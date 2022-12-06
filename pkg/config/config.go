@@ -85,6 +85,9 @@ type RTCConfig struct {
 
 	// for testing, disable UDP
 	ForceTCP bool `yaml:"force_tcp,omitempty"`
+
+	// force a reconnect on a publication error
+	ReconnectOnPublicationError *bool `yaml:"reconnect_on_publication_error,omitempty"`
 }
 
 type TURNServer struct {

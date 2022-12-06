@@ -84,6 +84,7 @@ const (
 	ParticipantCloseReasonNegotiateFailed
 	ParticipantCloseReasonMigrationRequested
 	ParticipantCloseReasonOvercommitted
+	ParticipantCloseReasonPublicationError
 )
 
 func (p ParticipantCloseReason) String() string {
@@ -122,10 +123,12 @@ func (p ParticipantCloseReason) String() string {
 		return "SIMULATE_SERVER_LEAVE"
 	case ParticipantCloseReasonNegotiateFailed:
 		return "NEGOTIATE_FAILED"
-	case ParticipantCloseReasonOvercommitted:
-		return "OVERCOMMITTED"
 	case ParticipantCloseReasonMigrationRequested:
 		return "MIGRATION_REQUESTED"
+	case ParticipantCloseReasonOvercommitted:
+		return "OVERCOMMITTED"
+	case ParticipantCloseReasonPublicationError:
+		return "PUBLICATION_ERROR"
 	default:
 		return fmt.Sprintf("%d", int(p))
 	}
@@ -156,7 +159,7 @@ func (p ParticipantCloseReason) ToDisconnectReason() livekit.DisconnectReason {
 		return livekit.DisconnectReason_SERVER_SHUTDOWN
 	case ParticipantCloseReasonOvercommitted:
 		return livekit.DisconnectReason_SERVER_SHUTDOWN
-	case ParticipantCloseReasonNegotiateFailed:
+	case ParticipantCloseReasonNegotiateFailed, ParticipantCloseReasonPublicationError:
 		return livekit.DisconnectReason_STATE_MISMATCH
 	default:
 		// the other types will map to unknown reason

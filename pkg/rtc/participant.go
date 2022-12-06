@@ -64,30 +64,31 @@ type SubscribeRequest struct {
 }
 
 type ParticipantParams struct {
-	Identity                livekit.ParticipantIdentity
-	Name                    livekit.ParticipantName
-	SID                     livekit.ParticipantID
-	Config                  *WebRTCConfig
-	Sink                    routing.MessageSink
-	AudioConfig             config.AudioConfig
-	VideoConfig             config.VideoConfig
-	ProtocolVersion         types.ProtocolVersion
-	Telemetry               telemetry.TelemetryService
-	PLIThrottleConfig       config.PLIThrottleConfig
-	CongestionControlConfig config.CongestionControlConfig
-	EnabledCodecs           []*livekit.Codec
-	Logger                  logger.Logger
-	SimTracks               map[uint32]SimulcastTrackInfo
-	Grants                  *auth.ClaimGrants
-	InitialVersion          uint32
-	ClientConf              *livekit.ClientConfiguration
-	ClientInfo              ClientInfo
-	Region                  string
-	Migration               bool
-	AdaptiveStream          bool
-	AllowTCPFallback        bool
-	TURNSEnabled            bool
-	GetParticipantInfo      func(pID livekit.ParticipantID) *livekit.ParticipantInfo
+	Identity                    livekit.ParticipantIdentity
+	Name                        livekit.ParticipantName
+	SID                         livekit.ParticipantID
+	Config                      *WebRTCConfig
+	Sink                        routing.MessageSink
+	AudioConfig                 config.AudioConfig
+	VideoConfig                 config.VideoConfig
+	ProtocolVersion             types.ProtocolVersion
+	Telemetry                   telemetry.TelemetryService
+	PLIThrottleConfig           config.PLIThrottleConfig
+	CongestionControlConfig     config.CongestionControlConfig
+	EnabledCodecs               []*livekit.Codec
+	Logger                      logger.Logger
+	SimTracks                   map[uint32]SimulcastTrackInfo
+	Grants                      *auth.ClaimGrants
+	InitialVersion              uint32
+	ClientConf                  *livekit.ClientConfiguration
+	ClientInfo                  ClientInfo
+	Region                      string
+	Migration                   bool
+	AdaptiveStream              bool
+	AllowTCPFallback            bool
+	TURNSEnabled                bool
+	GetParticipantInfo          func(pID livekit.ParticipantID) *livekit.ParticipantInfo
+	ReconnectOnPublicationError bool
 }
 
 type ParticipantImpl struct {
@@ -197,6 +198,8 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p.state.Store(livekit.ParticipantInfo_JOINING)
 	p.grants = params.Grants
 	p.SetResponseSink(params.Sink)
+
+	p.supervisor.OnPublicationError(p.onPublicationError)
 
 	var err error
 	// keep last participants and when updates were sent
@@ -1484,7 +1487,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		} else {
 			p.pendingTracks[req.Cid].trackInfos = append(p.pendingTracks[req.Cid].trackInfos, ti)
 		}
-		p.params.Logger.Debugw("pending track queued", "trackID", ti.Sid, "track", ti.String(), "request", req.String())
+		p.params.Logger.Infow("pending track queued", "trackID", ti.Sid, "track", ti.String(), "request", req.String())
 		return nil
 	}
 
@@ -1492,7 +1495,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
 
 	p.pendingTracks[req.Cid] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}}
-	p.params.Logger.Debugw("pending track added", "trackID", ti.Sid, "track", ti.String(), "request", req.String())
+	p.params.Logger.Infow("pending track added", "trackID", ti.Sid, "track", ti.String(), "request", req.String())
 	return ti
 }
 
@@ -1947,13 +1950,12 @@ func (p *ParticipantImpl) GetCachedDownTrack(trackID livekit.TrackID) (*webrtc.R
 	return nil, sfu.DownTrackState{}
 }
 
-func (p *ParticipantImpl) onAnyTransportNegotiationFailed() {
-	p.params.Logger.Infow("negotiation failed, starting full reconnect")
+func (p *ParticipantImpl) issueFullReconnect(reason types.ParticipantCloseReason) {
 	_ = p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Leave{
 			Leave: &livekit.LeaveRequest{
 				CanReconnect: true,
-				Reason:       types.ParticipantCloseReasonNegotiateFailed.ToDisconnectReason(),
+				Reason:       reason.ToDisconnectReason(),
 			},
 		},
 	})
@@ -1961,6 +1963,19 @@ func (p *ParticipantImpl) onAnyTransportNegotiationFailed() {
 
 	// on a full reconnect, no need to supervise this participant anymore
 	p.supervisor.Stop()
+}
+
+func (p *ParticipantImpl) onPublicationError(trackID livekit.TrackID) {
+	p.params.Logger.Infow("publication failed", "trackID", trackID)
+	if p.params.ReconnectOnPublicationError {
+		p.params.Logger.Infow("starting full reconnect")
+		p.issueFullReconnect(types.ParticipantCloseReasonPublicationError)
+	}
+}
+
+func (p *ParticipantImpl) onAnyTransportNegotiationFailed() {
+	p.params.Logger.Infow("negotiation failed, starting full reconnect")
+	p.issueFullReconnect(types.ParticipantCloseReasonNegotiateFailed)
 }
 
 func (p *ParticipantImpl) EnqueueSubscribeTrack(trackID livekit.TrackID, isRelayed bool, f func(sub types.LocalParticipant) error) bool {

@@ -27,6 +27,8 @@ type ParticipantSupervisor struct {
 	subscriptions        map[livekit.TrackID]types.OperationMonitor
 
 	isStopped atomic.Bool
+
+	onPublicationError func(trackID livekit.TrackID)
 }
 
 func NewParticipantSupervisor(params ParticipantSupervisorParams) *ParticipantSupervisor {
@@ -43,6 +45,20 @@ func NewParticipantSupervisor(params ParticipantSupervisorParams) *ParticipantSu
 
 func (p *ParticipantSupervisor) Stop() {
 	p.isStopped.Store(true)
+}
+
+func (p *ParticipantSupervisor) OnPublicationError(f func(trackID livekit.TrackID)) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	p.onPublicationError = f
+}
+
+func (p *ParticipantSupervisor) getOnPublicationError() func(trackID livekit.TrackID) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	return p.onPublicationError
 }
 
 func (p *ParticipantSupervisor) SetPublisherPeerConnectionConnected(isConnected bool) {
@@ -141,17 +157,20 @@ func (p *ParticipantSupervisor) checkState() {
 }
 
 func (p *ParticipantSupervisor) checkPublications() {
+	var erroredPublications []livekit.TrackID
 	var removablePublications []livekit.TrackID
 	p.lock.RLock()
 	for trackID, pm := range p.publications {
 		if err := pm.Check(); err != nil {
 			p.params.Logger.Errorw("supervisor error on publication", err, "trackID", trackID)
+			erroredPublications = append(erroredPublications, trackID)
 		} else {
 			if pm.IsIdle() {
 				removablePublications = append(removablePublications, trackID)
 			}
 		}
 	}
+	onPublicationError := p.getOnPublicationError()
 	p.lock.RUnlock()
 
 	p.lock.Lock()
@@ -159,6 +178,12 @@ func (p *ParticipantSupervisor) checkPublications() {
 		delete(p.publications, trackID)
 	}
 	p.lock.Unlock()
+
+	if onPublicationError != nil {
+		for _, trackID := range erroredPublications {
+			onPublicationError(trackID)
+		}
+	}
 }
 
 func (p *ParticipantSupervisor) checkSubscriptions() {

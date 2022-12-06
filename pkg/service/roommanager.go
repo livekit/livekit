@@ -280,6 +280,11 @@ func (r *RoomManager) StartSession(
 	if r.config.RTC.AllowTCPFallback != nil {
 		allowFallback = *r.config.RTC.AllowTCPFallback
 	}
+	// default do not force full reconnect on a publication error
+	reconnectOnPublicationError := false
+	if r.config.RTC.ReconnectOnPublicationError != nil {
+		reconnectOnPublicationError = *r.config.RTC.ReconnectOnPublicationError
+	}
 	participant, err = rtc.NewParticipant(rtc.ParticipantParams{
 		Identity:                pi.Identity,
 		Name:                    pi.Name,
@@ -307,6 +312,7 @@ func (r *RoomManager) StartSession(
 			}
 			return nil
 		},
+		ReconnectOnPublicationError: reconnectOnPublicationError,
 	})
 	if err != nil {
 		return err
