@@ -21,6 +21,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/routing/selector"
 	"github.com/livekit/livekit-server/pkg/rtc"
+	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
@@ -38,6 +39,7 @@ type RTCService struct {
 	isDev         bool
 	limits        config.LimitConfig
 	parser        *uaparser.Parser
+	telemetry     telemetry.TelemetryService
 }
 
 func NewRTCService(
@@ -46,6 +48,7 @@ func NewRTCService(
 	store ServiceStore,
 	router routing.MessageRouter,
 	currentNode routing.LocalNode,
+	telemetry telemetry.TelemetryService,
 ) *RTCService {
 	s := &RTCService{
 		router:        router,
@@ -57,6 +60,7 @@ func NewRTCService(
 		isDev:         conf.Development,
 		limits:        conf.Limit,
 		parser:        uaparser.NewFromSaved(),
+		telemetry:     telemetry,
 	}
 
 	// allow connections from any origin, since script may be hosted anywhere
@@ -197,13 +201,6 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pLogger := rtc.LoggerWithParticipant(
-		rtc.LoggerWithRoom(logger.GetDefaultLogger(), roomName, livekit.RoomID(rm.Sid)),
-		pi.Identity,
-		"",
-		false,
-	)
-
 	// wait for the first message before upgrading to websocket. If no one is
 	// responding to our connection attempt, we should terminate the connection
 	// instead of waiting forever on the WebSocket
@@ -214,6 +211,25 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !pi.Reconnect && initialResponse.GetJoin() != nil {
+		pi.ID = livekit.ParticipantID(initialResponse.GetJoin().GetParticipant().GetSid())
+	}
+
+	var signalStats *telemetry.BytesTrackStats
+	if pi.ID != "" {
+		signalStats = telemetry.NewBytesTrackStats(
+			telemetry.BytesTrackIDForParticipantID(telemetry.BytesTrackTypeSignal, pi.ID),
+			pi.ID,
+			s.telemetry)
+	}
+
+	pLogger := rtc.LoggerWithParticipant(
+		rtc.LoggerWithRoom(logger.GetDefaultLogger(), roomName, livekit.RoomID(rm.Sid)),
+		pi.Identity,
+		pi.ID,
+		false,
+	)
+
 	done := make(chan struct{})
 	// function exits when websocket terminates, it'll close the event reading off of response sink as well
 	defer func() {
@@ -221,6 +237,10 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		resSource.Close()
 		reqSink.Close()
 		close(done)
+
+		if signalStats != nil {
+			signalStats.Report()
+		}
 	}()
 
 	// upgrade only once the basics are good to go
@@ -233,9 +253,13 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// websocket established
 	sigConn := NewWSSignalConnection(conn)
-	if err := sigConn.WriteResponse(initialResponse); err != nil {
+	if count, err := sigConn.WriteResponse(initialResponse); err != nil {
 		pLogger.Warnw("could not write initial response", err)
 		return
+	} else {
+		if signalStats != nil {
+			signalStats.AddBytes(uint64(count), true)
+		}
 	}
 
 	prometheus.ServiceOperationCounter.WithLabelValues("signal_ws", "success", "").Add(1)
@@ -265,9 +289,19 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 
-				if err = sigConn.WriteResponse(res); err != nil {
+				if pi.ID == "" && initialResponse.GetJoin() != nil {
+					pi.ID = livekit.ParticipantID(initialResponse.GetJoin().GetParticipant().GetSid())
+					signalStats = telemetry.NewBytesTrackStats(
+						telemetry.BytesTrackIDForParticipantID(telemetry.BytesTrackTypeSignal, pi.ID),
+						pi.ID,
+						s.telemetry)
+				}
+
+				if count, err := sigConn.WriteResponse(res); err != nil {
 					pLogger.Warnw("error writing to websocket", err)
 					return
+				} else if signalStats != nil {
+					signalStats.AddBytes(uint64(count), true)
 				}
 			}
 		}
@@ -275,7 +309,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// handle incoming requests from websocket
 	for {
-		req, err := sigConn.ReadRequest()
+		req, count, err := sigConn.ReadRequest()
 		// normal closure
 		if err != nil {
 			if err == io.EOF || strings.HasSuffix(err.Error(), "use of closed network connection") ||
@@ -287,8 +321,11 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		if signalStats != nil {
+			signalStats.AddBytes(uint64(count), false)
+		}
 		if _, ok := req.Message.(*livekit.SignalRequest_Ping); ok {
-			_ = sigConn.WriteResponse(&livekit.SignalResponse{
+			count, perr := sigConn.WriteResponse(&livekit.SignalResponse{
 				Message: &livekit.SignalResponse_Pong{
 					//
 					// Although this field is int64, some clients (like JS) cause overflow if nanosecond granularity is used.
@@ -297,6 +334,9 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					Pong: time.Now().UnixMilli(),
 				},
 			})
+			if perr == nil && signalStats != nil {
+				signalStats.AddBytes(uint64(count), true)
+			}
 			continue
 		}
 		if err := reqSink.WriteMessage(req); err != nil {

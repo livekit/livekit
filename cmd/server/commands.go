@@ -15,6 +15,7 @@ import (
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/utils"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
 )
@@ -65,6 +66,16 @@ func printPorts(c *cli.Context) error {
 		fmt.Println(p)
 	}
 	return nil
+}
+
+func helpVerbose(c *cli.Context) error {
+	generatedFlags, err := config.GenerateCLIFlags(baseFlags, false)
+	if err != nil {
+		return err
+	}
+
+	c.App.Flags = append(baseFlags, generatedFlags...)
+	return cli.ShowAppHelp(c)
 }
 
 func createToken(c *cli.Context) error {

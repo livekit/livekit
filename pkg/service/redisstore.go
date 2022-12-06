@@ -48,15 +48,22 @@ const (
 )
 
 type RedisStore struct {
-	rc   *redis.Client
-	ctx  context.Context
-	done chan struct{}
+	rc           redis.UniversalClient
+	unlockScript *redis.Script
+	ctx          context.Context
+	done         chan struct{}
 }
 
-func NewRedisStore(rc *redis.Client) *RedisStore {
+func NewRedisStore(rc redis.UniversalClient) *RedisStore {
+	unlockScript := `if redis.call("get", KEYS[1]) == ARGV[1] then
+						return redis.call("del", KEYS[1])
+					 else return 0 
+					 end`
+
 	return &RedisStore{
-		ctx: context.Background(),
-		rc:  rc,
+		ctx:          context.Background(),
+		rc:           rc,
+		unlockScript: redis.NewScript(unlockScript),
 	}
 }
 
@@ -244,21 +251,19 @@ func (s *RedisStore) LockRoom(_ context.Context, roomName livekit.RoomName, dura
 	return "", ErrRoomLockFailed
 }
 
-func (s *RedisStore) UnlockRoom(_ context.Context, roomName livekit.RoomName, uid string) error {
+func (s *RedisStore) UnlockRoom(ctx context.Context, roomName livekit.RoomName, uid string) error {
 	key := RoomLockPrefix + string(roomName)
-
-	val, err := s.rc.Get(s.ctx, key).Result()
-	if err == redis.Nil {
-		// already unlocked
-		return nil
-	} else if err != nil {
+	res, err := s.unlockScript.Run(ctx, s.rc, []string{key}, uid).Result()
+	if err != nil {
 		return err
 	}
 
-	if val != uid {
+	// uid does not match
+	if i, ok := res.(int64); !ok || i != 1 {
 		return ErrRoomUnlockFailed
 	}
-	return s.rc.Del(s.ctx, key).Err()
+
+	return nil
 }
 
 func (s *RedisStore) StoreParticipant(_ context.Context, roomName livekit.RoomName, participant *livekit.ParticipantInfo) error {
@@ -420,6 +425,8 @@ func (s *RedisStore) UpdateEgress(_ context.Context, info *livekit.EgressInfo) e
 // Deletes egress info 24h after the egress has ended
 func (s *RedisStore) egressWorker() {
 	ticker := time.NewTicker(time.Minute * 30)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-s.done:

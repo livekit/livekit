@@ -15,8 +15,11 @@ var (
 	pionIgnoredPrefixes = map[string][]string{
 		"ice": {
 			"pingAllCandidates called with no candidate pairs",
-			"failed to send packet",
+			"failed to send packet: io: read/write on closed pipe",
 			"Ignoring remote candidate with tcpType active",
+			"discard message from",
+			"Failed to discover mDNS candidate",
+			"Failed to read from candidate tcp",
 		},
 		"pc": {
 			"Failed to accept RTCP stream is already closed",

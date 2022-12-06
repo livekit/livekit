@@ -35,7 +35,6 @@ func NewDDVideoLayerSelector(logger logger.Logger) *DDVideoLayerSelector {
 }
 
 func (s *DDVideoLayerSelector) Select(expPkt *buffer.ExtPacket, tp *TranslationParams) (selected bool) {
-	// return true
 	tp.marker = expPkt.Packet.Marker
 	if expPkt.DependencyDescriptor == nil {
 		// packet don't have dependency descriptor, pass check

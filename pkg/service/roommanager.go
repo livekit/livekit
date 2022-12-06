@@ -199,9 +199,6 @@ func (r *RoomManager) Stop() {
 		if r.rtcConfig.UDPMux != nil {
 			_ = r.rtcConfig.UDPMux.Close()
 		}
-		if r.rtcConfig.UDPMuxConn != nil {
-			_ = r.rtcConfig.UDPMuxConn.Close()
-		}
 		if r.rtcConfig.TCPMuxListener != nil {
 			_ = r.rtcConfig.TCPMuxListener.Close()
 		}
@@ -222,6 +219,10 @@ func (r *RoomManager) StartSession(
 	}
 	defer room.Release()
 
+	// only create the room, but don't start a participant session
+	if pi.Identity == "" {
+		return nil
+	}
 	participant := room.GetParticipant(pi.Identity)
 	if participant != nil {
 		// When reconnecting, it means WS has interrupted by underlying peer connection is still ok
@@ -300,6 +301,12 @@ func (r *RoomManager) StartSession(
 		AdaptiveStream:          pi.AdaptiveStream,
 		AllowTCPFallback:        allowFallback,
 		TURNSEnabled:            r.config.IsTURNSEnabled(),
+		GetParticipantInfo: func(pID livekit.ParticipantID) *livekit.ParticipantInfo {
+			if p := room.GetParticipantBySid(pID); p != nil {
+				return p.ToProto()
+			}
+			return nil
+		},
 	})
 	if err != nil {
 		return err

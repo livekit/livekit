@@ -19,7 +19,7 @@ func (conf *Config) determineIP() (string, error) {
 		var err error
 		for i := 0; i < 3; i++ {
 			var ip string
-			ip, err = GetExternalIP(stunServers)
+			ip, err = GetExternalIP(stunServers, nil)
 			if err == nil {
 				return ip, nil
 			} else {
@@ -30,14 +30,14 @@ func (conf *Config) determineIP() (string, error) {
 	}
 
 	// use local ip instead
-	addresses, err := GetLocalIPAddresses()
+	addresses, err := GetLocalIPAddresses(false)
 	if len(addresses) > 0 {
 		return addresses[0], err
 	}
 	return "", err
 }
 
-func GetLocalIPAddresses() ([]string, error) {
+func GetLocalIPAddresses(includeLoopback bool) ([]string, error) {
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return nil, err
@@ -70,6 +70,10 @@ func GetLocalIPAddresses() ([]string, error) {
 		}
 	}
 
+	if includeLoopback {
+		addresses = append(addresses, loopBacks...)
+	}
+
 	if len(addresses) > 0 {
 		return addresses, nil
 	}
@@ -79,11 +83,19 @@ func GetLocalIPAddresses() ([]string, error) {
 	return nil, fmt.Errorf("could not find local IP address")
 }
 
-func GetExternalIP(stunServers []string) (string, error) {
+// GetExternalIP return external IP for localAddr from stun server. If localAddr is nil, a local address is chosen automatically.
+func GetExternalIP(stunServers []string, localAddr net.Addr) (string, error) {
 	if len(stunServers) == 0 {
 		return "", errors.New("STUN servers are required but not defined")
 	}
-	c, err := stun.Dial("udp4", stunServers[0])
+	dialer := &net.Dialer{
+		LocalAddr: localAddr,
+	}
+	conn, err := dialer.Dial("udp4", stunServers[0])
+	if err != nil {
+		return "", err
+	}
+	c, err := stun.NewClient(conn)
 	if err != nil {
 		return "", err
 	}

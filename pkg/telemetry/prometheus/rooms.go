@@ -5,6 +5,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
+
+	"github.com/livekit/protocol/livekit"
 )
 
 var (
@@ -20,18 +22,18 @@ var (
 	promTrackSubscribedTotal *prometheus.GaugeVec
 )
 
-func initRoomStats(nodeID string) {
+func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 	promRoomTotal = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "room",
 		Name:        "total",
-		ConstLabels: prometheus.Labels{"node_id": nodeID},
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	})
 	promRoomDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "room",
 		Name:        "duration_seconds",
-		ConstLabels: prometheus.Labels{"node_id": nodeID},
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		Buckets: []float64{
 			5, 10, 60, 5 * 60, 10 * 60, 30 * 60, 60 * 60, 2 * 60 * 60, 5 * 60 * 60, 10 * 60 * 60,
 		},
@@ -40,19 +42,19 @@ func initRoomStats(nodeID string) {
 		Namespace:   livekitNamespace,
 		Subsystem:   "participant",
 		Name:        "total",
-		ConstLabels: prometheus.Labels{"node_id": nodeID},
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	})
 	promTrackPublishedTotal = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "track",
 		Name:        "published_total",
-		ConstLabels: prometheus.Labels{"node_id": nodeID},
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	}, []string{"kind"})
 	promTrackSubscribedTotal = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "track",
 		Name:        "subscribed_total",
-		ConstLabels: prometheus.Labels{"node_id": nodeID},
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	}, []string{"kind"})
 
 	prometheus.MustRegister(promRoomTotal)

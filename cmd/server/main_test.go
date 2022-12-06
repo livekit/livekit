@@ -43,7 +43,7 @@ func TestShouldReturnErrorIfConfigFileDoesNotExist(t *testing.T) {
 func writeConfigFile(test testStruct, t *testing.T) {
 	if test.configFileName != "" {
 		d1 := []byte(test.expectedConfigBody)
-		err := os.WriteFile(test.configFileName, d1, 0644)
+		err := os.WriteFile(test.configFileName, d1, 0o644)
 		require.NoError(t, err)
 	}
 }

@@ -104,12 +104,16 @@ func (p *ParticipantImpl) SendSpeakerUpdate(speakers []*livekit.SpeakerInfo) err
 	})
 }
 
-func (p *ParticipantImpl) SendDataPacket(dp *livekit.DataPacket) error {
+func (p *ParticipantImpl) SendDataPacket(dp *livekit.DataPacket, data []byte) error {
 	if p.State() != livekit.ParticipantInfo_ACTIVE {
 		return ErrDataChannelUnavailable
 	}
 
-	return p.TransportManager.SendDataPacket(dp)
+	err := p.TransportManager.SendDataPacket(dp, data)
+	if err == nil {
+		p.dataChannelStats.AddBytes(uint64(len(data)), true)
+	}
+	return err
 }
 
 func (p *ParticipantImpl) SendRoomUpdate(room *livekit.Room) error {

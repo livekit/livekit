@@ -33,7 +33,7 @@ const (
 type RedisRouter struct {
 	LocalRouter
 
-	rc        *redis.Client
+	rc        redis.UniversalClient
 	ctx       context.Context
 	isStarted atomic.Bool
 	nodeMu    sync.RWMutex
@@ -44,7 +44,7 @@ type RedisRouter struct {
 	cancel func()
 }
 
-func NewRedisRouter(currentNode LocalNode, rc *redis.Client) *RedisRouter {
+func NewRedisRouter(currentNode LocalNode, rc redis.UniversalClient) *RedisRouter {
 	rr := &RedisRouter{
 		LocalRouter: *NewLocalRouter(currentNode),
 		rc:          rc,
@@ -155,6 +155,10 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livek
 		return
 	}
 
+	// index by connectionID, since there may be multiple connections for the participant
+	// set up response channel before sending StartSession and be ready to receive responses.
+	resChan := r.getOrCreateMessageChannel(r.responseChannels, string(connectionID))
+
 	sink := NewRTCNodeSink(r.rc, livekit.NodeID(rtcNode.Id), pKey)
 
 	// serialize claims
@@ -169,8 +173,6 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livek
 		return
 	}
 
-	// index by connectionID, since there may be multiple connections for the participant
-	resChan := r.getOrCreateMessageChannel(r.responseChannels, string(connectionID))
 	return connectionID, sink, resChan, nil
 }
 

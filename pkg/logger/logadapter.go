@@ -51,10 +51,11 @@ func (l *logAdapter) Infof(format string, args ...interface{}) {
 	if l.level > zapcore.InfoLevel {
 		return
 	}
-	if l.shouldIgnore(format) {
+	msg := fmt.Sprintf(format, args...)
+	if l.shouldIgnore(msg) {
 		return
 	}
-	l.logger.Info(fmt.Sprintf(format, args...))
+	l.logger.Info(msg)
 }
 
 func (l *logAdapter) Warn(msg string) {
@@ -71,10 +72,11 @@ func (l *logAdapter) Warnf(format string, args ...interface{}) {
 	if l.level > zapcore.WarnLevel {
 		return
 	}
-	if l.shouldIgnore(format) {
+	msg := fmt.Sprintf(format, args...)
+	if l.shouldIgnore(msg) {
 		return
 	}
-	l.logger.V(-1).Info(fmt.Sprintf(format, args...))
+	l.logger.V(-1).Info(msg)
 }
 
 func (l *logAdapter) Error(msg string) {
@@ -91,10 +93,11 @@ func (l *logAdapter) Errorf(format string, args ...interface{}) {
 	if l.level > zapcore.ErrorLevel {
 		return
 	}
-	if l.shouldIgnore(format) {
+	msg := fmt.Sprintf(format, args...)
+	if l.shouldIgnore(msg) {
 		return
 	}
-	l.logger.Error(nil, fmt.Sprintf(format, args...))
+	l.logger.Error(nil, msg)
 }
 
 func (l *logAdapter) shouldIgnore(msg string) bool {

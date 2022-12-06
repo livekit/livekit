@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -80,41 +81,89 @@ func (s *EgressService) Stop() {
 }
 
 func (s *EgressService) StartRoomCompositeEgress(ctx context.Context, req *livekit.RoomCompositeEgressRequest) (*livekit.EgressInfo, error) {
-	return s.StartEgress(ctx, livekit.RoomName(req.RoomName), &livekit.StartEgressRequest{
+	fields := []interface{}{"room", req.RoomName, "outputType", reflect.TypeOf(req.Output).String(), "baseUrl", req.CustomBaseUrl}
+	defer func() {
+		AppendLogFields(ctx, fields...)
+	}()
+	ei, err := s.startEgress(ctx, livekit.RoomName(req.RoomName), &livekit.StartEgressRequest{
 		Request: &livekit.StartEgressRequest_RoomComposite{
 			RoomComposite: req,
 		},
 	})
+	if err != nil {
+		return nil, err
+	}
+	fields = append(fields, "egressID", ei.EgressId)
+	return ei, err
 }
 
 func (s *EgressService) StartTrackCompositeEgress(ctx context.Context, req *livekit.TrackCompositeEgressRequest) (*livekit.EgressInfo, error) {
-	return s.StartEgress(ctx, livekit.RoomName(req.RoomName), &livekit.StartEgressRequest{
+	fields := []interface{}{
+		"room", req.RoomName, "outputType", reflect.TypeOf(req.Output).String(), "audioTrackID", req.AudioTrackId, "videoTrackID", req.VideoTrackId,
+	}
+	defer func() {
+		AppendLogFields(ctx, fields...)
+	}()
+	ei, err := s.startEgress(ctx, livekit.RoomName(req.RoomName), &livekit.StartEgressRequest{
 		Request: &livekit.StartEgressRequest_TrackComposite{
 			TrackComposite: req,
 		},
 	})
+	if err != nil {
+		return nil, err
+	}
+	fields = append(fields, "egressID", ei.EgressId)
+	return ei, err
 }
 
 func (s *EgressService) StartTrackEgress(ctx context.Context, req *livekit.TrackEgressRequest) (*livekit.EgressInfo, error) {
-	return s.StartEgress(ctx, livekit.RoomName(req.RoomName), &livekit.StartEgressRequest{
+	fields := []interface{}{"room", req.RoomName, "trackID", req.TrackId, "outputType", reflect.TypeOf(req.Output).String()}
+	defer func() {
+		AppendLogFields(ctx, fields...)
+	}()
+	ei, err := s.startEgress(ctx, livekit.RoomName(req.RoomName), &livekit.StartEgressRequest{
 		Request: &livekit.StartEgressRequest_Track{
 			Track: req,
 		},
 	})
+	if err != nil {
+		return nil, err
+	}
+	fields = append(fields, "egressID", ei.EgressId)
+	return ei, err
 }
 
-func (s *EgressService) StartEgress(ctx context.Context, roomName livekit.RoomName, req *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
+func (s *EgressService) StartWebEgress(ctx context.Context, req *livekit.WebEgressRequest) (*livekit.EgressInfo, error) {
+	fields := []interface{}{"url", req.Url, "outputType", reflect.TypeOf(req.Output).String()}
+	defer func() {
+		AppendLogFields(ctx, fields...)
+	}()
+	ei, err := s.startEgress(ctx, "", &livekit.StartEgressRequest{
+		Request: &livekit.StartEgressRequest_Web{
+			Web: req,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	fields = append(fields, "egressID", ei.EgressId)
+	return ei, err
+}
+
+func (s *EgressService) startEgress(ctx context.Context, roomName livekit.RoomName, req *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	} else if s.launcher == nil {
 		return nil, ErrEgressNotConnected
 	}
 
-	room, _, err := s.store.LoadRoom(ctx, roomName, false)
-	if err != nil {
-		return nil, err
+	if roomName != "" {
+		room, _, err := s.store.LoadRoom(ctx, roomName, false)
+		if err != nil {
+			return nil, err
+		}
+		req.RoomId = room.Sid
 	}
-	req.RoomId = room.Sid
 
 	return s.launcher.StartEgress(ctx, req)
 }
@@ -124,8 +173,6 @@ func (s *egressLauncher) StartEgress(ctx context.Context, req *livekit.StartEgre
 	if err != nil {
 		return nil, err
 	}
-
-	ensureRoomName(info)
 
 	s.telemetry.EgressStarted(ctx, info)
 	go func() {
@@ -142,6 +189,7 @@ type LayoutMetadata struct {
 }
 
 func (s *EgressService) UpdateLayout(ctx context.Context, req *livekit.UpdateLayoutRequest) (*livekit.EgressInfo, error) {
+	AppendLogFields(ctx, "egressID", req.EgressId, "layout", req.Layout)
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
@@ -153,8 +201,6 @@ func (s *EgressService) UpdateLayout(ctx context.Context, req *livekit.UpdateLay
 	if err != nil {
 		return nil, err
 	}
-
-	ensureRoomName(info)
 
 	metadata, err := json.Marshal(&LayoutMetadata{Layout: req.Layout})
 	if err != nil {
@@ -178,6 +224,7 @@ func (s *EgressService) UpdateLayout(ctx context.Context, req *livekit.UpdateLay
 }
 
 func (s *EgressService) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRequest) (*livekit.EgressInfo, error) {
+	AppendLogFields(ctx, "egressID", req.EgressId, "addUrls", req.AddOutputUrls, "removeUrls", req.RemoveOutputUrls)
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
@@ -195,8 +242,6 @@ func (s *EgressService) UpdateStream(ctx context.Context, req *livekit.UpdateStr
 		return nil, err
 	}
 
-	ensureRoomName(info)
-
 	go func() {
 		if err := s.es.UpdateEgress(ctx, info); err != nil {
 			logger.Errorw("could not write egress info", err)
@@ -207,6 +252,9 @@ func (s *EgressService) UpdateStream(ctx context.Context, req *livekit.UpdateStr
 }
 
 func (s *EgressService) ListEgress(ctx context.Context, req *livekit.ListEgressRequest) (*livekit.ListEgressResponse, error) {
+	if req.RoomName != "" {
+		AppendLogFields(ctx, "room", req.RoomName)
+	}
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
@@ -223,6 +271,7 @@ func (s *EgressService) ListEgress(ctx context.Context, req *livekit.ListEgressR
 }
 
 func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressRequest) (*livekit.EgressInfo, error) {
+	AppendLogFields(ctx, "egressID", req.EgressId)
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
@@ -239,8 +288,6 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 	if err != nil {
 		return nil, err
 	}
-
-	ensureRoomName(info)
 
 	go func() {
 		if err := s.es.UpdateEgress(ctx, info); err != nil {
@@ -276,8 +323,6 @@ func (s *EgressService) startWorker() error {
 					logger.Errorw("failed to read results", err)
 					continue
 				}
-
-				ensureRoomName(res)
 
 				switch res.Status {
 				case livekit.EgressStatus_EGRESS_COMPLETE,
@@ -319,18 +364,4 @@ func (s *EgressService) startWorker() error {
 	}()
 
 	return nil
-}
-
-// Ensure compatibility with Egress <= v1.0.5
-func ensureRoomName(info *livekit.EgressInfo) {
-	if info.RoomName == "" {
-		switch r := info.Request.(type) {
-		case *livekit.EgressInfo_RoomComposite:
-			info.RoomName = r.RoomComposite.RoomName
-		case *livekit.EgressInfo_TrackComposite:
-			info.RoomName = r.TrackComposite.RoomName
-		case *livekit.EgressInfo_Track:
-			info.RoomName = r.Track.RoomName
-		}
-	}
 }

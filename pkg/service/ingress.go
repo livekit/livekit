@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -60,16 +59,30 @@ func (s *IngressService) Stop() {
 }
 
 func (s *IngressService) CreateIngress(ctx context.Context, req *livekit.CreateIngressRequest) (*livekit.IngressInfo, error) {
-	return s.CreateIngressWithUrlPrefix(ctx, s.conf.RTMPBaseURL, req)
+	fields := []interface{}{
+		"inputType", req.InputType,
+		"name", req.Name,
+	}
+	if req.RoomName != "" {
+		fields = append(fields, "room", req.RoomName, "identity", req.ParticipantIdentity)
+	}
+	defer func() {
+		AppendLogFields(ctx, fields...)
+	}()
+
+	ig, err := s.CreateIngressWithUrlPrefix(ctx, s.conf.RTMPBaseURL, req)
+	if err != nil {
+		return nil, err
+	}
+	fields = append(fields, "ingressID", ig.IngressId)
+
+	return ig, nil
 }
 
 func (s *IngressService) CreateIngressWithUrlPrefix(ctx context.Context, urlPrefix string, req *livekit.CreateIngressRequest) (*livekit.IngressInfo, error) {
-	roomName, err := EnsureJoinPermission(ctx)
+	err := EnsureIngressAdminPermission(ctx)
 	if err != nil {
 		return nil, twirpAuthError(err)
-	}
-	if req.RoomName != "" && req.RoomName != string(roomName) {
-		return nil, twirpAuthError(ErrPermissionDenied)
 	}
 
 	sk := utils.NewGuid("")
@@ -78,7 +91,7 @@ func (s *IngressService) CreateIngressWithUrlPrefix(ctx context.Context, urlPref
 		IngressId:           utils.NewGuid(utils.IngressPrefix),
 		Name:                req.Name,
 		StreamKey:           sk,
-		Url:                 newRtmpUrl(urlPrefix, sk),
+		Url:                 urlPrefix,
 		InputType:           req.InputType,
 		Audio:               req.Audio,
 		Video:               req.Video,
@@ -133,12 +146,17 @@ func (s *IngressService) sendRPCWithRetry(ctx context.Context, req *livekit.Ingr
 }
 
 func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateIngressRequest) (*livekit.IngressInfo, error) {
-	roomName, err := EnsureJoinPermission(ctx)
+	fields := []interface{}{
+		"ingress", req.IngressId,
+		"name", req.Name,
+	}
+	if req.RoomName != "" {
+		fields = append(fields, "room", req.RoomName, "identity", req.ParticipantIdentity)
+	}
+	AppendLogFields(ctx, fields...)
+	err := EnsureIngressAdminPermission(ctx)
 	if err != nil {
 		return nil, twirpAuthError(err)
-	}
-	if req.RoomName != "" && req.RoomName != string(roomName) {
-		return nil, twirpAuthError(ErrPermissionDenied)
 	}
 
 	if s.rpcClient == nil {
@@ -204,12 +222,10 @@ func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateI
 }
 
 func (s *IngressService) ListIngress(ctx context.Context, req *livekit.ListIngressRequest) (*livekit.ListIngressResponse, error) {
-	roomName, err := EnsureJoinPermission(ctx)
+	AppendLogFields(ctx, "room", req.RoomName)
+	err := EnsureIngressAdminPermission(ctx)
 	if err != nil {
 		return nil, twirpAuthError(err)
-	}
-	if req.RoomName != "" && req.RoomName != string(roomName) {
-		return nil, twirpAuthError(ErrPermissionDenied)
 	}
 
 	infos, err := s.store.ListIngress(ctx, livekit.RoomName(req.RoomName))
@@ -222,7 +238,8 @@ func (s *IngressService) ListIngress(ctx context.Context, req *livekit.ListIngre
 }
 
 func (s *IngressService) DeleteIngress(ctx context.Context, req *livekit.DeleteIngressRequest) (*livekit.IngressInfo, error) {
-	if _, err := EnsureJoinPermission(ctx); err != nil {
+	AppendLogFields(ctx, "ingressID", req.IngressId)
+	if err := EnsureIngressAdminPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
 
@@ -329,8 +346,4 @@ func (s *IngressService) entitiesWorker() {
 			return
 		}
 	}
-}
-
-func newRtmpUrl(baseUrl string, ingressId string) string {
-	return fmt.Sprintf("%s/%s", baseUrl, ingressId)
 }

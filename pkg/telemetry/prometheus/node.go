@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/mackerelio/go-osstat/loadavg"
+	"github.com/mackerelio/go-osstat/memory"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
@@ -27,7 +28,7 @@ var (
 	promSysDroppedPacketPctGauge prometheus.Gauge
 )
 
-func Init(nodeID string) {
+func Init(nodeID string, nodeType livekit.NodeType) {
 	if initialized.Swap(true) {
 		return
 	}
@@ -37,7 +38,7 @@ func Init(nodeID string) {
 			Namespace:   livekitNamespace,
 			Subsystem:   "node",
 			Name:        "messages",
-			ConstLabels: prometheus.Labels{"node_id": nodeID},
+			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		},
 		[]string{"type", "status"},
 	)
@@ -47,7 +48,7 @@ func Init(nodeID string) {
 			Namespace:   livekitNamespace,
 			Subsystem:   "node",
 			Name:        "service_operation",
-			ConstLabels: prometheus.Labels{"node_id": nodeID},
+			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		},
 		[]string{"type", "status", "error_type"},
 	)
@@ -57,7 +58,7 @@ func Init(nodeID string) {
 			Namespace:   livekitNamespace,
 			Subsystem:   "node",
 			Name:        "packet_total",
-			ConstLabels: prometheus.Labels{"node_id": nodeID},
+			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 			Help:        "System level packet count. Count starts at 0 when service is first started.",
 		},
 		[]string{"type"},
@@ -68,7 +69,7 @@ func Init(nodeID string) {
 			Namespace:   livekitNamespace,
 			Subsystem:   "node",
 			Name:        "dropped_packets",
-			ConstLabels: prometheus.Labels{"node_id": nodeID},
+			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 			Help:        "System level dropped outgoing packet percentage.",
 		},
 	)
@@ -80,8 +81,20 @@ func Init(nodeID string) {
 
 	sysPacketsStart, sysDroppedPacketsStart, _ = getTCStats()
 
-	initPacketStats(nodeID)
-	initRoomStats(nodeID)
+	initPacketStats(nodeID, nodeType)
+	initRoomStats(nodeID, nodeType)
+}
+
+func getMemoryStats() (memoryLoad float32, err error) {
+	memInfo, err := memory.Get()
+	if err != nil {
+		return
+	}
+
+	if memInfo.Total != 0 {
+		memoryLoad = float32(memInfo.Used) / float32(memInfo.Total)
+	}
+	return
 }
 
 func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats) (*livekit.NodeStats, bool, error) {
@@ -94,6 +107,10 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 	if err != nil {
 		return nil, false, err
 	}
+
+	memoryLoad, _ := getMemoryStats()
+	// On MacOS, get "\"vm_stat\": executable file not found in $PATH" although it is in /usr/bin
+	// So, do not error out. Use the information if it is available.
 
 	sysPackets, sysDroppedPackets, err := getTCStats()
 	if err != nil {
@@ -154,6 +171,7 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		LoadAvgLast15Min:           float32(loadAvg.Loadavg15),
 		SysPacketsOut:              sysPackets,
 		SysPacketsDropped:          sysDroppedPackets,
+		MemoryLoad:                 memoryLoad,
 	}
 
 	// update stats

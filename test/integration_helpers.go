@@ -47,7 +47,7 @@ func init() {
 		Config: logger.Config{Level: "debug"},
 	})
 
-	prometheus.Init("test")
+	prometheus.Init("test", livekit.NodeType_SERVER)
 }
 
 func setupSingleNodeTest(name string) (*service.LivekitServer, func()) {
@@ -137,7 +137,7 @@ func waitUntilConnected(t *testing.T, clients ...*testclient.RTCClient) {
 
 func createSingleNodeServer(configUpdater func(*config.Config)) *service.LivekitServer {
 	var err error
-	conf, err := config.NewConfig("", true, nil)
+	conf, err := config.NewConfig("", true, nil, nil)
 	if err != nil {
 		panic(fmt.Sprintf("could not create config: %v", err))
 	}
@@ -163,7 +163,7 @@ func createSingleNodeServer(configUpdater func(*config.Config)) *service.Livekit
 
 func createMultiNodeServer(nodeID string, port uint32) *service.LivekitServer {
 	var err error
-	conf, err := config.NewConfig("", true, nil)
+	conf, err := config.NewConfig("", true, nil, nil)
 	if err != nil {
 		panic(fmt.Sprintf("could not create config: %v", err))
 	}

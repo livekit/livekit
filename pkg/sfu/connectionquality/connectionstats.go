@@ -39,7 +39,6 @@ type ConnectionStats struct {
 	lock             sync.RWMutex
 	score            float32
 	lastUpdate       time.Time
-	isLowQuality     atomic.Bool
 	maxExpectedLayer int32
 
 	done     chan struct{}
@@ -242,15 +241,6 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 				cs.score = float32(clamp(float64(cs.score), float64(MinScore), float64(MaxScore)))
 			}
 		}
-	}
-
-	if cs.score < 4.2 {
-		if !cs.isLowQuality.Swap(true) {
-			// changed from good to low quality, log
-			cs.params.Logger.Infow("low connection quality", "score", cs.score, "params", params)
-		}
-	} else {
-		cs.isLowQuality.Store(false)
 	}
 
 	return cs.score

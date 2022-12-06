@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/protocol/auth"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
@@ -226,6 +228,10 @@ const (
 	ICEConnectionTypeUnknown ICEConnectionType = "unknown"
 )
 
+type AddTrackParams struct {
+	Stereo bool
+}
+
 //counterfeiter:generate . LocalParticipant
 type LocalParticipant interface {
 	Participant
@@ -240,6 +246,7 @@ type LocalParticipant interface {
 	SubscriberAsPrimary() bool
 	GetClientConfiguration() *livekit.ClientConfiguration
 	GetICEConnectionType() ICEConnectionType
+	GetBufferFactory() *buffer.Factory
 
 	SetResponseSink(sink routing.MessageSink)
 	CloseSignalConnection()
@@ -260,8 +267,8 @@ type LocalParticipant interface {
 	HandleAnswer(sdp webrtc.SessionDescription)
 	Negotiate(force bool)
 	ICERestart(iceConfig *IceConfig)
-	AddTrackToSubscriber(trackLocal webrtc.TrackLocal) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
-	AddTransceiverFromTrackToSubscriber(trackLocal webrtc.TrackLocal) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
+	AddTrackToSubscriber(trackLocal webrtc.TrackLocal, params AddTrackParams) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
+	AddTransceiverFromTrackToSubscriber(trackLocal webrtc.TrackLocal, params AddTrackParams) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
 	RemoveTrackFromSubscriber(sender *webrtc.RTPSender) error
 
 	// subscriptions
@@ -269,6 +276,7 @@ type LocalParticipant interface {
 	RemoveSubscribedTrack(st SubscribedTrack)
 	UpdateSubscribedTrackSettings(trackID livekit.TrackID, settings *livekit.UpdateTrackSettings) error
 	GetSubscribedTracks() []SubscribedTrack
+	VerifySubscribeParticipantInfo(pID livekit.ParticipantID, version uint32)
 
 	// returns list of participant identities that the current participant is subscribed to
 	GetSubscribedParticipants() []livekit.ParticipantID
@@ -282,7 +290,7 @@ type LocalParticipant interface {
 	SendJoinResponse(joinResponse *livekit.JoinResponse) error
 	SendParticipantUpdate(participants []*livekit.ParticipantInfo) error
 	SendSpeakerUpdate(speakers []*livekit.SpeakerInfo) error
-	SendDataPacket(packet *livekit.DataPacket) error
+	SendDataPacket(packet *livekit.DataPacket, data []byte) error
 	SendRoomUpdate(room *livekit.Room) error
 	SendConnectionQualityUpdate(update *livekit.ConnectionQualityUpdate) error
 	SubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool)
@@ -300,6 +308,7 @@ type LocalParticipant interface {
 	OnSubscribedTo(callback func(LocalParticipant, livekit.ParticipantID))
 	OnClose(callback func(LocalParticipant, map[livekit.TrackID]livekit.ParticipantID))
 	OnClaimsChanged(callback func(LocalParticipant))
+	OnReceiverReport(dt *sfu.DownTrack, report *rtcp.ReceiverReport)
 
 	// session migration
 	MaybeStartMigration(force bool, onStart func()) bool
@@ -313,8 +322,13 @@ type LocalParticipant interface {
 	UncacheDownTrack(rtpTransceiver *webrtc.RTPTransceiver)
 	GetCachedDownTrack(trackID livekit.TrackID) (*webrtc.RTPTransceiver, sfu.DownTrackState)
 
-	EnqueueSubscribeTrack(trackID livekit.TrackID, isRelayed bool, f func(sub LocalParticipant) error)
-	EnqueueUnsubscribeTrack(trackID livekit.TrackID, isRelayed bool, willBeResumed bool, f func(subscriberID livekit.ParticipantID, willBeResumed bool) error)
+	EnqueueSubscribeTrack(trackID livekit.TrackID, isRelayed bool, f func(sub LocalParticipant) error) bool
+	EnqueueUnsubscribeTrack(
+		trackID livekit.TrackID,
+		isRelayed bool,
+		willBeResumed bool,
+		f func(subscriberID livekit.ParticipantID, willBeResumed bool) error,
+	) bool
 	ProcessSubscriptionRequestsQueue(trackID livekit.TrackID)
 	ClearInProgressAndProcessSubscriptionRequestsQueue(trackID livekit.TrackID)
 
@@ -376,6 +390,9 @@ type MediaTrack interface {
 
 	// returns quality information that's appropriate for width & height
 	GetQualityForDimension(width, height uint32) livekit.VideoQuality
+
+	// returns temporal layer that's appropriate for fps
+	GetTemporalLayerForSpatialFps(spatial int32, fps uint32, mime string) int32
 
 	Receivers() []sfu.TrackReceiver
 	ClearAllReceivers(willBeResumed bool)

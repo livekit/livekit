@@ -49,6 +49,8 @@ const (
 	keyFrameIntervalMin = 200
 	keyFrameIntervalMax = 1000
 	flushTimeout        = 1 * time.Second
+
+	maxPadding = 2000
 )
 
 var (
@@ -103,13 +105,14 @@ var (
 // -------------------------------------------------------------------
 
 type DownTrackState struct {
-	RTPStats       *buffer.RTPStats
-	ForwarderState ForwarderState
+	RTPStats             *buffer.RTPStats
+	DeltaStatsSnapshotId uint32
+	ForwarderState       ForwarderState
 }
 
 func (d DownTrackState) String() string {
-	return fmt.Sprintf("DownTrackState{rtpStats: %s, forwarder: %s}",
-		d.RTPStats.ToString(), d.ForwarderState.String())
+	return fmt.Sprintf("DownTrackState{rtpStats: %s, delta: %d, forwarder: %s}",
+		d.RTPStats.ToString(), d.DeltaStatsSnapshotId, d.ForwarderState.String())
 }
 
 // -------------------------------------------------------------------
@@ -149,6 +152,7 @@ type DownTrack struct {
 	receiver                TrackReceiver
 	transceiver             *webrtc.RTPTransceiver
 	writeStream             webrtc.TrackLocalWriter
+	rtcpReader              *buffer.RTCPReader
 	onCloseHandler          func(willBeResumed bool)
 	onBind                  func()
 	receiverReportListeners []ReceiverReportListener
@@ -306,8 +310,15 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		rr.OnPacket(func(pkt []byte) {
 			d.handleRTCP(pkt)
 		})
+		d.rtcpReader = rr
 	}
-	d.sequencer = newSequencer(d.maxTrack, d.logger)
+
+	if d.kind == webrtc.RTPCodecTypeAudio {
+		d.sequencer = newSequencer(d.maxTrack, 0, d.logger)
+	} else {
+		d.sequencer = newSequencer(d.maxTrack, maxPadding, d.logger)
+	}
+
 	d.codec = codec.RTPCodecCapability
 	d.forwarder.DetermineCodec(d.codec)
 	if d.onBind != nil {
@@ -442,7 +453,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		}
 	}()
 
-	if !d.bound.Load() {
+	if !d.bound.Load() || !d.connected.Load() {
 		return nil
 	}
 
@@ -615,7 +626,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 		// So, retransmitting padding packets is only going to make matters worse.
 		//
 		if d.sequencer != nil {
-			d.sequencer.push(0, hdr.SequenceNumber, hdr.Timestamp, int8(InvalidLayerSpatial))
+			d.sequencer.pushPadding(hdr.SequenceNumber)
 		}
 
 		bytesSent += size
@@ -704,6 +715,12 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		d.bound.Store(false)
 		d.logger.Debugw("closing sender", "kind", d.kind)
 		d.receiver.DeleteDownTrack(d.subscriberID)
+
+		if d.rtcpReader != nil {
+			logger.Infow("downtrack close rtcp reader")
+			d.rtcpReader.Close()
+			d.rtcpReader.OnPacket(nil)
+		}
 	}
 
 	d.bindLock.Unlock()
@@ -761,13 +778,15 @@ func (d *DownTrack) MaxLayers() VideoLayers {
 
 func (d *DownTrack) GetState() DownTrackState {
 	return DownTrackState{
-		RTPStats:       d.rtpStats,
-		ForwarderState: d.forwarder.GetState(),
+		RTPStats:             d.rtpStats,
+		DeltaStatsSnapshotId: d.deltaStatsSnapshotId,
+		ForwarderState:       d.forwarder.GetState(),
 	}
 }
 
 func (d *DownTrack) SeedState(state DownTrackState) {
 	d.rtpStats.Seed(state.RTPStats)
+	d.deltaStatsSnapshotId = state.DeltaStatsSnapshotId
 	d.forwarder.SeedState(state.ForwarderState)
 }
 
@@ -1154,7 +1173,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 					rttToReport = rtt
 				}
 
-				d.rtpStats.UpdateFromReceiverReport(r.LastSequenceNumber, r.TotalLost, rtt, float64(r.Jitter))
+				d.rtpStats.UpdateFromReceiverReport(r, rtt)
 			}
 			if len(rr.Reports) > 0 {
 				d.listenerLock.RLock()
@@ -1235,11 +1254,6 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	nackMisses := uint32(0)
 	numRepeatedNACKs := uint32(0)
 	for _, meta := range d.sequencer.getPacketsMeta(filtered) {
-		if meta.layer == int8(InvalidLayerSpatial) {
-			// padding packet, no RTX for those
-			continue
-		}
-
 		if disallowedLayers[meta.layer] {
 			continue
 		}

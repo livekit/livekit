@@ -51,7 +51,7 @@ type Room struct {
 	// map of identity -> Participant
 	participants    map[livekit.ParticipantIdentity]types.LocalParticipant
 	participantOpts map[livekit.ParticipantIdentity]*ParticipantOptions
-	bufferFactory   *buffer.Factory
+	bufferFactory   *buffer.FactoryOfBufferFactory
 
 	// batch update participant info for non-publishers
 	batchedUpdates   map[livekit.ParticipantIdentity]*livekit.ParticipantInfo
@@ -93,7 +93,7 @@ func NewRoom(
 		serverInfo:      serverInfo,
 		participants:    make(map[livekit.ParticipantIdentity]types.LocalParticipant),
 		participantOpts: make(map[livekit.ParticipantIdentity]*ParticipantOptions),
-		bufferFactory:   buffer.NewBufferFactory(config.Receiver.PacketBufferSize),
+		bufferFactory:   buffer.NewFactoryOfBufferFactory(config.Receiver.PacketBufferSize),
 		batchedUpdates:  make(map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
 		closed:          make(chan struct{}),
 	}
@@ -183,7 +183,7 @@ func (r *Room) GetActiveSpeakers() []*livekit.SpeakerInfo {
 }
 
 func (r *Room) GetBufferFactory() *buffer.Factory {
-	return r.bufferFactory
+	return r.bufferFactory.CreateBufferFactory()
 }
 
 func (r *Room) FirstJoinedAt() int64 {
@@ -369,19 +369,19 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, reason ty
 		}
 	}
 
-	activeRecording := false
-	if (p != nil && p.IsRecorder()) || p == nil && r.protoRoom.ActiveRecording {
+	if (p != nil && p.IsRecorder()) || r.protoRoom.ActiveRecording {
+		activeRecording := false
 		for _, op := range r.participants {
 			if op.IsRecorder() {
 				activeRecording = true
 				break
 			}
 		}
-	}
 
-	if r.protoRoom.ActiveRecording != activeRecording {
-		r.protoRoom.ActiveRecording = activeRecording
-		r.sendRoomUpdateLocked()
+		if r.protoRoom.ActiveRecording != activeRecording {
+			r.protoRoom.ActiveRecording = activeRecording
+			r.sendRoomUpdateLocked()
+		}
 	}
 	r.lock.Unlock()
 
@@ -772,6 +772,7 @@ func (r *Room) onParticipantUpdate(p types.LocalParticipant) {
 
 func (r *Room) onDataPacket(source types.LocalParticipant, dp *livekit.DataPacket) {
 	dest := dp.GetUser().GetDestinationSids()
+	var dpData []byte
 
 	for _, op := range r.GetParticipants() {
 		if op.State() != livekit.ParticipantInfo_ACTIVE {
@@ -792,7 +793,16 @@ func (r *Room) onDataPacket(source types.LocalParticipant, dp *livekit.DataPacke
 				continue
 			}
 		}
-		err := op.SendDataPacket(dp)
+		if dpData == nil {
+			var err error
+			dpData, err = proto.Marshal(dp)
+			if err != nil {
+				r.Logger.Errorw("failed to marshal data packet", err)
+				return
+			}
+		}
+
+		err := op.SendDataPacket(dp, dpData)
 		if err != nil {
 			r.Logger.Infow("send data packet error", "error", err, "participant", op.Identity())
 		}
@@ -879,9 +889,18 @@ func (r *Room) sendActiveSpeakers(speakers []*livekit.SpeakerInfo) {
 		},
 	}
 
+	var dpData []byte
 	for _, p := range r.GetParticipants() {
 		if p.ProtocolVersion().HandlesDataPackets() && !p.ProtocolVersion().SupportsSpeakerChanged() {
-			_ = p.SendDataPacket(dp)
+			if dpData == nil {
+				var err error
+				dpData, err = proto.Marshal(dp)
+				if err != nil {
+					r.Logger.Errorw("failed to marshal ActiveSpeaker data packet", err)
+					return
+				}
+			}
+			_ = p.SendDataPacket(dp, dpData)
 		}
 	}
 }

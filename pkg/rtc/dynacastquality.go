@@ -58,7 +58,7 @@ func (d *DynacastQuality) OnSubscribedMaxQualityChange(f func(maxSubscribedQuali
 }
 
 func (d *DynacastQuality) NotifySubscriberMaxQuality(subscriberID livekit.ParticipantID, quality livekit.VideoQuality) {
-	d.params.Logger.Debugw(
+	d.params.Logger.Infow(
 		"setting subscriber max quality",
 		"mime", d.params.MimeType,
 		"subscriberID", subscriberID,
@@ -77,7 +77,7 @@ func (d *DynacastQuality) NotifySubscriberMaxQuality(subscriberID livekit.Partic
 }
 
 func (d *DynacastQuality) NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, quality livekit.VideoQuality) {
-	d.params.Logger.Debugw(
+	d.params.Logger.Infow(
 		"setting subscriber node max quality",
 		"mime", d.params.MimeType,
 		"subscriberNodeID", nodeID,
@@ -124,7 +124,7 @@ func (d *DynacastQuality) updateQualityChange(force bool) {
 
 	d.initialized = true
 	d.maxSubscribedQuality = maxSubscribedQuality
-	d.params.Logger.Debugw("notifying quality change",
+	d.params.Logger.Infow("notifying quality change",
 		"mime", d.params.MimeType,
 		"maxSubscriberQuality", d.maxSubscriberQuality,
 		"maxSubscriberNodeQuality", d.maxSubscriberNodeQuality,

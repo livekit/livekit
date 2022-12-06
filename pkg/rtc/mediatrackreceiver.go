@@ -69,7 +69,6 @@ type MediaTrackReceiverParams struct {
 	ParticipantID       livekit.ParticipantID
 	ParticipantIdentity livekit.ParticipantIdentity
 	ParticipantVersion  uint32
-	BufferFactory       *buffer.Factory
 	ReceiverConfig      ReceiverConfig
 	SubscriberConfig    DirectionConfig
 	Telemetry           telemetry.TelemetryService
@@ -110,7 +109,6 @@ func NewMediaTrackReceiver(params MediaTrackReceiverParams) *MediaTrackReceiver 
 	t.MediaTrackSubscriptions = NewMediaTrackSubscriptions(MediaTrackSubscriptionsParams{
 		MediaTrack:       params.MediaTrack,
 		IsRelayed:        params.IsRelayed,
-		BufferFactory:    params.BufferFactory,
 		ReceiverConfig:   params.ReceiverConfig,
 		SubscriberConfig: params.SubscriberConfig,
 		Telemetry:        params.Telemetry,
@@ -430,10 +428,9 @@ func (t *MediaTrackReceiver) removePendingSubscribeOp(subscriberID livekit.Parti
 
 // AddSubscriber subscribes sub to current mediaTrack
 func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) error {
-	t.addPendingSubscribeOp(sub.ID())
-
-	trackID := t.ID()
-	sub.EnqueueSubscribeTrack(trackID, t.params.IsRelayed, t.addSubscriber)
+	if sub.EnqueueSubscribeTrack(t.ID(), t.params.IsRelayed, t.addSubscriber) {
+		t.addPendingSubscribeOp(sub.ID())
+	}
 	return nil
 }
 
@@ -485,7 +482,14 @@ func (t *MediaTrackReceiver) addSubscriber(sub types.LocalParticipant) (err erro
 	}
 
 	tLogger := LoggerWithTrack(sub.GetLogger(), t.ID(), t.params.IsRelayed)
-	err = t.MediaTrackSubscriptions.AddSubscriber(sub, NewWrappedReceiver(receivers, t.ID(), streamId, potentialCodecs, tLogger))
+	err = t.MediaTrackSubscriptions.AddSubscriber(sub, NewWrappedReceiver(WrappedReceiverParams{
+		Receivers:      receivers,
+		TrackID:        t.ID(),
+		StreamId:       streamId,
+		UpstreamCodecs: potentialCodecs,
+		Logger:         tLogger,
+		DisableRed:     t.trackInfo.GetDisableRed(),
+	}))
 	if err != nil {
 		return
 	}
@@ -502,9 +506,9 @@ func (t *MediaTrackReceiver) RemoveSubscriber(subscriberID livekit.ParticipantID
 	}
 
 	sub := subTrack.Subscriber()
-	t.addPendingSubscribeOp(sub.ID())
-
-	sub.EnqueueUnsubscribeTrack(subTrack.ID(), t.params.IsRelayed, willBeResumed, t.removeSubscriber)
+	if sub.EnqueueUnsubscribeTrack(subTrack.ID(), t.params.IsRelayed, willBeResumed, t.removeSubscriber) {
+		t.addPendingSubscribeOp(sub.ID())
+	}
 }
 
 func (t *MediaTrackReceiver) removeSubscriber(subscriberID livekit.ParticipantID, willBeResumed bool) (err error) {
@@ -807,6 +811,22 @@ func (t *MediaTrackReceiver) SetRTT(rtt uint32) {
 			wr.SetRTT(rtt)
 		}
 	}
+}
+
+func (t *MediaTrackReceiver) GetTemporalLayerForSpatialFps(spatial int32, fps uint32, mime string) int32 {
+	receiver := t.Receiver(mime)
+	if receiver == nil {
+		return buffer.DefaultMaxLayerTemporal
+	}
+
+	layerFps := receiver.GetTemporalLayerFpsForSpatial(spatial)
+	requestFps := float32(fps) * layerSelectionTolerance
+	for i, f := range layerFps {
+		if requestFps <= f {
+			return int32(i)
+		}
+	}
+	return buffer.DefaultMaxLayerTemporal
 }
 
 // ---------------------------

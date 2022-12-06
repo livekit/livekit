@@ -4,20 +4,18 @@ import (
 	"io"
 	"sync"
 
-	"github.com/livekit/mediatransportutil/pkg/bucket"
 	"github.com/pion/transport/packetio"
+
+	"github.com/livekit/mediatransportutil/pkg/bucket"
 )
 
-type Factory struct {
-	sync.RWMutex
-	videoPool   *sync.Pool
-	audioPool   *sync.Pool
-	rtpBuffers  map[uint32]*Buffer
-	rtcpReaders map[uint32]*RTCPReader
+type FactoryOfBufferFactory struct {
+	videoPool *sync.Pool
+	audioPool *sync.Pool
 }
 
-func NewBufferFactory(trackingPackets int) *Factory {
-	return &Factory{
+func NewFactoryOfBufferFactory(trackingPackets int) *FactoryOfBufferFactory {
+	return &FactoryOfBufferFactory{
 		videoPool: &sync.Pool{
 			New: func() interface{} {
 				b := make([]byte, trackingPackets*bucket.MaxPktSize)
@@ -30,9 +28,24 @@ func NewBufferFactory(trackingPackets int) *Factory {
 				return &b
 			},
 		},
+	}
+}
+
+func (f *FactoryOfBufferFactory) CreateBufferFactory() *Factory {
+	return &Factory{
+		videoPool:   f.videoPool,
+		audioPool:   f.audioPool,
 		rtpBuffers:  make(map[uint32]*Buffer),
 		rtcpReaders: make(map[uint32]*RTCPReader),
 	}
+}
+
+type Factory struct {
+	sync.RWMutex
+	videoPool   *sync.Pool
+	audioPool   *sync.Pool
+	rtpBuffers  map[uint32]*Buffer
+	rtcpReaders map[uint32]*RTCPReader
 }
 
 func (f *Factory) GetOrNew(packetType packetio.BufferPacketType, ssrc uint32) io.ReadWriteCloser {

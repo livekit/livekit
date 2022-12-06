@@ -12,6 +12,7 @@ import (
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
 
+	"github.com/livekit/mediatransportutil/pkg/bucket"
 	"github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -57,6 +58,11 @@ type TrackReceiver interface {
 
 	// Get primary receiver if this receiver represents a RED codec; otherwise it will return itself
 	GetPrimaryReceiverForRed() TrackReceiver
+
+	// Get red receiver for primary codec, used by forward red encodings for opus only codec
+	GetRedReceiver() TrackReceiver
+
+	GetTemporalLayerFpsForSpatial(layer int32) []float32
 }
 
 // WebRTCReceiver receives a media track
@@ -102,10 +108,9 @@ type WebRTCReceiver struct {
 	// update stats
 	onStatsUpdate func(w *WebRTCReceiver, stat *livekit.AnalyticsStat)
 
-	// update layer info
-	onMaxLayerChange func(maxLayer int32)
-
 	primaryReceiver atomic.Value // *RedPrimaryReceiver
+	redReceiver     atomic.Value // *RedReceiver
+	redPktWriter    func(pkt *buffer.ExtPacket, spatialLayer int32)
 }
 
 func IsSvcCodec(mime string) bool {
@@ -185,7 +190,6 @@ func NewWebRTCReceiver(
 	}
 
 	w.streamTrackerManager = NewStreamTrackerManager(logger, trackInfo, w.isSVC)
-	w.streamTrackerManager.OnMaxLayerChanged(w.onMaxLayerChange)
 	w.streamTrackerManager.OnAvailableLayersChanged(w.downTrackLayerChange)
 	w.streamTrackerManager.OnBitrateAvailabilityChanged(w.downTrackBitrateAvailabilityChange)
 
@@ -513,6 +517,7 @@ func (w *WebRTCReceiver) getDeltaStats() map[uint32]*buffer.StreamStatsWithLayer
 }
 
 func (w *WebRTCReceiver) forwardRTP(layer int32) {
+	pktBuf := make([]byte, bucket.MaxPktSize)
 	tracker := w.streamTrackerManager.GetTracker(layer)
 
 	defer func() {
@@ -521,6 +526,9 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 			w.closeTracks()
 			if pr := w.primaryReceiver.Load(); pr != nil {
 				pr.(*RedPrimaryReceiver).Close()
+			}
+			if pr := w.redReceiver.Load(); pr != nil {
+				pr.(*RedReceiver).Close()
 			}
 		})
 
@@ -533,8 +541,9 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 	for {
 		w.bufferMu.RLock()
 		buf := w.buffers[layer]
+		redPktWriter := w.redPktWriter
 		w.bufferMu.RUnlock()
-		pkt, err := buf.ReadExtended()
+		pkt, err := buf.ReadExtended(pktBuf)
 		if err == io.EOF {
 			return
 		}
@@ -551,14 +560,15 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 		}
 
 		if spatialTracker != nil {
-			spatialTracker.Observe(pkt.Packet.SequenceNumber, pkt.Temporal, len(pkt.RawPacket), len(pkt.Packet.Payload))
+			spatialTracker.Observe(pkt.Temporal, len(pkt.RawPacket), len(pkt.Packet.Payload))
 		}
 
 		w.downTrackSpreader.Broadcast(func(dt TrackSender) {
 			_ = dt.WriteRTP(pkt, spatialLayer)
 		})
-		if pr := w.primaryReceiver.Load(); pr != nil {
-			pr.(*RedPrimaryReceiver).ForwardRTP(pkt, spatialLayer)
+
+		if redPktWriter != nil {
+			redPktWriter(pkt, spatialLayer)
 		}
 	}
 }
@@ -609,7 +619,37 @@ func (w *WebRTCReceiver) GetPrimaryReceiverForRed() TrackReceiver {
 			Threshold: w.lbThreshold,
 			Logger:    w.logger,
 		})
-		w.primaryReceiver.CompareAndSwap(nil, pr)
+		if w.primaryReceiver.CompareAndSwap(nil, pr) {
+			w.bufferMu.Lock()
+			w.redPktWriter = pr.ForwardRTP
+			w.bufferMu.Unlock()
+		}
 	}
 	return w.primaryReceiver.Load().(*RedPrimaryReceiver)
+}
+
+func (w *WebRTCReceiver) GetRedReceiver() TrackReceiver {
+	if w.isRED || w.closed.Load() {
+		return w
+	}
+
+	if w.redReceiver.Load() == nil {
+		pr := NewRedReceiver(w, DownTrackSpreaderParams{
+			Threshold: w.lbThreshold,
+			Logger:    w.logger,
+		})
+		if w.redReceiver.CompareAndSwap(nil, pr) {
+			w.bufferMu.Lock()
+			w.redPktWriter = pr.ForwardRTP
+			w.bufferMu.Unlock()
+		}
+	}
+	return w.redReceiver.Load().(*RedReceiver)
+}
+
+func (w *WebRTCReceiver) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
+	if !w.isSVC {
+		return w.getBuffer(layer).GetTemporalLayerFpsForSpatial(0)
+	}
+	return w.getBuffer(layer).GetTemporalLayerFpsForSpatial(layer)
 }

@@ -85,6 +85,7 @@ type Buffer struct {
 	// callbacks
 	onClose        func()
 	onRtcpFeedback func([]rtcp.Packet)
+	onFpsChanged   func()
 
 	// logger
 	logger logger.Logger
@@ -93,11 +94,9 @@ type Buffer struct {
 	ddExt             uint8
 	ddParser          *DependencyDescriptorParser
 	maxLayerChangedCB func(int32, int32)
-}
 
-// BufferOptions provides configuration options for the buffer
-type Options struct {
-	MaxBitRate uint64
+	frameRateCalculator [DefaultMaxLayerSpatial + 1]FrameRateCalculator
+	frameRateCalculated bool
 }
 
 // NewBuffer constructs a new Buffer
@@ -156,24 +155,19 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	b.lastReport = time.Now().UnixNano()
 	b.mime = strings.ToLower(codec.MimeType)
 
-	switch {
-	case strings.HasPrefix(b.mime, "audio/"):
-		b.codecType = webrtc.RTPCodecTypeAudio
-		b.bucket = bucket.NewBucket(b.audioPool.Get().(*[]byte))
-	case strings.HasPrefix(b.mime, "video/"):
-		b.codecType = webrtc.RTPCodecTypeVideo
-		b.bucket = bucket.NewBucket(b.videoPool.Get().(*[]byte))
-	default:
-		b.codecType = webrtc.RTPCodecType(0)
-	}
 	for _, ext := range params.HeaderExtensions {
 		switch ext.URI {
 		case dd.ExtensionUrl:
 			b.ddExt = uint8(ext.ID)
+			frc := NewFrameRateCalculatorDD(b.clockRate, b.logger)
+			for i := range b.frameRateCalculator {
+				b.frameRateCalculator[i] = frc.GetFrameRateCalculatorForSpatial(int32(i))
+			}
 			b.ddParser = NewDependencyDescriptorParser(b.ddExt, b.logger, func(spatial, temporal int32) {
 				if b.maxLayerChangedCB != nil {
 					b.maxLayerChangedCB(spatial, temporal)
 				}
+				frc.SetMaxLayer(spatial, temporal)
 			})
 
 		case sdp.AudioLevelURI:
@@ -182,11 +176,26 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 		}
 	}
 
+	switch {
+	case strings.HasPrefix(b.mime, "audio/"):
+		b.codecType = webrtc.RTPCodecTypeAudio
+		b.bucket = bucket.NewBucket(b.audioPool.Get().(*[]byte))
+	case strings.HasPrefix(b.mime, "video/"):
+		b.codecType = webrtc.RTPCodecTypeVideo
+		b.bucket = bucket.NewBucket(b.videoPool.Get().(*[]byte))
+		if b.frameRateCalculator[0] == nil && strings.EqualFold(codec.MimeType, webrtc.MimeTypeVP8) {
+			b.frameRateCalculator[0] = NewFrameRateCalculatorVP8(b.clockRate, b.logger)
+		}
+
+	default:
+		b.codecType = webrtc.RTPCodecType(0)
+	}
+
 	for _, fb := range codec.RTCPFeedback {
 		switch fb.Type {
 		case webrtc.TypeRTCPFBGoogREMB:
 			b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBGoogREMB)
-			b.logger.Warnw("REMB not supported, RTCP feedback will not be generated", nil)
+			b.logger.Debugw("REMB not supported, RTCP feedback will not be generated")
 		case webrtc.TypeRTCPFBTransportCC:
 			if b.codecType == webrtc.RTPCodecTypeVideo {
 				b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBTransportCC)
@@ -243,7 +252,7 @@ func (b *Buffer) Read(buff []byte) (n int, err error) {
 		b.Lock()
 		if b.pPackets != nil && len(b.pPackets) > b.lastPacketRead {
 			if len(buff) < len(b.pPackets[b.lastPacketRead].packet) {
-				err = ErrBufferTooSmall
+				err = bucket.ErrBufferTooSmall
 				b.Unlock()
 				return
 			}
@@ -258,16 +267,22 @@ func (b *Buffer) Read(buff []byte) (n int, err error) {
 	}
 }
 
-func (b *Buffer) ReadExtended() (*ExtPacket, error) {
+func (b *Buffer) ReadExtended(buf []byte) (*ExtPacket, error) {
 	for {
 		if b.closed.Load() {
 			return nil, io.EOF
 		}
 		b.Lock()
 		if b.extPackets.Len() > 0 {
-			extPkt := b.extPackets.PopFront().(*ExtPacket)
+			ep := b.extPackets.PopFront().(*ExtPacket)
+			ep = b.patchExtPacket(ep, buf)
+			if ep == nil {
+				b.Unlock()
+				continue
+			}
+
 			b.Unlock()
-			return extPkt, nil
+			return ep, nil
 		}
 		b.Unlock()
 		time.Sleep(10 * time.Millisecond)
@@ -349,7 +364,7 @@ func (b *Buffer) SetRTT(rtt uint32) {
 }
 
 func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
-	pb, err := b.bucket.AddPacket(pkt)
+	pktBuf, err := b.bucket.AddPacket(pkt)
 	if err != nil {
 		//
 		// Even when erroring, do
@@ -364,14 +379,14 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 			b.processHeaderExtensions(&rtpPacket, arrivalTime)
 		}
 
-		if err != ErrRTXPacket {
+		if err != bucket.ErrRTXPacket {
 			b.logger.Warnw("could not add RTP packet to bucket", err)
 		}
 		return
 	}
 
 	var p rtp.Packet
-	err = p.Unmarshal(pb)
+	err = p.Unmarshal(pktBuf)
 	if err != nil {
 		b.logger.Warnw("error unmarshaling RTP packet", err)
 		return
@@ -380,15 +395,66 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 	b.updateStreamState(&p, arrivalTime)
 	b.processHeaderExtensions(&p, arrivalTime)
 
-	ep := b.getExtPacket(pb, &p, arrivalTime)
+	b.doNACKs()
+
+	b.doReports(arrivalTime)
+
+	ep := b.getExtPacket(&p, arrivalTime)
 	if ep == nil {
 		return
 	}
 	b.extPackets.PushBack(ep)
 
-	b.doNACKs()
+	b.doFpsCalc(ep)
+}
 
-	b.doReports(arrivalTime)
+func (b *Buffer) patchExtPacket(ep *ExtPacket, buf []byte) *ExtPacket {
+	n, err := b.getPacket(buf, ep.Packet.SequenceNumber)
+	if err != nil {
+		b.logger.Warnw("could not get packet", err, "sn", ep.Packet.SequenceNumber)
+		return nil
+	}
+	ep.RawPacket = buf[:n]
+
+	// patch RTP packet to point payload to new buffer
+	rtp := *ep.Packet
+	payloadStart := ep.Packet.Header.MarshalSize()
+	payloadEnd := payloadStart + len(ep.Packet.Payload)
+	if payloadEnd > n {
+		b.logger.Warnw("unexpected marshal size", nil, "max", n, "need", payloadEnd)
+		return nil
+	}
+	rtp.Payload = buf[payloadStart:payloadEnd]
+	ep.Packet = &rtp
+
+	return ep
+}
+
+func (b *Buffer) doFpsCalc(ep *ExtPacket) {
+	if b.frameRateCalculated || len(ep.Packet.Payload) == 0 {
+		return
+	}
+	spatial := ep.Spatial
+	if spatial < 0 || int(spatial) >= len(b.frameRateCalculator) {
+		spatial = 0
+	}
+	if fr := b.frameRateCalculator[spatial]; fr != nil {
+		if fr.RecvPacket(ep) {
+			complete := true
+			for _, fr2 := range b.frameRateCalculator {
+				if fr2 != nil && !fr2.Completed() {
+					complete = false
+					break
+				}
+			}
+			if complete {
+				b.frameRateCalculated = true
+				if f := b.onFpsChanged; f != nil {
+					go f()
+				}
+			}
+		}
+	}
 }
 
 func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime int64) {
@@ -435,11 +501,10 @@ func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime int64) {
 	}
 }
 
-func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTime int64) *ExtPacket {
+func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64) *ExtPacket {
 	ep := &ExtPacket{
-		Packet:    rtpPacket,
-		Arrival:   arrivalTime,
-		RawPacket: rawPacket,
+		Packet:  rtpPacket,
+		Arrival: arrivalTime,
 		VideoLayer: VideoLayer{
 			Spatial:  InvalidLayerSpatial,
 			Temporal: InvalidLayerTemporal,
@@ -467,7 +532,6 @@ func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTi
 			b.logger.Warnw("could not unmarshal VP8 packet", err)
 			return nil
 		}
-		ep.Payload = vp8Packet
 		ep.KeyFrame = vp8Packet.IsKeyFrame
 		if ep.DependencyDescriptor == nil {
 			ep.Temporal = int32(vp8Packet.TID)
@@ -476,6 +540,7 @@ func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTi
 			vp8Packet.TID = uint8(ep.Temporal)
 			ep.Spatial = InvalidLayerSpatial // vp8 don't have spatial scalability, reset to -1
 		}
+		ep.Payload = vp8Packet
 	case "video/h264":
 		ep.KeyFrame = IsH264Keyframe(rtpPacket.Payload)
 	case "video/av1":
@@ -576,6 +641,11 @@ func (b *Buffer) getRTCP() []rtcp.Packet {
 func (b *Buffer) GetPacket(buff []byte, sn uint16) (int, error) {
 	b.Lock()
 	defer b.Unlock()
+
+	return b.getPacket(buff, sn)
+}
+
+func (b *Buffer) getPacket(buff []byte, sn uint16) (int, error) {
 	if b.closed.Load() {
 		return 0, io.EOF
 	}
@@ -643,4 +713,21 @@ func (b *Buffer) GetAudioLevel() (float64, bool) {
 // work for that too. Do we keep it unchange or use both methods?
 func (b *Buffer) OnMaxLayerChanged(fn func(int32, int32)) {
 	b.maxLayerChangedCB = fn
+}
+
+func (b *Buffer) OnFpsChanged(f func()) {
+	b.Lock()
+	b.onFpsChanged = f
+	b.Unlock()
+}
+
+func (b *Buffer) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
+	if int(layer) >= len(b.frameRateCalculator) {
+		return nil
+	}
+
+	if fc := b.frameRateCalculator[layer]; fc != nil {
+		return fc.GetFrameRate()
+	}
+	return nil
 }
