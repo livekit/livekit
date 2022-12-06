@@ -170,7 +170,6 @@ func (p *ParticipantSupervisor) checkPublications() {
 			}
 		}
 	}
-	onPublicationError := p.getOnPublicationError()
 	p.lock.RUnlock()
 
 	p.lock.Lock()
@@ -179,7 +178,7 @@ func (p *ParticipantSupervisor) checkPublications() {
 	}
 	p.lock.Unlock()
 
-	if onPublicationError != nil {
+	if onPublicationError := p.getOnPublicationError(); onPublicationError != nil {
 		for _, trackID := range erroredPublications {
 			onPublicationError(trackID)
 		}
