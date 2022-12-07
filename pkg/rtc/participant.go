@@ -116,6 +116,8 @@ type ParticipantImpl struct {
 	// client intended to publish, yet to be reconciled
 	pendingTracksLock sync.RWMutex
 	pendingTracks     map[string]*pendingTrackInfo
+	// migrated in muted tracks are not fired need close at participant close
+	mutedTrackNotFired []*MediaTrack
 
 	*TransportManager
 	*UpTrackManager
@@ -497,11 +499,24 @@ func (p *ParticipantImpl) handleMigrateMutedTrack() {
 			}
 		}
 	}
+	p.mutedTrackNotFired = append(p.mutedTrackNotFired, addedTracks...)
 	p.pendingTracksLock.Unlock()
 
 	for _, t := range addedTracks {
 		p.handleTrackPublished(t)
 	}
+}
+
+func (p *ParticipantImpl) removeMutedTrackNotFired(mt *MediaTrack) {
+	p.pendingTracksLock.Lock()
+	for i, t := range p.mutedTrackNotFired {
+		if t == mt {
+			p.mutedTrackNotFired[i] = p.mutedTrackNotFired[len(p.mutedTrackNotFired)-1]
+			p.mutedTrackNotFired = p.mutedTrackNotFired[:len(p.mutedTrackNotFired)-1]
+			break
+		}
+	}
+	p.pendingTracksLock.Unlock()
 }
 
 // AddTrack is called when client intends to publish track.
@@ -571,11 +586,17 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 
 	p.supervisor.Stop()
 
-	p.UpTrackManager.Close(!sendLeave)
-
 	p.pendingTracksLock.Lock()
 	p.pendingTracks = make(map[string]*pendingTrackInfo)
+	closeMutedTrack := p.mutedTrackNotFired
+	p.mutedTrackNotFired = p.mutedTrackNotFired[:0]
 	p.pendingTracksLock.Unlock()
+
+	for _, t := range closeMutedTrack {
+		t.Close(!sendLeave)
+	}
+
+	p.UpTrackManager.Close(!sendLeave)
 
 	p.lock.Lock()
 	disallowedSubscriptions := make(map[livekit.TrackID]livekit.ParticipantID)
@@ -1589,8 +1610,11 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	}
 	p.pendingTracksLock.Unlock()
 
-	if mt.AddReceiver(rtpReceiver, track, p.twcc, mid) && newTrack {
-		p.handleTrackPublished(mt)
+	if mt.AddReceiver(rtpReceiver, track, p.twcc, mid) {
+		p.removeMutedTrackNotFired(mt)
+		if newTrack {
+			p.handleTrackPublished(mt)
+		}
 	}
 
 	return mt, newTrack
