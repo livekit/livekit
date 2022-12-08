@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"os/signal"
@@ -221,6 +220,12 @@ func startServer(c *cli.Context) error {
 		return err
 	}
 
+	// validate API key length
+	err = conf.ValidateKeys()
+	if err != nil {
+		return err
+	}
+
 	if memProfile != "" {
 		if f, err := os.Create(memProfile); err != nil {
 			return err
@@ -263,7 +268,7 @@ func getConfigString(configFile string, inConfigBody string) (string, error) {
 		return inConfigBody, nil
 	}
 
-	outConfigBody, err := ioutil.ReadFile(configFile)
+	outConfigBody, err := os.ReadFile(configFile)
 	if err != nil {
 		return "", err
 	}

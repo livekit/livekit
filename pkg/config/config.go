@@ -33,6 +33,11 @@ const (
 	StatsUpdateInterval = time.Second * 10
 )
 
+var (
+	ErrKeyFileIncorrectPermission = errors.New("key file must have 0600 permission")
+	ErrKeysNotSet                 = errors.New("one of key-file or keys must be provided")
+)
+
 type Config struct {
 	Port           uint32                   `yaml:"port"`
 	BindAddresses  []string                 `yaml:"bind_addresses"`
@@ -396,6 +401,41 @@ func (conf *Config) ToCLIFlagNames(existingFlags []cli.Flag) map[string]reflect.
 	}
 
 	return flagNames
+}
+
+func (conf *Config) ValidateKeys() error {
+	// prefer keyfile if set
+	if conf.KeyFile != "" {
+		if st, err := os.Stat(conf.KeyFile); err != nil {
+			return err
+		} else if st.Mode().Perm() != 0600 {
+			return ErrKeyFileIncorrectPermission
+		}
+		f, err := os.Open(conf.KeyFile)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			_ = f.Close()
+		}()
+		decoder := yaml.NewDecoder(f)
+		if err = decoder.Decode(conf.Keys); err != nil {
+			return err
+		}
+	}
+
+	if len(conf.Keys) == 0 {
+		return ErrKeysNotSet
+	}
+
+	if !conf.Development {
+		for key, secret := range conf.Keys {
+			if len(secret) < 32 {
+				logger.Errorw("secret is too short, should be at least 32 characters for security", nil, "apiKey", key)
+			}
+		}
+	}
+	return nil
 }
 
 func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error) {
