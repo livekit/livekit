@@ -16,7 +16,7 @@ func TestUtils_ParticipantKey(t *testing.T) {
 	require.Equal(t, livekit.ParticipantIdentity(""), identity)
 
 	// decode invalid
-	roomName, identity, err = parseParticipantKey("abcd")
+	_, _, err = parseParticipantKey("abcd")
 	require.Error(t, err)
 
 	// encode/decode without delimiter
