@@ -101,7 +101,7 @@ type Buffer struct {
 
 // NewBuffer constructs a new Buffer
 func NewBuffer(ssrc uint32, vp, ap *sync.Pool) *Buffer {
-	l := logger.GetDefaultLogger() // will be reset with correct context via SetLogger
+	l := logger.GetLogger() // will be reset with correct context via SetLogger
 	b := &Buffer{
 		mediaSSRC:   ssrc,
 		videoPool:   vp,
