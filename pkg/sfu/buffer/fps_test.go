@@ -150,7 +150,7 @@ func TestFpsVP8(t *testing.T) {
 			frames := [][]*testFrameInfo{}
 			vp8calcs := make([]*FrameRateCalculatorVP8, len(fps))
 			for i := range vp8calcs {
-				vp8calcs[i] = NewFrameRateCalculatorVP8(90000, logger.Logger{})
+				vp8calcs[i] = NewFrameRateCalculatorVP8(90000, logger.GetLogger())
 				frames = append(frames, createFrames(c.startFrameNumber, c.startTs, 200, [][]float32{fps[i]}, false)[0])
 			}
 
@@ -181,7 +181,7 @@ func TestFpsVP8(t *testing.T) {
 		frames := [][]*testFrameInfo{}
 		vp8calcs := make([]*FrameRateCalculatorVP8, len(fps))
 		for i := range vp8calcs {
-			vp8calcs[i] = NewFrameRateCalculatorVP8(90000, logger.Logger{})
+			vp8calcs[i] = NewFrameRateCalculatorVP8(90000, logger.GetLogger())
 			frames = append(frames, createFrames(100, 12345678, 300, [][]float32{fps[i]}, false)[0])
 			for j := 5; j < 130; j++ {
 				if j%2 == 0 {
@@ -240,7 +240,7 @@ func TestFpsDD(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			fps := testCase.fps
 			frames := createFrames(c.startFrameNumber, c.startTs, 500, fps, testCase.spatialDependency)
-			ddcalc := NewFrameRateCalculatorDD(90000, logger.Logger{})
+			ddcalc := NewFrameRateCalculatorDD(90000, logger.GetLogger())
 			ddcalc.SetMaxLayer(int32(len(fps)-1), int32(len(fps[0])-1))
 			ddcalcs := make([]FrameRateCalculator, len(fps))
 			for i := range fps {
@@ -273,7 +273,7 @@ func TestFpsDD(t *testing.T) {
 	t.Run("packet lost and duplicate", func(t *testing.T) {
 		fps := [][]float32{{7.5, 15, 30}, {7.5, 15, 30}, {7.5, 15, 30}}
 		frames := createFrames(100, 12345678, 500, fps, true)
-		ddcalc := NewFrameRateCalculatorDD(90000, logger.Logger{})
+		ddcalc := NewFrameRateCalculatorDD(90000, logger.GetLogger())
 		ddcalc.SetMaxLayer(int32(len(fps)-1), int32(len(fps[0])-1))
 		ddcalcs := make([]FrameRateCalculator, len(fps))
 		for i := range fps {

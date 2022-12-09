@@ -5,8 +5,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-logr/logr"
-
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -128,7 +126,7 @@ func (s *StreamTrackerManager) AddTracker(layer int32) *StreamTracker {
 
 		params = ConfigVideo[layer]
 	}
-	params.Logger = logger.Logger(logr.Logger(s.logger).WithValues("layer", layer))
+	params.Logger = s.logger.WithValues("layer", layer)
 	tracker := NewStreamTracker(params)
 	s.logger.Debugw("StreamTrackerManager add track", "layer", layer)
 	tracker.OnStatusChanged(func(status StreamStatus) {

@@ -11,7 +11,7 @@ import (
 )
 
 func newRTPMunger() *RTPMunger {
-	return NewRTPMunger(logger.GetDefaultLogger())
+	return NewRTPMunger(logger.GetLogger())
 }
 
 func TestSetLastSnTs(t *testing.T) {

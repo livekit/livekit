@@ -85,7 +85,7 @@ func NewRoom(
 	r := &Room{
 		protoRoom:       proto.Clone(room).(*livekit.Room),
 		internal:        internal,
-		Logger:          LoggerWithRoom(logger.GetDefaultLogger(), livekit.RoomName(room.Name), livekit.RoomID(room.Sid)),
+		Logger:          LoggerWithRoom(logger.GetLogger(), livekit.RoomName(room.Name), livekit.RoomID(room.Sid)),
 		config:          config,
 		audioConfig:     audioConfig,
 		telemetry:       telemetry,

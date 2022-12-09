@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/bep/debounce"
-	"github.com/go-logr/logr"
 	"github.com/pion/ice/v2"
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/cc"
@@ -257,7 +256,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	se.SetDTLSRetransmissionInterval(dtlsRetransmissionInterval)
 	se.SetICETimeouts(iceDisconnectedTimeout, iceFailedTimeout, iceKeepaliveInterval)
 
-	lf := serverlogger.NewLoggerFactory(logr.Logger(params.Logger))
+	lf := serverlogger.NewLoggerFactory(params.Logger)
 	if lf != nil {
 		se.LoggerFactory = lf
 	}
@@ -318,6 +317,9 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 }
 
 func NewPCTransport(params TransportParams) (*PCTransport, error) {
+	if params.Logger == nil {
+		params.Logger = logger.GetLogger()
+	}
 	t := &PCTransport{
 		params:                   params,
 		debouncedNegotiate:       debounce.New(negotiationFrequency),

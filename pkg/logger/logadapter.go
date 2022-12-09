@@ -4,13 +4,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/go-logr/logr"
 	"go.uber.org/zap/zapcore"
+
+	"github.com/livekit/protocol/logger"
 )
 
 // implements webrtc.LeveledLogger
 type logAdapter struct {
-	logger          logr.Logger
+	logger          logger.Logger
 	level           zapcore.Level
 	ignoredPrefixes []string
 }
@@ -27,14 +28,21 @@ func (l *logAdapter) Debug(msg string) {
 	if l.level > zapcore.DebugLevel {
 		return
 	}
-	l.logger.V(1).Info(msg)
+	if l.shouldIgnore(msg) {
+		return
+	}
+	l.logger.Debugw(msg)
 }
 
 func (l *logAdapter) Debugf(format string, args ...interface{}) {
 	if l.level > zapcore.DebugLevel {
 		return
 	}
-	l.logger.V(1).Info(fmt.Sprintf(format, args...))
+	msg := fmt.Sprintf(format, args...)
+	if l.shouldIgnore(msg) {
+		return
+	}
+	l.logger.Debugw(msg)
 }
 
 func (l *logAdapter) Info(msg string) {
@@ -44,7 +52,7 @@ func (l *logAdapter) Info(msg string) {
 	if l.shouldIgnore(msg) {
 		return
 	}
-	l.logger.Info(msg)
+	l.logger.Infow(msg)
 }
 
 func (l *logAdapter) Infof(format string, args ...interface{}) {
@@ -55,7 +63,7 @@ func (l *logAdapter) Infof(format string, args ...interface{}) {
 	if l.shouldIgnore(msg) {
 		return
 	}
-	l.logger.Info(msg)
+	l.logger.Infow(msg)
 }
 
 func (l *logAdapter) Warn(msg string) {
@@ -65,7 +73,7 @@ func (l *logAdapter) Warn(msg string) {
 	if l.shouldIgnore(msg) {
 		return
 	}
-	l.logger.V(-1).Info(msg)
+	l.logger.Warnw(msg, nil)
 }
 
 func (l *logAdapter) Warnf(format string, args ...interface{}) {
@@ -76,7 +84,7 @@ func (l *logAdapter) Warnf(format string, args ...interface{}) {
 	if l.shouldIgnore(msg) {
 		return
 	}
-	l.logger.V(-1).Info(msg)
+	l.logger.Warnw(msg, nil)
 }
 
 func (l *logAdapter) Error(msg string) {
@@ -86,7 +94,7 @@ func (l *logAdapter) Error(msg string) {
 	if l.shouldIgnore(msg) {
 		return
 	}
-	l.logger.Error(nil, msg)
+	l.logger.Errorw(msg, nil)
 }
 
 func (l *logAdapter) Errorf(format string, args ...interface{}) {
@@ -97,7 +105,7 @@ func (l *logAdapter) Errorf(format string, args ...interface{}) {
 	if l.shouldIgnore(msg) {
 		return
 	}
-	l.logger.Error(nil, msg)
+	l.logger.Errorw(msg, nil)
 }
 
 func (l *logAdapter) shouldIgnore(msg string) bool {
