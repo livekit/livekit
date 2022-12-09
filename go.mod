@@ -10,7 +10,6 @@ require (
 	github.com/florianl/go-tc v0.4.1
 	github.com/gammazero/deque v0.1.0
 	github.com/gammazero/workerpool v1.1.2
-	github.com/go-logr/logr v1.2.3
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/google/wire v0.5.0
 	github.com/gorilla/websocket v1.5.0
@@ -18,7 +17,7 @@ require (
 	github.com/hashicorp/golang-lru v0.6.0
 	github.com/livekit/mageutil v0.0.0-20221002073820-d9198083cfdc
 	github.com/livekit/mediatransportutil v0.0.0-20221007030528-7440725c362b
-	github.com/livekit/protocol v1.2.5-0.20221208020623-5420927b7944
+	github.com/livekit/protocol v1.3.0
 	github.com/livekit/rtcscore-go v0.0.0-20220815072451-20ee10ae1995
 	github.com/mackerelio/go-osstat v0.2.3
 	github.com/magefile/mage v1.14.0
@@ -61,7 +60,7 @@ require (
 	github.com/eapache/channels v1.1.0 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
 	github.com/frostbyte73/go-throttle v0.0.0-20210621200530-8018c891361d // indirect
-	github.com/go-logr/zapr v1.2.3 // indirect
+	github.com/go-logr/logr v1.2.3 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/google/go-cmp v0.5.8 // indirect
 	github.com/google/subcommands v1.2.0 // indirect

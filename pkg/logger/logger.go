@@ -1,7 +1,6 @@
 package serverlogger
 
 import (
-	"github.com/go-logr/logr"
 	"github.com/pion/logging"
 	"go.uber.org/zap/zapcore"
 
@@ -35,13 +34,10 @@ var (
 
 // implements webrtc.LoggerFactory
 type LoggerFactory struct {
-	logger logr.Logger
+	logger logger.Logger
 }
 
-func NewLoggerFactory(logger logr.Logger) *LoggerFactory {
-	if logger.GetSink() == nil {
-		logger = logr.Discard()
-	}
+func NewLoggerFactory(logger logger.Logger) *LoggerFactory {
 	return &LoggerFactory{
 		logger: logger,
 	}
@@ -56,7 +52,7 @@ func (f *LoggerFactory) NewLogger(scope string) logging.LeveledLogger {
 }
 
 // Note: only pass in logr.Logger with default depth
-func SetLogger(l logr.Logger) {
+func SetLogger(l logger.Logger) {
 	logger.SetLogger(l, "livekit")
 }
 

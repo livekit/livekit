@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-logr/logr"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
@@ -301,7 +300,7 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 	if w.Kind() == webrtc.RTPCodecTypeVideo {
 		layer = buffer.RidToSpatialLayer(track.RID(), w.trackInfo)
 	}
-	buff.SetLogger(logger.Logger(logr.Logger(w.logger).WithValues("layer", layer)))
+	buff.SetLogger(w.logger.WithValues("layer", layer))
 	buff.SetTWCC(w.twcc)
 	buff.SetAudioLevelParams(audio.AudioLevelParams{
 		ActiveLevel:     w.audioConfig.ActiveLevel,

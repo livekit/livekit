@@ -76,6 +76,9 @@ type TransportManager struct {
 }
 
 func NewTransportManager(params TransportManagerParams) (*TransportManager, error) {
+	if params.Logger == nil {
+		params.Logger = logger.GetLogger()
+	}
 	t := &TransportManager{
 		params:         params,
 		mediaLossProxy: NewMediaLossProxy(MediaLossProxyParams{Logger: params.Logger}),

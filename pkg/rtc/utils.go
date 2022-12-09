@@ -6,7 +6,6 @@ import (
 	"io"
 	"strings"
 
-	"github.com/go-logr/logr"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/protocol/livekit"
@@ -130,51 +129,43 @@ func Recover() {
 
 // logger helpers
 func LoggerWithParticipant(l logger.Logger, identity livekit.ParticipantIdentity, sid livekit.ParticipantID, isRemote bool) logger.Logger {
-	lr := logr.Logger(l)
+	values := make([]interface{}, 0, 4)
 	if identity != "" {
-		lr = lr.WithValues("participant", identity)
+		values = append(values, "participant", identity)
 	}
 	if sid != "" {
-		lr = lr.WithValues("pID", sid)
+		values = append(values, "pID", sid)
 	}
-	lr = lr.WithValues("remote", isRemote)
-	return logger.Logger(lr)
+	values = append(values, "remote", isRemote)
+	// enable sampling per participant
+	return l.WithItemSampler().WithValues(values...)
 }
 
 func LoggerWithRoom(l logger.Logger, name livekit.RoomName, roomID livekit.RoomID) logger.Logger {
-	lr := logr.Logger(l)
+	values := make([]interface{}, 0, 2)
 	if name != "" {
-		lr = lr.WithValues("room", name)
+		values = append(values, "room", name)
 	}
 	if roomID != "" {
-		lr = lr.WithValues("roomID", roomID)
+		values = append(values, "roomID", roomID)
 	}
-	return logger.Logger(lr)
+	return l.WithValues(values...)
 }
 
 func LoggerWithTrack(l logger.Logger, trackID livekit.TrackID, isRelayed bool) logger.Logger {
-	lr := logr.Logger(l)
 	if trackID != "" {
-		lr = lr.WithValues("trackID", trackID)
-		lr = lr.WithValues("relayed", isRelayed)
+		return l.WithValues("trackID", trackID, "relayed", isRelayed)
 	}
-	return logger.Logger(lr)
+	return l
 }
 
 func LoggerWithPCTarget(l logger.Logger, target livekit.SignalTarget) logger.Logger {
-	lr := logr.Logger(l)
-	if lr.GetSink() == nil {
-		return l
-	}
-
-	lr = lr.WithValues("transport", target)
-	return logger.Logger(lr)
+	return l.WithValues("transport", target)
 }
 
 func LoggerWithCodecMime(l logger.Logger, mime string) logger.Logger {
-	lr := logr.Logger(l)
 	if mime != "" {
-		lr = lr.WithValues("mime", mime)
+		return l.WithValues("mime", mime)
 	}
-	return logger.Logger(lr)
+	return l
 }

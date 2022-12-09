@@ -224,7 +224,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pLogger := rtc.LoggerWithParticipant(
-		rtc.LoggerWithRoom(logger.GetDefaultLogger(), roomName, livekit.RoomID(rm.Sid)),
+		rtc.LoggerWithRoom(logger.GetLogger(), roomName, livekit.RoomID(rm.Sid)),
 		pi.Identity,
 		pi.ID,
 		false,

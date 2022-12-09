@@ -12,6 +12,7 @@ import (
 
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -467,8 +468,9 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 			FmtpLine: c.FmtpLine,
 		})
 	}
+	sid := livekit.ParticipantID(utils.NewGuid(utils.ParticipantPrefix))
 	p, _ := NewParticipant(ParticipantParams{
-		SID:               livekit.ParticipantID(utils.NewGuid(utils.ParticipantPrefix)),
+		SID:               sid,
 		Identity:          identity,
 		Config:            rtcConf,
 		Sink:              &routingfakes.FakeMessageSink{},
@@ -478,6 +480,7 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 		EnabledCodecs:     enabledCodecs,
 		ClientConf:        opts.clientConf,
 		ClientInfo:        ClientInfo{ClientInfo: opts.clientInfo},
+		Logger:            LoggerWithParticipant(logger.GetLogger(), identity, sid, false),
 	})
 	p.isPublisher.Store(opts.publisher)
 

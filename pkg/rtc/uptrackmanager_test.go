@@ -6,14 +6,19 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 )
 
+var defaultUptrackManagerParams = UpTrackManagerParams{
+	Logger: logger.GetLogger(),
+}
+
 func TestUpdateSubscriptionPermission(t *testing.T) {
 	t.Run("updates subscription permission", func(t *testing.T) {
-		um := NewUpTrackManager(UpTrackManagerParams{})
+		um := NewUpTrackManager(defaultUptrackManagerParams)
 
 		tra := &typesfakes.FakeMediaTrack{}
 		tra.IDReturns("audio")
@@ -103,7 +108,7 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 	})
 
 	t.Run("updates subscription permission using both", func(t *testing.T) {
-		um := NewUpTrackManager(UpTrackManagerParams{})
+		um := NewUpTrackManager(defaultUptrackManagerParams)
 
 		tra := &typesfakes.FakeMediaTrack{}
 		tra.IDReturns("audio")
@@ -176,7 +181,7 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 
 func TestSubscriptionPermission(t *testing.T) {
 	t.Run("checks subscription permission", func(t *testing.T) {
-		um := NewUpTrackManager(UpTrackManagerParams{})
+		um := NewUpTrackManager(defaultUptrackManagerParams)
 
 		tra := &typesfakes.FakeMediaTrack{}
 		tra.IDReturns("audio")

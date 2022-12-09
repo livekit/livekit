@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/bep/debounce"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -35,6 +36,9 @@ type DynacastManager struct {
 }
 
 func NewDynacastManager(params DynacastManagerParams) *DynacastManager {
+	if params.Logger == nil {
+		params.Logger = logger.GetLogger()
+	}
 	d := &DynacastManager{
 		params:                        params,
 		dynacastQuality:               make(map[string]*DynacastQuality),
@@ -84,22 +88,18 @@ func (d *DynacastManager) Close() {
 	}
 }
 
-//
 // THere are situations like track unmute or streaming from a sifferent node
 // where subscribed quality needs to sent to the provider immediately.
 // This bypasses any debouncing and forces a subscribed quality update
 // with immediate effect.
-//
 func (d *DynacastManager) ForceUpdate() {
 	d.update(true)
 }
 
-//
 // It is possible for tracks to be in pending close state. When track
 // is waiting to be closed, a node is not streaming a track. This can
 // be used to force an update announcing that subscribed quality is OFF,
 // i.e. indicating not pulling track any more.
-//
 func (d *DynacastManager) ForceQuality(quality livekit.VideoQuality) {
 	d.lock.Lock()
 	defer d.lock.Unlock()
