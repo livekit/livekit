@@ -92,7 +92,7 @@ func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomName livek
 	// create a new connection id
 	connectionID = livekit.ConnectionID(utils.NewGuid("CO_"))
 	// index channels by roomName | identity
-	key := participantKeyLegacy(roomName, pi.Identity)
+	key := participantKey(roomName, pi.Identity)
 	key = key + "|" + livekit.ParticipantKey(connectionID)
 
 	// close older channels if one already exists
