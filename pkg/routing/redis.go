@@ -38,9 +38,10 @@ func signalNodeChannel(nodeID livekit.NodeID) string {
 	return "signal_channel:" + string(nodeID)
 }
 
-func publishRTCMessage(rc redis.UniversalClient, nodeID livekit.NodeID, participantKey livekit.ParticipantKey, msg proto.Message) error {
+func publishRTCMessage(rc redis.UniversalClient, nodeID livekit.NodeID, participantKey livekit.ParticipantKey, participantKeyB62 livekit.ParticipantKey, msg proto.Message) error {
 	rm := &livekit.RTCNodeMessage{
-		ParticipantKey: string(participantKey),
+		ParticipantKey:    string(participantKey),
+		ParticipantKeyB62: string(participantKeyB62),
 	}
 	switch o := msg.(type) {
 	case *livekit.StartSession:
@@ -54,6 +55,7 @@ func publishRTCMessage(rc redis.UniversalClient, nodeID livekit.NodeID, particip
 	case *livekit.RTCNodeMessage:
 		rm = o
 		rm.ParticipantKey = string(participantKey)
+		rm.ParticipantKeyB62 = string(participantKeyB62)
 	default:
 		return ErrInvalidRouterMessage
 	}
@@ -94,18 +96,20 @@ func publishSignalMessage(rc redis.UniversalClient, nodeID livekit.NodeID, conne
 }
 
 type RTCNodeSink struct {
-	rc             redis.UniversalClient
-	nodeID         livekit.NodeID
-	participantKey livekit.ParticipantKey
-	isClosed       atomic.Bool
-	onClose        func()
+	rc                redis.UniversalClient
+	nodeID            livekit.NodeID
+	participantKey    livekit.ParticipantKey
+	participantKeyB62 livekit.ParticipantKey
+	isClosed          atomic.Bool
+	onClose           func()
 }
 
-func NewRTCNodeSink(rc redis.UniversalClient, nodeID livekit.NodeID, participantKey livekit.ParticipantKey) *RTCNodeSink {
+func NewRTCNodeSink(rc redis.UniversalClient, nodeID livekit.NodeID, participantKey livekit.ParticipantKey, participantKeyB62 livekit.ParticipantKey) *RTCNodeSink {
 	return &RTCNodeSink{
-		rc:             rc,
-		nodeID:         nodeID,
-		participantKey: participantKey,
+		rc:                rc,
+		nodeID:            nodeID,
+		participantKey:    participantKey,
+		participantKeyB62: participantKeyB62,
 	}
 }
 
@@ -113,7 +117,7 @@ func (s *RTCNodeSink) WriteMessage(msg proto.Message) error {
 	if s.isClosed.Load() {
 		return ErrChannelClosed
 	}
-	return publishRTCMessage(s.rc, s.nodeID, s.participantKey, msg)
+	return publishRTCMessage(s.rc, s.nodeID, s.participantKey, s.participantKeyB62, msg)
 }
 
 func (s *RTCNodeSink) Close() {

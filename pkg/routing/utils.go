@@ -9,6 +9,22 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
+func participantKeyLegacy(roomName livekit.RoomName, identity livekit.ParticipantIdentity) livekit.ParticipantKey {
+	return livekit.ParticipantKey(string(roomName) + "|" + string(identity))
+}
+
+func parseParticipantKeyLegacy(pkey livekit.ParticipantKey) (roomName livekit.RoomName, identity livekit.ParticipantIdentity, err error) {
+	parts := strings.Split(string(pkey), "|")
+	if len(parts) == 2 {
+		roomName = livekit.RoomName(parts[0])
+		identity = livekit.ParticipantIdentity(parts[1])
+		return
+	}
+
+	err = fmt.Errorf("invalid participant key: %s", pkey)
+	return
+}
+
 func participantKey(roomName livekit.RoomName, identity livekit.ParticipantIdentity) livekit.ParticipantKey {
 	return livekit.ParticipantKey(encode(string(roomName), string(identity)))
 }

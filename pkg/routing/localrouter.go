@@ -92,20 +92,22 @@ func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomName livek
 	// create a new connection id
 	connectionID = livekit.ConnectionID(utils.NewGuid("CO_"))
 	// index channels by roomName | identity
-	key := participantKey(roomName, pi.Identity)
+	key := participantKeyLegacy(roomName, pi.Identity)
 	key = key + "|" + livekit.ParticipantKey(connectionID)
+	keyB62 := participantKey(roomName, pi.Identity)
+	keyB62 = keyB62 + "|" + livekit.ParticipantKey(connectionID)
 
 	// close older channels if one already exists
-	reqChan := r.getMessageChannel(r.requestChannels, string(key))
+	reqChan := r.getMessageChannel(r.requestChannels, string(key), string(keyB62))
 	if reqChan != nil {
 		reqChan.Close()
 	}
-	resChan := r.getMessageChannel(r.responseChannels, string(key))
+	resChan := r.getMessageChannel(r.responseChannels, string(key), string(keyB62))
 	if resChan != nil {
 		resChan.Close()
 	}
-	reqChan = r.getOrCreateMessageChannel(r.requestChannels, string(key))
-	resChan = r.getOrCreateMessageChannel(r.responseChannels, string(key))
+	reqChan = r.getOrCreateMessageChannel(r.requestChannels, string(key), string(keyB62))
+	resChan = r.getOrCreateMessageChannel(r.responseChannels, string(key), string(keyB62))
 
 	go func() {
 		err := r.onNewParticipant(
@@ -130,16 +132,20 @@ func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomName livek
 }
 
 func (r *LocalRouter) WriteParticipantRTC(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) error {
+	r.lock.Lock()
 	if r.rtcMessageChan.IsClosed() {
 		// create a new one
 		r.rtcMessageChan = NewMessageChannel(localRTCChannelSize)
 	}
-	msg.ParticipantKey = string(participantKey(roomName, identity))
+	r.lock.Unlock()
+	msg.ParticipantKey = string(participantKeyLegacy(roomName, identity))
+	msg.ParticipantKeyB62 = string(participantKey(roomName, identity))
 	return r.writeRTCMessage(r.rtcMessageChan, msg)
 }
 
 func (r *LocalRouter) WriteRoomRTC(ctx context.Context, roomName livekit.RoomName, msg *livekit.RTCNodeMessage) error {
-	msg.ParticipantKey = string(participantKey(roomName, ""))
+	msg.ParticipantKey = string(participantKeyLegacy(roomName, ""))
+	msg.ParticipantKeyB62 = string(participantKey(roomName, ""))
 	return r.WriteNodeRTC(ctx, r.currentNode.Id, msg)
 }
 
@@ -246,7 +252,15 @@ func (r *LocalRouter) rtcMessageWorker() {
 	// consume messages from
 	for msg := range msgChan {
 		if rtcMsg, ok := msg.(*livekit.RTCNodeMessage); ok {
-			room, identity, err := parseParticipantKey(livekit.ParticipantKey(rtcMsg.ParticipantKey))
+			var room livekit.RoomName
+			var identity livekit.ParticipantIdentity
+			var err error
+			if rtcMsg.ParticipantKeyB62 != "" {
+				room, identity, err = parseParticipantKey(livekit.ParticipantKey(rtcMsg.ParticipantKeyB62))
+			}
+			if err != nil {
+				room, identity, err = parseParticipantKeyLegacy(livekit.ParticipantKey(rtcMsg.ParticipantKey))
+			}
 			if err != nil {
 				logger.Errorw("could not process RTC message", err)
 				continue
@@ -258,13 +272,17 @@ func (r *LocalRouter) rtcMessageWorker() {
 	}
 }
 
-func (r *LocalRouter) getMessageChannel(target map[string]*MessageChannel, key string) *MessageChannel {
+func (r *LocalRouter) getMessageChannel(target map[string]*MessageChannel, key string, keyB62 string) *MessageChannel {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
-	return target[key]
+	if keyB62 != "" {
+		return target[keyB62]
+	} else {
+		return target[key]
+	}
 }
 
-func (r *LocalRouter) getOrCreateMessageChannel(target map[string]*MessageChannel, key string) *MessageChannel {
+func (r *LocalRouter) getOrCreateMessageChannel(target map[string]*MessageChannel, key string, keyB62 string) *MessageChannel {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 	mc := target[key]
@@ -276,10 +294,18 @@ func (r *LocalRouter) getOrCreateMessageChannel(target map[string]*MessageChanne
 	mc = NewMessageChannel(DefaultMessageChannelSize)
 	mc.OnClose(func() {
 		r.lock.Lock()
-		delete(target, key)
+		if keyB62 != "" {
+			delete(target, keyB62)
+		} else {
+			delete(target, key)
+		}
 		r.lock.Unlock()
 	})
-	target[key] = mc
+	if keyB62 != "" {
+		target[keyB62] = mc
+	} else {
+		target[key] = mc
+	}
 
 	return mc
 }
