@@ -130,16 +130,20 @@ func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomName livek
 }
 
 func (r *LocalRouter) WriteParticipantRTC(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) error {
+	r.lock.Lock()
 	if r.rtcMessageChan.IsClosed() {
 		// create a new one
 		r.rtcMessageChan = NewMessageChannel(localRTCChannelSize)
 	}
-	msg.ParticipantKey = string(participantKey(roomName, identity))
+	r.lock.Unlock()
+	msg.ParticipantKey = string(participantKeyLegacy(roomName, identity))
+	msg.ParticipantKeyB62 = string(participantKey(roomName, identity))
 	return r.writeRTCMessage(r.rtcMessageChan, msg)
 }
 
 func (r *LocalRouter) WriteRoomRTC(ctx context.Context, roomName livekit.RoomName, msg *livekit.RTCNodeMessage) error {
-	msg.ParticipantKey = string(participantKey(roomName, ""))
+	msg.ParticipantKey = string(participantKeyLegacy(roomName, ""))
+	msg.ParticipantKeyB62 = string(participantKey(roomName, ""))
 	return r.WriteNodeRTC(ctx, r.currentNode.Id, msg)
 }
 
@@ -246,7 +250,15 @@ func (r *LocalRouter) rtcMessageWorker() {
 	// consume messages from
 	for msg := range msgChan {
 		if rtcMsg, ok := msg.(*livekit.RTCNodeMessage); ok {
-			room, identity, err := parseParticipantKey(livekit.ParticipantKey(rtcMsg.ParticipantKey))
+			var room livekit.RoomName
+			var identity livekit.ParticipantIdentity
+			var err error
+			if rtcMsg.ParticipantKeyB62 != "" {
+				room, identity, err = parseParticipantKey(livekit.ParticipantKey(rtcMsg.ParticipantKeyB62))
+			}
+			if err != nil {
+				room, identity, err = parseParticipantKeyLegacy(livekit.ParticipantKey(rtcMsg.ParticipantKey))
+			}
 			if err != nil {
 				logger.Errorw("could not process RTC message", err)
 				continue
