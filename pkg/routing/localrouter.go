@@ -94,20 +94,18 @@ func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomName livek
 	// index channels by roomName | identity
 	key := participantKeyLegacy(roomName, pi.Identity)
 	key = key + "|" + livekit.ParticipantKey(connectionID)
-	keyB62 := participantKey(roomName, pi.Identity)
-	keyB62 = keyB62 + "|" + livekit.ParticipantKey(connectionID)
 
 	// close older channels if one already exists
-	reqChan := r.getMessageChannel(r.requestChannels, string(key), string(keyB62))
+	reqChan := r.getMessageChannel(r.requestChannels, string(key))
 	if reqChan != nil {
 		reqChan.Close()
 	}
-	resChan := r.getMessageChannel(r.responseChannels, string(key), string(keyB62))
+	resChan := r.getMessageChannel(r.responseChannels, string(key))
 	if resChan != nil {
 		resChan.Close()
 	}
-	reqChan = r.getOrCreateMessageChannel(r.requestChannels, string(key), string(keyB62))
-	resChan = r.getOrCreateMessageChannel(r.responseChannels, string(key), string(keyB62))
+	reqChan = r.getOrCreateMessageChannel(r.requestChannels, string(key))
+	resChan = r.getOrCreateMessageChannel(r.responseChannels, string(key))
 
 	go func() {
 		err := r.onNewParticipant(
@@ -272,17 +270,13 @@ func (r *LocalRouter) rtcMessageWorker() {
 	}
 }
 
-func (r *LocalRouter) getMessageChannel(target map[string]*MessageChannel, key string, keyB62 string) *MessageChannel {
+func (r *LocalRouter) getMessageChannel(target map[string]*MessageChannel, key string) *MessageChannel {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
-	if keyB62 != "" {
-		return target[keyB62]
-	} else {
-		return target[key]
-	}
+	return target[key]
 }
 
-func (r *LocalRouter) getOrCreateMessageChannel(target map[string]*MessageChannel, key string, keyB62 string) *MessageChannel {
+func (r *LocalRouter) getOrCreateMessageChannel(target map[string]*MessageChannel, key string) *MessageChannel {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 	mc := target[key]
@@ -294,18 +288,10 @@ func (r *LocalRouter) getOrCreateMessageChannel(target map[string]*MessageChanne
 	mc = NewMessageChannel(DefaultMessageChannelSize)
 	mc.OnClose(func() {
 		r.lock.Lock()
-		if keyB62 != "" {
-			delete(target, keyB62)
-		} else {
-			delete(target, key)
-		}
+		delete(target, key)
 		r.lock.Unlock()
 	})
-	if keyB62 != "" {
-		target[keyB62] = mc
-	} else {
-		target[key] = mc
-	}
+	target[key] = mc
 
 	return mc
 }
