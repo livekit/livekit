@@ -149,10 +149,12 @@ func LoggerWithRoom(l logger.Logger, name livekit.RoomName, roomID livekit.RoomI
 	if roomID != "" {
 		values = append(values, "roomID", roomID)
 	}
-	return l.WithValues(values...)
+	// also sample for the room
+	return l.WithItemSampler().WithValues(values...)
 }
 
 func LoggerWithTrack(l logger.Logger, trackID livekit.TrackID, isRelayed bool) logger.Logger {
+	// sampling not required because caller already passing in participant's logger
 	if trackID != "" {
 		return l.WithValues("trackID", trackID, "relayed", isRelayed)
 	}
