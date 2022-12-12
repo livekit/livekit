@@ -544,7 +544,7 @@ func (r *RedisRouter) handleRTCMessage(rm *livekit.RTCNodeMessage) error {
 			if pKeyB62 != "" {
 				roomName, identity, err = parseParticipantKey(pKeyB62)
 			}
-			if err != nil {
+			if err != nil || pKeyB62 == "" {
 				roomName, identity, err = parseParticipantKeyLegacy(pKey)
 			}
 			if err != nil {
