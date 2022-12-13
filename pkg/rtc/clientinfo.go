@@ -11,8 +11,20 @@ type ClientInfo struct {
 	*livekit.ClientInfo
 }
 
+func (c ClientInfo) isFirefox() bool {
+	return c.ClientInfo != nil && strings.EqualFold(c.ClientInfo.Browser, "firefox")
+}
+
+func (c ClientInfo) isSafari() bool {
+	return c.ClientInfo != nil && strings.EqualFold(c.ClientInfo.Browser, "safari")
+}
+
 func (c ClientInfo) SupportsAudioRED() bool {
-	return c.ClientInfo != nil && c.ClientInfo.Browser != "firefox" && c.ClientInfo.Browser != "safari"
+	return !c.isFirefox() && !c.isSafari()
+}
+
+func (c ClientInfo) SupportPrflxOverRelay() bool {
+	return !c.isFirefox()
 }
 
 // CompareVersion compares two semver versions
