@@ -12,7 +12,11 @@ type ClientInfo struct {
 }
 
 func (c ClientInfo) SupportsAudioRED() bool {
-	return c.ClientInfo != nil && c.ClientInfo.Browser != "firefox" && c.ClientInfo.Browser != "safari"
+	return c.ClientInfo != nil && !strings.EqualFold(c.ClientInfo.Browser, "firefox") && !strings.EqualFold(c.ClientInfo.Browser, "safari")
+}
+
+func (c ClientInfo) SupportPrflxOverRelay() bool {
+	return c.ClientInfo != nil && !strings.EqualFold(c.ClientInfo.Browser, "firefox")
 }
 
 // CompareVersion compares two semver versions

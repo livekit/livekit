@@ -231,6 +231,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 
 	se := params.Config.SettingEngine
 	se.DisableMediaEngineCopy(true)
+
 	//
 	// Disable SRTP replay protection (https://datatracker.ietf.org/doc/html/rfc3711#page-15).
 	// Needed due to lack of RTX stream support in Pion.
@@ -250,11 +251,18 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	//
 	se.DisableSRTPReplayProtection(true)
 	se.DisableSRTCPReplayProtection(true)
+	useICELite := params.Config.UseICELite
 	if !params.ProtocolVersion.SupportsICELite() {
 		se.SetLite(false)
+		useICELite = false
 	}
 	se.SetDTLSRetransmissionInterval(dtlsRetransmissionInterval)
 	se.SetICETimeouts(iceDisconnectedTimeout, iceFailedTimeout, iceKeepaliveInterval)
+
+	// if client don't support prflx over relay, we should not expose private address to it, use single external ip as host candidate
+	if !useICELite && params.IsOfferer && !params.ClientInfo.SupportPrflxOverRelay() && params.Config.ExternalIP != "" {
+		se.SetNAT1To1IPs([]string{params.Config.ExternalIP}, webrtc.ICECandidateTypeHost)
+	}
 
 	lf := serverlogger.NewLoggerFactory(params.Logger)
 	if lf != nil {
