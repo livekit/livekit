@@ -33,7 +33,6 @@ type WebRTCConfig struct {
 	Publisher      DirectionConfig
 	Subscriber     DirectionConfig
 	ExternalIP     string
-	UseICELite     bool
 }
 
 type ReceiverConfig struct {
@@ -242,7 +241,6 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 		Publisher:      publisherConfig,
 		Subscriber:     subscriberConfig,
 		ExternalIP:     confExternalIP,
-		UseICELite:     rtcConf.UseICELite,
 	}, nil
 }
 
