@@ -258,7 +258,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	se.SetICETimeouts(iceDisconnectedTimeout, iceFailedTimeout, iceKeepaliveInterval)
 
 	// if client don't support prflx over relay, we should not expose private address to it, use single external ip as host candidate
-	if params.IsOfferer && !params.ClientInfo.SupportPrflxOverRelay() && params.Config.ExternalIP != "" {
+	if !params.ClientInfo.SupportPrflxOverRelay() && params.Config.ExternalIP != "" {
 		se.SetNAT1To1IPs([]string{params.Config.ExternalIP}, webrtc.ICECandidateTypeHost)
 	}
 
