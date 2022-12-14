@@ -2,6 +2,8 @@ package rtc
 
 import (
 	"context"
+	"errors"
+	"io"
 	"math"
 	"sort"
 	"sync"
@@ -803,7 +805,7 @@ func (r *Room) onDataPacket(source types.LocalParticipant, dp *livekit.DataPacke
 		}
 
 		err := op.SendDataPacket(dp, dpData)
-		if err != nil {
+		if err != nil && !errors.Is(err, io.ErrClosedPipe) {
 			r.Logger.Infow("send data packet error", "error", err, "participant", op.Identity())
 		}
 	}

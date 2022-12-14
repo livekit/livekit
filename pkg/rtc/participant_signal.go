@@ -180,16 +180,14 @@ func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
 
 	sink := p.getResponseSink()
 	if sink == nil {
-		err := fmt.Errorf("no response sink")
-		p.params.Logger.Warnw("could not send message to participant", err,
-			"message", fmt.Sprintf("%T", msg.Message))
-		return err
+		p.params.Logger.Infow("could not send message to participant", "messageType", fmt.Sprintf("%T", msg.Message))
+		return nil
 	}
 
 	err := sink.WriteMessage(msg)
 	if err != nil {
 		p.params.Logger.Warnw("could not send message to participant", err,
-			"message", fmt.Sprintf("%T", msg.Message))
+			"messageType", fmt.Sprintf("%T", msg.Message))
 		return err
 	}
 	return nil
