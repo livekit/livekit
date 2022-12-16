@@ -486,9 +486,8 @@ func (r *RTPStats) UpdateFromReceiverReport(rr rtcp.ReceptionReport, rtt uint32)
 		r.lastRRTime = time.Now()
 		r.lastRR = rr
 	} else {
-		r.logger.Warnw(
-			"receiver report potentially out of order",
-			fmt.Errorf("highestSN: existing: %d, received: %d", r.extHighestSNOverridden, rr.LastSequenceNumber),
+		r.logger.Debugw(
+			fmt.Sprintf("receiver report potentially out of order, highestSN: existing: %d, received: %d", r.extHighestSNOverridden, rr.LastSequenceNumber),
 			"lastRRTime", r.lastRRTime,
 			"lastRR", r.lastRR,
 			"sinceLastRR", time.Since(r.lastRRTime),
