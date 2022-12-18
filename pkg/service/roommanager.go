@@ -31,7 +31,7 @@ const (
 )
 
 type iceConfigCacheEntry struct {
-	iceConfig  types.IceConfig
+	iceConfig  livekit.ICEConfig
 	modifiedAt time.Time
 }
 
@@ -323,7 +323,7 @@ func (r *RoomManager) StartSession(
 	opts := rtc.ParticipantOptions{
 		AutoSubscribe: pi.AutoSubscribe,
 	}
-	if err = room.Join(participant, &opts, r.iceServersForRoom(protoRoom, iceConfig.PreferSub == types.PreferTls)); err != nil {
+	if err = room.Join(participant, &opts, r.iceServersForRoom(protoRoom, iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS)); err != nil {
 		pLogger.Errorw("could not join room", err)
 		_ = participant.Close(true, types.ParticipantCloseReasonJoinFailed)
 		return err
@@ -364,7 +364,7 @@ func (r *RoomManager) StartSession(
 			logger.Errorw("could not refresh token", err)
 		}
 	})
-	participant.OnICEConfigChanged(func(participant types.LocalParticipant, iceConfig types.IceConfig) {
+	participant.OnICEConfigChanged(func(participant types.LocalParticipant, iceConfig livekit.ICEConfig) {
 		r.lock.Lock()
 		r.iceConfigCache[participant.Identity()] = &iceConfigCacheEntry{
 			iceConfig:  iceConfig,
@@ -687,13 +687,13 @@ func (r *RoomManager) refreshToken(participant types.LocalParticipant) error {
 	return nil
 }
 
-func (r *RoomManager) setIceConfig(participant types.LocalParticipant) types.IceConfig {
+func (r *RoomManager) setIceConfig(participant types.LocalParticipant) livekit.ICEConfig {
 	r.lock.Lock()
 	iceConfigCacheEntry, ok := r.iceConfigCache[participant.Identity()]
 	if !ok || time.Since(iceConfigCacheEntry.modifiedAt) > iceConfigTTL {
 		delete(r.iceConfigCache, participant.Identity())
 		r.lock.Unlock()
-		return types.IceConfig{}
+		return livekit.ICEConfig{}
 	}
 	r.lock.Unlock()
 

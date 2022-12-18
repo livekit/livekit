@@ -154,7 +154,7 @@ type ParticipantImpl struct {
 
 	onClose            func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID)
 	onClaimsChanged    func(participant types.LocalParticipant)
-	onICEConfigChanged func(participant types.LocalParticipant, iceConfig types.IceConfig)
+	onICEConfigChanged func(participant types.LocalParticipant, iceConfig livekit.ICEConfig)
 
 	cachedDownTracks map[livekit.TrackID]*downTrackState
 
@@ -759,7 +759,7 @@ func (p *ParticipantImpl) MigrateState() types.MigrateState {
 }
 
 // ICERestart restarts subscriber ICE connections
-func (p *ParticipantImpl) ICERestart(iceConfig *types.IceConfig) {
+func (p *ParticipantImpl) ICERestart(iceConfig *livekit.ICEConfig) {
 	p.clearDisconnectTimer()
 	p.clearMigrationTimer()
 
@@ -770,7 +770,7 @@ func (p *ParticipantImpl) ICERestart(iceConfig *types.IceConfig) {
 	p.TransportManager.ICERestart(iceConfig)
 }
 
-func (p *ParticipantImpl) OnICEConfigChanged(f func(participant types.LocalParticipant, iceConfig types.IceConfig)) {
+func (p *ParticipantImpl) OnICEConfigChanged(f func(participant types.LocalParticipant, iceConfig livekit.ICEConfig)) {
 	p.lock.Lock()
 	p.onICEConfigChanged = f
 	p.lock.Unlock()
@@ -1097,14 +1097,14 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		return err
 	}
 
-	tm.OnICEConfigChanged(func(iceConfig types.IceConfig) {
+	tm.OnICEConfigChanged(func(iceConfig livekit.ICEConfig) {
 		p.lock.Lock()
 		onICEConfigChanged := p.onICEConfigChanged
 
 		if p.params.ClientConf == nil {
 			p.params.ClientConf = &livekit.ClientConfiguration{}
 		}
-		if iceConfig.PreferSub == types.PreferTls {
+		if iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS {
 			p.params.ClientConf.ForceRelay = livekit.ClientConfigSetting_ENABLED
 		} else {
 			// UNSET indicates that clients could override RTCConfiguration to forceRelay
