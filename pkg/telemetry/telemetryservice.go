@@ -23,7 +23,7 @@ type TelemetryService interface {
 	RoomEnded(ctx context.Context, room *livekit.Room)
 	ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientInfo *livekit.ClientInfo, clientMeta *livekit.AnalyticsClientMeta)
 	ParticipantActive(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientMeta *livekit.AnalyticsClientMeta)
-	ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo)
+	ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, shouldSendEvent bool)
 	TrackPublished(ctx context.Context, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo)
 	TrackUnpublished(ctx context.Context, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, ssrc uint32)
 	TrackSubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, publisher *livekit.ParticipantInfo)
@@ -116,8 +116,12 @@ func (t *telemetryService) getWorker(participantID livekit.ParticipantID) (worke
 	return
 }
 
-func (t *telemetryService) createWorker(ctx context.Context, roomID livekit.RoomID, roomName livekit.RoomName,
-	participantID livekit.ParticipantID, participantIdentity livekit.ParticipantIdentity) {
+func (t *telemetryService) createWorker(ctx context.Context,
+	roomID livekit.RoomID,
+	roomName livekit.RoomName,
+	participantID livekit.ParticipantID,
+	participantIdentity livekit.ParticipantIdentity,
+) *StatsWorker {
 	worker := newStatsWorker(
 		ctx,
 		t,
@@ -130,6 +134,7 @@ func (t *telemetryService) createWorker(ctx context.Context, roomID livekit.Room
 	t.lock.Lock()
 	t.workers[participantID] = worker
 	t.lock.Unlock()
+	return worker
 }
 
 func (t *telemetryService) cleanupWorkers() {
