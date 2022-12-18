@@ -62,7 +62,7 @@ type TransportManager struct {
 	pendingDataChannelsPublisher []*livekit.DataChannelInfo
 	lastPublisherAnswer          atomic.Value
 	lastPublisherOffer           atomic.Value
-	iceConfig                    livekit.ICEConfig
+	iceConfig                    *livekit.ICEConfig
 
 	mediaLossProxy       *MediaLossProxy
 	udpLossUnstableCount uint32
@@ -73,7 +73,7 @@ type TransportManager struct {
 	onPrimaryTransportInitialConnected func()
 	onAnyTransportFailed               func()
 
-	onICEConfigChanged func(iceConfig livekit.ICEConfig)
+	onICEConfigChanged func(iceConfig *livekit.ICEConfig)
 }
 
 func NewTransportManager(params TransportManagerParams) (*TransportManager, error) {
@@ -436,25 +436,25 @@ func (t *TransportManager) NegotiateSubscriber(force bool) {
 
 func (t *TransportManager) ICERestart(iceConfig *livekit.ICEConfig) {
 	if iceConfig != nil {
-		t.SetICEConfig(*iceConfig)
+		t.SetICEConfig(iceConfig)
 	}
 
 	t.subscriber.ICERestart()
 }
 
-func (t *TransportManager) OnICEConfigChanged(f func(iceConfig livekit.ICEConfig)) {
+func (t *TransportManager) OnICEConfigChanged(f func(iceConfig *livekit.ICEConfig)) {
 	t.lock.Lock()
 	t.onICEConfigChanged = f
 	t.lock.Unlock()
 }
 
-func (t *TransportManager) SetICEConfig(iceConfig livekit.ICEConfig) {
+func (t *TransportManager) SetICEConfig(iceConfig *livekit.ICEConfig) {
 	t.configureICE(iceConfig, true)
 }
 
-func (t *TransportManager) configureICE(iceConfig livekit.ICEConfig, reset bool) {
+func (t *TransportManager) configureICE(iceConfig *livekit.ICEConfig, reset bool) {
 	t.lock.Lock()
-	if proto.Equal(&t.iceConfig, &iceConfig) {
+	if proto.Equal(t.iceConfig, iceConfig) {
 		t.lock.Unlock()
 		return
 	}
@@ -512,7 +512,7 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 	//
 	// As both transports are switched to the same type on any failure, checking just subscriber should be fine.
 	//
-	getNext := func(ic livekit.ICEConfig) livekit.ICECandidateType {
+	getNext := func(ic *livekit.ICEConfig) livekit.ICECandidateType {
 		if ic.PreferenceSubscriber == livekit.ICECandidateType_ICT_NONE && t.params.ClientInfo.SupportsICETCP() {
 			return livekit.ICECandidateType_ICT_TCP
 		} else if ic.PreferenceSubscriber != livekit.ICECandidateType_ICT_TLS && t.params.TURNSEnabled {
@@ -556,7 +556,7 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 
 	// irrespective of which one fails, force prefer candidate on both as the other one might
 	// fail at a different time and cause another disruption
-	t.configureICE(livekit.ICEConfig{
+	t.configureICE(&livekit.ICEConfig{
 		PreferenceSubscriber: preferNext,
 		PreferencePublisher:  preferNext,
 	}, false)

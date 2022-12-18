@@ -322,8 +322,8 @@ type LocalParticipant interface {
 	ProcessSubscriptionRequestsQueue(trackID livekit.TrackID)
 	ClearInProgressAndProcessSubscriptionRequestsQueue(trackID livekit.TrackID)
 
-	SetICEConfig(iceConfig livekit.ICEConfig)
-	OnICEConfigChanged(callback func(participant LocalParticipant, iceConfig livekit.ICEConfig))
+	SetICEConfig(iceConfig *livekit.ICEConfig)
+	OnICEConfigChanged(callback func(participant LocalParticipant, iceConfig *livekit.ICEConfig))
 
 	UpdateSubscribedQuality(nodeID livekit.NodeID, trackID livekit.TrackID, maxQualities []SubscribedCodecQuality) error
 	UpdateMediaLoss(nodeID livekit.NodeID, trackID livekit.TrackID, fractionalLoss uint32) error

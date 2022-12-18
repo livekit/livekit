@@ -31,7 +31,7 @@ const (
 )
 
 type iceConfigCacheEntry struct {
-	iceConfig  livekit.ICEConfig
+	iceConfig  *livekit.ICEConfig
 	modifiedAt time.Time
 }
 
@@ -364,7 +364,7 @@ func (r *RoomManager) StartSession(
 			logger.Errorw("could not refresh token", err)
 		}
 	})
-	participant.OnICEConfigChanged(func(participant types.LocalParticipant, iceConfig livekit.ICEConfig) {
+	participant.OnICEConfigChanged(func(participant types.LocalParticipant, iceConfig *livekit.ICEConfig) {
 		r.lock.Lock()
 		r.iceConfigCache[participant.Identity()] = &iceConfigCacheEntry{
 			iceConfig:  iceConfig,
@@ -687,13 +687,13 @@ func (r *RoomManager) refreshToken(participant types.LocalParticipant) error {
 	return nil
 }
 
-func (r *RoomManager) setIceConfig(participant types.LocalParticipant) livekit.ICEConfig {
+func (r *RoomManager) setIceConfig(participant types.LocalParticipant) *livekit.ICEConfig {
 	r.lock.Lock()
 	iceConfigCacheEntry, ok := r.iceConfigCache[participant.Identity()]
 	if !ok || time.Since(iceConfigCacheEntry.modifiedAt) > iceConfigTTL {
 		delete(r.iceConfigCache, participant.Identity())
 		r.lock.Unlock()
-		return livekit.ICEConfig{}
+		return &livekit.ICEConfig{}
 	}
 	r.lock.Unlock()
 

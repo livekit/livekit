@@ -154,7 +154,7 @@ type ParticipantImpl struct {
 
 	onClose            func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID)
 	onClaimsChanged    func(participant types.LocalParticipant)
-	onICEConfigChanged func(participant types.LocalParticipant, iceConfig livekit.ICEConfig)
+	onICEConfigChanged func(participant types.LocalParticipant, iceConfig *livekit.ICEConfig)
 
 	cachedDownTracks map[livekit.TrackID]*downTrackState
 
@@ -770,7 +770,7 @@ func (p *ParticipantImpl) ICERestart(iceConfig *livekit.ICEConfig) {
 	p.TransportManager.ICERestart(iceConfig)
 }
 
-func (p *ParticipantImpl) OnICEConfigChanged(f func(participant types.LocalParticipant, iceConfig livekit.ICEConfig)) {
+func (p *ParticipantImpl) OnICEConfigChanged(f func(participant types.LocalParticipant, iceConfig *livekit.ICEConfig)) {
 	p.lock.Lock()
 	p.onICEConfigChanged = f
 	p.lock.Unlock()
@@ -1097,7 +1097,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		return err
 	}
 
-	tm.OnICEConfigChanged(func(iceConfig livekit.ICEConfig) {
+	tm.OnICEConfigChanged(func(iceConfig *livekit.ICEConfig) {
 		p.lock.Lock()
 		onICEConfigChanged := p.onICEConfigChanged
 
