@@ -34,7 +34,7 @@ func Test_OnParticipantJoin_EventIsSent(t *testing.T) {
 	participantInfo := &livekit.ParticipantInfo{Sid: partSID}
 
 	// do
-	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, clientInfo, clientMeta)
+	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, clientInfo, clientMeta, true)
 	time.Sleep(time.Millisecond * 500)
 
 	// test
@@ -146,7 +146,7 @@ func Test_OnParticipantActive_EventIsSent(t *testing.T) {
 	participantInfo := &livekit.ParticipantInfo{Sid: partSID}
 
 	// do
-	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, clientInfo, clientMeta)
+	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, clientInfo, clientMeta, true)
 	time.Sleep(time.Millisecond * 500)
 
 	// test
@@ -198,7 +198,7 @@ func Test_OnTrackSubscribed_EventIsSent(t *testing.T) {
 	participantInfo := &livekit.ParticipantInfo{Sid: partSID}
 
 	// do
-	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, clientInfo, clientMeta)
+	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, clientInfo, clientMeta, true)
 	time.Sleep(time.Millisecond * 500)
 
 	// test
