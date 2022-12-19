@@ -207,19 +207,6 @@ type Participant interface {
 	DebugInfo() map[string]interface{}
 }
 
-type PreferCandidateType int
-
-const (
-	PreferNone PreferCandidateType = iota
-	PreferTcp
-	PreferTls
-)
-
-type IceConfig struct {
-	PreferSub PreferCandidateType
-	PreferPub PreferCandidateType
-}
-
 // -------------------------------------------------------
 
 type ICEConnectionType string
@@ -269,7 +256,7 @@ type LocalParticipant interface {
 
 	HandleAnswer(sdp webrtc.SessionDescription)
 	Negotiate(force bool)
-	ICERestart(iceConfig *IceConfig)
+	ICERestart(iceConfig *livekit.ICEConfig)
 	AddTrackToSubscriber(trackLocal webrtc.TrackLocal, params AddTrackParams) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
 	AddTransceiverFromTrackToSubscriber(trackLocal webrtc.TrackLocal, params AddTrackParams) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
 	RemoveTrackFromSubscriber(sender *webrtc.RTPSender) error
@@ -335,8 +322,8 @@ type LocalParticipant interface {
 	ProcessSubscriptionRequestsQueue(trackID livekit.TrackID)
 	ClearInProgressAndProcessSubscriptionRequestsQueue(trackID livekit.TrackID)
 
-	SetICEConfig(iceConfig IceConfig)
-	OnICEConfigChanged(callback func(participant LocalParticipant, iceConfig IceConfig))
+	SetICEConfig(iceConfig *livekit.ICEConfig)
+	OnICEConfigChanged(callback func(participant LocalParticipant, iceConfig *livekit.ICEConfig))
 
 	UpdateSubscribedQuality(nodeID livekit.NodeID, trackID livekit.TrackID, maxQualities []SubscribedCodecQuality) error
 	UpdateMediaLoss(nodeID livekit.NodeID, trackID livekit.TrackID, fractionalLoss uint32) error

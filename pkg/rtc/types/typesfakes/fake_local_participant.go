@@ -340,10 +340,10 @@ type FakeLocalParticipant struct {
 	hiddenReturnsOnCall map[int]struct {
 		result1 bool
 	}
-	ICERestartStub        func(*types.IceConfig)
+	ICERestartStub        func(*livekit.ICEConfig)
 	iCERestartMutex       sync.RWMutex
 	iCERestartArgsForCall []struct {
-		arg1 *types.IceConfig
+		arg1 *livekit.ICEConfig
 	}
 	IDStub        func() livekit.ParticipantID
 	iDMutex       sync.RWMutex
@@ -448,10 +448,10 @@ type FakeLocalParticipant struct {
 	onDataPacketArgsForCall []struct {
 		arg1 func(types.LocalParticipant, *livekit.DataPacket)
 	}
-	OnICEConfigChangedStub        func(func(participant types.LocalParticipant, iceConfig types.IceConfig))
+	OnICEConfigChangedStub        func(func(participant types.LocalParticipant, iceConfig *livekit.ICEConfig))
 	onICEConfigChangedMutex       sync.RWMutex
 	onICEConfigChangedArgsForCall []struct {
-		arg1 func(participant types.LocalParticipant, iceConfig types.IceConfig)
+		arg1 func(participant types.LocalParticipant, iceConfig *livekit.ICEConfig)
 	}
 	OnParticipantUpdateStub        func(func(types.LocalParticipant))
 	onParticipantUpdateMutex       sync.RWMutex
@@ -607,10 +607,10 @@ type FakeLocalParticipant struct {
 	sendSpeakerUpdateReturnsOnCall map[int]struct {
 		result1 error
 	}
-	SetICEConfigStub        func(types.IceConfig)
+	SetICEConfigStub        func(*livekit.ICEConfig)
 	setICEConfigMutex       sync.RWMutex
 	setICEConfigArgsForCall []struct {
-		arg1 types.IceConfig
+		arg1 *livekit.ICEConfig
 	}
 	SetMetadataStub        func(string)
 	setMetadataMutex       sync.RWMutex
@@ -2464,10 +2464,10 @@ func (fake *FakeLocalParticipant) HiddenReturnsOnCall(i int, result1 bool) {
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) ICERestart(arg1 *types.IceConfig) {
+func (fake *FakeLocalParticipant) ICERestart(arg1 *livekit.ICEConfig) {
 	fake.iCERestartMutex.Lock()
 	fake.iCERestartArgsForCall = append(fake.iCERestartArgsForCall, struct {
-		arg1 *types.IceConfig
+		arg1 *livekit.ICEConfig
 	}{arg1})
 	stub := fake.ICERestartStub
 	fake.recordInvocation("ICERestart", []interface{}{arg1})
@@ -2483,13 +2483,13 @@ func (fake *FakeLocalParticipant) ICERestartCallCount() int {
 	return len(fake.iCERestartArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) ICERestartCalls(stub func(*types.IceConfig)) {
+func (fake *FakeLocalParticipant) ICERestartCalls(stub func(*livekit.ICEConfig)) {
 	fake.iCERestartMutex.Lock()
 	defer fake.iCERestartMutex.Unlock()
 	fake.ICERestartStub = stub
 }
 
-func (fake *FakeLocalParticipant) ICERestartArgsForCall(i int) *types.IceConfig {
+func (fake *FakeLocalParticipant) ICERestartArgsForCall(i int) *livekit.ICEConfig {
 	fake.iCERestartMutex.RLock()
 	defer fake.iCERestartMutex.RUnlock()
 	argsForCall := fake.iCERestartArgsForCall[i]
@@ -3065,10 +3065,10 @@ func (fake *FakeLocalParticipant) OnDataPacketArgsForCall(i int) func(types.Loca
 	return argsForCall.arg1
 }
 
-func (fake *FakeLocalParticipant) OnICEConfigChanged(arg1 func(participant types.LocalParticipant, iceConfig types.IceConfig)) {
+func (fake *FakeLocalParticipant) OnICEConfigChanged(arg1 func(participant types.LocalParticipant, iceConfig *livekit.ICEConfig)) {
 	fake.onICEConfigChangedMutex.Lock()
 	fake.onICEConfigChangedArgsForCall = append(fake.onICEConfigChangedArgsForCall, struct {
-		arg1 func(participant types.LocalParticipant, iceConfig types.IceConfig)
+		arg1 func(participant types.LocalParticipant, iceConfig *livekit.ICEConfig)
 	}{arg1})
 	stub := fake.OnICEConfigChangedStub
 	fake.recordInvocation("OnICEConfigChanged", []interface{}{arg1})
@@ -3084,13 +3084,13 @@ func (fake *FakeLocalParticipant) OnICEConfigChangedCallCount() int {
 	return len(fake.onICEConfigChangedArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) OnICEConfigChangedCalls(stub func(func(participant types.LocalParticipant, iceConfig types.IceConfig))) {
+func (fake *FakeLocalParticipant) OnICEConfigChangedCalls(stub func(func(participant types.LocalParticipant, iceConfig *livekit.ICEConfig))) {
 	fake.onICEConfigChangedMutex.Lock()
 	defer fake.onICEConfigChangedMutex.Unlock()
 	fake.OnICEConfigChangedStub = stub
 }
 
-func (fake *FakeLocalParticipant) OnICEConfigChangedArgsForCall(i int) func(participant types.LocalParticipant, iceConfig types.IceConfig) {
+func (fake *FakeLocalParticipant) OnICEConfigChangedArgsForCall(i int) func(participant types.LocalParticipant, iceConfig *livekit.ICEConfig) {
 	fake.onICEConfigChangedMutex.RLock()
 	defer fake.onICEConfigChangedMutex.RUnlock()
 	argsForCall := fake.onICEConfigChangedArgsForCall[i]
@@ -3979,10 +3979,10 @@ func (fake *FakeLocalParticipant) SendSpeakerUpdateReturnsOnCall(i int, result1 
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) SetICEConfig(arg1 types.IceConfig) {
+func (fake *FakeLocalParticipant) SetICEConfig(arg1 *livekit.ICEConfig) {
 	fake.setICEConfigMutex.Lock()
 	fake.setICEConfigArgsForCall = append(fake.setICEConfigArgsForCall, struct {
-		arg1 types.IceConfig
+		arg1 *livekit.ICEConfig
 	}{arg1})
 	stub := fake.SetICEConfigStub
 	fake.recordInvocation("SetICEConfig", []interface{}{arg1})
@@ -3998,13 +3998,13 @@ func (fake *FakeLocalParticipant) SetICEConfigCallCount() int {
 	return len(fake.setICEConfigArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) SetICEConfigCalls(stub func(types.IceConfig)) {
+func (fake *FakeLocalParticipant) SetICEConfigCalls(stub func(*livekit.ICEConfig)) {
 	fake.setICEConfigMutex.Lock()
 	defer fake.setICEConfigMutex.Unlock()
 	fake.SetICEConfigStub = stub
 }
 
-func (fake *FakeLocalParticipant) SetICEConfigArgsForCall(i int) types.IceConfig {
+func (fake *FakeLocalParticipant) SetICEConfigArgsForCall(i int) *livekit.ICEConfig {
 	fake.setICEConfigMutex.RLock()
 	defer fake.setICEConfigMutex.RUnlock()
 	argsForCall := fake.setICEConfigArgsForCall[i]
