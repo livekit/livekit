@@ -40,7 +40,7 @@ type FakeTelemetryService struct {
 		arg3 *livekit.ParticipantInfo
 		arg4 *livekit.AnalyticsClientMeta
 	}
-	ParticipantJoinedStub        func(context.Context, *livekit.Room, *livekit.ParticipantInfo, *livekit.ClientInfo, *livekit.AnalyticsClientMeta)
+	ParticipantJoinedStub        func(context.Context, *livekit.Room, *livekit.ParticipantInfo, *livekit.ClientInfo, *livekit.AnalyticsClientMeta, bool)
 	participantJoinedMutex       sync.RWMutex
 	participantJoinedArgsForCall []struct {
 		arg1 context.Context
@@ -48,6 +48,7 @@ type FakeTelemetryService struct {
 		arg3 *livekit.ParticipantInfo
 		arg4 *livekit.ClientInfo
 		arg5 *livekit.AnalyticsClientMeta
+		arg6 bool
 	}
 	ParticipantLeftStub        func(context.Context, *livekit.Room, *livekit.ParticipantInfo, bool)
 	participantLeftMutex       sync.RWMutex
@@ -299,7 +300,7 @@ func (fake *FakeTelemetryService) ParticipantActiveArgsForCall(i int) (context.C
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
 }
 
-func (fake *FakeTelemetryService) ParticipantJoined(arg1 context.Context, arg2 *livekit.Room, arg3 *livekit.ParticipantInfo, arg4 *livekit.ClientInfo, arg5 *livekit.AnalyticsClientMeta) {
+func (fake *FakeTelemetryService) ParticipantJoined(arg1 context.Context, arg2 *livekit.Room, arg3 *livekit.ParticipantInfo, arg4 *livekit.ClientInfo, arg5 *livekit.AnalyticsClientMeta, arg6 bool) {
 	fake.participantJoinedMutex.Lock()
 	fake.participantJoinedArgsForCall = append(fake.participantJoinedArgsForCall, struct {
 		arg1 context.Context
@@ -307,12 +308,13 @@ func (fake *FakeTelemetryService) ParticipantJoined(arg1 context.Context, arg2 *
 		arg3 *livekit.ParticipantInfo
 		arg4 *livekit.ClientInfo
 		arg5 *livekit.AnalyticsClientMeta
-	}{arg1, arg2, arg3, arg4, arg5})
+		arg6 bool
+	}{arg1, arg2, arg3, arg4, arg5, arg6})
 	stub := fake.ParticipantJoinedStub
-	fake.recordInvocation("ParticipantJoined", []interface{}{arg1, arg2, arg3, arg4, arg5})
+	fake.recordInvocation("ParticipantJoined", []interface{}{arg1, arg2, arg3, arg4, arg5, arg6})
 	fake.participantJoinedMutex.Unlock()
 	if stub != nil {
-		fake.ParticipantJoinedStub(arg1, arg2, arg3, arg4, arg5)
+		fake.ParticipantJoinedStub(arg1, arg2, arg3, arg4, arg5, arg6)
 	}
 }
 
@@ -322,17 +324,17 @@ func (fake *FakeTelemetryService) ParticipantJoinedCallCount() int {
 	return len(fake.participantJoinedArgsForCall)
 }
 
-func (fake *FakeTelemetryService) ParticipantJoinedCalls(stub func(context.Context, *livekit.Room, *livekit.ParticipantInfo, *livekit.ClientInfo, *livekit.AnalyticsClientMeta)) {
+func (fake *FakeTelemetryService) ParticipantJoinedCalls(stub func(context.Context, *livekit.Room, *livekit.ParticipantInfo, *livekit.ClientInfo, *livekit.AnalyticsClientMeta, bool)) {
 	fake.participantJoinedMutex.Lock()
 	defer fake.participantJoinedMutex.Unlock()
 	fake.ParticipantJoinedStub = stub
 }
 
-func (fake *FakeTelemetryService) ParticipantJoinedArgsForCall(i int) (context.Context, *livekit.Room, *livekit.ParticipantInfo, *livekit.ClientInfo, *livekit.AnalyticsClientMeta) {
+func (fake *FakeTelemetryService) ParticipantJoinedArgsForCall(i int) (context.Context, *livekit.Room, *livekit.ParticipantInfo, *livekit.ClientInfo, *livekit.AnalyticsClientMeta, bool) {
 	fake.participantJoinedMutex.RLock()
 	defer fake.participantJoinedMutex.RUnlock()
 	argsForCall := fake.participantJoinedArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4, argsForCall.arg5
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4, argsForCall.arg5, argsForCall.arg6
 }
 
 func (fake *FakeTelemetryService) ParticipantLeft(arg1 context.Context, arg2 *livekit.Room, arg3 *livekit.ParticipantInfo, arg4 bool) {

@@ -38,7 +38,7 @@ func Test_ParticipantAndRoomDataAreSentWithAnalytics(t *testing.T) {
 	partSID := livekit.ParticipantID("part1")
 	clientInfo := &livekit.ClientInfo{Sdk: 2}
 	participantInfo := &livekit.ParticipantInfo{Sid: string(partSID)}
-	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, clientInfo, nil)
+	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, clientInfo, nil, true)
 
 	// do
 	packet := 33
@@ -66,7 +66,7 @@ func Test_OnDownstreamPackets(t *testing.T) {
 	partSID := livekit.ParticipantID("part1")
 	clientInfo := &livekit.ClientInfo{Sdk: 2}
 	participantInfo := &livekit.ParticipantInfo{Sid: string(partSID)}
-	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, clientInfo, nil)
+	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, clientInfo, nil, true)
 
 	// do
 	packets := []int{33, 23}
@@ -99,7 +99,7 @@ func Test_OnDownstreamPackets_SeveralTracks(t *testing.T) {
 	partSID := livekit.ParticipantID("part1")
 	clientInfo := &livekit.ClientInfo{Sdk: 2}
 	participantInfo := &livekit.ParticipantInfo{Sid: string(partSID)}
-	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, clientInfo, nil)
+	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, clientInfo, nil, true)
 
 	// do
 	packet1 := 33
@@ -144,7 +144,7 @@ func Test_OnDownStreamStat(t *testing.T) {
 	room := &livekit.Room{}
 	partSID := livekit.ParticipantID("part1")
 	participantInfo := &livekit.ParticipantInfo{Sid: string(partSID)}
-	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, nil, nil)
+	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, nil, nil, true)
 
 	// do
 	stat1 := &livekit.AnalyticsStat{
@@ -203,7 +203,7 @@ func Test_PacketLostDiffShouldBeSentToTelemetry(t *testing.T) {
 	room := &livekit.Room{}
 	partSID := livekit.ParticipantID("part1")
 	participantInfo := &livekit.ParticipantInfo{Sid: string(partSID)}
-	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, nil, nil)
+	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, nil, nil, true)
 
 	// do
 	trackID := livekit.TrackID("trackID1")
@@ -255,7 +255,7 @@ func Test_OnDownStreamRTCP_SeveralTracks(t *testing.T) {
 	room := &livekit.Room{}
 	partSID := livekit.ParticipantID("part1")
 	participantInfo := &livekit.ParticipantInfo{Sid: string(partSID)}
-	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, nil, nil)
+	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, nil, nil, true)
 
 	// do
 	trackID1 := livekit.TrackID("trackID1")
@@ -324,7 +324,7 @@ func Test_OnUpstreamStat(t *testing.T) {
 	room := &livekit.Room{}
 	partSID := livekit.ParticipantID("part1")
 	participantInfo := &livekit.ParticipantInfo{Sid: string(partSID)}
-	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, nil, nil)
+	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, nil, nil, true)
 
 	// do
 	stat1 := &livekit.AnalyticsStat{
@@ -386,7 +386,7 @@ func Test_OnUpstreamRTCP_SeveralTracks(t *testing.T) {
 	partSID := livekit.ParticipantID("part1")
 	identity := livekit.ParticipantIdentity("part1Identity")
 	participantInfo := &livekit.ParticipantInfo{Sid: string(partSID), Identity: string(identity)}
-	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, nil, nil)
+	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, nil, nil, true)
 
 	// there should be bytes reported so that stats are sent
 	totalBytes := 1
@@ -472,7 +472,7 @@ func Test_AnalyticsSentWhenParticipantLeaves(t *testing.T) {
 	room := &livekit.Room{}
 	partSID := "part1"
 	participantInfo := &livekit.ParticipantInfo{Sid: partSID}
-	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, nil, nil)
+	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, nil, nil, true)
 
 	// do
 	fixture.sut.ParticipantLeft(context.Background(), room, participantInfo, true)
@@ -489,7 +489,7 @@ func Test_AddUpTrack(t *testing.T) {
 	room := &livekit.Room{}
 	partSID := livekit.ParticipantID("part1")
 	participantInfo := &livekit.ParticipantInfo{Sid: string(partSID)}
-	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, nil, nil)
+	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, nil, nil, true)
 
 	// do
 	var totalBytes uint64 = 3
@@ -526,7 +526,7 @@ func Test_AddUpTrack_SeveralBuffers_Simulcast(t *testing.T) {
 	room := &livekit.Room{}
 	partSID := livekit.ParticipantID("part1")
 	participantInfo := &livekit.ParticipantInfo{Sid: string(partSID)}
-	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, nil, nil)
+	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, nil, nil, true)
 
 	// do
 	trackID := livekit.TrackID("trackID")
@@ -565,7 +565,7 @@ func Test_BothDownstreamAndUpstreamStatsAreSentTogether(t *testing.T) {
 	room := &livekit.Room{}
 	partSID := livekit.ParticipantID("part1")
 	participantInfo := &livekit.ParticipantInfo{Sid: string(partSID)}
-	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, nil, nil)
+	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, nil, nil, true)
 
 	// do
 	// upstream bytes

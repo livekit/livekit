@@ -65,6 +65,7 @@ func (t *telemetryService) ParticipantJoined(
 	participant *livekit.ParticipantInfo,
 	clientInfo *livekit.ClientInfo,
 	clientMeta *livekit.AnalyticsClientMeta,
+	shouldSendEvent bool,
 ) {
 	t.enqueue(func() {
 		prometheus.IncrementParticipantJoin(1)
@@ -78,16 +79,18 @@ func (t *telemetryService) ParticipantJoined(
 			livekit.ParticipantIdentity(participant.Identity),
 		)
 
-		t.SendEvent(ctx, &livekit.AnalyticsEvent{
-			Type:          livekit.AnalyticsEventType_PARTICIPANT_JOINED,
-			Timestamp:     timestamppb.Now(),
-			RoomId:        room.Sid,
-			ParticipantId: participant.Sid,
-			Participant:   participant,
-			Room:          room,
-			ClientInfo:    clientInfo,
-			ClientMeta:    clientMeta,
-		})
+		if shouldSendEvent {
+			t.SendEvent(ctx, &livekit.AnalyticsEvent{
+				Type:          livekit.AnalyticsEventType_PARTICIPANT_JOINED,
+				Timestamp:     timestamppb.Now(),
+				RoomId:        room.Sid,
+				ParticipantId: participant.Sid,
+				Participant:   participant,
+				Room:          room,
+				ClientInfo:    clientInfo,
+				ClientMeta:    clientMeta,
+			})
+		}
 	})
 }
 
@@ -128,7 +131,11 @@ func (t *telemetryService) ParticipantActive(
 	})
 }
 
-func (t *telemetryService) ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, shouldSendEvent bool) {
+func (t *telemetryService) ParticipantLeft(ctx context.Context,
+	room *livekit.Room,
+	participant *livekit.ParticipantInfo,
+	shouldSendEvent bool,
+) {
 	t.enqueue(func() {
 		isConnected := false
 		if worker, ok := t.getWorker(livekit.ParticipantID(participant.Sid)); ok {
