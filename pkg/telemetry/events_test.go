@@ -75,7 +75,7 @@ func Test_OnParticipantLeft_EventIsSent(t *testing.T) {
 
 	// test
 	require.Equal(t, 2, fixture.analytics.SendEventCallCount())
-	_, event := fixture.analytics.SendEventArgsForCall(0)
+	_, event := fixture.analytics.SendEventArgsForCall(1)
 	require.Equal(t, livekit.AnalyticsEventType_PARTICIPANT_LEFT, event.Type)
 	require.Equal(t, partSID, event.ParticipantId)
 	require.Equal(t, room.Sid, event.RoomId)
