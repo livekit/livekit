@@ -29,11 +29,12 @@ type FakeRoom struct {
 	nameReturnsOnCall map[int]struct {
 		result1 livekit.RoomName
 	}
-	RemoveParticipantStub        func(livekit.ParticipantIdentity, types.ParticipantCloseReason)
+	RemoveParticipantStub        func(livekit.ParticipantIdentity, livekit.ParticipantID, types.ParticipantCloseReason)
 	removeParticipantMutex       sync.RWMutex
 	removeParticipantArgsForCall []struct {
 		arg1 livekit.ParticipantIdentity
-		arg2 types.ParticipantCloseReason
+		arg2 livekit.ParticipantID
+		arg3 types.ParticipantCloseReason
 	}
 	SetParticipantPermissionStub        func(types.LocalParticipant, *livekit.ParticipantPermission) error
 	setParticipantPermissionMutex       sync.RWMutex
@@ -219,17 +220,18 @@ func (fake *FakeRoom) NameReturnsOnCall(i int, result1 livekit.RoomName) {
 	}{result1}
 }
 
-func (fake *FakeRoom) RemoveParticipant(arg1 livekit.ParticipantIdentity, arg2 types.ParticipantCloseReason) {
+func (fake *FakeRoom) RemoveParticipant(arg1 livekit.ParticipantIdentity, arg2 livekit.ParticipantID, arg3 types.ParticipantCloseReason) {
 	fake.removeParticipantMutex.Lock()
 	fake.removeParticipantArgsForCall = append(fake.removeParticipantArgsForCall, struct {
 		arg1 livekit.ParticipantIdentity
-		arg2 types.ParticipantCloseReason
-	}{arg1, arg2})
+		arg2 livekit.ParticipantID
+		arg3 types.ParticipantCloseReason
+	}{arg1, arg2, arg3})
 	stub := fake.RemoveParticipantStub
-	fake.recordInvocation("RemoveParticipant", []interface{}{arg1, arg2})
+	fake.recordInvocation("RemoveParticipant", []interface{}{arg1, arg2, arg3})
 	fake.removeParticipantMutex.Unlock()
 	if stub != nil {
-		fake.RemoveParticipantStub(arg1, arg2)
+		fake.RemoveParticipantStub(arg1, arg2, arg3)
 	}
 }
 
@@ -239,17 +241,17 @@ func (fake *FakeRoom) RemoveParticipantCallCount() int {
 	return len(fake.removeParticipantArgsForCall)
 }
 
-func (fake *FakeRoom) RemoveParticipantCalls(stub func(livekit.ParticipantIdentity, types.ParticipantCloseReason)) {
+func (fake *FakeRoom) RemoveParticipantCalls(stub func(livekit.ParticipantIdentity, livekit.ParticipantID, types.ParticipantCloseReason)) {
 	fake.removeParticipantMutex.Lock()
 	defer fake.removeParticipantMutex.Unlock()
 	fake.RemoveParticipantStub = stub
 }
 
-func (fake *FakeRoom) RemoveParticipantArgsForCall(i int) (livekit.ParticipantIdentity, types.ParticipantCloseReason) {
+func (fake *FakeRoom) RemoveParticipantArgsForCall(i int) (livekit.ParticipantIdentity, livekit.ParticipantID, types.ParticipantCloseReason) {
 	fake.removeParticipantMutex.RLock()
 	defer fake.removeParticipantMutex.RUnlock()
 	argsForCall := fake.removeParticipantArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
 func (fake *FakeRoom) SetParticipantPermission(arg1 types.LocalParticipant, arg2 *livekit.ParticipantPermission) error {
