@@ -475,7 +475,7 @@ func Test_AnalyticsSentWhenParticipantLeaves(t *testing.T) {
 	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, nil, nil)
 
 	// do
-	fixture.sut.ParticipantLeft(context.Background(), room, participantInfo)
+	fixture.sut.ParticipantLeft(context.Background(), room, participantInfo, true)
 
 	// should not be called if there are no track stats
 	time.Sleep(time.Millisecond * 500)

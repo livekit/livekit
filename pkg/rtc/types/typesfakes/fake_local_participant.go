@@ -612,11 +612,6 @@ type FakeLocalParticipant struct {
 	setICEConfigArgsForCall []struct {
 		arg1 types.IceConfig
 	}
-	SetNameStub        func(string)
-	setNameMutex       sync.RWMutex
-	setNameArgsForCall []struct {
-		arg1 string
-	}
 	SetMetadataStub        func(string)
 	setMetadataMutex       sync.RWMutex
 	setMetadataArgsForCall []struct {
@@ -634,6 +629,11 @@ type FakeLocalParticipant struct {
 	setMigrateStateMutex       sync.RWMutex
 	setMigrateStateArgsForCall []struct {
 		arg1 types.MigrateState
+	}
+	SetNameStub        func(string)
+	setNameMutex       sync.RWMutex
+	setNameArgsForCall []struct {
+		arg1 string
 	}
 	SetPermissionStub        func(*livekit.ParticipantPermission) bool
 	setPermissionMutex       sync.RWMutex
@@ -4011,38 +4011,6 @@ func (fake *FakeLocalParticipant) SetICEConfigArgsForCall(i int) types.IceConfig
 	return argsForCall.arg1
 }
 
-func (fake *FakeLocalParticipant) SetName(arg1 string) {
-	fake.setNameMutex.Lock()
-	fake.setNameArgsForCall = append(fake.setNameArgsForCall, struct {
-		arg1 string
-	}{arg1})
-	stub := fake.SetNameStub
-	fake.recordInvocation("SetName", []interface{}{arg1})
-	fake.setNameMutex.Unlock()
-	if stub != nil {
-		fake.SetNameStub(arg1)
-	}
-}
-
-func (fake *FakeLocalParticipant) SetNameCallCount() int {
-	fake.setNameMutex.RLock()
-	defer fake.setNameMutex.RUnlock()
-	return len(fake.setNameArgsForCall)
-}
-
-func (fake *FakeLocalParticipant) SetNameCalls(stub func(string)) {
-	fake.setNameMutex.Lock()
-	defer fake.setNameMutex.Unlock()
-	fake.SetNameStub = stub
-}
-
-func (fake *FakeLocalParticipant) SetNameArgsForCall(i int) string {
-	fake.setNameMutex.RLock()
-	defer fake.setNameMutex.RUnlock()
-	argsForCall := fake.setNameArgsForCall[i]
-	return argsForCall.arg1
-}
-
 func (fake *FakeLocalParticipant) SetMetadata(arg1 string) {
 	fake.setMetadataMutex.Lock()
 	fake.setMetadataArgsForCall = append(fake.setMetadataArgsForCall, struct {
@@ -4149,6 +4117,38 @@ func (fake *FakeLocalParticipant) SetMigrateStateArgsForCall(i int) types.Migrat
 	fake.setMigrateStateMutex.RLock()
 	defer fake.setMigrateStateMutex.RUnlock()
 	argsForCall := fake.setMigrateStateArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) SetName(arg1 string) {
+	fake.setNameMutex.Lock()
+	fake.setNameArgsForCall = append(fake.setNameArgsForCall, struct {
+		arg1 string
+	}{arg1})
+	stub := fake.SetNameStub
+	fake.recordInvocation("SetName", []interface{}{arg1})
+	fake.setNameMutex.Unlock()
+	if stub != nil {
+		fake.SetNameStub(arg1)
+	}
+}
+
+func (fake *FakeLocalParticipant) SetNameCallCount() int {
+	fake.setNameMutex.RLock()
+	defer fake.setNameMutex.RUnlock()
+	return len(fake.setNameArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) SetNameCalls(stub func(string)) {
+	fake.setNameMutex.Lock()
+	defer fake.setNameMutex.Unlock()
+	fake.SetNameStub = stub
+}
+
+func (fake *FakeLocalParticipant) SetNameArgsForCall(i int) string {
+	fake.setNameMutex.RLock()
+	defer fake.setNameMutex.RUnlock()
+	argsForCall := fake.setNameArgsForCall[i]
 	return argsForCall.arg1
 }
 
@@ -5110,6 +5110,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.setMigrateInfoMutex.RUnlock()
 	fake.setMigrateStateMutex.RLock()
 	defer fake.setMigrateStateMutex.RUnlock()
+	fake.setNameMutex.RLock()
+	defer fake.setNameMutex.RUnlock()
 	fake.setPermissionMutex.RLock()
 	defer fake.setPermissionMutex.RUnlock()
 	fake.setResponseSinkMutex.RLock()

@@ -69,7 +69,7 @@ func Test_OnParticipantLeft_EventIsSent(t *testing.T) {
 	participantInfo := &livekit.ParticipantInfo{Sid: partSID}
 
 	// do
-	fixture.sut.ParticipantLeft(context.Background(), room, participantInfo)
+	fixture.sut.ParticipantLeft(context.Background(), room, participantInfo, true)
 	time.Sleep(time.Millisecond * 500)
 
 	// test
