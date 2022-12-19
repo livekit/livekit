@@ -105,8 +105,9 @@ func (t *telemetryService) ParticipantActive(
 			Participant: participant,
 		})
 
-		if _, ok := t.getWorker(livekit.ParticipantID(participant.Sid)); !ok {
-			t.createWorker(
+		worker, ok := t.getWorker(livekit.ParticipantID(participant.Sid))
+		if !ok {
+			worker = t.createWorker(
 				ctx,
 				livekit.RoomID(room.Sid),
 				livekit.RoomName(room.Name),
@@ -114,6 +115,7 @@ func (t *telemetryService) ParticipantActive(
 				livekit.ParticipantIdentity(participant.Identity),
 			)
 		}
+		worker.SetConnected()
 
 		t.SendEvent(ctx, &livekit.AnalyticsEvent{
 			Type:          livekit.AnalyticsEventType_PARTICIPANT_ACTIVE,
@@ -126,28 +128,32 @@ func (t *telemetryService) ParticipantActive(
 	})
 }
 
-func (t *telemetryService) ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo) {
+func (t *telemetryService) ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, shouldSendEvent bool) {
 	t.enqueue(func() {
+		isConnected := false
 		if worker, ok := t.getWorker(livekit.ParticipantID(participant.Sid)); ok {
+			isConnected = worker.IsConnected()
 			worker.Close()
 		}
 
 		prometheus.SubParticipant()
 
-		t.NotifyEvent(ctx, &livekit.WebhookEvent{
-			Event:       webhook.EventParticipantLeft,
-			Room:        room,
-			Participant: participant,
-		})
+		if isConnected && shouldSendEvent {
+			t.NotifyEvent(ctx, &livekit.WebhookEvent{
+				Event:       webhook.EventParticipantLeft,
+				Room:        room,
+				Participant: participant,
+			})
 
-		t.SendEvent(ctx, &livekit.AnalyticsEvent{
-			Type:          livekit.AnalyticsEventType_PARTICIPANT_LEFT,
-			Timestamp:     timestamppb.Now(),
-			RoomId:        room.Sid,
-			ParticipantId: participant.Sid,
-			Participant:   participant,
-			Room:          room,
-		})
+			t.SendEvent(ctx, &livekit.AnalyticsEvent{
+				Type:          livekit.AnalyticsEventType_PARTICIPANT_LEFT,
+				Timestamp:     timestamppb.Now(),
+				RoomId:        room.Sid,
+				ParticipantId: participant.Sid,
+				Participant:   participant,
+				Room:          room,
+			})
+		}
 	})
 }
 
