@@ -20,6 +20,7 @@ type StatsWorker struct {
 	roomName            livekit.RoomName
 	participantID       livekit.ParticipantID
 	participantIdentity livekit.ParticipantIdentity
+	isConnected         bool
 
 	lock             sync.RWMutex
 	outgoingPerTrack map[livekit.TrackID][]*livekit.AnalyticsStat
@@ -60,6 +61,19 @@ func (s *StatsWorker) OnTrackStat(trackID livekit.TrackID, direction livekit.Str
 
 func (s *StatsWorker) ParticipantID() livekit.ParticipantID {
 	return s.participantID
+}
+
+func (s *StatsWorker) SetConnected() {
+	s.lock.Lock()
+	s.isConnected = true
+	s.lock.Unlock()
+}
+
+func (s *StatsWorker) IsConnected() bool {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+
+	return s.isConnected
 }
 
 func (s *StatsWorker) Flush() {

@@ -69,12 +69,13 @@ func Test_OnParticipantLeft_EventIsSent(t *testing.T) {
 	participantInfo := &livekit.ParticipantInfo{Sid: partSID}
 
 	// do
-	fixture.sut.ParticipantLeft(context.Background(), room, participantInfo)
+	fixture.sut.ParticipantActive(context.Background(), room, participantInfo, &livekit.AnalyticsClientMeta{})
+	fixture.sut.ParticipantLeft(context.Background(), room, participantInfo, true)
 	time.Sleep(time.Millisecond * 500)
 
 	// test
-	require.Equal(t, 1, fixture.analytics.SendEventCallCount())
-	_, event := fixture.analytics.SendEventArgsForCall(0)
+	require.Equal(t, 2, fixture.analytics.SendEventCallCount())
+	_, event := fixture.analytics.SendEventArgsForCall(1)
 	require.Equal(t, livekit.AnalyticsEventType_PARTICIPANT_LEFT, event.Type)
 	require.Equal(t, partSID, event.ParticipantId)
 	require.Equal(t, room.Sid, event.RoomId)

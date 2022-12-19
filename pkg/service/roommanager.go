@@ -332,7 +332,7 @@ func (r *RoomManager) StartSession(
 		pLogger.Errorw("could not store participant", err)
 	}
 
-	updateParticipantCount := func(proto *livekit.Room) {
+	persistRoomForParticipantCount := func(proto *livekit.Room) {
 		if !participant.Hidden() {
 			err = r.roomStore.StoreRoom(ctx, proto, room.Internal())
 			if err != nil {
@@ -342,7 +342,7 @@ func (r *RoomManager) StartSession(
 	}
 
 	// update room store with new numParticipants
-	updateParticipantCount(room.ToProto())
+	persistRoomForParticipantCount(room.ToProto())
 
 	clientMeta := &livekit.AnalyticsClientMeta{Region: r.currentNode.Region, Node: r.currentNode.Id}
 	r.telemetry.ParticipantJoined(ctx, protoRoom, participant.ToProto(), pi.Client, clientMeta)
@@ -353,8 +353,8 @@ func (r *RoomManager) StartSession(
 
 		// update room store with new numParticipants
 		proto := room.ToProto()
-		updateParticipantCount(proto)
-		r.telemetry.ParticipantLeft(ctx, proto, p.ToProto())
+		persistRoomForParticipantCount(proto)
+		r.telemetry.ParticipantLeft(ctx, proto, p.ToProto(), true)
 
 		room.RemoveDisallowedSubscriptions(p, disallowedSubscriptions)
 	})
