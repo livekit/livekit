@@ -90,11 +90,7 @@ func (s *SubscriptionDeduper) updateSubscriptionsFromUpdateSubscription(
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	participantSubscriptions := s.participantsSubscriptions[participantKey]
-	if participantSubscriptions == nil {
-		participantSubscriptions = make(map[livekit.TrackID]*subscriptionSetting)
-		s.participantsSubscriptions[participantKey] = participantSubscriptions
-	}
+	participantSubscriptions := s.getOrCreateParticipantSubscriptions(participantKey)
 
 	numTracks := len(us.TrackSids)
 	for _, pt := range us.ParticipantTracks {
@@ -139,11 +135,7 @@ func (s *SubscriptionDeduper) updateSubscriptionsFromUpdateTrackSettings(
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	participantSubscriptions := s.participantsSubscriptions[participantKey]
-	if participantSubscriptions == nil {
-		participantSubscriptions = make(map[livekit.TrackID]*subscriptionSetting)
-		s.participantsSubscriptions[participantKey] = participantSubscriptions
-	}
+	participantSubscriptions := s.getOrCreateParticipantSubscriptions(participantKey)
 
 	for _, trackSid := range uts.TrackSids {
 		subscriptionSetting := participantSubscriptions[livekit.TrackID(trackSid)]
@@ -163,4 +155,14 @@ func (s *SubscriptionDeduper) updateSubscriptionsFromUpdateTrackSettings(
 	}
 
 	return isDupe
+}
+
+func (s *SubscriptionDeduper) getOrCreateParticipantSubscriptions(participantKey livekit.ParticipantKey) map[livekit.TrackID]*subscriptionSetting {
+	participantSubscriptions := s.participantsSubscriptions[participantKey]
+	if participantSubscriptions == nil {
+		participantSubscriptions = make(map[livekit.TrackID]*subscriptionSetting)
+		s.participantsSubscriptions[participantKey] = participantSubscriptions
+	}
+
+	return participantSubscriptions
 }
