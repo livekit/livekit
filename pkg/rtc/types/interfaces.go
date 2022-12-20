@@ -473,3 +473,10 @@ type OperationMonitor interface {
 	Check() error
 	IsIdle() bool
 }
+
+//
+// SignalDeduper related definitions
+//
+type SignalDeduper interface {
+	Dedupe(participantKey livekit.ParticipantKey, req *livekit.SignalRequest) bool
+}
