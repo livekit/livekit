@@ -148,15 +148,15 @@ func (s *SubscriptionDeduper) updateSubscriptionsFromUpdateTrackSettings(
 	for _, trackSid := range uts.TrackSids {
 		subscriptionSetting := participantSubscriptions[livekit.TrackID(trackSid)]
 		if subscriptionSetting == nil {
+			// new track seen
 			subscriptionSetting := subscriptionSettingFromUpdateTrackSettings(uts)
 			participantSubscriptions[livekit.TrackID(trackSid)] = subscriptionSetting
-			// new track seen
 			isDupe = false
 		} else {
 			newSubscriptionSetting := subscriptionSettingFromUpdateTrackSettings(uts)
 			if !subscriptionSetting.Equal(newSubscriptionSetting) {
-				participantSubscriptions[livekit.TrackID(trackSid)] = newSubscriptionSetting
 				// subscription setting change
+				participantSubscriptions[livekit.TrackID(trackSid)] = newSubscriptionSetting
 				isDupe = false
 			}
 		}
