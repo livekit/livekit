@@ -30,6 +30,7 @@ require (
 	github.com/pion/logging v0.2.2
 	github.com/pion/rtcp v1.2.10
 	github.com/pion/rtp v1.7.13
+	github.com/pion/rtp/v2 v2.0.0
 	github.com/pion/sdp/v3 v3.0.6
 	github.com/pion/stun v0.3.5
 	github.com/pion/transport v0.14.1
