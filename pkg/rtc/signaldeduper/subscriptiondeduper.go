@@ -81,6 +81,13 @@ func (s *SubscriptionDeduper) Dedupe(participantKey livekit.ParticipantKey, req 
 	return isDupe
 }
 
+func (s *SubscriptionDeduper) ParticipantClosed(participantKey livekit.ParticipantKey) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	delete(s.participantsSubscriptions, participantKey)
+}
+
 func (s *SubscriptionDeduper) updateSubscriptionsFromUpdateSubscription(
 	participantKey livekit.ParticipantKey,
 	us *livekit.UpdateSubscription,

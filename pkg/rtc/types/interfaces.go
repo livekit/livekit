@@ -479,4 +479,5 @@ type OperationMonitor interface {
 //
 type SignalDeduper interface {
 	Dedupe(participantKey livekit.ParticipantKey, req *livekit.SignalRequest) bool
+	ParticipantClosed(participantKey livekit.ParticipantKey)
 }
