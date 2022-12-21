@@ -64,31 +64,32 @@ type SubscribeRequest struct {
 }
 
 type ParticipantParams struct {
-	Identity                    livekit.ParticipantIdentity
-	Name                        livekit.ParticipantName
-	SID                         livekit.ParticipantID
-	Config                      *WebRTCConfig
-	Sink                        routing.MessageSink
-	AudioConfig                 config.AudioConfig
-	VideoConfig                 config.VideoConfig
-	ProtocolVersion             types.ProtocolVersion
-	Telemetry                   telemetry.TelemetryService
-	PLIThrottleConfig           config.PLIThrottleConfig
-	CongestionControlConfig     config.CongestionControlConfig
-	EnabledCodecs               []*livekit.Codec
-	Logger                      logger.Logger
-	SimTracks                   map[uint32]SimulcastTrackInfo
-	Grants                      *auth.ClaimGrants
-	InitialVersion              uint32
-	ClientConf                  *livekit.ClientConfiguration
-	ClientInfo                  ClientInfo
-	Region                      string
-	Migration                   bool
-	AdaptiveStream              bool
-	AllowTCPFallback            bool
-	TURNSEnabled                bool
-	GetParticipantInfo          func(pID livekit.ParticipantID) *livekit.ParticipantInfo
-	ReconnectOnPublicationError bool
+	Identity                     livekit.ParticipantIdentity
+	Name                         livekit.ParticipantName
+	SID                          livekit.ParticipantID
+	Config                       *WebRTCConfig
+	Sink                         routing.MessageSink
+	AudioConfig                  config.AudioConfig
+	VideoConfig                  config.VideoConfig
+	ProtocolVersion              types.ProtocolVersion
+	Telemetry                    telemetry.TelemetryService
+	PLIThrottleConfig            config.PLIThrottleConfig
+	CongestionControlConfig      config.CongestionControlConfig
+	EnabledCodecs                []*livekit.Codec
+	Logger                       logger.Logger
+	SimTracks                    map[uint32]SimulcastTrackInfo
+	Grants                       *auth.ClaimGrants
+	InitialVersion               uint32
+	ClientConf                   *livekit.ClientConfiguration
+	ClientInfo                   ClientInfo
+	Region                       string
+	Migration                    bool
+	AdaptiveStream               bool
+	AllowTCPFallback             bool
+	TURNSEnabled                 bool
+	GetParticipantInfo           func(pID livekit.ParticipantID) *livekit.ParticipantInfo
+	ReconnectOnPublicationError  bool
+	ReconnectOnSubscriptionError bool
 }
 
 type ParticipantImpl struct {
@@ -202,6 +203,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p.SetResponseSink(params.Sink)
 
 	p.supervisor.OnPublicationError(p.onPublicationError)
+	p.supervisor.OnSubscriptionError(p.onSubscriptionError)
 
 	var err error
 	// keep last participants and when updates were sent
@@ -919,7 +921,7 @@ func (p *ParticipantImpl) VerifySubscribeParticipantInfo(pID livekit.Participant
 }
 
 // AddSubscribedTrack adds a track to the participant's subscribed list
-func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack) {
+func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack, sourceTrack types.MediaTrack) {
 	p.lock.Lock()
 	if v, ok := p.trackPublisherVersion[subTrack.ID()]; ok && v > subTrack.PublisherVersion() {
 		p.lock.Unlock()
@@ -939,7 +941,7 @@ func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack) {
 	onSubscribedTo := p.onSubscribedTo
 
 	p.subscribedTracks[subTrack.ID()] = subTrack
-	p.supervisor.SetSubscribedTrack(subTrack.ID(), subTrack)
+	p.supervisor.SetSubscribedTrack(subTrack.ID(), subTrack, sourceTrack)
 
 	settings := p.subscribedTracksSettings[subTrack.ID()]
 	p.lock.Unlock()
@@ -966,7 +968,7 @@ func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack) {
 }
 
 // RemoveSubscribedTrack removes a track to the participant's subscribed list
-func (p *ParticipantImpl) RemoveSubscribedTrack(subTrack types.SubscribedTrack) {
+func (p *ParticipantImpl) RemoveSubscribedTrack(subTrack types.SubscribedTrack, sourceTrack types.MediaTrack) {
 	p.lock.Lock()
 	if v, ok := p.trackPublisherVersion[subTrack.ID()]; ok && v > subTrack.PublisherVersion() {
 		p.lock.Unlock()
@@ -984,7 +986,7 @@ func (p *ParticipantImpl) RemoveSubscribedTrack(subTrack types.SubscribedTrack) 
 	p.trackPublisherVersion[subTrack.ID()] = subTrack.PublisherVersion()
 
 	delete(p.subscribedTracks, subTrack.ID())
-	p.supervisor.ClearSubscribedTrack(subTrack.ID(), subTrack)
+	p.supervisor.ClearSubscribedTrack(subTrack.ID(), subTrack, sourceTrack)
 
 	// remove from subscribed map
 	numRemaining := 0
@@ -2011,9 +2013,15 @@ func (p *ParticipantImpl) issueFullReconnect(reason types.ParticipantCloseReason
 }
 
 func (p *ParticipantImpl) onPublicationError(trackID livekit.TrackID) {
-	p.params.Logger.Infow("publication failed", "trackID", trackID)
 	if p.params.ReconnectOnPublicationError {
-		p.params.Logger.Infow("starting full reconnect")
+		p.params.Logger.Infow("issuing full reconnect on publication error", "trackID", trackID)
+		p.issueFullReconnect(types.ParticipantCloseReasonPublicationError)
+	}
+}
+
+func (p *ParticipantImpl) onSubscriptionError(trackID livekit.TrackID) {
+	if p.params.ReconnectOnSubscriptionError {
+		p.params.Logger.Infow("issuing full reconnect on subscription error", "trackID", trackID)
 		p.issueFullReconnect(types.ParticipantCloseReasonPublicationError)
 	}
 }
@@ -2023,7 +2031,7 @@ func (p *ParticipantImpl) onAnyTransportNegotiationFailed() {
 	p.issueFullReconnect(types.ParticipantCloseReasonNegotiateFailed)
 }
 
-func (p *ParticipantImpl) EnqueueSubscribeTrack(trackID livekit.TrackID, isRelayed bool, f func(sub types.LocalParticipant) error) bool {
+func (p *ParticipantImpl) EnqueueSubscribeTrack(trackID livekit.TrackID, sourceTrack types.MediaTrack, isRelayed bool, f func(sub types.LocalParticipant) error) bool {
 	// do not queue subscription is participant is already closed/disconnected
 	if p.isClosed.Load() || p.State() == livekit.ParticipantInfo_DISCONNECTED {
 		return false
@@ -2031,7 +2039,7 @@ func (p *ParticipantImpl) EnqueueSubscribeTrack(trackID livekit.TrackID, isRelay
 
 	p.params.Logger.Debugw("queuing subscribe", "trackID", trackID, "relayed", isRelayed)
 
-	p.supervisor.UpdateSubscription(trackID, true)
+	p.supervisor.UpdateSubscription(trackID, true, sourceTrack)
 
 	p.lock.Lock()
 	p.subscriptionRequestsQueue[trackID] = append(p.subscriptionRequestsQueue[trackID], SubscribeRequest{
@@ -2046,13 +2054,14 @@ func (p *ParticipantImpl) EnqueueSubscribeTrack(trackID livekit.TrackID, isRelay
 
 func (p *ParticipantImpl) EnqueueUnsubscribeTrack(
 	trackID livekit.TrackID,
+	sourceTrack types.MediaTrack,
 	isRelayed bool,
 	willBeResumed bool,
 	f func(subscriberID livekit.ParticipantID, willBeResumed bool) error,
 ) bool {
 	p.params.Logger.Debugw("queuing unsubscribe", "trackID", trackID, "relayed", isRelayed)
 
-	p.supervisor.UpdateSubscription(trackID, false)
+	p.supervisor.UpdateSubscription(trackID, false, sourceTrack)
 
 	p.lock.Lock()
 	p.subscriptionRequestsQueue[trackID] = append(p.subscriptionRequestsQueue[trackID], SubscribeRequest{

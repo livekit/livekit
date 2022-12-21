@@ -40,8 +40,6 @@ type PublicationMonitor struct {
 	publishedTrack types.LocalMediaTrack
 	isMuted        bool
 	unmutedAt      time.Time
-
-	lastError error
 }
 
 func NewPublicationMonitor(params PublicationMonitorParams) *PublicationMonitor {
@@ -127,12 +125,6 @@ func (p *PublicationMonitor) clearPublishedTrack(pubTrack types.LocalMediaTrack)
 
 func (p *PublicationMonitor) Check() error {
 	p.lock.RLock()
-	if p.lastError != nil {
-		p.lock.RUnlock()
-		// return an error only once
-		return nil
-	}
-
 	var pub *publish
 	if p.desiredPublishes.Len() > 0 {
 		pub = p.desiredPublishes.Front().(*publish)
@@ -148,10 +140,6 @@ func (p *PublicationMonitor) Check() error {
 
 	if pub.isStart && !isMuted && !unmutedAt.IsZero() && time.Since(unmutedAt) > publishWaitDuration {
 		// timed out waiting for publish
-		p.lock.Lock()
-		p.lastError = errPublishTimeout
-		p.lock.Unlock()
-
 		return errPublishTimeout
 	}
 
@@ -183,7 +171,5 @@ func (p *PublicationMonitor) update() {
 			p.desiredPublishes.PushFront(pub)
 			return
 		}
-
-		p.lastError = nil
 	}
 }

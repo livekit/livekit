@@ -285,6 +285,11 @@ func (r *RoomManager) StartSession(
 	if r.config.RTC.ReconnectOnPublicationError != nil {
 		reconnectOnPublicationError = *r.config.RTC.ReconnectOnPublicationError
 	}
+	// default do not force full reconnect on a subscription error
+	reconnectOnSubscriptionError := false
+	if r.config.RTC.ReconnectOnSubscriptionError != nil {
+		reconnectOnSubscriptionError = *r.config.RTC.ReconnectOnSubscriptionError
+	}
 	participant, err = rtc.NewParticipant(rtc.ParticipantParams{
 		Identity:                pi.Identity,
 		Name:                    pi.Name,
@@ -312,7 +317,8 @@ func (r *RoomManager) StartSession(
 			}
 			return nil
 		},
-		ReconnectOnPublicationError: reconnectOnPublicationError,
+		ReconnectOnPublicationError:  reconnectOnPublicationError,
+		ReconnectOnSubscriptionError: reconnectOnSubscriptionError,
 	})
 	if err != nil {
 		return err

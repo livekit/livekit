@@ -23,10 +23,11 @@ type FakeLocalParticipant struct {
 		arg1 webrtc.ICECandidateInit
 		arg2 livekit.SignalTarget
 	}
-	AddSubscribedTrackStub        func(types.SubscribedTrack)
+	AddSubscribedTrackStub        func(types.SubscribedTrack, types.MediaTrack)
 	addSubscribedTrackMutex       sync.RWMutex
 	addSubscribedTrackArgsForCall []struct {
 		arg1 types.SubscribedTrack
+		arg2 types.MediaTrack
 	}
 	AddSubscriberStub        func(types.LocalParticipant, types.AddSubscriberParams) (int, error)
 	addSubscriberMutex       sync.RWMutex
@@ -167,12 +168,13 @@ type FakeLocalParticipant struct {
 	debugInfoReturnsOnCall map[int]struct {
 		result1 map[string]interface{}
 	}
-	EnqueueSubscribeTrackStub        func(livekit.TrackID, bool, func(sub types.LocalParticipant) error) bool
+	EnqueueSubscribeTrackStub        func(livekit.TrackID, types.MediaTrack, bool, func(sub types.LocalParticipant) error) bool
 	enqueueSubscribeTrackMutex       sync.RWMutex
 	enqueueSubscribeTrackArgsForCall []struct {
 		arg1 livekit.TrackID
-		arg2 bool
-		arg3 func(sub types.LocalParticipant) error
+		arg2 types.MediaTrack
+		arg3 bool
+		arg4 func(sub types.LocalParticipant) error
 	}
 	enqueueSubscribeTrackReturns struct {
 		result1 bool
@@ -180,13 +182,14 @@ type FakeLocalParticipant struct {
 	enqueueSubscribeTrackReturnsOnCall map[int]struct {
 		result1 bool
 	}
-	EnqueueUnsubscribeTrackStub        func(livekit.TrackID, bool, bool, func(subscriberID livekit.ParticipantID, willBeResumed bool) error) bool
+	EnqueueUnsubscribeTrackStub        func(livekit.TrackID, types.MediaTrack, bool, bool, func(subscriberID livekit.ParticipantID, willBeResumed bool) error) bool
 	enqueueUnsubscribeTrackMutex       sync.RWMutex
 	enqueueUnsubscribeTrackArgsForCall []struct {
 		arg1 livekit.TrackID
-		arg2 bool
+		arg2 types.MediaTrack
 		arg3 bool
-		arg4 func(subscriberID livekit.ParticipantID, willBeResumed bool) error
+		arg4 bool
+		arg5 func(subscriberID livekit.ParticipantID, willBeResumed bool) error
 	}
 	enqueueUnsubscribeTrackReturns struct {
 		result1 bool
@@ -506,10 +509,11 @@ type FakeLocalParticipant struct {
 		arg2 bool
 		arg3 bool
 	}
-	RemoveSubscribedTrackStub        func(types.SubscribedTrack)
+	RemoveSubscribedTrackStub        func(types.SubscribedTrack, types.MediaTrack)
 	removeSubscribedTrackMutex       sync.RWMutex
 	removeSubscribedTrackArgsForCall []struct {
 		arg1 types.SubscribedTrack
+		arg2 types.MediaTrack
 	}
 	RemoveSubscriberStub        func(types.LocalParticipant, livekit.TrackID, bool)
 	removeSubscriberMutex       sync.RWMutex
@@ -827,16 +831,17 @@ func (fake *FakeLocalParticipant) AddICECandidateArgsForCall(i int) (webrtc.ICEC
 	return argsForCall.arg1, argsForCall.arg2
 }
 
-func (fake *FakeLocalParticipant) AddSubscribedTrack(arg1 types.SubscribedTrack) {
+func (fake *FakeLocalParticipant) AddSubscribedTrack(arg1 types.SubscribedTrack, arg2 types.MediaTrack) {
 	fake.addSubscribedTrackMutex.Lock()
 	fake.addSubscribedTrackArgsForCall = append(fake.addSubscribedTrackArgsForCall, struct {
 		arg1 types.SubscribedTrack
-	}{arg1})
+		arg2 types.MediaTrack
+	}{arg1, arg2})
 	stub := fake.AddSubscribedTrackStub
-	fake.recordInvocation("AddSubscribedTrack", []interface{}{arg1})
+	fake.recordInvocation("AddSubscribedTrack", []interface{}{arg1, arg2})
 	fake.addSubscribedTrackMutex.Unlock()
 	if stub != nil {
-		fake.AddSubscribedTrackStub(arg1)
+		fake.AddSubscribedTrackStub(arg1, arg2)
 	}
 }
 
@@ -846,17 +851,17 @@ func (fake *FakeLocalParticipant) AddSubscribedTrackCallCount() int {
 	return len(fake.addSubscribedTrackArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) AddSubscribedTrackCalls(stub func(types.SubscribedTrack)) {
+func (fake *FakeLocalParticipant) AddSubscribedTrackCalls(stub func(types.SubscribedTrack, types.MediaTrack)) {
 	fake.addSubscribedTrackMutex.Lock()
 	defer fake.addSubscribedTrackMutex.Unlock()
 	fake.AddSubscribedTrackStub = stub
 }
 
-func (fake *FakeLocalParticipant) AddSubscribedTrackArgsForCall(i int) types.SubscribedTrack {
+func (fake *FakeLocalParticipant) AddSubscribedTrackArgsForCall(i int) (types.SubscribedTrack, types.MediaTrack) {
 	fake.addSubscribedTrackMutex.RLock()
 	defer fake.addSubscribedTrackMutex.RUnlock()
 	argsForCall := fake.addSubscribedTrackArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeLocalParticipant) AddSubscriber(arg1 types.LocalParticipant, arg2 types.AddSubscriberParams) (int, error) {
@@ -1562,20 +1567,21 @@ func (fake *FakeLocalParticipant) DebugInfoReturnsOnCall(i int, result1 map[stri
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) EnqueueSubscribeTrack(arg1 livekit.TrackID, arg2 bool, arg3 func(sub types.LocalParticipant) error) bool {
+func (fake *FakeLocalParticipant) EnqueueSubscribeTrack(arg1 livekit.TrackID, arg2 types.MediaTrack, arg3 bool, arg4 func(sub types.LocalParticipant) error) bool {
 	fake.enqueueSubscribeTrackMutex.Lock()
 	ret, specificReturn := fake.enqueueSubscribeTrackReturnsOnCall[len(fake.enqueueSubscribeTrackArgsForCall)]
 	fake.enqueueSubscribeTrackArgsForCall = append(fake.enqueueSubscribeTrackArgsForCall, struct {
 		arg1 livekit.TrackID
-		arg2 bool
-		arg3 func(sub types.LocalParticipant) error
-	}{arg1, arg2, arg3})
+		arg2 types.MediaTrack
+		arg3 bool
+		arg4 func(sub types.LocalParticipant) error
+	}{arg1, arg2, arg3, arg4})
 	stub := fake.EnqueueSubscribeTrackStub
 	fakeReturns := fake.enqueueSubscribeTrackReturns
-	fake.recordInvocation("EnqueueSubscribeTrack", []interface{}{arg1, arg2, arg3})
+	fake.recordInvocation("EnqueueSubscribeTrack", []interface{}{arg1, arg2, arg3, arg4})
 	fake.enqueueSubscribeTrackMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2, arg3)
+		return stub(arg1, arg2, arg3, arg4)
 	}
 	if specificReturn {
 		return ret.result1
@@ -1589,17 +1595,17 @@ func (fake *FakeLocalParticipant) EnqueueSubscribeTrackCallCount() int {
 	return len(fake.enqueueSubscribeTrackArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) EnqueueSubscribeTrackCalls(stub func(livekit.TrackID, bool, func(sub types.LocalParticipant) error) bool) {
+func (fake *FakeLocalParticipant) EnqueueSubscribeTrackCalls(stub func(livekit.TrackID, types.MediaTrack, bool, func(sub types.LocalParticipant) error) bool) {
 	fake.enqueueSubscribeTrackMutex.Lock()
 	defer fake.enqueueSubscribeTrackMutex.Unlock()
 	fake.EnqueueSubscribeTrackStub = stub
 }
 
-func (fake *FakeLocalParticipant) EnqueueSubscribeTrackArgsForCall(i int) (livekit.TrackID, bool, func(sub types.LocalParticipant) error) {
+func (fake *FakeLocalParticipant) EnqueueSubscribeTrackArgsForCall(i int) (livekit.TrackID, types.MediaTrack, bool, func(sub types.LocalParticipant) error) {
 	fake.enqueueSubscribeTrackMutex.RLock()
 	defer fake.enqueueSubscribeTrackMutex.RUnlock()
 	argsForCall := fake.enqueueSubscribeTrackArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
 }
 
 func (fake *FakeLocalParticipant) EnqueueSubscribeTrackReturns(result1 bool) {
@@ -1625,21 +1631,22 @@ func (fake *FakeLocalParticipant) EnqueueSubscribeTrackReturnsOnCall(i int, resu
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) EnqueueUnsubscribeTrack(arg1 livekit.TrackID, arg2 bool, arg3 bool, arg4 func(subscriberID livekit.ParticipantID, willBeResumed bool) error) bool {
+func (fake *FakeLocalParticipant) EnqueueUnsubscribeTrack(arg1 livekit.TrackID, arg2 types.MediaTrack, arg3 bool, arg4 bool, arg5 func(subscriberID livekit.ParticipantID, willBeResumed bool) error) bool {
 	fake.enqueueUnsubscribeTrackMutex.Lock()
 	ret, specificReturn := fake.enqueueUnsubscribeTrackReturnsOnCall[len(fake.enqueueUnsubscribeTrackArgsForCall)]
 	fake.enqueueUnsubscribeTrackArgsForCall = append(fake.enqueueUnsubscribeTrackArgsForCall, struct {
 		arg1 livekit.TrackID
-		arg2 bool
+		arg2 types.MediaTrack
 		arg3 bool
-		arg4 func(subscriberID livekit.ParticipantID, willBeResumed bool) error
-	}{arg1, arg2, arg3, arg4})
+		arg4 bool
+		arg5 func(subscriberID livekit.ParticipantID, willBeResumed bool) error
+	}{arg1, arg2, arg3, arg4, arg5})
 	stub := fake.EnqueueUnsubscribeTrackStub
 	fakeReturns := fake.enqueueUnsubscribeTrackReturns
-	fake.recordInvocation("EnqueueUnsubscribeTrack", []interface{}{arg1, arg2, arg3, arg4})
+	fake.recordInvocation("EnqueueUnsubscribeTrack", []interface{}{arg1, arg2, arg3, arg4, arg5})
 	fake.enqueueUnsubscribeTrackMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2, arg3, arg4)
+		return stub(arg1, arg2, arg3, arg4, arg5)
 	}
 	if specificReturn {
 		return ret.result1
@@ -1653,17 +1660,17 @@ func (fake *FakeLocalParticipant) EnqueueUnsubscribeTrackCallCount() int {
 	return len(fake.enqueueUnsubscribeTrackArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) EnqueueUnsubscribeTrackCalls(stub func(livekit.TrackID, bool, bool, func(subscriberID livekit.ParticipantID, willBeResumed bool) error) bool) {
+func (fake *FakeLocalParticipant) EnqueueUnsubscribeTrackCalls(stub func(livekit.TrackID, types.MediaTrack, bool, bool, func(subscriberID livekit.ParticipantID, willBeResumed bool) error) bool) {
 	fake.enqueueUnsubscribeTrackMutex.Lock()
 	defer fake.enqueueUnsubscribeTrackMutex.Unlock()
 	fake.EnqueueUnsubscribeTrackStub = stub
 }
 
-func (fake *FakeLocalParticipant) EnqueueUnsubscribeTrackArgsForCall(i int) (livekit.TrackID, bool, bool, func(subscriberID livekit.ParticipantID, willBeResumed bool) error) {
+func (fake *FakeLocalParticipant) EnqueueUnsubscribeTrackArgsForCall(i int) (livekit.TrackID, types.MediaTrack, bool, bool, func(subscriberID livekit.ParticipantID, willBeResumed bool) error) {
 	fake.enqueueUnsubscribeTrackMutex.RLock()
 	defer fake.enqueueUnsubscribeTrackMutex.RUnlock()
 	argsForCall := fake.enqueueUnsubscribeTrackArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4, argsForCall.arg5
 }
 
 func (fake *FakeLocalParticipant) EnqueueUnsubscribeTrackReturns(result1 bool) {
@@ -3409,16 +3416,17 @@ func (fake *FakeLocalParticipant) RemovePublishedTrackArgsForCall(i int) (types.
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
-func (fake *FakeLocalParticipant) RemoveSubscribedTrack(arg1 types.SubscribedTrack) {
+func (fake *FakeLocalParticipant) RemoveSubscribedTrack(arg1 types.SubscribedTrack, arg2 types.MediaTrack) {
 	fake.removeSubscribedTrackMutex.Lock()
 	fake.removeSubscribedTrackArgsForCall = append(fake.removeSubscribedTrackArgsForCall, struct {
 		arg1 types.SubscribedTrack
-	}{arg1})
+		arg2 types.MediaTrack
+	}{arg1, arg2})
 	stub := fake.RemoveSubscribedTrackStub
-	fake.recordInvocation("RemoveSubscribedTrack", []interface{}{arg1})
+	fake.recordInvocation("RemoveSubscribedTrack", []interface{}{arg1, arg2})
 	fake.removeSubscribedTrackMutex.Unlock()
 	if stub != nil {
-		fake.RemoveSubscribedTrackStub(arg1)
+		fake.RemoveSubscribedTrackStub(arg1, arg2)
 	}
 }
 
@@ -3428,17 +3436,17 @@ func (fake *FakeLocalParticipant) RemoveSubscribedTrackCallCount() int {
 	return len(fake.removeSubscribedTrackArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) RemoveSubscribedTrackCalls(stub func(types.SubscribedTrack)) {
+func (fake *FakeLocalParticipant) RemoveSubscribedTrackCalls(stub func(types.SubscribedTrack, types.MediaTrack)) {
 	fake.removeSubscribedTrackMutex.Lock()
 	defer fake.removeSubscribedTrackMutex.Unlock()
 	fake.RemoveSubscribedTrackStub = stub
 }
 
-func (fake *FakeLocalParticipant) RemoveSubscribedTrackArgsForCall(i int) types.SubscribedTrack {
+func (fake *FakeLocalParticipant) RemoveSubscribedTrackArgsForCall(i int) (types.SubscribedTrack, types.MediaTrack) {
 	fake.removeSubscribedTrackMutex.RLock()
 	defer fake.removeSubscribedTrackMutex.RUnlock()
 	argsForCall := fake.removeSubscribedTrackArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeLocalParticipant) RemoveSubscriber(arg1 types.LocalParticipant, arg2 livekit.TrackID, arg3 bool) {

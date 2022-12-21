@@ -262,8 +262,8 @@ type LocalParticipant interface {
 	RemoveTrackFromSubscriber(sender *webrtc.RTPSender) error
 
 	// subscriptions
-	AddSubscribedTrack(st SubscribedTrack)
-	RemoveSubscribedTrack(st SubscribedTrack)
+	AddSubscribedTrack(st SubscribedTrack, sourceTrack MediaTrack)
+	RemoveSubscribedTrack(st SubscribedTrack, sourceTrack MediaTrack)
 	UpdateSubscribedTrackSettings(trackID livekit.TrackID, settings *livekit.UpdateTrackSettings) error
 	GetSubscribedTracks() []SubscribedTrack
 	VerifySubscribeParticipantInfo(pID livekit.ParticipantID, version uint32)
@@ -312,9 +312,10 @@ type LocalParticipant interface {
 	UncacheDownTrack(rtpTransceiver *webrtc.RTPTransceiver)
 	GetCachedDownTrack(trackID livekit.TrackID) (*webrtc.RTPTransceiver, sfu.DownTrackState)
 
-	EnqueueSubscribeTrack(trackID livekit.TrackID, isRelayed bool, f func(sub LocalParticipant) error) bool
+	EnqueueSubscribeTrack(trackID livekit.TrackID, sourceTrack MediaTrack, isRelayed bool, f func(sub LocalParticipant) error) bool
 	EnqueueUnsubscribeTrack(
 		trackID livekit.TrackID,
+		sourceTrack MediaTrack,
 		isRelayed bool,
 		willBeResumed bool,
 		f func(subscriberID livekit.ParticipantID, willBeResumed bool) error,
