@@ -924,6 +924,7 @@ func (p *ParticipantImpl) VerifySubscribeParticipantInfo(pID livekit.Participant
 func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack, sourceTrack types.MediaTrack) {
 	p.lock.Lock()
 	if v, ok := p.trackPublisherVersion[subTrack.ID()]; ok && v > subTrack.PublisherVersion() {
+		p.supervisor.SetSubscribedTrack(subTrack.ID(), subTrack, sourceTrack)
 		p.lock.Unlock()
 		p.params.Logger.Infow("ignoring add subscribedTrack from older version",
 			"current", v,
@@ -971,6 +972,7 @@ func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack, sou
 func (p *ParticipantImpl) RemoveSubscribedTrack(subTrack types.SubscribedTrack, sourceTrack types.MediaTrack) {
 	p.lock.Lock()
 	if v, ok := p.trackPublisherVersion[subTrack.ID()]; ok && v > subTrack.PublisherVersion() {
+		p.supervisor.ClearSubscribedTrack(subTrack.ID(), subTrack, sourceTrack)
 		p.lock.Unlock()
 		p.params.Logger.Infow("ignoring remove subscribedTrack from older version",
 			"current", v,
