@@ -221,17 +221,17 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 	defer r.lock.Unlock()
 
 	if r.IsClosed() {
-		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "room_closed").Add(1)
+		prometheus.AddServiceOperation("participant_join", "error", "room_closed")
 		return ErrRoomClosed
 	}
 
 	if r.participants[participant.Identity()] != nil {
-		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "already_joined").Add(1)
+		prometheus.AddServiceOperation("participant_join", "error", "already_joined")
 		return ErrAlreadyJoined
 	}
 
 	if r.protoRoom.MaxParticipants > 0 && len(r.participants) >= int(r.protoRoom.MaxParticipants) {
-		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "max_exceeded").Add(1)
+		prometheus.AddServiceOperation("participant_join", "error", "max_exceeded")
 		return ErrMaxParticipantsExceeded
 	}
 
@@ -323,7 +323,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 
 	joinResponse := r.createJoinResponseLocked(participant, iceServers)
 	if err := participant.SendJoinResponse(joinResponse); err != nil {
-		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "send_response").Add(1)
+		prometheus.AddServiceOperation("participant_join", "error", "send_response")
 		return err
 	}
 
@@ -341,7 +341,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 		}
 	}
 
-	prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "success", "").Add(1)
+	prometheus.AddServiceOperation("participant_join", "success", "")
 
 	return nil
 }

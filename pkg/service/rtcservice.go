@@ -155,7 +155,7 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// reject non websocket requests
 	if !websocket.IsWebSocketUpgrade(r) {
-		prometheus.ServiceOperationCounter.WithLabelValues("signal_ws", "error", "reject").Add(1)
+		prometheus.AddServiceOperation("signal_ws", "error", "reject")
 		w.WriteHeader(404)
 		return
 	}
@@ -188,7 +188,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// create room if it doesn't exist, also assigns an RTC node for the room
 	rm, err := s.roomAllocator.CreateRoom(r.Context(), &livekit.CreateRoomRequest{Name: string(roomName)})
 	if err != nil {
-		prometheus.ServiceOperationCounter.WithLabelValues("signal_ws", "error", "create_room").Add(1)
+		prometheus.AddServiceOperation("signal_ws", "error", "create_room")
 		handleError(w, http.StatusInternalServerError, err, loggerFields...)
 		return
 	}
@@ -196,7 +196,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// this needs to be started first *before* using router functions on this node
 	connId, reqSink, resSource, err := s.router.StartParticipantSignal(r.Context(), roomName, pi)
 	if err != nil {
-		prometheus.ServiceOperationCounter.WithLabelValues("signal_ws", "error", "start_signal").Add(1)
+		prometheus.AddServiceOperation("signal_ws", "error", "start_signal")
 		handleError(w, http.StatusInternalServerError, err, loggerFields...)
 		return
 	}
@@ -206,7 +206,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// instead of waiting forever on the WebSocket
 	initialResponse, err := readInitialResponse(resSource, maxInitialResponseWait)
 	if err != nil {
-		prometheus.ServiceOperationCounter.WithLabelValues("signal_ws", "error", "initial_response").Add(1)
+		prometheus.AddServiceOperation("signal_ws", "error", "initial_response")
 		handleError(w, http.StatusInternalServerError, err, loggerFields...)
 		return
 	}
@@ -246,7 +246,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// upgrade only once the basics are good to go
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		prometheus.ServiceOperationCounter.WithLabelValues("signal_ws", "error", "upgrade").Add(1)
+		prometheus.AddServiceOperation("signal_ws", "error", "upgrade")
 		handleError(w, http.StatusInternalServerError, err, loggerFields...)
 		return
 	}
@@ -262,7 +262,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	prometheus.ServiceOperationCounter.WithLabelValues("signal_ws", "success", "").Add(1)
+	prometheus.AddServiceOperation("signal_ws", "success", "")
 	pLogger.Infow("new client WS connected", "connID", connId)
 
 	// handle responses

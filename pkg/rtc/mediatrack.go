@@ -19,6 +19,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/telemetry"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
 // MediaTrack represents a WebRTC track that needs to be forwarded
@@ -196,6 +197,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	buff, rtcpReader := t.params.BufferFactory.GetBufferPair(uint32(track.SSRC()))
 	if buff == nil || rtcpReader == nil {
 		t.params.Logger.Errorw("could not retrieve buffer pair", nil)
+		prometheus.AddPublishedTrackFailure(t.ToProto().Type.String())
 		return newCodec
 	}
 
@@ -203,6 +205,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		pkts, err := rtcp.Unmarshal(bytes)
 		if err != nil {
 			t.params.Logger.Errorw("could not unmarshal RTCP", err)
+			prometheus.AddPublishedTrackFailure(t.ToProto().Type.String())
 			return
 		}
 

@@ -17,14 +17,15 @@ const (
 )
 
 var (
-	bytesIn           atomic.Uint64
-	bytesOut          atomic.Uint64
-	packetsIn         atomic.Uint64
-	packetsOut        atomic.Uint64
-	nackTotal         atomic.Uint64
-	retransmitBytes   atomic.Uint64
-	retransmitPackets atomic.Uint64
-	participantJoin   atomic.Uint64
+	bytesIn               atomic.Uint64
+	bytesOut              atomic.Uint64
+	packetsIn             atomic.Uint64
+	packetsOut            atomic.Uint64
+	nackTotal             atomic.Uint64
+	retransmitBytes       atomic.Uint64
+	retransmitPackets     atomic.Uint64
+	participantJoin       atomic.Uint64
+	participantJoinFailed atomic.Uint64
 
 	promPacketLabels    = []string{"direction", "transmission"}
 	promPacketTotal     *prometheus.CounterVec
@@ -137,6 +138,12 @@ func IncrementParticipantJoin(join uint32) {
 	if join > 0 {
 		promParticipantJoin.WithLabelValues().Add(float64(join))
 		participantJoin.Add(uint64(join))
+	}
+}
+
+func IncrementParticipantJoinFailed(failed uint32) {
+	if failed > 0 {
+		participantJoinFailed.Add(uint64(failed))
 	}
 }
 

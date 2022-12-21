@@ -19,9 +19,13 @@ const (
 var (
 	initialized atomic.Bool
 
-	MessageCounter          *prometheus.CounterVec
-	ServiceOperationCounter *prometheus.CounterVec
+	MessageCounter *prometheus.CounterVec
 
+	connectionErrors             atomic.Uint64
+	connectionSuccess            atomic.Uint64
+	signalErrors                 atomic.Uint64
+	signalSuccess                atomic.Uint64
+	serviceOperationCounter      *prometheus.CounterVec
 	sysPacketsStart              uint32
 	sysDroppedPacketsStart       uint32
 	promSysPacketGauge           *prometheus.GaugeVec
@@ -43,7 +47,7 @@ func Init(nodeID string, nodeType livekit.NodeType) {
 		[]string{"type", "status"},
 	)
 
-	ServiceOperationCounter = prometheus.NewCounterVec(
+	serviceOperationCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace:   livekitNamespace,
 			Subsystem:   "node",
@@ -75,7 +79,7 @@ func Init(nodeID string, nodeType livekit.NodeType) {
 	)
 
 	prometheus.MustRegister(MessageCounter)
-	prometheus.MustRegister(ServiceOperationCounter)
+	prometheus.MustRegister(serviceOperationCounter)
 	prometheus.MustRegister(promSysPacketGauge)
 	prometheus.MustRegister(promSysDroppedPacketPctGauge)
 
@@ -95,6 +99,37 @@ func getMemoryStats() (memoryLoad float32, err error) {
 		memoryLoad = float32(memInfo.Used) / float32(memInfo.Total)
 	}
 	return
+}
+
+func AddServiceOperation(typeStr string, status string, errType string) {
+	switch typeStr {
+	case "ice_connection", "peer_connection", "offer", "answer":
+		if errType == "" {
+			connectionSuccess.Inc()
+		} else {
+			connectionErrors.Inc()
+		}
+	case "participant_join":
+		// errors can: room_closed, already_joined, max_exceeded, send_reponse
+		if errType == "" {
+			IncrementParticipantJoin(1)
+		} else {
+			IncrementParticipantJoinFailed(1)
+		}
+
+	case "signal_ws":
+		if errType == "" {
+			signalSuccess.Inc()
+		} else {
+			if errType == "initial_response" || errType == "reject" {
+				// ignore errors based on bad client behavior
+				break
+			}
+			signalErrors.Inc()
+		}
+	}
+
+	serviceOperationCounter.WithLabelValues(typeStr, status, errType).Add(1)
 }
 
 func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats) (*livekit.NodeStats, bool, error) {

@@ -10,10 +10,12 @@ import (
 )
 
 var (
-	roomTotal            atomic.Int32
-	participantTotal     atomic.Int32
-	trackPublishedTotal  atomic.Int32
-	trackSubscribedTotal atomic.Int32
+	roomTotal                   atomic.Int32
+	participantTotal            atomic.Int32
+	trackPublishedTotal         atomic.Int32
+	trackPublishedFailureTotal  atomic.Int32
+	trackSubscribedTotal        atomic.Int32
+	trackSubscribedFailureTotal atomic.Int32
 
 	promRoomTotal            prometheus.Gauge
 	promRoomDuration         prometheus.Histogram
@@ -97,6 +99,10 @@ func SubPublishedTrack(kind string) {
 	trackPublishedTotal.Dec()
 }
 
+func AddPublishedTrackFailure(kind string) {
+	trackPublishedFailureTotal.Inc()
+}
+
 func AddSubscribedTrack(kind string) {
 	promTrackSubscribedTotal.WithLabelValues(kind).Add(1)
 	trackSubscribedTotal.Inc()
@@ -105,4 +111,8 @@ func AddSubscribedTrack(kind string) {
 func SubSubscribedTrack(kind string) {
 	promTrackSubscribedTotal.WithLabelValues(kind).Sub(1)
 	trackSubscribedTotal.Dec()
+}
+
+func AddSubscribedTrackFailure(kind string) {
+	trackSubscribedFailureTotal.Inc()
 }

@@ -598,7 +598,7 @@
         },
         {
           "exemplar": true,
-          "expr": "sum(rate(livekit_node_service_operation{status=\"success\", type=\"signal_ws\"}[5m])) - sum(rate(livekit_node_service_operation{status=\"success\", type=\"ice_connection\"}[5m]))",
+          "expr": "sum(rate(livekit_node_service_operation{status=\"success\", type=\"signal_ws\"}[5m])) - (sum(rate(livekit_node_service_operation{status=\"success\", type=\"ice_connection\"}[5m]))/2)",
           "hide": false,
           "interval": "",
           "legendFormat": "Missing",
@@ -688,7 +688,7 @@
       "targets": [
         {
           "exemplar": true,
-          "expr": "sum(rate(livekit_node_service_operation{status=\"success\", type=\"ice_connection\"}[5m])) / sum(rate(livekit_node_service_operation{status=\"success\", type=\"signal_ws\"}[5m]))",
+          "expr": "(sum(rate(livekit_node_service_operation{status=\"success\", type=\"ice_connection\"}[5m]))/2) / sum(rate(livekit_node_service_operation{status=\"success\", type=\"signal_ws\"}[5m]))",
           "interval": "",
           "legendFormat": "Success Percent",
           "refId": "A"
