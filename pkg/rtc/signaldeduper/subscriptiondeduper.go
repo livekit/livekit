@@ -25,16 +25,6 @@ func subscriptionSettingFromUpdateSubscription(us *livekit.UpdateSubscription) *
 	}
 }
 
-func subscriptionSettingPatchFromUpdateSubscription(us *livekit.UpdateSubscription, from *subscriptionSetting) *subscriptionSetting {
-	return &subscriptionSetting{
-		isEnabled: us.Subscribe,
-		quality:   from.quality,
-		width:     from.width,
-		height:    from.height,
-		fps:       from.fps,
-	}
-}
-
 func subscriptionSettingFromUpdateTrackSettings(uts *livekit.UpdateTrackSettings) *subscriptionSetting {
 	return &subscriptionSetting{
 		isEnabled: !uts.Disabled,
@@ -114,17 +104,17 @@ func (s *SubscriptionDeduper) updateSubscriptionsFromUpdateSubscription(
 	}
 
 	for trackID := range trackIDs {
-		subscriptionSetting := participantSubscriptions[trackID]
-		if subscriptionSetting == nil {
+		currentSetting := participantSubscriptions[trackID]
+		if currentSetting == nil {
 			// new track seen
-			subscriptionSetting := subscriptionSettingFromUpdateSubscription(us)
-			participantSubscriptions[trackID] = subscriptionSetting
+			currentSetting = subscriptionSettingFromUpdateSubscription(us)
+			participantSubscriptions[trackID] = currentSetting
 			isDupe = false
 		} else {
-			newSubscriptionSetting := subscriptionSettingPatchFromUpdateSubscription(us, subscriptionSetting)
-			if !subscriptionSetting.Equal(newSubscriptionSetting) {
+			newSetting := subscriptionSettingFromUpdateSubscription(us)
+			if !currentSetting.Equal(newSetting) {
 				// subscription setting change
-				participantSubscriptions[trackID] = newSubscriptionSetting
+				participantSubscriptions[trackID] = newSetting
 				isDupe = false
 			}
 		}
@@ -145,17 +135,17 @@ func (s *SubscriptionDeduper) updateSubscriptionsFromUpdateTrackSettings(
 	participantSubscriptions := s.getOrCreateParticipantSubscriptions(participantKey)
 
 	for _, trackSid := range uts.TrackSids {
-		subscriptionSetting := participantSubscriptions[livekit.TrackID(trackSid)]
-		if subscriptionSetting == nil {
+		currentSetting := participantSubscriptions[livekit.TrackID(trackSid)]
+		if currentSetting == nil {
 			// new track seen
-			subscriptionSetting := subscriptionSettingFromUpdateTrackSettings(uts)
-			participantSubscriptions[livekit.TrackID(trackSid)] = subscriptionSetting
+			currentSetting = subscriptionSettingFromUpdateTrackSettings(uts)
+			participantSubscriptions[livekit.TrackID(trackSid)] = currentSetting
 			isDupe = false
 		} else {
-			newSubscriptionSetting := subscriptionSettingFromUpdateTrackSettings(uts)
-			if !subscriptionSetting.Equal(newSubscriptionSetting) {
+			newSetting := subscriptionSettingFromUpdateTrackSettings(uts)
+			if !currentSetting.Equal(newSetting) {
 				// subscription setting change
-				participantSubscriptions[livekit.TrackID(trackSid)] = newSubscriptionSetting
+				participantSubscriptions[livekit.TrackID(trackSid)] = newSetting
 				isDupe = false
 			}
 		}
