@@ -100,7 +100,7 @@ func (s *SubscriptionMonitor) clearSubscribedTrack(params UpdateSubscribedTrackP
 	if so.subscribedTrack == params.SubscribedTrack {
 		so.subscribedTrack = nil
 	} else {
-		s.params.Logger.Errorw("mismatched subscribed track on clear", nil, "trackID", s.params.TrackID)
+		s.params.Logger.Errorw("supervisor: mismatched subscribed track on clear", nil, "trackID", s.params.TrackID)
 	}
 
 	s.update()

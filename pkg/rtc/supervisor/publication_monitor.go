@@ -116,7 +116,7 @@ func (p *PublicationMonitor) clearPublishedTrack(pubTrack types.LocalMediaTrack)
 	if p.publishedTrack == pubTrack {
 		p.publishedTrack = nil
 	} else {
-		p.params.Logger.Errorw("mismatched published track on clear", nil, "trackID", p.params.TrackID)
+		p.params.Logger.Errorw("supervisor: mismatched published track on clear", nil, "trackID", p.params.TrackID)
 	}
 
 	p.update()
