@@ -154,7 +154,6 @@ func (s *SubscriptionMonitor) getOrCreateSubscriptionOpsForSource(sourceTrack ty
 }
 
 func (s *SubscriptionMonitor) update() {
-	var toReap []types.MediaTrack
 	for sourceTrack, so := range s.subscriptionOpsBySource {
 		for {
 			var tx *transition
@@ -173,12 +172,8 @@ func (s *SubscriptionMonitor) update() {
 			}
 
 			if so.desiredTransitions.Len() == 0 && so.subscribedTrack == nil {
-				toReap = append(toReap, sourceTrack)
+				delete(s.subscriptionOpsBySource, sourceTrack)
 			}
 		}
-	}
-
-	for _, st := range toReap {
-		delete(s.subscriptionOpsBySource, st)
 	}
 }
