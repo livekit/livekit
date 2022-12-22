@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"time"
 
@@ -317,28 +318,40 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 
 	if !s.useNewRPC {
 		s.useNewRPC = useNewEgressRPC(s.es)
+		if (s.useNewRPC && s.client == nil) || (!s.useNewRPC && s.clientDeprecated == nil) {
+			return nil, ErrEgressNotConnected
+		}
 	}
 
 	var info *livekit.EgressInfo
 	var err error
-	if s.useNewRPC {
-		if s.client == nil {
-			return nil, ErrEgressNotConnected
+	returned := make(chan struct{})
+	go func() {
+		if s.useNewRPC {
+			info, err = s.client.StopEgress(ctx, req.EgressId, req)
+		} else {
+			// TODO: remove in future version
+			info, err = s.clientDeprecated.SendRequest(ctx, &livekit.EgressRequest{
+				EgressId: req.EgressId,
+				Request: &livekit.EgressRequest_Stop{
+					Stop: req,
+				},
+			})
 		}
-		info, err = s.client.StopEgress(ctx, req.EgressId, req)
-	} else {
-		// TODO: remove in future version
-		if s.clientDeprecated == nil {
-			return nil, ErrEgressNotConnected
+	}()
+
+	existing, loadErr := s.es.LoadEgress(ctx, req.EgressId)
+	if loadErr == nil {
+		if existing.Status != livekit.EgressStatus_EGRESS_STARTING &&
+			existing.Status != livekit.EgressStatus_EGRESS_ACTIVE {
+			return nil, fmt.Errorf("egress with status %s cannot be stopped", info.Status.String())
 		}
-		info, err = s.clientDeprecated.SendRequest(ctx, &livekit.EgressRequest{
-			EgressId: req.EgressId,
-			Request: &livekit.EgressRequest_Stop{
-				Stop: req,
-			},
-		})
 	}
+	<-returned
 	if err != nil {
+		if loadErr != nil {
+			return nil, loadErr
+		}
 		return nil, err
 	}
 
