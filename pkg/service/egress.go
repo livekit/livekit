@@ -83,7 +83,7 @@ func (s *EgressService) Start() error {
 	}
 
 	s.shutdown = make(chan struct{})
-	if s.clientDeprecated != nil && s.es != nil {
+	if s.psrpcClient != nil && s.es != nil {
 		return s.startWorker()
 	}
 
@@ -193,7 +193,7 @@ func (s *egressLauncher) StartEgress(ctx context.Context, req *livekit.StartEgre
 	if s.usePSRPC {
 		info, err = s.psrpcClient.StartEgress(ctx, req)
 	} else {
-		// TODO: remove in future version
+		logger.Warnw("Using deprecated egress client. Please upgrade egress to v >=1.5.4", nil)
 		info, err = s.clientDeprecated.SendRequest(ctx, req)
 	}
 	if err != nil {
@@ -219,7 +219,7 @@ func (s *EgressService) UpdateLayout(ctx context.Context, req *livekit.UpdateLay
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
-	if (s.usePSRPC && s.psrpcClient == nil) || (!s.usePSRPC && s.clientDeprecated == nil) {
+	if s.psrpcClient == nil {
 		return nil, ErrEgressNotConnected
 	}
 
@@ -255,29 +255,23 @@ func (s *EgressService) UpdateStream(ctx context.Context, req *livekit.UpdateStr
 		return nil, twirpAuthError(err)
 	}
 
-	if !s.usePSRPC {
-		s.usePSRPC = usePSRPC(s.es)
+	if s.psrpcClient == nil {
+		return nil, ErrEgressNotConnected
 	}
 
-	var info *livekit.EgressInfo
-	var err error
-	if s.usePSRPC {
-		if s.psrpcClient == nil {
-			return nil, ErrEgressNotConnected
-		}
-		info, err = s.psrpcClient.UpdateStream(ctx, req.EgressId, req)
-	} else {
-		// TODO: remove in future version
-		if s.clientDeprecated == nil {
-			return nil, ErrEgressNotConnected
-		}
-		info, err = s.clientDeprecated.SendRequest(ctx, &livekit.EgressRequest{
+	f0 := func() (*livekit.EgressInfo, error) {
+		return s.clientDeprecated.SendRequest(ctx, &livekit.EgressRequest{
 			EgressId: req.EgressId,
 			Request: &livekit.EgressRequest_UpdateStream{
 				UpdateStream: req,
 			},
 		})
 	}
+	f1 := func() (*livekit.EgressInfo, error) {
+		return s.psrpcClient.UpdateStream(ctx, req.EgressId, req)
+	}
+
+	info, err := s.getFirst(f0, f1)
 	if err != nil {
 		return nil, err
 	}
@@ -298,7 +292,7 @@ func (s *EgressService) ListEgress(ctx context.Context, req *livekit.ListEgressR
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
-	if (s.usePSRPC && s.psrpcClient == nil) || (!s.usePSRPC && s.clientDeprecated == nil) {
+	if s.psrpcClient == nil {
 		return nil, ErrEgressNotConnected
 	}
 
@@ -316,42 +310,32 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 		return nil, twirpAuthError(err)
 	}
 
-	if !s.usePSRPC {
-		s.usePSRPC = usePSRPC(s.es)
-		if (s.usePSRPC && s.psrpcClient == nil) || (!s.usePSRPC && s.clientDeprecated == nil) {
-			return nil, ErrEgressNotConnected
-		}
+	if s.psrpcClient == nil {
+		return nil, ErrEgressNotConnected
 	}
 
-	var info *livekit.EgressInfo
-	var err error
-	returned := make(chan struct{})
-	go func() {
-		if s.usePSRPC {
-			info, err = s.psrpcClient.StopEgress(ctx, req.EgressId, req)
-		} else {
-			// TODO: remove in future version
-			info, err = s.clientDeprecated.SendRequest(ctx, &livekit.EgressRequest{
-				EgressId: req.EgressId,
-				Request: &livekit.EgressRequest_Stop{
-					Stop: req,
-				},
-			})
-		}
-	}()
-
-	existing, loadErr := s.es.LoadEgress(ctx, req.EgressId)
-	if loadErr == nil {
-		if existing.Status != livekit.EgressStatus_EGRESS_STARTING &&
-			existing.Status != livekit.EgressStatus_EGRESS_ACTIVE {
+	info, err := s.es.LoadEgress(ctx, req.EgressId)
+	if info == nil {
+		if info.Status != livekit.EgressStatus_EGRESS_STARTING &&
+			info.Status != livekit.EgressStatus_EGRESS_ACTIVE {
 			return nil, fmt.Errorf("egress with status %s cannot be stopped", info.Status.String())
 		}
 	}
-	<-returned
+
+	f0 := func() (*livekit.EgressInfo, error) {
+		return s.clientDeprecated.SendRequest(ctx, &livekit.EgressRequest{
+			EgressId: req.EgressId,
+			Request: &livekit.EgressRequest_Stop{
+				Stop: req,
+			},
+		})
+	}
+	f1 := func() (*livekit.EgressInfo, error) {
+		return s.psrpcClient.StopEgress(ctx, req.EgressId, req)
+	}
+
+	info, err = s.getFirst(f0, f1)
 	if err != nil {
-		if loadErr != nil {
-			return nil, loadErr
-		}
 		return nil, err
 	}
 
@@ -390,31 +374,32 @@ func (s *EgressService) startWorker() error {
 		}
 	}()
 
-	// TODO: remove in future version
-	go func() {
-		sub, err := s.clientDeprecated.GetUpdateChannel(context.Background())
-		if err != nil {
-			logger.Errorw("failed to subscribe to results channel", err)
-		}
-
-		resChan := sub.Channel()
-		for {
-			select {
-			case msg := <-resChan:
-				b := sub.Payload(msg)
-				info := &livekit.EgressInfo{}
-				if err = proto.Unmarshal(b, info); err != nil {
-					logger.Errorw("failed to read results", err)
-					continue
-				}
-				s.handleUpdate(info)
-			case <-s.shutdown:
-				_ = sub.Close()
-				rs.Stop()
-				return
+	if s.clientDeprecated != nil {
+		go func() {
+			sub, err := s.clientDeprecated.GetUpdateChannel(context.Background())
+			if err != nil {
+				logger.Errorw("failed to subscribe to results channel", err)
 			}
-		}
-	}()
+
+			resChan := sub.Channel()
+			for {
+				select {
+				case msg := <-resChan:
+					b := sub.Payload(msg)
+					info := &livekit.EgressInfo{}
+					if err = proto.Unmarshal(b, info); err != nil {
+						logger.Errorw("failed to read results", err)
+						continue
+					}
+					s.handleUpdate(info)
+				case <-s.shutdown:
+					_ = sub.Close()
+					rs.Stop()
+					return
+				}
+			}
+		}()
+	}
 
 	return nil
 }
@@ -451,6 +436,34 @@ func (s *EgressService) handleUpdate(info *livekit.EgressInfo) {
 }
 
 // TODO: remove in future version
+func (s *EgressService) getFirst(f0, f1 func() (*livekit.EgressInfo, error)) (*livekit.EgressInfo, error) {
+	if s.clientDeprecated == nil {
+		return f1()
+	}
+
+	var infoV0, infoV1 *livekit.EgressInfo
+	var errV0, errV1 error
+	v0Done := make(chan struct{})
+	v1Done := make(chan struct{})
+
+	go func() {
+		infoV0, errV0 = f0()
+		close(v0Done)
+	}()
+
+	go func() {
+		infoV1, errV1 = f1()
+		close(v1Done)
+	}()
+
+	select {
+	case <-v0Done:
+		return infoV0, errV0
+	case <-v1Done:
+		return infoV1, errV1
+	}
+}
+
 var minVersion *goversion.Version
 
 func usePSRPC(es EgressStore) bool {
