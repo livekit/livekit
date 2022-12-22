@@ -44,7 +44,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		wire.Bind(new(livekit.RoomService), new(*RoomService)),
 		telemetry.NewAnalyticsService,
 		telemetry.NewTelemetryService,
-		psrpc.NewRedisMessageBus,
 		newEgressInternalClient,
 		egress.NewRedisRPCClient,
 		getEgressStore,
@@ -134,8 +133,11 @@ func createStore(rc redis.UniversalClient) ObjectStore {
 	return NewLocalStore()
 }
 
-func newEgressInternalClient(nodeID livekit.NodeID, bus psrpc.MessageBus) (rpc.EgressInternalClient, error) {
-	return rpc.NewEgressInternalClient(string(nodeID), bus)
+func newEgressInternalClient(nodeID livekit.NodeID, rc redis.UniversalClient) (rpc.EgressInternalClient, error) {
+	if rc == nil {
+		return nil, nil
+	}
+	return rpc.NewEgressInternalClient(string(nodeID), psrpc.NewRedisMessageBus(rc))
 }
 
 func getEgressStore(s ObjectStore) EgressStore {
