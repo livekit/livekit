@@ -46,7 +46,7 @@ jobs:
         uses: dominikh/staticcheck-action@v1.2.0
         with:
           min-go-version: 1.18
-          version: 2022.1
+          version: 2022.1.3
           install-go: false
 
       - name: Test
