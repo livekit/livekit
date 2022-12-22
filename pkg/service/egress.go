@@ -21,9 +21,9 @@ import (
 )
 
 type EgressService struct {
-	client           rpc.EgressInternalClient
+	psrpcClient      rpc.EgressInternalClient
 	clientDeprecated egress.RPCClient
-	useNewRPC        bool
+	usePSRPC         bool
 	store            ServiceStore
 	es               EgressStore
 	roomService      livekit.RoomService
@@ -33,24 +33,24 @@ type EgressService struct {
 }
 
 type egressLauncher struct {
-	client           rpc.EgressInternalClient
+	psrpcClient      rpc.EgressInternalClient
 	clientDeprecated egress.RPCClient
-	useNewRPC        bool
+	usePSRPC         bool
 	es               EgressStore
 	telemetry        telemetry.TelemetryService
 }
 
 func NewEgressLauncher(
-	client rpc.EgressInternalClient,
+	psrpcClient rpc.EgressInternalClient,
 	clientDeprecated egress.RPCClient,
 	es EgressStore,
 	ts telemetry.TelemetryService) rtc.EgressLauncher {
-	if client == nil && clientDeprecated == nil {
+	if psrpcClient == nil && clientDeprecated == nil {
 		return nil
 	}
 
 	return &egressLauncher{
-		client:           client,
+		psrpcClient:      psrpcClient,
 		clientDeprecated: clientDeprecated,
 		es:               es,
 		telemetry:        ts,
@@ -67,7 +67,7 @@ func NewEgressService(
 	launcher rtc.EgressLauncher,
 ) *EgressService {
 	return &EgressService{
-		client:           client,
+		psrpcClient:      client,
 		clientDeprecated: clientDeprecated,
 		store:            store,
 		es:               es,
@@ -186,12 +186,12 @@ func (s *egressLauncher) StartEgress(ctx context.Context, req *livekit.StartEgre
 	var info *livekit.EgressInfo
 	var err error
 
-	if !s.useNewRPC {
-		s.useNewRPC = useNewEgressRPC(s.es)
+	if !s.usePSRPC {
+		s.usePSRPC = usePSRPC(s.es)
 	}
 
-	if s.useNewRPC {
-		info, err = s.client.StartEgress(ctx, req)
+	if s.usePSRPC {
+		info, err = s.psrpcClient.StartEgress(ctx, req)
 	} else {
 		// TODO: remove in future version
 		info, err = s.clientDeprecated.SendRequest(ctx, req)
@@ -219,7 +219,7 @@ func (s *EgressService) UpdateLayout(ctx context.Context, req *livekit.UpdateLay
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
-	if (s.useNewRPC && s.client == nil) || (!s.useNewRPC && s.clientDeprecated == nil) {
+	if (s.usePSRPC && s.psrpcClient == nil) || (!s.usePSRPC && s.clientDeprecated == nil) {
 		return nil, ErrEgressNotConnected
 	}
 
@@ -255,17 +255,17 @@ func (s *EgressService) UpdateStream(ctx context.Context, req *livekit.UpdateStr
 		return nil, twirpAuthError(err)
 	}
 
-	if !s.useNewRPC {
-		s.useNewRPC = useNewEgressRPC(s.es)
+	if !s.usePSRPC {
+		s.usePSRPC = usePSRPC(s.es)
 	}
 
 	var info *livekit.EgressInfo
 	var err error
-	if s.useNewRPC {
-		if s.client == nil {
+	if s.usePSRPC {
+		if s.psrpcClient == nil {
 			return nil, ErrEgressNotConnected
 		}
-		info, err = s.client.UpdateStream(ctx, req.EgressId, req)
+		info, err = s.psrpcClient.UpdateStream(ctx, req.EgressId, req)
 	} else {
 		// TODO: remove in future version
 		if s.clientDeprecated == nil {
@@ -298,7 +298,7 @@ func (s *EgressService) ListEgress(ctx context.Context, req *livekit.ListEgressR
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
-	if (s.useNewRPC && s.client == nil) || (!s.useNewRPC && s.clientDeprecated == nil) {
+	if (s.usePSRPC && s.psrpcClient == nil) || (!s.usePSRPC && s.clientDeprecated == nil) {
 		return nil, ErrEgressNotConnected
 	}
 
@@ -316,9 +316,9 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 		return nil, twirpAuthError(err)
 	}
 
-	if !s.useNewRPC {
-		s.useNewRPC = useNewEgressRPC(s.es)
-		if (s.useNewRPC && s.client == nil) || (!s.useNewRPC && s.clientDeprecated == nil) {
+	if !s.usePSRPC {
+		s.usePSRPC = usePSRPC(s.es)
+		if (s.usePSRPC && s.psrpcClient == nil) || (!s.usePSRPC && s.clientDeprecated == nil) {
 			return nil, ErrEgressNotConnected
 		}
 	}
@@ -327,8 +327,8 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 	var err error
 	returned := make(chan struct{})
 	go func() {
-		if s.useNewRPC {
-			info, err = s.client.StopEgress(ctx, req.EgressId, req)
+		if s.usePSRPC {
+			info, err = s.psrpcClient.StopEgress(ctx, req.EgressId, req)
 		} else {
 			// TODO: remove in future version
 			info, err = s.clientDeprecated.SendRequest(ctx, &livekit.EgressRequest{
@@ -373,7 +373,7 @@ func (s *EgressService) startWorker() error {
 	}
 
 	go func() {
-		sub, err := s.client.SubscribeInfoUpdate(context.Background())
+		sub, err := s.psrpcClient.SubscribeInfoUpdate(context.Background())
 		if err != nil {
 			logger.Errorw("failed to subscribe", err)
 		}
@@ -453,7 +453,7 @@ func (s *EgressService) handleUpdate(info *livekit.EgressInfo) {
 // TODO: remove in future version
 var minVersion *goversion.Version
 
-func useNewEgressRPC(es EgressStore) bool {
+func usePSRPC(es EgressStore) bool {
 	if minVersion == nil {
 		minVersion, _ = goversion.NewVersion("1.5.4")
 	}
