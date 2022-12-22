@@ -13,12 +13,14 @@ import (
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v3"
 
+	"github.com/livekit/livekit-server/pkg/service/rpc"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/ingress"
 	"github.com/livekit/protocol/livekit"
 	redisLiveKit "github.com/livekit/protocol/redis"
 	"github.com/livekit/protocol/webhook"
+	"github.com/livekit/psrpc"
 
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
 	"github.com/livekit/livekit-server/pkg/config"
@@ -42,6 +44,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		wire.Bind(new(livekit.RoomService), new(*RoomService)),
 		telemetry.NewAnalyticsService,
 		telemetry.NewTelemetryService,
+		psrpc.NewRedisMessageBus,
+		newEgressInternalClient,
 		egress.NewRedisRPCClient,
 		getEgressStore,
 		NewEgressLauncher,
@@ -128,6 +132,10 @@ func createStore(rc redis.UniversalClient) ObjectStore {
 		return NewRedisStore(rc)
 	}
 	return NewLocalStore()
+}
+
+func newEgressInternalClient(nodeID livekit.NodeID, bus psrpc.MessageBus) (rpc.EgressInternalClient, error) {
+	return rpc.NewEgressInternalClient(string(nodeID), bus)
 }
 
 func getEgressStore(s ObjectStore) EgressStore {

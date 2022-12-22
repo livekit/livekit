@@ -7,9 +7,11 @@ import (
 	"reflect"
 	"time"
 
+	goversion "github.com/hashicorp/go-version"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/rtc"
+	"github.com/livekit/livekit-server/pkg/service/rpc"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -18,35 +20,45 @@ import (
 )
 
 type EgressService struct {
-	rpcClient   egress.RPCClient
-	store       ServiceStore
-	es          EgressStore
-	roomService livekit.RoomService
-	telemetry   telemetry.TelemetryService
-	launcher    rtc.EgressLauncher
-	shutdown    chan struct{}
+	client           rpc.EgressInternalClient
+	clientDeprecated egress.RPCClient
+	useNewRPC        bool
+	store            ServiceStore
+	es               EgressStore
+	roomService      livekit.RoomService
+	telemetry        telemetry.TelemetryService
+	launcher         rtc.EgressLauncher
+	shutdown         chan struct{}
 }
 
 type egressLauncher struct {
-	rpcClient egress.RPCClient
-	es        EgressStore
-	telemetry telemetry.TelemetryService
+	client           rpc.EgressInternalClient
+	clientDeprecated egress.RPCClient
+	useNewRPC        bool
+	es               EgressStore
+	telemetry        telemetry.TelemetryService
 }
 
-func NewEgressLauncher(rpcClient egress.RPCClient, es EgressStore, ts telemetry.TelemetryService) rtc.EgressLauncher {
-	if rpcClient == nil {
+func NewEgressLauncher(
+	client rpc.EgressInternalClient,
+	clientDeprecated egress.RPCClient,
+	es EgressStore,
+	ts telemetry.TelemetryService) rtc.EgressLauncher {
+	if client == nil && clientDeprecated == nil {
 		return nil
 	}
 
 	return &egressLauncher{
-		rpcClient: rpcClient,
-		es:        es,
-		telemetry: ts,
+		client:           client,
+		clientDeprecated: clientDeprecated,
+		es:               es,
+		telemetry:        ts,
 	}
 }
 
 func NewEgressService(
-	rpcClient egress.RPCClient,
+	client rpc.EgressInternalClient,
+	clientDeprecated egress.RPCClient,
 	store ServiceStore,
 	es EgressStore,
 	rs livekit.RoomService,
@@ -54,12 +66,13 @@ func NewEgressService(
 	launcher rtc.EgressLauncher,
 ) *EgressService {
 	return &EgressService{
-		rpcClient:   rpcClient,
-		store:       store,
-		es:          es,
-		roomService: rs,
-		telemetry:   ts,
-		launcher:    launcher,
+		client:           client,
+		clientDeprecated: clientDeprecated,
+		store:            store,
+		es:               es,
+		roomService:      rs,
+		telemetry:        ts,
+		launcher:         launcher,
 	}
 }
 
@@ -69,7 +82,7 @@ func (s *EgressService) Start() error {
 	}
 
 	s.shutdown = make(chan struct{})
-	if s.rpcClient != nil && s.es != nil {
+	if s.clientDeprecated != nil && s.es != nil {
 		return s.startWorker()
 	}
 
@@ -169,7 +182,19 @@ func (s *EgressService) startEgress(ctx context.Context, roomName livekit.RoomNa
 }
 
 func (s *egressLauncher) StartEgress(ctx context.Context, req *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
-	info, err := s.rpcClient.SendRequest(ctx, req)
+	var info *livekit.EgressInfo
+	var err error
+
+	if !s.useNewRPC {
+		s.useNewRPC = useNewEgressRPC(s.es)
+	}
+
+	if s.useNewRPC {
+		info, err = s.client.StartEgress(ctx, req)
+	} else {
+		// TODO: remove in future version
+		info, err = s.clientDeprecated.SendRequest(ctx, req)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +218,7 @@ func (s *EgressService) UpdateLayout(ctx context.Context, req *livekit.UpdateLay
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
-	if s.rpcClient == nil {
+	if (s.useNewRPC && s.client == nil) || (!s.useNewRPC && s.clientDeprecated == nil) {
 		return nil, ErrEgressNotConnected
 	}
 
@@ -228,16 +253,30 @@ func (s *EgressService) UpdateStream(ctx context.Context, req *livekit.UpdateStr
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
-	if s.rpcClient == nil {
-		return nil, ErrEgressNotConnected
+
+	if !s.useNewRPC {
+		s.useNewRPC = useNewEgressRPC(s.es)
 	}
 
-	info, err := s.rpcClient.SendRequest(ctx, &livekit.EgressRequest{
-		EgressId: req.EgressId,
-		Request: &livekit.EgressRequest_UpdateStream{
-			UpdateStream: req,
-		},
-	})
+	var info *livekit.EgressInfo
+	var err error
+	if s.useNewRPC {
+		if s.client == nil {
+			return nil, ErrEgressNotConnected
+		}
+		info, err = s.client.UpdateStream(ctx, req.EgressId, req)
+	} else {
+		// TODO: remove in future version
+		if s.clientDeprecated == nil {
+			return nil, ErrEgressNotConnected
+		}
+		info, err = s.clientDeprecated.SendRequest(ctx, &livekit.EgressRequest{
+			EgressId: req.EgressId,
+			Request: &livekit.EgressRequest_UpdateStream{
+				UpdateStream: req,
+			},
+		})
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -258,7 +297,7 @@ func (s *EgressService) ListEgress(ctx context.Context, req *livekit.ListEgressR
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
-	if s.rpcClient == nil {
+	if (s.useNewRPC && s.client == nil) || (!s.useNewRPC && s.clientDeprecated == nil) {
 		return nil, ErrEgressNotConnected
 	}
 
@@ -275,16 +314,30 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
-	if s.rpcClient == nil {
-		return nil, ErrEgressNotConnected
+
+	if !s.useNewRPC {
+		s.useNewRPC = useNewEgressRPC(s.es)
 	}
 
-	info, err := s.rpcClient.SendRequest(ctx, &livekit.EgressRequest{
-		EgressId: req.EgressId,
-		Request: &livekit.EgressRequest_Stop{
-			Stop: req,
-		},
-	})
+	var info *livekit.EgressInfo
+	var err error
+	if s.useNewRPC {
+		if s.client == nil {
+			return nil, ErrEgressNotConnected
+		}
+		info, err = s.client.StopEgress(ctx, req.EgressId, req)
+	} else {
+		// TODO: remove in future version
+		if s.clientDeprecated == nil {
+			return nil, ErrEgressNotConnected
+		}
+		info, err = s.clientDeprecated.SendRequest(ctx, &livekit.EgressRequest{
+			EgressId: req.EgressId,
+			Request: &livekit.EgressRequest_Stop{
+				Stop: req,
+			},
+		})
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -300,61 +353,48 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 
 func (s *EgressService) startWorker() error {
 	rs := s.es.(*RedisStore)
-	if err := rs.Start(); err != nil {
+	err := rs.Start()
+	if err != nil {
 		logger.Errorw("failed to start redis egress worker", err)
 		return err
 	}
 
-	sub, err := s.rpcClient.GetUpdateChannel(context.Background())
-	if err != nil {
-		logger.Errorw("failed to subscribe to results channel", err)
-		return err
-	}
-
 	go func() {
+		sub, err := s.client.SubscribeInfoUpdate(context.Background())
+		if err != nil {
+			logger.Errorw("failed to subscribe", err)
+		}
+
+		for {
+			select {
+			case info := <-sub.Channel():
+				s.handleUpdate(info)
+			case <-s.shutdown:
+				_ = sub.Close()
+				rs.Stop()
+				return
+			}
+		}
+	}()
+
+	// TODO: remove in future version
+	go func() {
+		sub, err := s.clientDeprecated.GetUpdateChannel(context.Background())
+		if err != nil {
+			logger.Errorw("failed to subscribe to results channel", err)
+		}
+
 		resChan := sub.Channel()
 		for {
 			select {
 			case msg := <-resChan:
 				b := sub.Payload(msg)
-
-				res := &livekit.EgressInfo{}
-				if err = proto.Unmarshal(b, res); err != nil {
+				info := &livekit.EgressInfo{}
+				if err = proto.Unmarshal(b, info); err != nil {
 					logger.Errorw("failed to read results", err)
 					continue
 				}
-
-				switch res.Status {
-				case livekit.EgressStatus_EGRESS_COMPLETE,
-					livekit.EgressStatus_EGRESS_FAILED,
-					livekit.EgressStatus_EGRESS_ABORTED:
-
-					// make sure endedAt is set so it eventually gets deleted
-					if res.EndedAt == 0 {
-						res.EndedAt = time.Now().UnixNano()
-					}
-
-					err = s.es.UpdateEgress(context.Background(), res)
-					if err != nil {
-						logger.Errorw("could not update egress", err)
-					}
-
-					// log results
-					if res.Error != "" {
-						logger.Errorw("egress failed", errors.New(res.Error), "egressID", res.EgressId)
-					} else {
-						logger.Infow("egress ended", "egressID", res.EgressId)
-					}
-
-					s.telemetry.EgressEnded(context.Background(), res)
-
-				default:
-					err = s.es.UpdateEgress(context.Background(), res)
-					if err != nil {
-						logger.Errorw("could not update egress", err)
-					}
-				}
-
+				s.handleUpdate(info)
 			case <-s.shutdown:
 				_ = sub.Close()
 				rs.Stop()
@@ -364,4 +404,50 @@ func (s *EgressService) startWorker() error {
 	}()
 
 	return nil
+}
+
+func (s *EgressService) handleUpdate(info *livekit.EgressInfo) {
+	switch info.Status {
+	case livekit.EgressStatus_EGRESS_COMPLETE,
+		livekit.EgressStatus_EGRESS_FAILED,
+		livekit.EgressStatus_EGRESS_ABORTED:
+
+		// make sure endedAt is set so it eventually gets deleted
+		if info.EndedAt == 0 {
+			info.EndedAt = time.Now().UnixNano()
+		}
+
+		if err := s.es.UpdateEgress(context.Background(), info); err != nil {
+			logger.Errorw("could not update egress", err)
+		}
+
+		// log results
+		if info.Error != "" {
+			logger.Errorw("egress failed", errors.New(info.Error), "egressID", info.EgressId)
+		} else {
+			logger.Infow("egress ended", "egressID", info.EgressId)
+		}
+
+		s.telemetry.EgressEnded(context.Background(), info)
+
+	default:
+		if err := s.es.UpdateEgress(context.Background(), info); err != nil {
+			logger.Errorw("could not update egress", err)
+		}
+	}
+}
+
+// TODO: remove in future version
+var minVersion *goversion.Version
+
+func useNewEgressRPC(es EgressStore) bool {
+	if minVersion == nil {
+		minVersion, _ = goversion.NewVersion("1.5.4")
+	}
+	v, err := es.GetEgressVersion(context.Background())
+	if err != nil {
+		return false
+	}
+
+	return v.GreaterThanOrEqual(minVersion)
 }

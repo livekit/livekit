@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package rpc;
+
+option go_package = "github.com/livekit/livekit/pkg/service/rpc";
+
+import "options.proto";
+import "livekit_rpc_internal.proto";
+import "livekit_egress.proto";
+
+service EgressInternal {
+  rpc StartEgress(livekit.StartEgressRequest) returns (livekit.EgressInfo);
+  rpc UpdateStream(livekit.UpdateStreamRequest) returns (livekit.EgressInfo) {
+    option (psrpc.options).topics = true;
+  }
+  rpc StopEgress(livekit.StopEgressRequest) returns (livekit.EgressInfo) {
+    option (psrpc.options).topics = true;
+  }
+  rpc InfoUpdate(Empty) returns (livekit.EgressInfo) {
+    option (psrpc.options).subscription = true;
+  }
+}
+
+message Empty{}
