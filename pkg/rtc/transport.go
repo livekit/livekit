@@ -970,7 +970,7 @@ func (t *PCTransport) GetICEConnectionType() types.ICEConnectionType {
 		return unknown
 	}
 	p, err := t.getSelectedPair()
-	if err != nil {
+	if err != nil || p == nil {
 		return unknown
 	}
 
