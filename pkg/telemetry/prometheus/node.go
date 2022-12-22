@@ -21,9 +21,9 @@ var (
 
 	MessageCounter *prometheus.CounterVec
 
-	connectionErrors             atomic.Uint64
+	connectionFailures           atomic.Uint64
 	connectionSuccess            atomic.Uint64
-	signalErrors                 atomic.Uint64
+	signalFailures               atomic.Uint64
 	signalSuccess                atomic.Uint64
 	serviceOperationCounter      *prometheus.CounterVec
 	sysPacketsStart              uint32
@@ -107,7 +107,7 @@ func AddServiceOperation(typeStr string, status string, errType string) {
 		if errType == "" {
 			connectionSuccess.Inc()
 		} else {
-			connectionErrors.Inc()
+			connectionFailures.Inc()
 		}
 	case "participant_join":
 		// errors can: room_closed, already_joined, max_exceeded, send_reponse
@@ -125,7 +125,7 @@ func AddServiceOperation(typeStr string, status string, errType string) {
 				// ignore errors based on bad client behavior
 				break
 			}
-			signalErrors.Inc()
+			signalFailures.Inc()
 		}
 	}
 
@@ -162,6 +162,17 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 	retransmitBytesNow := retransmitBytes.Load()
 	retransmitPacketsNow := retransmitPackets.Load()
 	participantJoinNow := participantJoin.Load()
+	connectionSuccessNow := connectionSuccess.Load()
+	signalSuccessNow := signalSuccess.Load()
+	trackPublishedTotalNow := trackPublishedTotal.Load()
+	trackSubscribedTotalNow := trackSubscribedTotal.Load()
+
+	// failures
+	participantJoinFailedNow := participantJoinFailed.Load()
+	connectionFailuresNow := connectionFailures.Load()
+	signalFailuresNow := signalFailures.Load()
+	trackPublishedFailureTotalNow := trackPublishedFailureTotal.Load()
+	trackSubscribedFailureTotalNow := trackSubscribedFailureTotal.Load()
 
 	updatedAt := time.Now().Unix()
 	elapsed := updatedAt - prevAverage.UpdatedAt
@@ -181,8 +192,8 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		UpdatedAt:                  updatedAt,
 		NumRooms:                   roomTotal.Load(),
 		NumClients:                 participantTotal.Load(),
-		NumTracksIn:                trackPublishedTotal.Load(),
-		NumTracksOut:               trackSubscribedTotal.Load(),
+		NumTracksIn:                trackPublishedTotalNow,
+		NumTracksOut:               trackSubscribedTotalNow,
 		BytesIn:                    bytesInNow,
 		BytesOut:                   bytesOutNow,
 		PacketsIn:                  packetsInNow,
@@ -207,6 +218,13 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		SysPacketsOut:              sysPackets,
 		SysPacketsDropped:          sysDroppedPackets,
 		MemoryLoad:                 memoryLoad,
+		ConnectionSuccess:          connectionSuccessNow,
+		ConnectionFailures:         connectionFailuresNow,
+		SignalSuccess:              signalSuccessNow,
+		SignalFailures:             signalFailuresNow,
+		TrackPublishedFailures:     uint64(trackPublishedFailureTotalNow),
+		TrackSubscribedFailures:    uint64(trackSubscribedFailureTotalNow),
+		ParticipantJoinFailures:    participantJoinFailedNow,
 	}
 
 	// update stats
@@ -229,6 +247,16 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 			stats.SysPacketsDroppedPctPerSec = float32(stats.SysPacketsDroppedPerSec) / float32(packetTotal)
 		}
 		promSysDroppedPacketPctGauge.Set(float64(stats.SysPacketsDroppedPctPerSec))
+
+		stats.ConnectionSuccessPerSec = perSec(prevAverage.ConnectionSuccess, connectionSuccessNow, elapsed)
+		stats.ConnectionFailuresPerSec = perSec(prevAverage.ConnectionFailures, connectionFailuresNow, elapsed)
+		stats.SignalSuccessPerSec = perSec(prevAverage.SignalSuccess, signalSuccessNow, elapsed)
+		stats.SignalFailuresPerSec = perSec(prevAverage.SignalFailures, signalFailuresNow, elapsed)
+		stats.TrackPublishedPerSec = perSec(uint64(prevAverage.NumTracksIn), uint64(trackPublishedTotalNow), elapsed)
+		stats.TrackPublishedFailurePerSec = perSec(prevAverage.TrackPublishedFailures, uint64(trackPublishedFailureTotalNow), elapsed)
+		stats.TrackSubscribedPerSec = perSec(uint64(prevAverage.NumTracksOut), uint64(trackSubscribedTotalNow), elapsed)
+		stats.TrackSubscribedFailurePerSec = perSec(prevAverage.TrackSubscribedFailures, uint64(trackSubscribedFailureTotalNow), elapsed)
+		stats.ParticipantJoinFailurePerSec = perSec(prevAverage.ParticipantJoinFailures, participantJoinFailedNow, elapsed)
 	}
 
 	return stats, computeAverage, nil
