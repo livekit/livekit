@@ -197,7 +197,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	buff, rtcpReader := t.params.BufferFactory.GetBufferPair(uint32(track.SSRC()))
 	if buff == nil || rtcpReader == nil {
 		t.params.Logger.Errorw("could not retrieve buffer pair", nil)
-		prometheus.AddPublishedTrackFailure(t.ToProto().Type.String())
+		prometheus.AddPublishedTrackFailure(t.trackInfo.Type.String())
 		return newCodec
 	}
 
@@ -205,7 +205,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		pkts, err := rtcp.Unmarshal(bytes)
 		if err != nil {
 			t.params.Logger.Errorw("could not unmarshal RTCP", err)
-			prometheus.AddPublishedTrackFailure(t.ToProto().Type.String())
+			prometheus.AddPublishedTrackFailure(t.trackInfo.Type.String())
 			return
 		}
 
