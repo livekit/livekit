@@ -21,7 +21,7 @@ import (
 )
 
 type EgressService struct {
-	psrpcClient      rpc.EgressInternalClient
+	psrpcClient      rpc.EgressClient
 	clientDeprecated egress.RPCClient
 	store            ServiceStore
 	es               EgressStore
@@ -32,7 +32,7 @@ type EgressService struct {
 }
 
 type egressLauncher struct {
-	psrpcClient      rpc.EgressInternalClient
+	psrpcClient      rpc.EgressClient
 	clientDeprecated egress.RPCClient
 	usePSRPC         bool
 	es               EgressStore
@@ -40,7 +40,7 @@ type egressLauncher struct {
 }
 
 func NewEgressLauncher(
-	psrpcClient rpc.EgressInternalClient,
+	psrpcClient rpc.EgressClient,
 	clientDeprecated egress.RPCClient,
 	es EgressStore,
 	ts telemetry.TelemetryService) rtc.EgressLauncher {
@@ -57,7 +57,7 @@ func NewEgressLauncher(
 }
 
 func NewEgressService(
-	client rpc.EgressInternalClient,
+	psrpcClient rpc.EgressClient,
 	clientDeprecated egress.RPCClient,
 	store ServiceStore,
 	es EgressStore,
@@ -66,7 +66,7 @@ func NewEgressService(
 	launcher rtc.EgressLauncher,
 ) *EgressService {
 	return &EgressService{
-		psrpcClient:      client,
+		psrpcClient:      psrpcClient,
 		clientDeprecated: clientDeprecated,
 		store:            store,
 		es:               es,
@@ -442,26 +442,34 @@ func (s *EgressService) getFirst(f0, f1 func() (*livekit.EgressInfo, error)) (*l
 		return f1()
 	}
 
-	var infoV0, infoV1 *livekit.EgressInfo
-	var errV0, errV1 error
-	v0Done := make(chan struct{})
-	v1Done := make(chan struct{})
+	type res struct {
+		info *livekit.EgressInfo
+		err  error
+	}
+	v0 := make(chan *res, 1)
+	v1 := make(chan *res, 1)
 
 	go func() {
-		infoV0, errV0 = f0()
-		close(v0Done)
+		info, err := f0()
+		v0 <- &res{
+			info: info,
+			err:  err,
+		}
 	}()
 
 	go func() {
-		infoV1, errV1 = f1()
-		close(v1Done)
+		info, err := f1()
+		v1 <- &res{
+			info: info,
+			err:  err,
+		}
 	}()
 
 	select {
-	case <-v0Done:
-		return infoV0, errV0
-	case <-v1Done:
-		return infoV1, errV1
+	case r := <-v0:
+		return r.info, r.err
+	case r := <-v1:
+		return r.info, r.err
 	}
 }
 

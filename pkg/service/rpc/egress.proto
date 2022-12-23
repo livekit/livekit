@@ -10,15 +10,27 @@ import "livekit_egress.proto";
 
 service EgressInternal {
   rpc StartEgress(livekit.StartEgressRequest) returns (livekit.EgressInfo);
+  rpc InfoUpdate(Empty) returns (livekit.EgressInfo) {
+    option (psrpc.options).subscription = true;
+  }
+  rpc ListActiveEgress(ListActiveEgressRequest) returns (ListActiveEgressResponse) {
+    option (psrpc.options).multi = true;
+  }
+}
+
+service EgressHandler {
   rpc UpdateStream(livekit.UpdateStreamRequest) returns (livekit.EgressInfo) {
     option (psrpc.options).topics = true;
   }
   rpc StopEgress(livekit.StopEgressRequest) returns (livekit.EgressInfo) {
     option (psrpc.options).topics = true;
   }
-  rpc InfoUpdate(Empty) returns (livekit.EgressInfo) {
-    option (psrpc.options).subscription = true;
-  }
 }
 
-message Empty{}
+message Empty {}
+
+message ListActiveEgressRequest {}
+
+message ListActiveEgressResponse {
+  repeated string egress_id = 1;
+}

@@ -47,7 +47,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	nodeID := getNodeID(currentNode)
-	egressInternalClient, err := newEgressInternalClient(nodeID, universalClient)
+	messageBus := getMessageBus(universalClient)
+	egressClient, err := rpc.NewEgressClient(nodeID, messageBus)
 	if err != nil {
 		return nil, err
 	}
@@ -63,15 +64,15 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	analyticsService := telemetry.NewAnalyticsService(conf, currentNode)
 	telemetryService := telemetry.NewTelemetryService(notifier, analyticsService)
-	rtcEgressLauncher := NewEgressLauncher(egressInternalClient, rpcClient, egressStore, telemetryService)
+	rtcEgressLauncher := NewEgressLauncher(egressClient, rpcClient, egressStore, telemetryService)
 	roomService, err := NewRoomService(roomConfig, apiConfig, router, roomAllocator, objectStore, rtcEgressLauncher)
 	if err != nil {
 		return nil, err
 	}
-	egressService := NewEgressService(egressInternalClient, rpcClient, objectStore, egressStore, roomService, telemetryService, rtcEgressLauncher)
+	egressService := NewEgressService(egressClient, rpcClient, objectStore, egressStore, roomService, telemetryService, rtcEgressLauncher)
 	ingressConfig := getIngressConfig(conf)
-	rpc := ingress.NewRedisRPC(nodeID, universalClient)
-	ingressRPCClient := getIngressRPCClient(rpc)
+	ingressRPC := ingress.NewRedisRPC(nodeID, universalClient)
+	ingressRPCClient := getIngressRPCClient(ingressRPC)
 	ingressStore := getIngressStore(objectStore)
 	ingressService := NewIngressService(ingressConfig, ingressRPCClient, ingressStore, roomService, telemetryService)
 	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode, telemetryService)
@@ -162,11 +163,11 @@ func createStore(rc redis.UniversalClient) ObjectStore {
 	return NewLocalStore()
 }
 
-func newEgressInternalClient(nodeID livekit.NodeID, rc redis.UniversalClient) (rpc.EgressInternalClient, error) {
+func getMessageBus(rc redis.UniversalClient) psrpc.MessageBus {
 	if rc == nil {
-		return nil, nil
+		return nil
 	}
-	return rpc.NewEgressInternalClient(string(nodeID), psrpc.NewRedisMessageBus(rc))
+	return psrpc.NewRedisMessageBus(rc)
 }
 
 func getEgressStore(s ObjectStore) EgressStore {
