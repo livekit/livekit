@@ -93,6 +93,9 @@ type RTCConfig struct {
 
 	// force a reconnect on a publication error
 	ReconnectOnPublicationError *bool `yaml:"reconnect_on_publication_error,omitempty"`
+
+	// force a reconnect on a subscription error
+	ReconnectOnSubscriptionError *bool `yaml:"reconnect_on_subscription_error,omitempty"`
 }
 
 type TURNServer struct {
