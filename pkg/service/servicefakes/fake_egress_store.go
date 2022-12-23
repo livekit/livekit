@@ -5,11 +5,25 @@ import (
 	"context"
 	"sync"
 
+	version "github.com/hashicorp/go-version"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/protocol/livekit"
 )
 
 type FakeEgressStore struct {
+	GetEgressVersionStub        func(context.Context) (*version.Version, error)
+	getEgressVersionMutex       sync.RWMutex
+	getEgressVersionArgsForCall []struct {
+		arg1 context.Context
+	}
+	getEgressVersionReturns struct {
+		result1 *version.Version
+		result2 error
+	}
+	getEgressVersionReturnsOnCall map[int]struct {
+		result1 *version.Version
+		result2 error
+	}
 	ListEgressStub        func(context.Context, livekit.RoomName) ([]*livekit.EgressInfo, error)
 	listEgressMutex       sync.RWMutex
 	listEgressArgsForCall []struct {
@@ -64,6 +78,70 @@ type FakeEgressStore struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
+}
+
+func (fake *FakeEgressStore) GetEgressVersion(arg1 context.Context) (*version.Version, error) {
+	fake.getEgressVersionMutex.Lock()
+	ret, specificReturn := fake.getEgressVersionReturnsOnCall[len(fake.getEgressVersionArgsForCall)]
+	fake.getEgressVersionArgsForCall = append(fake.getEgressVersionArgsForCall, struct {
+		arg1 context.Context
+	}{arg1})
+	stub := fake.GetEgressVersionStub
+	fakeReturns := fake.getEgressVersionReturns
+	fake.recordInvocation("GetEgressVersion", []interface{}{arg1})
+	fake.getEgressVersionMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeEgressStore) GetEgressVersionCallCount() int {
+	fake.getEgressVersionMutex.RLock()
+	defer fake.getEgressVersionMutex.RUnlock()
+	return len(fake.getEgressVersionArgsForCall)
+}
+
+func (fake *FakeEgressStore) GetEgressVersionCalls(stub func(context.Context) (*version.Version, error)) {
+	fake.getEgressVersionMutex.Lock()
+	defer fake.getEgressVersionMutex.Unlock()
+	fake.GetEgressVersionStub = stub
+}
+
+func (fake *FakeEgressStore) GetEgressVersionArgsForCall(i int) context.Context {
+	fake.getEgressVersionMutex.RLock()
+	defer fake.getEgressVersionMutex.RUnlock()
+	argsForCall := fake.getEgressVersionArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeEgressStore) GetEgressVersionReturns(result1 *version.Version, result2 error) {
+	fake.getEgressVersionMutex.Lock()
+	defer fake.getEgressVersionMutex.Unlock()
+	fake.GetEgressVersionStub = nil
+	fake.getEgressVersionReturns = struct {
+		result1 *version.Version
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeEgressStore) GetEgressVersionReturnsOnCall(i int, result1 *version.Version, result2 error) {
+	fake.getEgressVersionMutex.Lock()
+	defer fake.getEgressVersionMutex.Unlock()
+	fake.GetEgressVersionStub = nil
+	if fake.getEgressVersionReturnsOnCall == nil {
+		fake.getEgressVersionReturnsOnCall = make(map[int]struct {
+			result1 *version.Version
+			result2 error
+		})
+	}
+	fake.getEgressVersionReturnsOnCall[i] = struct {
+		result1 *version.Version
+		result2 error
+	}{result1, result2}
 }
 
 func (fake *FakeEgressStore) ListEgress(arg1 context.Context, arg2 livekit.RoomName) ([]*livekit.EgressInfo, error) {
@@ -323,6 +401,8 @@ func (fake *FakeEgressStore) UpdateEgressReturnsOnCall(i int, result1 error) {
 func (fake *FakeEgressStore) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
+	fake.getEgressVersionMutex.RLock()
+	defer fake.getEgressVersionMutex.RUnlock()
 	fake.listEgressMutex.RLock()
 	defer fake.listEgressMutex.RUnlock()
 	fake.loadEgressMutex.RLock()

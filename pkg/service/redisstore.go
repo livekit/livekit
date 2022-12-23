@@ -20,7 +20,8 @@ import (
 )
 
 const (
-	VersionKey = "livekit_version"
+	VersionKey       = "livekit_version"
+	EgressVersionKey = "egress_version"
 
 	// RoomsKey is hash of room_name => Room proto
 	RoomsKey        = "rooms"
@@ -73,21 +74,17 @@ func (s *RedisStore) Start() error {
 	}
 
 	s.done = make(chan struct{}, 1)
-	current, err := s.rc.Get(s.ctx, VersionKey).Result()
+
+	v, err := s.rc.Get(s.ctx, VersionKey).Result()
 	if err != nil && err != redis.Nil {
 		return err
 	}
-	if current == "" {
-		current = "0.0.0"
+	if v == "" {
+		v = "0.0.0"
 	}
-
-	v, _ := goversion.NewVersion(current)
-	migrateEgress, _ := goversion.NewVersion("1.1.3")
-	if v.LessThan(migrateEgress) {
-		if _, err = s.MigrateEgressInfo(); err != nil {
-			return err
-		}
-
+	existing, _ := goversion.NewVersion(v)
+	current, _ := goversion.NewVersion(version.Version)
+	if current.GreaterThan(existing) {
 		if err = s.rc.Set(s.ctx, VersionKey, version.Version, 0).Err(); err != nil {
 			return err
 		}
@@ -422,6 +419,17 @@ func (s *RedisStore) UpdateEgress(_ context.Context, info *livekit.EgressInfo) e
 	return nil
 }
 
+func (s *RedisStore) GetEgressVersion(_ context.Context) (*goversion.Version, error) {
+	egressVersion, err := s.rc.Get(s.ctx, EgressVersionKey).Result()
+	if err != nil && err != redis.Nil {
+		return nil, err
+	}
+	if egressVersion == "" {
+		egressVersion = "0.0.0"
+	}
+	return goversion.NewVersion(egressVersion)
+}
+
 // Deletes egress info 24h after the egress has ended
 func (s *RedisStore) egressWorker() {
 	ticker := time.NewTicker(time.Minute * 30)
@@ -440,7 +448,7 @@ func (s *RedisStore) egressWorker() {
 	}
 }
 
-func (s RedisStore) CleanEndedEgress() error {
+func (s *RedisStore) CleanEndedEgress() error {
 	values, err := s.rc.HGetAll(s.ctx, EndedEgressKey).Result()
 	if err != nil && err != redis.Nil {
 		return err
@@ -796,53 +804,4 @@ func (s *RedisStore) DeleteIngress(_ context.Context, info *livekit.IngressInfo)
 	}
 
 	return nil
-}
-
-// Migration to LiveKit >= v1.1.3
-func (s *RedisStore) MigrateEgressInfo() (int, error) {
-	locked, err := s.rc.SetNX(s.ctx, "egress-migration", utils.NewGuid("LOCK"), time.Minute).Result()
-	if err != nil {
-		return 0, err
-	} else if !locked {
-		return 0, nil
-	}
-
-	it := s.rc.Scan(s.ctx, 0, DeprecatedRoomEgressPrefix+"*", 0).Iterator()
-	migrated := 0
-	for it.Next(s.ctx) {
-		migrated++
-		key := it.Val()
-		egressIDs, err := s.rc.SMembers(s.ctx, key).Result()
-		if err != nil && err != redis.Nil {
-			return migrated, err
-		}
-
-		for _, egressID := range egressIDs {
-			info, err := s.LoadEgress(s.ctx, egressID)
-			if err != nil {
-				return migrated, err
-			}
-
-			var roomName string
-			switch req := info.Request.(type) {
-			case *livekit.EgressInfo_RoomComposite:
-				roomName = req.RoomComposite.RoomName
-			case *livekit.EgressInfo_TrackComposite:
-				roomName = req.TrackComposite.RoomName
-			case *livekit.EgressInfo_Track:
-				roomName = req.Track.RoomName
-			}
-
-			tx := s.rc.TxPipeline()
-			tx.SAdd(s.ctx, RoomEgressPrefix+roomName, egressID)
-			tx.SRem(s.ctx, key, egressID)
-			if _, err = tx.Exec(s.ctx); err != nil {
-				return migrated, err
-			}
-		}
-
-		s.rc.Del(s.ctx, key)
-	}
-
-	return migrated, nil
 }

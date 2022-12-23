@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	goversion "github.com/hashicorp/go-version"
+
 	"github.com/livekit/protocol/livekit"
 )
 
@@ -44,6 +46,7 @@ type EgressStore interface {
 	LoadEgress(ctx context.Context, egressID string) (*livekit.EgressInfo, error)
 	ListEgress(ctx context.Context, roomName livekit.RoomName) ([]*livekit.EgressInfo, error)
 	UpdateEgress(ctx context.Context, info *livekit.EgressInfo) error
+	GetEgressVersion(ctx context.Context) (*goversion.Version, error)
 }
 
 //counterfeiter:generate . IngressStore
