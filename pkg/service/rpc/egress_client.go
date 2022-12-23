@@ -16,6 +16,10 @@ type egressClient struct {
 }
 
 func NewEgressClient(nodeID livekit.NodeID, bus psrpc.MessageBus) (EgressClient, error) {
+	if bus == nil {
+		return nil, nil
+	}
+	
 	clientID := string(nodeID)
 	internalClient, err := NewEgressInternalClient(clientID, bus)
 	if err != nil {
