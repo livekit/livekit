@@ -32,5 +32,5 @@ message Empty {}
 message ListActiveEgressRequest {}
 
 message ListActiveEgressResponse {
-  repeated string egress_id = 1;
+  repeated string egress_ids = 1;
 }
