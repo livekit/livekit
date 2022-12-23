@@ -9,7 +9,9 @@ import "livekit_rpc_internal.proto";
 import "livekit_egress.proto";
 
 service EgressInternal {
-  rpc StartEgress(livekit.StartEgressRequest) returns (livekit.EgressInfo);
+  rpc StartEgress(livekit.StartEgressRequest) returns (livekit.EgressInfo) {
+    option (psrpc.options).affinity_func = true;
+  };
   rpc ListActiveEgress(ListActiveEgressRequest) returns (ListActiveEgressResponse) {
     option (psrpc.options).multi = true;
   }
