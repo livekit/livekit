@@ -140,8 +140,23 @@ type AudioConfig struct {
 	SmoothIntervals uint32 `yaml:"smooth_intervals"`
 }
 
+type StreamTrackerConfig struct {
+	SamplesRequired       uint32        `yaml:"samples_required"`
+	CyclesRequired        uint32        `yaml:"cycles_required"`
+	CycleDuration         time.Duration `yaml:"cycle_duration"`
+	BitrateReportInterval time.Duration `yaml:"bitrate_report_interval"`
+}
+
+type StreamTrackersConfig struct {
+	Video                     []StreamTrackerConfig `yaml:"video"`
+	Screenshare               []StreamTrackerConfig `yaml:"screenshare"`
+	ExemptedLayersVideo       []int32               `yaml:"exempted_layers_video"`
+	ExemptedLayersScreenshare []int32               `yaml:"exempted_layers_screenshare"`
+}
+
 type VideoConfig struct {
-	DynacastPauseDelay time.Duration `yaml:"dynacast_pause_delay,omitempty"`
+	DynacastPauseDelay time.Duration        `yaml:"dynacast_pause_delay,omitempty"`
+	StreamTracker      StreamTrackersConfig `yaml:"stream_tracker,omitempty"`
 }
 
 type RoomConfig struct {
@@ -254,6 +269,50 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 		},
 		Video: VideoConfig{
 			DynacastPauseDelay: 5 * time.Second,
+			StreamTracker: StreamTrackersConfig{
+				ExemptedLayersScreenshare: []int32{0},
+				ExemptedLayersVideo:       []int32{},
+				Screenshare: []StreamTrackerConfig{
+					{
+						SamplesRequired:       1,
+						CyclesRequired:        1,
+						CycleDuration:         2 * time.Second,
+						BitrateReportInterval: 4 * time.Second,
+					},
+					{
+						SamplesRequired:       1,
+						CyclesRequired:        1,
+						CycleDuration:         2 * time.Second,
+						BitrateReportInterval: 4 * time.Second,
+					},
+					{
+						SamplesRequired:       1,
+						CyclesRequired:        1,
+						CycleDuration:         2 * time.Second,
+						BitrateReportInterval: 4 * time.Second,
+					},
+				},
+				Video: []StreamTrackerConfig{
+					{
+						SamplesRequired:       1,
+						CyclesRequired:        4,
+						CycleDuration:         500 * time.Millisecond,
+						BitrateReportInterval: 1 * time.Second,
+					},
+					{
+						SamplesRequired:       5,
+						CyclesRequired:        20,
+						CycleDuration:         500 * time.Millisecond,
+						BitrateReportInterval: 1 * time.Second,
+					},
+					{
+						SamplesRequired:       5,
+						CyclesRequired:        20,
+						CycleDuration:         500 * time.Millisecond,
+						BitrateReportInterval: 1 * time.Second,
+					},
+				},
+			},
 		},
 		Redis: redisLiveKit.RedisConfig{},
 		Room: RoomConfig{
