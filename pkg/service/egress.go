@@ -23,7 +23,6 @@ import (
 type EgressService struct {
 	psrpcClient      rpc.EgressInternalClient
 	clientDeprecated egress.RPCClient
-	usePSRPC         bool
 	store            ServiceStore
 	es               EgressStore
 	roomService      livekit.RoomService
@@ -315,7 +314,9 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 	}
 
 	info, err := s.es.LoadEgress(ctx, req.EgressId)
-	if info == nil {
+	if err != nil {
+		return nil, err
+	} else {
 		if info.Status != livekit.EgressStatus_EGRESS_STARTING &&
 			info.Status != livekit.EgressStatus_EGRESS_ACTIVE {
 			return nil, fmt.Errorf("egress with status %s cannot be stopped", info.Status.String())
