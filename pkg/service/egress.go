@@ -8,7 +8,6 @@ import (
 	"reflect"
 	"time"
 
-	goversion "github.com/hashicorp/go-version"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/rtc"
@@ -186,7 +185,7 @@ func (s *egressLauncher) StartEgress(ctx context.Context, req *livekit.StartEgre
 	var err error
 
 	if !s.usePSRPC {
-		s.usePSRPC = usePSRPC(s.es)
+		s.usePSRPC = s.es.UsePSRPC()
 	}
 
 	if s.usePSRPC {
@@ -471,18 +470,4 @@ func (s *EgressService) getFirst(f0, f1 func() (*livekit.EgressInfo, error)) (*l
 	case r := <-v1:
 		return r.info, r.err
 	}
-}
-
-var minVersion *goversion.Version
-
-func usePSRPC(es EgressStore) bool {
-	if minVersion == nil {
-		minVersion, _ = goversion.NewVersion("1.5.4")
-	}
-	v, err := es.GetEgressVersion(context.Background())
-	if err != nil {
-		return false
-	}
-
-	return v.GreaterThanOrEqual(minVersion)
 }

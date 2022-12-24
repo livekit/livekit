@@ -419,6 +419,16 @@ func (s *RedisStore) UpdateEgress(_ context.Context, info *livekit.EgressInfo) e
 	return nil
 }
 
+func (s *RedisStore) UsePSRPC() bool {
+	egressVersion, err := s.rc.Get(s.ctx, EgressVersionKey).Result()
+	if err != nil || egressVersion == "" {
+		return false
+	}
+	v, _ := goversion.NewVersion(egressVersion)
+	minVersion, _ := goversion.NewVersion("1.5.4")
+	return v.GreaterThanOrEqual(minVersion)
+}
+
 func (s *RedisStore) GetEgressVersion(_ context.Context) (*goversion.Version, error) {
 	egressVersion, err := s.rc.Get(s.ctx, EgressVersionKey).Result()
 	if err != nil && err != redis.Nil {
