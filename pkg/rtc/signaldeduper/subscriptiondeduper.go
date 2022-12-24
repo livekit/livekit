@@ -2,11 +2,16 @@ package signaldeduper
 
 import (
 	"sync"
+	"time"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+)
+
+const (
+	dupeBarrierDuration = 5 * time.Second
 )
 
 // --------------------------------------------------
@@ -45,17 +50,22 @@ func (s *subscriptionSetting) Equal(other *subscriptionSetting) bool {
 
 // --------------------------------------------------
 
+type subscriptionState struct {
+	setting         *subscriptionSetting
+	lastNonDupeTime time.Time
+}
+
 type SubscriptionDeduper struct {
 	logger logger.Logger
 
 	lock                      sync.RWMutex
-	participantsSubscriptions map[livekit.ParticipantKey]map[livekit.TrackID]*subscriptionSetting
+	participantsSubscriptions map[livekit.ParticipantKey]map[livekit.TrackID]*subscriptionState
 }
 
 func NewSubscriptionDeduper(logger logger.Logger) types.SignalDeduper {
 	return &SubscriptionDeduper{
 		logger:                    logger,
-		participantsSubscriptions: make(map[livekit.ParticipantKey]map[livekit.TrackID]*subscriptionSetting),
+		participantsSubscriptions: make(map[livekit.ParticipantKey]map[livekit.TrackID]*subscriptionState),
 	}
 }
 
@@ -87,8 +97,6 @@ func (s *SubscriptionDeduper) updateSubscriptionsFromUpdateSubscription(
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	participantSubscriptions := s.getOrCreateParticipantSubscriptions(participantKey)
-
 	numTracks := len(us.TrackSids)
 	for _, pt := range us.ParticipantTracks {
 		numTracks += len(pt.TrackSids)
@@ -103,20 +111,11 @@ func (s *SubscriptionDeduper) updateSubscriptionsFromUpdateSubscription(
 		}
 	}
 
+	newSetting := subscriptionSettingFromUpdateSubscription(us)
 	for trackID := range trackIDs {
-		currentSetting := participantSubscriptions[trackID]
-		if currentSetting == nil {
-			// new track seen
-			currentSetting = subscriptionSettingFromUpdateSubscription(us)
-			participantSubscriptions[trackID] = currentSetting
+		isTrackDupe := s.detectDupe(participantKey, trackID, newSetting)
+		if !isTrackDupe {
 			isDupe = false
-		} else {
-			newSetting := subscriptionSettingFromUpdateSubscription(us)
-			if !currentSetting.Equal(newSetting) {
-				// subscription setting change
-				participantSubscriptions[trackID] = newSetting
-				isDupe = false
-			}
 		}
 	}
 
@@ -132,34 +131,54 @@ func (s *SubscriptionDeduper) updateSubscriptionsFromUpdateTrackSettings(
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	participantSubscriptions := s.getOrCreateParticipantSubscriptions(participantKey)
-
+	newSetting := subscriptionSettingFromUpdateTrackSettings(uts)
 	for _, trackSid := range uts.TrackSids {
-		currentSetting := participantSubscriptions[livekit.TrackID(trackSid)]
-		if currentSetting == nil {
-			// new track seen
-			currentSetting = subscriptionSettingFromUpdateTrackSettings(uts)
-			participantSubscriptions[livekit.TrackID(trackSid)] = currentSetting
+		isTrackDupe := s.detectDupe(participantKey, livekit.TrackID(trackSid), newSetting)
+		if !isTrackDupe {
 			isDupe = false
-		} else {
-			newSetting := subscriptionSettingFromUpdateTrackSettings(uts)
-			if !currentSetting.Equal(newSetting) {
-				// subscription setting change
-				participantSubscriptions[livekit.TrackID(trackSid)] = newSetting
-				isDupe = false
-			}
 		}
 	}
 
 	return isDupe
 }
 
-func (s *SubscriptionDeduper) getOrCreateParticipantSubscriptions(participantKey livekit.ParticipantKey) map[livekit.TrackID]*subscriptionSetting {
+func (s *SubscriptionDeduper) getOrCreateParticipantSubscriptions(
+	participantKey livekit.ParticipantKey,
+) map[livekit.TrackID]*subscriptionState {
 	participantSubscriptions := s.participantsSubscriptions[participantKey]
 	if participantSubscriptions == nil {
-		participantSubscriptions = make(map[livekit.TrackID]*subscriptionSetting)
+		participantSubscriptions = make(map[livekit.TrackID]*subscriptionState)
 		s.participantsSubscriptions[participantKey] = participantSubscriptions
 	}
 
 	return participantSubscriptions
+}
+
+func (s *SubscriptionDeduper) detectDupe(
+	participantKey livekit.ParticipantKey,
+	trackID livekit.TrackID,
+	updatedSetting *subscriptionSetting,
+) bool {
+	isDupe := true
+	participantSubscriptions := s.getOrCreateParticipantSubscriptions(participantKey)
+	state := participantSubscriptions[trackID]
+	if state == nil || !state.setting.Equal(updatedSetting) {
+		// new track seen or subscription setting change
+		state = &subscriptionState{
+			setting:         updatedSetting,
+			lastNonDupeTime: time.Now(),
+		}
+		isDupe = false
+	}
+
+	if isDupe && time.Since(state.lastNonDupeTime) > dupeBarrierDuration {
+		state.lastNonDupeTime = time.Now()
+		isDupe = false
+	}
+
+	if !isDupe {
+		participantSubscriptions[trackID] = state
+	}
+
+	return isDupe
 }
