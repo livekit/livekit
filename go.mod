@@ -7,6 +7,7 @@ require (
 	github.com/d5/tengo/v2 v2.13.0
 	github.com/dustin/go-humanize v1.0.0
 	github.com/elliotchance/orderedmap v1.5.0
+	github.com/elliotchance/orderedmap/v2 v2.2.0
 	github.com/florianl/go-tc v0.4.2
 	github.com/gammazero/deque v0.1.0
 	github.com/gammazero/workerpool v1.1.2
