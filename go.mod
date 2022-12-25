@@ -7,7 +7,7 @@ require (
 	github.com/d5/tengo/v2 v2.13.0
 	github.com/dustin/go-humanize v1.0.0
 	github.com/elliotchance/orderedmap v1.5.0
-	github.com/florianl/go-tc v0.4.1
+	github.com/florianl/go-tc v0.4.2
 	github.com/gammazero/deque v0.1.0
 	github.com/gammazero/workerpool v1.1.2
 	github.com/go-redis/redis/v8 v8.11.5
@@ -64,10 +64,10 @@ require (
 	github.com/frostbyte73/go-throttle v0.0.0-20210621200530-8018c891361d // indirect
 	github.com/go-logr/logr v1.2.3 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
-	github.com/google/go-cmp v0.5.8 // indirect
+	github.com/google/go-cmp v0.5.9 // indirect
 	github.com/google/subcommands v1.2.0 // indirect
 	github.com/google/uuid v1.3.0 // indirect
-	github.com/josharian/native v1.0.0 // indirect
+	github.com/josharian/native v1.1.0 // indirect
 	github.com/klauspost/compress v1.15.13 // indirect
 	github.com/lithammer/shortuuid/v3 v3.0.7 // indirect
 	github.com/mattn/go-runewidth v0.0.9 // indirect
