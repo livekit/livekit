@@ -175,16 +175,16 @@ func (s *StreamTracker) Observe(temporalLayer int32, pktSize int, payloadSize in
 		return
 	}
 
-	if temporalLayer >= 0 && payloadSize > 0 {
-		s.bytesForBitrate[temporalLayer] += int64(pktSize)
-	}
-
 	isInitialized := s.params.StreamTrackerImpl.Observe(temporalLayer, pktSize, payloadSize)
 	if isInitialized {
 		s.setStatusLocked(StreamStatusActive)
 		s.lastBitrateReport = time.Now()
 
 		go s.worker(s.generation.Load())
+	}
+
+	if temporalLayer >= 0 {
+		s.bytesForBitrate[temporalLayer] += int64(pktSize)
 	}
 	s.lock.Unlock()
 
