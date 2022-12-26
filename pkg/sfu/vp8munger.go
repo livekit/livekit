@@ -3,16 +3,14 @@ package sfu
 import (
 	"fmt"
 
-	"github.com/elliotchance/orderedmap"
+	"github.com/elliotchance/orderedmap/v2"
 
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
-//
 // VP8 munger
-//
 type TranslationParamsVP8 struct {
 	Header *buffer.VP8
 }
@@ -49,7 +47,7 @@ type VP8MungerParams struct {
 	keyIdxOffset         uint8
 	keyIdxUsed           int
 
-	missingPictureIds    *orderedmap.OrderedMap
+	missingPictureIds    *orderedmap.OrderedMap[int32, int32]
 	lastDroppedPictureId int32
 }
 
@@ -63,7 +61,7 @@ func NewVP8Munger(logger logger.Logger) *VP8Munger {
 	return &VP8Munger{
 		logger: logger,
 		VP8MungerParams: VP8MungerParams{
-			missingPictureIds:    orderedmap.NewOrderedMap(),
+			missingPictureIds:    orderedmap.NewOrderedMap[int32, int32](),
 			lastDroppedPictureId: -1,
 		},
 	}
@@ -138,7 +136,7 @@ func (v *VP8Munger) UpdateOffsets(extPkt *buffer.ExtPacket) {
 	}
 
 	// clear missing picture ids on layer switch
-	v.missingPictureIds = orderedmap.NewOrderedMap()
+	v.missingPictureIds = orderedmap.NewOrderedMap[int32, int32]()
 
 	v.lastDroppedPictureId = -1
 }
@@ -153,11 +151,10 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumb
 
 	// if out-of-order, look up missing picture id cache
 	if ordering == SequenceNumberOrderingOutOfOrder {
-		value, ok := v.missingPictureIds.Get(extPictureId)
+		pictureIdOffset, ok := v.missingPictureIds.Get(extPictureId)
 		if !ok {
 			return nil, ErrOutOfOrderVP8PictureIdCacheMiss
 		}
-		pictureIdOffset := value.(int32)
 
 		// the out-of-order picture id cannot be deleted from the cache
 		// as there could more than one packet in a picture and more
@@ -332,15 +329,12 @@ func (v *VP8Munger) UpdateAndGetPadding(newPicture bool) *buffer.VP8 {
 
 // for testing only
 func (v *VP8Munger) PictureIdOffset(extPictureId int32) (int32, bool) {
-	value, ok := v.missingPictureIds.Get(extPictureId)
-	return value.(int32), ok
+	return v.missingPictureIds.Get(extPictureId)
 }
 
 // -----------------------------
 
-//
 // VP8PictureIdWrapHandler
-//
 func isWrapping7Bit(val1 int32, val2 int32) bool {
 	return val2 < val1 && (val1-val2) > (1<<6)
 }
