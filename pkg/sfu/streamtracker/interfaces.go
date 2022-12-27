@@ -1,6 +1,34 @@
 package streamtracker
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
+
+// ------------------------------------------------------------
+
+type StreamStatusChange int32
+
+func (s StreamStatusChange) String() string {
+	switch s {
+	case StreamStatusChangeNone:
+		return "none"
+	case StreamStatusChangeStopped:
+		return "stopped"
+	case StreamStatusChangeActive:
+		return "active"
+	default:
+		return fmt.Sprintf("unknown: %d", int(s))
+	}
+}
+
+const (
+	StreamStatusChangeNone StreamStatusChange = iota
+	StreamStatusChangeStopped
+	StreamStatusChangeActive
+)
+
+// ------------------------------------------------------------
 
 type StreamTrackerImpl interface {
 	Start()
@@ -9,6 +37,6 @@ type StreamTrackerImpl interface {
 
 	GetCheckInterval() time.Duration
 
-	Observe(temporalLayer int32, pktSize int, payloadSize int) bool
-	CheckStatus() StreamStatus
+	Observe(hasMarker bool, ts uint32) StreamStatusChange
+	CheckStatus() StreamStatusChange
 }

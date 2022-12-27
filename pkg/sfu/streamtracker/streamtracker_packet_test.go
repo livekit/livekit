@@ -39,14 +39,14 @@ func TestStreamTracker(t *testing.T) {
 		require.Equal(t, StreamStatusStopped, tracker.Status())
 
 		// observe first packet
-		tracker.Observe(0, 20, 10)
+		tracker.Observe(0, 20, 10, false, 0)
 
 		testutils.WithTimeout(t, func() string {
 			if callbackCalled.Load() {
 				return ""
-			} else {
-				return "first packet didn't activate stream"
 			}
+
+			return "first packet didn't activate stream"
 		})
 
 		require.Equal(t, StreamStatusActive, tracker.Status())
@@ -70,7 +70,7 @@ func TestStreamTracker(t *testing.T) {
 			callbackStatusMu.Unlock()
 		})
 
-		tracker.Observe(0, 20, 10)
+		tracker.Observe(0, 20, 10, false, 0)
 		testutils.WithTimeout(t, func() string {
 			callbackStatusMu.RLock()
 			defer callbackStatusMu.RUnlock()
@@ -107,22 +107,22 @@ func TestStreamTracker(t *testing.T) {
 		tracker.Start()
 		require.Equal(t, StreamStatusStopped, tracker.Status())
 
-		tracker.Observe(0, 20, 10)
+		tracker.Observe(0, 20, 10, false, 0)
 		testutils.WithTimeout(t, func() string {
 			if tracker.Status() == StreamStatusActive {
 				return ""
-			} else {
-				return "first packet did not activate stream"
 			}
+
+			return "first packet did not activate stream"
 		})
 
 		tracker.setStatusLocked(StreamStatusStopped)
 
-		tracker.Observe(0, 20, 10)
+		tracker.Observe(0, 20, 10, false, 0)
 		tracker.updateStatus()
 		require.Equal(t, StreamStatusStopped, tracker.Status())
 
-		tracker.Observe(0, 20, 10)
+		tracker.Observe(0, 20, 10, false, 0)
 		tracker.updateStatus()
 		require.Equal(t, StreamStatusActive, tracker.Status())
 
@@ -132,13 +132,13 @@ func TestStreamTracker(t *testing.T) {
 	t.Run("changes to inactive when paused", func(t *testing.T) {
 		tracker := newStreamTrackerPacket(5, 60, 500*time.Millisecond)
 		tracker.Start()
-		tracker.Observe(0, 20, 10)
+		tracker.Observe(0, 20, 10, false, 0)
 		testutils.WithTimeout(t, func() string {
 			if tracker.Status() == StreamStatusActive {
 				return ""
-			} else {
-				return "first packet did not activate stream"
 			}
+
+			return "first packet did not activate stream"
 		})
 
 		tracker.SetPaused(true)
@@ -158,46 +158,48 @@ func TestStreamTracker(t *testing.T) {
 		require.Equal(t, StreamStatusStopped, tracker.Status())
 
 		// observe first packet
-		tracker.Observe(0, 20, 10)
+		tracker.Observe(0, 20, 10, false, 0)
 
 		testutils.WithTimeout(t, func() string {
 			if callbackCalled.Load() == 1 {
 				return ""
-			} else {
-				return fmt.Sprintf("expected onStatusChanged to be called once, actual: %d", callbackCalled.Load())
 			}
+
+			return fmt.Sprintf("expected onStatusChanged to be called once, actual: %d", callbackCalled.Load())
 		})
 
 		require.Equal(t, StreamStatusActive, tracker.Status())
 		require.Equal(t, uint32(1), callbackCalled.Load())
 
 		// observe a few more
-		tracker.Observe(0, 20, 10)
-		tracker.Observe(0, 20, 10)
-		tracker.Observe(0, 20, 10)
-		tracker.Observe(0, 20, 10)
+		tracker.Observe(0, 20, 10, false, 0)
+		tracker.Observe(0, 20, 10, false, 0)
+		tracker.Observe(0, 20, 10, false, 0)
+		tracker.Observe(0, 20, 10, false, 0)
 		tracker.updateStatus()
 
 		// should still be active
 		require.Equal(t, StreamStatusActive, tracker.Status())
+		require.Equal(t, uint32(1), callbackCalled.Load())
 
 		// Reset. The first packet after reset should flip state again
 		tracker.Reset()
 		require.Equal(t, StreamStatusStopped, tracker.Status())
+		require.Equal(t, uint32(2), callbackCalled.Load())
 
 		// first packet after reset
-		tracker.Observe(0, 20, 10)
+		tracker.Observe(0, 20, 10, false, 0)
 
 		testutils.WithTimeout(t, func() string {
-			if callbackCalled.Load() == 2 {
+			if callbackCalled.Load() == 3 {
 				return ""
-			} else {
-				return fmt.Sprintf("expected onStatusChanged to be called twice, actual %d", callbackCalled.Load())
 			}
+
+			return fmt.Sprintf("expected onStatusChanged to be called thrice, actual %d", callbackCalled.Load())
 		})
 
 		require.Equal(t, StreamStatusActive, tracker.Status())
-		require.Equal(t, uint32(2), callbackCalled.Load())
+		require.Equal(t, uint32(3), callbackCalled.Load())
 
 		tracker.Stop()
 	})

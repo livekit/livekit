@@ -18,8 +18,6 @@ type StreamTrackerPacketParams struct {
 	Logger logger.Logger
 }
 
-// StreamTracker keeps track of packet flow and ensures a particular up track is consistently producing
-// It runs its own goroutine for detection, and fires OnStatusChanged callback
 type StreamTrackerPacket struct {
 	params StreamTrackerPacketParams
 
@@ -53,35 +51,39 @@ func (s *StreamTrackerPacket) GetCheckInterval() time.Duration {
 	return s.params.CycleDuration
 }
 
-// Observe a packet that's received
-func (s *StreamTrackerPacket) Observe(temporalLayer int32, pktSize int, payloadSize int) bool {
+func (s *StreamTrackerPacket) Observe(_hasMarker bool, _ts uint32) StreamStatusChange {
 	if !s.initialized {
 		// first packet
 		s.initialized = true
 		s.countSinceLast = 1
-		return true
+		return StreamStatusChangeActive
 	}
 
 	s.countSinceLast++
-	return false
+	return StreamStatusChangeNone
 }
 
-func (s *StreamTrackerPacket) CheckStatus() StreamStatus {
+func (s *StreamTrackerPacket) CheckStatus() StreamStatusChange {
+	if !s.initialized {
+		// should not be getting called when not initialized, but be safe
+		return StreamStatusChangeNone
+	}
+
 	if s.countSinceLast >= s.params.SamplesRequired {
 		s.cycleCount++
 	} else {
 		s.cycleCount = 0
 	}
 
-	var status StreamStatus
+	statusChange := StreamStatusChangeNone
 	if s.cycleCount == 0 {
 		// no packets seen for a period, flip to stopped
-		status = StreamStatusStopped
+		statusChange = StreamStatusChangeStopped
 	} else if s.cycleCount >= s.params.CyclesRequired {
 		// packets seen for some time after resume, flip to active
-		status = StreamStatusActive
+		statusChange = StreamStatusChangeActive
 	}
 
 	s.countSinceLast = 0
-	return status
+	return statusChange
 }

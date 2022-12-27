@@ -17,7 +17,9 @@ type StreamTrackerManager struct {
 	trackInfo         *livekit.TrackInfo
 	isSVC             bool
 	maxPublishedLayer int32
+	clockRate         uint32
 
+	trackerType                config.StreamTrackerType
 	configVideo                []streamtracker.StreamTrackerPacketParams
 	configScreenshare          []streamtracker.StreamTrackerPacketParams
 	exemptedLayersVideo        []int32
@@ -43,6 +45,8 @@ func NewStreamTrackerManager(
 	logger logger.Logger,
 	trackInfo *livekit.TrackInfo,
 	isSVC bool,
+	clockRate uint32,
+	trackerType config.StreamTrackerType,
 	trackerConfig config.StreamTrackersConfig,
 ) *StreamTrackerManager {
 	s := &StreamTrackerManager{
@@ -50,6 +54,8 @@ func NewStreamTrackerManager(
 		trackInfo:                 trackInfo,
 		isSVC:                     isSVC,
 		maxPublishedLayer:         0,
+		clockRate:                 clockRate,
+		trackerType:               trackerType,
 		exemptedLayersVideo:       trackerConfig.ExemptedLayersVideo,
 		exemptedLayersScreenshare: trackerConfig.ExemptedLayersScreenshare,
 	}
@@ -95,30 +101,63 @@ func (s *StreamTrackerManager) OnMaxLayerChanged(f func(maxLayer int32)) {
 	s.onMaxLayerChanged = f
 }
 
-func (s *StreamTrackerManager) AddTracker(layer int32) *streamtracker.StreamTracker {
+func (s *StreamTrackerManager) createStreamTrackerPacket(layer int32) streamtracker.StreamTrackerImpl {
 	var params streamtracker.StreamTrackerPacketParams
-	var bitrateInterval time.Duration
 	if s.trackInfo.Source == livekit.TrackSource_SCREEN_SHARE {
 		if int(layer) >= len(s.configScreenshare) {
 			return nil
 		}
 
 		params = s.configScreenshare[layer]
-		bitrateInterval = s.bitrateIntervalScreenshare[layer]
 	} else {
 		if int(layer) >= len(s.configVideo) {
 			return nil
 		}
 
 		params = s.configVideo[layer]
-		bitrateInterval = s.bitrateIntervalVideo[layer]
 	}
 	params.Logger = s.logger.WithValues("layer", layer)
-	trackerImpl := streamtracker.NewStreamTrackerPacket(params)
+	return streamtracker.NewStreamTrackerPacket(params)
+}
+
+func (s *StreamTrackerManager) createStreamTrackerFrame(layer int32) streamtracker.StreamTrackerImpl {
+	params := streamtracker.StreamTrackerFrameParams{
+		ClockRate: s.clockRate,
+		Logger:    s.logger.WithValues("layer", layer),
+	}
+	return streamtracker.NewStreamTrackerFrame(params)
+}
+
+func (s *StreamTrackerManager) AddTracker(layer int32) *streamtracker.StreamTracker {
+	var bitrateInterval time.Duration
+	if s.trackInfo.Source == livekit.TrackSource_SCREEN_SHARE {
+		if int(layer) >= len(s.bitrateIntervalScreenshare) {
+			return nil
+		}
+
+		bitrateInterval = s.bitrateIntervalScreenshare[layer]
+	} else {
+		if int(layer) >= len(s.bitrateIntervalVideo) {
+			return nil
+		}
+
+		bitrateInterval = s.bitrateIntervalVideo[layer]
+	}
+
+	var trackerImpl streamtracker.StreamTrackerImpl
+	switch s.trackerType {
+	case config.StreamTrackerTypePacket:
+		trackerImpl = s.createStreamTrackerPacket(layer)
+	case config.StreamTrackerTypeFrame:
+		trackerImpl = s.createStreamTrackerFrame(layer)
+	}
+	if trackerImpl == nil {
+		return nil
+	}
 	tracker := streamtracker.NewStreamTracker(streamtracker.StreamTrackerParams{
 		StreamTrackerImpl:     trackerImpl,
 		BitrateReportInterval: bitrateInterval,
-		Logger:                params.Logger,
+		Logger:                s.logger.WithValues("layer", layer),
 	})
 	s.logger.Debugw("StreamTrackerManager add track", "layer", layer)
 	tracker.OnStatusChanged(func(status streamtracker.StreamStatus) {
@@ -136,9 +175,11 @@ func (s *StreamTrackerManager) AddTracker(layer int32) *streamtracker.StreamTrac
 	})
 
 	s.lock.Lock()
+	paused := s.paused
 	s.trackers[layer] = tracker
 	s.lock.Unlock()
 
+	tracker.SetPaused(paused)
 	tracker.Start()
 	return tracker
 }
@@ -191,6 +232,13 @@ func (s *StreamTrackerManager) SetPaused(paused bool) {
 			tracker.SetPaused(paused)
 		}
 	}
+}
+
+func (s *StreamTrackerManager) IsPaused() bool {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+
+	return s.paused
 }
 
 func (s *StreamTrackerManager) SetMaxExpectedSpatialLayer(layer int32) int32 {
@@ -431,7 +479,8 @@ func (s *StreamTrackerManager) removeAvailableLayer(layer int32) {
 
 	newLayers := make([]int32, 0, DefaultMaxLayerSpatial+1)
 	for _, l := range s.availableLayers {
-		if exempt || l != layer {
+		// do not remove layers for non-simulcast
+		if exempt || l != layer || len(s.trackInfo.Layers) < 2 {
 			newLayers = append(newLayers, l)
 		}
 	}

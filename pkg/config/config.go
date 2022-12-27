@@ -23,12 +23,16 @@ var DefaultStunServers = []string{
 }
 
 type CongestionControlProbeMode string
+type StreamTrackerType string
 
 const (
 	generatedCLIFlagUsage = "generated"
 
 	CongestionControlProbeModePadding CongestionControlProbeMode = "padding"
 	CongestionControlProbeModeMedia   CongestionControlProbeMode = "media"
+
+	StreamTrackerTypePacket StreamTrackerType = "packet"
+	StreamTrackerTypeFrame  StreamTrackerType = "frame"
 
 	StatsUpdateInterval = time.Second * 10
 )
@@ -159,6 +163,7 @@ type StreamTrackersConfig struct {
 
 type VideoConfig struct {
 	DynacastPauseDelay time.Duration        `yaml:"dynacast_pause_delay,omitempty"`
+	StreamTrackerType  StreamTrackerType    `yaml:"stream_tracker_type,omitempty"`
 	StreamTracker      StreamTrackersConfig `yaml:"stream_tracker,omitempty"`
 }
 
@@ -272,6 +277,7 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 		},
 		Video: VideoConfig{
 			DynacastPauseDelay: 5 * time.Second,
+			StreamTrackerType:  StreamTrackerTypeFrame,
 			StreamTracker: StreamTrackersConfig{
 				ExemptedLayersScreenshare: []int32{0},
 				ExemptedLayersVideo:       []int32{},

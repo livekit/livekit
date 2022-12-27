@@ -24,8 +24,8 @@ func (s StreamStatus) String() string {
 }
 
 const (
-	StreamStatusStopped StreamStatus = 0
-	StreamStatusActive  StreamStatus = 1
+	StreamStatusStopped StreamStatus = iota
+	StreamStatusActive
 )
 
 // ------------------------------------------------------------
@@ -167,7 +167,13 @@ func (s *StreamTracker) SetPaused(paused bool) {
 	s.maybeNotifyStatus()
 }
 
-func (s *StreamTracker) Observe(temporalLayer int32, pktSize int, payloadSize int) {
+func (s *StreamTracker) Observe(
+	temporalLayer int32,
+	pktSize int,
+	payloadSize int,
+	hasMarker bool,
+	ts uint32,
+) {
 	s.lock.Lock()
 
 	if s.isStopped || s.paused || payloadSize == 0 {
@@ -175,8 +181,8 @@ func (s *StreamTracker) Observe(temporalLayer int32, pktSize int, payloadSize in
 		return
 	}
 
-	isInitialized := s.params.StreamTrackerImpl.Observe(temporalLayer, pktSize, payloadSize)
-	if isInitialized {
+	statusChange := s.params.StreamTrackerImpl.Observe(hasMarker, ts)
+	if statusChange == StreamStatusChangeActive {
 		s.setStatusLocked(StreamStatusActive)
 		s.lastBitrateReport = time.Now()
 
@@ -188,7 +194,7 @@ func (s *StreamTracker) Observe(temporalLayer int32, pktSize int, payloadSize in
 	}
 	s.lock.Unlock()
 
-	if isInitialized {
+	if statusChange != StreamStatusChangeNone {
 		s.maybeNotifyStatus()
 	}
 }
@@ -239,7 +245,12 @@ func (s *StreamTracker) worker(generation uint32) {
 
 func (s *StreamTracker) updateStatus() {
 	s.lock.Lock()
-	s.status = s.params.StreamTrackerImpl.CheckStatus()
+	switch s.params.StreamTrackerImpl.CheckStatus() {
+	case StreamStatusChangeStopped:
+		s.setStatusLocked(StreamStatusStopped)
+	case StreamStatusChangeActive:
+		s.setStatusLocked(StreamStatusActive)
+	}
 	s.lock.Unlock()
 
 	s.maybeNotifyStatus()
