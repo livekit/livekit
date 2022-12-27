@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	lru "github.com/hashicorp/golang-lru"
+	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/pion/rtcp"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
@@ -97,7 +97,7 @@ type ParticipantImpl struct {
 
 	isClosed     atomic.Bool
 	state        atomic.Value // livekit.ParticipantInfo_State
-	updateCache  *lru.Cache
+	updateCache  *lru.Cache[livekit.ParticipantID, uint32]
 	resSink      atomic.Value // routing.MessageSink
 	resSinkValid atomic.Bool
 	grants       *auth.ClaimGrants
@@ -207,7 +207,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 
 	var err error
 	// keep last participants and when updates were sent
-	if p.updateCache, err = lru.New(128); err != nil {
+	if p.updateCache, err = lru.New[livekit.ParticipantID, uint32](128); err != nil {
 		return nil, err
 	}
 
@@ -909,7 +909,7 @@ func (p *ParticipantImpl) UpdateSubscribedTrackSettings(trackID livekit.TrackID,
 }
 
 func (p *ParticipantImpl) VerifySubscribeParticipantInfo(pID livekit.ParticipantID, version uint32) {
-	if v, ok := p.updateCache.Get(pID); ok && v.(uint32) >= version {
+	if v, ok := p.updateCache.Get(pID); ok && v >= version {
 		return
 	}
 

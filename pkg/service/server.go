@@ -14,7 +14,7 @@ import (
 	"github.com/pion/turn/v2"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
-	"github.com/urfave/negroni"
+	"github.com/urfave/negroni/v3"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 

@@ -47,18 +47,17 @@ func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.
 	validUpdates := make([]*livekit.ParticipantInfo, 0, len(participantsToUpdate))
 	for _, pi := range participantsToUpdate {
 		isValid := true
-		if val, ok := p.updateCache.Get(pi.Sid); ok {
-			if lastVersion, ok := val.(uint32); ok {
-				// this is a message delivered out of order, a more recent version of the message had already been
-				// sent.
-				if pi.Version < lastVersion {
-					p.params.Logger.Debugw("skipping outdated participant update", "version", pi.Version, "lastVersion", lastVersion)
-					isValid = false
-				}
+		pID := livekit.ParticipantID(pi.Sid)
+		if lastVersion, ok := p.updateCache.Get(pID); ok {
+			// this is a message delivered out of order, a more recent version of the message had already been
+			// sent.
+			if pi.Version < lastVersion {
+				p.params.Logger.Debugw("skipping outdated participant update", "version", pi.Version, "lastVersion", lastVersion)
+				isValid = false
 			}
 		}
 		if isValid {
-			p.updateCache.Add(pi.Sid, pi.Version)
+			p.updateCache.Add(pID, pi.Version)
 			validUpdates = append(validUpdates, pi)
 		}
 	}

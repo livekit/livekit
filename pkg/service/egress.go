@@ -368,7 +368,6 @@ func (s *EgressService) startWorker() error {
 				s.handleUpdate(info)
 			case <-s.shutdown:
 				_ = sub.Close()
-				rs.Stop()
 				return
 			}
 		}
