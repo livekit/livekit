@@ -38,7 +38,7 @@ require (
 	github.com/pion/webrtc/v3 v3.1.50
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.14.0
-	github.com/rs/cors v1.8.2
+	github.com/rs/cors v1.8.3
 	github.com/sebest/xff v0.0.0-20210106013422-671bd2870b3a
 	github.com/stretchr/testify v1.8.1
 	github.com/thoas/go-funk v0.9.3
