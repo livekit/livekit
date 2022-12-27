@@ -81,7 +81,7 @@ func (s *EgressService) Start() error {
 	}
 
 	s.shutdown = make(chan struct{})
-	if s.psrpcClient != nil && s.es != nil {
+	if (s.psrpcClient != nil || s.clientDeprecated != nil) && s.es != nil {
 		return s.startWorker()
 	}
 
@@ -188,7 +188,7 @@ func (s *egressLauncher) StartEgress(ctx context.Context, req *livekit.StartEgre
 		s.usePSRPC = s.es.UsePSRPC()
 	}
 
-	if s.usePSRPC {
+	if s.usePSRPC && s.psrpcClient != nil {
 		info, err = s.psrpcClient.StartEgress(ctx, req)
 	} else {
 		logger.Warnw("Using deprecated egress client. Please upgrade egress to v >=1.5.4", nil)
@@ -217,7 +217,7 @@ func (s *EgressService) UpdateLayout(ctx context.Context, req *livekit.UpdateLay
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
-	if s.psrpcClient == nil {
+	if s.psrpcClient == nil && s.clientDeprecated == nil {
 		return nil, ErrEgressNotConnected
 	}
 
@@ -253,7 +253,7 @@ func (s *EgressService) UpdateStream(ctx context.Context, req *livekit.UpdateStr
 		return nil, twirpAuthError(err)
 	}
 
-	if s.psrpcClient == nil {
+	if s.psrpcClient == nil && s.clientDeprecated == nil {
 		return nil, ErrEgressNotConnected
 	}
 
@@ -290,7 +290,7 @@ func (s *EgressService) ListEgress(ctx context.Context, req *livekit.ListEgressR
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
-	if s.psrpcClient == nil {
+	if s.psrpcClient == nil && s.clientDeprecated == nil {
 		return nil, ErrEgressNotConnected
 	}
 
@@ -308,7 +308,7 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 		return nil, twirpAuthError(err)
 	}
 
-	if s.psrpcClient == nil {
+	if s.psrpcClient == nil && s.clientDeprecated == nil {
 		return nil, ErrEgressNotConnected
 	}
 
@@ -356,22 +356,24 @@ func (s *EgressService) startWorker() error {
 		return err
 	}
 
-	go func() {
-		sub, err := s.psrpcClient.SubscribeInfoUpdate(context.Background())
-		if err != nil {
-			logger.Errorw("failed to subscribe", err)
-		}
-
-		for {
-			select {
-			case info := <-sub.Channel():
-				s.handleUpdate(info)
-			case <-s.shutdown:
-				_ = sub.Close()
-				return
+	if s.psrpcClient != nil {
+		go func() {
+			sub, err := s.psrpcClient.SubscribeInfoUpdate(context.Background())
+			if err != nil {
+				logger.Errorw("failed to subscribe", err)
 			}
-		}
-	}()
+
+			for {
+				select {
+				case info := <-sub.Channel():
+					s.handleUpdate(info)
+				case <-s.shutdown:
+					_ = sub.Close()
+					return
+				}
+			}
+		}()
+	}
 
 	if s.clientDeprecated != nil {
 		go func() {
@@ -438,6 +440,9 @@ func (s *EgressService) handleUpdate(info *livekit.EgressInfo) {
 func (s *EgressService) getFirst(f0, f1 func() (*livekit.EgressInfo, error)) (*livekit.EgressInfo, error) {
 	if s.clientDeprecated == nil {
 		return f1()
+	}
+	if s.psrpcClient == nil {
+		return f0()
 	}
 
 	type res struct {

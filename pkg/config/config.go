@@ -48,6 +48,7 @@ type Config struct {
 	Video          VideoConfig              `yaml:"video,omitempty"`
 	Room           RoomConfig               `yaml:"room,omitempty"`
 	TURN           TURNConfig               `yaml:"turn,omitempty"`
+	Egress         EgressConfig             `yaml:"egress,omitempty"`
 	Ingress        IngressConfig            `yaml:"ingress,omitempty"`
 	WebHook        WebHookConfig            `yaml:"webhook,omitempty"`
 	NodeSelector   NodeSelectorConfig       `yaml:"node_selector,omitempty"`
@@ -219,6 +220,10 @@ type RegionConfig struct {
 type LimitConfig struct {
 	NumTracks   int32   `yaml:"num_tracks"`
 	BytesPerSec float32 `yaml:"bytes_per_sec"`
+}
+
+type EgressConfig struct {
+	ForcePsrpc bool `yaml:"force_psrpc"`
 }
 
 type IngressConfig struct {

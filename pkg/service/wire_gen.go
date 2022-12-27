@@ -48,7 +48,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	nodeID := getNodeID(currentNode)
 	messageBus := getMessageBus(universalClient)
-	egressClient, err := rpc.NewEgressClient(nodeID, messageBus)
+	egressClient, err := getEgressClient(conf, nodeID, messageBus)
 	if err != nil {
 		return nil, err
 	}
@@ -71,8 +71,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	egressService := NewEgressService(egressClient, rpcClient, objectStore, egressStore, roomService, telemetryService, rtcEgressLauncher)
 	ingressConfig := getIngressConfig(conf)
-	ingressRPC := ingress.NewRedisRPC(nodeID, universalClient)
-	ingressRPCClient := getIngressRPCClient(ingressRPC)
+	rpc := ingress.NewRedisRPC(nodeID, universalClient)
+	ingressRPCClient := getIngressRPCClient(rpc)
 	ingressStore := getIngressStore(objectStore)
 	ingressService := NewIngressService(ingressConfig, ingressRPCClient, ingressStore, roomService, telemetryService)
 	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode, telemetryService)
@@ -168,6 +168,14 @@ func getMessageBus(rc redis.UniversalClient) psrpc.MessageBus {
 		return nil
 	}
 	return psrpc.NewRedisMessageBus(rc)
+}
+
+func getEgressClient(conf *config.Config, nodeID livekit.NodeID, bus psrpc.MessageBus) (rpc.EgressClient, error) {
+	if conf.Egress.ForcePsrpc {
+		return rpc.NewEgressClient(nodeID, bus)
+	}
+
+	return nil, nil
 }
 
 func getEgressStore(s ObjectStore) EgressStore {
