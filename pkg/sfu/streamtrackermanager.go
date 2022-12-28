@@ -57,6 +57,8 @@ func NewStreamTrackerManager(
 		s.trackerConfig = trackersConfig.Screenshare
 	case livekit.TrackSource_CAMERA:
 		s.trackerConfig = trackersConfig.Video
+	default:
+		s.trackerConfig = trackersConfig.Video
 	}
 
 	for _, layer := range s.trackInfo.Layers {
