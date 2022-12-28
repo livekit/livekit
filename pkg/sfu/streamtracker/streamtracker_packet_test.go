@@ -9,16 +9,19 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/testutils"
 	"github.com/livekit/protocol/logger"
 )
 
 func newStreamTrackerPacket(samplesRequired uint32, cyclesRequired uint32, cycleDuration time.Duration) *StreamTracker {
 	stp := NewStreamTrackerPacket(StreamTrackerPacketParams{
-		SamplesRequired: samplesRequired,
-		CyclesRequired:  cyclesRequired,
-		CycleDuration:   cycleDuration,
-		Logger:          logger.GetLogger(),
+		Config: config.StreamTrackerPacketConfig{
+			SamplesRequired: samplesRequired,
+			CyclesRequired:  cyclesRequired,
+			CycleDuration:   cycleDuration,
+		},
+		Logger: logger.GetLogger(),
 	})
 
 	return NewStreamTracker(StreamTrackerParams{

@@ -1,6 +1,7 @@
 package streamtracker
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -19,7 +20,7 @@ func (s StreamStatus) String() string {
 	case StreamStatusActive:
 		return "active"
 	default:
-		return "unknown"
+		return fmt.Sprintf("unknown: %d", int(s))
 	}
 }
 

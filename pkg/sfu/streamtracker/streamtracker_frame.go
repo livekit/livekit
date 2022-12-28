@@ -4,21 +4,18 @@ import (
 	"math"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/logger"
 )
 
 const (
 	checkInterval       = 500 * time.Millisecond
-	evalIntervalFactor  = float64(1.5)
 	staleWindowFactor   = 5
 	frameRateResolution = float64(0.01) // 1 frame every 100 seconds
 )
 
-func defaultEvalInterval() time.Duration {
-	return time.Duration(float64(checkInterval) * evalIntervalFactor)
-}
-
 type StreamTrackerFrameParams struct {
+	Config    config.StreamTrackerFrameConfig
 	ClockRate uint32
 	Logger    logger.Logger
 }
@@ -61,7 +58,7 @@ func (s *StreamTrackerFrame) Reset() {
 	s.numFrames = 0
 
 	s.lowestFrameRate = 0.0
-	s.evalInterval = defaultEvalInterval()
+	s.updateEvalInterval()
 	s.lastStatusCheckAt = time.Time{}
 }
 
@@ -114,13 +111,12 @@ func (s *StreamTrackerFrame) CheckStatus() StreamStatusChange {
 	if diff > 0 || s.numFrames > 1 {
 		if diff > s.params.ClockRate*staleWindowFactor {
 			s.params.Logger.Infow("eval window might be stale", "numFrames", s.numFrames, "timeElapsed", float64(diff)/float64(s.params.ClockRate))
-			// STREAM-TRACKER-FRAME-TODO: might need to protect against one frame, long pause and then another frame, i. e. window getting stale.
+			// STREAM-TRACKER-FRAME-TODO: might need to protect against one frame, long pause and then one or more frames, i. e. window getting stale.
 			// One possible option is to reset the fps measurement variables (tsInitialized, oldestTS, newestTS, numFrames, lowestFrameRate, evelInterval)
 			// and restart the lowest frame rate calulation process.
 		}
 		frameRate = float64(s.params.ClockRate) / float64(diff) * float64(s.numFrames-1)
 		frameRate = math.Round(frameRate/frameRateResolution) * frameRateResolution
-		s.params.Logger.Debugw("RAJA frame rate calculation", "oldest", s.oldestTS, "newest", s.newestTS, "diff", diff, "numFrames", s.numFrames, "frameRate", frameRate) // REMOVE
 	}
 
 	if s.lowestFrameRate == 0.0 {
@@ -130,7 +126,7 @@ func (s *StreamTrackerFrame) CheckStatus() StreamStatusChange {
 		}
 
 		s.lowestFrameRate = frameRate
-		s.evalInterval = time.Duration(math.Max(float64(time.Second)/s.lowestFrameRate*evalIntervalFactor, float64(defaultEvalInterval())))
+		s.updateEvalInterval()
 		s.params.Logger.Infow("initializing lowest frame rate", "lowestFPS", s.lowestFrameRate, "evalInterval", s.evalInterval)
 	} else {
 		// check only at intervals based on lowest seen frame rate
@@ -147,11 +143,13 @@ func (s *StreamTrackerFrame) CheckStatus() StreamStatusChange {
 	s.oldestTS = s.newestTS
 	s.numFrames = 1
 
-	// RAJA-TODO: this does not work properly for frame rate falling steeply, how to address that
+	// STREAM-TRACKER-FRAME-TODO: this will run into challenges for frame rate falling steeply, how to address that
+	// look at some referential rules (between layers) for possibilities to solve it. Currently, this is addressed
+	// by setting a source aware min FPS to ensure evaluation window in long enough
 	// update lowest seen frame rate
 	if frameRate > 0.0 && s.lowestFrameRate > frameRate {
 		s.lowestFrameRate = frameRate
-		s.evalInterval = time.Duration(math.Max(float64(time.Second)/s.lowestFrameRate, float64(defaultEvalInterval())))
+		s.updateEvalInterval()
 		s.params.Logger.Infow("updating lowest frame rate", "lowestFPS", s.lowestFrameRate, "evalInterval", s.evalInterval)
 	}
 
@@ -160,4 +158,20 @@ func (s *StreamTrackerFrame) CheckStatus() StreamStatusChange {
 	}
 
 	return StreamStatusChangeActive
+}
+
+func (s *StreamTrackerFrame) updateEvalInterval() {
+	s.evalInterval = checkInterval
+	if s.lowestFrameRate > 0 {
+		lowestFrameRateInterval := time.Duration(float64(time.Second) / s.lowestFrameRate)
+		if lowestFrameRateInterval > s.evalInterval {
+			s.evalInterval = lowestFrameRateInterval
+		}
+	}
+	if s.params.Config.MinFPS > 0 {
+		minFPSInterval := time.Duration(float64(time.Second) / s.params.Config.MinFPS)
+		if minFPSInterval > s.evalInterval {
+			s.evalInterval = minFPSInterval
+		}
+	}
 }

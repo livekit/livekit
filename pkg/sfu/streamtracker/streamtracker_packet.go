@@ -3,18 +3,12 @@ package streamtracker
 import (
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/logger"
 )
 
 type StreamTrackerPacketParams struct {
-	// number of samples needed per cycle
-	SamplesRequired uint32
-
-	// number of cycles needed to be active
-	CyclesRequired uint32
-
-	CycleDuration time.Duration
-
+	Config config.StreamTrackerPacketConfig
 	Logger logger.Logger
 }
 
@@ -48,7 +42,7 @@ func (s *StreamTrackerPacket) Reset() {
 }
 
 func (s *StreamTrackerPacket) GetCheckInterval() time.Duration {
-	return s.params.CycleDuration
+	return s.params.Config.CycleDuration
 }
 
 func (s *StreamTrackerPacket) Observe(_hasMarker bool, _ts uint32) StreamStatusChange {
@@ -69,7 +63,7 @@ func (s *StreamTrackerPacket) CheckStatus() StreamStatusChange {
 		return StreamStatusChangeNone
 	}
 
-	if s.countSinceLast >= s.params.SamplesRequired {
+	if s.countSinceLast >= s.params.Config.SamplesRequired {
 		s.cycleCount++
 	} else {
 		s.cycleCount = 0
@@ -79,7 +73,7 @@ func (s *StreamTrackerPacket) CheckStatus() StreamStatusChange {
 	if s.cycleCount == 0 {
 		// no packets seen for a period, flip to stopped
 		statusChange = StreamStatusChangeStopped
-	} else if s.cycleCount >= s.params.CyclesRequired {
+	} else if s.cycleCount >= s.params.Config.CyclesRequired {
 		// packets seen for some time after resume, flip to active
 		statusChange = StreamStatusChangeActive
 	}

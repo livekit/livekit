@@ -549,7 +549,6 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64) *ExtPack
 			ep.Spatial = InvalidLayerSpatial // vp8 don't have spatial scalability, reset to -1
 		}
 		ep.Payload = vp8Packet
-		//fmt.Printf("vp8 packet, sn: %d, ts: %d, pid: %d, isKeyFrame: %+v, temporal: %d\n", ep.Packet.SequenceNumber, ep.Packet.Timestamp, vp8Packet.PictureID, ep.KeyFrame, ep.Temporal) // REMOVE
 	case "video/h264":
 		ep.KeyFrame = IsH264Keyframe(rtpPacket.Payload)
 	case "video/av1":

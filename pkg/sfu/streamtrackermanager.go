@@ -3,7 +3,6 @@ package sfu
 import (
 	"sort"
 	"sync"
-	"time"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -19,13 +18,8 @@ type StreamTrackerManager struct {
 	maxPublishedLayer int32
 	clockRate         uint32
 
-	trackerType                config.StreamTrackerType
-	configVideo                []streamtracker.StreamTrackerPacketParams
-	configScreenshare          []streamtracker.StreamTrackerPacketParams
-	exemptedLayersVideo        []int32
-	exemptedLayersScreenshare  []int32
-	bitrateIntervalVideo       []time.Duration
-	bitrateIntervalScreenshare []time.Duration
+	trackerType   config.StreamTrackerType
+	trackerConfig config.StreamTrackerConfig
 
 	lock sync.RWMutex
 
@@ -47,35 +41,22 @@ func NewStreamTrackerManager(
 	isSVC bool,
 	clockRate uint32,
 	trackerType config.StreamTrackerType,
-	trackerConfig config.StreamTrackersConfig,
+	trackersConfig config.StreamTrackersConfig,
 ) *StreamTrackerManager {
 	s := &StreamTrackerManager{
-		logger:                    logger,
-		trackInfo:                 trackInfo,
-		isSVC:                     isSVC,
-		maxPublishedLayer:         0,
-		clockRate:                 clockRate,
-		trackerType:               trackerType,
-		exemptedLayersVideo:       trackerConfig.ExemptedLayersVideo,
-		exemptedLayersScreenshare: trackerConfig.ExemptedLayersScreenshare,
+		logger:            logger,
+		trackInfo:         trackInfo,
+		isSVC:             isSVC,
+		maxPublishedLayer: 0,
+		clockRate:         clockRate,
+		trackerType:       trackerType,
 	}
 
-	for _, layer := range trackerConfig.Video {
-		s.configVideo = append(s.configVideo, streamtracker.StreamTrackerPacketParams{
-			SamplesRequired: layer.SamplesRequired,
-			CyclesRequired:  layer.CyclesRequired,
-			CycleDuration:   layer.CycleDuration,
-		})
-		s.bitrateIntervalVideo = append(s.bitrateIntervalVideo, layer.BitrateReportInterval)
-	}
-
-	for _, layer := range trackerConfig.Screenshare {
-		s.configScreenshare = append(s.configScreenshare, streamtracker.StreamTrackerPacketParams{
-			SamplesRequired: layer.SamplesRequired,
-			CyclesRequired:  layer.CyclesRequired,
-			CycleDuration:   layer.CycleDuration,
-		})
-		s.bitrateIntervalScreenshare = append(s.bitrateIntervalScreenshare, layer.BitrateReportInterval)
+	switch s.trackInfo.Source {
+	case livekit.TrackSource_SCREEN_SHARE:
+		s.trackerConfig = trackersConfig.Screenshare
+	case livekit.TrackSource_CAMERA:
+		s.trackerConfig = trackersConfig.Video
 	}
 
 	for _, layer := range s.trackInfo.Layers {
@@ -102,26 +83,26 @@ func (s *StreamTrackerManager) OnMaxLayerChanged(f func(maxLayer int32)) {
 }
 
 func (s *StreamTrackerManager) createStreamTrackerPacket(layer int32) streamtracker.StreamTrackerImpl {
-	var params streamtracker.StreamTrackerPacketParams
-	if s.trackInfo.Source == livekit.TrackSource_SCREEN_SHARE {
-		if int(layer) >= len(s.configScreenshare) {
-			return nil
-		}
-
-		params = s.configScreenshare[layer]
-	} else {
-		if int(layer) >= len(s.configVideo) {
-			return nil
-		}
-
-		params = s.configVideo[layer]
+	packetTrackerConfig, ok := s.trackerConfig.PacketTracker[layer]
+	if !ok {
+		return nil
 	}
-	params.Logger = s.logger.WithValues("layer", layer)
+
+	params := streamtracker.StreamTrackerPacketParams{
+		Config: packetTrackerConfig,
+		Logger: s.logger.WithValues("layer", layer),
+	}
 	return streamtracker.NewStreamTrackerPacket(params)
 }
 
 func (s *StreamTrackerManager) createStreamTrackerFrame(layer int32) streamtracker.StreamTrackerImpl {
+	frameTrackerConfig, ok := s.trackerConfig.FrameTracker[layer]
+	if !ok {
+		return nil
+	}
+
 	params := streamtracker.StreamTrackerFrameParams{
+		Config:    frameTrackerConfig,
 		ClockRate: s.clockRate,
 		Logger:    s.logger.WithValues("layer", layer),
 	}
@@ -129,19 +110,9 @@ func (s *StreamTrackerManager) createStreamTrackerFrame(layer int32) streamtrack
 }
 
 func (s *StreamTrackerManager) AddTracker(layer int32) *streamtracker.StreamTracker {
-	var bitrateInterval time.Duration
-	if s.trackInfo.Source == livekit.TrackSource_SCREEN_SHARE {
-		if int(layer) >= len(s.bitrateIntervalScreenshare) {
-			return nil
-		}
-
-		bitrateInterval = s.bitrateIntervalScreenshare[layer]
-	} else {
-		if int(layer) >= len(s.bitrateIntervalVideo) {
-			return nil
-		}
-
-		bitrateInterval = s.bitrateIntervalVideo[layer]
+	bitrateInterval, ok := s.trackerConfig.BitrateReportInterval[layer]
+	if !ok {
+		return nil
 	}
 
 	var trackerImpl streamtracker.StreamTrackerImpl
@@ -154,11 +125,13 @@ func (s *StreamTrackerManager) AddTracker(layer int32) *streamtracker.StreamTrac
 	if trackerImpl == nil {
 		return nil
 	}
+
 	tracker := streamtracker.NewStreamTracker(streamtracker.StreamTrackerParams{
 		StreamTrackerImpl:     trackerImpl,
 		BitrateReportInterval: bitrateInterval,
 		Logger:                s.logger.WithValues("layer", layer),
 	})
+
 	s.logger.Debugw("StreamTrackerManager add track", "layer", layer)
 	tracker.OnStatusChanged(func(status streamtracker.StreamStatus) {
 		s.logger.Debugw("StreamTrackerManager OnStatusChanged", "layer", layer, "status", status)
@@ -458,13 +431,7 @@ func (s *StreamTrackerManager) removeAvailableLayer(layer int32) {
 	// remove from available if not exempt
 	//
 	exempt := false
-	var sourceExemptedLayers []int32
-	if s.trackInfo.Source == livekit.TrackSource_SCREEN_SHARE {
-		sourceExemptedLayers = s.exemptedLayersScreenshare
-	} else {
-		sourceExemptedLayers = s.exemptedLayersVideo
-	}
-	for _, l := range sourceExemptedLayers {
+	for _, l := range s.trackerConfig.ExemptedLayers {
 		if layer == l {
 			exempt = true
 			break
