@@ -94,6 +94,24 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	}
 	t.subscribedTracksMu.Unlock()
 
+	if t.params.MediaTrack.Kind() == livekit.TrackType_AUDIO /*&& audioselection.AudioCodecCanbeMux(*t.params.MediaTrack.ToProto(), wr.codecs) */ {
+		wr.DetermineReceiver(opusCodecCapability)
+		sub.AddMuxAudioTrack(trackID, wr)
+		subTrack := NewSubscribedTrack(SubscribedTrackParams{
+			PublisherID:       t.params.MediaTrack.PublisherID(),
+			PublisherIdentity: t.params.MediaTrack.PublisherIdentity(),
+			PublisherVersion:  t.params.MediaTrack.PublisherVersion(),
+			Subscriber:        sub,
+			MediaTrack:        t.params.MediaTrack,
+			DownTrack:         nil,
+			AdaptiveStream:    sub.GetAdaptiveStream(),
+		})
+		t.subscribedTracksMu.Lock()
+		t.subscribedTracks[subscriberID] = subTrack
+		t.subscribedTracksMu.Unlock()
+		return nil
+	}
+
 	var rtcpFeedback []webrtc.RTCPFeedback
 	switch t.params.MediaTrack.Kind() {
 	case livekit.TrackType_AUDIO:
@@ -285,7 +303,9 @@ func (t *MediaTrackSubscriptions) RemoveSubscriber(subscriberID livekit.Particip
 
 func (t *MediaTrackSubscriptions) closeSubscribedTrack(subTrack types.SubscribedTrack, willBeResumed bool) {
 	dt := subTrack.DownTrack()
+	sub := subTrack.Subscriber()
 	if dt == nil {
+		sub.RemoveMuxAudioTrack(t.params.MediaTrack.ID())
 		return
 	}
 
@@ -294,7 +314,6 @@ func (t *MediaTrackSubscriptions) closeSubscribedTrack(subTrack types.Subscribed
 	if willBeResumed {
 		tr := dt.GetTransceiver()
 		if tr != nil {
-			sub := subTrack.Subscriber()
 			sub.CacheDownTrack(subTrack.ID(), tr, dt.GetState())
 		}
 	}

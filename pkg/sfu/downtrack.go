@@ -236,11 +236,11 @@ func NewDownTrack(
 		maxTrack:       mt,
 		streamID:       r.StreamID(),
 		bufferFactory:  bf,
-		receiver:       r,
 		upstreamCodecs: codecs,
 		kind:           kind,
 		codec:          codecs[0].RTPCodecCapability,
 	}
+	d.receiver = r
 	d.forwarder = NewForwarder(d.kind, d.logger)
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
@@ -269,6 +269,19 @@ func NewDownTrack(
 	d.deltaStatsSnapshotId = d.rtpStats.NewSnapshotId()
 
 	return d, nil
+}
+
+func (d *DownTrack) ResetReceiver(r TrackReceiver) {
+	d.bindLock.Lock()
+	d.receiver = r
+	d.bindLock.Unlock()
+	// TODO: log stats
+}
+
+func (d *DownTrack) getReceiver() TrackReceiver {
+	d.bindLock.Lock()
+	defer d.bindLock.Unlock()
+	return d.receiver
 }
 
 // Bind is called by the PeerConnection after negotiation is complete
@@ -340,7 +353,7 @@ func (d *DownTrack) Unbind(_ webrtc.TrackLocalContext) error {
 }
 
 func (d *DownTrack) TrackInfoAvailable() {
-	d.connectionStats.Start(d.receiver.TrackInfo())
+	d.connectionStats.Start(d.getReceiver().TrackInfo())
 }
 
 // ID is the unique identifier for this Track. This should be unique for the
@@ -431,7 +444,7 @@ func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
 	for {
 		if d.connected.Load() {
 			d.logger.Debugw("sending PLI for layer lock", "generation", generation, "layer", layer)
-			d.receiver.SendPLI(layer, false)
+			d.getReceiver().SendPLI(layer, false)
 			d.rtpStats.UpdateLayerLockPliAndTime(1)
 		}
 
@@ -873,7 +886,7 @@ func (d *DownTrack) IsDeficient() bool {
 }
 
 func (d *DownTrack) BandwidthRequested() int64 {
-	return d.forwarder.BandwidthRequested(d.receiver.GetLayeredBitrate())
+	return d.forwarder.BandwidthRequested(d.getReceiver().GetLayeredBitrate())
 }
 
 func (d *DownTrack) DistanceToDesired() int32 {
@@ -881,13 +894,13 @@ func (d *DownTrack) DistanceToDesired() int32 {
 }
 
 func (d *DownTrack) AllocateOptimal(allowOvershoot bool) VideoAllocation {
-	allocation := d.forwarder.AllocateOptimal(d.receiver.GetLayeredBitrate(), allowOvershoot)
+	allocation := d.forwarder.AllocateOptimal(d.getReceiver().GetLayeredBitrate(), allowOvershoot)
 	d.maybeStartKeyFrameRequester()
 	return allocation
 }
 
 func (d *DownTrack) ProvisionalAllocatePrepare() {
-	d.forwarder.ProvisionalAllocatePrepare(d.receiver.GetLayeredBitrate())
+	d.forwarder.ProvisionalAllocatePrepare(d.getReceiver().GetLayeredBitrate())
 }
 
 func (d *DownTrack) ProvisionalAllocate(availableChannelCapacity int64, layers VideoLayers, allowPause bool, allowOvershoot bool) int64 {
@@ -913,19 +926,19 @@ func (d *DownTrack) ProvisionalAllocateCommit() VideoAllocation {
 }
 
 func (d *DownTrack) AllocateNextHigher(availableChannelCapacity int64, allowOvershoot bool) (VideoAllocation, bool) {
-	allocation, available := d.forwarder.AllocateNextHigher(availableChannelCapacity, d.receiver.GetLayeredBitrate(), allowOvershoot)
+	allocation, available := d.forwarder.AllocateNextHigher(availableChannelCapacity, d.getReceiver().GetLayeredBitrate(), allowOvershoot)
 	d.maybeStartKeyFrameRequester()
 	return allocation, available
 }
 
 func (d *DownTrack) GetNextHigherTransition(allowOvershoot bool) (VideoTransition, bool) {
-	transition, available := d.forwarder.GetNextHigherTransition(d.receiver.GetLayeredBitrate(), allowOvershoot)
+	transition, available := d.forwarder.GetNextHigherTransition(d.getReceiver().GetLayeredBitrate(), allowOvershoot)
 	d.logger.Debugw("stream: get next higher layer", "transition", transition, "available", available)
 	return transition, available
 }
 
 func (d *DownTrack) Pause() VideoAllocation {
-	allocation := d.forwarder.Pause(d.receiver.GetLayeredBitrate())
+	allocation := d.forwarder.Pause(d.getReceiver().GetLayeredBitrate())
 	d.maybeStartKeyFrameRequester()
 	return allocation
 }
@@ -1128,7 +1141,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			targetLayers := d.forwarder.TargetLayers()
 			if targetLayers != InvalidLayers {
 				d.logger.Debugw("sending PLI RTCP", "layer", targetLayers.Spatial)
-				d.receiver.SendPLI(targetLayers.Spatial, false)
+				d.getReceiver().SendPLI(targetLayers.Spatial, false)
 				d.isNACKThrottled.Store(true)
 				d.rtpStats.UpdatePliTime()
 				pliOnce = false
@@ -1219,7 +1232,7 @@ func (d *DownTrack) SetConnected() {
 		if d.bound.Load() && d.kind == webrtc.RTPCodecTypeVideo {
 			targetLayers := d.forwarder.TargetLayers()
 			if targetLayers != InvalidLayers {
-				d.receiver.SendPLI(targetLayers.Spatial, true)
+				d.getReceiver().SendPLI(targetLayers.Spatial, true)
 			}
 		}
 	}
@@ -1266,7 +1279,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		}
 
 		pktBuff := *src
-		n, err := d.receiver.ReadRTP(pktBuff, uint8(meta.layer), meta.sourceSeqNo)
+		n, err := d.getReceiver().ReadRTP(pktBuff, uint8(meta.layer), meta.sourceSeqNo)
 		if err != nil {
 			if err == io.EOF {
 				break

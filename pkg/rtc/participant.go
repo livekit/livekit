@@ -21,6 +21,8 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/supervisor"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/audio"
+	"github.com/livekit/livekit-server/pkg/sfu/audioselection"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/livekit-server/pkg/telemetry"
@@ -37,6 +39,8 @@ const (
 
 	disconnectCleanupDuration = 15 * time.Second
 	migrationWaitDuration     = 3 * time.Second
+
+	muxAudioTracks = 3
 )
 
 type pendingTrackInfo struct {
@@ -163,6 +167,8 @@ type ParticipantImpl struct {
 	trackPublisherVersion     map[livekit.TrackID]uint32
 
 	supervisor *supervisor.ParticipantSupervisor
+
+	audioForwarder *audioselection.SelectionForwarder
 }
 
 func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
@@ -194,6 +200,11 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 			params.SID,
 			params.Telemetry),
 		supervisor: supervisor.NewParticipantSupervisor(supervisor.ParticipantSupervisorParams{Logger: params.Logger}),
+		audioForwarder: audioselection.NewSelectionForwarder(audioselection.SelectionForwarderParams{
+			ActiveDowntracks:     3,
+			Logger:               params.Logger,
+			ActiveLevelThreshold: audio.ConvertAudioLevel(35),
+		}),
 	}
 	p.version.Store(params.InitialVersion)
 	p.migrateState.Store(types.MigrateStateInit)
@@ -215,6 +226,11 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	}
 
 	p.setupUpTrackManager()
+
+	err = p.setupAudioForwarder()
+	if err != nil {
+		return nil, err
+	}
 
 	return p, nil
 }
@@ -652,6 +668,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 
 		p.TransportManager.Close()
 	}()
+	p.audioForwarder.Stop()
 
 	p.dataChannelStats.Report()
 	return nil
@@ -963,6 +980,7 @@ func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack) {
 	if !isAlreadySubscribed && onSubscribedTo != nil {
 		onSubscribedTo(p, publisherID)
 	}
+
 }
 
 // RemoveSubscribedTrack removes a track to the participant's subscribed list
@@ -1297,6 +1315,7 @@ func (p *ParticipantImpl) onPrimaryTransportInitialConnected() {
 
 func (p *ParticipantImpl) onPrimaryTransportFullyEstablished() {
 	p.updateState(livekit.ParticipantInfo_ACTIVE)
+	p.audioForwarder.Start()
 }
 
 func (p *ParticipantImpl) clearDisconnectTimer() {
@@ -2162,4 +2181,109 @@ func codecsFromMediaDescription(m *sdp.MediaDescription) (out []sdp.Codec, err e
 	}
 
 	return out, nil
+}
+
+func (p *ParticipantImpl) AddMuxAudioTrack(trackID livekit.TrackID, r sfu.TrackReceiver) {
+	p.audioForwarder.AddSource(trackID, r)
+}
+
+func (p *ParticipantImpl) RemoveMuxAudioTrack(trackID livekit.TrackID) {
+	p.audioForwarder.RemoveSource(trackID)
+
+}
+
+func (p *ParticipantImpl) setupAudioForwarder() error {
+	// 1. add downtracks
+	for i := 0; i < muxAudioTracks; i++ {
+		if err := p.addDowntrack(); err != nil {
+			p.params.Logger.Errorw("error adding downtrack", err)
+			return err
+		}
+	}
+
+	// 2. setup audio forwarder callbacks
+	p.audioForwarder.OnForwardMappingChanged(func(forwardMapping map[livekit.TrackID]livekit.TrackID) {
+		p.params.Logger.Debugw("forward mapping changed", "mappings", forwardMapping)
+	})
+	return nil
+}
+
+func (p *ParticipantImpl) addDowntrack() error {
+	codecs := []webrtc.RTPCodecParameters{
+		{
+			RTPCodecCapability: opusCodecCapability,
+		},
+	}
+	trackID := livekit.TrackID(utils.NewGuid(utils.TrackPrefix + "AX"))
+	streamID := PackStreamID(p.ID(), trackID)
+	downTrack, err := sfu.NewDownTrack(
+		codecs,
+		audioselection.NewNullReceiver(streamID, trackID),
+		p.GetBufferFactory(),
+		p.ID(),
+		p.params.Config.Receiver.PacketBufferSize,
+		LoggerWithTrack(p.GetLogger(), trackID, false),
+	)
+	if err != nil {
+		return err
+	}
+
+	// subTrack := NewSubscribedTrack(SubscribedTrackParams{
+	// 	PublisherID:       t.params.MediaTrack.PublisherID(),
+	// 	PublisherIdentity: t.params.MediaTrack.PublisherIdentity(),
+	// 	PublisherVersion:  t.params.MediaTrack.PublisherVersion(),
+	// 	Subscriber:        sub,
+	// 	MediaTrack:        t.params.MediaTrack,
+	// 	DownTrack:         downTrack,
+	// 	AdaptiveStream:    sub.GetAdaptiveStream(),
+	// })
+
+	// Bind callback can happen from replaceTrack, so set it up early
+	downTrack.OnBind(func() {
+		p.audioForwarder.AddDownTrack(downTrack)
+		// wr.DetermineReceiver(downTrack.Codec())
+		// if reusingTransceiver.Load() {
+		// 	downTrack.SeedState(dtState)
+		// }
+		// if err = wr.AddDownTrack(downTrack); err != nil && err != sfu.ErrReceiverClosed {
+		// 	sub.GetLogger().Errorw(
+		// 		"could not add down track", err,
+		// 		"publisher", subTrack.PublisherIdentity(),
+		// 		"publisherID", subTrack.PublisherID(),
+		// 		"trackID", trackID,
+		// 	)
+		// }
+
+		// go subTrack.Bound()
+
+		// subTrack.SetPublisherMuted(t.params.MediaTrack.IsMuted())
+	})
+
+	downTrack.OnStatsUpdate(func(_ *sfu.DownTrack, stat *livekit.AnalyticsStat) {
+		// t.params.Telemetry.TrackStats(livekit.StreamType_DOWNSTREAM, subscriberID, trackID, stat)
+	})
+
+	downTrack.OnRttUpdate(func(_ *sfu.DownTrack, rtt uint32) {
+		go p.UpdateRTT(rtt)
+	})
+
+	downTrack.AddReceiverReportListener(func(dt *sfu.DownTrack, report *rtcp.ReceiverReport) {
+		p.OnReceiverReport(dt, report)
+	})
+
+	sender, transceiver, err := p.AddTransceiverFromTrackToSubscriber(downTrack, types.AddTrackParams{})
+	if err != nil {
+		return err
+	}
+
+	sendParameters := sender.GetParameters()
+	downTrack.SetRTPHeaderExtensions(sendParameters.HeaderExtensions)
+
+	downTrack.SetTransceiver(transceiver)
+
+	downTrack.OnCloseHandler(func(willBeResumed bool) {
+		p.audioForwarder.RemoveDownTrack(downTrack)
+	})
+
+	return nil
 }
