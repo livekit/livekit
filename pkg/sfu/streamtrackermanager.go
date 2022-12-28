@@ -18,7 +18,6 @@ type StreamTrackerManager struct {
 	maxPublishedLayer int32
 	clockRate         uint32
 
-	trackerType   config.StreamTrackerType
 	trackerConfig config.StreamTrackerConfig
 
 	lock sync.RWMutex
@@ -40,7 +39,6 @@ func NewStreamTrackerManager(
 	trackInfo *livekit.TrackInfo,
 	isSVC bool,
 	clockRate uint32,
-	trackerType config.StreamTrackerType,
 	trackersConfig config.StreamTrackersConfig,
 ) *StreamTrackerManager {
 	s := &StreamTrackerManager{
@@ -49,7 +47,6 @@ func NewStreamTrackerManager(
 		isSVC:             isSVC,
 		maxPublishedLayer: 0,
 		clockRate:         clockRate,
-		trackerType:       trackerType,
 	}
 
 	switch s.trackInfo.Source {
@@ -118,7 +115,7 @@ func (s *StreamTrackerManager) AddTracker(layer int32) *streamtracker.StreamTrac
 	}
 
 	var trackerImpl streamtracker.StreamTrackerImpl
-	switch s.trackerType {
+	switch s.trackerConfig.StreamTrackerType {
 	case config.StreamTrackerTypePacket:
 		trackerImpl = s.createStreamTrackerPacket(layer)
 	case config.StreamTrackerTypeFrame:
