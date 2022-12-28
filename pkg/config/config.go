@@ -158,6 +158,7 @@ type StreamTrackerFrameConfig struct {
 }
 
 type StreamTrackerConfig struct {
+	StreamTrackerType     StreamTrackerType                   `yaml:"stream_tracker_type,omitempty"`
 	BitrateReportInterval map[int32]time.Duration             `yaml:"bitrate_report_interval,omitempty"`
 	ExemptedLayers        []int32                             `yaml:"exempted_layers,omitempty"`
 	PacketTracker         map[int32]StreamTrackerPacketConfig `yaml:"packet_tracker,omitempty"`
@@ -171,7 +172,6 @@ type StreamTrackersConfig struct {
 
 type VideoConfig struct {
 	DynacastPauseDelay time.Duration        `yaml:"dynacast_pause_delay,omitempty"`
-	StreamTrackerType  StreamTrackerType    `yaml:"stream_tracker_type,omitempty"`
 	StreamTracker      StreamTrackersConfig `yaml:"stream_tracker,omitempty"`
 }
 
@@ -285,9 +285,9 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 		},
 		Video: VideoConfig{
 			DynacastPauseDelay: 5 * time.Second,
-			StreamTrackerType:  StreamTrackerTypePacket,
 			StreamTracker: StreamTrackersConfig{
 				Video: StreamTrackerConfig{
+					StreamTrackerType: StreamTrackerTypePacket,
 					BitrateReportInterval: map[int32]time.Duration{
 						0: 1 * time.Second,
 						1: 1 * time.Second,
@@ -324,6 +324,7 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 					},
 				},
 				Screenshare: StreamTrackerConfig{
+					StreamTrackerType: StreamTrackerTypePacket,
 					BitrateReportInterval: map[int32]time.Duration{
 						0: 4 * time.Second,
 						1: 4 * time.Second,

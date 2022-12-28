@@ -171,8 +171,7 @@ func NewWebRTCReceiver(
 	trackInfo *livekit.TrackInfo,
 	logger logger.Logger,
 	twcc *twcc.Responder,
-	trackerType config.StreamTrackerType,
-	trackerConfig config.StreamTrackersConfig,
+	trackersConfig config.StreamTrackersConfig,
 	opts ...ReceiverOpts,
 ) *WebRTCReceiver {
 	w := &WebRTCReceiver{
@@ -190,7 +189,7 @@ func NewWebRTCReceiver(
 		isRED:       IsRedCodec(track.Codec().MimeType),
 	}
 
-	w.streamTrackerManager = NewStreamTrackerManager(logger, trackInfo, w.isSVC, w.codec.ClockRate, trackerType, trackerConfig)
+	w.streamTrackerManager = NewStreamTrackerManager(logger, trackInfo, w.isSVC, w.codec.ClockRate, trackersConfig)
 	w.streamTrackerManager.OnAvailableLayersChanged(w.downTrackLayerChange)
 	w.streamTrackerManager.OnBitrateAvailabilityChanged(w.downTrackBitrateAvailabilityChange)
 

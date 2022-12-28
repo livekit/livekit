@@ -234,7 +234,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			t.params.TrackInfo,
 			LoggerWithCodecMime(t.params.Logger, mime),
 			twcc,
-			t.params.VideoConfig.StreamTrackerType,
 			t.params.VideoConfig.StreamTracker,
 			sfu.WithPliThrottleConfig(t.params.PLIThrottleConfig),
 			sfu.WithAudioConfig(t.params.AudioConfig),
