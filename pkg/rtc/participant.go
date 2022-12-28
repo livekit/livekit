@@ -1505,7 +1505,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		Layers:     req.Layers,
 		DisableRed: req.DisableRed,
 		Stereo:     req.Stereo,
-		E2Ee:       req.E2Ee,
+		Encryption: req.Encryption,
 	}
 	p.setStableTrackID(req.Cid, ti)
 	for _, codec := range req.SimulcastCodecs {
