@@ -285,7 +285,7 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 		},
 		Video: VideoConfig{
 			DynacastPauseDelay: 5 * time.Second,
-			StreamTrackerType:  StreamTrackerTypeFrame,
+			StreamTrackerType:  StreamTrackerTypePacket,
 			StreamTracker: StreamTrackersConfig{
 				Video: StreamTrackerConfig{
 					BitrateReportInterval: map[int32]time.Duration{
