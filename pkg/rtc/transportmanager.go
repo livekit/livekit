@@ -83,6 +83,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 	t := &TransportManager{
 		params:         params,
 		mediaLossProxy: NewMediaLossProxy(MediaLossProxyParams{Logger: params.Logger}),
+		iceConfig:      &livekit.ICEConfig{},
 	}
 	t.mediaLossProxy.OnMediaLossUpdate(t.onMediaLossUpdate)
 

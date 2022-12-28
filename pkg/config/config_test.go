@@ -42,11 +42,12 @@ func TestGeneratedFlags(t *testing.T) {
 	app.Flags = append(app.Flags, generatedFlags...)
 
 	set := flag.NewFlagSet("test", 0)
-	set.Bool("rtc.use_ice_lite", true, "")                   // bool
-	set.String("redis.address", "localhost:6379", "")        // string
-	set.Uint("prometheus_port", 9999, "")                    // uint32
-	set.Bool("rtc.allow_tcp_fallback", true, "")             // pointer
-	set.Bool("rtc.reconnect_on_publication_error", true, "") // pointer
+	set.Bool("rtc.use_ice_lite", true, "")                     // bool
+	set.String("redis.address", "localhost:6379", "")          // string
+	set.Uint("prometheus_port", 9999, "")                      // uint32
+	set.Bool("rtc.allow_tcp_fallback", true, "")               // pointer
+	set.Bool("rtc.reconnect_on_publication_error", true, "")   // pointer
+	set.Bool("rtc.reconnect_on_subscription_error", false, "") // pointer
 
 	c := cli.NewContext(app, set, nil)
 	conf, err := NewConfig("", true, c, nil)
@@ -55,8 +56,13 @@ func TestGeneratedFlags(t *testing.T) {
 	require.True(t, conf.RTC.UseICELite)
 	require.Equal(t, "localhost:6379", conf.Redis.Address)
 	require.Equal(t, uint32(9999), conf.PrometheusPort)
+
 	require.NotNil(t, conf.RTC.AllowTCPFallback)
 	require.True(t, *conf.RTC.AllowTCPFallback)
+
 	require.NotNil(t, conf.RTC.ReconnectOnPublicationError)
 	require.True(t, *conf.RTC.ReconnectOnPublicationError)
+
+	require.NotNil(t, conf.RTC.ReconnectOnSubscriptionError)
+	require.False(t, *conf.RTC.ReconnectOnSubscriptionError)
 }

@@ -2,7 +2,6 @@ package routing
 
 import (
 	"context"
-	"runtime"
 	"sync"
 	"time"
 
@@ -176,7 +175,7 @@ func (r *LocalRouter) Start() error {
 		return nil
 	}
 	go r.statsWorker()
-	go r.memStatsWorker()
+	// go r.memStatsWorker()
 	// on local routers, Start doesn't do anything, websocket connections initiate the connections
 	go r.rtcMessageWorker()
 	return nil
@@ -207,6 +206,7 @@ func (r *LocalRouter) statsWorker() {
 	}
 }
 
+/*
 func (r *LocalRouter) memStatsWorker() {
 	ticker := time.NewTicker(time.Second * 30)
 	defer ticker.Stop()
@@ -220,10 +220,9 @@ func (r *LocalRouter) memStatsWorker() {
 			"mallocs", m.Mallocs, "frees", m.Frees, "m-f", m.Mallocs-m.Frees,
 			"hinuse", m.HeapInuse, "halloc", m.HeapAlloc, "frag", m.HeapInuse-m.HeapAlloc,
 		)
-
-		runtime.GC()
 	}
 }
+*/
 
 func (r *LocalRouter) rtcMessageWorker() {
 	// is a new channel available? if so swap to that one

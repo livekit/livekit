@@ -269,7 +269,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 			})
 		} else if state == livekit.ParticipantInfo_DISCONNECTED {
 			// remove participant from room
-			go r.RemoveParticipant(p.Identity(), types.ParticipantCloseReasonStateDisconnected)
+			go r.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonStateDisconnected)
 		}
 	})
 	participant.OnTrackUpdated(r.onTrackUpdated)
@@ -317,7 +317,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 	time.AfterFunc(time.Minute, func() {
 		state := participant.State()
 		if state == livekit.ParticipantInfo_JOINING || state == livekit.ParticipantInfo_JOINED {
-			r.RemoveParticipant(participant.Identity(), types.ParticipantCloseReasonJoinTimeout)
+			r.RemoveParticipant(participant.Identity(), participant.ID(), types.ParticipantCloseReasonJoinTimeout)
 		}
 	})
 
@@ -360,10 +360,16 @@ func (r *Room) ResumeParticipant(p types.LocalParticipant, responseSink routing.
 	return nil
 }
 
-func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, reason types.ParticipantCloseReason) {
+func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livekit.ParticipantID, reason types.ParticipantCloseReason) {
 	r.lock.Lock()
 	p, ok := r.participants[identity]
 	if ok {
+		if pID != "" && p.ID() != pID {
+			// participant session has been replaced
+			r.lock.Unlock()
+			return
+		}
+
 		delete(r.participants, identity)
 		delete(r.participantOpts, identity)
 		if !p.Hidden() {

@@ -242,7 +242,7 @@ func (r *RoomManager) StartSession(
 		} else {
 			participant.GetLogger().Infow("removing duplicate participant")
 			// we need to clean up the existing participant, so a new one can join
-			room.RemoveParticipant(participant.Identity(), types.ParticipantCloseReasonDuplicateIdentity)
+			room.RemoveParticipant(participant.Identity(), participant.ID(), types.ParticipantCloseReasonDuplicateIdentity)
 		}
 	} else if pi.Reconnect {
 		// send leave request if participant is trying to reconnect without keep subscribe state
@@ -285,6 +285,11 @@ func (r *RoomManager) StartSession(
 	if r.config.RTC.ReconnectOnPublicationError != nil {
 		reconnectOnPublicationError = *r.config.RTC.ReconnectOnPublicationError
 	}
+	// default do not force full reconnect on a subscription error
+	reconnectOnSubscriptionError := false
+	if r.config.RTC.ReconnectOnSubscriptionError != nil {
+		reconnectOnSubscriptionError = *r.config.RTC.ReconnectOnSubscriptionError
+	}
 	participant, err = rtc.NewParticipant(rtc.ParticipantParams{
 		Identity:                pi.Identity,
 		Name:                    pi.Name,
@@ -312,7 +317,8 @@ func (r *RoomManager) StartSession(
 			}
 			return nil
 		},
-		ReconnectOnPublicationError: reconnectOnPublicationError,
+		ReconnectOnPublicationError:  reconnectOnPublicationError,
+		ReconnectOnSubscriptionError: reconnectOnSubscriptionError,
 	})
 	if err != nil {
 		return err
@@ -541,7 +547,8 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomName livekit.Roo
 			return
 		}
 		pLogger.Infow("removing participant")
-		room.RemoveParticipant(identity, types.ParticipantCloseReasonServiceRequestRemoveParticipant)
+		// remove participant by identity, any SID
+		room.RemoveParticipant(identity, "", types.ParticipantCloseReasonServiceRequestRemoveParticipant)
 	case *livekit.RTCNodeMessage_MuteTrack:
 		if participant == nil {
 			return

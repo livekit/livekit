@@ -262,8 +262,8 @@ type LocalParticipant interface {
 	RemoveTrackFromSubscriber(sender *webrtc.RTPSender) error
 
 	// subscriptions
-	AddSubscribedTrack(st SubscribedTrack)
-	RemoveSubscribedTrack(st SubscribedTrack)
+	AddSubscribedTrack(st SubscribedTrack, sourceTrack MediaTrack)
+	RemoveSubscribedTrack(st SubscribedTrack, sourceTrack MediaTrack)
 	UpdateSubscribedTrackSettings(trackID livekit.TrackID, settings *livekit.UpdateTrackSettings) error
 	GetSubscribedTracks() []SubscribedTrack
 	VerifySubscribeParticipantInfo(pID livekit.ParticipantID, version uint32)
@@ -312,9 +312,10 @@ type LocalParticipant interface {
 	UncacheDownTrack(rtpTransceiver *webrtc.RTPTransceiver)
 	GetCachedDownTrack(trackID livekit.TrackID) (*webrtc.RTPTransceiver, sfu.DownTrackState)
 
-	EnqueueSubscribeTrack(trackID livekit.TrackID, isRelayed bool, f func(sub LocalParticipant) error) bool
+	EnqueueSubscribeTrack(trackID livekit.TrackID, sourceTrack MediaTrack, isRelayed bool, f func(sub LocalParticipant) error) bool
 	EnqueueUnsubscribeTrack(
 		trackID livekit.TrackID,
+		sourceTrack MediaTrack,
 		isRelayed bool,
 		willBeResumed bool,
 		f func(subscriberID livekit.ParticipantID, willBeResumed bool) error,
@@ -335,7 +336,7 @@ type LocalParticipant interface {
 type Room interface {
 	Name() livekit.RoomName
 	ID() livekit.RoomID
-	RemoveParticipant(identity livekit.ParticipantIdentity, reason ParticipantCloseReason)
+	RemoveParticipant(identity livekit.ParticipantIdentity, pID livekit.ParticipantID, reason ParticipantCloseReason)
 	UpdateSubscriptions(participant LocalParticipant, trackIDs []livekit.TrackID, participantTracks []*livekit.ParticipantTracks, subscribe bool) error
 	UpdateSubscriptionPermission(participant LocalParticipant, permissions *livekit.SubscriptionPermission) error
 	SyncState(participant LocalParticipant, state *livekit.SyncState) error
@@ -472,4 +473,12 @@ type OperationMonitor interface {
 	PostEvent(ome OperationMonitorEvent, omd OperationMonitorData)
 	Check() error
 	IsIdle() bool
+}
+
+//
+// SignalDeduper related definitions
+//
+type SignalDeduper interface {
+	Dedupe(participantKey livekit.ParticipantKey, req *livekit.SignalRequest) bool
+	ParticipantClosed(participantKey livekit.ParticipantKey)
 }

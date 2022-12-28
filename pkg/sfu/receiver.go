@@ -171,6 +171,7 @@ func NewWebRTCReceiver(
 	trackInfo *livekit.TrackInfo,
 	logger logger.Logger,
 	twcc *twcc.Responder,
+	trackersConfig config.StreamTrackersConfig,
 	opts ...ReceiverOpts,
 ) *WebRTCReceiver {
 	w := &WebRTCReceiver{
@@ -188,7 +189,7 @@ func NewWebRTCReceiver(
 		isRED:       IsRedCodec(track.Codec().MimeType),
 	}
 
-	w.streamTrackerManager = NewStreamTrackerManager(logger, trackInfo, w.isSVC)
+	w.streamTrackerManager = NewStreamTrackerManager(logger, trackInfo, w.isSVC, w.codec.ClockRate, trackersConfig)
 	w.streamTrackerManager.OnAvailableLayersChanged(w.downTrackLayerChange)
 	w.streamTrackerManager.OnBitrateAvailabilityChanged(w.downTrackBitrateAvailabilityChange)
 
@@ -334,6 +335,7 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 	rtt := w.rtt
 	w.bufferMu.Unlock()
 	buff.SetRTT(rtt)
+	buff.SetPaused(w.streamTrackerManager.IsPaused())
 
 	if w.Kind() == webrtc.RTPCodecTypeVideo && w.useTrackers {
 		w.streamTrackerManager.AddTracker(layer)
@@ -347,6 +349,16 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 // the layer
 func (w *WebRTCReceiver) SetUpTrackPaused(paused bool) {
 	w.streamTrackerManager.SetPaused(paused)
+
+	w.bufferMu.RLock()
+	for _, buff := range w.buffers {
+		if buff == nil {
+			continue
+		}
+
+		buff.SetPaused(paused)
+	}
+	w.bufferMu.RUnlock()
 }
 
 func (w *WebRTCReceiver) AddDownTrack(track TrackSender) error {
@@ -559,7 +571,13 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 		}
 
 		if spatialTracker != nil {
-			spatialTracker.Observe(pkt.Temporal, len(pkt.RawPacket), len(pkt.Packet.Payload))
+			spatialTracker.Observe(
+				pkt.Temporal,
+				len(pkt.RawPacket),
+				len(pkt.Packet.Payload),
+				pkt.Packet.Marker,
+				pkt.Packet.Timestamp,
+			)
 		}
 
 		w.downTrackSpreader.Broadcast(func(dt TrackSender) {

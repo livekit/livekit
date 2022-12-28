@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	transitionWaitDuration = 10 * time.Second
+	transitionWaitDuration = 20 * time.Second
 )
 
 var (
@@ -25,6 +25,22 @@ type transition struct {
 	at          time.Time
 }
 
+type subscriptionOps struct {
+	desiredTransitions deque.Deque
+
+	subscribedTrack types.SubscribedTrack
+}
+
+type SubscriptionOpParams struct {
+	SourceTrack types.MediaTrack
+	IsSubscribe bool
+}
+
+type UpdateSubscribedTrackParams struct {
+	SourceTrack     types.MediaTrack
+	SubscribedTrack types.SubscribedTrack
+}
+
 type SubscriptionMonitorParams struct {
 	TrackID livekit.TrackID
 	Logger  logger.Logger
@@ -33,38 +49,36 @@ type SubscriptionMonitorParams struct {
 type SubscriptionMonitor struct {
 	params SubscriptionMonitorParams
 
-	lock               sync.RWMutex
-	desiredTransitions deque.Deque
-
-	subscribedTrack types.SubscribedTrack
-
-	lastError error
+	lock                    sync.RWMutex
+	subscriptionOpsBySource map[types.MediaTrack]*subscriptionOps
 }
 
 func NewSubscriptionMonitor(params SubscriptionMonitorParams) *SubscriptionMonitor {
 	s := &SubscriptionMonitor{
-		params: params,
+		params:                  params,
+		subscriptionOpsBySource: make(map[types.MediaTrack]*subscriptionOps),
 	}
-	s.desiredTransitions.SetMinCapacity(2)
 	return s
 }
 
 func (s *SubscriptionMonitor) PostEvent(ome types.OperationMonitorEvent, omd types.OperationMonitorData) {
 	switch ome {
 	case types.OperationMonitorEventUpdateSubscription:
-		s.updateSubscription(omd.(bool))
+		s.updateSubscription(omd.(SubscriptionOpParams))
 	case types.OperationMonitorEventSetSubscribedTrack:
-		s.setSubscribedTrack(omd.(types.SubscribedTrack))
+		s.setSubscribedTrack(omd.(UpdateSubscribedTrackParams))
 	case types.OperationMonitorEventClearSubscribedTrack:
-		s.clearSubscribedTrack(omd.(types.SubscribedTrack))
+		s.clearSubscribedTrack(omd.(UpdateSubscribedTrackParams))
 	}
 }
 
-func (s *SubscriptionMonitor) updateSubscription(isSubscribe bool) {
+func (s *SubscriptionMonitor) updateSubscription(params SubscriptionOpParams) {
 	s.lock.Lock()
-	s.desiredTransitions.PushBack(
+
+	so := s.getOrCreateSubscriptionOpsForSource(params.SourceTrack)
+	so.desiredTransitions.PushBack(
 		&transition{
-			isSubscribe: isSubscribe,
+			isSubscribe: params.IsSubscribe,
 			at:          time.Now(),
 		},
 	)
@@ -72,19 +86,21 @@ func (s *SubscriptionMonitor) updateSubscription(isSubscribe bool) {
 	s.lock.Unlock()
 }
 
-func (s *SubscriptionMonitor) setSubscribedTrack(subTrack types.SubscribedTrack) {
+func (s *SubscriptionMonitor) setSubscribedTrack(params UpdateSubscribedTrackParams) {
 	s.lock.Lock()
-	s.subscribedTrack = subTrack
+	so := s.getOrCreateSubscriptionOpsForSource(params.SourceTrack)
+	so.subscribedTrack = params.SubscribedTrack
 	s.update()
 	s.lock.Unlock()
 }
 
-func (s *SubscriptionMonitor) clearSubscribedTrack(subTrack types.SubscribedTrack) {
+func (s *SubscriptionMonitor) clearSubscribedTrack(params UpdateSubscribedTrackParams) {
 	s.lock.Lock()
-	if s.subscribedTrack == subTrack {
-		s.subscribedTrack = nil
+	so := s.getOrCreateSubscriptionOpsForSource(params.SourceTrack)
+	if so.subscribedTrack == params.SubscribedTrack {
+		so.subscribedTrack = nil
 	} else {
-		s.params.Logger.Errorw("mismatched subscribed track on clear", nil, "trackID", s.params.TrackID)
+		s.params.Logger.Errorw("supervisor: mismatched subscribed track on clear", nil, "trackID", s.params.TrackID)
 	}
 
 	s.update()
@@ -92,37 +108,27 @@ func (s *SubscriptionMonitor) clearSubscribedTrack(subTrack types.SubscribedTrac
 }
 
 func (s *SubscriptionMonitor) Check() error {
-	s.lock.RLock()
-	if s.lastError != nil {
-		s.lock.RUnlock()
-		// return an error only once
-		return nil
-	}
+	s.lock.Lock()
+	defer s.lock.Unlock()
 
-	var tx *transition
-	if s.desiredTransitions.Len() > 0 {
-		tx = s.desiredTransitions.Front().(*transition)
-	}
-	s.lock.RUnlock()
-
-	if tx == nil {
-		return nil
-	}
-
-	if time.Since(tx.at) > transitionWaitDuration {
-		// timed out waiting for transition
-		var err error
-		if tx.isSubscribe {
-			err = errSubscribeTimeout
-		} else {
-			err = errUnsubscribeTimeout
+	for _, so := range s.subscriptionOpsBySource {
+		var tx *transition
+		if so.desiredTransitions.Len() > 0 {
+			tx = so.desiredTransitions.Front().(*transition)
 		}
 
-		s.lock.Lock()
-		s.lastError = err
-		s.lock.Unlock()
+		if tx == nil {
+			continue
+		}
 
-		return err
+		if time.Since(tx.at) > transitionWaitDuration {
+			// timed out waiting for transition
+			if tx.isSubscribe {
+				return errSubscribeTimeout
+			} else {
+				return errUnsubscribeTimeout
+			}
+		}
 	}
 
 	// give more time for transition to happen
@@ -133,26 +139,41 @@ func (s *SubscriptionMonitor) IsIdle() bool {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 
-	return s.desiredTransitions.Len() == 0 && s.subscribedTrack == nil
+	return len(s.subscriptionOpsBySource) == 0
+}
+
+func (s *SubscriptionMonitor) getOrCreateSubscriptionOpsForSource(sourceTrack types.MediaTrack) *subscriptionOps {
+	so := s.subscriptionOpsBySource[sourceTrack]
+	if so == nil {
+		so = &subscriptionOps{}
+		so.desiredTransitions.SetMinCapacity(4)
+		s.subscriptionOpsBySource[sourceTrack] = so
+	}
+
+	return so
 }
 
 func (s *SubscriptionMonitor) update() {
-	for {
-		var tx *transition
-		if s.desiredTransitions.Len() > 0 {
-			tx = s.desiredTransitions.PopFront().(*transition)
-		}
+	for sourceTrack, so := range s.subscriptionOpsBySource {
+		for {
+			var tx *transition
+			if so.desiredTransitions.Len() > 0 {
+				tx = so.desiredTransitions.PopFront().(*transition)
+			}
 
-		if tx == nil {
-			return
-		}
+			if tx == nil {
+				break
+			}
 
-		if (tx.isSubscribe && s.subscribedTrack == nil) || (!tx.isSubscribe && s.subscribedTrack != nil) {
-			// put it back as the condition is not satisfied
-			s.desiredTransitions.PushFront(tx)
-			return
-		}
+			if (tx.isSubscribe && so.subscribedTrack == nil) || (!tx.isSubscribe && so.subscribedTrack != nil) {
+				// put it back as the condition is not satisfied
+				so.desiredTransitions.PushFront(tx)
+				break
+			}
 
-		s.lastError = nil
+			if so.desiredTransitions.Len() == 0 && so.subscribedTrack == nil {
+				delete(s.subscriptionOpsBySource, sourceTrack)
+			}
+		}
 	}
 }
