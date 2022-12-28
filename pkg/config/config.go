@@ -23,12 +23,16 @@ var DefaultStunServers = []string{
 }
 
 type CongestionControlProbeMode string
+type StreamTrackerType string
 
 const (
 	generatedCLIFlagUsage = "generated"
 
 	CongestionControlProbeModePadding CongestionControlProbeMode = "padding"
 	CongestionControlProbeModeMedia   CongestionControlProbeMode = "media"
+
+	StreamTrackerTypePacket StreamTrackerType = "packet"
+	StreamTrackerTypeFrame  StreamTrackerType = "frame"
 
 	StatsUpdateInterval = time.Second * 10
 )
@@ -143,22 +147,31 @@ type AudioConfig struct {
 	SmoothIntervals uint32 `yaml:"smooth_intervals"`
 }
 
+type StreamTrackerPacketConfig struct {
+	SamplesRequired uint32        `yaml:"samples_required"` // number of samples needed per cycle
+	CyclesRequired  uint32        `yaml:"cycles_required"`  // number of cycles needed to be active
+	CycleDuration   time.Duration `yaml:"cycle_duration"`
+}
+
+type StreamTrackerFrameConfig struct {
+	MinFPS float64 `yaml:"min_fps"`
+}
+
 type StreamTrackerConfig struct {
-	SamplesRequired       uint32        `yaml:"samples_required"`
-	CyclesRequired        uint32        `yaml:"cycles_required"`
-	CycleDuration         time.Duration `yaml:"cycle_duration"`
-	BitrateReportInterval time.Duration `yaml:"bitrate_report_interval"`
+	BitrateReportInterval map[int32]time.Duration             `yaml:"bitrate_report_interval,omitempty"`
+	ExemptedLayers        []int32                             `yaml:"exempted_layers,omitempty"`
+	PacketTracker         map[int32]StreamTrackerPacketConfig `yaml:"packet_tracker,omitempty"`
+	FrameTracker          map[int32]StreamTrackerFrameConfig  `yaml:"frame_tracker,omitempty"`
 }
 
 type StreamTrackersConfig struct {
-	Video                     []StreamTrackerConfig `yaml:"video"`
-	Screenshare               []StreamTrackerConfig `yaml:"screenshare"`
-	ExemptedLayersVideo       []int32               `yaml:"exempted_layers_video"`
-	ExemptedLayersScreenshare []int32               `yaml:"exempted_layers_screenshare"`
+	Video       StreamTrackerConfig `yaml:"video"`
+	Screenshare StreamTrackerConfig `yaml:"screenshare"`
 }
 
 type VideoConfig struct {
 	DynacastPauseDelay time.Duration        `yaml:"dynacast_pause_delay,omitempty"`
+	StreamTrackerType  StreamTrackerType    `yaml:"stream_tracker_type,omitempty"`
 	StreamTracker      StreamTrackersConfig `yaml:"stream_tracker,omitempty"`
 }
 
@@ -272,47 +285,78 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 		},
 		Video: VideoConfig{
 			DynacastPauseDelay: 5 * time.Second,
+			StreamTrackerType:  StreamTrackerTypePacket,
 			StreamTracker: StreamTrackersConfig{
-				ExemptedLayersScreenshare: []int32{0},
-				ExemptedLayersVideo:       []int32{},
-				Screenshare: []StreamTrackerConfig{
-					{
-						SamplesRequired:       1,
-						CyclesRequired:        1,
-						CycleDuration:         2 * time.Second,
-						BitrateReportInterval: 4 * time.Second,
+				Video: StreamTrackerConfig{
+					BitrateReportInterval: map[int32]time.Duration{
+						0: 1 * time.Second,
+						1: 1 * time.Second,
+						2: 1 * time.Second,
 					},
-					{
-						SamplesRequired:       1,
-						CyclesRequired:        1,
-						CycleDuration:         2 * time.Second,
-						BitrateReportInterval: 4 * time.Second,
+					ExemptedLayers: []int32{},
+					PacketTracker: map[int32]StreamTrackerPacketConfig{
+						0: StreamTrackerPacketConfig{
+							SamplesRequired: 1,
+							CyclesRequired:  4,
+							CycleDuration:   500 * time.Millisecond,
+						},
+						1: StreamTrackerPacketConfig{
+							SamplesRequired: 5,
+							CyclesRequired:  20,
+							CycleDuration:   500 * time.Millisecond,
+						},
+						2: StreamTrackerPacketConfig{
+							SamplesRequired: 5,
+							CyclesRequired:  20,
+							CycleDuration:   500 * time.Millisecond,
+						},
 					},
-					{
-						SamplesRequired:       1,
-						CyclesRequired:        1,
-						CycleDuration:         2 * time.Second,
-						BitrateReportInterval: 4 * time.Second,
+					FrameTracker: map[int32]StreamTrackerFrameConfig{
+						0: StreamTrackerFrameConfig{
+							MinFPS: 5.0,
+						},
+						1: StreamTrackerFrameConfig{
+							MinFPS: 5.0,
+						},
+						2: StreamTrackerFrameConfig{
+							MinFPS: 5.0,
+						},
 					},
 				},
-				Video: []StreamTrackerConfig{
-					{
-						SamplesRequired:       1,
-						CyclesRequired:        4,
-						CycleDuration:         500 * time.Millisecond,
-						BitrateReportInterval: 1 * time.Second,
+				Screenshare: StreamTrackerConfig{
+					BitrateReportInterval: map[int32]time.Duration{
+						0: 4 * time.Second,
+						1: 4 * time.Second,
+						2: 4 * time.Second,
 					},
-					{
-						SamplesRequired:       5,
-						CyclesRequired:        20,
-						CycleDuration:         500 * time.Millisecond,
-						BitrateReportInterval: 1 * time.Second,
+					ExemptedLayers: []int32{0},
+					PacketTracker: map[int32]StreamTrackerPacketConfig{
+						0: StreamTrackerPacketConfig{
+							SamplesRequired: 1,
+							CyclesRequired:  1,
+							CycleDuration:   2 * time.Second,
+						},
+						1: StreamTrackerPacketConfig{
+							SamplesRequired: 1,
+							CyclesRequired:  1,
+							CycleDuration:   2 * time.Second,
+						},
+						2: StreamTrackerPacketConfig{
+							SamplesRequired: 1,
+							CyclesRequired:  1,
+							CycleDuration:   2 * time.Second,
+						},
 					},
-					{
-						SamplesRequired:       5,
-						CyclesRequired:        20,
-						CycleDuration:         500 * time.Millisecond,
-						BitrateReportInterval: 1 * time.Second,
+					FrameTracker: map[int32]StreamTrackerFrameConfig{
+						0: StreamTrackerFrameConfig{
+							MinFPS: 0.5,
+						},
+						1: StreamTrackerFrameConfig{
+							MinFPS: 0.5,
+						},
+						2: StreamTrackerFrameConfig{
+							MinFPS: 0.5,
+						},
 					},
 				},
 			},

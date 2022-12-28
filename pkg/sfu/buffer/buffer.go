@@ -95,6 +95,7 @@ type Buffer struct {
 	ddParser          *DependencyDescriptorParser
 	maxLayerChangedCB func(int32, int32)
 
+	paused              bool
 	frameRateCalculator [DefaultMaxLayerSpatial + 1]FrameRateCalculator
 	frameRateCalculated bool
 }
@@ -121,6 +122,13 @@ func (b *Buffer) SetLogger(logger logger.Logger) {
 	if b.rtpStats != nil {
 		b.rtpStats.SetLogger(logger)
 	}
+}
+
+func (b *Buffer) SetPaused(paused bool) {
+	b.Lock()
+	defer b.Unlock()
+
+	b.paused = paused
 }
 
 func (b *Buffer) SetTWCC(twcc *twcc.Responder) {
@@ -431,7 +439,7 @@ func (b *Buffer) patchExtPacket(ep *ExtPacket, buf []byte) *ExtPacket {
 }
 
 func (b *Buffer) doFpsCalc(ep *ExtPacket) {
-	if b.frameRateCalculated || len(ep.Packet.Payload) == 0 {
+	if b.paused || b.frameRateCalculated || len(ep.Packet.Payload) == 0 {
 		return
 	}
 	spatial := ep.Spatial
