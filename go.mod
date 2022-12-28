@@ -18,8 +18,8 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20221221221243-f361fbe40290
 	github.com/livekit/mediatransportutil v0.0.0-20221007030528-7440725c362b
-	github.com/livekit/protocol v1.3.1
-	github.com/livekit/psrpc v0.2.0
+	github.com/livekit/protocol v1.3.2-0.20221228091932-fa87d56355d2
+	github.com/livekit/psrpc v0.2.1
 	github.com/livekit/rtcscore-go v0.0.0-20220815072451-20ee10ae1995
 	github.com/mackerelio/go-osstat v0.2.3
 	github.com/magefile/mage v1.14.0
@@ -38,10 +38,10 @@ require (
 	github.com/pion/webrtc/v3 v3.1.50
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.14.0
-	github.com/rs/cors v1.8.2
+	github.com/rs/cors v1.8.3
 	github.com/sebest/xff v0.0.0-20210106013422-671bd2870b3a
 	github.com/stretchr/testify v1.8.1
-	github.com/thoas/go-funk v0.9.2
+	github.com/thoas/go-funk v0.9.3
 	github.com/twitchtv/twirp v8.1.3+incompatible
 	github.com/ua-parser/uap-go v0.0.0-20211112212520-00c877edfe0f
 	github.com/urfave/cli/v2 v2.23.7
