@@ -236,7 +236,7 @@ type LimitConfig struct {
 }
 
 type EgressConfig struct {
-	ForcePsrpc bool `yaml:"force_psrpc"`
+	UsePsRPC bool `yaml:"use_psrpc"`
 }
 
 type IngressConfig struct {

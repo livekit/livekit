@@ -33,7 +33,6 @@ type EgressService struct {
 type egressLauncher struct {
 	psrpcClient      rpc.EgressClient
 	clientDeprecated egress.RPCClient
-	usePSRPC         bool
 	es               EgressStore
 	telemetry        telemetry.TelemetryService
 }
@@ -184,14 +183,10 @@ func (s *egressLauncher) StartEgress(ctx context.Context, req *livekit.StartEgre
 	var info *livekit.EgressInfo
 	var err error
 
-	if !s.usePSRPC {
-		s.usePSRPC = s.es.UsePSRPC()
-	}
-
-	if s.usePSRPC && s.psrpcClient != nil {
+	if s.psrpcClient != nil {
 		info, err = s.psrpcClient.StartEgress(ctx, req)
 	} else {
-		logger.Warnw("Using deprecated egress client. Please upgrade egress to v >=1.5.4", nil)
+		logger.Infow("Using deprecated egress client.", nil)
 		info, err = s.clientDeprecated.SendRequest(ctx, req)
 	}
 	if err != nil {

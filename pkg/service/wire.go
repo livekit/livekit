@@ -142,7 +142,7 @@ func getMessageBus(rc redis.UniversalClient) psrpc.MessageBus {
 }
 
 func getEgressClient(conf *config.Config, nodeID livekit.NodeID, bus psrpc.MessageBus) (rpc.EgressClient, error) {
-	if conf.Egress.ForcePsrpc {
+	if conf.Egress.UsePsRPC {
 		return rpc.NewEgressClient(nodeID, bus)
 	}
 
