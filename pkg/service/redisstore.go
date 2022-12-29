@@ -20,8 +20,7 @@ import (
 )
 
 const (
-	VersionKey       = "livekit_version"
-	EgressVersionKey = "egress_version"
+	VersionKey = "livekit_version"
 
 	// RoomsKey is hash of room_name => Room proto
 	RoomsKey        = "rooms"
@@ -417,27 +416,6 @@ func (s *RedisStore) UpdateEgress(_ context.Context, info *livekit.EgressInfo) e
 	}
 
 	return nil
-}
-
-func (s *RedisStore) UsePSRPC() bool {
-	egressVersion, err := s.rc.Get(s.ctx, EgressVersionKey).Result()
-	if err != nil || egressVersion == "" {
-		return false
-	}
-	v, _ := goversion.NewVersion(egressVersion)
-	minVersion, _ := goversion.NewVersion("1.5.4")
-	return v.GreaterThanOrEqual(minVersion)
-}
-
-func (s *RedisStore) GetEgressVersion(_ context.Context) (*goversion.Version, error) {
-	egressVersion, err := s.rc.Get(s.ctx, EgressVersionKey).Result()
-	if err != nil && err != redis.Nil {
-		return nil, err
-	}
-	if egressVersion == "" {
-		egressVersion = "0.0.0"
-	}
-	return goversion.NewVersion(egressVersion)
 }
 
 // Deletes egress info 24h after the egress has ended
