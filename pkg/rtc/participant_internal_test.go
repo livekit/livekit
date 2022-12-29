@@ -58,7 +58,6 @@ func TestIsReady(t *testing.T) {
 func TestTrackPublishing(t *testing.T) {
 	t.Run("should send the correct events", func(t *testing.T) {
 		p := newParticipantForTest("test")
-		p.state.Store(livekit.ParticipantInfo_ACTIVE)
 		track := &typesfakes.FakeMediaTrack{}
 		track.IDReturns("id")
 		published := false
@@ -484,6 +483,7 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 		Logger:            LoggerWithParticipant(logger.GetLogger(), identity, sid, false),
 	})
 	p.isPublisher.Store(opts.publisher)
+	p.updateState(livekit.ParticipantInfo_ACTIVE)
 
 	return p
 }
