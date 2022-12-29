@@ -2,6 +2,7 @@ package rtc
 
 import (
 	"fmt"
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -260,16 +261,27 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	// if client don't support prflx over relay, we should not expose private address to it, use single external ip as host candidate
 	if !params.ClientInfo.SupportPrflxOverRelay() && len(params.Config.NAT1To1IPs) > 0 {
 		var nat1to1Ips []string
+		var includeIps []string
 		for _, mapping := range params.Config.NAT1To1IPs {
 			if ips := strings.Split(mapping, "/"); len(ips) == 2 {
-				if ips[0] == ips[1] {
+				if ips[0] != ips[1] {
 					nat1to1Ips = append(nat1to1Ips, mapping)
+					includeIps = append(includeIps, ips[1])
 				}
 			}
 		}
 		if len(nat1to1Ips) > 0 {
 			params.Logger.Infow("client doesn't support prflx over relay, use external ip only as host candidate", "ips", nat1to1Ips)
 			se.SetNAT1To1IPs(nat1to1Ips, webrtc.ICECandidateTypeHost)
+			se.SetIPFilter(func (ip net.IP) bool {
+				ipstr := ip.String()
+				for _, inc := range includeIps {
+					if inc == ipstr {
+						return true
+					}
+				}
+				return false
+			})
 		}
 	}
 
