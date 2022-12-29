@@ -165,7 +165,7 @@ func validateExternalIP(ctx context.Context, nodeIP string, addr *net.UDPAddr) e
 		for {
 			n, err := srv.Read(buf)
 			if err != nil {
-				logger.Infow("error reading from UDP socket", "err", err)
+				logger.Debugw("error reading from UDP socket", "err", err)
 				return
 			}
 			if string(buf[:n]) == magicString {
