@@ -1,10 +1,13 @@
 package rtc
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math/rand"
 	"net"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/pion/ice/v2"
@@ -293,22 +296,29 @@ func getNAT1to1IPsForConf(conf *config.Config, ipFilter func(net.IP) bool) ([]st
 		udpPorts = append(udpPorts, 0)
 	}
 
+	var wg sync.WaitGroup
+	ctx, cancel := context.WithCancel(context.Background())
 	for _, ip := range localIPs {
 		if ipFilter != nil && !ipFilter(net.ParseIP(ip)) {
 			continue
 		}
 
+		wg.Add(1)
 		go func(localIP string) {
+			defer wg.Done()
 			for _, port := range udpPorts {
-				addr, err := config.GetExternalIP(stunServers, &net.UDPAddr{IP: net.ParseIP(localIP), Port: port})
+
+				addr, err := config.GetExternalIP(ctx, stunServers, &net.UDPAddr{IP: net.ParseIP(localIP), Port: port})
 				if err != nil {
-					// if strings.Contains(err.Error(), "already in use") {
-					// 	continue
-					// }
+					if strings.Contains(err.Error(), "address already in use") {
+						logger.Debugw("failed to get external ip, address already in use", "local", localIP, "port", port)
+						continue
+					}
 					logger.Infow("failed to get external ip", "local", localIP, "err", err)
 					return
 				}
 				addrCh <- ipmapping{externalIP: addr, localIP: localIP}
+				return
 			}
 			logger.Infow("failed to get external ip after all ports tried", "local", localIP, "ports", udpPorts)
 		}(ip)
@@ -340,6 +350,8 @@ done:
 			break done
 		}
 	}
+	cancel()
+	wg.Wait()
 
 	// mapping unresolved local ip to itself
 	for _, local := range localIPs {

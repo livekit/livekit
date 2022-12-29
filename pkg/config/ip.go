@@ -21,7 +21,7 @@ func (conf *Config) determineIP() (string, error) {
 		var err error
 		for i := 0; i < 3; i++ {
 			var ip string
-			ip, err = GetExternalIP(stunServers, nil)
+			ip, err = GetExternalIP(context.Background(), stunServers, nil)
 			if err == nil {
 				return ip, nil
 			} else {
@@ -86,7 +86,7 @@ func GetLocalIPAddresses(includeLoopback bool) ([]string, error) {
 }
 
 // GetExternalIP return external IP for localAddr from stun server. If localAddr is nil, a local address is chosen automatically.
-func GetExternalIP(stunServers []string, localAddr net.Addr) (string, error) {
+func GetExternalIP(ctx context.Context, stunServers []string, localAddr net.Addr) (string, error) {
 	if len(stunServers) == 0 {
 		return "", errors.New("STUN servers are required but not defined")
 	}
@@ -131,13 +131,16 @@ func GetExternalIP(stunServers []string, localAddr net.Addr) (string, error) {
 		return "", err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx1, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	select {
 	case nodeIP := <-ipChan:
+		if localAddr == nil {
+			return nodeIP, nil
+		}
 		_ = c.Close()
-		return nodeIP, validateExternalIP(nodeIP, localAddr.(*net.UDPAddr))
-	case <-ctx.Done():
+		return nodeIP, validateExternalIP(ctx1, nodeIP, localAddr.(*net.UDPAddr))
+	case <-ctx1.Done():
 		msg := "could not determine public IP"
 		if stunErr != nil {
 			return "", errors.Wrap(stunErr, msg)
@@ -147,7 +150,7 @@ func GetExternalIP(stunServers []string, localAddr net.Addr) (string, error) {
 	}
 }
 
-func validateExternalIP(nodeIP string, addr *net.UDPAddr) error {
+func validateExternalIP(ctx context.Context, nodeIP string, addr *net.UDPAddr) error {
 	srv, err := net.ListenUDP("udp", addr)
 	if err != nil {
 		return err
@@ -182,10 +185,12 @@ func validateExternalIP(nodeIP string, addr *net.UDPAddr) error {
 		return err
 	}
 
+	ctx1, cancel := context.WithTimeout(ctx, 1*time.Second)
+	defer cancel()
 	select {
 	case <-validCh:
 		return nil
-	case <-time.After(3 * time.Second):
+	case <-ctx1.Done():
 		break
 	}
 	return fmt.Errorf("could not validate external IP")
