@@ -70,8 +70,10 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 		LoggerFactory: logging.NewLoggerFactory(logger.GetLogger()),
 	}
 
+	var ifFilter func(string) bool
 	if len(rtcConf.Interfaces.Includes) != 0 || len(rtcConf.Interfaces.Excludes) != 0 {
-		s.SetInterfaceFilter(InterfaceFilterFromConf(rtcConf.Interfaces))
+		ifFilter = InterfaceFilterFromConf(rtcConf.Interfaces)
+		s.SetInterfaceFilter(ifFilter)
 	}
 
 	var ipFilter func(net.IP) bool
@@ -124,6 +126,12 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 			}
 			if rtcConf.EnableLoopbackCandidate {
 				opts = append(opts, ice.UDPMuxFromPortWithLoopback())
+			}
+			if ipFilter != nil {
+				opts = append(opts, ice.UDPMuxFromPortWithIPFilter(ipFilter))
+			}
+			if ifFilter != nil {
+				opts = append(opts, ice.UDPMuxFromPortWithInterfaceFilter(ifFilter))
 			}
 			udpMux, err := ice.NewMultiUDPMuxFromPort(int(rtcConf.UDPPort), opts...)
 			if err != nil {
