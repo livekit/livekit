@@ -263,7 +263,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 		for _, mapping := range params.Config.NAT1To1IPs {
 			if ips := strings.Split(mapping, "/"); len(ips) == 2 {
 				if ips[0] == ips[1] {
-					nat1to1Ips = append(nat1to1Ips, ips[0])
+					nat1to1Ips = append(nat1to1Ips, mapping)
 				}
 			}
 		}
