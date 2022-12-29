@@ -1,4 +1,3 @@
-//
 // Design of Prober
 //
 // Probing is used to check for existence of excess channel capacity.
@@ -61,12 +60,12 @@
 // estimated channel capacity + probing rate when actively probing).
 //
 // But, there a few significant challenges
-//   1. Pacer will require buffering of forwarded packets. That means
-//      more memory, more CPU (have to make copy of packets) and
-//      more latency in the media stream.
-//   2. Scalability concern as SFU may be handling hundreds of
-//      subscriber peer connections and each one processing the pacing
-//      loop at 5ms interval will add up.
+//  1. Pacer will require buffering of forwarded packets. That means
+//     more memory, more CPU (have to make copy of packets) and
+//     more latency in the media stream.
+//  2. Scalability concern as SFU may be handling hundreds of
+//     subscriber peer connections and each one processing the pacing
+//     loop at 5ms interval will add up.
 //
 // So, this module assumes that pacing is inherently provided by the
 // publishers for media streams. That is a reasonable assumption given
@@ -85,25 +84,25 @@
 // For example, probing at 5 Mbps for 1/2 second and sending 1000 byte
 // probe per iteration will wake up every 1.6 ms. That is very high,
 // but should last for 1/2 second or so.
-//     5 Mbps over 1/2 second = 2.5 Mbps
-//     2.5 Mbps = 312500 bytes = 313 probes at 1000 byte probes
-//     313 probes over 1/2 second = 1.6 ms between probes
+//
+//	5 Mbps over 1/2 second = 2.5 Mbps
+//	2.5 Mbps = 312500 bytes = 313 probes at 1000 byte probes
+//	313 probes over 1/2 second = 1.6 ms between probes
 //
 // A few things to note
-// 1. When a probe cluster is added, the expected media rate is provided.
-//    So, the wake-up interval takes that into account. For example,
-//    if probing at 5 Mbps for 1/2 second and if 4 Mbps of it is expected
-//    to be provided by media traffic, the wake-up interval becomes 8 ms.
-// 2. The amount of probing should actually be capped at some value to
-//    avoid too much self-induced congestion. It maybe something like 500 kbps.
-//    That will increase the wake-up interval to 16 ms in the above example.
-// 3. In practice, the probing interval may also be shorter. Typically,
-//    it can be run for 2 - 3 RTTs to get a good measurement. For
-//    the longest hauls, RTT could be 250 ms or so leading to the probing
-//    window being long(ish). But, RTT should be much shorter especially if
-//    the subscriber peer connection of the client is able to connect to
-//    the nearest data center.
-//
+//  1. When a probe cluster is added, the expected media rate is provided.
+//     So, the wake-up interval takes that into account. For example,
+//     if probing at 5 Mbps for 1/2 second and if 4 Mbps of it is expected
+//     to be provided by media traffic, the wake-up interval becomes 8 ms.
+//  2. The amount of probing should actually be capped at some value to
+//     avoid too much self-induced congestion. It maybe something like 500 kbps.
+//     That will increase the wake-up interval to 16 ms in the above example.
+//  3. In practice, the probing interval may also be shorter. Typically,
+//     it can be run for 2 - 3 RTTs to get a good measurement. For
+//     the longest hauls, RTT could be 250 ms or so leading to the probing
+//     window being long(ish). But, RTT should be much shorter especially if
+//     the subscriber peer connection of the client is able to connect to
+//     the nearest data center.
 package sfu
 
 import (

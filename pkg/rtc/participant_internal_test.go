@@ -58,7 +58,6 @@ func TestIsReady(t *testing.T) {
 func TestTrackPublishing(t *testing.T) {
 	t.Run("should send the correct events", func(t *testing.T) {
 		p := newParticipantForTest("test")
-		p.state.Store(livekit.ParticipantInfo_ACTIVE)
 		track := &typesfakes.FakeMediaTrack{}
 		track.IDReturns("id")
 		published := false
@@ -184,6 +183,7 @@ func TestTrackPublishing(t *testing.T) {
 
 func TestOutOfOrderUpdates(t *testing.T) {
 	p := newParticipantForTest("test")
+	p.updateState(livekit.ParticipantInfo_JOINED)
 	p.SetMetadata("initial metadata")
 	sink := p.getResponseSink().(*routingfakes.FakeMessageSink)
 	pi1 := p.ToProto()
@@ -483,6 +483,7 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 		Logger:            LoggerWithParticipant(logger.GetLogger(), identity, sid, false),
 	})
 	p.isPublisher.Store(opts.publisher)
+	p.updateState(livekit.ParticipantInfo_ACTIVE)
 
 	return p
 }
