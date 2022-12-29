@@ -8,6 +8,8 @@ import (
 
 	"github.com/pion/stun"
 	"github.com/pkg/errors"
+
+	"github.com/livekit/protocol/logger"
 )
 
 func (conf *Config) determineIP() (string, error) {
@@ -133,7 +135,8 @@ func GetExternalIP(stunServers []string, localAddr net.Addr) (string, error) {
 	defer cancel()
 	select {
 	case nodeIP := <-ipChan:
-		return nodeIP, nil
+		_ = c.Close()
+		return nodeIP, validateExternalIP(nodeIP, localAddr.(*net.UDPAddr))
 	case <-ctx.Done():
 		msg := "could not determine public IP"
 		if stunErr != nil {
@@ -142,4 +145,48 @@ func GetExternalIP(stunServers []string, localAddr net.Addr) (string, error) {
 			return "", fmt.Errorf(msg)
 		}
 	}
+}
+
+func validateExternalIP(nodeIP string, addr *net.UDPAddr) error {
+	srv, err := net.ListenUDP("udp", addr)
+	if err != nil {
+		return err
+	}
+	defer srv.Close()
+
+	magicString := "9#B8D2Nvg2xg5P$ZRwJ+f)*^Nne6*W3WamGY"
+
+	validCh := make(chan struct{})
+	go func() {
+		buf := make([]byte, 1024)
+		for {
+			n, err := srv.Read(buf)
+			if err != nil {
+				logger.Infow("error reading from UDP socket", "err", err)
+				return
+			}
+			if string(buf[:n]) == magicString {
+				close(validCh)
+				return
+			}
+		}
+	}()
+
+	cli, err := net.DialUDP("udp", nil, &net.UDPAddr{IP: net.ParseIP(nodeIP), Port: srv.LocalAddr().(*net.UDPAddr).Port})
+	if err != nil {
+		return err
+	}
+	defer cli.Close()
+
+	if _, err = cli.Write([]byte(magicString)); err != nil {
+		return err
+	}
+
+	select {
+	case <-validCh:
+		return nil
+	case <-time.After(3 * time.Second):
+		break
+	}
+	return fmt.Errorf("could not validate external IP")
 }

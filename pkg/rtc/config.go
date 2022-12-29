@@ -3,6 +3,7 @@ package rtc
 import (
 	"errors"
 	"fmt"
+	"math/rand"
 	"net"
 	"time"
 
@@ -279,18 +280,37 @@ func getNAT1to1IPsForConf(conf *config.Config, ipFilter func(net.IP) bool) ([]st
 		localIP    string
 	}
 	addrCh := make(chan ipmapping, len(localIPs))
+
+	var udpPorts []int
+	if conf.RTC.ICEPortRangeStart != 0 && conf.RTC.ICEPortRangeEnd != 0 {
+		portRangeStart, portRangeEnd := uint16(conf.RTC.ICEPortRangeStart), uint16(conf.RTC.ICEPortRangeEnd)
+		for i := 0; i < 5; i++ {
+			udpPorts = append(udpPorts, rand.Intn(int(portRangeEnd-portRangeStart))+int(portRangeStart))
+		}
+	} else if conf.RTC.UDPPort != 0 {
+		udpPorts = append(udpPorts, int(conf.RTC.UDPPort))
+	} else {
+		udpPorts = append(udpPorts, 0)
+	}
+
 	for _, ip := range localIPs {
 		if ipFilter != nil && !ipFilter(net.ParseIP(ip)) {
 			continue
 		}
 
 		go func(localIP string) {
-			addr, err := config.GetExternalIP(stunServers, &net.UDPAddr{IP: net.ParseIP(localIP)})
-			if err != nil {
-				logger.Infow("failed to get external ip", "local", localIP, "err", err)
-				return
+			for _, port := range udpPorts {
+				addr, err := config.GetExternalIP(stunServers, &net.UDPAddr{IP: net.ParseIP(localIP), Port: port})
+				if err != nil {
+					// if strings.Contains(err.Error(), "already in use") {
+					// 	continue
+					// }
+					logger.Infow("failed to get external ip", "local", localIP, "err", err)
+					return
+				}
+				addrCh <- ipmapping{externalIP: addr, localIP: localIP}
 			}
-			addrCh <- ipmapping{externalIP: addr, localIP: localIP}
+			logger.Infow("failed to get external ip after all ports tried", "local", localIP, "ports", udpPorts)
 		}(ip)
 	}
 
