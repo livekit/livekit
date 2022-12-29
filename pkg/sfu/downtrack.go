@@ -678,10 +678,10 @@ func (d *DownTrack) Close() {
 
 // Close track, flush used to indicate whether send blank frame to flush
 // decoder of client.
-// 1. When transceiver is reused by other participant's video track,
-//    set flush=true to avoid previous video shows before previous stream is displayed.
-// 2. in case of session migration, participant migrate from other node, video track should
-//    be resumed with same participant, set flush=false since we don't need to flush decoder.
+//  1. When transceiver is reused by other participant's video track,
+//     set flush=true to avoid previous video shows before previous stream is displayed.
+//  2. in case of session migration, participant migrate from other node, video track should
+//     be resumed with same participant, set flush=false since we don't need to flush decoder.
 func (d *DownTrack) CloseWithFlush(flush bool) {
 	if d.isClosed.Swap(true) {
 		// already closed

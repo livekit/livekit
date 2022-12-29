@@ -15,9 +15,7 @@ import (
 	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
 )
 
-//
 // Forwarder
-//
 const (
 	FlagPauseOnDowngrade  = true
 	FlagFilterRTX         = true

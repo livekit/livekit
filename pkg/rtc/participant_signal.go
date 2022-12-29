@@ -43,6 +43,9 @@ func (p *ParticipantImpl) SendJoinResponse(joinResponse *livekit.JoinResponse) e
 }
 
 func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.ParticipantInfo) error {
+	if p.State() == livekit.ParticipantInfo_DISCONNECTED || p.State() == livekit.ParticipantInfo_JOINING {
+		return nil
+	}
 	p.updateLock.Lock()
 	validUpdates := make([]*livekit.ParticipantInfo, 0, len(participantsToUpdate))
 	for _, pi := range participantsToUpdate {

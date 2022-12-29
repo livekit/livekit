@@ -909,13 +909,17 @@ func (p *ParticipantImpl) UpdateSubscribedTrackSettings(trackID livekit.TrackID,
 }
 
 func (p *ParticipantImpl) VerifySubscribeParticipantInfo(pID livekit.ParticipantID, version uint32) {
+	if p.State() == livekit.ParticipantInfo_JOINING {
+		// we have not sent a JoinResponse yet. metadata would be covered in JoinResponse
+		return
+	}
 	if v, ok := p.updateCache.Get(pID); ok && v >= version {
 		return
 	}
 
 	if f := p.params.GetParticipantInfo; f != nil {
 		if info := f(pID); info != nil {
-			p.SendParticipantUpdate([]*livekit.ParticipantInfo{info})
+			_ = p.SendParticipantUpdate([]*livekit.ParticipantInfo{info})
 		}
 	}
 }
