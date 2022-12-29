@@ -30,6 +30,7 @@ func (p *ParticipantImpl) SetResponseSink(sink routing.MessageSink) {
 }
 
 func (p *ParticipantImpl) SendJoinResponse(joinResponse *livekit.JoinResponse) error {
+	// update state prior to sending message, or the message would not be sent
 	if p.State() == livekit.ParticipantInfo_JOINING {
 		p.updateState(livekit.ParticipantInfo_JOINED)
 	}
@@ -43,7 +44,8 @@ func (p *ParticipantImpl) SendJoinResponse(joinResponse *livekit.JoinResponse) e
 }
 
 func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.ParticipantInfo) error {
-	if p.State() == livekit.ParticipantInfo_DISCONNECTED || p.State() == livekit.ParticipantInfo_JOINING {
+	if !p.IsReady() {
+		// avoid manipulating cache before it's ready
 		return nil
 	}
 	p.updateLock.Lock()
@@ -176,7 +178,7 @@ func (p *ParticipantImpl) sendTrackUnpublished(trackID livekit.TrackID) {
 }
 
 func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
-	if p.State() == livekit.ParticipantInfo_DISCONNECTED {
+	if !p.IsReady() {
 		return nil
 	}
 
