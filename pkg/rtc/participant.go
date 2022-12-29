@@ -129,9 +129,13 @@ type ParticipantImpl struct {
 	subscribedTracksSettings map[livekit.TrackID]*livekit.UpdateTrackSettings
 	// keeps track of disallowed tracks
 	disallowedSubscriptions map[livekit.TrackID]livekit.ParticipantID // trackID -> publisherID
-	// keep track of other publishers ids that we are subscribed to
-	subscribedTo      map[livekit.ParticipantID]struct{}
+	// keeps track of other publishers ids that we are subscribed to
+	subscribedTo map[livekit.ParticipantID]struct{}
+	// keeps track of unpublished tracks in order to reuse trackID
 	unpublishedTracks []*livekit.TrackInfo
+	// queued participant updates before join response is sent
+	// access guarded by updateLock
+	queuedUpdates []*livekit.ParticipantInfo
 
 	dataChannelStats *telemetry.BytesTrackStats
 

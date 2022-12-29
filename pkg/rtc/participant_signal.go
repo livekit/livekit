@@ -30,25 +30,48 @@ func (p *ParticipantImpl) SetResponseSink(sink routing.MessageSink) {
 }
 
 func (p *ParticipantImpl) SendJoinResponse(joinResponse *livekit.JoinResponse) error {
-	// update state prior to sending message, or the message would not be sent
-	if p.State() == livekit.ParticipantInfo_JOINING {
-		p.updateState(livekit.ParticipantInfo_JOINED)
+	// keep track of participant updates and versions
+	p.updateLock.Lock()
+	for _, op := range joinResponse.OtherParticipants {
+		p.updateCache.Add(livekit.ParticipantID(op.Sid), op.Version)
 	}
+	p.updateLock.Unlock()
 
 	// send Join response
-	return p.writeMessage(&livekit.SignalResponse{
+	err := p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Join{
 			Join: joinResponse,
 		},
 	})
+	if err != nil {
+		return err
+	}
+
+	// update state after to sending message, so that no participant updates could slip through before JoinResponse is
+	// sent
+	p.updateLock.Lock()
+	if p.State() == livekit.ParticipantInfo_JOINING {
+		p.updateState(livekit.ParticipantInfo_JOINED)
+	}
+	queuedUpdates := p.queuedUpdates
+	p.queuedUpdates = nil
+	p.updateLock.Unlock()
+
+	if len(queuedUpdates) > 0 {
+		return p.SendParticipantUpdate(queuedUpdates)
+	}
+
+	return nil
 }
 
 func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.ParticipantInfo) error {
+	p.updateLock.Lock()
 	if !p.IsReady() {
-		// avoid manipulating cache before it's ready
+		// queue up updates
+		p.queuedUpdates = append(p.queuedUpdates, participantsToUpdate...)
+		p.updateLock.Unlock()
 		return nil
 	}
-	p.updateLock.Lock()
 	validUpdates := make([]*livekit.ParticipantInfo, 0, len(participantsToUpdate))
 	for _, pi := range participantsToUpdate {
 		isValid := true
@@ -178,7 +201,7 @@ func (p *ParticipantImpl) sendTrackUnpublished(trackID livekit.TrackID) {
 }
 
 func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
-	if !p.IsReady() {
+	if p.State() == livekit.ParticipantInfo_DISCONNECTED || (!p.IsReady() && msg.GetJoin() == nil) {
 		return nil
 	}
 
