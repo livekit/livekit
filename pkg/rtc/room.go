@@ -245,7 +245,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 	// it's important to set this before connection, we don't want to miss out on any publishedTracks
 	participant.OnTrackPublished(r.onTrackPublished)
 	participant.OnStateChange(func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State) {
-		r.Logger.Debugw("participant state changed",
+		r.Logger.Infow("participant state changed",
 			"state", p.State(),
 			"participant", p.Identity(),
 			"pID", p.ID(),
@@ -408,7 +408,7 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 	p.OnSubscribedTo(nil)
 
 	// close participant as well
-	r.Logger.Infow("closing participant for removal", "pID", p.ID(), "participant", p.Identity())
+	r.Logger.Debugw("closing participant for removal", "pID", p.ID(), "participant", p.Identity())
 	_ = p.Close(true, reason)
 
 	r.lock.RLock()
