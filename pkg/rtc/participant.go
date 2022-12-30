@@ -97,7 +97,6 @@ type ParticipantImpl struct {
 
 	isClosed     atomic.Bool
 	state        atomic.Value // livekit.ParticipantInfo_State
-	updateCache  *lru.Cache[livekit.ParticipantID, uint32]
 	resSink      atomic.Value // routing.MessageSink
 	resSinkValid atomic.Bool
 	grants       *auth.ClaimGrants
@@ -129,19 +128,27 @@ type ParticipantImpl struct {
 	subscribedTracksSettings map[livekit.TrackID]*livekit.UpdateTrackSettings
 	// keeps track of disallowed tracks
 	disallowedSubscriptions map[livekit.TrackID]livekit.ParticipantID // trackID -> publisherID
-	// keep track of other publishers ids that we are subscribed to
-	subscribedTo      map[livekit.ParticipantID]struct{}
+	// keeps track of other publishers ids that we are subscribed to
+	subscribedTo map[livekit.ParticipantID]struct{}
+	// keeps track of unpublished tracks in order to reuse trackID
 	unpublishedTracks []*livekit.TrackInfo
+
+	// queued participant updates before join response is sent
+	// guarded by updateLock
+	queuedUpdates []*livekit.ParticipantInfo
+	// cache of recently sent updates, to ensuring ordering by version
+	// guarded by updateLock
+	updateCache *lru.Cache[livekit.ParticipantID, uint32]
+	updateLock  sync.Mutex
 
 	dataChannelStats *telemetry.BytesTrackStats
 
 	rttUpdatedAt time.Time
 	lastRTT      uint32
 
-	lock       sync.RWMutex
-	once       sync.Once
-	updateLock sync.Mutex
-	version    atomic.Uint32
+	lock    sync.RWMutex
+	once    sync.Once
+	version atomic.Uint32
 
 	// callbacks & handlers
 	onTrackPublished    func(types.LocalParticipant, types.MediaTrack)
