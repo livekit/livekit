@@ -158,7 +158,7 @@ func (s *StreamTrackerFrame) updateEstimatedFrameRate() float64 {
 		// slow increase, prevents shortening eval interval too quickly on frame rate going up
 		factor = frameRateIncreaseFactor
 	case s.estimatedFrameRate > frameRate:
-		// fase decrease, prevents declaring stream stop too quickly on frame rate going down
+		// fast decrease, prevents declaring stream stop too quickly on frame rate going down
 		factor = frameRateDecreaseFactor
 	}
 
