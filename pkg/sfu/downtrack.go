@@ -689,7 +689,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 	}
 
 	d.bindLock.Lock()
-	d.logger.Infow("close down track", "flushBlankFrame", flush)
+	d.logger.Debugw("close down track", "flushBlankFrame", flush)
 	if d.bound.Load() {
 		if d.forwarder != nil {
 			d.forwarder.Mute(true)
@@ -717,7 +717,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		d.receiver.DeleteDownTrack(d.subscriberID)
 
 		if d.rtcpReader != nil {
-			logger.Infow("downtrack close rtcp reader")
+			logger.Debugw("downtrack close rtcp reader")
 			d.rtcpReader.Close()
 			d.rtcpReader.OnPacket(nil)
 		}

@@ -8,6 +8,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
@@ -32,7 +33,8 @@ type SubscribedTrack struct {
 	params   SubscribedTrackParams
 	subMuted atomic.Bool
 	pubMuted atomic.Bool
-	settings atomic.Value // *livekit.UpdateTrackSettings
+	settings atomic.Pointer[livekit.UpdateTrackSettings]
+	logger   logger.Logger
 
 	onBind atomic.Value // func()
 	bound  atomic.Bool
@@ -42,7 +44,12 @@ type SubscribedTrack struct {
 
 func NewSubscribedTrack(params SubscribedTrackParams) *SubscribedTrack {
 	s := &SubscribedTrack{
-		params:    params,
+		params: params,
+		logger: params.Subscriber.GetLogger().WithValues(
+			"trackID", params.DownTrack.ID(),
+			"publisherID", params.PublisherID,
+			"publisher", params.PublisherIdentity,
+		),
 		debouncer: debounce.New(subscriptionDebounceInterval),
 	}
 
@@ -120,6 +127,11 @@ func (t *SubscribedTrack) SetPublisherMuted(muted bool) {
 func (t *SubscribedTrack) UpdateSubscriberSettings(settings *livekit.UpdateTrackSettings) {
 	prevDisabled := t.subMuted.Swap(settings.Disabled)
 	t.settings.Store(settings)
+
+	if prevDisabled != settings.Disabled {
+		t.logger.Infow("updated subscribed track enabled", "enabled", !settings.Disabled)
+	}
+
 	// avoid frequent changes to mute & video layers, unless it became visible
 	if prevDisabled != settings.Disabled && !settings.Disabled {
 		t.UpdateVideoLayer()
@@ -133,12 +145,15 @@ func (t *SubscribedTrack) UpdateVideoLayer() {
 	if t.DownTrack().Kind() != webrtc.RTPCodecTypeVideo {
 		return
 	}
-	t.Subscriber().GetLogger().Debugw("updating video layer")
 
-	settings, ok := t.settings.Load().(*livekit.UpdateTrackSettings)
-	if !ok {
+	settings := t.settings.Load()
+	if settings == nil {
 		return
 	}
+
+	t.logger.Debugw("updating video layer",
+		"settings", settings,
+	)
 
 	quality := settings.Quality
 	if settings.Width > 0 {

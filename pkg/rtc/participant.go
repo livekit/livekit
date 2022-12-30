@@ -448,7 +448,7 @@ func (p *ParticipantImpl) OnClaimsChanged(callback func(types.LocalParticipant))
 
 // HandleOffer an offer from remote participant, used when clients make the initial connection
 func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) {
-	p.params.Logger.Infow("received offer", "transport", livekit.SignalTarget_PUBLISHER)
+	p.params.Logger.Debugw("received offer", "transport", livekit.SignalTarget_PUBLISHER)
 	shouldPend := false
 	if p.MigrateState() == types.MigrateStateInit {
 		shouldPend = true
@@ -462,7 +462,7 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) {
 // HandleAnswer handles a client answer response, with subscriber PC, server initiates the
 // offer and client answers
 func (p *ParticipantImpl) HandleAnswer(answer webrtc.SessionDescription) {
-	p.params.Logger.Infow("received answer", "transport", livekit.SignalTarget_SUBSCRIBER)
+	p.params.Logger.Debugw("received answer", "transport", livekit.SignalTarget_SUBSCRIBER)
 
 	/* from server received join request to client answer
 	 * 1. server send join response & offer
@@ -476,7 +476,7 @@ func (p *ParticipantImpl) HandleAnswer(answer webrtc.SessionDescription) {
 }
 
 func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) error {
-	p.params.Logger.Infow("sending answer", "transport", livekit.SignalTarget_PUBLISHER)
+	p.params.Logger.Debugw("sending answer", "transport", livekit.SignalTarget_PUBLISHER)
 	answer = p.configurePublisherAnswer(answer)
 	if err := p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Answer{
@@ -937,14 +937,14 @@ func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack, sou
 	if v, ok := p.trackPublisherVersion[subTrack.ID()]; ok && v > subTrack.PublisherVersion() {
 		p.supervisor.SetSubscribedTrack(subTrack.ID(), subTrack, sourceTrack)
 		p.lock.Unlock()
-		p.params.Logger.Infow("ignoring add subscribedTrack from older version",
+		p.params.Logger.Debugw("ignoring add subscribedTrack from older version",
 			"current", v,
 			"requesting", subTrack.PublisherVersion(),
 			"trackID", subTrack.ID(),
 		)
 		return
 	}
-	p.params.Logger.Infow("added subscribedTrack",
+	p.params.Logger.Debugw("added subscribedTrack",
 		"publisherID", subTrack.PublisherID(),
 		"publisherIdentity", subTrack.PublisherIdentity(),
 		"trackID", subTrack.ID())
@@ -985,14 +985,14 @@ func (p *ParticipantImpl) RemoveSubscribedTrack(subTrack types.SubscribedTrack, 
 	if v, ok := p.trackPublisherVersion[subTrack.ID()]; ok && v > subTrack.PublisherVersion() {
 		p.supervisor.ClearSubscribedTrack(subTrack.ID(), subTrack, sourceTrack)
 		p.lock.Unlock()
-		p.params.Logger.Infow("ignoring remove subscribedTrack from older version",
+		p.params.Logger.Debugw("ignoring remove subscribedTrack from older version",
 			"current", v,
 			"requesting", subTrack.PublisherVersion(),
 			"trackID", subTrack.ID(),
 		)
 		return
 	}
-	p.params.Logger.Infow("removed subscribedTrack",
+	p.params.Logger.Debugw("removed subscribedTrack",
 		"publisherID", subTrack.PublisherID(),
 		"publisherIdentity", subTrack.PublisherIdentity(),
 		"trackID", subTrack.ID(), "kind", subTrack.DownTrack().Kind())
@@ -1198,7 +1198,7 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 
 // when the server has an offer for participant
 func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription) error {
-	p.params.Logger.Infow("sending offer", "transport", livekit.SignalTarget_SUBSCRIBER)
+	p.params.Logger.Debugw("sending offer", "transport", livekit.SignalTarget_SUBSCRIBER)
 	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Offer{
 			Offer: ToProtoSessionDescription(offer),

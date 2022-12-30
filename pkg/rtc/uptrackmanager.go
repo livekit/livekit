@@ -123,10 +123,8 @@ func (u *UpTrackManager) AddSubscriber(sub types.LocalParticipant, params types.
 	for _, track := range tracks {
 		trackIDs = append(trackIDs, track.ID())
 	}
-	u.params.Logger.Debugw("subscribing participant to tracks",
-		"subscriber", sub.Identity(),
-		"subscriberID", sub.ID(),
-		"trackIDs", trackIDs)
+	sub.GetLogger().Debugw("subscribing to tracks",
+		"trackID", trackIDs)
 
 	n := 0
 	for _, track := range tracks {
