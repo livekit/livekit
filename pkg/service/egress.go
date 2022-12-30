@@ -15,6 +15,7 @@ import (
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/telemetry"
 )
@@ -182,6 +183,11 @@ func (s *EgressService) startEgress(ctx context.Context, roomName livekit.RoomNa
 func (s *egressLauncher) StartEgress(ctx context.Context, req *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
 	var info *livekit.EgressInfo
 	var err error
+
+	// Ensure we have a Egress ID
+	if req.EgressId == "" {
+		req.EgressId = utils.NewGuid(utils.EgressPrefix)
+	}
 
 	if s.psrpcClient != nil {
 		info, err = s.psrpcClient.StartEgress(ctx, req)
