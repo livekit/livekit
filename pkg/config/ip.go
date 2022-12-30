@@ -8,6 +8,8 @@ import (
 
 	"github.com/pion/stun"
 	"github.com/pkg/errors"
+
+	"github.com/livekit/protocol/logger"
 )
 
 func (conf *Config) determineIP() (string, error) {
@@ -19,7 +21,7 @@ func (conf *Config) determineIP() (string, error) {
 		var err error
 		for i := 0; i < 3; i++ {
 			var ip string
-			ip, err = GetExternalIP(stunServers, nil)
+			ip, err = GetExternalIP(context.Background(), stunServers, nil)
 			if err == nil {
 				return ip, nil
 			} else {
@@ -83,8 +85,9 @@ func GetLocalIPAddresses(includeLoopback bool) ([]string, error) {
 	return nil, fmt.Errorf("could not find local IP address")
 }
 
-// GetExternalIP return external IP for localAddr from stun server. If localAddr is nil, a local address is chosen automatically.
-func GetExternalIP(stunServers []string, localAddr net.Addr) (string, error) {
+// GetExternalIP return external IP for localAddr from stun server. If localAddr is nil, a local address is chosen automatically,
+// else the address will be used to validate the external IP is accessible from the outside.
+func GetExternalIP(ctx context.Context, stunServers []string, localAddr net.Addr) (string, error) {
 	if len(stunServers) == 0 {
 		return "", errors.New("STUN servers are required but not defined")
 	}
@@ -129,12 +132,16 @@ func GetExternalIP(stunServers []string, localAddr net.Addr) (string, error) {
 		return "", err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx1, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	select {
 	case nodeIP := <-ipChan:
-		return nodeIP, nil
-	case <-ctx.Done():
+		if localAddr == nil {
+			return nodeIP, nil
+		}
+		_ = c.Close()
+		return nodeIP, validateExternalIP(ctx1, nodeIP, localAddr.(*net.UDPAddr))
+	case <-ctx1.Done():
 		msg := "could not determine public IP"
 		if stunErr != nil {
 			return "", errors.Wrap(stunErr, msg)
@@ -142,4 +149,52 @@ func GetExternalIP(stunServers []string, localAddr net.Addr) (string, error) {
 			return "", fmt.Errorf(msg)
 		}
 	}
+}
+
+// validateExternalIP validates that the external IP is accessible from the outside by listen the local address,
+// it will send a magic string to the external IP and check the string is received by the local address.
+func validateExternalIP(ctx context.Context, nodeIP string, addr *net.UDPAddr) error {
+	srv, err := net.ListenUDP("udp", addr)
+	if err != nil {
+		return err
+	}
+	defer srv.Close()
+
+	magicString := "9#B8D2Nvg2xg5P$ZRwJ+f)*^Nne6*W3WamGY"
+
+	validCh := make(chan struct{})
+	go func() {
+		buf := make([]byte, 1024)
+		for {
+			n, err := srv.Read(buf)
+			if err != nil {
+				logger.Debugw("error reading from UDP socket", "err", err)
+				return
+			}
+			if string(buf[:n]) == magicString {
+				close(validCh)
+				return
+			}
+		}
+	}()
+
+	cli, err := net.DialUDP("udp", nil, &net.UDPAddr{IP: net.ParseIP(nodeIP), Port: srv.LocalAddr().(*net.UDPAddr).Port})
+	if err != nil {
+		return err
+	}
+	defer cli.Close()
+
+	if _, err = cli.Write([]byte(magicString)); err != nil {
+		return err
+	}
+
+	ctx1, cancel := context.WithTimeout(ctx, 1*time.Second)
+	defer cancel()
+	select {
+	case <-validCh:
+		return nil
+	case <-ctx1.Done():
+		break
+	}
+	return fmt.Errorf("could not validate external IP")
 }
