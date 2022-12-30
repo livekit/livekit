@@ -717,7 +717,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		d.receiver.DeleteDownTrack(d.subscriberID)
 
 		if d.rtcpReader != nil {
-			logger.Debugw("downtrack close rtcp reader")
+			d.logger.Debugw("downtrack close rtcp reader")
 			d.rtcpReader.Close()
 			d.rtcpReader.OnPacket(nil)
 		}
