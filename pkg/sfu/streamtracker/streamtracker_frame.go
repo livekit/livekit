@@ -9,10 +9,10 @@ import (
 )
 
 const (
-	checkInterval       = 500 * time.Millisecond
-	frameRateResolution = float64(0.01) // 1 frame every 100 seconds
-	frameRateIncreaseFactor = 0.4 // slow increase
-	frameRateDecreaseFactor = 0.1 // fast decrease
+	checkInterval           = 500 * time.Millisecond
+	frameRateResolution     = float64(0.01) // 1 frame every 100 seconds
+	frameRateIncreaseFactor = 0.6           // slow increase
+	frameRateDecreaseFactor = 0.9           // fast decrease
 )
 
 type StreamTrackerFrameParams struct {
@@ -31,9 +31,9 @@ type StreamTrackerFrame struct {
 	newestTS      uint32
 	numFrames     int
 
-	estimatedFrameRate   float64
-	evalInterval      time.Duration
-	lastStatusCheckAt time.Time
+	estimatedFrameRate float64
+	evalInterval       time.Duration
+	lastStatusCheckAt  time.Time
 }
 
 func NewStreamTrackerFrame(params StreamTrackerFrameParams) StreamTrackerImpl {
@@ -73,27 +73,24 @@ func (s *StreamTrackerFrame) GetCheckInterval() time.Duration {
 }
 
 func (s *StreamTrackerFrame) Observe(hasMarker bool, ts uint32) StreamStatusChange {
-	if !hasMarker {
-		return StreamStatusChangeNone
-	}
-
-	if !s.tsInitialized {
-		s.tsInitialized = true
-		s.oldestTS = ts
-		s.newestTS = ts
-		s.numFrames = 1
-	} else {
-		diff := ts - s.oldestTS
-		if diff > (1 << 31) {
+	if hasMarker {
+		if !s.tsInitialized {
+			s.tsInitialized = true
 			s.oldestTS = ts
-		}
-		diff = ts - s.newestTS
-		if diff < (1 << 31) {
 			s.newestTS = ts
+			s.numFrames = 1
+		} else {
+			diff := ts - s.oldestTS
+			if diff > (1 << 31) {
+				s.oldestTS = ts
+			}
+			diff = ts - s.newestTS
+			if diff < (1 << 31) {
+				s.newestTS = ts
+			}
+			s.numFrames++
 		}
-		s.numFrames++
 	}
-	s.params.Logger.Debugw("RAJA frame", "ts", ts)	// REMOVE
 
 	// When starting up, check for first packet and declare active.
 	// Happens under following conditions
@@ -165,7 +162,7 @@ func (s *StreamTrackerFrame) updateEstimatedFrameRate() float64 {
 		factor = frameRateDecreaseFactor
 	}
 
-	estimatedFrameRate := frameRate * factor + s.estimatedFrameRate * (1.0 - factor)
+	estimatedFrameRate := frameRate*factor + s.estimatedFrameRate*(1.0-factor)
 	estimatedFrameRate = math.Round(estimatedFrameRate/frameRateResolution) * frameRateResolution
 	if s.estimatedFrameRate != estimatedFrameRate {
 		s.estimatedFrameRate = estimatedFrameRate
