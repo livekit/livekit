@@ -1365,7 +1365,7 @@ func (t *PCTransport) handleRemoteICECandidate(e *event) error {
 }
 
 func (t *PCTransport) handleLogICECandidates(e *event) error {
-	t.params.Logger.Infow(
+	t.params.Logger.Debugw(
 		"ice candidates",
 		"lc", t.allowedLocalCandidates,
 		"rc", t.allowedRemoteCandidates,

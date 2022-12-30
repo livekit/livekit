@@ -258,7 +258,7 @@ func (r *RoomManager) StartSession(
 		return errors.New("could not restart participant")
 	}
 
-	logger.Infow("starting RTC session",
+	logger.Debugw("starting RTC session",
 		"room", roomName,
 		"nodeID", r.currentNode.Id,
 		"participant", pi.Identity,
@@ -456,7 +456,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 // manages an RTC session for a participant, runs on the RTC node
 func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalParticipant, requestSource routing.MessageSource) {
 	defer func() {
-		logger.Infow("RTC session finishing",
+		logger.Debugw("RTC session finishing",
 			"participant", participant.Identity(),
 			"pID", participant.ID(),
 			"room", room.Name(),

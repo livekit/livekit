@@ -57,8 +57,6 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 				pLogger.Errorw("failed to update subscribed track settings", err, "trackID", sid)
 				continue
 			}
-
-			pLogger.Infow("updated subscribed track settings", "trackID", sid, "settings", msg.TrackSetting)
 		}
 	case *livekit.SignalRequest_Leave:
 		pLogger.Infow("client leaving room")
