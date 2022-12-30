@@ -292,7 +292,7 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 			DynacastPauseDelay: 5 * time.Second,
 			StreamTracker: StreamTrackersConfig{
 				Video: StreamTrackerConfig{
-					StreamTrackerType: StreamTrackerTypePacket,
+					StreamTrackerType: StreamTrackerTypeFrame,
 					BitrateReportInterval: map[int32]time.Duration{
 						0: 1 * time.Second,
 						1: 1 * time.Second,
@@ -329,7 +329,7 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 					},
 				},
 				Screenshare: StreamTrackerConfig{
-					StreamTrackerType: StreamTrackerTypePacket,
+					StreamTrackerType: StreamTrackerTypeFrame,
 					BitrateReportInterval: map[int32]time.Duration{
 						0: 4 * time.Second,
 						1: 4 * time.Second,
