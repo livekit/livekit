@@ -98,8 +98,13 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 			if err != nil {
 				return nil, err
 			}
-			logger.Debugw("using external IPs", "ips", ips)
-			s.SetNAT1To1IPs(ips, webrtc.ICECandidateTypeHost)
+			if len(ips) == 0 {
+				logger.Infow("no external IPs found, using node IP for NAT1To1Ips", "ip", externalIP)
+				s.SetNAT1To1IPs([]string{externalIP}, webrtc.ICECandidateTypeHost)
+			} else {
+				logger.Infow("using external IPs", "ips", ips)
+				s.SetNAT1To1IPs(ips, webrtc.ICECandidateTypeHost)
+			}
 			nat1to1IPs = ips
 		} else {
 			s.SetNAT1To1IPs([]string{externalIP}, webrtc.ICECandidateTypeHost)
@@ -307,7 +312,6 @@ func getNAT1to1IPsForConf(conf *config.Config, ipFilter func(net.IP) bool) ([]st
 		go func(localIP string) {
 			defer wg.Done()
 			for _, port := range udpPorts {
-
 				addr, err := config.GetExternalIP(ctx, stunServers, &net.UDPAddr{IP: net.ParseIP(localIP), Port: port})
 				if err != nil {
 					if strings.Contains(err.Error(), "address already in use") {
@@ -352,6 +356,11 @@ done:
 	}
 	cancel()
 	wg.Wait()
+
+	if len(natMapping) == 0 {
+		// no external ip resolved
+		return nil, nil
+	}
 
 	// mapping unresolved local ip to itself
 	for _, local := range localIPs {
