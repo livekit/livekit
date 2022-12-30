@@ -305,8 +305,8 @@ github.com/pion/datachannel v1.5.5/go.mod h1:iMz+lECmfdCMqFRhXhcA/219B0SQlbpoR2V
 github.com/pion/dtls/v2 v2.1.5 h1:jlh2vtIyUBShchoTDqpCCqiYCyRFJ/lvf/gQ8TALs+c=
 github.com/pion/dtls/v2 v2.1.5/go.mod h1:BqCE7xPZbPSubGasRoDFJeTsyJtdD1FanJYL0JGheqY=
 github.com/pion/ice/v2 v2.2.12/go.mod h1:z2KXVFyRkmjetRlaVRgjO9U3ShKwzhlUylvxKfHfd5A=
-github.com/pion/ice/v2 v2.2.13-0.20221229105605-283943ec2394 h1:lkulXux99DKG3w981gasltLxs54bAJa2h8FeFlVPR04=
-github.com/pion/ice/v2 v2.2.13-0.20221229105605-283943ec2394/go.mod h1:eFO4/1zCI+a3OFVt7l7kP+5jWCuZo8FwU2UwEa3+164=
+github.com/pion/ice/v2 v2.2.13 h1:NvLtzwcyob6wXgFqLmVQbGB3s9zzWmOegNMKYig5l9M=
+github.com/pion/ice/v2 v2.2.13/go.mod h1:eFO4/1zCI+a3OFVt7l7kP+5jWCuZo8FwU2UwEa3+164=
 github.com/pion/interceptor v0.1.11/go.mod h1:tbtKjZY14awXd7Bq0mmWvgtHB5MDaRN7HV3OZ/uy7s8=
 github.com/pion/interceptor v0.1.12 h1:CslaNriCFUItiXS5o+hh5lpL0t0ytQkFnUcbbCs2Zq8=
 github.com/pion/interceptor v0.1.12/go.mod h1:bDtgAD9dRkBZpWHGKaoKb42FhDHTG2rX8Ii9LRALLVA=
