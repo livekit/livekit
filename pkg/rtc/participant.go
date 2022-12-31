@@ -265,6 +265,10 @@ func (p *ParticipantImpl) IsReady() bool {
 	return state == livekit.ParticipantInfo_JOINED || state == livekit.ParticipantInfo_ACTIVE
 }
 
+func (p *ParticipantImpl) IsDisconnected() bool {
+	return p.State() == livekit.ParticipantInfo_DISCONNECTED
+}
+
 func (p *ParticipantImpl) ConnectedAt() time.Time {
 	return p.connectedAt
 }
@@ -719,7 +723,7 @@ func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
 	p.migrationTimer = time.AfterFunc(migrationWaitDuration, func() {
 		p.clearMigrationTimer()
 
-		if p.isClosed.Load() || p.State() == livekit.ParticipantInfo_DISCONNECTED {
+		if p.isClosed.Load() || p.IsDisconnected() {
 			return
 		}
 		// TODO: change to debug once we are confident
@@ -1216,7 +1220,7 @@ func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription) err
 
 // when a new remoteTrack is created, creates a Track and adds it to room
 func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
-	if p.State() == livekit.ParticipantInfo_DISCONNECTED {
+	if p.IsDisconnected() {
 		return
 	}
 
@@ -1254,7 +1258,7 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 }
 
 func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byte) {
-	if p.State() == livekit.ParticipantInfo_DISCONNECTED || !p.CanPublishData() {
+	if p.IsDisconnected() || !p.CanPublishData() {
 		return
 	}
 
@@ -1285,7 +1289,7 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 }
 
 func (p *ParticipantImpl) onICECandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) error {
-	if c == nil || p.State() == livekit.ParticipantInfo_DISCONNECTED {
+	if c == nil || p.IsDisconnected() {
 		return nil
 	}
 
@@ -1333,7 +1337,7 @@ func (p *ParticipantImpl) setupDisconnectTimer() {
 	p.disconnectTimer = time.AfterFunc(disconnectCleanupDuration, func() {
 		p.clearDisconnectTimer()
 
-		if p.isClosed.Load() || p.State() == livekit.ParticipantInfo_DISCONNECTED {
+		if p.isClosed.Load() || p.IsDisconnected() {
 			return
 		}
 		p.params.Logger.Infow("closing disconnected participant")
@@ -1355,7 +1359,7 @@ func (p *ParticipantImpl) onAnyTransportFailed() {
 func (p *ParticipantImpl) subscriberRTCPWorker() {
 	defer Recover()
 	for {
-		if p.State() == livekit.ParticipantInfo_DISCONNECTED {
+		if p.IsDisconnected() {
 			return
 		}
 
@@ -2050,7 +2054,7 @@ func (p *ParticipantImpl) onAnyTransportNegotiationFailed() {
 
 func (p *ParticipantImpl) EnqueueSubscribeTrack(trackID livekit.TrackID, sourceTrack types.MediaTrack, isRelayed bool, f func(sub types.LocalParticipant) error) bool {
 	// do not queue subscription is participant is already closed/disconnected
-	if p.isClosed.Load() || p.State() == livekit.ParticipantInfo_DISCONNECTED {
+	if p.isClosed.Load() || p.IsDisconnected() {
 		return false
 	}
 

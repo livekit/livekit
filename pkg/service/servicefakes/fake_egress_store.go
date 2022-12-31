@@ -62,16 +62,6 @@ type FakeEgressStore struct {
 	updateEgressReturnsOnCall map[int]struct {
 		result1 error
 	}
-	UsePSRPCStub        func() bool
-	usePSRPCMutex       sync.RWMutex
-	usePSRPCArgsForCall []struct {
-	}
-	usePSRPCReturns struct {
-		result1 bool
-	}
-	usePSRPCReturnsOnCall map[int]struct {
-		result1 bool
-	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
 }
@@ -330,59 +320,6 @@ func (fake *FakeEgressStore) UpdateEgressReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
-func (fake *FakeEgressStore) UsePSRPC() bool {
-	fake.usePSRPCMutex.Lock()
-	ret, specificReturn := fake.usePSRPCReturnsOnCall[len(fake.usePSRPCArgsForCall)]
-	fake.usePSRPCArgsForCall = append(fake.usePSRPCArgsForCall, struct {
-	}{})
-	stub := fake.UsePSRPCStub
-	fakeReturns := fake.usePSRPCReturns
-	fake.recordInvocation("UsePSRPC", []interface{}{})
-	fake.usePSRPCMutex.Unlock()
-	if stub != nil {
-		return stub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeEgressStore) UsePSRPCCallCount() int {
-	fake.usePSRPCMutex.RLock()
-	defer fake.usePSRPCMutex.RUnlock()
-	return len(fake.usePSRPCArgsForCall)
-}
-
-func (fake *FakeEgressStore) UsePSRPCCalls(stub func() bool) {
-	fake.usePSRPCMutex.Lock()
-	defer fake.usePSRPCMutex.Unlock()
-	fake.UsePSRPCStub = stub
-}
-
-func (fake *FakeEgressStore) UsePSRPCReturns(result1 bool) {
-	fake.usePSRPCMutex.Lock()
-	defer fake.usePSRPCMutex.Unlock()
-	fake.UsePSRPCStub = nil
-	fake.usePSRPCReturns = struct {
-		result1 bool
-	}{result1}
-}
-
-func (fake *FakeEgressStore) UsePSRPCReturnsOnCall(i int, result1 bool) {
-	fake.usePSRPCMutex.Lock()
-	defer fake.usePSRPCMutex.Unlock()
-	fake.UsePSRPCStub = nil
-	if fake.usePSRPCReturnsOnCall == nil {
-		fake.usePSRPCReturnsOnCall = make(map[int]struct {
-			result1 bool
-		})
-	}
-	fake.usePSRPCReturnsOnCall[i] = struct {
-		result1 bool
-	}{result1}
-}
-
 func (fake *FakeEgressStore) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
@@ -394,8 +331,6 @@ func (fake *FakeEgressStore) Invocations() map[string][][]interface{} {
 	defer fake.storeEgressMutex.RUnlock()
 	fake.updateEgressMutex.RLock()
 	defer fake.updateEgressMutex.RUnlock()
-	fake.usePSRPCMutex.RLock()
-	defer fake.usePSRPCMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

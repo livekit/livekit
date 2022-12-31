@@ -434,7 +434,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 	})
 
 	newRoom.OnParticipantChanged(func(p types.LocalParticipant) {
-		if p.State() != livekit.ParticipantInfo_DISCONNECTED {
+		if !p.IsDisconnected() {
 			if err := r.roomStore.StoreParticipant(ctx, roomName, p.ToProto()); err != nil {
 				newRoom.Logger.Errorw("could not handle participant change", err)
 			}
@@ -483,7 +483,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 		select {
 		case <-stateCheckTicker.C:
 			// periodic check to ensure participant didn't become disconnected
-			if participant.State() == livekit.ParticipantInfo_DISCONNECTED {
+			if participant.IsDisconnected() {
 				return
 			}
 		case <-tokenTicker.C:

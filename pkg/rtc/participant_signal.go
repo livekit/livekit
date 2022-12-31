@@ -66,6 +66,11 @@ func (p *ParticipantImpl) SendJoinResponse(joinResponse *livekit.JoinResponse) e
 
 func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.ParticipantInfo) error {
 	p.updateLock.Lock()
+	if p.IsDisconnected() {
+		p.updateLock.Unlock()
+		return nil
+	}
+
 	if !p.IsReady() {
 		// queue up updates
 		p.queuedUpdates = append(p.queuedUpdates, participantsToUpdate...)
@@ -201,7 +206,7 @@ func (p *ParticipantImpl) sendTrackUnpublished(trackID livekit.TrackID) {
 }
 
 func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
-	if p.State() == livekit.ParticipantInfo_DISCONNECTED || (!p.IsReady() && msg.GetJoin() == nil) {
+	if p.IsDisconnected() || (!p.IsReady() && msg.GetJoin() == nil) {
 		return nil
 	}
 
