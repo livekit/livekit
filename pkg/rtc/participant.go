@@ -254,6 +254,14 @@ func (p *ParticipantImpl) ProtocolVersion() types.ProtocolVersion {
 
 func (p *ParticipantImpl) IsReady() bool {
 	state := p.State()
+
+	// when migrating, there is no JoinResponse, state transitions from JOINING -> ACTIVE -> DISCONNECTED
+	// so JOINING is considered ready.
+	if p.params.Migration {
+		return state != livekit.ParticipantInfo_DISCONNECTED
+	}
+
+	// when not migrating, there is a JoinResponse, state transitions from JOINING -> JOINED -> ACTIVE -> DISCONNECTED
 	return state == livekit.ParticipantInfo_JOINED || state == livekit.ParticipantInfo_ACTIVE
 }
 
