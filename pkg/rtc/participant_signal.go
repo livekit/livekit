@@ -201,7 +201,7 @@ func (p *ParticipantImpl) sendTrackUnpublished(trackID livekit.TrackID) {
 }
 
 func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
-	if p.State() == livekit.ParticipantInfo_DISCONNECTED || (!p.IsReady() && msg.GetJoin() == nil) {
+	if p.State() == livekit.ParticipantInfo_DISCONNECTED || (!p.params.Migration && !p.IsReady() && msg.GetJoin() == nil) {
 		return nil
 	}
 
