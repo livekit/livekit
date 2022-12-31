@@ -368,6 +368,16 @@ type FakeLocalParticipant struct {
 	identityReturnsOnCall map[int]struct {
 		result1 livekit.ParticipantIdentity
 	}
+	IsDisconnectedStub        func() bool
+	isDisconnectedMutex       sync.RWMutex
+	isDisconnectedArgsForCall []struct {
+	}
+	isDisconnectedReturns struct {
+		result1 bool
+	}
+	isDisconnectedReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	IsPublisherStub        func() bool
 	isPublisherMutex       sync.RWMutex
 	isPublisherArgsForCall []struct {
@@ -2606,6 +2616,59 @@ func (fake *FakeLocalParticipant) IdentityReturnsOnCall(i int, result1 livekit.P
 	}
 	fake.identityReturnsOnCall[i] = struct {
 		result1 livekit.ParticipantIdentity
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) IsDisconnected() bool {
+	fake.isDisconnectedMutex.Lock()
+	ret, specificReturn := fake.isDisconnectedReturnsOnCall[len(fake.isDisconnectedArgsForCall)]
+	fake.isDisconnectedArgsForCall = append(fake.isDisconnectedArgsForCall, struct {
+	}{})
+	stub := fake.IsDisconnectedStub
+	fakeReturns := fake.isDisconnectedReturns
+	fake.recordInvocation("IsDisconnected", []interface{}{})
+	fake.isDisconnectedMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) IsDisconnectedCallCount() int {
+	fake.isDisconnectedMutex.RLock()
+	defer fake.isDisconnectedMutex.RUnlock()
+	return len(fake.isDisconnectedArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) IsDisconnectedCalls(stub func() bool) {
+	fake.isDisconnectedMutex.Lock()
+	defer fake.isDisconnectedMutex.Unlock()
+	fake.IsDisconnectedStub = stub
+}
+
+func (fake *FakeLocalParticipant) IsDisconnectedReturns(result1 bool) {
+	fake.isDisconnectedMutex.Lock()
+	defer fake.isDisconnectedMutex.Unlock()
+	fake.IsDisconnectedStub = nil
+	fake.isDisconnectedReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) IsDisconnectedReturnsOnCall(i int, result1 bool) {
+	fake.isDisconnectedMutex.Lock()
+	defer fake.isDisconnectedMutex.Unlock()
+	fake.IsDisconnectedStub = nil
+	if fake.isDisconnectedReturnsOnCall == nil {
+		fake.isDisconnectedReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.isDisconnectedReturnsOnCall[i] = struct {
+		result1 bool
 	}{result1}
 }
 
@@ -5050,6 +5113,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.iDMutex.RUnlock()
 	fake.identityMutex.RLock()
 	defer fake.identityMutex.RUnlock()
+	fake.isDisconnectedMutex.RLock()
+	defer fake.isDisconnectedMutex.RUnlock()
 	fake.isPublisherMutex.RLock()
 	defer fake.isPublisherMutex.RUnlock()
 	fake.isReadyMutex.RLock()

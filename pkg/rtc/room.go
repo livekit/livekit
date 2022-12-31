@@ -398,7 +398,7 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 	}
 
 	// send broadcast only if it's not already closed
-	sendUpdates := p.State() != livekit.ParticipantInfo_DISCONNECTED
+	sendUpdates := !p.IsDisconnected()
 
 	p.OnTrackUpdated(nil)
 	p.OnTrackPublished(nil)
@@ -873,11 +873,6 @@ func (r *Room) broadcastParticipantState(p types.LocalParticipant, opts broadcas
 
 func (r *Room) sendParticipantUpdates(updates []*livekit.ParticipantInfo) {
 	for _, op := range r.GetParticipants() {
-		// skip closed participants
-		if op.State() == livekit.ParticipantInfo_DISCONNECTED {
-			continue
-		}
-
 		err := op.SendParticipantUpdate(updates)
 		if err != nil {
 			r.Logger.Errorw("could not send update to participant", err,

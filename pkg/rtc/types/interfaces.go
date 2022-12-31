@@ -233,6 +233,7 @@ type LocalParticipant interface {
 	ConnectedAt() time.Time
 	State() livekit.ParticipantInfo_State
 	IsReady() bool
+	IsDisconnected() bool
 	SubscriberAsPrimary() bool
 	GetClientConfiguration() *livekit.ClientConfiguration
 	GetICEConnectionType() ICEConnectionType
