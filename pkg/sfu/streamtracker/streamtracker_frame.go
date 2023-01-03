@@ -132,7 +132,7 @@ func (s *StreamTrackerFrame) updateStatusCheckTime() bool {
 	if s.lastStatusCheckAt.IsZero() {
 		s.lastStatusCheckAt = time.Now()
 	}
-	if time.Since(s.lastStatusCheckAt) < time.Duration(statusCheckTolerance * float64(s.evalInterval)) {
+	if time.Since(s.lastStatusCheckAt) < time.Duration(statusCheckTolerance*float64(s.evalInterval)) {
 		return false
 	}
 	s.lastStatusCheckAt = time.Now()
