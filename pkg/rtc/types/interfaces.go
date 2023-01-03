@@ -267,7 +267,7 @@ type LocalParticipant interface {
 	UpdateSubscribedTrackSettings(trackID livekit.TrackID, settings *livekit.UpdateTrackSettings) error
 	GetSubscribedTracks() []SubscribedTrack
 	VerifySubscribeParticipantInfo(pID livekit.ParticipantID, version uint32)
-	AddMuxAudioTrack(trackID livekit.TrackID, r sfu.TrackReceiver)
+	AddMuxAudioTrack(publisherID livekit.ParticipantID, trackID livekit.TrackID, r sfu.TrackReceiver)
 	RemoveMuxAudioTrack(trackID livekit.TrackID)
 
 	// returns list of participant identities that the current participant is subscribed to

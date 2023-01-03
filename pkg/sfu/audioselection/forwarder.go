@@ -43,12 +43,13 @@ type SelectionForwarderParams struct {
 }
 
 type sourceInfo struct {
-	trackID    livekit.TrackID
-	receiver   sfu.TrackReceiver
-	vad        bool
-	active     bool
-	audioLevel float64
-	downtrack  *sfu.DownTrack
+	participantID livekit.ParticipantID
+	trackID       livekit.TrackID
+	receiver      sfu.TrackReceiver
+	vad           bool
+	active        bool
+	audioLevel    float64
+	downtrack     *sfu.DownTrack
 }
 
 type SelectionForwarder struct {
@@ -59,7 +60,7 @@ type SelectionForwarder struct {
 	downtracks     []*sfu.DownTrack
 	close          chan struct{}
 
-	onForwardMappingChanged func(forwardMapping map[livekit.TrackID]livekit.TrackID)
+	onForwardMappingChanged func(muxInfo []*livekit.AudioTrackMuxInfo)
 }
 
 func NewSelectionForwarder(params SelectionForwarderParams) *SelectionForwarder {
@@ -88,14 +89,14 @@ func (f *SelectionForwarder) RemoveDownTrack(dt *sfu.DownTrack) {
 }
 
 // OnForwardMappingChanged is called when the forward mapping is changed, used to update the relationship between downtracks and sources
-func (f *SelectionForwarder) OnForwardMappingChanged(h func(forwardMapping map[livekit.TrackID]livekit.TrackID)) {
+func (f *SelectionForwarder) OnForwardMappingChanged(h func(muxInfo []*livekit.AudioTrackMuxInfo)) {
 	f.onForwardMappingChanged = h
 }
 
-func (f *SelectionForwarder) AddSource(trackID livekit.TrackID, source sfu.TrackReceiver) {
+func (f *SelectionForwarder) AddSource(participantID livekit.ParticipantID, trackID livekit.TrackID, source sfu.TrackReceiver) {
 	f.params.Logger.Debugw("adding source", "trackID", trackID)
 	f.lock.Lock()
-	f.sources = append(f.sources, &sourceInfo{trackID: trackID, receiver: source})
+	f.sources = append(f.sources, &sourceInfo{participantID: participantID, trackID: trackID, receiver: source})
 	f.lock.Unlock()
 }
 
@@ -172,13 +173,18 @@ func (f *SelectionForwarder) updateForward() {
 	}
 
 	if forwardChanged && f.onForwardMappingChanged != nil {
-		forwardMapping := make(map[livekit.TrackID]livekit.TrackID)
+		muxInfo := make([]*livekit.AudioTrackMuxInfo, 0, len(f.sources))
+
 		for _, source := range f.sources {
 			if source.active && source.downtrack != nil {
-				forwardMapping[source.receiver.TrackID()] = livekit.TrackID(source.downtrack.ID())
+				muxInfo = append(muxInfo, &livekit.AudioTrackMuxInfo{
+					SdpTrackId:     source.downtrack.ID(),
+					ParticipantSid: string(source.participantID),
+					TrackSid:       string(source.trackID),
+				})
 			}
 		}
-		f.onForwardMappingChanged(forwardMapping)
+		f.onForwardMappingChanged(muxInfo)
 	}
 }
 

@@ -2183,8 +2183,8 @@ func codecsFromMediaDescription(m *sdp.MediaDescription) (out []sdp.Codec, err e
 	return out, nil
 }
 
-func (p *ParticipantImpl) AddMuxAudioTrack(trackID livekit.TrackID, r sfu.TrackReceiver) {
-	p.audioForwarder.AddSource(trackID, r)
+func (p *ParticipantImpl) AddMuxAudioTrack(publisherID livekit.ParticipantID, trackID livekit.TrackID, r sfu.TrackReceiver) {
+	p.audioForwarder.AddSource(publisherID, trackID, r)
 }
 
 func (p *ParticipantImpl) RemoveMuxAudioTrack(trackID livekit.TrackID) {
@@ -2202,8 +2202,11 @@ func (p *ParticipantImpl) setupAudioForwarder() error {
 	}
 
 	// 2. setup audio forwarder callbacks
-	p.audioForwarder.OnForwardMappingChanged(func(forwardMapping map[livekit.TrackID]livekit.TrackID) {
-		p.params.Logger.Debugw("forward mapping changed", "mappings", forwardMapping)
+	p.audioForwarder.OnForwardMappingChanged(func(muxInfo []*livekit.AudioTrackMuxInfo) {
+		p.params.Logger.Debugw("forward mapping changed", "mux_info", muxInfo)
+		p.sendAudioMuxUpdate(&livekit.AudioTrackMuxUpdate{
+			AudioTrackMuxes: muxInfo,
+		})
 	})
 	return nil
 }

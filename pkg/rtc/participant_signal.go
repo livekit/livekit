@@ -173,6 +173,14 @@ func (p *ParticipantImpl) sendTrackUnpublished(trackID livekit.TrackID) {
 	})
 }
 
+func (p *ParticipantImpl) sendAudioMuxUpdate(mapping *livekit.AudioTrackMuxUpdate) {
+	_ = p.writeMessage(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_AudioMuxUpdate{
+			AudioMuxUpdate: mapping,
+		},
+	})
+}
+
 func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
 	if p.State() == livekit.ParticipantInfo_DISCONNECTED {
 		return nil

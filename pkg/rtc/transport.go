@@ -1377,6 +1377,7 @@ func (t *PCTransport) handleLogICECandidates(e *event) error {
 }
 
 func (t *PCTransport) setNegotiationState(state NegotiationState) {
+	t.params.Logger.Debugw("set negotiation state", "state", state)
 	t.negotiationState = state
 	if onNegotiationStateChanged := t.getOnNegotiationStateChanged(); onNegotiationStateChanged != nil {
 		onNegotiationStateChanged(t.negotiationState)
@@ -1440,6 +1441,7 @@ func (t *PCTransport) setupSignalStateCheckTimer() {
 		failed := t.negotiationState != NegotiationStateNone
 
 		if t.negotiateCounter.Load() == negotiateVersion && failed {
+			t.params.Logger.Errorw("negotiation failed", nil, "state", t.negotiationState, "version", negotiateVersion)
 			if onNegotiationFailed := t.getOnNegotiationFailed(); onNegotiationFailed != nil {
 				onNegotiationFailed()
 			}

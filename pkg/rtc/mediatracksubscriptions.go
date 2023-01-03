@@ -96,7 +96,6 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 
 	if t.params.MediaTrack.Kind() == livekit.TrackType_AUDIO /*&& audioselection.AudioCodecCanbeMux(*t.params.MediaTrack.ToProto(), wr.codecs) */ {
 		wr.DetermineReceiver(opusCodecCapability)
-		sub.AddMuxAudioTrack(trackID, wr)
 		subTrack := NewSubscribedTrack(SubscribedTrackParams{
 			PublisherID:       t.params.MediaTrack.PublisherID(),
 			PublisherIdentity: t.params.MediaTrack.PublisherIdentity(),
@@ -109,6 +108,8 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		t.subscribedTracksMu.Lock()
 		t.subscribedTracks[subscriberID] = subTrack
 		t.subscribedTracksMu.Unlock()
+		sub.VerifySubscribeParticipantInfo(subTrack.PublisherID(), subTrack.PublisherVersion())
+		sub.AddMuxAudioTrack(subTrack.PublisherID(), trackID, wr)
 		return nil
 	}
 
