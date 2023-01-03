@@ -230,9 +230,18 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 		return ErrAlreadyJoined
 	}
 
-	if r.protoRoom.MaxParticipants > 0 && len(r.participants) >= int(r.protoRoom.MaxParticipants) {
-		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "max_exceeded").Add(1)
-		return ErrMaxParticipantsExceeded
+	if r.protoRoom.MaxParticipants > 0 && !participant.IsRecorder() {
+		participantCount := 0
+		for _, p := range r.participants {
+			if !p.IsRecorder() {
+				participantCount++
+			}
+		}
+
+		if participantCount >= int(r.protoRoom.MaxParticipants) {
+			prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "max_exceeded").Add(1)
+			return ErrMaxParticipantsExceeded
+		}
 	}
 
 	if r.FirstJoinedAt() == 0 {
