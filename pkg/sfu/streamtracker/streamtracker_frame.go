@@ -10,9 +10,10 @@ import (
 
 const (
 	checkInterval           = 500 * time.Millisecond
-	frameRateResolution     = float64(0.01) // 1 frame every 100 seconds
-	frameRateIncreaseFactor = 0.6           // slow increase
-	frameRateDecreaseFactor = 0.9           // fast decrease
+	statusCheckTolerance    = 0.98
+	frameRateResolution     = 0.01 // 1 frame every 100 seconds
+	frameRateIncreaseFactor = 0.6  // slow increase
+	frameRateDecreaseFactor = 0.9  // fast decrease
 )
 
 type StreamTrackerFrameParams struct {
@@ -131,7 +132,7 @@ func (s *StreamTrackerFrame) updateStatusCheckTime() bool {
 	if s.lastStatusCheckAt.IsZero() {
 		s.lastStatusCheckAt = time.Now()
 	}
-	if time.Since(s.lastStatusCheckAt) < s.evalInterval {
+	if time.Since(s.lastStatusCheckAt) < time.Duration(statusCheckTolerance*float64(s.evalInterval)) {
 		return false
 	}
 	s.lastStatusCheckAt = time.Now()
@@ -139,14 +140,12 @@ func (s *StreamTrackerFrame) updateStatusCheckTime() bool {
 }
 
 func (s *StreamTrackerFrame) updateEstimatedFrameRate() float64 {
-	frameRate := float64(0.0)
 	diff := s.newestTS - s.oldestTS
 	if diff == 0 || s.numFrames < 2 {
 		return 0.0
 	}
 
-	frameRate = float64(s.params.ClockRate) / float64(diff) * float64(s.numFrames-1)
-	frameRate = math.Round(frameRate/frameRateResolution) * frameRateResolution
+	frameRate := roundFrameRate(float64(s.params.ClockRate) / float64(diff) * float64(s.numFrames-1))
 
 	// reset for next evaluation interval
 	s.oldestTS = s.newestTS
@@ -162,8 +161,7 @@ func (s *StreamTrackerFrame) updateEstimatedFrameRate() float64 {
 		factor = frameRateDecreaseFactor
 	}
 
-	estimatedFrameRate := frameRate*factor + s.estimatedFrameRate*(1.0-factor)
-	estimatedFrameRate = math.Round(estimatedFrameRate/frameRateResolution) * frameRateResolution
+	estimatedFrameRate := roundFrameRate(frameRate*factor + s.estimatedFrameRate*(1.0-factor))
 	if s.estimatedFrameRate != estimatedFrameRate {
 		s.estimatedFrameRate = estimatedFrameRate
 		s.updateEvalInterval()
@@ -190,4 +188,10 @@ func (s *StreamTrackerFrame) updateEvalInterval() {
 			s.evalInterval = minFPSInterval
 		}
 	}
+}
+
+// ------------------------------------------------------------------------------
+
+func roundFrameRate(frameRate float64) float64 {
+	return math.Round(frameRate/frameRateResolution) * frameRateResolution
 }
