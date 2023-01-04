@@ -19,12 +19,21 @@ func (c ClientInfo) isSafari() bool {
 	return c.ClientInfo != nil && strings.EqualFold(c.ClientInfo.Browser, "safari")
 }
 
+func (c ClientInfo) isGo() bool {
+	return c.ClientInfo != nil && c.ClientInfo.Sdk == livekit.ClientInfo_GO
+}
+
 func (c ClientInfo) SupportsAudioRED() bool {
 	return !c.isFirefox() && !c.isSafari()
 }
 
 func (c ClientInfo) SupportPrflxOverRelay() bool {
 	return !c.isFirefox()
+}
+
+// GoSDK(pion) relies on rtp packets to fire ontrack event, browsers and native (libwebrtc) rely on sdp
+func (c ClientInfo) FireTrackByRTPPacket() bool {
+	return c.isGo()
 }
 
 // CompareVersion compares two semver versions

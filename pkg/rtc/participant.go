@@ -970,6 +970,10 @@ func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack, sou
 	settings := p.subscribedTracksSettings[subTrack.ID()]
 	p.lock.Unlock()
 
+	if p.params.ClientInfo.FireTrackByRTPPacket() {
+		subTrack.DownTrack().SetActivePaddingOnMuteUpTrack()
+	}
+
 	subTrack.OnBind(func() {
 		if p.TransportManager.HasSubscriberEverConnected() {
 			subTrack.DownTrack().SetConnected()

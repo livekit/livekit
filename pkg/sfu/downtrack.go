@@ -51,6 +51,10 @@ const (
 	flushTimeout        = 1 * time.Second
 
 	maxPadding = 2000
+
+	waitBeforeSendPaddingOnMute = 100 * time.Millisecond
+	paddingOnMuteInterval       = 100 * time.Millisecond
+	maxPaddingOnMute            = 50
 )
 
 var (
@@ -159,6 +163,7 @@ type DownTrack struct {
 	listenerLock            sync.RWMutex
 	isClosed                atomic.Bool
 	connected               atomic.Bool
+	bindAndConnectedOnce    atomic.Bool
 
 	rtpStats *buffer.RTPStats
 
@@ -177,6 +182,8 @@ type DownTrack struct {
 	writeIOErrors atomic.Uint32
 
 	isNACKThrottled atomic.Bool
+
+	activePaddingOnMuteUpTrack atomic.Bool
 
 	// RTCP callbacks
 	onREMB                func(dt *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate)
@@ -319,15 +326,16 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.sequencer = newSequencer(d.maxTrack, maxPadding, d.logger)
 	}
 
+	d.bound.Store(true)
 	d.codec = codec.RTPCodecCapability
 	d.forwarder.DetermineCodec(d.codec)
 	if d.onBind != nil {
 		d.onBind()
 	}
-	d.bound.Store(true)
 	d.bindLock.Unlock()
 
 	d.logger.Debugw("downtrack bound")
+	d.onBindAndConnected()
 
 	return codec, nil
 }
@@ -419,6 +427,9 @@ func (d *DownTrack) stopKeyFrameRequester() {
 }
 
 func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
+	if d.IsClosed() {
+		return
+	}
 	interval := 2 * d.rtpStats.GetRtt()
 	if interval < keyFrameIntervalMin {
 		interval = keyFrameIntervalMin
@@ -542,8 +553,8 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 
 // WritePaddingRTP tries to write as many padding only RTP packets as necessary
 // to satisfy given size to the DownTrack
-func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
-	if !d.rtpStats.IsActive() {
+func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool) int {
+	if !d.rtpStats.IsActive() && !paddingOnMute {
 		return 0
 	}
 
@@ -563,7 +574,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 	// can be sent only on frame boundaries, writing on disabled tracks
 	// will give more options.
 	// LK-TODO-END
-	if d.forwarder.IsMuted() {
+	if d.forwarder.IsMuted() && !paddingOnMute {
 		return 0
 	}
 
@@ -618,7 +629,10 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 		for _, f := range d.onPaddingSent {
 			f(d, size)
 		}
-		d.rtpStats.Update(&hdr, 0, len(payload), time.Now().UnixNano())
+
+		if !paddingOnMute {
+			d.rtpStats.Update(&hdr, 0, len(payload), time.Now().UnixNano())
+		}
 
 		//
 		// Register with sequencer with invalid layer so that NACKs for these can be filtered out.
@@ -1216,13 +1230,15 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 
 func (d *DownTrack) SetConnected() {
 	if !d.connected.Swap(true) {
-		if d.bound.Load() && d.kind == webrtc.RTPCodecTypeVideo {
-			targetLayers := d.forwarder.TargetLayers()
-			if targetLayers != InvalidLayers {
-				d.receiver.SendPLI(targetLayers.Spatial, true)
-			}
-		}
+		d.onBindAndConnected()
 	}
+}
+
+// SetActivePaddingOnMuteUpTrack will enable padding on the track when its uptrack is muted.
+// Pion will not fire OnTrack event until it receives packet for the track,
+// so we send padding packets to help pion client (go-sdk) to fire the event.
+func (d *DownTrack) SetActivePaddingOnMuteUpTrack() {
+	d.activePaddingOnMuteUpTrack.Store(true)
 }
 
 func (d *DownTrack) retransmitPackets(nacks []uint16) {
@@ -1477,4 +1493,33 @@ func (d *DownTrack) GetNackStats() (totalPackets uint32, totalRepeatedNACKs uint
 	d.statsLock.RUnlock()
 
 	return
+}
+
+func (d *DownTrack) onBindAndConnected() {
+	if d.connected.Load() && d.bound.Load() && d.kind == webrtc.RTPCodecTypeVideo && !d.bindAndConnectedOnce.Swap(true) {
+		targetLayers := d.forwarder.TargetLayers()
+		if targetLayers != InvalidLayers {
+			d.receiver.SendPLI(targetLayers.Spatial, true)
+		}
+
+		if d.activePaddingOnMuteUpTrack.Load() {
+			go d.sendPaddingOnMute()
+		}
+	}
+}
+
+func (d *DownTrack) sendPaddingOnMute() {
+	d.logger.Debugw("sending padding on mute")
+	// let uptrack have chance to send packet before we send padding
+	time.Sleep(waitBeforeSendPaddingOnMute)
+
+	for i := 0; i < maxPaddingOnMute; i++ {
+		if d.rtpStats.IsActive() || d.IsClosed() {
+			return
+		}
+
+		d.WritePaddingRTP(20, true)
+
+		time.Sleep(paddingOnMuteInterval)
+	}
 }
