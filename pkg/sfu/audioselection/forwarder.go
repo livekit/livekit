@@ -71,6 +71,11 @@ func NewSelectionForwarder(params SelectionForwarderParams) *SelectionForwarder 
 }
 
 func (f *SelectionForwarder) Start() {
+	f.lock.Lock()
+	for _, dt := range f.downtracks {
+		dt.SetConnected()
+	}
+	f.lock.Unlock()
 	go f.process()
 }
 
@@ -189,7 +194,6 @@ func (f *SelectionForwarder) updateForward() {
 }
 
 func (f *SelectionForwarder) activeSource(source *sourceInfo) bool {
-	f.params.Logger.Debugw("activating source", "trackID", source.receiver.TrackID())
 	if len(f.idleDowntracks) == 0 {
 		if len(f.downtracks) < f.params.ActiveDowntracks {
 			dt := f.params.RequestDownTrack(source.receiver)
@@ -205,6 +209,7 @@ func (f *SelectionForwarder) activeSource(source *sourceInfo) bool {
 	f.idleDowntracks = f.idleDowntracks[1:]
 	source.downtrack.ResetReceiver(source.receiver)
 	source.receiver.AddDownTrack(source.downtrack)
+	f.params.Logger.Debugw("activating source", "trackID", source.receiver.TrackID(), "downtrack", source.downtrack.ID())
 	return true
 }
 

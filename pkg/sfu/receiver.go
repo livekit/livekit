@@ -366,6 +366,7 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) error {
 	track.TrackInfoAvailable()
 
 	w.downTrackSpreader.Store(track)
+	w.logger.Debugw("added downtrack", "downtrack", track.ID())
 	return nil
 }
 

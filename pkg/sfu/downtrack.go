@@ -149,6 +149,7 @@ type DownTrack struct {
 	rtpHeaderExtensions     []webrtc.RTPHeaderExtensionParameter
 	absSendTimeID           int
 	dependencyDescriptorID  int
+	receiverLock            sync.RWMutex
 	receiver                TrackReceiver
 	transceiver             *webrtc.RTPTransceiver
 	writeStream             webrtc.TrackLocalWriter
@@ -240,7 +241,9 @@ func NewDownTrack(
 		kind:           kind,
 		codec:          codecs[0].RTPCodecCapability,
 	}
+	d.receiverLock.Lock()
 	d.receiver = r
+	d.receiverLock.Unlock()
 	d.forwarder = NewForwarder(d.kind, d.logger)
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
@@ -272,15 +275,15 @@ func NewDownTrack(
 }
 
 func (d *DownTrack) ResetReceiver(r TrackReceiver) {
-	d.bindLock.Lock()
+	d.receiverLock.Lock()
 	d.receiver = r
-	d.bindLock.Unlock()
+	d.receiverLock.Unlock()
 	// TODO: log stats
 }
 
 func (d *DownTrack) getReceiver() TrackReceiver {
-	d.bindLock.Lock()
-	defer d.bindLock.Unlock()
+	d.receiverLock.RLock()
+	defer d.receiverLock.RUnlock()
 	return d.receiver
 }
 
@@ -727,7 +730,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 
 		d.bound.Store(false)
 		d.logger.Debugw("closing sender", "kind", d.kind)
-		d.receiver.DeleteDownTrack(d.subscriberID)
+		d.getReceiver().DeleteDownTrack(d.subscriberID)
 
 		if d.rtcpReader != nil {
 			logger.Infow("downtrack close rtcp reader")
