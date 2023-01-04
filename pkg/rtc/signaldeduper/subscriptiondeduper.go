@@ -17,31 +17,38 @@ const (
 // --------------------------------------------------
 
 type subscriptionSetting struct {
-	isEnabled bool
-	quality   livekit.VideoQuality
-	width     uint32
-	height    uint32
-	fps       uint32
+	isEnabled         bool
+	trackSettingsSeen bool
+	quality           livekit.VideoQuality
+	width             uint32
+	height            uint32
+	fps               uint32
 }
 
-func subscriptionSettingFromUpdateSubscription(us *livekit.UpdateSubscription) *subscriptionSetting {
-	return &subscriptionSetting{
-		isEnabled: us.Subscribe,
+func subscriptionSettingFromUpdateSubscription(us *livekit.UpdateSubscription, existing *subscriptionSetting) *subscriptionSetting {
+	var ss subscriptionSetting
+	if existing != nil {
+		ss = *existing
 	}
+	ss.isEnabled = us.Subscribe
+	return &ss
+
 }
 
 func subscriptionSettingFromUpdateTrackSettings(uts *livekit.UpdateTrackSettings) *subscriptionSetting {
 	return &subscriptionSetting{
-		isEnabled: !uts.Disabled,
-		quality:   uts.Quality,
-		width:     uts.Width,
-		height:    uts.Height,
-		fps:       uts.Fps,
+		isEnabled:         !uts.Disabled,
+		trackSettingsSeen: true,
+		quality:           uts.Quality,
+		width:             uts.Width,
+		height:            uts.Height,
+		fps:               uts.Fps,
 	}
 }
 
 func (s *subscriptionSetting) Equal(other *subscriptionSetting) bool {
 	return s.isEnabled == other.isEnabled &&
+		s.trackSettingsSeen == other.trackSettingsSeen &&
 		s.quality == other.quality &&
 		s.width == other.width &&
 		s.height == other.height &&
@@ -111,8 +118,15 @@ func (s *SubscriptionDeduper) updateSubscriptionsFromUpdateSubscription(
 		}
 	}
 
-	newSetting := subscriptionSettingFromUpdateSubscription(us)
 	for trackID := range trackIDs {
+		var existingSetting *subscriptionSetting
+		existingState := s.getSubscriptionState(participantKey, trackID)
+		if existingState != nil {
+			existingSetting = existingState.setting
+		}
+
+		newSetting := subscriptionSettingFromUpdateSubscription(us, existingSetting)
+
 		isTrackDupe := s.detectDupe(participantKey, trackID, newSetting)
 		if !isTrackDupe {
 			isDupe = false
@@ -160,8 +174,7 @@ func (s *SubscriptionDeduper) detectDupe(
 	updatedSetting *subscriptionSetting,
 ) bool {
 	isDupe := true
-	participantSubscriptions := s.getOrCreateParticipantSubscriptions(participantKey)
-	state := participantSubscriptions[trackID]
+	state := s.getSubscriptionState(participantKey, trackID)
 	if state == nil || !state.setting.Equal(updatedSetting) {
 		// new track seen or subscription setting change
 		state = &subscriptionState{
@@ -177,8 +190,18 @@ func (s *SubscriptionDeduper) detectDupe(
 	}
 
 	if !isDupe {
-		participantSubscriptions[trackID] = state
+		s.setSubscriptionState(participantKey, trackID, state)
 	}
 
 	return isDupe
+}
+
+func (s *SubscriptionDeduper) getSubscriptionState(participantKey livekit.ParticipantKey, trackID livekit.TrackID) *subscriptionState {
+	participantSubscriptions := s.getOrCreateParticipantSubscriptions(participantKey)
+	return participantSubscriptions[trackID]
+}
+
+func (s *SubscriptionDeduper) setSubscriptionState(participantKey livekit.ParticipantKey, trackID livekit.TrackID, state *subscriptionState) {
+	participantSubscriptions := s.getOrCreateParticipantSubscriptions(participantKey)
+	participantSubscriptions[trackID] = state
 }

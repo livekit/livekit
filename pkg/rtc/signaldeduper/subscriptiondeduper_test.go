@@ -74,8 +74,21 @@ func TestSubscriptionDeduper(t *testing.T) {
 		}
 		require.True(t, sd.Dedupe("p0", us))
 
-		// update track settings, should not be a dupe
+		// update track settings with quality, should not be a dupe
 		uts := &livekit.SignalRequest{
+			Message: &livekit.SignalRequest_TrackSetting{
+				TrackSetting: &livekit.UpdateTrackSettings{
+					TrackSids: []string{
+						"p1.track1",
+					},
+					Quality: livekit.VideoQuality_LOW,
+				},
+			},
+		}
+		require.False(t, sd.Dedupe("p0", uts))
+
+		// update track settings with dimensions, should not be a dupe
+		uts = &livekit.SignalRequest{
 			Message: &livekit.SignalRequest_TrackSetting{
 				TrackSetting: &livekit.UpdateTrackSettings{
 					TrackSids: []string{
