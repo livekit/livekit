@@ -25,11 +25,14 @@ type subscriptionSetting struct {
 	fps               uint32
 }
 
-func subscriptionSettingFromUpdateSubscription(us *livekit.UpdateSubscription, trackSettingsSeen bool) *subscriptionSetting {
-	return &subscriptionSetting{
-		isEnabled:         us.Subscribe,
-		trackSettingsSeen: trackSettingsSeen,
+func subscriptionSettingFromUpdateSubscription(us *livekit.UpdateSubscription, existing *subscriptionSetting) *subscriptionSetting {
+	var ss subscriptionSetting
+	if existing != nil {
+		ss = *existing
 	}
+	ss.isEnabled = us.Subscribe
+	return &ss
+
 }
 
 func subscriptionSettingFromUpdateTrackSettings(uts *livekit.UpdateTrackSettings) *subscriptionSetting {
@@ -116,13 +119,13 @@ func (s *SubscriptionDeduper) updateSubscriptionsFromUpdateSubscription(
 	}
 
 	for trackID := range trackIDs {
-		trackSettingsSeen := false
+		var existingSetting *subscriptionSetting
 		existingState := s.getSubscriptionState(participantKey, trackID)
-		if existingState != nil && existingState.setting != nil {
-			trackSettingsSeen = existingState.setting.trackSettingsSeen
+		if existingState != nil {
+			existingSetting = existingState.setting
 		}
 
-		newSetting := subscriptionSettingFromUpdateSubscription(us, trackSettingsSeen)
+		newSetting := subscriptionSettingFromUpdateSubscription(us, existingSetting)
 
 		isTrackDupe := s.detectDupe(participantKey, trackID, newSetting)
 		if !isTrackDupe {
