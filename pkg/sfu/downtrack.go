@@ -248,7 +248,7 @@ func NewDownTrack(
 		kind:           kind,
 		codec:          codecs[0].RTPCodecCapability,
 	}
-	d.forwarder = NewForwarder(d.kind, d.logger)
+	d.forwarder = NewForwarder(d.kind, d.logger, d.receiver.GetReferenceLayerRTPTimestamp)
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
 		MimeType:      codecs[0].MimeType, // LK-TODO have to notify on codec change
@@ -547,6 +547,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		}
 	}
 
+	d.logger.Debugw("RAJA fowarding", "ts", hdr.Timestamp) // REMOVE
 	d.rtpStats.Update(hdr, len(payload), 0, time.Now().UnixNano())
 	return nil
 }
@@ -974,7 +975,7 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 		return nil
 	}
 
-	return d.rtpStats.GetRtcpSenderReport(d.ssrc)
+	return d.rtpStats.GetRtcpSenderReport(d.ssrc, d.receiver.GetRTCPSenderReportData(d.forwarder.GetReferenceLayerSpatial()))
 }
 
 func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan struct{} {

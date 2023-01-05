@@ -1,15 +1,30 @@
 package sfu
 
 import (
+	"fmt"
 	"sort"
 	"sync"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/streamtracker"
+	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
+
+// ---------------------------------------------------------
+
+type rtcpSenderReportData struct {
+	rtpTS uint32
+	ntpTS mediatransportutil.NtpTime
+}
+
+func (r *rtcpSenderReportData) String() string {
+	return fmt.Sprintf("rtpTS: %d, ntpTS: +%v", r.rtpTS, r.ntpTS.Time())
+}
+
+// ---------------------------------------------------------
 
 type StreamTrackerManager struct {
 	logger            logger.Logger
@@ -22,7 +37,8 @@ type StreamTrackerManager struct {
 
 	lock sync.RWMutex
 
-	trackers [DefaultMaxLayerSpatial + 1]*streamtracker.StreamTracker
+	trackers      [DefaultMaxLayerSpatial + 1]*streamtracker.StreamTracker
+	senderReports [DefaultMaxLayerSpatial + 1]*rtcpSenderReportData
 
 	availableLayers  []int32
 	exemptedLayers   []int32
@@ -496,3 +512,83 @@ func (s *StreamTrackerManager) removeAvailableLayer(layer int32) {
 		s.onMaxLayerChanged(curMaxLayer)
 	}
 }
+
+/* RAJA-REMOVE
+func (s *StreamTrackerManager) UpdateRTCPSenderReportData(layer int32, rtpTS uint32, ntpTS mediatransportutil.NtpTime) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	if layer == InvalidLayerSpatial || int(layer) >= len(s.senderReports) || ntpTS == 0 {
+		return
+	}
+
+	sr := s.senderReports[layer]
+	if sr == nil {
+		s.senderReports[layer] = &rtcpSenderReportData{
+			rtpTS: rtpTS,
+			ntpTS: ntpTS,
+		}
+		s.logger.Infow("RAJA sr data", "layer", layer, "rtpTS", rtpTS, "ntpTS", ntpTS.Time(), "ntpTSRaw", ntpTS, "seconds", ntpTS>>32) // REMOVE
+	} else {
+		s.logger.Infow("RAJA sr data update", "layer", layer, "rtpTS", rtpTS, "diff", rtpTS-sr.rtpTS, "ntpTS", ntpTS.Time(), "ntpTSRaw", ntpTS, "seconds", ntpTS>>32, "diffNTP", ntpTS.Time().Sub(sr.ntpTS.Time())) // REMOVE
+		sr.rtpTS = rtpTS
+		sr.ntpTS = ntpTS
+	}
+}
+
+func (s *StreamTrackerManager) GetRTCPSenderReportData(layer int32) (rtpTS uint32, ntpTS mediatransportutil.NtpTime, err error) {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+
+	if layer == InvalidLayerSpatial || int(layer) >= len(s.senderReports) {
+		err = fmt.Errorf("invalid layer: %d", layer)
+		return
+	}
+
+	sr := s.senderReports[layer]
+	if sr != nil {
+		rtpTS = sr.rtpTS
+		ntpTS = sr.ntpTS
+	} else {
+		err = fmt.Errorf("unavailable layer: %d", layer)
+	}
+	return
+}
+
+func (s *StreamTrackerManager) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error) {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+
+	if layer == referenceLayer {
+		return 0, nil
+	}
+
+	if layer == InvalidLayerSpatial || int(layer) >= len(s.senderReports) {
+		return 0, fmt.Errorf("invalid layer: %d", layer)
+	}
+	srLayer := s.senderReports[layer]
+	if srLayer == nil || srLayer.ntpTS == 0 {
+		return 0, fmt.Errorf("layer rtcp sender report not available: %d", layer)
+	}
+
+	if referenceLayer == InvalidLayerSpatial || int(referenceLayer) >= len(s.senderReports) {
+		return 0, fmt.Errorf("invalid reference layer: %d", referenceLayer)
+	}
+	srRef := s.senderReports[referenceLayer]
+	if srRef == nil || srRef.ntpTS == 0 {
+		return 0, fmt.Errorf("reference layer rtcp sender report not available: %d", referenceLayer)
+	}
+
+	// using NTP time of most recent sender report of layer and referenceLayer
+	// line up the RTP time stamps
+	ntpDiff := float64(int64(srRef.ntpTS-srLayer.ntpTS)) / float64(1<<32)
+	normalizedReqTS := srLayer.rtpTS + uint32(ntpDiff*float64(s.clockRate))
+
+	// now that both RTP timestamp correspond to roughly the same NTP time,
+	// the diff is the offset in RTP timestamps between layer and referenceLayer.
+	// Add the offset to layer's ts to map it to corresponding RTP timestamp in
+	// the reference layer.
+	s.logger.Infow("RAJA normalized TS", "ts", ts, "reqL", layer, "srLayer", srLayer, "refL", referenceLayer, "srRef", srRef, "ntpDiff", ntpDiff, "normalizedReqTS", normalizedReqTS, "adjusted", ts+(srRef.rtpTS-normalizedReqTS)) // REMOVE
+	return ts + (srRef.rtpTS - normalizedReqTS), nil
+}
+*/

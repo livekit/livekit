@@ -86,6 +86,7 @@ type Buffer struct {
 	onClose        func()
 	onRtcpFeedback func([]rtcp.Packet)
 	onFpsChanged   func()
+	// RAJA-REMOVE onRtcpSenderReport func(rtpTS uint32, ntpTS mediatransportutil.NtpTime)
 
 	// logger
 	logger logger.Logger
@@ -618,11 +619,30 @@ func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64) {
 	b.RLock()
 	defer b.RUnlock()
 
-	if b.rtpStats == nil {
-		return
+	if b.rtpStats != nil {
+		b.rtpStats.SetRtcpSenderReportData(&RTCPSenderReportData{
+			RTPTimestamp: rtpTime,
+			NTPTimestamp: mediatransportutil.NtpTime(ntpTime),
+			ArrivalTime:  time.Now(),
+		})
 	}
 
-	b.rtpStats.SetRtcpSenderReportData(rtpTime, mediatransportutil.NtpTime(ntpTime), time.Now())
+	/* RAJA-REMOVE
+	if b.onRtcpSenderReport != nil {
+		b.onRtcpSenderReport(rtpTime, mediatransportutil.NtpTime(ntpTime))
+	}
+	*/
+}
+
+func (b *Buffer) GetSenderReportData() *RTCPSenderReportData {
+	b.RLock()
+	defer b.RUnlock()
+
+	if b.rtpStats != nil {
+		return b.rtpStats.GetRtcpSenderReportData()
+	}
+
+	return nil
 }
 
 func (b *Buffer) SetLastFractionLostReport(lost uint8) {
@@ -663,6 +683,12 @@ func (b *Buffer) getPacket(buff []byte, sn uint16) (int, error) {
 func (b *Buffer) OnRtcpFeedback(fn func(fb []rtcp.Packet)) {
 	b.onRtcpFeedback = fn
 }
+
+/* RAJA-REMOVE
+func (b *Buffer) OnRtcpSenderReport(fn func(rtpTS uint32, ntpTS mediatransportutil.NtpTime)) {
+	b.onRtcpSenderReport = fn
+}
+*/
 
 // GetMediaSSRC returns the associated SSRC of the RTP stream
 func (b *Buffer) GetMediaSSRC() uint32 {
