@@ -459,11 +459,7 @@ func (t *TransportManager) configureICE(iceConfig *livekit.ICEConfig, reset bool
 	if reset || isChanged {
 		t.failureCount = 0
 		t.isTransportReconfigured = !reset
-
-		if iceConfig.PreferenceSubscriber != livekit.ICECandidateType_ICT_NONE {
-			t.mediaLossProxy.OnMediaLossUpdate(nil)
-			t.udpLossUnstableCount = 0
-		}
+		t.udpLossUnstableCount = 0
 	}
 
 	if !isChanged {
@@ -475,6 +471,10 @@ func (t *TransportManager) configureICE(iceConfig *livekit.ICEConfig, reset bool
 	onICEConfigChanged := t.onICEConfigChanged
 	t.iceConfig = iceConfig
 	t.lock.Unlock()
+
+	if iceConfig.PreferenceSubscriber != livekit.ICECandidateType_ICT_NONE {
+		t.mediaLossProxy.OnMediaLossUpdate(nil)
+	}
 
 	t.publisher.SetPreferTCP(iceConfig.PreferencePublisher == livekit.ICECandidateType_ICT_TCP)
 	t.subscriber.SetPreferTCP(iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TCP)
