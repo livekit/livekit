@@ -2,6 +2,7 @@ package sfu
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -62,6 +63,9 @@ type TrackReceiver interface {
 	GetRedReceiver() TrackReceiver
 
 	GetTemporalLayerFpsForSpatial(layer int32) []float32
+
+	GetRTCPSenderReportData(layer int32) *buffer.RTCPSenderReportData
+	GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error)
 }
 
 // WebRTCReceiver receives a media track
@@ -310,6 +314,11 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 		SmoothIntervals: w.audioConfig.SmoothIntervals,
 	})
 	buff.OnRtcpFeedback(w.sendRTCP)
+	buff.OnRtcpSenderReport(func(srData *buffer.RTCPSenderReportData) {
+		w.downTrackSpreader.Broadcast(func(dt TrackSender) {
+			_ = dt.HandleRTCPSenderReportData(w.codec.PayloadType, layer, srData)
+		})
+	})
 
 	var duration time.Duration
 	switch layer {
@@ -669,4 +678,53 @@ func (w *WebRTCReceiver) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
 		return w.getBuffer(layer).GetTemporalLayerFpsForSpatial(0)
 	}
 	return w.getBuffer(layer).GetTemporalLayerFpsForSpatial(layer)
+}
+
+func (w *WebRTCReceiver) GetRTCPSenderReportData(layer int32) *buffer.RTCPSenderReportData {
+	w.bufferMu.RLock()
+	defer w.bufferMu.RUnlock()
+
+	if layer == InvalidLayerSpatial || int(layer) >= len(w.buffers) {
+		return nil
+	}
+
+	return w.buffers[layer].GetSenderReportData()
+}
+
+func (w *WebRTCReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error) {
+	w.bufferMu.RLock()
+	defer w.bufferMu.RUnlock()
+
+	if layer == referenceLayer {
+		return ts, nil
+	}
+
+	if layer == InvalidLayerSpatial || int(layer) >= len(w.buffers) {
+		return 0, fmt.Errorf("invalid layer: %d", layer)
+	}
+	srLayer := w.buffers[layer].GetSenderReportData()
+	if srLayer == nil || srLayer.NTPTimestamp == 0 {
+		return 0, fmt.Errorf("layer rtcp sender report not available: %d", layer)
+	}
+
+	if referenceLayer == InvalidLayerSpatial || int(referenceLayer) >= len(w.buffers) {
+		return 0, fmt.Errorf("invalid reference layer: %d", referenceLayer)
+	}
+	srRef := w.buffers[referenceLayer].GetSenderReportData()
+	if srRef == nil || srRef.NTPTimestamp == 0 {
+		return 0, fmt.Errorf("reference layer rtcp sender report not available: %d", referenceLayer)
+	}
+
+	// line up the RTP time stamps using NTP time of most recent sender report of layer and referenceLayer
+	// NOTE: It is possible that reference layer has stopped (due to dynacast/adaptive streaming OR publisher
+	// constraints). It should be okay even if the layer has stopped for a long time when using modulo arithmetic for
+	// RTP time stamp (uint32 arithmetic).
+	ntpDiff := float64(int64(srRef.NTPTimestamp-srLayer.NTPTimestamp)) / float64(1<<32)
+	normalizedTS := srLayer.RTPTimestamp + uint32(ntpDiff*float64(w.codec.ClockRate))
+
+	// now that both RTP timestamps correspond to roughly the same NTP time,
+	// the diff between them is the offset in RTP timestamp units between layer and referenceLayer.
+	// Add the offset to layer's ts to map it to corresponding RTP timestamp in
+	// the reference layer.
+	return ts + (srRef.RTPTimestamp - normalizedTS), nil
 }

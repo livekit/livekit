@@ -169,30 +169,33 @@ var (
 // -------------------------------------------------------------------
 
 type ForwarderState struct {
-	Started    bool
-	LastTSCalc int64
-	RTP        RTPMungerState
-	VP8        VP8MungerState
+	Started               bool
+	ReferenceLayerSpatial int32
+	LastTSCalc            int64
+	RTP                   RTPMungerState
+	VP8                   VP8MungerState
 }
 
 func (f ForwarderState) String() string {
-	return fmt.Sprintf("ForwarderState{started: %v, lTSCalc: %d, rtp: %s, vp8: %s}",
-		f.Started, f.LastTSCalc, f.RTP.String(), f.VP8.String())
+	return fmt.Sprintf("ForwarderState{started: %v, ref: %d, lTSCalc: %d, rtp: %s, vp8: %s}",
+		f.Started, f.ReferenceLayerSpatial, f.LastTSCalc, f.RTP.String(), f.VP8.String())
 }
 
 // -------------------------------------------------------------------
 
 type Forwarder struct {
-	lock   sync.RWMutex
-	codec  webrtc.RTPCodecCapability
-	kind   webrtc.RTPCodecType
-	logger logger.Logger
+	lock                          sync.RWMutex
+	codec                         webrtc.RTPCodecCapability
+	kind                          webrtc.RTPCodecType
+	logger                        logger.Logger
+	getReferenceLayerRTPTimestamp func(ts uint32, layer int32, referenceLayer int32) (uint32, error)
 
 	muted bool
 
-	started  bool
-	lastSSRC uint32
-	lTSCalc  int64
+	started               bool
+	lastSSRC              uint32
+	lTSCalc               int64
+	referenceLayerSpatial int32
 
 	maxLayers     VideoLayers
 	currentLayers VideoLayers
@@ -213,10 +216,17 @@ type Forwarder struct {
 	ddLayerSelector *DDVideoLayerSelector
 }
 
-func NewForwarder(kind webrtc.RTPCodecType, logger logger.Logger) *Forwarder {
+func NewForwarder(
+	kind webrtc.RTPCodecType,
+	logger logger.Logger,
+	getReferenceLayerRTPTimestamp func(ts uint32, layer int32, referenceLayer int32) (uint32, error),
+) *Forwarder {
 	f := &Forwarder{
-		kind:   kind,
-		logger: logger,
+		kind:                          kind,
+		logger:                        logger,
+		getReferenceLayerRTPTimestamp: getReferenceLayerRTPTimestamp,
+
+		referenceLayerSpatial: InvalidLayerSpatial,
 
 		// start off with nothing, let streamallocator set things
 		currentLayers: InvalidLayers,
@@ -265,9 +275,10 @@ func (f *Forwarder) GetState() ForwarderState {
 	}
 
 	state := ForwarderState{
-		Started:    f.started,
-		LastTSCalc: f.lTSCalc,
-		RTP:        f.rtpMunger.GetLast(),
+		Started:               f.started,
+		ReferenceLayerSpatial: f.referenceLayerSpatial,
+		LastTSCalc:            f.lTSCalc,
+		RTP:                   f.rtpMunger.GetLast(),
 	}
 
 	if f.vp8Munger != nil {
@@ -292,6 +303,7 @@ func (f *Forwarder) SeedState(state ForwarderState) {
 	}
 
 	f.started = true
+	f.referenceLayerSpatial = state.ReferenceLayerSpatial
 }
 
 func (f *Forwarder) Mute(muted bool) (bool, VideoLayers) {
@@ -367,6 +379,13 @@ func (f *Forwarder) TargetLayers() VideoLayers {
 	defer f.lock.RUnlock()
 
 	return f.targetLayers
+}
+
+func (f *Forwarder) GetReferenceLayerSpatial() int32 {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+
+	return f.referenceLayerSpatial
 }
 
 func (f *Forwarder) GetForwardingStatus() ForwardingStatus {
@@ -1362,7 +1381,7 @@ func (f *Forwarder) GetTranslationParams(extPkt *buffer.ExtPacket, layer int32) 
 
 	switch f.kind {
 	case webrtc.RTPCodecTypeAudio:
-		return f.getTranslationParamsAudio(extPkt)
+		return f.getTranslationParamsAudio(extPkt, layer)
 	case webrtc.RTPCodecTypeVideo:
 		return f.getTranslationParamsVideo(extPkt, layer)
 	}
@@ -1371,37 +1390,42 @@ func (f *Forwarder) GetTranslationParams(extPkt *buffer.ExtPacket, layer int32) 
 }
 
 // should be called with lock held
-func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, tp *TranslationParams) (*TranslationParams, error) {
+func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer int32, tp *TranslationParams) (*TranslationParams, error) {
 	if f.lastSSRC != extPkt.Packet.SSRC {
 		if !f.started {
 			f.started = true
+			f.referenceLayerSpatial = layer
 			f.rtpMunger.SetLastSnTs(extPkt)
 			if f.vp8Munger != nil {
 				f.vp8Munger.SetLast(extPkt)
 			}
 		} else {
-			// LK-TODO-START
-			// The below offset calculation is not technically correct.
-			// Timestamps based on the system time of an intermediate box like
-			// SFU is not going to be accurate. Packets arrival/processing
-			// are subject to vagaries of network delays, SFU processing etc.
-			// But, the correct way is a lot harder. Will have to
-			// look at RTCP SR to get timestamps and align (and figure out alignment
-			// of layers and use that during layer switch in simulcast case).
-			// That can get tricky. Given the complexity of that approach, maybe
-			// this is just fine till it is not :-).
-			// LK-TODO-END
-
 			// Compute how much time passed between the old RTP extPkt
 			// and the current packet, and fix timestamp on source change
-			tDiffMs := (extPkt.Arrival - f.lTSCalc) / 1e6
-			if tDiffMs < 0 {
-				tDiffMs = 0
+			var td uint32
+			if f.getReferenceLayerRTPTimestamp != nil {
+				refTS, err := f.getReferenceLayerRTPTimestamp(extPkt.Packet.Timestamp, layer, f.referenceLayerSpatial)
+				if err == nil {
+					last := f.rtpMunger.GetLast()
+					td = refTS - last.LastTS
+					if td > (1 << 31) {
+						f.logger.Infow("reference timestamp out-of-order", "lastTS", last.LastTS, "refTS", refTS, "td", td)
+						td = 0 // reset to force arrival time based calculation
+					}
+				}
 			}
-			td := uint32(tDiffMs * int64(f.codec.ClockRate) / 1000)
+
 			if td == 0 {
-				td = 1
+				tDiffMs := (extPkt.Arrival - f.lTSCalc) / 1e6
+				if tDiffMs < 0 {
+					tDiffMs = 0
+				}
+				td = uint32(tDiffMs * int64(f.codec.ClockRate) / 1000)
+				if td == 0 {
+					td = 1
+				}
 			}
+
 			f.rtpMunger.UpdateSnTsOffsets(extPkt, 1, td)
 			if f.vp8Munger != nil {
 				f.vp8Munger.UpdateOffsets(extPkt)
@@ -1435,8 +1459,8 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, tp *Tra
 }
 
 // should be called with lock held
-func (f *Forwarder) getTranslationParamsAudio(extPkt *buffer.ExtPacket) (*TranslationParams, error) {
-	return f.getTranslationParamsCommon(extPkt, nil)
+func (f *Forwarder) getTranslationParamsAudio(extPkt *buffer.ExtPacket, layer int32) (*TranslationParams, error) {
+	return f.getTranslationParamsCommon(extPkt, layer, nil)
 }
 
 // should be called with lock held
@@ -1508,7 +1532,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		return tp, nil
 	}
 
-	_, err := f.getTranslationParamsCommon(extPkt, tp)
+	_, err := f.getTranslationParamsCommon(extPkt, layer, tp)
 	if tp.shouldDrop || f.vp8Munger == nil || len(extPkt.Packet.Payload) == 0 {
 		return tp, err
 	}

@@ -36,6 +36,7 @@ type TrackSender interface {
 	ID() string
 	SubscriberID() livekit.ParticipantID
 	TrackInfoAvailable()
+	HandleRTCPSenderReportData(payloadType webrtc.PayloadType, layer int32, srData *buffer.RTCPSenderReportData) error
 }
 
 const (
@@ -248,7 +249,7 @@ func NewDownTrack(
 		kind:           kind,
 		codec:          codecs[0].RTPCodecCapability,
 	}
-	d.forwarder = NewForwarder(d.kind, d.logger)
+	d.forwarder = NewForwarder(d.kind, d.logger, d.receiver.GetReferenceLayerRTPTimestamp)
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
 		MimeType:      codecs[0].MimeType, // LK-TODO have to notify on codec change
@@ -974,7 +975,7 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 		return nil
 	}
 
-	return d.rtpStats.GetRtcpSenderReport(d.ssrc)
+	return d.rtpStats.GetRtcpSenderReport(d.ssrc, d.receiver.GetRTCPSenderReportData(d.forwarder.GetReferenceLayerSpatial()))
 }
 
 func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan struct{} {
@@ -1522,4 +1523,8 @@ func (d *DownTrack) sendPaddingOnMute() {
 
 		time.Sleep(paddingOnMuteInterval)
 	}
+}
+
+func (d *DownTrack) HandleRTCPSenderReportData(_payloadType webrtc.PayloadType, _layer int32, _srData *buffer.RTCPSenderReportData) error {
+	return nil
 }
