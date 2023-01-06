@@ -455,7 +455,14 @@ func (t *TransportManager) SetICEConfig(iceConfig *livekit.ICEConfig) {
 
 func (t *TransportManager) configureICE(iceConfig *livekit.ICEConfig, reset bool) {
 	t.lock.Lock()
-	if proto.Equal(t.iceConfig, iceConfig) {
+	isEqual := proto.Equal(t.iceConfig, iceConfig)
+	if reset || !isEqual {
+		t.failureCount = 0
+		t.isTransportReconfigured = !reset
+		t.udpLossUnstableCount = 0
+	}
+
+	if isEqual {
 		t.lock.Unlock()
 		return
 	}
@@ -463,8 +470,6 @@ func (t *TransportManager) configureICE(iceConfig *livekit.ICEConfig, reset bool
 	t.params.Logger.Infow("setting ICE config", "iceConfig", iceConfig)
 	onICEConfigChanged := t.onICEConfigChanged
 	t.iceConfig = iceConfig
-	t.failureCount = 0
-	t.isTransportReconfigured = !reset
 	t.lock.Unlock()
 
 	if iceConfig.PreferenceSubscriber != livekit.ICECandidateType_ICT_NONE {
@@ -641,6 +646,7 @@ func (t *TransportManager) onMediaLossUpdate(loss uint8) {
 			if t.udpRTT > 0 && t.tcpRTT < uint32(float32(t.udpRTT)*1.3) && t.tcpRTT < tcpGoodRTT {
 				t.udpLossUnstableCount = 0
 				t.lock.Unlock()
+
 				t.params.Logger.Infow("udp connection unstable, switch to tcp")
 				t.handleConnectionFailed(true)
 				if t.onAnyTransportFailed != nil {
