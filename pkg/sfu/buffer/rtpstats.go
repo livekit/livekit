@@ -703,7 +703,7 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srData *RTCPSenderReportData
 	if srData == nil || srData.NTPTimestamp == 0 || srData.ArrivalTime.IsZero() {
 		r.params.Logger.Infow("reference layer sender report not available")
 	} else {
-		// NTP timestamp in sender report could have a different base, i. e. it may not be wall clock at the time of send.
+		// NTP timestamp in sender report could have a different base, i. e. it may not be wall clock time at the time of send.
 		// So, do not compare local NTP to what is received from remote side. Record receive time locally and do a difference
 		// using local time now (i. e. same time base) and add the difference to remote NTP to get the current time in remote
 		// NTP time base.
