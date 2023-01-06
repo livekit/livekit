@@ -314,11 +314,6 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 		SmoothIntervals: w.audioConfig.SmoothIntervals,
 	})
 	buff.OnRtcpFeedback(w.sendRTCP)
-	/* RAJA-REMOVE
-	buff.OnRtcpSenderReport(func(rtpTS uint32, ntpTS mediatransportutil.NtpTime) {
-		w.streamTrackerManager.UpdateRTCPSenderReportData(layer, rtpTS, ntpTS)
-	})
-	*/
 
 	var duration time.Duration
 	switch layer {
