@@ -36,6 +36,7 @@ type TrackSender interface {
 	ID() string
 	SubscriberID() livekit.ParticipantID
 	TrackInfoAvailable()
+	HandleRTCPSenderReportData(layer int32, srData *buffer.RTCPSenderReportData)
 }
 
 const (
@@ -1522,4 +1523,7 @@ func (d *DownTrack) sendPaddingOnMute() {
 
 		time.Sleep(paddingOnMuteInterval)
 	}
+}
+
+func (d *DownTrack) HandleRTCPSenderReportData(_layer int32, _srData *buffer.RTCPSenderReportData) {
 }
