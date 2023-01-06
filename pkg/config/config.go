@@ -241,6 +241,7 @@ type EgressConfig struct {
 
 type IngressConfig struct {
 	RTMPBaseURL string `yaml:"rtmp_base_url"`
+	UsePsRPC    bool   `yaml:"use_psrpc"`
 }
 
 // not exposed to YAML

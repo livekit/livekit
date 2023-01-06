@@ -71,10 +71,14 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	egressService := NewEgressService(egressClient, rpcClient, objectStore, egressStore, roomService, telemetryService, rtcEgressLauncher)
 	ingressConfig := getIngressConfig(conf)
+	ingressClient, err := getIngressClient(conf, nodeID, messageBus)
+	if err != nil {
+		return nil, err
+	}
 	rpc := ingress.NewRedisRPC(nodeID, universalClient)
 	ingressRPCClient := getIngressRPCClient(rpc)
 	ingressStore := getIngressStore(objectStore)
-	ingressService := NewIngressService(ingressConfig, ingressRPCClient, ingressStore, roomService, telemetryService)
+	ingressService := NewIngressService(ingressConfig, nodeID, messageBus, ingressClient, ingressRPCClient, ingressStore, roomService, telemetryService)
 	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode, telemetryService)
 	clientConfigurationManager := createClientConfiguration()
 	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager, rtcEgressLauncher)
@@ -185,6 +189,14 @@ func getEgressStore(s ObjectStore) EgressStore {
 	default:
 		return nil
 	}
+}
+
+func getIngressClient(conf *config.Config, nodeID livekit.NodeID, bus psrpc.MessageBus) (rpc.IngressClient, error) {
+	if conf.Ingress.UsePsRPC {
+		return rpc.NewIngressClient(nodeID, bus)
+	}
+
+	return nil, nil
 }
 
 func getIngressStore(s ObjectStore) IngressStore {
