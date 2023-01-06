@@ -680,16 +680,6 @@ func (w *WebRTCReceiver) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
 	return w.getBuffer(layer).GetTemporalLayerFpsForSpatial(layer)
 }
 
-/* RAJA-REMOVE
-func (w *WebRTCReceiver) GetRTCPSenderReportData(layer int32) (uint32, mediatransportutil.NtpTime, error) {
-	return w.streamTrackerManager.GetRTCPSenderReportData(layer)
-}
-
-func (w *WebRTCReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error) {
-	return w.streamTrackerManager.GetReferenceLayerRTPTimestamp(ts, layer, referenceLayer)
-}
-*/
-
 func (w *WebRTCReceiver) GetRTCPSenderReportData(layer int32) *buffer.RTCPSenderReportData {
 	w.bufferMu.RLock()
 	defer w.bufferMu.RUnlock()
@@ -730,10 +720,9 @@ func (w *WebRTCReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, r
 	ntpDiff := float64(int64(srRef.NTPTimestamp-srLayer.NTPTimestamp)) / float64(1<<32)
 	normalizedReqTS := srLayer.RTPTimestamp + uint32(ntpDiff*float64(w.codec.ClockRate))
 
-	// now that both RTP timestamp correspond to roughly the same NTP time,
-	// the diff is the offset in RTP timestamps between layer and referenceLayer.
+	// now that both RTP timestamps correspond to roughly the same NTP time,
+	// the diff between them is the offset in RTP timestamp units between layer and referenceLayer.
 	// Add the offset to layer's ts to map it to corresponding RTP timestamp in
 	// the reference layer.
-	w.logger.Infow("RAJA normalized TS", "ts", ts, "reqL", layer, "srLayer", srLayer, "refL", referenceLayer, "srRef", srRef, "ntpDiff", ntpDiff, "normalizedReqTS", normalizedReqTS, "adjusted", ts+(srRef.RTPTimestamp-normalizedReqTS)) // REMOVE
 	return ts + (srRef.RTPTimestamp - normalizedReqTS), nil
 }

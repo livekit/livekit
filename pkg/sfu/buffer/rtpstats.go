@@ -702,29 +702,6 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srData *RTCPSenderReportData
 		return nil
 	}
 
-	/* RAJA-REMOVE
-	now := time.Now()
-	nowNTP := mediatransportutil.ToNtpTime(now)
-
-	var nowRTP uint32
-	if ntpTSRef != 0 {
-		nowRTP = rtpTSRef + uint32(nowNTP.Time().Sub(ntpTSRef.Time()).Seconds()*float64(r.params.ClockRate))
-		if nowRTP-r.highestTS > (1 << 31) {
-			r.params.Logger.Infow(
-				"reference layer sender report could not be used",
-				"nowRTP", nowRTP,
-				"highestTS", r.highestTS,
-				"rtpTSRef", rtpTSRef,
-				"timeOffset", now.Sub(ntpTSRef.Time()).Seconds(),
-			)
-			nowRTP = 0 // reset to force calculation using highest send time
-		}
-	}
-	r.params.Logger.Infow("RAJA RTCP SR gen", "refR", rtpTSRef, "refN", ntpTSRef.Time(), "now", now, "nowNTP", nowNTP.Time(), "nowRTP", nowRTP, "highestTS", r.highestTS, "highest", time.Unix(0, r.highestTime))
-	if nowRTP == 0 {
-		nowRTP = r.highestTS + uint32((now.UnixNano()-r.highestTime)*int64(r.params.ClockRate)/1e9)
-	}
-	*/
 	var nowNTP mediatransportutil.NtpTime
 	var nowRTP uint32
 	if srData == nil || srData.NTPTimestamp == 0 || srData.ArrivalTime.IsZero() {
@@ -737,18 +714,6 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srData *RTCPSenderReportData
 		timeSinceLastSR := time.Since(srData.ArrivalTime)
 		nowNTP = mediatransportutil.ToNtpTime(srData.NTPTimestamp.Time().Add(timeSinceLastSR))
 		nowRTP = srData.RTPTimestamp + uint32(timeSinceLastSR.Milliseconds()*int64(r.params.ClockRate)/1000)
-		r.params.Logger.Infow(
-			"RAJA RTCP SR gen",
-			"refR", srData.RTPTimestamp,
-			"nowRTP", nowRTP,
-			"refN", srData.NTPTimestamp.Time(),
-			"nowNTP", nowNTP.Time(),
-			"arrivalTime", srData.ArrivalTime,
-			"now", time.Now(),
-			"timeSinceLastSR", timeSinceLastSR,
-			"highestTS", r.highestTS,
-			"highest", time.Unix(0, r.highestTime),
-		) // REMOVE
 		if nowRTP-r.highestTS > (1 << 31) {
 			r.params.Logger.Infow(
 				"reference layer sender report could not be used",

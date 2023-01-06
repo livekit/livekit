@@ -547,7 +547,6 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		}
 	}
 
-	d.logger.Debugw("RAJA fowarding", "ts", hdr.Timestamp) // REMOVE
 	d.rtpStats.Update(hdr, len(payload), 0, time.Now().UnixNano())
 	return nil
 }

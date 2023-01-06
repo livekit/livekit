@@ -1395,30 +1395,16 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 		if !f.started {
 			f.started = true
 			f.referenceLayerSpatial = layer
-			f.logger.Infow("RAJA setting reference layer", "referenceLayer", f.referenceLayerSpatial) // REMOVE
 			f.rtpMunger.SetLastSnTs(extPkt)
 			if f.vp8Munger != nil {
 				f.vp8Munger.SetLast(extPkt)
 			}
 		} else {
-			// LK-TODO-START
-			// The below offset calculation is not technically correct.
-			// Timestamps based on the system time of an intermediate box like
-			// SFU is not going to be accurate. Packets arrival/processing
-			// are subject to vagaries of network delays, SFU processing etc.
-			// But, the correct way is a lot harder. Will have to
-			// look at RTCP SR to get timestamps and align (and figure out alignment
-			// of layers and use that during layer switch in simulcast case).
-			// That can get tricky. Given the complexity of that approach, maybe
-			// this is just fine till it is not :-).
-			// LK-TODO-END
-
 			// Compute how much time passed between the old RTP extPkt
 			// and the current packet, and fix timestamp on source change
 			var td uint32
 			if f.getReferenceLayerRTPTimestamp != nil {
 				refTS, err := f.getReferenceLayerRTPTimestamp(extPkt.Packet.Timestamp, layer, f.referenceLayerSpatial)
-				f.logger.Infow("RAJA layer switch", "reqL", layer, "refL", f.referenceLayerSpatial, "refTS", refTS, "err", err) // REMOVE
 				if err == nil {
 					last := f.rtpMunger.GetLast()
 					td = refTS - last.LastTS
