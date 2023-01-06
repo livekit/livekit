@@ -1,30 +1,15 @@
 package sfu
 
 import (
-	"fmt"
 	"sort"
 	"sync"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/streamtracker"
-	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
-
-// ---------------------------------------------------------
-
-type rtcpSenderReportData struct {
-	rtpTS uint32
-	ntpTS mediatransportutil.NtpTime
-}
-
-func (r *rtcpSenderReportData) String() string {
-	return fmt.Sprintf("rtpTS: %d, ntpTS: +%v", r.rtpTS, r.ntpTS.Time())
-}
-
-// ---------------------------------------------------------
 
 type StreamTrackerManager struct {
 	logger            logger.Logger
@@ -37,8 +22,7 @@ type StreamTrackerManager struct {
 
 	lock sync.RWMutex
 
-	trackers      [DefaultMaxLayerSpatial + 1]*streamtracker.StreamTracker
-	senderReports [DefaultMaxLayerSpatial + 1]*rtcpSenderReportData
+	trackers [DefaultMaxLayerSpatial + 1]*streamtracker.StreamTracker
 
 	availableLayers  []int32
 	exemptedLayers   []int32
