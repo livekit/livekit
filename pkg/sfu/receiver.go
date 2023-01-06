@@ -720,11 +720,11 @@ func (w *WebRTCReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, r
 	// constraints). It should be okay even if the layer has stopped for a long time when using modulo arithmetic for
 	// RTP time stamp (uint32 arithmetic).
 	ntpDiff := float64(int64(srRef.NTPTimestamp-srLayer.NTPTimestamp)) / float64(1<<32)
-	normalizedReqTS := srLayer.RTPTimestamp + uint32(ntpDiff*float64(w.codec.ClockRate))
+	normalizedTS := srLayer.RTPTimestamp + uint32(ntpDiff*float64(w.codec.ClockRate))
 
 	// now that both RTP timestamps correspond to roughly the same NTP time,
 	// the diff between them is the offset in RTP timestamp units between layer and referenceLayer.
 	// Add the offset to layer's ts to map it to corresponding RTP timestamp in
 	// the reference layer.
-	return ts + (srRef.RTPTimestamp - normalizedReqTS), nil
+	return ts + (srRef.RTPTimestamp - normalizedTS), nil
 }
