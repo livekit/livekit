@@ -43,7 +43,7 @@ jobs:
           args: build
 
       - name: Static Check
-        uses: dominikh/staticcheck-action@v1.2.0
+        uses: dominikh/staticcheck-action@v1.3.0
         with:
           min-go-version: 1.18
           version: 2022.1.3
