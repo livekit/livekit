@@ -710,8 +710,10 @@ func (w *WebRTCReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, r
 		return 0, fmt.Errorf("reference layer rtcp sender report not available: %d", referenceLayer)
 	}
 
-	// using NTP time of most recent sender report of layer and referenceLayer
-	// line up the RTP time stamps
+	// line up the RTP time stamps using NTP time of most recent sender report of layer and referenceLayer
+	// NOTE: It is possible that reference layer has stopped (due to dynacast/adaptive streaming OR publisher
+	// constraints). It should be okay even if the layer has stopped for a long time when using modulo arithmetic for
+	// RTP time stamp (uint32 arithmetic).
 	ntpDiff := float64(int64(srRef.NTPTimestamp-srLayer.NTPTimestamp)) / float64(1<<32)
 	normalizedReqTS := srLayer.RTPTimestamp + uint32(ntpDiff*float64(w.codec.ClockRate))
 
