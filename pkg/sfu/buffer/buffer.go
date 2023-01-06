@@ -83,9 +83,10 @@ type Buffer struct {
 	lastFractionLostToReport uint8 // Last fraction lost from subscribers, should report to publisher; Audio only
 
 	// callbacks
-	onClose        func()
-	onRtcpFeedback func([]rtcp.Packet)
-	onFpsChanged   func()
+	onClose            func()
+	onRtcpFeedback     func([]rtcp.Packet)
+	onRtcpSenderReport func(*RTCPSenderReportData)
+	onFpsChanged       func()
 
 	// logger
 	logger logger.Logger
@@ -615,15 +616,20 @@ func (b *Buffer) buildReceptionReport() *rtcp.ReceptionReport {
 }
 
 func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64) {
-	b.RLock()
-	defer b.RUnlock()
+	srData := &RTCPSenderReportData{
+		RTPTimestamp: rtpTime,
+		NTPTimestamp: mediatransportutil.NtpTime(ntpTime),
+		ArrivalTime:  time.Now(),
+	}
 
+	b.RLock()
 	if b.rtpStats != nil {
-		b.rtpStats.SetRtcpSenderReportData(&RTCPSenderReportData{
-			RTPTimestamp: rtpTime,
-			NTPTimestamp: mediatransportutil.NtpTime(ntpTime),
-			ArrivalTime:  time.Now(),
-		})
+		b.rtpStats.SetRtcpSenderReportData(srData)
+	}
+	b.RUnlock()
+
+	if b.onRtcpSenderReport != nil {
+		b.onRtcpSenderReport(srData)
 	}
 }
 
@@ -675,6 +681,10 @@ func (b *Buffer) getPacket(buff []byte, sn uint16) (int, error) {
 
 func (b *Buffer) OnRtcpFeedback(fn func(fb []rtcp.Packet)) {
 	b.onRtcpFeedback = fn
+}
+
+func (b *Buffer) OnRtcpSenderReport(fn func(srData *RTCPSenderReportData)) {
+	b.onRtcpSenderReport = fn
 }
 
 // GetMediaSSRC returns the associated SSRC of the RTP stream

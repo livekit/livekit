@@ -314,6 +314,11 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 		SmoothIntervals: w.audioConfig.SmoothIntervals,
 	})
 	buff.OnRtcpFeedback(w.sendRTCP)
+	buff.OnRtcpSenderReport(func(srData *buffer.RTCPSenderReportData) {
+		w.downTrackSpreader.Broadcast(func(dt TrackSender) {
+			dt.HandleRTCPSenderReportData(layer, srData)
+		})
+	})
 
 	var duration time.Duration
 	switch layer {
