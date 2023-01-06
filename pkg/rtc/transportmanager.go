@@ -455,14 +455,14 @@ func (t *TransportManager) SetICEConfig(iceConfig *livekit.ICEConfig) {
 
 func (t *TransportManager) configureICE(iceConfig *livekit.ICEConfig, reset bool) {
 	t.lock.Lock()
-	isChanged := proto.Equal(t.iceConfig, iceConfig)
-	if reset || isChanged {
+	isEqual := proto.Equal(t.iceConfig, iceConfig)
+	if reset || !isEqual {
 		t.failureCount = 0
 		t.isTransportReconfigured = !reset
 		t.udpLossUnstableCount = 0
 	}
 
-	if !isChanged {
+	if isEqual {
 		t.lock.Unlock()
 		return
 	}
