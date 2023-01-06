@@ -166,10 +166,6 @@ type RTPStats struct {
 
 	srData *RTCPSenderReportData
 
-	srInitialized bool
-	rtpSRFirst    uint32
-	ntpSRFirst    mediatransportutil.NtpTime
-
 	nextSnapshotId uint32
 	snapshots      map[uint32]*Snapshot
 }
