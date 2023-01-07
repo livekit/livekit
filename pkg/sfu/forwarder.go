@@ -1,3 +1,4 @@
+// RAJA-TODO: check all places where currentLayers, targetLayers, maxLayers are used when using opportunistic layers
 package sfu
 
 import (
@@ -66,6 +67,7 @@ const (
 	VideoAllocationStateAwaitingMeasurement
 	VideoAllocationStateOptimal
 	VideoAllocationStateDeficient
+	VideoAllocationStatePubMuted // RAJA-TODO: is this needed?
 )
 
 func (v VideoAllocationState) String() string {
@@ -82,6 +84,8 @@ func (v VideoAllocationState) String() string {
 		return "OPTIMAL"
 	case VideoAllocationStateDeficient:
 		return "DEFICIENT"
+	case VideoAllocationStatePubMuted:
+		return "PUB_MUTED"
 	default:
 		return fmt.Sprintf("%d", int(v))
 	}
@@ -114,6 +118,7 @@ var (
 
 type VideoAllocationProvisional struct {
 	muted           bool
+	pubMuted        bool // RAJA-TODO
 	bitrates        Bitrates
 	availableLayers []int32
 	exemptedLayers  []int32
@@ -191,7 +196,8 @@ type Forwarder struct {
 	logger                        logger.Logger
 	getReferenceLayerRTPTimestamp func(ts uint32, layer int32, referenceLayer int32) (uint32, error)
 
-	muted bool
+	muted    bool
+	pubMuted bool
 
 	started               bool
 	lastSSRC              uint32
@@ -334,6 +340,33 @@ func (f *Forwarder) IsMuted() bool {
 	return f.muted
 }
 
+func (f *Forwarder) PubMute(pubMuted bool) (bool, VideoLayers) {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	if f.pubMuted == pubMuted {
+		return false, f.maxLayers
+	}
+
+	f.logger.Debugw("setting forwarder pub mute", "pubMuted", pubMuted)
+	f.pubMuted = pubMuted
+
+	// resync when muted so that sequence numbers do not jump on unmute
+	// RAJA-TODO: this reync shoul not be required as publisher can restart
+	if pubMuted {
+		f.resyncLocked()
+	}
+
+	return true, f.maxLayers
+}
+
+func (f *Forwarder) IsPubMuted() bool {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+
+	return f.pubMuted
+}
+
 func (f *Forwarder) SetMaxSpatialLayer(spatialLayer int32) (bool, VideoLayers, VideoLayers) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
@@ -394,7 +427,7 @@ func (f *Forwarder) GetForwardingStatus() ForwardingStatus {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
-	if f.muted || len(f.availableLayers) == 0 {
+	if f.muted || f.pubMuted || len(f.availableLayers) == 0 {
 		return ForwardingStatusOptimal
 	}
 
@@ -413,7 +446,7 @@ func (f *Forwarder) IsReducedQuality() (int32, bool) {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
-	if f.muted || len(f.availableLayers) == 0 || f.targetLayers.Spatial == InvalidLayerSpatial {
+	if f.muted || f.pubMuted || len(f.availableLayers) == 0 || f.targetLayers.Spatial == InvalidLayerSpatial {
 		return 0, false
 	}
 
@@ -453,6 +486,7 @@ func (f *Forwarder) UpTrackLayersChange(availableLayers []int32, exemptedLayers 
 }
 
 func (f *Forwarder) getOptimalBandwidthNeeded(brs Bitrates, maxLayers VideoLayers) int64 {
+	// RAJA-TODO: should this include f.pubMuted?
 	if f.muted {
 		return 0
 	}
@@ -509,6 +543,7 @@ func (f *Forwarder) bitrateAvailable(brs Bitrates) bool {
 }
 
 func (f *Forwarder) getDistanceToDesired(brs Bitrates, targetLayers VideoLayers, maxLayers VideoLayers) int32 {
+	// RAJA-TODO: how to include pubMuted here? Should it be included here or should this be changed to check only pubMuted?
 	if f.muted {
 		return 0
 	}
@@ -560,6 +595,7 @@ func (f *Forwarder) BandwidthRequested(brs Bitrates) int64 {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
+	// RAJA-TODO: check for changes need with opportunistic forwarding
 	if f.targetLayers == InvalidLayers {
 		return 0
 	}
@@ -592,6 +628,9 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 	switch {
 	case f.muted:
 		alloc.state = VideoAllocationStateMuted
+
+	case f.pubMuted:
+		alloc.state = VideoAllocationStatePubMuted
 
 	case len(f.availableLayers) == 0:
 		// feed is dry
@@ -703,6 +742,7 @@ func (f *Forwarder) ProvisionalAllocatePrepare(bitrates Bitrates) {
 	f.provisional = &VideoAllocationProvisional{
 		allocatedLayers: InvalidLayers,
 		muted:           f.muted,
+		pubMuted:        f.pubMuted,
 		bitrates:        bitrates,
 		maxLayers:       f.maxLayers,
 	}
@@ -1272,6 +1312,9 @@ func (f *Forwarder) Pause(brs Bitrates) VideoAllocation {
 	case f.muted:
 		alloc.state = VideoAllocationStateMuted
 
+	case f.pubMuted:
+		alloc.state = VideoAllocationStatePubMuted
+
 	case len(f.availableLayers) == 0:
 		// feed is dry
 		alloc.state = VideoAllocationStateFeedDry
@@ -1285,6 +1328,7 @@ func (f *Forwarder) Pause(brs Bitrates) VideoAllocation {
 }
 
 func (f *Forwarder) updateAllocation(alloc VideoAllocation, reason string) VideoAllocation {
+	// RAJA-TODO - check for changes needed with opportunistic forwarding
 	if f.targetLayers == InvalidLayers && alloc.targetLayers.IsValid() {
 		alloc.change = VideoStreamingChangeResuming
 	} else if f.targetLayers != InvalidLayers && !alloc.targetLayers.IsValid() {
@@ -1328,6 +1372,8 @@ func (f *Forwarder) Resync() {
 }
 
 func (f *Forwarder) resyncLocked() {
+	// RAJA-TODO: check for any additional reset needed with opportunistic forwarding
+	// RAJA-TODO: look for publisher vs subscriber mute and ensure that existing layer can continue on publisher mute/unmute
 	f.currentLayers = InvalidLayers
 	f.lastSSRC = 0
 }
@@ -1336,6 +1382,7 @@ func (f *Forwarder) CheckSync() (locked bool, layer int32) {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
+	// RAJA-TODO: check for changes needed with opportunistic forwarding
 	layer = f.targetLayers.Spatial
 	locked = f.targetLayers.Spatial == f.currentLayers.Spatial
 
@@ -1361,6 +1408,7 @@ func (f *Forwarder) FilterRTX(nacks []uint16) (filtered []uint16, disallowedLaye
 	//
 	// Without the curb, when congestion hits, RTX rate could be so high that it further congests the channel.
 	//
+	// RAJA-TODO: check for any changes needed here with opportunistic forwarding
 	for layer := int32(0); layer < DefaultMaxLayerSpatial+1; layer++ {
 		if f.lastAllocation.state == VideoAllocationStateDeficient &&
 			(f.targetLayers.Spatial < f.currentLayers.Spatial || layer > f.currentLayers.Spatial) {
@@ -1375,6 +1423,7 @@ func (f *Forwarder) GetTranslationParams(extPkt *buffer.ExtPacket, layer int32) 
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
+	// RAJA-TODO: maybe intentionally do not drop on publisher only mute as media from pub could start before signal message comes through and we can latch on to existing layer
 	if f.muted {
 		return &TranslationParams{
 			shouldDrop: true,

@@ -168,6 +168,6 @@ func (t *SubscribedTrack) UpdateVideoLayer() {
 }
 
 func (t *SubscribedTrack) updateDownTrackMute() {
-	muted := t.subMuted.Load() || t.pubMuted.Load()
-	t.DownTrack().Mute(muted)
+	t.DownTrack().Mute(t.subMuted.Load())
+	t.DownTrack().PubMute(t.pubMuted.Load())
 }

@@ -650,13 +650,24 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool) int {
 	return bytesSent
 }
 
-// Mute enables or disables media forwarding
+// Mute enables or disables media forwarding - subscriber triggered
 func (d *DownTrack) Mute(muted bool) {
 	changed, maxLayers := d.forwarder.Mute(muted)
+	d.handleMute(muted, changed, maxLayers)
+}
+
+// PubMute enables or disables media forwarding - publisher side
+func (d *DownTrack) PubMute(muted bool) {
+	changed, maxLayers := d.forwarder.PubMute(muted)
+	d.handleMute(muted, changed, maxLayers)
+}
+
+func (d *DownTrack) handleMute(muted bool, changed bool, maxLayers VideoLayers) {
 	if !changed {
 		return
 	}
 
+	// RAJA-TODO: should not be necessary on publisher unmute, but does not hurt
 	if d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
 		notifyLayer := InvalidLayerSpatial
 		if !muted {
@@ -1455,6 +1466,7 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 		"MimeType":            d.codec.MimeType,
 		"Bound":               d.bound.Load(),
 		"Muted":               d.forwarder.IsMuted(),
+		"PubMuted":            d.forwarder.IsPubMuted(),
 		"CurrentSpatialLayer": d.forwarder.CurrentLayers().Spatial,
 		"Stats":               stats,
 	}
