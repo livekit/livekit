@@ -2,6 +2,27 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.3] - 2023-01-06
+### Added
+- Signal deduper: ignore duplicate signal messages #1243 #1247 #1257
+- FPS based stream tracker #1267 #1269 #1275 #1281
+- Support forwarding track encryption status #1265
+- Use publisher side sender report when forwarding - improves A/V sync #1286
+
+### Fixed
+- When removing a participant, verify SID matches #1237
+- Fixed rare panic when GetSelectedICECandidatePair returns nil #1253
+- Prevent ParticipantUpdate to be sent before JoinResponse #1271 #1272
+- Fixed Firefox connectivity issues when using UDPMux #1270 #1277
+- Fixed subscribing muted track with Egress and Go SDK #1283
+
+### Changed
+- ParticipantLeft webhook would not be sent unless connected successfully #1130
+- Updated to Go 1.18+ #1259
+- Updated Egress RPC framework - psrpc #1252 #1256 #1266 #1273
+- Track subscription operations per source track #1248
+- Egress participants do not count in max_participants #1279
+
 ## [1.3.2] - 2022-12-15
 ### Added
 - help-verbose subcommand to print out all flags #1171 #1180
