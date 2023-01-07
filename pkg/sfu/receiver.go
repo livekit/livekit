@@ -452,6 +452,13 @@ func (w *WebRTCReceiver) SetRTCPCh(ch chan []rtcp.Packet) {
 }
 
 func (w *WebRTCReceiver) getBuffer(layer int32) *buffer.Buffer {
+	w.bufferMu.RLock()
+	defer w.bufferMu.RUnlock()
+
+	return w.getBufferLocked(layer)
+}
+
+func (w *WebRTCReceiver) getBufferLocked(layer int32) *buffer.Buffer {
 	// for svc codecs, use layer full quality instead.
 	// we only have buffer for full quality
 	if w.isSVC {
@@ -462,10 +469,7 @@ func (w *WebRTCReceiver) getBuffer(layer int32) *buffer.Buffer {
 		return nil
 	}
 
-	w.bufferMu.RLock()
-	buff := w.buffers[layer]
-	w.bufferMu.RUnlock()
-	return buff
+	return w.buffers[layer]
 }
 
 func (w *WebRTCReceiver) ReadRTP(buf []byte, layer uint8, sn uint16) (int, error) {
@@ -713,7 +717,7 @@ func (w *WebRTCReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, r
 		return ts, nil
 	}
 
-	bLayer := w.getBuffer(layer)
+	bLayer := w.getBufferLocked(layer)
 	if bLayer == nil {
 		return 0, fmt.Errorf("invalid layer: %d", layer)
 	}
@@ -722,7 +726,7 @@ func (w *WebRTCReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, r
 		return 0, fmt.Errorf("layer rtcp sender report not available: %d", layer)
 	}
 
-	bReferenceLayer := w.getBuffer(referenceLayer)
+	bReferenceLayer := w.getBufferLocked(referenceLayer)
 	if bReferenceLayer == nil {
 		return 0, fmt.Errorf("invalid reference layer: %d", referenceLayer)
 	}
