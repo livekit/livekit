@@ -152,6 +152,7 @@ type TranslationParams struct {
 }
 
 // -------------------------------------------------------------------
+
 type VideoLayers = buffer.VideoLayer
 
 const (
@@ -229,6 +230,7 @@ func NewForwarder(
 		referenceLayerSpatial: InvalidLayerSpatial,
 
 		// start off with nothing, let streamallocator set things
+		// RAJA-TODO: update comment here when doing opportunistic layers
 		currentLayers: InvalidLayers,
 		targetLayers:  InvalidLayers,
 
@@ -261,7 +263,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability) {
 		f.vp8Munger = NewVP8Munger(f.logger)
 	case "video/av1":
 		// TODO : we only enable dd layer selector for av1 now, at future we can
-		// enable it for vp9 too
+		// enable it for vp8 too
 		f.ddLayerSelector = NewDDVideoLayerSelector(f.logger)
 	}
 }
@@ -1575,7 +1577,7 @@ func (f *Forwarder) GetSnTsForPadding(num int) ([]SnTs, error) {
 	defer f.lock.Unlock()
 
 	// padding is used for probing. Padding packets should be
-	// at frame boundaries only to ensure decoder sequencer does
+	// at only the frame boundaries to ensure decoder sequencer does
 	// not get out-of-sync. But, when a stream is paused,
 	// force a frame marker as a restart of the stream will
 	// start with a key frame which will reset the decoder.
@@ -1583,6 +1585,7 @@ func (f *Forwarder) GetSnTsForPadding(num int) ([]SnTs, error) {
 	if f.targetLayers == InvalidLayers {
 		forceMarker = true
 	}
+	// RAJA-TODO: check this with opportunistic forwarding to ensure force is correct, i. e. should it check current?
 	return f.rtpMunger.UpdateAndGetPaddingSnTs(num, 0, 0, forceMarker)
 }
 
@@ -1590,7 +1593,7 @@ func (f *Forwarder) GetSnTsForBlankFrames(frameRate uint32, numPackets int) ([]S
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	// NOTE: not using diff of current time and previous packet time (lTSCalc) as this
+	// NOTE: not using diff of current time and previous packet time (lTSCalc) as this is
 	// driven by a timer, there might be slight differences compared to the frame rate.
 	// As the differences are going to be small (and also not to update RTP time stamp
 	// by those small differences), not doing the diff.
