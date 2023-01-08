@@ -115,6 +115,11 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 	retransmitBytesNow := retransmitBytes.Load()
 	retransmitPacketsNow := retransmitPackets.Load()
 	participantJoinNow := participantJoin.Load()
+	participantRTCNow := participantRTC.Load()
+	trackPublishAttemptsNow := trackPublishAttempts.Load()
+	trackPublishSuccessNow := trackPublishSuccess.Load()
+	trackSubscribeAttemptsNow := trackSubscribeAttempts.Load()
+	trackSubscribeSuccessNow := trackSubscribeSuccess.Load()
 
 	updatedAt := time.Now().Unix()
 	elapsed := updatedAt - prevAverage.UpdatedAt
@@ -136,6 +141,10 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		NumClients:                 participantTotal.Load(),
 		NumTracksIn:                trackPublishedTotal.Load(),
 		NumTracksOut:               trackSubscribedTotal.Load(),
+		NumTrackPublishAttempts:    trackPublishAttemptsNow,
+		NumTrackPublishSuccess:     trackPublishSuccessNow,
+		NumTrackSubscribeAttempts:  trackSubscribeAttemptsNow,
+		NumTrackSubscribeSuccess:   trackSubscribeSuccessNow,
 		BytesIn:                    bytesInNow,
 		BytesOut:                   bytesOutNow,
 		PacketsIn:                  packetsInNow,
@@ -144,6 +153,7 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		RetransmitPacketsOut:       retransmitPacketsNow,
 		NackTotal:                  nackTotalNow,
 		ParticipantJoin:            participantJoinNow,
+		ParticipantRtc:             participantRTCNow,
 		BytesInPerSec:              prevAverage.BytesInPerSec,
 		BytesOutPerSec:             prevAverage.BytesOutPerSec,
 		PacketsInPerSec:            prevAverage.PacketsInPerSec,
@@ -173,8 +183,13 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		stats.RetransmitPacketsOutPerSec = perSec(prevAverage.RetransmitPacketsOut, retransmitPacketsNow, elapsed)
 		stats.NackPerSec = perSec(prevAverage.NackTotal, nackTotalNow, elapsed)
 		stats.ParticipantJoinPerSec = perSec(prevAverage.ParticipantJoin, participantJoinNow, elapsed)
+		stats.ParticipantRtcPerSec = perSec(prevAverage.ParticipantRtc, participantRTCNow, elapsed)
 		stats.SysPacketsOutPerSec = perSec(uint64(prev.SysPacketsOut), uint64(sysPackets), elapsed)
 		stats.SysPacketsDroppedPerSec = perSec(uint64(prev.SysPacketsDropped), uint64(sysDroppedPackets), elapsed)
+		stats.TrackPublishAttemptsPerSec = perSec(uint64(prevAverage.NumTrackPublishAttempts), uint64(trackPublishAttemptsNow), elapsed)
+		stats.TrackPublishSuccessPerSec = perSec(uint64(prevAverage.NumTrackPublishSuccess), uint64(trackPublishSuccessNow), elapsed)
+		stats.TrackSubscribeAttemptsPerSec = perSec(uint64(prevAverage.NumTrackSubscribeAttempts), uint64(trackSubscribeAttemptsNow), elapsed)
+		stats.TrackSubscribeSuccessPerSec = perSec(uint64(prevAverage.NumTrackSubscribeSuccess), uint64(trackSubscribeSuccessNow), elapsed)
 
 		packetTotal := stats.SysPacketsOutPerSec + stats.SysPacketsDroppedPerSec
 		if packetTotal == 0 {

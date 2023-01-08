@@ -10,16 +10,22 @@ import (
 )
 
 var (
-	roomTotal            atomic.Int32
-	participantTotal     atomic.Int32
-	trackPublishedTotal  atomic.Int32
-	trackSubscribedTotal atomic.Int32
+	roomTotal              atomic.Int32
+	participantTotal       atomic.Int32
+	trackPublishedTotal    atomic.Int32
+	trackSubscribedTotal   atomic.Int32
+	trackPublishAttempts   atomic.Int32
+	trackPublishSuccess    atomic.Int32
+	trackSubscribeAttempts atomic.Int32
+	trackSubscribeSuccess  atomic.Int32
 
-	promRoomTotal            prometheus.Gauge
-	promRoomDuration         prometheus.Histogram
-	promParticipantTotal     prometheus.Gauge
-	promTrackPublishedTotal  *prometheus.GaugeVec
-	promTrackSubscribedTotal *prometheus.GaugeVec
+	promRoomTotal             prometheus.Gauge
+	promRoomDuration          prometheus.Histogram
+	promParticipantTotal      prometheus.Gauge
+	promTrackPublishedTotal   *prometheus.GaugeVec
+	promTrackSubscribedTotal  *prometheus.GaugeVec
+	promTrackPublishCounter   *prometheus.CounterVec
+	promTrackSubscribeCounter *prometheus.CounterVec
 )
 
 func initRoomStats(nodeID string, nodeType livekit.NodeType) {
@@ -56,12 +62,26 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 		Name:        "subscribed_total",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	}, []string{"kind"})
+	promTrackPublishCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "track",
+		Name:        "publish_counter",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+	}, []string{"kind", "state"})
+	promTrackSubscribeCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "track",
+		Name:        "subscribe_counter",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+	}, []string{"kind", "state"})
 
 	prometheus.MustRegister(promRoomTotal)
 	prometheus.MustRegister(promRoomDuration)
 	prometheus.MustRegister(promParticipantTotal)
 	prometheus.MustRegister(promTrackPublishedTotal)
 	prometheus.MustRegister(promTrackSubscribedTotal)
+	prometheus.MustRegister(promTrackPublishCounter)
+	prometheus.MustRegister(promTrackSubscribeCounter)
 }
 
 func RoomStarted() {
@@ -97,6 +117,14 @@ func SubPublishedTrack(kind string) {
 	trackPublishedTotal.Dec()
 }
 
+func AddPublishAttempt(kind string, state string) {
+	promTrackPublishCounter.WithLabelValues(kind, state).Inc()
+	trackPublishAttempts.Inc()
+	if state == "success" {
+		trackPublishSuccess.Inc()
+	}
+}
+
 func AddSubscribedTrack(kind string) {
 	promTrackSubscribedTotal.WithLabelValues(kind).Add(1)
 	trackSubscribedTotal.Inc()
@@ -105,4 +133,12 @@ func AddSubscribedTrack(kind string) {
 func SubSubscribedTrack(kind string) {
 	promTrackSubscribedTotal.WithLabelValues(kind).Sub(1)
 	trackSubscribedTotal.Dec()
+}
+
+func AddSubscribeAttempt(kind string, state string) {
+	promTrackSubscribeCounter.WithLabelValues(kind, state).Inc()
+	trackSubscribeAttempts.Inc()
+	if state == "success" {
+		trackSubscribeSuccess.Inc()
+	}
 }

@@ -24,6 +24,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/livekit-server/pkg/telemetry"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
@@ -570,6 +571,10 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 	if !p.grants.Video.GetCanPublish() {
 		p.params.Logger.Warnw("no permission to publish track", nil)
 		return
+	}
+
+	if req.Sid == "" {
+		prometheus.AddPublishAttempt(req.Type.String(), "attempt")
 	}
 
 	ti := p.addPendingTrackLocked(req)

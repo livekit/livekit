@@ -25,6 +25,7 @@ var (
 	retransmitBytes   atomic.Uint64
 	retransmitPackets atomic.Uint64
 	participantJoin   atomic.Uint64
+	participantRTC    atomic.Uint64
 
 	promPacketLabels    = []string{"direction", "transmission"}
 	promPacketTotal     *prometheus.CounterVec
@@ -133,10 +134,15 @@ func IncrementRTCP(direction Direction, nack, pli, fir uint32) {
 	}
 }
 
-func IncrementParticipantJoin(join uint32) {
+func IncrementParticipantJoin(join uint32, label string) {
 	if join > 0 {
-		promParticipantJoin.WithLabelValues().Add(float64(join))
-		participantJoin.Add(uint64(join))
+		promParticipantJoin.WithLabelValues(label).Add(float64(join))
+		switch label {
+		case "signal_connected":
+			participantJoin.Add(uint64(join))
+		case "rtc_connected":
+			participantRTC.Add(uint64(join))
+		}
 	}
 }
 

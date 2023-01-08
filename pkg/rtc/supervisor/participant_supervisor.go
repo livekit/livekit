@@ -4,10 +4,12 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/atomic"
+
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"go.uber.org/atomic"
 )
 
 const (
@@ -154,6 +156,10 @@ func (p *ParticipantSupervisor) UpdateSubscription(trackID livekit.TrackID, isSu
 		},
 	)
 	p.lock.Unlock()
+
+	if isSubscribe {
+		prometheus.AddSubscribeAttempt(sourceTrack.Kind().String(), "success")
+	}
 }
 
 func (p *ParticipantSupervisor) SetSubscribedTrack(trackID livekit.TrackID, subTrack types.SubscribedTrack, sourceTrack types.MediaTrack) {
