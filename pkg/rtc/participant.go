@@ -573,10 +573,6 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 		return
 	}
 
-	if req.Sid == "" {
-		prometheus.AddPublishAttempt(req.Type.String())
-	}
-
 	ti := p.addPendingTrackLocked(req)
 	if ti == nil {
 		return
@@ -1239,6 +1235,9 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 	}
 
 	publishedTrack, isNewTrack := p.mediaTrackReceived(track, rtpReceiver)
+	if isNewTrack {
+		prometheus.AddPublishAttempt(track.Kind().String())
+	}
 
 	if publishedTrack != nil {
 		p.params.Logger.Infow("mediaTrack published",

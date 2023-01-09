@@ -197,7 +197,6 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		handleError(w, http.StatusInternalServerError, err, loggerFields...)
 		return
 	}
-	prometheus.IncrementParticipantJoin(1)
 
 	// wait for the first message before upgrading to websocket. If no one is
 	// responding to our connection attempt, we should terminate the connection
@@ -207,6 +206,8 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		handleError(w, http.StatusInternalServerError, err, loggerFields...)
 		return
 	}
+
+	prometheus.IncrementParticipantJoin(1)
 
 	if !pi.Reconnect && initialResponse.GetJoin() != nil {
 		pi.ID = livekit.ParticipantID(initialResponse.GetJoin().GetParticipant().GetSid())
