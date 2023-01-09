@@ -134,14 +134,14 @@ func IncrementRTCP(direction Direction, nack, pli, fir uint32) {
 	}
 }
 
-func IncrementParticipantJoin(join uint32, label string) {
+func IncrementParticipantJoin(join uint32, rtcConnected ...bool) {
 	if join > 0 {
-		promParticipantJoin.WithLabelValues(label).Add(float64(join))
-		switch label {
-		case "signal_connected":
-			participantJoin.Add(uint64(join))
-		case "rtc_connected":
+		if len(rtcConnected) > 0 && rtcConnected[0] {
 			participantRTC.Add(uint64(join))
+			promParticipantJoin.WithLabelValues("rtc_connected").Add(float64(join))
+		} else {
+			participantJoin.Add(uint64(join))
+			promParticipantJoin.WithLabelValues("signal_connected").Add(float64(join))
 		}
 	}
 }

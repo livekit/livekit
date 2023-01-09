@@ -574,7 +574,7 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 	}
 
 	if req.Sid == "" {
-		prometheus.AddPublishAttempt(req.Type.String(), "attempt")
+		prometheus.AddPublishAttempt(req.Type.String())
 	}
 
 	ti := p.addPendingTrackLocked(req)

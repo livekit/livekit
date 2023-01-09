@@ -68,7 +68,7 @@ func (t *telemetryService) ParticipantJoined(
 	shouldSendEvent bool,
 ) {
 	t.enqueue(func() {
-		prometheus.IncrementParticipantJoin(1, "rtc_connected")
+		prometheus.IncrementParticipantJoin(1, true)
 		prometheus.AddParticipant()
 
 		t.createWorker(
@@ -183,7 +183,7 @@ func (t *telemetryService) TrackPublished(
 ) {
 	t.enqueue(func() {
 		prometheus.AddPublishedTrack(track.Type.String())
-		prometheus.AddPublishAttempt(track.Type.String(), "success")
+		prometheus.AddPublishAttempt(track.Type.String(), true)
 
 		roomID, roomName := t.getRoomDetails(participantID)
 		t.NotifyEvent(ctx, &livekit.WebhookEvent{

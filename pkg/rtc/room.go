@@ -221,12 +221,10 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 	defer r.lock.Unlock()
 
 	if r.IsClosed() {
-		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "room_closed").Add(1)
 		return ErrRoomClosed
 	}
 
 	if r.participants[participant.Identity()] != nil {
-		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "already_joined").Add(1)
 		return ErrAlreadyJoined
 	}
 
@@ -239,7 +237,6 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 		}
 
 		if participantCount >= int(r.protoRoom.MaxParticipants) {
-			prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "max_exceeded").Add(1)
 			return ErrMaxParticipantsExceeded
 		}
 	}

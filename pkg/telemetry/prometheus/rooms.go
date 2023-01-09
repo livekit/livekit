@@ -117,11 +117,13 @@ func SubPublishedTrack(kind string) {
 	trackPublishedTotal.Dec()
 }
 
-func AddPublishAttempt(kind string, state string) {
-	promTrackPublishCounter.WithLabelValues(kind, state).Inc()
-	trackPublishAttempts.Inc()
-	if state == "success" {
+func AddPublishAttempt(kind string, success ...bool) {
+	if len(success) > 0 && success[0] {
 		trackPublishSuccess.Inc()
+		promTrackPublishCounter.WithLabelValues(kind, "success").Inc()
+	} else {
+		trackPublishAttempts.Inc()
+		promTrackPublishCounter.WithLabelValues(kind, "attempt").Inc()
 	}
 }
 
@@ -135,12 +137,12 @@ func SubSubscribedTrack(kind string) {
 	trackSubscribedTotal.Dec()
 }
 
-func AddSubscribeAttempt(kind string, success bool) {
-	trackSubscribeAttempts.Inc()
-	if success {
-		promTrackSubscribeCounter.WithLabelValues(kind, "success").Inc()
+func AddSubscribeAttempt(kind string, success ...bool) {
+	if len(success) > 0 && success[0] {
 		trackSubscribeSuccess.Inc()
+		promTrackSubscribeCounter.WithLabelValues(kind, "success").Inc()
 	} else {
+		trackSubscribeAttempts.Inc()
 		promTrackSubscribeCounter.WithLabelValues(kind, "attempt").Inc()
 	}
 }
