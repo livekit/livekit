@@ -653,22 +653,33 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool) int {
 // Mute enables or disables media forwarding - subscriber triggered
 func (d *DownTrack) Mute(muted bool) {
 	changed, maxLayers := d.forwarder.Mute(muted)
-	d.handleMute(muted, changed, maxLayers)
+	d.handleMute(muted, false, changed, maxLayers)
 }
 
 // PubMute enables or disables media forwarding - publisher side
-func (d *DownTrack) PubMute(muted bool) {
-	changed, maxLayers := d.forwarder.PubMute(muted)
-	d.handleMute(muted, changed, maxLayers)
+func (d *DownTrack) PubMute(pubMuted bool) {
+	changed, maxLayers := d.forwarder.PubMute(pubMuted)
+	d.handleMute(pubMuted, true, changed, maxLayers)
 }
 
-func (d *DownTrack) handleMute(muted bool, changed bool, maxLayers VideoLayers) {
+func (d *DownTrack) handleMute(muted bool, isPub bool, changed bool, maxLayers VideoLayers) {
 	if !changed {
 		return
 	}
 
-	// RAJA-TODO: should not be necessary on publisher unmute, but does not hurt
-	if d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
+	//
+	// Subscriber mute changes trigger a max layer notification.
+	// That could result in dynacast turning off/on layers on publisher side.
+	//
+	// Publisher mute changes should not trigger notification.
+	// If dynacast turns off all layers on publisher mute, there will be a delay
+	// in layers turning back on on unmute. It will require
+	//   1. unmute signalling
+	//   2. down track(s) notifying max layer
+	//   3. publisher notified about max layer
+	//   4. publisher starting layer(s)
+	//
+	if !isPub && d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
 		notifyLayer := InvalidLayerSpatial
 		if !muted {
 			//

@@ -178,8 +178,12 @@ type ForwarderState struct {
 	Started               bool
 	ReferenceLayerSpatial int32
 	LastTSCalc            int64
-	RTP                   RTPMungerState
-	VP8                   VP8MungerState
+	CurrentLayers         VideoLayers // RAJA-TODO: is this needed?
+	TargetLayers          VideoLayers // RAJA-TODO: is this needed?
+	// RAJA-TODO: Are opportunistic layers needed here?, probably yes
+	// RAJA-TODO: parked layers for publisher mute?
+	RTP RTPMungerState
+	VP8 VP8MungerState
 }
 
 func (f ForwarderState) String() string {
@@ -285,6 +289,8 @@ func (f *Forwarder) GetState() ForwarderState {
 	state := ForwarderState{
 		Started:               f.started,
 		ReferenceLayerSpatial: f.referenceLayerSpatial,
+		CurrentLayers:         f.currentLayers,
+		TargetLayers:          f.targetLayers,
 		LastTSCalc:            f.lTSCalc,
 		RTP:                   f.rtpMunger.GetLast(),
 	}
@@ -304,6 +310,9 @@ func (f *Forwarder) SeedState(state ForwarderState) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
+	f.referenceLayerSpatial = state.ReferenceLayerSpatial
+	f.currentLayers = state.CurrentLayers
+	f.targetLayers = state.TargetLayers
 	f.lTSCalc = state.LastTSCalc
 	f.rtpMunger.SeedLast(state.RTP)
 	if f.vp8Munger != nil {
@@ -311,7 +320,6 @@ func (f *Forwarder) SeedState(state ForwarderState) {
 	}
 
 	f.started = true
-	f.referenceLayerSpatial = state.ReferenceLayerSpatial
 }
 
 func (f *Forwarder) Mute(muted bool) (bool, VideoLayers) {
@@ -352,7 +360,7 @@ func (f *Forwarder) PubMute(pubMuted bool) (bool, VideoLayers) {
 	f.pubMuted = pubMuted
 
 	// resync when muted so that sequence numbers do not jump on unmute
-	// RAJA-TODO: this reync shoul not be required as publisher can restart
+	// RAJA-TODO: this resync should not be required as publisher can restart
 	if pubMuted {
 		f.resyncLocked()
 	}
@@ -703,7 +711,7 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 		}
 
 		if alloc.bandwidthRequested == 0 && f.maxLayers.IsValid() {
-			// if overshoot was allowed and it did not also find a layer,
+			// if overshoot was allowed and that also did not find a layer,
 			// keep target at exempted layer (if available) and the current layer is at that level.
 			// i. e. exempted layer may really have stopped, so a layer switch to an exempted layer should
 			// not happen as layer switch will send PLI requests. Just letting it continue at the current
@@ -760,7 +768,7 @@ func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layers V
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	if f.provisional.muted || !f.provisional.maxLayers.IsValid() || (!allowOvershoot && layers.GreaterThan(f.provisional.maxLayers)) {
+	if f.provisional.muted || f.provisional.pubMuted || !f.provisional.maxLayers.IsValid() || (!allowOvershoot && layers.GreaterThan(f.provisional.maxLayers)) {
 		return 0
 	}
 
@@ -832,7 +840,7 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot b
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	if f.provisional.muted {
+	if f.provisional.muted || f.provisional.pubMuted {
 		f.provisional.allocatedLayers = InvalidLayers
 		return VideoTransition{
 			from:           f.targetLayers,
@@ -969,7 +977,7 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	if f.provisional.muted {
+	if f.provisional.muted || f.provisional.pubMuted {
 		f.provisional.allocatedLayers = InvalidLayers
 		return VideoTransition{
 			from:           f.targetLayers,
@@ -1075,6 +1083,9 @@ func (f *Forwarder) ProvisionalAllocateCommit() VideoAllocation {
 	switch {
 	case f.provisional.muted:
 		alloc.state = VideoAllocationStateMuted
+
+	case f.provisional.pubMuted:
+		alloc.state = VideoAllocationStatePubMuted
 
 	case len(f.provisional.availableLayers) == 0:
 		// feed is dry
