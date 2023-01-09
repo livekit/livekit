@@ -135,10 +135,12 @@ func SubSubscribedTrack(kind string) {
 	trackSubscribedTotal.Dec()
 }
 
-func AddSubscribeAttempt(kind string, state string) {
-	promTrackSubscribeCounter.WithLabelValues(kind, state).Inc()
+func AddSubscribeAttempt(kind string, success bool) {
 	trackSubscribeAttempts.Inc()
-	if state == "success" {
+	if success {
+		promTrackSubscribeCounter.WithLabelValues(kind, "success").Inc()
 		trackSubscribeSuccess.Inc()
+	} else {
+		promTrackSubscribeCounter.WithLabelValues(kind, "attempt").Inc()
 	}
 }

@@ -442,7 +442,7 @@ func (t *MediaTrackReceiver) addSubscriber(sub types.LocalParticipant) (err erro
 		}
 	}()
 
-	prometheus.AddSubscribeAttempt(t.Kind().String(), "attempt")
+	prometheus.AddSubscribeAttempt(t.Kind().String(), false)
 
 	t.lock.RLock()
 	if t.state != mediaTrackReceiverStateOpen {

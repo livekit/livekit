@@ -158,7 +158,7 @@ func (p *ParticipantSupervisor) UpdateSubscription(trackID livekit.TrackID, isSu
 	p.lock.Unlock()
 
 	if isSubscribe {
-		prometheus.AddSubscribeAttempt(sourceTrack.Kind().String(), "success")
+		prometheus.AddSubscribeAttempt(sourceTrack.Kind().String(), true)
 	}
 }
 
