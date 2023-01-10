@@ -23,12 +23,20 @@ import (
 
 	"github.com/twitchtv/twirp"
 
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/logger"
 )
 
 var (
-	loggerKey = struct{}{}
+	loggerKey         = struct{}{}
+	statusReporterKey = struct{ a int }{42}
 )
+
+type twirpRequestFields struct {
+	service string
+	method  string
+	error   twirp.Error
+}
 
 // logging handling inspired by https://github.com/bakins/twirpzap
 // License: Apache-2.0
@@ -54,10 +62,9 @@ func TwirpLogger(logger logger.Logger) *twirp.ServerHooks {
 }
 
 type requestLogger struct {
+	twirpRequestFields
+
 	logger     logger.Logger
-	service    string
-	method     string
-	error      twirp.Error
 	fieldsOrig []interface{}
 	fields     []interface{}
 	startedAt  time.Time
@@ -127,6 +134,65 @@ func responseSent(ctx context.Context, requestLoggerPool *sync.Pool) {
 
 func errorReceived(ctx context.Context, e twirp.Error) context.Context {
 	r, ok := ctx.Value(loggerKey).(*requestLogger)
+	if !ok || r == nil {
+		return ctx
+	}
+
+	r.error = e
+
+	return ctx
+}
+
+func TwirpRequestStatusReporter() *twirp.ServerHooks {
+	return &twirp.ServerHooks{
+		RequestReceived: statusReporterRequestReceived,
+		RequestRouted:   statusReporterResponseRouted,
+		Error:           statusReporterErrorReceived,
+		ResponseSent:    statusReporterResponseSent,
+	}
+}
+
+func statusReporterRequestReceived(ctx context.Context) (context.Context, error) {
+	r := &twirpRequestFields{}
+
+	if svc, ok := twirp.ServiceName(ctx); ok {
+		r.service = svc
+	}
+
+	ctx = context.WithValue(ctx, statusReporterKey, r)
+	return ctx, nil
+}
+
+func statusReporterResponseRouted(ctx context.Context) (context.Context, error) {
+	if meth, ok := twirp.MethodName(ctx); ok {
+		l, ok := ctx.Value(statusReporterKey).(*twirpRequestFields)
+		if !ok || l == nil {
+			return ctx, nil
+		}
+		l.method = meth
+	}
+
+	return ctx, nil
+}
+
+func statusReporterResponseSent(ctx context.Context) {
+	r, ok := ctx.Value(statusReporterKey).(*twirpRequestFields)
+	if !ok || r == nil {
+		return
+	}
+
+	status, _ := twirp.StatusCode(ctx)
+
+	var code twirp.ErrorCode
+	if r.error != nil {
+		code = r.error.Code()
+	}
+
+	prometheus.TwirpRequestStatusCounter.WithLabelValues(r.service, r.method, status, string(code)).Add(1)
+}
+
+func statusReporterErrorReceived(ctx context.Context, e twirp.Error) context.Context {
+	r, ok := ctx.Value(statusReporterKey).(*twirpRequestFields)
 	if !ok || r == nil {
 		return ctx
 	}

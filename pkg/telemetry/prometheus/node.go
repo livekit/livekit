@@ -19,8 +19,9 @@ const (
 var (
 	initialized atomic.Bool
 
-	MessageCounter          *prometheus.CounterVec
-	ServiceOperationCounter *prometheus.CounterVec
+	MessageCounter            *prometheus.CounterVec
+	ServiceOperationCounter   *prometheus.CounterVec
+	TwirpRequestStatusCounter *prometheus.CounterVec
 
 	sysPacketsStart              uint32
 	sysDroppedPacketsStart       uint32
@@ -53,6 +54,16 @@ func Init(nodeID string, nodeType livekit.NodeType) {
 		[]string{"type", "status", "error_type"},
 	)
 
+	TwirpRequestStatusCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace:   livekitNamespace,
+			Subsystem:   "node",
+			Name:        "twirp_request_status",
+			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+		},
+		[]string{"service", "method", "status", "code"},
+	)
+
 	promSysPacketGauge = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace:   livekitNamespace,
@@ -76,6 +87,7 @@ func Init(nodeID string, nodeType livekit.NodeType) {
 
 	prometheus.MustRegister(MessageCounter)
 	prometheus.MustRegister(ServiceOperationCounter)
+	prometheus.MustRegister(TwirpRequestStatusCounter)
 	prometheus.MustRegister(promSysPacketGauge)
 	prometheus.MustRegister(promSysDroppedPacketPctGauge)
 
