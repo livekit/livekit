@@ -170,7 +170,8 @@ func listNodes(c *cli.Context) error {
 	table.SetAutoWrapText(false)
 	table.SetHeader([]string{
 		"ID", "IP Address", "Region",
-		"CPUs", "CPU Usage\nLoad Avg", "Memory Used/Total",
+		"CPUs", "CPU Usage\nLoad Avg",
+		"Memory Used/Total",
 		"Rooms", "Clients\nTracks In/Out",
 		"Bytes/s In/Out\nBytes Total", "Packets/s In/Out\nPackets Total", "System Dropped Pkts/s\nPkts/s Out/Dropped",
 		"Nack/s\nNack Total", "Retrans/s\nRetrans Total",
@@ -179,9 +180,9 @@ func listNodes(c *cli.Context) error {
 	table.SetColumnAlignment([]int{
 		tablewriter.ALIGN_CENTER, tablewriter.ALIGN_CENTER, tablewriter.ALIGN_CENTER,
 		tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT,
+		tablewriter.ALIGN_RIGHT,
 		tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT,
-		tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT,
-		tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT,
+		tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT,
 		tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT,
 		tablewriter.ALIGN_CENTER,
 	})
@@ -217,7 +218,8 @@ func listNodes(c *cli.Context) error {
 
 		table.Append([]string{
 			idAndState, node.Ip, node.Region,
-			cpus, cpuUsageAndLoadAvg, memUsage,
+			cpus, cpuUsageAndLoadAvg,
+			memUsage,
 			rooms, clientsAndTracks,
 			bytes, packets, sysPackets,
 			nacks, retransmit,
