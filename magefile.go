@@ -150,6 +150,7 @@ func Psrpc() error {
 	psrpcProtoFiles := []string{
 		"pkg/service/rpc/egress.proto",
 		"pkg/service/rpc/ingress.proto",
+		"pkg/service/rpc/io.proto",
 	}
 
 	fmt.Println("generating psrpc")

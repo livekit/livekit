@@ -5,8 +5,6 @@ package rpc;
 option go_package = "github.com/livekit/livekit/pkg/service/rpc";
 
 import "options.proto";
-import "livekit_rpc_internal.proto";
-import "livekit_ingress.proto";
 
 service IngressInternal {
   rpc ListActiveIngress(ListActiveIngressRequest) returns (ListActiveIngressResponse) {
@@ -14,23 +12,11 @@ service IngressInternal {
   };
 }
 
-service IngressEntity {
-  rpc GetIngressInfo(livekit.GetIngressInfoRequest) returns (livekit.GetIngressInfoResponse);
-}
-
 service IngressHandler {
   rpc HangUpIngress(HangUpIngressRequest) returns (HangUpIngressResponse) {
     option (psrpc.options).topics = true;
   };
 }
-
-service IngressUpdate {
-  rpc StateUpdate(Ignored) returns (livekit.UpdateIngressStateRequest) {
-    option (psrpc.options).subscription = true;
-  };
-}
-
-message Ignored {}
 
 message ListActiveIngressRequest {}
 

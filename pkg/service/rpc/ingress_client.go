@@ -8,13 +8,11 @@ import (
 type IngressClient interface {
 	IngressInternalClient
 	IngressHandlerClient
-	IngressUpdateClient
 }
 
 type ingressClient struct {
 	IngressInternalClient
 	IngressHandlerClient
-	IngressUpdateClient
 }
 
 func NewIngressClient(nodeID livekit.NodeID, bus psrpc.MessageBus) (IngressClient, error) {
@@ -31,13 +29,8 @@ func NewIngressClient(nodeID livekit.NodeID, bus psrpc.MessageBus) (IngressClien
 	if err != nil {
 		return nil, err
 	}
-	updateClient, err := NewIngressUpdateClient(clientID, bus)
-	if err != nil {
-		return nil, err
-	}
 	return &ingressClient{
 		IngressInternalClient: internalClient,
 		IngressHandlerClient:  handlerClient,
-		IngressUpdateClient:   updateClient,
 	}, nil
 }
