@@ -174,6 +174,14 @@ func (p *ParticipantImpl) SendRefreshToken(token string) error {
 	})
 }
 
+func (p *ParticipantImpl) SendReconnectResponse(reconnectResponse *livekit.ReconnectResponse) error {
+	return p.writeMessage(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_Reconnect{
+			Reconnect: reconnectResponse,
+		},
+	})
+}
+
 func (p *ParticipantImpl) sendICECandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) error {
 	trickle := ToProtoTrickle(c.ToJSON())
 	trickle.Target = target

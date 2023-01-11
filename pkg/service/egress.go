@@ -192,7 +192,7 @@ func (s *egressLauncher) StartEgress(ctx context.Context, req *livekit.StartEgre
 	if s.psrpcClient != nil {
 		info, err = s.psrpcClient.StartEgress(ctx, req)
 	} else {
-		logger.Infow("Using deprecated egress client.", nil)
+		logger.Infow("using deprecated egress client")
 		info, err = s.clientDeprecated.SendRequest(ctx, req)
 	}
 	if err != nil {
