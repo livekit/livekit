@@ -164,7 +164,9 @@ type RTPStats struct {
 	rtt    uint32
 	maxRtt uint32
 
-	srData *RTCPSenderReportData
+	srData    *RTCPSenderReportData
+	lastSRNTP mediatransportutil.NtpTime
+	lastSRAt  time.Time
 
 	nextSnapshotId uint32
 	snapshots      map[uint32]*Snapshot
@@ -460,7 +462,7 @@ func (r *RTPStats) getTotalPacketsPrimary() uint32 {
 	return packetsSeen - r.packetsPadding
 }
 
-func (r *RTPStats) UpdateFromReceiverReport(rr rtcp.ReceptionReport, rtt uint32) {
+func (r *RTPStats) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt uint32, isRttChanged bool) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
@@ -468,13 +470,20 @@ func (r *RTPStats) UpdateFromReceiverReport(rr rtcp.ReceptionReport, rtt uint32)
 		return
 	}
 
+	rtt, err := mediatransportutil.GetRttMs(&rr, r.lastSRNTP, r.lastSRAt)
+	if err == nil {
+		isRttChanged = rtt != r.rtt
+	}
+
 	if r.lastRRTime.IsZero() || r.extHighestSNOverridden <= rr.LastSequenceNumber {
 		r.extHighestSNOverridden = rr.LastSequenceNumber
 		r.packetsLostOverridden = rr.TotalLost
 
-		r.rtt = rtt
-		if rtt > r.maxRtt {
-			r.maxRtt = rtt
+		if isRttChanged {
+			r.rtt = rtt
+			if rtt > r.maxRtt {
+				r.maxRtt = rtt
+			}
 		}
 
 		r.jitterOverridden = float64(rr.Jitter)
@@ -484,7 +493,7 @@ func (r *RTPStats) UpdateFromReceiverReport(rr rtcp.ReceptionReport, rtt uint32)
 
 		// update snapshots
 		for _, s := range r.snapshots {
-			if rtt > s.maxRtt {
+			if isRttChanged && rtt > s.maxRtt {
 				s.maxRtt = rtt
 			}
 
@@ -504,6 +513,7 @@ func (r *RTPStats) UpdateFromReceiverReport(rr rtcp.ReceptionReport, rtt uint32)
 			"receivedRR", rr,
 		)
 	}
+	return
 }
 
 func (r *RTPStats) UpdateNack(nackCount uint32) {
@@ -725,6 +735,9 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srData *RTCPSenderReportData
 		nowNTP = mediatransportutil.ToNtpTime(now)
 		nowRTP = r.highestTS + uint32((now.UnixNano()-r.highestTime)*int64(r.params.ClockRate)/1e9)
 	}
+
+	r.lastSRNTP = nowNTP
+	r.lastSRAt = time.Now()
 
 	return &rtcp.SenderReport{
 		SSRC:        ssrc,
