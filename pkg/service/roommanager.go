@@ -219,6 +219,8 @@ func (r *RoomManager) StartSession(
 	}
 	defer room.Release()
 
+	protoRoom := room.ToProto()
+
 	// only create the room, but don't start a participant session
 	if pi.Identity == "" {
 		return nil
@@ -233,7 +235,13 @@ func (r *RoomManager) StartSession(
 				"nodeID", r.currentNode.Id,
 				"participant", pi.Identity,
 			)
-			if err = room.ResumeParticipant(participant, responseSink); err != nil {
+			iceConfig := r.getIceConfig(participant)
+			if iceConfig == nil {
+				iceConfig = &livekit.ICEConfig{}
+			}
+			if err = room.ResumeParticipant(participant, responseSink,
+				r.iceServersForRoom(protoRoom, iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS),
+			); err != nil {
 				logger.Warnw("could not resume participant", err, "participant", pi.Identity)
 				return err
 			}
@@ -274,7 +282,6 @@ func (r *RoomManager) StartSession(
 	rtcConf.SetBufferFactory(room.GetBufferFactory())
 	sid := livekit.ParticipantID(utils.NewGuid(utils.ParticipantPrefix))
 	pLogger := rtc.LoggerWithParticipant(room.Logger, pi.Identity, sid, false)
-	protoRoom := room.ToProto()
 	// default allow forceTCP
 	allowFallback := true
 	if r.config.RTC.AllowTCPFallback != nil {
@@ -695,16 +702,22 @@ func (r *RoomManager) refreshToken(participant types.LocalParticipant) error {
 }
 
 func (r *RoomManager) setIceConfig(participant types.LocalParticipant) *livekit.ICEConfig {
+	iceConfig := r.getIceConfig(participant)
+	if iceConfig == nil {
+		return &livekit.ICEConfig{}
+	}
+	participant.SetICEConfig(iceConfig)
+	return iceConfig
+}
+
+func (r *RoomManager) getIceConfig(participant types.LocalParticipant) *livekit.ICEConfig {
 	r.lock.Lock()
+	defer r.lock.Unlock()
 	iceConfigCacheEntry, ok := r.iceConfigCache[participant.Identity()]
 	if !ok || time.Since(iceConfigCacheEntry.modifiedAt) > iceConfigTTL {
 		delete(r.iceConfigCache, participant.Identity())
-		r.lock.Unlock()
-		return &livekit.ICEConfig{}
+		return nil
 	}
-	r.lock.Unlock()
-
-	participant.SetICEConfig(iceConfigCacheEntry.iceConfig)
 	return iceConfigCacheEntry.iceConfig
 }
 

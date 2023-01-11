@@ -355,10 +355,17 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 	return nil
 }
 
-func (r *Room) ResumeParticipant(p types.LocalParticipant, responseSink routing.MessageSink) error {
+func (r *Room) ResumeParticipant(p types.LocalParticipant, responseSink routing.MessageSink, iceServers []*livekit.ICEServer) error {
 	// close previous sink, and link to new one
 	p.CloseSignalConnection()
 	p.SetResponseSink(responseSink)
+
+	if err := p.SendReconnectResponse(&livekit.ReconnectResponse{
+		IceServers:          iceServers,
+		ClientConfiguration: p.GetClientConfiguration(),
+	}); err != nil {
+		return err
+	}
 
 	updates := ToProtoParticipants(r.GetParticipants())
 	if err := p.SendParticipantUpdate(updates); err != nil {
