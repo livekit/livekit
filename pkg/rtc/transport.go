@@ -409,7 +409,6 @@ func (t *PCTransport) setICEConnectedAt(at time.Time) {
 		// This prevents reset of connected at time if ICE goes `Connected` -> `Disconnected` -> `Connected`.
 		//
 		t.iceConnectedAt = at
-		prometheus.ServiceOperationCounter.WithLabelValues("ice_connection", "success", "").Add(1)
 	}
 	t.lock.Unlock()
 }

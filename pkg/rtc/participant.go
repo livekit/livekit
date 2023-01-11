@@ -589,7 +589,7 @@ func (p *ParticipantImpl) SetMigrateInfo(
 	for _, t := range mediaTracks {
 		ti := t.GetTrack()
 
-		p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
+		p.supervisor.AddPublication(livekit.TrackID(ti.Sid), ti.Type)
 		p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
 
 		p.pendingTracks[t.GetCid()] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}, migrated: true}
@@ -1548,7 +1548,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	}
 
 	if p.getPublishedTrackBySignalCid(req.Cid) != nil || p.getPublishedTrackBySdpCid(req.Cid) != nil || p.pendingTracks[req.Cid] != nil {
-		p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
+		p.supervisor.AddPublication(livekit.TrackID(ti.Sid), ti.Type)
 		p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
 
 		if p.pendingTracks[req.Cid] == nil {
@@ -1560,7 +1560,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		return nil
 	}
 
-	p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
+	p.supervisor.AddPublication(livekit.TrackID(ti.Sid), ti.Type)
 	p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
 
 	p.pendingTracks[req.Cid] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}}

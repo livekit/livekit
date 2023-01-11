@@ -4,10 +4,11 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/atomic"
+
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"go.uber.org/atomic"
 )
 
 const (
@@ -91,7 +92,7 @@ func (p *ParticipantSupervisor) SetPublisherPeerConnectionConnected(isConnected 
 	p.lock.Unlock()
 }
 
-func (p *ParticipantSupervisor) AddPublication(trackID livekit.TrackID) {
+func (p *ParticipantSupervisor) AddPublication(trackID livekit.TrackID, trackType livekit.TrackType) {
 	p.lock.Lock()
 	pm, ok := p.publications[trackID]
 	if !ok {
@@ -106,7 +107,7 @@ func (p *ParticipantSupervisor) AddPublication(trackID livekit.TrackID) {
 		}
 		p.publications[trackID] = pm
 	}
-	pm.opMon.PostEvent(types.OperationMonitorEventAddPendingPublication, nil)
+	pm.opMon.PostEvent(types.OperationMonitorEventAddPendingPublication, trackType.String())
 	p.lock.Unlock()
 }
 

@@ -121,6 +121,11 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 	retransmitBytesNow := retransmitBytes.Load()
 	retransmitPacketsNow := retransmitPackets.Load()
 	participantJoinNow := participantJoin.Load()
+	participantRTCNow := participantRTC.Load()
+	trackPublishAttemptsNow := trackPublishAttempts.Load()
+	trackPublishSuccessNow := trackPublishSuccess.Load()
+	trackSubscribeAttemptsNow := trackSubscribeAttempts.Load()
+	trackSubscribeSuccessNow := trackSubscribeSuccess.Load()
 
 	updatedAt := time.Now().Unix()
 	elapsed := updatedAt - prevAverage.UpdatedAt
@@ -136,37 +141,47 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 	}
 
 	stats := &livekit.NodeStats{
-		StartedAt:                  prev.StartedAt,
-		UpdatedAt:                  updatedAt,
-		NumRooms:                   roomTotal.Load(),
-		NumClients:                 participantTotal.Load(),
-		NumTracksIn:                trackPublishedTotal.Load(),
-		NumTracksOut:               trackSubscribedTotal.Load(),
-		BytesIn:                    bytesInNow,
-		BytesOut:                   bytesOutNow,
-		PacketsIn:                  packetsInNow,
-		PacketsOut:                 packetsOutNow,
-		RetransmitBytesOut:         retransmitBytesNow,
-		RetransmitPacketsOut:       retransmitPacketsNow,
-		NackTotal:                  nackTotalNow,
-		ParticipantJoin:            participantJoinNow,
-		BytesInPerSec:              prevAverage.BytesInPerSec,
-		BytesOutPerSec:             prevAverage.BytesOutPerSec,
-		PacketsInPerSec:            prevAverage.PacketsInPerSec,
-		PacketsOutPerSec:           prevAverage.PacketsOutPerSec,
-		RetransmitBytesOutPerSec:   prevAverage.RetransmitBytesOutPerSec,
-		RetransmitPacketsOutPerSec: prevAverage.RetransmitPacketsOutPerSec,
-		NackPerSec:                 prevAverage.NackPerSec,
-		ParticipantJoinPerSec:      prevAverage.ParticipantJoinPerSec,
-		NumCpus:                    numCPUs,
-		CpuLoad:                    cpuLoad,
-		MemoryTotal:                memTotal,
-		MemoryUsed:                 memUsed,
-		LoadAvgLast1Min:            float32(loadAvg.Loadavg1),
-		LoadAvgLast5Min:            float32(loadAvg.Loadavg5),
-		LoadAvgLast15Min:           float32(loadAvg.Loadavg15),
-		SysPacketsOut:              sysPackets,
-		SysPacketsDropped:          sysDroppedPackets,
+		StartedAt:                    prev.StartedAt,
+		UpdatedAt:                    updatedAt,
+		NumRooms:                     roomTotal.Load(),
+		NumClients:                   participantTotal.Load(),
+		NumTracksIn:                  trackPublishedTotal.Load(),
+		NumTracksOut:                 trackSubscribedTotal.Load(),
+		NumTrackPublishAttempts:      trackPublishAttemptsNow,
+		NumTrackPublishSuccess:       trackPublishSuccessNow,
+		NumTrackSubscribeAttempts:    trackSubscribeAttemptsNow,
+		NumTrackSubscribeSuccess:     trackSubscribeSuccessNow,
+		BytesIn:                      bytesInNow,
+		BytesOut:                     bytesOutNow,
+		PacketsIn:                    packetsInNow,
+		PacketsOut:                   packetsOutNow,
+		RetransmitBytesOut:           retransmitBytesNow,
+		RetransmitPacketsOut:         retransmitPacketsNow,
+		NackTotal:                    nackTotalNow,
+		ParticipantJoin:              participantJoinNow,
+		ParticipantRtc:               participantRTCNow,
+		BytesInPerSec:                prevAverage.BytesInPerSec,
+		BytesOutPerSec:               prevAverage.BytesOutPerSec,
+		PacketsInPerSec:              prevAverage.PacketsInPerSec,
+		PacketsOutPerSec:             prevAverage.PacketsOutPerSec,
+		RetransmitBytesOutPerSec:     prevAverage.RetransmitBytesOutPerSec,
+		RetransmitPacketsOutPerSec:   prevAverage.RetransmitPacketsOutPerSec,
+		NackPerSec:                   prevAverage.NackPerSec,
+		ParticipantJoinPerSec:        prevAverage.ParticipantJoinPerSec,
+		ParticipantRtcPerSec:         prevAverage.ParticipantRtcPerSec,
+		NumCpus:                      numCPUs,
+		CpuLoad:                      cpuLoad,
+		MemoryTotal:                  memTotal,
+		MemoryUsed:                   memUsed,
+		LoadAvgLast1Min:              float32(loadAvg.Loadavg1),
+		LoadAvgLast5Min:              float32(loadAvg.Loadavg5),
+		LoadAvgLast15Min:             float32(loadAvg.Loadavg15),
+		SysPacketsOut:                sysPackets,
+		SysPacketsDropped:            sysDroppedPackets,
+		TrackPublishAttemptsPerSec:   prevAverage.TrackPublishAttemptsPerSec,
+		TrackPublishSuccessPerSec:    prevAverage.TrackPublishSuccessPerSec,
+		TrackSubscribeAttemptsPerSec: prevAverage.TrackSubscribeAttemptsPerSec,
+		TrackSubscribeSuccessPerSec:  prevAverage.TrackSubscribeSuccessPerSec,
 	}
 
 	// update stats
@@ -179,8 +194,13 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		stats.RetransmitPacketsOutPerSec = perSec(prevAverage.RetransmitPacketsOut, retransmitPacketsNow, elapsed)
 		stats.NackPerSec = perSec(prevAverage.NackTotal, nackTotalNow, elapsed)
 		stats.ParticipantJoinPerSec = perSec(prevAverage.ParticipantJoin, participantJoinNow, elapsed)
-		stats.SysPacketsOutPerSec = perSec(uint64(prev.SysPacketsOut), uint64(sysPackets), elapsed)
-		stats.SysPacketsDroppedPerSec = perSec(uint64(prev.SysPacketsDropped), uint64(sysDroppedPackets), elapsed)
+		stats.ParticipantRtcPerSec = perSec(prevAverage.ParticipantRtc, participantRTCNow, elapsed)
+		stats.SysPacketsOutPerSec = perSec(uint64(prevAverage.SysPacketsOut), uint64(sysPackets), elapsed)
+		stats.SysPacketsDroppedPerSec = perSec(uint64(prevAverage.SysPacketsDropped), uint64(sysDroppedPackets), elapsed)
+		stats.TrackPublishAttemptsPerSec = perSec(uint64(prevAverage.NumTrackPublishAttempts), uint64(trackPublishAttemptsNow), elapsed)
+		stats.TrackPublishSuccessPerSec = perSec(uint64(prevAverage.NumTrackPublishSuccess), uint64(trackPublishSuccessNow), elapsed)
+		stats.TrackSubscribeAttemptsPerSec = perSec(uint64(prevAverage.NumTrackSubscribeAttempts), uint64(trackSubscribeAttemptsNow), elapsed)
+		stats.TrackSubscribeSuccessPerSec = perSec(uint64(prevAverage.NumTrackSubscribeSuccess), uint64(trackSubscribeSuccessNow), elapsed)
 
 		packetTotal := stats.SysPacketsOutPerSec + stats.SysPacketsDroppedPerSec
 		if packetTotal == 0 {
