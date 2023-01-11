@@ -16,6 +16,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
+	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/livekit-server/pkg/telemetry"
 )
@@ -171,7 +172,12 @@ func (s *EgressService) startEgress(ctx context.Context, roomName livekit.RoomNa
 
 	if roomName != "" {
 		room, _, err := s.store.LoadRoom(ctx, roomName, false)
-		if err != nil {
+		switch err {
+		case nil:
+			// continue
+		case ErrRoomNotFound:
+			return nil, twirp.NewError(twirp.NotFound, err.Error())
+		default:
 			return nil, err
 		}
 		req.RoomId = room.Sid
@@ -223,7 +229,12 @@ func (s *EgressService) UpdateLayout(ctx context.Context, req *livekit.UpdateLay
 	}
 
 	info, err := s.es.LoadEgress(ctx, req.EgressId)
-	if err != nil {
+	switch err {
+	case nil:
+		// continue
+	case ErrRoomNotFound:
+		return nil, twirp.NewError(twirp.NotFound, err.Error())
+	default:
 		return nil, err
 	}
 
@@ -315,11 +326,18 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 
 	info, err := s.es.LoadEgress(ctx, req.EgressId)
 	if err != nil {
-		return nil, err
+		switch err {
+		case nil:
+			// continue
+		case ErrRoomNotFound:
+			return nil, twirp.NewError(twirp.NotFound, err.Error())
+		default:
+			return nil, err
+		}
 	} else {
 		if info.Status != livekit.EgressStatus_EGRESS_STARTING &&
 			info.Status != livekit.EgressStatus_EGRESS_ACTIVE {
-			return nil, fmt.Errorf("egress with status %s cannot be stopped", info.Status.String())
+			return nil, twirp.NewError(twirp.FailedPrecondition, fmt.Sprintf("egress with status %s cannot be stopped", info.Status.String()))
 		}
 	}
 
