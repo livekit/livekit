@@ -227,16 +227,21 @@ func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateI
 	case livekit.IngressState_ENDPOINT_BUFFERING,
 		livekit.IngressState_ENDPOINT_PUBLISHING:
 		// Do not update store the returned state as the ingress service will do it
-		var err error
-		if s.psrpcClient != nil {
-			_, err = s.psrpcClient.HangUpIngress(ctx, req.IngressId, &rpc.HangUpIngressRequest{})
-		} else {
-			_, err = s.sendRPCWithRetry(ctx, &livekit.IngressRequest{
-				IngressId: req.IngressId,
-				Request:   &livekit.IngressRequest_Update{Update: req},
+		race := rpc.NewRace[livekit.IngressState](ctx)
+		if s.rpcClient != nil {
+			race.Go(func(ctx context.Context) (*livekit.IngressState, error) {
+				return s.sendRPCWithRetry(ctx, &livekit.IngressRequest{
+					IngressId: req.IngressId,
+					Request:   &livekit.IngressRequest_Update{Update: req},
+				})
 			})
 		}
-		if err != nil {
+		if s.psrpcClient != nil {
+			race.Go(func(ctx context.Context) (*livekit.IngressState, error) {
+				return s.psrpcClient.UpdateIngress(ctx, req.IngressId, req)
+			})
+		}
+		if _, _, err := race.Wait(); err != nil {
 			logger.Warnw("could not update active ingress", err)
 		}
 	}
@@ -287,16 +292,21 @@ func (s *IngressService) DeleteIngress(ctx context.Context, req *livekit.DeleteI
 	switch info.State.Status {
 	case livekit.IngressState_ENDPOINT_BUFFERING,
 		livekit.IngressState_ENDPOINT_PUBLISHING:
-		var err error
-		if s.psrpcClient != nil {
-			_, err = s.psrpcClient.HangUpIngress(ctx, req.IngressId, &rpc.HangUpIngressRequest{})
-		} else {
-			_, err = s.sendRPCWithRetry(ctx, &livekit.IngressRequest{
-				IngressId: req.IngressId,
-				Request:   &livekit.IngressRequest_Delete{Delete: req},
+		race := rpc.NewRace[livekit.IngressState](ctx)
+		if s.rpcClient != nil {
+			race.Go(func(ctx context.Context) (*livekit.IngressState, error) {
+				return s.sendRPCWithRetry(ctx, &livekit.IngressRequest{
+					IngressId: req.IngressId,
+					Request:   &livekit.IngressRequest_Delete{Delete: req},
+				})
 			})
 		}
-		if err != nil {
+		if s.psrpcClient != nil {
+			race.Go(func(ctx context.Context) (*livekit.IngressState, error) {
+				return s.psrpcClient.DeleteIngress(ctx, req.IngressId, req)
+			})
+		}
+		if _, _, err := race.Wait(); err != nil {
 			logger.Warnw("could not stop active ingress", err)
 		}
 	}
