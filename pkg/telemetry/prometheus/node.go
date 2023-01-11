@@ -97,18 +97,6 @@ func Init(nodeID string, nodeType livekit.NodeType) {
 	initRoomStats(nodeID, nodeType)
 }
 
-func getMemoryStats() (memoryLoad float32, err error) {
-	memInfo, err := memory.Get()
-	if err != nil {
-		return
-	}
-
-	if memInfo.Total != 0 {
-		memoryLoad = float32(memInfo.Used) / float32(memInfo.Total)
-	}
-	return
-}
-
 func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats) (*livekit.NodeStats, bool, error) {
 	loadAvg, err := loadavg.Get()
 	if err != nil {
@@ -120,9 +108,15 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		return nil, false, err
 	}
 
-	memoryLoad, _ := getMemoryStats()
 	// On MacOS, get "\"vm_stat\": executable file not found in $PATH" although it is in /usr/bin
 	// So, do not error out. Use the information if it is available.
+	memTotal := uint64(0)
+	memUsed := uint64(0)
+	memInfo, _ := memory.Get()
+	if memInfo != nil {
+		memTotal = memInfo.Total
+		memUsed = memInfo.Used
+	}
 
 	sysPackets, sysDroppedPackets, err := getTCStats()
 	if err != nil {
@@ -178,12 +172,13 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		ParticipantJoinPerSec:      prevAverage.ParticipantJoinPerSec,
 		NumCpus:                    numCPUs,
 		CpuLoad:                    cpuLoad,
+		MemoryTotal:                memTotal,
+		MemoryUsed:                 memUsed,
 		LoadAvgLast1Min:            float32(loadAvg.Loadavg1),
 		LoadAvgLast5Min:            float32(loadAvg.Loadavg5),
 		LoadAvgLast15Min:           float32(loadAvg.Loadavg15),
 		SysPacketsOut:              sysPackets,
 		SysPacketsDropped:          sysDroppedPackets,
-		MemoryLoad:                 memoryLoad,
 	}
 
 	// update stats
