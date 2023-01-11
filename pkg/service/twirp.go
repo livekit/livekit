@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"strconv"
 	"sync"
 	"time"
 
@@ -181,14 +182,26 @@ func statusReporterResponseSent(ctx context.Context) {
 		return
 	}
 
-	status, _ := twirp.StatusCode(ctx)
+	var statusFamily string
+	if statusCode, ok := twirp.StatusCode(ctx); ok {
+		if status, err := strconv.Atoi(statusCode); err != nil {
+			switch {
+			case status >= 400 && status <= 499:
+				statusFamily = "4xx"
+			case status >= 500 && status <= 599:
+				statusFamily = "5xx"
+			default:
+				statusFamily = strconv.Itoa(status)
+			}
+		}
+	}
 
 	var code twirp.ErrorCode
 	if r.error != nil {
 		code = r.error.Code()
 	}
 
-	prometheus.TwirpRequestStatusCounter.WithLabelValues(r.service, r.method, status, string(code)).Add(1)
+	prometheus.TwirpRequestStatusCounter.WithLabelValues(r.service, r.method, statusFamily, string(code)).Add(1)
 }
 
 func statusReporterErrorReceived(ctx context.Context, e twirp.Error) context.Context {
