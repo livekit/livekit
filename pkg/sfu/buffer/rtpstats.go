@@ -263,6 +263,8 @@ func (r *RTPStats) Seed(from *RTPStats) {
 	} else {
 		r.srData = nil
 	}
+	r.lastSRNTP = from.lastSRNTP
+	r.lastSRAt = from.lastSRAt
 
 	r.nextSnapshotId = from.nextSnapshotId
 	for id, ss := range from.snapshots {
