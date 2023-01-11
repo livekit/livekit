@@ -204,7 +204,7 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 		r.isInRtxGateRegion = true
 	}
 
-	if r.isInRtxGateRegion && (mungedSN-r.rtxGateSn) > RtxGateWindow {
+	if r.isInRtxGateRegion && (mungedSN-r.rtxGateSn) < (1<<15) && (mungedSN-r.rtxGateSn) > RtxGateWindow {
 		r.isInRtxGateRegion = false
 	}
 

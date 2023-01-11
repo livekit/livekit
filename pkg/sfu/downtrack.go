@@ -428,7 +428,7 @@ func (d *DownTrack) stopKeyFrameRequester() {
 }
 
 func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
-	if d.IsClosed() {
+	if d.IsClosed() || layer == InvalidLayerSpatial {
 		return
 	}
 	interval := 2 * d.rtpStats.GetRtt()
@@ -669,15 +669,22 @@ func (d *DownTrack) handleMute(muted bool, isPub bool, changed bool, maxLayers V
 
 	//
 	// Subscriber mute changes trigger a max layer notification.
-	// That could result in dynacast turning off/on layers on publisher side.
+	// That could result in encoding layers getting turned on/off on publisher side
+	// (depending on aggregate layer requirements of all subscribers of the track).
 	//
 	// Publisher mute changes should not trigger notification.
-	// If dynacast turns off all layers on publisher mute, there will be a delay
-	// in layers turning back on on unmute. It will require
-	//   1. unmute signalling
+	// If publisher turns off all layers because of subscribers indicating
+	// no layers required due to publisher mute, there will be a delay
+	// in layers turning back on when unmute happens. Unmute path will require
+	//   1. unmute signalling out-of-band from publisher received by down track(s)
 	//   2. down track(s) notifying max layer
-	//   3. publisher notified about max layer
-	//   4. publisher starting layer(s)
+	//   3. out-of-band notification about max layer sent back to the publisher
+	//   4. publisher starts layer(s)
+	// Ideally, on publisher mute, whatever layers were active reamin active and
+	// can be restarted by publisher immediately on unmute.
+	//
+	// Note that while publisher mute is active, subscriber changes can also happen
+	// and that could not turn on/off layers on publisher side.
 	//
 	if !isPub && d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
 		notifyLayer := InvalidLayerSpatial

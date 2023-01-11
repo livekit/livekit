@@ -214,6 +214,7 @@ func (s *StreamTrackerManager) IsPaused() bool {
 }
 
 func (s *StreamTrackerManager) SetMaxExpectedSpatialLayer(layer int32) int32 {
+	// RAJA-TODO: if not removing layers from available when paused, make sure that tracker reset is done properly from here.
 	s.lock.Lock()
 	prev := s.maxExpectedLayer
 	if layer <= s.maxExpectedLayer {
@@ -225,9 +226,9 @@ func (s *StreamTrackerManager) SetMaxExpectedSpatialLayer(layer int32) int32 {
 
 	//
 	// Some higher layer is expected to start.
-	// If the layer was not stopped (i.e. it will still be in available layers),
+	// If the layer was not detected as stopped (i.e. it is still in available layers),
 	// don't need to do anything. If not, reset the stream tracker so that
-	// the layer is declared available on the first packet
+	// the layer is declared available on the first packet.
 	//
 	// NOTE: There may be a race between checking if a layer is available and
 	// resetting the tracker, i.e. the track may stop just after checking.

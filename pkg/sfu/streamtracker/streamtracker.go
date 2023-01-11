@@ -153,19 +153,21 @@ func (s *StreamTracker) resetLocked() {
 }
 
 func (s *StreamTracker) SetPaused(paused bool) {
-	s.lock.Lock()
-	s.paused = paused
-	if !paused {
-		s.resetLocked()
-	} else {
-		// bump generation to trigger exit of current worker
-		s.generation.Inc()
+	/*
+		s.lock.Lock()
+		s.paused = paused
+		if !paused {
+			s.resetLocked()
+		} else {
+			// bump generation to trigger exit of current worker
+			s.generation.Inc()
 
-		s.setStatusLocked(StreamStatusStopped)
-	}
-	s.lock.Unlock()
+			s.setStatusLocked(StreamStatusStopped)
+		}
+		s.lock.Unlock()
 
-	s.maybeNotifyStatus()
+		s.maybeNotifyStatus()
+	*/
 }
 
 func (s *StreamTracker) Observe(
@@ -177,7 +179,7 @@ func (s *StreamTracker) Observe(
 ) {
 	s.lock.Lock()
 
-	if s.isStopped || s.paused || payloadSize == 0 {
+	if s.isStopped /* || s.paused */ || payloadSize == 0 {
 		s.lock.Unlock()
 		return
 	}
@@ -273,6 +275,7 @@ func (s *StreamTracker) bitrateReport() {
 		s.bitrate[i] = bitrate
 		s.bytesForBitrate[i] = 0
 	}
+	s.params.Logger.Debugw("RAJA bitrates", "bitrate", s.bitrate) // REMOVE
 	s.lock.Unlock()
 
 	if bitrateAvailabilityChanged && s.onBitrateAvailable != nil {

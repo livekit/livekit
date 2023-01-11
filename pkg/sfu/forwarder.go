@@ -359,11 +359,14 @@ func (f *Forwarder) PubMute(pubMuted bool) (bool, VideoLayers) {
 	f.logger.Debugw("setting forwarder pub mute", "pubMuted", pubMuted)
 	f.pubMuted = pubMuted
 
+	/* RAJA-REMOVE
 	// resync when muted so that sequence numbers do not jump on unmute
 	// RAJA-TODO: this resync should not be required as publisher can restart
 	if pubMuted {
 		f.resyncLocked()
 	}
+	*/
+	// do not resync on publisher mute as forwarding can continue on unmute using same layers
 
 	return true, f.maxLayers
 }
@@ -637,6 +640,7 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 	case f.muted:
 		alloc.state = VideoAllocationStateMuted
 
+	// RAJA-TODO: should not set target to InvalidLayers on `pubMute`, should let it continue on the existing layer
 	case f.pubMuted:
 		alloc.state = VideoAllocationStatePubMuted
 
@@ -1394,9 +1398,9 @@ func (f *Forwarder) CheckSync() (locked bool, layer int32) {
 	defer f.lock.RUnlock()
 
 	// RAJA-TODO: check for changes needed with opportunistic forwarding
+	// RAJA-TODO: do not report out-of-sync if muted, especially pubMuted which might park at previous layers
 	layer = f.targetLayers.Spatial
 	locked = f.targetLayers.Spatial == f.currentLayers.Spatial
-
 	return
 }
 
@@ -1434,8 +1438,7 @@ func (f *Forwarder) GetTranslationParams(extPkt *buffer.ExtPacket, layer int32) 
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	// RAJA-TODO: maybe intentionally do not drop on publisher only mute as media from pub could start before signal message comes through and we can latch on to existing layer
-	if f.muted {
+	if f.muted || f.pubMuted {
 		return &TranslationParams{
 			shouldDrop: true,
 		}, nil

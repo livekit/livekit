@@ -560,6 +560,7 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64) *ExtPack
 		if b.rtpStats != nil {
 			b.rtpStats.UpdateKeyFrame(1)
 		}
+		b.logger.Debugw("RAJA received key frame") // REMOVE
 	}
 
 	return ep
