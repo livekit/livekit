@@ -69,6 +69,8 @@ func (p *PublicationMonitor) PostEvent(ome types.OperationMonitorEvent, omd type
 }
 
 func (p *PublicationMonitor) addPending(trackType string) {
+	prometheus.AddPublishAttempt(trackType)
+
 	p.lock.Lock()
 	p.desiredPublishes.PushBack(
 		&publish{
@@ -84,8 +86,6 @@ func (p *PublicationMonitor) addPending(trackType string) {
 	)
 	p.update()
 	p.lock.Unlock()
-
-	prometheus.AddPublishAttempt(trackType)
 }
 
 func (p *PublicationMonitor) maybeStartMonitor() {

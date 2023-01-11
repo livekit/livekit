@@ -75,6 +75,10 @@ func (s *SubscriptionMonitor) PostEvent(ome types.OperationMonitorEvent, omd typ
 }
 
 func (s *SubscriptionMonitor) updateSubscription(params SubscriptionOpParams) {
+	if params.IsSubscribe {
+		prometheus.AddSubscribeAttempt(params.SourceTrack.Kind().String())
+	}
+
 	s.lock.Lock()
 
 	so := s.getOrCreateSubscriptionOpsForSource(params.SourceTrack)
@@ -86,10 +90,6 @@ func (s *SubscriptionMonitor) updateSubscription(params SubscriptionOpParams) {
 	)
 	s.update()
 	s.lock.Unlock()
-
-	if params.IsSubscribe && params.SourceTrack != nil {
-		prometheus.AddSubscribeAttempt(params.SourceTrack.Kind().String())
-	}
 }
 
 func (s *SubscriptionMonitor) setSubscribedTrack(params UpdateSubscribedTrackParams) {
