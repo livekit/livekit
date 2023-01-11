@@ -51,6 +51,8 @@ const (
 	flushTimeout        = 1 * time.Second
 
 	maxPadding = 2000
+
+	precedingPacketsAfterSwitchUptrack = 25
 )
 
 var (
@@ -160,6 +162,7 @@ type DownTrack struct {
 	listenerLock            sync.RWMutex
 	isClosed                atomic.Bool
 	connected               atomic.Bool
+	uptrackSwitched         atomic.Bool
 
 	rtpStats *buffer.RTPStats
 
@@ -277,6 +280,7 @@ func NewDownTrack(
 func (d *DownTrack) ResetReceiver(r TrackReceiver) {
 	d.receiverLock.Lock()
 	d.receiver = r
+	d.uptrackSwitched.Store(true)
 	d.receiverLock.Unlock()
 	// TODO: log stats
 }
@@ -473,6 +477,35 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		return nil
 	}
 
+	if d.kind == webrtc.RTPCodecTypeAudio && d.uptrackSwitched.CompareAndSwap(true, false) {
+		// uptrack switched, need to send pre-activation packets
+		d.logger.Debugw("uptrack switched, sending pre-activation packets")
+		preBuf := PacketFactory.Get().(*[]byte)
+		defer PacketFactory.Put(preBuf)
+		readRTPBuff := *preBuf
+		for i := precedingPacketsAfterSwitchUptrack; i > 0; i-- {
+			n, err := d.getReceiver().ReadRTP(readRTPBuff, uint8(layer), extPkt.Packet.SequenceNumber-uint16(i))
+			if err != nil {
+				d.logger.Debugw("failed to read pre-activation packet", "error", err)
+				continue
+			}
+
+			var rtpPkt rtp.Packet
+			if err = rtpPkt.Unmarshal(readRTPBuff[:n]); err != nil {
+				d.logger.Debugw("failed to unmarshal pre-activation packet", "error", err)
+				continue
+			}
+
+			arrivalTime := extPkt.Arrival - int64(extPkt.Packet.Timestamp-rtpPkt.Timestamp)*1e9/int64(d.codec.ClockRate)
+			if err = d.WriteRTP(&buffer.ExtPacket{
+				Packet:  &rtpPkt,
+				Arrival: arrivalTime,
+			}, layer); err != nil {
+				d.logger.Debugw("failed to write pre-activation packet", "error", err)
+			}
+		}
+	}
+
 	tp, err := d.forwarder.GetTranslationParams(extPkt, layer)
 	if tp.shouldDrop {
 		if tp.isDroppingRelevant {
@@ -653,6 +686,9 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 
 // Mute enables or disables media forwarding
 func (d *DownTrack) Mute(muted bool) {
+	if d == nil {
+		return
+	}
 	changed, maxLayers := d.forwarder.Mute(muted)
 	if !changed {
 		return

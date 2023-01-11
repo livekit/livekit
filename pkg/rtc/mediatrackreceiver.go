@@ -730,7 +730,8 @@ func (t *MediaTrackReceiver) GetAudioLevel() (float64, bool) {
 		return 0, false
 	}
 
-	return receiver.GetAudioLevel()
+	level, _, active := receiver.GetAudioLevel()
+	return level, active
 }
 
 func (t *MediaTrackReceiver) onDownTrackCreated(downTrack *sfu.DownTrack) {

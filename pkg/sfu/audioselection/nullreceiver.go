@@ -38,8 +38,8 @@ func (r *NullReceiver) ReadRTP(buf []byte, layer uint8, sn uint16) (int, error) 
 func (r *NullReceiver) GetLayeredBitrate() sfu.Bitrates {
 	return sfu.Bitrates{}
 }
-func (r *NullReceiver) GetAudioLevel() (float64, bool) {
-	return 0, false
+func (r *NullReceiver) GetAudioLevel() (smooth, loudest float64, active bool) {
+	return 0, 0, false
 }
 func (r *NullReceiver) SendPLI(layer int32, force bool) {
 }

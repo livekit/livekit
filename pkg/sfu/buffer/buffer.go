@@ -698,12 +698,12 @@ func (b *Buffer) GetDeltaStats() *StreamStatsWithLayers {
 	}
 }
 
-func (b *Buffer) GetAudioLevel() (float64, bool) {
+func (b *Buffer) GetAudioLevel() (smooth, loudest float64, active bool) {
 	b.RLock()
 	defer b.RUnlock()
 
 	if b.audioLevel == nil {
-		return 0, false
+		return 0, 0, false
 	}
 
 	return b.audioLevel.GetLevel()

@@ -146,7 +146,7 @@ func (f *SelectionForwarder) updateForward() {
 	}
 
 	for _, source := range f.sources {
-		source.audioLevel, _ = source.receiver.GetAudioLevel()
+		source.audioLevel, _, _ = source.receiver.GetAudioLevel()
 	}
 
 	sort.Slice(f.sources, func(i, j int) bool {

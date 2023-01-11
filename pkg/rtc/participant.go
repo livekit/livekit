@@ -40,7 +40,7 @@ const (
 	disconnectCleanupDuration = 15 * time.Second
 	migrationWaitDuration     = 3 * time.Second
 
-	muxAudioTracks = 3
+	muxAudioTracks = 1
 )
 
 type pendingTrackInfo struct {
@@ -201,7 +201,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 			params.Telemetry),
 		supervisor: supervisor.NewParticipantSupervisor(supervisor.ParticipantSupervisorParams{Logger: params.Logger}),
 		audioForwarder: audioselection.NewSelectionForwarder(audioselection.SelectionForwarderParams{
-			ActiveDowntracks:     3,
+			ActiveDowntracks:     muxAudioTracks,
 			Logger:               params.Logger,
 			ActiveLevelThreshold: audio.ConvertAudioLevel(35),
 		}),

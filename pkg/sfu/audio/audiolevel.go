@@ -86,10 +86,14 @@ func (l *AudioLevel) Observe(level uint8, durationMs uint32) {
 }
 
 // returns current soothed audio level
-func (l *AudioLevel) GetLevel() (float64, bool) {
+func (l *AudioLevel) GetLevel() (smooth, loudest float64, active bool) {
 	smoothedLevel := l.smoothedLevel.Load()
-	active := smoothedLevel >= l.activeThreshold
-	return smoothedLevel, active
+	active = smoothedLevel >= l.activeThreshold
+	return smoothedLevel, ConvertAudioLevel(float64(l.loudestObservedLevel)), active
+}
+
+func (l *AudioLevel) GetLoudestLevel() uint8 {
+	return l.loudestObservedLevel
 }
 
 // convert decibel back to linear

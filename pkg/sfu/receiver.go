@@ -40,7 +40,7 @@ type TrackReceiver interface {
 	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
 	GetLayeredBitrate() Bitrates
 
-	GetAudioLevel() (float64, bool)
+	GetAudioLevel() (smooth, loudest float64, active bool)
 
 	SendPLI(layer int32, force bool)
 
@@ -470,9 +470,9 @@ func (w *WebRTCReceiver) GetTrackStats() *livekit.RTPStats {
 	return buffer.AggregateRTPStats(stats)
 }
 
-func (w *WebRTCReceiver) GetAudioLevel() (float64, bool) {
+func (w *WebRTCReceiver) GetAudioLevel() (smooth, loudest float64, active bool) {
 	if w.Kind() == webrtc.RTPCodecTypeVideo {
-		return 0, false
+		return 0, 0, false
 	}
 
 	w.bufferMu.RLock()
@@ -486,7 +486,7 @@ func (w *WebRTCReceiver) GetAudioLevel() (float64, bool) {
 		return buff.GetAudioLevel()
 	}
 
-	return 0, false
+	return 0, 0, false
 }
 
 func (w *WebRTCReceiver) getDeltaStats() map[uint32]*buffer.StreamStatsWithLayers {

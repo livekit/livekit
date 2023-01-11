@@ -193,11 +193,11 @@ func (d *DummyReceiver) GetLayeredBitrate() sfu.Bitrates {
 	return sfu.Bitrates{}
 }
 
-func (d *DummyReceiver) GetAudioLevel() (float64, bool) {
+func (d *DummyReceiver) GetAudioLevel() (smooth, loudest float64, active bool) {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		return r.GetAudioLevel()
 	}
-	return 0, false
+	return 0, 0, false
 }
 
 func (d *DummyReceiver) SendPLI(layer int32, force bool) {
