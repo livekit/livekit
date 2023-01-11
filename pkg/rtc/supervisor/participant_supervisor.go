@@ -7,7 +7,6 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -93,7 +92,7 @@ func (p *ParticipantSupervisor) SetPublisherPeerConnectionConnected(isConnected 
 	p.lock.Unlock()
 }
 
-func (p *ParticipantSupervisor) AddPublication(trackID livekit.TrackID) {
+func (p *ParticipantSupervisor) AddPublication(trackID livekit.TrackID, trackType livekit.TrackType) {
 	p.lock.Lock()
 	pm, ok := p.publications[trackID]
 	if !ok {
@@ -108,7 +107,7 @@ func (p *ParticipantSupervisor) AddPublication(trackID livekit.TrackID) {
 		}
 		p.publications[trackID] = pm
 	}
-	pm.opMon.PostEvent(types.OperationMonitorEventAddPendingPublication, nil)
+	pm.opMon.PostEvent(types.OperationMonitorEventAddPendingPublication, trackType.String())
 	p.lock.Unlock()
 }
 
@@ -156,10 +155,6 @@ func (p *ParticipantSupervisor) UpdateSubscription(trackID livekit.TrackID, isSu
 		},
 	)
 	p.lock.Unlock()
-
-	if isSubscribe {
-		prometheus.AddSubscribeAttempt(sourceTrack.Kind().String(), true)
-	}
 }
 
 func (p *ParticipantSupervisor) SetSubscribedTrack(trackID livekit.TrackID, subTrack types.SubscribedTrack, sourceTrack types.MediaTrack) {

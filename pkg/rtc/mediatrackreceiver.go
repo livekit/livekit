@@ -19,7 +19,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/telemetry"
-	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
 const (
@@ -441,8 +440,6 @@ func (t *MediaTrackReceiver) addSubscriber(sub types.LocalParticipant) (err erro
 			t.removePendingSubscribeOp(sub.ID())
 		}
 	}()
-
-	prometheus.AddSubscribeAttempt(t.Kind().String())
 
 	t.lock.RLock()
 	if t.state != mediaTrackReceiverStateOpen {

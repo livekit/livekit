@@ -24,7 +24,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/livekit-server/pkg/telemetry"
-	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
@@ -590,7 +589,7 @@ func (p *ParticipantImpl) SetMigrateInfo(
 	for _, t := range mediaTracks {
 		ti := t.GetTrack()
 
-		p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
+		p.supervisor.AddPublication(livekit.TrackID(ti.Sid), ti.Type)
 		p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
 
 		p.pendingTracks[t.GetCid()] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}, migrated: true}
@@ -1235,9 +1234,6 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 	}
 
 	publishedTrack, isNewTrack := p.mediaTrackReceived(track, rtpReceiver)
-	if isNewTrack {
-		prometheus.AddPublishAttempt(track.Kind().String())
-	}
 
 	if publishedTrack != nil {
 		p.params.Logger.Infow("mediaTrack published",
@@ -1552,7 +1548,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	}
 
 	if p.getPublishedTrackBySignalCid(req.Cid) != nil || p.getPublishedTrackBySdpCid(req.Cid) != nil || p.pendingTracks[req.Cid] != nil {
-		p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
+		p.supervisor.AddPublication(livekit.TrackID(ti.Sid), ti.Type)
 		p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
 
 		if p.pendingTracks[req.Cid] == nil {
@@ -1564,7 +1560,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		return nil
 	}
 
-	p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
+	p.supervisor.AddPublication(livekit.TrackID(ti.Sid), ti.Type)
 	p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
 
 	p.pendingTracks[req.Cid] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}}

@@ -183,7 +183,6 @@ func (t *telemetryService) TrackPublished(
 ) {
 	t.enqueue(func() {
 		prometheus.AddPublishedTrack(track.Type.String())
-		prometheus.AddPublishAttempt(track.Type.String(), true)
 
 		roomID, roomName := t.getRoomDetails(participantID)
 		t.NotifyEvent(ctx, &livekit.WebhookEvent{
