@@ -234,6 +234,7 @@ type LocalParticipant interface {
 	State() livekit.ParticipantInfo_State
 	IsReady() bool
 	IsDisconnected() bool
+	IsIdle() bool
 	SubscriberAsPrimary() bool
 	GetClientConfiguration() *livekit.ClientConfiguration
 	GetICEConnectionType() ICEConnectionType
@@ -380,6 +381,7 @@ type MediaTrack interface {
 	RevokeDisallowedSubscribers(allowedSubscriberIdentities []livekit.ParticipantIdentity) []livekit.ParticipantIdentity
 	GetAllSubscribers() []livekit.ParticipantID
 	GetNumSubscribers() int
+	IsSubscribed() bool
 
 	// returns quality information that's appropriate for width & height
 	GetQualityForDimension(width, height uint32) livekit.VideoQuality
