@@ -9,29 +9,29 @@ import (
 
 type TimedVersion struct {
 	lock  sync.RWMutex
-	at    time.Time
+	ts    int64
 	ticks int32
 }
 
 func NewTimedVersion(at time.Time, ticks int32) *TimedVersion {
 	return &TimedVersion{
-		at:    at,
+		ts:    at.UnixMicro(),
 		ticks: ticks,
 	}
 }
 
-func NewTimedVersionFromProto(proto *livekit.TimedVersion) *TimedVersion {
+func NewTimedVersionFromProto(ptv *livekit.TimedVersion) *TimedVersion {
 	return &TimedVersion{
-		at:    time.UnixMicro(proto.UnixMicro),
-		ticks: proto.Ticks,
+		ts:    ptv.UnixMicro,
+		ticks: ptv.Ticks,
 	}
 }
 
-func (t *TimedVersion) Update(at time.Time) {
+func (t *TimedVersion) Update(other *TimedVersion) {
 	t.lock.Lock()
-	if at.After(t.at) {
-		t.at = at
-		t.ticks = 0
+	if other.After(t) {
+		t.ts = other.ts
+		t.ticks = other.ticks
 	} else {
 		t.ticks++
 	}
@@ -42,11 +42,11 @@ func (t *TimedVersion) After(other *TimedVersion) bool {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 
-	if t.at.Equal(other.at) {
+	if t.ts == other.ts {
 		return t.ticks > other.ticks
 	}
 
-	return t.at.After(other.at)
+	return t.ts > other.ts
 }
 
 func (t *TimedVersion) ToProto() *livekit.TimedVersion {
@@ -54,7 +54,7 @@ func (t *TimedVersion) ToProto() *livekit.TimedVersion {
 	defer t.lock.RUnlock()
 
 	return &livekit.TimedVersion{
-		UnixMicro: t.at.UnixMicro(),
+		UnixMicro: t.ts,
 		Ticks:     t.ticks,
 	}
 }

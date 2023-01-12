@@ -221,16 +221,17 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 				u.lock.Unlock()
 				return nil
 			}
-			u.subscriptionPermissionVersion.Update(time.UnixMicro(timedVersion.UnixMicro))
+			u.subscriptionPermissionVersion.Update(tv)
 		} else {
 			u.subscriptionPermissionVersion = utils.NewTimedVersionFromProto(timedVersion)
 		}
 	} else {
+		tv := utils.NewTimedVersion(time.Now(), 0)
 		// use current time as the new/updated version
 		if u.subscriptionPermissionVersion == nil {
-			u.subscriptionPermissionVersion = utils.NewTimedVersion(time.Now(), 0)
+			u.subscriptionPermissionVersion = tv
 		} else {
-			u.subscriptionPermissionVersion.Update(time.Now())
+			u.subscriptionPermissionVersion.Update(tv)
 		}
 	}
 
