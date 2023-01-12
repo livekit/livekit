@@ -269,6 +269,23 @@ func (p *ParticipantImpl) IsDisconnected() bool {
 	return p.State() == livekit.ParticipantInfo_DISCONNECTED
 }
 
+func (p *ParticipantImpl) IsIdle() bool {
+	// check if there are any published tracks that are subscribed
+	for _, t := range p.GetPublishedTracks() {
+		if t.IsSubscribed() {
+			return false
+		}
+	}
+
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	// check if participant is subscribed to any tracks
+	if len(p.subscribedTracks) != 0 || len(p.subscriptionInProgress) != 0 || len(p.subscriptionRequestsQueue) != 0 {
+		return false
+	}
+	return true
+}
+
 func (p *ParticipantImpl) ConnectedAt() time.Time {
 	return p.connectedAt
 }
