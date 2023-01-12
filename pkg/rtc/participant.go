@@ -24,6 +24,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/livekit-server/pkg/telemetry"
+	utils2 "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
@@ -90,6 +91,7 @@ type ParticipantParams struct {
 	GetParticipantInfo           func(pID livekit.ParticipantID) *livekit.ParticipantInfo
 	ReconnectOnPublicationError  bool
 	ReconnectOnSubscriptionError bool
+	VersionGenerator             utils2.TimedVersionGenerator
 }
 
 type ParticipantImpl struct {
@@ -1191,8 +1193,9 @@ func (p *ParticipantImpl) setupTransportManager() error {
 
 func (p *ParticipantImpl) setupUpTrackManager() {
 	p.UpTrackManager = NewUpTrackManager(UpTrackManagerParams{
-		SID:    p.params.SID,
-		Logger: p.params.Logger,
+		SID:              p.params.SID,
+		Logger:           p.params.Logger,
+		VersionGenerator: p.params.VersionGenerator,
 	})
 
 	p.UpTrackManager.OnPublishedTrackUpdated(func(track types.MediaTrack, onlyIfReady bool) {
