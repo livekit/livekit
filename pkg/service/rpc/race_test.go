@@ -36,6 +36,20 @@ func TestRaceError(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestRaceContextCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	r := rpc.NewRace[raceTestValue](ctx)
+	r.Go(func(ctx context.Context) (*raceTestValue, error) {
+		time.Sleep(time.Millisecond)
+		return nil, nil
+	})
+	i, res, err := r.Wait()
+	require.EqualValues(t, -1, i)
+	require.Nil(t, res)
+	require.ErrorIs(t, err, ctx.Err())
+}
+
 func TestRaceMany(t *testing.T) {
 	r := rpc.NewRace[raceTestValue](context.Background())
 	for i := 0; i < 5; i++ {
