@@ -2,8 +2,7 @@ package rpc
 
 import (
 	"context"
-	"sync/atomic"
-	"unsafe"
+	"sync"
 )
 
 type raceResult[T any] struct {
@@ -16,7 +15,9 @@ type Race[T any] struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
 	nextIndex int
-	res       unsafe.Pointer
+
+	resultLock sync.Mutex
+	result     *raceResult[T]
 }
 
 // NewRace creates a race to yield the result from one or more candidate
@@ -36,7 +37,13 @@ func (r *Race[T]) Go(fn func(ctx context.Context) (*T, error)) {
 
 	go func() {
 		val, err := fn(r.ctx)
-		atomic.CompareAndSwapPointer(&r.res, nil, (unsafe.Pointer)(&raceResult[T]{i, val, err}))
+
+		r.resultLock.Lock()
+		if r.result == nil {
+			r.result = &raceResult[T]{i, val, err}
+		}
+		r.resultLock.Unlock()
+
 		r.cancel()
 	}()
 }
@@ -45,8 +52,12 @@ func (r *Race[T]) Go(fn func(ctx context.Context) (*T, error)) {
 // or -1 if the context is cancelled before any candidate finishes.
 func (r *Race[T]) Wait() (int, *T, error) {
 	<-r.ctx.Done()
-	if r := (*raceResult[T])(atomic.LoadPointer(&r.res)); r != nil {
-		return r.i, r.val, r.err
+
+	r.resultLock.Lock()
+	res := r.result
+	r.resultLock.Unlock()
+	if res != nil {
+		return res.i, res.val, res.err
 	}
 	return -1, nil, r.ctx.Err()
 }
