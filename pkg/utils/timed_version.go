@@ -7,17 +7,45 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
-type TimedVersion struct {
-	lock  sync.RWMutex
+type TimedVersionGenerator interface {
+	New() *TimedVersion
+}
+
+func NewDefaultTimedVersionGenerator() TimedVersionGenerator {
+	return &timedVersionGenerator{}
+}
+
+type timedVersionGenerator struct {
+	lock  sync.Mutex
 	ts    int64
 	ticks int32
 }
 
-func NewTimedVersion(at time.Time, ticks int32) *TimedVersion {
+func (g *timedVersionGenerator) New() *TimedVersion {
+	ts := time.Now().UnixMicro()
+	var ticks int32
+
+	g.lock.Lock()
+	if ts <= g.ts {
+		g.ticks++
+		ts = g.ts
+		ticks = g.ticks
+	} else {
+		g.ts = ts
+		g.ticks = 0
+	}
+	g.lock.Unlock()
+
 	return &TimedVersion{
-		ts:    at.UnixMicro(),
+		ts:    ts,
 		ticks: ticks,
 	}
+}
+
+type TimedVersion struct {
+	lock  sync.RWMutex
+	ts    int64
+	ticks int32
 }
 
 func NewTimedVersionFromProto(ptv *livekit.TimedVersion) *TimedVersion {
@@ -32,8 +60,6 @@ func (t *TimedVersion) Update(other *TimedVersion) {
 	if other.After(t) {
 		t.ts = other.ts
 		t.ticks = other.ticks
-	} else {
-		t.ticks++
 	}
 	t.lock.Unlock()
 }

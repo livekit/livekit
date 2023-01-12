@@ -14,6 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/livekit-server/pkg/service/rpc"
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/ingress"
@@ -61,6 +62,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		NewLocalRoomManager,
 		newTurnAuthHandler,
 		newInProcessTurnServer,
+		utils.NewDefaultTimedVersionGenerator,
 		NewLivekitServer,
 	)
 	return &LivekitServer{}, nil

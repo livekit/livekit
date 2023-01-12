@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -13,7 +14,8 @@ import (
 )
 
 var defaultUptrackManagerParams = UpTrackManagerParams{
-	Logger: logger.GetLogger(),
+	Logger:           logger.GetLogger(),
+	VersionGenerator: utils.NewDefaultTimedVersionGenerator(),
 }
 
 func TestUpdateSubscriptionPermission(t *testing.T) {
