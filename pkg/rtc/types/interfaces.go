@@ -220,6 +220,7 @@ const (
 
 type AddTrackParams struct {
 	Stereo bool
+	Red    bool
 }
 
 //counterfeiter:generate . LocalParticipant
