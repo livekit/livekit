@@ -83,7 +83,7 @@ func (s *IOInfoService) UpdateEgressInfo(ctx context.Context, info *livekit.Egre
 			info.EndedAt = time.Now().UnixNano()
 		}
 
-		if err := s.es.UpdateEgress(context.Background(), info); err != nil {
+		if err := s.es.UpdateEgress(ctx, info); err != nil {
 			logger.Errorw("could not update egress", err)
 			return nil, err
 		}
@@ -95,10 +95,10 @@ func (s *IOInfoService) UpdateEgressInfo(ctx context.Context, info *livekit.Egre
 			logger.Infow("egress ended", "egressID", info.EgressId)
 		}
 
-		s.telemetry.EgressEnded(context.Background(), info)
+		s.telemetry.EgressEnded(ctx, info)
 
 	default:
-		if err := s.es.UpdateEgress(context.Background(), info); err != nil {
+		if err := s.es.UpdateEgress(ctx, info); err != nil {
 			logger.Errorw("could not update egress", err)
 			return nil, err
 		}
