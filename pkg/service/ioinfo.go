@@ -57,15 +57,17 @@ func NewIOInfoService(
 }
 
 func (s *IOInfoService) Start() error {
-	rs := s.es.(*RedisStore)
-	err := rs.Start()
-	if err != nil {
-		logger.Errorw("failed to start redis egress worker", err)
-		return err
-	}
+	if s.es != nil {
+		rs := s.es.(*RedisStore)
+		err := rs.Start()
+		if err != nil {
+			logger.Errorw("failed to start redis egress worker", err)
+			return err
+		}
 
-	go s.egressWorkerDeprecated()
-	go s.ingressWorkerDeprecated()
+		go s.egressWorkerDeprecated()
+		go s.ingressWorkerDeprecated()
+	}
 
 	return nil
 }
