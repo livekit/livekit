@@ -25,6 +25,7 @@ var (
 	retransmitBytes   atomic.Uint64
 	retransmitPackets atomic.Uint64
 	participantJoin   atomic.Uint64
+	participantRTC    atomic.Uint64
 
 	promPacketLabels    = []string{"direction", "transmission"}
 	promPacketTotal     *prometheus.CounterVec
@@ -73,7 +74,7 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 		Subsystem:   "participant_join",
 		Name:        "total",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
-	}, nil)
+	}, []string{"state"})
 	promConnections = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "connection",
@@ -133,10 +134,15 @@ func IncrementRTCP(direction Direction, nack, pli, fir uint32) {
 	}
 }
 
-func IncrementParticipantJoin(join uint32) {
+func IncrementParticipantJoin(join uint32, rtcConnected ...bool) {
 	if join > 0 {
-		promParticipantJoin.WithLabelValues().Add(float64(join))
-		participantJoin.Add(uint64(join))
+		if len(rtcConnected) > 0 && rtcConnected[0] {
+			participantRTC.Add(uint64(join))
+			promParticipantJoin.WithLabelValues("rtc_connected").Add(float64(join))
+		} else {
+			participantJoin.Add(uint64(join))
+			promParticipantJoin.WithLabelValues("signal_connected").Add(float64(join))
+		}
 	}
 }
 

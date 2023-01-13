@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package rpc;
+
+option go_package = "github.com/livekit/livekit/pkg/service/rpc";
+
+import "livekit_rpc_internal.proto";
+
+service IOInfo {
+  rpc GetIngressInfo(livekit.GetIngressInfoRequest) returns (livekit.GetIngressInfoResponse);
+  rpc UpdateIngressState(livekit.UpdateIngressStateRequest) returns (Ignored);
+}
+
+message Ignored {}

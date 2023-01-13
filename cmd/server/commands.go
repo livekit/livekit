@@ -171,17 +171,18 @@ func listNodes(c *cli.Context) error {
 	table.SetHeader([]string{
 		"ID", "IP Address", "Region",
 		"CPUs", "CPU Usage\nLoad Avg",
+		"Memory Used/Total",
 		"Rooms", "Clients\nTracks In/Out",
-		"Bytes/s In/Out\nBytes Total", "Packets/s In/Out\nPackets Total", "System Dropped Pkts/s\nPkts/s Out / Dropped",
+		"Bytes/s In/Out\nBytes Total", "Packets/s In/Out\nPackets Total", "System Dropped Pkts/s\nPkts/s Out/Dropped",
 		"Nack/s\nNack Total", "Retrans/s\nRetrans Total",
 		"Started At\nUpdated At",
 	})
 	table.SetColumnAlignment([]int{
 		tablewriter.ALIGN_CENTER, tablewriter.ALIGN_CENTER, tablewriter.ALIGN_CENTER,
 		tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT,
+		tablewriter.ALIGN_RIGHT,
 		tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT,
-		tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT,
-		tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT,
+		tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT,
 		tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT,
 		tablewriter.ALIGN_CENTER,
 	})
@@ -196,6 +197,7 @@ func listNodes(c *cli.Context) error {
 		cpus := strconv.Itoa(int(stats.NumCpus))
 		cpuUsageAndLoadAvg := fmt.Sprintf("%.2f %%\n%.2f %.2f %.2f", stats.CpuLoad*100,
 			stats.LoadAvgLast1Min, stats.LoadAvgLast5Min, stats.LoadAvgLast15Min)
+		memUsage := fmt.Sprintf("%s / %s", humanize.Bytes(stats.MemoryUsed), humanize.Bytes(stats.MemoryTotal))
 
 		// Room stats
 		rooms := strconv.Itoa(int(stats.NumRooms))
@@ -217,6 +219,7 @@ func listNodes(c *cli.Context) error {
 		table.Append([]string{
 			idAndState, node.Ip, node.Region,
 			cpus, cpuUsageAndLoadAvg,
+			memUsage,
 			rooms, clientsAndTracks,
 			bytes, packets, sysPackets,
 			nacks, retransmit,

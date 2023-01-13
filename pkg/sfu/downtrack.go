@@ -16,7 +16,6 @@ import (
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
 
-	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -1212,12 +1211,10 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				}
 				rr.Reports = append(rr.Reports, r)
 
-				rtt := mediatransportutil.GetRttMs(&r)
-				if rtt != d.rtpStats.GetRtt() {
+				rtt, isRttChanged := d.rtpStats.UpdateFromReceiverReport(r)
+				if isRttChanged {
 					rttToReport = rtt
 				}
-
-				d.rtpStats.UpdateFromReceiverReport(r, rtt)
 			}
 			if len(rr.Reports) > 0 {
 				d.listenerLock.RLock()

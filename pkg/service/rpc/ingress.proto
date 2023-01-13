@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package rpc;
+
+option go_package = "github.com/livekit/livekit/pkg/service/rpc";
+
+import "options.proto";
+import "livekit_ingress.proto";
+
+service IngressInternal {
+  rpc ListActiveIngress(ListActiveIngressRequest) returns (ListActiveIngressResponse) {
+    option (psrpc.options).multi = true;
+  };
+}
+
+service IngressHandler {
+  rpc UpdateIngress(livekit.UpdateIngressRequest) returns (livekit.IngressState) {
+    option (psrpc.options).topics = true;
+  };
+  rpc DeleteIngress(livekit.DeleteIngressRequest) returns (livekit.IngressState) {
+    option (psrpc.options).topics = true;
+  };
+}
+
+message ListActiveIngressRequest {}
+
+message ListActiveIngressResponse {
+  repeated string ingress_ids = 1;
+}

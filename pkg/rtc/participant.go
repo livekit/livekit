@@ -24,6 +24,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/livekit-server/pkg/telemetry"
+	utils2 "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
@@ -90,6 +91,7 @@ type ParticipantParams struct {
 	GetParticipantInfo           func(pID livekit.ParticipantID) *livekit.ParticipantInfo
 	ReconnectOnPublicationError  bool
 	ReconnectOnSubscriptionError bool
+	VersionGenerator             utils2.TimedVersionGenerator
 }
 
 type ParticipantImpl struct {
@@ -267,6 +269,23 @@ func (p *ParticipantImpl) IsReady() bool {
 
 func (p *ParticipantImpl) IsDisconnected() bool {
 	return p.State() == livekit.ParticipantInfo_DISCONNECTED
+}
+
+func (p *ParticipantImpl) IsIdle() bool {
+	// check if there are any published tracks that are subscribed
+	for _, t := range p.GetPublishedTracks() {
+		if t.IsSubscribed() {
+			return false
+		}
+	}
+
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	// check if participant is subscribed to any tracks
+	if len(p.subscribedTracks) != 0 || len(p.subscriptionInProgress) != 0 || len(p.subscriptionRequestsQueue) != 0 {
+		return false
+	}
+	return true
 }
 
 func (p *ParticipantImpl) ConnectedAt() time.Time {
@@ -589,7 +608,7 @@ func (p *ParticipantImpl) SetMigrateInfo(
 	for _, t := range mediaTracks {
 		ti := t.GetTrack()
 
-		p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
+		p.supervisor.AddPublication(livekit.TrackID(ti.Sid), ti.Type)
 		p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
 
 		p.pendingTracks[t.GetCid()] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}, migrated: true}
@@ -1174,8 +1193,9 @@ func (p *ParticipantImpl) setupTransportManager() error {
 
 func (p *ParticipantImpl) setupUpTrackManager() {
 	p.UpTrackManager = NewUpTrackManager(UpTrackManagerParams{
-		SID:    p.params.SID,
-		Logger: p.params.Logger,
+		SID:              p.params.SID,
+		Logger:           p.params.Logger,
+		VersionGenerator: p.params.VersionGenerator,
 	})
 
 	p.UpTrackManager.OnPublishedTrackUpdated(func(track types.MediaTrack, onlyIfReady bool) {
@@ -1548,7 +1568,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	}
 
 	if p.getPublishedTrackBySignalCid(req.Cid) != nil || p.getPublishedTrackBySdpCid(req.Cid) != nil || p.pendingTracks[req.Cid] != nil {
-		p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
+		p.supervisor.AddPublication(livekit.TrackID(ti.Sid), ti.Type)
 		p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
 
 		if p.pendingTracks[req.Cid] == nil {
@@ -1560,7 +1580,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		return nil
 	}
 
-	p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
+	p.supervisor.AddPublication(livekit.TrackID(ti.Sid), ti.Type)
 	p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
 
 	p.pendingTracks[req.Cid] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}}

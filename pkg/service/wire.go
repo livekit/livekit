@@ -14,6 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/livekit-server/pkg/service/rpc"
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/ingress"
@@ -51,6 +52,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		NewEgressLauncher,
 		NewEgressService,
 		ingress.NewRedisRPC,
+		getIngressClient,
 		getIngressStore,
 		getIngressConfig,
 		getIngressRPCClient,
@@ -61,6 +63,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		NewLocalRoomManager,
 		newTurnAuthHandler,
 		newInProcessTurnServer,
+		utils.NewDefaultTimedVersionGenerator,
 		NewLivekitServer,
 	)
 	return &LivekitServer{}, nil
@@ -156,6 +159,14 @@ func getEgressStore(s ObjectStore) EgressStore {
 	default:
 		return nil
 	}
+}
+
+func getIngressClient(conf *config.Config, nodeID livekit.NodeID, bus psrpc.MessageBus) (rpc.IngressClient, error) {
+	if conf.Ingress.UsePsRPC {
+		return rpc.NewIngressClient(nodeID, bus)
+	}
+
+	return nil, nil
 }
 
 func getIngressStore(s ObjectStore) IngressStore {
