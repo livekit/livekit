@@ -249,6 +249,11 @@ func NewDownTrack(
 		codec:          codecs[0].RTPCodecCapability,
 	}
 	d.forwarder = NewForwarder(d.kind, d.logger, d.receiver.GetReferenceLayerRTPTimestamp)
+	d.forwarder.OnParkedLayersExpired(func() {
+		if d.onSubscriptionChanged != nil {
+			d.onSubscriptionChanged(d)
+		}
+	})
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
 		MimeType:      codecs[0].MimeType, // LK-TODO have to notify on codec change
@@ -407,6 +412,7 @@ func (d *DownTrack) GetTransceiver() *webrtc.RTPTransceiver {
 }
 
 func (d *DownTrack) maybeStartKeyFrameRequester() {
+	// RAJA-TODO: make sure this does not go crazy with opportunistic forwarding, i. e. opportunistic forwarding should not leave current and target different forcing this to keep asking for key frames.
 	//
 	// Always move to next generation to abandon any running key frame requester
 	// This ensures that it is stopped if forwarding is disabled due to mute
