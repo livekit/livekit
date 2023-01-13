@@ -24,9 +24,6 @@ service EgressHandler {
   rpc StopEgress(livekit.StopEgressRequest) returns (livekit.EgressInfo) {
     option (psrpc.options).topics = true;
   }
-  rpc InfoUpdate(Empty) returns (livekit.EgressInfo) {
-    option (psrpc.options).subscription = true;
-  }
 }
 
 message Empty {}

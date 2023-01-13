@@ -19,7 +19,7 @@ require (
 	github.com/livekit/mageutil v0.0.0-20221221221243-f361fbe40290
 	github.com/livekit/mediatransportutil v0.0.0-20230111071722-904079e94a7c
 	github.com/livekit/protocol v1.3.2-0.20230111195642-abfad31c5f93
-	github.com/livekit/psrpc v0.2.1
+	github.com/livekit/psrpc v0.2.3
 	github.com/livekit/rtcscore-go v0.0.0-20220815072451-20ee10ae1995
 	github.com/mackerelio/go-osstat v0.2.3
 	github.com/magefile/mage v1.14.0
@@ -100,8 +100,8 @@ require (
 	golang.org/x/sys v0.3.0 // indirect
 	golang.org/x/text v0.5.0 // indirect
 	golang.org/x/tools v0.1.12 // indirect
-	google.golang.org/genproto v0.0.0-20200825200019-8632dd797987 // indirect
-	google.golang.org/grpc v1.51.0 // indirect
+	google.golang.org/genproto v0.0.0-20221118155620-16455021b5e6 // indirect
+	google.golang.org/grpc v1.52.0 // indirect
 	gopkg.in/square/go-jose.v2 v2.6.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
