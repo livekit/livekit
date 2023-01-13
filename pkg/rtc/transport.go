@@ -220,10 +220,6 @@ type TransportParams struct {
 
 func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimator cc.BandwidthEstimator)) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
 	directionConfig := params.DirectionConfig
-	// enable nack if audio red is not support
-	if !isCodecEnabled(params.EnabledCodecs, webrtc.RTPCodecCapability{MimeType: sfu.MimeTypeAudioRed}) || !params.ClientInfo.SupportsAudioRED() {
-		directionConfig.RTCPFeedback.Audio = append(directionConfig.RTCPFeedback.Audio, webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBNACK})
-	}
 
 	me, err := createMediaEngine(params.EnabledCodecs, directionConfig)
 	if err != nil {
@@ -273,7 +269,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 		if len(nat1to1Ips) > 0 {
 			params.Logger.Infow("client doesn't support prflx over relay, use external ip only as host candidate", "ips", nat1to1Ips)
 			se.SetNAT1To1IPs(nat1to1Ips, webrtc.ICECandidateTypeHost)
-			se.SetIPFilter(func (ip net.IP) bool {
+			se.SetIPFilter(func(ip net.IP) bool {
 				ipstr := ip.String()
 				for _, inc := range includeIps {
 					if inc == ipstr {
@@ -627,7 +623,7 @@ func (t *PCTransport) AddTrack(trackLocal webrtc.TrackLocal, params types.AddTra
 		return
 	}
 
-	configureTransceiverStereo(transceiver, params.Stereo)
+	configureAudioTransceiver(transceiver, params.Stereo, !params.Red || !t.params.ClientInfo.SupportsAudioRED())
 
 	return
 }
@@ -644,7 +640,7 @@ func (t *PCTransport) AddTransceiverFromTrack(trackLocal webrtc.TrackLocal, para
 		return
 	}
 
-	configureTransceiverStereo(transceiver, params.Stereo)
+	configureAudioTransceiver(transceiver, params.Stereo, !params.Red || !t.params.ClientInfo.SupportsAudioRED())
 
 	return
 }
@@ -1766,8 +1762,8 @@ func (t *PCTransport) handleICERestart(e *event) error {
 	return t.doICERestart()
 }
 
-// configure subscriber tranceiver for audio stereo
-func configureTransceiverStereo(tr *webrtc.RTPTransceiver, stereo bool) {
+// configure subscriber tranceiver for audio stereo and nack
+func configureAudioTransceiver(tr *webrtc.RTPTransceiver, stereo bool, nack bool) {
 	sender := tr.Sender()
 	if sender == nil {
 		return
@@ -1780,6 +1776,9 @@ func configureTransceiverStereo(tr *webrtc.RTPTransceiver, stereo bool) {
 			c.SDPFmtpLine = strings.ReplaceAll(c.SDPFmtpLine, ";sprop-stereo=1", "")
 			if stereo {
 				c.SDPFmtpLine += ";sprop-stereo=1"
+			}
+			if nack {
+				c.RTCPFeedback = append(c.RTCPFeedback, webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBNACK})
 			}
 		}
 		configCodecs = append(configCodecs, c)
