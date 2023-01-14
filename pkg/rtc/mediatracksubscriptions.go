@@ -229,7 +229,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		}
 	}
 
-	// wthether re-using or stopping remove transceiver from cache
+	// whether re-using or stopping remove transceiver from cache
 	// NOTE: safety net, if somehow a cached transceiver is re-used by a different track
 	sub.UncacheDownTrack(transceiver)
 
@@ -258,15 +258,6 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		}
 	}()
 
-	t.params.Telemetry.TrackSubscribed(
-		context.Background(),
-		subscriberID,
-		t.params.MediaTrack.ToProto(),
-		&livekit.ParticipantInfo{
-			Sid:      string(t.params.MediaTrack.PublisherID()),
-			Identity: string(t.params.MediaTrack.PublisherIdentity()),
-		},
-	)
 	return nil
 }
 

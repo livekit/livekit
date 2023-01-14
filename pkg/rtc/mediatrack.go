@@ -277,12 +277,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 				t.params.Logger.Debugw("primary codec published, set potential codecs", "potential", potentialCodecs)
 				t.MediaTrackReceiver.SetPotentialCodecs(potentialCodecs, parameters.HeaderExtensions)
 			}
-			t.params.Telemetry.TrackPublished(
-				context.Background(),
-				t.PublisherID(),
-				t.PublisherIdentity(),
-				t.ToProto(),
-			)
 		}
 
 		newWR.OnMaxLayerChange(t.onMaxLayerChange)

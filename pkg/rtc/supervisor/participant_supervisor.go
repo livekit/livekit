@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	monitorInterval = 3 * time.Second
+	monitorInterval = 1 * time.Second
 )
 
 type ParticipantSupervisorParams struct {
@@ -92,7 +92,7 @@ func (p *ParticipantSupervisor) SetPublisherPeerConnectionConnected(isConnected 
 	p.lock.Unlock()
 }
 
-func (p *ParticipantSupervisor) AddPublication(trackID livekit.TrackID, trackType livekit.TrackType) {
+func (p *ParticipantSupervisor) AddPublication(trackID livekit.TrackID, trackType livekit.TrackType, onSuccess func(track types.LocalMediaTrack)) {
 	p.lock.Lock()
 	pm, ok := p.publications[trackID]
 	if !ok {
@@ -102,6 +102,7 @@ func (p *ParticipantSupervisor) AddPublication(trackID livekit.TrackID, trackTyp
 					TrackID:                   trackID,
 					IsPeerConnectionConnected: p.isPublisherConnected,
 					Logger:                    p.params.Logger,
+					OnSuccess:                 onSuccess,
 				},
 			),
 		}
