@@ -457,7 +457,7 @@ func Test_OnUpstreamRTCP_SeveralTracks(t *testing.T) {
 	require.True(t, found2)
 
 	// remove 1 track - track stats were flushed above, so no more calls to SendStats
-	fixture.sut.TrackUnpublished(context.Background(), partSID, identity, &livekit.TrackInfo{Sid: string(trackID2)}, 0)
+	fixture.sut.TrackUnpublished(context.Background(), partSID, identity, &livekit.TrackInfo{Sid: string(trackID2)}, true)
 
 	// flush
 	fixture.flush()

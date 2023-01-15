@@ -247,13 +247,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 				if t.dynacastManager != nil {
 					t.dynacastManager.Close()
 				}
-				t.params.Telemetry.TrackUnpublished(
-					context.Background(),
-					t.PublisherID(),
-					t.PublisherIdentity(),
-					t.ToProto(),
-					uint32(track.SSRC()),
-				)
 			}
 		})
 		newWR.OnStatsUpdate(func(_ *sfu.WebRTCReceiver, stat *livekit.AnalyticsStat) {
@@ -277,12 +270,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 				t.params.Logger.Debugw("primary codec published, set potential codecs", "potential", potentialCodecs)
 				t.MediaTrackReceiver.SetPotentialCodecs(potentialCodecs, parameters.HeaderExtensions)
 			}
-			t.params.Telemetry.TrackPublished(
-				context.Background(),
-				t.PublisherID(),
-				t.PublisherIdentity(),
-				t.ToProto(),
-			)
 		}
 
 		newWR.OnMaxLayerChange(t.onMaxLayerChange)

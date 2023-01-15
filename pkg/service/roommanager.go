@@ -248,6 +248,7 @@ func (r *RoomManager) StartSession(
 				logger.Warnw("could not resume participant", err, "participant", pi.Identity)
 				return err
 			}
+			r.telemetry.ParticipantResumed(ctx, room.ToProto(), participant.ToProto(), livekit.NodeID(r.currentNode.Id))
 			go r.rtcSessionWorker(room, participant, requestSource)
 			return nil
 		} else {
