@@ -302,10 +302,13 @@ func (t *telemetryService) TrackUnpublished(
 	participantID livekit.ParticipantID,
 	identity livekit.ParticipantIdentity,
 	track *livekit.TrackInfo,
-	ssrc uint32,
+	shouldSendEvent bool,
 ) {
 	t.enqueue(func() {
 		prometheus.SubPublishedTrack(track.Type.String())
+		if !shouldSendEvent {
+			return
+		}
 
 		room := t.getRoomDetails(participantID)
 		if room == nil {

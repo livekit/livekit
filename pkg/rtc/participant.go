@@ -1783,6 +1783,17 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 	mt.AddOnClose(func() {
 		p.supervisor.ClearPublishedTrack(livekit.TrackID(ti.Sid), mt)
 
+		// not logged when closing
+		if !p.isClosed.Load() {
+			p.params.Telemetry.TrackUnpublished(
+				context.Background(),
+				p.ID(),
+				p.Identity(),
+				mt.ToProto(),
+			)
+		}
+		p.MigrateState()
+
 		// re-use track sid
 		p.pendingTracksLock.Lock()
 		if pti := p.pendingTracks[signalCid]; pti != nil {
