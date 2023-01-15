@@ -180,7 +180,9 @@ func (t *telemetryService) TrackPublishRequested(
 	t.enqueue(func() {
 		prometheus.AddPublishAttempt(track.Type.String())
 		room := t.getRoomDetails(participantID)
-
+		if room == nil {
+			return
+		}
 		ev := newTrackEvent(livekit.AnalyticsEventType_TRACK_PUBLISH_REQUESTED, room, participantID, track)
 		ev.Participant.Identity = string(identity)
 		t.SendEvent(ctx, ev)
@@ -198,6 +200,9 @@ func (t *telemetryService) TrackPublished(
 		prometheus.AddPublishSuccess(track.Type.String())
 
 		room := t.getRoomDetails(participantID)
+		if room == nil {
+			return
+		}
 		participant := &livekit.ParticipantInfo{
 			Sid:      string(participantID),
 			Identity: string(identity),
@@ -217,11 +222,11 @@ func (t *telemetryService) TrackPublished(
 
 func (t *telemetryService) TrackPublishedUpdate(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
 	t.enqueue(func() {
-		ev := t.getRoomDetails(participantID)
-		if ev == nil {
+		room := t.getRoomDetails(participantID)
+		if room == nil {
 			return
 		}
-		t.SendEvent(ctx, newTrackEvent(livekit.AnalyticsEventType_TRACK_PUBLISHED_UPDATE, ev, participantID, track))
+		t.SendEvent(ctx, newTrackEvent(livekit.AnalyticsEventType_TRACK_PUBLISHED_UPDATE, room, participantID, track))
 	})
 }
 
@@ -234,6 +239,9 @@ func (t *telemetryService) TrackMaxSubscribedVideoQuality(
 ) {
 	t.enqueue(func() {
 		room := t.getRoomDetails(participantID)
+		if room == nil {
+			return
+		}
 		ev := newTrackEvent(livekit.AnalyticsEventType_TRACK_MAX_SUBSCRIBED_VIDEO_QUALITY, room, participantID, track)
 		ev.MaxSubscribedVideoQuality = maxQuality
 		ev.Mime = mime
@@ -249,6 +257,9 @@ func (t *telemetryService) TrackSubscribeRequested(
 ) {
 	t.enqueue(func() {
 		room := t.getRoomDetails(participantID)
+		if room == nil {
+			return
+		}
 		ev := newTrackEvent(livekit.AnalyticsEventType_TRACK_SUBSCRIBE_REQUESTED, room, participantID, track)
 		ev.Publisher = publisher
 		t.SendEvent(ctx, ev)
@@ -265,6 +276,9 @@ func (t *telemetryService) TrackSubscribed(
 		prometheus.AddSubscribedTrack(track.Type.String())
 
 		room := t.getRoomDetails(participantID)
+		if room == nil {
+			return
+		}
 		ev := newTrackEvent(livekit.AnalyticsEventType_TRACK_SUBSCRIBED, room, participantID, track)
 		ev.Publisher = publisher
 		t.SendEvent(ctx, ev)
@@ -276,6 +290,9 @@ func (t *telemetryService) TrackUnsubscribed(ctx context.Context, participantID 
 		prometheus.SubSubscribedTrack(track.Type.String())
 
 		room := t.getRoomDetails(participantID)
+		if room == nil {
+			return
+		}
 		t.SendEvent(ctx, newTrackEvent(livekit.AnalyticsEventType_TRACK_UNSUBSCRIBED, room, participantID, track))
 	})
 }
@@ -291,6 +308,9 @@ func (t *telemetryService) TrackUnpublished(
 		prometheus.SubPublishedTrack(track.Type.String())
 
 		room := t.getRoomDetails(participantID)
+		if room == nil {
+			return
+		}
 		participant := &livekit.ParticipantInfo{
 			Sid:      string(participantID),
 			Identity: string(identity),
@@ -313,6 +333,9 @@ func (t *telemetryService) TrackMuted(
 ) {
 	t.enqueue(func() {
 		room := t.getRoomDetails(participantID)
+		if room == nil {
+			return
+		}
 
 		t.SendEvent(ctx, newTrackEvent(livekit.AnalyticsEventType_TRACK_MUTED, room, participantID, track))
 	})
@@ -325,6 +348,9 @@ func (t *telemetryService) TrackUnmuted(
 ) {
 	t.enqueue(func() {
 		room := t.getRoomDetails(participantID)
+		if room == nil {
+			return
+		}
 
 		t.SendEvent(ctx, newTrackEvent(livekit.AnalyticsEventType_TRACK_UNMUTED, room, participantID, track))
 	})
