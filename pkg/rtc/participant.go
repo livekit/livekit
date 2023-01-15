@@ -608,7 +608,7 @@ func (p *ParticipantImpl) SetMigrateInfo(
 	for _, t := range mediaTracks {
 		ti := t.GetTrack()
 
-		p.supervisor.AddPublication(livekit.TrackID(ti.Sid), ti.Type, nil)
+		p.supervisor.AddPublication(livekit.TrackID(ti.Sid), nil)
 		p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
 
 		p.pendingTracks[t.GetCid()] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}, migrated: true}
@@ -1577,7 +1577,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	}
 
 	p.params.Telemetry.TrackPublishRequested(context.Background(), p.ID(), p.Identity(), ti)
-	p.supervisor.AddPublication(livekit.TrackID(ti.Sid), ti.Type, func(t types.LocalMediaTrack) {
+	p.supervisor.AddPublication(livekit.TrackID(ti.Sid), func(t types.LocalMediaTrack) {
 		p.params.Telemetry.TrackPublished(
 			context.Background(),
 			t.PublisherID(),
@@ -1790,6 +1790,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 				p.ID(),
 				p.Identity(),
 				mt.ToProto(),
+				true,
 			)
 		}
 		p.MigrateState()

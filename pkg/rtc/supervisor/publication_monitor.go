@@ -58,7 +58,7 @@ func (p *PublicationMonitor) PostEvent(ome types.OperationMonitorEvent, omd type
 	case types.OperationMonitorEventPublisherPeerConnectionConnected:
 		p.setConnected(omd.(bool))
 	case types.OperationMonitorEventAddPendingPublication:
-		p.addPending(omd.(string))
+		p.addPending()
 	case types.OperationMonitorEventSetPublicationMute:
 		p.setMute(omd.(bool))
 	case types.OperationMonitorEventSetPublishedTrack:
@@ -68,7 +68,7 @@ func (p *PublicationMonitor) PostEvent(ome types.OperationMonitorEvent, omd type
 	}
 }
 
-func (p *PublicationMonitor) addPending(trackType string) {
+func (p *PublicationMonitor) addPending() {
 	p.lock.Lock()
 	p.desiredPublishes.PushBack(
 		&publish{

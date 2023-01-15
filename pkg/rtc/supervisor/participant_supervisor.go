@@ -92,7 +92,7 @@ func (p *ParticipantSupervisor) SetPublisherPeerConnectionConnected(isConnected 
 	p.lock.Unlock()
 }
 
-func (p *ParticipantSupervisor) AddPublication(trackID livekit.TrackID, trackType livekit.TrackType, onSuccess func(track types.LocalMediaTrack)) {
+func (p *ParticipantSupervisor) AddPublication(trackID livekit.TrackID, onSuccess func(track types.LocalMediaTrack)) {
 	p.lock.Lock()
 	pm, ok := p.publications[trackID]
 	if !ok {
@@ -108,7 +108,7 @@ func (p *ParticipantSupervisor) AddPublication(trackID livekit.TrackID, trackTyp
 		}
 		p.publications[trackID] = pm
 	}
-	pm.opMon.PostEvent(types.OperationMonitorEventAddPendingPublication, trackType.String())
+	pm.opMon.PostEvent(types.OperationMonitorEventAddPendingPublication, nil)
 	p.lock.Unlock()
 }
 
