@@ -180,11 +180,10 @@ func (t *telemetryService) TrackPublishRequested(
 	t.enqueue(func() {
 		prometheus.AddPublishAttempt(track.Type.String())
 		room := t.getRoomDetails(participantID)
-		if room == nil {
-			return
-		}
 		ev := newTrackEvent(livekit.AnalyticsEventType_TRACK_PUBLISH_REQUESTED, room, participantID, track)
-		ev.Participant.Identity = string(identity)
+		if ev.Participant != nil {
+			ev.Participant.Identity = string(identity)
+		}
 		t.SendEvent(ctx, ev)
 	})
 }
@@ -200,9 +199,6 @@ func (t *telemetryService) TrackPublished(
 		prometheus.AddPublishSuccess(track.Type.String())
 
 		room := t.getRoomDetails(participantID)
-		if room == nil {
-			return
-		}
 		participant := &livekit.ParticipantInfo{
 			Sid:      string(participantID),
 			Identity: string(identity),
@@ -223,9 +219,6 @@ func (t *telemetryService) TrackPublished(
 func (t *telemetryService) TrackPublishedUpdate(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
 	t.enqueue(func() {
 		room := t.getRoomDetails(participantID)
-		if room == nil {
-			return
-		}
 		t.SendEvent(ctx, newTrackEvent(livekit.AnalyticsEventType_TRACK_PUBLISHED_UPDATE, room, participantID, track))
 	})
 }
@@ -239,9 +232,6 @@ func (t *telemetryService) TrackMaxSubscribedVideoQuality(
 ) {
 	t.enqueue(func() {
 		room := t.getRoomDetails(participantID)
-		if room == nil {
-			return
-		}
 		ev := newTrackEvent(livekit.AnalyticsEventType_TRACK_MAX_SUBSCRIBED_VIDEO_QUALITY, room, participantID, track)
 		ev.MaxSubscribedVideoQuality = maxQuality
 		ev.Mime = mime
@@ -257,9 +247,6 @@ func (t *telemetryService) TrackSubscribeRequested(
 ) {
 	t.enqueue(func() {
 		room := t.getRoomDetails(participantID)
-		if room == nil {
-			return
-		}
 		ev := newTrackEvent(livekit.AnalyticsEventType_TRACK_SUBSCRIBE_REQUESTED, room, participantID, track)
 		ev.Publisher = publisher
 		t.SendEvent(ctx, ev)
@@ -276,9 +263,6 @@ func (t *telemetryService) TrackSubscribed(
 		prometheus.AddSubscribedTrack(track.Type.String())
 
 		room := t.getRoomDetails(participantID)
-		if room == nil {
-			return
-		}
 		ev := newTrackEvent(livekit.AnalyticsEventType_TRACK_SUBSCRIBED, room, participantID, track)
 		ev.Publisher = publisher
 		t.SendEvent(ctx, ev)
@@ -290,9 +274,6 @@ func (t *telemetryService) TrackUnsubscribed(ctx context.Context, participantID 
 		prometheus.SubSubscribedTrack(track.Type.String())
 
 		room := t.getRoomDetails(participantID)
-		if room == nil {
-			return
-		}
 		t.SendEvent(ctx, newTrackEvent(livekit.AnalyticsEventType_TRACK_UNSUBSCRIBED, room, participantID, track))
 	})
 }
@@ -311,9 +292,6 @@ func (t *telemetryService) TrackUnpublished(
 		}
 
 		room := t.getRoomDetails(participantID)
-		if room == nil {
-			return
-		}
 		participant := &livekit.ParticipantInfo{
 			Sid:      string(participantID),
 			Identity: string(identity),
@@ -336,10 +314,6 @@ func (t *telemetryService) TrackMuted(
 ) {
 	t.enqueue(func() {
 		room := t.getRoomDetails(participantID)
-		if room == nil {
-			return
-		}
-
 		t.SendEvent(ctx, newTrackEvent(livekit.AnalyticsEventType_TRACK_MUTED, room, participantID, track))
 	})
 }
@@ -351,10 +325,6 @@ func (t *telemetryService) TrackUnmuted(
 ) {
 	t.enqueue(func() {
 		room := t.getRoomDetails(participantID)
-		if room == nil {
-			return
-		}
-
 		t.SendEvent(ctx, newTrackEvent(livekit.AnalyticsEventType_TRACK_UNMUTED, room, participantID, track))
 	})
 }
@@ -395,18 +365,23 @@ func (t *telemetryService) getRoomDetails(participantID livekit.ParticipantID) *
 }
 
 func newRoomEvent(event livekit.AnalyticsEventType, room *livekit.Room) *livekit.AnalyticsEvent {
-	return &livekit.AnalyticsEvent{
+	ev := &livekit.AnalyticsEvent{
 		Type:      event,
 		Timestamp: timestamppb.Now(),
-		RoomId:    room.Sid,
-		Room:      room,
 	}
+	if room != nil {
+		ev.Room = room
+		ev.RoomId = room.Sid
+	}
+	return ev
 }
 
 func newParticipantEvent(event livekit.AnalyticsEventType, room *livekit.Room, participant *livekit.ParticipantInfo) *livekit.AnalyticsEvent {
 	ev := newRoomEvent(event, room)
-	ev.ParticipantId = participant.Sid
-	ev.Participant = participant
+	if participant != nil {
+		ev.ParticipantId = participant.Sid
+		ev.Participant = participant
+	}
 	return ev
 }
 
@@ -414,8 +389,10 @@ func newTrackEvent(event livekit.AnalyticsEventType, room *livekit.Room, partici
 	ev := newParticipantEvent(event, room, &livekit.ParticipantInfo{
 		Sid: string(participantID),
 	})
-	ev.TrackId = track.Sid
-	ev.Track = track
+	if track != nil {
+		ev.TrackId = track.Sid
+		ev.Track = track
+	}
 	return ev
 }
 
