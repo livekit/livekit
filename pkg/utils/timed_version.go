@@ -61,8 +61,6 @@ func (t *TimedVersion) Update(other *TimedVersion) {
 	if other.After(t) {
 		t.ts = other.ts
 		t.ticks = other.ticks
-	} else {
-
 	}
 	t.lock.Unlock()
 }
