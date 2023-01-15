@@ -129,14 +129,14 @@ func (t *telemetryService) ParticipantResumed(
 	ctx context.Context,
 	room *livekit.Room,
 	participant *livekit.ParticipantInfo,
+	nodeID livekit.NodeID,
 ) {
 	t.enqueue(func() {
-		if _, ok := t.getWorker(livekit.ParticipantID(participant.Sid)); !ok {
-			// only when participant is active on this instance
-			return
+		ev := newParticipantEvent(livekit.AnalyticsEventType_PARTICIPANT_RESUMED, room, participant)
+		ev.ClientMeta = &livekit.AnalyticsClientMeta{
+			Node: string(nodeID),
 		}
-
-		t.SendEvent(ctx, newParticipantEvent(livekit.AnalyticsEventType_PARTICIPANT_RESUMED, room, participant))
+		t.SendEvent(ctx, ev)
 	})
 }
 

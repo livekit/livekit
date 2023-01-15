@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -85,4 +86,11 @@ func (t *TimedVersion) ToProto() *livekit.TimedVersion {
 		UnixMicro: t.ts,
 		Ticks:     t.ticks,
 	}
+}
+
+func (t *TimedVersion) String() string {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return fmt.Sprintf("%d.%d", t.ts, t.ticks)
 }

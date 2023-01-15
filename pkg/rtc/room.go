@@ -369,7 +369,6 @@ func (r *Room) ResumeParticipant(p types.LocalParticipant, responseSink routing.
 		return err
 	}
 
-	r.telemetry.ParticipantResumed(context.Background(), r.ToProto(), p.ToProto())
 	p.ICERestart(nil)
 	return nil
 }

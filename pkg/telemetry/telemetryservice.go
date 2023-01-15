@@ -26,7 +26,7 @@ type TelemetryService interface {
 	// ParticipantActive - a participant establishes media connection
 	ParticipantActive(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientMeta *livekit.AnalyticsClientMeta)
 	// ParticipantResumed - there has been an ICE restart or connection resume attempt
-	ParticipantResumed(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo)
+	ParticipantResumed(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, nodeID livekit.NodeID)
 	// ParticipantLeft - the participant leaves the room, only sent if ParticipantActive has been called before
 	ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, shouldSendEvent bool)
 	// TrackPublishRequested - a publication attempt has been received
