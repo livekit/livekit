@@ -15,20 +15,39 @@ import (
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 . TelemetryService
 type TelemetryService interface {
-	// stats
+	// TrackStats is called periodically for each track in both directions (published/subscribed)
 	TrackStats(streamType livekit.StreamType, participantID livekit.ParticipantID, trackID livekit.TrackID, stat *livekit.AnalyticsStat)
 
 	// events
 	RoomStarted(ctx context.Context, room *livekit.Room)
 	RoomEnded(ctx context.Context, room *livekit.Room)
+	// ParticipantJoined - a participant establishes signal connection to a room
 	ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientInfo *livekit.ClientInfo, clientMeta *livekit.AnalyticsClientMeta, shouldSendEvent bool)
+	// ParticipantActive - a participant establishes media connection
 	ParticipantActive(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientMeta *livekit.AnalyticsClientMeta)
+	// ParticipantResumed - there has been an ICE restart or connection resume attempt
+	ParticipantResumed(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, nodeID livekit.NodeID)
+	// ParticipantLeft - the participant leaves the room, only sent if ParticipantActive has been called before
 	ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, shouldSendEvent bool)
+	// TrackPublishRequested - a publication attempt has been received
+	TrackPublishRequested(ctx context.Context, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo)
+	// TrackPublished - a publication attempt has been successful
 	TrackPublished(ctx context.Context, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo)
-	TrackUnpublished(ctx context.Context, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, ssrc uint32)
+	// TrackUnpublished - a participant unpublished a track
+	TrackUnpublished(ctx context.Context, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, shouldSendEvent bool)
+	// TrackSubscribeRequested - a participant requested to subscribe to a track
+	TrackSubscribeRequested(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, publisher *livekit.ParticipantInfo)
+	// TrackSubscribed - a participant subscribed to a track successfully
 	TrackSubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, publisher *livekit.ParticipantInfo)
+	// TrackUnsubscribed - a participant unsubscribed from a track successfully
 	TrackUnsubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
+	// TrackMuted - the publisher has muted the Track
+	TrackMuted(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
+	// TrackUnmuted - the publisher has muted the Track
+	TrackUnmuted(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
+	// TrackPublishedUpdate - track metadata has been updated
 	TrackPublishedUpdate(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
+	// TrackMaxSubscribedVideoQuality - publisher is notified of the max quality subscribers desire
 	TrackMaxSubscribedVideoQuality(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, mime string, maxQuality livekit.VideoQuality)
 	EgressStarted(ctx context.Context, info *livekit.EgressInfo)
 	EgressEnded(ctx context.Context, info *livekit.EgressInfo)

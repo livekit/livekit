@@ -4,14 +4,15 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/atomic"
+
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"go.uber.org/atomic"
 )
 
 const (
-	monitorInterval = 3 * time.Second
+	monitorInterval = 1 * time.Second
 )
 
 type ParticipantSupervisorParams struct {
@@ -91,7 +92,7 @@ func (p *ParticipantSupervisor) SetPublisherPeerConnectionConnected(isConnected 
 	p.lock.Unlock()
 }
 
-func (p *ParticipantSupervisor) AddPublication(trackID livekit.TrackID) {
+func (p *ParticipantSupervisor) AddPublication(trackID livekit.TrackID, onSuccess func(track types.LocalMediaTrack)) {
 	p.lock.Lock()
 	pm, ok := p.publications[trackID]
 	if !ok {
@@ -101,6 +102,7 @@ func (p *ParticipantSupervisor) AddPublication(trackID livekit.TrackID) {
 					TrackID:                   trackID,
 					IsPeerConnectionConnected: p.isPublisherConnected,
 					Logger:                    p.params.Logger,
+					OnSuccess:                 onSuccess,
 				},
 			),
 		}

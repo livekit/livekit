@@ -6,7 +6,9 @@ import (
 	"time"
 
 	"github.com/gammazero/deque"
+
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -73,6 +75,10 @@ func (s *SubscriptionMonitor) PostEvent(ome types.OperationMonitorEvent, omd typ
 }
 
 func (s *SubscriptionMonitor) updateSubscription(params SubscriptionOpParams) {
+	if params.IsSubscribe {
+		prometheus.AddSubscribeAttempt(params.SourceTrack.Kind().String())
+	}
+
 	s.lock.Lock()
 
 	so := s.getOrCreateSubscriptionOpsForSource(params.SourceTrack)
@@ -169,6 +175,10 @@ func (s *SubscriptionMonitor) update() {
 				// put it back as the condition is not satisfied
 				so.desiredTransitions.PushFront(tx)
 				break
+			}
+
+			if tx.isSubscribe && so.subscribedTrack != nil {
+				prometheus.AddSubscribeSuccess(so.subscribedTrack.MediaTrack().Kind().String())
 			}
 
 			if so.desiredTransitions.Len() == 0 && so.subscribedTrack == nil {

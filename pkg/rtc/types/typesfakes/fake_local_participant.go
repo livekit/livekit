@@ -378,6 +378,16 @@ type FakeLocalParticipant struct {
 	isDisconnectedReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	IsIdleStub        func() bool
+	isIdleMutex       sync.RWMutex
+	isIdleArgsForCall []struct {
+	}
+	isIdleReturns struct {
+		result1 bool
+	}
+	isIdleReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	IsPublisherStub        func() bool
 	isPublisherMutex       sync.RWMutex
 	isPublisherArgsForCall []struct {
@@ -2679,6 +2689,59 @@ func (fake *FakeLocalParticipant) IsDisconnectedReturnsOnCall(i int, result1 boo
 		})
 	}
 	fake.isDisconnectedReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) IsIdle() bool {
+	fake.isIdleMutex.Lock()
+	ret, specificReturn := fake.isIdleReturnsOnCall[len(fake.isIdleArgsForCall)]
+	fake.isIdleArgsForCall = append(fake.isIdleArgsForCall, struct {
+	}{})
+	stub := fake.IsIdleStub
+	fakeReturns := fake.isIdleReturns
+	fake.recordInvocation("IsIdle", []interface{}{})
+	fake.isIdleMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) IsIdleCallCount() int {
+	fake.isIdleMutex.RLock()
+	defer fake.isIdleMutex.RUnlock()
+	return len(fake.isIdleArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) IsIdleCalls(stub func() bool) {
+	fake.isIdleMutex.Lock()
+	defer fake.isIdleMutex.Unlock()
+	fake.IsIdleStub = stub
+}
+
+func (fake *FakeLocalParticipant) IsIdleReturns(result1 bool) {
+	fake.isIdleMutex.Lock()
+	defer fake.isIdleMutex.Unlock()
+	fake.IsIdleStub = nil
+	fake.isIdleReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) IsIdleReturnsOnCall(i int, result1 bool) {
+	fake.isIdleMutex.Lock()
+	defer fake.isIdleMutex.Unlock()
+	fake.IsIdleStub = nil
+	if fake.isIdleReturnsOnCall == nil {
+		fake.isIdleReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.isIdleReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
 }
@@ -5187,6 +5250,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.identityMutex.RUnlock()
 	fake.isDisconnectedMutex.RLock()
 	defer fake.isDisconnectedMutex.RUnlock()
+	fake.isIdleMutex.RLock()
+	defer fake.isIdleMutex.RUnlock()
 	fake.isPublisherMutex.RLock()
 	defer fake.isPublisherMutex.RUnlock()
 	fake.isReadyMutex.RLock()

@@ -68,7 +68,7 @@ func (t *telemetryService) ParticipantJoined(
 	shouldSendEvent bool,
 ) {
 	t.enqueue(func() {
-		prometheus.IncrementParticipantJoin(1)
+		prometheus.IncrementParticipantJoin(1, true)
 		prometheus.AddParticipant()
 
 		t.createWorker(
@@ -80,16 +80,10 @@ func (t *telemetryService) ParticipantJoined(
 		)
 
 		if shouldSendEvent {
-			t.SendEvent(ctx, &livekit.AnalyticsEvent{
-				Type:          livekit.AnalyticsEventType_PARTICIPANT_JOINED,
-				Timestamp:     timestamppb.Now(),
-				RoomId:        room.Sid,
-				ParticipantId: participant.Sid,
-				Participant:   participant,
-				Room:          room,
-				ClientInfo:    clientInfo,
-				ClientMeta:    clientMeta,
-			})
+			ev := newParticipantEvent(livekit.AnalyticsEventType_PARTICIPANT_JOINED, room, participant)
+			ev.ClientInfo = clientInfo
+			ev.ClientMeta = clientMeta
+			t.SendEvent(ctx, ev)
 		}
 	})
 }
@@ -125,15 +119,24 @@ func (t *telemetryService) ParticipantActive(
 		}
 		worker.SetConnected()
 
-		t.SendEvent(ctx, &livekit.AnalyticsEvent{
-			Type:          livekit.AnalyticsEventType_PARTICIPANT_ACTIVE,
-			Timestamp:     timestamppb.Now(),
-			RoomId:        room.Sid,
-			ParticipantId: participant.Sid,
-			Participant:   participant,
-			Room:          room,
-			ClientMeta:    clientMeta,
-		})
+		ev := newParticipantEvent(livekit.AnalyticsEventType_PARTICIPANT_ACTIVE, room, participant)
+		ev.ClientMeta = clientMeta
+		t.SendEvent(ctx, ev)
+	})
+}
+
+func (t *telemetryService) ParticipantResumed(
+	ctx context.Context,
+	room *livekit.Room,
+	participant *livekit.ParticipantInfo,
+	nodeID livekit.NodeID,
+) {
+	t.enqueue(func() {
+		ev := newParticipantEvent(livekit.AnalyticsEventType_PARTICIPANT_RESUMED, room, participant)
+		ev.ClientMeta = &livekit.AnalyticsClientMeta{
+			Node: string(nodeID),
+		}
+		t.SendEvent(ctx, ev)
 	})
 }
 
@@ -163,15 +166,25 @@ func (t *telemetryService) ParticipantLeft(ctx context.Context,
 				Participant: participant,
 			})
 
-			t.SendEvent(ctx, &livekit.AnalyticsEvent{
-				Type:          livekit.AnalyticsEventType_PARTICIPANT_LEFT,
-				Timestamp:     timestamppb.Now(),
-				RoomId:        room.Sid,
-				ParticipantId: participant.Sid,
-				Participant:   participant,
-				Room:          room,
-			})
+			t.SendEvent(ctx, newParticipantEvent(livekit.AnalyticsEventType_PARTICIPANT_LEFT, room, participant))
 		}
+	})
+}
+
+func (t *telemetryService) TrackPublishRequested(
+	ctx context.Context,
+	participantID livekit.ParticipantID,
+	identity livekit.ParticipantIdentity,
+	track *livekit.TrackInfo,
+) {
+	t.enqueue(func() {
+		prometheus.AddPublishAttempt(track.Type.String())
+		room := t.getRoomDetails(participantID)
+		ev := newTrackEvent(livekit.AnalyticsEventType_TRACK_PUBLISH_REQUESTED, room, participantID, track)
+		if ev.Participant != nil {
+			ev.Participant.Identity = string(identity)
+		}
+		t.SendEvent(ctx, ev)
 	})
 }
 
@@ -183,47 +196,30 @@ func (t *telemetryService) TrackPublished(
 ) {
 	t.enqueue(func() {
 		prometheus.AddPublishedTrack(track.Type.String())
+		prometheus.AddPublishSuccess(track.Type.String())
 
-		roomID, roomName := t.getRoomDetails(participantID)
+		room := t.getRoomDetails(participantID)
+		participant := &livekit.ParticipantInfo{
+			Sid:      string(participantID),
+			Identity: string(identity),
+		}
 		t.NotifyEvent(ctx, &livekit.WebhookEvent{
-			Event: webhook.EventTrackPublished,
-			Room: &livekit.Room{
-				Sid:  string(roomID),
-				Name: string(roomName),
-			},
-			Participant: &livekit.ParticipantInfo{
-				Sid:      string(participantID),
-				Identity: string(identity),
-			},
-			Track: track,
+			Event:       webhook.EventTrackPublished,
+			Room:        room,
+			Participant: participant,
+			Track:       track,
 		})
 
-		t.SendEvent(ctx, &livekit.AnalyticsEvent{
-			Type:          livekit.AnalyticsEventType_TRACK_PUBLISHED,
-			Timestamp:     timestamppb.Now(),
-			RoomId:        string(roomID),
-			ParticipantId: string(participantID),
-			Participant: &livekit.ParticipantInfo{
-				Sid:      string(participantID),
-				Identity: string(identity),
-			},
-			Track: track,
-			Room:  &livekit.Room{Name: string(roomName)},
-		})
+		ev := newTrackEvent(livekit.AnalyticsEventType_TRACK_PUBLISHED, room, participantID, track)
+		ev.Participant = participant
+		t.SendEvent(ctx, ev)
 	})
 }
 
 func (t *telemetryService) TrackPublishedUpdate(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
 	t.enqueue(func() {
-		roomID, roomName := t.getRoomDetails(participantID)
-		t.SendEvent(ctx, &livekit.AnalyticsEvent{
-			Type:          livekit.AnalyticsEventType_TRACK_PUBLISHED_UPDATE,
-			Timestamp:     timestamppb.Now(),
-			RoomId:        string(roomID),
-			ParticipantId: string(participantID),
-			Track:         track,
-			Room:          &livekit.Room{Name: string(roomName)},
-		})
+		room := t.getRoomDetails(participantID)
+		t.SendEvent(ctx, newTrackEvent(livekit.AnalyticsEventType_TRACK_PUBLISHED_UPDATE, room, participantID, track))
 	})
 }
 
@@ -235,17 +231,25 @@ func (t *telemetryService) TrackMaxSubscribedVideoQuality(
 	maxQuality livekit.VideoQuality,
 ) {
 	t.enqueue(func() {
-		roomID, roomName := t.getRoomDetails(participantID)
-		t.SendEvent(ctx, &livekit.AnalyticsEvent{
-			Type:                      livekit.AnalyticsEventType_TRACK_MAX_SUBSCRIBED_VIDEO_QUALITY,
-			Timestamp:                 timestamppb.Now(),
-			RoomId:                    string(roomID),
-			ParticipantId:             string(participantID),
-			Track:                     track,
-			Room:                      &livekit.Room{Name: string(roomName)},
-			MaxSubscribedVideoQuality: maxQuality,
-			Mime:                      mime,
-		})
+		room := t.getRoomDetails(participantID)
+		ev := newTrackEvent(livekit.AnalyticsEventType_TRACK_MAX_SUBSCRIBED_VIDEO_QUALITY, room, participantID, track)
+		ev.MaxSubscribedVideoQuality = maxQuality
+		ev.Mime = mime
+		t.SendEvent(ctx, ev)
+	})
+}
+
+func (t *telemetryService) TrackSubscribeRequested(
+	ctx context.Context,
+	participantID livekit.ParticipantID,
+	track *livekit.TrackInfo,
+	publisher *livekit.ParticipantInfo,
+) {
+	t.enqueue(func() {
+		room := t.getRoomDetails(participantID)
+		ev := newTrackEvent(livekit.AnalyticsEventType_TRACK_SUBSCRIBE_REQUESTED, room, participantID, track)
+		ev.Publisher = publisher
+		t.SendEvent(ctx, ev)
 	})
 }
 
@@ -258,16 +262,10 @@ func (t *telemetryService) TrackSubscribed(
 	t.enqueue(func() {
 		prometheus.AddSubscribedTrack(track.Type.String())
 
-		roomID, roomName := t.getRoomDetails(participantID)
-		t.SendEvent(ctx, &livekit.AnalyticsEvent{
-			Type:          livekit.AnalyticsEventType_TRACK_SUBSCRIBED,
-			Timestamp:     timestamppb.Now(),
-			RoomId:        string(roomID),
-			ParticipantId: string(participantID),
-			Track:         track,
-			Room:          &livekit.Room{Name: string(roomName)},
-			Publisher:     publisher,
-		})
+		room := t.getRoomDetails(participantID)
+		ev := newTrackEvent(livekit.AnalyticsEventType_TRACK_SUBSCRIBED, room, participantID, track)
+		ev.Publisher = publisher
+		t.SendEvent(ctx, ev)
 	})
 }
 
@@ -275,15 +273,8 @@ func (t *telemetryService) TrackUnsubscribed(ctx context.Context, participantID 
 	t.enqueue(func() {
 		prometheus.SubSubscribedTrack(track.Type.String())
 
-		roomID, roomName := t.getRoomDetails(participantID)
-		t.SendEvent(ctx, &livekit.AnalyticsEvent{
-			Type:          livekit.AnalyticsEventType_TRACK_UNSUBSCRIBED,
-			Timestamp:     timestamppb.Now(),
-			RoomId:        string(roomID),
-			ParticipantId: string(participantID),
-			TrackId:       track.Sid,
-			Room:          &livekit.Room{Name: string(roomName)},
-		})
+		room := t.getRoomDetails(participantID)
+		t.SendEvent(ctx, newTrackEvent(livekit.AnalyticsEventType_TRACK_UNSUBSCRIBED, room, participantID, track))
 	})
 }
 
@@ -292,34 +283,49 @@ func (t *telemetryService) TrackUnpublished(
 	participantID livekit.ParticipantID,
 	identity livekit.ParticipantIdentity,
 	track *livekit.TrackInfo,
-	ssrc uint32,
+	shouldSendEvent bool,
 ) {
 	t.enqueue(func() {
-		roomID, roomName := t.getRoomDetails(participantID)
-
 		prometheus.SubPublishedTrack(track.Type.String())
+		if !shouldSendEvent {
+			return
+		}
 
+		room := t.getRoomDetails(participantID)
+		participant := &livekit.ParticipantInfo{
+			Sid:      string(participantID),
+			Identity: string(identity),
+		}
 		t.NotifyEvent(ctx, &livekit.WebhookEvent{
-			Event: webhook.EventTrackUnpublished,
-			Room: &livekit.Room{
-				Sid:  string(roomID),
-				Name: string(roomName),
-			},
-			Participant: &livekit.ParticipantInfo{
-				Sid:      string(participantID),
-				Identity: string(identity),
-			},
-			Track: track,
+			Event:       webhook.EventTrackUnpublished,
+			Room:        room,
+			Participant: participant,
+			Track:       track,
 		})
 
-		t.SendEvent(ctx, &livekit.AnalyticsEvent{
-			Type:          livekit.AnalyticsEventType_TRACK_UNPUBLISHED,
-			Timestamp:     timestamppb.Now(),
-			RoomId:        string(roomID),
-			ParticipantId: string(participantID),
-			TrackId:       track.Sid,
-			Room:          &livekit.Room{Name: string(roomName)},
-		})
+		t.SendEvent(ctx, newTrackEvent(livekit.AnalyticsEventType_TRACK_UNPUBLISHED, room, participantID, track))
+	})
+}
+
+func (t *telemetryService) TrackMuted(
+	ctx context.Context,
+	participantID livekit.ParticipantID,
+	track *livekit.TrackInfo,
+) {
+	t.enqueue(func() {
+		room := t.getRoomDetails(participantID)
+		t.SendEvent(ctx, newTrackEvent(livekit.AnalyticsEventType_TRACK_MUTED, room, participantID, track))
+	})
+}
+
+func (t *telemetryService) TrackUnmuted(
+	ctx context.Context,
+	participantID livekit.ParticipantID,
+	track *livekit.TrackInfo,
+) {
+	t.enqueue(func() {
+		room := t.getRoomDetails(participantID)
+		t.SendEvent(ctx, newTrackEvent(livekit.AnalyticsEventType_TRACK_UNMUTED, room, participantID, track))
 	})
 }
 
@@ -330,13 +336,7 @@ func (t *telemetryService) EgressStarted(ctx context.Context, info *livekit.Egre
 			EgressInfo: info,
 		})
 
-		t.SendEvent(ctx, &livekit.AnalyticsEvent{
-			Type:      livekit.AnalyticsEventType_EGRESS_STARTED,
-			Timestamp: timestamppb.Now(),
-			EgressId:  info.EgressId,
-			RoomId:    info.RoomId,
-			Egress:    info,
-		})
+		t.SendEvent(ctx, newEgressEvent(livekit.AnalyticsEventType_EGRESS_STARTED, info))
 	})
 }
 
@@ -347,20 +347,61 @@ func (t *telemetryService) EgressEnded(ctx context.Context, info *livekit.Egress
 			EgressInfo: info,
 		})
 
-		t.SendEvent(ctx, &livekit.AnalyticsEvent{
-			Type:      livekit.AnalyticsEventType_EGRESS_ENDED,
-			Timestamp: timestamppb.Now(),
-			EgressId:  info.EgressId,
-			RoomId:    info.RoomId,
-			Egress:    info,
-		})
+		t.SendEvent(ctx, newEgressEvent(livekit.AnalyticsEventType_EGRESS_ENDED, info))
 	})
 }
 
-func (t *telemetryService) getRoomDetails(participantID livekit.ParticipantID) (livekit.RoomID, livekit.RoomName) {
+// returns a livekit.Room with only name and sid filled out
+// returns nil if room is not found
+func (t *telemetryService) getRoomDetails(participantID livekit.ParticipantID) *livekit.Room {
 	if worker, ok := t.getWorker(participantID); ok {
-		return worker.roomID, worker.roomName
+		return &livekit.Room{
+			Sid:  string(worker.roomID),
+			Name: string(worker.roomName),
+		}
 	}
 
-	return "", ""
+	return nil
+}
+
+func newRoomEvent(event livekit.AnalyticsEventType, room *livekit.Room) *livekit.AnalyticsEvent {
+	ev := &livekit.AnalyticsEvent{
+		Type:      event,
+		Timestamp: timestamppb.Now(),
+	}
+	if room != nil {
+		ev.Room = room
+		ev.RoomId = room.Sid
+	}
+	return ev
+}
+
+func newParticipantEvent(event livekit.AnalyticsEventType, room *livekit.Room, participant *livekit.ParticipantInfo) *livekit.AnalyticsEvent {
+	ev := newRoomEvent(event, room)
+	if participant != nil {
+		ev.ParticipantId = participant.Sid
+		ev.Participant = participant
+	}
+	return ev
+}
+
+func newTrackEvent(event livekit.AnalyticsEventType, room *livekit.Room, participantID livekit.ParticipantID, track *livekit.TrackInfo) *livekit.AnalyticsEvent {
+	ev := newParticipantEvent(event, room, &livekit.ParticipantInfo{
+		Sid: string(participantID),
+	})
+	if track != nil {
+		ev.TrackId = track.Sid
+		ev.Track = track
+	}
+	return ev
+}
+
+func newEgressEvent(event livekit.AnalyticsEventType, egress *livekit.EgressInfo) *livekit.AnalyticsEvent {
+	return &livekit.AnalyticsEvent{
+		Type:      event,
+		Timestamp: timestamppb.Now(),
+		EgressId:  egress.EgressId,
+		RoomId:    egress.RoomId,
+		Egress:    egress,
+	}
 }

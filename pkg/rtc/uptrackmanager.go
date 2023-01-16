@@ -3,7 +3,6 @@ package rtc
 import (
 	"errors"
 	"sync"
-	"time"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -17,10 +16,12 @@ var (
 )
 
 type UpTrackManagerParams struct {
-	SID    livekit.ParticipantID
-	Logger logger.Logger
+	SID              livekit.ParticipantID
+	Logger           logger.Logger
+	VersionGenerator utils.TimedVersionGenerator
 }
 
+// UpTrackManager manages all uptracks from a participant
 type UpTrackManager struct {
 	params UpTrackManagerParams
 
@@ -203,6 +204,10 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 ) error {
 	u.lock.Lock()
 	if timedVersion != nil {
+		// it's possible for permission updates to come from another node. In that case
+		// they would be the authority for this participant's permissions
+		// we do not want to initialize subscriptionPermissionVersion too early since if another machine is the
+		// owner for the data, we'd prefer to use their TimedVersion
 		if u.subscriptionPermissionVersion != nil {
 			tv := utils.NewTimedVersionFromProto(timedVersion)
 			// ignore older version
@@ -221,16 +226,18 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 				u.lock.Unlock()
 				return nil
 			}
-			u.subscriptionPermissionVersion.Update(time.UnixMicro(timedVersion.UnixMicro))
+			u.subscriptionPermissionVersion.Update(tv)
 		} else {
 			u.subscriptionPermissionVersion = utils.NewTimedVersionFromProto(timedVersion)
 		}
 	} else {
+		// for requests coming from the current node, use local versions
+		tv := u.params.VersionGenerator.New()
 		// use current time as the new/updated version
 		if u.subscriptionPermissionVersion == nil {
-			u.subscriptionPermissionVersion = utils.NewTimedVersion(time.Now(), 0)
+			u.subscriptionPermissionVersion = tv
 		} else {
-			u.subscriptionPermissionVersion.Update(time.Now())
+			u.subscriptionPermissionVersion.Update(tv)
 		}
 	}
 
