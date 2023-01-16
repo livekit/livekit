@@ -233,7 +233,7 @@ func (s *EgressService) UpdateLayout(ctx context.Context, req *livekit.UpdateLay
 	case nil:
 		// continue
 	case ErrRoomNotFound:
-		return nil, twirp.NewError(twirp.NotFound, err.Error())
+		return nil, twirp.NotFoundError(err.Error())
 	default:
 		return nil, err
 	}
@@ -330,7 +330,7 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 		case nil:
 			// continue
 		case ErrRoomNotFound:
-			return nil, twirp.NewError(twirp.NotFound, err.Error())
+			return nil, twirp.NotFoundError(err.Error())
 		default:
 			return nil, err
 		}
