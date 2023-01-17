@@ -150,12 +150,7 @@ func (s *EgressService) startEgress(ctx context.Context, roomName livekit.RoomNa
 
 	if roomName != "" {
 		room, _, err := s.store.LoadRoom(ctx, roomName, false)
-		switch err {
-		case nil:
-			// continue
-		case ErrRoomNotFound:
-			return nil, twirp.NotFoundError(err.Error())
-		default:
+		if err != nil {
 			return nil, err
 		}
 		req.RoomId = room.Sid
@@ -207,12 +202,7 @@ func (s *EgressService) UpdateLayout(ctx context.Context, req *livekit.UpdateLay
 	}
 
 	info, err := s.es.LoadEgress(ctx, req.EgressId)
-	switch err {
-	case nil:
-		// continue
-	case ErrRoomNotFound:
-		return nil, twirp.NotFoundError(err.Error())
-	default:
+	if err != nil {
 		return nil, err
 	}
 
@@ -308,14 +298,7 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 
 	info, err := s.es.LoadEgress(ctx, req.EgressId)
 	if err != nil {
-		switch err {
-		case nil:
-			// continue
-		case ErrRoomNotFound:
-			return nil, twirp.NotFoundError(err.Error())
-		default:
-			return nil, err
-		}
+		return nil, err
 	} else {
 		if info.Status != livekit.EgressStatus_EGRESS_STARTING &&
 			info.Status != livekit.EgressStatus_EGRESS_ACTIVE {
