@@ -4,11 +4,12 @@ package rpc;
 
 option go_package = "github.com/livekit/livekit/pkg/service/rpc";
 
+import "livekit_egress.proto";
 import "livekit_rpc_internal.proto";
+import "google/protobuf/empty.proto";
 
 service IOInfo {
+  rpc UpdateEgressInfo(livekit.EgressInfo) returns (google.protobuf.Empty);
   rpc GetIngressInfo(livekit.GetIngressInfoRequest) returns (livekit.GetIngressInfoResponse);
-  rpc UpdateIngressState(livekit.UpdateIngressStateRequest) returns (Ignored);
+  rpc UpdateIngressState(livekit.UpdateIngressStateRequest) returns (google.protobuf.Empty);
 }
-
-message Ignored {}
