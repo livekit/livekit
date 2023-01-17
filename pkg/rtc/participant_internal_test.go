@@ -10,6 +10,7 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/livekit-server/pkg/telemetry/telemetryfakes"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -481,6 +482,7 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 		ClientConf:        opts.clientConf,
 		ClientInfo:        ClientInfo{ClientInfo: opts.clientInfo},
 		Logger:            LoggerWithParticipant(logger.GetLogger(), identity, sid, false),
+		Telemetry:         &telemetryfakes.FakeTelemetryService{},
 	})
 	p.isPublisher.Store(opts.publisher)
 	p.updateState(livekit.ParticipantInfo_ACTIVE)

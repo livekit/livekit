@@ -8,7 +8,6 @@ import (
 	"github.com/gammazero/deque"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -29,6 +28,7 @@ type PublicationMonitorParams struct {
 	TrackID                   livekit.TrackID
 	IsPeerConnectionConnected bool
 	Logger                    logger.Logger
+	OnSuccess                 func(t types.LocalMediaTrack)
 }
 
 type PublicationMonitor struct {
@@ -58,7 +58,7 @@ func (p *PublicationMonitor) PostEvent(ome types.OperationMonitorEvent, omd type
 	case types.OperationMonitorEventPublisherPeerConnectionConnected:
 		p.setConnected(omd.(bool))
 	case types.OperationMonitorEventAddPendingPublication:
-		p.addPending(omd.(string))
+		p.addPending()
 	case types.OperationMonitorEventSetPublicationMute:
 		p.setMute(omd.(bool))
 	case types.OperationMonitorEventSetPublishedTrack:
@@ -68,9 +68,7 @@ func (p *PublicationMonitor) PostEvent(ome types.OperationMonitorEvent, omd type
 	}
 }
 
-func (p *PublicationMonitor) addPending(trackType string) {
-	prometheus.AddPublishAttempt(trackType)
-
+func (p *PublicationMonitor) addPending() {
 	p.lock.Lock()
 	p.desiredPublishes.PushBack(
 		&publish{
@@ -171,7 +169,9 @@ func (p *PublicationMonitor) update() {
 		}
 
 		if pub.isStart && p.publishedTrack != nil {
-			prometheus.AddPublishSuccess(p.publishedTrack.Kind().String())
+			if p.params.OnSuccess != nil {
+				p.params.OnSuccess(p.publishedTrack)
+			}
 		}
 
 		if (pub.isStart && p.publishedTrack == nil) || (!pub.isStart && p.publishedTrack != nil) {

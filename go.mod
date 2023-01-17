@@ -5,7 +5,7 @@ go 1.18
 require (
 	github.com/bep/debounce v1.2.1
 	github.com/d5/tengo/v2 v2.13.0
-	github.com/dustin/go-humanize v1.0.0
+	github.com/dustin/go-humanize v1.0.1
 	github.com/elliotchance/orderedmap/v2 v2.2.0
 	github.com/florianl/go-tc v0.4.2
 	github.com/gammazero/deque v0.1.0
