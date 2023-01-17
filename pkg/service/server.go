@@ -27,25 +27,25 @@ import (
 )
 
 type LivekitServer struct {
-	config         *config.Config
-	egressService  *EgressService
-	ingressService *IngressService
-	rtcService     *RTCService
-	httpServer     *http.Server
-	promServer     *http.Server
-	router         routing.Router
-	roomManager    *RoomManager
-	turnServer     *turn.Server
-	currentNode    routing.LocalNode
-	running        atomic.Bool
-	doneChan       chan struct{}
-	closedChan     chan struct{}
+	config      *config.Config
+	ioService   *IOInfoService
+	rtcService  *RTCService
+	httpServer  *http.Server
+	promServer  *http.Server
+	router      routing.Router
+	roomManager *RoomManager
+	turnServer  *turn.Server
+	currentNode routing.LocalNode
+	running     atomic.Bool
+	doneChan    chan struct{}
+	closedChan  chan struct{}
 }
 
 func NewLivekitServer(conf *config.Config,
 	roomService livekit.RoomService,
 	egressService *EgressService,
 	ingressService *IngressService,
+	ioService *IOInfoService,
 	rtcService *RTCService,
 	keyProvider auth.KeyProvider,
 	router routing.Router,
@@ -54,12 +54,11 @@ func NewLivekitServer(conf *config.Config,
 	currentNode routing.LocalNode,
 ) (s *LivekitServer, err error) {
 	s = &LivekitServer{
-		config:         conf,
-		egressService:  egressService,
-		ingressService: ingressService,
-		rtcService:     rtcService,
-		router:         router,
-		roomManager:    roomManager,
+		config:      conf,
+		ioService:   ioService,
+		rtcService:  rtcService,
+		router:      router,
+		roomManager: roomManager,
 		// turn server starts automatically
 		turnServer:  turnServer,
 		currentNode: currentNode,
@@ -154,11 +153,9 @@ func (s *LivekitServer) Start() error {
 		return err
 	}
 
-	if err := s.egressService.Start(); err != nil {
+	if err := s.ioService.Start(); err != nil {
 		return err
 	}
-
-	s.ingressService.Start()
 
 	addresses := s.config.BindAddresses
 	if addresses == nil {
@@ -248,8 +245,7 @@ func (s *LivekitServer) Start() error {
 	}
 
 	s.roomManager.Stop()
-	s.egressService.Stop()
-	s.ingressService.Stop()
+	s.ioService.Stop()
 
 	close(s.closedChan)
 	return nil
