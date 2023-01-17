@@ -240,6 +240,7 @@ func (s *IOInfoService) ingressWorkerDeprecated() {
 
 		case <-s.shutdown:
 			_ = updates.Close()
+			_ = entities.Close()
 			return
 		}
 	}

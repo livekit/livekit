@@ -26,8 +26,6 @@ service EgressHandler {
   }
 }
 
-message Empty {}
-
 message ListActiveEgressRequest {}
 
 message ListActiveEgressResponse {
