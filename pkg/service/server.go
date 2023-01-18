@@ -83,8 +83,9 @@ func NewLivekitServer(conf *config.Config,
 	}
 
 	twirpLoggingHook := TwirpLogger(logger.GetLogger())
+	twirpRequestStatusHook := TwirpRequestStatusReporter()
 	roomServer := livekit.NewRoomServiceServer(roomService, twirpLoggingHook)
-	egressServer := livekit.NewEgressServer(egressService, twirpLoggingHook)
+	egressServer := livekit.NewEgressServer(egressService, twirpLoggingHook, twirpRequestStatusHook)
 	ingressServer := livekit.NewIngressServer(ingressService, twirpLoggingHook)
 
 	mux := http.NewServeMux()
