@@ -608,7 +608,7 @@ func (p *ParticipantImpl) SetMigrateInfo(
 	for _, t := range mediaTracks {
 		ti := t.GetTrack()
 
-		p.supervisor.AddPublication(livekit.TrackID(ti.Sid), ti.Type)
+		p.supervisor.AddPublication(livekit.TrackID(ti.Sid), nil)
 		p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
 
 		p.pendingTracks[t.GetCid()] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}, migrated: true}
@@ -984,7 +984,16 @@ func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack, sou
 	onSubscribedTo := p.onSubscribedTo
 
 	p.subscribedTracks[subTrack.ID()] = subTrack
+	// TODO: I believe we have yet to negotiate with the subscriber, so it's a bit early to consider the track been
+	// successfully subscribed to
+	// ideally we consider it's successful after the participant has answered that offer OR we've received the
+	// first receiver report
+	// will move the telemetry options when this is implemented
 	p.supervisor.SetSubscribedTrack(subTrack.ID(), subTrack, sourceTrack)
+	p.params.Telemetry.TrackSubscribed(context.Background(), p.ID(), sourceTrack.ToProto(), &livekit.ParticipantInfo{
+		Identity: string(subTrack.PublisherIdentity()),
+		Sid:      string(subTrack.PublisherID()),
+	})
 
 	settings := p.subscribedTracksSettings[subTrack.ID()]
 	p.lock.Unlock()
@@ -1567,10 +1576,17 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		})
 	}
 
+	p.params.Telemetry.TrackPublishRequested(context.Background(), p.ID(), p.Identity(), ti)
+	p.supervisor.AddPublication(livekit.TrackID(ti.Sid), func(t types.LocalMediaTrack) {
+		p.params.Telemetry.TrackPublished(
+			context.Background(),
+			t.PublisherID(),
+			t.PublisherIdentity(),
+			t.ToProto(),
+		)
+	})
+	p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
 	if p.getPublishedTrackBySignalCid(req.Cid) != nil || p.getPublishedTrackBySdpCid(req.Cid) != nil || p.pendingTracks[req.Cid] != nil {
-		p.supervisor.AddPublication(livekit.TrackID(ti.Sid), ti.Type)
-		p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
-
 		if p.pendingTracks[req.Cid] == nil {
 			p.pendingTracks[req.Cid] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}}
 		} else {
@@ -1579,9 +1595,6 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		p.params.Logger.Infow("pending track queued", "trackID", ti.Sid, "track", ti.String(), "request", req.String())
 		return nil
 	}
-
-	p.supervisor.AddPublication(livekit.TrackID(ti.Sid), ti.Type)
-	p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
 
 	p.pendingTracks[req.Cid] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}}
 	p.params.Logger.Infow("pending track added", "trackID", ti.Sid, "track", ti.String(), "request", req.String())
@@ -1613,6 +1626,10 @@ func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) {
 	p.supervisor.SetPublicationMute(trackID, muted)
 
 	track := p.UpTrackManager.SetPublishedTrackMuted(trackID, muted)
+	var trackInfo *livekit.TrackInfo
+	if track != nil {
+		trackInfo = track.ToProto()
+	}
 
 	isPending := false
 	p.pendingTracksLock.RLock()
@@ -1621,10 +1638,19 @@ func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) {
 			if livekit.TrackID(ti.Sid) == trackID {
 				ti.Muted = muted
 				isPending = true
+				trackInfo = ti
 			}
 		}
 	}
 	p.pendingTracksLock.RUnlock()
+
+	if trackInfo != nil {
+		if muted {
+			p.params.Telemetry.TrackMuted(context.Background(), p.ID(), trackInfo)
+		} else {
+			p.params.Telemetry.TrackUnmuted(context.Background(), p.ID(), trackInfo)
+		}
+	}
 
 	if !isPending && track == nil {
 		p.params.Logger.Warnw("could not locate track", nil, "trackID", trackID)
@@ -1756,6 +1782,18 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 
 	mt.AddOnClose(func() {
 		p.supervisor.ClearPublishedTrack(livekit.TrackID(ti.Sid), mt)
+
+		// not logged when closing
+		if !p.isClosed.Load() {
+			p.params.Telemetry.TrackUnpublished(
+				context.Background(),
+				p.ID(),
+				p.Identity(),
+				mt.ToProto(),
+				true,
+			)
+		}
+		p.MigrateState()
 
 		// re-use track sid
 		p.pendingTracksLock.Lock()
@@ -2085,6 +2123,15 @@ func (p *ParticipantImpl) EnqueueSubscribeTrack(trackID livekit.TrackID, sourceT
 	p.params.Logger.Debugw("queuing subscribe", "trackID", trackID, "relayed", isRelayed)
 
 	p.supervisor.UpdateSubscription(trackID, true, sourceTrack)
+	p.params.Telemetry.TrackSubscribeRequested(
+		context.Background(),
+		p.ID(),
+		sourceTrack.ToProto(),
+		&livekit.ParticipantInfo{
+			Sid:      string(sourceTrack.PublisherID()),
+			Identity: string(sourceTrack.PublisherIdentity()),
+		},
+	)
 
 	p.lock.Lock()
 	p.subscriptionRequestsQueue[trackID] = append(p.subscriptionRequestsQueue[trackID], SubscribeRequest{

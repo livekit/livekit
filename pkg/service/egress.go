@@ -3,12 +3,8 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"reflect"
-	"time"
-
-	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/service/rpc"
@@ -28,7 +24,6 @@ type EgressService struct {
 	roomService      livekit.RoomService
 	telemetry        telemetry.TelemetryService
 	launcher         rtc.EgressLauncher
-	shutdown         chan struct{}
 }
 
 type egressLauncher struct {
@@ -73,23 +68,6 @@ func NewEgressService(
 		telemetry:        ts,
 		launcher:         launcher,
 	}
-}
-
-func (s *EgressService) Start() error {
-	if s.shutdown != nil {
-		return nil
-	}
-
-	s.shutdown = make(chan struct{})
-	if (s.psrpcClient != nil || s.clientDeprecated != nil) && s.es != nil {
-		return s.startWorker()
-	}
-
-	return nil
-}
-
-func (s *EgressService) Stop() {
-	close(s.shutdown)
 }
 
 func (s *EgressService) StartRoomCompositeEgress(ctx context.Context, req *livekit.RoomCompositeEgressRequest) (*livekit.EgressInfo, error) {
@@ -355,92 +333,4 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 	}()
 
 	return info, nil
-}
-
-func (s *EgressService) startWorker() error {
-	rs := s.es.(*RedisStore)
-	err := rs.Start()
-	if err != nil {
-		logger.Errorw("failed to start redis egress worker", err)
-		return err
-	}
-
-	if s.psrpcClient != nil {
-		go func() {
-			sub, err := s.psrpcClient.SubscribeInfoUpdate(context.Background())
-			if err != nil {
-				logger.Errorw("failed to subscribe", err)
-			}
-
-			for {
-				select {
-				case info := <-sub.Channel():
-					s.handleUpdate(info)
-				case <-s.shutdown:
-					_ = sub.Close()
-					return
-				}
-			}
-		}()
-	}
-
-	if s.clientDeprecated != nil {
-		go func() {
-			sub, err := s.clientDeprecated.GetUpdateChannel(context.Background())
-			if err != nil {
-				logger.Errorw("failed to subscribe to results channel", err)
-			}
-
-			resChan := sub.Channel()
-			for {
-				select {
-				case msg := <-resChan:
-					b := sub.Payload(msg)
-					info := &livekit.EgressInfo{}
-					if err = proto.Unmarshal(b, info); err != nil {
-						logger.Errorw("failed to read results", err)
-						continue
-					}
-					s.handleUpdate(info)
-				case <-s.shutdown:
-					_ = sub.Close()
-					rs.Stop()
-					return
-				}
-			}
-		}()
-	}
-
-	return nil
-}
-
-func (s *EgressService) handleUpdate(info *livekit.EgressInfo) {
-	switch info.Status {
-	case livekit.EgressStatus_EGRESS_COMPLETE,
-		livekit.EgressStatus_EGRESS_FAILED,
-		livekit.EgressStatus_EGRESS_ABORTED:
-
-		// make sure endedAt is set so it eventually gets deleted
-		if info.EndedAt == 0 {
-			info.EndedAt = time.Now().UnixNano()
-		}
-
-		if err := s.es.UpdateEgress(context.Background(), info); err != nil {
-			logger.Errorw("could not update egress", err)
-		}
-
-		// log results
-		if info.Error != "" {
-			logger.Errorw("egress failed", errors.New(info.Error), "egressID", info.EgressId)
-		} else {
-			logger.Infow("egress ended", "egressID", info.EgressId)
-		}
-
-		s.telemetry.EgressEnded(context.Background(), info)
-
-	default:
-		if err := s.es.UpdateEgress(context.Background(), info); err != nil {
-			logger.Errorw("could not update egress", err)
-		}
-	}
 }
