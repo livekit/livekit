@@ -98,6 +98,9 @@ rtc:
   #     - 10.0.0.0/16
   #   excludes:
   #     - 192.168.1.0/24
+  # # Set to true to support mdns name candidate. In most case it is not needed unless client send mdns name candidate only. Enable it
+  # # might cause performance issue if the node has much participants and network has active mdns messages. 
+  # use_mdns: true
 
 # when enabled, LiveKit will expose prometheus metrics on :6789/metrics
 # prometheus_port: 6789
