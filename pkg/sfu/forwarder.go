@@ -134,8 +134,9 @@ type VideoAllocationProvisional struct {
 // -------------------------------------------------------------------
 
 type VideoTransition struct {
-	from           VideoLayers
-	to             VideoLayers
+	from VideoLayers
+	to   VideoLayers
+	// RAJA-TODO check if bandwidthDelta is proper as last allocation might not be holding onto right stuff
 	bandwidthDelta int64
 }
 
@@ -788,6 +789,7 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 	if !alloc.targetLayers.IsValid() {
 		alloc.targetLayers = InvalidLayers
 	}
+	// RAJA-TODO check if bandwidthDelta is proper as last allocation might not be holding onto right stuff
 	alloc.bandwidthDelta = alloc.bandwidthRequested - f.lastAllocation.bandwidthRequested
 	alloc.distanceToDesired = f.getDistanceToDesired(brs, alloc.targetLayers, f.maxLayers)
 
@@ -1630,12 +1632,13 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 			Spatial: layer,
 		}
 		f.clearParkedLayers()
+		f.logger.Infow("resuming parked layer", "current", f.currentLayers, "target", f.targetLayers)
 	} else {
 		needsLock := f.targetLayers.Spatial != f.currentLayers.Spatial || f.currentLayers.Spatial < f.opportunisticLayers.Spatial
 		if needsLock {
 			lockable := extPkt.KeyFrame || tp.switchingToTargetLayer
 			targetLock := f.targetLayers.Spatial != f.currentLayers.Spatial && f.targetLayers.Spatial == layer
-			opportunisticLock := layer != f.currentLayers.Spatial && layer <= f.opportunisticLayers.Spatial
+			opportunisticLock := layer > f.currentLayers.Spatial && layer <= f.opportunisticLayers.Spatial
 			if lockable && (targetLock || opportunisticLock) {
 				if !targetLock && opportunisticLock {
 					// switch to target when opportunistically locking, use max temporal though to allow temporal layer expansion
