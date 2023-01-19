@@ -280,6 +280,7 @@ func (cs *ConnectionStats) getStat() *livekit.AnalyticsStat {
 		Score:   score,
 		Streams: analyticsStreams,
 		Mime:    cs.params.MimeType,
+		Source:  cs.trackInfo.Source,
 	}
 }
 
