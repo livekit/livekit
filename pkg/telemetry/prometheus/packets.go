@@ -85,7 +85,7 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 		Subsystem:   "packet_loss",
 		Name:        "percent",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
-		Buckets:     []float64{0.01, 0.02, 0.04, 0.07, 0.1, 0.2, 0.4, 0.6, 0.8, 1},
+		Buckets:     []float64{0.0, 0.1, 0.3, 0.5, 0.7, 1, 5, 10, 40, 100},
 	}, promStreamLabels)
 	promJitter = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace:   livekitNamespace,
@@ -171,7 +171,9 @@ func IncrementRTCP(direction Direction, nack, pli, fir uint32) {
 }
 
 func RecordPacketLoss(direction Direction, source livekit.TrackSource, lost, total uint32) {
-	promPacketLoss.WithLabelValues(string(direction), source.String()).Observe(float64(lost) / float64(total))
+	if total > 0 {
+		promPacketLoss.WithLabelValues(string(direction), source.String()).Observe(float64(lost) / float64(total) * 100)
+	}
 	if lost > 0 {
 		promPacketLossTotal.WithLabelValues(string(direction), source.String()).Add(float64(lost))
 	}
