@@ -16,7 +16,7 @@ import (
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 . TelemetryService
 type TelemetryService interface {
 	// TrackStats is called periodically for each track in both directions (published/subscribed)
-	TrackStats(streamType livekit.StreamType, participantID livekit.ParticipantID, trackID livekit.TrackID, stat *livekit.AnalyticsStat)
+	TrackStats(key StatsKey, stat *livekit.AnalyticsStat)
 
 	// events
 	RoomStarted(ctx context.Context, room *livekit.Room)

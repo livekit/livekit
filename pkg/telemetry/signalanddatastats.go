@@ -69,7 +69,7 @@ func (p *BytesTrackStats) report(force bool) {
 	}
 
 	if recv := p.recv.Swap(0); recv > 0 {
-		p.telemetry.TrackStats(livekit.StreamType_UPSTREAM, p.pID, p.trackID, &livekit.AnalyticsStat{
+		p.telemetry.TrackStats(StatsKeyForData(livekit.StreamType_UPSTREAM, p.pID, p.trackID), &livekit.AnalyticsStat{
 			Streams: []*livekit.AnalyticsStream{
 				{PrimaryBytes: recv},
 			},
@@ -77,7 +77,7 @@ func (p *BytesTrackStats) report(force bool) {
 	}
 
 	if send := p.send.Swap(0); send > 0 {
-		p.telemetry.TrackStats(livekit.StreamType_DOWNSTREAM, p.pID, p.trackID, &livekit.AnalyticsStat{
+		p.telemetry.TrackStats(StatsKeyForData(livekit.StreamType_DOWNSTREAM, p.pID, p.trackID), &livekit.AnalyticsStat{
 			Streams: []*livekit.AnalyticsStream{
 				{PrimaryBytes: send},
 			},
