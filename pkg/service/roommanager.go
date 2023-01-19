@@ -331,6 +331,7 @@ func (r *RoomManager) StartSession(
 		ReconnectOnPublicationError:  reconnectOnPublicationError,
 		ReconnectOnSubscriptionError: reconnectOnSubscriptionError,
 		VersionGenerator:             r.versionGenerator,
+		TrackResolver:                room.ResolveMediaTrackForSubscriber,
 	})
 	if err != nil {
 		return err

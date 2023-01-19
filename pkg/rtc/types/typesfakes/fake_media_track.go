@@ -15,16 +15,24 @@ type FakeMediaTrack struct {
 	addOnCloseArgsForCall []struct {
 		arg1 func()
 	}
-	AddSubscriberStub        func(types.LocalParticipant) error
+	AddPermissionObserverStub        func(livekit.ParticipantID, func())
+	addPermissionObserverMutex       sync.RWMutex
+	addPermissionObserverArgsForCall []struct {
+		arg1 livekit.ParticipantID
+		arg2 func()
+	}
+	AddSubscriberStub        func(types.LocalParticipant) (types.SubscribedTrack, error)
 	addSubscriberMutex       sync.RWMutex
 	addSubscriberArgsForCall []struct {
 		arg1 types.LocalParticipant
 	}
 	addSubscriberReturns struct {
-		result1 error
+		result1 types.SubscribedTrack
+		result2 error
 	}
 	addSubscriberReturnsOnCall map[int]struct {
-		result1 error
+		result1 types.SubscribedTrack
+		result2 error
 	}
 	ClearAllReceiversStub        func(bool)
 	clearAllReceiversMutex       sync.RWMutex
@@ -152,6 +160,10 @@ type FakeMediaTrack struct {
 	nameReturnsOnCall map[int]struct {
 		result1 string
 	}
+	NotifyPermissionsChangedStub        func()
+	notifyPermissionsChangedMutex       sync.RWMutex
+	notifyPermissionsChangedArgsForCall []struct {
+	}
 	PublisherIDStub        func() livekit.ParticipantID
 	publisherIDMutex       sync.RWMutex
 	publisherIDArgsForCall []struct {
@@ -191,6 +203,11 @@ type FakeMediaTrack struct {
 	}
 	receiversReturnsOnCall map[int]struct {
 		result1 []sfu.TrackReceiver
+	}
+	RemovePermissionObserverStub        func(livekit.ParticipantID)
+	removePermissionObserverMutex       sync.RWMutex
+	removePermissionObserverArgsForCall []struct {
+		arg1 livekit.ParticipantID
 	}
 	RemoveSubscriberStub        func(livekit.ParticipantID, bool)
 	removeSubscriberMutex       sync.RWMutex
@@ -275,7 +292,40 @@ func (fake *FakeMediaTrack) AddOnCloseArgsForCall(i int) func() {
 	return argsForCall.arg1
 }
 
-func (fake *FakeMediaTrack) AddSubscriber(arg1 types.LocalParticipant) error {
+func (fake *FakeMediaTrack) AddPermissionObserver(arg1 livekit.ParticipantID, arg2 func()) {
+	fake.addPermissionObserverMutex.Lock()
+	fake.addPermissionObserverArgsForCall = append(fake.addPermissionObserverArgsForCall, struct {
+		arg1 livekit.ParticipantID
+		arg2 func()
+	}{arg1, arg2})
+	stub := fake.AddPermissionObserverStub
+	fake.recordInvocation("AddPermissionObserver", []interface{}{arg1, arg2})
+	fake.addPermissionObserverMutex.Unlock()
+	if stub != nil {
+		fake.AddPermissionObserverStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeMediaTrack) AddPermissionObserverCallCount() int {
+	fake.addPermissionObserverMutex.RLock()
+	defer fake.addPermissionObserverMutex.RUnlock()
+	return len(fake.addPermissionObserverArgsForCall)
+}
+
+func (fake *FakeMediaTrack) AddPermissionObserverCalls(stub func(livekit.ParticipantID, func())) {
+	fake.addPermissionObserverMutex.Lock()
+	defer fake.addPermissionObserverMutex.Unlock()
+	fake.AddPermissionObserverStub = stub
+}
+
+func (fake *FakeMediaTrack) AddPermissionObserverArgsForCall(i int) (livekit.ParticipantID, func()) {
+	fake.addPermissionObserverMutex.RLock()
+	defer fake.addPermissionObserverMutex.RUnlock()
+	argsForCall := fake.addPermissionObserverArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeMediaTrack) AddSubscriber(arg1 types.LocalParticipant) (types.SubscribedTrack, error) {
 	fake.addSubscriberMutex.Lock()
 	ret, specificReturn := fake.addSubscriberReturnsOnCall[len(fake.addSubscriberArgsForCall)]
 	fake.addSubscriberArgsForCall = append(fake.addSubscriberArgsForCall, struct {
@@ -289,9 +339,9 @@ func (fake *FakeMediaTrack) AddSubscriber(arg1 types.LocalParticipant) error {
 		return stub(arg1)
 	}
 	if specificReturn {
-		return ret.result1
+		return ret.result1, ret.result2
 	}
-	return fakeReturns.result1
+	return fakeReturns.result1, fakeReturns.result2
 }
 
 func (fake *FakeMediaTrack) AddSubscriberCallCount() int {
@@ -300,7 +350,7 @@ func (fake *FakeMediaTrack) AddSubscriberCallCount() int {
 	return len(fake.addSubscriberArgsForCall)
 }
 
-func (fake *FakeMediaTrack) AddSubscriberCalls(stub func(types.LocalParticipant) error) {
+func (fake *FakeMediaTrack) AddSubscriberCalls(stub func(types.LocalParticipant) (types.SubscribedTrack, error)) {
 	fake.addSubscriberMutex.Lock()
 	defer fake.addSubscriberMutex.Unlock()
 	fake.AddSubscriberStub = stub
@@ -313,27 +363,30 @@ func (fake *FakeMediaTrack) AddSubscriberArgsForCall(i int) types.LocalParticipa
 	return argsForCall.arg1
 }
 
-func (fake *FakeMediaTrack) AddSubscriberReturns(result1 error) {
+func (fake *FakeMediaTrack) AddSubscriberReturns(result1 types.SubscribedTrack, result2 error) {
 	fake.addSubscriberMutex.Lock()
 	defer fake.addSubscriberMutex.Unlock()
 	fake.AddSubscriberStub = nil
 	fake.addSubscriberReturns = struct {
-		result1 error
-	}{result1}
+		result1 types.SubscribedTrack
+		result2 error
+	}{result1, result2}
 }
 
-func (fake *FakeMediaTrack) AddSubscriberReturnsOnCall(i int, result1 error) {
+func (fake *FakeMediaTrack) AddSubscriberReturnsOnCall(i int, result1 types.SubscribedTrack, result2 error) {
 	fake.addSubscriberMutex.Lock()
 	defer fake.addSubscriberMutex.Unlock()
 	fake.AddSubscriberStub = nil
 	if fake.addSubscriberReturnsOnCall == nil {
 		fake.addSubscriberReturnsOnCall = make(map[int]struct {
-			result1 error
+			result1 types.SubscribedTrack
+			result2 error
 		})
 	}
 	fake.addSubscriberReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
+		result1 types.SubscribedTrack
+		result2 error
+	}{result1, result2}
 }
 
 func (fake *FakeMediaTrack) ClearAllReceivers(arg1 bool) {
@@ -1010,6 +1063,30 @@ func (fake *FakeMediaTrack) NameReturnsOnCall(i int, result1 string) {
 	}{result1}
 }
 
+func (fake *FakeMediaTrack) NotifyPermissionsChanged() {
+	fake.notifyPermissionsChangedMutex.Lock()
+	fake.notifyPermissionsChangedArgsForCall = append(fake.notifyPermissionsChangedArgsForCall, struct {
+	}{})
+	stub := fake.NotifyPermissionsChangedStub
+	fake.recordInvocation("NotifyPermissionsChanged", []interface{}{})
+	fake.notifyPermissionsChangedMutex.Unlock()
+	if stub != nil {
+		fake.NotifyPermissionsChangedStub()
+	}
+}
+
+func (fake *FakeMediaTrack) NotifyPermissionsChangedCallCount() int {
+	fake.notifyPermissionsChangedMutex.RLock()
+	defer fake.notifyPermissionsChangedMutex.RUnlock()
+	return len(fake.notifyPermissionsChangedArgsForCall)
+}
+
+func (fake *FakeMediaTrack) NotifyPermissionsChangedCalls(stub func()) {
+	fake.notifyPermissionsChangedMutex.Lock()
+	defer fake.notifyPermissionsChangedMutex.Unlock()
+	fake.NotifyPermissionsChangedStub = stub
+}
+
 func (fake *FakeMediaTrack) PublisherID() livekit.ParticipantID {
 	fake.publisherIDMutex.Lock()
 	ret, specificReturn := fake.publisherIDReturnsOnCall[len(fake.publisherIDArgsForCall)]
@@ -1220,6 +1297,38 @@ func (fake *FakeMediaTrack) ReceiversReturnsOnCall(i int, result1 []sfu.TrackRec
 	fake.receiversReturnsOnCall[i] = struct {
 		result1 []sfu.TrackReceiver
 	}{result1}
+}
+
+func (fake *FakeMediaTrack) RemovePermissionObserver(arg1 livekit.ParticipantID) {
+	fake.removePermissionObserverMutex.Lock()
+	fake.removePermissionObserverArgsForCall = append(fake.removePermissionObserverArgsForCall, struct {
+		arg1 livekit.ParticipantID
+	}{arg1})
+	stub := fake.RemovePermissionObserverStub
+	fake.recordInvocation("RemovePermissionObserver", []interface{}{arg1})
+	fake.removePermissionObserverMutex.Unlock()
+	if stub != nil {
+		fake.RemovePermissionObserverStub(arg1)
+	}
+}
+
+func (fake *FakeMediaTrack) RemovePermissionObserverCallCount() int {
+	fake.removePermissionObserverMutex.RLock()
+	defer fake.removePermissionObserverMutex.RUnlock()
+	return len(fake.removePermissionObserverArgsForCall)
+}
+
+func (fake *FakeMediaTrack) RemovePermissionObserverCalls(stub func(livekit.ParticipantID)) {
+	fake.removePermissionObserverMutex.Lock()
+	defer fake.removePermissionObserverMutex.Unlock()
+	fake.RemovePermissionObserverStub = stub
+}
+
+func (fake *FakeMediaTrack) RemovePermissionObserverArgsForCall(i int) livekit.ParticipantID {
+	fake.removePermissionObserverMutex.RLock()
+	defer fake.removePermissionObserverMutex.RUnlock()
+	argsForCall := fake.removePermissionObserverArgsForCall[i]
+	return argsForCall.arg1
 }
 
 func (fake *FakeMediaTrack) RemoveSubscriber(arg1 livekit.ParticipantID, arg2 bool) {
@@ -1501,6 +1610,8 @@ func (fake *FakeMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.invocationsMutex.RUnlock()
 	fake.addOnCloseMutex.RLock()
 	defer fake.addOnCloseMutex.RUnlock()
+	fake.addPermissionObserverMutex.RLock()
+	defer fake.addPermissionObserverMutex.RUnlock()
 	fake.addSubscriberMutex.RLock()
 	defer fake.addSubscriberMutex.RUnlock()
 	fake.clearAllReceiversMutex.RLock()
@@ -1529,6 +1640,8 @@ func (fake *FakeMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.kindMutex.RUnlock()
 	fake.nameMutex.RLock()
 	defer fake.nameMutex.RUnlock()
+	fake.notifyPermissionsChangedMutex.RLock()
+	defer fake.notifyPermissionsChangedMutex.RUnlock()
 	fake.publisherIDMutex.RLock()
 	defer fake.publisherIDMutex.RUnlock()
 	fake.publisherIdentityMutex.RLock()
@@ -1537,6 +1650,8 @@ func (fake *FakeMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.publisherVersionMutex.RUnlock()
 	fake.receiversMutex.RLock()
 	defer fake.receiversMutex.RUnlock()
+	fake.removePermissionObserverMutex.RLock()
+	defer fake.removePermissionObserverMutex.RUnlock()
 	fake.removeSubscriberMutex.RLock()
 	defer fake.removeSubscriberMutex.RUnlock()
 	fake.revokeDisallowedSubscribersMutex.RLock()

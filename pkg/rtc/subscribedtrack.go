@@ -30,14 +30,17 @@ type SubscribedTrackParams struct {
 }
 
 type SubscribedTrack struct {
-	params   SubscribedTrackParams
-	subMuted atomic.Bool
-	pubMuted atomic.Bool
-	settings atomic.Pointer[livekit.UpdateTrackSettings]
-	logger   logger.Logger
+	params           SubscribedTrackParams
+	subMuted         atomic.Bool
+	pubMuted         atomic.Bool
+	settings         atomic.Pointer[livekit.UpdateTrackSettings]
+	logger           logger.Logger
+	sender           atomic.Pointer[webrtc.RTPSender]
+	needsNegotiation atomic.Bool
 
-	onBind atomic.Value // func()
-	bound  atomic.Bool
+	onBind  atomic.Value // func()
+	onClose atomic.Value // func(bool)
+	bound   atomic.Bool
 
 	debouncer func(func())
 }
@@ -62,6 +65,7 @@ func (t *SubscribedTrack) OnBind(f func()) {
 	t.maybeOnBind()
 }
 
+// for DownTrack callback to notify us that it's bound
 func (t *SubscribedTrack) Bound() {
 	t.bound.Store(true)
 	if !t.params.AdaptiveStream {
@@ -70,6 +74,21 @@ func (t *SubscribedTrack) Bound() {
 		)
 	}
 	t.maybeOnBind()
+}
+
+// for DownTrack callback to notify us that it's closed
+func (t *SubscribedTrack) Close(willBeResumed bool) {
+	if onClose := t.onClose.Load(); onClose != nil {
+		go onClose.(func(bool))(willBeResumed)
+	}
+}
+
+func (t *SubscribedTrack) OnClose(f func(bool)) {
+	t.onClose.Store(f)
+}
+
+func (t *SubscribedTrack) IsBound() bool {
+	return t.bound.Load()
 }
 
 func (t *SubscribedTrack) maybeOnBind() {
@@ -165,6 +184,22 @@ func (t *SubscribedTrack) UpdateVideoLayer() {
 	if settings.Fps > 0 {
 		t.DownTrack().SetMaxTemporalLayer(t.MediaTrack().GetTemporalLayerForSpatialFps(spatial, settings.Fps, t.DownTrack().Codec().MimeType))
 	}
+}
+
+func (t *SubscribedTrack) NeedsNegotiation() bool {
+	return t.needsNegotiation.Load()
+}
+
+func (t *SubscribedTrack) SetNeedsNegotiation(needs bool) {
+	t.needsNegotiation.Store(needs)
+}
+
+func (t *SubscribedTrack) RTPSender() *webrtc.RTPSender {
+	return t.sender.Load()
+}
+
+func (t *SubscribedTrack) SetRTPSender(sender *webrtc.RTPSender) {
+	t.sender.Store(sender)
 }
 
 func (t *SubscribedTrack) updateDownTrackMute() {
