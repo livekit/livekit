@@ -34,6 +34,9 @@ var (
 	promNackTotal       *prometheus.CounterVec
 	promPliTotal        *prometheus.CounterVec
 	promFirTotal        *prometheus.CounterVec
+	promPacketLoss      *prometheus.HistogramVec
+	promJitter          *prometheus.HistogramVec
+	promRTT             *prometheus.HistogramVec
 	promParticipantJoin *prometheus.CounterVec
 	promConnections     *prometheus.GaugeVec
 )
@@ -69,6 +72,27 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 		Name:        "total",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	}, promRTCPLabels)
+	promPacketLoss = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "packet_loss",
+		Name:        "percent",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+		Buckets:     []float64{0.01, 0.02, 0.04, 0.07, 0.1, 0.2, 0.4, 0.6, 0.8, 1},
+	}, promRTCPLabels)
+	promJitter = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "jitter",
+		Name:        "us",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+		Buckets:     []float64{100, 300, 500, 1000, 1500, 2000, 3000, 5000, 10000, 60000},
+	}, promRTCPLabels)
+	promRTT = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "rtt",
+		Name:        "ms",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+		Buckets:     []float64{50, 75, 100, 125, 150, 200, 250, 400, 1000, 10000},
+	}, promRTCPLabels)
 	promParticipantJoin = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "participant_join",
@@ -87,6 +111,9 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 	prometheus.MustRegister(promNackTotal)
 	prometheus.MustRegister(promPliTotal)
 	prometheus.MustRegister(promFirTotal)
+	prometheus.MustRegister(promPacketLoss)
+	prometheus.MustRegister(promJitter)
+	prometheus.MustRegister(promRTT)
 	prometheus.MustRegister(promParticipantJoin)
 	prometheus.MustRegister(promConnections)
 }
@@ -131,6 +158,24 @@ func IncrementRTCP(direction Direction, nack, pli, fir uint32) {
 	}
 	if fir > 0 {
 		promFirTotal.WithLabelValues(string(direction)).Add(float64(fir))
+	}
+}
+
+func RecordPacketLoss(direction Direction, loss float64) {
+	if loss > 0 {
+		promJitter.WithLabelValues(string(direction)).Observe(loss)
+	}
+}
+
+func RecordJitter(direction Direction, jitter uint32) {
+	if jitter > 0 {
+		promJitter.WithLabelValues(string(direction)).Observe(float64(jitter))
+	}
+}
+
+func RecordRTT(direction Direction, rtt uint32) {
+	if rtt > 0 {
+		promRTT.WithLabelValues(string(direction)).Observe(float64(rtt))
 	}
 }
 

@@ -33,6 +33,9 @@ func (t *telemetryService) TrackStats(streamType livekit.StreamType, participant
 				packets += stream.RetransmitPackets
 				bytes += stream.RetransmitBytes
 			}
+			prometheus.RecordPacketLoss(direction, float64(stream.PacketsLost)/float64(packets))
+			prometheus.RecordRTT(direction, stream.Rtt)
+			prometheus.RecordJitter(direction, stream.Jitter)
 		}
 		prometheus.IncrementRTCP(direction, nacks, plis, firs)
 		prometheus.IncrementPackets(direction, uint64(packets), false)
