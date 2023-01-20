@@ -1553,7 +1553,7 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 					last := f.rtpMunger.GetLast()
 					td = refTS - last.LastTS
 					if td > (1 << 31) {
-						f.logger.Infow("reference timestamp out-of-order", "lastTS", last.LastTS, "refTS", refTS, "td", td)
+						f.logger.Infow("reference timestamp out-of-order", "lastTS", last.LastTS, "refTS", refTS, "td", int32(td))
 						td = 0 // reset to force arrival time based calculation
 					}
 				}
@@ -1568,6 +1568,11 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 				if td == 0 {
 					td = 1
 				}
+				f.logger.Infow(
+					"timestamp adjustment using arrival time",
+					"tDiffMsOrig", (extPkt.Arrival-f.lTSCalc)/1e6, "tDiffMsAdjusted", tDiffMs,
+					"tdOrig", uint32(tDiffMs*int64(f.codec.ClockRate)/1000), "tdAdjusted", td,
+				)
 			}
 
 			f.rtpMunger.UpdateSnTsOffsets(extPkt, 1, td)

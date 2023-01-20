@@ -164,9 +164,11 @@ type RTPStats struct {
 	rtt    uint32
 	maxRtt uint32
 
-	srData    *RTCPSenderReportData
-	lastSRNTP mediatransportutil.NtpTime
-	lastSRAt  time.Time
+	srData        *RTCPSenderReportData
+	lastSRNTP     mediatransportutil.NtpTime
+	lastSRRTP     uint32
+	lastSRAt      time.Time
+	lastSRPackets uint32
 
 	nextSnapshotId uint32
 	snapshots      map[uint32]*Snapshot
@@ -264,7 +266,9 @@ func (r *RTPStats) Seed(from *RTPStats) {
 		r.srData = nil
 	}
 	r.lastSRNTP = from.lastSRNTP
+	r.lastSRRTP = from.lastSRRTP
 	r.lastSRAt = from.lastSRAt
+	r.lastSRPackets = from.lastSRPackets
 
 	r.nextSnapshotId = from.nextSnapshotId
 	for id, ss := range from.snapshots {
@@ -710,42 +714,59 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srData *RTCPSenderReportData
 		return nil
 	}
 
+	packetCount := r.getTotalPacketsPrimary() + r.packetsDuplicate + r.packetsPadding
+	if packetCount == r.lastSRPackets {
+		// no packets sent since last report
+		return nil
+	}
+
+	if srData == nil || srData.NTPTimestamp == 0 || srData.ArrivalTime.IsZero() {
+		// no sender report from publisher
+		return nil
+	}
+
+	// NTP timestamp in sender report from publisher side could have a different base,
+	// i. e. it may not be wall clock time at the time of send.
+	// It is not possible to accurately calculate current time in the NTP time base of the publisher side.
+	// Time of arrival of sender report from publisher side can be stored and time since that arrival
+	// can be calculated using local time base and that can be used to adjust the NTP time stamp to current time.
+	// However, that does not account for the variable time of network propagation of sender report.
+	// So, it is not possible to get accurate NTP timestamp of current time in publisher's time base.
+	//
+	// As a compromise, the NTP timestamp corresponding to the last sent RTP packet is calculated and used.
+	// That does mean it will not be very accurate, i. e. a bit of time could have elapsed since the last packet transmit.
+	// But, it is okay as NTP time stamp is used referentially to calculate RTT.
+	//
+	// NOTE: Large amounts of time without packets sent will cause error in this calculation,
+	// i. e. RTP time stamp rolling over will cause incorrect calculations (approx 13h for video and 25h for 48 KHz audio)
 	var nowNTP mediatransportutil.NtpTime
 	var nowRTP uint32
-	if srData == nil || srData.NTPTimestamp == 0 || srData.ArrivalTime.IsZero() {
-		r.params.Logger.Infow("reference layer sender report not available")
+	if r.lastSRNTP != 0 {
+		sinceLastSR := time.Duration(float64(r.highestTS-r.lastSRRTP) / float64(r.params.ClockRate) * float64(time.Second))
+		nowNTP = mediatransportutil.ToNtpTime(r.lastSRNTP.Time().Add(sinceLastSR))
+		nowRTP = r.highestTS
 	} else {
-		// NTP timestamp in sender report could have a different base, i. e. it may not be wall clock time at the time of send.
-		// So, do not compare local NTP to what is received from remote side. Record receive time locally and do a difference
-		// using local time now (i. e. same time base) and add the difference to remote NTP to get the current time in remote
-		// NTP time base.
-		timeSinceLastSR := time.Since(srData.ArrivalTime)
-		nowNTP = mediatransportutil.ToNtpTime(srData.NTPTimestamp.Time().Add(timeSinceLastSR))
-		nowRTP = srData.RTPTimestamp + uint32(timeSinceLastSR.Milliseconds()*int64(r.params.ClockRate)/1000)
-		if nowRTP-r.highestTS > (1 << 31) {
-			r.params.Logger.Infow(
-				"reference layer sender report could not be used",
-				"nowRTP", nowRTP,
-				"highestTS", r.highestTS,
-				"timeSinceLastSR", timeSinceLastSR,
-			)
-			nowNTP = 0 // reset to force calculation using highest send time
+		if (r.highestTS - srData.RTPTimestamp) > (1 << 31) {
+			// sender report is newer than last packet sent, use it
+			nowNTP = srData.NTPTimestamp
+			nowRTP = srData.RTPTimestamp
+		} else {
+			sinceLastSR := time.Duration(float64(r.highestTS-srData.RTPTimestamp) / float64(r.params.ClockRate) * float64(time.Second))
+			nowNTP = mediatransportutil.ToNtpTime(srData.NTPTimestamp.Time().Add(sinceLastSR))
+			nowRTP = r.highestTS
 		}
-	}
-	if nowNTP == 0 {
-		now := time.Now()
-		nowNTP = mediatransportutil.ToNtpTime(now)
-		nowRTP = r.highestTS + uint32((now.UnixNano()-r.highestTime)*int64(r.params.ClockRate)/1e9)
 	}
 
 	r.lastSRNTP = nowNTP
+	r.lastSRRTP = nowRTP
 	r.lastSRAt = time.Now()
+	r.lastSRPackets = packetCount
 
 	return &rtcp.SenderReport{
 		SSRC:        ssrc,
 		NTPTime:     uint64(nowNTP),
 		RTPTime:     nowRTP,
-		PacketCount: r.getTotalPacketsPrimary() + r.packetsDuplicate + r.packetsPadding,
+		PacketCount: packetCount,
 		OctetCount:  uint32(r.bytes + r.bytesDuplicate + r.bytesPadding),
 	}
 }

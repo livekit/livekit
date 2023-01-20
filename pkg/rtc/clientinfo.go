@@ -77,3 +77,7 @@ func (c ClientInfo) SupportsICETCP() bool {
 	// most SDKs support ICE/TCP
 	return true
 }
+
+func (c ClientInfo) SupportsChangeRTPSenderEncodingActive() bool {
+	return !c.isFirefox()
+}
