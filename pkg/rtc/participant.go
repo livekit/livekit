@@ -92,6 +92,7 @@ type ParticipantParams struct {
 	ReconnectOnPublicationError  bool
 	ReconnectOnSubscriptionError bool
 	VersionGenerator             utils2.TimedVersionGenerator
+	DisableDynacast              bool
 }
 
 type ParticipantImpl struct {
@@ -1475,6 +1476,10 @@ func (p *ParticipantImpl) onStreamStateChange(update *sfu.StreamStateUpdate) err
 }
 
 func (p *ParticipantImpl) onSubscribedMaxQualityChange(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedCodec, maxSubscribedQualites []types.SubscribedCodecQuality) error {
+	if p.params.DisableDynacast {
+		return nil
+	}
+
 	if len(subscribedQualities) == 0 {
 		return nil
 	}
