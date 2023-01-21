@@ -50,20 +50,6 @@ type downTrackState struct {
 	downTrack   sfu.DownTrackState
 }
 
-type SubscribeRequestType int
-
-const (
-	SubscribeRequestTypeRemove SubscribeRequestType = iota
-	SubscribeRequestTypeAdd
-)
-
-type SubscribeRequest struct {
-	requestType   SubscribeRequestType
-	willBeResumed bool
-	addCb         func(sub types.LocalParticipant) error
-	removeCb      func(subscriberID livekit.ParticipantID, willBeResumed bool) error
-}
-
 type ParticipantParams struct {
 	Identity                     livekit.ParticipantIdentity
 	Name                         livekit.ParticipantName
