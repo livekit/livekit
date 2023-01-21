@@ -394,7 +394,12 @@ func (f *Forwarder) PubMute(pubMuted bool) (bool, VideoLayers) {
 		f.resyncLocked()
 	}
 	*/
-	// do not resync on publisher mute as forwarding can continue on unmute using same layers
+	// Do not resync on publisher mute as forwarding can continue on unmute using same layers.
+	// On unmute, park current layers as streaming can continue without a key frame when publisher starts the stream.
+	if !pubMuted && f.currentLayers.IsValid() {
+		f.setupParkedLayers(f.currentLayers)
+		f.currentLayers = InvalidLayers
+	}
 
 	return true, f.maxLayers
 }
@@ -1448,29 +1453,26 @@ func (f *Forwarder) resyncLocked() {
 }
 
 func (f *Forwarder) clearParkedLayers() {
-	f.lock.Lock()
 	f.parkedLayers = InvalidLayers
 	if f.parkedLayersTimer != nil {
 		f.parkedLayersTimer.Stop()
 		f.parkedLayersTimer = nil
 	}
-	f.lock.Unlock()
 }
 
-func (f *Forwarder) setupParkedLayersTimer(parkedLayers VideoLayers) {
+func (f *Forwarder) setupParkedLayers(parkedLayers VideoLayers) {
 	f.clearParkedLayers()
 
-	// RAJA-TODO: need to clear parked layers timer when there is a match
-	f.lock.Lock()
 	f.parkedLayers = parkedLayers
 	f.parkedLayersTimer = time.AfterFunc(ParkedLayersWaitDuration, func() {
+		f.lock.Lock()
 		f.clearParkedLayers()
+		f.lock.Unlock()
 
 		if onParkedLayersExpired := f.getOnParkedLayersExpired(); onParkedLayersExpired != nil {
 			onParkedLayersExpired()
 		}
 	})
-	f.lock.Unlock()
 }
 
 func (f *Forwarder) CheckSync() (locked bool, layer int32) {
@@ -1616,6 +1618,23 @@ func (f *Forwarder) getTranslationParamsAudio(extPkt *buffer.ExtPacket, layer in
 func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer int32) (*TranslationParams, error) {
 	tp := &TranslationParams{}
 
+	/* RAJA-TODO
+	if f.currentLayers.Spatial != InvalidLayerSpatial {
+		// RAJA-TODO: figure out fast path dependency descriptor
+		// forwarding some layer, check for opportunistic update
+		if layer != f.currentLayers.Spatial &&
+			layer <= f.opportunisticLayers.Spatial &&
+			f.currentLayers.Spatial < f.opportunisticLayers.Spatial &&
+			extPkt.KeyFrame {
+			// switch to target when opportunistically locking, use max temporal though to allow temporal layer expansion
+			f.targetLayers = VideoLayers{
+				Spatial:  extPkt.VideoLayer.Spatial,
+				Temporal: DefaultMaxLayerTemporal, // RAJA-TODO - check if this is correct when temporal not supported also
+			}
+			f.logger.Infow("locking opportunistically to target layer", "current", f.currentLayers, "target", f.targetLayers)
+		}
+	} else {
+	*/
 	// RAJA-TODO: make fast path fast - i. e. if current layer is a valid one, only check for opportunistic upgrade and move on, slow path of locking can take more checks, do not penalize fast path.
 	if f.targetLayers.Spatial == InvalidLayerSpatial && f.parkedLayers.Spatial == InvalidLayerSpatial && f.opportunisticLayers.Spatial == InvalidLayerSpatial {
 		// stream is paused by streamallocator
@@ -1635,6 +1654,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		f.targetLayers = f.parkedLayers
 		f.currentLayers = VideoLayers{
 			Spatial: layer,
+			// RAJA-TODO: set Temporal properly taking into account current, if codec supports temporal etc.
 		}
 		f.clearParkedLayers()
 		f.logger.Infow("resuming parked layer", "current", f.currentLayers, "target", f.targetLayers)
@@ -1649,7 +1669,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 					// switch to target when opportunistically locking, use max temporal though to allow temporal layer expansion
 					f.targetLayers = VideoLayers{
 						Spatial:  extPkt.VideoLayer.Spatial,
-						Temporal: DefaultMaxLayerTemporal,
+						Temporal: DefaultMaxLayerTemporal, // RAJA-TODO - check if this is correct when temporal not supported also
 					}
 					f.logger.Infow("locking opportunistically to target layer", "current", f.currentLayers, "target", f.targetLayers)
 				}
