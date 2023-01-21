@@ -195,7 +195,7 @@ func (m *SubscriptionManager) IsSubscribedTo(participantID livekit.ParticipantID
 	return ok
 }
 
-func (m *SubscriptionManager) UpdateSubscribedTrackSettings(trackID livekit.TrackID, settings *livekit.UpdateTrackSettings) error {
+func (m *SubscriptionManager) UpdateSubscribedTrackSettings(trackID livekit.TrackID, settings *livekit.UpdateTrackSettings) {
 	m.lock.Lock()
 	sub, ok := m.subscriptions[trackID]
 	if !ok {
@@ -204,7 +204,6 @@ func (m *SubscriptionManager) UpdateSubscribedTrackSettings(trackID livekit.Trac
 	m.lock.Unlock()
 
 	sub.setSettings(settings)
-	return nil
 }
 
 // OnSubscribeStatusChanged callback will be notified when a participant subscribes or unsubscribes to another participant

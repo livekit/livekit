@@ -289,6 +289,35 @@ func TestSubscribeStatusChanged(t *testing.T) {
 	require.Equal(t, int32(1), numParticipantUnsubscribed.Load())
 }
 
+// clients may send update subscribed settings prior to subscription events coming through
+// settings should be persisted and used when the subscription does take place.
+func TestUpdateSettingsBeforeSubscription(t *testing.T) {
+	sm := newTestSubscriptionManager(t)
+	defer sm.Close(false)
+	resolver := newTestResolver(true, nil)
+	sm.params.TrackResolver = resolver.Resolve
+
+	settings := &livekit.UpdateTrackSettings{
+		Disabled: true,
+		Width:    100,
+		Height:   100,
+	}
+	sm.UpdateSubscribedTrackSettings("track", settings)
+
+	sm.SubscribeToTrack("track", "pub", "pubID")
+
+	s := sm.subscriptions["track"]
+	require.Eventually(t, func() bool {
+		return !s.needsSubscribe()
+	}, subSettleTimeout, subCheckInterval, "track should be subscribed")
+
+	st := s.getSubscribedTrack().(*typesfakes.FakeSubscribedTrack)
+	applied := st.UpdateSubscriberSettingsArgsForCall(0)
+	require.Equal(t, settings.Disabled, applied.Disabled)
+	require.Equal(t, settings.Width, applied.Width)
+	require.Equal(t, settings.Height, applied.Height)
+}
+
 func newTestSubscriptionManager(t *testing.T) *SubscriptionManager {
 	p := &typesfakes.FakeLocalParticipant{}
 	p.CanSubscribeReturns(true)

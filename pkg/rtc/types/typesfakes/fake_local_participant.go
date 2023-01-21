@@ -744,17 +744,11 @@ type FakeLocalParticipant struct {
 	updateSubscribedQualityReturnsOnCall map[int]struct {
 		result1 error
 	}
-	UpdateSubscribedTrackSettingsStub        func(livekit.TrackID, *livekit.UpdateTrackSettings) error
+	UpdateSubscribedTrackSettingsStub        func(livekit.TrackID, *livekit.UpdateTrackSettings)
 	updateSubscribedTrackSettingsMutex       sync.RWMutex
 	updateSubscribedTrackSettingsArgsForCall []struct {
 		arg1 livekit.TrackID
 		arg2 *livekit.UpdateTrackSettings
-	}
-	updateSubscribedTrackSettingsReturns struct {
-		result1 error
-	}
-	updateSubscribedTrackSettingsReturnsOnCall map[int]struct {
-		result1 error
 	}
 	UpdateSubscriptionPermissionStub        func(*livekit.SubscriptionPermission, *livekit.TimedVersion, func(participantIdentity livekit.ParticipantIdentity) types.LocalParticipant, func(participantID livekit.ParticipantID) types.LocalParticipant) error
 	updateSubscriptionPermissionMutex       sync.RWMutex
@@ -4738,24 +4732,18 @@ func (fake *FakeLocalParticipant) UpdateSubscribedQualityReturnsOnCall(i int, re
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) UpdateSubscribedTrackSettings(arg1 livekit.TrackID, arg2 *livekit.UpdateTrackSettings) error {
+func (fake *FakeLocalParticipant) UpdateSubscribedTrackSettings(arg1 livekit.TrackID, arg2 *livekit.UpdateTrackSettings) {
 	fake.updateSubscribedTrackSettingsMutex.Lock()
-	ret, specificReturn := fake.updateSubscribedTrackSettingsReturnsOnCall[len(fake.updateSubscribedTrackSettingsArgsForCall)]
 	fake.updateSubscribedTrackSettingsArgsForCall = append(fake.updateSubscribedTrackSettingsArgsForCall, struct {
 		arg1 livekit.TrackID
 		arg2 *livekit.UpdateTrackSettings
 	}{arg1, arg2})
 	stub := fake.UpdateSubscribedTrackSettingsStub
-	fakeReturns := fake.updateSubscribedTrackSettingsReturns
 	fake.recordInvocation("UpdateSubscribedTrackSettings", []interface{}{arg1, arg2})
 	fake.updateSubscribedTrackSettingsMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2)
+		fake.UpdateSubscribedTrackSettingsStub(arg1, arg2)
 	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
 }
 
 func (fake *FakeLocalParticipant) UpdateSubscribedTrackSettingsCallCount() int {
@@ -4764,7 +4752,7 @@ func (fake *FakeLocalParticipant) UpdateSubscribedTrackSettingsCallCount() int {
 	return len(fake.updateSubscribedTrackSettingsArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) UpdateSubscribedTrackSettingsCalls(stub func(livekit.TrackID, *livekit.UpdateTrackSettings) error) {
+func (fake *FakeLocalParticipant) UpdateSubscribedTrackSettingsCalls(stub func(livekit.TrackID, *livekit.UpdateTrackSettings)) {
 	fake.updateSubscribedTrackSettingsMutex.Lock()
 	defer fake.updateSubscribedTrackSettingsMutex.Unlock()
 	fake.UpdateSubscribedTrackSettingsStub = stub
@@ -4775,29 +4763,6 @@ func (fake *FakeLocalParticipant) UpdateSubscribedTrackSettingsArgsForCall(i int
 	defer fake.updateSubscribedTrackSettingsMutex.RUnlock()
 	argsForCall := fake.updateSubscribedTrackSettingsArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2
-}
-
-func (fake *FakeLocalParticipant) UpdateSubscribedTrackSettingsReturns(result1 error) {
-	fake.updateSubscribedTrackSettingsMutex.Lock()
-	defer fake.updateSubscribedTrackSettingsMutex.Unlock()
-	fake.UpdateSubscribedTrackSettingsStub = nil
-	fake.updateSubscribedTrackSettingsReturns = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeLocalParticipant) UpdateSubscribedTrackSettingsReturnsOnCall(i int, result1 error) {
-	fake.updateSubscribedTrackSettingsMutex.Lock()
-	defer fake.updateSubscribedTrackSettingsMutex.Unlock()
-	fake.UpdateSubscribedTrackSettingsStub = nil
-	if fake.updateSubscribedTrackSettingsReturnsOnCall == nil {
-		fake.updateSubscribedTrackSettingsReturnsOnCall = make(map[int]struct {
-			result1 error
-		})
-	}
-	fake.updateSubscribedTrackSettingsReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
 }
 
 func (fake *FakeLocalParticipant) UpdateSubscriptionPermission(arg1 *livekit.SubscriptionPermission, arg2 *livekit.TimedVersion, arg3 func(participantIdentity livekit.ParticipantIdentity) types.LocalParticipant, arg4 func(participantID livekit.ParticipantID) types.LocalParticipant) error {
