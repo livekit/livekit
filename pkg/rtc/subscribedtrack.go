@@ -1,6 +1,7 @@
 package rtc
 
 import (
+	"sync"
 	"time"
 
 	"github.com/bep/debounce"
@@ -38,9 +39,10 @@ type SubscribedTrack struct {
 	sender           atomic.Pointer[webrtc.RTPSender]
 	needsNegotiation atomic.Bool
 
-	onBind  atomic.Value // func()
-	onClose atomic.Value // func(bool)
-	bound   atomic.Bool
+	bindLock        sync.Mutex
+	onBindCallbacks []func()
+	onClose         atomic.Value // func(bool)
+	bound           atomic.Bool
 
 	debouncer func(func())
 }
@@ -59,21 +61,34 @@ func NewSubscribedTrack(params SubscribedTrackParams) *SubscribedTrack {
 	return s
 }
 
-func (t *SubscribedTrack) OnBind(f func()) {
-	t.onBind.Store(f)
+func (t *SubscribedTrack) AddOnBind(f func()) {
+	t.bindLock.Lock()
+	bound := t.bound.Load()
+	if !bound {
+		t.onBindCallbacks = append(t.onBindCallbacks, f)
+	}
+	t.bindLock.Unlock()
 
-	t.maybeOnBind()
+	if bound {
+		// fire immediately, do not need to persist since bind is a one time event
+		go f()
+	}
 }
 
 // for DownTrack callback to notify us that it's bound
 func (t *SubscribedTrack) Bound() {
+	t.bindLock.Lock()
 	t.bound.Store(true)
+	callbacks := t.onBindCallbacks
+	t.bindLock.Unlock()
 	if !t.params.AdaptiveStream {
 		t.params.DownTrack.SetMaxSpatialLayer(
 			buffer.VideoQualityToSpatialLayer(livekit.VideoQuality_HIGH, t.params.MediaTrack.ToProto()),
 		)
 	}
-	t.maybeOnBind()
+	for _, cb := range callbacks {
+		go cb()
+	}
 }
 
 // for DownTrack callback to notify us that it's closed
@@ -89,12 +104,6 @@ func (t *SubscribedTrack) OnClose(f func(bool)) {
 
 func (t *SubscribedTrack) IsBound() bool {
 	return t.bound.Load()
-}
-
-func (t *SubscribedTrack) maybeOnBind() {
-	if onBind := t.onBind.Load(); onBind != nil && t.bound.Load() {
-		go onBind.(func())()
-	}
 }
 
 func (t *SubscribedTrack) ID() livekit.TrackID {

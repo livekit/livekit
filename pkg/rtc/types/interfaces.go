@@ -411,7 +411,7 @@ type LocalMediaTrack interface {
 
 //counterfeiter:generate . SubscribedTrack
 type SubscribedTrack interface {
-	OnBind(f func())
+	AddOnBind(f func())
 	IsBound() bool
 	Close(willBeResumed bool)
 	OnClose(f func(willBeResumed bool))

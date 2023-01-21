@@ -887,33 +887,17 @@ func (p *ParticipantImpl) onTrackSubscribed(subTrack types.SubscribedTrack) {
 		subTrack.DownTrack().SetActivePaddingOnMuteUpTrack()
 	}
 
-	subTrack.OnBind(func() {
+	subTrack.AddOnBind(func() {
 		if p.TransportManager.HasSubscriberEverConnected() {
 			subTrack.DownTrack().SetConnected()
 		}
 		p.TransportManager.AddSubscribedTrack(subTrack)
-
-		sourceTrack := subTrack.MediaTrack()
 		//p.supervisor.SetSubscribedTrack(subTrack.ID(), subTrack, sourceTrack)
-		p.params.Telemetry.TrackSubscribed(context.Background(), p.ID(), sourceTrack.ToProto(), &livekit.ParticipantInfo{
-			Identity: string(subTrack.PublisherIdentity()),
-			Sid:      string(subTrack.PublisherID()),
-		})
 	})
 }
 
 // onTrackUnsubscribed handles post-processing after a track is unsubscribed
 func (p *ParticipantImpl) onTrackUnsubscribed(subTrack types.SubscribedTrack) {
-	//sourceTrack := subTrack.MediaTrack()
-
-	//p.supervisor.ClearSubscribedTrack(subTrack.ID(), subTrack, sourceTrack)
-
-	//
-	// NOTE
-	// subscribedTracksSettings should not be deleted on removal as it is needed if corresponding publisher migrated
-	// LK-TODO: find a way to clean these up
-	//
-
 	p.TransportManager.RemoveSubscribedTrack(subTrack)
 }
 

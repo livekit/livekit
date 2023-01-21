@@ -11,6 +11,11 @@ import (
 )
 
 type FakeSubscribedTrack struct {
+	AddOnBindStub        func(func())
+	addOnBindMutex       sync.RWMutex
+	addOnBindArgsForCall []struct {
+		arg1 func()
+	}
 	CloseStub        func(bool)
 	closeMutex       sync.RWMutex
 	closeArgsForCall []struct {
@@ -75,11 +80,6 @@ type FakeSubscribedTrack struct {
 	}
 	needsNegotiationReturnsOnCall map[int]struct {
 		result1 bool
-	}
-	OnBindStub        func(func())
-	onBindMutex       sync.RWMutex
-	onBindArgsForCall []struct {
-		arg1 func()
 	}
 	OnCloseStub        func(func(willBeResumed bool))
 	onCloseMutex       sync.RWMutex
@@ -172,6 +172,38 @@ type FakeSubscribedTrack struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
+}
+
+func (fake *FakeSubscribedTrack) AddOnBind(arg1 func()) {
+	fake.addOnBindMutex.Lock()
+	fake.addOnBindArgsForCall = append(fake.addOnBindArgsForCall, struct {
+		arg1 func()
+	}{arg1})
+	stub := fake.AddOnBindStub
+	fake.recordInvocation("AddOnBind", []interface{}{arg1})
+	fake.addOnBindMutex.Unlock()
+	if stub != nil {
+		fake.AddOnBindStub(arg1)
+	}
+}
+
+func (fake *FakeSubscribedTrack) AddOnBindCallCount() int {
+	fake.addOnBindMutex.RLock()
+	defer fake.addOnBindMutex.RUnlock()
+	return len(fake.addOnBindArgsForCall)
+}
+
+func (fake *FakeSubscribedTrack) AddOnBindCalls(stub func(func())) {
+	fake.addOnBindMutex.Lock()
+	defer fake.addOnBindMutex.Unlock()
+	fake.AddOnBindStub = stub
+}
+
+func (fake *FakeSubscribedTrack) AddOnBindArgsForCall(i int) func() {
+	fake.addOnBindMutex.RLock()
+	defer fake.addOnBindMutex.RUnlock()
+	argsForCall := fake.addOnBindArgsForCall[i]
+	return argsForCall.arg1
 }
 
 func (fake *FakeSubscribedTrack) Close(arg1 bool) {
@@ -522,38 +554,6 @@ func (fake *FakeSubscribedTrack) NeedsNegotiationReturnsOnCall(i int, result1 bo
 	fake.needsNegotiationReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
-}
-
-func (fake *FakeSubscribedTrack) OnBind(arg1 func()) {
-	fake.onBindMutex.Lock()
-	fake.onBindArgsForCall = append(fake.onBindArgsForCall, struct {
-		arg1 func()
-	}{arg1})
-	stub := fake.OnBindStub
-	fake.recordInvocation("OnBind", []interface{}{arg1})
-	fake.onBindMutex.Unlock()
-	if stub != nil {
-		fake.OnBindStub(arg1)
-	}
-}
-
-func (fake *FakeSubscribedTrack) OnBindCallCount() int {
-	fake.onBindMutex.RLock()
-	defer fake.onBindMutex.RUnlock()
-	return len(fake.onBindArgsForCall)
-}
-
-func (fake *FakeSubscribedTrack) OnBindCalls(stub func(func())) {
-	fake.onBindMutex.Lock()
-	defer fake.onBindMutex.Unlock()
-	fake.OnBindStub = stub
-}
-
-func (fake *FakeSubscribedTrack) OnBindArgsForCall(i int) func() {
-	fake.onBindMutex.RLock()
-	defer fake.onBindMutex.RUnlock()
-	argsForCall := fake.onBindArgsForCall[i]
-	return argsForCall.arg1
 }
 
 func (fake *FakeSubscribedTrack) OnClose(arg1 func(willBeResumed bool)) {
@@ -1050,6 +1050,8 @@ func (fake *FakeSubscribedTrack) UpdateVideoLayerCalls(stub func()) {
 func (fake *FakeSubscribedTrack) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
+	fake.addOnBindMutex.RLock()
+	defer fake.addOnBindMutex.RUnlock()
 	fake.closeMutex.RLock()
 	defer fake.closeMutex.RUnlock()
 	fake.downTrackMutex.RLock()
@@ -1064,8 +1066,6 @@ func (fake *FakeSubscribedTrack) Invocations() map[string][][]interface{} {
 	defer fake.mediaTrackMutex.RUnlock()
 	fake.needsNegotiationMutex.RLock()
 	defer fake.needsNegotiationMutex.RUnlock()
-	fake.onBindMutex.RLock()
-	defer fake.onBindMutex.RUnlock()
 	fake.onCloseMutex.RLock()
 	defer fake.onCloseMutex.RUnlock()
 	fake.publisherIDMutex.RLock()
