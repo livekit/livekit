@@ -71,10 +71,7 @@ func TestSubscribe(t *testing.T) {
 		require.True(t, s.isDesired())
 		require.Nil(t, s.getSubscribedTrack())
 		require.Eventually(t, func() bool {
-			if subCount.Load() != 1 {
-				return false
-			}
-			return true
+			return subCount.Load() == 1
 		}, subSettleTimeout, subCheckInterval, "track was not subscribed")
 
 		require.Len(t, sm.GetSubscribedTracks(), 1)
