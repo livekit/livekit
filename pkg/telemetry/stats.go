@@ -5,10 +5,38 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
-func (t *telemetryService) TrackStats(streamType livekit.StreamType, participantID livekit.ParticipantID, trackID livekit.TrackID, stat *livekit.AnalyticsStat) {
+type StatsKey struct {
+	streamType    livekit.StreamType
+	participantID livekit.ParticipantID
+	trackID       livekit.TrackID
+	trackSource   livekit.TrackSource
+	trackType     livekit.TrackType
+	track         bool
+}
+
+func StatsKeyForTrack(streamType livekit.StreamType, participantID livekit.ParticipantID, trackID livekit.TrackID, trackSource livekit.TrackSource, trackType livekit.TrackType) StatsKey {
+	return StatsKey{
+		streamType:    streamType,
+		participantID: participantID,
+		trackID:       trackID,
+		trackSource:   trackSource,
+		trackType:     trackType,
+		track:         true,
+	}
+}
+
+func StatsKeyForData(streamType livekit.StreamType, participantID livekit.ParticipantID, trackID livekit.TrackID) StatsKey {
+	return StatsKey{
+		streamType:    streamType,
+		participantID: participantID,
+		trackID:       trackID,
+	}
+}
+
+func (t *telemetryService) TrackStats(key StatsKey, stat *livekit.AnalyticsStat) {
 	t.enqueue(func() {
 		direction := prometheus.Incoming
-		if streamType == livekit.StreamType_DOWNSTREAM {
+		if key.streamType == livekit.StreamType_DOWNSTREAM {
 			direction = prometheus.Outgoing
 		}
 
@@ -25,13 +53,18 @@ func (t *telemetryService) TrackStats(streamType livekit.StreamType, participant
 			firs += stream.Firs
 			packets += stream.PrimaryPackets + stream.PaddingPackets
 			bytes += stream.PrimaryBytes + stream.PaddingBytes
-			if streamType == livekit.StreamType_DOWNSTREAM {
+			if key.streamType == livekit.StreamType_DOWNSTREAM {
 				retransmitPackets += stream.RetransmitPackets
 				retransmitBytes += stream.RetransmitBytes
 			} else {
 				// for upstream, we don't account for these separately for now
 				packets += stream.RetransmitPackets
 				bytes += stream.RetransmitBytes
+			}
+			if key.track {
+				prometheus.RecordPacketLoss(direction, key.trackSource, key.trackType, stream.PacketsLost, stream.PrimaryPackets+stream.PaddingPackets)
+				prometheus.RecordRTT(direction, key.trackSource, key.trackType, stream.Rtt)
+				prometheus.RecordJitter(direction, key.trackSource, key.trackType, stream.Jitter)
 			}
 		}
 		prometheus.IncrementRTCP(direction, nacks, plis, firs)
@@ -44,8 +77,8 @@ func (t *telemetryService) TrackStats(streamType livekit.StreamType, participant
 			prometheus.IncrementBytes(direction, retransmitBytes, true)
 		}
 
-		if worker, ok := t.getWorker(participantID); ok {
-			worker.OnTrackStat(trackID, streamType, stat)
+		if worker, ok := t.getWorker(key.participantID); ok {
+			worker.OnTrackStat(key.trackID, key.streamType, stat)
 		}
 	})
 }

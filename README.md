@@ -232,8 +232,14 @@ This command publishes a looped demo video to a room. Due to how the video clip 
 there's a slight delay before the browser has sufficient data to begin rendering frames. This is an artifact of the
 simulation.
 
-## Deploying to a server
+## Deployment
 
+### Use LiveKit Cloud
+LiveKit Cloud is the fastest and most reliable way to run LiveKit. Every project gets free monthly bandwidth and transcoding credits.
+
+Sign up for [LiveKit Cloud](https://cloud.livekit.io/).
+
+### Self-host
 Read our [deployment docs](https://docs.livekit.io/deploy/) for more information.
 
 ## Building from source

@@ -81,6 +81,7 @@ type RTCConfig struct {
 	Interfaces              InterfacesConfig `yaml:"interfaces"`
 	IPs                     IPsConfig        `yaml:"ips"`
 	EnableLoopbackCandidate bool             `yaml:"enable_loopback_candidate"`
+	UseMDNS                 bool             `yaml:"use_mdns"`
 
 	// Number of packets to buffer for NACK
 	PacketBufferSize int `yaml:"packet_buffer_size,omitempty"`
