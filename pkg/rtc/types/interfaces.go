@@ -269,8 +269,6 @@ type LocalParticipant interface {
 	// subscriptions
 	SubscribeToTrack(trackID livekit.TrackID, publisherIdentity livekit.ParticipantIdentity, publisherID livekit.ParticipantID)
 	UnsubscribeFromTrack(trackID livekit.TrackID)
-	//AddSubscribedTrack(st SubscribedTrack, sourceTrack MediaTrack)
-	//RemoveSubscribedTrack(st SubscribedTrack, sourceTrack MediaTrack)
 	UpdateSubscribedTrackSettings(trackID livekit.TrackID, settings *livekit.UpdateTrackSettings) error
 	GetSubscribedTracks() []SubscribedTrack
 	VerifySubscribeParticipantInfo(pID livekit.ParticipantID, version uint32)
