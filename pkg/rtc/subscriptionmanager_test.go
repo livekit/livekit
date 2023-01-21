@@ -312,6 +312,7 @@ func TestUpdateSettingsBeforeSubscription(t *testing.T) {
 	}, subSettleTimeout, subCheckInterval, "track should be subscribed")
 
 	st := s.getSubscribedTrack().(*typesfakes.FakeSubscribedTrack)
+	require.Equal(t, 1, st.UpdateSubscriberSettingsCallCount())
 	applied := st.UpdateSubscriberSettingsArgsForCall(0)
 	require.Equal(t, settings.Disabled, applied.Disabled)
 	require.Equal(t, settings.Width, applied.Width)

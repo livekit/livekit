@@ -368,7 +368,7 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 	} else {
 		// revoke all subscriptions
 		for _, st := range p.GetSubscribedTracks() {
-			st.DownTrack().Close()
+			st.MediaTrack().RemoveSubscriber(p.ID(), false)
 		}
 	}
 
@@ -891,7 +891,6 @@ func (p *ParticipantImpl) onTrackSubscribed(subTrack types.SubscribedTrack) {
 			subTrack.DownTrack().SetConnected()
 		}
 		p.TransportManager.AddSubscribedTrack(subTrack)
-		//p.supervisor.SetSubscribedTrack(subTrack.ID(), subTrack, sourceTrack)
 	})
 }
 

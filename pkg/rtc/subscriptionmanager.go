@@ -200,6 +200,7 @@ func (m *SubscriptionManager) UpdateSubscribedTrackSettings(trackID livekit.Trac
 	sub, ok := m.subscriptions[trackID]
 	if !ok {
 		sub = newTrackSubscription(trackID)
+		m.subscriptions[trackID] = sub
 	}
 	m.lock.Unlock()
 

@@ -41,11 +41,7 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 		}
 	case *livekit.SignalRequest_TrackSetting:
 		for _, sid := range livekit.StringsAsTrackIDs(msg.TrackSetting.TrackSids) {
-			err := participant.UpdateSubscribedTrackSettings(sid, msg.TrackSetting)
-			if err != nil {
-				pLogger.Errorw("failed to update subscribed track settings", err, "trackID", sid)
-				continue
-			}
+			participant.UpdateSubscribedTrackSettings(sid, msg.TrackSetting)
 		}
 	case *livekit.SignalRequest_Leave:
 		pLogger.Infow("client leaving room")
