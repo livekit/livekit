@@ -125,6 +125,16 @@ type FakeParticipant struct {
 	startMutex       sync.RWMutex
 	startArgsForCall []struct {
 	}
+	StateStub        func() livekit.ParticipantInfo_State
+	stateMutex       sync.RWMutex
+	stateArgsForCall []struct {
+	}
+	stateReturns struct {
+		result1 livekit.ParticipantInfo_State
+	}
+	stateReturnsOnCall map[int]struct {
+		result1 livekit.ParticipantInfo_State
+	}
 	SubscriptionPermissionStub        func() (*livekit.SubscriptionPermission, *livekit.TimedVersion)
 	subscriptionPermissionMutex       sync.RWMutex
 	subscriptionPermissionArgsForCall []struct {
@@ -801,6 +811,59 @@ func (fake *FakeParticipant) StartCalls(stub func()) {
 	fake.StartStub = stub
 }
 
+func (fake *FakeParticipant) State() livekit.ParticipantInfo_State {
+	fake.stateMutex.Lock()
+	ret, specificReturn := fake.stateReturnsOnCall[len(fake.stateArgsForCall)]
+	fake.stateArgsForCall = append(fake.stateArgsForCall, struct {
+	}{})
+	stub := fake.StateStub
+	fakeReturns := fake.stateReturns
+	fake.recordInvocation("State", []interface{}{})
+	fake.stateMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) StateCallCount() int {
+	fake.stateMutex.RLock()
+	defer fake.stateMutex.RUnlock()
+	return len(fake.stateArgsForCall)
+}
+
+func (fake *FakeParticipant) StateCalls(stub func() livekit.ParticipantInfo_State) {
+	fake.stateMutex.Lock()
+	defer fake.stateMutex.Unlock()
+	fake.StateStub = stub
+}
+
+func (fake *FakeParticipant) StateReturns(result1 livekit.ParticipantInfo_State) {
+	fake.stateMutex.Lock()
+	defer fake.stateMutex.Unlock()
+	fake.StateStub = nil
+	fake.stateReturns = struct {
+		result1 livekit.ParticipantInfo_State
+	}{result1}
+}
+
+func (fake *FakeParticipant) StateReturnsOnCall(i int, result1 livekit.ParticipantInfo_State) {
+	fake.stateMutex.Lock()
+	defer fake.stateMutex.Unlock()
+	fake.StateStub = nil
+	if fake.stateReturnsOnCall == nil {
+		fake.stateReturnsOnCall = make(map[int]struct {
+			result1 livekit.ParticipantInfo_State
+		})
+	}
+	fake.stateReturnsOnCall[i] = struct {
+		result1 livekit.ParticipantInfo_State
+	}{result1}
+}
+
 func (fake *FakeParticipant) SubscriptionPermission() (*livekit.SubscriptionPermission, *livekit.TimedVersion) {
 	fake.subscriptionPermissionMutex.Lock()
 	ret, specificReturn := fake.subscriptionPermissionReturnsOnCall[len(fake.subscriptionPermissionArgsForCall)]
@@ -1064,6 +1127,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.setNameMutex.RUnlock()
 	fake.startMutex.RLock()
 	defer fake.startMutex.RUnlock()
+	fake.stateMutex.RLock()
+	defer fake.stateMutex.RUnlock()
 	fake.subscriptionPermissionMutex.RLock()
 	defer fake.subscriptionPermissionMutex.RUnlock()
 	fake.toProtoMutex.RLock()

@@ -323,7 +323,7 @@ func (t *MediaTrackSubscriptions) GetNumSubscribers() int {
 	return len(t.subscribedTracks)
 }
 
-func (t *MediaTrackSubscriptions) NotifyPermissionsChanged() {
+func (t *MediaTrackSubscriptions) NotifyChanged() {
 	t.subscribedTracksMu.RLock()
 	defer t.subscribedTracksMu.RUnlock()
 
@@ -338,13 +338,13 @@ func (t *MediaTrackSubscriptions) NotifyPermissionsChanged() {
 	}()
 }
 
-func (t *MediaTrackSubscriptions) AddPermissionObserver(pID livekit.ParticipantID, onChanged func()) {
+func (t *MediaTrackSubscriptions) AddChangeObserver(pID livekit.ParticipantID, onChanged func()) {
 	t.permissionsMu.Lock()
 	t.permissionObservers[pID] = onChanged
 	t.permissionsMu.Unlock()
 }
 
-func (t *MediaTrackSubscriptions) RemovePermissionObserver(pID livekit.ParticipantID) {
+func (t *MediaTrackSubscriptions) RemoveChangeObserver(pID livekit.ParticipantID) {
 	t.permissionsMu.Lock()
 	delete(t.permissionObservers, pID)
 	t.permissionsMu.Unlock()

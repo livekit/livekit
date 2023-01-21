@@ -173,6 +173,7 @@ func (p ParticipantCloseReason) ToDisconnectReason() livekit.DisconnectReason {
 type Participant interface {
 	ID() livekit.ParticipantID
 	Identity() livekit.ParticipantIdentity
+	State() livekit.ParticipantInfo_State
 
 	ToProto() *livekit.ParticipantInfo
 
@@ -233,7 +234,6 @@ type LocalParticipant interface {
 	GetAdaptiveStream() bool
 	ProtocolVersion() ProtocolVersion
 	ConnectedAt() time.Time
-	State() livekit.ParticipantInfo_State
 	IsClosed() bool
 	IsReady() bool
 	IsDisconnected() bool
@@ -336,7 +336,6 @@ type Room interface {
 	UpdateSubscriptionPermission(participant LocalParticipant, permissions *livekit.SubscriptionPermission) error
 	SyncState(participant LocalParticipant, state *livekit.SyncState) error
 	SimulateScenario(participant LocalParticipant, scenario *livekit.SimulateScenario) error
-	SetParticipantPermission(participant LocalParticipant, permission *livekit.ParticipantPermission) error
 	UpdateVideoLayers(participant Participant, updateVideoLayers *livekit.UpdateVideoLayers) error
 	ResolveMediaTrackForSubscriber(subIdentity livekit.ParticipantIdentity, publisherID livekit.ParticipantID, trackID livekit.TrackID) (MediaResolverResult, error)
 }
@@ -375,9 +374,9 @@ type MediaTrack interface {
 	GetAllSubscribers() []livekit.ParticipantID
 	GetNumSubscribers() int
 	IsSubscribed() bool
-	NotifyPermissionsChanged()
-	AddPermissionObserver(pID livekit.ParticipantID, onChanged func())
-	RemovePermissionObserver(pID livekit.ParticipantID)
+	NotifyChanged()
+	AddChangeObserver(pID livekit.ParticipantID, onChanged func())
+	RemoveChangeObserver(pID livekit.ParticipantID)
 
 	// returns quality information that's appropriate for width & height
 	GetQualityForDimension(width, height uint32) livekit.VideoQuality

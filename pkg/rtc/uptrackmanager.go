@@ -201,7 +201,7 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 	u.lock.Unlock()
 
 	for _, t := range u.GetPublishedTracks() {
-		t.NotifyPermissionsChanged()
+		t.NotifyChanged()
 	}
 	u.maybeRevokeSubscriptions(resolverByIdentity)
 

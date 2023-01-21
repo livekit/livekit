@@ -261,12 +261,12 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 			s.recordAttempt(false)
 
 			switch err {
-			case ErrNoTrackPermission, ErrNoSubscribePermission:
+			case ErrNoTrackPermission, ErrNoSubscribePermission, ErrTrackNotAttached:
 				// ignore permission errors, it's outside of our control and publisher could
 				// grant any time
 			case ErrPublisherNotConnected, ErrTrackNotFound:
 				// publisher left or track was unpublished, if after timeout, we'd unsubscribe
-				// from it. this is the *only* case we'd control subscriptions
+				// from it. this is the *only* case we'd change desired state
 				if s.durationSinceStart() > notFoundTimeout {
 					m.params.Logger.Infow("unsubscribing track since track isn't available",
 						"trackID", s.trackID,
@@ -376,7 +376,7 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 	}
 	if !res.HasPermission {
 		if permChanged {
-			track.AddPermissionObserver(m.params.Participant.ID(), func() {
+			track.AddChangeObserver(m.params.Participant.ID(), func() {
 				m.queueReconcile(s.trackID)
 			})
 		}
@@ -435,7 +435,7 @@ func (m *SubscriptionManager) unsubscribe(s *trackSubscription) error {
 
 	track := subTrack.MediaTrack()
 	pID := m.params.Participant.ID()
-	track.RemovePermissionObserver(pID)
+	track.RemoveChangeObserver(pID)
 	track.RemoveSubscriber(pID, false)
 
 	return nil

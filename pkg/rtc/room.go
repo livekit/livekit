@@ -134,7 +134,7 @@ func (r *Room) GetParticipant(identity livekit.ParticipantIdentity) types.LocalP
 	return r.participants[identity]
 }
 
-func (r *Room) GetParticipantBySid(participantID livekit.ParticipantID) types.LocalParticipant {
+func (r *Room) GetParticipantByID(participantID livekit.ParticipantID) types.LocalParticipant {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
@@ -283,7 +283,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 	participant.OnDataPacket(r.onDataPacket)
 	participant.OnSubscribeStatusChanged(func(publisherID livekit.ParticipantID, subscribed bool) {
 		if subscribed {
-			pub := r.GetParticipantBySid(publisherID)
+			pub := r.GetParticipantByID(publisherID)
 			if pub != nil && pub.State() == livekit.ParticipantInfo_ACTIVE {
 				// when a participant subscribes to another participant,
 				// send speaker update if the subscribed to participant is active.
@@ -472,7 +472,7 @@ func (r *Room) UpdateSubscriptions(
 	}
 
 	for _, pt := range participantTracks {
-		pub := r.GetParticipantBySid(livekit.ParticipantID(pt.ParticipantSid))
+		pub := r.GetParticipantByID(livekit.ParticipantID(pt.ParticipantSid))
 		for _, trackID := range livekit.StringsAsTrackIDs(pt.TrackSids) {
 			publisherIDs[trackID] = livekit.ParticipantID(pt.ParticipantSid)
 			if pub != nil {
@@ -497,27 +497,21 @@ func (r *Room) SyncState(participant types.LocalParticipant, state *livekit.Sync
 }
 
 func (r *Room) UpdateSubscriptionPermission(participant types.LocalParticipant, subscriptionPermission *livekit.SubscriptionPermission) error {
-	return participant.UpdateSubscriptionPermission(subscriptionPermission, nil, r.GetParticipant, r.GetParticipantBySid)
+	return participant.UpdateSubscriptionPermission(subscriptionPermission, nil, r.GetParticipant, r.GetParticipantByID)
 }
 
 func (r *Room) RemoveDisallowedSubscriptions(sub types.LocalParticipant, disallowedSubscriptions map[livekit.TrackID]livekit.ParticipantID) {
 	for trackID, publisherID := range disallowedSubscriptions {
-		pub := r.GetParticipantBySid(publisherID)
+		pub := r.GetParticipantByID(publisherID)
 		if pub == nil {
 			continue
 		}
 
 		track := pub.GetPublishedTrack(trackID)
-		if track == nil {
+		if track != nil {
 			track.RemoveSubscriber(sub.ID(), false)
 		}
 	}
-}
-
-func (r *Room) SetParticipantPermission(participant types.LocalParticipant, permission *livekit.ParticipantPermission) error {
-	// SetPermission will fire permission changed observers
-	participant.SetPermission(permission)
-	return nil
 }
 
 func (r *Room) UpdateVideoLayers(participant types.Participant, updateVideoLayers *livekit.UpdateVideoLayers) error {
@@ -526,7 +520,7 @@ func (r *Room) UpdateVideoLayers(participant types.Participant, updateVideoLayer
 
 func (r *Room) ResolveMediaTrackForSubscriber(subIdentity livekit.ParticipantIdentity, publisherID livekit.ParticipantID, trackID livekit.TrackID) (types.MediaResolverResult, error) {
 	res := types.MediaResolverResult{}
-	pub := r.GetParticipantBySid(publisherID)
+	pub := r.GetParticipantByID(publisherID)
 	if pub == nil {
 		return res, ErrPublisherNotConnected
 	}

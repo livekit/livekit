@@ -323,7 +323,7 @@ func (r *RoomManager) StartSession(
 		AllowTCPFallback:        allowFallback,
 		TURNSEnabled:            r.config.IsTURNSEnabled(),
 		GetParticipantInfo: func(pID livekit.ParticipantID) *livekit.ParticipantInfo {
-			if p := room.GetParticipantBySid(pID); p != nil {
+			if p := room.GetParticipantByID(pID); p != nil {
 				return p.ToProto()
 			}
 			return nil
@@ -586,10 +586,7 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomName livekit.Roo
 			participant.SetMetadata(rm.UpdateParticipant.Metadata)
 		}
 		if rm.UpdateParticipant.Permission != nil {
-			err := room.SetParticipantPermission(participant, rm.UpdateParticipant.Permission)
-			if err != nil {
-				pLogger.Errorw("could not update permissions", err)
-			}
+			participant.SetPermission(rm.UpdateParticipant.Permission)
 		}
 	case *livekit.RTCNodeMessage_DeleteRoom:
 		room.Logger.Infow("deleting room")
