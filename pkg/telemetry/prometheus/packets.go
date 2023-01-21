@@ -191,15 +191,16 @@ func RecordRTT(direction Direction, trackSource livekit.TrackSource, trackType l
 	}
 }
 
-func IncrementParticipantJoin(join uint32, rtcConnected ...bool) {
+func IncrementParticipantJoin(join uint32, state string) {
 	if join > 0 {
-		if len(rtcConnected) > 0 && rtcConnected[0] {
-			participantRTC.Add(uint64(join))
-			promParticipantJoin.WithLabelValues("rtc_connected").Add(float64(join))
-		} else {
+		switch state {
+		case "signal_connected", "rtc_initiated":
 			participantJoin.Add(uint64(join))
-			promParticipantJoin.WithLabelValues("signal_connected").Add(float64(join))
+		case "rtc_connected":
+			participantRTC.Add(uint64(join))
 		}
+
+		promParticipantJoin.WithLabelValues(state).Add(float64(join))
 	}
 }
 
