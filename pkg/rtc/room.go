@@ -701,10 +701,6 @@ func (r *Room) SimulateScenario(participant types.LocalParticipant, simulateScen
 
 // checks if participant should be autosubscribed to new tracks, assumes lock is already acquired
 func (r *Room) autoSubscribe(participant types.LocalParticipant) bool {
-	if !participant.CanSubscribe() {
-		return false
-	}
-
 	opts := r.participantOpts[participant.Identity()]
 	// default to true if no options are set
 	if opts != nil && !opts.AutoSubscribe {

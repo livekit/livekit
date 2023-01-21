@@ -31,7 +31,7 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-// using var instead of const to override in unittests
+// using var instead of const to override in tests
 var (
 	reconcileInterval = 3 * time.Second
 	// amount of time to give up if a track or publisher isn't found
@@ -98,8 +98,6 @@ func (m *SubscriptionManager) Close(willBeResumed bool) {
 		}
 	}
 
-	// Close peer connections without blocking participant close. If peer connections are gathering candidates
-	// Close will block.
 	go func() {
 		for _, dt := range downTracksToClose {
 			dt.CloseWithFlush(!willBeResumed)
@@ -125,8 +123,14 @@ func (m *SubscriptionManager) SubscribeToTrack(trackID livekit.TrackID, publishe
 	}
 	m.lock.Unlock()
 	sub.setPublisher(publisherIdentity, publisherID)
-	sub.setDesired(true)
-	m.queueReconcile(trackID)
+	if sub.setDesired(true) {
+		m.params.Logger.Infow("subscribing to track",
+			"trackID", trackID,
+			"publisherID", publisherID,
+			"publisherIdentity", publisherIdentity,
+		)
+		m.queueReconcile(trackID)
+	}
 }
 
 func (m *SubscriptionManager) UnsubscribeFromTrack(trackID livekit.TrackID) {
@@ -137,8 +141,14 @@ func (m *SubscriptionManager) UnsubscribeFromTrack(trackID livekit.TrackID) {
 		return
 	}
 
-	sub.setDesired(false)
-	m.queueReconcile(trackID)
+	if sub.setDesired(false) {
+		m.params.Logger.Infow("unsubscribing from track",
+			"trackID", trackID,
+			"publisherID", sub.getPublisherID(),
+			"publisherIdentity", sub.getPublisherIdentity(),
+		)
+		m.queueReconcile(trackID)
+	}
 }
 
 func (m *SubscriptionManager) GetSubscribedTracks() []types.SubscribedTrack {
@@ -198,7 +208,7 @@ func (m *SubscriptionManager) UpdateSubscribedTrackSettings(trackID livekit.Trac
 }
 
 // OnSubscribeStatusChanged callback will be notified when a participant subscribes or unsubscribes to another participant
-// it will only fire once per participant. If current participant is subscribed to multiple tracks from another, this
+// it will only fire once per publisher. If current participant is subscribed to multiple tracks from another, this
 // callback will only fire once.
 func (m *SubscriptionManager) OnSubscribeStatusChanged(fn func(publisherID livekit.ParticipantID, subscribed bool)) {
 	m.lock.Lock()
@@ -246,12 +256,6 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 					Identity: string(s.getPublisherIdentity()),
 				},
 			)
-			m.params.Logger.Infow("subscribing to track",
-				"trackID", s.trackID,
-				"publisherID", s.getPublisherID(),
-				"publisherIdentity", s.getPublisherIdentity(),
-			)
-
 		}
 		if err := m.subscribe(s); err != nil {
 			s.recordAttempt(false)
@@ -290,11 +294,6 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 	}
 
 	if s.needsUnsubscribe() {
-		m.params.Logger.Infow("unsubscribing from track",
-			"trackID", s.trackID,
-			"publisherID", s.getPublisherID(),
-			"publisherIdentity", s.getPublisherIdentity(),
-		)
 		if err := m.unsubscribe(s); err != nil {
 			m.params.Logger.Errorw("failed to unsubscribe", err,
 				"trackID", s.trackID,
@@ -323,6 +322,7 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 	}
 }
 
+// trigger an immediate reconcilation, when trackID is empty, will reconcile all subscriptions
 func (m *SubscriptionManager) queueReconcile(trackID livekit.TrackID) {
 	select {
 	case m.reconcileCh <- trackID:
@@ -348,6 +348,8 @@ func (m *SubscriptionManager) reconcileWorker() {
 			m.lock.RUnlock()
 			if s != nil {
 				m.reconcileSubscription(s)
+			} else {
+				m.reconcileSubscriptions()
 			}
 		}
 	}

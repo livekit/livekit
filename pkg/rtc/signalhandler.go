@@ -26,27 +26,16 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 	case *livekit.SignalRequest_Mute:
 		participant.SetTrackMuted(livekit.TrackID(msg.Mute.Sid), msg.Mute.Muted, false)
 	case *livekit.SignalRequest_Subscription:
-		var err error
-		// always allow unsubscribe
-		if participant.CanSubscribe() || !msg.Subscription.Subscribe {
-			updateErr := room.UpdateSubscriptions(
-				participant,
-				livekit.StringsAsTrackIDs(msg.Subscription.TrackSids),
-				msg.Subscription.ParticipantTracks,
-				msg.Subscription.Subscribe,
-			)
-			if updateErr != nil {
-				err = updateErr
-			}
-		} else {
-			err = ErrCannotSubscribe
-		}
+		// allow participant to indicate their interest in the subscription
+		// permission check happens later in SubscriptionManager
+		err := room.UpdateSubscriptions(
+			participant,
+			livekit.StringsAsTrackIDs(msg.Subscription.TrackSids),
+			msg.Subscription.ParticipantTracks,
+			msg.Subscription.Subscribe,
+		)
 		if err != nil {
 			pLogger.Warnw("could not update subscription", err,
-				"trackID", msg.Subscription.TrackSids,
-				"subscribe", msg.Subscription.Subscribe)
-		} else {
-			pLogger.Infow("updated subscription",
 				"trackID", msg.Subscription.TrackSids,
 				"subscribe", msg.Subscription.Subscribe)
 		}

@@ -346,6 +346,7 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 	video.Recorder = permission.Recorder
 
 	canPublish := video.GetCanPublish()
+	canSubscribe := video.GetCanSubscribe()
 	onParticipantUpdate := p.onParticipantUpdate
 	onClaimsChanged := p.onClaimsChanged
 	p.lock.Unlock()
@@ -362,6 +363,15 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 			}
 		}
 	}
+	if canSubscribe {
+		p.SubscriptionManager.queueReconcile("")
+	} else {
+		// revoke all subscriptions
+		for _, st := range p.GetSubscribedTracks() {
+			st.DownTrack().Close()
+		}
+	}
+
 	// update isPublisher attribute
 	p.isPublisher.Store(canPublish && p.TransportManager.IsPublisherEstablished())
 
@@ -639,6 +649,8 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 		onClose(p, disallowedSubscriptions)
 	}
 
+	// Close peer connections without blocking participant Close. If peer connections are gathering candidates
+	// Close will block.
 	go p.TransportManager.Close()
 
 	p.dataChannelStats.Report()
