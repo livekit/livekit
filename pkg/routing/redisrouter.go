@@ -207,7 +207,7 @@ func (r *RedisRouter) WriteNodeRTC(_ context.Context, rtcNodeID string, msg *liv
 }
 
 func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantKey livekit.ParticipantKey, participantKeyB62 livekit.ParticipantKey) error {
-	prometheus.IncrementParticipantJoin(1, "rtc_initiated")
+	prometheus.IncrementParticipantJoin(1, "rtc_init")
 	// find the node where the room is hosted at
 	rtcNode, err := r.GetNodeForRoom(r.ctx, livekit.RoomName(ss.RoomName))
 	if err != nil {

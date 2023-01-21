@@ -83,7 +83,7 @@ func (r *LocalRouter) ListNodes() ([]*livekit.Node, error) {
 }
 
 func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit) (connectionID livekit.ConnectionID, reqSink MessageSink, resSource MessageSource, err error) {
-	prometheus.IncrementParticipantJoin(1, "rtc_initiated")
+	prometheus.IncrementParticipantJoin(1, "rtc_init")
 	// treat it as a new participant connecting
 	if r.onNewParticipant == nil {
 		err = ErrHandlerNotDefined

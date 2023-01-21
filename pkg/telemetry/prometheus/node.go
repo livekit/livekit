@@ -133,6 +133,7 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 	retransmitBytesNow := retransmitBytes.Load()
 	retransmitPacketsNow := retransmitPackets.Load()
 	participantJoinNow := participantJoin.Load()
+	participantRTCInitNow := participantRTCInit.Load()
 	participantRTCNow := participantRTC.Load()
 	trackPublishAttemptsNow := trackPublishAttempts.Load()
 	trackPublishSuccessNow := trackPublishSuccess.Load()
@@ -171,6 +172,7 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		RetransmitPacketsOut:         retransmitPacketsNow,
 		NackTotal:                    nackTotalNow,
 		ParticipantJoin:              participantJoinNow,
+		ParticipantRtcInit:           participantRTCInitNow,
 		ParticipantRtc:               participantRTCNow,
 		BytesInPerSec:                prevAverage.BytesInPerSec,
 		BytesOutPerSec:               prevAverage.BytesOutPerSec,
@@ -180,6 +182,7 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		RetransmitPacketsOutPerSec:   prevAverage.RetransmitPacketsOutPerSec,
 		NackPerSec:                   prevAverage.NackPerSec,
 		ParticipantJoinPerSec:        prevAverage.ParticipantJoinPerSec,
+		ParticipantRtcInitPerSec:     prevAverage.ParticipantRtcInitPerSec,
 		ParticipantRtcPerSec:         prevAverage.ParticipantRtcPerSec,
 		NumCpus:                      numCPUs,
 		CpuLoad:                      cpuLoad,
@@ -206,6 +209,7 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		stats.RetransmitPacketsOutPerSec = perSec(prevAverage.RetransmitPacketsOut, retransmitPacketsNow, elapsed)
 		stats.NackPerSec = perSec(prevAverage.NackTotal, nackTotalNow, elapsed)
 		stats.ParticipantJoinPerSec = perSec(prevAverage.ParticipantJoin, participantJoinNow, elapsed)
+		stats.ParticipantRtcInitPerSec = perSec(prevAverage.ParticipantRtcInit, participantRTCInitNow, elapsed)
 		stats.ParticipantRtcPerSec = perSec(prevAverage.ParticipantRtc, participantRTCNow, elapsed)
 		stats.SysPacketsOutPerSec = perSec(uint64(prevAverage.SysPacketsOut), uint64(sysPackets), elapsed)
 		stats.SysPacketsDroppedPerSec = perSec(uint64(prevAverage.SysPacketsDropped), uint64(sysDroppedPackets), elapsed)
