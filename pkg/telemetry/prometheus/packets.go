@@ -17,16 +17,16 @@ const (
 )
 
 var (
-	bytesIn            atomic.Uint64
-	bytesOut           atomic.Uint64
-	packetsIn          atomic.Uint64
-	packetsOut         atomic.Uint64
-	nackTotal          atomic.Uint64
-	retransmitBytes    atomic.Uint64
-	retransmitPackets  atomic.Uint64
-	participantJoin    atomic.Uint64
-	participantRTC     atomic.Uint64
-	participantRTCInit atomic.Uint64
+	bytesIn                    atomic.Uint64
+	bytesOut                   atomic.Uint64
+	packetsIn                  atomic.Uint64
+	packetsOut                 atomic.Uint64
+	nackTotal                  atomic.Uint64
+	retransmitBytes            atomic.Uint64
+	retransmitPackets          atomic.Uint64
+	participantSignalConnected atomic.Uint64
+	participantRTCConnected    atomic.Uint64
+	participantRTCInit         atomic.Uint64
 
 	promPacketLabels    = []string{"direction", "transmission"}
 	promPacketTotal     *prometheus.CounterVec
@@ -192,18 +192,24 @@ func RecordRTT(direction Direction, trackSource livekit.TrackSource, trackType l
 	}
 }
 
-func IncrementParticipantJoin(join uint32, state string) {
+func IncrementParticipantJoin(join uint32) {
 	if join > 0 {
-		switch state {
-		case "signal_connected":
-			participantJoin.Add(uint64(join))
-		case "rtc_init":
-			participantRTCInit.Add(uint64(join))
-		case "rtc_connected":
-			participantRTC.Add(uint64(join))
-		}
+		participantSignalConnected.Add(uint64(join))
+		promParticipantJoin.WithLabelValues("signal_connected").Add(float64(join))
+	}
+}
 
-		promParticipantJoin.WithLabelValues(state).Add(float64(join))
+func IncrementParticipantRtcInit(join uint32) {
+	if join > 0 {
+		participantRTCInit.Add(uint64(join))
+		promParticipantJoin.WithLabelValues("rtc_init").Add(float64(join))
+	}
+}
+
+func IncrementParticipantRtcConnected(join uint32) {
+	if join > 0 {
+		participantRTCConnected.Add(uint64(join))
+		promParticipantJoin.WithLabelValues("rtc_connected").Add(float64(join))
 	}
 }
 

@@ -207,7 +207,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prometheus.IncrementParticipantJoin(1, "signal_connected")
+	prometheus.IncrementParticipantJoin(1)
 
 	if !pi.Reconnect && initialResponse.GetJoin() != nil {
 		pi.ID = livekit.ParticipantID(initialResponse.GetJoin().GetParticipant().GetSid())
