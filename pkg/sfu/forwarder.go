@@ -5,7 +5,6 @@ import (
 	"math"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/pion/webrtc/v3"
 
@@ -171,14 +170,13 @@ var (
 type ForwarderState struct {
 	Started               bool
 	ReferenceLayerSpatial int32
-	LastTSCalc            int64
 	RTP                   RTPMungerState
 	VP8                   VP8MungerState
 }
 
 func (f ForwarderState) String() string {
-	return fmt.Sprintf("ForwarderState{started: %v, ref: %d, lTSCalc: %d, rtp: %s, vp8: %s}",
-		f.Started, f.ReferenceLayerSpatial, f.LastTSCalc, f.RTP.String(), f.VP8.String())
+	return fmt.Sprintf("ForwarderState{started: %v, ref: %d, rtp: %s, vp8: %s}",
+		f.Started, f.ReferenceLayerSpatial, f.RTP.String(), f.VP8.String())
 }
 
 // -------------------------------------------------------------------
@@ -194,7 +192,6 @@ type Forwarder struct {
 
 	started               bool
 	lastSSRC              uint32
-	lTSCalc               int64
 	referenceLayerSpatial int32
 
 	maxLayers     VideoLayers
@@ -277,7 +274,6 @@ func (f *Forwarder) GetState() ForwarderState {
 	state := ForwarderState{
 		Started:               f.started,
 		ReferenceLayerSpatial: f.referenceLayerSpatial,
-		LastTSCalc:            f.lTSCalc,
 		RTP:                   f.rtpMunger.GetLast(),
 	}
 
@@ -296,7 +292,6 @@ func (f *Forwarder) SeedState(state ForwarderState) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	f.lTSCalc = state.LastTSCalc
 	f.rtpMunger.SeedLast(state.RTP)
 	if f.vp8Munger != nil {
 		f.vp8Munger.SeedLast(state.VP8)
@@ -1402,33 +1397,19 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 		} else {
 			// Compute how much time passed between the old RTP extPkt
 			// and the current packet, and fix timestamp on source change
-			var td uint32
+			td := uint32(1)
 			if f.getReferenceLayerRTPTimestamp != nil {
 				refTS, err := f.getReferenceLayerRTPTimestamp(extPkt.Packet.Timestamp, layer, f.referenceLayerSpatial)
 				if err == nil {
 					last := f.rtpMunger.GetLast()
 					td = refTS - last.LastTS
 					if td > (1 << 31) {
-						f.logger.Infow("reference timestamp out-of-order", "lastTS", last.LastTS, "refTS", refTS, "td", int32(td))
-						td = 0 // reset to force arrival time based calculation
+						f.logger.Infow("reference timestamp out-of-order, using default", "lastTS", last.LastTS, "refTS", refTS, "td", int32(td))
+						td = 1
 					}
 				}
-			}
-
-			if td == 0 {
-				tDiffMs := (extPkt.Arrival - f.lTSCalc) / 1e6
-				if tDiffMs < 0 {
-					tDiffMs = 0
-				}
-				td = uint32(tDiffMs * int64(f.codec.ClockRate) / 1000)
-				if td == 0 {
-					td = 1
-				}
-				f.logger.Infow(
-					"timestamp adjustment using arrival time",
-					"tDiffMsOrig", (extPkt.Arrival-f.lTSCalc)/1e6, "tDiffMsAdjusted", tDiffMs,
-					"tdOrig", uint32(tDiffMs*int64(f.codec.ClockRate)/1000), "tdAdjusted", td,
-				)
+			} else {
+				f.logger.Infow("reference timestamp not available, using default")
 			}
 
 			f.rtpMunger.UpdateSnTsOffsets(extPkt, 1, td)
@@ -1439,8 +1420,6 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 
 		f.lastSSRC = extPkt.Packet.SSRC
 	}
-
-	f.lTSCalc = extPkt.Arrival
 
 	if tp == nil {
 		tp = &TranslationParams{}
@@ -1594,12 +1573,6 @@ func (f *Forwarder) GetSnTsForPadding(num int) ([]SnTs, error) {
 func (f *Forwarder) GetSnTsForBlankFrames(frameRate uint32, numPackets int) ([]SnTs, bool, error) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
-
-	// NOTE: not using diff of current time and previous packet time (lTSCalc) as this
-	// driven by a timer, there might be slight differences compared to the frame rate.
-	// As the differences are going to be small (and also not to update RTP time stamp
-	// by those small differences), not doing the diff.
-	f.lTSCalc = time.Now().UnixNano()
 
 	frameEndNeeded := !f.rtpMunger.IsOnFrameBoundary()
 	if frameEndNeeded {
