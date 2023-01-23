@@ -100,7 +100,7 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 			return nil, err
 		}
 
-		node, err := r.selector.SelectNode(nodes)
+		node, err := r.selector.SelectNode(nodes, selector.AssignMeeting)
 		if err != nil {
 			return nil, err
 		}
