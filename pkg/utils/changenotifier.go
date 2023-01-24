@@ -21,38 +21,49 @@ import (
 )
 
 type ChangeNotifier struct {
-	observers sync.Map
+	lock      sync.Mutex
+	observers map[string]func()
 }
 
 func NewChangeNotifier() *ChangeNotifier {
-	return &ChangeNotifier{}
+	return &ChangeNotifier{
+		observers: make(map[string]func()),
+	}
 }
 
 func (n *ChangeNotifier) AddObserver(key string, onChanged func()) {
-	n.observers.Store(key, onChanged)
+	n.lock.Lock()
+	defer n.lock.Unlock()
+
+	n.observers[key] = onChanged
 }
 
 func (n *ChangeNotifier) RemoveObserver(key string) {
-	n.observers.Delete(key)
+	n.lock.Lock()
+	defer n.lock.Unlock()
+
+	delete(n.observers, key)
 }
 
 func (n *ChangeNotifier) HasObservers() bool {
-	hasObservers := false
-	n.observers.Range(func(key, val any) bool {
-		hasObservers = true
-		return false
-	})
-	return hasObservers
+	n.lock.Lock()
+	defer n.lock.Unlock()
+
+	return len(n.observers) > 0
 }
 
 func (n *ChangeNotifier) NotifyChanged() {
+	n.lock.Lock()
+	observers := n.observers
+	n.lock.Unlock()
+
+	if len(observers) == 0 {
+		return
+	}
 	go func() {
-		n.observers.Range(func(key, val any) bool {
-			if fn, ok := val.(func()); ok {
-				fn()
-			}
-			return true
-		})
+		for _, f := range observers {
+			f()
+		}
 	}()
 }
 
