@@ -223,6 +223,7 @@ func (m *SubscriptionManager) WaitUntilSubscribed(timeout time.Duration) error {
 		for _, sub := range m.subscriptions {
 			if sub.needsSubscribe() {
 				allSubscribed = false
+				break
 			}
 		}
 		m.lock.RUnlock()

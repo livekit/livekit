@@ -22,7 +22,7 @@ var (
 	// success rate by subtracting this from total attempts
 	trackSubscribeUserError atomic.Int32
 
-	promRoomTotal              prometheus.Gauge
+	promRoomCurrent            prometheus.Gauge
 	promRoomDuration           prometheus.Histogram
 	promParticipantCurrent     prometheus.Gauge
 	promTrackPublishedCurrent  *prometheus.GaugeVec
@@ -32,7 +32,7 @@ var (
 )
 
 func initRoomStats(nodeID string, nodeType livekit.NodeType) {
-	promRoomTotal = prometheus.NewGauge(prometheus.GaugeOpts{
+	promRoomCurrent = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "room",
 		Name:        "total",
@@ -78,7 +78,7 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	}, []string{"state", "error"})
 
-	prometheus.MustRegister(promRoomTotal)
+	prometheus.MustRegister(promRoomCurrent)
 	prometheus.MustRegister(promRoomDuration)
 	prometheus.MustRegister(promParticipantCurrent)
 	prometheus.MustRegister(promTrackPublishedCurrent)
@@ -88,7 +88,7 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 }
 
 func RoomStarted() {
-	promRoomTotal.Add(1)
+	promRoomCurrent.Add(1)
 	roomCurrent.Inc()
 }
 
@@ -96,7 +96,7 @@ func RoomEnded(startedAt time.Time) {
 	if !startedAt.IsZero() {
 		promRoomDuration.Observe(float64(time.Since(startedAt)) / float64(time.Second))
 	}
-	promRoomTotal.Sub(1)
+	promRoomCurrent.Sub(1)
 	roomCurrent.Dec()
 }
 

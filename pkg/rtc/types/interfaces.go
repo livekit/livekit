@@ -451,10 +451,7 @@ type MediaTrackResolver func(livekit.ParticipantIdentity, livekit.ParticipantID,
 type OperationMonitorEvent int
 
 const (
-	OperationMonitorEventUpdateSubscription OperationMonitorEvent = iota
-	OperationMonitorEventSetSubscribedTrack
-	OperationMonitorEventClearSubscribedTrack
-	OperationMonitorEventPublisherPeerConnectionConnected
+	OperationMonitorEventPublisherPeerConnectionConnected OperationMonitorEvent = iota
 	OperationMonitorEventAddPendingPublication
 	OperationMonitorEventSetPublicationMute
 	OperationMonitorEventSetPublishedTrack
@@ -463,12 +460,6 @@ const (
 
 func (o OperationMonitorEvent) String() string {
 	switch o {
-	case OperationMonitorEventUpdateSubscription:
-		return "UPDATE_SUBSCRIPTION"
-	case OperationMonitorEventSetSubscribedTrack:
-		return "SET_SUBSCRIBED_TRACK"
-	case OperationMonitorEventClearSubscribedTrack:
-		return "CLEAR_SUBSCRIBED_TRACK"
 	case OperationMonitorEventPublisherPeerConnectionConnected:
 		return "PUBLISHER_PEER_CONNECTION_CONNECTED"
 	case OperationMonitorEventAddPendingPublication:

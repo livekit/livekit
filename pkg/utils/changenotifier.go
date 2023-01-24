@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package rtc
+package utils
 
 import (
 	"sync"
