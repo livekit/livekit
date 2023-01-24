@@ -10,7 +10,6 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -212,7 +211,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			case *rtcp.SourceDescription:
 			// do nothing for now
 			case *rtcp.SenderReport:
-				t.params.Logger.Debugw("SENDER_REPORT", "ntp", mediatransportutil.NtpTime(pkt.NTPTime).Time(), "packets", pkt.PacketCount, "octets", pkt.OctetCount) // REMOVE
 				buff.SetSenderReportData(pkt.RTPTime, pkt.NTPTime)
 			}
 		}
