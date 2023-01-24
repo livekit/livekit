@@ -2417,7 +2417,7 @@ func (fake *FakeLocalParticipant) IsClosed() bool {
 	}{})
 	stub := fake.IsClosedStub
 	fakeReturns := fake.isClosedReturns
-	fake.recordInvocation("isClosed", []interface{}{})
+	fake.recordInvocation("IsClosed", []interface{}{})
 	fake.isClosedMutex.Unlock()
 	if stub != nil {
 		return stub()

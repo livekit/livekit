@@ -10,12 +10,6 @@ import (
 )
 
 type FakeMediaTrack struct {
-	AddChangeObserverStub        func(livekit.ParticipantID, func())
-	addChangeObserverMutex       sync.RWMutex
-	addChangeObserverArgsForCall []struct {
-		arg1 livekit.ParticipantID
-		arg2 func()
-	}
 	AddOnCloseStub        func(func())
 	addOnCloseMutex       sync.RWMutex
 	addOnCloseArgsForCall []struct {
@@ -160,10 +154,6 @@ type FakeMediaTrack struct {
 	nameReturnsOnCall map[int]struct {
 		result1 string
 	}
-	NotifyChangedStub        func()
-	notifyChangedMutex       sync.RWMutex
-	notifyChangedArgsForCall []struct {
-	}
 	PublisherIDStub        func() livekit.ParticipantID
 	publisherIDMutex       sync.RWMutex
 	publisherIDArgsForCall []struct {
@@ -203,11 +193,6 @@ type FakeMediaTrack struct {
 	}
 	receiversReturnsOnCall map[int]struct {
 		result1 []sfu.TrackReceiver
-	}
-	RemoveChangeObserverStub        func(livekit.ParticipantID)
-	removeChangeObserverMutex       sync.RWMutex
-	removeChangeObserverArgsForCall []struct {
-		arg1 livekit.ParticipantID
 	}
 	RemoveSubscriberStub        func(livekit.ParticipantID, bool)
 	removeSubscriberMutex       sync.RWMutex
@@ -258,39 +243,6 @@ type FakeMediaTrack struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
-}
-
-func (fake *FakeMediaTrack) AddChangeObserver(arg1 livekit.ParticipantID, arg2 func()) {
-	fake.addChangeObserverMutex.Lock()
-	fake.addChangeObserverArgsForCall = append(fake.addChangeObserverArgsForCall, struct {
-		arg1 livekit.ParticipantID
-		arg2 func()
-	}{arg1, arg2})
-	stub := fake.AddChangeObserverStub
-	fake.recordInvocation("AddChangeObserver", []interface{}{arg1, arg2})
-	fake.addChangeObserverMutex.Unlock()
-	if stub != nil {
-		fake.AddChangeObserverStub(arg1, arg2)
-	}
-}
-
-func (fake *FakeMediaTrack) AddChangeObserverCallCount() int {
-	fake.addChangeObserverMutex.RLock()
-	defer fake.addChangeObserverMutex.RUnlock()
-	return len(fake.addChangeObserverArgsForCall)
-}
-
-func (fake *FakeMediaTrack) AddChangeObserverCalls(stub func(livekit.ParticipantID, func())) {
-	fake.addChangeObserverMutex.Lock()
-	defer fake.addChangeObserverMutex.Unlock()
-	fake.AddChangeObserverStub = stub
-}
-
-func (fake *FakeMediaTrack) AddChangeObserverArgsForCall(i int) (livekit.ParticipantID, func()) {
-	fake.addChangeObserverMutex.RLock()
-	defer fake.addChangeObserverMutex.RUnlock()
-	argsForCall := fake.addChangeObserverArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeMediaTrack) AddOnClose(arg1 func()) {
@@ -1063,30 +1015,6 @@ func (fake *FakeMediaTrack) NameReturnsOnCall(i int, result1 string) {
 	}{result1}
 }
 
-func (fake *FakeMediaTrack) NotifyChanged() {
-	fake.notifyChangedMutex.Lock()
-	fake.notifyChangedArgsForCall = append(fake.notifyChangedArgsForCall, struct {
-	}{})
-	stub := fake.NotifyChangedStub
-	fake.recordInvocation("NotifyChanged", []interface{}{})
-	fake.notifyChangedMutex.Unlock()
-	if stub != nil {
-		fake.NotifyChangedStub()
-	}
-}
-
-func (fake *FakeMediaTrack) NotifyChangedCallCount() int {
-	fake.notifyChangedMutex.RLock()
-	defer fake.notifyChangedMutex.RUnlock()
-	return len(fake.notifyChangedArgsForCall)
-}
-
-func (fake *FakeMediaTrack) NotifyChangedCalls(stub func()) {
-	fake.notifyChangedMutex.Lock()
-	defer fake.notifyChangedMutex.Unlock()
-	fake.NotifyChangedStub = stub
-}
-
 func (fake *FakeMediaTrack) PublisherID() livekit.ParticipantID {
 	fake.publisherIDMutex.Lock()
 	ret, specificReturn := fake.publisherIDReturnsOnCall[len(fake.publisherIDArgsForCall)]
@@ -1297,38 +1225,6 @@ func (fake *FakeMediaTrack) ReceiversReturnsOnCall(i int, result1 []sfu.TrackRec
 	fake.receiversReturnsOnCall[i] = struct {
 		result1 []sfu.TrackReceiver
 	}{result1}
-}
-
-func (fake *FakeMediaTrack) RemoveChangeObserver(arg1 livekit.ParticipantID) {
-	fake.removeChangeObserverMutex.Lock()
-	fake.removeChangeObserverArgsForCall = append(fake.removeChangeObserverArgsForCall, struct {
-		arg1 livekit.ParticipantID
-	}{arg1})
-	stub := fake.RemoveChangeObserverStub
-	fake.recordInvocation("RemoveChangeObserver", []interface{}{arg1})
-	fake.removeChangeObserverMutex.Unlock()
-	if stub != nil {
-		fake.RemoveChangeObserverStub(arg1)
-	}
-}
-
-func (fake *FakeMediaTrack) RemoveChangeObserverCallCount() int {
-	fake.removeChangeObserverMutex.RLock()
-	defer fake.removeChangeObserverMutex.RUnlock()
-	return len(fake.removeChangeObserverArgsForCall)
-}
-
-func (fake *FakeMediaTrack) RemoveChangeObserverCalls(stub func(livekit.ParticipantID)) {
-	fake.removeChangeObserverMutex.Lock()
-	defer fake.removeChangeObserverMutex.Unlock()
-	fake.RemoveChangeObserverStub = stub
-}
-
-func (fake *FakeMediaTrack) RemoveChangeObserverArgsForCall(i int) livekit.ParticipantID {
-	fake.removeChangeObserverMutex.RLock()
-	defer fake.removeChangeObserverMutex.RUnlock()
-	argsForCall := fake.removeChangeObserverArgsForCall[i]
-	return argsForCall.arg1
 }
 
 func (fake *FakeMediaTrack) RemoveSubscriber(arg1 livekit.ParticipantID, arg2 bool) {
@@ -1608,8 +1504,6 @@ func (fake *FakeMediaTrack) UpdateVideoLayersArgsForCall(i int) []*livekit.Video
 func (fake *FakeMediaTrack) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
-	fake.addChangeObserverMutex.RLock()
-	defer fake.addChangeObserverMutex.RUnlock()
 	fake.addOnCloseMutex.RLock()
 	defer fake.addOnCloseMutex.RUnlock()
 	fake.addSubscriberMutex.RLock()
@@ -1640,8 +1534,6 @@ func (fake *FakeMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.kindMutex.RUnlock()
 	fake.nameMutex.RLock()
 	defer fake.nameMutex.RUnlock()
-	fake.notifyChangedMutex.RLock()
-	defer fake.notifyChangedMutex.RUnlock()
 	fake.publisherIDMutex.RLock()
 	defer fake.publisherIDMutex.RUnlock()
 	fake.publisherIdentityMutex.RLock()
@@ -1650,8 +1542,6 @@ func (fake *FakeMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.publisherVersionMutex.RUnlock()
 	fake.receiversMutex.RLock()
 	defer fake.receiversMutex.RUnlock()
-	fake.removeChangeObserverMutex.RLock()
-	defer fake.removeChangeObserverMutex.RUnlock()
 	fake.removeSubscriberMutex.RLock()
 	defer fake.removeSubscriberMutex.RUnlock()
 	fake.revokeDisallowedSubscribersMutex.RLock()
