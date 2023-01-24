@@ -19,4 +19,5 @@ var (
 	ErrNoSubscribePermission = errors.New("participant is not given permission to subscribe to tracks")
 	ErrTrackNotFound         = errors.New("track cannot be found")
 	ErrTrackNotAttached      = errors.New("track is not yet attached")
+	ErrTrackNotBound         = errors.New("track not bound")
 )

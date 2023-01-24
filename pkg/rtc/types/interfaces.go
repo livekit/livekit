@@ -272,6 +272,9 @@ type LocalParticipant interface {
 	UpdateSubscribedTrackSettings(trackID livekit.TrackID, settings *livekit.UpdateTrackSettings)
 	GetSubscribedTracks() []SubscribedTrack
 	VerifySubscribeParticipantInfo(pID livekit.ParticipantID, version uint32)
+	// WaitUntilSubscribed waits until all subscriptions have been settled, or if the timeout
+	// has been reached. If the timeout expires, it will return an error.
+	WaitUntilSubscribed(timeout time.Duration) error
 
 	// returns list of participant identities that the current participant is subscribed to
 	GetSubscribedParticipants() []livekit.ParticipantID
@@ -332,7 +335,7 @@ type Room interface {
 	Name() livekit.RoomName
 	ID() livekit.RoomID
 	RemoveParticipant(identity livekit.ParticipantIdentity, pID livekit.ParticipantID, reason ParticipantCloseReason)
-	UpdateSubscriptions(participant LocalParticipant, trackIDs []livekit.TrackID, participantTracks []*livekit.ParticipantTracks, subscribe bool) error
+	UpdateSubscriptions(participant LocalParticipant, trackIDs []livekit.TrackID, participantTracks []*livekit.ParticipantTracks, subscribe bool)
 	UpdateSubscriptionPermission(participant LocalParticipant, permissions *livekit.SubscriptionPermission) error
 	SyncState(participant LocalParticipant, state *livekit.SyncState) error
 	SimulateScenario(participant LocalParticipant, scenario *livekit.SimulateScenario) error
@@ -374,9 +377,6 @@ type MediaTrack interface {
 	GetAllSubscribers() []livekit.ParticipantID
 	GetNumSubscribers() int
 	IsSubscribed() bool
-	NotifyChanged()
-	AddChangeObserver(pID livekit.ParticipantID, onChanged func())
-	RemoveChangeObserver(pID livekit.ParticipantID)
 
 	// returns quality information that's appropriate for width & height
 	GetQualityForDimension(width, height uint32) livekit.VideoQuality
@@ -430,8 +430,16 @@ type SubscribedTrack interface {
 	NeedsNegotiation() bool
 }
 
+type ChangeNotifier interface {
+	AddObserver(key string, onChanged func())
+	RemoveObserver(key string)
+	HasObservers() bool
+	NotifyChanged()
+}
+
 type MediaResolverResult struct {
-	Track MediaTrack
+	TrackChangeNotifier ChangeNotifier
+	Track               MediaTrack
 	// is permission given to the requesting participant
 	HasPermission bool
 }

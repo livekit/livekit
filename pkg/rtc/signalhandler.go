@@ -28,17 +28,12 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 	case *livekit.SignalRequest_Subscription:
 		// allow participant to indicate their interest in the subscription
 		// permission check happens later in SubscriptionManager
-		err := room.UpdateSubscriptions(
+		room.UpdateSubscriptions(
 			participant,
 			livekit.StringsAsTrackIDs(msg.Subscription.TrackSids),
 			msg.Subscription.ParticipantTracks,
 			msg.Subscription.Subscribe,
 		)
-		if err != nil {
-			pLogger.Warnw("could not update subscription", err,
-				"trackID", msg.Subscription.TrackSids,
-				"subscribe", msg.Subscription.Subscribe)
-		}
 	case *livekit.SignalRequest_TrackSetting:
 		for _, sid := range livekit.StringsAsTrackIDs(msg.TrackSetting.TrackSids) {
 			participant.UpdateSubscribedTrackSettings(sid, msg.TrackSetting)

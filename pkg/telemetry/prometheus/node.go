@@ -156,10 +156,10 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 	stats := &livekit.NodeStats{
 		StartedAt:                        prev.StartedAt,
 		UpdatedAt:                        updatedAt,
-		NumRooms:                         roomTotal.Load(),
-		NumClients:                       participantTotal.Load(),
-		NumTracksIn:                      trackPublishedTotal.Load(),
-		NumTracksOut:                     trackSubscribedTotal.Load(),
+		NumRooms:                         roomCurrent.Load(),
+		NumClients:                       participantCurrent.Load(),
+		NumTracksIn:                      trackPublishedCurrent.Load(),
+		NumTracksOut:                     trackSubscribedCurrent.Load(),
 		NumTrackPublishAttempts:          trackPublishAttemptsNow,
 		NumTrackPublishSuccess:           trackPublishSuccessNow,
 		NumTrackSubscribeAttempts:        trackSubscribeAttemptsNow,
@@ -222,7 +222,7 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		if packetTotal == 0 {
 			stats.SysPacketsDroppedPctPerSec = 0
 		} else {
-			stats.SysPacketsDroppedPctPerSec = float32(stats.SysPacketsDroppedPerSec) / float32(packetTotal)
+			stats.SysPacketsDroppedPctPerSec = stats.SysPacketsDroppedPerSec / packetTotal
 		}
 		promSysDroppedPacketPctGauge.Set(float64(stats.SysPacketsDroppedPctPerSec))
 	}

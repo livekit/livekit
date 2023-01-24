@@ -74,6 +74,7 @@ func TestSubscribe(t *testing.T) {
 			return subCount.Load() == 1
 		}, subSettleTimeout, subCheckInterval, "track was not subscribed")
 
+		require.NotNil(t, s.getSubscribedTrack())
 		require.Len(t, sm.GetSubscribedTracks(), 1)
 		require.Len(t, sm.GetSubscribedParticipants(), 1)
 		require.Equal(t, "pubID", string(sm.GetSubscribedParticipants()[0]))

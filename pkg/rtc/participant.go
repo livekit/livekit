@@ -184,7 +184,6 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p.SetResponseSink(params.Sink)
 
 	p.supervisor.OnPublicationError(p.onPublicationError)
-	p.supervisor.OnSubscriptionError(p.onSubscriptionError)
 
 	var err error
 	// keep last participants and when updates were sent
@@ -364,6 +363,7 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 		}
 	}
 	if canSubscribe {
+		// reconcile everything
 		p.SubscriptionManager.queueReconcile("")
 	} else {
 		// revoke all subscriptions
@@ -629,7 +629,6 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	}
 
 	p.UpTrackManager.Close(!sendLeave)
-	p.SubscriptionManager.Close(!sendLeave)
 
 	p.lock.Lock()
 	disallowedSubscriptions := make(map[livekit.TrackID]livekit.ParticipantID)
@@ -651,7 +650,10 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 
 	// Close peer connections without blocking participant Close. If peer connections are gathering candidates
 	// Close will block.
-	go p.TransportManager.Close()
+	go func() {
+		p.SubscriptionManager.Close(!sendLeave)
+		p.TransportManager.Close()
+	}()
 
 	p.dataChannelStats.Report()
 	return nil

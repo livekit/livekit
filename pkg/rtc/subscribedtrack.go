@@ -80,6 +80,7 @@ func (t *SubscribedTrack) Bound() {
 	t.bindLock.Lock()
 	t.bound.Store(true)
 	callbacks := t.onBindCallbacks
+	t.onBindCallbacks = nil
 	t.bindLock.Unlock()
 	if !t.params.AdaptiveStream {
 		t.params.DownTrack.SetMaxSpatialLayer(

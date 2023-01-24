@@ -87,19 +87,13 @@ type FakeRoom struct {
 	updateSubscriptionPermissionReturnsOnCall map[int]struct {
 		result1 error
 	}
-	UpdateSubscriptionsStub        func(types.LocalParticipant, []livekit.TrackID, []*livekit.ParticipantTracks, bool) error
+	UpdateSubscriptionsStub        func(types.LocalParticipant, []livekit.TrackID, []*livekit.ParticipantTracks, bool)
 	updateSubscriptionsMutex       sync.RWMutex
 	updateSubscriptionsArgsForCall []struct {
 		arg1 types.LocalParticipant
 		arg2 []livekit.TrackID
 		arg3 []*livekit.ParticipantTracks
 		arg4 bool
-	}
-	updateSubscriptionsReturns struct {
-		result1 error
-	}
-	updateSubscriptionsReturnsOnCall map[int]struct {
-		result1 error
 	}
 	UpdateVideoLayersStub        func(types.Participant, *livekit.UpdateVideoLayers) error
 	updateVideoLayersMutex       sync.RWMutex
@@ -509,7 +503,7 @@ func (fake *FakeRoom) UpdateSubscriptionPermissionReturnsOnCall(i int, result1 e
 	}{result1}
 }
 
-func (fake *FakeRoom) UpdateSubscriptions(arg1 types.LocalParticipant, arg2 []livekit.TrackID, arg3 []*livekit.ParticipantTracks, arg4 bool) error {
+func (fake *FakeRoom) UpdateSubscriptions(arg1 types.LocalParticipant, arg2 []livekit.TrackID, arg3 []*livekit.ParticipantTracks, arg4 bool) {
 	var arg2Copy []livekit.TrackID
 	if arg2 != nil {
 		arg2Copy = make([]livekit.TrackID, len(arg2))
@@ -521,7 +515,6 @@ func (fake *FakeRoom) UpdateSubscriptions(arg1 types.LocalParticipant, arg2 []li
 		copy(arg3Copy, arg3)
 	}
 	fake.updateSubscriptionsMutex.Lock()
-	ret, specificReturn := fake.updateSubscriptionsReturnsOnCall[len(fake.updateSubscriptionsArgsForCall)]
 	fake.updateSubscriptionsArgsForCall = append(fake.updateSubscriptionsArgsForCall, struct {
 		arg1 types.LocalParticipant
 		arg2 []livekit.TrackID
@@ -529,16 +522,11 @@ func (fake *FakeRoom) UpdateSubscriptions(arg1 types.LocalParticipant, arg2 []li
 		arg4 bool
 	}{arg1, arg2Copy, arg3Copy, arg4})
 	stub := fake.UpdateSubscriptionsStub
-	fakeReturns := fake.updateSubscriptionsReturns
 	fake.recordInvocation("UpdateSubscriptions", []interface{}{arg1, arg2Copy, arg3Copy, arg4})
 	fake.updateSubscriptionsMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2, arg3, arg4)
+		fake.UpdateSubscriptionsStub(arg1, arg2, arg3, arg4)
 	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
 }
 
 func (fake *FakeRoom) UpdateSubscriptionsCallCount() int {
@@ -547,7 +535,7 @@ func (fake *FakeRoom) UpdateSubscriptionsCallCount() int {
 	return len(fake.updateSubscriptionsArgsForCall)
 }
 
-func (fake *FakeRoom) UpdateSubscriptionsCalls(stub func(types.LocalParticipant, []livekit.TrackID, []*livekit.ParticipantTracks, bool) error) {
+func (fake *FakeRoom) UpdateSubscriptionsCalls(stub func(types.LocalParticipant, []livekit.TrackID, []*livekit.ParticipantTracks, bool)) {
 	fake.updateSubscriptionsMutex.Lock()
 	defer fake.updateSubscriptionsMutex.Unlock()
 	fake.UpdateSubscriptionsStub = stub
@@ -558,29 +546,6 @@ func (fake *FakeRoom) UpdateSubscriptionsArgsForCall(i int) (types.LocalParticip
 	defer fake.updateSubscriptionsMutex.RUnlock()
 	argsForCall := fake.updateSubscriptionsArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
-}
-
-func (fake *FakeRoom) UpdateSubscriptionsReturns(result1 error) {
-	fake.updateSubscriptionsMutex.Lock()
-	defer fake.updateSubscriptionsMutex.Unlock()
-	fake.UpdateSubscriptionsStub = nil
-	fake.updateSubscriptionsReturns = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeRoom) UpdateSubscriptionsReturnsOnCall(i int, result1 error) {
-	fake.updateSubscriptionsMutex.Lock()
-	defer fake.updateSubscriptionsMutex.Unlock()
-	fake.UpdateSubscriptionsStub = nil
-	if fake.updateSubscriptionsReturnsOnCall == nil {
-		fake.updateSubscriptionsReturnsOnCall = make(map[int]struct {
-			result1 error
-		})
-	}
-	fake.updateSubscriptionsReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
 }
 
 func (fake *FakeRoom) UpdateVideoLayers(arg1 types.Participant, arg2 *livekit.UpdateVideoLayers) error {

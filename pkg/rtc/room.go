@@ -38,6 +38,8 @@ type broadcastOptions struct {
 }
 
 type Room struct {
+	*ChangeNotifierManager
+
 	lock sync.RWMutex
 
 	protoRoom *livekit.Room
@@ -85,19 +87,20 @@ func NewRoom(
 	egressLauncher EgressLauncher,
 ) *Room {
 	r := &Room{
-		protoRoom:       proto.Clone(room).(*livekit.Room),
-		internal:        internal,
-		Logger:          LoggerWithRoom(logger.GetLogger(), livekit.RoomName(room.Name), livekit.RoomID(room.Sid)),
-		config:          config,
-		audioConfig:     audioConfig,
-		telemetry:       telemetry,
-		egressLauncher:  egressLauncher,
-		serverInfo:      serverInfo,
-		participants:    make(map[livekit.ParticipantIdentity]types.LocalParticipant),
-		participantOpts: make(map[livekit.ParticipantIdentity]*ParticipantOptions),
-		bufferFactory:   buffer.NewFactoryOfBufferFactory(config.Receiver.PacketBufferSize),
-		batchedUpdates:  make(map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
-		closed:          make(chan struct{}),
+		ChangeNotifierManager: NewChangeNotifierManager(),
+		protoRoom:             proto.Clone(room).(*livekit.Room),
+		internal:              internal,
+		Logger:                LoggerWithRoom(logger.GetLogger(), livekit.RoomName(room.Name), livekit.RoomID(room.Sid)),
+		config:                config,
+		audioConfig:           audioConfig,
+		telemetry:             telemetry,
+		egressLauncher:        egressLauncher,
+		serverInfo:            serverInfo,
+		participants:          make(map[livekit.ParticipantIdentity]types.LocalParticipant),
+		participantOpts:       make(map[livekit.ParticipantIdentity]*ParticipantOptions),
+		bufferFactory:         buffer.NewFactoryOfBufferFactory(config.Receiver.PacketBufferSize),
+		batchedUpdates:        make(map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
+		closed:                make(chan struct{}),
 	}
 	if r.protoRoom.EmptyTimeout == 0 {
 		r.protoRoom.EmptyTimeout = DefaultEmptyTimeout
@@ -422,6 +425,11 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 		return
 	}
 
+	// clean up notifiers, participant isn't coming back
+	for _, track := range p.GetPublishedTracks() {
+		r.ChangeNotifierManager.RemoveNotifier(string(track.ID()), true)
+	}
+
 	// send broadcast only if it's not already closed
 	sendUpdates := !p.IsDisconnected()
 
@@ -455,7 +463,7 @@ func (r *Room) UpdateSubscriptions(
 	trackIDs []livekit.TrackID,
 	participantTracks []*livekit.ParticipantTracks,
 	subscribe bool,
-) error {
+) {
 	// find all matching tracks
 	publisherIDs := make(map[livekit.TrackID]livekit.ParticipantID)
 	publisherIdentities := make(map[livekit.TrackID]livekit.ParticipantIdentity)
@@ -489,7 +497,6 @@ func (r *Room) UpdateSubscriptions(
 			participant.UnsubscribeFromTrack(trackID)
 		}
 	}
-	return nil
 }
 
 func (r *Room) SyncState(participant types.LocalParticipant, state *livekit.SyncState) error {
@@ -497,7 +504,16 @@ func (r *Room) SyncState(participant types.LocalParticipant, state *livekit.Sync
 }
 
 func (r *Room) UpdateSubscriptionPermission(participant types.LocalParticipant, subscriptionPermission *livekit.SubscriptionPermission) error {
-	return participant.UpdateSubscriptionPermission(subscriptionPermission, nil, r.GetParticipant, r.GetParticipantByID)
+	if err := participant.UpdateSubscriptionPermission(subscriptionPermission, nil, r.GetParticipant, r.GetParticipantByID); err != nil {
+		return err
+	}
+	for _, track := range participant.GetPublishedTracks() {
+		notifier := r.ChangeNotifierManager.GetNotifier(string(track.ID()))
+		if notifier != nil {
+			notifier.NotifyChanged()
+		}
+	}
+	return nil
 }
 
 func (r *Room) RemoveDisallowedSubscriptions(sub types.LocalParticipant, disallowedSubscriptions map[livekit.TrackID]livekit.ParticipantID) {
@@ -526,10 +542,7 @@ func (r *Room) ResolveMediaTrackForSubscriber(subIdentity livekit.ParticipantIde
 	}
 
 	res.Track = pub.GetPublishedTrack(trackID)
-	if res.Track == nil {
-		return res, ErrTrackNotFound
-	}
-
+	res.TrackChangeNotifier = r.ChangeNotifierManager.GetOrCreateNotifier(string(trackID))
 	res.HasPermission = pub.HasPermission(trackID, subIdentity)
 
 	return res, nil
@@ -729,7 +742,7 @@ func (r *Room) createJoinResponseLocked(participant types.LocalParticipant, iceS
 	}
 }
 
-// a ParticipantImpl in the room added a new remoteTrack, subscribe other participants to it
+// a ParticipantImpl in the room added a new track, subscribe other participants to it
 func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.MediaTrack) {
 	// publish participant update, since track state is changed
 	r.broadcastParticipantState(participant, broadcastOptions{skipSource: true})
@@ -757,11 +770,17 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 			"trackID", track.ID())
 		existingParticipant.SubscribeToTrack(track.ID(), participant.Identity(), participant.ID())
 	}
-
-	if r.onParticipantChanged != nil {
-		r.onParticipantChanged(participant)
-	}
+	onParticipantChanged := r.onParticipantChanged
 	r.lock.RUnlock()
+
+	if onParticipantChanged != nil {
+		onParticipantChanged(participant)
+	}
+
+	notifier := r.ChangeNotifierManager.GetNotifier(string(track.ID()))
+	if notifier != nil {
+		notifier.NotifyChanged()
+	}
 
 	// auto track egress
 	if r.internal != nil && r.internal.TrackEgress != nil {

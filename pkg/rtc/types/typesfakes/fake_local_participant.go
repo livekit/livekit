@@ -781,6 +781,17 @@ type FakeLocalParticipant struct {
 		arg1 livekit.ParticipantID
 		arg2 uint32
 	}
+	WaitUntilSubscribedStub        func(time.Duration) error
+	waitUntilSubscribedMutex       sync.RWMutex
+	waitUntilSubscribedArgsForCall []struct {
+		arg1 time.Duration
+	}
+	waitUntilSubscribedReturns struct {
+		result1 error
+	}
+	waitUntilSubscribedReturnsOnCall map[int]struct {
+		result1 error
+	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
 }
@@ -2406,7 +2417,7 @@ func (fake *FakeLocalParticipant) IsClosed() bool {
 	}{})
 	stub := fake.IsClosedStub
 	fakeReturns := fake.isClosedReturns
-	fake.recordInvocation("IsClosed", []interface{}{})
+	fake.recordInvocation("isClosed", []interface{}{})
 	fake.isClosedMutex.Unlock()
 	if stub != nil {
 		return stub()
@@ -4923,6 +4934,67 @@ func (fake *FakeLocalParticipant) VerifySubscribeParticipantInfoArgsForCall(i in
 	return argsForCall.arg1, argsForCall.arg2
 }
 
+func (fake *FakeLocalParticipant) WaitUntilSubscribed(arg1 time.Duration) error {
+	fake.waitUntilSubscribedMutex.Lock()
+	ret, specificReturn := fake.waitUntilSubscribedReturnsOnCall[len(fake.waitUntilSubscribedArgsForCall)]
+	fake.waitUntilSubscribedArgsForCall = append(fake.waitUntilSubscribedArgsForCall, struct {
+		arg1 time.Duration
+	}{arg1})
+	stub := fake.WaitUntilSubscribedStub
+	fakeReturns := fake.waitUntilSubscribedReturns
+	fake.recordInvocation("WaitUntilSubscribed", []interface{}{arg1})
+	fake.waitUntilSubscribedMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) WaitUntilSubscribedCallCount() int {
+	fake.waitUntilSubscribedMutex.RLock()
+	defer fake.waitUntilSubscribedMutex.RUnlock()
+	return len(fake.waitUntilSubscribedArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) WaitUntilSubscribedCalls(stub func(time.Duration) error) {
+	fake.waitUntilSubscribedMutex.Lock()
+	defer fake.waitUntilSubscribedMutex.Unlock()
+	fake.WaitUntilSubscribedStub = stub
+}
+
+func (fake *FakeLocalParticipant) WaitUntilSubscribedArgsForCall(i int) time.Duration {
+	fake.waitUntilSubscribedMutex.RLock()
+	defer fake.waitUntilSubscribedMutex.RUnlock()
+	argsForCall := fake.waitUntilSubscribedArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) WaitUntilSubscribedReturns(result1 error) {
+	fake.waitUntilSubscribedMutex.Lock()
+	defer fake.waitUntilSubscribedMutex.Unlock()
+	fake.WaitUntilSubscribedStub = nil
+	fake.waitUntilSubscribedReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) WaitUntilSubscribedReturnsOnCall(i int, result1 error) {
+	fake.waitUntilSubscribedMutex.Lock()
+	defer fake.waitUntilSubscribedMutex.Unlock()
+	fake.WaitUntilSubscribedStub = nil
+	if fake.waitUntilSubscribedReturnsOnCall == nil {
+		fake.waitUntilSubscribedReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.waitUntilSubscribedReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
 func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
@@ -5100,6 +5172,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.updateVideoLayersMutex.RUnlock()
 	fake.verifySubscribeParticipantInfoMutex.RLock()
 	defer fake.verifySubscribeParticipantInfoMutex.RUnlock()
+	fake.waitUntilSubscribedMutex.RLock()
+	defer fake.waitUntilSubscribedMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

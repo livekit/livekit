@@ -28,9 +28,6 @@ type MediaTrackSubscriptions struct {
 	subscribedTracksMu sync.RWMutex
 	subscribedTracks   map[livekit.ParticipantID]types.SubscribedTrack
 
-	permissionsMu       sync.RWMutex
-	permissionObservers map[livekit.ParticipantID]func()
-
 	onDownTrackCreated           func(downTrack *sfu.DownTrack)
 	onSubscriberMaxQualityChange func(subscriberID livekit.ParticipantID, codec webrtc.RTPCodecCapability, layer int32)
 }
@@ -49,9 +46,8 @@ type MediaTrackSubscriptionsParams struct {
 
 func NewMediaTrackSubscriptions(params MediaTrackSubscriptionsParams) *MediaTrackSubscriptions {
 	return &MediaTrackSubscriptions{
-		params:              params,
-		subscribedTracks:    make(map[livekit.ParticipantID]types.SubscribedTrack),
-		permissionObservers: make(map[livekit.ParticipantID]func()),
+		params:           params,
+		subscribedTracks: make(map[livekit.ParticipantID]types.SubscribedTrack),
 	}
 }
 
@@ -321,33 +317,6 @@ func (t *MediaTrackSubscriptions) GetNumSubscribers() int {
 	defer t.subscribedTracksMu.RUnlock()
 
 	return len(t.subscribedTracks)
-}
-
-func (t *MediaTrackSubscriptions) NotifyChanged() {
-	t.subscribedTracksMu.RLock()
-	defer t.subscribedTracksMu.RUnlock()
-
-	var callbacks []func()
-	for _, cb := range t.permissionObservers {
-		callbacks = append(callbacks, cb)
-	}
-	go func() {
-		for _, cb := range callbacks {
-			cb()
-		}
-	}()
-}
-
-func (t *MediaTrackSubscriptions) AddChangeObserver(pID livekit.ParticipantID, onChanged func()) {
-	t.permissionsMu.Lock()
-	t.permissionObservers[pID] = onChanged
-	t.permissionsMu.Unlock()
-}
-
-func (t *MediaTrackSubscriptions) RemoveChangeObserver(pID livekit.ParticipantID) {
-	t.permissionsMu.Lock()
-	delete(t.permissionObservers, pID)
-	t.permissionsMu.Unlock()
 }
 
 func (t *MediaTrackSubscriptions) UpdateVideoLayers() {
