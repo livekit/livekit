@@ -54,12 +54,16 @@ func (n *ChangeNotifier) HasObservers() bool {
 
 func (n *ChangeNotifier) NotifyChanged() {
 	n.lock.Lock()
-	observers := n.observers
-	n.lock.Unlock()
-
-	if len(observers) == 0 {
+	if len(n.observers) == 0 {
+		n.lock.Unlock()
 		return
 	}
+	observers := make([]func(), 0, len(n.observers))
+	for _, f := range n.observers {
+		observers = append(observers, f)
+	}
+	n.lock.Unlock()
+
 	go func() {
 		for _, f := range observers {
 			f()
