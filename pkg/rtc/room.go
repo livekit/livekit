@@ -13,6 +13,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -38,8 +39,6 @@ type broadcastOptions struct {
 }
 
 type Room struct {
-	*ChangeNotifierManager
-
 	lock sync.RWMutex
 
 	protoRoom *livekit.Room
@@ -51,6 +50,7 @@ type Room struct {
 	serverInfo     *livekit.ServerInfo
 	telemetry      telemetry.TelemetryService
 	egressLauncher EgressLauncher
+	changeNotifier *utils.ChangeNotifierManager
 
 	// map of identity -> Participant
 	participants    map[livekit.ParticipantIdentity]types.LocalParticipant
@@ -87,20 +87,20 @@ func NewRoom(
 	egressLauncher EgressLauncher,
 ) *Room {
 	r := &Room{
-		ChangeNotifierManager: NewChangeNotifierManager(),
-		protoRoom:             proto.Clone(room).(*livekit.Room),
-		internal:              internal,
-		Logger:                LoggerWithRoom(logger.GetLogger(), livekit.RoomName(room.Name), livekit.RoomID(room.Sid)),
-		config:                config,
-		audioConfig:           audioConfig,
-		telemetry:             telemetry,
-		egressLauncher:        egressLauncher,
-		serverInfo:            serverInfo,
-		participants:          make(map[livekit.ParticipantIdentity]types.LocalParticipant),
-		participantOpts:       make(map[livekit.ParticipantIdentity]*ParticipantOptions),
-		bufferFactory:         buffer.NewFactoryOfBufferFactory(config.Receiver.PacketBufferSize),
-		batchedUpdates:        make(map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
-		closed:                make(chan struct{}),
+		protoRoom:       proto.Clone(room).(*livekit.Room),
+		internal:        internal,
+		Logger:          LoggerWithRoom(logger.GetLogger(), livekit.RoomName(room.Name), livekit.RoomID(room.Sid)),
+		config:          config,
+		audioConfig:     audioConfig,
+		telemetry:       telemetry,
+		egressLauncher:  egressLauncher,
+		changeNotifier:  utils.NewChangeNotifierManager(),
+		serverInfo:      serverInfo,
+		participants:    make(map[livekit.ParticipantIdentity]types.LocalParticipant),
+		participantOpts: make(map[livekit.ParticipantIdentity]*ParticipantOptions),
+		bufferFactory:   buffer.NewFactoryOfBufferFactory(config.Receiver.PacketBufferSize),
+		batchedUpdates:  make(map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
+		closed:          make(chan struct{}),
 	}
 	if r.protoRoom.EmptyTimeout == 0 {
 		r.protoRoom.EmptyTimeout = DefaultEmptyTimeout
@@ -427,7 +427,7 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 
 	// clean up notifiers, participant isn't coming back
 	for _, track := range p.GetPublishedTracks() {
-		r.ChangeNotifierManager.RemoveNotifier(string(track.ID()), true)
+		r.changeNotifier.RemoveNotifier(string(track.ID()), true)
 	}
 
 	// send broadcast only if it's not already closed
@@ -508,7 +508,7 @@ func (r *Room) UpdateSubscriptionPermission(participant types.LocalParticipant, 
 		return err
 	}
 	for _, track := range participant.GetPublishedTracks() {
-		notifier := r.ChangeNotifierManager.GetNotifier(string(track.ID()))
+		notifier := r.changeNotifier.GetNotifier(string(track.ID()))
 		if notifier != nil {
 			notifier.NotifyChanged()
 		}
@@ -542,7 +542,7 @@ func (r *Room) ResolveMediaTrackForSubscriber(subIdentity livekit.ParticipantIde
 	}
 
 	res.Track = pub.GetPublishedTrack(trackID)
-	res.TrackChangeNotifier = r.ChangeNotifierManager.GetOrCreateNotifier(string(trackID))
+	res.TrackChangeNotifier = r.changeNotifier.GetOrCreateNotifier(string(trackID))
 	res.HasPermission = pub.HasPermission(trackID, subIdentity)
 
 	return res, nil
@@ -777,7 +777,7 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 		onParticipantChanged(participant)
 	}
 
-	notifier := r.ChangeNotifierManager.GetNotifier(string(track.ID()))
+	notifier := r.changeNotifier.GetNotifier(string(track.ID()))
 	if notifier != nil {
 		notifier.NotifyChanged()
 	}
