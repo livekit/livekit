@@ -740,7 +740,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 	d.bindLock.Unlock()
 	d.connectionStats.Close()
 	d.rtpStats.Stop()
-	d.logger.Infow("rtp stats", "direction", "downstream", "stats", d.rtpStats.ToString())
+	d.logger.Infow("rtp stats", "direction", "downstream", "mime", d.mime, "stats", d.rtpStats.ToString())
 
 	if d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
 		d.onMaxLayerChanged(d, InvalidLayerSpatial)
@@ -974,7 +974,7 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 		return nil
 	}
 
-	return d.rtpStats.GetRtcpSenderReport(d.ssrc, d.receiver.GetRTCPSenderReportInfo(d.forwarder.GetReferenceLayerSpatial()))
+	return d.rtpStats.GetRtcpSenderReport(d.ssrc, d.receiver.GetRTCPSenderReportDataExt(d.forwarder.GetReferenceLayerSpatial()))
 }
 
 func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan struct{} {

@@ -89,7 +89,7 @@ type RTCPSenderReportData struct {
 	ArrivalTime  time.Time
 }
 
-type RTCPSenderReportInfo struct {
+type RTCPSenderReportDataExt struct {
 	SenderReportData *RTCPSenderReportData
 	SmoothedOWD      time.Duration
 }
@@ -171,7 +171,7 @@ type RTPStats struct {
 	rtt    uint32
 	maxRtt uint32
 
-	srInfo    *RTCPSenderReportInfo
+	srDataExt *RTCPSenderReportDataExt
 	lastSRNTP mediatransportutil.NtpTime
 	lastSRAt  time.Time
 
@@ -261,19 +261,19 @@ func (r *RTPStats) Seed(from *RTPStats) {
 	r.rtt = from.rtt
 	r.maxRtt = from.maxRtt
 
-	if from.srInfo != nil {
-		r.srInfo = &RTCPSenderReportInfo{
-			SmoothedOWD: from.srInfo.SmoothedOWD,
+	if from.srDataExt != nil {
+		r.srDataExt = &RTCPSenderReportDataExt{
+			SmoothedOWD: from.srDataExt.SmoothedOWD,
 		}
-		if from.srInfo.SenderReportData != nil {
-			r.srInfo.SenderReportData = &RTCPSenderReportData{
-				RTPTimestamp: from.srInfo.SenderReportData.RTPTimestamp,
-				NTPTimestamp: from.srInfo.SenderReportData.NTPTimestamp,
-				ArrivalTime:  from.srInfo.SenderReportData.ArrivalTime,
+		if from.srDataExt.SenderReportData != nil {
+			r.srDataExt.SenderReportData = &RTCPSenderReportData{
+				RTPTimestamp: from.srDataExt.SenderReportData.RTPTimestamp,
+				NTPTimestamp: from.srDataExt.SenderReportData.NTPTimestamp,
+				ArrivalTime:  from.srDataExt.SenderReportData.ArrivalTime,
 			}
 		}
 	} else {
-		r.srInfo = nil
+		r.srDataExt = nil
 	}
 	r.lastSRNTP = from.lastSRNTP
 	r.lastSRAt = from.lastSRAt
@@ -690,12 +690,12 @@ func (r *RTPStats) SetRtcpSenderReportData(srData *RTCPSenderReportData) {
 	defer r.lock.Unlock()
 
 	if srData == nil {
-		r.srInfo = nil
+		r.srDataExt = nil
 		return
 	}
 
 	// prevent against extreme case of anachronous sender reports
-	if r.srInfo != nil && r.srInfo.SenderReportData != nil && r.srInfo.SenderReportData.NTPTimestamp > srData.NTPTimestamp {
+	if r.srDataExt != nil && r.srDataExt.SenderReportData != nil && r.srDataExt.SenderReportData.NTPTimestamp > srData.NTPTimestamp {
 		return
 	}
 
@@ -708,18 +708,18 @@ func (r *RTPStats) SetRtcpSenderReportData(srData *RTCPSenderReportData) {
 	// after time stamping the RTCP packet and receive side processing after reading packet off the wire).
 	// Smoothed version of OWD is used to
 	owd := srData.ArrivalTime.Sub(srData.NTPTimestamp.Time())
-	if r.srInfo != nil && r.srInfo.SenderReportData != nil {
-		prevOwd := r.srInfo.SenderReportData.ArrivalTime.Sub(r.srInfo.SenderReportData.NTPTimestamp.Time())
+	if r.srDataExt != nil && r.srDataExt.SenderReportData != nil {
+		prevOwd := r.srDataExt.SenderReportData.ArrivalTime.Sub(r.srDataExt.SenderReportData.NTPTimestamp.Time())
 		if time.Duration(math.Abs(float64(owd)-float64(prevOwd))) > TooLargeOWD {
 			r.logger.Infow("large one-way-delay", "owd", owd, "prevOwd", prevOwd)
 		}
 	}
 
 	smoothedOwd := owd
-	if r.srInfo != nil {
-		smoothedOwd = r.srInfo.SmoothedOWD
+	if r.srDataExt != nil {
+		smoothedOwd = r.srDataExt.SmoothedOWD
 	}
-	r.srInfo = &RTCPSenderReportInfo{
+	r.srDataExt = &RTCPSenderReportDataExt{
 		SenderReportData: &RTCPSenderReportData{
 			RTPTimestamp: srData.RTPTimestamp,
 			NTPTimestamp: srData.NTPTimestamp,
@@ -729,25 +729,25 @@ func (r *RTPStats) SetRtcpSenderReportData(srData *RTCPSenderReportData) {
 	}
 }
 
-func (r *RTPStats) GetRtcpSenderReportInfo() *RTCPSenderReportInfo {
+func (r *RTPStats) GetRtcpSenderReportDataExt() *RTCPSenderReportDataExt {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	if r.srInfo == nil {
+	if r.srDataExt == nil {
 		return nil
 	}
 
-	return &RTCPSenderReportInfo{
+	return &RTCPSenderReportDataExt{
 		SenderReportData: &RTCPSenderReportData{
-			RTPTimestamp: r.srInfo.SenderReportData.RTPTimestamp,
-			NTPTimestamp: r.srInfo.SenderReportData.NTPTimestamp,
-			ArrivalTime:  r.srInfo.SenderReportData.ArrivalTime,
+			RTPTimestamp: r.srDataExt.SenderReportData.RTPTimestamp,
+			NTPTimestamp: r.srDataExt.SenderReportData.NTPTimestamp,
+			ArrivalTime:  r.srDataExt.SenderReportData.ArrivalTime,
 		},
-		SmoothedOWD: r.srInfo.SmoothedOWD,
+		SmoothedOWD: r.srDataExt.SmoothedOWD,
 	}
 }
 
-func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srInfo *RTCPSenderReportInfo) *rtcp.SenderReport {
+func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srDataExt *RTCPSenderReportDataExt) *rtcp.SenderReport {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
@@ -755,7 +755,7 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srInfo *RTCPSenderReportInfo
 		return nil
 	}
 
-	if srInfo == nil || srInfo.SenderReportData == nil || srInfo.SenderReportData.NTPTimestamp == 0 || srInfo.SenderReportData.ArrivalTime.IsZero() {
+	if srDataExt == nil || srDataExt.SenderReportData == nil || srDataExt.SenderReportData.NTPTimestamp == 0 || srDataExt.SenderReportData.ArrivalTime.IsZero() {
 		// no sender report from publisher
 		return nil
 	}
@@ -768,7 +768,7 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srInfo *RTCPSenderReportInfo
 	nowNTP := mediatransportutil.ToNtpTime(now)
 	nowRTP := r.highestTS
 
-	smoothedLocalTimeOfLatestSenderReportNTP := srInfo.SenderReportData.NTPTimestamp.Time().Add(srInfo.SmoothedOWD)
+	smoothedLocalTimeOfLatestSenderReportNTP := srDataExt.SenderReportData.NTPTimestamp.Time().Add(srDataExt.SmoothedOWD)
 	if smoothedLocalTimeOfLatestSenderReportNTP.After(now) {
 		r.logger.Infow("smoothed time of NTP is ahead",
 			"now", now,
@@ -777,7 +777,7 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srInfo *RTCPSenderReportInfo
 		)
 		nowRTP += uint32(now.Sub(time.Unix(0, r.highestTime)).Milliseconds() * int64(r.params.ClockRate) / 1000)
 	} else {
-		nowRTP = srInfo.SenderReportData.RTPTimestamp + uint32(now.Sub(smoothedLocalTimeOfLatestSenderReportNTP).Milliseconds()*int64(r.params.ClockRate)/1000)
+		nowRTP = srDataExt.SenderReportData.RTPTimestamp + uint32(now.Sub(smoothedLocalTimeOfLatestSenderReportNTP).Milliseconds()*int64(r.params.ClockRate)/1000)
 	}
 
 	r.lastSRNTP = nowNTP
@@ -834,8 +834,8 @@ func (r *RTPStats) SnapshotRtcpReceptionReport(ssrc uint32, proxyFracLost uint8,
 	}
 
 	var dlsr uint32
-	if r.srInfo != nil && r.srInfo.SenderReportData != nil && !r.srInfo.SenderReportData.ArrivalTime.IsZero() {
-		delayMS := uint32(time.Since(r.srInfo.SenderReportData.ArrivalTime).Milliseconds())
+	if r.srDataExt != nil && r.srDataExt.SenderReportData != nil && !r.srDataExt.SenderReportData.ArrivalTime.IsZero() {
+		delayMS := uint32(time.Since(r.srDataExt.SenderReportData.ArrivalTime).Milliseconds())
 		dlsr = (delayMS / 1e3) << 16
 		dlsr |= (delayMS % 1e3) * 65536 / 1000
 	}
@@ -847,8 +847,8 @@ func (r *RTPStats) SnapshotRtcpReceptionReport(ssrc uint32, proxyFracLost uint8,
 	}
 
 	lastSR := uint32(0)
-	if r.srInfo != nil && r.srInfo.SenderReportData != nil {
-		lastSR = uint32(r.srInfo.SenderReportData.NTPTimestamp >> 16)
+	if r.srDataExt != nil && r.srDataExt.SenderReportData != nil {
+		lastSR = uint32(r.srDataExt.SenderReportData.NTPTimestamp >> 16)
 	}
 	return &rtcp.ReceptionReport{
 		SSRC:               ssrc,

@@ -633,12 +633,12 @@ func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64) {
 	}
 }
 
-func (b *Buffer) GetSenderReportInfo() *RTCPSenderReportInfo {
+func (b *Buffer) GetSenderReportDataExt() *RTCPSenderReportDataExt {
 	b.RLock()
 	defer b.RUnlock()
 
 	if b.rtpStats != nil {
-		return b.rtpStats.GetRtcpSenderReportInfo()
+		return b.rtpStats.GetRtcpSenderReportDataExt()
 	}
 
 	return nil

@@ -65,7 +65,7 @@ type TrackReceiver interface {
 
 	GetTemporalLayerFpsForSpatial(layer int32) []float32
 
-	GetRTCPSenderReportInfo(layer int32) *buffer.RTCPSenderReportInfo
+	GetRTCPSenderReportDataExt(layer int32) *buffer.RTCPSenderReportDataExt
 	GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error)
 }
 
@@ -698,7 +698,7 @@ func (w *WebRTCReceiver) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
 	return b.GetTemporalLayerFpsForSpatial(layer)
 }
 
-func (w *WebRTCReceiver) GetRTCPSenderReportInfo(layer int32) *buffer.RTCPSenderReportInfo {
+func (w *WebRTCReceiver) GetRTCPSenderReportDataExt(layer int32) *buffer.RTCPSenderReportDataExt {
 	w.bufferMu.RLock()
 	defer w.bufferMu.RUnlock()
 
@@ -706,7 +706,7 @@ func (w *WebRTCReceiver) GetRTCPSenderReportInfo(layer int32) *buffer.RTCPSender
 		return nil
 	}
 
-	return w.buffers[layer].GetSenderReportInfo()
+	return w.buffers[layer].GetSenderReportDataExt()
 }
 
 func (w *WebRTCReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error) {
@@ -721,7 +721,7 @@ func (w *WebRTCReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, r
 	if bLayer == nil {
 		return 0, fmt.Errorf("invalid layer: %d", layer)
 	}
-	srLayer := bLayer.GetSenderReportInfo()
+	srLayer := bLayer.GetSenderReportDataExt()
 	if srLayer == nil || srLayer.SenderReportData == nil || srLayer.SenderReportData.NTPTimestamp == 0 {
 		return 0, fmt.Errorf("layer rtcp sender report not available: %d", layer)
 	}
@@ -730,7 +730,7 @@ func (w *WebRTCReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, r
 	if bReferenceLayer == nil {
 		return 0, fmt.Errorf("invalid reference layer: %d", referenceLayer)
 	}
-	srRef := bReferenceLayer.GetSenderReportInfo()
+	srRef := bReferenceLayer.GetSenderReportDataExt()
 	if srRef == nil || srRef.SenderReportData == nil || srRef.SenderReportData.NTPTimestamp == 0 {
 		return 0, fmt.Errorf("reference layer rtcp sender report not available: %d", referenceLayer)
 	}
