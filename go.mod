@@ -8,8 +8,8 @@ require (
 	github.com/dustin/go-humanize v1.0.1
 	github.com/elliotchance/orderedmap/v2 v2.2.0
 	github.com/florianl/go-tc v0.4.2
-	github.com/gammazero/deque v0.1.0
-	github.com/gammazero/workerpool v1.1.2
+	github.com/gammazero/deque v0.2.0
+	github.com/gammazero/workerpool v1.1.3
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/google/wire v0.5.0
 	github.com/gorilla/websocket v1.5.0
