@@ -10,26 +10,29 @@ import (
 )
 
 var (
-	roomTotal              atomic.Int32
-	participantTotal       atomic.Int32
-	trackPublishedTotal    atomic.Int32
-	trackSubscribedTotal   atomic.Int32
+	roomCurrent            atomic.Int32
+	participantCurrent     atomic.Int32
+	trackPublishedCurrent  atomic.Int32
+	trackSubscribedCurrent atomic.Int32
 	trackPublishAttempts   atomic.Int32
 	trackPublishSuccess    atomic.Int32
 	trackSubscribeAttempts atomic.Int32
 	trackSubscribeSuccess  atomic.Int32
+	// count the number of failures that are due to user error (permissions, track doesn't exist), so we could compute
+	// success rate by subtracting this from total attempts
+	trackSubscribeUserError atomic.Int32
 
-	promRoomTotal             prometheus.Gauge
-	promRoomDuration          prometheus.Histogram
-	promParticipantTotal      prometheus.Gauge
-	promTrackPublishedTotal   *prometheus.GaugeVec
-	promTrackSubscribedTotal  *prometheus.GaugeVec
-	promTrackPublishCounter   *prometheus.CounterVec
-	promTrackSubscribeCounter *prometheus.CounterVec
+	promRoomCurrent            prometheus.Gauge
+	promRoomDuration           prometheus.Histogram
+	promParticipantCurrent     prometheus.Gauge
+	promTrackPublishedCurrent  *prometheus.GaugeVec
+	promTrackSubscribedCurrent *prometheus.GaugeVec
+	promTrackPublishCounter    *prometheus.CounterVec
+	promTrackSubscribeCounter  *prometheus.CounterVec
 )
 
 func initRoomStats(nodeID string, nodeType livekit.NodeType) {
-	promRoomTotal = prometheus.NewGauge(prometheus.GaugeOpts{
+	promRoomCurrent = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "room",
 		Name:        "total",
@@ -44,19 +47,19 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 			5, 10, 60, 5 * 60, 10 * 60, 30 * 60, 60 * 60, 2 * 60 * 60, 5 * 60 * 60, 10 * 60 * 60,
 		},
 	})
-	promParticipantTotal = prometheus.NewGauge(prometheus.GaugeOpts{
+	promParticipantCurrent = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "participant",
 		Name:        "total",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	})
-	promTrackPublishedTotal = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+	promTrackPublishedCurrent = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "track",
 		Name:        "published_total",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	}, []string{"kind"})
-	promTrackSubscribedTotal = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+	promTrackSubscribedCurrent = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "track",
 		Name:        "subscribed_total",
@@ -73,48 +76,48 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 		Subsystem:   "track",
 		Name:        "subscribe_counter",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
-	}, []string{"kind", "state"})
+	}, []string{"state", "error"})
 
-	prometheus.MustRegister(promRoomTotal)
+	prometheus.MustRegister(promRoomCurrent)
 	prometheus.MustRegister(promRoomDuration)
-	prometheus.MustRegister(promParticipantTotal)
-	prometheus.MustRegister(promTrackPublishedTotal)
-	prometheus.MustRegister(promTrackSubscribedTotal)
+	prometheus.MustRegister(promParticipantCurrent)
+	prometheus.MustRegister(promTrackPublishedCurrent)
+	prometheus.MustRegister(promTrackSubscribedCurrent)
 	prometheus.MustRegister(promTrackPublishCounter)
 	prometheus.MustRegister(promTrackSubscribeCounter)
 }
 
 func RoomStarted() {
-	promRoomTotal.Add(1)
-	roomTotal.Inc()
+	promRoomCurrent.Add(1)
+	roomCurrent.Inc()
 }
 
 func RoomEnded(startedAt time.Time) {
 	if !startedAt.IsZero() {
 		promRoomDuration.Observe(float64(time.Since(startedAt)) / float64(time.Second))
 	}
-	promRoomTotal.Sub(1)
-	roomTotal.Dec()
+	promRoomCurrent.Sub(1)
+	roomCurrent.Dec()
 }
 
 func AddParticipant() {
-	promParticipantTotal.Add(1)
-	participantTotal.Inc()
+	promParticipantCurrent.Add(1)
+	participantCurrent.Inc()
 }
 
 func SubParticipant() {
-	promParticipantTotal.Sub(1)
-	participantTotal.Dec()
+	promParticipantCurrent.Sub(1)
+	participantCurrent.Dec()
 }
 
 func AddPublishedTrack(kind string) {
-	promTrackPublishedTotal.WithLabelValues(kind).Add(1)
-	trackPublishedTotal.Inc()
+	promTrackPublishedCurrent.WithLabelValues(kind).Add(1)
+	trackPublishedCurrent.Inc()
 }
 
 func SubPublishedTrack(kind string) {
-	promTrackPublishedTotal.WithLabelValues(kind).Sub(1)
-	trackPublishedTotal.Dec()
+	promTrackPublishedCurrent.WithLabelValues(kind).Sub(1)
+	trackPublishedCurrent.Dec()
 }
 
 func AddPublishAttempt(kind string) {
@@ -127,22 +130,31 @@ func AddPublishSuccess(kind string) {
 	promTrackPublishCounter.WithLabelValues(kind, "success").Inc()
 }
 
-func AddSubscribedTrack(kind string) {
-	promTrackSubscribedTotal.WithLabelValues(kind).Add(1)
-	trackSubscribedTotal.Inc()
-}
+func RecordTrackSubscribeSuccess(kind string) {
+	// modify both current and total counters
+	promTrackSubscribedCurrent.WithLabelValues(kind).Add(1)
+	trackSubscribedCurrent.Inc()
 
-func SubSubscribedTrack(kind string) {
-	promTrackSubscribedTotal.WithLabelValues(kind).Sub(1)
-	trackSubscribedTotal.Dec()
-}
-
-func AddSubscribeAttempt(kind string) {
-	trackSubscribeAttempts.Inc()
-	promTrackSubscribeCounter.WithLabelValues(kind, "attempt").Inc()
-}
-
-func AddSubscribeSuccess(kind string) {
+	promTrackSubscribeCounter.WithLabelValues("success", "").Inc()
 	trackSubscribeSuccess.Inc()
-	promTrackSubscribeCounter.WithLabelValues(kind, "success").Inc()
+}
+
+func RecordTrackUnsubscribed(kind string) {
+	// unsubscribed modifies current counter, but we leave the total values alone since they
+	// are used to compute rate
+	promTrackSubscribedCurrent.WithLabelValues(kind).Sub(1)
+	trackSubscribedCurrent.Dec()
+}
+
+func RecordTrackSubscribeAttempt() {
+	trackSubscribeAttempts.Inc()
+	promTrackSubscribeCounter.WithLabelValues("attempt", "").Inc()
+}
+
+func RecordTrackSubscribeFailure(err error, isUserError bool) {
+	promTrackSubscribeCounter.WithLabelValues("failure", err.Error()).Inc()
+
+	if isUserError {
+		trackSubscribeUserError.Inc()
+	}
 }

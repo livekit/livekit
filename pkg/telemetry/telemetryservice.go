@@ -40,7 +40,9 @@ type TelemetryService interface {
 	// TrackSubscribed - a participant subscribed to a track successfully
 	TrackSubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, publisher *livekit.ParticipantInfo)
 	// TrackUnsubscribed - a participant unsubscribed from a track successfully
-	TrackUnsubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
+	TrackUnsubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, shouldSendEvent bool)
+	// TrackSubscribeFailed - failure to subscribe to a track
+	TrackSubscribeFailed(ctx context.Context, participantID livekit.ParticipantID, trackID livekit.TrackID, err error, isUserError bool)
 	// TrackMuted - the publisher has muted the Track
 	TrackMuted(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
 	// TrackUnmuted - the publisher has muted the Track

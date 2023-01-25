@@ -246,6 +246,8 @@ func (t *telemetryService) TrackSubscribeRequested(
 	publisher *livekit.ParticipantInfo,
 ) {
 	t.enqueue(func() {
+		prometheus.RecordTrackSubscribeAttempt()
+
 		room := t.getRoomDetails(participantID)
 		ev := newTrackEvent(livekit.AnalyticsEventType_TRACK_SUBSCRIBE_REQUESTED, room, participantID, track)
 		ev.Publisher = publisher
@@ -260,7 +262,7 @@ func (t *telemetryService) TrackSubscribed(
 	publisher *livekit.ParticipantInfo,
 ) {
 	t.enqueue(func() {
-		prometheus.AddSubscribedTrack(track.Type.String())
+		prometheus.RecordTrackSubscribeSuccess(track.Type.String())
 
 		room := t.getRoomDetails(participantID)
 		ev := newTrackEvent(livekit.AnalyticsEventType_TRACK_SUBSCRIBED, room, participantID, track)
@@ -269,12 +271,38 @@ func (t *telemetryService) TrackSubscribed(
 	})
 }
 
-func (t *telemetryService) TrackUnsubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
+func (t *telemetryService) TrackSubscribeFailed(
+	ctx context.Context,
+	participantID livekit.ParticipantID,
+	trackID livekit.TrackID,
+	err error,
+	isUserError bool,
+) {
 	t.enqueue(func() {
-		prometheus.SubSubscribedTrack(track.Type.String())
+		prometheus.RecordTrackSubscribeFailure(err, isUserError)
 
 		room := t.getRoomDetails(participantID)
-		t.SendEvent(ctx, newTrackEvent(livekit.AnalyticsEventType_TRACK_UNSUBSCRIBED, room, participantID, track))
+		ev := newTrackEvent(livekit.AnalyticsEventType_TRACK_SUBSCRIBE_FAILED, room, participantID, &livekit.TrackInfo{
+			Sid: string(trackID),
+		})
+		ev.Error = err.Error()
+		t.SendEvent(ctx, ev)
+	})
+}
+
+func (t *telemetryService) TrackUnsubscribed(
+	ctx context.Context,
+	participantID livekit.ParticipantID,
+	track *livekit.TrackInfo,
+	shouldSendEvent bool,
+) {
+	t.enqueue(func() {
+		prometheus.RecordTrackUnsubscribed(track.Type.String())
+
+		if shouldSendEvent {
+			room := t.getRoomDetails(participantID)
+			t.SendEvent(ctx, newTrackEvent(livekit.AnalyticsEventType_TRACK_UNSUBSCRIBED, room, participantID, track))
+		}
 	})
 }
 

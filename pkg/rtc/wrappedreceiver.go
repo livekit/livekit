@@ -49,7 +49,7 @@ func NewWrappedReceiver(params WrappedReceiverParams) *WrappedReceiver {
 				PayloadType:        111,
 			})
 		} else if !params.DisableRed && strings.EqualFold(codecs[0].MimeType, webrtc.MimeTypeOpus) {
-			// if upstream is opus only and red eanbled, add red to match clients that supoort red
+			// if upstream is opus only and red enabled, add red to match clients that support red
 			codecs = append(codecs, webrtc.RTPCodecParameters{
 				RTPCodecCapability: redCodecCapability,
 				PayloadType:        63,
