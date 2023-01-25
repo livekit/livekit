@@ -722,7 +722,7 @@ func (w *WebRTCReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, r
 		return 0, fmt.Errorf("invalid layer: %d", layer)
 	}
 	srLayer := bLayer.GetSenderReportDataExt()
-	if srLayer == nil || srLayer.SenderReportData == nil || srLayer.SenderReportData.NTPTimestamp == 0 {
+	if srLayer == nil || srLayer.SenderReportData.NTPTimestamp == 0 {
 		return 0, fmt.Errorf("layer rtcp sender report not available: %d", layer)
 	}
 
@@ -731,7 +731,7 @@ func (w *WebRTCReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, r
 		return 0, fmt.Errorf("invalid reference layer: %d", referenceLayer)
 	}
 	srRef := bReferenceLayer.GetSenderReportDataExt()
-	if srRef == nil || srRef.SenderReportData == nil || srRef.SenderReportData.NTPTimestamp == 0 {
+	if srRef == nil || srRef.SenderReportData.NTPTimestamp == 0 {
 		return 0, fmt.Errorf("reference layer rtcp sender report not available: %d", referenceLayer)
 	}
 
