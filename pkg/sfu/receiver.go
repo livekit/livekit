@@ -65,7 +65,7 @@ type TrackReceiver interface {
 
 	GetTemporalLayerFpsForSpatial(layer int32) []float32
 
-	GetRTCPSenderReportData(layer int32) *buffer.RTCPSenderReportData
+	GetRTCPSenderReportDataExt(layer int32) *buffer.RTCPSenderReportDataExt
 	GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error)
 }
 
@@ -698,7 +698,7 @@ func (w *WebRTCReceiver) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
 	return b.GetTemporalLayerFpsForSpatial(layer)
 }
 
-func (w *WebRTCReceiver) GetRTCPSenderReportData(layer int32) *buffer.RTCPSenderReportData {
+func (w *WebRTCReceiver) GetRTCPSenderReportDataExt(layer int32) *buffer.RTCPSenderReportDataExt {
 	w.bufferMu.RLock()
 	defer w.bufferMu.RUnlock()
 
@@ -706,7 +706,7 @@ func (w *WebRTCReceiver) GetRTCPSenderReportData(layer int32) *buffer.RTCPSender
 		return nil
 	}
 
-	return w.buffers[layer].GetSenderReportData()
+	return w.buffers[layer].GetSenderReportDataExt()
 }
 
 func (w *WebRTCReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error) {
@@ -721,8 +721,8 @@ func (w *WebRTCReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, r
 	if bLayer == nil {
 		return 0, fmt.Errorf("invalid layer: %d", layer)
 	}
-	srLayer := bLayer.GetSenderReportData()
-	if srLayer == nil || srLayer.NTPTimestamp == 0 {
+	srLayer := bLayer.GetSenderReportDataExt()
+	if srLayer == nil || srLayer.SenderReportData.NTPTimestamp == 0 {
 		return 0, fmt.Errorf("layer rtcp sender report not available: %d", layer)
 	}
 
@@ -730,8 +730,8 @@ func (w *WebRTCReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, r
 	if bReferenceLayer == nil {
 		return 0, fmt.Errorf("invalid reference layer: %d", referenceLayer)
 	}
-	srRef := bReferenceLayer.GetSenderReportData()
-	if srRef == nil || srRef.NTPTimestamp == 0 {
+	srRef := bReferenceLayer.GetSenderReportDataExt()
+	if srRef == nil || srRef.SenderReportData.NTPTimestamp == 0 {
 		return 0, fmt.Errorf("reference layer rtcp sender report not available: %d", referenceLayer)
 	}
 
@@ -739,12 +739,12 @@ func (w *WebRTCReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, r
 	// NOTE: It is possible that reference layer has stopped (due to dynacast/adaptive streaming OR publisher
 	// constraints). It should be okay even if the layer has stopped for a long time when using modulo arithmetic for
 	// RTP time stamp (uint32 arithmetic).
-	ntpDiff := float64(int64(srRef.NTPTimestamp-srLayer.NTPTimestamp)) / float64(1<<32)
-	normalizedTS := srLayer.RTPTimestamp + uint32(ntpDiff*float64(w.codec.ClockRate))
+	ntpDiff := float64(int64(srRef.SenderReportData.NTPTimestamp-srLayer.SenderReportData.NTPTimestamp)) / float64(1<<32)
+	normalizedTS := srLayer.SenderReportData.RTPTimestamp + uint32(ntpDiff*float64(w.codec.ClockRate))
 
 	// now that both RTP timestamps correspond to roughly the same NTP time,
 	// the diff between them is the offset in RTP timestamp units between layer and referenceLayer.
 	// Add the offset to layer's ts to map it to corresponding RTP timestamp in
 	// the reference layer.
-	return ts + (srRef.RTPTimestamp - normalizedTS), nil
+	return ts + (srRef.SenderReportData.RTPTimestamp - normalizedTS), nil
 }
