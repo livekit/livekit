@@ -27,6 +27,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 	"github.com/livekit/livekit-server/pkg/telemetry/telemetryfakes"
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -192,6 +193,7 @@ func TestUnsubscribe(t *testing.T) {
 	s := &trackSubscription{
 		trackID:           "track",
 		desired:           true,
+		subscriberID:      sm.params.Participant.ID(),
 		publisherID:       "pubID",
 		publisherIdentity: "pub",
 		hasPermission:     true,
@@ -200,6 +202,8 @@ func TestUnsubscribe(t *testing.T) {
 	// a bunch of unfortunate manual wiring
 	res, err := resolver.Resolve("sub", s.publisherID, s.trackID)
 	require.NoError(t, err)
+	res.TrackChangeNotifier.AddObserver(string(sm.params.Participant.ID()), func() {})
+	s.changeNotifier = res.TrackChangeNotifier
 	st, err := res.Track.AddSubscriber(sm.params.Participant)
 	require.NoError(t, err)
 	s.subscribedTrack = st
@@ -230,6 +234,7 @@ func TestUnsubscribe(t *testing.T) {
 	sm.lock.RLock()
 	require.Len(t, sm.subscriptions, 0)
 	sm.lock.RUnlock()
+	require.False(t, res.TrackChangeNotifier.HasObservers())
 
 	tm := sm.params.Telemetry.(*telemetryfakes.FakeTelemetryService)
 	require.Equal(t, 1, tm.TrackUnsubscribedCallCount())
@@ -365,8 +370,9 @@ func (t *testResolver) Resolve(identity livekit.ParticipantIdentity, pID livekit
 	mt.AddSubscriberReturns(st, nil)
 	st.MediaTrackReturns(mt)
 	return types.MediaResolverResult{
-		Track:         mt,
-		HasPermission: t.hasPermission,
+		Track:               mt,
+		TrackChangeNotifier: utils.NewChangeNotifier(),
+		HasPermission:       t.hasPermission,
 	}, nil
 }
 
