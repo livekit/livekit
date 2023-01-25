@@ -68,7 +68,7 @@ func (t *telemetryService) ParticipantJoined(
 	shouldSendEvent bool,
 ) {
 	t.enqueue(func() {
-		prometheus.IncrementParticipantJoin(1, true)
+		prometheus.IncrementParticipantRtcConnected(1)
 		prometheus.AddParticipant()
 
 		t.createWorker(
