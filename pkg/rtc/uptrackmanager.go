@@ -87,6 +87,73 @@ func (u *UpTrackManager) OnPublishedTrackUpdated(f func(track types.MediaTrack, 
 	u.onTrackUpdated = f
 }
 
+<<<<<<< HEAD
+=======
+// AddSubscriber subscribes op to all publishedTracks
+func (u *UpTrackManager) AddSubscriber(sub types.LocalParticipant, params types.AddSubscriberParams) (int, error) {
+	u.lock.Lock()
+	defer u.lock.Unlock()
+
+	var tracks []types.MediaTrack
+	if params.AllTracks {
+		for _, t := range u.publishedTracks {
+			tracks = append(tracks, t)
+		}
+	} else {
+		for _, trackID := range params.TrackIDs {
+			track := u.getPublishedTrackLocked(trackID)
+			if track == nil {
+				continue
+			}
+
+			tracks = append(tracks, track)
+		}
+	}
+	if len(tracks) == 0 {
+		return 0, nil
+	}
+
+	var trackIDs []livekit.TrackID
+	for _, track := range tracks {
+		trackIDs = append(trackIDs, track.ID())
+	}
+	sub.GetLogger().Debugw("subscribing to tracks",
+		"trackID", trackIDs)
+
+	n := 0
+	for _, track := range tracks {
+		trackID := track.ID()
+		subscriberIdentity := sub.Identity()
+		if !u.hasPermissionLocked(trackID, subscriberIdentity) {
+			u.maybeAddPendingSubscriptionLocked(trackID, subscriberIdentity, sub, nil)
+			continue
+		}
+
+		if err := track.AddSubscriber(sub); err != nil {
+			return n, err
+		}
+		n += 1
+
+		u.maybeRemovePendingSubscriptionLocked(trackID, sub, true, true)
+	}
+	return n, nil
+}
+
+func (u *UpTrackManager) RemoveSubscriber(sub types.LocalParticipant, trackID livekit.TrackID, willBeResumed bool) {
+	u.lock.Lock()
+	track := u.getPublishedTrackLocked(trackID)
+
+	if track != nil {
+		u.lock.Unlock()
+		track.RemoveSubscriber(sub.ID(), willBeResumed)
+		u.lock.Lock()
+	}
+
+	u.maybeRemovePendingSubscriptionLocked(trackID, sub, false, false)
+	u.lock.Unlock()
+}
+
+>>>>>>> 33d536f (release lock while removing subscriber)
 func (u *UpTrackManager) SetPublishedTrackMuted(trackID livekit.TrackID, muted bool) types.MediaTrack {
 	u.lock.RLock()
 	track := u.publishedTracks[trackID]
