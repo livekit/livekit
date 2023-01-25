@@ -323,7 +323,7 @@ func (r *RoomManager) StartSession(
 		AllowTCPFallback:        allowFallback,
 		TURNSEnabled:            r.config.IsTURNSEnabled(),
 		GetParticipantInfo: func(pID livekit.ParticipantID) *livekit.ParticipantInfo {
-			if p := room.GetParticipantBySid(pID); p != nil {
+			if p := room.GetParticipantByID(pID); p != nil {
 				return p.ToProto()
 			}
 			return nil
@@ -331,6 +331,7 @@ func (r *RoomManager) StartSession(
 		ReconnectOnPublicationError:  reconnectOnPublicationError,
 		ReconnectOnSubscriptionError: reconnectOnSubscriptionError,
 		VersionGenerator:             r.versionGenerator,
+		TrackResolver:                room.ResolveMediaTrackForSubscriber,
 	})
 	if err != nil {
 		return err
@@ -585,10 +586,7 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomName livekit.Roo
 			participant.SetMetadata(rm.UpdateParticipant.Metadata)
 		}
 		if rm.UpdateParticipant.Permission != nil {
-			err := room.SetParticipantPermission(participant, rm.UpdateParticipant.Permission)
-			if err != nil {
-				pLogger.Errorw("could not update permissions", err)
-			}
+			participant.SetPermission(rm.UpdateParticipant.Permission)
 		}
 	case *livekit.RTCNodeMessage_DeleteRoom:
 		room.Logger.Infow("deleting room")
@@ -601,16 +599,12 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomName livekit.Roo
 			return
 		}
 		pLogger.Debugw("updating participant subscriptions")
-		if err := room.UpdateSubscriptions(
+		room.UpdateSubscriptions(
 			participant,
 			livekit.StringsAsTrackIDs(rm.UpdateSubscriptions.TrackSids),
 			rm.UpdateSubscriptions.ParticipantTracks,
 			rm.UpdateSubscriptions.Subscribe,
-		); err != nil {
-			pLogger.Warnw("could not update subscription", err,
-				"tracks", rm.UpdateSubscriptions.TrackSids,
-				"subscribe", rm.UpdateSubscriptions.Subscribe)
-		}
+		)
 	case *livekit.RTCNodeMessage_SendData:
 		pLogger.Debugw("api send data", "size", len(rm.SendData.Data))
 		up := &livekit.UserPacket{

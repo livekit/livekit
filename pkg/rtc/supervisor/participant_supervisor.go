@@ -30,19 +30,16 @@ type ParticipantSupervisor struct {
 	lock                 sync.RWMutex
 	isPublisherConnected bool
 	publications         map[livekit.TrackID]*trackMonitor
-	subscriptions        map[livekit.TrackID]*trackMonitor
 
 	isStopped atomic.Bool
 
-	onPublicationError  func(trackID livekit.TrackID)
-	onSubscriptionError func(trackID livekit.TrackID)
+	onPublicationError func(trackID livekit.TrackID)
 }
 
 func NewParticipantSupervisor(params ParticipantSupervisorParams) *ParticipantSupervisor {
 	p := &ParticipantSupervisor{
-		params:        params,
-		publications:  make(map[livekit.TrackID]*trackMonitor),
-		subscriptions: make(map[livekit.TrackID]*trackMonitor),
+		params:       params,
+		publications: make(map[livekit.TrackID]*trackMonitor),
 	}
 
 	go p.checkState()
@@ -66,20 +63,6 @@ func (p *ParticipantSupervisor) getOnPublicationError() func(trackID livekit.Tra
 	defer p.lock.RUnlock()
 
 	return p.onPublicationError
-}
-
-func (p *ParticipantSupervisor) OnSubscriptionError(f func(trackID livekit.TrackID)) {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	p.onSubscriptionError = f
-}
-
-func (p *ParticipantSupervisor) getOnSubscriptionError() func(trackID livekit.TrackID) {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-
-	return p.onSubscriptionError
 }
 
 func (p *ParticipantSupervisor) SetPublisherPeerConnectionConnected(isConnected bool) {
@@ -139,55 +122,6 @@ func (p *ParticipantSupervisor) ClearPublishedTrack(trackID livekit.TrackID, pub
 	p.lock.RUnlock()
 }
 
-func (p *ParticipantSupervisor) UpdateSubscription(trackID livekit.TrackID, isSubscribe bool, sourceTrack types.MediaTrack) {
-	p.lock.Lock()
-	sm, ok := p.subscriptions[trackID]
-	if !ok {
-		sm = &trackMonitor{
-			opMon: NewSubscriptionMonitor(SubscriptionMonitorParams{TrackID: trackID, Logger: p.params.Logger}),
-		}
-		p.subscriptions[trackID] = sm
-	}
-	sm.opMon.PostEvent(
-		types.OperationMonitorEventUpdateSubscription,
-		SubscriptionOpParams{
-			SourceTrack: sourceTrack,
-			IsSubscribe: isSubscribe,
-		},
-	)
-	p.lock.Unlock()
-}
-
-func (p *ParticipantSupervisor) SetSubscribedTrack(trackID livekit.TrackID, subTrack types.SubscribedTrack, sourceTrack types.MediaTrack) {
-	p.lock.RLock()
-	sm, ok := p.subscriptions[trackID]
-	if ok {
-		sm.opMon.PostEvent(
-			types.OperationMonitorEventSetSubscribedTrack,
-			UpdateSubscribedTrackParams{
-				SourceTrack:     sourceTrack,
-				SubscribedTrack: subTrack,
-			},
-		)
-	}
-	p.lock.RUnlock()
-}
-
-func (p *ParticipantSupervisor) ClearSubscribedTrack(trackID livekit.TrackID, subTrack types.SubscribedTrack, sourceTrack types.MediaTrack) {
-	p.lock.RLock()
-	sm, ok := p.subscriptions[trackID]
-	if ok {
-		sm.opMon.PostEvent(
-			types.OperationMonitorEventClearSubscribedTrack,
-			UpdateSubscribedTrackParams{
-				SourceTrack:     sourceTrack,
-				SubscribedTrack: subTrack,
-			},
-		)
-	}
-	p.lock.RUnlock()
-}
-
 func (p *ParticipantSupervisor) checkState() {
 	ticker := time.NewTicker(monitorInterval)
 	defer ticker.Stop()
@@ -196,7 +130,6 @@ func (p *ParticipantSupervisor) checkState() {
 		<-ticker.C
 
 		p.checkPublications()
-		p.checkSubscriptions()
 	}
 }
 
@@ -232,42 +165,6 @@ func (p *ParticipantSupervisor) checkPublications() {
 	if onPublicationError := p.getOnPublicationError(); onPublicationError != nil {
 		for _, trackID := range erroredPublications {
 			onPublicationError(trackID)
-		}
-	}
-}
-
-func (p *ParticipantSupervisor) checkSubscriptions() {
-	var erroredSubscriptions []livekit.TrackID
-	var removableSubscriptions []livekit.TrackID
-	p.lock.RLock()
-	for trackID, sm := range p.subscriptions {
-		if err := sm.opMon.Check(); err != nil {
-			if sm.err == nil {
-				p.params.Logger.Errorw("supervisor error on subscription", err, "trackID", trackID)
-				sm.err = err
-				erroredSubscriptions = append(erroredSubscriptions, trackID)
-			}
-		} else {
-			if sm.err != nil {
-				p.params.Logger.Infow("supervisor subscription recovered", "trackID", trackID)
-				sm.err = err
-			}
-			if sm.opMon.IsIdle() {
-				removableSubscriptions = append(removableSubscriptions, trackID)
-			}
-		}
-	}
-	p.lock.RUnlock()
-
-	p.lock.Lock()
-	for _, trackID := range removableSubscriptions {
-		delete(p.subscriptions, trackID)
-	}
-	p.lock.Unlock()
-
-	if onSubscriptionError := p.getOnSubscriptionError(); onSubscriptionError != nil {
-		for _, trackID := range erroredSubscriptions {
-			onSubscriptionError(trackID)
 		}
 	}
 }

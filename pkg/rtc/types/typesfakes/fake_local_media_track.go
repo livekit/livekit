@@ -15,16 +15,18 @@ type FakeLocalMediaTrack struct {
 	addOnCloseArgsForCall []struct {
 		arg1 func()
 	}
-	AddSubscriberStub        func(types.LocalParticipant) error
+	AddSubscriberStub        func(types.LocalParticipant) (types.SubscribedTrack, error)
 	addSubscriberMutex       sync.RWMutex
 	addSubscriberArgsForCall []struct {
 		arg1 types.LocalParticipant
 	}
 	addSubscriberReturns struct {
-		result1 error
+		result1 types.SubscribedTrack
+		result2 error
 	}
 	addSubscriberReturnsOnCall map[int]struct {
-		result1 error
+		result1 types.SubscribedTrack
+		result2 error
 	}
 	ClearAllReceiversStub        func(bool)
 	clearAllReceiversMutex       sync.RWMutex
@@ -142,16 +144,6 @@ type FakeLocalMediaTrack struct {
 		result1 bool
 	}
 	isSimulcastReturnsOnCall map[int]struct {
-		result1 bool
-	}
-	IsSubscribedStub        func() bool
-	isSubscribedMutex       sync.RWMutex
-	isSubscribedArgsForCall []struct {
-	}
-	isSubscribedReturns struct {
-		result1 bool
-	}
-	isSubscribedReturnsOnCall map[int]struct {
 		result1 bool
 	}
 	IsSubscriberStub        func(livekit.ParticipantID) bool
@@ -339,7 +331,7 @@ func (fake *FakeLocalMediaTrack) AddOnCloseArgsForCall(i int) func() {
 	return argsForCall.arg1
 }
 
-func (fake *FakeLocalMediaTrack) AddSubscriber(arg1 types.LocalParticipant) error {
+func (fake *FakeLocalMediaTrack) AddSubscriber(arg1 types.LocalParticipant) (types.SubscribedTrack, error) {
 	fake.addSubscriberMutex.Lock()
 	ret, specificReturn := fake.addSubscriberReturnsOnCall[len(fake.addSubscriberArgsForCall)]
 	fake.addSubscriberArgsForCall = append(fake.addSubscriberArgsForCall, struct {
@@ -353,9 +345,9 @@ func (fake *FakeLocalMediaTrack) AddSubscriber(arg1 types.LocalParticipant) erro
 		return stub(arg1)
 	}
 	if specificReturn {
-		return ret.result1
+		return ret.result1, ret.result2
 	}
-	return fakeReturns.result1
+	return fakeReturns.result1, fakeReturns.result2
 }
 
 func (fake *FakeLocalMediaTrack) AddSubscriberCallCount() int {
@@ -364,7 +356,7 @@ func (fake *FakeLocalMediaTrack) AddSubscriberCallCount() int {
 	return len(fake.addSubscriberArgsForCall)
 }
 
-func (fake *FakeLocalMediaTrack) AddSubscriberCalls(stub func(types.LocalParticipant) error) {
+func (fake *FakeLocalMediaTrack) AddSubscriberCalls(stub func(types.LocalParticipant) (types.SubscribedTrack, error)) {
 	fake.addSubscriberMutex.Lock()
 	defer fake.addSubscriberMutex.Unlock()
 	fake.AddSubscriberStub = stub
@@ -377,27 +369,30 @@ func (fake *FakeLocalMediaTrack) AddSubscriberArgsForCall(i int) types.LocalPart
 	return argsForCall.arg1
 }
 
-func (fake *FakeLocalMediaTrack) AddSubscriberReturns(result1 error) {
+func (fake *FakeLocalMediaTrack) AddSubscriberReturns(result1 types.SubscribedTrack, result2 error) {
 	fake.addSubscriberMutex.Lock()
 	defer fake.addSubscriberMutex.Unlock()
 	fake.AddSubscriberStub = nil
 	fake.addSubscriberReturns = struct {
-		result1 error
-	}{result1}
+		result1 types.SubscribedTrack
+		result2 error
+	}{result1, result2}
 }
 
-func (fake *FakeLocalMediaTrack) AddSubscriberReturnsOnCall(i int, result1 error) {
+func (fake *FakeLocalMediaTrack) AddSubscriberReturnsOnCall(i int, result1 types.SubscribedTrack, result2 error) {
 	fake.addSubscriberMutex.Lock()
 	defer fake.addSubscriberMutex.Unlock()
 	fake.AddSubscriberStub = nil
 	if fake.addSubscriberReturnsOnCall == nil {
 		fake.addSubscriberReturnsOnCall = make(map[int]struct {
-			result1 error
+			result1 types.SubscribedTrack
+			result2 error
 		})
 	}
 	fake.addSubscriberReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
+		result1 types.SubscribedTrack
+		result2 error
+	}{result1, result2}
 }
 
 func (fake *FakeLocalMediaTrack) ClearAllReceivers(arg1 bool) {
@@ -1020,59 +1015,6 @@ func (fake *FakeLocalMediaTrack) IsSimulcastReturnsOnCall(i int, result1 bool) {
 		})
 	}
 	fake.isSimulcastReturnsOnCall[i] = struct {
-		result1 bool
-	}{result1}
-}
-
-func (fake *FakeLocalMediaTrack) IsSubscribed() bool {
-	fake.isSubscribedMutex.Lock()
-	ret, specificReturn := fake.isSubscribedReturnsOnCall[len(fake.isSubscribedArgsForCall)]
-	fake.isSubscribedArgsForCall = append(fake.isSubscribedArgsForCall, struct {
-	}{})
-	stub := fake.IsSubscribedStub
-	fakeReturns := fake.isSubscribedReturns
-	fake.recordInvocation("IsSubscribed", []interface{}{})
-	fake.isSubscribedMutex.Unlock()
-	if stub != nil {
-		return stub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeLocalMediaTrack) IsSubscribedCallCount() int {
-	fake.isSubscribedMutex.RLock()
-	defer fake.isSubscribedMutex.RUnlock()
-	return len(fake.isSubscribedArgsForCall)
-}
-
-func (fake *FakeLocalMediaTrack) IsSubscribedCalls(stub func() bool) {
-	fake.isSubscribedMutex.Lock()
-	defer fake.isSubscribedMutex.Unlock()
-	fake.IsSubscribedStub = stub
-}
-
-func (fake *FakeLocalMediaTrack) IsSubscribedReturns(result1 bool) {
-	fake.isSubscribedMutex.Lock()
-	defer fake.isSubscribedMutex.Unlock()
-	fake.IsSubscribedStub = nil
-	fake.isSubscribedReturns = struct {
-		result1 bool
-	}{result1}
-}
-
-func (fake *FakeLocalMediaTrack) IsSubscribedReturnsOnCall(i int, result1 bool) {
-	fake.isSubscribedMutex.Lock()
-	defer fake.isSubscribedMutex.Unlock()
-	fake.IsSubscribedStub = nil
-	if fake.isSubscribedReturnsOnCall == nil {
-		fake.isSubscribedReturnsOnCall = make(map[int]struct {
-			result1 bool
-		})
-	}
-	fake.isSubscribedReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
 }
@@ -1941,8 +1883,6 @@ func (fake *FakeLocalMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.isMutedMutex.RUnlock()
 	fake.isSimulcastMutex.RLock()
 	defer fake.isSimulcastMutex.RUnlock()
-	fake.isSubscribedMutex.RLock()
-	defer fake.isSubscribedMutex.RUnlock()
 	fake.isSubscriberMutex.RLock()
 	defer fake.isSubscriberMutex.RUnlock()
 	fake.kindMutex.RLock()

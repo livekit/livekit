@@ -1762,7 +1762,7 @@ func (t *PCTransport) handleICERestart(e *event) error {
 	return t.doICERestart()
 }
 
-// configure subscriber tranceiver for audio stereo and nack
+// configure subscriber transceiver for audio stereo and nack
 func configureAudioTransceiver(tr *webrtc.RTPTransceiver, stereo bool, nack bool) {
 	sender := tr.Sender()
 	if sender == nil {

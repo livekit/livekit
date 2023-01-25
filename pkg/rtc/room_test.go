@@ -96,17 +96,15 @@ func TestRoomJoin(t *testing.T) {
 		stateChangeCB(p, livekit.ParticipantInfo_JOINED)
 
 		// it should become a subscriber when connectivity changes
+		numTracks := 0
 		for _, op := range rm.GetParticipants() {
 			if p == op {
 				continue
 			}
-			mockP := op.(*typesfakes.FakeLocalParticipant)
-			require.NotZero(t, mockP.AddSubscriberCallCount())
-			// last call should be to add the newest participant
-			sub, params := mockP.AddSubscriberArgsForCall(mockP.AddSubscriberCallCount() - 1)
-			require.Equal(t, p, sub)
-			require.Equal(t, types.AddSubscriberParams{AllTracks: true}, params)
+
+			numTracks += len(op.GetPublishedTracks())
 		}
+		require.Equal(t, numTracks, p.SubscribeToTrackCallCount())
 	})
 
 	t.Run("participant state change is broadcasted to others", func(t *testing.T) {
@@ -385,11 +383,9 @@ func TestNewTrack(t *testing.T) {
 		trackCB := pub.OnTrackPublishedArgsForCall(0)
 		require.NotNil(t, trackCB)
 		trackCB(pub, track)
-		// only p1 should've been called
-		require.Equal(t, 1, pub.AddSubscriberCallCount())
-		sub, params := pub.AddSubscriberArgsForCall(pub.AddSubscriberCallCount() - 1)
-		require.Equal(t, p1, sub)
-		require.Equal(t, types.AddSubscriberParams{TrackIDs: []livekit.TrackID{track.ID()}}, params)
+		// only p1 should've been subscribed to
+		require.Equal(t, 0, p0.SubscribeToTrackCallCount())
+		require.Equal(t, 1, p1.SubscribeToTrackCallCount())
 	})
 }
 
@@ -635,29 +631,18 @@ func TestHiddenParticipants(t *testing.T) {
 	})
 
 	t.Run("hidden participant subscribes to tracks", func(t *testing.T) {
-		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, numHidden: 1})
-		p := newMockParticipant("new", types.CurrentProtocol, false, true)
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
+		hidden := newMockParticipant("hidden", types.CurrentProtocol, true, false)
 
-		err := rm.Join(p, &ParticipantOptions{AutoSubscribe: true}, iceServersForRoom)
+		err := rm.Join(hidden, &ParticipantOptions{AutoSubscribe: true}, iceServersForRoom)
 		require.NoError(t, err)
 
-		stateChangeCB := p.OnStateChangeArgsForCall(0)
+		stateChangeCB := hidden.OnStateChangeArgsForCall(0)
 		require.NotNil(t, stateChangeCB)
-		p.StateReturns(livekit.ParticipantInfo_ACTIVE)
-		stateChangeCB(p, livekit.ParticipantInfo_JOINED)
+		hidden.StateReturns(livekit.ParticipantInfo_ACTIVE)
+		stateChangeCB(hidden, livekit.ParticipantInfo_JOINED)
 
-		// it should become a subscriber when connectivity changes
-		for _, op := range rm.GetParticipants() {
-			if p == op {
-				continue
-			}
-			mockP := op.(*typesfakes.FakeLocalParticipant)
-			require.NotZero(t, mockP.AddSubscriberCallCount())
-			// last call should be to add the newest participant
-			sub, params := mockP.AddSubscriberArgsForCall(mockP.AddSubscriberCallCount() - 1)
-			require.Equal(t, p, sub)
-			require.Equal(t, types.AddSubscriberParams{AllTracks: true}, params)
-		}
+		require.Equal(t, 2, hidden.SubscribeToTrackCallCount())
 	})
 }
 
@@ -708,6 +693,10 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *Room {
 		require.NoError(t, err)
 		participant.StateReturns(livekit.ParticipantInfo_ACTIVE)
 		participant.IsReadyReturns(true)
+		// each participant has a track
+		participant.GetPublishedTracksReturns([]types.MediaTrack{
+			&typesfakes.FakeMediaTrack{},
+		})
 	}
 	return rm
 }

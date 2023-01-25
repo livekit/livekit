@@ -135,6 +135,15 @@ type FakeTelemetryService struct {
 		arg1 telemetry.StatsKey
 		arg2 *livekit.AnalyticsStat
 	}
+	TrackSubscribeFailedStub        func(context.Context, livekit.ParticipantID, livekit.TrackID, error, bool)
+	trackSubscribeFailedMutex       sync.RWMutex
+	trackSubscribeFailedArgsForCall []struct {
+		arg1 context.Context
+		arg2 livekit.ParticipantID
+		arg3 livekit.TrackID
+		arg4 error
+		arg5 bool
+	}
 	TrackSubscribeRequestedStub        func(context.Context, livekit.ParticipantID, *livekit.TrackInfo, *livekit.ParticipantInfo)
 	trackSubscribeRequestedMutex       sync.RWMutex
 	trackSubscribeRequestedArgsForCall []struct {
@@ -167,12 +176,13 @@ type FakeTelemetryService struct {
 		arg4 *livekit.TrackInfo
 		arg5 bool
 	}
-	TrackUnsubscribedStub        func(context.Context, livekit.ParticipantID, *livekit.TrackInfo)
+	TrackUnsubscribedStub        func(context.Context, livekit.ParticipantID, *livekit.TrackInfo, bool)
 	trackUnsubscribedMutex       sync.RWMutex
 	trackUnsubscribedArgsForCall []struct {
 		arg1 context.Context
 		arg2 livekit.ParticipantID
 		arg3 *livekit.TrackInfo
+		arg4 bool
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
@@ -787,6 +797,42 @@ func (fake *FakeTelemetryService) TrackStatsArgsForCall(i int) (telemetry.StatsK
 	return argsForCall.arg1, argsForCall.arg2
 }
 
+func (fake *FakeTelemetryService) TrackSubscribeFailed(arg1 context.Context, arg2 livekit.ParticipantID, arg3 livekit.TrackID, arg4 error, arg5 bool) {
+	fake.trackSubscribeFailedMutex.Lock()
+	fake.trackSubscribeFailedArgsForCall = append(fake.trackSubscribeFailedArgsForCall, struct {
+		arg1 context.Context
+		arg2 livekit.ParticipantID
+		arg3 livekit.TrackID
+		arg4 error
+		arg5 bool
+	}{arg1, arg2, arg3, arg4, arg5})
+	stub := fake.TrackSubscribeFailedStub
+	fake.recordInvocation("TrackSubscribeFailed", []interface{}{arg1, arg2, arg3, arg4, arg5})
+	fake.trackSubscribeFailedMutex.Unlock()
+	if stub != nil {
+		fake.TrackSubscribeFailedStub(arg1, arg2, arg3, arg4, arg5)
+	}
+}
+
+func (fake *FakeTelemetryService) TrackSubscribeFailedCallCount() int {
+	fake.trackSubscribeFailedMutex.RLock()
+	defer fake.trackSubscribeFailedMutex.RUnlock()
+	return len(fake.trackSubscribeFailedArgsForCall)
+}
+
+func (fake *FakeTelemetryService) TrackSubscribeFailedCalls(stub func(context.Context, livekit.ParticipantID, livekit.TrackID, error, bool)) {
+	fake.trackSubscribeFailedMutex.Lock()
+	defer fake.trackSubscribeFailedMutex.Unlock()
+	fake.TrackSubscribeFailedStub = stub
+}
+
+func (fake *FakeTelemetryService) TrackSubscribeFailedArgsForCall(i int) (context.Context, livekit.ParticipantID, livekit.TrackID, error, bool) {
+	fake.trackSubscribeFailedMutex.RLock()
+	defer fake.trackSubscribeFailedMutex.RUnlock()
+	argsForCall := fake.trackSubscribeFailedArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4, argsForCall.arg5
+}
+
 func (fake *FakeTelemetryService) TrackSubscribeRequested(arg1 context.Context, arg2 livekit.ParticipantID, arg3 *livekit.TrackInfo, arg4 *livekit.ParticipantInfo) {
 	fake.trackSubscribeRequestedMutex.Lock()
 	fake.trackSubscribeRequestedArgsForCall = append(fake.trackSubscribeRequestedArgsForCall, struct {
@@ -927,18 +973,19 @@ func (fake *FakeTelemetryService) TrackUnpublishedArgsForCall(i int) (context.Co
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4, argsForCall.arg5
 }
 
-func (fake *FakeTelemetryService) TrackUnsubscribed(arg1 context.Context, arg2 livekit.ParticipantID, arg3 *livekit.TrackInfo) {
+func (fake *FakeTelemetryService) TrackUnsubscribed(arg1 context.Context, arg2 livekit.ParticipantID, arg3 *livekit.TrackInfo, arg4 bool) {
 	fake.trackUnsubscribedMutex.Lock()
 	fake.trackUnsubscribedArgsForCall = append(fake.trackUnsubscribedArgsForCall, struct {
 		arg1 context.Context
 		arg2 livekit.ParticipantID
 		arg3 *livekit.TrackInfo
-	}{arg1, arg2, arg3})
+		arg4 bool
+	}{arg1, arg2, arg3, arg4})
 	stub := fake.TrackUnsubscribedStub
-	fake.recordInvocation("TrackUnsubscribed", []interface{}{arg1, arg2, arg3})
+	fake.recordInvocation("TrackUnsubscribed", []interface{}{arg1, arg2, arg3, arg4})
 	fake.trackUnsubscribedMutex.Unlock()
 	if stub != nil {
-		fake.TrackUnsubscribedStub(arg1, arg2, arg3)
+		fake.TrackUnsubscribedStub(arg1, arg2, arg3, arg4)
 	}
 }
 
@@ -948,17 +995,17 @@ func (fake *FakeTelemetryService) TrackUnsubscribedCallCount() int {
 	return len(fake.trackUnsubscribedArgsForCall)
 }
 
-func (fake *FakeTelemetryService) TrackUnsubscribedCalls(stub func(context.Context, livekit.ParticipantID, *livekit.TrackInfo)) {
+func (fake *FakeTelemetryService) TrackUnsubscribedCalls(stub func(context.Context, livekit.ParticipantID, *livekit.TrackInfo, bool)) {
 	fake.trackUnsubscribedMutex.Lock()
 	defer fake.trackUnsubscribedMutex.Unlock()
 	fake.TrackUnsubscribedStub = stub
 }
 
-func (fake *FakeTelemetryService) TrackUnsubscribedArgsForCall(i int) (context.Context, livekit.ParticipantID, *livekit.TrackInfo) {
+func (fake *FakeTelemetryService) TrackUnsubscribedArgsForCall(i int) (context.Context, livekit.ParticipantID, *livekit.TrackInfo, bool) {
 	fake.trackUnsubscribedMutex.RLock()
 	defer fake.trackUnsubscribedMutex.RUnlock()
 	argsForCall := fake.trackUnsubscribedArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
 }
 
 func (fake *FakeTelemetryService) Invocations() map[string][][]interface{} {
@@ -1000,6 +1047,8 @@ func (fake *FakeTelemetryService) Invocations() map[string][][]interface{} {
 	defer fake.trackPublishedUpdateMutex.RUnlock()
 	fake.trackStatsMutex.RLock()
 	defer fake.trackStatsMutex.RUnlock()
+	fake.trackSubscribeFailedMutex.RLock()
+	defer fake.trackSubscribeFailedMutex.RUnlock()
 	fake.trackSubscribeRequestedMutex.RLock()
 	defer fake.trackSubscribeRequestedMutex.RUnlock()
 	fake.trackSubscribedMutex.RLock()
