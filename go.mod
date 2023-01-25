@@ -16,7 +16,7 @@ require (
 	github.com/hashicorp/go-version v1.6.0
 	github.com/hashicorp/golang-lru/v2 v2.0.1
 	github.com/jxskiss/base62 v1.1.0
-	github.com/livekit/mageutil v0.0.0-20221221221243-f361fbe40290
+	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20230111071722-904079e94a7c
 	github.com/livekit/protocol v1.3.3-0.20230124045313-d208f342983a
 	github.com/livekit/psrpc v0.2.4
