@@ -510,7 +510,6 @@ func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionSta
 	t.params.Logger.Debugw("peer connection state change", "state", state.String())
 	switch state {
 	case webrtc.PeerConnectionStateConnected:
-		t.logICECandidates()
 		isInitialConnection := t.setConnectedAt(time.Now())
 		if isInitialConnection {
 			if onInitialConnected := t.getOnInitialConnected(); onInitialConnected != nil {
@@ -1383,7 +1382,7 @@ func (t *PCTransport) handleRemoteICECandidate(e *event) error {
 }
 
 func (t *PCTransport) handleLogICECandidates(e *event) error {
-	t.params.Logger.Debugw(
+	t.params.Logger.Infow(
 		"ice candidates",
 		"lc", t.allowedLocalCandidates,
 		"rc", t.allowedRemoteCandidates,
