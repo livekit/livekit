@@ -465,13 +465,6 @@ func (t *MediaTrackReceiver) removeAllSubscribersForMime(mime string, willBeResu
 	}
 }
 
-func (t *MediaTrackReceiver) IsSubscribed() bool {
-	t.lock.RLock()
-	defer t.lock.RUnlock()
-
-	return t.MediaTrackSubscriptions.GetNumSubscribers() != 0
-}
-
 func (t *MediaTrackReceiver) RevokeDisallowedSubscribers(allowedSubscriberIdentities []livekit.ParticipantIdentity) []livekit.ParticipantIdentity {
 	var revokedSubscriberIdentities []livekit.ParticipantIdentity
 

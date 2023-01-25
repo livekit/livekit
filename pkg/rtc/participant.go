@@ -246,7 +246,7 @@ func (p *ParticipantImpl) IsDisconnected() bool {
 func (p *ParticipantImpl) IsIdle() bool {
 	// check if there are any published tracks that are subscribed
 	for _, t := range p.GetPublishedTracks() {
-		if t.IsSubscribed() {
+		if t.GetNumSubscribers() > 0 {
 			return false
 		}
 	}

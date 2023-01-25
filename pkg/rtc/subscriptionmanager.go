@@ -116,7 +116,7 @@ func (m *SubscriptionManager) SubscribeToTrack(trackID livekit.TrackID, publishe
 	m.lock.Lock()
 	sub, ok := m.subscriptions[trackID]
 	if !ok {
-		sub = newTrackSubscription(trackID)
+		sub = newTrackSubscription(m.params.Participant.ID(), trackID)
 		m.subscriptions[trackID] = sub
 	}
 	m.lock.Unlock()
@@ -198,7 +198,7 @@ func (m *SubscriptionManager) UpdateSubscribedTrackSettings(trackID livekit.Trac
 	m.lock.Lock()
 	sub, ok := m.subscriptions[trackID]
 	if !ok {
-		sub = newTrackSubscription(trackID)
+		sub = newTrackSubscription(m.params.Participant.ID(), trackID)
 		m.subscriptions[trackID] = sub
 	}
 	m.lock.Unlock()
@@ -461,7 +461,6 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 func (m *SubscriptionManager) unsubscribe(s *trackSubscription) error {
 	// remove from subscribedTo
 	subTrack := s.getSubscribedTrack()
-	s.setChangeNotifier(nil)
 	if subTrack == nil {
 		// already unsubscribed
 		return nil
@@ -550,9 +549,11 @@ func (m *SubscriptionManager) handleSubscribedTrackClose(s *trackSubscription, w
 }
 
 type trackSubscription struct {
+	subscriberID livekit.ParticipantID
+	trackID      livekit.TrackID
+
 	lock              sync.RWMutex
 	desired           bool
-	trackID           livekit.TrackID
 	publisherID       livekit.ParticipantID
 	publisherIdentity livekit.ParticipantIdentity
 	settings          *livekit.UpdateTrackSettings
@@ -565,9 +566,10 @@ type trackSubscription struct {
 	subStartedAt      atomic.Pointer[time.Time]
 }
 
-func newTrackSubscription(trackID livekit.TrackID) *trackSubscription {
+func newTrackSubscription(subscriberID livekit.ParticipantID, trackID livekit.TrackID) *trackSubscription {
 	return &trackSubscription{
-		trackID: trackID,
+		subscriberID: subscriberID,
+		trackID:      trackID,
 		// default allow
 		hasPermission: true,
 	}
@@ -600,6 +602,11 @@ func (s *trackSubscription) setDesired(desired bool) bool {
 		return false
 	}
 	s.desired = desired
+	// when no longer desired, we no longer care about change notifications
+	if !desired && s.changeNotifier != nil {
+		s.changeNotifier.RemoveObserver(string(s.subscriberID))
+		s.changeNotifier = nil
+	}
 	return true
 }
 
@@ -656,7 +663,7 @@ func (s *trackSubscription) setChangeNotifier(notifier types.ChangeNotifier) boo
 	s.lock.Unlock()
 
 	if existing != nil {
-		existing.RemoveObserver(string(s.trackID))
+		existing.RemoveObserver(string(s.subscriberID))
 	}
 	return true
 }
