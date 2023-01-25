@@ -289,9 +289,9 @@ func (d *DummyReceiver) GetRedReceiver() sfu.TrackReceiver {
 	return d
 }
 
-func (d *DummyReceiver) GetRTCPSenderReportData(layer int32) *buffer.RTCPSenderReportData {
+func (d *DummyReceiver) GetRTCPSenderReportDataExt(layer int32) *buffer.RTCPSenderReportDataExt {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
-		return r.GetRTCPSenderReportData(layer)
+		return r.GetRTCPSenderReportDataExt(layer)
 	}
 	return nil
 }
