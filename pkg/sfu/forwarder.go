@@ -219,6 +219,7 @@ type Forwarder struct {
 	parkedLayers        VideoLayers // layers that can resume without key frame // RAJA-TODO
 	parkedLayersTimer   *time.Timer
 	opportunisticLayers VideoLayers // highest layers that can be latched on to without waiting for an explicit allocation // RAJA-TODO
+	isLocked            bool        // a boolean to signify that the current layers are locked to optimal enabling a fast path check RAJA-TODO
 
 	provisional *VideoAllocationProvisional
 
@@ -1598,76 +1599,90 @@ func (f *Forwarder) getTranslationParamsAudio(extPkt *buffer.ExtPacket, layer in
 func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer int32) (*TranslationParams, error) {
 	tp := &TranslationParams{}
 
-	/* RAJA-TODO
-	if f.currentLayers.Spatial != InvalidLayerSpatial {
-		// RAJA-TODO: figure out fast path dependency descriptor
-		// forwarding some layer, check for opportunistic update
-		if layer != f.currentLayers.Spatial &&
-			layer <= f.opportunisticLayers.Spatial &&
-			f.currentLayers.Spatial < f.opportunisticLayers.Spatial &&
-			extPkt.KeyFrame {
-			// switch to target when opportunistically locking, use max temporal though to allow temporal layer expansion
-			f.targetLayers = VideoLayers{
-				Spatial:  extPkt.VideoLayer.Spatial,
-				Temporal: DefaultMaxLayerTemporal, // RAJA-TODO - check if this is correct when temporal not supported also
-			}
-			f.logger.Infow("locking opportunistically to target layer", "current", f.currentLayers, "target", f.targetLayers)
-		}
-	} else {
-	*/
-	// RAJA-TODO: make fast path fast - i. e. if current layer is a valid one, only check for opportunistic upgrade and move on, slow path of locking can take more checks, do not penalize fast path.
-	if f.targetLayers.Spatial == InvalidLayerSpatial && f.parkedLayers.Spatial == InvalidLayerSpatial && f.opportunisticLayers.Spatial == InvalidLayerSpatial {
-		// stream is paused by streamallocator
-		tp.shouldDrop = true
-		return tp, nil
-	}
-
-	if f.ddLayerSelector != nil {
-		if selected := f.ddLayerSelector.Select(extPkt, tp); !selected {
-			tp.shouldDrop = true
-			f.rtpMunger.PacketDropped(extPkt)
-			return tp, nil
-		}
-	}
-
-	if f.parkedLayers.Spatial != InvalidLayerSpatial && layer == f.parkedLayers.Spatial {
-		f.targetLayers = f.parkedLayers
-		f.currentLayers = VideoLayers{
-			Spatial: layer,
-			// RAJA-TODO: set Temporal properly taking into account current, if codec supports temporal etc.
-		}
-		f.clearParkedLayers()
-		f.logger.Infow("resuming parked layer", "current", f.currentLayers, "target", f.targetLayers)
-	} else {
-		needsLock := f.targetLayers.Spatial != f.currentLayers.Spatial || f.currentLayers.Spatial < f.opportunisticLayers.Spatial
-		if needsLock {
-			lockable := extPkt.KeyFrame || tp.switchingToTargetLayer
-			targetLock := f.targetLayers.Spatial != f.currentLayers.Spatial && f.targetLayers.Spatial == layer
-			opportunisticLock := layer > f.currentLayers.Spatial && layer <= f.opportunisticLayers.Spatial
-			if lockable && (targetLock || opportunisticLock) {
-				if !targetLock && opportunisticLock {
-					// switch to target when opportunistically locking, use max temporal though to allow temporal layer expansion
-					f.targetLayers = VideoLayers{
-						Spatial:  extPkt.VideoLayer.Spatial,
-						Temporal: DefaultMaxLayerTemporal, // RAJA-TODO - check if this is correct when temporal not supported also
-					}
-					f.logger.Infow("locking opportunistically to target layer", "current", f.currentLayers, "target", f.targetLayers)
+	if !f.isLocked {
+		if f.currentLayers.Spatial != InvalidLayerSpatial {
+			// RAJA-TODO: figure out fast path dependency descriptor
+			// forwarding some layer, check for opportunistic upgrade
+			if f.opportunisticLayers.Spatial != InvalidLayerSpatial &&
+				layer != f.currentLayers.Spatial &&
+				layer <= f.opportunisticLayers.Spatial &&
+				f.currentLayers.Spatial < layer &&
+				extPkt.KeyFrame {
+				// switch to a higher spatial layer opportunitically
+				// RAJA-TODO: is it okay to blindly switch target layers like this ok?
+				f.targetLayers = VideoLayers{
+					Spatial:  extPkt.VideoLayer.Spatial,
+					Temporal: DefaultMaxLayerTemporal, // RAJA-TODO - check if this is correct when temporal not supported also
 				}
+				f.logger.Infow("locking opportunistically to higher layer", "current", f.currentLayers, "target", f.targetLayers)
 
-				f.logger.Infow("locking to target layer", "current", f.currentLayers, "target", f.targetLayers)
 				f.currentLayers.Spatial = f.targetLayers.Spatial
 				if !f.isTemporalSupported {
 					f.currentLayers.Temporal = f.targetLayers.Temporal
 				}
 
-				// DD-TODO : we switch to target layer immediately now since we assume all frame chain is integrity
-				//   if we have frame chain check, should switch only if target chain is not broken and decodable
-				// if f.ddLayerSelector != nil {
-				// 	f.ddLayerSelector.SelectLayer(f.currentLayers)
-				// }
+				// if current layer reaches opportunistic layer, opportunistic layer is done
+				if f.currentLayers.Spatial >= f.opportunisticLayers.Spatial {
+					f.logger.Infow("reached opportunistic layer, clearing opportunistic layer", "current", f.currentLayers, "opportunistic", f.opportunisticLayers)
+					f.opportunisticLayers = InvalidLayers
+				}
+			}
+		} else {
+			// RAJA-TODO: make fast path fast - i. e. if current layer is a valid one, only check for opportunistic upgrade and move on, slow path of locking can take more checks, do not penalize fast path.
+			if f.targetLayers.Spatial == InvalidLayerSpatial && f.parkedLayers.Spatial == InvalidLayerSpatial && f.opportunisticLayers.Spatial == InvalidLayerSpatial {
+				// stream is paused by streamallocator
+				tp.shouldDrop = true
+				return tp, nil
+			}
 
-				if f.currentLayers.Spatial >= f.maxLayers.Spatial {
-					tp.isSwitchingToMaxLayer = true
+			if f.ddLayerSelector != nil {
+				if selected := f.ddLayerSelector.Select(extPkt, tp); !selected {
+					tp.shouldDrop = true
+					f.rtpMunger.PacketDropped(extPkt)
+					return tp, nil
+				}
+			}
+
+			if f.parkedLayers.Spatial != InvalidLayerSpatial && layer == f.parkedLayers.Spatial {
+				f.targetLayers = f.parkedLayers
+				f.currentLayers = VideoLayers{
+					Spatial: layer,
+					// RAJA-TODO: set Temporal properly taking into account current, if codec supports temporal etc.
+				}
+				f.clearParkedLayers()
+				f.logger.Infow("resuming parked layer", "current", f.currentLayers, "target", f.targetLayers)
+			} else {
+				needsLock := f.targetLayers.Spatial != f.currentLayers.Spatial || f.currentLayers.Spatial < f.opportunisticLayers.Spatial
+				if needsLock {
+					lockable := extPkt.KeyFrame || tp.switchingToTargetLayer
+					targetLock := f.targetLayers.Spatial != f.currentLayers.Spatial && f.targetLayers.Spatial == layer
+					opportunisticLock := layer > f.currentLayers.Spatial && layer <= f.opportunisticLayers.Spatial
+					if lockable && (targetLock || opportunisticLock) {
+						if !targetLock && opportunisticLock {
+							// switch to target when opportunistically locking, use max temporal though to allow temporal layer expansion
+							f.targetLayers = VideoLayers{
+								Spatial:  extPkt.VideoLayer.Spatial,
+								Temporal: DefaultMaxLayerTemporal, // RAJA-TODO - check if this is correct when temporal not supported also
+							}
+							f.logger.Infow("locking opportunistically to target layer", "current", f.currentLayers, "target", f.targetLayers)
+						}
+
+						f.logger.Infow("locking to target layer", "current", f.currentLayers, "target", f.targetLayers)
+						f.currentLayers.Spatial = f.targetLayers.Spatial
+						if !f.isTemporalSupported {
+							f.currentLayers.Temporal = f.targetLayers.Temporal
+						}
+
+						// DD-TODO : we switch to target layer immediately now since we assume all frame chain is integrity
+						//   if we have frame chain check, should switch only if target chain is not broken and decodable
+						// if f.ddLayerSelector != nil {
+						// 	f.ddLayerSelector.SelectLayer(f.currentLayers)
+						// }
+
+						if f.currentLayers.Spatial >= f.maxLayers.Spatial {
+							tp.isSwitchingToMaxLayer = true
+						}
+					}
 				}
 			}
 		}
@@ -1690,12 +1705,12 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		// switch point to get a smoother stream till the higher
 		// layer key frame arrives.
 		//
-		// Note that in the case of client subscription layer restriction
-		// coinciding with server restriction due to bandwidth limitation,
+		// Note that it is possible for client subscription layer restriction
+		// to coincide with server restriction due to bandwidth limitation,
 		// In the case of subscription change, higher should continue streaming
 		// to ensure smooth transition.
 		//
-		// To differentiate, drop only when in DEFICIENT state.
+		// To differentiate between the two cases, drop only when in DEFICIENT state.
 		//
 		tp.shouldDrop = true
 		tp.isDroppingRelevant = true
