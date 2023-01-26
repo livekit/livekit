@@ -16,6 +16,7 @@ import (
 
 // MessageSink is an abstraction for writing protobuf messages and having them read by a MessageSource,
 // potentially on a different node via a transport
+//
 //counterfeiter:generate . MessageSink
 type MessageSink interface {
 	WriteMessage(msg proto.Message) error
@@ -57,6 +58,7 @@ type RTCMessageCallback func(
 )
 
 // Router allows multiple nodes to coordinate the participant session
+//
 //counterfeiter:generate . Router
 type Router interface {
 	MessageRouter

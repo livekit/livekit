@@ -199,6 +199,12 @@ func IncrementParticipantJoin(join uint32) {
 	}
 }
 
+func IncrementParticipantJoinFail(join uint32) {
+	if join > 0 {
+		promParticipantJoin.WithLabelValues("signal_failed").Add(float64(join))
+	}
+}
+
 func IncrementParticipantRtcInit(join uint32) {
 	if join > 0 {
 		participantRTCInit.Add(uint64(join))
