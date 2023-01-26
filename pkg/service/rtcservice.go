@@ -26,10 +26,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
-const (
-	maxInitialResponseWait = 10 * time.Second
-)
-
 type RTCService struct {
 	router        routing.MessageRouter
 	roomAllocator RoomAllocator
