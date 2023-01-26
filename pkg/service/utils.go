@@ -9,7 +9,7 @@ import (
 
 func handleError(w http.ResponseWriter, status int, err error, keysAndValues ...interface{}) {
 	keysAndValues = append(keysAndValues, "status", status)
-	logger.Warnw("error handling request", err, keysAndValues...)
+	logger.GetLogger().WithCallDepth(1).Warnw("error handling request", err, keysAndValues...)
 	w.WriteHeader(status)
 	_, _ = w.Write([]byte(err.Error()))
 }
