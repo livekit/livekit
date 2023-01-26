@@ -512,14 +512,16 @@ func (m *SubscriptionManager) handleSubscribedTrackClose(s *trackSubscription, w
 	s.setSubscribedTrack(nil)
 	go m.params.OnTrackUnsubscribed(subTrack)
 
+	// always trigger to decrement unsubscribed counter. However, only log an analytics event when
+	// * the participant isn't closing
+	// * it's not a migration
+	m.params.Telemetry.TrackUnsubscribed(
+		context.Background(),
+		m.params.Participant.ID(),
+		&livekit.TrackInfo{Sid: string(s.trackID), Type: subTrack.MediaTrack().Kind()},
+		!willBeResumed && !m.params.Participant.IsClosed(),
+	)
 	if !willBeResumed {
-		m.params.Telemetry.TrackUnsubscribed(
-			context.Background(),
-			m.params.Participant.ID(),
-			&livekit.TrackInfo{Sid: string(s.trackID), Type: subTrack.MediaTrack().Kind()},
-			!m.params.Participant.IsClosed(),
-		)
-
 		sender := subTrack.RTPSender()
 		if sender != nil {
 			m.params.Logger.Debugw("removing PeerConnection track",
