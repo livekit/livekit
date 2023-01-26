@@ -195,7 +195,8 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		if i < 2 {
-			logger.Warnw("failed to start connection, retrying", err, loggerFields...)
+			fieldsWithAttempt := append(loggerFields, "attempt", i)
+			logger.Warnw("failed to start connection, retrying", err, fieldsWithAttempt...)
 		}
 	}
 	if err != nil {
