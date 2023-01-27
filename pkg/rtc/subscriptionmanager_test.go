@@ -198,6 +198,7 @@ func TestUnsubscribe(t *testing.T) {
 		publisherIdentity: "pub",
 		hasPermission:     true,
 		bound:             true,
+		logger:            logger.GetLogger(),
 	}
 	// a bunch of unfortunate manual wiring
 	res, err := resolver.Resolve("sub", s.publisherID, s.trackID)
