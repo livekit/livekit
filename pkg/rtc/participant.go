@@ -104,7 +104,7 @@ type ParticipantImpl struct {
 	twcc *twcc.Responder
 
 	// client intended to publish, yet to be reconciled
-	pendingTracksLock sync.RWMutex
+	pendingTracksLock utils.RWMutex
 	pendingTracks     map[string]*pendingTrackInfo
 	// migrated in muted tracks are not fired need close at participant close
 	mutedTrackNotFired []*MediaTrack
@@ -124,14 +124,14 @@ type ParticipantImpl struct {
 	// cache of recently sent updates, to ensuring ordering by version
 	// guarded by updateLock
 	updateCache *lru.Cache[livekit.ParticipantID, uint32]
-	updateLock  sync.Mutex
+	updateLock  utils.Mutex
 
 	dataChannelStats *telemetry.BytesTrackStats
 
 	rttUpdatedAt time.Time
 	lastRTT      uint32
 
-	lock    sync.RWMutex
+	lock    utils.RWMutex
 	once    sync.Once
 	version atomic.Uint32
 
