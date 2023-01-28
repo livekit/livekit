@@ -82,11 +82,30 @@ func (t *SubscribedTrack) Bound() {
 	callbacks := t.onBindCallbacks
 	t.onBindCallbacks = nil
 	t.bindLock.Unlock()
-	if !t.params.AdaptiveStream {
-		t.params.DownTrack.SetMaxSpatialLayer(
-			buffer.VideoQualityToSpatialLayer(livekit.VideoQuality_HIGH, t.params.MediaTrack.ToProto()),
-		)
+
+	if t.MediaTrack().Kind() == livekit.TrackType_VIDEO {
+		// When AdaptiveStream is enabled, default the subscriber to LOW quality stream
+		// we would want LOW instead of OFF for a couple of reasons
+		// 1. when a subscriber unsubscribes from a track, we would forget their previously defined settings
+		//    depending on client implementation, subscription on/off is kept separately from adaptive stream
+		//    So when there are no changes to desired resolution, but the user re-subscribes, we may leave stream at OFF
+		// 2. when interacting with dynacast *and* adaptive stream. If the publisher was not publishing at the
+		//    time of subscription, we might not be able to trigger adaptive stream updates on the client side
+		//    (since there isn't any video frames coming through). this will leave the stream "stuck" on off, without
+		//    a trigger to re-enable it
+		var desiredLayer int32
+		if t.params.AdaptiveStream {
+			desiredLayer = buffer.VideoQualityToSpatialLayer(livekit.VideoQuality_LOW, t.params.MediaTrack.ToProto())
+		} else {
+			desiredLayer = buffer.VideoQualityToSpatialLayer(livekit.VideoQuality_HIGH, t.params.MediaTrack.ToProto())
+		}
+		settings := t.settings.Load()
+		if settings != nil {
+			desiredLayer = t.spatialLayerFromSettings(settings)
+		}
+		t.DownTrack().SetMaxSpatialLayer(desiredLayer)
 	}
+
 	for _, cb := range callbacks {
 		go cb()
 	}
@@ -184,12 +203,7 @@ func (t *SubscribedTrack) UpdateVideoLayer() {
 		"settings", settings,
 	)
 
-	quality := settings.Quality
-	if settings.Width > 0 {
-		quality = t.MediaTrack().GetQualityForDimension(settings.Width, settings.Height)
-	}
-
-	spatial := buffer.VideoQualityToSpatialLayer(quality, t.params.MediaTrack.ToProto())
+	spatial := t.spatialLayerFromSettings(settings)
 	t.DownTrack().SetMaxSpatialLayer(spatial)
 	if settings.Fps > 0 {
 		t.DownTrack().SetMaxTemporalLayer(t.MediaTrack().GetTemporalLayerForSpatialFps(spatial, settings.Fps, t.DownTrack().Codec().MimeType))
@@ -215,4 +229,13 @@ func (t *SubscribedTrack) SetRTPSender(sender *webrtc.RTPSender) {
 func (t *SubscribedTrack) updateDownTrackMute() {
 	muted := t.subMuted.Load() || t.pubMuted.Load()
 	t.DownTrack().Mute(muted)
+}
+
+func (t *SubscribedTrack) spatialLayerFromSettings(settings *livekit.UpdateTrackSettings) int32 {
+	quality := settings.Quality
+	if settings.Width > 0 {
+		quality = t.MediaTrack().GetQualityForDimension(settings.Width, settings.Height)
+	}
+
+	return buffer.VideoQualityToSpatialLayer(quality, t.params.MediaTrack.ToProto())
 }
