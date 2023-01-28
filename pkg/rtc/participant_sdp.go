@@ -34,10 +34,7 @@ func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(offer webrtc.Se
 		p.pendingTracksLock.RLock()
 		_, info := p.getPendingTrack(streamID, livekit.TrackType_AUDIO)
 		// if RED is disabled for this track, don't prefer RED codec in offer
-		if info != nil && info.DisableRed {
-			p.pendingTracksLock.RUnlock()
-			continue
-		}
+		disableRed := info != nil && info.DisableRed
 		p.pendingTracksLock.RUnlock()
 
 		codecs, err := codecsFromMediaDescription(unmatchAudio)
@@ -60,11 +57,26 @@ func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(offer webrtc.Se
 		var preferredCodecs, leftCodecs []string
 		for _, codec := range codecs {
 			// codec contain opus/red
-			if strings.EqualFold(codec.Name, "red") && strings.Contains(codec.Fmtp, strconv.FormatInt(int64(opusPayload), 10)) {
+			if !disableRed && strings.EqualFold(codec.Name, "red") && strings.Contains(codec.Fmtp, strconv.FormatInt(int64(opusPayload), 10)) {
 				preferredCodecs = append(preferredCodecs, strconv.FormatInt(int64(codec.PayloadType), 10))
 			} else {
 				leftCodecs = append(leftCodecs, strconv.FormatInt(int64(codec.PayloadType), 10))
 			}
+		}
+
+		// ensure nack enabled for audio in publisher offer
+		var nackFound bool
+		for _, attr := range unmatchAudio.Attributes {
+			if attr.Key == "rtcp-fb" && strings.Contains(attr.Value, fmt.Sprintf("%d nack", opusPayload)) {
+				nackFound = true
+				break
+			}
+		}
+		if !nackFound {
+			unmatchAudio.Attributes = append(unmatchAudio.Attributes, sdp.Attribute{
+				Key:   "rtcp-fb",
+				Value: fmt.Sprintf("%d nack", opusPayload),
+			})
 		}
 
 		// no opus/red found
