@@ -534,9 +534,13 @@ func (p *ParticipantImpl) handleMigrateMutedTrack() {
 	p.mutedTrackNotFired = append(p.mutedTrackNotFired, addedTracks...)
 	p.pendingTracksLock.Unlock()
 
-	for _, t := range addedTracks {
-		p.handleTrackPublished(t)
-	}
+	// launch callbacks in goroutine since they could block
+	// callbacks handle webhooks as well as db persistence
+	go func() {
+		for _, t := range addedTracks {
+			p.handleTrackPublished(t)
+		}
+	}()
 }
 
 func (p *ParticipantImpl) removeMutedTrackNotFired(mt *MediaTrack) {
@@ -579,7 +583,7 @@ func (p *ParticipantImpl) SetMigrateInfo(
 	for _, t := range mediaTracks {
 		ti := t.GetTrack()
 
-		p.supervisor.AddPublication(livekit.TrackID(ti.Sid), nil)
+		p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
 		p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
 
 		p.pendingTracks[t.GetCid()] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}, migrated: true}
@@ -1404,14 +1408,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	}
 
 	p.params.Telemetry.TrackPublishRequested(context.Background(), p.ID(), p.Identity(), ti)
-	p.supervisor.AddPublication(livekit.TrackID(ti.Sid), func(t types.LocalMediaTrack) {
-		p.params.Telemetry.TrackPublished(
-			context.Background(),
-			t.PublisherID(),
-			t.PublisherIdentity(),
-			t.ToProto(),
-		)
-	})
+	p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
 	p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
 	if p.getPublishedTrackBySignalCid(req.Cid) != nil || p.getPublishedTrackBySdpCid(req.Cid) != nil || p.pendingTracks[req.Cid] != nil {
 		if p.pendingTracks[req.Cid] == nil {
@@ -1643,6 +1640,15 @@ func (p *ParticipantImpl) handleTrackPublished(track types.MediaTrack) {
 	if onTrackPublished != nil {
 		onTrackPublished(p, track)
 	}
+
+	// send webhook after callbacks are complete, persistence and state handling happens
+	// in `onTrackPublished` cb
+	p.params.Telemetry.TrackPublished(
+		context.Background(),
+		p.ID(),
+		p.Identity(),
+		track.ToProto(),
+	)
 }
 
 func (p *ParticipantImpl) hasPendingMigratedTrack() bool {
