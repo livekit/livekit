@@ -27,7 +27,15 @@ type EgressService struct {
 	launcher         rtc.EgressLauncher
 }
 
+type EgressLauncher interface {
+	rtc.EgressLauncher
+
+	StartEgressWithClusterId(ctx context.Context, clusterId string, req *livekit.StartEgressRequest) (*livekit.EgressInfo, error)
+}
+
 type egressLauncher struct {
+	defaultEgressClusterId string
+
 	psrpcClient      rpc.EgressClient
 	clientDeprecated egress.RPCClient
 	es               EgressStore
@@ -35,19 +43,21 @@ type egressLauncher struct {
 }
 
 func NewEgressLauncher(
+	defaultEgressClusterId string,
 	psrpcClient rpc.EgressClient,
 	clientDeprecated egress.RPCClient,
 	es EgressStore,
-	ts telemetry.TelemetryService) rtc.EgressLauncher {
+	ts telemetry.TelemetryService) EgressLauncher {
 	if psrpcClient == nil && clientDeprecated == nil {
 		return nil
 	}
 
 	return &egressLauncher{
-		psrpcClient:      psrpcClient,
-		clientDeprecated: clientDeprecated,
-		es:               es,
-		telemetry:        ts,
+		defaultEgressClusterId: defaultEgressClusterId,
+		psrpcClient:            psrpcClient,
+		clientDeprecated:       clientDeprecated,
+		es:                     es,
+		telemetry:              ts,
 	}
 }
 
@@ -160,6 +170,9 @@ func (s *EgressService) startEgress(ctx context.Context, roomName livekit.RoomNa
 }
 
 func (s *egressLauncher) StartEgress(ctx context.Context, req *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
+	return s.StartEgressWithClusterId(ctx, s.defaultEgressClusterId, req)
+}
+func (s *egressLauncher) StartEgressWithClusterId(ctx context.Context, clusterId string, req *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
 	var info *livekit.EgressInfo
 	var err error
 
@@ -169,7 +182,7 @@ func (s *egressLauncher) StartEgress(ctx context.Context, req *livekit.StartEgre
 	}
 
 	if s.psrpcClient != nil {
-		info, err = s.psrpcClient.StartEgress(ctx, req)
+		info, err = s.psrpcClient.StartEgress(ctx, clusterId, req)
 	} else {
 		logger.Infow("using deprecated egress client")
 		info, err = s.clientDeprecated.SendRequest(ctx, req)
