@@ -19,6 +19,7 @@ var (
 			"discard message from",
 			"Failed to discover mDNS candidate",
 			"Failed to read from candidate tcp",
+			"remote mDNS candidate added, but mDNS is disabled",
 		},
 		"pc": {
 			"Failed to accept RTCP stream is already closed",
