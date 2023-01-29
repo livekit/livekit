@@ -188,7 +188,6 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ctx := utils.ContextWithAttempt(r.Context(), i)
 		cr, err = s.startConnection(ctx, roomName, pi, connectionTimeout)
 		if err == nil {
-			// do not retry room not found errors
 			break
 		}
 		if i < 2 {
