@@ -301,12 +301,17 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 				}
 			default:
 				// all other errors
-				s.logger.Warnw("failed to subscribe", err,
-					"attempt", s.numAttempts.Load(),
-				)
 				if s.durationSinceStart() > subscriptionTimeout {
+					s.logger.Errorw("failed to subscribe, triggering error handler", err,
+						"attempt", s.numAttempts.Load(),
+					)
 					s.maybeRecordError(m.params.Telemetry, m.params.Participant.ID(), err, false)
 					m.params.OnSubcriptionError(s.trackID)
+				} else {
+					s.logger.Debugw("failed to subscribe, retrying",
+						"error", err,
+						"attempt", s.numAttempts.Load(),
+					)
 				}
 			}
 		} else {
