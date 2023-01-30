@@ -684,8 +684,9 @@ func (d *DownTrack) handleMute(muted bool, isPub bool, changed bool, maxLayers V
 	//
 	// Publisher mute changes should not trigger notification.
 	// If publisher turns off all layers because of subscribers indicating
-	// no layers required due to publisher mute, there will be a delay
-	// in layers turning back on when unmute happens. Unmute path will require
+	// no layers required due to publisher mute (bit of circular dependency),
+	// there will be a delay in layers turning back on when unmute happens.
+	// Unmute path will require
 	//   1. unmute signalling out-of-band from publisher received by down track(s)
 	//   2. down track(s) notifying max layer
 	//   3. out-of-band notification about max layer sent back to the publisher
@@ -694,7 +695,7 @@ func (d *DownTrack) handleMute(muted bool, isPub bool, changed bool, maxLayers V
 	// can be restarted by publisher immediately on unmute.
 	//
 	// Note that while publisher mute is active, subscriber changes can also happen
-	// and that could not turn on/off layers on publisher side.
+	// and that could turn on/off layers on publisher side.
 	//
 	if !isPub && d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
 		notifyLayer := InvalidLayerSpatial
