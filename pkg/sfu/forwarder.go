@@ -675,12 +675,18 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 		alloc.state = VideoAllocationStateAwaitingMeasurement
 
 		//
-		// Resume with the highest layer available <= max subscribed layer
-		// If already resumed, move allocation to the highest available layer <= max subscribed layer
+		// Target the highest layer available <= max subscribed layer.
 		//
-		alloc.targetLayers = VideoLayers{
-			Spatial:  int32(math.Min(float64(f.maxLayers.Spatial), float64(f.availableLayers[len(f.availableLayers)-1]))),
-			Temporal: int32(math.Max(0, float64(f.maxLayers.Temporal))),
+		// If target already set, move allocation to the highest available layer <= max subscribed layer only if that is higher than existing target.
+		// It is possible that in situations like coming out of publisher mute, target is already set higher due to parked layers.
+		//
+		if f.availableLayers[len(f.availableLayers)-1] > f.targetLayers.Spatial {
+			alloc.targetLayers = VideoLayers{
+				Spatial:  int32(math.Min(float64(f.maxLayers.Spatial), float64(f.availableLayers[len(f.availableLayers)-1]))),
+				Temporal: int32(math.Max(0, float64(f.maxLayers.Temporal))),
+			}
+		} else {
+			alloc.targetLayers = f.targetLayers
 		}
 
 	default:
@@ -1459,7 +1465,8 @@ func (f *Forwarder) GetTranslationParams(extPkt *buffer.ExtPacket, layer int32) 
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	if f.muted || f.pubMuted {
+	// do not drop on publisher mute to enabled resume on publisher unmute without a key frame
+	if f.muted {
 		return &TranslationParams{
 			shouldDrop: true,
 		}, nil
