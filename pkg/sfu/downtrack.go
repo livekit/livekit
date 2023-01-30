@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -353,7 +354,12 @@ func (d *DownTrack) Unbind(_ webrtc.TrackLocalContext) error {
 }
 
 func (d *DownTrack) TrackInfoAvailable() {
-	d.connectionStats.Start(d.receiver.TrackInfo())
+	ti := d.receiver.TrackInfo()
+	if ti == nil {
+		return
+	}
+	d.forwarder.SetNumAdvertisedLayers(int32(math.Max(1, float64(len(ti.Layers)))))
+	d.connectionStats.Start(ti)
 }
 
 // ID is the unique identifier for this Track. This should be unique for the

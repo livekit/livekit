@@ -153,21 +153,19 @@ func (s *StreamTracker) resetLocked() {
 }
 
 func (s *StreamTracker) SetPaused(paused bool) {
-	/*
-		s.lock.Lock()
-		s.paused = paused
-		if !paused {
-			s.resetLocked()
-		} else {
-			// bump generation to trigger exit of current worker
-			s.generation.Inc()
+	s.lock.Lock()
+	s.paused = paused
+	if !paused {
+		s.resetLocked()
+	} else {
+		// bump generation to trigger exit of current worker
+		s.generation.Inc()
 
-			s.setStatusLocked(StreamStatusStopped)
-		}
-		s.lock.Unlock()
+		s.setStatusLocked(StreamStatusStopped)
+	}
+	s.lock.Unlock()
 
-		s.maybeNotifyStatus()
-	*/
+	s.maybeNotifyStatus()
 }
 
 func (s *StreamTracker) Observe(

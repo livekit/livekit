@@ -127,6 +127,8 @@ type VideoAllocationProvisional struct {
 	availableLayers []int32
 	exemptedLayers  []int32
 	maxLayers       VideoLayers
+	currentLayers   VideoLayers
+	parkedLayers    VideoLayers
 
 	allocatedLayers VideoLayers
 }
@@ -186,6 +188,7 @@ type ForwarderState struct {
 	TargetLayers          VideoLayers // RAJA-TODO: is this needed?
 	// RAJA-TODO: Are opportunistic layers needed here?, probably yes
 	// RAJA-TODO: parked layers for publisher mute?
+	// RAJA-TODO: do we need to store timer of how much is left in parked layer timers?
 	RTP RTPMungerState
 	VP8 VP8MungerState
 }
@@ -204,6 +207,8 @@ type Forwarder struct {
 	logger                        logger.Logger
 	getReferenceLayerRTPTimestamp func(ts uint32, layer int32, referenceLayer int32) (uint32, error)
 
+	numAdvertisedLayers int32
+
 	muted    bool
 	pubMuted bool
 
@@ -216,10 +221,10 @@ type Forwarder struct {
 	targetLayers  VideoLayers
 	// RAJA-TODO: do we need a notification for UpTrackMaxExpectedLayer to trigger setting parkedLayers? or should we set parkedLayers always when not subMuted? With adaptive stream, setting max layer maybe should set parked?
 	// RAJA-TODO: when to wait for parked layers? Coming out of pubMute? Actually maybe any time other than subMute. parkedLayers should expire though and trigger a re-allocation if there are other available layers.
-	parkedLayers        VideoLayers // layers that can resume without key frame // RAJA-TODO
-	parkedLayersTimer   *time.Timer
-	opportunisticLayers VideoLayers // highest layers that can be latched on to without waiting for an explicit allocation // RAJA-TODO
-	isLocked            bool        // a boolean to signify that the current layers are locked to optimal enabling a fast path check RAJA-TODO
+	parkedLayers      VideoLayers // layers that can resume without key frame // RAJA-TODO
+	parkedLayersTimer *time.Timer
+	// RAJA-REMOVE opportunisticLayers VideoLayers // highest layers that can be latched on to without waiting for an explicit allocation // RAJA-TODO
+	// RAJA-REMOVE isLocked            bool        // a boolean to signify that the current layers are locked to optimal enabling a fast path check RAJA-TODO
 
 	provisional *VideoAllocationProvisional
 
@@ -252,10 +257,10 @@ func NewForwarder(
 
 		// start off with nothing, let streamallocator/opportunistic forwarder set the target
 		// RAJA-TODO: update comment here when doing opportunistic layers
-		currentLayers:       InvalidLayers,
-		targetLayers:        InvalidLayers,
-		parkedLayers:        InvalidLayers,
-		opportunisticLayers: InvalidLayers,
+		currentLayers: InvalidLayers,
+		targetLayers:  InvalidLayers,
+		parkedLayers:  InvalidLayers,
+		// RAJA-REMOVE opportunisticLayers: InvalidLayers,
 
 		lastAllocation: VideoAllocationDefault,
 
@@ -269,6 +274,13 @@ func NewForwarder(
 	}
 
 	return f
+}
+
+func (f *Forwarder) SetNumAdvertisedLayers(numAdvertisedLayers int32) {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	f.numAdvertisedLayers = numAdvertisedLayers
 }
 
 func (f *Forwarder) OnParkedLayersExpired(fn func()) {
@@ -394,6 +406,7 @@ func (f *Forwarder) PubMute(pubMuted bool) (bool, VideoLayers) {
 	// Do not resync on publisher mute as forwarding can continue on unmute using same layers.
 	// On unmute, park current layers as streaming can continue without a key frame when publisher starts the stream.
 	if !pubMuted && f.currentLayers.IsValid() {
+		// RAJA-TODO: check that current = target before parking, i. e. should not set target to current if they were not equal, but how to indicate that there is a resumable layer possible. Maybe a separate parked layers is needed?
 		f.setupParkedLayers(f.currentLayers)
 		f.currentLayers = InvalidLayers
 	}
@@ -408,6 +421,7 @@ func (f *Forwarder) IsPubMuted() bool {
 	return f.pubMuted
 }
 
+/* RAJA-REMOVE
 func (f *Forwarder) setOpportunisticLayers() {
 	if f.isDeficientLocked() || !f.maxLayers.IsValid() {
 		f.opportunisticLayers = InvalidLayers
@@ -417,6 +431,7 @@ func (f *Forwarder) setOpportunisticLayers() {
 	f.opportunisticLayers = f.maxLayers
 	// DD-TODO: how to set this for dependency descriptor use cases?
 }
+*/
 
 func (f *Forwarder) SetMaxSpatialLayer(spatialLayer int32) (bool, VideoLayers, VideoLayers) {
 	f.lock.Lock()
@@ -429,7 +444,9 @@ func (f *Forwarder) SetMaxSpatialLayer(spatialLayer int32) (bool, VideoLayers, V
 	f.logger.Infow("setting max spatial layer", "layer", spatialLayer)
 	f.maxLayers.Spatial = spatialLayer
 
-	f.setOpportunisticLayers()
+	// RAJA-REMOVE f.setOpportunisticLayers()
+	f.logger.Infow("clearing parked layers max spatial") // REMOVE
+	f.clearParkedLayers()
 
 	return true, f.maxLayers, f.currentLayers
 }
@@ -445,7 +462,9 @@ func (f *Forwarder) SetMaxTemporalLayer(temporalLayer int32) (bool, VideoLayers,
 	f.logger.Infow("setting max temporal layer", "layer", temporalLayer)
 	f.maxLayers.Temporal = temporalLayer
 
-	f.setOpportunisticLayers()
+	// RAJA-REMOVE f.setOpportunisticLayers()
+	f.logger.Infow("clearing parked layers max temporal") // REMOVE
+	f.clearParkedLayers()
 
 	return true, f.maxLayers, f.currentLayers
 }
@@ -673,6 +692,14 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
+	// RAJA-TODO: make this super simple
+	// - set to max available layer <= max
+	// - if none available under max and if overshoot is allowed, set to higher
+	// - when no layers available, set to how many ever layers trackInfo has?
+	// - challenges to solve:
+	//   o by the time available layer happens, the key frame has gone by
+	//   o isLocked fast path cannot happen if target is set arbitratily high, maybe this is not too bad and don't need the isLocked variable?
+
 	if f.kind == webrtc.RTPCodecTypeAudio {
 		return f.lastAllocation
 	}
@@ -692,10 +719,23 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 	// RAJA-TODO: if somehow current layers are not valid, set current to opportunistic max as this is the no-congestion path
 	case f.pubMuted:
 		alloc.state = VideoAllocationStatePubMuted
+		// leave it at current layers for opportunistic resume
+		alloc.targetLayers = f.currentLayers
 
+	/* RAJA-TODO-REMOVE
 	case len(f.availableLayers) == 0:
-		// feed is dry
+		// feed is dry, leave target at current if already started for opportunistic resume
 		alloc.state = VideoAllocationStateFeedDry
+		if f.started {
+			alloc.targetLayers = f.currentLayers
+		} else {
+			// opportunisitically latch on to anything
+			alloc.targetLayers = VideoLayers{
+				Spatial:  DefaultMaxLayerSpatial,
+				Temporal: DefaultMaxLayerTemporal,
+			}
+		}
+	*/
 
 	case !f.bitrateAvailable(brs):
 		// feed bitrate not yet calculated for all available layers
@@ -709,6 +749,23 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 			Spatial:  int32(math.Min(float64(f.maxLayers.Spatial), float64(f.availableLayers[len(f.availableLayers)-1]))),
 			Temporal: int32(math.Max(0, float64(f.maxLayers.Temporal))),
 		}
+		// RAJA-TODO-START
+		// clearing this too early causesa an issue as follows
+		//   1. pubMute -> pubUnmute -> parked layers set -> parked layer lock -> parked layer gets cleared
+		//   2. stream tracker reports layer availability change on publisher unmute starting streaming.
+		//   3. That causes stream allocator to re-allocate
+		//   4. Causes forwarded layer to switch down 0 if the layer was already at a higher layer (as that is
+		//      first detected by stream tracker) and then other layers are detected and then it switches back up.
+		//      This pretty much nullifies the advantage of resume without key frame.
+		//
+		// Possibility: can this allocation just do nothing if currentLayers is valid?
+		// Question: How will the above work if publisher has stopped a layer? How to distinguish that case?
+		//           In that case, currentLayers could be valid and hence not trigger a re-allocation.
+		// RAJA-TODO-STOP
+	case f.parkedLayers.IsValid():
+		// if parked on a layer, let it continue
+		alloc.state = VideoAllocationStateOptimal
+		alloc.targetLayers = f.parkedLayers
 
 	default:
 		// allocate best layer available
@@ -763,6 +820,7 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 			}
 		}
 
+		/* RAJA-TODO-REMOVE
 		if alloc.bandwidthRequested == 0 && f.maxLayers.IsValid() {
 			// RAJA-TODO: I think this can be changed to not check for exempted layers, i. e. just let the current layer continue as long as current layer is <= max layer
 			// if overshoot was allowed and that also did not find a layer,
@@ -786,6 +844,20 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 		if !alloc.targetLayers.IsValid() && f.maxLayers.IsValid() {
 			alloc.state = VideoAllocationStateDeficient
 		}
+		*/
+		// feed is dry, leave target at current if already started for opportunistic resume
+		if alloc.bandwidthRequested == 0 && f.maxLayers.IsValid() {
+			alloc.state = VideoAllocationStateFeedDry
+			if f.started {
+				alloc.targetLayers = f.currentLayers
+			} else {
+				// opportunisitically latch on to anything
+				alloc.targetLayers = VideoLayers{
+					Spatial:  DefaultMaxLayerSpatial,
+					Temporal: DefaultMaxLayerTemporal,
+				}
+			}
+		}
 	}
 
 	if !alloc.targetLayers.IsValid() {
@@ -808,6 +880,8 @@ func (f *Forwarder) ProvisionalAllocatePrepare(bitrates Bitrates) {
 		pubMuted:        f.pubMuted,
 		bitrates:        bitrates,
 		maxLayers:       f.maxLayers,
+		currentLayers:   f.currentLayers,
+		parkedLayers:    f.parkedLayers,
 	}
 	if len(f.availableLayers) > 0 {
 		f.provisional.availableLayers = make([]int32, len(f.availableLayers))
@@ -827,6 +901,7 @@ func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layers V
 		return 0
 	}
 
+	/* RAJA-TODO-REMOVE
 	maybeAdoptExempted := func() int64 {
 		br := int64(0)
 		if f.currentLayers.IsValid() {
@@ -840,14 +915,16 @@ func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layers V
 		}
 		return br
 	}
+	*/
 
 	requiredBitrate := f.provisional.bitrates[layers.Spatial][layers.Temporal]
 	if requiredBitrate == 0 {
-		return maybeAdoptExempted()
+		// RAJA-TODO-REMOVE return maybeAdoptExempted()
+		return 0
 	}
 
 	alreadyAllocatedBitrate := int64(0)
-	if f.provisional.allocatedLayers != InvalidLayers {
+	if f.provisional.allocatedLayers.IsValid() {
 		alreadyAllocatedBitrate = f.provisional.bitrates[f.provisional.allocatedLayers.Spatial][f.provisional.allocatedLayers.Temporal]
 	}
 
@@ -870,7 +947,8 @@ func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layers V
 	}
 
 	// RAJA-TODO: move this maybe adopt exempted to ProvisionalAllocateCommit()
-	return maybeAdoptExempted()
+	// RAJA-TODO-REMOVE return maybeAdoptExempted()
+	return 0
 }
 
 func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot bool) VideoTransition {
@@ -898,16 +976,19 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot b
 
 	if f.provisional.muted || f.provisional.pubMuted {
 		f.provisional.allocatedLayers = InvalidLayers
+		if f.provisional.pubMuted {
+			// leave it at current for opportunistic forwarding, there is still bandwidth saving with publisher mute
+			f.provisional.allocatedLayers = f.provisional.currentLayers
+		}
 		return VideoTransition{
 			from:           f.targetLayers,
-			to:             InvalidLayers,
+			to:             f.provisional.allocatedLayers,
 			bandwidthDelta: 0 - f.lastAllocation.bandwidthRequested,
-			// LK-TODO should this take current bitrate of current target layers?
 		}
 	}
 
 	// check if we should preserve current target
-	if f.targetLayers != InvalidLayers {
+	if f.targetLayers.IsValid() {
 		// what is the highest that is available
 		maximalLayers := InvalidLayers
 		maximalBandwidthRequired := int64(0)
@@ -925,9 +1006,10 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot b
 			}
 		}
 
-		if maximalLayers != InvalidLayers {
+		if maximalLayers.IsValid() {
 			if !f.targetLayers.GreaterThan(maximalLayers) && f.provisional.bitrates[f.targetLayers.Spatial][f.targetLayers.Temporal] != 0 {
-				// currently streaming and wanting an upgrade, just preserve current target in the cooperative scheme of things
+				// currently streaming and maybe wanting an upgrade (f.targetLayers <= maximalLayers),
+				// just preserve current target in the cooperative scheme of things
 				f.provisional.allocatedLayers = f.targetLayers
 				return VideoTransition{
 					from:           f.targetLayers,
@@ -937,7 +1019,7 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot b
 			}
 
 			if f.targetLayers.GreaterThan(maximalLayers) {
-				// maximalLayers <= f.targetLayers, make the down move
+				// maximalLayers < f.targetLayers, make the down move
 				f.provisional.allocatedLayers = maximalLayers
 				return VideoTransition{
 					from:           f.targetLayers,
@@ -981,17 +1063,18 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot b
 			0, f.provisional.maxLayers.Spatial,
 			0, f.provisional.maxLayers.Temporal,
 		)
+
+		// could not find a minimal layer, overshoot if allowed
+		if bandwidthRequired == 0 && f.provisional.maxLayers.IsValid() && allowOvershoot {
+			targetLayers, bandwidthRequired = findNextLayer(
+				f.provisional.maxLayers.Spatial+1, DefaultMaxLayerSpatial,
+				0, DefaultMaxLayerTemporal,
+			)
+		}
 	}
 
-	// could not find a minimal layer, overshoot if allowed
-	if bandwidthRequired == 0 && f.provisional.maxLayers.IsValid() && allowOvershoot {
-		targetLayers, bandwidthRequired = findNextLayer(
-			f.provisional.maxLayers.Spatial+1, DefaultMaxLayerSpatial,
-			0, DefaultMaxLayerTemporal,
-		)
-	}
-
-	// RAJA-TODO: maybe move this ProvisionalAllocationCommit()
+	/* RAJA-TODO-REMOVE
+	// RAJA-TODO: maybe move this to ProvisionalAllocationCommit()
 	// adopt exempted layer if current is at one of the exempted layers below maximum
 	if bandwidthRequired == 0 && f.provisional.maxLayers.IsValid() && f.currentLayers.IsValid() {
 		for _, s := range f.provisional.exemptedLayers {
@@ -1007,6 +1090,15 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot b
 	if bandwidthRequired == 0 && (!f.currentLayers.IsValid() || f.currentLayers != targetLayers) {
 		targetLayers = InvalidLayers
 	}
+	*/
+	// if nothing available, just leave target at current to enable opportunistic forwarding in case current resumes
+	if targetLayers == InvalidLayers {
+		if f.provisional.parkedLayers.IsValid() {
+			targetLayers = f.provisional.parkedLayers
+		} else {
+			targetLayers = f.provisional.currentLayers
+		}
+	}
 
 	f.provisional.allocatedLayers = targetLayers
 	return VideoTransition{
@@ -1019,7 +1111,8 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot b
 func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransition {
 	//
 	// This is called when a track needs a change (could be mute/unmute, subscribed layers changed, published layers changed)
-	// when channel is congested.
+	// when channel is congested. This is called on tracks other than the one needing the change. When the track
+	// needing the change requires bits, this is called to check if this track can contribute some bits to the pool.
 	//
 	// The goal is to keep all tracks streaming as much as possible. So, the track that needs a change needs bandwidth to be unpaused.
 	//
@@ -1036,11 +1129,14 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 
 	if f.provisional.muted || f.provisional.pubMuted {
 		f.provisional.allocatedLayers = InvalidLayers
+		if f.provisional.pubMuted {
+			// leave it at current for opportunistic forwarding, there is still bandwidth saving with publisher mute
+			f.provisional.allocatedLayers = f.provisional.currentLayers
+		}
 		return VideoTransition{
 			from:           f.targetLayers,
-			to:             InvalidLayers,
+			to:             f.provisional.allocatedLayers,
 			bandwidthDelta: 0 - f.lastAllocation.bandwidthRequested,
-			// LK-TODO should this take current bitrate of current target layers?
 		}
 	}
 
@@ -1058,6 +1154,7 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 	}
 
 	if maxReachableLayerTemporal == InvalidLayerTemporal {
+		/* RAJA-TODO-REMOVE
 		// stick to an exempted layer if available
 		// RAJA-TODO: maybe move this to ProvisionalAllocateCommit()?
 		if f.currentLayers.IsValid() {
@@ -1081,6 +1178,20 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 			to:             InvalidLayers,
 			bandwidthDelta: 0 - f.lastAllocation.bandwidthRequested,
 			// LK-TODO should this take current bitrate of current target layers?
+		}
+		*/
+		// feed has gone dry, just leave target at current to enable opportunistic forwarding in case current resumes.
+		// Note that this is giving back bits and opportunistic forwarding resuming might trigger congestion again,
+		// but that should be handled by stream allocator.
+		if f.provisional.parkedLayers.IsValid() {
+			f.provisional.allocatedLayers = f.provisional.parkedLayers
+		} else {
+			f.provisional.allocatedLayers = f.provisional.currentLayers
+		}
+		return VideoTransition{
+			from:           f.targetLayers,
+			to:             f.provisional.allocatedLayers,
+			bandwidthDelta: 0 - f.lastAllocation.bandwidthRequested,
 		}
 	}
 
@@ -1149,7 +1260,7 @@ func (f *Forwarder) ProvisionalAllocateCommit() VideoAllocation {
 		// feed is dry
 		alloc.state = VideoAllocationStateFeedDry
 
-	case f.provisional.allocatedLayers == InvalidLayers:
+	case !f.provisional.allocatedLayers.IsValid():
 		// RAJA-TODO: maybe move exempt layer allocation here? But, have to be careful to ensure only done in if !allowPause
 		alloc.state = VideoAllocationStateDeficient
 
@@ -1172,6 +1283,8 @@ func (f *Forwarder) ProvisionalAllocateCommit() VideoAllocation {
 		}
 	}
 
+	f.logger.Infow("clearing parked layers cooperative") // REMOVE
+	f.clearParkedLayers()
 	return f.updateAllocation(alloc, "cooperative")
 }
 
@@ -1191,7 +1304,7 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, brs Bitra
 	}
 
 	// if targets are still pending, don't increase
-	if f.targetLayers != InvalidLayers && f.targetLayers != f.currentLayers {
+	if f.targetLayers.IsValid() && f.targetLayers != f.currentLayers {
 		f.lastAllocation.change = VideoStreamingChangeNone
 		return f.lastAllocation, false
 	}
@@ -1199,7 +1312,7 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, brs Bitra
 	optimalBandwidthNeeded := f.getOptimalBandwidthNeeded(brs, f.maxLayers)
 
 	alreadyAllocated := int64(0)
-	if f.targetLayers != InvalidLayers {
+	if f.targetLayers.IsValid() {
 		alreadyAllocated = brs[f.targetLayers.Spatial][f.targetLayers.Temporal]
 	}
 
@@ -1247,7 +1360,7 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, brs Bitra
 	boosted := false
 
 	// try moving temporal layer up in currently streaming spatial layer
-	if f.targetLayers != InvalidLayers {
+	if f.targetLayers.IsValid() {
 		done, allocation, boosted = doAllocation(
 			f.targetLayers.Spatial, f.targetLayers.Spatial,
 			f.targetLayers.Temporal+1, f.maxLayers.Temporal,
@@ -1294,12 +1407,12 @@ func (f *Forwarder) GetNextHigherTransition(brs Bitrates, allowOvershoot bool) (
 	}
 
 	// if targets are still pending, don't increase
-	if f.targetLayers != InvalidLayers && f.targetLayers != f.currentLayers {
+	if f.targetLayers.IsValid() && f.targetLayers != f.currentLayers {
 		return VideoTransition{}, false
 	}
 
 	alreadyAllocated := int64(0)
-	if f.targetLayers != InvalidLayers {
+	if f.targetLayers.IsValid() {
 		alreadyAllocated = brs[f.targetLayers.Spatial][f.targetLayers.Temporal]
 	}
 
@@ -1332,7 +1445,7 @@ func (f *Forwarder) GetNextHigherTransition(brs Bitrates, allowOvershoot bool) (
 	isAvailable := false
 
 	// try moving temporal layer up in currently streaming spatial layer
-	if f.targetLayers != InvalidLayers {
+	if f.targetLayers.IsValid() {
 		done, transition, isAvailable = findNextHigher(
 			f.targetLayers.Spatial, f.targetLayers.Spatial,
 			f.targetLayers.Temporal+1, f.maxLayers.Temporal,
@@ -1394,14 +1507,16 @@ func (f *Forwarder) Pause(brs Bitrates) VideoAllocation {
 		alloc.state = VideoAllocationStateDeficient
 	}
 
+	f.logger.Infow("clearing parked layers pause") // REMOVE
+	f.clearParkedLayers()
 	return f.updateAllocation(alloc, "pause")
 }
 
 func (f *Forwarder) updateAllocation(alloc VideoAllocation, reason string) VideoAllocation {
 	// RAJA-TODO - check for changes needed with opportunistic forwarding
-	if f.targetLayers == InvalidLayers && alloc.targetLayers.IsValid() {
+	if !f.targetLayers.IsValid() && alloc.targetLayers.IsValid() {
 		alloc.change = VideoStreamingChangeResuming
-	} else if f.targetLayers != InvalidLayers && !alloc.targetLayers.IsValid() {
+	} else if f.targetLayers.IsValid() && !alloc.targetLayers.IsValid() {
 		// RAJA-TODO: when pausing, can the target layers and current layers be left unchanged so that it can latch on layer resuming?
 		alloc.change = VideoStreamingChangePausing
 	}
@@ -1421,9 +1536,11 @@ func (f *Forwarder) updateAllocation(alloc VideoAllocation, reason string) Video
 	}
 
 	f.setTargetLayers(f.lastAllocation.targetLayers)
+	/* RAJA-TODO-REMOVE
 	if f.targetLayers == InvalidLayers {
 		f.resyncLocked()
 	}
+	*/
 
 	return f.lastAllocation
 }
@@ -1447,6 +1564,8 @@ func (f *Forwarder) resyncLocked() {
 	// RAJA-TODO: look for publisher vs subscriber mute and ensure that existing layer can continue on publisher mute/unmute
 	f.currentLayers = InvalidLayers
 	f.lastSSRC = 0
+	f.logger.Infow("clearing parked layers resync") // REMOVE
+	f.clearParkedLayers()
 }
 
 func (f *Forwarder) clearParkedLayers() {
@@ -1458,6 +1577,8 @@ func (f *Forwarder) clearParkedLayers() {
 }
 
 func (f *Forwarder) setupParkedLayers(parkedLayers VideoLayers) {
+	// RAJA-TODO should ProvisionalAllocationCommit clear parked layers? Probably yes, as congestion should reset things.
+	// RAJA-TODO target should also be set to parked layers (not necessarily only to current when nothing available) as current could be reset to -1 after pub unmute and in that case target should be set to parked
 	f.clearParkedLayers()
 
 	f.parkedLayers = parkedLayers
@@ -1599,93 +1720,116 @@ func (f *Forwarder) getTranslationParamsAudio(extPkt *buffer.ExtPacket, layer in
 func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer int32) (*TranslationParams, error) {
 	tp := &TranslationParams{}
 
-	if !f.isLocked {
-		if f.currentLayers.Spatial != InvalidLayerSpatial {
-			// RAJA-TODO: figure out fast path dependency descriptor
-			// forwarding some layer, check for opportunistic upgrade
-			if f.opportunisticLayers.Spatial != InvalidLayerSpatial &&
-				layer != f.currentLayers.Spatial &&
-				layer <= f.opportunisticLayers.Spatial &&
-				f.currentLayers.Spatial < layer &&
-				extPkt.KeyFrame {
-				// switch to a higher spatial layer opportunitically
-				// RAJA-TODO: is it okay to blindly switch target layers like this ok?
-				f.targetLayers = VideoLayers{
-					Spatial:  extPkt.VideoLayer.Spatial,
-					Temporal: DefaultMaxLayerTemporal, // RAJA-TODO - check if this is correct when temporal not supported also
-				}
-				f.logger.Infow("locking opportunistically to higher layer", "current", f.currentLayers, "target", f.targetLayers)
+	if !f.targetLayers.IsValid() {
+		// stream is paused by streamallocator
+		tp.shouldDrop = true
+		return tp, nil
+	}
 
-				f.currentLayers.Spatial = f.targetLayers.Spatial
-				if !f.isTemporalSupported {
-					f.currentLayers.Temporal = f.targetLayers.Temporal
-				}
-
-				// if current layer reaches opportunistic layer, opportunistic layer is done
-				if f.currentLayers.Spatial >= f.opportunisticLayers.Spatial {
-					f.logger.Infow("reached opportunistic layer, clearing opportunistic layer", "current", f.currentLayers, "opportunistic", f.opportunisticLayers)
-					f.opportunisticLayers = InvalidLayers
-				}
+	if f.ddLayerSelector != nil {
+		if selected := f.ddLayerSelector.Select(extPkt, tp); !selected {
+			tp.shouldDrop = true
+			f.rtpMunger.PacketDropped(extPkt)
+			return tp, nil
+		} else if tp.switchingToTargetLayer {
+			// lock to target layer
+			f.logger.Infow("locking to target layer", "current", f.currentLayers, "target", f.targetLayers)
+			f.currentLayers.Spatial = f.targetLayers.Spatial
+			if !f.isTemporalSupported {
+				f.currentLayers.Temporal = f.targetLayers.Temporal
 			}
-		} else {
-			// RAJA-TODO: make fast path fast - i. e. if current layer is a valid one, only check for opportunistic upgrade and move on, slow path of locking can take more checks, do not penalize fast path.
-			if f.targetLayers.Spatial == InvalidLayerSpatial && f.parkedLayers.Spatial == InvalidLayerSpatial && f.opportunisticLayers.Spatial == InvalidLayerSpatial {
-				// stream is paused by streamallocator
-				tp.shouldDrop = true
-				return tp, nil
+			// TODO : we switch to target layer immediately now since we assume all frame chain is integrity
+			//   if we have frame chain check, should switch only if target chain is not broken and decodable
+			// if f.ddLayerSelector != nil {
+			// 	f.ddLayerSelector.SelectLayer(f.currentLayers)
+			// }
+			if f.currentLayers.Spatial >= f.maxLayers.Spatial || f.currentLayers.Spatial == (f.numAdvertisedLayers-1) {
+				tp.isSwitchingToMaxLayer = true
 			}
+		}
+	} else {
+		// RAJA-REMOVE if !f.isLocked {
+		if f.currentLayers.Spatial != f.targetLayers.Spatial {
+			// Three things to check when not locked to target
+			//   1. Resumable layer - don't need a key frame
+			//   2. Opportunistic layer upgrade - needs a key frame
+			//   3. Need to downgrade - needs a key frame
+			found := false
+			if f.parkedLayers.IsValid() {
+				if f.parkedLayers.Spatial == layer {
+					f.logger.Infow("resuming at parked layer", "current", f.currentLayers, "target", f.targetLayers, "parked", f.parkedLayers)
+					f.currentLayers = f.parkedLayers
+					found = true
 
-			if f.ddLayerSelector != nil {
-				if selected := f.ddLayerSelector.Select(extPkt, tp); !selected {
-					tp.shouldDrop = true
-					f.rtpMunger.PacketDropped(extPkt)
-					return tp, nil
+					// RAJA-TODO-START: Check if this comment is needed?
+					// Not clearing parked layers on resuming at parked layer as
+					// it is possible for stream tracker to declare layers restarting
+					// and those will trigger a stream allocator cycle. If parked layers
+					// are cleared, those events could end up switching to a different
+					// layer and then back to a parked layer. For example
+					//   o parked layer (spatial): 2
+					//   o layer 2 resumes and locks to parked layers here
+					//   o stream tracker deckares some other layer is available with bitrate before layer 2's bitrate measurement is available
+					//   o an allocation will choose that layer and then switch back to layer 2 when its bitrates are available
+					//   o that will cause 2 unnecessary layer switches and 2 unnecessary key frames
+					// RAJA-TODO-STOP:
 				}
-			}
-
-			if f.parkedLayers.Spatial != InvalidLayerSpatial && layer == f.parkedLayers.Spatial {
-				f.targetLayers = f.parkedLayers
-				f.currentLayers = VideoLayers{
-					Spatial: layer,
-					// RAJA-TODO: set Temporal properly taking into account current, if codec supports temporal etc.
-				}
-				f.clearParkedLayers()
-				f.logger.Infow("resuming parked layer", "current", f.currentLayers, "target", f.targetLayers)
 			} else {
-				needsLock := f.targetLayers.Spatial != f.currentLayers.Spatial || f.currentLayers.Spatial < f.opportunisticLayers.Spatial
-				if needsLock {
-					lockable := extPkt.KeyFrame || tp.switchingToTargetLayer
-					targetLock := f.targetLayers.Spatial != f.currentLayers.Spatial && f.targetLayers.Spatial == layer
-					opportunisticLock := layer > f.currentLayers.Spatial && layer <= f.opportunisticLayers.Spatial
-					if lockable && (targetLock || opportunisticLock) {
-						if !targetLock && opportunisticLock {
-							// switch to target when opportunistically locking, use max temporal though to allow temporal layer expansion
-							f.targetLayers = VideoLayers{
-								Spatial:  extPkt.VideoLayer.Spatial,
-								Temporal: DefaultMaxLayerTemporal, // RAJA-TODO - check if this is correct when temporal not supported also
-							}
-							f.logger.Infow("locking opportunistically to target layer", "current", f.currentLayers, "target", f.targetLayers)
-						}
+				if extPkt.KeyFrame {
+					if layer > f.currentLayers.Spatial && layer <= f.targetLayers.Spatial {
+						f.logger.Infow("upgrading layer", "current", f.currentLayers, "target", f.targetLayers, "upgrade", layer)
+						found = true
+					}
 
-						f.logger.Infow("locking to target layer", "current", f.currentLayers, "target", f.targetLayers)
-						f.currentLayers.Spatial = f.targetLayers.Spatial
+					if layer < f.currentLayers.Spatial && layer >= f.targetLayers.Spatial {
+						f.logger.Infow("downgrading layer", "current", f.currentLayers, "target", f.targetLayers, "downgrade", layer)
+						found = true
+					}
+
+					if found {
+						f.currentLayers.Spatial = layer
 						if !f.isTemporalSupported {
-							f.currentLayers.Temporal = f.targetLayers.Temporal
-						}
-
-						// DD-TODO : we switch to target layer immediately now since we assume all frame chain is integrity
-						//   if we have frame chain check, should switch only if target chain is not broken and decodable
-						// if f.ddLayerSelector != nil {
-						// 	f.ddLayerSelector.SelectLayer(f.currentLayers)
-						// }
-
-						if f.currentLayers.Spatial >= f.maxLayers.Spatial {
-							tp.isSwitchingToMaxLayer = true
+							f.currentLayers.Temporal = extPkt.Temporal
 						}
 					}
 				}
 			}
+
+			if found {
+				f.logger.Infow("clearing parked layers found") // REMOVE
+				f.clearParkedLayers()
+				if f.currentLayers.Spatial >= f.maxLayers.Spatial || f.currentLayers.Spatial == (f.numAdvertisedLayers-1) {
+					tp.isSwitchingToMaxLayer = true
+
+					// if maximum is attained, adjust target to enable fast path layer check in per-packet path
+					f.logger.Infow(
+						"reached max layer",
+						"current", f.currentLayers,
+						"target", f.targetLayers,
+						"max", f.maxLayers,
+						"advertised", f.numAdvertisedLayers,
+					)
+					f.targetLayers.Spatial = f.currentLayers.Spatial
+				}
+				/* RAJA-REMOVE
+				if f.currentLayers.Spatial == f.targetLayers.Spatial {
+					f.isLocked = true
+				}
+				*/
+			}
+		} else {
+			// if locked to higher than nax layer due to overshoot, check if it can be dialed back
+			if f.targetLayers.Spatial > f.maxLayers.Spatial {
+				if layer <= f.maxLayers.Spatial && extPkt.KeyFrame {
+					f.logger.Infow("adjusting overshoot", "current", f.currentLayers, "target", f.targetLayers, "adjuted", layer)
+					f.currentLayers.Spatial = layer
+					f.targetLayers.Spatial = layer
+				}
+			}
 		}
+
+		// RAJA-TODO: what will detect a layer stop and trigger a down grade? Maybe when removing layers, need to trigger a downgrade?
+		// But, to what layer? how to handle overshoot during downgrade?
 	}
 
 	if f.currentLayers.Spatial != layer {
@@ -1765,7 +1909,7 @@ func (f *Forwarder) GetSnTsForPadding(num int) ([]SnTs, error) {
 	// force a frame marker as a restart of the stream will
 	// start with a key frame which will reset the decoder.
 	forceMarker := false
-	if f.targetLayers == InvalidLayers {
+	if !f.targetLayers.IsValid() {
 		forceMarker = true
 	}
 	// RAJA-TODO: check this with opportunistic forwarding to ensure force is correct, i. e. should it check current?
