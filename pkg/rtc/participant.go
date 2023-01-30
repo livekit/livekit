@@ -488,19 +488,9 @@ func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) er
 		return err
 	}
 
-	if p.isPublisher.Load() != p.CanPublish() {
-		p.isPublisher.Store(p.CanPublish())
-		// trigger update as well if participant is already fully connected
-		if p.State() == livekit.ParticipantInfo_ACTIVE {
-			p.lock.RLock()
-			onParticipantUpdate := p.onParticipantUpdate
-			p.lock.RUnlock()
-
-			if onParticipantUpdate != nil {
-				onParticipantUpdate(p)
-			}
-		}
-	}
+	// received an offer from the client, if publishing is allowed, mark this
+	// participant as a publisher
+	p.setIsPublisher(p.CanPublish())
 
 	if p.MigrateState() == types.MigrateStateSync {
 		go p.handleMigrateMutedTrack()
@@ -1067,6 +1057,21 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 	}
 }
 
+func (p *ParticipantImpl) setIsPublisher(isPublisher bool) {
+	if p.isPublisher.Swap(isPublisher) != isPublisher {
+		// trigger update as well if participant is already fully connected
+		if p.State() == livekit.ParticipantInfo_ACTIVE {
+			p.lock.RLock()
+			onParticipantUpdate := p.onParticipantUpdate
+			p.lock.RUnlock()
+
+			if onParticipantUpdate != nil {
+				onParticipantUpdate(p)
+			}
+		}
+	}
+}
+
 // when the server has an offer for participant
 func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription) error {
 	p.params.Logger.Debugw("sending offer", "transport", livekit.SignalTarget_SUBSCRIBER)
@@ -1144,6 +1149,10 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		}
 	default:
 		p.params.Logger.Warnw("received unsupported data packet", nil, "payload", payload)
+	}
+
+	if !p.IsPublisher() {
+		p.setIsPublisher(true)
 	}
 }
 
