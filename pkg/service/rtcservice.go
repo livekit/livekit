@@ -80,18 +80,20 @@ func (s *RTCService) Validate(w http.ResponseWriter, r *http.Request) {
 
 func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.ParticipantInit, int, error) {
 	claims := GetGrants(r.Context())
+	var pi routing.ParticipantInit
+
 	// require a claim
 	if claims == nil || claims.Video == nil {
-		return "", routing.ParticipantInit{}, http.StatusUnauthorized, rtc.ErrPermissionDenied
+		return "", pi, http.StatusUnauthorized, rtc.ErrPermissionDenied
 	}
 
 	onlyName, err := EnsureJoinPermission(r.Context())
 	if err != nil {
-		return "", routing.ParticipantInit{}, http.StatusUnauthorized, err
+		return "", pi, http.StatusUnauthorized, err
 	}
 
 	if claims.Identity == "" {
-		return "", routing.ParticipantInit{}, http.StatusBadRequest, ErrIdentityEmpty
+		return "", pi, http.StatusBadRequest, ErrIdentityEmpty
 	}
 
 	roomName := livekit.RoomName(r.FormValue("room"))
@@ -116,17 +118,27 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 		claims.Identity += "#" + publishParam
 	}
 
+	// room allocator validations
+	err = s.roomAllocator.ValidateCreateRoom(r.Context(), roomName)
+	if err != nil {
+		if errors.Is(err, ErrRoomNotFound) {
+			return "", pi, http.StatusNotFound, err
+		} else {
+			return "", pi, http.StatusInternalServerError, err
+		}
+	}
+
 	region := ""
 	if router, ok := s.router.(routing.Router); ok {
 		region = router.GetRegion()
 		if foundNode, err := router.GetNodeForRoom(r.Context(), roomName); err == nil {
 			if selector.LimitsReached(s.limits, foundNode.Stats) {
-				return "", routing.ParticipantInit{}, http.StatusServiceUnavailable, rtc.ErrLimitExceeded
+				return "", pi, http.StatusServiceUnavailable, rtc.ErrLimitExceeded
 			}
 		}
 	}
 
-	pi := routing.ParticipantInit{
+	pi = routing.ParticipantInit{
 		Reconnect:     boolValue(reconnectParam),
 		Identity:      livekit.ParticipantIdentity(claims.Identity),
 		Name:          livekit.ParticipantName(claims.Name),
@@ -167,18 +179,6 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"participant", pi.Identity,
 		"room", roomName,
 		"remote", false,
-	}
-
-	// when auto create is disabled, we'll check to ensure it's already created
-	if !s.config.Room.AutoCreate {
-		_, _, err := s.store.LoadRoom(context.Background(), roomName, false)
-		if err == ErrRoomNotFound {
-			handleError(w, http.StatusNotFound, err, loggerFields...)
-			return
-		} else if err != nil {
-			handleError(w, http.StatusInternalServerError, err, loggerFields...)
-			return
-		}
 	}
 
 	// give it a few attempts to start session

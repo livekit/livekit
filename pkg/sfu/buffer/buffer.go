@@ -216,6 +216,12 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 				}
 			}
 		case webrtc.TypeRTCPFBNACK:
+			// pion use a single mediaengine to manage negotiated codecs of peerconnection, that means we can't have different
+			// codec settings at track level for same codec type, so enable nack for all audio receivers but don't create nack queue
+			// for red codec.
+			if strings.EqualFold(b.mime, "audio/red") {
+				return
+			}
 			b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBNACK)
 			b.nacker = nack.NewNACKQueue()
 		}
