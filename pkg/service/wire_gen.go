@@ -12,7 +12,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/service/rpc"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/utils"
@@ -66,7 +65,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	analyticsService := telemetry.NewAnalyticsService(conf, currentNode)
 	telemetryService := telemetry.NewTelemetryService(notifier, analyticsService)
-	rtcEgressLauncher := getEgressLauncher(conf, egressClient, rpcClient, egressStore, telemetryService)
+	rtcEgressLauncher := NewEgressLauncher(egressClient, rpcClient, egressStore, telemetryService)
 	roomService, err := NewRoomService(roomConfig, apiConfig, router, roomAllocator, objectStore, rtcEgressLauncher)
 	if err != nil {
 		return nil, err
@@ -187,10 +186,6 @@ func getEgressClient(conf *config.Config, nodeID livekit.NodeID, bus psrpc.Messa
 	}
 
 	return nil, nil
-}
-
-func getEgressLauncher(conf *config.Config, psrpcClient rpc.EgressClient, clientDeprecated egress.RPCClient, es EgressStore, ts telemetry.TelemetryService) rtc.EgressLauncher {
-	return NewEgressLauncher(conf.Egress.ClusterId, psrpcClient, clientDeprecated, es, ts)
 }
 
 func getEgressStore(s ObjectStore) EgressStore {

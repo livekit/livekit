@@ -237,8 +237,7 @@ type LimitConfig struct {
 }
 
 type EgressConfig struct {
-	UsePsRPC  bool   `yaml:"use_psrpc"`
-	ClusterId string `yaml:"cluster_id"`
+	UsePsRPC bool `yaml:"use_psrpc"`
 }
 
 type IngressConfig struct {

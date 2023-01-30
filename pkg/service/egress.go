@@ -27,15 +27,7 @@ type EgressService struct {
 	launcher         rtc.EgressLauncher
 }
 
-type EgressLauncher interface {
-	rtc.EgressLauncher
-
-	StartEgressWithClusterId(ctx context.Context, clusterId string, req *livekit.StartEgressRequest) (*livekit.EgressInfo, error)
-}
-
 type egressLauncher struct {
-	defaultEgressClusterId string
-
 	psrpcClient      rpc.EgressClient
 	clientDeprecated egress.RPCClient
 	es               EgressStore
@@ -43,21 +35,19 @@ type egressLauncher struct {
 }
 
 func NewEgressLauncher(
-	defaultEgressClusterId string,
 	psrpcClient rpc.EgressClient,
 	clientDeprecated egress.RPCClient,
 	es EgressStore,
-	ts telemetry.TelemetryService) EgressLauncher {
+	ts telemetry.TelemetryService) rtc.EgressLauncher {
 	if psrpcClient == nil && clientDeprecated == nil {
 		return nil
 	}
 
 	return &egressLauncher{
-		defaultEgressClusterId: defaultEgressClusterId,
-		psrpcClient:            psrpcClient,
-		clientDeprecated:       clientDeprecated,
-		es:                     es,
-		telemetry:              ts,
+		psrpcClient:      psrpcClient,
+		clientDeprecated: clientDeprecated,
+		es:               es,
+		telemetry:        ts,
 	}
 }
 
@@ -170,7 +160,7 @@ func (s *EgressService) startEgress(ctx context.Context, roomName livekit.RoomNa
 }
 
 func (s *egressLauncher) StartEgress(ctx context.Context, req *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
-	return s.StartEgressWithClusterId(ctx, s.defaultEgressClusterId, req)
+	return s.StartEgressWithClusterId(ctx, "", req)
 }
 func (s *egressLauncher) StartEgressWithClusterId(ctx context.Context, clusterId string, req *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
 	var info *livekit.EgressInfo
