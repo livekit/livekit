@@ -177,7 +177,7 @@ func (s *StreamTracker) Observe(
 ) {
 	s.lock.Lock()
 
-	if s.isStopped /* || s.paused */ || payloadSize == 0 {
+	if s.isStopped || s.paused || payloadSize == 0 {
 		s.lock.Unlock()
 		return
 	}
@@ -273,7 +273,6 @@ func (s *StreamTracker) bitrateReport() {
 		s.bitrate[i] = bitrate
 		s.bytesForBitrate[i] = 0
 	}
-	s.params.Logger.Debugw("RAJA bitrates", "bitrate", s.bitrate) // REMOVE
 	s.lock.Unlock()
 
 	if bitrateAvailabilityChanged && s.onBitrateAvailable != nil {
