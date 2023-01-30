@@ -39,9 +39,11 @@ const (
 	negotiationFailedTimeout   = 15 * time.Second
 	dtlsRetransmissionInterval = 100 * time.Millisecond
 
-	iceDisconnectedTimeout = 10 * time.Second // compatible for ice-lite with firefox client
-	iceFailedTimeout       = 25 * time.Second // pion's default
-	iceKeepaliveInterval   = 2 * time.Second  // pion's default
+	iceDisconnectedTimeout    = 10 * time.Second // compatible for ice-lite with firefox client
+	iceFailedTimeout          = 25 * time.Second // pion's default
+	iceKeepaliveInterval      = 2 * time.Second  // pion's default
+	minConnectTimeoutAfterICE = 5 * time.Second  // min duration for waiting pc to connect after ICE is connected
+	maxConnectTimeoutAfterICE = 20 * time.Second // max duration for waiting pc to connect after ICE is connected
 
 	shortConnectionThreshold = 90 * time.Second
 )
@@ -153,8 +155,10 @@ type PCTransport struct {
 	lossyDCOpened    bool
 	onDataPacket     func(kind livekit.DataPacket_Kind, data []byte)
 
-	iceConnectedAt time.Time
-	connectedAt    time.Time
+	iceStartedAt         time.Time
+	iceConnectedAt       time.Time
+	connectedAt          time.Time
+	connectAfterICETimer *time.Timer // timer to wait for pc to connect after ice connected
 
 	onFullyEstablished func()
 
@@ -397,6 +401,14 @@ func (t *PCTransport) createPeerConnection() error {
 	return nil
 }
 
+func (t *PCTransport) setICEStartedAt(at time.Time) {
+	t.lock.Lock()
+	if t.iceStartedAt.IsZero() {
+		t.iceStartedAt = at
+	}
+	t.lock.Unlock()
+}
+
 func (t *PCTransport) setICEConnectedAt(at time.Time) {
 	t.lock.Lock()
 	if t.iceConnectedAt.IsZero() {
@@ -405,6 +417,21 @@ func (t *PCTransport) setICEConnectedAt(at time.Time) {
 		// This prevents reset of connected at time if ICE goes `Connected` -> `Disconnected` -> `Connected`.
 		//
 		t.iceConnectedAt = at
+
+		// set failure timer for dtls handshake
+		iceCost := at.Sub(t.iceStartedAt)
+		connTimeoutAfterICE := 3 * iceCost
+		if connTimeoutAfterICE < minConnectTimeoutAfterICE {
+			connTimeoutAfterICE = minConnectTimeoutAfterICE
+		} else if connTimeoutAfterICE > maxConnectTimeoutAfterICE {
+			connTimeoutAfterICE = maxConnectTimeoutAfterICE
+		}
+		t.connectAfterICETimer = time.AfterFunc(connTimeoutAfterICE, func() {
+			if t.pc.ConnectionState() == webrtc.PeerConnectionStateConnecting {
+				t.params.Logger.Infow("connect timeout after ICE connected", "timeout", connTimeoutAfterICE, "iceCost", iceCost)
+				t.handleConnectionFailed()
+			}
+		})
 	}
 	t.lock.Unlock()
 }
@@ -503,6 +530,9 @@ func (t *PCTransport) onICEConnectionStateChange(state webrtc.ICEConnectionState
 		} else {
 			t.params.Logger.Infow("selected ICE candidate pair", "pair", pair)
 		}
+
+	case webrtc.ICEConnectionStateChecking:
+		t.setICEStartedAt(time.Now())
 	}
 }
 
@@ -510,6 +540,7 @@ func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionSta
 	t.params.Logger.Debugw("peer connection state change", "state", state.String())
 	switch state {
 	case webrtc.PeerConnectionStateConnected:
+		t.clearConnTimerAfterICE()
 		isInitialConnection := t.setConnectedAt(time.Now())
 		if isInitialConnection {
 			if onInitialConnected := t.getOnInitialConnected(); onInitialConnected != nil {
@@ -520,6 +551,7 @@ func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionSta
 		}
 	case webrtc.PeerConnectionStateFailed:
 		t.params.Logger.Infow("peer connection failed")
+		t.clearConnTimerAfterICE()
 		t.logICECandidates()
 		t.handleConnectionFailed()
 	}
@@ -782,6 +814,17 @@ func (t *PCTransport) Close() {
 	}
 
 	_ = t.pc.Close()
+
+	t.clearConnTimerAfterICE()
+}
+
+func (t *PCTransport) clearConnTimerAfterICE() {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	if t.connectAfterICETimer != nil {
+		t.connectAfterICETimer.Stop()
+		t.connectAfterICETimer = nil
+	}
 }
 
 func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription) {
