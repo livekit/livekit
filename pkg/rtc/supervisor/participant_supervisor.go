@@ -75,7 +75,7 @@ func (p *ParticipantSupervisor) SetPublisherPeerConnectionConnected(isConnected 
 	p.lock.Unlock()
 }
 
-func (p *ParticipantSupervisor) AddPublication(trackID livekit.TrackID, onSuccess func(track types.LocalMediaTrack)) {
+func (p *ParticipantSupervisor) AddPublication(trackID livekit.TrackID) {
 	p.lock.Lock()
 	pm, ok := p.publications[trackID]
 	if !ok {
@@ -85,7 +85,6 @@ func (p *ParticipantSupervisor) AddPublication(trackID livekit.TrackID, onSucces
 					TrackID:                   trackID,
 					IsPeerConnectionConnected: p.isPublisherConnected,
 					Logger:                    p.params.Logger,
-					OnSuccess:                 onSuccess,
 				},
 			),
 		}

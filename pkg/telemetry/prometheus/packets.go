@@ -93,7 +93,7 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 		Subsystem:   "jitter",
 		Name:        "us",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
-		Buckets:     []float64{100, 500, 1500, 2000, 3000, 5000, 10000, 20000, 40000, 60000},
+		Buckets:     []float64{100, 500, 1500, 3000, 6000, 12000, 24000, 48000, 96000, 192000},
 	}, promStreamLabels)
 	promRTT = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace:   livekitNamespace,
@@ -196,6 +196,12 @@ func IncrementParticipantJoin(join uint32) {
 	if join > 0 {
 		participantSignalConnected.Add(uint64(join))
 		promParticipantJoin.WithLabelValues("signal_connected").Add(float64(join))
+	}
+}
+
+func IncrementParticipantJoinFail(join uint32) {
+	if join > 0 {
+		promParticipantJoin.WithLabelValues("signal_failed").Add(float64(join))
 	}
 }
 

@@ -104,7 +104,7 @@ type ParticipantImpl struct {
 	twcc *twcc.Responder
 
 	// client intended to publish, yet to be reconciled
-	pendingTracksLock sync.RWMutex
+	pendingTracksLock utils.RWMutex
 	pendingTracks     map[string]*pendingTrackInfo
 	// migrated in muted tracks are not fired need close at participant close
 	mutedTrackNotFired []*MediaTrack
@@ -124,14 +124,14 @@ type ParticipantImpl struct {
 	// cache of recently sent updates, to ensuring ordering by version
 	// guarded by updateLock
 	updateCache *lru.Cache[livekit.ParticipantID, uint32]
-	updateLock  sync.Mutex
+	updateLock  utils.Mutex
 
 	dataChannelStats *telemetry.BytesTrackStats
 
 	rttUpdatedAt time.Time
 	lastRTT      uint32
 
-	lock    sync.RWMutex
+	lock    utils.RWMutex
 	once    sync.Once
 	version atomic.Uint32
 
@@ -488,19 +488,9 @@ func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) er
 		return err
 	}
 
-	if p.isPublisher.Load() != p.CanPublish() {
-		p.isPublisher.Store(p.CanPublish())
-		// trigger update as well if participant is already fully connected
-		if p.State() == livekit.ParticipantInfo_ACTIVE {
-			p.lock.RLock()
-			onParticipantUpdate := p.onParticipantUpdate
-			p.lock.RUnlock()
-
-			if onParticipantUpdate != nil {
-				onParticipantUpdate(p)
-			}
-		}
-	}
+	// received an offer from the client, if publishing is allowed, mark this
+	// participant as a publisher
+	p.setIsPublisher(p.CanPublish())
 
 	if p.MigrateState() == types.MigrateStateSync {
 		go p.handleMigrateMutedTrack()
@@ -534,9 +524,13 @@ func (p *ParticipantImpl) handleMigrateMutedTrack() {
 	p.mutedTrackNotFired = append(p.mutedTrackNotFired, addedTracks...)
 	p.pendingTracksLock.Unlock()
 
-	for _, t := range addedTracks {
-		p.handleTrackPublished(t)
-	}
+	// launch callbacks in goroutine since they could block
+	// callbacks handle webhooks as well as db persistence
+	go func() {
+		for _, t := range addedTracks {
+			p.handleTrackPublished(t)
+		}
+	}()
 }
 
 func (p *ParticipantImpl) removeMutedTrackNotFired(mt *MediaTrack) {
@@ -579,7 +573,7 @@ func (p *ParticipantImpl) SetMigrateInfo(
 	for _, t := range mediaTracks {
 		ti := t.GetTrack()
 
-		p.supervisor.AddPublication(livekit.TrackID(ti.Sid), nil)
+		p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
 		p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
 
 		p.pendingTracks[t.GetCid()] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}, migrated: true}
@@ -1063,6 +1057,21 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 	}
 }
 
+func (p *ParticipantImpl) setIsPublisher(isPublisher bool) {
+	if p.isPublisher.Swap(isPublisher) != isPublisher {
+		// trigger update as well if participant is already fully connected
+		if p.State() == livekit.ParticipantInfo_ACTIVE {
+			p.lock.RLock()
+			onParticipantUpdate := p.onParticipantUpdate
+			p.lock.RUnlock()
+
+			if onParticipantUpdate != nil {
+				onParticipantUpdate(p)
+			}
+		}
+	}
+}
+
 // when the server has an offer for participant
 func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription) error {
 	p.params.Logger.Debugw("sending offer", "transport", livekit.SignalTarget_SUBSCRIBER)
@@ -1140,6 +1149,10 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		}
 	default:
 		p.params.Logger.Warnw("received unsupported data packet", nil, "payload", payload)
+	}
+
+	if !p.IsPublisher() {
+		p.setIsPublisher(true)
 	}
 }
 
@@ -1404,14 +1417,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	}
 
 	p.params.Telemetry.TrackPublishRequested(context.Background(), p.ID(), p.Identity(), ti)
-	p.supervisor.AddPublication(livekit.TrackID(ti.Sid), func(t types.LocalMediaTrack) {
-		p.params.Telemetry.TrackPublished(
-			context.Background(),
-			t.PublisherID(),
-			t.PublisherIdentity(),
-			t.ToProto(),
-		)
-	})
+	p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
 	p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
 	if p.getPublishedTrackBySignalCid(req.Cid) != nil || p.getPublishedTrackBySdpCid(req.Cid) != nil || p.pendingTracks[req.Cid] != nil {
 		if p.pendingTracks[req.Cid] == nil {
@@ -1611,16 +1617,13 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 		p.supervisor.ClearPublishedTrack(livekit.TrackID(ti.Sid), mt)
 
 		// not logged when closing
-		if !p.isClosed.Load() {
-			p.params.Telemetry.TrackUnpublished(
-				context.Background(),
-				p.ID(),
-				p.Identity(),
-				mt.ToProto(),
-				true,
-			)
-		}
-		p.MigrateState()
+		p.params.Telemetry.TrackUnpublished(
+			context.Background(),
+			p.ID(),
+			p.Identity(),
+			mt.ToProto(),
+			!p.IsClosed(),
+		)
 
 		// re-use track sid
 		p.pendingTracksLock.Lock()
@@ -1646,6 +1649,15 @@ func (p *ParticipantImpl) handleTrackPublished(track types.MediaTrack) {
 	if onTrackPublished != nil {
 		onTrackPublished(p, track)
 	}
+
+	// send webhook after callbacks are complete, persistence and state handling happens
+	// in `onTrackPublished` cb
+	p.params.Telemetry.TrackPublished(
+		context.Background(),
+		p.ID(),
+		p.Identity(),
+		track.ToProto(),
+	)
 }
 
 func (p *ParticipantImpl) hasPendingMigratedTrack() bool {

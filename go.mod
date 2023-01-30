@@ -16,9 +16,9 @@ require (
 	github.com/hashicorp/go-version v1.6.0
 	github.com/hashicorp/golang-lru/v2 v2.0.1
 	github.com/jxskiss/base62 v1.1.0
-	github.com/livekit/mageutil v0.0.0-20221221221243-f361fbe40290
-	github.com/livekit/mediatransportutil v0.0.0-20230111071722-904079e94a7c
-	github.com/livekit/protocol v1.3.3-0.20230124045313-d208f342983a
+	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
+	github.com/livekit/mediatransportutil v0.0.0-20230130133657-96cfb115473a
+	github.com/livekit/protocol v1.3.3-0.20230127213545-10b378e3bc1e
 	github.com/livekit/psrpc v0.2.4
 	github.com/livekit/rtcscore-go v0.0.0-20220815072451-20ee10ae1995
 	github.com/mackerelio/go-osstat v0.2.3
@@ -44,7 +44,7 @@ require (
 	github.com/thoas/go-funk v0.9.3
 	github.com/twitchtv/twirp v8.1.3+incompatible
 	github.com/ua-parser/uap-go v0.0.0-20211112212520-00c877edfe0f
-	github.com/urfave/cli/v2 v2.24.1
+	github.com/urfave/cli/v2 v2.24.2
 	github.com/urfave/negroni/v3 v3.0.0
 	go.uber.org/atomic v1.10.0
 	go.uber.org/zap v1.24.0

@@ -172,8 +172,6 @@ type RTPStats struct {
 	maxRtt uint32
 
 	srDataExt *RTCPSenderReportDataExt
-	lastSRNTP mediatransportutil.NtpTime
-	lastSRAt  time.Time
 
 	nextSnapshotId uint32
 	snapshots      map[uint32]*Snapshot
@@ -269,8 +267,6 @@ func (r *RTPStats) Seed(from *RTPStats) {
 	} else {
 		r.srDataExt = nil
 	}
-	r.lastSRNTP = from.lastSRNTP
-	r.lastSRAt = from.lastSRAt
 
 	r.nextSnapshotId = from.nextSnapshotId
 	for id, ss := range from.snapshots {
@@ -478,11 +474,13 @@ func (r *RTPStats) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt uint32
 		return
 	}
 
-	rtt, err := mediatransportutil.GetRttMs(&rr, r.lastSRNTP, r.lastSRAt)
+	rtt, err := mediatransportutil.GetRttMsFromReceiverReportOnly(&rr)
 	if err == nil {
 		isRttChanged = rtt != r.rtt
 	} else {
-		r.logger.Warnw("error getting rtt", err)
+		if err != mediatransportutil.ErrRttNoLastSenderReport {
+			r.logger.Warnw("error getting rtt", err)
+		}
 	}
 
 	if r.lastRRTime.IsZero() || r.extHighestSNOverridden <= rr.LastSequenceNumber {
@@ -765,9 +763,6 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srDataExt *RTCPSenderReportD
 	} else {
 		nowRTP = srDataExt.SenderReportData.RTPTimestamp + uint32(now.Sub(smoothedLocalTimeOfLatestSenderReportNTP).Milliseconds()*int64(r.params.ClockRate)/1000)
 	}
-
-	r.lastSRNTP = nowNTP
-	r.lastSRAt = time.Now()
 
 	return &rtcp.SenderReport{
 		SSRC:        ssrc,
