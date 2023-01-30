@@ -426,8 +426,11 @@ func (t *PCTransport) setICEConnectedAt(at time.Time) {
 		} else if connTimeoutAfterICE > maxConnectTimeoutAfterICE {
 			connTimeoutAfterICE = maxConnectTimeoutAfterICE
 		}
+		t.params.Logger.Debugw("setting connection timer after ice connected", "timeout", connTimeoutAfterICE, "iceCost", iceCost)
 		t.connectAfterICETimer = time.AfterFunc(connTimeoutAfterICE, func() {
-			if t.pc.ConnectionState() == webrtc.PeerConnectionStateConnecting {
+			state := t.pc.ConnectionState()
+			// if pc is still checking or connected but not fully established after timeout, then fire connection fail
+			if state != webrtc.PeerConnectionStateClosed && state != webrtc.PeerConnectionStateFailed && !t.isFullyEstablished() {
 				t.params.Logger.Infow("connect timeout after ICE connected", "timeout", connTimeoutAfterICE, "iceCost", iceCost)
 				t.handleConnectionFailed()
 			}
@@ -591,15 +594,18 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 }
 
 func (t *PCTransport) maybeNotifyFullyEstablished() {
-	t.lock.RLock()
-	fullyEstablished := t.reliableDCOpened && t.lossyDCOpened && !t.connectedAt.IsZero()
-	t.lock.RUnlock()
-
-	if fullyEstablished {
+	if t.isFullyEstablished() {
 		if onFullyEstablished := t.getOnFullyEstablished(); onFullyEstablished != nil {
 			onFullyEstablished()
 		}
 	}
+}
+
+func (t *PCTransport) isFullyEstablished() bool {
+	t.lock.RLock()
+	fullyEstablished := t.reliableDCOpened && t.lossyDCOpened && !t.connectedAt.IsZero()
+	t.lock.RUnlock()
+	return fullyEstablished
 }
 
 func (t *PCTransport) SetPreferTCP(preferTCP bool) {

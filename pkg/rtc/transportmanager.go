@@ -668,5 +668,11 @@ func (t *TransportManager) UpdateRTT(rtt uint32, isUDP bool) {
 		}
 	} else {
 		t.tcpRTT = rtt
+
+		// TODO:
+		// t.pub.SetTcpRTT(rtt)
+		// t.sub.SetTcpRTT(rtt)
+
+		// if ice connection cost large than 5 * tcp rtt, switch to tcp
 	}
 }
