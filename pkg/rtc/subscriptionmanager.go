@@ -482,6 +482,7 @@ func (m *SubscriptionManager) handleSubscribedTrackClose(s *trackSubscription, w
 	s.logger.Debugw("subscribed track closed",
 		"willBeResumed", willBeResumed,
 	)
+	wasBound := s.isBound()
 	subTrack := s.getSubscribedTrack()
 	if subTrack == nil {
 		return
@@ -509,15 +510,19 @@ func (m *SubscriptionManager) handleSubscribedTrackClose(s *trackSubscription, w
 	subTrack.OnClose(nil)
 	go m.params.OnTrackUnsubscribed(subTrack)
 
-	// always trigger to decrement unsubscribed counter. However, only log an analytics event when
+	// trigger to decrement unsubscribed counter as long as track has been bound
+	// Only log an analytics event when
 	// * the participant isn't closing
 	// * it's not a migration
-	m.params.Telemetry.TrackUnsubscribed(
-		context.Background(),
-		m.params.Participant.ID(),
-		&livekit.TrackInfo{Sid: string(s.trackID), Type: subTrack.MediaTrack().Kind()},
-		!willBeResumed && !m.params.Participant.IsClosed(),
-	)
+	if wasBound {
+		m.params.Telemetry.TrackUnsubscribed(
+			context.Background(),
+			m.params.Participant.ID(),
+			&livekit.TrackInfo{Sid: string(s.trackID), Type: subTrack.MediaTrack().Kind()},
+			!willBeResumed && !m.params.Participant.IsClosed(),
+		)
+	}
+
 	if !willBeResumed {
 		sender := subTrack.RTPSender()
 		if sender != nil {
@@ -689,6 +694,12 @@ func (s *trackSubscription) setBound() {
 	s.bound = true
 }
 
+func (s *trackSubscription) isBound() bool {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+	return s.bound
+}
+
 func (s *trackSubscription) startAttempt() {
 	if s.numAttempts.Load() == 0 {
 		t := time.Now()
@@ -722,14 +733,13 @@ func (s *trackSubscription) maybeRecordSuccess(ts telemetry.TelemetryService, pI
 		return
 	}
 
-	if s.eventSent.Swap(true) {
-		return
-	}
+	eventSent := s.eventSent.Swap(true)
 
-	ts.TrackSubscribed(context.Background(), pID, mediaTrack.ToProto(), &livekit.ParticipantInfo{
+	pi := &livekit.ParticipantInfo{
 		Identity: string(subTrack.PublisherIdentity()),
 		Sid:      string(subTrack.PublisherID()),
-	})
+	}
+	ts.TrackSubscribed(context.Background(), pID, mediaTrack.ToProto(), pi, !eventSent)
 }
 
 func (s *trackSubscription) durationSinceStart() time.Duration {

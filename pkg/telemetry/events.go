@@ -260,9 +260,14 @@ func (t *telemetryService) TrackSubscribed(
 	participantID livekit.ParticipantID,
 	track *livekit.TrackInfo,
 	publisher *livekit.ParticipantInfo,
+	shouldSendEvent bool,
 ) {
 	t.enqueue(func() {
 		prometheus.RecordTrackSubscribeSuccess(track.Type.String())
+
+		if !shouldSendEvent {
+			return
+		}
 
 		room := t.getRoomDetails(participantID)
 		ev := newTrackEvent(livekit.AnalyticsEventType_TRACK_SUBSCRIBED, room, participantID, track)
