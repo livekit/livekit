@@ -68,13 +68,13 @@ func (t *telemetryService) TrackStats(key StatsKey, stat *livekit.AnalyticsStat)
 			}
 		}
 		prometheus.IncrementRTCP(direction, nacks, plis, firs)
-		prometheus.IncrementPackets(direction, uint64(packets), false)
-		prometheus.IncrementBytes(direction, bytes, false)
+		prometheus.IncrementPackets(direction, uint64(packets), false, "")
+		prometheus.IncrementBytes(direction, bytes, false, "")
 		if retransmitPackets != 0 {
-			prometheus.IncrementPackets(direction, uint64(retransmitPackets), true)
+			prometheus.IncrementPackets(direction, uint64(retransmitPackets), true, "")
 		}
 		if retransmitBytes != 0 {
-			prometheus.IncrementBytes(direction, retransmitBytes, true)
+			prometheus.IncrementBytes(direction, retransmitBytes, true, "")
 		}
 
 		if worker, ok := t.getWorker(key.participantID); ok {

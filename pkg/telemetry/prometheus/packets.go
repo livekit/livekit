@@ -28,7 +28,7 @@ var (
 	participantRTCConnected    atomic.Uint64
 	participantRTCInit         atomic.Uint64
 
-	promPacketLabels    = []string{"direction", "transmission"}
+	promPacketLabels    = []string{"direction", "transmission", "region"}
 	promPacketTotal     *prometheus.CounterVec
 	promPacketBytes     *prometheus.CounterVec
 	promRTCPLabels      = []string{"direction"}
@@ -128,10 +128,11 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 	prometheus.MustRegister(promConnections)
 }
 
-func IncrementPackets(direction Direction, count uint64, retransmit bool) {
+func IncrementPackets(direction Direction, count uint64, retransmit bool, region string) {
 	promPacketTotal.WithLabelValues(
 		string(direction),
 		transmissionLabel(retransmit),
+		region,
 	).Add(float64(count))
 	if direction == Incoming {
 		packetsIn.Add(count)
@@ -143,10 +144,11 @@ func IncrementPackets(direction Direction, count uint64, retransmit bool) {
 	}
 }
 
-func IncrementBytes(direction Direction, count uint64, retransmit bool) {
+func IncrementBytes(direction Direction, count uint64, retransmit bool, region string) {
 	promPacketBytes.WithLabelValues(
 		string(direction),
 		transmissionLabel(retransmit),
+		region,
 	).Add(float64(count))
 	if direction == Incoming {
 		bytesIn.Add(count)
