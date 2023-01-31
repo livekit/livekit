@@ -599,7 +599,7 @@ func (t *PCTransport) AddTrack(trackLocal webrtc.TrackLocal, params types.AddTra
 		}
 	}
 
-	// if never negotiated with client, can't reuse transeiver for track not subscribed before migration
+	// if never negotiated with client, can't reuse transceiver for track not subscribed before migration
 	if !canReuse {
 		return t.AddTransceiverFromTrack(trackLocal, params)
 	}
