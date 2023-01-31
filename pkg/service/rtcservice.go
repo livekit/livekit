@@ -278,6 +278,13 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 
+				switch m := res.Message.(type) {
+				case *livekit.SignalResponse_Offer:
+					pLogger.Infow("sending offer", "offer", m)
+				case *livekit.SignalResponse_Answer:
+					pLogger.Infow("sending answer", "answer", m)
+				}
+
 				if pi.ID == "" && cr.InitialResponse.GetJoin() != nil {
 					pi.ID = livekit.ParticipantID(cr.InitialResponse.GetJoin().GetParticipant().GetSid())
 					signalStats = telemetry.NewBytesTrackStats(
@@ -328,6 +335,14 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			continue
 		}
+
+		switch m := req.Message.(type) {
+		case *livekit.SignalRequest_Offer:
+			pLogger.Infow("received offer", "offer", m)
+		case *livekit.SignalRequest_Answer:
+			pLogger.Infow("received answer", "answer", m)
+		}
+
 		if err := cr.RequestSink.WriteMessage(req); err != nil {
 			pLogger.Warnw("error writing to request sink", err,
 				"connID", cr.ConnectionID)
