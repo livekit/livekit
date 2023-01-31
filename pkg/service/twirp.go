@@ -184,14 +184,14 @@ func statusReporterResponseSent(ctx context.Context) {
 
 	var statusFamily string
 	if statusCode, ok := twirp.StatusCode(ctx); ok {
-		if status, err := strconv.Atoi(statusCode); err != nil {
+		if status, err := strconv.Atoi(statusCode); err == nil {
 			switch {
 			case status >= 400 && status <= 499:
 				statusFamily = "4xx"
 			case status >= 500 && status <= 599:
 				statusFamily = "5xx"
 			default:
-				statusFamily = strconv.Itoa(status)
+				statusFamily = statusCode
 			}
 		}
 	}
