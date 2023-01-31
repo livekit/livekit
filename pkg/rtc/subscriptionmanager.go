@@ -35,9 +35,10 @@ import (
 var (
 	reconcileInterval = 3 * time.Second
 	// amount of time to give up if a track or publisher isn't found
-	notFoundTimeout = 5 * time.Second
+	// giving this a lot of time because during migrations the user could take a lot of time to resume
+	notFoundTimeout = 20 * time.Second
 	// amount of time to try otherwise before flagging subscription as failed
-	subscriptionTimeout = 10 * time.Second
+	subscriptionTimeout = 20 * time.Second
 )
 
 type SubscriptionManagerParams struct {
@@ -295,7 +296,7 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 				// from it. this is the *only* case we'd change desired state
 				if s.durationSinceStart() > notFoundTimeout {
 					s.maybeRecordError(m.params.Telemetry, m.params.Participant.ID(), err, true)
-					s.logger.Infow("unsubscribing track since track isn't available")
+					s.logger.Infow("unsubscribing track since track isn't available", "error", err)
 					s.setDesired(false)
 					m.queueReconcile(s.trackID)
 				}
@@ -507,7 +508,6 @@ func (m *SubscriptionManager) handleSubscribedTrackClose(s *trackSubscription, w
 		go changedCB(publisherID, false)
 	}
 
-	subTrack.OnClose(nil)
 	go m.params.OnTrackUnsubscribed(subTrack)
 
 	// trigger to decrement unsubscribed counter as long as track has been bound
@@ -643,6 +643,7 @@ func (s *trackSubscription) isDesired() bool {
 
 func (s *trackSubscription) setSubscribedTrack(track types.SubscribedTrack) {
 	s.lock.Lock()
+	oldTrack := s.subscribedTrack
 	s.subscribedTrack = track
 	s.bound = false
 	settings := s.settings
@@ -651,6 +652,9 @@ func (s *trackSubscription) setSubscribedTrack(track types.SubscribedTrack) {
 	if settings != nil && track != nil {
 		s.logger.Debugw("restoring subscriber settings", "settings", settings)
 		track.UpdateSubscriberSettings(settings)
+	}
+	if oldTrack != nil {
+		oldTrack.OnClose(nil)
 	}
 }
 
