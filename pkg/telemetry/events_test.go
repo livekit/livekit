@@ -207,10 +207,12 @@ func Test_OnTrackSubscribed_EventIsSent(t *testing.T) {
 	require.Equal(t, room, event.Room)
 
 	// do
-	fixture.sut.TrackSubscribed(context.Background(), livekit.ParticipantID(partSID), trackInfo, publisherInfo)
+	fixture.sut.TrackSubscribed(context.Background(), livekit.ParticipantID(partSID), trackInfo, publisherInfo, true)
 	time.Sleep(time.Millisecond * 500)
 
-	require.Equal(t, 2, fixture.analytics.SendEventCallCount())
+	require.Eventually(t, func() bool {
+		return fixture.analytics.SendEventCallCount() == 2
+	}, time.Second, time.Millisecond*50, "expected send event to be called twice")
 	_, eventTrackSubscribed := fixture.analytics.SendEventArgsForCall(1)
 	require.Equal(t, livekit.AnalyticsEventType_TRACK_SUBSCRIBED, eventTrackSubscribed.Type)
 	require.Equal(t, partSID, eventTrackSubscribed.ParticipantId)

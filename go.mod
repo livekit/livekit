@@ -17,9 +17,9 @@ require (
 	github.com/hashicorp/golang-lru/v2 v2.0.1
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
-	github.com/livekit/mediatransportutil v0.0.0-20230111071722-904079e94a7c
-	github.com/livekit/protocol v1.3.3-0.20230127213545-10b378e3bc1e
-	github.com/livekit/psrpc v0.2.4
+	github.com/livekit/mediatransportutil v0.0.0-20230130133657-96cfb115473a
+	github.com/livekit/protocol v1.3.3-0.20230131012249-9987dca3a3e7
+	github.com/livekit/psrpc v0.2.5
 	github.com/livekit/rtcscore-go v0.0.0-20220815072451-20ee10ae1995
 	github.com/mackerelio/go-osstat v0.2.3
 	github.com/magefile/mage v1.14.0
@@ -55,7 +55,7 @@ require (
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/cespare/xxhash/v2 v2.1.2 // indirect
+	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
@@ -77,7 +77,7 @@ require (
 	github.com/mdlayher/socket v0.1.1 // indirect
 	github.com/minio/highwayhash v1.0.2 // indirect
 	github.com/nats-io/jwt/v2 v2.3.0 // indirect
-	github.com/nats-io/nats.go v1.21.0 // indirect
+	github.com/nats-io/nats.go v1.23.0 // indirect
 	github.com/nats-io/nkeys v0.3.0 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/pion/datachannel v1.5.5 // indirect
@@ -94,14 +94,14 @@ require (
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
-	golang.org/x/crypto v0.4.0 // indirect
+	golang.org/x/crypto v0.5.0 // indirect
 	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4 // indirect
-	golang.org/x/net v0.4.0 // indirect
-	golang.org/x/sys v0.3.0 // indirect
-	golang.org/x/text v0.5.0 // indirect
+	golang.org/x/net v0.5.0 // indirect
+	golang.org/x/sys v0.4.0 // indirect
+	golang.org/x/text v0.6.0 // indirect
 	golang.org/x/tools v0.1.12 // indirect
-	google.golang.org/genproto v0.0.0-20221118155620-16455021b5e6 // indirect
-	google.golang.org/grpc v1.52.0 // indirect
+	google.golang.org/genproto v0.0.0-20230127162408-596548ed4efa // indirect
+	google.golang.org/grpc v1.52.3 // indirect
 	gopkg.in/square/go-jose.v2 v2.6.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )

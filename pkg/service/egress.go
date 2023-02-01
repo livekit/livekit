@@ -160,6 +160,9 @@ func (s *EgressService) startEgress(ctx context.Context, roomName livekit.RoomNa
 }
 
 func (s *egressLauncher) StartEgress(ctx context.Context, req *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
+	return s.StartEgressWithClusterId(ctx, "", req)
+}
+func (s *egressLauncher) StartEgressWithClusterId(ctx context.Context, clusterId string, req *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
 	var info *livekit.EgressInfo
 	var err error
 
@@ -169,7 +172,7 @@ func (s *egressLauncher) StartEgress(ctx context.Context, req *livekit.StartEgre
 	}
 
 	if s.psrpcClient != nil {
-		info, err = s.psrpcClient.StartEgress(ctx, req)
+		info, err = s.psrpcClient.StartEgress(ctx, clusterId, req)
 	} else {
 		logger.Infow("using deprecated egress client")
 		info, err = s.clientDeprecated.SendRequest(ctx, req)
