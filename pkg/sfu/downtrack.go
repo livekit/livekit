@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -249,6 +250,11 @@ func NewDownTrack(
 		codec:          codecs[0].RTPCodecCapability,
 	}
 	d.forwarder = NewForwarder(d.kind, d.logger, d.receiver.GetReferenceLayerRTPTimestamp)
+	d.forwarder.OnParkedLayersExpired(func() {
+		if d.onSubscriptionChanged != nil {
+			d.onSubscriptionChanged(d)
+		}
+	})
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
 		MimeType:      codecs[0].MimeType, // LK-TODO have to notify on codec change
@@ -348,7 +354,12 @@ func (d *DownTrack) Unbind(_ webrtc.TrackLocalContext) error {
 }
 
 func (d *DownTrack) TrackInfoAvailable() {
-	d.connectionStats.Start(d.receiver.TrackInfo())
+	ti := d.receiver.TrackInfo()
+	if ti == nil {
+		return
+	}
+	d.forwarder.SetNumAdvertisedLayers(int32(math.Max(1, float64(len(ti.Layers)))))
+	d.connectionStats.Start(ti)
 }
 
 // ID is the unique identifier for this Track. This should be unique for the
@@ -427,7 +438,7 @@ func (d *DownTrack) stopKeyFrameRequester() {
 }
 
 func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
-	if d.IsClosed() {
+	if d.IsClosed() || layer == InvalidLayerSpatial {
 		return
 	}
 	interval := 2 * d.rtpStats.GetRtt()
@@ -649,14 +660,44 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool) int {
 	return bytesSent
 }
 
-// Mute enables or disables media forwarding
+// Mute enables or disables media forwarding - subscriber triggered
 func (d *DownTrack) Mute(muted bool) {
 	changed, maxLayers := d.forwarder.Mute(muted)
+	d.handleMute(muted, false, changed, maxLayers)
+}
+
+// PubMute enables or disables media forwarding - publisher side
+func (d *DownTrack) PubMute(pubMuted bool) {
+	changed, maxLayers := d.forwarder.PubMute(pubMuted)
+	d.handleMute(pubMuted, true, changed, maxLayers)
+}
+
+func (d *DownTrack) handleMute(muted bool, isPub bool, changed bool, maxLayers VideoLayers) {
 	if !changed {
 		return
 	}
 
-	if d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
+	//
+	// Subscriber mute changes trigger a max layer notification.
+	// That could result in encoding layers getting turned on/off on publisher side
+	// (depending on aggregate layer requirements of all subscribers of the track).
+	//
+	// Publisher mute changes should not trigger notification.
+	// If publisher turns off all layers because of subscribers indicating
+	// no layers required due to publisher mute (bit of circular dependency),
+	// there will be a delay in layers turning back on when unmute happens.
+	// Unmute path will require
+	//   1. unmute signalling out-of-band from publisher received by down track(s)
+	//   2. down track(s) notifying max layer
+	//   3. out-of-band notification about max layer sent back to the publisher
+	//   4. publisher starts layer(s)
+	// Ideally, on publisher mute, whatever layers were active reamin active and
+	// can be restarted by publisher immediately on unmute.
+	//
+	// Note that while publisher mute is active, subscriber changes can also happen
+	// and that could turn on/off layers on publisher side.
+	//
+	if !isPub && d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
 		notifyLayer := InvalidLayerSpatial
 		if !muted {
 			//
@@ -676,6 +717,14 @@ func (d *DownTrack) Mute(muted bool) {
 	// when muting, send a few silence frames to ensure residual noise does not
 	// put the comfort noise generator on decoder side in a bad state where it
 	// generates noise that is not so comfortable.
+	//
+	// One possibility is not to inject blank frames when publisher is muted
+	// and let forwarding continue. When publisher is muted, unless the media
+	// stream is stopped, publisher will send silence frames which should have
+	// comfort noise information. But, in case the publisher stops at an
+	// inopportune frame (due to media stream stop or injecting audio from a file),
+	// the decoder could be in a noisy state. So, inject blank frames on publisher
+	// mute too.
 	d.blankFramesGeneration.Inc()
 	if d.kind == webrtc.RTPCodecTypeAudio && muted {
 		d.writeBlankFrameRTP(RTPBlankFramesMuteSeconds, d.blankFramesGeneration.Load())
@@ -1452,6 +1501,7 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 		"MimeType":            d.codec.MimeType,
 		"Bound":               d.bound.Load(),
 		"Muted":               d.forwarder.IsMuted(),
+		"PubMuted":            d.forwarder.IsPubMuted(),
 		"CurrentSpatialLayer": d.forwarder.CurrentLayers().Spatial,
 		"Stats":               stats,
 	}

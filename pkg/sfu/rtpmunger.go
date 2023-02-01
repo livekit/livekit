@@ -204,7 +204,7 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 		r.isInRtxGateRegion = true
 	}
 
-	if r.isInRtxGateRegion && (mungedSN-r.rtxGateSn) > RtxGateWindow {
+	if r.isInRtxGateRegion && (mungedSN-r.rtxGateSn) < (1<<15) && (mungedSN-r.rtxGateSn) > RtxGateWindow {
 		r.isInRtxGateRegion = false
 	}
 
@@ -235,10 +235,10 @@ func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate
 	if !r.lastMarker {
 		if !forceMarker {
 			return nil, ErrPaddingNotOnFrameBoundary
-		} else {
-			// if forcing frame end, use timestamp of latest received frame for the first one
-			tsOffset = 1
 		}
+
+		// if forcing frame end, use timestamp of latest received frame for the first one
+		tsOffset = 1
 	}
 
 	vals := make([]SnTs, num)

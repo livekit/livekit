@@ -7,6 +7,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/streamtracker"
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -19,6 +20,8 @@ type StreamTrackerManager struct {
 	clockRate         uint32
 
 	trackerConfig config.StreamTrackerConfig
+
+	layersNotifyOpQueue *utils.OpsQueue
 
 	lock sync.RWMutex
 
@@ -42,11 +45,12 @@ func NewStreamTrackerManager(
 	trackersConfig config.StreamTrackersConfig,
 ) *StreamTrackerManager {
 	s := &StreamTrackerManager{
-		logger:            logger,
-		trackInfo:         trackInfo,
-		isSVC:             isSVC,
-		maxPublishedLayer: 0,
-		clockRate:         clockRate,
+		logger:              logger,
+		trackInfo:           trackInfo,
+		isSVC:               isSVC,
+		maxPublishedLayer:   0,
+		clockRate:           clockRate,
+		layersNotifyOpQueue: utils.NewOpsQueue(logger, "layer-notify", 10),
 	}
 
 	switch s.trackInfo.Source {
@@ -67,6 +71,14 @@ func NewStreamTrackerManager(
 	s.maxExpectedLayer = s.maxPublishedLayer
 
 	return s
+}
+
+func (s *StreamTrackerManager) Start() {
+	s.layersNotifyOpQueue.Start()
+}
+
+func (s *StreamTrackerManager) Stop() {
+	s.layersNotifyOpQueue.Stop()
 }
 
 func (s *StreamTrackerManager) OnAvailableLayersChanged(f func(availableLayers []int32, exemptedLayers []int32)) {
@@ -133,12 +145,14 @@ func (s *StreamTrackerManager) AddTracker(layer int32) *streamtracker.StreamTrac
 
 	s.logger.Debugw("StreamTrackerManager add track", "layer", layer)
 	tracker.OnStatusChanged(func(status streamtracker.StreamStatus) {
-		s.logger.Debugw("StreamTrackerManager OnStatusChanged", "layer", layer, "status", status)
-		if status == streamtracker.StreamStatusStopped {
-			s.removeAvailableLayer(layer)
-		} else {
-			s.addAvailableLayer(layer)
-		}
+		s.layersNotifyOpQueue.Enqueue(func() {
+			s.logger.Debugw("StreamTrackerManager OnStatusChanged", "layer", layer, "status", status)
+			if status == streamtracker.StreamStatusStopped {
+				s.removeAvailableLayer(layer)
+			} else {
+				s.addAvailableLayer(layer)
+			}
+		})
 	})
 	tracker.OnBitrateAvailable(func() {
 		if s.onBitrateAvailabilityChanged != nil {
@@ -225,9 +239,9 @@ func (s *StreamTrackerManager) SetMaxExpectedSpatialLayer(layer int32) int32 {
 
 	//
 	// Some higher layer is expected to start.
-	// If the layer was not stopped (i.e. it will still be in available layers),
+	// If the layer was not detected as stopped (i.e. it is still in available layers),
 	// don't need to do anything. If not, reset the stream tracker so that
-	// the layer is declared available on the first packet
+	// the layer is declared available on the first packet.
 	//
 	// NOTE: There may be a race between checking if a layer is available and
 	// resetting the tracker, i.e. the track may stop just after checking.

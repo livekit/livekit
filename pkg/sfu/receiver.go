@@ -197,6 +197,7 @@ func NewWebRTCReceiver(
 	w.streamTrackerManager = NewStreamTrackerManager(logger, trackInfo, w.isSVC, w.codec.ClockRate, trackersConfig)
 	w.streamTrackerManager.OnAvailableLayersChanged(w.downTrackLayerChange)
 	w.streamTrackerManager.OnBitrateAvailabilityChanged(w.downTrackBitrateAvailabilityChange)
+	w.streamTrackerManager.Start()
 
 	for _, opt := range opts {
 		w = opt(w)
@@ -562,6 +563,8 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 			if pr := w.redReceiver.Load(); pr != nil {
 				pr.(*RedReceiver).Close()
 			}
+
+			w.streamTrackerManager.Stop()
 		})
 
 		w.streamTrackerManager.RemoveTracker(layer)

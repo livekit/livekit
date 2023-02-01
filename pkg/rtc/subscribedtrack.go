@@ -227,8 +227,8 @@ func (t *SubscribedTrack) SetRTPSender(sender *webrtc.RTPSender) {
 }
 
 func (t *SubscribedTrack) updateDownTrackMute() {
-	muted := t.subMuted.Load() || t.pubMuted.Load()
-	t.DownTrack().Mute(muted)
+	t.DownTrack().Mute(t.subMuted.Load())
+	t.DownTrack().PubMute(t.pubMuted.Load())
 }
 
 func (t *SubscribedTrack) spatialLayerFromSettings(settings *livekit.UpdateTrackSettings) int32 {
