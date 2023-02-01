@@ -192,7 +192,7 @@ func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescript
 		switch m.MediaName.Media {
 		case "audio":
 			_, ok := m.Attribute(sdp.AttrKeyInactive)
-			if !ok {
+			if ok {
 				continue
 			}
 			mid, ok := m.Attribute(sdp.AttrKeyMID)
@@ -203,7 +203,7 @@ func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescript
 			var ti *livekit.TrackInfo
 			for _, om := range parsedOffer.MediaDescriptions {
 				_, ok := om.Attribute(sdp.AttrKeyInactive)
-				if !ok {
+				if ok {
 					continue
 				}
 				omid, ok := om.Attribute(sdp.AttrKeyMID)
