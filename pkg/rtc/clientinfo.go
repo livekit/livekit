@@ -36,10 +36,40 @@ func (c ClientInfo) FireTrackByRTPPacket() bool {
 	return c.isGo()
 }
 
-// CompareVersion compares two semver versions
+func (c ClientInfo) CanHandleReconnectResponse() bool {
+	if c.Sdk == livekit.ClientInfo_JS {
+		// JS cannot handle new responses before 1.6.4
+		if c.compareVersion("1.6.4") < 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func (c ClientInfo) SupportsICETCP() bool {
+	if c.ClientInfo == nil {
+		return false
+	}
+	if c.ClientInfo.Sdk == livekit.ClientInfo_GO {
+		// Go does not support active TCP
+		return false
+	}
+	if c.ClientInfo.Sdk == livekit.ClientInfo_SWIFT {
+		// ICE/TCP added in 1.0.5
+		return c.compareVersion("1.0.5") >= 0
+	}
+	// most SDKs support ICE/TCP
+	return true
+}
+
+func (c ClientInfo) SupportsChangeRTPSenderEncodingActive() bool {
+	return !c.isFirefox()
+}
+
+// compareVersion compares a semver against the current client SDK version
 // returning 1 if current version is greater than version
 // 0 if they are the same, and -1 if it's an earlier version
-func (c ClientInfo) CompareVersion(version string) int {
+func (c ClientInfo) compareVersion(version string) int {
 	if c.ClientInfo == nil {
 		return -1
 	}
@@ -61,23 +91,4 @@ func (c ClientInfo) CompareVersion(version string) int {
 		}
 	}
 	return 0
-}
-
-func (c ClientInfo) SupportsICETCP() bool {
-	if c.ClientInfo == nil {
-		return false
-	}
-	if c.ClientInfo.Sdk == livekit.ClientInfo_GO {
-		return false
-	}
-	if c.ClientInfo.Sdk == livekit.ClientInfo_SWIFT {
-		// ICE/TCP added in 1.0.5
-		return c.CompareVersion("1.0.5") >= 0
-	}
-	// most SDKs support ICE/TCP
-	return true
-}
-
-func (c ClientInfo) SupportsChangeRTPSenderEncodingActive() bool {
-	return !c.isFirefox()
 }

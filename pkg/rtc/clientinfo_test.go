@@ -30,9 +30,9 @@ func TestClientInfo_CompareVersion(t *testing.T) {
 			Version: "1",
 		},
 	}
-	require.Equal(t, 1, c.CompareVersion("0.1.0"))
-	require.Equal(t, 0, c.CompareVersion("1.0.0"))
-	require.Equal(t, -1, c.CompareVersion("1.0.5"))
+	require.Equal(t, 1, c.compareVersion("0.1.0"))
+	require.Equal(t, 0, c.compareVersion("1.0.0"))
+	require.Equal(t, -1, c.compareVersion("1.0.5"))
 }
 
 func TestClientInfo_SupportsICETCP(t *testing.T) {
