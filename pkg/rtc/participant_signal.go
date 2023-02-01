@@ -175,6 +175,9 @@ func (p *ParticipantImpl) SendRefreshToken(token string) error {
 }
 
 func (p *ParticipantImpl) SendReconnectResponse(reconnectResponse *livekit.ReconnectResponse) error {
+	if !p.params.ClientInfo.CanHandleReconnectResponse() {
+		return nil
+	}
 	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Reconnect{
 			Reconnect: reconnectResponse,
