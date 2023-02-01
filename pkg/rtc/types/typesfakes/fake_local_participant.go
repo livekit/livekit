@@ -713,6 +713,10 @@ type FakeLocalParticipant struct {
 	unsubscribeFromTrackArgsForCall []struct {
 		arg1 livekit.TrackID
 	}
+	UpdateLastSeenSignalStub        func()
+	updateLastSeenSignalMutex       sync.RWMutex
+	updateLastSeenSignalArgsForCall []struct {
+	}
 	UpdateMediaLossStub        func(livekit.NodeID, livekit.TrackID, uint32) error
 	updateMediaLossMutex       sync.RWMutex
 	updateMediaLossArgsForCall []struct {
@@ -4580,6 +4584,30 @@ func (fake *FakeLocalParticipant) UnsubscribeFromTrackArgsForCall(i int) livekit
 	return argsForCall.arg1
 }
 
+func (fake *FakeLocalParticipant) UpdateLastSeenSignal() {
+	fake.updateLastSeenSignalMutex.Lock()
+	fake.updateLastSeenSignalArgsForCall = append(fake.updateLastSeenSignalArgsForCall, struct {
+	}{})
+	stub := fake.UpdateLastSeenSignalStub
+	fake.recordInvocation("UpdateLastSeenSignal", []interface{}{})
+	fake.updateLastSeenSignalMutex.Unlock()
+	if stub != nil {
+		fake.UpdateLastSeenSignalStub()
+	}
+}
+
+func (fake *FakeLocalParticipant) UpdateLastSeenSignalCallCount() int {
+	fake.updateLastSeenSignalMutex.RLock()
+	defer fake.updateLastSeenSignalMutex.RUnlock()
+	return len(fake.updateLastSeenSignalArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) UpdateLastSeenSignalCalls(stub func()) {
+	fake.updateLastSeenSignalMutex.Lock()
+	defer fake.updateLastSeenSignalMutex.Unlock()
+	fake.UpdateLastSeenSignalStub = stub
+}
+
 func (fake *FakeLocalParticipant) UpdateMediaLoss(arg1 livekit.NodeID, arg2 livekit.TrackID, arg3 uint32) error {
 	fake.updateMediaLossMutex.Lock()
 	ret, specificReturn := fake.updateMediaLossReturnsOnCall[len(fake.updateMediaLossArgsForCall)]
@@ -5158,6 +5186,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.uncacheDownTrackMutex.RUnlock()
 	fake.unsubscribeFromTrackMutex.RLock()
 	defer fake.unsubscribeFromTrackMutex.RUnlock()
+	fake.updateLastSeenSignalMutex.RLock()
+	defer fake.updateLastSeenSignalMutex.RUnlock()
 	fake.updateMediaLossMutex.RLock()
 	defer fake.updateMediaLossMutex.RUnlock()
 	fake.updateRTTMutex.RLock()

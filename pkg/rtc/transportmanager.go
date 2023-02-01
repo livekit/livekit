@@ -4,6 +4,7 @@ import (
 	"math/bits"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/pion/rtcp"
 	"github.com/pion/sdp/v3"
@@ -21,7 +22,8 @@ import (
 )
 
 const (
-	failureCountThreshold = 2
+	failureCountThreshold     = 2
+	preferNextByFailureWindow = time.Minute
 
 	// when RR report loss percentage over this threshold, we consider it is a unstable event
 	udpLossFracUnstable = 25
@@ -57,6 +59,8 @@ type TransportManager struct {
 	subscriber              *PCTransport
 	failureCount            int
 	isTransportReconfigured bool
+	lastFailure             time.Time
+	lastSignalAt            time.Time
 
 	pendingOfferPublisher        *webrtc.SessionDescription
 	pendingDataChannelsPublisher []*livekit.DataChannelInfo
@@ -460,6 +464,7 @@ func (t *TransportManager) configureICE(iceConfig *livekit.ICEConfig, reset bool
 		t.failureCount = 0
 		t.isTransportReconfigured = !reset
 		t.udpLossUnstableCount = 0
+		t.lastFailure = time.Time{}
 	}
 
 	if isEqual {
@@ -512,6 +517,15 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 		return
 	}
 
+	if time.Since(t.lastSignalAt) > iceFailedTimeout {
+		// the failed might cause by network interrput because we have not seen any signal in the time window too
+		// so don't switch to next candidate type
+		t.failureCount = 0
+		t.lastFailure = time.Time{}
+		t.lock.Unlock()
+		return
+	}
+
 	//
 	// Checking only `PreferenceSubcriber` field although any connection failure (PUBLISHER OR SUBSCRIBER) will
 	// flow through here.
@@ -533,7 +547,9 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 		preferNext = getNext(t.iceConfig)
 	} else {
 		t.failureCount++
-		if t.failureCount < failureCountThreshold {
+		lastFailure := t.lastFailure
+		t.lastFailure = time.Now()
+		if t.failureCount < failureCountThreshold || time.Since(lastFailure) > preferNextByFailureWindow {
 			t.lock.Unlock()
 			return
 		}
@@ -668,5 +684,15 @@ func (t *TransportManager) UpdateRTT(rtt uint32, isUDP bool) {
 		}
 	} else {
 		t.tcpRTT = rtt
+
+		// TODO: considering using tcp rtt to calculate ice connection cost, if ice connection can't be established
+		// within 5 * tcp rtt(at least 5s), means udp traffic might be block/dropped, switch to tcp.
+		// Currently, most cases reported is that ice connected but subsequent connection, so left the thinking for now.
 	}
+}
+
+func (t *TransportManager) UpdateLastSeenSignal() {
+	t.lock.Lock()
+	t.lastSignalAt = time.Now()
+	t.lock.Unlock()
 }
