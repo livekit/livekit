@@ -38,8 +38,8 @@ func (c ClientInfo) FireTrackByRTPPacket() bool {
 
 func (c ClientInfo) CanHandleReconnectResponse() bool {
 	if c.Sdk == livekit.ClientInfo_JS {
-		// JS cannot handle new responses before 1.6.4
-		if c.compareVersion("1.6.4") < 0 {
+		// JS handles Reconnect explicitly in 1.6.3, prior to 1.6.4 it could not handle unknown responses
+		if c.compareVersion("1.6.3") < 0 {
 			return false
 		}
 	}
