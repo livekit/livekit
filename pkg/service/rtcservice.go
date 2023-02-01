@@ -333,7 +333,6 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if perr == nil && signalStats != nil {
 				signalStats.AddBytes(uint64(count), true)
 			}
-			continue
 		}
 
 		switch m := req.Message.(type) {
