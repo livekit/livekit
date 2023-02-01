@@ -191,6 +191,10 @@ func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescript
 	for _, m := range parsed.MediaDescriptions {
 		switch m.MediaName.Media {
 		case "audio":
+			_, ok := m.Attribute(sdp.AttrKeyInactive)
+			if ok {
+				continue
+			}
 			mid, ok := m.Attribute(sdp.AttrKeyMID)
 			if !ok {
 				continue
@@ -198,6 +202,10 @@ func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescript
 			// find track info from offer's stream id
 			var ti *livekit.TrackInfo
 			for _, om := range parsedOffer.MediaDescriptions {
+				_, ok := om.Attribute(sdp.AttrKeyInactive)
+				if ok {
+					continue
+				}
 				omid, ok := om.Attribute(sdp.AttrKeyMID)
 				if ok && omid == mid {
 					streamID, ok := lksdp.ExtractStreamID(om)
