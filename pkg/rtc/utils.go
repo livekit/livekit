@@ -112,7 +112,10 @@ func RecoverSilent() {
 	recover()
 }
 
-func Recover() {
+func Recover(l logger.Logger) {
+	if l == nil {
+		l = logger.GetLogger()
+	}
 	if r := recover(); r != nil {
 		var err error
 		switch e := r.(type) {
@@ -123,7 +126,7 @@ func Recover() {
 		default:
 			err = errors.New("unknown panic")
 		}
-		logger.Errorw("recovered panic", err, "panic", r)
+		l.Errorw("recovered panic", err, "panic", r)
 	}
 }
 

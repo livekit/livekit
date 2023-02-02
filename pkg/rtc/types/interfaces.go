@@ -295,6 +295,7 @@ type LocalParticipant interface {
 	SubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool)
 	SendRefreshToken(token string) error
 	SendReconnectResponse(reconnectResponse *livekit.ReconnectResponse) error
+	IssueFullReconnect(reason ParticipantCloseReason)
 
 	// callbacks
 	OnStateChange(func(p LocalParticipant, oldState livekit.ParticipantInfo_State))

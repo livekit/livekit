@@ -397,6 +397,11 @@ type FakeLocalParticipant struct {
 	isSubscribedToReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	IssueFullReconnectStub        func(types.ParticipantCloseReason)
+	issueFullReconnectMutex       sync.RWMutex
+	issueFullReconnectArgsForCall []struct {
+		arg1 types.ParticipantCloseReason
+	}
 	MaybeStartMigrationStub        func(bool, func()) bool
 	maybeStartMigrationMutex       sync.RWMutex
 	maybeStartMigrationArgsForCall []struct {
@@ -2793,6 +2798,38 @@ func (fake *FakeLocalParticipant) IsSubscribedToReturnsOnCall(i int, result1 boo
 	}{result1}
 }
 
+func (fake *FakeLocalParticipant) IssueFullReconnect(arg1 types.ParticipantCloseReason) {
+	fake.issueFullReconnectMutex.Lock()
+	fake.issueFullReconnectArgsForCall = append(fake.issueFullReconnectArgsForCall, struct {
+		arg1 types.ParticipantCloseReason
+	}{arg1})
+	stub := fake.IssueFullReconnectStub
+	fake.recordInvocation("IssueFullReconnect", []interface{}{arg1})
+	fake.issueFullReconnectMutex.Unlock()
+	if stub != nil {
+		fake.IssueFullReconnectStub(arg1)
+	}
+}
+
+func (fake *FakeLocalParticipant) IssueFullReconnectCallCount() int {
+	fake.issueFullReconnectMutex.RLock()
+	defer fake.issueFullReconnectMutex.RUnlock()
+	return len(fake.issueFullReconnectArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) IssueFullReconnectCalls(stub func(types.ParticipantCloseReason)) {
+	fake.issueFullReconnectMutex.Lock()
+	defer fake.issueFullReconnectMutex.Unlock()
+	fake.IssueFullReconnectStub = stub
+}
+
+func (fake *FakeLocalParticipant) IssueFullReconnectArgsForCall(i int) types.ParticipantCloseReason {
+	fake.issueFullReconnectMutex.RLock()
+	defer fake.issueFullReconnectMutex.RUnlock()
+	argsForCall := fake.issueFullReconnectArgsForCall[i]
+	return argsForCall.arg1
+}
+
 func (fake *FakeLocalParticipant) MaybeStartMigration(arg1 bool, arg2 func()) bool {
 	fake.maybeStartMigrationMutex.Lock()
 	ret, specificReturn := fake.maybeStartMigrationReturnsOnCall[len(fake.maybeStartMigrationArgsForCall)]
@@ -5104,6 +5141,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.isRecorderMutex.RUnlock()
 	fake.isSubscribedToMutex.RLock()
 	defer fake.isSubscribedToMutex.RUnlock()
+	fake.issueFullReconnectMutex.RLock()
+	defer fake.issueFullReconnectMutex.RUnlock()
 	fake.maybeStartMigrationMutex.RLock()
 	defer fake.maybeStartMigrationMutex.RUnlock()
 	fake.migrateStateMutex.RLock()
