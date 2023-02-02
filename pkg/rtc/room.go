@@ -900,6 +900,10 @@ func (r *Room) broadcastParticipantState(p types.LocalParticipant, opts broadcas
 }
 
 func (r *Room) sendParticipantUpdates(updates []*livekit.ParticipantInfo) {
+	if len(updates) == 0 {
+		return
+	}
+
 	for _, op := range r.GetParticipants() {
 		err := op.SendParticipantUpdate(updates)
 		if err != nil {
@@ -960,16 +964,26 @@ func (r *Room) pushAndDequeueUpdates(pi *livekit.ParticipantInfo, isImmediate bo
 	shouldSend := isImmediate || pi.IsPublisher
 
 	if existing != nil {
-		if pi.Sid != existing.Sid {
-			// session change, need to send immediately
-			isImmediate = true
-			existing.State = livekit.ParticipantInfo_DISCONNECTED
-			updates = append(updates, existing)
-		} else if pi.Version < existing.Version {
-			// out of order update
-			return nil
-		} else if shouldSend {
-			updates = append(updates, existing)
+		if pi.Sid == existing.Sid {
+			// same participant session
+			if pi.Version < existing.Version {
+				// out of order update
+				return nil
+			} else if shouldSend {
+				updates = append(updates, existing)
+			}
+		} else {
+			// different participant sessions
+			if existing.JoinedAt < pi.JoinedAt {
+				// existing is older, synthesize a DISCONNECT for older and
+				// send immediately along with newer session to signal switch
+				shouldSend = true
+				existing.State = livekit.ParticipantInfo_DISCONNECTED
+				updates = append(updates, existing)
+			} else {
+				// older session update, newer session has already been notified, so nothing to do
+				return nil
+			}
 		}
 	}
 
