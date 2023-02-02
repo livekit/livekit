@@ -1051,7 +1051,7 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 	p.lock.RUnlock()
 	if onStateChange != nil {
 		go func() {
-			defer Recover()
+			defer Recover(p.GetLogger())
 			onStateChange(p, oldState)
 		}()
 	}
@@ -1225,7 +1225,7 @@ func (p *ParticipantImpl) onAnyTransportFailed() {
 // subscriberRTCPWorker sends SenderReports periodically when the participant is subscribed to
 // other publishedTracks in the room.
 func (p *ParticipantImpl) subscriberRTCPWorker() {
-	defer Recover()
+	defer Recover(p.GetLogger())
 	for {
 		if p.IsDisconnected() {
 			return
@@ -1805,7 +1805,7 @@ func (p *ParticipantImpl) getPublishedTrackBySdpCid(clientId string) types.Media
 }
 
 func (p *ParticipantImpl) publisherRTCPWorker() {
-	defer Recover()
+	defer Recover(p.GetLogger())
 
 	// read from rtcpChan
 	for pkts := range p.rtcpCh {
@@ -1895,7 +1895,7 @@ func (p *ParticipantImpl) GetCachedDownTrack(trackID livekit.TrackID) (*webrtc.R
 	return nil, sfu.DownTrackState{}
 }
 
-func (p *ParticipantImpl) issueFullReconnect(reason types.ParticipantCloseReason) {
+func (p *ParticipantImpl) IssueFullReconnect(reason types.ParticipantCloseReason) {
 	_ = p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Leave{
 			Leave: &livekit.LeaveRequest{
@@ -1913,20 +1913,20 @@ func (p *ParticipantImpl) issueFullReconnect(reason types.ParticipantCloseReason
 func (p *ParticipantImpl) onPublicationError(trackID livekit.TrackID) {
 	if p.params.ReconnectOnPublicationError {
 		p.params.Logger.Infow("issuing full reconnect on publication error", "trackID", trackID)
-		p.issueFullReconnect(types.ParticipantCloseReasonPublicationError)
+		p.IssueFullReconnect(types.ParticipantCloseReasonPublicationError)
 	}
 }
 
 func (p *ParticipantImpl) onSubscriptionError(trackID livekit.TrackID) {
 	if p.params.ReconnectOnSubscriptionError {
 		p.params.Logger.Infow("issuing full reconnect on subscription error", "trackID", trackID)
-		p.issueFullReconnect(types.ParticipantCloseReasonPublicationError)
+		p.IssueFullReconnect(types.ParticipantCloseReasonPublicationError)
 	}
 }
 
 func (p *ParticipantImpl) onAnyTransportNegotiationFailed() {
 	p.params.Logger.Infow("negotiation failed, starting full reconnect")
-	p.issueFullReconnect(types.ParticipantCloseReasonNegotiateFailed)
+	p.IssueFullReconnect(types.ParticipantCloseReasonNegotiateFailed)
 }
 
 func (p *ParticipantImpl) UpdateSubscribedQuality(nodeID livekit.NodeID, trackID livekit.TrackID, maxQualities []types.SubscribedCodecQuality) error {

@@ -468,23 +468,17 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 
 // manages an RTC session for a participant, runs on the RTC node
 func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalParticipant, requestSource routing.MessageSource) {
-	defer func() {
-		logger.Debugw("RTC session finishing",
-			"participant", participant.Identity(),
-			"pID", participant.ID(),
-			"room", room.Name(),
-			"roomID", room.ID(),
-		)
-		requestSource.Close()
-	}()
-	defer rtc.Recover()
-
 	pLogger := rtc.LoggerWithParticipant(
 		rtc.LoggerWithRoom(logger.GetLogger(), room.Name(), room.ID()),
 		participant.Identity(),
 		participant.ID(),
 		false,
 	)
+	defer func() {
+		pLogger.Debugw("RTC session finishing")
+		requestSource.Close()
+	}()
+	defer rtc.Recover(pLogger)
 
 	// send first refresh for cases when client token is close to expiring
 	_ = r.refreshToken(participant)
