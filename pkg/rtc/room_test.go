@@ -211,28 +211,33 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 		Sid:         "1",
 		IsPublisher: true,
 		Version:     1,
+		JoinedAt:    0,
 	}
 	publisher1v2 := &livekit.ParticipantInfo{
 		Identity:    identity,
 		Sid:         "1",
 		IsPublisher: true,
 		Version:     2,
+		JoinedAt:    1,
 	}
 	publisher2 := &livekit.ParticipantInfo{
 		Identity:    identity,
 		Sid:         "2",
 		IsPublisher: true,
 		Version:     1,
+		JoinedAt:    2,
 	}
 	subscriber1v1 := &livekit.ParticipantInfo{
 		Identity: identity,
 		Sid:      "1",
 		Version:  1,
+		JoinedAt: 0,
 	}
 	subscriber1v2 := &livekit.ParticipantInfo{
 		Identity: identity,
 		Sid:      "1",
 		Version:  2,
+		JoinedAt: 1,
 	}
 
 	requirePIEquals := func(t *testing.T, a, b *livekit.ParticipantInfo) {
@@ -265,6 +270,17 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 				queued := rm.batchedUpdates[livekit.ParticipantIdentity(identity)]
 				require.NotNil(t, queued)
 				requirePIEquals(t, subscriber1v2, queued)
+			},
+		},
+		{
+			name:      "both versions updates when immediate",
+			pi:        subscriber1v2,
+			existing:  subscriber1v1,
+			immediate: true,
+			expected:  []*livekit.ParticipantInfo{subscriber1v1, subscriber1v2},
+			validate: func(t *testing.T, rm *Room, _ []*livekit.ParticipantInfo) {
+				queued := rm.batchedUpdates[livekit.ParticipantIdentity(identity)]
+				require.Nil(t, queued)
 			},
 		},
 		{
