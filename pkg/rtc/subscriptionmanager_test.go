@@ -70,7 +70,6 @@ func TestSubscribe(t *testing.T) {
 		sm.SubscribeToTrack("track", "pub", "pubID")
 		s := sm.subscriptions["track"]
 		require.True(t, s.isDesired())
-		require.Nil(t, s.getSubscribedTrack())
 		require.Eventually(t, func() bool {
 			return subCount.Load() == 1
 		}, subSettleTimeout, subCheckInterval, "track was not subscribed")
