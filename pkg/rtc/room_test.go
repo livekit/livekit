@@ -273,7 +273,7 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 			},
 		},
 		{
-			name:      "both versions updates when immediate",
+			name:      "latest version when immediate",
 			pi:        subscriber1v2,
 			existing:  subscriber1v1,
 			immediate: true,
