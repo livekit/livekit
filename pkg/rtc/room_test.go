@@ -277,7 +277,7 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 			pi:        subscriber1v2,
 			existing:  subscriber1v1,
 			immediate: true,
-			expected:  []*livekit.ParticipantInfo{subscriber1v1, subscriber1v2},
+			expected:  []*livekit.ParticipantInfo{subscriber1v2},
 			validate: func(t *testing.T, rm *Room, _ []*livekit.ParticipantInfo) {
 				queued := rm.batchedUpdates[livekit.ParticipantIdentity(identity)]
 				require.Nil(t, queued)
@@ -310,7 +310,7 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 			name:     "when switching to publisher, queue is cleared",
 			pi:       publisher1v2,
 			existing: subscriber1v1,
-			expected: []*livekit.ParticipantInfo{subscriber1v1, publisher1v2},
+			expected: []*livekit.ParticipantInfo{publisher1v2},
 			validate: func(t *testing.T, rm *Room, updates []*livekit.ParticipantInfo) {
 				require.Empty(t, rm.batchedUpdates)
 			},

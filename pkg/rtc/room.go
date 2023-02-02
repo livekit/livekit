@@ -969,8 +969,6 @@ func (r *Room) pushAndDequeueUpdates(pi *livekit.ParticipantInfo, isImmediate bo
 			if pi.Version < existing.Version {
 				// out of order update
 				return nil
-			} else if shouldSend {
-				updates = append(updates, existing)
 			}
 		} else {
 			// different participant sessions
