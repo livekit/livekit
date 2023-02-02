@@ -981,7 +981,7 @@ func (r *Room) pushAndDequeueUpdates(pi *livekit.ParticipantInfo, isImmediate bo
 				existing.State = livekit.ParticipantInfo_DISCONNECTED
 				updates = append(updates, existing)
 			} else {
-				// older session update, newer session has already been notified, so nothing to do
+				// older session update, newer session has already become active, so nothing to do
 				return nil
 			}
 		}
