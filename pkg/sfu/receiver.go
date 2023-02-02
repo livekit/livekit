@@ -702,11 +702,16 @@ func (w *WebRTCReceiver) GetRTCPSenderReportDataExt(layer int32) *buffer.RTCPSen
 	w.bufferMu.RLock()
 	defer w.bufferMu.RUnlock()
 
-	if layer == InvalidLayerSpatial || int(layer) >= len(w.buffers) {
+	if layer == InvalidLayerSpatial {
 		return nil
 	}
 
-	return w.buffers[layer].GetSenderReportDataExt()
+	buffer := w.getBufferLocked(layer)
+	if buffer == nil {
+		return nil
+	}
+
+	return buffer.GetSenderReportDataExt()
 }
 
 func (w *WebRTCReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error) {
