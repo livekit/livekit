@@ -35,8 +35,8 @@ import (
 var (
 	reconcileInterval = 3 * time.Second
 	// amount of time to give up if a track or publisher isn't found
-	// giving this a lot of time because during migrations the user could take a lot of time to resume
-	notFoundTimeout = 20 * time.Second
+	// ensuring this is longer than iceFailedTimeout so we are certain the participant won't return
+	notFoundTimeout = iceFailedTimeout
 	// amount of time to try otherwise before flagging subscription as failed
 	subscriptionTimeout = 20 * time.Second
 )
@@ -381,7 +381,6 @@ func (m *SubscriptionManager) reconcileWorker() {
 
 func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 	s.logger.Debugw("executing subscribe")
-	s.startAttempt()
 
 	if !m.params.Participant.CanSubscribe() {
 		return ErrNoSubscribePermission
@@ -602,6 +601,14 @@ func (s *trackSubscription) getPublisherIdentity() livekit.ParticipantIdentity {
 func (s *trackSubscription) setDesired(desired bool) bool {
 	s.lock.Lock()
 	defer s.lock.Unlock()
+
+	if desired {
+		// as long as user explicitly set it to desired
+		// we'll reset the timer so it has sufficient time to reconcile
+		t := time.Now()
+		s.subStartedAt.Store(&t)
+	}
+
 	if s.desired == desired {
 		return false
 	}
@@ -611,8 +618,9 @@ func (s *trackSubscription) setDesired(desired bool) bool {
 		s.changeNotifier.RemoveObserver(string(s.subscriberID))
 		s.changeNotifier = nil
 	}
+
 	if desired {
-		// reset attempt
+		// reset attempts
 		s.numAttempts.Store(0)
 	}
 	return true
@@ -702,13 +710,6 @@ func (s *trackSubscription) isBound() bool {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 	return s.bound
-}
-
-func (s *trackSubscription) startAttempt() {
-	if s.numAttempts.Load() == 0 {
-		t := time.Now()
-		s.subStartedAt.Store(&t)
-	}
 }
 
 func (s *trackSubscription) recordAttempt(success bool) {
