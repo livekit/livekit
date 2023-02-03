@@ -1509,7 +1509,7 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 				if err == nil {
 					last := f.rtpMunger.GetLast()
 					td = refTS - last.LastTS
-					if td > (1 << 31) {
+					if td == 0 || td > (1<<31) {
 						f.logger.Infow("reference timestamp out-of-order, using default", "lastTS", last.LastTS, "refTS", refTS, "td", int32(td))
 						td = 1
 					}
