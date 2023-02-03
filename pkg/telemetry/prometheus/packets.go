@@ -146,6 +146,12 @@ func IncrementParticipantJoin(join uint32, rtcConnected ...bool) {
 	}
 }
 
+func IncrementParticipantJoinFail(join uint32) {
+	if join > 0 {
+		promParticipantJoin.WithLabelValues("signal_failed").Add(float64(join))
+	}
+}
+
 func AddConnection(direction Direction) {
 	promConnections.WithLabelValues(string(direction)).Add(1)
 }
