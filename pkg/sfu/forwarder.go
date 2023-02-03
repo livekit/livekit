@@ -177,15 +177,13 @@ var (
 // -------------------------------------------------------------------
 
 type ForwarderState struct {
-	Started               bool
-	ReferenceLayerSpatial int32
-	RTP                   RTPMungerState
-	VP8                   VP8MungerState
+	Started bool
+	RTP     RTPMungerState
+	VP8     VP8MungerState
 }
 
 func (f ForwarderState) String() string {
-	return fmt.Sprintf("ForwarderState{started: %v, ref: %d, rtp: %s, vp8: %s}",
-		f.Started, f.ReferenceLayerSpatial, f.RTP.String(), f.VP8.String())
+	return fmt.Sprintf("ForwarderState{started: %v, rtp: %s, vp8: %s}", f.Started, f.RTP.String(), f.VP8.String())
 }
 
 // -------------------------------------------------------------------
@@ -310,9 +308,8 @@ func (f *Forwarder) GetState() ForwarderState {
 	}
 
 	state := ForwarderState{
-		Started:               f.started,
-		ReferenceLayerSpatial: f.referenceLayerSpatial,
-		RTP:                   f.rtpMunger.GetLast(),
+		Started: f.started,
+		RTP:     f.rtpMunger.GetLast(),
 	}
 
 	if f.vp8Munger != nil {
@@ -330,7 +327,6 @@ func (f *Forwarder) SeedState(state ForwarderState) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	f.referenceLayerSpatial = state.ReferenceLayerSpatial
 	f.rtpMunger.SeedLast(state.RTP)
 	if f.vp8Munger != nil {
 		f.vp8Munger.SeedLast(state.VP8)
@@ -1500,6 +1496,11 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 				f.vp8Munger.SetLast(extPkt)
 			}
 		} else {
+			if f.referenceLayerSpatial == InvalidLayerSpatial {
+				// on a resume, reference layer may not be set, so only set when it is invalid
+				f.referenceLayerSpatial = layer
+			}
+
 			// Compute how much time passed between the old RTP extPkt
 			// and the current packet, and fix timestamp on source change
 			td := uint32(1)
@@ -1508,7 +1509,7 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 				if err == nil {
 					last := f.rtpMunger.GetLast()
 					td = refTS - last.LastTS
-					if td > (1 << 31) {
+					if td == 0 || td > (1<<31) {
 						f.logger.Infow("reference timestamp out-of-order, using default", "lastTS", last.LastTS, "refTS", refTS, "td", int32(td))
 						td = 1
 					}
