@@ -418,8 +418,11 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 	}
 
 	subTrack, err := track.AddSubscriber(m.params.Participant)
-	if err != nil && err != errAlreadySubscribed {
-		// ignore already subscribed error
+	if err != nil {
+		if err == errAlreadySubscribed {
+			// ignore already subscribed error
+			return nil
+		}
 		return err
 	}
 	subTrack.OnClose(func(willBeResumed bool) {
