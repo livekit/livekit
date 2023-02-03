@@ -1117,7 +1117,7 @@ func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error 
 	}
 
 	// replace client's fingerprint into dump pc's answer, for pion's dtls process, it will
-	// keep the fingerprint at first call of SetRemoteDescription, if dumb pc and client pc use
+	// keep the fingerprint at first call of SetRemoteDescription, if dummy pc and client pc use
 	// different fingerprint, that will cause pion denied dtls data after handshake with client
 	// complete (can't pass fingerprint change).
 	// in this step, we don't established connection with dump pc(no candidate swap), just use
@@ -1161,7 +1161,7 @@ func (t *PCTransport) initPCWithPreviousAnswer(previousAnswer webrtc.SessionDesc
 			// for pion generate unmatched sdp, it always appends data channel to last m-lines,
 			// that not consistent with our previous answer that data channel might at middle-line
 			// because sdp can negotiate multi times before migration.(it will sticky to the last m-line atfirst negotiate)
-			// so use a dumb pc to negotiate sdp to fixed the datachannel's mid at same position with previous answer
+			// so use a dummy pc to negotiate sdp to fixed the datachannel's mid at same position with previous answer
 			if err := t.preparePC(previousAnswer); err != nil {
 				t.params.Logger.Errorw("prepare pc for migration failed", err)
 				return senders, err
