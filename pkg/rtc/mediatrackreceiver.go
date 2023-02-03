@@ -152,7 +152,7 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority 
 		return
 	}
 
-	// codec postion maybe taked by DumbReceiver, check and upgrade to WebRTCReceiver
+	// codec position maybe taken by DumbReceiver, check and upgrade to WebRTCReceiver
 	var upgradeReceiver bool
 	for _, r := range t.receivers {
 		if strings.EqualFold(r.Codec().MimeType, receiver.Codec().MimeType) {

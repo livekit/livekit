@@ -284,16 +284,21 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 			s.recordAttempt(false)
 
 			switch err {
-			case ErrNoTrackPermission, ErrNoSubscribePermission:
-				// retry permission errors forever, since it's outside of our control and publisher could
-				// grant any time
-				// however, we'll still log an event to reflect this in telemetry
+			case ErrNoTrackPermission, ErrNoSubscribePermission, ErrNoReceiver, ErrNotOpen, ErrTrackNotAttached:
+				// these are errors that are outside of our control, so we'll keep trying
+				// - ErrNoTrackPermission: publisher did not grant subscriber permission, may change any moment
+				// - ErrNoSubscribePermission: participant was not granted canSubscribe, may change any moment
+				// - ErrNoReceiver: Track is in the process of closing (another local track published to the same instance)
+				// - ErrTrackNotAttached: Remote Track that is not attached, but may be attached later
+				// - ErrNotOpen: Track is closing or already closed
+				// We'll still log an event to reflect this in telemetry since it's been too long
 				if s.durationSinceStart() > subscriptionTimeout {
 					s.maybeRecordError(m.params.Telemetry, m.params.Participant.ID(), err, true)
 				}
 			case ErrPublisherNotConnected, ErrTrackNotFound:
-				// publisher left or track was unpublished, if after timeout, we'd unsubscribe
-				// from it. this is the *only* case we'd change desired state
+				// publisher left or source track was never published or closed
+				// if after timeout, we'd unsubscribe from it.
+				// this is the *only* case we'd change desired state
 				if s.durationSinceStart() > notFoundTimeout {
 					s.maybeRecordError(m.params.Telemetry, m.params.Participant.ID(), err, true)
 					s.logger.Infow("unsubscribing track since track isn't available", "error", err)
@@ -338,6 +343,8 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 
 	if s.needsBind() {
 		// check bound status, notify error callback if it's not bound
+		// if a publisher leaves or closes the source track, SubscribedTrack will be closed as well and it will go
+		// back to needsSubscribe state
 		if s.durationSinceStart() > subscriptionTimeout {
 			s.logger.Errorw("track not bound after timeout", nil)
 			s.maybeRecordError(m.params.Telemetry, m.params.Participant.ID(), ErrTrackNotBound, false)
@@ -565,7 +572,10 @@ type trackSubscription struct {
 	eventSent         atomic.Bool
 	numAttempts       atomic.Int32
 	bound             bool
-	subStartedAt      atomic.Pointer[time.Time]
+
+	// the later of when subscription was requested or when the first failure was encountered
+	// this timestamp determines when failures are reported
+	subStartedAt atomic.Pointer[time.Time]
 }
 
 func newTrackSubscription(subscriberID livekit.ParticipantID, trackID livekit.TrackID, l logger.Logger) *trackSubscription {
@@ -714,6 +724,11 @@ func (s *trackSubscription) isBound() bool {
 
 func (s *trackSubscription) recordAttempt(success bool) {
 	if !success {
+		if s.numAttempts.Load() == 0 {
+			// on first failure, we'd want to start the timer
+			t := time.Now()
+			s.subStartedAt.Store(&t)
+		}
 		s.numAttempts.Add(1)
 	} else {
 		s.numAttempts.Store(0)
