@@ -301,10 +301,11 @@ type FakeLocalParticipant struct {
 	hiddenReturnsOnCall map[int]struct {
 		result1 bool
 	}
-	ICERestartStub        func(*livekit.ICEConfig)
+	ICERestartStub        func(*livekit.ICEConfig, livekit.ReconnectReason)
 	iCERestartMutex       sync.RWMutex
 	iCERestartArgsForCall []struct {
 		arg1 *livekit.ICEConfig
+		arg2 livekit.ReconnectReason
 	}
 	IDStub        func() livekit.ParticipantID
 	iDMutex       sync.RWMutex
@@ -735,10 +736,11 @@ type FakeLocalParticipant struct {
 	updateMediaLossReturnsOnCall map[int]struct {
 		result1 error
 	}
-	UpdateRTTStub        func(uint32)
+	UpdateRTTStub        func(uint32, bool)
 	updateRTTMutex       sync.RWMutex
 	updateRTTArgsForCall []struct {
 		arg1 uint32
+		arg2 bool
 	}
 	UpdateSubscribedQualityStub        func(livekit.NodeID, livekit.TrackID, []types.SubscribedCodecQuality) error
 	updateSubscribedQualityMutex       sync.RWMutex
@@ -2281,16 +2283,17 @@ func (fake *FakeLocalParticipant) HiddenReturnsOnCall(i int, result1 bool) {
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) ICERestart(arg1 *livekit.ICEConfig) {
+func (fake *FakeLocalParticipant) ICERestart(arg1 *livekit.ICEConfig, arg2 livekit.ReconnectReason) {
 	fake.iCERestartMutex.Lock()
 	fake.iCERestartArgsForCall = append(fake.iCERestartArgsForCall, struct {
 		arg1 *livekit.ICEConfig
-	}{arg1})
+		arg2 livekit.ReconnectReason
+	}{arg1, arg2})
 	stub := fake.ICERestartStub
-	fake.recordInvocation("ICERestart", []interface{}{arg1})
+	fake.recordInvocation("ICERestart", []interface{}{arg1, arg2})
 	fake.iCERestartMutex.Unlock()
 	if stub != nil {
-		fake.ICERestartStub(arg1)
+		fake.ICERestartStub(arg1, arg2)
 	}
 }
 
@@ -2300,17 +2303,17 @@ func (fake *FakeLocalParticipant) ICERestartCallCount() int {
 	return len(fake.iCERestartArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) ICERestartCalls(stub func(*livekit.ICEConfig)) {
+func (fake *FakeLocalParticipant) ICERestartCalls(stub func(*livekit.ICEConfig, livekit.ReconnectReason)) {
 	fake.iCERestartMutex.Lock()
 	defer fake.iCERestartMutex.Unlock()
 	fake.ICERestartStub = stub
 }
 
-func (fake *FakeLocalParticipant) ICERestartArgsForCall(i int) *livekit.ICEConfig {
+func (fake *FakeLocalParticipant) ICERestartArgsForCall(i int) (*livekit.ICEConfig, livekit.ReconnectReason) {
 	fake.iCERestartMutex.RLock()
 	defer fake.iCERestartMutex.RUnlock()
 	argsForCall := fake.iCERestartArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeLocalParticipant) ID() livekit.ParticipantID {
@@ -4708,16 +4711,17 @@ func (fake *FakeLocalParticipant) UpdateMediaLossReturnsOnCall(i int, result1 er
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) UpdateRTT(arg1 uint32) {
+func (fake *FakeLocalParticipant) UpdateRTT(arg1 uint32, arg2 bool) {
 	fake.updateRTTMutex.Lock()
 	fake.updateRTTArgsForCall = append(fake.updateRTTArgsForCall, struct {
 		arg1 uint32
-	}{arg1})
+		arg2 bool
+	}{arg1, arg2})
 	stub := fake.UpdateRTTStub
-	fake.recordInvocation("UpdateRTT", []interface{}{arg1})
+	fake.recordInvocation("UpdateRTT", []interface{}{arg1, arg2})
 	fake.updateRTTMutex.Unlock()
 	if stub != nil {
-		fake.UpdateRTTStub(arg1)
+		fake.UpdateRTTStub(arg1, arg2)
 	}
 }
 
@@ -4727,17 +4731,17 @@ func (fake *FakeLocalParticipant) UpdateRTTCallCount() int {
 	return len(fake.updateRTTArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) UpdateRTTCalls(stub func(uint32)) {
+func (fake *FakeLocalParticipant) UpdateRTTCalls(stub func(uint32, bool)) {
 	fake.updateRTTMutex.Lock()
 	defer fake.updateRTTMutex.Unlock()
 	fake.UpdateRTTStub = stub
 }
 
-func (fake *FakeLocalParticipant) UpdateRTTArgsForCall(i int) uint32 {
+func (fake *FakeLocalParticipant) UpdateRTTArgsForCall(i int) (uint32, bool) {
 	fake.updateRTTMutex.RLock()
 	defer fake.updateRTTMutex.RUnlock()
 	argsForCall := fake.updateRTTArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeLocalParticipant) UpdateSubscribedQuality(arg1 livekit.NodeID, arg2 livekit.TrackID, arg3 []types.SubscribedCodecQuality) error {

@@ -31,15 +31,16 @@ type MessageSource interface {
 }
 
 type ParticipantInit struct {
-	Identity       livekit.ParticipantIdentity
-	Name           livekit.ParticipantName
-	Reconnect      bool
-	AutoSubscribe  bool
-	Client         *livekit.ClientInfo
-	Grants         *auth.ClaimGrants
-	Region         string
-	AdaptiveStream bool
-	ID             livekit.ParticipantID
+	Identity        livekit.ParticipantIdentity
+	Name            livekit.ParticipantName
+	Reconnect       bool
+	ReconnectReason livekit.ReconnectReason
+	AutoSubscribe   bool
+	Client          *livekit.ClientInfo
+	Grants          *auth.ClaimGrants
+	Region          string
+	AdaptiveStream  bool
+	ID              livekit.ParticipantID
 }
 
 type NewParticipantCallback func(
@@ -116,13 +117,14 @@ func (pi *ParticipantInit) ToStartSession(roomName livekit.RoomName, connectionI
 		Identity: string(pi.Identity),
 		Name:     string(pi.Name),
 		// connection id is to allow the RTC node to identify where to route the message back to
-		ConnectionId:   string(connectionID),
-		Reconnect:      pi.Reconnect,
-		AutoSubscribe:  pi.AutoSubscribe,
-		Client:         pi.Client,
-		GrantsJson:     string(claims),
-		AdaptiveStream: pi.AdaptiveStream,
-		ParticipantId:  string(pi.ID),
+		ConnectionId:    string(connectionID),
+		Reconnect:       pi.Reconnect,
+		ReconnectReason: pi.ReconnectReason,
+		AutoSubscribe:   pi.AutoSubscribe,
+		Client:          pi.Client,
+		GrantsJson:      string(claims),
+		AdaptiveStream:  pi.AdaptiveStream,
+		ParticipantId:   string(pi.ID),
 	}, nil
 }
 
@@ -133,14 +135,15 @@ func ParticipantInitFromStartSession(ss *livekit.StartSession, region string) (*
 	}
 
 	return &ParticipantInit{
-		Identity:       livekit.ParticipantIdentity(ss.Identity),
-		Name:           livekit.ParticipantName(ss.Name),
-		Reconnect:      ss.Reconnect,
-		Client:         ss.Client,
-		AutoSubscribe:  ss.AutoSubscribe,
-		Grants:         claims,
-		Region:         region,
-		AdaptiveStream: ss.AdaptiveStream,
-		ID:             livekit.ParticipantID(ss.ParticipantId),
+		Identity:        livekit.ParticipantIdentity(ss.Identity),
+		Name:            livekit.ParticipantName(ss.Name),
+		Reconnect:       ss.Reconnect,
+		ReconnectReason: ss.ReconnectReason,
+		Client:          ss.Client,
+		AutoSubscribe:   ss.AutoSubscribe,
+		Grants:          claims,
+		Region:          region,
+		AdaptiveStream:  ss.AdaptiveStream,
+		ID:              livekit.ParticipantID(ss.ParticipantId),
 	}, nil
 }

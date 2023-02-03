@@ -98,6 +98,7 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 
 	roomName := livekit.RoomName(r.FormValue("room"))
 	reconnectParam := r.FormValue("reconnect")
+	reconnectReason, _ := strconv.Atoi(r.FormValue("reconnect_reason")) // 0 means unknown reason
 	autoSubParam := r.FormValue("auto_subscribe")
 	publishParam := r.FormValue("publish")
 	adaptiveStreamParam := r.FormValue("adaptive_stream")
@@ -139,13 +140,14 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 	}
 
 	pi = routing.ParticipantInit{
-		Reconnect:     boolValue(reconnectParam),
-		Identity:      livekit.ParticipantIdentity(claims.Identity),
-		Name:          livekit.ParticipantName(claims.Name),
-		AutoSubscribe: true,
-		Client:        s.ParseClientInfo(r),
-		Grants:        claims,
-		Region:        region,
+		Reconnect:       boolValue(reconnectParam),
+		ReconnectReason: livekit.ReconnectReason(reconnectReason),
+		Identity:        livekit.ParticipantIdentity(claims.Identity),
+		Name:            livekit.ParticipantName(claims.Name),
+		AutoSubscribe:   true,
+		Client:          s.ParseClientInfo(r),
+		Grants:          claims,
+		Region:          region,
 	}
 	if pi.Reconnect {
 		pi.ID = livekit.ParticipantID(participantID)
@@ -320,7 +322,9 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if signalStats != nil {
 			signalStats.AddBytes(uint64(count), false)
 		}
-		if _, ok := req.Message.(*livekit.SignalRequest_Ping); ok {
+
+		switch m := req.Message.(type) {
+		case *livekit.SignalRequest_Ping:
 			count, perr := sigConn.WriteResponse(&livekit.SignalResponse{
 				Message: &livekit.SignalResponse_Pong{
 					//
@@ -328,6 +332,18 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					// So. use UnixMillis().
 					//
 					Pong: time.Now().UnixMilli(),
+				},
+			})
+			if perr == nil && signalStats != nil {
+				signalStats.AddBytes(uint64(count), true)
+			}
+		case *livekit.SignalRequest_PingReq:
+			count, perr := sigConn.WriteResponse(&livekit.SignalResponse{
+				Message: &livekit.SignalResponse_PongResp{
+					PongResp: &livekit.Pong{
+						LastPingTimestamp: m.PingReq.Timestamp,
+						Timestamp:         time.Now().UnixMilli(),
+					},
 				},
 			})
 			if perr == nil && signalStats != nil {

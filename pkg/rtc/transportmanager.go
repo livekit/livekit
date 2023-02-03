@@ -439,11 +439,15 @@ func (t *TransportManager) NegotiateSubscriber(force bool) {
 	t.subscriber.Negotiate(force)
 }
 
-func (t *TransportManager) ICERestart(iceConfig *livekit.ICEConfig) {
+func (t *TransportManager) ICERestart(iceConfig *livekit.ICEConfig, resetShortConnection bool) {
 	if iceConfig != nil {
 		t.SetICEConfig(iceConfig)
 	}
 
+	if resetShortConnection {
+		t.publisher.ResetShortConnOnICERestart()
+		t.subscriber.ResetShortConnOnICERestart()
+	}
 	t.subscriber.ICERestart()
 }
 
@@ -662,7 +666,7 @@ func (t *TransportManager) onMediaLossUpdate(loss uint8) {
 	if loss >= uint8(255*udpLossFracUnstable/100) {
 		t.udpLossUnstableCount |= 1
 		if bits.OnesCount32(t.udpLossUnstableCount) >= udpLossUnstableCountThreshold {
-			if t.udpRTT > 0 && t.tcpRTT < uint32(float32(t.udpRTT)*1.3) && t.tcpRTT < tcpGoodRTT {
+			if t.udpRTT > 0 && t.tcpRTT < uint32(float32(t.udpRTT)*1.3) && t.tcpRTT < tcpGoodRTT && time.Since(t.lastSignalAt) < iceFailedTimeout {
 				t.udpLossUnstableCount = 0
 				t.lock.Unlock()
 

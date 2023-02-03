@@ -237,6 +237,7 @@ func (r *RoomManager) StartSession(
 				"room", roomName,
 				"nodeID", r.currentNode.Id,
 				"participant", pi.Identity,
+				"reason", pi.ReconnectReason,
 			)
 			iceConfig := r.getIceConfig(participant)
 			if iceConfig == nil {
@@ -244,11 +245,11 @@ func (r *RoomManager) StartSession(
 			}
 			if err = room.ResumeParticipant(participant, responseSink,
 				r.iceServersForRoom(protoRoom, iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS),
-			); err != nil {
+				pi.ReconnectReason); err != nil {
 				logger.Warnw("could not resume participant", err, "participant", pi.Identity)
 				return err
 			}
-			r.telemetry.ParticipantResumed(ctx, room.ToProto(), participant.ToProto(), livekit.NodeID(r.currentNode.Id))
+			r.telemetry.ParticipantResumed(ctx, room.ToProto(), participant.ToProto(), livekit.NodeID(r.currentNode.Id), pi.ReconnectReason)
 			go r.rtcSessionWorker(room, participant, requestSource)
 			return nil
 		} else {

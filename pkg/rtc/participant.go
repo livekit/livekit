@@ -750,7 +750,7 @@ func (p *ParticipantImpl) MigrateState() types.MigrateState {
 }
 
 // ICERestart restarts subscriber ICE connections
-func (p *ParticipantImpl) ICERestart(iceConfig *livekit.ICEConfig) {
+func (p *ParticipantImpl) ICERestart(iceConfig *livekit.ICEConfig, reason livekit.ReconnectReason) {
 	p.clearDisconnectTimer()
 	p.clearMigrationTimer()
 
@@ -758,7 +758,7 @@ func (p *ParticipantImpl) ICERestart(iceConfig *livekit.ICEConfig) {
 		t.(types.LocalMediaTrack).Restart()
 	}
 
-	p.TransportManager.ICERestart(iceConfig)
+	p.TransportManager.ICERestart(iceConfig, reason == livekit.ReconnectReason_REASON_PUBLISHER_FAILED || reason == livekit.ReconnectReason_REASON_SUBSCRIBER_FAILED)
 }
 
 func (p *ParticipantImpl) OnICEConfigChanged(f func(participant types.LocalParticipant, iceConfig *livekit.ICEConfig)) {
@@ -919,7 +919,11 @@ func (p *ParticipantImpl) SubscriptionPermissionUpdate(publisherID livekit.Parti
 	}
 }
 
-func (p *ParticipantImpl) UpdateRTT(rtt uint32) {
+func (p *ParticipantImpl) UpdateRTT(rtt uint32, isUDP bool) {
+	if !isUDP {
+		p.TransportManager.UpdateRTT(rtt, false)
+		return
+	}
 	now := time.Now()
 	p.lock.Lock()
 	if now.Sub(p.rttUpdatedAt) < rttUpdateInterval || p.lastRTT == rtt {

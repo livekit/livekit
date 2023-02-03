@@ -58,13 +58,14 @@ type FakeTelemetryService struct {
 		arg3 *livekit.ParticipantInfo
 		arg4 bool
 	}
-	ParticipantResumedStub        func(context.Context, *livekit.Room, *livekit.ParticipantInfo, livekit.NodeID)
+	ParticipantResumedStub        func(context.Context, *livekit.Room, *livekit.ParticipantInfo, livekit.NodeID, livekit.ReconnectReason)
 	participantResumedMutex       sync.RWMutex
 	participantResumedArgsForCall []struct {
 		arg1 context.Context
 		arg2 *livekit.Room
 		arg3 *livekit.ParticipantInfo
 		arg4 livekit.NodeID
+		arg5 livekit.ReconnectReason
 	}
 	RoomEndedStub        func(context.Context, *livekit.Room)
 	roomEndedMutex       sync.RWMutex
@@ -419,19 +420,20 @@ func (fake *FakeTelemetryService) ParticipantLeftArgsForCall(i int) (context.Con
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
 }
 
-func (fake *FakeTelemetryService) ParticipantResumed(arg1 context.Context, arg2 *livekit.Room, arg3 *livekit.ParticipantInfo, arg4 livekit.NodeID) {
+func (fake *FakeTelemetryService) ParticipantResumed(arg1 context.Context, arg2 *livekit.Room, arg3 *livekit.ParticipantInfo, arg4 livekit.NodeID, arg5 livekit.ReconnectReason) {
 	fake.participantResumedMutex.Lock()
 	fake.participantResumedArgsForCall = append(fake.participantResumedArgsForCall, struct {
 		arg1 context.Context
 		arg2 *livekit.Room
 		arg3 *livekit.ParticipantInfo
 		arg4 livekit.NodeID
-	}{arg1, arg2, arg3, arg4})
+		arg5 livekit.ReconnectReason
+	}{arg1, arg2, arg3, arg4, arg5})
 	stub := fake.ParticipantResumedStub
-	fake.recordInvocation("ParticipantResumed", []interface{}{arg1, arg2, arg3, arg4})
+	fake.recordInvocation("ParticipantResumed", []interface{}{arg1, arg2, arg3, arg4, arg5})
 	fake.participantResumedMutex.Unlock()
 	if stub != nil {
-		fake.ParticipantResumedStub(arg1, arg2, arg3, arg4)
+		fake.ParticipantResumedStub(arg1, arg2, arg3, arg4, arg5)
 	}
 }
 
@@ -441,17 +443,17 @@ func (fake *FakeTelemetryService) ParticipantResumedCallCount() int {
 	return len(fake.participantResumedArgsForCall)
 }
 
-func (fake *FakeTelemetryService) ParticipantResumedCalls(stub func(context.Context, *livekit.Room, *livekit.ParticipantInfo, livekit.NodeID)) {
+func (fake *FakeTelemetryService) ParticipantResumedCalls(stub func(context.Context, *livekit.Room, *livekit.ParticipantInfo, livekit.NodeID, livekit.ReconnectReason)) {
 	fake.participantResumedMutex.Lock()
 	defer fake.participantResumedMutex.Unlock()
 	fake.ParticipantResumedStub = stub
 }
 
-func (fake *FakeTelemetryService) ParticipantResumedArgsForCall(i int) (context.Context, *livekit.Room, *livekit.ParticipantInfo, livekit.NodeID) {
+func (fake *FakeTelemetryService) ParticipantResumedArgsForCall(i int) (context.Context, *livekit.Room, *livekit.ParticipantInfo, livekit.NodeID, livekit.ReconnectReason) {
 	fake.participantResumedMutex.RLock()
 	defer fake.participantResumedMutex.RUnlock()
 	argsForCall := fake.participantResumedArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4, argsForCall.arg5
 }
 
 func (fake *FakeTelemetryService) RoomEnded(arg1 context.Context, arg2 *livekit.Room) {
