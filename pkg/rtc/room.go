@@ -372,8 +372,7 @@ func (r *Room) ResumeParticipant(p types.LocalParticipant, responseSink routing.
 	p.CloseSignalConnection()
 	p.SetResponseSink(responseSink)
 
-	reconnectResponse := r.createReconnectResponseLocked(p, iceServers)
-
+	reconnectResponse := r.createReconnectResponse(p, iceServers)
 	if err := p.SendReconnectResponse(reconnectResponse); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("participant_resume", "error", "send_response").Add(1)
 		return err
@@ -718,7 +717,6 @@ func (r *Room) autoSubscribe(participant types.LocalParticipant) bool {
 }
 
 func (r *Room) createJoinResponseLocked(participant types.LocalParticipant, iceServers []*livekit.ICEServer) *livekit.JoinResponse {
-	// gather other participants and send join response
 	otherParticipants := make([]*livekit.ParticipantInfo, 0, len(r.participants))
 	for _, p := range r.participants {
 		if p.ID() != participant.ID() && !p.Hidden() {
@@ -743,8 +741,7 @@ func (r *Room) createJoinResponseLocked(participant types.LocalParticipant, iceS
 	}
 }
 
-func (r *Room) createReconnectResponseLocked(participant types.LocalParticipant, iceServers []*livekit.ICEServer) *livekit.ReconnectResponse {
-	// gather other participants and send join response
+func (r *Room) createReconnectResponse(participant types.LocalParticipant, iceServers []*livekit.ICEServer) *livekit.ReconnectResponse {
 	otherParticipants := make([]*livekit.ParticipantInfo, 0, len(r.participants))
 	for _, p := range r.participants {
 		if p.ID() != participant.ID() && !p.Hidden() {
