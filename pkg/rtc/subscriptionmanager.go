@@ -38,7 +38,7 @@ var (
 	// ensuring this is longer than iceFailedTimeout so we are certain the participant won't return
 	notFoundTimeout = iceFailedTimeout
 	// amount of time to try otherwise before flagging subscription as failed
-	subscriptionTimeout = 20 * time.Second
+	subscriptionTimeout = iceFailedTimeout
 )
 
 type SubscriptionManagerParams struct {
