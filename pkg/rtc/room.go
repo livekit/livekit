@@ -372,13 +372,14 @@ func (r *Room) ResumeParticipant(p types.LocalParticipant, responseSink routing.
 	p.CloseSignalConnection()
 	p.SetResponseSink(responseSink)
 
-	if err := p.SendReconnectResponse(&livekit.ReconnectResponse{
-		IceServers:          iceServers,
-		ClientConfiguration: p.GetClientConfiguration(),
-	}); err != nil {
+	reconnectResponse := r.createReconnectResponseLocked(p, iceServers)
+
+	if err := p.SendReconnectResponse(reconnectResponse); err != nil {
+		prometheus.ServiceOperationCounter.WithLabelValues("participant_resume", "error", "send_response").Add(1)
 		return err
 	}
 
+	// unclear if this is still needed when the participants are being sent down in the reconnect response
 	updates := ToProtoParticipants(r.GetParticipants())
 	if err := p.SendParticipantUpdate(updates); err != nil {
 		return err
@@ -739,6 +740,24 @@ func (r *Room) createJoinResponseLocked(participant types.LocalParticipant, iceS
 		PingInterval: 10,
 		PingTimeout:  20,
 		ServerInfo:   r.serverInfo,
+	}
+}
+
+func (r *Room) createReconnectResponseLocked(participant types.LocalParticipant, iceServers []*livekit.ICEServer) *livekit.ReconnectResponse {
+	// gather other participants and send join response
+	otherParticipants := make([]*livekit.ParticipantInfo, 0, len(r.participants))
+	for _, p := range r.participants {
+		if p.ID() != participant.ID() && !p.Hidden() {
+			otherParticipants = append(otherParticipants, p.ToProto())
+		}
+	}
+
+	return &livekit.ReconnectResponse{
+		Room:                r.protoRoom,
+		Participant:         participant.ToProto(),
+		OtherParticipants:   otherParticipants,
+		IceServers:          iceServers,
+		ClientConfiguration: participant.GetClientConfiguration(),
 	}
 }
 
