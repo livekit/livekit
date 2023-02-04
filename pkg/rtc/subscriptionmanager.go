@@ -429,7 +429,7 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 		// ignore already subscribed error
 		return err
 	}
-	if subTrack != nil { // could be nil if already subscribed
+	if err == nil && subTrack != nil { // subTrack could be nil if already subscribed
 		subTrack.OnClose(func(willBeResumed bool) {
 			m.handleSubscribedTrackClose(s, willBeResumed)
 		})
