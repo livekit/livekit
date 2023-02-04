@@ -425,24 +425,25 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 	}
 
 	subTrack, err := track.AddSubscriber(m.params.Participant)
-	if err != nil {
-		if err == errAlreadySubscribed {
-			// ignore already subscribed error
-			return nil
-		}
+	if err != nil && err != errAlreadySubscribed {
+		// ignore already subscribed error
 		return err
 	}
-	subTrack.OnClose(func(willBeResumed bool) {
-		m.handleSubscribedTrackClose(s, willBeResumed)
-	})
-	subTrack.AddOnBind(func() {
-		s.setBound()
-		s.maybeRecordSuccess(m.params.Telemetry, m.params.Participant.ID())
-	})
-	s.setSubscribedTrack(subTrack)
+	if subTrack != nil { // could be nil if already subscribed
+		subTrack.OnClose(func(willBeResumed bool) {
+			m.handleSubscribedTrackClose(s, willBeResumed)
+		})
+		subTrack.AddOnBind(func() {
+			s.setBound()
+			s.maybeRecordSuccess(m.params.Telemetry, m.params.Participant.ID())
+		})
+		s.setSubscribedTrack(subTrack)
 
-	if subTrack.NeedsNegotiation() {
-		m.params.Participant.Negotiate(false)
+		if subTrack.NeedsNegotiation() {
+			m.params.Participant.Negotiate(false)
+		}
+
+		go m.params.OnTrackSubscribed(subTrack)
 	}
 
 	// add mark the participant as someone we've subscribed to
@@ -458,8 +459,6 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 	}
 	pTracks[s.trackID] = struct{}{}
 	m.lock.Unlock()
-
-	go m.params.OnTrackSubscribed(subTrack)
 
 	if changedCB != nil && firstSubscribe {
 		go changedCB(publisherID, true)
