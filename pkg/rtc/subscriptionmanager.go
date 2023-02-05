@@ -600,12 +600,6 @@ func (s *trackSubscription) getPublisherID() livekit.ParticipantID {
 	return s.publisherID
 }
 
-func (s *trackSubscription) getPublisherIdentity() livekit.ParticipantIdentity {
-	s.lock.RLock()
-	defer s.lock.RUnlock()
-	return s.publisherIdentity
-}
-
 func (s *trackSubscription) setDesired(desired bool) bool {
 	s.lock.Lock()
 	if desired {
