@@ -13,7 +13,6 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
-	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -50,7 +49,7 @@ type Room struct {
 	serverInfo     *livekit.ServerInfo
 	telemetry      telemetry.TelemetryService
 	egressLauncher EgressLauncher
-	changeNotifier *utils.ChangeNotifierManager
+	trackManager   *RoomTrackManager
 
 	// map of identity -> Participant
 	participants    map[livekit.ParticipantIdentity]types.LocalParticipant
@@ -94,7 +93,7 @@ func NewRoom(
 		audioConfig:     audioConfig,
 		telemetry:       telemetry,
 		egressLauncher:  egressLauncher,
-		changeNotifier:  utils.NewChangeNotifierManager(),
+		trackManager:    NewRoomTrackManager(),
 		serverInfo:      serverInfo,
 		participants:    make(map[livekit.ParticipantIdentity]types.LocalParticipant),
 		participantOpts: make(map[livekit.ParticipantIdentity]*ParticipantOptions),
@@ -251,7 +250,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 		r.protoRoom.NumParticipants++
 	}
 
-	// it's important to set this before connection, we don't want to miss out on any publishedTracks
+	// it's important to set this before connection, we don't want to miss out on any published tracks
 	participant.OnTrackPublished(r.onTrackPublished)
 	participant.OnStateChange(func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State) {
 		r.Logger.Infow("participant state changed",
@@ -266,7 +265,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 
 		state := p.State()
 		if state == livekit.ParticipantInfo_ACTIVE {
-			// subscribe participant to existing publishedTracks
+			// subscribe participant to existing published tracks
 			r.subscribeToExistingTracks(p)
 
 			// start the workers once connectivity is established
@@ -282,6 +281,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 		}
 	})
 	participant.OnTrackUpdated(r.onTrackUpdated)
+	participant.OnTrackUnpublished(r.onTrackUnpublished)
 	participant.OnParticipantUpdate(r.onParticipantUpdate)
 	participant.OnDataPacket(r.onDataPacket)
 	participant.OnSubscribeStatusChanged(func(publisherID livekit.ParticipantID, subscribed bool) {
@@ -425,16 +425,12 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 		return
 	}
 
-	// clean up notifiers, participant isn't coming back
-	for _, track := range p.GetPublishedTracks() {
-		r.changeNotifier.RemoveNotifier(string(track.ID()), true)
-	}
-
 	// send broadcast only if it's not already closed
 	sendUpdates := !p.IsDisconnected()
 
 	p.OnTrackUpdated(nil)
 	p.OnTrackPublished(nil)
+	p.OnTrackUnpublished(nil)
 	p.OnStateChange(nil)
 	p.OnParticipantUpdate(nil)
 	p.OnDataPacket(nil)
@@ -464,37 +460,22 @@ func (r *Room) UpdateSubscriptions(
 	participantTracks []*livekit.ParticipantTracks,
 	subscribe bool,
 ) {
-	// find all matching tracks
-	publisherIDs := make(map[livekit.TrackID]livekit.ParticipantID)
-	publisherIdentities := make(map[livekit.TrackID]livekit.ParticipantIdentity)
-	participants := r.GetParticipants()
+	// handle subscription changes
 	for _, trackID := range trackIDs {
-		for _, p := range participants {
-			track := p.GetPublishedTrack(trackID)
-			if track != nil {
-				publisherIDs[trackID] = p.ID()
-				publisherIdentities[trackID] = p.Identity()
-				break
-			}
+		if subscribe {
+			participant.SubscribeToTrack(trackID)
+		} else {
+			participant.UnsubscribeFromTrack(trackID)
 		}
 	}
 
 	for _, pt := range participantTracks {
-		pub := r.GetParticipantByID(livekit.ParticipantID(pt.ParticipantSid))
 		for _, trackID := range livekit.StringsAsTrackIDs(pt.TrackSids) {
-			publisherIDs[trackID] = livekit.ParticipantID(pt.ParticipantSid)
-			if pub != nil {
-				publisherIdentities[trackID] = pub.Identity()
+			if subscribe {
+				participant.SubscribeToTrack(trackID)
+			} else {
+				participant.UnsubscribeFromTrack(trackID)
 			}
-		}
-	}
-
-	// handle subscription changes
-	for trackID, publisherID := range publisherIDs {
-		if subscribe {
-			participant.SubscribeToTrack(trackID, publisherIdentities[trackID], publisherID)
-		} else {
-			participant.UnsubscribeFromTrack(trackID)
 		}
 	}
 }
@@ -508,10 +489,7 @@ func (r *Room) UpdateSubscriptionPermission(participant types.LocalParticipant, 
 		return err
 	}
 	for _, track := range participant.GetPublishedTracks() {
-		notifier := r.changeNotifier.GetNotifier(string(track.ID()))
-		if notifier != nil {
-			notifier.NotifyChanged()
-		}
+		r.trackManager.NotifyTrackChanged(track.ID())
 	}
 	return nil
 }
@@ -534,18 +512,28 @@ func (r *Room) UpdateVideoLayers(participant types.Participant, updateVideoLayer
 	return participant.UpdateVideoLayers(updateVideoLayers)
 }
 
-func (r *Room) ResolveMediaTrackForSubscriber(subIdentity livekit.ParticipantIdentity, publisherID livekit.ParticipantID, trackID livekit.TrackID) (types.MediaResolverResult, error) {
+func (r *Room) ResolveMediaTrackForSubscriber(subIdentity livekit.ParticipantIdentity, trackID livekit.TrackID) types.MediaResolverResult {
 	res := types.MediaResolverResult{}
-	pub := r.GetParticipantByID(publisherID)
-	if pub == nil {
-		return res, ErrPublisherNotConnected
+
+	info := r.trackManager.GetTrackInfo(trackID)
+	res.TrackChangedNotifier = r.trackManager.GetOrCreateTrackChangeNotifier(trackID)
+
+	if info == nil {
+		return res
 	}
 
-	res.Track = pub.GetPublishedTrack(trackID)
-	res.TrackChangeNotifier = r.changeNotifier.GetOrCreateNotifier(string(trackID))
-	res.HasPermission = pub.HasPermission(trackID, subIdentity)
+	res.Track = info.Track
+	res.TrackRemovedNotifier = r.trackManager.GetOrCreateTrackRemoveNotifier(trackID)
+	res.PublisherIdentity = info.PublisherIdentity
+	res.PublisherID = info.PublisherID
 
-	return res, nil
+	pub := r.GetParticipantByID(info.PublisherID)
+	// when publisher is not found, we will assume it doesn't have permission to access
+	if pub != nil {
+		res.HasPermission = pub.HasPermission(trackID, subIdentity)
+	}
+
+	return res
 }
 
 func (r *Room) IsClosed() bool {
@@ -768,7 +756,7 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 			"publisher", participant.Identity(),
 			"publisherID", participant.ID(),
 			"trackID", track.ID())
-		existingParticipant.SubscribeToTrack(track.ID(), participant.Identity(), participant.ID())
+		existingParticipant.SubscribeToTrack(track.ID())
 	}
 	onParticipantChanged := r.onParticipantChanged
 	r.lock.RUnlock()
@@ -777,10 +765,8 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 		onParticipantChanged(participant)
 	}
 
-	notifier := r.changeNotifier.GetNotifier(string(track.ID()))
-	if notifier != nil {
-		notifier.NotifyChanged()
-	}
+	r.trackManager.AddTrack(track, participant.Identity(), participant.ID())
+	r.trackManager.NotifyTrackChanged(track.ID())
 
 	// auto track egress
 	if r.internal != nil && r.internal.TrackEgress != nil {
@@ -801,6 +787,16 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 func (r *Room) onTrackUpdated(p types.LocalParticipant, _ types.MediaTrack) {
 	// send track updates to everyone, especially if track was updated by admin
 	r.broadcastParticipantState(p, broadcastOptions{})
+	if r.onParticipantChanged != nil {
+		r.onParticipantChanged(p)
+	}
+}
+
+func (r *Room) onTrackUnpublished(p types.LocalParticipant, track types.MediaTrack) {
+	r.trackManager.RemoveTrack(track)
+	if !p.IsClosed() {
+		r.broadcastParticipantState(p, broadcastOptions{skipSource: true})
+	}
 	if r.onParticipantChanged != nil {
 		r.onParticipantChanged(p)
 	}
@@ -871,7 +867,7 @@ func (r *Room) subscribeToExistingTracks(p types.LocalParticipant) {
 		// subscribe to all
 		for _, track := range op.GetPublishedTracks() {
 			trackIDs = append(trackIDs, track.ID())
-			p.SubscribeToTrack(track.ID(), op.Identity(), op.ID())
+			p.SubscribeToTrack(track.ID())
 		}
 	}
 	if len(trackIDs) > 0 {

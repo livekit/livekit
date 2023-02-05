@@ -38,7 +38,7 @@ type UpTrackManager struct {
 
 	// callbacks & handlers
 	onClose        func()
-	onTrackUpdated func(track types.MediaTrack, onlyIfReady bool)
+	onTrackUpdated func(track types.MediaTrack)
 }
 
 func NewUpTrackManager(params UpTrackManagerParams) *UpTrackManager {
@@ -83,7 +83,7 @@ func (u *UpTrackManager) ToProto() []*livekit.TrackInfo {
 	return trackInfos
 }
 
-func (u *UpTrackManager) OnPublishedTrackUpdated(f func(track types.MediaTrack, onlyIfReady bool)) {
+func (u *UpTrackManager) OnPublishedTrackUpdated(f func(track types.MediaTrack)) {
 	u.onTrackUpdated = f
 }
 
@@ -99,7 +99,7 @@ func (u *UpTrackManager) SetPublishedTrackMuted(trackID livekit.TrackID, muted b
 		if currentMuted != track.IsMuted() {
 			u.params.Logger.Infow("publisher mute status changed", "trackID", trackID, "muted", track.IsMuted())
 			if u.onTrackUpdated != nil {
-				u.onTrackUpdated(track, false)
+				u.onTrackUpdated(track)
 			}
 		}
 	}
@@ -232,7 +232,7 @@ func (u *UpTrackManager) UpdateVideoLayers(updateVideoLayers *livekit.UpdateVide
 
 	track.UpdateVideoLayers(updateVideoLayers.Layers)
 	if u.onTrackUpdated != nil {
-		u.onTrackUpdated(track, false)
+		u.onTrackUpdated(track)
 	}
 
 	return nil
@@ -259,11 +259,6 @@ func (u *UpTrackManager) AddPublishedTrack(track types.MediaTrack) {
 			notifyClose = true
 		}
 		u.lock.Unlock()
-
-		// only send this when client is in a ready state
-		if u.onTrackUpdated != nil {
-			u.onTrackUpdated(track, true)
-		}
 
 		if notifyClose && u.onClose != nil {
 			u.onClose()

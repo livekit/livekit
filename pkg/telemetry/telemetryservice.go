@@ -36,7 +36,7 @@ type TelemetryService interface {
 	// TrackUnpublished - a participant unpublished a track
 	TrackUnpublished(ctx context.Context, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, shouldSendEvent bool)
 	// TrackSubscribeRequested - a participant requested to subscribe to a track
-	TrackSubscribeRequested(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, publisher *livekit.ParticipantInfo)
+	TrackSubscribeRequested(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
 	// TrackSubscribed - a participant subscribed to a track successfully
 	TrackSubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, publisher *livekit.ParticipantInfo, shouldSendEvent bool)
 	// TrackUnsubscribed - a participant unsubscribed from a track successfully

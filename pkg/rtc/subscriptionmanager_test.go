@@ -47,7 +47,7 @@ func TestSubscribe(t *testing.T) {
 	t.Run("happy path subscribe", func(t *testing.T) {
 		sm := newTestSubscriptionManager(t)
 		defer sm.Close(false)
-		resolver := newTestResolver(true, nil)
+		resolver := newTestResolver(true, true, "pub", "pubID")
 		sm.params.TrackResolver = resolver.Resolve
 		subCount := atomic.Int32{}
 		failed := atomic.Bool{}
@@ -67,7 +67,7 @@ func TestSubscribe(t *testing.T) {
 			}
 		})
 
-		sm.SubscribeToTrack("track", "pub", "pubID")
+		sm.SubscribeToTrack("track")
 		s := sm.subscriptions["track"]
 		require.True(t, s.isDesired())
 		require.Eventually(t, func() bool {
@@ -112,14 +112,14 @@ func TestSubscribe(t *testing.T) {
 	t.Run("no track permission", func(t *testing.T) {
 		sm := newTestSubscriptionManager(t)
 		defer sm.Close(false)
-		resolver := newTestResolver(false, nil)
+		resolver := newTestResolver(false, true, "pub", "pubID")
 		sm.params.TrackResolver = resolver.Resolve
 		failed := atomic.Bool{}
 		sm.params.OnSubcriptionError = func(trackID livekit.TrackID) {
 			failed.Store(true)
 		}
 
-		sm.SubscribeToTrack("track", "pub", "pubID")
+		sm.SubscribeToTrack("track")
 		s := sm.subscriptions["track"]
 		require.Eventually(t, func() bool {
 			return !s.getHasPermission()
@@ -153,21 +153,21 @@ func TestSubscribe(t *testing.T) {
 	t.Run("publisher left", func(t *testing.T) {
 		sm := newTestSubscriptionManager(t)
 		defer sm.Close(false)
-		resolver := newTestResolver(true, nil)
+		resolver := newTestResolver(true, true, "pub", "pubID")
 		sm.params.TrackResolver = resolver.Resolve
 		failed := atomic.Bool{}
 		sm.params.OnSubcriptionError = func(trackID livekit.TrackID) {
 			failed.Store(true)
 		}
 
-		sm.SubscribeToTrack("track", "pub", "pubID")
+		sm.SubscribeToTrack("track")
 		s := sm.subscriptions["track"]
 		require.Eventually(t, func() bool {
 			return !s.needsSubscribe()
 		}, subSettleTimeout, subCheckInterval, "should be subscribed")
 
 		resolver.lock.Lock()
-		resolver.err = ErrTrackNotFound
+		resolver.hasTrack = false
 		resolver.lock.Unlock()
 
 		// publisher triggers close
@@ -187,7 +187,7 @@ func TestUnsubscribe(t *testing.T) {
 		unsubCount.Add(1)
 	}
 
-	resolver := newTestResolver(true, nil)
+	resolver := newTestResolver(true, true, "pub", "pubID")
 
 	s := &trackSubscription{
 		trackID:           "track",
@@ -200,10 +200,9 @@ func TestUnsubscribe(t *testing.T) {
 		logger:            logger.GetLogger(),
 	}
 	// a bunch of unfortunate manual wiring
-	res, err := resolver.Resolve("sub", s.publisherID, s.trackID)
-	require.NoError(t, err)
-	res.TrackChangeNotifier.AddObserver(string(sm.params.Participant.ID()), func() {})
-	s.changeNotifier = res.TrackChangeNotifier
+	res := resolver.Resolve("sub", s.trackID)
+	res.TrackChangedNotifier.AddObserver(string(sm.params.Participant.ID()), func() {})
+	s.changedNotifier = res.TrackChangedNotifier
 	st, err := res.Track.AddSubscriber(sm.params.Participant)
 	require.NoError(t, err)
 	s.subscribedTrack = st
@@ -227,14 +226,14 @@ func TestUnsubscribe(t *testing.T) {
 
 	require.Eventually(t, func() bool {
 		return !s.needsUnsubscribe()
-	}, subSettleTimeout, subCheckInterval, "track was not unsubscribed")
+	}, subSettleTimeout, subCheckInterval, "Track was not unsubscribed")
 
 	// no traces should be left
 	require.Len(t, sm.GetSubscribedTracks(), 0)
 	sm.lock.RLock()
 	require.Len(t, sm.subscriptions, 0)
 	sm.lock.RUnlock()
-	require.False(t, res.TrackChangeNotifier.HasObservers())
+	require.False(t, res.TrackChangedNotifier.HasObservers())
 
 	tm := sm.params.Telemetry.(*telemetryfakes.FakeTelemetryService)
 	require.Equal(t, 1, tm.TrackUnsubscribedCallCount())
@@ -243,7 +242,7 @@ func TestUnsubscribe(t *testing.T) {
 func TestSubscribeStatusChanged(t *testing.T) {
 	sm := newTestSubscriptionManager(t)
 	defer sm.Close(false)
-	resolver := newTestResolver(true, nil)
+	resolver := newTestResolver(true, true, "pub", "pubID")
 	sm.params.TrackResolver = resolver.Resolve
 	numParticipantSubscribed := atomic.Int32{}
 	numParticipantUnsubscribed := atomic.Int32{}
@@ -255,8 +254,8 @@ func TestSubscribeStatusChanged(t *testing.T) {
 		}
 	})
 
-	sm.SubscribeToTrack("track1", "pub", "pubID")
-	sm.SubscribeToTrack("track2", "pub", "pubID")
+	sm.SubscribeToTrack("track1")
+	sm.SubscribeToTrack("track2")
 	s1 := sm.subscriptions["track1"]
 	s2 := sm.subscriptions["track2"]
 	require.Eventually(t, func() bool {
@@ -300,7 +299,7 @@ func TestSubscribeStatusChanged(t *testing.T) {
 func TestUpdateSettingsBeforeSubscription(t *testing.T) {
 	sm := newTestSubscriptionManager(t)
 	defer sm.Close(false)
-	resolver := newTestResolver(true, nil)
+	resolver := newTestResolver(true, true, "pub", "pubID")
 	sm.params.TrackResolver = resolver.Resolve
 
 	settings := &livekit.UpdateTrackSettings{
@@ -310,12 +309,12 @@ func TestUpdateSettingsBeforeSubscription(t *testing.T) {
 	}
 	sm.UpdateSubscribedTrackSettings("track", settings)
 
-	sm.SubscribeToTrack("track", "pub", "pubID")
+	sm.SubscribeToTrack("track")
 
 	s := sm.subscriptions["track"]
 	require.Eventually(t, func() bool {
 		return !s.needsSubscribe()
-	}, subSettleTimeout, subCheckInterval, "track should be subscribed")
+	}, subSettleTimeout, subCheckInterval, "Track should be subscribed")
 
 	st := s.getSubscribedTrack().(*typesfakes.FakeSubscribedTrack)
 	require.Equal(t, 1, st.UpdateSubscriberSettingsCallCount())
@@ -336,8 +335,8 @@ func newTestSubscriptionManager(t *testing.T) *SubscriptionManager {
 		OnTrackSubscribed:   func(subTrack types.SubscribedTrack) {},
 		OnTrackUnsubscribed: func(subTrack types.SubscribedTrack) {},
 		OnSubcriptionError:  func(trackID livekit.TrackID) {},
-		TrackResolver: func(identity livekit.ParticipantIdentity, pID livekit.ParticipantID, trackID livekit.TrackID) (types.MediaResolverResult, error) {
-			return types.MediaResolverResult{}, ErrTrackNotFound
+		TrackResolver: func(identity livekit.ParticipantIdentity, trackID livekit.TrackID) types.MediaResolverResult {
+			return types.MediaResolverResult{}
 		},
 		Telemetry: &telemetryfakes.FakeTelemetryService{},
 	})
@@ -346,34 +345,41 @@ func newTestSubscriptionManager(t *testing.T) *SubscriptionManager {
 type testResolver struct {
 	lock          sync.Mutex
 	hasPermission bool
-	err           error
+	hasTrack      bool
+	pubIdentity   livekit.ParticipantIdentity
+	pubID         livekit.ParticipantID
 }
 
-func newTestResolver(hasPermission bool, err error) *testResolver {
+func newTestResolver(hasPermission bool, hasTrack bool, pubIdentity livekit.ParticipantIdentity, pubID livekit.ParticipantID) *testResolver {
 	return &testResolver{
 		hasPermission: hasPermission,
-		err:           err,
+		hasTrack:      hasTrack,
+		pubIdentity:   pubIdentity,
+		pubID:         pubID,
 	}
 }
 
-func (t *testResolver) Resolve(identity livekit.ParticipantIdentity, pID livekit.ParticipantID, trackID livekit.TrackID) (types.MediaResolverResult, error) {
+func (t *testResolver) Resolve(identity livekit.ParticipantIdentity, trackID livekit.TrackID) types.MediaResolverResult {
 	t.lock.Lock()
 	defer t.lock.Unlock()
-	if t.err != nil {
-		return types.MediaResolverResult{}, t.err
+	res := types.MediaResolverResult{
+		TrackChangedNotifier: utils.NewChangeNotifier(),
+		TrackRemovedNotifier: utils.NewChangeNotifier(),
+		HasPermission:        t.hasPermission,
+		PublisherID:          t.pubID,
+		PublisherIdentity:    t.pubIdentity,
 	}
-	mt := &typesfakes.FakeMediaTrack{}
-	st := &typesfakes.FakeSubscribedTrack{}
-	st.IDReturns(trackID)
-	st.PublisherIDReturns(pID)
-	st.PublisherIdentityReturns(identity)
-	mt.AddSubscriberReturns(st, nil)
-	st.MediaTrackReturns(mt)
-	return types.MediaResolverResult{
-		Track:               mt,
-		TrackChangeNotifier: utils.NewChangeNotifier(),
-		HasPermission:       t.hasPermission,
-	}, nil
+	if t.hasTrack {
+		mt := &typesfakes.FakeMediaTrack{}
+		st := &typesfakes.FakeSubscribedTrack{}
+		st.IDReturns(trackID)
+		st.PublisherIDReturns(t.pubID)
+		st.PublisherIdentityReturns(t.pubIdentity)
+		mt.AddSubscriberReturns(st, nil)
+		st.MediaTrackReturns(mt)
+		res.Track = mt
+	}
+	return res
 }
 
 func setTestSubscribedTrackBound(t *testing.T, st types.SubscribedTrack) {

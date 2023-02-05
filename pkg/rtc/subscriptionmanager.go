@@ -113,21 +113,18 @@ func (m *SubscriptionManager) isClosed() bool {
 	}
 }
 
-func (m *SubscriptionManager) SubscribeToTrack(trackID livekit.TrackID, publisherIdentity livekit.ParticipantIdentity, publisherID livekit.ParticipantID) {
+func (m *SubscriptionManager) SubscribeToTrack(trackID livekit.TrackID) {
 	m.lock.Lock()
 	sub, ok := m.subscriptions[trackID]
 	if !ok {
 		sLogger := m.params.Logger.WithValues(
 			"trackID", trackID,
-			"publisherID", publisherID,
-			"publisherIdentity", publisherIdentity,
 		)
 		sub = newTrackSubscription(m.params.Participant.ID(), trackID, sLogger)
 		m.subscriptions[trackID] = sub
 	}
 	desireChanged := sub.setDesired(true)
 	m.lock.Unlock()
-	sub.setPublisher(publisherIdentity, publisherID)
 	if desireChanged {
 		sub.logger.Infow("subscribing to track")
 	}
@@ -274,10 +271,6 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 				&livekit.TrackInfo{
 					Sid: string(s.trackID),
 				},
-				&livekit.ParticipantInfo{
-					Sid:      string(s.getPublisherID()),
-					Identity: string(s.getPublisherIdentity()),
-				},
 			)
 		}
 		if err := m.subscribe(s); err != nil {
@@ -295,8 +288,8 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 				if s.durationSinceStart() > subscriptionTimeout {
 					s.maybeRecordError(m.params.Telemetry, m.params.Participant.ID(), err, true)
 				}
-			case ErrPublisherNotConnected, ErrTrackNotFound:
-				// publisher left or source track was never published or closed
+			case ErrTrackNotFound:
+				// source track was never published or closed
 				// if after timeout, we'd unsubscribe from it.
 				// this is the *only* case we'd change desired state
 				if s.durationSinceStart() > notFoundTimeout {
@@ -393,19 +386,22 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 		return ErrNoSubscribePermission
 	}
 
-	res, err := m.params.TrackResolver(m.params.Participant.Identity(), s.publisherID, s.trackID)
-	if err != nil {
-		return err
-	}
-
+	res := m.params.TrackResolver(m.params.Participant.Identity(), s.trackID)
 	s.logger.Debugw("resolved track", "result", res)
 
-	if res.TrackChangeNotifier != nil && s.setChangeNotifier(res.TrackChangeNotifier) {
+	if res.TrackChangedNotifier != nil && s.setChangedNotifier(res.TrackChangedNotifier) {
 		// set callback only when we haven't done it before
-		// we set the observer before checking for existence of track, so that we may get notified when track becomes
-		// available
-		res.TrackChangeNotifier.AddObserver(string(m.params.Participant.ID()), func() {
+		// we set the observer before checking for existence of track, so that we may get notified
+		// when the track becomes available
+		res.TrackChangedNotifier.AddObserver(string(m.params.Participant.ID()), func() {
 			m.queueReconcile(s.trackID)
+		})
+	}
+	if res.TrackRemovedNotifier != nil && s.setRemovedNotifier(res.TrackRemovedNotifier) {
+		res.TrackRemovedNotifier.AddObserver(string(m.params.Participant.ID()), func() {
+			// source track removed, we would unsubscribe
+			s.logger.Debugw("removing subscription since source track was removed")
+			s.setDesired(false)
 		})
 	}
 
@@ -424,6 +420,7 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 		return ErrNoTrackPermission
 	}
 
+	s.setPublisher(res.PublisherIdentity, res.PublisherID)
 	subTrack, err := track.AddSubscriber(m.params.Participant)
 	if err != nil && err != errAlreadySubscribed {
 		// ignore already subscribed error
@@ -566,7 +563,8 @@ type trackSubscription struct {
 	publisherID       livekit.ParticipantID
 	publisherIdentity livekit.ParticipantIdentity
 	settings          *livekit.UpdateTrackSettings
-	changeNotifier    types.ChangeNotifier
+	changedNotifier   types.ChangeNotifier
+	removedNotifier   types.ChangeNotifier
 	hasPermission     bool
 	subscribedTrack   types.SubscribedTrack
 	eventSent         atomic.Bool
@@ -610,8 +608,6 @@ func (s *trackSubscription) getPublisherIdentity() livekit.ParticipantIdentity {
 
 func (s *trackSubscription) setDesired(desired bool) bool {
 	s.lock.Lock()
-	defer s.lock.Unlock()
-
 	if desired {
 		// as long as user explicitly set it to desired
 		// we'll reset the timer so it has sufficient time to reconcile
@@ -620,18 +616,19 @@ func (s *trackSubscription) setDesired(desired bool) bool {
 	}
 
 	if s.desired == desired {
+		s.lock.Unlock()
 		return false
 	}
 	s.desired = desired
-	// when no longer desired, we no longer care about change notifications
-	if !desired && s.changeNotifier != nil {
-		s.changeNotifier.RemoveObserver(string(s.subscriberID))
-		s.changeNotifier = nil
-	}
+	s.lock.Unlock()
 
+	// when no longer desired, we no longer care about change notifications
 	if desired {
 		// reset attempts
 		s.numAttempts.Store(0)
+	} else {
+		s.setChangedNotifier(nil)
+		s.setRemovedNotifier(nil)
 	}
 	return true
 }
@@ -682,15 +679,32 @@ func (s *trackSubscription) getSubscribedTrack() types.SubscribedTrack {
 	return s.subscribedTrack
 }
 
-func (s *trackSubscription) setChangeNotifier(notifier types.ChangeNotifier) bool {
+func (s *trackSubscription) setChangedNotifier(notifier types.ChangeNotifier) bool {
 	s.lock.Lock()
-	if s.changeNotifier == notifier {
+	if s.changedNotifier == notifier {
 		s.lock.Unlock()
 		return false
 	}
 
-	existing := s.changeNotifier
-	s.changeNotifier = notifier
+	existing := s.changedNotifier
+	s.changedNotifier = notifier
+	s.lock.Unlock()
+
+	if existing != nil {
+		existing.RemoveObserver(string(s.subscriberID))
+	}
+	return true
+}
+
+func (s *trackSubscription) setRemovedNotifier(notifier types.ChangeNotifier) bool {
+	s.lock.Lock()
+	if s.removedNotifier == notifier {
+		s.lock.Unlock()
+		return false
+	}
+
+	existing := s.removedNotifier
+	s.removedNotifier = notifier
 	s.lock.Unlock()
 
 	if existing != nil {

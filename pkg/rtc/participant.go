@@ -138,6 +138,7 @@ type ParticipantImpl struct {
 	// callbacks & handlers
 	onTrackPublished    func(types.LocalParticipant, types.MediaTrack)
 	onTrackUpdated      func(types.LocalParticipant, types.MediaTrack)
+	onTrackUnpublished  func(types.LocalParticipant, types.MediaTrack)
 	onStateChange       func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State)
 	onParticipantUpdate func(types.LocalParticipant)
 	onDataPacket        func(types.LocalParticipant, *livekit.DataPacket)
@@ -409,6 +410,12 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 func (p *ParticipantImpl) OnTrackPublished(callback func(types.LocalParticipant, types.MediaTrack)) {
 	p.lock.Lock()
 	p.onTrackPublished = callback
+	p.lock.Unlock()
+}
+
+func (p *ParticipantImpl) OnTrackUnpublished(callback func(types.LocalParticipant, types.MediaTrack)) {
+	p.lock.Lock()
+	p.onTrackUnpublished = callback
 	p.lock.Unlock()
 }
 
@@ -1011,11 +1018,7 @@ func (p *ParticipantImpl) setupUpTrackManager() {
 		VersionGenerator: p.params.VersionGenerator,
 	})
 
-	p.UpTrackManager.OnPublishedTrackUpdated(func(track types.MediaTrack, onlyIfReady bool) {
-		if onlyIfReady && !p.IsReady() {
-			return
-		}
-
+	p.UpTrackManager.OnPublishedTrackUpdated(func(track types.MediaTrack) {
 		p.lock.RLock()
 		onTrackUpdated := p.onTrackUpdated
 		p.lock.RUnlock()
@@ -1613,8 +1616,9 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 		delete(p.pendingTracks, signalCid)
 	}
 
+	trackID := livekit.TrackID(ti.Sid)
 	mt.AddOnClose(func() {
-		p.supervisor.ClearPublishedTrack(livekit.TrackID(ti.Sid), mt)
+		p.supervisor.ClearPublishedTrack(trackID, mt)
 
 		// not logged when closing
 		p.params.Telemetry.TrackUnpublished(
@@ -1625,14 +1629,26 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 			!p.IsClosed(),
 		)
 
-		// re-use track sid
+		isUnpublished := false
+		// re-use Track sid
 		p.pendingTracksLock.Lock()
 		if pti := p.pendingTracks[signalCid]; pti != nil {
 			p.sendTrackPublished(signalCid, pti.trackInfos[0])
 		} else {
 			p.unpublishedTracks = append(p.unpublishedTracks, ti)
+			isUnpublished = true
 		}
 		p.pendingTracksLock.Unlock()
+
+		if isUnpublished && !p.IsClosed() {
+			// unpublished events aren't necessary when participant is closed
+			p.lock.RLock()
+			onTrackUnpublished := p.onTrackUnpublished
+			p.lock.RUnlock()
+			if onTrackUnpublished != nil {
+				onTrackUnpublished(p, mt)
+			}
+		}
 	})
 
 	return mt

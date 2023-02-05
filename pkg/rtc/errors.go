@@ -14,7 +14,6 @@ var (
 	ErrMissingGrants           = errors.New("VideoGrant is missing")
 
 	// Track subscription related
-	ErrPublisherNotConnected = errors.New("publisher is not connected")
 	ErrNoTrackPermission     = errors.New("participant is not allowed to subscribe to this track")
 	ErrNoSubscribePermission = errors.New("participant is not given permission to subscribe to tracks")
 	ErrTrackNotFound         = errors.New("track cannot be found")
