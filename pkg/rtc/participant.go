@@ -472,7 +472,7 @@ func (p *ParticipantImpl) HandleAnswer(answer webrtc.SessionDescription) {
 	 * 2. client send answer
 	 */
 	signalConnCost := time.Since(p.ConnectedAt()).Milliseconds()
-	p.TransportManager.UpdateRTT(uint32(signalConnCost), false)
+	p.TransportManager.UpdateSignalingRTT(uint32(signalConnCost))
 
 	p.TransportManager.HandleAnswer(answer)
 }
@@ -758,7 +758,7 @@ func (p *ParticipantImpl) ICERestart(iceConfig *livekit.ICEConfig, reason liveki
 		t.(types.LocalMediaTrack).Restart()
 	}
 
-	p.TransportManager.ICERestart(iceConfig, reason == livekit.ReconnectReason_REASON_PUBLISHER_FAILED || reason == livekit.ReconnectReason_REASON_SUBSCRIBER_FAILED)
+	p.TransportManager.ICERestart(iceConfig, reason == livekit.ReconnectReason_RR_PUBLISHER_FAILED || reason == livekit.ReconnectReason_RR_SUBSCRIBER_FAILED)
 }
 
 func (p *ParticipantImpl) OnICEConfigChanged(f func(participant types.LocalParticipant, iceConfig *livekit.ICEConfig)) {
@@ -919,11 +919,7 @@ func (p *ParticipantImpl) SubscriptionPermissionUpdate(publisherID livekit.Parti
 	}
 }
 
-func (p *ParticipantImpl) UpdateRTT(rtt uint32, isUDP bool) {
-	if !isUDP {
-		p.TransportManager.UpdateRTT(rtt, false)
-		return
-	}
+func (p *ParticipantImpl) UpdateMediaRTT(rtt uint32) {
 	now := time.Now()
 	p.lock.Lock()
 	if now.Sub(p.rttUpdatedAt) < rttUpdateInterval || p.lastRTT == rtt {
@@ -933,7 +929,7 @@ func (p *ParticipantImpl) UpdateRTT(rtt uint32, isUDP bool) {
 	p.rttUpdatedAt = now
 	p.lastRTT = rtt
 	p.lock.Unlock()
-	p.TransportManager.UpdateRTT(rtt, true)
+	p.TransportManager.UpdateMediaRTT(rtt)
 
 	for _, pt := range p.GetPublishedTracks() {
 		pt.(types.LocalMediaTrack).SetRTT(rtt)

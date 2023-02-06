@@ -71,7 +71,7 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 
 	case *livekit.SignalRequest_PingReq:
 		if msg.PingReq.Rtt > 0 {
-			participant.UpdateRTT(uint32(msg.PingReq.Rtt), false)
+			participant.UpdateSignalingRTT(uint32(msg.PingReq.Rtt))
 		}
 	}
 	return nil

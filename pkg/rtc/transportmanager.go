@@ -70,7 +70,7 @@ type TransportManager struct {
 
 	mediaLossProxy       *MediaLossProxy
 	udpLossUnstableCount uint32
-	tcpRTT, udpRTT       uint32
+	signalingRTT, udpRTT uint32
 
 	onPublisherInitialConnected        func()
 	onSubscriberInitialConnected       func()
@@ -666,11 +666,11 @@ func (t *TransportManager) onMediaLossUpdate(loss uint8) {
 	if loss >= uint8(255*udpLossFracUnstable/100) {
 		t.udpLossUnstableCount |= 1
 		if bits.OnesCount32(t.udpLossUnstableCount) >= udpLossUnstableCountThreshold {
-			if t.udpRTT > 0 && t.tcpRTT < uint32(float32(t.udpRTT)*1.3) && t.tcpRTT < tcpGoodRTT && time.Since(t.lastSignalAt) < iceFailedTimeout {
+			if t.udpRTT > 0 && t.signalingRTT < uint32(float32(t.udpRTT)*1.3) && t.signalingRTT < tcpGoodRTT && time.Since(t.lastSignalAt) < iceFailedTimeout {
 				t.udpLossUnstableCount = 0
 				t.lock.Unlock()
 
-				t.params.Logger.Infow("udp connection unstable, switch to tcp")
+				t.params.Logger.Infow("udp connection unstable, switch to tcp", "signalingRTT", t.signalingRTT)
 				t.handleConnectionFailed(true)
 				if t.onAnyTransportFailed != nil {
 					t.onAnyTransportFailed()
@@ -682,19 +682,19 @@ func (t *TransportManager) onMediaLossUpdate(loss uint8) {
 	t.lock.Unlock()
 }
 
-func (t *TransportManager) UpdateRTT(rtt uint32, isUDP bool) {
-	if isUDP {
-		if t.udpRTT == 0 {
-			t.udpRTT = rtt
-		} else {
-			t.udpRTT = uint32(int(t.udpRTT) + (int(rtt)-int(t.udpRTT))/2)
-		}
-	} else {
-		t.tcpRTT = rtt
+func (t *TransportManager) UpdateSignalingRTT(rtt uint32) {
+	t.signalingRTT = rtt
 
-		// TODO: considering using tcp rtt to calculate ice connection cost, if ice connection can't be established
-		// within 5 * tcp rtt(at least 5s), means udp traffic might be block/dropped, switch to tcp.
-		// Currently, most cases reported is that ice connected but subsequent connection, so left the thinking for now.
+	// TODO: considering using tcp rtt to calculate ice connection cost, if ice connection can't be established
+	// within 5 * tcp rtt(at least 5s), means udp traffic might be block/dropped, switch to tcp.
+	// Currently, most cases reported is that ice connected but subsequent connection, so left the thinking for now.
+}
+
+func (t *TransportManager) UpdateMediaRTT(rtt uint32) {
+	if t.udpRTT == 0 {
+		t.udpRTT = rtt
+	} else {
+		t.udpRTT = uint32(int(t.udpRTT) + (int(rtt)-int(t.udpRTT))/2)
 	}
 }
 

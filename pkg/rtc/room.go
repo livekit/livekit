@@ -701,7 +701,7 @@ func (r *Room) SimulateScenario(participant types.LocalParticipant, simulateScen
 		participant.ICERestart(&livekit.ICEConfig{
 			PreferenceSubscriber: livekit.ICECandidateType(scenario.SwitchCandidateProtocol),
 			PreferencePublisher:  livekit.ICECandidateType(scenario.SwitchCandidateProtocol),
-		}, livekit.ReconnectReason_REASON_SWITCH_CANDIDATE)
+		}, livekit.ReconnectReason_RR_SWITCH_CANDIDATE)
 	}
 	return nil
 }

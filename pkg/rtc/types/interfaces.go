@@ -317,7 +317,8 @@ type LocalParticipant interface {
 	MigrateState() MigrateState
 	SetMigrateInfo(previousOffer, previousAnswer *webrtc.SessionDescription, mediaTracks []*livekit.TrackPublishedResponse, dataChannels []*livekit.DataChannelInfo)
 
-	UpdateRTT(rtt uint32, isUDP bool)
+	UpdateMediaRTT(rtt uint32)
+	UpdateSignalingRTT(rtt uint32)
 
 	CacheDownTrack(trackID livekit.TrackID, rtpTransceiver *webrtc.RTPTransceiver, downTrackState sfu.DownTrackState)
 	UncacheDownTrack(rtpTransceiver *webrtc.RTPTransceiver)

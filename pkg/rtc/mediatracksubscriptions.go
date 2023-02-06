@@ -158,7 +158,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	})
 
 	downTrack.OnRttUpdate(func(_ *sfu.DownTrack, rtt uint32) {
-		go sub.UpdateRTT(rtt, true)
+		go sub.UpdateMediaRTT(rtt)
 	})
 
 	downTrack.AddReceiverReportListener(func(dt *sfu.DownTrack, report *rtcp.ReceiverReport) {
