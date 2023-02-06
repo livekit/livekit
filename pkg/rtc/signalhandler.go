@@ -68,6 +68,11 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 			pLogger.Warnw("could not simulate scenario", err,
 				"simulate", msg.Simulate)
 		}
+
+	case *livekit.SignalRequest_PingReq:
+		if msg.PingReq.Rtt > 0 {
+			participant.UpdateSignalingRTT(uint32(msg.PingReq.Rtt))
+		}
 	}
 	return nil
 }

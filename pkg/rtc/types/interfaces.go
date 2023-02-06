@@ -262,7 +262,7 @@ type LocalParticipant interface {
 
 	HandleAnswer(sdp webrtc.SessionDescription)
 	Negotiate(force bool)
-	ICERestart(iceConfig *livekit.ICEConfig)
+	ICERestart(iceConfig *livekit.ICEConfig, reason livekit.ReconnectReason)
 	AddTrackToSubscriber(trackLocal webrtc.TrackLocal, params AddTrackParams) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
 	AddTransceiverFromTrackToSubscriber(trackLocal webrtc.TrackLocal, params AddTrackParams) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
 	RemoveTrackFromSubscriber(sender *webrtc.RTPSender) error
@@ -317,7 +317,8 @@ type LocalParticipant interface {
 	MigrateState() MigrateState
 	SetMigrateInfo(previousOffer, previousAnswer *webrtc.SessionDescription, mediaTracks []*livekit.TrackPublishedResponse, dataChannels []*livekit.DataChannelInfo)
 
-	UpdateRTT(rtt uint32)
+	UpdateMediaRTT(rtt uint32)
+	UpdateSignalingRTT(rtt uint32)
 
 	CacheDownTrack(trackID livekit.TrackID, rtpTransceiver *webrtc.RTPTransceiver, downTrackState sfu.DownTrackState)
 	UncacheDownTrack(rtpTransceiver *webrtc.RTPTransceiver)

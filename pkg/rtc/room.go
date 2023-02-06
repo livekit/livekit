@@ -367,7 +367,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 	return nil
 }
 
-func (r *Room) ResumeParticipant(p types.LocalParticipant, responseSink routing.MessageSink, iceServers []*livekit.ICEServer) error {
+func (r *Room) ResumeParticipant(p types.LocalParticipant, responseSink routing.MessageSink, iceServers []*livekit.ICEServer, reason livekit.ReconnectReason) error {
 	// close previous sink, and link to new one
 	p.CloseSignalConnection()
 	p.SetResponseSink(responseSink)
@@ -384,7 +384,7 @@ func (r *Room) ResumeParticipant(p types.LocalParticipant, responseSink routing.
 		return err
 	}
 
-	p.ICERestart(nil)
+	p.ICERestart(nil, reason)
 	return nil
 }
 
@@ -701,7 +701,7 @@ func (r *Room) SimulateScenario(participant types.LocalParticipant, simulateScen
 		participant.ICERestart(&livekit.ICEConfig{
 			PreferenceSubscriber: livekit.ICECandidateType(scenario.SwitchCandidateProtocol),
 			PreferencePublisher:  livekit.ICECandidateType(scenario.SwitchCandidateProtocol),
-		})
+		}, livekit.ReconnectReason_RR_SWITCH_CANDIDATE)
 	}
 	return nil
 }

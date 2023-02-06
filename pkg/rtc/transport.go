@@ -155,10 +155,12 @@ type PCTransport struct {
 	lossyDCOpened    bool
 	onDataPacket     func(kind livekit.DataPacket_Kind, data []byte)
 
-	iceStartedAt         time.Time
-	iceConnectedAt       time.Time
-	connectedAt          time.Time
-	connectAfterICETimer *time.Timer // timer to wait for pc to connect after ice connected
+	iceStartedAt               time.Time
+	iceConnectedAt             time.Time
+	firstConnectedAt           time.Time
+	connectedAt                time.Time
+	connectAfterICETimer       *time.Timer // timer to wait for pc to connect after ice connected
+	resetShortConnOnICERestart atomic.Bool
 
 	onFullyEstablished func()
 
@@ -419,22 +421,35 @@ func (t *PCTransport) setICEConnectedAt(at time.Time) {
 		t.iceConnectedAt = at
 
 		// set failure timer for dtls handshake
-		iceCost := at.Sub(t.iceStartedAt)
-		connTimeoutAfterICE := 3 * iceCost
+		iceDuration := at.Sub(t.iceStartedAt)
+		connTimeoutAfterICE := 3 * iceDuration
 		if connTimeoutAfterICE < minConnectTimeoutAfterICE {
 			connTimeoutAfterICE = minConnectTimeoutAfterICE
 		} else if connTimeoutAfterICE > maxConnectTimeoutAfterICE {
 			connTimeoutAfterICE = maxConnectTimeoutAfterICE
 		}
-		t.params.Logger.Debugw("setting connection timer after ice connected", "timeout", connTimeoutAfterICE, "iceCost", iceCost)
+		t.params.Logger.Debugw("setting connection timer after ice connected", "timeout", connTimeoutAfterICE, "iceDuration", iceDuration)
 		t.connectAfterICETimer = time.AfterFunc(connTimeoutAfterICE, func() {
 			state := t.pc.ConnectionState()
 			// if pc is still checking or connected but not fully established after timeout, then fire connection fail
 			if state != webrtc.PeerConnectionStateClosed && state != webrtc.PeerConnectionStateFailed && !t.isFullyEstablished() {
-				t.params.Logger.Infow("connect timeout after ICE connected", "timeout", connTimeoutAfterICE, "iceCost", iceCost)
+				t.params.Logger.Infow("connect timeout after ICE connected", "timeout", connTimeoutAfterICE, "iceDuration", iceDuration)
 				t.handleConnectionFailed()
 			}
 		})
+	}
+	t.lock.Unlock()
+}
+
+func (t *PCTransport) resetShortConn() {
+	t.params.Logger.Infow("resetting short connection on ICE restart")
+	t.lock.Lock()
+	t.iceStartedAt = time.Time{}
+	t.iceConnectedAt = time.Time{}
+	t.connectedAt = time.Time{}
+	if t.connectAfterICETimer != nil {
+		t.connectAfterICETimer.Stop()
+		t.connectAfterICETimer = nil
 	}
 	t.lock.Unlock()
 }
@@ -478,12 +493,13 @@ func (t *PCTransport) logICECandidates() {
 
 func (t *PCTransport) setConnectedAt(at time.Time) bool {
 	t.lock.Lock()
-	if !t.connectedAt.IsZero() {
+	t.connectedAt = at
+	if !t.firstConnectedAt.IsZero() {
 		t.lock.Unlock()
 		return false
 	}
 
-	t.connectedAt = at
+	t.firstConnectedAt = at
 	prometheus.ServiceOperationCounter.WithLabelValues("peer_connection", "success", "").Add(1)
 	t.lock.Unlock()
 	return true
@@ -781,7 +797,7 @@ func (t *PCTransport) HasEverConnected() bool {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 
-	return !t.connectedAt.IsZero()
+	return !t.firstConnectedAt.IsZero()
 }
 
 func (t *PCTransport) WriteRTCP(pkts []rtcp.Packet) error {
@@ -1000,6 +1016,10 @@ func (t *PCTransport) ICERestart() {
 	t.postEvent(event{
 		signal: signalICERestart,
 	})
+}
+
+func (t *PCTransport) ResetShortConnOnICERestart() {
+	t.resetShortConnOnICERestart.Store(true)
 }
 
 func (t *PCTransport) OnStreamStateChange(f func(update *sfu.StreamStateUpdate) error) {
@@ -1724,6 +1744,10 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription) e
 		return nil
 	}
 
+	if offerRestartICE && t.resetShortConnOnICERestart.CompareAndSwap(true, false) {
+		t.resetShortConn()
+	}
+
 	if err := t.setRemoteDescription(*sd); err != nil {
 		return err
 	}
@@ -1764,6 +1788,10 @@ func (t *PCTransport) doICERestart() error {
 		t.params.Logger.Debugw("deferring ICE restart to after gathering")
 		t.restartAfterGathering = true
 		return nil
+	}
+
+	if t.resetShortConnOnICERestart.CompareAndSwap(true, false) {
+		t.resetShortConn()
 	}
 
 	if t.negotiationState == NegotiationStateNone {
