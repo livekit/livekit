@@ -69,16 +69,22 @@ type VideoAllocation struct {
 	isDeficient        bool
 	bandwidthRequested int64
 	bandwidthDelta     int64
+	/* RAJA-REMOVE
 	availableLayers    []int32
 	exemptedLayers     []int32
-	bitrates           Bitrates
-	targetLayers       VideoLayers
-	distanceToDesired  int32
+	*/
+	bitrates          Bitrates // RAJA-TODO: figure when (or if) to clear this so that layer changes trigger properly
+	targetLayers      VideoLayers
+	distanceToDesired int32
 }
 
 func (v VideoAllocation) String() string {
+	/* RAJA-REMOVE
 	return fmt.Sprintf("VideoAllocation{pause: %s, def: %+v, bw: %d, del: %d, avail: %+v, exempt: %+v, rates: %+v, target: %s, dist: %d}",
 		v.pauseReason, v.isDeficient, v.bandwidthRequested, v.bandwidthDelta, v.availableLayers, v.exemptedLayers, v.bitrates, v.targetLayers, v.distanceToDesired)
+	*/
+	return fmt.Sprintf("VideoAllocation{pause: %s, def: %+v, bw: %d, del: %d, rates: %+v, target: %s, dist: %d}",
+		v.pauseReason, v.isDeficient, v.bandwidthRequested, v.bandwidthDelta, v.bitrates, v.targetLayers, v.distanceToDesired)
 }
 
 var (
@@ -90,11 +96,13 @@ var (
 // -------------------------------------------------------------------
 
 type VideoAllocationProvisional struct {
-	muted           bool
-	pubMuted        bool
-	bitrates        Bitrates
+	muted    bool
+	pubMuted bool
+	bitrates Bitrates
+	/* RAJA-REMOVE
 	availableLayers []int32
 	exemptedLayers  []int32
+	*/
 	maxLayers       VideoLayers
 	currentLayers   VideoLayers
 	parkedLayers    VideoLayers
@@ -186,8 +194,10 @@ type Forwarder struct {
 
 	lastAllocation VideoAllocation
 
+	/* RAJA-REMOVE
 	availableLayers []int32
 	exemptedLayers  []int32
+	*/
 
 	rtpMunger *RTPMunger
 	vp8Munger *VP8Munger
@@ -425,7 +435,7 @@ func (f *Forwarder) GetForwardingStatus() ForwardingStatus {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
-	if f.muted || f.pubMuted || len(f.availableLayers) == 0 {
+	if f.muted || f.pubMuted || f.lastAllocation.pauseReason == VideoPauseReasonFeedDry {
 		return ForwardingStatusOptimal
 	}
 
@@ -433,7 +443,7 @@ func (f *Forwarder) GetForwardingStatus() ForwardingStatus {
 		return ForwardingStatusOff
 	}
 
-	if f.targetLayers.Spatial < f.maxLayers.Spatial && f.targetLayers.Spatial < f.availableLayers[len(f.availableLayers)-1] {
+	if f.isDeficientLocked() {
 		return ForwardingStatusPartial
 	}
 
@@ -444,7 +454,7 @@ func (f *Forwarder) IsReducedQuality() (int32, bool) {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
-	if f.muted || f.pubMuted || len(f.availableLayers) == 0 || f.targetLayers.Spatial == InvalidLayerSpatial {
+	if f.muted || f.pubMuted || f.lastAllocation.pauseReason == VideoPauseReasonFeedDry || f.targetLayers.Spatial == InvalidLayerSpatial {
 		return 0, false
 	}
 
@@ -464,6 +474,7 @@ func (f *Forwarder) IsReducedQuality() (int32, bool) {
 	return distance, f.isDeficientLocked()
 }
 
+/* RAJA-REMOVE
 func (f *Forwarder) UpTrackLayersChange(availableLayers []int32, exemptedLayers []int32) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
@@ -482,6 +493,7 @@ func (f *Forwarder) UpTrackLayersChange(availableLayers []int32, exemptedLayers 
 		f.exemptedLayers = nil
 	}
 }
+*/
 
 func (f *Forwarder) getOptimalBandwidthNeeded(brs Bitrates, maxLayers VideoLayers) int64 {
 	if f.muted || f.pubMuted {
@@ -506,6 +518,7 @@ func (f *Forwarder) getOptimalBandwidthNeeded(brs Bitrates, maxLayers VideoLayer
 	return 0
 }
 
+/* RAJA-REMOVE
 func (f *Forwarder) bitrateAvailable(brs Bitrates) bool {
 	neededLayers := 0
 	bitrateAvailableLayers := 0
@@ -542,6 +555,39 @@ func (f *Forwarder) bitrateAvailable(brs Bitrates) bool {
 	}
 
 	return bitrateAvailableLayers == neededLayers
+}
+*/
+
+func (f *Forwarder) getLayerChanges(brs Bitrates) (addedLayers []int32, removedLayers []int32) {
+	lastAllocationLayers := f.lastAllocation.bitrates.GetLayers()
+	nowLayers := brs.GetLayers()
+
+	for _, ln := range nowLayers {
+		found := false
+		for _, lla := range lastAllocationLayers {
+			if lla == ln {
+				found = true
+				break
+			}
+		}
+		if !found {
+			addedLayers = append(addedLayers, ln)
+		}
+	}
+
+	for _, lla := range lastAllocationLayers {
+		found := false
+		for _, ln := range nowLayers {
+			if ln == lla {
+				found = true
+				break
+			}
+		}
+		if !found {
+			removedLayers = append(removedLayers, lla)
+		}
+	}
+	return
 }
 
 func (f *Forwarder) getDistanceToDesired(brs Bitrates, targetLayers VideoLayers, maxLayers VideoLayers) int32 {
@@ -623,11 +669,13 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 	}
 
 	alloc := VideoAllocation{
-		pauseReason:     VideoPauseReasonNone,
+		pauseReason: VideoPauseReasonNone,
+		/* RAJA-REMOVE
 		availableLayers: f.availableLayers,
 		exemptedLayers:  f.exemptedLayers,
-		bitrates:        brs,
-		targetLayers:    InvalidLayers,
+		*/
+		bitrates:     brs,
+		targetLayers: InvalidLayers,
 	}
 
 	switch {
@@ -643,23 +691,30 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 		// if parked on a layer, let it continue
 		alloc.targetLayers = f.parkedLayers
 
-	case !f.bitrateAvailable(brs):
-		// Feed bitrate not yet calculated for all available layers
-		//
-		// Target the highest layer available <= max subscribed layer.
-		//
-		// If target already set, move allocation to the highest available layer <= max subscribed layer only if that is higher than existing target.
-		// It is possible that in situations like coming out of publisher mute, target is already set higher due to parked layers.
-		if f.availableLayers[len(f.availableLayers)-1] > f.targetLayers.Spatial {
-			alloc.targetLayers = VideoLayers{
-				Spatial:  int32(math.Min(float64(f.maxLayers.Spatial), float64(f.availableLayers[len(f.availableLayers)-1]))),
-				Temporal: int32(math.Max(0, float64(f.maxLayers.Temporal))),
+		/* RAJA-REMOVE
+		case !f.bitrateAvailable(brs):
+			// Feed bitrate not yet calculated for all available layers
+			//
+			// Target the highest layer available <= max subscribed layer.
+			//
+			// If target already set, move allocation to the highest available layer <= max subscribed layer only if that is higher than existing target.
+			// It is possible that in situations like coming out of publisher mute, target is already set higher due to parked layers.
+			if f.availableLayers[len(f.availableLayers)-1] > f.targetLayers.Spatial {
+				alloc.targetLayers = VideoLayers{
+					Spatial:  int32(math.Min(float64(f.maxLayers.Spatial), float64(f.availableLayers[len(f.availableLayers)-1]))),
+					Temporal: int32(math.Max(0, float64(f.maxLayers.Temporal))),
+				}
+			} else {
+				alloc.targetLayers = f.targetLayers
 			}
-		} else {
-			alloc.targetLayers = f.targetLayers
-		}
+		*/
 
 	default:
+		// RAJA-TODO:
+		//  - getLayerChanges
+		//  - if removed has current or target, re-alloc
+		//  - if added has higher, re-alloc
+
 		// allocate best layer available
 		for s := f.maxLayers.Spatial; s >= 0; s-- {
 			for t := f.maxLayers.Temporal; t >= 0; t-- {
@@ -747,6 +802,7 @@ func (f *Forwarder) ProvisionalAllocatePrepare(bitrates Bitrates) {
 		currentLayers:   f.currentLayers,
 		parkedLayers:    f.parkedLayers,
 	}
+	/* RAJA-REMOVE
 	if len(f.availableLayers) > 0 {
 		f.provisional.availableLayers = make([]int32, len(f.availableLayers))
 		copy(f.provisional.availableLayers, f.availableLayers)
@@ -755,6 +811,7 @@ func (f *Forwarder) ProvisionalAllocatePrepare(bitrates Bitrates) {
 		f.provisional.exemptedLayers = make([]int32, len(f.exemptedLayers))
 		copy(f.provisional.exemptedLayers, f.exemptedLayers)
 	}
+	*/
 }
 
 func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layers VideoLayers, allowPause bool, allowOvershoot bool) int64 {
@@ -1043,11 +1100,13 @@ func (f *Forwarder) ProvisionalAllocateCommit() VideoAllocation {
 	alloc := VideoAllocation{
 		bandwidthRequested: 0,
 		bandwidthDelta:     -f.lastAllocation.bandwidthRequested,
+		/* RAJA-REMOVE
 		availableLayers:    f.provisional.availableLayers,
 		exemptedLayers:     f.provisional.exemptedLayers,
-		bitrates:           f.provisional.bitrates,
-		targetLayers:       f.provisional.allocatedLayers,
-		distanceToDesired:  f.getDistanceToDesired(f.provisional.bitrates, f.provisional.allocatedLayers, f.provisional.maxLayers),
+		*/
+		bitrates:          f.provisional.bitrates,
+		targetLayers:      f.provisional.allocatedLayers,
+		distanceToDesired: f.getDistanceToDesired(f.provisional.bitrates, f.provisional.allocatedLayers, f.provisional.maxLayers),
 	}
 
 	switch {
@@ -1141,11 +1200,13 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, brs Bitra
 					isDeficient:        true,
 					bandwidthRequested: bandwidthRequested,
 					bandwidthDelta:     bandwidthRequested - alreadyAllocated,
+					/* RAJA-REMOVE
 					availableLayers:    f.availableLayers,
 					exemptedLayers:     f.exemptedLayers,
-					bitrates:           brs,
-					targetLayers:       targetLayers,
-					distanceToDesired:  f.getDistanceToDesired(brs, targetLayers, f.maxLayers),
+					*/
+					bitrates:          brs,
+					targetLayers:      targetLayers,
+					distanceToDesired: f.getDistanceToDesired(brs, targetLayers, f.maxLayers),
 				}
 				if targetLayers.GreaterThan(f.maxLayers) || bandwidthRequested >= optimalBandwidthNeeded {
 					alloc.isDeficient = false
@@ -1286,11 +1347,13 @@ func (f *Forwarder) Pause(brs Bitrates) VideoAllocation {
 	alloc := VideoAllocation{
 		bandwidthRequested: 0,
 		bandwidthDelta:     0 - f.lastAllocation.bandwidthRequested,
+		/* RAJA-REMOVE
 		availableLayers:    f.availableLayers,
 		exemptedLayers:     f.exemptedLayers,
-		bitrates:           brs,
-		targetLayers:       InvalidLayers,
-		distanceToDesired:  f.getDistanceToDesired(brs, InvalidLayers, f.maxLayers),
+		*/
+		bitrates:          brs,
+		targetLayers:      InvalidLayers,
+		distanceToDesired: f.getDistanceToDesired(brs, InvalidLayers, f.maxLayers),
 	}
 
 	switch {
@@ -1322,6 +1385,7 @@ func (f *Forwarder) updateAllocation(alloc VideoAllocation, reason string) Video
 	}
 
 	f.lastAllocation = alloc
+	/* RAJA-REMOVE
 	if len(alloc.availableLayers) > 0 {
 		f.lastAllocation.availableLayers = make([]int32, len(alloc.availableLayers))
 		copy(f.lastAllocation.availableLayers, alloc.availableLayers)
@@ -1330,6 +1394,7 @@ func (f *Forwarder) updateAllocation(alloc VideoAllocation, reason string) Video
 		f.lastAllocation.exemptedLayers = make([]int32, len(alloc.exemptedLayers))
 		copy(f.lastAllocation.exemptedLayers, alloc.exemptedLayers)
 	}
+	*/
 
 	f.setTargetLayers(f.lastAllocation.targetLayers)
 	if f.targetLayers == InvalidLayers {

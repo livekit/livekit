@@ -865,7 +865,7 @@ func (d *DownTrack) GetForwardingStatus() ForwardingStatus {
 }
 
 func (d *DownTrack) UpTrackLayersChange(availableLayers []int32, exemptedLayers []int32) {
-	d.forwarder.UpTrackLayersChange(availableLayers, exemptedLayers)
+	// RAJA-REMOVE d.forwarder.UpTrackLayersChange(availableLayers, exemptedLayers)
 
 	if onAvailableLayersChanged, ok := d.onAvailableLayersChanged.Load().(func(dt *DownTrack)); ok {
 		onAvailableLayersChanged(d)
