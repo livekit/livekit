@@ -130,11 +130,13 @@ func (t *telemetryService) ParticipantResumed(
 	room *livekit.Room,
 	participant *livekit.ParticipantInfo,
 	nodeID livekit.NodeID,
+	reason livekit.ReconnectReason,
 ) {
 	t.enqueue(func() {
 		ev := newParticipantEvent(livekit.AnalyticsEventType_PARTICIPANT_RESUMED, room, participant)
 		ev.ClientMeta = &livekit.AnalyticsClientMeta{
-			Node: string(nodeID),
+			Node:            string(nodeID),
+			ReconnectReason: reason,
 		}
 		t.SendEvent(ctx, ev)
 	})

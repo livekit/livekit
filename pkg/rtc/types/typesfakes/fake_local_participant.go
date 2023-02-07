@@ -301,10 +301,11 @@ type FakeLocalParticipant struct {
 	hiddenReturnsOnCall map[int]struct {
 		result1 bool
 	}
-	ICERestartStub        func(*livekit.ICEConfig)
+	ICERestartStub        func(*livekit.ICEConfig, livekit.ReconnectReason)
 	iCERestartMutex       sync.RWMutex
 	iCERestartArgsForCall []struct {
 		arg1 *livekit.ICEConfig
+		arg2 livekit.ReconnectReason
 	}
 	IDStub        func() livekit.ParticipantID
 	iDMutex       sync.RWMutex
@@ -738,9 +739,14 @@ type FakeLocalParticipant struct {
 	updateMediaLossReturnsOnCall map[int]struct {
 		result1 error
 	}
-	UpdateRTTStub        func(uint32)
-	updateRTTMutex       sync.RWMutex
-	updateRTTArgsForCall []struct {
+	UpdateMediaRTTStub        func(uint32)
+	updateMediaRTTMutex       sync.RWMutex
+	updateMediaRTTArgsForCall []struct {
+		arg1 uint32
+	}
+	UpdateSignalingRTTStub        func(uint32)
+	updateSignalingRTTMutex       sync.RWMutex
+	updateSignalingRTTArgsForCall []struct {
 		arg1 uint32
 	}
 	UpdateSubscribedQualityStub        func(livekit.NodeID, livekit.TrackID, []types.SubscribedCodecQuality) error
@@ -2284,16 +2290,17 @@ func (fake *FakeLocalParticipant) HiddenReturnsOnCall(i int, result1 bool) {
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) ICERestart(arg1 *livekit.ICEConfig) {
+func (fake *FakeLocalParticipant) ICERestart(arg1 *livekit.ICEConfig, arg2 livekit.ReconnectReason) {
 	fake.iCERestartMutex.Lock()
 	fake.iCERestartArgsForCall = append(fake.iCERestartArgsForCall, struct {
 		arg1 *livekit.ICEConfig
-	}{arg1})
+		arg2 livekit.ReconnectReason
+	}{arg1, arg2})
 	stub := fake.ICERestartStub
-	fake.recordInvocation("ICERestart", []interface{}{arg1})
+	fake.recordInvocation("ICERestart", []interface{}{arg1, arg2})
 	fake.iCERestartMutex.Unlock()
 	if stub != nil {
-		fake.ICERestartStub(arg1)
+		fake.ICERestartStub(arg1, arg2)
 	}
 }
 
@@ -2303,17 +2310,17 @@ func (fake *FakeLocalParticipant) ICERestartCallCount() int {
 	return len(fake.iCERestartArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) ICERestartCalls(stub func(*livekit.ICEConfig)) {
+func (fake *FakeLocalParticipant) ICERestartCalls(stub func(*livekit.ICEConfig, livekit.ReconnectReason)) {
 	fake.iCERestartMutex.Lock()
 	defer fake.iCERestartMutex.Unlock()
 	fake.ICERestartStub = stub
 }
 
-func (fake *FakeLocalParticipant) ICERestartArgsForCall(i int) *livekit.ICEConfig {
+func (fake *FakeLocalParticipant) ICERestartArgsForCall(i int) (*livekit.ICEConfig, livekit.ReconnectReason) {
 	fake.iCERestartMutex.RLock()
 	defer fake.iCERestartMutex.RUnlock()
 	argsForCall := fake.iCERestartArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeLocalParticipant) ID() livekit.ParticipantID {
@@ -4741,35 +4748,67 @@ func (fake *FakeLocalParticipant) UpdateMediaLossReturnsOnCall(i int, result1 er
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) UpdateRTT(arg1 uint32) {
-	fake.updateRTTMutex.Lock()
-	fake.updateRTTArgsForCall = append(fake.updateRTTArgsForCall, struct {
+func (fake *FakeLocalParticipant) UpdateMediaRTT(arg1 uint32) {
+	fake.updateMediaRTTMutex.Lock()
+	fake.updateMediaRTTArgsForCall = append(fake.updateMediaRTTArgsForCall, struct {
 		arg1 uint32
 	}{arg1})
-	stub := fake.UpdateRTTStub
-	fake.recordInvocation("UpdateRTT", []interface{}{arg1})
-	fake.updateRTTMutex.Unlock()
+	stub := fake.UpdateMediaRTTStub
+	fake.recordInvocation("UpdateMediaRTT", []interface{}{arg1})
+	fake.updateMediaRTTMutex.Unlock()
 	if stub != nil {
-		fake.UpdateRTTStub(arg1)
+		fake.UpdateMediaRTTStub(arg1)
 	}
 }
 
-func (fake *FakeLocalParticipant) UpdateRTTCallCount() int {
-	fake.updateRTTMutex.RLock()
-	defer fake.updateRTTMutex.RUnlock()
-	return len(fake.updateRTTArgsForCall)
+func (fake *FakeLocalParticipant) UpdateMediaRTTCallCount() int {
+	fake.updateMediaRTTMutex.RLock()
+	defer fake.updateMediaRTTMutex.RUnlock()
+	return len(fake.updateMediaRTTArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) UpdateRTTCalls(stub func(uint32)) {
-	fake.updateRTTMutex.Lock()
-	defer fake.updateRTTMutex.Unlock()
-	fake.UpdateRTTStub = stub
+func (fake *FakeLocalParticipant) UpdateMediaRTTCalls(stub func(uint32)) {
+	fake.updateMediaRTTMutex.Lock()
+	defer fake.updateMediaRTTMutex.Unlock()
+	fake.UpdateMediaRTTStub = stub
 }
 
-func (fake *FakeLocalParticipant) UpdateRTTArgsForCall(i int) uint32 {
-	fake.updateRTTMutex.RLock()
-	defer fake.updateRTTMutex.RUnlock()
-	argsForCall := fake.updateRTTArgsForCall[i]
+func (fake *FakeLocalParticipant) UpdateMediaRTTArgsForCall(i int) uint32 {
+	fake.updateMediaRTTMutex.RLock()
+	defer fake.updateMediaRTTMutex.RUnlock()
+	argsForCall := fake.updateMediaRTTArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) UpdateSignalingRTT(arg1 uint32) {
+	fake.updateSignalingRTTMutex.Lock()
+	fake.updateSignalingRTTArgsForCall = append(fake.updateSignalingRTTArgsForCall, struct {
+		arg1 uint32
+	}{arg1})
+	stub := fake.UpdateSignalingRTTStub
+	fake.recordInvocation("UpdateSignalingRTT", []interface{}{arg1})
+	fake.updateSignalingRTTMutex.Unlock()
+	if stub != nil {
+		fake.UpdateSignalingRTTStub(arg1)
+	}
+}
+
+func (fake *FakeLocalParticipant) UpdateSignalingRTTCallCount() int {
+	fake.updateSignalingRTTMutex.RLock()
+	defer fake.updateSignalingRTTMutex.RUnlock()
+	return len(fake.updateSignalingRTTArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) UpdateSignalingRTTCalls(stub func(uint32)) {
+	fake.updateSignalingRTTMutex.Lock()
+	defer fake.updateSignalingRTTMutex.Unlock()
+	fake.UpdateSignalingRTTStub = stub
+}
+
+func (fake *FakeLocalParticipant) UpdateSignalingRTTArgsForCall(i int) uint32 {
+	fake.updateSignalingRTTMutex.RLock()
+	defer fake.updateSignalingRTTMutex.RUnlock()
+	argsForCall := fake.updateSignalingRTTArgsForCall[i]
 	return argsForCall.arg1
 }
 
@@ -5264,8 +5303,10 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.updateLastSeenSignalMutex.RUnlock()
 	fake.updateMediaLossMutex.RLock()
 	defer fake.updateMediaLossMutex.RUnlock()
-	fake.updateRTTMutex.RLock()
-	defer fake.updateRTTMutex.RUnlock()
+	fake.updateMediaRTTMutex.RLock()
+	defer fake.updateMediaRTTMutex.RUnlock()
+	fake.updateSignalingRTTMutex.RLock()
+	defer fake.updateSignalingRTTMutex.RUnlock()
 	fake.updateSubscribedQualityMutex.RLock()
 	defer fake.updateSubscribedQualityMutex.RUnlock()
 	fake.updateSubscribedTrackSettingsMutex.RLock()

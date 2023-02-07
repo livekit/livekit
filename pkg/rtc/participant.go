@@ -479,7 +479,7 @@ func (p *ParticipantImpl) HandleAnswer(answer webrtc.SessionDescription) {
 	 * 2. client send answer
 	 */
 	signalConnCost := time.Since(p.ConnectedAt()).Milliseconds()
-	p.TransportManager.UpdateRTT(uint32(signalConnCost), false)
+	p.TransportManager.UpdateSignalingRTT(uint32(signalConnCost))
 
 	p.TransportManager.HandleAnswer(answer)
 }
@@ -757,7 +757,7 @@ func (p *ParticipantImpl) MigrateState() types.MigrateState {
 }
 
 // ICERestart restarts subscriber ICE connections
-func (p *ParticipantImpl) ICERestart(iceConfig *livekit.ICEConfig) {
+func (p *ParticipantImpl) ICERestart(iceConfig *livekit.ICEConfig, reason livekit.ReconnectReason) {
 	p.clearDisconnectTimer()
 	p.clearMigrationTimer()
 
@@ -765,7 +765,7 @@ func (p *ParticipantImpl) ICERestart(iceConfig *livekit.ICEConfig) {
 		t.(types.LocalMediaTrack).Restart()
 	}
 
-	p.TransportManager.ICERestart(iceConfig)
+	p.TransportManager.ICERestart(iceConfig, reason == livekit.ReconnectReason_RR_PUBLISHER_FAILED || reason == livekit.ReconnectReason_RR_SUBSCRIBER_FAILED)
 }
 
 func (p *ParticipantImpl) OnICEConfigChanged(f func(participant types.LocalParticipant, iceConfig *livekit.ICEConfig)) {
@@ -926,7 +926,7 @@ func (p *ParticipantImpl) SubscriptionPermissionUpdate(publisherID livekit.Parti
 	}
 }
 
-func (p *ParticipantImpl) UpdateRTT(rtt uint32) {
+func (p *ParticipantImpl) UpdateMediaRTT(rtt uint32) {
 	now := time.Now()
 	p.lock.Lock()
 	if now.Sub(p.rttUpdatedAt) < rttUpdateInterval || p.lastRTT == rtt {
@@ -936,7 +936,7 @@ func (p *ParticipantImpl) UpdateRTT(rtt uint32) {
 	p.rttUpdatedAt = now
 	p.lastRTT = rtt
 	p.lock.Unlock()
-	p.TransportManager.UpdateRTT(rtt, true)
+	p.TransportManager.UpdateMediaRTT(rtt)
 
 	for _, pt := range p.GetPublishedTracks() {
 		pt.(types.LocalMediaTrack).SetRTT(rtt)

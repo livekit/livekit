@@ -83,7 +83,10 @@ func (s *SubscriptionDeduper) Dedupe(participantKey livekit.ParticipantKey, req 
 		isDupe = s.updateSubscriptionsFromUpdateSubscription(participantKey, msg.Subscription)
 	case *livekit.SignalRequest_TrackSetting:
 		isDupe = s.updateSubscriptionsFromUpdateTrackSettings(participantKey, msg.TrackSetting)
+	default:
+		return false
 	}
+	s.logger.Infow("subscription deduper received message", "participantKey", participantKey, "update", req.String(), "isDupe", isDupe)
 
 	return isDupe
 }
