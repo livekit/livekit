@@ -1462,6 +1462,7 @@ func (f *Forwarder) GetTranslationParams(extPkt *buffer.ExtPacket, layer int32) 
 	defer f.lock.Unlock()
 
 	// Video: Do not drop on publisher mute to enable resume on publisher unmute without a key frame.
+	// Audio: Do not drop on publisher mute to ensure decoder does not get stuck at a noise frame.
 	if f.muted {
 		return &TranslationParams{
 			shouldDrop: true,
@@ -1470,13 +1471,6 @@ func (f *Forwarder) GetTranslationParams(extPkt *buffer.ExtPacket, layer int32) 
 
 	switch f.kind {
 	case webrtc.RTPCodecTypeAudio:
-		// Audio: Blank frames are injected on publisher mute to ensure decoder does not get stuck at a noise frame. So, do not forward.
-		if f.pubMuted {
-			return &TranslationParams{
-				shouldDrop: true,
-			}, nil
-		}
-
 		return f.getTranslationParamsAudio(extPkt, layer)
 	case webrtc.RTPCodecTypeVideo:
 		return f.getTranslationParamsVideo(extPkt, layer)
