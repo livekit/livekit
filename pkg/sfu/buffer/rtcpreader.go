@@ -22,7 +22,7 @@ func (r *RTCPReader) Write(p []byte) (n int, err error) {
 		err = io.EOF
 		return
 	}
-	if f, ok := r.onPacket.Load().(func([]byte)); ok {
+	if f, ok := r.onPacket.Load().(func([]byte)); ok && f != nil {
 		f(p)
 	}
 	return
