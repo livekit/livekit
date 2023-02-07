@@ -712,22 +712,6 @@ func (d *DownTrack) handleMute(muted bool, isPub bool, changed bool, maxLayers V
 	if d.onSubscriptionChanged != nil {
 		d.onSubscriptionChanged(d)
 	}
-
-	// when muting, send a few silence frames to ensure residual noise does not
-	// put the comfort noise generator on decoder side in a bad state where it
-	// generates noise that is not so comfortable.
-	//
-	// One possibility is not to inject blank frames when publisher is muted
-	// and let forwarding continue. When publisher is muted, unless the media
-	// stream is stopped, publisher will send silence frames which should have
-	// comfort noise information. But, in case the publisher stops at an
-	// inopportune frame (due to media stream stop or injecting audio from a file),
-	// the decoder could be in a noisy state. So, inject blank frames on publisher
-	// mute too.
-	d.blankFramesGeneration.Inc()
-	if d.kind == webrtc.RTPCodecTypeAudio && muted {
-		d.writeBlankFrameRTP(RTPBlankFramesMuteSeconds, d.blankFramesGeneration.Load())
-	}
 }
 
 func (d *DownTrack) IsClosed() bool {
