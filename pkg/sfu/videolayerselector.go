@@ -98,7 +98,7 @@ func (s *DDVideoLayerSelector) Select(expPkt *buffer.ExtPacket, tp *TranslationP
 		// expPkt.DependencyDescriptor.FrameDependencies.SpatialId, expPkt.DependencyDescriptor.FrameDependencies.TemporalId))
 		return false
 	} else if dti == dd.DecodeTargetSwitch {
-		tp.switchingToTargetLayer = true
+		tp.isSwitchingToTargetLayer = true
 	}
 
 	// DD-TODO : add frame to forwarded queue if entire frame is forwarded

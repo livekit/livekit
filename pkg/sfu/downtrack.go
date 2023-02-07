@@ -202,6 +202,9 @@ type DownTrack struct {
 	// max layer change callback
 	onSubscribedLayersChanged func(dt *DownTrack, layers VideoLayers)
 
+	// target layer found callback
+	onTargetLayerFound func(dt *DownTrack)
+
 	// packet sent callback
 	onPacketSent []func(dt *DownTrack, size int)
 
@@ -544,7 +547,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		d.onMaxLayerChanged(d, layer)
 	}
 
-	if extPkt.KeyFrame || tp.switchingToTargetLayer {
+	if extPkt.KeyFrame || tp.isSwitchingToTargetLayer {
 		d.isNACKThrottled.Store(false)
 		d.rtpStats.UpdateKeyFrame(1)
 
@@ -553,8 +556,12 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			d.stopKeyFrameRequester()
 		}
 
-		if !tp.switchingToTargetLayer {
+		if !tp.isSwitchingToTargetLayer {
 			d.logger.Debugw("forwarding key frame", "layer", layer)
+		} else {
+			if d.onTargetLayerFound != nil {
+				d.onTargetLayerFound(d)
+			}
 		}
 	}
 
@@ -909,6 +916,10 @@ func (d *DownTrack) OnSubscriptionChanged(fn func(dt *DownTrack)) {
 
 func (d *DownTrack) OnSubscribedLayersChanged(fn func(dt *DownTrack, layers VideoLayers)) {
 	d.onSubscribedLayersChanged = fn
+}
+
+func (d *DownTrack) OnTargetLayerFound(fn func(dt *DownTrack)) {
+	d.onTargetLayerFound = fn
 }
 
 func (d *DownTrack) OnPacketSent(fn func(dt *DownTrack, size int)) {

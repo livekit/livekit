@@ -96,6 +96,7 @@ const (
 	streamAllocatorSignalPeriodicPing
 	streamAllocatorSignalSendProbe
 	streamAllocatorSignalProbeClusterDone
+	streamAllocatorSignalTargetLayerFound
 )
 
 func (s streamAllocatorSignal) String() string {
@@ -114,6 +115,8 @@ func (s streamAllocatorSignal) String() string {
 		return "SEND_PROBE"
 	case streamAllocatorSignalProbeClusterDone:
 		return "PROBE_CLUSTER_DONE"
+	case streamAllocatorSignalTargetLayerFound:
+		return "TARGET_LAYER_FOUND"
 	default:
 		return fmt.Sprintf("%d", int(s))
 	}
@@ -240,6 +243,7 @@ func (s *StreamAllocator) AddTrack(downTrack *DownTrack, params AddTrackParams) 
 	downTrack.OnSubscriptionChanged(s.onSubscriptionChanged)
 	downTrack.OnSubscribedLayersChanged(s.onSubscribedLayersChanged)
 	downTrack.OnPacketSent(s.onPacketSent)
+	downTrack.OnTargetLayerFound(s.onTargetLayerFound)
 
 	s.maybePostEventAllocateTrack(downTrack)
 }
@@ -429,6 +433,14 @@ func (s *StreamAllocator) onProbeClusterDone(info ProbeClusterInfo) {
 	})
 }
 
+// called when forwarder finds a target layer
+func (s *StreamAllocator) onTargetLayerFound(downTrack *DownTrack) {
+	s.postEvent(Event{
+		Signal:  streamAllocatorSignalTargetLayerFound,
+		TrackID: livekit.TrackID(downTrack.ID()),
+	})
+}
+
 func (s *StreamAllocator) maybePostEventAllocateTrack(downTrack *DownTrack) {
 	shouldPost := false
 	s.videoTracksMu.Lock()
@@ -500,6 +512,8 @@ func (s *StreamAllocator) handleEvent(event *Event) {
 		s.handleSignalSendProbe(event)
 	case streamAllocatorSignalProbeClusterDone:
 		s.handleSignalProbeClusterDone(event)
+	case streamAllocatorSignalTargetLayerFound:
+		s.handleSignalTargetLayerFound(event)
 	}
 }
 
@@ -597,6 +611,16 @@ func (s *StreamAllocator) handleSignalProbeClusterDone(event *Event) {
 	}
 	queueWait := time.Duration(queueTime+float64(ProbeSettleWait)) * time.Millisecond
 	s.probeEndTime = s.lastProbeStartTime.Add(queueWait)
+}
+
+func (s *StreamAllocator) handleSignalTargetLayerFound(event *Event) {
+	s.videoTracksMu.Lock()
+	track := s.videoTracks[event.TrackID]
+	s.videoTracksMu.Unlock()
+
+	if track != nil {
+		// RAJA-TODO send an update if unpausing
+	}
 }
 
 func (s *StreamAllocator) setState(state streamAllocatorState) {
@@ -718,8 +742,9 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	// if not deficient, free pass allocate track
 	if !s.params.Config.Enabled || s.state == streamAllocatorStateStable || !track.IsManaged() {
 		update := NewStreamStateUpdate()
-		allocation := track.AllocateOptimal(FlagAllowOvershootWhileOptimal)
-		update.HandleStreamingChange(allocation.change, track)
+		// RAJA-TODO allocation := track.AllocateOptimal(FlagAllowOvershootWhileOptimal)
+		track.AllocateOptimal(FlagAllowOvershootWhileOptimal)
+		// RAJA-TODO update.HandleStreamingChange(allocation.change, track)
 		s.maybeSendUpdate(update)
 		return
 	}
@@ -741,10 +766,11 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 
 	// downgrade, giving back bits
 	if transition.from.GreaterThan(transition.to) {
-		allocation := track.ProvisionalAllocateCommit()
+		// RAJA-TODO allocation := track.ProvisionalAllocateCommit()
+		track.ProvisionalAllocateCommit()
 
 		update := NewStreamStateUpdate()
-		update.HandleStreamingChange(allocation.change, track)
+		// RAJA-TODO update.HandleStreamingChange(allocation.change, track)
 		s.maybeSendUpdate(update)
 
 		s.adjustState()
@@ -784,8 +810,9 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	if bandwidthAcquired >= transition.bandwidthDelta {
 		// commit the tracks that contributed
 		for _, t := range contributingTracks {
-			allocation := t.ProvisionalAllocateCommit()
-			update.HandleStreamingChange(allocation.change, t)
+			// RAJA-TODO allocation := t.ProvisionalAllocateCommit()
+			t.ProvisionalAllocateCommit()
+			// RAJA-TODO update.HandleStreamingChange(allocation.change, t)
 		}
 
 		// LK-TODO if got too much extra, can potentially give it to some deficient track
@@ -793,8 +820,9 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 
 	// commit the track that needs change if enough could be acquired or pause not allowed
 	if !s.params.Config.AllowPause || bandwidthAcquired >= transition.bandwidthDelta {
-		allocation := track.ProvisionalAllocateCommit()
-		update.HandleStreamingChange(allocation.change, track)
+		// RAJA-TODO allocation := track.ProvisionalAllocateCommit()
+		track.ProvisionalAllocateCommit()
+		// RAJA-TODO update.HandleStreamingChange(allocation.change, track)
 	}
 
 	s.maybeSendUpdate(update)
@@ -864,7 +892,7 @@ func (s *StreamAllocator) maybeBoostDeficientTracks() {
 			continue
 		}
 
-		update.HandleStreamingChange(allocation.change, track)
+		// RAJA-TODO update.HandleStreamingChange(allocation.change, track)
 
 		availableChannelCapacity -= allocation.bandwidthDelta
 		if availableChannelCapacity <= 0 {
@@ -918,7 +946,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 		}
 
 		allocation := track.AllocateOptimal(FlagAllowOvershootExemptTrackWhileDeficient)
-		update.HandleStreamingChange(allocation.change, track)
+		// RAJA-TODO update.HandleStreamingChange(allocation.change, track)
 
 		// LK-TODO: optimistic allocation before bitrate is available will return 0. How to account for that?
 		availableChannelCapacity -= allocation.bandwidthRequested
@@ -934,8 +962,9 @@ func (s *StreamAllocator) allocateAllTracks() {
 				continue
 			}
 
-			allocation := track.Pause()
-			update.HandleStreamingChange(allocation.change, track)
+			// RAJA-TODO allocation := track.Pause()
+			track.Pause()
+			// RAJA-TODO update.HandleStreamingChange(allocation.change, track)
 		}
 	} else {
 		sorted := s.getSorted()
@@ -961,8 +990,9 @@ func (s *StreamAllocator) allocateAllTracks() {
 		}
 
 		for _, track := range sorted {
-			allocation := track.ProvisionalAllocateCommit()
-			update.HandleStreamingChange(allocation.change, track)
+			// RAJA-TODO allocation := track.ProvisionalAllocateCommit()
+			track.ProvisionalAllocateCommit()
+			// RAJA-TODO update.HandleStreamingChange(allocation.change, track)
 		}
 	}
 
@@ -1107,13 +1137,14 @@ func (s *StreamAllocator) maybeProbe() {
 func (s *StreamAllocator) maybeProbeWithMedia() {
 	// boost deficient track farthest from desired layers
 	for _, track := range s.getMaxDistanceSortedDeficient() {
-		allocation, boosted := track.AllocateNextHigher(ChannelCapacityInfinity, FlagAllowOvershootInCatchup)
+		// RAJA-TODO allocation, boosted := track.AllocateNextHigher(ChannelCapacityInfinity, FlagAllowOvershootInCatchup)
+		_, boosted := track.AllocateNextHigher(ChannelCapacityInfinity, FlagAllowOvershootInCatchup)
 		if !boosted {
 			continue
 		}
 
 		update := NewStreamStateUpdate()
-		update.HandleStreamingChange(allocation.change, track)
+		// RAJA-TODO update.HandleStreamingChange(allocation.change, track)
 		s.maybeSendUpdate(update)
 
 		s.lastProbeStartTime = time.Now()
@@ -1235,6 +1266,7 @@ func NewStreamStateUpdate() *StreamStateUpdate {
 	return &StreamStateUpdate{}
 }
 
+/* RAJA-TODO
 func (s *StreamStateUpdate) HandleStreamingChange(change VideoStreamingChange, track *Track) {
 	switch change {
 	case VideoStreamingChangePausing:
@@ -1251,6 +1283,7 @@ func (s *StreamStateUpdate) HandleStreamingChange(change VideoStreamingChange, t
 		})
 	}
 }
+*/
 
 func (s *StreamStateUpdate) Empty() bool {
 	return len(s.StreamStates) == 0
