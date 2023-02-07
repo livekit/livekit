@@ -37,8 +37,8 @@ type Bitrates [DefaultMaxLayerSpatial + 1][DefaultMaxLayerTemporal + 1]int64
 
 func (b *Bitrates) GetLayers() []int32 {
 	layers := []int32{}
-	for i = 0; i < len(b); i++ {
-		for j = 0; j < len(b[0]); j++ {
+	for i := 0; i < len(b); i++ {
+		for j := 0; j < len(b[0]); j++ {
 			if b[i][j] != 0 {
 				layers = append(layers, int32(i))
 				break
