@@ -400,7 +400,7 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 	if res.TrackRemovedNotifier != nil && s.setRemovedNotifier(res.TrackRemovedNotifier) {
 		res.TrackRemovedNotifier.AddObserver(string(m.params.Participant.ID()), func() {
 			// source track removed, we would unsubscribe
-			s.logger.Debugw("removing subscription since source track was removed")
+			s.logger.Debugw("unsubscribing track since source track was removed")
 			s.setDesired(false)
 		})
 	}
