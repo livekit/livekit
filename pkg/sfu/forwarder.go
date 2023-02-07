@@ -425,7 +425,7 @@ func (f *Forwarder) GetForwardingStatus() ForwardingStatus {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
-	if f.muted || f.pubMuted || f.lastAllocation.pauseReason == VideoPauseReasonFeedDry {
+	if f.muted || f.pubMuted || len(f.availableLayers) == 0 {
 		return ForwardingStatusOptimal
 	}
 
@@ -433,7 +433,7 @@ func (f *Forwarder) GetForwardingStatus() ForwardingStatus {
 		return ForwardingStatusOff
 	}
 
-	if f.isDeficientLocked() {
+	if f.targetLayers.Spatial < f.maxLayers.Spatial && f.targetLayers.Spatial < f.availableLayers[len(f.availableLayers)-1] {
 		return ForwardingStatusPartial
 	}
 
@@ -444,7 +444,7 @@ func (f *Forwarder) IsReducedQuality() (int32, bool) {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
-	if f.muted || f.pubMuted || f.lastAllocation.pauseReason == VideoPauseReasonFeedDry || f.targetLayers.Spatial == InvalidLayerSpatial {
+	if f.muted || f.pubMuted || len(f.availableLayers) == 0 || f.targetLayers.Spatial == InvalidLayerSpatial {
 		return 0, false
 	}
 
@@ -506,7 +506,6 @@ func (f *Forwarder) getOptimalBandwidthNeeded(brs Bitrates, maxLayers VideoLayer
 	return 0
 }
 
-/* RAJA-REMOVE
 func (f *Forwarder) bitrateAvailable(brs Bitrates) bool {
 	neededLayers := 0
 	bitrateAvailableLayers := 0
@@ -544,7 +543,6 @@ func (f *Forwarder) bitrateAvailable(brs Bitrates) bool {
 
 	return bitrateAvailableLayers == neededLayers
 }
-*/
 
 func (f *Forwarder) getDistanceToDesired(brs Bitrates, targetLayers VideoLayers, maxLayers VideoLayers) int32 {
 	if f.muted || f.pubMuted {
@@ -645,23 +643,21 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 		// if parked on a layer, let it continue
 		alloc.targetLayers = f.parkedLayers
 
-		/* RAJA-REMOVE
-		case !f.bitrateAvailable(brs):
-			// Feed bitrate not yet calculated for all available layers
-			//
-			// Target the highest layer available <= max subscribed layer.
-			//
-			// If target already set, move allocation to the highest available layer <= max subscribed layer only if that is higher than existing target.
-			// It is possible that in situations like coming out of publisher mute, target is already set higher due to parked layers.
-			if f.availableLayers[len(f.availableLayers)-1] > f.targetLayers.Spatial {
-				alloc.targetLayers = VideoLayers{
-					Spatial:  int32(math.Min(float64(f.maxLayers.Spatial), float64(f.availableLayers[len(f.availableLayers)-1]))),
-					Temporal: int32(math.Max(0, float64(f.maxLayers.Temporal))),
-				}
-			} else {
-				alloc.targetLayers = f.targetLayers
+	case !f.bitrateAvailable(brs):
+		// Feed bitrate not yet calculated for all available layers
+		//
+		// Target the highest layer available <= max subscribed layer.
+		//
+		// If target already set, move allocation to the highest available layer <= max subscribed layer only if that is higher than existing target.
+		// It is possible that in situations like coming out of publisher mute, target is already set higher due to parked layers.
+		if f.availableLayers[len(f.availableLayers)-1] > f.targetLayers.Spatial {
+			alloc.targetLayers = VideoLayers{
+				Spatial:  int32(math.Min(float64(f.maxLayers.Spatial), float64(f.availableLayers[len(f.availableLayers)-1]))),
+				Temporal: int32(math.Max(0, float64(f.maxLayers.Temporal))),
 			}
-		*/
+		} else {
+			alloc.targetLayers = f.targetLayers
+		}
 
 	default:
 		// allocate best layer available
@@ -717,7 +713,7 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 		// feed may be dry, leave target at current if already started for opportunistic resume
 		if alloc.bandwidthRequested == 0 && f.maxLayers.IsValid() {
 			alloc.pauseReason = VideoPauseReasonFeedDry
-			if f.started && f.currentLayers.IsValid() {
+			if f.started {
 				alloc.targetLayers = f.currentLayers
 			} else {
 				// opportunisitically latch on to anything
@@ -1061,32 +1057,20 @@ func (f *Forwarder) ProvisionalAllocateCommit() VideoAllocation {
 	case f.provisional.pubMuted:
 		alloc.pauseReason = VideoPauseReasonPubMuted
 
-		/* RAJA-REMOVE
-			// RAJA-TODO can the next case completely replace this? both are feed dry
-		case len(f.provisional.availableLayers) == 0:
-			alloc.pauseReason = VideoPauseReasonFeedDry
-		*/
-
 	case f.getOptimalBandwidthNeeded(f.provisional.bitrates, f.provisional.maxLayers) == 0:
-		// some exempt layer is available, but technically the feed is dry
-		alloc.pauseReason = VideoPauseReasonFeedDry
+		if f.provisional.allocatedLayers.IsValid() {
+			// overshoot
+			alloc.bandwidthRequested = f.provisional.bitrates[f.provisional.allocatedLayers.Spatial][f.provisional.allocatedLayers.Temporal]
+			alloc.bandwidthDelta = alloc.bandwidthRequested - f.lastAllocation.bandwidthRequested
+		} else {
+			// some exempt layer may be available, but technically the feed is dry
+			alloc.pauseReason = VideoPauseReasonFeedDry
 
-		/* RAJA-REMOVE
-		// leave target at current if current layer is exempted for opportunistic forwarding
-		if f.provisional.currentLayers.IsValid() {
-			for _, s := range f.provisional.exemptedLayers {
-				if s <= f.provisional.maxLayers.Spatial && f.provisional.currentLayers.Spatial == s {
-					f.provisional.allocatedLayers = f.provisional.currentLayers
-					alloc.targetLayers = f.provisional.allocatedLayers
-					break
-				}
+			// leave target at current for opportunistic forwarding
+			if f.provisional.currentLayers.IsValid() && f.provisional.currentLayers.Spatial <= f.provisional.maxLayers.Spatial {
+				f.provisional.allocatedLayers = f.provisional.currentLayers
+				alloc.targetLayers = f.provisional.allocatedLayers
 			}
-		}
-		*/
-		// leave target at current for opportunistic forwarding
-		if f.provisional.currentLayers.IsValid() && f.provisional.currentLayers.Spatial <= f.provisional.maxLayers.Spatial {
-			f.provisional.allocatedLayers = f.provisional.currentLayers
-			alloc.targetLayers = f.provisional.allocatedLayers
 		}
 
 	default:
@@ -1316,14 +1300,8 @@ func (f *Forwarder) Pause(brs Bitrates) VideoAllocation {
 	case f.pubMuted:
 		alloc.pauseReason = VideoPauseReasonPubMuted
 
-		/* RAJA-REMOVE
-			// RAJA-TODO can the next case completely replace this? both are feed dry
-		case len(f.availableLayers) == 0:
-			alloc.pauseReason = VideoPauseReasonFeedDry
-		*/
-
 	case f.getOptimalBandwidthNeeded(brs, f.maxLayers) == 0:
-		// some exempt layer is available, but technically the feed is dry
+		// some exempt layer may be available, but technically the feed is dry
 		alloc.pauseReason = VideoPauseReasonFeedDry
 
 	default:

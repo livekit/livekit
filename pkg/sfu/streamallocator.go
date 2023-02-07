@@ -619,7 +619,11 @@ func (s *StreamAllocator) handleSignalTargetLayerFound(event *Event) {
 	s.videoTracksMu.Unlock()
 
 	if track != nil {
-		// RAJA-TODO send an update if unpausing
+		update := NewStreamStateUpdate()
+		if track.SetPaused(false) {
+			update.HandleStreamingChange(false, track)
+		}
+		s.maybeSendUpdate(update)
 	}
 }
 
@@ -742,9 +746,10 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	// if not deficient, free pass allocate track
 	if !s.params.Config.Enabled || s.state == streamAllocatorStateStable || !track.IsManaged() {
 		update := NewStreamStateUpdate()
-		// RAJA-TODO allocation := track.AllocateOptimal(FlagAllowOvershootWhileOptimal)
-		track.AllocateOptimal(FlagAllowOvershootWhileOptimal)
-		// RAJA-TODO update.HandleStreamingChange(allocation.change, track)
+		allocation := track.AllocateOptimal(FlagAllowOvershootWhileOptimal)
+		if allocation.pauseReason == VideoPauseReasonBandwidth && track.SetPaused(true) {
+			update.HandleStreamingChange(true, track)
+		}
 		s.maybeSendUpdate(update)
 		return
 	}
@@ -766,11 +771,12 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 
 	// downgrade, giving back bits
 	if transition.from.GreaterThan(transition.to) {
-		// RAJA-TODO allocation := track.ProvisionalAllocateCommit()
-		track.ProvisionalAllocateCommit()
+		allocation := track.ProvisionalAllocateCommit()
 
 		update := NewStreamStateUpdate()
-		// RAJA-TODO update.HandleStreamingChange(allocation.change, track)
+		if allocation.pauseReason == VideoPauseReasonBandwidth && track.SetPaused(true) {
+			update.HandleStreamingChange(true, track)
+		}
 		s.maybeSendUpdate(update)
 
 		s.adjustState()
@@ -810,9 +816,10 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	if bandwidthAcquired >= transition.bandwidthDelta {
 		// commit the tracks that contributed
 		for _, t := range contributingTracks {
-			// RAJA-TODO allocation := t.ProvisionalAllocateCommit()
-			t.ProvisionalAllocateCommit()
-			// RAJA-TODO update.HandleStreamingChange(allocation.change, t)
+			allocation := t.ProvisionalAllocateCommit()
+			if allocation.pauseReason == VideoPauseReasonBandwidth && track.SetPaused(true) {
+				update.HandleStreamingChange(true, t)
+			}
 		}
 
 		// LK-TODO if got too much extra, can potentially give it to some deficient track
@@ -820,9 +827,10 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 
 	// commit the track that needs change if enough could be acquired or pause not allowed
 	if !s.params.Config.AllowPause || bandwidthAcquired >= transition.bandwidthDelta {
-		// RAJA-TODO allocation := track.ProvisionalAllocateCommit()
-		track.ProvisionalAllocateCommit()
-		// RAJA-TODO update.HandleStreamingChange(allocation.change, track)
+		allocation := track.ProvisionalAllocateCommit()
+		if allocation.pauseReason == VideoPauseReasonBandwidth && track.SetPaused(true) {
+			update.HandleStreamingChange(true, track)
+		}
 	}
 
 	s.maybeSendUpdate(update)
@@ -892,7 +900,9 @@ func (s *StreamAllocator) maybeBoostDeficientTracks() {
 			continue
 		}
 
-		// RAJA-TODO update.HandleStreamingChange(allocation.change, track)
+		if allocation.pauseReason == VideoPauseReasonBandwidth && track.SetPaused(true) {
+			update.HandleStreamingChange(true, track)
+		}
 
 		availableChannelCapacity -= allocation.bandwidthDelta
 		if availableChannelCapacity <= 0 {
@@ -946,7 +956,9 @@ func (s *StreamAllocator) allocateAllTracks() {
 		}
 
 		allocation := track.AllocateOptimal(FlagAllowOvershootExemptTrackWhileDeficient)
-		// RAJA-TODO update.HandleStreamingChange(allocation.change, track)
+		if allocation.pauseReason == VideoPauseReasonBandwidth && track.SetPaused(true) {
+			update.HandleStreamingChange(true, track)
+		}
 
 		// LK-TODO: optimistic allocation before bitrate is available will return 0. How to account for that?
 		availableChannelCapacity -= allocation.bandwidthRequested
@@ -962,9 +974,10 @@ func (s *StreamAllocator) allocateAllTracks() {
 				continue
 			}
 
-			// RAJA-TODO allocation := track.Pause()
-			track.Pause()
-			// RAJA-TODO update.HandleStreamingChange(allocation.change, track)
+			allocation := track.Pause()
+			if allocation.pauseReason == VideoPauseReasonBandwidth && track.SetPaused(true) {
+				update.HandleStreamingChange(true, track)
+			}
 		}
 	} else {
 		sorted := s.getSorted()
@@ -990,9 +1003,10 @@ func (s *StreamAllocator) allocateAllTracks() {
 		}
 
 		for _, track := range sorted {
-			// RAJA-TODO allocation := track.ProvisionalAllocateCommit()
-			track.ProvisionalAllocateCommit()
-			// RAJA-TODO update.HandleStreamingChange(allocation.change, track)
+			allocation := track.ProvisionalAllocateCommit()
+			if allocation.pauseReason == VideoPauseReasonBandwidth && track.SetPaused(true) {
+				update.HandleStreamingChange(true, track)
+			}
 		}
 	}
 
@@ -1137,14 +1151,15 @@ func (s *StreamAllocator) maybeProbe() {
 func (s *StreamAllocator) maybeProbeWithMedia() {
 	// boost deficient track farthest from desired layers
 	for _, track := range s.getMaxDistanceSortedDeficient() {
-		// RAJA-TODO allocation, boosted := track.AllocateNextHigher(ChannelCapacityInfinity, FlagAllowOvershootInCatchup)
-		_, boosted := track.AllocateNextHigher(ChannelCapacityInfinity, FlagAllowOvershootInCatchup)
+		allocation, boosted := track.AllocateNextHigher(ChannelCapacityInfinity, FlagAllowOvershootInCatchup)
 		if !boosted {
 			continue
 		}
 
 		update := NewStreamStateUpdate()
-		// RAJA-TODO update.HandleStreamingChange(allocation.change, track)
+		if allocation.pauseReason == VideoPauseReasonBandwidth && track.SetPaused(true) {
+			update.HandleStreamingChange(true, track)
+		}
 		s.maybeSendUpdate(update)
 
 		s.lastProbeStartTime = time.Now()
@@ -1266,16 +1281,14 @@ func NewStreamStateUpdate() *StreamStateUpdate {
 	return &StreamStateUpdate{}
 }
 
-/* RAJA-TODO
-func (s *StreamStateUpdate) HandleStreamingChange(change VideoStreamingChange, track *Track) {
-	switch change {
-	case VideoStreamingChangePausing:
+func (s *StreamStateUpdate) HandleStreamingChange(isPaused bool, track *Track) {
+	if isPaused {
 		s.StreamStates = append(s.StreamStates, &StreamStateInfo{
 			ParticipantID: track.PublisherID(),
 			TrackID:       track.ID(),
 			State:         StreamStatePaused,
 		})
-	case VideoStreamingChangeResuming:
+	} else {
 		s.StreamStates = append(s.StreamStates, &StreamStateInfo{
 			ParticipantID: track.PublisherID(),
 			TrackID:       track.ID(),
@@ -1283,7 +1296,6 @@ func (s *StreamStateUpdate) HandleStreamingChange(change VideoStreamingChange, t
 		})
 	}
 }
-*/
 
 func (s *StreamStateUpdate) Empty() bool {
 	return len(s.StreamStates) == 0
@@ -1305,6 +1317,8 @@ type Track struct {
 	totalRepeatedNacks uint32
 
 	isDirty bool
+
+	isPaused bool
 }
 
 func newTrack(
@@ -1333,6 +1347,15 @@ func (t *Track) SetDirty(isDirty bool) bool {
 	}
 
 	t.isDirty = isDirty
+	return true
+}
+
+func (t *Track) SetPaused(isPaused bool) bool {
+	if t.isPaused == isPaused {
+		return false
+	}
+
+	t.isPaused = isPaused
 	return true
 }
 
