@@ -54,7 +54,8 @@ const (
 	maxPadding = 2000
 
 	waitBeforeSendPaddingOnMute = 100 * time.Millisecond
-	maxPaddingOnMuteDuration    = 5 * time.Second
+	paddingOnMuteInterval       = 100 * time.Millisecond
+	maxPaddingOnMute            = 50
 )
 
 var (
@@ -711,6 +712,22 @@ func (d *DownTrack) handleMute(muted bool, isPub bool, changed bool, maxLayers V
 
 	if d.onSubscriptionChanged != nil {
 		d.onSubscriptionChanged(d)
+	}
+
+	// when muting, send a few silence frames to ensure residual noise does not
+	// put the comfort noise generator on decoder side in a bad state where it
+	// generates noise that is not so comfortable.
+	//
+	// One possibility is not to inject blank frames when publisher is muted
+	// and let forwarding continue. When publisher is muted, unless the media
+	// stream is stopped, publisher will send silence frames which should have
+	// comfort noise information. But, in case the publisher stops at an
+	// inopportune frame (due to media stream stop or injecting audio from a file),
+	// the decoder could be in a noisy state. So, inject blank frames on publisher
+	// mute too.
+	d.blankFramesGeneration.Inc()
+	if d.kind == webrtc.RTPCodecTypeAudio && muted {
+		d.writeBlankFrameRTP(RTPBlankFramesMuteSeconds, d.blankFramesGeneration.Load())
 	}
 }
 
@@ -1527,12 +1544,10 @@ func (d *DownTrack) GetNackStats() (totalPackets uint32, totalRepeatedNACKs uint
 }
 
 func (d *DownTrack) onBindAndConnected() {
-	if d.connected.Load() && d.bound.Load() && !d.bindAndConnectedOnce.Swap(true) {
-		if d.kind == webrtc.RTPCodecTypeVideo {
-			targetLayers := d.forwarder.TargetLayers()
-			if targetLayers != InvalidLayers {
-				d.receiver.SendPLI(targetLayers.Spatial, true)
-			}
+	if d.connected.Load() && d.bound.Load() && d.kind == webrtc.RTPCodecTypeVideo && !d.bindAndConnectedOnce.Swap(true) {
+		targetLayers := d.forwarder.TargetLayers()
+		if targetLayers != InvalidLayers {
+			d.receiver.SendPLI(targetLayers.Spatial, true)
 		}
 
 		if d.activePaddingOnMuteUpTrack.Load() {
@@ -1546,68 +1561,14 @@ func (d *DownTrack) sendPaddingOnMute() {
 	// let uptrack have chance to send packet before we send padding
 	time.Sleep(waitBeforeSendPaddingOnMute)
 
-	if d.kind == webrtc.RTPCodecTypeVideo {
-		d.sendPaddingOnMuteForVideo()
-	} else if d.mime == "audio/opus" {
-		d.sendSilentFrameOnMuteForOpus()
-	}
-}
-
-func (d *DownTrack) sendPaddingOnMuteForVideo() {
-	paddingOnMuteInterval := 100 * time.Millisecond
-	numPackets := maxPaddingOnMuteDuration / paddingOnMuteInterval
-	for i := 0; i < int(numPackets); i++ {
+	for i := 0; i < maxPaddingOnMute; i++ {
 		if d.rtpStats.IsActive() || d.IsClosed() {
 			return
 		}
+
 		d.WritePaddingRTP(20, true)
+
 		time.Sleep(paddingOnMuteInterval)
-	}
-}
-
-func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
-	frameRate := uint32(50)
-	frameDuration := time.Duration(1000/frameRate) * time.Millisecond
-	numFrames := frameRate * uint32(maxPaddingOnMuteDuration/time.Second)
-	for {
-		if d.rtpStats.IsActive() || d.IsClosed() || numFrames <= 0 {
-			return
-		}
-		snts, _, err := d.forwarder.GetSnTsForBlankFrames(frameRate, 1)
-		if err != nil {
-			d.logger.Warnw("could not get SN/TS for blank frame", err)
-			return
-		}
-		for i := 0; i < len(snts); i++ {
-			hdr := rtp.Header{
-				Version:        2,
-				Padding:        false,
-				Marker:         true,
-				PayloadType:    d.payloadType,
-				SequenceNumber: snts[i].sequenceNumber,
-				Timestamp:      snts[i].timestamp,
-				SSRC:           d.ssrc,
-				CSRC:           []uint32{},
-			}
-
-			err = d.writeRTPHeaderExtensions(&hdr)
-			if err != nil {
-				d.logger.Warnw("could not write header extension for blank frame", err)
-				return
-			}
-
-			payload := make([]byte, len(OpusSilenceFrame))
-			copy(payload[0:], OpusSilenceFrame)
-
-			_, err := d.writeStream.WriteRTP(&hdr, payload)
-			if err != nil {
-				d.logger.Warnw("could not write blank frame", err)
-				return
-			}
-		}
-
-		numFrames--
-		time.Sleep(frameDuration)
 	}
 }
 
