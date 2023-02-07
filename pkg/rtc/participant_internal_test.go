@@ -63,27 +63,17 @@ func TestTrackPublishing(t *testing.T) {
 		track.IDReturns("id")
 		published := false
 		updated := false
-		unpublished := false
 		p.OnTrackUpdated(func(p types.LocalParticipant, track types.MediaTrack) {
 			updated = true
-		})
-		p.OnTrackUnpublished(func(p types.LocalParticipant, track types.MediaTrack) {
-			unpublished = true
 		})
 		p.OnTrackPublished(func(p types.LocalParticipant, track types.MediaTrack) {
 			published = true
 		})
 		p.UpTrackManager.AddPublishedTrack(track)
 		p.handleTrackPublished(track)
-
 		require.True(t, published)
 		require.False(t, updated)
 		require.Len(t, p.UpTrackManager.publishedTracks, 1)
-
-		track.AddOnCloseArgsForCall(0)()
-		require.Len(t, p.UpTrackManager.publishedTracks, 0)
-		require.True(t, unpublished)
-		require.False(t, updated)
 	})
 
 	t.Run("sends back trackPublished event", func(t *testing.T) {

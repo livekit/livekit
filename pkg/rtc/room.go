@@ -766,7 +766,6 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 	}
 
 	r.trackManager.AddTrack(track, participant.Identity(), participant.ID())
-	r.trackManager.NotifyTrackChanged(track.ID())
 
 	// auto track egress
 	if r.internal != nil && r.internal.TrackEgress != nil {
