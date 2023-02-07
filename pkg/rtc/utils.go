@@ -2,7 +2,6 @@ package rtc
 
 import (
 	"encoding/json"
-	"errors"
 	"io"
 	"strings"
 
@@ -106,28 +105,6 @@ func ToProtoTrackKind(kind webrtc.RTPCodecType) livekit.TrackType {
 
 func IsEOF(err error) bool {
 	return err == io.ErrClosedPipe || err == io.EOF
-}
-
-func RecoverSilent() {
-	recover()
-}
-
-func Recover(l logger.Logger) {
-	if l == nil {
-		l = logger.GetLogger()
-	}
-	if r := recover(); r != nil {
-		var err error
-		switch e := r.(type) {
-		case string:
-			err = errors.New(e)
-		case error:
-			err = e
-		default:
-			err = errors.New("unknown panic")
-		}
-		l.Errorw("recovered panic", err, "panic", r)
-	}
 }
 
 // logger helpers

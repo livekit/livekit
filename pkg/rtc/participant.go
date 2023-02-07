@@ -1054,7 +1054,6 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 	p.lock.RUnlock()
 	if onStateChange != nil {
 		go func() {
-			defer Recover(p.GetLogger())
 			onStateChange(p, oldState)
 		}()
 	}
@@ -1228,7 +1227,6 @@ func (p *ParticipantImpl) onAnyTransportFailed() {
 // subscriberRTCPWorker sends SenderReports periodically when the participant is subscribed to
 // other publishedTracks in the room.
 func (p *ParticipantImpl) subscriberRTCPWorker() {
-	defer Recover(p.GetLogger())
 	for {
 		if p.IsDisconnected() {
 			return
@@ -1821,8 +1819,6 @@ func (p *ParticipantImpl) getPublishedTrackBySdpCid(clientId string) types.Media
 }
 
 func (p *ParticipantImpl) publisherRTCPWorker() {
-	defer Recover(p.GetLogger())
-
 	// read from rtcpChan
 	for pkts := range p.rtcpCh {
 		if pkts == nil {
