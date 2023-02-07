@@ -71,14 +71,9 @@ func TestTrackPublishing(t *testing.T) {
 		})
 		p.UpTrackManager.AddPublishedTrack(track)
 		p.handleTrackPublished(track)
-
 		require.True(t, published)
 		require.False(t, updated)
 		require.Len(t, p.UpTrackManager.publishedTracks, 1)
-
-		track.AddOnCloseArgsForCall(0)()
-		require.Len(t, p.UpTrackManager.publishedTracks, 0)
-		require.True(t, updated)
 	})
 
 	t.Run("sends back trackPublished event", func(t *testing.T) {

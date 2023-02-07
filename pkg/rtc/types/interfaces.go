@@ -268,7 +268,7 @@ type LocalParticipant interface {
 	RemoveTrackFromSubscriber(sender *webrtc.RTPSender) error
 
 	// subscriptions
-	SubscribeToTrack(trackID livekit.TrackID, publisherIdentity livekit.ParticipantIdentity, publisherID livekit.ParticipantID)
+	SubscribeToTrack(trackID livekit.TrackID)
 	UnsubscribeFromTrack(trackID livekit.TrackID)
 	UpdateSubscribedTrackSettings(trackID livekit.TrackID, settings *livekit.UpdateTrackSettings)
 	GetSubscribedTracks() []SubscribedTrack
@@ -303,6 +303,8 @@ type LocalParticipant interface {
 	OnTrackPublished(func(LocalParticipant, MediaTrack))
 	// OnTrackUpdated - one of its publishedTracks changed in status
 	OnTrackUpdated(callback func(LocalParticipant, MediaTrack))
+	// OnTrackUnpublished - a track was unpublished
+	OnTrackUnpublished(callback func(LocalParticipant, MediaTrack))
 	// OnParticipantUpdate - metadata or permission is updated
 	OnParticipantUpdate(callback func(LocalParticipant))
 	OnDataPacket(callback func(LocalParticipant, *livekit.DataPacket))
@@ -343,7 +345,7 @@ type Room interface {
 	SyncState(participant LocalParticipant, state *livekit.SyncState) error
 	SimulateScenario(participant LocalParticipant, scenario *livekit.SimulateScenario) error
 	UpdateVideoLayers(participant Participant, updateVideoLayers *livekit.UpdateVideoLayers) error
-	ResolveMediaTrackForSubscriber(subIdentity livekit.ParticipantIdentity, publisherID livekit.ParticipantID, trackID livekit.TrackID) (MediaResolverResult, error)
+	ResolveMediaTrackForSubscriber(subIdentity livekit.ParticipantIdentity, trackID livekit.TrackID) MediaResolverResult
 }
 
 // MediaTrack represents a media track
@@ -440,14 +442,17 @@ type ChangeNotifier interface {
 }
 
 type MediaResolverResult struct {
-	TrackChangeNotifier ChangeNotifier
-	Track               MediaTrack
+	TrackChangedNotifier ChangeNotifier
+	TrackRemovedNotifier ChangeNotifier
+	Track                MediaTrack
 	// is permission given to the requesting participant
-	HasPermission bool
+	HasPermission     bool
+	PublisherID       livekit.ParticipantID
+	PublisherIdentity livekit.ParticipantIdentity
 }
 
 // MediaTrackResolver locates a specific media track for a subscriber
-type MediaTrackResolver func(livekit.ParticipantIdentity, livekit.ParticipantID, livekit.TrackID) (MediaResolverResult, error)
+type MediaTrackResolver func(livekit.ParticipantIdentity, livekit.TrackID) MediaResolverResult
 
 // Supervisor/operation monitor related definitions
 type OperationMonitorEvent int
