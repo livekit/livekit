@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"os"
 	"strings"
 
 	"github.com/pion/webrtc/v3"
@@ -123,9 +122,7 @@ func Recover(l logger.Logger) {
 		default:
 			err = errors.New("unknown panic")
 		}
-		l.Errorw("Panic", err, "panic", r)
-
-		os.Exit(1)
+		l.Errorw("panic", err, "panic", r)
 	}
 }
 
