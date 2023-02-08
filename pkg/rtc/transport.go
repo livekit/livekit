@@ -1577,6 +1577,11 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 
 	offer, err := t.pc.CreateOffer(options)
 	if err != nil {
+		if errors.Is(err, webrtc.ErrConnectionClosed) {
+			t.params.Logger.Warnw("trying to create offer on closed peer connection", nil)
+			return nil
+		}
+
 		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "create").Add(1)
 		return errors.Wrap(err, "create offer failed")
 	}
@@ -1588,6 +1593,11 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 
 	err = t.pc.SetLocalDescription(offer)
 	if err != nil {
+		if errors.Is(err, webrtc.ErrConnectionClosed) {
+			t.params.Logger.Warnw("trying to set local description on closed peer connection", nil)
+			return nil
+		}
+
 		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "local_description").Add(1)
 		return errors.Wrap(err, "setting local description failed")
 	}
@@ -1662,6 +1672,11 @@ func (t *PCTransport) setRemoteDescription(sd webrtc.SessionDescription) error {
 	}
 
 	if err := t.pc.SetRemoteDescription(sd); err != nil {
+		if errors.Is(err, webrtc.ErrConnectionClosed) {
+			t.params.Logger.Warnw("trying to set remote description on closed peer connection", nil)
+			return nil
+		}
+
 		sdpType := "offer"
 		if sd.Type == webrtc.SDPTypeAnswer {
 			sdpType = "answer"
@@ -1690,6 +1705,11 @@ func (t *PCTransport) setRemoteDescription(sd webrtc.SessionDescription) error {
 func (t *PCTransport) createAndSendAnswer() error {
 	answer, err := t.pc.CreateAnswer(nil)
 	if err != nil {
+		if errors.Is(err, webrtc.ErrConnectionClosed) {
+			t.params.Logger.Warnw("trying to create answer on closed peer connection", nil)
+			return nil
+		}
+
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "create").Add(1)
 		return errors.Wrap(err, "create answer failed")
 	}
