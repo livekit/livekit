@@ -158,7 +158,7 @@ type DownTrack struct {
 	writeStream             webrtc.TrackLocalWriter
 	rtcpReader              *buffer.RTCPReader
 	onCloseHandler          func(willBeResumed bool)
-	onBind                  func()
+	onBinding               func()
 	receiverReportListeners []ReceiverReportListener
 	listenerLock            sync.RWMutex
 	isClosed                atomic.Bool
@@ -331,12 +331,12 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.sequencer = newSequencer(d.maxTrack, maxPadding, d.logger)
 	}
 
-	d.bound.Store(true)
 	d.codec = codec.RTPCodecCapability
 	d.forwarder.DetermineCodec(d.codec)
-	if d.onBind != nil {
-		d.onBind()
+	if d.onBinding != nil {
+		d.onBinding()
 	}
+	d.bound.Store(true)
 	d.bindLock.Unlock()
 
 	d.logger.Debugw("downtrack bound")
@@ -875,8 +875,8 @@ func (d *DownTrack) OnCloseHandler(fn func(willBeResumed bool)) {
 	d.onCloseHandler = fn
 }
 
-func (d *DownTrack) OnBind(fn func()) {
-	d.onBind = fn
+func (d *DownTrack) OnBinding(fn func()) {
+	d.onBinding = fn
 }
 
 func (d *DownTrack) OnREMB(fn func(dt *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate)) {
