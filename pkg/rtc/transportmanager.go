@@ -432,7 +432,7 @@ func (t *TransportManager) AddICECandidate(candidate webrtc.ICECandidateInit, ta
 			if err != nil {
 				t.params.Logger.Errorw("failed to parse ice candidate", err)
 			} else if strings.HasSuffix(candidate.Address(), ".local") {
-				t.params.Logger.Debugw("ignoring mDNS candidate", "candidate", candidateValue)
+				t.params.Logger.Debugw("ignoring mDNS candidate", "candidate", candidateValue, "target", target)
 				return
 			}
 		}
