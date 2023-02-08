@@ -217,6 +217,15 @@ func (s *StreamTracker) BitrateTemporalCumulative() []int64 {
 		}
 	}
 
+	// clear higher layers
+	for i := 0; i < len(brs); i++ {
+		if brs[i] == 0 {
+			for j := i + 1; j < len(brs); j++ {
+				brs[j] = 0
+			}
+		}
+	}
+
 	return brs
 }
 

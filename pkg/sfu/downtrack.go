@@ -556,12 +556,12 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			d.stopKeyFrameRequester()
 		}
 
-		if !tp.isSwitchingToTargetLayer {
+		if extPkt.KeyFrame {
 			d.logger.Debugw("forwarding key frame", "layer", layer)
-		} else {
-			if d.onTargetLayerFound != nil {
-				d.onTargetLayerFound(d)
-			}
+		}
+
+		if tp.isSwitchingToTargetLayer && d.onTargetLayerFound != nil {
+			d.onTargetLayerFound(d)
 		}
 	}
 
@@ -1200,7 +1200,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 	sendPliOnce := func() {
 		if pliOnce {
 			targetLayers := d.forwarder.TargetLayers()
-			if targetLayers != InvalidLayers {
+			if targetLayers != InvalidLayers && !d.forwarder.IsAnyMuted() {
 				d.logger.Debugw("sending PLI RTCP", "layer", targetLayers.Spatial)
 				d.receiver.SendPLI(targetLayers.Spatial, false)
 				d.isNACKThrottled.Store(true)
