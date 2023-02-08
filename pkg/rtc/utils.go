@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/pion/webrtc/v3"
@@ -108,10 +109,6 @@ func IsEOF(err error) bool {
 	return err == io.ErrClosedPipe || err == io.EOF
 }
 
-func RecoverSilent() {
-	recover()
-}
-
 func Recover(l logger.Logger) {
 	if l == nil {
 		l = logger.GetLogger()
@@ -126,7 +123,9 @@ func Recover(l logger.Logger) {
 		default:
 			err = errors.New("unknown panic")
 		}
-		l.Errorw("recovered panic", err, "panic", r)
+		l.Errorw("Panic", err, "panic", r)
+
+		os.Exit(1)
 	}
 }
 

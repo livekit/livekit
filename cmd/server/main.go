@@ -13,6 +13,7 @@ import (
 	"github.com/urfave/cli/v2"
 
 	serverlogger "github.com/livekit/livekit-server/pkg/logger"
+	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/logger"
 
@@ -101,6 +102,8 @@ func init() {
 }
 
 func main() {
+	defer rtc.Recover(logger.GetLogger())
+
 	generatedFlags, err := config.GenerateCLIFlags(baseFlags, true)
 	if err != nil {
 		fmt.Println(err)

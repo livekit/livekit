@@ -263,7 +263,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// we would terminate the signal connection as well
 			_ = conn.Close()
 		}()
-		defer rtc.Recover(pLogger)
+
 		for {
 			select {
 			case <-done:
