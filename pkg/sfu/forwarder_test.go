@@ -196,9 +196,10 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 	f.Mute(false)
 
 	// feed dry, target set to maximum for opportunistic start
+	f.SetNumAdvertisedLayers(3)
 	disable(f)
 	expectedTargetLayers := VideoLayers{
-		Spatial:  DefaultMaxLayerSpatial,
+		Spatial:  2,
 		Temporal: DefaultMaxLayerTemporal,
 	}
 	expectedResult = VideoAllocation{
