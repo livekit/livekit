@@ -37,6 +37,7 @@ type WebRTCConfig struct {
 	Publisher      DirectionConfig
 	Subscriber     DirectionConfig
 	NAT1To1IPs     []string
+	UseMDNS        bool
 }
 
 type ReceiverConfig struct {
@@ -265,6 +266,7 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 		Publisher:      publisherConfig,
 		Subscriber:     subscriberConfig,
 		NAT1To1IPs:     nat1to1IPs,
+		UseMDNS:        rtcConf.UseMDNS,
 	}, nil
 }
 
