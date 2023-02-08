@@ -746,7 +746,7 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 			} else {
 				// opportunisitically latch on to anything
 				alloc.targetLayers = VideoLayers{
-					Spatial:  f.numAdvertisedLayers,
+					Spatial:  int32(math.Max(0, float64(f.numAdvertisedLayers-1))),
 					Temporal: DefaultMaxLayerTemporal,
 				}
 			}
