@@ -54,8 +54,7 @@ const (
 	maxPadding = 2000
 
 	waitBeforeSendPaddingOnMute = 100 * time.Millisecond
-	paddingOnMuteInterval       = 100 * time.Millisecond
-	maxPaddingOnMute            = 50
+	maxPaddingOnMuteDuration    = 5 * time.Second
 )
 
 var (
@@ -159,7 +158,7 @@ type DownTrack struct {
 	writeStream             webrtc.TrackLocalWriter
 	rtcpReader              *buffer.RTCPReader
 	onCloseHandler          func(willBeResumed bool)
-	onBind                  func()
+	onBinding               func()
 	receiverReportListeners []ReceiverReportListener
 	listenerLock            sync.RWMutex
 	isClosed                atomic.Bool
@@ -335,12 +334,12 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.sequencer = newSequencer(d.maxTrack, maxPadding, d.logger)
 	}
 
-	d.bound.Store(true)
 	d.codec = codec.RTPCodecCapability
 	d.forwarder.DetermineCodec(d.codec)
-	if d.onBind != nil {
-		d.onBind()
+	if d.onBinding != nil {
+		d.onBinding()
 	}
+	d.bound.Store(true)
 	d.bindLock.Unlock()
 
 	d.logger.Debugw("downtrack bound")
@@ -883,8 +882,8 @@ func (d *DownTrack) OnCloseHandler(fn func(willBeResumed bool)) {
 	d.onCloseHandler = fn
 }
 
-func (d *DownTrack) OnBind(fn func()) {
-	d.onBind = fn
+func (d *DownTrack) OnBinding(fn func()) {
+	d.onBinding = fn
 }
 
 func (d *DownTrack) OnREMB(fn func(dt *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate)) {
@@ -1050,6 +1049,8 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 		switch d.mime {
 		case "audio/opus":
 			writeBlankFrame = d.writeOpusBlankFrame
+		case "audio/red":
+			writeBlankFrame = d.writeOpusRedBlankFrame
 		case "video/vp8":
 			writeBlankFrame = d.writeVP8BlankFrame
 		case "video/h264":
@@ -1060,7 +1061,7 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 		}
 
 		frameRate := uint32(30)
-		if d.mime == "audio/opus" {
+		if d.mime == "audio/opus" || d.mime == "audio/red" {
 			frameRate = 50
 		}
 
@@ -1136,6 +1137,25 @@ func (d *DownTrack) writeOpusBlankFrame(hdr *rtp.Header, frameEndNeeded bool) (i
 	// i. e. comfort noise generation actually not producing something comfortable.
 	payload := make([]byte, len(OpusSilenceFrame))
 	copy(payload[0:], OpusSilenceFrame)
+
+	_, err := d.writeStream.WriteRTP(hdr, payload)
+	if err == nil {
+		d.rtpStats.Update(hdr, len(payload), 0, time.Now().UnixNano())
+	}
+	return hdr.MarshalSize() + len(payload), err
+}
+
+func (d *DownTrack) writeOpusRedBlankFrame(hdr *rtp.Header, frameEndNeeded bool) (int, error) {
+	// primary only silence frame for opus/red, there is no need to contain redundant silent frames
+	payload := make([]byte, len(OpusSilenceFrame)+1)
+
+	// primary header
+	//  0 1 2 3 4 5 6 7
+	// +-+-+-+-+-+-+-+-+
+	// |0|   Block PT  |
+	// +-+-+-+-+-+-+-+-+
+	payload[0] = opusPT
+	copy(payload[1:], OpusSilenceFrame)
 
 	_, err := d.writeStream.WriteRTP(hdr, payload)
 	if err == nil {
@@ -1555,10 +1575,12 @@ func (d *DownTrack) GetNackStats() (totalPackets uint32, totalRepeatedNACKs uint
 }
 
 func (d *DownTrack) onBindAndConnected() {
-	if d.connected.Load() && d.bound.Load() && d.kind == webrtc.RTPCodecTypeVideo && !d.bindAndConnectedOnce.Swap(true) {
-		targetLayers := d.forwarder.TargetLayers()
-		if targetLayers != InvalidLayers {
-			d.receiver.SendPLI(targetLayers.Spatial, true)
+	if d.connected.Load() && d.bound.Load() && !d.bindAndConnectedOnce.Swap(true) {
+		if d.kind == webrtc.RTPCodecTypeVideo {
+			targetLayers := d.forwarder.TargetLayers()
+			if targetLayers != InvalidLayers {
+				d.receiver.SendPLI(targetLayers.Spatial, true)
+			}
 		}
 
 		if d.activePaddingOnMuteUpTrack.Load() {
@@ -1572,14 +1594,68 @@ func (d *DownTrack) sendPaddingOnMute() {
 	// let uptrack have chance to send packet before we send padding
 	time.Sleep(waitBeforeSendPaddingOnMute)
 
-	for i := 0; i < maxPaddingOnMute; i++ {
+	if d.kind == webrtc.RTPCodecTypeVideo {
+		d.sendPaddingOnMuteForVideo()
+	} else if d.mime == "audio/opus" {
+		d.sendSilentFrameOnMuteForOpus()
+	}
+}
+
+func (d *DownTrack) sendPaddingOnMuteForVideo() {
+	paddingOnMuteInterval := 100 * time.Millisecond
+	numPackets := maxPaddingOnMuteDuration / paddingOnMuteInterval
+	for i := 0; i < int(numPackets); i++ {
 		if d.rtpStats.IsActive() || d.IsClosed() {
 			return
 		}
-
 		d.WritePaddingRTP(20, true)
-
 		time.Sleep(paddingOnMuteInterval)
+	}
+}
+
+func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
+	frameRate := uint32(50)
+	frameDuration := time.Duration(1000/frameRate) * time.Millisecond
+	numFrames := frameRate * uint32(maxPaddingOnMuteDuration/time.Second)
+	for {
+		if d.rtpStats.IsActive() || d.IsClosed() || numFrames <= 0 {
+			return
+		}
+		snts, _, err := d.forwarder.GetSnTsForBlankFrames(frameRate, 1)
+		if err != nil {
+			d.logger.Warnw("could not get SN/TS for blank frame", err)
+			return
+		}
+		for i := 0; i < len(snts); i++ {
+			hdr := rtp.Header{
+				Version:        2,
+				Padding:        false,
+				Marker:         true,
+				PayloadType:    d.payloadType,
+				SequenceNumber: snts[i].sequenceNumber,
+				Timestamp:      snts[i].timestamp,
+				SSRC:           d.ssrc,
+				CSRC:           []uint32{},
+			}
+
+			err = d.writeRTPHeaderExtensions(&hdr)
+			if err != nil {
+				d.logger.Warnw("could not write header extension for blank frame", err)
+				return
+			}
+
+			payload := make([]byte, len(OpusSilenceFrame))
+			copy(payload[0:], OpusSilenceFrame)
+
+			_, err := d.writeStream.WriteRTP(&hdr, payload)
+			if err != nil {
+				d.logger.Warnw("could not write blank frame", err)
+				return
+			}
+		}
+
+		numFrames--
+		time.Sleep(frameDuration)
 	}
 }
 
