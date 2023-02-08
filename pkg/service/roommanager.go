@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -478,6 +479,12 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 	defer func() {
 		pLogger.Debugw("RTC session finishing")
 		requestSource.Close()
+	}()
+
+	defer func() {
+		if r := rtc.Recover(pLogger); r != nil {
+			os.Exit(1)
+		}
 	}()
 
 	// send first refresh for cases when client token is close to expiring

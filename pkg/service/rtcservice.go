@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -263,7 +264,11 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// we would terminate the signal connection as well
 			_ = conn.Close()
 		}()
-
+		defer func() {
+			if r := rtc.Recover(pLogger); r != nil {
+				os.Exit(1)
+			}
+		}()
 		for {
 			select {
 			case <-done:
