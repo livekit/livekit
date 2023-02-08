@@ -20,6 +20,11 @@
     {
       "matchManagers": ["gomod"],
       "matchPackagePrefixes": ["github.com/livekit"],
+      "groupName": "pion deps"
+    },
+    {
+      "matchManagers": ["gomod"],
+      "matchPackagePrefixes": ["github.com/livekit"],
       "groupName": "livekit deps"
     }
   ],
