@@ -181,8 +181,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 	f.Mute(true)
 	disable(f)
 	expectedResult := VideoAllocation{
-		state:              VideoAllocationStateMuted,
-		change:             VideoStreamingChangeNone,
+		pauseReason:        VideoPauseReasonMuted,
 		bandwidthRequested: 0,
 		bandwidthDelta:     0,
 		availableLayers:    nil,
@@ -196,17 +195,15 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 
 	f.Mute(false)
 
-	// feed dry state, target set to maximum for opportunistic start
+	// feed dry, target set to maximum for opportunistic start
 	f.SetNumAdvertisedLayers(3)
-	f.lastAllocation.state = VideoAllocationStateNone
 	disable(f)
 	expectedTargetLayers := VideoLayers{
 		Spatial:  2,
 		Temporal: DefaultMaxLayerTemporal,
 	}
 	expectedResult = VideoAllocation{
-		state:              VideoAllocationStateFeedDry,
-		change:             VideoStreamingChangeResuming,
+		pauseReason:        VideoPauseReasonFeedDry,
 		bandwidthRequested: 0,
 		bandwidthDelta:     0,
 		availableLayers:    nil,
@@ -224,8 +221,6 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		Temporal: 1,
 	}
 	expectedResult = VideoAllocation{
-		state:              VideoAllocationStateOptimal,
-		change:             VideoStreamingChangeNone,
 		bandwidthRequested: 0,
 		bandwidthDelta:     0,
 		availableLayers:    nil,
@@ -240,7 +235,6 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 	f.parkedLayers = InvalidLayers
 
 	// awaiting measurement, i.e. bitrates are not available, but layers available
-	f.lastAllocation.state = VideoAllocationStateNone
 	disable(f)
 	f.UpTrackLayersChange([]int32{0}, []int32{})
 	expectedTargetLayers = VideoLayers{
@@ -248,8 +242,6 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		Temporal: DefaultMaxLayerTemporal,
 	}
 	expectedResult = VideoAllocation{
-		state:              VideoAllocationStateAwaitingMeasurement,
-		change:             VideoStreamingChangeResuming,
 		bandwidthRequested: 0,
 		bandwidthDelta:     0,
 		availableLayers:    []int32{0},
@@ -265,6 +257,8 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 
 	// layers are available, but all layers <= max are exempted.
 	// forwarder not started yet, so should set target to max.
+	// pauseReason should be populated to indicate feed is dry
+	// because exempt layers are actually detected as stopped.
 	f.SetMaxSpatialLayer(0)
 	f.currentLayers = VideoLayers{Spatial: 0, Temporal: 0}
 	f.UpTrackLayersChange([]int32{0, 1, 2}, []int32{0})
@@ -273,8 +267,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		Temporal: DefaultMaxLayerTemporal,
 	}
 	expectedResult = VideoAllocation{
-		state:              VideoAllocationStateFeedDry,
-		change:             VideoStreamingChangeNone,
+		pauseReason:        VideoPauseReasonFeedDry,
 		bandwidthRequested: 0,
 		bandwidthDelta:     0,
 		availableLayers:    []int32{0, 1, 2},
@@ -295,8 +288,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		Temporal: 0,
 	}
 	expectedResult = VideoAllocation{
-		state:              VideoAllocationStateFeedDry,
-		change:             VideoStreamingChangeNone,
+		pauseReason:        VideoPauseReasonFeedDry,
 		bandwidthRequested: 0,
 		bandwidthDelta:     0,
 		availableLayers:    []int32{0, 1, 2},
@@ -317,8 +309,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		Temporal: 0,
 	}
 	expectedResult = VideoAllocation{
-		state:              VideoAllocationStateFeedDry,
-		change:             VideoStreamingChangeNone,
+		pauseReason:        VideoPauseReasonFeedDry,
 		bandwidthRequested: 0,
 		bandwidthDelta:     0,
 		availableLayers:    []int32{0, 1, 2},
@@ -334,7 +325,6 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 
 	// allocate using bitrates, allocation should choose optimal
 	f.currentLayers = InvalidLayers
-	f.SetMaxSpatialLayer(DefaultMaxLayerSpatial)
 	f.UpTrackLayersChange([]int32{0, 1, 2}, []int32{})
 	f.maxLayers = VideoLayers{Spatial: 1, Temporal: 3}
 	expectedTargetLayers = VideoLayers{
@@ -342,8 +332,6 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		Temporal: 3,
 	}
 	expectedResult = VideoAllocation{
-		state:              VideoAllocationStateOptimal,
-		change:             VideoStreamingChangeNone,
 		bandwidthRequested: bitrates[1][3],
 		bandwidthDelta:     bitrates[1][3],
 		availableLayers:    []int32{0, 1, 2},
@@ -369,8 +357,6 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		Temporal: 1,
 	}
 	expectedResult = VideoAllocation{
-		state:              VideoAllocationStateOptimal,
-		change:             VideoStreamingChangeNone,
 		bandwidthRequested: sparseBitrates[2][1],
 		bandwidthDelta:     sparseBitrates[2][1] - bitrates[1][3],
 		availableLayers:    []int32{2},
@@ -384,10 +370,9 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 	require.Equal(t, InvalidLayers, f.CurrentLayers())
 	require.Equal(t, expectedTargetLayers, f.TargetLayers())
 
-	// when not allowing overshoot, should not be able to find a layer
+	// when not allowing overshoot, should leave it at current (current is InvalidLayers in this test)
 	expectedResult = VideoAllocation{
-		state:              VideoAllocationStateFeedDry,
-		change:             VideoStreamingChangePausing,
+		pauseReason:        VideoPauseReasonFeedDry,
 		bandwidthRequested: 0,
 		bandwidthDelta:     -sparseBitrates[2][1],
 		availableLayers:    []int32{2},
@@ -439,8 +424,7 @@ func TestForwarderProvisionalAllocate(t *testing.T) {
 		Temporal: 2,
 	}
 	expectedResult := VideoAllocation{
-		state:              VideoAllocationStateDeficient,
-		change:             VideoStreamingChangeResuming,
+		isDeficient:        true,
 		bandwidthRequested: bitrates[1][2],
 		bandwidthDelta:     bitrates[1][2],
 		availableLayers:    availableLayers,
@@ -465,8 +449,7 @@ func TestForwarderProvisionalAllocate(t *testing.T) {
 		Temporal: 0,
 	}
 	expectedResult = VideoAllocation{
-		state:              VideoAllocationStateDeficient,
-		change:             VideoStreamingChangeResuming,
+		isDeficient:        true,
 		bandwidthRequested: bitrates[0][0],
 		bandwidthDelta:     bitrates[0][0] - bitrates[1][2],
 		availableLayers:    availableLayers,
@@ -514,8 +497,6 @@ func TestForwarderProvisionalAllocate(t *testing.T) {
 		Temporal: 3,
 	}
 	expectedResult = VideoAllocation{
-		state:              VideoAllocationStateOptimal,
-		change:             VideoStreamingChangeNone,
 		bandwidthRequested: bitrates[1][3],
 		bandwidthDelta:     bitrates[1][3] - 1, // 1 is the last allocation bandwith requested
 		availableLayers:    availableLayers,
@@ -566,8 +547,7 @@ func TestForwarderProvisionalAllocate(t *testing.T) {
 		Temporal: 2,
 	}
 	expectedResult = VideoAllocation{
-		state:              VideoAllocationStateDeficient,
-		change:             VideoStreamingChangeNone,
+		pauseReason:        VideoPauseReasonFeedDry,
 		bandwidthRequested: bitrates[0][2],
 		bandwidthDelta:     bitrates[0][2] - 8, // 8 is the last allocation bandwith requested
 		availableLayers:    availableLayers,
@@ -598,7 +578,7 @@ func TestForwarderProvisionalAllocate(t *testing.T) {
 	f.currentLayers = VideoLayers{Spatial: 1, Temporal: 2}
 	f.ProvisionalAllocatePrepare(bitrates)
 
-	// all the provisional allocations below should fall back to exempted layer
+	// all the provisional allocations below should not succeed
 	usedBitrate = f.ProvisionalAllocate(bitrates[2][3], VideoLayers{Spatial: 0, Temporal: 0}, false, true)
 	require.Equal(t, int64(0), usedBitrate)
 
@@ -611,8 +591,7 @@ func TestForwarderProvisionalAllocate(t *testing.T) {
 	require.Equal(t, int64(0), usedBitrate)
 
 	expectedResult = VideoAllocation{
-		state:              VideoAllocationStateDeficient,
-		change:             VideoStreamingChangePausing,
+		pauseReason:        VideoPauseReasonFeedDry,
 		bandwidthRequested: 0,
 		bandwidthDelta:     0,
 		availableLayers:    availableLayers,
@@ -647,8 +626,7 @@ func TestForwarderProvisionalAllocateMute(t *testing.T) {
 
 	// committing should set target to InvalidLayers as track is muted
 	expectedResult := VideoAllocation{
-		state:              VideoAllocationStateMuted,
-		change:             VideoStreamingChangeNone,
+		pauseReason:        VideoPauseReasonMuted,
 		bandwidthRequested: 0,
 		bandwidthDelta:     0,
 		availableLayers:    nil,
@@ -689,8 +667,7 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 	// committing should set target to (0, 0)
 	expectedLayers := VideoLayers{Spatial: 0, Temporal: 0}
 	expectedResult := VideoAllocation{
-		state:              VideoAllocationStateDeficient,
-		change:             VideoStreamingChangeResuming,
+		isDeficient:        true,
 		bandwidthRequested: 1,
 		bandwidthDelta:     1,
 		availableLayers:    availableLayers,
@@ -718,8 +695,6 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 	// committing should set target to (2, 1)
 	expectedLayers = VideoLayers{Spatial: 2, Temporal: 1}
 	expectedResult = VideoAllocation{
-		state:              VideoAllocationStateOptimal,
-		change:             VideoStreamingChangeNone,
 		bandwidthRequested: 10,
 		bandwidthDelta:     0,
 		availableLayers:    availableLayers,
@@ -791,8 +766,6 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 	// committing should set target to (1, 0)
 	expectedLayers = VideoLayers{Spatial: 1, Temporal: 0}
 	expectedResult = VideoAllocation{
-		state:              VideoAllocationStateOptimal,
-		change:             VideoStreamingChangeResuming,
 		bandwidthRequested: 5,
 		bandwidthDelta:     5,
 		availableLayers:    availableLayers,
@@ -836,8 +809,6 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 	// committing should set target to (0, 2)
 	expectedLayers = VideoLayers{Spatial: 0, Temporal: 2}
 	expectedResult = VideoAllocation{
-		state:              VideoAllocationStateDeficient,
-		change:             VideoStreamingChangeResuming,
 		bandwidthRequested: 0,
 		bandwidthDelta:     -5,
 		availableLayers:    availableLayers,
@@ -870,8 +841,6 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 
 	// committing should set target to current layers to enable opportunistic forwarding
 	expectedResult = VideoAllocation{
-		state:              VideoAllocationStateOptimal,
-		change:             VideoStreamingChangeNone,
 		bandwidthRequested: 0,
 		bandwidthDelta:     0,
 		availableLayers:    availableLayers,
@@ -931,20 +900,18 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 	f.SetMaxTemporalLayer(DefaultMaxLayerTemporal)
 
 	// when not in deficient state, does not boost
-	f.lastAllocation.state = VideoAllocationStateNone
 	result, boosted = f.AllocateNextHigher(ChannelCapacityInfinity, bitrates, false)
 	require.Equal(t, VideoAllocationDefault, result)
 	require.False(t, boosted)
 
-	// if layers have not caught up, should not allocate next layer
-	f.lastAllocation.state = VideoAllocationStateDeficient
+	// if layers have not caught up, should not allocate next layer even if deficient
+	f.lastAllocation.isDeficient = true
 	f.targetLayers = VideoLayers{
 		Spatial:  0,
 		Temporal: 0,
 	}
 	expectedResult := VideoAllocation{
-		state:              VideoAllocationStateDeficient,
-		change:             VideoStreamingChangeNone,
+		isDeficient:        true,
 		bandwidthRequested: 0,
 		bandwidthDelta:     0,
 		availableLayers:    nil,
@@ -969,8 +936,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 
 	// empty bitrates cannot increase layer
 	expectedResult = VideoAllocation{
-		state:              VideoAllocationStateDeficient,
-		change:             VideoStreamingChangeNone,
+		isDeficient:        true,
 		bandwidthRequested: 2,
 		bandwidthDelta:     0,
 		availableLayers:    nil,
@@ -989,8 +955,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 		Temporal: 1,
 	}
 	expectedResult = VideoAllocation{
-		state:              VideoAllocationStateDeficient,
-		change:             VideoStreamingChangeNone,
+		isDeficient:        true,
 		bandwidthRequested: 3,
 		bandwidthDelta:     1,
 		availableLayers:    nil,
@@ -1011,8 +976,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 		Temporal: 0,
 	}
 	expectedResult = VideoAllocation{
-		state:              VideoAllocationStateDeficient,
-		change:             VideoStreamingChangeNone,
+		isDeficient:        true,
 		bandwidthRequested: 4,
 		bandwidthDelta:     1,
 		availableLayers:    nil,
@@ -1034,8 +998,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 		Temporal: 3,
 	}
 	expectedResult = VideoAllocation{
-		state:              VideoAllocationStateDeficient,
-		change:             VideoStreamingChangeNone,
+		isDeficient:        true,
 		bandwidthRequested: 5,
 		bandwidthDelta:     1,
 		availableLayers:    nil,
@@ -1056,8 +1019,6 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 		Temporal: 1,
 	}
 	expectedResult = VideoAllocation{
-		state:              VideoAllocationStateOptimal,
-		change:             VideoStreamingChangeNone,
 		bandwidthRequested: 7,
 		bandwidthDelta:     2,
 		availableLayers:    nil,
@@ -1082,7 +1043,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 
 	// turn off everything, allocating next layer should result in streaming lowest layers
 	disable(f)
-	f.lastAllocation.state = VideoAllocationStateDeficient
+	f.lastAllocation.isDeficient = true
 	f.lastAllocation.bandwidthRequested = 0
 
 	expectedTargetLayers = VideoLayers{
@@ -1090,8 +1051,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 		Temporal: 0,
 	}
 	expectedResult = VideoAllocation{
-		state:              VideoAllocationStateDeficient,
-		change:             VideoStreamingChangeResuming,
+		isDeficient:        true,
 		bandwidthRequested: 2,
 		bandwidthDelta:     2,
 		availableLayers:    nil,
@@ -1107,8 +1067,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 
 	// no new available capacity cannot bump up layer
 	expectedResult = VideoAllocation{
-		state:              VideoAllocationStateDeficient,
-		change:             VideoStreamingChangeNone,
+		isDeficient:        true,
 		bandwidthRequested: 2,
 		bandwidthDelta:     2,
 		availableLayers:    nil,
@@ -1138,8 +1097,6 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 		Temporal: 0,
 	}
 	expectedResult = VideoAllocation{
-		state:              VideoAllocationStateOptimal,
-		change:             VideoStreamingChangeNone,
 		bandwidthRequested: bitrates[1][0],
 		bandwidthDelta:     bitrates[1][0],
 		availableLayers:    nil,
@@ -1175,8 +1132,8 @@ func TestForwarderPause(t *testing.T) {
 	f.ProvisionalAllocateCommit()
 
 	expectedResult := VideoAllocation{
-		state:              VideoAllocationStateDeficient,
-		change:             VideoStreamingChangePausing,
+		pauseReason:        VideoPauseReasonBandwidth,
+		isDeficient:        true,
 		bandwidthRequested: 0,
 		bandwidthDelta:     0 - bitrates[0][0],
 		availableLayers:    availableLayers,
@@ -1210,8 +1167,7 @@ func TestForwarderPauseMute(t *testing.T) {
 
 	f.Mute(true)
 	expectedResult := VideoAllocation{
-		state:              VideoAllocationStateMuted,
-		change:             VideoStreamingChangePausing,
+		pauseReason:        VideoPauseReasonMuted,
 		bandwidthRequested: 0,
 		bandwidthDelta:     0 - bitrates[0][0],
 		availableLayers:    availableLayers,
@@ -1456,7 +1412,8 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	}
 	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
 	expectedTP = TranslationParams{
-		isSwitchingToMaxLayer: true,
+		isSwitchingToMaxLayer:    true,
+		isSwitchingToTargetLayer: true,
 		rtp: &TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingContiguous,
 			sequenceNumber: 23333,
@@ -1710,7 +1667,8 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
 
 	expectedTP = TranslationParams{
-		isSwitchingToMaxLayer: true,
+		isSwitchingToMaxLayer:    true,
+		isSwitchingToTargetLayer: true,
 		rtp: &TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingContiguous,
 			sequenceNumber: 23338,
