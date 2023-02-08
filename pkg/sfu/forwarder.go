@@ -1604,6 +1604,10 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 					f.logger.Infow("adjusting overshoot", "current", f.currentLayers, "target", f.targetLayers, "adjuted", layer)
 					f.currentLayers.Spatial = layer
 					f.targetLayers.Spatial = layer
+
+					if f.currentLayers.Spatial >= f.maxLayers.Spatial || f.currentLayers.Spatial == (f.numAdvertisedLayers-1) {
+						tp.isSwitchingToMaxLayer = true
+					}
 				}
 			}
 		}

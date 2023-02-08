@@ -441,7 +441,7 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) (types.Su
 	}
 
 	tLogger := LoggerWithTrack(sub.GetLogger(), t.ID(), t.params.IsRelayed)
-	wrParams := NewWrappedReceiver(WrappedReceiverParams{
+	wr := NewWrappedReceiver(WrappedReceiverParams{
 		Receivers:      receivers,
 		TrackID:        t.ID(),
 		StreamId:       streamId,
@@ -449,7 +449,7 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) (types.Su
 		Logger:         tLogger,
 		DisableRed:     t.trackInfo.GetDisableRed(),
 	})
-	return t.MediaTrackSubscriptions.AddSubscriber(sub, wrParams)
+	return t.MediaTrackSubscriptions.AddSubscriber(sub, wr)
 }
 
 // RemoveSubscriber removes participant from subscription
