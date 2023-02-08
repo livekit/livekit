@@ -134,7 +134,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	// Bind callback can happen from replaceTrack, so set it up early
 	var reusingTransceiver atomic.Bool
 	var dtState sfu.DownTrackState
-	downTrack.OnBind(func() {
+	downTrack.OnBinding(func() {
 		wr.DetermineReceiver(downTrack.Codec())
 		if reusingTransceiver.Load() {
 			downTrack.SeedState(dtState)
