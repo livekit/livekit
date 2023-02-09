@@ -19,7 +19,7 @@
     },
     {
       "matchManagers": ["gomod"],
-      "matchPackagePrefixes": ["github.com/livekit"],
+      "matchPackagePrefixes": ["github.com/pion"],
       "groupName": "pion deps"
     },
     {
