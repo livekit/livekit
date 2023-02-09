@@ -627,7 +627,7 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 		}
 
 		// check for current target being removed
-		if doAlloc == false {
+		if !doAlloc {
 			for _, l := range removed {
 				if l == f.targetLayers.Spatial {
 					doAlloc = true
