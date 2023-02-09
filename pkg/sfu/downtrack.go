@@ -859,10 +859,6 @@ func (d *DownTrack) SeedState(state DownTrackState) {
 	d.forwarder.SeedState(state.ForwarderState)
 }
 
-func (d *DownTrack) GetForwardingStatus() ForwardingStatus {
-	return d.forwarder.GetForwardingStatus()
-}
-
 func (d *DownTrack) UpTrackLayersChange() {
 	if onAvailableLayersChanged, ok := d.onAvailableLayersChanged.Load().(func(dt *DownTrack)); ok {
 		onAvailableLayersChanged(d)

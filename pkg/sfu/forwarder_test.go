@@ -110,32 +110,6 @@ func TestForwarderLayersVideo(t *testing.T) {
 	require.Equal(t, VideoLayers{Spatial: 0, Temporal: 1}, currentLayers)
 }
 
-func TestForwarderGetForwardingStatus(t *testing.T) {
-	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
-	f.SetMaxSpatialLayer(DefaultMaxLayerSpatial)
-	f.SetMaxTemporalLayer(DefaultMaxLayerTemporal)
-
-	// no available layers, should be optimal
-	require.Equal(t, ForwardingStatusOptimal, f.GetForwardingStatus())
-
-	// with available layers, should be off
-	f.lastAllocation.pauseReason = VideoPauseReasonNone
-	require.Equal(t, ForwardingStatusOff, f.GetForwardingStatus())
-
-	// when muted, should be optimal
-	f.Mute(true)
-	require.Equal(t, ForwardingStatusOptimal, f.GetForwardingStatus())
-
-	// when target is max, should be optimal
-	f.Mute(false)
-	f.targetLayers = f.maxLayers
-	require.Equal(t, ForwardingStatusOptimal, f.GetForwardingStatus())
-
-	// when deficient, should be partial
-	f.lastAllocation.isDeficient = true
-	require.Equal(t, ForwardingStatusPartial, f.GetForwardingStatus())
-}
-
 func TestForwarderAllocateOptimal(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 	f.SetMaxSpatialLayer(DefaultMaxLayerSpatial)
@@ -296,36 +270,65 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 	require.Equal(t, InvalidLayers, f.CurrentLayers())
 	require.Equal(t, expectedTargetLayers, f.TargetLayers())
 
-	// when not allowing overshoot, should leave it at current when started (current is InvalidLayers in this test)
+	// when not allowing overshoot, should leave it at current when started and current is valid
 	sparseBitrates[1][2] = 10
 	sparseBitrates[2][1] = 0
 	f.started = true
+	f.currentLayers = VideoLayers{Spatial: 0, Temporal: 1}
+	expectedTargetLayers = VideoLayers{
+		Spatial:  0,
+		Temporal: 1,
+	}
 	expectedResult = VideoAllocation{
 		pauseReason:        VideoPauseReasonFeedDry,
 		bandwidthRequested: 0,
 		bandwidthDelta:     -7,
 		bitrates:           sparseBitrates,
-		targetLayers:       InvalidLayers,
+		targetLayers:       expectedTargetLayers,
 		maxLayers:          expectedMaxLayers,
 		distanceToDesired:  0,
 	}
 	result = f.AllocateOptimal(sparseBitrates, false)
 	require.Equal(t, expectedResult, result)
 	require.Equal(t, expectedResult, f.lastAllocation)
-	require.Equal(t, InvalidLayers, f.CurrentLayers())
-	require.Equal(t, InvalidLayers, f.TargetLayers())
+	require.Equal(t, expectedTargetLayers, f.CurrentLayers())
+	require.Equal(t, expectedTargetLayers, f.TargetLayers())
 
-	// when not allowing overshoot, should leave it at max for opportunistic forwarding when not started
-	f.started = false
-	f.targetLayers = VideoLayers{Spatial: 1, Temporal: 3}
+	// when not allowing overshoot, should leave it at max when started and current is not valid
 	sparseBitrates[1][2] = 0
 	sparseBitrates[2][1] = 7
+	f.started = true
+	f.currentLayers = InvalidLayers
+	expectedTargetLayers = VideoLayers{
+		Spatial:  2,
+		Temporal: 3,
+	}
 	expectedResult = VideoAllocation{
 		pauseReason:        VideoPauseReasonFeedDry,
 		bandwidthRequested: 0,
 		bandwidthDelta:     0,
 		bitrates:           sparseBitrates,
-		targetLayers:       DefaultMaxLayers,
+		targetLayers:       expectedTargetLayers,
+		maxLayers:          expectedMaxLayers,
+		distanceToDesired:  -1,
+	}
+	result = f.AllocateOptimal(sparseBitrates, false)
+	require.Equal(t, expectedResult, result)
+	require.Equal(t, expectedResult, f.lastAllocation)
+	require.Equal(t, InvalidLayers, f.CurrentLayers())
+	require.Equal(t, expectedTargetLayers, f.TargetLayers())
+
+	// when not allowing overshoot, should leave it at max for opportunistic forwarding when not started
+	f.started = false
+	f.targetLayers = VideoLayers{Spatial: 2, Temporal: 3}
+	sparseBitrates[1][2] = 10
+	sparseBitrates[2][1] = 0
+	expectedResult = VideoAllocation{
+		pauseReason:        VideoPauseReasonFeedDry,
+		bandwidthRequested: 0,
+		bandwidthDelta:     0,
+		bitrates:           sparseBitrates,
+		targetLayers:       expectedTargetLayers,
 		maxLayers:          expectedMaxLayers,
 		distanceToDesired:  -1,
 	}

@@ -25,16 +25,6 @@ const (
 
 // -------------------------------------------------------------------
 
-type ForwardingStatus int
-
-const (
-	ForwardingStatusOff ForwardingStatus = iota
-	ForwardingStatusPartial
-	ForwardingStatusOptimal
-)
-
-// -------------------------------------------------------------------
-
 type VideoPauseReason int
 
 const (
@@ -429,25 +419,6 @@ func (f *Forwarder) GetReferenceLayerSpatial() int32 {
 	return f.referenceLayerSpatial
 }
 
-func (f *Forwarder) GetForwardingStatus() ForwardingStatus {
-	f.lock.RLock()
-	defer f.lock.RUnlock()
-
-	if f.muted || f.pubMuted || f.lastAllocation.pauseReason == VideoPauseReasonFeedDry {
-		return ForwardingStatusOptimal
-	}
-
-	if f.targetLayers == InvalidLayers {
-		return ForwardingStatusOff
-	}
-
-	if f.isDeficientLocked() {
-		return ForwardingStatusPartial
-	}
-
-	return ForwardingStatusOptimal
-}
-
 func (f *Forwarder) IsReducedQuality() (int32, bool) {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
@@ -685,7 +656,6 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 					alloc.bandwidthRequested = brs[s][t]
 					break
 				}
-				fmt.Printf("alloc: %+v\n", alloc) // REMOVE
 
 				if alloc.bandwidthRequested != 0 {
 					break
@@ -724,8 +694,7 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 
 			// feed may be dry, leave target at current if already started for opportunistic resume
 			if alloc.bandwidthRequested == 0 && f.maxLayers.IsValid() {
-				// RAJA-TODO: this one should set to current only if current is valid, but there was some problem with that, check and implement the change
-				if f.started {
+				if f.started && f.currentLayers.IsValid() {
 					alloc.targetLayers = f.currentLayers
 				} else {
 					// opportunisitically latch on to anything
