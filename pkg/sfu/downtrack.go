@@ -27,7 +27,7 @@ import (
 
 // TrackSender defines an interface send media to remote peer
 type TrackSender interface {
-	UpTrackLayersChange(availableLayers []int32, exemptedLayers []int32)
+	UpTrackLayersChange()
 	UpTrackBitrateAvailabilityChange()
 	WriteRTP(p *buffer.ExtPacket, layer int32) error
 	Close()
@@ -863,9 +863,7 @@ func (d *DownTrack) GetForwardingStatus() ForwardingStatus {
 	return d.forwarder.GetForwardingStatus()
 }
 
-func (d *DownTrack) UpTrackLayersChange(availableLayers []int32, exemptedLayers []int32) {
-	// RAJA-REMOVE d.forwarder.UpTrackLayersChange(availableLayers, exemptedLayers)
-
+func (d *DownTrack) UpTrackLayersChange() {
 	if onAvailableLayersChanged, ok := d.onAvailableLayersChanged.Load().(func(dt *DownTrack)); ok {
 		onAvailableLayersChanged(d)
 	}

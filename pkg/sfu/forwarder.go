@@ -629,7 +629,6 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 		alloc.targetLayers = f.parkedLayers
 
 	case !f.targetLayers.IsValid():
-		fmt.Printf("case1\n") // REMOVE
 		if f.maxLayers.IsValid() {
 			if allowOvershoot {
 				alloc.targetLayers = VideoLayers{
@@ -642,14 +641,11 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 		}
 
 	case f.lastAllocation.maxLayers != f.maxLayers:
-		fmt.Printf("case2\n") // REMOVE
 		alloc.targetLayers = f.maxLayers
 
 	default:
-		fmt.Printf("case3\n") // REMOVE
 		doAlloc := false
 		added, removed := f.getLayerChanges(brs)
-		fmt.Printf("added: %+v, removed: %+v, target: %+v, max: %+v\n", added, removed, f.targetLayers, f.maxLayers) // REMOVE
 
 		// check for an added higher than current target
 		for _, l := range added {
@@ -673,7 +669,6 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 			// no layer changes, leave target as is
 			alloc.targetLayers = f.targetLayers
 			alloc.bandwidthRequested = brs[alloc.targetLayers.Spatial][alloc.targetLayers.Temporal]
-			fmt.Printf("no change alloc: %+v\n", alloc) // REMOVE
 		} else {
 			// allocate best layer available
 			for s := f.maxLayers.Spatial; s >= 0; s-- {
@@ -716,6 +711,7 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 						}
 
 						alloc.bandwidthRequested = brs[s][t]
+						alloc.pauseReason = VideoPauseReasonNone
 						f.logger.Infow("allowing overshoot", "maxLayer", f.maxLayers, "targetLayers", alloc.targetLayers)
 						break
 					}
@@ -728,6 +724,7 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 
 			// feed may be dry, leave target at current if already started for opportunistic resume
 			if alloc.bandwidthRequested == 0 && f.maxLayers.IsValid() {
+				// RAJA-TODO: this one should set to current only if current is valid, but there was some problem with that, check and implement the change
 				if f.started {
 					alloc.targetLayers = f.currentLayers
 				} else {

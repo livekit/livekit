@@ -162,7 +162,6 @@ type StreamTrackerFrameConfig struct {
 type StreamTrackerConfig struct {
 	StreamTrackerType     StreamTrackerType                   `yaml:"stream_tracker_type,omitempty"`
 	BitrateReportInterval map[int32]time.Duration             `yaml:"bitrate_report_interval,omitempty"`
-	ExemptedLayers        []int32                             `yaml:"exempted_layers,omitempty"`
 	PacketTracker         map[int32]StreamTrackerPacketConfig `yaml:"packet_tracker,omitempty"`
 	FrameTracker          map[int32]StreamTrackerFrameConfig  `yaml:"frame_tracker,omitempty"`
 }
@@ -300,7 +299,6 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 						1: 1 * time.Second,
 						2: 1 * time.Second,
 					},
-					ExemptedLayers: []int32{},
 					PacketTracker: map[int32]StreamTrackerPacketConfig{
 						0: StreamTrackerPacketConfig{
 							SamplesRequired: 1,
@@ -337,7 +335,6 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 						1: 4 * time.Second,
 						2: 4 * time.Second,
 					},
-					ExemptedLayers: []int32{0},
 					PacketTracker: map[int32]StreamTrackerPacketConfig{
 						0: StreamTrackerPacketConfig{
 							SamplesRequired: 1,

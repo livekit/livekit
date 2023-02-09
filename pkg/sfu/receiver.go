@@ -401,9 +401,8 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) error {
 	}
 
 	if w.Kind() == webrtc.RTPCodecTypeVideo {
-		// notify added down track of available layers
-		availableLayers, exemptedLayers := w.streamTrackerManager.GetAvailableLayers()
-		track.UpTrackLayersChange(availableLayers, exemptedLayers)
+		// kick off an allocation on added down track
+		track.UpTrackLayersChange()
 	}
 	track.TrackInfoAvailable()
 
@@ -415,9 +414,9 @@ func (w *WebRTCReceiver) SetMaxExpectedSpatialLayer(layer int32) {
 	w.streamTrackerManager.SetMaxExpectedSpatialLayer(layer)
 }
 
-func (w *WebRTCReceiver) downTrackLayerChange(availableLayers []int32, exemptedLayers []int32) {
+func (w *WebRTCReceiver) downTrackLayerChange() {
 	for _, dt := range w.downTrackSpreader.GetDownTracks() {
-		dt.UpTrackLayersChange(availableLayers, exemptedLayers)
+		dt.UpTrackLayersChange()
 	}
 }
 
