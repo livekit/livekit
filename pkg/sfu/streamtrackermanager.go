@@ -7,7 +7,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/streamtracker"
-	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -20,8 +19,6 @@ type StreamTrackerManager struct {
 	clockRate         uint32
 
 	trackerConfig config.StreamTrackerConfig
-
-	layersNotifyOpQueue *utils.OpsQueue
 
 	lock sync.RWMutex
 
@@ -44,12 +41,11 @@ func NewStreamTrackerManager(
 	trackersConfig config.StreamTrackersConfig,
 ) *StreamTrackerManager {
 	s := &StreamTrackerManager{
-		logger:              logger,
-		trackInfo:           trackInfo,
-		isSVC:               isSVC,
-		maxPublishedLayer:   0,
-		clockRate:           clockRate,
-		layersNotifyOpQueue: utils.NewOpsQueue(logger, "layer-notify", 10),
+		logger:            logger,
+		trackInfo:         trackInfo,
+		isSVC:             isSVC,
+		maxPublishedLayer: 0,
+		clockRate:         clockRate,
 	}
 
 	switch s.trackInfo.Source {
@@ -70,14 +66,6 @@ func NewStreamTrackerManager(
 	s.maxExpectedLayer = s.maxPublishedLayer
 
 	return s
-}
-
-func (s *StreamTrackerManager) Start() {
-	s.layersNotifyOpQueue.Start()
-}
-
-func (s *StreamTrackerManager) Stop() {
-	s.layersNotifyOpQueue.Stop()
 }
 
 func (s *StreamTrackerManager) OnAvailableLayersChanged(f func()) {
@@ -144,14 +132,12 @@ func (s *StreamTrackerManager) AddTracker(layer int32) *streamtracker.StreamTrac
 
 	s.logger.Debugw("StreamTrackerManager add track", "layer", layer)
 	tracker.OnStatusChanged(func(status streamtracker.StreamStatus) {
-		s.layersNotifyOpQueue.Enqueue(func() {
-			s.logger.Debugw("StreamTrackerManager OnStatusChanged", "layer", layer, "status", status)
-			if status == streamtracker.StreamStatusStopped {
-				s.removeAvailableLayer(layer)
-			} else {
-				s.addAvailableLayer(layer)
-			}
-		})
+		s.logger.Debugw("StreamTrackerManager OnStatusChanged", "layer", layer, "status", status)
+		if status == streamtracker.StreamStatusStopped {
+			s.removeAvailableLayer(layer)
+		} else {
+			s.addAvailableLayer(layer)
+		}
 	})
 	tracker.OnBitrateAvailable(func() {
 		if s.onBitrateAvailabilityChanged != nil {
