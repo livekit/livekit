@@ -82,6 +82,7 @@ func (v VideoAllocation) String() string {
 
 var (
 	VideoAllocationDefault = VideoAllocation{
+		pauseReason:  VideoPauseReasonFeedDry, // start with no feed till feed is seen
 		targetLayers: InvalidLayers,
 		maxLayers:    InvalidLayers,
 	}
@@ -142,6 +143,11 @@ const (
 
 var (
 	InvalidLayers = buffer.InvalidLayers
+
+	DefaultMaxLayers = VideoLayers{
+		Spatial:  DefaultMaxLayerSpatial,
+		Temporal: DefaultMaxLayerTemporal,
+	}
 )
 
 // -------------------------------------------------------------------
@@ -605,6 +611,9 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 		targetLayers: InvalidLayers,
 		maxLayers:    f.maxLayers,
 	}
+	if f.getOptimalBandwidthNeeded(brs, f.maxLayers) == 0 {
+		alloc.pauseReason = VideoPauseReasonFeedDry
+	}
 
 	switch {
 	case f.muted:
@@ -620,6 +629,7 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 		alloc.targetLayers = f.parkedLayers
 
 	case !f.targetLayers.IsValid():
+		fmt.Printf("case1\n") // REMOVE
 		if f.maxLayers.IsValid() {
 			if allowOvershoot {
 				alloc.targetLayers = VideoLayers{
@@ -632,11 +642,14 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 		}
 
 	case f.lastAllocation.maxLayers != f.maxLayers:
+		fmt.Printf("case2\n") // REMOVE
 		alloc.targetLayers = f.maxLayers
 
 	default:
+		fmt.Printf("case3\n") // REMOVE
 		doAlloc := false
 		added, removed := f.getLayerChanges(brs)
+		fmt.Printf("added: %+v, removed: %+v, target: %+v, max: %+v\n", added, removed, f.targetLayers, f.maxLayers) // REMOVE
 
 		// check for an added higher than current target
 		for _, l := range added {
@@ -657,8 +670,10 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 		}
 
 		if !doAlloc {
+			// no layer changes, leave target as is
 			alloc.targetLayers = f.targetLayers
 			alloc.bandwidthRequested = brs[alloc.targetLayers.Spatial][alloc.targetLayers.Temporal]
+			fmt.Printf("no change alloc: %+v\n", alloc) // REMOVE
 		} else {
 			// allocate best layer available
 			for s := f.maxLayers.Spatial; s >= 0; s-- {
@@ -675,6 +690,7 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 					alloc.bandwidthRequested = brs[s][t]
 					break
 				}
+				fmt.Printf("alloc: %+v\n", alloc) // REMOVE
 
 				if alloc.bandwidthRequested != 0 {
 					break
@@ -712,7 +728,6 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 
 			// feed may be dry, leave target at current if already started for opportunistic resume
 			if alloc.bandwidthRequested == 0 && f.maxLayers.IsValid() {
-				alloc.pauseReason = VideoPauseReasonFeedDry
 				if f.started {
 					alloc.targetLayers = f.currentLayers
 				} else {
