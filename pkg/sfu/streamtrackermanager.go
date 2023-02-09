@@ -378,7 +378,7 @@ func (s *StreamTrackerManager) addAvailableLayer(layer int32) {
 	s.availableLayers = append(s.availableLayers, layer)
 	sort.Slice(s.availableLayers, func(i, j int) bool { return s.availableLayers[i] < s.availableLayers[j] })
 
-	// check if new layer was the max layer
+	// check if new layer is the max layer
 	isMaxLayerChange := s.availableLayers[len(s.availableLayers)-1] == layer
 
 	s.logger.Infow(
