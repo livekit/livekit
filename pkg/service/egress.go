@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/twitchtv/twirp"
+
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/service/rpc"
+	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
-	"github.com/twitchtv/twirp"
-
-	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
 type EgressService struct {
@@ -281,12 +281,22 @@ func (s *EgressService) ListEgress(ctx context.Context, req *livekit.ListEgressR
 		return nil, ErrEgressNotConnected
 	}
 
-	infos, err := s.es.ListEgress(ctx, livekit.RoomName(req.RoomName))
-	if err != nil {
-		return nil, err
+	var items []*livekit.EgressInfo
+	if req.EgressId != "" {
+		info, err := s.es.LoadEgress(ctx, req.EgressId)
+		if err != nil {
+			return nil, err
+		}
+		items = []*livekit.EgressInfo{info}
+	} else {
+		var err error
+		items, err = s.es.ListEgress(ctx, livekit.RoomName(req.RoomName))
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	return &livekit.ListEgressResponse{Items: infos}, nil
+	return &livekit.ListEgressResponse{Items: items}, nil
 }
 
 func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressRequest) (*livekit.EgressInfo, error) {
