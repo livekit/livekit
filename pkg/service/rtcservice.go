@@ -458,6 +458,9 @@ func (s *RTCService) startConnection(ctx context.Context, roomName livekit.RoomN
 	// instead of waiting forever on the WebSocket
 	cr.InitialResponse, err = readInitialResponse(cr.ResponseSource, timeout)
 	if err != nil {
+		// close the connection to avoid leaking
+		cr.RequestSink.Close()
+		cr.ResponseSource.Close()
 		return cr, err
 	}
 	return cr, nil

@@ -20,6 +20,7 @@ import (
 //counterfeiter:generate . MessageSink
 type MessageSink interface {
 	WriteMessage(msg proto.Message) error
+	IsClosed() bool
 	Close()
 }
 
@@ -27,6 +28,7 @@ type MessageSink interface {
 type MessageSource interface {
 	// ReadChan exposes a one way channel to make it easier to use with select
 	ReadChan() <-chan proto.Message
+	IsClosed() bool
 	Close()
 }
 

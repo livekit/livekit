@@ -129,6 +129,10 @@ func (s *RTCNodeSink) Close() {
 	}
 }
 
+func (s *RTCNodeSink) IsClosed() bool {
+	return s.isClosed.Load()
+}
+
 func (s *RTCNodeSink) OnClose(f func()) {
 	s.onClose = f
 }
@@ -164,6 +168,10 @@ func (s *SignalNodeSink) Close() {
 	if s.onClose != nil {
 		s.onClose()
 	}
+}
+
+func (s *SignalNodeSink) IsClosed() bool {
+	return s.isClosed.Load()
 }
 
 func (s *SignalNodeSink) OnClose(f func()) {
