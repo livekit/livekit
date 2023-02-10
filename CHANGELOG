@@ -23,7 +23,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Ignore inactive media in SDP #1365
 - Ensure older participant session update does not go out after a newer #1372
 - Fix potentially nil access in buffer #1374
-- ensuare onPacket is not nil in rtcpreader callback #1390
+- Ensure onPacket is not nil in RTCPReader callback #1390
 - Fix rare panic by CreateSenderReport before bind completed #1397
 
 ### Changed
