@@ -287,9 +287,9 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 				switch m := res.Message.(type) {
 				case *livekit.SignalResponse_Offer:
-					pLogger.Infow("sending offer", "offer", m)
+					pLogger.Debugw("sending offer", "offer", m)
 				case *livekit.SignalResponse_Answer:
-					pLogger.Infow("sending answer", "answer", m)
+					pLogger.Debugw("sending answer", "answer", m)
 				}
 
 				if pi.ID == "" && cr.InitialResponse.GetJoin() != nil {
