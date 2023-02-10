@@ -4,7 +4,7 @@ import (
 	"io"
 	"sync"
 
-	"github.com/pion/transport/packetio"
+	"github.com/pion/transport/v2/packetio"
 
 	"github.com/livekit/mediatransportutil/pkg/bucket"
 )

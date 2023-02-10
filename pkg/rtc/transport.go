@@ -728,28 +728,40 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 		return err
 	}
 
+	reliableDCReadyHandler := func() {
+		t.params.Logger.Debugw("reliable data channel open")
+		t.lock.Lock()
+		t.reliableDCOpened = true
+		t.lock.Unlock()
+
+		t.maybeNotifyFullyEstablished()
+	}
+
+	lossyDCReadyHanlder := func() {
+		t.params.Logger.Debugw("lossy data channel open")
+		t.lock.Lock()
+		t.lossyDCOpened = true
+		t.lock.Unlock()
+
+		t.maybeNotifyFullyEstablished()
+	}
+
 	t.lock.Lock()
 	switch dc.Label() {
 	case ReliableDataChannel:
 		t.reliableDC = dc
-		t.reliableDC.OnOpen(func() {
-			t.params.Logger.Debugw("reliable data channel open")
-			t.lock.Lock()
-			t.reliableDCOpened = true
-			t.lock.Unlock()
-
-			t.maybeNotifyFullyEstablished()
-		})
+		if t.params.DirectionConfig.StrictACKs {
+			t.reliableDC.OnOpen(reliableDCReadyHandler)
+		} else {
+			t.reliableDC.OnDial(reliableDCReadyHandler)
+		}
 	case LossyDataChannel:
 		t.lossyDC = dc
-		t.lossyDC.OnOpen(func() {
-			t.params.Logger.Debugw("lossy data channel open")
-			t.lock.Lock()
-			t.lossyDCOpened = true
-			t.lock.Unlock()
-
-			t.maybeNotifyFullyEstablished()
-		})
+		if t.params.DirectionConfig.StrictACKs {
+			t.lossyDC.OnOpen(lossyDCReadyHanlder)
+		} else {
+			t.lossyDC.OnDial(lossyDCReadyHanlder)
+		}
 	default:
 		t.params.Logger.Errorw("unknown data channel label", nil, "label", dc.Label())
 	}
