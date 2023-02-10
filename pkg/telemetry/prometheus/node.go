@@ -118,10 +118,8 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		memUsed = memInfo.Used
 	}
 
-	sysPackets, sysDroppedPackets, err := getTCStats()
-	if err != nil {
-		return nil, false, err
-	}
+	// do not error out, and use the information if it is available
+	sysPackets, sysDroppedPackets, _ := getTCStats()
 	promSysPacketGauge.WithLabelValues("out").Set(float64(sysPackets - sysPacketsStart))
 	promSysPacketGauge.WithLabelValues("dropped").Set(float64(sysDroppedPackets - sysDroppedPacketsStart))
 
