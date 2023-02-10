@@ -23,6 +23,7 @@ type subscriptionSetting struct {
 	width             uint32
 	height            uint32
 	fps               uint32
+	priority          uint32
 }
 
 func subscriptionSettingFromUpdateSubscription(us *livekit.UpdateSubscription, existing *subscriptionSetting) *subscriptionSetting {
@@ -43,6 +44,7 @@ func subscriptionSettingFromUpdateTrackSettings(uts *livekit.UpdateTrackSettings
 		width:             uts.Width,
 		height:            uts.Height,
 		fps:               uts.Fps,
+		priority:          uts.Priority,
 	}
 }
 
@@ -52,7 +54,8 @@ func (s *subscriptionSetting) Equal(other *subscriptionSetting) bool {
 		s.quality == other.quality &&
 		s.width == other.width &&
 		s.height == other.height &&
-		s.fps == other.fps
+		s.fps == other.fps &&
+		s.priority == other.priority
 }
 
 // --------------------------------------------------

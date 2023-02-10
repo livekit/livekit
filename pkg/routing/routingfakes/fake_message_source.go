@@ -13,6 +13,16 @@ type FakeMessageSource struct {
 	closeMutex       sync.RWMutex
 	closeArgsForCall []struct {
 	}
+	IsClosedStub        func() bool
+	isClosedMutex       sync.RWMutex
+	isClosedArgsForCall []struct {
+	}
+	isClosedReturns struct {
+		result1 bool
+	}
+	isClosedReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	ReadChanStub        func() <-chan protoreflect.ProtoMessage
 	readChanMutex       sync.RWMutex
 	readChanArgsForCall []struct {
@@ -49,6 +59,59 @@ func (fake *FakeMessageSource) CloseCalls(stub func()) {
 	fake.closeMutex.Lock()
 	defer fake.closeMutex.Unlock()
 	fake.CloseStub = stub
+}
+
+func (fake *FakeMessageSource) IsClosed() bool {
+	fake.isClosedMutex.Lock()
+	ret, specificReturn := fake.isClosedReturnsOnCall[len(fake.isClosedArgsForCall)]
+	fake.isClosedArgsForCall = append(fake.isClosedArgsForCall, struct {
+	}{})
+	stub := fake.IsClosedStub
+	fakeReturns := fake.isClosedReturns
+	fake.recordInvocation("IsClosed", []interface{}{})
+	fake.isClosedMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeMessageSource) IsClosedCallCount() int {
+	fake.isClosedMutex.RLock()
+	defer fake.isClosedMutex.RUnlock()
+	return len(fake.isClosedArgsForCall)
+}
+
+func (fake *FakeMessageSource) IsClosedCalls(stub func() bool) {
+	fake.isClosedMutex.Lock()
+	defer fake.isClosedMutex.Unlock()
+	fake.IsClosedStub = stub
+}
+
+func (fake *FakeMessageSource) IsClosedReturns(result1 bool) {
+	fake.isClosedMutex.Lock()
+	defer fake.isClosedMutex.Unlock()
+	fake.IsClosedStub = nil
+	fake.isClosedReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeMessageSource) IsClosedReturnsOnCall(i int, result1 bool) {
+	fake.isClosedMutex.Lock()
+	defer fake.isClosedMutex.Unlock()
+	fake.IsClosedStub = nil
+	if fake.isClosedReturnsOnCall == nil {
+		fake.isClosedReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.isClosedReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
 }
 
 func (fake *FakeMessageSource) ReadChan() <-chan protoreflect.ProtoMessage {
@@ -109,6 +172,8 @@ func (fake *FakeMessageSource) Invocations() map[string][][]interface{} {
 	defer fake.invocationsMutex.RUnlock()
 	fake.closeMutex.RLock()
 	defer fake.closeMutex.RUnlock()
+	fake.isClosedMutex.RLock()
+	defer fake.isClosedMutex.RUnlock()
 	fake.readChanMutex.RLock()
 	defer fake.readChanMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}

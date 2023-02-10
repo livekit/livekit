@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -263,7 +264,11 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// we would terminate the signal connection as well
 			_ = conn.Close()
 		}()
-		defer rtc.Recover(pLogger)
+		defer func() {
+			if r := rtc.Recover(pLogger); r != nil {
+				os.Exit(1)
+			}
+		}()
 		for {
 			select {
 			case <-done:
@@ -282,9 +287,9 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 				switch m := res.Message.(type) {
 				case *livekit.SignalResponse_Offer:
-					pLogger.Infow("sending offer", "offer", m)
+					pLogger.Debugw("sending offer", "offer", m)
 				case *livekit.SignalResponse_Answer:
-					pLogger.Infow("sending answer", "answer", m)
+					pLogger.Debugw("sending answer", "answer", m)
 				}
 
 				if pi.ID == "" && cr.InitialResponse.GetJoin() != nil {
@@ -453,6 +458,9 @@ func (s *RTCService) startConnection(ctx context.Context, roomName livekit.RoomN
 	// instead of waiting forever on the WebSocket
 	cr.InitialResponse, err = readInitialResponse(cr.ResponseSource, timeout)
 	if err != nil {
+		// close the connection to avoid leaking
+		cr.RequestSink.Close()
+		cr.ResponseSource.Close()
 		return cr, err
 	}
 	return cr, nil

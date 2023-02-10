@@ -18,7 +18,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20230130133657-96cfb115473a
-	github.com/livekit/protocol v1.3.3-0.20230206022348-f6d32e15b011
+	github.com/livekit/protocol v1.3.3-0.20230209080154-800036bdb4cb
 	github.com/livekit/psrpc v0.2.5
 	github.com/livekit/rtcscore-go v0.0.0-20220815072451-20ee10ae1995
 	github.com/mackerelio/go-osstat v0.2.3
@@ -26,16 +26,16 @@ require (
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.5.0
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/olekukonko/tablewriter v0.0.5
-	github.com/pion/ice/v2 v2.2.13
+	github.com/pion/ice/v2 v2.3.0
 	github.com/pion/interceptor v0.1.12
 	github.com/pion/logging v0.2.2
 	github.com/pion/rtcp v1.2.10
 	github.com/pion/rtp v1.7.13
 	github.com/pion/sdp/v3 v3.0.6
-	github.com/pion/stun v0.3.5
-	github.com/pion/transport v0.14.1
-	github.com/pion/turn/v2 v2.0.9
-	github.com/pion/webrtc/v3 v3.1.50
+	github.com/pion/stun v0.4.0
+	github.com/pion/transport/v2 v2.0.1
+	github.com/pion/turn/v2 v2.1.0
+	github.com/pion/webrtc/v3 v3.1.54
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.14.0
 	github.com/rs/cors v1.8.3
@@ -81,12 +81,12 @@ require (
 	github.com/nats-io/nkeys v0.3.0 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/pion/datachannel v1.5.5 // indirect
-	github.com/pion/dtls/v2 v2.1.5 // indirect
-	github.com/pion/mdns v0.0.5 // indirect
+	github.com/pion/dtls/v2 v2.2.4 // indirect
+	github.com/pion/mdns v0.0.7 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
-	github.com/pion/sctp v1.8.5 // indirect
-	github.com/pion/srtp/v2 v2.0.10 // indirect
-	github.com/pion/udp v0.1.1 // indirect
+	github.com/pion/sctp v1.8.6 // indirect
+	github.com/pion/srtp/v2 v2.0.12 // indirect
+	github.com/pion/udp v0.1.4 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_model v0.3.0 // indirect
 	github.com/prometheus/common v0.37.0 // indirect
@@ -94,11 +94,11 @@ require (
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
-	golang.org/x/crypto v0.5.0 // indirect
+	golang.org/x/crypto v0.6.0 // indirect
 	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4 // indirect
-	golang.org/x/net v0.5.0 // indirect
+	golang.org/x/net v0.6.0 // indirect
 	golang.org/x/sys v0.5.0 // indirect
-	golang.org/x/text v0.6.0 // indirect
+	golang.org/x/text v0.7.0 // indirect
 	golang.org/x/tools v0.1.12 // indirect
 	google.golang.org/genproto v0.0.0-20230127162408-596548ed4efa // indirect
 	google.golang.org/grpc v1.52.3 // indirect

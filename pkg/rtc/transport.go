@@ -728,28 +728,40 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 		return err
 	}
 
+	reliableDCReadyHandler := func() {
+		t.params.Logger.Debugw("reliable data channel open")
+		t.lock.Lock()
+		t.reliableDCOpened = true
+		t.lock.Unlock()
+
+		t.maybeNotifyFullyEstablished()
+	}
+
+	lossyDCReadyHanlder := func() {
+		t.params.Logger.Debugw("lossy data channel open")
+		t.lock.Lock()
+		t.lossyDCOpened = true
+		t.lock.Unlock()
+
+		t.maybeNotifyFullyEstablished()
+	}
+
 	t.lock.Lock()
 	switch dc.Label() {
 	case ReliableDataChannel:
 		t.reliableDC = dc
-		t.reliableDC.OnOpen(func() {
-			t.params.Logger.Debugw("reliable data channel open")
-			t.lock.Lock()
-			t.reliableDCOpened = true
-			t.lock.Unlock()
-
-			t.maybeNotifyFullyEstablished()
-		})
+		if t.params.DirectionConfig.StrictACKs {
+			t.reliableDC.OnOpen(reliableDCReadyHandler)
+		} else {
+			t.reliableDC.OnDial(reliableDCReadyHandler)
+		}
 	case LossyDataChannel:
 		t.lossyDC = dc
-		t.lossyDC.OnOpen(func() {
-			t.params.Logger.Debugw("lossy data channel open")
-			t.lock.Lock()
-			t.lossyDCOpened = true
-			t.lock.Unlock()
-
-			t.maybeNotifyFullyEstablished()
-		})
+		if t.params.DirectionConfig.StrictACKs {
+			t.lossyDC.OnOpen(lossyDCReadyHanlder)
+		} else {
+			t.lossyDC.OnDial(lossyDCReadyHanlder)
+		}
 	default:
 		t.params.Logger.Errorw("unknown data channel label", nil, "label", dc.Label())
 	}
@@ -1577,6 +1589,11 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 
 	offer, err := t.pc.CreateOffer(options)
 	if err != nil {
+		if errors.Is(err, webrtc.ErrConnectionClosed) {
+			t.params.Logger.Warnw("trying to create offer on closed peer connection", nil)
+			return nil
+		}
+
 		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "create").Add(1)
 		return errors.Wrap(err, "create offer failed")
 	}
@@ -1588,6 +1605,11 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 
 	err = t.pc.SetLocalDescription(offer)
 	if err != nil {
+		if errors.Is(err, webrtc.ErrConnectionClosed) {
+			t.params.Logger.Warnw("trying to set local description on closed peer connection", nil)
+			return nil
+		}
+
 		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "local_description").Add(1)
 		return errors.Wrap(err, "setting local description failed")
 	}
@@ -1662,6 +1684,11 @@ func (t *PCTransport) setRemoteDescription(sd webrtc.SessionDescription) error {
 	}
 
 	if err := t.pc.SetRemoteDescription(sd); err != nil {
+		if errors.Is(err, webrtc.ErrConnectionClosed) {
+			t.params.Logger.Warnw("trying to set remote description on closed peer connection", nil)
+			return nil
+		}
+
 		sdpType := "offer"
 		if sd.Type == webrtc.SDPTypeAnswer {
 			sdpType = "answer"
@@ -1690,6 +1717,11 @@ func (t *PCTransport) setRemoteDescription(sd webrtc.SessionDescription) error {
 func (t *PCTransport) createAndSendAnswer() error {
 	answer, err := t.pc.CreateAnswer(nil)
 	if err != nil {
+		if errors.Is(err, webrtc.ErrConnectionClosed) {
+			t.params.Logger.Warnw("trying to create answer on closed peer connection", nil)
+			return nil
+		}
+
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "create").Add(1)
 		return errors.Wrap(err, "create answer failed")
 	}
