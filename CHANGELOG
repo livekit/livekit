@@ -2,6 +2,43 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.4] - 2023-02-09
+### Added
+- Memory used and total to node stats #1293 #1296
+- Reconnect response to update ICE servers after resume #1300 #1367
+- Additional prometheus stats #1291
+- Adopt psrpc for internal communication protocol #1295
+- Enable track-level audio nack config #1306
+- Telemetry events for ParticipantResumed, track requested actions #1308
+- Allow disabling mDNS, which degrades performance on certain networks #1311 #1393
+- Publish stream stats to prometheus #1313 #1347
+- Retry initial connection attempt if it fails #1335 #1409
+- Add reconnect reason and signal rtt calculation #1381
+- silent frame for muted audio downtrack #1389
+
+### Fixed
+- Fixed TimedVersion handling of non-monotonic timestamps #1304
+- Persist participant before firing webhook #1340
+- Set IsPublisher to true for data-only publishers #1348
+- Ignore inactive media in SDP #1365
+- Ensure older participant session update does not go out after a newer #1372
+- Fix potentially nil access in buffer #1374
+- ensuare onPacket is not nil in rtcpreader callback #1390
+- Fix rare panic by CreateSenderReport before bind completed #1397
+
+### Changed
+- A/V synchronization improvements #1297 #1315 #1318 #1321 #1351
+- IOInfo service to handle ingress/egress updates #1305
+- Subscription manager to improve subscription resilience #1317 #1358 #1369 #1379 #1382
+- Enable video at low res by default when adaptive stream is enabled #1341
+- Enable upstream nack for opus only audio track #1343
+- Allow /rtc/validate to return room not found message #1344
+- Improve connectivity check to detect DTLS failure #1366
+- Simplify forwarding logic #1349 #1376 #1398
+- Send stream state paused only when it is paused due to bandwidth limitation. #1391
+- Do not catch panics, exit instead to prevent lockup #1392
+
+
 ## [1.3.3] - 2023-01-06
 ### Added
 - Signal deduper: ignore duplicate signal messages #1243 #1247 #1257
