@@ -358,9 +358,9 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		switch m := req.Message.(type) {
 		case *livekit.SignalRequest_Offer:
-			pLogger.Infow("received offer", "offer", m)
+			pLogger.Debugw("received offer", "offer", m)
 		case *livekit.SignalRequest_Answer:
-			pLogger.Infow("received answer", "answer", m)
+			pLogger.Debugw("received answer", "answer", m)
 		}
 
 		if err := cr.RequestSink.WriteMessage(req); err != nil {
