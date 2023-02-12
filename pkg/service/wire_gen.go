@@ -8,7 +8,6 @@ package service
 
 import (
 	"fmt"
-	"github.com/go-redis/redis/v8"
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -24,6 +23,7 @@ import (
 	"github.com/livekit/psrpc"
 	"github.com/pion/turn/v2"
 	"github.com/pkg/errors"
+	"github.com/redis/go-redis/v9"
 	"gopkg.in/yaml.v3"
 	"os"
 )
