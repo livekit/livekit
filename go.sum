@@ -235,8 +235,8 @@ github.com/livekit/mediatransportutil v0.0.0-20230130133657-96cfb115473a h1:5UkG
 github.com/livekit/mediatransportutil v0.0.0-20230130133657-96cfb115473a/go.mod h1:1Dlx20JPoIKGP45eo+yuj0HjeE25zmyeX/EWHiPCjFw=
 github.com/livekit/protocol v1.4.1 h1:ZuVEPpRXgYIeCWA3PV+Zs4ygBumRPXBE/OOqr3v9LHE=
 github.com/livekit/protocol v1.4.1/go.mod h1:NQqdMVGf7yf7615n0EaUD17d0xkQ0ERMzG3XAHHpbUw=
-github.com/livekit/psrpc v0.2.6-0.20230213054912-d3f16996d4f8 h1:dC1PRVnxckyg9FiEVw3Lt8kMi1U3ekFAC1V23CgdlxI=
-github.com/livekit/psrpc v0.2.6-0.20230213054912-d3f16996d4f8/go.mod h1:2wtOo1F03vub2qIjx0rAPpVplg873670/LN08o/yopM=
+github.com/livekit/psrpc v0.2.6 h1:cYrpYEwKEd6TRtF9fXYjVEJU2K0laF0uL0hNJg7pw/E=
+github.com/livekit/psrpc v0.2.6/go.mod h1:2wtOo1F03vub2qIjx0rAPpVplg873670/LN08o/yopM=
 github.com/livekit/rtcscore-go v0.0.0-20220815072451-20ee10ae1995 h1:vOaY2qvfLihDyeZtnGGN1Law9wRrw8BMGCr1TygTvMw=
 github.com/livekit/rtcscore-go v0.0.0-20220815072451-20ee10ae1995/go.mod h1:116ych8UaEs9vfIE8n6iZCZ30iagUFTls0vRmC+Ix5U=
 github.com/mackerelio/go-osstat v0.2.3 h1:jAMXD5erlDE39kdX2CU7YwCGRcxIO33u/p8+Fhe5dJw=
