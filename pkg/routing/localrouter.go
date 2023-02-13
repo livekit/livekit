@@ -209,23 +209,22 @@ func (r *LocalRouter) statsWorker() {
 }
 
 /*
-func (r *LocalRouter) memStatsWorker() {
-	ticker := time.NewTicker(time.Second * 30)
-	defer ticker.Stop()
+	func (r *LocalRouter) memStatsWorker() {
+		ticker := time.NewTicker(time.Second * 30)
+		defer ticker.Stop()
 
-	for {
-		<-ticker.C
+		for {
+			<-ticker.C
 
-		var m runtime.MemStats
-		runtime.ReadMemStats(&m)
-		logger.Infow("memstats",
-			"mallocs", m.Mallocs, "frees", m.Frees, "m-f", m.Mallocs-m.Frees,
-			"hinuse", m.HeapInuse, "halloc", m.HeapAlloc, "frag", m.HeapInuse-m.HeapAlloc,
-		)
+			var m runtime.MemStats
+			runtime.ReadMemStats(&m)
+			logger.Infow("memstats",
+				"mallocs", m.Mallocs, "frees", m.Frees, "m-f", m.Mallocs-m.Frees,
+				"hinuse", m.HeapInuse, "halloc", m.HeapAlloc, "frag", m.HeapInuse-m.HeapAlloc,
+			)
+		}
 	}
-}
 */
-
 func (r *LocalRouter) rtcMessageWorker() {
 	// is a new channel available? if so swap to that one
 	if !r.isStarted.Load() {
