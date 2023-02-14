@@ -1638,18 +1638,16 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 			!p.IsClosed(),
 		)
 
-		isUnpublished := false
 		// re-use Track sid
 		p.pendingTracksLock.Lock()
 		if pti := p.pendingTracks[signalCid]; pti != nil {
 			p.sendTrackPublished(signalCid, pti.trackInfos[0])
 		} else {
 			p.unpublishedTracks = append(p.unpublishedTracks, ti)
-			isUnpublished = true
 		}
 		p.pendingTracksLock.Unlock()
 
-		if isUnpublished && !p.IsClosed() {
+		if !p.IsClosed() {
 			// unpublished events aren't necessary when participant is closed
 			p.params.Logger.Debugw("unpublished track", "trackID", ti.Sid, "trackInfo", ti)
 			p.lock.RLock()
