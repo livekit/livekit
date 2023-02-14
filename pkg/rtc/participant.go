@@ -1109,14 +1109,16 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 			"trackID", publishedTrack.ID(),
 			"rid", track.RID(),
 			"SSRC", track.SSRC(),
-			"mime", track.Codec().MimeType)
+			"mime", track.Codec().MimeType,
+		)
 	} else {
 		p.params.Logger.Warnw("webrtc Track published but can't find MediaTrack", nil,
 			"kind", track.Kind().String(),
 			"webrtcTrackID", track.ID(),
 			"rid", track.RID(),
 			"SSRC", track.SSRC(),
-			"mime", track.Codec().MimeType)
+			"mime", track.Codec().MimeType,
+		)
 	}
 
 	if !isNewTrack && publishedTrack != nil && !publishedTrack.HasPendingCodec() && p.IsReady() {
@@ -1519,7 +1521,14 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	p.pendingTracksLock.Lock()
 	newTrack := false
 
-	p.params.Logger.Debugw("media track received", "trackID", track.ID(), "kind", track.Kind())
+	p.params.Logger.Debugw(
+		"media track received",
+		"kind", track.Kind().String(),
+		"trackID", track.ID(),
+		"rid", track.RID(),
+		"SSRC", track.SSRC(),
+		"mime", track.Codec().MimeType,
+	)
 	mid := p.TransportManager.GetPublisherMid(rtpReceiver)
 	if mid == "" {
 		p.params.Logger.Warnw("could not get mid for track", nil, "trackID", track.ID())
