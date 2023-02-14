@@ -72,7 +72,10 @@ func NewEgressService(
 }
 
 func (s *EgressService) StartRoomCompositeEgress(ctx context.Context, req *livekit.RoomCompositeEgressRequest) (*livekit.EgressInfo, error) {
-	fields := []interface{}{"room", req.RoomName, "outputType", reflect.TypeOf(req.Output).String(), "baseUrl", req.CustomBaseUrl}
+	fields := []interface{}{"room", req.RoomName, "baseUrl", req.CustomBaseUrl}
+	if t := reflect.TypeOf(req.Output); t != nil {
+		fields = append(fields, "outputType", t.String())
+	}
 	defer func() {
 		AppendLogFields(ctx, fields...)
 	}()
@@ -90,7 +93,10 @@ func (s *EgressService) StartRoomCompositeEgress(ctx context.Context, req *livek
 
 func (s *EgressService) StartTrackCompositeEgress(ctx context.Context, req *livekit.TrackCompositeEgressRequest) (*livekit.EgressInfo, error) {
 	fields := []interface{}{
-		"room", req.RoomName, "outputType", reflect.TypeOf(req.Output).String(), "audioTrackID", req.AudioTrackId, "videoTrackID", req.VideoTrackId,
+		"room", req.RoomName, "audioTrackID", req.AudioTrackId, "videoTrackID", req.VideoTrackId,
+	}
+	if t := reflect.TypeOf(req.Output); t != nil {
+		fields = append(fields, "outputType", t.String())
 	}
 	defer func() {
 		AppendLogFields(ctx, fields...)
@@ -108,7 +114,10 @@ func (s *EgressService) StartTrackCompositeEgress(ctx context.Context, req *live
 }
 
 func (s *EgressService) StartTrackEgress(ctx context.Context, req *livekit.TrackEgressRequest) (*livekit.EgressInfo, error) {
-	fields := []interface{}{"room", req.RoomName, "trackID", req.TrackId, "outputType", reflect.TypeOf(req.Output).String()}
+	fields := []interface{}{"room", req.RoomName, "trackID", req.TrackId}
+	if t := reflect.TypeOf(req.Output); t != nil {
+		fields = append(fields, "outputType", t.String())
+	}
 	defer func() {
 		AppendLogFields(ctx, fields...)
 	}()
@@ -125,7 +134,10 @@ func (s *EgressService) StartTrackEgress(ctx context.Context, req *livekit.Track
 }
 
 func (s *EgressService) StartWebEgress(ctx context.Context, req *livekit.WebEgressRequest) (*livekit.EgressInfo, error) {
-	fields := []interface{}{"url", req.Url, "outputType", reflect.TypeOf(req.Output).String()}
+	fields := []interface{}{"url", req.Url}
+	if t := reflect.TypeOf(req.Output); t != nil {
+		fields = append(fields, "outputType", t.String())
+	}
 	defer func() {
 		AppendLogFields(ctx, fields...)
 	}()
