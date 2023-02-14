@@ -110,6 +110,8 @@ rtc:
 
 # when enabled, LiveKit will expose prometheus metrics on :6789/metrics
 # prometheus_port: 6789
+# tag prometheus metrics with custom env label; defaults to dev|prod
+# prometheus_env: custom-label
 
 # API key / secret pairs.
 # Keys are used for JWT authentication, server APIs would require a keypair in order to generate access tokens

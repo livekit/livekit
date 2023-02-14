@@ -46,6 +46,7 @@ type Config struct {
 	Port           uint32                   `yaml:"port"`
 	BindAddresses  []string                 `yaml:"bind_addresses"`
 	PrometheusPort uint32                   `yaml:"prometheus_port,omitempty"`
+	PrometheusEnv  string                   `yaml:"prometheus_env,omitempty"`
 	RTC            RTCConfig                `yaml:"rtc,omitempty"`
 	Redis          redisLiveKit.RedisConfig `yaml:"redis,omitempty"`
 	Audio          AudioConfig              `yaml:"audio,omitempty"`

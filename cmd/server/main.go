@@ -250,7 +250,15 @@ func startServer(c *cli.Context) error {
 		return err
 	}
 
-	prometheus.Init(currentNode.Id, currentNode.Type)
+	var promEnv string
+	if conf.PrometheusEnv != "" {
+		promEnv = conf.PrometheusEnv
+	} else if conf.Development {
+		promEnv = "dev"
+	} else {
+		promEnv = "prod"
+	}
+	prometheus.Init(currentNode.Id, currentNode.Type, promEnv)
 
 	server, err := service.InitializeServer(conf, currentNode)
 	if err != nil {
