@@ -346,6 +346,7 @@ type Room interface {
 	SimulateScenario(participant LocalParticipant, scenario *livekit.SimulateScenario) error
 	UpdateVideoLayers(participant Participant, updateVideoLayers *livekit.UpdateVideoLayers) error
 	ResolveMediaTrackForSubscriber(subIdentity livekit.ParticipantIdentity, trackID livekit.TrackID) MediaResolverResult
+	GetLocalParticipants() []LocalParticipant
 }
 
 // MediaTrack represents a media track

@@ -9,6 +9,16 @@ import (
 )
 
 type FakeRoom struct {
+	GetLocalParticipantsStub        func() []types.LocalParticipant
+	getLocalParticipantsMutex       sync.RWMutex
+	getLocalParticipantsArgsForCall []struct {
+	}
+	getLocalParticipantsReturns struct {
+		result1 []types.LocalParticipant
+	}
+	getLocalParticipantsReturnsOnCall map[int]struct {
+		result1 []types.LocalParticipant
+	}
 	IDStub        func() livekit.RoomID
 	iDMutex       sync.RWMutex
 	iDArgsForCall []struct {
@@ -106,6 +116,59 @@ type FakeRoom struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
+}
+
+func (fake *FakeRoom) GetLocalParticipants() []types.LocalParticipant {
+	fake.getLocalParticipantsMutex.Lock()
+	ret, specificReturn := fake.getLocalParticipantsReturnsOnCall[len(fake.getLocalParticipantsArgsForCall)]
+	fake.getLocalParticipantsArgsForCall = append(fake.getLocalParticipantsArgsForCall, struct {
+	}{})
+	stub := fake.GetLocalParticipantsStub
+	fakeReturns := fake.getLocalParticipantsReturns
+	fake.recordInvocation("GetLocalParticipants", []interface{}{})
+	fake.getLocalParticipantsMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeRoom) GetLocalParticipantsCallCount() int {
+	fake.getLocalParticipantsMutex.RLock()
+	defer fake.getLocalParticipantsMutex.RUnlock()
+	return len(fake.getLocalParticipantsArgsForCall)
+}
+
+func (fake *FakeRoom) GetLocalParticipantsCalls(stub func() []types.LocalParticipant) {
+	fake.getLocalParticipantsMutex.Lock()
+	defer fake.getLocalParticipantsMutex.Unlock()
+	fake.GetLocalParticipantsStub = stub
+}
+
+func (fake *FakeRoom) GetLocalParticipantsReturns(result1 []types.LocalParticipant) {
+	fake.getLocalParticipantsMutex.Lock()
+	defer fake.getLocalParticipantsMutex.Unlock()
+	fake.GetLocalParticipantsStub = nil
+	fake.getLocalParticipantsReturns = struct {
+		result1 []types.LocalParticipant
+	}{result1}
+}
+
+func (fake *FakeRoom) GetLocalParticipantsReturnsOnCall(i int, result1 []types.LocalParticipant) {
+	fake.getLocalParticipantsMutex.Lock()
+	defer fake.getLocalParticipantsMutex.Unlock()
+	fake.GetLocalParticipantsStub = nil
+	if fake.getLocalParticipantsReturnsOnCall == nil {
+		fake.getLocalParticipantsReturnsOnCall = make(map[int]struct {
+			result1 []types.LocalParticipant
+		})
+	}
+	fake.getLocalParticipantsReturnsOnCall[i] = struct {
+		result1 []types.LocalParticipant
+	}{result1}
 }
 
 func (fake *FakeRoom) ID() livekit.RoomID {
@@ -606,6 +669,8 @@ func (fake *FakeRoom) UpdateVideoLayersReturnsOnCall(i int, result1 error) {
 func (fake *FakeRoom) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
+	fake.getLocalParticipantsMutex.RLock()
+	defer fake.getLocalParticipantsMutex.RUnlock()
 	fake.iDMutex.RLock()
 	defer fake.iDMutex.RUnlock()
 	fake.nameMutex.RLock()
