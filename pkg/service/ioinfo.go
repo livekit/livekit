@@ -222,18 +222,23 @@ func (s *IOInfoService) ingressWorkerDeprecated() {
 		case msg := <-entityChan:
 			b := entities.Payload(msg)
 
-			req := &rpc.GetIngressInfoRequest{}
+			// requestID/senderID needed to respond
+			req := &livekit.GetIngressInfoRequest{}
 			if err = proto.Unmarshal(b, req); err != nil {
 				logger.Errorw("failed to read request", err)
 				continue
 			}
 
-			info, err := s.loadIngressFromInfoRequest(req)
+			info, err := s.loadIngressFromInfoRequest(&rpc.GetIngressInfoRequest{
+				IngressId: req.IngressId,
+				StreamKey: req.StreamKey,
+			})
 			if err != nil {
 				logger.Errorw("failed to load ingress info", err)
 				continue
 			}
-			err = s.icDeprecated.SendGetIngressInfoResponse(context.Background(), req, &rpc.GetIngressInfoResponse{Info: info}, err)
+
+			err = s.icDeprecated.SendGetIngressInfoResponse(context.Background(), req, &livekit.GetIngressInfoResponse{Info: info}, err)
 			if err != nil {
 				logger.Errorw("could not send response", err)
 			}

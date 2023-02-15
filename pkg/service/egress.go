@@ -187,6 +187,7 @@ func (s *egressLauncher) StartEgressWithClusterId(ctx context.Context, clusterId
 		info, err = s.psrpcClient.StartEgress(ctx, clusterId, req)
 	} else {
 		logger.Infow("using deprecated egress client")
+		// SendRequest will transform rpc.StartEgressRequest into deprecated livekit.StartEgressRequest
 		info, err = s.clientDeprecated.SendRequest(ctx, req)
 	}
 	if err != nil {
