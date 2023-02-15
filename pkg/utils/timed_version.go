@@ -95,9 +95,6 @@ func (t *TimedVersion) Compare(other *TimedVersion) int {
 		}
 		return -1
 	}
-	if t.ts == other.ts {
-		return 0
-	}
 	if t.ts > other.ts {
 		return 1
 	}
