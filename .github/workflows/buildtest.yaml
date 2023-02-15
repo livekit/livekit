@@ -45,6 +45,7 @@ jobs:
       - name: Static Check
         uses: dominikh/staticcheck-action@v1.3.0
         with:
+          checks: '["all", "-ST1000", "-ST1003", "-ST1020", "-ST1021", "-ST1022", "-SA1019"]'
           min-go-version: 1.18
           version: 2022.1.3
           install-go: false
