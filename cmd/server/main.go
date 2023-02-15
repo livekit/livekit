@@ -250,7 +250,7 @@ func startServer(c *cli.Context) error {
 		return err
 	}
 
-	prometheus.Init(currentNode.Id, currentNode.Type)
+	prometheus.Init(currentNode.Id, currentNode.Type, conf.Environment)
 
 	server, err := service.InitializeServer(conf, currentNode)
 	if err != nil {

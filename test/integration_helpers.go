@@ -46,7 +46,7 @@ func init() {
 		Config: logger.Config{Level: "debug"},
 	})
 
-	prometheus.Init("test", livekit.NodeType_SERVER)
+	prometheus.Init("test", livekit.NodeType_SERVER, "test")
 }
 
 func setupSingleNodeTest(name string) (*service.LivekitServer, func()) {
