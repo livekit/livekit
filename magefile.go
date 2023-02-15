@@ -145,59 +145,6 @@ func PublishDocker() error {
 	return nil
 }
 
-// regenerate psrpc service definitions
-func Psrpc() error {
-	psrpcProtoFiles := []string{
-		"pkg/service/rpc/egress.proto",
-		"pkg/service/rpc/ingress.proto",
-		"pkg/service/rpc/io.proto",
-	}
-
-	fmt.Println("generating psrpc")
-
-	protocolDir, err := mageutil.GetPkgDir("github.com/livekit/protocol")
-	if err != nil {
-		return err
-	}
-
-	psrpcDir, err := mageutil.GetPkgDir("github.com/livekit/psrpc")
-	if err != nil {
-		return err
-	}
-
-	protoc, err := mageutil.GetToolPath("protoc")
-	if err != nil {
-		return err
-	}
-	protocGoPath, err := mageutil.GetToolPath("protoc-gen-go")
-	if err != nil {
-		return err
-	}
-	psrpcPath, err := mageutil.GetToolPath("protoc-gen-psrpc")
-	if err != nil {
-		return err
-	}
-
-	fmt.Println("generating psrpc protobuf")
-	args := append([]string{
-		"--go_out", ".",
-		"--psrpc_out", ".",
-		"--go_opt=paths=source_relative",
-		"--psrpc_opt=paths=source_relative",
-		"--plugin=go=" + protocGoPath,
-		"--plugin=psrpc=" + psrpcPath,
-		"-I" + protocolDir,
-		"-I" + psrpcDir + "/protoc-gen-psrpc/options",
-		"-I=.",
-	}, psrpcProtoFiles...)
-	cmd := exec.Command(protoc, args...)
-	mageutil.ConnectStd(cmd)
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-	return nil
-}
-
 // run unit tests, skipping integration
 func Test() error {
 	mg.Deps(generateWire, setULimit)

@@ -14,6 +14,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/rpc"
 )
 
 // A rooms service that supports a single node
@@ -84,8 +85,8 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 	}
 
 	if req.Egress != nil && req.Egress.Room != nil {
-		egress := &livekit.StartEgressRequest{
-			Request: &livekit.StartEgressRequest_RoomComposite{
+		egress := &rpc.StartEgressRequest{
+			Request: &rpc.StartEgressRequest_RoomComposite{
 				RoomComposite: req.Egress.Room,
 			},
 			RoomId: rm.Sid,
