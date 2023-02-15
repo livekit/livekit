@@ -36,4 +36,8 @@ func TestTimedVersion(t *testing.T) {
 	assert.True(t, tv2.After(tv1))
 	// tv3 and tv2 are equivalent after update
 	assert.False(t, tv3.After(tv2))
+
+	assert.Equal(t, 0, tv1.Compare(tv1))
+	assert.Equal(t, -1, tv1.Compare(tv2))
+	assert.Equal(t, 1, tv2.Compare(tv1))
 }

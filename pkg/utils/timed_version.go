@@ -56,6 +56,12 @@ func NewTimedVersionFromProto(ptv *livekit.TimedVersion) *TimedVersion {
 	}
 }
 
+func NewTimedVersionFromTime(t time.Time) *TimedVersion {
+	return &TimedVersion{
+		ts: t.UnixMicro(),
+	}
+}
+
 func (t *TimedVersion) Update(other *TimedVersion) {
 	t.lock.Lock()
 	if other.After(t) {
@@ -74,6 +80,28 @@ func (t *TimedVersion) After(other *TimedVersion) bool {
 	}
 
 	return t.ts > other.ts
+}
+
+func (t *TimedVersion) Compare(other *TimedVersion) int {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	if t.ts == other.ts {
+		if t.ticks == other.ticks {
+			return 0
+		}
+		if t.ticks > other.ticks {
+			return 1
+		}
+		return -1
+	}
+	if t.ts == other.ts {
+		return 0
+	}
+	if t.ts > other.ts {
+		return 1
+	}
+	return -1
 }
 
 func (t *TimedVersion) ToProto() *livekit.TimedVersion {
