@@ -46,7 +46,7 @@ type Config struct {
 	Port           uint32                   `yaml:"port"`
 	BindAddresses  []string                 `yaml:"bind_addresses"`
 	PrometheusPort uint32                   `yaml:"prometheus_port,omitempty"`
-	Environment  string                   `yaml:"environment,omitempty"`
+	Environment    string                   `yaml:"environment,omitempty"`
 	RTC            RTCConfig                `yaml:"rtc,omitempty"`
 	Redis          redisLiveKit.RedisConfig `yaml:"redis,omitempty"`
 	Audio          AudioConfig              `yaml:"audio,omitempty"`
@@ -457,6 +457,10 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 	}
 	if conf.Logging.Level == "" && conf.Development {
 		conf.Logging.Level = "debug"
+	}
+
+	if conf.Development {
+		conf.Environment = "dev"
 	}
 
 	return conf, nil
