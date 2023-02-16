@@ -346,6 +346,7 @@ type Room interface {
 	SimulateScenario(participant LocalParticipant, scenario *livekit.SimulateScenario) error
 	UpdateVideoLayers(participant Participant, updateVideoLayers *livekit.UpdateVideoLayers) error
 	ResolveMediaTrackForSubscriber(subIdentity livekit.ParticipantIdentity, trackID livekit.TrackID) MediaResolverResult
+	GetLocalParticipants() []LocalParticipant
 }
 
 // MediaTrack represents a media track
@@ -488,10 +489,4 @@ type OperationMonitor interface {
 	PostEvent(ome OperationMonitorEvent, omd OperationMonitorData)
 	Check() error
 	IsIdle() bool
-}
-
-// SignalDeduper related definitions
-type SignalDeduper interface {
-	Dedupe(participantKey livekit.ParticipantKey, req *livekit.SignalRequest) bool
-	ParticipantClosed(participantKey livekit.ParticipantKey)
 }

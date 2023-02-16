@@ -29,7 +29,7 @@ var (
 	promSysDroppedPacketPctGauge prometheus.Gauge
 )
 
-func Init(nodeID string, nodeType livekit.NodeType) {
+func Init(nodeID string, nodeType livekit.NodeType, env string) {
 	if initialized.Swap(true) {
 		return
 	}
@@ -39,7 +39,7 @@ func Init(nodeID string, nodeType livekit.NodeType) {
 			Namespace:   livekitNamespace,
 			Subsystem:   "node",
 			Name:        "messages",
-			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String(), "env": env},
 		},
 		[]string{"type", "status"},
 	)
@@ -49,7 +49,7 @@ func Init(nodeID string, nodeType livekit.NodeType) {
 			Namespace:   livekitNamespace,
 			Subsystem:   "node",
 			Name:        "service_operation",
-			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String(), "env": env},
 		},
 		[]string{"type", "status", "error_type"},
 	)
@@ -59,7 +59,7 @@ func Init(nodeID string, nodeType livekit.NodeType) {
 			Namespace:   livekitNamespace,
 			Subsystem:   "node",
 			Name:        "twirp_request_status",
-			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String(), "env": env},
 		},
 		[]string{"service", "method", "status", "code"},
 	)
@@ -69,7 +69,7 @@ func Init(nodeID string, nodeType livekit.NodeType) {
 			Namespace:   livekitNamespace,
 			Subsystem:   "node",
 			Name:        "packet_total",
-			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String(), "env": env},
 			Help:        "System level packet count. Count starts at 0 when service is first started.",
 		},
 		[]string{"type"},
@@ -80,7 +80,7 @@ func Init(nodeID string, nodeType livekit.NodeType) {
 			Namespace:   livekitNamespace,
 			Subsystem:   "node",
 			Name:        "dropped_packets",
-			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String(), "env": env},
 			Help:        "System level dropped outgoing packet percentage.",
 		},
 	)
@@ -93,8 +93,8 @@ func Init(nodeID string, nodeType livekit.NodeType) {
 
 	sysPacketsStart, sysDroppedPacketsStart, _ = getTCStats()
 
-	initPacketStats(nodeID, nodeType)
-	initRoomStats(nodeID, nodeType)
+	initPacketStats(nodeID, nodeType, env)
+	initRoomStats(nodeID, nodeType, env)
 }
 
 func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats) (*livekit.NodeStats, bool, error) {
@@ -118,10 +118,8 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		memUsed = memInfo.Used
 	}
 
-	sysPackets, sysDroppedPackets, err := getTCStats()
-	if err != nil {
-		return nil, false, err
-	}
+	// do not error out, and use the information if it is available
+	sysPackets, sysDroppedPackets, _ := getTCStats()
 	promSysPacketGauge.WithLabelValues("out").Set(float64(sysPackets - sysPacketsStart))
 	promSysPacketGauge.WithLabelValues("dropped").Set(float64(sysDroppedPackets - sysDroppedPacketsStart))
 

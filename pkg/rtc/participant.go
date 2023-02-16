@@ -3,6 +3,7 @@ package rtc
 import (
 	"context"
 	"io"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -1054,7 +1055,11 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 	p.lock.RUnlock()
 	if onStateChange != nil {
 		go func() {
-			defer Recover(p.GetLogger())
+			defer func() {
+				if r := Recover(p.GetLogger()); r != nil {
+					os.Exit(1)
+				}
+			}()
 			onStateChange(p, oldState)
 		}()
 	}
@@ -1104,14 +1109,16 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 			"trackID", publishedTrack.ID(),
 			"rid", track.RID(),
 			"SSRC", track.SSRC(),
-			"mime", track.Codec().MimeType)
+			"mime", track.Codec().MimeType,
+		)
 	} else {
 		p.params.Logger.Warnw("webrtc Track published but can't find MediaTrack", nil,
 			"kind", track.Kind().String(),
 			"webrtcTrackID", track.ID(),
 			"rid", track.RID(),
 			"SSRC", track.SSRC(),
-			"mime", track.Codec().MimeType)
+			"mime", track.Codec().MimeType,
+		)
 	}
 
 	if !isNewTrack && publishedTrack != nil && !publishedTrack.HasPendingCodec() && p.IsReady() {
@@ -1228,7 +1235,11 @@ func (p *ParticipantImpl) onAnyTransportFailed() {
 // subscriberRTCPWorker sends SenderReports periodically when the participant is subscribed to
 // other publishedTracks in the room.
 func (p *ParticipantImpl) subscriberRTCPWorker() {
-	defer Recover(p.GetLogger())
+	defer func() {
+		if r := Recover(p.GetLogger()); r != nil {
+			os.Exit(1)
+		}
+	}()
 	for {
 		if p.IsDisconnected() {
 			return
@@ -1510,7 +1521,14 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	p.pendingTracksLock.Lock()
 	newTrack := false
 
-	p.params.Logger.Debugw("media track received", "trackID", track.ID(), "kind", track.Kind())
+	p.params.Logger.Debugw(
+		"media track received",
+		"kind", track.Kind().String(),
+		"trackID", track.ID(),
+		"rid", track.RID(),
+		"SSRC", track.SSRC(),
+		"mime", track.Codec().MimeType,
+	)
 	mid := p.TransportManager.GetPublisherMid(rtpReceiver)
 	if mid == "" {
 		p.params.Logger.Warnw("could not get mid for track", nil, "trackID", track.ID())
@@ -1629,19 +1647,18 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 			!p.IsClosed(),
 		)
 
-		isUnpublished := false
 		// re-use Track sid
 		p.pendingTracksLock.Lock()
 		if pti := p.pendingTracks[signalCid]; pti != nil {
 			p.sendTrackPublished(signalCid, pti.trackInfos[0])
 		} else {
 			p.unpublishedTracks = append(p.unpublishedTracks, ti)
-			isUnpublished = true
 		}
 		p.pendingTracksLock.Unlock()
 
-		if isUnpublished && !p.IsClosed() {
+		if !p.IsClosed() {
 			// unpublished events aren't necessary when participant is closed
+			p.params.Logger.Debugw("unpublished track", "trackID", ti.Sid, "trackInfo", ti)
 			p.lock.RLock()
 			onTrackUnpublished := p.onTrackUnpublished
 			p.lock.RUnlock()
@@ -1821,7 +1838,11 @@ func (p *ParticipantImpl) getPublishedTrackBySdpCid(clientId string) types.Media
 }
 
 func (p *ParticipantImpl) publisherRTCPWorker() {
-	defer Recover(p.GetLogger())
+	defer func() {
+		if r := Recover(p.GetLogger()); r != nil {
+			os.Exit(1)
+		}
+	}()
 
 	// read from rtcpChan
 	for pkts := range p.rtcpCh {

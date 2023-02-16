@@ -39,10 +39,10 @@ const (
 	negotiationFailedTimeout   = 15 * time.Second
 	dtlsRetransmissionInterval = 100 * time.Millisecond
 
-	iceDisconnectedTimeout    = 10 * time.Second // compatible for ice-lite with firefox client
-	iceFailedTimeout          = 25 * time.Second // pion's default
-	iceKeepaliveInterval      = 2 * time.Second  // pion's default
-	minConnectTimeoutAfterICE = 5 * time.Second  // min duration for waiting pc to connect after ICE is connected
+	iceDisconnectedTimeout = 10 * time.Second // compatible for ice-lite with firefox client
+	iceFailedTimeout       = 25 * time.Second // pion's default
+	iceKeepaliveInterval   = 2 * time.Second  // pion's default
+
 	maxConnectTimeoutAfterICE = 20 * time.Second // max duration for waiting pc to connect after ICE is connected
 
 	shortConnectionThreshold = 90 * time.Second
@@ -422,17 +422,21 @@ func (t *PCTransport) setICEConnectedAt(at time.Time) {
 
 		// set failure timer for dtls handshake
 		iceDuration := at.Sub(t.iceStartedAt)
-		connTimeoutAfterICE := 3 * iceDuration
-		if connTimeoutAfterICE < minConnectTimeoutAfterICE {
-			connTimeoutAfterICE = minConnectTimeoutAfterICE
-		} else if connTimeoutAfterICE > maxConnectTimeoutAfterICE {
+		// let ice has chance to become disconnected if user close/refresh client app before transport full connected.
+		connTimeoutAfterICE := iceDisconnectedTimeout + time.Second + iceDuration
+		if connTimeoutAfterICE < 3*iceDuration {
+			connTimeoutAfterICE = 3 * iceDuration
+		}
+		if connTimeoutAfterICE > maxConnectTimeoutAfterICE {
 			connTimeoutAfterICE = maxConnectTimeoutAfterICE
 		}
 		t.params.Logger.Debugw("setting connection timer after ice connected", "timeout", connTimeoutAfterICE, "iceDuration", iceDuration)
 		t.connectAfterICETimer = time.AfterFunc(connTimeoutAfterICE, func() {
 			state := t.pc.ConnectionState()
-			// if pc is still checking or connected but not fully established after timeout, then fire connection fail
-			if state != webrtc.PeerConnectionStateClosed && state != webrtc.PeerConnectionStateFailed && !t.isFullyEstablished() {
+			iceState := t.pc.ICEConnectionState()
+			// if ice connected, pc is still checking or connected but not fully established after timeout, then fire connection fail
+			if iceState == webrtc.ICEConnectionStateConnected && state != webrtc.PeerConnectionStateClosed &&
+				state != webrtc.PeerConnectionStateFailed && !t.isFullyEstablished() {
 				t.params.Logger.Infow("connect timeout after ICE connected", "timeout", connTimeoutAfterICE, "iceDuration", iceDuration)
 				t.handleConnectionFailed()
 			}
@@ -728,28 +732,40 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 		return err
 	}
 
+	reliableDCReadyHandler := func() {
+		t.params.Logger.Debugw("reliable data channel open")
+		t.lock.Lock()
+		t.reliableDCOpened = true
+		t.lock.Unlock()
+
+		t.maybeNotifyFullyEstablished()
+	}
+
+	lossyDCReadyHanlder := func() {
+		t.params.Logger.Debugw("lossy data channel open")
+		t.lock.Lock()
+		t.lossyDCOpened = true
+		t.lock.Unlock()
+
+		t.maybeNotifyFullyEstablished()
+	}
+
 	t.lock.Lock()
 	switch dc.Label() {
 	case ReliableDataChannel:
 		t.reliableDC = dc
-		t.reliableDC.OnOpen(func() {
-			t.params.Logger.Debugw("reliable data channel open")
-			t.lock.Lock()
-			t.reliableDCOpened = true
-			t.lock.Unlock()
-
-			t.maybeNotifyFullyEstablished()
-		})
+		if t.params.DirectionConfig.StrictACKs {
+			t.reliableDC.OnOpen(reliableDCReadyHandler)
+		} else {
+			t.reliableDC.OnDial(reliableDCReadyHandler)
+		}
 	case LossyDataChannel:
 		t.lossyDC = dc
-		t.lossyDC.OnOpen(func() {
-			t.params.Logger.Debugw("lossy data channel open")
-			t.lock.Lock()
-			t.lossyDCOpened = true
-			t.lock.Unlock()
-
-			t.maybeNotifyFullyEstablished()
-		})
+		if t.params.DirectionConfig.StrictACKs {
+			t.lossyDC.OnOpen(lossyDCReadyHanlder)
+		} else {
+			t.lossyDC.OnDial(lossyDCReadyHanlder)
+		}
 	default:
 		t.params.Logger.Errorw("unknown data channel label", nil, "label", dc.Label())
 	}

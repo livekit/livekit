@@ -8,13 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 	"github.com/twitchtv/twirp"
-
-	"github.com/livekit/protocol/auth"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	serverlogger "github.com/livekit/livekit-server/pkg/logger"
@@ -23,6 +18,10 @@ import (
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/livekit-server/pkg/testutils"
 	testclient "github.com/livekit/livekit-server/test/client"
+	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 )
 
 const (
@@ -47,7 +46,7 @@ func init() {
 		Config: logger.Config{Level: "debug"},
 	})
 
-	prometheus.Init("test", livekit.NodeType_SERVER)
+	prometheus.Init("test", livekit.NodeType_SERVER, "test")
 }
 
 func setupSingleNodeTest(name string) (*service.LivekitServer, func()) {

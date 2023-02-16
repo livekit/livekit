@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/auth"
@@ -20,6 +20,7 @@ import (
 //counterfeiter:generate . MessageSink
 type MessageSink interface {
 	WriteMessage(msg proto.Message) error
+	IsClosed() bool
 	Close()
 }
 
@@ -27,6 +28,7 @@ type MessageSink interface {
 type MessageSource interface {
 	// ReadChan exposes a one way channel to make it easier to use with select
 	ReadChan() <-chan proto.Message
+	IsClosed() bool
 	Close()
 }
 

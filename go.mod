@@ -10,7 +10,6 @@ require (
 	github.com/florianl/go-tc v0.4.2
 	github.com/gammazero/deque v0.1.0
 	github.com/gammazero/workerpool v1.1.2
-	github.com/go-redis/redis/v8 v8.11.5
 	github.com/google/wire v0.5.0
 	github.com/gorilla/websocket v1.5.0
 	github.com/hashicorp/go-version v1.6.0
@@ -18,26 +17,27 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20230130133657-96cfb115473a
-	github.com/livekit/protocol v1.3.3-0.20230206022348-f6d32e15b011
-	github.com/livekit/psrpc v0.2.5
+	github.com/livekit/protocol v1.4.2-0.20230215235903-8a6b0e05628f
+	github.com/livekit/psrpc v0.2.6
 	github.com/livekit/rtcscore-go v0.0.0-20220815072451-20ee10ae1995
 	github.com/mackerelio/go-osstat v0.2.3
 	github.com/magefile/mage v1.14.0
-	github.com/maxbrunsfeld/counterfeiter/v6 v6.5.0
+	github.com/maxbrunsfeld/counterfeiter/v6 v6.6.1
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/olekukonko/tablewriter v0.0.5
-	github.com/pion/ice/v2 v2.2.13
+	github.com/pion/ice/v2 v2.3.0
 	github.com/pion/interceptor v0.1.12
 	github.com/pion/logging v0.2.2
 	github.com/pion/rtcp v1.2.10
 	github.com/pion/rtp v1.7.13
 	github.com/pion/sdp/v3 v3.0.6
-	github.com/pion/stun v0.3.5
-	github.com/pion/transport v0.14.1
-	github.com/pion/turn/v2 v2.0.9
-	github.com/pion/webrtc/v3 v3.1.50
+	github.com/pion/stun v0.4.0
+	github.com/pion/transport/v2 v2.0.1
+	github.com/pion/turn/v2 v2.1.0
+	github.com/pion/webrtc/v3 v3.1.55
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.14.0
+	github.com/redis/go-redis/v9 v9.0.2
 	github.com/rs/cors v1.8.3
 	github.com/sebest/xff v0.0.0-20210106013422-671bd2870b3a
 	github.com/stretchr/testify v1.8.1
@@ -68,25 +68,22 @@ require (
 	github.com/google/subcommands v1.2.0 // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/josharian/native v1.1.0 // indirect
-	github.com/klauspost/compress v1.15.13 // indirect
 	github.com/lithammer/shortuuid/v3 v3.0.7 // indirect
 	github.com/lithammer/shortuuid/v4 v4.0.0 // indirect
 	github.com/mattn/go-runewidth v0.0.9 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
-	github.com/mdlayher/netlink v1.6.0 // indirect
-	github.com/mdlayher/socket v0.1.1 // indirect
-	github.com/minio/highwayhash v1.0.2 // indirect
-	github.com/nats-io/jwt/v2 v2.3.0 // indirect
+	github.com/mdlayher/netlink v1.7.1 // indirect
+	github.com/mdlayher/socket v0.4.0 // indirect
 	github.com/nats-io/nats.go v1.23.0 // indirect
 	github.com/nats-io/nkeys v0.3.0 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/pion/datachannel v1.5.5 // indirect
-	github.com/pion/dtls/v2 v2.1.5 // indirect
-	github.com/pion/mdns v0.0.5 // indirect
+	github.com/pion/dtls/v2 v2.2.4 // indirect
+	github.com/pion/mdns v0.0.7 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
-	github.com/pion/sctp v1.8.5 // indirect
-	github.com/pion/srtp/v2 v2.0.10 // indirect
-	github.com/pion/udp v0.1.1 // indirect
+	github.com/pion/sctp v1.8.6 // indirect
+	github.com/pion/srtp/v2 v2.0.12 // indirect
+	github.com/pion/udp v0.1.4 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_model v0.3.0 // indirect
 	github.com/prometheus/common v0.37.0 // indirect
@@ -94,14 +91,14 @@ require (
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
-	golang.org/x/crypto v0.5.0 // indirect
-	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4 // indirect
-	golang.org/x/net v0.5.0 // indirect
-	golang.org/x/sys v0.4.0 // indirect
-	golang.org/x/text v0.6.0 // indirect
-	golang.org/x/tools v0.1.12 // indirect
+	golang.org/x/crypto v0.6.0 // indirect
+	golang.org/x/mod v0.7.0 // indirect
+	golang.org/x/net v0.6.0 // indirect
+	golang.org/x/sys v0.5.0 // indirect
+	golang.org/x/text v0.7.0 // indirect
+	golang.org/x/tools v0.5.0 // indirect
 	google.golang.org/genproto v0.0.0-20230127162408-596548ed4efa // indirect
-	google.golang.org/grpc v1.52.3 // indirect
+	google.golang.org/grpc v1.53.0 // indirect
 	gopkg.in/square/go-jose.v2 v2.6.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )

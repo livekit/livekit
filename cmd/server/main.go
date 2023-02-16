@@ -13,6 +13,7 @@ import (
 	"github.com/urfave/cli/v2"
 
 	serverlogger "github.com/livekit/livekit-server/pkg/logger"
+	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/logger"
 
@@ -101,6 +102,11 @@ func init() {
 }
 
 func main() {
+	defer func() {
+		rtc.Recover(logger.GetLogger())
+		os.Exit(1)
+	}()
+
 	generatedFlags, err := config.GenerateCLIFlags(baseFlags, true)
 	if err != nil {
 		fmt.Println(err)
@@ -244,7 +250,7 @@ func startServer(c *cli.Context) error {
 		return err
 	}
 
-	prometheus.Init(currentNode.Id, currentNode.Type)
+	prometheus.Init(currentNode.Id, currentNode.Type, conf.Environment)
 
 	server, err := service.InitializeServer(conf, currentNode)
 	if err != nil {

@@ -13,7 +13,7 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/sdp/v3"
-	"github.com/pion/transport/packetio"
+	"github.com/pion/transport/v2/packetio"
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
 
@@ -795,7 +795,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 	d.bindLock.Unlock()
 	d.connectionStats.Close()
 	d.rtpStats.Stop()
-	d.logger.Infow("rtp stats", "direction", "downstream", "mime", d.mime, "stats", d.rtpStats.ToString())
+	d.logger.Infow("rtp stats", "direction", "downstream", "mime", d.mime, "ssrc", d.ssrc, "stats", d.rtpStats.ToString())
 
 	if d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
 		d.onMaxLayerChanged(d, InvalidLayerSpatial)

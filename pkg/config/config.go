@@ -46,6 +46,7 @@ type Config struct {
 	Port           uint32                   `yaml:"port"`
 	BindAddresses  []string                 `yaml:"bind_addresses"`
 	PrometheusPort uint32                   `yaml:"prometheus_port,omitempty"`
+	Environment    string                   `yaml:"environment,omitempty"`
 	RTC            RTCConfig                `yaml:"rtc,omitempty"`
 	Redis          redisLiveKit.RedisConfig `yaml:"redis,omitempty"`
 	Audio          AudioConfig              `yaml:"audio,omitempty"`
@@ -82,6 +83,7 @@ type RTCConfig struct {
 	IPs                     IPsConfig        `yaml:"ips"`
 	EnableLoopbackCandidate bool             `yaml:"enable_loopback_candidate"`
 	UseMDNS                 bool             `yaml:"use_mdns"`
+	StrictACKs              bool             `yaml:"strict_acks"`
 
 	// Number of packets to buffer for NACK
 	PacketBufferSize int `yaml:"packet_buffer_size,omitempty"`
@@ -272,6 +274,7 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 			ICEPortRangeEnd:   0,
 			STUNServers:       []string{},
 			PacketBufferSize:  500,
+			StrictACKs:        true,
 			PLIThrottle: PLIThrottleConfig{
 				LowQuality:  500 * time.Millisecond,
 				MidQuality:  time.Second,
@@ -451,6 +454,10 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 	}
 	if conf.Logging.Level == "" && conf.Development {
 		conf.Logging.Level = "debug"
+	}
+
+	if conf.Development {
+		conf.Environment = "dev"
 	}
 
 	return conf, nil

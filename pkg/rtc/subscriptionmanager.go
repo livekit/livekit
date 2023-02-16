@@ -399,6 +399,12 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 	}
 	if res.TrackRemovedNotifier != nil && s.setRemovedNotifier(res.TrackRemovedNotifier) {
 		res.TrackRemovedNotifier.AddObserver(string(m.params.Participant.ID()), func() {
+			// re-resolve the track in case the same track had been re-published
+			res := m.params.TrackResolver(m.params.Participant.Identity(), s.trackID)
+			if res.Track != nil {
+				// do not unsubscribe, track is still available
+				return
+			}
 			// source track removed, we would unsubscribe
 			s.logger.Debugw("unsubscribing track since source track was removed")
 			s.setDesired(false)

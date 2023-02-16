@@ -10,7 +10,7 @@ import (
 )
 
 func init() {
-	prometheus.Init("test", livekit.NodeType_SERVER)
+	prometheus.Init("test", livekit.NodeType_SERVER, "test")
 }
 
 func newMockParticipant(identity livekit.ParticipantIdentity, protocol types.ProtocolVersion, hidden bool, publisher bool) *typesfakes.FakeLocalParticipant {

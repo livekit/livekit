@@ -3,7 +3,7 @@ package routing
 import (
 	"context"
 
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
@@ -129,6 +129,10 @@ func (s *RTCNodeSink) Close() {
 	}
 }
 
+func (s *RTCNodeSink) IsClosed() bool {
+	return s.isClosed.Load()
+}
+
 func (s *RTCNodeSink) OnClose(f func()) {
 	s.onClose = f
 }
@@ -164,6 +168,10 @@ func (s *SignalNodeSink) Close() {
 	if s.onClose != nil {
 		s.onClose()
 	}
+}
+
+func (s *SignalNodeSink) IsClosed() bool {
+	return s.isClosed.Load()
 }
 
 func (s *SignalNodeSink) OnClose(f func()) {

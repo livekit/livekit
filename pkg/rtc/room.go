@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"math"
+	"runtime"
 	"sort"
 	"sync"
 	"time"
@@ -30,6 +31,8 @@ const (
 	AudioLevelQuantization    = 8 // ideally power of 2 to minimize float decimal
 	invAudioLevelQuantization = 1.0 / AudioLevelQuantization
 	subscriberUpdateInterval  = 3 * time.Second
+
+	dataForwardLoadBalanceThreshold = 20
 )
 
 type broadcastOptions struct {
@@ -157,6 +160,10 @@ func (r *Room) GetParticipants() []types.LocalParticipant {
 		participants = append(participants, p)
 	}
 	return participants
+}
+
+func (r *Room) GetLocalParticipants() []types.LocalParticipant {
+	return r.GetParticipants()
 }
 
 func (r *Room) GetActiveSpeakers() []*livekit.SpeakerInfo {
@@ -810,42 +817,7 @@ func (r *Room) onParticipantUpdate(p types.LocalParticipant) {
 }
 
 func (r *Room) onDataPacket(source types.LocalParticipant, dp *livekit.DataPacket) {
-	dest := dp.GetUser().GetDestinationSids()
-	var dpData []byte
-
-	for _, op := range r.GetParticipants() {
-		if op.State() != livekit.ParticipantInfo_ACTIVE {
-			continue
-		}
-		if source != nil && op.ID() == source.ID() {
-			continue
-		}
-		if len(dest) > 0 {
-			found := false
-			for _, dID := range dest {
-				if op.ID() == livekit.ParticipantID(dID) {
-					found = true
-					break
-				}
-			}
-			if !found {
-				continue
-			}
-		}
-		if dpData == nil {
-			var err error
-			dpData, err = proto.Marshal(dp)
-			if err != nil {
-				r.Logger.Errorw("failed to marshal data packet", err)
-				return
-			}
-		}
-
-		err := op.SendDataPacket(dp, dpData)
-		if err != nil && !errors.Is(err, io.ErrClosedPipe) {
-			r.Logger.Infow("send data packet error", "error", err, "participant", op.Identity())
-		}
-	}
+	BroadcastDataPacketForRoom(r, source, dp, r.Logger)
 }
 
 func (r *Room) subscribeToExistingTracks(p types.LocalParticipant) {
@@ -1154,4 +1126,87 @@ func (r *Room) DebugInfo() map[string]interface{} {
 	info["Participants"] = participantInfo
 
 	return info
+}
+
+func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, dp *livekit.DataPacket, logger logger.Logger) {
+	dest := dp.GetUser().GetDestinationSids()
+	var dpData []byte
+
+	participants := r.GetLocalParticipants()
+	cap := len(dest)
+	if cap == 0 {
+		cap = len(participants)
+	}
+	destParticpants := make([]types.LocalParticipant, 0, cap)
+
+	for _, op := range participants {
+		if op.State() != livekit.ParticipantInfo_ACTIVE {
+			continue
+		}
+		if source != nil && op.ID() == source.ID() {
+			continue
+		}
+		if len(dest) > 0 {
+			found := false
+			for _, dID := range dest {
+				if op.ID() == livekit.ParticipantID(dID) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				continue
+			}
+		}
+		if dpData == nil {
+			var err error
+			dpData, err = proto.Marshal(dp)
+			if err != nil {
+				logger.Errorw("failed to marshal data packet", err)
+				return
+			}
+		}
+		destParticpants = append(destParticpants, op)
+	}
+
+	if len(destParticpants) < dataForwardLoadBalanceThreshold {
+		for _, op := range destParticpants {
+			err := op.SendDataPacket(dp, dpData)
+			if err != nil && !errors.Is(err, io.ErrClosedPipe) {
+				logger.Infow("send data packet error", "error", err, "participant", op.Identity())
+			}
+		}
+		return
+	}
+
+	// parallel - enables much more efficient multi-core utilization
+	start := atomic.NewUint64(0)
+	end := uint64(len(destParticpants))
+
+	step := uint64(1)
+
+	var wg sync.WaitGroup
+	numCPU := runtime.NumCPU()
+	wg.Add(numCPU)
+	for p := 0; p < numCPU; p++ {
+		go func() {
+			defer wg.Done()
+			for {
+				n := start.Add(step)
+				if n >= end+step {
+					return
+				}
+
+				for i := n - step; i < n && i < end; i++ {
+					op := destParticpants[i]
+					err := op.SendDataPacket(dp, dpData)
+					if err != nil && !errors.Is(err, io.ErrClosedPipe) {
+						logger.Infow("send data packet error", "error", err, "participant", op.Identity())
+					}
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
 }

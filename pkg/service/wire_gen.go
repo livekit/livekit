@@ -8,11 +8,9 @@ package service
 
 import (
 	"fmt"
-	"github.com/go-redis/redis/v8"
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/livekit-server/pkg/service/rpc"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/auth"
@@ -20,10 +18,12 @@ import (
 	"github.com/livekit/protocol/ingress"
 	"github.com/livekit/protocol/livekit"
 	redis2 "github.com/livekit/protocol/redis"
+	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/webhook"
 	"github.com/livekit/psrpc"
 	"github.com/pion/turn/v2"
 	"github.com/pkg/errors"
+	"github.com/redis/go-redis/v9"
 	"gopkg.in/yaml.v3"
 	"os"
 )

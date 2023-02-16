@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-redis/redis/v8"
 	goversion "github.com/hashicorp/go-version"
 	"github.com/pkg/errors"
+	"github.com/redis/go-redis/v9"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/version"
