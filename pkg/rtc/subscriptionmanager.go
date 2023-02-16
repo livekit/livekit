@@ -765,7 +765,7 @@ func (s *trackSubscription) handleSourceTrackRemoved() {
 		// to prevent race conditions, if we've recently been asked to subscribe to a track
 		// ignore when source was removed. reconciler will take care of it eventually
 		// this would address the case when a track was unpublished and republished immediately
-		// it's possible for setSubscribed(true) for the republished track to fire before
+		// it's possible for another caller to call setDesired(true) for the republished track before
 		// handleSourceTrackRemoved is called on the previously unpublished track
 		return
 	}
