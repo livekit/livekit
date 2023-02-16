@@ -399,10 +399,6 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) error {
 		w.logger.Infow("subscriberID already exists, replacing downtrack", "subscriberID", track.SubscriberID())
 	}
 
-	if w.Kind() == webrtc.RTPCodecTypeVideo {
-		// kick off an allocation on added down track
-		track.UpTrackLayersChange()
-	}
 	track.TrackInfoAvailable()
 
 	w.downTrackSpreader.Store(track)

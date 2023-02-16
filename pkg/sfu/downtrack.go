@@ -905,6 +905,9 @@ func (d *DownTrack) OnBitrateAvailabilityChanged(fn func(dt *DownTrack)) {
 
 func (d *DownTrack) OnSubscriptionChanged(fn func(dt *DownTrack)) {
 	d.onSubscriptionChanged = fn
+
+	// kick off an allocation just in case other events happened before callbacks were set up
+	go fn(d)
 }
 
 func (d *DownTrack) OnSubscribedLayersChanged(fn func(dt *DownTrack, layers VideoLayers)) {
