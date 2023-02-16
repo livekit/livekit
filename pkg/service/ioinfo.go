@@ -207,7 +207,7 @@ func (s *IOInfoService) ingressWorkerDeprecated() {
 		case msg := <-updateChan:
 			b := updates.Payload(msg)
 
-			res := &rpc.UpdateIngressStateRequest{}
+			res := &livekit.UpdateIngressStateRequest{}
 			if err = proto.Unmarshal(b, res); err != nil {
 				logger.Errorw("failed to read results", err)
 				continue
@@ -222,7 +222,6 @@ func (s *IOInfoService) ingressWorkerDeprecated() {
 		case msg := <-entityChan:
 			b := entities.Payload(msg)
 
-			// requestID/senderID needed to respond
 			req := &livekit.GetIngressInfoRequest{}
 			if err = proto.Unmarshal(b, req); err != nil {
 				logger.Errorw("failed to read request", err)
