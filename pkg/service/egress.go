@@ -9,11 +9,11 @@ import (
 	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/livekit-server/pkg/rtc"
-	"github.com/livekit/livekit-server/pkg/service/rpc"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 )
 
@@ -79,8 +79,8 @@ func (s *EgressService) StartRoomCompositeEgress(ctx context.Context, req *livek
 	defer func() {
 		AppendLogFields(ctx, fields...)
 	}()
-	ei, err := s.startEgress(ctx, livekit.RoomName(req.RoomName), &livekit.StartEgressRequest{
-		Request: &livekit.StartEgressRequest_RoomComposite{
+	ei, err := s.startEgress(ctx, livekit.RoomName(req.RoomName), &rpc.StartEgressRequest{
+		Request: &rpc.StartEgressRequest_RoomComposite{
 			RoomComposite: req,
 		},
 	})
@@ -101,8 +101,8 @@ func (s *EgressService) StartTrackCompositeEgress(ctx context.Context, req *live
 	defer func() {
 		AppendLogFields(ctx, fields...)
 	}()
-	ei, err := s.startEgress(ctx, livekit.RoomName(req.RoomName), &livekit.StartEgressRequest{
-		Request: &livekit.StartEgressRequest_TrackComposite{
+	ei, err := s.startEgress(ctx, livekit.RoomName(req.RoomName), &rpc.StartEgressRequest{
+		Request: &rpc.StartEgressRequest_TrackComposite{
 			TrackComposite: req,
 		},
 	})
@@ -121,8 +121,8 @@ func (s *EgressService) StartTrackEgress(ctx context.Context, req *livekit.Track
 	defer func() {
 		AppendLogFields(ctx, fields...)
 	}()
-	ei, err := s.startEgress(ctx, livekit.RoomName(req.RoomName), &livekit.StartEgressRequest{
-		Request: &livekit.StartEgressRequest_Track{
+	ei, err := s.startEgress(ctx, livekit.RoomName(req.RoomName), &rpc.StartEgressRequest{
+		Request: &rpc.StartEgressRequest_Track{
 			Track: req,
 		},
 	})
@@ -141,8 +141,8 @@ func (s *EgressService) StartWebEgress(ctx context.Context, req *livekit.WebEgre
 	defer func() {
 		AppendLogFields(ctx, fields...)
 	}()
-	ei, err := s.startEgress(ctx, "", &livekit.StartEgressRequest{
-		Request: &livekit.StartEgressRequest_Web{
+	ei, err := s.startEgress(ctx, "", &rpc.StartEgressRequest{
+		Request: &rpc.StartEgressRequest_Web{
 			Web: req,
 		},
 	})
@@ -153,7 +153,7 @@ func (s *EgressService) StartWebEgress(ctx context.Context, req *livekit.WebEgre
 	return ei, err
 }
 
-func (s *EgressService) startEgress(ctx context.Context, roomName livekit.RoomName, req *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
+func (s *EgressService) startEgress(ctx context.Context, roomName livekit.RoomName, req *rpc.StartEgressRequest) (*livekit.EgressInfo, error) {
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	} else if s.launcher == nil {
@@ -171,14 +171,14 @@ func (s *EgressService) startEgress(ctx context.Context, roomName livekit.RoomNa
 	return s.launcher.StartEgress(ctx, req)
 }
 
-func (s *egressLauncher) StartEgress(ctx context.Context, req *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
+func (s *egressLauncher) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) (*livekit.EgressInfo, error) {
 	return s.StartEgressWithClusterId(ctx, "", req)
 }
-func (s *egressLauncher) StartEgressWithClusterId(ctx context.Context, clusterId string, req *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
+func (s *egressLauncher) StartEgressWithClusterId(ctx context.Context, clusterId string, req *rpc.StartEgressRequest) (*livekit.EgressInfo, error) {
 	var info *livekit.EgressInfo
 	var err error
 
-	// Ensure we have a Egress ID
+	// Ensure we have an Egress ID
 	if req.EgressId == "" {
 		req.EgressId = utils.NewGuid(utils.EgressPrefix)
 	}
@@ -187,6 +187,7 @@ func (s *egressLauncher) StartEgressWithClusterId(ctx context.Context, clusterId
 		info, err = s.psrpcClient.StartEgress(ctx, clusterId, req)
 	} else {
 		logger.Infow("using deprecated egress client")
+		// SendRequest will transform rpc.StartEgressRequest into deprecated livekit.StartEgressRequest
 		info, err = s.clientDeprecated.SendRequest(ctx, req)
 	}
 	if err != nil {

@@ -8,12 +8,12 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	"github.com/livekit/livekit-server/pkg/service/rpc"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/ingress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
 )
 
@@ -107,16 +107,16 @@ func (s *IOInfoService) UpdateEgressInfo(ctx context.Context, info *livekit.Egre
 	return &emptypb.Empty{}, nil
 }
 
-func (s *IOInfoService) GetIngressInfo(ctx context.Context, req *livekit.GetIngressInfoRequest) (*livekit.GetIngressInfoResponse, error) {
+func (s *IOInfoService) GetIngressInfo(ctx context.Context, req *rpc.GetIngressInfoRequest) (*rpc.GetIngressInfoResponse, error) {
 	info, err := s.loadIngressFromInfoRequest(req)
 	if err != nil {
 		return nil, err
 	}
 
-	return &livekit.GetIngressInfoResponse{Info: info}, nil
+	return &rpc.GetIngressInfoResponse{Info: info}, nil
 }
 
-func (s *IOInfoService) loadIngressFromInfoRequest(req *livekit.GetIngressInfoRequest) (info *livekit.IngressInfo, err error) {
+func (s *IOInfoService) loadIngressFromInfoRequest(req *rpc.GetIngressInfoRequest) (info *livekit.IngressInfo, err error) {
 	if req.IngressId != "" {
 		info, err = s.is.LoadIngress(context.Background(), req.IngressId)
 	} else if req.StreamKey != "" {
@@ -127,7 +127,7 @@ func (s *IOInfoService) loadIngressFromInfoRequest(req *livekit.GetIngressInfoRe
 	return info, err
 }
 
-func (s *IOInfoService) UpdateIngressState(ctx context.Context, req *livekit.UpdateIngressStateRequest) (*emptypb.Empty, error) {
+func (s *IOInfoService) UpdateIngressState(ctx context.Context, req *rpc.UpdateIngressStateRequest) (*emptypb.Empty, error) {
 	if err := s.is.UpdateIngressState(ctx, req.IngressId, req.State); err != nil {
 		logger.Errorw("could not update ingress", err)
 		return nil, err
@@ -228,11 +228,15 @@ func (s *IOInfoService) ingressWorkerDeprecated() {
 				continue
 			}
 
-			info, err := s.loadIngressFromInfoRequest(req)
+			info, err := s.loadIngressFromInfoRequest(&rpc.GetIngressInfoRequest{
+				IngressId: req.IngressId,
+				StreamKey: req.StreamKey,
+			})
 			if err != nil {
 				logger.Errorw("failed to load ingress info", err)
 				continue
 			}
+
 			err = s.icDeprecated.SendGetIngressInfoResponse(context.Background(), req, &livekit.GetIngressInfoResponse{Info: info}, err)
 			if err != nil {
 				logger.Errorw("could not send response", err)
