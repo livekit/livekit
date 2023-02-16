@@ -38,7 +38,8 @@ var (
 	// ensuring this is longer than iceFailedTimeout so we are certain the participant won't return
 	notFoundTimeout = iceFailedTimeout
 	// amount of time to try otherwise before flagging subscription as failed
-	subscriptionTimeout = iceFailedTimeout
+	subscriptionTimeout    = iceFailedTimeout
+	trackRemoveGracePeriod = time.Second
 )
 
 type SubscriptionManagerParams struct {
@@ -405,9 +406,7 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 				// do not unsubscribe, track is still available
 				return
 			}
-			// source track removed, we would unsubscribe
-			s.logger.Debugw("unsubscribing track since source track was removed")
-			s.setDesired(false)
+			s.handleSourceTrackRemoved()
 		})
 	}
 
@@ -749,6 +748,28 @@ func (s *trackSubscription) recordAttempt(success bool) {
 	} else {
 		s.numAttempts.Store(0)
 	}
+}
+
+func (s *trackSubscription) handleSourceTrackRemoved() {
+	s.lock.Lock()
+	startedAt := s.subStartedAt.Load()
+	if startedAt == nil || time.Since(*startedAt) < trackRemoveGracePeriod {
+		// to prevent race conditions, if we've recently been asked to subscribe to a track
+		// ignore when source was removed. reconciler will take care of it eventually
+		// this would address the case when a track was unpublished and republished immediately
+		// it's possible for setSubscribed(true) for the republished track to fire before
+		// handleSourceTrackRemoved is called on the previously unpublished track
+		s.lock.Unlock()
+		return
+	}
+
+	// source track removed, we would unsubscribe
+	s.logger.Debugw("unsubscribing track since source track was removed")
+	s.desired = false
+	s.lock.Unlock()
+
+	s.setChangedNotifier(nil)
+	s.setRemovedNotifier(nil)
 }
 
 func (s *trackSubscription) maybeRecordError(ts telemetry.TelemetryService, pID livekit.ParticipantID, err error, isUserError bool) {
