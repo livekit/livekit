@@ -707,8 +707,6 @@ func (s *trackSubscription) setRemovedNotifier(notifier types.ChangeNotifier) bo
 }
 
 func (s *trackSubscription) setRemovedNotifierLocked(notifier types.ChangeNotifier) bool {
-	s.lock.Lock()
-	defer s.lock.Unlock()
 	if s.removedNotifier == notifier {
 
 		return false
