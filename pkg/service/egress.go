@@ -324,7 +324,6 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 
 	info, err := s.es.LoadEgress(ctx, req.EgressId)
 	if err != nil {
-
 		return nil, err
 	} else {
 		if info.Status != livekit.EgressStatus_EGRESS_STARTING &&
