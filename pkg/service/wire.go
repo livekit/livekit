@@ -51,8 +51,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		getEgressStore,
 		NewEgressLauncher,
 		NewEgressService,
-		ingress.NewRedisRPC,
-		getIngressClient,
+		rpc.NewIngressClient,
 		getIngressStore,
 		getIngressConfig,
 		getIngressRPCClient,
@@ -159,14 +158,6 @@ func getEgressStore(s ObjectStore) EgressStore {
 	default:
 		return nil
 	}
-}
-
-func getIngressClient(conf *config.Config, nodeID livekit.NodeID, bus psrpc.MessageBus) (rpc.IngressClient, error) {
-	if conf.Ingress.UsePsRPC {
-		return rpc.NewIngressClient(nodeID, bus)
-	}
-
-	return nil, nil
 }
 
 func getIngressStore(s ObjectStore) IngressStore {
