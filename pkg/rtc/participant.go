@@ -1691,10 +1691,6 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 }
 
 func (p *ParticipantImpl) handleTrackPublished(track types.MediaTrack) {
-	if !p.hasPendingMigratedTrack() {
-		p.SetMigrateState(types.MigrateStateComplete)
-	}
-
 	p.lock.RLock()
 	onTrackPublished := p.onTrackPublished
 	p.lock.RUnlock()
@@ -1710,6 +1706,10 @@ func (p *ParticipantImpl) handleTrackPublished(track types.MediaTrack) {
 		p.Identity(),
 		track.ToProto(),
 	)
+
+	if !p.hasPendingMigratedTrack() {
+		p.SetMigrateState(types.MigrateStateComplete)
+	}
 }
 
 func (p *ParticipantImpl) hasPendingMigratedTrack() bool {
