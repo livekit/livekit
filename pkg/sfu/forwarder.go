@@ -429,7 +429,7 @@ func (f *Forwarder) GetForwardingStatus() ForwardingStatus {
 		return ForwardingStatusOptimal
 	}
 
-	if f.targetLayers == InvalidLayers {
+	if !f.targetLayers.IsValid() {
 		return ForwardingStatusOff
 	}
 
@@ -600,7 +600,17 @@ func (f *Forwarder) BandwidthRequested(brs Bitrates) int64 {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
-	if f.targetLayers == InvalidLayers {
+	if !f.targetLayers.IsValid() {
+		if f.targetLayers != InvalidLayers {
+			f.logger.Warnw(
+				"unexpected target layers", nil,
+				"target", f.targetLayers,
+				"current", f.currentLayers,
+				"parked", f.parkedLayers,
+				"max", f.maxLayers,
+				"lastAllocation", f.lastAllocation,
+			)
+		}
 		return 0
 	}
 
@@ -788,7 +798,7 @@ func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layers V
 	//  2. a layer above maximum which may or may not fit.
 	// In any of those cases, take the lowest possible layer if pause is not allowed
 	//
-	if !allowPause && (f.provisional.allocatedLayers == InvalidLayers || !layers.GreaterThan(f.provisional.allocatedLayers)) {
+	if !allowPause && (!f.provisional.allocatedLayers.IsValid() || !layers.GreaterThan(f.provisional.allocatedLayers)) {
 		f.provisional.allocatedLayers = layers
 		return requiredBitrate - alreadyAllocatedBitrate
 	}
@@ -900,7 +910,7 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot b
 
 	targetLayers := f.targetLayers
 	bandwidthRequired := int64(0)
-	if targetLayers == InvalidLayers {
+	if !targetLayers.IsValid() {
 		// currently not streaming, find minimal
 		// NOTE: a layer in feed could have paused and there could be other options than going back to minimal,
 		// but the cooperative scheme knocks things back to minimal
@@ -919,7 +929,7 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot b
 	}
 
 	// if nothing available, just leave target at current to enable opportunistic forwarding in case current resumes
-	if targetLayers == InvalidLayers {
+	if !targetLayers.IsValid() {
 		if f.provisional.parkedLayers.IsValid() {
 			targetLayers = f.provisional.parkedLayers
 		} else {
@@ -1332,7 +1342,7 @@ func (f *Forwarder) updateAllocation(alloc VideoAllocation, reason string) Video
 	}
 
 	f.setTargetLayers(f.lastAllocation.targetLayers)
-	if f.targetLayers == InvalidLayers {
+	if !f.targetLayers.IsValid() {
 		f.resyncLocked()
 	}
 
