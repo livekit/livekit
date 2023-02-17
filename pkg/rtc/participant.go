@@ -137,12 +137,13 @@ type ParticipantImpl struct {
 	version atomic.Uint32
 
 	// callbacks & handlers
-	onTrackPublished    func(types.LocalParticipant, types.MediaTrack)
-	onTrackUpdated      func(types.LocalParticipant, types.MediaTrack)
-	onTrackUnpublished  func(types.LocalParticipant, types.MediaTrack)
-	onStateChange       func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State)
-	onParticipantUpdate func(types.LocalParticipant)
-	onDataPacket        func(types.LocalParticipant, *livekit.DataPacket)
+	onTrackPublished     func(types.LocalParticipant, types.MediaTrack)
+	onTrackUpdated       func(types.LocalParticipant, types.MediaTrack)
+	onTrackUnpublished   func(types.LocalParticipant, types.MediaTrack)
+	onStateChange        func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State)
+	onMigrateStateChange func(p types.LocalParticipant, migrateState types.MigrateState)
+	onParticipantUpdate  func(types.LocalParticipant)
+	onDataPacket         func(types.LocalParticipant, *livekit.DataPacket)
 
 	migrateState atomic.Value // types.MigrateState
 
@@ -424,6 +425,19 @@ func (p *ParticipantImpl) OnStateChange(callback func(p types.LocalParticipant, 
 	p.lock.Lock()
 	p.onStateChange = callback
 	p.lock.Unlock()
+}
+
+func (p *ParticipantImpl) OnMigrateStateChange(callback func(p types.LocalParticipant, state types.MigrateState)) {
+	p.lock.Lock()
+	p.onMigrateStateChange = callback
+	p.lock.Unlock()
+}
+
+func (p *ParticipantImpl) getOnMigrateStateChange() func(p types.LocalParticipant, state types.MigrateState) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	return p.onMigrateStateChange
 }
 
 func (p *ParticipantImpl) OnTrackUpdated(callback func(types.LocalParticipant, types.MediaTrack)) {
@@ -738,8 +752,9 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 	}
 
 	p.params.Logger.Debugw("SetMigrateState", "state", s)
-	processPendingOffer := false
 	p.migrateState.Store(s)
+
+	processPendingOffer := false
 	if s == types.MigrateStateSync {
 		processPendingOffer = true
 	}
@@ -750,6 +765,10 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 
 	if processPendingOffer {
 		p.TransportManager.ProcessPendingPublisherOffer()
+	}
+
+	if onMigrateStateChange := p.getOnMigrateStateChange(); onMigrateStateChange != nil {
+		go onMigrateStateChange(p, s)
 	}
 }
 

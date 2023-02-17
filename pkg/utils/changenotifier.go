@@ -16,9 +16,7 @@
 
 package utils
 
-import (
-	"sync"
-)
+import "sync"
 
 type ChangeNotifier struct {
 	lock      sync.Mutex
