@@ -717,3 +717,9 @@ func (t *TransportManager) UpdateLastSeenSignal() {
 	t.lastSignalAt = time.Now()
 	t.lock.Unlock()
 }
+
+func (t *TransportManager) SinceLastSignal() time.Duration {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+	return time.Since(t.lastSignalAt)
+}
