@@ -30,7 +30,26 @@ var (
 )
 
 type AudioLevelHandle func(level uint8, duration uint32)
+
+// ---------------------------------------------------
+
 type Bitrates [DefaultMaxLayerSpatial + 1][DefaultMaxLayerTemporal + 1]int64
+
+func (b *Bitrates) GetLayers() []int32 {
+	layers := []int32{}
+	for i := 0; i < len(b); i++ {
+		for j := 0; j < len(b[0]); j++ {
+			if b[i][j] != 0 {
+				layers = append(layers, int32(i))
+				break
+			}
+		}
+	}
+
+	return layers
+}
+
+// ---------------------------------------------------
 
 // TrackReceiver defines an interface receive media from remote peer
 type TrackReceiver interface {
@@ -197,7 +216,6 @@ func NewWebRTCReceiver(
 	w.streamTrackerManager = NewStreamTrackerManager(logger, trackInfo, w.isSVC, w.codec.ClockRate, trackersConfig)
 	w.streamTrackerManager.OnAvailableLayersChanged(w.downTrackLayerChange)
 	w.streamTrackerManager.OnBitrateAvailabilityChanged(w.downTrackBitrateAvailabilityChange)
-	w.streamTrackerManager.Start()
 
 	for _, opt := range opts {
 		w = opt(w)
@@ -381,11 +399,6 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) error {
 		w.logger.Infow("subscriberID already exists, replacing downtrack", "subscriberID", track.SubscriberID())
 	}
 
-	if w.Kind() == webrtc.RTPCodecTypeVideo {
-		// notify added down track of available layers
-		availableLayers, exemptedLayers := w.streamTrackerManager.GetAvailableLayers()
-		track.UpTrackLayersChange(availableLayers, exemptedLayers)
-	}
 	track.TrackInfoAvailable()
 
 	w.downTrackSpreader.Store(track)
@@ -396,9 +409,9 @@ func (w *WebRTCReceiver) SetMaxExpectedSpatialLayer(layer int32) {
 	w.streamTrackerManager.SetMaxExpectedSpatialLayer(layer)
 }
 
-func (w *WebRTCReceiver) downTrackLayerChange(availableLayers []int32, exemptedLayers []int32) {
+func (w *WebRTCReceiver) downTrackLayerChange() {
 	for _, dt := range w.downTrackSpreader.GetDownTracks() {
-		dt.UpTrackLayersChange(availableLayers, exemptedLayers)
+		dt.UpTrackLayersChange()
 	}
 }
 
@@ -563,8 +576,6 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 			if pr := w.redReceiver.Load(); pr != nil {
 				pr.(*RedReceiver).Close()
 			}
-
-			w.streamTrackerManager.Stop()
 		})
 
 		w.streamTrackerManager.RemoveTracker(layer)

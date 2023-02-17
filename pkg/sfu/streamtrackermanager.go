@@ -7,7 +7,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/streamtracker"
-	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -21,18 +20,15 @@ type StreamTrackerManager struct {
 
 	trackerConfig config.StreamTrackerConfig
 
-	layersNotifyOpQueue *utils.OpsQueue
-
 	lock sync.RWMutex
 
 	trackers [DefaultMaxLayerSpatial + 1]*streamtracker.StreamTracker
 
 	availableLayers  []int32
-	exemptedLayers   []int32
 	maxExpectedLayer int32
 	paused           bool
 
-	onAvailableLayersChanged     func(availableLayers []int32, exemptedLayers []int32)
+	onAvailableLayersChanged     func()
 	onBitrateAvailabilityChanged func()
 	onMaxLayerChanged            func(maxLayer int32)
 }
@@ -45,12 +41,11 @@ func NewStreamTrackerManager(
 	trackersConfig config.StreamTrackersConfig,
 ) *StreamTrackerManager {
 	s := &StreamTrackerManager{
-		logger:              logger,
-		trackInfo:           trackInfo,
-		isSVC:               isSVC,
-		maxPublishedLayer:   0,
-		clockRate:           clockRate,
-		layersNotifyOpQueue: utils.NewOpsQueue(logger, "layer-notify", 10),
+		logger:            logger,
+		trackInfo:         trackInfo,
+		isSVC:             isSVC,
+		maxPublishedLayer: 0,
+		clockRate:         clockRate,
 	}
 
 	switch s.trackInfo.Source {
@@ -73,15 +68,7 @@ func NewStreamTrackerManager(
 	return s
 }
 
-func (s *StreamTrackerManager) Start() {
-	s.layersNotifyOpQueue.Start()
-}
-
-func (s *StreamTrackerManager) Stop() {
-	s.layersNotifyOpQueue.Stop()
-}
-
-func (s *StreamTrackerManager) OnAvailableLayersChanged(f func(availableLayers []int32, exemptedLayers []int32)) {
+func (s *StreamTrackerManager) OnAvailableLayersChanged(f func()) {
 	s.onAvailableLayersChanged = f
 }
 
@@ -145,14 +132,12 @@ func (s *StreamTrackerManager) AddTracker(layer int32) *streamtracker.StreamTrac
 
 	s.logger.Debugw("StreamTrackerManager add track", "layer", layer)
 	tracker.OnStatusChanged(func(status streamtracker.StreamStatus) {
-		s.layersNotifyOpQueue.Enqueue(func() {
-			s.logger.Debugw("StreamTrackerManager OnStatusChanged", "layer", layer, "status", status)
-			if status == streamtracker.StreamStatusStopped {
-				s.removeAvailableLayer(layer)
-			} else {
-				s.addAvailableLayer(layer)
-			}
-		})
+		s.logger.Debugw("StreamTrackerManager OnStatusChanged", "layer", layer, "status", status)
+		if status == streamtracker.StreamStatusStopped {
+			s.removeAvailableLayer(layer)
+		} else {
+			s.addAvailableLayer(layer)
+		}
 	})
 	tracker.OnBitrateAvailable(func() {
 		if s.onBitrateAvailabilityChanged != nil {
@@ -188,7 +173,6 @@ func (s *StreamTrackerManager) RemoveAllTrackers() {
 		s.trackers[layer] = nil
 	}
 	s.availableLayers = make([]int32, 0)
-	s.exemptedLayers = make([]int32, 0)
 	s.maxExpectedLayer = DefaultMaxLayerSpatial
 	s.paused = false
 	s.lock.Unlock()
@@ -353,26 +337,6 @@ func (s *StreamTrackerManager) GetLayeredBitrate() Bitrates {
 	return br
 }
 
-func (s *StreamTrackerManager) GetAvailableLayers() ([]int32, []int32) {
-	s.lock.RLock()
-	defer s.lock.RUnlock()
-
-	var availableLayers []int32
-	availableLayers = append(availableLayers, s.availableLayers...)
-
-	var exemptedLayers []int32
-	exemptedLayers = append(exemptedLayers, s.exemptedLayers...)
-
-	return availableLayers, exemptedLayers
-}
-
-func (s *StreamTrackerManager) HasSpatialLayer(layer int32) bool {
-	s.lock.RLock()
-	defer s.lock.RUnlock()
-
-	return s.hasSpatialLayerLocked(layer)
-}
-
 func (s *StreamTrackerManager) hasSpatialLayerLocked(layer int32) bool {
 	for _, l := range s.availableLayers {
 		if l == layer {
@@ -400,35 +364,21 @@ func (s *StreamTrackerManager) addAvailableLayer(layer int32) {
 	s.availableLayers = append(s.availableLayers, layer)
 	sort.Slice(s.availableLayers, func(i, j int) bool { return s.availableLayers[i] < s.availableLayers[j] })
 
-	for idx, el := range s.exemptedLayers {
-		if el == layer {
-			s.exemptedLayers[idx] = s.exemptedLayers[len(s.exemptedLayers)-1]
-			s.exemptedLayers = s.exemptedLayers[:len(s.exemptedLayers)-1]
-			break
-		}
-	}
-	sort.Slice(s.exemptedLayers, func(i, j int) bool { return s.exemptedLayers[i] < s.exemptedLayers[j] })
-
-	var availableLayers []int32
-	availableLayers = append(availableLayers, s.availableLayers...)
-
-	var exemptedLayers []int32
-	exemptedLayers = append(exemptedLayers, s.exemptedLayers...)
-	s.lock.Unlock()
+	// check if new layer is the max layer
+	isMaxLayerChange := s.availableLayers[len(s.availableLayers)-1] == layer
 
 	s.logger.Infow(
 		"available layers changed - layer seen",
 		"added", layer,
-		"availableLayers", availableLayers,
-		"exemptedLayers", exemptedLayers,
+		"availableLayers", s.availableLayers,
 	)
+	s.lock.Unlock()
 
 	if s.onAvailableLayersChanged != nil {
-		s.onAvailableLayersChanged(availableLayers, exemptedLayers)
+		s.onAvailableLayersChanged()
 	}
 
-	// check if new layer was the max layer
-	if availableLayers[len(availableLayers)-1] == layer && s.onMaxLayerChanged != nil {
+	if isMaxLayerChange && s.onMaxLayerChanged != nil {
 		s.onMaxLayerChanged(layer)
 	}
 }
@@ -440,52 +390,21 @@ func (s *StreamTrackerManager) removeAvailableLayer(layer int32) {
 		prevMaxLayer = s.availableLayers[len(s.availableLayers)-1]
 	}
 
-	//
-	// remove from available if not exempt
-	//
-	exempt := false
-	for _, l := range s.trackerConfig.ExemptedLayers {
-		if layer == l {
-			exempt = true
-			break
-		}
-	}
-
-	if exempt {
-		if layer > s.maxExpectedLayer || s.paused {
-			exempt = false
-		}
-	}
-
 	newLayers := make([]int32, 0, DefaultMaxLayerSpatial+1)
 	for _, l := range s.availableLayers {
 		// do not remove layers for non-simulcast
-		if exempt || l != layer || len(s.trackInfo.Layers) < 2 {
+		if l != layer || len(s.trackInfo.Layers) < 2 {
 			newLayers = append(newLayers, l)
 		}
 	}
 	sort.Slice(newLayers, func(i, j int) bool { return newLayers[i] < newLayers[j] })
 	s.availableLayers = newLayers
 
-	//
-	// add to exempt if not already present
-	//
-	if exempt {
-		found := false
-		for _, el := range s.exemptedLayers {
-			if el == layer {
-				found = true
-				break
-			}
-		}
-		if !found {
-			s.exemptedLayers = append(s.exemptedLayers, layer)
-			sort.Slice(s.exemptedLayers, func(i, j int) bool { return s.exemptedLayers[i] < s.exemptedLayers[j] })
-		}
-	}
-
-	var exemptedLayers []int32
-	exemptedLayers = append(exemptedLayers, s.exemptedLayers...)
+	s.logger.Infow(
+		"available layers changed - layer gone",
+		"removed", layer,
+		"availableLayers", newLayers,
+	)
 
 	curMaxLayer := InvalidLayerSpatial
 	if len(s.availableLayers) > 0 {
@@ -493,16 +412,9 @@ func (s *StreamTrackerManager) removeAvailableLayer(layer int32) {
 	}
 	s.lock.Unlock()
 
-	s.logger.Infow(
-		"available layers changed - layer gone",
-		"removed", layer,
-		"availableLayers", newLayers,
-		"exeptedLayers", exemptedLayers,
-	)
-
 	// need to immediately switch off unavailable layers
 	if s.onAvailableLayersChanged != nil {
-		s.onAvailableLayersChanged(newLayers, exemptedLayers)
+		s.onAvailableLayersChanged()
 	}
 
 	// if maxLayer was removed, send the new maxLayer

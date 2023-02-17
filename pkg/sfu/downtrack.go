@@ -27,7 +27,7 @@ import (
 
 // TrackSender defines an interface send media to remote peer
 type TrackSender interface {
-	UpTrackLayersChange(availableLayers []int32, exemptedLayers []int32)
+	UpTrackLayersChange()
 	UpTrackBitrateAvailabilityChange()
 	WriteRTP(p *buffer.ExtPacket, layer int32) error
 	Close()
@@ -555,12 +555,12 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			d.stopKeyFrameRequester()
 		}
 
-		if !tp.isSwitchingToTargetLayer {
+		if extPkt.KeyFrame {
 			d.logger.Debugw("forwarding key frame", "layer", layer)
-		} else {
-			if d.onTargetLayerFound != nil {
-				d.onTargetLayerFound(d)
-			}
+		}
+
+		if tp.isSwitchingToTargetLayer && d.onTargetLayerFound != nil {
+			d.onTargetLayerFound(d)
 		}
 	}
 
@@ -859,13 +859,7 @@ func (d *DownTrack) SeedState(state DownTrackState) {
 	d.forwarder.SeedState(state.ForwarderState)
 }
 
-func (d *DownTrack) GetForwardingStatus() ForwardingStatus {
-	return d.forwarder.GetForwardingStatus()
-}
-
-func (d *DownTrack) UpTrackLayersChange(availableLayers []int32, exemptedLayers []int32) {
-	d.forwarder.UpTrackLayersChange(availableLayers, exemptedLayers)
-
+func (d *DownTrack) UpTrackLayersChange() {
 	if onAvailableLayersChanged, ok := d.onAvailableLayersChanged.Load().(func(dt *DownTrack)); ok {
 		onAvailableLayersChanged(d)
 	}
@@ -911,6 +905,9 @@ func (d *DownTrack) OnBitrateAvailabilityChanged(fn func(dt *DownTrack)) {
 
 func (d *DownTrack) OnSubscriptionChanged(fn func(dt *DownTrack)) {
 	d.onSubscriptionChanged = fn
+
+	// kick off an allocation just in case other events happened before callbacks were set up
+	go fn(d)
 }
 
 func (d *DownTrack) OnSubscribedLayersChanged(fn func(dt *DownTrack, layers VideoLayers)) {
@@ -1220,7 +1217,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 	sendPliOnce := func() {
 		if pliOnce {
 			targetLayers := d.forwarder.TargetLayers()
-			if targetLayers != InvalidLayers {
+			if targetLayers != InvalidLayers && !d.forwarder.IsAnyMuted() {
 				d.logger.Debugw("sending PLI RTCP", "layer", targetLayers.Spatial)
 				d.receiver.SendPLI(targetLayers.Spatial, false)
 				d.isNACKThrottled.Store(true)
