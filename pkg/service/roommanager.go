@@ -419,13 +419,13 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 	currentRoom := r.rooms[roomName]
 	for currentRoom != lastSeenRoom {
 		r.lock.Unlock()
-		if currentRoom.Hold() {
+		if currentRoom != nil && currentRoom.Hold() {
 			return currentRoom, nil
-		} else {
-			lastSeenRoom = currentRoom
-			r.lock.Lock()
-			currentRoom = r.rooms[roomName]
 		}
+
+		lastSeenRoom = currentRoom
+		r.lock.Lock()
+		currentRoom = r.rooms[roomName]
 	}
 
 	// construct ice servers

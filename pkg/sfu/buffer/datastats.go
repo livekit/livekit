@@ -82,7 +82,7 @@ func (s *DataStats) ToProtoAggregateOnly() *livekit.RTPStats {
 		StartTime: timestamppb.New(s.startTime),
 		EndTime:   timestamppb.New(end),
 		Duration:  end.Sub(s.startTime).Seconds(),
-		Bytes:     uint64(s.windowBytes),
-		Bitrate:   float64(s.windowBytes) * 8 / end.Sub(s.startTime).Seconds(),
+		Bytes:     uint64(s.totalBytes),
+		Bitrate:   float64(s.totalBytes) * 8 / end.Sub(s.startTime).Seconds(),
 	}
 }

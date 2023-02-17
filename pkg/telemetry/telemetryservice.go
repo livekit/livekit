@@ -102,7 +102,7 @@ func (t *telemetryService) FlushStats() {
 }
 
 func (t *telemetryService) run() {
-	ticker := time.NewTicker(config.StatsUpdateInterval)
+	ticker := time.NewTicker(config.TelemetryStatsUpdateInterval)
 	defer ticker.Stop()
 
 	cleanupTicker := time.NewTicker(time.Minute)
