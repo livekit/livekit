@@ -299,6 +299,7 @@ type LocalParticipant interface {
 
 	// callbacks
 	OnStateChange(func(p LocalParticipant, oldState livekit.ParticipantInfo_State))
+	OnMigrateStateChange(func(p LocalParticipant, migrateState MigrateState))
 	// OnTrackPublished - remote added a track
 	OnTrackPublished(func(LocalParticipant, MediaTrack))
 	// OnTrackUpdated - one of its publishedTracks changed in status
