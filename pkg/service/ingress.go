@@ -2,11 +2,9 @@ package service
 
 import (
 	"context"
-	"time"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/telemetry"
-	"github.com/livekit/protocol/ingress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
@@ -14,17 +12,11 @@ import (
 	"github.com/livekit/psrpc"
 )
 
-var (
-	initialTimeout = time.Second * 3
-	retryTimeout   = time.Minute * 1
-)
-
 type IngressService struct {
 	conf        *config.IngressConfig
 	nodeID      livekit.NodeID
 	bus         psrpc.MessageBus
 	psrpcClient rpc.IngressClient
-	rpcClient   ingress.RPCClient
 	store       IngressStore
 	roomService livekit.RoomService
 	telemetry   telemetry.TelemetryService
@@ -35,7 +27,6 @@ func NewIngressService(
 	nodeID livekit.NodeID,
 	bus psrpc.MessageBus,
 	psrpcClient rpc.IngressClient,
-	rpcClient ingress.RPCClient,
 	store IngressStore,
 	rs livekit.RoomService,
 	ts telemetry.TelemetryService,
@@ -46,7 +37,6 @@ func NewIngressService(
 		nodeID:      nodeID,
 		bus:         bus,
 		psrpcClient: psrpcClient,
-		rpcClient:   rpcClient,
 		store:       store,
 		roomService: rs,
 		telemetry:   ts,
@@ -100,47 +90,12 @@ func (s *IngressService) CreateIngressWithUrlPrefix(ctx context.Context, urlPref
 		State:               &livekit.IngressState{},
 	}
 
-	if err := s.store.StoreIngress(ctx, info); err != nil {
+	if err = s.store.StoreIngress(ctx, info); err != nil {
 		logger.Errorw("could not write ingress info", err)
 		return nil, err
 	}
 
 	return info, nil
-}
-
-func (s *IngressService) sendRPCWithRetry(ctx context.Context, req *livekit.IngressRequest) (*livekit.IngressState, error) {
-	type result struct {
-		state *livekit.IngressState
-		err   error
-	}
-
-	resChan := make(chan result, 1)
-
-	go func() {
-		cctx, _ := context.WithTimeout(context.Background(), retryTimeout)
-
-		for {
-			select {
-			case <-cctx.Done():
-				resChan <- result{nil, ingress.ErrNoResponse}
-				return
-			default:
-			}
-
-			s, err := s.rpcClient.SendRequest(cctx, req)
-			if err != ingress.ErrNoResponse {
-				resChan <- result{s, err}
-				return
-			}
-		}
-	}()
-
-	select {
-	case res := <-resChan:
-		return res.state, res.err
-	case <-time.After(initialTimeout):
-		return nil, ingress.ErrNoResponse
-	}
 }
 
 func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateIngressRequest) (*livekit.IngressInfo, error) {
@@ -157,7 +112,7 @@ func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateI
 		return nil, twirpAuthError(err)
 	}
 
-	if s.psrpcClient == nil && s.rpcClient == nil {
+	if s.psrpcClient == nil {
 		return nil, ErrIngressNotConnected
 	}
 
@@ -199,21 +154,7 @@ func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateI
 	case livekit.IngressState_ENDPOINT_BUFFERING,
 		livekit.IngressState_ENDPOINT_PUBLISHING:
 		// Do not update store the returned state as the ingress service will do it
-		race := rpc.NewRace[livekit.IngressState](ctx)
-		if s.rpcClient != nil {
-			race.Go(func(ctx context.Context) (*livekit.IngressState, error) {
-				return s.sendRPCWithRetry(ctx, &livekit.IngressRequest{
-					IngressId: req.IngressId,
-					Request:   &livekit.IngressRequest_Update{Update: req},
-				})
-			})
-		}
-		if s.psrpcClient != nil {
-			race.Go(func(ctx context.Context) (*livekit.IngressState, error) {
-				return s.psrpcClient.UpdateIngress(ctx, req.IngressId, req)
-			})
-		}
-		if _, _, err := race.Wait(); err != nil {
+		if _, err = s.psrpcClient.UpdateIngress(ctx, req.IngressId, req); err != nil {
 			logger.Warnw("could not update active ingress", err)
 		}
 	}
@@ -252,7 +193,7 @@ func (s *IngressService) DeleteIngress(ctx context.Context, req *livekit.DeleteI
 		return nil, twirpAuthError(err)
 	}
 
-	if s.psrpcClient == nil && s.rpcClient == nil {
+	if s.psrpcClient == nil {
 		return nil, ErrIngressNotConnected
 	}
 
@@ -264,21 +205,7 @@ func (s *IngressService) DeleteIngress(ctx context.Context, req *livekit.DeleteI
 	switch info.State.Status {
 	case livekit.IngressState_ENDPOINT_BUFFERING,
 		livekit.IngressState_ENDPOINT_PUBLISHING:
-		race := rpc.NewRace[livekit.IngressState](ctx)
-		if s.rpcClient != nil {
-			race.Go(func(ctx context.Context) (*livekit.IngressState, error) {
-				return s.sendRPCWithRetry(ctx, &livekit.IngressRequest{
-					IngressId: req.IngressId,
-					Request:   &livekit.IngressRequest_Delete{Delete: req},
-				})
-			})
-		}
-		if s.psrpcClient != nil {
-			race.Go(func(ctx context.Context) (*livekit.IngressState, error) {
-				return s.psrpcClient.DeleteIngress(ctx, req.IngressId, req)
-			})
-		}
-		if _, _, err := race.Wait(); err != nil {
+		if _, err = s.psrpcClient.DeleteIngress(ctx, req.IngressId, req); err != nil {
 			logger.Warnw("could not stop active ingress", err)
 		}
 	}
