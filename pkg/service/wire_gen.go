@@ -15,7 +15,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/egress"
-	"github.com/livekit/protocol/ingress"
 	"github.com/livekit/protocol/livekit"
 	redis2 "github.com/livekit/protocol/redis"
 	"github.com/livekit/protocol/rpc"
@@ -72,15 +71,13 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	egressService := NewEgressService(egressClient, rpcClient, objectStore, egressStore, roomService, telemetryService, rtcEgressLauncher)
 	ingressConfig := getIngressConfig(conf)
-	ingressClient, err := getIngressClient(conf, nodeID, messageBus)
+	ingressClient, err := rpc.NewIngressClient(nodeID, messageBus)
 	if err != nil {
 		return nil, err
 	}
-	rpc := ingress.NewRedisRPC(nodeID, universalClient)
-	ingressRPCClient := getIngressRPCClient(rpc)
 	ingressStore := getIngressStore(objectStore)
-	ingressService := NewIngressService(ingressConfig, nodeID, messageBus, ingressClient, ingressRPCClient, ingressStore, roomService, telemetryService)
-	ioInfoService, err := NewIOInfoService(nodeID, messageBus, egressStore, ingressStore, telemetryService, rpcClient, ingressRPCClient)
+	ingressService := NewIngressService(ingressConfig, nodeID, messageBus, ingressClient, ingressStore, roomService, telemetryService)
+	ioInfoService, err := NewIOInfoService(nodeID, messageBus, egressStore, ingressStore, telemetryService, rpcClient)
 	if err != nil {
 		return nil, err
 	}
@@ -197,14 +194,6 @@ func getEgressStore(s ObjectStore) EgressStore {
 	}
 }
 
-func getIngressClient(conf *config.Config, nodeID livekit.NodeID, bus psrpc.MessageBus) (rpc.IngressClient, error) {
-	if conf.Ingress.UsePsRPC {
-		return rpc.NewIngressClient(nodeID, bus)
-	}
-
-	return nil, nil
-}
-
 func getIngressStore(s ObjectStore) IngressStore {
 	switch store := s.(type) {
 	case *RedisStore:
@@ -216,10 +205,6 @@ func getIngressStore(s ObjectStore) IngressStore {
 
 func getIngressConfig(conf *config.Config) *config.IngressConfig {
 	return &conf.Ingress
-}
-
-func getIngressRPCClient(rpc2 ingress.RPC) ingress.RPCClient {
-	return rpc2
 }
 
 func createClientConfiguration() clientconfiguration.ClientConfigurationManager {

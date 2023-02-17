@@ -10,7 +10,6 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/egress"
-	"github.com/livekit/protocol/ingress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
@@ -23,7 +22,6 @@ type IOInfoService struct {
 	is           IngressStore
 	telemetry    telemetry.TelemetryService
 	ecDeprecated egress.RPCClient
-	icDeprecated ingress.RPCClient
 	shutdown     chan struct{}
 }
 
@@ -34,14 +32,12 @@ func NewIOInfoService(
 	is IngressStore,
 	ts telemetry.TelemetryService,
 	ec egress.RPCClient,
-	ic ingress.RPCClient,
 ) (*IOInfoService, error) {
 	s := &IOInfoService{
 		es:           es,
 		is:           is,
 		telemetry:    ts,
 		ecDeprecated: ec,
-		icDeprecated: ic,
 		shutdown:     make(chan struct{}),
 	}
 
@@ -66,7 +62,6 @@ func (s *IOInfoService) Start() error {
 		}
 
 		go s.egressWorkerDeprecated()
-		go s.ingressWorkerDeprecated()
 	}
 
 	return nil
@@ -179,73 +174,4 @@ func (s *IOInfoService) egressWorkerDeprecated() error {
 	}()
 
 	return nil
-}
-
-// Deprecated
-func (s *IOInfoService) ingressWorkerDeprecated() {
-	if s.icDeprecated == nil {
-		return
-	}
-
-	updates, err := s.icDeprecated.GetUpdateChannel(context.Background())
-	if err != nil {
-		logger.Errorw("failed to subscribe to results channel", err)
-		return
-	}
-
-	entities, err := s.icDeprecated.GetEntityChannel(context.Background())
-	if err != nil {
-		logger.Errorw("failed to subscribe to entities channel", err)
-		_ = updates.Close()
-		return
-	}
-
-	updateChan := updates.Channel()
-	entityChan := entities.Channel()
-	for {
-		select {
-		case msg := <-updateChan:
-			b := updates.Payload(msg)
-
-			res := &livekit.UpdateIngressStateRequest{}
-			if err = proto.Unmarshal(b, res); err != nil {
-				logger.Errorw("failed to read results", err)
-				continue
-			}
-
-			// save updated info to store
-			err = s.is.UpdateIngressState(context.Background(), res.IngressId, res.State)
-			if err != nil {
-				logger.Errorw("could not update ingress", err)
-			}
-
-		case msg := <-entityChan:
-			b := entities.Payload(msg)
-
-			req := &livekit.GetIngressInfoRequest{}
-			if err = proto.Unmarshal(b, req); err != nil {
-				logger.Errorw("failed to read request", err)
-				continue
-			}
-
-			info, err := s.loadIngressFromInfoRequest(&rpc.GetIngressInfoRequest{
-				IngressId: req.IngressId,
-				StreamKey: req.StreamKey,
-			})
-			if err != nil {
-				logger.Errorw("failed to load ingress info", err)
-				continue
-			}
-
-			err = s.icDeprecated.SendGetIngressInfoResponse(context.Background(), req, &livekit.GetIngressInfoResponse{Info: info}, err)
-			if err != nil {
-				logger.Errorw("could not send response", err)
-			}
-
-		case <-s.shutdown:
-			_ = updates.Close()
-			_ = entities.Close()
-			return
-		}
-	}
 }

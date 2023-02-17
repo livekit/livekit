@@ -20,7 +20,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/egress"
-	"github.com/livekit/protocol/ingress"
 	"github.com/livekit/protocol/livekit"
 	redisLiveKit "github.com/livekit/protocol/redis"
 	"github.com/livekit/protocol/rpc"
@@ -54,7 +53,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		rpc.NewIngressClient,
 		getIngressStore,
 		getIngressConfig,
-		getIngressRPCClient,
 		NewIngressService,
 		NewRoomAllocator,
 		NewRoomService,
@@ -171,10 +169,6 @@ func getIngressStore(s ObjectStore) IngressStore {
 
 func getIngressConfig(conf *config.Config) *config.IngressConfig {
 	return &conf.Ingress
-}
-
-func getIngressRPCClient(rpc ingress.RPC) ingress.RPCClient {
-	return rpc
 }
 
 func createClientConfiguration() clientconfiguration.ClientConfigurationManager {
