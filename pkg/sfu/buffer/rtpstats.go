@@ -407,7 +407,6 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 
 			r.updateJitter(rtph, packetTime)
 		}
-
 	}
 
 	return
