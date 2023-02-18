@@ -10,7 +10,6 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
-	serverutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/version"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
@@ -51,7 +50,7 @@ type RoomManager struct {
 	telemetry         telemetry.TelemetryService
 	clientConfManager clientconfiguration.ClientConfigurationManager
 	egressLauncher    rtc.EgressLauncher
-	versionGenerator  serverutils.TimedVersionGenerator
+	versionGenerator  utils.TimedVersionGenerator
 
 	rooms map[livekit.RoomName]*rtc.Room
 
@@ -66,7 +65,7 @@ func NewLocalRoomManager(
 	telemetry telemetry.TelemetryService,
 	clientConfManager clientconfiguration.ClientConfigurationManager,
 	egressLauncher rtc.EgressLauncher,
-	versionGenerator serverutils.TimedVersionGenerator,
+	versionGenerator utils.TimedVersionGenerator,
 ) (*RoomManager, error) {
 	rtcConf, err := rtc.NewWebRTCConfig(conf, currentNode.Ip)
 	if err != nil {

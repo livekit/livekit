@@ -8,7 +8,7 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	"github.com/livekit/livekit-server/pkg/utils"
+	"github.com/livekit/protocol/utils"
 )
 
 var (
