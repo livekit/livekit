@@ -1053,7 +1053,7 @@ func (p *ParticipantImpl) setupUpTrackManager() {
 func (p *ParticipantImpl) setupSubscriptionManager() {
 	p.SubscriptionManager = NewSubscriptionManager(SubscriptionManagerParams{
 		Participant:         p,
-		Logger:              p.params.Logger,
+		Logger:              p.params.Logger.WithoutSampler(),
 		TrackResolver:       p.params.TrackResolver,
 		Telemetry:           p.params.Telemetry,
 		OnTrackSubscribed:   p.onTrackSubscribed,
@@ -1677,7 +1677,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 
 		if !p.IsClosed() {
 			// unpublished events aren't necessary when participant is closed
-			p.params.Logger.Debugw("unpublished track", "trackID", ti.Sid, "trackInfo", ti)
+			p.params.Logger.Infow("unpublished track", "trackID", ti.Sid, "trackInfo", ti)
 			p.lock.RLock()
 			onTrackUnpublished := p.onTrackUnpublished
 			p.lock.RUnlock()

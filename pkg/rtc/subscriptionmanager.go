@@ -295,7 +295,7 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 				// this is the *only* case we'd change desired state
 				if s.durationSinceStart() > notFoundTimeout {
 					s.maybeRecordError(m.params.Telemetry, m.params.Participant.ID(), err, true)
-					s.logger.Infow("unsubscribing track since track isn't available", "error", err)
+					s.logger.Infow("unsubscribing from track after notFoundTimeout", "error", err)
 					s.setDesired(false)
 					m.queueReconcile(s.trackID)
 				}
@@ -771,7 +771,7 @@ func (s *trackSubscription) handleSourceTrackRemoved() {
 	}
 
 	// source track removed, we would unsubscribe
-	s.logger.Debugw("unsubscribing track since source track was removed")
+	s.logger.Infow("unsubscribing from track since source track was removed")
 	s.desired = false
 
 	s.setChangedNotifierLocked(nil)
