@@ -1623,7 +1623,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 	if f.currentLayers.Temporal != f.targetLayers.Temporal {
 		incomingVP8, ok := extPkt.Payload.(buffer.VP8)
 		if ok {
-			if incomingVP8.TIDPresent == 1 && incomingVP8.TID <= uint8(f.targetLayers.Temporal) {
+			if incomingVP8.TIDPresent == 0 || incomingVP8.TID <= uint8(f.targetLayers.Temporal) {
 				f.currentLayers.Temporal = f.targetLayers.Temporal
 			}
 		}
