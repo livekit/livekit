@@ -187,11 +187,11 @@ func (d *DummyReceiver) ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
 	return 0, errors.New("no receiver")
 }
 
-func (d *DummyReceiver) GetLayeredBitrate() sfu.Bitrates {
+func (d *DummyReceiver) GetLayeredBitrate() ([]int32, sfu.Bitrates) {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		return r.GetLayeredBitrate()
 	}
-	return sfu.Bitrates{}
+	return nil, sfu.Bitrates{}
 }
 
 func (d *DummyReceiver) GetAudioLevel() (float64, bool) {

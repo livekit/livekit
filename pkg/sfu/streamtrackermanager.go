@@ -303,7 +303,7 @@ func (s *StreamTrackerManager) GetMaxExpectedLayer() int32 {
 	return maxExpectedLayer
 }
 
-func (s *StreamTrackerManager) GetLayeredBitrate() Bitrates {
+func (s *StreamTrackerManager) GetLayeredBitrate() ([]int32, Bitrates) {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 
@@ -334,7 +334,10 @@ func (s *StreamTrackerManager) GetLayeredBitrate() Bitrates {
 		}
 	}
 
-	return br
+	availableLayers := make([]int32, len(s.availableLayers))
+	copy(availableLayers, s.availableLayers)
+
+	return availableLayers, br
 }
 
 func (s *StreamTrackerManager) hasSpatialLayerLocked(layer int32) bool {

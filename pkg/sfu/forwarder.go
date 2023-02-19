@@ -466,38 +466,6 @@ func (f *Forwarder) getOptimalBandwidthNeeded(brs Bitrates, maxLayers VideoLayer
 	return 0
 }
 
-func (f *Forwarder) getLayerChanges(brs Bitrates) (addedLayers []int32, removedLayers []int32) {
-	lastAllocationLayers := f.lastAllocation.bitrates.GetLayers()
-	nowLayers := brs.GetLayers()
-
-	for _, ln := range nowLayers {
-		found := false
-		for _, lla := range lastAllocationLayers {
-			if lla == ln {
-				found = true
-				break
-			}
-		}
-		if !found {
-			addedLayers = append(addedLayers, ln)
-		}
-	}
-
-	for _, lla := range lastAllocationLayers {
-		found := false
-		for _, ln := range nowLayers {
-			if ln == lla {
-				found = true
-				break
-			}
-		}
-		if !found {
-			removedLayers = append(removedLayers, lla)
-		}
-	}
-	return
-}
-
 func (f *Forwarder) getDistanceToDesired(brs Bitrates, targetLayers VideoLayers, maxLayers VideoLayers) int32 {
 	if f.muted || f.pubMuted {
 		return 0
@@ -578,7 +546,7 @@ func (f *Forwarder) DistanceToDesired() int32 {
 	return f.lastAllocation.distanceToDesired
 }
 
-func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllocation {
+func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allowOvershoot bool) VideoAllocation {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -597,6 +565,9 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 	}
 
 	switch {
+	case !f.maxLayers.IsValid():
+		// nothing to do when max layers are not valid
+
 	case f.muted:
 		alloc.pauseReason = VideoPauseReasonMuted
 
@@ -609,8 +580,19 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 		// if parked on a layer, let it continue
 		alloc.targetLayers = f.parkedLayers
 
-	case !f.targetLayers.IsValid():
-		if f.maxLayers.IsValid() {
+	case f.maxLayers != f.lastAllocation.maxLayers:
+		alloc.targetLayers = f.maxLayers
+
+	case len(availableLayers) == 0:
+		// feed may be dry
+		if f.currentLayers.IsValid() {
+			// let it continue at current layer if valid.
+			// Covers the cases of
+			//   1. mis-detection of layer stop - can continue streaming
+			//   2. current layer resuming - can latch on when it starts
+			alloc.targetLayers = f.currentLayers
+		} else {
+			// opportunistically latch on to anything
 			if allowOvershoot {
 				alloc.targetLayers = VideoLayers{
 					Spatial:  int32(math.Max(0, float64(f.numAdvertisedLayers-1))),
@@ -621,97 +603,37 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 			}
 		}
 
-	case f.lastAllocation.maxLayers != f.maxLayers:
-		alloc.targetLayers = f.maxLayers
-
 	default:
-		doAlloc := false
-		added, removed := f.getLayerChanges(brs)
-
-		// check for an added higher than current target
-		for _, l := range added {
-			if l > f.targetLayers.Spatial {
-				doAlloc = true
-				break
-			}
-		}
-
-		// check for current target being removed
-		if !doAlloc {
-			for _, l := range removed {
-				if l == f.targetLayers.Spatial {
-					doAlloc = true
+		isCurrentLayerAvailable := false
+		if f.currentLayers.IsValid() {
+			for _, l := range availableLayers {
+				if l == f.currentLayers.Spatial {
+					isCurrentLayerAvailable = true
 					break
 				}
 			}
 		}
 
-		if !doAlloc {
-			// no layer changes, leave target as is
-			alloc.targetLayers = f.targetLayers
-			alloc.bandwidthRequested = brs[alloc.targetLayers.Spatial][alloc.targetLayers.Temporal]
+		if !isCurrentLayerAvailable && f.currentLayers.IsValid() {
+			// current layer maybe stopped, move to highest available
+			for _, l := range availableLayers {
+				if l > alloc.targetLayers.Spatial {
+					alloc.targetLayers.Spatial = l
+				}
+			}
+			alloc.targetLayers.Temporal = DefaultMaxLayerTemporal
 		} else {
-			// allocate best layer available
-			for s := f.maxLayers.Spatial; s >= 0; s-- {
-				for t := f.maxLayers.Temporal; t >= 0; t-- {
-					if brs[s][t] == 0 {
-						continue
-					}
-
-					alloc.targetLayers = VideoLayers{
-						Spatial:  s,
-						Temporal: t,
-					}
-
-					alloc.bandwidthRequested = brs[s][t]
-					break
-				}
-
-				if alloc.bandwidthRequested != 0 {
-					break
-				}
-			}
-
-			if alloc.bandwidthRequested == 0 && f.maxLayers.IsValid() && allowOvershoot {
-				// if we cannot allocate anything below max layer,
-				// look for a layer above. It is okay to overshoot
-				// in optimal allocation (i.e. no bandwidth restrictions).
-				// It is possible that clients send only a higher layer.
-				// To accommodate cases like that, try finding a layer
-				// above the requested maximum to ensure streaming
-				for s := f.maxLayers.Spatial + 1; s <= DefaultMaxLayerSpatial; s++ {
-					for t := int32(0); t <= DefaultMaxLayerTemporal; t++ {
-						if brs[s][t] == 0 {
-							continue
-						}
-
-						alloc.targetLayers = VideoLayers{
-							Spatial:  s,
-							Temporal: t,
-						}
-
-						alloc.bandwidthRequested = brs[s][t]
-						alloc.pauseReason = VideoPauseReasonNone
-						f.logger.Infow("allowing overshoot", "maxLayer", f.maxLayers, "targetLayers", alloc.targetLayers)
-						break
-					}
-
-					if alloc.bandwidthRequested != 0 {
-						break
-					}
-				}
-			}
-
-			// feed may be dry, leave target at current if already started for opportunistic resume
-			if alloc.bandwidthRequested == 0 && f.maxLayers.IsValid() {
-				if f.started && f.currentLayers.IsValid() {
-					alloc.targetLayers = f.currentLayers
-				} else {
-					// opportunisitically latch on to anything
+			if f.targetLayers.IsValid() {
+				alloc.targetLayers = f.targetLayers
+			} else {
+				// opportunistically latch on to anything
+				if allowOvershoot {
 					alloc.targetLayers = VideoLayers{
 						Spatial:  int32(math.Max(0, float64(f.numAdvertisedLayers-1))),
 						Temporal: DefaultMaxLayerTemporal,
 					}
+				} else {
+					alloc.targetLayers = f.maxLayers
 				}
 			}
 		}
@@ -719,6 +641,9 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 
 	if !alloc.targetLayers.IsValid() {
 		alloc.targetLayers = InvalidLayers
+	}
+	if alloc.targetLayers.IsValid() {
+		alloc.bandwidthRequested = brs[alloc.targetLayers.Spatial][alloc.targetLayers.Temporal]
 	}
 	alloc.bandwidthDelta = alloc.bandwidthRequested - f.lastAllocation.bandwidthRequested
 	alloc.distanceToDesired = f.getDistanceToDesired(brs, alloc.targetLayers, f.maxLayers)

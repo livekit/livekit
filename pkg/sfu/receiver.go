@@ -31,25 +31,7 @@ var (
 
 type AudioLevelHandle func(level uint8, duration uint32)
 
-// ---------------------------------------------------
-
 type Bitrates [DefaultMaxLayerSpatial + 1][DefaultMaxLayerTemporal + 1]int64
-
-func (b *Bitrates) GetLayers() []int32 {
-	layers := []int32{}
-	for i := 0; i < len(b); i++ {
-		for j := 0; j < len(b[0]); j++ {
-			if b[i][j] != 0 {
-				layers = append(layers, int32(i))
-				break
-			}
-		}
-	}
-
-	return layers
-}
-
-// ---------------------------------------------------
 
 // TrackReceiver defines an interface receive media from remote peer
 type TrackReceiver interface {
@@ -59,7 +41,7 @@ type TrackReceiver interface {
 	HeaderExtensions() []webrtc.RTPHeaderExtensionParameter
 
 	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
-	GetLayeredBitrate() Bitrates
+	GetLayeredBitrate() ([]int32, Bitrates)
 
 	GetAudioLevel() (float64, bool)
 
@@ -421,7 +403,7 @@ func (w *WebRTCReceiver) downTrackBitrateAvailabilityChange() {
 	}
 }
 
-func (w *WebRTCReceiver) GetLayeredBitrate() Bitrates {
+func (w *WebRTCReceiver) GetLayeredBitrate() ([]int32, Bitrates) {
 	return w.streamTrackerManager.GetLayeredBitrate()
 }
 
