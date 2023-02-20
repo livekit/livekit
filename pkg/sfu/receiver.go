@@ -198,6 +198,7 @@ func NewWebRTCReceiver(
 	w.streamTrackerManager = NewStreamTrackerManager(logger, trackInfo, w.isSVC, w.codec.ClockRate, trackersConfig)
 	w.streamTrackerManager.OnAvailableLayersChanged(w.downTrackLayerChange)
 	w.streamTrackerManager.OnBitrateAvailabilityChanged(w.downTrackBitrateAvailabilityChange)
+	w.streamTrackerManager.OnMaxPublishedLayerChanged(w.downTrackMaxPublishedLayerChange)
 
 	for _, opt := range opts {
 		w = opt(w)
@@ -382,6 +383,7 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) error {
 	}
 
 	track.TrackInfoAvailable()
+	track.UpTrackMaxPublishedLayerChange(w.streamTrackerManager.GetMaxPublishedLayer())
 
 	w.downTrackSpreader.Store(track)
 	return nil
@@ -400,6 +402,12 @@ func (w *WebRTCReceiver) downTrackLayerChange() {
 func (w *WebRTCReceiver) downTrackBitrateAvailabilityChange() {
 	for _, dt := range w.downTrackSpreader.GetDownTracks() {
 		dt.UpTrackBitrateAvailabilityChange()
+	}
+}
+
+func (w *WebRTCReceiver) downTrackMaxPublishedLayerChange(maxPublishedLayer int32) {
+	for _, dt := range w.downTrackSpreader.GetDownTracks() {
+		dt.UpTrackMaxPublishedLayerChange(maxPublishedLayer)
 	}
 }
 
