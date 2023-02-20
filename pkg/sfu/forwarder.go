@@ -585,9 +585,15 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 
 			alloc.requestLayerSpatial = alloc.targetLayers.Spatial
 		} else {
-			// opportunistically latch on to anything
-			opportunisticAlloc()
-			alloc.requestLayerSpatial = int32(math.Min(float64(f.maxLayers.Spatial), float64(f.maxPublishedLayer)))
+			if f.currentLayers.IsValid() && f.currentLayers.Spatial == f.requestLayerSpatial {
+				// current is locked to desired, stay there
+				alloc.targetLayers = f.targetLayers
+				alloc.requestLayerSpatial = f.requestLayerSpatial
+			} else {
+				// opportunistically latch on to anything
+				opportunisticAlloc()
+				alloc.requestLayerSpatial = int32(math.Min(float64(f.maxLayers.Spatial), float64(f.maxPublishedLayer)))
+			}
 		}
 	}
 
@@ -1198,7 +1204,8 @@ func (f *Forwarder) Pause(brs Bitrates) VideoAllocation {
 func (f *Forwarder) updateAllocation(alloc VideoAllocation, reason string) VideoAllocation {
 	if alloc.isDeficient != f.lastAllocation.isDeficient ||
 		alloc.pauseReason != f.lastAllocation.pauseReason ||
-		alloc.targetLayers != f.lastAllocation.targetLayers {
+		alloc.targetLayers != f.lastAllocation.targetLayers ||
+		alloc.requestLayerSpatial != f.lastAllocation.requestLayerSpatial {
 		f.logger.Infow(fmt.Sprintf("stream allocation: %s", reason), "allocation", alloc)
 	}
 	f.lastAllocation = alloc
@@ -1437,12 +1444,30 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 			} else {
 				if extPkt.KeyFrame {
 					if layer > f.currentLayers.Spatial && layer <= f.targetLayers.Spatial {
-						f.logger.Infow("upgrading layer", "current", f.currentLayers, "target", f.targetLayers, "layer", layer, "feed", extPkt.Packet.SSRC)
+						f.logger.Infow(
+							"upgrading layer",
+							"current", f.currentLayers,
+							"target", f.targetLayers,
+							"max", f.maxLayers,
+							"layer", layer,
+							"req", f.requestLayerSpatial,
+							"maxPublished", f.maxPublishedLayer,
+							"feed", extPkt.Packet.SSRC,
+						)
 						found = true
 					}
 
 					if layer < f.currentLayers.Spatial && layer >= f.targetLayers.Spatial {
-						f.logger.Infow("downgrading layer", "current", f.currentLayers, "target", f.targetLayers, "layer", layer, "feed", extPkt.Packet.SSRC)
+						f.logger.Infow(
+							"downgrading layer",
+							"current", f.currentLayers,
+							"target", f.targetLayers,
+							"max", f.maxLayers,
+							"layer", layer,
+							"req", f.requestLayerSpatial,
+							"maxPublished", f.maxPublishedLayer,
+							"feed", extPkt.Packet.SSRC,
+						)
 						found = true
 					}
 
@@ -1467,6 +1492,8 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 						"current", f.currentLayers,
 						"target", f.targetLayers,
 						"max", f.maxLayers,
+						"layer", layer,
+						"req", f.requestLayerSpatial,
 						"maxPublished", f.maxPublishedLayer,
 						"feed", extPkt.Packet.SSRC,
 					)
@@ -1477,7 +1504,16 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 			// if locked to higher than max layer due to overshoot, check if it can be dialed back
 			if f.targetLayers.Spatial > f.maxLayers.Spatial {
 				if layer <= f.maxLayers.Spatial && extPkt.KeyFrame {
-					f.logger.Infow("adjusting overshoot", "current", f.currentLayers, "target", f.targetLayers, "layer", layer, "feed", extPkt.Packet.SSRC)
+					f.logger.Infow(
+						"adjusting overshoot",
+						"current", f.currentLayers,
+						"target", f.targetLayers,
+						"max", f.maxLayers,
+						"layer", layer,
+						"req", f.requestLayerSpatial,
+						"maxPublished", f.maxPublishedLayer,
+						"feed", extPkt.Packet.SSRC,
+					)
 					f.currentLayers.Spatial = layer
 					f.targetLayers.Spatial = layer
 
