@@ -873,6 +873,8 @@ func (d *DownTrack) UpTrackBitrateAvailabilityChange() {
 }
 
 func (d *DownTrack) UpTrackMaxPublishedLayerChange(maxPublishedLayer int32) {
+	d.forwarder.SetMaxPublishedLayer(maxPublishedLayer)
+
 	if d.onMaxPublishedLayerChanged != nil {
 		d.onMaxPublishedLayerChanged(d)
 	}
