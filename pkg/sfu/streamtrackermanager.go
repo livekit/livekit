@@ -316,6 +316,13 @@ func (s *StreamTrackerManager) getMaxExpectedLayerLocked() int32 {
 	return maxExpectedLayer
 }
 
+func (s *StreamTrackerManager) GetMaxPublishedLayer() int32 {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+
+	return s.maxPublishedLayer
+}
+
 func (s *StreamTrackerManager) GetLayeredBitrate() ([]int32, Bitrates) {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
