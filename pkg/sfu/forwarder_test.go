@@ -370,7 +370,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		bandwidthDelta:      0,
 		bitrates:            emptyBitrates,
 		targetLayers:        expectedTargetLayers,
-		requestLayerSpatial: 0,
+		requestLayerSpatial: 1,
 		maxLayers:           expectedMaxLayers,
 		distanceToDesired:   0,
 	}

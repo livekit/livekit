@@ -582,11 +582,13 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 				}
 			}
 			alloc.targetLayers.Temporal = DefaultMaxLayerTemporal
+
+			alloc.requestLayerSpatial = alloc.targetLayers.Spatial
 		} else {
 			// opportunistically latch on to anything
 			opportunisticAlloc()
+			alloc.requestLayerSpatial = int32(math.Min(float64(f.maxLayers.Spatial), float64(f.maxPublishedLayer)))
 		}
-		alloc.requestLayerSpatial = int32(math.Min(float64(f.maxLayers.Spatial), float64(f.maxPublishedLayer)))
 	}
 
 	if !alloc.targetLayers.IsValid() {
