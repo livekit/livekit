@@ -355,7 +355,6 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 
 	// stays the same if feed is not dry and current is valid, available and locked
 	f.currentLayers = VideoLayers{Spatial: 0, Temporal: 1}
-	f.targetLayers = VideoLayers{Spatial: 0, Temporal: 1}
 	f.requestLayerSpatial = 0
 	expectedTargetLayers = VideoLayers{
 		Spatial:  0,

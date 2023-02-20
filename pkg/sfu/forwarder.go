@@ -587,7 +587,7 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 		} else {
 			if f.currentLayers.IsValid() && f.currentLayers.Spatial == f.requestLayerSpatial {
 				// current is locked to desired, stay there
-				alloc.targetLayers = f.targetLayers
+				alloc.targetLayers = f.currentLayers
 				alloc.requestLayerSpatial = f.requestLayerSpatial
 			} else {
 				// opportunistically latch on to anything
