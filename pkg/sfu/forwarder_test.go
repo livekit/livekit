@@ -138,6 +138,22 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 	f.SetMaxSpatialLayer(DefaultMaxLayerSpatial)
 	f.SetMaxTemporalLayer(DefaultMaxLayerTemporal)
 
+	// should still have target at InvalidLayers until max publisher layer is available
+	expectedResult = VideoAllocation{
+		pauseReason:        VideoPauseReasonFeedDry,
+		bandwidthRequested: 0,
+		bandwidthDelta:     0,
+		bitrates:           bitrates,
+		targetLayers:       InvalidLayers,
+		maxLayers:          DefaultMaxLayers,
+		distanceToDesired:  0,
+	}
+	result = f.AllocateOptimal(nil, bitrates, true)
+	require.Equal(t, expectedResult, result)
+	require.Equal(t, expectedResult, f.lastAllocation)
+
+	f.SetMaxPublishedLayer(DefaultMaxLayerSpatial)
+
 	// muted should not consume any bandwidth
 	f.Mute(true)
 	disable(f)
@@ -215,7 +231,6 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 	f.lastAllocation.maxLayers = DefaultMaxLayers
 
 	// when feed is dry and current is not valid, should set up for opportunistic forwarding
-	f.SetNumAdvertisedLayers(3)
 	disable(f)
 	expectedTargetLayers := VideoLayers{
 		Spatial:  2,
@@ -283,20 +298,20 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 	require.Equal(t, expectedResult, f.lastAllocation)
 	require.Equal(t, expectedTargetLayers, f.TargetLayers())
 
-	// stays at target if feed is not dry and current is not valid, i. e. not forwarding
+	// opportunistic target if feed is not dry and current is not valid, i. e. not forwarding
 	expectedResult = VideoAllocation{
 		pauseReason:        VideoPauseReasonFeedDry,
 		bandwidthRequested: 0,
 		bandwidthDelta:     0,
 		bitrates:           emptyBitrates,
-		targetLayers:       expectedTargetLayers,
+		targetLayers:       DefaultMaxLayers,
 		maxLayers:          expectedMaxLayers,
 		distanceToDesired:  0,
 	}
 	result = f.AllocateOptimal([]int32{0, 1}, emptyBitrates, true)
 	require.Equal(t, expectedResult, result)
 	require.Equal(t, expectedResult, f.lastAllocation)
-	require.Equal(t, expectedTargetLayers, f.TargetLayers())
+	require.Equal(t, DefaultMaxLayers, f.TargetLayers())
 
 	// if feed is not dry and target is not valid, should be opportunistic (with and without overshoot)
 	f.targetLayers = InvalidLayers
@@ -373,6 +388,7 @@ func TestForwarderProvisionalAllocate(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 	f.SetMaxSpatialLayer(DefaultMaxLayerSpatial)
 	f.SetMaxTemporalLayer(DefaultMaxLayerTemporal)
+	f.SetMaxPublishedLayer(DefaultMaxLayerSpatial)
 
 	bitrates := Bitrates{
 		{1, 2, 3, 4},
@@ -605,6 +621,7 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 	f.SetMaxSpatialLayer(DefaultMaxLayerSpatial)
 	f.SetMaxTemporalLayer(DefaultMaxLayerTemporal)
+	f.SetMaxPublishedLayer(DefaultMaxLayerSpatial)
 
 	bitrates := Bitrates{
 		{1, 2, 3, 4},
@@ -815,6 +832,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 	f := newForwarder(testutils.TestOpusCodec, webrtc.RTPCodecTypeAudio)
 	f.SetMaxSpatialLayer(DefaultMaxLayerSpatial)
 	f.SetMaxTemporalLayer(DefaultMaxLayerTemporal)
+	f.SetMaxPublishedLayer(DefaultMaxLayerSpatial)
 
 	emptyBitrates := Bitrates{}
 	bitrates := Bitrates{
@@ -830,6 +848,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 	f = newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 	f.SetMaxSpatialLayer(DefaultMaxLayerSpatial)
 	f.SetMaxTemporalLayer(DefaultMaxLayerTemporal)
+	f.SetMaxPublishedLayer(DefaultMaxLayerSpatial)
 
 	// when not in deficient state, does not boost
 	result, boosted = f.AllocateNextHigher(ChannelCapacityInfinity, bitrates, false)
@@ -1053,6 +1072,7 @@ func TestForwarderPause(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 	f.SetMaxSpatialLayer(DefaultMaxLayerSpatial)
 	f.SetMaxTemporalLayer(DefaultMaxLayerTemporal)
+	f.SetMaxPublishedLayer(DefaultMaxLayerSpatial)
 
 	bitrates := Bitrates{
 		{1, 2, 3, 4},
@@ -1085,6 +1105,7 @@ func TestForwarderPauseMute(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 	f.SetMaxSpatialLayer(DefaultMaxLayerSpatial)
 	f.SetMaxTemporalLayer(DefaultMaxLayerTemporal)
+	f.SetMaxPublishedLayer(DefaultMaxLayerSpatial)
 
 	bitrates := Bitrates{
 		{1, 2, 3, 4},

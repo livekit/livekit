@@ -240,6 +240,7 @@ func (s *StreamAllocator) AddTrack(downTrack *DownTrack, params AddTrackParams) 
 	downTrack.OnTransportCCFeedback(s.onTransportCCFeedback)
 	downTrack.OnAvailableLayersChanged(s.onAvailableLayersChanged)
 	downTrack.OnBitrateAvailabilityChanged(s.onBitrateAvailabilityChanged)
+	downTrack.OnMaxPublishedLayerChanged(s.onMaxPublishedLayerChanged)
 	downTrack.OnSubscriptionChanged(s.onSubscriptionChanged)
 	downTrack.OnSubscribedLayersChanged(s.onSubscribedLayersChanged)
 	downTrack.OnPacketSent(s.onPacketSent)
@@ -385,6 +386,11 @@ func (s *StreamAllocator) onAvailableLayersChanged(downTrack *DownTrack) {
 
 // called when feeding track's bitrate measurement of any layer is available
 func (s *StreamAllocator) onBitrateAvailabilityChanged(downTrack *DownTrack) {
+	s.maybePostEventAllocateTrack(downTrack)
+}
+
+// called when feeding track's max publisher layer changes
+func (s *StreamAllocator) onMaxPublishedLayerChanged(downTrack *DownTrack) {
 	s.maybePostEventAllocateTrack(downTrack)
 }
 

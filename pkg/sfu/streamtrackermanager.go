@@ -30,7 +30,8 @@ type StreamTrackerManager struct {
 
 	onAvailableLayersChanged     func()
 	onBitrateAvailabilityChanged func()
-	onMaxLayerChanged            func(maxLayer int32)
+	onMaxPublishedLayerChanged   func(maxPublishedLayer int32)
+	onMaxAvailableLayerChanged   func(maxAvailableLayer int32)
 }
 
 func NewStreamTrackerManager(
@@ -44,7 +45,7 @@ func NewStreamTrackerManager(
 		logger:            logger,
 		trackInfo:         trackInfo,
 		isSVC:             isSVC,
-		maxPublishedLayer: 0,
+		maxPublishedLayer: InvalidLayerSpatial,
 		clockRate:         clockRate,
 	}
 
@@ -57,14 +58,7 @@ func NewStreamTrackerManager(
 		s.trackerConfig = trackersConfig.Video
 	}
 
-	for _, layer := range s.trackInfo.Layers {
-		spatialLayer := buffer.VideoQualityToSpatialLayer(layer.Quality, trackInfo)
-		if spatialLayer > s.maxPublishedLayer {
-			s.maxPublishedLayer = spatialLayer
-		}
-	}
-	s.maxExpectedLayer = s.maxPublishedLayer
-
+	s.maxExpectedLayerFromTrackInfo()
 	return s
 }
 
@@ -76,8 +70,12 @@ func (s *StreamTrackerManager) OnBitrateAvailabilityChanged(f func()) {
 	s.onBitrateAvailabilityChanged = f
 }
 
-func (s *StreamTrackerManager) OnMaxLayerChanged(f func(maxLayer int32)) {
-	s.onMaxLayerChanged = f
+func (s *StreamTrackerManager) OnMaxPublishedLayerChanged(f func(maxPublishedLayer int32)) {
+	s.onMaxPublishedLayerChanged = f
+}
+
+func (s *StreamTrackerManager) OnMaxLayerChanged(f func(maxAvailableLayer int32)) {
+	s.onMaxAvailableLayerChanged = f
 }
 
 func (s *StreamTrackerManager) createStreamTrackerPacket(layer int32) streamtracker.StreamTrackerImpl {
@@ -148,7 +146,17 @@ func (s *StreamTrackerManager) AddTracker(layer int32) *streamtracker.StreamTrac
 	s.lock.Lock()
 	paused := s.paused
 	s.trackers[layer] = tracker
+
+	var onMaxPublishedLayerChanged func(maxPublishedLayer int32)
+	if layer > s.maxPublishedLayer {
+		s.maxPublishedLayer = layer
+		onMaxPublishedLayerChanged = s.onMaxPublishedLayerChanged
+	}
 	s.lock.Unlock()
+
+	if onMaxPublishedLayerChanged != nil {
+		onMaxPublishedLayerChanged(layer)
+	}
 
 	tracker.SetPaused(paused)
 	tracker.Start()
@@ -173,7 +181,7 @@ func (s *StreamTrackerManager) RemoveAllTrackers() {
 		s.trackers[layer] = nil
 	}
 	s.availableLayers = make([]int32, 0)
-	s.maxExpectedLayer = DefaultMaxLayerSpatial
+	s.maxExpectedLayerFromTrackInfo()
 	s.paused = false
 	s.lock.Unlock()
 
@@ -256,15 +264,16 @@ func (s *StreamTrackerManager) DistanceToDesired() int32 {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 
-	if s.paused || s.maxExpectedLayer == DefaultMaxLayerSpatial {
+	if s.paused {
 		return 0
 	}
 
+	maxExpectedLayer := s.getMaxExpectedLayerLocked()
 	if len(s.availableLayers) == 0 {
-		return s.maxExpectedLayer + 1
+		return maxExpectedLayer + 1
 	}
 
-	distance := s.maxExpectedLayer - s.availableLayers[len(s.availableLayers)-1]
+	distance := maxExpectedLayer - s.availableLayers[len(s.availableLayers)-1]
 	if distance < 0 {
 		distance = 0
 	}
@@ -295,6 +304,10 @@ func (s *StreamTrackerManager) GetMaxExpectedLayer() int32 {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 
+	return s.getMaxExpectedLayerLocked()
+}
+
+func (s *StreamTrackerManager) getMaxExpectedLayerLocked() int32 {
 	// find min of <expected, published> layer
 	maxExpectedLayer := s.maxExpectedLayer
 	if maxExpectedLayer > s.maxPublishedLayer {
@@ -381,8 +394,8 @@ func (s *StreamTrackerManager) addAvailableLayer(layer int32) {
 		s.onAvailableLayersChanged()
 	}
 
-	if isMaxLayerChange && s.onMaxLayerChanged != nil {
-		s.onMaxLayerChanged(layer)
+	if isMaxLayerChange && s.onMaxAvailableLayerChanged != nil {
+		s.onMaxAvailableLayerChanged(layer)
 	}
 }
 
@@ -421,7 +434,17 @@ func (s *StreamTrackerManager) removeAvailableLayer(layer int32) {
 	}
 
 	// if maxLayer was removed, send the new maxLayer
-	if curMaxLayer != prevMaxLayer && s.onMaxLayerChanged != nil {
-		s.onMaxLayerChanged(curMaxLayer)
+	if curMaxLayer != prevMaxLayer && s.onMaxAvailableLayerChanged != nil {
+		s.onMaxAvailableLayerChanged(curMaxLayer)
+	}
+}
+
+func (s *StreamTrackerManager) maxExpectedLayerFromTrackInfo() {
+	s.maxExpectedLayer = InvalidLayerSpatial
+	for _, layer := range s.trackInfo.Layers {
+		spatialLayer := buffer.VideoQualityToSpatialLayer(layer.Quality, s.trackInfo)
+		if spatialLayer > s.maxExpectedLayer {
+			s.maxExpectedLayer = spatialLayer
+		}
 	}
 }
