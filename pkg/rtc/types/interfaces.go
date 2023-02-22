@@ -372,6 +372,7 @@ type MediaTrack interface {
 	IsSimulcast() bool
 
 	Close(willBeResumed bool)
+	IsOpen() bool
 
 	// callbacks
 	AddOnClose(func())

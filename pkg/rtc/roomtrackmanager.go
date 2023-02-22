@@ -82,7 +82,15 @@ func (r *RoomTrackManager) GetTrackInfo(trackID livekit.TrackID) *TrackInfo {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
-	return r.tracks[trackID]
+	info := r.tracks[trackID]
+	if info == nil {
+		return nil
+	}
+	// when track is about to close, do not resolve
+	if info.Track != nil && !info.Track.IsOpen() {
+		return nil
+	}
+	return info
 }
 
 func (r *RoomTrackManager) NotifyTrackChanged(trackID livekit.TrackID) {

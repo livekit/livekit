@@ -242,6 +242,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		)
 		newWR.SetRTCPCh(t.params.RTCPChan)
 		newWR.OnCloseHandler(func() {
+			t.MediaTrackReceiver.SetClosing()
 			t.MediaTrackReceiver.ClearReceiver(mime, false)
 			if t.MediaTrackReceiver.TryClose() {
 				if t.dynacastManager != nil {
@@ -349,6 +350,7 @@ func (t *MediaTrack) Restart() {
 }
 
 func (t *MediaTrack) Close(willBeResumed bool) {
+	t.MediaTrackReceiver.SetClosing()
 	if t.dynacastManager != nil {
 		t.dynacastManager.Close()
 	}

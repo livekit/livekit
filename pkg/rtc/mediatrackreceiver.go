@@ -36,6 +36,7 @@ type mediaTrackReceiverState int
 
 const (
 	mediaTrackReceiverStateOpen mediaTrackReceiverState = iota
+	mediaTrackReceiverStateClosing
 	mediaTrackReceiverStateClosed
 )
 
@@ -43,6 +44,8 @@ func (m mediaTrackReceiverState) String() string {
 	switch m {
 	case mediaTrackReceiverStateOpen:
 		return "OPEN"
+	case mediaTrackReceiverStateClosing:
+		return "CLOSING"
 	case mediaTrackReceiverStateClosed:
 		return "CLOSED"
 	default:
@@ -289,6 +292,20 @@ func (t *MediaTrackReceiver) OnMediaLossFeedback(f func(dt *sfu.DownTrack, rr *r
 
 func (t *MediaTrackReceiver) OnVideoLayerUpdate(f func(layers []*livekit.VideoLayer)) {
 	t.onVideoLayerUpdate = f
+}
+
+func (t *MediaTrackReceiver) IsOpen() bool {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+	return t.state == mediaTrackReceiverStateOpen
+}
+
+func (t *MediaTrackReceiver) SetClosing() {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	if t.state == mediaTrackReceiverStateOpen {
+		t.state = mediaTrackReceiverStateClosing
+	}
 }
 
 func (t *MediaTrackReceiver) TryClose() bool {

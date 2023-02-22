@@ -126,6 +126,16 @@ type FakeLocalMediaTrack struct {
 	iDReturnsOnCall map[int]struct {
 		result1 livekit.TrackID
 	}
+	IsClosingStub        func() bool
+	isClosingMutex       sync.RWMutex
+	isClosingArgsForCall []struct {
+	}
+	isClosingReturns struct {
+		result1 bool
+	}
+	isClosingReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	IsMutedStub        func() bool
 	isMutedMutex       sync.RWMutex
 	isMutedArgsForCall []struct {
@@ -910,6 +920,59 @@ func (fake *FakeLocalMediaTrack) IDReturnsOnCall(i int, result1 livekit.TrackID)
 	}
 	fake.iDReturnsOnCall[i] = struct {
 		result1 livekit.TrackID
+	}{result1}
+}
+
+func (fake *FakeLocalMediaTrack) IsClosing() bool {
+	fake.isClosingMutex.Lock()
+	ret, specificReturn := fake.isClosingReturnsOnCall[len(fake.isClosingArgsForCall)]
+	fake.isClosingArgsForCall = append(fake.isClosingArgsForCall, struct {
+	}{})
+	stub := fake.IsClosingStub
+	fakeReturns := fake.isClosingReturns
+	fake.recordInvocation("IsClosing", []interface{}{})
+	fake.isClosingMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalMediaTrack) IsClosingCallCount() int {
+	fake.isClosingMutex.RLock()
+	defer fake.isClosingMutex.RUnlock()
+	return len(fake.isClosingArgsForCall)
+}
+
+func (fake *FakeLocalMediaTrack) IsClosingCalls(stub func() bool) {
+	fake.isClosingMutex.Lock()
+	defer fake.isClosingMutex.Unlock()
+	fake.IsClosingStub = stub
+}
+
+func (fake *FakeLocalMediaTrack) IsClosingReturns(result1 bool) {
+	fake.isClosingMutex.Lock()
+	defer fake.isClosingMutex.Unlock()
+	fake.IsClosingStub = nil
+	fake.isClosingReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalMediaTrack) IsClosingReturnsOnCall(i int, result1 bool) {
+	fake.isClosingMutex.Lock()
+	defer fake.isClosingMutex.Unlock()
+	fake.IsClosingStub = nil
+	if fake.isClosingReturnsOnCall == nil {
+		fake.isClosingReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.isClosingReturnsOnCall[i] = struct {
+		result1 bool
 	}{result1}
 }
 
@@ -1879,6 +1942,8 @@ func (fake *FakeLocalMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.hasSdpCidMutex.RUnlock()
 	fake.iDMutex.RLock()
 	defer fake.iDMutex.RUnlock()
+	fake.isClosingMutex.RLock()
+	defer fake.isClosingMutex.RUnlock()
 	fake.isMutedMutex.RLock()
 	defer fake.isMutedMutex.RUnlock()
 	fake.isSimulcastMutex.RLock()
