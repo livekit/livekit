@@ -103,6 +103,16 @@ type FakeMediaTrack struct {
 	isMutedReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	IsOpenStub        func() bool
+	isOpenMutex       sync.RWMutex
+	isOpenArgsForCall []struct {
+	}
+	isOpenReturns struct {
+		result1 bool
+	}
+	isOpenReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	IsSimulcastStub        func() bool
 	isSimulcastMutex       sync.RWMutex
 	isSimulcastArgsForCall []struct {
@@ -728,6 +738,59 @@ func (fake *FakeMediaTrack) IsMutedReturnsOnCall(i int, result1 bool) {
 		})
 	}
 	fake.isMutedReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeMediaTrack) IsOpen() bool {
+	fake.isOpenMutex.Lock()
+	ret, specificReturn := fake.isOpenReturnsOnCall[len(fake.isOpenArgsForCall)]
+	fake.isOpenArgsForCall = append(fake.isOpenArgsForCall, struct {
+	}{})
+	stub := fake.IsOpenStub
+	fakeReturns := fake.isOpenReturns
+	fake.recordInvocation("IsOpen", []interface{}{})
+	fake.isOpenMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeMediaTrack) IsOpenCallCount() int {
+	fake.isOpenMutex.RLock()
+	defer fake.isOpenMutex.RUnlock()
+	return len(fake.isOpenArgsForCall)
+}
+
+func (fake *FakeMediaTrack) IsOpenCalls(stub func() bool) {
+	fake.isOpenMutex.Lock()
+	defer fake.isOpenMutex.Unlock()
+	fake.IsOpenStub = stub
+}
+
+func (fake *FakeMediaTrack) IsOpenReturns(result1 bool) {
+	fake.isOpenMutex.Lock()
+	defer fake.isOpenMutex.Unlock()
+	fake.IsOpenStub = nil
+	fake.isOpenReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeMediaTrack) IsOpenReturnsOnCall(i int, result1 bool) {
+	fake.isOpenMutex.Lock()
+	defer fake.isOpenMutex.Unlock()
+	fake.IsOpenStub = nil
+	if fake.isOpenReturnsOnCall == nil {
+		fake.isOpenReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.isOpenReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
 }
@@ -1461,6 +1524,8 @@ func (fake *FakeMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.iDMutex.RUnlock()
 	fake.isMutedMutex.RLock()
 	defer fake.isMutedMutex.RUnlock()
+	fake.isOpenMutex.RLock()
+	defer fake.isOpenMutex.RUnlock()
 	fake.isSimulcastMutex.RLock()
 	defer fake.isSimulcastMutex.RUnlock()
 	fake.isSubscriberMutex.RLock()
