@@ -1173,7 +1173,7 @@ func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, dp 
 		for _, op := range destParticpants {
 			err := op.SendDataPacket(dp, dpData)
 			if err != nil && !errors.Is(err, io.ErrClosedPipe) {
-				logger.Infow("send data packet error", "error", err, "participant", op.Identity())
+				op.GetLogger().Infow("send data packet error", "error", err)
 			}
 		}
 		return
@@ -1201,12 +1201,11 @@ func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, dp 
 					op := destParticpants[i]
 					err := op.SendDataPacket(dp, dpData)
 					if err != nil && !errors.Is(err, io.ErrClosedPipe) {
-						logger.Infow("send data packet error", "error", err, "participant", op.Identity())
+						op.GetLogger().Infow("send data packet error", "error", err, "participant", op.Identity())
 					}
 				}
 			}
 		}()
 	}
 	wg.Wait()
-
 }
