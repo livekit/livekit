@@ -93,16 +93,6 @@ type FakeMediaTrack struct {
 	iDReturnsOnCall map[int]struct {
 		result1 livekit.TrackID
 	}
-	IsClosingStub        func() bool
-	isClosingMutex       sync.RWMutex
-	isClosingArgsForCall []struct {
-	}
-	isClosingReturns struct {
-		result1 bool
-	}
-	isClosingReturnsOnCall map[int]struct {
-		result1 bool
-	}
 	IsMutedStub        func() bool
 	isMutedMutex       sync.RWMutex
 	isMutedArgsForCall []struct {
@@ -111,6 +101,16 @@ type FakeMediaTrack struct {
 		result1 bool
 	}
 	isMutedReturnsOnCall map[int]struct {
+		result1 bool
+	}
+	IsOpenStub        func() bool
+	isOpenMutex       sync.RWMutex
+	isOpenArgsForCall []struct {
+	}
+	isOpenReturns struct {
+		result1 bool
+	}
+	isOpenReturnsOnCall map[int]struct {
 		result1 bool
 	}
 	IsSimulcastStub        func() bool
@@ -689,59 +689,6 @@ func (fake *FakeMediaTrack) IDReturnsOnCall(i int, result1 livekit.TrackID) {
 	}{result1}
 }
 
-func (fake *FakeMediaTrack) IsClosing() bool {
-	fake.isClosingMutex.Lock()
-	ret, specificReturn := fake.isClosingReturnsOnCall[len(fake.isClosingArgsForCall)]
-	fake.isClosingArgsForCall = append(fake.isClosingArgsForCall, struct {
-	}{})
-	stub := fake.IsClosingStub
-	fakeReturns := fake.isClosingReturns
-	fake.recordInvocation("IsClosing", []interface{}{})
-	fake.isClosingMutex.Unlock()
-	if stub != nil {
-		return stub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeMediaTrack) IsClosingCallCount() int {
-	fake.isClosingMutex.RLock()
-	defer fake.isClosingMutex.RUnlock()
-	return len(fake.isClosingArgsForCall)
-}
-
-func (fake *FakeMediaTrack) IsClosingCalls(stub func() bool) {
-	fake.isClosingMutex.Lock()
-	defer fake.isClosingMutex.Unlock()
-	fake.IsClosingStub = stub
-}
-
-func (fake *FakeMediaTrack) IsClosingReturns(result1 bool) {
-	fake.isClosingMutex.Lock()
-	defer fake.isClosingMutex.Unlock()
-	fake.IsClosingStub = nil
-	fake.isClosingReturns = struct {
-		result1 bool
-	}{result1}
-}
-
-func (fake *FakeMediaTrack) IsClosingReturnsOnCall(i int, result1 bool) {
-	fake.isClosingMutex.Lock()
-	defer fake.isClosingMutex.Unlock()
-	fake.IsClosingStub = nil
-	if fake.isClosingReturnsOnCall == nil {
-		fake.isClosingReturnsOnCall = make(map[int]struct {
-			result1 bool
-		})
-	}
-	fake.isClosingReturnsOnCall[i] = struct {
-		result1 bool
-	}{result1}
-}
-
 func (fake *FakeMediaTrack) IsMuted() bool {
 	fake.isMutedMutex.Lock()
 	ret, specificReturn := fake.isMutedReturnsOnCall[len(fake.isMutedArgsForCall)]
@@ -791,6 +738,59 @@ func (fake *FakeMediaTrack) IsMutedReturnsOnCall(i int, result1 bool) {
 		})
 	}
 	fake.isMutedReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeMediaTrack) IsOpen() bool {
+	fake.isOpenMutex.Lock()
+	ret, specificReturn := fake.isOpenReturnsOnCall[len(fake.isOpenArgsForCall)]
+	fake.isOpenArgsForCall = append(fake.isOpenArgsForCall, struct {
+	}{})
+	stub := fake.IsOpenStub
+	fakeReturns := fake.isOpenReturns
+	fake.recordInvocation("IsOpen", []interface{}{})
+	fake.isOpenMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeMediaTrack) IsOpenCallCount() int {
+	fake.isOpenMutex.RLock()
+	defer fake.isOpenMutex.RUnlock()
+	return len(fake.isOpenArgsForCall)
+}
+
+func (fake *FakeMediaTrack) IsOpenCalls(stub func() bool) {
+	fake.isOpenMutex.Lock()
+	defer fake.isOpenMutex.Unlock()
+	fake.IsOpenStub = stub
+}
+
+func (fake *FakeMediaTrack) IsOpenReturns(result1 bool) {
+	fake.isOpenMutex.Lock()
+	defer fake.isOpenMutex.Unlock()
+	fake.IsOpenStub = nil
+	fake.isOpenReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeMediaTrack) IsOpenReturnsOnCall(i int, result1 bool) {
+	fake.isOpenMutex.Lock()
+	defer fake.isOpenMutex.Unlock()
+	fake.IsOpenStub = nil
+	if fake.isOpenReturnsOnCall == nil {
+		fake.isOpenReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.isOpenReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
 }
@@ -1522,10 +1522,10 @@ func (fake *FakeMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.getTemporalLayerForSpatialFpsMutex.RUnlock()
 	fake.iDMutex.RLock()
 	defer fake.iDMutex.RUnlock()
-	fake.isClosingMutex.RLock()
-	defer fake.isClosingMutex.RUnlock()
 	fake.isMutedMutex.RLock()
 	defer fake.isMutedMutex.RUnlock()
+	fake.isOpenMutex.RLock()
+	defer fake.isOpenMutex.RUnlock()
 	fake.isSimulcastMutex.RLock()
 	defer fake.isSimulcastMutex.RUnlock()
 	fake.isSubscriberMutex.RLock()
