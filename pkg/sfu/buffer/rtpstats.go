@@ -2,6 +2,7 @@ package buffer
 
 import (
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -20,6 +21,7 @@ const (
 	FirstSnapshotId     = 1
 	SnInfoSize          = 2048
 	SnInfoMask          = SnInfoSize - 1
+	TooLargeOWD         = 400 * time.Millisecond
 )
 
 type RTPFlowState struct {
@@ -79,6 +81,17 @@ type SnInfo struct {
 	pktSize       uint16
 	isPaddingOnly bool
 	marker        bool
+}
+
+type RTCPSenderReportData struct {
+	RTPTimestamp uint32
+	NTPTimestamp mediatransportutil.NtpTime
+	ArrivalTime  time.Time
+}
+
+type RTCPSenderReportDataExt struct {
+	SenderReportData RTCPSenderReportData
+	SmoothedOWD      time.Duration
 }
 
 type RTPStatsParams struct {
@@ -158,9 +171,7 @@ type RTPStats struct {
 	rtt    uint32
 	maxRtt uint32
 
-	rtpSR     uint32
-	ntpSR     mediatransportutil.NtpTime
-	arrivalSR int64
+	srDataExt *RTCPSenderReportDataExt
 
 	nextSnapshotId uint32
 	snapshots      map[uint32]*Snapshot
@@ -248,9 +259,14 @@ func (r *RTPStats) Seed(from *RTPStats) {
 	r.rtt = from.rtt
 	r.maxRtt = from.maxRtt
 
-	r.rtpSR = from.rtpSR
-	r.ntpSR = from.ntpSR
-	r.arrivalSR = from.arrivalSR
+	if from.srDataExt != nil {
+		r.srDataExt = &RTCPSenderReportDataExt{
+			SenderReportData: from.srDataExt.SenderReportData,
+			SmoothedOWD:      from.srDataExt.SmoothedOWD,
+		}
+	} else {
+		r.srDataExt = nil
+	}
 
 	r.nextSnapshotId = from.nextSnapshotId
 	for id, ss := range from.snapshots {
@@ -391,7 +407,6 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 
 			r.updateJitter(rtph, packetTime)
 		}
-
 	}
 
 	return
@@ -450,7 +465,7 @@ func (r *RTPStats) getTotalPacketsPrimary() uint32 {
 	return packetsSeen - r.packetsPadding
 }
 
-func (r *RTPStats) UpdateFromReceiverReport(rr rtcp.ReceptionReport, rtt uint32) {
+func (r *RTPStats) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt uint32, isRttChanged bool) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
@@ -458,13 +473,24 @@ func (r *RTPStats) UpdateFromReceiverReport(rr rtcp.ReceptionReport, rtt uint32)
 		return
 	}
 
+	rtt, err := mediatransportutil.GetRttMsFromReceiverReportOnly(&rr)
+	if err == nil {
+		isRttChanged = rtt != r.rtt
+	} else {
+		if err != mediatransportutil.ErrRttNoLastSenderReport {
+			r.logger.Warnw("error getting rtt", err)
+		}
+	}
+
 	if r.lastRRTime.IsZero() || r.extHighestSNOverridden <= rr.LastSequenceNumber {
 		r.extHighestSNOverridden = rr.LastSequenceNumber
 		r.packetsLostOverridden = rr.TotalLost
 
-		r.rtt = rtt
-		if rtt > r.maxRtt {
-			r.maxRtt = rtt
+		if isRttChanged {
+			r.rtt = rtt
+			if rtt > r.maxRtt {
+				r.maxRtt = rtt
+			}
 		}
 
 		r.jitterOverridden = float64(rr.Jitter)
@@ -474,7 +500,7 @@ func (r *RTPStats) UpdateFromReceiverReport(rr rtcp.ReceptionReport, rtt uint32)
 
 		// update snapshots
 		for _, s := range r.snapshots {
-			if rtt > s.maxRtt {
+			if isRttChanged && rtt > s.maxRtt {
 				s.maxRtt = rtt
 			}
 
@@ -494,6 +520,7 @@ func (r *RTPStats) UpdateFromReceiverReport(rr rtcp.ReceptionReport, rtt uint32)
 			"receivedRR", rr,
 		)
 	}
+	return
 }
 
 func (r *RTPStats) UpdateNack(nackCount uint32) {
@@ -649,16 +676,61 @@ func (r *RTPStats) GetRtt() uint32 {
 	return r.rtt
 }
 
-func (r *RTPStats) SetRtcpSenderReportData(rtpTS uint32, ntpTS mediatransportutil.NtpTime, arrival time.Time) {
+func (r *RTPStats) SetRtcpSenderReportData(srData *RTCPSenderReportData) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	r.rtpSR = rtpTS
-	r.ntpSR = ntpTS
-	r.arrivalSR = arrival.UnixNano()
+	if srData == nil {
+		r.srDataExt = nil
+		return
+	}
+
+	// prevent against extreme case of anachronous sender reports
+	if r.srDataExt != nil && r.srDataExt.SenderReportData.NTPTimestamp > srData.NTPTimestamp {
+		return
+	}
+
+	// Low pass filter one-way-delay (owd) to normalize time stamp to local time base  when sending RTCP sender report.
+	// Forwarding RTCP sender report would be ideal. But, there are a couple of issues with that
+	//   1. Senders could have different clocks.
+	//   2. Adjusting to current time as required by RTCP spec.
+	// By normalizing to local clock, these issues can be addressed. However, normalization is not straightforward
+	// as it is not possible to know the propagation delay and processing delay at both ends (send side processing
+	// after time stamping the RTCP packet and receive side processing after reading packet off the wire).
+	// Smoothed version of OWD is used to
+	owd := srData.ArrivalTime.Sub(srData.NTPTimestamp.Time())
+	if r.srDataExt != nil {
+		prevOwd := r.srDataExt.SenderReportData.ArrivalTime.Sub(r.srDataExt.SenderReportData.NTPTimestamp.Time())
+		if time.Duration(math.Abs(float64(owd)-float64(prevOwd))) > TooLargeOWD {
+			r.logger.Infow("large one-way-delay", "owd", owd, "prevOwd", prevOwd)
+		}
+	}
+
+	smoothedOwd := owd
+	if r.srDataExt != nil {
+		smoothedOwd = r.srDataExt.SmoothedOWD
+	}
+	r.srDataExt = &RTCPSenderReportDataExt{
+		SenderReportData: *srData,
+		SmoothedOWD:      (owd + smoothedOwd) / 2,
+	}
 }
 
-func (r *RTPStats) GetRtcpSenderReport(ssrc uint32) *rtcp.SenderReport {
+func (r *RTPStats) GetRtcpSenderReportDataExt() *RTCPSenderReportDataExt {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	if r.srDataExt == nil {
+		return nil
+	}
+
+	return &RTCPSenderReportDataExt{
+		SenderReportData: r.srDataExt.SenderReportData,
+		SmoothedOWD:      r.srDataExt.SmoothedOWD,
+	}
+}
+
+func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srDataExt *RTCPSenderReportDataExt) *rtcp.SenderReport {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
@@ -666,9 +738,30 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32) *rtcp.SenderReport {
 		return nil
 	}
 
+	if srDataExt == nil || srDataExt.SenderReportData.NTPTimestamp == 0 || srDataExt.SenderReportData.ArrivalTime.IsZero() {
+		// no sender report from publisher
+		return nil
+	}
+
+	// NTP timestamp in sender report from publisher side could have a different base,
+	// i. e. although it should be wall clock at time of send, have observed instances of older timer.
+	// It is not possible to accurately calculate current time in the NTP time base of the publisher side.
+	// So, using a smoothed version of one way delay for use in sender reports.
 	now := time.Now()
 	nowNTP := mediatransportutil.ToNtpTime(now)
-	nowRTP := r.highestTS + uint32((now.UnixNano()-r.highestTime)*int64(r.params.ClockRate)/1e9)
+	nowRTP := r.highestTS
+
+	smoothedLocalTimeOfLatestSenderReportNTP := srDataExt.SenderReportData.NTPTimestamp.Time().Add(srDataExt.SmoothedOWD)
+	if smoothedLocalTimeOfLatestSenderReportNTP.After(now) {
+		r.logger.Infow("smoothed time of NTP is ahead",
+			"now", now,
+			"smoothed", smoothedLocalTimeOfLatestSenderReportNTP,
+			"diff", smoothedLocalTimeOfLatestSenderReportNTP.Sub(now),
+		)
+		nowRTP += uint32(now.Sub(time.Unix(0, r.highestTime)).Milliseconds() * int64(r.params.ClockRate) / 1000)
+	} else {
+		nowRTP = srDataExt.SenderReportData.RTPTimestamp + uint32(now.Sub(smoothedLocalTimeOfLatestSenderReportNTP).Milliseconds()*int64(r.params.ClockRate)/1000)
+	}
 
 	return &rtcp.SenderReport{
 		SSRC:        ssrc,
@@ -721,8 +814,8 @@ func (r *RTPStats) SnapshotRtcpReceptionReport(ssrc uint32, proxyFracLost uint8,
 	}
 
 	var dlsr uint32
-	if r.arrivalSR != 0 {
-		delayMS := uint32((time.Now().UnixNano() - r.arrivalSR) / 1e6)
+	if r.srDataExt != nil && !r.srDataExt.SenderReportData.ArrivalTime.IsZero() {
+		delayMS := uint32(time.Since(r.srDataExt.SenderReportData.ArrivalTime).Milliseconds())
 		dlsr = (delayMS / 1e3) << 16
 		dlsr |= (delayMS % 1e3) * 65536 / 1000
 	}
@@ -733,13 +826,17 @@ func (r *RTPStats) SnapshotRtcpReceptionReport(ssrc uint32, proxyFracLost uint8,
 		jitter = r.jitterOverridden
 	}
 
+	lastSR := uint32(0)
+	if r.srDataExt != nil {
+		lastSR = uint32(r.srDataExt.SenderReportData.NTPTimestamp >> 16)
+	}
 	return &rtcp.ReceptionReport{
 		SSRC:               ssrc,
 		FractionLost:       fracLost,
 		TotalLost:          r.packetsLost,
 		LastSequenceNumber: now.extStartSN,
 		Jitter:             uint32(jitter),
-		LastSenderReport:   uint32(r.ntpSR >> 16),
+		LastSenderReport:   lastSR,
 		Delay:              dlsr,
 	}
 }

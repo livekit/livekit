@@ -7,9 +7,20 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/protocol/livekit"
+	webrtc "github.com/pion/webrtc/v3"
 )
 
 type FakeSubscribedTrack struct {
+	AddOnBindStub        func(func())
+	addOnBindMutex       sync.RWMutex
+	addOnBindArgsForCall []struct {
+		arg1 func()
+	}
+	CloseStub        func(bool)
+	closeMutex       sync.RWMutex
+	closeArgsForCall []struct {
+		arg1 bool
+	}
 	DownTrackStub        func() *sfu.DownTrack
 	downTrackMutex       sync.RWMutex
 	downTrackArgsForCall []struct {
@@ -29,6 +40,16 @@ type FakeSubscribedTrack struct {
 	}
 	iDReturnsOnCall map[int]struct {
 		result1 livekit.TrackID
+	}
+	IsBoundStub        func() bool
+	isBoundMutex       sync.RWMutex
+	isBoundArgsForCall []struct {
+	}
+	isBoundReturns struct {
+		result1 bool
+	}
+	isBoundReturnsOnCall map[int]struct {
+		result1 bool
 	}
 	IsMutedStub        func() bool
 	isMutedMutex       sync.RWMutex
@@ -50,10 +71,20 @@ type FakeSubscribedTrack struct {
 	mediaTrackReturnsOnCall map[int]struct {
 		result1 types.MediaTrack
 	}
-	OnBindStub        func(func())
-	onBindMutex       sync.RWMutex
-	onBindArgsForCall []struct {
-		arg1 func()
+	NeedsNegotiationStub        func() bool
+	needsNegotiationMutex       sync.RWMutex
+	needsNegotiationArgsForCall []struct {
+	}
+	needsNegotiationReturns struct {
+		result1 bool
+	}
+	needsNegotiationReturnsOnCall map[int]struct {
+		result1 bool
+	}
+	OnCloseStub        func(func(willBeResumed bool))
+	onCloseMutex       sync.RWMutex
+	onCloseArgsForCall []struct {
+		arg1 func(willBeResumed bool)
 	}
 	PublisherIDStub        func() livekit.ParticipantID
 	publisherIDMutex       sync.RWMutex
@@ -84,6 +115,16 @@ type FakeSubscribedTrack struct {
 	}
 	publisherVersionReturnsOnCall map[int]struct {
 		result1 uint32
+	}
+	RTPSenderStub        func() *webrtc.RTPSender
+	rTPSenderMutex       sync.RWMutex
+	rTPSenderArgsForCall []struct {
+	}
+	rTPSenderReturns struct {
+		result1 *webrtc.RTPSender
+	}
+	rTPSenderReturnsOnCall map[int]struct {
+		result1 *webrtc.RTPSender
 	}
 	SetPublisherMutedStub        func(bool)
 	setPublisherMutedMutex       sync.RWMutex
@@ -131,6 +172,70 @@ type FakeSubscribedTrack struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
+}
+
+func (fake *FakeSubscribedTrack) AddOnBind(arg1 func()) {
+	fake.addOnBindMutex.Lock()
+	fake.addOnBindArgsForCall = append(fake.addOnBindArgsForCall, struct {
+		arg1 func()
+	}{arg1})
+	stub := fake.AddOnBindStub
+	fake.recordInvocation("AddOnBind", []interface{}{arg1})
+	fake.addOnBindMutex.Unlock()
+	if stub != nil {
+		fake.AddOnBindStub(arg1)
+	}
+}
+
+func (fake *FakeSubscribedTrack) AddOnBindCallCount() int {
+	fake.addOnBindMutex.RLock()
+	defer fake.addOnBindMutex.RUnlock()
+	return len(fake.addOnBindArgsForCall)
+}
+
+func (fake *FakeSubscribedTrack) AddOnBindCalls(stub func(func())) {
+	fake.addOnBindMutex.Lock()
+	defer fake.addOnBindMutex.Unlock()
+	fake.AddOnBindStub = stub
+}
+
+func (fake *FakeSubscribedTrack) AddOnBindArgsForCall(i int) func() {
+	fake.addOnBindMutex.RLock()
+	defer fake.addOnBindMutex.RUnlock()
+	argsForCall := fake.addOnBindArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeSubscribedTrack) Close(arg1 bool) {
+	fake.closeMutex.Lock()
+	fake.closeArgsForCall = append(fake.closeArgsForCall, struct {
+		arg1 bool
+	}{arg1})
+	stub := fake.CloseStub
+	fake.recordInvocation("Close", []interface{}{arg1})
+	fake.closeMutex.Unlock()
+	if stub != nil {
+		fake.CloseStub(arg1)
+	}
+}
+
+func (fake *FakeSubscribedTrack) CloseCallCount() int {
+	fake.closeMutex.RLock()
+	defer fake.closeMutex.RUnlock()
+	return len(fake.closeArgsForCall)
+}
+
+func (fake *FakeSubscribedTrack) CloseCalls(stub func(bool)) {
+	fake.closeMutex.Lock()
+	defer fake.closeMutex.Unlock()
+	fake.CloseStub = stub
+}
+
+func (fake *FakeSubscribedTrack) CloseArgsForCall(i int) bool {
+	fake.closeMutex.RLock()
+	defer fake.closeMutex.RUnlock()
+	argsForCall := fake.closeArgsForCall[i]
+	return argsForCall.arg1
 }
 
 func (fake *FakeSubscribedTrack) DownTrack() *sfu.DownTrack {
@@ -236,6 +341,59 @@ func (fake *FakeSubscribedTrack) IDReturnsOnCall(i int, result1 livekit.TrackID)
 	}
 	fake.iDReturnsOnCall[i] = struct {
 		result1 livekit.TrackID
+	}{result1}
+}
+
+func (fake *FakeSubscribedTrack) IsBound() bool {
+	fake.isBoundMutex.Lock()
+	ret, specificReturn := fake.isBoundReturnsOnCall[len(fake.isBoundArgsForCall)]
+	fake.isBoundArgsForCall = append(fake.isBoundArgsForCall, struct {
+	}{})
+	stub := fake.IsBoundStub
+	fakeReturns := fake.isBoundReturns
+	fake.recordInvocation("IsBound", []interface{}{})
+	fake.isBoundMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeSubscribedTrack) IsBoundCallCount() int {
+	fake.isBoundMutex.RLock()
+	defer fake.isBoundMutex.RUnlock()
+	return len(fake.isBoundArgsForCall)
+}
+
+func (fake *FakeSubscribedTrack) IsBoundCalls(stub func() bool) {
+	fake.isBoundMutex.Lock()
+	defer fake.isBoundMutex.Unlock()
+	fake.IsBoundStub = stub
+}
+
+func (fake *FakeSubscribedTrack) IsBoundReturns(result1 bool) {
+	fake.isBoundMutex.Lock()
+	defer fake.isBoundMutex.Unlock()
+	fake.IsBoundStub = nil
+	fake.isBoundReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeSubscribedTrack) IsBoundReturnsOnCall(i int, result1 bool) {
+	fake.isBoundMutex.Lock()
+	defer fake.isBoundMutex.Unlock()
+	fake.IsBoundStub = nil
+	if fake.isBoundReturnsOnCall == nil {
+		fake.isBoundReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.isBoundReturnsOnCall[i] = struct {
+		result1 bool
 	}{result1}
 }
 
@@ -345,35 +503,88 @@ func (fake *FakeSubscribedTrack) MediaTrackReturnsOnCall(i int, result1 types.Me
 	}{result1}
 }
 
-func (fake *FakeSubscribedTrack) OnBind(arg1 func()) {
-	fake.onBindMutex.Lock()
-	fake.onBindArgsForCall = append(fake.onBindArgsForCall, struct {
-		arg1 func()
-	}{arg1})
-	stub := fake.OnBindStub
-	fake.recordInvocation("OnBind", []interface{}{arg1})
-	fake.onBindMutex.Unlock()
+func (fake *FakeSubscribedTrack) NeedsNegotiation() bool {
+	fake.needsNegotiationMutex.Lock()
+	ret, specificReturn := fake.needsNegotiationReturnsOnCall[len(fake.needsNegotiationArgsForCall)]
+	fake.needsNegotiationArgsForCall = append(fake.needsNegotiationArgsForCall, struct {
+	}{})
+	stub := fake.NeedsNegotiationStub
+	fakeReturns := fake.needsNegotiationReturns
+	fake.recordInvocation("NeedsNegotiation", []interface{}{})
+	fake.needsNegotiationMutex.Unlock()
 	if stub != nil {
-		fake.OnBindStub(arg1)
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeSubscribedTrack) NeedsNegotiationCallCount() int {
+	fake.needsNegotiationMutex.RLock()
+	defer fake.needsNegotiationMutex.RUnlock()
+	return len(fake.needsNegotiationArgsForCall)
+}
+
+func (fake *FakeSubscribedTrack) NeedsNegotiationCalls(stub func() bool) {
+	fake.needsNegotiationMutex.Lock()
+	defer fake.needsNegotiationMutex.Unlock()
+	fake.NeedsNegotiationStub = stub
+}
+
+func (fake *FakeSubscribedTrack) NeedsNegotiationReturns(result1 bool) {
+	fake.needsNegotiationMutex.Lock()
+	defer fake.needsNegotiationMutex.Unlock()
+	fake.NeedsNegotiationStub = nil
+	fake.needsNegotiationReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeSubscribedTrack) NeedsNegotiationReturnsOnCall(i int, result1 bool) {
+	fake.needsNegotiationMutex.Lock()
+	defer fake.needsNegotiationMutex.Unlock()
+	fake.NeedsNegotiationStub = nil
+	if fake.needsNegotiationReturnsOnCall == nil {
+		fake.needsNegotiationReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.needsNegotiationReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeSubscribedTrack) OnClose(arg1 func(willBeResumed bool)) {
+	fake.onCloseMutex.Lock()
+	fake.onCloseArgsForCall = append(fake.onCloseArgsForCall, struct {
+		arg1 func(willBeResumed bool)
+	}{arg1})
+	stub := fake.OnCloseStub
+	fake.recordInvocation("OnClose", []interface{}{arg1})
+	fake.onCloseMutex.Unlock()
+	if stub != nil {
+		fake.OnCloseStub(arg1)
 	}
 }
 
-func (fake *FakeSubscribedTrack) OnBindCallCount() int {
-	fake.onBindMutex.RLock()
-	defer fake.onBindMutex.RUnlock()
-	return len(fake.onBindArgsForCall)
+func (fake *FakeSubscribedTrack) OnCloseCallCount() int {
+	fake.onCloseMutex.RLock()
+	defer fake.onCloseMutex.RUnlock()
+	return len(fake.onCloseArgsForCall)
 }
 
-func (fake *FakeSubscribedTrack) OnBindCalls(stub func(func())) {
-	fake.onBindMutex.Lock()
-	defer fake.onBindMutex.Unlock()
-	fake.OnBindStub = stub
+func (fake *FakeSubscribedTrack) OnCloseCalls(stub func(func(willBeResumed bool))) {
+	fake.onCloseMutex.Lock()
+	defer fake.onCloseMutex.Unlock()
+	fake.OnCloseStub = stub
 }
 
-func (fake *FakeSubscribedTrack) OnBindArgsForCall(i int) func() {
-	fake.onBindMutex.RLock()
-	defer fake.onBindMutex.RUnlock()
-	argsForCall := fake.onBindArgsForCall[i]
+func (fake *FakeSubscribedTrack) OnCloseArgsForCall(i int) func(willBeResumed bool) {
+	fake.onCloseMutex.RLock()
+	defer fake.onCloseMutex.RUnlock()
+	argsForCall := fake.onCloseArgsForCall[i]
 	return argsForCall.arg1
 }
 
@@ -533,6 +744,59 @@ func (fake *FakeSubscribedTrack) PublisherVersionReturnsOnCall(i int, result1 ui
 	}
 	fake.publisherVersionReturnsOnCall[i] = struct {
 		result1 uint32
+	}{result1}
+}
+
+func (fake *FakeSubscribedTrack) RTPSender() *webrtc.RTPSender {
+	fake.rTPSenderMutex.Lock()
+	ret, specificReturn := fake.rTPSenderReturnsOnCall[len(fake.rTPSenderArgsForCall)]
+	fake.rTPSenderArgsForCall = append(fake.rTPSenderArgsForCall, struct {
+	}{})
+	stub := fake.RTPSenderStub
+	fakeReturns := fake.rTPSenderReturns
+	fake.recordInvocation("RTPSender", []interface{}{})
+	fake.rTPSenderMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeSubscribedTrack) RTPSenderCallCount() int {
+	fake.rTPSenderMutex.RLock()
+	defer fake.rTPSenderMutex.RUnlock()
+	return len(fake.rTPSenderArgsForCall)
+}
+
+func (fake *FakeSubscribedTrack) RTPSenderCalls(stub func() *webrtc.RTPSender) {
+	fake.rTPSenderMutex.Lock()
+	defer fake.rTPSenderMutex.Unlock()
+	fake.RTPSenderStub = stub
+}
+
+func (fake *FakeSubscribedTrack) RTPSenderReturns(result1 *webrtc.RTPSender) {
+	fake.rTPSenderMutex.Lock()
+	defer fake.rTPSenderMutex.Unlock()
+	fake.RTPSenderStub = nil
+	fake.rTPSenderReturns = struct {
+		result1 *webrtc.RTPSender
+	}{result1}
+}
+
+func (fake *FakeSubscribedTrack) RTPSenderReturnsOnCall(i int, result1 *webrtc.RTPSender) {
+	fake.rTPSenderMutex.Lock()
+	defer fake.rTPSenderMutex.Unlock()
+	fake.RTPSenderStub = nil
+	if fake.rTPSenderReturnsOnCall == nil {
+		fake.rTPSenderReturnsOnCall = make(map[int]struct {
+			result1 *webrtc.RTPSender
+		})
+	}
+	fake.rTPSenderReturnsOnCall[i] = struct {
+		result1 *webrtc.RTPSender
 	}{result1}
 }
 
@@ -786,22 +1050,32 @@ func (fake *FakeSubscribedTrack) UpdateVideoLayerCalls(stub func()) {
 func (fake *FakeSubscribedTrack) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
+	fake.addOnBindMutex.RLock()
+	defer fake.addOnBindMutex.RUnlock()
+	fake.closeMutex.RLock()
+	defer fake.closeMutex.RUnlock()
 	fake.downTrackMutex.RLock()
 	defer fake.downTrackMutex.RUnlock()
 	fake.iDMutex.RLock()
 	defer fake.iDMutex.RUnlock()
+	fake.isBoundMutex.RLock()
+	defer fake.isBoundMutex.RUnlock()
 	fake.isMutedMutex.RLock()
 	defer fake.isMutedMutex.RUnlock()
 	fake.mediaTrackMutex.RLock()
 	defer fake.mediaTrackMutex.RUnlock()
-	fake.onBindMutex.RLock()
-	defer fake.onBindMutex.RUnlock()
+	fake.needsNegotiationMutex.RLock()
+	defer fake.needsNegotiationMutex.RUnlock()
+	fake.onCloseMutex.RLock()
+	defer fake.onCloseMutex.RUnlock()
 	fake.publisherIDMutex.RLock()
 	defer fake.publisherIDMutex.RUnlock()
 	fake.publisherIdentityMutex.RLock()
 	defer fake.publisherIdentityMutex.RUnlock()
 	fake.publisherVersionMutex.RLock()
 	defer fake.publisherVersionMutex.RUnlock()
+	fake.rTPSenderMutex.RLock()
+	defer fake.rTPSenderMutex.RUnlock()
 	fake.setPublisherMutedMutex.RLock()
 	defer fake.setPublisherMutedMutex.RUnlock()
 	fake.subscriberMutex.RLock()

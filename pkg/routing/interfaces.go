@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/auth"
@@ -16,9 +16,11 @@ import (
 
 // MessageSink is an abstraction for writing protobuf messages and having them read by a MessageSource,
 // potentially on a different node via a transport
+//
 //counterfeiter:generate . MessageSink
 type MessageSink interface {
 	WriteMessage(msg proto.Message) error
+	IsClosed() bool
 	Close()
 }
 
@@ -26,19 +28,21 @@ type MessageSink interface {
 type MessageSource interface {
 	// ReadChan exposes a one way channel to make it easier to use with select
 	ReadChan() <-chan proto.Message
+	IsClosed() bool
 	Close()
 }
 
 type ParticipantInit struct {
-	Identity       livekit.ParticipantIdentity
-	Name           livekit.ParticipantName
-	Reconnect      bool
-	AutoSubscribe  bool
-	Client         *livekit.ClientInfo
-	Grants         *auth.ClaimGrants
-	Region         string
-	AdaptiveStream bool
-	ID             livekit.ParticipantID
+	Identity        livekit.ParticipantIdentity
+	Name            livekit.ParticipantName
+	Reconnect       bool
+	ReconnectReason livekit.ReconnectReason
+	AutoSubscribe   bool
+	Client          *livekit.ClientInfo
+	Grants          *auth.ClaimGrants
+	Region          string
+	AdaptiveStream  bool
+	ID              livekit.ParticipantID
 }
 
 type NewParticipantCallback func(
@@ -57,6 +61,7 @@ type RTCMessageCallback func(
 )
 
 // Router allows multiple nodes to coordinate the participant session
+//
 //counterfeiter:generate . Router
 type Router interface {
 	MessageRouter
@@ -114,13 +119,14 @@ func (pi *ParticipantInit) ToStartSession(roomName livekit.RoomName, connectionI
 		Identity: string(pi.Identity),
 		Name:     string(pi.Name),
 		// connection id is to allow the RTC node to identify where to route the message back to
-		ConnectionId:   string(connectionID),
-		Reconnect:      pi.Reconnect,
-		AutoSubscribe:  pi.AutoSubscribe,
-		Client:         pi.Client,
-		GrantsJson:     string(claims),
-		AdaptiveStream: pi.AdaptiveStream,
-		ParticipantId:  string(pi.ID),
+		ConnectionId:    string(connectionID),
+		Reconnect:       pi.Reconnect,
+		ReconnectReason: pi.ReconnectReason,
+		AutoSubscribe:   pi.AutoSubscribe,
+		Client:          pi.Client,
+		GrantsJson:      string(claims),
+		AdaptiveStream:  pi.AdaptiveStream,
+		ParticipantId:   string(pi.ID),
 	}, nil
 }
 
@@ -131,14 +137,15 @@ func ParticipantInitFromStartSession(ss *livekit.StartSession, region string) (*
 	}
 
 	return &ParticipantInit{
-		Identity:       livekit.ParticipantIdentity(ss.Identity),
-		Name:           livekit.ParticipantName(ss.Name),
-		Reconnect:      ss.Reconnect,
-		Client:         ss.Client,
-		AutoSubscribe:  ss.AutoSubscribe,
-		Grants:         claims,
-		Region:         region,
-		AdaptiveStream: ss.AdaptiveStream,
-		ID:             livekit.ParticipantID(ss.ParticipantId),
+		Identity:        livekit.ParticipantIdentity(ss.Identity),
+		Name:            livekit.ParticipantName(ss.Name),
+		Reconnect:       ss.Reconnect,
+		ReconnectReason: ss.ReconnectReason,
+		Client:          ss.Client,
+		AutoSubscribe:   ss.AutoSubscribe,
+		Grants:          claims,
+		Region:          region,
+		AdaptiveStream:  ss.AdaptiveStream,
+		ID:              livekit.ParticipantID(ss.ParticipantId),
 	}, nil
 }

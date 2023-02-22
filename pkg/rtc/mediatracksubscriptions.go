@@ -1,13 +1,11 @@
 package rtc
 
 import (
-	"context"
 	"errors"
 	"sync"
 
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
-	"github.com/pion/webrtc/v3/pkg/rtcerr"
 	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/livekit"
@@ -30,9 +28,8 @@ type MediaTrackSubscriptions struct {
 	subscribedTracksMu sync.RWMutex
 	subscribedTracks   map[livekit.ParticipantID]types.SubscribedTrack
 
-	onDownTrackCreated              func(downTrack *sfu.DownTrack)
-	onSubscriptionOperationComplete func(sub types.LocalParticipant)
-	onSubscriberMaxQualityChange    func(subscriberID livekit.ParticipantID, codec webrtc.RTPCodecCapability, layer int32)
+	onDownTrackCreated           func(downTrack *sfu.DownTrack)
+	onSubscriberMaxQualityChange func(subscriberID livekit.ParticipantID, codec webrtc.RTPCodecCapability, layer int32)
 }
 
 type MediaTrackSubscriptionsParams struct {
@@ -58,10 +55,6 @@ func (t *MediaTrackSubscriptions) OnDownTrackCreated(f func(downTrack *sfu.DownT
 	t.onDownTrackCreated = f
 }
 
-func (t *MediaTrackSubscriptions) OnSubscriptionOperationComplete(f func(sub types.LocalParticipant)) {
-	t.onSubscriptionOperationComplete = f
-}
-
 func (t *MediaTrackSubscriptions) OnSubscriberMaxQualityChange(f func(subscriberID livekit.ParticipantID, codec webrtc.RTPCodecCapability, layer int32)) {
 	t.onSubscriberMaxQualityChange = f
 }
@@ -82,7 +75,7 @@ func (t *MediaTrackSubscriptions) IsSubscriber(subID livekit.ParticipantID) bool
 }
 
 // AddSubscriber subscribes sub to current mediaTrack
-func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *WrappedReceiver) error {
+func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *WrappedReceiver) (types.SubscribedTrack, error) {
 	trackID := t.params.MediaTrack.ID()
 	subscriberID := sub.ID()
 
@@ -90,7 +83,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	t.subscribedTracksMu.Lock()
 	if _, ok := t.subscribedTracks[subscriberID]; ok {
 		t.subscribedTracksMu.Unlock()
-		return errAlreadySubscribed
+		return nil, errAlreadySubscribed
 	}
 	t.subscribedTracksMu.Unlock()
 
@@ -133,7 +126,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		LoggerWithTrack(sub.GetLogger(), trackID, t.params.IsRelayed),
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if t.onDownTrackCreated != nil {
@@ -153,7 +146,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	// Bind callback can happen from replaceTrack, so set it up early
 	var reusingTransceiver atomic.Bool
 	var dtState sfu.DownTrackState
-	downTrack.OnBind(func() {
+	downTrack.OnBinding(func() {
 		wr.DetermineReceiver(downTrack.Codec())
 		if reusingTransceiver.Load() {
 			downTrack.SeedState(dtState)
@@ -173,7 +166,8 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	})
 
 	downTrack.OnStatsUpdate(func(_ *sfu.DownTrack, stat *livekit.AnalyticsStat) {
-		t.params.Telemetry.TrackStats(livekit.StreamType_DOWNSTREAM, subscriberID, trackID, stat)
+		key := telemetry.StatsKeyForTrack(livekit.StreamType_DOWNSTREAM, subscriberID, trackID, t.params.MediaTrack.Source(), t.params.MediaTrack.Kind())
+		t.params.Telemetry.TrackStats(key, stat)
 	})
 
 	downTrack.OnMaxLayerChanged(func(dt *sfu.DownTrack, layer int32) {
@@ -183,7 +177,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	})
 
 	downTrack.OnRttUpdate(func(_ *sfu.DownTrack, rtt uint32) {
-		go sub.UpdateRTT(rtt)
+		go sub.UpdateMediaRTT(rtt)
 	})
 
 	downTrack.AddReceiverReportListener(func(dt *sfu.DownTrack, report *rtcp.ReceiverReport) {
@@ -228,6 +222,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		info := t.params.MediaTrack.ToProto()
 		addTrackParams := types.AddTrackParams{
 			Stereo: info.Stereo,
+			Red:    !info.DisableRed,
 		}
 		sub.VerifySubscribeParticipantInfo(subTrack.PublisherID(), subTrack.PublisherVersion())
 		if sub.ProtocolVersion().SupportsTransceiverReuse() {
@@ -238,19 +233,23 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 			//
 			sender, transceiver, err = sub.AddTrackToSubscriber(downTrack, addTrackParams)
 			if err != nil {
-				return err
+				return nil, err
 			}
 		} else {
 			sender, transceiver, err = sub.AddTransceiverFromTrackToSubscriber(downTrack, addTrackParams)
 			if err != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
 
-	// wthether re-using or stopping remove transceiver from cache
+	// whether re-using or stopping remove transceiver from cache
 	// NOTE: safety net, if somehow a cached transceiver is re-used by a different track
 	sub.UncacheDownTrack(transceiver)
+
+	// negotiation isn't required if we've replaced track
+	subTrack.SetNeedsNegotiation(!replacedTrack)
+	subTrack.SetRTPSender(sender)
 
 	sendParameters := sender.GetParameters()
 	downTrack.SetRTPHeaderExtensions(sendParameters.HeaderExtensions)
@@ -258,35 +257,14 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	downTrack.SetTransceiver(transceiver)
 
 	downTrack.OnCloseHandler(func(willBeResumed bool) {
-		go t.downTrackClosed(sub, subTrack, willBeResumed, sender)
+		go t.downTrackClosed(sub, willBeResumed)
 	})
 
 	t.subscribedTracksMu.Lock()
 	t.subscribedTracks[subscriberID] = subTrack
 	t.subscribedTracksMu.Unlock()
 
-	// since sub will lock, run it in a goroutine to avoid deadlocks
-	go func() {
-		sub.AddSubscribedTrack(subTrack)
-		if !replacedTrack {
-			sub.Negotiate(false)
-		}
-
-		if t.onSubscriptionOperationComplete != nil {
-			t.onSubscriptionOperationComplete(sub)
-		}
-	}()
-
-	t.params.Telemetry.TrackSubscribed(
-		context.Background(),
-		subscriberID,
-		t.params.MediaTrack.ToProto(),
-		&livekit.ParticipantInfo{
-			Sid:      string(t.params.MediaTrack.PublisherID()),
-			Identity: string(t.params.MediaTrack.PublisherIdentity()),
-		},
-	)
-	return nil
+	return subTrack, nil
 }
 
 // RemoveSubscriber removes participant from subscription
@@ -405,47 +383,15 @@ func (t *MediaTrackSubscriptions) DebugInfo() []map[string]interface{} {
 
 func (t *MediaTrackSubscriptions) downTrackClosed(
 	sub types.LocalParticipant,
-	subTrack types.SubscribedTrack,
 	willBeResumed bool,
-	sender *webrtc.RTPSender,
 ) {
-	defer func() {
-		if t.onSubscriptionOperationComplete != nil {
-			t.onSubscriptionOperationComplete(sub)
-		}
-	}()
-
 	subscriberID := sub.ID()
 	t.subscribedTracksMu.Lock()
+	subTrack := t.subscribedTracks[subscriberID]
 	delete(t.subscribedTracks, subscriberID)
 	t.subscribedTracksMu.Unlock()
 
-	if !willBeResumed {
-		t.params.Telemetry.TrackUnsubscribed(context.Background(), subscriberID, t.params.MediaTrack.ToProto())
-
-		if sender != nil {
-			sub.GetLogger().Debugw("removing PeerConnection track",
-				"publisher", subTrack.PublisherIdentity(),
-				"publisherID", subTrack.PublisherID(),
-				"kind", t.params.MediaTrack.Kind(),
-			)
-
-			if err := sub.RemoveTrackFromSubscriber(sender); err != nil {
-				if _, ok := err.(*rtcerr.InvalidStateError); !ok {
-					// most of these are safe to ignore, since the track state might have already
-					// been set to Inactive
-					sub.GetLogger().Debugw("could not remove remoteTrack from forwarder",
-						"error", err,
-						"publisher", subTrack.PublisherIdentity(),
-						"publisherID", subTrack.PublisherID(),
-					)
-				}
-			}
-		}
-	}
-
-	sub.RemoveSubscribedTrack(subTrack)
-	if !willBeResumed {
-		sub.Negotiate(false)
+	if subTrack != nil {
+		subTrack.Close(willBeResumed)
 	}
 }

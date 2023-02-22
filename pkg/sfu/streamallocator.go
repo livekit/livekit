@@ -96,6 +96,7 @@ const (
 	streamAllocatorSignalPeriodicPing
 	streamAllocatorSignalSendProbe
 	streamAllocatorSignalProbeClusterDone
+	streamAllocatorSignalTargetLayerFound
 )
 
 func (s streamAllocatorSignal) String() string {
@@ -114,6 +115,8 @@ func (s streamAllocatorSignal) String() string {
 		return "SEND_PROBE"
 	case streamAllocatorSignalProbeClusterDone:
 		return "PROBE_CLUSTER_DONE"
+	case streamAllocatorSignalTargetLayerFound:
+		return "TARGET_LAYER_FOUND"
 	default:
 		return fmt.Sprintf("%d", int(s))
 	}
@@ -237,9 +240,11 @@ func (s *StreamAllocator) AddTrack(downTrack *DownTrack, params AddTrackParams) 
 	downTrack.OnTransportCCFeedback(s.onTransportCCFeedback)
 	downTrack.OnAvailableLayersChanged(s.onAvailableLayersChanged)
 	downTrack.OnBitrateAvailabilityChanged(s.onBitrateAvailabilityChanged)
+	downTrack.OnMaxPublishedLayerChanged(s.onMaxPublishedLayerChanged)
 	downTrack.OnSubscriptionChanged(s.onSubscriptionChanged)
 	downTrack.OnSubscribedLayersChanged(s.onSubscribedLayersChanged)
 	downTrack.OnPacketSent(s.onPacketSent)
+	downTrack.OnTargetLayerFound(s.onTargetLayerFound)
 
 	s.maybePostEventAllocateTrack(downTrack)
 }
@@ -384,6 +389,11 @@ func (s *StreamAllocator) onBitrateAvailabilityChanged(downTrack *DownTrack) {
 	s.maybePostEventAllocateTrack(downTrack)
 }
 
+// called when feeding track's max publisher layer changes
+func (s *StreamAllocator) onMaxPublishedLayerChanged(downTrack *DownTrack) {
+	s.maybePostEventAllocateTrack(downTrack)
+}
+
 // called when subscription settings changes (muting/unmuting of track)
 func (s *StreamAllocator) onSubscriptionChanged(downTrack *DownTrack) {
 	s.maybePostEventAllocateTrack(downTrack)
@@ -426,6 +436,14 @@ func (s *StreamAllocator) onProbeClusterDone(info ProbeClusterInfo) {
 	s.postEvent(Event{
 		Signal: streamAllocatorSignalProbeClusterDone,
 		Data:   info,
+	})
+}
+
+// called when forwarder finds a target layer
+func (s *StreamAllocator) onTargetLayerFound(downTrack *DownTrack) {
+	s.postEvent(Event{
+		Signal:  streamAllocatorSignalTargetLayerFound,
+		TrackID: livekit.TrackID(downTrack.ID()),
 	})
 }
 
@@ -500,6 +518,8 @@ func (s *StreamAllocator) handleEvent(event *Event) {
 		s.handleSignalSendProbe(event)
 	case streamAllocatorSignalProbeClusterDone:
 		s.handleSignalProbeClusterDone(event)
+	case streamAllocatorSignalTargetLayerFound:
+		s.handleSignalTargetLayerFound(event)
 	}
 }
 
@@ -597,6 +617,20 @@ func (s *StreamAllocator) handleSignalProbeClusterDone(event *Event) {
 	}
 	queueWait := time.Duration(queueTime+float64(ProbeSettleWait)) * time.Millisecond
 	s.probeEndTime = s.lastProbeStartTime.Add(queueWait)
+}
+
+func (s *StreamAllocator) handleSignalTargetLayerFound(event *Event) {
+	s.videoTracksMu.Lock()
+	track := s.videoTracks[event.TrackID]
+	s.videoTracksMu.Unlock()
+
+	if track != nil {
+		update := NewStreamStateUpdate()
+		if track.SetPaused(false) {
+			update.HandleStreamingChange(false, track)
+		}
+		s.maybeSendUpdate(update)
+	}
 }
 
 func (s *StreamAllocator) setState(state streamAllocatorState) {
@@ -719,7 +753,9 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	if !s.params.Config.Enabled || s.state == streamAllocatorStateStable || !track.IsManaged() {
 		update := NewStreamStateUpdate()
 		allocation := track.AllocateOptimal(FlagAllowOvershootWhileOptimal)
-		update.HandleStreamingChange(allocation.change, track)
+		if allocation.pauseReason == VideoPauseReasonBandwidth && track.SetPaused(true) {
+			update.HandleStreamingChange(true, track)
+		}
 		s.maybeSendUpdate(update)
 		return
 	}
@@ -744,7 +780,9 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 		allocation := track.ProvisionalAllocateCommit()
 
 		update := NewStreamStateUpdate()
-		update.HandleStreamingChange(allocation.change, track)
+		if allocation.pauseReason == VideoPauseReasonBandwidth && track.SetPaused(true) {
+			update.HandleStreamingChange(true, track)
+		}
 		s.maybeSendUpdate(update)
 
 		s.adjustState()
@@ -785,7 +823,9 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 		// commit the tracks that contributed
 		for _, t := range contributingTracks {
 			allocation := t.ProvisionalAllocateCommit()
-			update.HandleStreamingChange(allocation.change, t)
+			if allocation.pauseReason == VideoPauseReasonBandwidth && track.SetPaused(true) {
+				update.HandleStreamingChange(true, t)
+			}
 		}
 
 		// LK-TODO if got too much extra, can potentially give it to some deficient track
@@ -794,7 +834,9 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	// commit the track that needs change if enough could be acquired or pause not allowed
 	if !s.params.Config.AllowPause || bandwidthAcquired >= transition.bandwidthDelta {
 		allocation := track.ProvisionalAllocateCommit()
-		update.HandleStreamingChange(allocation.change, track)
+		if allocation.pauseReason == VideoPauseReasonBandwidth && track.SetPaused(true) {
+			update.HandleStreamingChange(true, track)
+		}
 	}
 
 	s.maybeSendUpdate(update)
@@ -864,7 +906,9 @@ func (s *StreamAllocator) maybeBoostDeficientTracks() {
 			continue
 		}
 
-		update.HandleStreamingChange(allocation.change, track)
+		if allocation.pauseReason == VideoPauseReasonBandwidth && track.SetPaused(true) {
+			update.HandleStreamingChange(true, track)
+		}
 
 		availableChannelCapacity -= allocation.bandwidthDelta
 		if availableChannelCapacity <= 0 {
@@ -918,7 +962,9 @@ func (s *StreamAllocator) allocateAllTracks() {
 		}
 
 		allocation := track.AllocateOptimal(FlagAllowOvershootExemptTrackWhileDeficient)
-		update.HandleStreamingChange(allocation.change, track)
+		if allocation.pauseReason == VideoPauseReasonBandwidth && track.SetPaused(true) {
+			update.HandleStreamingChange(true, track)
+		}
 
 		// LK-TODO: optimistic allocation before bitrate is available will return 0. How to account for that?
 		availableChannelCapacity -= allocation.bandwidthRequested
@@ -935,7 +981,9 @@ func (s *StreamAllocator) allocateAllTracks() {
 			}
 
 			allocation := track.Pause()
-			update.HandleStreamingChange(allocation.change, track)
+			if allocation.pauseReason == VideoPauseReasonBandwidth && track.SetPaused(true) {
+				update.HandleStreamingChange(true, track)
+			}
 		}
 	} else {
 		sorted := s.getSorted()
@@ -962,7 +1010,9 @@ func (s *StreamAllocator) allocateAllTracks() {
 
 		for _, track := range sorted {
 			allocation := track.ProvisionalAllocateCommit()
-			update.HandleStreamingChange(allocation.change, track)
+			if allocation.pauseReason == VideoPauseReasonBandwidth && track.SetPaused(true) {
+				update.HandleStreamingChange(true, track)
+			}
 		}
 	}
 
@@ -1113,7 +1163,9 @@ func (s *StreamAllocator) maybeProbeWithMedia() {
 		}
 
 		update := NewStreamStateUpdate()
-		update.HandleStreamingChange(allocation.change, track)
+		if allocation.pauseReason == VideoPauseReasonBandwidth && track.SetPaused(true) {
+			update.HandleStreamingChange(true, track)
+		}
 		s.maybeSendUpdate(update)
 
 		s.lastProbeStartTime = time.Now()
@@ -1235,15 +1287,14 @@ func NewStreamStateUpdate() *StreamStateUpdate {
 	return &StreamStateUpdate{}
 }
 
-func (s *StreamStateUpdate) HandleStreamingChange(change VideoStreamingChange, track *Track) {
-	switch change {
-	case VideoStreamingChangePausing:
+func (s *StreamStateUpdate) HandleStreamingChange(isPaused bool, track *Track) {
+	if isPaused {
 		s.StreamStates = append(s.StreamStates, &StreamStateInfo{
 			ParticipantID: track.PublisherID(),
 			TrackID:       track.ID(),
 			State:         StreamStatePaused,
 		})
-	case VideoStreamingChangeResuming:
+	} else {
 		s.StreamStates = append(s.StreamStates, &StreamStateInfo{
 			ParticipantID: track.PublisherID(),
 			TrackID:       track.ID(),
@@ -1272,6 +1323,8 @@ type Track struct {
 	totalRepeatedNacks uint32
 
 	isDirty bool
+
+	isPaused bool
 }
 
 func newTrack(
@@ -1300,6 +1353,15 @@ func (t *Track) SetDirty(isDirty bool) bool {
 	}
 
 	t.isDirty = isDirty
+	return true
+}
+
+func (t *Track) SetPaused(isPaused bool) bool {
+	if t.isPaused == isPaused {
+		return false
+	}
+
+	t.isPaused = isPaused
 	return true
 }
 
@@ -1351,7 +1413,7 @@ func (t *Track) SetMaxLayers(layers VideoLayers) bool {
 }
 
 func (t *Track) WritePaddingRTP(bytesToSend int) int {
-	return t.downTrack.WritePaddingRTP(bytesToSend)
+	return t.downTrack.WritePaddingRTP(bytesToSend, false)
 }
 
 func (t *Track) AllocateOptimal(allowOvershoot bool) VideoAllocation {

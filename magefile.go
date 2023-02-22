@@ -15,6 +15,7 @@ import (
 
 	"github.com/livekit/livekit-server/version"
 	"github.com/livekit/mageutil"
+	_ "github.com/livekit/psrpc"
 )
 
 const (

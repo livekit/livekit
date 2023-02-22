@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -49,6 +50,7 @@ type RoomManager struct {
 	telemetry         telemetry.TelemetryService
 	clientConfManager clientconfiguration.ClientConfigurationManager
 	egressLauncher    rtc.EgressLauncher
+	versionGenerator  utils.TimedVersionGenerator
 
 	rooms map[livekit.RoomName]*rtc.Room
 
@@ -63,8 +65,8 @@ func NewLocalRoomManager(
 	telemetry telemetry.TelemetryService,
 	clientConfManager clientconfiguration.ClientConfigurationManager,
 	egressLauncher rtc.EgressLauncher,
+	versionGenerator utils.TimedVersionGenerator,
 ) (*RoomManager, error) {
-
 	rtcConf, err := rtc.NewWebRTCConfig(conf, currentNode.Ip)
 	if err != nil {
 		return nil, err
@@ -79,6 +81,7 @@ func NewLocalRoomManager(
 		telemetry:         telemetry,
 		clientConfManager: clientConfManager,
 		egressLauncher:    egressLauncher,
+		versionGenerator:  versionGenerator,
 
 		rooms: make(map[livekit.RoomName]*rtc.Room),
 
@@ -219,6 +222,8 @@ func (r *RoomManager) StartSession(
 	}
 	defer room.Release()
 
+	protoRoom := room.ToProto()
+
 	// only create the room, but don't start a participant session
 	if pi.Identity == "" {
 		return nil
@@ -232,11 +237,19 @@ func (r *RoomManager) StartSession(
 				"room", roomName,
 				"nodeID", r.currentNode.Id,
 				"participant", pi.Identity,
+				"reason", pi.ReconnectReason,
 			)
-			if err = room.ResumeParticipant(participant, responseSink); err != nil {
+			iceConfig := r.getIceConfig(participant)
+			if iceConfig == nil {
+				iceConfig = &livekit.ICEConfig{}
+			}
+			if err = room.ResumeParticipant(participant, responseSink,
+				r.iceServersForRoom(protoRoom, iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS),
+				pi.ReconnectReason); err != nil {
 				logger.Warnw("could not resume participant", err, "participant", pi.Identity)
 				return err
 			}
+			r.telemetry.ParticipantResumed(ctx, room.ToProto(), participant.ToProto(), livekit.NodeID(r.currentNode.Id), pi.ReconnectReason)
 			go r.rtcSessionWorker(room, participant, requestSource)
 			return nil
 		} else {
@@ -258,7 +271,7 @@ func (r *RoomManager) StartSession(
 		return errors.New("could not restart participant")
 	}
 
-	logger.Infow("starting RTC session",
+	logger.Debugw("starting RTC session",
 		"room", roomName,
 		"nodeID", r.currentNode.Id,
 		"participant", pi.Identity,
@@ -274,7 +287,6 @@ func (r *RoomManager) StartSession(
 	rtcConf.SetBufferFactory(room.GetBufferFactory())
 	sid := livekit.ParticipantID(utils.NewGuid(utils.ParticipantPrefix))
 	pLogger := rtc.LoggerWithParticipant(room.Logger, pi.Identity, sid, false)
-	protoRoom := room.ToProto()
 	// default allow forceTCP
 	allowFallback := true
 	if r.config.RTC.AllowTCPFallback != nil {
@@ -284,6 +296,11 @@ func (r *RoomManager) StartSession(
 	reconnectOnPublicationError := false
 	if r.config.RTC.ReconnectOnPublicationError != nil {
 		reconnectOnPublicationError = *r.config.RTC.ReconnectOnPublicationError
+	}
+	// default do not force full reconnect on a subscription error
+	reconnectOnSubscriptionError := false
+	if r.config.RTC.ReconnectOnSubscriptionError != nil {
+		reconnectOnSubscriptionError = *r.config.RTC.ReconnectOnSubscriptionError
 	}
 	participant, err = rtc.NewParticipant(rtc.ParticipantParams{
 		Identity:                pi.Identity,
@@ -307,12 +324,15 @@ func (r *RoomManager) StartSession(
 		AllowTCPFallback:        allowFallback,
 		TURNSEnabled:            r.config.IsTURNSEnabled(),
 		GetParticipantInfo: func(pID livekit.ParticipantID) *livekit.ParticipantInfo {
-			if p := room.GetParticipantBySid(pID); p != nil {
+			if p := room.GetParticipantByID(pID); p != nil {
 				return p.ToProto()
 			}
 			return nil
 		},
-		ReconnectOnPublicationError: reconnectOnPublicationError,
+		ReconnectOnPublicationError:  reconnectOnPublicationError,
+		ReconnectOnSubscriptionError: reconnectOnSubscriptionError,
+		VersionGenerator:             r.versionGenerator,
+		TrackResolver:                room.ResolveMediaTrackForSubscriber,
 	})
 	if err != nil {
 		return err
@@ -398,13 +418,13 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 	currentRoom := r.rooms[roomName]
 	for currentRoom != lastSeenRoom {
 		r.lock.Unlock()
-		if currentRoom.Hold() {
+		if currentRoom != nil && currentRoom.Hold() {
 			return currentRoom, nil
-		} else {
-			lastSeenRoom = currentRoom
-			r.lock.Lock()
-			currentRoom = r.rooms[roomName]
 		}
+
+		lastSeenRoom = currentRoom
+		r.lock.Lock()
+		currentRoom = r.rooms[roomName]
 	}
 
 	// construct ice servers
@@ -428,7 +448,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 	})
 
 	newRoom.OnParticipantChanged(func(p types.LocalParticipant) {
-		if p.State() != livekit.ParticipantInfo_DISCONNECTED {
+		if !p.IsDisconnected() {
 			if err := r.roomStore.StoreParticipant(ctx, roomName, p.ToProto()); err != nil {
 				newRoom.Logger.Errorw("could not handle participant change", err)
 			}
@@ -449,23 +469,22 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 
 // manages an RTC session for a participant, runs on the RTC node
 func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalParticipant, requestSource routing.MessageSource) {
-	defer func() {
-		logger.Infow("RTC session finishing",
-			"participant", participant.Identity(),
-			"pID", participant.ID(),
-			"room", room.Name(),
-			"roomID", room.ID(),
-		)
-		requestSource.Close()
-	}()
-	defer rtc.Recover()
-
 	pLogger := rtc.LoggerWithParticipant(
 		rtc.LoggerWithRoom(logger.GetLogger(), room.Name(), room.ID()),
 		participant.Identity(),
 		participant.ID(),
 		false,
 	)
+	defer func() {
+		pLogger.Debugw("RTC session finishing")
+		requestSource.Close()
+	}()
+
+	defer func() {
+		if r := rtc.Recover(pLogger); r != nil {
+			os.Exit(1)
+		}
+	}()
 
 	// send first refresh for cases when client token is close to expiring
 	_ = r.refreshToken(participant)
@@ -477,7 +496,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 		select {
 		case <-stateCheckTicker.C:
 			// periodic check to ensure participant didn't become disconnected
-			if participant.State() == livekit.ParticipantInfo_DISCONNECTED {
+			if participant.IsDisconnected() {
 				return
 			}
 		case <-tokenTicker.C:
@@ -567,10 +586,7 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomName livekit.Roo
 			participant.SetMetadata(rm.UpdateParticipant.Metadata)
 		}
 		if rm.UpdateParticipant.Permission != nil {
-			err := room.SetParticipantPermission(participant, rm.UpdateParticipant.Permission)
-			if err != nil {
-				pLogger.Errorw("could not update permissions", err)
-			}
+			participant.SetPermission(rm.UpdateParticipant.Permission)
 		}
 	case *livekit.RTCNodeMessage_DeleteRoom:
 		room.Logger.Infow("deleting room")
@@ -583,16 +599,12 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomName livekit.Roo
 			return
 		}
 		pLogger.Debugw("updating participant subscriptions")
-		if err := room.UpdateSubscriptions(
+		room.UpdateSubscriptions(
 			participant,
 			livekit.StringsAsTrackIDs(rm.UpdateSubscriptions.TrackSids),
 			rm.UpdateSubscriptions.ParticipantTracks,
 			rm.UpdateSubscriptions.Subscribe,
-		); err != nil {
-			pLogger.Warnw("could not update subscription", err,
-				"tracks", rm.UpdateSubscriptions.TrackSids,
-				"subscribe", rm.UpdateSubscriptions.Subscribe)
-		}
+		)
 	case *livekit.RTCNodeMessage_SendData:
 		pLogger.Debugw("api send data", "size", len(rm.SendData.Data))
 		up := &livekit.UserPacket{
@@ -689,16 +701,22 @@ func (r *RoomManager) refreshToken(participant types.LocalParticipant) error {
 }
 
 func (r *RoomManager) setIceConfig(participant types.LocalParticipant) *livekit.ICEConfig {
+	iceConfig := r.getIceConfig(participant)
+	if iceConfig == nil {
+		return &livekit.ICEConfig{}
+	}
+	participant.SetICEConfig(iceConfig)
+	return iceConfig
+}
+
+func (r *RoomManager) getIceConfig(participant types.LocalParticipant) *livekit.ICEConfig {
 	r.lock.Lock()
+	defer r.lock.Unlock()
 	iceConfigCacheEntry, ok := r.iceConfigCache[participant.Identity()]
 	if !ok || time.Since(iceConfigCacheEntry.modifiedAt) > iceConfigTTL {
 		delete(r.iceConfigCache, participant.Identity())
-		r.lock.Unlock()
-		return &livekit.ICEConfig{}
+		return nil
 	}
-	r.lock.Unlock()
-
-	participant.SetICEConfig(iceConfigCacheEntry.iceConfig)
 	return iceConfigCacheEntry.iceConfig
 }
 

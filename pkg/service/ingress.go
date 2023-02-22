@@ -2,36 +2,31 @@ package service
 
 import (
 	"context"
-	"errors"
-	"time"
-
-	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/telemetry"
-	"github.com/livekit/protocol/ingress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
-)
-
-var (
-	initialTimeout = time.Second * 3
-	retryTimeout   = time.Minute * 1
+	"github.com/livekit/psrpc"
 )
 
 type IngressService struct {
 	conf        *config.IngressConfig
-	rpcClient   ingress.RPCClient
+	nodeID      livekit.NodeID
+	bus         psrpc.MessageBus
+	psrpcClient rpc.IngressClient
 	store       IngressStore
 	roomService livekit.RoomService
 	telemetry   telemetry.TelemetryService
-	shutdown    chan struct{}
 }
 
 func NewIngressService(
 	conf *config.IngressConfig,
-	rpcClient ingress.RPCClient,
+	nodeID livekit.NodeID,
+	bus psrpc.MessageBus,
+	psrpcClient rpc.IngressClient,
 	store IngressStore,
 	rs livekit.RoomService,
 	ts telemetry.TelemetryService,
@@ -39,23 +34,13 @@ func NewIngressService(
 
 	return &IngressService{
 		conf:        conf,
-		rpcClient:   rpcClient,
+		nodeID:      nodeID,
+		bus:         bus,
+		psrpcClient: psrpcClient,
 		store:       store,
 		roomService: rs,
 		telemetry:   ts,
-		shutdown:    make(chan struct{}),
 	}
-}
-
-func (s *IngressService) Start() {
-	if s.rpcClient != nil {
-		go s.updateWorker()
-		go s.entitiesWorker()
-	}
-}
-
-func (s *IngressService) Stop() {
-	close(s.shutdown)
 }
 
 func (s *IngressService) CreateIngress(ctx context.Context, req *livekit.CreateIngressRequest) (*livekit.IngressInfo, error) {
@@ -84,6 +69,9 @@ func (s *IngressService) CreateIngressWithUrlPrefix(ctx context.Context, urlPref
 	if err != nil {
 		return nil, twirpAuthError(err)
 	}
+	if s.store == nil {
+		return nil, ErrIngressNotConnected
+	}
 
 	sk := utils.NewGuid("")
 
@@ -102,47 +90,12 @@ func (s *IngressService) CreateIngressWithUrlPrefix(ctx context.Context, urlPref
 		State:               &livekit.IngressState{},
 	}
 
-	if err := s.store.StoreIngress(ctx, info); err != nil {
+	if err = s.store.StoreIngress(ctx, info); err != nil {
 		logger.Errorw("could not write ingress info", err)
 		return nil, err
 	}
 
 	return info, nil
-}
-
-func (s *IngressService) sendRPCWithRetry(ctx context.Context, req *livekit.IngressRequest) (*livekit.IngressState, error) {
-	type result struct {
-		state *livekit.IngressState
-		err   error
-	}
-
-	resChan := make(chan result, 1)
-
-	go func() {
-		cctx, _ := context.WithTimeout(context.Background(), retryTimeout)
-
-		for {
-			select {
-			case <-cctx.Done():
-				resChan <- result{nil, ingress.ErrNoResponse}
-				return
-			default:
-			}
-
-			s, err := s.rpcClient.SendRequest(cctx, req)
-			if err != ingress.ErrNoResponse {
-				resChan <- result{s, err}
-				return
-			}
-		}
-	}()
-
-	select {
-	case res := <-resChan:
-		return res.state, res.err
-	case <-time.After(initialTimeout):
-		return nil, ingress.ErrNoResponse
-	}
 }
 
 func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateIngressRequest) (*livekit.IngressInfo, error) {
@@ -159,7 +112,7 @@ func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateI
 		return nil, twirpAuthError(err)
 	}
 
-	if s.rpcClient == nil {
+	if s.psrpcClient == nil {
 		return nil, ErrIngressNotConnected
 	}
 
@@ -201,14 +154,8 @@ func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateI
 	case livekit.IngressState_ENDPOINT_BUFFERING,
 		livekit.IngressState_ENDPOINT_PUBLISHING:
 		// Do not update store the returned state as the ingress service will do it
-		s, err := s.sendRPCWithRetry(ctx, &livekit.IngressRequest{
-			IngressId: req.IngressId,
-			Request:   &livekit.IngressRequest_Update{Update: req},
-		})
-		if err != nil {
+		if _, err = s.psrpcClient.UpdateIngress(ctx, req.IngressId, req); err != nil {
 			logger.Warnw("could not update active ingress", err)
-		} else {
-			info.State = s
 		}
 	}
 
@@ -227,6 +174,9 @@ func (s *IngressService) ListIngress(ctx context.Context, req *livekit.ListIngre
 	if err != nil {
 		return nil, twirpAuthError(err)
 	}
+	if s.store == nil {
+		return nil, ErrIngressNotConnected
+	}
 
 	infos, err := s.store.ListIngress(ctx, livekit.RoomName(req.RoomName))
 	if err != nil {
@@ -243,7 +193,7 @@ func (s *IngressService) DeleteIngress(ctx context.Context, req *livekit.DeleteI
 		return nil, twirpAuthError(err)
 	}
 
-	if s.rpcClient == nil {
+	if s.psrpcClient == nil {
 		return nil, ErrIngressNotConnected
 	}
 
@@ -255,14 +205,8 @@ func (s *IngressService) DeleteIngress(ctx context.Context, req *livekit.DeleteI
 	switch info.State.Status {
 	case livekit.IngressState_ENDPOINT_BUFFERING,
 		livekit.IngressState_ENDPOINT_PUBLISHING:
-		s, err := s.sendRPCWithRetry(ctx, &livekit.IngressRequest{
-			IngressId: req.IngressId,
-			Request:   &livekit.IngressRequest_Delete{Delete: req},
-		})
-		if err != nil {
+		if _, err = s.psrpcClient.DeleteIngress(ctx, req.IngressId, req); err != nil {
 			logger.Warnw("could not stop active ingress", err)
-		} else {
-			info.State = s
 		}
 	}
 
@@ -274,76 +218,4 @@ func (s *IngressService) DeleteIngress(ctx context.Context, req *livekit.DeleteI
 
 	info.State.Status = livekit.IngressState_ENDPOINT_INACTIVE
 	return info, nil
-}
-
-func (s *IngressService) updateWorker() {
-	sub, err := s.rpcClient.GetUpdateChannel(context.Background())
-	if err != nil {
-		logger.Errorw("failed to subscribe to results channel", err)
-		return
-	}
-
-	resChan := sub.Channel()
-	for {
-		select {
-		case msg := <-resChan:
-			b := sub.Payload(msg)
-
-			res := &livekit.UpdateIngressStateRequest{}
-			if err = proto.Unmarshal(b, res); err != nil {
-				logger.Errorw("failed to read results", err)
-				continue
-			}
-
-			// save updated info to store
-			err = s.store.UpdateIngressState(context.Background(), res.IngressId, res.State)
-			if err != nil {
-				logger.Errorw("could not update ingress", err)
-			}
-
-		case <-s.shutdown:
-			_ = sub.Close()
-			return
-		}
-	}
-}
-
-func (s *IngressService) entitiesWorker() {
-	sub, err := s.rpcClient.GetEntityChannel(context.Background())
-	if err != nil {
-		logger.Errorw("failed to subscribe to entities channel", err)
-		return
-	}
-
-	resChan := sub.Channel()
-	for {
-		select {
-		case msg := <-resChan:
-			b := sub.Payload(msg)
-
-			req := &livekit.GetIngressInfoRequest{}
-			if err = proto.Unmarshal(b, req); err != nil {
-				logger.Errorw("failed to read request", err)
-				continue
-			}
-
-			var info *livekit.IngressInfo
-			var err error
-			if req.IngressId != "" {
-				info, err = s.store.LoadIngress(context.Background(), req.IngressId)
-			} else if req.StreamKey != "" {
-				info, err = s.store.LoadIngressFromStreamKey(context.Background(), req.StreamKey)
-			} else {
-				err = errors.New("request needs to specity either IngressId or StreamKey")
-			}
-			err = s.rpcClient.SendGetIngressInfoResponse(context.Background(), req, &livekit.GetIngressInfoResponse{Info: info}, err)
-			if err != nil {
-				logger.Errorw("could not send response", err)
-			}
-
-		case <-s.shutdown:
-			_ = sub.Close()
-			return
-		}
-	}
 }

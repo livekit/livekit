@@ -10,6 +10,7 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/livekit-server/pkg/telemetry/telemetryfakes"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -58,7 +59,6 @@ func TestIsReady(t *testing.T) {
 func TestTrackPublishing(t *testing.T) {
 	t.Run("should send the correct events", func(t *testing.T) {
 		p := newParticipantForTest("test")
-		p.state.Store(livekit.ParticipantInfo_ACTIVE)
 		track := &typesfakes.FakeMediaTrack{}
 		track.IDReturns("id")
 		published := false
@@ -71,14 +71,9 @@ func TestTrackPublishing(t *testing.T) {
 		})
 		p.UpTrackManager.AddPublishedTrack(track)
 		p.handleTrackPublished(track)
-
 		require.True(t, published)
 		require.False(t, updated)
 		require.Len(t, p.UpTrackManager.publishedTracks, 1)
-
-		track.AddOnCloseArgsForCall(0)()
-		require.Len(t, p.UpTrackManager.publishedTracks, 0)
-		require.True(t, updated)
 	})
 
 	t.Run("sends back trackPublished event", func(t *testing.T) {
@@ -184,6 +179,7 @@ func TestTrackPublishing(t *testing.T) {
 
 func TestOutOfOrderUpdates(t *testing.T) {
 	p := newParticipantForTest("test")
+	p.updateState(livekit.ParticipantInfo_JOINED)
 	p.SetMetadata("initial metadata")
 	sink := p.getResponseSink().(*routingfakes.FakeMessageSink)
 	pi1 := p.ToProto()
@@ -481,8 +477,10 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 		ClientConf:        opts.clientConf,
 		ClientInfo:        ClientInfo{ClientInfo: opts.clientInfo},
 		Logger:            LoggerWithParticipant(logger.GetLogger(), identity, sid, false),
+		Telemetry:         &telemetryfakes.FakeTelemetryService{},
 	})
 	p.isPublisher.Store(opts.publisher)
+	p.updateState(livekit.ParticipantInfo_ACTIVE)
 
 	return p
 }

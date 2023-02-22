@@ -117,6 +117,17 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 	return rm, nil
 }
 
+func (r *StandardRoomAllocator) ValidateCreateRoom(ctx context.Context, roomName livekit.RoomName) error {
+	// when auto create is disabled, we'll check to ensure it's already created
+	if !r.config.Room.AutoCreate {
+		_, _, err := r.roomStore.LoadRoom(ctx, roomName, false)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func applyDefaultRoomConfig(room *livekit.Room, conf *config.RoomConfig) {
 	room.EmptyTimeout = conf.EmptyTimeout
 	room.MaxParticipants = conf.MaxParticipants

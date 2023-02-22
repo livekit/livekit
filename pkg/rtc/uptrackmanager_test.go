@@ -7,13 +7,15 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 )
 
 var defaultUptrackManagerParams = UpTrackManagerParams{
-	Logger: logger.GetLogger(),
+	Logger:           logger.GetLogger(),
+	VersionGenerator: utils.NewDefaultTimedVersionGenerator(),
 }
 
 func TestUpdateSubscriptionPermission(t *testing.T) {

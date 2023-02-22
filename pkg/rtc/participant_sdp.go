@@ -34,10 +34,7 @@ func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(offer webrtc.Se
 		p.pendingTracksLock.RLock()
 		_, info := p.getPendingTrack(streamID, livekit.TrackType_AUDIO)
 		// if RED is disabled for this track, don't prefer RED codec in offer
-		if info != nil && info.DisableRed {
-			p.pendingTracksLock.RUnlock()
-			continue
-		}
+		disableRed := info != nil && info.DisableRed
 		p.pendingTracksLock.RUnlock()
 
 		codecs, err := codecsFromMediaDescription(unmatchAudio)
@@ -60,11 +57,26 @@ func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(offer webrtc.Se
 		var preferredCodecs, leftCodecs []string
 		for _, codec := range codecs {
 			// codec contain opus/red
-			if strings.EqualFold(codec.Name, "red") && strings.Contains(codec.Fmtp, strconv.FormatInt(int64(opusPayload), 10)) {
+			if !disableRed && strings.EqualFold(codec.Name, "red") && strings.Contains(codec.Fmtp, strconv.FormatInt(int64(opusPayload), 10)) {
 				preferredCodecs = append(preferredCodecs, strconv.FormatInt(int64(codec.PayloadType), 10))
 			} else {
 				leftCodecs = append(leftCodecs, strconv.FormatInt(int64(codec.PayloadType), 10))
 			}
+		}
+
+		// ensure nack enabled for audio in publisher offer
+		var nackFound bool
+		for _, attr := range unmatchAudio.Attributes {
+			if attr.Key == "rtcp-fb" && strings.Contains(attr.Value, fmt.Sprintf("%d nack", opusPayload)) {
+				nackFound = true
+				break
+			}
+		}
+		if !nackFound {
+			unmatchAudio.Attributes = append(unmatchAudio.Attributes, sdp.Attribute{
+				Key:   "rtcp-fb",
+				Value: fmt.Sprintf("%d nack", opusPayload),
+			})
 		}
 
 		// no opus/red found
@@ -179,6 +191,10 @@ func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescript
 	for _, m := range parsed.MediaDescriptions {
 		switch m.MediaName.Media {
 		case "audio":
+			_, ok := m.Attribute(sdp.AttrKeyInactive)
+			if ok {
+				continue
+			}
 			mid, ok := m.Attribute(sdp.AttrKeyMID)
 			if !ok {
 				continue
@@ -186,6 +202,10 @@ func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescript
 			// find track info from offer's stream id
 			var ti *livekit.TrackInfo
 			for _, om := range parsedOffer.MediaDescriptions {
+				_, ok := om.Attribute(sdp.AttrKeyInactive)
+				if ok {
+					continue
+				}
 				omid, ok := om.Attribute(sdp.AttrKeyMID)
 				if ok && omid == mid {
 					streamID, ok := lksdp.ExtractStreamID(om)

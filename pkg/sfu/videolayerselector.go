@@ -17,7 +17,7 @@ type targetLayer struct {
 type DDVideoLayerSelector struct {
 	logger logger.Logger
 
-	// TODO : fields for frame chain detect
+	// DD-TODO : fields for frame chain detect
 	// frameNumberWrapper Uint16Wrapper
 	// expectKeyFrame      bool
 
@@ -43,7 +43,7 @@ func (s *DDVideoLayerSelector) Select(expPkt *buffer.ExtPacket, tp *TranslationP
 
 	if expPkt.DependencyDescriptor.AttachedStructure != nil {
 		// update decode target layer and active decode targets
-		// TODO : these targets info can be shared by all the downtracks, no need calculate in every selector
+		// DD-TODO : these targets info can be shared by all the downtracks, no need calculate in every selector
 		s.updateDependencyStructure(expPkt.DependencyDescriptor.AttachedStructure)
 	}
 
@@ -52,7 +52,7 @@ func (s *DDVideoLayerSelector) Select(expPkt *buffer.ExtPacket, tp *TranslationP
 		return true
 	}
 
-	// TODO : we don't have a rtp queue to ensure the order of packets now,
+	// DD-TODO : we don't have a rtp queue to ensure the order of packets now,
 	// so we don't know packet is lost/out of order, that cause us can't detect
 	// frame integrity, entire frame is forwareded, whether frame chain is broken.
 	// So use a simple check here, assume all the reference frame is forwarded and
@@ -69,7 +69,7 @@ func (s *DDVideoLayerSelector) Select(expPkt *buffer.ExtPacket, tp *TranslationP
 		// find target match with selected layer
 		if dt.Layer.Spatial <= s.layer.Spatial && dt.Layer.Temporal <= s.layer.Temporal {
 			if activeDecodeTargets == nil || ((*activeDecodeTargets)&(1<<dt.Target) != 0) {
-				// TODO : check frame chain integrity
+				// DD-TODO : check frame chain integrity
 				currentTarget = dt.Target
 				// s.logger.Debugw("select target", "target", currentTarget, "layer", dt.layer, "dtis", expPkt.DependencyDescriptor.FrameDependencies.DecodeTargetIndications)
 				break
@@ -92,16 +92,16 @@ func (s *DDVideoLayerSelector) Select(expPkt *buffer.ExtPacket, tp *TranslationP
 		return false
 	}
 
-	// TODO : if bandwidth in congest, could drop the 'Discardable' packet
+	// DD-TODO : if bandwidth in congest, could drop the 'Discardable' packet
 	if dti := dtis[currentTarget]; dti == dd.DecodeTargetNotPresent {
 		// s.logger.Debugw(fmt.Sprintf("drop packet for decode target not present, dtis %v, currentTarget %d, s:%d, t:%d", dtis, currentTarget,
 		// expPkt.DependencyDescriptor.FrameDependencies.SpatialId, expPkt.DependencyDescriptor.FrameDependencies.TemporalId))
 		return false
 	} else if dti == dd.DecodeTargetSwitch {
-		tp.switchingToTargetLayer = true
+		tp.isSwitchingToTargetLayer = true
 	}
 
-	// TODO : add frame to forwarded queue if entire frame is forwarded
+	// DD-TODO : add frame to forwarded queue if entire frame is forwarded
 	// s.logger.Debugw("select packet", "target", currentTarget, "layer", s.layer)
 
 	tp.ddExtension = &dd.DependencyDescriptorExtension{
@@ -176,7 +176,7 @@ func (s *DDVideoLayerSelector) updateDependencyStructure(structure *dd.FrameDepe
 	s.logger.Debugw(fmt.Sprintf("update decode targets: %v", s.decodeTargetLayer))
 }
 
-// TODO : use generic wrapper when updated to go 1.18
+// DD-TODO : use generic wrapper when updated to go 1.18
 type Uint16Wrapper struct {
 	last_value    *uint16
 	lastUnwrapped int32

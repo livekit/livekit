@@ -108,12 +108,12 @@ func IsEOF(err error) bool {
 	return err == io.ErrClosedPipe || err == io.EOF
 }
 
-func RecoverSilent() {
-	recover()
-}
-
-func Recover() {
-	if r := recover(); r != nil {
+func Recover(l logger.Logger) any {
+	if l == nil {
+		l = logger.GetLogger()
+	}
+	r := recover()
+	if r != nil {
 		var err error
 		switch e := r.(type) {
 		case string:
@@ -123,8 +123,10 @@ func Recover() {
 		default:
 			err = errors.New("unknown panic")
 		}
-		logger.Errorw("recovered panic", err, "panic", r)
+		l.Errorw("recovered panic", err, "panic", r)
 	}
+
+	return r
 }
 
 // logger helpers

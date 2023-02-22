@@ -9,11 +9,13 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/webhook"
 )
 
 type EgressLauncher interface {
-	StartEgress(context.Context, *livekit.StartEgressRequest) (*livekit.EgressInfo, error)
+	StartEgress(context.Context, *rpc.StartEgressRequest) (*livekit.EgressInfo, error)
+	StartEgressWithClusterId(ctx context.Context, clusterId string, req *rpc.StartEgressRequest) (*livekit.EgressInfo, error)
 }
 
 func StartTrackEgress(
@@ -76,8 +78,8 @@ func startTrackEgress(
 		return req, errors.New("egress launcher not found")
 	}
 
-	_, err := launcher.StartEgress(ctx, &livekit.StartEgressRequest{
-		Request: &livekit.StartEgressRequest_Track{
+	_, err := launcher.StartEgress(ctx, &rpc.StartEgressRequest{
+		Request: &rpc.StartEgressRequest_Track{
 			Track: req,
 		},
 		RoomId: string(roomID),

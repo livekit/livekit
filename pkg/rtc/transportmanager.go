@@ -4,7 +4,9 @@ import (
 	"math/bits"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/pion/ice/v2"
 	"github.com/pion/rtcp"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
@@ -21,7 +23,8 @@ import (
 )
 
 const (
-	failureCountThreshold = 2
+	failureCountThreshold     = 2
+	preferNextByFailureWindow = time.Minute
 
 	// when RR report loss percentage over this threshold, we consider it is a unstable event
 	udpLossFracUnstable = 25
@@ -57,6 +60,8 @@ type TransportManager struct {
 	subscriber              *PCTransport
 	failureCount            int
 	isTransportReconfigured bool
+	lastFailure             time.Time
+	lastSignalAt            time.Time
 
 	pendingOfferPublisher        *webrtc.SessionDescription
 	pendingDataChannelsPublisher []*livekit.DataChannelInfo
@@ -66,7 +71,7 @@ type TransportManager struct {
 
 	mediaLossProxy       *MediaLossProxy
 	udpLossUnstableCount uint32
-	tcpRTT, udpRTT       uint32
+	signalingRTT, udpRTT uint32
 
 	onPublisherInitialConnected        func()
 	onSubscriberInitialConnected       func()
@@ -420,6 +425,19 @@ func (t *TransportManager) HandleAnswer(answer webrtc.SessionDescription) {
 
 // AddICECandidate adds candidates for remote peer
 func (t *TransportManager) AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget) {
+	if !t.params.Config.UseMDNS {
+		candidateValue := strings.TrimPrefix(candidate.Candidate, "candidate:")
+		if candidateValue != "" {
+			candidate, err := ice.UnmarshalCandidate(candidateValue)
+			if err != nil {
+				t.params.Logger.Errorw("failed to parse ice candidate", err)
+			} else if strings.HasSuffix(candidate.Address(), ".local") {
+				t.params.Logger.Debugw("ignoring mDNS candidate", "candidate", candidateValue, "target", target)
+				return
+			}
+		}
+	}
+
 	switch target {
 	case livekit.SignalTarget_PUBLISHER:
 		t.publisher.AddICECandidate(candidate)
@@ -435,11 +453,15 @@ func (t *TransportManager) NegotiateSubscriber(force bool) {
 	t.subscriber.Negotiate(force)
 }
 
-func (t *TransportManager) ICERestart(iceConfig *livekit.ICEConfig) {
+func (t *TransportManager) ICERestart(iceConfig *livekit.ICEConfig, resetShortConnection bool) {
 	if iceConfig != nil {
 		t.SetICEConfig(iceConfig)
 	}
 
+	if resetShortConnection {
+		t.publisher.ResetShortConnOnICERestart()
+		t.subscriber.ResetShortConnOnICERestart()
+	}
 	t.subscriber.ICERestart()
 }
 
@@ -455,7 +477,15 @@ func (t *TransportManager) SetICEConfig(iceConfig *livekit.ICEConfig) {
 
 func (t *TransportManager) configureICE(iceConfig *livekit.ICEConfig, reset bool) {
 	t.lock.Lock()
-	if proto.Equal(t.iceConfig, iceConfig) {
+	isEqual := proto.Equal(t.iceConfig, iceConfig)
+	if reset || !isEqual {
+		t.failureCount = 0
+		t.isTransportReconfigured = !reset
+		t.udpLossUnstableCount = 0
+		t.lastFailure = time.Time{}
+	}
+
+	if isEqual {
 		t.lock.Unlock()
 		return
 	}
@@ -463,8 +493,6 @@ func (t *TransportManager) configureICE(iceConfig *livekit.ICEConfig, reset bool
 	t.params.Logger.Infow("setting ICE config", "iceConfig", iceConfig)
 	onICEConfigChanged := t.onICEConfigChanged
 	t.iceConfig = iceConfig
-	t.failureCount = 0
-	t.isTransportReconfigured = !reset
 	t.lock.Unlock()
 
 	if iceConfig.PreferenceSubscriber != livekit.ICECandidateType_ICT_NONE {
@@ -507,6 +535,18 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 		return
 	}
 
+	lastSignalSince := time.Since(t.lastSignalAt)
+	if lastSignalSince > iceFailedTimeout {
+		// the failed might cause by network interrupt because we have not seen any signal in the time window too
+		// so don't switch to next candidate type
+		t.params.Logger.Infow("ignoring prefer candidate check by ICE failure because no signal received in the ice failed window",
+			"lastSignalSince", lastSignalSince)
+		t.failureCount = 0
+		t.lastFailure = time.Time{}
+		t.lock.Unlock()
+		return
+	}
+
 	//
 	// Checking only `PreferenceSubcriber` field although any connection failure (PUBLISHER OR SUBSCRIBER) will
 	// flow through here.
@@ -528,7 +568,9 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 		preferNext = getNext(t.iceConfig)
 	} else {
 		t.failureCount++
-		if t.failureCount < failureCountThreshold {
+		lastFailure := t.lastFailure
+		t.lastFailure = time.Now()
+		if t.failureCount < failureCountThreshold || time.Since(lastFailure) > preferNextByFailureWindow {
 			t.lock.Unlock()
 			return
 		}
@@ -638,10 +680,11 @@ func (t *TransportManager) onMediaLossUpdate(loss uint8) {
 	if loss >= uint8(255*udpLossFracUnstable/100) {
 		t.udpLossUnstableCount |= 1
 		if bits.OnesCount32(t.udpLossUnstableCount) >= udpLossUnstableCountThreshold {
-			if t.udpRTT > 0 && t.tcpRTT < uint32(float32(t.udpRTT)*1.3) && t.tcpRTT < tcpGoodRTT {
+			if t.udpRTT > 0 && t.signalingRTT < uint32(float32(t.udpRTT)*1.3) && t.signalingRTT < tcpGoodRTT && time.Since(t.lastSignalAt) < iceFailedTimeout {
 				t.udpLossUnstableCount = 0
 				t.lock.Unlock()
-				t.params.Logger.Infow("udp connection unstable, switch to tcp")
+
+				t.params.Logger.Infow("udp connection unstable, switch to tcp", "signalingRTT", t.signalingRTT)
 				t.handleConnectionFailed(true)
 				if t.onAnyTransportFailed != nil {
 					t.onAnyTransportFailed()
@@ -653,14 +696,30 @@ func (t *TransportManager) onMediaLossUpdate(loss uint8) {
 	t.lock.Unlock()
 }
 
-func (t *TransportManager) UpdateRTT(rtt uint32, isUDP bool) {
-	if isUDP {
-		if t.udpRTT == 0 {
-			t.udpRTT = rtt
-		} else {
-			t.udpRTT = uint32(int(t.udpRTT) + (int(rtt)-int(t.udpRTT))/2)
-		}
+func (t *TransportManager) UpdateSignalingRTT(rtt uint32) {
+	t.signalingRTT = rtt
+
+	// TODO: considering using tcp rtt to calculate ice connection cost, if ice connection can't be established
+	// within 5 * tcp rtt(at least 5s), means udp traffic might be block/dropped, switch to tcp.
+	// Currently, most cases reported is that ice connected but subsequent connection, so left the thinking for now.
+}
+
+func (t *TransportManager) UpdateMediaRTT(rtt uint32) {
+	if t.udpRTT == 0 {
+		t.udpRTT = rtt
 	} else {
-		t.tcpRTT = rtt
+		t.udpRTT = uint32(int(t.udpRTT) + (int(rtt)-int(t.udpRTT))/2)
 	}
+}
+
+func (t *TransportManager) UpdateLastSeenSignal() {
+	t.lock.Lock()
+	t.lastSignalAt = time.Now()
+	t.lock.Unlock()
+}
+
+func (t *TransportManager) SinceLastSignal() time.Duration {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+	return time.Since(t.lastSignalAt)
 }

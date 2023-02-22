@@ -234,6 +234,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			t.params.TrackInfo,
 			LoggerWithCodecMime(t.params.Logger, mime),
 			twcc,
+			t.params.VideoConfig.StreamTracker,
 			sfu.WithPliThrottleConfig(t.params.PLIThrottleConfig),
 			sfu.WithAudioConfig(t.params.AudioConfig),
 			sfu.WithLoadBalanceThreshold(20),
@@ -246,18 +247,12 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 				if t.dynacastManager != nil {
 					t.dynacastManager.Close()
 				}
-				t.params.Telemetry.TrackUnpublished(
-					context.Background(),
-					t.PublisherID(),
-					t.PublisherIdentity(),
-					t.ToProto(),
-					uint32(track.SSRC()),
-				)
 			}
 		})
 		newWR.OnStatsUpdate(func(_ *sfu.WebRTCReceiver, stat *livekit.AnalyticsStat) {
 			// LK-TODO: this needs to be receiver/mime aware
-			t.params.Telemetry.TrackStats(livekit.StreamType_UPSTREAM, t.PublisherID(), t.ID(), stat)
+			key := telemetry.StatsKeyForTrack(livekit.StreamType_UPSTREAM, t.PublisherID(), t.ID(), t.params.TrackInfo.Source, t.params.TrackInfo.Type)
+			t.params.Telemetry.TrackStats(key, stat)
 		})
 		if t.PrimaryReceiver() == nil {
 			// primary codec published, set potential codecs
@@ -276,12 +271,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 				t.params.Logger.Debugw("primary codec published, set potential codecs", "potential", potentialCodecs)
 				t.MediaTrackReceiver.SetPotentialCodecs(potentialCodecs, parameters.HeaderExtensions)
 			}
-			t.params.Telemetry.TrackPublished(
-				context.Background(),
-				t.PublisherID(),
-				t.PublisherIdentity(),
-				t.ToProto(),
-			)
 		}
 
 		newWR.OnMaxLayerChange(t.onMaxLayerChange)

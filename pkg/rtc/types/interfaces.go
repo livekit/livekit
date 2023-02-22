@@ -173,6 +173,7 @@ func (p ParticipantCloseReason) ToDisconnectReason() livekit.DisconnectReason {
 type Participant interface {
 	ID() livekit.ParticipantID
 	Identity() livekit.ParticipantIdentity
+	State() livekit.ParticipantInfo_State
 
 	ToProto() *livekit.ParticipantInfo
 
@@ -183,8 +184,9 @@ type Participant interface {
 	GetPublishedTracks() []MediaTrack
 	RemovePublishedTrack(track MediaTrack, willBeResumed bool, shouldClose bool)
 
-	AddSubscriber(op LocalParticipant, params AddSubscriberParams) (int, error)
-	RemoveSubscriber(op LocalParticipant, trackID livekit.TrackID, resume bool)
+	// HasPermission checks permission of the subscriber by identity. Returns true if subscriber is allowed to subscribe
+	// to the track with trackID
+	HasPermission(trackID livekit.TrackID, subIdentity livekit.ParticipantIdentity) bool
 
 	// permissions
 	Hidden() bool
@@ -220,6 +222,7 @@ const (
 
 type AddTrackParams struct {
 	Stereo bool
+	Red    bool
 }
 
 //counterfeiter:generate . LocalParticipant
@@ -231,8 +234,10 @@ type LocalParticipant interface {
 	GetAdaptiveStream() bool
 	ProtocolVersion() ProtocolVersion
 	ConnectedAt() time.Time
-	State() livekit.ParticipantInfo_State
+	IsClosed() bool
 	IsReady() bool
+	IsDisconnected() bool
+	IsIdle() bool
 	SubscriberAsPrimary() bool
 	GetClientConfiguration() *livekit.ClientConfiguration
 	GetICEConnectionType() ICEConnectionType
@@ -240,6 +245,7 @@ type LocalParticipant interface {
 
 	SetResponseSink(sink routing.MessageSink)
 	CloseSignalConnection()
+	UpdateLastSeenSignal()
 
 	// permissions
 	ClaimGrants() *auth.ClaimGrants
@@ -256,19 +262,22 @@ type LocalParticipant interface {
 
 	HandleAnswer(sdp webrtc.SessionDescription)
 	Negotiate(force bool)
-	ICERestart(iceConfig *livekit.ICEConfig)
+	ICERestart(iceConfig *livekit.ICEConfig, reason livekit.ReconnectReason)
 	AddTrackToSubscriber(trackLocal webrtc.TrackLocal, params AddTrackParams) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
 	AddTransceiverFromTrackToSubscriber(trackLocal webrtc.TrackLocal, params AddTrackParams) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
 	RemoveTrackFromSubscriber(sender *webrtc.RTPSender) error
 
 	// subscriptions
-	AddSubscribedTrack(st SubscribedTrack)
-	RemoveSubscribedTrack(st SubscribedTrack)
-	UpdateSubscribedTrackSettings(trackID livekit.TrackID, settings *livekit.UpdateTrackSettings) error
+	SubscribeToTrack(trackID livekit.TrackID)
+	UnsubscribeFromTrack(trackID livekit.TrackID)
+	UpdateSubscribedTrackSettings(trackID livekit.TrackID, settings *livekit.UpdateTrackSettings)
 	GetSubscribedTracks() []SubscribedTrack
 	VerifySubscribeParticipantInfo(pID livekit.ParticipantID, version uint32)
 	AddMuxAudioTrack(publisherID livekit.ParticipantID, trackID livekit.TrackID, r sfu.TrackReceiver)
 	RemoveMuxAudioTrack(trackID livekit.TrackID)
+	// WaitUntilSubscribed waits until all subscriptions have been settled, or if the timeout
+	// has been reached. If the timeout expires, it will return an error.
+	WaitUntilSubscribed(timeout time.Duration) error
 
 	// returns list of participant identities that the current participant is subscribed to
 	GetSubscribedParticipants() []livekit.ParticipantID
@@ -287,17 +296,22 @@ type LocalParticipant interface {
 	SendConnectionQualityUpdate(update *livekit.ConnectionQualityUpdate) error
 	SubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool)
 	SendRefreshToken(token string) error
+	SendReconnectResponse(reconnectResponse *livekit.ReconnectResponse) error
+	IssueFullReconnect(reason ParticipantCloseReason)
 
 	// callbacks
 	OnStateChange(func(p LocalParticipant, oldState livekit.ParticipantInfo_State))
+	OnMigrateStateChange(func(p LocalParticipant, migrateState MigrateState))
 	// OnTrackPublished - remote added a track
 	OnTrackPublished(func(LocalParticipant, MediaTrack))
 	// OnTrackUpdated - one of its publishedTracks changed in status
 	OnTrackUpdated(callback func(LocalParticipant, MediaTrack))
+	// OnTrackUnpublished - a track was unpublished
+	OnTrackUnpublished(callback func(LocalParticipant, MediaTrack))
 	// OnParticipantUpdate - metadata or permission is updated
 	OnParticipantUpdate(callback func(LocalParticipant))
 	OnDataPacket(callback func(LocalParticipant, *livekit.DataPacket))
-	OnSubscribedTo(callback func(LocalParticipant, livekit.ParticipantID))
+	OnSubscribeStatusChanged(fn func(publisherID livekit.ParticipantID, subscribed bool))
 	OnClose(callback func(LocalParticipant, map[livekit.TrackID]livekit.ParticipantID))
 	OnClaimsChanged(callback func(LocalParticipant))
 	OnReceiverReport(dt *sfu.DownTrack, report *rtcp.ReceiverReport)
@@ -308,21 +322,12 @@ type LocalParticipant interface {
 	MigrateState() MigrateState
 	SetMigrateInfo(previousOffer, previousAnswer *webrtc.SessionDescription, mediaTracks []*livekit.TrackPublishedResponse, dataChannels []*livekit.DataChannelInfo)
 
-	UpdateRTT(rtt uint32)
+	UpdateMediaRTT(rtt uint32)
+	UpdateSignalingRTT(rtt uint32)
 
 	CacheDownTrack(trackID livekit.TrackID, rtpTransceiver *webrtc.RTPTransceiver, downTrackState sfu.DownTrackState)
 	UncacheDownTrack(rtpTransceiver *webrtc.RTPTransceiver)
 	GetCachedDownTrack(trackID livekit.TrackID) (*webrtc.RTPTransceiver, sfu.DownTrackState)
-
-	EnqueueSubscribeTrack(trackID livekit.TrackID, isRelayed bool, f func(sub LocalParticipant) error) bool
-	EnqueueUnsubscribeTrack(
-		trackID livekit.TrackID,
-		isRelayed bool,
-		willBeResumed bool,
-		f func(subscriberID livekit.ParticipantID, willBeResumed bool) error,
-	) bool
-	ProcessSubscriptionRequestsQueue(trackID livekit.TrackID)
-	ClearInProgressAndProcessSubscriptionRequestsQueue(trackID livekit.TrackID)
 
 	SetICEConfig(iceConfig *livekit.ICEConfig)
 	OnICEConfigChanged(callback func(participant LocalParticipant, iceConfig *livekit.ICEConfig))
@@ -338,12 +343,13 @@ type Room interface {
 	Name() livekit.RoomName
 	ID() livekit.RoomID
 	RemoveParticipant(identity livekit.ParticipantIdentity, pID livekit.ParticipantID, reason ParticipantCloseReason)
-	UpdateSubscriptions(participant LocalParticipant, trackIDs []livekit.TrackID, participantTracks []*livekit.ParticipantTracks, subscribe bool) error
+	UpdateSubscriptions(participant LocalParticipant, trackIDs []livekit.TrackID, participantTracks []*livekit.ParticipantTracks, subscribe bool)
 	UpdateSubscriptionPermission(participant LocalParticipant, permissions *livekit.SubscriptionPermission) error
 	SyncState(participant LocalParticipant, state *livekit.SyncState) error
 	SimulateScenario(participant LocalParticipant, scenario *livekit.SimulateScenario) error
-	SetParticipantPermission(participant LocalParticipant, permission *livekit.ParticipantPermission) error
 	UpdateVideoLayers(participant Participant, updateVideoLayers *livekit.UpdateVideoLayers) error
+	ResolveMediaTrackForSubscriber(subIdentity livekit.ParticipantIdentity, trackID livekit.TrackID) MediaResolverResult
+	GetLocalParticipants() []LocalParticipant
 }
 
 // MediaTrack represents a media track
@@ -373,7 +379,7 @@ type MediaTrack interface {
 	AddOnClose(func())
 
 	// subscribers
-	AddSubscriber(participant LocalParticipant) error
+	AddSubscriber(participant LocalParticipant) (SubscribedTrack, error)
 	RemoveSubscriber(participantID livekit.ParticipantID, willBeResumed bool)
 	IsSubscriber(subID livekit.ParticipantID) bool
 	RevokeDisallowedSubscribers(allowedSubscriberIdentities []livekit.ParticipantIdentity) []livekit.ParticipantIdentity
@@ -408,11 +414,12 @@ type LocalMediaTrack interface {
 	NotifySubscriberNodeMediaLoss(nodeID livekit.NodeID, fractionalLoss uint8)
 }
 
-// MediaTrack is the main interface representing a track published to the room
-//
 //counterfeiter:generate . SubscribedTrack
 type SubscribedTrack interface {
-	OnBind(f func())
+	AddOnBind(f func())
+	IsBound() bool
+	Close(willBeResumed bool)
+	OnClose(f func(willBeResumed bool))
 	ID() livekit.TrackID
 	PublisherID() livekit.ParticipantID
 	PublisherIdentity() livekit.ParticipantIdentity
@@ -422,23 +429,40 @@ type SubscribedTrack interface {
 	Subscriber() LocalParticipant
 	DownTrack() *sfu.DownTrack
 	MediaTrack() MediaTrack
+	RTPSender() *webrtc.RTPSender
 	IsMuted() bool
 	SetPublisherMuted(muted bool)
 	UpdateSubscriberSettings(settings *livekit.UpdateTrackSettings)
 	// selects appropriate video layer according to subscriber preferences
 	UpdateVideoLayer()
+	NeedsNegotiation() bool
 }
 
-//
+type ChangeNotifier interface {
+	AddObserver(key string, onChanged func())
+	RemoveObserver(key string)
+	HasObservers() bool
+	NotifyChanged()
+}
+
+type MediaResolverResult struct {
+	TrackChangedNotifier ChangeNotifier
+	TrackRemovedNotifier ChangeNotifier
+	Track                MediaTrack
+	// is permission given to the requesting participant
+	HasPermission     bool
+	PublisherID       livekit.ParticipantID
+	PublisherIdentity livekit.ParticipantIdentity
+}
+
+// MediaTrackResolver locates a specific media track for a subscriber
+type MediaTrackResolver func(livekit.ParticipantIdentity, livekit.TrackID) MediaResolverResult
+
 // Supervisor/operation monitor related definitions
-//
 type OperationMonitorEvent int
 
 const (
-	OperationMonitorEventUpdateSubscription OperationMonitorEvent = iota
-	OperationMonitorEventSetSubscribedTrack
-	OperationMonitorEventClearSubscribedTrack
-	OperationMonitorEventPublisherPeerConnectionConnected
+	OperationMonitorEventPublisherPeerConnectionConnected OperationMonitorEvent = iota
 	OperationMonitorEventAddPendingPublication
 	OperationMonitorEventSetPublicationMute
 	OperationMonitorEventSetPublishedTrack
@@ -447,12 +471,6 @@ const (
 
 func (o OperationMonitorEvent) String() string {
 	switch o {
-	case OperationMonitorEventUpdateSubscription:
-		return "UPDATE_SUBSCRIPTION"
-	case OperationMonitorEventSetSubscribedTrack:
-		return "SET_SUBSCRIBED_TRACK"
-	case OperationMonitorEventClearSubscribedTrack:
-		return "CLEAR_SUBSCRIBED_TRACK"
 	case OperationMonitorEventPublisherPeerConnectionConnected:
 		return "PUBLISHER_PEER_CONNECTION_CONNECTED"
 	case OperationMonitorEventAddPendingPublication:
@@ -474,12 +492,4 @@ type OperationMonitor interface {
 	PostEvent(ome OperationMonitorEvent, omd OperationMonitorData)
 	Check() error
 	IsIdle() bool
-}
-
-//
-// SignalDeduper related definitions
-//
-type SignalDeduper interface {
-	Dedupe(participantKey livekit.ParticipantKey, req *livekit.SignalRequest) bool
-	ParticipantClosed(participantKey livekit.ParticipantKey)
 }

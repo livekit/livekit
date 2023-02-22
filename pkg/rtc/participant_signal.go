@@ -30,35 +30,67 @@ func (p *ParticipantImpl) SetResponseSink(sink routing.MessageSink) {
 }
 
 func (p *ParticipantImpl) SendJoinResponse(joinResponse *livekit.JoinResponse) error {
-	if p.State() == livekit.ParticipantInfo_JOINING {
-		p.updateState(livekit.ParticipantInfo_JOINED)
+	// keep track of participant updates and versions
+	p.updateLock.Lock()
+	for _, op := range joinResponse.OtherParticipants {
+		p.updateCache.Add(livekit.ParticipantID(op.Sid), op.Version)
 	}
+	p.updateLock.Unlock()
 
 	// send Join response
-	return p.writeMessage(&livekit.SignalResponse{
+	err := p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Join{
 			Join: joinResponse,
 		},
 	})
+	if err != nil {
+		return err
+	}
+
+	// update state after to sending message, so that no participant updates could slip through before JoinResponse is
+	// sent
+	p.updateLock.Lock()
+	if p.State() == livekit.ParticipantInfo_JOINING {
+		p.updateState(livekit.ParticipantInfo_JOINED)
+	}
+	queuedUpdates := p.queuedUpdates
+	p.queuedUpdates = nil
+	p.updateLock.Unlock()
+
+	if len(queuedUpdates) > 0 {
+		return p.SendParticipantUpdate(queuedUpdates)
+	}
+
+	return nil
 }
 
 func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.ParticipantInfo) error {
 	p.updateLock.Lock()
+	if p.IsDisconnected() {
+		p.updateLock.Unlock()
+		return nil
+	}
+
+	if !p.IsReady() {
+		// queue up updates
+		p.queuedUpdates = append(p.queuedUpdates, participantsToUpdate...)
+		p.updateLock.Unlock()
+		return nil
+	}
 	validUpdates := make([]*livekit.ParticipantInfo, 0, len(participantsToUpdate))
 	for _, pi := range participantsToUpdate {
 		isValid := true
-		if val, ok := p.updateCache.Get(pi.Sid); ok {
-			if lastVersion, ok := val.(uint32); ok {
-				// this is a message delivered out of order, a more recent version of the message had already been
-				// sent.
-				if pi.Version < lastVersion {
-					p.params.Logger.Debugw("skipping outdated participant update", "version", pi.Version, "lastVersion", lastVersion)
-					isValid = false
-				}
+		pID := livekit.ParticipantID(pi.Sid)
+		if lastVersion, ok := p.updateCache.Get(pID); ok {
+			// this is a message delivered out of order, a more recent version of the message had already been
+			// sent.
+			if pi.Version < lastVersion {
+				p.params.Logger.Debugw("skipping outdated participant update", "version", pi.Version, "lastVersion", lastVersion)
+				isValid = false
 			}
 		}
 		if isValid {
-			p.updateCache.Add(pi.Sid, pi.Version)
+			p.updateCache.Add(pID, pi.Version)
 			validUpdates = append(validUpdates, pi)
 		}
 	}
@@ -142,6 +174,17 @@ func (p *ParticipantImpl) SendRefreshToken(token string) error {
 	})
 }
 
+func (p *ParticipantImpl) SendReconnectResponse(reconnectResponse *livekit.ReconnectResponse) error {
+	if !p.params.ClientInfo.CanHandleReconnectResponse() {
+		return nil
+	}
+	return p.writeMessage(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_Reconnect{
+			Reconnect: reconnectResponse,
+		},
+	})
+}
+
 func (p *ParticipantImpl) sendICECandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) error {
 	trickle := ToProtoTrickle(c.ToJSON())
 	trickle.Target = target
@@ -182,7 +225,7 @@ func (p *ParticipantImpl) sendAudioMuxUpdate(mapping *livekit.AudioTrackMuxUpdat
 }
 
 func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
-	if p.State() == livekit.ParticipantInfo_DISCONNECTED {
+	if p.IsDisconnected() || (!p.IsReady() && msg.GetJoin() == nil) {
 		return nil
 	}
 

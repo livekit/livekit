@@ -12,6 +12,7 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
 // wrapper around WebRTC receiver, overriding its ID
@@ -48,7 +49,7 @@ func NewWrappedReceiver(params WrappedReceiverParams) *WrappedReceiver {
 				PayloadType:        111,
 			})
 		} else if !params.DisableRed && strings.EqualFold(codecs[0].MimeType, webrtc.MimeTypeOpus) {
-			// if upstream is opus only and red eanbled, add red to match clients that supoort red
+			// if upstream is opus only and red enabled, add red to match clients that support red
 			codecs = append(codecs, webrtc.RTPCodecParameters{
 				RTPCodecCapability: redCodecCapability,
 				PayloadType:        63,
@@ -186,11 +187,11 @@ func (d *DummyReceiver) ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
 	return 0, errors.New("no receiver")
 }
 
-func (d *DummyReceiver) GetLayeredBitrate() sfu.Bitrates {
+func (d *DummyReceiver) GetLayeredBitrate() ([]int32, sfu.Bitrates) {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		return r.GetLayeredBitrate()
 	}
-	return sfu.Bitrates{}
+	return nil, sfu.Bitrates{}
 }
 
 func (d *DummyReceiver) GetAudioLevel() (smooth, loudest float64, active bool) {
@@ -286,4 +287,18 @@ func (d *DummyReceiver) GetPrimaryReceiverForRed() sfu.TrackReceiver {
 
 func (d *DummyReceiver) GetRedReceiver() sfu.TrackReceiver {
 	return d
+}
+
+func (d *DummyReceiver) GetRTCPSenderReportDataExt(layer int32) *buffer.RTCPSenderReportDataExt {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+		return r.GetRTCPSenderReportDataExt(layer)
+	}
+	return nil
+}
+
+func (d *DummyReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error) {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+		return r.GetReferenceLayerRTPTimestamp(ts, layer, referenceLayer)
+	}
+	return 0, errors.New("receiver not available")
 }

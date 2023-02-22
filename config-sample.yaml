@@ -98,9 +98,20 @@ rtc:
   #     - 10.0.0.0/16
   #   excludes:
   #     - 192.168.1.0/24
+  # # Set to true to enable mDNS name candidate. This should be left disabled for most users.
+  # # when enabled, it will impact performance since each PeerConnection will process the same mDNS message independently
+  # use_mdns: true
+  # # Set to false to disable strict ACKs for peer connections where LiveKit is the dialing side,
+  # # ie. subscriber peer connections. Disabling strict ACKs will prevent clients that do not ACK
+  # # peer connections from getting kicked out of rooms by the monitor. Note that if strict ACKs
+  # # are disabled and clients don't ACK opened peer connections, only reliable, ordered delivery
+  # # will be available.
+  # strict_acks: true
 
 # when enabled, LiveKit will expose prometheus metrics on :6789/metrics
 # prometheus_port: 6789
+# set a custom environment variable. prometheus metrics will be labeled with this value. defaults to an empty string
+# environment: custom-value
 
 # API key / secret pairs.
 # Keys are used for JWT authentication, server APIs would require a keypair in order to generate access tokens
@@ -108,7 +119,6 @@ rtc:
 keys:
   key1: secret1
   key2: secret2
-
 # Logging config
 # logging:
 #   # log level, valid values: debug, info, warn, error
@@ -120,7 +130,6 @@ keys:
 #   # for production setups, enables sampling algorithm
 #   # https://github.com/uber-go/zap/blob/master/FAQ.md#why-sample-application-logs
 #   sample: false
-
 
 # Default room config
 # Each room created will inherit these settings. If rooms are created explicitly with CreateRoom, they will take
@@ -199,6 +208,12 @@ keys:
 #   # The stream_key will be appended to this base and returned as part of the
 #   # ingress info
 #   rtmp_base_url: "rtmp://my.domain.com/live"
+
+# egress server
+# egress:
+#   # Whether to use the PSRPC enabled RPC implementation. This requires livekit egress version >=1.5.4
+#   # The legacy, non PSRPC RPC implementation will be removed eventually
+#   use_psrpc: false
 
 # Region of the current node. Required if using regionaware node selector
 # region: us-west-2

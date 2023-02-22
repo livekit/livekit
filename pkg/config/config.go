@@ -23,6 +23,7 @@ var DefaultStunServers = []string{
 }
 
 type CongestionControlProbeMode string
+type StreamTrackerType string
 
 const (
 	generatedCLIFlagUsage = "generated"
@@ -30,7 +31,11 @@ const (
 	CongestionControlProbeModePadding CongestionControlProbeMode = "padding"
 	CongestionControlProbeModeMedia   CongestionControlProbeMode = "media"
 
-	StatsUpdateInterval = time.Second * 10
+	StreamTrackerTypePacket StreamTrackerType = "packet"
+	StreamTrackerTypeFrame  StreamTrackerType = "frame"
+
+	StatsUpdateInterval          = time.Second * 10
+	TelemetryStatsUpdateInterval = time.Second * 30
 )
 
 var (
@@ -42,12 +47,14 @@ type Config struct {
 	Port           uint32                   `yaml:"port"`
 	BindAddresses  []string                 `yaml:"bind_addresses"`
 	PrometheusPort uint32                   `yaml:"prometheus_port,omitempty"`
+	Environment    string                   `yaml:"environment,omitempty"`
 	RTC            RTCConfig                `yaml:"rtc,omitempty"`
 	Redis          redisLiveKit.RedisConfig `yaml:"redis,omitempty"`
 	Audio          AudioConfig              `yaml:"audio,omitempty"`
 	Video          VideoConfig              `yaml:"video,omitempty"`
 	Room           RoomConfig               `yaml:"room,omitempty"`
 	TURN           TURNConfig               `yaml:"turn,omitempty"`
+	Egress         EgressConfig             `yaml:"egress,omitempty"`
 	Ingress        IngressConfig            `yaml:"ingress,omitempty"`
 	WebHook        WebHookConfig            `yaml:"webhook,omitempty"`
 	NodeSelector   NodeSelectorConfig       `yaml:"node_selector,omitempty"`
@@ -76,6 +83,8 @@ type RTCConfig struct {
 	Interfaces              InterfacesConfig `yaml:"interfaces"`
 	IPs                     IPsConfig        `yaml:"ips"`
 	EnableLoopbackCandidate bool             `yaml:"enable_loopback_candidate"`
+	UseMDNS                 bool             `yaml:"use_mdns"`
+	StrictACKs              bool             `yaml:"strict_acks"`
 
 	// Number of packets to buffer for NACK
 	PacketBufferSize int `yaml:"packet_buffer_size,omitempty"`
@@ -93,6 +102,9 @@ type RTCConfig struct {
 
 	// force a reconnect on a publication error
 	ReconnectOnPublicationError *bool `yaml:"reconnect_on_publication_error,omitempty"`
+
+	// force a reconnect on a subscription error
+	ReconnectOnSubscriptionError *bool `yaml:"reconnect_on_subscription_error,omitempty"`
 }
 
 type TURNServer struct {
@@ -140,8 +152,31 @@ type AudioConfig struct {
 	SmoothIntervals uint32 `yaml:"smooth_intervals"`
 }
 
+type StreamTrackerPacketConfig struct {
+	SamplesRequired uint32        `yaml:"samples_required"` // number of samples needed per cycle
+	CyclesRequired  uint32        `yaml:"cycles_required"`  // number of cycles needed to be active
+	CycleDuration   time.Duration `yaml:"cycle_duration"`
+}
+
+type StreamTrackerFrameConfig struct {
+	MinFPS float64 `yaml:"min_fps"`
+}
+
+type StreamTrackerConfig struct {
+	StreamTrackerType     StreamTrackerType                   `yaml:"stream_tracker_type,omitempty"`
+	BitrateReportInterval map[int32]time.Duration             `yaml:"bitrate_report_interval,omitempty"`
+	PacketTracker         map[int32]StreamTrackerPacketConfig `yaml:"packet_tracker,omitempty"`
+	FrameTracker          map[int32]StreamTrackerFrameConfig  `yaml:"frame_tracker,omitempty"`
+}
+
+type StreamTrackersConfig struct {
+	Video       StreamTrackerConfig `yaml:"video"`
+	Screenshare StreamTrackerConfig `yaml:"screenshare"`
+}
+
 type VideoConfig struct {
-	DynacastPauseDelay time.Duration `yaml:"dynacast_pause_delay,omitempty"`
+	DynacastPauseDelay time.Duration        `yaml:"dynacast_pause_delay,omitempty"`
+	StreamTracker      StreamTrackersConfig `yaml:"stream_tracker,omitempty"`
 }
 
 type RoomConfig struct {
@@ -203,6 +238,10 @@ type LimitConfig struct {
 	BytesPerSec float32 `yaml:"bytes_per_sec"`
 }
 
+type EgressConfig struct {
+	UsePsRPC bool `yaml:"use_psrpc"`
+}
+
 type IngressConfig struct {
 	RTMPBaseURL string `yaml:"rtmp_base_url"`
 }
@@ -235,6 +274,7 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 			ICEPortRangeEnd:   0,
 			STUNServers:       []string{},
 			PacketBufferSize:  500,
+			StrictACKs:        true,
 			PLIThrottle: PLIThrottleConfig{
 				LowQuality:  500 * time.Millisecond,
 				MidQuality:  time.Second,
@@ -254,6 +294,80 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 		},
 		Video: VideoConfig{
 			DynacastPauseDelay: 5 * time.Second,
+			StreamTracker: StreamTrackersConfig{
+				Video: StreamTrackerConfig{
+					StreamTrackerType: StreamTrackerTypePacket,
+					BitrateReportInterval: map[int32]time.Duration{
+						0: 1 * time.Second,
+						1: 1 * time.Second,
+						2: 1 * time.Second,
+					},
+					PacketTracker: map[int32]StreamTrackerPacketConfig{
+						0: StreamTrackerPacketConfig{
+							SamplesRequired: 1,
+							CyclesRequired:  4,
+							CycleDuration:   500 * time.Millisecond,
+						},
+						1: StreamTrackerPacketConfig{
+							SamplesRequired: 5,
+							CyclesRequired:  20,
+							CycleDuration:   500 * time.Millisecond,
+						},
+						2: StreamTrackerPacketConfig{
+							SamplesRequired: 5,
+							CyclesRequired:  20,
+							CycleDuration:   500 * time.Millisecond,
+						},
+					},
+					FrameTracker: map[int32]StreamTrackerFrameConfig{
+						0: StreamTrackerFrameConfig{
+							MinFPS: 5.0,
+						},
+						1: StreamTrackerFrameConfig{
+							MinFPS: 5.0,
+						},
+						2: StreamTrackerFrameConfig{
+							MinFPS: 5.0,
+						},
+					},
+				},
+				Screenshare: StreamTrackerConfig{
+					StreamTrackerType: StreamTrackerTypePacket,
+					BitrateReportInterval: map[int32]time.Duration{
+						0: 4 * time.Second,
+						1: 4 * time.Second,
+						2: 4 * time.Second,
+					},
+					PacketTracker: map[int32]StreamTrackerPacketConfig{
+						0: StreamTrackerPacketConfig{
+							SamplesRequired: 1,
+							CyclesRequired:  1,
+							CycleDuration:   2 * time.Second,
+						},
+						1: StreamTrackerPacketConfig{
+							SamplesRequired: 1,
+							CyclesRequired:  1,
+							CycleDuration:   2 * time.Second,
+						},
+						2: StreamTrackerPacketConfig{
+							SamplesRequired: 1,
+							CyclesRequired:  1,
+							CycleDuration:   2 * time.Second,
+						},
+					},
+					FrameTracker: map[int32]StreamTrackerFrameConfig{
+						0: StreamTrackerFrameConfig{
+							MinFPS: 0.5,
+						},
+						1: StreamTrackerFrameConfig{
+							MinFPS: 0.5,
+						},
+						2: StreamTrackerFrameConfig{
+							MinFPS: 0.5,
+						},
+					},
+				},
+			},
 		},
 		Redis: redisLiveKit.RedisConfig{},
 		Room: RoomConfig{
@@ -340,6 +454,10 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 	}
 	if conf.Logging.Level == "" && conf.Development {
 		conf.Logging.Level = "debug"
+	}
+
+	if conf.Development {
+		conf.Environment = "dev"
 	}
 
 	return conf, nil

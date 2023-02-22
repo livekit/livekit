@@ -8,6 +8,7 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
@@ -82,6 +83,7 @@ func (r *LocalRouter) ListNodes() ([]*livekit.Node, error) {
 }
 
 func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit) (connectionID livekit.ConnectionID, reqSink MessageSink, resSource MessageSource, err error) {
+	prometheus.IncrementParticipantRtcInit(1)
 	// treat it as a new participant connecting
 	if r.onNewParticipant == nil {
 		err = ErrHandlerNotDefined
@@ -207,23 +209,22 @@ func (r *LocalRouter) statsWorker() {
 }
 
 /*
-func (r *LocalRouter) memStatsWorker() {
-	ticker := time.NewTicker(time.Second * 30)
-	defer ticker.Stop()
+	func (r *LocalRouter) memStatsWorker() {
+		ticker := time.NewTicker(time.Second * 30)
+		defer ticker.Stop()
 
-	for {
-		<-ticker.C
+		for {
+			<-ticker.C
 
-		var m runtime.MemStats
-		runtime.ReadMemStats(&m)
-		logger.Infow("memstats",
-			"mallocs", m.Mallocs, "frees", m.Frees, "m-f", m.Mallocs-m.Frees,
-			"hinuse", m.HeapInuse, "halloc", m.HeapAlloc, "frag", m.HeapInuse-m.HeapAlloc,
-		)
+			var m runtime.MemStats
+			runtime.ReadMemStats(&m)
+			logger.Infow("memstats",
+				"mallocs", m.Mallocs, "frees", m.Frees, "m-f", m.Mallocs-m.Frees,
+				"hinuse", m.HeapInuse, "halloc", m.HeapAlloc, "frag", m.HeapInuse-m.HeapAlloc,
+			)
+		}
 	}
-}
 */
-
 func (r *LocalRouter) rtcMessageWorker() {
 	// is a new channel available? if so swap to that one
 	if !r.isStarted.Load() {

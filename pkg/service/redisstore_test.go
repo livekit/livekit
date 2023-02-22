@@ -8,7 +8,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/ingress"
 	"github.com/livekit/protocol/livekit"
@@ -149,7 +148,7 @@ func TestEgressStore(t *testing.T) {
 
 	roomName := "egress-test"
 
-	// test migration
+	// store egress info
 	info := &livekit.EgressInfo{
 		EgressId: utils.NewGuid(utils.EgressPrefix),
 		RoomId:   utils.NewGuid(utils.RoomPrefix),
@@ -162,30 +161,7 @@ func TestEgressStore(t *testing.T) {
 			},
 		},
 	}
-
-	data, err := proto.Marshal(info)
-	require.NoError(t, err)
-
-	// store egress info the old way
-	tx := rc.TxPipeline()
-	tx.HSet(ctx, service.EgressKey, info.EgressId, data)
-	tx.SAdd(ctx, service.DeprecatedRoomEgressPrefix+info.RoomId, info.EgressId)
-	_, err = tx.Exec(ctx)
-	require.NoError(t, err)
-
-	// run migration
-	migrated, err := rs.MigrateEgressInfo()
-	require.NoError(t, err)
-	require.Equal(t, 1, migrated)
-
-	// check that it was migrated
-	exists, err := rc.Exists(ctx, service.DeprecatedRoomEgressPrefix+info.RoomId).Result()
-	require.NoError(t, err)
-	require.Equal(t, int64(0), exists)
-
-	exists, err = rc.Exists(ctx, service.RoomEgressPrefix+info.RoomName).Result()
-	require.NoError(t, err)
-	require.Equal(t, int64(1), exists)
+	require.NoError(t, rs.StoreEgress(ctx, info))
 
 	// load
 	res, err := rs.LoadEgress(ctx, info.EgressId)

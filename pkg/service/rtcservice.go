@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/sebest/xff"
 	"github.com/ua-parser/uap-go/uaparser"
 
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -23,10 +25,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
-)
-
-const (
-	maxInitialResponseWait = 10 * time.Second
 )
 
 type RTCService struct {
@@ -83,22 +81,25 @@ func (s *RTCService) Validate(w http.ResponseWriter, r *http.Request) {
 
 func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.ParticipantInit, int, error) {
 	claims := GetGrants(r.Context())
+	var pi routing.ParticipantInit
+
 	// require a claim
 	if claims == nil || claims.Video == nil {
-		return "", routing.ParticipantInit{}, http.StatusUnauthorized, rtc.ErrPermissionDenied
+		return "", pi, http.StatusUnauthorized, rtc.ErrPermissionDenied
 	}
 
 	onlyName, err := EnsureJoinPermission(r.Context())
 	if err != nil {
-		return "", routing.ParticipantInit{}, http.StatusUnauthorized, err
+		return "", pi, http.StatusUnauthorized, err
 	}
 
 	if claims.Identity == "" {
-		return "", routing.ParticipantInit{}, http.StatusBadRequest, ErrIdentityEmpty
+		return "", pi, http.StatusBadRequest, ErrIdentityEmpty
 	}
 
 	roomName := livekit.RoomName(r.FormValue("room"))
 	reconnectParam := r.FormValue("reconnect")
+	reconnectReason, _ := strconv.Atoi(r.FormValue("reconnect_reason")) // 0 means unknown reason
 	autoSubParam := r.FormValue("auto_subscribe")
 	publishParam := r.FormValue("publish")
 	adaptiveStreamParam := r.FormValue("adaptive_stream")
@@ -119,24 +120,35 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 		claims.Identity += "#" + publishParam
 	}
 
+	// room allocator validations
+	err = s.roomAllocator.ValidateCreateRoom(r.Context(), roomName)
+	if err != nil {
+		if errors.Is(err, ErrRoomNotFound) {
+			return "", pi, http.StatusNotFound, err
+		} else {
+			return "", pi, http.StatusInternalServerError, err
+		}
+	}
+
 	region := ""
 	if router, ok := s.router.(routing.Router); ok {
 		region = router.GetRegion()
 		if foundNode, err := router.GetNodeForRoom(r.Context(), roomName); err == nil {
 			if selector.LimitsReached(s.limits, foundNode.Stats) {
-				return "", routing.ParticipantInit{}, http.StatusServiceUnavailable, rtc.ErrLimitExceeded
+				return "", pi, http.StatusServiceUnavailable, rtc.ErrLimitExceeded
 			}
 		}
 	}
 
-	pi := routing.ParticipantInit{
-		Reconnect:     boolValue(reconnectParam),
-		Identity:      livekit.ParticipantIdentity(claims.Identity),
-		Name:          livekit.ParticipantName(claims.Name),
-		AutoSubscribe: true,
-		Client:        s.ParseClientInfo(r),
-		Grants:        claims,
-		Region:        region,
+	pi = routing.ParticipantInit{
+		Reconnect:       boolValue(reconnectParam),
+		ReconnectReason: livekit.ReconnectReason(reconnectReason),
+		Identity:        livekit.ParticipantIdentity(claims.Identity),
+		Name:            livekit.ParticipantName(claims.Name),
+		AutoSubscribe:   true,
+		Client:          s.ParseClientInfo(r),
+		Grants:          claims,
+		Region:          region,
 	}
 	if pi.Reconnect {
 		pi.ID = livekit.ParticipantID(participantID)
@@ -155,7 +167,6 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// reject non websocket requests
 	if !websocket.IsWebSocketUpgrade(r) {
-		prometheus.ServiceOperationCounter.WithLabelValues("signal_ws", "error", "reject").Add(1)
 		w.WriteHeader(404)
 		return
 	}
@@ -173,46 +184,30 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"remote", false,
 	}
 
-	// when auto create is disabled, we'll check to ensure it's already created
-	if !s.config.Room.AutoCreate {
-		_, _, err := s.store.LoadRoom(context.Background(), roomName, false)
-		if err == ErrRoomNotFound {
-			handleError(w, 404, err, loggerFields...)
-			return
-		} else if err != nil {
-			handleError(w, 500, err, loggerFields...)
-			return
+	// give it a few attempts to start session
+	var cr connectionResult
+	for i := 0; i < 3; i++ {
+		connectionTimeout := 3 * time.Second * time.Duration(i+1)
+		ctx := utils.ContextWithAttempt(r.Context(), i)
+		cr, err = s.startConnection(ctx, roomName, pi, connectionTimeout)
+		if err == nil {
+			break
+		}
+		if i < 2 {
+			fieldsWithAttempt := append(loggerFields, "attempt", i)
+			logger.Warnw("failed to start connection, retrying", err, fieldsWithAttempt...)
 		}
 	}
-
-	// create room if it doesn't exist, also assigns an RTC node for the room
-	rm, err := s.roomAllocator.CreateRoom(r.Context(), &livekit.CreateRoomRequest{Name: string(roomName)})
 	if err != nil {
-		prometheus.ServiceOperationCounter.WithLabelValues("signal_ws", "error", "create_room").Add(1)
+		prometheus.IncrementParticipantJoinFail(1)
 		handleError(w, http.StatusInternalServerError, err, loggerFields...)
 		return
 	}
 
-	// this needs to be started first *before* using router functions on this node
-	connId, reqSink, resSource, err := s.router.StartParticipantSignal(r.Context(), roomName, pi)
-	if err != nil {
-		prometheus.ServiceOperationCounter.WithLabelValues("signal_ws", "error", "start_signal").Add(1)
-		handleError(w, http.StatusInternalServerError, err, loggerFields...)
-		return
-	}
+	prometheus.IncrementParticipantJoin(1)
 
-	// wait for the first message before upgrading to websocket. If no one is
-	// responding to our connection attempt, we should terminate the connection
-	// instead of waiting forever on the WebSocket
-	initialResponse, err := readInitialResponse(resSource, maxInitialResponseWait)
-	if err != nil {
-		prometheus.ServiceOperationCounter.WithLabelValues("signal_ws", "error", "initial_response").Add(1)
-		handleError(w, http.StatusInternalServerError, err, loggerFields...)
-		return
-	}
-
-	if !pi.Reconnect && initialResponse.GetJoin() != nil {
-		pi.ID = livekit.ParticipantID(initialResponse.GetJoin().GetParticipant().GetSid())
+	if !pi.Reconnect && cr.InitialResponse.GetJoin() != nil {
+		pi.ID = livekit.ParticipantID(cr.InitialResponse.GetJoin().GetParticipant().GetSid())
 	}
 
 	var signalStats *telemetry.BytesTrackStats
@@ -224,7 +219,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pLogger := rtc.LoggerWithParticipant(
-		rtc.LoggerWithRoom(logger.GetLogger(), roomName, livekit.RoomID(rm.Sid)),
+		rtc.LoggerWithRoom(logger.GetLogger(), roomName, livekit.RoomID(cr.Room.Sid)),
 		pi.Identity,
 		pi.ID,
 		false,
@@ -233,9 +228,9 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	done := make(chan struct{})
 	// function exits when websocket terminates, it'll close the event reading off of response sink as well
 	defer func() {
-		pLogger.Infow("finishing WS connection", "connID", connId)
-		resSource.Close()
-		reqSink.Close()
+		pLogger.Infow("finishing WS connection", "connID", cr.ConnectionID)
+		cr.ResponseSource.Close()
+		cr.RequestSink.Close()
 		close(done)
 
 		if signalStats != nil {
@@ -246,14 +241,13 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// upgrade only once the basics are good to go
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		prometheus.ServiceOperationCounter.WithLabelValues("signal_ws", "error", "upgrade").Add(1)
 		handleError(w, http.StatusInternalServerError, err, loggerFields...)
 		return
 	}
 
 	// websocket established
 	sigConn := NewWSSignalConnection(conn)
-	if count, err := sigConn.WriteResponse(initialResponse); err != nil {
+	if count, err := sigConn.WriteResponse(cr.InitialResponse); err != nil {
 		pLogger.Warnw("could not write initial response", err)
 		return
 	} else {
@@ -261,9 +255,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			signalStats.AddBytes(uint64(count), true)
 		}
 	}
-
-	prometheus.ServiceOperationCounter.WithLabelValues("signal_ws", "success", "").Add(1)
-	pLogger.Infow("new client WS connected", "connID", connId)
+	pLogger.Infow("new client WS connected", "connID", cr.ConnectionID)
 
 	// handle responses
 	go func() {
@@ -272,12 +264,16 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// we would terminate the signal connection as well
 			_ = conn.Close()
 		}()
-		defer rtc.Recover()
+		defer func() {
+			if r := rtc.Recover(pLogger); r != nil {
+				os.Exit(1)
+			}
+		}()
 		for {
 			select {
 			case <-done:
 				return
-			case msg := <-resSource.ReadChan():
+			case msg := <-cr.ResponseSource.ReadChan():
 				if msg == nil {
 					return
 				}
@@ -285,12 +281,19 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				if !ok {
 					pLogger.Errorw("unexpected message type", nil,
 						"type", fmt.Sprintf("%T", msg),
-						"connID", connId)
+						"connID", cr.ConnectionID)
 					continue
 				}
 
-				if pi.ID == "" && initialResponse.GetJoin() != nil {
-					pi.ID = livekit.ParticipantID(initialResponse.GetJoin().GetParticipant().GetSid())
+				switch m := res.Message.(type) {
+				case *livekit.SignalResponse_Offer:
+					pLogger.Debugw("sending offer", "offer", m)
+				case *livekit.SignalResponse_Answer:
+					pLogger.Debugw("sending answer", "answer", m)
+				}
+
+				if pi.ID == "" && cr.InitialResponse.GetJoin() != nil {
+					pi.ID = livekit.ParticipantID(cr.InitialResponse.GetJoin().GetParticipant().GetSid())
 					signalStats = telemetry.NewBytesTrackStats(
 						telemetry.BytesTrackIDForParticipantID(telemetry.BytesTrackTypeSignal, pi.ID),
 						pi.ID,
@@ -314,7 +317,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			if err == io.EOF || strings.HasSuffix(err.Error(), "use of closed network connection") ||
 				websocket.IsCloseError(err, websocket.CloseAbnormalClosure, websocket.CloseGoingAway, websocket.CloseNormalClosure, websocket.CloseNoStatusReceived) {
-				pLogger.Debugw("exit ws read loop for closed connection", "connID", connId)
+				pLogger.Debugw("exit ws read loop for closed connection", "connID", cr.ConnectionID)
 				return
 			} else {
 				pLogger.Errorw("error reading from websocket", err)
@@ -324,7 +327,9 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if signalStats != nil {
 			signalStats.AddBytes(uint64(count), false)
 		}
-		if _, ok := req.Message.(*livekit.SignalRequest_Ping); ok {
+
+		switch m := req.Message.(type) {
+		case *livekit.SignalRequest_Ping:
 			count, perr := sigConn.WriteResponse(&livekit.SignalResponse{
 				Message: &livekit.SignalResponse_Pong{
 					//
@@ -337,11 +342,30 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if perr == nil && signalStats != nil {
 				signalStats.AddBytes(uint64(count), true)
 			}
-			continue
+		case *livekit.SignalRequest_PingReq:
+			count, perr := sigConn.WriteResponse(&livekit.SignalResponse{
+				Message: &livekit.SignalResponse_PongResp{
+					PongResp: &livekit.Pong{
+						LastPingTimestamp: m.PingReq.Timestamp,
+						Timestamp:         time.Now().UnixMilli(),
+					},
+				},
+			})
+			if perr == nil && signalStats != nil {
+				signalStats.AddBytes(uint64(count), true)
+			}
 		}
-		if err := reqSink.WriteMessage(req); err != nil {
+
+		switch m := req.Message.(type) {
+		case *livekit.SignalRequest_Offer:
+			pLogger.Debugw("received offer", "offer", m)
+		case *livekit.SignalRequest_Answer:
+			pLogger.Debugw("received answer", "answer", m)
+		}
+
+		if err := cr.RequestSink.WriteMessage(req); err != nil {
 			pLogger.Warnw("error writing to request sink", err,
-				"connID", connId)
+				"connID", cr.ConnectionID)
 		}
 	}
 }
@@ -405,6 +429,41 @@ func (s *RTCService) ParseClientInfo(r *http.Request) *livekit.ClientInfo {
 	}
 
 	return ci
+}
+
+type connectionResult struct {
+	Room            *livekit.Room
+	ConnectionID    livekit.ConnectionID
+	RequestSink     routing.MessageSink
+	ResponseSource  routing.MessageSource
+	InitialResponse *livekit.SignalResponse
+}
+
+func (s *RTCService) startConnection(ctx context.Context, roomName livekit.RoomName, pi routing.ParticipantInit, timeout time.Duration) (connectionResult, error) {
+	var cr connectionResult
+	var err error
+	cr.Room, err = s.roomAllocator.CreateRoom(ctx, &livekit.CreateRoomRequest{Name: string(roomName)})
+	if err != nil {
+		return cr, err
+	}
+
+	// this needs to be started first *before* using router functions on this node
+	cr.ConnectionID, cr.RequestSink, cr.ResponseSource, err = s.router.StartParticipantSignal(ctx, roomName, pi)
+	if err != nil {
+		return cr, err
+	}
+
+	// wait for the first message before upgrading to websocket. If no one is
+	// responding to our connection attempt, we should terminate the connection
+	// instead of waiting forever on the WebSocket
+	cr.InitialResponse, err = readInitialResponse(cr.ResponseSource, timeout)
+	if err != nil {
+		// close the connection to avoid leaking
+		cr.RequestSink.Close()
+		cr.ResponseSource.Close()
+		return cr, err
+	}
+	return cr, nil
 }
 
 func readInitialResponse(source routing.MessageSource, timeout time.Duration) (*livekit.SignalResponse, error) {
