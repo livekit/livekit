@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"math"
-	"runtime"
 	"sort"
 	"sync"
 	"time"
@@ -16,6 +15,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -1169,44 +1169,10 @@ func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, dp 
 		destParticpants = append(destParticpants, op)
 	}
 
-	if len(destParticpants) < dataForwardLoadBalanceThreshold {
-		for _, op := range destParticpants {
-			err := op.SendDataPacket(dp, dpData)
-			if err != nil && !errors.Is(err, io.ErrClosedPipe) {
-				logger.Infow("send data packet error", "error", err, "participant", op.Identity())
-			}
+	utils.ParallelExec(destParticpants, dataForwardLoadBalanceThreshold, 1, func(op types.LocalParticipant) {
+		err := op.SendDataPacket(dp, dpData)
+		if err != nil && !errors.Is(err, io.ErrClosedPipe) {
+			op.GetLogger().Infow("send data packet error", "error", err)
 		}
-		return
-	}
-
-	// parallel - enables much more efficient multi-core utilization
-	start := atomic.NewUint64(0)
-	end := uint64(len(destParticpants))
-
-	step := uint64(1)
-
-	var wg sync.WaitGroup
-	numCPU := runtime.NumCPU()
-	wg.Add(numCPU)
-	for p := 0; p < numCPU; p++ {
-		go func() {
-			defer wg.Done()
-			for {
-				n := start.Add(step)
-				if n >= end+step {
-					return
-				}
-
-				for i := n - step; i < n && i < end; i++ {
-					op := destParticpants[i]
-					err := op.SendDataPacket(dp, dpData)
-					if err != nil && !errors.Is(err, io.ErrClosedPipe) {
-						logger.Infow("send data packet error", "error", err, "participant", op.Identity())
-					}
-				}
-			}
-		}()
-	}
-	wg.Wait()
-
+	})
 }
