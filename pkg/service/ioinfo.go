@@ -71,7 +71,8 @@ func (s *IOInfoService) UpdateEgressInfo(ctx context.Context, info *livekit.Egre
 	switch info.Status {
 	case livekit.EgressStatus_EGRESS_COMPLETE,
 		livekit.EgressStatus_EGRESS_FAILED,
-		livekit.EgressStatus_EGRESS_ABORTED:
+		livekit.EgressStatus_EGRESS_ABORTED,
+		livekit.EgressStatus_EGRESS_LIMIT_REACHED:
 
 		// make sure endedAt is set so it eventually gets deleted
 		if info.EndedAt == 0 {
