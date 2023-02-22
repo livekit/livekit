@@ -1201,7 +1201,7 @@ func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, dp 
 					op := destParticpants[i]
 					err := op.SendDataPacket(dp, dpData)
 					if err != nil && !errors.Is(err, io.ErrClosedPipe) {
-						op.GetLogger().Infow("send data packet error", "error", err, "participant", op.Identity())
+						op.GetLogger().Infow("send data packet error", "error", err)
 					}
 				}
 			}
