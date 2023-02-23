@@ -420,6 +420,11 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 	permChanged := s.setHasPermission(res.HasPermission)
 	if permChanged {
 		m.params.Participant.SubscriptionPermissionUpdate(s.getPublisherID(), s.trackID, res.HasPermission)
+		if res.HasPermission {
+			// when permission is granted, reset the timer so it has sufficient time to reconcile
+			t := time.Now()
+			s.subStartedAt.Store(&t)
+		}
 	}
 	if !res.HasPermission {
 		return ErrNoTrackPermission
@@ -578,7 +583,7 @@ type trackSubscription struct {
 	numAttempts       atomic.Int32
 	bound             bool
 
-	// the later of when subscription was requested or when the first failure was encountered
+	// the later of when subscription was requested OR when the first failure was encountered OR when permission is granted
 	// this timestamp determines when failures are reported
 	subStartedAt atomic.Pointer[time.Time]
 }
