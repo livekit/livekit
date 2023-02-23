@@ -698,6 +698,8 @@ func (t *TransportManager) onMediaLossUpdate(loss uint8) {
 
 func (t *TransportManager) UpdateSignalingRTT(rtt uint32) {
 	t.signalingRTT = rtt
+	t.publisher.SetSignalingRTT(rtt)
+	t.subscriber.SetSignalingRTT(rtt)
 
 	// TODO: considering using tcp rtt to calculate ice connection cost, if ice connection can't be established
 	// within 5 * tcp rtt(at least 5s), means udp traffic might be block/dropped, switch to tcp.
