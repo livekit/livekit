@@ -420,19 +420,21 @@ func (t *PCTransport) setICEStartedAt(at time.Time) {
 		// set failure timer for tcp ice connection based on signaling RTT
 		if t.preferTCP.Load() {
 			signalingRTT := t.signalingRTT.Load()
-			tcpICETimeout := time.Duration(signalingRTT*8) * time.Millisecond
-			if tcpICETimeout < minTcpICEConnectTimeout {
-				tcpICETimeout = minTcpICEConnectTimeout
-			} else if tcpICETimeout > maxTcpICEConnectTimeout {
-				tcpICETimeout = maxTcpICEConnectTimeout
-			}
-			t.params.Logger.Debugw("set tcp ice connect timer", "timeout", tcpICETimeout, "signalRTT", signalingRTT)
-			t.tcpICETimer = time.AfterFunc(tcpICETimeout, func() {
-				if t.pc.ICEConnectionState() == webrtc.ICEConnectionStateChecking {
-					t.params.Logger.Infow("tcp ice connect timeout", "timeout", tcpICETimeout, "signalRTT", signalingRTT)
-					t.handleConnectionFailed(true)
+			if signalingRTT < 1000 {
+				tcpICETimeout := time.Duration(signalingRTT*8) * time.Millisecond
+				if tcpICETimeout < minTcpICEConnectTimeout {
+					tcpICETimeout = minTcpICEConnectTimeout
+				} else if tcpICETimeout > maxTcpICEConnectTimeout {
+					tcpICETimeout = maxTcpICEConnectTimeout
 				}
-			})
+				t.params.Logger.Debugw("set tcp ice connect timer", "timeout", tcpICETimeout, "signalRTT", signalingRTT)
+				t.tcpICETimer = time.AfterFunc(tcpICETimeout, func() {
+					if t.pc.ICEConnectionState() == webrtc.ICEConnectionStateChecking {
+						t.params.Logger.Infow("tcp ice connect timeout", "timeout", tcpICETimeout, "signalRTT", signalingRTT)
+						t.handleConnectionFailed(true)
+					}
+				})
+			}
 		}
 	}
 	t.lock.Unlock()
