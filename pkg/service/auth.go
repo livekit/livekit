@@ -131,31 +131,23 @@ func EnsureAdminPermission(ctx context.Context, room livekit.RoomName) error {
 
 func EnsureCreatePermission(ctx context.Context) error {
 	claims := GetGrants(ctx)
-	if claims == nil {
+	if claims == nil || claims.Video == nil || !claims.Video.RoomCreate {
 		return ErrPermissionDenied
 	}
-
-	if claims.Video.RoomCreate {
-		return nil
-	}
-	return ErrPermissionDenied
+	return nil
 }
 
 func EnsureListPermission(ctx context.Context) error {
 	claims := GetGrants(ctx)
-	if claims == nil {
+	if claims == nil || claims.Video == nil || !claims.Video.RoomList {
 		return ErrPermissionDenied
 	}
-
-	if claims.Video.RoomList {
-		return nil
-	}
-	return ErrPermissionDenied
+	return nil
 }
 
 func EnsureRecordPermission(ctx context.Context) error {
 	claims := GetGrants(ctx)
-	if claims == nil || !claims.Video.RoomRecord {
+	if claims == nil || claims.Video == nil || !claims.Video.RoomRecord {
 		return ErrPermissionDenied
 	}
 	return nil
@@ -163,7 +155,7 @@ func EnsureRecordPermission(ctx context.Context) error {
 
 func EnsureIngressAdminPermission(ctx context.Context) error {
 	claims := GetGrants(ctx)
-	if claims == nil || !claims.Video.IngressAdmin {
+	if claims == nil || claims.Video == nil || !claims.Video.IngressAdmin {
 		return ErrPermissionDenied
 	}
 	return nil
