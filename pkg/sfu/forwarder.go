@@ -1515,10 +1515,10 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 						"feed", extPkt.Packet.SSRC,
 					)
 					f.currentLayers.Spatial = layer
-					f.targetLayers.Spatial = layer
 
 					if f.currentLayers.Spatial >= f.maxLayers.Spatial || f.currentLayers.Spatial == f.maxPublishedLayer {
 						tp.isSwitchingToMaxLayer = true
+						f.targetLayers.Spatial = layer
 					}
 				}
 			}

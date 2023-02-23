@@ -1340,6 +1340,7 @@ func newTrack(
 		isSimulcast: isSimulcast,
 		publisherID: publisherID,
 		logger:      logger,
+		isPaused:    true,
 	}
 	t.SetPriority(0)
 	t.SetMaxLayers(downTrack.MaxLayers())

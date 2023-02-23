@@ -1593,9 +1593,9 @@ func (d *DownTrack) GetNackStats() (totalPackets uint32, totalRepeatedNACKs uint
 func (d *DownTrack) onBindAndConnected() {
 	if d.connected.Load() && d.bound.Load() && !d.bindAndConnectedOnce.Swap(true) {
 		if d.kind == webrtc.RTPCodecTypeVideo {
-			targetLayers := d.forwarder.TargetLayers()
-			if targetLayers != InvalidLayers {
-				d.receiver.SendPLI(targetLayers.Spatial, true)
+			_, layer := d.forwarder.CheckSync()
+			if layer != InvalidLayerSpatial {
+				d.receiver.SendPLI(layer, true)
 			}
 		}
 
