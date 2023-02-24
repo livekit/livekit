@@ -280,6 +280,13 @@ func (d *DummyReceiver) TrackInfo() *livekit.TrackInfo {
 	return nil
 }
 
+func (d *DummyReceiver) IsClosed() bool {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+		return r.IsClosed()
+	}
+	return false
+}
+
 func (d *DummyReceiver) GetPrimaryReceiverForRed() sfu.TrackReceiver {
 	// DummyReceiver used for video, it should not have RED codec
 	return d

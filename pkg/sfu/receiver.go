@@ -39,6 +39,7 @@ type TrackReceiver interface {
 	StreamID() string
 	Codec() webrtc.RTPCodecParameters
 	HeaderExtensions() []webrtc.RTPHeaderExtensionParameter
+	IsClosed() bool
 
 	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
 	GetLayeredBitrate() ([]int32, Bitrates)
@@ -247,6 +248,10 @@ func (w *WebRTCReceiver) OnMaxLayerChange(fn func(maxLayer int32)) {
 
 func (w *WebRTCReceiver) GetConnectionScore() float32 {
 	return w.connectionStats.GetScore()
+}
+
+func (w *WebRTCReceiver) IsClosed() bool {
+	return w.closed.Load()
 }
 
 func (w *WebRTCReceiver) SetRTT(rtt uint32) {
