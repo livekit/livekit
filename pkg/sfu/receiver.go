@@ -83,7 +83,6 @@ type WebRTCReceiver struct {
 	kind           webrtc.RTPCodecType
 	receiver       *webrtc.RTPReceiver
 	codec          webrtc.RTPCodecParameters
-	isSimulcast    bool
 	isSVC          bool
 	isRED          bool
 	onCloseHandler func()
@@ -182,18 +181,16 @@ func NewWebRTCReceiver(
 	opts ...ReceiverOpts,
 ) *WebRTCReceiver {
 	w := &WebRTCReceiver{
-		logger:   logger,
-		receiver: receiver,
-		trackID:  livekit.TrackID(track.ID()),
-		streamID: track.StreamID(),
-		codec:    track.Codec(),
-		kind:     track.Kind(),
-		// LK-TODO: this should be based on VideoLayers protocol message rather than RID based
-		isSimulcast: len(track.RID()) > 0,
-		twcc:        twcc,
-		trackInfo:   trackInfo,
-		isSVC:       IsSvcCodec(track.Codec().MimeType),
-		isRED:       IsRedCodec(track.Codec().MimeType),
+		logger:    logger,
+		receiver:  receiver,
+		trackID:   livekit.TrackID(track.ID()),
+		streamID:  track.StreamID(),
+		codec:     track.Codec(),
+		kind:      track.Kind(),
+		twcc:      twcc,
+		trackInfo: trackInfo,
+		isSVC:     IsSvcCodec(track.Codec().MimeType),
+		isRED:     IsRedCodec(track.Codec().MimeType),
 	}
 
 	w.streamTrackerManager = NewStreamTrackerManager(logger, trackInfo, w.isSVC, w.codec.ClockRate, trackersConfig)
@@ -635,7 +632,8 @@ func (w *WebRTCReceiver) closeTracks() {
 
 func (w *WebRTCReceiver) DebugInfo() map[string]interface{} {
 	info := map[string]interface{}{
-		"Simulcast": w.isSimulcast,
+		"SVC":       w.isSVC,
+		"Simulcast": !w.isSVC && len(w.trackInfo.Layers) > 1,
 	}
 
 	w.upTrackMu.RLock()

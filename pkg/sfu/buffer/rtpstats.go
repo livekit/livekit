@@ -868,9 +868,23 @@ func (r *RTPStats) DeltaInfo(snapshotId uint32) *RTPDeltaInfo {
 	packetsLost := uint32(0)
 	intervalStats := r.getIntervalStats(uint16(then.extStartSN), uint16(now.extStartSN))
 	if r.params.IsReceiverReportDriven {
+		// by taking number of packets from interval report, packets not sent (because of missing packets in feed) will be accounted for
+		packetsExpected = intervalStats.packets + intervalStats.packetsPadding
+		if packetsExpected == 0 {
+			return nil
+		}
+
 		packetsLost = now.packetsLostOverridden - then.packetsLostOverridden
 		if int32(packetsLost) < 0 {
 			packetsLost = 0
+		}
+
+		if packetsLost > packetsExpected {
+			r.logger.Warnw(
+				"unexpected number of packets lost",
+				fmt.Errorf("start: %d, end: %d, expected: %d, lost: %d", then.extStartSN, now.extStartSN, packetsExpected, packetsLost),
+			)
+			packetsLost = packetsExpected
 		}
 	} else {
 		packetsLost = intervalStats.packetsLost

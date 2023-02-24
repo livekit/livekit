@@ -29,10 +29,9 @@ type ConnectionStatsParams struct {
 }
 
 type ConnectionStats struct {
-	params      ConnectionStatsParams
-	codecName   string
-	trackInfo   *livekit.TrackInfo
-	normFactors [buffer.DefaultMaxLayerSpatial + 1]float32
+	params    ConnectionStatsParams
+	codecName string
+	trackInfo *livekit.TrackInfo
 
 	onStatsUpdate func(cs *ConnectionStats, stat *livekit.AnalyticsStat)
 
@@ -49,7 +48,6 @@ func NewConnectionStats(params ConnectionStatsParams) *ConnectionStats {
 	return &ConnectionStats{
 		params:           params,
 		codecName:        getCodecNameFromMime(params.MimeType), // LK-TODO: have to notify on codec change
-		normFactors:      [buffer.DefaultMaxLayerSpatial + 1]float32{1, 1, 1},
 		score:            MaxScore,
 		maxExpectedLayer: buffer.InvalidLayerSpatial,
 		done:             make(chan struct{}),
@@ -60,46 +58,6 @@ func (cs *ConnectionStats) Start(trackInfo *livekit.TrackInfo) {
 	cs.lock.Lock()
 	cs.trackInfo = trackInfo
 
-	//
-	// get best score and calculate normalization factor.
-	// Raitonale: MOS modeling will yield a max score for a specific codec.
-	// That is outside the control of an SFU. SFU can impair quality due
-	// network issues. So, get the maximum for given codec and normalize
-	// it to the highest score. So, under perfect conditions, it will
-	// yield a MOS of 5 which is the highest rating. Any SFU induced impairment
-	// or network impairment will result in a lower score and that is
-	// the quality that is under SFU/infrastructure control.
-	//
-	if trackInfo.Type == livekit.TrackType_AUDIO {
-		// LK-TODO: would be good to have audio expected bitrate in Trackinfo
-		params := TrackScoreParams{
-			Duration: time.Second,
-			Codec:    cs.codecName,
-			Bytes:    20000 / 8,
-		}
-		cs.normFactors[0] = MaxScore / AudioTrackScore(params, 1)
-	} else {
-		for _, layer := range cs.trackInfo.Layers {
-			spatial := buffer.VideoQualityToSpatialLayer(layer.Quality, cs.trackInfo)
-			// LK-TODO: would be good to have expected frame rate in Trackinfo
-			frameRate := uint32(30)
-			switch spatial {
-			case 0:
-				frameRate = 15
-			case 1:
-				frameRate = 20
-			}
-			params := TrackScoreParams{
-				Duration: time.Second,
-				Codec:    cs.codecName,
-				Bytes:    uint64(layer.Bitrate) / 8,
-				Width:    layer.Width,
-				Height:   layer.Height,
-				Frames:   frameRate,
-			}
-			cs.normFactors[spatial] = MaxScore / VideoTrackScore(params, 1)
-		}
-	}
 	cs.lock.Unlock()
 
 	go cs.updateStatsWorker()
@@ -154,7 +112,7 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 	var params TrackScoreParams
 	switch {
 	case cs.trackInfo.Type == livekit.TrackType_AUDIO:
-		maxAvailableLayer, maxAvailableLayerStats := getMaxAvailableLayerStats(streams, 0)
+		_, maxAvailableLayerStats := getMaxAvailableLayerStats(streams, 0)
 		if maxAvailableLayerStats == nil {
 			// retain old score as stats will not be available when muted
 			break
@@ -169,11 +127,7 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 			break
 		}
 
-		normFactor := float32(1)
-		if int(maxAvailableLayer) < len(cs.normFactors) {
-			normFactor = cs.normFactors[maxAvailableLayer]
-		}
-		cs.score = AudioTrackScore(params, normFactor)
+		cs.score = AudioTrackScore(params)
 
 	case cs.trackInfo.Type == livekit.TrackType_VIDEO:
 		//
@@ -227,11 +181,7 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 
 			cs.score = LossBasedTrackScore(params)
 		} else {
-			normFactor := float32(1)
-			if int(maxAvailableLayer) < len(cs.normFactors) {
-				normFactor = cs.normFactors[maxAvailableLayer]
-			}
-			cs.score = VideoTrackScore(params, normFactor)
+			cs.score = VideoTrackScore(params)
 			if cs.params.GetIsReducedQuality != nil {
 				// penalty of one level per layer away from desired/expected layer
 				distanceToDesired, isDeficient := cs.params.GetIsReducedQuality()

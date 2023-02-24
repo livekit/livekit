@@ -2,6 +2,7 @@ package connectionquality
 
 import (
 	"math"
+	"strings"
 	"time"
 
 	"github.com/livekit/protocol/livekit"
@@ -77,19 +78,21 @@ func getRtcMosStat(params TrackScoreParams) rtcmos.Stat {
 	}
 }
 
-func AudioTrackScore(params TrackScoreParams, normFactor float32) float32 {
+func AudioTrackScore(params TrackScoreParams) float32 {
 	stat := getRtcMosStat(params)
 	stat.AudioConfig = &rtcmos.AudioConfig{}
 	stat.AudioConfig.Dtx = &params.DtxEnabled
+	isRed := strings.Contains(params.Codec, "red")
+	stat.AudioConfig.Red = &isRed
 
 	scores := rtcmos.Score([]rtcmos.Stat{stat})
 	if len(scores) == 1 {
-		return float32(clamp(float64(float32(scores[0].AudioScore)*normFactor), float64(MinScore), float64(MaxScore)))
+		return float32(scores[0].AudioScore)
 	}
 	return 0
 }
 
-func VideoTrackScore(params TrackScoreParams, normFactor float32) float32 {
+func VideoTrackScore(params TrackScoreParams) float32 {
 	stat := getRtcMosStat(params)
 	stat.VideoConfig = &rtcmos.VideoConfig{
 		FrameRate: float32Ptr(float32(getFrameRate(params.Duration.Seconds(), params.Frames))),
@@ -103,7 +106,7 @@ func VideoTrackScore(params TrackScoreParams, normFactor float32) float32 {
 
 	scores := rtcmos.Score([]rtcmos.Stat{stat})
 	if len(scores) == 1 {
-		return float32(clamp(float64(float32(scores[0].VideoScore)*normFactor), float64(MinScore), float64(MaxScore)))
+		return float32(scores[0].VideoScore)
 	}
 	return 0
 }

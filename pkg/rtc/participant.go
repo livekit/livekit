@@ -817,35 +817,38 @@ func (p *ParticipantImpl) GetAudioLevel() (level float64, active bool) {
 }
 
 func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo {
-	publisherScores := p.getPublisherConnectionQuality()
+	numTracks := 0
+	minScore := float32(5.0)
+	for _, score := range p.getPublisherConnectionQuality() {
+		numTracks++
 
-	numTracks := len(publisherScores)
-	totalScore := float32(0.0)
-	for _, score := range publisherScores {
-		totalScore += score
+		if score < minScore {
+			minScore = score
+		}
 	}
 
 	subscribedTracks := p.SubscriptionManager.GetSubscribedTracks()
-	subscriberScores := make(map[livekit.TrackID]float32, len(subscribedTracks))
 	for _, subTrack := range subscribedTracks {
 		if subTrack.IsMuted() || subTrack.MediaTrack().IsMuted() {
 			continue
 		}
-		score := subTrack.DownTrack().GetConnectionScore()
-		subscriberScores[subTrack.ID()] = score
-		totalScore += score
+
 		numTracks++
+
+		score := subTrack.DownTrack().GetConnectionScore()
+		if score < minScore {
+			minScore = score
+		}
 	}
 
-	avgScore := float32(5.0)
-	if numTracks > 0 {
-		avgScore = totalScore / float32(numTracks)
+	if numTracks == 0 {
+		return nil
 	}
 
 	return &livekit.ConnectionQualityInfo{
 		ParticipantSid: string(p.ID()),
-		Quality:        connectionquality.Score2Rating(avgScore),
-		Score:          avgScore,
+		Quality:        connectionquality.Score2Rating(minScore),
+		Score:          minScore,
 	}
 }
 
