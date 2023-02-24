@@ -265,7 +265,8 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 		return
 	}
 	if s.needsSubscribe() {
-		if s.numAttempts.Load() == 0 {
+		numAttempts := s.getNumAttempts()
+		if numAttempts == 0 {
 			m.params.Telemetry.TrackSubscribeRequested(
 				context.Background(),
 				m.params.Participant.ID(),
@@ -303,14 +304,14 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 				// all other errors
 				if s.durationSinceStart() > subscriptionTimeout {
 					s.logger.Errorw("failed to subscribe, triggering error handler", err,
-						"attempt", s.numAttempts.Load(),
+						"attempt", numAttempts,
 					)
 					s.maybeRecordError(m.params.Telemetry, m.params.Participant.ID(), err, false)
 					m.params.OnSubcriptionError(s.trackID)
 				} else {
 					s.logger.Debugw("failed to subscribe, retrying",
 						"error", err,
-						"attempt", s.numAttempts.Load(),
+						"attempt", numAttempts,
 					)
 				}
 			}
@@ -420,11 +421,6 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 	permChanged := s.setHasPermission(res.HasPermission)
 	if permChanged {
 		m.params.Participant.SubscriptionPermissionUpdate(s.getPublisherID(), s.trackID, res.HasPermission)
-		if res.HasPermission {
-			// when permission is granted, reset the timer so it has sufficient time to reconcile
-			t := time.Now()
-			s.subStartedAt.Store(&t)
-		}
 	}
 	if !res.HasPermission {
 		return ErrNoTrackPermission
@@ -565,6 +561,8 @@ func (m *SubscriptionManager) handleSubscribedTrackClose(s *trackSubscription, w
 	m.queueReconcile(s.trackID)
 }
 
+// --------------------------------------------------------------------------------------
+
 type trackSubscription struct {
 	subscriberID livekit.ParticipantID
 	trackID      livekit.TrackID
@@ -647,6 +645,11 @@ func (s *trackSubscription) setHasPermission(perm bool) bool {
 		return false
 	}
 	s.hasPermission = perm
+	if s.hasPermission {
+		// when permission is granted, reset the timer so it has sufficient time to reconcile
+		t := time.Now()
+		s.subStartedAt.Store(&t)
+	}
 	return true
 }
 
@@ -760,6 +763,10 @@ func (s *trackSubscription) recordAttempt(success bool) {
 	} else {
 		s.numAttempts.Store(0)
 	}
+}
+
+func (s *trackSubscription) getNumAttempts() int32 {
+	return s.numAttempts.Load()
 }
 
 func (s *trackSubscription) handleSourceTrackRemoved() {
