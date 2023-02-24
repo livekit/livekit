@@ -14,6 +14,7 @@ import (
 	"github.com/pion/turn/v2"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
+	"github.com/twitchtv/twirp"
 	"github.com/urfave/negroni/v3"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
@@ -85,7 +86,12 @@ func NewLivekitServer(conf *config.Config,
 	twirpLoggingHook := TwirpLogger(logger.GetLogger())
 	twirpRequestStatusHook := TwirpRequestStatusReporter()
 	roomServer := livekit.NewRoomServiceServer(roomService, twirpLoggingHook)
-	egressServer := livekit.NewEgressServer(egressService, twirpLoggingHook, twirpRequestStatusHook)
+	egressServer := livekit.NewEgressServer(egressService, twirp.WithServerHooks(
+		twirp.ChainHooks(
+			twirpLoggingHook,
+			twirpRequestStatusHook,
+		),
+	))
 	ingressServer := livekit.NewIngressServer(ingressService, twirpLoggingHook)
 
 	mux := http.NewServeMux()
