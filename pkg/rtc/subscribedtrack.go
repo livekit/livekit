@@ -51,7 +51,7 @@ func NewSubscribedTrack(params SubscribedTrackParams) *SubscribedTrack {
 	s := &SubscribedTrack{
 		params: params,
 		logger: params.Subscriber.GetLogger().WithValues(
-			"trackID", params.DownTrack.ID(),
+			"trackID", params.MediaTrack.ID(),
 			"publisherID", params.PublisherID,
 			"publisher", params.PublisherIdentity,
 		),

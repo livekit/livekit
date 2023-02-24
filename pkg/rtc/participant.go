@@ -844,8 +844,9 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 
 	subscribedTracks := p.SubscriptionManager.GetSubscribedTracks()
 	subscriberScores := make(map[livekit.TrackID]float32, len(subscribedTracks))
+	// TODO-mux: calculate score for muxed tracks
 	for _, subTrack := range subscribedTracks {
-		if subTrack.IsMuted() || subTrack.MediaTrack().IsMuted() {
+		if subTrack.IsMuted() || subTrack.MediaTrack().IsMuted() || subTrack.DownTrack() == nil {
 			continue
 		}
 		score := subTrack.DownTrack().GetConnectionScore()
@@ -1286,10 +1287,18 @@ func (p *ParticipantImpl) subscriberRTCPWorker() {
 		var srs []rtcp.Packet
 		var sd []rtcp.SourceDescriptionChunk
 		subscribedTracks := p.SubscriptionManager.GetSubscribedTracks()
+		downtracks := p.audioForwarder.GetDowntracks()
 		p.lock.RLock()
 		for _, subTrack := range subscribedTracks {
-			sr := subTrack.DownTrack().CreateSenderReport()
-			chunks := subTrack.DownTrack().CreateSourceDescriptionChunks()
+			if subTrack.DownTrack() == nil {
+				continue
+			}
+			downtracks = append(downtracks, subTrack.DownTrack())
+		}
+
+		for _, dt := range downtracks {
+			sr := dt.CreateSenderReport()
+			chunks := dt.CreateSourceDescriptionChunks()
 			if sr == nil || chunks == nil {
 				continue
 			}
@@ -2133,7 +2142,7 @@ func (p *ParticipantImpl) addDowntrack() error {
 	// })
 
 	// Bind callback can happen from replaceTrack, so set it up early
-	downTrack.OnBind(func() {
+	downTrack.OnBinding(func() {
 		p.audioForwarder.AddDownTrack(downTrack)
 		// wr.DetermineReceiver(downTrack.Codec())
 		// if reusingTransceiver.Load() {
@@ -2158,7 +2167,7 @@ func (p *ParticipantImpl) addDowntrack() error {
 	})
 
 	downTrack.OnRttUpdate(func(_ *sfu.DownTrack, rtt uint32) {
-		go p.UpdateRTT(rtt)
+		go p.UpdateMediaRTT(rtt)
 	})
 
 	downTrack.AddReceiverReportListener(func(dt *sfu.DownTrack, report *rtcp.ReceiverReport) {

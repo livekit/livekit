@@ -4,6 +4,7 @@ import (
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/protocol/livekit"
 )
 
@@ -35,8 +36,8 @@ func (r *NullReceiver) HeaderExtensions() []webrtc.RTPHeaderExtensionParameter {
 func (r *NullReceiver) ReadRTP(buf []byte, layer uint8, sn uint16) (int, error) {
 	return 0, nil
 }
-func (r *NullReceiver) GetLayeredBitrate() sfu.Bitrates {
-	return sfu.Bitrates{}
+func (r *NullReceiver) GetLayeredBitrate() ([]int32, sfu.Bitrates) {
+	return nil, sfu.Bitrates{}
 }
 func (r *NullReceiver) GetAudioLevel() (smooth, loudest float64, active bool) {
 	return 0, 0, false
@@ -69,4 +70,12 @@ func (r *NullReceiver) GetRedReceiver() sfu.TrackReceiver {
 }
 func (r *NullReceiver) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
 	return nil
+}
+
+func (r *NullReceiver) GetRTCPSenderReportDataExt(layer int32) *buffer.RTCPSenderReportDataExt {
+	return nil
+}
+
+func (r *NullReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error) {
+	return ts, nil
 }

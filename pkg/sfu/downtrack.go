@@ -259,7 +259,9 @@ func NewDownTrack(
 	d.receiverLock.Lock()
 	d.receiver = r
 	d.receiverLock.Unlock()
-	d.forwarder = NewForwarder(d.kind, d.logger, d.receiver.GetReferenceLayerRTPTimestamp)
+	d.forwarder = NewForwarder(d.kind, d.logger, func(ts uint32, layer, referenceLayer int32) (uint32, error) {
+		return d.getReceiver().GetReferenceLayerRTPTimestamp(ts, layer, referenceLayer)
+	})
 	d.forwarder.OnParkedLayersExpired(func() {
 		if d.onSubscriptionChanged != nil {
 			d.onSubscriptionChanged(d)

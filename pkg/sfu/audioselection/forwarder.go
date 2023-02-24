@@ -90,7 +90,16 @@ func (f *SelectionForwarder) AddDownTrack(dt *sfu.DownTrack) {
 	f.lock.Unlock()
 }
 
+// TODO-mux: impelement
 func (f *SelectionForwarder) RemoveDownTrack(dt *sfu.DownTrack) {
+}
+
+func (f *SelectionForwarder) GetDowntracks() []*sfu.DownTrack {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+	tracks := make([]*sfu.DownTrack, len(f.downtracks))
+	copy(tracks, f.downtracks)
+	return tracks
 }
 
 // OnForwardMappingChanged is called when the forward mapping is changed, used to update the relationship between downtracks and sources

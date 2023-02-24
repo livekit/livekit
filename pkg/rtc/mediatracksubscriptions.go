@@ -103,7 +103,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		t.subscribedTracksMu.Unlock()
 		sub.VerifySubscribeParticipantInfo(subTrack.PublisherID(), subTrack.PublisherVersion())
 		sub.AddMuxAudioTrack(subTrack.PublisherID(), trackID, wr)
-		return nil
+		return subTrack, nil
 	}
 
 	var rtcpFeedback []webrtc.RTCPFeedback
