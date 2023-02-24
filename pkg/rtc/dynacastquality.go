@@ -13,9 +13,8 @@ const (
 )
 
 type DynacastQualityParams struct {
-	MimeType           string
-	DynacastPauseDelay time.Duration
-	Logger             logger.Logger
+	MimeType string
+	Logger   logger.Logger
 }
 
 // DynacastQuality manages max subscribed quality of a single receiver of a media track
