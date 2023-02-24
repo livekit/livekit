@@ -297,10 +297,20 @@ func (t *MediaTrackReceiver) OnVideoLayerUpdate(f func(layers []*livekit.VideoLa
 func (t *MediaTrackReceiver) IsOpen() bool {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
-	return t.state == mediaTrackReceiverStateOpen
+	if t.state != mediaTrackReceiverStateOpen {
+		return false
+	}
+	// If any one of the receivers has entered closed state, we would not consider the track open
+	for _, receiver := range t.receivers {
+		if receiver.IsClosed() {
+			return false
+		}
+	}
+	return true
 }
 
 func (t *MediaTrackReceiver) SetClosing() {
+	t.params.Logger.Infow("setting track to closing")
 	t.lock.Lock()
 	defer t.lock.Unlock()
 	if t.state == mediaTrackReceiverStateOpen {
