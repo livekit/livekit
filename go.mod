@@ -19,7 +19,7 @@ require (
 	github.com/livekit/mediatransportutil v0.0.0-20230130133657-96cfb115473a
 	github.com/livekit/protocol v1.4.3-0.20230222030027-e946da680c7b
 	github.com/livekit/psrpc v0.2.7
-	github.com/livekit/rtcscore-go v0.0.0-20220815072451-20ee10ae1995
+	github.com/livekit/rtcscore-go v0.0.0-20230224125650-6a6442ef9ebc
 	github.com/mackerelio/go-osstat v0.2.3
 	github.com/magefile/mage v1.14.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.6.1
@@ -52,8 +52,6 @@ require (
 	google.golang.org/protobuf v1.28.1
 	gopkg.in/yaml.v3 v3.0.1
 )
-
-replace github.com/livekit/rtcscore-go => ../rtcscore-go
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect

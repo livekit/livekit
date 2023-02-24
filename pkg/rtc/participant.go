@@ -818,7 +818,7 @@ func (p *ParticipantImpl) GetAudioLevel() (level float64, active bool) {
 
 func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo {
 	numTracks := 0
-	minScore := float32(5.0)
+	minScore := connectionquality.MaxScore
 	for _, score := range p.getPublisherConnectionQuality() {
 		numTracks++
 
