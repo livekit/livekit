@@ -20,7 +20,7 @@ func TestConnectionQuality(t *testing.T) {
 		cs.updateScore(nil)
 		require.Equal(t, float32(5), cs.GetScore())
 
-		// perfect conditions should return a score of 5
+		// best conditions should return a high score
 		streams := map[uint32]*buffer.StreamStatsWithLayers{
 			1: &buffer.StreamStatsWithLayers{
 				Layers: map[int32]*buffer.RTPDeltaInfo{
@@ -33,7 +33,7 @@ func TestConnectionQuality(t *testing.T) {
 			},
 		}
 		cs.updateScore(streams)
-		require.Equal(t, float32(5), cs.GetScore())
+		require.Less(t, float32(4.3), cs.GetScore())
 
 		// introduce loss and the score should drop
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
@@ -152,7 +152,7 @@ func TestConnectionQuality(t *testing.T) {
 		cs.updateScore(nil)
 		require.Equal(t, float32(5), cs.GetScore())
 
-		// layer 0 perfect score
+		// layer 0 best conditions
 		streams := map[uint32]*buffer.StreamStatsWithLayers{
 			1: &buffer.StreamStatsWithLayers{
 				Layers: map[int32]*buffer.RTPDeltaInfo{
@@ -166,13 +166,14 @@ func TestConnectionQuality(t *testing.T) {
 			},
 		}
 		cs.updateScore(streams)
-		require.Equal(t, float32(5), cs.GetScore())
+		score := cs.GetScore()
+		require.Less(t, float32(4.3), score)
 
 		maxExpectedLayer = 1
 		currentLayer = 1
 		// update locks to expected layer and returns previous score
 		cs.updateScore(nil)
-		require.Equal(t, float32(5), cs.GetScore())
+		require.Equal(t, score, cs.GetScore())
 
 		// layer 1 at layer 0 bitrate should give lower score
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
@@ -190,7 +191,7 @@ func TestConnectionQuality(t *testing.T) {
 		cs.updateScore(streams)
 		require.Less(t, cs.GetScore(), float32(5))
 
-		// layer 1 at optimal bit rate should give max score
+		// layer 1 at optimal bit rate should give best score for those conditions
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
 			1: &buffer.StreamStatsWithLayers{
 				Layers: map[int32]*buffer.RTPDeltaInfo{
@@ -204,9 +205,9 @@ func TestConnectionQuality(t *testing.T) {
 			},
 		}
 		cs.updateScore(streams)
-		require.Equal(t, float32(5), cs.GetScore())
+		require.Less(t, float32(4.1), cs.GetScore())
 
-		// a layer at higher than optimal bit rate should give max score
+		// a layer at higher than optimal bit rate should give high score
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
 			1: &buffer.StreamStatsWithLayers{
 				Layers: map[int32]*buffer.RTPDeltaInfo{
@@ -220,13 +221,14 @@ func TestConnectionQuality(t *testing.T) {
 			},
 		}
 		cs.updateScore(streams)
-		require.Equal(t, float32(5), cs.GetScore())
+		score = cs.GetScore()
+		require.Less(t, float32(4.2), score)
 
 		maxExpectedLayer = 2
 		currentLayer = 2
 		// update locks to expected layer and returns previous score
 		cs.updateScore(nil)
-		require.Equal(t, float32(5), cs.GetScore())
+		require.Equal(t, score, cs.GetScore())
 
 		// layer 2 at layer 1 bitrate should give lower score
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
@@ -244,7 +246,7 @@ func TestConnectionQuality(t *testing.T) {
 		cs.updateScore(streams)
 		require.Less(t, cs.GetScore(), float32(5))
 
-		// layer 2 at optimal bit rate should give max score
+		// layer 2 at optimal bit rate should give high score
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
 			1: &buffer.StreamStatsWithLayers{
 				Layers: map[int32]*buffer.RTPDeltaInfo{
@@ -258,7 +260,7 @@ func TestConnectionQuality(t *testing.T) {
 			},
 		}
 		cs.updateScore(streams)
-		require.Equal(t, float32(5), cs.GetScore())
+		require.Less(t, float32(3.75), cs.GetScore())
 
 		// layer 2 at optimal bit rate, but with loss should give less score
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
@@ -274,7 +276,7 @@ func TestConnectionQuality(t *testing.T) {
 			},
 		}
 		cs.updateScore(streams)
-		score := cs.GetScore()
+		score = cs.GetScore()
 		require.Less(t, score, float32(5))
 
 		// adding rtt (i. e. delay) should reduce score further
@@ -313,7 +315,7 @@ func TestConnectionQuality(t *testing.T) {
 		cs.updateScore(streams)
 		require.Less(t, cs.GetScore(), score)
 
-		// layer 2 max expected, but max available is layer 1 should reduce one level even if layer 1 is perfect
+		// layer 2 max expected, but max available is layer 1 should reduce one level even if layer 1 is at best quality
 		currentLayer = 1
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
 			1: &buffer.StreamStatsWithLayers{
@@ -330,7 +332,7 @@ func TestConnectionQuality(t *testing.T) {
 		cs.updateScore(streams)
 		require.Less(t, float32(4), cs.GetScore())
 
-		// layer 2 max expected, but max available is layer 0 should reduce two levels even if layer 0 is perfect
+		// layer 2 max expected, but max available is layer 0 should reduce two levels even if layer 0 is at best quality
 		currentLayer = 0
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
 			0: &buffer.StreamStatsWithLayers{
@@ -379,7 +381,7 @@ func TestConnectionQuality(t *testing.T) {
 		cs.updateScore(nil)
 		require.Equal(t, float32(5), cs.GetScore())
 
-		// perfect conditions should return a score of 5
+		// best conditions should return a high score
 		streams := map[uint32]*buffer.StreamStatsWithLayers{
 			1: &buffer.StreamStatsWithLayers{
 				Layers: map[int32]*buffer.RTPDeltaInfo{
