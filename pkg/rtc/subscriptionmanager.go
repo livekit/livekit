@@ -48,7 +48,7 @@ type SubscriptionManagerParams struct {
 	TrackResolver       types.MediaTrackResolver
 	OnTrackSubscribed   func(subTrack types.SubscribedTrack)
 	OnTrackUnsubscribed func(subTrack types.SubscribedTrack)
-	OnSubcriptionError  func(trackID livekit.TrackID)
+	OnSubscriptionError func(trackID livekit.TrackID)
 	Telemetry           telemetry.TelemetryService
 }
 
@@ -58,21 +58,24 @@ type SubscriptionManager struct {
 	lock          sync.RWMutex
 	subscriptions map[livekit.TrackID]*trackSubscription
 	subscribedTo  map[livekit.ParticipantID]map[livekit.TrackID]struct{}
-	reconcileCh   chan livekit.TrackID
-	closeCh       chan struct{}
-	doneCh        chan struct{}
+	// keeps track of tracks that are already queued for reconcile to avoid duplicating reconcile requests
+	pendingReconcile map[livekit.TrackID]struct{}
+	reconcileCh      chan livekit.TrackID
+	closeCh          chan struct{}
+	doneCh           chan struct{}
 
 	onSubscribeStatusChanged func(publisherID livekit.ParticipantID, subscribed bool)
 }
 
 func NewSubscriptionManager(params SubscriptionManagerParams) *SubscriptionManager {
 	m := &SubscriptionManager{
-		params:        params,
-		subscriptions: make(map[livekit.TrackID]*trackSubscription),
-		subscribedTo:  make(map[livekit.ParticipantID]map[livekit.TrackID]struct{}),
-		reconcileCh:   make(chan livekit.TrackID, 50),
-		closeCh:       make(chan struct{}),
-		doneCh:        make(chan struct{}),
+		params:           params,
+		subscriptions:    make(map[livekit.TrackID]*trackSubscription),
+		subscribedTo:     make(map[livekit.ParticipantID]map[livekit.TrackID]struct{}),
+		pendingReconcile: make(map[livekit.TrackID]struct{}),
+		reconcileCh:      make(chan livekit.TrackID, 50),
+		closeCh:          make(chan struct{}),
+		doneCh:           make(chan struct{}),
 	}
 
 	go m.reconcileWorker()
@@ -307,7 +310,7 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 						"attempt", numAttempts,
 					)
 					s.maybeRecordError(m.params.Telemetry, m.params.Participant.ID(), err, false)
-					m.params.OnSubcriptionError(s.trackID)
+					m.params.OnSubscriptionError(s.trackID)
 				} else {
 					s.logger.Debugw("failed to subscribe, retrying",
 						"error", err,
@@ -343,13 +346,20 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 		if s.durationSinceStart() > subscriptionTimeout {
 			s.logger.Errorw("track not bound after timeout", nil)
 			s.maybeRecordError(m.params.Telemetry, m.params.Participant.ID(), ErrTrackNotBound, false)
-			m.params.OnSubcriptionError(s.trackID)
+			m.params.OnSubscriptionError(s.trackID)
 		}
 	}
 }
 
-// trigger an immediate reconcilation, when trackID is empty, will reconcile all subscriptions
+// trigger an immediate reconciliation, when trackID is empty, will reconcile all subscriptions
 func (m *SubscriptionManager) queueReconcile(trackID livekit.TrackID) {
+	m.lock.Lock()
+	if _, ok := m.pendingReconcile[trackID]; ok {
+		// already reconciled
+		m.lock.Unlock()
+		return
+	}
+	m.lock.Unlock()
 	select {
 	case m.reconcileCh <- trackID:
 	default:
@@ -369,9 +379,10 @@ func (m *SubscriptionManager) reconcileWorker() {
 		case <-reconcileTicker.C:
 			m.reconcileSubscriptions()
 		case trackID := <-m.reconcileCh:
-			m.lock.RLock()
+			m.lock.Lock()
 			s := m.subscriptions[trackID]
-			m.lock.RUnlock()
+			delete(m.pendingReconcile, trackID)
+			m.lock.Unlock()
 			if s != nil {
 				m.reconcileSubscription(s)
 			} else {

@@ -1059,7 +1059,7 @@ func (p *ParticipantImpl) setupSubscriptionManager() {
 		Telemetry:           p.params.Telemetry,
 		OnTrackSubscribed:   p.onTrackSubscribed,
 		OnTrackUnsubscribed: p.onTrackUnsubscribed,
-		OnSubcriptionError:  p.onSubscriptionError,
+		OnSubscriptionError: p.onSubscriptionError,
 	})
 }
 
