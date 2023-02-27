@@ -155,7 +155,7 @@ func (s *StreamTrackerManager) AddTracker(layer int32) *streamtracker.StreamTrac
 	s.lock.Unlock()
 
 	if onMaxPublishedLayerChanged != nil {
-		onMaxPublishedLayerChanged(layer)
+		go onMaxPublishedLayerChanged(layer)
 	}
 
 	tracker.SetPaused(paused)
