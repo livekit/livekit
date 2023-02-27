@@ -1356,9 +1356,9 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 						f.logger.Infow("reference timestamp out-of-order, using default", "lastTS", last.LastTS, "refTS", refTS, "td", int32(td))
 						td = 1
 					}
+				} else {
+					f.logger.Infow("reference timestamp get error, using default", "error", err)
 				}
-			} else {
-				f.logger.Infow("reference timestamp not available, using default")
 			}
 
 			f.rtpMunger.UpdateSnTsOffsets(extPkt, 1, td)

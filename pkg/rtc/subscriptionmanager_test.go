@@ -54,7 +54,7 @@ func TestSubscribe(t *testing.T) {
 		sm.params.OnTrackSubscribed = func(subTrack types.SubscribedTrack) {
 			subCount.Add(1)
 		}
-		sm.params.OnSubcriptionError = func(trackID livekit.TrackID) {
+		sm.params.OnSubscriptionError = func(trackID livekit.TrackID) {
 			failed.Store(true)
 		}
 		numParticipantSubscribed := atomic.Int32{}
@@ -115,7 +115,7 @@ func TestSubscribe(t *testing.T) {
 		resolver := newTestResolver(false, true, "pub", "pubID")
 		sm.params.TrackResolver = resolver.Resolve
 		failed := atomic.Bool{}
-		sm.params.OnSubcriptionError = func(trackID livekit.TrackID) {
+		sm.params.OnSubscriptionError = func(trackID livekit.TrackID) {
 			failed.Store(true)
 		}
 
@@ -156,7 +156,7 @@ func TestSubscribe(t *testing.T) {
 		resolver := newTestResolver(true, true, "pub", "pubID")
 		sm.params.TrackResolver = resolver.Resolve
 		failed := atomic.Bool{}
-		sm.params.OnSubcriptionError = func(trackID livekit.TrackID) {
+		sm.params.OnSubscriptionError = func(trackID livekit.TrackID) {
 			failed.Store(true)
 		}
 
@@ -278,6 +278,7 @@ func TestSubscribeStatusChanged(t *testing.T) {
 
 	require.Equal(t, int32(1), numParticipantSubscribed.Load())
 	require.Equal(t, int32(0), numParticipantUnsubscribed.Load())
+	require.True(t, sm.IsSubscribedTo("pubID"))
 
 	// now unsubscribe track2, no event should be fired
 	sm.UnsubscribeFromTrack("track2")
@@ -292,6 +293,7 @@ func TestSubscribeStatusChanged(t *testing.T) {
 		return !s1.needsUnsubscribe()
 	}, subSettleTimeout, subCheckInterval, "track1 should be unsubscribed")
 	require.Equal(t, int32(1), numParticipantUnsubscribed.Load())
+	require.False(t, sm.IsSubscribedTo("pubID"))
 }
 
 // clients may send update subscribed settings prior to subscription events coming through
@@ -334,7 +336,7 @@ func newTestSubscriptionManager(t *testing.T) *SubscriptionManager {
 		Logger:              logger.GetLogger(),
 		OnTrackSubscribed:   func(subTrack types.SubscribedTrack) {},
 		OnTrackUnsubscribed: func(subTrack types.SubscribedTrack) {},
-		OnSubcriptionError:  func(trackID livekit.TrackID) {},
+		OnSubscriptionError: func(trackID livekit.TrackID) {},
 		TrackResolver: func(identity livekit.ParticipantIdentity, trackID livekit.TrackID) types.MediaResolverResult {
 			return types.MediaResolverResult{}
 		},

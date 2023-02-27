@@ -2,6 +2,34 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.5] - 2023-02-25
+### Added
+- Allow for strict ACKs to be disabled or subscriber peer connections #1410
+
+### Fixed
+- Don't error when get tc stats fails #1306
+- Fixed support for Redis cluster #1415
+- Fixed unpublished callback being skipped in certain cases #1418
+- Fixed panic when Egress request is sent with an empty output field #1420
+- Do not unsubscribe from track if it's been republished #1424 #1429 #1454 #1465
+- Fixed panic when closing room #1428
+- Use available layers in optimal allocation #1445 #1446 #1448 #1449
+- Fixed unable to notify webhook when egress ending with status EgressStatus_EGRESS_LIMIT_REACHED #1451
+- Reset subscription start timer on permission grant #1457
+- Avoid panic when server receives a token without a video grant #1463
+
+### Changed
+- Updated various logging #1413 #1433 #1437 #1440 #1470
+- Do not force TCP when client left before DTLS handshake #1414
+- Improved performance of data packet forwarding by broadcasting in parallel #1425
+- Cleaning up `availableLayers` and `exemptedLayers` #1407
+- Send stream start on initial start #1456
+- Switch to TLS if ICE/TCP isn't working well #1458
+
+### Removed
+- Removed signal de-duper as it has not proven to be reliable #1427
+- Remove deprecated ingress rpc #1439 (breaking change for Ingress, this will require Ingress v0.0.2+)
+
 ## [1.3.4] - 2023-02-09
 ### Added
 - Memory used and total to node stats #1293 #1296

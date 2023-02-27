@@ -690,14 +690,14 @@ func (r *RTPStats) SetRtcpSenderReportData(srData *RTCPSenderReportData) {
 		return
 	}
 
-	// Low pass filter one-way-delay (owd) to normalize time stamp to local time base  when sending RTCP sender report.
-	// Forwarding RTCP sender report would be ideal. But, there are a couple of issues with that
+	// Low pass filter one-way-delay (owd) to normalize time stamp to local time base when sending RTCP Sender Report.
+	// Forwarding RTCP Sender Report would be ideal. But, there are a couple of issues with that
 	//   1. Senders could have different clocks.
 	//   2. Adjusting to current time as required by RTCP spec.
 	// By normalizing to local clock, these issues can be addressed. However, normalization is not straightforward
 	// as it is not possible to know the propagation delay and processing delay at both ends (send side processing
 	// after time stamping the RTCP packet and receive side processing after reading packet off the wire).
-	// Smoothed version of OWD is used to
+	// Smoothed version of OWD is used to alleviate irregularities somewhat.
 	owd := srData.ArrivalTime.Sub(srData.NTPTimestamp.Time())
 	if r.srDataExt != nil {
 		prevOwd := r.srDataExt.SenderReportData.ArrivalTime.Sub(r.srDataExt.SenderReportData.NTPTimestamp.Time())
