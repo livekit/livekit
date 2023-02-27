@@ -2,7 +2,6 @@ package sfu
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -99,9 +98,6 @@ type WebRTCReceiver struct {
 	bufferMu sync.RWMutex
 	buffers  [DefaultMaxLayerSpatial + 1]*buffer.Buffer
 	rtt      uint32
-
-	senderReportMu sync.RWMutex
-	senderReports  [DefaultMaxLayerSpatial + 1]*buffer.RTCPSenderReportDataExt
 
 	upTrackMu sync.RWMutex
 	upTracks  [DefaultMaxLayerSpatial + 1]*webrtc.TrackRemote
@@ -330,9 +326,7 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 			_ = dt.HandleRTCPSenderReportData(w.codec.PayloadType, layer, srData)
 		})
 
-		w.senderReportMu.Lock()
-		w.senderReports[layer] = buff.GetSenderReportDataExt()
-		w.senderReportMu.Unlock()
+		w.streamTrackerManager.SetRTCPSenderReportDataExt(layer, buff.GetSenderReportDataExt())
 	})
 
 	var duration time.Duration
@@ -715,54 +709,9 @@ func (w *WebRTCReceiver) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
 }
 
 func (w *WebRTCReceiver) GetRTCPSenderReportDataExt(layer int32) *buffer.RTCPSenderReportDataExt {
-	w.senderReportMu.RLock()
-	defer w.senderReportMu.RUnlock()
-
-	if layer < 0 || int(layer) >= len(w.senderReports) {
-		return nil
-	}
-
-	return w.senderReports[layer]
+	return w.streamTrackerManager.GetRTCPSenderReportDataExt(layer)
 }
 
 func (w *WebRTCReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error) {
-	w.senderReportMu.RLock()
-	defer w.senderReportMu.RUnlock()
-
-	if layer < 0 || referenceLayer < 0 {
-		return 0, fmt.Errorf("invalid layer, target: %d, reference: %d", layer, referenceLayer)
-	}
-
-	if layer == referenceLayer {
-		return ts, nil
-	}
-
-	var srLayer *buffer.RTCPSenderReportDataExt
-	if int(layer) < len(w.senderReports) {
-		srLayer = w.senderReports[layer]
-	}
-	if srLayer == nil || srLayer.SenderReportData.NTPTimestamp == 0 {
-		return 0, fmt.Errorf("layer rtcp sender report not available: %d", layer)
-	}
-
-	var srRef *buffer.RTCPSenderReportDataExt
-	if int(referenceLayer) < len(w.senderReports) {
-		srRef = w.senderReports[referenceLayer]
-	}
-	if srRef == nil || srRef.SenderReportData.NTPTimestamp == 0 {
-		return 0, fmt.Errorf("reference layer rtcp sender report not available: %d", referenceLayer)
-	}
-
-	// line up the RTP time stamps using NTP time of most recent sender report of layer and referenceLayer
-	// NOTE: It is possible that reference layer has stopped (due to dynacast/adaptive streaming OR publisher
-	// constraints). It should be okay even if the layer has stopped for a long time when using modulo arithmetic for
-	// RTP time stamp (uint32 arithmetic).
-	ntpDiff := float64(int64(srRef.SenderReportData.NTPTimestamp-srLayer.SenderReportData.NTPTimestamp)) / float64(1<<32)
-	normalizedTS := srLayer.SenderReportData.RTPTimestamp + uint32(ntpDiff*float64(w.codec.ClockRate))
-
-	// now that both RTP timestamps correspond to roughly the same NTP time,
-	// the diff between them is the offset in RTP timestamp units between layer and referenceLayer.
-	// Add the offset to layer's ts to map it to corresponding RTP timestamp in
-	// the reference layer.
-	return ts + (srRef.SenderReportData.RTPTimestamp - normalizedTS), nil
+	return w.streamTrackerManager.GetReferenceLayerRTPTimestamp(ts, layer, referenceLayer)
 }
