@@ -110,16 +110,20 @@ func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.
 }
 
 // SendSpeakerUpdate notifies participant changes to speakers. only send members that have changed since last update
-func (p *ParticipantImpl) SendSpeakerUpdate(speakers []*livekit.SpeakerInfo) error {
+func (p *ParticipantImpl) SendSpeakerUpdate(speakers []*livekit.SpeakerInfo, force bool) error {
 	if !p.IsReady() {
 		return nil
 	}
 
 	var scopedSpeakers []*livekit.SpeakerInfo
-	for _, s := range speakers {
-		participantID := livekit.ParticipantID(s.Sid)
-		if p.IsSubscribedTo(participantID) || participantID == p.ID() {
-			scopedSpeakers = append(scopedSpeakers, s)
+	if force {
+		scopedSpeakers = speakers
+	} else {
+		for _, s := range speakers {
+			participantID := livekit.ParticipantID(s.Sid)
+			if p.IsSubscribedTo(participantID) || participantID == p.ID() {
+				scopedSpeakers = append(scopedSpeakers, s)
+			}
 		}
 	}
 

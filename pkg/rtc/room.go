@@ -305,7 +305,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 							Level:  float32(level),
 							Active: active,
 						},
-					})
+					}, false)
 				}
 
 				update := &livekit.ConnectionQualityUpdate{}
@@ -320,7 +320,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 					Level:  0,
 					Active: false,
 				},
-			})
+			}, true)
 		}
 
 	})
@@ -911,7 +911,7 @@ func (r *Room) sendActiveSpeakers(speakers []*livekit.SpeakerInfo) {
 func (r *Room) sendSpeakerChanges(speakers []*livekit.SpeakerInfo) {
 	for _, p := range r.GetParticipants() {
 		if p.ProtocolVersion().SupportsSpeakerChanged() {
-			_ = p.SendSpeakerUpdate(speakers)
+			_ = p.SendSpeakerUpdate(speakers, false)
 		}
 	}
 }

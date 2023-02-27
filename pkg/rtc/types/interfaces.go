@@ -288,7 +288,7 @@ type LocalParticipant interface {
 	// server sent messages
 	SendJoinResponse(joinResponse *livekit.JoinResponse) error
 	SendParticipantUpdate(participants []*livekit.ParticipantInfo) error
-	SendSpeakerUpdate(speakers []*livekit.SpeakerInfo) error
+	SendSpeakerUpdate(speakers []*livekit.SpeakerInfo, force bool) error
 	SendDataPacket(packet *livekit.DataPacket, data []byte) error
 	SendRoomUpdate(room *livekit.Room) error
 	SendConnectionQualityUpdate(update *livekit.ConnectionQualityUpdate) error
