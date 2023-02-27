@@ -100,6 +100,9 @@ type WebRTCReceiver struct {
 	buffers  [DefaultMaxLayerSpatial + 1]*buffer.Buffer
 	rtt      uint32
 
+	senderReportMu sync.RWMutex
+	senderReports  [DefaultMaxLayerSpatial + 1]*buffer.RTCPSenderReportDataExt
+
 	upTrackMu sync.RWMutex
 	upTracks  [DefaultMaxLayerSpatial + 1]*webrtc.TrackRemote
 
@@ -326,6 +329,10 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 		w.downTrackSpreader.Broadcast(func(dt TrackSender) {
 			_ = dt.HandleRTCPSenderReportData(w.codec.PayloadType, layer, srData)
 		})
+
+		w.senderReportMu.Lock()
+		w.senderReports[layer] = buff.GetSenderReportDataExt()
+		w.senderReportMu.Unlock()
 	})
 
 	var duration time.Duration
@@ -708,43 +715,40 @@ func (w *WebRTCReceiver) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
 }
 
 func (w *WebRTCReceiver) GetRTCPSenderReportDataExt(layer int32) *buffer.RTCPSenderReportDataExt {
-	w.bufferMu.RLock()
-	defer w.bufferMu.RUnlock()
+	w.senderReportMu.RLock()
+	defer w.senderReportMu.RUnlock()
 
-	if layer == InvalidLayerSpatial {
+	if layer < 0 || int(layer) >= len(w.senderReports) {
 		return nil
 	}
 
-	buffer := w.getBufferLocked(layer)
-	if buffer == nil {
-		return nil
-	}
-
-	return buffer.GetSenderReportDataExt()
+	return w.senderReports[layer]
 }
 
 func (w *WebRTCReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error) {
-	w.bufferMu.RLock()
-	defer w.bufferMu.RUnlock()
+	w.senderReportMu.RLock()
+	defer w.senderReportMu.RUnlock()
+
+	if layer < 0 || referenceLayer < 0 {
+		return 0, fmt.Errorf("invalid layer, target: %d, reference: %d", layer, referenceLayer)
+	}
 
 	if layer == referenceLayer {
 		return ts, nil
 	}
 
-	bLayer := w.getBufferLocked(layer)
-	if bLayer == nil {
-		return 0, fmt.Errorf("invalid layer: %d", layer)
+	var srLayer *buffer.RTCPSenderReportDataExt
+	if int(layer) < len(w.senderReports) {
+		srLayer = w.senderReports[layer]
 	}
-	srLayer := bLayer.GetSenderReportDataExt()
 	if srLayer == nil || srLayer.SenderReportData.NTPTimestamp == 0 {
 		return 0, fmt.Errorf("layer rtcp sender report not available: %d", layer)
 	}
 
-	bReferenceLayer := w.getBufferLocked(referenceLayer)
-	if bReferenceLayer == nil {
-		return 0, fmt.Errorf("invalid reference layer: %d", referenceLayer)
+	var srRef *buffer.RTCPSenderReportDataExt
+	if int(referenceLayer) < len(w.senderReports) {
+		srRef = w.senderReports[referenceLayer]
 	}
-	srRef := bReferenceLayer.GetSenderReportDataExt()
 	if srRef == nil || srRef.SenderReportData.NTPTimestamp == 0 {
 		return 0, fmt.Errorf("reference layer rtcp sender report not available: %d", referenceLayer)
 	}
