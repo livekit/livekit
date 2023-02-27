@@ -411,7 +411,7 @@ func TestActiveSpeakers(t *testing.T) {
 		var updates [][]*livekit.SpeakerInfo
 		numCalls := p.SendSpeakerUpdateCallCount()
 		for i := 0; i < numCalls; i++ {
-			infos := p.SendSpeakerUpdateArgsForCall(i)
+			infos, _ := p.SendSpeakerUpdateArgsForCall(i)
 			updates = append(updates, infos)
 		}
 		return updates
