@@ -427,7 +427,7 @@ type SubscribedTrack interface {
 	SubscriberID() livekit.ParticipantID
 	SubscriberIdentity() livekit.ParticipantIdentity
 	Subscriber() LocalParticipant
-	DownTrack() *sfu.DownTrack
+	DownTrack() DownTrack
 	MediaTrack() MediaTrack
 	RTPSender() *webrtc.RTPSender
 	IsMuted() bool
@@ -436,6 +436,25 @@ type SubscribedTrack interface {
 	// selects appropriate video layer according to subscriber preferences
 	UpdateVideoLayer()
 	NeedsNegotiation() bool
+	IsMuxedTrack() bool
+}
+
+type DownTrack interface {
+	ID() string
+	CloseWithFlush(flush bool)
+	Resync()
+	Codec() webrtc.RTPCodecCapability
+	DebugInfo() map[string]interface{}
+	GetConnectionScore() float32
+	SetActivePaddingOnMuteUpTrack()
+	SetConnected()
+	SetMaxSpatialLayer(spatialLayer int32)
+	SetMaxTemporalLayer(temporalLayer int32)
+	Kind() webrtc.RTPCodecType
+	Mute(muted bool)
+	PubMute(pubMuted bool)
+	CreateSenderReport() *rtcp.SenderReport
+	CreateSourceDescriptionChunks() []rtcp.SourceDescriptionChunk
 }
 
 type ChangeNotifier interface {

@@ -13,6 +13,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/audioselection"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
@@ -89,20 +90,25 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 
 	if t.params.MediaTrack.Kind() == livekit.TrackType_AUDIO /*&& audioselection.AudioCodecCanbeMux(*t.params.MediaTrack.ToProto(), wr.codecs) */ {
 		wr.DetermineReceiver(opusCodecCapability)
+		ndt := audioselection.NewNullAudioDowntrack()
 		subTrack := NewSubscribedTrack(SubscribedTrackParams{
 			PublisherID:       t.params.MediaTrack.PublisherID(),
 			PublisherIdentity: t.params.MediaTrack.PublisherIdentity(),
 			PublisherVersion:  t.params.MediaTrack.PublisherVersion(),
 			Subscriber:        sub,
 			MediaTrack:        t.params.MediaTrack,
-			DownTrack:         nil,
+			DownTrack:         ndt,
 			AdaptiveStream:    sub.GetAdaptiveStream(),
+			IsMuxedTrack:      true,
 		})
 		t.subscribedTracksMu.Lock()
 		t.subscribedTracks[subscriberID] = subTrack
 		t.subscribedTracksMu.Unlock()
 		sub.VerifySubscribeParticipantInfo(subTrack.PublisherID(), subTrack.PublisherVersion())
 		sub.AddMuxAudioTrack(subTrack.PublisherID(), trackID, wr)
+
+		go subTrack.Bound()
+		subTrack.SetPublisherMuted(t.params.MediaTrack.IsMuted())
 		return subTrack, nil
 	}
 
@@ -281,20 +287,22 @@ func (t *MediaTrackSubscriptions) RemoveSubscriber(subscriberID livekit.Particip
 }
 
 func (t *MediaTrackSubscriptions) closeSubscribedTrack(subTrack types.SubscribedTrack, willBeResumed bool) {
-	dt := subTrack.DownTrack()
 	sub := subTrack.Subscriber()
-	if dt == nil {
+	if subTrack.IsMuxedTrack() {
 		sub.RemoveMuxAudioTrack(t.params.MediaTrack.ID())
-		return
-	}
+		go t.downTrackClosed(sub, willBeResumed)
+	} else {
+		if dt, ok := subTrack.DownTrack().(*sfu.DownTrack); ok {
+			dt.CloseWithFlush(!willBeResumed)
 
-	dt.CloseWithFlush(!willBeResumed)
-
-	if willBeResumed {
-		tr := dt.GetTransceiver()
-		if tr != nil {
-			sub.CacheDownTrack(subTrack.ID(), tr, dt.GetState())
+			if willBeResumed {
+				tr := dt.GetTransceiver()
+				if tr != nil {
+					sub.CacheDownTrack(subTrack.ID(), tr, dt.GetState())
+				}
+			}
 		}
+
 	}
 }
 

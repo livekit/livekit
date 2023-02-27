@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/protocol/livekit"
 	webrtc "github.com/pion/webrtc/v3"
 )
@@ -21,15 +20,15 @@ type FakeSubscribedTrack struct {
 	closeArgsForCall []struct {
 		arg1 bool
 	}
-	DownTrackStub        func() *sfu.DownTrack
+	DownTrackStub        func() types.DownTrack
 	downTrackMutex       sync.RWMutex
 	downTrackArgsForCall []struct {
 	}
 	downTrackReturns struct {
-		result1 *sfu.DownTrack
+		result1 types.DownTrack
 	}
 	downTrackReturnsOnCall map[int]struct {
-		result1 *sfu.DownTrack
+		result1 types.DownTrack
 	}
 	IDStub        func() livekit.TrackID
 	iDMutex       sync.RWMutex
@@ -59,6 +58,16 @@ type FakeSubscribedTrack struct {
 		result1 bool
 	}
 	isMutedReturnsOnCall map[int]struct {
+		result1 bool
+	}
+	IsMuxedTrackStub        func() bool
+	isMuxedTrackMutex       sync.RWMutex
+	isMuxedTrackArgsForCall []struct {
+	}
+	isMuxedTrackReturns struct {
+		result1 bool
+	}
+	isMuxedTrackReturnsOnCall map[int]struct {
 		result1 bool
 	}
 	MediaTrackStub        func() types.MediaTrack
@@ -238,7 +247,7 @@ func (fake *FakeSubscribedTrack) CloseArgsForCall(i int) bool {
 	return argsForCall.arg1
 }
 
-func (fake *FakeSubscribedTrack) DownTrack() *sfu.DownTrack {
+func (fake *FakeSubscribedTrack) DownTrack() types.DownTrack {
 	fake.downTrackMutex.Lock()
 	ret, specificReturn := fake.downTrackReturnsOnCall[len(fake.downTrackArgsForCall)]
 	fake.downTrackArgsForCall = append(fake.downTrackArgsForCall, struct {
@@ -262,32 +271,32 @@ func (fake *FakeSubscribedTrack) DownTrackCallCount() int {
 	return len(fake.downTrackArgsForCall)
 }
 
-func (fake *FakeSubscribedTrack) DownTrackCalls(stub func() *sfu.DownTrack) {
+func (fake *FakeSubscribedTrack) DownTrackCalls(stub func() types.DownTrack) {
 	fake.downTrackMutex.Lock()
 	defer fake.downTrackMutex.Unlock()
 	fake.DownTrackStub = stub
 }
 
-func (fake *FakeSubscribedTrack) DownTrackReturns(result1 *sfu.DownTrack) {
+func (fake *FakeSubscribedTrack) DownTrackReturns(result1 types.DownTrack) {
 	fake.downTrackMutex.Lock()
 	defer fake.downTrackMutex.Unlock()
 	fake.DownTrackStub = nil
 	fake.downTrackReturns = struct {
-		result1 *sfu.DownTrack
+		result1 types.DownTrack
 	}{result1}
 }
 
-func (fake *FakeSubscribedTrack) DownTrackReturnsOnCall(i int, result1 *sfu.DownTrack) {
+func (fake *FakeSubscribedTrack) DownTrackReturnsOnCall(i int, result1 types.DownTrack) {
 	fake.downTrackMutex.Lock()
 	defer fake.downTrackMutex.Unlock()
 	fake.DownTrackStub = nil
 	if fake.downTrackReturnsOnCall == nil {
 		fake.downTrackReturnsOnCall = make(map[int]struct {
-			result1 *sfu.DownTrack
+			result1 types.DownTrack
 		})
 	}
 	fake.downTrackReturnsOnCall[i] = struct {
-		result1 *sfu.DownTrack
+		result1 types.DownTrack
 	}{result1}
 }
 
@@ -446,6 +455,59 @@ func (fake *FakeSubscribedTrack) IsMutedReturnsOnCall(i int, result1 bool) {
 		})
 	}
 	fake.isMutedReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeSubscribedTrack) IsMuxedTrack() bool {
+	fake.isMuxedTrackMutex.Lock()
+	ret, specificReturn := fake.isMuxedTrackReturnsOnCall[len(fake.isMuxedTrackArgsForCall)]
+	fake.isMuxedTrackArgsForCall = append(fake.isMuxedTrackArgsForCall, struct {
+	}{})
+	stub := fake.IsMuxedTrackStub
+	fakeReturns := fake.isMuxedTrackReturns
+	fake.recordInvocation("IsMuxedTrack", []interface{}{})
+	fake.isMuxedTrackMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeSubscribedTrack) IsMuxedTrackCallCount() int {
+	fake.isMuxedTrackMutex.RLock()
+	defer fake.isMuxedTrackMutex.RUnlock()
+	return len(fake.isMuxedTrackArgsForCall)
+}
+
+func (fake *FakeSubscribedTrack) IsMuxedTrackCalls(stub func() bool) {
+	fake.isMuxedTrackMutex.Lock()
+	defer fake.isMuxedTrackMutex.Unlock()
+	fake.IsMuxedTrackStub = stub
+}
+
+func (fake *FakeSubscribedTrack) IsMuxedTrackReturns(result1 bool) {
+	fake.isMuxedTrackMutex.Lock()
+	defer fake.isMuxedTrackMutex.Unlock()
+	fake.IsMuxedTrackStub = nil
+	fake.isMuxedTrackReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeSubscribedTrack) IsMuxedTrackReturnsOnCall(i int, result1 bool) {
+	fake.isMuxedTrackMutex.Lock()
+	defer fake.isMuxedTrackMutex.Unlock()
+	fake.IsMuxedTrackStub = nil
+	if fake.isMuxedTrackReturnsOnCall == nil {
+		fake.isMuxedTrackReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.isMuxedTrackReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
 }
@@ -1062,6 +1124,8 @@ func (fake *FakeSubscribedTrack) Invocations() map[string][][]interface{} {
 	defer fake.isBoundMutex.RUnlock()
 	fake.isMutedMutex.RLock()
 	defer fake.isMutedMutex.RUnlock()
+	fake.isMuxedTrackMutex.RLock()
+	defer fake.isMuxedTrackMutex.RUnlock()
 	fake.mediaTrackMutex.RLock()
 	defer fake.mediaTrackMutex.RUnlock()
 	fake.needsNegotiationMutex.RLock()

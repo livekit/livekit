@@ -12,7 +12,6 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
@@ -26,8 +25,9 @@ type SubscribedTrackParams struct {
 	PublisherVersion  uint32
 	Subscriber        types.LocalParticipant
 	MediaTrack        types.MediaTrack
-	DownTrack         *sfu.DownTrack
+	DownTrack         types.DownTrack
 	AdaptiveStream    bool
+	IsMuxedTrack      bool
 }
 
 type SubscribedTrack struct {
@@ -126,6 +126,10 @@ func (t *SubscribedTrack) IsBound() bool {
 	return t.bound.Load()
 }
 
+func (t *SubscribedTrack) IsMuxedTrack() bool {
+	return t.params.IsMuxedTrack
+}
+
 func (t *SubscribedTrack) ID() livekit.TrackID {
 	return livekit.TrackID(t.params.DownTrack.ID())
 }
@@ -154,7 +158,7 @@ func (t *SubscribedTrack) Subscriber() types.LocalParticipant {
 	return t.params.Subscriber
 }
 
-func (t *SubscribedTrack) DownTrack() *sfu.DownTrack {
+func (t *SubscribedTrack) DownTrack() types.DownTrack {
 	return t.params.DownTrack
 }
 

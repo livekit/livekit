@@ -25,7 +25,6 @@ import (
 	"github.com/pion/webrtc/v3/pkg/rtcerr"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -91,7 +90,7 @@ func (m *SubscriptionManager) Close(willBeResumed bool) {
 	<-m.doneCh
 
 	subTracks := m.GetSubscribedTracks()
-	downTracksToClose := make([]*sfu.DownTrack, 0, len(subTracks))
+	downTracksToClose := make([]types.DownTrack, 0, len(subTracks))
 	for _, st := range subTracks {
 		dt := st.DownTrack()
 		// nil check exists primarily for tests

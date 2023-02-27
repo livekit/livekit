@@ -1051,11 +1051,13 @@ func (t *PCTransport) AddTrackToStreamAllocator(subTrack types.SubscribedTrack) 
 		return
 	}
 
-	t.streamAllocator.AddTrack(subTrack.DownTrack(), sfu.AddTrackParams{
-		Source:      subTrack.MediaTrack().Source(),
-		IsSimulcast: subTrack.MediaTrack().IsSimulcast(),
-		PublisherID: subTrack.MediaTrack().PublisherID(),
-	})
+	if dt, ok := subTrack.DownTrack().(*sfu.DownTrack); ok {
+		t.streamAllocator.AddTrack(dt, sfu.AddTrackParams{
+			Source:      subTrack.MediaTrack().Source(),
+			IsSimulcast: subTrack.MediaTrack().IsSimulcast(),
+			PublisherID: subTrack.MediaTrack().PublisherID(),
+		})
+	}
 }
 
 func (t *PCTransport) RemoveTrackFromStreamAllocator(subTrack types.SubscribedTrack) {
@@ -1063,7 +1065,9 @@ func (t *PCTransport) RemoveTrackFromStreamAllocator(subTrack types.SubscribedTr
 		return
 	}
 
-	t.streamAllocator.RemoveTrack(subTrack.DownTrack())
+	if dt, ok := subTrack.DownTrack().(*sfu.DownTrack); ok {
+		t.streamAllocator.RemoveTrack(dt)
+	}
 }
 
 func (t *PCTransport) GetICEConnectionType() types.ICEConnectionType {

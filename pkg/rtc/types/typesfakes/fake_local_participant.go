@@ -23,6 +23,13 @@ type FakeLocalParticipant struct {
 		arg1 webrtc.ICECandidateInit
 		arg2 livekit.SignalTarget
 	}
+	AddMuxAudioTrackStub        func(livekit.ParticipantID, livekit.TrackID, sfu.TrackReceiver)
+	addMuxAudioTrackMutex       sync.RWMutex
+	addMuxAudioTrackArgsForCall []struct {
+		arg1 livekit.ParticipantID
+		arg2 livekit.TrackID
+		arg3 sfu.TrackReceiver
+	}
 	AddTrackStub        func(*livekit.AddTrackRequest)
 	addTrackMutex       sync.RWMutex
 	addTrackArgsForCall []struct {
@@ -501,6 +508,11 @@ type FakeLocalParticipant struct {
 	protocolVersionReturnsOnCall map[int]struct {
 		result1 types.ProtocolVersion
 	}
+	RemoveMuxAudioTrackStub        func(livekit.TrackID)
+	removeMuxAudioTrackMutex       sync.RWMutex
+	removeMuxAudioTrackArgsForCall []struct {
+		arg1 livekit.TrackID
+	}
 	RemovePublishedTrackStub        func(types.MediaTrack, bool, bool)
 	removePublishedTrackMutex       sync.RWMutex
 	removePublishedTrackArgsForCall []struct {
@@ -850,6 +862,40 @@ func (fake *FakeLocalParticipant) AddICECandidateArgsForCall(i int) (webrtc.ICEC
 	defer fake.addICECandidateMutex.RUnlock()
 	argsForCall := fake.addICECandidateArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeLocalParticipant) AddMuxAudioTrack(arg1 livekit.ParticipantID, arg2 livekit.TrackID, arg3 sfu.TrackReceiver) {
+	fake.addMuxAudioTrackMutex.Lock()
+	fake.addMuxAudioTrackArgsForCall = append(fake.addMuxAudioTrackArgsForCall, struct {
+		arg1 livekit.ParticipantID
+		arg2 livekit.TrackID
+		arg3 sfu.TrackReceiver
+	}{arg1, arg2, arg3})
+	stub := fake.AddMuxAudioTrackStub
+	fake.recordInvocation("AddMuxAudioTrack", []interface{}{arg1, arg2, arg3})
+	fake.addMuxAudioTrackMutex.Unlock()
+	if stub != nil {
+		fake.AddMuxAudioTrackStub(arg1, arg2, arg3)
+	}
+}
+
+func (fake *FakeLocalParticipant) AddMuxAudioTrackCallCount() int {
+	fake.addMuxAudioTrackMutex.RLock()
+	defer fake.addMuxAudioTrackMutex.RUnlock()
+	return len(fake.addMuxAudioTrackArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) AddMuxAudioTrackCalls(stub func(livekit.ParticipantID, livekit.TrackID, sfu.TrackReceiver)) {
+	fake.addMuxAudioTrackMutex.Lock()
+	defer fake.addMuxAudioTrackMutex.Unlock()
+	fake.AddMuxAudioTrackStub = stub
+}
+
+func (fake *FakeLocalParticipant) AddMuxAudioTrackArgsForCall(i int) (livekit.ParticipantID, livekit.TrackID, sfu.TrackReceiver) {
+	fake.addMuxAudioTrackMutex.RLock()
+	defer fake.addMuxAudioTrackMutex.RUnlock()
+	argsForCall := fake.addMuxAudioTrackArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
 func (fake *FakeLocalParticipant) AddTrack(arg1 *livekit.AddTrackRequest) {
@@ -3430,6 +3476,38 @@ func (fake *FakeLocalParticipant) ProtocolVersionReturnsOnCall(i int, result1 ty
 	}{result1}
 }
 
+func (fake *FakeLocalParticipant) RemoveMuxAudioTrack(arg1 livekit.TrackID) {
+	fake.removeMuxAudioTrackMutex.Lock()
+	fake.removeMuxAudioTrackArgsForCall = append(fake.removeMuxAudioTrackArgsForCall, struct {
+		arg1 livekit.TrackID
+	}{arg1})
+	stub := fake.RemoveMuxAudioTrackStub
+	fake.recordInvocation("RemoveMuxAudioTrack", []interface{}{arg1})
+	fake.removeMuxAudioTrackMutex.Unlock()
+	if stub != nil {
+		fake.RemoveMuxAudioTrackStub(arg1)
+	}
+}
+
+func (fake *FakeLocalParticipant) RemoveMuxAudioTrackCallCount() int {
+	fake.removeMuxAudioTrackMutex.RLock()
+	defer fake.removeMuxAudioTrackMutex.RUnlock()
+	return len(fake.removeMuxAudioTrackArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) RemoveMuxAudioTrackCalls(stub func(livekit.TrackID)) {
+	fake.removeMuxAudioTrackMutex.Lock()
+	defer fake.removeMuxAudioTrackMutex.Unlock()
+	fake.RemoveMuxAudioTrackStub = stub
+}
+
+func (fake *FakeLocalParticipant) RemoveMuxAudioTrackArgsForCall(i int) livekit.TrackID {
+	fake.removeMuxAudioTrackMutex.RLock()
+	defer fake.removeMuxAudioTrackMutex.RUnlock()
+	argsForCall := fake.removeMuxAudioTrackArgsForCall[i]
+	return argsForCall.arg1
+}
+
 func (fake *FakeLocalParticipant) RemovePublishedTrack(arg1 types.MediaTrack, arg2 bool, arg3 bool) {
 	fake.removePublishedTrackMutex.Lock()
 	fake.removePublishedTrackArgsForCall = append(fake.removePublishedTrackArgsForCall, struct {
@@ -5174,6 +5252,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.invocationsMutex.RUnlock()
 	fake.addICECandidateMutex.RLock()
 	defer fake.addICECandidateMutex.RUnlock()
+	fake.addMuxAudioTrackMutex.RLock()
+	defer fake.addMuxAudioTrackMutex.RUnlock()
 	fake.addTrackMutex.RLock()
 	defer fake.addTrackMutex.RUnlock()
 	fake.addTrackToSubscriberMutex.RLock()
@@ -5284,6 +5364,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.onTrackUpdatedMutex.RUnlock()
 	fake.protocolVersionMutex.RLock()
 	defer fake.protocolVersionMutex.RUnlock()
+	fake.removeMuxAudioTrackMutex.RLock()
+	defer fake.removeMuxAudioTrackMutex.RUnlock()
 	fake.removePublishedTrackMutex.RLock()
 	defer fake.removePublishedTrackMutex.RUnlock()
 	fake.removeTrackFromSubscriberMutex.RLock()

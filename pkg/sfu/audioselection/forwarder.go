@@ -162,13 +162,13 @@ func (f *SelectionForwarder) updateForward() {
 		return f.sources[i].audioLevel > f.sources[j].audioLevel
 	})
 
-	var activeteSources, idleSources []*sourceInfo
+	var activateSources, idleSources []*sourceInfo
 	for i, source := range f.sources {
 		if i >= f.params.ActiveDowntracks && source.active {
 			idleSources = append(idleSources, source)
 		} else {
 			if source.audioLevel > f.params.ActiveLevelThreshold && !source.active {
-				activeteSources = append(activeteSources, source)
+				activateSources = append(activateSources, source)
 			} else if source.audioLevel <= f.params.ActiveLevelThreshold && source.active {
 				idleSources = append(idleSources, source)
 			}
@@ -176,7 +176,7 @@ func (f *SelectionForwarder) updateForward() {
 	}
 
 	var forwardChanged bool
-	for _, source := range activeteSources {
+	for _, source := range activateSources {
 		if len(f.idleDowntracks) == 0 && len(idleSources) > 0 {
 			f.deactiveSource(idleSources[0])
 			idleSources = idleSources[1:]

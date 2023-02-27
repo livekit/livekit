@@ -843,14 +843,13 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 	}
 
 	subscribedTracks := p.SubscriptionManager.GetSubscribedTracks()
-	subscriberScores := make(map[livekit.TrackID]float32, len(subscribedTracks))
-	// TODO-mux: calculate score for muxed tracks
+	// subscriberScores := make(map[livekit.TrackID]float32, len(subscribedTracks))
 	for _, subTrack := range subscribedTracks {
-		if subTrack.IsMuted() || subTrack.MediaTrack().IsMuted() || subTrack.DownTrack() == nil {
+		if subTrack.IsMuted() || subTrack.MediaTrack().IsMuted() {
 			continue
 		}
 		score := subTrack.DownTrack().GetConnectionScore()
-		subscriberScores[subTrack.ID()] = score
+		// subscriberScores[subTrack.ID()] = score
 		totalScore += score
 		numTracks++
 	}
@@ -1287,18 +1286,10 @@ func (p *ParticipantImpl) subscriberRTCPWorker() {
 		var srs []rtcp.Packet
 		var sd []rtcp.SourceDescriptionChunk
 		subscribedTracks := p.SubscriptionManager.GetSubscribedTracks()
-		downtracks := p.audioForwarder.GetDowntracks()
 		p.lock.RLock()
 		for _, subTrack := range subscribedTracks {
-			if subTrack.DownTrack() == nil {
-				continue
-			}
-			downtracks = append(downtracks, subTrack.DownTrack())
-		}
-
-		for _, dt := range downtracks {
-			sr := dt.CreateSenderReport()
-			chunks := dt.CreateSourceDescriptionChunks()
+			sr := subTrack.DownTrack().CreateSenderReport()
+			chunks := subTrack.DownTrack().CreateSourceDescriptionChunks()
 			if sr == nil || chunks == nil {
 				continue
 			}
