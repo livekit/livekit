@@ -1414,7 +1414,13 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 			return tp, nil
 		} else if tp.isSwitchingToTargetLayer {
 			// lock to target layer
-			f.logger.Infow("locking to target layer", "current", f.currentLayers, "target", f.targetLayers, "req", f.requestLayerSpatial, "feed", extPkt.Packet.SSRC)
+			f.logger.Infow(
+				"locking to target layer",
+				"current", f.currentLayers,
+				"target", f.targetLayers,
+				"req", f.requestLayerSpatial,
+				"feed", extPkt.Packet.SSRC,
+			)
 			f.currentLayers.Spatial = f.targetLayers.Spatial
 			if !f.isTemporalSupported {
 				f.currentLayers.Temporal = f.targetLayers.Temporal
@@ -1437,7 +1443,13 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 			found := false
 			if f.parkedLayers.IsValid() {
 				if f.parkedLayers.Spatial == layer {
-					f.logger.Infow("resuming at parked layer", "current", f.currentLayers, "target", f.targetLayers, "parked", f.parkedLayers, "feed", extPkt.Packet.SSRC)
+					f.logger.Infow(
+						"resuming at parked layer",
+						"current", f.currentLayers,
+						"target", f.targetLayers,
+						"parked", f.parkedLayers,
+						"feed", extPkt.Packet.SSRC,
+					)
 					f.currentLayers = f.parkedLayers
 					found = true
 				}
