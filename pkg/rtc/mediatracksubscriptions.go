@@ -205,6 +205,10 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 			Stereo: info.Stereo,
 			Red:    !info.DisableRed,
 		}
+		if addTrackParams.Red && (len(codecs) == 1 && codecs[0].MimeType == webrtc.MimeTypeOpus) {
+			addTrackParams.Red = false
+		}
+
 		sub.VerifySubscribeParticipantInfo(subTrack.PublisherID(), subTrack.PublisherVersion())
 		if sub.ProtocolVersion().SupportsTransceiverReuse() {
 			//
