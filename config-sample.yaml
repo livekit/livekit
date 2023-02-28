@@ -176,6 +176,8 @@ keys:
 #   update_interval: 500
 #   # to prevent speaker updates from too jumpy, smooth out values over N samples
 #   smooth_intervals: 4
+#   # enable red encoding downtrack for opus only audio up track
+#   active_red_encoding: true
 
 # turn server
 # turn:

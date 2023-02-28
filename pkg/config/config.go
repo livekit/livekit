@@ -150,6 +150,8 @@ type AudioConfig struct {
 	// smoothing for audioLevel values sent to the client.
 	// audioLevel will be an average of `smooth_intervals`, 0 to disable
 	SmoothIntervals uint32 `yaml:"smooth_intervals"`
+	// enable red encoding downtrack for opus only audio up track
+	ActiveREDEncoding bool `yaml:"active_red_encoding"`
 }
 
 type StreamTrackerPacketConfig struct {

@@ -95,8 +95,8 @@ func TestRedReceiver(t *testing.T) {
 			}, 0)
 			verifyRedEncodings(t, dt.lastReceivedPkt, expectPkt)
 		}
-
 	})
+
 	t.Run("unorder and repeat", func(t *testing.T) {
 		w := &WebRTCReceiver{kind: webrtc.RTPCodecTypeAudio}
 		red := w.GetRedReceiver().(*RedReceiver)
@@ -126,7 +126,7 @@ func TestRedReceiver(t *testing.T) {
 		verifyRedEncodings(t, dt.lastReceivedPkt, expectPkt)
 	})
 
-	t.Run("encoding excceed space", func(t *testing.T) {
+	t.Run("encoding exceed space", func(t *testing.T) {
 		w := &WebRTCReceiver{isRED: true, kind: webrtc.RTPCodecTypeAudio}
 		require.Equal(t, w.GetRedReceiver(), w)
 		w.isRED = false
@@ -144,6 +144,37 @@ func TestRedReceiver(t *testing.T) {
 				Packet: pkt,
 			}, 0)
 			verifyRedEncodings(t, dt.lastReceivedPkt, expectPkt)
+		}
+	})
+
+	t.Run("large timestamp gap", func(t *testing.T) {
+		w := &WebRTCReceiver{isRED: true, kind: webrtc.RTPCodecTypeAudio}
+		require.Equal(t, w.GetRedReceiver(), w)
+		w.isRED = false
+		red := w.GetRedReceiver().(*RedReceiver)
+		require.NotNil(t, red)
+		require.NoError(t, red.AddDownTrack(dt))
+
+		header := rtp.Header{SequenceNumber: 65534, Timestamp: (uint32(1) << 31) - 2*tsStep, PayloadType: 111}
+		// first few packets normal
+		expectPkt := make([]*rtp.Packet, 0, maxRedCount+1)
+		for _, pkt := range generatePkts(header, 4, tsStep) {
+			expectPkt = append(expectPkt, pkt)
+			if len(expectPkt) > maxRedCount+1 {
+				expectPkt = expectPkt[1:]
+			}
+			red.ForwardRTP(&buffer.ExtPacket{
+				Packet: pkt,
+			}, 0)
+			verifyRedEncodings(t, dt.lastReceivedPkt, expectPkt)
+		}
+
+		// and then a few packets with a large timestmap jump, should contain only primary
+		for _, pkt := range generatePkts(header, 4, 40*tsStep) {
+			red.ForwardRTP(&buffer.ExtPacket{
+				Packet: pkt,
+			}, 0)
+			verifyRedEncodings(t, dt.lastReceivedPkt, []*rtp.Packet{pkt})
 		}
 	})
 }
