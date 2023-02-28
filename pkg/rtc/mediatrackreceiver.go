@@ -15,6 +15,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -74,6 +75,7 @@ type MediaTrackReceiverParams struct {
 	ParticipantVersion  uint32
 	ReceiverConfig      ReceiverConfig
 	SubscriberConfig    DirectionConfig
+	AudioConfig         config.AudioConfig
 	Telemetry           telemetry.TelemetryService
 	Logger              logger.Logger
 }
@@ -474,7 +476,7 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) (types.Su
 		StreamId:       streamId,
 		UpstreamCodecs: potentialCodecs,
 		Logger:         tLogger,
-		DisableRed:     t.trackInfo.GetDisableRed(),
+		DisableRed:     t.trackInfo.GetDisableRed() || !t.params.AudioConfig.ActiveREDEncoding,
 	})
 	return t.MediaTrackSubscriptions.AddSubscriber(sub, wr)
 }
