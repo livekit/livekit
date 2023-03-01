@@ -544,10 +544,6 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 		alloc.targetLayers = f.parkedLayers
 		alloc.requestLayerSpatial = alloc.targetLayers.Spatial
 
-	case f.maxLayers != f.lastAllocation.maxLayers:
-		opportunisticAlloc()
-		alloc.requestLayerSpatial = int32(math.Min(float64(f.maxLayers.Spatial), float64(f.maxPublishedLayer)))
-
 	case len(availableLayers) == 0:
 		// feed may be dry
 		if f.currentLayers.IsValid() {
@@ -585,14 +581,15 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 
 			alloc.requestLayerSpatial = alloc.targetLayers.Spatial
 		} else {
-			if f.currentLayers.IsValid() && f.currentLayers.Spatial == f.requestLayerSpatial {
+			requestLayerSpatial := int32(math.Min(float64(f.maxLayers.Spatial), float64(f.maxPublishedLayer)))
+			if f.currentLayers.IsValid() && requestLayerSpatial == f.requestLayerSpatial && f.currentLayers.Spatial == f.requestLayerSpatial {
 				// current is locked to desired, stay there
 				alloc.targetLayers = f.currentLayers
 				alloc.requestLayerSpatial = f.requestLayerSpatial
 			} else {
 				// opportunistically latch on to anything
 				opportunisticAlloc()
-				alloc.requestLayerSpatial = int32(math.Min(float64(f.maxLayers.Spatial), float64(f.maxPublishedLayer)))
+				alloc.requestLayerSpatial = requestLayerSpatial
 			}
 		}
 	}
