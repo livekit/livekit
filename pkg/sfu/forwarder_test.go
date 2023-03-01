@@ -354,6 +354,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 	require.Equal(t, expectedResult, f.lastAllocation)
 
 	// stays the same if feed is not dry and current is valid, available and locked
+	f.maxLayers = VideoLayers{Spatial: 0, Temporal: 1}
 	f.currentLayers = VideoLayers{Spatial: 0, Temporal: 1}
 	f.requestLayerSpatial = 0
 	expectedTargetLayers = VideoLayers{
@@ -367,7 +368,29 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		bitrates:            emptyBitrates,
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: 0,
-		maxLayers:           DefaultMaxLayers,
+		maxLayers:           f.maxLayers,
+		distanceToDesired:   0,
+	}
+	result = f.AllocateOptimal([]int32{0, 1}, emptyBitrates, true)
+	require.Equal(t, expectedResult, result)
+	require.Equal(t, expectedResult, f.lastAllocation)
+
+	// opportunistic if feed is not dry and current is valid, but request layer has changed
+	f.maxLayers = VideoLayers{Spatial: 2, Temporal: 1}
+	f.currentLayers = VideoLayers{Spatial: 0, Temporal: 1}
+	f.requestLayerSpatial = 0
+	expectedTargetLayers = VideoLayers{
+		Spatial:  2,
+		Temporal: 3,
+	}
+	expectedResult = VideoAllocation{
+		pauseReason:         VideoPauseReasonFeedDry,
+		bandwidthRequested:  0,
+		bandwidthDelta:      0,
+		bitrates:            emptyBitrates,
+		targetLayers:        expectedTargetLayers,
+		requestLayerSpatial: 2,
+		maxLayers:           f.maxLayers,
 		distanceToDesired:   0,
 	}
 	result = f.AllocateOptimal([]int32{0, 1}, emptyBitrates, true)
