@@ -30,7 +30,6 @@ const (
 	udpLossFracUnstable = 25
 	// if in last 32 times RR, the unstable report count over this threshold, the connection is unstable
 	udpLossUnstableCountThreshold = 20
-	tcpGoodRTT                    = 80
 )
 
 type TransportManagerParams struct {
@@ -47,7 +46,7 @@ type TransportManagerParams struct {
 	ClientInfo              ClientInfo
 	Migration               bool
 	AllowTCPFallback        bool
-	TCPFallbackCheckRTT     bool
+	TCPFallbackRttThreshold int
 	TURNSEnabled            bool
 	Logger                  logger.Logger
 }
@@ -676,12 +675,15 @@ func (t *TransportManager) OnReceiverReport(dt *sfu.DownTrack, report *rtcp.Rece
 }
 
 func (t *TransportManager) onMediaLossUpdate(loss uint8) {
+	if t.params.TCPFallbackRttThreshold == 0 {
+		return
+	}
 	t.lock.Lock()
 	t.udpLossUnstableCount <<= 1
 	if loss >= uint8(255*udpLossFracUnstable/100) {
 		t.udpLossUnstableCount |= 1
 		if bits.OnesCount32(t.udpLossUnstableCount) >= udpLossUnstableCountThreshold {
-			if t.udpRTT > 0 && t.signalingRTT < uint32(float32(t.udpRTT)*1.3) && t.signalingRTT < tcpGoodRTT && time.Since(t.lastSignalAt) < iceFailedTimeout {
+			if t.udpRTT > 0 && t.signalingRTT < uint32(float32(t.udpRTT)*1.3) && int(t.signalingRTT) < t.params.TCPFallbackRttThreshold && time.Since(t.lastSignalAt) < iceFailedTimeout {
 				t.udpLossUnstableCount = 0
 				t.lock.Unlock()
 
@@ -732,5 +734,5 @@ func (t *TransportManager) SinceLastSignal() time.Duration {
 }
 
 func (t *TransportManager) canUseICETCP() bool {
-	return !t.params.TCPFallbackCheckRTT || t.signalingRTT < tcpGoodRTT
+	return t.params.TCPFallbackRttThreshold == 0 || int(t.signalingRTT) < t.params.TCPFallbackRttThreshold
 }

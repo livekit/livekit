@@ -292,10 +292,6 @@ func (r *RoomManager) StartSession(
 	if r.config.RTC.AllowTCPFallback != nil {
 		allowFallback = *r.config.RTC.AllowTCPFallback
 	}
-	tcpFallbackCheckRTT := false
-	if r.config.RTC.TCPFallbackCheckRTT != nil {
-		tcpFallbackCheckRTT = *r.config.RTC.TCPFallbackCheckRTT
-	}
 	// default do not force full reconnect on a publication error
 	reconnectOnPublicationError := false
 	if r.config.RTC.ReconnectOnPublicationError != nil {
@@ -326,7 +322,7 @@ func (r *RoomManager) StartSession(
 		Region:                  pi.Region,
 		AdaptiveStream:          pi.AdaptiveStream,
 		AllowTCPFallback:        allowFallback,
-		TCPFallbackCheckRTT:     tcpFallbackCheckRTT,
+		TCPFallbackRttThreshold: r.config.RTC.TCPFallbackRttThreshold,
 		TURNSEnabled:            r.config.IsTURNSEnabled(),
 		GetParticipantInfo: func(pID livekit.ParticipantID) *livekit.ParticipantInfo {
 			if p := room.GetParticipantByID(pID); p != nil {
