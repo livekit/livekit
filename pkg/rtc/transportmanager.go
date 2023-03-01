@@ -47,6 +47,7 @@ type TransportManagerParams struct {
 	ClientInfo              ClientInfo
 	Migration               bool
 	AllowTCPFallback        bool
+	TCPFallbackCheckRTT     bool
 	TURNSEnabled            bool
 	Logger                  logger.Logger
 }
@@ -554,7 +555,7 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 	// As both transports are switched to the same type on any failure, checking just subscriber should be fine.
 	//
 	getNext := func(ic *livekit.ICEConfig) livekit.ICECandidateType {
-		if ic.PreferenceSubscriber == livekit.ICECandidateType_ICT_NONE && t.params.ClientInfo.SupportsICETCP() {
+		if ic.PreferenceSubscriber == livekit.ICECandidateType_ICT_NONE && t.params.ClientInfo.SupportsICETCP() && t.canUseICETCP() {
 			return livekit.ICECandidateType_ICT_TCP
 		} else if ic.PreferenceSubscriber != livekit.ICECandidateType_ICT_TLS && t.params.TURNSEnabled {
 			return livekit.ICECandidateType_ICT_TLS
@@ -697,7 +698,9 @@ func (t *TransportManager) onMediaLossUpdate(loss uint8) {
 }
 
 func (t *TransportManager) UpdateSignalingRTT(rtt uint32) {
+	t.lock.Lock()
 	t.signalingRTT = rtt
+	t.lock.Unlock()
 	t.publisher.SetSignalingRTT(rtt)
 	t.subscriber.SetSignalingRTT(rtt)
 
@@ -707,11 +710,13 @@ func (t *TransportManager) UpdateSignalingRTT(rtt uint32) {
 }
 
 func (t *TransportManager) UpdateMediaRTT(rtt uint32) {
+	t.lock.Lock()
 	if t.udpRTT == 0 {
 		t.udpRTT = rtt
 	} else {
 		t.udpRTT = uint32(int(t.udpRTT) + (int(rtt)-int(t.udpRTT))/2)
 	}
+	t.lock.Unlock()
 }
 
 func (t *TransportManager) UpdateLastSeenSignal() {
@@ -724,4 +729,8 @@ func (t *TransportManager) SinceLastSignal() time.Duration {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 	return time.Since(t.lastSignalAt)
+}
+
+func (t *TransportManager) canUseICETCP() bool {
+	return !t.params.TCPFallbackCheckRTT || t.signalingRTT < tcpGoodRTT
 }
