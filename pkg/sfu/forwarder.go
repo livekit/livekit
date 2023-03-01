@@ -1500,26 +1500,26 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 					f.targetLayers.Spatial = f.currentLayers.Spatial
 				}
 			}
-		} else {
-			// if locked to higher than max layer due to overshoot, check if it can be dialed back
-			if f.targetLayers.Spatial > f.maxLayers.Spatial {
-				if layer <= f.maxLayers.Spatial && extPkt.KeyFrame {
-					f.logger.Infow(
-						"adjusting overshoot",
-						"current", f.currentLayers,
-						"target", f.targetLayers,
-						"max", f.maxLayers,
-						"layer", layer,
-						"req", f.requestLayerSpatial,
-						"maxPublished", f.maxPublishedLayer,
-						"feed", extPkt.Packet.SSRC,
-					)
-					f.currentLayers.Spatial = layer
+		}
 
-					if f.currentLayers.Spatial >= f.maxLayers.Spatial || f.currentLayers.Spatial == f.maxPublishedLayer {
-						tp.isSwitchingToMaxLayer = true
-						f.targetLayers.Spatial = layer
-					}
+		// if locked to higher than max layer due to overshoot, check if it can be dialed back
+		if f.currentLayers.Spatial > f.maxLayers.Spatial {
+			if layer <= f.maxLayers.Spatial && extPkt.KeyFrame {
+				f.logger.Infow(
+					"adjusting overshoot",
+					"current", f.currentLayers,
+					"target", f.targetLayers,
+					"max", f.maxLayers,
+					"layer", layer,
+					"req", f.requestLayerSpatial,
+					"maxPublished", f.maxPublishedLayer,
+					"feed", extPkt.Packet.SSRC,
+				)
+				f.currentLayers.Spatial = layer
+
+				if f.currentLayers.Spatial >= f.maxLayers.Spatial || f.currentLayers.Spatial == f.maxPublishedLayer {
+					tp.isSwitchingToMaxLayer = true
+					f.targetLayers.Spatial = layer
 				}
 			}
 		}
