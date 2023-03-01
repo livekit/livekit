@@ -322,7 +322,6 @@ func (r *RoomManager) StartSession(
 		Region:                  pi.Region,
 		AdaptiveStream:          pi.AdaptiveStream,
 		AllowTCPFallback:        allowFallback,
-		TCPFallbackRttThreshold: r.config.RTC.TCPFallbackRttThreshold,
 		TURNSEnabled:            r.config.IsTURNSEnabled(),
 		GetParticipantInfo: func(pID livekit.ParticipantID) *livekit.ParticipantInfo {
 			if p := room.GetParticipantByID(pID); p != nil {

@@ -46,7 +46,7 @@ type TransportManagerParams struct {
 	ClientInfo              ClientInfo
 	Migration               bool
 	AllowTCPFallback        bool
-	TCPFallbackRttThreshold int
+	TCPFallbackRTTThreshold int
 	TURNSEnabled            bool
 	Logger                  logger.Logger
 }
@@ -675,7 +675,7 @@ func (t *TransportManager) OnReceiverReport(dt *sfu.DownTrack, report *rtcp.Rece
 }
 
 func (t *TransportManager) onMediaLossUpdate(loss uint8) {
-	if t.params.TCPFallbackRttThreshold == 0 {
+	if t.params.TCPFallbackRTTThreshold == 0 {
 		return
 	}
 	t.lock.Lock()
@@ -683,7 +683,7 @@ func (t *TransportManager) onMediaLossUpdate(loss uint8) {
 	if loss >= uint8(255*udpLossFracUnstable/100) {
 		t.udpLossUnstableCount |= 1
 		if bits.OnesCount32(t.udpLossUnstableCount) >= udpLossUnstableCountThreshold {
-			if t.udpRTT > 0 && t.signalingRTT < uint32(float32(t.udpRTT)*1.3) && int(t.signalingRTT) < t.params.TCPFallbackRttThreshold && time.Since(t.lastSignalAt) < iceFailedTimeout {
+			if t.udpRTT > 0 && t.signalingRTT < uint32(float32(t.udpRTT)*1.3) && int(t.signalingRTT) < t.params.TCPFallbackRTTThreshold && time.Since(t.lastSignalAt) < iceFailedTimeout {
 				t.udpLossUnstableCount = 0
 				t.lock.Unlock()
 
@@ -734,5 +734,5 @@ func (t *TransportManager) SinceLastSignal() time.Duration {
 }
 
 func (t *TransportManager) canUseICETCP() bool {
-	return t.params.TCPFallbackRttThreshold == 0 || int(t.signalingRTT) < t.params.TCPFallbackRttThreshold
+	return t.params.TCPFallbackRTTThreshold == 0 || int(t.signalingRTT) < t.params.TCPFallbackRTTThreshold
 }

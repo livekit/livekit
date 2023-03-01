@@ -97,9 +97,6 @@ type RTCConfig struct {
 	// allow TCP and TURN/TLS fallback
 	AllowTCPFallback *bool `yaml:"allow_tcp_fallback,omitempty"`
 
-	// if set, will skip tcp ice if signaling RTT greater than the threshold
-	TCPFallbackRttThreshold int `yaml:"tcp_fallback_rtt_threshold,omitempty"`
-
 	// for testing, disable UDP
 	ForceTCP bool `yaml:"force_tcp,omitempty"`
 

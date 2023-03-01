@@ -73,7 +73,7 @@ type ParticipantParams struct {
 	Migration                    bool
 	AdaptiveStream               bool
 	AllowTCPFallback             bool
-	TCPFallbackRttThreshold      int
+	TCPFallbackRTTThreshold      int
 	TURNSEnabled                 bool
 	GetParticipantInfo           func(pID livekit.ParticipantID) *livekit.ParticipantInfo
 	ReconnectOnPublicationError  bool
@@ -982,7 +982,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		ClientInfo:              p.params.ClientInfo,
 		Migration:               p.params.Migration,
 		AllowTCPFallback:        p.params.AllowTCPFallback,
-		TCPFallbackRttThreshold: p.params.TCPFallbackRttThreshold,
+		TCPFallbackRTTThreshold: p.params.TCPFallbackRTTThreshold,
 		TURNSEnabled:            p.params.TURNSEnabled,
 		Logger:                  p.params.Logger,
 	})
