@@ -1,3 +1,4 @@
+// RAJA-TODO: can this file be deleted?
 package connectionquality
 
 import (

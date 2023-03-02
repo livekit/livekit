@@ -10,17 +10,25 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 )
 
 const (
+	MaxMOS = float32(4.5)
+
+	maxScore  = float64(100.0)
+	poorScore = float64(50.0)
+
 	waitForQualityPoor = 25 * time.Second
 	waitForQualityGood = 15 * time.Second
+
+	unmuteTimeThreshold = float64(0.75)
 )
 
 // ------------------------------------------
 
 type windowStat struct {
-	startTime       time.Time
+	startedAt       time.Time
 	duration        time.Duration
 	packetsExpected uint32
 	packetsLost     uint32
@@ -41,11 +49,22 @@ func (w *windowStat) calculateScore(plw float64) float64 {
 	}
 	lossEffect *= plw
 
-	return 93.2 - delayEffect - lossEffect
+	return maxScore - delayEffect - lossEffect
 }
 
 func (w *windowStat) getStartTime() time.Time {
-	return w.startTime
+	return w.startedAt
+}
+
+func (w *windowStat) String() string {
+	return fmt.Sprintf("start: %+v, dur: %+v, pe: %d, pl: %d, rtt: %d, jitter: %0.2f",
+		w.startedAt,
+		w.duration,
+		w.packetsExpected,
+		w.packetsLost,
+		w.rttMax,
+		w.jitterMax,
+	)
 }
 
 // ------------------------------------------
@@ -62,12 +81,23 @@ func newWindowScore(stat *windowStat, plw float64) *windowScore {
 	}
 }
 
+func newWindowScoreWithScore(stat *windowStat, score float64) *windowScore {
+	return &windowScore{
+		stat:  stat,
+		score: score,
+	}
+}
+
 func (w *windowScore) getScore() float64 {
 	return w.score
 }
 
 func (w *windowScore) getStartTime() time.Time {
 	return w.stat.getStartTime()
+}
+
+func (w *windowScore) String() string {
+	return fmt.Sprintf("stat: {%+v}, score: %0.2f", w.stat, w.score)
 }
 
 // ------------------------------------------
@@ -94,22 +124,46 @@ func (q qualityScoreState) String() string {
 
 type qualityScoreParams struct {
 	PacketLossWeight float64
+	Logger           logger.Logger
 }
 
 type qualityScore struct {
 	params qualityScoreParams
 
-	lock    sync.RWMutex
+	lock         sync.RWMutex
+	lastUpdateAt time.Time
+
 	score   float64
 	state   qualityScoreState
 	windows []*windowScore
+
+	mutedAt   time.Time
+	unmutedAt time.Time
 }
 
 func newQualityScore(params qualityScoreParams) *qualityScore {
 	return &qualityScore{
 		params: params,
-		score:  100.0,
+		score:  maxScore,
 		state:  qualityScoreStateStable,
+	}
+}
+
+func (q *qualityScore) Start() {
+	q.lock.Lock()
+	defer q.lock.Unlock()
+
+	q.lastUpdateAt = time.Now()
+}
+
+func (q *qualityScore) UpdateMute(isMuted bool) {
+	q.lock.Lock()
+	defer q.lock.Unlock()
+
+	if isMuted {
+		q.mutedAt = time.Now()
+	} else {
+		q.unmutedAt = time.Now()
 	}
 }
 
@@ -117,11 +171,23 @@ func (q *qualityScore) Update(stat *windowStat) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
 
+	if stat == nil {
+		// if no stat, i. e. no packets received, could be due to mute or stream has stopped due to some constraint
+		q.updateNoPacketsReceived()
+	} else {
+		q.updatePacketsReceived(stat)
+	}
+
+	q.lastUpdateAt = time.Now()
+}
+
+func (q *qualityScore) updatePacketsReceived(stat *windowStat) {
 	ws := newWindowScore(stat, q.params.PacketLossWeight)
+	q.params.Logger.Infow("quality stat", "stat", stat, "window", ws) // REMOVE
 	score := ws.getScore()
 	cq := scoreToConnectionQuality(score)
 
-	// transition to recovering on any quality drop
+	// transition to start of recovering on any quality drop
 	// WARNING NOTE: comparing protobuf enum values directly (livekit.ConnectionQuality)
 	if scoreToConnectionQuality(q.score) > cq {
 		q.windows = []*windowScore{ws}
@@ -158,6 +224,45 @@ func (q *qualityScore) Update(stat *windowStat) {
 	}
 }
 
+func (q *qualityScore) updateNoPacketsReceived() {
+	isMuted := !q.mutedAt.IsZero() && (!q.unmutedAt.IsZero() || q.mutedAt.After(q.unmutedAt))
+	if isMuted {
+		// stable when muted
+		q.state = qualityScoreStateStable
+		q.windows = q.windows[:0]
+		q.score = maxScore
+		return
+	}
+
+	// when not muted, if has been unmuted for enough time in the analysis window, transition to POOR quality
+	var sinceUnmute time.Duration
+	if q.unmutedAt.IsZero() {
+		sinceUnmute = time.Since(q.lastUpdateAt)
+	} else {
+		sinceUnmute = time.Since(q.unmutedAt)
+	}
+	sinceLastUpdate := time.Since(q.lastUpdateAt)
+	if sinceUnmute.Seconds()/sinceLastUpdate.Seconds() < unmuteTimeThreshold {
+		return
+	}
+
+	ws := newWindowScoreWithScore(&windowStat{
+		startedAt: q.lastUpdateAt,
+		duration:  sinceLastUpdate,
+	}, poorScore)
+	score := ws.getScore()
+	// transition to start of recovering on any quality drop
+	// WARNING NOTE: comparing protobuf enum values directly (livekit.ConnectionQuality)
+	if scoreToConnectionQuality(q.score) > scoreToConnectionQuality(score) {
+		q.windows = []*windowScore{ws}
+		q.state = qualityScoreStateRecovering
+		q.score = score
+		return
+	}
+
+	q.windows = append(q.windows, ws)
+}
+
 func (q *qualityScore) prune() {
 	cq := scoreToConnectionQuality(q.score)
 
@@ -188,11 +293,11 @@ func (q *qualityScore) GetScoreAndQuality() (float32, livekit.ConnectionQuality)
 	return float32(q.score), scoreToConnectionQuality(q.score)
 }
 
-func (q *qualityScore) GetMOS() float32 {
+func (q *qualityScore) GetMOSAndQuality() (float32, livekit.ConnectionQuality) {
 	q.lock.RLock()
 	defer q.lock.RUnlock()
 
-	return scoreToMOS(q.score)
+	return scoreToMOS(q.score), scoreToConnectionQuality(q.score)
 }
 
 // ------------------------------------------

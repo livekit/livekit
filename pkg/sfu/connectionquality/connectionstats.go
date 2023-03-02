@@ -31,17 +31,19 @@ type ConnectionStatsParams struct {
 }
 
 type ConnectionStats struct {
-	params    ConnectionStatsParams
-	codecName string // RAJA-REMOVE
+	params ConnectionStatsParams
+	// RAJA-REMOVE codecName string // RAJA-REMOVE
 	trackInfo *livekit.TrackInfo
 
 	onStatsUpdate func(cs *ConnectionStats, stat *livekit.AnalyticsStat)
 
 	scorer *qualityScore
 
-	lock             sync.RWMutex
+	lock sync.RWMutex
+	/* RAJA-REMOVE
 	score            float32   // RAJA-REMOVE
 	lastUpdate       time.Time // RAJA-REMOVE
+	*/
 	maxExpectedLayer int32
 
 	// RAJA-REMOVE done     chan struct{}
@@ -58,9 +60,10 @@ func NewConnectionStats(params ConnectionStatsParams) *ConnectionStats {
 		params: params,
 		scorer: newQualityScore(qualityScoreParams{
 			PacketLossWeight: getPacketLossWeight(params.MimeType, params.IsFECEnabled), // LK-TODO: have to notify codec change?
+			Logger:           params.Logger,
 		}),
-		codecName:        getCodecNameFromMime(params.MimeType), // LK-TODO: have to notify on codec change
-		score:            MaxScore,
+		// RAJA-REMOVE codecName: getCodecNameFromMime(params.MimeType), // LK-TODO: have to notify on codec change
+		// RAJA-REMOVE score:            MaxScore,
 		maxExpectedLayer: buffer.InvalidLayerSpatial,
 		// RAJA-REMOVE done:             make(chan struct{}),
 	}
@@ -69,7 +72,6 @@ func NewConnectionStats(params ConnectionStatsParams) *ConnectionStats {
 func (cs *ConnectionStats) Start(trackInfo *livekit.TrackInfo) {
 	cs.lock.Lock()
 	cs.trackInfo = trackInfo
-
 	cs.lock.Unlock()
 
 	go cs.updateStatsWorker()
@@ -90,14 +92,24 @@ func (cs *ConnectionStats) OnStatsUpdate(fn func(cs *ConnectionStats, stat *live
 	cs.onStatsUpdate = fn
 }
 
-func (cs *ConnectionStats) GetScore() float32 {
+func (cs *ConnectionStats) UpdateMute(isMuted bool) {
+	cs.scorer.UpdateMute(isMuted)
+}
+
+func (cs *ConnectionStats) GetScoreAndQuality() (float32, livekit.ConnectionQuality) {
+	/* RAJA-REMOVE
 	cs.lock.RLock()
 	defer cs.lock.RUnlock()
 
 	return cs.score
+	*/
+
+	// RAJA-TODO: change to GetScoreAndQuality() maybe?
+	return cs.scorer.GetMOSAndQuality()
 }
 
 func (cs *ConnectionStats) getLayerDimensions(layer int32) (uint32, uint32) {
+	// RAJA-TODO: check if this needs to be locked?
 	if cs.trackInfo == nil {
 		return 0, 0
 	}
@@ -123,7 +135,7 @@ type windowStat struct {
 */
 
 func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWithLayers) float32 {
-	// RAJA-TODO: call cs.scorer.Update()
+	/* RAJA-TODO
 	cs.lock.Lock()
 	defer cs.lock.Unlock()
 
@@ -221,21 +233,25 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 	}
 
 	return cs.score
+	*/
 
 	// RAJA-TODO - calculate max expected layer properly
+	var stat *windowStat
 	_, maxAvailableLayerStats := getMaxAvailableLayerStats(streams, 0)
 	if maxAvailableLayerStats != nil {
-		cs.scorer.Update(&windowStat{
-			startTime:       maxAvailableLayerStats.StartTime,
+		stat = &windowStat{
+			startedAt:       maxAvailableLayerStats.StartTime,
 			duration:        maxAvailableLayerStats.Duration,
 			packetsExpected: maxAvailableLayerStats.Packets + maxAvailableLayerStats.PacketsPadding,
 			packetsLost:     maxAvailableLayerStats.PacketsLost,
 			rttMax:          maxAvailableLayerStats.RttMax,
 			jitterMax:       maxAvailableLayerStats.JitterMax,
-		})
+		}
 	}
+	cs.scorer.Update(stat)
 
-	return cs.scorer.GetMOS()
+	mos, _ := cs.scorer.GetMOSAndQuality()
+	return mos
 }
 
 func (cs *ConnectionStats) getStat() *livekit.AnalyticsStat {
@@ -303,6 +319,7 @@ func (cs *ConnectionStats) updateStatsWorker() {
 	}
 	*/
 
+	cs.scorer.Start()
 	for {
 		<-tk.C
 
@@ -323,6 +340,7 @@ func (cs *ConnectionStats) updateStatsWorker() {
 
 // -----------------------------------------------------------------------
 
+/* RAJA-REMOVE
 func getCodecNameFromMime(mime string) string {
 	codecName := ""
 	codecParsed := strings.Split(strings.ToLower(mime), "/")
@@ -331,6 +349,7 @@ func getCodecNameFromMime(mime string) string {
 	}
 	return codecName
 }
+*/
 
 // how much weight to give to packet loss rate when calculating score.
 // It is codec dependent.

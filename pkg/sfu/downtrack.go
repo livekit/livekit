@@ -684,6 +684,8 @@ func (d *DownTrack) handleMute(muted bool, isPub bool, changed bool, maxLayers V
 		return
 	}
 
+	d.connectionStats.UpdateMute(d.forwarder.IsAnyMuted())
+
 	//
 	// Subscriber mute changes trigger a max layer notification.
 	// That could result in encoding layers getting turned on/off on publisher side
@@ -1554,8 +1556,8 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 	}
 }
 
-func (d *DownTrack) GetConnectionScore() float32 {
-	return d.connectionStats.GetScore()
+func (d *DownTrack) GetConnectionScoreAndQuality() (float32, livekit.ConnectionQuality) {
+	return d.connectionStats.GetScoreAndQuality()
 }
 
 func (d *DownTrack) GetTrackStats() *livekit.RTPStats {

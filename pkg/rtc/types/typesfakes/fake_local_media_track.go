@@ -60,15 +60,17 @@ type FakeLocalMediaTrack struct {
 		result1 float64
 		result2 bool
 	}
-	GetConnectionScoreStub        func() float32
-	getConnectionScoreMutex       sync.RWMutex
-	getConnectionScoreArgsForCall []struct {
+	GetConnectionScoreAndQualityStub        func() (float32, livekit.ConnectionQuality)
+	getConnectionScoreAndQualityMutex       sync.RWMutex
+	getConnectionScoreAndQualityArgsForCall []struct {
 	}
-	getConnectionScoreReturns struct {
+	getConnectionScoreAndQualityReturns struct {
 		result1 float32
+		result2 livekit.ConnectionQuality
 	}
-	getConnectionScoreReturnsOnCall map[int]struct {
+	getConnectionScoreAndQualityReturnsOnCall map[int]struct {
 		result1 float32
+		result2 livekit.ConnectionQuality
 	}
 	GetNumSubscribersStub        func() int
 	getNumSubscribersMutex       sync.RWMutex
@@ -578,57 +580,60 @@ func (fake *FakeLocalMediaTrack) GetAudioLevelReturnsOnCall(i int, result1 float
 	}{result1, result2}
 }
 
-func (fake *FakeLocalMediaTrack) GetConnectionScore() float32 {
-	fake.getConnectionScoreMutex.Lock()
-	ret, specificReturn := fake.getConnectionScoreReturnsOnCall[len(fake.getConnectionScoreArgsForCall)]
-	fake.getConnectionScoreArgsForCall = append(fake.getConnectionScoreArgsForCall, struct {
+func (fake *FakeLocalMediaTrack) GetConnectionScoreAndQuality() (float32, livekit.ConnectionQuality) {
+	fake.getConnectionScoreAndQualityMutex.Lock()
+	ret, specificReturn := fake.getConnectionScoreAndQualityReturnsOnCall[len(fake.getConnectionScoreAndQualityArgsForCall)]
+	fake.getConnectionScoreAndQualityArgsForCall = append(fake.getConnectionScoreAndQualityArgsForCall, struct {
 	}{})
-	stub := fake.GetConnectionScoreStub
-	fakeReturns := fake.getConnectionScoreReturns
-	fake.recordInvocation("GetConnectionScore", []interface{}{})
-	fake.getConnectionScoreMutex.Unlock()
+	stub := fake.GetConnectionScoreAndQualityStub
+	fakeReturns := fake.getConnectionScoreAndQualityReturns
+	fake.recordInvocation("GetConnectionScoreAndQuality", []interface{}{})
+	fake.getConnectionScoreAndQualityMutex.Unlock()
 	if stub != nil {
 		return stub()
 	}
 	if specificReturn {
-		return ret.result1
+		return ret.result1, ret.result2
 	}
-	return fakeReturns.result1
+	return fakeReturns.result1, fakeReturns.result2
 }
 
-func (fake *FakeLocalMediaTrack) GetConnectionScoreCallCount() int {
-	fake.getConnectionScoreMutex.RLock()
-	defer fake.getConnectionScoreMutex.RUnlock()
-	return len(fake.getConnectionScoreArgsForCall)
+func (fake *FakeLocalMediaTrack) GetConnectionScoreAndQualityCallCount() int {
+	fake.getConnectionScoreAndQualityMutex.RLock()
+	defer fake.getConnectionScoreAndQualityMutex.RUnlock()
+	return len(fake.getConnectionScoreAndQualityArgsForCall)
 }
 
-func (fake *FakeLocalMediaTrack) GetConnectionScoreCalls(stub func() float32) {
-	fake.getConnectionScoreMutex.Lock()
-	defer fake.getConnectionScoreMutex.Unlock()
-	fake.GetConnectionScoreStub = stub
+func (fake *FakeLocalMediaTrack) GetConnectionScoreAndQualityCalls(stub func() (float32, livekit.ConnectionQuality)) {
+	fake.getConnectionScoreAndQualityMutex.Lock()
+	defer fake.getConnectionScoreAndQualityMutex.Unlock()
+	fake.GetConnectionScoreAndQualityStub = stub
 }
 
-func (fake *FakeLocalMediaTrack) GetConnectionScoreReturns(result1 float32) {
-	fake.getConnectionScoreMutex.Lock()
-	defer fake.getConnectionScoreMutex.Unlock()
-	fake.GetConnectionScoreStub = nil
-	fake.getConnectionScoreReturns = struct {
+func (fake *FakeLocalMediaTrack) GetConnectionScoreAndQualityReturns(result1 float32, result2 livekit.ConnectionQuality) {
+	fake.getConnectionScoreAndQualityMutex.Lock()
+	defer fake.getConnectionScoreAndQualityMutex.Unlock()
+	fake.GetConnectionScoreAndQualityStub = nil
+	fake.getConnectionScoreAndQualityReturns = struct {
 		result1 float32
-	}{result1}
+		result2 livekit.ConnectionQuality
+	}{result1, result2}
 }
 
-func (fake *FakeLocalMediaTrack) GetConnectionScoreReturnsOnCall(i int, result1 float32) {
-	fake.getConnectionScoreMutex.Lock()
-	defer fake.getConnectionScoreMutex.Unlock()
-	fake.GetConnectionScoreStub = nil
-	if fake.getConnectionScoreReturnsOnCall == nil {
-		fake.getConnectionScoreReturnsOnCall = make(map[int]struct {
+func (fake *FakeLocalMediaTrack) GetConnectionScoreAndQualityReturnsOnCall(i int, result1 float32, result2 livekit.ConnectionQuality) {
+	fake.getConnectionScoreAndQualityMutex.Lock()
+	defer fake.getConnectionScoreAndQualityMutex.Unlock()
+	fake.GetConnectionScoreAndQualityStub = nil
+	if fake.getConnectionScoreAndQualityReturnsOnCall == nil {
+		fake.getConnectionScoreAndQualityReturnsOnCall = make(map[int]struct {
 			result1 float32
+			result2 livekit.ConnectionQuality
 		})
 	}
-	fake.getConnectionScoreReturnsOnCall[i] = struct {
+	fake.getConnectionScoreAndQualityReturnsOnCall[i] = struct {
 		result1 float32
-	}{result1}
+		result2 livekit.ConnectionQuality
+	}{result1, result2}
 }
 
 func (fake *FakeLocalMediaTrack) GetNumSubscribers() int {
@@ -1930,8 +1935,8 @@ func (fake *FakeLocalMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.getAllSubscribersMutex.RUnlock()
 	fake.getAudioLevelMutex.RLock()
 	defer fake.getAudioLevelMutex.RUnlock()
-	fake.getConnectionScoreMutex.RLock()
-	defer fake.getConnectionScoreMutex.RUnlock()
+	fake.getConnectionScoreAndQualityMutex.RLock()
+	defer fake.getConnectionScoreAndQualityMutex.RUnlock()
 	fake.getNumSubscribersMutex.RLock()
 	defer fake.getNumSubscribersMutex.RUnlock()
 	fake.getQualityForDimensionMutex.RLock()

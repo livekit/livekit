@@ -23,7 +23,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/auth"
@@ -817,6 +816,7 @@ func (p *ParticipantImpl) GetAudioLevel() (level float64, active bool) {
 }
 
 func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo {
+	/* RAJA-REMOVE
 	numTracks := 0
 	minScore := connectionquality.MaxScore
 	for _, score := range p.getPublisherConnectionQuality() {
@@ -835,7 +835,7 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 
 		numTracks++
 
-		score := subTrack.DownTrack().GetConnectionScore()
+		score := subTrack.DownTrack().GetConnectionScoreAndQuality()
 		if score < minScore {
 			minScore = score
 		}
@@ -848,6 +848,54 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 	return &livekit.ConnectionQualityInfo{
 		ParticipantSid: string(p.ID()),
 		Quality:        connectionquality.Score2Rating(minScore),
+		Score:          minScore,
+	}
+	*/
+
+	numTracks := 0
+	minQuality := livekit.ConnectionQuality_EXCELLENT
+	minScore := float32(0.0)
+
+	for _, pt := range p.GetPublishedTracks() {
+		// RAJA-TODO: remove this check, this can directly be conveyed by GetScore return value?
+		if pt.IsMuted() {
+			continue
+		}
+
+		numTracks++
+
+		score, quality := pt.(types.LocalMediaTrack).GetConnectionScoreAndQuality()
+		if quality < minQuality {
+			// WARNING NOTE: comparing protobuf enums directly
+			minQuality = quality
+			minScore = score
+		}
+	}
+
+	subscribedTracks := p.SubscriptionManager.GetSubscribedTracks()
+	for _, subTrack := range subscribedTracks {
+		// RAJA-TODO: remove this check, this can directly be conveyed by GetScore return value?
+		if subTrack.IsMuted() || subTrack.MediaTrack().IsMuted() {
+			continue
+		}
+
+		numTracks++
+
+		score, quality := subTrack.DownTrack().GetConnectionScoreAndQuality()
+		if quality < minQuality {
+			// WARNING NOTE: comparing protobuf enums directly
+			minQuality = quality
+			minScore = score
+		}
+	}
+
+	if numTracks == 0 {
+		return nil
+	}
+
+	return &livekit.ConnectionQualityInfo{
+		ParticipantSid: string(p.ID()),
+		Quality:        minQuality,
 		Score:          minScore,
 	}
 }
@@ -1527,6 +1575,7 @@ func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) {
 	}
 }
 
+/* RAJA-REMOVE
 func (p *ParticipantImpl) getPublisherConnectionQuality() map[livekit.TrackID]float32 {
 	publishedTracks := p.GetPublishedTracks()
 	scores := make(map[livekit.TrackID]float32, len(publishedTracks))
@@ -1539,6 +1588,7 @@ func (p *ParticipantImpl) getPublisherConnectionQuality() map[livekit.TrackID]fl
 
 	return scores
 }
+*/
 
 func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) (*MediaTrack, bool) {
 	p.pendingTracksLock.Lock()

@@ -242,8 +242,8 @@ func (w *WebRTCReceiver) OnMaxLayerChange(fn func(maxLayer int32)) {
 	w.streamTrackerManager.OnMaxLayerChanged(fn)
 }
 
-func (w *WebRTCReceiver) GetConnectionScore() float32 {
-	return w.connectionStats.GetScore()
+func (w *WebRTCReceiver) GetConnectionScoreAndQuality() (float32, livekit.ConnectionQuality) {
+	return w.connectionStats.GetScoreAndQuality()
 }
 
 func (w *WebRTCReceiver) IsClosed() bool {
