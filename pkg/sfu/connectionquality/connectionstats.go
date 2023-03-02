@@ -9,6 +9,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
@@ -21,6 +22,7 @@ const (
 type ConnectionStatsParams struct {
 	UpdateInterval         time.Duration
 	MimeType               string
+	IsFECEnabled           bool // RAJA-TODO: this needs to be passed in
 	GetDeltaStats          func() map[uint32]*buffer.StreamStatsWithLayers
 	GetMaxExpectedLayer    func() int32
 	GetCurrentLayerSpatial func() int32
@@ -30,27 +32,37 @@ type ConnectionStatsParams struct {
 
 type ConnectionStats struct {
 	params    ConnectionStatsParams
-	codecName string
+	codecName string // RAJA-REMOVE
 	trackInfo *livekit.TrackInfo
 
 	onStatsUpdate func(cs *ConnectionStats, stat *livekit.AnalyticsStat)
 
+	scorer *qualityScore
+
 	lock             sync.RWMutex
-	score            float32
-	lastUpdate       time.Time
+	score            float32   // RAJA-REMOVE
+	lastUpdate       time.Time // RAJA-REMOVE
 	maxExpectedLayer int32
 
-	done     chan struct{}
+	// RAJA-REMOVE done     chan struct{}
 	isClosed atomic.Bool
+
+	// RAJA-TODO
+	//   - mute/unmute time
+	//   - max expected layer change time
+	//   - forwarder target layer switch time
 }
 
 func NewConnectionStats(params ConnectionStatsParams) *ConnectionStats {
 	return &ConnectionStats{
-		params:           params,
+		params: params,
+		scorer: newQualityScore(qualityScoreParams{
+			PacketLossWeight: getPacketLossWeight(params.MimeType, params.IsFECEnabled), // LK-TODO: have to notify codec change?
+		}),
 		codecName:        getCodecNameFromMime(params.MimeType), // LK-TODO: have to notify on codec change
 		score:            MaxScore,
 		maxExpectedLayer: buffer.InvalidLayerSpatial,
-		done:             make(chan struct{}),
+		// RAJA-REMOVE done:             make(chan struct{}),
 	}
 }
 
@@ -64,11 +76,14 @@ func (cs *ConnectionStats) Start(trackInfo *livekit.TrackInfo) {
 }
 
 func (cs *ConnectionStats) Close() {
+	/* RAJA-REMOVE
 	if cs.isClosed.Swap(true) {
 		return
 	}
 
 	close(cs.done)
+	*/
+	cs.isClosed.Store(true)
 }
 
 func (cs *ConnectionStats) OnStatsUpdate(fn func(cs *ConnectionStats, stat *livekit.AnalyticsStat)) {
@@ -96,7 +111,19 @@ func (cs *ConnectionStats) getLayerDimensions(layer int32) (uint32, uint32) {
 	return 0, 0
 }
 
+/* RAJA-REMOVE
+type windowStat struct {
+	startTime       time.Time
+	duration        time.Duration
+	packetsExpected uint32
+	packetsLost     uint32
+	rttMax          uint32
+	jitterMax       float64
+}
+*/
+
 func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWithLayers) float32 {
+	// RAJA-TODO: call cs.scorer.Update()
 	cs.lock.Lock()
 	defer cs.lock.Unlock()
 
@@ -194,6 +221,21 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 	}
 
 	return cs.score
+
+	// RAJA-TODO - calculate max expected layer properly
+	_, maxAvailableLayerStats := getMaxAvailableLayerStats(streams, 0)
+	if maxAvailableLayerStats != nil {
+		cs.scorer.Update(&windowStat{
+			startTime:       maxAvailableLayerStats.StartTime,
+			duration:        maxAvailableLayerStats.Duration,
+			packetsExpected: maxAvailableLayerStats.Packets + maxAvailableLayerStats.PacketsPadding,
+			packetsLost:     maxAvailableLayerStats.PacketsLost,
+			rttMax:          maxAvailableLayerStats.RttMax,
+			jitterMax:       maxAvailableLayerStats.JitterMax,
+		})
+	}
+
+	return cs.scorer.GetMOS()
 }
 
 func (cs *ConnectionStats) getStat() *livekit.AnalyticsStat {
@@ -242,6 +284,7 @@ func (cs *ConnectionStats) updateStatsWorker() {
 	tk := time.NewTicker(interval)
 	defer tk.Stop()
 
+	/* RAJA-REMOVE
 	for {
 		select {
 		case <-cs.done:
@@ -258,6 +301,24 @@ func (cs *ConnectionStats) updateStatsWorker() {
 			}
 		}
 	}
+	*/
+
+	for {
+		<-tk.C
+
+		if cs.isClosed.Load() {
+			return
+		}
+
+		stat := cs.getStat()
+		if stat == nil {
+			continue
+		}
+
+		if cs.onStatsUpdate != nil {
+			cs.onStatsUpdate(cs, stat)
+		}
+	}
 }
 
 // -----------------------------------------------------------------------
@@ -269,6 +330,36 @@ func getCodecNameFromMime(mime string) string {
 		codecName = codecParsed[1]
 	}
 	return codecName
+}
+
+// how much weight to give to packet loss rate when calculating score.
+// It is codec dependent.
+// For audio:
+//   o Opus without FEC or RED suffers the most through packet loss, hence has the highest weight
+//   o RED with two packet redundancy can absorb two out of every three packets lost, so packet loss is not as detrimental and therefore lower weight
+//
+// For video:
+//   o No in-built codec repair available, hence same for all codecs
+func getPacketLossWeight(mimeType string, isFecEnabled bool) float64 {
+	plw := float64(0.0)
+	switch {
+	case strings.EqualFold(mimeType, webrtc.MimeTypeOpus):
+		plw = 8.0
+		if isFecEnabled {
+			plw /= 2.0
+		}
+
+	case strings.EqualFold(mimeType, "audio/red"):
+		plw = 2.0
+		if isFecEnabled {
+			plw /= 2.0
+		}
+
+	case strings.HasPrefix(strings.ToLower(mimeType), "video/"):
+		plw = 10.0
+	}
+
+	return plw
 }
 
 func toAnalyticsStream(ssrc uint32, deltaStats *buffer.RTPDeltaInfo) *livekit.AnalyticsStream {
@@ -300,11 +391,15 @@ func toAnalyticsVideoLayer(layer int32, layerStats *buffer.RTPDeltaInfo) *liveki
 }
 
 func getMaxAvailableLayerStats(streams map[uint32]*buffer.StreamStatsWithLayers, maxExpectedLayer int32) (int32, *buffer.RTPDeltaInfo) {
+	if maxExpectedLayer == buffer.InvalidLayerSpatial {
+		return buffer.InvalidLayerSpatial, nil
+	}
+
 	maxAvailableLayer := buffer.InvalidLayerSpatial
 	var maxAvailableLayerStats *buffer.RTPDeltaInfo
 	for _, stream := range streams {
 		for layer, layerStats := range stream.Layers {
-			if maxExpectedLayer == buffer.InvalidLayerSpatial || int32(layer) > maxExpectedLayer {
+			if int32(layer) > maxExpectedLayer {
 				continue
 			}
 
@@ -318,6 +413,7 @@ func getMaxAvailableLayerStats(streams map[uint32]*buffer.StreamStatsWithLayers,
 	return maxAvailableLayer, maxAvailableLayerStats
 }
 
+// RAJA-REMOVE
 func getTrackScoreParams(codec string, layerStats *buffer.RTPDeltaInfo) TrackScoreParams {
 	return TrackScoreParams{
 		Duration:        layerStats.Duration,

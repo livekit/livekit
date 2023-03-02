@@ -42,6 +42,7 @@ type IntervalStats struct {
 }
 
 type RTPDeltaInfo struct {
+	StartTime            time.Time
 	Duration             time.Duration
 	Packets              uint32
 	Bytes                uint64
@@ -897,6 +898,7 @@ func (r *RTPStats) DeltaInfo(snapshotId uint32) *RTPDeltaInfo {
 	maxJitterTime := maxJitter / float64(r.params.ClockRate) * 1e6
 
 	return &RTPDeltaInfo{
+		StartTime:            then.startTime,
 		Duration:             now.startTime.Sub(then.startTime),
 		Packets:              packetsExpected - intervalStats.packetsPadding,
 		Bytes:                intervalStats.bytes,
