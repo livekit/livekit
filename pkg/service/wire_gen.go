@@ -40,15 +40,19 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
+	nodeID := getNodeID(currentNode)
+	messageBus := getMessageBus(universalClient)
+	signalClient, err := routing.NewSignalClient(nodeID, messageBus)
+	if err != nil {
+		return nil, err
+	}
 	clientConfig := getClientConfig(conf)
-	router := routing.CreateRouter(universalClient, currentNode, clientConfig)
+	router := routing.CreateRouter(universalClient, currentNode, signalClient, clientConfig)
 	objectStore := createStore(universalClient)
 	roomAllocator, err := NewRoomAllocator(conf, router, objectStore)
 	if err != nil {
 		return nil, err
 	}
-	nodeID := getNodeID(currentNode)
-	messageBus := getMessageBus(universalClient)
 	egressClient, err := getEgressClient(conf, nodeID, messageBus)
 	if err != nil {
 		return nil, err
@@ -89,7 +93,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	signalService, err := NewDefaultSignalService(currentNode, messageBus, router, roomManager)
+	signalServer, err := NewDefaultSignalServer(currentNode, messageBus, router, roomManager)
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +102,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, ioInfoService, rtcService, keyProvider, router, roomManager, signalService, server, currentNode)
+	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, ioInfoService, rtcService, keyProvider, router, roomManager, signalServer, server, currentNode)
 	if err != nil {
 		return nil, err
 	}
@@ -110,8 +114,14 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 	if err != nil {
 		return nil, err
 	}
+	nodeID := getNodeID(currentNode)
+	messageBus := getMessageBus(universalClient)
+	signalClient, err := routing.NewSignalClient(nodeID, messageBus)
+	if err != nil {
+		return nil, err
+	}
 	clientConfig := getClientConfig(conf)
-	router := routing.CreateRouter(universalClient, currentNode, clientConfig)
+	router := routing.CreateRouter(universalClient, currentNode, signalClient, clientConfig)
 	return router, nil
 }
 

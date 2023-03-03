@@ -58,7 +58,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		NewRoomAllocator,
 		NewRoomService,
 		NewRTCService,
-		NewDefaultSignalService,
+		NewDefaultSignalServer,
+		routing.NewSignalClient,
 		NewLocalRoomManager,
 		newTurnAuthHandler,
 		newInProcessTurnServer,
@@ -72,6 +73,9 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 	wire.Build(
 		createRedisClient,
 		getClientConfig,
+		getNodeID,
+		getMessageBus,
+		routing.NewSignalClient,
 		routing.CreateRouter,
 	)
 

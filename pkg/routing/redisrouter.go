@@ -32,7 +32,7 @@ const (
 // It relies on the RTC node to be the primary driver of the participant connection.
 // Because
 type RedisRouter struct {
-	LocalRouter
+	*LocalRouter
 
 	rc             redis.UniversalClient
 	usePSRPCSignal bool
@@ -46,9 +46,9 @@ type RedisRouter struct {
 	cancel func()
 }
 
-func NewRedisRouter(currentNode LocalNode, rc redis.UniversalClient, clientConfig config.ClientConfig) *RedisRouter {
+func NewRedisRouter(lr *LocalRouter, rc redis.UniversalClient, clientConfig config.ClientConfig) *RedisRouter {
 	rr := &RedisRouter{
-		LocalRouter:    *NewLocalRouter(currentNode),
+		LocalRouter:    lr,
 		rc:             rc,
 		usePSRPCSignal: clientConfig.UsePSRPCSignal,
 	}
@@ -150,7 +150,7 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livek
 	}
 
 	if r.usePSRPCSignal {
-		return r.StartParticipantSignalWithNodeID(roomName, pi, livekit.NodeID(rtcNode.Id))
+		return r.StartParticipantSignalWithNodeID(ctx, roomName, pi, livekit.NodeID(rtcNode.Id))
 	}
 
 	// create a new connection id

@@ -17,8 +17,10 @@ const localRTCChannelSize = 10000
 
 // a router of messages on the same node, basic implementation for local testing
 type LocalRouter struct {
-	currentNode LocalNode
-	lock        sync.RWMutex
+	currentNode  LocalNode
+	signalClient SignalClient
+
+	lock sync.RWMutex
 	// channels for each participant
 	requestChannels  map[string]*MessageChannel
 	responseChannels map[string]*MessageChannel
@@ -26,14 +28,14 @@ type LocalRouter struct {
 
 	rtcMessageChan *MessageChannel
 
-	onNewParticipant  NewParticipantCallback
-	onRTCMessage      RTCMessageCallback
-	onNewSignalClient NewSignalClientCallabck
+	onNewParticipant NewParticipantCallback
+	onRTCMessage     RTCMessageCallback
 }
 
-func NewLocalRouter(currentNode LocalNode) *LocalRouter {
+func NewLocalRouter(currentNode LocalNode, signalClient SignalClient) *LocalRouter {
 	return &LocalRouter{
 		currentNode:      currentNode,
+		signalClient:     signalClient,
 		requestChannels:  make(map[string]*MessageChannel),
 		responseChannels: make(map[string]*MessageChannel),
 		rtcMessageChan:   NewMessageChannel(localRTCChannelSize),
@@ -82,11 +84,11 @@ func (r *LocalRouter) ListNodes() ([]*livekit.Node, error) {
 }
 
 func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit) (connectionID livekit.ConnectionID, reqSink MessageSink, resSource MessageSource, err error) {
-	return r.StartParticipantSignalWithNodeID(roomName, pi, livekit.NodeID(r.currentNode.Id))
+	return r.StartParticipantSignalWithNodeID(ctx, roomName, pi, livekit.NodeID(r.currentNode.Id))
 }
 
-func (r *LocalRouter) StartParticipantSignalWithNodeID(roomName livekit.RoomName, pi ParticipantInit, nodeID livekit.NodeID) (connectionID livekit.ConnectionID, reqSink MessageSink, resSource MessageSource, err error) {
-	connectionID, reqSink, resSource, err = r.onNewSignalClient(roomName, pi, livekit.NodeID(r.currentNode.Id))
+func (r *LocalRouter) StartParticipantSignalWithNodeID(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit, nodeID livekit.NodeID) (connectionID livekit.ConnectionID, reqSink MessageSink, resSource MessageSource, err error) {
+	connectionID, reqSink, resSource, err = r.signalClient.StartParticipantSignal(ctx, roomName, pi, livekit.NodeID(r.currentNode.Id))
 	if err != nil {
 		logger.Errorw("could not handle new participant", err,
 			"room", roomName,
@@ -129,10 +131,6 @@ func (r *LocalRouter) writeRTCMessage(sink MessageSink, msg *livekit.RTCNodeMess
 	defer sink.Close()
 	msg.SenderTime = time.Now().Unix()
 	return sink.WriteMessage(msg)
-}
-
-func (r *LocalRouter) OnNewSignalClient(callback NewSignalClientCallabck) {
-	r.onNewSignalClient = callback
 }
 
 func (r *LocalRouter) OnNewParticipantRTC(callback NewParticipantCallback) {

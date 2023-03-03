@@ -99,9 +99,6 @@ type Router interface {
 
 	// OnRTCMessage is called to execute actions on the RTC node
 	OnRTCMessage(callback RTCMessageCallback)
-
-	// OnNewSignalClient is called to handle incoming RTC connections
-	OnNewSignalClient(NewSignalClientCallabck)
 }
 
 type MessageRouter interface {
@@ -113,14 +110,16 @@ type MessageRouter interface {
 	WriteRoomRTC(ctx context.Context, roomName livekit.RoomName, msg *livekit.RTCNodeMessage) error
 }
 
-func CreateRouter(rc redis.UniversalClient, node LocalNode, clientConfig config.ClientConfig) Router {
+func CreateRouter(rc redis.UniversalClient, node LocalNode, signalClient SignalClient, clientConfig config.ClientConfig) Router {
+	lr := NewLocalRouter(node, signalClient)
+
 	if rc != nil {
-		return NewRedisRouter(node, rc, clientConfig)
+		return NewRedisRouter(lr, rc, clientConfig)
 	}
 
 	// local routing and store
 	logger.Infow("using single-node routing")
-	return NewLocalRouter(node)
+	return lr
 }
 
 func (pi *ParticipantInit) ToStartSession(roomName livekit.RoomName, connectionID livekit.ConnectionID) (*livekit.StartSession, error) {
