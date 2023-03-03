@@ -347,11 +347,19 @@ func (f *Forwarder) PubMute(pubMuted bool) (bool, VideoLayers) {
 	f.logger.Debugw("setting forwarder pub mute", "pubMuted", pubMuted)
 	f.pubMuted = pubMuted
 
-	// Do not resync on publisher mute as forwarding can continue on unmute using same layers.
-	// On unmute, park current layers as streaming can continue without a key frame when publisher starts the stream.
-	if !pubMuted && f.targetLayers.IsValid() && f.currentLayers.Spatial == f.targetLayers.Spatial {
-		f.setupParkedLayers(f.targetLayers)
-		f.currentLayers = InvalidLayers
+	if f.kind == webrtc.RTPCodecTypeAudio {
+		// for audio resync when pub muted so that sequence numbers do not jump on unmute
+		// audio stops forwarding during pub mute too
+		if pubMuted {
+			f.resyncLocked()
+		}
+	} else {
+		// Do not resync on publisher mute as forwarding can continue on unmute using same layers.
+		// On unmute, park current layers as streaming can continue without a key frame when publisher starts the stream.
+		if !pubMuted && f.targetLayers.IsValid() && f.currentLayers.Spatial == f.targetLayers.Spatial {
+			f.setupParkedLayers(f.targetLayers)
+			f.currentLayers = InvalidLayers
+		}
 	}
 
 	return true, f.maxLayers
