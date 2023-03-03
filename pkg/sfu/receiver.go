@@ -374,6 +374,8 @@ func (w *WebRTCReceiver) SetUpTrackPaused(paused bool) {
 		buff.SetPaused(paused)
 	}
 	w.bufferMu.RUnlock()
+
+	w.connectionStats.UpdateMute(paused)
 }
 
 func (w *WebRTCReceiver) AddDownTrack(track TrackSender) error {
