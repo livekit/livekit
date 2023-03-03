@@ -39,7 +39,7 @@ type ConnectionStats struct {
 
 	scorer *qualityScorer
 
-	lock sync.RWMutex
+	lock sync.RWMutex // RAJA-REMOVE - don't think this is needed as only trackInfo is protected by it and trackInfo read happens from goroutine which is started after trackInfo is written.
 	/* RAJA-REMOVE
 	score            float32   // RAJA-REMOVE
 	lastUpdate       time.Time // RAJA-REMOVE
@@ -73,6 +73,8 @@ func (cs *ConnectionStats) Start(trackInfo *livekit.TrackInfo) {
 	cs.lock.Lock()
 	cs.trackInfo = trackInfo
 	cs.lock.Unlock()
+
+	cs.scorer.Start()
 
 	go cs.updateStatsWorker()
 }
@@ -319,7 +321,6 @@ func (cs *ConnectionStats) updateStatsWorker() {
 	}
 	*/
 
-	cs.scorer.Start()
 	for {
 		<-tk.C
 
@@ -363,18 +364,23 @@ func getPacketLossWeight(mimeType string, isFecEnabled bool) float64 {
 	plw := float64(0.0)
 	switch {
 	case strings.EqualFold(mimeType, webrtc.MimeTypeOpus):
+		// 2.5%: fall to GOOD, 5%: fall to POOR
 		plw = 8.0
 		if isFecEnabled {
-			plw /= 2.0
+			// 3.75%: fall to GOOD, 7.5%: fall to POOR
+			plw /= 1.5
 		}
 
 	case strings.EqualFold(mimeType, "audio/red"):
-		plw = 2.0
+		// 6.66%: fall to GOOD, 13.33%: fall to POOR
+		plw = 3.0
 		if isFecEnabled {
-			plw /= 2.0
+			// 10%: fall to GOOD, 20%: fall to POOR
+			plw /= 1.5
 		}
 
 	case strings.HasPrefix(strings.ToLower(mimeType), "video/"):
+		// 2%: fall to GOOD, 4%: fall to POOR
 		plw = 10.0
 	}
 

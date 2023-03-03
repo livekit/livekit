@@ -5,6 +5,7 @@ package connectionquality
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"sync"
 	"time"
@@ -139,6 +140,8 @@ type qualityScorer struct {
 
 	mutedAt   time.Time
 	unmutedAt time.Time
+
+	maxPPS float64
 }
 
 func newQualityScorer(params qualityScorerParams) *qualityScorer {
@@ -196,7 +199,7 @@ func (q *qualityScorer) Update(stat *windowStat) {
 			duration:  time.Since(q.lastUpdateAt),
 		}, poorScore)
 	} else {
-		ws = newWindowScore(stat, q.params.PacketLossWeight)
+		ws = newWindowScore(stat, q.getPacketLossWeight(stat))
 	}
 	q.params.Logger.Infow("quality stat", "stat", stat, "window", ws) // REMOVE
 	score := ws.getScore()
@@ -219,13 +222,8 @@ func (q *qualityScorer) Update(stat *windowStat) {
 
 	// when recovering, look at a longer window
 	q.windows = append(q.windows, ws)
-	q.prune()
-
-	recoveringDuration := time.Since(q.windows[0].getStartTime())
-	cq = scoreToConnectionQuality(q.score)
-	if (cq == livekit.ConnectionQuality_GOOD && recoveringDuration < waitForQualityGood) ||
-		(cq == livekit.ConnectionQuality_POOR && recoveringDuration < waitForQualityPoor) {
-		// hold at current quality till there is enough data while recovering
+	if !q.prune() {
+		// minimum recovery duration not satisfied, hold at current quality
 		return
 	}
 
@@ -252,11 +250,30 @@ func (q *qualityScorer) isUnmutedEnough() bool {
 	}
 
 	sinceLastUpdate := time.Since(q.lastUpdateAt)
+	fmt.Printf("unmute: %+v, last: %+v\n", sinceUnmute, sinceLastUpdate) // REMOVE
 
 	return sinceUnmute.Seconds()/sinceLastUpdate.Seconds() > unmuteTimeThreshold
 }
 
-func (q *qualityScorer) prune() {
+func (q *qualityScorer) getPacketLossWeight(stat *windowStat) float64 {
+	if stat == nil {
+		return q.params.PacketLossWeight
+	}
+
+	// packet loss is weighted by comparing against max packet rate seen.
+	// this is to handle situations like DTX in audio and variable bit rate tracks like screen share.
+	// and the effect of loss is not pronounced in those scenarios (audio silence, statis screen share).
+	// for example, DTX typically uses only 5% of packets of full packet rate. at that rate,
+	// packet loss weight is reduced to ~22% of configured weight (i. e. sqrt(0.05) * configured weight)
+	pps := float64(stat.packetsExpected) / stat.duration.Seconds()
+	if pps > q.maxPPS {
+		q.maxPPS = pps
+	}
+
+	return math.Sqrt(pps/q.maxPPS) * q.params.PacketLossWeight
+}
+
+func (q *qualityScorer) prune() bool {
 	cq := scoreToConnectionQuality(q.score)
 
 	var wait time.Duration
@@ -277,6 +294,15 @@ func (q *qualityScorer) prune() {
 		q.windows = q.windows[idx:]
 		break
 	}
+
+	// find the oldest window of given quality and check if enough wait happened
+	for idx := 0; idx < len(q.windows); idx++ {
+		if cq == scoreToConnectionQuality(q.windows[idx].getScore()) {
+			return time.Since(q.windows[idx].getStartTime()) > wait
+		}
+	}
+
+	return false
 }
 
 func (q *qualityScorer) GetScoreAndQuality() (float32, livekit.ConnectionQuality) {
