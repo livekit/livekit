@@ -37,7 +37,7 @@ type ConnectionStats struct {
 
 	onStatsUpdate func(cs *ConnectionStats, stat *livekit.AnalyticsStat)
 
-	scorer *qualityScore
+	scorer *qualityScorer
 
 	lock sync.RWMutex
 	/* RAJA-REMOVE
@@ -58,7 +58,7 @@ type ConnectionStats struct {
 func NewConnectionStats(params ConnectionStatsParams) *ConnectionStats {
 	return &ConnectionStats{
 		params: params,
-		scorer: newQualityScore(qualityScoreParams{
+		scorer: newQualityScorer(qualityScorerParams{
 			PacketLossWeight: getPacketLossWeight(params.MimeType, params.IsFECEnabled), // LK-TODO: have to notify codec change?
 			Logger:           params.Logger,
 		}),
