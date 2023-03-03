@@ -76,6 +76,9 @@ type signalService struct {
 }
 
 func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest]) (err error) {
+	// copy the context to prevent a race between the session handler closing
+	// and the delivery of any parting messages from the client. take care to
+	// copy the incoming rpc headers to avoid dropping any session vars.
 	ctx, cancel := context.WithCancel(psrpc.NewContextWithIncomingHeader(context.Background(), psrpc.IncomingHeader(stream.Context())))
 	defer cancel()
 

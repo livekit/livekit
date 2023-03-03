@@ -110,11 +110,11 @@ type MessageRouter interface {
 	WriteRoomRTC(ctx context.Context, roomName livekit.RoomName, msg *livekit.RTCNodeMessage) error
 }
 
-func CreateRouter(rc redis.UniversalClient, node LocalNode, signalClient SignalClient, clientConfig config.ClientConfig) Router {
+func CreateRouter(config *config.Config, rc redis.UniversalClient, node LocalNode, signalClient SignalClient) Router {
 	lr := NewLocalRouter(node, signalClient)
 
 	if rc != nil {
-		return NewRedisRouter(lr, rc, clientConfig)
+		return NewRedisRouter(config, lr, rc)
 	}
 
 	// local routing and store

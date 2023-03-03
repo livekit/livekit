@@ -46,11 +46,11 @@ type RedisRouter struct {
 	cancel func()
 }
 
-func NewRedisRouter(lr *LocalRouter, rc redis.UniversalClient, clientConfig config.ClientConfig) *RedisRouter {
+func NewRedisRouter(config *config.Config, lr *LocalRouter, rc redis.UniversalClient) *RedisRouter {
 	rr := &RedisRouter{
 		LocalRouter:    lr,
 		rc:             rc,
-		usePSRPCSignal: clientConfig.UsePSRPCSignal,
+		usePSRPCSignal: config.UsePSRPCSignal,
 	}
 	rr.ctx, rr.cancel = context.WithCancel(context.Background())
 	return rr

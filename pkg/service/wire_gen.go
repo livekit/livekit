@@ -46,8 +46,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	clientConfig := getClientConfig(conf)
-	router := routing.CreateRouter(universalClient, currentNode, signalClient, clientConfig)
+	router := routing.CreateRouter(conf, universalClient, currentNode, signalClient)
 	objectStore := createStore(universalClient)
 	roomAllocator, err := NewRoomAllocator(conf, router, objectStore)
 	if err != nil {
@@ -120,8 +119,7 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 	if err != nil {
 		return nil, err
 	}
-	clientConfig := getClientConfig(conf)
-	router := routing.CreateRouter(universalClient, currentNode, signalClient, clientConfig)
+	router := routing.CreateRouter(conf, universalClient, currentNode, signalClient)
 	return router, nil
 }
 
@@ -233,8 +231,4 @@ func getRoomConf(config2 *config.Config) config.RoomConfig {
 
 func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Server, error) {
 	return NewTurnServer(conf, authHandler, false)
-}
-
-func getClientConfig(config2 *config.Config) config.ClientConfig {
-	return config2.Clients
 }
