@@ -40,14 +40,18 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	router := routing.CreateRouter(universalClient, currentNode)
+	nodeID := getNodeID(currentNode)
+	messageBus := getMessageBus(universalClient)
+	signalClient, err := routing.NewSignalClient(nodeID, messageBus)
+	if err != nil {
+		return nil, err
+	}
+	router := routing.CreateRouter(conf, universalClient, currentNode, signalClient)
 	objectStore := createStore(universalClient)
 	roomAllocator, err := NewRoomAllocator(conf, router, objectStore)
 	if err != nil {
 		return nil, err
 	}
-	nodeID := getNodeID(currentNode)
-	messageBus := getMessageBus(universalClient)
 	egressClient, err := getEgressClient(conf, nodeID, messageBus)
 	if err != nil {
 		return nil, err
@@ -88,12 +92,16 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
+	signalServer, err := NewDefaultSignalServer(currentNode, messageBus, router, roomManager)
+	if err != nil {
+		return nil, err
+	}
 	authHandler := newTurnAuthHandler(objectStore)
 	server, err := newInProcessTurnServer(conf, authHandler)
 	if err != nil {
 		return nil, err
 	}
-	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, ioInfoService, rtcService, keyProvider, router, roomManager, server, currentNode)
+	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, ioInfoService, rtcService, keyProvider, router, roomManager, signalServer, server, currentNode)
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +113,13 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 	if err != nil {
 		return nil, err
 	}
-	router := routing.CreateRouter(universalClient, currentNode)
+	nodeID := getNodeID(currentNode)
+	messageBus := getMessageBus(universalClient)
+	signalClient, err := routing.NewSignalClient(nodeID, messageBus)
+	if err != nil {
+		return nil, err
+	}
+	router := routing.CreateRouter(conf, universalClient, currentNode, signalClient)
 	return router, nil
 }
 
@@ -172,7 +186,7 @@ func createStore(rc redis.UniversalClient) ObjectStore {
 
 func getMessageBus(rc redis.UniversalClient) psrpc.MessageBus {
 	if rc == nil {
-		return nil
+		return psrpc.NewLocalMessageBus()
 	}
 	return psrpc.NewRedisMessageBus(rc)
 }
