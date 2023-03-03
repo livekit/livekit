@@ -869,6 +869,8 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 			// WARNING NOTE: comparing protobuf enums directly
 			minQuality = quality
 			minScore = score
+		} else if quality == minQuality && score < minScore {
+			minScore = score
 		}
 	}
 
@@ -885,6 +887,8 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 		if quality < minQuality {
 			// WARNING NOTE: comparing protobuf enums directly
 			minQuality = quality
+			minScore = score
+		} else if quality == minQuality && score < minScore {
 			minScore = score
 		}
 	}
