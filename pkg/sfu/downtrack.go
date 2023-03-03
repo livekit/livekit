@@ -363,7 +363,7 @@ func (d *DownTrack) TrackInfoAvailable() {
 	if ti == nil {
 		return
 	}
-	d.connectionStats.Start(ti)
+	d.connectionStats.Start(ti, time.Now())
 }
 
 // ID is the unique identifier for this Track. This should be unique for the
@@ -684,7 +684,7 @@ func (d *DownTrack) handleMute(muted bool, isPub bool, changed bool, maxLayers V
 		return
 	}
 
-	d.connectionStats.UpdateMute(d.forwarder.IsAnyMuted())
+	d.connectionStats.UpdateMute(d.forwarder.IsAnyMuted(), time.Now())
 
 	//
 	// Subscriber mute changes trigger a max layer notification.

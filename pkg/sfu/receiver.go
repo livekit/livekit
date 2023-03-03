@@ -221,7 +221,7 @@ func NewWebRTCReceiver(
 			w.onStatsUpdate(w, stat)
 		}
 	})
-	w.connectionStats.Start(w.trackInfo)
+	w.connectionStats.Start(w.trackInfo, time.Now())
 
 	return w
 }
@@ -375,7 +375,7 @@ func (w *WebRTCReceiver) SetUpTrackPaused(paused bool) {
 	}
 	w.bufferMu.RUnlock()
 
-	w.connectionStats.UpdateMute(paused)
+	w.connectionStats.UpdateMute(paused, time.Now())
 }
 
 func (w *WebRTCReceiver) AddDownTrack(track TrackSender) error {

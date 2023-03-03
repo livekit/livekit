@@ -69,12 +69,12 @@ func NewConnectionStats(params ConnectionStatsParams) *ConnectionStats {
 	}
 }
 
-func (cs *ConnectionStats) Start(trackInfo *livekit.TrackInfo) {
+func (cs *ConnectionStats) Start(trackInfo *livekit.TrackInfo, at time.Time) {
 	cs.lock.Lock()
 	cs.trackInfo = trackInfo
 	cs.lock.Unlock()
 
-	cs.scorer.Start()
+	cs.scorer.Start(at)
 
 	go cs.updateStatsWorker()
 }
@@ -94,8 +94,8 @@ func (cs *ConnectionStats) OnStatsUpdate(fn func(cs *ConnectionStats, stat *live
 	cs.onStatsUpdate = fn
 }
 
-func (cs *ConnectionStats) UpdateMute(isMuted bool) {
-	cs.scorer.UpdateMute(isMuted)
+func (cs *ConnectionStats) UpdateMute(isMuted bool, at time.Time) {
+	cs.scorer.UpdateMute(isMuted, at)
 }
 
 func (cs *ConnectionStats) GetScoreAndQuality() (float32, livekit.ConnectionQuality) {
@@ -136,7 +136,7 @@ type windowStat struct {
 }
 */
 
-func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWithLayers) float32 {
+func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWithLayers, at time.Time) float32 {
 	/* RAJA-TODO
 	cs.lock.Lock()
 	defer cs.lock.Unlock()
@@ -250,13 +250,13 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 			jitterMax:       maxAvailableLayerStats.JitterMax,
 		}
 	}
-	cs.scorer.Update(stat)
+	cs.scorer.Update(stat, at)
 
 	mos, _ := cs.scorer.GetMOSAndQuality()
 	return mos
 }
 
-func (cs *ConnectionStats) getStat() *livekit.AnalyticsStat {
+func (cs *ConnectionStats) getStat(at time.Time) *livekit.AnalyticsStat {
 	if cs.params.GetDeltaStats == nil {
 		return nil
 	}
@@ -284,7 +284,7 @@ func (cs *ConnectionStats) getStat() *livekit.AnalyticsStat {
 		analyticsStreams = append(analyticsStreams, as)
 	}
 
-	score := cs.updateScore(streams)
+	score := cs.updateScore(streams, at)
 
 	return &livekit.AnalyticsStat{
 		Score:   score,
@@ -328,7 +328,7 @@ func (cs *ConnectionStats) updateStatsWorker() {
 			return
 		}
 
-		stat := cs.getStat()
+		stat := cs.getStat(time.Now())
 		if stat == nil {
 			continue
 		}

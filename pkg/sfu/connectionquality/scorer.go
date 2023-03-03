@@ -152,58 +152,65 @@ func newQualityScorer(params qualityScorerParams) *qualityScorer {
 	}
 }
 
-func (q *qualityScorer) Start() {
+func (q *qualityScorer) Start(at time.Time) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
 
-	q.lastUpdateAt = time.Now()
+	q.lastUpdateAt = at
 }
 
-func (q *qualityScorer) UpdateMute(isMuted bool) {
+func (q *qualityScorer) UpdateMute(isMuted bool, at time.Time) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
 
 	if isMuted {
-		q.mutedAt = time.Now()
+		q.mutedAt = at
 
 		// stable when muted
 		q.state = qualityScorerStateStable
 		q.windows = q.windows[:0]
 		q.score = maxScore
 	} else {
-		q.unmutedAt = time.Now()
+		q.unmutedAt = at
 	}
 }
 
-func (q *qualityScorer) Update(stat *windowStat) {
+func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
 
+	fmt.Printf("update at: %+v\n", at) // REMOVE
 	// nothing to do when muted or not unmuted for long enough
 	// NOTE: it is possible that unmute -> mute -> unmute transition happens in the
 	//       same analysis window. On a transition to mute, state immediately moves
 	//       to stable and quality EXCELLENT for responsiveness. On an unmute, the
 	//       entire window data is considered (as long as enough time has passed since
 	//       unmute) include the data before mute.
-	if q.isMuted() || !q.isUnmutedEnough() {
-		q.lastUpdateAt = time.Now()
+	if q.isMuted() || !q.isUnmutedEnough(at) {
+		fmt.Printf("muted: %+v, unmuted: %+v, mutesAt: %+v, unmutedAt: %+v\n", q.isMuted(), q.isUnmutedEnough(at), q.mutedAt, q.unmutedAt) // REMOVE
+		q.lastUpdateAt = at
 		return
 	}
-
-	q.lastUpdateAt = time.Now()
 
 	var ws *windowScore
 	if stat == nil {
 		ws = newWindowScoreWithScore(&windowStat{
 			startedAt: q.lastUpdateAt,
-			duration:  time.Since(q.lastUpdateAt),
+			duration:  at.Sub(q.lastUpdateAt),
 		}, poorScore)
 	} else {
-		ws = newWindowScore(stat, q.getPacketLossWeight(stat))
+		if stat.packetsExpected == 0 {
+			ws = newWindowScoreWithScore(stat, poorScore)
+		} else {
+			ws = newWindowScore(stat, q.getPacketLossWeight(stat))
+		}
 	}
 	q.params.Logger.Infow("quality stat", "stat", stat, "window", ws) // REMOVE
 	score := ws.getScore()
 	cq := scoreToConnectionQuality(score)
+	fmt.Printf("quality stat: %+v, window: %+v, score: %0.2f, cq: %+v\n\n\n", stat, ws, score, cq) // REMOVE
+
+	q.lastUpdateAt = at
 
 	// transition to start of recovering on any quality drop
 	// WARNING NOTE: comparing protobuf enum values directly (livekit.ConnectionQuality)
@@ -222,7 +229,8 @@ func (q *qualityScorer) Update(stat *windowStat) {
 
 	// when recovering, look at a longer window
 	q.windows = append(q.windows, ws)
-	if !q.prune() {
+	if !q.prune(at) {
+		fmt.Printf("prune returning: len: %d, windows: %+v\n\n\n", len(q.windows), q.windows) // REMOVE
 		// minimum recovery duration not satisfied, hold at current quality
 		return
 	}
@@ -231,6 +239,7 @@ func (q *qualityScorer) Update(stat *windowStat) {
 	sort.Slice(q.windows, func(i, j int) bool { return q.windows[i].getScore() < q.windows[j].getScore() })
 	mid := (len(q.windows)+1)/2 - 1
 	q.score = q.windows[mid].getScore()
+	fmt.Printf("prune passing: len: %d, windows: %+v, mid: %d, score: %0.2f\n\n\n", len(q.windows), q.windows, mid, q.score) // REMOVE
 	if scoreToConnectionQuality(q.score) == livekit.ConnectionQuality_EXCELLENT {
 		q.state = qualityScorerStateStable
 		q.windows = q.windows[:0]
@@ -238,19 +247,19 @@ func (q *qualityScorer) Update(stat *windowStat) {
 }
 
 func (q *qualityScorer) isMuted() bool {
-	return !q.mutedAt.IsZero() && (!q.unmutedAt.IsZero() || q.mutedAt.After(q.unmutedAt))
+	return !q.mutedAt.IsZero() && (q.unmutedAt.IsZero() || q.mutedAt.After(q.unmutedAt))
 }
 
-func (q *qualityScorer) isUnmutedEnough() bool {
+func (q *qualityScorer) isUnmutedEnough(at time.Time) bool {
 	var sinceUnmute time.Duration
 	if q.unmutedAt.IsZero() {
-		sinceUnmute = time.Since(q.lastUpdateAt)
+		sinceUnmute = at.Sub(q.lastUpdateAt)
 	} else {
-		sinceUnmute = time.Since(q.unmutedAt)
+		sinceUnmute = at.Sub(q.unmutedAt)
 	}
 
-	sinceLastUpdate := time.Since(q.lastUpdateAt)
-	fmt.Printf("unmute: %+v, last: %+v\n", sinceUnmute, sinceLastUpdate) // REMOVE
+	sinceLastUpdate := at.Sub(q.lastUpdateAt)
+	fmt.Printf("sinceUnmute: %+v, sinceLastUpdate: %+v, m: %+v, u: %+v, now: %+v\n", sinceUnmute, sinceLastUpdate, q.mutedAt, q.unmutedAt, at) // REMOVE
 
 	return sinceUnmute.Seconds()/sinceLastUpdate.Seconds() > unmuteTimeThreshold
 }
@@ -273,7 +282,7 @@ func (q *qualityScorer) getPacketLossWeight(stat *windowStat) float64 {
 	return math.Sqrt(pps/q.maxPPS) * q.params.PacketLossWeight
 }
 
-func (q *qualityScorer) prune() bool {
+func (q *qualityScorer) prune(at time.Time) bool {
 	cq := scoreToConnectionQuality(q.score)
 
 	var wait time.Duration
@@ -283,7 +292,7 @@ func (q *qualityScorer) prune() bool {
 		wait = waitForQualityGood
 	}
 
-	startThreshold := time.Now().Add(-2 * wait)
+	startThreshold := at.Add(-wait)
 	sort.Slice(q.windows, func(i, j int) bool { return q.windows[i].getStartTime().Before(q.windows[j].getStartTime()) })
 	for idx := 0; idx < len(q.windows); idx++ {
 		w := q.windows[idx]
@@ -294,11 +303,13 @@ func (q *qualityScorer) prune() bool {
 		q.windows = q.windows[idx:]
 		break
 	}
+	fmt.Printf("pruned windows: %+v, wait: %+v, startThreshold: %+v, cq: %+v, score: %0.2f, at: %+v\n\n", q.windows, wait, startThreshold, cq, q.score, at) // REMOVE
 
 	// find the oldest window of given quality and check if enough wait happened
 	for idx := 0; idx < len(q.windows); idx++ {
+		fmt.Printf("cq: %+v, idx: %d, idx_cq: %+v, start: %+v, wait: %+v, since: %+v\n", cq, idx, scoreToConnectionQuality(q.windows[idx].getScore()), q.windows[idx].getStartTime(), wait, at.Sub(q.windows[idx].getStartTime())) // REMOVE
 		if cq == scoreToConnectionQuality(q.windows[idx].getScore()) {
-			return time.Since(q.windows[idx].getStartTime()) > wait
+			return at.Sub(q.windows[idx].getStartTime()) >= wait
 		}
 	}
 
@@ -322,11 +333,11 @@ func (q *qualityScorer) GetMOSAndQuality() (float32, livekit.ConnectionQuality) 
 // ------------------------------------------
 
 func scoreToConnectionQuality(score float64) livekit.ConnectionQuality {
-	if score > 80 {
+	if score > 80.0 {
 		return livekit.ConnectionQuality_EXCELLENT
 	}
 
-	if score > 60 {
+	if score > 60.0 {
 		return livekit.ConnectionQuality_GOOD
 	}
 
