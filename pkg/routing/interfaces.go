@@ -7,6 +7,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -60,6 +61,17 @@ type RTCMessageCallback func(
 	msg *livekit.RTCNodeMessage,
 )
 
+type NewSignalClientCallabck func(
+	roomName livekit.RoomName,
+	pi ParticipantInit,
+	nodeID livekit.NodeID,
+) (
+	connectionID livekit.ConnectionID,
+	reqSink MessageSink,
+	resSource MessageSource,
+	err error,
+)
+
 // Router allows multiple nodes to coordinate the participant session
 //
 //counterfeiter:generate . Router
@@ -87,6 +99,9 @@ type Router interface {
 
 	// OnRTCMessage is called to execute actions on the RTC node
 	OnRTCMessage(callback RTCMessageCallback)
+
+	// OnNewSignalClient is called to handle incoming RTC connections
+	OnNewSignalClient(NewSignalClientCallabck)
 }
 
 type MessageRouter interface {
@@ -98,9 +113,9 @@ type MessageRouter interface {
 	WriteRoomRTC(ctx context.Context, roomName livekit.RoomName, msg *livekit.RTCNodeMessage) error
 }
 
-func CreateRouter(rc redis.UniversalClient, node LocalNode) Router {
+func CreateRouter(rc redis.UniversalClient, node LocalNode, clientConfig config.ClientConfig) Router {
 	if rc != nil {
-		return NewRedisRouter(node, rc)
+		return NewRedisRouter(node, rc, clientConfig)
 	}
 
 	// local routing and store

@@ -8,10 +8,8 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
 )
 
 // aggregated channel for all participants
@@ -28,8 +26,9 @@ type LocalRouter struct {
 
 	rtcMessageChan *MessageChannel
 
-	onNewParticipant NewParticipantCallback
-	onRTCMessage     RTCMessageCallback
+	onNewParticipant  NewParticipantCallback
+	onRTCMessage      RTCMessageCallback
+	onNewSignalClient NewSignalClientCallabck
 }
 
 func NewLocalRouter(currentNode LocalNode) *LocalRouter {
@@ -83,51 +82,19 @@ func (r *LocalRouter) ListNodes() ([]*livekit.Node, error) {
 }
 
 func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit) (connectionID livekit.ConnectionID, reqSink MessageSink, resSource MessageSource, err error) {
-	prometheus.IncrementParticipantRtcInit(1)
-	// treat it as a new participant connecting
-	if r.onNewParticipant == nil {
-		err = ErrHandlerNotDefined
-		return
-	}
+	return r.StartParticipantSignalWithNodeID(roomName, pi, livekit.NodeID(r.currentNode.Id))
+}
 
-	// create a new connection id
-	connectionID = livekit.ConnectionID(utils.NewGuid("CO_"))
-	// index channels by roomName | identity
-	key := participantKey(roomName, pi.Identity)
-	key = key + "|" + livekit.ParticipantKey(connectionID)
-
-	// close older channels if one already exists
-	reqChan := r.getMessageChannel(r.requestChannels, string(key))
-	if reqChan != nil {
-		reqChan.Close()
-	}
-	resChan := r.getMessageChannel(r.responseChannels, string(key))
-	if resChan != nil {
-		resChan.Close()
-	}
-	reqChan = r.getOrCreateMessageChannel(r.requestChannels, string(key))
-	resChan = r.getOrCreateMessageChannel(r.responseChannels, string(key))
-
-	go func() {
-		err := r.onNewParticipant(
-			ctx,
-			roomName,
-			pi,
-			// request source
-			reqChan,
-			// response sink
-			resChan,
+func (r *LocalRouter) StartParticipantSignalWithNodeID(roomName livekit.RoomName, pi ParticipantInit, nodeID livekit.NodeID) (connectionID livekit.ConnectionID, reqSink MessageSink, resSource MessageSource, err error) {
+	connectionID, reqSink, resSource, err = r.onNewSignalClient(roomName, pi, livekit.NodeID(r.currentNode.Id))
+	if err != nil {
+		logger.Errorw("could not handle new participant", err,
+			"room", roomName,
+			"participant", pi.Identity,
+			"connectionID", connectionID,
 		)
-		if err != nil {
-			reqChan.Close()
-			resChan.Close()
-			logger.Errorw("could not handle new participant", err,
-				"room", roomName,
-				"participant", pi.Identity,
-			)
-		}
-	}()
-	return connectionID, reqChan, resChan, nil
+	}
+	return
 }
 
 func (r *LocalRouter) WriteParticipantRTC(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) error {
@@ -162,6 +129,10 @@ func (r *LocalRouter) writeRTCMessage(sink MessageSink, msg *livekit.RTCNodeMess
 	defer sink.Close()
 	msg.SenderTime = time.Now().Unix()
 	return sink.WriteMessage(msg)
+}
+
+func (r *LocalRouter) OnNewSignalClient(callback NewSignalClientCallabck) {
+	r.onNewSignalClient = callback
 }
 
 func (r *LocalRouter) OnNewParticipantRTC(callback NewParticipantCallback) {

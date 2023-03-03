@@ -67,6 +67,11 @@ type FakeRouter struct {
 	onNewParticipantRTCArgsForCall []struct {
 		arg1 routing.NewParticipantCallback
 	}
+	OnNewSignalClientStub        func(routing.NewSignalClientCallabck)
+	onNewSignalClientMutex       sync.RWMutex
+	onNewSignalClientArgsForCall []struct {
+		arg1 routing.NewSignalClientCallabck
+	}
 	OnRTCMessageStub        func(routing.RTCMessageCallback)
 	onRTCMessageMutex       sync.RWMutex
 	onRTCMessageArgsForCall []struct {
@@ -468,6 +473,38 @@ func (fake *FakeRouter) OnNewParticipantRTCArgsForCall(i int) routing.NewPartici
 	fake.onNewParticipantRTCMutex.RLock()
 	defer fake.onNewParticipantRTCMutex.RUnlock()
 	argsForCall := fake.onNewParticipantRTCArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeRouter) OnNewSignalClient(arg1 routing.NewSignalClientCallabck) {
+	fake.onNewSignalClientMutex.Lock()
+	fake.onNewSignalClientArgsForCall = append(fake.onNewSignalClientArgsForCall, struct {
+		arg1 routing.NewSignalClientCallabck
+	}{arg1})
+	stub := fake.OnNewSignalClientStub
+	fake.recordInvocation("OnNewSignalClient", []interface{}{arg1})
+	fake.onNewSignalClientMutex.Unlock()
+	if stub != nil {
+		fake.OnNewSignalClientStub(arg1)
+	}
+}
+
+func (fake *FakeRouter) OnNewSignalClientCallCount() int {
+	fake.onNewSignalClientMutex.RLock()
+	defer fake.onNewSignalClientMutex.RUnlock()
+	return len(fake.onNewSignalClientArgsForCall)
+}
+
+func (fake *FakeRouter) OnNewSignalClientCalls(stub func(routing.NewSignalClientCallabck)) {
+	fake.onNewSignalClientMutex.Lock()
+	defer fake.onNewSignalClientMutex.Unlock()
+	fake.OnNewSignalClientStub = stub
+}
+
+func (fake *FakeRouter) OnNewSignalClientArgsForCall(i int) routing.NewSignalClientCallabck {
+	fake.onNewSignalClientMutex.RLock()
+	defer fake.onNewSignalClientMutex.RUnlock()
+	argsForCall := fake.onNewSignalClientArgsForCall[i]
 	return argsForCall.arg1
 }
 
@@ -1016,6 +1053,8 @@ func (fake *FakeRouter) Invocations() map[string][][]interface{} {
 	defer fake.listNodesMutex.RUnlock()
 	fake.onNewParticipantRTCMutex.RLock()
 	defer fake.onNewParticipantRTCMutex.RUnlock()
+	fake.onNewSignalClientMutex.RLock()
+	defer fake.onNewSignalClientMutex.RUnlock()
 	fake.onRTCMessageMutex.RLock()
 	defer fake.onRTCMessageMutex.RUnlock()
 	fake.registerNodeMutex.RLock()

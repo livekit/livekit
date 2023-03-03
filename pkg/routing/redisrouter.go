@@ -16,6 +16,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing/selector"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
@@ -33,10 +34,11 @@ const (
 type RedisRouter struct {
 	LocalRouter
 
-	rc        redis.UniversalClient
-	ctx       context.Context
-	isStarted atomic.Bool
-	nodeMu    sync.RWMutex
+	rc             redis.UniversalClient
+	usePSRPCSignal bool
+	ctx            context.Context
+	isStarted      atomic.Bool
+	nodeMu         sync.RWMutex
 	// previous stats for computing averages
 	prevStats *livekit.NodeStats
 
@@ -44,10 +46,11 @@ type RedisRouter struct {
 	cancel func()
 }
 
-func NewRedisRouter(currentNode LocalNode, rc redis.UniversalClient) *RedisRouter {
+func NewRedisRouter(currentNode LocalNode, rc redis.UniversalClient, clientConfig config.ClientConfig) *RedisRouter {
 	rr := &RedisRouter{
-		LocalRouter: *NewLocalRouter(currentNode),
-		rc:          rc,
+		LocalRouter:    *NewLocalRouter(currentNode),
+		rc:             rc,
+		usePSRPCSignal: clientConfig.UsePSRPCSignal,
 	}
 	rr.ctx, rr.cancel = context.WithCancel(context.Background())
 	return rr
@@ -144,6 +147,10 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livek
 	rtcNode, err := r.GetNodeForRoom(ctx, roomName)
 	if err != nil {
 		return
+	}
+
+	if r.usePSRPCSignal {
+		return r.StartParticipantSignalWithNodeID(roomName, pi, livekit.NodeID(rtcNode.Id))
 	}
 
 	// create a new connection id

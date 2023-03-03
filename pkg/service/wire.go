@@ -39,6 +39,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		routing.CreateRouter,
 		getRoomConf,
 		config.DefaultAPIConfig,
+		getClientConfig,
 		wire.Bind(new(routing.MessageRouter), new(routing.Router)),
 		wire.Bind(new(livekit.RoomService), new(*RoomService)),
 		telemetry.NewAnalyticsService,
@@ -57,6 +58,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		NewRoomAllocator,
 		NewRoomService,
 		NewRTCService,
+		NewDefaultSignalService,
 		NewLocalRoomManager,
 		newTurnAuthHandler,
 		newInProcessTurnServer,
@@ -69,6 +71,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routing.Router, error) {
 	wire.Build(
 		createRedisClient,
+		getClientConfig,
 		routing.CreateRouter,
 	)
 
@@ -136,7 +139,7 @@ func createStore(rc redis.UniversalClient) ObjectStore {
 
 func getMessageBus(rc redis.UniversalClient) psrpc.MessageBus {
 	if rc == nil {
-		return nil
+		return psrpc.NewLocalMessageBus()
 	}
 	return psrpc.NewRedisMessageBus(rc)
 }
@@ -181,4 +184,8 @@ func getRoomConf(config *config.Config) config.RoomConfig {
 
 func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Server, error) {
 	return NewTurnServer(conf, authHandler, false)
+}
+
+func getClientConfig(config *config.Config) config.ClientConfig {
+	return config.Clients
 }

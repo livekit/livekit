@@ -40,7 +40,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	router := routing.CreateRouter(universalClient, currentNode)
+	clientConfig := getClientConfig(conf)
+	router := routing.CreateRouter(universalClient, currentNode, clientConfig)
 	objectStore := createStore(universalClient)
 	roomAllocator, err := NewRoomAllocator(conf, router, objectStore)
 	if err != nil {
@@ -88,12 +89,16 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
+	signalService, err := NewDefaultSignalService(currentNode, messageBus, router, roomManager)
+	if err != nil {
+		return nil, err
+	}
 	authHandler := newTurnAuthHandler(objectStore)
 	server, err := newInProcessTurnServer(conf, authHandler)
 	if err != nil {
 		return nil, err
 	}
-	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, ioInfoService, rtcService, keyProvider, router, roomManager, server, currentNode)
+	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, ioInfoService, rtcService, keyProvider, router, roomManager, signalService, server, currentNode)
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +110,8 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 	if err != nil {
 		return nil, err
 	}
-	router := routing.CreateRouter(universalClient, currentNode)
+	clientConfig := getClientConfig(conf)
+	router := routing.CreateRouter(universalClient, currentNode, clientConfig)
 	return router, nil
 }
 
@@ -172,7 +178,7 @@ func createStore(rc redis.UniversalClient) ObjectStore {
 
 func getMessageBus(rc redis.UniversalClient) psrpc.MessageBus {
 	if rc == nil {
-		return nil
+		return psrpc.NewLocalMessageBus()
 	}
 	return psrpc.NewRedisMessageBus(rc)
 }
@@ -217,4 +223,8 @@ func getRoomConf(config2 *config.Config) config.RoomConfig {
 
 func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Server, error) {
 	return NewTurnServer(conf, authHandler, false)
+}
+
+func getClientConfig(config2 *config.Config) config.ClientConfig {
+	return config2.Clients
 }

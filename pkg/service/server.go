@@ -28,18 +28,19 @@ import (
 )
 
 type LivekitServer struct {
-	config      *config.Config
-	ioService   *IOInfoService
-	rtcService  *RTCService
-	httpServer  *http.Server
-	promServer  *http.Server
-	router      routing.Router
-	roomManager *RoomManager
-	turnServer  *turn.Server
-	currentNode routing.LocalNode
-	running     atomic.Bool
-	doneChan    chan struct{}
-	closedChan  chan struct{}
+	config        *config.Config
+	ioService     *IOInfoService
+	rtcService    *RTCService
+	httpServer    *http.Server
+	promServer    *http.Server
+	router        routing.Router
+	roomManager   *RoomManager
+	signalService *SignalService
+	turnServer    *turn.Server
+	currentNode   routing.LocalNode
+	running       atomic.Bool
+	doneChan      chan struct{}
+	closedChan    chan struct{}
 }
 
 func NewLivekitServer(conf *config.Config,
@@ -51,15 +52,17 @@ func NewLivekitServer(conf *config.Config,
 	keyProvider auth.KeyProvider,
 	router routing.Router,
 	roomManager *RoomManager,
+	signalService *SignalService,
 	turnServer *turn.Server,
 	currentNode routing.LocalNode,
 ) (s *LivekitServer, err error) {
 	s = &LivekitServer{
-		config:      conf,
-		ioService:   ioService,
-		rtcService:  rtcService,
-		router:      router,
-		roomManager: roomManager,
+		config:        conf,
+		ioService:     ioService,
+		rtcService:    rtcService,
+		router:        router,
+		roomManager:   roomManager,
+		signalService: signalService,
 		// turn server starts automatically
 		turnServer:  turnServer,
 		currentNode: currentNode,
@@ -252,6 +255,7 @@ func (s *LivekitServer) Start() error {
 	}
 
 	s.roomManager.Stop()
+	s.signalService.Stop()
 	s.ioService.Stop()
 
 	close(s.closedChan)

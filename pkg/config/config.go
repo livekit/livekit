@@ -61,6 +61,7 @@ type Config struct {
 	KeyFile        string                   `yaml:"key_file,omitempty"`
 	Keys           map[string]string        `yaml:"keys,omitempty"`
 	Region         string                   `yaml:"region,omitempty"`
+	Clients        ClientConfig             `yaml:"clients,omitempty"`
 	// LogLevel is deprecated
 	LogLevel string        `yaml:"log_level,omitempty"`
 	Logging  LoggingConfig `yaml:"logging,omitempty"`
@@ -225,6 +226,10 @@ type NodeSelectorConfig struct {
 	CPULoadLimit float32        `yaml:"cpu_load_limit"`
 	SysloadLimit float32        `yaml:"sysload_limit"`
 	Regions      []RegionConfig `yaml:"regions"`
+}
+
+type ClientConfig struct {
+	UsePSRPCSignal bool `yaml:"use_psrpc_signal"`
 }
 
 // RegionConfig lists available regions and their latitude/longitude, so the selector would prefer
