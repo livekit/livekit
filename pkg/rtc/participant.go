@@ -816,52 +816,11 @@ func (p *ParticipantImpl) GetAudioLevel() (level float64, active bool) {
 }
 
 func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo {
-	/* RAJA-REMOVE
-	numTracks := 0
-	minScore := connectionquality.MaxScore
-	for _, score := range p.getPublisherConnectionQuality() {
-		numTracks++
-
-		if score < minScore {
-			minScore = score
-		}
-	}
-
-	subscribedTracks := p.SubscriptionManager.GetSubscribedTracks()
-	for _, subTrack := range subscribedTracks {
-		if subTrack.IsMuted() || subTrack.MediaTrack().IsMuted() {
-			continue
-		}
-
-		numTracks++
-
-		score := subTrack.DownTrack().GetConnectionScoreAndQuality()
-		if score < minScore {
-			minScore = score
-		}
-	}
-
-	if numTracks == 0 {
-		return nil
-	}
-
-	return &livekit.ConnectionQualityInfo{
-		ParticipantSid: string(p.ID()),
-		Quality:        connectionquality.Score2Rating(minScore),
-		Score:          minScore,
-	}
-	*/
-
 	numTracks := 0
 	minQuality := livekit.ConnectionQuality_EXCELLENT
 	minScore := float32(0.0)
 
 	for _, pt := range p.GetPublishedTracks() {
-		// RAJA-TODO: remove this check, this can directly be conveyed by GetScore return value?
-		if pt.IsMuted() {
-			continue
-		}
-
 		numTracks++
 
 		score, quality := pt.(types.LocalMediaTrack).GetConnectionScoreAndQuality()
@@ -876,11 +835,6 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 
 	subscribedTracks := p.SubscriptionManager.GetSubscribedTracks()
 	for _, subTrack := range subscribedTracks {
-		// RAJA-TODO: remove this check, this can directly be conveyed by GetScore return value?
-		if subTrack.IsMuted() || subTrack.MediaTrack().IsMuted() {
-			continue
-		}
-
 		numTracks++
 
 		score, quality := subTrack.DownTrack().GetConnectionScoreAndQuality()
@@ -1578,21 +1532,6 @@ func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) {
 		p.params.Logger.Warnw("could not locate track", nil, "trackID", trackID)
 	}
 }
-
-/* RAJA-REMOVE
-func (p *ParticipantImpl) getPublisherConnectionQuality() map[livekit.TrackID]float32 {
-	publishedTracks := p.GetPublishedTracks()
-	scores := make(map[livekit.TrackID]float32, len(publishedTracks))
-	for _, pt := range publishedTracks {
-		if pt.IsMuted() {
-			continue
-		}
-		scores[pt.ID()] = pt.(types.LocalMediaTrack).GetConnectionScore()
-	}
-
-	return scores
-}
-*/
 
 func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) (*MediaTrack, bool) {
 	p.pendingTracksLock.Lock()

@@ -236,8 +236,6 @@ github.com/livekit/protocol v1.4.3-0.20230228000108-073251b64ab4 h1:Vr8mjL0sb0RR
 github.com/livekit/protocol v1.4.3-0.20230228000108-073251b64ab4/go.mod h1:hkK/G0wwFiLUGp9F5kxeQxq2CQuIzkmfBwKhTsc71us=
 github.com/livekit/psrpc v0.2.9 h1:F9QatmORMcCzzzkDDqFJHe1ZIrJw9rXiluBk33Pmcdw=
 github.com/livekit/psrpc v0.2.9/go.mod h1:K0j8f1PgLShR7Lx80KbmwFkDH2BvOnycXGV0OSRURKc=
-github.com/livekit/rtcscore-go v0.0.0-20230224125650-6a6442ef9ebc h1:C8gL3pCjKmevR38PJ7+TsPS+Rm4Kbba8lwJmjNMqdUU=
-github.com/livekit/rtcscore-go v0.0.0-20230224125650-6a6442ef9ebc/go.mod h1:116ych8UaEs9vfIE8n6iZCZ30iagUFTls0vRmC+Ix5U=
 github.com/mackerelio/go-osstat v0.2.3 h1:jAMXD5erlDE39kdX2CU7YwCGRcxIO33u/p8+Fhe5dJw=
 github.com/mackerelio/go-osstat v0.2.3/go.mod h1:DQbPOnsss9JHIXgBStc/dnhhir3gbd3YH+Dbdi7ptMA=
 github.com/magefile/mage v1.14.0 h1:6QDX3g6z1YvJ4olPhT1wksUcSa/V0a1B+pJb73fBjyo=

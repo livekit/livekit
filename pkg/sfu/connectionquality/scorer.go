@@ -1,6 +1,3 @@
-// RAJA-TODO
-// maintain max_pps and do some adjustment for pps reduction
-// maintain max fps and do some adjustment for fps reduction
 package connectionquality
 
 import (
@@ -39,6 +36,8 @@ type windowStat struct {
 }
 
 func (w *windowStat) calculatePacketScore(plw float64) float64 {
+	// this is based on simplified E-model based on packet loss, rtt, jitter as
+	// outlined at https://www.pingman.com/kb/article/how-is-mos-calculated-in-pingplotter-pro-50.html.
 	effectiveDelay := (float64(w.rttMax) / 2.0) + ((w.jitterMax * 2.0) / 1000.0)
 	delayEffect := effectiveDelay / 40.0
 	if effectiveDelay > 160.0 {
@@ -62,10 +61,15 @@ func (w *windowStat) calculateByteScore(expectedBitrate int64) float64 {
 
 	score := float64(0.0)
 	if w.bytes != 0 {
+		// using the ratio of expectedBitrate / actualBitrate
+		// the quality inflection points are approximately
 		// GOOD at ~2.7x, POOR at ~7.5x
 		score = maxScore - 20*math.Log(float64(expectedBitrate)/float64(w.bytes*8))
 		if score > maxScore {
 			score = maxScore
+		}
+		if score < 0.0 {
+			score = 0.0
 		}
 	}
 
@@ -223,7 +227,6 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
 
-	fmt.Printf("update at: %+v\n", at) // REMOVE
 	// nothing to do when muted or not unmuted for long enough
 	// NOTE: it is possible that unmute -> mute -> unmute transition happens in the
 	//       same analysis window. On a transition to mute, state immediately moves
@@ -231,7 +234,6 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 	//       entire window data is considered (as long as enough time has passed since
 	//       unmute) include the data before mute.
 	if q.isMuted() || !q.isUnmutedEnough(at) {
-		fmt.Printf("muted: %+v, unmuted: %+v, mutesAt: %+v, unmutedAt: %+v\n", q.isMuted(), q.isUnmutedEnough(at), q.mutedAt, q.unmutedAt) // REMOVE
 		q.lastUpdateAt = at
 		return
 	}
@@ -255,10 +257,8 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 			}
 		}
 	}
-	q.params.Logger.Infow("quality stat", "stat", stat, "window", ws) // REMOVE
 	score := ws.getScore()
 	cq := scoreToConnectionQuality(score)
-	fmt.Printf("quality stat: %+v, window: %+v, score: %0.2f, cq: %+v\n\n\n", stat, ws, score, cq) // REMOVE
 
 	q.lastUpdateAt = at
 
@@ -280,7 +280,6 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 	// when recovering, look at a longer window
 	q.windows = append(q.windows, ws)
 	if !q.prune(at) {
-		fmt.Printf("prune returning: len: %d, windows: %+v\n\n\n", len(q.windows), q.windows) // REMOVE
 		// minimum recovery duration not satisfied, hold at current quality
 		return
 	}
@@ -289,7 +288,6 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 	sort.Slice(q.windows, func(i, j int) bool { return q.windows[i].getScore() < q.windows[j].getScore() })
 	mid := (len(q.windows)+1)/2 - 1
 	q.score = q.windows[mid].getScore()
-	fmt.Printf("prune passing: len: %d, windows: %+v, mid: %d, score: %0.2f\n\n\n", len(q.windows), q.windows, mid, q.score) // REMOVE
 	if scoreToConnectionQuality(q.score) == livekit.ConnectionQuality_EXCELLENT {
 		q.state = qualityScorerStateStable
 		q.windows = q.windows[:0]
@@ -309,7 +307,6 @@ func (q *qualityScorer) isUnmutedEnough(at time.Time) bool {
 	}
 
 	sinceLastUpdate := at.Sub(q.lastUpdateAt)
-	fmt.Printf("sinceUnmute: %+v, sinceLastUpdate: %+v, m: %+v, u: %+v, now: %+v\n", sinceUnmute, sinceLastUpdate, q.mutedAt, q.unmutedAt, at) // REMOVE
 
 	return sinceUnmute.Seconds()/sinceLastUpdate.Seconds() > unmuteTimeThreshold
 }
@@ -353,11 +350,9 @@ func (q *qualityScorer) prune(at time.Time) bool {
 		q.windows = q.windows[idx:]
 		break
 	}
-	fmt.Printf("pruned windows: %+v, wait: %+v, startThreshold: %+v, cq: %+v, score: %0.2f, at: %+v\n\n", q.windows, wait, startThreshold, cq, q.score, at) // REMOVE
 
 	// find the oldest window of given quality and check if enough wait happened
 	for idx := 0; idx < len(q.windows); idx++ {
-		fmt.Printf("cq: %+v, idx: %d, idx_cq: %+v, start: %+v, wait: %+v, since: %+v\n", cq, idx, scoreToConnectionQuality(q.windows[idx].getScore()), q.windows[idx].getStartTime(), wait, at.Sub(q.windows[idx].getStartTime())) // REMOVE
 		if cq == scoreToConnectionQuality(q.windows[idx].getScore()) {
 			return at.Sub(q.windows[idx].getStartTime()) >= wait
 		}
@@ -418,6 +413,8 @@ func (q *qualityScorer) GetMOSAndQuality() (float32, livekit.ConnectionQuality) 
 // ------------------------------------------
 
 func scoreToConnectionQuality(score float64) livekit.ConnectionQuality {
+	// R-factor -> livekit.ConnectionQuality scale mapping based on
+	// https://www.itu.int/ITU-T/2005-2008/com12/emodelv1/tut.htm
 	if score > 80.0 {
 		return livekit.ConnectionQuality_EXCELLENT
 	}

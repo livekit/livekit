@@ -265,14 +265,7 @@ func NewDownTrack(
 		MimeType:      codecs[0].MimeType, // LK-TODO have to notify on codec change
 		IsFECEnabled:  strings.EqualFold(codecs[0].MimeType, webrtc.MimeTypeOpus) && strings.Contains(strings.ToLower(codecs[0].SDPFmtpLine), "fec"),
 		GetDeltaStats: d.getDeltaStats,
-		GetMaxExpectedLayer: func() int32 {
-			return d.forwarder.MaxLayers().Spatial
-		},
-		GetCurrentLayerSpatial: func() int32 {
-			return d.forwarder.CurrentLayers().Spatial
-		},
-		GetIsReducedQuality: d.forwarder.IsReducedQuality,
-		Logger:              d.logger,
+		Logger:        d.logger,
 	})
 	d.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
 		if d.onStatsUpdate != nil {

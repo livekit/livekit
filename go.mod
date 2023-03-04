@@ -19,7 +19,6 @@ require (
 	github.com/livekit/mediatransportutil v0.0.0-20230130133657-96cfb115473a
 	github.com/livekit/protocol v1.4.3-0.20230228000108-073251b64ab4
 	github.com/livekit/psrpc v0.2.9
-	github.com/livekit/rtcscore-go v0.0.0-20230224125650-6a6442ef9ebc
 	github.com/mackerelio/go-osstat v0.2.3
 	github.com/magefile/mage v1.14.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.6.1

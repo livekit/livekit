@@ -264,62 +264,6 @@ func (s *StreamTrackerManager) SetMaxExpectedSpatialLayer(layer int32) int32 {
 	return prev
 }
 
-func (s *StreamTrackerManager) DistanceToDesired() int32 {
-	s.lock.RLock()
-	defer s.lock.RUnlock()
-
-	if s.paused {
-		return 0
-	}
-
-	maxExpectedLayer := s.getMaxExpectedLayerLocked()
-	if len(s.availableLayers) == 0 {
-		return maxExpectedLayer + 1
-	}
-
-	distance := maxExpectedLayer - s.availableLayers[len(s.availableLayers)-1]
-	if distance < 0 {
-		distance = 0
-	}
-
-	return distance
-}
-
-func (s *StreamTrackerManager) GetLayerDimension(layer int32) (uint32, uint32) {
-	height := uint32(0)
-	width := uint32(0)
-	if len(s.trackInfo.Layers) > 0 {
-		quality := buffer.SpatialLayerToVideoQuality(layer, s.trackInfo)
-		for _, layer := range s.trackInfo.Layers {
-			if layer.Quality == quality {
-				height = layer.Height
-				width = layer.Width
-				break
-			}
-		}
-	} else {
-		width = s.trackInfo.Width
-		height = s.trackInfo.Height
-	}
-	return width, height
-}
-
-func (s *StreamTrackerManager) GetMaxExpectedLayer() int32 {
-	s.lock.RLock()
-	defer s.lock.RUnlock()
-
-	return s.getMaxExpectedLayerLocked()
-}
-
-func (s *StreamTrackerManager) getMaxExpectedLayerLocked() int32 {
-	// find min of <expected, published> layer
-	maxExpectedLayer := s.maxExpectedLayer
-	if maxExpectedLayer > s.maxPublishedLayer {
-		maxExpectedLayer = s.maxPublishedLayer
-	}
-	return maxExpectedLayer
-}
-
 func (s *StreamTrackerManager) GetMaxPublishedLayer() int32 {
 	s.lock.RLock()
 	defer s.lock.RUnlock()

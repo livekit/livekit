@@ -2,7 +2,6 @@ package connectionquality
 
 import (
 	"strings"
-	"sync"
 	"time"
 
 	"go.uber.org/atomic"
@@ -20,39 +19,22 @@ const (
 )
 
 type ConnectionStatsParams struct {
-	UpdateInterval         time.Duration
-	MimeType               string
-	IsFECEnabled           bool
-	GetDeltaStats          func() map[uint32]*buffer.StreamStatsWithLayers
-	GetMaxExpectedLayer    func() int32
-	GetCurrentLayerSpatial func() int32
-	GetIsReducedQuality    func() (int32, bool)
-	Logger                 logger.Logger
+	UpdateInterval time.Duration
+	MimeType       string
+	IsFECEnabled   bool
+	GetDeltaStats  func() map[uint32]*buffer.StreamStatsWithLayers
+	Logger         logger.Logger
 }
 
 type ConnectionStats struct {
-	params ConnectionStatsParams
-	// RAJA-REMOVE codecName string // RAJA-REMOVE
+	params    ConnectionStatsParams
 	trackInfo *livekit.TrackInfo
 
 	onStatsUpdate func(cs *ConnectionStats, stat *livekit.AnalyticsStat)
 
 	scorer *qualityScorer
 
-	lock sync.RWMutex // RAJA-REMOVE - don't think this is needed as only trackInfo is protected by it and trackInfo read happens from goroutine which is started after trackInfo is written.
-	/* RAJA-REMOVE
-	score            float32   // RAJA-REMOVE
-	lastUpdate       time.Time // RAJA-REMOVE
-	*/
-	maxExpectedLayer int32
-
-	// RAJA-REMOVE done     chan struct{}
 	isClosed atomic.Bool
-
-	// RAJA-TODO
-	//   - mute/unmute time
-	//   - max expected layer change time
-	//   - forwarder target layer switch time
 }
 
 func NewConnectionStats(params ConnectionStatsParams) *ConnectionStats {
@@ -62,17 +44,11 @@ func NewConnectionStats(params ConnectionStatsParams) *ConnectionStats {
 			PacketLossWeight: getPacketLossWeight(params.MimeType, params.IsFECEnabled), // LK-TODO: have to notify codec change?
 			Logger:           params.Logger,
 		}),
-		// RAJA-REMOVE codecName: getCodecNameFromMime(params.MimeType), // LK-TODO: have to notify on codec change
-		// RAJA-REMOVE score:            MaxScore,
-		maxExpectedLayer: buffer.InvalidLayerSpatial,
-		// RAJA-REMOVE done:             make(chan struct{}),
 	}
 }
 
 func (cs *ConnectionStats) Start(trackInfo *livekit.TrackInfo, at time.Time) {
-	cs.lock.Lock()
 	cs.trackInfo = trackInfo
-	cs.lock.Unlock()
 
 	cs.scorer.Start(at)
 
@@ -80,13 +56,6 @@ func (cs *ConnectionStats) Start(trackInfo *livekit.TrackInfo, at time.Time) {
 }
 
 func (cs *ConnectionStats) Close() {
-	/* RAJA-REMOVE
-	if cs.isClosed.Swap(true) {
-		return
-	}
-
-	close(cs.done)
-	*/
 	cs.isClosed.Store(true)
 }
 
@@ -103,159 +72,10 @@ func (cs *ConnectionStats) AddTransition(bitrate int64, at time.Time) {
 }
 
 func (cs *ConnectionStats) GetScoreAndQuality() (float32, livekit.ConnectionQuality) {
-	/* RAJA-REMOVE
-	cs.lock.RLock()
-	defer cs.lock.RUnlock()
-
-	return cs.score
-	*/
-
-	// RAJA-TODO: change to GetScoreAndQuality() maybe?
 	return cs.scorer.GetMOSAndQuality()
 }
 
-func (cs *ConnectionStats) getLayerDimensions(layer int32) (uint32, uint32) {
-	// RAJA-TODO: check if this needs to be locked?
-	if cs.trackInfo == nil {
-		return 0, 0
-	}
-
-	for _, l := range cs.trackInfo.Layers {
-		if layer == buffer.VideoQualityToSpatialLayer(l.Quality, cs.trackInfo) {
-			return l.Width, l.Height
-		}
-	}
-
-	return 0, 0
-}
-
-/* RAJA-REMOVE
-type windowStat struct {
-	startTime       time.Time
-	duration        time.Duration
-	packetsExpected uint32
-	packetsLost     uint32
-	rttMax          uint32
-	jitterMax       float64
-}
-*/
-
 func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWithLayers, at time.Time) float32 {
-	/* RAJA-TODO
-	cs.lock.Lock()
-	defer cs.lock.Unlock()
-
-	// Initial interval will have partial data
-	if cs.lastUpdate.IsZero() {
-		cs.lastUpdate = time.Now()
-		cs.score = MaxScore
-		return cs.score
-	}
-
-	cs.lastUpdate = time.Now()
-
-	var params TrackScoreParams
-	switch {
-	case cs.trackInfo.Type == livekit.TrackType_AUDIO:
-		_, maxAvailableLayerStats := getMaxAvailableLayerStats(streams, 0)
-		if maxAvailableLayerStats == nil {
-			// retain old score as stats will not be available when muted
-			break
-		}
-
-		params = getTrackScoreParams(cs.codecName, maxAvailableLayerStats)
-		packetRate := float64(params.PacketsExpected) / maxAvailableLayerStats.Duration.Seconds()
-		if packetRate < audioPacketRateThreshold {
-			// With DTX, it is possible to have fewer packets per second.
-			// A loss with reduced packet rate has amplified negative effect on quality.
-			// Opus uses 20 ms packetisation (50 pps). Calculate score only if packet rate is at least half of that.
-			break
-		}
-
-		cs.score = AudioTrackScore(params)
-
-	case cs.trackInfo.Type == livekit.TrackType_VIDEO:
-		//
-		// See note below about muxed tracks quality calculation challenges.
-		//
-		// This part concerns simulcast + dynacast challeges.
-		// A sub-optimal solution is to measure only in windows where the max layer is stable.
-		// With adaptive stream, it is possible that subscription changes max layer.
-		// When expected layer changes from low -> high, the stats in that window
-		// (when the change happens) will correspond to lower layer at least partially.
-		// Using that to calculate against expected higher layer could result in lower score.
-		//
-		maxExpectedLayer := cs.params.GetMaxExpectedLayer()
-		if maxExpectedLayer == buffer.InvalidLayerSpatial || maxExpectedLayer != cs.maxExpectedLayer {
-			cs.maxExpectedLayer = maxExpectedLayer
-			if maxExpectedLayer == buffer.InvalidLayerSpatial {
-				// if not expecting data, reset the score to maximum
-				cs.score = MaxScore
-			}
-			break
-		}
-
-		cs.maxExpectedLayer = maxExpectedLayer
-
-		maxAvailableLayer, maxAvailableLayerStats := getMaxAvailableLayerStats(streams, maxExpectedLayer)
-		if maxAvailableLayerStats == nil {
-			// retain old score as stats will not be available when muted
-			break
-		}
-
-		params = getTrackScoreParams(cs.codecName, maxAvailableLayerStats)
-
-		// for muxed tracks, i. e. simulcast publisher muxed into a single track,
-		// use the current spatial layer.
-		// NOTE: This is still not perfect as muxing means layers could have changed
-		// in the analysis window. Needs a more complex design to keep track of all layer
-		// switches to be able to do precise calculations. As the window is small,
-		// using the current and maximum is a reasonable approximation.
-		if cs.params.GetCurrentLayerSpatial != nil {
-			maxAvailableLayer = cs.params.GetCurrentLayerSpatial()
-			if maxAvailableLayer == buffer.InvalidLayerSpatial {
-				// retain old score as stats will not be available if not forwarding
-				break
-			}
-		}
-		params.Width, params.Height = cs.getLayerDimensions(maxAvailableLayer)
-		if cs.trackInfo.Source == livekit.TrackSource_SCREEN_SHARE || params.Width == 0 || params.Height == 0 {
-			if cs.params.GetIsReducedQuality != nil {
-				_, params.IsReducedQuality = cs.params.GetIsReducedQuality()
-			}
-
-			cs.score = LossBasedTrackScore(params)
-		} else {
-			cs.score = VideoTrackScore(params)
-			if cs.params.GetIsReducedQuality != nil {
-				// penalty of one level per layer away from desired/expected layer
-				distanceToDesired, isDeficient := cs.params.GetIsReducedQuality()
-				if isDeficient {
-					cs.score -= float32(distanceToDesired)
-				}
-				cs.score = float32(clamp(float64(cs.score), float64(MinScore), float64(MaxScore)))
-			}
-		}
-	}
-
-	return cs.score
-	*/
-
-	/* RAJA-TODO
-	// RAJA-TODO - calculate max expected layer properly
-	var stat *windowStat
-	_, maxAvailableLayerStats := getMaxAvailableLayerStats(streams, 0)
-	if maxAvailableLayerStats != nil {
-		stat = &windowStat{
-			startedAt:       maxAvailableLayerStats.StartTime,
-			duration:        maxAvailableLayerStats.Duration,
-			packetsExpected: maxAvailableLayerStats.Packets + maxAvailableLayerStats.PacketsPadding,
-			packetsLost:     maxAvailableLayerStats.PacketsLost,
-			rttMax:          maxAvailableLayerStats.RttMax,
-			jitterMax:       maxAvailableLayerStats.JitterMax,
-		}
-	}
-	*/
 	var stat windowStat
 	for _, s := range streams {
 		if stat.startedAt.IsZero() || stat.startedAt.After(s.RTPStats.StartTime) {
@@ -326,25 +146,6 @@ func (cs *ConnectionStats) updateStatsWorker() {
 	tk := time.NewTicker(interval)
 	defer tk.Stop()
 
-	/* RAJA-REMOVE
-	for {
-		select {
-		case <-cs.done:
-			return
-
-		case <-tk.C:
-			stat := cs.getStat()
-			if stat == nil {
-				continue
-			}
-
-			if cs.onStatsUpdate != nil {
-				cs.onStatsUpdate(cs, stat)
-			}
-		}
-	}
-	*/
-
 	for {
 		<-tk.C
 
@@ -364,17 +165,6 @@ func (cs *ConnectionStats) updateStatsWorker() {
 }
 
 // -----------------------------------------------------------------------
-
-/* RAJA-REMOVE
-func getCodecNameFromMime(mime string) string {
-	codecName := ""
-	codecParsed := strings.Split(strings.ToLower(mime), "/")
-	if len(codecParsed) > 1 {
-		codecName = codecParsed[1]
-	}
-	return codecName
-}
-*/
 
 // how much weight to give to packet loss rate when calculating score.
 // It is codec dependent.
@@ -436,42 +226,5 @@ func toAnalyticsVideoLayer(layer int32, layerStats *buffer.RTPDeltaInfo) *liveki
 		Packets: layerStats.Packets + layerStats.PacketsDuplicate + layerStats.PacketsPadding,
 		Bytes:   layerStats.Bytes + layerStats.BytesDuplicate + layerStats.BytesPadding,
 		Frames:  layerStats.Frames,
-	}
-}
-
-func getMaxAvailableLayerStats(streams map[uint32]*buffer.StreamStatsWithLayers, maxExpectedLayer int32) (int32, *buffer.RTPDeltaInfo) {
-	if maxExpectedLayer == buffer.InvalidLayerSpatial {
-		return buffer.InvalidLayerSpatial, nil
-	}
-
-	maxAvailableLayer := buffer.InvalidLayerSpatial
-	var maxAvailableLayerStats *buffer.RTPDeltaInfo
-	for _, stream := range streams {
-		for layer, layerStats := range stream.Layers {
-			if int32(layer) > maxExpectedLayer {
-				continue
-			}
-
-			if int32(layer) > maxAvailableLayer {
-				maxAvailableLayer = int32(layer)
-				maxAvailableLayerStats = layerStats
-			}
-		}
-	}
-
-	return maxAvailableLayer, maxAvailableLayerStats
-}
-
-// RAJA-REMOVE
-func getTrackScoreParams(codec string, layerStats *buffer.RTPDeltaInfo) TrackScoreParams {
-	return TrackScoreParams{
-		Duration:        layerStats.Duration,
-		Codec:           codec,
-		PacketsExpected: layerStats.Packets + layerStats.PacketsPadding,
-		PacketsLost:     layerStats.PacketsLost,
-		Bytes:           layerStats.Bytes - layerStats.HeaderBytes, // only use media payload size
-		Frames:          layerStats.Frames,
-		Jitter:          layerStats.JitterMax,
-		Rtt:             layerStats.RttMax,
 	}
 }
