@@ -238,21 +238,26 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 		return
 	}
 
+	reason := "none"
 	var ws *windowScore
 	if stat == nil {
+		reason = "dry"
 		ws = newWindowScoreWithScore(&windowStat{
 			startedAt: q.lastUpdateAt,
 			duration:  at.Sub(q.lastUpdateAt),
 		}, poorScore)
 	} else {
 		if stat.packetsExpected == 0 {
+			reason = "dry"
 			ws = newWindowScoreWithScore(stat, poorScore)
 		} else {
 			wsPacket := newWindowScorePacket(stat, q.getPacketLossWeight(stat))
 			wsByte := newWindowScoreByte(stat, q.getExpectedBitsAndUpdateTransitions(at))
 			if wsPacket.getScore() < wsByte.getScore() {
+				reason = "packet"
 				ws = wsPacket
 			} else {
+				reason = "bitrate"
 				ws = wsByte
 			}
 		}
@@ -268,6 +273,13 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 		q.windows = []*windowScore{ws}
 		q.state = qualityScorerStateRecovering
 		q.score = score
+		q.params.Logger.Infow(
+			"quality drop",
+			"reaason", reason,
+			"score", q.score,
+			"quality", scoreToConnectionQuality(q.score),
+			"window", ws,
+		)
 		return
 	}
 
