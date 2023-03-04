@@ -8,6 +8,7 @@ require (
 	github.com/dustin/go-humanize v1.0.1
 	github.com/elliotchance/orderedmap/v2 v2.2.0
 	github.com/florianl/go-tc v0.4.2
+	github.com/frostbyte73/core v0.0.4
 	github.com/gammazero/deque v0.1.0
 	github.com/gammazero/workerpool v1.1.2
 	github.com/google/wire v0.5.0
@@ -60,7 +61,6 @@ require (
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/eapache/channels v1.1.0 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
-	github.com/frostbyte73/core v0.0.4 // indirect
 	github.com/go-logr/logr v1.2.3 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/google/go-cmp v0.5.9 // indirect

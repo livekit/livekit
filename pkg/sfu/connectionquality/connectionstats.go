@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"go.uber.org/atomic"
+	"github.com/frostbyte73/core"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -34,7 +34,7 @@ type ConnectionStats struct {
 
 	scorer *qualityScorer
 
-	isClosed atomic.Bool
+	done core.Fuse
 }
 
 func NewConnectionStats(params ConnectionStatsParams) *ConnectionStats {
@@ -44,6 +44,7 @@ func NewConnectionStats(params ConnectionStatsParams) *ConnectionStats {
 			PacketLossWeight: getPacketLossWeight(params.MimeType, params.IsFECEnabled), // LK-TODO: have to notify codec change?
 			Logger:           params.Logger,
 		}),
+		done: core.NewFuse(),
 	}
 }
 
@@ -56,7 +57,7 @@ func (cs *ConnectionStats) Start(trackInfo *livekit.TrackInfo, at time.Time) {
 }
 
 func (cs *ConnectionStats) Close() {
-	cs.isClosed.Store(true)
+	cs.done.Break()
 }
 
 func (cs *ConnectionStats) OnStatsUpdate(fn func(cs *ConnectionStats, stat *livekit.AnalyticsStat)) {
@@ -147,19 +148,23 @@ func (cs *ConnectionStats) updateStatsWorker() {
 	defer tk.Stop()
 
 	for {
-		<-tk.C
-
-		if cs.isClosed.Load() {
+		select {
+		case <-cs.done.Watch():
 			return
-		}
 
-		stat := cs.getStat(time.Now())
-		if stat == nil {
-			continue
-		}
+		case <-tk.C:
+			if cs.done.IsClosed() {
+				return
+			}
 
-		if cs.onStatsUpdate != nil {
-			cs.onStatsUpdate(cs, stat)
+			stat := cs.getStat(time.Now())
+			if stat == nil {
+				continue
+			}
+
+			if cs.onStatsUpdate != nil {
+				cs.onStatsUpdate(cs, stat)
+			}
 		}
 	}
 }
