@@ -232,7 +232,7 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 	//       same analysis window. On a transition to mute, state immediately moves
 	//       to stable and quality EXCELLENT for responsiveness. On an unmute, the
 	//       entire window data is considered (as long as enough time has passed since
-	//       unmute) include the data before mute.
+	//       unmute) including the data before mute.
 	if q.isMuted() || !q.isUnmutedEnough(at) {
 		q.lastUpdateAt = at
 		return
@@ -388,6 +388,7 @@ func (q *qualityScorer) getExpectedBitsAndUpdateTransitions(at time.Time) int64 
 	}
 	totalBits += at.Sub(startedAt).Seconds() * float64(lt.bitrate)
 
+	// set up last bit rate as the startig bit rate for next analysis window
 	q.transitions = []layerTransition{layerTransition{
 		startedAt: at,
 		bitrate:   lt.bitrate,

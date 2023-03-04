@@ -439,30 +439,6 @@ func (f *Forwarder) GetReferenceLayerSpatial() int32 {
 	return f.referenceLayerSpatial
 }
 
-func (f *Forwarder) IsReducedQuality() (int32, bool) {
-	f.lock.RLock()
-	defer f.lock.RUnlock()
-
-	if f.muted || f.pubMuted || f.lastAllocation.pauseReason == VideoPauseReasonFeedDry || f.targetLayers.Spatial == InvalidLayerSpatial {
-		return 0, false
-	}
-
-	if f.currentLayers.Spatial != f.targetLayers.Spatial {
-		//
-		// Waiting for layer lock, do not declare reduced quality.
-		// Note the target might actually be a lower layer than current.
-		//
-		return 0, false
-	}
-
-	distance := f.maxLayers.Spatial - f.currentLayers.Spatial
-	if distance < 0 {
-		distance = 0
-	}
-
-	return distance, f.isDeficientLocked()
-}
-
 func (f *Forwarder) isDeficientLocked() bool {
 	return f.lastAllocation.isDeficient
 }
