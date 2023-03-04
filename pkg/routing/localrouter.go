@@ -8,10 +8,8 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
 )
 
 // aggregated channel for all participants
@@ -19,8 +17,10 @@ const localRTCChannelSize = 10000
 
 // a router of messages on the same node, basic implementation for local testing
 type LocalRouter struct {
-	currentNode LocalNode
-	lock        sync.RWMutex
+	currentNode  LocalNode
+	signalClient SignalClient
+
+	lock sync.RWMutex
 	// channels for each participant
 	requestChannels  map[string]*MessageChannel
 	responseChannels map[string]*MessageChannel
@@ -32,9 +32,10 @@ type LocalRouter struct {
 	onRTCMessage     RTCMessageCallback
 }
 
-func NewLocalRouter(currentNode LocalNode) *LocalRouter {
+func NewLocalRouter(currentNode LocalNode, signalClient SignalClient) *LocalRouter {
 	return &LocalRouter{
 		currentNode:      currentNode,
+		signalClient:     signalClient,
 		requestChannels:  make(map[string]*MessageChannel),
 		responseChannels: make(map[string]*MessageChannel),
 		rtcMessageChan:   NewMessageChannel(localRTCChannelSize),
@@ -83,51 +84,19 @@ func (r *LocalRouter) ListNodes() ([]*livekit.Node, error) {
 }
 
 func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit) (connectionID livekit.ConnectionID, reqSink MessageSink, resSource MessageSource, err error) {
-	prometheus.IncrementParticipantRtcInit(1)
-	// treat it as a new participant connecting
-	if r.onNewParticipant == nil {
-		err = ErrHandlerNotDefined
-		return
-	}
+	return r.StartParticipantSignalWithNodeID(ctx, roomName, pi, livekit.NodeID(r.currentNode.Id))
+}
 
-	// create a new connection id
-	connectionID = livekit.ConnectionID(utils.NewGuid("CO_"))
-	// index channels by roomName | identity
-	key := participantKey(roomName, pi.Identity)
-	key = key + "|" + livekit.ParticipantKey(connectionID)
-
-	// close older channels if one already exists
-	reqChan := r.getMessageChannel(r.requestChannels, string(key))
-	if reqChan != nil {
-		reqChan.Close()
-	}
-	resChan := r.getMessageChannel(r.responseChannels, string(key))
-	if resChan != nil {
-		resChan.Close()
-	}
-	reqChan = r.getOrCreateMessageChannel(r.requestChannels, string(key))
-	resChan = r.getOrCreateMessageChannel(r.responseChannels, string(key))
-
-	go func() {
-		err := r.onNewParticipant(
-			ctx,
-			roomName,
-			pi,
-			// request source
-			reqChan,
-			// response sink
-			resChan,
+func (r *LocalRouter) StartParticipantSignalWithNodeID(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit, nodeID livekit.NodeID) (connectionID livekit.ConnectionID, reqSink MessageSink, resSource MessageSource, err error) {
+	connectionID, reqSink, resSource, err = r.signalClient.StartParticipantSignal(ctx, roomName, pi, livekit.NodeID(r.currentNode.Id))
+	if err != nil {
+		logger.Errorw("could not handle new participant", err,
+			"room", roomName,
+			"participant", pi.Identity,
+			"connectionID", connectionID,
 		)
-		if err != nil {
-			reqChan.Close()
-			resChan.Close()
-			logger.Errorw("could not handle new participant", err,
-				"room", roomName,
-				"participant", pi.Identity,
-			)
-		}
-	}()
-	return connectionID, reqChan, resChan, nil
+	}
+	return
 }
 
 func (r *LocalRouter) WriteParticipantRTC(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) error {
