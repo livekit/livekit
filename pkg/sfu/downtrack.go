@@ -29,6 +29,7 @@ type TrackSender interface {
 	UpTrackLayersChange()
 	UpTrackBitrateAvailabilityChange()
 	UpTrackMaxPublishedLayerChange(maxPublishedLayer int32)
+	UpTrackBitrateReport(availableLayers []int32, bitrates Bitrates)
 	WriteRTP(p *buffer.ExtPacket, layer int32) error
 	Close()
 	IsClosed() bool
@@ -874,6 +875,10 @@ func (d *DownTrack) UpTrackMaxPublishedLayerChange(maxPublishedLayer int32) {
 	if d.onMaxPublishedLayerChanged != nil {
 		d.onMaxPublishedLayerChanged(d)
 	}
+}
+
+func (d *DownTrack) UpTrackBitrateReport(availableLayers []int32, bitrates Bitrates) {
+	d.connectionStats.AddTransition(d.forwarder.GetOptimalBandwidthNeeded(availableLayers, bitrates), time.Now())
 }
 
 // OnCloseHandler method to be called on remote tracked removed

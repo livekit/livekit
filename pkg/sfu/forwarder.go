@@ -478,6 +478,13 @@ func (f *Forwarder) DistanceToDesired() int32 {
 	return f.lastAllocation.distanceToDesired
 }
 
+func (f *Forwarder) GetOptimalBandwidthNeeded(_availableLayers []int32, brs Bitrates) int64 {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+
+	return getOptimalBandwidthNeeded(f.muted, f.pubMuted, f.maxPublishedLayer, brs, f.maxLayers)
+}
+
 func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allowOvershoot bool) VideoAllocation {
 	f.lock.Lock()
 	defer f.lock.Unlock()
