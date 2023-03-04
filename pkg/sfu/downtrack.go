@@ -263,6 +263,7 @@ func NewDownTrack(
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
 		MimeType:      codecs[0].MimeType, // LK-TODO have to notify on codec change
+		IsFECEnabled:  strings.EqualFold(codecs[0].MimeType, webrtc.MimeTypeOpus) && strings.Contains(strings.ToLower(codecs[0].SDPFmtpLine), "fec"),
 		GetDeltaStats: d.getDeltaStats,
 		GetMaxExpectedLayer: func() int32 {
 			return d.forwarder.MaxLayers().Spatial

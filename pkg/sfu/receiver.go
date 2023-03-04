@@ -208,6 +208,7 @@ func NewWebRTCReceiver(
 
 	w.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
 		MimeType:            w.codec.MimeType,
+		IsFECEnabled:        strings.EqualFold(w.codec.MimeType, webrtc.MimeTypeOpus) && strings.Contains(strings.ToLower(w.codec.SDPFmtpLine), "fec"),
 		GetDeltaStats:       w.getDeltaStats,
 		GetMaxExpectedLayer: w.streamTrackerManager.GetMaxExpectedLayer,
 		GetIsReducedQuality: func() (int32, bool) {

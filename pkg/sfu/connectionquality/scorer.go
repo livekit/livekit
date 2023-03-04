@@ -33,11 +33,12 @@ type windowStat struct {
 	duration        time.Duration
 	packetsExpected uint32
 	packetsLost     uint32
+	bytes           uint64
 	rttMax          uint32
 	jitterMax       float64
 }
 
-func (w *windowStat) calculateScore(plw float64) float64 {
+func (w *windowStat) calculatePacketScore(plw float64) float64 {
 	effectiveDelay := (float64(w.rttMax) / 2.0) + ((w.jitterMax * 2.0) / 1000.0)
 	delayEffect := effectiveDelay / 40.0
 	if effectiveDelay > 160.0 {
@@ -53,16 +54,35 @@ func (w *windowStat) calculateScore(plw float64) float64 {
 	return maxScore - delayEffect - lossEffect
 }
 
+func (w *windowStat) calculateByteScore(expectedBitrate int64) float64 {
+	if expectedBitrate == 0 {
+		// unsupported mode
+		return maxScore
+	}
+
+	score := float64(0.0)
+	if w.bytes != 0 {
+		// GOOD at ~2.7x, POOR at ~7.5x
+		score = maxScore - 20*math.Log(float64(expectedBitrate)/float64(w.bytes*8))
+		if score > maxScore {
+			score = maxScore
+		}
+	}
+
+	return score
+}
+
 func (w *windowStat) getStartTime() time.Time {
 	return w.startedAt
 }
 
 func (w *windowStat) String() string {
-	return fmt.Sprintf("start: %+v, dur: %+v, pe: %d, pl: %d, rtt: %d, jitter: %0.2f",
+	return fmt.Sprintf("start: %+v, dur: %+v, pe: %d, pl: %d, b: %d, rtt: %d, jitter: %0.2f",
 		w.startedAt,
 		w.duration,
 		w.packetsExpected,
 		w.packetsLost,
+		w.bytes,
 		w.rttMax,
 		w.jitterMax,
 	)
@@ -75,10 +95,17 @@ type windowScore struct {
 	score float64
 }
 
-func newWindowScore(stat *windowStat, plw float64) *windowScore {
+func newWindowScorePacket(stat *windowStat, plw float64) *windowScore {
 	return &windowScore{
 		stat:  stat,
-		score: stat.calculateScore(plw),
+		score: stat.calculatePacketScore(plw),
+	}
+}
+
+func newWindowScoreByte(stat *windowStat, expectedBitrate int64) *windowScore {
+	return &windowScore{
+		stat:  stat,
+		score: stat.calculateByteScore(expectedBitrate),
 	}
 }
 
@@ -123,6 +150,11 @@ func (q qualityScorerState) String() string {
 
 // ------------------------------------------
 
+type layerTransition struct {
+	startedAt time.Time
+	bitrate   int64
+}
+
 type qualityScorerParams struct {
 	PacketLossWeight float64
 	Logger           logger.Logger
@@ -142,6 +174,8 @@ type qualityScorer struct {
 	unmutedAt time.Time
 
 	maxPPS float64
+
+	transitions []layerTransition
 }
 
 func newQualityScorer(params qualityScorerParams) *qualityScorer {
@@ -175,6 +209,16 @@ func (q *qualityScorer) UpdateMute(isMuted bool, at time.Time) {
 	}
 }
 
+func (q *qualityScorer) AddTransition(bitrate int64, at time.Time) {
+	q.lock.Lock()
+	defer q.lock.Unlock()
+
+	q.transitions = append(q.transitions, layerTransition{
+		startedAt: at,
+		bitrate:   bitrate,
+	})
+}
+
 func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
@@ -202,7 +246,13 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 		if stat.packetsExpected == 0 {
 			ws = newWindowScoreWithScore(stat, poorScore)
 		} else {
-			ws = newWindowScore(stat, q.getPacketLossWeight(stat))
+			wsPacket := newWindowScorePacket(stat, q.getPacketLossWeight(stat))
+			wsByte := newWindowScoreByte(stat, q.getExpectedBitsAndUpdateTransitions(at))
+			if wsPacket.getScore() < wsByte.getScore() {
+				ws = wsPacket
+			} else {
+				ws = wsByte
+			}
 		}
 	}
 	q.params.Logger.Infow("quality stat", "stat", stat, "window", ws) // REMOVE
@@ -314,6 +364,41 @@ func (q *qualityScorer) prune(at time.Time) bool {
 	}
 
 	return false
+}
+
+func (q *qualityScorer) getExpectedBitsAndUpdateTransitions(at time.Time) int64 {
+	if len(q.transitions) == 0 {
+		return 0
+	}
+
+	var startedAt time.Time
+	totalBits := float64(0.0)
+	for idx := 0; idx < len(q.transitions)-1; idx++ {
+		lt := &q.transitions[idx]
+		ltNext := &q.transitions[idx+1]
+
+		if lt.startedAt.After(q.lastUpdateAt) {
+			startedAt = lt.startedAt
+		} else {
+			startedAt = q.lastUpdateAt
+		}
+		totalBits += ltNext.startedAt.Sub(startedAt).Seconds() * float64(lt.bitrate)
+	}
+	// last transition
+	lt := &q.transitions[len(q.transitions)-1]
+	if lt.startedAt.After(q.lastUpdateAt) {
+		startedAt = lt.startedAt
+	} else {
+		startedAt = q.lastUpdateAt
+	}
+	totalBits += at.Sub(startedAt).Seconds() * float64(lt.bitrate)
+
+	q.transitions = []layerTransition{layerTransition{
+		startedAt: at,
+		bitrate:   lt.bitrate,
+	}}
+
+	return int64(totalBits)
 }
 
 func (q *qualityScorer) GetScoreAndQuality() (float32, livekit.ConnectionQuality) {

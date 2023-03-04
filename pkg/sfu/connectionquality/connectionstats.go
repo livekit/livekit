@@ -22,7 +22,7 @@ const (
 type ConnectionStatsParams struct {
 	UpdateInterval         time.Duration
 	MimeType               string
-	IsFECEnabled           bool // RAJA-TODO: this needs to be passed in
+	IsFECEnabled           bool
 	GetDeltaStats          func() map[uint32]*buffer.StreamStatsWithLayers
 	GetMaxExpectedLayer    func() int32
 	GetCurrentLayerSpatial func() int32
@@ -96,6 +96,10 @@ func (cs *ConnectionStats) OnStatsUpdate(fn func(cs *ConnectionStats, stat *live
 
 func (cs *ConnectionStats) UpdateMute(isMuted bool, at time.Time) {
 	cs.scorer.UpdateMute(isMuted, at)
+}
+
+func (cs *ConnectionStats) AddTransition(bitrate int64, at time.Time) {
+	cs.scorer.AddTransition(bitrate, at)
 }
 
 func (cs *ConnectionStats) GetScoreAndQuality() (float32, livekit.ConnectionQuality) {
@@ -237,6 +241,7 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 	return cs.score
 	*/
 
+	/* RAJA-TODO
 	// RAJA-TODO - calculate max expected layer properly
 	var stat *windowStat
 	_, maxAvailableLayerStats := getMaxAvailableLayerStats(streams, 0)
@@ -250,7 +255,26 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 			jitterMax:       maxAvailableLayerStats.JitterMax,
 		}
 	}
-	cs.scorer.Update(stat, at)
+	*/
+	var stat windowStat
+	for _, s := range streams {
+		if stat.startedAt.IsZero() || stat.startedAt.After(s.RTPStats.StartTime) {
+			stat.startedAt = s.RTPStats.StartTime
+		}
+		if stat.duration < s.RTPStats.Duration {
+			stat.duration = s.RTPStats.Duration
+		}
+		stat.packetsExpected += s.RTPStats.Packets + s.RTPStats.PacketsPadding
+		stat.packetsLost += s.RTPStats.PacketsLost
+		if stat.rttMax < s.RTPStats.RttMax {
+			stat.rttMax = s.RTPStats.RttMax
+		}
+		if stat.jitterMax < s.RTPStats.JitterMax {
+			stat.jitterMax = s.RTPStats.JitterMax
+		}
+		stat.bytes += s.RTPStats.Bytes - s.RTPStats.HeaderBytes // only use media payload size
+	}
+	cs.scorer.Update(&stat, at)
 
 	mos, _ := cs.scorer.GetMOSAndQuality()
 	return mos
