@@ -29,6 +29,7 @@ type TrackSender interface {
 	UpTrackLayersChange()
 	UpTrackBitrateAvailabilityChange()
 	UpTrackMaxPublishedLayerChange(maxPublishedLayer int32)
+	UpTrackBitrateReport(availableLayers []int32, bitrates Bitrates)
 	WriteRTP(p *buffer.ExtPacket, layer int32) error
 	Close()
 	IsClosed() bool
@@ -876,6 +877,18 @@ func (d *DownTrack) UpTrackMaxPublishedLayerChange(maxPublishedLayer int32) {
 	}
 }
 
+func (d *DownTrack) maybeAddTransition(bitrate int64) {
+	if d.kind == webrtc.RTPCodecTypeAudio {
+		return
+	}
+
+	d.connectionStats.AddTransition(bitrate, time.Now())
+}
+
+func (d *DownTrack) UpTrackBitrateReport(_availableLayers []int32, bitrates Bitrates) {
+	d.maybeAddTransition(d.forwarder.GetOptimalBandwidthNeeded(bitrates))
+}
+
 // OnCloseHandler method to be called on remote tracked removed
 func (d *DownTrack) OnCloseHandler(fn func(willBeResumed bool)) {
 	d.onCloseHandler = fn
@@ -964,6 +977,7 @@ func (d *DownTrack) AllocateOptimal(allowOvershoot bool) VideoAllocation {
 	al, brs := d.receiver.GetLayeredBitrate()
 	allocation := d.forwarder.AllocateOptimal(al, brs, allowOvershoot)
 	d.maybeStartKeyFrameRequester()
+	d.maybeAddTransition(allocation.bandwidthNeeded)
 	return allocation
 }
 
@@ -991,6 +1005,7 @@ func (d *DownTrack) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 func (d *DownTrack) ProvisionalAllocateCommit() VideoAllocation {
 	allocation := d.forwarder.ProvisionalAllocateCommit()
 	d.maybeStartKeyFrameRequester()
+	d.maybeAddTransition(allocation.bandwidthNeeded)
 	return allocation
 }
 
@@ -998,6 +1013,7 @@ func (d *DownTrack) AllocateNextHigher(availableChannelCapacity int64, allowOver
 	_, brs := d.receiver.GetLayeredBitrate()
 	allocation, available := d.forwarder.AllocateNextHigher(availableChannelCapacity, brs, allowOvershoot)
 	d.maybeStartKeyFrameRequester()
+	d.maybeAddTransition(allocation.bandwidthNeeded)
 	return allocation, available
 }
 
@@ -1012,6 +1028,7 @@ func (d *DownTrack) Pause() VideoAllocation {
 	_, brs := d.receiver.GetLayeredBitrate()
 	allocation := d.forwarder.Pause(brs)
 	d.maybeStartKeyFrameRequester()
+	d.maybeAddTransition(allocation.bandwidthNeeded)
 	return allocation
 }
 

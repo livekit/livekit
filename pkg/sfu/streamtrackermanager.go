@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 
+	"github.com/frostbyte73/core"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/streamtracker"
@@ -32,10 +34,13 @@ type StreamTrackerManager struct {
 	senderReportMu sync.RWMutex
 	senderReports  [DefaultMaxLayerSpatial + 1]*buffer.RTCPSenderReportDataExt
 
+	closed core.Fuse
+
 	onAvailableLayersChanged     func()
 	onBitrateAvailabilityChanged func()
 	onMaxPublishedLayerChanged   func(maxPublishedLayer int32)
 	onMaxAvailableLayerChanged   func(maxAvailableLayer int32)
+	onBitrateReport              func(availableLayers []int32, bitrates Bitrates)
 }
 
 func NewStreamTrackerManager(
@@ -51,6 +56,7 @@ func NewStreamTrackerManager(
 		isSVC:             isSVC,
 		maxPublishedLayer: InvalidLayerSpatial,
 		clockRate:         clockRate,
+		closed:            core.NewFuse(),
 	}
 
 	switch s.trackInfo.Source {
@@ -63,7 +69,13 @@ func NewStreamTrackerManager(
 	}
 
 	s.maxExpectedLayerFromTrackInfo()
+
+	go s.bitrateReporter()
 	return s
+}
+
+func (s *StreamTrackerManager) Close() {
+	s.closed.Break()
 }
 
 func (s *StreamTrackerManager) OnAvailableLayersChanged(f func()) {
@@ -80,6 +92,10 @@ func (s *StreamTrackerManager) OnMaxPublishedLayerChanged(f func(maxPublishedLay
 
 func (s *StreamTrackerManager) OnMaxLayerChanged(f func(maxAvailableLayer int32)) {
 	s.onMaxAvailableLayerChanged = f
+}
+
+func (s *StreamTrackerManager) OnBitrateReport(f func(availableLayers []int32, bitrates Bitrates)) {
+	s.onBitrateReport = f
 }
 
 func (s *StreamTrackerManager) createStreamTrackerPacket(layer int32) streamtracker.StreamTrackerImpl {
@@ -466,4 +482,21 @@ func (s *StreamTrackerManager) GetReferenceLayerRTPTimestamp(ts uint32, layer in
 	// Add the offset to layer's ts to map it to corresponding RTP timestamp in
 	// the reference layer.
 	return ts + (srRef.SenderReportData.RTPTimestamp - normalizedTS), nil
+}
+
+func (s *StreamTrackerManager) bitrateReporter() {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-s.closed.Watch():
+			return
+
+		case <-ticker.C:
+			if s.onBitrateReport != nil {
+				s.onBitrateReport(s.GetLayeredBitrate())
+			}
+		}
+	}
 }

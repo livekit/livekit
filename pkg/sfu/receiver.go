@@ -195,6 +195,7 @@ func NewWebRTCReceiver(
 	w.streamTrackerManager.OnAvailableLayersChanged(w.downTrackLayerChange)
 	w.streamTrackerManager.OnBitrateAvailabilityChanged(w.downTrackBitrateAvailabilityChange)
 	w.streamTrackerManager.OnMaxPublishedLayerChanged(w.downTrackMaxPublishedLayerChange)
+	w.streamTrackerManager.OnBitrateReport(w.downTrackBitrateReport)
 
 	for _, opt := range opts {
 		w = opt(w)
@@ -427,6 +428,12 @@ func (w *WebRTCReceiver) downTrackMaxPublishedLayerChange(maxPublishedLayer int3
 	w.notifyMaxExpectedLayer(maxPublishedLayer)
 }
 
+func (w *WebRTCReceiver) downTrackBitrateReport(availableLayers []int32, bitrates Bitrates) {
+	for _, dt := range w.downTrackSpreader.GetDownTracks() {
+		dt.UpTrackBitrateReport(availableLayers, bitrates)
+	}
+}
+
 func (w *WebRTCReceiver) GetLayeredBitrate() ([]int32, Bitrates) {
 	return w.streamTrackerManager.GetLayeredBitrate()
 }
@@ -634,6 +641,7 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 // closeTracks close all tracks from Receiver
 func (w *WebRTCReceiver) closeTracks() {
 	w.connectionStats.Close()
+	w.streamTrackerManager.Close()
 
 	for _, dt := range w.downTrackSpreader.ResetAndGetDownTracks() {
 		dt.Close()
