@@ -151,6 +151,7 @@ func TestConnectionQuality(t *testing.T) {
 		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, quality)
 
 		// POOR -> GOOD -> EXCELLENT should take longer
+		now = now.Add(duration)
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
 			1: &buffer.StreamStatsWithLayers{
 				RTPStats: &buffer.RTPDeltaInfo{
@@ -344,6 +345,13 @@ func TestConnectionQuality(t *testing.T) {
 		mos, quality = cs.GetScoreAndQuality()
 		require.Greater(t, float32(4.1), mos)
 		require.Equal(t, livekit.ConnectionQuality_GOOD, quality)
+
+		// a transition to 0 (all layers stopped) should flip quality to EXCELLENT
+		now = now.Add(duration)
+		cs.AddTransition(0, now)
+		mos, quality = cs.GetScoreAndQuality()
+		require.Greater(t, float32(4.6), mos)
+		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, quality)
 	})
 
 	t.Run("codecs - packets", func(t *testing.T) {
@@ -579,7 +587,7 @@ func TestConnectionQuality(t *testing.T) {
 
 				duration := 5 * time.Second
 				now := time.Now()
-				cs.Start(&livekit.TrackInfo{Type: livekit.TrackType_AUDIO}, now.Add(-duration))
+				cs.Start(&livekit.TrackInfo{Type: livekit.TrackType_VIDEO}, now)
 
 				for _, tr := range tc.transitions {
 					cs.AddTransition(tr.bitrate, now.Add(tr.offset))

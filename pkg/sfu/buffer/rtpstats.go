@@ -271,7 +271,8 @@ func (r *RTPStats) Seed(from *RTPStats) {
 
 	r.nextSnapshotId = from.nextSnapshotId
 	for id, ss := range from.snapshots {
-		r.snapshots[id] = ss
+		ssCopy := *ss
+		r.snapshots[id] = &ssCopy
 	}
 }
 
@@ -332,7 +333,7 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 
 		// initialize snapshots if any
 		for i := uint32(FirstSnapshotId); i < r.nextSnapshotId; i++ {
-			r.snapshots[i] = &Snapshot{extStartSN: r.extStartSN}
+			r.snapshots[i] = &Snapshot{startTime: r.startTime, extStartSN: r.extStartSN}
 		}
 	}
 
@@ -1270,6 +1271,7 @@ func (r *RTPStats) getAndResetSnapshot(snapshotId uint32) (*Snapshot, *Snapshot)
 	then := r.snapshots[snapshotId]
 	if then == nil {
 		then = &Snapshot{
+			startTime:  r.startTime,
 			extStartSN: r.extStartSN,
 		}
 		r.snapshots[snapshotId] = then

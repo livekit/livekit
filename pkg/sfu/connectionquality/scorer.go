@@ -17,8 +17,8 @@ const (
 	maxScore  = float64(100.0)
 	poorScore = float64(50.0)
 
-	waitForQualityPoor = 25 * time.Second
-	waitForQualityGood = 15 * time.Second
+	waitForQualityPoor = 5
+	waitForQualityGood = 3
 
 	unmuteTimeThreshold = float64(0.5)
 )
@@ -55,7 +55,7 @@ func (w *windowStat) calculatePacketScore(plw float64) float64 {
 
 func (w *windowStat) calculateByteScore(expectedBitrate int64) float64 {
 	if expectedBitrate == 0 {
-		// unsupported mode
+		// unsupported mode OR all layers stopped
 		return maxScore
 	}
 
@@ -74,10 +74,6 @@ func (w *windowStat) calculateByteScore(expectedBitrate int64) float64 {
 	}
 
 	return score
-}
-
-func (w *windowStat) getStartTime() time.Time {
-	return w.startedAt
 }
 
 func (w *windowStat) String() string {
@@ -122,10 +118,6 @@ func newWindowScoreWithScore(stat *windowStat, score float64) *windowScore {
 
 func (w *windowScore) getScore() float64 {
 	return w.score
-}
-
-func (w *windowScore) getStartTime() time.Time {
-	return w.stat.getStartTime()
 }
 
 func (w *windowScore) String() string {
@@ -177,6 +169,9 @@ type qualityScorer struct {
 	mutedAt   time.Time
 	unmutedAt time.Time
 
+	layersMutedAt   time.Time
+	layersUnmutedAt time.Time
+
 	maxPPS float64
 
 	transitions []layerTransition
@@ -221,11 +216,27 @@ func (q *qualityScorer) AddTransition(bitrate int64, at time.Time) {
 		startedAt: at,
 		bitrate:   bitrate,
 	})
+
+	if bitrate == 0 {
+		q.layersMutedAt = at
+
+		// stable when no layers expected
+		q.state = qualityScorerStateStable
+		q.windows = q.windows[:0]
+		q.score = maxScore
+	} else {
+		if q.layersUnmutedAt.IsZero() || q.layersMutedAt.After(q.layersUnmutedAt) {
+			q.layersUnmutedAt = at
+		}
+	}
 }
 
 func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
+
+	// always update transitions
+	expectedBitrate := q.getExpectedBitsAndUpdateTransitions(at)
 
 	// nothing to do when muted or not unmuted for long enough
 	// NOTE: it is possible that unmute -> mute -> unmute transition happens in the
@@ -233,7 +244,7 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 	//       to stable and quality EXCELLENT for responsiveness. On an unmute, the
 	//       entire window data is considered (as long as enough time has passed since
 	//       unmute) including the data before mute.
-	if q.isMuted() || !q.isUnmutedEnough(at) {
+	if q.isMuted() || !q.isUnmutedEnough(at) || q.areLayersMuted() {
 		q.lastUpdateAt = at
 		return
 	}
@@ -252,7 +263,7 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 			ws = newWindowScoreWithScore(stat, poorScore)
 		} else {
 			wsPacket := newWindowScorePacket(stat, q.getPacketLossWeight(stat))
-			wsByte := newWindowScoreByte(stat, q.getExpectedBitsAndUpdateTransitions(at))
+			wsByte := newWindowScoreByte(stat, expectedBitrate)
 			if wsPacket.getScore() < wsByte.getScore() {
 				reason = "packet"
 				ws = wsPacket
@@ -279,6 +290,7 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 			"score", q.score,
 			"quality", scoreToConnectionQuality(q.score),
 			"window", ws,
+			"expectedBitrate", expectedBitrate,
 		)
 		return
 	}
@@ -318,9 +330,25 @@ func (q *qualityScorer) isUnmutedEnough(at time.Time) bool {
 		sinceUnmute = at.Sub(q.unmutedAt)
 	}
 
+	var sinceLayersUnmute time.Duration
+	if q.layersUnmutedAt.IsZero() {
+		sinceLayersUnmute = at.Sub(q.lastUpdateAt)
+	} else {
+		sinceLayersUnmute = at.Sub(q.layersUnmutedAt)
+	}
+
+	validDuration := sinceUnmute
+	if sinceLayersUnmute < validDuration {
+		validDuration = sinceLayersUnmute
+	}
+
 	sinceLastUpdate := at.Sub(q.lastUpdateAt)
 
-	return sinceUnmute.Seconds()/sinceLastUpdate.Seconds() > unmuteTimeThreshold
+	return validDuration.Seconds()/sinceLastUpdate.Seconds() > unmuteTimeThreshold
+}
+
+func (q *qualityScorer) areLayersMuted() bool {
+	return !q.layersMutedAt.IsZero() && (q.layersUnmutedAt.IsZero() || q.layersMutedAt.After(q.layersUnmutedAt))
 }
 
 func (q *qualityScorer) getPacketLossWeight(stat *windowStat) float64 {
@@ -344,33 +372,20 @@ func (q *qualityScorer) getPacketLossWeight(stat *windowStat) float64 {
 func (q *qualityScorer) prune(at time.Time) bool {
 	cq := scoreToConnectionQuality(q.score)
 
-	var wait time.Duration
+	var wait int
 	if cq == livekit.ConnectionQuality_POOR {
 		wait = waitForQualityPoor
 	} else {
 		wait = waitForQualityGood
 	}
 
-	startThreshold := at.Add(-wait)
-	sort.Slice(q.windows, func(i, j int) bool { return q.windows[i].getStartTime().Before(q.windows[j].getStartTime()) })
-	for idx := 0; idx < len(q.windows); idx++ {
-		w := q.windows[idx]
-		if w.getStartTime().Before(startThreshold) {
-			continue
-		}
-
-		q.windows = q.windows[idx:]
-		break
+	oldest := len(q.windows) - wait
+	if oldest < 0 {
+		oldest = 0
 	}
+	q.windows = q.windows[oldest:]
 
-	// find the oldest window of given quality and check if enough wait happened
-	for idx := 0; idx < len(q.windows); idx++ {
-		if cq == scoreToConnectionQuality(q.windows[idx].getScore()) {
-			return at.Sub(q.windows[idx].getStartTime()) >= wait
-		}
-	}
-
-	return false
+	return len(q.windows) >= wait
 }
 
 func (q *qualityScorer) getExpectedBitsAndUpdateTransitions(at time.Time) int64 {
