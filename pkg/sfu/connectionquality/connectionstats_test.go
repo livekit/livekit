@@ -1,7 +1,6 @@
 package connectionquality
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
@@ -260,7 +259,6 @@ func TestConnectionQuality(t *testing.T) {
 		require.Greater(t, float32(4.6), mos)
 		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, quality)
 
-		fmt.Printf("last update\n") // REMOVE
 		// next update with no packets should knock quality down
 		now = now.Add(duration)
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
