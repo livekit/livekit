@@ -308,9 +308,11 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 					}, false)
 				}
 
-				update := &livekit.ConnectionQualityUpdate{}
-				update.Updates = append(update.Updates, pub.GetConnectionQuality())
-				_ = participant.SendConnectionQualityUpdate(update)
+				if cq := pub.GetConnectionQuality(); cq != nil {
+					update := &livekit.ConnectionQualityUpdate{}
+					update.Updates = append(update.Updates, cq)
+					_ = participant.SendConnectionQualityUpdate(update)
+				}
 			}
 		} else {
 			// no longer subscribed to the publisher, clear speaker status

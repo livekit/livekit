@@ -42,6 +42,7 @@ type IntervalStats struct {
 }
 
 type RTPDeltaInfo struct {
+	StartTime            time.Time
 	Duration             time.Duration
 	Packets              uint32
 	Bytes                uint64
@@ -270,7 +271,8 @@ func (r *RTPStats) Seed(from *RTPStats) {
 
 	r.nextSnapshotId = from.nextSnapshotId
 	for id, ss := range from.snapshots {
-		r.snapshots[id] = ss
+		ssCopy := *ss
+		r.snapshots[id] = &ssCopy
 	}
 }
 
@@ -331,7 +333,7 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 
 		// initialize snapshots if any
 		for i := uint32(FirstSnapshotId); i < r.nextSnapshotId; i++ {
-			r.snapshots[i] = &Snapshot{extStartSN: r.extStartSN}
+			r.snapshots[i] = &Snapshot{startTime: r.startTime, extStartSN: r.extStartSN}
 		}
 	}
 
@@ -868,9 +870,23 @@ func (r *RTPStats) DeltaInfo(snapshotId uint32) *RTPDeltaInfo {
 	packetsLost := uint32(0)
 	intervalStats := r.getIntervalStats(uint16(then.extStartSN), uint16(now.extStartSN))
 	if r.params.IsReceiverReportDriven {
+		// by taking number of packets from interval report, packets not sent (because of missing packets in feed) will be accounted for
+		packetsExpected = intervalStats.packets + intervalStats.packetsPadding
+		if packetsExpected == 0 {
+			return nil
+		}
+
 		packetsLost = now.packetsLostOverridden - then.packetsLostOverridden
 		if int32(packetsLost) < 0 {
 			packetsLost = 0
+		}
+
+		if packetsLost > packetsExpected {
+			r.logger.Warnw(
+				"unexpected number of packets lost",
+				fmt.Errorf("start: %d, end: %d, expected: %d, lost: %d", then.extStartSN, now.extStartSN, packetsExpected, packetsLost),
+			)
+			packetsLost = packetsExpected
 		}
 	} else {
 		packetsLost = intervalStats.packetsLost
@@ -883,6 +899,7 @@ func (r *RTPStats) DeltaInfo(snapshotId uint32) *RTPDeltaInfo {
 	maxJitterTime := maxJitter / float64(r.params.ClockRate) * 1e6
 
 	return &RTPDeltaInfo{
+		StartTime:            then.startTime,
 		Duration:             now.startTime.Sub(then.startTime),
 		Packets:              packetsExpected - intervalStats.packetsPadding,
 		Bytes:                intervalStats.bytes,
@@ -1254,6 +1271,7 @@ func (r *RTPStats) getAndResetSnapshot(snapshotId uint32) (*Snapshot, *Snapshot)
 	then := r.snapshots[snapshotId]
 	if then == nil {
 		then = &Snapshot{
+			startTime:  r.startTime,
 			extStartSN: r.extStartSN,
 		}
 		r.snapshots[snapshotId] = then

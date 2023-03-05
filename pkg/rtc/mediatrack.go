@@ -18,6 +18,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
@@ -312,12 +313,13 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	return newCodec
 }
 
-func (t *MediaTrack) GetConnectionScore() float32 {
+func (t *MediaTrack) GetConnectionScoreAndQuality() (float32, livekit.ConnectionQuality) {
 	receiver := t.PrimaryReceiver()
 	if rtcReceiver, ok := receiver.(*sfu.WebRTCReceiver); ok {
-		return rtcReceiver.GetConnectionScore()
+		return rtcReceiver.GetConnectionScoreAndQuality()
 	}
-	return 0.0
+
+	return connectionquality.MaxMOS, livekit.ConnectionQuality_EXCELLENT
 }
 
 func (t *MediaTrack) SetRTT(rtt uint32) {

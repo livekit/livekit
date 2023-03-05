@@ -263,15 +263,9 @@ func NewDownTrack(
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
 		MimeType:      codecs[0].MimeType, // LK-TODO have to notify on codec change
+		IsFECEnabled:  strings.EqualFold(codecs[0].MimeType, webrtc.MimeTypeOpus) && strings.Contains(strings.ToLower(codecs[0].SDPFmtpLine), "fec"),
 		GetDeltaStats: d.getDeltaStats,
-		GetMaxExpectedLayer: func() int32 {
-			return d.forwarder.MaxLayers().Spatial
-		},
-		GetCurrentLayerSpatial: func() int32 {
-			return d.forwarder.CurrentLayers().Spatial
-		},
-		GetIsReducedQuality: d.forwarder.IsReducedQuality,
-		Logger:              d.logger,
+		Logger:        d.logger,
 	})
 	d.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
 		if d.onStatsUpdate != nil {
@@ -363,7 +357,7 @@ func (d *DownTrack) TrackInfoAvailable() {
 	if ti == nil {
 		return
 	}
-	d.connectionStats.Start(ti)
+	d.connectionStats.Start(ti, time.Now())
 }
 
 // ID is the unique identifier for this Track. This should be unique for the
@@ -683,6 +677,8 @@ func (d *DownTrack) handleMute(muted bool, isPub bool, changed bool, maxLayers V
 	if !changed {
 		return
 	}
+
+	d.connectionStats.UpdateMute(d.forwarder.IsAnyMuted(), time.Now())
 
 	//
 	// Subscriber mute changes trigger a max layer notification.
@@ -1554,8 +1550,8 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 	}
 }
 
-func (d *DownTrack) GetConnectionScore() float32 {
-	return d.connectionStats.GetScore()
+func (d *DownTrack) GetConnectionScoreAndQuality() (float32, livekit.ConnectionQuality) {
+	return d.connectionStats.GetScoreAndQuality()
 }
 
 func (d *DownTrack) GetTrackStats() *livekit.RTPStats {

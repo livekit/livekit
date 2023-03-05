@@ -23,7 +23,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/auth"
@@ -818,35 +817,45 @@ func (p *ParticipantImpl) GetAudioLevel() (level float64, active bool) {
 }
 
 func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo {
-	publisherScores := p.getPublisherConnectionQuality()
+	numTracks := 0
+	minQuality := livekit.ConnectionQuality_EXCELLENT
+	minScore := float32(0.0)
 
-	numTracks := len(publisherScores)
-	totalScore := float32(0.0)
-	for _, score := range publisherScores {
-		totalScore += score
+	for _, pt := range p.GetPublishedTracks() {
+		numTracks++
+
+		score, quality := pt.(types.LocalMediaTrack).GetConnectionScoreAndQuality()
+		if quality < minQuality {
+			// WARNING NOTE: comparing protobuf enums directly
+			minQuality = quality
+			minScore = score
+		} else if quality == minQuality && score < minScore {
+			minScore = score
+		}
 	}
 
 	subscribedTracks := p.SubscriptionManager.GetSubscribedTracks()
-	subscriberScores := make(map[livekit.TrackID]float32, len(subscribedTracks))
 	for _, subTrack := range subscribedTracks {
-		if subTrack.IsMuted() || subTrack.MediaTrack().IsMuted() {
-			continue
-		}
-		score := subTrack.DownTrack().GetConnectionScore()
-		subscriberScores[subTrack.ID()] = score
-		totalScore += score
 		numTracks++
+
+		score, quality := subTrack.DownTrack().GetConnectionScoreAndQuality()
+		if quality < minQuality {
+			// WARNING NOTE: comparing protobuf enums directly
+			minQuality = quality
+			minScore = score
+		} else if quality == minQuality && score < minScore {
+			minScore = score
+		}
 	}
 
-	avgScore := float32(5.0)
-	if numTracks > 0 {
-		avgScore = totalScore / float32(numTracks)
+	if numTracks == 0 {
+		return nil
 	}
 
 	return &livekit.ConnectionQualityInfo{
 		ParticipantSid: string(p.ID()),
-		Quality:        connectionquality.Score2Rating(avgScore),
-		Score:          avgScore,
+		Quality:        minQuality,
+		Score:          minScore,
 	}
 }
 
@@ -1524,19 +1533,6 @@ func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) {
 	if !isPending && track == nil {
 		p.params.Logger.Warnw("could not locate track", nil, "trackID", trackID)
 	}
-}
-
-func (p *ParticipantImpl) getPublisherConnectionQuality() map[livekit.TrackID]float32 {
-	publishedTracks := p.GetPublishedTracks()
-	scores := make(map[livekit.TrackID]float32, len(publishedTracks))
-	for _, pt := range publishedTracks {
-		if pt.IsMuted() {
-			continue
-		}
-		scores[pt.ID()] = pt.(types.LocalMediaTrack).GetConnectionScore()
-	}
-
-	return scores
 }
 
 func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) (*MediaTrack, bool) {
