@@ -108,6 +108,7 @@ func (cs *ConnectionStats) getStat(at time.Time) *livekit.AnalyticsStat {
 
 	streams := cs.params.GetDeltaStats()
 	if len(streams) == 0 {
+		cs.updateScore(streams, at)
 		return nil
 	}
 
