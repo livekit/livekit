@@ -95,7 +95,9 @@ func (s *StreamTrackerManager) OnMaxLayerChanged(f func(maxAvailableLayer int32)
 }
 
 func (s *StreamTrackerManager) OnBitrateReport(f func(availableLayers []int32, bitrates Bitrates)) {
+	s.lock.Lock()
 	s.onBitrateReport = f
+	s.lock.Unlock()
 }
 
 func (s *StreamTrackerManager) createStreamTrackerPacket(layer int32) streamtracker.StreamTrackerImpl {
@@ -494,8 +496,12 @@ func (s *StreamTrackerManager) bitrateReporter() {
 			return
 
 		case <-ticker.C:
-			if s.onBitrateReport != nil {
-				s.onBitrateReport(s.GetLayeredBitrate())
+			s.lock.RLock()
+			onBitrateReport := s.onBitrateReport
+			s.lock.RUnlock()
+
+			if onBitrateReport != nil {
+				onBitrateReport(s.GetLayeredBitrate())
 			}
 		}
 	}
