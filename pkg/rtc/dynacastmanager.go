@@ -140,9 +140,8 @@ func (d *DynacastManager) getOrCreateDynacastQuality(mime string) *DynacastQuali
 	}
 
 	dq := NewDynacastQuality(DynacastQualityParams{
-		MimeType:           mime,
-		DynacastPauseDelay: d.params.DynacastPauseDelay,
-		Logger:             d.params.Logger,
+		MimeType: mime,
+		Logger:   d.params.Logger,
 	})
 	dq.OnSubscribedMaxQualityChange(func(maxQuality livekit.VideoQuality) {
 		d.updateMaxQualityForMime(mime, maxQuality)

@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 
+	"github.com/frostbyte73/core"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/streamtracker"
@@ -32,10 +34,13 @@ type StreamTrackerManager struct {
 	senderReportMu sync.RWMutex
 	senderReports  [DefaultMaxLayerSpatial + 1]*buffer.RTCPSenderReportDataExt
 
+	closed core.Fuse
+
 	onAvailableLayersChanged     func()
 	onBitrateAvailabilityChanged func()
 	onMaxPublishedLayerChanged   func(maxPublishedLayer int32)
 	onMaxAvailableLayerChanged   func(maxAvailableLayer int32)
+	onBitrateReport              func(availableLayers []int32, bitrates Bitrates)
 }
 
 func NewStreamTrackerManager(
@@ -51,6 +56,7 @@ func NewStreamTrackerManager(
 		isSVC:             isSVC,
 		maxPublishedLayer: InvalidLayerSpatial,
 		clockRate:         clockRate,
+		closed:            core.NewFuse(),
 	}
 
 	switch s.trackInfo.Source {
@@ -63,7 +69,13 @@ func NewStreamTrackerManager(
 	}
 
 	s.maxExpectedLayerFromTrackInfo()
+
+	go s.bitrateReporter()
 	return s
+}
+
+func (s *StreamTrackerManager) Close() {
+	s.closed.Break()
 }
 
 func (s *StreamTrackerManager) OnAvailableLayersChanged(f func()) {
@@ -80,6 +92,12 @@ func (s *StreamTrackerManager) OnMaxPublishedLayerChanged(f func(maxPublishedLay
 
 func (s *StreamTrackerManager) OnMaxLayerChanged(f func(maxAvailableLayer int32)) {
 	s.onMaxAvailableLayerChanged = f
+}
+
+func (s *StreamTrackerManager) OnBitrateReport(f func(availableLayers []int32, bitrates Bitrates)) {
+	s.lock.Lock()
+	s.onBitrateReport = f
+	s.lock.Unlock()
 }
 
 func (s *StreamTrackerManager) createStreamTrackerPacket(layer int32) streamtracker.StreamTrackerImpl {
@@ -262,62 +280,6 @@ func (s *StreamTrackerManager) SetMaxExpectedSpatialLayer(layer int32) int32 {
 	}
 
 	return prev
-}
-
-func (s *StreamTrackerManager) DistanceToDesired() int32 {
-	s.lock.RLock()
-	defer s.lock.RUnlock()
-
-	if s.paused {
-		return 0
-	}
-
-	maxExpectedLayer := s.getMaxExpectedLayerLocked()
-	if len(s.availableLayers) == 0 {
-		return maxExpectedLayer + 1
-	}
-
-	distance := maxExpectedLayer - s.availableLayers[len(s.availableLayers)-1]
-	if distance < 0 {
-		distance = 0
-	}
-
-	return distance
-}
-
-func (s *StreamTrackerManager) GetLayerDimension(layer int32) (uint32, uint32) {
-	height := uint32(0)
-	width := uint32(0)
-	if len(s.trackInfo.Layers) > 0 {
-		quality := buffer.SpatialLayerToVideoQuality(layer, s.trackInfo)
-		for _, layer := range s.trackInfo.Layers {
-			if layer.Quality == quality {
-				height = layer.Height
-				width = layer.Width
-				break
-			}
-		}
-	} else {
-		width = s.trackInfo.Width
-		height = s.trackInfo.Height
-	}
-	return width, height
-}
-
-func (s *StreamTrackerManager) GetMaxExpectedLayer() int32 {
-	s.lock.RLock()
-	defer s.lock.RUnlock()
-
-	return s.getMaxExpectedLayerLocked()
-}
-
-func (s *StreamTrackerManager) getMaxExpectedLayerLocked() int32 {
-	// find min of <expected, published> layer
-	maxExpectedLayer := s.maxExpectedLayer
-	if maxExpectedLayer > s.maxPublishedLayer {
-		maxExpectedLayer = s.maxPublishedLayer
-	}
-	return maxExpectedLayer
 }
 
 func (s *StreamTrackerManager) GetMaxPublishedLayer() int32 {
@@ -522,4 +484,25 @@ func (s *StreamTrackerManager) GetReferenceLayerRTPTimestamp(ts uint32, layer in
 	// Add the offset to layer's ts to map it to corresponding RTP timestamp in
 	// the reference layer.
 	return ts + (srRef.SenderReportData.RTPTimestamp - normalizedTS), nil
+}
+
+func (s *StreamTrackerManager) bitrateReporter() {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-s.closed.Watch():
+			return
+
+		case <-ticker.C:
+			s.lock.RLock()
+			onBitrateReport := s.onBitrateReport
+			s.lock.RUnlock()
+
+			if onBitrateReport != nil {
+				onBitrateReport(s.GetLayeredBitrate())
+			}
+		}
+	}
 }

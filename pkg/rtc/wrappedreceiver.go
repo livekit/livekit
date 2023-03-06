@@ -259,13 +259,6 @@ func (d *DummyReceiver) DebugInfo() map[string]interface{} {
 	return nil
 }
 
-func (d *DummyReceiver) GetLayerDimension(quality int32) (uint32, uint32) {
-	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
-		return r.GetLayerDimension(quality)
-	}
-	return 0, 0
-}
-
 func (d *DummyReceiver) GetTemporalLayerFpsForSpatial(spatial int32) []float32 {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		return r.GetTemporalLayerFpsForSpatial(spatial)

@@ -7,6 +7,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -60,6 +61,17 @@ type RTCMessageCallback func(
 	msg *livekit.RTCNodeMessage,
 )
 
+type NewSignalClientCallabck func(
+	roomName livekit.RoomName,
+	pi ParticipantInit,
+	nodeID livekit.NodeID,
+) (
+	connectionID livekit.ConnectionID,
+	reqSink MessageSink,
+	resSource MessageSource,
+	err error,
+)
+
 // Router allows multiple nodes to coordinate the participant session
 //
 //counterfeiter:generate . Router
@@ -98,14 +110,16 @@ type MessageRouter interface {
 	WriteRoomRTC(ctx context.Context, roomName livekit.RoomName, msg *livekit.RTCNodeMessage) error
 }
 
-func CreateRouter(rc redis.UniversalClient, node LocalNode) Router {
+func CreateRouter(config *config.Config, rc redis.UniversalClient, node LocalNode, signalClient SignalClient) Router {
+	lr := NewLocalRouter(node, signalClient)
+
 	if rc != nil {
-		return NewRedisRouter(node, rc)
+		return NewRedisRouter(config, lr, rc)
 	}
 
 	// local routing and store
 	logger.Infow("using single-node routing")
-	return NewLocalRouter(node)
+	return lr
 }
 
 func (pi *ParticipantInit) ToStartSession(roomName livekit.RoomName, connectionID livekit.ConnectionID) (*livekit.StartSession, error) {

@@ -29,6 +29,7 @@ type TrackSender interface {
 	UpTrackLayersChange()
 	UpTrackBitrateAvailabilityChange()
 	UpTrackMaxPublishedLayerChange(maxPublishedLayer int32)
+	UpTrackBitrateReport(availableLayers []int32, bitrates Bitrates)
 	WriteRTP(p *buffer.ExtPacket, layer int32) error
 	Close()
 	IsClosed() bool
@@ -263,15 +264,9 @@ func NewDownTrack(
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
 		MimeType:      codecs[0].MimeType, // LK-TODO have to notify on codec change
+		IsFECEnabled:  strings.EqualFold(codecs[0].MimeType, webrtc.MimeTypeOpus) && strings.Contains(strings.ToLower(codecs[0].SDPFmtpLine), "fec"),
 		GetDeltaStats: d.getDeltaStats,
-		GetMaxExpectedLayer: func() int32 {
-			return d.forwarder.MaxLayers().Spatial
-		},
-		GetCurrentLayerSpatial: func() int32 {
-			return d.forwarder.CurrentLayers().Spatial
-		},
-		GetIsReducedQuality: d.forwarder.IsReducedQuality,
-		Logger:              d.logger,
+		Logger:        d.logger,
 	})
 	d.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
 		if d.onStatsUpdate != nil {
@@ -363,7 +358,7 @@ func (d *DownTrack) TrackInfoAvailable() {
 	if ti == nil {
 		return
 	}
-	d.connectionStats.Start(ti)
+	d.connectionStats.Start(ti, time.Now())
 }
 
 // ID is the unique identifier for this Track. This should be unique for the
@@ -684,6 +679,8 @@ func (d *DownTrack) handleMute(muted bool, isPub bool, changed bool, maxLayers V
 		return
 	}
 
+	d.connectionStats.UpdateMute(d.forwarder.IsAnyMuted(), time.Now())
+
 	//
 	// Subscriber mute changes trigger a max layer notification.
 	// That could result in encoding layers getting turned on/off on publisher side
@@ -880,6 +877,18 @@ func (d *DownTrack) UpTrackMaxPublishedLayerChange(maxPublishedLayer int32) {
 	}
 }
 
+func (d *DownTrack) maybeAddTransition(bitrate int64) {
+	if d.kind == webrtc.RTPCodecTypeAudio {
+		return
+	}
+
+	d.connectionStats.AddTransition(bitrate, time.Now())
+}
+
+func (d *DownTrack) UpTrackBitrateReport(_availableLayers []int32, bitrates Bitrates) {
+	d.maybeAddTransition(d.forwarder.GetOptimalBandwidthNeeded(bitrates))
+}
+
 // OnCloseHandler method to be called on remote tracked removed
 func (d *DownTrack) OnCloseHandler(fn func(willBeResumed bool)) {
 	d.onCloseHandler = fn
@@ -968,6 +977,7 @@ func (d *DownTrack) AllocateOptimal(allowOvershoot bool) VideoAllocation {
 	al, brs := d.receiver.GetLayeredBitrate()
 	allocation := d.forwarder.AllocateOptimal(al, brs, allowOvershoot)
 	d.maybeStartKeyFrameRequester()
+	d.maybeAddTransition(allocation.bandwidthNeeded)
 	return allocation
 }
 
@@ -995,6 +1005,7 @@ func (d *DownTrack) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 func (d *DownTrack) ProvisionalAllocateCommit() VideoAllocation {
 	allocation := d.forwarder.ProvisionalAllocateCommit()
 	d.maybeStartKeyFrameRequester()
+	d.maybeAddTransition(allocation.bandwidthNeeded)
 	return allocation
 }
 
@@ -1002,6 +1013,7 @@ func (d *DownTrack) AllocateNextHigher(availableChannelCapacity int64, allowOver
 	_, brs := d.receiver.GetLayeredBitrate()
 	allocation, available := d.forwarder.AllocateNextHigher(availableChannelCapacity, brs, allowOvershoot)
 	d.maybeStartKeyFrameRequester()
+	d.maybeAddTransition(allocation.bandwidthNeeded)
 	return allocation, available
 }
 
@@ -1016,6 +1028,7 @@ func (d *DownTrack) Pause() VideoAllocation {
 	_, brs := d.receiver.GetLayeredBitrate()
 	allocation := d.forwarder.Pause(brs)
 	d.maybeStartKeyFrameRequester()
+	d.maybeAddTransition(allocation.bandwidthNeeded)
 	return allocation
 }
 
@@ -1554,8 +1567,8 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 	}
 }
 
-func (d *DownTrack) GetConnectionScore() float32 {
-	return d.connectionStats.GetScore()
+func (d *DownTrack) GetConnectionScoreAndQuality() (float32, livekit.ConnectionQuality) {
+	return d.connectionStats.GetScoreAndQuality()
 }
 
 func (d *DownTrack) GetTrackStats() *livekit.RTPStats {

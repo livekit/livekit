@@ -405,7 +405,7 @@ type LocalMediaTrack interface {
 	HasSdpCid(cid string) bool
 
 	GetAudioLevel() (level float64, active bool)
-	GetConnectionScore() float32
+	GetConnectionScoreAndQuality() (float32, livekit.ConnectionQuality)
 
 	SetRTT(rtt uint32)
 

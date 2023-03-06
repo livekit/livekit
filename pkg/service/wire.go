@@ -57,6 +57,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		NewRoomAllocator,
 		NewRoomService,
 		NewRTCService,
+		NewDefaultSignalServer,
+		routing.NewSignalClient,
 		NewLocalRoomManager,
 		newTurnAuthHandler,
 		newInProcessTurnServer,
@@ -69,6 +71,9 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routing.Router, error) {
 	wire.Build(
 		createRedisClient,
+		getNodeID,
+		getMessageBus,
+		routing.NewSignalClient,
 		routing.CreateRouter,
 	)
 
@@ -136,7 +141,7 @@ func createStore(rc redis.UniversalClient) ObjectStore {
 
 func getMessageBus(rc redis.UniversalClient) psrpc.MessageBus {
 	if rc == nil {
-		return nil
+		return psrpc.NewLocalMessageBus()
 	}
 	return psrpc.NewRedisMessageBus(rc)
 }

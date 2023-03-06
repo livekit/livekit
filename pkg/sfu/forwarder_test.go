@@ -218,41 +218,43 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 	// when max layers changes, target is opportunistic, but requested spatial layer should be at max
 	f.maxLayers = VideoLayers{Spatial: 1, Temporal: 3}
 	expectedResult = VideoAllocation{
-		pauseReason:         VideoPauseReasonFeedDry,
-		bandwidthRequested:  0,
-		bandwidthDelta:      0,
-		bitrates:            emptyBitrates,
+		pauseReason:         VideoPauseReasonNone,
+		bandwidthRequested:  bitrates[1][3],
+		bandwidthDelta:      bitrates[1][3],
+		bandwidthNeeded:     bitrates[1][3],
+		bitrates:            bitrates,
 		targetLayers:        DefaultMaxLayers,
 		requestLayerSpatial: f.maxLayers.Spatial,
 		maxLayers:           f.maxLayers,
-		distanceToDesired:   0,
+		distanceToDesired:   -1,
 	}
-	result = f.AllocateOptimal(nil, emptyBitrates, true)
+	result = f.AllocateOptimal(nil, bitrates, true)
 	require.Equal(t, expectedResult, result)
 	require.Equal(t, expectedResult, f.lastAllocation)
 	require.Equal(t, DefaultMaxLayers, f.TargetLayers())
 
 	// reset max layers for rest of the tests below
 	f.maxLayers = DefaultMaxLayers
-	f.lastAllocation.maxLayers = DefaultMaxLayers
 
 	// when feed is dry and current is not valid, should set up for opportunistic forwarding
+	// NOTE: feed is dry due to availableLayers = nil, some valid bitrates may be passed in here for testing purposes only
 	disable(f)
 	expectedTargetLayers := VideoLayers{
 		Spatial:  2,
 		Temporal: DefaultMaxLayerTemporal,
 	}
 	expectedResult = VideoAllocation{
-		pauseReason:         VideoPauseReasonFeedDry,
-		bandwidthRequested:  0,
-		bandwidthDelta:      0,
-		bitrates:            emptyBitrates,
+		pauseReason:         VideoPauseReasonNone,
+		bandwidthRequested:  bitrates[2][1],
+		bandwidthDelta:      bitrates[2][1] - bitrates[1][3],
+		bandwidthNeeded:     bitrates[2][1],
+		bitrates:            bitrates,
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: expectedTargetLayers.Spatial,
 		maxLayers:           DefaultMaxLayers,
 		distanceToDesired:   0,
 	}
-	result = f.AllocateOptimal(nil, emptyBitrates, true)
+	result = f.AllocateOptimal(nil, bitrates, true)
 	require.Equal(t, expectedResult, result)
 	require.Equal(t, expectedResult, f.lastAllocation)
 	require.Equal(t, expectedTargetLayers, f.TargetLayers())
@@ -268,7 +270,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 	expectedResult = VideoAllocation{
 		pauseReason:         VideoPauseReasonFeedDry,
 		bandwidthRequested:  0,
-		bandwidthDelta:      0,
+		bandwidthDelta:      0 - bitrates[2][1],
 		bitrates:            emptyBitrates,
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: expectedTargetLayers.Spatial,
@@ -284,16 +286,17 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 
 	// opportunistic target if feed is not dry and current is not valid, i. e. not forwarding
 	expectedResult = VideoAllocation{
-		pauseReason:         VideoPauseReasonFeedDry,
-		bandwidthRequested:  0,
-		bandwidthDelta:      0,
-		bitrates:            emptyBitrates,
+		pauseReason:         VideoPauseReasonNone,
+		bandwidthRequested:  bitrates[2][1],
+		bandwidthDelta:      bitrates[2][1],
+		bandwidthNeeded:     bitrates[2][1],
+		bitrates:            bitrates,
 		targetLayers:        DefaultMaxLayers,
 		requestLayerSpatial: 2,
 		maxLayers:           DefaultMaxLayers,
 		distanceToDesired:   0,
 	}
-	result = f.AllocateOptimal([]int32{0, 1}, emptyBitrates, true)
+	result = f.AllocateOptimal([]int32{0, 1}, bitrates, true)
 	require.Equal(t, expectedResult, result)
 	require.Equal(t, expectedResult, f.lastAllocation)
 	require.Equal(t, DefaultMaxLayers, f.TargetLayers())
@@ -303,7 +306,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 	expectedResult = VideoAllocation{
 		pauseReason:         VideoPauseReasonFeedDry,
 		bandwidthRequested:  0,
-		bandwidthDelta:      0,
+		bandwidthDelta:      0 - bitrates[2][1],
 		bitrates:            emptyBitrates,
 		targetLayers:        DefaultMaxLayers,
 		requestLayerSpatial: 2,
@@ -320,16 +323,17 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		Temporal: DefaultMaxLayerTemporal,
 	}
 	expectedResult = VideoAllocation{
-		pauseReason:         VideoPauseReasonFeedDry,
-		bandwidthRequested:  0,
-		bandwidthDelta:      0,
-		bitrates:            emptyBitrates,
+		pauseReason:         VideoPauseReasonNone,
+		bandwidthRequested:  bitrates[2][1],
+		bandwidthDelta:      bitrates[2][1],
+		bandwidthNeeded:     bitrates[2][1],
+		bitrates:            bitrates,
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: 2,
 		maxLayers:           DefaultMaxLayers,
 		distanceToDesired:   0,
 	}
-	result = f.AllocateOptimal([]int32{0, 1}, emptyBitrates, true)
+	result = f.AllocateOptimal([]int32{0, 1}, bitrates, true)
 	require.Equal(t, expectedResult, result)
 	require.Equal(t, expectedResult, f.lastAllocation)
 
@@ -340,16 +344,17 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		Temporal: DefaultMaxLayerTemporal,
 	}
 	expectedResult = VideoAllocation{
-		pauseReason:         VideoPauseReasonFeedDry,
-		bandwidthRequested:  0,
+		pauseReason:         VideoPauseReasonNone,
+		bandwidthRequested:  bitrates[2][1],
 		bandwidthDelta:      0,
-		bitrates:            emptyBitrates,
+		bandwidthNeeded:     bitrates[2][1],
+		bitrates:            bitrates,
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: 1,
 		maxLayers:           DefaultMaxLayers,
-		distanceToDesired:   0,
+		distanceToDesired:   1,
 	}
-	result = f.AllocateOptimal([]int32{1}, emptyBitrates, true)
+	result = f.AllocateOptimal([]int32{1}, bitrates, true)
 	require.Equal(t, expectedResult, result)
 	require.Equal(t, expectedResult, f.lastAllocation)
 
@@ -364,7 +369,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 	expectedResult = VideoAllocation{
 		pauseReason:         VideoPauseReasonFeedDry,
 		bandwidthRequested:  0,
-		bandwidthDelta:      0,
+		bandwidthDelta:      0 - bitrates[2][1],
 		bitrates:            emptyBitrates,
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: 0,
@@ -437,6 +442,7 @@ func TestForwarderProvisionalAllocate(t *testing.T) {
 		isDeficient:         true,
 		bandwidthRequested:  bitrates[1][2],
 		bandwidthDelta:      bitrates[1][2],
+		bandwidthNeeded:     bitrates[2][3],
 		bitrates:            bitrates,
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: expectedTargetLayers.Spatial,
@@ -463,6 +469,7 @@ func TestForwarderProvisionalAllocate(t *testing.T) {
 		isDeficient:         true,
 		bandwidthRequested:  bitrates[0][0],
 		bandwidthDelta:      bitrates[0][0] - bitrates[1][2],
+		bandwidthNeeded:     bitrates[2][3],
 		bitrates:            bitrates,
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: expectedTargetLayers.Spatial,
@@ -666,6 +673,7 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 		isDeficient:         true,
 		bandwidthRequested:  1,
 		bandwidthDelta:      1,
+		bandwidthNeeded:     bitrates[2][1],
 		bitrates:            bitrates,
 		targetLayers:        expectedLayers,
 		requestLayerSpatial: expectedLayers.Spatial,
@@ -695,6 +703,7 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 		bandwidthRequested:  10,
 		bandwidthDelta:      0,
 		bitrates:            bitrates,
+		bandwidthNeeded:     bitrates[2][1],
 		targetLayers:        expectedLayers,
 		requestLayerSpatial: expectedLayers.Spatial,
 		maxLayers:           DefaultMaxLayers,
@@ -904,6 +913,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 		isDeficient:         true,
 		bandwidthRequested:  3,
 		bandwidthDelta:      1,
+		bandwidthNeeded:     bitrates[2][1],
 		bitrates:            bitrates,
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: expectedTargetLayers.Spatial,
@@ -931,6 +941,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 		isDeficient:         true,
 		bandwidthRequested:  4,
 		bandwidthDelta:      1,
+		bandwidthNeeded:     bitrates[2][1],
 		bitrates:            bitrates,
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: expectedTargetLayers.Spatial,
@@ -954,6 +965,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 		isDeficient:         true,
 		bandwidthRequested:  5,
 		bandwidthDelta:      1,
+		bandwidthNeeded:     bitrates[2][1],
 		bitrates:            bitrates,
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: expectedTargetLayers.Spatial,
@@ -976,6 +988,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 		bandwidthRequested:  7,
 		bandwidthDelta:      2,
 		bitrates:            bitrates,
+		bandwidthNeeded:     bitrates[2][1],
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: expectedTargetLayers.Spatial,
 		maxLayers:           DefaultMaxLayers,
@@ -1009,6 +1022,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 		isDeficient:         true,
 		bandwidthRequested:  2,
 		bandwidthDelta:      2,
+		bandwidthNeeded:     bitrates[2][1],
 		bitrates:            bitrates,
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: expectedTargetLayers.Spatial,
@@ -1026,6 +1040,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 		isDeficient:         true,
 		bandwidthRequested:  2,
 		bandwidthDelta:      2,
+		bandwidthNeeded:     bitrates[2][1],
 		bitrates:            bitrates,
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: expectedTargetLayers.Spatial,
@@ -1096,6 +1111,7 @@ func TestForwarderPause(t *testing.T) {
 		isDeficient:         true,
 		bandwidthRequested:  0,
 		bandwidthDelta:      0 - bitrates[0][0],
+		bandwidthNeeded:     bitrates[2][3],
 		bitrates:            bitrates,
 		targetLayers:        InvalidLayers,
 		requestLayerSpatial: InvalidLayerSpatial,

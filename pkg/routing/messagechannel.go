@@ -15,6 +15,10 @@ type MessageChannel struct {
 	lock     sync.RWMutex
 }
 
+func NewDefaultMessageChannel() *MessageChannel {
+	return NewMessageChannel(DefaultMessageChannelSize)
+}
+
 func NewMessageChannel(size int) *MessageChannel {
 	return &MessageChannel{
 		// allow some buffer to avoid blocked writes
