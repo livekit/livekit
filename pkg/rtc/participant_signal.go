@@ -217,7 +217,6 @@ func (p *ParticipantImpl) sendDisconnectUpdatesForReconnect() error {
 		}
 	}
 	p.updateLock.Unlock()
-	p.params.Logger.Debugw("sending disconnect updates for reconnect", "count", len(disconnectedParticipants))
 
 	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Update{
