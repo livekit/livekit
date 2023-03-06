@@ -30,6 +30,9 @@ var (
 			"Error reading first packet from",
 			"error closing connection",
 		},
+		"turn": {
+			"error when handling datagram",
+		},
 	}
 )
 
