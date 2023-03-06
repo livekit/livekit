@@ -2,7 +2,7 @@ package types
 
 type ProtocolVersion int
 
-const CurrentProtocol = 8
+const CurrentProtocol = 9
 
 func (v ProtocolVersion) SupportsPackedStreamId() bool {
 	return v > 0
@@ -52,4 +52,8 @@ func (v ProtocolVersion) SupportsUnpublish() bool {
 // in the first offer
 func (v ProtocolVersion) SupportFastStart() bool {
 	return v > 7
+}
+
+func (v ProtocolVersion) SupportHandlesDisconnectedUpdate() bool {
+	return v > 8
 }

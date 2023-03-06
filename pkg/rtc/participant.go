@@ -50,6 +50,12 @@ type downTrackState struct {
 	downTrack   sfu.DownTrackState
 }
 
+type participantUpdateInfo struct {
+	version   uint32
+	state     livekit.ParticipantInfo_State
+	updatedAt time.Time
+}
+
 type ParticipantParams struct {
 	Identity                     livekit.ParticipantIdentity
 	Name                         livekit.ParticipantName
@@ -125,7 +131,7 @@ type ParticipantImpl struct {
 	queuedUpdates []*livekit.ParticipantInfo
 	// cache of recently sent updates, to ensuring ordering by version
 	// guarded by updateLock
-	updateCache *lru.Cache[livekit.ParticipantID, uint32]
+	updateCache *lru.Cache[livekit.ParticipantID, participantUpdateInfo]
 	updateLock  utils.Mutex
 
 	dataChannelStats *telemetry.BytesTrackStats
@@ -192,7 +198,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 
 	var err error
 	// keep last participants and when updates were sent
-	if p.updateCache, err = lru.New[livekit.ParticipantID, uint32](128); err != nil {
+	if p.updateCache, err = lru.New[livekit.ParticipantID, participantUpdateInfo](128); err != nil {
 		return nil, err
 	}
 
@@ -905,7 +911,7 @@ func (p *ParticipantImpl) VerifySubscribeParticipantInfo(pID livekit.Participant
 		// we have not sent a JoinResponse yet. metadata would be covered in JoinResponse
 		return
 	}
-	if v, ok := p.updateCache.Get(pID); ok && v >= version {
+	if info, ok := p.updateCache.Get(pID); ok && info.version >= version {
 		return
 	}
 

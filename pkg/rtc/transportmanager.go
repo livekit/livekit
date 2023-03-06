@@ -733,6 +733,12 @@ func (t *TransportManager) SinceLastSignal() time.Duration {
 	return time.Since(t.lastSignalAt)
 }
 
+func (t *TransportManager) LastSeenSignalAt() time.Time {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+	return t.lastSignalAt
+}
+
 func (t *TransportManager) canUseICETCP() bool {
 	return t.params.TCPFallbackRTTThreshold == 0 || int(t.signalingRTT) < t.params.TCPFallbackRTTThreshold
 }
