@@ -23,6 +23,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/auth"
@@ -849,7 +850,8 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 	}
 
 	if numTracks == 0 {
-		return nil
+		minQuality = livekit.ConnectionQuality_EXCELLENT
+		minScore = connectionquality.MaxMOS
 	}
 
 	return &livekit.ConnectionQualityInfo{
