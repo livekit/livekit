@@ -30,6 +30,7 @@ type windowStat struct {
 	duration        time.Duration
 	packetsExpected uint32
 	packetsLost     uint32
+	packetsMissing  uint32
 	bytes           uint64
 	rttMax          uint32
 	jitterMax       float64
@@ -44,9 +45,14 @@ func (w *windowStat) calculatePacketScore(plw float64) float64 {
 		delayEffect = (effectiveDelay - 120.0) / 10.0
 	}
 
+	actualLost := w.packetsLost - w.packetsMissing
+	if int32(actualLost) < 0 {
+		actualLost = 0
+	}
+
 	lossEffect := float64(0.0)
 	if w.packetsExpected > 0 {
-		lossEffect = float64(w.packetsLost) * 100.0 / float64(w.packetsExpected)
+		lossEffect = float64(actualLost) * 100.0 / float64(w.packetsExpected)
 	}
 	lossEffect *= plw
 
@@ -256,26 +262,18 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 
 	reason := "none"
 	var ws *windowScore
-	if stat == nil {
+	if stat.packetsExpected == 0 {
 		reason = "dry"
-		ws = newWindowScoreWithScore(&windowStat{
-			startedAt: q.lastUpdateAt,
-			duration:  at.Sub(q.lastUpdateAt),
-		}, poorScore)
+		ws = newWindowScoreWithScore(stat, poorScore)
 	} else {
-		if stat.packetsExpected == 0 {
-			reason = "dry"
-			ws = newWindowScoreWithScore(stat, poorScore)
+		wsPacket := newWindowScorePacket(stat, q.getPacketLossWeight(stat))
+		wsByte := newWindowScoreByte(stat, expectedBitrate)
+		if wsPacket.getScore() < wsByte.getScore() {
+			reason = "packet"
+			ws = wsPacket
 		} else {
-			wsPacket := newWindowScorePacket(stat, q.getPacketLossWeight(stat))
-			wsByte := newWindowScoreByte(stat, expectedBitrate)
-			if wsPacket.getScore() < wsByte.getScore() {
-				reason = "packet"
-				ws = wsPacket
-			} else {
-				reason = "bitrate"
-				ws = wsByte
-			}
+			reason = "bitrate"
+			ws = wsByte
 		}
 	}
 	score := ws.getScore()

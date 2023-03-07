@@ -31,6 +31,8 @@ type RTPFlowState struct {
 }
 
 type IntervalStats struct {
+	earliestPktTime    int64
+	latestPktTime      int64
 	packets            uint32
 	bytes              uint64
 	headerBytes        uint64
@@ -54,6 +56,7 @@ type RTPDeltaInfo struct {
 	BytesPadding         uint64
 	HeaderBytesPadding   uint64
 	PacketsLost          uint32
+	PacketsMissing       uint32
 	Frames               uint32
 	RttMax               uint32
 	JitterMax            float64
@@ -78,6 +81,7 @@ type Snapshot struct {
 }
 
 type SnInfo struct {
+	pktTime       int64
 	hdrSize       uint16
 	pktSize       uint16
 	isPaddingOnly bool
@@ -365,7 +369,7 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 				isDuplicate = true
 			} else {
 				r.packetsLost--
-				r.setSnInfo(rtph.SequenceNumber, uint16(pktSize), uint16(hdrSize), uint16(payloadSize), rtph.Marker)
+				r.setSnInfo(rtph.SequenceNumber, packetTime, uint16(pktSize), uint16(hdrSize), uint16(payloadSize), rtph.Marker)
 			}
 		}
 
@@ -384,7 +388,7 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 		r.clearSnInfos(r.highestSN+1, rtph.SequenceNumber)
 		r.packetsLost += uint32(diff - 1)
 
-		r.setSnInfo(rtph.SequenceNumber, uint16(pktSize), uint16(hdrSize), uint16(payloadSize), rtph.Marker)
+		r.setSnInfo(rtph.SequenceNumber, packetTime, uint16(pktSize), uint16(hdrSize), uint16(payloadSize), rtph.Marker)
 
 		if rtph.SequenceNumber < r.highestSN && !first {
 			r.cycles++
@@ -434,7 +438,7 @@ func (r *RTPStats) maybeAdjustStartSN(rtph *rtp.Header, packetTime int64, pktSiz
 	beforeAdjust := r.extStartSN
 	r.extStartSN = uint32(rtph.SequenceNumber)
 
-	r.setSnInfo(rtph.SequenceNumber, uint16(pktSize), uint16(hdrSize), uint16(payloadSize), rtph.Marker)
+	r.setSnInfo(rtph.SequenceNumber, packetTime, uint16(pktSize), uint16(hdrSize), uint16(payloadSize), rtph.Marker)
 
 	for _, s := range r.snapshots {
 		if s.extStartSN == beforeAdjust {
@@ -855,6 +859,9 @@ func (r *RTPStats) DeltaInfo(snapshotId uint32) *RTPDeltaInfo {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
+	startTime := then.startTime
+	endTime := now.startTime
+
 	packetsExpected := now.extStartSN - then.extStartSN
 	if packetsExpected > NumSequenceNumbers {
 		r.logger.Warnw(
@@ -864,28 +871,27 @@ func (r *RTPStats) DeltaInfo(snapshotId uint32) *RTPDeltaInfo {
 		return nil
 	}
 	if packetsExpected == 0 {
-		r.logger.Debugw(
-			"no expected packets",
-			"info", fmt.Sprintf("start: %d @ %+v, end: %d @ %+v", then.extStartSN, then.startTime, now.extStartSN, now.startTime),
-		)
-		return nil
-	}
-
-	packetsLost := uint32(0)
-	intervalStats := r.getIntervalStats(uint16(then.extStartSN), uint16(now.extStartSN))
-	if r.params.IsReceiverReportDriven {
-		// by taking number of packets from interval report, packets not sent (because of missing packets in feed) will be accounted for
-		packetsExpected = intervalStats.packets + intervalStats.packetsPadding
-		if packetsExpected == 0 {
-			r.logger.Debugw(
-				"no expected packets in interval",
-				"info", fmt.Sprintf("start: %d @ %+v, end: %d @ %+v", then.extStartSN, then.startTime, now.extStartSN, now.startTime),
-			)
+		if r.params.IsReceiverReportDriven {
+			// not received RTCP RR
 			return nil
 		}
 
-		// discount loss in the interval as those are packets not sent at all
-		packetsLost = now.packetsLostOverridden - then.packetsLostOverridden - intervalStats.packetsLost
+		return &RTPDeltaInfo{
+			StartTime: startTime,
+			Duration:  endTime.Sub(startTime),
+		}
+	}
+
+	packetsLost := uint32(0)
+	packetsMissing := uint32(0)
+	intervalStats := r.getIntervalStats(uint16(then.extStartSN), uint16(now.extStartSN))
+	if r.params.IsReceiverReportDriven {
+		startTime = time.Unix(0, intervalStats.earliestPktTime)
+		endTime = time.Unix(0, intervalStats.latestPktTime)
+
+		packetsMissing = intervalStats.packetsLost
+
+		packetsLost = now.packetsLostOverridden - then.packetsLostOverridden
 		if int32(packetsLost) < 0 {
 			packetsLost = 0
 		}
@@ -915,8 +921,8 @@ func (r *RTPStats) DeltaInfo(snapshotId uint32) *RTPDeltaInfo {
 	maxJitterTime := maxJitter / float64(r.params.ClockRate) * 1e6
 
 	return &RTPDeltaInfo{
-		StartTime:            then.startTime,
-		Duration:             now.startTime.Sub(then.startTime),
+		StartTime:            startTime,
+		Duration:             endTime.Sub(startTime),
 		Packets:              packetsExpected - intervalStats.packetsPadding,
 		Bytes:                intervalStats.bytes,
 		HeaderBytes:          intervalStats.headerBytes,
@@ -927,6 +933,7 @@ func (r *RTPStats) DeltaInfo(snapshotId uint32) *RTPDeltaInfo {
 		BytesPadding:         intervalStats.bytesPadding,
 		HeaderBytesPadding:   intervalStats.headerBytesPadding,
 		PacketsLost:          packetsLost,
+		PacketsMissing:       packetsMissing,
 		Frames:               intervalStats.frames,
 		RttMax:               then.maxRtt,
 		JitterMax:            maxJitterTime,
@@ -1150,7 +1157,7 @@ func (r *RTPStats) getSnInfoOutOfOrderPtr(sn uint16) int {
 	return (r.snInfoWritePtr - int(offset) - 1) & SnInfoMask
 }
 
-func (r *RTPStats) setSnInfo(sn uint16, pktSize uint16, hdrSize uint16, payloadSize uint16, marker bool) {
+func (r *RTPStats) setSnInfo(sn uint16, pktTime int64, pktSize uint16, hdrSize uint16, payloadSize uint16, marker bool) {
 	writePtr := 0
 	ooo := (sn - r.highestSN) > (1 << 15)
 	if !ooo {
@@ -1164,6 +1171,7 @@ func (r *RTPStats) setSnInfo(sn uint16, pktSize uint16, hdrSize uint16, payloadS
 	}
 
 	snInfo := &r.snInfos[writePtr]
+	snInfo.pktTime = pktTime
 	snInfo.pktSize = pktSize
 	snInfo.hdrSize = hdrSize
 	snInfo.isPaddingOnly = payloadSize == 0
@@ -1173,7 +1181,9 @@ func (r *RTPStats) setSnInfo(sn uint16, pktSize uint16, hdrSize uint16, payloadS
 func (r *RTPStats) clearSnInfos(startInclusive uint16, endExclusive uint16) {
 	for sn := startInclusive; sn != endExclusive; sn++ {
 		snInfo := &r.snInfos[r.snInfoWritePtr]
+		snInfo.pktTime = 0
 		snInfo.pktSize = 0
+		snInfo.hdrSize = 0
 		snInfo.isPaddingOnly = false
 		snInfo.marker = false
 
@@ -1218,6 +1228,14 @@ func (r *RTPStats) getIntervalStats(startInclusive uint16, endExclusive uint16) 
 
 		if snInfo.marker {
 			intervalStats.frames++
+		}
+
+		if intervalStats.earliestPktTime == 0 || snInfo.pktTime < intervalStats.earliestPktTime {
+			intervalStats.earliestPktTime = snInfo.pktTime
+		}
+
+		if intervalStats.latestPktTime == 0 || snInfo.pktTime > intervalStats.latestPktTime {
+			intervalStats.latestPktTime = snInfo.pktTime
 		}
 	}
 
