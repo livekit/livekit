@@ -543,7 +543,7 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 	if lastSignalSince > iceFailedTimeout || !signalValid {
 		// the failed might cause by network interrupt because signal closed or we have not seen any signal in the time window,
 		// so don't switch to next candidate type
-		t.params.Logger.Infow("ignoring prefer candidate check by ICE failure because no signal received in the ice failed window",
+		t.params.Logger.Infow("ignoring prefer candidate check by ICE failure because signal connection interrupted",
 			"lastSignalSince", lastSignalSince, "signalValid", signalValid)
 		t.failureCount = 0
 		t.lastFailure = time.Time{}
