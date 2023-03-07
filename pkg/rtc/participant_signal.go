@@ -2,6 +2,7 @@ package rtc
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/pion/webrtc/v3"
 
@@ -33,7 +34,7 @@ func (p *ParticipantImpl) SendJoinResponse(joinResponse *livekit.JoinResponse) e
 	// keep track of participant updates and versions
 	p.updateLock.Lock()
 	for _, op := range joinResponse.OtherParticipants {
-		p.updateCache.Add(livekit.ParticipantID(op.Sid), op.Version)
+		p.updateCache.Add(livekit.ParticipantID(op.Sid), participantUpdateInfo{version: op.Version, state: op.State, updatedAt: time.Now()})
 	}
 	p.updateLock.Unlock()
 
@@ -84,13 +85,13 @@ func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.
 		if lastVersion, ok := p.updateCache.Get(pID); ok {
 			// this is a message delivered out of order, a more recent version of the message had already been
 			// sent.
-			if pi.Version < lastVersion {
+			if pi.Version < lastVersion.version {
 				p.params.Logger.Debugw("skipping outdated participant update", "version", pi.Version, "lastVersion", lastVersion)
 				isValid = false
 			}
 		}
 		if isValid {
-			p.updateCache.Add(pID, pi.Version)
+			p.updateCache.Add(pID, participantUpdateInfo{version: pi.Version, state: pi.State, updatedAt: time.Now()})
 			validUpdates = append(validUpdates, pi)
 		}
 	}
@@ -182,9 +183,46 @@ func (p *ParticipantImpl) SendReconnectResponse(reconnectResponse *livekit.Recon
 	if !p.params.ClientInfo.CanHandleReconnectResponse() {
 		return nil
 	}
-	return p.writeMessage(&livekit.SignalResponse{
+	if err := p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Reconnect{
 			Reconnect: reconnectResponse,
+		},
+	}); err != nil {
+		return err
+	}
+
+	if p.params.ProtocolVersion.SupportHandlesDisconnectedUpdate() {
+		return p.sendDisconnectUpdatesForReconnect()
+	}
+
+	return nil
+}
+
+func (p *ParticipantImpl) sendDisconnectUpdatesForReconnect() error {
+	lastSignalAt := p.TransportManager.LastSeenSignalAt()
+	var disconnectedParticipants []*livekit.ParticipantInfo
+	p.updateLock.Lock()
+	keys := p.updateCache.Keys()
+	for i := len(keys) - 1; i >= 0; i-- {
+		if info, ok := p.updateCache.Get(keys[i]); ok {
+			if info.updatedAt.Before(lastSignalAt) {
+				break
+			} else if info.state == livekit.ParticipantInfo_DISCONNECTED {
+				disconnectedParticipants = append(disconnectedParticipants, &livekit.ParticipantInfo{
+					Sid:     string(keys[i]),
+					Version: info.version,
+					State:   livekit.ParticipantInfo_DISCONNECTED,
+				})
+			}
+		}
+	}
+	p.updateLock.Unlock()
+
+	return p.writeMessage(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_Update{
+			Update: &livekit.ParticipantUpdate{
+				Participants: disconnectedParticipants,
+			},
 		},
 	})
 }
