@@ -50,7 +50,12 @@ func (w *windowStat) calculatePacketScore(plw float64) float64 {
 	}
 	lossEffect *= plw
 
-	return maxScore - delayEffect - lossEffect
+	score := maxScore - delayEffect - lossEffect
+	if score < 0.0 {
+		score = 0.0
+	}
+
+	return score
 }
 
 func (w *windowStat) calculateByteScore(expectedBitrate int64) float64 {
