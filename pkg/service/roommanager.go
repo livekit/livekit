@@ -243,7 +243,7 @@ func (r *RoomManager) StartSession(
 			if iceConfig == nil {
 				iceConfig = &livekit.ICEConfig{}
 			}
-			if err = room.ResumeParticipant(participant, responseSink,
+			if err = room.ResumeParticipant(participant, requestSource, responseSink,
 				r.iceServersForRoom(protoRoom, iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS),
 				pi.ReconnectReason); err != nil {
 				logger.Warnw("could not resume participant", err, "participant", pi.Identity)
@@ -343,7 +343,7 @@ func (r *RoomManager) StartSession(
 	opts := rtc.ParticipantOptions{
 		AutoSubscribe: pi.AutoSubscribe,
 	}
-	if err = room.Join(participant, &opts, r.iceServersForRoom(protoRoom, iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS)); err != nil {
+	if err = room.Join(participant, requestSource, &opts, r.iceServersForRoom(protoRoom, iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS)); err != nil {
 		pLogger.Errorw("could not join room", err)
 		_ = participant.Close(true, types.ParticipantCloseReasonJoinFailed)
 		return err
@@ -508,6 +508,9 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 			// In single node mode, the request source is directly tied to the signal message channel
 			// this means ICE restart isn't possible in single node mode
 			if obj == nil {
+				if room.GetParticipantRequestSource(participant.Identity()) == requestSource {
+					participant.SetSignalSourceValid(false)
+				}
 				return
 			}
 

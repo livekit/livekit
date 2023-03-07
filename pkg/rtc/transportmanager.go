@@ -62,6 +62,7 @@ type TransportManager struct {
 	isTransportReconfigured bool
 	lastFailure             time.Time
 	lastSignalAt            time.Time
+	signalSourceValid       atomic.Bool
 
 	pendingOfferPublisher        *webrtc.SessionDescription
 	pendingDataChannelsPublisher []*livekit.DataChannelInfo
@@ -176,6 +177,8 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 			return nil, err
 		}
 	}
+
+	t.signalSourceValid.Store(true)
 
 	return t, nil
 }
@@ -536,11 +539,12 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 	}
 
 	lastSignalSince := time.Since(t.lastSignalAt)
-	if lastSignalSince > iceFailedTimeout {
-		// the failed might cause by network interrupt because we have not seen any signal in the time window too
+	signalValid := t.signalSourceValid.Load()
+	if lastSignalSince > iceFailedTimeout || !signalValid {
+		// the failed might cause by network interrupt because signal closed or we have not seen any signal in the time window,
 		// so don't switch to next candidate type
 		t.params.Logger.Infow("ignoring prefer candidate check by ICE failure because no signal received in the ice failed window",
-			"lastSignalSince", lastSignalSince)
+			"lastSignalSince", lastSignalSince, "signalValid", signalValid)
 		t.failureCount = 0
 		t.lastFailure = time.Time{}
 		t.lock.Unlock()
@@ -741,4 +745,9 @@ func (t *TransportManager) LastSeenSignalAt() time.Time {
 
 func (t *TransportManager) canUseICETCP() bool {
 	return t.params.TCPFallbackRTTThreshold == 0 || int(t.signalingRTT) < t.params.TCPFallbackRTTThreshold
+}
+
+func (t *TransportManager) SetSignalSourceValid(valid bool) {
+	t.signalSourceValid.Store(valid)
+	t.params.Logger.Debugw("signal source valid", "valid", valid)
 }
