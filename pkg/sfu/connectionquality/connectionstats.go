@@ -77,25 +77,29 @@ func (cs *ConnectionStats) GetScoreAndQuality() (float32, livekit.ConnectionQual
 }
 
 func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWithLayers, at time.Time) float32 {
-	var stat windowStat
-	for _, s := range streams {
-		if stat.startedAt.IsZero() || stat.startedAt.After(s.RTPStats.StartTime) {
-			stat.startedAt = s.RTPStats.StartTime
+	if len(streams) == 0 {
+		cs.scorer.Update(nil, at)
+	} else {
+		var stat windowStat
+		for _, s := range streams {
+			if stat.startedAt.IsZero() || stat.startedAt.After(s.RTPStats.StartTime) {
+				stat.startedAt = s.RTPStats.StartTime
+			}
+			if stat.duration < s.RTPStats.Duration {
+				stat.duration = s.RTPStats.Duration
+			}
+			stat.packetsExpected += s.RTPStats.Packets + s.RTPStats.PacketsPadding
+			stat.packetsLost += s.RTPStats.PacketsLost
+			if stat.rttMax < s.RTPStats.RttMax {
+				stat.rttMax = s.RTPStats.RttMax
+			}
+			if stat.jitterMax < s.RTPStats.JitterMax {
+				stat.jitterMax = s.RTPStats.JitterMax
+			}
+			stat.bytes += s.RTPStats.Bytes - s.RTPStats.HeaderBytes // only use media payload size
 		}
-		if stat.duration < s.RTPStats.Duration {
-			stat.duration = s.RTPStats.Duration
-		}
-		stat.packetsExpected += s.RTPStats.Packets + s.RTPStats.PacketsPadding
-		stat.packetsLost += s.RTPStats.PacketsLost
-		if stat.rttMax < s.RTPStats.RttMax {
-			stat.rttMax = s.RTPStats.RttMax
-		}
-		if stat.jitterMax < s.RTPStats.JitterMax {
-			stat.jitterMax = s.RTPStats.JitterMax
-		}
-		stat.bytes += s.RTPStats.Bytes - s.RTPStats.HeaderBytes // only use media payload size
+		cs.scorer.Update(&stat, at)
 	}
-	cs.scorer.Update(&stat, at)
 
 	mos, _ := cs.scorer.GetMOSAndQuality()
 	return mos
