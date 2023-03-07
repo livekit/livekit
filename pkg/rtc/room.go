@@ -393,6 +393,10 @@ func (r *Room) ResumeParticipant(p types.LocalParticipant, responseSink routing.
 		return err
 	}
 
+	r.lock.RLock()
+	p.SendRoomUpdate(r.protoRoom)
+	r.lock.RUnlock()
+
 	p.ICERestart(nil, reason)
 	return nil
 }
