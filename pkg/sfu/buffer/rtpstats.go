@@ -864,6 +864,10 @@ func (r *RTPStats) DeltaInfo(snapshotId uint32) *RTPDeltaInfo {
 		return nil
 	}
 	if packetsExpected == 0 {
+		r.logger.Debugw(
+			"no expected packets",
+			"info", fmt.Sprintf("start: %d @ %+v, end: %d @ %+v", then.extStartSN, then.startTime, now.extStartSN, now.startTime),
+		)
 		return nil
 	}
 
@@ -873,10 +877,15 @@ func (r *RTPStats) DeltaInfo(snapshotId uint32) *RTPDeltaInfo {
 		// by taking number of packets from interval report, packets not sent (because of missing packets in feed) will be accounted for
 		packetsExpected = intervalStats.packets + intervalStats.packetsPadding
 		if packetsExpected == 0 {
+			r.logger.Debugw(
+				"no expected packets in interval",
+				"info", fmt.Sprintf("start: %d @ %+v, end: %d @ %+v", then.extStartSN, then.startTime, now.extStartSN, now.startTime),
+			)
 			return nil
 		}
 
-		packetsLost = now.packetsLostOverridden - then.packetsLostOverridden
+		// discount loss in the interval as those are packets not sent at all
+		packetsLost = now.packetsLostOverridden - then.packetsLostOverridden - intervalStats.packetsLost
 		if int32(packetsLost) < 0 {
 			packetsLost = 0
 		}
@@ -884,7 +893,14 @@ func (r *RTPStats) DeltaInfo(snapshotId uint32) *RTPDeltaInfo {
 		if packetsLost > packetsExpected {
 			r.logger.Warnw(
 				"unexpected number of packets lost",
-				fmt.Errorf("start: %d, end: %d, expected: %d, lost: %d", then.extStartSN, now.extStartSN, packetsExpected, packetsLost),
+				fmt.Errorf(
+					"start: %d, end: %d, expected: %d, lost: report: %d, interval: %d",
+					then.extStartSN,
+					now.extStartSN,
+					packetsExpected,
+					now.packetsLostOverridden-then.packetsLostOverridden,
+					intervalStats.packetsLost,
+				),
 			)
 			packetsLost = packetsExpected
 		}
@@ -1123,12 +1139,12 @@ func (r *RTPStats) getSnInfoOutOfOrderPtr(sn uint16) int {
 	offset := sn - r.highestSN
 	if offset > 0 && offset < (1<<15) {
 		return -1 // in-order, not expected, maybe too new
-	} else {
-		offset = r.highestSN - sn
-		if int(offset) >= SnInfoSize {
-			// too old, ignore
-			return -1
-		}
+	}
+
+	offset = r.highestSN - sn
+	if int(offset) >= SnInfoSize {
+		// too old, ignore
+		return -1
 	}
 
 	return (r.snInfoWritePtr - int(offset) - 1) & SnInfoMask
@@ -1180,6 +1196,7 @@ func (r *RTPStats) getIntervalStats(startInclusive uint16, endExclusive uint16) 
 	processSN := func(sn uint16) {
 		readPtr := r.getSnInfoOutOfOrderPtr(sn)
 		if readPtr < 0 {
+			packetsNotFound++
 			return
 		}
 
