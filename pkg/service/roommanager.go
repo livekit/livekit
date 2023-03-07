@@ -610,6 +610,7 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomName livekit.Roo
 		up := &livekit.UserPacket{
 			Payload:         rm.SendData.Data,
 			DestinationSids: rm.SendData.DestinationSids,
+			Topic:           rm.SendData.Topic,
 		}
 		room.SendDataPacket(up, rm.SendData.Kind)
 	case *livekit.RTCNodeMessage_UpdateRoomMetadata:
