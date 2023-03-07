@@ -882,6 +882,11 @@ func (d *DownTrack) maybeAddTransition(bitrate int64) {
 		return
 	}
 
+	ti := d.receiver.TrackInfo()
+	if ti == nil || ti.Source == livekit.TrackSource_SCREEN_SHARE {
+		return
+	}
+
 	d.connectionStats.AddTransition(bitrate, time.Now())
 }
 
