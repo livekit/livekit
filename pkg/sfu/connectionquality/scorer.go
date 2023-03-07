@@ -286,7 +286,7 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 		q.score = score
 		q.params.Logger.Infow(
 			"quality drop",
-			"reaason", reason,
+			"reason", reason,
 			"score", q.score,
 			"quality", scoreToConnectionQuality(q.score),
 			"window", ws,
