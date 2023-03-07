@@ -653,6 +653,11 @@ type FakeLocalParticipant struct {
 	setResponseSinkArgsForCall []struct {
 		arg1 routing.MessageSink
 	}
+	SetSignalSourceValidStub        func(bool)
+	setSignalSourceValidMutex       sync.RWMutex
+	setSignalSourceValidArgsForCall []struct {
+		arg1 bool
+	}
 	SetTrackMutedStub        func(livekit.TrackID, bool, bool)
 	setTrackMutedMutex       sync.RWMutex
 	setTrackMutedArgsForCall []struct {
@@ -4297,6 +4302,38 @@ func (fake *FakeLocalParticipant) SetResponseSinkArgsForCall(i int) routing.Mess
 	return argsForCall.arg1
 }
 
+func (fake *FakeLocalParticipant) SetSignalSourceValid(arg1 bool) {
+	fake.setSignalSourceValidMutex.Lock()
+	fake.setSignalSourceValidArgsForCall = append(fake.setSignalSourceValidArgsForCall, struct {
+		arg1 bool
+	}{arg1})
+	stub := fake.SetSignalSourceValidStub
+	fake.recordInvocation("SetSignalSourceValid", []interface{}{arg1})
+	fake.setSignalSourceValidMutex.Unlock()
+	if stub != nil {
+		fake.SetSignalSourceValidStub(arg1)
+	}
+}
+
+func (fake *FakeLocalParticipant) SetSignalSourceValidCallCount() int {
+	fake.setSignalSourceValidMutex.RLock()
+	defer fake.setSignalSourceValidMutex.RUnlock()
+	return len(fake.setSignalSourceValidArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) SetSignalSourceValidCalls(stub func(bool)) {
+	fake.setSignalSourceValidMutex.Lock()
+	defer fake.setSignalSourceValidMutex.Unlock()
+	fake.SetSignalSourceValidStub = stub
+}
+
+func (fake *FakeLocalParticipant) SetSignalSourceValidArgsForCall(i int) bool {
+	fake.setSignalSourceValidMutex.RLock()
+	defer fake.setSignalSourceValidMutex.RUnlock()
+	argsForCall := fake.setSignalSourceValidArgsForCall[i]
+	return argsForCall.arg1
+}
+
 func (fake *FakeLocalParticipant) SetTrackMuted(arg1 livekit.TrackID, arg2 bool, arg3 bool) {
 	fake.setTrackMutedMutex.Lock()
 	fake.setTrackMutedArgsForCall = append(fake.setTrackMutedArgsForCall, struct {
@@ -5320,6 +5357,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.setPermissionMutex.RUnlock()
 	fake.setResponseSinkMutex.RLock()
 	defer fake.setResponseSinkMutex.RUnlock()
+	fake.setSignalSourceValidMutex.RLock()
+	defer fake.setSignalSourceValidMutex.RUnlock()
 	fake.setTrackMutedMutex.RLock()
 	defer fake.setTrackMutedMutex.RUnlock()
 	fake.startMutex.RLock()
