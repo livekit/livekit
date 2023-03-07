@@ -54,6 +54,7 @@ type RTPDeltaInfo struct {
 	BytesPadding         uint64
 	HeaderBytesPadding   uint64
 	PacketsLost          uint32
+	PacketsMissing       uint32
 	Frames               uint32
 	RttMax               uint32
 	JitterMax            float64
@@ -863,6 +864,7 @@ func (r *RTPStats) DeltaInfo(snapshotId uint32) *RTPDeltaInfo {
 		)
 		return nil
 	}
+	// RAJA-TODO: check for down track - maybe cannot reset snapshots?
 	if packetsExpected == 0 {
 		r.logger.Debugw(
 			"no expected packets",
@@ -872,20 +874,12 @@ func (r *RTPStats) DeltaInfo(snapshotId uint32) *RTPDeltaInfo {
 	}
 
 	packetsLost := uint32(0)
+	packetsMissing := uint32(0)
 	intervalStats := r.getIntervalStats(uint16(then.extStartSN), uint16(now.extStartSN))
 	if r.params.IsReceiverReportDriven {
-		// by taking number of packets from interval report, packets not sent (because of missing packets in feed) will be accounted for
-		packetsExpected = intervalStats.packets + intervalStats.packetsPadding
-		if packetsExpected == 0 {
-			r.logger.Debugw(
-				"no expected packets in interval",
-				"info", fmt.Sprintf("start: %d @ %+v, end: %d @ %+v", then.extStartSN, then.startTime, now.extStartSN, now.startTime),
-			)
-			return nil
-		}
+		packetsMissing = intervalStats.packetsLost
 
-		// discount loss in the interval as those are packets not sent at all
-		packetsLost = now.packetsLostOverridden - then.packetsLostOverridden - intervalStats.packetsLost
+		packetsLost = now.packetsLostOverridden - then.packetsLostOverridden
 		if int32(packetsLost) < 0 {
 			packetsLost = 0
 		}
@@ -927,6 +921,7 @@ func (r *RTPStats) DeltaInfo(snapshotId uint32) *RTPDeltaInfo {
 		BytesPadding:         intervalStats.bytesPadding,
 		HeaderBytesPadding:   intervalStats.headerBytesPadding,
 		PacketsLost:          packetsLost,
+		PacketsMissing:       packetsMissing,
 		Frames:               intervalStats.frames,
 		RttMax:               then.maxRtt,
 		JitterMax:            maxJitterTime,

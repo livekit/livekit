@@ -90,6 +90,7 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 			}
 			stat.packetsExpected += s.RTPStats.Packets + s.RTPStats.PacketsPadding
 			stat.packetsLost += s.RTPStats.PacketsLost
+			stat.packetsMissing += s.RTPStats.PacketsMissing
 			if stat.rttMax < s.RTPStats.RttMax {
 				stat.rttMax = s.RTPStats.RttMax
 			}
