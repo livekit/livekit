@@ -55,9 +55,10 @@ type Room struct {
 	trackManager   *RoomTrackManager
 
 	// map of identity -> Participant
-	participants    map[livekit.ParticipantIdentity]types.LocalParticipant
-	participantOpts map[livekit.ParticipantIdentity]*ParticipantOptions
-	bufferFactory   *buffer.FactoryOfBufferFactory
+	participants              map[livekit.ParticipantIdentity]types.LocalParticipant
+	participantOpts           map[livekit.ParticipantIdentity]*ParticipantOptions
+	participantRequestSources map[livekit.ParticipantIdentity]routing.MessageSource
+	bufferFactory             *buffer.FactoryOfBufferFactory
 
 	// batch update participant info for non-publishers
 	batchedUpdates   map[livekit.ParticipantIdentity]*livekit.ParticipantInfo
@@ -89,20 +90,21 @@ func NewRoom(
 	egressLauncher EgressLauncher,
 ) *Room {
 	r := &Room{
-		protoRoom:       proto.Clone(room).(*livekit.Room),
-		internal:        internal,
-		Logger:          LoggerWithRoom(logger.GetLogger(), livekit.RoomName(room.Name), livekit.RoomID(room.Sid)),
-		config:          config,
-		audioConfig:     audioConfig,
-		telemetry:       telemetry,
-		egressLauncher:  egressLauncher,
-		trackManager:    NewRoomTrackManager(),
-		serverInfo:      serverInfo,
-		participants:    make(map[livekit.ParticipantIdentity]types.LocalParticipant),
-		participantOpts: make(map[livekit.ParticipantIdentity]*ParticipantOptions),
-		bufferFactory:   buffer.NewFactoryOfBufferFactory(config.Receiver.PacketBufferSize),
-		batchedUpdates:  make(map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
-		closed:          make(chan struct{}),
+		protoRoom:                 proto.Clone(room).(*livekit.Room),
+		internal:                  internal,
+		Logger:                    LoggerWithRoom(logger.GetLogger(), livekit.RoomName(room.Name), livekit.RoomID(room.Sid)),
+		config:                    config,
+		audioConfig:               audioConfig,
+		telemetry:                 telemetry,
+		egressLauncher:            egressLauncher,
+		trackManager:              NewRoomTrackManager(),
+		serverInfo:                serverInfo,
+		participants:              make(map[livekit.ParticipantIdentity]types.LocalParticipant),
+		participantOpts:           make(map[livekit.ParticipantIdentity]*ParticipantOptions),
+		participantRequestSources: make(map[livekit.ParticipantIdentity]routing.MessageSource),
+		bufferFactory:             buffer.NewFactoryOfBufferFactory(config.Receiver.PacketBufferSize),
+		batchedUpdates:            make(map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
+		closed:                    make(chan struct{}),
 	}
 	if r.protoRoom.EmptyTimeout == 0 {
 		r.protoRoom.EmptyTimeout = DefaultEmptyTimeout
@@ -225,7 +227,7 @@ func (r *Room) Release() {
 	r.holds.Dec()
 }
 
-func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions, iceServers []*livekit.ICEServer) error {
+func (r *Room) Join(participant types.LocalParticipant, requestSource routing.MessageSource, opts *ParticipantOptions, iceServers []*livekit.ICEServer) error {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
@@ -339,6 +341,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 
 	r.participants[participant.Identity()] = participant
 	r.participantOpts[participant.Identity()] = opts
+	r.participantRequestSources[participant.Identity()] = requestSource
 
 	if r.onParticipantChanged != nil {
 		r.onParticipantChanged(participant)
@@ -376,10 +379,29 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 	return nil
 }
 
-func (r *Room) ResumeParticipant(p types.LocalParticipant, responseSink routing.MessageSink, iceServers []*livekit.ICEServer, reason livekit.ReconnectReason) error {
+func (r *Room) ReplaceParticipantRequestSource(identity livekit.ParticipantIdentity, reqSource routing.MessageSource) {
+	r.lock.Lock()
+	if rs, ok := r.participantRequestSources[identity]; ok {
+		rs.Close()
+	}
+	r.participantRequestSources[identity] = reqSource
+
+	r.lock.Unlock()
+}
+
+func (r *Room) GetParticipantRequestSource(identity livekit.ParticipantIdentity) routing.MessageSource {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+	return r.participantRequestSources[identity]
+}
+
+func (r *Room) ResumeParticipant(p types.LocalParticipant, requestSource routing.MessageSource, responseSink routing.MessageSink, iceServers []*livekit.ICEServer, reason livekit.ReconnectReason) error {
+	r.ReplaceParticipantRequestSource(p.Identity(), requestSource)
 	// close previous sink, and link to new one
 	p.CloseSignalConnection()
 	p.SetResponseSink(responseSink)
+
+	p.SetSignalSourceValid(true)
 
 	if err := p.SendReconnectResponse(&livekit.ReconnectResponse{
 		IceServers:          iceServers,
@@ -413,6 +435,7 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 
 		delete(r.participants, identity)
 		delete(r.participantOpts, identity)
+		delete(r.participantRequestSources, identity)
 		if !p.Hidden() {
 			r.protoRoom.NumParticipants--
 		}

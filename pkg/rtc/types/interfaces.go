@@ -246,6 +246,7 @@ type LocalParticipant interface {
 	SetResponseSink(sink routing.MessageSink)
 	CloseSignalConnection()
 	UpdateLastSeenSignal()
+	SetSignalSourceValid(valid bool)
 
 	// permissions
 	ClaimGrants() *auth.ClaimGrants
