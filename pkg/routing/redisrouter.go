@@ -50,7 +50,7 @@ func NewRedisRouter(config *config.Config, lr *LocalRouter, rc redis.UniversalCl
 	rr := &RedisRouter{
 		LocalRouter:    lr,
 		rc:             rc,
-		usePSRPCSignal: config.UsePSRPCSignal,
+		usePSRPCSignal: config.SignalRelay.Enabled,
 	}
 	rr.ctx, rr.cancel = context.WithCancel(context.Background())
 	return rr

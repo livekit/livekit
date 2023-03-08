@@ -6,12 +6,14 @@ import (
 	"github.com/pkg/errors"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
+	"github.com/livekit/psrpc/middleware"
 )
 
 type SessionHandler func(
@@ -31,9 +33,15 @@ func NewSignalServer(
 	nodeID livekit.NodeID,
 	region string,
 	bus psrpc.MessageBus,
+	config config.SignalRelayConfig,
 	sessionHandler SessionHandler,
 ) (*SignalServer, error) {
-	s, err := rpc.NewTypedSignalServer(nodeID, &signalService{region, sessionHandler}, bus)
+	ri := middleware.NewStreamRetryInterceptorFactory(middleware.RetryOptions{
+		MaxAttempts: config.MaxAttempts,
+		Timeout:     config.Timeout,
+		Backoff:     config.Backoff,
+	})
+	s, err := rpc.NewTypedSignalServer(nodeID, &signalService{region, sessionHandler}, bus, psrpc.WithServerStreamInterceptors(ri))
 	if err != nil {
 		return nil, err
 	}
@@ -48,6 +56,7 @@ func NewSignalServer(
 func NewDefaultSignalServer(
 	currentNode routing.LocalNode,
 	bus psrpc.MessageBus,
+	config config.SignalRelayConfig,
 	router routing.Router,
 	roomManager *RoomManager,
 ) (r *SignalServer, err error) {
@@ -63,7 +72,7 @@ func NewDefaultSignalServer(
 		return roomManager.StartSession(ctx, roomName, pi, requestSource, responseSink)
 	}
 
-	return NewSignalServer(livekit.NodeID(currentNode.Id), currentNode.Region, bus, sessionHandler)
+	return NewSignalServer(livekit.NodeID(currentNode.Id), currentNode.Region, bus, config, sessionHandler)
 }
 
 func (r *SignalServer) Stop() {
