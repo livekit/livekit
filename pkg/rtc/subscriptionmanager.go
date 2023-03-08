@@ -19,10 +19,10 @@ package rtc
 import (
 	"context"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/pion/webrtc/v3/pkg/rtcerr"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
