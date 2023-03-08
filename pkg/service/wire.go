@@ -57,6 +57,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		NewRoomAllocator,
 		NewRoomService,
 		NewRTCService,
+		getSignalRelayConfig,
 		NewDefaultSignalServer,
 		routing.NewSignalClient,
 		NewLocalRoomManager,
@@ -73,6 +74,7 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 		createRedisClient,
 		getNodeID,
 		getMessageBus,
+		getSignalRelayConfig,
 		routing.NewSignalClient,
 		routing.CreateRouter,
 	)
@@ -182,6 +184,10 @@ func createClientConfiguration() clientconfiguration.ClientConfigurationManager 
 
 func getRoomConf(config *config.Config) config.RoomConfig {
 	return config.Room
+}
+
+func getSignalRelayConfig(config *config.Config) config.SignalRelayConfig {
+	return config.SignalRelay
 }
 
 func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Server, error) {

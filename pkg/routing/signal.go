@@ -5,11 +5,13 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/psrpc"
+	"github.com/livekit/psrpc/middleware"
 )
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
@@ -24,8 +26,13 @@ type signalClient struct {
 	client rpc.TypedSignalClient
 }
 
-func NewSignalClient(nodeID livekit.NodeID, bus psrpc.MessageBus) (SignalClient, error) {
-	c, err := rpc.NewTypedSignalClient(nodeID, bus)
+func NewSignalClient(nodeID livekit.NodeID, bus psrpc.MessageBus, config config.SignalRelayConfig) (SignalClient, error) {
+	ri := middleware.NewStreamRetryInterceptorFactory(middleware.RetryOptions{
+		MaxAttempts: config.MaxAttempts,
+		Timeout:     config.Timeout,
+		Backoff:     config.Backoff,
+	})
+	c, err := rpc.NewTypedSignalClient(nodeID, bus, psrpc.WithClientStreamInterceptors(ri))
 	if err != nil {
 		return nil, err
 	}

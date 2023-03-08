@@ -42,7 +42,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	nodeID := getNodeID(currentNode)
 	messageBus := getMessageBus(universalClient)
-	signalClient, err := routing.NewSignalClient(nodeID, messageBus)
+	signalRelayConfig := getSignalRelayConfig(conf)
+	signalClient, err := routing.NewSignalClient(nodeID, messageBus, signalRelayConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +93,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	signalServer, err := NewDefaultSignalServer(currentNode, messageBus, router, roomManager)
+	signalServer, err := NewDefaultSignalServer(currentNode, messageBus, signalRelayConfig, router, roomManager)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +116,8 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 	}
 	nodeID := getNodeID(currentNode)
 	messageBus := getMessageBus(universalClient)
-	signalClient, err := routing.NewSignalClient(nodeID, messageBus)
+	signalRelayConfig := getSignalRelayConfig(conf)
+	signalClient, err := routing.NewSignalClient(nodeID, messageBus, signalRelayConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -227,6 +229,10 @@ func createClientConfiguration() clientconfiguration.ClientConfigurationManager 
 
 func getRoomConf(config2 *config.Config) config.RoomConfig {
 	return config2.Room
+}
+
+func getSignalRelayConfig(config2 *config.Config) config.SignalRelayConfig {
+	return config2.SignalRelay
 }
 
 func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Server, error) {

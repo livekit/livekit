@@ -61,17 +61,6 @@ type RTCMessageCallback func(
 	msg *livekit.RTCNodeMessage,
 )
 
-type NewSignalClientCallabck func(
-	roomName livekit.RoomName,
-	pi ParticipantInit,
-	nodeID livekit.NodeID,
-) (
-	connectionID livekit.ConnectionID,
-	reqSink MessageSink,
-	resSource MessageSource,
-	err error,
-)
-
 // Router allows multiple nodes to coordinate the participant session
 //
 //counterfeiter:generate . Router
