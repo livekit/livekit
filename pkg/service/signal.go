@@ -41,7 +41,7 @@ func NewSignalServer(
 		Timeout:     config.Timeout,
 		Backoff:     config.Backoff,
 	})
-	s, err := rpc.NewTypedSignalServer(nodeID, &signalService{region, sessionHandler}, bus, psrpc.WithServerStreamInterceptors(ri))
+	s, err := rpc.NewTypedSignalServer(nodeID, &signalService{region, sessionHandler}, bus, psrpc.WithServerStreamInterceptors(ri), psrpc.WithServerChannelSize(config.StreamBufferSize))
 	if err != nil {
 		return nil, err
 	}

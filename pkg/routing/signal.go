@@ -23,6 +23,7 @@ type SignalClient interface {
 
 type signalClient struct {
 	nodeID livekit.NodeID
+	config config.SignalRelayConfig
 	client rpc.TypedSignalClient
 }
 
@@ -39,6 +40,7 @@ func NewSignalClient(nodeID livekit.NodeID, bus psrpc.MessageBus, config config.
 
 	return &signalClient{
 		nodeID: nodeID,
+		config: config,
 		client: c,
 	}, nil
 }
