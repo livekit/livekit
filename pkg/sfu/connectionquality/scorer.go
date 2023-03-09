@@ -3,7 +3,6 @@ package connectionquality
 import (
 	"fmt"
 	"math"
-	"sort"
 	"sync"
 	"time"
 
@@ -17,8 +16,8 @@ const (
 	maxScore  = float64(100.0)
 	poorScore = float64(50.0)
 
-	waitForQualityPoor = 5
-	waitForQualityGood = 3
+	increaseFactor = float64(0.4) // slow increase
+	decreaseFactor = float64(0.8) // fast decrease
 
 	unmuteTimeThreshold = float64(0.5)
 )
@@ -101,62 +100,6 @@ func (w *windowStat) String() string {
 
 // ------------------------------------------
 
-type windowScore struct {
-	stat  *windowStat
-	score float64
-}
-
-func newWindowScorePacket(stat *windowStat, plw float64) *windowScore {
-	return &windowScore{
-		stat:  stat,
-		score: stat.calculatePacketScore(plw),
-	}
-}
-
-func newWindowScoreByte(stat *windowStat, expectedBitrate int64) *windowScore {
-	return &windowScore{
-		stat:  stat,
-		score: stat.calculateByteScore(expectedBitrate),
-	}
-}
-
-func newWindowScoreWithScore(stat *windowStat, score float64) *windowScore {
-	return &windowScore{
-		stat:  stat,
-		score: score,
-	}
-}
-
-func (w *windowScore) getScore() float64 {
-	return w.score
-}
-
-func (w *windowScore) String() string {
-	return fmt.Sprintf("stat: {%+v}, score: %0.2f", w.stat, w.score)
-}
-
-// ------------------------------------------
-
-type qualityScorerState int
-
-const (
-	qualityScorerStateStable qualityScorerState = iota
-	qualityScorerStateRecovering
-)
-
-func (q qualityScorerState) String() string {
-	switch q {
-	case qualityScorerStateStable:
-		return "STABLE"
-	case qualityScorerStateRecovering:
-		return "RECOVERING"
-	default:
-		return fmt.Sprintf("%d", int(q))
-	}
-}
-
-// ------------------------------------------
-
 type layerTransition struct {
 	startedAt time.Time
 	bitrate   int64
@@ -173,9 +116,7 @@ type qualityScorer struct {
 	lock         sync.RWMutex
 	lastUpdateAt time.Time
 
-	score   float64
-	state   qualityScorerState
-	windows []*windowScore
+	score float64
 
 	mutedAt   time.Time
 	unmutedAt time.Time
@@ -192,7 +133,6 @@ func newQualityScorer(params qualityScorerParams) *qualityScorer {
 	return &qualityScorer{
 		params: params,
 		score:  maxScore,
-		state:  qualityScorerStateStable,
 	}
 }
 
@@ -209,10 +149,6 @@ func (q *qualityScorer) UpdateMute(isMuted bool, at time.Time) {
 
 	if isMuted {
 		q.mutedAt = at
-
-		// stable when muted
-		q.state = qualityScorerStateStable
-		q.windows = q.windows[:0]
 		q.score = maxScore
 	} else {
 		q.unmutedAt = at
@@ -230,10 +166,6 @@ func (q *qualityScorer) AddTransition(bitrate int64, at time.Time) {
 
 	if bitrate == 0 {
 		q.layersMutedAt = at
-
-		// stable when no layers expected
-		q.state = qualityScorerStateStable
-		q.windows = q.windows[:0]
 		q.score = maxScore
 	} else {
 		if q.layersUnmutedAt.IsZero() || q.layersMutedAt.After(q.layersUnmutedAt) {
@@ -261,64 +193,42 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 	}
 
 	reason := "none"
-	var ws *windowScore
+	var score float64
 	if stat.packetsExpected == 0 {
 		reason = "dry"
-		ws = newWindowScoreWithScore(stat, poorScore)
+		score = poorScore
 	} else {
-		wsPacket := newWindowScorePacket(stat, q.getPacketLossWeight(stat))
-		wsByte := newWindowScoreByte(stat, expectedBitrate)
-		if wsPacket.getScore() < wsByte.getScore() {
+		packetScore := stat.calculatePacketScore(q.getPacketLossWeight(stat))
+		byteScore := stat.calculateByteScore(expectedBitrate)
+		if packetScore < byteScore {
 			reason = "packet"
-			ws = wsPacket
+			score = packetScore
 		} else {
 			reason = "bitrate"
-			ws = wsByte
+			score = byteScore
 		}
 	}
-	score := ws.getScore()
-	cq := scoreToConnectionQuality(score)
-
-	q.lastUpdateAt = at
-
-	// transition to start of recovering on any quality drop
+	factor := increaseFactor
+	if score < q.score {
+		factor = decreaseFactor
+	}
+	score = factor*score + (1.0-factor)*q.score
 	// WARNING NOTE: comparing protobuf enum values directly (livekit.ConnectionQuality)
-	if scoreToConnectionQuality(q.score) > cq {
-		q.windows = []*windowScore{ws}
-		q.state = qualityScorerStateRecovering
-		q.score = score
+	if scoreToConnectionQuality(q.score) > scoreToConnectionQuality(score) {
 		q.params.Logger.Infow(
 			"quality drop",
 			"reason", reason,
-			"score", q.score,
-			"quality", scoreToConnectionQuality(q.score),
-			"window", ws,
+			"prevScore", q.score,
+			"prevQuality", scoreToConnectionQuality(q.score),
+			"score", score,
+			"quality", scoreToConnectionQuality(score),
+			"stat", stat,
 			"expectedBitrate", expectedBitrate,
 		)
-		return
 	}
 
-	// if stable and quality continues to be EXCELLENT, stay there.
-	if q.state == qualityScorerStateStable && cq == livekit.ConnectionQuality_EXCELLENT {
-		q.score = score
-		return
-	}
-
-	// when recovering, look at a longer window
-	q.windows = append(q.windows, ws)
-	if !q.prune(at) {
-		// minimum recovery duration not satisfied, hold at current quality
-		return
-	}
-
-	// take median of scores in a longer window to prevent quality reporting oscillations
-	sort.Slice(q.windows, func(i, j int) bool { return q.windows[i].getScore() < q.windows[j].getScore() })
-	mid := (len(q.windows)+1)/2 - 1
-	q.score = q.windows[mid].getScore()
-	if scoreToConnectionQuality(q.score) == livekit.ConnectionQuality_EXCELLENT {
-		q.state = qualityScorerStateStable
-		q.windows = q.windows[:0]
-	}
+	q.score = score
+	q.lastUpdateAt = at
 }
 
 func (q *qualityScorer) isMuted() bool {
@@ -370,25 +280,6 @@ func (q *qualityScorer) getPacketLossWeight(stat *windowStat) float64 {
 	}
 
 	return math.Sqrt(pps/q.maxPPS) * q.params.PacketLossWeight
-}
-
-func (q *qualityScorer) prune(at time.Time) bool {
-	cq := scoreToConnectionQuality(q.score)
-
-	var wait int
-	if cq == livekit.ConnectionQuality_POOR {
-		wait = waitForQualityPoor
-	} else {
-		wait = waitForQualityGood
-	}
-
-	oldest := len(q.windows) - wait
-	if oldest < 0 {
-		oldest = 0
-	}
-	q.windows = q.windows[oldest:]
-
-	return len(q.windows) >= wait
 }
 
 func (q *qualityScorer) getExpectedBitsAndUpdateTransitions(at time.Time) int64 {
