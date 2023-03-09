@@ -2,9 +2,11 @@ package connectionquality
 
 import (
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/frostbyte73/core"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -14,8 +16,8 @@ import (
 )
 
 const (
-	UpdateInterval           = 5 * time.Second
-	audioPacketRateThreshold = float64(25.0)
+	UpdateInterval   = 5 * time.Second
+	processThreshold = 0.95
 )
 
 type ConnectionStatsParams struct {
@@ -27,10 +29,14 @@ type ConnectionStatsParams struct {
 }
 
 type ConnectionStats struct {
-	params    ConnectionStatsParams
-	trackInfo *livekit.TrackInfo
+	params  ConnectionStatsParams
+	isVideo atomic.Bool
 
 	onStatsUpdate func(cs *ConnectionStats, stat *livekit.AnalyticsStat)
+
+	lock           sync.RWMutex
+	lastStatsAt    time.Time
+	statsInProcess bool
 
 	scorer *qualityScorer
 
@@ -49,7 +55,7 @@ func NewConnectionStats(params ConnectionStatsParams) *ConnectionStats {
 }
 
 func (cs *ConnectionStats) Start(trackInfo *livekit.TrackInfo, at time.Time) {
-	cs.trackInfo = trackInfo
+	cs.isVideo.Store(trackInfo.Type == livekit.TrackType_VIDEO)
 
 	cs.scorer.Start(at)
 
@@ -74,6 +80,10 @@ func (cs *ConnectionStats) AddTransition(bitrate int64, at time.Time) {
 
 func (cs *ConnectionStats) GetScoreAndQuality() (float32, livekit.ConnectionQuality) {
 	return cs.scorer.GetMOSAndQuality()
+}
+
+func (cs *ConnectionStats) ReceiverReportReceived(at time.Time) {
+	cs.getStat(at)
 }
 
 func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWithLayers, at time.Time) float32 {
@@ -102,40 +112,83 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 	return mos
 }
 
-func (cs *ConnectionStats) getStat(at time.Time) *livekit.AnalyticsStat {
+func (cs *ConnectionStats) maybeMarkInProcess() bool {
+	cs.lock.Lock()
+	defer cs.lock.Unlock()
+
+	if cs.statsInProcess {
+		// already running
+		return false
+	}
+
+	interval := cs.params.UpdateInterval
+	if interval == 0 {
+		interval = UpdateInterval
+	}
+
+	if cs.lastStatsAt.IsZero() || time.Since(cs.lastStatsAt) > time.Duration(processThreshold*float64(interval)) {
+		cs.statsInProcess = true
+		return true
+	}
+
+	return false
+}
+
+func (cs *ConnectionStats) updateInProcess(isAvailable bool, at time.Time) {
+	cs.lock.Lock()
+	defer cs.lock.Unlock()
+
+	cs.statsInProcess = false
+	if isAvailable {
+		cs.lastStatsAt = at
+	}
+}
+
+func (cs *ConnectionStats) getStat(at time.Time) {
 	if cs.params.GetDeltaStats == nil {
-		return nil
+		return
+	}
+
+	if !cs.maybeMarkInProcess() {
+		// not yet time to process
+		return
 	}
 
 	streams := cs.params.GetDeltaStats()
 	if len(streams) == 0 {
-		return nil
+		cs.updateInProcess(false, at)
+		return
 	}
 
-	analyticsStreams := make([]*livekit.AnalyticsStream, 0, len(streams))
-	for ssrc, stream := range streams {
-		as := toAnalyticsStream(ssrc, stream.RTPStats)
-
-		//
-		// add video layer if either
-		//   1. Simulcast - even if there is only one layer per stream as it provides layer id
-		//   2. A stream has multiple layers
-		//
-		if cs.trackInfo.Type == livekit.TrackType_VIDEO && (len(streams) > 1 || len(stream.Layers) > 1) {
-			for layer, layerStats := range stream.Layers {
-				as.VideoLayers = append(as.VideoLayers, toAnalyticsVideoLayer(layer, layerStats))
-			}
-		}
-
-		analyticsStreams = append(analyticsStreams, as)
-	}
+	// stats available, update last stats time
+	cs.updateInProcess(true, at)
 
 	score := cs.updateScore(streams, at)
 
-	return &livekit.AnalyticsStat{
-		Score:   score,
-		Streams: analyticsStreams,
-		Mime:    cs.params.MimeType,
+	if cs.onStatsUpdate != nil {
+		analyticsStreams := make([]*livekit.AnalyticsStream, 0, len(streams))
+		for ssrc, stream := range streams {
+			as := toAnalyticsStream(ssrc, stream.RTPStats)
+
+			//
+			// add video layer if either
+			//   1. Simulcast - even if there is only one layer per stream as it provides layer id
+			//   2. A stream has multiple layers
+			//
+			if (len(streams) > 1 || len(stream.Layers) > 1) && cs.isVideo.Load() {
+				for layer, layerStats := range stream.Layers {
+					as.VideoLayers = append(as.VideoLayers, toAnalyticsVideoLayer(layer, layerStats))
+				}
+			}
+
+			analyticsStreams = append(analyticsStreams, as)
+		}
+
+		cs.onStatsUpdate(cs, &livekit.AnalyticsStat{
+			Score:   score,
+			Streams: analyticsStreams,
+			Mime:    cs.params.MimeType,
+		})
 	}
 }
 
@@ -158,14 +211,7 @@ func (cs *ConnectionStats) updateStatsWorker() {
 				return
 			}
 
-			stat := cs.getStat(time.Now())
-			if stat == nil {
-				continue
-			}
-
-			if cs.onStatsUpdate != nil {
-				cs.onStatsUpdate(cs, stat)
-			}
+			cs.getStat(time.Now())
 		}
 	}
 }
