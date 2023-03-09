@@ -245,6 +245,10 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		newWR.SetRTCPCh(t.params.RTCPChan)
 		newWR.OnCloseHandler(func() {
 			t.MediaTrackReceiver.SetClosing()
+
+			// record stats before clearing receivers
+			t.MediaTrackReceiver.RecordPublishRTPStats()
+
 			t.MediaTrackReceiver.ClearReceiver(mime, false)
 			if t.MediaTrackReceiver.TryClose() {
 				if t.dynacastManager != nil {
