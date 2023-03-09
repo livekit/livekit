@@ -1,6 +1,7 @@
 package connectionquality
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -48,7 +49,7 @@ func TestConnectionQuality(t *testing.T) {
 		require.Greater(t, float32(4.6), mos)
 		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, quality)
 
-		// introduce loss and the score should drop - 10% loss for Opus -> POOR
+		// introduce loss and the score should drop - 12% loss for Opus -> POOR
 		now = now.Add(duration)
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
 			1: &buffer.StreamStatsWithLayers{
@@ -56,7 +57,7 @@ func TestConnectionQuality(t *testing.T) {
 					StartTime:   now,
 					Duration:    duration,
 					Packets:     250,
-					PacketsLost: 25,
+					PacketsLost: 30,
 				},
 			},
 		}
@@ -65,25 +66,8 @@ func TestConnectionQuality(t *testing.T) {
 		require.Greater(t, float32(3.2), mos)
 		require.Equal(t, livekit.ConnectionQuality_POOR, quality)
 
-		// should stay at POOR quality for poor threshold wait even if the conditions improve
-		for i := 0; i < 3; i++ {
-			now = now.Add(duration)
-			streams = map[uint32]*buffer.StreamStatsWithLayers{
-				1: &buffer.StreamStatsWithLayers{
-					RTPStats: &buffer.RTPDeltaInfo{
-						StartTime: now,
-						Duration:  duration,
-						Packets:   250,
-					},
-				},
-			}
-			cs.updateScore(streams, now.Add(duration))
-			mos, quality = cs.GetScoreAndQuality()
-			require.Greater(t, float32(3.2), mos)
-			require.Equal(t, livekit.ConnectionQuality_POOR, quality)
-		}
-
-		// should return median quality which should be EXCELLENT as all windows in above loop have great conditions
+		// should stay at POOR quality for one iteration even if the conditions improve
+		// due to significant loss (12%) in the previous window
 		now = now.Add(duration)
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
 			1: &buffer.StreamStatsWithLayers{
@@ -96,98 +80,10 @@ func TestConnectionQuality(t *testing.T) {
 		}
 		cs.updateScore(streams, now.Add(duration))
 		mos, quality = cs.GetScoreAndQuality()
-		require.Greater(t, float32(4.6), mos)
-		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, quality)
-
-		// introduce loss and the score should drop - 3% loss for Opus -> GOOD
-		now = now.Add(duration)
-		streams = map[uint32]*buffer.StreamStatsWithLayers{
-			1: &buffer.StreamStatsWithLayers{
-				RTPStats: &buffer.RTPDeltaInfo{
-					StartTime:   now,
-					Duration:    duration,
-					Packets:     250,
-					PacketsLost: 8,
-				},
-			},
-		}
-		cs.updateScore(streams, now.Add(duration))
-		mos, quality = cs.GetScoreAndQuality()
-		require.Greater(t, float32(4.1), mos)
-		require.Equal(t, livekit.ConnectionQuality_GOOD, quality)
-
-		// should stay at GOOD quality for good threshold (which is shorter than poor threshold) wait even if the conditions improve
-		for i := 0; i < 1; i++ {
-			now = now.Add(duration)
-			streams = map[uint32]*buffer.StreamStatsWithLayers{
-				1: &buffer.StreamStatsWithLayers{
-					RTPStats: &buffer.RTPDeltaInfo{
-						StartTime: now,
-						Duration:  duration,
-						Packets:   250,
-					},
-				},
-			}
-			cs.updateScore(streams, now.Add(duration))
-			mos, quality = cs.GetScoreAndQuality()
-			require.Greater(t, float32(4.1), mos)
-			require.Equal(t, livekit.ConnectionQuality_GOOD, quality)
-		}
-
-		// should return median quality which should be EXCELLENT as all windows in above loop have great conditions
-		now = now.Add(duration)
-		streams = map[uint32]*buffer.StreamStatsWithLayers{
-			1: &buffer.StreamStatsWithLayers{
-				RTPStats: &buffer.RTPDeltaInfo{
-					StartTime: now,
-					Duration:  duration,
-					Packets:   250,
-				},
-			},
-		}
-		cs.updateScore(streams, now.Add(duration))
-		mos, quality = cs.GetScoreAndQuality()
-		require.Greater(t, float32(4.6), mos)
-		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, quality)
-
-		// POOR -> GOOD -> EXCELLENT should take longer
-		now = now.Add(duration)
-		streams = map[uint32]*buffer.StreamStatsWithLayers{
-			1: &buffer.StreamStatsWithLayers{
-				RTPStats: &buffer.RTPDeltaInfo{
-					StartTime:   now,
-					Duration:    duration,
-					Packets:     250,
-					PacketsLost: 25,
-				},
-			},
-		}
-		cs.updateScore(streams, now.Add(duration))
-		mos, quality = cs.GetScoreAndQuality()
 		require.Greater(t, float32(3.2), mos)
 		require.Equal(t, livekit.ConnectionQuality_POOR, quality)
 
-		// should stay at POOR quality for poor threshold wait even if the conditions improve
-		for i := 0; i < 3; i++ {
-			now = now.Add(duration)
-			streams = map[uint32]*buffer.StreamStatsWithLayers{
-				1: &buffer.StreamStatsWithLayers{
-					RTPStats: &buffer.RTPDeltaInfo{
-						StartTime:   now,
-						Duration:    duration,
-						Packets:     250,
-						PacketsLost: 8,
-					},
-				},
-			}
-			cs.updateScore(streams, now.Add(duration))
-			mos, quality = cs.GetScoreAndQuality()
-			require.Greater(t, float32(3.2), mos)
-			require.Equal(t, livekit.ConnectionQuality_POOR, quality)
-		}
-
-		// should return median quality which should be GOOD as all windows in above loop have some loss (i. e. GOOD quality).
-		// although the below update has no loss (EXCELLENT quality), median should be at GOOO
+		// should climb up to GOOD if conditions continue to be good
 		now = now.Add(duration)
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
 			1: &buffer.StreamStatsWithLayers{
@@ -203,7 +99,56 @@ func TestConnectionQuality(t *testing.T) {
 		require.Greater(t, float32(4.1), mos)
 		require.Equal(t, livekit.ConnectionQuality_GOOD, quality)
 
-		// another EXCELLENT quality window and the median should switch to EXCELLENT
+		// should climb up to EXCELLENT if conditions continue to be good
+		now = now.Add(duration)
+		streams = map[uint32]*buffer.StreamStatsWithLayers{
+			1: &buffer.StreamStatsWithLayers{
+				RTPStats: &buffer.RTPDeltaInfo{
+					StartTime: now,
+					Duration:  duration,
+					Packets:   250,
+				},
+			},
+		}
+		cs.updateScore(streams, now.Add(duration))
+		mos, quality = cs.GetScoreAndQuality()
+		require.Greater(t, float32(4.6), mos)
+		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, quality)
+
+		// introduce loss and the score should drop - 5% loss for Opus -> GOOD
+		now = now.Add(duration)
+		streams = map[uint32]*buffer.StreamStatsWithLayers{
+			1: &buffer.StreamStatsWithLayers{
+				RTPStats: &buffer.RTPDeltaInfo{
+					StartTime:   now,
+					Duration:    duration,
+					Packets:     250,
+					PacketsLost: 13,
+				},
+			},
+		}
+		cs.updateScore(streams, now.Add(duration))
+		mos, quality = cs.GetScoreAndQuality()
+		require.Greater(t, float32(4.1), mos)
+		require.Equal(t, livekit.ConnectionQuality_GOOD, quality)
+
+		// should stay at GOOD quality for another iteration even if the conditions improve
+		now = now.Add(duration)
+		streams = map[uint32]*buffer.StreamStatsWithLayers{
+			1: &buffer.StreamStatsWithLayers{
+				RTPStats: &buffer.RTPDeltaInfo{
+					StartTime: now,
+					Duration:  duration,
+					Packets:   250,
+				},
+			},
+		}
+		cs.updateScore(streams, now.Add(duration))
+		mos, quality = cs.GetScoreAndQuality()
+		require.Greater(t, float32(4.1), mos)
+		require.Equal(t, livekit.ConnectionQuality_GOOD, quality)
+
+		// should climb up to EXCELLENT if conditions continue to be good
 		now = now.Add(duration)
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
 			1: &buffer.StreamStatsWithLayers{
@@ -367,6 +312,7 @@ func TestConnectionQuality(t *testing.T) {
 			packetsExpected   uint32
 			expectedQualities []expectedQuality
 		}{
+			// NOTE: Because of EWMA (Exponentially Weighted Moving Average), these cut off points are not exact
 			// "audio/opus" - no fec - 0 <= loss < 2.5%: EXCELLENT, 2.5% <= loss < 5%: GOOD, >= 5%: POOR
 			{
 				name:            "audio/opus - no fec",
@@ -385,7 +331,7 @@ func TestConnectionQuality(t *testing.T) {
 						expectedQuality:      livekit.ConnectionQuality_GOOD,
 					},
 					{
-						packetLossPercentage: 5.0,
+						packetLossPercentage: 5.2,
 						expectedMOS:          3.2,
 						expectedQuality:      livekit.ConnectionQuality_POOR,
 					},
@@ -404,12 +350,12 @@ func TestConnectionQuality(t *testing.T) {
 						expectedQuality:      livekit.ConnectionQuality_EXCELLENT,
 					},
 					{
-						packetLossPercentage: 4.0,
+						packetLossPercentage: 4.1,
 						expectedMOS:          4.1,
 						expectedQuality:      livekit.ConnectionQuality_GOOD,
 					},
 					{
-						packetLossPercentage: 8.0,
+						packetLossPercentage: 8.2,
 						expectedMOS:          3.2,
 						expectedQuality:      livekit.ConnectionQuality_POOR,
 					},
@@ -457,7 +403,7 @@ func TestConnectionQuality(t *testing.T) {
 						expectedQuality:      livekit.ConnectionQuality_GOOD,
 					},
 					{
-						packetLossPercentage: 20.0,
+						packetLossPercentage: 22.0,
 						expectedMOS:          3.2,
 						expectedQuality:      livekit.ConnectionQuality_POOR,
 					},
@@ -476,7 +422,7 @@ func TestConnectionQuality(t *testing.T) {
 						expectedQuality:      livekit.ConnectionQuality_EXCELLENT,
 					},
 					{
-						packetLossPercentage: 2.0,
+						packetLossPercentage: 2.5,
 						expectedMOS:          4.1,
 						expectedQuality:      livekit.ConnectionQuality_GOOD,
 					},
@@ -504,7 +450,7 @@ func TestConnectionQuality(t *testing.T) {
 								StartTime:   now,
 								Duration:    duration,
 								Packets:     tc.packetsExpected,
-								PacketsLost: uint32(eq.packetLossPercentage * float64(tc.packetsExpected) / 100.0),
+								PacketsLost: uint32(math.Ceil(eq.packetLossPercentage * float64(tc.packetsExpected) / 100.0)),
 							},
 						},
 					}
@@ -531,6 +477,7 @@ func TestConnectionQuality(t *testing.T) {
 			expectedMOS     float32
 			expectedQuality livekit.ConnectionQuality
 		}{
+			// NOTE: Because of EWMA (Exponentially Weighted Moving Average), these cut off points are not exact
 			// 1.0 <= expectedBits / actualBits < ~2.7 = EXCELLENT
 			// ~2.7 <= expectedBits / actualBits < ~7.5 = GOOD
 			// expectedBits / actualBits >= ~7.5 = POOR
@@ -560,7 +507,7 @@ func TestConnectionQuality(t *testing.T) {
 						offset:  3 * time.Second,
 					},
 				},
-				bytes:           7_000_000 / 8 / 3,
+				bytes:           uint64(math.Ceil(7_000_000.0 / 8.0 / 3.5)),
 				expectedMOS:     4.1,
 				expectedQuality: livekit.ConnectionQuality_GOOD,
 			},
@@ -575,7 +522,7 @@ func TestConnectionQuality(t *testing.T) {
 						offset:  3 * time.Second,
 					},
 				},
-				bytes:           8_000_000 / 8 / 8,
+				bytes:           uint64(math.Ceil(8_000_000.0 / 8.0 / 13.0)),
 				expectedMOS:     3.2,
 				expectedQuality: livekit.ConnectionQuality_POOR,
 			},
