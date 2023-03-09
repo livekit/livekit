@@ -1307,6 +1307,8 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 					l(d, rr)
 				}
 				d.listenerLock.RUnlock()
+
+				d.connectionStats.ReceiverReportReceived(time.Now())
 			}
 
 		case *rtcp.TransportLayerNack:
