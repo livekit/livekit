@@ -19,7 +19,7 @@ require (
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20230130133657-96cfb115473a
 	github.com/livekit/protocol v1.4.3-0.20230306094455-176d6d15b6c0
-	github.com/livekit/psrpc v0.2.10-0.20230303054701-5853a56b4643
+	github.com/livekit/psrpc v0.2.10-0.20230309012759-5531f8e3b362
 	github.com/mackerelio/go-osstat v0.2.3
 	github.com/magefile/mage v1.14.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.6.1
@@ -49,7 +49,7 @@ require (
 	go.uber.org/atomic v1.10.0
 	go.uber.org/zap v1.24.0
 	golang.org/x/sync v0.1.0
-	google.golang.org/protobuf v1.28.1
+	google.golang.org/protobuf v1.29.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -62,7 +62,7 @@ require (
 	github.com/eapache/channels v1.1.0 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
 	github.com/go-logr/logr v1.2.3 // indirect
-	github.com/golang/protobuf v1.5.2 // indirect
+	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/google/go-cmp v0.5.9 // indirect
 	github.com/google/subcommands v1.2.0 // indirect
 	github.com/google/uuid v1.3.0 // indirect
@@ -90,14 +90,14 @@ require (
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
-	golang.org/x/crypto v0.6.0 // indirect
-	golang.org/x/exp v0.0.0-20230224173230-c95f2b4c22f2 // indirect
-	golang.org/x/mod v0.7.0 // indirect
-	golang.org/x/net v0.7.0 // indirect
-	golang.org/x/sys v0.5.0 // indirect
-	golang.org/x/text v0.7.0 // indirect
-	golang.org/x/tools v0.5.0 // indirect
-	google.golang.org/genproto v0.0.0-20230301171018-9ab4bdc49ad5 // indirect
+	golang.org/x/crypto v0.7.0 // indirect
+	golang.org/x/exp v0.0.0-20230307190834-24139beb5833 // indirect
+	golang.org/x/mod v0.8.0 // indirect
+	golang.org/x/net v0.8.0 // indirect
+	golang.org/x/sys v0.6.0 // indirect
+	golang.org/x/text v0.8.0 // indirect
+	golang.org/x/tools v0.6.0 // indirect
+	google.golang.org/genproto v0.0.0-20230306155012-7f2fa6fef1f4 // indirect
 	google.golang.org/grpc v1.53.0 // indirect
 	gopkg.in/square/go-jose.v2 v2.6.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
