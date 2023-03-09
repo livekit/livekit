@@ -3,10 +3,10 @@ package connectionquality
 import (
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/frostbyte73/core"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
