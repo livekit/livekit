@@ -29,6 +29,7 @@ type TrackSender interface {
 	UpTrackLayersChange()
 	UpTrackBitrateAvailabilityChange()
 	UpTrackMaxPublishedLayerChange(maxPublishedLayer int32)
+	UpTrackMaxTemporalLayerSeenChange(maxTemporalLayerSeen int32)
 	UpTrackBitrateReport(availableLayers []int32, bitrates Bitrates)
 	WriteRTP(p *buffer.ExtPacket, layer int32) error
 	Close()
@@ -877,7 +878,11 @@ func (d *DownTrack) UpTrackMaxPublishedLayerChange(maxPublishedLayer int32) {
 	}
 }
 
-func (d *DownTrack) maybeAddTransition(bitrate int64, distance int32) {
+func (d *DownTrack) UpTrackMaxTemporalLayerSeenChange(maxTemporalLayerSeen int32) {
+	d.forwarder.SetMaxTemporalLayerSeen(maxTemporalLayerSeen)
+}
+
+func (d *DownTrack) maybeAddTransition(bitrate int64, distance float64) {
 	if d.kind == webrtc.RTPCodecTypeAudio {
 		return
 	}
@@ -888,8 +893,7 @@ func (d *DownTrack) maybeAddTransition(bitrate int64, distance int32) {
 	}
 
 	if ti.Source == livekit.TrackSource_SCREEN_SHARE {
-		// RAJA-TODO: remove cast on distance
-		d.connectionStats.AddLayerTransition(float64(distance), time.Now())
+		d.connectionStats.AddLayerTransition(distance, time.Now())
 	}
 
 	d.connectionStats.AddBitrateTransition(bitrate, time.Now())
@@ -979,7 +983,7 @@ func (d *DownTrack) BandwidthRequested() int64 {
 	return d.forwarder.BandwidthRequested(brs)
 }
 
-func (d *DownTrack) DistanceToDesired() int32 {
+func (d *DownTrack) DistanceToDesired() float64 {
 	_, brs := d.receiver.GetLayeredBitrate()
 	return d.forwarder.DistanceToDesired(brs)
 }
