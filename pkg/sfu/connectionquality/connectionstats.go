@@ -74,8 +74,12 @@ func (cs *ConnectionStats) UpdateMute(isMuted bool, at time.Time) {
 	cs.scorer.UpdateMute(isMuted, at)
 }
 
-func (cs *ConnectionStats) AddTransition(bitrate int64, at time.Time) {
-	cs.scorer.AddTransition(bitrate, at)
+func (cs *ConnectionStats) AddBitrateTransition(bitrate int64, at time.Time) {
+	cs.scorer.AddBitrateTransition(bitrate, at)
+}
+
+func (cs *ConnectionStats) AddLayerTransition(distance float64, at time.Time) {
+	cs.scorer.AddLayerTransition(distance, at)
 }
 
 func (cs *ConnectionStats) GetScoreAndQuality() (float32, livekit.ConnectionQuality) {

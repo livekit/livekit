@@ -19,6 +19,8 @@ const (
 	increaseFactor = float64(0.4) // slow increase
 	decreaseFactor = float64(0.8) // fast decrease
 
+	distanceWeight = float64(20.0) // each spatial layer missed drops a quality level
+
 	unmuteTimeThreshold = float64(0.5)
 )
 
@@ -63,7 +65,7 @@ func (w *windowStat) calculatePacketScore(plw float64) float64 {
 	return score
 }
 
-func (w *windowStat) calculateByteScore(expectedBitrate int64) float64 {
+func (w *windowStat) calculateBitrateScore(expectedBitrate int64) float64 {
 	if expectedBitrate == 0 {
 		// unsupported mode OR all layers stopped
 		return maxScore
@@ -100,9 +102,14 @@ func (w *windowStat) String() string {
 
 // ------------------------------------------
 
-type layerTransition struct {
+type bitrateTransition struct {
 	startedAt time.Time
 	bitrate   int64
+}
+
+type layerTransition struct {
+	startedAt time.Time
+	distance  float64
 }
 
 type qualityScorerParams struct {
@@ -121,12 +128,13 @@ type qualityScorer struct {
 	mutedAt   time.Time
 	unmutedAt time.Time
 
-	layersMutedAt   time.Time
-	layersUnmutedAt time.Time
+	bitrateMutedAt   time.Time
+	bitrateUnmutedAt time.Time
 
 	maxPPS float64
 
-	transitions []layerTransition
+	bitrateTransitions []bitrateTransition
+	layerTransitions   []layerTransition
 }
 
 func newQualityScorer(params qualityScorerParams) *qualityScorer {
@@ -155,23 +163,33 @@ func (q *qualityScorer) UpdateMute(isMuted bool, at time.Time) {
 	}
 }
 
-func (q *qualityScorer) AddTransition(bitrate int64, at time.Time) {
+func (q *qualityScorer) AddBitrateTransition(bitrate int64, at time.Time) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
 
-	q.transitions = append(q.transitions, layerTransition{
+	q.bitrateTransitions = append(q.bitrateTransitions, bitrateTransition{
 		startedAt: at,
 		bitrate:   bitrate,
 	})
 
 	if bitrate == 0 {
-		q.layersMutedAt = at
+		q.bitrateMutedAt = at
 		q.score = maxScore
 	} else {
-		if q.layersUnmutedAt.IsZero() || q.layersMutedAt.After(q.layersUnmutedAt) {
-			q.layersUnmutedAt = at
+		if q.bitrateUnmutedAt.IsZero() || q.bitrateMutedAt.After(q.bitrateUnmutedAt) {
+			q.bitrateUnmutedAt = at
 		}
 	}
+}
+
+func (q *qualityScorer) AddLayerTransition(distance float64, at time.Time) {
+	q.lock.Lock()
+	defer q.lock.Unlock()
+
+	q.layerTransitions = append(q.layerTransitions, layerTransition{
+		startedAt: at,
+		distance:  distance,
+	})
 }
 
 func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
@@ -180,6 +198,7 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 
 	// always update transitions
 	expectedBitrate := q.getExpectedBitsAndUpdateTransitions(at)
+	expectedDistance := q.getExpectedDistanceAndUpdateTransitions(at)
 
 	// nothing to do when muted or not unmuted for long enough
 	// NOTE: it is possible that unmute -> mute -> unmute transition happens in the
@@ -187,7 +206,7 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 	//       to stable and quality EXCELLENT for responsiveness. On an unmute, the
 	//       entire window data is considered (as long as enough time has passed since
 	//       unmute) including the data before mute.
-	if q.isMuted() || !q.isUnmutedEnough(at) || q.areLayersMuted() {
+	if q.isMuted() || !q.isUnmutedEnough(at) || q.isBitrateMuted() {
 		q.lastUpdateAt = at
 		return
 	}
@@ -199,13 +218,24 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 		score = poorScore
 	} else {
 		packetScore := stat.calculatePacketScore(q.getPacketLossWeight(stat))
-		byteScore := stat.calculateByteScore(expectedBitrate)
-		if packetScore < byteScore {
+		bitrateScore := stat.calculateBitrateScore(expectedBitrate)
+		layerScore := math.Max(math.Min(maxScore, maxScore-(expectedDistance*distanceWeight)), 0.0)
+
+		minScore := math.Min(packetScore, bitrateScore)
+		minScore = math.Min(minScore, layerScore)
+
+		switch {
+		case packetScore == minScore:
 			reason = "packet"
 			score = packetScore
-		} else {
+
+		case bitrateScore == minScore:
 			reason = "bitrate"
-			score = byteScore
+			score = bitrateScore
+
+		case layerScore == minScore:
+			reason = "layer"
+			score = layerScore
 		}
 	}
 	factor := increaseFactor
@@ -224,6 +254,7 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 			"quality", scoreToConnectionQuality(score),
 			"stat", stat,
 			"expectedBitrate", expectedBitrate,
+			"expectedDistance", expectedDistance,
 		)
 	}
 
@@ -244,10 +275,10 @@ func (q *qualityScorer) isUnmutedEnough(at time.Time) bool {
 	}
 
 	var sinceLayersUnmute time.Duration
-	if q.layersUnmutedAt.IsZero() {
+	if q.bitrateUnmutedAt.IsZero() {
 		sinceLayersUnmute = at.Sub(q.lastUpdateAt)
 	} else {
-		sinceLayersUnmute = at.Sub(q.layersUnmutedAt)
+		sinceLayersUnmute = at.Sub(q.bitrateUnmutedAt)
 	}
 
 	validDuration := sinceUnmute
@@ -260,8 +291,8 @@ func (q *qualityScorer) isUnmutedEnough(at time.Time) bool {
 	return validDuration.Seconds()/sinceLastUpdate.Seconds() > unmuteTimeThreshold
 }
 
-func (q *qualityScorer) areLayersMuted() bool {
-	return !q.layersMutedAt.IsZero() && (q.layersUnmutedAt.IsZero() || q.layersMutedAt.After(q.layersUnmutedAt))
+func (q *qualityScorer) isBitrateMuted() bool {
+	return !q.bitrateMutedAt.IsZero() && (q.bitrateUnmutedAt.IsZero() || q.bitrateMutedAt.After(q.bitrateUnmutedAt))
 }
 
 func (q *qualityScorer) getPacketLossWeight(stat *windowStat) float64 {
@@ -283,39 +314,97 @@ func (q *qualityScorer) getPacketLossWeight(stat *windowStat) float64 {
 }
 
 func (q *qualityScorer) getExpectedBitsAndUpdateTransitions(at time.Time) int64 {
-	if len(q.transitions) == 0 {
+	if len(q.bitrateTransitions) == 0 {
 		return 0
 	}
 
 	var startedAt time.Time
 	totalBits := float64(0.0)
-	for idx := 0; idx < len(q.transitions)-1; idx++ {
-		lt := &q.transitions[idx]
-		ltNext := &q.transitions[idx+1]
+	for idx := 0; idx < len(q.bitrateTransitions)-1; idx++ {
+		bt := &q.bitrateTransitions[idx]
+		btNext := &q.bitrateTransitions[idx+1]
+
+		if bt.startedAt.After(q.lastUpdateAt) {
+			startedAt = bt.startedAt
+		} else {
+			startedAt = q.lastUpdateAt
+		}
+		totalBits += btNext.startedAt.Sub(startedAt).Seconds() * float64(bt.bitrate)
+	}
+
+	// last transition
+	bt := &q.bitrateTransitions[len(q.bitrateTransitions)-1]
+	if bt.startedAt.After(q.lastUpdateAt) {
+		startedAt = bt.startedAt
+	} else {
+		startedAt = q.lastUpdateAt
+	}
+	totalBits += at.Sub(startedAt).Seconds() * float64(bt.bitrate)
+
+	// set up last bit rate as the startig bit rate for next analysis window
+	q.bitrateTransitions = []bitrateTransition{bitrateTransition{
+		startedAt: at,
+		bitrate:   bt.bitrate,
+	}}
+
+	return int64(totalBits)
+}
+
+func (q *qualityScorer) getExpectedDistanceAndUpdateTransitions(at time.Time) float64 {
+	if len(q.layerTransitions) == 0 {
+		return 0
+	}
+
+	var startedAt time.Time
+	totalDistance := float64(0.0)
+	totalDuration := time.Duration(0)
+	for idx := 0; idx < len(q.layerTransitions)-1; idx++ {
+		lt := &q.layerTransitions[idx]
+		ltNext := &q.layerTransitions[idx+1]
 
 		if lt.startedAt.After(q.lastUpdateAt) {
 			startedAt = lt.startedAt
 		} else {
 			startedAt = q.lastUpdateAt
 		}
-		totalBits += ltNext.startedAt.Sub(startedAt).Seconds() * float64(lt.bitrate)
+		dur := ltNext.startedAt.Sub(startedAt)
+		totalDuration += dur
+
+		dist := lt.distance
+		if dist < 0.0 {
+			// negative distances are overshoot, that does not compensate for shortfalls, so use optimal, i. e. 0 distance when overshooting
+			dist = 0.0
+		}
+		totalDistance += dur.Seconds() * float64(dist)
 	}
+
 	// last transition
-	lt := &q.transitions[len(q.transitions)-1]
+	lt := &q.layerTransitions[len(q.layerTransitions)-1]
 	if lt.startedAt.After(q.lastUpdateAt) {
 		startedAt = lt.startedAt
 	} else {
 		startedAt = q.lastUpdateAt
 	}
-	totalBits += at.Sub(startedAt).Seconds() * float64(lt.bitrate)
+	dur := at.Sub(startedAt)
+	totalDuration += dur
 
-	// set up last bit rate as the startig bit rate for next analysis window
-	q.transitions = []layerTransition{layerTransition{
+	dist := lt.distance
+	if dist < 0.0 {
+		dist = 0.0
+	}
+	totalDistance += dur.Seconds() * float64(dist)
+
+	// set up last distance as the startig distance for next analysis window
+	q.layerTransitions = []layerTransition{layerTransition{
 		startedAt: at,
-		bitrate:   lt.bitrate,
+		distance:  lt.distance,
 	}}
 
-	return int64(totalBits)
+	if totalDuration == 0 {
+		return 0
+	}
+
+	return totalDistance / totalDuration.Seconds()
 }
 
 func (q *qualityScorer) GetScoreAndQuality() (float32, livekit.ConnectionQuality) {

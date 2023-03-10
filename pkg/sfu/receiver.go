@@ -195,6 +195,7 @@ func NewWebRTCReceiver(
 	w.streamTrackerManager.OnAvailableLayersChanged(w.downTrackLayerChange)
 	w.streamTrackerManager.OnBitrateAvailabilityChanged(w.downTrackBitrateAvailabilityChange)
 	w.streamTrackerManager.OnMaxPublishedLayerChanged(w.downTrackMaxPublishedLayerChange)
+	w.streamTrackerManager.OnMaxTemporalLayerSeenChanged(w.downTrackMaxTemporalLayerSeenChange)
 	w.streamTrackerManager.OnBitrateReport(w.downTrackBitrateReport)
 
 	for _, opt := range opts {
@@ -400,7 +401,7 @@ func (w *WebRTCReceiver) notifyMaxExpectedLayer(layer int32) {
 		}
 	}
 
-	w.connectionStats.AddTransition(expectedBitrate, time.Now())
+	w.connectionStats.AddBitrateTransition(expectedBitrate, time.Now())
 }
 
 func (w *WebRTCReceiver) SetMaxExpectedSpatialLayer(layer int32) {
@@ -428,9 +429,23 @@ func (w *WebRTCReceiver) downTrackMaxPublishedLayerChange(maxPublishedLayer int3
 	w.notifyMaxExpectedLayer(maxPublishedLayer)
 }
 
+func (w *WebRTCReceiver) downTrackMaxTemporalLayerSeenChange(maxTemporalLayerSeen int32) {
+	for _, dt := range w.downTrackSpreader.GetDownTracks() {
+		dt.UpTrackMaxTemporalLayerSeenChange(maxTemporalLayerSeen)
+	}
+
+	if w.trackInfo.Source == livekit.TrackSource_SCREEN_SHARE {
+		w.connectionStats.AddLayerTransition(w.streamTrackerManager.DistanceToDesired(), time.Now())
+	}
+}
+
 func (w *WebRTCReceiver) downTrackBitrateReport(availableLayers []int32, bitrates Bitrates) {
 	for _, dt := range w.downTrackSpreader.GetDownTracks() {
 		dt.UpTrackBitrateReport(availableLayers, bitrates)
+	}
+
+	if w.trackInfo.Source == livekit.TrackSource_SCREEN_SHARE {
+		w.connectionStats.AddLayerTransition(w.streamTrackerManager.DistanceToDesired(), time.Now())
 	}
 }
 
