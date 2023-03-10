@@ -1461,7 +1461,7 @@ func (t *Track) BandwidthRequested() int64 {
 	return t.downTrack.BandwidthRequested()
 }
 
-func (t *Track) DistanceToDesired() int32 {
+func (t *Track) DistanceToDesired() float64 {
 	return t.downTrack.DistanceToDesired()
 }
 

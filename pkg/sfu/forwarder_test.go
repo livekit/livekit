@@ -1094,6 +1094,7 @@ func TestForwarderPause(t *testing.T) {
 	f.SetMaxSpatialLayer(DefaultMaxLayerSpatial)
 	f.SetMaxTemporalLayer(DefaultMaxLayerTemporal)
 	f.SetMaxPublishedLayer(DefaultMaxLayerSpatial)
+	f.SetMaxTemporalLayerSeen(DefaultMaxLayerTemporal)
 
 	bitrates := Bitrates{
 		{1, 2, 3, 4},
@@ -1116,7 +1117,7 @@ func TestForwarderPause(t *testing.T) {
 		targetLayers:        InvalidLayers,
 		requestLayerSpatial: InvalidLayerSpatial,
 		maxLayers:           DefaultMaxLayers,
-		distanceToDesired:   12,
+		distanceToDesired:   3,
 	}
 	result := f.Pause(bitrates)
 	require.Equal(t, expectedResult, result)
