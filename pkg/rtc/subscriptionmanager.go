@@ -544,15 +544,18 @@ func (m *SubscriptionManager) handleSubscribedTrackClose(s *trackSubscription, w
 			!willBeResumed && !m.params.Participant.IsClosed(),
 		)
 
-		stats := subTrack.DownTrack().GetTrackStats()
-		if stats != nil {
-			m.params.Telemetry.TrackSubscribeRTPStats(
-				context.Background(),
-				m.params.Participant.ID(),
-				s.trackID,
-				subTrack.DownTrack().Codec().MimeType,
-				stats,
-			)
+		dt := subTrack.DownTrack()
+		if dt != nil {
+			stats := dt.GetTrackStats()
+			if stats != nil {
+				m.params.Telemetry.TrackSubscribeRTPStats(
+					context.Background(),
+					m.params.Participant.ID(),
+					s.trackID,
+					subTrack.DownTrack().Codec().MimeType,
+					stats,
+				)
+			}
 		}
 	}
 
