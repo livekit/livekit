@@ -482,11 +482,11 @@ func (f *Forwarder) BandwidthRequested(brs Bitrates) int64 {
 	return brs[f.targetLayers.Spatial][f.targetLayers.Temporal]
 }
 
-func (f *Forwarder) DistanceToDesired() int32 {
+func (f *Forwarder) DistanceToDesired(brs Bitrates) int32 {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
-	return f.lastAllocation.distanceToDesired
+	return getDistanceToDesired(f.muted, f.pubMuted, f.maxPublishedLayer, brs, f.targetLayers, f.maxLayers)
 }
 
 func (f *Forwarder) GetOptimalBandwidthNeeded(brs Bitrates) int64 {

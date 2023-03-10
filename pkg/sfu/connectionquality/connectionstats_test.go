@@ -273,8 +273,8 @@ func TestConnectionQuality(t *testing.T) {
 		cs.UpdateMute(false, now.Add(2*time.Second))
 
 		// bitrate based calculation can drop quality even if there is no loss
-		cs.AddTransition(1_000_000, now)
-		cs.AddTransition(2_000_000, now.Add(2*time.Second))
+		cs.AddBitrateTransition(1_000_000, now)
+		cs.AddBitrateTransition(2_000_000, now.Add(2*time.Second))
 
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
 			1: &buffer.StreamStatsWithLayers{
@@ -293,13 +293,13 @@ func TestConnectionQuality(t *testing.T) {
 
 		// a transition to 0 (all layers stopped) should flip quality to EXCELLENT
 		now = now.Add(duration)
-		cs.AddTransition(0, now)
+		cs.AddBitrateTransition(0, now)
 		mos, quality = cs.GetScoreAndQuality()
 		require.Greater(t, float32(4.6), mos)
 		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, quality)
 	})
 
-	t.Run("codecs - packets", func(t *testing.T) {
+	t.Run("codecs - packet", func(t *testing.T) {
 		type expectedQuality struct {
 			packetLossPercentage float64
 			expectedMOS          float32
@@ -465,7 +465,7 @@ func TestConnectionQuality(t *testing.T) {
 		}
 	})
 
-	t.Run("bytes", func(t *testing.T) {
+	t.Run("bitrate", func(t *testing.T) {
 		type transition struct {
 			bitrate int64
 			offset  time.Duration
@@ -537,7 +537,7 @@ func TestConnectionQuality(t *testing.T) {
 				cs.Start(&livekit.TrackInfo{Type: livekit.TrackType_VIDEO}, now)
 
 				for _, tr := range tc.transitions {
-					cs.AddTransition(tr.bitrate, now.Add(tr.offset))
+					cs.AddBitrateTransition(tr.bitrate, now.Add(tr.offset))
 				}
 
 				streams := map[uint32]*buffer.StreamStatsWithLayers{
@@ -547,6 +547,92 @@ func TestConnectionQuality(t *testing.T) {
 							Duration:  duration,
 							Packets:   100,
 							Bytes:     tc.bytes,
+						},
+					},
+				}
+				cs.updateScore(streams, now.Add(duration))
+				mos, quality := cs.GetScoreAndQuality()
+				require.Greater(t, tc.expectedMOS, mos)
+				require.Equal(t, tc.expectedQuality, quality)
+			})
+		}
+	})
+
+	t.Run("layer", func(t *testing.T) {
+		type transition struct {
+			distance float64
+			offset   time.Duration
+		}
+		testCases := []struct {
+			name            string
+			transitions     []transition
+			expectedMOS     float32
+			expectedQuality livekit.ConnectionQuality
+		}{
+			// NOTE: Because of EWMA (Exponentially Weighted Moving Average), these cut off points are not exact
+			// each spatial layer missed drops o quality level
+			{
+				name: "excellent",
+				transitions: []transition{
+					{
+						distance: 0.5,
+					},
+					{
+						distance: 0.0,
+						offset:   3 * time.Second,
+					},
+				},
+				expectedMOS:     4.6,
+				expectedQuality: livekit.ConnectionQuality_EXCELLENT,
+			},
+			{
+				name: "good",
+				transitions: []transition{
+					{
+						distance: 1.0,
+					},
+					{
+						distance: 1.5,
+						offset:   2 * time.Second,
+					},
+				},
+				expectedMOS:     4.1,
+				expectedQuality: livekit.ConnectionQuality_GOOD,
+			},
+			{
+				name: "poor",
+				transitions: []transition{
+					{
+						distance: 2.0,
+					},
+					{
+						distance: 2.7,
+						offset:   1 * time.Second,
+					},
+				},
+				expectedMOS:     3.2,
+				expectedQuality: livekit.ConnectionQuality_POOR,
+			},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				cs := newConnectionStats("video/vp8", false)
+
+				duration := 5 * time.Second
+				now := time.Now()
+				cs.Start(&livekit.TrackInfo{Type: livekit.TrackType_VIDEO}, now)
+
+				for _, tr := range tc.transitions {
+					cs.AddLayerTransition(tr.distance, now.Add(tr.offset))
+				}
+
+				streams := map[uint32]*buffer.StreamStatsWithLayers{
+					123: &buffer.StreamStatsWithLayers{
+						RTPStats: &buffer.RTPDeltaInfo{
+							StartTime: now,
+							Duration:  duration,
+							Packets:   200,
 						},
 					},
 				}

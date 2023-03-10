@@ -400,7 +400,7 @@ func (w *WebRTCReceiver) notifyMaxExpectedLayer(layer int32) {
 		}
 	}
 
-	w.connectionStats.AddTransition(expectedBitrate, time.Now())
+	w.connectionStats.AddBitrateTransition(expectedBitrate, time.Now())
 }
 
 func (w *WebRTCReceiver) SetMaxExpectedSpatialLayer(layer int32) {

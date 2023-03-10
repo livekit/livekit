@@ -877,21 +877,26 @@ func (d *DownTrack) UpTrackMaxPublishedLayerChange(maxPublishedLayer int32) {
 	}
 }
 
-func (d *DownTrack) maybeAddTransition(bitrate int64) {
+func (d *DownTrack) maybeAddTransition(bitrate int64, distance int32) {
 	if d.kind == webrtc.RTPCodecTypeAudio {
 		return
 	}
 
 	ti := d.receiver.TrackInfo()
-	if ti == nil || ti.Source == livekit.TrackSource_SCREEN_SHARE {
+	if ti == nil {
 		return
 	}
 
-	d.connectionStats.AddTransition(bitrate, time.Now())
+	if ti.Source == livekit.TrackSource_SCREEN_SHARE {
+		// RAJA-TODO: remove cast on distance
+		d.connectionStats.AddLayerTransition(float64(distance), time.Now())
+	}
+
+	d.connectionStats.AddBitrateTransition(bitrate, time.Now())
 }
 
 func (d *DownTrack) UpTrackBitrateReport(_availableLayers []int32, bitrates Bitrates) {
-	d.maybeAddTransition(d.forwarder.GetOptimalBandwidthNeeded(bitrates))
+	d.maybeAddTransition(d.forwarder.GetOptimalBandwidthNeeded(bitrates), d.forwarder.DistanceToDesired(bitrates))
 }
 
 // OnCloseHandler method to be called on remote tracked removed
@@ -975,14 +980,15 @@ func (d *DownTrack) BandwidthRequested() int64 {
 }
 
 func (d *DownTrack) DistanceToDesired() int32 {
-	return d.forwarder.DistanceToDesired()
+	_, brs := d.receiver.GetLayeredBitrate()
+	return d.forwarder.DistanceToDesired(brs)
 }
 
 func (d *DownTrack) AllocateOptimal(allowOvershoot bool) VideoAllocation {
 	al, brs := d.receiver.GetLayeredBitrate()
 	allocation := d.forwarder.AllocateOptimal(al, brs, allowOvershoot)
 	d.maybeStartKeyFrameRequester()
-	d.maybeAddTransition(allocation.bandwidthNeeded)
+	d.maybeAddTransition(allocation.bandwidthNeeded, allocation.distanceToDesired)
 	return allocation
 }
 
@@ -1010,7 +1016,7 @@ func (d *DownTrack) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 func (d *DownTrack) ProvisionalAllocateCommit() VideoAllocation {
 	allocation := d.forwarder.ProvisionalAllocateCommit()
 	d.maybeStartKeyFrameRequester()
-	d.maybeAddTransition(allocation.bandwidthNeeded)
+	d.maybeAddTransition(allocation.bandwidthNeeded, allocation.distanceToDesired)
 	return allocation
 }
 
@@ -1018,7 +1024,7 @@ func (d *DownTrack) AllocateNextHigher(availableChannelCapacity int64, allowOver
 	_, brs := d.receiver.GetLayeredBitrate()
 	allocation, available := d.forwarder.AllocateNextHigher(availableChannelCapacity, brs, allowOvershoot)
 	d.maybeStartKeyFrameRequester()
-	d.maybeAddTransition(allocation.bandwidthNeeded)
+	d.maybeAddTransition(allocation.bandwidthNeeded, allocation.distanceToDesired)
 	return allocation, available
 }
 
@@ -1033,7 +1039,7 @@ func (d *DownTrack) Pause() VideoAllocation {
 	_, brs := d.receiver.GetLayeredBitrate()
 	allocation := d.forwarder.Pause(brs)
 	d.maybeStartKeyFrameRequester()
-	d.maybeAddTransition(allocation.bandwidthNeeded)
+	d.maybeAddTransition(allocation.bandwidthNeeded, allocation.distanceToDesired)
 	return allocation
 }
 
