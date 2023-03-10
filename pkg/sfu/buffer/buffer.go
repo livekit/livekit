@@ -87,6 +87,7 @@ type Buffer struct {
 	onRtcpFeedback     func([]rtcp.Packet)
 	onRtcpSenderReport func(*RTCPSenderReportData)
 	onFpsChanged       func()
+	onFinalRtpStats    func(*RTPStats)
 
 	// logger
 	logger logger.Logger
@@ -321,6 +322,9 @@ func (b *Buffer) Close() error {
 		if b.rtpStats != nil {
 			b.rtpStats.Stop()
 			b.logger.Infow("rtp stats", "direction", "upstream", "stats", b.rtpStats.ToString())
+			if b.onFinalRtpStats != nil {
+				b.onFinalRtpStats(b.rtpStats)
+			}
 		}
 
 		if b.onClose != nil {
@@ -691,6 +695,10 @@ func (b *Buffer) OnRtcpFeedback(fn func(fb []rtcp.Packet)) {
 
 func (b *Buffer) OnRtcpSenderReport(fn func(srData *RTCPSenderReportData)) {
 	b.onRtcpSenderReport = fn
+}
+
+func (b *Buffer) OnFinalRtpStats(fn func(*RTPStats)) {
+	b.onFinalRtpStats = fn
 }
 
 // GetMediaSSRC returns the associated SSRC of the RTP stream

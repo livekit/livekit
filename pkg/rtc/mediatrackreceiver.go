@@ -1,7 +1,6 @@
 package rtc
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"sort"
@@ -687,39 +686,6 @@ func (t *MediaTrackReceiver) GetAudioLevel() (float64, bool) {
 	}
 
 	return receiver.GetAudioLevel()
-}
-
-func (t *MediaTrackReceiver) RecordPublishRTPStats() {
-	t.lock.RLock()
-	defer t.lock.RUnlock()
-
-	recordForLayer := func(layer int, mimeType string, stats *livekit.RTPStats) {
-		t.params.Telemetry.TrackPublishRTPStats(
-			context.Background(),
-			t.params.ParticipantID,
-			t.ID(),
-			mimeType,
-			layer,
-			stats,
-		)
-	}
-	for _, receiver := range t.receiversShadow {
-		if wr, ok := receiver.TrackReceiver.(*sfu.WebRTCReceiver); ok {
-			if len(receiver.layerSSRCs) == 0 {
-				stats := wr.GetLayerStats(0)
-				if stats != nil {
-					recordForLayer(0, receiver.Codec().MimeType, stats)
-				}
-				continue
-			}
-			for layer := range receiver.layerSSRCs {
-				stats := wr.GetLayerStats(int32(layer))
-				if stats != nil {
-					recordForLayer(layer, receiver.Codec().MimeType, stats)
-				}
-			}
-		}
-	}
 }
 
 func (t *MediaTrackReceiver) onDownTrackCreated(downTrack *sfu.DownTrack) {
