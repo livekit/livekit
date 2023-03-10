@@ -220,6 +220,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 
 	t.lock.Lock()
 	mime := strings.ToLower(track.Codec().MimeType)
+	layer := buffer.RidToSpatialLayer(track.RID(), t.trackInfo)
 	t.params.Logger.Debugw("AddReceiver", "mime", track.Codec().MimeType)
 	wr := t.MediaTrackReceiver.Receiver(mime)
 	if wr == nil {
@@ -310,6 +311,17 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	buff.OnFpsChanged(func() {
 		t.MediaTrackSubscriptions.UpdateVideoLayers()
 	})
+
+	buff.OnFinalRtpStats(func(stats *buffer.RTPStats) {
+		t.params.Telemetry.TrackPublishRTPStats(
+			context.Background(),
+			t.params.ParticipantID,
+			t.ID(),
+			mime,
+			int(layer),
+			stats.ToProto(),
+		)
+	})
 	return newCodec
 }
 
@@ -357,7 +369,6 @@ func (t *MediaTrack) Close(willBeResumed bool) {
 	if t.dynacastManager != nil {
 		t.dynacastManager.Close()
 	}
-
 	t.MediaTrackReceiver.ClearAllReceivers(willBeResumed)
 	t.MediaTrackReceiver.Close()
 }

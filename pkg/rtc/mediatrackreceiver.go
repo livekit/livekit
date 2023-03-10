@@ -85,14 +85,13 @@ type MediaTrackReceiver struct {
 	muted       atomic.Bool
 	simulcasted atomic.Bool
 
-	lock               sync.RWMutex
-	receivers          []*simulcastReceiver
-	receiversShadow    []*simulcastReceiver
-	trackInfo          *livekit.TrackInfo
-	layerDimensions    map[livekit.VideoQuality]*livekit.VideoLayer
-	potentialCodecs    []webrtc.RTPCodecParameters
-	pendingSubscribeOp map[livekit.ParticipantID]int
-	state              mediaTrackReceiverState
+	lock            sync.RWMutex
+	receivers       []*simulcastReceiver
+	receiversShadow []*simulcastReceiver
+	trackInfo       *livekit.TrackInfo
+	layerDimensions map[livekit.VideoQuality]*livekit.VideoLayer
+	potentialCodecs []webrtc.RTPCodecParameters
+	state           mediaTrackReceiverState
 
 	onSetupReceiver     func(mime string)
 	onMediaLossFeedback func(dt *sfu.DownTrack, report *rtcp.ReceiverReport)
@@ -104,11 +103,10 @@ type MediaTrackReceiver struct {
 
 func NewMediaTrackReceiver(params MediaTrackReceiverParams) *MediaTrackReceiver {
 	t := &MediaTrackReceiver{
-		params:             params,
-		trackInfo:          proto.Clone(params.TrackInfo).(*livekit.TrackInfo),
-		layerDimensions:    make(map[livekit.VideoQuality]*livekit.VideoLayer),
-		pendingSubscribeOp: make(map[livekit.ParticipantID]int),
-		state:              mediaTrackReceiverStateOpen,
+		params:          params,
+		trackInfo:       proto.Clone(params.TrackInfo).(*livekit.TrackInfo),
+		layerDimensions: make(map[livekit.VideoQuality]*livekit.VideoLayer),
+		state:           mediaTrackReceiverStateOpen,
 	}
 
 	t.MediaTrackSubscriptions = NewMediaTrackSubscriptions(MediaTrackSubscriptionsParams{
@@ -312,7 +310,6 @@ func (t *MediaTrackReceiver) IsOpen() bool {
 }
 
 func (t *MediaTrackReceiver) SetClosing() {
-	t.params.Logger.Infow("setting track to closing")
 	t.lock.Lock()
 	defer t.lock.Unlock()
 	if t.state == mediaTrackReceiverStateOpen {

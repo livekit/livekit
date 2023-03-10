@@ -543,6 +543,20 @@ func (m *SubscriptionManager) handleSubscribedTrackClose(s *trackSubscription, w
 			&livekit.TrackInfo{Sid: string(s.trackID), Type: subTrack.MediaTrack().Kind()},
 			!willBeResumed && !m.params.Participant.IsClosed(),
 		)
+
+		dt := subTrack.DownTrack()
+		if dt != nil {
+			stats := dt.GetTrackStats()
+			if stats != nil {
+				m.params.Telemetry.TrackSubscribeRTPStats(
+					context.Background(),
+					m.params.Participant.ID(),
+					s.trackID,
+					subTrack.DownTrack().Codec().MimeType,
+					stats,
+				)
+			}
+		}
 	}
 
 	if !willBeResumed {
@@ -564,9 +578,7 @@ func (m *SubscriptionManager) handleSubscribedTrackClose(s *trackSubscription, w
 				}
 			}
 		}
-	}
 
-	if !willBeResumed {
 		m.params.Participant.Negotiate(false)
 	}
 	m.queueReconcile(s.trackID)

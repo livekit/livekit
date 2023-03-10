@@ -51,6 +51,8 @@ type TelemetryService interface {
 	TrackPublishedUpdate(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
 	// TrackMaxSubscribedVideoQuality - publisher is notified of the max quality subscribers desire
 	TrackMaxSubscribedVideoQuality(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, mime string, maxQuality livekit.VideoQuality)
+	TrackPublishRTPStats(ctx context.Context, participantID livekit.ParticipantID, trackID livekit.TrackID, mimeType string, layer int, stats *livekit.RTPStats)
+	TrackSubscribeRTPStats(ctx context.Context, participantID livekit.ParticipantID, trackID livekit.TrackID, mimeType string, stats *livekit.RTPStats)
 	EgressStarted(ctx context.Context, info *livekit.EgressInfo)
 	EgressEnded(ctx context.Context, info *livekit.EgressInfo)
 

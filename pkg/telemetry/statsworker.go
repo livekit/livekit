@@ -80,11 +80,6 @@ func (s *StatsWorker) Flush() {
 	ts := timestamppb.Now()
 
 	s.lock.Lock()
-	if !s.closedAt.IsZero() {
-		s.lock.Unlock()
-		return
-	}
-
 	stats := make([]*livekit.AnalyticsStat, 0, len(s.incomingPerTrack)+len(s.outgoingPerTrack))
 
 	incomingPerTrack := s.incomingPerTrack

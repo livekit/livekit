@@ -362,6 +362,44 @@ func (t *telemetryService) TrackUnmuted(
 	})
 }
 
+func (t *telemetryService) TrackPublishRTPStats(
+	ctx context.Context,
+	participantID livekit.ParticipantID,
+	trackID livekit.TrackID,
+	mimeType string,
+	layer int,
+	stats *livekit.RTPStats,
+) {
+	t.enqueue(func() {
+		room := t.getRoomDetails(participantID)
+		ev := newRoomEvent(livekit.AnalyticsEventType_TRACK_PUBLISH_STATS, room)
+		ev.ParticipantId = string(participantID)
+		ev.TrackId = string(trackID)
+		ev.Mime = mimeType
+		ev.VideoLayer = int32(layer)
+		ev.RtpStats = stats
+		t.SendEvent(ctx, ev)
+	})
+}
+
+func (t *telemetryService) TrackSubscribeRTPStats(
+	ctx context.Context,
+	participantID livekit.ParticipantID,
+	trackID livekit.TrackID,
+	mimeType string,
+	stats *livekit.RTPStats,
+) {
+	t.enqueue(func() {
+		room := t.getRoomDetails(participantID)
+		ev := newRoomEvent(livekit.AnalyticsEventType_TRACK_SUBSCRIBE_STATS, room)
+		ev.ParticipantId = string(participantID)
+		ev.TrackId = string(trackID)
+		ev.Mime = mimeType
+		ev.RtpStats = stats
+		t.SendEvent(ctx, ev)
+	})
+}
+
 func (t *telemetryService) EgressStarted(ctx context.Context, info *livekit.EgressInfo) {
 	t.enqueue(func() {
 		t.NotifyEvent(ctx, &livekit.WebhookEvent{
