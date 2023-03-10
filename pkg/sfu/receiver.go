@@ -508,15 +508,6 @@ func (w *WebRTCReceiver) ReadRTP(buf []byte, layer uint8, sn uint16) (int, error
 	return b.GetPacket(buf, sn)
 }
 
-func (w *WebRTCReceiver) GetLayerStats(layer int32) *livekit.RTPStats {
-	buff := w.getBuffer(layer)
-	if buff == nil {
-		return nil
-	}
-
-	return buff.GetStats()
-}
-
 func (w *WebRTCReceiver) GetTrackStats() *livekit.RTPStats {
 	w.bufferMu.RLock()
 	defer w.bufferMu.RUnlock()
