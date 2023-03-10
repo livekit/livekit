@@ -108,8 +108,8 @@ type WebRTCReceiver struct {
 
 	connectionStats *connectionquality.ConnectionStats
 
-	// update stats
-	onStatsUpdate func(w *WebRTCReceiver, stat *livekit.AnalyticsStat)
+	onStatsUpdate    func(w *WebRTCReceiver, stat *livekit.AnalyticsStat)
+	onMaxLayerChange func(maxLayer int32)
 
 	primaryReceiver atomic.Value // *RedPrimaryReceiver
 	redReceiver     atomic.Value // *RedReceiver
@@ -192,11 +192,7 @@ func NewWebRTCReceiver(
 	}
 
 	w.streamTrackerManager = NewStreamTrackerManager(logger, trackInfo, w.isSVC, w.codec.ClockRate, trackersConfig)
-	w.streamTrackerManager.OnAvailableLayersChanged(w.downTrackLayerChange)
-	w.streamTrackerManager.OnBitrateAvailabilityChanged(w.downTrackBitrateAvailabilityChange)
-	w.streamTrackerManager.OnMaxPublishedLayerChanged(w.downTrackMaxPublishedLayerChange)
-	w.streamTrackerManager.OnMaxTemporalLayerSeenChanged(w.downTrackMaxTemporalLayerSeenChange)
-	w.streamTrackerManager.OnBitrateReport(w.downTrackBitrateReport)
+	w.streamTrackerManager.SetListener(w)
 
 	for _, opt := range opts {
 		w = opt(w)
@@ -232,7 +228,9 @@ func (w *WebRTCReceiver) OnStatsUpdate(fn func(w *WebRTCReceiver, stat *livekit.
 }
 
 func (w *WebRTCReceiver) OnMaxLayerChange(fn func(maxLayer int32)) {
-	w.streamTrackerManager.OnMaxLayerChanged(fn)
+	w.upTrackMu.Lock()
+	w.onMaxLayerChange = fn
+	w.upTrackMu.Unlock()
 }
 
 func (w *WebRTCReceiver) GetConnectionScoreAndQuality() (float32, livekit.ConnectionQuality) {
@@ -409,19 +407,22 @@ func (w *WebRTCReceiver) SetMaxExpectedSpatialLayer(layer int32) {
 	w.notifyMaxExpectedLayer(layer)
 }
 
-func (w *WebRTCReceiver) downTrackLayerChange() {
+// StreamTrackerManagerListener.OnAvailableLayersChanged
+func (w *WebRTCReceiver) OnAvailableLayersChanged() {
 	for _, dt := range w.downTrackSpreader.GetDownTracks() {
 		dt.UpTrackLayersChange()
 	}
 }
 
-func (w *WebRTCReceiver) downTrackBitrateAvailabilityChange() {
+// StreamTrackerManagerListener.OnBitrateAvailabilityChanged
+func (w *WebRTCReceiver) OnBitrateAvailabilityChanged() {
 	for _, dt := range w.downTrackSpreader.GetDownTracks() {
 		dt.UpTrackBitrateAvailabilityChange()
 	}
 }
 
-func (w *WebRTCReceiver) downTrackMaxPublishedLayerChange(maxPublishedLayer int32) {
+// StreamTrackerManagerListener.OnMaxPublishedLayerChanged
+func (w *WebRTCReceiver) OnMaxPublishedLayerChanged(maxPublishedLayer int32) {
 	for _, dt := range w.downTrackSpreader.GetDownTracks() {
 		dt.UpTrackMaxPublishedLayerChange(maxPublishedLayer)
 	}
@@ -429,7 +430,8 @@ func (w *WebRTCReceiver) downTrackMaxPublishedLayerChange(maxPublishedLayer int3
 	w.notifyMaxExpectedLayer(maxPublishedLayer)
 }
 
-func (w *WebRTCReceiver) downTrackMaxTemporalLayerSeenChange(maxTemporalLayerSeen int32) {
+// StreamTrackerManagerListener.OnMaxTemporalLayerSeenChanged
+func (w *WebRTCReceiver) OnMaxTemporalLayerSeenChanged(maxTemporalLayerSeen int32) {
 	for _, dt := range w.downTrackSpreader.GetDownTracks() {
 		dt.UpTrackMaxTemporalLayerSeenChange(maxTemporalLayerSeen)
 	}
@@ -439,7 +441,19 @@ func (w *WebRTCReceiver) downTrackMaxTemporalLayerSeenChange(maxTemporalLayerSee
 	}
 }
 
-func (w *WebRTCReceiver) downTrackBitrateReport(availableLayers []int32, bitrates Bitrates) {
+// StreamTrackerManagerListener.OnMaxAvailableLayerChanged
+func (w *WebRTCReceiver) OnMaxAvailableLayerChanged(maxAvailableLayer int32) {
+	w.upTrackMu.RLock()
+	onMaxLayerChange := w.onMaxLayerChange
+	w.upTrackMu.RUnlock()
+
+	if onMaxLayerChange != nil {
+		onMaxLayerChange(maxAvailableLayer)
+	}
+}
+
+// StreamTrackerManagerListener.OnBitrateReport
+func (w *WebRTCReceiver) OnBitrateReport(availableLayers []int32, bitrates Bitrates) {
 	for _, dt := range w.downTrackSpreader.GetDownTracks() {
 		dt.UpTrackBitrateReport(availableLayers, bitrates)
 	}
