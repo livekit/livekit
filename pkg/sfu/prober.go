@@ -125,10 +125,11 @@ type Prober struct {
 
 	clusterId atomic.Uint32
 
-	clustersMu       sync.RWMutex
-	clusters         deque.Deque
-	activeCluster    *Cluster
-	activeStateQueue []bool
+	clustersMu                sync.RWMutex
+	clusters                  deque.Deque
+	activeCluster             *Cluster
+	activeStateQueue          []bool
+	activeStateQueueInProcess atomic.Bool
 
 	onSendProbe        func(bytesToSend int)
 	onProbeClusterDone func(info ProbeClusterInfo)
@@ -275,11 +276,16 @@ func (p *Prober) pushBackClusterAndMaybeStart(cluster *Cluster) {
 }
 
 func (p *Prober) processActiveStateQueue() {
+	if p.activeStateQueueInProcess.Swap(true) {
+		// processing queue
+		return
+	}
+
 	for {
 		p.clustersMu.Lock()
 		if len(p.activeStateQueue) == 0 {
 			p.clustersMu.Unlock()
-			return
+			break
 		}
 
 		isActive := p.activeStateQueue[0]
@@ -292,6 +298,8 @@ func (p *Prober) processActiveStateQueue() {
 			onActiveChanged(isActive)
 		}
 	}
+
+	p.activeStateQueueInProcess.Store(false)
 }
 
 func (p *Prober) run() {
