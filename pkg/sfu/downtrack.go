@@ -123,6 +123,33 @@ func (d DownTrackState) String() string {
 
 // -------------------------------------------------------------------
 
+type DownTrackStreamAllocatorListener interface {
+	// RTCP received
+	OnREMB(dt *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate)
+	OnTransportCCFeedback(dt *DownTrack, cc *rtcp.TransportLayerCC)
+
+	// video layer availability changed
+	OnAvailableLayersChanged(dt *DownTrack)
+
+	// video layer bitrate availability changed
+	OnBitrateAvailabilityChanged(dt *DownTrack)
+
+	// max published video layer changed
+	OnMaxPublishedLayerChanged(dt *DownTrack)
+
+	// subscription changed - mute/unmute
+	OnSubscriptionChanged(dt *DownTrack)
+
+	// subscribed max video layer changed
+	OnSubscribedLayersChanged(dt *DownTrack, layers VideoLayers)
+
+	// target video layer reaached
+	OnTargetLayerReached(dt *DownTrack)
+
+	// packet(s) sent
+	OnPacketsSent(dt *DownTrack, size int)
+}
+
 type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
 
 // DownTrack implements TrackLocal, is the track used to write packets
@@ -134,11 +161,9 @@ type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
 // - closed
 // once closed, a DownTrack cannot be re-used.
 type DownTrack struct {
-	bindLock      sync.Mutex
 	logger        logger.Logger
 	id            livekit.TrackID
 	subscriberID  livekit.ParticipantID
-	bound         atomic.Bool
 	kind          webrtc.RTPCodecType
 	mime          string
 	ssrc          uint32
@@ -150,22 +175,27 @@ type DownTrack struct {
 
 	forwarder *Forwarder
 
-	upstreamCodecs          []webrtc.RTPCodecParameters
-	codec                   webrtc.RTPCodecCapability
-	rtpHeaderExtensions     []webrtc.RTPHeaderExtensionParameter
-	absSendTimeID           int
-	dependencyDescriptorID  int
-	receiver                TrackReceiver
-	transceiver             *webrtc.RTPTransceiver
-	writeStream             webrtc.TrackLocalWriter
-	rtcpReader              *buffer.RTCPReader
-	onCloseHandler          func(willBeResumed bool)
-	onBinding               func()
-	receiverReportListeners []ReceiverReportListener
+	upstreamCodecs         []webrtc.RTPCodecParameters
+	codec                  webrtc.RTPCodecCapability
+	rtpHeaderExtensions    []webrtc.RTPHeaderExtensionParameter
+	absSendTimeID          int
+	dependencyDescriptorID int
+	receiver               TrackReceiver
+	transceiver            *webrtc.RTPTransceiver
+	writeStream            webrtc.TrackLocalWriter
+	rtcpReader             *buffer.RTCPReader
+	onCloseHandler         func(willBeResumed bool)
+	onBinding              func()
+
 	listenerLock            sync.RWMutex
-	isClosed                atomic.Bool
-	connected               atomic.Bool
-	bindAndConnectedOnce    atomic.Bool
+	receiverReportListeners []ReceiverReportListener
+
+	bindLock sync.Mutex
+	bound    atomic.Bool
+
+	isClosed             atomic.Bool
+	connected            atomic.Bool
+	bindAndConnectedOnce atomic.Bool
 
 	rtpStats *buffer.RTPStats
 
@@ -187,33 +217,11 @@ type DownTrack struct {
 
 	activePaddingOnMuteUpTrack atomic.Bool
 
-	// RTCP callbacks
-	onREMB                func(dt *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate)
-	onTransportCCFeedback func(dt *DownTrack, cc *rtcp.TransportLayerCC)
-
-	// simulcast layer availability change callback
-	onAvailableLayersChanged func(dt *DownTrack)
-
-	// layer bitrate availability change callback
-	onBitrateAvailabilityChanged func(dt *DownTrack)
-
-	// max published layer change callback
-	onMaxPublishedLayerChanged func(dt *DownTrack)
-
-	// subscription change callback
-	onSubscriptionChanged func(dt *DownTrack)
-
-	// max layer change callback
-	onSubscribedLayersChanged func(dt *DownTrack, layers VideoLayers)
-
-	// target layer found callback
-	onTargetLayerFound func(dt *DownTrack)
-
-	// packet sent callback
-	onPacketSent []func(dt *DownTrack, size int)
-
-	// padding packet sent callback
-	onPaddingSent []func(dt *DownTrack, size int)
+	streamAllocatorLock             sync.RWMutex
+	streamAllocatorListener         DownTrackStreamAllocatorListener
+	streamAllocatorReportTicker     *time.Ticker
+	streamAllocatorReportGeneration int
+	streamAllocatorBytesCounter     atomic.Uint32
 
 	// update stats
 	onStatsUpdate func(dt *DownTrack, stat *livekit.AnalyticsStat)
@@ -258,8 +266,8 @@ func NewDownTrack(
 	}
 	d.forwarder = NewForwarder(d.kind, d.logger, d.receiver.GetReferenceLayerRTPTimestamp)
 	d.forwarder.OnParkedLayersExpired(func() {
-		if d.onSubscriptionChanged != nil {
-			d.onSubscriptionChanged(d)
+		if sal := d.getStreamAllocatorListener(); sal != nil {
+			sal.OnSubscriptionChanged(d)
 		}
 	})
 
@@ -360,6 +368,64 @@ func (d *DownTrack) TrackInfoAvailable() {
 		return
 	}
 	d.connectionStats.Start(ti, time.Now())
+}
+
+func (d *DownTrack) SetStreamAllocatorListener(listener DownTrackStreamAllocatorListener) {
+	d.streamAllocatorLock.Lock()
+	d.streamAllocatorListener = listener
+	d.streamAllocatorLock.Unlock()
+}
+
+func (d *DownTrack) getStreamAllocatorListener() DownTrackStreamAllocatorListener {
+	d.streamAllocatorLock.RLock()
+	defer d.streamAllocatorLock.RUnlock()
+
+	return d.streamAllocatorListener
+}
+
+func (d *DownTrack) SetStreamAllocatorReportInterval(interval time.Duration) {
+	d.ClearStreamAllocatorReportInterval()
+
+	if interval == 0 {
+		return
+	}
+
+	d.streamAllocatorLock.Lock()
+	ticker := time.NewTicker(interval)
+	d.streamAllocatorReportTicker = ticker
+	d.streamAllocatorBytesCounter.Store(0)
+
+	d.streamAllocatorReportGeneration++
+	gen := d.streamAllocatorReportGeneration
+	d.streamAllocatorLock.Unlock()
+
+	go func(generation int) {
+		<-ticker.C
+
+		d.streamAllocatorLock.Lock()
+		if generation != d.streamAllocatorReportGeneration {
+			d.streamAllocatorLock.Unlock()
+			return
+		}
+
+		sal := d.streamAllocatorListener
+		bytes := d.streamAllocatorBytesCounter.Swap(0)
+		d.streamAllocatorLock.Unlock()
+
+		if sal != nil {
+			sal.OnPacketsSent(d, int(bytes))
+		}
+	}(gen)
+}
+
+func (d *DownTrack) ClearStreamAllocatorReportInterval() {
+	d.streamAllocatorLock.Lock()
+	if d.streamAllocatorReportTicker != nil {
+		d.streamAllocatorReportTicker.Stop()
+		d.streamAllocatorReportTicker = nil
+	}
+	d.streamAllocatorReportGeneration++
+	d.streamAllocatorLock.Unlock()
 }
 
 // ID is the unique identifier for this Track. This should be unique for the
@@ -535,10 +601,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		return err
 	}
 
-	pktSize := hdr.MarshalSize() + len(payload)
-	for _, f := range d.onPacketSent {
-		f(d, pktSize)
-	}
+	d.streamAllocatorBytesCounter.Add(uint32(hdr.MarshalSize() + len(payload)))
 
 	if tp.isSwitchingToMaxLayer && d.onMaxSubscribedLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
 		d.onMaxSubscribedLayerChanged(d, layer)
@@ -556,8 +619,10 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			d.stopKeyFrameRequester()
 		}
 
-		if tp.isSwitchingToTargetLayer && d.onTargetLayerFound != nil {
-			d.onTargetLayerFound(d)
+		if tp.isSwitchingToTargetLayer {
+			if sal := d.getStreamAllocatorListener(); sal != nil {
+				sal.OnTargetLayerReached(d)
+			}
 		}
 	}
 
@@ -639,11 +704,6 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool) int {
 			return bytesSent
 		}
 
-		size := hdr.MarshalSize() + len(payload)
-		for _, f := range d.onPaddingSent {
-			f(d, size)
-		}
-
 		if !paddingOnMute {
 			d.rtpStats.Update(&hdr, 0, len(payload), time.Now().UnixNano())
 		}
@@ -657,7 +717,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool) int {
 			d.sequencer.pushPadding(hdr.SequenceNumber)
 		}
 
-		bytesSent += size
+		bytesSent += hdr.MarshalSize() + len(payload)
 	}
 
 	return bytesSent
@@ -715,8 +775,8 @@ func (d *DownTrack) handleMute(muted bool, isPub bool, changed bool, maxLayers V
 		d.onMaxSubscribedLayerChanged(d, notifyLayer)
 	}
 
-	if d.onSubscriptionChanged != nil {
-		d.onSubscriptionChanged(d)
+	if sal := d.getStreamAllocatorListener(); sal != nil {
+		sal.OnSubscriptionChanged(d)
 	}
 
 	// when muting, send a few silence frames to ensure residual noise does not
@@ -805,6 +865,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 	}
 
 	d.stopKeyFrameRequester()
+	d.ClearStreamAllocatorReportInterval()
 }
 
 func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
@@ -824,8 +885,8 @@ func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
 		d.onMaxSubscribedLayerChanged(d, maxLayers.Spatial)
 	}
 
-	if d.onSubscribedLayersChanged != nil {
-		d.onSubscribedLayersChanged(d, maxLayers)
+	if sal := d.getStreamAllocatorListener(); sal != nil {
+		sal.OnSubscribedLayersChanged(d, maxLayers)
 	}
 }
 
@@ -835,8 +896,8 @@ func (d *DownTrack) SetMaxTemporalLayer(temporalLayer int32) {
 		return
 	}
 
-	if d.onSubscribedLayersChanged != nil {
-		d.onSubscribedLayersChanged(d, maxLayers)
+	if sal := d.getStreamAllocatorListener(); sal != nil {
+		sal.OnSubscribedLayersChanged(d, maxLayers)
 	}
 }
 
@@ -859,22 +920,22 @@ func (d *DownTrack) SeedState(state DownTrackState) {
 }
 
 func (d *DownTrack) UpTrackLayersChange() {
-	if d.onAvailableLayersChanged != nil {
-		d.onAvailableLayersChanged(d)
+	if sal := d.getStreamAllocatorListener(); sal != nil {
+		sal.OnAvailableLayersChanged(d)
 	}
 }
 
 func (d *DownTrack) UpTrackBitrateAvailabilityChange() {
-	if d.onBitrateAvailabilityChanged != nil {
-		d.onBitrateAvailabilityChanged(d)
+	if sal := d.getStreamAllocatorListener(); sal != nil {
+		sal.OnBitrateAvailabilityChanged(d)
 	}
 }
 
 func (d *DownTrack) UpTrackMaxPublishedLayerChange(maxPublishedLayer int32) {
 	d.forwarder.SetMaxPublishedLayer(maxPublishedLayer)
 
-	if d.onMaxPublishedLayerChanged != nil {
-		d.onMaxPublishedLayerChanged(d)
+	if sal := d.getStreamAllocatorListener(); sal != nil {
+		sal.OnMaxPublishedLayerChanged(d)
 	}
 }
 
@@ -912,54 +973,11 @@ func (d *DownTrack) OnBinding(fn func()) {
 	d.onBinding = fn
 }
 
-func (d *DownTrack) OnREMB(fn func(dt *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate)) {
-	d.onREMB = fn
-}
-
-func (d *DownTrack) OnTransportCCFeedback(fn func(dt *DownTrack, cc *rtcp.TransportLayerCC)) {
-	d.onTransportCCFeedback = fn
-}
-
 func (d *DownTrack) AddReceiverReportListener(listener ReceiverReportListener) {
 	d.listenerLock.Lock()
 	defer d.listenerLock.Unlock()
 
 	d.receiverReportListeners = append(d.receiverReportListeners, listener)
-}
-
-func (d *DownTrack) OnAvailableLayersChanged(fn func(dt *DownTrack)) {
-	d.onAvailableLayersChanged = fn
-}
-
-func (d *DownTrack) OnBitrateAvailabilityChanged(fn func(dt *DownTrack)) {
-	d.onBitrateAvailabilityChanged = fn
-}
-
-func (d *DownTrack) OnMaxPublishedLayerChanged(fn func(dt *DownTrack)) {
-	d.onMaxPublishedLayerChanged = fn
-}
-
-func (d *DownTrack) OnSubscriptionChanged(fn func(dt *DownTrack)) {
-	d.onSubscriptionChanged = fn
-
-	// kick off an allocation just in case other events happened before callbacks were set up
-	go fn(d)
-}
-
-func (d *DownTrack) OnSubscribedLayersChanged(fn func(dt *DownTrack, layers VideoLayers)) {
-	d.onSubscribedLayersChanged = fn
-}
-
-func (d *DownTrack) OnTargetLayerFound(fn func(dt *DownTrack)) {
-	d.onTargetLayerFound = fn
-}
-
-func (d *DownTrack) OnPacketSent(fn func(dt *DownTrack, size int)) {
-	d.onPacketSent = append(d.onPacketSent, fn)
-}
-
-func (d *DownTrack) OnPaddingSent(fn func(dt *DownTrack, size int)) {
-	d.onPaddingSent = append(d.onPaddingSent, fn)
 }
 
 func (d *DownTrack) OnStatsUpdate(fn func(dt *DownTrack, stat *livekit.AnalyticsStat)) {
@@ -1157,9 +1175,7 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 					return
 				}
 
-				for _, f := range d.onPacketSent {
-					f(d, pktSize)
-				}
+				d.streamAllocatorBytesCounter.Add(uint32(pktSize))
 
 				// only the first frame will need frameEndNeeded to close out the
 				// previous picture, rest are small key frames (for the video case)
@@ -1290,8 +1306,8 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			sendPliOnce()
 
 		case *rtcp.ReceiverEstimatedMaximumBitrate:
-			if d.onREMB != nil {
-				d.onREMB(d, p)
+			if sal := d.getStreamAllocatorListener(); sal != nil {
+				sal.OnREMB(d, p)
 			}
 
 		case *rtcp.ReceiverReport:
@@ -1331,8 +1347,10 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			go d.retransmitPackets(nacks)
 
 		case *rtcp.TransportLayerCC:
-			if p.MediaSSRC == d.ssrc && d.onTransportCCFeedback != nil {
-				d.onTransportCCFeedback(d, p)
+			if p.MediaSSRC == d.ssrc {
+				if sal := d.getStreamAllocatorListener(); sal != nil {
+					sal.OnTransportCCFeedback(d, p)
+				}
 			}
 		}
 	}
@@ -1461,10 +1479,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		if _, err = d.writeStream.WriteRTP(&pkt.Header, payload); err != nil {
 			d.logger.Errorw("writing rtx packet err", err)
 		} else {
-			pktSize := pkt.Header.MarshalSize() + len(payload)
-			for _, f := range d.onPacketSent {
-				f(d, pktSize)
-			}
+			d.streamAllocatorBytesCounter.Add(uint32(pkt.Header.MarshalSize() + len(payload)))
 
 			d.rtpStats.Update(&pkt.Header, len(payload), 0, time.Now().UnixNano())
 		}

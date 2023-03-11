@@ -125,12 +125,14 @@ type Prober struct {
 
 	clusterId atomic.Uint32
 
-	clustersMu    sync.RWMutex
-	clusters      deque.Deque
-	activeCluster *Cluster
+	clustersMu       sync.RWMutex
+	clusters         deque.Deque
+	activeCluster    *Cluster
+	activeStateQueue []bool
 
 	onSendProbe        func(bytesToSend int)
 	onProbeClusterDone func(info ProbeClusterInfo)
+	onActiveChanged    func(isActive bool)
 }
 
 func NewProber(params ProberParams) *Prober {
@@ -176,6 +178,10 @@ func (p *Prober) OnProbeClusterDone(f func(info ProbeClusterInfo)) {
 	p.onProbeClusterDone = f
 }
 
+func (p *Prober) OnActiveChanged(f func(isActive bool)) {
+	p.onActiveChanged = f
+}
+
 func (p *Prober) AddCluster(desiredRateBps int, expectedRateBps int, minDuration time.Duration, maxDuration time.Duration) ProbeClusterId {
 	if desiredRateBps <= 0 {
 		return ProbeClusterIdInvalid
@@ -190,13 +196,13 @@ func (p *Prober) AddCluster(desiredRateBps int, expectedRateBps int, minDuration
 	return clusterId
 }
 
-func (p *Prober) PacketSent(size int) {
+func (p *Prober) PacketsSent(size int) {
 	cluster := p.getFrontCluster()
 	if cluster == nil {
 		return
 	}
 
-	cluster.PacketSent(size)
+	cluster.PacketsSent(size)
 }
 
 func (p *Prober) ProbeSent(size int) {
@@ -245,24 +251,58 @@ func (p *Prober) popFrontCluster(cluster *Cluster) {
 
 func (p *Prober) pushBackClusterAndMaybeStart(cluster *Cluster) {
 	p.clustersMu.Lock()
-	defer p.clustersMu.Unlock()
-
 	p.clusters.PushBack(cluster)
 
 	if p.clusters.Len() == 1 {
+		p.activeStateQueue = append(p.activeStateQueue, true)
+
 		go p.run()
+	}
+	p.clustersMu.Unlock()
+
+	p.processActiveStateQueue()
+}
+
+func (p *Prober) processActiveStateQueue() {
+	for {
+		p.clustersMu.Lock()
+		if len(p.activeStateQueue) == 0 {
+			p.clustersMu.Unlock()
+			return
+		}
+
+		isActive := p.activeStateQueue[0]
+		p.activeStateQueue = p.activeStateQueue[1:]
+
+		onActiveChanged := p.onActiveChanged
+		p.clustersMu.Unlock()
+
+		if onActiveChanged != nil {
+			onActiveChanged(isActive)
+		}
 	}
 }
 
 func (p *Prober) run() {
-	for {
-		// determine how long to sleep
-		cluster := p.getFrontCluster()
-		if cluster == nil {
-			return
-		}
+	defer func() {
+		p.clustersMu.Lock()
+		p.activeStateQueue = append(p.activeStateQueue, false)
+		p.clustersMu.Unlock()
 
-		time.Sleep(cluster.GetSleepDuration())
+		p.processActiveStateQueue()
+	}()
+
+	// determine how long to sleep
+	cluster := p.getFrontCluster()
+	if cluster == nil {
+		return
+	}
+
+	ticker := time.NewTicker(cluster.GetSleepDuration())
+	defer ticker.Stop()
+
+	for {
+		<-ticker.C
 
 		// wake up and check for probes to send
 		cluster = p.getFrontCluster()
@@ -280,8 +320,15 @@ func (p *Prober) run() {
 			}
 
 			p.popFrontCluster(cluster)
-			continue
 		}
+
+		// determine how long to sleep
+		cluster := p.getFrontCluster()
+		if cluster == nil {
+			return
+		}
+
+		ticker.Reset(cluster.GetSleepDuration())
 	}
 }
 
@@ -300,12 +347,6 @@ type ProbeClusterInfo struct {
 }
 
 type Cluster struct {
-	// LK-TODO-START
-	// Check if we can operate at cluster level without a lock.
-	// The quantities that are updated in a different thread are
-	//   bytesSentNonProbe - maybe make this an atomic value
-	// Lock contention time should be very minimal though.
-	// LK-TODO-END
 	lock sync.RWMutex
 
 	id           ProbeClusterId
@@ -354,7 +395,7 @@ func (c *Cluster) GetSleepDuration() time.Duration {
 	return c.sleepDuration
 }
 
-func (c *Cluster) PacketSent(size int) {
+func (c *Cluster) PacketsSent(size int) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 

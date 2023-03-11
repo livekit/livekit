@@ -186,6 +186,7 @@ func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 
 	s.prober.OnSendProbe(s.onSendProbe)
 	s.prober.OnProbeClusterDone(s.onProbeClusterDone)
+	s.prober.OnActiveChanged(s.onProbeActiveChanged)
 
 	return s
 }
@@ -236,15 +237,11 @@ func (s *StreamAllocator) AddTrack(downTrack *DownTrack, params AddTrackParams) 
 	s.videoTracks[livekit.TrackID(downTrack.ID())] = track
 	s.videoTracksMu.Unlock()
 
-	downTrack.OnREMB(s.onREMB)
-	downTrack.OnTransportCCFeedback(s.onTransportCCFeedback)
-	downTrack.OnAvailableLayersChanged(s.onAvailableLayersChanged)
-	downTrack.OnBitrateAvailabilityChanged(s.onBitrateAvailabilityChanged)
-	downTrack.OnMaxPublishedLayerChanged(s.onMaxPublishedLayerChanged)
-	downTrack.OnSubscriptionChanged(s.onSubscriptionChanged)
-	downTrack.OnSubscribedLayersChanged(s.onSubscribedLayersChanged)
-	downTrack.OnPacketSent(s.onPacketSent)
-	downTrack.OnTargetLayerFound(s.onTargetLayerFound)
+	downTrack.SetStreamAllocatorListener(s)
+	if s.prober.IsRunning() {
+		// LK-TODO: this can be changed to adapt to probe rate
+		downTrack.SetStreamAllocatorReportInterval(50 * time.Millisecond)
+	}
 
 	s.maybePostEventAllocateTrack(downTrack)
 }
@@ -285,7 +282,7 @@ func (s *StreamAllocator) resetState() {
 }
 
 // called when a new REMB is received (receive side bandwidth estimation)
-func (s *StreamAllocator) onREMB(downTrack *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate) {
+func (s *StreamAllocator) OnREMB(downTrack *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate) {
 	//
 	// Channel capacity is estimated at a peer connection level. All down tracks
 	// in the peer connection will end up calling this for a REMB report with
@@ -365,7 +362,7 @@ func (s *StreamAllocator) onREMB(downTrack *DownTrack, remb *rtcp.ReceiverEstima
 }
 
 // called when a new transport-cc feedback is received
-func (s *StreamAllocator) onTransportCCFeedback(downTrack *DownTrack, fb *rtcp.TransportLayerCC) {
+func (s *StreamAllocator) OnTransportCCFeedback(downTrack *DownTrack, fb *rtcp.TransportLayerCC) {
 	if s.bwe != nil {
 		s.bwe.WriteRTCP([]rtcp.Packet{fb}, nil)
 	}
@@ -380,27 +377,27 @@ func (s *StreamAllocator) onTargetBitrateChange(bitrate int) {
 }
 
 // called when feeding track's layer availability changes
-func (s *StreamAllocator) onAvailableLayersChanged(downTrack *DownTrack) {
+func (s *StreamAllocator) OnAvailableLayersChanged(downTrack *DownTrack) {
 	s.maybePostEventAllocateTrack(downTrack)
 }
 
 // called when feeding track's bitrate measurement of any layer is available
-func (s *StreamAllocator) onBitrateAvailabilityChanged(downTrack *DownTrack) {
+func (s *StreamAllocator) OnBitrateAvailabilityChanged(downTrack *DownTrack) {
 	s.maybePostEventAllocateTrack(downTrack)
 }
 
 // called when feeding track's max publisher layer changes
-func (s *StreamAllocator) onMaxPublishedLayerChanged(downTrack *DownTrack) {
+func (s *StreamAllocator) OnMaxPublishedLayerChanged(downTrack *DownTrack) {
 	s.maybePostEventAllocateTrack(downTrack)
 }
 
 // called when subscription settings changes (muting/unmuting of track)
-func (s *StreamAllocator) onSubscriptionChanged(downTrack *DownTrack) {
+func (s *StreamAllocator) OnSubscriptionChanged(downTrack *DownTrack) {
 	s.maybePostEventAllocateTrack(downTrack)
 }
 
 // called when subscribed layers changes (limiting max layers)
-func (s *StreamAllocator) onSubscribedLayersChanged(downTrack *DownTrack, layers VideoLayers) {
+func (s *StreamAllocator) OnSubscribedLayersChanged(downTrack *DownTrack, layers VideoLayers) {
 	shouldPost := false
 	s.videoTracksMu.Lock()
 	if track := s.videoTracks[livekit.TrackID(downTrack.ID())]; track != nil {
@@ -419,8 +416,16 @@ func (s *StreamAllocator) onSubscribedLayersChanged(downTrack *DownTrack, layers
 }
 
 // called when a video DownTrack sends a packet
-func (s *StreamAllocator) onPacketSent(downTrack *DownTrack, size int) {
-	s.prober.PacketSent(size)
+func (s *StreamAllocator) OnPacketsSent(downTrack *DownTrack, size int) {
+	s.prober.PacketsSent(size)
+}
+
+// called when forwarder finds a target layer
+func (s *StreamAllocator) OnTargetLayerReached(downTrack *DownTrack) {
+	s.postEvent(Event{
+		Signal:  streamAllocatorSignalTargetLayerFound,
+		TrackID: livekit.TrackID(downTrack.ID()),
+	})
 }
 
 // called when prober wants to send packet(s)
@@ -439,12 +444,16 @@ func (s *StreamAllocator) onProbeClusterDone(info ProbeClusterInfo) {
 	})
 }
 
-// called when forwarder finds a target layer
-func (s *StreamAllocator) onTargetLayerFound(downTrack *DownTrack) {
-	s.postEvent(Event{
-		Signal:  streamAllocatorSignalTargetLayerFound,
-		TrackID: livekit.TrackID(downTrack.ID()),
-	})
+// called when prober active state changes
+func (s *StreamAllocator) onProbeActiveChanged(isActive bool) {
+	for _, t := range s.getTracks() {
+		if isActive {
+			// LK-TODO: this can be changed to adapt to probe rate
+			t.DownTrack().SetStreamAllocatorReportInterval(50 * time.Millisecond)
+		} else {
+			t.DownTrack().ClearStreamAllocatorReportInterval()
+		}
+	}
 }
 
 func (s *StreamAllocator) maybePostEventAllocateTrack(downTrack *DownTrack) {
@@ -484,6 +493,8 @@ func (s *StreamAllocator) processEvents() {
 	for event := range s.eventCh {
 		s.handleEvent(&event)
 	}
+
+	s.stopProbe()
 }
 
 func (s *StreamAllocator) ping() {
