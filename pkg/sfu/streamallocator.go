@@ -415,17 +415,17 @@ func (s *StreamAllocator) OnSubscribedLayersChanged(downTrack *DownTrack, layers
 	}
 }
 
-// called when a video DownTrack sends a packet
-func (s *StreamAllocator) OnPacketsSent(downTrack *DownTrack, size int) {
-	s.prober.PacketsSent(size)
-}
-
 // called when forwarder finds a target layer
 func (s *StreamAllocator) OnTargetLayerReached(downTrack *DownTrack) {
 	s.postEvent(Event{
 		Signal:  streamAllocatorSignalTargetLayerFound,
 		TrackID: livekit.TrackID(downTrack.ID()),
 	})
+}
+
+// called when a video DownTrack sends a packet
+func (s *StreamAllocator) OnPacketsSent(downTrack *DownTrack, size int) {
+	s.prober.PacketsSent(size)
 }
 
 // called when prober wants to send packet(s)
