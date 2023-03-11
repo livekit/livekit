@@ -163,11 +163,15 @@ func (p *Prober) Reset() {
 
 	p.clusters.Clear()
 	p.activeCluster = nil
+
+	p.activeStateQueue = append(p.activeStateQueue, false)
 	p.clustersMu.Unlock()
 
 	if p.onProbeClusterDone != nil && reset {
 		p.onProbeClusterDone(info)
 	}
+
+	p.processActiveStateQueue()
 }
 
 func (p *Prober) OnSendProbe(f func(bytesToSend int)) {
@@ -233,10 +237,10 @@ func (p *Prober) getFrontCluster() *Cluster {
 
 func (p *Prober) popFrontCluster(cluster *Cluster) {
 	p.clustersMu.Lock()
-	defer p.clustersMu.Unlock()
 
 	if p.clusters.Len() == 0 {
 		p.activeCluster = nil
+		p.clustersMu.Unlock()
 		return
 	}
 
@@ -247,6 +251,13 @@ func (p *Prober) popFrontCluster(cluster *Cluster) {
 	if cluster == p.activeCluster {
 		p.activeCluster = nil
 	}
+
+	if p.clusters.Len() == 0 {
+		p.activeStateQueue = append(p.activeStateQueue, false)
+	}
+	p.clustersMu.Unlock()
+
+	p.processActiveStateQueue()
 }
 
 func (p *Prober) pushBackClusterAndMaybeStart(cluster *Cluster) {
@@ -284,14 +295,6 @@ func (p *Prober) processActiveStateQueue() {
 }
 
 func (p *Prober) run() {
-	defer func() {
-		p.clustersMu.Lock()
-		p.activeStateQueue = append(p.activeStateQueue, false)
-		p.clustersMu.Unlock()
-
-		p.processActiveStateQueue()
-	}()
-
 	// determine how long to sleep
 	cluster := p.getFrontCluster()
 	if cluster == nil {
