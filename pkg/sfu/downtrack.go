@@ -374,6 +374,11 @@ func (d *DownTrack) SetStreamAllocatorListener(listener DownTrackStreamAllocator
 	d.streamAllocatorLock.Lock()
 	d.streamAllocatorListener = listener
 	d.streamAllocatorLock.Unlock()
+
+	// kick of a gratuitous allocation
+	if listener != nil {
+		listener.OnSubscriptionChanged(d)
+	}
 }
 
 func (d *DownTrack) getStreamAllocatorListener() DownTrackStreamAllocatorListener {
@@ -400,20 +405,22 @@ func (d *DownTrack) SetStreamAllocatorReportInterval(interval time.Duration) {
 	d.streamAllocatorLock.Unlock()
 
 	go func(generation int) {
-		<-ticker.C
+		for {
+			<-ticker.C
 
-		d.streamAllocatorLock.Lock()
-		if generation != d.streamAllocatorReportGeneration {
+			d.streamAllocatorLock.Lock()
+			if generation != d.streamAllocatorReportGeneration {
+				d.streamAllocatorLock.Unlock()
+				return
+			}
+
+			sal := d.streamAllocatorListener
+			bytes := d.streamAllocatorBytesCounter.Swap(0)
 			d.streamAllocatorLock.Unlock()
-			return
-		}
 
-		sal := d.streamAllocatorListener
-		bytes := d.streamAllocatorBytesCounter.Swap(0)
-		d.streamAllocatorLock.Unlock()
-
-		if sal != nil {
-			sal.OnPacketsSent(d, int(bytes))
+			if sal != nil {
+				sal.OnPacketsSent(d, int(bytes))
+			}
 		}
 	}(gen)
 }

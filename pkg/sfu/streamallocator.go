@@ -184,9 +184,7 @@ func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 
 	s.resetState()
 
-	s.prober.OnSendProbe(s.onSendProbe)
-	s.prober.OnProbeClusterDone(s.onProbeClusterDone)
-	s.prober.OnActiveChanged(s.onProbeActiveChanged)
+	s.prober.SetProberListener(s)
 
 	return s
 }
@@ -429,7 +427,7 @@ func (s *StreamAllocator) OnPacketsSent(downTrack *DownTrack, size int) {
 }
 
 // called when prober wants to send packet(s)
-func (s *StreamAllocator) onSendProbe(bytesToSend int) {
+func (s *StreamAllocator) OnSendProbe(bytesToSend int) {
 	s.postEvent(Event{
 		Signal: streamAllocatorSignalSendProbe,
 		Data:   bytesToSend,
@@ -437,7 +435,7 @@ func (s *StreamAllocator) onSendProbe(bytesToSend int) {
 }
 
 // called when prober wants to send packet(s)
-func (s *StreamAllocator) onProbeClusterDone(info ProbeClusterInfo) {
+func (s *StreamAllocator) OnProbeClusterDone(info ProbeClusterInfo) {
 	s.postEvent(Event{
 		Signal: streamAllocatorSignalProbeClusterDone,
 		Data:   info,
@@ -445,7 +443,7 @@ func (s *StreamAllocator) onProbeClusterDone(info ProbeClusterInfo) {
 }
 
 // called when prober active state changes
-func (s *StreamAllocator) onProbeActiveChanged(isActive bool) {
+func (s *StreamAllocator) OnActiveChanged(isActive bool) {
 	for _, t := range s.getTracks() {
 		if isActive {
 			// LK-TODO: this can be changed to adapt to probe rate

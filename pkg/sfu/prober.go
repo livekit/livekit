@@ -116,6 +116,12 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
+type ProberListener interface {
+	OnSendProbe(bytesToSend int)
+	OnProbeClusterDone(info ProbeClusterInfo)
+	OnActiveChanged(isActive bool)
+}
+
 type ProberParams struct {
 	Logger logger.Logger
 }
@@ -131,9 +137,8 @@ type Prober struct {
 	activeStateQueue          []bool
 	activeStateQueueInProcess atomic.Bool
 
-	onSendProbe        func(bytesToSend int)
-	onProbeClusterDone func(info ProbeClusterInfo)
-	onActiveChanged    func(isActive bool)
+	listenerMu sync.RWMutex
+	listener   ProberListener
 }
 
 func NewProber(params ProberParams) *Prober {
@@ -142,6 +147,19 @@ func NewProber(params ProberParams) *Prober {
 	}
 	p.clusters.SetMinCapacity(2)
 	return p
+}
+
+func (p *Prober) SetProberListener(listener ProberListener) {
+	p.listenerMu.Lock()
+	p.listener = listener
+	p.listenerMu.Unlock()
+}
+
+func (p *Prober) getProberListener() ProberListener {
+	p.listenerMu.RLock()
+	defer p.listenerMu.RUnlock()
+
+	return p.listener
 }
 
 func (p *Prober) IsRunning() bool {
@@ -168,23 +186,13 @@ func (p *Prober) Reset() {
 	p.activeStateQueue = append(p.activeStateQueue, false)
 	p.clustersMu.Unlock()
 
-	if p.onProbeClusterDone != nil && reset {
-		p.onProbeClusterDone(info)
+	if reset {
+		if pl := p.getProberListener(); pl != nil {
+			pl.OnProbeClusterDone(info)
+		}
 	}
 
 	p.processActiveStateQueue()
-}
-
-func (p *Prober) OnSendProbe(f func(bytesToSend int)) {
-	p.onSendProbe = f
-}
-
-func (p *Prober) OnProbeClusterDone(f func(info ProbeClusterInfo)) {
-	p.onProbeClusterDone = f
-}
-
-func (p *Prober) OnActiveChanged(f func(isActive bool)) {
-	p.onActiveChanged = f
 }
 
 func (p *Prober) AddCluster(desiredRateBps int, expectedRateBps int, minDuration time.Duration, maxDuration time.Duration) ProbeClusterId {
@@ -290,12 +298,10 @@ func (p *Prober) processActiveStateQueue() {
 
 		isActive := p.activeStateQueue[0]
 		p.activeStateQueue = p.activeStateQueue[1:]
-
-		onActiveChanged := p.onActiveChanged
 		p.clustersMu.Unlock()
 
-		if onActiveChanged != nil {
-			onActiveChanged(isActive)
+		if pl := p.getProberListener(); pl != nil {
+			pl.OnActiveChanged(isActive)
 		}
 	}
 
@@ -309,11 +315,9 @@ func (p *Prober) run() {
 		return
 	}
 
-	ticker := time.NewTicker(cluster.GetSleepDuration())
-	defer ticker.Stop()
-
+	timer := time.NewTimer(cluster.GetSleepDuration())
 	for {
-		<-ticker.C
+		<-timer.C
 
 		// wake up and check for probes to send
 		cluster = p.getFrontCluster()
@@ -321,13 +325,13 @@ func (p *Prober) run() {
 			return
 		}
 
-		cluster.Process(p.onSendProbe)
+		cluster.Process(p.getProberListener())
 
 		if cluster.IsFinished() {
 			p.logger.Debugw("cluster finished", "cluster", cluster.String())
 
-			if p.onProbeClusterDone != nil {
-				p.onProbeClusterDone(cluster.GetInfo())
+			if pl := p.getProberListener(); pl != nil {
+				pl.OnProbeClusterDone(cluster.GetInfo())
 			}
 
 			p.popFrontCluster(cluster)
@@ -339,7 +343,7 @@ func (p *Prober) run() {
 			return
 		}
 
-		ticker.Reset(cluster.GetSleepDuration())
+		timer.Reset(cluster.GetSleepDuration())
 	}
 }
 
@@ -450,7 +454,7 @@ func (c *Cluster) GetInfo() ProbeClusterInfo {
 	}
 }
 
-func (c *Cluster) Process(onSendProbe func(bytesToSend int)) {
+func (c *Cluster) Process(pl ProberListener) {
 	c.lock.RLock()
 
 	timeElapsed := time.Since(c.startTime)
@@ -480,8 +484,8 @@ func (c *Cluster) Process(onSendProbe func(bytesToSend int)) {
 	bytesShortFall = ((bytesShortFall + 274) / 275) * 275
 	c.lock.RUnlock()
 
-	if bytesShortFall > 0 && onSendProbe != nil {
-		onSendProbe(bytesShortFall)
+	if bytesShortFall > 0 && pl != nil {
+		pl.OnSendProbe(bytesShortFall)
 	}
 
 	// LK-TODO look at adapting sleep time based on how many bytes and how much time is left
