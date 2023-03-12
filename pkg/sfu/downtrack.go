@@ -219,7 +219,6 @@ type DownTrack struct {
 
 	streamAllocatorLock             sync.RWMutex
 	streamAllocatorListener         DownTrackStreamAllocatorListener
-	streamAllocatorReportTicker     *time.Ticker
 	streamAllocatorReportGeneration int
 	streamAllocatorBytesCounter     atomic.Uint32
 
@@ -396,8 +395,6 @@ func (d *DownTrack) SetStreamAllocatorReportInterval(interval time.Duration) {
 	}
 
 	d.streamAllocatorLock.Lock()
-	ticker := time.NewTicker(interval)
-	d.streamAllocatorReportTicker = ticker
 	d.streamAllocatorBytesCounter.Store(0)
 
 	d.streamAllocatorReportGeneration++
@@ -405,8 +402,9 @@ func (d *DownTrack) SetStreamAllocatorReportInterval(interval time.Duration) {
 	d.streamAllocatorLock.Unlock()
 
 	go func(generation int) {
+		timer := time.NewTimer(interval)
 		for {
-			<-ticker.C
+			<-timer.C
 
 			d.streamAllocatorLock.Lock()
 			if generation != d.streamAllocatorReportGeneration {
@@ -421,16 +419,14 @@ func (d *DownTrack) SetStreamAllocatorReportInterval(interval time.Duration) {
 			if sal != nil {
 				sal.OnPacketsSent(d, int(bytes))
 			}
+
+			timer.Reset(interval)
 		}
 	}(gen)
 }
 
 func (d *DownTrack) ClearStreamAllocatorReportInterval() {
 	d.streamAllocatorLock.Lock()
-	if d.streamAllocatorReportTicker != nil {
-		d.streamAllocatorReportTicker.Stop()
-		d.streamAllocatorReportTicker = nil
-	}
 	d.streamAllocatorReportGeneration++
 	d.streamAllocatorLock.Unlock()
 }
