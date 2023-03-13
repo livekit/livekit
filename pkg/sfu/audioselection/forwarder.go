@@ -59,6 +59,7 @@ type SelectionForwarder struct {
 	idleDowntracks []*sfu.DownTrack
 	downtracks     []*sfu.DownTrack
 	close          chan struct{}
+	sourceChanged  bool
 
 	onForwardMappingChanged func(muxInfo []*livekit.AudioTrackMuxInfo)
 }
@@ -111,6 +112,7 @@ func (f *SelectionForwarder) AddSource(participantID livekit.ParticipantID, trac
 	f.params.Logger.Debugw("adding source", "trackID", trackID)
 	f.lock.Lock()
 	f.sources = append(f.sources, &sourceInfo{participantID: participantID, trackID: trackID, receiver: source})
+	f.sourceChanged = true
 	f.lock.Unlock()
 }
 
@@ -126,6 +128,7 @@ func (f *SelectionForwarder) RemoveSource(trackID livekit.TrackID) {
 			break
 		}
 	}
+	f.sourceChanged = true
 	f.lock.Unlock()
 }
 
@@ -150,7 +153,7 @@ func (f *SelectionForwarder) process() {
 func (f *SelectionForwarder) updateForward() {
 	f.lock.Lock()
 	defer f.lock.Unlock()
-	if len(f.sources) == 0 {
+	if len(f.sources) == 0 && !f.sourceChanged {
 		return
 	}
 
@@ -186,19 +189,21 @@ func (f *SelectionForwarder) updateForward() {
 		}
 	}
 
-	if forwardChanged && f.onForwardMappingChanged != nil {
-		muxInfo := make([]*livekit.AudioTrackMuxInfo, 0, len(f.sources))
+	if (f.sourceChanged || forwardChanged) && f.onForwardMappingChanged != nil {
+		f.sourceChanged = false
+		muxInfos := make([]*livekit.AudioTrackMuxInfo, 0, len(f.sources))
 
 		for _, source := range f.sources {
-			if source.active && source.downtrack != nil {
-				muxInfo = append(muxInfo, &livekit.AudioTrackMuxInfo{
-					SdpTrackId:     source.downtrack.ID(),
-					ParticipantSid: string(source.participantID),
-					TrackSid:       string(source.trackID),
-				})
+			info := &livekit.AudioTrackMuxInfo{
+				ParticipantSid: string(source.participantID),
+				TrackSid:       string(source.trackID),
 			}
+			if source.downtrack != nil {
+				info.SdpTrackId = source.downtrack.ID()
+			}
+			muxInfos = append(muxInfos, info)
 		}
-		f.onForwardMappingChanged(muxInfo)
+		f.onForwardMappingChanged(muxInfos)
 	}
 }
 
