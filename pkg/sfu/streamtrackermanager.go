@@ -306,15 +306,15 @@ done:
 		}
 	}
 
+	if !maxLayers.IsValid() || s.maxTemporalLayerSeen < 0 {
+		return 0.0
+	}
+
 	distance := float64(0.0)
 	for sp := maxLayers.Spatial; sp <= s.getMaxExpectedLayerLocked(); sp++ {
 		for t := maxLayers.Temporal; t <= s.maxTemporalLayerSeen; t++ {
 			distance++
 		}
-	}
-
-	if s.maxTemporalLayerSeen < 0 {
-		return distance
 	}
 
 	return distance / float64(s.maxTemporalLayerSeen+1)
