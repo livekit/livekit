@@ -350,7 +350,7 @@ func (s *RedisStore) LoadEgress(_ context.Context, egressID string) (*livekit.Eg
 	}
 }
 
-func (s *RedisStore) ListEgress(_ context.Context, roomName livekit.RoomName) ([]*livekit.EgressInfo, error) {
+func (s *RedisStore) ListEgress(_ context.Context, roomName livekit.RoomName, active bool) ([]*livekit.EgressInfo, error) {
 	var infos []*livekit.EgressInfo
 
 	if roomName == "" {
@@ -368,7 +368,11 @@ func (s *RedisStore) ListEgress(_ context.Context, roomName livekit.RoomName) ([
 			if err != nil {
 				return nil, err
 			}
-			infos = append(infos, info)
+
+			// if active, filter status starting, active, and ending
+			if !active || int32(info.Status) < int32(livekit.EgressStatus_EGRESS_COMPLETE) {
+				infos = append(infos, info)
+			}
 		}
 	} else {
 		egressIDs, err := s.rc.SMembers(s.ctx, RoomEgressPrefix+string(roomName)).Result()
@@ -389,7 +393,11 @@ func (s *RedisStore) ListEgress(_ context.Context, roomName livekit.RoomName) ([
 			if err != nil {
 				return nil, err
 			}
-			infos = append(infos, info)
+
+			// if active, filter status starting, active, and ending
+			if !active || int32(info.Status) < int32(livekit.EgressStatus_EGRESS_COMPLETE) {
+				infos = append(infos, info)
+			}
 		}
 	}
 

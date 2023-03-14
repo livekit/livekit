@@ -189,12 +189,12 @@ func TestEgressStore(t *testing.T) {
 	require.NoError(t, rs.UpdateEgress(ctx, info))
 
 	// list
-	list, err := rs.ListEgress(ctx, "")
+	list, err := rs.ListEgress(ctx, "", false)
 	require.NoError(t, err)
 	require.Len(t, list, 2)
 
 	// list by room
-	list, err = rs.ListEgress(ctx, livekit.RoomName(roomName))
+	list, err = rs.ListEgress(ctx, livekit.RoomName(roomName), false)
 	require.NoError(t, err)
 	require.Len(t, list, 1)
 
@@ -207,7 +207,7 @@ func TestEgressStore(t *testing.T) {
 	require.NoError(t, rs.CleanEndedEgress())
 
 	// list
-	list, err = rs.ListEgress(ctx, livekit.RoomName(roomName))
+	list, err = rs.ListEgress(ctx, livekit.RoomName(roomName), false)
 	require.NoError(t, err)
 	require.Len(t, list, 0)
 }
