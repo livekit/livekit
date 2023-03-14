@@ -14,7 +14,9 @@ import (
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/psrpc"
 
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
 	"github.com/livekit/livekit-server/pkg/config"
@@ -52,6 +54,8 @@ type RoomManager struct {
 	egressLauncher    rtc.EgressLauncher
 	versionGenerator  utils.TimedVersionGenerator
 
+	roomServer rpc.TypedRoomServer
+
 	rooms map[livekit.RoomName]*rtc.Room
 
 	iceConfigCache map[livekit.ParticipantIdentity]*iceConfigCacheEntry
@@ -66,6 +70,7 @@ func NewLocalRoomManager(
 	clientConfManager clientconfiguration.ClientConfigurationManager,
 	egressLauncher rtc.EgressLauncher,
 	versionGenerator utils.TimedVersionGenerator,
+	bus psrpc.MessageBus,
 ) (*RoomManager, error) {
 	rtcConf, err := rtc.NewWebRTCConfig(conf, currentNode.Ip)
 	if err != nil {
@@ -96,6 +101,11 @@ func NewLocalRoomManager(
 		},
 	}
 
+	r.roomServer, err = rpc.NewTypedRoomServer(livekit.NodeID(r.currentNode.Id), r, bus)
+	if err != nil {
+		return nil, err
+	}
+
 	// hook up to router
 	router.OnNewParticipantRTC(r.StartSession)
 	router.OnRTCMessage(r.handleRTCMessage)
@@ -109,7 +119,7 @@ func (r *RoomManager) GetRoom(_ context.Context, roomName livekit.RoomName) *rtc
 }
 
 // DeleteRoom completely deletes all room information, including active sessions, room store, and routing info
-func (r *RoomManager) DeleteRoom(ctx context.Context, roomName livekit.RoomName) error {
+func (r *RoomManager) deleteRoom(ctx context.Context, roomName livekit.RoomName) error {
 	logger.Infow("deleting room state", "room", roomName)
 	r.lock.Lock()
 	delete(r.rooms, roomName)
@@ -149,7 +159,7 @@ func (r *RoomManager) CleanupRooms() error {
 	now := time.Now().Unix()
 	for _, room := range rooms {
 		if (now - room.CreationTime) > roomPurgeSeconds {
-			if err := r.DeleteRoom(ctx, livekit.RoomName(room.Name)); err != nil {
+			if err := r.deleteRoom(ctx, livekit.RoomName(room.Name)); err != nil {
 				return err
 			}
 		}
@@ -197,6 +207,8 @@ func (r *RoomManager) Stop() {
 		}
 		room.Close()
 	}
+
+	r.roomServer.Shutdown()
 
 	if r.rtcConfig != nil {
 		if r.rtcConfig.UDPMux != nil {
@@ -348,6 +360,11 @@ func (r *RoomManager) StartSession(
 		_ = participant.Close(true, types.ParticipantCloseReasonJoinFailed)
 		return err
 	}
+	if err := r.roomServer.RegisterAllParticipantTopics(livekit.FormatParticipantTopic(roomName, participant.Identity())); err != nil {
+		pLogger.Errorw("could not join register participant topic", err)
+		_ = participant.Close(true, types.ParticipantCloseReasonMessageBusFailed)
+		return err
+	}
 	if err = r.roomStore.StoreParticipant(ctx, roomName, participant.ToProto()); err != nil {
 		pLogger.Errorw("could not store participant", err)
 	}
@@ -370,6 +387,8 @@ func (r *RoomManager) StartSession(
 		if err := r.roomStore.DeleteParticipant(ctx, roomName, p.Identity()); err != nil {
 			pLogger.Errorw("could not delete participant", err)
 		}
+
+		r.roomServer.DeregisterAllParticipantTopics(livekit.FormatParticipantTopic(roomName, participant.Identity()))
 
 		// update room store with new numParticipants
 		proto := room.ToProto()
@@ -413,6 +432,10 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 		return nil, err
 	}
 
+	if err := r.roomServer.RegisterAllRoomTopics(livekit.FormatRoomTopic(roomName)); err != nil {
+		return nil, err
+	}
+
 	r.lock.Lock()
 
 	currentRoom := r.rooms[roomName]
@@ -431,10 +454,12 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 	newRoom := rtc.NewRoom(ri, internal, *r.rtcConfig, &r.config.Audio, r.serverInfo, r.telemetry, r.egressLauncher)
 
 	newRoom.OnClose(func() {
+		r.roomServer.DeregisterAllRoomTopics(livekit.FormatRoomTopic(roomName))
+
 		roomInfo := newRoom.ToProto()
 		r.telemetry.RoomEnded(ctx, roomInfo)
 		prometheus.RoomEnded(time.Unix(roomInfo.CreationTime, 0))
-		if err := r.DeleteRoom(ctx, roomName); err != nil {
+		if err := r.deleteRoom(ctx, roomName); err != nil {
 			newRoom.Logger.Errorw("could not delete room", err)
 		}
 
@@ -469,12 +494,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 
 // manages an RTC session for a participant, runs on the RTC node
 func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalParticipant, requestSource routing.MessageSource) {
-	pLogger := rtc.LoggerWithParticipant(
-		rtc.LoggerWithRoom(logger.GetLogger(), room.Name(), room.ID()),
-		participant.Identity(),
-		participant.ID(),
-		false,
-	)
+	pLogger := r.participantLogger(room, participant)
 	defer func() {
 		pLogger.Debugw("RTC session finishing")
 		requestSource.Close()
@@ -526,100 +546,165 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 
 // handles RTC messages resulted from Room API calls
 func (r *RoomManager) handleRTCMessage(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) {
-	r.lock.RLock()
-	room := r.rooms[roomName]
-	r.lock.RUnlock()
-
-	if room == nil {
-		if _, ok := msg.Message.(*livekit.RTCNodeMessage_DeleteRoom); ok {
-			// special case of a non-RTC room e.g. room created but no participants joined
-			logger.Debugw("Deleting non-rtc room, loading from roomstore")
-			err := r.roomStore.DeleteRoom(ctx, roomName)
-			if err != nil {
-				logger.Debugw("Error deleting non-rtc room", "err", err)
-			}
-			return
-		} else {
-			logger.Warnw("Could not find room", nil, "room", roomName)
-			return
-		}
-	}
-
-	participant := room.GetParticipant(identity)
-	var sid livekit.ParticipantID
-	if participant != nil {
-		sid = participant.ID()
-	}
-	pLogger := rtc.LoggerWithParticipant(
-		rtc.LoggerWithRoom(logger.GetLogger(), roomName, room.ID()),
-		identity,
-		sid,
-		false,
-	)
-
 	switch rm := msg.Message.(type) {
 	case *livekit.RTCNodeMessage_RemoveParticipant:
-		if participant == nil {
-			return
-		}
-		pLogger.Infow("removing participant")
-		// remove participant by identity, any SID
-		room.RemoveParticipant(identity, "", types.ParticipantCloseReasonServiceRequestRemoveParticipant)
+		r.RemoveParticipant(ctx, rm.RemoveParticipant)
 	case *livekit.RTCNodeMessage_MuteTrack:
-		if participant == nil {
-			return
-		}
-		pLogger.Debugw("setting track muted",
-			"trackID", rm.MuteTrack.TrackSid, "muted", rm.MuteTrack.Muted)
-		if !rm.MuteTrack.Muted && !r.config.Room.EnableRemoteUnmute {
-			pLogger.Errorw("cannot unmute track, remote unmute is disabled", nil)
-			return
-		}
-		participant.SetTrackMuted(livekit.TrackID(rm.MuteTrack.TrackSid), rm.MuteTrack.Muted, true)
+		r.MutePublishedTrack(ctx, rm.MuteTrack)
 	case *livekit.RTCNodeMessage_UpdateParticipant:
-		if participant == nil {
-			return
-		}
-		pLogger.Debugw("updating participant", "metadata", rm.UpdateParticipant.Metadata,
-			"permission", rm.UpdateParticipant.Permission)
-		if rm.UpdateParticipant.Name != "" {
-			participant.SetName(rm.UpdateParticipant.Name)
-		}
-		if rm.UpdateParticipant.Metadata != "" {
-			participant.SetMetadata(rm.UpdateParticipant.Metadata)
-		}
-		if rm.UpdateParticipant.Permission != nil {
-			participant.SetPermission(rm.UpdateParticipant.Permission)
-		}
+		r.UpdateParticipant(ctx, rm.UpdateParticipant)
 	case *livekit.RTCNodeMessage_DeleteRoom:
+		r.DeleteRoom(ctx, rm.DeleteRoom)
+	case *livekit.RTCNodeMessage_UpdateSubscriptions:
+		r.UpdateSubscriptions(ctx, rm.UpdateSubscriptions)
+	case *livekit.RTCNodeMessage_SendData:
+		r.SendData(ctx, rm.SendData)
+	case *livekit.RTCNodeMessage_UpdateRoomMetadata:
+		r.UpdateRoomMetadata(ctx, rm.UpdateRoomMetadata)
+	}
+}
+
+func (r *RoomManager) participantLogger(room *rtc.Room, participant types.LocalParticipant) logger.Logger {
+	return rtc.LoggerWithParticipant(
+		rtc.LoggerWithRoom(logger.GetLogger(), room.Name(), room.ID()),
+		participant.Identity(),
+		participant.ID(),
+		false,
+	)
+}
+
+func (r *RoomManager) roomLogger(room *rtc.Room) logger.Logger {
+	return rtc.LoggerWithParticipant(rtc.LoggerWithRoom(logger.GetLogger(), room.Name(), room.ID()), "", "", false)
+}
+
+func (r *RoomManager) RemoveParticipant(ctx context.Context, req *livekit.RoomParticipantIdentity) (*livekit.RemoveParticipantResponse, error) {
+	room := r.GetRoom(ctx, livekit.RoomName(req.Room))
+	if room == nil {
+		return nil, ErrRoomNotFound
+	}
+
+	participant := room.GetParticipant(livekit.ParticipantIdentity(req.Identity))
+	if participant == nil {
+		return nil, ErrParticipantNotFound
+	}
+
+	r.participantLogger(room, participant).Infow("removing participant")
+	room.RemoveParticipant(livekit.ParticipantIdentity(req.Identity), "", types.ParticipantCloseReasonServiceRequestRemoveParticipant)
+	return &livekit.RemoveParticipantResponse{}, nil
+}
+
+func (r *RoomManager) MutePublishedTrack(ctx context.Context, req *livekit.MuteRoomTrackRequest) (*livekit.MuteRoomTrackResponse, error) {
+	room := r.GetRoom(ctx, livekit.RoomName(req.Room))
+	if room == nil {
+		return nil, ErrRoomNotFound
+	}
+
+	participant := room.GetParticipant(livekit.ParticipantIdentity(req.Identity))
+	if participant == nil {
+		return nil, ErrParticipantNotFound
+	}
+
+	r.participantLogger(room, participant).Debugw("setting track muted",
+		"trackID", req.TrackSid, "muted", req.Muted)
+	if !req.Muted && !r.config.Room.EnableRemoteUnmute {
+		r.participantLogger(room, participant).Errorw("cannot unmute track, remote unmute is disabled", nil)
+		return nil, ErrRemoteUnmuteNoteEnabled
+	}
+	track := participant.SetTrackMuted(livekit.TrackID(req.TrackSid), req.Muted, true)
+	return &livekit.MuteRoomTrackResponse{Track: track}, nil
+}
+
+func (r *RoomManager) UpdateParticipant(ctx context.Context, req *livekit.UpdateParticipantRequest) (*livekit.ParticipantInfo, error) {
+	room := r.GetRoom(ctx, livekit.RoomName(req.Room))
+	if room == nil {
+		return nil, ErrRoomNotFound
+	}
+
+	participant := room.GetParticipant(livekit.ParticipantIdentity(req.Identity))
+	if participant == nil {
+		return nil, ErrParticipantNotFound
+	}
+
+	r.participantLogger(room, participant).Debugw("updating participant",
+		"metadata", req.Metadata, "permission", req.Permission)
+	if req.Name != "" {
+		participant.SetName(req.Name)
+	}
+	if req.Metadata != "" {
+		participant.SetMetadata(req.Metadata)
+	}
+	if req.Permission != nil {
+		participant.SetPermission(req.Permission)
+	}
+	return participant.ToProto(), nil
+}
+
+func (r *RoomManager) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomRequest) (*livekit.DeleteRoomResponse, error) {
+	room := r.GetRoom(ctx, livekit.RoomName(req.Room))
+	if room == nil {
+		// special case of a non-RTC room e.g. room created but no participants joined
+		logger.Debugw("Deleting non-rtc room, loading from roomstore")
+		err := r.roomStore.DeleteRoom(ctx, livekit.RoomName(req.Room))
+		if err != nil {
+			logger.Debugw("Error deleting non-rtc room", "err", err)
+			return nil, err
+		}
+	} else {
 		room.Logger.Infow("deleting room")
 		for _, p := range room.GetParticipants() {
 			_ = p.Close(true, types.ParticipantCloseReasonServiceRequestDeleteRoom)
 		}
 		room.Close()
-	case *livekit.RTCNodeMessage_UpdateSubscriptions:
-		if participant == nil {
-			return
-		}
-		pLogger.Debugw("updating participant subscriptions")
-		room.UpdateSubscriptions(
-			participant,
-			livekit.StringsAsTrackIDs(rm.UpdateSubscriptions.TrackSids),
-			rm.UpdateSubscriptions.ParticipantTracks,
-			rm.UpdateSubscriptions.Subscribe,
-		)
-	case *livekit.RTCNodeMessage_SendData:
-		pLogger.Debugw("api send data", "size", len(rm.SendData.Data))
-		up := &livekit.UserPacket{
-			Payload:         rm.SendData.Data,
-			DestinationSids: rm.SendData.DestinationSids,
-			Topic:           rm.SendData.Topic,
-		}
-		room.SendDataPacket(up, rm.SendData.Kind)
-	case *livekit.RTCNodeMessage_UpdateRoomMetadata:
-		pLogger.Debugw("updating room")
-		room.SetMetadata(rm.UpdateRoomMetadata.Metadata)
 	}
+	return &livekit.DeleteRoomResponse{}, nil
+}
+
+func (r *RoomManager) UpdateSubscriptions(ctx context.Context, req *livekit.UpdateSubscriptionsRequest) (*livekit.UpdateSubscriptionsResponse, error) {
+	room := r.GetRoom(ctx, livekit.RoomName(req.Room))
+	if room == nil {
+		return nil, ErrRoomNotFound
+	}
+
+	participant := room.GetParticipant(livekit.ParticipantIdentity(req.Identity))
+	if participant == nil {
+		return nil, ErrParticipantNotFound
+	}
+
+	r.participantLogger(room, participant).Debugw("updating participant subscriptions")
+	room.UpdateSubscriptions(
+		participant,
+		livekit.StringsAsTrackIDs(req.TrackSids),
+		req.ParticipantTracks,
+		req.Subscribe,
+	)
+	return &livekit.UpdateSubscriptionsResponse{}, nil
+}
+
+func (r *RoomManager) SendData(ctx context.Context, req *livekit.SendDataRequest) (*livekit.SendDataResponse, error) {
+	room := r.GetRoom(ctx, livekit.RoomName(req.Room))
+	if room == nil {
+		return nil, ErrRoomNotFound
+	}
+
+	r.roomLogger(room).Debugw("api send data", "size", len(req.Data))
+	up := &livekit.UserPacket{
+		Payload:         req.Data,
+		DestinationSids: req.DestinationSids,
+		Topic:           req.Topic,
+	}
+	room.SendDataPacket(up, req.Kind)
+	return &livekit.SendDataResponse{}, nil
+}
+
+func (r *RoomManager) UpdateRoomMetadata(ctx context.Context, req *livekit.UpdateRoomMetadataRequest) (*livekit.Room, error) {
+	room := r.GetRoom(ctx, livekit.RoomName(req.Room))
+	if room == nil {
+		return nil, ErrRoomNotFound
+	}
+
+	r.roomLogger(room).Debugw("updating room")
+	room.SetMetadata(req.Metadata)
+	return room.ToProto(), nil
 }
 
 func (r *RoomManager) iceServersForRoom(ri *livekit.Room, tlsOnly bool) []*livekit.ICEServer {

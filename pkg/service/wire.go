@@ -25,6 +25,7 @@ import (
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
 	"github.com/livekit/psrpc"
+	"github.com/livekit/psrpc/middleware"
 )
 
 func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*LivekitServer, error) {
@@ -58,6 +59,9 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		NewRoomService,
 		NewRTCService,
 		getSignalRelayConfig,
+		getRoomPSRPCConfig,
+		livekit.NewTopicFormatter,
+		getRoomClient,
 		NewDefaultSignalServer,
 		routing.NewSignalClient,
 		NewLocalRoomManager,
@@ -188,6 +192,29 @@ func getRoomConf(config *config.Config) config.RoomConfig {
 
 func getSignalRelayConfig(config *config.Config) config.SignalRelayConfig {
 	return config.SignalRelay
+}
+
+func getRoomPSRPCConfig(config *config.Config, rc redis.UniversalClient) config.RoomPSRPCConfig {
+	if rc == nil {
+		// always enable psrpc for local only nodes
+		config.RoomPSRPC.Enabled = true
+	}
+	return config.RoomPSRPC
+}
+
+func getRoomClient(config config.RoomPSRPCConfig, nodeID livekit.NodeID, bus psrpc.MessageBus) (rpc.TypedRoomClient, error) {
+	if config.Enabled {
+		return rpc.NewTypedRoomClient(
+			nodeID,
+			bus,
+			middleware.WithRPCRetries(middleware.RetryOptions{
+				MaxAttempts: config.MaxAttempts,
+				Timeout:     config.Timeout,
+				Backoff:     config.Backoff,
+			}),
+		)
+	}
+	return nil, nil
 }
 
 func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Server, error) {

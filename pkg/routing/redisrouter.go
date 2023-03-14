@@ -1,10 +1,7 @@
 package routing
 
 import (
-	"bytes"
 	"context"
-	"runtime/pprof"
-	"sync"
 	"time"
 
 	"github.com/pkg/errors"
@@ -38,7 +35,6 @@ type RedisRouter struct {
 	usePSRPCSignal bool
 	ctx            context.Context
 	isStarted      atomic.Bool
-	nodeMu         sync.RWMutex
 	// previous stats for computing averages
 	prevStats *livekit.NodeStats
 
@@ -57,9 +53,9 @@ func NewRedisRouter(config *config.Config, lr *LocalRouter, rc redis.UniversalCl
 }
 
 func (r *RedisRouter) RegisterNode() error {
-	r.nodeMu.RLock()
+	r.lock.RLock()
 	data, err := proto.Marshal((*livekit.Node)(r.currentNode))
-	r.nodeMu.RUnlock()
+	r.lock.RUnlock()
 	if err != nil {
 		return err
 	}
@@ -184,7 +180,7 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livek
 	return connectionID, sink, resChan, nil
 }
 
-func (r *RedisRouter) WriteParticipantRTC(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) error {
+func (r *RedisRouter) WriteParticipantRTC(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) error {
 	pkey := participantKeyLegacy(roomName, identity)
 	pkeyB62 := participantKey(roomName, identity)
 	rtcNode, err := r.getParticipantRTCNode(pkey, pkeyB62)
@@ -192,10 +188,7 @@ func (r *RedisRouter) WriteParticipantRTC(_ context.Context, roomName livekit.Ro
 		return err
 	}
 
-	rtcSink := NewRTCNodeSink(r.rc, livekit.NodeID(rtcNode), pkey, pkeyB62)
-	msg.ParticipantKey = string(participantKeyLegacy(roomName, identity))
-	msg.ParticipantKeyB62 = string(participantKey(roomName, identity))
-	return r.writeRTCMessage(rtcSink, msg)
+	return r.writeNodeRTC(ctx, rtcNode, roomName, identity, msg)
 }
 
 func (r *RedisRouter) WriteRoomRTC(ctx context.Context, roomName livekit.RoomName, msg *livekit.RTCNodeMessage) error {
@@ -203,14 +196,29 @@ func (r *RedisRouter) WriteRoomRTC(ctx context.Context, roomName livekit.RoomNam
 	if err != nil {
 		return err
 	}
-	msg.ParticipantKey = string(participantKeyLegacy(roomName, ""))
-	msg.ParticipantKeyB62 = string(participantKey(roomName, ""))
-	return r.WriteNodeRTC(ctx, node.Id, msg)
+
+	return r.writeNodeRTC(ctx, node.Id, roomName, "", msg)
 }
 
-func (r *RedisRouter) WriteNodeRTC(_ context.Context, rtcNodeID string, msg *livekit.RTCNodeMessage) error {
-	rtcSink := NewRTCNodeSink(r.rc, livekit.NodeID(rtcNodeID), livekit.ParticipantKey(msg.ParticipantKey), livekit.ParticipantKey(msg.ParticipantKeyB62))
-	return r.writeRTCMessage(rtcSink, msg)
+func (r *RedisRouter) writeNodeRTC(
+	ctx context.Context,
+	rtcNodeID string,
+	roomName livekit.RoomName,
+	identity livekit.ParticipantIdentity,
+	msg *livekit.RTCNodeMessage,
+) error {
+	pkey := participantKeyLegacy(roomName, identity)
+	pkeyB62 := participantKey(roomName, identity)
+
+	msg.ParticipantKey = string(pkey)
+	msg.ParticipantKeyB62 = string(pkeyB62)
+	msg.SenderTime = time.Now().Unix()
+	msg.RoomName = string(roomName)
+	msg.Identity = string(identity)
+
+	rtcSink := NewRTCNodeSink(r.rc, livekit.NodeID(rtcNodeID), pkey, pkeyB62)
+	defer rtcSink.Close()
+	return rtcSink.WriteMessage(msg)
 }
 
 func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantKey livekit.ParticipantKey, participantKeyB62 livekit.ParticipantKey) error {
@@ -300,6 +308,10 @@ func (r *RedisRouter) Start() error {
 	go r.statsWorker()
 	go r.redisWorker(workerStarted)
 
+	if err := r.LocalRouter.Start(); err != nil {
+		return err
+	}
+
 	// wait until worker is running
 	select {
 	case <-workerStarted:
@@ -310,9 +322,9 @@ func (r *RedisRouter) Start() error {
 }
 
 func (r *RedisRouter) Drain() {
-	r.nodeMu.Lock()
+	r.lock.Lock()
 	r.currentNode.State = livekit.NodeState_SHUTTING_DOWN
-	r.nodeMu.Unlock()
+	r.lock.Unlock()
 	if err := r.RegisterNode(); err != nil {
 		logger.Errorw("failed to mark as draining", err, "nodeID", r.currentNode.Id)
 	}
@@ -328,21 +340,55 @@ func (r *RedisRouter) Stop() {
 	r.cancel()
 }
 
-func (r *RedisRouter) setParticipantRTCNode(participantKey livekit.ParticipantKey, participantKeyB62 livekit.ParticipantKey, nodeID string) error {
-	var err error
-	if participantKey != "" {
-		err1 := r.rc.Set(r.ctx, participantRTCKey(participantKey), nodeID, participantMappingTTL).Err()
-		if err1 != nil {
-			err = errors.Wrap(err, "could not set rtc node")
+func (r *RedisRouter) statsWorker() {
+	statsUpdateTicker := time.NewTicker(statsUpdateInterval)
+	defer statsUpdateTicker.Stop()
+
+	for {
+		select {
+		case <-statsUpdateTicker.C:
+			if err := r.updateNodeStats(); err != nil {
+				logger.Errorw("could not update node", err)
+			}
+		case <-r.ctx.Done():
+			return
 		}
+	}
+}
+
+func (r *RedisRouter) updateNodeStats() error {
+	r.lock.Lock()
+	if r.prevStats == nil {
+		r.prevStats = r.currentNode.Stats
+	}
+	updated, computedAvg, err := prometheus.GetUpdatedNodeStats(r.currentNode.Stats, r.prevStats)
+	if err != nil {
+		logger.Errorw("could not update node stats", err)
+		r.lock.Unlock()
+		return err
+	}
+	r.currentNode.Stats = updated
+	if computedAvg {
+		r.prevStats = updated
+	}
+	r.lock.Unlock()
+
+	// TODO: check stats against config.Limit values
+
+	return r.RegisterNode()
+}
+
+func (r *RedisRouter) setParticipantRTCNode(participantKey livekit.ParticipantKey, participantKeyB62 livekit.ParticipantKey, nodeID string) (err error) {
+	if participantKey != "" {
+		err = r.rc.Set(r.ctx, participantRTCKey(participantKey), nodeID, participantMappingTTL).Err()
 	}
 	if participantKeyB62 != "" {
-		err2 := r.rc.Set(r.ctx, participantRTCKey(participantKeyB62), nodeID, participantMappingTTL).Err()
-		if err2 != nil {
-			err = errors.Wrap(err, "could not set rtc node")
-		}
+		err = r.rc.Set(r.ctx, participantRTCKey(participantKeyB62), nodeID, participantMappingTTL).Err()
 	}
-	return err
+	if err != nil {
+		return errors.Wrap(err, "could not set rtc node")
+	}
+	return nil
 }
 
 func (r *RedisRouter) setParticipantSignalNode(connectionID livekit.ConnectionID, nodeID string) error {
@@ -378,39 +424,6 @@ func (r *RedisRouter) getParticipantSignalNode(connectionID livekit.ConnectionID
 		err = ErrNodeNotFound
 	}
 	return val, err
-}
-
-// update node stats and cleanup
-func (r *RedisRouter) statsWorker() {
-	goroutineDumped := false
-	for r.ctx.Err() == nil {
-		// update periodically
-		select {
-		case <-time.After(statsUpdateInterval):
-			_ = r.WriteNodeRTC(context.Background(), r.currentNode.Id, &livekit.RTCNodeMessage{
-				Message: &livekit.RTCNodeMessage_KeepAlive{},
-			})
-			r.nodeMu.RLock()
-			stats := r.currentNode.Stats
-			r.nodeMu.RUnlock()
-
-			delaySeconds := time.Now().Unix() - stats.UpdatedAt
-			if delaySeconds > statsMaxDelaySeconds {
-				if !goroutineDumped {
-					goroutineDumped = true
-					buf := bytes.NewBuffer(nil)
-					_ = pprof.Lookup("goroutine").WriteTo(buf, 2)
-					logger.Errorw("status update delayed, possible deadlock", nil,
-						"delay", delaySeconds,
-						"goroutines", buf.String())
-				}
-			} else {
-				goroutineDumped = false
-			}
-		case <-r.ctx.Done():
-			return
-		}
-	}
 }
 
 // worker that consumes redis messages intended for this node
@@ -522,24 +535,7 @@ func (r *RedisRouter) handleRTCMessage(rm *livekit.RTCNodeMessage) error {
 			break
 		}
 
-		r.nodeMu.Lock()
-		if r.prevStats == nil {
-			r.prevStats = r.currentNode.Stats
-		}
-		updated, computedAvg, err := prometheus.GetUpdatedNodeStats(r.currentNode.Stats, r.prevStats)
-		if err != nil {
-			logger.Errorw("could not update node stats", err)
-			r.nodeMu.Unlock()
-			return err
-		}
-		r.currentNode.Stats = updated
-		if computedAvg {
-			r.prevStats = updated
-		}
-		r.nodeMu.Unlock()
-
-		// TODO: check stats against config.Limit values
-		if err := r.RegisterNode(); err != nil {
+		if err := r.updateNodeStats(); err != nil {
 			logger.Errorw("could not update node", err)
 		}
 

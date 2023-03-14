@@ -14,6 +14,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/pkg/service/servicefakes"
+	"github.com/livekit/protocol/rpc/rpcfakes"
 )
 
 func TestDeleteRoom(t *testing.T) {
@@ -107,23 +108,23 @@ func newTestRoomService(conf config.RoomConfig) *TestRoomService {
 	router := &routingfakes.FakeRouter{}
 	allocator := &servicefakes.FakeRoomAllocator{}
 	store := &servicefakes.FakeServiceStore{}
-	svc, err := service.NewRoomService(conf,
+	roomClient := &rpcfakes.FakeTypedRoomClient{}
+	svc := service.NewRoomService(conf,
 		config.APIConfig{ExecutionTimeout: 2},
-		router, allocator, store, nil)
-	if err != nil {
-		panic(err)
-	}
+		router, allocator, store, nil, roomClient, config.RoomPSRPCConfig{Enabled: true}, livekit.NewTopicFormatter())
 	return &TestRoomService{
 		RoomService: *svc,
 		router:      router,
 		allocator:   allocator,
 		store:       store,
+		roomClient:  roomClient,
 	}
 }
 
 type TestRoomService struct {
 	service.RoomService
-	router    *routingfakes.FakeRouter
-	allocator *servicefakes.FakeRoomAllocator
-	store     *servicefakes.FakeServiceStore
+	router     *routingfakes.FakeRouter
+	allocator  *servicefakes.FakeRoomAllocator
+	store      *servicefakes.FakeServiceStore
+	roomClient *rpcfakes.FakeTypedRoomClient
 }

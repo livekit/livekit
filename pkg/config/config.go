@@ -62,6 +62,7 @@ type Config struct {
 	Keys           map[string]string        `yaml:"keys,omitempty"`
 	Region         string                   `yaml:"region,omitempty"`
 	SignalRelay    SignalRelayConfig        `yaml:"signal_relay,omitempty"`
+	RoomPSRPC      RoomPSRPCConfig          `yaml:"room_psrpc,omitempty"`
 	// LogLevel is deprecated
 	LogLevel string        `yaml:"log_level,omitempty"`
 	Logging  LoggingConfig `yaml:"logging,omitempty"`
@@ -234,6 +235,13 @@ type SignalRelayConfig struct {
 	Timeout          time.Duration `yaml:"timeout"`
 	Backoff          time.Duration `yaml:"backoff"`
 	StreamBufferSize int           `yaml:"stream_buffer_size"`
+}
+
+type RoomPSRPCConfig struct {
+	Enabled     bool          `yaml:"enabled"`
+	MaxAttempts int           `yaml:"max_attempts"`
+	Timeout     time.Duration `yaml:"timeout"`
+	Backoff     time.Duration `yaml:"backoff"`
 }
 
 // RegionConfig lists available regions and their latitude/longitude, so the selector would prefer
@@ -411,6 +419,12 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 			Timeout:          500 * time.Millisecond,
 			Backoff:          500 * time.Millisecond,
 			StreamBufferSize: 1000,
+		},
+		RoomPSRPC: RoomPSRPCConfig{
+			Enabled:     false,
+			MaxAttempts: 3,
+			Timeout:     500 * time.Millisecond,
+			Backoff:     500 * time.Millisecond,
 		},
 		Keys: map[string]string{},
 	}

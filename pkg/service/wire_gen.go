@@ -20,6 +20,7 @@ import (
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
 	"github.com/livekit/psrpc"
+	"github.com/livekit/psrpc/middleware"
 	"github.com/pion/turn/v2"
 	"github.com/pkg/errors"
 	"github.com/redis/go-redis/v9"
@@ -70,10 +71,13 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	analyticsService := telemetry.NewAnalyticsService(conf, currentNode)
 	telemetryService := telemetry.NewTelemetryService(notifier, analyticsService)
 	rtcEgressLauncher := NewEgressLauncher(egressClient, rpcClient, egressStore, telemetryService)
-	roomService, err := NewRoomService(roomConfig, apiConfig, router, roomAllocator, objectStore, rtcEgressLauncher)
+	roomPSRPCConfig := getRoomPSRPCConfig(conf, universalClient)
+	roomClient, err := getRoomClient(roomPSRPCConfig, nodeID, messageBus)
 	if err != nil {
 		return nil, err
 	}
+	topicFormatter := livekit.NewTopicFormatter()
+	roomService := NewRoomService(roomConfig, apiConfig, router, roomAllocator, objectStore, rtcEgressLauncher, roomClient, roomPSRPCConfig, topicFormatter)
 	egressService := NewEgressService(egressClient, rpcClient, objectStore, egressStore, roomService, telemetryService, rtcEgressLauncher)
 	ingressConfig := getIngressConfig(conf)
 	ingressClient, err := rpc.NewIngressClient(nodeID, messageBus)
@@ -89,7 +93,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode, telemetryService)
 	clientConfigurationManager := createClientConfiguration()
 	timedVersionGenerator := utils.NewDefaultTimedVersionGenerator()
-	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager, rtcEgressLauncher, timedVersionGenerator)
+	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager, rtcEgressLauncher, timedVersionGenerator, messageBus)
 	if err != nil {
 		return nil, err
 	}
@@ -233,6 +237,28 @@ func getRoomConf(config2 *config.Config) config.RoomConfig {
 
 func getSignalRelayConfig(config2 *config.Config) config.SignalRelayConfig {
 	return config2.SignalRelay
+}
+
+func getRoomPSRPCConfig(config2 *config.Config, rc redis.UniversalClient) config.RoomPSRPCConfig {
+	if rc == nil {
+		config2.
+			RoomPSRPC.Enabled = true
+	}
+	return config2.RoomPSRPC
+}
+
+func getRoomClient(config2 config.RoomPSRPCConfig, nodeID livekit.NodeID, bus psrpc.MessageBus) (rpc.TypedRoomClient, error) {
+	if config2.Enabled {
+		return rpc.NewTypedRoomClient(
+			nodeID,
+			bus, middleware.WithRPCRetries(middleware.RetryOptions{
+				MaxAttempts: config2.MaxAttempts,
+				Timeout:     config2.Timeout,
+				Backoff:     config2.Backoff,
+			}),
+		)
+	}
+	return nil, nil
 }
 
 func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Server, error) {

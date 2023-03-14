@@ -71,6 +71,7 @@ const (
 	ParticipantCloseReasonVerifyFailed
 	ParticipantCloseReasonJoinFailed
 	ParticipantCloseReasonJoinTimeout
+	ParticipantCloseReasonMessageBusFailed
 	ParticipantCloseReasonStateDisconnected
 	ParticipantCloseReasonPeerConnectionDisconnected
 	ParticipantCloseReasonDuplicateIdentity
@@ -101,6 +102,8 @@ func (p ParticipantCloseReason) String() string {
 		return "JOIN_FAILED"
 	case ParticipantCloseReasonJoinTimeout:
 		return "JOIN_TIMEOUT"
+	case ParticipantCloseReasonMessageBusFailed:
+		return "MESSAGE_BUS_FAILED"
 	case ParticipantCloseReasonStateDisconnected:
 		return "STATE_DISCONNECTED"
 	case ParticipantCloseReasonPeerConnectionDisconnected:
@@ -259,7 +262,7 @@ type LocalParticipant interface {
 	AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget)
 	HandleOffer(sdp webrtc.SessionDescription)
 	AddTrack(req *livekit.AddTrackRequest)
-	SetTrackMuted(trackID livekit.TrackID, muted bool, fromAdmin bool)
+	SetTrackMuted(trackID livekit.TrackID, muted bool, fromAdmin bool) *livekit.TrackInfo
 
 	HandleAnswer(sdp webrtc.SessionDescription)
 	Negotiate(force bool)

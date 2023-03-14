@@ -19,12 +19,15 @@ import (
 
 // A rooms service that supports a single node
 type RoomService struct {
-	roomConf       config.RoomConfig
-	apiConf        config.APIConfig
-	router         routing.MessageRouter
-	roomAllocator  RoomAllocator
-	roomStore      ServiceStore
-	egressLauncher rtc.EgressLauncher
+	roomConf          config.RoomConfig
+	apiConf           config.APIConfig
+	router            routing.MessageRouter
+	roomAllocator     RoomAllocator
+	roomStore         ServiceStore
+	egressLauncher    rtc.EgressLauncher
+	roomManagerClient rpc.TypedRoomClient
+	usePSRPC          bool
+	topicFormatter    livekit.TopicFormatter
 }
 
 func NewRoomService(
@@ -34,16 +37,21 @@ func NewRoomService(
 	roomAllocator RoomAllocator,
 	serviceStore ServiceStore,
 	egressLauncher rtc.EgressLauncher,
-) (svc *RoomService, err error) {
-	svc = &RoomService{
-		roomConf:       roomConf,
-		apiConf:        apiConf,
-		router:         router,
-		roomAllocator:  roomAllocator,
-		roomStore:      serviceStore,
-		egressLauncher: egressLauncher,
+	roomManagerClient rpc.TypedRoomClient,
+	config config.RoomPSRPCConfig,
+	topicFormatter livekit.TopicFormatter,
+) *RoomService {
+	return &RoomService{
+		roomConf:          roomConf,
+		apiConf:           apiConf,
+		router:            router,
+		roomAllocator:     roomAllocator,
+		roomStore:         serviceStore,
+		egressLauncher:    egressLauncher,
+		roomManagerClient: roomManagerClient,
+		usePSRPC:          config.Enabled,
+		topicFormatter:    topicFormatter,
 	}
-	return
 }
 
 func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (*livekit.Room, error) {
@@ -125,6 +133,11 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 	if err := EnsureCreatePermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
+
+	if s.usePSRPC {
+		return s.roomManagerClient.DeleteRoom(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
+	}
+
 	err := s.router.WriteRoomRTC(ctx, livekit.RoomName(req.Room), &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_DeleteRoom{
 			DeleteRoom: req,
@@ -185,6 +198,14 @@ func (s *RoomService) GetParticipant(ctx context.Context, req *livekit.RoomParti
 
 func (s *RoomService) RemoveParticipant(ctx context.Context, req *livekit.RoomParticipantIdentity) (*livekit.RemoveParticipantResponse, error) {
 	AppendLogFields(ctx, "room", req.Room, "participant", req.Identity)
+	if err := EnsureAdminPermission(ctx, livekit.RoomName(req.Room)); err != nil {
+		return nil, twirpAuthError(err)
+	}
+
+	if s.usePSRPC {
+		return s.roomManagerClient.RemoveParticipant(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
+	}
+
 	err := s.writeParticipantMessage(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity), &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_RemoveParticipant{
 			RemoveParticipant: req,
@@ -215,6 +236,10 @@ func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 	AppendLogFields(ctx, "room", req.Room, "participant", req.Identity, "track", req.TrackSid, "muted", req.Muted)
 	if err := EnsureAdminPermission(ctx, livekit.RoomName(req.Room)); err != nil {
 		return nil, twirpAuthError(err)
+	}
+
+	if s.usePSRPC {
+		return s.roomManagerClient.MutePublishedTrack(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
 	}
 
 	err := s.writeParticipantMessage(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity), &livekit.RTCNodeMessage{
@@ -262,6 +287,13 @@ func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.Update
 	if maxMetadataSize > 0 && len(req.Metadata) > maxMetadataSize {
 		return nil, twirp.InvalidArgumentError(ErrMetadataExceedsLimits.Error(), strconv.Itoa(maxMetadataSize))
 	}
+	if err := EnsureAdminPermission(ctx, livekit.RoomName(req.Room)); err != nil {
+		return nil, twirpAuthError(err)
+	}
+
+	if s.usePSRPC {
+		return s.roomManagerClient.UpdateParticipant(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
+	}
 
 	err := s.writeParticipantMessage(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity), &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_UpdateParticipant{
@@ -299,6 +331,14 @@ func (s *RoomService) UpdateSubscriptions(ctx context.Context, req *livekit.Upda
 		trackSIDs = append(trackSIDs, pt.TrackSids...)
 	}
 	AppendLogFields(ctx, "room", req.Room, "participant", req.Identity, "track", trackSIDs)
+	if err := EnsureAdminPermission(ctx, livekit.RoomName(req.Room)); err != nil {
+		return nil, twirpAuthError(err)
+	}
+
+	if s.usePSRPC {
+		return s.roomManagerClient.UpdateSubscriptions(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
+	}
+
 	err := s.writeParticipantMessage(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity), &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_UpdateSubscriptions{
 			UpdateSubscriptions: req,
@@ -316,6 +356,10 @@ func (s *RoomService) SendData(ctx context.Context, req *livekit.SendDataRequest
 	AppendLogFields(ctx, "room", roomName, "size", len(req.Data))
 	if err := EnsureAdminPermission(ctx, roomName); err != nil {
 		return nil, twirpAuthError(err)
+	}
+
+	if s.usePSRPC {
+		return s.roomManagerClient.SendData(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
 	}
 
 	err := s.router.WriteRoomRTC(ctx, roomName, &livekit.RTCNodeMessage{
@@ -356,6 +400,10 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 		return nil, err
 	}
 
+	if s.usePSRPC {
+		return s.roomManagerClient.UpdateRoomMetadata(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
+	}
+
 	err = s.router.WriteRoomRTC(ctx, livekit.RoomName(req.Room), &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_UpdateRoomMetadata{
 			UpdateRoomMetadata: req,
@@ -383,10 +431,6 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 }
 
 func (s *RoomService) writeParticipantMessage(ctx context.Context, room livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) error {
-	if err := EnsureAdminPermission(ctx, room); err != nil {
-		return twirpAuthError(err)
-	}
-
 	return s.router.WriteParticipantRTC(ctx, room, identity, msg)
 }
 
