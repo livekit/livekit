@@ -63,7 +63,8 @@ type TrackReceiver interface {
 	// Get red receiver for primary codec, used by forward red encodings for opus only codec
 	GetRedReceiver() TrackReceiver
 
-	GetTemporalLayerFpsForSpatial(layer int32) []float32
+	GetFrameRates() [][]float32
+	GetTemporalLayerFpsForSpatial(layer int32) (bool, []float32)
 
 	GetRTCPSenderReportDataExt(layer int32) *buffer.RTCPSenderReportDataExt
 	GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error)
@@ -743,10 +744,56 @@ func (w *WebRTCReceiver) GetRedReceiver() TrackReceiver {
 	return w.redReceiver.Load().(*RedReceiver)
 }
 
-func (w *WebRTCReceiver) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
+func (w *WebRTCReceiver) GetFrameRates() [][]float32 {
+	w.bufferMu.RLock()
+	defer w.bufferMu.RUnlock()
+
+	fps := make([][]float32, DefaultMaxLayerSpatial+1)
+	for i := 0; i < len(fps); i++ {
+		fps[i] = make([]float32, DefaultMaxLayerTemporal+1)
+	}
+
+	if w.isSVC {
+		if w.buffers[0] == nil {
+			return nil
+		}
+
+		for layer := int32(0); layer < DefaultMaxLayerSpatial+1; layer++ {
+			isAvailable, fr := w.buffers[0].GetTemporalLayerFpsForSpatial(layer)
+			if !isAvailable {
+				// even if one layer does not have frame rate, not ready yet
+				return nil
+			}
+
+			if fr != nil {
+				copy(fps[layer], fr)
+			}
+		}
+	} else {
+		for layer, buff := range w.buffers {
+			if buff == nil {
+				continue
+			}
+
+			isAvailable, fr := buff.GetTemporalLayerFpsForSpatial(0)
+			if !isAvailable {
+				// even if one layer does not have frame rate, not ready yet
+				return nil
+			}
+
+			if fr != nil {
+				copy(fps[layer], fr)
+			}
+		}
+	}
+
+	return fps
+}
+
+func (w *WebRTCReceiver) GetTemporalLayerFpsForSpatial(layer int32) (bool, []float32) {
 	b := w.getBuffer(layer)
 	if b == nil {
-		return nil
+		return false, nil
 	}
 
 	if !w.isSVC {

@@ -39,6 +39,7 @@ type TrackSender interface {
 	SubscriberID() livekit.ParticipantID
 	TrackInfoAvailable()
 	HandleRTCPSenderReportData(payloadType webrtc.PayloadType, layer int32, srData *buffer.RTCPSenderReportData) error
+	HandleTrackFrameRateReport(payloadType webrtc.PayloadType, fps [][]float32) error
 }
 
 const (
@@ -1724,5 +1725,9 @@ func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
 }
 
 func (d *DownTrack) HandleRTCPSenderReportData(_payloadType webrtc.PayloadType, _layer int32, _srData *buffer.RTCPSenderReportData) error {
+	return nil
+}
+
+func (d *DownTrack) HandleTrackFrameRateReport(_payloadType webrtc.PayloadType, _fps [][]float32) error {
 	return nil
 }

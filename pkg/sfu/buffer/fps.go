@@ -19,7 +19,7 @@ type frameInfo struct {
 
 type FrameRateCalculator interface {
 	RecvPacket(ep *ExtPacket) bool
-	GetFrameRate() []float32
+	GetFrameRate() (bool, []float32)
 	Completed() bool
 }
 
@@ -175,8 +175,8 @@ func (f *FrameRateCalculatorVP8) reset() {
 	f.baseFrame = nil
 }
 
-func (f *FrameRateCalculatorVP8) GetFrameRate() []float32 {
-	return f.frameRates[:]
+func (f *FrameRateCalculatorVP8) GetFrameRate() (bool, []float32) {
+	return f.completed, f.frameRates[:]
 }
 
 // -----------------------------
@@ -391,11 +391,11 @@ func (f *FrameRateCalculatorDD) calc() bool {
 	return false
 }
 
-func (f *FrameRateCalculatorDD) GetFrameRateForSpatial(spatial int32) []float32 {
+func (f *FrameRateCalculatorDD) GetFrameRateForSpatial(spatial int32) (bool, []float32) {
 	if spatial < 0 || spatial >= int32(len(f.frameRates)) {
-		return nil
+		return false, nil
 	}
-	return f.frameRates[spatial][:]
+	return f.completed, f.frameRates[spatial][:]
 }
 
 func (f *FrameRateCalculatorDD) close() {
@@ -429,6 +429,6 @@ type FrameRateCalculatorForDDLayer struct {
 	spatial int32
 }
 
-func (f *FrameRateCalculatorForDDLayer) GetFrameRate() []float32 {
+func (f *FrameRateCalculatorForDDLayer) GetFrameRate() (bool, []float32) {
 	return f.FrameRateCalculatorDD.GetFrameRateForSpatial(f.spatial)
 }

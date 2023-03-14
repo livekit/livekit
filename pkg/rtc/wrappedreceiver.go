@@ -259,11 +259,18 @@ func (d *DummyReceiver) DebugInfo() map[string]interface{} {
 	return nil
 }
 
-func (d *DummyReceiver) GetTemporalLayerFpsForSpatial(spatial int32) []float32 {
+func (d *DummyReceiver) GetFrameRates() [][]float32 {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+		return r.GetFrameRates()
+	}
+	return nil
+}
+
+func (d *DummyReceiver) GetTemporalLayerFpsForSpatial(spatial int32) (bool, []float32) {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		return r.GetTemporalLayerFpsForSpatial(spatial)
 	}
-	return nil
+	return false, nil
 }
 
 func (d *DummyReceiver) TrackInfo() *livekit.TrackInfo {

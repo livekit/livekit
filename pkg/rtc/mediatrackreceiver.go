@@ -774,7 +774,11 @@ func (t *MediaTrackReceiver) GetTemporalLayerForSpatialFps(spatial int32, fps ui
 		return buffer.DefaultMaxLayerTemporal
 	}
 
-	layerFps := receiver.GetTemporalLayerFpsForSpatial(spatial)
+	isAvailable, layerFps := receiver.GetTemporalLayerFpsForSpatial(spatial)
+	if !isAvailable {
+		return buffer.DefaultMaxLayerTemporal
+	}
+
 	requestFps := float32(fps) * layerSelectionTolerance
 	for i, f := range layerFps {
 		if requestFps <= f {

@@ -99,7 +99,7 @@ type Buffer struct {
 
 	paused              bool
 	frameRateCalculator [DefaultMaxLayerSpatial + 1]FrameRateCalculator
-	frameRateCalculated bool
+	// RAJA-REMOVE frameRateCalculated bool
 }
 
 // NewBuffer constructs a new Buffer
@@ -450,7 +450,7 @@ func (b *Buffer) patchExtPacket(ep *ExtPacket, buf []byte) *ExtPacket {
 }
 
 func (b *Buffer) doFpsCalc(ep *ExtPacket) {
-	if b.paused || b.frameRateCalculated || len(ep.Packet.Payload) == 0 {
+	if b.paused /* RAJA-REMOVE || b.frameRateCalculated */ || len(ep.Packet.Payload) == 0 {
 		return
 	}
 	spatial := ep.Spatial
@@ -458,7 +458,15 @@ func (b *Buffer) doFpsCalc(ep *ExtPacket) {
 		spatial = 0
 	}
 	if fr := b.frameRateCalculator[spatial]; fr != nil {
+		if fr.Completed() {
+			return
+		}
+
 		if fr.RecvPacket(ep) {
+			if f := b.onFpsChanged; f != nil {
+				go f()
+			}
+			/* RAJA-REMOVE
 			complete := true
 			for _, fr2 := range b.frameRateCalculator {
 				if fr2 != nil && !fr2.Completed() {
@@ -472,6 +480,7 @@ func (b *Buffer) doFpsCalc(ep *ExtPacket) {
 					go f()
 				}
 			}
+			*/
 		}
 	}
 }
@@ -766,13 +775,22 @@ func (b *Buffer) OnFpsChanged(f func()) {
 	b.Unlock()
 }
 
-func (b *Buffer) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
+func (b *Buffer) GetTemporalLayerFpsForSpatial(layer int32) (bool, []float32) {
+	b.RLock()
+	defer b.RUnlock()
+
+	/* RAJA-REMOVE
+	if !b.frameRateCalculated {
+		return false, nil
+	}
+	*/
+
 	if int(layer) >= len(b.frameRateCalculator) {
-		return nil
+		return true, nil
 	}
 
 	if fc := b.frameRateCalculator[layer]; fc != nil {
 		return fc.GetFrameRate()
 	}
-	return nil
+	return true, nil
 }
