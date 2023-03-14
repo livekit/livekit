@@ -958,6 +958,7 @@ func (d *DownTrack) maybeAddTransition(bitrate int64, distance float64) {
 
 	if ti.Source == livekit.TrackSource_SCREEN_SHARE {
 		d.connectionStats.AddLayerTransition(distance, time.Now())
+		return
 	}
 
 	d.connectionStats.AddBitrateTransition(bitrate, time.Now())
