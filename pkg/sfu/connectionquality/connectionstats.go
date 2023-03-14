@@ -29,8 +29,10 @@ type ConnectionStatsParams struct {
 }
 
 type ConnectionStats struct {
-	params  ConnectionStatsParams
-	isVideo atomic.Bool
+	params ConnectionStatsParams
+
+	isStarted atomic.Bool
+	isVideo   atomic.Bool
 
 	onStatsUpdate func(cs *ConnectionStats, stat *livekit.AnalyticsStat)
 
@@ -55,7 +57,13 @@ func NewConnectionStats(params ConnectionStatsParams) *ConnectionStats {
 }
 
 func (cs *ConnectionStats) Start(trackInfo *livekit.TrackInfo, at time.Time) {
+	if cs.isStarted.Swap(true) {
+		return
+	}
+
 	cs.isVideo.Store(trackInfo.Type == livekit.TrackType_VIDEO)
+
+	cs.updateLastStatsAt(time.Now()) // force an initial wait
 
 	cs.scorer.Start(at)
 
@@ -130,7 +138,7 @@ func (cs *ConnectionStats) maybeMarkInProcess() bool {
 		interval = UpdateInterval
 	}
 
-	if cs.lastStatsAt.IsZero() || time.Since(cs.lastStatsAt) > time.Duration(processThreshold*float64(interval)) {
+	if cs.isStarted.Load() && time.Since(cs.lastStatsAt) > time.Duration(processThreshold*float64(interval)) {
 		cs.statsInProcess = true
 		return true
 	}
@@ -138,14 +146,18 @@ func (cs *ConnectionStats) maybeMarkInProcess() bool {
 	return false
 }
 
-func (cs *ConnectionStats) updateInProcess(isAvailable bool, at time.Time) {
+func (cs *ConnectionStats) updateLastStatsAt(at time.Time) {
+	cs.lock.Lock()
+	defer cs.lock.Unlock()
+
+	cs.lastStatsAt = at
+}
+
+func (cs *ConnectionStats) clearInProcess() {
 	cs.lock.Lock()
 	defer cs.lock.Unlock()
 
 	cs.statsInProcess = false
-	if isAvailable {
-		cs.lastStatsAt = at
-	}
 }
 
 func (cs *ConnectionStats) getStat(at time.Time) {
@@ -160,12 +172,12 @@ func (cs *ConnectionStats) getStat(at time.Time) {
 
 	streams := cs.params.GetDeltaStats()
 	if len(streams) == 0 {
-		cs.updateInProcess(false, at)
+		cs.clearInProcess()
 		return
 	}
 
 	// stats available, update last stats time
-	cs.updateInProcess(true, at)
+	cs.updateLastStatsAt(at)
 
 	score := cs.updateScore(streams, at)
 
@@ -194,6 +206,8 @@ func (cs *ConnectionStats) getStat(at time.Time) {
 			Mime:    cs.params.MimeType,
 		})
 	}
+
+	cs.clearInProcess()
 }
 
 func (cs *ConnectionStats) updateStatsWorker() {
