@@ -303,7 +303,7 @@ func (s *EgressService) ListEgress(ctx context.Context, req *livekit.ListEgressR
 		items = []*livekit.EgressInfo{info}
 	} else {
 		var err error
-		items, err = s.es.ListEgress(ctx, livekit.RoomName(req.RoomName))
+		items, err = s.es.ListEgress(ctx, livekit.RoomName(req.RoomName), req.Active)
 		if err != nil {
 			return nil, err
 		}
