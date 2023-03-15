@@ -242,7 +242,7 @@ func (s *StreamTrackerManager) IsPaused() bool {
 }
 
 func (s *StreamTrackerManager) SetMaxExpectedSpatialLayer(layer int32) int32 {
-	s.logger.Infow("RAJA setting max expected layer", "layer", layer)	// REMOVE
+	s.logger.Infow("RAJA setting max expected layer", "layer", layer) // REMOVE
 	s.lock.Lock()
 	prev := s.maxExpectedLayer
 	if layer <= s.maxExpectedLayer {
@@ -319,15 +319,6 @@ done:
 	if !maxLayers.IsValid() {
 		distance++
 	}
-	s.logger.Infow("RAJA stm",
-		"ml", maxLayers,
-		"aml", adjustedMaxLayers,
-		"mel", s.maxExpectedLayer,
-		"mtls", s.maxTemporalLayerSeen,
-		"al", al,
-		"brs", brs,
-		"d", distance,
-	)	// REMOVE
 
 	return float64(distance) / float64(s.maxTemporalLayerSeen+1)
 }
@@ -586,7 +577,6 @@ func (s *StreamTrackerManager) bitrateReporter() {
 
 		case <-ticker.C:
 			al, brs := s.GetLayeredBitrate()
-			s.logger.Infow("RAJA measured bitrates", "al", al, "brs", brs)	// REMOVE
 			s.updateMaxTemporalLayerSeen(brs)
 
 			if listener := s.getListener(); listener != nil {

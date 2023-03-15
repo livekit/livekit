@@ -1,7 +1,6 @@
 package connectionquality
 
 import (
-	"fmt"	// REMOVE
 	"math"
 	"testing"
 	"time"
@@ -300,7 +299,6 @@ func TestConnectionQuality(t *testing.T) {
 		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, quality)
 
 		// test layer mute via UpdateLayerMute API
-		fmt.Printf("last run\n")	// REMOVE
 		cs.AddBitrateTransition(1_000_000, now)
 		cs.AddBitrateTransition(2_000_000, now.Add(2*time.Second))
 
