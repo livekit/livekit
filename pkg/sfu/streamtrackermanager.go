@@ -242,7 +242,6 @@ func (s *StreamTrackerManager) IsPaused() bool {
 }
 
 func (s *StreamTrackerManager) SetMaxExpectedSpatialLayer(layer int32) int32 {
-	s.logger.Infow("RAJA setting max expected layer", "layer", layer) // REMOVE
 	s.lock.Lock()
 	prev := s.maxExpectedLayer
 	if layer <= s.maxExpectedLayer {
@@ -291,7 +290,7 @@ func (s *StreamTrackerManager) DistanceToDesired() float64 {
 		return 0
 	}
 
-	al, brs := s.getLayeredBitrateLocked()
+	_, brs := s.getLayeredBitrateLocked()
 
 	maxLayers := InvalidLayers
 done:
@@ -307,7 +306,6 @@ done:
 		}
 	}
 
-	// RAJA-TODO: need to take available layers into account
 	adjustedMaxLayers := maxLayers
 	if !maxLayers.IsValid() {
 		adjustedMaxLayers = VideoLayers{Spatial: 0, Temporal: 0}
