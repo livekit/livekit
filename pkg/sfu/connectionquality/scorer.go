@@ -128,8 +128,8 @@ type qualityScorer struct {
 	mutedAt   time.Time
 	unmutedAt time.Time
 
-	bitrateMutedAt   time.Time
-	bitrateUnmutedAt time.Time
+	layerMutedAt   time.Time
+	layerUnmutedAt time.Time
 
 	maxPPS float64
 
@@ -167,17 +167,47 @@ func (q *qualityScorer) AddBitrateTransition(bitrate int64, at time.Time) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
 
+	q.params.Logger.Infow("RAJA adding bitrate transition", "bitrate", bitrate, "at", at)	// REMOVE
+	fmt.Printf("RAJA adding bitrate transition, bitrate: %d, at: %+v\n", bitrate, at)	// REMOVE
 	q.bitrateTransitions = append(q.bitrateTransitions, bitrateTransition{
 		startedAt: at,
 		bitrate:   bitrate,
 	})
 
 	if bitrate == 0 {
-		q.bitrateMutedAt = at
-		q.score = maxScore
+		if !q.isLayerMuted() {
+			fmt.Printf("muting layer at: %+v\n", at)	// REMOVE
+			q.layerMutedAt = at
+			q.score = maxScore
+		}
 	} else {
-		if q.bitrateUnmutedAt.IsZero() || q.bitrateMutedAt.After(q.bitrateUnmutedAt) {
-			q.bitrateUnmutedAt = at
+		if q.isLayerMuted() {
+			fmt.Printf("unmuting layer at: %+v\n", at)	// REMOVE
+			q.layerUnmutedAt = at
+		}
+	}
+}
+
+func (q *qualityScorer) UpdateLayerMute(isMuted bool, at time.Time) {
+	q.lock.Lock()
+	defer q.lock.Unlock()
+
+	if isMuted {
+		if !q.isLayerMuted() {
+			q.bitrateTransitions = append(q.bitrateTransitions, bitrateTransition{
+				startedAt: at,
+				bitrate:   0,
+			})
+			q.layerTransitions = append(q.layerTransitions, layerTransition{
+				startedAt: at,
+				distance:  0.0,
+			})
+			q.layerMutedAt = at
+			q.score = maxScore
+		}
+	} else {
+		if q.isLayerMuted() {
+			q.layerUnmutedAt = at
 		}
 	}
 }
@@ -186,6 +216,7 @@ func (q *qualityScorer) AddLayerTransition(distance float64, at time.Time) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
 
+	q.params.Logger.Infow("RAJA adding layer transition", "distance", distance, "at", at)	// REMOVE
 	q.layerTransitions = append(q.layerTransitions, layerTransition{
 		startedAt: at,
 		distance:  distance,
@@ -206,7 +237,8 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 	//       to stable and quality EXCELLENT for responsiveness. On an unmute, the
 	//       entire window data is considered (as long as enough time has passed since
 	//       unmute) including the data before mute.
-	if q.isMuted() || !q.isUnmutedEnough(at) || q.isBitrateMuted() {
+	fmt.Printf("m: %+v, iu: %+v, il: %+v\n", q.isMuted(), q.isUnmutedEnough(at), q.isLayerMuted())	// REMOVE
+	if q.isMuted() || !q.isUnmutedEnough(at) || q.isLayerMuted() {
 		q.lastUpdateAt = at
 		return
 	}
@@ -243,6 +275,18 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 		factor = decreaseFactor
 	}
 	score = factor*score + (1.0-factor)*q.score
+	fmt.Printf( "RAJA quality update, score: %0.2f\n", score) // REMOVE
+	q.params.Logger.Infow(
+		"RAJA quality update",
+		"reason", reason,
+		"prevScore", q.score,
+		"prevQuality", scoreToConnectionQuality(q.score),
+		"score", score,
+		"quality", scoreToConnectionQuality(score),
+		"stat", stat,
+		"expectedBitrate", expectedBitrate,
+		"expectedDistance", expectedDistance,
+	)	// REMOVE
 	// WARNING NOTE: comparing protobuf enum values directly (livekit.ConnectionQuality)
 	if scoreToConnectionQuality(q.score) > scoreToConnectionQuality(score) {
 		q.params.Logger.Infow(
@@ -273,26 +317,29 @@ func (q *qualityScorer) isUnmutedEnough(at time.Time) bool {
 	} else {
 		sinceUnmute = at.Sub(q.unmutedAt)
 	}
+	fmt.Printf("sincenUmute: %+v, at: %+v\n", sinceUnmute, at)	// REMOVE
 
-	var sinceLayersUnmute time.Duration
-	if q.bitrateUnmutedAt.IsZero() {
-		sinceLayersUnmute = at.Sub(q.lastUpdateAt)
+	var sinceLayerUnmute time.Duration
+	if q.layerUnmutedAt.IsZero() {
+		sinceLayerUnmute = at.Sub(q.lastUpdateAt)
 	} else {
-		sinceLayersUnmute = at.Sub(q.bitrateUnmutedAt)
+		sinceLayerUnmute = at.Sub(q.layerUnmutedAt)
 	}
+	fmt.Printf("sinceLayerUnmute: %+v, at: %+v\n", sinceLayerUnmute, at)	// REMOVE
 
 	validDuration := sinceUnmute
-	if sinceLayersUnmute < validDuration {
-		validDuration = sinceLayersUnmute
+	if sinceLayerUnmute < validDuration {
+		validDuration = sinceLayerUnmute
 	}
 
 	sinceLastUpdate := at.Sub(q.lastUpdateAt)
+	fmt.Printf("valid: %+v, sinceLastUpdate: %+v\n", validDuration, sinceLastUpdate)	// REMOVE
 
 	return validDuration.Seconds()/sinceLastUpdate.Seconds() > unmuteTimeThreshold
 }
 
-func (q *qualityScorer) isBitrateMuted() bool {
-	return !q.bitrateMutedAt.IsZero() && (q.bitrateUnmutedAt.IsZero() || q.bitrateMutedAt.After(q.bitrateUnmutedAt))
+func (q *qualityScorer) isLayerMuted() bool {
+	return !q.layerMutedAt.IsZero() && (q.layerUnmutedAt.IsZero() || q.layerMutedAt.After(q.layerUnmutedAt))
 }
 
 func (q *qualityScorer) getPacketLossWeight(stat *windowStat) float64 {
