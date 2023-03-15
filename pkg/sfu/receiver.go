@@ -380,6 +380,7 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) error {
 
 	track.TrackInfoAvailable()
 	track.UpTrackMaxPublishedLayerChange(w.streamTrackerManager.GetMaxPublishedLayer())
+	track.UpTrackMaxTemporalLayerSeenChange(w.streamTrackerManager.GetMaxTemporalLayerSeen())
 
 	w.downTrackSpreader.Store(track)
 	return nil

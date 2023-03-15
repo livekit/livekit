@@ -321,15 +321,6 @@ done:
 	return float64(distance) / float64(s.maxTemporalLayerSeen+1)
 }
 
-func (s *StreamTrackerManager) getMaxExpectedLayerLocked() int32 {
-	// find min of <expected, published> layer
-	maxExpectedLayer := s.maxExpectedLayer
-	if maxExpectedLayer > s.maxPublishedLayer {
-		maxExpectedLayer = s.maxPublishedLayer
-	}
-	return maxExpectedLayer
-}
-
 func (s *StreamTrackerManager) GetMaxPublishedLayer() int32 {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
@@ -536,6 +527,13 @@ func (s *StreamTrackerManager) GetReferenceLayerRTPTimestamp(ts uint32, layer in
 	// Add the offset to layer's ts to map it to corresponding RTP timestamp in
 	// the reference layer.
 	return ts + (srRef.SenderReportData.RTPTimestamp - normalizedTS), nil
+}
+
+func (s *StreamTrackerManager) GetMaxTemporalLayerSeen() int32 {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+
+	return s.maxTemporalLayerSeen
 }
 
 func (s *StreamTrackerManager) updateMaxTemporalLayerSeen(brs Bitrates) {
