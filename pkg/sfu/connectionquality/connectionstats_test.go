@@ -297,6 +297,50 @@ func TestConnectionQuality(t *testing.T) {
 		mos, quality = cs.GetScoreAndQuality()
 		require.Greater(t, float32(4.6), mos)
 		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, quality)
+
+		// test layer mute via UpdateLayerMute API
+		cs.AddBitrateTransition(1_000_000, now)
+		cs.AddBitrateTransition(2_000_000, now.Add(2*time.Second))
+
+		streams = map[uint32]*buffer.StreamStatsWithLayers{
+			1: &buffer.StreamStatsWithLayers{
+				RTPStats: &buffer.RTPDeltaInfo{
+					StartTime: now,
+					Duration:  duration,
+					Packets:   250,
+					Bytes:     8_000_000 / 8 / 4,
+				},
+			},
+		}
+		cs.updateScore(streams, now.Add(duration))
+		mos, quality = cs.GetScoreAndQuality()
+		require.Greater(t, float32(4.1), mos)
+		require.Equal(t, livekit.ConnectionQuality_GOOD, quality)
+
+		now = now.Add(duration)
+		cs.UpdateLayerMute(true, now)
+		mos, quality = cs.GetScoreAndQuality()
+		require.Greater(t, float32(4.6), mos)
+		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, quality)
+
+		// setting bit rate after layer mute should layer unmute automatically
+		cs.AddBitrateTransition(1_000_000, now)
+		cs.AddBitrateTransition(2_000_000, now.Add(2*time.Second))
+
+		streams = map[uint32]*buffer.StreamStatsWithLayers{
+			1: &buffer.StreamStatsWithLayers{
+				RTPStats: &buffer.RTPDeltaInfo{
+					StartTime: now,
+					Duration:  duration,
+					Packets:   250,
+					Bytes:     8_000_000 / 8 / 4,
+				},
+			},
+		}
+		cs.updateScore(streams, now.Add(duration))
+		mos, quality = cs.GetScoreAndQuality()
+		require.Greater(t, float32(4.1), mos)
+		require.Equal(t, livekit.ConnectionQuality_GOOD, quality)
 	})
 
 	t.Run("codecs - packet", func(t *testing.T) {

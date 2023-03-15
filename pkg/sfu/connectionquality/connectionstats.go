@@ -86,6 +86,10 @@ func (cs *ConnectionStats) AddBitrateTransition(bitrate int64, at time.Time) {
 	cs.scorer.AddBitrateTransition(bitrate, at)
 }
 
+func (cs *ConnectionStats) UpdateLayerMute(isMuted bool, at time.Time) {
+	cs.scorer.UpdateLayerMute(isMuted, at)
+}
+
 func (cs *ConnectionStats) AddLayerTransition(distance float64, at time.Time) {
 	cs.scorer.AddLayerTransition(distance, at)
 }

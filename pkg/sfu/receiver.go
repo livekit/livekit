@@ -380,6 +380,7 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) error {
 
 	track.TrackInfoAvailable()
 	track.UpTrackMaxPublishedLayerChange(w.streamTrackerManager.GetMaxPublishedLayer())
+	track.UpTrackMaxTemporalLayerSeenChange(w.streamTrackerManager.GetMaxTemporalLayerSeen())
 
 	w.downTrackSpreader.Store(track)
 	return nil
@@ -388,7 +389,13 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) error {
 func (w *WebRTCReceiver) SetMaxExpectedSpatialLayer(layer int32) {
 	w.streamTrackerManager.SetMaxExpectedSpatialLayer(layer)
 
-	w.connectionStats.AddLayerTransition(w.streamTrackerManager.DistanceToDesired(), time.Now())
+	now := time.Now()
+	if layer == InvalidLayerSpatial {
+		w.connectionStats.UpdateLayerMute(true, now)
+	} else {
+		w.connectionStats.UpdateLayerMute(false, now)
+		w.connectionStats.AddLayerTransition(w.streamTrackerManager.DistanceToDesired(), now)
+	}
 }
 
 // StreamTrackerManagerListener.OnAvailableLayersChanged
