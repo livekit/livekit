@@ -77,7 +77,9 @@ func NewStreamTrackerManager(
 
 	s.maxExpectedLayerFromTrackInfo()
 
-	go s.bitrateReporter()
+	if s.trackInfo.Type == livekit.TrackType_VIDEO {
+		go s.bitrateReporter()
+	}
 	return s
 }
 
