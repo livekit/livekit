@@ -606,7 +606,7 @@ func TestConnectionQuality(t *testing.T) {
 						distance: 2.0,
 					},
 					{
-						distance: 2.7,
+						distance: 2.0,
 						offset:   1 * time.Second,
 					},
 				},

@@ -79,7 +79,6 @@ type Snapshot struct {
 }
 
 type SnInfo struct {
-	pktTime       int64
 	hdrSize       uint16
 	pktSize       uint16
 	isPaddingOnly bool
