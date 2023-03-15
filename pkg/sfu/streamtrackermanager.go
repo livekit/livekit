@@ -286,7 +286,7 @@ func (s *StreamTrackerManager) DistanceToDesired() float64 {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 
-	if s.paused {
+	if s.paused || s.maxExpectedLayer < 0 || s.maxTemporalLayerSeen < 0 {
 		return 0
 	}
 
@@ -306,13 +306,18 @@ done:
 		}
 	}
 
-	if !maxLayers.IsValid() || s.maxTemporalLayerSeen < 0 {
-		return 0.0
+	adjustedMaxLayers := maxLayers
+	if !maxLayers.IsValid() {
+		adjustedMaxLayers = VideoLayers{Spatial: 0, Temporal: 0}
 	}
 
 	distance :=
-		((s.getMaxExpectedLayerLocked() - maxLayers.Spatial) * (s.maxTemporalLayerSeen + 1)) +
-			(s.maxTemporalLayerSeen - maxLayers.Temporal)
+		((s.maxExpectedLayer - adjustedMaxLayers.Spatial) * (s.maxTemporalLayerSeen + 1)) +
+			(s.maxTemporalLayerSeen - adjustedMaxLayers.Temporal)
+	if !maxLayers.IsValid() {
+		distance++
+	}
+
 	return float64(distance) / float64(s.maxTemporalLayerSeen+1)
 }
 

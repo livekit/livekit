@@ -1452,7 +1452,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 			// if f.ddLayerSelector != nil {
 			// 	f.ddLayerSelector.SelectLayer(f.currentLayers)
 			// }
-			if f.currentLayers.Spatial >= f.maxLayers.Spatial || f.currentLayers.Spatial == f.maxPublishedLayer {
+			if f.currentLayers.Spatial >= f.maxLayers.Spatial {
 				tp.isSwitchingToMaxLayer = true
 			}
 		}
@@ -1517,10 +1517,9 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 			if found {
 				tp.isSwitchingToTargetLayer = true
 				f.clearParkedLayers()
-				if f.currentLayers.Spatial >= f.maxLayers.Spatial || f.currentLayers.Spatial == f.maxPublishedLayer {
+				if f.currentLayers.Spatial >= f.maxLayers.Spatial {
 					tp.isSwitchingToMaxLayer = true
 
-					// if maximum is attained, adjust target to enable fast path layer check in per-packet path
 					f.logger.Infow(
 						"reached max layer",
 						"current", f.currentLayers,
@@ -1531,6 +1530,9 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 						"maxPublished", f.maxPublishedLayer,
 						"feed", extPkt.Packet.SSRC,
 					)
+				}
+
+				if f.currentLayers.Spatial >= f.maxLayers.Spatial || f.currentLayers.Spatial == f.maxPublishedLayer {
 					f.targetLayers.Spatial = f.currentLayers.Spatial
 				}
 			}
@@ -1551,8 +1553,11 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 				)
 				f.currentLayers.Spatial = layer
 
-				if f.currentLayers.Spatial >= f.maxLayers.Spatial || f.currentLayers.Spatial == f.maxPublishedLayer {
+				if f.currentLayers.Spatial >= f.maxLayers.Spatial {
 					tp.isSwitchingToMaxLayer = true
+				}
+
+				if f.currentLayers.Spatial >= f.maxLayers.Spatial || f.currentLayers.Spatial == f.maxPublishedLayer {
 					f.targetLayers.Spatial = layer
 				}
 			}
