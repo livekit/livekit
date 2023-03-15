@@ -3,6 +3,7 @@ package routing
 import (
 	"context"
 
+	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -18,6 +19,7 @@ import (
 
 //counterfeiter:generate . SignalClient
 type SignalClient interface {
+	ActiveCount() int
 	StartParticipantSignal(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit, nodeID livekit.NodeID) (connectionID livekit.ConnectionID, reqSink MessageSink, resSource MessageSource, err error)
 }
 
@@ -25,6 +27,7 @@ type signalClient struct {
 	nodeID livekit.NodeID
 	config config.SignalRelayConfig
 	client rpc.TypedSignalClient
+	active atomic.Int32
 }
 
 func NewSignalClient(nodeID livekit.NodeID, bus psrpc.MessageBus, config config.SignalRelayConfig) (SignalClient, error) {
@@ -45,6 +48,10 @@ func NewSignalClient(nodeID livekit.NodeID, bus psrpc.MessageBus, config config.
 	}, nil
 }
 
+func (r *signalClient) ActiveCount() int {
+	return int(r.active.Load())
+}
+
 func (r *signalClient) StartParticipantSignal(
 	ctx context.Context,
 	roomName livekit.RoomName,
@@ -56,6 +63,9 @@ func (r *signalClient) StartParticipantSignal(
 	resSource MessageSource,
 	err error,
 ) {
+	r.active.Inc()
+	defer r.active.Dec()
+
 	connectionID = livekit.ConnectionID(utils.NewGuid("CO_"))
 	ss, err := pi.ToStartSession(roomName, connectionID)
 	if err != nil {
