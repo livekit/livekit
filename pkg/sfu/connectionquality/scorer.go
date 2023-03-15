@@ -19,7 +19,7 @@ const (
 	increaseFactor = float64(0.4) // slow increase
 	decreaseFactor = float64(0.8) // fast decrease
 
-	distanceWeight = float64(20.0) // each spatial layer missed drops a quality level
+	distanceWeight = float64(25.0) // each spatial layer missed drops a quality level
 
 	unmuteTimeThreshold = float64(0.5)
 )

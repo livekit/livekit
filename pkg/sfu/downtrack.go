@@ -946,22 +946,12 @@ func (d *DownTrack) UpTrackMaxTemporalLayerSeenChange(maxTemporalLayerSeen int32
 	d.forwarder.SetMaxTemporalLayerSeen(maxTemporalLayerSeen)
 }
 
-func (d *DownTrack) maybeAddTransition(bitrate int64, distance float64) {
+func (d *DownTrack) maybeAddTransition(_bitrate int64, distance float64) {
 	if d.kind == webrtc.RTPCodecTypeAudio {
 		return
 	}
 
-	ti := d.receiver.TrackInfo()
-	if ti == nil {
-		return
-	}
-
-	if ti.Source == livekit.TrackSource_SCREEN_SHARE {
-		d.connectionStats.AddLayerTransition(distance, time.Now())
-		return
-	}
-
-	d.connectionStats.AddBitrateTransition(bitrate, time.Now())
+	d.connectionStats.AddLayerTransition(distance, time.Now())
 }
 
 func (d *DownTrack) UpTrackBitrateReport(_availableLayers []int32, bitrates Bitrates) {

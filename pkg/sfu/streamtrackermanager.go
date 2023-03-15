@@ -310,14 +310,10 @@ done:
 		return 0.0
 	}
 
-	distance := float64(0.0)
-	for sp := maxLayers.Spatial; sp <= s.getMaxExpectedLayerLocked(); sp++ {
-		for t := maxLayers.Temporal; t <= s.maxTemporalLayerSeen; t++ {
-			distance++
-		}
-	}
-
-	return distance / float64(s.maxTemporalLayerSeen+1)
+	distance :=
+		((s.getMaxExpectedLayerLocked() - maxLayers.Spatial) * (s.maxTemporalLayerSeen + 1)) +
+			(s.maxTemporalLayerSeen - maxLayers.Temporal)
+	return float64(distance) / float64(s.maxTemporalLayerSeen+1)
 }
 
 func (s *StreamTrackerManager) getMaxExpectedLayerLocked() int32 {

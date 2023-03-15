@@ -216,6 +216,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 	f.parkedLayers = InvalidLayers
 
 	// when max layers changes, target is opportunistic, but requested spatial layer should be at max
+	f.SetMaxTemporalLayerSeen(3)
 	f.maxLayers = VideoLayers{Spatial: 1, Temporal: 3}
 	expectedResult = VideoAllocation{
 		pauseReason:         VideoPauseReasonNone,
@@ -252,7 +253,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: expectedTargetLayers.Spatial,
 		maxLayers:           DefaultMaxLayers,
-		distanceToDesired:   0,
+		distanceToDesired:   -0.5,
 	}
 	result = f.AllocateOptimal(nil, bitrates, true)
 	require.Equal(t, expectedResult, result)
@@ -275,7 +276,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: expectedTargetLayers.Spatial,
 		maxLayers:           DefaultMaxLayers,
-		distanceToDesired:   0,
+		distanceToDesired:   -0.75,
 	}
 	result = f.AllocateOptimal(nil, emptyBitrates, true)
 	require.Equal(t, expectedResult, result)
@@ -294,7 +295,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		targetLayers:        DefaultMaxLayers,
 		requestLayerSpatial: 2,
 		maxLayers:           DefaultMaxLayers,
-		distanceToDesired:   0,
+		distanceToDesired:   -0.5,
 	}
 	result = f.AllocateOptimal([]int32{0, 1}, bitrates, true)
 	require.Equal(t, expectedResult, result)
@@ -311,7 +312,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		targetLayers:        DefaultMaxLayers,
 		requestLayerSpatial: 2,
 		maxLayers:           DefaultMaxLayers,
-		distanceToDesired:   0,
+		distanceToDesired:   -2.75,
 	}
 	result = f.AllocateOptimal([]int32{0, 1}, emptyBitrates, false)
 	require.Equal(t, expectedResult, result)
@@ -331,7 +332,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: 2,
 		maxLayers:           DefaultMaxLayers,
-		distanceToDesired:   0,
+		distanceToDesired:   -0.5,
 	}
 	result = f.AllocateOptimal([]int32{0, 1}, bitrates, true)
 	require.Equal(t, expectedResult, result)
@@ -352,7 +353,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: 1,
 		maxLayers:           DefaultMaxLayers,
-		distanceToDesired:   1,
+		distanceToDesired:   0.5,
 	}
 	result = f.AllocateOptimal([]int32{1}, bitrates, true)
 	require.Equal(t, expectedResult, result)
@@ -374,7 +375,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: 0,
 		maxLayers:           f.maxLayers,
-		distanceToDesired:   0,
+		distanceToDesired:   -0.25,
 	}
 	result = f.AllocateOptimal([]int32{0, 1}, emptyBitrates, true)
 	require.Equal(t, expectedResult, result)
@@ -396,7 +397,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: 2,
 		maxLayers:           f.maxLayers,
-		distanceToDesired:   0,
+		distanceToDesired:   -2.75,
 	}
 	result = f.AllocateOptimal([]int32{0, 1}, emptyBitrates, true)
 	require.Equal(t, expectedResult, result)
@@ -408,6 +409,7 @@ func TestForwarderProvisionalAllocate(t *testing.T) {
 	f.SetMaxSpatialLayer(DefaultMaxLayerSpatial)
 	f.SetMaxTemporalLayer(DefaultMaxLayerTemporal)
 	f.SetMaxPublishedLayer(DefaultMaxLayerSpatial)
+	f.SetMaxTemporalLayerSeen(DefaultMaxLayerTemporal)
 
 	bitrates := Bitrates{
 		{1, 2, 3, 4},
@@ -447,7 +449,7 @@ func TestForwarderProvisionalAllocate(t *testing.T) {
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: expectedTargetLayers.Spatial,
 		maxLayers:           DefaultMaxLayers,
-		distanceToDesired:   5,
+		distanceToDesired:   1.25,
 	}
 	result := f.ProvisionalAllocateCommit()
 	require.Equal(t, expectedResult, result)
@@ -474,7 +476,7 @@ func TestForwarderProvisionalAllocate(t *testing.T) {
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: expectedTargetLayers.Spatial,
 		maxLayers:           DefaultMaxLayers,
-		distanceToDesired:   11,
+		distanceToDesired:   2.75,
 	}
 	result = f.ProvisionalAllocateCommit()
 	require.Equal(t, expectedResult, result)
@@ -521,7 +523,7 @@ func TestForwarderProvisionalAllocate(t *testing.T) {
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: expectedTargetLayers.Spatial,
 		maxLayers:           expectedMaxLayers,
-		distanceToDesired:   -4,
+		distanceToDesired:   -1.75,
 	}
 	result = f.ProvisionalAllocateCommit()
 	require.Equal(t, expectedResult, result)
@@ -565,7 +567,7 @@ func TestForwarderProvisionalAllocate(t *testing.T) {
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: expectedTargetLayers.Spatial,
 		maxLayers:           expectedMaxLayers,
-		distanceToDesired:   0,
+		distanceToDesired:   0.25,
 	}
 	result = f.ProvisionalAllocateCommit()
 	require.Equal(t, expectedResult, result)
@@ -598,7 +600,7 @@ func TestForwarderProvisionalAllocate(t *testing.T) {
 		targetLayers:        InvalidLayers,
 		requestLayerSpatial: InvalidLayerSpatial,
 		maxLayers:           expectedMaxLayers,
-		distanceToDesired:   0,
+		distanceToDesired:   0.25,
 	}
 	result = f.ProvisionalAllocateCommit()
 	require.Equal(t, expectedResult, result)
@@ -649,6 +651,7 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 	f.SetMaxSpatialLayer(DefaultMaxLayerSpatial)
 	f.SetMaxTemporalLayer(DefaultMaxLayerTemporal)
 	f.SetMaxPublishedLayer(DefaultMaxLayerSpatial)
+	f.SetMaxTemporalLayerSeen(DefaultMaxLayerTemporal)
 
 	bitrates := Bitrates{
 		{1, 2, 3, 4},
@@ -678,7 +681,7 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 		targetLayers:        expectedLayers,
 		requestLayerSpatial: expectedLayers.Spatial,
 		maxLayers:           DefaultMaxLayers,
-		distanceToDesired:   9,
+		distanceToDesired:   2.25,
 	}
 	result := f.ProvisionalAllocateCommit()
 	require.Equal(t, expectedResult, result)
@@ -707,7 +710,7 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 		targetLayers:        expectedLayers,
 		requestLayerSpatial: expectedLayers.Spatial,
 		maxLayers:           DefaultMaxLayers,
-		distanceToDesired:   0,
+		distanceToDesired:   0.0,
 	}
 	result = f.ProvisionalAllocateCommit()
 	require.Equal(t, expectedResult, result)
@@ -776,7 +779,7 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 		targetLayers:        expectedLayers,
 		requestLayerSpatial: expectedLayers.Spatial,
 		maxLayers:           expectedMaxLayers,
-		distanceToDesired:   -1,
+		distanceToDesired:   -1.0,
 	}
 	result = f.ProvisionalAllocateCommit()
 	require.Equal(t, expectedResult, result)
@@ -815,7 +818,7 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 		targetLayers:        expectedLayers,
 		requestLayerSpatial: expectedLayers.Spatial,
 		maxLayers:           expectedMaxLayers,
-		distanceToDesired:   0,
+		distanceToDesired:   -0.5,
 	}
 	result = f.ProvisionalAllocateCommit()
 	require.Equal(t, expectedResult, result)
@@ -830,7 +833,7 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 		targetLayers:        expectedLayers,
 		requestLayerSpatial: expectedLayers.Spatial,
 		maxLayers:           expectedMaxLayers,
-		distanceToDesired:   0,
+		distanceToDesired:   -0.5,
 	}
 	result = f.ProvisionalAllocateCommit()
 	require.Equal(t, expectedResult, result)
@@ -883,6 +886,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 	f.SetMaxSpatialLayer(DefaultMaxLayerSpatial)
 	f.SetMaxTemporalLayer(DefaultMaxLayerTemporal)
 	f.SetMaxPublishedLayer(DefaultMaxLayerSpatial)
+	f.SetMaxTemporalLayerSeen(DefaultMaxLayerTemporal)
 
 	// when not in deficient state, does not boost
 	result, boosted = f.AllocateNextHigher(ChannelCapacityInfinity, bitrates, false)
@@ -918,7 +922,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: expectedTargetLayers.Spatial,
 		maxLayers:           DefaultMaxLayers,
-		distanceToDesired:   3,
+		distanceToDesired:   2.0,
 	}
 	result, boosted = f.AllocateNextHigher(ChannelCapacityInfinity, bitrates, false)
 	require.Equal(t, expectedResult, result)
@@ -946,7 +950,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: expectedTargetLayers.Spatial,
 		maxLayers:           DefaultMaxLayers,
-		distanceToDesired:   2,
+		distanceToDesired:   1.25,
 	}
 	result, boosted = f.AllocateNextHigher(ChannelCapacityInfinity, bitrates, false)
 	require.Equal(t, expectedResult, result)
@@ -970,7 +974,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: expectedTargetLayers.Spatial,
 		maxLayers:           DefaultMaxLayers,
-		distanceToDesired:   1,
+		distanceToDesired:   0.5,
 	}
 	result, boosted = f.AllocateNextHigher(ChannelCapacityInfinity, bitrates, false)
 	require.Equal(t, expectedResult, result)
@@ -992,7 +996,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: expectedTargetLayers.Spatial,
 		maxLayers:           DefaultMaxLayers,
-		distanceToDesired:   0,
+		distanceToDesired:   0.0,
 	}
 	result, boosted = f.AllocateNextHigher(ChannelCapacityInfinity, bitrates, false)
 	require.Equal(t, expectedResult, result)
@@ -1027,7 +1031,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: expectedTargetLayers.Spatial,
 		maxLayers:           DefaultMaxLayers,
-		distanceToDesired:   4,
+		distanceToDesired:   2.25,
 	}
 	result, boosted = f.AllocateNextHigher(ChannelCapacityInfinity, bitrates, false)
 	require.Equal(t, expectedResult, result)
@@ -1045,7 +1049,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: expectedTargetLayers.Spatial,
 		maxLayers:           DefaultMaxLayers,
-		distanceToDesired:   4,
+		distanceToDesired:   2.25,
 	}
 	result, boosted = f.AllocateNextHigher(0, bitrates, false)
 	require.Equal(t, expectedResult, result)
@@ -1079,7 +1083,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: expectedTargetLayers.Spatial,
 		maxLayers:           expectedMaxLayers,
-		distanceToDesired:   -1,
+		distanceToDesired:   -1.0,
 	}
 	// overshoot should return (1, 0) even if there is not enough capacity
 	result, boosted = f.AllocateNextHigher(bitrates[1][0]-1, bitrates, true)

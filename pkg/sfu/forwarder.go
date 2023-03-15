@@ -1702,43 +1702,71 @@ func getDistanceToDesired(
 	targetLayers VideoLayers,
 	maxLayers VideoLayers,
 ) float64 {
-	if muted || pubMuted || maxPublishedLayer == InvalidLayerSpatial || !maxLayers.IsValid() {
+	if muted || pubMuted || maxPublishedLayer == InvalidLayerSpatial || maxTemporalLayerSeen == InvalidLayerTemporal || !maxLayers.IsValid() {
 		return 0.0
 	}
 
-	found := false
-	distance := float64(0.0)
+	adjustedMaxLayers := maxLayers
+
+	// max available spatial is min(subscribedMax, publishedMax, availableMax)
+	// subscribedMax = subscriber requested max spatial layer
+	// publishedMax = max spatial layer ever published
+	// availableMax = based on bit rate measurement, available max spatial layer
+	maxAvailableSpatial := InvalidLayerSpatial
 done:
-	for s := maxLayers.Spatial; s >= 0; s-- {
-		for t := maxLayers.Temporal; t >= 0; t-- {
-			if brs[s][t] == 0 {
-				continue
-			}
-			if s == targetLayers.Spatial && t == targetLayers.Temporal {
-				found = true
+	for s := int32(len(brs)) - 1; s >= 0; s-- {
+		for t := int32(len(brs[0])) - 1; t >= 0; t-- {
+			if brs[s][t] != 0 {
+				maxAvailableSpatial = s
 				break done
 			}
-
-			distance++
 		}
 	}
+	if maxAvailableSpatial < adjustedMaxLayers.Spatial {
+		adjustedMaxLayers.Spatial = maxAvailableSpatial
+	}
 
-	// maybe overshooting
-	if !found && targetLayers.IsValid() {
-		distance = 0.0
-		for s := targetLayers.Spatial; s > maxLayers.Spatial; s-- {
-			for t := maxLayers.Temporal; t >= 0; t-- {
-				if targetLayers.Temporal < t || brs[s][t] == 0 {
-					continue
-				}
-				distance--
+	if maxPublishedLayer < adjustedMaxLayers.Spatial {
+		adjustedMaxLayers.Spatial = maxPublishedLayer
+	}
+
+	// max available temporal is min(subscribedMax, temporalLayerSeenMax, availableMax)
+	// subscribedMax = subscriber requested max temporal layer
+	// temporalLayerSeenMax = max temporal layer ever published/seen
+	// availableMax = based on bit rate measurement, available max temporal in the adjusted max spatial layer
+	maxAvailableTemporal := InvalidLayerTemporal
+	if adjustedMaxLayers.Spatial != InvalidLayerSpatial {
+		for t := int32(len(brs[0])) - 1; t >= 0; t-- {
+			if brs[adjustedMaxLayers.Spatial][t] != 0 {
+				maxAvailableTemporal = t
+				break
 			}
 		}
 	}
-
-	if maxTemporalLayerSeen < 0 {
-		maxTemporalLayerSeen = 0
+	if maxAvailableTemporal < adjustedMaxLayers.Temporal {
+		adjustedMaxLayers.Temporal = maxAvailableTemporal
 	}
 
-	return distance / float64(maxTemporalLayerSeen+1)
+	if maxTemporalLayerSeen < adjustedMaxLayers.Temporal {
+		adjustedMaxLayers.Temporal = maxTemporalLayerSeen
+	}
+
+	if !adjustedMaxLayers.IsValid() {
+		adjustedMaxLayers = VideoLayers{Spatial: 0, Temporal: 0}
+	}
+
+	// adjust target layers if they are invalid, i. e. not streaming
+	adjustedTargetLayers := targetLayers
+	if !targetLayers.IsValid() {
+		adjustedTargetLayers = VideoLayers{Spatial: 0, Temporal: 0}
+	}
+
+	distance :=
+		((adjustedMaxLayers.Spatial - adjustedTargetLayers.Spatial) * (maxTemporalLayerSeen + 1)) +
+			(adjustedMaxLayers.Temporal - adjustedTargetLayers.Temporal)
+	if !targetLayers.IsValid() {
+		distance++
+	}
+
+	return float64(distance) / float64(maxTemporalLayerSeen+1)
 }

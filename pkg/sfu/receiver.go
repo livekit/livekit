@@ -385,26 +385,10 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) error {
 	return nil
 }
 
-func (w *WebRTCReceiver) notifyMaxExpectedLayer(layer int32) {
-	if w.Kind() == webrtc.RTPCodecTypeAudio || w.trackInfo.Source == livekit.TrackSource_SCREEN_SHARE {
-		// screen share tracks have highly variable bitrate, do not use bit rate based quality for those
-		return
-	}
-
-	expectedBitrate := int64(0)
-	for _, vl := range w.trackInfo.Layers {
-		l := buffer.VideoQualityToSpatialLayer(vl.Quality, w.trackInfo)
-		if l <= layer {
-			expectedBitrate += int64(vl.Bitrate)
-		}
-	}
-
-	w.connectionStats.AddBitrateTransition(expectedBitrate, time.Now())
-}
-
 func (w *WebRTCReceiver) SetMaxExpectedSpatialLayer(layer int32) {
 	w.streamTrackerManager.SetMaxExpectedSpatialLayer(layer)
-	w.notifyMaxExpectedLayer(layer)
+
+	w.connectionStats.AddLayerTransition(w.streamTrackerManager.DistanceToDesired(), time.Now())
 }
 
 // StreamTrackerManagerListener.OnAvailableLayersChanged
@@ -427,7 +411,7 @@ func (w *WebRTCReceiver) OnMaxPublishedLayerChanged(maxPublishedLayer int32) {
 		dt.UpTrackMaxPublishedLayerChange(maxPublishedLayer)
 	}
 
-	w.notifyMaxExpectedLayer(maxPublishedLayer)
+	w.connectionStats.AddLayerTransition(w.streamTrackerManager.DistanceToDesired(), time.Now())
 }
 
 // StreamTrackerManagerListener.OnMaxTemporalLayerSeenChanged
@@ -436,9 +420,7 @@ func (w *WebRTCReceiver) OnMaxTemporalLayerSeenChanged(maxTemporalLayerSeen int3
 		dt.UpTrackMaxTemporalLayerSeenChange(maxTemporalLayerSeen)
 	}
 
-	if w.trackInfo.Source == livekit.TrackSource_SCREEN_SHARE {
-		w.connectionStats.AddLayerTransition(w.streamTrackerManager.DistanceToDesired(), time.Now())
-	}
+	w.connectionStats.AddLayerTransition(w.streamTrackerManager.DistanceToDesired(), time.Now())
 }
 
 // StreamTrackerManagerListener.OnMaxAvailableLayerChanged
