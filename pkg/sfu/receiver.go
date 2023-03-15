@@ -440,9 +440,7 @@ func (w *WebRTCReceiver) OnBitrateReport(availableLayers []int32, bitrates Bitra
 		dt.UpTrackBitrateReport(availableLayers, bitrates)
 	}
 
-	if w.trackInfo.Source == livekit.TrackSource_SCREEN_SHARE {
-		w.connectionStats.AddLayerTransition(w.streamTrackerManager.DistanceToDesired(), time.Now())
-	}
+	w.connectionStats.AddLayerTransition(w.streamTrackerManager.DistanceToDesired(), time.Now())
 }
 
 func (w *WebRTCReceiver) GetLayeredBitrate() ([]int32, Bitrates) {
