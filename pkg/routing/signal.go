@@ -63,9 +63,6 @@ func (r *signalClient) StartParticipantSignal(
 	resSource MessageSource,
 	err error,
 ) {
-	r.active.Inc()
-	defer r.active.Dec()
-
 	connectionID = livekit.ConnectionID(utils.NewGuid("CO_"))
 	ss, err := pi.ToStartSession(roomName, connectionID)
 	if err != nil {
@@ -94,6 +91,9 @@ func (r *signalClient) StartParticipantSignal(
 	resChan := NewDefaultMessageChannel()
 
 	go func() {
+		r.active.Inc()
+		defer r.active.Dec()
+
 		var err error
 		for msg := range stream.Channel() {
 			if err = resChan.WriteMessage(msg.Response); err != nil {
