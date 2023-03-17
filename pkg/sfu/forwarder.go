@@ -540,7 +540,7 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 		}
 		alloc.targetLayers = VideoLayers{
 			Spatial:  int32(math.Min(float64(f.maxPublishedLayer), float64(maxSpatial))),
-			Temporal: DefaultMaxLayerTemporal,
+			Temporal: f.maxTemporalLayerSeen,
 		}
 	}
 

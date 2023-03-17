@@ -216,15 +216,19 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 	f.parkedLayers = InvalidLayers
 
 	// when max layers changes, target is opportunistic, but requested spatial layer should be at max
-	f.SetMaxTemporalLayerSeen(3)
+	f.SetMaxTemporalLayerSeen(2)
 	f.maxLayers = VideoLayers{Spatial: 1, Temporal: 3}
+	expectedTargetLayers := VideoLayers{
+		Spatial:  2,
+		Temporal: 2,
+	}
 	expectedResult = VideoAllocation{
 		pauseReason:         VideoPauseReasonNone,
 		bandwidthRequested:  bitrates[1][3],
 		bandwidthDelta:      bitrates[1][3],
 		bandwidthNeeded:     bitrates[1][3],
 		bitrates:            bitrates,
-		targetLayers:        DefaultMaxLayers,
+		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: f.maxLayers.Spatial,
 		maxLayers:           f.maxLayers,
 		distanceToDesired:   -1,
@@ -232,15 +236,16 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 	result = f.AllocateOptimal(nil, bitrates, true)
 	require.Equal(t, expectedResult, result)
 	require.Equal(t, expectedResult, f.lastAllocation)
-	require.Equal(t, DefaultMaxLayers, f.TargetLayers())
+	require.Equal(t, expectedTargetLayers, f.TargetLayers())
 
 	// reset max layers for rest of the tests below
 	f.maxLayers = DefaultMaxLayers
 
 	// when feed is dry and current is not valid, should set up for opportunistic forwarding
 	// NOTE: feed is dry due to availableLayers = nil, some valid bitrates may be passed in here for testing purposes only
+	f.SetMaxTemporalLayerSeen(DefaultMaxLayerTemporal)
 	disable(f)
-	expectedTargetLayers := VideoLayers{
+	expectedTargetLayers = VideoLayers{
 		Spatial:  2,
 		Temporal: DefaultMaxLayerTemporal,
 	}
