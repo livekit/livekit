@@ -1824,18 +1824,6 @@ done:
 	if !targetLayers.IsValid() {
 		distance++
 	}
-	fmt.Printf("ml: %+v, mal: %+v, aml: %+v, mpl: %d, mtls: %d, tl: %+v, atl: %+v, al: %+v, brs: %+v, d: %d\n",
-		maxLayers,
-		VideoLayers{Spatial: maxAvailableSpatial, Temporal: maxAvailableTemporal},
-		adjustedMaxLayers,
-		maxPublishedLayer,
-		maxTemporalLayerSeen,
-		targetLayers,
-		adjustedTargetLayers,
-		availableLayers,
-		brs,
-		distance,
-	) // REMOVE
 
 	return float64(distance) / float64(maxTemporalLayerSeen+1)
 }
