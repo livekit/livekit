@@ -98,6 +98,7 @@ type VideoAllocationProvisional struct {
 	pubMuted             bool
 	maxPublishedLayer    int32
 	maxTemporalLayerSeen int32
+	availableLayers      []int32
 	bitrates             Bitrates
 	maxLayers            VideoLayers
 	currentLayers        VideoLayers
@@ -497,11 +498,20 @@ func (f *Forwarder) BandwidthRequested(brs Bitrates) int64 {
 	return brs[f.targetLayers.Spatial][f.targetLayers.Temporal]
 }
 
-func (f *Forwarder) DistanceToDesired(brs Bitrates) float64 {
+func (f *Forwarder) DistanceToDesired(availableLayers []int32, brs Bitrates) float64 {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
-	return getDistanceToDesired(f.muted, f.pubMuted, f.maxPublishedLayer, f.maxTemporalLayerSeen, brs, f.targetLayers, f.maxLayers)
+	return getDistanceToDesired(
+		f.muted,
+		f.pubMuted,
+		f.maxPublishedLayer,
+		f.maxTemporalLayerSeen,
+		availableLayers,
+		brs,
+		f.targetLayers,
+		f.maxLayers,
+	)
 }
 
 func (f *Forwarder) GetOptimalBandwidthNeeded(brs Bitrates) int64 {
@@ -620,12 +630,21 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 		alloc.bandwidthRequested = optimalBandwidthNeeded
 	}
 	alloc.bandwidthDelta = alloc.bandwidthRequested - f.lastAllocation.bandwidthRequested
-	alloc.distanceToDesired = getDistanceToDesired(f.muted, f.pubMuted, f.maxPublishedLayer, f.maxTemporalLayerSeen, brs, alloc.targetLayers, f.maxLayers)
+	alloc.distanceToDesired = getDistanceToDesired(
+		f.muted,
+		f.pubMuted,
+		f.maxPublishedLayer,
+		f.maxTemporalLayerSeen,
+		availableLayers,
+		brs,
+		alloc.targetLayers,
+		f.maxLayers,
+	)
 
 	return f.updateAllocation(alloc, "optimal")
 }
 
-func (f *Forwarder) ProvisionalAllocatePrepare(bitrates Bitrates) {
+func (f *Forwarder) ProvisionalAllocatePrepare(availableLayers []int32, bitrates Bitrates) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -640,6 +659,9 @@ func (f *Forwarder) ProvisionalAllocatePrepare(bitrates Bitrates) {
 		currentLayers:        f.currentLayers,
 		parkedLayers:         f.parkedLayers,
 	}
+
+	f.provisional.availableLayers = make([]int32, len(availableLayers))
+	copy(f.provisional.availableLayers, availableLayers)
 }
 
 func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layers VideoLayers, allowPause bool, allowOvershoot bool) int64 {
@@ -945,6 +967,7 @@ func (f *Forwarder) ProvisionalAllocateCommit() VideoAllocation {
 			f.provisional.pubMuted,
 			f.provisional.maxPublishedLayer,
 			f.provisional.maxTemporalLayerSeen,
+			f.provisional.availableLayers,
 			f.provisional.bitrates,
 			f.provisional.allocatedLayers,
 			f.provisional.maxLayers,
@@ -1002,7 +1025,7 @@ func (f *Forwarder) ProvisionalAllocateCommit() VideoAllocation {
 	return f.updateAllocation(alloc, "cooperative")
 }
 
-func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, brs Bitrates, allowOvershoot bool) (VideoAllocation, bool) {
+func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, availableLayers []int32, brs Bitrates, allowOvershoot bool) (VideoAllocation, bool) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -1053,7 +1076,16 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, brs Bitra
 					targetLayers:        targetLayers,
 					requestLayerSpatial: targetLayers.Spatial,
 					maxLayers:           f.maxLayers,
-					distanceToDesired:   getDistanceToDesired(f.muted, f.pubMuted, f.maxPublishedLayer, f.maxTemporalLayerSeen, brs, targetLayers, f.maxLayers),
+					distanceToDesired: getDistanceToDesired(
+						f.muted,
+						f.pubMuted,
+						f.maxPublishedLayer,
+						f.maxTemporalLayerSeen,
+						availableLayers,
+						brs,
+						targetLayers,
+						f.maxLayers,
+					),
 				}
 				if targetLayers.GreaterThan(f.maxLayers) || bandwidthRequested >= optimalBandwidthNeeded {
 					alloc.isDeficient = false
@@ -1187,7 +1219,7 @@ func (f *Forwarder) GetNextHigherTransition(brs Bitrates, allowOvershoot bool) (
 	return VideoTransition{}, false
 }
 
-func (f *Forwarder) Pause(brs Bitrates) VideoAllocation {
+func (f *Forwarder) Pause(availableLayers []int32, brs Bitrates) VideoAllocation {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -1200,7 +1232,16 @@ func (f *Forwarder) Pause(brs Bitrates) VideoAllocation {
 		targetLayers:        InvalidLayers,
 		requestLayerSpatial: InvalidLayerSpatial,
 		maxLayers:           f.maxLayers,
-		distanceToDesired:   getDistanceToDesired(f.muted, f.pubMuted, f.maxPublishedLayer, f.maxTemporalLayerSeen, brs, InvalidLayers, f.maxLayers),
+		distanceToDesired: getDistanceToDesired(
+			f.muted,
+			f.pubMuted,
+			f.maxPublishedLayer,
+			f.maxTemporalLayerSeen,
+			availableLayers,
+			brs,
+			InvalidLayers,
+			f.maxLayers,
+		),
 	}
 
 	switch {
@@ -1703,6 +1744,7 @@ func getDistanceToDesired(
 	pubMuted bool,
 	maxPublishedLayer int32,
 	maxTemporalLayerSeen int32,
+	availableLayers []int32,
 	brs Bitrates,
 	targetLayers VideoLayers,
 	maxLayers VideoLayers,
@@ -1713,11 +1755,13 @@ func getDistanceToDesired(
 
 	adjustedMaxLayers := maxLayers
 
+	maxAvailableSpatial := InvalidLayerSpatial
+	maxAvailableTemporal := InvalidLayerTemporal
+
 	// max available spatial is min(subscribedMax, publishedMax, availableMax)
 	// subscribedMax = subscriber requested max spatial layer
 	// publishedMax = max spatial layer ever published
 	// availableMax = based on bit rate measurement, available max spatial layer
-	maxAvailableSpatial := InvalidLayerSpatial
 done:
 	for s := int32(len(brs)) - 1; s >= 0; s-- {
 		for t := int32(len(brs[0])) - 1; t >= 0; t-- {
@@ -1727,6 +1771,15 @@ done:
 			}
 		}
 	}
+
+	// before bit rate measurement is available, stream tracker could declare layer seen, account for that
+	for _, layer := range availableLayers {
+		if layer > maxAvailableSpatial {
+			maxAvailableSpatial = layer
+			maxAvailableTemporal = maxTemporalLayerSeen // till bit rate measurement is available, assume max seen as temporal
+		}
+	}
+
 	if maxAvailableSpatial < adjustedMaxLayers.Spatial {
 		adjustedMaxLayers.Spatial = maxAvailableSpatial
 	}
@@ -1739,7 +1792,6 @@ done:
 	// subscribedMax = subscriber requested max temporal layer
 	// temporalLayerSeenMax = max temporal layer ever published/seen
 	// availableMax = based on bit rate measurement, available max temporal in the adjusted max spatial layer
-	maxAvailableTemporal := InvalidLayerTemporal
 	if adjustedMaxLayers.Spatial != InvalidLayerSpatial {
 		for t := int32(len(brs[0])) - 1; t >= 0; t-- {
 			if brs[adjustedMaxLayers.Spatial][t] != 0 {
@@ -1772,6 +1824,18 @@ done:
 	if !targetLayers.IsValid() {
 		distance++
 	}
+	fmt.Printf("ml: %+v, mal: %+v, aml: %+v, mpl: %d, mtls: %d, tl: %+v, atl: %+v, al: %+v, brs: %+v, d: %d\n",
+		maxLayers,
+		VideoLayers{Spatial: maxAvailableSpatial, Temporal: maxAvailableTemporal},
+		adjustedMaxLayers,
+		maxPublishedLayer,
+		maxTemporalLayerSeen,
+		targetLayers,
+		adjustedTargetLayers,
+		availableLayers,
+		brs,
+		distance,
+	) // REMOVE
 
 	return float64(distance) / float64(maxTemporalLayerSeen+1)
 }
