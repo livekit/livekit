@@ -1267,7 +1267,7 @@ func (r *RTPStats) updateJitter(rtph *rtp.Header, packetTime int64) {
 
 		for _, s := range r.snapshots {
 			if r.jitter > s.maxJitter {
-				r.maxJitter = r.jitter
+				s.maxJitter = r.jitter
 			}
 		}
 	}
