@@ -292,7 +292,7 @@ func (s *StreamTrackerManager) DistanceToDesired() float64 {
 		return 0
 	}
 
-	_, brs := s.getLayeredBitrateLocked()
+	al, brs := s.getLayeredBitrateLocked()
 
 	maxLayers := InvalidLayers
 done:
@@ -305,6 +305,14 @@ done:
 				}
 				break done
 			}
+		}
+	}
+
+	// before bit rate measurement is available, stream tracker could declare layer seen, account for that
+	for _, layer := range al {
+		if layer > maxLayers.Spatial {
+			maxLayers.Spatial = layer
+			maxLayers.Temporal = s.maxTemporalLayerSeen // till bit rate measurement is available, assume max seen as temporal
 		}
 	}
 

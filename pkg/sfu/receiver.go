@@ -403,6 +403,8 @@ func (w *WebRTCReceiver) OnAvailableLayersChanged() {
 	for _, dt := range w.downTrackSpreader.GetDownTracks() {
 		dt.UpTrackLayersChange()
 	}
+
+	w.connectionStats.AddLayerTransition(w.streamTrackerManager.DistanceToDesired(), time.Now())
 }
 
 // StreamTrackerManagerListener.OnBitrateAvailabilityChanged
