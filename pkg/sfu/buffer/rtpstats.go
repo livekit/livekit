@@ -801,7 +801,7 @@ func (r *RTPStats) SnapshotRtcpReceptionReport(ssrc uint32, proxyFracLost uint8,
 
 	packetsLost := uint32(0)
 	if r.params.IsReceiverReportDriven {
-		// should not be set for streams that need to generate reception report
+		// receiver report drvien should not be set for streams that need to generate reception report, but including code here for consistency
 		packetsLost = now.packetsLostOverridden - then.packetsLostOverridden
 		if int32(packetsLost) < 0 {
 			packetsLost = 0
@@ -825,7 +825,7 @@ func (r *RTPStats) SnapshotRtcpReceptionReport(ssrc uint32, proxyFracLost uint8,
 
 	jitter := r.jitter
 	if r.params.IsReceiverReportDriven {
-		// should not be set for streams that need to generate reception report
+		// receiver report drvien should not be set for streams that need to generate reception report, but including code here for consistency
 		jitter = r.jitterOverridden
 	}
 
@@ -910,7 +910,11 @@ func (r *RTPStats) DeltaInfo(snapshotId uint32) *RTPDeltaInfo {
 
 	maxJitter := then.maxJitter
 	if r.params.IsReceiverReportDriven {
-		maxJitter = then.maxJitterOverridden
+		// discount jitter from publisher side + internal processing
+		maxJitter = then.maxJitterOverridden - maxJitter
+		if maxJitter < 0.0 {
+			maxJitter = 0.0
+		}
 	}
 	maxJitterTime := maxJitter / float64(r.params.ClockRate) * 1e6
 
@@ -970,6 +974,7 @@ func (r *RTPStats) ToString() string {
 	jitter := r.jitter
 	maxJitter := r.maxJitter
 	if r.params.IsReceiverReportDriven {
+		// NOTE: jitter includes jitter from publisher and from processing
 		jitter = r.jitterOverridden
 		maxJitter = r.maxJitterOverridden
 	}
@@ -1043,6 +1048,7 @@ func (r *RTPStats) ToProto() *livekit.RTPStats {
 	jitter := r.jitter
 	maxJitter := r.maxJitter
 	if r.params.IsReceiverReportDriven {
+		// NOTE: jitter includes jitter from publisher and from processing
 		jitter = r.jitterOverridden
 		maxJitter = r.maxJitterOverridden
 	}
@@ -1261,7 +1267,7 @@ func (r *RTPStats) updateJitter(rtph *rtp.Header, packetTime int64) {
 
 		for _, s := range r.snapshots {
 			if r.jitter > s.maxJitter {
-				r.maxJitter = r.jitter
+				s.maxJitter = r.jitter
 			}
 		}
 	}
