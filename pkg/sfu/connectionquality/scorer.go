@@ -124,6 +124,7 @@ type qualityScorer struct {
 	lastUpdateAt time.Time
 
 	score float64
+	stat  windowStat
 
 	mutedAt   time.Time
 	unmutedAt time.Time
@@ -276,6 +277,7 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 			"reason", reason,
 			"prevScore", q.score,
 			"prevQuality", scoreToConnectionQuality(q.score),
+			"prevStat", q.stat,
 			"score", score,
 			"quality", scoreToConnectionQuality(score),
 			"stat", stat,
@@ -285,6 +287,7 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 	}
 
 	q.score = score
+	q.stat = *stat
 	q.lastUpdateAt = at
 }
 
