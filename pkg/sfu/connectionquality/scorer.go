@@ -277,7 +277,7 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 			"reason", reason,
 			"prevScore", q.score,
 			"prevQuality", scoreToConnectionQuality(q.score),
-			"prevStat", q.stat,
+			"prevStat", &q.stat,
 			"score", score,
 			"quality", scoreToConnectionQuality(score),
 			"stat", stat,
