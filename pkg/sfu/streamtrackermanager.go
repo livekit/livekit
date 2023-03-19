@@ -426,8 +426,7 @@ func (s *StreamTrackerManager) removeAvailableLayer(layer int32) {
 
 	newLayers := make([]int32, 0, DefaultMaxLayerSpatial+1)
 	for _, l := range s.availableLayers {
-		// do not remove layers for non-simulcast
-		if l != layer || len(s.trackInfo.Layers) < 2 {
+		if l != layer {
 			newLayers = append(newLayers, l)
 		}
 	}
