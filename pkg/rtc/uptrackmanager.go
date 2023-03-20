@@ -145,7 +145,7 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 				if u.subscriptionPermission != nil {
 					perms = u.subscriptionPermission.String()
 				}
-				u.params.Logger.Infow(
+				u.params.Logger.Debugw(
 					"skipping older subscription permission version",
 					"existingValue", perms,
 					"existingVersion", u.subscriptionPermissionVersion.ToProto().String(),

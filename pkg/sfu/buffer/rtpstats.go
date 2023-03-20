@@ -21,7 +21,7 @@ const (
 	FirstSnapshotId     = 1
 	SnInfoSize          = 2048
 	SnInfoMask          = SnInfoSize - 1
-	TooLargeOWD         = 400 * time.Millisecond
+	TooLargeOWDDelta    = 400 * time.Millisecond
 )
 
 type RTPFlowState struct {
@@ -704,8 +704,8 @@ func (r *RTPStats) SetRtcpSenderReportData(srData *RTCPSenderReportData) {
 	owd := srData.ArrivalTime.Sub(srData.NTPTimestamp.Time())
 	if r.srDataExt != nil {
 		prevOwd := r.srDataExt.SenderReportData.ArrivalTime.Sub(r.srDataExt.SenderReportData.NTPTimestamp.Time())
-		if time.Duration(math.Abs(float64(owd)-float64(prevOwd))) > TooLargeOWD {
-			r.logger.Infow("large one-way-delay", "owd", owd, "prevOwd", prevOwd)
+		if time.Duration(math.Abs(float64(owd)-float64(prevOwd))) > TooLargeOWDDelta {
+			r.logger.Debugw("large delta in one-way-delay", "owd", owd, "prevOwd", prevOwd)
 		}
 	}
 
@@ -756,7 +756,7 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srDataExt *RTCPSenderReportD
 
 	smoothedLocalTimeOfLatestSenderReportNTP := srDataExt.SenderReportData.NTPTimestamp.Time().Add(srDataExt.SmoothedOWD)
 	if smoothedLocalTimeOfLatestSenderReportNTP.After(now) {
-		r.logger.Infow("smoothed time of NTP is ahead",
+		r.logger.Debugw("smoothed time of NTP is ahead",
 			"now", now,
 			"smoothed", smoothedLocalTimeOfLatestSenderReportNTP,
 			"diff", smoothedLocalTimeOfLatestSenderReportNTP.Sub(now),
