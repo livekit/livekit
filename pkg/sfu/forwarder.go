@@ -252,7 +252,7 @@ func (f *Forwarder) SetMaxPublishedLayer(maxPublishedLayer int32) {
 	}
 
 	f.maxPublishedLayer = maxPublishedLayer
-	f.logger.Infow("setting max published layer", "maxPublishedLayer", f.maxPublishedLayer)
+	f.logger.Debugw("setting max published layer", "maxPublishedLayer", f.maxPublishedLayer)
 }
 
 func (f *Forwarder) SetMaxTemporalLayerSeen(maxTemporalLayerSeen int32) {
@@ -264,7 +264,7 @@ func (f *Forwarder) SetMaxTemporalLayerSeen(maxTemporalLayerSeen int32) {
 	}
 
 	f.maxTemporalLayerSeen = maxTemporalLayerSeen
-	f.logger.Infow("setting max temporal layer seen", "maxTemporalLayerSeen", f.maxTemporalLayerSeen)
+	f.logger.Debugw("setting max temporal layer seen", "maxTemporalLayerSeen", f.maxTemporalLayerSeen)
 }
 
 func (f *Forwarder) OnParkedLayersExpired(fn func()) {
@@ -414,7 +414,7 @@ func (f *Forwarder) SetMaxSpatialLayer(spatialLayer int32) (bool, VideoLayers, V
 		return false, f.maxLayers, f.currentLayers
 	}
 
-	f.logger.Infow("setting max spatial layer", "layer", spatialLayer)
+	f.logger.Debugw("setting max spatial layer", "layer", spatialLayer)
 	f.maxLayers.Spatial = spatialLayer
 
 	f.clearParkedLayers()
@@ -430,7 +430,7 @@ func (f *Forwarder) SetMaxTemporalLayer(temporalLayer int32) (bool, VideoLayers,
 		return false, f.maxLayers, f.currentLayers
 	}
 
-	f.logger.Infow("setting max temporal layer", "layer", temporalLayer)
+	f.logger.Debugw("setting max temporal layer", "layer", temporalLayer)
 	f.maxLayers.Temporal = temporalLayer
 
 	f.clearParkedLayers()
@@ -1269,7 +1269,11 @@ func (f *Forwarder) updateAllocation(alloc VideoAllocation, reason string) Video
 		alloc.pauseReason != f.lastAllocation.pauseReason ||
 		alloc.targetLayers != f.lastAllocation.targetLayers ||
 		alloc.requestLayerSpatial != f.lastAllocation.requestLayerSpatial {
-		f.logger.Infow(fmt.Sprintf("stream allocation: %s", reason), "allocation", alloc)
+		if reason == "optimal" {
+			f.logger.Debugw(fmt.Sprintf("stream allocation: %s", reason), "allocation", alloc)
+		} else {
+			f.logger.Infow(fmt.Sprintf("stream allocation: %s", reason), "allocation", alloc)
+		}
 	}
 	f.lastAllocation = alloc
 
@@ -1416,11 +1420,11 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 					last := f.rtpMunger.GetLast()
 					td = refTS - last.LastTS
 					if td == 0 || td > (1<<31) {
-						f.logger.Infow("reference timestamp out-of-order, using default", "lastTS", last.LastTS, "refTS", refTS, "td", int32(td))
+						f.logger.Debugw("reference timestamp out-of-order, using default", "lastTS", last.LastTS, "refTS", refTS, "td", int32(td))
 						td = 1
 					}
 				} else {
-					f.logger.Infow("reference timestamp get error, using default", "error", err)
+					f.logger.Debugw("reference timestamp get error, using default", "error", err)
 				}
 			}
 

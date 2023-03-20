@@ -409,7 +409,7 @@ func (s *StreamTrackerManager) addAvailableLayer(layer int32) {
 	// check if new layer is the max layer
 	isMaxLayerChange := s.availableLayers[len(s.availableLayers)-1] == layer
 
-	s.logger.Infow(
+	s.logger.Debugw(
 		"available layers changed - layer seen",
 		"added", layer,
 		"availableLayers", s.availableLayers,
@@ -441,7 +441,7 @@ func (s *StreamTrackerManager) removeAvailableLayer(layer int32) {
 	sort.Slice(newLayers, func(i, j int) bool { return newLayers[i] < newLayers[j] })
 	s.availableLayers = newLayers
 
-	s.logger.Infow(
+	s.logger.Debugw(
 		"available layers changed - layer gone",
 		"removed", layer,
 		"availableLayers", newLayers,
