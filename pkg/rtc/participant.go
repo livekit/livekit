@@ -793,7 +793,7 @@ func (p *ParticipantImpl) ICERestart(iceConfig *livekit.ICEConfig, reason liveki
 		t.(types.LocalMediaTrack).Restart()
 	}
 
-	p.TransportManager.ICERestart(iceConfig, reason == livekit.ReconnectReason_RR_PUBLISHER_FAILED || reason == livekit.ReconnectReason_RR_SUBSCRIBER_FAILED)
+	p.TransportManager.ICERestart(iceConfig, reason)
 }
 
 func (p *ParticipantImpl) OnICEConfigChanged(f func(participant types.LocalParticipant, iceConfig *livekit.ICEConfig)) {
