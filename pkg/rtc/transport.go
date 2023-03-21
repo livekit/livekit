@@ -495,7 +495,7 @@ func (t *PCTransport) resetShortConn() {
 	t.lock.Unlock()
 }
 
-func (t *PCTransport) isShortConnection(at time.Time) (bool, time.Duration) {
+func (t *PCTransport) IsShortConnection(at time.Time) (bool, time.Duration) {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 
@@ -568,7 +568,7 @@ func (t *PCTransport) handleConnectionFailed(forceShortConn bool) {
 	isShort := forceShortConn
 	if !isShort {
 		var duration time.Duration
-		isShort, duration = t.isShortConnection(time.Now())
+		isShort, duration = t.IsShortConnection(time.Now())
 		if isShort {
 			pair, err := t.getSelectedPair()
 			if err != nil {

@@ -456,9 +456,29 @@ func (t *TransportManager) NegotiateSubscriber(force bool) {
 	t.subscriber.Negotiate(force)
 }
 
-func (t *TransportManager) ICERestart(iceConfig *livekit.ICEConfig, resetShortConnection bool) {
+func (t *TransportManager) ICERestart(iceConfig *livekit.ICEConfig, reason livekit.ReconnectReason) {
 	if iceConfig != nil {
 		t.SetICEConfig(iceConfig)
+	}
+
+	var (
+		isShort              bool
+		duration             time.Duration
+		resetShortConnection bool
+	)
+	switch reason {
+	case livekit.ReconnectReason_RR_PUBLISHER_FAILED:
+		resetShortConnection = true
+		isShort, duration = t.publisher.IsShortConnection(time.Now())
+
+	case livekit.ReconnectReason_RR_SUBSCRIBER_FAILED:
+		resetShortConnection = true
+		isShort, duration = t.subscriber.IsShortConnection(time.Now())
+	}
+
+	if isShort {
+		t.params.Logger.Infow("short connection by client ice restart", "duration", duration, "reason", reason)
+		t.handleConnectionFailed(isShort)
 	}
 
 	if resetShortConnection {
