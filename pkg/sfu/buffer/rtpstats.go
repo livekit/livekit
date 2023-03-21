@@ -1313,9 +1313,9 @@ func (r *RTPStats) getAndResetSnapshot(snapshotId uint32) (*Snapshot, *Snapshot)
 		nacks:                 r.nacks,
 		plis:                  r.plis,
 		firs:                  r.firs,
-		maxJitter:             0.0,
-		maxJitterOverridden:   0.0,
-		maxRtt:                0,
+		maxJitter:             r.jitter,
+		maxJitterOverridden:   r.jitterOverridden,
+		maxRtt:                r.rtt,
 	}
 	// make a copy so that it can be used independently
 	now := *r.snapshots[snapshotId]
