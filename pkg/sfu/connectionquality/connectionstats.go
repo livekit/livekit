@@ -21,11 +21,13 @@ const (
 )
 
 type ConnectionStatsParams struct {
-	UpdateInterval time.Duration
-	MimeType       string
-	IsFECEnabled   bool
-	GetDeltaStats  func() map[uint32]*buffer.StreamStatsWithLayers
-	Logger         logger.Logger
+	UpdateInterval    time.Duration
+	MimeType          string
+	IsFECEnabled      bool
+	IsDependentRTT    bool
+	IsDependentJitter bool
+	GetDeltaStats     func() map[uint32]*buffer.StreamStatsWithLayers
+	Logger            logger.Logger
 }
 
 type ConnectionStats struct {
@@ -49,8 +51,10 @@ func NewConnectionStats(params ConnectionStatsParams) *ConnectionStats {
 	return &ConnectionStats{
 		params: params,
 		scorer: newQualityScorer(qualityScorerParams{
-			PacketLossWeight: getPacketLossWeight(params.MimeType, params.IsFECEnabled), // LK-TODO: have to notify codec change?
-			Logger:           params.Logger,
+			PacketLossWeight:  getPacketLossWeight(params.MimeType, params.IsFECEnabled), // LK-TODO: have to notify codec change?
+			IsDependentRTT:    params.IsDependentRTT,
+			IsDependentJitter: params.IsDependentJitter,
+			Logger:            params.Logger,
 		}),
 		done: core.NewFuse(),
 	}

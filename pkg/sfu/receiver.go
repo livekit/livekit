@@ -204,10 +204,11 @@ func NewWebRTCReceiver(
 	})
 
 	w.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
-		MimeType:      w.codec.MimeType,
-		IsFECEnabled:  strings.EqualFold(w.codec.MimeType, webrtc.MimeTypeOpus) && strings.Contains(strings.ToLower(w.codec.SDPFmtpLine), "fec"),
-		GetDeltaStats: w.getDeltaStats,
-		Logger:        w.logger,
+		MimeType:       w.codec.MimeType,
+		IsFECEnabled:   strings.EqualFold(w.codec.MimeType, webrtc.MimeTypeOpus) && strings.Contains(strings.ToLower(w.codec.SDPFmtpLine), "fec"),
+		IsDependentRTT: true,
+		GetDeltaStats:  w.getDeltaStats,
+		Logger:         w.logger.WithValues("direction", "up"),
 	})
 	w.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
 		if w.onStatsUpdate != nil {
