@@ -108,8 +108,9 @@ Client SDKs enable your frontend to include interactive, multi-user experiences.
       <a href="https://github.com/livekit/client-sdk-android/tree/main/sample-app-compose/src/main/java/io/livekit/android/composesample" target="_blank" rel="noopener noreferrer">Compose example</a>
     </td>
   </tr>
+<!-- Flutter -->
   <tr>
-    <td>Flutter</td>
+    <td>Flutter (all platforms)</td>
     <td>
       <a href="https://github.com/livekit/client-sdk-flutter" target="_blank" rel="noopener noreferrer">client-sdk-flutter</a>
     </td>
@@ -140,6 +141,15 @@ Client SDKs enable your frontend to include interactive, multi-user experiences.
     <td>native</td>
     <td></td>
   </tr>
+  <!-- Rust -->
+  <tr>
+    <td>Rust</td>
+    <td>
+      <a href="https://github.com/livekit/client-sdk-rust" target="_blank" rel="noopener noreferrer">client-sdk-rust</a>
+    </td>
+    <td></td>
+    <td></td>
+  </tr>
 </table>
 
 ### Server SDKs
@@ -160,8 +170,9 @@ enabling you to build automations that behave like end-users.
 
 ### Ecosystem & Tools
 
-- [Egress](https://github.com/livekit/egress) - export and record your rooms
 - [CLI](https://github.com/livekit/livekit-cli) - command line interface & load tester
+- [Egress](https://github.com/livekit/egress) - export and record your rooms
+- [Ingress](https://github.com/livekit/ingress) - ingest streams from RTMP / OBS Studio
 - [Docker image](https://hub.docker.com/r/livekit/livekit-server)
 - [Helm charts](https://github.com/livekit/livekit-helm)
 
@@ -236,11 +247,14 @@ simulation.
 ## Deployment
 
 ### Use LiveKit Cloud
-LiveKit Cloud is the fastest and most reliable way to run LiveKit. Every project gets free monthly bandwidth and transcoding credits.
+
+LiveKit Cloud is the fastest and most reliable way to run LiveKit. Every project gets free monthly bandwidth and
+transcoding credits.
 
 Sign up for [LiveKit Cloud](https://cloud.livekit.io/).
 
 ### Self-host
+
 Read our [deployment docs](https://docs.livekit.io/deploy/) for more information.
 
 ## Building from source
