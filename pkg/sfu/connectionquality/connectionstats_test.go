@@ -63,11 +63,12 @@ func TestConnectionQuality(t *testing.T) {
 		}
 		cs.updateScore(streams, now.Add(duration))
 		mos, quality = cs.GetScoreAndQuality()
-		require.Greater(t, float32(3.2), mos)
+		require.Greater(t, float32(2.1), mos)
 		require.Equal(t, livekit.ConnectionQuality_POOR, quality)
 
-		// should stay at POOR quality for one iteration even if the conditions improve
-		// due to significant loss (12%) in the previous window
+		// should climb to GOOD quality in one iteration if the conditions improve.
+		// although significant loss (12%) in the previous window, lowest score is
+		// bound so that climbing back does not take too long even under excellent conditions.
 		now = now.Add(duration)
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
 			1: &buffer.StreamStatsWithLayers{
@@ -80,10 +81,10 @@ func TestConnectionQuality(t *testing.T) {
 		}
 		cs.updateScore(streams, now.Add(duration))
 		mos, quality = cs.GetScoreAndQuality()
-		require.Greater(t, float32(3.2), mos)
-		require.Equal(t, livekit.ConnectionQuality_POOR, quality)
+		require.Greater(t, float32(4.1), mos)
+		require.Equal(t, livekit.ConnectionQuality_GOOD, quality)
 
-		// should climb up to GOOD if conditions continue to be good
+		// should stay at GOOD if conditions continue to be good
 		now = now.Add(duration)
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
 			1: &buffer.StreamStatsWithLayers{
@@ -178,7 +179,7 @@ func TestConnectionQuality(t *testing.T) {
 		}
 		cs.updateScore(streams, now.Add(duration))
 		mos, quality = cs.GetScoreAndQuality()
-		require.Greater(t, float32(3.2), mos)
+		require.Greater(t, float32(2.1), mos)
 		require.Equal(t, livekit.ConnectionQuality_POOR, quality)
 
 		now = now.Add(duration)
@@ -218,7 +219,7 @@ func TestConnectionQuality(t *testing.T) {
 		}
 		cs.updateScore(streams, now.Add(duration))
 		mos, quality = cs.GetScoreAndQuality()
-		require.Greater(t, float32(3.2), mos)
+		require.Greater(t, float32(2.1), mos)
 		require.Equal(t, livekit.ConnectionQuality_POOR, quality)
 
 		// mute/unmute to bring quality back up
@@ -357,7 +358,7 @@ func TestConnectionQuality(t *testing.T) {
 			expectedQualities []expectedQuality
 		}{
 			// NOTE: Because of EWMA (Exponentially Weighted Moving Average), these cut off points are not exact
-			// "audio/opus" - no fec - 0 <= loss < 2.5%: EXCELLENT, 2.5% <= loss < 5%: GOOD, >= 5%: POOR
+			// "audio/opus" - no fec - 0 <= loss < 2.5%: EXCELLENT, 2.5% <= loss < 7.5%: GOOD, >= 7.5%: POOR
 			{
 				name:            "audio/opus - no fec",
 				mimeType:        "audio/opus",
@@ -375,13 +376,13 @@ func TestConnectionQuality(t *testing.T) {
 						expectedQuality:      livekit.ConnectionQuality_GOOD,
 					},
 					{
-						packetLossPercentage: 5.2,
-						expectedMOS:          3.2,
+						packetLossPercentage: 9.2,
+						expectedMOS:          2.1,
 						expectedQuality:      livekit.ConnectionQuality_POOR,
 					},
 				},
 			},
-			// "audio/opus" - fec - 0 <= loss < 3.75%: EXCELLENT, 3.75% <= loss < 7.5%: GOOD, >= 7.5%: POOR
+			// "audio/opus" - fec - 0 <= loss < 3.75%: EXCELLENT, 3.75% <= loss < 11.25%: GOOD, >= 11.25%: POOR
 			{
 				name:            "audio/opus - fec",
 				mimeType:        "audio/opus",
@@ -399,13 +400,13 @@ func TestConnectionQuality(t *testing.T) {
 						expectedQuality:      livekit.ConnectionQuality_GOOD,
 					},
 					{
-						packetLossPercentage: 8.2,
-						expectedMOS:          3.2,
+						packetLossPercentage: 13.2,
+						expectedMOS:          2.1,
 						expectedQuality:      livekit.ConnectionQuality_POOR,
 					},
 				},
 			},
-			// "audio/red" - no fec - 0 <= loss < 6.66%: EXCELLENT, 6.66% <= loss < 13.33%: GOOD, >= 13.33%: POOR
+			// "audio/red" - no fec - 0 <= loss < 6.66%: EXCELLENT, 6.66% <= loss < 20%: GOOD, >= 20%: POOR
 			{
 				name:            "audio/red - no fec",
 				mimeType:        "audio/red",
@@ -423,13 +424,13 @@ func TestConnectionQuality(t *testing.T) {
 						expectedQuality:      livekit.ConnectionQuality_GOOD,
 					},
 					{
-						packetLossPercentage: 16.0,
-						expectedMOS:          3.2,
+						packetLossPercentage: 23.0,
+						expectedMOS:          2.1,
 						expectedQuality:      livekit.ConnectionQuality_POOR,
 					},
 				},
 			},
-			// "audio/red" - fec - 0 <= loss < 10%: EXCELLENT, 10% <= loss < 20%: GOOD, >= 20%: POOR
+			// "audio/red" - fec - 0 <= loss < 10%: EXCELLENT, 10% <= loss < 30%: GOOD, >= 30%: POOR
 			{
 				name:            "audio/red - fec",
 				mimeType:        "audio/red",
@@ -447,13 +448,13 @@ func TestConnectionQuality(t *testing.T) {
 						expectedQuality:      livekit.ConnectionQuality_GOOD,
 					},
 					{
-						packetLossPercentage: 22.0,
-						expectedMOS:          3.2,
+						packetLossPercentage: 36.0,
+						expectedMOS:          2.1,
 						expectedQuality:      livekit.ConnectionQuality_POOR,
 					},
 				},
 			},
-			// "video/*" - 0 <= loss < 2%: EXCELLENT, 2% <= loss < 4%: GOOD, >= 4%: POOR
+			// "video/*" - 0 <= loss < 2%: EXCELLENT, 2% <= loss < 6%: GOOD, >= 6%: POOR
 			{
 				name:            "video/*",
 				mimeType:        "video/vp8",
@@ -471,8 +472,8 @@ func TestConnectionQuality(t *testing.T) {
 						expectedQuality:      livekit.ConnectionQuality_GOOD,
 					},
 					{
-						packetLossPercentage: 5.0,
-						expectedMOS:          3.2,
+						packetLossPercentage: 7.0,
+						expectedMOS:          2.1,
 						expectedQuality:      livekit.ConnectionQuality_POOR,
 					},
 				},
@@ -523,8 +524,8 @@ func TestConnectionQuality(t *testing.T) {
 		}{
 			// NOTE: Because of EWMA (Exponentially Weighted Moving Average), these cut off points are not exact
 			// 1.0 <= expectedBits / actualBits < ~2.7 = EXCELLENT
-			// ~2.7 <= expectedBits / actualBits < ~7.5 = GOOD
-			// expectedBits / actualBits >= ~7.5 = POOR
+			// ~2.7 <= expectedBits / actualBits < ~20.1 = GOOD
+			// expectedBits / actualBits >= ~20.1 = POOR
 			{
 				name: "excellent",
 				transitions: []transition{
@@ -566,8 +567,8 @@ func TestConnectionQuality(t *testing.T) {
 						offset:  3 * time.Second,
 					},
 				},
-				bytes:           uint64(math.Ceil(8_000_000.0 / 8.0 / 13.0)),
-				expectedMOS:     3.2,
+				bytes:           uint64(math.Ceil(8_000_000.0 / 8.0 / 43.0)),
+				expectedMOS:     2.1,
 				expectedQuality: livekit.ConnectionQuality_POOR,
 			},
 		}
@@ -650,11 +651,11 @@ func TestConnectionQuality(t *testing.T) {
 						distance: 2.0,
 					},
 					{
-						distance: 2.0,
+						distance: 2.2,
 						offset:   1 * time.Second,
 					},
 				},
-				expectedMOS:     3.2,
+				expectedMOS:     2.1,
 				expectedQuality: livekit.ConnectionQuality_POOR,
 			},
 		}

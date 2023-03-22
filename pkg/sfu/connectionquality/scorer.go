@@ -14,12 +14,13 @@ const (
 	MaxMOS = float32(4.5)
 
 	maxScore  = float64(100.0)
-	poorScore = float64(50.0)
+	poorScore = float64(30.0)
+	minScore  = float64(20.0)
 
 	increaseFactor = float64(0.4) // slow increase
 	decreaseFactor = float64(0.8) // fast decrease
 
-	distanceWeight = float64(25.0) // each spatial layer missed drops a quality level
+	distanceWeight = float64(35.0) // each spatial layer missed drops a quality level
 
 	unmuteTimeThreshold = float64(0.5)
 )
@@ -75,7 +76,7 @@ func (w *windowStat) calculateBitrateScore(expectedBitrate int64) float64 {
 	if w.bytes != 0 {
 		// using the ratio of expectedBitrate / actualBitrate
 		// the quality inflection points are approximately
-		// GOOD at ~2.7x, POOR at ~7.5x
+		// GOOD at ~2.7x, POOR at ~20.1x
 		score = maxScore - 20*math.Log(float64(expectedBitrate)/float64(w.bytes*8))
 		if score > maxScore {
 			score = maxScore
@@ -264,12 +265,19 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 			reason = "layer"
 			score = layerScore
 		}
+
+		factor := increaseFactor
+		if score < q.score {
+			factor = decreaseFactor
+		}
+		score = factor*score + (1.0-factor)*q.score
 	}
-	factor := increaseFactor
-	if score < q.score {
-		factor = decreaseFactor
+	if score < minScore {
+		// lower bound to prevent score from becoming very small values due to extreme conditions.
+		// Without a lower bound, it can get so low that it takes a long time to climb back to
+		// better quality even under excellent conditions.
+		score = minScore
 	}
-	score = factor*score + (1.0-factor)*q.score
 	// WARNING NOTE: comparing protobuf enum values directly (livekit.ConnectionQuality)
 	if scoreToConnectionQuality(q.score) > scoreToConnectionQuality(score) {
 		q.params.Logger.Infow(
@@ -453,13 +461,19 @@ func (q *qualityScorer) GetMOSAndQuality() (float32, livekit.ConnectionQuality) 
 // ------------------------------------------
 
 func scoreToConnectionQuality(score float64) livekit.ConnectionQuality {
-	// R-factor -> livekit.ConnectionQuality scale mapping based on
+	// R-factor -> livekit.ConnectionQuality scale mapping roughly based on
 	// https://www.itu.int/ITU-T/2005-2008/com12/emodelv1/tut.htm
+	//
+	// As there are only three levels in livekit.ConnectionQuality scale,
+	// using a larger range for middling quality. Empirical evidence suggests
+	// that a score of 60 does not correspond to `POOR` quality. Repair
+	// mechanisms and use of algorithms like de-jittering makes the experience
+	// better even under harsh conditions.
 	if score > 80.0 {
 		return livekit.ConnectionQuality_EXCELLENT
 	}
 
-	if score > 60.0 {
+	if score > 40.0 {
 		return livekit.ConnectionQuality_GOOD
 	}
 
