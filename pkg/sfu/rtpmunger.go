@@ -2,6 +2,7 @@ package sfu
 
 import (
 	"fmt"
+	"math/rand"
 
 	"github.com/livekit/protocol/logger"
 
@@ -41,17 +42,19 @@ type SnTs struct {
 // ----------------------------------------------------------------------
 
 type RTPMungerState struct {
-	LastSN uint16
-	LastTS uint32
+	Started bool
+	LastSN  uint16
+	LastTS  uint32
 }
 
 func (r RTPMungerState) String() string {
-	return fmt.Sprintf("RTPMungerState{lastSN: %d, lastTS: %d)", r.LastSN, r.LastTS)
+	return fmt.Sprintf("RTPMungerState{started: %v, lastSN: %d, lastTS: %d)", r.Started, r.LastSN, r.LastTS)
 }
 
 // ----------------------------------------------------------------------
 
 type RTPMungerParams struct {
+	started           bool
 	highestIncomingSN uint16
 	lastSN            uint16
 	snOffset          uint16
@@ -81,6 +84,7 @@ func NewRTPMunger(logger logger.Logger) *RTPMunger {
 
 func (r *RTPMunger) GetParams() RTPMungerParams {
 	return RTPMungerParams{
+		started:           r.started,
 		highestIncomingSN: r.highestIncomingSN,
 		lastSN:            r.lastSN,
 		snOffset:          r.snOffset,
@@ -92,20 +96,28 @@ func (r *RTPMunger) GetParams() RTPMungerParams {
 
 func (r *RTPMunger) GetLast() RTPMungerState {
 	return RTPMungerState{
-		LastSN: r.lastSN,
-		LastTS: r.lastTS,
+		Started: r.started,
+		LastSN:  r.lastSN,
+		LastTS:  r.lastTS,
 	}
 }
 
 func (r *RTPMunger) SeedLast(state RTPMungerState) {
+	r.started = state.Started
 	r.lastSN = state.LastSN
 	r.lastTS = state.LastTS
 }
 
 func (r *RTPMunger) SetLastSnTs(extPkt *buffer.ExtPacket) {
 	r.highestIncomingSN = extPkt.Packet.SequenceNumber - 1
-	r.lastSN = extPkt.Packet.SequenceNumber
-	r.lastTS = extPkt.Packet.Timestamp
+	if !r.started {
+		r.lastSN = extPkt.Packet.SequenceNumber
+		r.lastTS = extPkt.Packet.Timestamp
+	} else {
+		r.snOffset = extPkt.Packet.SequenceNumber - r.lastSN - 1
+		r.tsOffset = extPkt.Packet.Timestamp - r.lastTS - 1
+	}
+	r.started = true
 }
 
 func (r *RTPMunger) UpdateSnTsOffsets(extPkt *buffer.ExtPacket, snAdjust uint16, tsAdjust uint32) {
@@ -122,7 +134,7 @@ func (r *RTPMunger) PacketDropped(extPkt *buffer.ExtPacket) {
 	if r.highestIncomingSN != extPkt.Packet.SequenceNumber {
 		return
 	}
-	r.snOffset += 1
+	r.snOffset++
 	r.lastSN = extPkt.Packet.SequenceNumber - r.snOffset
 
 	r.snOffsetsWritePtr = (r.snOffsetsWritePtr - 1) & SnOffsetCacheMask
@@ -177,7 +189,7 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 		// sequence number offset.
 		if len(extPkt.Packet.Payload) == 0 {
 			r.highestIncomingSN = extPkt.Packet.SequenceNumber
-			r.snOffset += 1
+			r.snOffset++
 
 			return &TranslationParamsRTP{
 				snOrdering: SequenceNumberOrderingContiguous,
@@ -239,6 +251,12 @@ func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate
 
 		// if forcing frame end, use timestamp of latest received frame for the first one
 		tsOffset = 1
+	}
+
+	if !r.started {
+		r.lastSN = uint16(rand.Intn(1<<14)) + uint16(1<<15) // a random number in third quartile of sequence number space
+		r.lastTS = uint32(rand.Intn(1<<30)) + uint32(1<<31) // a random number in third quartile of time stamp space
+		r.started = true
 	}
 
 	vals := make([]SnTs, num)
