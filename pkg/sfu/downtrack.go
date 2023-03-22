@@ -630,9 +630,6 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		}
 	}
 
-	if d.kind == webrtc.RTPCodecTypeAudio {
-		d.logger.Infow("sending audio frame", "sn", hdr.SequenceNumber, "ts", hdr.Timestamp, "isn", extPkt.Packet.SequenceNumber, "its", extPkt.Packet.Timestamp) // REMOVE
-	}
 	d.rtpStats.Update(hdr, len(payload), 0, time.Now().UnixNano())
 	return nil
 }
@@ -1714,7 +1711,6 @@ func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
 				d.logger.Warnw("could not write blank frame", err)
 				return
 			}
-			d.logger.Infow("sending audio frame silence", "sn", hdr.SequenceNumber, "ts", hdr.Timestamp) // REMOVE
 		}
 
 		numFrames--
