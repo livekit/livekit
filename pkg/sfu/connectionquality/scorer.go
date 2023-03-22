@@ -38,10 +38,21 @@ type windowStat struct {
 	jitterMax       float64
 }
 
-func (w *windowStat) calculatePacketScore(plw float64) float64 {
+func (w *windowStat) calculatePacketScore(plw float64, isDependentRTT bool, isDependentJitter bool) float64 {
 	// this is based on simplified E-model based on packet loss, rtt, jitter as
 	// outlined at https://www.pingman.com/kb/article/how-is-mos-calculated-in-pingplotter-pro-50.html.
-	effectiveDelay := (float64(w.rttMax) / 2.0) + ((w.jitterMax * 2.0) / 1000.0)
+	effectiveDelay := 0.0
+	// discount the dependent factors if dependency indicated.
+	// for example,
+	// 1. in the up stream, RTT cannot be measured without RTCP-XR, it is using down stream RTT.
+	// 2. in the down stream, up stream jitter affects it. although jitter can be adjusted to account for up stream
+	//    jitter, this lever can be used to discount jitter in scoring.
+	if !isDependentRTT {
+		effectiveDelay += float64(w.rttMax) / 2.0
+	}
+	if !isDependentJitter {
+		effectiveDelay += (w.jitterMax * 2.0) / 1000.0
+	}
 	delayEffect := effectiveDelay / 40.0
 	if effectiveDelay > 160.0 {
 		delayEffect = (effectiveDelay - 120.0) / 10.0
@@ -114,8 +125,10 @@ type layerTransition struct {
 }
 
 type qualityScorerParams struct {
-	PacketLossWeight float64
-	Logger           logger.Logger
+	PacketLossWeight  float64
+	IsDependentRTT    bool
+	IsDependentJitter bool
+	Logger            logger.Logger
 }
 
 type qualityScorer struct {
@@ -245,7 +258,7 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 		reason = "dry"
 		score = poorScore
 	} else {
-		packetScore := stat.calculatePacketScore(q.getPacketLossWeight(stat))
+		packetScore := stat.calculatePacketScore(q.getPacketLossWeight(stat), q.params.IsDependentRTT, q.params.IsDependentJitter)
 		bitrateScore := stat.calculateBitrateScore(expectedBitrate)
 		layerScore := math.Max(math.Min(maxScore, maxScore-(expectedDistance*distanceWeight)), 0.0)
 

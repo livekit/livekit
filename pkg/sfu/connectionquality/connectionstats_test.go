@@ -11,17 +11,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func newConnectionStats(mimeType string, isFECEnabled bool) *ConnectionStats {
+func newConnectionStats(mimeType string, isFECEnabled bool, isDependentRTT bool, isDependentJitter bool) *ConnectionStats {
 	return NewConnectionStats(ConnectionStatsParams{
-		MimeType:     mimeType,
-		IsFECEnabled: isFECEnabled,
-		Logger:       logger.GetLogger(),
+		MimeType:          mimeType,
+		IsFECEnabled:      isFECEnabled,
+		IsDependentRTT:    isDependentRTT,
+		IsDependentJitter: isDependentJitter,
+		Logger:            logger.GetLogger(),
 	})
 }
 
 func TestConnectionQuality(t *testing.T) {
 	t.Run("quality scorer state machine", func(t *testing.T) {
-		cs := newConnectionStats("audio/opus", false)
+		cs := newConnectionStats("audio/opus", false, false, false)
 
 		duration := 5 * time.Second
 		now := time.Now()
@@ -344,6 +346,62 @@ func TestConnectionQuality(t *testing.T) {
 		require.Equal(t, livekit.ConnectionQuality_GOOD, quality)
 	})
 
+	t.Run("quality scorer dependent rtt", func(t *testing.T) {
+		cs := newConnectionStats("audio/opus", false, true, false)
+
+		duration := 5 * time.Second
+		now := time.Now()
+		cs.Start(&livekit.TrackInfo{Type: livekit.TrackType_AUDIO}, now.Add(-duration))
+		cs.UpdateMute(false, now.Add(-1*time.Second))
+
+		// RTT does not knock quality down because it is dependent and hence not taken into account
+		// at 2% loss, quality should stay at EXCELLENT purely based on loss. With high RTT (700 ms)
+		// quality should drop to GOOD if RTT were taken into consieration
+		streams := map[uint32]*buffer.StreamStatsWithLayers{
+			1: &buffer.StreamStatsWithLayers{
+				RTPStats: &buffer.RTPDeltaInfo{
+					StartTime:   now,
+					Duration:    duration,
+					Packets:     250,
+					PacketsLost: 5,
+					RttMax:      700,
+				},
+			},
+		}
+		cs.updateScore(streams, now.Add(duration))
+		mos, quality := cs.GetScoreAndQuality()
+		require.Greater(t, float32(4.6), mos)
+		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, quality)
+	})
+
+	t.Run("quality scorer dependent jitter", func(t *testing.T) {
+		cs := newConnectionStats("audio/opus", false, false, true)
+
+		duration := 5 * time.Second
+		now := time.Now()
+		cs.Start(&livekit.TrackInfo{Type: livekit.TrackType_AUDIO}, now.Add(-duration))
+		cs.UpdateMute(false, now.Add(-1*time.Second))
+
+		// Jitter does not knock quality down because it is dependent and hence not taken into account
+		// at 2% loss, quality should stay at EXCELLENT purely based on loss. With high jitter (200 ms)
+		// quality should drop to GOOD if jitter were taken into consieration
+		streams := map[uint32]*buffer.StreamStatsWithLayers{
+			1: &buffer.StreamStatsWithLayers{
+				RTPStats: &buffer.RTPDeltaInfo{
+					StartTime:   now,
+					Duration:    duration,
+					Packets:     250,
+					PacketsLost: 5,
+					JitterMax:   200,
+				},
+			},
+		}
+		cs.updateScore(streams, now.Add(duration))
+		mos, quality := cs.GetScoreAndQuality()
+		require.Greater(t, float32(4.6), mos)
+		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, quality)
+	})
+
 	t.Run("codecs - packet", func(t *testing.T) {
 		type expectedQuality struct {
 			packetLossPercentage float64
@@ -482,7 +540,7 @@ func TestConnectionQuality(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				cs := newConnectionStats(tc.mimeType, tc.isFECEnabled)
+				cs := newConnectionStats(tc.mimeType, tc.isFECEnabled, false, false)
 
 				duration := 5 * time.Second
 				now := time.Now()
@@ -575,7 +633,7 @@ func TestConnectionQuality(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				cs := newConnectionStats("video/vp8", false)
+				cs := newConnectionStats("video/vp8", false, false, false)
 
 				duration := 5 * time.Second
 				now := time.Now()
@@ -662,7 +720,7 @@ func TestConnectionQuality(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				cs := newConnectionStats("video/vp8", false)
+				cs := newConnectionStats("video/vp8", false, false, false)
 
 				duration := 5 * time.Second
 				now := time.Now()
