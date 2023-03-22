@@ -27,14 +27,18 @@ func TestSetLastSnTs(t *testing.T) {
 	require.NotNil(t, extPkt)
 
 	r.SetLastSnTs(extPkt)
-	require.True(t, r.highestIncomingSN == 23332)
-	require.True(t, r.lastSN == 23333)
-	require.True(t, r.lastTS == 0xabcdef)
+	require.Equal(t, uint16(23332), r.highestIncomingSN)
+	require.Equal(t, uint16(23333), r.lastSN)
+	require.Equal(t, uint32(0xabcdef), r.lastTS)
 	require.Equal(t, uint16(0), r.snOffset)
 	require.Equal(t, uint32(0), r.tsOffset)
+	require.True(t, r.started)
+
+	// force re-start
+	r.started = false
 
 	params = &testutils.TestExtPacketParams{
-		SequenceNumber: 0,
+		SequenceNumber: 43,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
 	}
@@ -43,11 +47,30 @@ func TestSetLastSnTs(t *testing.T) {
 	require.NotNil(t, extPkt)
 
 	r.SetLastSnTs(extPkt)
-	require.True(t, r.highestIncomingSN == 65535)
-	require.True(t, r.lastSN == 0)
-	require.True(t, r.lastTS == 0xabcdef)
+	require.Equal(t, uint16(42), r.highestIncomingSN)
+	require.Equal(t, uint16(43), r.lastSN)
+	require.Equal(t, uint32(0xabcdef), r.lastTS)
 	require.Equal(t, uint16(0), r.snOffset)
 	require.Equal(t, uint32(0), r.tsOffset)
+	require.True(t, r.started)
+
+	// set on a started munger
+	params = &testutils.TestExtPacketParams{
+		SequenceNumber: 23457,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
+	}
+	extPkt, err = testutils.GetTestExtPacket(params)
+	require.NoError(t, err)
+	require.NotNil(t, extPkt)
+
+	r.SetLastSnTs(extPkt)
+	require.Equal(t, uint16(23456), r.highestIncomingSN)
+	require.Equal(t, uint16(43), r.lastSN)
+	require.Equal(t, uint32(0xabcdef), r.lastTS)
+	require.Equal(t, uint16(23413), r.snOffset)
+	require.Equal(t, uint32(0xffffffff), r.tsOffset)
+	require.True(t, r.started)
 }
 
 func TestUpdateSnTsOffsets(t *testing.T) {
@@ -68,9 +91,9 @@ func TestUpdateSnTsOffsets(t *testing.T) {
 	}
 	extPkt, _ = testutils.GetTestExtPacket(params)
 	r.UpdateSnTsOffsets(extPkt, 1, 1)
-	require.True(t, r.highestIncomingSN == 33332)
-	require.True(t, r.lastSN == 23333)
-	require.True(t, r.lastTS == 0xabcdef)
+	require.Equal(t, uint16(33332), r.highestIncomingSN)
+	require.Equal(t, uint16(23333), r.lastSN)
+	require.Equal(t, uint32(0xabcdef), r.lastTS)
 	require.Equal(t, uint16(9999), r.snOffset)
 	require.Equal(t, uint32(0xffffffff), r.tsOffset)
 }
@@ -207,8 +230,8 @@ func TestPaddingOnlyPacket(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrPaddingOnlyPacket)
 	require.Equal(t, tpExpected, *tp)
-	require.True(t, r.highestIncomingSN == 23333)
-	require.True(t, r.lastSN == 23333)
+	require.Equal(t, uint16(23333), r.highestIncomingSN)
+	require.Equal(t, uint16(23333), r.lastSN)
 	require.Equal(t, uint16(1), r.snOffset)
 
 	// padding only packet with a gap should not report an error
@@ -228,8 +251,8 @@ func TestPaddingOnlyPacket(t *testing.T) {
 	tp, err = r.UpdateAndGetSnTs(extPkt)
 	require.NoError(t, err)
 	require.Equal(t, tpExpected, *tp)
-	require.True(t, r.highestIncomingSN == 23335)
-	require.True(t, r.lastSN == 23334)
+	require.Equal(t, uint16(23335), r.highestIncomingSN)
+	require.Equal(t, uint16(23334), r.lastSN)
 	require.Equal(t, uint16(1), r.snOffset)
 }
 
@@ -266,8 +289,8 @@ func TestGapInSequenceNumber(t *testing.T) {
 	tp, err := r.UpdateAndGetSnTs(extPkt)
 	require.NoError(t, err)
 	require.Equal(t, tpExpected, *tp)
-	require.True(t, r.highestIncomingSN == 1)
-	require.True(t, r.lastSN == 1)
+	require.Equal(t, uint16(1), r.highestIncomingSN)
+	require.Equal(t, uint16(1), r.lastSN)
 	require.Equal(t, uint16(0), r.snOffset)
 
 	// ensure missing sequence numbers got recorded in cache
@@ -294,8 +317,8 @@ func TestGapInSequenceNumber(t *testing.T) {
 	tp, err = r.UpdateAndGetSnTs(extPkt)
 	require.ErrorIs(t, err, ErrPaddingOnlyPacket)
 	require.Equal(t, tpExpected, *tp)
-	require.True(t, r.highestIncomingSN == 2)
-	require.True(t, r.lastSN == 1)
+	require.Equal(t, uint16(2), r.highestIncomingSN)
+	require.Equal(t, uint16(1), r.lastSN)
 	require.Equal(t, uint16(1), r.snOffset)
 
 	// a packet with a gap should be adding to missing cache
@@ -316,8 +339,8 @@ func TestGapInSequenceNumber(t *testing.T) {
 	tp, err = r.UpdateAndGetSnTs(extPkt)
 	require.NoError(t, err)
 	require.Equal(t, tpExpected, *tp)
-	require.True(t, r.highestIncomingSN == 4)
-	require.True(t, r.lastSN == 3)
+	require.Equal(t, uint16(4), r.highestIncomingSN)
+	require.Equal(t, uint16(3), r.lastSN)
 	require.Equal(t, uint16(1), r.snOffset)
 
 	// another contiguous padding only packet should be dropped
@@ -335,8 +358,8 @@ func TestGapInSequenceNumber(t *testing.T) {
 	tp, err = r.UpdateAndGetSnTs(extPkt)
 	require.ErrorIs(t, err, ErrPaddingOnlyPacket)
 	require.Equal(t, tpExpected, *tp)
-	require.True(t, r.highestIncomingSN == 5)
-	require.True(t, r.lastSN == 3)
+	require.Equal(t, uint16(5), r.highestIncomingSN)
+	require.Equal(t, uint16(3), r.lastSN)
 	require.Equal(t, uint16(2), r.snOffset)
 
 	// a packet with a gap should be adding to missing cache
@@ -357,8 +380,8 @@ func TestGapInSequenceNumber(t *testing.T) {
 	tp, err = r.UpdateAndGetSnTs(extPkt)
 	require.NoError(t, err)
 	require.Equal(t, tpExpected, *tp)
-	require.True(t, r.highestIncomingSN == 7)
-	require.True(t, r.lastSN == 5)
+	require.Equal(t, uint16(7), r.highestIncomingSN)
+	require.Equal(t, uint16(5), r.lastSN)
 	require.Equal(t, uint16(2), r.snOffset)
 
 	// check the missing packets
@@ -378,8 +401,8 @@ func TestGapInSequenceNumber(t *testing.T) {
 	tp, err = r.UpdateAndGetSnTs(extPkt)
 	require.NoError(t, err)
 	require.Equal(t, tpExpected, *tp)
-	require.True(t, r.highestIncomingSN == 7)
-	require.True(t, r.lastSN == 5)
+	require.Equal(t, uint16(7), r.highestIncomingSN)
+	require.Equal(t, uint16(5), r.lastSN)
 	require.Equal(t, uint16(2), r.snOffset)
 
 	params = &testutils.TestExtPacketParams{
@@ -398,8 +421,8 @@ func TestGapInSequenceNumber(t *testing.T) {
 	tp, err = r.UpdateAndGetSnTs(extPkt)
 	require.NoError(t, err)
 	require.Equal(t, tpExpected, *tp)
-	require.True(t, r.highestIncomingSN == 7)
-	require.True(t, r.lastSN == 5)
+	require.Equal(t, uint16(7), r.highestIncomingSN)
+	require.Equal(t, uint16(5), r.lastSN)
 	require.Equal(t, uint16(2), r.snOffset)
 }
 
