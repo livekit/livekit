@@ -8,9 +8,10 @@ import (
 	"github.com/frostbyte73/core"
 	"go.uber.org/atomic"
 
+	"github.com/pion/webrtc/v3"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
@@ -227,13 +228,14 @@ func (cs *ConnectionStats) updateStatsWorker() {
 	tk := time.NewTicker(interval)
 	defer tk.Stop()
 
+	done := cs.done.Watch()
 	for {
 		select {
-		case <-cs.done.Watch():
+		case <-done:
 			return
 
 		case <-tk.C:
-			if cs.done.IsClosed() {
+			if cs.done.IsBroken() {
 				return
 			}
 
@@ -247,11 +249,13 @@ func (cs *ConnectionStats) updateStatsWorker() {
 // how much weight to give to packet loss rate when calculating score.
 // It is codec dependent.
 // For audio:
-//   o Opus without FEC or RED suffers the most through packet loss, hence has the highest weight
-//   o RED with two packet redundancy can absorb two out of every three packets lost, so packet loss is not as detrimental and therefore lower weight
+//
+//	o Opus without FEC or RED suffers the most through packet loss, hence has the highest weight
+//	o RED with two packet redundancy can absorb two out of every three packets lost, so packet loss is not as detrimental and therefore lower weight
 //
 // For video:
-//   o No in-built codec repair available, hence same for all codecs
+//
+//	o No in-built codec repair available, hence same for all codecs
 func getPacketLossWeight(mimeType string, isFecEnabled bool) float64 {
 	plw := float64(0.0)
 	switch {
