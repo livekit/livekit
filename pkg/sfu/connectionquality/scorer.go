@@ -391,7 +391,7 @@ func (q *qualityScorer) getExpectedBitsAndUpdateTransitions(at time.Time) int64 
 	}
 	totalBits += at.Sub(startedAt).Seconds() * float64(bt.bitrate)
 
-	// set up last bit rate as the startig bit rate for next analysis window
+	// set up last bit rate as the starting bit rate for next analysis window
 	q.bitrateTransitions = []bitrateTransition{bitrateTransition{
 		startedAt: at,
 		bitrate:   bt.bitrate,
@@ -444,7 +444,7 @@ func (q *qualityScorer) getExpectedDistanceAndUpdateTransitions(at time.Time) fl
 	}
 	totalDistance += dur.Seconds() * float64(dist)
 
-	// set up last distance as the startig distance for next analysis window
+	// set up last distance as the starting distance for next analysis window
 	q.layerTransitions = []layerTransition{layerTransition{
 		startedAt: at,
 		distance:  lt.distance,

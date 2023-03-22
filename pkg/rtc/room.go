@@ -1166,7 +1166,7 @@ func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, dp 
 	if cap == 0 {
 		cap = len(participants)
 	}
-	destParticpants := make([]types.LocalParticipant, 0, cap)
+	destParticipants := make([]types.LocalParticipant, 0, cap)
 
 	for _, op := range participants {
 		if op.State() != livekit.ParticipantInfo_ACTIVE {
@@ -1195,10 +1195,10 @@ func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, dp 
 				return
 			}
 		}
-		destParticpants = append(destParticpants, op)
+		destParticipants = append(destParticipants, op)
 	}
 
-	utils.ParallelExec(destParticpants, dataForwardLoadBalanceThreshold, 1, func(op types.LocalParticipant) {
+	utils.ParallelExec(destParticipants, dataForwardLoadBalanceThreshold, 1, func(op types.LocalParticipant) {
 		err := op.SendDataPacket(dp, dpData)
 		if err != nil && !errors.Is(err, io.ErrClosedPipe) {
 			op.GetLogger().Infow("send data packet error", "error", err)

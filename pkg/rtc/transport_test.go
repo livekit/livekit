@@ -246,7 +246,7 @@ func TestFirstAnswerMissedDuringICERestart(t *testing.T) {
 	// exchange ICE
 	handleICEExchange(t, transportA, transportB)
 
-	// first anwser missed
+	// first answer missed
 	var firstAnswerReceived atomic.Bool
 	transportB.OnAnswer(func(sd webrtc.SessionDescription) error {
 		if firstAnswerReceived.Load() {

@@ -340,7 +340,7 @@ func getNAT1to1IPsForConf(conf *config.Config, ipFilter func(net.IP) bool) ([]st
 		}(ip)
 	}
 
-	var firstResloved bool
+	var firstResolved bool
 	natMapping := make(map[string]string)
 	timeout := time.NewTimer(5 * time.Second)
 	defer timeout.Stop()
@@ -349,8 +349,8 @@ done:
 	for {
 		select {
 		case mapping := <-addrCh:
-			if !firstResloved {
-				firstResloved = true
+			if !firstResolved {
+				firstResolved = true
 				timeout.Reset(1 * time.Second)
 			}
 			if local, ok := natMapping[mapping.externalIP]; ok {

@@ -88,7 +88,7 @@ func (d *DynacastManager) Close() {
 	}
 }
 
-// THere are situations like track unmute or streaming from a sifferent node
+// THere are situations like track unmute or streaming from a different node
 // where subscribed quality needs to sent to the provider immediately.
 // This bypasses any debouncing and forces a subscribed quality update
 // with immediate effect.

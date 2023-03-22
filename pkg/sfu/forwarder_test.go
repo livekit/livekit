@@ -518,7 +518,7 @@ func TestForwarderProvisionalAllocate(t *testing.T) {
 	}
 	expectedResult = VideoAllocation{
 		bandwidthRequested:  bitrates[1][3],
-		bandwidthDelta:      bitrates[1][3] - 1, // 1 is the last allocation bandwith requested
+		bandwidthDelta:      bitrates[1][3] - 1, // 1 is the last allocation bandwidth requested
 		bitrates:            bitrates,
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: expectedTargetLayers.Spatial,
@@ -562,7 +562,7 @@ func TestForwarderProvisionalAllocate(t *testing.T) {
 	expectedResult = VideoAllocation{
 		pauseReason:         VideoPauseReasonFeedDry,
 		bandwidthRequested:  bitrates[0][2],
-		bandwidthDelta:      bitrates[0][2] - 8, // 8 is the last allocation bandwith requested
+		bandwidthDelta:      bitrates[0][2] - 8, // 8 is the last allocation bandwidth requested
 		bitrates:            bitrates,
 		targetLayers:        expectedTargetLayers,
 		requestLayerSpatial: expectedTargetLayers.Spatial,
@@ -787,7 +787,7 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 	require.Equal(t, expectedLayers, f.TargetLayers())
 
 	//
-	// Test continuting at current layers when feed is dry
+	// Test continuing at current layers when feed is dry
 	//
 	bitrates = Bitrates{
 		{0, 0, 0, 0},

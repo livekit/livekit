@@ -357,7 +357,7 @@ func TestConnectionQuality(t *testing.T) {
 
 		// RTT does not knock quality down because it is dependent and hence not taken into account
 		// at 2% loss, quality should stay at EXCELLENT purely based on loss. With high RTT (700 ms)
-		// quality should drop to GOOD if RTT were taken into consieration
+		// quality should drop to GOOD if RTT were taken into consideration
 		streams := map[uint32]*buffer.StreamStatsWithLayers{
 			1: &buffer.StreamStatsWithLayers{
 				RTPStats: &buffer.RTPDeltaInfo{
@@ -385,7 +385,7 @@ func TestConnectionQuality(t *testing.T) {
 
 		// Jitter does not knock quality down because it is dependent and hence not taken into account
 		// at 2% loss, quality should stay at EXCELLENT purely based on loss. With high jitter (200 ms)
-		// quality should drop to GOOD if jitter were taken into consieration
+		// quality should drop to GOOD if jitter were taken into consideration
 		streams := map[uint32]*buffer.StreamStatsWithLayers{
 			1: &buffer.StreamStatsWithLayers{
 				RTPStats: &buffer.RTPDeltaInfo{

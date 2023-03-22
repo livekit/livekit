@@ -801,7 +801,7 @@ func (r *RTPStats) SnapshotRtcpReceptionReport(ssrc uint32, proxyFracLost uint8,
 
 	packetsLost := uint32(0)
 	if r.params.IsReceiverReportDriven {
-		// receiver report drvien should not be set for streams that need to generate reception report, but including code here for consistency
+		// receiver report driven should not be set for streams that need to generate reception report, but including code here for consistency
 		packetsLost = now.packetsLostOverridden - then.packetsLostOverridden
 		if int32(packetsLost) < 0 {
 			packetsLost = 0
@@ -825,7 +825,7 @@ func (r *RTPStats) SnapshotRtcpReceptionReport(ssrc uint32, proxyFracLost uint8,
 
 	jitter := r.jitter
 	if r.params.IsReceiverReportDriven {
-		// receiver report drvien should not be set for streams that need to generate reception report, but including code here for consistency
+		// receiver report driven should not be set for streams that need to generate reception report, but including code here for consistency
 		jitter = r.jitterOverridden
 	}
 

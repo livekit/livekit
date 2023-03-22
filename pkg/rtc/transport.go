@@ -1263,7 +1263,7 @@ func (t *PCTransport) initPCWithPreviousAnswer(previousAnswer webrtc.SessionDesc
 		}
 		tr.SetMid(mid)
 
-		// save mid -> senders for migration resue
+		// save mid -> senders for migration reuse
 		sender := tr.Sender()
 		senders[mid] = sender
 
@@ -1294,7 +1294,7 @@ func (t *PCTransport) SetPreviousSdp(offer, answer *webrtc.SessionDescription) {
 			}
 			return
 		} else if offer != nil {
-			// in migration case, can't reuse tranceiver before negotiated except track subscribed at previous node
+			// in migration case, can't reuse transceiver before negotiated except track subscribed at previous node
 			t.canReuseTransceiver = false
 			if err := t.parseTrackMid(*offer, senders); err != nil {
 				t.params.Logger.Errorw("parse previous offer failed", err, "offer", offer.SDP)
@@ -1318,12 +1318,12 @@ func (t *PCTransport) parseTrackMid(offer webrtc.SessionDescription, senders map
 		}
 
 		if split := strings.Split(msid, " "); len(split) == 2 {
-			trackid := split[1]
+			trackID := split[1]
 			mid := lksdp.GetMidValue(m)
 			if mid == "" {
 				return ErrMidNotFound
 			}
-			t.previousTrackDescription[trackid] = &trackDescription{
+			t.previousTrackDescription[trackID] = &trackDescription{
 				mid:    mid,
 				sender: senders[mid],
 			}

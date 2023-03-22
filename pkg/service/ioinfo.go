@@ -118,7 +118,7 @@ func (s *IOInfoService) loadIngressFromInfoRequest(req *rpc.GetIngressInfoReques
 	} else if req.StreamKey != "" {
 		info, err = s.is.LoadIngressFromStreamKey(context.Background(), req.StreamKey)
 	} else {
-		err = errors.New("request needs to specity either IngressId or StreamKey")
+		err = errors.New("request needs to specify either IngressId or StreamKey")
 	}
 	return info, err
 }

@@ -92,7 +92,7 @@ type Buffer struct {
 	// logger
 	logger logger.Logger
 
-	// depencency descriptor
+	// dependency descriptor
 	ddExt             uint8
 	ddParser          *DependencyDescriptorParser
 	maxLayerChangedCB func(int32, int32)
@@ -755,7 +755,7 @@ func (b *Buffer) GetAudioLevel() (float64, bool) {
 }
 
 // TODO : now we rely on stream tracker for layer change, dependency still
-// work for that too. Do we keep it unchange or use both methods?
+// work for that too. Do we keep it unchanged or use both methods?
 func (b *Buffer) OnMaxLayerChanged(fn func(int32, int32)) {
 	b.maxLayerChangedCB = fn
 }
