@@ -1,4 +1,4 @@
-# LiveKit: High-performance WebRTC
+# LiveKit: Real-time video, audio and data for developers
 
 LiveKit is an open source project that provides scalable, multi-user conferencing based on WebRTC. It's designed to
 provide everything you need to build real-time video/audio/data capabilities in your applications.
@@ -9,7 +9,7 @@ LiveKit's server is written in Go, using the awesome [Pion WebRTC](https://githu
 [![Slack community](https://img.shields.io/endpoint?url=https%3A%2F%2Flivekit.io%2Fbadges%2Fslack)](https://livekit.io/join-slack)
 [![Twitter Follow](https://img.shields.io/twitter/follow/livekitted)](https://twitter.com/livekitted)
 [![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/livekit/livekit)](https://github.com/livekit/livekit/releases/latest)
-[![GitHub Workflow Status](https://img.shields.io/github/workflow/status/livekit/livekit/Test)](https://github.com/livekit/livekit/actions/workflows/buildtest.yaml)
+[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/livekit/livekit/buildtest.yaml?branch=master)](https://github.com/livekit/livekit/actions/workflows/buildtest.yaml)
 [![License](https://img.shields.io/github/license/livekit/livekit)](https://github.com/livekit/livekit/blob/master/LICENSE)
 
 ## Features
@@ -32,10 +32,11 @@ LiveKit's server is written in Go, using the awesome [Pion WebRTC](https://githu
 
 https://docs.livekit.io
 
-## Try it live
+## Live Demos
 
-Head to [our playground](https://livekit.io/playground) and give it a spin. Build a Zoom-like conferencing app in under
-100 lines of code!
+- [LiveKit Meet](https://meet.livekit.io) ([source](https://github.com/livekit/meet))
+- [Spatial Audio](https://spatial-audio-demo.livekit.io/) ([source](https://github.com/livekit-examples/spatial-audio))
+- Livestreaming from OBS Studio ([source](https://github.com/livekit-examples/livestream))
 
 ## SDKs & Tools
 
