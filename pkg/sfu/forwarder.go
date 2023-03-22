@@ -1477,9 +1477,10 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 	if f.ddLayerSelector != nil {
 		if selected := f.ddLayerSelector.Select(extPkt, tp); !selected {
 			tp.shouldDrop = true
+			f.rtpMunger.UpdateAndGetSnTs(extPkt) // call to update highest incoming sequence number and other internal structures
 			f.rtpMunger.PacketDropped(extPkt)
 			return tp, nil
-		} else if tp.isSwitchingToTargetLayer {
+		} else if f.targetLayers.Spatial != f.currentLayers.Spatial && f.targetLayers.Spatial == layer && (extPkt.KeyFrame || tp.isSwitchingToTargetLayer) {
 			// lock to target layer
 			f.logger.Infow(
 				"locking to target layer",
@@ -1609,7 +1610,8 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		}
 	}
 
-	if f.currentLayers.Spatial != layer {
+	// if we have layer selector, let it decide whether to drop or not
+	if f.ddLayerSelector == nil && f.currentLayers.Spatial != layer {
 		tp.shouldDrop = true
 		return tp, nil
 	}
