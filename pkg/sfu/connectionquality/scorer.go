@@ -63,7 +63,7 @@ func (w *windowStat) calculatePacketScore(plw float64, isDependentRTT bool, isDe
 		actualLost = 0
 	}
 
-	lossEffect := float64(0.0)
+	var lossEffect float64
 	if w.packetsExpected > 0 {
 		lossEffect = float64(actualLost) * 100.0 / float64(w.packetsExpected)
 	}
@@ -83,7 +83,7 @@ func (w *windowStat) calculateBitrateScore(expectedBitrate int64) float64 {
 		return maxScore
 	}
 
-	score := float64(0.0)
+	var score float64
 	if w.bytes != 0 {
 		// using the ratio of expectedBitrate / actualBitrate
 		// the quality inflection points are approximately
@@ -369,7 +369,7 @@ func (q *qualityScorer) getExpectedBitsAndUpdateTransitions(at time.Time) int64 
 	}
 
 	var startedAt time.Time
-	totalBits := float64(0.0)
+	var totalBits float64
 	for idx := 0; idx < len(q.bitrateTransitions)-1; idx++ {
 		bt := &q.bitrateTransitions[idx]
 		btNext := &q.bitrateTransitions[idx+1]
@@ -391,8 +391,8 @@ func (q *qualityScorer) getExpectedBitsAndUpdateTransitions(at time.Time) int64 
 	}
 	totalBits += at.Sub(startedAt).Seconds() * float64(bt.bitrate)
 
-	// set up last bit rate as the startig bit rate for next analysis window
-	q.bitrateTransitions = []bitrateTransition{bitrateTransition{
+	// set up last bit rate as the starting bit rate for next analysis window
+	q.bitrateTransitions = []bitrateTransition{{
 		startedAt: at,
 		bitrate:   bt.bitrate,
 	}}
@@ -406,7 +406,7 @@ func (q *qualityScorer) getExpectedDistanceAndUpdateTransitions(at time.Time) fl
 	}
 
 	var startedAt time.Time
-	totalDistance := float64(0.0)
+	var totalDistance float64
 	totalDuration := time.Duration(0)
 	for idx := 0; idx < len(q.layerTransitions)-1; idx++ {
 		lt := &q.layerTransitions[idx]
@@ -425,7 +425,7 @@ func (q *qualityScorer) getExpectedDistanceAndUpdateTransitions(at time.Time) fl
 			// negative distances are overshoot, that does not compensate for shortfalls, so use optimal, i. e. 0 distance when overshooting
 			dist = 0.0
 		}
-		totalDistance += dur.Seconds() * float64(dist)
+		totalDistance += dur.Seconds() * dist
 	}
 
 	// last transition
@@ -442,10 +442,10 @@ func (q *qualityScorer) getExpectedDistanceAndUpdateTransitions(at time.Time) fl
 	if dist < 0.0 {
 		dist = 0.0
 	}
-	totalDistance += dur.Seconds() * float64(dist)
+	totalDistance += dur.Seconds() * dist
 
-	// set up last distance as the startig distance for next analysis window
-	q.layerTransitions = []layerTransition{layerTransition{
+	// set up last distance as the starting distance for next analysis window
+	q.layerTransitions = []layerTransition{{
 		startedAt: at,
 		distance:  lt.distance,
 	}}

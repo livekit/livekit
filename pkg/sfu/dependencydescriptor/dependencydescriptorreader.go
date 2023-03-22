@@ -59,7 +59,7 @@ func (r *DependencyDescriptorReader) Parse() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	return r.buffer.ReadedBytes(), nil
+	return r.buffer.BytesRead(), nil
 }
 
 func (r *DependencyDescriptorReader) readMandatoryFields() error {

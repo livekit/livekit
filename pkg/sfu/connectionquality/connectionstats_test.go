@@ -5,10 +5,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/stretchr/testify/require"
 )
 
 func newConnectionStats(mimeType string, isFECEnabled bool, isDependentRTT bool, isDependentJitter bool) *ConnectionStats {
@@ -38,7 +39,7 @@ func TestConnectionQuality(t *testing.T) {
 
 		// best conditions (no loss, jitter/rtt = 0) - quality should stay EXCELLENT
 		streams := map[uint32]*buffer.StreamStatsWithLayers{
-			1: &buffer.StreamStatsWithLayers{
+			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
 					Duration:  duration,
@@ -54,7 +55,7 @@ func TestConnectionQuality(t *testing.T) {
 		// introduce loss and the score should drop - 12% loss for Opus -> POOR
 		now = now.Add(duration)
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
-			1: &buffer.StreamStatsWithLayers{
+			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime:   now,
 					Duration:    duration,
@@ -73,7 +74,7 @@ func TestConnectionQuality(t *testing.T) {
 		// bound so that climbing back does not take too long even under excellent conditions.
 		now = now.Add(duration)
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
-			1: &buffer.StreamStatsWithLayers{
+			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
 					Duration:  duration,
@@ -89,7 +90,7 @@ func TestConnectionQuality(t *testing.T) {
 		// should stay at GOOD if conditions continue to be good
 		now = now.Add(duration)
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
-			1: &buffer.StreamStatsWithLayers{
+			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
 					Duration:  duration,
@@ -105,7 +106,7 @@ func TestConnectionQuality(t *testing.T) {
 		// should climb up to EXCELLENT if conditions continue to be good
 		now = now.Add(duration)
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
-			1: &buffer.StreamStatsWithLayers{
+			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
 					Duration:  duration,
@@ -121,7 +122,7 @@ func TestConnectionQuality(t *testing.T) {
 		// introduce loss and the score should drop - 5% loss for Opus -> GOOD
 		now = now.Add(duration)
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
-			1: &buffer.StreamStatsWithLayers{
+			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime:   now,
 					Duration:    duration,
@@ -138,7 +139,7 @@ func TestConnectionQuality(t *testing.T) {
 		// should stay at GOOD quality for another iteration even if the conditions improve
 		now = now.Add(duration)
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
-			1: &buffer.StreamStatsWithLayers{
+			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
 					Duration:  duration,
@@ -154,7 +155,7 @@ func TestConnectionQuality(t *testing.T) {
 		// should climb up to EXCELLENT if conditions continue to be good
 		now = now.Add(duration)
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
-			1: &buffer.StreamStatsWithLayers{
+			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
 					Duration:  duration,
@@ -170,7 +171,7 @@ func TestConnectionQuality(t *testing.T) {
 		// mute when quality is POOR should return quality to EXCELLENT
 		now = now.Add(duration)
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
-			1: &buffer.StreamStatsWithLayers{
+			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime:   now,
 					Duration:    duration,
@@ -195,7 +196,7 @@ func TestConnectionQuality(t *testing.T) {
 		cs.UpdateMute(false, now.Add(3*time.Second))
 
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
-			1: &buffer.StreamStatsWithLayers{
+			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
 					Duration:  duration,
@@ -211,7 +212,7 @@ func TestConnectionQuality(t *testing.T) {
 		// next update with no packets should knock quality down
 		now = now.Add(duration)
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
-			1: &buffer.StreamStatsWithLayers{
+			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
 					Duration:  duration,
@@ -232,7 +233,7 @@ func TestConnectionQuality(t *testing.T) {
 		// with lesser number of packet (simulating DTX).
 		// even higher loss (like 10%) should only knock down quality to GOOD, typically would be POOR at that loss rate
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
-			1: &buffer.StreamStatsWithLayers{
+			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime:   now,
 					Duration:    duration,
@@ -254,7 +255,7 @@ func TestConnectionQuality(t *testing.T) {
 		// RTT and jitter can knock quality down.
 		// at 2% loss, quality should stay at EXCELLENT purely based on loss, but with added RTT/jitter, should drop to GOOD
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
-			1: &buffer.StreamStatsWithLayers{
+			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime:   now,
 					Duration:    duration,
@@ -280,7 +281,7 @@ func TestConnectionQuality(t *testing.T) {
 		cs.AddBitrateTransition(2_000_000, now.Add(2*time.Second))
 
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
-			1: &buffer.StreamStatsWithLayers{
+			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
 					Duration:  duration,
@@ -306,7 +307,7 @@ func TestConnectionQuality(t *testing.T) {
 		cs.AddBitrateTransition(2_000_000, now.Add(2*time.Second))
 
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
-			1: &buffer.StreamStatsWithLayers{
+			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
 					Duration:  duration,
@@ -331,7 +332,7 @@ func TestConnectionQuality(t *testing.T) {
 		cs.AddBitrateTransition(2_000_000, now.Add(2*time.Second))
 
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
-			1: &buffer.StreamStatsWithLayers{
+			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
 					Duration:  duration,
@@ -356,9 +357,9 @@ func TestConnectionQuality(t *testing.T) {
 
 		// RTT does not knock quality down because it is dependent and hence not taken into account
 		// at 2% loss, quality should stay at EXCELLENT purely based on loss. With high RTT (700 ms)
-		// quality should drop to GOOD if RTT were taken into consieration
+		// quality should drop to GOOD if RTT were taken into consideration
 		streams := map[uint32]*buffer.StreamStatsWithLayers{
-			1: &buffer.StreamStatsWithLayers{
+			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime:   now,
 					Duration:    duration,
@@ -384,9 +385,9 @@ func TestConnectionQuality(t *testing.T) {
 
 		// Jitter does not knock quality down because it is dependent and hence not taken into account
 		// at 2% loss, quality should stay at EXCELLENT purely based on loss. With high jitter (200 ms)
-		// quality should drop to GOOD if jitter were taken into consieration
+		// quality should drop to GOOD if jitter were taken into consideration
 		streams := map[uint32]*buffer.StreamStatsWithLayers{
-			1: &buffer.StreamStatsWithLayers{
+			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime:   now,
 					Duration:    duration,
@@ -548,7 +549,7 @@ func TestConnectionQuality(t *testing.T) {
 
 				for _, eq := range tc.expectedQualities {
 					streams := map[uint32]*buffer.StreamStatsWithLayers{
-						123: &buffer.StreamStatsWithLayers{
+						123: {
 							RTPStats: &buffer.RTPDeltaInfo{
 								StartTime:   now,
 								Duration:    duration,
@@ -644,7 +645,7 @@ func TestConnectionQuality(t *testing.T) {
 				}
 
 				streams := map[uint32]*buffer.StreamStatsWithLayers{
-					123: &buffer.StreamStatsWithLayers{
+					123: {
 						RTPStats: &buffer.RTPDeltaInfo{
 							StartTime: now,
 							Duration:  duration,
@@ -731,7 +732,7 @@ func TestConnectionQuality(t *testing.T) {
 				}
 
 				streams := map[uint32]*buffer.StreamStatsWithLayers{
-					123: &buffer.StreamStatsWithLayers{
+					123: {
 						RTPStats: &buffer.RTPDeltaInfo{
 							StartTime: now,
 							Duration:  duration,

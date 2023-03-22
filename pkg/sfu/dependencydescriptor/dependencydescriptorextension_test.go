@@ -35,7 +35,7 @@ func TestDependencyDescriptorUnmarshal(t *testing.T) {
 		}
 
 		var ddVal DependencyDescriptor
-		var d DependencyDescriptorExtension = DependencyDescriptorExtension{
+		var d = DependencyDescriptorExtension{
 			Structure:  structure,
 			Descriptor: &ddVal,
 		}

@@ -54,7 +54,7 @@ func (m mediaTrackReceiverState) String() string {
 	}
 }
 
-//-----------------------------------------------------
+// -----------------------------------------------------
 
 type simulcastReceiver struct {
 	sfu.TrackReceiver

@@ -92,7 +92,7 @@ type Buffer struct {
 	// logger
 	logger logger.Logger
 
-	// depencency descriptor
+	// dependency descriptor
 	ddExt             uint8
 	ddParser          *DependencyDescriptorParser
 	maxLayerChangedCB func(int32, int32)
@@ -436,15 +436,15 @@ func (b *Buffer) patchExtPacket(ep *ExtPacket, buf []byte) *ExtPacket {
 	ep.RawPacket = buf[:n]
 
 	// patch RTP packet to point payload to new buffer
-	rtp := *ep.Packet
+	pkt := *ep.Packet
 	payloadStart := ep.Packet.Header.MarshalSize()
 	payloadEnd := payloadStart + len(ep.Packet.Payload)
 	if payloadEnd > n {
 		b.logger.Warnw("unexpected marshal size", nil, "max", n, "need", payloadEnd)
 		return nil
 	}
-	rtp.Payload = buf[payloadStart:payloadEnd]
-	ep.Packet = &rtp
+	pkt.Payload = buf[payloadStart:payloadEnd]
+	ep.Packet = &pkt
 
 	return ep
 }
@@ -755,7 +755,7 @@ func (b *Buffer) GetAudioLevel() (float64, bool) {
 }
 
 // TODO : now we rely on stream tracker for layer change, dependency still
-// work for that too. Do we keep it unchange or use both methods?
+// work for that too. Do we keep it unchanged or use both methods?
 func (b *Buffer) OnMaxLayerChanged(fn func(int32, int32)) {
 	b.maxLayerChangedCB = fn
 }

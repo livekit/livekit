@@ -47,7 +47,7 @@ func (w *DependencyDescriptorWriter) Write() error {
 		return err
 	}
 
-	if w.hasExtenedFields() {
+	if w.hasExtendedFields() {
 		if err := w.writeExtendedFields(); err != nil {
 			return err
 		}
@@ -57,15 +57,15 @@ func (w *DependencyDescriptorWriter) Write() error {
 		}
 	}
 
-	remaingBits := w.writer.RemainingBits()
+	remainingBits := w.writer.RemainingBits()
 	// Zero remaining memory to avoid leaving it uninitialized.
-	if remaingBits%64 != 0 {
-		if err := w.writeBits(0, remaingBits%64); err != nil {
+	if remainingBits%64 != 0 {
+		if err := w.writeBits(0, remainingBits%64); err != nil {
 			return err
 		}
 	}
 
-	for i := 0; i < remaingBits/64; i++ {
+	for i := 0; i < remainingBits/64; i++ {
 		if err := w.writeBits(0, 64); err != nil {
 			return err
 		}
@@ -101,10 +101,10 @@ func (w *DependencyDescriptorWriter) findBestTemplate() error {
 	}
 
 	// Search if there any better template that have small extra size.
-	w.bestTemplate = w.caculateMatch(firstSameLayerIdx, firstSameLayer)
+	w.bestTemplate = w.calculateMatch(firstSameLayerIdx, firstSameLayer)
 	for i := firstSameLayerIdx + 1; i <= lastSameLayerIdx; i++ {
 		t := w.structure.Templates[i]
-		match := w.caculateMatch(i, t)
+		match := w.calculateMatch(i, t)
 		if match.ExtraSizeBits < w.bestTemplate.ExtraSizeBits {
 			w.bestTemplate = match
 		}
@@ -127,7 +127,7 @@ func (w *DependencyDescriptorWriter) findBestTemplate() error {
 // 	return true
 // }
 
-func (w *DependencyDescriptorWriter) caculateMatch(idx int, template *FrameDependencyTemplate) TemplateMatch {
+func (w *DependencyDescriptorWriter) calculateMatch(idx int, template *FrameDependencyTemplate) TemplateMatch {
 	var result TemplateMatch
 	result.TemplateIdx = idx
 	result.NeedCustomFdiffs = w.descriptor.FrameDependencies.FrameDiffs != nil && !reflect.DeepEqual(w.descriptor.FrameDependencies.FrameDiffs, template.FrameDiffs)
@@ -191,13 +191,13 @@ func (w *DependencyDescriptorWriter) writeBool(val bool) error {
 }
 
 func (w *DependencyDescriptorWriter) writeBits(val uint64, bitCount int) error {
-	if err := w.writer.WriteBits(uint64(val), bitCount); err != nil {
+	if err := w.writer.WriteBits(val, bitCount); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (w *DependencyDescriptorWriter) hasExtenedFields() bool {
+func (w *DependencyDescriptorWriter) hasExtendedFields() bool {
 	return w.bestTemplate.ExtraSizeBits > 0 || w.descriptor.AttachedStructure != nil || w.descriptor.ActiveDecodeTargetsBitmask != nil
 }
 
@@ -448,7 +448,7 @@ const mandatoryFieldSize = 1 + 1 + 6 + 16
 
 func (w *DependencyDescriptorWriter) ValueSizeBits() int {
 	valueSizeBits := mandatoryFieldSize + w.bestTemplate.ExtraSizeBits
-	if w.hasExtenedFields() {
+	if w.hasExtendedFields() {
 		valueSizeBits += 5
 		if w.descriptor.AttachedStructure != nil {
 			valueSizeBits += w.structureSizeBits()

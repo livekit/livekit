@@ -6,17 +6,17 @@ import (
 )
 
 type BitStreamReader struct {
-	buf         []byte
-	pos         int
-	remaingBits int
+	buf           []byte
+	pos           int
+	remainingBits int
 }
 
 func NewBitStreamReader(buf []byte) *BitStreamReader {
-	return &BitStreamReader{buf: buf, remaingBits: len(buf) * 8}
+	return &BitStreamReader{buf: buf, remainingBits: len(buf) * 8}
 }
 
-func (b *BitStreamReader) RemaningBits() int {
-	return b.remaingBits
+func (b *BitStreamReader) RemainingBits() int {
+	return b.remainingBits
 }
 
 // Reads `bits` from the bitstream. `bits` must be in range [0, 64].
@@ -27,17 +27,17 @@ func (b *BitStreamReader) ReadBits(bits int) (uint64, error) {
 		return 0, errors.New("invalid number of bits, expected 0-64")
 	}
 
-	if b.remaingBits < bits {
-		b.remaingBits -= bits
+	if b.remainingBits < bits {
+		b.remainingBits -= bits
 		return 0, io.EOF
 	}
 
-	remainingBitsInFirstByte := b.remaingBits % 8
-	b.remaingBits -= bits
+	remainingBitsInFirstByte := b.remainingBits % 8
+	b.remainingBits -= bits
 	if bits < remainingBitsInFirstByte {
 		// Reading fewer bits than what's left in the current byte, just
 		// return the portion of this byte that is needed.
-		offset := (remainingBitsInFirstByte - bits)
+		offset := remainingBitsInFirstByte - bits
 		return uint64((b.buf[b.pos] >> offset) & ((1 << bits) - 1)), nil
 	}
 	var result uint64
@@ -69,11 +69,11 @@ func (b *BitStreamReader) ReadBool() (bool, error) {
 }
 
 func (b *BitStreamReader) Ok() bool {
-	return b.remaingBits >= 0
+	return b.remainingBits >= 0
 }
 
 func (b *BitStreamReader) Invalidate() {
-	b.remaingBits = -1
+	b.remainingBits = -1
 }
 
 // Reads value in range [0, `num_values` - 1].
@@ -107,8 +107,8 @@ func (b *BitStreamReader) ReadNonSymmetric(numValues uint32) (uint32, error) {
 	return uint32((val << 1) + bit - uint64(numMinBitsValues)), nil
 }
 
-func (b *BitStreamReader) ReadedBytes() int {
-	if b.remaingBits%8 > 0 {
+func (b *BitStreamReader) BytesRead() int {
+	if b.remainingBits%8 > 0 {
 		return b.pos + 1
 	}
 	return b.pos

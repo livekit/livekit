@@ -27,10 +27,9 @@ const (
 	RoomInternalKey = "room_internal"
 
 	// EgressKey is a hash of egressID => egress info
-	EgressKey                  = "egress"
-	EndedEgressKey             = "ended_egress"
-	RoomEgressPrefix           = "egress:room:"
-	DeprecatedRoomEgressPrefix = "room_egress:"
+	EgressKey        = "egress"
+	EndedEgressKey   = "ended_egress"
+	RoomEgressPrefix = "egress:room:"
 
 	// IngressKey is a hash of ingressID => ingress info
 	IngressKey         = "ingress"

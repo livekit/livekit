@@ -78,7 +78,7 @@ func (s *DDVideoLayerSelector) Select(expPkt *buffer.ExtPacket, tp *TranslationP
 	}
 
 	if currentTarget < 0 {
-		// s.logger.Debugw(fmt.Sprintf("drop packet for no target found, deocdeTargets %v, selected layer %v, s:%d, t:%d",
+		// s.logger.Debugw(fmt.Sprintf("drop packet for no target found, decodeTargets %v, selected layer %v, s:%d, t:%d",
 		// s.decodeTargetLayer, s.layer, expPkt.DependencyDescriptor.FrameDependencies.SpatialId, expPkt.DependencyDescriptor.FrameDependencies.TemporalId))
 		// no active decode target, forward all packets
 		return false
@@ -178,25 +178,25 @@ func (s *DDVideoLayerSelector) updateDependencyStructure(structure *dd.FrameDepe
 
 // DD-TODO : use generic wrapper when updated to go 1.18
 type Uint16Wrapper struct {
-	last_value    *uint16
+	lastValue     *uint16
 	lastUnwrapped int32
 }
 
 func (w *Uint16Wrapper) Unwrap(value uint16) int32 {
-	if w.last_value == nil {
-		w.last_value = &value
+	if w.lastValue == nil {
+		w.lastValue = &value
 		w.lastUnwrapped = int32(value)
-		return int32(*w.last_value)
+		return int32(*w.lastValue)
 	}
 
-	diff := value - *w.last_value
+	diff := value - *w.lastValue
 	w.lastUnwrapped += int32(diff)
-	if diff == 0x8000 && value < *w.last_value {
+	if diff == 0x8000 && value < *w.lastValue {
 		w.lastUnwrapped -= 0x10000
 	} else if diff > 0x8000 {
 		w.lastUnwrapped -= 0x10000
 	}
 
-	*w.last_value = value
+	*w.lastValue = value
 	return w.lastUnwrapped
 }

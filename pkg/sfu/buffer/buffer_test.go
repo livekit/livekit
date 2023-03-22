@@ -6,11 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livekit/mediatransportutil/pkg/nack"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/mediatransportutil/pkg/nack"
 )
 
 var vp8Codec = webrtc.RTPCodecParameters{

@@ -27,7 +27,7 @@ func (w *BitStreamWriter) WriteBits(val uint64, bitCount int) error {
 	totalBits := bitCount
 
 	// push bits to the highest bits of uint64
-	val <<= (64 - bitCount)
+	val <<= 64 - bitCount
 
 	buf := w.buf[w.pos:]
 

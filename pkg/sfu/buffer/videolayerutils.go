@@ -84,7 +84,7 @@ func RidToSpatialLayer(rid string, trackInfo *livekit.TrackInfo) int32 {
 			logger.Warnw("unexpected rid f with only two qualities, low and high", nil)
 			return 1
 		case lp[livekit.VideoQuality_MEDIUM] && lp[livekit.VideoQuality_HIGH]:
-			logger.Warnw("unexpected rid f with only two qualities, medum and high", nil)
+			logger.Warnw("unexpected rid f with only two qualities, medium and high", nil)
 			return 1
 
 		default:
@@ -156,7 +156,7 @@ func SpatialLayerToRid(layer int32, trackInfo *livekit.TrackInfo) string {
 			logger.Warnw("unexpected layer 2 with only two qualities, low and high", nil)
 			return HalfResolution
 		case lp[livekit.VideoQuality_MEDIUM] && lp[livekit.VideoQuality_HIGH]:
-			logger.Warnw("unexpected layer 2 with only two qualities, medum and high", nil)
+			logger.Warnw("unexpected layer 2 with only two qualities, medium and high", nil)
 			return HalfResolution
 
 		default:

@@ -3,8 +3,9 @@ package routing
 import (
 	"testing"
 
-	"github.com/livekit/protocol/livekit"
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/protocol/livekit"
 )
 
 func TestUtils_ParticipantKey(t *testing.T) {

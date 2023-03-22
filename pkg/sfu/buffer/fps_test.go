@@ -147,7 +147,7 @@ func TestFpsVP8(t *testing.T) {
 		testCase := c
 		t.Run(name, func(t *testing.T) {
 			fps := testCase.fps
-			frames := [][]*testFrameInfo{}
+			frames := make([][]*testFrameInfo, 0)
 			vp8calcs := make([]*FrameRateCalculatorVP8, len(fps))
 			for i := range vp8calcs {
 				vp8calcs[i] = NewFrameRateCalculatorVP8(90000, logger.GetLogger())
@@ -178,7 +178,7 @@ func TestFpsVP8(t *testing.T) {
 	}
 	t.Run("packet lost and duplicate", func(t *testing.T) {
 		fps := [][]float32{{7.5, 15}, {7.5, 15}, {15, 30}}
-		frames := [][]*testFrameInfo{}
+		frames := make([][]*testFrameInfo, 0)
 		vp8calcs := make([]*FrameRateCalculatorVP8, len(fps))
 		for i := range vp8calcs {
 			vp8calcs[i] = NewFrameRateCalculatorVP8(90000, logger.GetLogger())

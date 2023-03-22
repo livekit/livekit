@@ -8,7 +8,7 @@ require (
 	github.com/dustin/go-humanize v1.0.1
 	github.com/elliotchance/orderedmap/v2 v2.2.0
 	github.com/florianl/go-tc v0.4.2
-	github.com/frostbyte73/core v0.0.4
+	github.com/frostbyte73/core v0.0.5
 	github.com/gammazero/deque v0.1.0
 	github.com/gammazero/workerpool v1.1.2
 	github.com/google/wire v0.5.0

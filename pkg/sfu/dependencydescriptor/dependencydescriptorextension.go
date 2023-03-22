@@ -85,17 +85,17 @@ func (d *DependencyDescriptor) String() string {
 type DecodeTargetIndication int
 
 const (
-	DecodeTargetNotPresent DecodeTargetIndication = iota // DecodeTargetInfo symbol '-'
-	DecodeTargetDiscadable                               // DecodeTargetInfo symbol 'D'
-	DecodeTargetSwitch                                   // DecodeTargetInfo symbol 'S'
-	DecodeTargetRequired                                 // DecodeTargetInfo symbol 'R'
+	DecodeTargetNotPresent  DecodeTargetIndication = iota // DecodeTargetInfo symbol '-'
+	DecodeTargetDiscardable                               // DecodeTargetInfo symbol 'D'
+	DecodeTargetSwitch                                    // DecodeTargetInfo symbol 'S'
+	DecodeTargetRequired                                  // DecodeTargetInfo symbol 'R'
 )
 
 func (i DecodeTargetIndication) String() string {
 	switch i {
 	case DecodeTargetNotPresent:
 		return "-"
-	case DecodeTargetDiscadable:
+	case DecodeTargetDiscardable:
 		return "D"
 	case DecodeTargetSwitch:
 		return "S"

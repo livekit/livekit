@@ -314,30 +314,30 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 						2: 1 * time.Second,
 					},
 					PacketTracker: map[int32]StreamTrackerPacketConfig{
-						0: StreamTrackerPacketConfig{
+						0: {
 							SamplesRequired: 1,
 							CyclesRequired:  4,
 							CycleDuration:   500 * time.Millisecond,
 						},
-						1: StreamTrackerPacketConfig{
+						1: {
 							SamplesRequired: 5,
 							CyclesRequired:  20,
 							CycleDuration:   500 * time.Millisecond,
 						},
-						2: StreamTrackerPacketConfig{
+						2: {
 							SamplesRequired: 5,
 							CyclesRequired:  20,
 							CycleDuration:   500 * time.Millisecond,
 						},
 					},
 					FrameTracker: map[int32]StreamTrackerFrameConfig{
-						0: StreamTrackerFrameConfig{
+						0: {
 							MinFPS: 5.0,
 						},
-						1: StreamTrackerFrameConfig{
+						1: {
 							MinFPS: 5.0,
 						},
-						2: StreamTrackerFrameConfig{
+						2: {
 							MinFPS: 5.0,
 						},
 					},
@@ -350,30 +350,30 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 						2: 4 * time.Second,
 					},
 					PacketTracker: map[int32]StreamTrackerPacketConfig{
-						0: StreamTrackerPacketConfig{
+						0: {
 							SamplesRequired: 1,
 							CyclesRequired:  1,
 							CycleDuration:   2 * time.Second,
 						},
-						1: StreamTrackerPacketConfig{
+						1: {
 							SamplesRequired: 1,
 							CyclesRequired:  1,
 							CycleDuration:   2 * time.Second,
 						},
-						2: StreamTrackerPacketConfig{
+						2: {
 							SamplesRequired: 1,
 							CyclesRequired:  1,
 							CycleDuration:   2 * time.Second,
 						},
 					},
 					FrameTracker: map[int32]StreamTrackerFrameConfig{
-						0: StreamTrackerFrameConfig{
+						0: {
 							MinFPS: 0.5,
 						},
-						1: StreamTrackerFrameConfig{
+						1: {
 							MinFPS: 0.5,
 						},
-						2: StreamTrackerFrameConfig{
+						2: {
 							MinFPS: 0.5,
 						},
 					},
@@ -576,7 +576,7 @@ func (conf *Config) ValidateKeys() error {
 
 func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error) {
 	blankConfig := &Config{}
-	flags := []cli.Flag{}
+	flags := make([]cli.Flag, 0)
 	for name, value := range blankConfig.ToCLIFlagNames(existingFlags) {
 		kind := value.Kind()
 		if kind == reflect.Ptr {

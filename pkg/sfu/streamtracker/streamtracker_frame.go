@@ -151,7 +151,7 @@ func (s *StreamTrackerFrame) updateEstimatedFrameRate() float64 {
 	s.oldestTS = s.newestTS
 	s.numFrames = 1
 
-	factor := float64(1.0)
+	factor := 1.0
 	switch {
 	case s.estimatedFrameRate < frameRate:
 		// slow increase, prevents shortening eval interval too quickly on frame rate going up

@@ -6,10 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/rtc/types"
-	"github.com/livekit/protocol/livekit"
 	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/protocol/livekit"
 )
 
 func TestSubscribedMaxQuality(t *testing.T) {

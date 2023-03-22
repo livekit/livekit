@@ -363,7 +363,7 @@ func (t *TransportManager) GetUnmatchMediaForOffer(offer webrtc.SessionDescripti
 		answer := lastAnswer.(webrtc.SessionDescription)
 		parsedAnswer, err1 := answer.Unmarshal()
 		if err1 != nil {
-			// should not happend
+			// should not happen
 			t.params.Logger.Errorw("failed to parse last answer", err)
 			return
 		}
@@ -572,7 +572,7 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 	}
 
 	//
-	// Checking only `PreferenceSubcriber` field although any connection failure (PUBLISHER OR SUBSCRIBER) will
+	// Checking only `PreferenceSubscriber` field although any connection failure (PUBLISHER OR SUBSCRIBER) will
 	// flow through here.
 	//
 	// As both transports are switched to the same type on any failure, checking just subscriber should be fine.

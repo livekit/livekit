@@ -687,7 +687,7 @@ func (p *ParticipantImpl) IsClosed() bool {
 	return p.isClosed.Load()
 }
 
-// Negotiate subscriber SDP with client, if force is true, will cencel pending
+// Negotiate subscriber SDP with client, if force is true, will cancel pending
 // negotiate task and negotiate immediately
 func (p *ParticipantImpl) Negotiate(force bool) {
 	if p.MigrateState() != types.MigrateStateInit {
@@ -1363,7 +1363,7 @@ func (p *ParticipantImpl) onStreamStateChange(update *sfu.StreamStateUpdate) err
 	})
 }
 
-func (p *ParticipantImpl) onSubscribedMaxQualityChange(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedCodec, maxSubscribedQualites []types.SubscribedCodecQuality) error {
+func (p *ParticipantImpl) onSubscribedMaxQualityChange(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedCodec, maxSubscribedQualities []types.SubscribedCodecQuality) error {
 	if p.params.DisableDynacast {
 		return nil
 	}
@@ -1394,7 +1394,7 @@ func (p *ParticipantImpl) onSubscribedMaxQualityChange(trackID livekit.TrackID, 
 		}
 	}
 
-	for _, maxSubscribedQuality := range maxSubscribedQualites {
+	for _, maxSubscribedQuality := range maxSubscribedQualities {
 		ti := &livekit.TrackInfo{
 			Sid:  string(trackID),
 			Type: livekit.TrackType_VIDEO,
@@ -1417,7 +1417,7 @@ func (p *ParticipantImpl) onSubscribedMaxQualityChange(trackID livekit.TrackID, 
 		"sending max subscribed quality",
 		"trackID", trackID,
 		"qualities", subscribedQualities,
-		"max", maxSubscribedQualites,
+		"max", maxSubscribedQualities,
 	)
 	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_SubscribedQualityUpdate{

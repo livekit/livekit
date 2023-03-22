@@ -630,7 +630,7 @@ func (c *RTCClient) ensurePublisherConnected() error {
 	}
 }
 
-func (c *RTCClient) handleDataMessage(kind livekit.DataPacket_Kind, data []byte) {
+func (c *RTCClient) handleDataMessage(_ livekit.DataPacket_Kind, data []byte) {
 	dp := &livekit.DataPacket{}
 	err := proto.Unmarshal(data, dp)
 	if err != nil {

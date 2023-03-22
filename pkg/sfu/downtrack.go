@@ -143,7 +143,7 @@ type DownTrackStreamAllocatorListener interface {
 	// subscribed max video layer changed
 	OnSubscribedLayersChanged(dt *DownTrack, layers VideoLayers)
 
-	// target video layer reaached
+	// target video layer reached
 	OnTargetLayerReached(dt *DownTrack)
 
 	// packet(s) sent
@@ -760,7 +760,7 @@ func (d *DownTrack) handleMute(muted bool, isPub bool, changed bool, maxLayers V
 	//   2. down track(s) notifying max layer
 	//   3. out-of-band notification about max layer sent back to the publisher
 	//   4. publisher starts layer(s)
-	// Ideally, on publisher mute, whatever layers were active reamin active and
+	// Ideally, on publisher mute, whatever layers were active remain active and
 	// can be restarted by publisher immediately on unmute.
 	//
 	// Note that while publisher mute is active, subscriber changes can also happen
@@ -1503,7 +1503,7 @@ func (d *DownTrack) writeRTPHeaderExtensions(hdr *rtp.Header, extraExtensions ..
 	hdr.Extensions = []rtp.Extension{}
 
 	for _, ext := range extraExtensions {
-		hdr.SetExtension(uint8(ext.id), ext.payload)
+		hdr.SetExtension(ext.id, ext.payload)
 	}
 
 	if d.absSendTimeID != 0 {
