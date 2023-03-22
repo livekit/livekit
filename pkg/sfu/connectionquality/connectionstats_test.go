@@ -5,10 +5,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/stretchr/testify/require"
 )
 
 func newConnectionStats(mimeType string, isFECEnabled bool, isDependentRTT bool, isDependentJitter bool) *ConnectionStats {

@@ -3,8 +3,9 @@ package buffer
 import (
 	"testing"
 
-	"github.com/livekit/protocol/livekit"
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/protocol/livekit"
 )
 
 func TestRidConversion(t *testing.T) {
