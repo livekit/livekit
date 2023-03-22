@@ -1162,11 +1162,11 @@ func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, dp 
 	var dpData []byte
 
 	participants := r.GetLocalParticipants()
-	cap := len(dest)
-	if cap == 0 {
-		cap = len(participants)
+	capacity := len(dest)
+	if capacity == 0 {
+		capacity = len(participants)
 	}
-	destParticipants := make([]types.LocalParticipant, 0, cap)
+	destParticipants := make([]types.LocalParticipant, 0, capacity)
 
 	for _, op := range participants {
 		if op.State() != livekit.ParticipantInfo_ACTIVE {

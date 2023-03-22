@@ -255,7 +255,7 @@ func (cs *ConnectionStats) updateStatsWorker() {
 //
 //	o No in-built codec repair available, hence same for all codecs
 func getPacketLossWeight(mimeType string, isFecEnabled bool) float64 {
-	plw := float64(0.0)
+	var plw float64
 	switch {
 	case strings.EqualFold(mimeType, webrtc.MimeTypeOpus):
 		// 2.5%: fall to GOOD, 7.5%: fall to POOR

@@ -361,7 +361,7 @@ func TestSetStableTrackID(t *testing.T) {
 }
 
 func TestDisableCodecs(t *testing.T) {
-	participant := newParticipantForTestWithOpts(livekit.ParticipantIdentity("123"), &participantOpts{
+	participant := newParticipantForTestWithOpts("123", &participantOpts{
 		publisher: false,
 		clientConf: &livekit.ClientConfiguration{
 			DisabledCodecs: &livekit.DisabledCodecs{

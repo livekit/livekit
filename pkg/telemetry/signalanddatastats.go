@@ -53,31 +53,31 @@ func (s *BytesTrackStats) Report() {
 	s.report(true)
 }
 
-func (p *BytesTrackStats) report(force bool) {
+func (s *BytesTrackStats) report(force bool) {
 	now := time.Now()
 	if !force {
-		lr := p.lastStatsReport.Load().(*time.Time)
+		lr := s.lastStatsReport.Load().(*time.Time)
 		if time.Since(*lr) < statsReportInterval {
 			return
 		}
 
-		if !p.lastStatsReport.CompareAndSwap(lr, &now) {
+		if !s.lastStatsReport.CompareAndSwap(lr, &now) {
 			return
 		}
 	} else {
-		p.lastStatsReport.Store(&now)
+		s.lastStatsReport.Store(&now)
 	}
 
-	if recv := p.recv.Swap(0); recv > 0 {
-		p.telemetry.TrackStats(StatsKeyForData(livekit.StreamType_UPSTREAM, p.pID, p.trackID), &livekit.AnalyticsStat{
+	if recv := s.recv.Swap(0); recv > 0 {
+		s.telemetry.TrackStats(StatsKeyForData(livekit.StreamType_UPSTREAM, s.pID, s.trackID), &livekit.AnalyticsStat{
 			Streams: []*livekit.AnalyticsStream{
 				{PrimaryBytes: recv},
 			},
 		})
 	}
 
-	if send := p.send.Swap(0); send > 0 {
-		p.telemetry.TrackStats(StatsKeyForData(livekit.StreamType_DOWNSTREAM, p.pID, p.trackID), &livekit.AnalyticsStat{
+	if send := s.send.Swap(0); send > 0 {
+		s.telemetry.TrackStats(StatsKeyForData(livekit.StreamType_DOWNSTREAM, s.pID, s.trackID), &livekit.AnalyticsStat{
 			Streams: []*livekit.AnalyticsStream{
 				{PrimaryBytes: send},
 			},

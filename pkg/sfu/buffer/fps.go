@@ -115,7 +115,7 @@ func (f *FrameRateCalculatorVP8) RecvPacket(ep *ExtPacket) bool {
 
 func (f *FrameRateCalculatorVP8) calc() bool {
 	var rateCounter int
-	for currentTemporal := int32(0); currentTemporal <= int32(DefaultMaxLayerTemporal); currentTemporal++ {
+	for currentTemporal := int32(0); currentTemporal <= DefaultMaxLayerTemporal; currentTemporal++ {
 		if f.frameRates[currentTemporal] > 0 {
 			rateCounter++
 			continue

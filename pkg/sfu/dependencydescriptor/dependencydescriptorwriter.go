@@ -191,7 +191,7 @@ func (w *DependencyDescriptorWriter) writeBool(val bool) error {
 }
 
 func (w *DependencyDescriptorWriter) writeBits(val uint64, bitCount int) error {
-	if err := w.writer.WriteBits(uint64(val), bitCount); err != nil {
+	if err := w.writer.WriteBits(val, bitCount); err != nil {
 		return err
 	}
 	return nil

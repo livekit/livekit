@@ -1503,7 +1503,7 @@ func (d *DownTrack) writeRTPHeaderExtensions(hdr *rtp.Header, extraExtensions ..
 	hdr.Extensions = []rtp.Extension{}
 
 	for _, ext := range extraExtensions {
-		hdr.SetExtension(uint8(ext.id), ext.payload)
+		hdr.SetExtension(ext.id, ext.payload)
 	}
 
 	if d.absSendTimeID != 0 {

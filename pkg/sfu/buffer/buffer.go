@@ -436,15 +436,15 @@ func (b *Buffer) patchExtPacket(ep *ExtPacket, buf []byte) *ExtPacket {
 	ep.RawPacket = buf[:n]
 
 	// patch RTP packet to point payload to new buffer
-	rtp := *ep.Packet
+	pkt := *ep.Packet
 	payloadStart := ep.Packet.Header.MarshalSize()
 	payloadEnd := payloadStart + len(ep.Packet.Payload)
 	if payloadEnd > n {
 		b.logger.Warnw("unexpected marshal size", nil, "max", n, "need", payloadEnd)
 		return nil
 	}
-	rtp.Payload = buf[payloadStart:payloadEnd]
-	ep.Packet = &rtp
+	pkt.Payload = buf[payloadStart:payloadEnd]
+	ep.Packet = &pkt
 
 	return ep
 }

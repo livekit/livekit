@@ -37,7 +37,7 @@ func (b *BitStreamReader) ReadBits(bits int) (uint64, error) {
 	if bits < remainingBitsInFirstByte {
 		// Reading fewer bits than what's left in the current byte, just
 		// return the portion of this byte that is needed.
-		offset := (remainingBitsInFirstByte - bits)
+		offset := remainingBitsInFirstByte - bits
 		return uint64((b.buf[b.pos] >> offset) & ((1 << bits) - 1)), nil
 	}
 	var result uint64
