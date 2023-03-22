@@ -252,23 +252,23 @@ func getPacketLossWeight(mimeType string, isFecEnabled bool) float64 {
 	plw := float64(0.0)
 	switch {
 	case strings.EqualFold(mimeType, webrtc.MimeTypeOpus):
-		// 2.5%: fall to GOOD, 5%: fall to POOR
+		// 2.5%: fall to GOOD, 7.5%: fall to POOR
 		plw = 8.0
 		if isFecEnabled {
-			// 3.75%: fall to GOOD, 7.5%: fall to POOR
+			// 3.75%: fall to GOOD, 11.25%: fall to POOR
 			plw /= 1.5
 		}
 
 	case strings.EqualFold(mimeType, "audio/red"):
-		// 6.66%: fall to GOOD, 13.33%: fall to POOR
+		// 6.66%: fall to GOOD, 20.0%: fall to POOR
 		plw = 3.0
 		if isFecEnabled {
-			// 10%: fall to GOOD, 20%: fall to POOR
+			// 10%: fall to GOOD, 30.0%: fall to POOR
 			plw /= 1.5
 		}
 
 	case strings.HasPrefix(strings.ToLower(mimeType), "video/"):
-		// 2%: fall to GOOD, 4%: fall to POOR
+		// 2%: fall to GOOD, 6%: fall to POOR
 		plw = 10.0
 	}
 
