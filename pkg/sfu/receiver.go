@@ -298,7 +298,12 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 	}
 
 	layer := int32(0)
-	if w.Kind() == webrtc.RTPCodecTypeVideo {
+	// for svc codecs, use layer full quality instead.
+	// we only have buffer for full quality
+	if w.isSVC {
+		layer = int32(len(w.buffers)) - 1
+	}
+	if w.Kind() == webrtc.RTPCodecTypeVideo && !w.isSVC {
 		layer = buffer.RidToSpatialLayer(track.RID(), w.trackInfo)
 	}
 	buff.SetLogger(w.logger.WithValues("layer", layer))
