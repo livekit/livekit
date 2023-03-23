@@ -298,11 +298,6 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 	}
 
 	layer := int32(0)
-	// for svc codecs, use layer full quality instead.
-	// we only have buffer for full quality
-	if w.isSVC {
-		layer = int32(len(w.buffers)) - 1
-	}
 	if w.Kind() == webrtc.RTPCodecTypeVideo && !w.isSVC {
 		layer = buffer.RidToSpatialLayer(track.RID(), w.trackInfo)
 	}
@@ -510,10 +505,10 @@ func (w *WebRTCReceiver) getBuffer(layer int32) *buffer.Buffer {
 }
 
 func (w *WebRTCReceiver) getBufferLocked(layer int32) *buffer.Buffer {
-	// for svc codecs, use layer full quality instead.
-	// we only have buffer for full quality
+	// for svc codecs, use layer = 0 always.
+	// spatial layers are in-built and handled by single buffer
 	if w.isSVC {
-		layer = int32(len(w.buffers)) - 1
+		layer = 0
 	}
 
 	if int(layer) >= len(w.buffers) {

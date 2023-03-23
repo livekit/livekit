@@ -1277,10 +1277,10 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 	pliOnce := true
 	sendPliOnce := func() {
 		if pliOnce {
-			targetLayers := d.forwarder.TargetLayers()
-			if targetLayers != InvalidLayers && !d.forwarder.IsAnyMuted() {
-				d.logger.Debugw("sending PLI RTCP", "layer", targetLayers.Spatial)
-				d.receiver.SendPLI(targetLayers.Spatial, false)
+			_, layer := d.forwarder.CheckSync()
+			if layer != InvalidLayerSpatial && !d.forwarder.IsAnyMuted() {
+				d.logger.Debugw("sending PLI RTCP", "layer", layer)
+				d.receiver.SendPLI(layer, false)
 				d.isNACKThrottled.Store(true)
 				d.rtpStats.UpdatePliTime()
 				pliOnce = false
