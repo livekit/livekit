@@ -390,6 +390,10 @@ func (s *RTCService) ParseClientInfo(r *http.Request) *livekit.ClientInfo {
 		ci.Sdk = livekit.ClientInfo_GO
 	case "unity":
 		ci.Sdk = livekit.ClientInfo_UNITY
+	case "reactnative":
+		ci.Sdk = livekit.ClientInfo_REACT_NATIVE
+	case "rust":
+		ci.Sdk = livekit.ClientInfo_RUST
 	}
 
 	ci.Version = values.Get("version")
@@ -407,6 +411,7 @@ func (s *RTCService) ParseClientInfo(r *http.Request) *livekit.ClientInfo {
 
 	// attempt to parse types for SDKs that support browser as a platform
 	if ci.Sdk == livekit.ClientInfo_JS ||
+		ci.Sdk == livekit.ClientInfo_REACT_NATIVE ||
 		ci.Sdk == livekit.ClientInfo_FLUTTER ||
 		ci.Sdk == livekit.ClientInfo_UNITY {
 		client := s.parser.Parse(r.UserAgent())
