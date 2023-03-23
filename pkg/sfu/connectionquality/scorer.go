@@ -252,13 +252,14 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 		return
 	}
 
+	plw := q.getPacketLossWeight(stat)
 	reason := "none"
 	var score float64
 	if stat.packetsExpected == 0 {
 		reason = "dry"
 		score = poorScore
 	} else {
-		packetScore := stat.calculatePacketScore(q.getPacketLossWeight(stat), q.params.IsDependentRTT, q.params.IsDependentJitter)
+		packetScore := stat.calculatePacketScore(plw, q.params.IsDependentRTT, q.params.IsDependentJitter)
 		bitrateScore := stat.calculateBitrateScore(expectedBitrate)
 		layerScore := math.Max(math.Min(maxScore, maxScore-(expectedDistance*distanceWeight)), 0.0)
 
@@ -302,6 +303,8 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 			"score", score,
 			"quality", scoreToConnectionQuality(score),
 			"stat", stat,
+			"packetLossWeight", plw,
+			"maxPPS", q.maxPPS,
 			"expectedBitrate", expectedBitrate,
 			"expectedDistance", expectedDistance,
 		)
