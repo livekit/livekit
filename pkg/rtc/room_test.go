@@ -34,7 +34,7 @@ func init() {
 		Config: logger.Config{Level: "debug"},
 	})
 	// allow immediate closure in testing
-	RoomDepartureGrace = 0
+	RoomDepartureGrace = 1
 }
 
 var iceServersForRoom = []*livekit.ICEServer{{Urls: []string{"stun:stun.l.google.com:19302"}}}
@@ -351,7 +351,7 @@ func TestRoomClosure(t *testing.T) {
 		rm.protoRoom.EmptyTimeout = 0
 		rm.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonClientRequestLeave)
 
-		time.Sleep(defaultDelay)
+		time.Sleep(time.Duration(RoomDepartureGrace)*time.Second + defaultDelay)
 
 		rm.CloseIfEmpty()
 		require.Len(t, rm.GetParticipants(), 0)
