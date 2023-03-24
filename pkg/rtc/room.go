@@ -27,12 +27,16 @@ import (
 
 const (
 	DefaultEmptyTimeout       = 5 * 60 // 5m
-	DefaultRoomDepartureGrace = 20
-	AudioLevelQuantization    = 8 // ideally power of 2 to minimize float decimal
+	AudioLevelQuantization    = 8      // ideally power of 2 to minimize float decimal
 	invAudioLevelQuantization = 1.0 / AudioLevelQuantization
 	subscriberUpdateInterval  = 3 * time.Second
 
 	dataForwardLoadBalanceThreshold = 20
+)
+
+var (
+	// var to allow unit test override
+	RoomDepartureGrace uint32 = 20
 )
 
 type broadcastOptions struct {
@@ -464,6 +468,11 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 	// send broadcast only if it's not already closed
 	sendUpdates := !p.IsDisconnected()
 
+	// remove all published tracks
+	for _, t := range p.GetPublishedTracks() {
+		r.trackManager.RemoveTrack(t)
+	}
+
 	p.OnTrackUpdated(nil)
 	p.OnTrackPublished(nil)
 	p.OnTrackUnpublished(nil)
@@ -476,11 +485,7 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 	r.Logger.Debugw("closing participant for removal", "pID", p.ID(), "participant", p.Identity())
 	_ = p.Close(true, reason)
 
-	r.lock.RLock()
-	if len(r.participants) == 0 {
-		r.leftAt.Store(time.Now().Unix())
-	}
-	r.lock.RUnlock()
+	r.leftAt.Store(time.Now().Unix())
 
 	if sendUpdates {
 		if r.onParticipantChanged != nil {
@@ -597,16 +602,15 @@ func (r *Room) CloseIfEmpty() {
 		}
 	}
 
-	timeout := r.protoRoom.EmptyTimeout
+	var timeout uint32
 	var elapsed int64
-	if r.FirstJoinedAt() > 0 {
-		// exit 20s after
+	if r.FirstJoinedAt() > 0 && r.LastLeftAt() > 0 {
 		elapsed = time.Now().Unix() - r.LastLeftAt()
-		if timeout > DefaultRoomDepartureGrace {
-			timeout = DefaultRoomDepartureGrace
-		}
+		// need to give time in case participant is reconnecting
+		timeout = RoomDepartureGrace
 	} else {
 		elapsed = time.Now().Unix() - r.protoRoom.CreationTime
+		timeout = r.protoRoom.EmptyTimeout
 	}
 	r.lock.Unlock()
 

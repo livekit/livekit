@@ -33,6 +33,8 @@ func init() {
 	serverlogger.InitFromConfig(config.LoggingConfig{
 		Config: logger.Config{Level: "debug"},
 	})
+	// allow immediate closure in testing
+	RoomDepartureGrace = 1
 }
 
 var iceServersForRoom = []*livekit.ICEServer{{Urls: []string{"stun:stun.l.google.com:19302"}}}
@@ -59,11 +61,11 @@ func TestJoinedState(t *testing.T) {
 		require.LessOrEqual(t, s, rm.LastLeftAt())
 	})
 
-	t.Run("LastLeftAt should not be set when there are still participants in the room", func(t *testing.T) {
+	t.Run("LastLeftAt should be set when there are still participants in the room", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
 		p0 := rm.GetParticipants()[0]
 		rm.RemoveParticipant(p0.Identity(), p0.ID(), types.ParticipantCloseReasonClientRequestLeave)
-		require.EqualValues(t, 0, rm.LastLeftAt())
+		require.Greater(t, rm.LastLeftAt(), int64(0))
 	})
 }
 
@@ -349,7 +351,7 @@ func TestRoomClosure(t *testing.T) {
 		rm.protoRoom.EmptyTimeout = 0
 		rm.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonClientRequestLeave)
 
-		time.Sleep(defaultDelay)
+		time.Sleep(time.Duration(RoomDepartureGrace)*time.Second + defaultDelay)
 
 		rm.CloseIfEmpty()
 		require.Len(t, rm.GetParticipants(), 0)
