@@ -1,7 +1,7 @@
-# LiveKit: High-performance WebRTC
+# LiveKit: Real-time video, audio and data for developers
 
-LiveKit is an open source project that provides scalable, multi-user conferencing based on WebRTC. It's designed to
-provide everything you need to build real-time video/audio/data capabilities in your applications.
+[LiveKit](https://livekit.io) is an open source project that provides scalable, multi-user conferencing based on WebRTC.
+It's designed to provide everything you need to build real-time video/audio/data capabilities in your applications.
 
 LiveKit's server is written in Go, using the awesome [Pion WebRTC](https://github.com/pion/webrtc) implementation.
 
@@ -9,7 +9,7 @@ LiveKit's server is written in Go, using the awesome [Pion WebRTC](https://githu
 [![Slack community](https://img.shields.io/endpoint?url=https%3A%2F%2Flivekit.io%2Fbadges%2Fslack)](https://livekit.io/join-slack)
 [![Twitter Follow](https://img.shields.io/twitter/follow/livekitted)](https://twitter.com/livekitted)
 [![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/livekit/livekit)](https://github.com/livekit/livekit/releases/latest)
-[![GitHub Workflow Status](https://img.shields.io/github/workflow/status/livekit/livekit/Test)](https://github.com/livekit/livekit/actions/workflows/buildtest.yaml)
+[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/livekit/livekit/buildtest.yaml?branch=master)](https://github.com/livekit/livekit/actions/workflows/buildtest.yaml)
 [![License](https://img.shields.io/github/license/livekit/livekit)](https://github.com/livekit/livekit/blob/master/LICENSE)
 
 ## Features
@@ -32,10 +32,11 @@ LiveKit's server is written in Go, using the awesome [Pion WebRTC](https://githu
 
 https://docs.livekit.io
 
-## Try it live
+## Live Demos
 
-Head to [our playground](https://livekit.io/playground) and give it a spin. Build a Zoom-like conferencing app in under
-100 lines of code!
+- [LiveKit Meet](https://meet.livekit.io) ([source](https://github.com/livekit/meet))
+- [Spatial Audio](https://spatial-audio-demo.livekit.io/) ([source](https://github.com/livekit-examples/spatial-audio))
+- Livestreaming from OBS Studio ([source](https://github.com/livekit-examples/livestream))
 
 ## SDKs & Tools
 
@@ -107,8 +108,9 @@ Client SDKs enable your frontend to include interactive, multi-user experiences.
       <a href="https://github.com/livekit/client-sdk-android/tree/main/sample-app-compose/src/main/java/io/livekit/android/composesample" target="_blank" rel="noopener noreferrer">Compose example</a>
     </td>
   </tr>
+<!-- Flutter -->
   <tr>
-    <td>Flutter</td>
+    <td>Flutter (all platforms)</td>
     <td>
       <a href="https://github.com/livekit/client-sdk-flutter" target="_blank" rel="noopener noreferrer">client-sdk-flutter</a>
     </td>
@@ -139,6 +141,15 @@ Client SDKs enable your frontend to include interactive, multi-user experiences.
     <td>native</td>
     <td></td>
   </tr>
+  <!-- Rust -->
+  <tr>
+    <td>Rust</td>
+    <td>
+      <a href="https://github.com/livekit/client-sdk-rust" target="_blank" rel="noopener noreferrer">client-sdk-rust</a>
+    </td>
+    <td></td>
+    <td></td>
+  </tr>
 </table>
 
 ### Server SDKs
@@ -159,8 +170,9 @@ enabling you to build automations that behave like end-users.
 
 ### Ecosystem & Tools
 
-- [Egress](https://github.com/livekit/egress) - export and record your rooms
 - [CLI](https://github.com/livekit/livekit-cli) - command line interface & load tester
+- [Egress](https://github.com/livekit/egress) - export and record your rooms
+- [Ingress](https://github.com/livekit/ingress) - ingest streams from RTMP / OBS Studio
 - [Docker image](https://hub.docker.com/r/livekit/livekit-server)
 - [Helm charts](https://github.com/livekit/livekit-helm)
 
@@ -235,11 +247,14 @@ simulation.
 ## Deployment
 
 ### Use LiveKit Cloud
-LiveKit Cloud is the fastest and most reliable way to run LiveKit. Every project gets free monthly bandwidth and transcoding credits.
+
+LiveKit Cloud is the fastest and most reliable way to run LiveKit. Every project gets free monthly bandwidth and
+transcoding credits.
 
 Sign up for [LiveKit Cloud](https://cloud.livekit.io/).
 
 ### Self-host
+
 Read our [deployment docs](https://docs.livekit.io/deploy/) for more information.
 
 ## Building from source
