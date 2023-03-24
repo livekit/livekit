@@ -59,11 +59,11 @@ func TestJoinedState(t *testing.T) {
 		require.LessOrEqual(t, s, rm.LastLeftAt())
 	})
 
-	t.Run("LastLeftAt should not be set when there are still participants in the room", func(t *testing.T) {
+	t.Run("LastLeftAt should be set when there are still participants in the room", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
 		p0 := rm.GetParticipants()[0]
 		rm.RemoveParticipant(p0.Identity(), p0.ID(), types.ParticipantCloseReasonClientRequestLeave)
-		require.EqualValues(t, 0, rm.LastLeftAt())
+		require.Greater(t, rm.LastLeftAt(), int64(0))
 	})
 }
 
