@@ -27,12 +27,16 @@ import (
 
 const (
 	DefaultEmptyTimeout       = 5 * 60 // 5m
-	RoomDepartureGrace        = 20
-	AudioLevelQuantization    = 8 // ideally power of 2 to minimize float decimal
+	AudioLevelQuantization    = 8      // ideally power of 2 to minimize float decimal
 	invAudioLevelQuantization = 1.0 / AudioLevelQuantization
 	subscriberUpdateInterval  = 3 * time.Second
 
 	dataForwardLoadBalanceThreshold = 20
+)
+
+var (
+	// var to allow unit test override
+	RoomDepartureGrace uint32 = 20
 )
 
 type broadcastOptions struct {
@@ -601,7 +605,6 @@ func (r *Room) CloseIfEmpty() {
 	var timeout uint32
 	var elapsed int64
 	if r.FirstJoinedAt() > 0 && r.LastLeftAt() > 0 {
-		// exit 20s after
 		elapsed = time.Now().Unix() - r.LastLeftAt()
 		// need to give time in case participant is reconnecting
 		timeout = RoomDepartureGrace

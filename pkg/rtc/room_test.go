@@ -33,6 +33,8 @@ func init() {
 	serverlogger.InitFromConfig(config.LoggingConfig{
 		Config: logger.Config{Level: "debug"},
 	})
+	// allow immediate closure in testing
+	RoomDepartureGrace = 0
 }
 
 var iceServersForRoom = []*livekit.ICEServer{{Urls: []string{"stun:stun.l.google.com:19302"}}}
