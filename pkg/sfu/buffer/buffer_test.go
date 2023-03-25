@@ -198,8 +198,8 @@ func TestNewBuffer(t *testing.T) {
 				buf, _ := p.Marshal()
 				_, _ = buff.Write(buf)
 			}
-			require.Equal(t, uint16(1), buff.rtpStats.cycles)
-			require.Equal(t, uint16(2), buff.rtpStats.highestSN)
+			require.Equal(t, uint16(2), buff.rtpStats.sequenceNumber.GetHighest())
+			require.Equal(t, uint32((1<<16)+2), buff.rtpStats.sequenceNumber.GetExtendedHighest())
 		})
 	}
 }
