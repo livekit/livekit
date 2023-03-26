@@ -1,4 +1,4 @@
-package sfu
+package streamallocator
 
 import (
 	"fmt"
@@ -16,6 +16,8 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
 const (
@@ -223,12 +225,12 @@ type AddTrackParams struct {
 	PublisherID livekit.ParticipantID
 }
 
-func (s *StreamAllocator) AddTrack(downTrack *DownTrack, params AddTrackParams) {
+func (s *StreamAllocator) AddTrack(downTrack *sfu.DownTrack, params AddTrackParams) {
 	if downTrack.Kind() != webrtc.RTPCodecTypeVideo {
 		return
 	}
 
-	track := newTrack(downTrack, params.Source, params.IsSimulcast, params.PublisherID, s.params.Logger)
+	track := NewTrack(downTrack, params.Source, params.IsSimulcast, params.PublisherID, s.params.Logger)
 	track.SetPriority(params.Priority)
 
 	s.videoTracksMu.Lock()
@@ -244,7 +246,7 @@ func (s *StreamAllocator) AddTrack(downTrack *DownTrack, params AddTrackParams) 
 	s.maybePostEventAllocateTrack(downTrack)
 }
 
-func (s *StreamAllocator) RemoveTrack(downTrack *DownTrack) {
+func (s *StreamAllocator) RemoveTrack(downTrack *sfu.DownTrack) {
 	s.videoTracksMu.Lock()
 	if existing := s.videoTracks[livekit.TrackID(downTrack.ID())]; existing != nil && existing.DownTrack() == downTrack {
 		delete(s.videoTracks, livekit.TrackID(downTrack.ID()))
@@ -257,7 +259,7 @@ func (s *StreamAllocator) RemoveTrack(downTrack *DownTrack) {
 	})
 }
 
-func (s *StreamAllocator) SetTrackPriority(downTrack *DownTrack, priority uint8) {
+func (s *StreamAllocator) SetTrackPriority(downTrack *sfu.DownTrack, priority uint8) {
 	s.videoTracksMu.Lock()
 	if track := s.videoTracks[livekit.TrackID(downTrack.ID())]; track != nil {
 		changed := track.SetPriority(priority)
@@ -280,7 +282,7 @@ func (s *StreamAllocator) resetState() {
 }
 
 // called when a new REMB is received (receive side bandwidth estimation)
-func (s *StreamAllocator) OnREMB(downTrack *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate) {
+func (s *StreamAllocator) OnREMB(downTrack *sfu.DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate) {
 	//
 	// Channel capacity is estimated at a peer connection level. All down tracks
 	// in the peer connection will end up calling this for a REMB report with
@@ -360,7 +362,7 @@ func (s *StreamAllocator) OnREMB(downTrack *DownTrack, remb *rtcp.ReceiverEstima
 }
 
 // called when a new transport-cc feedback is received
-func (s *StreamAllocator) OnTransportCCFeedback(downTrack *DownTrack, fb *rtcp.TransportLayerCC) {
+func (s *StreamAllocator) OnTransportCCFeedback(downTrack *sfu.DownTrack, fb *rtcp.TransportLayerCC) {
 	if s.bwe != nil {
 		s.bwe.WriteRTCP([]rtcp.Packet{fb}, nil)
 	}
@@ -375,27 +377,27 @@ func (s *StreamAllocator) onTargetBitrateChange(bitrate int) {
 }
 
 // called when feeding track's layer availability changes
-func (s *StreamAllocator) OnAvailableLayersChanged(downTrack *DownTrack) {
+func (s *StreamAllocator) OnAvailableLayersChanged(downTrack *sfu.DownTrack) {
 	s.maybePostEventAllocateTrack(downTrack)
 }
 
 // called when feeding track's bitrate measurement of any layer is available
-func (s *StreamAllocator) OnBitrateAvailabilityChanged(downTrack *DownTrack) {
+func (s *StreamAllocator) OnBitrateAvailabilityChanged(downTrack *sfu.DownTrack) {
 	s.maybePostEventAllocateTrack(downTrack)
 }
 
 // called when feeding track's max publisher layer changes
-func (s *StreamAllocator) OnMaxPublishedLayerChanged(downTrack *DownTrack) {
+func (s *StreamAllocator) OnMaxPublishedLayerChanged(downTrack *sfu.DownTrack) {
 	s.maybePostEventAllocateTrack(downTrack)
 }
 
 // called when subscription settings changes (muting/unmuting of track)
-func (s *StreamAllocator) OnSubscriptionChanged(downTrack *DownTrack) {
+func (s *StreamAllocator) OnSubscriptionChanged(downTrack *sfu.DownTrack) {
 	s.maybePostEventAllocateTrack(downTrack)
 }
 
 // called when subscribed layers changes (limiting max layers)
-func (s *StreamAllocator) OnSubscribedLayersChanged(downTrack *DownTrack, layers VideoLayers) {
+func (s *StreamAllocator) OnSubscribedLayersChanged(downTrack *sfu.DownTrack, layers buffer.VideoLayer) {
 	shouldPost := false
 	s.videoTracksMu.Lock()
 	if track := s.videoTracks[livekit.TrackID(downTrack.ID())]; track != nil {
@@ -414,7 +416,7 @@ func (s *StreamAllocator) OnSubscribedLayersChanged(downTrack *DownTrack, layers
 }
 
 // called when forwarder finds a target layer
-func (s *StreamAllocator) OnTargetLayerReached(downTrack *DownTrack) {
+func (s *StreamAllocator) OnTargetLayerReached(downTrack *sfu.DownTrack) {
 	s.postEvent(Event{
 		Signal:  streamAllocatorSignalTargetLayerFound,
 		TrackID: livekit.TrackID(downTrack.ID()),
@@ -422,7 +424,7 @@ func (s *StreamAllocator) OnTargetLayerReached(downTrack *DownTrack) {
 }
 
 // called when a video DownTrack sends a packet
-func (s *StreamAllocator) OnPacketsSent(downTrack *DownTrack, size int) {
+func (s *StreamAllocator) OnPacketsSent(downTrack *sfu.DownTrack, size int) {
 	s.prober.PacketsSent(size)
 }
 
@@ -454,7 +456,7 @@ func (s *StreamAllocator) OnActiveChanged(isActive bool) {
 	}
 }
 
-func (s *StreamAllocator) maybePostEventAllocateTrack(downTrack *DownTrack) {
+func (s *StreamAllocator) maybePostEventAllocateTrack(downTrack *sfu.DownTrack) {
 	shouldPost := false
 	s.videoTracksMu.Lock()
 	if track := s.videoTracks[livekit.TrackID(downTrack.ID())]; track != nil {
@@ -762,7 +764,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	if !s.params.Config.Enabled || s.state == streamAllocatorStateStable || !track.IsManaged() {
 		update := NewStreamStateUpdate()
 		allocation := track.AllocateOptimal(FlagAllowOvershootWhileOptimal)
-		if allocation.pauseReason == VideoPauseReasonBandwidth && track.SetPaused(true) {
+		if allocation.PauseReason == sfu.VideoPauseReasonBandwidth && track.SetPaused(true) {
 			update.HandleStreamingChange(true, track)
 		}
 		s.maybeSendUpdate(update)
@@ -780,16 +782,16 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	transition := track.ProvisionalAllocateGetCooperativeTransition(FlagAllowOvershootWhileDeficient)
 
 	// track is currently streaming at minimum
-	if transition.bandwidthDelta == 0 {
+	if transition.BandwidthDelta == 0 {
 		return
 	}
 
 	// downgrade, giving back bits
-	if transition.from.GreaterThan(transition.to) {
+	if transition.From.GreaterThan(transition.To) {
 		allocation := track.ProvisionalAllocateCommit()
 
 		update := NewStreamStateUpdate()
-		if allocation.pauseReason == VideoPauseReasonBandwidth && track.SetPaused(true) {
+		if allocation.PauseReason == sfu.VideoPauseReasonBandwidth && track.SetPaused(true) {
 			update.HandleStreamingChange(true, track)
 		}
 		s.maybeSendUpdate(update)
@@ -817,22 +819,22 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 
 	for _, t := range minDistanceSorted {
 		tx := t.ProvisionalAllocateGetBestWeightedTransition()
-		if tx.bandwidthDelta < 0 {
+		if tx.BandwidthDelta < 0 {
 			contributingTracks = append(contributingTracks, t)
 
-			bandwidthAcquired += -tx.bandwidthDelta
-			if bandwidthAcquired >= transition.bandwidthDelta {
+			bandwidthAcquired += -tx.BandwidthDelta
+			if bandwidthAcquired >= transition.BandwidthDelta {
 				break
 			}
 		}
 	}
 
 	update := NewStreamStateUpdate()
-	if bandwidthAcquired >= transition.bandwidthDelta {
+	if bandwidthAcquired >= transition.BandwidthDelta {
 		// commit the tracks that contributed
 		for _, t := range contributingTracks {
 			allocation := t.ProvisionalAllocateCommit()
-			if allocation.pauseReason == VideoPauseReasonBandwidth && track.SetPaused(true) {
+			if allocation.PauseReason == sfu.VideoPauseReasonBandwidth && track.SetPaused(true) {
 				update.HandleStreamingChange(true, t)
 			}
 		}
@@ -841,9 +843,9 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	}
 
 	// commit the track that needs change if enough could be acquired or pause not allowed
-	if !s.params.Config.AllowPause || bandwidthAcquired >= transition.bandwidthDelta {
+	if !s.params.Config.AllowPause || bandwidthAcquired >= transition.BandwidthDelta {
 		allocation := track.ProvisionalAllocateCommit()
-		if allocation.pauseReason == VideoPauseReasonBandwidth && track.SetPaused(true) {
+		if allocation.PauseReason == sfu.VideoPauseReasonBandwidth && track.SetPaused(true) {
 			update.HandleStreamingChange(true, track)
 		}
 	}
@@ -915,11 +917,11 @@ func (s *StreamAllocator) maybeBoostDeficientTracks() {
 			continue
 		}
 
-		if allocation.pauseReason == VideoPauseReasonBandwidth && track.SetPaused(true) {
+		if allocation.PauseReason == sfu.VideoPauseReasonBandwidth && track.SetPaused(true) {
 			update.HandleStreamingChange(true, track)
 		}
 
-		availableChannelCapacity -= allocation.bandwidthDelta
+		availableChannelCapacity -= allocation.BandwidthDelta
 		if availableChannelCapacity <= 0 {
 			break
 		}
@@ -971,12 +973,12 @@ func (s *StreamAllocator) allocateAllTracks() {
 		}
 
 		allocation := track.AllocateOptimal(FlagAllowOvershootExemptTrackWhileDeficient)
-		if allocation.pauseReason == VideoPauseReasonBandwidth && track.SetPaused(true) {
+		if allocation.PauseReason == sfu.VideoPauseReasonBandwidth && track.SetPaused(true) {
 			update.HandleStreamingChange(true, track)
 		}
 
 		// LK-TODO: optimistic allocation before bitrate is available will return 0. How to account for that?
-		availableChannelCapacity -= allocation.bandwidthRequested
+		availableChannelCapacity -= allocation.BandwidthRequested
 	}
 
 	if availableChannelCapacity < 0 {
@@ -990,7 +992,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 			}
 
 			allocation := track.Pause()
-			if allocation.pauseReason == VideoPauseReasonBandwidth && track.SetPaused(true) {
+			if allocation.PauseReason == sfu.VideoPauseReasonBandwidth && track.SetPaused(true) {
 				update.HandleStreamingChange(true, track)
 			}
 		}
@@ -1000,9 +1002,9 @@ func (s *StreamAllocator) allocateAllTracks() {
 			track.ProvisionalAllocatePrepare()
 		}
 
-		for spatial := int32(0); spatial <= DefaultMaxLayerSpatial; spatial++ {
-			for temporal := int32(0); temporal <= DefaultMaxLayerTemporal; temporal++ {
-				layers := VideoLayers{
+		for spatial := int32(0); spatial <= buffer.DefaultMaxLayerSpatial; spatial++ {
+			for temporal := int32(0); temporal <= buffer.DefaultMaxLayerTemporal; temporal++ {
+				layers := buffer.VideoLayer{
 					Spatial:  spatial,
 					Temporal: temporal,
 				}
@@ -1019,7 +1021,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 
 		for _, track := range sorted {
 			allocation := track.ProvisionalAllocateCommit()
-			if allocation.pauseReason == VideoPauseReasonBandwidth && track.SetPaused(true) {
+			if allocation.PauseReason == sfu.VideoPauseReasonBandwidth && track.SetPaused(true) {
 				update.HandleStreamingChange(true, track)
 			}
 		}
@@ -1172,7 +1174,7 @@ func (s *StreamAllocator) maybeProbeWithMedia() {
 		}
 
 		update := NewStreamStateUpdate()
-		if allocation.pauseReason == VideoPauseReasonBandwidth && track.SetPaused(true) {
+		if allocation.PauseReason == sfu.VideoPauseReasonBandwidth && track.SetPaused(true) {
 			update.HandleStreamingChange(true, track)
 		}
 		s.maybeSendUpdate(update)
@@ -1186,11 +1188,11 @@ func (s *StreamAllocator) maybeProbeWithPadding() {
 	// use deficient track farthest from desired layers to find how much to probe
 	for _, track := range s.getMaxDistanceSortedDeficient() {
 		transition, available := track.GetNextHigherTransition(FlagAllowOvershootInProbe)
-		if !available || transition.bandwidthDelta < 0 {
+		if !available || transition.BandwidthDelta < 0 {
 			continue
 		}
 
-		probeRateBps := (transition.bandwidthDelta * ProbePct) / 100
+		probeRateBps := (transition.BandwidthDelta * ProbePct) / 100
 		if probeRateBps < ProbeMinBps {
 			probeRateBps = ProbeMinBps
 		}
@@ -1263,615 +1265,3 @@ func (s *StreamAllocator) getMaxDistanceSortedDeficient() MaxDistanceSorter {
 }
 
 // ------------------------------------------------
-
-type StreamState int
-
-const (
-	StreamStateActive StreamState = iota
-	StreamStatePaused
-)
-
-func (s StreamState) String() string {
-	switch s {
-	case StreamStateActive:
-		return "active"
-	case StreamStatePaused:
-		return "paused"
-	default:
-		return "unknown"
-	}
-}
-
-type StreamStateInfo struct {
-	ParticipantID livekit.ParticipantID
-	TrackID       livekit.TrackID
-	State         StreamState
-}
-
-type StreamStateUpdate struct {
-	StreamStates []*StreamStateInfo
-}
-
-func NewStreamStateUpdate() *StreamStateUpdate {
-	return &StreamStateUpdate{}
-}
-
-func (s *StreamStateUpdate) HandleStreamingChange(isPaused bool, track *Track) {
-	if isPaused {
-		s.StreamStates = append(s.StreamStates, &StreamStateInfo{
-			ParticipantID: track.PublisherID(),
-			TrackID:       track.ID(),
-			State:         StreamStatePaused,
-		})
-	} else {
-		s.StreamStates = append(s.StreamStates, &StreamStateInfo{
-			ParticipantID: track.PublisherID(),
-			TrackID:       track.ID(),
-			State:         StreamStateActive,
-		})
-	}
-}
-
-func (s *StreamStateUpdate) Empty() bool {
-	return len(s.StreamStates) == 0
-}
-
-// ------------------------------------------------
-
-type Track struct {
-	downTrack   *DownTrack
-	source      livekit.TrackSource
-	isSimulcast bool
-	priority    uint8
-	publisherID livekit.ParticipantID
-	logger      logger.Logger
-
-	maxLayers VideoLayers
-
-	totalPackets       uint32
-	totalRepeatedNacks uint32
-
-	isDirty bool
-
-	isPaused bool
-}
-
-func newTrack(
-	downTrack *DownTrack,
-	source livekit.TrackSource,
-	isSimulcast bool,
-	publisherID livekit.ParticipantID,
-	logger logger.Logger,
-) *Track {
-	t := &Track{
-		downTrack:   downTrack,
-		source:      source,
-		isSimulcast: isSimulcast,
-		publisherID: publisherID,
-		logger:      logger,
-		isPaused:    true,
-	}
-	t.SetPriority(0)
-	t.SetMaxLayers(downTrack.MaxLayers())
-
-	return t
-}
-
-func (t *Track) SetDirty(isDirty bool) bool {
-	if t.isDirty == isDirty {
-		return false
-	}
-
-	t.isDirty = isDirty
-	return true
-}
-
-func (t *Track) SetPaused(isPaused bool) bool {
-	if t.isPaused == isPaused {
-		return false
-	}
-
-	t.isPaused = isPaused
-	return true
-}
-
-func (t *Track) SetPriority(priority uint8) bool {
-	if priority == 0 {
-		switch t.source {
-		case livekit.TrackSource_SCREEN_SHARE:
-			priority = PriorityDefaultScreenshare
-		default:
-			priority = PriorityDefaultVideo
-		}
-	}
-
-	if t.priority == priority {
-		return false
-	}
-
-	t.priority = priority
-	return true
-}
-
-func (t *Track) Priority() uint8 {
-	return t.priority
-}
-
-func (t *Track) DownTrack() *DownTrack {
-	return t.downTrack
-}
-
-func (t *Track) IsManaged() bool {
-	return t.source != livekit.TrackSource_SCREEN_SHARE || t.isSimulcast
-}
-
-func (t *Track) ID() livekit.TrackID {
-	return livekit.TrackID(t.downTrack.ID())
-}
-
-func (t *Track) PublisherID() livekit.ParticipantID {
-	return t.publisherID
-}
-
-func (t *Track) SetMaxLayers(layers VideoLayers) bool {
-	if t.maxLayers == layers {
-		return false
-	}
-
-	t.maxLayers = layers
-	return true
-}
-
-func (t *Track) WritePaddingRTP(bytesToSend int) int {
-	return t.downTrack.WritePaddingRTP(bytesToSend, false)
-}
-
-func (t *Track) AllocateOptimal(allowOvershoot bool) VideoAllocation {
-	return t.downTrack.AllocateOptimal(allowOvershoot)
-}
-
-func (t *Track) ProvisionalAllocatePrepare() {
-	t.downTrack.ProvisionalAllocatePrepare()
-}
-
-func (t *Track) ProvisionalAllocate(availableChannelCapacity int64, layers VideoLayers, allowPause bool, allowOvershoot bool) int64 {
-	return t.downTrack.ProvisionalAllocate(availableChannelCapacity, layers, allowPause, allowOvershoot)
-}
-
-func (t *Track) ProvisionalAllocateGetCooperativeTransition(allowOvershoot bool) VideoTransition {
-	return t.downTrack.ProvisionalAllocateGetCooperativeTransition(allowOvershoot)
-}
-
-func (t *Track) ProvisionalAllocateGetBestWeightedTransition() VideoTransition {
-	return t.downTrack.ProvisionalAllocateGetBestWeightedTransition()
-}
-
-func (t *Track) ProvisionalAllocateCommit() VideoAllocation {
-	return t.downTrack.ProvisionalAllocateCommit()
-}
-
-func (t *Track) AllocateNextHigher(availableChannelCapacity int64, allowOvershoot bool) (VideoAllocation, bool) {
-	return t.downTrack.AllocateNextHigher(availableChannelCapacity, allowOvershoot)
-}
-
-func (t *Track) GetNextHigherTransition(allowOvershoot bool) (VideoTransition, bool) {
-	return t.downTrack.GetNextHigherTransition(allowOvershoot)
-}
-
-func (t *Track) Pause() VideoAllocation {
-	return t.downTrack.Pause()
-}
-
-func (t *Track) IsDeficient() bool {
-	return t.downTrack.IsDeficient()
-}
-
-func (t *Track) BandwidthRequested() int64 {
-	return t.downTrack.BandwidthRequested()
-}
-
-func (t *Track) DistanceToDesired() float64 {
-	return t.downTrack.DistanceToDesired()
-}
-
-func (t *Track) GetNackDelta() (uint32, uint32) {
-	totalPackets, totalRepeatedNacks := t.downTrack.GetNackStats()
-
-	packetDelta := totalPackets - t.totalPackets
-	t.totalPackets = totalPackets
-
-	nackDelta := totalRepeatedNacks - t.totalRepeatedNacks
-	t.totalRepeatedNacks = totalRepeatedNacks
-
-	return packetDelta, nackDelta
-}
-
-// ------------------------------------------------
-
-type TrackSorter []*Track
-
-func (t TrackSorter) Len() int {
-	return len(t)
-}
-
-func (t TrackSorter) Swap(i, j int) {
-	t[i], t[j] = t[j], t[i]
-}
-
-func (t TrackSorter) Less(i, j int) bool {
-	//
-	// TrackSorter is used to allocate layer-by-layer.
-	// So, higher priority track should come earlier so that it gets an earlier shot at each layer
-	//
-	if t[i].priority != t[j].priority {
-		return t[i].priority > t[j].priority
-	}
-
-	if t[i].maxLayers.Spatial != t[j].maxLayers.Spatial {
-		return t[i].maxLayers.Spatial > t[j].maxLayers.Spatial
-	}
-
-	return t[i].maxLayers.Temporal > t[j].maxLayers.Temporal
-}
-
-// ------------------------------------------------
-
-type MaxDistanceSorter []*Track
-
-func (m MaxDistanceSorter) Len() int {
-	return len(m)
-}
-
-func (m MaxDistanceSorter) Swap(i, j int) {
-	m[i], m[j] = m[j], m[i]
-}
-
-func (m MaxDistanceSorter) Less(i, j int) bool {
-	//
-	// MaxDistanceSorter is used to find a deficient track to use for probing during recovery from congestion.
-	// So, higher priority track should come earlier so that they have a chance to recover sooner.
-	//
-	if m[i].priority != m[j].priority {
-		return m[i].priority > m[j].priority
-	}
-
-	return m[i].DistanceToDesired() > m[j].DistanceToDesired()
-}
-
-// ------------------------------------------------
-
-type MinDistanceSorter []*Track
-
-func (m MinDistanceSorter) Len() int {
-	return len(m)
-}
-
-func (m MinDistanceSorter) Swap(i, j int) {
-	m[i], m[j] = m[j], m[i]
-}
-
-func (m MinDistanceSorter) Less(i, j int) bool {
-	//
-	// MinDistanceSorter is used to find excess bandwidth in cooperative allocation.
-	// So, lower priority track should come earlier so that they contribute bandwidth to higher priority tracks.
-	//
-	if m[i].priority != m[j].priority {
-		return m[i].priority < m[j].priority
-	}
-
-	return m[i].DistanceToDesired() < m[j].DistanceToDesired()
-}
-
-// ------------------------------------------------
-
-type ChannelTrend int
-
-const (
-	ChannelTrendNeutral ChannelTrend = iota
-	ChannelTrendClearing
-	ChannelTrendCongesting
-)
-
-func (c ChannelTrend) String() string {
-	switch c {
-	case ChannelTrendNeutral:
-		return "NEUTRAL"
-	case ChannelTrendClearing:
-		return "CLEARING"
-	case ChannelTrendCongesting:
-		return "CONGESTING"
-	default:
-		return fmt.Sprintf("%d", int(c))
-	}
-}
-
-type ChannelCongestionReason int
-
-const (
-	ChannelCongestionReasonNone ChannelCongestionReason = iota
-	ChannelCongestionReasonEstimate
-	ChannelCongestionReasonLoss
-)
-
-func (c ChannelCongestionReason) String() string {
-	switch c {
-	case ChannelCongestionReasonNone:
-		return "NONE"
-	case ChannelCongestionReasonEstimate:
-		return "ESTIMATE"
-	case ChannelCongestionReasonLoss:
-		return "LOSS"
-	default:
-		return fmt.Sprintf("%d", int(c))
-	}
-}
-
-type ChannelObserverParams struct {
-	Name                           string
-	EstimateRequiredSamples        int
-	EstimateDownwardTrendThreshold float64
-	EstimateCollapseValues         bool
-	NackWindowMinDuration          time.Duration
-	NackWindowMaxDuration          time.Duration
-	NackRatioThreshold             float64
-}
-
-type ChannelObserver struct {
-	params ChannelObserverParams
-	logger logger.Logger
-
-	estimateTrend *TrendDetector
-
-	nackWindowStartTime time.Time
-	packets             uint32
-	repeatedNacks       uint32
-}
-
-func NewChannelObserver(params ChannelObserverParams, logger logger.Logger) *ChannelObserver {
-	return &ChannelObserver{
-		params: params,
-		logger: logger,
-		estimateTrend: NewTrendDetector(TrendDetectorParams{
-			Name:                   params.Name + "-estimate",
-			Logger:                 logger,
-			RequiredSamples:        params.EstimateRequiredSamples,
-			DownwardTrendThreshold: params.EstimateDownwardTrendThreshold,
-			CollapseValues:         params.EstimateCollapseValues,
-		}),
-	}
-}
-
-func (c *ChannelObserver) SeedEstimate(estimate int64) {
-	c.estimateTrend.Seed(estimate)
-}
-
-func (c *ChannelObserver) SeedNack(packets uint32, repeatedNacks uint32) {
-	c.packets = packets
-	c.repeatedNacks = repeatedNacks
-}
-
-func (c *ChannelObserver) AddEstimate(estimate int64) {
-	c.estimateTrend.AddValue(estimate)
-}
-
-func (c *ChannelObserver) AddNack(packets uint32, repeatedNacks uint32) {
-	if c.params.NackWindowMaxDuration != 0 && !c.nackWindowStartTime.IsZero() && time.Since(c.nackWindowStartTime) > c.params.NackWindowMaxDuration {
-		c.nackWindowStartTime = time.Time{}
-		c.packets = 0
-		c.repeatedNacks = 0
-	}
-
-	//
-	// Start NACK monitoring window only when a repeated NACK happens.
-	// This allows locking tightly to when NACKs start happening and
-	// check if the NACKs keep adding up (potentially a sign of congestion)
-	// or isolated losses
-	//
-	if c.repeatedNacks == 0 && repeatedNacks != 0 {
-		c.nackWindowStartTime = time.Now()
-	}
-
-	if !c.nackWindowStartTime.IsZero() {
-		c.packets += packets
-		c.repeatedNacks += repeatedNacks
-	}
-}
-
-func (c *ChannelObserver) GetLowestEstimate() int64 {
-	return c.estimateTrend.GetLowest()
-}
-
-func (c *ChannelObserver) GetHighestEstimate() int64 {
-	return c.estimateTrend.GetHighest()
-}
-
-func (c *ChannelObserver) GetNackRatio() (uint32, uint32, float64) {
-	ratio := 0.0
-	if c.packets != 0 {
-		ratio = float64(c.repeatedNacks) / float64(c.packets)
-		if ratio > 1.0 {
-			ratio = 1.0
-		}
-	}
-
-	return c.packets, c.repeatedNacks, ratio
-}
-
-func (c *ChannelObserver) GetTrend() (ChannelTrend, ChannelCongestionReason) {
-	estimateDirection := c.estimateTrend.GetDirection()
-	packets, repeatedNacks, nackRatio := c.GetNackRatio()
-
-	switch {
-	case estimateDirection == TrendDirectionDownward:
-		c.logger.Debugw(
-			"stream allocator: channel observer: estimate is trending downward",
-			"name", c.params.Name,
-			"estimate", c.estimateTrend.ToString(),
-			"packets", packets,
-			"repeatedNacks", repeatedNacks,
-			"ratio", nackRatio,
-		)
-		return ChannelTrendCongesting, ChannelCongestionReasonEstimate
-	case c.params.NackWindowMinDuration != 0 && !c.nackWindowStartTime.IsZero() && time.Since(c.nackWindowStartTime) > c.params.NackWindowMinDuration && nackRatio > c.params.NackRatioThreshold:
-		c.logger.Debugw(
-			"stream allocator: channel observer: high rate of repeated NACKs",
-			"name", c.params.Name,
-			"estimate", c.estimateTrend.ToString(),
-			"packets", packets,
-			"repeatedNacks", repeatedNacks,
-			"ratio", nackRatio,
-		)
-		return ChannelTrendCongesting, ChannelCongestionReasonLoss
-	case estimateDirection == TrendDirectionUpward:
-		return ChannelTrendClearing, ChannelCongestionReasonNone
-	}
-
-	return ChannelTrendNeutral, ChannelCongestionReasonNone
-}
-
-// ------------------------------------------------
-
-type TrendDirection int
-
-const (
-	TrendDirectionNeutral TrendDirection = iota
-	TrendDirectionUpward
-	TrendDirectionDownward
-)
-
-func (t TrendDirection) String() string {
-	switch t {
-	case TrendDirectionNeutral:
-		return "NEUTRAL"
-	case TrendDirectionUpward:
-		return "UPWARD"
-	case TrendDirectionDownward:
-		return "DOWNWARD"
-	default:
-		return fmt.Sprintf("%d", int(t))
-	}
-}
-
-type TrendDetectorParams struct {
-	Name                   string
-	Logger                 logger.Logger
-	RequiredSamples        int
-	DownwardTrendThreshold float64
-	CollapseValues         bool
-}
-
-type TrendDetector struct {
-	params TrendDetectorParams
-
-	startTime    time.Time
-	numSamples   int
-	values       []int64
-	lowestValue  int64
-	highestValue int64
-
-	direction TrendDirection
-}
-
-func NewTrendDetector(params TrendDetectorParams) *TrendDetector {
-	return &TrendDetector{
-		params:    params,
-		startTime: time.Now(),
-		direction: TrendDirectionNeutral,
-	}
-}
-
-func (t *TrendDetector) Seed(value int64) {
-	if len(t.values) != 0 {
-		return
-	}
-
-	t.values = append(t.values, value)
-}
-
-func (t *TrendDetector) AddValue(value int64) {
-	t.numSamples++
-	if t.lowestValue == 0 || value < t.lowestValue {
-		t.lowestValue = value
-	}
-	if value > t.highestValue {
-		t.highestValue = value
-	}
-
-	// ignore duplicate values
-	if t.params.CollapseValues && len(t.values) != 0 && t.values[len(t.values)-1] == value {
-		return
-	}
-
-	if len(t.values) == t.params.RequiredSamples {
-		t.values = t.values[1:]
-	}
-	t.values = append(t.values, value)
-
-	t.updateDirection()
-}
-
-func (t *TrendDetector) GetLowest() int64 {
-	return t.lowestValue
-}
-
-func (t *TrendDetector) GetHighest() int64 {
-	return t.highestValue
-}
-
-func (t *TrendDetector) GetValues() []int64 {
-	return t.values
-}
-
-func (t *TrendDetector) GetDirection() TrendDirection {
-	return t.direction
-}
-
-func (t *TrendDetector) ToString() string {
-	now := time.Now()
-	elapsed := now.Sub(t.startTime).Seconds()
-	str := fmt.Sprintf("n: %s", t.params.Name)
-	str += fmt.Sprintf(", t: %+v|%+v|%.2fs", t.startTime.Format(time.UnixDate), now.Format(time.UnixDate), elapsed)
-	str += fmt.Sprintf(", v: %d|%d|%d|%+v|%.2f", t.numSamples, t.lowestValue, t.highestValue, t.values, kendallsTau(t.values))
-	return str
-}
-
-func (t *TrendDetector) updateDirection() {
-	if len(t.values) < t.params.RequiredSamples {
-		t.direction = TrendDirectionNeutral
-		return
-	}
-
-	// using Kendall's Tau to find trend
-	kt := kendallsTau(t.values)
-
-	t.direction = TrendDirectionNeutral
-	switch {
-	case kt > 0:
-		t.direction = TrendDirectionUpward
-	case kt < t.params.DownwardTrendThreshold:
-		t.direction = TrendDirectionDownward
-	}
-}
-
-// ------------------------------------------------
-
-func kendallsTau(values []int64) float64 {
-	concordantPairs := 0
-	discordantPairs := 0
-
-	for i := 0; i < len(values)-1; i++ {
-		for j := i + 1; j < len(values); j++ {
-			if values[i] < values[j] {
-				concordantPairs++
-			} else if values[i] > values[j] {
-				discordantPairs++
-			}
-		}
-	}
-
-	if (concordantPairs + discordantPairs) == 0 {
-		return 0.0
-	}
-
-	return (float64(concordantPairs) - float64(discordantPairs)) / (float64(concordantPairs) + float64(discordantPairs))
-}

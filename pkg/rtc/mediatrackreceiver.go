@@ -240,7 +240,7 @@ func (t *MediaTrackReceiver) SetLayerSsrc(mime string, rid string, ssrc uint32) 
 	defer t.lock.Unlock()
 
 	layer := buffer.RidToSpatialLayer(rid, t.params.TrackInfo)
-	if layer == sfu.InvalidLayerSpatial {
+	if layer == buffer.InvalidLayerSpatial {
 		// non-simulcast case will not have `rid`
 		layer = 0
 	}

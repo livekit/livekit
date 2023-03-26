@@ -141,7 +141,7 @@ type DownTrackStreamAllocatorListener interface {
 	OnSubscriptionChanged(dt *DownTrack)
 
 	// subscribed max video layer changed
-	OnSubscribedLayersChanged(dt *DownTrack, layers VideoLayers)
+	OnSubscribedLayersChanged(dt *DownTrack, layers buffer.VideoLayer)
 
 	// target video layer reached
 	OnTargetLayerReached(dt *DownTrack)
@@ -508,7 +508,7 @@ func (d *DownTrack) stopKeyFrameRequester() {
 }
 
 func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
-	if d.IsClosed() || layer == InvalidLayerSpatial {
+	if d.IsClosed() || layer == buffer.InvalidLayerSpatial {
 		return
 	}
 	interval := 2 * d.rtpStats.GetRtt()
@@ -739,7 +739,7 @@ func (d *DownTrack) PubMute(pubMuted bool) {
 	d.handleMute(pubMuted, true, changed, maxLayers)
 }
 
-func (d *DownTrack) handleMute(muted bool, isPub bool, changed bool, maxLayers VideoLayers) {
+func (d *DownTrack) handleMute(muted bool, isPub bool, changed bool, maxLayers buffer.VideoLayer) {
 	if !changed {
 		return
 	}
@@ -767,7 +767,7 @@ func (d *DownTrack) handleMute(muted bool, isPub bool, changed bool, maxLayers V
 	// and that could turn on/off layers on publisher side.
 	//
 	if !isPub && d.onMaxSubscribedLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
-		notifyLayer := InvalidLayerSpatial
+		notifyLayer := buffer.InvalidLayerSpatial
 		if !muted {
 			//
 			// When unmuting, don't wait for layer lock as
@@ -861,7 +861,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 	d.logger.Infow("rtp stats", "direction", "downstream", "mime", d.mime, "ssrc", d.ssrc, "stats", d.rtpStats.ToString())
 
 	if d.onMaxSubscribedLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
-		d.onMaxSubscribedLayerChanged(d, InvalidLayerSpatial)
+		d.onMaxSubscribedLayerChanged(d, buffer.InvalidLayerSpatial)
 	}
 
 	if d.onCloseHandler != nil {
@@ -905,7 +905,7 @@ func (d *DownTrack) SetMaxTemporalLayer(temporalLayer int32) {
 	}
 }
 
-func (d *DownTrack) MaxLayers() VideoLayers {
+func (d *DownTrack) MaxLayers() buffer.VideoLayer {
 	return d.forwarder.MaxLayers()
 }
 
@@ -1008,7 +1008,7 @@ func (d *DownTrack) AllocateOptimal(allowOvershoot bool) VideoAllocation {
 	al, brs := d.receiver.GetLayeredBitrate()
 	allocation := d.forwarder.AllocateOptimal(al, brs, allowOvershoot)
 	d.maybeStartKeyFrameRequester()
-	d.maybeAddTransition(allocation.bandwidthNeeded, allocation.distanceToDesired)
+	d.maybeAddTransition(allocation.BandwidthNeeded, allocation.DistanceToDesired)
 	return allocation
 }
 
@@ -1017,7 +1017,7 @@ func (d *DownTrack) ProvisionalAllocatePrepare() {
 	d.forwarder.ProvisionalAllocatePrepare(al, brs)
 }
 
-func (d *DownTrack) ProvisionalAllocate(availableChannelCapacity int64, layers VideoLayers, allowPause bool, allowOvershoot bool) int64 {
+func (d *DownTrack) ProvisionalAllocate(availableChannelCapacity int64, layers buffer.VideoLayer, allowPause bool, allowOvershoot bool) int64 {
 	return d.forwarder.ProvisionalAllocate(availableChannelCapacity, layers, allowPause, allowOvershoot)
 }
 
@@ -1036,7 +1036,7 @@ func (d *DownTrack) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 func (d *DownTrack) ProvisionalAllocateCommit() VideoAllocation {
 	allocation := d.forwarder.ProvisionalAllocateCommit()
 	d.maybeStartKeyFrameRequester()
-	d.maybeAddTransition(allocation.bandwidthNeeded, allocation.distanceToDesired)
+	d.maybeAddTransition(allocation.BandwidthNeeded, allocation.DistanceToDesired)
 	return allocation
 }
 
@@ -1044,7 +1044,7 @@ func (d *DownTrack) AllocateNextHigher(availableChannelCapacity int64, allowOver
 	al, brs := d.receiver.GetLayeredBitrate()
 	allocation, available := d.forwarder.AllocateNextHigher(availableChannelCapacity, al, brs, allowOvershoot)
 	d.maybeStartKeyFrameRequester()
-	d.maybeAddTransition(allocation.bandwidthNeeded, allocation.distanceToDesired)
+	d.maybeAddTransition(allocation.BandwidthNeeded, allocation.DistanceToDesired)
 	return allocation, available
 }
 
@@ -1059,7 +1059,7 @@ func (d *DownTrack) Pause() VideoAllocation {
 	al, brs := d.receiver.GetLayeredBitrate()
 	allocation := d.forwarder.Pause(al, brs)
 	d.maybeStartKeyFrameRequester()
-	d.maybeAddTransition(allocation.bandwidthNeeded, allocation.distanceToDesired)
+	d.maybeAddTransition(allocation.BandwidthNeeded, allocation.DistanceToDesired)
 	return allocation
 }
 
@@ -1278,7 +1278,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 	sendPliOnce := func() {
 		if pliOnce {
 			_, layer := d.forwarder.CheckSync()
-			if layer != InvalidLayerSpatial && !d.forwarder.IsAnyMuted() {
+			if layer != buffer.InvalidLayerSpatial && !d.forwarder.IsAnyMuted() {
 				d.logger.Debugw("sending PLI RTCP", "layer", layer)
 				d.receiver.SendPLI(layer, false)
 				d.isNACKThrottled.Store(true)
@@ -1637,7 +1637,7 @@ func (d *DownTrack) onBindAndConnected() {
 	if d.connected.Load() && d.bound.Load() && !d.bindAndConnectedOnce.Swap(true) {
 		if d.kind == webrtc.RTPCodecTypeVideo {
 			_, layer := d.forwarder.CheckSync()
-			if layer != InvalidLayerSpatial {
+			if layer != buffer.InvalidLayerSpatial {
 				d.receiver.SendPLI(layer, true)
 			}
 		}

@@ -103,7 +103,7 @@
 //     window being long(ish). But, RTT should be much shorter especially if
 //     the subscriber peer connection of the client is able to connect to
 //     the nearest data center.
-package sfu
+package streamallocator
 
 import (
 	"fmt"
