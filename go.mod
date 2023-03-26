@@ -4,20 +4,20 @@ go 1.18
 
 require (
 	github.com/bep/debounce v1.2.1
-	github.com/d5/tengo/v2 v2.13.0
+	github.com/d5/tengo/v2 v2.14.0
 	github.com/dustin/go-humanize v1.0.1
 	github.com/elliotchance/orderedmap/v2 v2.2.0
 	github.com/florianl/go-tc v0.4.2
 	github.com/frostbyte73/core v0.0.5
-	github.com/gammazero/deque v0.1.0
-	github.com/gammazero/workerpool v1.1.2
+	github.com/gammazero/deque v0.2.1
+	github.com/gammazero/workerpool v1.1.3
 	github.com/google/wire v0.5.0
 	github.com/gorilla/websocket v1.5.0
 	github.com/hashicorp/go-version v1.6.0
-	github.com/hashicorp/golang-lru/v2 v2.0.1
+	github.com/hashicorp/golang-lru/v2 v2.0.2
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
-	github.com/livekit/mediatransportutil v0.0.0-20230130133657-96cfb115473a
+	github.com/livekit/mediatransportutil v0.0.0-20230326055817-ed569ca13d26
 	github.com/livekit/protocol v1.5.1
 	github.com/livekit/psrpc v0.2.10-0.20230310095745-5cd63568998d
 	github.com/mackerelio/go-osstat v0.2.4
