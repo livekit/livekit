@@ -132,7 +132,7 @@ type Prober struct {
 	clusterId atomic.Uint32
 
 	clustersMu                sync.RWMutex
-	clusters                  deque.Deque
+	clusters                  deque.Deque[*Cluster]
 	activeCluster             *Cluster
 	activeStateQueue          []bool
 	activeStateQueueInProcess atomic.Bool
@@ -238,7 +238,7 @@ func (p *Prober) getFrontCluster() *Cluster {
 	if p.clusters.Len() == 0 {
 		p.activeCluster = nil
 	} else {
-		p.activeCluster = p.clusters.Front().(*Cluster)
+		p.activeCluster = p.clusters.Front()
 		p.activeCluster.Start()
 	}
 	return p.activeCluster
@@ -253,7 +253,7 @@ func (p *Prober) popFrontCluster(cluster *Cluster) {
 		return
 	}
 
-	if p.clusters.Front().(*Cluster) == cluster {
+	if p.clusters.Front() == cluster {
 		p.clusters.PopFront()
 	}
 
