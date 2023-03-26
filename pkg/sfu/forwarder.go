@@ -55,39 +55,39 @@ func (v VideoPauseReason) String() string {
 // -------------------------------------------------------------------
 
 type VideoAllocation struct {
-	pauseReason         VideoPauseReason
-	isDeficient         bool
-	bandwidthRequested  int64
-	bandwidthDelta      int64
-	bandwidthNeeded     int64
-	bitrates            Bitrates
-	targetLayers        VideoLayers
-	requestLayerSpatial int32
-	maxLayers           VideoLayers
-	distanceToDesired   float64
+	PauseReason         VideoPauseReason
+	IsDeficient         bool
+	BandwidthRequested  int64
+	BandwidthDelta      int64
+	BandwidthNeeded     int64
+	Bitrates            Bitrates
+	TargetLayers        buffer.VideoLayer
+	RequestLayerSpatial int32
+	MaxLayers           buffer.VideoLayer
+	DistanceToDesired   float64
 }
 
 func (v VideoAllocation) String() string {
 	return fmt.Sprintf("VideoAllocation{pause: %s, def: %+v, bwr: %d, del: %d, bwn: %d, rates: %+v, target: %s, req: %d, max: %s, dist: %0.2f}",
-		v.pauseReason,
-		v.isDeficient,
-		v.bandwidthRequested,
-		v.bandwidthDelta,
-		v.bandwidthNeeded,
-		v.bitrates,
-		v.targetLayers,
-		v.requestLayerSpatial,
-		v.maxLayers,
-		v.distanceToDesired,
+		v.PauseReason,
+		v.IsDeficient,
+		v.BandwidthRequested,
+		v.BandwidthDelta,
+		v.BandwidthNeeded,
+		v.Bitrates,
+		v.TargetLayers,
+		v.RequestLayerSpatial,
+		v.MaxLayers,
+		v.DistanceToDesired,
 	)
 }
 
 var (
 	VideoAllocationDefault = VideoAllocation{
-		pauseReason:         VideoPauseReasonFeedDry, // start with no feed till feed is seen
-		targetLayers:        InvalidLayers,
-		requestLayerSpatial: InvalidLayerSpatial,
-		maxLayers:           InvalidLayers,
+		PauseReason:         VideoPauseReasonFeedDry, // start with no feed till feed is seen
+		TargetLayers:        buffer.InvalidLayers,
+		RequestLayerSpatial: buffer.InvalidLayerSpatial,
+		MaxLayers:           buffer.InvalidLayers,
 	}
 )
 
@@ -99,23 +99,23 @@ type VideoAllocationProvisional struct {
 	maxPublishedLayer    int32
 	maxTemporalLayerSeen int32
 	availableLayers      []int32
-	bitrates             Bitrates
-	maxLayers            VideoLayers
-	currentLayers        VideoLayers
-	parkedLayers         VideoLayers
-	allocatedLayers      VideoLayers
+	Bitrates             Bitrates
+	maxLayers            buffer.VideoLayer
+	currentLayers        buffer.VideoLayer
+	parkedLayers         buffer.VideoLayer
+	allocatedLayers      buffer.VideoLayer
 }
 
 // -------------------------------------------------------------------
 
 type VideoTransition struct {
-	from           VideoLayers
-	to             VideoLayers
-	bandwidthDelta int64
+	From           buffer.VideoLayer
+	To             buffer.VideoLayer
+	BandwidthDelta int64
 }
 
 func (v VideoTransition) String() string {
-	return fmt.Sprintf("VideoTransition{from: %s, to: %s, del: %d}", v.from, v.to, v.bandwidthDelta)
+	return fmt.Sprintf("VideoTransition{from: %s, to: %s, del: %d}", v.From, v.To, v.BandwidthDelta)
 }
 
 // -------------------------------------------------------------------
@@ -134,27 +134,6 @@ type TranslationParams struct {
 	// but we don't have frame queue now, so just use decode target indication
 	isSwitchingToTargetLayer bool
 }
-
-// -------------------------------------------------------------------
-
-type VideoLayers = buffer.VideoLayer
-
-const (
-	InvalidLayerSpatial  = buffer.InvalidLayerSpatial
-	InvalidLayerTemporal = buffer.InvalidLayerTemporal
-
-	DefaultMaxLayerSpatial  = buffer.DefaultMaxLayerSpatial
-	DefaultMaxLayerTemporal = buffer.DefaultMaxLayerTemporal
-)
-
-var (
-	InvalidLayers = buffer.InvalidLayers
-
-	DefaultMaxLayers = VideoLayers{
-		Spatial:  DefaultMaxLayerSpatial,
-		Temporal: DefaultMaxLayerTemporal,
-	}
-)
 
 // -------------------------------------------------------------------
 
@@ -187,11 +166,11 @@ type Forwarder struct {
 	lastSSRC              uint32
 	referenceLayerSpatial int32
 
-	maxLayers           VideoLayers
-	currentLayers       VideoLayers
-	targetLayers        VideoLayers
+	maxLayers           buffer.VideoLayer
+	currentLayers       buffer.VideoLayer
+	targetLayers        buffer.VideoLayer
 	requestLayerSpatial int32
-	parkedLayers        VideoLayers // layers that can resume without key frame
+	parkedLayers        buffer.VideoLayer // layers that can resume without key frame
 	parkedLayersTimer   *time.Timer
 
 	provisional *VideoAllocationProvisional
@@ -218,16 +197,16 @@ func NewForwarder(
 		logger:                        logger,
 		getReferenceLayerRTPTimestamp: getReferenceLayerRTPTimestamp,
 
-		maxPublishedLayer:    InvalidLayerSpatial,
-		maxTemporalLayerSeen: InvalidLayerTemporal,
+		maxPublishedLayer:    buffer.InvalidLayerSpatial,
+		maxTemporalLayerSeen: buffer.InvalidLayerTemporal,
 
-		referenceLayerSpatial: InvalidLayerSpatial,
+		referenceLayerSpatial: buffer.InvalidLayerSpatial,
 
 		// start off with nothing, let streamallocator/opportunistic forwarder set the target
-		currentLayers:       InvalidLayers,
-		targetLayers:        InvalidLayers,
-		requestLayerSpatial: InvalidLayerSpatial,
-		parkedLayers:        InvalidLayers,
+		currentLayers:       buffer.InvalidLayers,
+		targetLayers:        buffer.InvalidLayers,
+		requestLayerSpatial: buffer.InvalidLayerSpatial,
+		parkedLayers:        buffer.InvalidLayers,
 
 		lastAllocation: VideoAllocationDefault,
 
@@ -235,9 +214,9 @@ func NewForwarder(
 	}
 
 	if f.kind == webrtc.RTPCodecTypeVideo {
-		f.maxLayers = VideoLayers{Spatial: InvalidLayerSpatial, Temporal: DefaultMaxLayerTemporal}
+		f.maxLayers = buffer.VideoLayer{Spatial: buffer.InvalidLayerSpatial, Temporal: buffer.DefaultMaxLayerTemporal}
 	} else {
-		f.maxLayers = InvalidLayers
+		f.maxLayers = buffer.InvalidLayers
 	}
 
 	return f
@@ -337,7 +316,7 @@ func (f *Forwarder) SeedState(state ForwarderState) {
 	f.started = true
 }
 
-func (f *Forwarder) Mute(muted bool) (bool, VideoLayers) {
+func (f *Forwarder) Mute(muted bool) (bool, buffer.VideoLayer) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -363,7 +342,7 @@ func (f *Forwarder) IsMuted() bool {
 	return f.muted
 }
 
-func (f *Forwarder) PubMute(pubMuted bool) (bool, VideoLayers) {
+func (f *Forwarder) PubMute(pubMuted bool) (bool, buffer.VideoLayer) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -385,7 +364,7 @@ func (f *Forwarder) PubMute(pubMuted bool) (bool, VideoLayers) {
 		// On unmute, park current layers as streaming can continue without a key frame when publisher starts the stream.
 		if !pubMuted && f.targetLayers.IsValid() && f.currentLayers.Spatial == f.targetLayers.Spatial {
 			f.setupParkedLayers(f.targetLayers)
-			f.currentLayers = InvalidLayers
+			f.currentLayers = buffer.InvalidLayers
 		}
 	}
 
@@ -406,7 +385,7 @@ func (f *Forwarder) IsAnyMuted() bool {
 	return f.muted || f.pubMuted
 }
 
-func (f *Forwarder) SetMaxSpatialLayer(spatialLayer int32) (bool, VideoLayers, VideoLayers) {
+func (f *Forwarder) SetMaxSpatialLayer(spatialLayer int32) (bool, buffer.VideoLayer, buffer.VideoLayer) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -422,7 +401,7 @@ func (f *Forwarder) SetMaxSpatialLayer(spatialLayer int32) (bool, VideoLayers, V
 	return true, f.maxLayers, f.currentLayers
 }
 
-func (f *Forwarder) SetMaxTemporalLayer(temporalLayer int32) (bool, VideoLayers, VideoLayers) {
+func (f *Forwarder) SetMaxTemporalLayer(temporalLayer int32) (bool, buffer.VideoLayer, buffer.VideoLayer) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -438,21 +417,21 @@ func (f *Forwarder) SetMaxTemporalLayer(temporalLayer int32) (bool, VideoLayers,
 	return true, f.maxLayers, f.currentLayers
 }
 
-func (f *Forwarder) MaxLayers() VideoLayers {
+func (f *Forwarder) MaxLayers() buffer.VideoLayer {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
 	return f.maxLayers
 }
 
-func (f *Forwarder) CurrentLayers() VideoLayers {
+func (f *Forwarder) CurrentLayers() buffer.VideoLayer {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
 	return f.currentLayers
 }
 
-func (f *Forwarder) TargetLayers() VideoLayers {
+func (f *Forwarder) TargetLayers() buffer.VideoLayer {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
@@ -467,7 +446,7 @@ func (f *Forwarder) GetReferenceLayerSpatial() int32 {
 }
 
 func (f *Forwarder) isDeficientLocked() bool {
-	return f.lastAllocation.isDeficient
+	return f.lastAllocation.IsDeficient
 }
 
 func (f *Forwarder) IsDeficient() bool {
@@ -482,7 +461,7 @@ func (f *Forwarder) BandwidthRequested(brs Bitrates) int64 {
 	defer f.lock.RUnlock()
 
 	if !f.targetLayers.IsValid() {
-		if f.targetLayers != InvalidLayers {
+		if f.targetLayers != buffer.InvalidLayers {
 			f.logger.Warnw(
 				"unexpected target layers", nil,
 				"target", f.targetLayers,
@@ -530,17 +509,17 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 	}
 
 	alloc := VideoAllocation{
-		pauseReason:         VideoPauseReasonNone,
-		bitrates:            brs,
-		targetLayers:        InvalidLayers,
-		requestLayerSpatial: f.requestLayerSpatial,
-		maxLayers:           f.maxLayers,
+		PauseReason:         VideoPauseReasonNone,
+		Bitrates:            brs,
+		TargetLayers:        buffer.InvalidLayers,
+		RequestLayerSpatial: f.requestLayerSpatial,
+		MaxLayers:           f.maxLayers,
 	}
 	optimalBandwidthNeeded := getOptimalBandwidthNeeded(f.muted, f.pubMuted, f.maxPublishedLayer, brs, f.maxLayers)
 	if optimalBandwidthNeeded == 0 {
-		alloc.pauseReason = VideoPauseReasonFeedDry
+		alloc.PauseReason = VideoPauseReasonFeedDry
 	}
-	alloc.bandwidthNeeded = optimalBandwidthNeeded
+	alloc.BandwidthNeeded = optimalBandwidthNeeded
 
 	opportunisticAlloc := func() {
 		// opportunistically latch on to anything
@@ -548,29 +527,29 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 		if allowOvershoot && f.maxPublishedLayer > maxSpatial {
 			maxSpatial = f.maxPublishedLayer
 		}
-		alloc.targetLayers = VideoLayers{
+		alloc.TargetLayers = buffer.VideoLayer{
 			Spatial:  int32(math.Min(float64(f.maxPublishedLayer), float64(maxSpatial))),
-			Temporal: DefaultMaxLayerTemporal,
+			Temporal: buffer.DefaultMaxLayerTemporal,
 		}
 	}
 
 	switch {
-	case !f.maxLayers.IsValid() || f.maxPublishedLayer == InvalidLayerSpatial:
+	case !f.maxLayers.IsValid() || f.maxPublishedLayer == buffer.InvalidLayerSpatial:
 		// nothing to do when max layers are not valid OR max publisher layer is invalid
 
 	case f.muted:
-		alloc.pauseReason = VideoPauseReasonMuted
+		alloc.PauseReason = VideoPauseReasonMuted
 
 	case f.pubMuted:
-		alloc.pauseReason = VideoPauseReasonPubMuted
+		alloc.PauseReason = VideoPauseReasonPubMuted
 		// leave it at current layers for opportunistic resume
-		alloc.targetLayers = f.currentLayers
-		alloc.requestLayerSpatial = alloc.targetLayers.Spatial
+		alloc.TargetLayers = f.currentLayers
+		alloc.RequestLayerSpatial = alloc.TargetLayers.Spatial
 
 	case f.parkedLayers.IsValid():
 		// if parked on a layer, let it continue
-		alloc.targetLayers = f.parkedLayers
-		alloc.requestLayerSpatial = alloc.targetLayers.Spatial
+		alloc.TargetLayers = f.parkedLayers
+		alloc.RequestLayerSpatial = alloc.TargetLayers.Spatial
 
 	case len(availableLayers) == 0:
 		// feed may be dry
@@ -579,12 +558,12 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 			// Covers the cases of
 			//   1. mis-detection of layer stop - can continue streaming
 			//   2. current layer resuming - can latch on when it starts
-			alloc.targetLayers = f.currentLayers
-			alloc.requestLayerSpatial = alloc.targetLayers.Spatial
+			alloc.TargetLayers = f.currentLayers
+			alloc.RequestLayerSpatial = alloc.TargetLayers.Spatial
 		} else {
 			// opportunistically latch on to anything
 			opportunisticAlloc()
-			alloc.requestLayerSpatial = int32(math.Min(float64(f.maxLayers.Spatial), float64(f.maxPublishedLayer)))
+			alloc.RequestLayerSpatial = int32(math.Min(float64(f.maxLayers.Spatial), float64(f.maxPublishedLayer)))
 		}
 
 	default:
@@ -601,60 +580,60 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 		if !isCurrentLayerAvailable && f.currentLayers.IsValid() {
 			// current layer maybe stopped, move to highest available
 			for _, l := range availableLayers {
-				if l > alloc.targetLayers.Spatial {
-					alloc.targetLayers.Spatial = l
+				if l > alloc.TargetLayers.Spatial {
+					alloc.TargetLayers.Spatial = l
 				}
 			}
-			alloc.targetLayers.Temporal = DefaultMaxLayerTemporal
+			alloc.TargetLayers.Temporal = buffer.DefaultMaxLayerTemporal
 
-			alloc.requestLayerSpatial = alloc.targetLayers.Spatial
+			alloc.RequestLayerSpatial = alloc.TargetLayers.Spatial
 		} else {
 			requestLayerSpatial := int32(math.Min(float64(f.maxLayers.Spatial), float64(f.maxPublishedLayer)))
 			if f.currentLayers.IsValid() && requestLayerSpatial == f.requestLayerSpatial && f.currentLayers.Spatial == f.requestLayerSpatial {
 				// current is locked to desired, stay there
-				alloc.targetLayers = f.currentLayers
-				alloc.requestLayerSpatial = f.requestLayerSpatial
+				alloc.TargetLayers = f.currentLayers
+				alloc.RequestLayerSpatial = f.requestLayerSpatial
 			} else {
 				// opportunistically latch on to anything
 				opportunisticAlloc()
-				alloc.requestLayerSpatial = requestLayerSpatial
+				alloc.RequestLayerSpatial = requestLayerSpatial
 			}
 		}
 	}
 
-	if !alloc.targetLayers.IsValid() {
-		alloc.targetLayers = InvalidLayers
-		alloc.requestLayerSpatial = InvalidLayerSpatial
+	if !alloc.TargetLayers.IsValid() {
+		alloc.TargetLayers = buffer.InvalidLayers
+		alloc.RequestLayerSpatial = buffer.InvalidLayerSpatial
 	}
-	if alloc.targetLayers.IsValid() {
-		alloc.bandwidthRequested = optimalBandwidthNeeded
+	if alloc.TargetLayers.IsValid() {
+		alloc.BandwidthRequested = optimalBandwidthNeeded
 	}
-	alloc.bandwidthDelta = alloc.bandwidthRequested - f.lastAllocation.bandwidthRequested
-	alloc.distanceToDesired = getDistanceToDesired(
+	alloc.BandwidthDelta = alloc.BandwidthRequested - f.lastAllocation.BandwidthRequested
+	alloc.DistanceToDesired = getDistanceToDesired(
 		f.muted,
 		f.pubMuted,
 		f.maxPublishedLayer,
 		f.maxTemporalLayerSeen,
 		availableLayers,
 		brs,
-		alloc.targetLayers,
+		alloc.TargetLayers,
 		f.maxLayers,
 	)
 
 	return f.updateAllocation(alloc, "optimal")
 }
 
-func (f *Forwarder) ProvisionalAllocatePrepare(availableLayers []int32, bitrates Bitrates) {
+func (f *Forwarder) ProvisionalAllocatePrepare(availableLayers []int32, Bitrates Bitrates) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
 	f.provisional = &VideoAllocationProvisional{
-		allocatedLayers:      InvalidLayers,
+		allocatedLayers:      buffer.InvalidLayers,
 		muted:                f.muted,
 		pubMuted:             f.pubMuted,
 		maxPublishedLayer:    f.maxPublishedLayer,
 		maxTemporalLayerSeen: f.maxTemporalLayerSeen,
-		bitrates:             bitrates,
+		Bitrates:             Bitrates,
 		maxLayers:            f.maxLayers,
 		currentLayers:        f.currentLayers,
 		parkedLayers:         f.parkedLayers,
@@ -664,22 +643,22 @@ func (f *Forwarder) ProvisionalAllocatePrepare(availableLayers []int32, bitrates
 	copy(f.provisional.availableLayers, availableLayers)
 }
 
-func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layers VideoLayers, allowPause bool, allowOvershoot bool) int64 {
+func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layers buffer.VideoLayer, allowPause bool, allowOvershoot bool) int64 {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	if f.provisional.muted || f.provisional.pubMuted || f.provisional.maxPublishedLayer == InvalidLayerSpatial || !f.provisional.maxLayers.IsValid() || (!allowOvershoot && layers.GreaterThan(f.provisional.maxLayers)) {
+	if f.provisional.muted || f.provisional.pubMuted || f.provisional.maxPublishedLayer == buffer.InvalidLayerSpatial || !f.provisional.maxLayers.IsValid() || (!allowOvershoot && layers.GreaterThan(f.provisional.maxLayers)) {
 		return 0
 	}
 
-	requiredBitrate := f.provisional.bitrates[layers.Spatial][layers.Temporal]
+	requiredBitrate := f.provisional.Bitrates[layers.Spatial][layers.Temporal]
 	if requiredBitrate == 0 {
 		return 0
 	}
 
 	alreadyAllocatedBitrate := int64(0)
 	if f.provisional.allocatedLayers.IsValid() {
-		alreadyAllocatedBitrate = f.provisional.bitrates[f.provisional.allocatedLayers.Spatial][f.provisional.allocatedLayers.Temporal]
+		alreadyAllocatedBitrate = f.provisional.Bitrates[f.provisional.allocatedLayers.Spatial][f.provisional.allocatedLayers.Temporal]
 	}
 
 	// a layer under maximum fits, take it
@@ -727,28 +706,28 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot b
 	defer f.lock.Unlock()
 
 	if f.provisional.muted || f.provisional.pubMuted {
-		f.provisional.allocatedLayers = InvalidLayers
+		f.provisional.allocatedLayers = buffer.InvalidLayers
 		if f.provisional.pubMuted {
 			// leave it at current for opportunistic forwarding, there is still bandwidth saving with publisher mute
 			f.provisional.allocatedLayers = f.provisional.currentLayers
 		}
 		return VideoTransition{
-			from:           f.targetLayers,
-			to:             f.provisional.allocatedLayers,
-			bandwidthDelta: 0 - f.lastAllocation.bandwidthRequested,
+			From:           f.targetLayers,
+			To:             f.provisional.allocatedLayers,
+			BandwidthDelta: 0 - f.lastAllocation.BandwidthRequested,
 		}
 	}
 
 	// check if we should preserve current target
 	if f.targetLayers.IsValid() {
 		// what is the highest that is available
-		maximalLayers := InvalidLayers
+		maximalLayers := buffer.InvalidLayers
 		maximalBandwidthRequired := int64(0)
 		for s := f.provisional.maxLayers.Spatial; s >= 0; s-- {
 			for t := f.provisional.maxLayers.Temporal; t >= 0; t-- {
-				if f.provisional.bitrates[s][t] != 0 {
-					maximalLayers = VideoLayers{Spatial: s, Temporal: t}
-					maximalBandwidthRequired = f.provisional.bitrates[s][t]
+				if f.provisional.Bitrates[s][t] != 0 {
+					maximalLayers = buffer.VideoLayer{Spatial: s, Temporal: t}
+					maximalBandwidthRequired = f.provisional.Bitrates[s][t]
 					break
 				}
 			}
@@ -759,14 +738,14 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot b
 		}
 
 		if maximalLayers.IsValid() {
-			if !f.targetLayers.GreaterThan(maximalLayers) && f.provisional.bitrates[f.targetLayers.Spatial][f.targetLayers.Temporal] != 0 {
+			if !f.targetLayers.GreaterThan(maximalLayers) && f.provisional.Bitrates[f.targetLayers.Spatial][f.targetLayers.Temporal] != 0 {
 				// currently streaming and maybe wanting an upgrade (f.targetLayers <= maximalLayers),
 				// just preserve current target in the cooperative scheme of things
 				f.provisional.allocatedLayers = f.targetLayers
 				return VideoTransition{
-					from:           f.targetLayers,
-					to:             f.targetLayers,
-					bandwidthDelta: 0,
+					From:           f.targetLayers,
+					To:             f.targetLayers,
+					BandwidthDelta: 0,
 				}
 			}
 
@@ -774,9 +753,9 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot b
 				// maximalLayers < f.targetLayers, make the down move
 				f.provisional.allocatedLayers = maximalLayers
 				return VideoTransition{
-					from:           f.targetLayers,
-					to:             maximalLayers,
-					bandwidthDelta: maximalBandwidthRequired - f.lastAllocation.bandwidthRequested,
+					From:           f.targetLayers,
+					To:             maximalLayers,
+					BandwidthDelta: maximalBandwidthRequired - f.lastAllocation.BandwidthRequested,
 				}
 			}
 		}
@@ -785,14 +764,14 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot b
 	findNextLayer := func(
 		minSpatial, maxSpatial int32,
 		minTemporal, maxTemporal int32,
-	) (VideoLayers, int64) {
-		layers := InvalidLayers
+	) (buffer.VideoLayer, int64) {
+		layers := buffer.InvalidLayers
 		bw := int64(0)
 		for s := minSpatial; s <= maxSpatial; s++ {
 			for t := minTemporal; t <= maxTemporal; t++ {
-				if f.provisional.bitrates[s][t] != 0 {
-					layers = VideoLayers{Spatial: s, Temporal: t}
-					bw = f.provisional.bitrates[s][t]
+				if f.provisional.Bitrates[s][t] != 0 {
+					layers = buffer.VideoLayer{Spatial: s, Temporal: t}
+					bw = f.provisional.Bitrates[s][t]
 					break
 				}
 			}
@@ -819,8 +798,8 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot b
 		// could not find a minimal layer, overshoot if allowed
 		if bandwidthRequired == 0 && f.provisional.maxLayers.IsValid() && allowOvershoot {
 			targetLayers, bandwidthRequired = findNextLayer(
-				f.provisional.maxLayers.Spatial+1, DefaultMaxLayerSpatial,
-				0, DefaultMaxLayerTemporal,
+				f.provisional.maxLayers.Spatial+1, buffer.DefaultMaxLayerSpatial,
+				0, buffer.DefaultMaxLayerTemporal,
 			)
 		}
 	}
@@ -836,9 +815,9 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot b
 
 	f.provisional.allocatedLayers = targetLayers
 	return VideoTransition{
-		from:           f.targetLayers,
-		to:             targetLayers,
-		bandwidthDelta: bandwidthRequired - f.lastAllocation.bandwidthRequested,
+		From:           f.targetLayers,
+		To:             targetLayers,
+		BandwidthDelta: bandwidthRequired - f.lastAllocation.BandwidthRequested,
 	}
 }
 
@@ -862,32 +841,32 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 	defer f.lock.Unlock()
 
 	if f.provisional.muted || f.provisional.pubMuted {
-		f.provisional.allocatedLayers = InvalidLayers
+		f.provisional.allocatedLayers = buffer.InvalidLayers
 		if f.provisional.pubMuted {
 			// leave it at current for opportunistic forwarding, there is still bandwidth saving with publisher mute
 			f.provisional.allocatedLayers = f.provisional.currentLayers
 		}
 		return VideoTransition{
-			from:           f.targetLayers,
-			to:             f.provisional.allocatedLayers,
-			bandwidthDelta: 0 - f.lastAllocation.bandwidthRequested,
+			From:           f.targetLayers,
+			To:             f.provisional.allocatedLayers,
+			BandwidthDelta: 0 - f.lastAllocation.BandwidthRequested,
 		}
 	}
 
-	maxReachableLayerTemporal := InvalidLayerTemporal
+	maxReachableLayerTemporal := buffer.InvalidLayerTemporal
 	for t := f.provisional.maxLayers.Temporal; t >= 0; t-- {
 		for s := f.provisional.maxLayers.Spatial; s >= 0; s-- {
-			if f.provisional.bitrates[s][t] != 0 {
+			if f.provisional.Bitrates[s][t] != 0 {
 				maxReachableLayerTemporal = t
 				break
 			}
 		}
-		if maxReachableLayerTemporal != InvalidLayerTemporal {
+		if maxReachableLayerTemporal != buffer.InvalidLayerTemporal {
 			break
 		}
 	}
 
-	if maxReachableLayerTemporal == InvalidLayerTemporal {
+	if maxReachableLayerTemporal == buffer.InvalidLayerTemporal {
 		// feed has gone dry, just leave target at current to enable opportunistic forwarding in case current resumes.
 		// Note that this is giving back bits and opportunistic forwarding resuming might trigger congestion again,
 		// but that should be handled by stream allocator.
@@ -897,15 +876,15 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 			f.provisional.allocatedLayers = f.provisional.currentLayers
 		}
 		return VideoTransition{
-			from:           f.targetLayers,
-			to:             f.provisional.allocatedLayers,
-			bandwidthDelta: 0 - f.lastAllocation.bandwidthRequested,
+			From:           f.targetLayers,
+			To:             f.provisional.allocatedLayers,
+			BandwidthDelta: 0 - f.lastAllocation.BandwidthRequested,
 		}
 	}
 
 	// starting from minimum to target, find transition which gives the best
 	// transition taking into account bits saved vs cost of such a transition
-	bestLayers := InvalidLayers
+	bestLayers := buffer.InvalidLayers
 	bestBandwidthDelta := int64(0)
 	bestValue := float32(0)
 	for s := int32(0); s <= f.targetLayers.Spatial; s++ {
@@ -914,7 +893,7 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 				break
 			}
 
-			bandwidthDelta := int64(math.Max(float64(0), float64(f.lastAllocation.bandwidthRequested-f.provisional.bitrates[s][t])))
+			BandwidthDelta := int64(math.Max(float64(0), float64(f.lastAllocation.BandwidthRequested-f.provisional.Bitrates[s][t])))
 
 			transitionCost := int32(0)
 			if f.targetLayers.Spatial != s {
@@ -925,21 +904,21 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 
 			value := float32(0)
 			if (transitionCost + qualityCost) != 0 {
-				value = float32(bandwidthDelta) / float32(transitionCost+qualityCost)
+				value = float32(BandwidthDelta) / float32(transitionCost+qualityCost)
 			}
-			if value > bestValue || (value == bestValue && bandwidthDelta > bestBandwidthDelta) {
+			if value > bestValue || (value == bestValue && BandwidthDelta > bestBandwidthDelta) {
 				bestValue = value
-				bestBandwidthDelta = bandwidthDelta
-				bestLayers = VideoLayers{Spatial: s, Temporal: t}
+				bestBandwidthDelta = BandwidthDelta
+				bestLayers = buffer.VideoLayer{Spatial: s, Temporal: t}
 			}
 		}
 	}
 
 	f.provisional.allocatedLayers = bestLayers
 	return VideoTransition{
-		from:           f.targetLayers,
-		to:             bestLayers,
-		bandwidthDelta: bestBandwidthDelta,
+		From:           f.targetLayers,
+		To:             bestLayers,
+		BandwidthDelta: bestBandwidthDelta,
 	}
 }
 
@@ -951,24 +930,24 @@ func (f *Forwarder) ProvisionalAllocateCommit() VideoAllocation {
 		f.provisional.muted,
 		f.provisional.pubMuted,
 		f.provisional.maxPublishedLayer,
-		f.provisional.bitrates,
+		f.provisional.Bitrates,
 		f.provisional.maxLayers,
 	)
 	alloc := VideoAllocation{
-		bandwidthRequested:  0,
-		bandwidthDelta:      -f.lastAllocation.bandwidthRequested,
-		bitrates:            f.provisional.bitrates,
-		bandwidthNeeded:     optimalBandwidthNeeded,
-		targetLayers:        f.provisional.allocatedLayers,
-		requestLayerSpatial: f.provisional.allocatedLayers.Spatial,
-		maxLayers:           f.provisional.maxLayers,
-		distanceToDesired: getDistanceToDesired(
+		BandwidthRequested:  0,
+		BandwidthDelta:      -f.lastAllocation.BandwidthRequested,
+		Bitrates:            f.provisional.Bitrates,
+		BandwidthNeeded:     optimalBandwidthNeeded,
+		TargetLayers:        f.provisional.allocatedLayers,
+		RequestLayerSpatial: f.provisional.allocatedLayers.Spatial,
+		MaxLayers:           f.provisional.maxLayers,
+		DistanceToDesired: getDistanceToDesired(
 			f.provisional.muted,
 			f.provisional.pubMuted,
 			f.provisional.maxPublishedLayer,
 			f.provisional.maxTemporalLayerSeen,
 			f.provisional.availableLayers,
-			f.provisional.bitrates,
+			f.provisional.Bitrates,
 			f.provisional.allocatedLayers,
 			f.provisional.maxLayers,
 		),
@@ -976,47 +955,47 @@ func (f *Forwarder) ProvisionalAllocateCommit() VideoAllocation {
 
 	switch {
 	case f.provisional.muted:
-		alloc.pauseReason = VideoPauseReasonMuted
+		alloc.PauseReason = VideoPauseReasonMuted
 
 	case f.provisional.pubMuted:
-		alloc.pauseReason = VideoPauseReasonPubMuted
+		alloc.PauseReason = VideoPauseReasonPubMuted
 
 	case optimalBandwidthNeeded == 0:
 		if f.provisional.allocatedLayers.IsValid() {
 			// overshoot
-			alloc.bandwidthRequested = f.provisional.bitrates[f.provisional.allocatedLayers.Spatial][f.provisional.allocatedLayers.Temporal]
-			alloc.bandwidthDelta = alloc.bandwidthRequested - f.lastAllocation.bandwidthRequested
+			alloc.BandwidthRequested = f.provisional.Bitrates[f.provisional.allocatedLayers.Spatial][f.provisional.allocatedLayers.Temporal]
+			alloc.BandwidthDelta = alloc.BandwidthRequested - f.lastAllocation.BandwidthRequested
 		} else {
-			alloc.pauseReason = VideoPauseReasonFeedDry
+			alloc.PauseReason = VideoPauseReasonFeedDry
 
 			// leave target at current for opportunistic forwarding
 			if f.provisional.currentLayers.IsValid() && f.provisional.currentLayers.Spatial <= f.provisional.maxLayers.Spatial {
 				f.provisional.allocatedLayers = f.provisional.currentLayers
-				alloc.targetLayers = f.provisional.allocatedLayers
-				alloc.requestLayerSpatial = alloc.targetLayers.Spatial
+				alloc.TargetLayers = f.provisional.allocatedLayers
+				alloc.RequestLayerSpatial = alloc.TargetLayers.Spatial
 			}
 		}
 
 	default:
 		if f.provisional.allocatedLayers.IsValid() {
-			alloc.bandwidthRequested = f.provisional.bitrates[f.provisional.allocatedLayers.Spatial][f.provisional.allocatedLayers.Temporal]
+			alloc.BandwidthRequested = f.provisional.Bitrates[f.provisional.allocatedLayers.Spatial][f.provisional.allocatedLayers.Temporal]
 		}
-		alloc.bandwidthDelta = alloc.bandwidthRequested - f.lastAllocation.bandwidthRequested
+		alloc.BandwidthDelta = alloc.BandwidthRequested - f.lastAllocation.BandwidthRequested
 
 		if f.provisional.allocatedLayers.GreaterThan(f.provisional.maxLayers) ||
-			alloc.bandwidthRequested >= getOptimalBandwidthNeeded(
+			alloc.BandwidthRequested >= getOptimalBandwidthNeeded(
 				f.provisional.muted,
 				f.provisional.pubMuted,
 				f.provisional.maxPublishedLayer,
-				f.provisional.bitrates,
+				f.provisional.Bitrates,
 				f.provisional.maxLayers,
 			) {
 			// could be greater than optimal if overshooting
-			alloc.isDeficient = false
+			alloc.IsDeficient = false
 		} else {
-			alloc.isDeficient = true
+			alloc.IsDeficient = true
 			if !f.provisional.allocatedLayers.IsValid() {
-				alloc.pauseReason = VideoPauseReasonBandwidth
+				alloc.PauseReason = VideoPauseReasonBandwidth
 			}
 		}
 	}
@@ -1056,27 +1035,27 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, available
 	) (bool, VideoAllocation, bool) {
 		for s := minSpatial; s <= maxSpatial; s++ {
 			for t := minTemporal; t <= maxTemporal; t++ {
-				bandwidthRequested := brs[s][t]
-				if bandwidthRequested == 0 {
+				BandwidthRequested := brs[s][t]
+				if BandwidthRequested == 0 {
 					continue
 				}
 
-				if !allowOvershoot && bandwidthRequested-alreadyAllocated > availableChannelCapacity {
+				if !allowOvershoot && BandwidthRequested-alreadyAllocated > availableChannelCapacity {
 					// next higher available layer does not fit, return
 					return true, f.lastAllocation, false
 				}
 
-				targetLayers := VideoLayers{Spatial: s, Temporal: t}
+				targetLayers := buffer.VideoLayer{Spatial: s, Temporal: t}
 				alloc := VideoAllocation{
-					isDeficient:         true,
-					bandwidthRequested:  bandwidthRequested,
-					bandwidthDelta:      bandwidthRequested - alreadyAllocated,
-					bandwidthNeeded:     optimalBandwidthNeeded,
-					bitrates:            brs,
-					targetLayers:        targetLayers,
-					requestLayerSpatial: targetLayers.Spatial,
-					maxLayers:           f.maxLayers,
-					distanceToDesired: getDistanceToDesired(
+					IsDeficient:         true,
+					BandwidthRequested:  BandwidthRequested,
+					BandwidthDelta:      BandwidthRequested - alreadyAllocated,
+					BandwidthNeeded:     optimalBandwidthNeeded,
+					Bitrates:            brs,
+					TargetLayers:        targetLayers,
+					RequestLayerSpatial: targetLayers.Spatial,
+					MaxLayers:           f.maxLayers,
+					DistanceToDesired: getDistanceToDesired(
 						f.muted,
 						f.pubMuted,
 						f.maxPublishedLayer,
@@ -1087,8 +1066,8 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, available
 						f.maxLayers,
 					),
 				}
-				if targetLayers.GreaterThan(f.maxLayers) || bandwidthRequested >= optimalBandwidthNeeded {
-					alloc.isDeficient = false
+				if targetLayers.GreaterThan(f.maxLayers) || BandwidthRequested >= optimalBandwidthNeeded {
+					alloc.IsDeficient = false
 				}
 
 				return true, f.updateAllocation(alloc, "next-higher"), true
@@ -1124,8 +1103,8 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, available
 
 	if allowOvershoot && f.maxLayers.IsValid() {
 		done, allocation, boosted = doAllocation(
-			f.maxLayers.Spatial+1, DefaultMaxLayerSpatial,
-			0, DefaultMaxLayerTemporal,
+			f.maxLayers.Spatial+1, buffer.DefaultMaxLayerSpatial,
+			0, buffer.DefaultMaxLayerTemporal,
 		)
 		if done {
 			return allocation, boosted
@@ -1164,15 +1143,15 @@ func (f *Forwarder) GetNextHigherTransition(brs Bitrates, allowOvershoot bool) (
 	) (bool, VideoTransition, bool) {
 		for s := minSpatial; s <= maxSpatial; s++ {
 			for t := minTemporal; t <= maxTemporal; t++ {
-				bandwidthRequested := brs[s][t]
-				if bandwidthRequested == 0 {
+				BandwidthRequested := brs[s][t]
+				if BandwidthRequested == 0 {
 					continue
 				}
 
 				transition := VideoTransition{
-					from:           f.targetLayers,
-					to:             VideoLayers{Spatial: s, Temporal: t},
-					bandwidthDelta: bandwidthRequested - alreadyAllocated,
+					From:           f.targetLayers,
+					To:             buffer.VideoLayer{Spatial: s, Temporal: t},
+					BandwidthDelta: BandwidthRequested - alreadyAllocated,
 				}
 
 				return true, transition, true
@@ -1208,8 +1187,8 @@ func (f *Forwarder) GetNextHigherTransition(brs Bitrates, allowOvershoot bool) (
 
 	if allowOvershoot && f.maxLayers.IsValid() {
 		done, transition, isAvailable = findNextHigher(
-			f.maxLayers.Spatial+1, DefaultMaxLayerSpatial,
-			0, DefaultMaxLayerTemporal,
+			f.maxLayers.Spatial+1, buffer.DefaultMaxLayerSpatial,
+			0, buffer.DefaultMaxLayerTemporal,
 		)
 		if done {
 			return transition, isAvailable
@@ -1225,39 +1204,39 @@ func (f *Forwarder) Pause(availableLayers []int32, brs Bitrates) VideoAllocation
 
 	optimalBandwidthNeeded := getOptimalBandwidthNeeded(f.muted, f.pubMuted, f.maxPublishedLayer, brs, f.maxLayers)
 	alloc := VideoAllocation{
-		bandwidthRequested:  0,
-		bandwidthDelta:      0 - f.lastAllocation.bandwidthRequested,
-		bitrates:            brs,
-		bandwidthNeeded:     optimalBandwidthNeeded,
-		targetLayers:        InvalidLayers,
-		requestLayerSpatial: InvalidLayerSpatial,
-		maxLayers:           f.maxLayers,
-		distanceToDesired: getDistanceToDesired(
+		BandwidthRequested:  0,
+		BandwidthDelta:      0 - f.lastAllocation.BandwidthRequested,
+		Bitrates:            brs,
+		BandwidthNeeded:     optimalBandwidthNeeded,
+		TargetLayers:        buffer.InvalidLayers,
+		RequestLayerSpatial: buffer.InvalidLayerSpatial,
+		MaxLayers:           f.maxLayers,
+		DistanceToDesired: getDistanceToDesired(
 			f.muted,
 			f.pubMuted,
 			f.maxPublishedLayer,
 			f.maxTemporalLayerSeen,
 			availableLayers,
 			brs,
-			InvalidLayers,
+			buffer.InvalidLayers,
 			f.maxLayers,
 		),
 	}
 
 	switch {
 	case f.muted:
-		alloc.pauseReason = VideoPauseReasonMuted
+		alloc.PauseReason = VideoPauseReasonMuted
 
 	case f.pubMuted:
-		alloc.pauseReason = VideoPauseReasonPubMuted
+		alloc.PauseReason = VideoPauseReasonPubMuted
 
 	case optimalBandwidthNeeded == 0:
-		alloc.pauseReason = VideoPauseReasonFeedDry
+		alloc.PauseReason = VideoPauseReasonFeedDry
 
 	default:
 		// pausing due to lack of bandwidth
-		alloc.isDeficient = true
-		alloc.pauseReason = VideoPauseReasonBandwidth
+		alloc.IsDeficient = true
+		alloc.PauseReason = VideoPauseReasonBandwidth
 	}
 
 	f.clearParkedLayers()
@@ -1265,10 +1244,10 @@ func (f *Forwarder) Pause(availableLayers []int32, brs Bitrates) VideoAllocation
 }
 
 func (f *Forwarder) updateAllocation(alloc VideoAllocation, reason string) VideoAllocation {
-	if alloc.isDeficient != f.lastAllocation.isDeficient ||
-		alloc.pauseReason != f.lastAllocation.pauseReason ||
-		alloc.targetLayers != f.lastAllocation.targetLayers ||
-		alloc.requestLayerSpatial != f.lastAllocation.requestLayerSpatial {
+	if alloc.IsDeficient != f.lastAllocation.IsDeficient ||
+		alloc.PauseReason != f.lastAllocation.PauseReason ||
+		alloc.TargetLayers != f.lastAllocation.TargetLayers ||
+		alloc.RequestLayerSpatial != f.lastAllocation.RequestLayerSpatial {
 		if reason == "optimal" {
 			f.logger.Debugw(fmt.Sprintf("stream allocation: %s", reason), "allocation", alloc)
 		} else {
@@ -1277,7 +1256,7 @@ func (f *Forwarder) updateAllocation(alloc VideoAllocation, reason string) Video
 	}
 	f.lastAllocation = alloc
 
-	f.setTargetLayers(f.lastAllocation.targetLayers, f.lastAllocation.requestLayerSpatial)
+	f.setTargetLayers(f.lastAllocation.TargetLayers, f.lastAllocation.RequestLayerSpatial)
 	if !f.targetLayers.IsValid() {
 		f.resyncLocked()
 	}
@@ -1285,7 +1264,7 @@ func (f *Forwarder) updateAllocation(alloc VideoAllocation, reason string) Video
 	return f.lastAllocation
 }
 
-func (f *Forwarder) setTargetLayers(targetLayers VideoLayers, requestLayerSpatial int32) {
+func (f *Forwarder) setTargetLayers(targetLayers buffer.VideoLayer, requestLayerSpatial int32) {
 	f.targetLayers = targetLayers
 	if f.ddLayerSelector != nil {
 		f.ddLayerSelector.SelectLayer(targetLayers)
@@ -1302,20 +1281,20 @@ func (f *Forwarder) Resync() {
 }
 
 func (f *Forwarder) resyncLocked() {
-	f.currentLayers = InvalidLayers
+	f.currentLayers = buffer.InvalidLayers
 	f.lastSSRC = 0
 	f.clearParkedLayers()
 }
 
 func (f *Forwarder) clearParkedLayers() {
-	f.parkedLayers = InvalidLayers
+	f.parkedLayers = buffer.InvalidLayers
 	if f.parkedLayersTimer != nil {
 		f.parkedLayersTimer.Stop()
 		f.parkedLayersTimer = nil
 	}
 }
 
-func (f *Forwarder) setupParkedLayers(parkedLayers VideoLayers) {
+func (f *Forwarder) setupParkedLayers(parkedLayers buffer.VideoLayer) {
 	f.clearParkedLayers()
 
 	f.parkedLayers = parkedLayers
@@ -1339,7 +1318,7 @@ func (f *Forwarder) CheckSync() (locked bool, layer int32) {
 	return
 }
 
-func (f *Forwarder) FilterRTX(nacks []uint16) (filtered []uint16, disallowedLayers [DefaultMaxLayerSpatial + 1]bool) {
+func (f *Forwarder) FilterRTX(nacks []uint16) (filtered []uint16, disallowedLayers [buffer.DefaultMaxLayerSpatial + 1]bool) {
 	if !FlagFilterRTX {
 		filtered = nacks
 		return
@@ -1358,7 +1337,7 @@ func (f *Forwarder) FilterRTX(nacks []uint16) (filtered []uint16, disallowedLaye
 	//
 	// Without the curb, when congestion hits, RTX rate could be so high that it further congests the channel.
 	//
-	for layer := int32(0); layer < DefaultMaxLayerSpatial+1; layer++ {
+	for layer := int32(0); layer < buffer.DefaultMaxLayerSpatial+1; layer++ {
 		if f.isDeficientLocked() && (f.targetLayers.Spatial < f.currentLayers.Spatial || layer > f.currentLayers.Spatial) {
 			disallowedLayers[layer] = true
 		}
@@ -1406,7 +1385,7 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 				f.vp8Munger.SetLast(extPkt)
 			}
 		} else {
-			if f.referenceLayerSpatial == InvalidLayerSpatial {
+			if f.referenceLayerSpatial == buffer.InvalidLayerSpatial {
 				// on a resume, reference layer may not be set, so only set when it is invalid
 				f.referenceLayerSpatial = layer
 			}
@@ -1715,8 +1694,8 @@ func (f *Forwarder) GetRTPMungerParams() RTPMungerParams {
 
 // -----------------------------------------------------------------------------
 
-func getOptimalBandwidthNeeded(muted bool, pubMuted bool, maxPublishedLayer int32, brs Bitrates, maxLayers VideoLayers) int64 {
-	if muted || pubMuted || maxPublishedLayer == InvalidLayerSpatial {
+func getOptimalBandwidthNeeded(muted bool, pubMuted bool, maxPublishedLayer int32, brs Bitrates, maxLayers buffer.VideoLayer) int64 {
+	if muted || pubMuted || maxPublishedLayer == buffer.InvalidLayerSpatial {
 		return 0
 	}
 
@@ -1745,17 +1724,17 @@ func getDistanceToDesired(
 	maxTemporalLayerSeen int32,
 	availableLayers []int32,
 	brs Bitrates,
-	targetLayers VideoLayers,
-	maxLayers VideoLayers,
+	targetLayers buffer.VideoLayer,
+	maxLayers buffer.VideoLayer,
 ) float64 {
-	if muted || pubMuted || maxPublishedLayer == InvalidLayerSpatial || maxTemporalLayerSeen == InvalidLayerTemporal || !maxLayers.IsValid() {
+	if muted || pubMuted || maxPublishedLayer == buffer.InvalidLayerSpatial || maxTemporalLayerSeen == buffer.InvalidLayerTemporal || !maxLayers.IsValid() {
 		return 0.0
 	}
 
 	adjustedMaxLayers := maxLayers
 
-	maxAvailableSpatial := InvalidLayerSpatial
-	maxAvailableTemporal := InvalidLayerTemporal
+	maxAvailableSpatial := buffer.InvalidLayerSpatial
+	maxAvailableTemporal := buffer.InvalidLayerTemporal
 
 	// max available spatial is min(subscribedMax, publishedMax, availableMax)
 	// subscribedMax = subscriber requested max spatial layer
@@ -1791,7 +1770,7 @@ done:
 	// subscribedMax = subscriber requested max temporal layer
 	// temporalLayerSeenMax = max temporal layer ever published/seen
 	// availableMax = based on bit rate measurement, available max temporal in the adjusted max spatial layer
-	if adjustedMaxLayers.Spatial != InvalidLayerSpatial {
+	if adjustedMaxLayers.Spatial != buffer.InvalidLayerSpatial {
 		for t := int32(len(brs[0])) - 1; t >= 0; t-- {
 			if brs[adjustedMaxLayers.Spatial][t] != 0 {
 				maxAvailableTemporal = t
@@ -1808,13 +1787,13 @@ done:
 	}
 
 	if !adjustedMaxLayers.IsValid() {
-		adjustedMaxLayers = VideoLayers{Spatial: 0, Temporal: 0}
+		adjustedMaxLayers = buffer.VideoLayer{Spatial: 0, Temporal: 0}
 	}
 
 	// adjust target layers if they are invalid, i. e. not streaming
 	adjustedTargetLayers := targetLayers
 	if !targetLayers.IsValid() {
-		adjustedTargetLayers = VideoLayers{Spatial: 0, Temporal: 0}
+		adjustedTargetLayers = buffer.VideoLayer{Spatial: 0, Temporal: 0}
 	}
 
 	distance :=

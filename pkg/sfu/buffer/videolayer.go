@@ -15,6 +15,11 @@ var (
 		Spatial:  InvalidLayerSpatial,
 		Temporal: InvalidLayerTemporal,
 	}
+
+	DefaultMaxLayers = VideoLayer{
+		Spatial:  DefaultMaxLayerSpatial,
+		Temporal: DefaultMaxLayerTemporal,
+	}
 )
 
 type VideoLayer struct {

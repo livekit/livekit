@@ -30,7 +30,7 @@ var (
 
 type AudioLevelHandle func(level uint8, duration uint32)
 
-type Bitrates [DefaultMaxLayerSpatial + 1][DefaultMaxLayerTemporal + 1]int64
+type Bitrates [buffer.DefaultMaxLayerSpatial + 1][buffer.DefaultMaxLayerTemporal + 1]int64
 
 // TrackReceiver defines an interface receive media from remote peer
 type TrackReceiver interface {
@@ -94,11 +94,11 @@ type WebRTCReceiver struct {
 	twcc *twcc.Responder
 
 	bufferMu sync.RWMutex
-	buffers  [DefaultMaxLayerSpatial + 1]*buffer.Buffer
+	buffers  [buffer.DefaultMaxLayerSpatial + 1]*buffer.Buffer
 	rtt      uint32
 
 	upTrackMu sync.RWMutex
-	upTracks  [DefaultMaxLayerSpatial + 1]*webrtc.TrackRemote
+	upTracks  [buffer.DefaultMaxLayerSpatial + 1]*webrtc.TrackRemote
 
 	lbThreshold int
 
@@ -391,7 +391,7 @@ func (w *WebRTCReceiver) SetMaxExpectedSpatialLayer(layer int32) {
 	w.streamTrackerManager.SetMaxExpectedSpatialLayer(layer)
 
 	now := time.Now()
-	if layer == InvalidLayerSpatial {
+	if layer == buffer.InvalidLayerSpatial {
 		w.connectionStats.UpdateLayerMute(true, now)
 	} else {
 		w.connectionStats.UpdateLayerMute(false, now)

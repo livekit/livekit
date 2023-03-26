@@ -36,14 +36,14 @@ type StreamTrackerManager struct {
 	maxPublishedLayer    int32
 	maxTemporalLayerSeen int32
 
-	trackers [DefaultMaxLayerSpatial + 1]*streamtracker.StreamTracker
+	trackers [buffer.DefaultMaxLayerSpatial + 1]*streamtracker.StreamTracker
 
 	availableLayers  []int32
 	maxExpectedLayer int32
 	paused           bool
 
 	senderReportMu sync.RWMutex
-	senderReports  [DefaultMaxLayerSpatial + 1]*buffer.RTCPSenderReportDataExt
+	senderReports  [buffer.DefaultMaxLayerSpatial + 1]*buffer.RTCPSenderReportDataExt
 
 	closed core.Fuse
 
@@ -61,8 +61,8 @@ func NewStreamTrackerManager(
 		logger:               logger,
 		trackInfo:            trackInfo,
 		isSVC:                isSVC,
-		maxPublishedLayer:    InvalidLayerSpatial,
-		maxTemporalLayerSeen: InvalidLayerTemporal,
+		maxPublishedLayer:    buffer.InvalidLayerSpatial,
+		maxTemporalLayerSeen: buffer.InvalidLayerTemporal,
 		clockRate:            clockRate,
 		closed:               core.NewFuse(),
 	}
@@ -295,12 +295,12 @@ func (s *StreamTrackerManager) DistanceToDesired() float64 {
 
 	al, brs := s.getLayeredBitrateLocked()
 
-	maxLayers := InvalidLayers
+	maxLayers := buffer.InvalidLayers
 done:
 	for s := int32(len(brs)) - 1; s >= 0; s-- {
 		for t := int32(len(brs[0])) - 1; t >= 0; t-- {
 			if brs[s][t] != 0 {
-				maxLayers = VideoLayers{
+				maxLayers = buffer.VideoLayer{
 					Spatial:  s,
 					Temporal: t,
 				}
@@ -319,7 +319,7 @@ done:
 
 	adjustedMaxLayers := maxLayers
 	if !maxLayers.IsValid() {
-		adjustedMaxLayers = VideoLayers{Spatial: 0, Temporal: 0}
+		adjustedMaxLayers = buffer.VideoLayer{Spatial: 0, Temporal: 0}
 	}
 
 	distance :=
@@ -351,7 +351,7 @@ func (s *StreamTrackerManager) getLayeredBitrateLocked() ([]int32, Bitrates) {
 
 	for i, tracker := range s.trackers {
 		if tracker != nil {
-			tls := make([]int64, DefaultMaxLayerTemporal+1)
+			tls := make([]int64, buffer.DefaultMaxLayerTemporal+1)
 			if s.hasSpatialLayerLocked(int32(i)) {
 				tls = tracker.BitrateTemporalCumulative()
 			}
@@ -428,12 +428,12 @@ func (s *StreamTrackerManager) addAvailableLayer(layer int32) {
 
 func (s *StreamTrackerManager) removeAvailableLayer(layer int32) {
 	s.lock.Lock()
-	prevMaxLayer := InvalidLayerSpatial
+	prevMaxLayer := buffer.InvalidLayerSpatial
 	if len(s.availableLayers) > 0 {
 		prevMaxLayer = s.availableLayers[len(s.availableLayers)-1]
 	}
 
-	newLayers := make([]int32, 0, DefaultMaxLayerSpatial+1)
+	newLayers := make([]int32, 0, buffer.DefaultMaxLayerSpatial+1)
 	for _, l := range s.availableLayers {
 		if l != layer {
 			newLayers = append(newLayers, l)
@@ -448,7 +448,7 @@ func (s *StreamTrackerManager) removeAvailableLayer(layer int32) {
 		"availableLayers", newLayers,
 	)
 
-	curMaxLayer := InvalidLayerSpatial
+	curMaxLayer := buffer.InvalidLayerSpatial
 	if len(s.availableLayers) > 0 {
 		curMaxLayer = s.availableLayers[len(s.availableLayers)-1]
 	}
@@ -466,7 +466,7 @@ func (s *StreamTrackerManager) removeAvailableLayer(layer int32) {
 }
 
 func (s *StreamTrackerManager) maxExpectedLayerFromTrackInfo() {
-	s.maxExpectedLayer = InvalidLayerSpatial
+	s.maxExpectedLayer = buffer.InvalidLayerSpatial
 	for _, layer := range s.trackInfo.Layers {
 		spatialLayer := buffer.VideoQualityToSpatialLayer(layer.Quality, s.trackInfo)
 		if spatialLayer > s.maxExpectedLayer {
@@ -547,7 +547,7 @@ func (s *StreamTrackerManager) GetMaxTemporalLayerSeen() int32 {
 }
 
 func (s *StreamTrackerManager) updateMaxTemporalLayerSeen(brs Bitrates) {
-	maxTemporalLayerSeen := InvalidLayerTemporal
+	maxTemporalLayerSeen := buffer.InvalidLayerTemporal
 done:
 	for t := int32(len(brs[0])) - 1; t >= 0; t-- {
 		for s := int32(len(brs)) - 1; s >= 0; s-- {

@@ -24,6 +24,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
+	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/auth"
@@ -1338,7 +1339,7 @@ func (p *ParticipantImpl) subscriberRTCPWorker() {
 	}
 }
 
-func (p *ParticipantImpl) onStreamStateChange(update *sfu.StreamStateUpdate) error {
+func (p *ParticipantImpl) onStreamStateChange(update *streamallocator.StreamStateUpdate) error {
 	if len(update.StreamStates) == 0 {
 		return nil
 	}
@@ -1346,7 +1347,7 @@ func (p *ParticipantImpl) onStreamStateChange(update *sfu.StreamStateUpdate) err
 	streamStateUpdate := &livekit.StreamStateUpdate{}
 	for _, streamStateInfo := range update.StreamStates {
 		state := livekit.StreamState_ACTIVE
-		if streamStateInfo.State == sfu.StreamStatePaused {
+		if streamStateInfo.State == streamallocator.StreamStatePaused {
 			state = livekit.StreamState_PAUSED
 		}
 		streamStateUpdate.StreamStates = append(streamStateUpdate.StreamStates, &livekit.StreamStateInfo{

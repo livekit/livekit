@@ -11,7 +11,7 @@ import (
 
 type targetLayer struct {
 	Target int
-	Layer  VideoLayers
+	Layer  buffer.VideoLayer
 }
 
 type DDVideoLayerSelector struct {
@@ -22,7 +22,7 @@ type DDVideoLayerSelector struct {
 	// expectKeyFrame      bool
 
 	decodeTargetLayer          []targetLayer
-	layer                      VideoLayers
+	layer                      buffer.VideoLayer
 	activeDecodeTargetsBitmask *uint32
 	structure                  *dd.FrameDependencyStructure
 }
@@ -30,7 +30,7 @@ type DDVideoLayerSelector struct {
 func NewDDVideoLayerSelector(logger logger.Logger) *DDVideoLayerSelector {
 	return &DDVideoLayerSelector{
 		logger: logger,
-		layer:  VideoLayers{Spatial: 2, Temporal: 2},
+		layer:  buffer.VideoLayer{Spatial: 2, Temporal: 2},
 	}
 }
 
@@ -48,7 +48,7 @@ func (s *DDVideoLayerSelector) Select(expPkt *buffer.ExtPacket, tp *TranslationP
 	}
 
 	// forward all packets before locking
-	if s.layer == InvalidLayers {
+	if s.layer == buffer.InvalidLayers {
 		return true
 	}
 
@@ -122,8 +122,8 @@ func (s *DDVideoLayerSelector) Select(expPkt *buffer.ExtPacket, tp *TranslationP
 	return true
 }
 
-func (s *DDVideoLayerSelector) SelectLayer(layer VideoLayers) {
-	// layer = VideoLayers{1, 1}
+func (s *DDVideoLayerSelector) SelectLayer(layer buffer.VideoLayer) {
+	// layer = buffer.VideoLayer{1, 1}
 	s.layer = layer
 	activeBitMask := uint32(0)
 	var maxSpatial, maxTemporal int32
@@ -152,7 +152,7 @@ func (s *DDVideoLayerSelector) updateDependencyStructure(structure *dd.FrameDepe
 	s.decodeTargetLayer = s.decodeTargetLayer[:0]
 
 	for target := 0; target < structure.NumDecodeTargets; target++ {
-		layer := VideoLayers{Spatial: 0, Temporal: 0}
+		layer := buffer.VideoLayer{Spatial: 0, Temporal: 0}
 		for _, t := range structure.Templates {
 			if t.DecodeTargetIndications[target] != dd.DecodeTargetNotPresent {
 				if layer.Spatial < int32(t.SpatialId) {

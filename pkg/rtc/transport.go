@@ -26,7 +26,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	serverlogger "github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
@@ -182,7 +182,7 @@ type PCTransport struct {
 	onNegotiationFailed       func()
 
 	// stream allocator for subscriber PC
-	streamAllocator *sfu.StreamAllocator
+	streamAllocator *streamallocator.StreamAllocator
 
 	previousAnswer *webrtc.SessionDescription
 	// track id -> description map in previous offer sdp
@@ -366,7 +366,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		canReuseTransceiver:      true,
 	}
 	if params.IsSendSide {
-		t.streamAllocator = sfu.NewStreamAllocator(sfu.StreamAllocatorParams{
+		t.streamAllocator = streamallocator.NewStreamAllocator(streamallocator.StreamAllocatorParams{
 			Config: params.CongestionControlConfig,
 			Logger: params.Logger,
 		})
@@ -1085,7 +1085,7 @@ func (t *PCTransport) ResetShortConnOnICERestart() {
 	t.resetShortConnOnICERestart.Store(true)
 }
 
-func (t *PCTransport) OnStreamStateChange(f func(update *sfu.StreamStateUpdate) error) {
+func (t *PCTransport) OnStreamStateChange(f func(update *streamallocator.StreamStateUpdate) error) {
 	if t.streamAllocator == nil {
 		return
 	}
@@ -1098,7 +1098,7 @@ func (t *PCTransport) AddTrackToStreamAllocator(subTrack types.SubscribedTrack) 
 		return
 	}
 
-	t.streamAllocator.AddTrack(subTrack.DownTrack(), sfu.AddTrackParams{
+	t.streamAllocator.AddTrack(subTrack.DownTrack(), streamallocator.AddTrackParams{
 		Source:      subTrack.MediaTrack().Source(),
 		IsSimulcast: subTrack.MediaTrack().IsSimulcast(),
 		PublisherID: subTrack.MediaTrack().PublisherID(),
