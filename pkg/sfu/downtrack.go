@@ -631,9 +631,6 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	}
 
 	d.rtpStats.Update(hdr, len(payload), 0, time.Now().UnixNano())
-	if d.kind == webrtc.RTPCodecTypeAudio {
-		d.logger.Infow("RAJA forwarding audio", "isn", extPkt.Packet.SequenceNumber, "its", extPkt.Packet.Timestamp, "osn", hdr.SequenceNumber, "ots", hdr.Timestamp)
-	}
 	return nil
 }
 
@@ -1174,9 +1171,6 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 					d.logger.Warnw("could not write blank frame", err)
 					close(done)
 					return
-				}
-				if d.kind == webrtc.RTPCodecTypeAudio {
-					d.logger.Infow("RAJA audio blank", "osn", hdr.SequenceNumber, "ots", hdr.Timestamp)
 				}
 
 				d.streamAllocatorBytesCounter.Add(uint32(pktSize))
