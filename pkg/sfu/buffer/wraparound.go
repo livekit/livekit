@@ -72,7 +72,6 @@ func (w *WrapAround[T, ET]) Update(val T) (result wrapAroundUpdateResult[ET]) {
 }
 
 func (w *WrapAround[T, ET]) ResetHighest(val T) {
-	// TODO: what about cycles?
 	w.highest = val
 }
 

@@ -322,7 +322,7 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 		r.resyncOnNextPacket = false
 
 		if r.initialized {
-			r.sequenceNumber.ResetHighest(rtph.SequenceNumber)
+			r.sequenceNumber.ResetHighest(rtph.SequenceNumber - 1)
 			r.timestamp.ResetHighest(rtph.Timestamp)
 			r.highestTime = packetTime
 		}
