@@ -1422,6 +1422,9 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 					if td == 0 || td > (1<<31) {
 						f.logger.Debugw("reference timestamp out-of-order, using default", "lastTS", last.LastTS, "refTS", refTS, "td", int32(td))
 						td = 1
+					} else if td > uint32(0.5*float32(f.codec.ClockRate)) {
+						// log jumps greater than 0.5 seconds
+						f.logger.Debugw("reference timestamp too far ahead", "lastTS", last.LastTS, "refTS", refTS, "td", td)
 					}
 				} else {
 					f.logger.Debugw("reference timestamp get error, using default", "error", err)
