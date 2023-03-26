@@ -1,5 +1,9 @@
 package buffer
 
+import (
+	"unsafe"
+)
+
 type number interface {
 	uint16 | uint32
 }
@@ -17,9 +21,10 @@ type WrapAround[T number, ET extendedNumber] struct {
 	cycles      int
 }
 
-func NewWrapAround[T number, ET extendedNumber](fullRange ET) *WrapAround[T, ET] {
+func NewWrapAround[T number, ET extendedNumber]() *WrapAround[T, ET] {
+	var t T
 	return &WrapAround[T, ET]{
-		fullRange: fullRange,
+		fullRange: 1 << (unsafe.Sizeof(t) * 8),
 	}
 }
 

@@ -181,8 +181,8 @@ func NewRTPStats(params RTPStatsParams) *RTPStats {
 	return &RTPStats{
 		params:         params,
 		logger:         params.Logger,
-		sequenceNumber: NewWrapAround[uint16, uint32](1 << 16),
-		timestamp:      NewWrapAround[uint32, uint64](1 << 32),
+		sequenceNumber: NewWrapAround[uint16, uint32](),
+		timestamp:      NewWrapAround[uint32, uint64](),
 		nextSnapshotId: FirstSnapshotId,
 		snapshots:      make(map[uint32]*Snapshot),
 	}

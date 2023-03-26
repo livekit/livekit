@@ -7,7 +7,7 @@ import (
 )
 
 func TestWrapAroundUint16(t *testing.T) {
-	w := NewWrapAround[uint16, uint32](uint32(1 << 16))
+	w := NewWrapAround[uint16, uint32]()
 	testCases := []struct {
 		name            string
 		input           uint16
@@ -151,7 +151,7 @@ func TestWrapAroundUint16(t *testing.T) {
 }
 
 func TestWrapAroundUint32(t *testing.T) {
-	w := NewWrapAround[uint32, uint64](uint64(1 << 32))
+	w := NewWrapAround[uint32, uint64]()
 	testCases := []struct {
 		name            string
 		input           uint32
