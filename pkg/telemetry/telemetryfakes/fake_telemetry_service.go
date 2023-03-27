@@ -22,6 +22,12 @@ type FakeTelemetryService struct {
 		arg1 context.Context
 		arg2 *livekit.EgressInfo
 	}
+	EgressUpdatedStub        func(context.Context, *livekit.EgressInfo)
+	egressUpdatedMutex       sync.RWMutex
+	egressUpdatedArgsForCall []struct {
+		arg1 context.Context
+		arg2 *livekit.EgressInfo
+	}
 	FlushStatsStub        func()
 	flushStatsMutex       sync.RWMutex
 	flushStatsArgsForCall []struct {
@@ -271,6 +277,39 @@ func (fake *FakeTelemetryService) EgressStartedArgsForCall(i int) (context.Conte
 	fake.egressStartedMutex.RLock()
 	defer fake.egressStartedMutex.RUnlock()
 	argsForCall := fake.egressStartedArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeTelemetryService) EgressUpdated(arg1 context.Context, arg2 *livekit.EgressInfo) {
+	fake.egressUpdatedMutex.Lock()
+	fake.egressUpdatedArgsForCall = append(fake.egressUpdatedArgsForCall, struct {
+		arg1 context.Context
+		arg2 *livekit.EgressInfo
+	}{arg1, arg2})
+	stub := fake.EgressUpdatedStub
+	fake.recordInvocation("EgressUpdated", []interface{}{arg1, arg2})
+	fake.egressUpdatedMutex.Unlock()
+	if stub != nil {
+		fake.EgressUpdatedStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeTelemetryService) EgressUpdatedCallCount() int {
+	fake.egressUpdatedMutex.RLock()
+	defer fake.egressUpdatedMutex.RUnlock()
+	return len(fake.egressUpdatedArgsForCall)
+}
+
+func (fake *FakeTelemetryService) EgressUpdatedCalls(stub func(context.Context, *livekit.EgressInfo)) {
+	fake.egressUpdatedMutex.Lock()
+	defer fake.egressUpdatedMutex.Unlock()
+	fake.EgressUpdatedStub = stub
+}
+
+func (fake *FakeTelemetryService) EgressUpdatedArgsForCall(i int) (context.Context, *livekit.EgressInfo) {
+	fake.egressUpdatedMutex.RLock()
+	defer fake.egressUpdatedMutex.RUnlock()
+	argsForCall := fake.egressUpdatedArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2
 }
 
@@ -1109,6 +1148,8 @@ func (fake *FakeTelemetryService) Invocations() map[string][][]interface{} {
 	defer fake.egressEndedMutex.RUnlock()
 	fake.egressStartedMutex.RLock()
 	defer fake.egressStartedMutex.RUnlock()
+	fake.egressUpdatedMutex.RLock()
+	defer fake.egressUpdatedMutex.RUnlock()
 	fake.flushStatsMutex.RLock()
 	defer fake.flushStatsMutex.RUnlock()
 	fake.notifyEventMutex.RLock()

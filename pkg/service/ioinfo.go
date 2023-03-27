@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"time"
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -68,21 +67,16 @@ func (s *IOInfoService) Start() error {
 }
 
 func (s *IOInfoService) UpdateEgressInfo(ctx context.Context, info *livekit.EgressInfo) (*emptypb.Empty, error) {
+	err := s.es.UpdateEgress(ctx, info)
+
 	switch info.Status {
+	case livekit.EgressStatus_EGRESS_ACTIVE:
+		s.telemetry.EgressUpdated(ctx, info)
+
 	case livekit.EgressStatus_EGRESS_COMPLETE,
 		livekit.EgressStatus_EGRESS_FAILED,
 		livekit.EgressStatus_EGRESS_ABORTED,
 		livekit.EgressStatus_EGRESS_LIMIT_REACHED:
-
-		// make sure endedAt is set so it eventually gets deleted
-		if info.EndedAt == 0 {
-			info.EndedAt = time.Now().UnixNano()
-		}
-
-		if err := s.es.UpdateEgress(ctx, info); err != nil {
-			logger.Errorw("could not update egress", err)
-			return nil, err
-		}
 
 		// log results
 		if info.Error != "" {
@@ -92,12 +86,10 @@ func (s *IOInfoService) UpdateEgressInfo(ctx context.Context, info *livekit.Egre
 		}
 
 		s.telemetry.EgressEnded(ctx, info)
-
-	default:
-		if err := s.es.UpdateEgress(ctx, info); err != nil {
-			logger.Errorw("could not update egress", err)
-			return nil, err
-		}
+	}
+	if err != nil {
+		logger.Errorw("could not update egress", err)
+		return nil, err
 	}
 
 	return &emptypb.Empty{}, nil
