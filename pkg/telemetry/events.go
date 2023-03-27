@@ -411,6 +411,15 @@ func (t *telemetryService) EgressStarted(ctx context.Context, info *livekit.Egre
 	})
 }
 
+func (t *telemetryService) EgressUpdated(ctx context.Context, info *livekit.EgressInfo) {
+	t.enqueue(func() {
+		t.NotifyEvent(ctx, &livekit.WebhookEvent{
+			Event:      webhook.EventEgressUpdated,
+			EgressInfo: info,
+		})
+	})
+}
+
 func (t *telemetryService) EgressEnded(ctx context.Context, info *livekit.EgressInfo) {
 	t.enqueue(func() {
 		t.NotifyEvent(ctx, &livekit.WebhookEvent{
