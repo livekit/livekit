@@ -106,13 +106,15 @@ func (cs *ConnectionStats) ReceiverReportReceived(at time.Time) {
 }
 
 func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWithLayers, at time.Time) float32 {
+	var endedAt time.Time
 	var stat windowStat
 	for _, s := range streams {
 		if stat.startedAt.IsZero() || stat.startedAt.After(s.RTPStats.StartTime) {
 			stat.startedAt = s.RTPStats.StartTime
 		}
-		if stat.duration < s.RTPStats.Duration {
-			stat.duration = s.RTPStats.Duration
+		streamEndedAt := s.RTPStats.StartTime.Add(s.RTPStats.Duration)
+		if endedAt.IsZero() || endedAt.Before(streamEndedAt) {
+			endedAt = streamEndedAt
 		}
 		stat.packetsExpected += s.RTPStats.Packets + s.RTPStats.PacketsPadding
 		stat.packetsLost += s.RTPStats.PacketsLost
@@ -124,6 +126,9 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 			stat.jitterMax = s.RTPStats.JitterMax
 		}
 		stat.bytes += s.RTPStats.Bytes - s.RTPStats.HeaderBytes // only use media payload size
+	}
+	if !stat.startedAt.IsZero() && !endedAt.IsZero() {
+		stat.duration = endedAt.Sub(stat.startedAt)
 	}
 	cs.scorer.Update(&stat, at)
 
