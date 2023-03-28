@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	missingPictureIdsThreshold = 50
-	droppedPictureIdsThreshold = 20
+	missingPictureIdsThreshold  = 50
+	droppedPictureIdsThreshold  = 20
 	exemptedPictureIdsThreshold = 20
 )
 
@@ -53,9 +53,8 @@ type VP8MungerParams struct {
 	keyIdxOffset         uint8
 	keyIdxUsed           int
 
-	missingPictureIds    *orderedmap.OrderedMap[int32, int32]
-	lastDroppedPictureId int32
-	droppedPictureIds *orderedmap.OrderedMap[int32, bool]
+	missingPictureIds  *orderedmap.OrderedMap[int32, int32]
+	droppedPictureIds  *orderedmap.OrderedMap[int32, bool]
 	exemptedPictureIds *orderedmap.OrderedMap[int32, bool]
 }
 
@@ -69,10 +68,9 @@ func NewVP8Munger(logger logger.Logger) *VP8Munger {
 	return &VP8Munger{
 		logger: logger,
 		VP8MungerParams: VP8MungerParams{
-			missingPictureIds:    orderedmap.NewOrderedMap[int32, int32](),
-			lastDroppedPictureId: -1,
-			droppedPictureIds:    orderedmap.NewOrderedMap[int32, bool](),
-			exemptedPictureIds:    orderedmap.NewOrderedMap[int32, bool](),
+			missingPictureIds:  orderedmap.NewOrderedMap[int32, int32](),
+			droppedPictureIds:  orderedmap.NewOrderedMap[int32, bool](),
+			exemptedPictureIds: orderedmap.NewOrderedMap[int32, bool](),
 		},
 	}
 }
@@ -122,8 +120,6 @@ func (v *VP8Munger) SetLast(extPkt *buffer.ExtPacket) {
 	if v.keyIdxUsed == 1 {
 		v.lastKeyIdx = vp8.KEYIDX
 	}
-
-	v.lastDroppedPictureId = -1
 }
 
 func (v *VP8Munger) UpdateOffsets(extPkt *buffer.ExtPacket) {
@@ -147,7 +143,6 @@ func (v *VP8Munger) UpdateOffsets(extPkt *buffer.ExtPacket) {
 
 	// clear picture id caches on layer switch
 	v.missingPictureIds = orderedmap.NewOrderedMap[int32, int32]()
-	v.lastDroppedPictureId = -1
 	v.droppedPictureIds = orderedmap.NewOrderedMap[int32, bool]()
 	v.exemptedPictureIds = orderedmap.NewOrderedMap[int32, bool]()
 }
@@ -164,7 +159,6 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumb
 	if ordering == SequenceNumberOrderingOutOfOrder {
 		pictureIdOffset, ok := v.missingPictureIds.Get(extPictureId)
 		if !ok {
-			v.logger.Infow("RAJA not in missing picture cache", "ipid", vp8.PictureID, "epid", extPictureId)	// REMOVE
 			return nil, ErrOutOfOrderVP8PictureIdCacheMiss
 		}
 
@@ -193,7 +187,6 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumb
 		translated := &TranslationParamsVP8{
 			Header: vp8Packet,
 		}
-		v.logger.Infow("RAJA from missing picture cache", "ipid", vp8.PictureID, "epid", extPictureId, "opid", vp8Packet.PictureID, "offset", pictureIdOffset)	// REMOVE
 		return translated, nil
 	}
 
@@ -214,32 +207,6 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumb
 	// and check if that was the last packet of Picture 10), it could get complicated when
 	// the gap is larger.
 	if ordering == SequenceNumberOrderingGap {
-		/* RAJA-REMOVE
-		// can drop packet if it belongs to the last dropped picture.
-		// Example:
-		//   o Packet 10 - Picture 11 - TID that should be dropped
-		//   o Packet 11 - missing
-		//   o Packet 12 - Picture 11 - will be reported as GAP, but belongs to a picture that was dropped and hence can be dropped
-		// If Packet 11 comes around, it will be reported as OUT_OF_ORDER, but the missing
-		// picture id cache will not have an entry and hence will be dropped.
-		if extPictureId == v.lastDroppedPictureId {
-			v.logger.Infow("RAJA dropping because last picture was dropped", "ipid", vp8.PictureID, "epid", extPictureId, "pepid", prevMaxPictureId)	// REMOVE
-			return nil, ErrFilteredVP8TemporalLayer
-		} else {
-			v.logger.Infow("RAJA adding to missing picture cache", "ipid", vp8.PictureID, "epid", extPictureId, "pepid", prevMaxPictureId)	// REMOVE
-			for lostPictureId := prevMaxPictureId; lostPictureId <= extPictureId; lostPictureId++ {
-				v.missingPictureIds.Set(lostPictureId, v.pictureIdOffset)
-			}
-
-			// trim cache if necessary
-			for v.missingPictureIds.Len() > 50 {
-				el := v.missingPictureIds.Front()
-				v.logger.Infow("RAJA dropping from missing picture cache", "ipid", vp8.PictureID, "epid", extPictureId, "pepid", prevMaxPictureId, "key", el.Key)	// REMOVE
-				v.missingPictureIds.Delete(el.Key)
-			}
-		}
-		*/
-		v.logger.Infow("RAJA adding to missing picture cache", "ipid", vp8.PictureID, "epid", extPictureId, "pepid", prevMaxPictureId)	// REMOVE
 		for lostPictureId := prevMaxPictureId; lostPictureId <= extPictureId; lostPictureId++ {
 			// Quque up only if picture id was not dropped. This is to avoid a subsequent packet of dropped frame going through.
 			// A sequence like this
@@ -250,59 +217,45 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumb
 			_, ok := v.droppedPictureIds.Get(lostPictureId)
 			if !ok {
 				v.missingPictureIds.Set(lostPictureId, v.pictureIdOffset)
-			} else {
-				v.logger.Infow("RAJA not adding dropped to missing picture cache", "ipid", vp8.PictureID, "epid", extPictureId, "pepid", prevMaxPictureId, "lostPictureId", lostPictureId)	// REMOVE
 			}
 		}
 
 		// trim cache if necessary
 		for v.missingPictureIds.Len() > missingPictureIdsThreshold {
 			el := v.missingPictureIds.Front()
-			v.logger.Infow("RAJA dropping from missing picture cache", "ipid", vp8.PictureID, "epid", extPictureId, "pepid", prevMaxPictureId, "key", el.Key)	// REMOVE
 			v.missingPictureIds.Delete(el.Key)
 		}
 
+		// if there is a gap, packet is forwarded irrespective of temporal layer as it cannot be determined
+		// which layer the missing packets belong to. A layer could have multiple packets. So, keep track
+		// of pictures that are forwarded even though they will be filterd out based on temporal layer
+		// requirements. That allows forwarding of the complete picture.
 		if vp8.TIDPresent == 1 && vp8.TID > uint8(maxTemporalLayer) {
 			v.exemptedPictureIds.Set(extPictureId, true)
 			// trim cache if necessary
 			for v.exemptedPictureIds.Len() > exemptedPictureIdsThreshold {
 				el := v.exemptedPictureIds.Front()
-				v.logger.Infow("RAJA dropping from exempted picture cache", "ipid", vp8.PictureID, "epid", extPictureId, "pepid", prevMaxPictureId, "key", el.Key)	// REMOVE
 				v.exemptedPictureIds.Delete(el.Key)
 			}
 		}
 	} else {
-		/* RAJA-REMOVE
 		if vp8.TIDPresent == 1 && vp8.TID > uint8(maxTemporalLayer) {
-			// adjust only once per picture as a picture could have multiple packets
-			if vp8.PictureIDPresent == 1 && prevMaxPictureId != extPictureId {
-				v.pictureIdOffset += 1
-			}
-			v.logger.Infow("RAJA dropping temporal layer", "ipid", vp8.PictureID, "epid", extPictureId, "pepid", prevMaxPictureId, "offset", v.pictureIdOffset, "tid", vp8.TID, "maxT", maxTemporalLayer)	// REMOVE
-			return nil, ErrFilteredVP8TemporalLayer
-		}
-		*/
-		if vp8.TIDPresent == 1 && vp8.TID > uint8(maxTemporalLayer) {
-			// Drop only if not exempted. A picture may not have been dropped even thought its temporal layer should have been dropped because it came after a loss.
-			// In that case, forward the entire picture.
+			// drop only if not exempted
 			_, ok := v.exemptedPictureIds.Get(extPictureId)
 			if !ok {
 				// adjust only once per picture as a picture could have multiple packets
 				if vp8.PictureIDPresent == 1 && prevMaxPictureId != extPictureId {
+					// keep track of dropped picture ids so that they do not get into the missing picture cache
 					v.droppedPictureIds.Set(extPictureId, true)
 					// trim cache if necessary
 					for v.droppedPictureIds.Len() > droppedPictureIdsThreshold {
 						el := v.droppedPictureIds.Front()
-						v.logger.Infow("RAJA dropping from dropped picture cache", "ipid", vp8.PictureID, "epid", extPictureId, "pepid", prevMaxPictureId, "key", el.Key)	// REMOVE
 						v.droppedPictureIds.Delete(el.Key)
 					}
 
 					v.pictureIdOffset += 1
 				}
-				v.logger.Infow("RAJA dropping temporal layer", "ipid", vp8.PictureID, "epid", extPictureId, "pepid", prevMaxPictureId, "offset", v.pictureIdOffset, "tid", vp8.TID, "maxT", maxTemporalLayer)	// REMOVE
 				return nil, ErrFilteredVP8TemporalLayer
-			} else {
-				v.logger.Infow("RAJA not dropping emxempted temporal layer", "ipid", vp8.PictureID, "epid", extPictureId, "pepid", prevMaxPictureId, "offset", v.pictureIdOffset, "tid", vp8.TID, "maxT", maxTemporalLayer)	// REMOVE
 			}
 		}
 	}
@@ -340,7 +293,6 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumb
 	translated := &TranslationParamsVP8{
 		Header: vp8Packet,
 	}
-	v.logger.Infow("RAJA in-order picture id", "ipid", vp8.PictureID, "epid", extPictureId, "pepid", prevMaxPictureId, "opid", mungedPictureId, "offset", v.pictureIdOffset)	// REMOVE
 	return translated, nil
 }
 
