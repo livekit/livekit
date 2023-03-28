@@ -14,6 +14,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/sebest/xff"
 	"github.com/ua-parser/uap-go/uaparser"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
@@ -38,6 +39,9 @@ type RTCService struct {
 	limits        config.LimitConfig
 	parser        *uaparser.Parser
 	telemetry     telemetry.TelemetryService
+
+	// temporary
+	reqSinkWriteFailCount *atomic.Uint32
 }
 
 func NewRTCService(
@@ -366,6 +370,14 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err := cr.RequestSink.WriteMessage(req); err != nil {
 			pLogger.Warnw("error writing to request sink", err,
 				"connID", cr.ConnectionID)
+
+			if s.reqSinkWriteFailCount.Add(1) > 10 {
+				pLogger.Warnw("too many errors writing to request sink, exiting", err,
+					"connID", cr.ConnectionID)
+				os.Exit(1)
+			}
+		} else {
+			s.reqSinkWriteFailCount.Store(0)
 		}
 	}
 }
@@ -484,5 +496,4 @@ func readInitialResponse(source routing.MessageSource, timeout time.Duration) (*
 			return res, nil
 		}
 	}
-
 }
