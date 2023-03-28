@@ -207,7 +207,7 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumb
 	// the gap is larger.
 	if ordering == SequenceNumberOrderingGap {
 		for lostPictureId := prevMaxPictureId; lostPictureId <= extPictureId; lostPictureId++ {
-			// Quque up only if picture id was not dropped. This is to avoid a subsequent packet of dropped frame going through.
+			// Record missing only if picture id was not dropped. This is to avoid a subsequent packet of dropped frame going through.
 			// A sequence like this
 			//   o Packet 10 - Picture 11 - TID that should be dropped
 			//   o Packet 11 - missing - belongs to Picture 11 still
