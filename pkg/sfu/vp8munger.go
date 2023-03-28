@@ -184,10 +184,9 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumb
 			IsKeyFrame:       vp8.IsKeyFrame,
 			HeaderSize:       vp8.HeaderSize + buffer.VP8PictureIdSizeDiff(mungedPictureId > 127, vp8.MBit),
 		}
-		translated := &TranslationParamsVP8{
+		return &TranslationParamsVP8{
 			Header: vp8Packet,
-		}
-		return translated, nil
+		}, nil
 	}
 
 	prevMaxPictureId := v.pictureIdWrapHandler.MaxPictureId()
@@ -290,10 +289,9 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumb
 		IsKeyFrame:       vp8.IsKeyFrame,
 		HeaderSize:       vp8.HeaderSize + buffer.VP8PictureIdSizeDiff(mungedPictureId > 127, vp8.MBit),
 	}
-	translated := &TranslationParamsVP8{
+	return &TranslationParamsVP8{
 		Header: vp8Packet,
-	}
-	return translated, nil
+	}, nil
 }
 
 func (v *VP8Munger) UpdateAndGetPadding(newPicture bool) *buffer.VP8 {
