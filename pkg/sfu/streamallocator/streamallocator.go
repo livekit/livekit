@@ -723,12 +723,10 @@ func (s *StreamAllocator) handleNewEstimateInNonProbe() {
 	}
 
 	var estimateToCommit int64
-	var packets, repeatedNacks uint32
-	var nackRatio float64
 	expectedBandwidthUsage := s.getExpectedBandwidthUsage()
+	packets, repeatedNacks, nackRatio := s.channelObserver.GetNackRatio()
 	switch reason {
 	case ChannelCongestionReasonLoss:
-		packets, repeatedNacks, nackRatio = s.channelObserver.GetNackRatio()
 		estimateToCommit = int64(float64(expectedBandwidthUsage) * (1.0 - NackRatioAttenuator*nackRatio))
 	default:
 		estimateToCommit = s.lastReceivedEstimate
@@ -1096,6 +1094,12 @@ func (s *StreamAllocator) initProbe(probeRateBps int64) {
 	s.channelObserver = s.newChannelObserverProbe()
 	s.channelObserver.SeedEstimate(s.lastReceivedEstimate)
 
+	// RAJA-TODO: this probably should only look at probe goal which is always driven expected usage, some time committed is much higher
+	// RAJA-TODO: i guess this was done as expected based goal could be lower than currently commited because NACKs could have triggered a congestion
+	// RAJA-TODO: maybe check if goal is less than last received estimate and only used the last received if that is lower than the goal?
+	// RAJA-TODO: also potentially use "last received" and not "committed" as last received is the latest state.
+	// RAJA-TODO: but last received could be quite low if channel was over driven a lot and it just kept congesting for a long time
+	// RAJA-TODO: at a minimum add a comment here as to why desired is chosen like this
 	desiredRateBps := int(probeRateBps) + int(math.Max(float64(s.committedChannelCapacity), float64(expectedBandwidthUsage)))
 	s.probeClusterId = s.prober.AddCluster(
 		desiredRateBps,
@@ -1110,7 +1114,7 @@ func (s *StreamAllocator) initProbe(probeRateBps int64) {
 		"committed", s.committedChannelCapacity,
 		"lastReceived", s.lastReceivedEstimate,
 		"probeRateBps", probeRateBps,
-		"goalBps", expectedBandwidthUsage+probeRateBps,
+		"goalBps", s.probeGoalBps,
 	)
 }
 

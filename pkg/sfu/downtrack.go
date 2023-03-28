@@ -560,6 +560,8 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		return err
 	}
 
+	incomingPictureId := uint16(0)	// REMOVE
+	outgoingPictureId := uint16(0)	// REMOVE
 	payload := extPkt.Packet.Payload
 	if tp.vp8 != nil {
 		incomingVP8, _ := extPkt.Payload.(buffer.VP8)
@@ -570,6 +572,8 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			d.logger.Errorw("write rtp packet failed", err)
 			return err
 		}
+		incomingPictureId = incomingVP8.PictureID
+		outgoingPictureId = tp.vp8.Header.PictureID
 	}
 
 	var meta *packetMeta
@@ -631,6 +635,9 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	}
 
 	d.rtpStats.Update(hdr, len(payload), 0, time.Now().UnixNano())
+	if d.kind == webrtc.RTPCodecTypeVideo {
+		d.logger.Infow("RAJA forwarding video", "isn", extPkt.Packet.SequenceNumber, "its", extPkt.Packet.Timestamp, "im", extPkt.Packet.Marker, "osn", hdr.SequenceNumber, "ots", hdr.Timestamp, "om", hdr.Marker, "ipid", incomingPictureId, "opid", outgoingPictureId)	// REMOVE
+	}
 	return nil
 }
 
@@ -707,6 +714,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool) int {
 		if err != nil {
 			return bytesSent
 		}
+		d.logger.Infow("RAJA writing padding", "osn", hdr.SequenceNumber, "ots", hdr.Timestamp, "om", hdr.Marker)	// REMOVE
 
 		if !paddingOnMute {
 			d.rtpStats.Update(&hdr, 0, len(payload), time.Now().UnixNano())
@@ -1051,7 +1059,7 @@ func (d *DownTrack) AllocateNextHigher(availableChannelCapacity int64, allowOver
 func (d *DownTrack) GetNextHigherTransition(allowOvershoot bool) (VideoTransition, bool) {
 	_, brs := d.receiver.GetLayeredBitrate()
 	transition, available := d.forwarder.GetNextHigherTransition(brs, allowOvershoot)
-	d.logger.Debugw("stream: get next higher layer", "transition", transition, "available", available)
+	d.logger.Debugw("stream: get next higher layer", "transition", transition, "available", available, "bitrates", brs)
 	return transition, available
 }
 
@@ -1444,6 +1452,8 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		pkt.Header.SSRC = d.ssrc
 		pkt.Header.PayloadType = d.payloadType
 
+		incomingPictureId := uint16(0)	// REMOVE
+		outgoingPictureId := uint16(0)	// REMOVE
 		payload := pkt.Payload
 		if d.mime == "video/vp8" && len(pkt.Payload) > 0 {
 			var incomingVP8 buffer.VP8
@@ -1459,6 +1469,8 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 				d.logger.Errorw("translating VP8 packet err", err)
 				continue
 			}
+			incomingPictureId = incomingVP8.PictureID
+			outgoingPictureId = translatedVP8.PictureID
 		}
 
 		var extraExtensions []extensionData
@@ -1481,6 +1493,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 
 			d.rtpStats.Update(&pkt.Header, len(payload), 0, time.Now().UnixNano())
 		}
+		d.logger.Infow("RAJA re-forwarding video", "isn", meta.sourceSeqNo, "osn", pkt.Header.SequenceNumber, "ots", pkt.Header.Timestamp, "om", pkt.Header.Marker, "ipid", incomingPictureId, "opid", outgoingPictureId)	// REMOVE
 	}
 
 	d.statsLock.Lock()
