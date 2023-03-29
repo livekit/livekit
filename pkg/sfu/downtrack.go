@@ -1051,7 +1051,7 @@ func (d *DownTrack) AllocateNextHigher(availableChannelCapacity int64, allowOver
 func (d *DownTrack) GetNextHigherTransition(allowOvershoot bool) (VideoTransition, bool) {
 	_, brs := d.receiver.GetLayeredBitrate()
 	transition, available := d.forwarder.GetNextHigherTransition(brs, allowOvershoot)
-	d.logger.Debugw("stream: get next higher layer", "transition", transition, "available", available)
+	d.logger.Debugw("stream: get next higher layer", "transition", transition, "available", available, "bitrates", brs)
 	return transition, available
 }
 

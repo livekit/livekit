@@ -65,17 +65,16 @@ func TestSetLast(t *testing.T) {
 				totalWrap:    0,
 				lastWrap:     0,
 			},
-			extLastPictureId:     13467,
-			pictureIdOffset:      0,
-			pictureIdUsed:        1,
-			lastTl0PicIdx:        233,
-			tl0PicIdxOffset:      0,
-			tl0PicIdxUsed:        1,
-			tidUsed:              1,
-			lastKeyIdx:           23,
-			keyIdxOffset:         0,
-			keyIdxUsed:           1,
-			lastDroppedPictureId: -1,
+			extLastPictureId: 13467,
+			pictureIdOffset:  0,
+			pictureIdUsed:    1,
+			lastTl0PicIdx:    233,
+			tl0PicIdxOffset:  0,
+			tl0PicIdxUsed:    1,
+			tidUsed:          1,
+			lastKeyIdx:       23,
+			keyIdxOffset:     0,
+			keyIdxUsed:       1,
 		},
 	}
 
@@ -140,17 +139,16 @@ func TestUpdateOffsets(t *testing.T) {
 				totalWrap:    0,
 				lastWrap:     0,
 			},
-			extLastPictureId:     13467,
-			pictureIdOffset:      345 - 13467 - 1,
-			pictureIdUsed:        1,
-			lastTl0PicIdx:        233,
-			tl0PicIdxOffset:      (12 - 233 - 1) & 0xff,
-			tl0PicIdxUsed:        1,
-			tidUsed:              1,
-			lastKeyIdx:           23,
-			keyIdxOffset:         (4 - 23 - 1) & 0x1f,
-			keyIdxUsed:           1,
-			lastDroppedPictureId: -1,
+			extLastPictureId: 13467,
+			pictureIdOffset:  345 - 13467 - 1,
+			pictureIdUsed:    1,
+			lastTl0PicIdx:    233,
+			tl0PicIdxOffset:  (12 - 233 - 1) & 0xff,
+			tl0PicIdxUsed:    1,
+			tidUsed:          1,
+			lastKeyIdx:       23,
+			keyIdxOffset:     (4 - 23 - 1) & 0x1f,
+			keyIdxUsed:       1,
 		},
 	}
 	require.True(t, compare(&expectedVP8Munger, v))
@@ -289,7 +287,8 @@ func TestTemporalLayerFiltering(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrFilteredVP8TemporalLayer)
 	require.Nil(t, tp)
-	require.EqualValues(t, 13467, v.lastDroppedPictureId)
+	dropped, _ := v.droppedPictureIds.Get(13467)
+	require.True(t, dropped)
 	require.EqualValues(t, 1, v.pictureIdOffset)
 
 	// another packet with the same picture id.
@@ -301,7 +300,8 @@ func TestTemporalLayerFiltering(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrFilteredVP8TemporalLayer)
 	require.Nil(t, tp)
-	require.EqualValues(t, 13467, v.lastDroppedPictureId)
+	dropped, _ = v.droppedPictureIds.Get(13467)
+	require.True(t, dropped)
 	require.EqualValues(t, 1, v.pictureIdOffset)
 
 	// another packet with the same picture id, but a gap in sequence number.
@@ -313,7 +313,8 @@ func TestTemporalLayerFiltering(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrFilteredVP8TemporalLayer)
 	require.Nil(t, tp)
-	require.EqualValues(t, 13467, v.lastDroppedPictureId)
+	dropped, _ = v.droppedPictureIds.Get(13467)
+	require.True(t, dropped)
 	require.EqualValues(t, 1, v.pictureIdOffset)
 }
 

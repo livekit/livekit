@@ -10,6 +10,12 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
+const (
+	missingPictureIdsThreshold  = 50
+	droppedPictureIdsThreshold  = 20
+	exemptedPictureIdsThreshold = 20
+)
+
 // VP8 munger
 type TranslationParamsVP8 struct {
 	Header *buffer.VP8
@@ -47,8 +53,9 @@ type VP8MungerParams struct {
 	keyIdxOffset         uint8
 	keyIdxUsed           int
 
-	missingPictureIds    *orderedmap.OrderedMap[int32, int32]
-	lastDroppedPictureId int32
+	missingPictureIds  *orderedmap.OrderedMap[int32, int32]
+	droppedPictureIds  *orderedmap.OrderedMap[int32, bool]
+	exemptedPictureIds *orderedmap.OrderedMap[int32, bool]
 }
 
 type VP8Munger struct {
@@ -61,8 +68,9 @@ func NewVP8Munger(logger logger.Logger) *VP8Munger {
 	return &VP8Munger{
 		logger: logger,
 		VP8MungerParams: VP8MungerParams{
-			missingPictureIds:    orderedmap.NewOrderedMap[int32, int32](),
-			lastDroppedPictureId: -1,
+			missingPictureIds:  orderedmap.NewOrderedMap[int32, int32](),
+			droppedPictureIds:  orderedmap.NewOrderedMap[int32, bool](),
+			exemptedPictureIds: orderedmap.NewOrderedMap[int32, bool](),
 		},
 	}
 }
@@ -112,8 +120,6 @@ func (v *VP8Munger) SetLast(extPkt *buffer.ExtPacket) {
 	if v.keyIdxUsed == 1 {
 		v.lastKeyIdx = vp8.KEYIDX
 	}
-
-	v.lastDroppedPictureId = -1
 }
 
 func (v *VP8Munger) UpdateOffsets(extPkt *buffer.ExtPacket) {
@@ -135,10 +141,10 @@ func (v *VP8Munger) UpdateOffsets(extPkt *buffer.ExtPacket) {
 		v.keyIdxOffset = (vp8.KEYIDX - v.lastKeyIdx - 1) & 0x1f
 	}
 
-	// clear missing picture ids on layer switch
+	// clear picture id caches on layer switch
 	v.missingPictureIds = orderedmap.NewOrderedMap[int32, int32]()
-
-	v.lastDroppedPictureId = -1
+	v.droppedPictureIds = orderedmap.NewOrderedMap[int32, bool]()
+	v.exemptedPictureIds = orderedmap.NewOrderedMap[int32, bool]()
 }
 
 func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumberOrdering, maxTemporalLayer int32) (*TranslationParamsVP8, error) {
@@ -200,34 +206,56 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumb
 	// and check if that was the last packet of Picture 10), it could get complicated when
 	// the gap is larger.
 	if ordering == SequenceNumberOrderingGap {
-		// can drop packet if it belongs to the last dropped picture.
-		// Example:
-		//   o Packet 10 - Picture 11 - TID that should be dropped
-		//   o Packet 11 - missing
-		//   o Packet 12 - Picture 11 - will be reported as GAP, but belongs to a picture that was dropped and hence can be dropped
-		// If Packet 11 comes around, it will be reported as OUT_OF_ORDER, but the missing
-		// picture id cache will not have an entry and hence will be dropped.
-		if extPictureId == v.lastDroppedPictureId {
-			return nil, ErrFilteredVP8TemporalLayer
-		} else {
-			for lostPictureId := prevMaxPictureId; lostPictureId <= extPictureId; lostPictureId++ {
+		for lostPictureId := prevMaxPictureId; lostPictureId <= extPictureId; lostPictureId++ {
+			// Record missing only if picture id was not dropped. This is to avoid a subsequent packet of dropped frame going through.
+			// A sequence like this
+			//   o Packet 10 - Picture 11 - TID that should be dropped
+			//   o Packet 11 - missing - belongs to Picture 11 still
+			//   o Packet 12 - Picture 12 - will be reported as GAP, so missing picture id mapping will be set up for Picture 11 also.
+			//   o Next packet - Packet 11 - this will use the wrong offset from missing pictures cache
+			_, ok := v.droppedPictureIds.Get(lostPictureId)
+			if !ok {
 				v.missingPictureIds.Set(lostPictureId, v.pictureIdOffset)
 			}
+		}
 
+		// trim cache if necessary
+		for v.missingPictureIds.Len() > missingPictureIdsThreshold {
+			el := v.missingPictureIds.Front()
+			v.missingPictureIds.Delete(el.Key)
+		}
+
+		// if there is a gap, packet is forwarded irrespective of temporal layer as it cannot be determined
+		// which layer the missing packets belong to. A layer could have multiple packets. So, keep track
+		// of pictures that are forwarded even though they will be filterd out based on temporal layer
+		// requirements. That allows forwarding of the complete picture.
+		if vp8.TIDPresent == 1 && vp8.TID > uint8(maxTemporalLayer) {
+			v.exemptedPictureIds.Set(extPictureId, true)
 			// trim cache if necessary
-			for v.missingPictureIds.Len() > 50 {
-				el := v.missingPictureIds.Front()
-				v.missingPictureIds.Delete(el.Key)
+			for v.exemptedPictureIds.Len() > exemptedPictureIdsThreshold {
+				el := v.exemptedPictureIds.Front()
+				v.exemptedPictureIds.Delete(el.Key)
 			}
 		}
 	} else {
 		if vp8.TIDPresent == 1 && vp8.TID > uint8(maxTemporalLayer) {
-			// adjust only once per picture as a picture could have multiple packets
-			if vp8.PictureIDPresent == 1 && prevMaxPictureId != extPictureId {
-				v.lastDroppedPictureId = extPictureId
-				v.pictureIdOffset += 1
+			// drop only if not exempted
+			_, ok := v.exemptedPictureIds.Get(extPictureId)
+			if !ok {
+				// adjust only once per picture as a picture could have multiple packets
+				if vp8.PictureIDPresent == 1 && prevMaxPictureId != extPictureId {
+					// keep track of dropped picture ids so that they do not get into the missing picture cache
+					v.droppedPictureIds.Set(extPictureId, true)
+					// trim cache if necessary
+					for v.droppedPictureIds.Len() > droppedPictureIdsThreshold {
+						el := v.droppedPictureIds.Front()
+						v.droppedPictureIds.Delete(el.Key)
+					}
+
+					v.pictureIdOffset += 1
+				}
+				return nil, ErrFilteredVP8TemporalLayer
 			}
-			return nil, ErrFilteredVP8TemporalLayer
 		}
 	}
 

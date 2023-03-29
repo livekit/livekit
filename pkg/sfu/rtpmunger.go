@@ -136,12 +136,6 @@ func (r *RTPMunger) PacketDropped(extPkt *buffer.ExtPacket) {
 	}
 	r.snOffset++
 	r.lastSN = extPkt.Packet.SequenceNumber - r.snOffset
-
-	r.snOffsetsWritePtr = (r.snOffsetsWritePtr - 1) & SnOffsetCacheMask
-	r.snOffsetsOccupancy--
-	if r.snOffsetsOccupancy < 0 {
-		r.logger.Warnw("sequence number offset cache is invalid", nil, "occupancy", r.snOffsetsOccupancy)
-	}
 }
 
 func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationParamsRTP, error) {

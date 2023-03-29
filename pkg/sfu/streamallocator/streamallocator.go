@@ -723,12 +723,10 @@ func (s *StreamAllocator) handleNewEstimateInNonProbe() {
 	}
 
 	var estimateToCommit int64
-	var packets, repeatedNacks uint32
-	var nackRatio float64
 	expectedBandwidthUsage := s.getExpectedBandwidthUsage()
+	packets, repeatedNacks, nackRatio := s.channelObserver.GetNackRatio()
 	switch reason {
 	case ChannelCongestionReasonLoss:
-		packets, repeatedNacks, nackRatio = s.channelObserver.GetNackRatio()
 		estimateToCommit = int64(float64(expectedBandwidthUsage) * (1.0 - NackRatioAttenuator*nackRatio))
 	default:
 		estimateToCommit = s.lastReceivedEstimate
@@ -1110,7 +1108,7 @@ func (s *StreamAllocator) initProbe(probeRateBps int64) {
 		"committed", s.committedChannelCapacity,
 		"lastReceived", s.lastReceivedEstimate,
 		"probeRateBps", probeRateBps,
-		"goalBps", expectedBandwidthUsage+probeRateBps,
+		"goalBps", s.probeGoalBps,
 	)
 }
 

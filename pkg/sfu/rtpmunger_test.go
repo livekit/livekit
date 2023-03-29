@@ -105,6 +105,7 @@ func TestPacketDropped(t *testing.T) {
 		SequenceNumber: 23333,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
+		PayloadSize:    10,
 	}
 	extPkt, _ := testutils.GetTestExtPacket(params)
 	r.SetLastSnTs(extPkt)
@@ -114,6 +115,9 @@ func TestPacketDropped(t *testing.T) {
 	require.Equal(t, uint16(0), r.snOffset)
 	require.Equal(t, uint32(0), r.tsOffset)
 
+	r.UpdateAndGetSnTs(extPkt) // update sequence number offset
+	require.Equal(t, 1, r.snOffsetsWritePtr)
+
 	// drop a non-head packet, should cause no change in internals
 	params = &testutils.TestExtPacketParams{
 		SequenceNumber: 33333,
@@ -122,7 +126,7 @@ func TestPacketDropped(t *testing.T) {
 	}
 	extPkt, _ = testutils.GetTestExtPacket(params)
 	r.PacketDropped(extPkt)
-	require.Equal(t, r.highestIncomingSN, uint16(23332))
+	require.Equal(t, r.highestIncomingSN, uint16(23333))
 	require.Equal(t, r.lastSN, uint16(23333))
 	require.Equal(t, uint16(0), r.snOffset)
 
@@ -131,11 +135,32 @@ func TestPacketDropped(t *testing.T) {
 		SequenceNumber: 44444,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
+		PayloadSize:    20,
 	}
 	extPkt, _ = testutils.GetTestExtPacket(params)
-	r.highestIncomingSN = 44444
+
+	r.UpdateAndGetSnTs(extPkt) // update sequence number offset
+	snOffsetWritePtr := (44444 - 23333 + 1) & SnOffsetCacheMask
+	require.Equal(t, snOffsetWritePtr, r.snOffsetsWritePtr)
+	require.Equal(t, SnOffsetCacheSize, r.snOffsetsOccupancy)
+
 	r.PacketDropped(extPkt)
 	require.Equal(t, r.lastSN, uint16(44443))
+	require.Equal(t, uint16(1), r.snOffset)
+
+	params = &testutils.TestExtPacketParams{
+		SequenceNumber: 44445,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
+		PayloadSize:    20,
+	}
+	extPkt, _ = testutils.GetTestExtPacket(params)
+
+	r.UpdateAndGetSnTs(extPkt) // update sequence number offset
+	require.Equal(t, uint16(1), r.snOffsets[snOffsetWritePtr])
+	snOffsetWritePtr = (snOffsetWritePtr + 1) & SnOffsetCacheMask
+	require.Equal(t, snOffsetWritePtr, r.snOffsetsWritePtr)
+	require.Equal(t, r.lastSN, uint16(44444))
 	require.Equal(t, uint16(1), r.snOffset)
 }
 
