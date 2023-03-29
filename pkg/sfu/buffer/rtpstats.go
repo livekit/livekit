@@ -19,7 +19,7 @@ const (
 	GapHistogramNumBins = 101
 	NumSequenceNumbers  = 65536
 	FirstSnapshotId     = 1
-	SnInfoSize          = 2048
+	SnInfoSize          = 8192
 	SnInfoMask          = SnInfoSize - 1
 	TooLargeOWDDelta    = 400 * time.Millisecond
 )
