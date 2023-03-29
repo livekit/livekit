@@ -31,12 +31,16 @@ type signalClient struct {
 }
 
 func NewSignalClient(nodeID livekit.NodeID, bus psrpc.MessageBus, config config.SignalRelayConfig) (SignalClient, error) {
-	ri := middleware.NewStreamRetryInterceptorFactory(middleware.RetryOptions{
-		MaxAttempts: config.MaxAttempts,
-		Timeout:     config.Timeout,
-		Backoff:     config.Backoff,
-	})
-	c, err := rpc.NewTypedSignalClient(nodeID, bus, psrpc.WithClientStreamInterceptors(ri))
+	c, err := rpc.NewTypedSignalClient(
+		nodeID,
+		bus,
+		psrpc.WithClientStreamInterceptors(middleware.NewStreamRetryInterceptorFactory(middleware.RetryOptions{
+			MaxAttempts: config.MaxAttempts,
+			Timeout:     config.Timeout,
+			Backoff:     config.Backoff,
+		})),
+		psrpc.WithClientChannelSize(config.StreamBufferSize),
+	)
 	if err != nil {
 		return nil, err
 	}
