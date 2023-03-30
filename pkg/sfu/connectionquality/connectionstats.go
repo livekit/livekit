@@ -106,29 +106,22 @@ func (cs *ConnectionStats) ReceiverReportReceived(at time.Time) {
 }
 
 func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWithLayers, at time.Time) float32 {
-	var endedAt time.Time
-	var stat windowStat
+	deltaInfoList := make([]*buffer.RTPDeltaInfo, 0, len(streams))
 	for _, s := range streams {
-		if stat.startedAt.IsZero() || stat.startedAt.After(s.RTPStats.StartTime) {
-			stat.startedAt = s.RTPStats.StartTime
-		}
-		streamEndedAt := s.RTPStats.StartTime.Add(s.RTPStats.Duration)
-		if endedAt.IsZero() || endedAt.Before(streamEndedAt) {
-			endedAt = streamEndedAt
-		}
-		stat.packetsExpected += s.RTPStats.Packets + s.RTPStats.PacketsPadding
-		stat.packetsLost += s.RTPStats.PacketsLost
-		stat.packetsMissing += s.RTPStats.PacketsMissing
-		if stat.rttMax < s.RTPStats.RttMax {
-			stat.rttMax = s.RTPStats.RttMax
-		}
-		if stat.jitterMax < s.RTPStats.JitterMax {
-			stat.jitterMax = s.RTPStats.JitterMax
-		}
-		stat.bytes += s.RTPStats.Bytes - s.RTPStats.HeaderBytes // only use media payload size
+		deltaInfoList = append(deltaInfoList, s.RTPStats)
 	}
-	if !stat.startedAt.IsZero() && !endedAt.IsZero() {
-		stat.duration = endedAt.Sub(stat.startedAt)
+	agg := buffer.AggregateRTPDeltaInfo(deltaInfoList)
+
+	var stat windowStat
+	if agg != nil {
+		stat.startedAt = agg.StartTime
+		stat.duration = agg.Duration
+		stat.packetsExpected = agg.Packets + agg.PacketsPadding
+		stat.packetsLost = agg.PacketsLost
+		stat.packetsMissing = agg.PacketsMissing
+		stat.bytes = agg.Bytes - agg.HeaderBytes // only use media payload size
+		stat.rttMax = agg.RttMax
+		stat.jitterMax = agg.JitterMax
 	}
 	cs.scorer.Update(&stat, at)
 

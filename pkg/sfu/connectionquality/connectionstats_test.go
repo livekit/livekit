@@ -59,8 +59,16 @@ func TestConnectionQuality(t *testing.T) {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime:   now,
 					Duration:    duration,
-					Packets:     250,
+					Packets:     120,
 					PacketsLost: 30,
+				},
+			},
+			2: {
+				RTPStats: &buffer.RTPDeltaInfo{
+					StartTime:   now,
+					Duration:    duration,
+					Packets:     130,
+					PacketsLost: 0,
 				},
 			},
 		}
