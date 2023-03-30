@@ -1492,3 +1492,101 @@ func AggregateRTPStats(statsList []*livekit.RTPStats) *livekit.RTPStats {
 		RttMax:               maxRtt,
 	}
 }
+
+func AggregateRTPDeltaInfo(deltaInfoList []*RTPDeltaInfo) *RTPDeltaInfo {
+	if len(deltaInfoList) == 0 {
+		return nil
+	}
+
+	startTime := time.Time{}
+	endTime := time.Time{}
+
+	packets := uint32(0)
+	bytes := uint64(0)
+	headerBytes := uint64(0)
+
+	packetsDuplicate := uint32(0)
+	bytesDuplicate := uint64(0)
+	headerBytesDuplicate := uint64(0)
+
+	packetsPadding := uint32(0)
+	bytesPadding := uint64(0)
+	headerBytesPadding := uint64(0)
+
+	packetsLost := uint32(0)
+	packetsMissing := uint32(0)
+
+	frames := uint32(0)
+
+	maxRtt := uint32(0)
+	maxJitter := float64(0)
+
+	nacks := uint32(0)
+	plis := uint32(0)
+	firs := uint32(0)
+
+	for _, deltaInfo := range deltaInfoList {
+		if startTime.IsZero() || startTime.After(deltaInfo.StartTime) {
+			startTime = deltaInfo.StartTime
+		}
+
+		endedAt := deltaInfo.StartTime.Add(deltaInfo.Duration)
+		if endTime.IsZero() || endTime.Before(endedAt) {
+			endTime = endedAt
+		}
+
+		packets += deltaInfo.Packets
+		bytes += deltaInfo.Bytes
+		headerBytes += deltaInfo.HeaderBytes
+
+		packetsDuplicate += deltaInfo.PacketsDuplicate
+		bytesDuplicate += deltaInfo.BytesDuplicate
+		headerBytesDuplicate += deltaInfo.HeaderBytesDuplicate
+
+		packetsPadding += deltaInfo.PacketsPadding
+		bytesPadding += deltaInfo.BytesPadding
+		headerBytesPadding += deltaInfo.HeaderBytesPadding
+
+		packetsLost += deltaInfo.PacketsLost
+		packetsMissing += deltaInfo.PacketsMissing
+
+		frames += deltaInfo.Frames
+
+		if deltaInfo.RttMax > maxRtt {
+			maxRtt = deltaInfo.RttMax
+		}
+
+		if deltaInfo.JitterMax > maxJitter {
+			maxJitter = deltaInfo.JitterMax
+		}
+
+		nacks += deltaInfo.Nacks
+		plis += deltaInfo.Plis
+		firs += deltaInfo.Firs
+	}
+	if startTime.IsZero() || endTime.IsZero() {
+		return nil
+	}
+
+	return &RTPDeltaInfo{
+		StartTime:            startTime,
+		Duration:             endTime.Sub(startTime),
+		Packets:              packets,
+		Bytes:                bytes,
+		HeaderBytes:          headerBytes,
+		PacketsDuplicate:     packetsDuplicate,
+		BytesDuplicate:       bytesDuplicate,
+		HeaderBytesDuplicate: headerBytesDuplicate,
+		PacketsPadding:       packetsPadding,
+		BytesPadding:         bytesPadding,
+		HeaderBytesPadding:   headerBytesPadding,
+		PacketsLost:          packetsLost,
+		PacketsMissing:       packetsMissing,
+		Frames:               frames,
+		RttMax:               maxRtt,
+		JitterMax:            maxJitter,
+		Nacks:                nacks,
+		Plis:                 plis,
+		Firs:                 firs,
+	}
+}
