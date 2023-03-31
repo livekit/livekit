@@ -12,22 +12,15 @@ import (
 )
 
 func (p *ParticipantImpl) getResponseSink() routing.MessageSink {
-	if !p.resSinkValid.Load() {
-		return nil
-	}
-	sink := p.resSink.Load()
-	if s, ok := sink.(routing.MessageSink); ok {
-		return s
-	}
-	return nil
+	p.resSinkMu.Lock()
+	defer p.resSinkMu.Unlock()
+	return p.resSink
 }
 
 func (p *ParticipantImpl) SetResponseSink(sink routing.MessageSink) {
-	p.resSinkValid.Store(sink != nil)
-	if sink != nil {
-		// cannot store nil into atomic.Value
-		p.resSink.Store(sink)
-	}
+	p.resSinkMu.Lock()
+	defer p.resSinkMu.Unlock()
+	p.resSink = sink
 }
 
 func (p *ParticipantImpl) SendJoinResponse(joinResponse *livekit.JoinResponse) error {
