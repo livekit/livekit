@@ -2,6 +2,40 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2023-03-27
+### Added
+- Added config to disable active RED encoding. Use NACK instead #1476 #1477
+- Added option to skip TCP fallback if TCP RTT is high #1484
+- psrpc based signaling between signal and RTC #1485
+- Connection quality algorithm revamp #1490 #1491 #1493 #1496 #1497 #1500 #1505 #1507 #1509 #1516 #1520 #1521 #1527 #1528 #1536
+- Support for topics in data channel messages #1489
+- Added active filter to ListEgress #1517
+- Handling for React Native and Rust SDK ClientInfo #1544
+
+### Fixed
+- Fixed unsubscribed speakers stuck as speaking to clients #1475
+- Do not include packet in RED if timestamp is too far back #1478
+- Prevent PLI layer lock getting stuck #1481
+- Fix a case of changing video quality not succeeding #1483
+- Resync on pub muted for audio to avoid jump in sequence numbers on unmute #1487
+- Fixed a case of data race #1492
+- Inform reconnecting participant about recently disconnected users #1495
+- Send room update that may be missed by reconnected participant #1499
+- Fixed regression for AV1 forwarding #1538
+- Ensure sequence number continuity #1539
+- Give proper grace period when recorder is still in the room #1547
+- Fix sequence number offset on packet drop #1556
+- Fix signal client message buffer size #1561
+
+### Changed
+- Reduce lock scope getting RTCP sender reports #1473
+- Avoid duplicate queueReconcile in subscription manager #1474
+- Do not log TURN errors with prefix "error when handling datagram" #1494
+- Improvements to TCP fallback mode #1498
+- Unify forwarder between dependency descriptor and no DD case. #1543
+- Increase sequence number cache to handle high rate tracks #1560
+
+
 ## [1.3.5] - 2023-02-25
 ### Added
 - Allow for strict ACKs to be disabled or subscriber peer connections #1410
