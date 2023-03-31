@@ -163,6 +163,21 @@ keys:
 #   urls:
 #     - https://your-host.com/handler
 
+# Signal Relay
+# since v1.4.0, a more reliable, psrpc based signal relay is available
+# this gives us the ability to more reliable proxy messages between a signal server and RTC node
+# signal_relay:
+#   # when enabled, livekit will use a more reliable, psrpc based signal relay
+#   enabled: true
+#   # number of attempts for each message before giving up
+#   max_attempts: 3
+#   # amount of time to wait for RTC node to ack
+#   timeout: 100ms
+#   # amount of time to wait before retrying
+#   backoff: 500ms
+#   # number of messages to buffer before blocking/dropping
+#   stream_buffer_size: 1000
+
 # customize audio level sensitivity
 # audio:
 #   # minimum level to be considered active, 0-127, where 0 is loudest
