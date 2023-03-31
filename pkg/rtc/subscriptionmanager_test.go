@@ -225,14 +225,20 @@ func TestUnsubscribe(t *testing.T) {
 	require.False(t, s.isDesired())
 
 	require.Eventually(t, func() bool {
-		return !s.needsUnsubscribe()
+		if s.needsUnsubscribe() {
+			return false
+		}
+		sm.lock.RLock()
+		subLen := len(sm.subscriptions)
+		sm.lock.RUnlock()
+		if subLen != 0 {
+			return false
+		}
+		return true
 	}, subSettleTimeout, subCheckInterval, "Track was not unsubscribed")
 
 	// no traces should be left
 	require.Len(t, sm.GetSubscribedTracks(), 0)
-	sm.lock.RLock()
-	require.Len(t, sm.subscriptions, 0)
-	sm.lock.RUnlock()
 	require.False(t, res.TrackChangedNotifier.HasObservers())
 
 	tm := sm.params.Telemetry.(*telemetryfakes.FakeTelemetryService)
