@@ -10,7 +10,7 @@ require (
 	github.com/florianl/go-tc v0.4.2
 	github.com/frostbyte73/core v0.0.5
 	github.com/gammazero/deque v0.2.1
-	github.com/gammazero/workerpool v1.1.2
+	github.com/gammazero/workerpool v1.1.3
 	github.com/google/wire v0.5.0
 	github.com/gorilla/websocket v1.5.0
 	github.com/hashicorp/go-version v1.6.0

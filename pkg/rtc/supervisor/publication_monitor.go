@@ -34,7 +34,7 @@ type PublicationMonitor struct {
 	params PublicationMonitorParams
 
 	lock             sync.RWMutex
-	desiredPublishes deque.Deque
+	desiredPublishes deque.Deque[*publish]
 
 	isConnected bool
 
@@ -128,7 +128,7 @@ func (p *PublicationMonitor) Check() error {
 	p.lock.RLock()
 	var pub *publish
 	if p.desiredPublishes.Len() > 0 {
-		pub = p.desiredPublishes.Front().(*publish)
+		pub = p.desiredPublishes.Front()
 	}
 
 	isMuted := p.isMuted
@@ -160,7 +160,7 @@ func (p *PublicationMonitor) update() {
 	for {
 		var pub *publish
 		if p.desiredPublishes.Len() > 0 {
-			pub = p.desiredPublishes.PopFront().(*publish)
+			pub = p.desiredPublishes.PopFront()
 		}
 
 		if pub == nil {

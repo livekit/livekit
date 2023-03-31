@@ -52,7 +52,7 @@ type Buffer struct {
 	videoPool     *sync.Pool
 	audioPool     *sync.Pool
 	codecType     webrtc.RTPCodecType
-	extPackets    deque.Deque
+	extPackets    deque.Deque[*ExtPacket]
 	pPackets      []pendingPacket
 	closeOnce     sync.Once
 	mediaSSRC     uint32
@@ -290,7 +290,7 @@ func (b *Buffer) ReadExtended(buf []byte) (*ExtPacket, error) {
 		}
 		b.Lock()
 		if b.extPackets.Len() > 0 {
-			ep := b.extPackets.PopFront().(*ExtPacket)
+			ep := b.extPackets.PopFront()
 			ep = b.patchExtPacket(ep, buf)
 			if ep == nil {
 				b.Unlock()
