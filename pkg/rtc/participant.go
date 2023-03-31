@@ -93,12 +93,12 @@ type ParticipantParams struct {
 type ParticipantImpl struct {
 	params ParticipantParams
 
-	isClosed     atomic.Bool
-	state        atomic.Value // livekit.ParticipantInfo_State
-	resSink      atomic.Value // routing.MessageSink
-	resSinkValid atomic.Bool
-	grants       *auth.ClaimGrants
-	isPublisher  atomic.Bool
+	isClosed    atomic.Bool
+	state       atomic.Value // livekit.ParticipantInfo_State
+	resSinkMu   sync.Mutex
+	resSink     routing.MessageSink
+	grants      *auth.ClaimGrants
+	isPublisher atomic.Bool
 
 	// when first connected
 	connectedAt time.Time
