@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/bep/debounce"
+	"github.com/pion/dtls/v2/pkg/crypto/elliptic"
 	"github.com/pion/ice/v2"
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/cc"
@@ -240,6 +241,10 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 
 	se := params.Config.SettingEngine
 	se.DisableMediaEngineCopy(true)
+
+	// Change elliptic curve to improve connectivity
+	// https://github.com/pion/dtls/pull/474
+	se.SetDTLSEllipticCurves(elliptic.X25519, elliptic.P384, elliptic.P256)
 
 	//
 	// Disable SRTP replay protection (https://datatracker.ietf.org/doc/html/rfc3711#page-15).
