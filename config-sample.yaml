@@ -163,6 +163,21 @@ keys:
 #   urls:
 #     - https://your-host.com/handler
 
+# Signal Relay
+# since v1.4.0, a more reliable, psrpc based signal relay is available
+# this gives us the ability to reliably proxy messages between a signal server and RTC node
+# signal_relay:
+#   # disabled by default. will be enabled by default in future versions
+#   enabled: true
+#   # number of attempts for each message before giving up
+#   max_attempts: 3
+#   # amount of time to wait for RTC node to ack
+#   timeout: 100ms
+#   # amount of time to add to timeout for each retry
+#   backoff: 500ms
+#   # number of messages to buffer before dropping
+#   stream_buffer_size: 1000
+
 # customize audio level sensitivity
 # audio:
 #   # minimum level to be considered active, 0-127, where 0 is loudest
