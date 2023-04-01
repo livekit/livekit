@@ -1526,6 +1526,10 @@ func AggregateRTPDeltaInfo(deltaInfoList []*RTPDeltaInfo) *RTPDeltaInfo {
 	firs := uint32(0)
 
 	for _, deltaInfo := range deltaInfoList {
+		if deltaInfo == nil {
+			continue
+		}
+
 		if startTime.IsZero() || startTime.After(deltaInfo.StartTime) {
 			startTime = deltaInfo.StartTime
 		}
