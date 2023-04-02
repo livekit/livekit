@@ -11,44 +11,21 @@ import (
 )
 
 var (
-	psrpcUnaryRequestTime   *prometheus.HistogramVec
-	psrpcUnaryResponseTime  *prometheus.HistogramVec
-	psrpcMultiRequestTime   *prometheus.HistogramVec
-	psrpcMultiResponseTime  *prometheus.HistogramVec
+	psrpcRequestTime        *prometheus.HistogramVec
 	psrpcStreamSendTime     *prometheus.HistogramVec
 	psrpcStreamReceiveTotal *prometheus.CounterVec
 	psrpcStreamCurrent      *prometheus.GaugeVec
+	psrpcErrorTotal         *prometheus.CounterVec
 )
 
 func initPSRPCStats(nodeID string, nodeType livekit.NodeType, env string) {
-	labels := []string{"service", "rpc"}
-	streamLabels := []string{"role", "service", "rpc"}
+	labels := []string{"role", "kind", "service", "method"}
+	streamLabels := []string{"role", "service", "method"}
 
-	psrpcUnaryRequestTime = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+	psrpcRequestTime = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "psrpc",
-		Name:        "unary_request_time_ms",
-		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String(), "env": env},
-		Buckets:     []float64{100, 200, 300, 400, 500, 1000, 1500, 2000, 5000, 10000},
-	}, labels)
-	psrpcUnaryResponseTime = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace:   livekitNamespace,
-		Subsystem:   "psrpc",
-		Name:        "unary_response_time_ms",
-		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String(), "env": env},
-		Buckets:     []float64{10, 50, 100, 300, 500, 1000, 1500, 2000, 5000, 10000},
-	}, labels)
-	psrpcMultiRequestTime = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace:   livekitNamespace,
-		Subsystem:   "psrpc",
-		Name:        "multi_request_time_ms",
-		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String(), "env": env},
-		Buckets:     []float64{100, 200, 300, 400, 500, 1000, 1500, 2000, 5000, 10000},
-	}, labels)
-	psrpcMultiResponseTime = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace:   livekitNamespace,
-		Subsystem:   "psrpc",
-		Name:        "multi_response_time_ms",
+		Name:        "request_time_ms",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String(), "env": env},
 		Buckets:     []float64{10, 50, 100, 300, 500, 1000, 1500, 2000, 5000, 10000},
 	}, labels)
@@ -57,7 +34,7 @@ func initPSRPCStats(nodeID string, nodeType livekit.NodeType, env string) {
 		Subsystem:   "psrpc",
 		Name:        "stream_send_time_ms",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String(), "env": env},
-		Buckets:     []float64{100, 200, 300, 400, 500, 1000, 1500, 2000, 5000, 10000},
+		Buckets:     []float64{10, 50, 100, 300, 500, 1000, 1500, 2000, 5000, 10000},
 	}, streamLabels)
 	psrpcStreamReceiveTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   livekitNamespace,
@@ -71,14 +48,18 @@ func initPSRPCStats(nodeID string, nodeType livekit.NodeType, env string) {
 		Name:        "stream_count",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String(), "env": env},
 	}, streamLabels)
+	psrpcErrorTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "psrpc",
+		Name:        "error_total",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String(), "env": env},
+	}, labels)
 
-	prometheus.MustRegister(psrpcUnaryRequestTime)
-	prometheus.MustRegister(psrpcUnaryResponseTime)
-	prometheus.MustRegister(psrpcMultiRequestTime)
-	prometheus.MustRegister(psrpcMultiResponseTime)
+	prometheus.MustRegister(psrpcRequestTime)
 	prometheus.MustRegister(psrpcStreamSendTime)
 	prometheus.MustRegister(psrpcStreamReceiveTotal)
 	prometheus.MustRegister(psrpcStreamCurrent)
+	prometheus.MustRegister(psrpcErrorTotal)
 }
 
 var _ middleware.MetricsObserver = PSRPCMetricsObserver{}
@@ -86,27 +67,39 @@ var _ middleware.MetricsObserver = PSRPCMetricsObserver{}
 type PSRPCMetricsObserver struct{}
 
 func (o PSRPCMetricsObserver) OnUnaryRequest(role middleware.MetricRole, info psrpc.RPCInfo, duration time.Duration, err error) {
-	if role == middleware.ClientRole {
-		psrpcUnaryRequestTime.WithLabelValues(info.Service, info.Method).Observe(float64(duration.Milliseconds()))
+	if err != nil {
+		psrpcErrorTotal.WithLabelValues(role.String(), "rpc", info.Service, info.Method).Inc()
+	} else if role == middleware.ClientRole {
+		psrpcRequestTime.WithLabelValues(role.String(), "rpc", info.Service, info.Method).Observe(float64(duration.Milliseconds()))
 	} else {
-		psrpcUnaryResponseTime.WithLabelValues(info.Service, info.Method).Observe(float64(duration.Milliseconds()))
+		psrpcRequestTime.WithLabelValues(role.String(), "rpc", info.Service, info.Method).Observe(float64(duration.Milliseconds()))
 	}
 }
 
 func (o PSRPCMetricsObserver) OnMultiRequest(role middleware.MetricRole, info psrpc.RPCInfo, duration time.Duration, responseCount int, errorCount int) {
-	if role == middleware.ClientRole {
-		psrpcMultiRequestTime.WithLabelValues(info.Service, info.Method).Observe(float64(duration.Milliseconds()))
+	if responseCount == 0 {
+		psrpcErrorTotal.WithLabelValues(role.String(), "multirpc", info.Service, info.Method).Inc()
+	} else if role == middleware.ClientRole {
+		psrpcRequestTime.WithLabelValues(role.String(), "multirpc", info.Service, info.Method).Observe(float64(duration.Milliseconds()))
 	} else {
-		psrpcMultiResponseTime.WithLabelValues(info.Service, info.Method).Observe(float64(duration.Milliseconds()))
+		psrpcRequestTime.WithLabelValues(role.String(), "multirpc", info.Service, info.Method).Observe(float64(duration.Milliseconds()))
 	}
 }
 
 func (o PSRPCMetricsObserver) OnStreamSend(role middleware.MetricRole, info psrpc.RPCInfo, duration time.Duration, err error) {
-	psrpcStreamSendTime.WithLabelValues(role.String(), info.Service, info.Method).Observe(float64(duration.Milliseconds()))
+	if err != nil {
+		psrpcErrorTotal.WithLabelValues(role.String(), "stream", info.Service, info.Method).Inc()
+	} else {
+		psrpcStreamSendTime.WithLabelValues(role.String(), info.Service, info.Method).Observe(float64(duration.Milliseconds()))
+	}
 }
 
 func (o PSRPCMetricsObserver) OnStreamRecv(role middleware.MetricRole, info psrpc.RPCInfo, err error) {
-	psrpcStreamReceiveTotal.WithLabelValues(role.String(), info.Service, info.Method).Inc()
+	if err != nil {
+		psrpcErrorTotal.WithLabelValues(role.String(), "stream", info.Service, info.Method).Inc()
+	} else {
+		psrpcStreamReceiveTotal.WithLabelValues(role.String(), info.Service, info.Method).Inc()
+	}
 }
 
 func (o PSRPCMetricsObserver) OnStreamOpen(role middleware.MetricRole, info psrpc.RPCInfo) {

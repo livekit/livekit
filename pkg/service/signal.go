@@ -40,12 +40,12 @@ func NewSignalServer(
 		nodeID,
 		&signalService{region, sessionHandler},
 		bus,
+		middleware.WithServerMetrics(prometheus.PSRPCMetricsObserver{}),
 		psrpc.WithServerStreamInterceptors(middleware.NewStreamRetryInterceptorFactory(middleware.RetryOptions{
 			MaxAttempts: config.MaxAttempts,
 			Timeout:     config.Timeout,
 			Backoff:     config.Backoff,
 		})),
-		middleware.WithServerMetrics(prometheus.PSRPCMetricsObserver{}),
 		psrpc.WithServerChannelSize(config.StreamBufferSize),
 	)
 	if err != nil {

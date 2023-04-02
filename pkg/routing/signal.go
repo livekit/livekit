@@ -35,12 +35,12 @@ func NewSignalClient(nodeID livekit.NodeID, bus psrpc.MessageBus, config config.
 	c, err := rpc.NewTypedSignalClient(
 		nodeID,
 		bus,
+		middleware.WithClientMetrics(prometheus.PSRPCMetricsObserver{}),
 		middleware.WithStreamRetries(middleware.RetryOptions{
 			MaxAttempts: config.MaxAttempts,
 			Timeout:     config.Timeout,
 			Backoff:     config.Backoff,
 		}),
-		middleware.WithClientMetrics(prometheus.PSRPCMetricsObserver{}),
 		psrpc.WithClientChannelSize(config.StreamBufferSize),
 	)
 	if err != nil {
