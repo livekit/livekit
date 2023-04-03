@@ -506,3 +506,40 @@ func connectTransports(t *testing.T, offerer, answerer *PCTransport, isICERestar
 		return answerer.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected
 	}, 10*time.Second, time.Millisecond*10, "answerer did not become connected")
 }
+
+func TestConfigureAudioTransceiver(t *testing.T) {
+	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	require.NoError(t, err)
+	defer pc.Close()
+
+	for _, testcase := range []struct {
+		nack   bool
+		stereo bool
+	}{
+		{false, false},
+		{true, false},
+		{false, true},
+		{true, true},
+	} {
+		t.Run(fmt.Sprintf("nack=%v,stereo=%v", testcase.nack, testcase.stereo), func(t *testing.T) {
+			tr, err := pc.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio, webrtc.RtpTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendonly})
+			require.NoError(t, err)
+
+			configureAudioTransceiver(tr, testcase.stereo, testcase.nack)
+			codecs := tr.Sender().GetParameters().Codecs
+			for _, codec := range codecs {
+				if strings.Contains(codec.MimeType, webrtc.MimeTypeOpus) {
+					require.Equal(t, testcase.stereo, strings.Contains(codec.SDPFmtpLine, "sprop-stereo=1"))
+					var nackEnabled bool
+					for _, fb := range codec.RTCPFeedback {
+						if fb.Type == webrtc.TypeRTCPFBNACK {
+							nackEnabled = true
+							break
+						}
+					}
+					require.Equal(t, testcase.nack, nackEnabled)
+				}
+			}
+		})
+	}
+}
