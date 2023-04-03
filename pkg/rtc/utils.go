@@ -140,7 +140,7 @@ func LoggerWithParticipant(l logger.Logger, identity livekit.ParticipantIdentity
 	}
 	values = append(values, "remote", isRemote)
 	// enable sampling per participant
-	return l.WithItemSampler().WithValues(values...)
+	return l.WithValues(values...)
 }
 
 func LoggerWithRoom(l logger.Logger, name livekit.RoomName, roomID livekit.RoomID) logger.Logger {
