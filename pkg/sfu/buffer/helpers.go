@@ -387,7 +387,7 @@ func (v *VP9) Unmarshal(payload []byte) error {
 
 		v.LayersPresent = 1
 		v.TID = (payload[idx] >> 5) & 0x7
-		if P && v.TID != 0 {
+		if !P && v.TID != 0 {
 			return errInvalidPacket
 		}
 		v.UBit = (payload[idx] >> 4) & 0x1

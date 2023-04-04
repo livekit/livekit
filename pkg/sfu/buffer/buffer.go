@@ -193,8 +193,17 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	case strings.HasPrefix(b.mime, "video/"):
 		b.codecType = webrtc.RTPCodecTypeVideo
 		b.bucket = bucket.NewBucket(b.videoPool.Get().(*[]byte))
-		if b.frameRateCalculator[0] == nil && strings.EqualFold(codec.MimeType, webrtc.MimeTypeVP8) {
-			b.frameRateCalculator[0] = NewFrameRateCalculatorVP8(b.clockRate, b.logger)
+		if b.frameRateCalculator[0] == nil {
+			if strings.EqualFold(codec.MimeType, webrtc.MimeTypeVP8) {
+				b.frameRateCalculator[0] = NewFrameRateCalculatorVP8(b.clockRate, b.logger)
+			}
+
+			if strings.EqualFold(codec.MimeType, webrtc.MimeTypeVP9) {
+				frc := NewFrameRateCalculatorVP9(b.clockRate, b.logger)
+				for i := range b.frameRateCalculator {
+					b.frameRateCalculator[i] = frc.GetFrameRateCalculatorForSpatial(int32(i))
+				}
+			}
 		}
 
 	default:
@@ -560,6 +569,22 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64) *ExtPack
 			ep.Spatial = InvalidLayerSpatial // vp8 don't have spatial scalability, reset to -1
 		}
 		ep.Payload = vp8Packet
+	case "video/vp9":
+		vp9Packet := VP9{}
+		if err := vp9Packet.Unmarshal(rtpPacket.Payload); err != nil {
+			b.logger.Warnw("could not unmarshal VP9 packet", err)
+			return nil
+		}
+		ep.KeyFrame = vp9Packet.IsKeyFrame
+		if ep.DependencyDescriptor == nil {
+			ep.Spatial = int32(vp9Packet.SID)
+			ep.Temporal = int32(vp9Packet.TID)
+		} else {
+			// vp9 with DependencyDescriptor enabled, use the SID/TID from the descriptor
+			vp9Packet.SID = uint8(ep.Spatial)
+			vp9Packet.TID = uint8(ep.Temporal)
+		}
+		ep.Payload = vp9Packet
 	case "video/h264":
 		ep.KeyFrame = IsH264Keyframe(rtpPacket.Payload)
 	case "video/av1":
