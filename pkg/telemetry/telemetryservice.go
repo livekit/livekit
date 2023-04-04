@@ -7,6 +7,7 @@ import (
 
 	"github.com/gammazero/workerpool"
 
+	"github.com/livekit/livekit-server/pkg/bridge"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -78,9 +79,11 @@ type telemetryService struct {
 
 	lock    sync.RWMutex
 	workers map[livekit.ParticipantID]*StatsWorker
+
+	bridge *bridge.Bridge
 }
 
-func NewTelemetryService(notifier webhook.Notifier, analytics AnalyticsService) TelemetryService {
+func NewTelemetryService(notifier webhook.Notifier, analytics AnalyticsService, bridge *bridge.Bridge) TelemetryService {
 	t := &telemetryService{
 		AnalyticsService: analytics,
 
@@ -88,6 +91,8 @@ func NewTelemetryService(notifier webhook.Notifier, analytics AnalyticsService) 
 		webhookPool: workerpool.New(maxWebhookWorkers),
 		jobsChan:    make(chan func(), jobQueueBufferSize),
 		workers:     make(map[livekit.ParticipantID]*StatsWorker),
+
+		bridge: bridge,
 	}
 
 	go t.run()

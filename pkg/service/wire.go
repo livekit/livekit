@@ -13,6 +13,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"gopkg.in/yaml.v3"
 
+	"github.com/livekit/livekit-server/pkg/bridge"
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -29,6 +30,7 @@ import (
 
 func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*LivekitServer, error) {
 	wire.Build(
+		bridge.NewBridge,
 		getNodeID,
 		createRedisClient,
 		createStore,
@@ -193,3 +195,11 @@ func getSignalRelayConfig(config *config.Config) config.SignalRelayConfig {
 func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Server, error) {
 	return NewTurnServer(conf, authHandler, false)
 }
+
+// func createBridge(conf *config.Config) (*Bridge, error) {
+// 	if !conf.Bridge.Enabled {
+// 		return nil, nil
+// 	}
+
+// 	return NewBridge(conf.Bridge, router)
+// }

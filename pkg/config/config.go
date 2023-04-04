@@ -68,6 +68,13 @@ type Config struct {
 	Limit    LimitConfig   `yaml:"limit,omitempty"`
 
 	Development bool `yaml:"development,omitempty"`
+
+	Bridge BridgeConfig `yaml:"bridge,omitempty"`
+}
+
+type BridgeConfig struct {
+	Url   string `yaml:"url,omitempty"`
+	Token string `yaml:"token,omitempty"`
 }
 
 type RTCConfig struct {

@@ -22,9 +22,14 @@ func (t *telemetryService) NotifyEvent(ctx context.Context, event *livekit.Webho
 	event.Id = utils.NewGuid("EV_")
 
 	t.webhookPool.Submit(func() {
-		if err := t.notifier.Notify(ctx, event); err != nil {
+
+		err := t.bridge.StreamPublish("wave.events", event)
+		if err != nil {
 			logger.Warnw("failed to notify webhook", err, "event", event.Event)
 		}
+		// if err := t.notifier.Notify(ctx, event); err != nil {
+		// 	logger.Warnw("failed to notify webhook", err, "event", event.Event)
+		// }
 	})
 }
 

@@ -8,6 +8,7 @@ package service
 
 import (
 	"fmt"
+	"github.com/livekit/livekit-server/pkg/bridge"
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -68,7 +69,11 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	analyticsService := telemetry.NewAnalyticsService(conf, currentNode)
-	telemetryService := telemetry.NewTelemetryService(notifier, analyticsService)
+	bridgeBridge, err := bridge.NewBridge(conf)
+	if err != nil {
+		return nil, err
+	}
+	telemetryService := telemetry.NewTelemetryService(notifier, analyticsService, bridgeBridge)
 	rtcEgressLauncher := NewEgressLauncher(egressClient, rpcClient, egressStore, telemetryService)
 	roomService, err := NewRoomService(roomConfig, apiConfig, router, roomAllocator, objectStore, rtcEgressLauncher)
 	if err != nil {

@@ -26,7 +26,7 @@ type telemetryServiceFixture struct {
 func createFixture() *telemetryServiceFixture {
 	fixture := &telemetryServiceFixture{}
 	fixture.analytics = &telemetryfakes.FakeAnalyticsService{}
-	fixture.sut = telemetry.NewTelemetryService(nil, fixture.analytics)
+	fixture.sut = telemetry.NewTelemetryService(nil, fixture.analytics, nil)
 	return fixture
 }
 
