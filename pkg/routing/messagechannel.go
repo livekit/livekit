@@ -1,20 +1,28 @@
 package routing
 
 import (
+	"sync"
+
 	"google.golang.org/protobuf/proto"
 )
 
+const DefaultMessageChannelSize = 200
+
 type MessageChannel struct {
-	msgChan chan proto.Message
-	closed  chan struct{}
-	onClose func()
+	msgChan  chan proto.Message
+	onClose  func()
+	isClosed bool
+	lock     sync.RWMutex
 }
 
-func NewMessageChannel() *MessageChannel {
+func NewDefaultMessageChannel() *MessageChannel {
+	return NewMessageChannel(DefaultMessageChannelSize)
+}
+
+func NewMessageChannel(size int) *MessageChannel {
 	return &MessageChannel{
 		// allow some buffer to avoid blocked writes
-		msgChan: make(chan proto.Message, 200),
-		closed:  make(chan struct{}),
+		msgChan: make(chan proto.Message, size),
 	}
 }
 
@@ -23,22 +31,19 @@ func (m *MessageChannel) OnClose(f func()) {
 }
 
 func (m *MessageChannel) IsClosed() bool {
-	select {
-	case <-m.closed:
-		return true
-	default:
-		return false
-	}
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+	return m.isClosed
 }
 
 func (m *MessageChannel) WriteMessage(msg proto.Message) error {
-	if m.IsClosed() {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+	if m.isClosed {
 		return ErrChannelClosed
 	}
 
 	select {
-	case <-m.closed:
-		return ErrChannelClosed
 	case m.msgChan <- msg:
 		// published
 		return nil
@@ -53,11 +58,15 @@ func (m *MessageChannel) ReadChan() <-chan proto.Message {
 }
 
 func (m *MessageChannel) Close() {
-	if m.IsClosed() {
+	m.lock.Lock()
+	if m.isClosed {
+		m.lock.Unlock()
 		return
 	}
-	close(m.closed)
+	m.isClosed = true
 	close(m.msgChan)
+	m.lock.Unlock()
+
 	if m.onClose != nil {
 		m.onClose()
 	}

@@ -4,8 +4,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livekit/protocol/livekit"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	"github.com/livekit/protocol/livekit"
 )
 
 type DataStatsParam struct {
@@ -61,7 +62,6 @@ func (s *DataStats) ToProtoActive() *livekit.RTPStats {
 		Bytes:     uint64(s.windowBytes),
 		Bitrate:   float64(s.windowBytes) * 8 / float64(duration) / 1e9,
 	}
-
 }
 
 func (s *DataStats) Stop() {
@@ -82,7 +82,7 @@ func (s *DataStats) ToProtoAggregateOnly() *livekit.RTPStats {
 		StartTime: timestamppb.New(s.startTime),
 		EndTime:   timestamppb.New(end),
 		Duration:  end.Sub(s.startTime).Seconds(),
-		Bytes:     uint64(s.windowBytes),
-		Bitrate:   float64(s.windowBytes) * 8 / float64(end.Sub(s.startTime).Seconds()),
+		Bytes:     uint64(s.totalBytes),
+		Bitrate:   float64(s.totalBytes) * 8 / end.Sub(s.startTime).Seconds(),
 	}
 }

@@ -4,7 +4,6 @@ import (
 	"math"
 
 	"github.com/livekit/protocol/livekit"
-	"github.com/thoas/go-funk"
 
 	"github.com/livekit/livekit-server/pkg/config"
 )
@@ -15,9 +14,10 @@ type RegionAwareSelector struct {
 	CurrentRegion   string
 	regionDistances map[string]float64
 	regions         []config.RegionConfig
+	SortBy          string
 }
 
-func NewRegionAwareSelector(currentRegion string, regions []config.RegionConfig) (*RegionAwareSelector, error) {
+func NewRegionAwareSelector(currentRegion string, regions []config.RegionConfig, sortBy string) (*RegionAwareSelector, error) {
 	if currentRegion == "" {
 		return nil, ErrCurrentRegionNotSet
 	}
@@ -26,6 +26,7 @@ func NewRegionAwareSelector(currentRegion string, regions []config.RegionConfig)
 		CurrentRegion:   currentRegion,
 		regionDistances: make(map[string]float64),
 		regions:         regions,
+		SortBy:          sortBy,
 	}
 
 	var currentRC *config.RegionConfig
@@ -79,14 +80,15 @@ func (s *RegionAwareSelector) SelectNode(nodes []*livekit.Node) (*livekit.Node, 
 		nodes = nearestNodes
 	}
 
-	idx := funk.RandomInt(0, len(nodes))
-	return nodes[idx], nil
+	return SelectSortedNode(nodes, s.SortBy)
 }
 
 // haversine(θ) function
 func hsin(theta float64) float64 {
 	return math.Pow(math.Sin(theta/2), 2)
 }
+
+var piBy180 = math.Pi / 180
 
 // Haversine Distance Formula
 // http://en.wikipedia.org/wiki/Haversine_formula
@@ -95,10 +97,10 @@ func distanceBetween(lat1, lon1, lat2, lon2 float64) float64 {
 	// convert to radians
 	// must cast radius as float to multiply later
 	var la1, lo1, la2, lo2, r float64
-	la1 = lat1 * math.Pi / 180
-	lo1 = lon1 * math.Pi / 180
-	la2 = lat2 * math.Pi / 180
-	lo2 = lon2 * math.Pi / 180
+	la1 = lat1 * piBy180
+	lo1 = lon1 * piBy180
+	la2 = lat2 * piBy180
+	lo2 = lon2 * piBy180
 
 	r = 6378100 // Earth radius in METERS
 

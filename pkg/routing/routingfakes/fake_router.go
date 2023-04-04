@@ -40,6 +40,16 @@ type FakeRouter struct {
 		result1 *livekit.Node
 		result2 error
 	}
+	GetRegionStub        func() string
+	getRegionMutex       sync.RWMutex
+	getRegionArgsForCall []struct {
+	}
+	getRegionReturns struct {
+		result1 string
+	}
+	getRegionReturnsOnCall map[int]struct {
+		result1 string
+	}
 	ListNodesStub        func() ([]*livekit.Node, error)
 	listNodesMutex       sync.RWMutex
 	listNodesArgsForCall []struct {
@@ -318,6 +328,59 @@ func (fake *FakeRouter) GetNodeForRoomReturnsOnCall(i int, result1 *livekit.Node
 		result1 *livekit.Node
 		result2 error
 	}{result1, result2}
+}
+
+func (fake *FakeRouter) GetRegion() string {
+	fake.getRegionMutex.Lock()
+	ret, specificReturn := fake.getRegionReturnsOnCall[len(fake.getRegionArgsForCall)]
+	fake.getRegionArgsForCall = append(fake.getRegionArgsForCall, struct {
+	}{})
+	stub := fake.GetRegionStub
+	fakeReturns := fake.getRegionReturns
+	fake.recordInvocation("GetRegion", []interface{}{})
+	fake.getRegionMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeRouter) GetRegionCallCount() int {
+	fake.getRegionMutex.RLock()
+	defer fake.getRegionMutex.RUnlock()
+	return len(fake.getRegionArgsForCall)
+}
+
+func (fake *FakeRouter) GetRegionCalls(stub func() string) {
+	fake.getRegionMutex.Lock()
+	defer fake.getRegionMutex.Unlock()
+	fake.GetRegionStub = stub
+}
+
+func (fake *FakeRouter) GetRegionReturns(result1 string) {
+	fake.getRegionMutex.Lock()
+	defer fake.getRegionMutex.Unlock()
+	fake.GetRegionStub = nil
+	fake.getRegionReturns = struct {
+		result1 string
+	}{result1}
+}
+
+func (fake *FakeRouter) GetRegionReturnsOnCall(i int, result1 string) {
+	fake.getRegionMutex.Lock()
+	defer fake.getRegionMutex.Unlock()
+	fake.GetRegionStub = nil
+	if fake.getRegionReturnsOnCall == nil {
+		fake.getRegionReturnsOnCall = make(map[int]struct {
+			result1 string
+		})
+	}
+	fake.getRegionReturnsOnCall[i] = struct {
+		result1 string
+	}{result1}
 }
 
 func (fake *FakeRouter) ListNodes() ([]*livekit.Node, error) {
@@ -947,6 +1010,8 @@ func (fake *FakeRouter) Invocations() map[string][][]interface{} {
 	defer fake.drainMutex.RUnlock()
 	fake.getNodeForRoomMutex.RLock()
 	defer fake.getNodeForRoomMutex.RUnlock()
+	fake.getRegionMutex.RLock()
+	defer fake.getRegionMutex.RUnlock()
 	fake.listNodesMutex.RLock()
 	defer fake.listNodesMutex.RUnlock()
 	fake.onNewParticipantRTCMutex.RLock()

@@ -1,4 +1,4 @@
-package rtc_test
+package rtc
 
 import (
 	"github.com/livekit/protocol/livekit"
@@ -6,11 +6,17 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
-func newMockParticipant(identity livekit.ParticipantIdentity, protocol types.ProtocolVersion, hidden bool) *typesfakes.FakeLocalParticipant {
+func init() {
+	prometheus.Init("test", livekit.NodeType_SERVER, "test")
+}
+
+func newMockParticipant(identity livekit.ParticipantIdentity, protocol types.ProtocolVersion, hidden bool, publisher bool) *typesfakes.FakeLocalParticipant {
 	p := &typesfakes.FakeLocalParticipant{}
-	p.IDReturns(livekit.ParticipantID(utils.NewGuid(utils.ParticipantPrefix)))
+	sid := utils.NewGuid(utils.ParticipantPrefix)
+	p.IDReturns(livekit.ParticipantID(sid))
 	p.IdentityReturns(identity)
 	p.StateReturns(livekit.ParticipantInfo_JOINED)
 	p.ProtocolVersionReturns(protocol)
@@ -18,11 +24,17 @@ func newMockParticipant(identity livekit.ParticipantIdentity, protocol types.Pro
 	p.CanPublishReturns(!hidden)
 	p.CanPublishDataReturns(!hidden)
 	p.HiddenReturns(hidden)
+	p.ToProtoReturns(&livekit.ParticipantInfo{
+		Sid:         sid,
+		Identity:    string(identity),
+		State:       livekit.ParticipantInfo_JOINED,
+		IsPublisher: publisher,
+	})
 
 	p.SetMetadataStub = func(m string) {
 		var f func(participant types.LocalParticipant)
-		if p.OnMetadataUpdateCallCount() > 0 {
-			f = p.OnMetadataUpdateArgsForCall(p.OnMetadataUpdateCallCount() - 1)
+		if p.OnParticipantUpdateCallCount() > 0 {
+			f = p.OnParticipantUpdateArgsForCall(p.OnParticipantUpdateCallCount() - 1)
 		}
 		if f != nil {
 			f(p)

@@ -1,29 +1,47 @@
 package serverlogger
 
 import (
-	"github.com/go-logr/logr"
-	"github.com/go-logr/zapr"
-	"github.com/livekit/protocol/logger"
 	"github.com/pion/logging"
-	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+
+	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/config"
 )
 
 var (
-	pionLevel zapcore.Level
+	pionLevel           zapcore.Level
+	pionIgnoredPrefixes = map[string][]string{
+		"ice": {
+			"pingAllCandidates called with no candidate pairs",
+			"failed to send packet: io: read/write on closed pipe",
+			"Ignoring remote candidate with tcpType active",
+			"discard message from",
+			"Failed to discover mDNS candidate",
+			"Failed to read from candidate tcp",
+			"remote mDNS candidate added, but mDNS is disabled",
+		},
+		"pc": {
+			"Failed to accept RTCP stream is already closed",
+			"Failed to accept RTP stream is already closed",
+			"Incoming unhandled RTCP ssrc",
+		},
+		"tcp_mux": {
+			"Error reading first packet from",
+			"error closing connection",
+		},
+		"turn": {
+			"error when handling datagram",
+		},
+	}
 )
 
 // implements webrtc.LoggerFactory
 type LoggerFactory struct {
-	logger logr.Logger
+	logger logger.Logger
 }
 
-func NewLoggerFactory(logger logr.Logger) *LoggerFactory {
-	if logger.GetSink() == nil {
-		logger = logr.Discard()
-	}
+func NewLoggerFactory(logger logger.Logger) *LoggerFactory {
 	return &LoggerFactory{
 		logger: logger,
 	}
@@ -31,54 +49,18 @@ func NewLoggerFactory(logger logr.Logger) *LoggerFactory {
 
 func (f *LoggerFactory) NewLogger(scope string) logging.LeveledLogger {
 	return &logAdapter{
-		logger: f.logger.WithName(scope),
-		level:  pionLevel,
+		logger:          f.logger.WithName(scope),
+		level:           pionLevel,
+		ignoredPrefixes: pionIgnoredPrefixes[scope],
 	}
 }
 
 // Note: only pass in logr.Logger with default depth
-func SetLogger(l logr.Logger) {
+func SetLogger(l logger.Logger) {
 	logger.SetLogger(l, "livekit")
 }
 
 func InitFromConfig(config config.LoggingConfig) {
-	lvl := parseLevel(config.Level)
-	pionLevel = parseLevel(config.PionLevel)
-	if lvl > pionLevel {
-		pionLevel = lvl
-	}
-	zapConfig := zap.Config{
-		Level:            zap.NewAtomicLevelAt(lvl),
-		Development:      false,
-		Encoding:         "console",
-		EncoderConfig:    zap.NewDevelopmentEncoderConfig(),
-		OutputPaths:      []string{"stderr"},
-		ErrorOutputPaths: []string{"stderr"},
-	}
-	if config.Sample {
-		zapConfig.Sampling = &zap.SamplingConfig{
-			Initial:    100,
-			Thereafter: 100,
-		}
-	}
-	if config.JSON {
-		zapConfig.Encoding = "json"
-		zapConfig.EncoderConfig = zap.NewProductionEncoderConfig()
-	}
-	initLogger(zapConfig)
-}
-
-// valid levels: debug, info, warn, error, fatal, panic
-func initLogger(config zap.Config) {
-	l, _ := config.Build()
-	zapLogger := zapr.NewLogger(l)
-	SetLogger(zapLogger)
-}
-
-func parseLevel(level string) zapcore.Level {
-	lvl := zapcore.InfoLevel
-	if level != "" {
-		_ = lvl.UnmarshalText([]byte(level))
-	}
-	return lvl
+	pionLevel = logger.ParseZapLevel(config.PionLevel)
+	logger.InitFromConfig(config.Config, "livekit")
 }

@@ -10,13 +10,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/encoding/protojson"
+
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -65,6 +66,20 @@ func TestWebhooks(t *testing.T) {
 	require.Equal(t, "c2", joined.Participant.Identity)
 	ts.ClearEvents()
 
+	// track published
+	writers := publishTracksForClients(t, c1)
+	defer stopWriters(writers...)
+	testutils.WithTimeout(t, func() string {
+		ev := ts.GetEvent(webhook.EventTrackPublished)
+		if ev == nil {
+			return "did not receive TrackPublished"
+		}
+		require.NotNil(t, ev.Track, "TrackPublished did not include trackInfo")
+		require.Equal(t, string(c1.ID()), ev.Participant.Sid)
+		return ""
+	})
+	ts.ClearEvents()
+
 	// first participant leaves
 	c1.Stop()
 	testutils.WithTimeout(t, func() string {
@@ -90,13 +105,12 @@ func TestWebhooks(t *testing.T) {
 }
 
 func setupServerWithWebhook() (server *service.LivekitServer, testServer *webhookTestServer, finishFunc func(), err error) {
-	conf, err := config.NewConfig("", nil)
+	conf, err := config.NewConfig("", true, nil, nil)
 	if err != nil {
 		panic(fmt.Sprintf("could not create config: %v", err))
 	}
 	conf.WebHook.URLs = []string{"http://localhost:7890"}
 	conf.WebHook.APIKey = testApiKey
-	conf.Development = true
 	conf.Keys = map[string]string{testApiKey: testApiSecret}
 
 	testServer = newTestServer(":7890")

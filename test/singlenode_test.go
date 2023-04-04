@@ -8,12 +8,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livekit/protocol/auth"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
 	"github.com/thoas/go-funk"
+
+	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc"
@@ -327,6 +328,23 @@ func TestSingleNodeCORS(t *testing.T) {
 	require.Equal(t, "testhost.com", res.Header.Get("Access-Control-Allow-Origin"))
 }
 
+func TestPingPong(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+	_, finish := setupSingleNodeTest("TestPingPong")
+	defer finish()
+
+	c1 := createRTCClient("c1", defaultServerPort, nil)
+	waitUntilConnected(t, c1)
+
+	require.NoError(t, c1.SendPing())
+	require.Eventually(t, func() bool {
+		return c1.PongReceivedAt() > 0
+	}, time.Second, 10*time.Millisecond)
+}
+
 func TestSingleNodeJoinAfterClose(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
@@ -337,6 +355,18 @@ func TestSingleNodeJoinAfterClose(t *testing.T) {
 	defer finish()
 
 	scenarioJoinClosedRoom(t)
+}
+
+func TestSingleNodeCloseNonRTCRoom(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	_, finish := setupSingleNodeTest("closeNonRTCRoom")
+	defer finish()
+
+	closeNonRTCRoom(t)
 }
 
 func TestAutoCreate(t *testing.T) {

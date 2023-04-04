@@ -10,6 +10,8 @@ import (
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/mediatransportutil/pkg/nack"
 )
 
 var vp8Codec = webrtc.RTPCodecParameters{
@@ -46,7 +48,7 @@ func TestNack(t *testing.T) {
 		var wg sync.WaitGroup
 		// 5 tries
 		wg.Add(5)
-		buff.OnFeedback(func(fb []rtcp.Packet) {
+		buff.OnRtcpFeedback(func(fb []rtcp.Packet) {
 			for _, pkt := range fb {
 				switch p := pkt.(type) {
 				case *rtcp.TransportLayerNack:
@@ -59,7 +61,7 @@ func TestNack(t *testing.T) {
 		buff.Bind(webrtc.RTPParameters{
 			HeaderExtensions: nil,
 			Codecs:           []webrtc.RTPCodecParameters{vp8Codec},
-		}, vp8Codec.RTPCodecCapability, Options{})
+		}, vp8Codec.RTPCodecCapability)
 		rtt := uint32(20)
 		buff.nacker.SetRTT(rtt)
 		for i := 0; i < 15; i++ {
@@ -67,7 +69,7 @@ func TestNack(t *testing.T) {
 				continue
 			}
 			if i < 14 {
-				time.Sleep(time.Duration(float64(rtt)*math.Pow(backoffFactor, float64(i))+10) * time.Millisecond)
+				time.Sleep(time.Duration(float64(rtt)*math.Pow(nack.BackoffFactor, float64(i))+10) * time.Millisecond)
 			} else {
 				time.Sleep(500 * time.Millisecond) // even a long wait should not exceed max retries
 			}
@@ -96,7 +98,7 @@ func TestNack(t *testing.T) {
 			1:     0,
 		}
 		wg.Add(5 * len(expects)) // retry 5 times
-		buff.OnFeedback(func(fb []rtcp.Packet) {
+		buff.OnRtcpFeedback(func(fb []rtcp.Packet) {
 			for _, pkt := range fb {
 				switch p := pkt.(type) {
 				case *rtcp.TransportLayerNack:
@@ -118,7 +120,7 @@ func TestNack(t *testing.T) {
 		buff.Bind(webrtc.RTPParameters{
 			HeaderExtensions: nil,
 			Codecs:           []webrtc.RTPCodecParameters{vp8Codec},
-		}, vp8Codec.RTPCodecCapability, Options{})
+		}, vp8Codec.RTPCodecCapability)
 		rtt := uint32(30)
 		buff.nacker.SetRTT(rtt)
 		for i := 0; i < 15; i++ {
@@ -126,7 +128,7 @@ func TestNack(t *testing.T) {
 				continue
 			}
 			if i < 14 {
-				time.Sleep(time.Duration(float64(rtt)*math.Pow(backoffFactor, float64(i))+10) * time.Millisecond)
+				time.Sleep(time.Duration(float64(rtt)*math.Pow(nack.BackoffFactor, float64(i))+10) * time.Millisecond)
 			} else {
 				time.Sleep(500 * time.Millisecond) // even a long wait should not exceed max retries
 			}
@@ -145,20 +147,11 @@ func TestNack(t *testing.T) {
 }
 
 func TestNewBuffer(t *testing.T) {
-	type args struct {
-		options Options
-	}
 	tests := []struct {
 		name string
-		args args
 	}{
 		{
 			name: "Must not be nil and add packets in sequence",
-			args: args{
-				options: Options{
-					MaxBitRate: 1e6,
-				},
-			},
 		},
 	}
 	for _, tt := range tests {
@@ -194,12 +187,12 @@ func TestNewBuffer(t *testing.T) {
 			buff := NewBuffer(123, pool, pool)
 			buff.codecType = webrtc.RTPCodecTypeVideo
 			require.NotNil(t, buff)
-			buff.OnFeedback(func(_ []rtcp.Packet) {
+			buff.OnRtcpFeedback(func(_ []rtcp.Packet) {
 			})
 			buff.Bind(webrtc.RTPParameters{
 				HeaderExtensions: nil,
 				Codecs:           []webrtc.RTPCodecParameters{vp8Codec},
-			}, vp8Codec.RTPCodecCapability, Options{})
+			}, vp8Codec.RTPCodecCapability)
 
 			for _, p := range TestPackets {
 				buf, _ := p.Marshal()
@@ -224,7 +217,7 @@ func TestFractionLostReport(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	buff.SetLastFractionLostReport(55)
-	buff.OnFeedback(func(fb []rtcp.Packet) {
+	buff.OnRtcpFeedback(func(fb []rtcp.Packet) {
 		for _, pkt := range fb {
 			switch p := pkt.(type) {
 			case *rtcp.ReceiverReport:
@@ -238,7 +231,7 @@ func TestFractionLostReport(t *testing.T) {
 	buff.Bind(webrtc.RTPParameters{
 		HeaderExtensions: nil,
 		Codecs:           []webrtc.RTPCodecParameters{opusCodec},
-	}, opusCodec.RTPCodecCapability, Options{})
+	}, opusCodec.RTPCodecCapability)
 	for i := 0; i < 15; i++ {
 		pkt := rtp.Packet{
 			Header:  rtp.Header{SequenceNumber: uint16(i), Timestamp: uint32(i)},

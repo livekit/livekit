@@ -5,9 +5,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/auth/authfakes"
-	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/service"
 )

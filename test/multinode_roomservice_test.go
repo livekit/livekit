@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/livekit/protocol/livekit"
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-server/pkg/testutils"
 )
@@ -125,7 +126,6 @@ func TestMultiNodeMutePublishedTrack(t *testing.T) {
 	defer c1.Stop()
 	waitUntilConnected(t, c1)
 
-	// c1 and c2 publishing, c3 just receiving
 	writers := publishTracksForClients(t, c1)
 	defer stopWriters(writers...)
 

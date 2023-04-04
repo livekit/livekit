@@ -6,10 +6,10 @@ import (
 	"io"
 	"strings"
 
-	"github.com/go-logr/logr"
+	"github.com/pion/webrtc/v3"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 )
@@ -34,12 +34,12 @@ func PackDataTrackLabel(participantID livekit.ParticipantID, trackID livekit.Tra
 	return string(participantID) + trackIdSeparator + string(trackID) + trackIdSeparator + label
 }
 
-func UnpackDataTrackLabel(packed string) (peerID livekit.ParticipantID, trackID livekit.TrackID, label string) {
+func UnpackDataTrackLabel(packed string) (participantID livekit.ParticipantID, trackID livekit.TrackID, label string) {
 	parts := strings.Split(packed, trackIdSeparator)
 	if len(parts) != 3 {
 		return "", livekit.TrackID(packed), ""
 	}
-	peerID = livekit.ParticipantID(parts[0])
+	participantID = livekit.ParticipantID(parts[0])
 	trackID = livekit.TrackID(parts[1])
 	label = parts[2]
 	return
@@ -108,12 +108,12 @@ func IsEOF(err error) bool {
 	return err == io.ErrClosedPipe || err == io.EOF
 }
 
-func RecoverSilent() {
-	recover()
-}
-
-func Recover() {
-	if r := recover(); r != nil {
+func Recover(l logger.Logger) any {
+	if l == nil {
+		l = logger.GetLogger()
+	}
+	r := recover()
+	if r != nil {
 		var err error
 		switch e := r.(type) {
 		case string:
@@ -123,37 +123,53 @@ func Recover() {
 		default:
 			err = errors.New("unknown panic")
 		}
-		logger.GetLogger().Error(err, "recovered panic", "panic", r)
+		l.Errorw("recovered panic", err, "panic", r)
 	}
+
+	return r
 }
 
 // logger helpers
-func LoggerWithParticipant(l logger.Logger, identity livekit.ParticipantIdentity, sid livekit.ParticipantID) logger.Logger {
-	lr := logr.Logger(l)
+func LoggerWithParticipant(l logger.Logger, identity livekit.ParticipantIdentity, sid livekit.ParticipantID, isRemote bool) logger.Logger {
+	values := make([]interface{}, 0, 4)
 	if identity != "" {
-		lr = lr.WithValues("participant", identity)
+		values = append(values, "participant", identity)
 	}
 	if sid != "" {
-		lr = lr.WithValues("pID", sid)
+		values = append(values, "pID", sid)
 	}
-	return logger.Logger(lr)
+	values = append(values, "remote", isRemote)
+	// enable sampling per participant
+	return l.WithValues(values...)
 }
 
 func LoggerWithRoom(l logger.Logger, name livekit.RoomName, roomID livekit.RoomID) logger.Logger {
-	lr := logr.Logger(l)
+	values := make([]interface{}, 0, 2)
 	if name != "" {
-		lr = lr.WithValues("room", name)
+		values = append(values, "room", name)
 	}
 	if roomID != "" {
-		lr = lr.WithValues("roomID", roomID)
+		values = append(values, "roomID", roomID)
 	}
-	return logger.Logger(lr)
+	// also sample for the room
+	return l.WithItemSampler().WithValues(values...)
 }
 
-func LoggerWithTrack(l logger.Logger, trackID livekit.TrackID) logger.Logger {
-	lr := logr.Logger(l)
+func LoggerWithTrack(l logger.Logger, trackID livekit.TrackID, isRelayed bool) logger.Logger {
+	// sampling not required because caller already passing in participant's logger
 	if trackID != "" {
-		lr = lr.WithValues("trackID", trackID)
+		return l.WithValues("trackID", trackID, "relayed", isRelayed)
 	}
-	return logger.Logger(lr)
+	return l
+}
+
+func LoggerWithPCTarget(l logger.Logger, target livekit.SignalTarget) logger.Logger {
+	return l.WithValues("transport", target)
+}
+
+func LoggerWithCodecMime(l logger.Logger, mime string) logger.Logger {
+	if mime != "" {
+		return l.WithValues("mime", mime)
+	}
+	return l
 }

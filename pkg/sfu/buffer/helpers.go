@@ -3,7 +3,6 @@ package buffer
 import (
 	"encoding/binary"
 	"errors"
-	"time"
 
 	"github.com/livekit/protocol/logger"
 )
@@ -216,7 +215,7 @@ func IsH264Keyframe(payload []byte) bool {
 		return false
 	} else if nalu <= 23 {
 		// simple NALU
-		return nalu == 5
+		return nalu == 7
 	} else if nalu == 24 || nalu == 25 || nalu == 26 || nalu == 27 {
 		// STAP-A, STAP-B, MTAP16 or MTAP24
 		i := 1
@@ -269,6 +268,8 @@ func IsH264Keyframe(payload []byte) bool {
 	}
 	return false
 }
+
+// -------------------------------------
 
 // VP9 is a helper to get spatial/temporal data from VP9 packet header
 /*
@@ -444,35 +445,79 @@ func (v *VP9) MarshalTo(buf []byte) error {
 
 // -------------------------------------
 
-var (
-	ntpEpoch = time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC)
-)
-
-type NtpTime uint64
-
-func (t NtpTime) Duration() time.Duration {
-	sec := (t >> 32) * 1e9
-	frac := (t & 0xffffffff) * 1e9
-	nsec := frac >> 32
-	if uint32(frac) >= 0x80000000 {
-		nsec++
+// IsAV1Keyframe detects if av1 payload is a keyframe
+// taken from https://github.com/jech/galene/blob/master/codecs/codecs.go
+// all credits belongs to Juliusz Chroboczek @jech and the awesome Galene SFU
+func IsAV1Keyframe(payload []byte) bool {
+	if len(payload) < 2 {
+		return false
 	}
-	return time.Duration(sec + nsec)
-}
-
-func (t NtpTime) Time() time.Time {
-	return ntpEpoch.Add(t.Duration())
-}
-
-func ToNtpTime(t time.Time) NtpTime {
-	nsec := uint64(t.Sub(ntpEpoch))
-	sec := nsec / 1e9
-	nsec = (nsec - sec*1e9) << 32
-	frac := nsec / 1e9
-	if nsec%1e9 >= 1e9/2 {
-		frac++
+	// Z=0, N=1
+	if (payload[0] & 0x88) != 0x08 {
+		return false
 	}
-	return NtpTime(sec<<32 | frac)
+	w := (payload[0] & 0x30) >> 4
+
+	getObu := func(data []byte, last bool) ([]byte, int, bool) {
+		if last {
+			return data, len(data), false
+		}
+		offset := 0
+		length := 0
+		for {
+			if len(data) <= offset {
+				return nil, offset, offset > 0
+			}
+			l := data[offset]
+			length |= int(l&0x7f) << (offset * 7)
+			offset++
+			if (l & 0x80) == 0 {
+				break
+			}
+		}
+		if len(data) < offset+length {
+			return data[offset:], len(data), true
+		}
+		return data[offset : offset+length],
+			offset + length, false
+	}
+	offset := 1
+	i := 0
+	for {
+		obu, length, truncated :=
+			getObu(payload[offset:], int(w) == i+1)
+		if len(obu) < 1 {
+			return false
+		}
+		tpe := (obu[0] & 0x38) >> 3
+		switch i {
+		case 0:
+			// OBU_SEQUENCE_HEADER
+			if tpe != 1 {
+				return false
+			}
+		default:
+			// OBU_FRAME_HEADER or OBU_FRAME
+			if tpe == 3 || tpe == 6 {
+				if len(obu) < 2 {
+					return false
+				}
+				// show_existing_frame == 0
+				if (obu[1] & 0x80) != 0 {
+					return false
+				}
+				// frame_type == KEY_FRAME
+				return (obu[1] & 0x60) == 0
+			}
+		}
+		if truncated || i >= int(w) {
+			// the first frame header is in a second
+			// packet, give up.
+			return false
+		}
+		offset += length
+		i++
+	}
 }
 
-// ------------------------------------------
+// -------------------------------------

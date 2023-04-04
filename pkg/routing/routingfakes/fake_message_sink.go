@@ -13,10 +13,15 @@ type FakeMessageSink struct {
 	closeMutex       sync.RWMutex
 	closeArgsForCall []struct {
 	}
-	OnCloseStub        func(func())
-	onCloseMutex       sync.RWMutex
-	onCloseArgsForCall []struct {
-		arg1 func()
+	IsClosedStub        func() bool
+	isClosedMutex       sync.RWMutex
+	isClosedArgsForCall []struct {
+	}
+	isClosedReturns struct {
+		result1 bool
+	}
+	isClosedReturnsOnCall map[int]struct {
+		result1 bool
 	}
 	WriteMessageStub        func(protoreflect.ProtoMessage) error
 	writeMessageMutex       sync.RWMutex
@@ -57,36 +62,57 @@ func (fake *FakeMessageSink) CloseCalls(stub func()) {
 	fake.CloseStub = stub
 }
 
-func (fake *FakeMessageSink) OnClose(arg1 func()) {
-	fake.onCloseMutex.Lock()
-	fake.onCloseArgsForCall = append(fake.onCloseArgsForCall, struct {
-		arg1 func()
-	}{arg1})
-	stub := fake.OnCloseStub
-	fake.recordInvocation("OnClose", []interface{}{arg1})
-	fake.onCloseMutex.Unlock()
+func (fake *FakeMessageSink) IsClosed() bool {
+	fake.isClosedMutex.Lock()
+	ret, specificReturn := fake.isClosedReturnsOnCall[len(fake.isClosedArgsForCall)]
+	fake.isClosedArgsForCall = append(fake.isClosedArgsForCall, struct {
+	}{})
+	stub := fake.IsClosedStub
+	fakeReturns := fake.isClosedReturns
+	fake.recordInvocation("IsClosed", []interface{}{})
+	fake.isClosedMutex.Unlock()
 	if stub != nil {
-		fake.OnCloseStub(arg1)
+		return stub()
 	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
 }
 
-func (fake *FakeMessageSink) OnCloseCallCount() int {
-	fake.onCloseMutex.RLock()
-	defer fake.onCloseMutex.RUnlock()
-	return len(fake.onCloseArgsForCall)
+func (fake *FakeMessageSink) IsClosedCallCount() int {
+	fake.isClosedMutex.RLock()
+	defer fake.isClosedMutex.RUnlock()
+	return len(fake.isClosedArgsForCall)
 }
 
-func (fake *FakeMessageSink) OnCloseCalls(stub func(func())) {
-	fake.onCloseMutex.Lock()
-	defer fake.onCloseMutex.Unlock()
-	fake.OnCloseStub = stub
+func (fake *FakeMessageSink) IsClosedCalls(stub func() bool) {
+	fake.isClosedMutex.Lock()
+	defer fake.isClosedMutex.Unlock()
+	fake.IsClosedStub = stub
 }
 
-func (fake *FakeMessageSink) OnCloseArgsForCall(i int) func() {
-	fake.onCloseMutex.RLock()
-	defer fake.onCloseMutex.RUnlock()
-	argsForCall := fake.onCloseArgsForCall[i]
-	return argsForCall.arg1
+func (fake *FakeMessageSink) IsClosedReturns(result1 bool) {
+	fake.isClosedMutex.Lock()
+	defer fake.isClosedMutex.Unlock()
+	fake.IsClosedStub = nil
+	fake.isClosedReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeMessageSink) IsClosedReturnsOnCall(i int, result1 bool) {
+	fake.isClosedMutex.Lock()
+	defer fake.isClosedMutex.Unlock()
+	fake.IsClosedStub = nil
+	if fake.isClosedReturnsOnCall == nil {
+		fake.isClosedReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.isClosedReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
 }
 
 func (fake *FakeMessageSink) WriteMessage(arg1 protoreflect.ProtoMessage) error {
@@ -155,8 +181,8 @@ func (fake *FakeMessageSink) Invocations() map[string][][]interface{} {
 	defer fake.invocationsMutex.RUnlock()
 	fake.closeMutex.RLock()
 	defer fake.closeMutex.RUnlock()
-	fake.onCloseMutex.RLock()
-	defer fake.onCloseMutex.RUnlock()
+	fake.isClosedMutex.RLock()
+	defer fake.isClosedMutex.RUnlock()
 	fake.writeMessageMutex.RLock()
 	defer fake.writeMessageMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}

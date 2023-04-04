@@ -3,9 +3,10 @@ package clientconfiguration
 import (
 	"fmt"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"google.golang.org/protobuf/proto"
 )
 
 type ConfigurationItem struct {

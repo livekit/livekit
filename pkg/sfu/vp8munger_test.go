@@ -4,8 +4,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/livekit/protocol/logger"
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/testutils"
@@ -26,7 +27,7 @@ func compare(expected *VP8Munger, actual *VP8Munger) bool {
 }
 
 func newVP8Munger() *VP8Munger {
-	return NewVP8Munger(logger.Logger(logger.GetLogger()))
+	return NewVP8Munger(logger.GetLogger())
 }
 
 func TestSetLast(t *testing.T) {
@@ -64,17 +65,16 @@ func TestSetLast(t *testing.T) {
 				totalWrap:    0,
 				lastWrap:     0,
 			},
-			extLastPictureId:     13467,
-			pictureIdOffset:      0,
-			pictureIdUsed:        1,
-			lastTl0PicIdx:        233,
-			tl0PicIdxOffset:      0,
-			tl0PicIdxUsed:        1,
-			tidUsed:              1,
-			lastKeyIdx:           23,
-			keyIdxOffset:         0,
-			keyIdxUsed:           1,
-			lastDroppedPictureId: -1,
+			extLastPictureId: 13467,
+			pictureIdOffset:  0,
+			pictureIdUsed:    1,
+			lastTl0PicIdx:    233,
+			tl0PicIdxOffset:  0,
+			tl0PicIdxUsed:    1,
+			tidUsed:          1,
+			lastKeyIdx:       23,
+			keyIdxOffset:     0,
+			keyIdxUsed:       1,
 		},
 	}
 
@@ -139,17 +139,16 @@ func TestUpdateOffsets(t *testing.T) {
 				totalWrap:    0,
 				lastWrap:     0,
 			},
-			extLastPictureId:     13467,
-			pictureIdOffset:      345 - 13467 - 1,
-			pictureIdUsed:        1,
-			lastTl0PicIdx:        233,
-			tl0PicIdxOffset:      (12 - 233 - 1) & 0xff,
-			tl0PicIdxUsed:        1,
-			tidUsed:              1,
-			lastKeyIdx:           23,
-			keyIdxOffset:         (4 - 23 - 1) & 0x1f,
-			keyIdxUsed:           1,
-			lastDroppedPictureId: -1,
+			extLastPictureId: 13467,
+			pictureIdOffset:  345 - 13467 - 1,
+			pictureIdUsed:    1,
+			lastTl0PicIdx:    233,
+			tl0PicIdxOffset:  (12 - 233 - 1) & 0xff,
+			tl0PicIdxUsed:    1,
+			tidUsed:          1,
+			lastKeyIdx:       23,
+			keyIdxOffset:     (4 - 23 - 1) & 0x1f,
+			keyIdxUsed:       1,
 		},
 	}
 	require.True(t, compare(&expectedVP8Munger, v))
@@ -196,7 +195,7 @@ func TestOutOfOrderPictureId(t *testing.T) {
 	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
 
 	tpExpected := TranslationParamsVP8{
-		header: &buffer.VP8{
+		Header: &buffer.VP8{
 			FirstByte:        25,
 			PictureIDPresent: 1,
 			PictureID:        13469,
@@ -215,7 +214,7 @@ func TestOutOfOrderPictureId(t *testing.T) {
 	tp, err = v.UpdateAndGet(extPkt, SequenceNumberOrderingGap, 2)
 	require.NoError(t, err)
 	require.NotNil(t, tp)
-	require.True(t, reflect.DeepEqual(tpExpected, *tp))
+	require.Equal(t, tpExpected, *tp)
 
 	// all three, the last, the current and the in-between should have been added to missing picture id cache
 	value, ok := v.PictureIdOffset(13467)
@@ -235,7 +234,7 @@ func TestOutOfOrderPictureId(t *testing.T) {
 	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
 
 	tpExpected = TranslationParamsVP8{
-		header: &buffer.VP8{
+		Header: &buffer.VP8{
 			FirstByte:        25,
 			PictureIDPresent: 1,
 			PictureID:        13468,
@@ -254,7 +253,7 @@ func TestOutOfOrderPictureId(t *testing.T) {
 	tp, err = v.UpdateAndGet(extPkt, SequenceNumberOrderingOutOfOrder, 2)
 	require.NoError(t, err)
 	require.NotNil(t, tp)
-	require.True(t, reflect.DeepEqual(tpExpected, *tp))
+	require.Equal(t, tpExpected, *tp)
 }
 
 func TestTemporalLayerFiltering(t *testing.T) {
@@ -288,7 +287,8 @@ func TestTemporalLayerFiltering(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrFilteredVP8TemporalLayer)
 	require.Nil(t, tp)
-	require.EqualValues(t, 13467, v.lastDroppedPictureId)
+	dropped, _ := v.droppedPictureIds.Get(13467)
+	require.True(t, dropped)
 	require.EqualValues(t, 1, v.pictureIdOffset)
 
 	// another packet with the same picture id.
@@ -300,7 +300,8 @@ func TestTemporalLayerFiltering(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrFilteredVP8TemporalLayer)
 	require.Nil(t, tp)
-	require.EqualValues(t, 13467, v.lastDroppedPictureId)
+	dropped, _ = v.droppedPictureIds.Get(13467)
+	require.True(t, dropped)
 	require.EqualValues(t, 1, v.pictureIdOffset)
 
 	// another packet with the same picture id, but a gap in sequence number.
@@ -312,7 +313,8 @@ func TestTemporalLayerFiltering(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrFilteredVP8TemporalLayer)
 	require.Nil(t, tp)
-	require.EqualValues(t, 13467, v.lastDroppedPictureId)
+	dropped, _ = v.droppedPictureIds.Get(13467)
+	require.True(t, dropped)
 	require.EqualValues(t, 1, v.pictureIdOffset)
 }
 
@@ -320,7 +322,6 @@ func TestGapInSequenceNumberSamePicture(t *testing.T) {
 	v := newVP8Munger()
 
 	params := &testutils.TestExtPacketParams{
-		IsHead:         true,
 		SequenceNumber: 65533,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
@@ -345,7 +346,7 @@ func TestGapInSequenceNumberSamePicture(t *testing.T) {
 	v.SetLast(extPkt)
 
 	tpExpected := TranslationParamsVP8{
-		header: &buffer.VP8{
+		Header: &buffer.VP8{
 			FirstByte:        25,
 			PictureIDPresent: 1,
 			PictureID:        13467,
@@ -363,11 +364,11 @@ func TestGapInSequenceNumberSamePicture(t *testing.T) {
 	}
 	tp, err := v.UpdateAndGet(extPkt, SequenceNumberOrderingContiguous, 2)
 	require.NoError(t, err)
-	require.True(t, reflect.DeepEqual(*tp, tpExpected))
+	require.Equal(t, tpExpected, *tp)
 
 	// telling there is a gap in sequence number will add pictures to missing picture cache
 	tpExpected = TranslationParamsVP8{
-		header: &buffer.VP8{
+		Header: &buffer.VP8{
 			FirstByte:        25,
 			PictureIDPresent: 1,
 			PictureID:        13467,
@@ -385,7 +386,7 @@ func TestGapInSequenceNumberSamePicture(t *testing.T) {
 	}
 	tp, err = v.UpdateAndGet(extPkt, SequenceNumberOrderingGap, 2)
 	require.NoError(t, err)
-	require.True(t, reflect.DeepEqual(*tp, tpExpected))
+	require.Equal(t, tpExpected, *tp)
 
 	value, ok := v.PictureIdOffset(13467)
 	require.True(t, ok)
@@ -396,7 +397,6 @@ func TestUpdateAndGetPadding(t *testing.T) {
 	v := newVP8Munger()
 
 	params := &testutils.TestExtPacketParams{
-		IsHead:         true,
 		SequenceNumber: 23333,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
@@ -438,7 +438,7 @@ func TestUpdateAndGetPadding(t *testing.T) {
 		HeaderSize:       6,
 		IsKeyFrame:       true,
 	}
-	require.True(t, reflect.DeepEqual(expectedVP8, *blankVP8))
+	require.Equal(t, expectedVP8, *blankVP8)
 
 	// getting padding with new picture
 	blankVP8 = v.UpdateAndGetPadding(true)
@@ -457,7 +457,7 @@ func TestUpdateAndGetPadding(t *testing.T) {
 		HeaderSize:       6,
 		IsKeyFrame:       true,
 	}
-	require.True(t, reflect.DeepEqual(expectedVP8, *blankVP8))
+	require.Equal(t, expectedVP8, *blankVP8)
 }
 
 func TestVP8PictureIdWrapHandler(t *testing.T) {

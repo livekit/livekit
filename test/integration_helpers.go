@@ -8,19 +8,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-redis/redis/v8"
-	"github.com/livekit/protocol/auth"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
+	"github.com/redis/go-redis/v9"
 	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	serverlogger "github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/livekit-server/pkg/testutils"
 	testclient "github.com/livekit/livekit-server/test/client"
+	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 )
 
 const (
@@ -38,12 +39,14 @@ const (
 	// connectTimeout = 5000 * time.Second
 )
 
-var (
-	roomClient livekit.RoomService
-)
+var roomClient livekit.RoomService
 
 func init() {
-	serverlogger.InitFromConfig(config.LoggingConfig{Level: "debug"})
+	serverlogger.InitFromConfig(config.LoggingConfig{
+		Config: logger.Config{Level: "debug"},
+	})
+
+	prometheus.Init("test", livekit.NodeType_SERVER, "test")
 }
 
 func setupSingleNodeTest(name string) (*service.LivekitServer, func()) {
@@ -133,11 +136,10 @@ func waitUntilConnected(t *testing.T, clients ...*testclient.RTCClient) {
 
 func createSingleNodeServer(configUpdater func(*config.Config)) *service.LivekitServer {
 	var err error
-	conf, err := config.NewConfig("", nil)
+	conf, err := config.NewConfig("", true, nil, nil)
 	if err != nil {
 		panic(fmt.Sprintf("could not create config: %v", err))
 	}
-	conf.Development = true
 	conf.Keys = map[string]string{testApiKey: testApiSecret}
 	if configUpdater != nil {
 		configUpdater(conf)
@@ -160,7 +162,7 @@ func createSingleNodeServer(configUpdater func(*config.Config)) *service.Livekit
 
 func createMultiNodeServer(nodeID string, port uint32) *service.LivekitServer {
 	var err error
-	conf, err := config.NewConfig("", nil)
+	conf, err := config.NewConfig("", true, nil, nil)
 	if err != nil {
 		panic(fmt.Sprintf("could not create config: %v", err))
 	}
@@ -168,7 +170,6 @@ func createMultiNodeServer(nodeID string, port uint32) *service.LivekitServer {
 	conf.RTC.UDPPort = port + 1
 	conf.RTC.TCPPort = port + 2
 	conf.Redis.Address = "localhost:6379"
-	conf.Development = true
 	conf.Keys = map[string]string{testApiKey: testApiSecret}
 
 	currentNode, err := routing.NewLocalNode(conf)
@@ -221,6 +222,7 @@ func createRTCClientWithToken(token string, port int, opts *testclient.Options) 
 
 	return c
 }
+
 func redisClient() *redis.Client {
 	return redis.NewClient(&redis.Options{
 		Addr: "localhost:6379",

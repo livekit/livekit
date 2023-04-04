@@ -4,8 +4,41 @@ import (
 	"io"
 	"sync"
 
-	"github.com/pion/transport/packetio"
+	"github.com/pion/transport/v2/packetio"
+
+	"github.com/livekit/mediatransportutil/pkg/bucket"
 )
+
+type FactoryOfBufferFactory struct {
+	videoPool *sync.Pool
+	audioPool *sync.Pool
+}
+
+func NewFactoryOfBufferFactory(trackingPackets int) *FactoryOfBufferFactory {
+	return &FactoryOfBufferFactory{
+		videoPool: &sync.Pool{
+			New: func() interface{} {
+				b := make([]byte, trackingPackets*bucket.MaxPktSize)
+				return &b
+			},
+		},
+		audioPool: &sync.Pool{
+			New: func() interface{} {
+				b := make([]byte, bucket.MaxPktSize*200)
+				return &b
+			},
+		},
+	}
+}
+
+func (f *FactoryOfBufferFactory) CreateBufferFactory() *Factory {
+	return &Factory{
+		videoPool:   f.videoPool,
+		audioPool:   f.audioPool,
+		rtpBuffers:  make(map[uint32]*Buffer),
+		rtcpReaders: make(map[uint32]*RTCPReader),
+	}
+}
 
 type Factory struct {
 	sync.RWMutex
@@ -13,25 +46,6 @@ type Factory struct {
 	audioPool   *sync.Pool
 	rtpBuffers  map[uint32]*Buffer
 	rtcpReaders map[uint32]*RTCPReader
-}
-
-func NewBufferFactory(trackingPackets int) *Factory {
-	return &Factory{
-		videoPool: &sync.Pool{
-			New: func() interface{} {
-				b := make([]byte, trackingPackets*maxPktSize)
-				return &b
-			},
-		},
-		audioPool: &sync.Pool{
-			New: func() interface{} {
-				b := make([]byte, maxPktSize*25)
-				return &b
-			},
-		},
-		rtpBuffers:  make(map[uint32]*Buffer),
-		rtcpReaders: make(map[uint32]*RTCPReader),
-	}
 }
 
 func (f *Factory) GetOrNew(packetType packetio.BufferPacketType, ssrc uint32) io.ReadWriteCloser {

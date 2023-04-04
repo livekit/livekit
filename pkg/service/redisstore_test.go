@@ -6,12 +6,43 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livekit/protocol/livekit"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
+	"github.com/livekit/protocol/ingress"
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/utils"
+
 	"github.com/livekit/livekit-server/pkg/service"
 )
+
+func TestRoomInternal(t *testing.T) {
+	ctx := context.Background()
+	rs := service.NewRedisStore(redisClient())
+
+	room := &livekit.Room{
+		Sid:  "123",
+		Name: "test_room",
+	}
+	internal := &livekit.RoomInternal{
+		TrackEgress: &livekit.AutoTrackEgress{Filepath: "egress"},
+	}
+
+	require.NoError(t, rs.StoreRoom(ctx, room, internal))
+	actualRoom, actualInternal, err := rs.LoadRoom(ctx, livekit.RoomName(room.Name), true)
+	require.NoError(t, err)
+	require.Equal(t, room.Sid, actualRoom.Sid)
+	require.Equal(t, internal.TrackEgress.Filepath, actualInternal.TrackEgress.Filepath)
+
+	// remove internal
+	require.NoError(t, rs.StoreRoom(ctx, room, nil))
+	_, actualInternal, err = rs.LoadRoom(ctx, livekit.RoomName(room.Name), true)
+	require.NoError(t, err)
+	require.Nil(t, actualInternal)
+
+	// clean up
+	require.NoError(t, rs.DeleteRoom(ctx, "test_room"))
+}
 
 func TestParticipantPersistence(t *testing.T) {
 	ctx := context.Background()
@@ -108,4 +139,144 @@ func TestRoomLock(t *testing.T) {
 		require.NoError(t, err)
 		_ = rs.UnlockRoom(ctx, roomName, token2)
 	})
+}
+
+func TestEgressStore(t *testing.T) {
+	ctx := context.Background()
+	rc := redisClient()
+	rs := service.NewRedisStore(rc)
+
+	roomName := "egress-test"
+
+	// store egress info
+	info := &livekit.EgressInfo{
+		EgressId: utils.NewGuid(utils.EgressPrefix),
+		RoomId:   utils.NewGuid(utils.RoomPrefix),
+		RoomName: roomName,
+		Status:   livekit.EgressStatus_EGRESS_STARTING,
+		Request: &livekit.EgressInfo_RoomComposite{
+			RoomComposite: &livekit.RoomCompositeEgressRequest{
+				RoomName: roomName,
+				Layout:   "speaker-dark",
+			},
+		},
+	}
+	require.NoError(t, rs.StoreEgress(ctx, info))
+
+	// load
+	res, err := rs.LoadEgress(ctx, info.EgressId)
+	require.NoError(t, err)
+	require.Equal(t, res.EgressId, info.EgressId)
+
+	// store another
+	info2 := &livekit.EgressInfo{
+		EgressId: utils.NewGuid(utils.EgressPrefix),
+		RoomId:   utils.NewGuid(utils.RoomPrefix),
+		RoomName: "another-egress-test",
+		Status:   livekit.EgressStatus_EGRESS_STARTING,
+		Request: &livekit.EgressInfo_RoomComposite{
+			RoomComposite: &livekit.RoomCompositeEgressRequest{
+				RoomName: "another-egress-test",
+				Layout:   "speaker-dark",
+			},
+		},
+	}
+	require.NoError(t, rs.StoreEgress(ctx, info2))
+
+	// update
+	info2.Status = livekit.EgressStatus_EGRESS_COMPLETE
+	info2.EndedAt = time.Now().Add(-24 * time.Hour).UnixNano()
+	require.NoError(t, rs.UpdateEgress(ctx, info))
+
+	// list
+	list, err := rs.ListEgress(ctx, "", false)
+	require.NoError(t, err)
+	require.Len(t, list, 2)
+
+	// list by room
+	list, err = rs.ListEgress(ctx, livekit.RoomName(roomName), false)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+
+	// update
+	info.Status = livekit.EgressStatus_EGRESS_COMPLETE
+	info.EndedAt = time.Now().Add(-24 * time.Hour).UnixNano()
+	require.NoError(t, rs.UpdateEgress(ctx, info))
+
+	// clean
+	require.NoError(t, rs.CleanEndedEgress())
+
+	// list
+	list, err = rs.ListEgress(ctx, livekit.RoomName(roomName), false)
+	require.NoError(t, err)
+	require.Len(t, list, 0)
+}
+
+func TestIngressStore(t *testing.T) {
+	ctx := context.Background()
+	rs := service.NewRedisStore(redisClient())
+
+	info := &livekit.IngressInfo{
+		IngressId: "ingressId",
+		StreamKey: "streamKey",
+		State: &livekit.IngressState{
+			StartedAt: 2,
+		},
+	}
+
+	err := rs.StoreIngress(ctx, info)
+	require.NoError(t, err)
+
+	err = rs.UpdateIngressState(ctx, info.IngressId, info.State)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		rs.DeleteIngress(ctx, info)
+	})
+
+	pulledInfo, err := rs.LoadIngress(ctx, "ingressId")
+	require.NoError(t, err)
+	compareIngressInfo(t, pulledInfo, info)
+
+	infos, err := rs.ListIngress(ctx, "room")
+	require.NoError(t, err)
+	require.Equal(t, 0, len(infos))
+
+	info.RoomName = "room"
+	err = rs.UpdateIngress(ctx, info)
+	require.NoError(t, err)
+
+	infos, err = rs.ListIngress(ctx, "room")
+	require.NoError(t, err)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, len(infos))
+	compareIngressInfo(t, infos[0], info)
+
+	info.RoomName = ""
+	err = rs.UpdateIngress(ctx, info)
+	require.NoError(t, err)
+
+	infos, err = rs.ListIngress(ctx, "room")
+	require.NoError(t, err)
+	require.Equal(t, 0, len(infos))
+
+	info.State.StartedAt = 1
+	err = rs.UpdateIngressState(ctx, info.IngressId, info.State)
+	require.Equal(t, ingress.ErrIngressOutOfDate, err)
+
+	info.State.StartedAt = 3
+	err = rs.UpdateIngressState(ctx, info.IngressId, info.State)
+	require.NoError(t, err)
+
+	infos, err = rs.ListIngress(ctx, "")
+	require.NoError(t, err)
+	require.Equal(t, 1, len(infos))
+	require.Equal(t, "", infos[0].RoomName)
+}
+
+func compareIngressInfo(t *testing.T, expected, v *livekit.IngressInfo) {
+	require.Equal(t, expected.IngressId, v.IngressId)
+	require.Equal(t, expected.StreamKey, v.StreamKey)
+	require.Equal(t, expected.RoomName, v.RoomName)
 }

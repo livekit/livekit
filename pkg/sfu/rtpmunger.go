@@ -1,6 +1,9 @@
 package sfu
 
 import (
+	"fmt"
+	"math/rand"
+
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -20,6 +23,9 @@ const (
 
 const (
 	RtxGateWindow = 2000
+
+	SnOffsetCacheSize = 4096
+	SnOffsetCacheMask = SnOffsetCacheSize - 1
 )
 
 type TranslationParamsRTP struct {
@@ -33,7 +39,22 @@ type SnTs struct {
 	timestamp      uint32
 }
 
+// ----------------------------------------------------------------------
+
+type RTPMungerState struct {
+	Started bool
+	LastSN  uint16
+	LastTS  uint32
+}
+
+func (r RTPMungerState) String() string {
+	return fmt.Sprintf("RTPMungerState{started: %v, lastSN: %d, lastTS: %d)", r.Started, r.LastSN, r.LastTS)
+}
+
+// ----------------------------------------------------------------------
+
 type RTPMungerParams struct {
+	started           bool
 	highestIncomingSN uint16
 	lastSN            uint16
 	snOffset          uint16
@@ -41,7 +62,9 @@ type RTPMungerParams struct {
 	tsOffset          uint32
 	lastMarker        bool
 
-	missingSNs map[uint16]uint16
+	snOffsets          [SnOffsetCacheSize]uint16
+	snOffsetsWritePtr  int
+	snOffsetsOccupancy int
 
 	rtxGateSn         uint16
 	isInRtxGateRegion bool
@@ -56,14 +79,12 @@ type RTPMunger struct {
 func NewRTPMunger(logger logger.Logger) *RTPMunger {
 	return &RTPMunger{
 		logger: logger,
-		RTPMungerParams: RTPMungerParams{
-			missingSNs: make(map[uint16]uint16, 10),
-		},
 	}
 }
 
 func (r *RTPMunger) GetParams() RTPMungerParams {
 	return RTPMungerParams{
+		started:           r.started,
 		highestIncomingSN: r.highestIncomingSN,
 		lastSN:            r.lastSN,
 		snOffset:          r.snOffset,
@@ -73,10 +94,30 @@ func (r *RTPMunger) GetParams() RTPMungerParams {
 	}
 }
 
+func (r *RTPMunger) GetLast() RTPMungerState {
+	return RTPMungerState{
+		Started: r.started,
+		LastSN:  r.lastSN,
+		LastTS:  r.lastTS,
+	}
+}
+
+func (r *RTPMunger) SeedLast(state RTPMungerState) {
+	r.started = state.Started
+	r.lastSN = state.LastSN
+	r.lastTS = state.LastTS
+}
+
 func (r *RTPMunger) SetLastSnTs(extPkt *buffer.ExtPacket) {
 	r.highestIncomingSN = extPkt.Packet.SequenceNumber - 1
-	r.lastSN = extPkt.Packet.SequenceNumber
-	r.lastTS = extPkt.Packet.Timestamp
+	if !r.started {
+		r.lastSN = extPkt.Packet.SequenceNumber
+		r.lastTS = extPkt.Packet.Timestamp
+	} else {
+		r.snOffset = extPkt.Packet.SequenceNumber - r.lastSN - 1
+		r.tsOffset = extPkt.Packet.Timestamp - r.lastTS - 1
+	}
+	r.started = true
 }
 
 func (r *RTPMunger) UpdateSnTsOffsets(extPkt *buffer.ExtPacket, snAdjust uint16, tsAdjust uint32) {
@@ -84,31 +125,30 @@ func (r *RTPMunger) UpdateSnTsOffsets(extPkt *buffer.ExtPacket, snAdjust uint16,
 	r.snOffset = extPkt.Packet.SequenceNumber - r.lastSN - snAdjust
 	r.tsOffset = extPkt.Packet.Timestamp - r.lastTS - tsAdjust
 
-	// clear incoming missing sequence numbers on layer/source switch
-	r.missingSNs = make(map[uint16]uint16, 10)
+	// clear offsets cache layer/source switch
+	r.snOffsetsWritePtr = 0
+	r.snOffsetsOccupancy = 0
 }
 
 func (r *RTPMunger) PacketDropped(extPkt *buffer.ExtPacket) {
-	if !extPkt.Head {
+	if r.highestIncomingSN != extPkt.Packet.SequenceNumber {
 		return
 	}
-
-	r.highestIncomingSN = extPkt.Packet.SequenceNumber
-	r.snOffset += 1
+	r.snOffset++
 	r.lastSN = extPkt.Packet.SequenceNumber - r.snOffset
 }
 
 func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationParamsRTP, error) {
-	// if out-of-order, look up missing sequence number cache
-	if !extPkt.Head {
-		snOffset, ok := r.missingSNs[extPkt.Packet.SequenceNumber]
-		if !ok {
+	// if out-of-order, look up sequence number offset cache
+	diff := extPkt.Packet.SequenceNumber - r.highestIncomingSN
+	if diff > (1 << 15) {
+		snOffset, isValid := r.getSnOffset(extPkt.Packet.SequenceNumber)
+		if !isValid {
 			return &TranslationParamsRTP{
 				snOrdering: SequenceNumberOrderingOutOfOrder,
 			}, ErrOutOfOrderSequenceNumberCacheMiss
 		}
 
-		delete(r.missingSNs, extPkt.Packet.SequenceNumber)
 		return &TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingOutOfOrder,
 			sequenceNumber: extPkt.Packet.SequenceNumber - snOffset,
@@ -116,16 +156,19 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 		}, nil
 	}
 
-	ordering := SequenceNumberOrderingContiguous
+	// record sn offset
+	for i := r.highestIncomingSN + 1; i != extPkt.Packet.SequenceNumber+1; i++ {
+		r.snOffsets[r.snOffsetsWritePtr] = r.snOffset
+		r.snOffsetsWritePtr = (r.snOffsetsWritePtr + 1) & SnOffsetCacheMask
+		r.snOffsetsOccupancy++
+	}
+	if r.snOffsetsOccupancy > SnOffsetCacheSize {
+		r.snOffsetsOccupancy = SnOffsetCacheSize
+	}
 
-	// if there are gaps, record it in missing sequence number cache
-	diff := extPkt.Packet.SequenceNumber - r.highestIncomingSN
+	ordering := SequenceNumberOrderingContiguous
 	if diff > 1 {
 		ordering = SequenceNumberOrderingGap
-
-		for i := r.highestIncomingSN + 1; i != extPkt.Packet.SequenceNumber; i++ {
-			r.missingSNs[i] = r.snOffset
-		}
 	} else {
 		// can get duplicate packet due to FEC
 		if diff == 0 {
@@ -140,7 +183,7 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 		// sequence number offset.
 		if len(extPkt.Packet.Payload) == 0 {
 			r.highestIncomingSN = extPkt.Packet.SequenceNumber
-			r.snOffset += 1
+			r.snOffset++
 
 			return &TranslationParamsRTP{
 				snOrdering: SequenceNumberOrderingContiguous,
@@ -167,7 +210,7 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 		r.isInRtxGateRegion = true
 	}
 
-	if r.isInRtxGateRegion && (mungedSN-r.rtxGateSn) > RtxGateWindow {
+	if r.isInRtxGateRegion && (mungedSN-r.rtxGateSn) < (1<<15) && (mungedSN-r.rtxGateSn) > RtxGateWindow {
 		r.isInRtxGateRegion = false
 	}
 
@@ -198,10 +241,16 @@ func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate
 	if !r.lastMarker {
 		if !forceMarker {
 			return nil, ErrPaddingNotOnFrameBoundary
-		} else {
-			// if forcing frame end, use timestamp of latest received frame for the first one
-			tsOffset = 1
 		}
+
+		// if forcing frame end, use timestamp of latest received frame for the first one
+		tsOffset = 1
+	}
+
+	if !r.started {
+		r.lastSN = uint16(rand.Intn(1<<14)) + uint16(1<<15) // a random number in third quartile of sequence number space
+		r.lastTS = uint32(rand.Intn(1<<30)) + uint32(1<<31) // a random number in third quartile of time stamp space
+		r.started = true
 	}
 
 	vals := make([]SnTs, num)
@@ -217,6 +266,9 @@ func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate
 	r.lastSN = vals[num-1].sequenceNumber
 	r.snOffset -= uint16(num)
 
+	r.tsOffset -= vals[num-1].timestamp - r.lastTS
+	r.lastTS = vals[num-1].timestamp
+
 	if forceMarker {
 		r.lastMarker = true
 	}
@@ -226,4 +278,14 @@ func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate
 
 func (r *RTPMunger) IsOnFrameBoundary() bool {
 	return r.lastMarker
+}
+
+func (r *RTPMunger) getSnOffset(sn uint16) (uint16, bool) {
+	diff := r.highestIncomingSN - sn
+	if int(diff) >= r.snOffsetsOccupancy {
+		return 0, false
+	}
+
+	readPtr := (r.snOffsetsWritePtr - int(diff) - 1) & SnOffsetCacheMask
+	return r.snOffsets[readPtr], true
 }

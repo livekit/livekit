@@ -5,10 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
+
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/testutils"
 	testclient "github.com/livekit/livekit-server/test/client"
@@ -115,8 +116,12 @@ func scenarioReceiveBeforePublish(t *testing.T) {
 	// now leave, and ensure that it's immediate
 	c2.Stop()
 
-	time.Sleep(testutils.ConnectTimeout)
-	require.Empty(t, c1.RemoteParticipants())
+	testutils.WithTimeout(t, func() string {
+		if len(c1.RemoteParticipants()) > 0 {
+			return fmt.Sprintf("expected no remote participants, actual: %v", c1.RemoteParticipants())
+		}
+		return ""
+	})
 }
 
 func scenarioDataPublish(t *testing.T) {
@@ -159,6 +164,20 @@ func scenarioJoinClosedRoom(t *testing.T) {
 	c2 := createRTCClient("jcr2", defaultServerPort, nil)
 	waitUntilConnected(t, c2)
 	stopClients(c2)
+}
+
+// close a room that has been created, but no participant has joined
+func closeNonRTCRoom(t *testing.T) {
+	createCtx := contextWithToken(createRoomToken())
+	_, err := roomClient.CreateRoom(createCtx, &livekit.CreateRoomRequest{
+		Name: testRoom,
+	})
+	require.NoError(t, err)
+
+	_, err = roomClient.DeleteRoom(createCtx, &livekit.DeleteRoomRequest{
+		Room: testRoom,
+	})
+	require.NoError(t, err)
 }
 
 func publishTracksForClients(t *testing.T, clients ...*testclient.RTCClient) []*testclient.TrackWriter {

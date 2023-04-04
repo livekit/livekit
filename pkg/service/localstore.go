@@ -5,14 +5,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livekit/protocol/livekit"
 	"github.com/thoas/go-funk"
+
+	"github.com/livekit/protocol/livekit"
 )
 
 // encapsulates CRUD operations for room settings
 type LocalStore struct {
 	// map of roomName => room
-	rooms map[livekit.RoomName]*livekit.Room
+	rooms        map[livekit.RoomName]*livekit.Room
+	roomInternal map[livekit.RoomName]*livekit.RoomInternal
 	// map of roomName => { identity: participant }
 	participants map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo
 
@@ -23,46 +25,57 @@ type LocalStore struct {
 func NewLocalStore() *LocalStore {
 	return &LocalStore{
 		rooms:        make(map[livekit.RoomName]*livekit.Room),
+		roomInternal: make(map[livekit.RoomName]*livekit.RoomInternal),
 		participants: make(map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
 		lock:         sync.RWMutex{},
 	}
 }
 
-func (s *LocalStore) StoreRoom(_ context.Context, room *livekit.Room) error {
+func (s *LocalStore) StoreRoom(_ context.Context, room *livekit.Room, internal *livekit.RoomInternal) error {
 	if room.CreationTime == 0 {
 		room.CreationTime = time.Now().Unix()
 	}
+	roomName := livekit.RoomName(room.Name)
+
 	s.lock.Lock()
-	s.rooms[livekit.RoomName(room.Name)] = room
+	s.rooms[roomName] = room
+	s.roomInternal[roomName] = internal
 	s.lock.Unlock()
+
 	return nil
 }
 
-func (s *LocalStore) LoadRoom(_ context.Context, name livekit.RoomName) (*livekit.Room, error) {
+func (s *LocalStore) LoadRoom(_ context.Context, roomName livekit.RoomName, includeInternal bool) (*livekit.Room, *livekit.RoomInternal, error) {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 
-	room := s.rooms[name]
+	room := s.rooms[roomName]
 	if room == nil {
-		return nil, ErrRoomNotFound
+		return nil, nil, ErrRoomNotFound
 	}
-	return room, nil
+
+	var internal *livekit.RoomInternal
+	if includeInternal {
+		internal = s.roomInternal[roomName]
+	}
+
+	return room, internal, nil
 }
 
-func (s *LocalStore) ListRooms(_ context.Context, names []livekit.RoomName) ([]*livekit.Room, error) {
+func (s *LocalStore) ListRooms(_ context.Context, roomNames []livekit.RoomName) ([]*livekit.Room, error) {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 	rooms := make([]*livekit.Room, 0, len(s.rooms))
 	for _, r := range s.rooms {
-		if names == nil || funk.Contains(names, livekit.RoomName(r.Name)) {
+		if roomNames == nil || funk.Contains(roomNames, livekit.RoomName(r.Name)) {
 			rooms = append(rooms, r)
 		}
 	}
 	return rooms, nil
 }
 
-func (s *LocalStore) DeleteRoom(ctx context.Context, name livekit.RoomName) error {
-	room, err := s.LoadRoom(ctx, name)
+func (s *LocalStore) DeleteRoom(ctx context.Context, roomName livekit.RoomName) error {
+	room, _, err := s.LoadRoom(ctx, roomName, false)
 	if err == ErrRoomNotFound {
 		return nil
 	} else if err != nil {
@@ -74,6 +87,7 @@ func (s *LocalStore) DeleteRoom(ctx context.Context, name livekit.RoomName) erro
 
 	delete(s.participants, livekit.RoomName(room.Name))
 	delete(s.rooms, livekit.RoomName(room.Name))
+	delete(s.roomInternal, livekit.RoomName(room.Name))
 	return nil
 }
 
@@ -141,30 +155,5 @@ func (s *LocalStore) DeleteParticipant(_ context.Context, roomName livekit.RoomN
 	if roomParticipants != nil {
 		delete(roomParticipants, identity)
 	}
-	return nil
-}
-
-func (s *LocalStore) StoreEgress(_ context.Context, _ *livekit.EgressInfo) error {
-	// redis is required for egress
-	return nil
-}
-
-func (s *LocalStore) LoadEgress(_ context.Context, _ string) (*livekit.EgressInfo, error) {
-	// redis is required for egress
-	return nil, ErrEgressNotFound
-}
-
-func (s *LocalStore) ListEgress(_ context.Context, _ livekit.RoomID) ([]*livekit.EgressInfo, error) {
-	// redis is required for egress
-	return nil, nil
-}
-
-func (s *LocalStore) UpdateEgress(_ context.Context, _ *livekit.EgressInfo) error {
-	// redis is required for egress
-	return nil
-}
-
-func (s *LocalStore) DeleteEgress(_ context.Context, _ *livekit.EgressInfo) error {
-	// redis is required for egress
 	return nil
 }

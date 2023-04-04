@@ -2,50 +2,92 @@ package telemetry
 
 import (
 	"context"
+	"sync"
 	"time"
 
+	"github.com/gammazero/workerpool"
+
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/webhook"
 )
 
-const updateFrequency = time.Second * 10
-
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 . TelemetryService
 type TelemetryService interface {
-	// stats
-	TrackStats(streamType livekit.StreamType, participantID livekit.ParticipantID, trackID livekit.TrackID, stat *livekit.AnalyticsStat)
+	// TrackStats is called periodically for each track in both directions (published/subscribed)
+	TrackStats(key StatsKey, stat *livekit.AnalyticsStat)
 
 	// events
 	RoomStarted(ctx context.Context, room *livekit.Room)
 	RoomEnded(ctx context.Context, room *livekit.Room)
-	ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientInfo *livekit.ClientInfo, clientMeta *livekit.AnalyticsClientMeta)
-	ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo)
-	TrackPublished(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
-	TrackUnpublished(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, ssrc uint32)
-	TrackSubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, publisher *livekit.ParticipantInfo)
-	TrackUnsubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
+	// ParticipantJoined - a participant establishes signal connection to a room
+	ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientInfo *livekit.ClientInfo, clientMeta *livekit.AnalyticsClientMeta, shouldSendEvent bool)
+	// ParticipantActive - a participant establishes media connection
+	ParticipantActive(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientMeta *livekit.AnalyticsClientMeta)
+	// ParticipantResumed - there has been an ICE restart or connection resume attempt
+	ParticipantResumed(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, nodeID livekit.NodeID, reason livekit.ReconnectReason)
+	// ParticipantLeft - the participant leaves the room, only sent if ParticipantActive has been called before
+	ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, shouldSendEvent bool)
+	// TrackPublishRequested - a publication attempt has been received
+	TrackPublishRequested(ctx context.Context, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo)
+	// TrackPublished - a publication attempt has been successful
+	TrackPublished(ctx context.Context, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo)
+	// TrackUnpublished - a participant unpublished a track
+	TrackUnpublished(ctx context.Context, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, shouldSendEvent bool)
+	// TrackSubscribeRequested - a participant requested to subscribe to a track
+	TrackSubscribeRequested(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
+	// TrackSubscribed - a participant subscribed to a track successfully
+	TrackSubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, publisher *livekit.ParticipantInfo, shouldSendEvent bool)
+	// TrackUnsubscribed - a participant unsubscribed from a track successfully
+	TrackUnsubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, shouldSendEvent bool)
+	// TrackSubscribeFailed - failure to subscribe to a track
+	TrackSubscribeFailed(ctx context.Context, participantID livekit.ParticipantID, trackID livekit.TrackID, err error, isUserError bool)
+	// TrackMuted - the publisher has muted the Track
+	TrackMuted(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
+	// TrackUnmuted - the publisher has muted the Track
+	TrackUnmuted(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
+	// TrackPublishedUpdate - track metadata has been updated
 	TrackPublishedUpdate(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
-	TrackMaxSubscribedVideoQuality(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, maxQuality livekit.VideoQuality)
-	RecordingStarted(ctx context.Context, ri *livekit.RecordingInfo)
-	RecordingEnded(ctx context.Context, ri *livekit.RecordingInfo)
-	ParticipantActive(ctx context.Context, participantID livekit.ParticipantID, clientMeta *livekit.AnalyticsClientMeta)
+	// TrackMaxSubscribedVideoQuality - publisher is notified of the max quality subscribers desire
+	TrackMaxSubscribedVideoQuality(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, mime string, maxQuality livekit.VideoQuality)
+	TrackPublishRTPStats(ctx context.Context, participantID livekit.ParticipantID, trackID livekit.TrackID, mimeType string, layer int, stats *livekit.RTPStats)
+	TrackSubscribeRTPStats(ctx context.Context, participantID livekit.ParticipantID, trackID livekit.TrackID, mimeType string, stats *livekit.RTPStats)
 	EgressStarted(ctx context.Context, info *livekit.EgressInfo)
+	EgressUpdated(ctx context.Context, info *livekit.EgressInfo)
 	EgressEnded(ctx context.Context, info *livekit.EgressInfo)
+
+	// helpers
+	AnalyticsService
+	NotifyEvent(ctx context.Context, event *livekit.WebhookEvent)
+	FlushStats()
 }
 
-type doWorkFunc func()
+const (
+	maxWebhookWorkers  = 50
+	workerCleanupWait  = 3 * time.Minute
+	jobQueueBufferSize = 10000
+)
 
 type telemetryService struct {
-	internalService TelemetryServiceInternal
-	jobQueue        chan doWorkFunc
-}
+	AnalyticsService
 
-const jobQueueBufferSize = 100
+	notifier    webhook.Notifier
+	webhookPool *workerpool.WorkerPool
+	jobsChan    chan func()
+
+	lock    sync.RWMutex
+	workers map[livekit.ParticipantID]*StatsWorker
+}
 
 func NewTelemetryService(notifier webhook.Notifier, analytics AnalyticsService) TelemetryService {
 	t := &telemetryService{
-		internalService: NewTelemetryServiceInternal(notifier, analytics),
-		jobQueue:        make(chan doWorkFunc, jobQueueBufferSize),
+		AnalyticsService: analytics,
+
+		notifier:    notifier,
+		webhookPool: workerpool.New(maxWebhookWorkers),
+		jobsChan:    make(chan func(), jobQueueBufferSize),
+		workers:     make(map[livekit.ParticipantID]*StatsWorker),
 	}
 
 	go t.run()
@@ -53,114 +95,81 @@ func NewTelemetryService(notifier webhook.Notifier, analytics AnalyticsService) 
 	return t
 }
 
-func (t *telemetryService) run() {
+func (t *telemetryService) FlushStats() {
+	t.lock.Lock()
+	defer t.lock.Unlock()
 
-	ticker := time.NewTicker(updateFrequency)
+	for _, worker := range t.workers {
+		worker.Flush()
+	}
+}
+
+func (t *telemetryService) run() {
+	ticker := time.NewTicker(config.TelemetryStatsUpdateInterval)
+	defer ticker.Stop()
+
+	cleanupTicker := time.NewTicker(time.Minute)
+	defer cleanupTicker.Stop()
+
 	for {
 		select {
 		case <-ticker.C:
-			t.internalService.SendAnalytics()
-		case job, ok := <-t.jobQueue:
-			if ok {
-				job()
-			}
+			t.FlushStats()
+		case <-cleanupTicker.C:
+			t.cleanupWorkers()
+		case op := <-t.jobsChan:
+			op()
 		}
 	}
 }
 
-func (t *telemetryService) TrackStats(streamType livekit.StreamType, participantID livekit.ParticipantID, trackID livekit.TrackID, stats *livekit.AnalyticsStat) {
-	t.jobQueue <- func() {
-		t.internalService.TrackStats(streamType, participantID, trackID, stats)
+func (t *telemetryService) enqueue(op func()) {
+	select {
+	case t.jobsChan <- op:
+	// success
+	default:
+		logger.Warnw("telemetry queue full", nil)
 	}
 }
 
-func (t *telemetryService) RoomStarted(ctx context.Context, room *livekit.Room) {
-	t.jobQueue <- func() {
-		t.internalService.RoomStarted(ctx, room)
-	}
+func (t *telemetryService) getWorker(participantID livekit.ParticipantID) (worker *StatsWorker, ok bool) {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	worker, ok = t.workers[participantID]
+	return
 }
 
-func (t *telemetryService) RoomEnded(ctx context.Context, room *livekit.Room) {
-	t.jobQueue <- func() {
-		t.internalService.RoomEnded(ctx, room)
-	}
+func (t *telemetryService) createWorker(ctx context.Context,
+	roomID livekit.RoomID,
+	roomName livekit.RoomName,
+	participantID livekit.ParticipantID,
+	participantIdentity livekit.ParticipantIdentity,
+) *StatsWorker {
+	worker := newStatsWorker(
+		ctx,
+		t,
+		roomID,
+		roomName,
+		participantID,
+		participantIdentity,
+	)
+
+	t.lock.Lock()
+	t.workers[participantID] = worker
+	t.lock.Unlock()
+	return worker
 }
 
-func (t *telemetryService) ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo,
-	clientInfo *livekit.ClientInfo, clientMeta *livekit.AnalyticsClientMeta) {
-	t.jobQueue <- func() {
-		t.internalService.ParticipantJoined(ctx, room, participant, clientInfo, clientMeta)
-	}
-}
+func (t *telemetryService) cleanupWorkers() {
+	t.lock.Lock()
+	defer t.lock.Unlock()
 
-func (t *telemetryService) ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo) {
-	t.jobQueue <- func() {
-		t.internalService.ParticipantLeft(ctx, room, participant)
-	}
-}
-
-func (t *telemetryService) TrackPublished(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
-	t.jobQueue <- func() {
-		t.internalService.TrackPublished(ctx, participantID, track)
-	}
-}
-
-func (t *telemetryService) TrackUnpublished(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, ssrc uint32) {
-	t.jobQueue <- func() {
-		t.internalService.TrackUnpublished(ctx, participantID, track, ssrc)
-	}
-}
-
-func (t *telemetryService) TrackSubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, publisher *livekit.ParticipantInfo) {
-	t.jobQueue <- func() {
-		t.internalService.TrackSubscribed(ctx, participantID, track, publisher)
-	}
-}
-
-func (t *telemetryService) TrackUnsubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
-	t.jobQueue <- func() {
-		t.internalService.TrackUnsubscribed(ctx, participantID, track)
-	}
-}
-
-func (t *telemetryService) RecordingStarted(ctx context.Context, ri *livekit.RecordingInfo) {
-	t.jobQueue <- func() {
-		t.internalService.RecordingStarted(ctx, ri)
-	}
-}
-
-func (t *telemetryService) RecordingEnded(ctx context.Context, ri *livekit.RecordingInfo) {
-	t.jobQueue <- func() {
-		t.internalService.RecordingEnded(ctx, ri)
-	}
-}
-
-func (t *telemetryService) TrackPublishedUpdate(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
-	t.jobQueue <- func() {
-		t.internalService.TrackPublishedUpdate(ctx, participantID, track)
-	}
-}
-
-func (t *telemetryService) ParticipantActive(ctx context.Context, participantID livekit.ParticipantID, clientMeta *livekit.AnalyticsClientMeta) {
-	t.jobQueue <- func() {
-		t.internalService.ParticipantActive(ctx, participantID, clientMeta)
-	}
-}
-
-func (t *telemetryService) TrackMaxSubscribedVideoQuality(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, maxQuality livekit.VideoQuality) {
-	t.jobQueue <- func() {
-		t.internalService.TrackMaxSubscribedVideoQuality(ctx, participantID, track, maxQuality)
-	}
-}
-
-func (t *telemetryService) EgressStarted(ctx context.Context, info *livekit.EgressInfo) {
-	t.jobQueue <- func() {
-		t.internalService.EgressStarted(ctx, info)
-	}
-}
-
-func (t *telemetryService) EgressEnded(ctx context.Context, info *livekit.EgressInfo) {
-	t.jobQueue <- func() {
-		t.internalService.EgressEnded(ctx, info)
+	for participantID, worker := range t.workers {
+		closedAt := worker.ClosedAt()
+		if !closedAt.IsZero() && time.Since(closedAt) > workerCleanupWait {
+			logger.Debugw("reaping analytics worker for participant", "pID", participantID)
+			delete(t.workers, participantID)
+		}
 	}
 }

@@ -24,6 +24,18 @@ type FakeRoomAllocator struct {
 		result1 *livekit.Room
 		result2 error
 	}
+	ValidateCreateRoomStub        func(context.Context, livekit.RoomName) error
+	validateCreateRoomMutex       sync.RWMutex
+	validateCreateRoomArgsForCall []struct {
+		arg1 context.Context
+		arg2 livekit.RoomName
+	}
+	validateCreateRoomReturns struct {
+		result1 error
+	}
+	validateCreateRoomReturnsOnCall map[int]struct {
+		result1 error
+	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
 }
@@ -93,11 +105,75 @@ func (fake *FakeRoomAllocator) CreateRoomReturnsOnCall(i int, result1 *livekit.R
 	}{result1, result2}
 }
 
+func (fake *FakeRoomAllocator) ValidateCreateRoom(arg1 context.Context, arg2 livekit.RoomName) error {
+	fake.validateCreateRoomMutex.Lock()
+	ret, specificReturn := fake.validateCreateRoomReturnsOnCall[len(fake.validateCreateRoomArgsForCall)]
+	fake.validateCreateRoomArgsForCall = append(fake.validateCreateRoomArgsForCall, struct {
+		arg1 context.Context
+		arg2 livekit.RoomName
+	}{arg1, arg2})
+	stub := fake.ValidateCreateRoomStub
+	fakeReturns := fake.validateCreateRoomReturns
+	fake.recordInvocation("ValidateCreateRoom", []interface{}{arg1, arg2})
+	fake.validateCreateRoomMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeRoomAllocator) ValidateCreateRoomCallCount() int {
+	fake.validateCreateRoomMutex.RLock()
+	defer fake.validateCreateRoomMutex.RUnlock()
+	return len(fake.validateCreateRoomArgsForCall)
+}
+
+func (fake *FakeRoomAllocator) ValidateCreateRoomCalls(stub func(context.Context, livekit.RoomName) error) {
+	fake.validateCreateRoomMutex.Lock()
+	defer fake.validateCreateRoomMutex.Unlock()
+	fake.ValidateCreateRoomStub = stub
+}
+
+func (fake *FakeRoomAllocator) ValidateCreateRoomArgsForCall(i int) (context.Context, livekit.RoomName) {
+	fake.validateCreateRoomMutex.RLock()
+	defer fake.validateCreateRoomMutex.RUnlock()
+	argsForCall := fake.validateCreateRoomArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeRoomAllocator) ValidateCreateRoomReturns(result1 error) {
+	fake.validateCreateRoomMutex.Lock()
+	defer fake.validateCreateRoomMutex.Unlock()
+	fake.ValidateCreateRoomStub = nil
+	fake.validateCreateRoomReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeRoomAllocator) ValidateCreateRoomReturnsOnCall(i int, result1 error) {
+	fake.validateCreateRoomMutex.Lock()
+	defer fake.validateCreateRoomMutex.Unlock()
+	fake.ValidateCreateRoomStub = nil
+	if fake.validateCreateRoomReturnsOnCall == nil {
+		fake.validateCreateRoomReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.validateCreateRoomReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
 func (fake *FakeRoomAllocator) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
 	fake.createRoomMutex.RLock()
 	defer fake.createRoomMutex.RUnlock()
+	fake.validateCreateRoomMutex.RLock()
+	defer fake.validateCreateRoomMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

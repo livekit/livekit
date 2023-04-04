@@ -5,10 +5,11 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 )
@@ -28,18 +29,18 @@ func NewWSSignalConnection(conn types.WebsocketClient) *WSSignalConnection {
 	wsc := &WSSignalConnection{
 		conn:    conn,
 		mu:      sync.Mutex{},
-		useJSON: true,
+		useJSON: false,
 	}
 	go wsc.pingWorker()
 	return wsc
 }
 
-func (c *WSSignalConnection) ReadRequest() (*livekit.SignalRequest, error) {
+func (c *WSSignalConnection) ReadRequest() (*livekit.SignalRequest, int, error) {
 	for {
 		// handle special messages and pass on the rest
 		messageType, payload, err := c.conn.ReadMessage()
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 
 		msg := &livekit.SignalRequest{}
@@ -53,22 +54,22 @@ func (c *WSSignalConnection) ReadRequest() (*livekit.SignalRequest, error) {
 			}
 			// protobuf encoded
 			err := proto.Unmarshal(payload, msg)
-			return msg, err
+			return msg, len(payload), err
 		case websocket.TextMessage:
 			c.mu.Lock()
 			// json encoded, also write back JSON
 			c.useJSON = true
 			c.mu.Unlock()
 			err := protojson.Unmarshal(payload, msg)
-			return msg, err
+			return msg, len(payload), err
 		default:
 			logger.Debugw("unsupported message", "message", messageType)
-			return nil, nil
+			return nil, len(payload), nil
 		}
 	}
 }
 
-func (c *WSSignalConnection) WriteResponse(msg *livekit.SignalResponse) error {
+func (c *WSSignalConnection) WriteResponse(msg *livekit.SignalResponse) (int, error) {
 	var msgType int
 	var payload []byte
 	var err error
@@ -84,10 +85,10 @@ func (c *WSSignalConnection) WriteResponse(msg *livekit.SignalResponse) error {
 		payload, err = proto.Marshal(msg)
 	}
 	if err != nil {
-		return err
+		return 0, err
 	}
 
-	return c.conn.WriteMessage(msgType, payload)
+	return len(payload), c.conn.WriteMessage(msgType, payload)
 }
 
 func (c *WSSignalConnection) pingWorker() {
