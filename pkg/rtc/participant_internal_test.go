@@ -465,7 +465,6 @@ func TestPreferVideoCodecForPublisher(t *testing.T) {
 		// h264 should not be preferred
 		require.NotEqual(t, codecs[0].MimeType, "video/h264")
 
-		// negotiated codec should not contain h264
 		sink := &routingfakes.FakeMessageSink{}
 		participant.SetResponseSink(sink)
 		var answer webrtc.SessionDescription
