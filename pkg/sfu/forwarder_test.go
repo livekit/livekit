@@ -113,8 +113,8 @@ func TestForwarderLayersVideo(t *testing.T) {
 func TestForwarderAllocateOptimal(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
-	emptyBitrates := buffer.Bitrates{}
-	bitrates := buffer.Bitrates{
+	emptyBitrates := Bitrates{}
+	bitrates := Bitrates{
 		{2, 3, 0, 0},
 		{4, 0, 0, 5},
 		{0, 7, 0, 0},
@@ -411,7 +411,7 @@ func TestForwarderProvisionalAllocate(t *testing.T) {
 	f.SetMaxPublishedLayer(buffer.DefaultMaxLayerSpatial)
 	f.SetMaxTemporalLayerSeen(buffer.DefaultMaxLayerTemporal)
 
-	bitrates := buffer.Bitrates{
+	bitrates := Bitrates{
 		{1, 2, 3, 4},
 		{5, 6, 7, 8},
 		{9, 10, 11, 12},
@@ -614,7 +614,7 @@ func TestForwarderProvisionalAllocateMute(t *testing.T) {
 	f.SetMaxSpatialLayer(buffer.DefaultMaxLayerSpatial)
 	f.SetMaxTemporalLayer(buffer.DefaultMaxLayerTemporal)
 
-	bitrates := buffer.Bitrates{
+	bitrates := Bitrates{
 		{1, 2, 3, 4},
 		{5, 6, 7, 8},
 		{9, 10, 11, 12},
@@ -653,7 +653,7 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 	f.SetMaxPublishedLayer(buffer.DefaultMaxLayerSpatial)
 	f.SetMaxTemporalLayerSeen(buffer.DefaultMaxLayerTemporal)
 
-	bitrates := buffer.Bitrates{
+	bitrates := Bitrates{
 		{1, 2, 3, 4},
 		{5, 6, 7, 8},
 		{9, 10, 0, 0},
@@ -846,7 +846,7 @@ func TestForwarderProvisionalAllocateGetBestWeightedTransition(t *testing.T) {
 	f.SetMaxSpatialLayer(buffer.DefaultMaxLayerSpatial)
 	f.SetMaxTemporalLayer(buffer.DefaultMaxLayerTemporal)
 
-	bitrates := buffer.Bitrates{
+	bitrates := Bitrates{
 		{1, 2, 3, 4},
 		{5, 6, 7, 8},
 		{9, 10, 11, 12},
@@ -871,8 +871,8 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 	f.SetMaxTemporalLayer(buffer.DefaultMaxLayerTemporal)
 	f.SetMaxPublishedLayer(buffer.DefaultMaxLayerSpatial)
 
-	emptyBitrates := buffer.Bitrates{}
-	bitrates := buffer.Bitrates{
+	emptyBitrates := Bitrates{}
+	bitrates := Bitrates{
 		{2, 3, 0, 0},
 		{4, 0, 0, 5},
 		{0, 7, 0, 0},
@@ -1100,7 +1100,7 @@ func TestForwarderPause(t *testing.T) {
 	f.SetMaxPublishedLayer(buffer.DefaultMaxLayerSpatial)
 	f.SetMaxTemporalLayerSeen(buffer.DefaultMaxLayerTemporal)
 
-	bitrates := buffer.Bitrates{
+	bitrates := Bitrates{
 		{1, 2, 3, 4},
 		{5, 6, 7, 8},
 		{9, 10, 11, 12},
@@ -1135,7 +1135,7 @@ func TestForwarderPauseMute(t *testing.T) {
 	f.SetMaxTemporalLayer(buffer.DefaultMaxLayerTemporal)
 	f.SetMaxPublishedLayer(buffer.DefaultMaxLayerSpatial)
 
-	bitrates := buffer.Bitrates{
+	bitrates := Bitrates{
 		{1, 2, 3, 4},
 		{5, 6, 7, 8},
 		{9, 10, 11, 12},
