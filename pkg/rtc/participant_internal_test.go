@@ -1,6 +1,7 @@
 package rtc
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -423,6 +424,184 @@ func TestDisableCodecs(t *testing.T) {
 		}
 	}
 	require.False(t, found264)
+}
+
+func TestPreferVideoCodecForPublisher(t *testing.T) {
+	participant := newParticipantForTestWithOpts("123", &participantOpts{
+		publisher: true,
+	})
+	participant.SetMigrateState(types.MigrateStateComplete)
+
+	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	require.NoError(t, err)
+	defer pc.Close()
+
+	for i := 0; i < 2; i++ {
+		// publish h264 track without client preferred codec
+		trackCid := fmt.Sprintf("preferh264video%d", i)
+		participant.AddTrack(&livekit.AddTrackRequest{
+			Type:   livekit.TrackType_VIDEO,
+			Name:   "video",
+			Width:  1280,
+			Height: 720,
+			Source: livekit.TrackSource_CAMERA,
+			SimulcastCodecs: []*livekit.SimulcastCodec{
+				{
+					Codec: "h264",
+					Cid:   trackCid,
+				},
+			},
+		})
+
+		track, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{MimeType: "video/vp8"}, trackCid, trackCid)
+		require.NoError(t, err)
+		transceiver, err := pc.AddTransceiverFromTrack(track, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendrecv})
+		require.NoError(t, err)
+		sdp, err := pc.CreateOffer(nil)
+		require.NoError(t, err)
+		pc.SetLocalDescription(sdp)
+		codecs := transceiver.Receiver().GetParameters().Codecs
+
+		// h264 should not be preferred
+		require.NotEqual(t, codecs[0].MimeType, "video/h264")
+
+		sink := &routingfakes.FakeMessageSink{}
+		participant.SetResponseSink(sink)
+		var answer webrtc.SessionDescription
+		var answerReceived atomic.Bool
+		sink.WriteMessageStub = func(msg proto.Message) error {
+			if res, ok := msg.(*livekit.SignalResponse); ok {
+				if res.GetAnswer() != nil {
+					answer = FromProtoSessionDescription(res.GetAnswer())
+					pc.SetRemoteDescription(answer)
+					answerReceived.Store(true)
+				}
+			}
+			return nil
+		}
+		participant.HandleOffer(sdp)
+
+		require.Eventually(t, func() bool { return answerReceived.Load() }, 5*time.Second, 10*time.Millisecond)
+
+		var h264Preferred bool
+		parsed, err := answer.Unmarshal()
+		require.NoError(t, err)
+		var videoSectionIndex int
+		for _, m := range parsed.MediaDescriptions {
+			if m.MediaName.Media == "video" {
+				if videoSectionIndex == i {
+					codecs, err := codecsFromMediaDescription(m)
+					require.NoError(t, err)
+					if strings.EqualFold(codecs[0].Name, "h264") {
+						h264Preferred = true
+						break
+					}
+				}
+				videoSectionIndex++
+			}
+		}
+
+		require.Truef(t, h264Preferred, "h264 should be preferred for video section %d, answer sdp: \n%s", i, answer.SDP)
+	}
+}
+
+func TestPreferAudioCodecForRed(t *testing.T) {
+	participant := newParticipantForTestWithOpts("123", &participantOpts{
+		publisher: true,
+	})
+	participant.SetMigrateState(types.MigrateStateComplete)
+
+	me := webrtc.MediaEngine{}
+	me.RegisterDefaultCodecs()
+	require.NoError(t, me.RegisterCodec(webrtc.RTPCodecParameters{
+		RTPCodecCapability: redCodecCapability,
+		PayloadType:        63,
+	}, webrtc.RTPCodecTypeAudio))
+
+	api := webrtc.NewAPI(webrtc.WithMediaEngine(&me))
+	pc, err := api.NewPeerConnection(webrtc.Configuration{})
+	require.NoError(t, err)
+	defer pc.Close()
+
+	for i, disableRed := range []bool{false, true} {
+		t.Run(fmt.Sprintf("disableRed=%v", disableRed), func(t *testing.T) {
+			trackCid := fmt.Sprintf("audiotrack%d", i)
+			participant.AddTrack(&livekit.AddTrackRequest{
+				Type:       livekit.TrackType_AUDIO,
+				DisableRed: disableRed,
+				Cid:        trackCid,
+			})
+			track, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{MimeType: "audio/opus"}, trackCid, trackCid)
+			require.NoError(t, err)
+			transceiver, err := pc.AddTransceiverFromTrack(track, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendrecv})
+			require.NoError(t, err)
+			codecs := transceiver.Sender().GetParameters().Codecs
+			for i, c := range codecs {
+				if c.MimeType == "audio/opus" && i != 0 {
+					codecs[0], codecs[i] = codecs[i], codecs[0]
+					break
+				}
+			}
+			transceiver.SetCodecPreferences(codecs)
+			sdp, err := pc.CreateOffer(nil)
+			require.NoError(t, err)
+			pc.SetLocalDescription(sdp)
+			// opus should be preferred
+			require.Equal(t, codecs[0].MimeType, "audio/opus", sdp)
+
+			sink := &routingfakes.FakeMessageSink{}
+			participant.SetResponseSink(sink)
+			var answer webrtc.SessionDescription
+			var answerReceived atomic.Bool
+			sink.WriteMessageStub = func(msg proto.Message) error {
+				if res, ok := msg.(*livekit.SignalResponse); ok {
+					if res.GetAnswer() != nil {
+						answer = FromProtoSessionDescription(res.GetAnswer())
+						pc.SetRemoteDescription(answer)
+						answerReceived.Store(true)
+					}
+				}
+				return nil
+			}
+			participant.HandleOffer(sdp)
+
+			require.Eventually(t, func() bool { return answerReceived.Load() }, 5*time.Second, 10*time.Millisecond)
+
+			var redPreferred bool
+			parsed, err := answer.Unmarshal()
+			require.NoError(t, err)
+			var audioSectionIndex int
+			for _, m := range parsed.MediaDescriptions {
+				if m.MediaName.Media == "audio" {
+					if audioSectionIndex == i {
+						codecs, err := codecsFromMediaDescription(m)
+						require.NoError(t, err)
+						// nack is always enabled. if red is preferred, server will not generate nack request
+						var nackEnabled bool
+						for _, c := range codecs {
+							if c.Name == "opus" {
+								for _, fb := range c.RTCPFeedback {
+									if strings.Contains(fb, "nack") {
+										nackEnabled = true
+										break
+									}
+								}
+							}
+						}
+						require.True(t, nackEnabled, "nack should be enabled for opus")
+
+						if strings.EqualFold(codecs[0].Name, "red") {
+							redPreferred = true
+							break
+						}
+					}
+					audioSectionIndex++
+				}
+			}
+			require.Equalf(t, !disableRed, redPreferred, "offer : \n%s\nanswer sdp: \n%s", sdp, answer.SDP)
+		})
+	}
+
 }
 
 type participantOpts struct {
