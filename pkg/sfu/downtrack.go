@@ -995,8 +995,7 @@ func (d *DownTrack) IsDeficient() bool {
 }
 
 func (d *DownTrack) BandwidthRequested() int64 {
-	_, brs := d.receiver.GetLayeredBitrate()
-	return d.forwarder.BandwidthRequested(brs)
+	return d.forwarder.BandwidthRequested()
 }
 
 func (d *DownTrack) DistanceToDesired() float64 {

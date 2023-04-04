@@ -456,25 +456,11 @@ func (f *Forwarder) IsDeficient() bool {
 	return f.isDeficientLocked()
 }
 
-func (f *Forwarder) BandwidthRequested(brs Bitrates) int64 {
+func (f *Forwarder) BandwidthRequested() int64 {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
-	if !f.targetLayers.IsValid() {
-		if f.targetLayers != buffer.InvalidLayers {
-			f.logger.Warnw(
-				"unexpected target layers", nil,
-				"target", f.targetLayers,
-				"current", f.currentLayers,
-				"parked", f.parkedLayers,
-				"max", f.maxLayers,
-				"lastAllocation", f.lastAllocation,
-			)
-		}
-		return 0
-	}
-
-	return brs[f.targetLayers.Spatial][f.targetLayers.Temporal]
+	return f.lastAllocation.BandwidthRequested
 }
 
 func (f *Forwarder) DistanceToDesired(availableLayers []int32, brs Bitrates) float64 {
