@@ -140,11 +140,16 @@ type TranslationParams struct {
 type ForwarderState struct {
 	Started bool
 	RTP     RTPMungerState
-	VP8     VP8MungerState
+	Codec   interface{}
 }
 
 func (f ForwarderState) String() string {
-	return fmt.Sprintf("ForwarderState{started: %v, rtp: %s, vp8: %s}", f.Started, f.RTP.String(), f.VP8.String())
+	codecString := ""
+	switch codecState := f.Codec.(type) {
+	case codecmunger.VP8State:
+		codecString = codecState.String()
+	}
+	return fmt.Sprintf("ForwarderState{started: %v, rtp: %s, codec: %s}", f.Started, f.RTP.String(), codecString)
 }
 
 // -------------------------------------------------------------------
@@ -170,7 +175,6 @@ type Forwarder struct {
 	lastAllocation VideoAllocation
 
 	rtpMunger *RTPMunger
-	// RAJA-REMOVE vp8Munger *VP8Munger
 
 	isTemporalSupported bool
 
@@ -257,7 +261,6 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability) {
 	switch strings.ToLower(codec.MimeType) {
 	case "video/vp8":
 		f.isTemporalSupported = true
-		// RAJA-TODO f.vp8Munger = NewVP8Munger(f.logger)
 		f.codecMunger = codecmunger.NewVP8(f.logger)
 		if f.vls != nil {
 			f.vls = videolayerselector.NewSimulcastFromNull(f.vls)
@@ -296,13 +299,8 @@ func (f *Forwarder) GetState() ForwarderState {
 	state := ForwarderState{
 		Started: f.started,
 		RTP:     f.rtpMunger.GetLast(),
+		Codec:   f.codecMunger.GetState(),
 	}
-
-	/* RAJA-TOOD
-	if f.vp8Munger != nil {
-		state.VP8 = f.vp8Munger.GetLast()
-	}
-	*/
 
 	return state
 }
@@ -316,11 +314,7 @@ func (f *Forwarder) SeedState(state ForwarderState) {
 	defer f.lock.Unlock()
 
 	f.rtpMunger.SeedLast(state.RTP)
-	/* RAJA-TODO
-	if f.vp8Munger != nil {
-		f.vp8Munger.SeedLast(state.VP8)
-	}
-	*/
+	f.codecMunger.SeedState(state.Codec)
 
 	f.started = true
 }
@@ -1327,7 +1321,6 @@ func (f *Forwarder) setupParkedLayers(parkedLayers buffer.VideoLayer) {
 	})
 }
 
-// RAJA-TODO: maybe move this to video layer selector
 func (f *Forwarder) CheckSync() (locked bool, layer int32) {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
@@ -1402,11 +1395,6 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 			f.started = true
 			f.referenceLayerSpatial = layer
 			f.rtpMunger.SetLastSnTs(extPkt)
-			/* RAJA-TODO
-			if f.vp8Munger != nil {
-				f.vp8Munger.SetLast(extPkt)
-			}
-			*/
 			f.codecMunger.SetLast(extPkt)
 		} else {
 			if f.referenceLayerSpatial == buffer.InvalidLayerSpatial {
@@ -1435,11 +1423,6 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 			}
 
 			f.rtpMunger.UpdateSnTsOffsets(extPkt, 1, td)
-			/* RAJA-TODO
-			if f.vp8Munger != nil {
-				f.vp8Munger.UpdateOffsets(extPkt)
-			}
-			*/
 			f.codecMunger.UpdateOffsets(extPkt)
 		}
 
@@ -1529,7 +1512,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 	}
 
 	_, err := f.getTranslationParamsCommon(extPkt, layer, tp)
-	if tp.shouldDrop /* RAJA-TODO || f.vp8Munger == nil */ || len(extPkt.Packet.Payload) == 0 {
+	if tp.shouldDrop || len(extPkt.Packet.Payload) == 0 {
 		return tp, err
 	}
 
@@ -1622,7 +1605,6 @@ func (f *Forwarder) GetPaddingVP8(frameEndNeeded bool) *buffer.VP8 {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	// RAJA-TODO return f.vp8Munger.UpdateAndGetPadding(!frameEndNeeded)
 	padding := f.codecMunger.UpdateAndGetPadding(!frameEndNeeded)
 	if vp8, ok := padding.(*buffer.VP8); ok {
 		return vp8
