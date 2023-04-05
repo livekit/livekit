@@ -1436,10 +1436,6 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 	tpRTP, err := f.rtpMunger.UpdateAndGetSnTs(extPkt)
 	if err != nil {
 		tp.shouldDrop = true
-		if err == ErrPaddingOnlyPacket || err == ErrDuplicatePacket || err == ErrOutOfOrderSequenceNumberCacheMiss {
-			return tp, nil
-		}
-
 		return tp, err
 	}
 
@@ -1556,12 +1552,9 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 	if err != nil {
 		tp.rtp = nil
 		tp.shouldDrop = true
-		if err == ErrFilteredVP8TemporalLayer || err == ErrOutOfOrderVP8PictureIdCacheMiss {
-			if err == ErrFilteredVP8TemporalLayer {
-				// filtered temporal layer, update sequence number offset to prevent holes
-				f.rtpMunger.PacketDropped(extPkt)
-			}
-			return tp, nil
+		if err == codecmunger.ErrFilteredVP8TemporalLayer {
+			// filtered temporal layer, update sequence number offset to prevent holes
+			f.rtpMunger.PacketDropped(extPkt)
 		}
 
 		return tp, err

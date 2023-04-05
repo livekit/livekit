@@ -12,16 +12,6 @@ var (
 	ErrFilteredVP8TemporalLayer        = errors.New("filtered VP8 temporal layer")
 )
 
-/* RAJA-REMOVE
-type VideoLayerSelectorResult struct {
-	IsSelected              bool
-	IsRelevant              bool
-	IsSwitchingLayer        bool
-	IsSwitchingToMaxSpatial bool
-	RTPMarker               bool
-}
-*/
-
 type CodecMunger interface {
 	GetState() interface{}
 	SeedState(state interface{})

@@ -65,9 +65,6 @@ var (
 	ErrPaddingOnlyPacket                 = errors.New("padding only packet that need not be forwarded")
 	ErrDuplicatePacket                   = errors.New("duplicate packet")
 	ErrPaddingNotOnFrameBoundary         = errors.New("padding cannot send on non-frame boundary")
-	ErrNotVP8                            = errors.New("not VP8")
-	ErrOutOfOrderVP8PictureIdCacheMiss   = errors.New("out-of-order VP8 picture id not found in cache")
-	ErrFilteredVP8TemporalLayer          = errors.New("filtered VP8 temporal layer")
 	ErrDownTrackAlreadyBound             = errors.New("already bound")
 )
 
