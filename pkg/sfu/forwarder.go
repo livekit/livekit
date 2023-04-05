@@ -1474,7 +1474,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 	}
 
 	if f.vls != nil {
-		result := f.vls.Select(extPkt)
+		result := f.vls.Select(extPkt, layer)
 		if !result.IsSelected {
 			tp.shouldDrop = true
 			if result.IsRelevant {

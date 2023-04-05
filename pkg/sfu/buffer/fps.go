@@ -151,7 +151,6 @@ func (f *frameRateCalculatorVPx) calc() bool {
 		if f.frameRates[2] > 0 && f.frameRates[2] > f.frameRates[1]*3 {
 			f.frameRates[1] = f.frameRates[2] / 2
 		}
-		// RAJA-TODO f.logger.Debugw("frame rate calculated", "rate", f.frameRates)
 		f.reset()
 		return true
 	}

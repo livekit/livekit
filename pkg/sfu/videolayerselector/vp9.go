@@ -21,7 +21,7 @@ func NewVP9FromNull(vls VideoLayerSelector) *VP9 {
 	}
 }
 
-func (v *VP9) Select(extPkt *buffer.ExtPacket) (result VideoLayerSelectorResult) {
+func (v *VP9) Select(extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerSelectorResult) {
 	vp9, ok := extPkt.Payload.(buffer.VP9)
 	if !ok {
 		return

@@ -33,5 +33,5 @@ type VideoLayerSelector interface {
 	SetCurrent(currentLayer buffer.VideoLayer)
 	GetCurrent() buffer.VideoLayer
 
-	Select(extPkt *buffer.ExtPacket) VideoLayerSelectorResult
+	Select(extPkt *buffer.ExtPacket, layer int32) VideoLayerSelectorResult
 }

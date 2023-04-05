@@ -21,7 +21,7 @@ func NewSimulcastFromNull(vls VideoLayerSelector) *Simulcast {
 	}
 }
 
-func (s *Simulcast) Select(extPkt *buffer.ExtPacket) (result VideoLayerSelectorResult) {
+func (s *Simulcast) Select(extPkt *buffer.ExtPacket, layer int32) (result VideoLayerSelectorResult) {
 	// RAJA-TODO: drop up front if target is invalid
 	if s.currentLayer.Spatial != s.targetLayer.Spatial {
 		// Three things to check when not locked to target
@@ -30,7 +30,7 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket) (result VideoLayerSelectorR
 		//   3. Need to downgrade - needs a key frame
 		found := false
 		if s.parkedLayer.IsValid() {
-			if s.parkedLayer.Spatial == extPkt.VideoLayer.Spatial {
+			if s.parkedLayer.Spatial == layer {
 				s.logger.Infow(
 					"resuming at parked layer",
 					"current", s.currentLayer,
@@ -46,13 +46,13 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket) (result VideoLayerSelectorR
 			}
 		} else {
 			if extPkt.KeyFrame {
-				if extPkt.VideoLayer.Spatial > s.currentLayer.Spatial && extPkt.VideoLayer.Spatial <= s.targetLayer.Spatial {
+				if layer > s.currentLayer.Spatial && layer <= s.targetLayer.Spatial {
 					s.logger.Infow(
 						"upgrading layer",
 						"current", s.currentLayer,
 						"target", s.targetLayer,
 						"max", s.maxLayer,
-						"layer", extPkt.VideoLayer.Spatial,
+						"layer", layer,
 						"req", s.requestSpatial,
 						"maxSeen", s.maxSeenLayer,
 						"feed", extPkt.Packet.SSRC,
@@ -60,13 +60,13 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket) (result VideoLayerSelectorR
 					found = true
 				}
 
-				if extPkt.VideoLayer.Spatial < s.currentLayer.Spatial && extPkt.VideoLayer.Spatial >= s.targetLayer.Spatial {
+				if layer < s.currentLayer.Spatial && layer >= s.targetLayer.Spatial {
 					s.logger.Infow(
 						"downgrading layer",
 						"current", s.currentLayer,
 						"target", s.targetLayer,
 						"max", s.maxLayer,
-						"layer", extPkt.VideoLayer.Spatial,
+						"layer", layer,
 						"req", s.requestSpatial,
 						"maxSeen", s.maxSeenLayer,
 						"feed", extPkt.Packet.SSRC,
@@ -75,7 +75,7 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket) (result VideoLayerSelectorR
 				}
 
 				if found {
-					s.currentLayer.Spatial = extPkt.VideoLayer.Spatial
+					s.currentLayer.Spatial = layer
 					/* RAJA-TODO
 					if !f.isTemporalSupported {
 						f.currentLayers.Temporal = f.targetLayers.Temporal
@@ -96,7 +96,7 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket) (result VideoLayerSelectorR
 					"current", s.currentLayer,
 					"target", s.targetLayer,
 					"max", s.maxLayer,
-					"layer", extPkt.VideoLayer.Spatial,
+					"layer", layer,
 					"req", s.requestSpatial,
 					"maxSeen", s.maxSeenLayer,
 					"feed", extPkt.Packet.SSRC,
@@ -111,31 +111,31 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket) (result VideoLayerSelectorR
 
 	// if locked to higher than max layer due to overshoot, check if it can be dialed back
 	if s.currentLayer.Spatial > s.maxLayer.Spatial {
-		if extPkt.VideoLayer.Spatial <= s.maxLayer.Spatial && extPkt.KeyFrame {
+		if layer <= s.maxLayer.Spatial && extPkt.KeyFrame {
 			s.logger.Infow(
 				"adjusting overshoot",
 				"current", s.currentLayer,
 				"target", s.targetLayer,
 				"max", s.maxLayer,
-				"layer", extPkt.VideoLayer.Spatial,
+				"layer", layer,
 				"req", s.requestSpatial,
 				"maxSeen", s.maxSeenLayer,
 				"feed", extPkt.Packet.SSRC,
 			)
-			s.currentLayer.Spatial = extPkt.VideoLayer.Spatial
+			s.currentLayer.Spatial = layer
 
 			if s.currentLayer.Spatial >= s.maxLayer.Spatial {
 				result.IsSwitchingToMaxSpatial = true
 			}
 
 			if s.currentLayer.Spatial >= s.maxLayer.Spatial || s.currentLayer.Spatial == s.maxSeenLayer.Spatial {
-				s.targetLayer.Spatial = extPkt.VideoLayer.Spatial
+				s.targetLayer.Spatial = layer
 			}
 		}
 	}
 
 	result.RTPMarker = extPkt.Packet.Marker
-	result.IsSelected = extPkt.VideoLayer.Spatial == s.currentLayer.Spatial
+	result.IsSelected = layer == s.currentLayer.Spatial
 	result.IsRelevant = false
 	return
 }

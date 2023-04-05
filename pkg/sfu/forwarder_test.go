@@ -1336,7 +1336,6 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
 		PayloadSize:    20,
-		VideoLayer:     buffer.VideoLayer{Spatial: 0, Temporal: 1},
 	}
 	vp8 := &buffer.VP8{
 		FirstByte:        25,
@@ -1468,7 +1467,6 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
 		PayloadSize:    20,
-		VideoLayer:     buffer.VideoLayer{Spatial: 0, Temporal: 1},
 	}
 	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
 	expectedTP = TranslationParams{
@@ -1505,7 +1503,6 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
 		PayloadSize:    20,
-		VideoLayer:     buffer.VideoLayer{Spatial: 0, Temporal: 2},
 	}
 	vp8 = &buffer.VP8{
 		FirstByte:        25,
@@ -1536,7 +1533,6 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
 		PayloadSize:    20,
-		VideoLayer:     buffer.VideoLayer{Spatial: 0, Temporal: 0},
 	}
 	vp8 = &buffer.VP8{
 		FirstByte:        25,
@@ -1632,7 +1628,6 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 		Timestamp:      0xfedcba,
 		SSRC:           0x87654321,
 		PayloadSize:    20,
-		VideoLayer:     buffer.VideoLayer{Spatial: 1, Temporal: 0},
 	}
 	vp8 = &buffer.VP8{
 		FirstByte:        25,
