@@ -2,6 +2,7 @@ package buffer
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -574,6 +575,44 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64) *ExtPack
 		if err := vp9Packet.Unmarshal(rtpPacket.Payload); err != nil {
 			b.logger.Warnw("could not unmarshal VP9 packet", err)
 			return nil
+		}
+		/* RAJA-REMOVE
+		b.logger.Infow("vp9 packet",
+			"packet", fmt.Sprintf("sid: %d, tid: %d, pid: %d, B: %+v, E: %+v, P: %+v, U: %+v, K: %+v, spatial: %d, temporal: %d\n",
+				vp9Packet.SID,
+				vp9Packet.TID,
+				vp9Packet.PictureID,
+				vp9Packet.IsBeginningOfFrame,
+				vp9Packet.IsEndOfFrame,
+				vp9Packet.IsSpatialLayerSwitchUpPoint,
+				vp9Packet.IsTemporalLayerSwitchUpPoint,
+				vp9Packet.IsKeyFrame,
+				ep.Spatial,
+				ep.Temporal,
+			),
+		) // REMOVE
+		if vp9Packet.IsKeyFrame {
+			b.logger.Infow("RAJA VP9 Key frame") // REMOVE
+		}
+		if vp9Packet.IsSpatialLayerSwitchUpPoint {
+			b.logger.Infow("RAJA P Bit") // REMOVE
+		}
+		*/
+		if vp9Packet.IsKeyFrame {
+			b.logger.Infow("RAJA vp9 key frame packet",
+				"packet", fmt.Sprintf("sid: %d, tid: %d, pid: %d, B: %+v, E: %+v, P: %+v, U: %+v, K: %+v, spatial: %d, temporal: %d\n",
+					vp9Packet.SID,
+					vp9Packet.TID,
+					vp9Packet.PictureID,
+					vp9Packet.IsBeginningOfFrame,
+					vp9Packet.IsEndOfFrame,
+					vp9Packet.IsSpatialLayerSwitchUpPoint,
+					vp9Packet.IsTemporalLayerSwitchUpPoint,
+					vp9Packet.IsKeyFrame,
+					ep.Spatial,
+					ep.Temporal,
+				),
+			) // REMOVE
 		}
 		ep.KeyFrame = vp9Packet.IsKeyFrame
 		if ep.DependencyDescriptor == nil {

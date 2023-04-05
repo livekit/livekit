@@ -310,8 +310,10 @@ func IsH264Keyframe(payload []byte) bool {
 type VP9 struct {
 	FirstByte byte
 
-	SpatialLayerSwitchUpPoint  bool
-	TemporalLayerSwitchUpPoint bool
+	IsSpatialLayerSwitchUpPoint  bool
+	IsTemporalLayerSwitchUpPoint bool
+	IsBeginningOfFrame           bool
+	IsEndOfFrame                 bool
 
 	PictureIDPresent int
 	PictureID        uint16 /* 8 or 16 bits, picture ID */
@@ -350,12 +352,15 @@ func (v *VP9) Unmarshal(payload []byte) error {
 	L := payload[idx]&0x20 > 0
 	F := payload[idx]&0x10 > 0
 	B := payload[idx]&0x08 > 0
+	E := payload[idx]&0x04 > 0
 
 	if F && !I {
 		return errInvalidPacket
 	}
 
-	v.SpatialLayerSwitchUpPoint = !P
+	v.IsSpatialLayerSwitchUpPoint = !P
+	v.IsBeginningOfFrame = B
+	v.IsEndOfFrame = E
 
 	// Check for PictureID
 	if I {
@@ -391,6 +396,7 @@ func (v *VP9) Unmarshal(payload []byte) error {
 			return errInvalidPacket
 		}
 		v.UBit = (payload[idx] >> 4) & 0x1
+		v.IsTemporalLayerSwitchUpPoint = v.UBit != 0
 
 		v.SID = (payload[idx] >> 1) & 0x7
 		v.DBit = payload[idx] & 0x1

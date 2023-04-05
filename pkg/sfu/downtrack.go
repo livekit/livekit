@@ -210,6 +210,7 @@ type DownTrack struct {
 	deltaStatsSnapshotId uint32
 
 	// Debug info
+	// RAJA-REMOVE packets dropped
 	pktsDropped   atomic.Uint32
 	writeIOErrors atomic.Uint32
 

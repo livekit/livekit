@@ -34,17 +34,17 @@ func NewDDVideoLayerSelector(logger logger.Logger) *DDVideoLayerSelector {
 	}
 }
 
-func (s *DDVideoLayerSelector) Select(expPkt *buffer.ExtPacket, tp *TranslationParams) (selected bool) {
-	tp.marker = expPkt.Packet.Marker
-	if expPkt.DependencyDescriptor == nil {
+func (s *DDVideoLayerSelector) Select(extPkt *buffer.ExtPacket, tp *TranslationParams) (selected bool) {
+	tp.marker = extPkt.Packet.Marker
+	if extPkt.DependencyDescriptor == nil {
 		// packet don't have dependency descriptor, pass check
 		return true
 	}
 
-	if expPkt.DependencyDescriptor.AttachedStructure != nil {
+	if extPkt.DependencyDescriptor.AttachedStructure != nil {
 		// update decode target layer and active decode targets
 		// DD-TODO : these targets info can be shared by all the downtracks, no need calculate in every selector
-		s.updateDependencyStructure(expPkt.DependencyDescriptor.AttachedStructure)
+		s.updateDependencyStructure(extPkt.DependencyDescriptor.AttachedStructure)
 	}
 
 	// forward all packets before locking
@@ -59,7 +59,7 @@ func (s *DDVideoLayerSelector) Select(expPkt *buffer.ExtPacket, tp *TranslationP
 	// only check DTI of the active decode target.
 	// it is not effeciency, at last we need check frame chain integrity.
 
-	activeDecodeTargets := expPkt.DependencyDescriptor.ActiveDecodeTargetsBitmask
+	activeDecodeTargets := extPkt.DependencyDescriptor.ActiveDecodeTargetsBitmask
 	if activeDecodeTargets != nil {
 		s.logger.Debugw("active decode targets", "activeDecodeTargets", *activeDecodeTargets)
 	}
@@ -71,7 +71,7 @@ func (s *DDVideoLayerSelector) Select(expPkt *buffer.ExtPacket, tp *TranslationP
 			if activeDecodeTargets == nil || ((*activeDecodeTargets)&(1<<dt.Target) != 0) {
 				// DD-TODO : check frame chain integrity
 				currentTarget = dt.Target
-				// s.logger.Debugw("select target", "target", currentTarget, "layer", dt.layer, "dtis", expPkt.DependencyDescriptor.FrameDependencies.DecodeTargetIndications)
+				// s.logger.Debugw("select target", "target", currentTarget, "layer", dt.layer, "dtis", extPkt.DependencyDescriptor.FrameDependencies.DecodeTargetIndications)
 				break
 			}
 		}
@@ -79,23 +79,23 @@ func (s *DDVideoLayerSelector) Select(expPkt *buffer.ExtPacket, tp *TranslationP
 
 	if currentTarget < 0 {
 		// s.logger.Debugw(fmt.Sprintf("drop packet for no target found, decodeTargets %v, selected layer %v, s:%d, t:%d",
-		// s.decodeTargetLayer, s.layer, expPkt.DependencyDescriptor.FrameDependencies.SpatialId, expPkt.DependencyDescriptor.FrameDependencies.TemporalId))
+		// s.decodeTargetLayer, s.layer, extPkt.DependencyDescriptor.FrameDependencies.SpatialId, extPkt.DependencyDescriptor.FrameDependencies.TemporalId))
 		// no active decode target, forward all packets
 		return false
 	}
 
-	dtis := expPkt.DependencyDescriptor.FrameDependencies.DecodeTargetIndications
+	dtis := extPkt.DependencyDescriptor.FrameDependencies.DecodeTargetIndications
 	if len(dtis) < currentTarget {
 		// dtis error, dependency descriptor might lost
 		s.logger.Debugw(fmt.Sprintf("drop packet for dtis error, dtis %v, currentTarget %d, s:%d, t:%d", dtis, currentTarget,
-			expPkt.DependencyDescriptor.FrameDependencies.SpatialId, expPkt.DependencyDescriptor.FrameDependencies.TemporalId))
+			extPkt.DependencyDescriptor.FrameDependencies.SpatialId, extPkt.DependencyDescriptor.FrameDependencies.TemporalId))
 		return false
 	}
 
 	// DD-TODO : if bandwidth in congest, could drop the 'Discardable' packet
 	if dti := dtis[currentTarget]; dti == dd.DecodeTargetNotPresent {
 		// s.logger.Debugw(fmt.Sprintf("drop packet for decode target not present, dtis %v, currentTarget %d, s:%d, t:%d", dtis, currentTarget,
-		// expPkt.DependencyDescriptor.FrameDependencies.SpatialId, expPkt.DependencyDescriptor.FrameDependencies.TemporalId))
+		// extPkt.DependencyDescriptor.FrameDependencies.SpatialId, extPkt.DependencyDescriptor.FrameDependencies.TemporalId))
 		return false
 	} else if dti == dd.DecodeTargetSwitch {
 		tp.isSwitchingToTargetLayer = true
@@ -105,10 +105,10 @@ func (s *DDVideoLayerSelector) Select(expPkt *buffer.ExtPacket, tp *TranslationP
 	// s.logger.Debugw("select packet", "target", currentTarget, "layer", s.layer)
 
 	tp.ddExtension = &dd.DependencyDescriptorExtension{
-		Descriptor: expPkt.DependencyDescriptor,
+		Descriptor: extPkt.DependencyDescriptor,
 		Structure:  s.structure,
 	}
-	if expPkt.DependencyDescriptor.AttachedStructure == nil && s.activeDecodeTargetsBitmask != nil {
+	if extPkt.DependencyDescriptor.AttachedStructure == nil && s.activeDecodeTargetsBitmask != nil {
 		// clone and override activebitmask
 		ddClone := *tp.ddExtension.Descriptor
 		ddClone.ActiveDecodeTargetsBitmask = s.activeDecodeTargetsBitmask
@@ -116,7 +116,7 @@ func (s *DDVideoLayerSelector) Select(expPkt *buffer.ExtPacket, tp *TranslationP
 		// s.logger.Debugw("set active decode targets bitmask", "activeDecodeTargetsBitmask", s.activeDecodeTargetsBitmask)
 	}
 
-	mark := expPkt.Packet.Header.Marker || (expPkt.DependencyDescriptor.LastPacketInFrame && s.layer.Spatial == int32(expPkt.DependencyDescriptor.FrameDependencies.SpatialId))
+	mark := extPkt.Packet.Header.Marker || (extPkt.DependencyDescriptor.LastPacketInFrame && s.layer.Spatial == int32(extPkt.DependencyDescriptor.FrameDependencies.SpatialId))
 	tp.marker = mark
 
 	return true
