@@ -13,7 +13,6 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/codecmunger"
-	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/videolayerselector"
 )
 
@@ -126,7 +125,7 @@ type TranslationParams struct {
 	isSwitchingToMaxLayer bool
 	rtp                   *TranslationParamsRTP
 	vp8                   *buffer.VP8
-	ddExtension           *dd.DependencyDescriptorExtension
+	ddBytes               []byte
 	marker                bool
 
 	// indicates this frame has 'Switch' decode indication for target layer
@@ -176,10 +175,10 @@ type Forwarder struct {
 
 	rtpMunger *RTPMunger
 
+	// RAJA-REMOVE: is this really needed?
 	isTemporalSupported bool
 
-	vls             videolayerselector.VideoLayerSelector
-	ddLayerSelector *DDVideoLayerSelector
+	vls videolayerselector.VideoLayerSelector
 
 	codecMunger codecmunger.CodecMunger
 
@@ -280,11 +279,18 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability) {
 		} else {
 			f.vls = videolayerselector.NewVP9(f.logger)
 		}
-		// RAJA-TODO f.ddLayerSelector = NewDDVideoLayerSelector(f.logger)
+		if f.vls != nil {
+			f.vls = videolayerselector.NewDependencyDescriptorFromNull(f.vls)
+		} else {
+			f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
+		}
 	case "video/av1":
-		// TODO : we only enable dd layer selector for av1 now, at future we can
-		// enable it for vp8 too
-		f.ddLayerSelector = NewDDVideoLayerSelector(f.logger)
+		// DD-TODO : we only enable dd layer selector for av1/vp9 now, in the future we can enable it for vp8 too
+		if f.vls != nil {
+			f.vls = videolayerselector.NewDependencyDescriptorFromNull(f.vls)
+		} else {
+			f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
+		}
 	}
 }
 
@@ -1279,9 +1285,6 @@ func (f *Forwarder) updateAllocation(alloc VideoAllocation, reason string) Video
 func (f *Forwarder) setTargetLayers(targetLayers buffer.VideoLayer, requestLayerSpatial int32) {
 	f.vls.SetTarget(targetLayers)
 	f.vls.SetRequestSpatial(requestLayerSpatial)
-	if f.ddLayerSelector != nil {
-		f.ddLayerSelector.SelectLayer(targetLayers)
-	}
 }
 
 func (f *Forwarder) Resync() {
@@ -1457,15 +1460,6 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		// stream is paused by streamallocator
 		tp.shouldDrop = true
 		return tp, nil
-	}
-
-	if f.ddLayerSelector != nil {
-		if selected := f.ddLayerSelector.Select(extPkt, tp); !selected {
-			tp.shouldDrop = true
-			f.rtpMunger.UpdateAndGetSnTs(extPkt) // call to update highest incoming sequence number and other internal structures
-			f.rtpMunger.PacketDropped(extPkt)
-			return tp, nil
-		}
 	}
 
 	if f.vls != nil {

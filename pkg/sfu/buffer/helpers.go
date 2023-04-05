@@ -335,6 +335,7 @@ type VP9 struct {
 }
 
 // Unmarshal parses VP9 Payload Description
+// RAJA-TODO: clean up to output only needed fields, make a copy of the file before editing
 func (v *VP9) Unmarshal(payload []byte) error {
 	if payload == nil {
 		return errNilPacket
@@ -416,6 +417,7 @@ func (v *VP9) Unmarshal(payload []byte) error {
 	return nil
 }
 
+// RAJA-REMOVE - may not need this, remove if not needed
 func (v *VP9) MarshalTo(buf []byte) error {
 	if len(buf) < v.HeaderSize {
 		return errShortPacket

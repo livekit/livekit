@@ -624,6 +624,7 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64) *ExtPack
 			vp9Packet.TID = uint8(ep.Temporal)
 		}
 		ep.Payload = vp9Packet
+		// RAJA-TODO: do not do full VP9 Parse if ddParser is present, just write a seaprate routine for finding if a key frame or not
 	case "video/h264":
 		ep.KeyFrame = IsH264Keyframe(rtpPacket.Payload)
 	case "video/av1":

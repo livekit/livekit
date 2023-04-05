@@ -3,11 +3,12 @@ package videolayerselector
 import "github.com/livekit/livekit-server/pkg/sfu/buffer"
 
 type VideoLayerSelectorResult struct {
-	IsSelected              bool
-	IsRelevant              bool
-	IsSwitchingLayer        bool
-	IsSwitchingToMaxSpatial bool
-	RTPMarker               bool
+	IsSelected                    bool
+	IsRelevant                    bool
+	IsSwitchingLayer              bool
+	IsSwitchingToMaxSpatial       bool
+	RTPMarker                     bool
+	DependencyDescriptorExtension []byte
 }
 
 type VideoLayerSelector interface {

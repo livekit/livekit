@@ -578,7 +578,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	}
 
 	if meta != nil && d.dependencyDescriptorID != 0 {
-		meta.ddBytes = hdr.GetExtension(uint8(d.dependencyDescriptorID))
+		meta.ddBytes = append(meta.ddBytes, tp.ddBytes...)
 	}
 
 	_, err = d.writeStream.WriteRTP(hdr, payload)
@@ -1522,16 +1522,11 @@ func (d *DownTrack) getTranslatedRTPHeader(extPkt *buffer.ExtPacket, tp *Transla
 	}
 
 	var extension []extensionData
-	if d.dependencyDescriptorID != 0 && tp.ddExtension != nil {
-		bytes, err := tp.ddExtension.Marshal()
-		if err != nil {
-			d.logger.Warnw("error marshalling dependency descriptor extension", err)
-		} else {
-			extension = append(extension, extensionData{
-				id:      uint8(d.dependencyDescriptorID),
-				payload: bytes,
-			})
-		}
+	if d.dependencyDescriptorID != 0 && len(tp.ddBytes) != 0 {
+		extension = append(extension, extensionData{
+			id:      uint8(d.dependencyDescriptorID),
+			payload: tp.ddBytes,
+		})
 	}
 	err := d.writeRTPHeaderExtensions(&hdr, extension...)
 	if err != nil {
