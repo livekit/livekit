@@ -9,7 +9,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
-func participantKeyLegacy(roomName livekit.RoomName, identity livekit.ParticipantIdentity) livekit.ParticipantKey {
+func ParticipantKeyLegacy(roomName livekit.RoomName, identity livekit.ParticipantIdentity) livekit.ParticipantKey {
 	return livekit.ParticipantKey(string(roomName) + "|" + string(identity))
 }
 
@@ -25,7 +25,7 @@ func parseParticipantKeyLegacy(pkey livekit.ParticipantKey) (roomName livekit.Ro
 	return
 }
 
-func participantKey(roomName livekit.RoomName, identity livekit.ParticipantIdentity) livekit.ParticipantKey {
+func ParticipantKey(roomName livekit.RoomName, identity livekit.ParticipantIdentity) livekit.ParticipantKey {
 	return livekit.ParticipantKey(encode(string(roomName), string(identity)))
 }
 
