@@ -1,4 +1,4 @@
-package sfu
+package codecmunger
 
 import (
 	"reflect"
@@ -8,11 +8,12 @@ import (
 
 	"github.com/livekit/protocol/logger"
 
+	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/testutils"
 )
 
-func compare(expected *VP8Munger, actual *VP8Munger) bool {
+func compare(expected *VP8, actual *VP8) bool {
 	return reflect.DeepEqual(expected.pictureIdWrapHandler, actual.pictureIdWrapHandler) &&
 		expected.extLastPictureId == actual.extLastPictureId &&
 		expected.pictureIdOffset == actual.pictureIdOffset &&
@@ -26,12 +27,12 @@ func compare(expected *VP8Munger, actual *VP8Munger) bool {
 		expected.keyIdxUsed == actual.keyIdxUsed
 }
 
-func newVP8Munger() *VP8Munger {
-	return NewVP8Munger(logger.GetLogger())
+func newVP8() *VP8 {
+	return NewVP8(logger.GetLogger())
 }
 
 func TestSetLast(t *testing.T) {
-	v := newVP8Munger()
+	v := newVP8()
 
 	params := &testutils.TestExtPacketParams{
 		SequenceNumber: 23333,
@@ -57,33 +58,31 @@ func TestSetLast(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, extPkt)
 
-	expectedVP8Munger := VP8Munger{
-		VP8MungerParams: VP8MungerParams{
-			pictureIdWrapHandler: VP8PictureIdWrapHandler{
-				maxPictureId: 13466,
-				maxMBit:      true,
-				totalWrap:    0,
-				lastWrap:     0,
-			},
-			extLastPictureId: 13467,
-			pictureIdOffset:  0,
-			pictureIdUsed:    1,
-			lastTl0PicIdx:    233,
-			tl0PicIdxOffset:  0,
-			tl0PicIdxUsed:    1,
-			tidUsed:          1,
-			lastKeyIdx:       23,
-			keyIdxOffset:     0,
-			keyIdxUsed:       1,
+	expectedVP8 := VP8{
+		pictureIdWrapHandler: VP8PictureIdWrapHandler{
+			maxPictureId: 13466,
+			maxMBit:      true,
+			totalWrap:    0,
+			lastWrap:     0,
 		},
+		extLastPictureId: 13467,
+		pictureIdOffset:  0,
+		pictureIdUsed:    1,
+		lastTl0PicIdx:    233,
+		tl0PicIdxOffset:  0,
+		tl0PicIdxUsed:    1,
+		tidUsed:          1,
+		lastKeyIdx:       23,
+		keyIdxOffset:     0,
+		keyIdxUsed:       1,
 	}
 
 	v.SetLast(extPkt)
-	require.True(t, compare(&expectedVP8Munger, v))
+	require.True(t, compare(&expectedVP8, v))
 }
 
 func TestUpdateOffsets(t *testing.T) {
-	v := newVP8Munger()
+	v := newVP8()
 
 	params := &testutils.TestExtPacketParams{
 		SequenceNumber: 23333,
@@ -131,31 +130,29 @@ func TestUpdateOffsets(t *testing.T) {
 	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
 	v.UpdateOffsets(extPkt)
 
-	expectedVP8Munger := VP8Munger{
-		VP8MungerParams: VP8MungerParams{
-			pictureIdWrapHandler: VP8PictureIdWrapHandler{
-				maxPictureId: 344,
-				maxMBit:      true,
-				totalWrap:    0,
-				lastWrap:     0,
-			},
-			extLastPictureId: 13467,
-			pictureIdOffset:  345 - 13467 - 1,
-			pictureIdUsed:    1,
-			lastTl0PicIdx:    233,
-			tl0PicIdxOffset:  (12 - 233 - 1) & 0xff,
-			tl0PicIdxUsed:    1,
-			tidUsed:          1,
-			lastKeyIdx:       23,
-			keyIdxOffset:     (4 - 23 - 1) & 0x1f,
-			keyIdxUsed:       1,
+	expectedVP8 := VP8{
+		pictureIdWrapHandler: VP8PictureIdWrapHandler{
+			maxPictureId: 344,
+			maxMBit:      true,
+			totalWrap:    0,
+			lastWrap:     0,
 		},
+		extLastPictureId: 13467,
+		pictureIdOffset:  345 - 13467 - 1,
+		pictureIdUsed:    1,
+		lastTl0PicIdx:    233,
+		tl0PicIdxOffset:  (12 - 233 - 1) & 0xff,
+		tl0PicIdxUsed:    1,
+		tidUsed:          1,
+		lastKeyIdx:       23,
+		keyIdxOffset:     (4 - 23 - 1) & 0x1f,
+		keyIdxUsed:       1,
 	}
-	require.True(t, compare(&expectedVP8Munger, v))
+	require.True(t, compare(&expectedVP8, v))
 }
 
 func TestOutOfOrderPictureId(t *testing.T) {
-	v := newVP8Munger()
+	v := newVP8()
 
 	params := &testutils.TestExtPacketParams{
 		SequenceNumber: 23333,
@@ -179,13 +176,13 @@ func TestOutOfOrderPictureId(t *testing.T) {
 	}
 	extPkt, _ := testutils.GetTestExtPacketVP8(params, vp8)
 	v.SetLast(extPkt)
-	v.UpdateAndGet(extPkt, SequenceNumberOrderingContiguous, 2)
+	v.UpdateAndGet(extPkt, sfu.SequenceNumberOrderingContiguous, 2)
 
 	// out-of-order sequence number not in the missing picture id cache
 	vp8.PictureID = 13466
 	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
 
-	tp, err := v.UpdateAndGet(extPkt, SequenceNumberOrderingOutOfOrder, 2)
+	tp, err := v.UpdateAndGet(extPkt, sfu.SequenceNumberOrderingOutOfOrder, 2)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrOutOfOrderVP8PictureIdCacheMiss)
 	require.Nil(t, tp)
@@ -211,7 +208,7 @@ func TestOutOfOrderPictureId(t *testing.T) {
 			IsKeyFrame:       true,
 		},
 	}
-	tp, err = v.UpdateAndGet(extPkt, SequenceNumberOrderingGap, 2)
+	tp, err = v.UpdateAndGet(extPkt, sfu.SequenceNumberOrderingGap, 2)
 	require.NoError(t, err)
 	require.NotNil(t, tp)
 	require.Equal(t, tpExpected, *tp)
@@ -250,14 +247,14 @@ func TestOutOfOrderPictureId(t *testing.T) {
 			IsKeyFrame:       true,
 		},
 	}
-	tp, err = v.UpdateAndGet(extPkt, SequenceNumberOrderingOutOfOrder, 2)
+	tp, err = v.UpdateAndGet(extPkt, sfu.SequenceNumberOrderingOutOfOrder, 2)
 	require.NoError(t, err)
 	require.NotNil(t, tp)
 	require.Equal(t, tpExpected, *tp)
 }
 
 func TestTemporalLayerFiltering(t *testing.T) {
-	v := newVP8Munger()
+	v := newVP8()
 
 	params := &testutils.TestExtPacketParams{
 		SequenceNumber: 23333,
@@ -283,7 +280,7 @@ func TestTemporalLayerFiltering(t *testing.T) {
 	v.SetLast(extPkt)
 
 	// translate
-	tp, err := v.UpdateAndGet(extPkt, SequenceNumberOrderingContiguous, 0)
+	tp, err := v.UpdateAndGet(extPkt, sfu.SequenceNumberOrderingContiguous, 0)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrFilteredVP8TemporalLayer)
 	require.Nil(t, tp)
@@ -296,7 +293,7 @@ func TestTemporalLayerFiltering(t *testing.T) {
 	params.SequenceNumber = 23334
 	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
 
-	tp, err = v.UpdateAndGet(extPkt, SequenceNumberOrderingContiguous, 0)
+	tp, err = v.UpdateAndGet(extPkt, sfu.SequenceNumberOrderingContiguous, 0)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrFilteredVP8TemporalLayer)
 	require.Nil(t, tp)
@@ -309,7 +306,7 @@ func TestTemporalLayerFiltering(t *testing.T) {
 	params.SequenceNumber = 23337
 	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
 
-	tp, err = v.UpdateAndGet(extPkt, SequenceNumberOrderingContiguous, 0)
+	tp, err = v.UpdateAndGet(extPkt, sfu.SequenceNumberOrderingContiguous, 0)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrFilteredVP8TemporalLayer)
 	require.Nil(t, tp)
@@ -319,7 +316,7 @@ func TestTemporalLayerFiltering(t *testing.T) {
 }
 
 func TestGapInSequenceNumberSamePicture(t *testing.T) {
-	v := newVP8Munger()
+	v := newVP8()
 
 	params := &testutils.TestExtPacketParams{
 		SequenceNumber: 65533,
@@ -362,7 +359,7 @@ func TestGapInSequenceNumberSamePicture(t *testing.T) {
 			IsKeyFrame:       true,
 		},
 	}
-	tp, err := v.UpdateAndGet(extPkt, SequenceNumberOrderingContiguous, 2)
+	tp, err := v.UpdateAndGet(extPkt, sfu.SequenceNumberOrderingContiguous, 2)
 	require.NoError(t, err)
 	require.Equal(t, tpExpected, *tp)
 
@@ -384,7 +381,7 @@ func TestGapInSequenceNumberSamePicture(t *testing.T) {
 			IsKeyFrame:       true,
 		},
 	}
-	tp, err = v.UpdateAndGet(extPkt, SequenceNumberOrderingGap, 2)
+	tp, err = v.UpdateAndGet(extPkt, sfu.SequenceNumberOrderingGap, 2)
 	require.NoError(t, err)
 	require.Equal(t, tpExpected, *tp)
 
@@ -394,7 +391,7 @@ func TestGapInSequenceNumberSamePicture(t *testing.T) {
 }
 
 func TestUpdateAndGetPadding(t *testing.T) {
-	v := newVP8Munger()
+	v := newVP8()
 
 	params := &testutils.TestExtPacketParams{
 		SequenceNumber: 23333,

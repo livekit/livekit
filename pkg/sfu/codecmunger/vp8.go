@@ -1,4 +1,4 @@
-package sfu
+package codecmunger
 
 import (
 	"fmt"
@@ -16,14 +16,9 @@ const (
 	exemptedPictureIdsThreshold = 20
 )
 
-// VP8 munger
-type TranslationParamsVP8 struct {
-	Header *buffer.VP8
-}
-
 // -----------------------------------------------------------
 
-type VP8MungerState struct {
+type VP8State struct {
 	ExtLastPictureId int32
 	PictureIdUsed    int
 	LastTl0PicIdx    uint8
@@ -33,14 +28,16 @@ type VP8MungerState struct {
 	KeyIdxUsed       int
 }
 
-func (v VP8MungerState) String() string {
-	return fmt.Sprintf("VP8MungerState{extLastPictureId: %d, pictureIdUsed: %+v, lastTl0PicIdx: %d, tl0PicIdxUsed: %+v, tidUsed: %+v, lastKeyIdx: %d, keyIdxUsed: %+v)",
+func (v VP8State) String() string {
+	return fmt.Sprintf("VP8State{extLastPictureId: %d, pictureIdUsed: %+v, lastTl0PicIdx: %d, tl0PicIdxUsed: %+v, tidUsed: %+v, lastKeyIdx: %d, keyIdxUsed: %+v)",
 		v.ExtLastPictureId, v.PictureIdUsed, v.LastTl0PicIdx, v.Tl0PicIdxUsed, v.TidUsed, v.LastKeyIdx, v.KeyIdxUsed)
 }
 
 // -----------------------------------------------------------
 
-type VP8MungerParams struct {
+type VP8 struct {
+	logger logger.Logger
+
 	pictureIdWrapHandler VP8PictureIdWrapHandler
 	extLastPictureId     int32
 	pictureIdOffset      int32
@@ -58,25 +55,17 @@ type VP8MungerParams struct {
 	exemptedPictureIds *orderedmap.OrderedMap[int32, bool]
 }
 
-type VP8Munger struct {
-	logger logger.Logger
-
-	VP8MungerParams
-}
-
-func NewVP8Munger(logger logger.Logger) *VP8Munger {
-	return &VP8Munger{
-		logger: logger,
-		VP8MungerParams: VP8MungerParams{
-			missingPictureIds:  orderedmap.NewOrderedMap[int32, int32](),
-			droppedPictureIds:  orderedmap.NewOrderedMap[int32, bool](),
-			exemptedPictureIds: orderedmap.NewOrderedMap[int32, bool](),
-		},
+func NewVP8(logger logger.Logger) *VP8 {
+	return &VP8{
+		logger:             logger,
+		missingPictureIds:  orderedmap.NewOrderedMap[int32, int32](),
+		droppedPictureIds:  orderedmap.NewOrderedMap[int32, bool](),
+		exemptedPictureIds: orderedmap.NewOrderedMap[int32, bool](),
 	}
 }
 
-func (v *VP8Munger) GetLast() VP8MungerState {
-	return VP8MungerState{
+func (v *VP8) GetState() interface{} {
+	return VP8State{
 		ExtLastPictureId: v.extLastPictureId,
 		PictureIdUsed:    v.pictureIdUsed,
 		LastTl0PicIdx:    v.lastTl0PicIdx,
@@ -87,17 +76,19 @@ func (v *VP8Munger) GetLast() VP8MungerState {
 	}
 }
 
-func (v *VP8Munger) SeedLast(state VP8MungerState) {
-	v.extLastPictureId = state.ExtLastPictureId
-	v.pictureIdUsed = state.PictureIdUsed
-	v.lastTl0PicIdx = state.LastTl0PicIdx
-	v.tl0PicIdxUsed = state.Tl0PicIdxUsed
-	v.tidUsed = state.TidUsed
-	v.lastKeyIdx = state.LastKeyIdx
-	v.keyIdxUsed = state.KeyIdxUsed
+func (v *VP8) SeedState(seed interface{}) {
+	if state, ok := seed.(VP8State); ok {
+		v.extLastPictureId = state.ExtLastPictureId
+		v.pictureIdUsed = state.PictureIdUsed
+		v.lastTl0PicIdx = state.LastTl0PicIdx
+		v.tl0PicIdxUsed = state.Tl0PicIdxUsed
+		v.tidUsed = state.TidUsed
+		v.lastKeyIdx = state.LastKeyIdx
+		v.keyIdxUsed = state.KeyIdxUsed
+	}
 }
 
-func (v *VP8Munger) SetLast(extPkt *buffer.ExtPacket) {
+func (v *VP8) SetLast(extPkt *buffer.ExtPacket) {
 	vp8, ok := extPkt.Payload.(buffer.VP8)
 	if !ok {
 		return
@@ -122,7 +113,7 @@ func (v *VP8Munger) SetLast(extPkt *buffer.ExtPacket) {
 	}
 }
 
-func (v *VP8Munger) UpdateOffsets(extPkt *buffer.ExtPacket) {
+func (v *VP8) UpdateOffsets(extPkt *buffer.ExtPacket) {
 	vp8, ok := extPkt.Payload.(buffer.VP8)
 	if !ok {
 		return
@@ -147,7 +138,7 @@ func (v *VP8Munger) UpdateOffsets(extPkt *buffer.ExtPacket) {
 	v.exemptedPictureIds = orderedmap.NewOrderedMap[int32, bool]()
 }
 
-func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumberOrdering, maxTemporalLayer int32) (*TranslationParamsVP8, error) {
+func (v *VP8) UpdateAndGet(extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap bool, maxTemporalLayer int32) (interface{}, error) {
 	vp8, ok := extPkt.Payload.(buffer.VP8)
 	if !ok {
 		return nil, ErrNotVP8
@@ -156,7 +147,7 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumb
 	extPictureId := v.pictureIdWrapHandler.Unwrap(vp8.PictureID, vp8.MBit)
 
 	// if out-of-order, look up missing picture id cache
-	if ordering == SequenceNumberOrderingOutOfOrder {
+	if snOutOfOrder {
 		pictureIdOffset, ok := v.missingPictureIds.Get(extPictureId)
 		if !ok {
 			return nil, ErrOutOfOrderVP8PictureIdCacheMiss
@@ -184,9 +175,7 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumb
 			IsKeyFrame:       vp8.IsKeyFrame,
 			HeaderSize:       vp8.HeaderSize + buffer.VPxPictureIdSizeDiff(mungedPictureId > 127, vp8.MBit),
 		}
-		return &TranslationParamsVP8{
-			Header: vp8Packet,
-		}, nil
+		return vp8Packet, nil
 	}
 
 	prevMaxPictureId := v.pictureIdWrapHandler.MaxPictureId()
@@ -205,7 +194,7 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumb
 	// it is possible to deduce that (for example by looking at previous packet's RTP marker
 	// and check if that was the last packet of Picture 10), it could get complicated when
 	// the gap is larger.
-	if ordering == SequenceNumberOrderingGap {
+	if snHasGap {
 		for lostPictureId := prevMaxPictureId; lostPictureId <= extPictureId; lostPictureId++ {
 			// Record missing only if picture id was not dropped. This is to avoid a subsequent packet of dropped frame going through.
 			// A sequence like this
@@ -289,12 +278,10 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumb
 		IsKeyFrame:       vp8.IsKeyFrame,
 		HeaderSize:       vp8.HeaderSize + buffer.VPxPictureIdSizeDiff(mungedPictureId > 127, vp8.MBit),
 	}
-	return &TranslationParamsVP8{
-		Header: vp8Packet,
-	}, nil
+	return vp8Packet, nil
 }
 
-func (v *VP8Munger) UpdateAndGetPadding(newPicture bool) *buffer.VP8 {
+func (v *VP8) UpdateAndGetPadding(newPicture bool) interface{} {
 	offset := 0
 	if newPicture {
 		offset = 1
@@ -356,7 +343,7 @@ func (v *VP8Munger) UpdateAndGetPadding(newPicture bool) *buffer.VP8 {
 }
 
 // for testing only
-func (v *VP8Munger) PictureIdOffset(extPictureId int32) (int32, bool) {
+func (v *VP8) PictureIdOffset(extPictureId int32) (int32, bool) {
 	return v.missingPictureIds.Get(extPictureId)
 }
 

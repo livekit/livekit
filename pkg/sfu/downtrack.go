@@ -69,7 +69,6 @@ var (
 	ErrOutOfOrderVP8PictureIdCacheMiss   = errors.New("out-of-order VP8 picture id not found in cache")
 	ErrFilteredVP8TemporalLayer          = errors.New("filtered VP8 temporal layer")
 	ErrDownTrackAlreadyBound             = errors.New("already bound")
-	ErrDownTrackClosed                   = errors.New("downtrack closed")
 )
 
 var (
@@ -209,9 +208,7 @@ type DownTrack struct {
 	connectionStats      *connectionquality.ConnectionStats
 	deltaStatsSnapshotId uint32
 
-	// Debug info
-	// RAJA-REMOVE packets dropped
-	pktsDropped   atomic.Uint32
+	// for throttling error logs
 	writeIOErrors atomic.Uint32
 
 	isNACKThrottled atomic.Bool
@@ -552,9 +549,6 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 
 	tp, err := d.forwarder.GetTranslationParams(extPkt, layer)
 	if tp.shouldDrop {
-		if tp.isDroppingRelevant {
-			d.pktsDropped.Inc()
-		}
 		if err != nil {
 			d.logger.Errorw("write rtp packet failed", err)
 		}
@@ -565,9 +559,8 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	if tp.vp8 != nil {
 		incomingVP8, _ := extPkt.Payload.(buffer.VP8)
 		pool = PacketFactory.Get().(*[]byte)
-		payload, err = d.translateVP8PacketTo(extPkt.Packet, &incomingVP8, tp.vp8.Header, pool)
+		payload, err = d.translateVP8PacketTo(extPkt.Packet, &incomingVP8, tp.vp8, pool)
 		if err != nil {
-			d.pktsDropped.Inc()
 			d.logger.Errorw("write rtp packet failed", err)
 			return err
 		}
@@ -577,13 +570,12 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	if d.sequencer != nil {
 		meta = d.sequencer.push(extPkt.Packet.SequenceNumber, tp.rtp.sequenceNumber, tp.rtp.timestamp, int8(layer))
 		if meta != nil && tp.vp8 != nil {
-			meta.packVP8(tp.vp8.Header)
+			meta.packVP8(tp.vp8)
 		}
 	}
 
 	hdr, err := d.getTranslatedRTPHeader(extPkt, tp)
 	if err != nil {
-		d.pktsDropped.Inc()
 		d.logger.Errorw("write rtp packet failed", err)
 		return err
 	}
@@ -594,7 +586,6 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 
 	_, err = d.writeStream.WriteRTP(hdr, payload)
 	if err != nil {
-		d.pktsDropped.Inc()
 		if errors.Is(err, io.ErrClosedPipe) {
 			writeIOErrors := d.writeIOErrors.Inc()
 			if (writeIOErrors % 100) == 1 {
@@ -1573,7 +1564,6 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 		"TSOffset":          rtpMungerParams.tsOffset,
 		"LastMarker":        rtpMungerParams.lastMarker,
 		"LastPli":           d.rtpStats.LastPli(),
-		"PacketsDropped":    d.pktsDropped.Load(),
 	}
 
 	senderReport := d.CreateSenderReport()
