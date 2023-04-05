@@ -1,3 +1,5 @@
+<!--BEGIN_BANNER_IMAGE--><!--END_BANNER_IMAGE-->
+
 # LiveKit: Real-time video, audio and data for developers
 
 [LiveKit](https://livekit.io) is an open source project that provides scalable, multi-user conferencing based on WebRTC.
@@ -281,3 +283,5 @@ We welcome your contributions toward improving LiveKit! Please join us
 ## License
 
 LiveKit server is licensed under Apache License v2.0.
+
+<!--BEGIN_REPO_NAV--><!--END_REPO_NAV-->
