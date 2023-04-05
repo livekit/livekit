@@ -40,7 +40,6 @@ require (
 	github.com/prometheus/client_golang v1.14.0
 	github.com/redis/go-redis/v9 v9.0.3
 	github.com/rs/cors v1.8.3
-	github.com/sebest/xff v0.0.0-20210106013422-671bd2870b3a
 	github.com/stretchr/testify v1.8.2
 	github.com/thoas/go-funk v0.9.3
 	github.com/twitchtv/twirp v8.1.3+incompatible
