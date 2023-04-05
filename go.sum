@@ -237,8 +237,8 @@ github.com/livekit/mediatransportutil v0.0.0-20230326055817-ed569ca13d26 h1:QlQF
 github.com/livekit/mediatransportutil v0.0.0-20230326055817-ed569ca13d26/go.mod h1:eDA41kiySZoG+wy4Etsjb3w0jjLx69i/vAmSjG4bteA=
 github.com/livekit/protocol v1.5.2-0.20230405103303-8c8b87686b2c h1:fkBV/qBvTSZogAh+dJ75WYqrAGHOpNGIi7Z1iuulHMQ=
 github.com/livekit/protocol v1.5.2-0.20230405103303-8c8b87686b2c/go.mod h1:UFgAWejoO4eshaaDe2jynTdQWwSktNO+8Wx19V7bs+o=
-github.com/livekit/psrpc v0.2.10 h1:Ud9GzMYkKhMbB6c3RkOqe8mlRtSqtW0StyICp1jApDM=
-github.com/livekit/psrpc v0.2.10/go.mod h1:K0j8f1PgLShR7Lx80KbmwFkDH2BvOnycXGV0OSRURKc=
+github.com/livekit/psrpc v0.2.11-0.20230405191830-d76f71512630 h1:Rm5KLZgQxWnTidY+H8MsAV6sk1iiFxeXqPFgSLkMing=
+github.com/livekit/psrpc v0.2.11-0.20230405191830-d76f71512630/go.mod h1:K0j8f1PgLShR7Lx80KbmwFkDH2BvOnycXGV0OSRURKc=
 github.com/mackerelio/go-osstat v0.2.4 h1:qxGbdPkFo65PXOb/F/nhDKpF2nGmGaCFDLXoZjJTtUs=
 github.com/mackerelio/go-osstat v0.2.4/go.mod h1:Zy+qzGdZs3A9cuIqmgbJvwbmLQH9dJvtio5ZjJTbdlQ=
 github.com/magefile/mage v1.14.0 h1:6QDX3g6z1YvJ4olPhT1wksUcSa/V0a1B+pJb73fBjyo=

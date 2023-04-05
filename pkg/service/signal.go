@@ -152,13 +152,19 @@ type relaySignalResponseSink struct {
 	psrpc.ServerStream[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest]
 	logger logger.Logger
 
-	mu      sync.Mutex
-	queue   []*livekit.SignalResponse
-	writing bool
+	mu       sync.Mutex
+	queue    []*livekit.SignalResponse
+	writing  bool
+	draining bool
 }
 
 func (s *relaySignalResponseSink) Close() {
-	s.ServerStream.Close(nil)
+	s.mu.Lock()
+	s.draining = true
+	if !s.writing {
+		s.ServerStream.Close(nil)
+	}
+	s.mu.Unlock()
 }
 
 func (s *relaySignalResponseSink) IsClosed() bool {
@@ -173,6 +179,9 @@ func (s *relaySignalResponseSink) write() {
 			msg = s.queue[0]
 			s.queue = s.queue[1:]
 		} else {
+			if s.draining {
+				s.ServerStream.Close(nil)
+			}
 			s.writing = false
 			s.mu.Unlock()
 			return
@@ -189,16 +198,17 @@ func (s *relaySignalResponseSink) write() {
 }
 
 func (s *relaySignalResponseSink) WriteMessage(msg proto.Message) error {
-	if err := s.Context().Err(); err != nil {
-		return err
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.draining || s.IsClosed() {
+		return psrpc.ErrStreamClosed
 	}
 
-	s.mu.Lock()
 	s.queue = append(s.queue, msg.(*livekit.SignalResponse))
 	if !s.writing {
 		s.writing = true
 		go s.write()
 	}
-	s.mu.Unlock()
 	return nil
 }
