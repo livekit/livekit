@@ -7,6 +7,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
@@ -34,11 +35,12 @@ func NewSignalClient(nodeID livekit.NodeID, bus psrpc.MessageBus, config config.
 	c, err := rpc.NewTypedSignalClient(
 		nodeID,
 		bus,
-		psrpc.WithClientStreamInterceptors(middleware.NewStreamRetryInterceptorFactory(middleware.RetryOptions{
+		middleware.WithClientMetrics(prometheus.PSRPCMetricsObserver{}),
+		middleware.WithStreamRetries(middleware.RetryOptions{
 			MaxAttempts: config.MaxAttempts,
 			Timeout:     config.Timeout,
 			Backoff:     config.Backoff,
-		})),
+		}),
 		psrpc.WithClientChannelSize(config.StreamBufferSize),
 	)
 	if err != nil {

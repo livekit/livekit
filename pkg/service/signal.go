@@ -38,12 +38,18 @@ func NewSignalServer(
 	config config.SignalRelayConfig,
 	sessionHandler SessionHandler,
 ) (*SignalServer, error) {
-	ri := middleware.NewStreamRetryInterceptorFactory(middleware.RetryOptions{
-		MaxAttempts: config.MaxAttempts,
-		Timeout:     config.Timeout,
-		Backoff:     config.Backoff,
-	})
-	s, err := rpc.NewTypedSignalServer(nodeID, &signalService{region, sessionHandler}, bus, psrpc.WithServerStreamInterceptors(ri), psrpc.WithServerChannelSize(config.StreamBufferSize))
+	s, err := rpc.NewTypedSignalServer(
+		nodeID,
+		&signalService{region, sessionHandler},
+		bus,
+		middleware.WithServerMetrics(prometheus.PSRPCMetricsObserver{}),
+		psrpc.WithServerStreamInterceptors(middleware.NewStreamRetryInterceptorFactory(middleware.RetryOptions{
+			MaxAttempts: config.MaxAttempts,
+			Timeout:     config.Timeout,
+			Backoff:     config.Backoff,
+		})),
+		psrpc.WithServerChannelSize(config.StreamBufferSize),
+	)
 	if err != nil {
 		return nil, err
 	}
