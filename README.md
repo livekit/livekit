@@ -2,6 +2,8 @@
 
 # LiveKit: Real-time video, audio and data for developers
 
+<!--BEGIN_DESCRIPTION--><!--END_DESCRIPTION-->
+
 [LiveKit](https://livekit.io) is an open source project that provides scalable, multi-user conferencing based on WebRTC.
 It's designed to provide everything you need to build real-time video/audio/data capabilities in your applications.
 
