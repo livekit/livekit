@@ -149,10 +149,6 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livek
 		return
 	}
 
-	if r.usePSRPCSignal {
-		return r.StartParticipantSignalWithNodeID(ctx, roomName, pi, livekit.NodeID(rtcNode.Id))
-	}
-
 	// create a new connection id
 	connectionID = livekit.ConnectionID(utils.NewGuid("CO_"))
 	pKey := participantKeyLegacy(roomName, pi.Identity)
@@ -161,6 +157,10 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livek
 	// map signal & rtc nodes
 	if err = r.setParticipantSignalNode(connectionID, r.currentNode.Id); err != nil {
 		return
+	}
+
+	if r.usePSRPCSignal {
+		return r.StartParticipantSignalWithNodeID(ctx, roomName, pi, livekit.NodeID(rtcNode.Id))
 	}
 
 	// index by connectionID, since there may be multiple connections for the participant

@@ -105,6 +105,11 @@ func (r *signalClient) StartParticipantSignal(
 			if err = resChan.WriteMessage(msg.Response); err != nil {
 				break
 			}
+			for _, res := range msg.Responses {
+				if err = resChan.WriteMessage(res); err != nil {
+					break
+				}
+			}
 		}
 
 		logger.Debugw("participant signal stream closed",
