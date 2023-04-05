@@ -571,35 +571,14 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64) *ExtPack
 		}
 		ep.Payload = vp8Packet
 	case "video/vp9":
-		vp9Packet := VP9{}
-		if err := vp9Packet.Unmarshal(rtpPacket.Payload); err != nil {
-			b.logger.Warnw("could not unmarshal VP9 packet", err)
-			return nil
-		}
-		/* RAJA-REMOVE
-		b.logger.Infow("vp9 packet",
-			"packet", fmt.Sprintf("sid: %d, tid: %d, pid: %d, B: %+v, E: %+v, P: %+v, U: %+v, K: %+v, spatial: %d, temporal: %d\n",
-				vp9Packet.SID,
-				vp9Packet.TID,
-				vp9Packet.PictureID,
-				vp9Packet.IsBeginningOfFrame,
-				vp9Packet.IsEndOfFrame,
-				vp9Packet.IsSpatialLayerSwitchUpPoint,
-				vp9Packet.IsTemporalLayerSwitchUpPoint,
-				vp9Packet.IsKeyFrame,
-				ep.Spatial,
-				ep.Temporal,
-			),
-		) // REMOVE
-		if vp9Packet.IsKeyFrame {
-			b.logger.Infow("RAJA VP9 Key frame") // REMOVE
-		}
-		if vp9Packet.IsSpatialLayerSwitchUpPoint {
-			b.logger.Infow("RAJA P Bit") // REMOVE
-		}
-		*/
-		if vp9Packet.IsKeyFrame {
-			b.logger.Infow("RAJA vp9 key frame packet",
+		if ep.DependencyDescriptor == nil {
+			vp9Packet := VP9{}
+			if err := vp9Packet.Unmarshal(rtpPacket.Payload); err != nil {
+				b.logger.Warnw("could not unmarshal VP9 packet", err)
+				return nil
+			}
+			/* RAJA-REMOVE
+			b.logger.Infow("vp9 packet",
 				"packet", fmt.Sprintf("sid: %d, tid: %d, pid: %d, B: %+v, E: %+v, P: %+v, U: %+v, K: %+v, spatial: %d, temporal: %d\n",
 					vp9Packet.SID,
 					vp9Packet.TID,
@@ -613,22 +592,51 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64) *ExtPack
 					ep.Temporal,
 				),
 			) // REMOVE
-		}
-		ep.KeyFrame = vp9Packet.IsKeyFrame
-		if ep.DependencyDescriptor == nil {
+			if vp9Packet.IsKeyFrame {
+				b.logger.Infow("RAJA VP9 Key frame") // REMOVE
+			}
+			if vp9Packet.IsSpatialLayerSwitchUpPoint {
+				b.logger.Infow("RAJA P Bit") // REMOVE
+			}
+			*/
+			if vp9Packet.IsKeyFrame {
+				b.logger.Infow("RAJA vp9 key frame packet",
+					"packet", fmt.Sprintf("sid: %d, tid: %d, pid: %d, B: %+v, E: %+v, P: %+v, U: %+v, K: %+v, spatial: %d, temporal: %d\n",
+						vp9Packet.SID,
+						vp9Packet.TID,
+						vp9Packet.PictureID,
+						vp9Packet.IsBeginningOfFrame,
+						vp9Packet.IsEndOfFrame,
+						vp9Packet.IsSpatialLayerSwitchUpPoint,
+						vp9Packet.IsTemporalLayerSwitchUpPoint,
+						vp9Packet.IsKeyFrame,
+						ep.Spatial,
+						ep.Temporal,
+					),
+				) // REMOVE
+			}
+			ep.KeyFrame = vp9Packet.IsKeyFrame
 			ep.Spatial = int32(vp9Packet.SID)
 			ep.Temporal = int32(vp9Packet.TID)
+			/* RAJA-REMOVE - don't think we need VP9 header when using dependency descriptor
+			} else {
+				// vp9 with DependencyDescriptor enabled, use the SID/TID from the descriptor
+				vp9Packet.SID = uint8(ep.Spatial)
+				vp9Packet.TID = uint8(ep.Temporal)
+			}
+			*/
+			ep.Payload = vp9Packet
 		} else {
-			// vp9 with DependencyDescriptor enabled, use the SID/TID from the descriptor
-			vp9Packet.SID = uint8(ep.Spatial)
-			vp9Packet.TID = uint8(ep.Temporal)
+			ep.KeyFrame = IsVP9KeyFrame(rtpPacket.Payload)
+			if ep.KeyFrame {
+				b.logger.Infow("RAJA vp9 key frame packet")
+			} // REMOVE
 		}
-		ep.Payload = vp9Packet
 		// RAJA-TODO: do not do full VP9 Parse if ddParser is present, just write a seaprate routine for finding if a key frame or not
 	case "video/h264":
-		ep.KeyFrame = IsH264Keyframe(rtpPacket.Payload)
+		ep.KeyFrame = IsH264KeyFrame(rtpPacket.Payload)
 	case "video/av1":
-		ep.KeyFrame = IsAV1Keyframe(rtpPacket.Payload)
+		ep.KeyFrame = IsAV1KeyFrame(rtpPacket.Payload)
 	}
 
 	if ep.KeyFrame {

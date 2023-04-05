@@ -138,7 +138,7 @@ func (v *VP8) UpdateOffsets(extPkt *buffer.ExtPacket) {
 	v.exemptedPictureIds = orderedmap.NewOrderedMap[int32, bool]()
 }
 
-func (v *VP8) UpdateAndGet(extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap bool, maxTemporalLayer int32) (interface{}, error) {
+func (v *VP8) UpdateAndGet(extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap bool, maxTemporalLayer int32) ([]byte, error) {
 	vp8, ok := extPkt.Payload.(buffer.VP8)
 	if !ok {
 		return nil, ErrNotVP8
@@ -175,7 +175,7 @@ func (v *VP8) UpdateAndGet(extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap
 			IsKeyFrame:       vp8.IsKeyFrame,
 			HeaderSize:       vp8.HeaderSize + buffer.VPxPictureIdSizeDiff(mungedPictureId > 127, vp8.MBit),
 		}
-		return vp8Packet, nil
+		return vp8Packet.Marshal()
 	}
 
 	prevMaxPictureId := v.pictureIdWrapHandler.MaxPictureId()
@@ -278,10 +278,10 @@ func (v *VP8) UpdateAndGet(extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap
 		IsKeyFrame:       vp8.IsKeyFrame,
 		HeaderSize:       vp8.HeaderSize + buffer.VPxPictureIdSizeDiff(mungedPictureId > 127, vp8.MBit),
 	}
-	return vp8Packet, nil
+	return vp8Packet.Marshal()
 }
 
-func (v *VP8) UpdateAndGetPadding(newPicture bool) interface{} {
+func (v *VP8) UpdateAndGetPadding(newPicture bool) ([]byte, error) {
 	offset := 0
 	if newPicture {
 		offset = 1
@@ -339,7 +339,7 @@ func (v *VP8) UpdateAndGetPadding(newPicture bool) interface{} {
 		IsKeyFrame:       true,
 		HeaderSize:       headerSize,
 	}
-	return vp8Packet
+	return vp8Packet.Marshal()
 }
 
 // for testing only

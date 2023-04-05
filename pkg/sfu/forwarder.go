@@ -124,7 +124,7 @@ type TranslationParams struct {
 	shouldDrop            bool
 	isSwitchingToMaxLayer bool
 	rtp                   *TranslationParamsRTP
-	vp8                   *buffer.VP8
+	codecBytes            []byte
 	ddBytes               []byte
 	marker                bool
 
@@ -204,7 +204,6 @@ func NewForwarder(
 	if f.kind == webrtc.RTPCodecTypeVideo {
 		f.vls.SetMaxTemporal(buffer.DefaultMaxLayerTemporal)
 	}
-
 	return f
 }
 
@@ -248,7 +247,7 @@ func (f *Forwarder) getOnParkedLayersExpired() func() {
 	return f.onParkedLayersExpired
 }
 
-func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability) {
+func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, isDependencyDescriptorAvailable bool) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -273,16 +272,18 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability) {
 			f.vls = videolayerselector.NewSimulcast(f.logger)
 		}
 	case "video/vp9":
-		// RAJA-TODO select DD or not based on DD availablility f.vp9LayerSelector = NewVP9VideoLayerSelector(f.logger)
-		if f.vls != nil {
-			f.vls = videolayerselector.NewVP9FromNull(f.vls)
+		if isDependencyDescriptorAvailable {
+			if f.vls != nil {
+				f.vls = videolayerselector.NewDependencyDescriptorFromNull(f.vls)
+			} else {
+				f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
+			}
 		} else {
-			f.vls = videolayerselector.NewVP9(f.logger)
-		}
-		if f.vls != nil {
-			f.vls = videolayerselector.NewDependencyDescriptorFromNull(f.vls)
-		} else {
-			f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
+			if f.vls != nil {
+				f.vls = videolayerselector.NewVP9FromNull(f.vls)
+			} else {
+				f.vls = videolayerselector.NewVP9(f.logger)
+			}
 		}
 	case "video/av1":
 		// DD-TODO : we only enable dd layer selector for av1/vp9 now, in the future we can enable it for vp8 too
@@ -909,7 +910,7 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 			BandwidthDelta := int64(math.Max(float64(0), float64(f.lastAllocation.BandwidthRequested-f.provisional.Bitrates[s][t])))
 
 			transitionCost := int32(0)
-			// RAJA-TODO: can SVC do single jumps or cost needs to be scaled per distance
+			// LK-TODO: SVC will need a different cost transition
 			if targetLayer.Spatial != s {
 				transitionCost = TransitionCostSpatial
 			}
@@ -1439,6 +1440,9 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 	tpRTP, err := f.rtpMunger.UpdateAndGetSnTs(extPkt)
 	if err != nil {
 		tp.shouldDrop = true
+		if err == ErrPaddingOnlyPacket || err == ErrDuplicatePacket || err == ErrOutOfOrderSequenceNumberCacheMiss {
+			return tp, nil
+		}
 		return tp, err
 	}
 
@@ -1506,26 +1510,32 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		return tp, err
 	}
 
+	// RAJA-TODO: do this in VLS somehow
 	// catch up temporal layer if necessary
-	/* RAJA-TODO - move adjust temporal -> VLS
-	if currentLayer.Temporal != targetLayer.Temporal {
+	if f.vls.GetCurrent().Temporal != f.vls.GetTarget().Temporal {
 		incomingVP8, ok := extPkt.Payload.(buffer.VP8)
 		if ok {
 			// RAJA-TODO: maybe do this on a frame boundary only
-			if incomingVP8.TIDPresent == 0 || incomingVP8.TID <= uint8(targetLayer.Temporal) {
-				currentLayer.Temporal = targetLayer.Temporal
+			if incomingVP8.TIDPresent == 0 || incomingVP8.TID <= uint8(f.vls.GetTarget().Temporal) {
 				// RAJA-TODO: check if this set back can be moved into vls
-				f.vls.SetCurrent(currentLayer)
+				f.vls.SetCurrent(buffer.VideoLayer{
+					Spatial:  f.vls.GetCurrent().Spatial,
+					Temporal: f.vls.GetTarget().Temporal,
+				})
 			}
 		}
 	}
-
-	tpVP8, err := f.vp8Munger.UpdateAndGet(extPkt, tp.rtp.snOrdering, currentLayer.Temporal)
+	codecBytes, err := f.codecMunger.UpdateAndGet(
+		extPkt,
+		tp.rtp.snOrdering == SequenceNumberOrderingOutOfOrder,
+		tp.rtp.snOrdering == SequenceNumberOrderingGap,
+		f.vls.GetCurrent().Temporal,
+	)
 	if err != nil {
 		tp.rtp = nil
 		tp.shouldDrop = true
-		if err == ErrFilteredVP8TemporalLayer || err == ErrOutOfOrderVP8PictureIdCacheMiss {
-			if err == ErrFilteredVP8TemporalLayer {
+		if err == codecmunger.ErrFilteredVP8TemporalLayer || err == codecmunger.ErrOutOfOrderVP8PictureIdCacheMiss {
+			if err == codecmunger.ErrFilteredVP8TemporalLayer {
 				// filtered temporal layer, update sequence number offset to prevent holes
 				f.rtpMunger.PacketDropped(extPkt)
 			}
@@ -1535,28 +1545,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		return tp, err
 	}
 
-	tp.vp8 = tpVP8
-	*/
-	codecMunged, err := f.codecMunger.UpdateAndGet(
-		extPkt,
-		tp.rtp.snOrdering == SequenceNumberOrderingOutOfOrder,
-		tp.rtp.snOrdering == SequenceNumberOrderingGap,
-		f.vls.GetCurrent().Temporal,
-	)
-	if err != nil {
-		tp.rtp = nil
-		tp.shouldDrop = true
-		if err == codecmunger.ErrFilteredVP8TemporalLayer {
-			// filtered temporal layer, update sequence number offset to prevent holes
-			f.rtpMunger.PacketDropped(extPkt)
-		}
-
-		return tp, err
-	}
-
-	if vp8, ok := codecMunged.(*buffer.VP8); ok {
-		tp.vp8 = vp8
-	}
+	tp.codecBytes = codecBytes
 	return tp, nil
 }
 
@@ -1588,16 +1577,11 @@ func (f *Forwarder) GetSnTsForBlankFrames(frameRate uint32, numPackets int) ([]S
 	return snts, frameEndNeeded, err
 }
 
-func (f *Forwarder) GetPaddingVP8(frameEndNeeded bool) *buffer.VP8 {
+func (f *Forwarder) GetPadding(frameEndNeeded bool) ([]byte, error) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	padding := f.codecMunger.UpdateAndGetPadding(!frameEndNeeded)
-	if vp8, ok := padding.(*buffer.VP8); ok {
-		return vp8
-	}
-
-	return nil
+	return f.codecMunger.UpdateAndGetPadding(!frameEndNeeded)
 }
 
 func (f *Forwarder) GetRTPMungerParams() RTPMungerParams {

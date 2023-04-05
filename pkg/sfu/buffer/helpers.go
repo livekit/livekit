@@ -63,7 +63,6 @@ func (v *VP8) Unmarshal(payload []byte) error {
 	}
 
 	payloadLen := len(payload)
-
 	if payloadLen < 1 {
 		return errShortPacket
 	}
@@ -146,6 +145,12 @@ func (v *VP8) Unmarshal(payload []byte) error {
 	return nil
 }
 
+func (v *VP8) Marshal() ([]byte, error) {
+	buf := make([]byte, v.HeaderSize)
+	err := v.MarshalTo(buf)
+	return buf, err
+}
+
 func (v *VP8) MarshalTo(buf []byte) error {
 	if len(buf) < v.HeaderSize {
 		return errShortPacket
@@ -190,6 +195,8 @@ func (v *VP8) MarshalTo(buf []byte) error {
 	return nil
 }
 
+// -------------------------------------
+
 func VPxPictureIdSizeDiff(mBit1 bool, mBit2 bool) int {
 	if mBit1 == mBit2 {
 		return 0
@@ -202,10 +209,12 @@ func VPxPictureIdSizeDiff(mBit1 bool, mBit2 bool) int {
 	return -1
 }
 
-// IsH264Keyframe detects if h264 payload is a keyframe
+// -------------------------------------
+
+// IsH264KeyFrame detects if h264 payload is a keyframe
 // this code was taken from https://github.com/jech/galene/blob/codecs/rtpconn/rtpreader.go#L45
 // all credits belongs to Juliusz Chroboczek @jech and the awesome Galene SFU
-func IsH264Keyframe(payload []byte) bool {
+func IsH264KeyFrame(payload []byte) bool {
 	if len(payload) < 1 {
 		return false
 	}
@@ -453,10 +462,63 @@ func (v *VP9) MarshalTo(buf []byte) error {
 
 // -------------------------------------
 
-// IsAV1Keyframe detects if av1 payload is a keyframe
+func IsVP9KeyFrame(payload []byte) bool {
+	payloadLen := len(payload)
+	if payloadLen < 1 {
+		return false
+	}
+
+	idx := 0
+	I := payload[idx]&0x80 > 0
+	P := payload[idx]&0x40 > 0
+	L := payload[idx]&0x20 > 0
+	F := payload[idx]&0x10 > 0
+	B := payload[idx]&0x08 > 0
+
+	if F && !I {
+		return false
+	}
+
+	// Check for PictureID
+	if I {
+		idx++
+		if payloadLen < idx+1 {
+			return false
+		}
+		// Check if m is 1, then Picture ID is 15 bits
+		if payload[idx]&0x80 > 0 {
+			idx++
+			if payloadLen < idx+1 {
+				return false
+			}
+		}
+	}
+
+	// Check if TL0PICIDX is present
+	sid := -1
+	if L {
+		idx++
+		if payloadLen < idx+1 {
+			return false
+		}
+
+		tid := (payload[idx] >> 5) & 0x7
+		if !P && tid != 0 {
+			return false
+		}
+
+		sid = int((payload[idx] >> 1) & 0x7)
+	}
+
+	return !P && (!L || (L && sid == 0)) && B
+}
+
+// -------------------------------------
+
+// IsAV1KeyFrame detects if av1 payload is a keyframe
 // taken from https://github.com/jech/galene/blob/master/codecs/codecs.go
 // all credits belongs to Juliusz Chroboczek @jech and the awesome Galene SFU
-func IsAV1Keyframe(payload []byte) bool {
+func IsAV1KeyFrame(payload []byte) bool {
 	if len(payload) < 2 {
 		return false
 	}
