@@ -195,11 +195,3 @@ func getSignalRelayConfig(config *config.Config) config.SignalRelayConfig {
 func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Server, error) {
 	return NewTurnServer(conf, authHandler, false)
 }
-
-// func createBridge(conf *config.Config) (*Bridge, error) {
-// 	if !conf.Bridge.Enabled {
-// 		return nil, nil
-// 	}
-
-// 	return NewBridge(conf.Bridge, router)
-// }
