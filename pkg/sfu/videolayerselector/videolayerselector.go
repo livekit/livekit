@@ -11,6 +11,7 @@ type VideoLayerSelectorResult struct {
 }
 
 type VideoLayerSelector interface {
+	SetMax(maxLayer buffer.VideoLayer)
 	SetMaxSpatial(layer int32)
 	SetMaxTemporal(layer int32)
 	GetMax() buffer.VideoLayer
@@ -21,6 +22,7 @@ type VideoLayerSelector interface {
 	SetRequestSpatial(layer int32)
 	GetRequestSpatial() int32
 
+	SetMaxSeen(maxSeenLayer buffer.VideoLayer)
 	SetMaxSeenSpatial(layer int32)
 	SetMaxSeenTemporal(layer int32)
 	GetMaxSeen() buffer.VideoLayer

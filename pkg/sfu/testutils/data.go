@@ -19,6 +19,7 @@ type TestExtPacketParams struct {
 	PayloadSize    int
 	PaddingSize    byte
 	ArrivalTime    int64
+	VideoLayer     buffer.VideoLayer
 }
 
 // -----------------------------------------------------------
@@ -44,10 +45,11 @@ func GetTestExtPacket(params *TestExtPacketParams) (*buffer.ExtPacket, error) {
 	}
 
 	ep := &buffer.ExtPacket{
-		Arrival:   params.ArrivalTime,
-		Packet:    &packet,
-		KeyFrame:  params.IsKeyFrame,
-		RawPacket: raw,
+		VideoLayer: params.VideoLayer,
+		Arrival:    params.ArrivalTime,
+		Packet:     &packet,
+		KeyFrame:   params.IsKeyFrame,
+		RawPacket:  raw,
 	}
 
 	return ep, nil

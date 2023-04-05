@@ -97,7 +97,7 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket) (result VideoLayerSelectorR
 					"target", s.targetLayer,
 					"max", s.maxLayer,
 					"layer", extPkt.VideoLayer.Spatial,
-					// RAJA-TODO "req", f.requestLayerSpatial,
+					"req", s.requestSpatial,
 					"maxSeen", s.maxSeenLayer,
 					"feed", extPkt.Packet.SSRC,
 				)
@@ -118,7 +118,7 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket) (result VideoLayerSelectorR
 				"target", s.targetLayer,
 				"max", s.maxLayer,
 				"layer", extPkt.VideoLayer.Spatial,
-				// RAJA-TODO "req", f.requestLayerSpatial,
+				"req", s.requestSpatial,
 				"maxSeen", s.maxSeenLayer,
 				"feed", extPkt.Packet.SSRC,
 			)

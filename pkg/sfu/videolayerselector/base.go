@@ -30,6 +30,10 @@ func NewBase(logger logger.Logger) *Base {
 	}
 }
 
+func (b *Base) SetMax(maxLayer buffer.VideoLayer) {
+	b.maxLayer = maxLayer
+}
+
 func (b *Base) SetMaxSpatial(layer int32) {
 	b.maxLayer.Spatial = layer
 }
@@ -56,6 +60,10 @@ func (b *Base) SetRequestSpatial(layer int32) {
 
 func (b *Base) GetRequestSpatial() int32 {
 	return b.requestSpatial
+}
+
+func (b *Base) SetMaxSeen(maxSeenLayer buffer.VideoLayer) {
+	b.maxSeenLayer = maxSeenLayer
 }
 
 func (b *Base) SetMaxSeenSpatial(layer int32) {

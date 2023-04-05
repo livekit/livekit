@@ -163,7 +163,6 @@ type Forwarder struct {
 	lastSSRC              uint32
 	referenceLayerSpatial int32
 
-	// RAJA-REMOVE requestLayerSpatial int32
 	parkedLayersTimer *time.Timer
 
 	provisional *VideoAllocationProvisional
@@ -190,17 +189,12 @@ func NewForwarder(
 		kind:                          kind,
 		logger:                        logger,
 		getReferenceLayerRTPTimestamp: getReferenceLayerRTPTimestamp,
-
-		referenceLayerSpatial: buffer.InvalidLayerSpatial,
-
-		// RAJA-REMOVE requestLayerSpatial: buffer.InvalidLayerSpatial,
-
-		lastAllocation: VideoAllocationDefault,
-
-		rtpMunger: NewRTPMunger(logger),
+		referenceLayerSpatial:         buffer.InvalidLayerSpatial,
+		lastAllocation:                VideoAllocationDefault,
+		rtpMunger:                     NewRTPMunger(logger),
+		vls:                           videolayerselector.NewNull(logger),
 	}
 
-	f.vls = videolayerselector.NewNull(logger)
 	if f.kind == webrtc.RTPCodecTypeVideo {
 		f.vls.SetMaxTemporal(buffer.DefaultMaxLayerTemporal)
 	}
@@ -1069,7 +1063,7 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, available
 						maxSeenLayer,
 						availableLayers,
 						brs,
-						targetLayer,
+						newTargetLayer,
 						maxLayer,
 					),
 				}
@@ -1633,13 +1627,13 @@ func getOptimalBandwidthNeeded(muted bool, pubMuted bool, maxPublishedLayer int3
 func getDistanceToDesired(
 	muted bool,
 	pubMuted bool,
-	maxSeen buffer.VideoLayer,
+	maxSeenLayer buffer.VideoLayer,
 	availableLayers []int32,
 	brs Bitrates,
 	targetLayers buffer.VideoLayer,
 	maxLayers buffer.VideoLayer,
 ) float64 {
-	if muted || pubMuted || !maxSeen.IsValid() || !maxLayers.IsValid() {
+	if muted || pubMuted || !maxSeenLayer.IsValid() || !maxLayers.IsValid() {
 		return 0.0
 	}
 
@@ -1666,7 +1660,7 @@ done:
 	for _, layer := range availableLayers {
 		if layer > maxAvailableSpatial {
 			maxAvailableSpatial = layer
-			maxAvailableTemporal = maxSeen.Temporal // till bit rate measurement is available, assume max seen as temporal
+			maxAvailableTemporal = maxSeenLayer.Temporal // till bit rate measurement is available, assume max seen as temporal
 		}
 	}
 
@@ -1674,8 +1668,8 @@ done:
 		adjustedMaxLayers.Spatial = maxAvailableSpatial
 	}
 
-	if maxSeen.Spatial < adjustedMaxLayers.Spatial {
-		adjustedMaxLayers.Spatial = maxSeen.Spatial
+	if maxSeenLayer.Spatial < adjustedMaxLayers.Spatial {
+		adjustedMaxLayers.Spatial = maxSeenLayer.Spatial
 	}
 
 	// max available temporal is min(subscribedMax, temporalLayerSeenMax, availableMax)
@@ -1694,8 +1688,8 @@ done:
 		adjustedMaxLayers.Temporal = maxAvailableTemporal
 	}
 
-	if maxSeen.Temporal < adjustedMaxLayers.Temporal {
-		adjustedMaxLayers.Temporal = maxSeen.Temporal
+	if maxSeenLayer.Temporal < adjustedMaxLayers.Temporal {
+		adjustedMaxLayers.Temporal = maxSeenLayer.Temporal
 	}
 
 	if !adjustedMaxLayers.IsValid() {
@@ -1709,11 +1703,11 @@ done:
 	}
 
 	distance :=
-		((adjustedMaxLayers.Spatial - adjustedTargetLayers.Spatial) * (maxSeen.Temporal + 1)) +
+		((adjustedMaxLayers.Spatial - adjustedTargetLayers.Spatial) * (maxSeenLayer.Temporal + 1)) +
 			(adjustedMaxLayers.Temporal - adjustedTargetLayers.Temporal)
 	if !targetLayers.IsValid() {
 		distance++
 	}
 
-	return float64(distance) / float64(maxSeen.Temporal+1)
+	return float64(distance) / float64(maxSeenLayer.Temporal+1)
 }
