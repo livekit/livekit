@@ -205,7 +205,7 @@ func (s *relaySignalResponseSink) WriteMessage(msg proto.Message) error {
 		return psrpc.ErrStreamClosed
 	}
 
-	s.queue = append(s.queue, proto.Clone(msg).(*livekit.SignalResponse))
+	s.queue = append(s.queue, msg.(*livekit.SignalResponse))
 	if !s.writing {
 		s.writing = true
 		go s.write()
