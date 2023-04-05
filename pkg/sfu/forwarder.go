@@ -260,6 +260,12 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability) {
 		} else {
 			f.vls = videolayerselector.NewSimulcast(f.logger)
 		}
+	case "video/h264":
+		if f.vls != nil {
+			f.vls = videolayerselector.NewSimulcastFromNull(f.vls)
+		} else {
+			f.vls = videolayerselector.NewSimulcast(f.logger)
+		}
 	case "video/vp9":
 		// RAJA-TODO select DD or not based on DD availablility f.vp9LayerSelector = NewVP9VideoLayerSelector(f.logger)
 		if f.vls != nil {
