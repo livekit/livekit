@@ -11,22 +11,23 @@ import (
 )
 
 func TestCPULoadSelector_SelectNode(t *testing.T) {
-	sel := selector.CPULoadSelector{CPULoadLimit: 0.8, SortBy: "random"}
+	softFil := selector.CPULoadSelector{CPULoadLimit: 0.8}
+	softSel := selector.NodeSelectorBase{SortBy: "random", Selectors: []selector.NodeFilter{&softFil}}
 
 	var nodes []*livekit.Node
-	_, err := sel.SelectNode(nodes)
+	_, err := softSel.SelectNode(nodes, selector.AssignMeeting)
 	require.Error(t, err, "should error no available nodes")
 
-	// Select a node with high load when no nodes with low load are available
+	// Select a node with high load when no nodes with low load are available with soflimit
 	nodes = []*livekit.Node{nodeLoadHigh}
-	if _, err := sel.SelectNode(nodes); err != nil {
+	if _, err := softSel.SelectNode(nodes, selector.AssignMeeting); err != nil {
 		t.Error(err)
 	}
 
 	// Select a node with low load when available
 	nodes = []*livekit.Node{nodeLoadLow, nodeLoadHigh}
 	for i := 0; i < 5; i++ {
-		node, err := sel.SelectNode(nodes)
+		node, err := softSel.SelectNode(nodes, selector.AssignMeeting)
 		if err != nil {
 			t.Error(err)
 		}
@@ -34,4 +35,12 @@ func TestCPULoadSelector_SelectNode(t *testing.T) {
 			t.Error("selected the wrong node")
 		}
 	}
+
+	nodes = []*livekit.Node{nodeLoadHigh}
+	hardFil := selector.CPULoadSelector{CPULoadLimit: 0.8, HardCPULoadLimit: 0.8}
+	hardSel := selector.NodeSelectorBase{SortBy: "random", Selectors: []selector.NodeFilter{&hardFil}}
+	// No node should be selected  when no nodes with low load are available with hardlimit
+	_, err = hardSel.SelectNode(nodes, selector.AssignMeeting)
+	require.Error(t, err, "should error no available nodes")
+
 }

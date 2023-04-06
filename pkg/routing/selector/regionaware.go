@@ -14,19 +14,18 @@ type RegionAwareSelector struct {
 	CurrentRegion   string
 	regionDistances map[string]float64
 	regions         []config.RegionConfig
-	SortBy          string
 }
 
-func NewRegionAwareSelector(currentRegion string, regions []config.RegionConfig, sortBy string) (*RegionAwareSelector, error) {
+func NewRegionAwareSelector(currentRegion string, regions []config.RegionConfig) (*RegionAwareSelector, error) {
 	if currentRegion == "" {
 		return nil, ErrCurrentRegionNotSet
 	}
 	// build internal map of distances
 	s := &RegionAwareSelector{
-		CurrentRegion:   currentRegion,
-		regionDistances: make(map[string]float64),
-		regions:         regions,
-		SortBy:          sortBy,
+		SystemLoadSelector: SystemLoadSelector{},
+		CurrentRegion:      currentRegion,
+		regionDistances:    make(map[string]float64),
+		regions:            regions,
 	}
 
 	var currentRC *config.RegionConfig
@@ -51,8 +50,8 @@ func NewRegionAwareSelector(currentRegion string, regions []config.RegionConfig,
 	return s, nil
 }
 
-func (s *RegionAwareSelector) SelectNode(nodes []*livekit.Node) (*livekit.Node, error) {
-	nodes, err := s.SystemLoadSelector.filterNodes(nodes)
+func (s *RegionAwareSelector) FilterNodes(nodes []*livekit.Node, selectionType NodeSelection) ([]*livekit.Node, error) {
+	nodes, err := s.SystemLoadSelector.FilterNodes(nodes, selectionType)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +79,7 @@ func (s *RegionAwareSelector) SelectNode(nodes []*livekit.Node) (*livekit.Node, 
 		nodes = nearestNodes
 	}
 
-	return SelectSortedNode(nodes, s.SortBy)
+	return nodes, nil
 }
 
 // haversine(θ) function

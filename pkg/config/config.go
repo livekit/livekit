@@ -58,6 +58,7 @@ type Config struct {
 	Ingress        IngressConfig            `yaml:"ingress,omitempty"`
 	WebHook        WebHookConfig            `yaml:"webhook,omitempty"`
 	NodeSelector   NodeSelectorConfig       `yaml:"node_selector,omitempty"`
+	NodeSelectors  NodeSelectorsConfig      `yaml:"node_selectors,omitempty"`
 	KeyFile        string                   `yaml:"key_file,omitempty"`
 	Keys           map[string]string        `yaml:"keys,omitempty"`
 	Region         string                   `yaml:"region,omitempty"`
@@ -221,11 +222,18 @@ type WebHookConfig struct {
 }
 
 type NodeSelectorConfig struct {
-	Kind         string         `yaml:"kind"`
-	SortBy       string         `yaml:"sort_by"`
-	CPULoadLimit float32        `yaml:"cpu_load_limit"`
-	SysloadLimit float32        `yaml:"sysload_limit"`
-	Regions      []RegionConfig `yaml:"regions"`
+	Kind             string         `yaml:"kind"`
+	SortBy           string         `yaml:"sort_by"`
+	CPULoadLimit     float32        `yaml:"cpu_load_limit"`
+	HardCPULoadLimit float32        `yaml:"hard_cpu_load_limit"`
+	SysloadLimit     float32        `yaml:"sysload_limit"`
+	HardSysloadLimit float32        `yaml:"hard_sysload_limit"`
+	Regions          []RegionConfig `yaml:"regions"`
+}
+
+type NodeSelectorsConfig struct {
+	SortBy    string               `yaml:"sort_by"`
+	Selectors []NodeSelectorConfig `yaml:"selectors"`
 }
 
 type SignalRelayConfig struct {
@@ -388,8 +396,8 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 				{Mime: "audio/red"},
 				{Mime: webrtc.MimeTypeVP8},
 				{Mime: webrtc.MimeTypeH264},
-				// {Mime: webrtc.MimeTypeAV1},
-				// {Mime: webrtc.MimeTypeVP9},
+				//{Mime: webrtc.MimeTypeAV1},
+				//{Mime: webrtc.MimeTypeVP9},
 			},
 			EmptyTimeout: 5 * 60,
 		},
@@ -398,12 +406,6 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 		},
 		TURN: TURNConfig{
 			Enabled: false,
-		},
-		NodeSelector: NodeSelectorConfig{
-			Kind:         "any",
-			SortBy:       "random",
-			SysloadLimit: 0.9,
-			CPULoadLimit: 0.9,
 		},
 		SignalRelay: SignalRelayConfig{
 			Enabled:          false,
@@ -476,6 +478,16 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 
 	if conf.Development {
 		conf.Environment = "dev"
+	}
+
+	if len(conf.NodeSelectors.Selectors) == 0 {
+		conf.NodeSelector =
+			NodeSelectorConfig{
+				Kind:         "any",
+				SortBy:       "random",
+				SysloadLimit: 0.9,
+				CPULoadLimit: 0.9,
+			}
 	}
 
 	return conf, nil
