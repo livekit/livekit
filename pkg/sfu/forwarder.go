@@ -122,16 +122,12 @@ func (v VideoTransition) String() string {
 
 type TranslationParams struct {
 	shouldDrop            bool
+	isResuming            bool
 	isSwitchingToMaxLayer bool
 	rtp                   *TranslationParamsRTP
 	codecBytes            []byte
 	ddBytes               []byte
 	marker                bool
-
-	// indicates this frame has 'Switch' decode indication for target layer
-	// TODO : in theory, we need check frame chain is not broken for the target
-	// but we don't have frame queue now, so just use decode target indication
-	isSwitchingToTargetLayer bool
 }
 
 // -------------------------------------------------------------------
@@ -1481,7 +1477,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		}
 
 		tp.isSwitchingToMaxLayer = result.IsSwitchingToMaxSpatial
-		tp.isSwitchingToTargetLayer = result.IsSwitchingLayer
+		tp.isResuming = result.IsResuming
 		tp.marker = result.RTPMarker
 	}
 

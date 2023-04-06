@@ -119,15 +119,23 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	}
 
 	if dti == dd.DecodeTargetSwitch {
-		result.IsSwitchingLayer = true
+		if !d.currentLayer.IsValid() {
+			result.IsResuming = true
+
+			d.SetCurrent(buffer.VideoLayer{
+				Spatial:  int32(extPkt.DependencyDescriptor.FrameDependencies.SpatialId),
+				Temporal: int32(extPkt.DependencyDescriptor.FrameDependencies.TemporalId),
+			})
+		}
 		d.SetCurrent(buffer.VideoLayer{
 			Spatial:  int32(extPkt.DependencyDescriptor.FrameDependencies.SpatialId),
 			Temporal: int32(extPkt.DependencyDescriptor.FrameDependencies.TemporalId),
-		})
+		}) // REMOVE
 		fmt.Printf("RAJA switching in: %+v curr: %+v, t: %+v, m: %+v, ms: %+v, rs: %d\n", buffer.VideoLayer{
 			Spatial:  int32(extPkt.DependencyDescriptor.FrameDependencies.SpatialId),
 			Temporal: int32(extPkt.DependencyDescriptor.FrameDependencies.TemporalId),
 		}, d.GetCurrent(), d.GetTarget(), d.GetMax(), d.GetMaxSeen(), d.GetRequestSpatial()) // REMOVE
+		// RAJA-TODO: need to figure out how we have reached max layer
 		if d.GetCurrent().SpatialGreaterThanOrEqual(d.GetMax()) {
 			result.IsSwitchingToMaxSpatial = true
 		}

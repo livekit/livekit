@@ -27,21 +27,26 @@ func (v *VP9) Select(extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerS
 		return
 	}
 
-	isSwitchingLayer := false
+	isActive := v.currentLayer.IsValid()
+	isResuming := false
 	currentLayer := v.currentLayer
 	updatedLayer := v.currentLayer
 	if v.currentLayer != v.targetLayer {
 		// temporal scale up/down
 		if v.currentLayer.Temporal < v.targetLayer.Temporal {
 			if extPkt.VideoLayer.Temporal > v.currentLayer.Temporal && extPkt.VideoLayer.Temporal <= v.targetLayer.Temporal && vp9.IsTemporalLayerSwitchUpPoint && vp9.IsBeginningOfFrame {
-				isSwitchingLayer = true
+				if !isActive {
+					isResuming = true
+				}
 				currentLayer.Temporal = extPkt.VideoLayer.Temporal
 				updatedLayer.Temporal = extPkt.VideoLayer.Temporal
 				v.logger.Infow("RAJA temporal layer switch up", "currentLayer", v.currentLayer, "cl", currentLayer, "targetLayer", v.targetLayer, "pid", vp9.PictureID) // REMOVE
 			}
 		} else {
 			if extPkt.VideoLayer.Temporal < v.currentLayer.Temporal && extPkt.VideoLayer.Temporal >= v.targetLayer.Temporal && vp9.IsEndOfFrame {
-				isSwitchingLayer = true
+				if !isActive {
+					isResuming = true
+				}
 				updatedLayer.Temporal = extPkt.VideoLayer.Temporal
 				v.logger.Infow("RAJA temporal layer switch down", "currentLayer", v.currentLayer, "cl", currentLayer, "targetLayer", v.targetLayer, "pid", vp9.PictureID) // REMOVE
 			}
@@ -50,14 +55,18 @@ func (v *VP9) Select(extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerS
 		// spatial scale up/down
 		if v.currentLayer.Spatial < v.targetLayer.Spatial {
 			if extPkt.VideoLayer.Spatial > v.currentLayer.Spatial && extPkt.VideoLayer.Spatial <= v.targetLayer.Spatial && vp9.IsSpatialLayerSwitchUpPoint && vp9.IsBeginningOfFrame {
-				isSwitchingLayer = true
+				if !isActive {
+					isResuming = true
+				}
 				currentLayer.Spatial = extPkt.VideoLayer.Spatial
 				updatedLayer.Spatial = extPkt.VideoLayer.Spatial
 				v.logger.Infow("RAJA spatial layer switch up", "currentLayer", v.currentLayer, "cl", currentLayer, "targetLayer", v.targetLayer, "pid", vp9.PictureID) // REMOVE
 			}
 		} else {
 			if extPkt.VideoLayer.Spatial < v.currentLayer.Spatial && extPkt.VideoLayer.Spatial >= v.targetLayer.Spatial && vp9.IsEndOfFrame {
-				isSwitchingLayer = true
+				if !isActive {
+					isResuming = true
+				}
 				updatedLayer.Spatial = extPkt.VideoLayer.Spatial
 				v.logger.Infow("RAJA spatial layer switch down", "currentLayer", v.currentLayer, "cl", currentLayer, "targetLayer", v.targetLayer, "pid", vp9.PictureID) // REMOVE
 			}
@@ -65,7 +74,7 @@ func (v *VP9) Select(extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerS
 
 		if updatedLayer.IsValid() {
 			v.currentLayer = updatedLayer
-			result.IsSwitchingLayer = isSwitchingLayer
+			result.IsResuming = isResuming
 		}
 	}
 

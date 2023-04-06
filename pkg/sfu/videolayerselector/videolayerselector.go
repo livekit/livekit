@@ -5,7 +5,7 @@ import "github.com/livekit/livekit-server/pkg/sfu/buffer"
 type VideoLayerSelectorResult struct {
 	IsSelected                    bool
 	IsRelevant                    bool
-	IsSwitchingLayer              bool
+	IsResuming                    bool
 	IsSwitchingToMaxSpatial       bool
 	RTPMarker                     bool
 	DependencyDescriptorExtension []byte

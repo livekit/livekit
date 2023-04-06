@@ -139,8 +139,8 @@ type DownTrackStreamAllocatorListener interface {
 	// subscribed max video layer changed
 	OnSubscribedLayersChanged(dt *DownTrack, layers buffer.VideoLayer)
 
-	// target video layer reached
-	OnTargetLayerReached(dt *DownTrack)
+	// stream rsumed
+	OnResume(dt *DownTrack)
 
 	// packet(s) sent
 	OnPacketsSent(dt *DownTrack, size int)
@@ -596,7 +596,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		d.onMaxSubscribedLayerChanged(d, layer)
 	}
 
-	if extPkt.KeyFrame || tp.isSwitchingToTargetLayer {
+	if extPkt.KeyFrame || tp.isResuming {
 		d.isNACKThrottled.Store(false)
 		if extPkt.KeyFrame {
 			d.rtpStats.UpdateKeyFrame(1)
@@ -608,9 +608,9 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			d.stopKeyFrameRequester()
 		}
 
-		if tp.isSwitchingToTargetLayer {
+		if tp.isResuming {
 			if sal := d.getStreamAllocatorListener(); sal != nil {
-				sal.OnTargetLayerReached(d)
+				sal.OnResume(d)
 			}
 		}
 	}
