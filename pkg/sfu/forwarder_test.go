@@ -387,7 +387,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 	f.requestLayerSpatial = 0
 	expectedTargetLayers = buffer.VideoLayer{
 		Spatial:  2,
-		Temporal: 3,
+		Temporal: 1,
 	}
 	expectedResult = VideoAllocation{
 		PauseReason:         VideoPauseReasonFeedDry,
@@ -397,7 +397,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		TargetLayers:        expectedTargetLayers,
 		RequestLayerSpatial: 2,
 		MaxLayers:           f.maxLayers,
-		DistanceToDesired:   -1.5,
+		DistanceToDesired:   -1,
 	}
 	result = f.AllocateOptimal([]int32{0, 1}, emptyBitrates, true)
 	require.Equal(t, expectedResult, result)

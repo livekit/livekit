@@ -564,6 +564,8 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64) *ExtPack
 		ep.KeyFrame = IsH264Keyframe(rtpPacket.Payload)
 	case "video/av1":
 		ep.KeyFrame = IsAV1Keyframe(rtpPacket.Payload)
+	case "video/vp9":
+		ep.KeyFrame = IsVP9Keyframe(rtpPacket.Payload)
 	}
 
 	if ep.KeyFrame {
