@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/sebest/xff"
 	"github.com/ua-parser/uap-go/uaparser"
 
 	"github.com/livekit/livekit-server/pkg/utils"
@@ -404,10 +403,7 @@ func (s *RTCService) ParseClientInfo(r *http.Request) *livekit.ClientInfo {
 	ci.DeviceModel = values.Get("device_model")
 	ci.Network = values.Get("network")
 	// get real address (forwarded http header) - check Cloudflare headers first, fall back to X-Forwarded-For
-	ci.Address = r.Header.Get("CF-Connecting-IP")
-	if len(ci.Address) == 0 {
-		ci.Address = xff.GetRemoteAddr(r)
-	}
+	ci.Address = GetClientIP(r)
 
 	// attempt to parse types for SDKs that support browser as a platform
 	if ci.Sdk == livekit.ClientInfo_JS ||

@@ -388,6 +388,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 	expectedTargetLayers = buffer.VideoLayer{
 		Spatial:  2,
 		Temporal: 3,
+		// RAJA-TODO: change in master Temporal: 1,
 	}
 	expectedResult = VideoAllocation{
 		PauseReason:         VideoPauseReasonFeedDry,
@@ -398,6 +399,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		RequestLayerSpatial: 2,
 		MaxLayers:           f.vls.GetMax(),
 		DistanceToDesired:   -1.5,
+		// RAJA-TODO change in master DistanceToDesired:   -1,
 	}
 	result = f.AllocateOptimal([]int32{0, 1}, emptyBitrates, true)
 	require.Equal(t, expectedResult, result)

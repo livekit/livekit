@@ -2,6 +2,18 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2023-04-05
+### Added
+- Added prometheus metrics for internal signaling API #1571
+
+### Fixed
+- Fix regressions in RTC when using redis with psrpc signaling #1584 #1582 #1580 #1567
+- Fix required bitrate assessment under channel congestion #1577
+
+### Changed
+- Improve DTLS reliability in regions with internet filters #1568
+- Reduce memory usage from logging #1576
+
 ## [1.4.0] - 2023-03-27
 ### Added
 - Added config to disable active RED encoding. Use NACK instead #1476 #1477

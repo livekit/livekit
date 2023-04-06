@@ -541,6 +541,7 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 		alloc.TargetLayers = buffer.VideoLayer{
 			Spatial:  int32(math.Min(float64(maxSeenLayer.Spatial), float64(maxSpatial))),
 			Temporal: buffer.DefaultMaxLayerTemporal,
+			// RAJA-TODO change in master Temporal: f.maxLayers.Temporal,
 		}
 	}
 
@@ -596,6 +597,7 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 				}
 			}
 			alloc.TargetLayers.Temporal = buffer.DefaultMaxLayerTemporal
+			// RAJA-TODO change in master for temporal filtering alloc.TargetLayers.Temporal = f.maxLayers.Temporal
 
 			alloc.RequestLayerSpatial = alloc.TargetLayers.Spatial
 		} else {
@@ -603,6 +605,7 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 			if currentLayer.IsValid() && requestLayerSpatial == requestSpatial && currentLayer.Spatial == requestSpatial {
 				// current is locked to desired, stay there
 				alloc.TargetLayers = currentLayer
+				// RAJA-TODO change in master alloc.TargetLayers = buffer.VideoLayer{Spatial: f.requestLayerSpatial, Temporal: f.maxLayers.Temporal}
 				alloc.RequestLayerSpatial = requestSpatial
 			} else {
 				// opportunistically latch on to anything

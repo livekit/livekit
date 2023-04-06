@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"sync"
 
 	"github.com/pkg/errors"
 	"google.golang.org/protobuf/proto"
@@ -36,12 +38,18 @@ func NewSignalServer(
 	config config.SignalRelayConfig,
 	sessionHandler SessionHandler,
 ) (*SignalServer, error) {
-	ri := middleware.NewStreamRetryInterceptorFactory(middleware.RetryOptions{
-		MaxAttempts: config.MaxAttempts,
-		Timeout:     config.Timeout,
-		Backoff:     config.Backoff,
-	})
-	s, err := rpc.NewTypedSignalServer(nodeID, &signalService{region, sessionHandler}, bus, psrpc.WithServerStreamInterceptors(ri), psrpc.WithServerChannelSize(config.StreamBufferSize))
+	s, err := rpc.NewTypedSignalServer(
+		nodeID,
+		&signalService{region, sessionHandler},
+		bus,
+		middleware.WithServerMetrics(prometheus.PSRPCMetricsObserver{}),
+		psrpc.WithServerStreamInterceptors(middleware.NewStreamRetryInterceptorFactory(middleware.RetryOptions{
+			MaxAttempts: config.MaxAttempts,
+			Timeout:     config.Timeout,
+			Backoff:     config.Backoff,
+		})),
+		psrpc.WithServerChannelSize(config.StreamBufferSize),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -69,6 +77,17 @@ func NewDefaultSignalServer(
 		responseSink routing.MessageSink,
 	) error {
 		prometheus.IncrementParticipantRtcInit(1)
+
+		if rr, ok := router.(*routing.RedisRouter); ok {
+			pKey := routing.ParticipantKeyLegacy(roomName, pi.Identity)
+			pKeyB62 := routing.ParticipantKey(roomName, pi.Identity)
+
+			// RTC session should start on this node
+			if err := rr.SetParticipantRTCNode(pKey, pKeyB62, currentNode.Id); err != nil {
+				return err
+			}
+		}
+
 		return roomManager.StartSession(ctx, roomName, pi, requestSource, responseSink)
 	}
 
@@ -106,6 +125,12 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 		return errors.Wrap(err, "failed to read participant from session")
 	}
 
+	l := logger.GetLogger().WithValues(
+		"room", ss.RoomName,
+		"participant", ss.Identity,
+		"connectionID", ss.ConnectionId,
+	)
+
 	reqChan := routing.NewDefaultMessageChannel()
 	defer reqChan.Close()
 
@@ -115,14 +140,13 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 		*pi,
 		livekit.ConnectionID(ss.ConnectionId),
 		reqChan,
-		&relaySignalResponseSink{stream},
+		&relaySignalResponseSink{
+			ServerStream: stream,
+			logger:       l,
+		},
 	)
 	if err != nil {
-		logger.Errorw("could not handle new participant", err,
-			"room", ss.RoomName,
-			"participant", ss.Identity,
-			"connectionID", ss.ConnectionId,
-		)
+		l.Errorw("could not handle new participant", err)
 	}
 
 	for msg := range stream.Channel() {
@@ -131,26 +155,71 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 		}
 	}
 
-	logger.Debugw("participant signal stream closed",
-		"room", ss.RoomName,
-		"participant", ss.Identity,
-		"connectionID", ss.ConnectionId,
-	)
+	l.Debugw("participant signal stream closed")
 	return
 }
 
 type relaySignalResponseSink struct {
 	psrpc.ServerStream[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest]
+	logger logger.Logger
+
+	mu       sync.Mutex
+	queue    []*livekit.SignalResponse
+	writing  bool
+	draining bool
 }
 
 func (s *relaySignalResponseSink) Close() {
-	s.ServerStream.Close(nil)
+	s.mu.Lock()
+	s.draining = true
+	if !s.writing {
+		s.ServerStream.Close(nil)
+	}
+	s.mu.Unlock()
 }
 
 func (s *relaySignalResponseSink) IsClosed() bool {
 	return s.Context().Err() != nil
 }
 
+func (s *relaySignalResponseSink) write() {
+	for {
+		s.mu.Lock()
+		var msg *livekit.SignalResponse
+		if len(s.queue) != 0 && !s.IsClosed() {
+			msg = s.queue[0]
+			s.queue = s.queue[1:]
+		} else {
+			if s.draining {
+				s.ServerStream.Close(nil)
+			}
+			s.writing = false
+			s.mu.Unlock()
+			return
+		}
+		s.mu.Unlock()
+
+		if err := s.Send(&rpc.RelaySignalResponse{Response: msg}); err != nil {
+			s.logger.Warnw(
+				"could not send message to participant", err,
+				"messageType", fmt.Sprintf("%T", msg.Message),
+			)
+		}
+	}
+}
+
 func (s *relaySignalResponseSink) WriteMessage(msg proto.Message) error {
-	return s.Send(&rpc.RelaySignalResponse{Response: msg.(*livekit.SignalResponse)})
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.draining || s.IsClosed() {
+		return psrpc.ErrStreamClosed
+	}
+
+	s.queue = append(s.queue, msg.(*livekit.SignalResponse))
+	if !s.writing {
+		s.writing = true
+		go s.write()
+	}
+	return nil
 }
