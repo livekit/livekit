@@ -515,7 +515,7 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 		}
 		alloc.TargetLayers = buffer.VideoLayer{
 			Spatial:  int32(math.Min(float64(f.maxPublishedLayer), float64(maxSpatial))),
-			Temporal: buffer.DefaultMaxLayerTemporal,
+			Temporal: f.maxLayers.Temporal,
 		}
 	}
 
@@ -570,14 +570,14 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 					alloc.TargetLayers.Spatial = l
 				}
 			}
-			alloc.TargetLayers.Temporal = buffer.DefaultMaxLayerTemporal
+			alloc.TargetLayers.Temporal = f.maxLayers.Temporal
 
 			alloc.RequestLayerSpatial = alloc.TargetLayers.Spatial
 		} else {
 			requestLayerSpatial := int32(math.Min(float64(f.maxLayers.Spatial), float64(f.maxPublishedLayer)))
 			if f.currentLayers.IsValid() && requestLayerSpatial == f.requestLayerSpatial && f.currentLayers.Spatial == f.requestLayerSpatial {
 				// current is locked to desired, stay there
-				alloc.TargetLayers = f.currentLayers
+				alloc.TargetLayers = buffer.VideoLayer{Spatial: f.requestLayerSpatial, Temporal: f.maxLayers.Temporal}
 				alloc.RequestLayerSpatial = f.requestLayerSpatial
 			} else {
 				// opportunistically latch on to anything
