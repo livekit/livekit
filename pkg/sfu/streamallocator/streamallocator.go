@@ -630,6 +630,7 @@ func (s *StreamAllocator) handleSignalProbeClusterDone(event *Event) {
 	s.probeEndTime = s.lastProbeStartTime.Add(queueWait)
 }
 
+// RAJA-TODO: change this to signal just layer switch, i. e. this is mainly used to detect a resume, this is not necessarily moving to target layer
 func (s *StreamAllocator) handleSignalTargetLayerFound(event *Event) {
 	s.videoTracksMu.Lock()
 	track := s.videoTracks[event.TrackID]

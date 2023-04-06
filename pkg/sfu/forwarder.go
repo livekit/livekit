@@ -546,7 +546,7 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 
 	switch {
 	case !maxLayer.IsValid() || maxSeenLayer.Spatial == buffer.InvalidLayerSpatial:
-		// nothing to do when max layers are not valid OR max publisher layer is invalid
+		// nothing to do when max layers are not valid OR max published layer is invalid
 
 	case f.muted:
 		alloc.PauseReason = VideoPauseReasonMuted
@@ -1470,7 +1470,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		result := f.vls.Select(extPkt, layer)
 		if !result.IsSelected {
 			tp.shouldDrop = true
-			if result.IsRelevant {
+			if f.started && result.IsRelevant {
 				f.rtpMunger.UpdateAndGetSnTs(extPkt) // call to update highest incoming sequence number and other internal structures
 				f.rtpMunger.PacketDropped(extPkt)
 			}
