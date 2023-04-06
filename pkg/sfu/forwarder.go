@@ -1052,12 +1052,12 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, available
 	) (bool, VideoAllocation, bool) {
 		for s := minSpatial; s <= maxSpatial; s++ {
 			for t := minTemporal; t <= maxTemporal; t++ {
-				BandwidthRequested := brs[s][t]
-				if BandwidthRequested == 0 {
+				bandwidthRequested := brs[s][t]
+				if bandwidthRequested == 0 {
 					continue
 				}
 
-				if !allowOvershoot && BandwidthRequested-alreadyAllocated > availableChannelCapacity {
+				if !allowOvershoot && bandwidthRequested-alreadyAllocated > availableChannelCapacity {
 					// next higher available layer does not fit, return
 					return true, f.lastAllocation, false
 				}
@@ -1065,8 +1065,8 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, available
 				newTargetLayer := buffer.VideoLayer{Spatial: s, Temporal: t}
 				alloc := VideoAllocation{
 					IsDeficient:         true,
-					BandwidthRequested:  BandwidthRequested,
-					BandwidthDelta:      BandwidthRequested - alreadyAllocated,
+					BandwidthRequested:  bandwidthRequested,
+					BandwidthDelta:      bandwidthRequested - alreadyAllocated,
 					BandwidthNeeded:     optimalBandwidthNeeded,
 					Bitrates:            brs,
 					TargetLayers:        newTargetLayer,
@@ -1082,7 +1082,7 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, available
 						maxLayer,
 					),
 				}
-				if newTargetLayer.GreaterThan(maxLayer) || BandwidthRequested >= optimalBandwidthNeeded {
+				if newTargetLayer.GreaterThan(maxLayer) || bandwidthRequested >= optimalBandwidthNeeded {
 					alloc.IsDeficient = false
 				}
 
@@ -1160,15 +1160,15 @@ func (f *Forwarder) GetNextHigherTransition(brs Bitrates, allowOvershoot bool) (
 	) (bool, VideoTransition, bool) {
 		for s := minSpatial; s <= maxSpatial; s++ {
 			for t := minTemporal; t <= maxTemporal; t++ {
-				BandwidthRequested := brs[s][t]
-				if BandwidthRequested == 0 {
+				bandwidthRequested := brs[s][t]
+				if bandwidthRequested == 0 {
 					continue
 				}
 
 				transition := VideoTransition{
 					From:           targetLayer,
 					To:             buffer.VideoLayer{Spatial: s, Temporal: t},
-					BandwidthDelta: BandwidthRequested - alreadyAllocated,
+					BandwidthDelta: bandwidthRequested - alreadyAllocated,
 				}
 
 				return true, transition, true

@@ -214,7 +214,8 @@ type FrameRateCalculatorVP9 struct {
 	logger    logger.Logger
 	completed bool
 
-	// VP9-TODO- this is assuming three spatial layers. As `completed` marker relies on all layers being finished, have to assume this. FIX.
+	// VP9-TODO - this is assuming three spatial layers. As `completed` marker relies on all layers being finished, have to assume this. FIX.
+	// VP9-TODO - get number of spatial layers from ScalabilityStructure in VP9 Payload Descriptor
 	frameRateCalculatorsVPx [DefaultMaxLayerSpatial + 1]*frameRateCalculatorVPx
 }
 
