@@ -273,8 +273,8 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability) {
 	case "video/vp8":
 		f.isTemporalSupported = true
 		f.vp8Munger = NewVP8Munger(f.logger)
-	case "video/av1":
-		// TODO : we only enable dd layer selector for av1 now, at future we can
+	case "video/av1", "video/vp9":
+		// TODO : we only enable dd layer selector for av1 and vp9 now, at future we can
 		// enable it for vp8 too
 		f.ddLayerSelector = NewDDVideoLayerSelector(f.logger)
 	}

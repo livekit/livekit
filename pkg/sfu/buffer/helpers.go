@@ -4,6 +4,8 @@ import (
 	"encoding/binary"
 	"errors"
 
+	"github.com/pion/rtp/codecs"
+
 	"github.com/livekit/protocol/logger"
 )
 
@@ -349,6 +351,30 @@ func IsAV1Keyframe(payload []byte) bool {
 		offset += length
 		i++
 	}
+}
+
+// IsVP9Keyframe detects if vp9 payload is a keyframe
+// taken from https://github.com/jech/galene/blob/master/codecs/codecs.go
+// all credits belongs to Juliusz Chroboczek @jech and the awesome Galene SFU
+func IsVP9Keyframe(payload []byte) bool {
+	var vp9 codecs.VP9Packet
+	_, err := vp9.Unmarshal(payload)
+	if err != nil || len(vp9.Payload) < 1 {
+		return false
+	}
+	if !vp9.B {
+		return false
+	}
+
+	if (vp9.Payload[0] & 0xc0) != 0x80 {
+		return false
+	}
+
+	profile := (vp9.Payload[0] >> 4) & 0x3
+	if profile != 3 {
+		return (vp9.Payload[0] & 0xC) == 0
+	}
+	return (vp9.Payload[0] & 0x6) == 0
 }
 
 // -------------------------------------
