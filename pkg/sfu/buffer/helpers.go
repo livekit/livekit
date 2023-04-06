@@ -592,6 +592,7 @@ func IsAV1KeyFrame(payload []byte) bool {
 	}
 }
 
+// RAJA-TODO: compare result of this with that of above
 // IsVP9Keyframe detects if vp9 payload is a keyframe
 // taken from https://github.com/jech/galene/blob/master/codecs/codecs.go
 // all credits belongs to Juliusz Chroboczek @jech and the awesome Galene SFU

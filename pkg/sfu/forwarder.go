@@ -531,6 +531,7 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 	opportunisticAlloc := func() {
 		// opportunistically latch on to anything
 		maxSpatial := maxLayer.Spatial
+		// RAJA-TODO: add check for VLS accepting overshoot
 		if allowOvershoot && maxSeenLayer.Spatial > maxSpatial {
 			maxSpatial = maxSeenLayer.Spatial
 		}
@@ -686,6 +687,7 @@ func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layers b
 	//  2. a layer above maximum which may or may not fit.
 	// In any of those cases, take the lowest possible layer if pause is not allowed
 	//
+	// RAJA-TODO: think about how to do VLS overshoot check here.
 	if !allowPause && (!f.provisional.allocatedLayers.IsValid() || !layers.GreaterThan(f.provisional.allocatedLayers)) {
 		f.provisional.allocatedLayers = layers
 		return requiredBitrate - alreadyAllocatedBitrate
@@ -808,6 +810,7 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot b
 		)
 
 		// could not find a minimal layer, overshoot if allowed
+		// RAJA-TODO Add VLS check for overshoot capable
 		if bandwidthRequired == 0 && f.provisional.maxLayers.IsValid() && allowOvershoot {
 			targetLayer, bandwidthRequired = findNextLayer(
 				f.provisional.maxLayers.Spatial+1, buffer.DefaultMaxLayerSpatial,
@@ -1056,6 +1059,7 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, available
 					continue
 				}
 
+				// RAJA-TODO do VLS overshoot check
 				if !allowOvershoot && bandwidthRequested-alreadyAllocated > availableChannelCapacity {
 					// next higher available layer does not fit, return
 					return true, f.lastAllocation, false
@@ -1116,6 +1120,7 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, available
 		return allocation, boosted
 	}
 
+	// RAJA-TODO do VLS overshoot check
 	if allowOvershoot && maxLayer.IsValid() {
 		done, allocation, boosted = doAllocation(
 			maxLayer.Spatial+1, buffer.DefaultMaxLayerSpatial,
@@ -1202,6 +1207,7 @@ func (f *Forwarder) GetNextHigherTransition(brs Bitrates, allowOvershoot bool) (
 		return transition, isAvailable
 	}
 
+	// RAJA-TODO do VLS overshoot check
 	if allowOvershoot && maxLayer.IsValid() {
 		done, transition, isAvailable = findNextHigher(
 			maxLayer.Spatial+1, buffer.DefaultMaxLayerSpatial,
@@ -1524,6 +1530,8 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 			}
 		}
 	}
+
+	// codec specific forwarding check and any needed packet munging
 	codecBytes, err := f.codecMunger.UpdateAndGet(
 		extPkt,
 		tp.rtp.snOrdering == SequenceNumberOrderingOutOfOrder,

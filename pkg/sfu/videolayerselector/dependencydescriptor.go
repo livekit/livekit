@@ -39,10 +39,6 @@ func NewDependencyDescriptorFromNull(vls VideoLayerSelector) *DependencyDescript
 }
 
 func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerSelectorResult) {
-	fmt.Printf("RAJA in: %+v curr: %+v, t: %+v, m: %+v, ms: %+v, rs: %d\n", buffer.VideoLayer{
-		Spatial:  int32(extPkt.DependencyDescriptor.FrameDependencies.SpatialId),
-		Temporal: int32(extPkt.DependencyDescriptor.FrameDependencies.TemporalId),
-	}, d.GetCurrent(), d.GetTarget(), d.GetMax(), d.GetMaxSeen(), d.GetRequestSpatial()) // REMOVE
 	result.IsRelevant = true
 	if extPkt.DependencyDescriptor == nil {
 		// packet don't have dependency descriptor, pass check
@@ -119,31 +115,50 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	}
 
 	if dti == dd.DecodeTargetSwitch {
+		// dependency descriptor decode target switch is enabled at all potential switch points.
+		// So, setting current layer on every switch point will change current layer a lot.
+		// But, currentLayer is not needed for layer selection. It is used for two things
+		//   1. To detect resumption - so by setting it to incoming layer only when current lqyer is invalid, that is taken care of
+		//   2. To detect reaching max spatial layer - current layer is set again when reaaching max layer to handle that
 		if !d.currentLayer.IsValid() {
 			result.IsResuming = true
 
-			d.SetCurrent(buffer.VideoLayer{
+			d.currentLayer = buffer.VideoLayer{
 				Spatial:  int32(extPkt.DependencyDescriptor.FrameDependencies.SpatialId),
 				Temporal: int32(extPkt.DependencyDescriptor.FrameDependencies.TemporalId),
-			})
+			}
+
+			d.logger.Infow(
+				"resuming at layer",
+				"current", d.currentLayer,
+				"target", d.targetLayer,
+				"max", d.maxLayer,
+				"layer", extPkt.DependencyDescriptor.FrameDependencies.SpatialId,
+				"req", d.requestSpatial,
+				"maxSeen", d.maxSeenLayer,
+				"feed", extPkt.Packet.SSRC,
+			)
 		}
-		d.SetCurrent(buffer.VideoLayer{
-			Spatial:  int32(extPkt.DependencyDescriptor.FrameDependencies.SpatialId),
-			Temporal: int32(extPkt.DependencyDescriptor.FrameDependencies.TemporalId),
-		}) // REMOVE
-		fmt.Printf("RAJA switching in: %+v curr: %+v, t: %+v, m: %+v, ms: %+v, rs: %d\n", buffer.VideoLayer{
-			Spatial:  int32(extPkt.DependencyDescriptor.FrameDependencies.SpatialId),
-			Temporal: int32(extPkt.DependencyDescriptor.FrameDependencies.TemporalId),
-		}, d.GetCurrent(), d.GetTarget(), d.GetMax(), d.GetMaxSeen(), d.GetRequestSpatial()) // REMOVE
-		// RAJA-TODO: need to figure out how we have reached max layer
-		if d.GetCurrent().SpatialGreaterThanOrEqual(d.GetMax()) {
+
+		if d.currentLayer.Spatial != d.maxLayer.Spatial && int32(extPkt.DependencyDescriptor.FrameDependencies.SpatialId) == d.maxLayer.Spatial {
 			result.IsSwitchingToMaxSpatial = true
+
+			d.currentLayer = buffer.VideoLayer{
+				Spatial:  int32(extPkt.DependencyDescriptor.FrameDependencies.SpatialId),
+				Temporal: int32(extPkt.DependencyDescriptor.FrameDependencies.TemporalId),
+			}
+
+			d.logger.Infow(
+				"reached max layer",
+				"current", d.currentLayer,
+				"target", d.targetLayer,
+				"max", d.maxLayer,
+				"layer", extPkt.DependencyDescriptor.FrameDependencies.SpatialId,
+				"req", d.requestSpatial,
+				"maxSeen", d.maxSeenLayer,
+				"feed", extPkt.Packet.SSRC,
+			)
 		}
-	} else {
-		fmt.Printf("RAJA not switching in: %+v curr: %+v, t: %+v, m: %+v, ms: %+v, rs: %d\n", buffer.VideoLayer{
-			Spatial:  int32(extPkt.DependencyDescriptor.FrameDependencies.SpatialId),
-			Temporal: int32(extPkt.DependencyDescriptor.FrameDependencies.TemporalId),
-		}, d.GetCurrent(), d.GetTarget(), d.GetMax(), d.GetMaxSeen(), d.GetRequestSpatial()) // REMOVE
 	}
 
 	// DD-TODO : add frame to forwarded queue if entire frame is forwarded

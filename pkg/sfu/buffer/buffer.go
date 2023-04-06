@@ -631,6 +631,10 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64) *ExtPack
 			if ep.KeyFrame {
 				b.logger.Infow("RAJA vp9 key frame packet")
 			} // REMOVE
+			kf1 := IsVP9Keyframe(rtpPacket.Payload)
+			if ep.KeyFrame != kf1 {
+				b.logger.Infow("RAJA vp9 key frame mismatch", "jech", kf1, "lk", ep.KeyFrame) // REMOVE
+			}
 		}
 		// RAJA-TODO: do not do full VP9 Parse if ddParser is present, just write a seaprate routine for finding if a key frame or not
 	case "video/h264":
