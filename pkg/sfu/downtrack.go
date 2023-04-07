@@ -597,22 +597,23 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		d.onMaxSubscribedLayerChanged(d, layer)
 	}
 
-	if extPkt.KeyFrame || tp.isResuming {
+	if extPkt.KeyFrame {
 		d.isNACKThrottled.Store(false)
 		if extPkt.KeyFrame {
 			d.rtpStats.UpdateKeyFrame(1)
 			d.logger.Debugw("forwarding key frame", "layer", layer)
 		}
 
+		// SVC-TODO - no need for key frame always when using SVC
 		locked, _ := d.forwarder.CheckSync()
 		if locked {
 			d.stopKeyFrameRequester()
 		}
+	}
 
-		if tp.isResuming {
-			if sal := d.getStreamAllocatorListener(); sal != nil {
-				sal.OnResume(d)
-			}
+	if tp.isResuming {
+		if sal := d.getStreamAllocatorListener(); sal != nil {
+			sal.OnResume(d)
 		}
 	}
 

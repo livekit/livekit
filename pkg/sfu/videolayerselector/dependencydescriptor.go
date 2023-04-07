@@ -43,14 +43,16 @@ func (d *DependencyDescriptor) IsOvershootOkay() bool {
 }
 
 func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerSelectorResult) {
-	result.IsRelevant = true
 	if extPkt.DependencyDescriptor == nil {
-		// packet don't have dependency descriptor, pass check
-		// DD-TODO: should probably drop here, i. e. if this selector is used and there is no DD, that is not correct
-		result.RTPMarker = extPkt.Packet.Marker
-		result.IsSelected = true
+		// packet don't have dependency descriptor
 		return
 	}
+
+	if !d.currentLayer.IsValid() && !extPkt.KeyFrame {
+		return
+	}
+
+	result.IsRelevant = true
 
 	if extPkt.DependencyDescriptor.AttachedStructure != nil {
 		// update decode target layer and active decode targets

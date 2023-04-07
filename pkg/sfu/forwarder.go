@@ -1476,21 +1476,18 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		return tp, nil
 	}
 
-	if f.vls != nil {
-		result := f.vls.Select(extPkt, layer)
-		if !result.IsSelected {
-			tp.shouldDrop = true
-			if f.started && result.IsRelevant {
-				f.rtpMunger.UpdateAndGetSnTs(extPkt) // call to update highest incoming sequence number and other internal structures
-				f.rtpMunger.PacketDropped(extPkt)
-			}
-			return tp, nil
+	result := f.vls.Select(extPkt, layer)
+	if !result.IsSelected {
+		tp.shouldDrop = true
+		if f.started && result.IsRelevant {
+			f.rtpMunger.UpdateAndGetSnTs(extPkt) // call to update highest incoming sequence number and other internal structures
+			f.rtpMunger.PacketDropped(extPkt)
 		}
-
-		tp.isSwitchingToMaxLayer = result.IsSwitchingToMaxSpatial
-		tp.isResuming = result.IsResuming
-		tp.marker = result.RTPMarker
+		return tp, nil
 	}
+	tp.isSwitchingToMaxLayer = result.IsSwitchingToMaxSpatial
+	tp.isResuming = result.IsResuming
+	tp.marker = result.RTPMarker
 
 	if FlagPauseOnDowngrade && f.isDeficientLocked() && f.vls.GetTarget().Spatial < f.vls.GetCurrent().Spatial {
 		//
