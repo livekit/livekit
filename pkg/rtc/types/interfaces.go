@@ -251,7 +251,7 @@ type LocalParticipant interface {
 	// permissions
 	ClaimGrants() *auth.ClaimGrants
 	SetPermission(permission *livekit.ParticipantPermission) bool
-	CanPublish() bool
+	CanPublishSource(source livekit.TrackSource) bool
 	CanSubscribe() bool
 	CanPublishData() bool
 
