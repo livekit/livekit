@@ -139,7 +139,7 @@ type DownTrackStreamAllocatorListener interface {
 	// subscribed max video layer changed
 	OnSubscribedLayersChanged(dt *DownTrack, layers buffer.VideoLayer)
 
-	// stream rsumed
+	// stream resumed
 	OnResume(dt *DownTrack)
 
 	// packet(s) sent
@@ -564,7 +564,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	if d.sequencer != nil {
 		meta = d.sequencer.push(extPkt.Packet.SequenceNumber, tp.rtp.sequenceNumber, tp.rtp.timestamp, int8(layer))
 		if meta != nil {
-			meta.codecBytes = tp.codecBytes
+			meta.codecBytes = append(meta.codecBytes, tp.codecBytes...)
 		}
 	}
 
