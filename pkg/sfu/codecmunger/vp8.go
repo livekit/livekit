@@ -20,12 +20,12 @@ const (
 
 type VP8State struct {
 	ExtLastPictureId int32
-	PictureIdUsed    int
+	PictureIdUsed    bool
 	LastTl0PicIdx    uint8
-	Tl0PicIdxUsed    int
-	TidUsed          int
+	Tl0PicIdxUsed    bool
+	TidUsed          bool
 	LastKeyIdx       uint8
-	KeyIdxUsed       int
+	KeyIdxUsed       bool
 }
 
 func (v VP8State) String() string {
@@ -41,14 +41,14 @@ type VP8 struct {
 	pictureIdWrapHandler VP8PictureIdWrapHandler
 	extLastPictureId     int32
 	pictureIdOffset      int32
-	pictureIdUsed        int
+	pictureIdUsed        bool
 	lastTl0PicIdx        uint8
 	tl0PicIdxOffset      uint8
-	tl0PicIdxUsed        int
-	tidUsed              int
+	tl0PicIdxUsed        bool
+	tidUsed              bool
 	lastKeyIdx           uint8
 	keyIdxOffset         uint8
-	keyIdxUsed           int
+	keyIdxUsed           bool
 
 	missingPictureIds  *orderedmap.OrderedMap[int32, int32]
 	droppedPictureIds  *orderedmap.OrderedMap[int32, bool]
@@ -94,21 +94,21 @@ func (v *VP8) SetLast(extPkt *buffer.ExtPacket) {
 		return
 	}
 
-	v.pictureIdUsed = vp8.PictureIDPresent
-	if v.pictureIdUsed == 1 {
-		v.pictureIdWrapHandler.Init(int32(vp8.PictureID)-1, vp8.MBit)
+	v.pictureIdUsed = vp8.I
+	if v.pictureIdUsed {
+		v.pictureIdWrapHandler.Init(int32(vp8.PictureID)-1, vp8.M)
 		v.extLastPictureId = int32(vp8.PictureID)
 	}
 
-	v.tl0PicIdxUsed = vp8.TL0PICIDXPresent
-	if v.tl0PicIdxUsed == 1 {
+	v.tl0PicIdxUsed = vp8.L
+	if v.tl0PicIdxUsed {
 		v.lastTl0PicIdx = vp8.TL0PICIDX
 	}
 
-	v.tidUsed = vp8.TIDPresent
+	v.tidUsed = vp8.T
 
-	v.keyIdxUsed = vp8.KEYIDXPresent
-	if v.keyIdxUsed == 1 {
+	v.keyIdxUsed = vp8.K
+	if v.keyIdxUsed {
 		v.lastKeyIdx = vp8.KEYIDX
 	}
 }
@@ -119,16 +119,16 @@ func (v *VP8) UpdateOffsets(extPkt *buffer.ExtPacket) {
 		return
 	}
 
-	if v.pictureIdUsed == 1 {
-		v.pictureIdWrapHandler.Init(int32(vp8.PictureID)-1, vp8.MBit)
+	if v.pictureIdUsed {
+		v.pictureIdWrapHandler.Init(int32(vp8.PictureID)-1, vp8.M)
 		v.pictureIdOffset = int32(vp8.PictureID) - v.extLastPictureId - 1
 	}
 
-	if v.tl0PicIdxUsed == 1 {
+	if v.tl0PicIdxUsed {
 		v.tl0PicIdxOffset = vp8.TL0PICIDX - v.lastTl0PicIdx - 1
 	}
 
-	if v.keyIdxUsed == 1 {
+	if v.keyIdxUsed {
 		v.keyIdxOffset = (vp8.KEYIDX - v.lastKeyIdx - 1) & 0x1f
 	}
 
@@ -144,7 +144,7 @@ func (v *VP8) UpdateAndGet(extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap
 		return nil, ErrNotVP8
 	}
 
-	extPictureId := v.pictureIdWrapHandler.Unwrap(vp8.PictureID, vp8.MBit)
+	extPictureId := v.pictureIdWrapHandler.Unwrap(vp8.PictureID, vp8.M)
 
 	// if out-of-order, look up missing picture id cache
 	if snOutOfOrder {
@@ -161,25 +161,25 @@ func (v *VP8) UpdateAndGet(extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap
 
 		mungedPictureId := uint16((extPictureId - pictureIdOffset) & 0x7fff)
 		vp8Packet := &buffer.VP8{
-			FirstByte:        vp8.FirstByte,
-			PictureIDPresent: vp8.PictureIDPresent,
-			PictureID:        mungedPictureId,
-			MBit:             mungedPictureId > 127,
-			TL0PICIDXPresent: vp8.TL0PICIDXPresent,
-			TL0PICIDX:        vp8.TL0PICIDX - v.tl0PicIdxOffset,
-			TIDPresent:       vp8.TIDPresent,
-			TID:              vp8.TID,
-			Y:                vp8.Y,
-			KEYIDXPresent:    vp8.KEYIDXPresent,
-			KEYIDX:           vp8.KEYIDX - v.keyIdxOffset,
-			IsKeyFrame:       vp8.IsKeyFrame,
-			HeaderSize:       vp8.HeaderSize + buffer.VPxPictureIdSizeDiff(mungedPictureId > 127, vp8.MBit),
+			FirstByte:  vp8.FirstByte,
+			I:          vp8.I,
+			M:          mungedPictureId > 127,
+			PictureID:  mungedPictureId,
+			L:          vp8.L,
+			TL0PICIDX:  vp8.TL0PICIDX - v.tl0PicIdxOffset,
+			T:          vp8.T,
+			TID:        vp8.TID,
+			Y:          vp8.Y,
+			K:          vp8.K,
+			KEYIDX:     vp8.KEYIDX - v.keyIdxOffset,
+			IsKeyFrame: vp8.IsKeyFrame,
+			HeaderSize: vp8.HeaderSize + buffer.VPxPictureIdSizeDiff(mungedPictureId > 127, vp8.M),
 		}
 		return vp8Packet.Marshal()
 	}
 
 	prevMaxPictureId := v.pictureIdWrapHandler.MaxPictureId()
-	v.pictureIdWrapHandler.UpdateMaxPictureId(extPictureId, vp8.MBit)
+	v.pictureIdWrapHandler.UpdateMaxPictureId(extPictureId, vp8.M)
 
 	// if there is a gap in sequence number, record possible pictures that
 	// the missing packets can belong to in missing picture id cache.
@@ -218,7 +218,7 @@ func (v *VP8) UpdateAndGet(extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap
 		// which layer the missing packets belong to. A layer could have multiple packets. So, keep track
 		// of pictures that are forwarded even though they will be filterd out based on temporal layer
 		// requirements. That allows forwarding of the complete picture.
-		if vp8.TIDPresent == 1 && vp8.TID > uint8(maxTemporalLayer) {
+		if vp8.T && vp8.TID > uint8(maxTemporalLayer) {
 			v.exemptedPictureIds.Set(extPictureId, true)
 			// trim cache if necessary
 			for v.exemptedPictureIds.Len() > exemptedPictureIdsThreshold {
@@ -227,12 +227,12 @@ func (v *VP8) UpdateAndGet(extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap
 			}
 		}
 	} else {
-		if vp8.TIDPresent == 1 && vp8.TID > uint8(maxTemporalLayer) {
+		if vp8.T && vp8.TID > uint8(maxTemporalLayer) {
 			// drop only if not exempted
 			_, ok := v.exemptedPictureIds.Get(extPictureId)
 			if !ok {
 				// adjust only once per picture as a picture could have multiple packets
-				if vp8.PictureIDPresent == 1 && prevMaxPictureId != extPictureId {
+				if vp8.I && prevMaxPictureId != extPictureId {
 					// keep track of dropped picture ids so that they do not get into the missing picture cache
 					v.droppedPictureIds.Set(extPictureId, true)
 					// trim cache if necessary
@@ -264,19 +264,19 @@ func (v *VP8) UpdateAndGet(extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap
 	v.lastKeyIdx = mungedKeyIdx
 
 	vp8Packet := &buffer.VP8{
-		FirstByte:        vp8.FirstByte,
-		PictureIDPresent: vp8.PictureIDPresent,
-		PictureID:        mungedPictureId,
-		MBit:             mungedPictureId > 127,
-		TL0PICIDXPresent: vp8.TL0PICIDXPresent,
-		TL0PICIDX:        mungedTl0PicIdx,
-		TIDPresent:       vp8.TIDPresent,
-		TID:              vp8.TID,
-		Y:                vp8.Y,
-		KEYIDXPresent:    vp8.KEYIDXPresent,
-		KEYIDX:           mungedKeyIdx,
-		IsKeyFrame:       vp8.IsKeyFrame,
-		HeaderSize:       vp8.HeaderSize + buffer.VPxPictureIdSizeDiff(mungedPictureId > 127, vp8.MBit),
+		FirstByte:  vp8.FirstByte,
+		I:          vp8.I,
+		M:          mungedPictureId > 127,
+		PictureID:  mungedPictureId,
+		L:          vp8.L,
+		TL0PICIDX:  mungedTl0PicIdx,
+		T:          vp8.T,
+		TID:        vp8.TID,
+		Y:          vp8.Y,
+		K:          vp8.K,
+		KEYIDX:     mungedKeyIdx,
+		IsKeyFrame: vp8.IsKeyFrame,
+		HeaderSize: vp8.HeaderSize + buffer.VPxPictureIdSizeDiff(mungedPictureId > 127, vp8.M),
 	}
 	return vp8Packet.Marshal()
 }
@@ -288,12 +288,12 @@ func (v *VP8) UpdateAndGetPadding(newPicture bool) ([]byte, error) {
 	}
 
 	headerSize := 1
-	if (v.pictureIdUsed + v.tl0PicIdxUsed + v.tidUsed + v.keyIdxUsed) != 0 {
+	if v.pictureIdUsed || v.tl0PicIdxUsed || v.tidUsed || v.keyIdxUsed {
 		headerSize += 1
 	}
 
 	extPictureId := v.extLastPictureId
-	if v.pictureIdUsed == 1 {
+	if v.pictureIdUsed {
 		extPictureId = v.extLastPictureId + int32(offset)
 		v.extLastPictureId = extPictureId
 		v.pictureIdOffset -= int32(offset)
@@ -306,38 +306,38 @@ func (v *VP8) UpdateAndGetPadding(newPicture bool) ([]byte, error) {
 	pictureId := uint16(extPictureId & 0x7fff)
 
 	tl0PicIdx := uint8(0)
-	if v.tl0PicIdxUsed == 1 {
+	if v.tl0PicIdxUsed {
 		tl0PicIdx = v.lastTl0PicIdx + uint8(offset)
 		v.lastTl0PicIdx = tl0PicIdx
 		v.tl0PicIdxOffset -= uint8(offset)
 		headerSize += 1
 	}
 
-	if (v.tidUsed + v.keyIdxUsed) != 0 {
+	if v.tidUsed || v.keyIdxUsed {
 		headerSize += 1
 	}
 
 	keyIdx := uint8(0)
-	if v.keyIdxUsed == 1 {
+	if v.keyIdxUsed {
 		keyIdx = (v.lastKeyIdx + uint8(offset)) & 0x1f
 		v.lastKeyIdx = keyIdx
 		v.keyIdxOffset -= uint8(offset)
 	}
 
 	vp8Packet := &buffer.VP8{
-		FirstByte:        0x10, // partition 0, start of VP8 Partition, reference frame
-		PictureIDPresent: v.pictureIdUsed,
-		PictureID:        pictureId,
-		MBit:             pictureId > 127,
-		TL0PICIDXPresent: v.tl0PicIdxUsed,
-		TL0PICIDX:        tl0PicIdx,
-		TIDPresent:       v.tidUsed,
-		TID:              0,
-		Y:                1,
-		KEYIDXPresent:    v.keyIdxUsed,
-		KEYIDX:           keyIdx,
-		IsKeyFrame:       true,
-		HeaderSize:       headerSize,
+		FirstByte:  0x10, // partition 0, start of VP8 Partition, reference frame
+		I:          v.pictureIdUsed,
+		M:          pictureId > 127,
+		PictureID:  pictureId,
+		L:          v.tl0PicIdxUsed,
+		TL0PICIDX:  tl0PicIdx,
+		T:          v.tidUsed,
+		TID:        0,
+		Y:          1,
+		K:          v.keyIdxUsed,
+		KEYIDX:     keyIdx,
+		IsKeyFrame: true,
+		HeaderSize: headerSize,
 	}
 	return vp8Packet.Marshal()
 }

@@ -34,21 +34,21 @@ var (
 type VP8 struct {
 	FirstByte byte
 
-	PictureIDPresent int
-	PictureID        uint16 /* 8 or 16 bits, picture ID */
-	MBit             bool
+	I         bool
+	M         bool
+	PictureID uint16 /* 8 or 16 bits, picture ID */
 
-	TL0PICIDXPresent int
-	TL0PICIDX        uint8 /* 8 bits temporal level zero index */
+	L         bool
+	TL0PICIDX uint8 /* 8 bits temporal level zero index */
 
 	// Optional Header If either of the T or K bits are set to 1,
 	// the TID/Y/KEYIDX extension field MUST be present.
-	TIDPresent int
-	TID        uint8 /* 2 bits temporal layer idx */
-	Y          uint8
+	T   bool
+	TID uint8 /* 2 bits temporal layer idx */
+	Y   uint8
 
-	KEYIDXPresent int
-	KEYIDX        uint8 /* 5 bits of key frame idx */
+	K      bool
+	KEYIDX uint8 /* 5 bits of key frame idx */
 
 	HeaderSize int
 
@@ -76,54 +76,50 @@ func (v *VP8) Unmarshal(payload []byte) error {
 		if payloadLen < idx+1 {
 			return errShortPacket
 		}
-		I := payload[idx]&0x80 > 0
-		L := payload[idx]&0x40 > 0
-		T := payload[idx]&0x20 > 0
-		K := payload[idx]&0x10 > 0
-		if L && !T {
+		v.I = payload[idx]&0x80 > 0
+		v.L = payload[idx]&0x40 > 0
+		v.T = payload[idx]&0x20 > 0
+		v.K = payload[idx]&0x10 > 0
+		if v.L && !v.T {
 			return errInvalidPacket
 		}
 		// Check for PictureID
-		if I {
+		if v.I {
 			idx++
 			if payloadLen < idx+1 {
 				return errShortPacket
 			}
-			v.PictureIDPresent = 1
 			pid := payload[idx] & 0x7f
 			// Check if m is 1, then Picture ID is 15 bits
-			if payload[idx]&0x80 > 0 {
+			v.M = payload[idx]&0x80 > 0
+			if v.M {
 				idx++
 				if payloadLen < idx+1 {
 					return errShortPacket
 				}
-				v.MBit = true
 				v.PictureID = binary.BigEndian.Uint16([]byte{pid, payload[idx]})
 			} else {
 				v.PictureID = uint16(pid)
 			}
 		}
 		// Check if TL0PICIDX is present
-		if L {
+		if v.L {
 			idx++
 			if payloadLen < idx+1 {
 				return errShortPacket
 			}
-			v.TL0PICIDXPresent = 1
 			v.TL0PICIDX = payload[idx]
 		}
-		if T || K {
+		if v.T || v.K {
 			idx++
 			if payloadLen < idx+1 {
 				return errShortPacket
 			}
-			if T {
-				v.TIDPresent = 1
+			if v.T {
 				v.TID = (payload[idx] & 0xc0) >> 6
 				v.Y = (payload[idx] & 0x20) >> 5
 			}
-			if K {
-				v.KEYIDXPresent = 1
+			if v.K {
 				v.KEYIDX = payload[idx] & 0x1f
 			}
 		}
@@ -158,13 +154,17 @@ func (v *VP8) MarshalTo(buf []byte) error {
 
 	idx := 0
 	buf[idx] = v.FirstByte
-	if (v.PictureIDPresent + v.TL0PICIDXPresent + v.TIDPresent + v.KEYIDXPresent) != 0 {
+	if v.I || v.L || v.T || v.K {
 		buf[idx] |= 0x80 // X bit
 		idx++
-		buf[idx] = byte(v.PictureIDPresent<<7) | byte(v.TL0PICIDXPresent<<6) | byte(v.TIDPresent<<5) | byte(v.KEYIDXPresent<<4)
+
+		xpos := idx
+		xval := byte(0)
+
 		idx++
-		if v.PictureIDPresent == 1 {
-			if v.MBit {
+		if v.I {
+			xval |= (1 << 7)
+			if v.M {
 				buf[idx] = 0x80 | byte((v.PictureID>>8)&0x7f)
 				buf[idx+1] = byte(v.PictureID & 0xff)
 				idx += 2
@@ -173,20 +173,25 @@ func (v *VP8) MarshalTo(buf []byte) error {
 				idx++
 			}
 		}
-		if v.TL0PICIDXPresent == 1 {
+		if v.L {
+			xval |= (1 << 6)
 			buf[idx] = v.TL0PICIDX
 			idx++
 		}
-		if v.TIDPresent == 1 || v.KEYIDXPresent == 1 {
+		if v.T || v.K {
 			buf[idx] = 0
-			if v.TIDPresent == 1 {
+			if v.T {
+				xval |= (1 << 5)
 				buf[idx] = v.TID<<6 | v.Y<<5
 			}
-			if v.KEYIDXPresent == 1 {
+			if v.K {
+				xval |= (1 << 4)
 				buf[idx] |= v.KEYIDX & 0x1f
 			}
 			idx++
 		}
+
+		buf[xpos] = xval
 	} else {
 		buf[idx] &^= 0x80 // X bit
 		idx++

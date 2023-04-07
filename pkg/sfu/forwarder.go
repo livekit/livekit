@@ -1523,7 +1523,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		incomingVP8, ok := extPkt.Payload.(buffer.VP8)
 		if ok {
 			// RAJA-TODO: maybe do this on a frame boundary only
-			if incomingVP8.TIDPresent == 0 || incomingVP8.TID <= uint8(f.vls.GetTarget().Temporal) {
+			if incomingVP8.T || incomingVP8.TID <= uint8(f.vls.GetTarget().Temporal) {
 				// RAJA-TODO: check if this set back can be moved into vls
 				f.vls.SetCurrent(buffer.VideoLayer{
 					Spatial:  f.vls.GetCurrent().Spatial,
