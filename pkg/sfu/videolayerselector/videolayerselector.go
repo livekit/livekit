@@ -12,6 +12,8 @@ type VideoLayerSelectorResult struct {
 }
 
 type VideoLayerSelector interface {
+	IsOvershootOkay() bool
+
 	SetMax(maxLayer buffer.VideoLayer)
 	SetMaxSpatial(layer int32)
 	SetMaxTemporal(layer int32)

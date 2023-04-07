@@ -38,6 +38,10 @@ func NewDependencyDescriptorFromNull(vls VideoLayerSelector) *DependencyDescript
 	}
 }
 
+func (d *DependencyDescriptor) IsOvershootOkay() bool {
+	return false
+}
+
 func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerSelectorResult) {
 	result.IsRelevant = true
 	if extPkt.DependencyDescriptor == nil {
@@ -117,9 +121,12 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	if dti == dd.DecodeTargetSwitch {
 		// dependency descriptor decode target switch is enabled at all potential switch points.
 		// So, setting current layer on every switch point will change current layer a lot.
-		// But, currentLayer is not needed for layer selection. It is used for two things
+		// currentLayer is not needed for layer selection in this selector.
+		// But, it is needed to signal things in the selector checks outside of this selector.
+		// The following cases are handled
 		//   1. To detect resumption - so by setting it to incoming layer only when current lqyer is invalid, that is taken care of
-		//   2. To detect reaching max spatial layer - current layer is set again when reaaching max layer to handle that
+		//   2. To detect target achieved - set current to target if it is not the same
+		//   3. To detect reaching max spatial layer - checked when current hits target
 		if !d.currentLayer.IsValid() {
 			result.IsResuming = true
 
@@ -140,24 +147,33 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 			)
 		}
 
-		if d.currentLayer.Spatial != d.maxLayer.Spatial && int32(extPkt.DependencyDescriptor.FrameDependencies.SpatialId) == d.maxLayer.Spatial {
-			result.IsSwitchingToMaxSpatial = true
+		if d.currentLayer != d.targetLayer {
+			if d.currentLayer.Spatial != d.targetLayer.Spatial && int32(extPkt.DependencyDescriptor.FrameDependencies.SpatialId) == d.targetLayer.Spatial {
+				d.currentLayer.Spatial = d.targetLayer.Spatial
+				if d.currentLayer.Spatial == d.maxLayer.Spatial {
+					result.IsSwitchingToMaxSpatial = true
 
-			d.currentLayer = buffer.VideoLayer{
-				Spatial:  int32(extPkt.DependencyDescriptor.FrameDependencies.SpatialId),
-				Temporal: int32(extPkt.DependencyDescriptor.FrameDependencies.TemporalId),
+					d.currentLayer = buffer.VideoLayer{
+						Spatial:  int32(extPkt.DependencyDescriptor.FrameDependencies.SpatialId),
+						Temporal: int32(extPkt.DependencyDescriptor.FrameDependencies.TemporalId),
+					}
+
+					d.logger.Infow(
+						"reached max layer",
+						"current", d.currentLayer,
+						"target", d.targetLayer,
+						"max", d.maxLayer,
+						"layer", extPkt.DependencyDescriptor.FrameDependencies.SpatialId,
+						"req", d.requestSpatial,
+						"maxSeen", d.maxSeenLayer,
+						"feed", extPkt.Packet.SSRC,
+					)
+				}
 			}
 
-			d.logger.Infow(
-				"reached max layer",
-				"current", d.currentLayer,
-				"target", d.targetLayer,
-				"max", d.maxLayer,
-				"layer", extPkt.DependencyDescriptor.FrameDependencies.SpatialId,
-				"req", d.requestSpatial,
-				"maxSeen", d.maxSeenLayer,
-				"feed", extPkt.Packet.SSRC,
-			)
+			if d.currentLayer.Temporal != d.targetLayer.Temporal && int32(extPkt.DependencyDescriptor.FrameDependencies.TemporalId) == d.targetLayer.Temporal {
+				d.currentLayer.Temporal = d.targetLayer.Temporal
+			}
 		}
 	}
 

@@ -21,6 +21,10 @@ func NewVP9FromNull(vls VideoLayerSelector) *VP9 {
 	}
 }
 
+func (v *VP9) IsOvershootOkay() bool {
+	return false
+}
+
 func (v *VP9) Select(extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerSelectorResult) {
 	vp9, ok := extPkt.Payload.(buffer.VP9)
 	if !ok {
@@ -86,128 +90,3 @@ func (v *VP9) Select(extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerS
 	result.IsRelevant = true
 	return
 }
-
-/* RAJA-TODO
-// at this point, either
-// 1. dependency description has selected the layer for forwarding OR
-// 2. non-dependency deescriptor is yet to make decision, but it can potentially switch to the incoming layer and start forwarding
-//
-// both cases cases upgrade/downgrade to current layer under the right conditions
-if f.currentLayers.Spatial != f.targetLayers.Spatial {
-	// Three things to check when not locked to target
-	//   1. Resumable layer - don't need a key frame
-	//   2. Opportunistic layer upgrade - needs a key frame if not using depedency descriptor
-	//   3. Need to downgrade - needs a key frame if not using dependency descriptor
-	found := false
-	if f.parkedLayers.IsValid() {
-		if f.parkedLayers.Spatial == layer {
-			f.logger.Infow(
-				"resuming at parked layer",
-				"current", f.currentLayers,
-				"target", f.targetLayers,
-				"parked", f.parkedLayers,
-				"feed", extPkt.Packet.SSRC,
-			)
-			f.currentLayers = f.parkedLayers
-			found = true
-		}
-	} else {
-		if extPkt.KeyFrame || tp.isSwitchingToTargetLayer {
-			if layer > f.currentLayers.Spatial && layer <= f.targetLayers.Spatial {
-				f.logger.Infow(
-					"upgrading layer",
-					"current", f.currentLayers,
-					"target", f.targetLayers,
-					"max", f.maxLayers,
-					"layer", layer,
-					"req", f.requestLayerSpatial,
-					"maxPublished", f.maxPublishedLayer,
-					"feed", extPkt.Packet.SSRC,
-				)
-				found = true
-			}
-
-			if layer < f.currentLayers.Spatial && layer >= f.targetLayers.Spatial {
-				f.logger.Infow(
-					"downgrading layer",
-					"current", f.currentLayers,
-					"target", f.targetLayers,
-					"max", f.maxLayers,
-					"layer", layer,
-					"req", f.requestLayerSpatial,
-					"maxPublished", f.maxPublishedLayer,
-					"feed", extPkt.Packet.SSRC,
-				)
-				found = true
-			}
-
-			if found {
-				f.currentLayers.Spatial = layer
-				if !f.isTemporalSupported {
-					f.currentLayers.Temporal = f.targetLayers.Temporal
-				}
-			}
-		}
-	}
-
-	if found {
-		tp.isSwitchingToTargetLayer = true
-		f.clearParkedLayers()
-		if f.currentLayers.Spatial >= f.maxLayers.Spatial {
-			tp.isSwitchingToMaxLayer = true
-
-			f.logger.Infow(
-				"reached max layer",
-				"current", f.currentLayers,
-				"target", f.targetLayers,
-				"max", f.maxLayers,
-				"layer", layer,
-				"req", f.requestLayerSpatial,
-				"maxPublished", f.maxPublishedLayer,
-				"feed", extPkt.Packet.SSRC,
-			)
-		}
-
-		if f.currentLayers.Spatial >= f.maxLayers.Spatial || f.currentLayers.Spatial == f.maxPublishedLayer {
-			f.targetLayers.Spatial = f.currentLayers.Spatial
-			if f.vp9LayerSelector != nil {
-				f.vp9LayerSelector.SelectLayer(f.targetLayers)
-			}
-			if f.ddLayerSelector != nil {
-				f.ddLayerSelector.SelectLayer(f.targetLayers)
-			}
-		}
-	}
-}
-
-// if locked to higher than max layer due to overshoot, check if it can be dialed back
-if f.currentLayers.Spatial > f.maxLayers.Spatial {
-	if layer <= f.maxLayers.Spatial && (extPkt.KeyFrame || tp.isSwitchingToTargetLayer) {
-		f.logger.Infow(
-			"adjusting overshoot",
-			"current", f.currentLayers,
-			"target", f.targetLayers,
-			"max", f.maxLayers,
-			"layer", layer,
-			"req", f.requestLayerSpatial,
-			"maxPublished", f.maxPublishedLayer,
-			"feed", extPkt.Packet.SSRC,
-		)
-		f.currentLayers.Spatial = layer
-
-		if f.currentLayers.Spatial >= f.maxLayers.Spatial {
-			tp.isSwitchingToMaxLayer = true
-		}
-
-		if f.currentLayers.Spatial >= f.maxLayers.Spatial || f.currentLayers.Spatial == f.maxPublishedLayer {
-			f.targetLayers.Spatial = layer
-			if f.vp9LayerSelector != nil {
-				f.vp9LayerSelector.SelectLayer(f.targetLayers)
-			}
-			if f.ddLayerSelector != nil {
-				f.ddLayerSelector.SelectLayer(f.targetLayers)
-			}
-		}
-	}
-}
-*/

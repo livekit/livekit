@@ -21,8 +21,11 @@ func NewSimulcastFromNull(vls VideoLayerSelector) *Simulcast {
 	}
 }
 
+func (s *Simulcast) IsOvershootOkay() bool {
+	return true
+}
+
 func (s *Simulcast) Select(extPkt *buffer.ExtPacket, layer int32) (result VideoLayerSelectorResult) {
-	// RAJA-TODO: drop up front if target is invalid
 	if s.currentLayer.Spatial != s.targetLayer.Spatial {
 		// Three things to check when not locked to target
 		//   1. Resumable layer - don't need a key frame

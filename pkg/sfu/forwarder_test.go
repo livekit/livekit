@@ -387,8 +387,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 	f.vls.SetRequestSpatial(0)
 	expectedTargetLayers = buffer.VideoLayer{
 		Spatial:  2,
-		Temporal: 3,
-		// RAJA-TODO: change in master Temporal: 1,
+		Temporal: 1,
 	}
 	expectedResult = VideoAllocation{
 		PauseReason:         VideoPauseReasonFeedDry,
@@ -398,8 +397,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		TargetLayers:        expectedTargetLayers,
 		RequestLayerSpatial: 2,
 		MaxLayers:           f.vls.GetMax(),
-		DistanceToDesired:   -1.5,
-		// RAJA-TODO change in master DistanceToDesired:   -1,
+		DistanceToDesired:   -1,
 	}
 	result = f.AllocateOptimal([]int32{0, 1}, emptyBitrates, true)
 	require.Equal(t, expectedResult, result)
@@ -1410,8 +1408,8 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	marshalledVP8, err := expectedVP8.Marshal()
 	require.NoError(t, err)
 	expectedTP = TranslationParams{
-		isSwitchingToMaxLayer:    true,
-		isSwitchingToTargetLayer: true,
+		isSwitchingToMaxLayer: true,
+		isResuming:            true,
 		rtp: &TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingContiguous,
 			sequenceNumber: 23333,
@@ -1667,8 +1665,7 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	marshalledVP8, err = expectedVP8.Marshal()
 	require.NoError(t, err)
 	expectedTP = TranslationParams{
-		isSwitchingToMaxLayer:    true,
-		isSwitchingToTargetLayer: true,
+		isSwitchingToMaxLayer: true,
 		rtp: &TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingContiguous,
 			sequenceNumber: 23338,

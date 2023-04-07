@@ -531,14 +531,12 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 	opportunisticAlloc := func() {
 		// opportunistically latch on to anything
 		maxSpatial := maxLayer.Spatial
-		// RAJA-TODO: add check for VLS accepting overshoot
-		if allowOvershoot && maxSeenLayer.Spatial > maxSpatial {
+		if allowOvershoot && f.vls.IsOvershootOkay() && maxSeenLayer.Spatial > maxSpatial {
 			maxSpatial = maxSeenLayer.Spatial
 		}
 		alloc.TargetLayers = buffer.VideoLayer{
 			Spatial:  int32(math.Min(float64(maxSeenLayer.Spatial), float64(maxSpatial))),
-			Temporal: buffer.DefaultMaxLayerTemporal,
-			// RAJA-TODO change in master Temporal: f.maxLayers.Temporal,
+			Temporal: maxLayer.Temporal,
 		}
 	}
 
@@ -593,16 +591,17 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 					alloc.TargetLayers.Spatial = l
 				}
 			}
-			alloc.TargetLayers.Temporal = buffer.DefaultMaxLayerTemporal
-			// RAJA-TODO change in master for temporal filtering alloc.TargetLayers.Temporal = f.maxLayers.Temporal
+			alloc.TargetLayers.Temporal = maxLayer.Temporal
 
 			alloc.RequestLayerSpatial = alloc.TargetLayers.Spatial
 		} else {
 			requestLayerSpatial := int32(math.Min(float64(maxLayer.Spatial), float64(maxSeenLayer.Spatial)))
 			if currentLayer.IsValid() && requestLayerSpatial == requestSpatial && currentLayer.Spatial == requestSpatial {
 				// current is locked to desired, stay there
-				alloc.TargetLayers = currentLayer
-				// RAJA-TODO change in master alloc.TargetLayers = buffer.VideoLayer{Spatial: f.requestLayerSpatial, Temporal: f.maxLayers.Temporal}
+				alloc.TargetLayers = buffer.VideoLayer{
+					Spatial:  requestSpatial,
+					Temporal: maxLayer.Temporal,
+				}
 				alloc.RequestLayerSpatial = requestSpatial
 			} else {
 				// opportunistically latch on to anything
@@ -660,7 +659,7 @@ func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layers b
 		f.provisional.pubMuted ||
 		f.provisional.maxSeenLayer.Spatial == buffer.InvalidLayerSpatial ||
 		!f.provisional.maxLayers.IsValid() ||
-		(!allowOvershoot && layers.GreaterThan(f.provisional.maxLayers)) {
+		((!allowOvershoot || !f.vls.IsOvershootOkay()) && layers.GreaterThan(f.provisional.maxLayers)) {
 		return 0
 	}
 
@@ -681,13 +680,13 @@ func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layers b
 	}
 
 	//
-	// Given layer does not fit. But overshoot is allowed.
+	// Given layer does not fit.
+	//
 	// Could be one of
 	//  1. a layer below maximum that does not fit
-	//  2. a layer above maximum which may or may not fit.
+	//  2. a layer above maximum which may or may not fit, but overshoot is allowed.
 	// In any of those cases, take the lowest possible layer if pause is not allowed
 	//
-	// RAJA-TODO: think about how to do VLS overshoot check here.
 	if !allowPause && (!f.provisional.allocatedLayers.IsValid() || !layers.GreaterThan(f.provisional.allocatedLayers)) {
 		f.provisional.allocatedLayers = layers
 		return requiredBitrate - alreadyAllocatedBitrate
@@ -810,8 +809,7 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot b
 		)
 
 		// could not find a minimal layer, overshoot if allowed
-		// RAJA-TODO Add VLS check for overshoot capable
-		if bandwidthRequired == 0 && f.provisional.maxLayers.IsValid() && allowOvershoot {
+		if bandwidthRequired == 0 && f.provisional.maxLayers.IsValid() && allowOvershoot && f.vls.IsOvershootOkay() {
 			targetLayer, bandwidthRequired = findNextLayer(
 				f.provisional.maxLayers.Spatial+1, buffer.DefaultMaxLayerSpatial,
 				0, buffer.DefaultMaxLayerTemporal,
@@ -1059,8 +1057,7 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, available
 					continue
 				}
 
-				// RAJA-TODO do VLS overshoot check
-				if !allowOvershoot && bandwidthRequested-alreadyAllocated > availableChannelCapacity {
+				if (!allowOvershoot || !f.vls.IsOvershootOkay()) && bandwidthRequested-alreadyAllocated > availableChannelCapacity {
 					// next higher available layer does not fit, return
 					return true, f.lastAllocation, false
 				}
@@ -1120,8 +1117,7 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, available
 		return allocation, boosted
 	}
 
-	// RAJA-TODO do VLS overshoot check
-	if allowOvershoot && maxLayer.IsValid() {
+	if allowOvershoot && f.vls.IsOvershootOkay() && maxLayer.IsValid() {
 		done, allocation, boosted = doAllocation(
 			maxLayer.Spatial+1, buffer.DefaultMaxLayerSpatial,
 			0, buffer.DefaultMaxLayerTemporal,
@@ -1207,8 +1203,7 @@ func (f *Forwarder) GetNextHigherTransition(brs Bitrates, allowOvershoot bool) (
 		return transition, isAvailable
 	}
 
-	// RAJA-TODO do VLS overshoot check
-	if allowOvershoot && maxLayer.IsValid() {
+	if allowOvershoot && f.vls.IsOvershootOkay() && maxLayer.IsValid() {
 		done, transition, isAvailable = findNextHigher(
 			maxLayer.Spatial+1, buffer.DefaultMaxLayerSpatial,
 			0, buffer.DefaultMaxLayerTemporal,
@@ -1464,7 +1459,6 @@ func (f *Forwarder) getTranslationParamsAudio(extPkt *buffer.ExtPacket, layer in
 func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer int32) (*TranslationParams, error) {
 	tp := &TranslationParams{}
 
-	// RAJA-TODO - move this into VLS
 	if !f.vls.GetTarget().IsValid() {
 		// stream is paused by streamallocator
 		tp.shouldDrop = true

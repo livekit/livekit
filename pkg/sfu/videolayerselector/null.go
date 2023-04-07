@@ -15,6 +15,10 @@ func NewNull(logger logger.Logger) *Null {
 	}
 }
 
+func (n *Null) IsOvershootOkay() bool {
+	return false
+}
+
 func (n *Null) Select(_extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerSelectorResult) {
 	return
 }
