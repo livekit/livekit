@@ -337,12 +337,13 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	}
 
 	d.codec = codec.RTPCodecCapability
-	d.forwarder.DetermineCodec(d.codec, d.dependencyDescriptorID != 0)
 	if d.onBinding != nil {
 		d.onBinding()
 	}
 	d.bound.Store(true)
 	d.bindLock.Unlock()
+
+	d.forwarder.DetermineCodec(d.codec, d.receiver.HeaderExtensions())
 
 	d.logger.Debugw("downtrack bound")
 	d.onBindAndConnected()

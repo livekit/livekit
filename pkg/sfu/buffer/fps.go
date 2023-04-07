@@ -4,6 +4,7 @@ import (
 	"container/list"
 
 	"github.com/livekit/protocol/logger"
+	"github.com/pion/rtp/codecs"
 )
 
 var minFramesForCalculation = [DefaultMaxLayerTemporal + 1]int{8, 15, 40}
@@ -215,7 +216,7 @@ type FrameRateCalculatorVP9 struct {
 	completed bool
 
 	// VP9-TODO - this is assuming three spatial layers. As `completed` marker relies on all layers being finished, have to assume this. FIX.
-	// VP9-TODO - get number of spatial layers from ScalabilityStructure in VP9 Payload Descriptor
+	//            Maybe look at number of layers in livekit.TrackInfo and declare completed once advertised layers are measured
 	frameRateCalculatorsVPx [DefaultMaxLayerSpatial + 1]*frameRateCalculatorVPx
 }
 
@@ -240,7 +241,7 @@ func (f *FrameRateCalculatorVP9) RecvPacket(ep *ExtPacket) bool {
 		return true
 	}
 
-	vp9, ok := ep.Payload.(VP9)
+	vp9, ok := ep.Payload.(codecs.VP9Packet)
 	if !ok {
 		f.logger.Debugw("no vp9 payload", "sn", ep.Packet.SequenceNumber)
 		return false

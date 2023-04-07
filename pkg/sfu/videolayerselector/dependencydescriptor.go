@@ -46,6 +46,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	result.IsRelevant = true
 	if extPkt.DependencyDescriptor == nil {
 		// packet don't have dependency descriptor, pass check
+		// DD-TODO: should probably drop here, i. e. if this selector is used and there is no DD, that is not correct
 		result.RTPMarker = extPkt.Packet.Marker
 		result.IsSelected = true
 		return
@@ -152,11 +153,6 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 				d.currentLayer.Spatial = d.targetLayer.Spatial
 				if d.currentLayer.Spatial == d.maxLayer.Spatial {
 					result.IsSwitchingToMaxSpatial = true
-
-					d.currentLayer = buffer.VideoLayer{
-						Spatial:  int32(extPkt.DependencyDescriptor.FrameDependencies.SpatialId),
-						Temporal: int32(extPkt.DependencyDescriptor.FrameDependencies.TemporalId),
-					}
 
 					d.logger.Infow(
 						"reached max layer",

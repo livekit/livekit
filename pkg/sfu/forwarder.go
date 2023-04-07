@@ -13,6 +13,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/codecmunger"
+	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/videolayerselector"
 )
 
@@ -243,7 +244,7 @@ func (f *Forwarder) getOnParkedLayersExpired() func() {
 	return f.onParkedLayersExpired
 }
 
-func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, isDependencyDescriptorAvailable bool) {
+func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions []webrtc.RTPHeaderExtensionParameter) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -268,7 +269,16 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, isDependency
 			f.vls = videolayerselector.NewSimulcast(f.logger)
 		}
 	case "video/vp9":
-		if isDependencyDescriptorAvailable {
+		isDDAvailable := false
+	searchDone:
+		for _, ext := range extensions {
+			switch ext.URI {
+			case dd.ExtensionUrl:
+				isDDAvailable = true
+				break searchDone
+			}
+		}
+		if isDDAvailable {
 			if f.vls != nil {
 				f.vls = videolayerselector.NewDependencyDescriptorFromNull(f.vls)
 			} else {

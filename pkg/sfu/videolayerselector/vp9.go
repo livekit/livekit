@@ -3,6 +3,7 @@ package videolayerselector
 import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/protocol/logger"
+	"github.com/pion/rtp/codecs"
 )
 
 type VP9 struct {
@@ -26,64 +27,64 @@ func (v *VP9) IsOvershootOkay() bool {
 }
 
 func (v *VP9) Select(extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerSelectorResult) {
-	vp9, ok := extPkt.Payload.(buffer.VP9)
+	vp9, ok := extPkt.Payload.(codecs.VP9Packet)
 	if !ok {
 		return
 	}
 
-	isActive := v.currentLayer.IsValid()
-	isResuming := false
 	currentLayer := v.currentLayer
-	updatedLayer := v.currentLayer
 	if v.currentLayer != v.targetLayer {
+		updatedLayer := v.currentLayer
+
 		// temporal scale up/down
 		if v.currentLayer.Temporal < v.targetLayer.Temporal {
-			if extPkt.VideoLayer.Temporal > v.currentLayer.Temporal && extPkt.VideoLayer.Temporal <= v.targetLayer.Temporal && vp9.IsTemporalLayerSwitchUpPoint && vp9.IsBeginningOfFrame {
-				if !isActive {
-					isResuming = true
-				}
+			if extPkt.VideoLayer.Temporal > v.currentLayer.Temporal && extPkt.VideoLayer.Temporal <= v.targetLayer.Temporal && vp9.U && vp9.B {
 				currentLayer.Temporal = extPkt.VideoLayer.Temporal
 				updatedLayer.Temporal = extPkt.VideoLayer.Temporal
-				v.logger.Infow("RAJA temporal layer switch up", "currentLayer", v.currentLayer, "cl", currentLayer, "targetLayer", v.targetLayer, "pid", vp9.PictureID) // REMOVE
 			}
 		} else {
-			if extPkt.VideoLayer.Temporal < v.currentLayer.Temporal && extPkt.VideoLayer.Temporal >= v.targetLayer.Temporal && vp9.IsEndOfFrame {
-				if !isActive {
-					isResuming = true
-				}
+			if extPkt.VideoLayer.Temporal < v.currentLayer.Temporal && extPkt.VideoLayer.Temporal >= v.targetLayer.Temporal && vp9.E {
 				updatedLayer.Temporal = extPkt.VideoLayer.Temporal
-				v.logger.Infow("RAJA temporal layer switch down", "currentLayer", v.currentLayer, "cl", currentLayer, "targetLayer", v.targetLayer, "pid", vp9.PictureID) // REMOVE
 			}
 		}
 
 		// spatial scale up/down
 		if v.currentLayer.Spatial < v.targetLayer.Spatial {
-			if extPkt.VideoLayer.Spatial > v.currentLayer.Spatial && extPkt.VideoLayer.Spatial <= v.targetLayer.Spatial && vp9.IsSpatialLayerSwitchUpPoint && vp9.IsBeginningOfFrame {
-				if !isActive {
-					isResuming = true
-				}
+			if extPkt.VideoLayer.Spatial > v.currentLayer.Spatial && extPkt.VideoLayer.Spatial <= v.targetLayer.Spatial && !vp9.P && vp9.B {
 				currentLayer.Spatial = extPkt.VideoLayer.Spatial
 				updatedLayer.Spatial = extPkt.VideoLayer.Spatial
-				v.logger.Infow("RAJA spatial layer switch up", "currentLayer", v.currentLayer, "cl", currentLayer, "targetLayer", v.targetLayer, "pid", vp9.PictureID) // REMOVE
 			}
 		} else {
-			if extPkt.VideoLayer.Spatial < v.currentLayer.Spatial && extPkt.VideoLayer.Spatial >= v.targetLayer.Spatial && vp9.IsEndOfFrame {
-				if !isActive {
-					isResuming = true
-				}
+			if extPkt.VideoLayer.Spatial < v.currentLayer.Spatial && extPkt.VideoLayer.Spatial >= v.targetLayer.Spatial && vp9.E {
 				updatedLayer.Spatial = extPkt.VideoLayer.Spatial
-				v.logger.Infow("RAJA spatial layer switch down", "currentLayer", v.currentLayer, "cl", currentLayer, "targetLayer", v.targetLayer, "pid", vp9.PictureID) // REMOVE
 			}
 		}
 
-		if updatedLayer.IsValid() {
+		if updatedLayer != v.currentLayer {
+			if !v.currentLayer.IsValid() && updatedLayer.IsValid() {
+				result.IsResuming = true
+			}
+
+			if v.currentLayer.Spatial != v.maxLayer.Spatial && updatedLayer.Spatial == v.maxLayer.Spatial {
+				result.IsSwitchingToMaxSpatial = true
+				v.logger.Infow(
+					"reached max layer",
+					"current", v.currentLayer,
+					"target", v.targetLayer,
+					"max", v.maxLayer,
+					"layer", extPkt.VideoLayer.Spatial,
+					"req", v.requestSpatial,
+					"maxSeen", v.maxSeenLayer,
+					"feed", extPkt.Packet.SSRC,
+				)
+			}
+
 			v.currentLayer = updatedLayer
-			result.IsResuming = isResuming
 		}
 	}
 
 	result.RTPMarker = extPkt.Packet.Marker
-	if extPkt.VideoLayer.Spatial == v.currentLayer.Spatial && vp9.IsEndOfFrame {
+	if extPkt.VideoLayer.Spatial == v.currentLayer.Spatial && vp9.E {
 		result.RTPMarker = true
 	}
 	result.IsSelected = !extPkt.VideoLayer.GreaterThan(currentLayer)
