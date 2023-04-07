@@ -19,7 +19,7 @@ func disable(f *Forwarder) {
 
 func newForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType) *Forwarder {
 	f := NewForwarder(kind, logger.GetLogger(), nil)
-	f.DetermineCodec(codec, false)
+	f.DetermineCodec(codec, nil)
 	return f
 }
 
@@ -1335,21 +1335,22 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
 		PayloadSize:    20,
+		SetMarker:      true,
 	}
 	vp8 := &buffer.VP8{
-		FirstByte:        25,
-		PictureIDPresent: 1,
-		PictureID:        13467,
-		MBit:             true,
-		TL0PICIDXPresent: 1,
-		TL0PICIDX:        233,
-		TIDPresent:       1,
-		TID:              1,
-		Y:                1,
-		KEYIDXPresent:    1,
-		KEYIDX:           23,
-		HeaderSize:       6,
-		IsKeyFrame:       false,
+		FirstByte:  25,
+		I:          true,
+		M:          true,
+		PictureID:  13467,
+		L:          true,
+		TL0PICIDX:  233,
+		T:          true,
+		TID:        0,
+		Y:          true,
+		K:          true,
+		KEYIDX:     23,
+		HeaderSize: 6,
+		IsKeyFrame: false,
 	}
 	extPkt, _ := testutils.GetTestExtPacketVP8(params, vp8)
 
@@ -1373,37 +1374,37 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expectedTP, *actualTP)
 
-	// should lock onto packet (target layer and key frame)
+	// should lock onto packet (key frame)
 	vp8 = &buffer.VP8{
-		FirstByte:        25,
-		PictureIDPresent: 1,
-		PictureID:        13467,
-		MBit:             true,
-		TL0PICIDXPresent: 1,
-		TL0PICIDX:        233,
-		TIDPresent:       1,
-		TID:              1,
-		Y:                1,
-		KEYIDXPresent:    1,
-		KEYIDX:           23,
-		HeaderSize:       6,
-		IsKeyFrame:       true,
+		FirstByte:  25,
+		I:          true,
+		M:          true,
+		PictureID:  13467,
+		L:          true,
+		TL0PICIDX:  233,
+		T:          true,
+		TID:        0,
+		Y:          true,
+		K:          true,
+		KEYIDX:     23,
+		HeaderSize: 6,
+		IsKeyFrame: true,
 	}
 	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
 	expectedVP8 := &buffer.VP8{
-		FirstByte:        25,
-		PictureIDPresent: 1,
-		PictureID:        13467,
-		MBit:             true,
-		TL0PICIDXPresent: 1,
-		TL0PICIDX:        233,
-		TIDPresent:       1,
-		TID:              1,
-		Y:                1,
-		KEYIDXPresent:    1,
-		KEYIDX:           23,
-		HeaderSize:       6,
-		IsKeyFrame:       true,
+		FirstByte:  25,
+		I:          true,
+		M:          true,
+		PictureID:  13467,
+		L:          true,
+		TL0PICIDX:  233,
+		T:          true,
+		TID:        0,
+		Y:          true,
+		K:          true,
+		KEYIDX:     23,
+		HeaderSize: 6,
+		IsKeyFrame: true,
 	}
 	marshalledVP8, err := expectedVP8.Marshal()
 	require.NoError(t, err)
@@ -1416,6 +1417,7 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 			timestamp:      0xabcdef,
 		},
 		codecBytes: marshalledVP8,
+		marker:     true,
 	}
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
 	require.NoError(t, err)
@@ -1426,6 +1428,7 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	// send a duplicate, should be dropped
 	expectedTP = TranslationParams{
 		shouldDrop: true,
+		marker:     true,
 	}
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
 	require.NoError(t, err)
@@ -1469,19 +1472,19 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	}
 	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
 	expectedVP8 = &buffer.VP8{
-		FirstByte:        25,
-		PictureIDPresent: 1,
-		PictureID:        13467,
-		MBit:             true,
-		TL0PICIDXPresent: 1,
-		TL0PICIDX:        233,
-		TIDPresent:       1,
-		TID:              1,
-		Y:                1,
-		KEYIDXPresent:    1,
-		KEYIDX:           23,
-		HeaderSize:       6,
-		IsKeyFrame:       true,
+		FirstByte:  25,
+		I:          true,
+		M:          true,
+		PictureID:  13467,
+		L:          true,
+		TL0PICIDX:  233,
+		T:          true,
+		TID:        0,
+		Y:          true,
+		K:          true,
+		KEYIDX:     23,
+		HeaderSize: 6,
+		IsKeyFrame: true,
 	}
 	marshalledVP8, err = expectedVP8.Marshal()
 	require.NoError(t, err)
@@ -1497,7 +1500,7 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expectedTP, *actualTP)
 
-	// temporal layer higher than target, should be dropped
+	// temporal layer matching target, should be forwarded
 	params = &testutils.TestExtPacketParams{
 		SequenceNumber: 23336,
 		Timestamp:      0xabcdef,
@@ -1505,65 +1508,36 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 		PayloadSize:    20,
 	}
 	vp8 = &buffer.VP8{
-		FirstByte:        25,
-		PictureIDPresent: 1,
-		PictureID:        13468,
-		MBit:             true,
-		TL0PICIDXPresent: 1,
-		TL0PICIDX:        233,
-		TIDPresent:       1,
-		TID:              2,
-		Y:                1,
-		KEYIDXPresent:    1,
-		KEYIDX:           23,
-		HeaderSize:       6,
-		IsKeyFrame:       true,
-	}
-	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
-	expectedTP = TranslationParams{
-		shouldDrop: true,
-	}
-	actualTP, err = f.GetTranslationParams(extPkt, 0)
-	require.NoError(t, err)
-	require.Equal(t, expectedTP, *actualTP)
-
-	// RTP sequence number and VP8 picture id should be contiguous after dropping higher temporal layer picture
-	params = &testutils.TestExtPacketParams{
-		SequenceNumber: 23337,
-		Timestamp:      0xabcdef,
-		SSRC:           0x12345678,
-		PayloadSize:    20,
-	}
-	vp8 = &buffer.VP8{
-		FirstByte:        25,
-		PictureIDPresent: 1,
-		PictureID:        13469,
-		MBit:             true,
-		TL0PICIDXPresent: 1,
-		TL0PICIDX:        234,
-		TIDPresent:       1,
-		TID:              0,
-		Y:                1,
-		KEYIDXPresent:    1,
-		KEYIDX:           23,
-		HeaderSize:       6,
-		IsKeyFrame:       false,
+		FirstByte:  25,
+		S:          true,
+		I:          true,
+		M:          true,
+		PictureID:  13468,
+		L:          true,
+		TL0PICIDX:  233,
+		T:          true,
+		TID:        1,
+		Y:          true,
+		K:          true,
+		KEYIDX:     23,
+		HeaderSize: 6,
+		IsKeyFrame: true,
 	}
 	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
 	expectedVP8 = &buffer.VP8{
-		FirstByte:        25,
-		PictureIDPresent: 1,
-		PictureID:        13468,
-		MBit:             true,
-		TL0PICIDXPresent: 1,
-		TL0PICIDX:        234,
-		TIDPresent:       1,
-		TID:              0,
-		Y:                1,
-		KEYIDXPresent:    1,
-		KEYIDX:           23,
-		HeaderSize:       6,
-		IsKeyFrame:       false,
+		FirstByte:  25,
+		I:          true,
+		M:          true,
+		PictureID:  13468,
+		L:          true,
+		TL0PICIDX:  233,
+		T:          true,
+		TID:        1,
+		Y:          true,
+		K:          true,
+		KEYIDX:     23,
+		HeaderSize: 6,
+		IsKeyFrame: true,
 	}
 	marshalledVP8, err = expectedVP8.Marshal()
 	require.NoError(t, err)
@@ -1579,9 +1553,91 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expectedTP, *actualTP)
 
+	// temporal layer higher than target, should be dropped
+	params = &testutils.TestExtPacketParams{
+		SequenceNumber: 23337,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
+		PayloadSize:    20,
+	}
+	vp8 = &buffer.VP8{
+		FirstByte:  25,
+		I:          true,
+		M:          true,
+		PictureID:  13468,
+		L:          true,
+		TL0PICIDX:  233,
+		T:          true,
+		TID:        2,
+		Y:          true,
+		K:          true,
+		KEYIDX:     23,
+		HeaderSize: 6,
+		IsKeyFrame: true,
+	}
+	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
+	expectedTP = TranslationParams{
+		shouldDrop: true,
+	}
+	actualTP, err = f.GetTranslationParams(extPkt, 0)
+	require.NoError(t, err)
+	require.Equal(t, expectedTP, *actualTP)
+
+	// RTP sequence number and VP8 picture id should be contiguous after dropping higher temporal layer picture
+	params = &testutils.TestExtPacketParams{
+		SequenceNumber: 23338,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
+		PayloadSize:    20,
+	}
+	vp8 = &buffer.VP8{
+		FirstByte:  25,
+		I:          true,
+		M:          true,
+		PictureID:  13469,
+		L:          true,
+		TL0PICIDX:  234,
+		T:          true,
+		TID:        0,
+		Y:          true,
+		K:          true,
+		KEYIDX:     23,
+		HeaderSize: 6,
+		IsKeyFrame: false,
+	}
+	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
+	expectedVP8 = &buffer.VP8{
+		FirstByte:  25,
+		I:          true,
+		M:          true,
+		PictureID:  13469,
+		L:          true,
+		TL0PICIDX:  234,
+		T:          true,
+		TID:        0,
+		Y:          true,
+		K:          true,
+		KEYIDX:     23,
+		HeaderSize: 6,
+		IsKeyFrame: false,
+	}
+	marshalledVP8, err = expectedVP8.Marshal()
+	require.NoError(t, err)
+	expectedTP = TranslationParams{
+		rtp: &TranslationParamsRTP{
+			snOrdering:     SequenceNumberOrderingContiguous,
+			sequenceNumber: 23336,
+			timestamp:      0xabcdef,
+		},
+		codecBytes: marshalledVP8,
+	}
+	actualTP, err = f.GetTranslationParams(extPkt, 0)
+	require.NoError(t, err)
+	require.Equal(t, expectedTP, *actualTP)
+
 	// padding only packet after a gap should be forwarded
 	params = &testutils.TestExtPacketParams{
-		SequenceNumber: 23339,
+		SequenceNumber: 23340,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
 	}
@@ -1590,7 +1646,7 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingGap,
-			sequenceNumber: 23337,
+			sequenceNumber: 23338,
 			timestamp:      0xabcdef,
 		},
 	}
@@ -1600,7 +1656,7 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 
 	// out-of-order should be forwarded using cache, even if it is padding only
 	params = &testutils.TestExtPacketParams{
-		SequenceNumber: 23338,
+		SequenceNumber: 23339,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
 	}
@@ -1609,7 +1665,7 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingOutOfOrder,
-			sequenceNumber: 23336,
+			sequenceNumber: 23337,
 			timestamp:      0xabcdef,
 		},
 	}
@@ -1631,36 +1687,36 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 		PayloadSize:    20,
 	}
 	vp8 = &buffer.VP8{
-		FirstByte:        25,
-		PictureIDPresent: 1,
-		PictureID:        45,
-		MBit:             false,
-		TL0PICIDXPresent: 1,
-		TL0PICIDX:        12,
-		TIDPresent:       1,
-		TID:              0,
-		Y:                1,
-		KEYIDXPresent:    1,
-		KEYIDX:           30,
-		HeaderSize:       5,
-		IsKeyFrame:       true,
+		FirstByte:  25,
+		I:          true,
+		M:          false,
+		PictureID:  45,
+		L:          true,
+		TL0PICIDX:  12,
+		T:          true,
+		TID:        0,
+		Y:          true,
+		K:          true,
+		KEYIDX:     30,
+		HeaderSize: 5,
+		IsKeyFrame: true,
 	}
 	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
 
 	expectedVP8 = &buffer.VP8{
-		FirstByte:        25,
-		PictureIDPresent: 1,
-		PictureID:        13469,
-		MBit:             true,
-		TL0PICIDXPresent: 1,
-		TL0PICIDX:        235,
-		TIDPresent:       1,
-		TID:              0,
-		Y:                1,
-		KEYIDXPresent:    1,
-		KEYIDX:           24,
-		HeaderSize:       6,
-		IsKeyFrame:       true,
+		FirstByte:  25,
+		I:          true,
+		M:          true,
+		PictureID:  13470,
+		L:          true,
+		TL0PICIDX:  235,
+		T:          true,
+		TID:        0,
+		Y:          true,
+		K:          true,
+		KEYIDX:     24,
+		HeaderSize: 6,
+		IsKeyFrame: true,
 	}
 	marshalledVP8, err = expectedVP8.Marshal()
 	require.NoError(t, err)
@@ -1668,7 +1724,7 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 		isSwitchingToMaxLayer: true,
 		rtp: &TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingContiguous,
-			sequenceNumber: 23338,
+			sequenceNumber: 23339,
 			timestamp:      0xabcdf0,
 		},
 		codecBytes: marshalledVP8,
@@ -1689,19 +1745,19 @@ func TestForwardGetSnTsForPadding(t *testing.T) {
 		PayloadSize:    20,
 	}
 	vp8 := &buffer.VP8{
-		FirstByte:        25,
-		PictureIDPresent: 1,
-		PictureID:        13467,
-		MBit:             true,
-		TL0PICIDXPresent: 1,
-		TL0PICIDX:        233,
-		TIDPresent:       1,
-		TID:              13,
-		Y:                1,
-		KEYIDXPresent:    1,
-		KEYIDX:           23,
-		HeaderSize:       6,
-		IsKeyFrame:       true,
+		FirstByte:  25,
+		I:          true,
+		M:          true,
+		PictureID:  13467,
+		L:          true,
+		TL0PICIDX:  233,
+		T:          true,
+		TID:        13,
+		Y:          true,
+		K:          true,
+		KEYIDX:     23,
+		HeaderSize: 6,
+		IsKeyFrame: true,
 	}
 	extPkt, _ := testutils.GetTestExtPacketVP8(params, vp8)
 
@@ -1756,19 +1812,19 @@ func TestForwardGetSnTsForBlankFrames(t *testing.T) {
 		PayloadSize:    20,
 	}
 	vp8 := &buffer.VP8{
-		FirstByte:        25,
-		PictureIDPresent: 1,
-		PictureID:        13467,
-		MBit:             true,
-		TL0PICIDXPresent: 1,
-		TL0PICIDX:        233,
-		TIDPresent:       1,
-		TID:              13,
-		Y:                1,
-		KEYIDXPresent:    1,
-		KEYIDX:           23,
-		HeaderSize:       6,
-		IsKeyFrame:       true,
+		FirstByte:  25,
+		I:          true,
+		M:          true,
+		PictureID:  13467,
+		L:          true,
+		TL0PICIDX:  233,
+		T:          true,
+		TID:        13,
+		Y:          true,
+		K:          true,
+		KEYIDX:     23,
+		HeaderSize: 6,
+		IsKeyFrame: true,
 	}
 	extPkt, _ := testutils.GetTestExtPacketVP8(params, vp8)
 
@@ -1826,19 +1882,19 @@ func TestForwardGetPaddingVP8(t *testing.T) {
 		PayloadSize:    20,
 	}
 	vp8 := &buffer.VP8{
-		FirstByte:        25,
-		PictureIDPresent: 1,
-		PictureID:        13467,
-		MBit:             true,
-		TL0PICIDXPresent: 1,
-		TL0PICIDX:        233,
-		TIDPresent:       1,
-		TID:              13,
-		Y:                1,
-		KEYIDXPresent:    1,
-		KEYIDX:           23,
-		HeaderSize:       6,
-		IsKeyFrame:       true,
+		FirstByte:  25,
+		I:          true,
+		M:          true,
+		PictureID:  13467,
+		L:          true,
+		TL0PICIDX:  233,
+		T:          true,
+		TID:        13,
+		Y:          true,
+		K:          true,
+		KEYIDX:     23,
+		HeaderSize: 6,
+		IsKeyFrame: true,
 	}
 	extPkt, _ := testutils.GetTestExtPacketVP8(params, vp8)
 
@@ -1853,19 +1909,19 @@ func TestForwardGetPaddingVP8(t *testing.T) {
 
 	// getting padding with frame end needed, should repeat the last picture id
 	expectedVP8 := buffer.VP8{
-		FirstByte:        16,
-		PictureIDPresent: 1,
-		PictureID:        13467,
-		MBit:             true,
-		TL0PICIDXPresent: 1,
-		TL0PICIDX:        233,
-		TIDPresent:       1,
-		TID:              0,
-		Y:                1,
-		KEYIDXPresent:    1,
-		KEYIDX:           23,
-		HeaderSize:       6,
-		IsKeyFrame:       true,
+		FirstByte:  16,
+		I:          true,
+		M:          true,
+		PictureID:  13467,
+		L:          true,
+		TL0PICIDX:  233,
+		T:          true,
+		TID:        0,
+		Y:          true,
+		K:          true,
+		KEYIDX:     23,
+		HeaderSize: 6,
+		IsKeyFrame: true,
 	}
 	blankVP8, err := f.GetPadding(true)
 	require.NoError(t, err)
@@ -1875,19 +1931,19 @@ func TestForwardGetPaddingVP8(t *testing.T) {
 
 	// getting padding with no frame end needed, should get next picture id
 	expectedVP8 = buffer.VP8{
-		FirstByte:        16,
-		PictureIDPresent: 1,
-		PictureID:        13468,
-		MBit:             true,
-		TL0PICIDXPresent: 1,
-		TL0PICIDX:        234,
-		TIDPresent:       1,
-		TID:              0,
-		Y:                1,
-		KEYIDXPresent:    1,
-		KEYIDX:           24,
-		HeaderSize:       6,
-		IsKeyFrame:       true,
+		FirstByte:  16,
+		I:          true,
+		M:          true,
+		PictureID:  13468,
+		L:          true,
+		TL0PICIDX:  234,
+		T:          true,
+		TID:        0,
+		Y:          true,
+		K:          true,
+		KEYIDX:     24,
+		HeaderSize: 6,
+		IsKeyFrame: true,
 	}
 	blankVP8, err = f.GetPadding(false)
 	require.NoError(t, err)

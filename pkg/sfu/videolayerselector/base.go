@@ -2,11 +2,14 @@ package videolayerselector
 
 import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/videolayerselector/temporallayerselector"
 	"github.com/livekit/protocol/logger"
 )
 
 type Base struct {
 	logger logger.Logger
+
+	tls temporallayerselector.TemporalLayerSelector
 
 	maxLayer       buffer.VideoLayer
 	targetLayer    buffer.VideoLayer
@@ -28,6 +31,14 @@ func NewBase(logger logger.Logger) *Base {
 		parkedLayer:    buffer.InvalidLayers,
 		currentLayer:   buffer.InvalidLayers,
 	}
+}
+
+func (b *Base) IsOvershootOkay() bool {
+	return false
+}
+
+func (b *Base) SetTemporalLayerSelector(tls temporallayerselector.TemporalLayerSelector) {
+	b.tls = tls
 }
 
 func (b *Base) SetMax(maxLayer buffer.VideoLayer) {
@@ -92,4 +103,18 @@ func (b *Base) SetCurrent(currentLayer buffer.VideoLayer) {
 
 func (b *Base) GetCurrent() buffer.VideoLayer {
 	return b.currentLayer
+}
+
+func (b *Base) Select(_extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerSelectorResult) {
+	return
+}
+
+func (b *Base) SelectTemporal(extPkt *buffer.ExtPacket) int32 {
+	if b.tls != nil {
+		this, next := b.tls.Select(extPkt, b.currentLayer.Temporal, b.targetLayer.Temporal)
+		b.currentLayer.Temporal = next
+		return this
+	}
+
+	return b.currentLayer.Temporal
 }

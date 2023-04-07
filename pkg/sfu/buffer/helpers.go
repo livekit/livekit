@@ -33,6 +33,7 @@ var (
 */
 type VP8 struct {
 	FirstByte byte
+	S         bool
 
 	I         bool
 	M         bool
@@ -45,7 +46,7 @@ type VP8 struct {
 	// the TID/Y/KEYIDX extension field MUST be present.
 	T   bool
 	TID uint8 /* 2 bits temporal layer idx */
-	Y   uint8
+	Y   bool
 
 	K      bool
 	KEYIDX uint8 /* 5 bits of key frame idx */
@@ -69,7 +70,7 @@ func (v *VP8) Unmarshal(payload []byte) error {
 
 	idx := 0
 	v.FirstByte = payload[idx]
-	S := payload[idx]&0x10 > 0
+	v.S = payload[idx]&0x10 > 0
 	// Check for extended bit control
 	if payload[idx]&0x80 > 0 {
 		idx++
@@ -83,14 +84,14 @@ func (v *VP8) Unmarshal(payload []byte) error {
 		if v.L && !v.T {
 			return errInvalidPacket
 		}
-		// Check for PictureID
+
 		if v.I {
 			idx++
 			if payloadLen < idx+1 {
 				return errShortPacket
 			}
 			pid := payload[idx] & 0x7f
-			// Check if m is 1, then Picture ID is 15 bits
+			// if m is 1, then Picture ID is 15 bits
 			v.M = payload[idx]&0x80 > 0
 			if v.M {
 				idx++
@@ -102,7 +103,7 @@ func (v *VP8) Unmarshal(payload []byte) error {
 				v.PictureID = uint16(pid)
 			}
 		}
-		// Check if TL0PICIDX is present
+
 		if v.L {
 			idx++
 			if payloadLen < idx+1 {
@@ -110,15 +111,18 @@ func (v *VP8) Unmarshal(payload []byte) error {
 			}
 			v.TL0PICIDX = payload[idx]
 		}
+
 		if v.T || v.K {
 			idx++
 			if payloadLen < idx+1 {
 				return errShortPacket
 			}
+
 			if v.T {
 				v.TID = (payload[idx] & 0xc0) >> 6
-				v.Y = (payload[idx] & 0x20) >> 5
+				v.Y = (payload[idx] & 0x20) > 0
 			}
+
 			if v.K {
 				v.KEYIDX = payload[idx] & 0x1f
 			}
@@ -127,15 +131,16 @@ func (v *VP8) Unmarshal(payload []byte) error {
 		if payloadLen < idx+1 {
 			return errShortPacket
 		}
+
 		// Check is packet is a keyframe by looking at P bit in vp8 payload
-		v.IsKeyFrame = payload[idx]&0x01 == 0 && S
+		v.IsKeyFrame = payload[idx]&0x01 == 0 && v.S
 	} else {
 		idx++
 		if payloadLen < idx+1 {
 			return errShortPacket
 		}
 		// Check is packet is a keyframe by looking at P bit in vp8 payload
-		v.IsKeyFrame = payload[idx]&0x01 == 0 && S
+		v.IsKeyFrame = payload[idx]&0x01 == 0 && v.S
 	}
 	v.HeaderSize = idx
 	return nil
@@ -173,17 +178,23 @@ func (v *VP8) MarshalTo(buf []byte) error {
 				idx++
 			}
 		}
+
 		if v.L {
 			xval |= (1 << 6)
 			buf[idx] = v.TL0PICIDX
 			idx++
 		}
+
 		if v.T || v.K {
 			buf[idx] = 0
 			if v.T {
 				xval |= (1 << 5)
-				buf[idx] = v.TID<<6 | v.Y<<5
+				buf[idx] = v.TID << 6
+				if v.Y {
+					buf[idx] |= (1 << 5)
+				}
 			}
+
 			if v.K {
 				xval |= (1 << 4)
 				buf[idx] |= v.KEYIDX & 0x1f

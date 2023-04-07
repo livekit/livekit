@@ -15,6 +15,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/codecmunger"
 	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/videolayerselector"
+	"github.com/livekit/livekit-server/pkg/sfu/videolayerselector/temporallayerselector"
 )
 
 // Forwarder
@@ -258,6 +259,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		} else {
 			f.vls = videolayerselector.NewSimulcast(f.logger)
 		}
+		f.vls.SetTemporalLayerSelector(temporallayerselector.NewVP8(f.logger))
 	case "video/h264":
 		if f.vls != nil {
 			f.vls = videolayerselector.NewSimulcastFromNull(f.vls)
@@ -1517,28 +1519,12 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		return tp, err
 	}
 
-	// RAJA-TODO: do this in VLS somehow
-	// catch up temporal layer if necessary
-	if f.vls.GetCurrent().Temporal != f.vls.GetTarget().Temporal {
-		incomingVP8, ok := extPkt.Payload.(buffer.VP8)
-		if ok {
-			// RAJA-TODO: maybe do this on a frame boundary only
-			if incomingVP8.T || incomingVP8.TID <= uint8(f.vls.GetTarget().Temporal) {
-				// RAJA-TODO: check if this set back can be moved into vls
-				f.vls.SetCurrent(buffer.VideoLayer{
-					Spatial:  f.vls.GetCurrent().Spatial,
-					Temporal: f.vls.GetTarget().Temporal,
-				})
-			}
-		}
-	}
-
 	// codec specific forwarding check and any needed packet munging
 	codecBytes, err := f.codecMunger.UpdateAndGet(
 		extPkt,
 		tp.rtp.snOrdering == SequenceNumberOrderingOutOfOrder,
 		tp.rtp.snOrdering == SequenceNumberOrderingGap,
-		f.vls.GetCurrent().Temporal,
+		f.vls.SelectTemporal(extPkt),
 	)
 	if err != nil {
 		tp.rtp = nil

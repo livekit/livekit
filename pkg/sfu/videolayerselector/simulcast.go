@@ -80,6 +80,7 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket, layer int32) (result VideoL
 
 				if found {
 					s.currentLayer.Spatial = layer
+					s.currentLayer.Temporal = extPkt.VideoLayer.Temporal
 				}
 			}
 		}

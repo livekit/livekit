@@ -1,6 +1,9 @@
 package videolayerselector
 
-import "github.com/livekit/livekit-server/pkg/sfu/buffer"
+import (
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/videolayerselector/temporallayerselector"
+)
 
 type VideoLayerSelectorResult struct {
 	IsSelected                    bool
@@ -13,6 +16,8 @@ type VideoLayerSelectorResult struct {
 
 type VideoLayerSelector interface {
 	IsOvershootOkay() bool
+
+	SetTemporalLayerSelector(tls temporallayerselector.TemporalLayerSelector)
 
 	SetMax(maxLayer buffer.VideoLayer)
 	SetMaxSpatial(layer int32)
@@ -37,4 +42,5 @@ type VideoLayerSelector interface {
 	GetCurrent() buffer.VideoLayer
 
 	Select(extPkt *buffer.ExtPacket, layer int32) VideoLayerSelectorResult
+	SelectTemporal(extPkt *buffer.ExtPacket) int32
 }

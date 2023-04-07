@@ -333,7 +333,7 @@ func (v *VP8) UpdateAndGetPadding(newPicture bool) ([]byte, error) {
 		TL0PICIDX:  tl0PicIdx,
 		T:          v.tidUsed,
 		TID:        0,
-		Y:          1,
+		Y:          true,
 		K:          v.keyIdxUsed,
 		KEYIDX:     keyIdx,
 		IsKeyFrame: true,
