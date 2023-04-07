@@ -245,12 +245,6 @@ func (d *DependencyDescriptor) updateDependencyStructure(structure *dd.FrameDepe
 
 	// sort decode target layer by spatial and temporal from high to low
 	sort.Slice(d.decodeTargets, func(i, j int) bool {
-		/* RAJA-REMOVE
-		if d.decodeTargets[i].Layer.Spatial == d.decodeTargets[j].Layer.Spatial {
-			return d.decodeTargets[i].Layer.Temporal > d.decodeTargets[j].Layer.Temporal
-		}
-		return d.decodeTargets[i].Layer.Spatial > d.decodeTargets[j].Layer.Spatial
-		*/
 		return d.decodeTargets[i].Layer.GreaterThan(d.decodeTargets[j].Layer)
 	})
 	d.logger.Debugw(fmt.Sprintf("update decode targets: %v", d.decodeTargets))

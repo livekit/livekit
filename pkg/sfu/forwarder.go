@@ -172,9 +172,6 @@ type Forwarder struct {
 
 	rtpMunger *RTPMunger
 
-	// RAJA-REMOVE: is this really needed?
-	isTemporalSupported bool
-
 	vls videolayerselector.VideoLayerSelector
 
 	codecMunger codecmunger.CodecMunger
@@ -255,7 +252,6 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 
 	switch strings.ToLower(codec.MimeType) {
 	case "video/vp8":
-		f.isTemporalSupported = true
 		f.codecMunger = codecmunger.NewVP8(f.logger)
 		if f.vls != nil {
 			f.vls = videolayerselector.NewSimulcastFromNull(f.vls)
@@ -1273,6 +1269,11 @@ func (f *Forwarder) Pause(availableLayers []int32, brs Bitrates) VideoAllocation
 }
 
 func (f *Forwarder) updateAllocation(alloc VideoAllocation, reason string) VideoAllocation {
+	// restrict target temporal to 0 if codec does not support temporal layers
+	if alloc.TargetLayers.IsValid() && strings.ToLower(f.codec.MimeType) == "video/h264" {
+		alloc.TargetLayers.Temporal = 0
+	}
+
 	if alloc.IsDeficient != f.lastAllocation.IsDeficient ||
 		alloc.PauseReason != f.lastAllocation.PauseReason ||
 		alloc.TargetLayers != f.lastAllocation.TargetLayers ||

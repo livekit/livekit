@@ -80,11 +80,6 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket, layer int32) (result VideoL
 
 				if found {
 					s.currentLayer.Spatial = layer
-					/* RAJA-TODO
-					if !f.isTemporalSupported {
-						f.currentLayers.Temporal = f.targetLayers.Temporal
-					}
-					*/
 				}
 			}
 		}
