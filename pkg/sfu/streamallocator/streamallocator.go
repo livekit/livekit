@@ -98,7 +98,7 @@ const (
 	streamAllocatorSignalPeriodicPing
 	streamAllocatorSignalSendProbe
 	streamAllocatorSignalProbeClusterDone
-	streamAllocatorSignalTargetLayerFound
+	streamAllocatorSignalResume
 )
 
 func (s streamAllocatorSignal) String() string {
@@ -117,8 +117,8 @@ func (s streamAllocatorSignal) String() string {
 		return "SEND_PROBE"
 	case streamAllocatorSignalProbeClusterDone:
 		return "PROBE_CLUSTER_DONE"
-	case streamAllocatorSignalTargetLayerFound:
-		return "TARGET_LAYER_FOUND"
+	case streamAllocatorSignalResume:
+		return "RESUME"
 	default:
 		return fmt.Sprintf("%d", int(s))
 	}
@@ -415,10 +415,10 @@ func (s *StreamAllocator) OnSubscribedLayersChanged(downTrack *sfu.DownTrack, la
 	}
 }
 
-// called when forwarder finds a target layer
-func (s *StreamAllocator) OnTargetLayerReached(downTrack *sfu.DownTrack) {
+// called when forwarder resumes a track
+func (s *StreamAllocator) OnResume(downTrack *sfu.DownTrack) {
 	s.postEvent(Event{
-		Signal:  streamAllocatorSignalTargetLayerFound,
+		Signal:  streamAllocatorSignalResume,
 		TrackID: livekit.TrackID(downTrack.ID()),
 	})
 }
@@ -529,8 +529,8 @@ func (s *StreamAllocator) handleEvent(event *Event) {
 		s.handleSignalSendProbe(event)
 	case streamAllocatorSignalProbeClusterDone:
 		s.handleSignalProbeClusterDone(event)
-	case streamAllocatorSignalTargetLayerFound:
-		s.handleSignalTargetLayerFound(event)
+	case streamAllocatorSignalResume:
+		s.handleSignalResume(event)
 	}
 }
 
@@ -630,7 +630,7 @@ func (s *StreamAllocator) handleSignalProbeClusterDone(event *Event) {
 	s.probeEndTime = s.lastProbeStartTime.Add(queueWait)
 }
 
-func (s *StreamAllocator) handleSignalTargetLayerFound(event *Event) {
+func (s *StreamAllocator) handleSignalResume(event *Event) {
 	s.videoTracksMu.Lock()
 	track := s.videoTracks[event.TrackID]
 	s.videoTracksMu.Unlock()

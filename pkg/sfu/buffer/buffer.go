@@ -10,6 +10,7 @@ import (
 	"github.com/gammazero/deque"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
+	"github.com/pion/rtp/codecs"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
@@ -193,8 +194,17 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	case strings.HasPrefix(b.mime, "video/"):
 		b.codecType = webrtc.RTPCodecTypeVideo
 		b.bucket = bucket.NewBucket(b.videoPool.Get().(*[]byte))
-		if b.frameRateCalculator[0] == nil && strings.EqualFold(codec.MimeType, webrtc.MimeTypeVP8) {
-			b.frameRateCalculator[0] = NewFrameRateCalculatorVP8(b.clockRate, b.logger)
+		if b.frameRateCalculator[0] == nil {
+			if strings.EqualFold(codec.MimeType, webrtc.MimeTypeVP8) {
+				b.frameRateCalculator[0] = NewFrameRateCalculatorVP8(b.clockRate, b.logger)
+			}
+
+			if strings.EqualFold(codec.MimeType, webrtc.MimeTypeVP9) {
+				frc := NewFrameRateCalculatorVP9(b.clockRate, b.logger)
+				for i := range b.frameRateCalculator {
+					b.frameRateCalculator[i] = frc.GetFrameRateCalculatorForSpatial(int32(i))
+				}
+			}
 		}
 
 	default:
@@ -560,12 +570,25 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64) *ExtPack
 			ep.Spatial = InvalidLayerSpatial // vp8 don't have spatial scalability, reset to -1
 		}
 		ep.Payload = vp8Packet
-	case "video/h264":
-		ep.KeyFrame = IsH264Keyframe(rtpPacket.Payload)
-	case "video/av1":
-		ep.KeyFrame = IsAV1Keyframe(rtpPacket.Payload)
 	case "video/vp9":
-		ep.KeyFrame = IsVP9Keyframe(rtpPacket.Payload)
+		if ep.DependencyDescriptor == nil {
+			var vp9Packet codecs.VP9Packet
+			_, err := vp9Packet.Unmarshal(rtpPacket.Payload)
+			if err != nil {
+				b.logger.Warnw("could not unmarshal VP9 packet", err)
+				return nil
+			}
+			ep.VideoLayer = VideoLayer{
+				Spatial:  int32(vp9Packet.SID),
+				Temporal: int32(vp9Packet.TID),
+			}
+			ep.Payload = vp9Packet
+		}
+		ep.KeyFrame = IsVP9KeyFrame(rtpPacket.Payload)
+	case "video/h264":
+		ep.KeyFrame = IsH264KeyFrame(rtpPacket.Payload)
+	case "video/av1":
+		ep.KeyFrame = IsAV1KeyFrame(rtpPacket.Payload)
 	}
 
 	if ep.KeyFrame {
