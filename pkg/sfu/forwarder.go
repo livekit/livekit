@@ -1490,6 +1490,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 	tp.isSwitchingToMaxLayer = result.IsSwitchingToMaxSpatial
 	tp.isResuming = result.IsResuming
 	tp.marker = result.RTPMarker
+	tp.ddBytes = result.DependencyDescriptorExtension
 
 	if FlagPauseOnDowngrade && f.isDeficientLocked() && f.vls.GetTarget().Spatial < f.vls.GetCurrent().Spatial {
 		//

@@ -484,7 +484,7 @@ func (w *WebRTCReceiver) sendRTCP(packets []rtcp.Packet) {
 }
 
 func (w *WebRTCReceiver) SendPLI(layer int32, force bool) {
-	// TODO :  should send LRR (Layer Refresh Request) instead of PLI
+	// SVC-TODO :  should send LRR (Layer Refresh Request) instead of PLI
 	buff := w.getBuffer(layer)
 	if buff == nil {
 		return

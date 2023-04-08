@@ -492,7 +492,7 @@ func (d *DownTrack) maybeStartKeyFrameRequester() {
 	//
 	d.stopKeyFrameRequester()
 
-	// TODO : for svc, don't need pli/lrr when layer comes down
+	// SVC-TODO : don't need pli/lrr when layer comes down
 	locked, layer := d.forwarder.CheckSync()
 	if !locked {
 		go d.keyFrameRequester(d.keyFrameRequestGeneration.Load(), layer)
