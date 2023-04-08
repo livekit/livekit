@@ -73,6 +73,16 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 		if msg.PingReq.Rtt > 0 {
 			participant.UpdateSignalingRTT(uint32(msg.PingReq.Rtt))
 		}
+
+	case *livekit.SignalRequest_UpdateMetadata:
+		if participant.ClaimGrants().Video.GetCanUpdateOwnMetadata() {
+			if msg.UpdateMetadata.Metadata != "" {
+				participant.SetMetadata(msg.UpdateMetadata.Metadata)
+			}
+			if msg.UpdateMetadata.Name != "" {
+				participant.SetName(msg.UpdateMetadata.Name)
+			}
+		}
 	}
 	return nil
 }

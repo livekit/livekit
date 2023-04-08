@@ -21,7 +21,7 @@ func newMockParticipant(identity livekit.ParticipantIdentity, protocol types.Pro
 	p.StateReturns(livekit.ParticipantInfo_JOINED)
 	p.ProtocolVersionReturns(protocol)
 	p.CanSubscribeReturns(true)
-	p.CanPublishReturns(!hidden)
+	p.CanPublishSourceReturns(!hidden)
 	p.CanPublishDataReturns(!hidden)
 	p.HiddenReturns(hidden)
 	p.ToProtoReturns(&livekit.ParticipantInfo{

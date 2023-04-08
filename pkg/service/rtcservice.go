@@ -110,7 +110,7 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 
 	// this is new connection for existing participant -  with publish only permissions
 	if publishParam != "" {
-		// Make sure grant has CanPublish set,
+		// Make sure grant has GetCanPublish set,
 		if !claims.Video.GetCanPublish() {
 			return "", routing.ParticipantInit{}, http.StatusUnauthorized, rtc.ErrPermissionDenied
 		}

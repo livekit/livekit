@@ -339,22 +339,13 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 	}
 	p.lock.Lock()
 	video := p.grants.Video
-	hasChanged := video.GetCanSubscribe() != permission.CanSubscribe ||
-		video.GetCanPublish() != permission.CanPublish ||
-		video.GetCanPublishData() != permission.CanPublishData ||
-		video.Hidden != permission.Hidden ||
-		video.Recorder != permission.Recorder
 
-	if !hasChanged {
+	if video.MatchesPermission(permission) {
 		p.lock.Unlock()
 		return false
 	}
 
-	video.SetCanSubscribe(permission.CanSubscribe)
-	video.SetCanPublish(permission.CanPublish)
-	video.SetCanPublishData(permission.CanPublishData)
-	video.Hidden = permission.Hidden
-	video.Recorder = permission.Recorder
+	video.UpdateFromPermission(permission)
 
 	canPublish := video.GetCanPublish()
 	canSubscribe := video.GetCanSubscribe()
@@ -362,9 +353,9 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 	onClaimsChanged := p.onClaimsChanged
 	p.lock.Unlock()
 
-	// publish permission has been revoked then remove all published tracks
-	if !canPublish {
-		for _, track := range p.GetPublishedTracks() {
+	// publish permission has been revoked then remove offending tracks
+	for _, track := range p.GetPublishedTracks() {
+		if !video.GetCanPublishSource(track.Source()) {
 			p.RemovePublishedTrack(track, false, false)
 			if p.ProtocolVersion().SupportsUnpublish() {
 				p.sendTrackUnpublished(track.ID())
@@ -374,6 +365,7 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 			}
 		}
 	}
+
 	if canSubscribe {
 		// reconcile everything
 		p.SubscriptionManager.queueReconcile("")
@@ -519,10 +511,6 @@ func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) er
 		return err
 	}
 
-	// received an offer from the client, if publishing is allowed, mark this
-	// participant as a publisher
-	p.setIsPublisher(p.CanPublish())
-
 	if p.MigrateState() == types.MigrateStateSync {
 		go p.handleMigrateMutedTrack()
 	}
@@ -582,7 +570,7 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	if !p.grants.Video.GetCanPublish() {
+	if !p.grants.Video.GetCanPublishSource(req.Source) {
 		p.params.Logger.Warnw("no permission to publish track", nil)
 		return
 	}
@@ -872,11 +860,10 @@ func (p *ParticipantImpl) IsPublisher() bool {
 	return p.isPublisher.Load()
 }
 
-func (p *ParticipantImpl) CanPublish() bool {
+func (p *ParticipantImpl) CanPublishSource(source livekit.TrackSource) bool {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
-
-	return p.grants.Video.GetCanPublish()
+	return p.grants.Video.GetCanPublishSource(source)
 }
 
 func (p *ParticipantImpl) CanSubscribe() bool {
@@ -1136,22 +1123,8 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 		return
 	}
 
-	if !p.CanPublish() {
-		p.params.Logger.Warnw("no permission to publish mediaTrack", nil)
-		return
-	}
-
 	publishedTrack, isNewTrack := p.mediaTrackReceived(track, rtpReceiver)
-
-	if publishedTrack != nil {
-		p.params.Logger.Infow("mediaTrack published",
-			"kind", track.Kind().String(),
-			"trackID", publishedTrack.ID(),
-			"rid", track.RID(),
-			"SSRC", track.SSRC(),
-			"mime", track.Codec().MimeType,
-		)
-	} else {
+	if publishedTrack == nil {
 		p.params.Logger.Warnw("webrtc Track published but can't find MediaTrack", nil,
 			"kind", track.Kind().String(),
 			"webrtcTrackID", track.ID(),
@@ -1159,9 +1132,29 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 			"SSRC", track.SSRC(),
 			"mime", track.Codec().MimeType,
 		)
+		return
 	}
 
-	if !isNewTrack && publishedTrack != nil && !publishedTrack.HasPendingCodec() && p.IsReady() {
+	if !p.CanPublishSource(publishedTrack.Source()) {
+		p.params.Logger.Warnw("no permission to publish mediaTrack", nil,
+			"source", publishedTrack.Source(),
+		)
+		return
+	}
+
+	if !p.IsPublisher() {
+		p.setIsPublisher(true)
+	}
+
+	p.params.Logger.Infow("mediaTrack published",
+		"kind", track.Kind().String(),
+		"trackID", publishedTrack.ID(),
+		"rid", track.RID(),
+		"SSRC", track.SSRC(),
+		"mime", track.Codec().MimeType,
+	)
+
+	if !isNewTrack && !publishedTrack.HasPendingCodec() && p.IsReady() {
 		p.lock.RLock()
 		onTrackUpdated := p.onTrackUpdated
 		p.lock.RUnlock()
