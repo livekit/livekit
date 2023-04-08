@@ -396,12 +396,12 @@ func (s *StreamAllocator) OnSubscriptionChanged(downTrack *sfu.DownTrack) {
 	s.maybePostEventAllocateTrack(downTrack)
 }
 
-// called when subscribed layers changes (limiting max layers)
-func (s *StreamAllocator) OnSubscribedLayersChanged(downTrack *sfu.DownTrack, layers buffer.VideoLayer) {
+// called when subscribed layer changes (limiting max layer)
+func (s *StreamAllocator) OnSubscribedLayerChanged(downTrack *sfu.DownTrack, layer buffer.VideoLayer) {
 	shouldPost := false
 	s.videoTracksMu.Lock()
 	if track := s.videoTracks[livekit.TrackID(downTrack.ID())]; track != nil {
-		if track.SetMaxLayers(layers) && track.SetDirty(true) {
+		if track.SetMaxLayer(layer) && track.SetDirty(true) {
 			shouldPost = true
 		}
 	}
@@ -941,12 +941,12 @@ func (s *StreamAllocator) allocateAllTracks() {
 	//   1. Stream as many tracks as possible, i.e. no pauses.
 	//   2. Try to give fair allocation to all track.
 	//
-	// Start with the lowest layers and give each track a chance at that layer and keep going up.
-	// As long as there is enough bandwidth for tracks to stream at the lowest layers, the first goal is achieved.
+	// Start with the lowest layer and give each track a chance at that layer and keep going up.
+	// As long as there is enough bandwidth for tracks to stream at the lowest layer, the first goal is achieved.
 	//
-	// Tracks that have higher subscribed layers can use any additional available bandwidth. This tried to achieve the second goal.
+	// Tracks that have higher subscribed layer can use any additional available bandwidth. This tried to achieve the second goal.
 	//
-	// If there is not enough bandwidth even for the lowest layers, tracks at lower priorities will be paused.
+	// If there is not enough bandwidth even for the lowest layer, tracks at lower priorities will be paused.
 	//
 	update := NewStreamStateUpdate()
 
@@ -1002,13 +1002,13 @@ func (s *StreamAllocator) allocateAllTracks() {
 
 		for spatial := int32(0); spatial <= buffer.DefaultMaxLayerSpatial; spatial++ {
 			for temporal := int32(0); temporal <= buffer.DefaultMaxLayerTemporal; temporal++ {
-				layers := buffer.VideoLayer{
+				layer := buffer.VideoLayer{
 					Spatial:  spatial,
 					Temporal: temporal,
 				}
 
 				for _, track := range sorted {
-					usedChannelCapacity := track.ProvisionalAllocate(availableChannelCapacity, layers, s.params.Config.AllowPause, FlagAllowOvershootWhileDeficient)
+					usedChannelCapacity := track.ProvisionalAllocate(availableChannelCapacity, layer, s.params.Config.AllowPause, FlagAllowOvershootWhileDeficient)
 					availableChannelCapacity -= usedChannelCapacity
 					if availableChannelCapacity < 0 {
 						availableChannelCapacity = 0
@@ -1164,7 +1164,7 @@ func (s *StreamAllocator) maybeProbe() {
 }
 
 func (s *StreamAllocator) maybeProbeWithMedia() {
-	// boost deficient track farthest from desired layers
+	// boost deficient track farthest from desired layer
 	for _, track := range s.getMaxDistanceSortedDeficient() {
 		allocation, boosted := track.AllocateNextHigher(ChannelCapacityInfinity, FlagAllowOvershootInCatchup)
 		if !boosted {
@@ -1183,7 +1183,7 @@ func (s *StreamAllocator) maybeProbeWithMedia() {
 }
 
 func (s *StreamAllocator) maybeProbeWithPadding() {
-	// use deficient track farthest from desired layers to find how much to probe
+	// use deficient track farthest from desired layer to find how much to probe
 	for _, track := range s.getMaxDistanceSortedDeficient() {
 		transition, available := track.GetNextHigherTransition(FlagAllowOvershootInProbe)
 		if !available || transition.BandwidthDelta < 0 {

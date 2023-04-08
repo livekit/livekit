@@ -89,7 +89,7 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket, layer int32) (result VideoL
 			if !isActive {
 				result.IsResuming = true
 			}
-			s.SetParked(buffer.InvalidLayers)
+			s.SetParked(buffer.InvalidLayer)
 			if s.currentLayer.Spatial >= s.maxLayer.Spatial {
 				result.IsSwitchingToMaxSpatial = true
 

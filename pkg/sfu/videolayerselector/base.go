@@ -24,12 +24,12 @@ type Base struct {
 func NewBase(logger logger.Logger) *Base {
 	return &Base{
 		logger:         logger,
-		maxLayer:       buffer.InvalidLayers,
-		targetLayer:    buffer.InvalidLayers, // start off with nothing, let streamallocator/opportunistic forwarder set the target
+		maxLayer:       buffer.InvalidLayer,
+		targetLayer:    buffer.InvalidLayer, // start off with nothing, let streamallocator/opportunistic forwarder set the target
 		requestSpatial: buffer.InvalidLayerSpatial,
-		maxSeenLayer:   buffer.InvalidLayers,
-		parkedLayer:    buffer.InvalidLayers,
-		currentLayer:   buffer.InvalidLayers,
+		maxSeenLayer:   buffer.InvalidLayer,
+		parkedLayer:    buffer.InvalidLayer,
+		currentLayer:   buffer.InvalidLayer,
 	}
 }
 

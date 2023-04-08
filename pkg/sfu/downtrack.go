@@ -137,7 +137,7 @@ type DownTrackStreamAllocatorListener interface {
 	OnSubscriptionChanged(dt *DownTrack)
 
 	// subscribed max video layer changed
-	OnSubscribedLayersChanged(dt *DownTrack, layers buffer.VideoLayer)
+	OnSubscribedLayerChanged(dt *DownTrack, layers buffer.VideoLayer)
 
 	// stream resumed
 	OnResume(dt *DownTrack)
@@ -259,7 +259,7 @@ func NewDownTrack(
 		codec:          codecs[0].RTPCodecCapability,
 	}
 	d.forwarder = NewForwarder(d.kind, d.logger, d.receiver.GetReferenceLayerRTPTimestamp)
-	d.forwarder.OnParkedLayersExpired(func() {
+	d.forwarder.OnParkedLayerExpired(func() {
 		if sal := d.getStreamAllocatorListener(); sal != nil {
 			sal.OnSubscriptionChanged(d)
 		}
@@ -599,10 +599,8 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 
 	if extPkt.KeyFrame {
 		d.isNACKThrottled.Store(false)
-		if extPkt.KeyFrame {
-			d.rtpStats.UpdateKeyFrame(1)
-			d.logger.Debugw("forwarding key frame", "layer", layer)
-		}
+		d.rtpStats.UpdateKeyFrame(1)
+		d.logger.Debugw("forwarding key frame", "layer", layer)
 
 		// SVC-TODO - no need for key frame always when using SVC
 		locked, _ := d.forwarder.CheckSync()
@@ -716,17 +714,17 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool) int {
 
 // Mute enables or disables media forwarding - subscriber triggered
 func (d *DownTrack) Mute(muted bool) {
-	changed, maxLayers := d.forwarder.Mute(muted)
-	d.handleMute(muted, false, changed, maxLayers)
+	changed, maxLayer := d.forwarder.Mute(muted)
+	d.handleMute(muted, false, changed, maxLayer)
 }
 
 // PubMute enables or disables media forwarding - publisher side
 func (d *DownTrack) PubMute(pubMuted bool) {
-	changed, maxLayers := d.forwarder.PubMute(pubMuted)
-	d.handleMute(pubMuted, true, changed, maxLayers)
+	changed, maxLayer := d.forwarder.PubMute(pubMuted)
+	d.handleMute(pubMuted, true, changed, maxLayer)
 }
 
-func (d *DownTrack) handleMute(muted bool, isPub bool, changed bool, maxLayers buffer.VideoLayer) {
+func (d *DownTrack) handleMute(muted bool, isPub bool, changed bool, maxLayer buffer.VideoLayer) {
 	if !changed {
 		return
 	}
@@ -761,7 +759,7 @@ func (d *DownTrack) handleMute(muted bool, isPub bool, changed bool, maxLayers b
 			// client might need to be notified to start layers
 			// before locking can happen in the forwarder.
 			//
-			notifyLayer = maxLayers.Spatial
+			notifyLayer = maxLayer.Spatial
 		}
 		d.onMaxSubscribedLayerChanged(d, notifyLayer)
 	}
@@ -860,12 +858,12 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 }
 
 func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
-	changed, maxLayers, currentLayers := d.forwarder.SetMaxSpatialLayer(spatialLayer)
+	changed, maxLayer, currentLayer := d.forwarder.SetMaxSpatialLayer(spatialLayer)
 	if !changed {
 		return
 	}
 
-	if d.onMaxSubscribedLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo && maxLayers.SpatialGreaterThanOrEqual(currentLayers) {
+	if d.onMaxSubscribedLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo && maxLayer.SpatialGreaterThanOrEqual(currentLayer) {
 		//
 		// Notify when new max is
 		//   1. Equal to current -> already locked to the new max
@@ -873,27 +871,27 @@ func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
 		//      a. is higher than previous max -> client may need to start higher layer before forwarder can lock
 		//      b. is lower than previous max -> client can stop higher layer(s)
 		//
-		d.onMaxSubscribedLayerChanged(d, maxLayers.Spatial)
+		d.onMaxSubscribedLayerChanged(d, maxLayer.Spatial)
 	}
 
 	if sal := d.getStreamAllocatorListener(); sal != nil {
-		sal.OnSubscribedLayersChanged(d, maxLayers)
+		sal.OnSubscribedLayerChanged(d, maxLayer)
 	}
 }
 
 func (d *DownTrack) SetMaxTemporalLayer(temporalLayer int32) {
-	changed, maxLayers, _ := d.forwarder.SetMaxTemporalLayer(temporalLayer)
+	changed, maxLayer, _ := d.forwarder.SetMaxTemporalLayer(temporalLayer)
 	if !changed {
 		return
 	}
 
 	if sal := d.getStreamAllocatorListener(); sal != nil {
-		sal.OnSubscribedLayersChanged(d, maxLayers)
+		sal.OnSubscribedLayerChanged(d, maxLayer)
 	}
 }
 
-func (d *DownTrack) MaxLayers() buffer.VideoLayer {
-	return d.forwarder.MaxLayers()
+func (d *DownTrack) MaxLayer() buffer.VideoLayer {
+	return d.forwarder.MaxLayer()
 }
 
 func (d *DownTrack) GetState() DownTrackState {
@@ -1566,7 +1564,7 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 		"Bound":               d.bound.Load(),
 		"Muted":               d.forwarder.IsMuted(),
 		"PubMuted":            d.forwarder.IsPubMuted(),
-		"CurrentSpatialLayer": d.forwarder.CurrentLayers().Spatial,
+		"CurrentSpatialLayer": d.forwarder.CurrentLayer().Spatial,
 		"Stats":               stats,
 	}
 }
