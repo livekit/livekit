@@ -16,7 +16,7 @@ type Track struct {
 	publisherID livekit.ParticipantID
 	logger      logger.Logger
 
-	maxLayers buffer.VideoLayer
+	maxLayer buffer.VideoLayer
 
 	totalPackets       uint32
 	totalRepeatedNacks uint32
@@ -42,7 +42,7 @@ func NewTrack(
 		isPaused:    true,
 	}
 	t.SetPriority(0)
-	t.SetMaxLayers(downTrack.MaxLayers())
+	t.SetMaxLayer(downTrack.MaxLayer())
 
 	return t
 }
@@ -103,12 +103,12 @@ func (t *Track) PublisherID() livekit.ParticipantID {
 	return t.publisherID
 }
 
-func (t *Track) SetMaxLayers(layers buffer.VideoLayer) bool {
-	if t.maxLayers == layers {
+func (t *Track) SetMaxLayer(layer buffer.VideoLayer) bool {
+	if t.maxLayer == layer {
 		return false
 	}
 
-	t.maxLayers = layers
+	t.maxLayer = layer
 	return true
 }
 
@@ -124,8 +124,8 @@ func (t *Track) ProvisionalAllocatePrepare() {
 	t.downTrack.ProvisionalAllocatePrepare()
 }
 
-func (t *Track) ProvisionalAllocate(availableChannelCapacity int64, layers buffer.VideoLayer, allowPause bool, allowOvershoot bool) int64 {
-	return t.downTrack.ProvisionalAllocate(availableChannelCapacity, layers, allowPause, allowOvershoot)
+func (t *Track) ProvisionalAllocate(availableChannelCapacity int64, layer buffer.VideoLayer, allowPause bool, allowOvershoot bool) int64 {
+	return t.downTrack.ProvisionalAllocate(availableChannelCapacity, layer, allowPause, allowOvershoot)
 }
 
 func (t *Track) ProvisionalAllocateGetCooperativeTransition(allowOvershoot bool) sfu.VideoTransition {
@@ -197,11 +197,11 @@ func (t TrackSorter) Less(i, j int) bool {
 		return t[i].priority > t[j].priority
 	}
 
-	if t[i].maxLayers.Spatial != t[j].maxLayers.Spatial {
-		return t[i].maxLayers.Spatial > t[j].maxLayers.Spatial
+	if t[i].maxLayer.Spatial != t[j].maxLayer.Spatial {
+		return t[i].maxLayer.Spatial > t[j].maxLayer.Spatial
 	}
 
-	return t[i].maxLayers.Temporal > t[j].maxLayers.Temporal
+	return t[i].maxLayer.Temporal > t[j].maxLayer.Temporal
 }
 
 // ------------------------------------------------
