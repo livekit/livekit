@@ -1136,7 +1136,9 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 	}
 
 	if !p.CanPublishSource(publishedTrack.Source()) {
-		p.params.Logger.Warnw("no permission to publish mediaTrack", nil)
+		p.params.Logger.Warnw("no permission to publish mediaTrack", nil,
+			"source", publishedTrack.Source(),
+		)
 		return
 	}
 
