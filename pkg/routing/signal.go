@@ -292,13 +292,9 @@ func (s *signalMessageSink[SendType, RecvType]) write() {
 		if err != nil {
 			failed := time.Now().After(deadline)
 
-			s.Logger.Warnw(
-				"could not send message to participant", err,
-				"attempt", attempt,
-				"retry", !failed,
-			)
-
 			if failed {
+				s.Logger.Warnw("could not send signal message", err)
+
 				s.mu.Lock()
 				s.seq += uint64(len(s.queue))
 				s.queue = nil
