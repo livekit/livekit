@@ -272,7 +272,6 @@ func (s *signalMessageSink[SendType, RecvType]) nextMessage() (msg SendType, n i
 }
 
 func (s *signalMessageSink[SendType, RecvType]) write() {
-	attempt := 0
 	interval := s.Config.MinRetryInterval
 	deadline := time.Now().Add(s.Config.RetryTimeout)
 
@@ -304,7 +303,6 @@ func (s *signalMessageSink[SendType, RecvType]) write() {
 				return
 			}
 
-			attempt++
 			interval *= 2
 			if interval > s.Config.MaxRetryInterval {
 				interval = s.Config.MaxRetryInterval
@@ -313,7 +311,6 @@ func (s *signalMessageSink[SendType, RecvType]) write() {
 
 		s.mu.Lock()
 		if err == nil {
-			attempt = 0
 			interval = s.Config.MinRetryInterval
 			deadline = time.Now().Add(s.Config.RetryTimeout)
 
@@ -339,6 +336,5 @@ func (s *signalMessageSink[SendType, RecvType]) WriteMessage(msg proto.Message) 
 		s.writing = true
 		go s.write()
 	}
-
 	return nil
 }
