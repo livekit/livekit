@@ -128,14 +128,14 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 	reqChan := routing.NewDefaultMessageChannel()
 	defer reqChan.Close()
 
-	err = r.sessionHandler(
-		ctx,
-		livekit.RoomName(ss.RoomName),
-		*pi,
-		livekit.ConnectionID(ss.ConnectionId),
-		reqChan,
-		routing.NewSignalMessageSink[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest](l, stream, r.config, signalResponseMessageWriter{}, false),
-	)
+	sink := routing.NewSignalMessageSink(routing.SignalSinkParams[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest]{
+		Logger: l,
+		Stream: stream,
+		Config: r.config,
+		Writer: signalResponseMessageWriter{},
+	})
+
+	err = r.sessionHandler(ctx, livekit.RoomName(ss.RoomName), *pi, livekit.ConnectionID(ss.ConnectionId), reqChan, sink)
 	if err != nil {
 		l.Errorw("could not handle new participant", err)
 	}

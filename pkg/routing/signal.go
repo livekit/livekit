@@ -93,7 +93,13 @@ func (r *signalClient) StartParticipantSignal(
 		return
 	}
 
-	sink := NewSignalMessageSink[*rpc.RelaySignalRequest, *rpc.RelaySignalResponse](l, stream, r.config, signalRequestMessageWriter{}, true)
+	sink := NewSignalMessageSink(SignalSinkParams[*rpc.RelaySignalRequest, *rpc.RelaySignalResponse]{
+		Logger:         l,
+		Stream:         stream,
+		Config:         r.config,
+		Writer:         signalRequestMessageWriter{},
+		CloseOnFailure: true,
+	})
 	resChan := NewDefaultMessageChannel()
 
 	go func() {
@@ -210,28 +216,24 @@ func (r *signalMessageReader[SendType, RecvType]) Read(msg RecvType) ([]proto.Me
 	return res, nil
 }
 
-func NewSignalMessageSink[SendType, RecvType RelaySignalMessage](
-	logger logger.Logger,
-	stream psrpc.Stream[SendType, RecvType],
-	config config.SignalRelayConfig,
-	writer SignalMessageWriter[SendType],
-	closeOnError bool,
-) MessageSink {
+type SignalSinkParams[SendType, RecvType RelaySignalMessage] struct {
+	Stream         psrpc.Stream[SendType, RecvType]
+	Logger         logger.Logger
+	Config         config.SignalRelayConfig
+	Writer         SignalMessageWriter[SendType]
+	CloseOnFailure bool
+}
+
+func NewSignalMessageSink[SendType, RecvType RelaySignalMessage](params SignalSinkParams[SendType, RecvType]) MessageSink {
 	return &signalMessageSink[SendType, RecvType]{
-		stream:       stream,
-		logger:       logger,
-		config:       config,
-		writer:       writer,
-		closeOnError: closeOnError,
+		SignalSinkParams: params,
 	}
 }
 
+var ErrSignalFailed = errors.New("signal stream failed")
+
 type signalMessageSink[SendType, RecvType RelaySignalMessage] struct {
-	stream       psrpc.Stream[SendType, RecvType]
-	logger       logger.Logger
-	config       config.SignalRelayConfig
-	writer       SignalMessageWriter[SendType]
-	closeOnError bool
+	SignalSinkParams[SendType, RecvType]
 
 	mu       sync.Mutex
 	seq      uint64
@@ -244,73 +246,79 @@ func (s *signalMessageSink[SendType, RecvType]) Close() {
 	s.mu.Lock()
 	s.draining = true
 	if !s.writing {
-		s.stream.Close(nil)
+		s.Stream.Close(nil)
 	}
 	s.mu.Unlock()
 }
 
 func (s *signalMessageSink[SendType, RecvType]) IsClosed() bool {
-	return s.stream.Context().Err() != nil
+	return s.Stream.Context().Err() != nil
+}
+
+func (s *signalMessageSink[SendType, RecvType]) nextMessage() (msg SendType, n int) {
+	if len(s.queue) == 0 {
+		return
+	}
+	if s.Config.MinVersion >= 1 {
+		return s.Writer.WriteMany(s.seq, s.queue), len(s.queue)
+	}
+	return s.Writer.WriteOne(s.seq, s.queue[0]), 1
 }
 
 func (s *signalMessageSink[SendType, RecvType]) write() {
 	attempt := 0
-	interval := s.config.MinRetryInterval
-	deadline := time.Now().Add(s.config.RetryTimeout)
+	interval := s.Config.MinRetryInterval
+	deadline := time.Now().Add(s.Config.RetryTimeout)
 
 	s.mu.Lock()
 	for {
-		if len(s.queue) == 0 || s.IsClosed() {
+		msg, n := s.nextMessage()
+		if n == 0 || s.IsClosed() {
 			if s.draining {
-				s.stream.Close(nil)
+				s.Stream.Close(nil)
 			}
 			s.writing = false
 			break
 		}
-
-		var msg SendType
-		var n int
-		if s.config.EnableBatching {
-			msg = s.writer.WriteMany(s.seq, s.queue)
-			n = len(s.queue)
-		} else {
-			msg = s.writer.WriteOne(s.seq, s.queue[0])
-			n = 1
-		}
 		s.mu.Unlock()
 
-		err := s.stream.Send(msg, psrpc.WithTimeout(interval))
+		err := s.Stream.Send(msg, psrpc.WithTimeout(interval))
 		if err != nil {
-			done := time.Now().After(deadline)
+			failed := time.Now().After(deadline)
 
-			s.logger.Warnw(
+			s.Logger.Warnw(
 				"could not send message to participant", err,
 				"attempt", attempt,
-				"retry", !done,
+				"retry", !failed,
 			)
 
-			if done {
-				if s.closeOnError {
-					s.stream.Close(nil)
+			if failed {
+				s.mu.Lock()
+				s.seq += uint64(len(s.queue))
+				s.queue = nil
+
+				if s.CloseOnFailure {
+					s.Stream.Close(ErrSignalFailed)
 				}
+				s.mu.Unlock()
 				return
 			}
 
 			attempt++
 			interval *= 2
-			if interval > s.config.MaxRetryInterval {
-				interval = s.config.MaxRetryInterval
+			if interval > s.Config.MaxRetryInterval {
+				interval = s.Config.MaxRetryInterval
 			}
 		}
 
 		s.mu.Lock()
 		if err == nil {
 			attempt = 0
-			interval = s.config.MinRetryInterval
-			deadline = time.Now().Add(s.config.RetryTimeout)
+			interval = s.Config.MinRetryInterval
+			deadline = time.Now().Add(s.Config.RetryTimeout)
 
-			s.queue = s.queue[n:]
 			s.seq += uint64(n)
+			s.queue = s.queue[n:]
 		}
 	}
 	s.mu.Unlock()
@@ -320,7 +328,9 @@ func (s *signalMessageSink[SendType, RecvType]) WriteMessage(msg proto.Message) 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.draining || s.IsClosed() {
+	if err := s.Stream.Err(); err != nil {
+		return err
+	} else if s.draining {
 		return psrpc.ErrStreamClosed
 	}
 

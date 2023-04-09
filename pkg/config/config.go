@@ -234,7 +234,6 @@ type SignalRelayConfig struct {
 	MinRetryInterval time.Duration `yaml:"min_retry_interval"`
 	MaxRetryInterval time.Duration `yaml:"max_retry_interval"`
 	StreamBufferSize int           `yaml:"stream_buffer_size"`
-	EnableBatching   bool          `yaml:"enable_batching"`
 	MinVersion       int           `yaml:"min_version"`
 }
 
@@ -413,7 +412,6 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 			MinRetryInterval: 500 * time.Millisecond,
 			MaxRetryInterval: 5 * time.Second,
 			StreamBufferSize: 1000,
-			EnableBatching:   false,
 		},
 		Keys: map[string]string{},
 	}
