@@ -2,8 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
-	"sync"
 
 	"github.com/pkg/errors"
 	"google.golang.org/protobuf/proto"
@@ -40,14 +38,9 @@ func NewSignalServer(
 ) (*SignalServer, error) {
 	s, err := rpc.NewTypedSignalServer(
 		nodeID,
-		&signalService{region, sessionHandler},
+		&signalService{region, sessionHandler, config},
 		bus,
 		middleware.WithServerMetrics(prometheus.PSRPCMetricsObserver{}),
-		psrpc.WithServerStreamInterceptors(middleware.NewStreamRetryInterceptorFactory(middleware.RetryOptions{
-			MaxAttempts: config.MaxAttempts,
-			Timeout:     config.Timeout,
-			Backoff:     config.Backoff,
-		})),
 		psrpc.WithServerChannelSize(config.StreamBufferSize),
 	)
 	if err != nil {
@@ -101,6 +94,7 @@ func (r *SignalServer) Stop() {
 type signalService struct {
 	region         string
 	sessionHandler SessionHandler
+	config         config.SignalRelayConfig
 }
 
 func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest]) (err error) {
@@ -140,86 +134,47 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 		*pi,
 		livekit.ConnectionID(ss.ConnectionId),
 		reqChan,
-		&relaySignalResponseSink{
-			ServerStream: stream,
-			logger:       l,
-		},
+		routing.NewSignalMessageSink[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest](l, stream, r.config, signalResponseMessageWriter{}, false),
 	)
 	if err != nil {
 		l.Errorw("could not handle new participant", err)
 	}
 
-	for msg := range stream.Channel() {
-		if err = reqChan.WriteMessage(msg.Request); err != nil {
-			break
-		}
-	}
+	err = routing.CopySignalStreamToMessageChannel[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest](stream, reqChan, signalRequestMessageReader{}, r.config)
+	l.Debugw("participant signal stream closed", "error", err)
 
-	l.Debugw("participant signal stream closed")
 	return
 }
 
-type relaySignalResponseSink struct {
-	psrpc.ServerStream[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest]
-	logger logger.Logger
+type signalResponseMessageWriter struct{}
 
-	mu       sync.Mutex
-	queue    []*livekit.SignalResponse
-	writing  bool
-	draining bool
-}
-
-func (s *relaySignalResponseSink) Close() {
-	s.mu.Lock()
-	s.draining = true
-	if !s.writing {
-		s.ServerStream.Close(nil)
-	}
-	s.mu.Unlock()
-}
-
-func (s *relaySignalResponseSink) IsClosed() bool {
-	return s.Context().Err() != nil
-}
-
-func (s *relaySignalResponseSink) write() {
-	for {
-		s.mu.Lock()
-		var msg *livekit.SignalResponse
-		if len(s.queue) != 0 && !s.IsClosed() {
-			msg = s.queue[0]
-			s.queue = s.queue[1:]
-		} else {
-			if s.draining {
-				s.ServerStream.Close(nil)
-			}
-			s.writing = false
-			s.mu.Unlock()
-			return
-		}
-		s.mu.Unlock()
-
-		if err := s.Send(&rpc.RelaySignalResponse{Response: msg}); err != nil {
-			s.logger.Warnw(
-				"could not send message to participant", err,
-				"messageType", fmt.Sprintf("%T", msg.Message),
-			)
-		}
+func (e signalResponseMessageWriter) WriteOne(seq uint64, msg proto.Message) *rpc.RelaySignalResponse {
+	return &rpc.RelaySignalResponse{
+		Seq:      seq,
+		Response: msg.(*livekit.SignalResponse),
 	}
 }
 
-func (s *relaySignalResponseSink) WriteMessage(msg proto.Message) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.draining || s.IsClosed() {
-		return psrpc.ErrStreamClosed
+func (e signalResponseMessageWriter) WriteMany(seq uint64, msgs []proto.Message) *rpc.RelaySignalResponse {
+	r := &rpc.RelaySignalResponse{
+		Seq:       seq,
+		Responses: make([]*livekit.SignalResponse, 0, len(msgs)),
 	}
-
-	s.queue = append(s.queue, msg.(*livekit.SignalResponse))
-	if !s.writing {
-		s.writing = true
-		go s.write()
+	for _, m := range msgs {
+		r.Responses = append(r.Responses, m.(*livekit.SignalResponse))
 	}
-	return nil
+	return r
+}
+
+type signalRequestMessageReader struct{}
+
+func (e signalRequestMessageReader) Read(rm *rpc.RelaySignalRequest) ([]proto.Message, error) {
+	msgs := make([]proto.Message, 0, len(rm.Requests)+1)
+	if rm.Request != nil {
+		msgs = append(msgs, rm.Request)
+	}
+	for _, m := range rm.Requests {
+		msgs = append(msgs, m)
+	}
+	return msgs, nil
 }

@@ -230,10 +230,12 @@ type NodeSelectorConfig struct {
 
 type SignalRelayConfig struct {
 	Enabled          bool          `yaml:"enabled"`
-	MaxAttempts      int           `yaml:"max_attempts,omitempty"`
-	Timeout          time.Duration `yaml:"timeout,omitempty"`
-	Backoff          time.Duration `yaml:"backoff,omitempty"`
-	StreamBufferSize int           `yaml:"stream_buffer_size,omitempty"`
+	RetryTimeout     time.Duration `yaml:"retry_timeout"`
+	MinRetryInterval time.Duration `yaml:"min_retry_interval"`
+	MaxRetryInterval time.Duration `yaml:"max_retry_interval"`
+	StreamBufferSize int           `yaml:"stream_buffer_size"`
+	EnableBatching   bool          `yaml:"enable_batching"`
+	MinVersion       int           `yaml:"min_version"`
 }
 
 // RegionConfig lists available regions and their latitude/longitude, so the selector would prefer
@@ -407,10 +409,11 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 		},
 		SignalRelay: SignalRelayConfig{
 			Enabled:          false,
-			MaxAttempts:      3,
-			Timeout:          500 * time.Millisecond,
-			Backoff:          500 * time.Millisecond,
+			RetryTimeout:     30 * time.Second,
+			MinRetryInterval: 500 * time.Millisecond,
+			MaxRetryInterval: 5 * time.Second,
 			StreamBufferSize: 1000,
+			EnableBatching:   false,
 		},
 		Keys: map[string]string{},
 	}
