@@ -253,10 +253,12 @@ func (s *signalMessageSink[SendType, RecvType]) Close() {
 		s.Stream.Close(nil)
 	}
 	s.mu.Unlock()
+
+	<-s.Stream.Context().Done()
 }
 
 func (s *signalMessageSink[SendType, RecvType]) IsClosed() bool {
-	return s.Stream.Context().Err() != nil
+	return s.Stream.Err() != nil
 }
 
 func (s *signalMessageSink[SendType, RecvType]) nextMessage() (msg SendType, n int) {
@@ -343,5 +345,6 @@ func (s *signalMessageSink[SendType, RecvType]) WriteMessage(msg proto.Message) 
 		s.writing = true
 		go s.write()
 	}
+
 	return nil
 }
