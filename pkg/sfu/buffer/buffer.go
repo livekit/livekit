@@ -567,7 +567,7 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64) *ExtPack
 		} else {
 			// vp8 with DependencyDescriptor enabled, use the TID from the descriptor
 			vp8Packet.TID = uint8(ep.Temporal)
-			ep.Spatial = InvalidLayerSpatial // vp8 don't have spatial scalability, reset to -1
+			ep.Spatial = InvalidLayerSpatial // vp8 don't have spatial scalability, reset to invalid
 		}
 		ep.Payload = vp8Packet
 	case "video/vp9":

@@ -132,7 +132,8 @@ func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(offer webrtc.Sess
 
 		mime = strings.ToUpper(mime)
 		// remove dd extension if av1/vp9 not preferred
-		if !strings.Contains(strings.ToLower(mime), "av1") && !strings.Contains(strings.ToLower(mime), "vp9") {
+		// RAJA-RESTORE if !strings.Contains(strings.ToLower(mime), "av1") && !strings.Contains(strings.ToLower(mime), "vp9") {
+		if !strings.Contains(strings.ToLower(mime), "av1") /* && !strings.Contains(strings.ToLower(mime), "vp9") */ {
 			for i, attr := range unmatchVideo.Attributes {
 				if strings.Contains(attr.Value, dd.ExtensionUrl) {
 					unmatchVideo.Attributes[i] = unmatchVideo.Attributes[len(unmatchVideo.Attributes)-1]
