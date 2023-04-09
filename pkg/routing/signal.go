@@ -208,8 +208,8 @@ func (r *signalMessageReader[SendType, RecvType]) Read(msg RecvType) ([]proto.Me
 		if r.seq < msg.GetSeq() {
 			return nil, errors.New("participant signal message dropped")
 		}
-		if r.seq < msg.GetSeq() {
-			n := int(msg.GetSeq() - r.seq)
+		if r.seq > msg.GetSeq() {
+			n := int(r.seq - msg.GetSeq())
 			if n > len(res) {
 				n = len(res)
 			}
