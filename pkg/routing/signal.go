@@ -290,9 +290,7 @@ func (s *signalMessageSink[SendType, RecvType]) write() {
 
 		err := s.Stream.Send(msg, psrpc.WithTimeout(interval))
 		if err != nil {
-			failed := time.Now().After(deadline)
-
-			if failed {
+			if time.Now().After(deadline) {
 				s.Logger.Warnw("could not send signal message", err)
 
 				s.mu.Lock()
