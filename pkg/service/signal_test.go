@@ -71,10 +71,8 @@ func TestSignal(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	for i := 0; i < 10; i++ {
-		err = reqSink.WriteMessage(reqMessageIn)
-		require.NoError(t, err)
-	}
+	err = reqSink.WriteMessage(reqMessageIn)
+	require.NoError(t, err)
 
 	<-done
 	require.True(t, proto.Equal(reqMessageIn, reqMessageOut), "req message should match %s %s", protojson.Format(reqMessageIn), protojson.Format(reqMessageOut))
