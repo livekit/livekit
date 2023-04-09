@@ -209,7 +209,11 @@ func (r *signalMessageReader[SendType, RecvType]) Read(msg RecvType) ([]proto.Me
 			return nil, errors.New("participant signal message dropped")
 		}
 		if r.seq < msg.GetSeq() {
-			res = res[msg.GetSeq()-r.seq:]
+			n := int(msg.GetSeq() - r.seq)
+			if n > len(res) {
+				n = len(res)
+			}
+			res = res[n:]
 		}
 		r.seq += uint64(len(res))
 	}
