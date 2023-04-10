@@ -169,12 +169,14 @@ keys:
 # signal_relay:
 #   # disabled by default. will be enabled by default in future versions
 #   enabled: true
-#   # number of attempts for each message before giving up
-#   max_attempts: 3
-#   # amount of time to wait for RTC node to ack
-#   timeout: 100ms
-#   # amount of time to add to timeout for each retry
-#   backoff: 500ms
+#   # amount of time a message delivery is tried before giving up
+#   retry_timeout: 30s
+#   # minimum amount of time to wait for RTC node to ack,
+#   # retries use exponentially increasing wait on every subsequent try
+#   # with an upper bound of max_retry_interval
+#   min_retry_interval: 500ms
+#   # maximum amount of time to wait for RTC node to ack
+#   max_retry_interval: 5s
 #   # number of messages to buffer before dropping
 #   stream_buffer_size: 1000
 
