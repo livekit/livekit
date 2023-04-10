@@ -230,11 +230,11 @@ type NodeSelectorConfig struct {
 
 type SignalRelayConfig struct {
 	Enabled          bool          `yaml:"enabled"`
-	RetryTimeout     time.Duration `yaml:"retry_timeout"`
-	MinRetryInterval time.Duration `yaml:"min_retry_interval"`
-	MaxRetryInterval time.Duration `yaml:"max_retry_interval"`
-	StreamBufferSize int           `yaml:"stream_buffer_size"`
-	MinVersion       int           `yaml:"min_version"`
+	RetryTimeout     time.Duration `yaml:"retry_timeout,omitempty"`
+	MinRetryInterval time.Duration `yaml:"min_retry_interval,omitempty"`
+	MaxRetryInterval time.Duration `yaml:"max_retry_interval,omitempty"`
+	StreamBufferSize int           `yaml:"stream_buffer_size,omitempty"`
+	MinVersion       int           `yaml:"min_version,omitempty"`
 }
 
 // RegionConfig lists available regions and their latitude/longitude, so the selector would prefer

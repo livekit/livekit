@@ -206,7 +206,7 @@ func (r *signalMessageReader[SendType, RecvType]) Read(msg RecvType) ([]proto.Me
 
 	if r.config.MinVersion >= 1 {
 		if r.seq < msg.GetSeq() {
-			return nil, errors.New("participant signal message dropped")
+			return nil, errors.New("signal message dropped")
 		}
 		if r.seq > msg.GetSeq() {
 			n := int(r.seq - msg.GetSeq())
