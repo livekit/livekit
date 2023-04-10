@@ -457,11 +457,7 @@ func (t *TransportManager) NegotiateSubscriber(force bool) {
 	t.subscriber.Negotiate(force)
 }
 
-func (t *TransportManager) ICERestart(iceConfig *livekit.ICEConfig, reason livekit.ReconnectReason) {
-	if iceConfig != nil {
-		t.SetICEConfig(iceConfig)
-	}
-
+func (t *TransportManager) HandleClientReconnect(reason livekit.ReconnectReason) {
 	var (
 		isShort              bool
 		duration             time.Duration
@@ -478,6 +474,9 @@ func (t *TransportManager) ICERestart(iceConfig *livekit.ICEConfig, reason livek
 	}
 
 	if isShort {
+		t.lock.Lock()
+		t.resetTransportConfigureLocked(false)
+		t.lock.Unlock()
 		t.params.Logger.Infow("short connection by client ice restart", "duration", duration, "reason", reason)
 		t.handleConnectionFailed(isShort)
 	}
@@ -486,6 +485,13 @@ func (t *TransportManager) ICERestart(iceConfig *livekit.ICEConfig, reason livek
 		t.publisher.ResetShortConnOnICERestart()
 		t.subscriber.ResetShortConnOnICERestart()
 	}
+}
+
+func (t *TransportManager) ICERestart(iceConfig *livekit.ICEConfig) {
+	if iceConfig != nil {
+		t.SetICEConfig(iceConfig)
+	}
+
 	t.subscriber.ICERestart()
 }
 
@@ -499,14 +505,18 @@ func (t *TransportManager) SetICEConfig(iceConfig *livekit.ICEConfig) {
 	t.configureICE(iceConfig, true)
 }
 
+func (t *TransportManager) resetTransportConfigureLocked(reconfigured bool) {
+	t.failureCount = 0
+	t.isTransportReconfigured = reconfigured
+	t.udpLossUnstableCount = 0
+	t.lastFailure = time.Time{}
+}
+
 func (t *TransportManager) configureICE(iceConfig *livekit.ICEConfig, reset bool) {
 	t.lock.Lock()
 	isEqual := proto.Equal(t.iceConfig, iceConfig)
 	if reset || !isEqual {
-		t.failureCount = 0
-		t.isTransportReconfigured = !reset
-		t.udpLossUnstableCount = 0
-		t.lastFailure = time.Time{}
+		t.resetTransportConfigureLocked(!reset)
 	}
 
 	if isEqual {
