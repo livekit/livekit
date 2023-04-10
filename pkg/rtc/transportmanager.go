@@ -457,11 +457,7 @@ func (t *TransportManager) NegotiateSubscriber(force bool) {
 	t.subscriber.Negotiate(force)
 }
 
-func (t *TransportManager) ICERestart(iceConfig *livekit.ICEConfig, reason livekit.ReconnectReason) {
-	if iceConfig != nil {
-		t.SetICEConfig(iceConfig)
-	}
-
+func (t *TransportManager) HandleClientReconnect(reason livekit.ReconnectReason) {
 	var (
 		isShort              bool
 		duration             time.Duration
@@ -478,11 +474,9 @@ func (t *TransportManager) ICERestart(iceConfig *livekit.ICEConfig, reason livek
 	}
 
 	if isShort {
-		if iceConfig == nil {
-			t.lock.Lock()
-			t.resetTransportConfigureLocked(false)
-			t.lock.Unlock()
-		}
+		t.lock.Lock()
+		t.resetTransportConfigureLocked(false)
+		t.lock.Unlock()
 		t.params.Logger.Infow("short connection by client ice restart", "duration", duration, "reason", reason)
 		t.handleConnectionFailed(isShort)
 	}
@@ -491,6 +485,13 @@ func (t *TransportManager) ICERestart(iceConfig *livekit.ICEConfig, reason livek
 		t.publisher.ResetShortConnOnICERestart()
 		t.subscriber.ResetShortConnOnICERestart()
 	}
+}
+
+func (t *TransportManager) ICERestart(iceConfig *livekit.ICEConfig) {
+	if iceConfig != nil {
+		t.SetICEConfig(iceConfig)
+	}
+
 	t.subscriber.ICERestart()
 }
 

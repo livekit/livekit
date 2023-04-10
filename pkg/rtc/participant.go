@@ -774,7 +774,7 @@ func (p *ParticipantImpl) MigrateState() types.MigrateState {
 }
 
 // ICERestart restarts subscriber ICE connections
-func (p *ParticipantImpl) ICERestart(iceConfig *livekit.ICEConfig, reason livekit.ReconnectReason) {
+func (p *ParticipantImpl) ICERestart(iceConfig *livekit.ICEConfig) {
 	p.clearDisconnectTimer()
 	p.clearMigrationTimer()
 
@@ -782,7 +782,7 @@ func (p *ParticipantImpl) ICERestart(iceConfig *livekit.ICEConfig, reason liveki
 		t.(types.LocalMediaTrack).Restart()
 	}
 
-	p.TransportManager.ICERestart(iceConfig, reason)
+	p.TransportManager.ICERestart(iceConfig)
 }
 
 func (p *ParticipantImpl) OnICEConfigChanged(f func(participant types.LocalParticipant, iceConfig *livekit.ICEConfig)) {

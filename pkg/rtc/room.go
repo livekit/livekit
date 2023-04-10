@@ -407,7 +407,7 @@ func (r *Room) ResumeParticipant(p types.LocalParticipant, requestSource routing
 
 	p.SetSignalSourceValid(true)
 
-	if err := p.SendReconnectResponse(&livekit.ReconnectResponse{
+	if err := p.HandleReconnectAndSendResponse(reason, &livekit.ReconnectResponse{
 		IceServers:          iceServers,
 		ClientConfiguration: p.GetClientConfiguration(),
 	}); err != nil {
@@ -423,7 +423,7 @@ func (r *Room) ResumeParticipant(p types.LocalParticipant, requestSource routing
 	p.SendRoomUpdate(r.protoRoom)
 	r.lock.RUnlock()
 
-	p.ICERestart(nil, reason)
+	p.ICERestart(nil)
 	return nil
 }
 
@@ -729,7 +729,7 @@ func (r *Room) SimulateScenario(participant types.LocalParticipant, simulateScen
 		participant.ICERestart(&livekit.ICEConfig{
 			PreferenceSubscriber: livekit.ICECandidateType(scenario.SwitchCandidateProtocol),
 			PreferencePublisher:  livekit.ICECandidateType(scenario.SwitchCandidateProtocol),
-		}, livekit.ReconnectReason_RR_SWITCH_CANDIDATE)
+		})
 	}
 	return nil
 }
