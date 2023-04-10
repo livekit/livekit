@@ -45,7 +45,7 @@ var (
 
 type Config struct {
 	Port           uint32                   `yaml:"port"`
-	BindAddresses  []string                 `yaml:"bind_addresses"`
+	BindAddresses  []string                 `yaml:"bind_addresses,omitempty"`
 	PrometheusPort uint32                   `yaml:"prometheus_port,omitempty"`
 	Environment    string                   `yaml:"environment,omitempty"`
 	RTC            RTCConfig                `yaml:"rtc,omitempty"`
@@ -81,11 +81,11 @@ type RTCConfig struct {
 	TURNServers             []TURNServer     `yaml:"turn_servers,omitempty"`
 	UseExternalIP           bool             `yaml:"use_external_ip"`
 	UseICELite              bool             `yaml:"use_ice_lite,omitempty"`
-	Interfaces              InterfacesConfig `yaml:"interfaces"`
-	IPs                     IPsConfig        `yaml:"ips"`
+	Interfaces              InterfacesConfig `yaml:"interfaces,omitempty"`
+	IPs                     IPsConfig        `yaml:"ips,omitempty"`
 	EnableLoopbackCandidate bool             `yaml:"enable_loopback_candidate"`
-	UseMDNS                 bool             `yaml:"use_mdns"`
-	StrictACKs              bool             `yaml:"strict_acks"`
+	UseMDNS                 bool             `yaml:"use_mdns,omitempty"`
+	StrictACKs              bool             `yaml:"strict_acks,omitempty"`
 
 	// Number of packets to buffer for NACK
 	PacketBufferSize int `yaml:"packet_buffer_size,omitempty"`
@@ -131,34 +131,34 @@ type CongestionControlConfig struct {
 }
 
 type InterfacesConfig struct {
-	Includes []string `yaml:"includes"`
-	Excludes []string `yaml:"excludes"`
+	Includes []string `yaml:"includes,omitempty"`
+	Excludes []string `yaml:"excludes,omitempty"`
 }
 
 type IPsConfig struct {
-	Includes []string `yaml:"includes"`
-	Excludes []string `yaml:"excludes"`
+	Includes []string `yaml:"includes,omitempty"`
+	Excludes []string `yaml:"excludes,omitempty"`
 }
 
 type AudioConfig struct {
 	// minimum level to be considered active, 0-127, where 0 is loudest
-	ActiveLevel uint8 `yaml:"active_level"`
+	ActiveLevel uint8 `yaml:"active_level,omitempty"`
 	// percentile to measure, a participant is considered active if it has exceeded the ActiveLevel more than
 	// MinPercentile% of the time
-	MinPercentile uint8 `yaml:"min_percentile"`
+	MinPercentile uint8 `yaml:"min_percentile,omitempty"`
 	// interval to update clients, in ms
-	UpdateInterval uint32 `yaml:"update_interval"`
+	UpdateInterval uint32 `yaml:"update_interval,omitempty"`
 	// smoothing for audioLevel values sent to the client.
 	// audioLevel will be an average of `smooth_intervals`, 0 to disable
-	SmoothIntervals uint32 `yaml:"smooth_intervals"`
+	SmoothIntervals uint32 `yaml:"smooth_intervals,omitempty"`
 	// enable red encoding downtrack for opus only audio up track
-	ActiveREDEncoding bool `yaml:"active_red_encoding"`
+	ActiveREDEncoding bool `yaml:"active_red_encoding,omitempty"`
 }
 
 type StreamTrackerPacketConfig struct {
-	SamplesRequired uint32        `yaml:"samples_required"` // number of samples needed per cycle
-	CyclesRequired  uint32        `yaml:"cycles_required"`  // number of cycles needed to be active
-	CycleDuration   time.Duration `yaml:"cycle_duration"`
+	SamplesRequired uint32        `yaml:"samples_required,omitempty"` // number of samples needed per cycle
+	CyclesRequired  uint32        `yaml:"cycles_required,omitempty"`  // number of cycles needed to be active
+	CycleDuration   time.Duration `yaml:"cycle_duration,omitempty"`
 }
 
 type StreamTrackerFrameConfig struct {
@@ -173,8 +173,8 @@ type StreamTrackerConfig struct {
 }
 
 type StreamTrackersConfig struct {
-	Video       StreamTrackerConfig `yaml:"video"`
-	Screenshare StreamTrackerConfig `yaml:"screenshare"`
+	Video       StreamTrackerConfig `yaml:"video,omitempty"`
+	Screenshare StreamTrackerConfig `yaml:"screenshare,omitempty"`
 }
 
 type VideoConfig struct {
@@ -184,12 +184,12 @@ type VideoConfig struct {
 
 type RoomConfig struct {
 	// enable rooms to be automatically created
-	AutoCreate         bool        `yaml:"auto_create"`
-	EnabledCodecs      []CodecSpec `yaml:"enabled_codecs"`
-	MaxParticipants    uint32      `yaml:"max_participants"`
-	EmptyTimeout       uint32      `yaml:"empty_timeout"`
-	EnableRemoteUnmute bool        `yaml:"enable_remote_unmute"`
-	MaxMetadataSize    uint32      `yaml:"max_metadata_size"`
+	AutoCreate         bool        `yaml:"auto_create,omitempty"`
+	EnabledCodecs      []CodecSpec `yaml:"enabled_codecs,omitempty"`
+	MaxParticipants    uint32      `yaml:"max_participants,omitempty"`
+	EmptyTimeout       uint32      `yaml:"empty_timeout,omitempty"`
+	EnableRemoteUnmute bool        `yaml:"enable_remote_unmute,omitempty"`
+	MaxMetadataSize    uint32      `yaml:"max_metadata_size,omitempty"`
 }
 
 type CodecSpec struct {
@@ -204,14 +204,14 @@ type LoggingConfig struct {
 
 type TURNConfig struct {
 	Enabled             bool   `yaml:"enabled"`
-	Domain              string `yaml:"domain"`
-	CertFile            string `yaml:"cert_file"`
-	KeyFile             string `yaml:"key_file"`
-	TLSPort             int    `yaml:"tls_port"`
-	UDPPort             int    `yaml:"udp_port"`
+	Domain              string `yaml:"domain,omitempty"`
+	CertFile            string `yaml:"cert_file,omitempty"`
+	KeyFile             string `yaml:"key_file,omitempty"`
+	TLSPort             int    `yaml:"tls_port,omitempty"`
+	UDPPort             int    `yaml:"udp_port,omitempty"`
 	RelayPortRangeStart uint16 `yaml:"relay_range_start,omitempty"`
 	RelayPortRangeEnd   uint16 `yaml:"relay_range_end,omitempty"`
-	ExternalTLS         bool   `yaml:"external_tls"`
+	ExternalTLS         bool   `yaml:"external_tls,omitempty"`
 }
 
 type WebHookConfig struct {
@@ -222,18 +222,18 @@ type WebHookConfig struct {
 
 type NodeSelectorConfig struct {
 	Kind         string         `yaml:"kind"`
-	SortBy       string         `yaml:"sort_by"`
-	CPULoadLimit float32        `yaml:"cpu_load_limit"`
-	SysloadLimit float32        `yaml:"sysload_limit"`
-	Regions      []RegionConfig `yaml:"regions"`
+	SortBy       string         `yaml:"sort_by,omitempty"`
+	CPULoadLimit float32        `yaml:"cpu_load_limit,omitempty"`
+	SysloadLimit float32        `yaml:"sysload_limit,omitempty"`
+	Regions      []RegionConfig `yaml:"regions,omitempty"`
 }
 
 type SignalRelayConfig struct {
 	Enabled          bool          `yaml:"enabled"`
-	MaxAttempts      int           `yaml:"max_attempts"`
-	Timeout          time.Duration `yaml:"timeout"`
-	Backoff          time.Duration `yaml:"backoff"`
-	StreamBufferSize int           `yaml:"stream_buffer_size"`
+	MaxAttempts      int           `yaml:"max_attempts,omitempty"`
+	Timeout          time.Duration `yaml:"timeout,omitempty"`
+	Backoff          time.Duration `yaml:"backoff,omitempty"`
+	StreamBufferSize int           `yaml:"stream_buffer_size,omitempty"`
 }
 
 // RegionConfig lists available regions and their latitude/longitude, so the selector would prefer
@@ -245,8 +245,8 @@ type RegionConfig struct {
 }
 
 type LimitConfig struct {
-	NumTracks   int32   `yaml:"num_tracks"`
-	BytesPerSec float32 `yaml:"bytes_per_sec"`
+	NumTracks   int32   `yaml:"num_tracks,omitempty"`
+	BytesPerSec float32 `yaml:"bytes_per_sec,omitempty"`
 }
 
 type EgressConfig struct {
