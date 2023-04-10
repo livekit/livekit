@@ -2,6 +2,8 @@ module github.com/livekit/livekit-server
 
 go 1.18
 
+replace github.com/livekit/protocol => ../protocol
+
 require (
 	github.com/bep/debounce v1.2.1
 	github.com/d5/tengo/v2 v2.14.0
