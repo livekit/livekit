@@ -122,7 +122,6 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	}
 
 	if dti == dd.DecodeTargetSwitch {
-		result.IsSwitchingLayer = true
 		// dependency descriptor decode target switch is enabled at all potential switch points.
 		// So, setting current layer on every switch point will change current layer a lot.
 		//
@@ -133,12 +132,8 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		//   1. To detect resumption
 		//   2. To detect target achieved so that key frame requests can be stopped
 		//   3. To detect reaching max spatial layer - checked when current hits target
-		//
-		// DD-TOOD - the first two cases are handled by setting IsSwitchingLayer on every indication
-		//           of decode target switch. The caller will do some more checks based on that.
-		//           So, it is not efficient. Set it to exactly satisfy the condtions above only when needed.
 		if !d.currentLayer.IsValid() {
-			// RAJA-TODO result.IsResuming = true
+			result.IsResuming = true
 
 			d.currentLayer = buffer.VideoLayer{
 				Spatial:  int32(extPkt.DependencyDescriptor.FrameDependencies.SpatialId),
@@ -159,11 +154,14 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 
 		if d.currentLayer != d.targetLayer {
 			if d.currentLayer.Spatial != d.targetLayer.Spatial && int32(extPkt.DependencyDescriptor.FrameDependencies.SpatialId) == d.targetLayer.Spatial {
-				// RAJA-TODO result.IsSwitchingToTargetSpatial = true
 				d.currentLayer.Spatial = d.targetLayer.Spatial
+
+				if d.currentLayer.Spatial == d.requestSpatial {
+					result.IsSwitchingToRequestSpatial = true
+				}
+
 				if d.currentLayer.Spatial == d.maxLayer.Spatial {
 					result.IsSwitchingToMaxSpatial = true
-
 					d.logger.Infow(
 						"reached max layer",
 						"current", d.currentLayer,

@@ -32,7 +32,7 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket, layer int32) (result VideoL
 		//   1. Resumable layer - don't need a key frame
 		//   2. Opportunistic layer upgrade - needs a key frame
 		//   3. Need to downgrade - needs a key frame
-		// RAJA-TODO isActive := s.currentLayer.IsValid()
+		isActive := s.currentLayer.IsValid()
 		found := false
 		if s.parkedLayer.IsValid() {
 			if s.parkedLayer.Spatial == layer {
@@ -87,13 +87,16 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket, layer int32) (result VideoL
 		}
 
 		if found {
-			result.IsSwitchingLayer = true
-			/* RAJA-TODO
 			if !isActive {
 				result.IsResuming = true
 			}
-			*/
+
 			s.SetParked(buffer.InvalidLayer)
+
+			if s.currentLayer.Spatial == s.requestSpatial {
+				result.IsSwitchingToRequestSpatial = true
+			}
+
 			if s.currentLayer.Spatial >= s.maxLayer.Spatial {
 				result.IsSwitchingToMaxSpatial = true
 				s.logger.Infow(
@@ -128,6 +131,10 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket, layer int32) (result VideoL
 		)
 		s.currentLayer.Spatial = layer
 
+		if s.currentLayer.Spatial == s.requestSpatial {
+			result.IsSwitchingToRequestSpatial = true
+		}
+
 		if s.currentLayer.Spatial >= s.maxLayer.Spatial {
 			result.IsSwitchingToMaxSpatial = true
 		}
@@ -135,8 +142,6 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket, layer int32) (result VideoL
 		if s.currentLayer.Spatial >= s.maxLayer.Spatial || s.currentLayer.Spatial == s.maxSeenLayer.Spatial {
 			s.targetLayer.Spatial = layer
 		}
-
-		result.IsSwitchingLayer = true
 	}
 
 	result.RTPMarker = extPkt.Packet.Marker

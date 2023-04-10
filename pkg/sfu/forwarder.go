@@ -123,13 +123,14 @@ func (v VideoTransition) String() string {
 // -------------------------------------------------------------------
 
 type TranslationParams struct {
-	shouldDrop              bool
-	isSwitchingLayer        bool
-	isSwitchingToMaxSpatial bool
-	rtp                     *TranslationParamsRTP
-	codecBytes              []byte
-	ddBytes                 []byte
-	marker                  bool
+	shouldDrop                  bool
+	isResuming                  bool
+	isSwitchingToRequestSpatial bool
+	isSwitchingToMaxSpatial     bool
+	rtp                         *TranslationParamsRTP
+	codecBytes                  []byte
+	ddBytes                     []byte
+	marker                      bool
 }
 
 // -------------------------------------------------------------------
@@ -1498,7 +1499,8 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		}
 		return tp, nil
 	}
-	tp.isSwitchingLayer = result.IsSwitchingLayer
+	tp.isResuming = result.IsResuming
+	tp.isSwitchingToRequestSpatial = result.IsSwitchingToRequestSpatial
 	tp.isSwitchingToMaxSpatial = result.IsSwitchingToMaxSpatial
 	tp.ddBytes = result.DependencyDescriptorExtension
 	tp.marker = result.RTPMarker

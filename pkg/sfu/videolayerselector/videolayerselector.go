@@ -8,7 +8,8 @@ import (
 type VideoLayerSelectorResult struct {
 	IsSelected                    bool
 	IsRelevant                    bool
-	IsSwitchingLayer              bool
+	IsResuming                    bool
+	IsSwitchingToRequestSpatial   bool
 	IsSwitchingToMaxSpatial       bool
 	RTPMarker                     bool
 	DependencyDescriptorExtension []byte

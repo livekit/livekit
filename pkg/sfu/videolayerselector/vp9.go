@@ -75,16 +75,13 @@ func (v *VP9) Select(extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerS
 		}
 
 		if updatedLayer != v.currentLayer {
-			result.IsSwitchingLayer = true
-			/* RAJA-TODO
 			if !v.currentLayer.IsValid() && updatedLayer.IsValid() {
 				result.IsResuming = true
 			}
 
-			if v.currentLayer.Spatial != v.targetLayer.Spatial && updatedLayer.Spatial == v.targetLayer.Spatial {
-				result.IsSwitchingToTargetSpatial = true
+			if v.currentLayer.Spatial != v.requestSpatial && updatedLayer.Spatial == v.requestSpatial {
+				result.IsSwitchingToRequestSpatial = true
 			}
-			*/
 
 			if v.currentLayer.Spatial != v.maxLayer.Spatial && updatedLayer.Spatial == v.maxLayer.Spatial {
 				result.IsSwitchingToMaxSpatial = true
@@ -100,11 +97,6 @@ func (v *VP9) Select(extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerS
 				)
 			}
 
-			if updatedLayer.GreaterThan(v.currentLayer) {
-				v.logger.Infow("RAJA switching up", "pid", vp9.PictureID, "current", v.currentLayer, "target", v.targetLayer, "updated", updatedLayer, "E", vp9.E, "B", vp9.B, "P", vp9.P, "in", extPkt.VideoLayer)
-			} else {
-				v.logger.Infow("RAJA switching down", "pid", vp9.PictureID, "current", v.currentLayer, "target", v.targetLayer, "updated", updatedLayer, "E", vp9.E, "B", vp9.B, "P", vp9.P, "in", extPkt.VideoLayer)
-			}
 			v.currentLayer = updatedLayer
 		}
 	}

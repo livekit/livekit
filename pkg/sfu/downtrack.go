@@ -142,8 +142,8 @@ type DownTrackStreamAllocatorListener interface {
 	// subscribed max video layer changed
 	OnSubscribedLayerChanged(dt *DownTrack, layers buffer.VideoLayer)
 
-	// forwarded layer switched
-	OnForwardedLayerSwitched(dt *DownTrack)
+	// stream resumed
+	OnResume(dt *DownTrack)
 
 	// packet(s) sent
 	OnPacketsSent(dt *DownTrack, size int)
@@ -606,14 +606,16 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		d.logger.Debugw("forwarding key frame", "layer", layer)
 	}
 
-	if tp.isSwitchingLayer {
+	if tp.isSwitchingToRequestSpatial {
 		locked, _ := d.forwarder.CheckSync()
 		if locked {
 			d.stopKeyFrameRequester()
 		}
+	}
 
+	if tp.isResuming {
 		if sal := d.getStreamAllocatorListener(); sal != nil {
-			sal.OnForwardedLayerSwitched(d)
+			sal.OnResume(d)
 		}
 	}
 
