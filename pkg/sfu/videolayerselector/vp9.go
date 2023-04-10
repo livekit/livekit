@@ -75,9 +75,16 @@ func (v *VP9) Select(extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerS
 		}
 
 		if updatedLayer != v.currentLayer {
+			result.IsSwitchingLayer = true
+			/* RAJA-TODO
 			if !v.currentLayer.IsValid() && updatedLayer.IsValid() {
 				result.IsResuming = true
 			}
+
+			if v.currentLayer.Spatial != v.targetLayer.Spatial && updatedLayer.Spatial == v.targetLayer.Spatial {
+				result.IsSwitchingToTargetSpatial = true
+			}
+			*/
 
 			if v.currentLayer.Spatial != v.maxLayer.Spatial && updatedLayer.Spatial == v.maxLayer.Spatial {
 				result.IsSwitchingToMaxSpatial = true

@@ -26,12 +26,13 @@ func (s *Simulcast) IsOvershootOkay() bool {
 }
 
 func (s *Simulcast) Select(extPkt *buffer.ExtPacket, layer int32) (result VideoLayerSelectorResult) {
+	// RAJA-TODO: fill out IsSwitchingToTargetSpatial
 	if s.currentLayer.Spatial != s.targetLayer.Spatial {
 		// Three things to check when not locked to target
 		//   1. Resumable layer - don't need a key frame
 		//   2. Opportunistic layer upgrade - needs a key frame
 		//   3. Need to downgrade - needs a key frame
-		isActive := s.currentLayer.IsValid()
+		// RAJA-TODO isActive := s.currentLayer.IsValid()
 		found := false
 		if s.parkedLayer.IsValid() {
 			if s.parkedLayer.Spatial == layer {
@@ -86,13 +87,15 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket, layer int32) (result VideoL
 		}
 
 		if found {
+			result.IsSwitchingLayer = true
+			/* RAJA-TODO
 			if !isActive {
 				result.IsResuming = true
 			}
+			*/
 			s.SetParked(buffer.InvalidLayer)
 			if s.currentLayer.Spatial >= s.maxLayer.Spatial {
 				result.IsSwitchingToMaxSpatial = true
-
 				s.logger.Infow(
 					"reached max layer",
 					"current", s.currentLayer,
@@ -112,28 +115,28 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket, layer int32) (result VideoL
 	}
 
 	// if locked to higher than max layer due to overshoot, check if it can be dialed back
-	if s.currentLayer.Spatial > s.maxLayer.Spatial {
-		if layer <= s.maxLayer.Spatial && extPkt.KeyFrame {
-			s.logger.Infow(
-				"adjusting overshoot",
-				"current", s.currentLayer,
-				"target", s.targetLayer,
-				"max", s.maxLayer,
-				"layer", layer,
-				"req", s.requestSpatial,
-				"maxSeen", s.maxSeenLayer,
-				"feed", extPkt.Packet.SSRC,
-			)
-			s.currentLayer.Spatial = layer
+	if s.currentLayer.Spatial > s.maxLayer.Spatial && layer <= s.maxLayer.Spatial && extPkt.KeyFrame {
+		s.logger.Infow(
+			"adjusting overshoot",
+			"current", s.currentLayer,
+			"target", s.targetLayer,
+			"max", s.maxLayer,
+			"layer", layer,
+			"req", s.requestSpatial,
+			"maxSeen", s.maxSeenLayer,
+			"feed", extPkt.Packet.SSRC,
+		)
+		s.currentLayer.Spatial = layer
 
-			if s.currentLayer.Spatial >= s.maxLayer.Spatial {
-				result.IsSwitchingToMaxSpatial = true
-			}
-
-			if s.currentLayer.Spatial >= s.maxLayer.Spatial || s.currentLayer.Spatial == s.maxSeenLayer.Spatial {
-				s.targetLayer.Spatial = layer
-			}
+		if s.currentLayer.Spatial >= s.maxLayer.Spatial {
+			result.IsSwitchingToMaxSpatial = true
 		}
+
+		if s.currentLayer.Spatial >= s.maxLayer.Spatial || s.currentLayer.Spatial == s.maxSeenLayer.Spatial {
+			s.targetLayer.Spatial = layer
+		}
+
+		result.IsSwitchingLayer = true
 	}
 
 	result.RTPMarker = extPkt.Packet.Marker

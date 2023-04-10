@@ -130,8 +130,11 @@ type DownTrackStreamAllocatorListener interface {
 	// video layer bitrate availability changed
 	OnBitrateAvailabilityChanged(dt *DownTrack)
 
-	// max published video layer changed
-	OnMaxPublishedLayerChanged(dt *DownTrack)
+	// max published spatial layer changed
+	OnMaxPublishedSpatialChanged(dt *DownTrack)
+
+	// max published temporal layer changed
+	OnMaxPublishedTemporalChanged(dt *DownTrack)
 
 	// subscription changed - mute/unmute
 	OnSubscriptionChanged(dt *DownTrack)
@@ -139,8 +142,8 @@ type DownTrackStreamAllocatorListener interface {
 	// subscribed max video layer changed
 	OnSubscribedLayerChanged(dt *DownTrack, layers buffer.VideoLayer)
 
-	// stream resumed
-	OnResume(dt *DownTrack)
+	// forwarded layer switched
+	OnForwardedLayerSwitched(dt *DownTrack)
 
 	// packet(s) sent
 	OnPacketsSent(dt *DownTrack, size int)
@@ -593,7 +596,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 
 	d.streamAllocatorBytesCounter.Add(uint32(hdr.MarshalSize() + len(payload)))
 
-	if tp.isSwitchingToMaxLayer && d.onMaxSubscribedLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
+	if tp.isSwitchingToMaxSpatial && d.onMaxSubscribedLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
 		d.onMaxSubscribedLayerChanged(d, layer)
 	}
 
@@ -601,17 +604,16 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		d.isNACKThrottled.Store(false)
 		d.rtpStats.UpdateKeyFrame(1)
 		d.logger.Debugw("forwarding key frame", "layer", layer)
+	}
 
-		// SVC-TODO - no need for key frame always when using SVC
+	if tp.isSwitchingLayer {
 		locked, _ := d.forwarder.CheckSync()
 		if locked {
 			d.stopKeyFrameRequester()
 		}
-	}
 
-	if tp.isResuming {
 		if sal := d.getStreamAllocatorListener(); sal != nil {
-			sal.OnResume(d)
+			sal.OnForwardedLayerSwitched(d)
 		}
 	}
 
@@ -921,15 +923,19 @@ func (d *DownTrack) UpTrackBitrateAvailabilityChange() {
 }
 
 func (d *DownTrack) UpTrackMaxPublishedLayerChange(maxPublishedLayer int32) {
-	d.forwarder.SetMaxPublishedLayer(maxPublishedLayer)
-
-	if sal := d.getStreamAllocatorListener(); sal != nil {
-		sal.OnMaxPublishedLayerChanged(d)
+	if d.forwarder.SetMaxPublishedLayer(maxPublishedLayer) {
+		if sal := d.getStreamAllocatorListener(); sal != nil {
+			sal.OnMaxPublishedSpatialChanged(d)
+		}
 	}
 }
 
 func (d *DownTrack) UpTrackMaxTemporalLayerSeenChange(maxTemporalLayerSeen int32) {
-	d.forwarder.SetMaxTemporalLayerSeen(maxTemporalLayerSeen)
+	if d.forwarder.SetMaxTemporalLayerSeen(maxTemporalLayerSeen) {
+		if sal := d.getStreamAllocatorListener(); sal != nil {
+			sal.OnMaxPublishedTemporalChanged(d)
+		}
+	}
 }
 
 func (d *DownTrack) maybeAddTransition(_bitrate int64, distance float64) {

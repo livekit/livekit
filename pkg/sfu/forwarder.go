@@ -123,13 +123,13 @@ func (v VideoTransition) String() string {
 // -------------------------------------------------------------------
 
 type TranslationParams struct {
-	shouldDrop            bool
-	isResuming            bool
-	isSwitchingToMaxLayer bool
-	rtp                   *TranslationParamsRTP
-	codecBytes            []byte
-	ddBytes               []byte
-	marker                bool
+	shouldDrop              bool
+	isSwitchingLayer        bool
+	isSwitchingToMaxSpatial bool
+	rtp                     *TranslationParamsRTP
+	codecBytes              []byte
+	ddBytes                 []byte
+	marker                  bool
 }
 
 // -------------------------------------------------------------------
@@ -202,30 +202,32 @@ func NewForwarder(
 	return f
 }
 
-func (f *Forwarder) SetMaxPublishedLayer(maxPublishedLayer int32) {
+func (f *Forwarder) SetMaxPublishedLayer(maxPublishedLayer int32) bool {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
 	existingMaxSeen := f.vls.GetMaxSeen()
 	if maxPublishedLayer <= existingMaxSeen.Spatial {
-		return
+		return false
 	}
 
 	f.vls.SetMaxSeenSpatial(maxPublishedLayer)
 	f.logger.Debugw("setting max published layer", "maxPublishedLayer", maxPublishedLayer)
+	return true
 }
 
-func (f *Forwarder) SetMaxTemporalLayerSeen(maxTemporalLayerSeen int32) {
+func (f *Forwarder) SetMaxTemporalLayerSeen(maxTemporalLayerSeen int32) bool {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
 	existingMaxSeen := f.vls.GetMaxSeen()
 	if maxTemporalLayerSeen <= existingMaxSeen.Temporal {
-		return
+		return false
 	}
 
 	f.vls.SetMaxSeenTemporal(maxTemporalLayerSeen)
 	f.logger.Debugw("setting max temporal layer seen", "maxTemporalLayerSeen", maxTemporalLayerSeen)
+	return true
 }
 
 func (f *Forwarder) OnParkedLayerExpired(fn func()) {
@@ -536,15 +538,24 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 	}
 	alloc.BandwidthNeeded = optimalBandwidthNeeded
 
+	getMaxTemporal := func() int32 {
+		maxTemporal := maxLayer.Temporal
+		if maxSeenLayer.Temporal != buffer.InvalidLayerTemporal && maxSeenLayer.Temporal < maxTemporal {
+			maxTemporal = maxSeenLayer.Temporal
+		}
+		return maxTemporal
+	}
+
 	opportunisticAlloc := func() {
 		// opportunistically latch on to anything
 		maxSpatial := maxLayer.Spatial
 		if allowOvershoot && f.vls.IsOvershootOkay() && maxSeenLayer.Spatial > maxSpatial {
 			maxSpatial = maxSeenLayer.Spatial
 		}
+
 		alloc.TargetLayer = buffer.VideoLayer{
 			Spatial:  int32(math.Min(float64(maxSeenLayer.Spatial), float64(maxSpatial))),
-			Temporal: maxLayer.Temporal,
+			Temporal: getMaxTemporal(),
 		}
 	}
 
@@ -599,7 +610,7 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 					alloc.TargetLayer.Spatial = l
 				}
 			}
-			alloc.TargetLayer.Temporal = maxLayer.Temporal
+			alloc.TargetLayer.Temporal = getMaxTemporal()
 
 			alloc.RequestLayerSpatial = alloc.TargetLayer.Spatial
 		} else {
@@ -608,7 +619,7 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 				// current is locked to desired, stay there
 				alloc.TargetLayer = buffer.VideoLayer{
 					Spatial:  requestSpatial,
-					Temporal: maxLayer.Temporal,
+					Temporal: getMaxTemporal(),
 				}
 				alloc.RequestLayerSpatial = requestSpatial
 			} else {
@@ -1487,10 +1498,10 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		}
 		return tp, nil
 	}
-	tp.isSwitchingToMaxLayer = result.IsSwitchingToMaxSpatial
-	tp.isResuming = result.IsResuming
-	tp.marker = result.RTPMarker
+	tp.isSwitchingLayer = result.IsSwitchingLayer
+	tp.isSwitchingToMaxSpatial = result.IsSwitchingToMaxSpatial
 	tp.ddBytes = result.DependencyDescriptorExtension
+	tp.marker = result.RTPMarker
 
 	if FlagPauseOnDowngrade && f.isDeficientLocked() && f.vls.GetTarget().Spatial < f.vls.GetCurrent().Spatial {
 		//

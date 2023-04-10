@@ -98,7 +98,7 @@ const (
 	streamAllocatorSignalPeriodicPing
 	streamAllocatorSignalSendProbe
 	streamAllocatorSignalProbeClusterDone
-	streamAllocatorSignalResume
+	streamAllocatorSignalForwardedLayerSwitch
 )
 
 func (s streamAllocatorSignal) String() string {
@@ -117,8 +117,8 @@ func (s streamAllocatorSignal) String() string {
 		return "SEND_PROBE"
 	case streamAllocatorSignalProbeClusterDone:
 		return "PROBE_CLUSTER_DONE"
-	case streamAllocatorSignalResume:
-		return "RESUME"
+	case streamAllocatorSignalForwardedLayerSwitch:
+		return "FORWARDED_LAYER_SWITCH"
 	default:
 		return fmt.Sprintf("%d", int(s))
 	}
@@ -386,8 +386,13 @@ func (s *StreamAllocator) OnBitrateAvailabilityChanged(downTrack *sfu.DownTrack)
 	s.maybePostEventAllocateTrack(downTrack)
 }
 
-// called when feeding track's max publisher layer changes
-func (s *StreamAllocator) OnMaxPublishedLayerChanged(downTrack *sfu.DownTrack) {
+// called when feeding track's max published spatial layer changes
+func (s *StreamAllocator) OnMaxPublishedSpatialChanged(downTrack *sfu.DownTrack) {
+	s.maybePostEventAllocateTrack(downTrack)
+}
+
+// called when feeding track's max published temporal layer changes
+func (s *StreamAllocator) OnMaxPublishedTemporalChanged(downTrack *sfu.DownTrack) {
 	s.maybePostEventAllocateTrack(downTrack)
 }
 
@@ -415,10 +420,10 @@ func (s *StreamAllocator) OnSubscribedLayerChanged(downTrack *sfu.DownTrack, lay
 	}
 }
 
-// called when forwarder resumes a track
-func (s *StreamAllocator) OnResume(downTrack *sfu.DownTrack) {
+// called when forwarder switches layer of a track
+func (s *StreamAllocator) OnForwardedLayerSwitched(downTrack *sfu.DownTrack) {
 	s.postEvent(Event{
-		Signal:  streamAllocatorSignalResume,
+		Signal:  streamAllocatorSignalForwardedLayerSwitch,
 		TrackID: livekit.TrackID(downTrack.ID()),
 	})
 }
@@ -529,8 +534,8 @@ func (s *StreamAllocator) handleEvent(event *Event) {
 		s.handleSignalSendProbe(event)
 	case streamAllocatorSignalProbeClusterDone:
 		s.handleSignalProbeClusterDone(event)
-	case streamAllocatorSignalResume:
-		s.handleSignalResume(event)
+	case streamAllocatorSignalForwardedLayerSwitch:
+		s.handleSignalForwardedLayerSwitch(event)
 	}
 }
 
@@ -630,7 +635,7 @@ func (s *StreamAllocator) handleSignalProbeClusterDone(event *Event) {
 	s.probeEndTime = s.lastProbeStartTime.Add(queueWait)
 }
 
-func (s *StreamAllocator) handleSignalResume(event *Event) {
+func (s *StreamAllocator) handleSignalForwardedLayerSwitch(event *Event) {
 	s.videoTracksMu.Lock()
 	track := s.videoTracks[event.TrackID]
 	s.videoTracksMu.Unlock()
