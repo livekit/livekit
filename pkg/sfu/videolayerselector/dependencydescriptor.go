@@ -124,11 +124,13 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	if dti == dd.DecodeTargetSwitch {
 		// dependency descriptor decode target switch is enabled at all potential switch points.
 		// So, setting current layer on every switch point will change current layer a lot.
-		// currentLayer is not needed for layer selection in this selector.
+		//
+		// However `currentLayer` is not needed for layer selection in this selector.
 		// But, it is needed to signal things in the selector checks outside of this selector.
+		//
 		// The following cases are handled
-		//   1. To detect resumption - so by setting it to incoming layer only when current lqyer is invalid, that is taken care of
-		//   2. To detect target achieved - set current to target if it is not the same
+		//   1. To detect resumption
+		//   2. To detect target achieved so that key frame requests can be stopped
 		//   3. To detect reaching max spatial layer - checked when current hits target
 		if !d.currentLayer.IsValid() {
 			result.IsResuming = true
@@ -153,9 +155,13 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		if d.currentLayer != d.targetLayer {
 			if d.currentLayer.Spatial != d.targetLayer.Spatial && int32(extPkt.DependencyDescriptor.FrameDependencies.SpatialId) == d.targetLayer.Spatial {
 				d.currentLayer.Spatial = d.targetLayer.Spatial
+
+				if d.currentLayer.Spatial == d.requestSpatial {
+					result.IsSwitchingToRequestSpatial = true
+				}
+
 				if d.currentLayer.Spatial == d.maxLayer.Spatial {
 					result.IsSwitchingToMaxSpatial = true
-
 					d.logger.Infow(
 						"reached max layer",
 						"current", d.currentLayer,

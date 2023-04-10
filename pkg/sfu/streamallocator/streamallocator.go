@@ -386,8 +386,13 @@ func (s *StreamAllocator) OnBitrateAvailabilityChanged(downTrack *sfu.DownTrack)
 	s.maybePostEventAllocateTrack(downTrack)
 }
 
-// called when feeding track's max publisher layer changes
-func (s *StreamAllocator) OnMaxPublishedLayerChanged(downTrack *sfu.DownTrack) {
+// called when feeding track's max published spatial layer changes
+func (s *StreamAllocator) OnMaxPublishedSpatialChanged(downTrack *sfu.DownTrack) {
+	s.maybePostEventAllocateTrack(downTrack)
+}
+
+// called when feeding track's max published temporal layer changes
+func (s *StreamAllocator) OnMaxPublishedTemporalChanged(downTrack *sfu.DownTrack) {
 	s.maybePostEventAllocateTrack(downTrack)
 }
 

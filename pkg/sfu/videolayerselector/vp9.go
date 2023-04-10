@@ -42,29 +42,34 @@ func (v *VP9) Select(extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerS
 			}
 
 			updatedLayer = extPkt.VideoLayer
-			currentLayer = extPkt.VideoLayer
 		} else {
-			// temporal scale up/down
-			if v.currentLayer.Temporal < v.targetLayer.Temporal {
-				if extPkt.VideoLayer.Temporal > v.currentLayer.Temporal && extPkt.VideoLayer.Temporal <= v.targetLayer.Temporal && vp9.U && vp9.B {
-					updatedLayer.Temporal = extPkt.VideoLayer.Temporal
-					currentLayer.Temporal = extPkt.VideoLayer.Temporal
-				}
-			} else {
-				if extPkt.VideoLayer.Temporal < v.currentLayer.Temporal && extPkt.VideoLayer.Temporal >= v.targetLayer.Temporal && vp9.E {
-					updatedLayer.Temporal = extPkt.VideoLayer.Temporal
+			if v.currentLayer.Temporal != v.targetLayer.Temporal {
+				if v.currentLayer.Temporal < v.targetLayer.Temporal {
+					// temporal scale up
+					if extPkt.VideoLayer.Temporal > v.currentLayer.Temporal && extPkt.VideoLayer.Temporal <= v.targetLayer.Temporal && vp9.U && vp9.B {
+						currentLayer.Temporal = extPkt.VideoLayer.Temporal
+						updatedLayer.Temporal = extPkt.VideoLayer.Temporal
+					}
+				} else {
+					// temporal scale down
+					if vp9.E {
+						updatedLayer.Temporal = v.targetLayer.Temporal
+					}
 				}
 			}
 
-			// spatial scale up/down
-			if v.currentLayer.Spatial < v.targetLayer.Spatial {
-				if extPkt.VideoLayer.Spatial > v.currentLayer.Spatial && extPkt.VideoLayer.Spatial <= v.targetLayer.Spatial && !vp9.P && vp9.B {
-					updatedLayer.Spatial = extPkt.VideoLayer.Spatial
-					currentLayer.Spatial = extPkt.VideoLayer.Spatial
-				}
-			} else {
-				if extPkt.VideoLayer.Spatial < v.currentLayer.Spatial && extPkt.VideoLayer.Spatial >= v.targetLayer.Spatial && vp9.E {
-					updatedLayer.Spatial = extPkt.VideoLayer.Spatial
+			if v.currentLayer.Spatial != v.targetLayer.Spatial {
+				if v.currentLayer.Spatial < v.targetLayer.Spatial {
+					// spatial scale up
+					if extPkt.VideoLayer.Spatial > v.currentLayer.Spatial && extPkt.VideoLayer.Spatial <= v.targetLayer.Spatial && !vp9.P && vp9.B {
+						currentLayer.Spatial = extPkt.VideoLayer.Spatial
+						updatedLayer.Spatial = extPkt.VideoLayer.Spatial
+					}
+				} else {
+					// spatial scale down
+					if vp9.E {
+						updatedLayer.Spatial = v.targetLayer.Spatial
+					}
 				}
 			}
 		}
@@ -72,6 +77,10 @@ func (v *VP9) Select(extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerS
 		if updatedLayer != v.currentLayer {
 			if !v.currentLayer.IsValid() && updatedLayer.IsValid() {
 				result.IsResuming = true
+			}
+
+			if v.currentLayer.Spatial != v.requestSpatial && updatedLayer.Spatial == v.requestSpatial {
+				result.IsSwitchingToRequestSpatial = true
 			}
 
 			if v.currentLayer.Spatial != v.maxLayer.Spatial && updatedLayer.Spatial == v.maxLayer.Spatial {
@@ -93,7 +102,7 @@ func (v *VP9) Select(extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerS
 	}
 
 	result.RTPMarker = extPkt.Packet.Marker
-	if extPkt.VideoLayer.Spatial == v.currentLayer.Spatial && vp9.E {
+	if vp9.E && extPkt.VideoLayer.Spatial == currentLayer.Spatial && (vp9.P || v.targetLayer.Spatial <= v.currentLayer.Spatial) {
 		result.RTPMarker = true
 	}
 	result.IsSelected = !extPkt.VideoLayer.GreaterThan(currentLayer)

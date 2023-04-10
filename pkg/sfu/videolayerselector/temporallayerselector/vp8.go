@@ -34,8 +34,8 @@ func (v *VP8) Select(extPkt *buffer.ExtPacket, current int32, target int32) (thi
 			next = tid
 		}
 	} else {
-		if tid < current && tid >= target && extPkt.Packet.Marker {
-			next = tid
+		if extPkt.Packet.Marker {
+			next = target
 		}
 	}
 	return

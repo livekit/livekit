@@ -89,10 +89,15 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket, layer int32) (result VideoL
 			if !isActive {
 				result.IsResuming = true
 			}
+
 			s.SetParked(buffer.InvalidLayer)
+
+			if s.currentLayer.Spatial == s.requestSpatial {
+				result.IsSwitchingToRequestSpatial = true
+			}
+
 			if s.currentLayer.Spatial >= s.maxLayer.Spatial {
 				result.IsSwitchingToMaxSpatial = true
-
 				s.logger.Infow(
 					"reached max layer",
 					"current", s.currentLayer,
@@ -112,27 +117,29 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket, layer int32) (result VideoL
 	}
 
 	// if locked to higher than max layer due to overshoot, check if it can be dialed back
-	if s.currentLayer.Spatial > s.maxLayer.Spatial {
-		if layer <= s.maxLayer.Spatial && extPkt.KeyFrame {
-			s.logger.Infow(
-				"adjusting overshoot",
-				"current", s.currentLayer,
-				"target", s.targetLayer,
-				"max", s.maxLayer,
-				"layer", layer,
-				"req", s.requestSpatial,
-				"maxSeen", s.maxSeenLayer,
-				"feed", extPkt.Packet.SSRC,
-			)
-			s.currentLayer.Spatial = layer
+	if s.currentLayer.Spatial > s.maxLayer.Spatial && layer <= s.maxLayer.Spatial && extPkt.KeyFrame {
+		s.logger.Infow(
+			"adjusting overshoot",
+			"current", s.currentLayer,
+			"target", s.targetLayer,
+			"max", s.maxLayer,
+			"layer", layer,
+			"req", s.requestSpatial,
+			"maxSeen", s.maxSeenLayer,
+			"feed", extPkt.Packet.SSRC,
+		)
+		s.currentLayer.Spatial = layer
 
-			if s.currentLayer.Spatial >= s.maxLayer.Spatial {
-				result.IsSwitchingToMaxSpatial = true
-			}
+		if s.currentLayer.Spatial == s.requestSpatial {
+			result.IsSwitchingToRequestSpatial = true
+		}
 
-			if s.currentLayer.Spatial >= s.maxLayer.Spatial || s.currentLayer.Spatial == s.maxSeenLayer.Spatial {
-				s.targetLayer.Spatial = layer
-			}
+		if s.currentLayer.Spatial >= s.maxLayer.Spatial {
+			result.IsSwitchingToMaxSpatial = true
+		}
+
+		if s.currentLayer.Spatial >= s.maxLayer.Spatial || s.currentLayer.Spatial == s.maxSeenLayer.Spatial {
+			s.targetLayer.Spatial = layer
 		}
 	}
 

@@ -626,10 +626,10 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 			return
 		}
 
-		// svc packet, dispatch to correct tracker
 		spatialTracker := tracker
 		spatialLayer := layer
 		if pkt.Spatial >= 0 {
+			// svc packet, dispatch to correct tracker
 			spatialLayer = pkt.Spatial
 			spatialTracker = w.streamTrackerManager.GetTracker(pkt.Spatial)
 			if spatialTracker == nil {

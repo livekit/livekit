@@ -1409,8 +1409,8 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	marshalledVP8, err := expectedVP8.Marshal()
 	require.NoError(t, err)
 	expectedTP = TranslationParams{
-		isSwitchingToMaxLayer: true,
-		isResuming:            true,
+		isSwitchingToMaxSpatial: true,
+		isResuming:              true,
 		rtp: &TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingContiguous,
 			sequenceNumber: 23333,
@@ -1721,7 +1721,7 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	marshalledVP8, err = expectedVP8.Marshal()
 	require.NoError(t, err)
 	expectedTP = TranslationParams{
-		isSwitchingToMaxLayer: true,
+		isSwitchingToMaxSpatial: true,
 		rtp: &TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingContiguous,
 			sequenceNumber: 23339,

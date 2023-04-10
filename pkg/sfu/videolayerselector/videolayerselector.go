@@ -9,6 +9,7 @@ type VideoLayerSelectorResult struct {
 	IsSelected                    bool
 	IsRelevant                    bool
 	IsResuming                    bool
+	IsSwitchingToRequestSpatial   bool
 	IsSwitchingToMaxSpatial       bool
 	RTPMarker                     bool
 	DependencyDescriptorExtension []byte
