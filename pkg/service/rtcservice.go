@@ -254,7 +254,12 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			signalStats.AddBytes(uint64(count), true)
 		}
 	}
-	pLogger.Infow("new client WS connected", "connID", cr.ConnectionID)
+	pLogger.Infow("new client WS connected",
+		"connID", cr.ConnectionID,
+		"reconnect", pi.Reconnect,
+		"reconnectReason", pi.ReconnectReason,
+		"adaptiveStream", pi.AdaptiveStream,
+	)
 
 	// handle responses
 	go func() {
