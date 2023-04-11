@@ -279,6 +279,7 @@ func (r *RoomManager) StartSession(
 		"sdkVersion", pi.Client.Version,
 		"protocol", pi.Client.Protocol,
 		"reconnect", pi.Reconnect,
+		"reconnectReason", pi.ReconnectReason,
 		"adaptiveStream", pi.AdaptiveStream,
 	)
 
