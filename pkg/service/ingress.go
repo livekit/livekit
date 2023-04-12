@@ -103,7 +103,7 @@ func (s *IngressService) CreateIngressWithUrlPrefix(ctx context.Context, urlPref
 	return info, nil
 }
 
-func updateInfoForRequest(req *livekit.UpdateIngressRequest, info *livekit.IngressInfo) error {
+func updateInfoUsingRequest(req *livekit.UpdateIngressRequest, info *livekit.IngressInfo) error {
 	if req.Name != "" {
 		info.Name = req.Name
 	}
@@ -164,14 +164,14 @@ func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateI
 		fallthrough
 
 	case livekit.IngressState_ENDPOINT_INACTIVE:
-		err = updateInfoForRequest(req, info)
+		err = updateInfoUsingRequest(req, info)
 		if err != nil {
 			return nil, err
 		}
 
 	case livekit.IngressState_ENDPOINT_BUFFERING,
 		livekit.IngressState_ENDPOINT_PUBLISHING:
-		err := updateInfoForRequest(req, info)
+		err := updateInfoUsingRequest(req, info)
 		if err != nil {
 			return nil, err
 		}
