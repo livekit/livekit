@@ -1448,7 +1448,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		}
 
 		var extraExtensions []extensionData
-		if len(meta.ddBytes) > 0 {
+		if d.dependencyDescriptorID != 0 && len(meta.ddBytes) != 0 {
 			extraExtensions = append(extraExtensions, extensionData{
 				id:      uint8(d.dependencyDescriptorID),
 				payload: meta.ddBytes,
