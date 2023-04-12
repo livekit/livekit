@@ -154,13 +154,13 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 			continue
 		}
 
-		chainID := d.structure.DecodeTargetProtectedByChain[dt.Target]
-		if len(fd.ChainDiffs) < chainID {
+		chainIdx := d.structure.DecodeTargetProtectedByChain[dt.Target]
+		if len(fd.ChainDiffs) < chainIdx {
 			// look for lower target
 			continue
 		}
 
-		prevFrameInChain := extFrameNum - uint64(fd.ChainDiffs[chainID])
+		prevFrameInChain := extFrameNum - uint64(fd.ChainDiffs[chainIdx])
 		if prevFrameInChain != 0 && prevFrameInChain != extFrameNum {
 			if sd, err := d.decisions.GetDecision(prevFrameInChain); err != nil || sd != selectorDecisionForwarded {
 				// look for lower target
