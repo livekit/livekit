@@ -59,7 +59,6 @@ func (b *Base) GetMax() buffer.VideoLayer {
 
 func (b *Base) SetTarget(targetLayer buffer.VideoLayer) {
 	b.targetLayer = targetLayer
-	b.logger.Infow("RAJA setting target", "target", b.targetLayer) // REMOVE
 }
 
 func (b *Base) GetTarget() buffer.VideoLayer {

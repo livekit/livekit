@@ -15,7 +15,7 @@ type DependencyDescriptor struct {
 	frameNum  *utils.WrapAround[uint16, uint64]
 	decisions *SelectorDecisionCache
 
-	decodeTargets              []buffer.DependencyDescriptorDecodeTarget // RAJA-TODO: get this from extPkt
+	decodeTargets              []buffer.DependencyDescriptorDecodeTarget
 	activeDecodeTargetsBitmask *uint32
 	structure                  *dede.FrameDependencyStructure
 }
@@ -39,20 +39,6 @@ func NewDependencyDescriptorFromNull(vls VideoLayerSelector) *DependencyDescript
 func (d *DependencyDescriptor) IsOvershootOkay() bool {
 	return false
 }
-
-// RAJA-TODO
-// - check frame diffs and decode chains
-// - frame number wrapper
-// - bit set to store forwarded frames
-//   o set on any packet of forwarded frame
-//   o when frame is forwarded, forward other packets without other checks
-//   o (maybe) use two bits to indicate missing, forwarded, dropped
-// - on a switch point, set current to decode target (both spatial and temporal)
-// - set RTP marker on current spatial match and end-of-frame
-// - need some notion of chain broken and wait for key frame
-// Questions
-// - what happens on packet loss?
-// - what happens on out-of-order?
 
 func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerSelectorResult) {
 	dd := extPkt.DependencyDescriptor
@@ -81,17 +67,15 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	}
 	switch sd {
 	case selectorDecisionForwarded:
+		// a packet of an alreadty forwarded frame, maintain decision
 		result.RTPMarker = extPkt.Packet.Header.Marker || (dd.LastPacketInFrame && d.currentLayer.Spatial == int32(fd.SpatialId))
-		d.logger.Infow("RAJA forwarding2", "info", fmt.Sprintf("fn: %d/%d, incoming: %+v, current: %+v, marker: %+v", dd.FrameNumber, extFrameNum, incomingLayer, d.currentLayer, result.RTPMarker)) // REMOVE
 		result.IsSelected = true
 
 	case selectorDecisionDropped:
-		d.logger.Infow("RAJA dropping2", "info", fmt.Sprintf("fn: %d/%d, incoming: %+v, current: %+v, marker: %+v", dd.FrameNumber, extFrameNum, incomingLayer, d.currentLayer, result.RTPMarker)) // REMOVE
+		// a packet of an alreadty dropped frame, maintain decision
 		return
 	}
 
-	// RAJA-TODO - maybe add a struct field `waitingForKeyFrame` and add to check here
-	// RAJA-TODO - maybe this is not required
 	if !d.currentLayer.IsValid() && !extPkt.KeyFrame {
 		d.decisions.AddDropped(extFrameNum)
 		return
@@ -109,13 +93,12 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 			break
 		}
 	}
-	// RAJA-TODO: check if not decodable, can we drop this early?
 	if !isDecodable {
 		d.decisions.AddDropped(extFrameNum)
 		return
 	}
 
-	// RAJA-TODO should not update for out-of-order RTP packets
+	// DD-TODO should not update for out-of-order RTP packets
 	if dd.AttachedStructure != nil {
 		// update decode target layer and active decode targets
 		// DD-TODO : these targets info can be shared by all the downtracks, no need calculate in every selector
@@ -179,23 +162,12 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	}
 
 	if highestDecodeTarget.Target < 0 {
+		// no active decode target, do not select
 		//d.logger.Debugw(fmt.Sprintf("drop packet for no target found, decodeTargets %v, tagetLayer %v, incoming %v",
 		//d.decodeTargets,
 		//d.targetLayer,
 		//incomingLayer,
 		//))
-		d.logger.Debugw(fmt.Sprintf("RAJA drop packet for no target found, decodeTargets %v, tagetLayer %v, incoming %v, structure: %+v, fn: %d/%d, fd: %+v, dec: %+v",
-			d.decodeTargets,
-			d.targetLayer,
-			incomingLayer,
-			d.structure,
-			dd.FrameNumber,
-			extFrameNum,
-			fd,
-			isDecodable,
-		)) // REMOVE
-
-		// no active decode target, do not select
 		d.decisions.AddDropped(extFrameNum)
 		return
 	}
@@ -208,12 +180,6 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 			highestDecodeTarget,
 			incomingLayer,
 		))
-		d.logger.Debugw(fmt.Sprintf("RAJA drop packet for dtis error, dtis %v, highestTarget %+v, incoming %v, dec: %+v",
-			dtis,
-			highestDecodeTarget,
-			incomingLayer,
-			isDecodable,
-		)) // REMOVE
 		d.decisions.AddDropped(extFrameNum)
 		return
 	}
@@ -228,20 +194,11 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		//dd.FrameNumber,
 		//extFrameNum,
 		//))
-		d.logger.Debugw(fmt.Sprintf("RAJA drop packet for decode target not present, dtis %v, highestDecodeTarget %d, incoming %v, fn: %d/%d, dec: %+v",
-			dtis,
-			highestDecodeTarget,
-			incomingLayer,
-			dd.FrameNumber,
-			extFrameNum,
-			isDecodable,
-		)) // REMOVE
 		d.decisions.AddDropped(extFrameNum)
 		return
 	}
 
 	if dti == dede.DecodeTargetSwitch && d.currentLayer != highestDecodeTarget.Layer {
-		d.logger.Infow("RAJA switching", "current", d.currentLayer, "incoming", incomingLayer, "target", d.targetLayer, "highestDecodeTarget", highestDecodeTarget) // REMOVE
 		if !d.currentLayer.IsValid() {
 			result.IsResuming = true
 			d.logger.Infow(
@@ -294,7 +251,6 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 
 	d.decisions.AddForwarded(extFrameNum)
 	result.RTPMarker = extPkt.Packet.Header.Marker || (dd.LastPacketInFrame && d.currentLayer.Spatial == int32(fd.SpatialId))
-	d.logger.Infow("RAJA forwarding", "info", fmt.Sprintf("fn: %d/%d, incoming: %+v, current: %+v, marker: %+v, isDecodable: %+v", dd.FrameNumber, extFrameNum, incomingLayer, d.currentLayer, result.RTPMarker, isDecodable)) // REMOVE
 	result.IsSelected = true
 	return
 }
@@ -302,56 +258,13 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 func (d *DependencyDescriptor) SetTarget(targetLayer buffer.VideoLayer) {
 	d.Base.SetTarget(targetLayer)
 
-	/* RAJA-REMOVE
-	activeBitMask := uint32(0)
-	var maxSpatial, maxTemporal int32
-	for _, dt := range d.decodeTargets {
-		if dt.Layer.Spatial > maxSpatial {
-			maxSpatial = dt.Layer.Spatial
-		}
-		if dt.Layer.Temporal > maxTemporal {
-			maxTemporal = dt.Layer.Temporal
-		}
-		if dt.Layer.Spatial <= targetLayer.Spatial && dt.Layer.Temporal <= targetLayer.Temporal {
-			activeBitMask |= 1 << dt.Target
-		}
-	}
-	if targetLayer.Spatial == maxSpatial && targetLayer.Temporal == maxTemporal {
-		// all the decode targets are selected
-		d.activeDecodeTargetsBitmask = nil
-	} else {
-		d.activeDecodeTargetsBitmask = &activeBitMask
-	}
-	*/
 	d.activeDecodeTargetsBitmask = buffer.GetActiveDecodeTargetBitmask(targetLayer, d.decodeTargets)
 	d.logger.Debugw("setting target", "targetlayer", targetLayer, "activeDecodeTargetsBitmask", d.activeDecodeTargetsBitmask)
 }
 
 func (d *DependencyDescriptor) updateDependencyStructure(structure *dede.FrameDependencyStructure) {
 	d.structure = structure
-	/* RAJA-REMOVE
-	d.decodeTargets = d.decodeTargets[:0]
 
-	for target := 0; target < structure.NumDecodeTargets; target++ {
-		layer := buffer.VideoLayer{Spatial: 0, Temporal: 0}
-		for _, t := range structure.Templates {
-			if t.DecodeTargetIndications[target] != dd.DecodeTargetNotPresent {
-				if layer.Spatial < int32(t.SpatialId) {
-					layer.Spatial = int32(t.SpatialId)
-				}
-				if layer.Temporal < int32(t.TemporalId) {
-					layer.Temporal = int32(t.TemporalId)
-				}
-			}
-		}
-		d.decodeTargets = append(d.decodeTargets, decodeTarget{target, layer})
-	}
-
-	// sort decode target layer by spatial and temporal from high to low
-	sort.Slice(d.decodeTargets, func(i, j int) bool {
-		return d.decodeTargets[i].Layer.GreaterThan(d.decodeTargets[j].Layer)
-	})
-	*/
 	d.decodeTargets = buffer.ProcessFrameDependencyStructure(structure)
 	d.logger.Debugw(fmt.Sprintf("update decode targets: %v", d.decodeTargets))
 }

@@ -16,8 +16,7 @@ type DependencyDescriptorParser struct {
 	ddExtID           uint8
 	logger            logger.Logger
 	onMaxLayerChanged func(int32, int32)
-	// RAJA-REMOVE decodeTargetLayer []VideoLayer
-	decodeTargets []DependencyDescriptorDecodeTarget
+	decodeTargets     []DependencyDescriptorDecodeTarget
 }
 
 func NewDependencyDescriptorParser(ddExtID uint8, logger logger.Logger, onMaxLayerChanged func(int32, int32)) *DependencyDescriptorParser {
@@ -57,33 +56,7 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*dd.DependencyDescr
 	}
 
 	if ddVal.AttachedStructure != nil {
-		// RAJA-REMOVE var maxSpatial, maxTemporal int32
 		r.structure = ddVal.AttachedStructure
-		/* RAJA-REMOVE
-		r.decodeTargetLayer = r.decodeTargetLayer[:0]
-		for target := 0; target < r.structure.NumDecodeTargets; target++ {
-			layer := VideoLayer{0, 0}
-			for _, t := range r.structure.Templates {
-				if t.DecodeTargetIndications[target] != dd.DecodeTargetNotPresent {
-					if layer.Spatial < int32(t.SpatialId) {
-						layer.Spatial = int32(t.SpatialId)
-					}
-					if layer.Temporal < int32(t.TemporalId) {
-						layer.Temporal = int32(t.TemporalId)
-					}
-				}
-			}
-			if layer.Spatial > maxSpatial {
-				maxSpatial = layer.Spatial
-			}
-			if layer.Temporal > maxTemporal {
-				maxTemporal = layer.Temporal
-			}
-			r.decodeTargetLayer = append(r.decodeTargetLayer, layer)
-		}
-		r.logger.Debugw("max layer changed", "maxSpatial", maxSpatial, "maxTemporal", maxTemporal)
-		go r.onMaxLayerChanged(maxSpatial, maxTemporal)
-		*/
 		r.decodeTargets = ProcessFrameDependencyStructure(ddVal.AttachedStructure)
 		if len(r.decodeTargets) != 0 {
 			r.logger.Debugw(fmt.Sprintf("update decode targets: %v", r.decodeTargets))
@@ -97,18 +70,6 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*dd.DependencyDescr
 
 	if mask := ddVal.ActiveDecodeTargetsBitmask; mask != nil {
 		var maxSpatial, maxTemporal int32
-		/* RAJA-REMOVE
-		for dt, layer := range r.decodeTargetLayer {
-			if *mask&(1<<dt) != uint32(dd.DecodeTargetNotPresent) {
-				if maxSpatial < layer.Spatial {
-					maxSpatial = layer.Spatial
-				}
-				if maxTemporal < layer.Temporal {
-					maxTemporal = layer.Temporal
-				}
-			}
-		}
-		*/
 		for _, dt := range r.decodeTargets {
 			if *mask&(1<<dt.Target) != uint32(dd.DecodeTargetNotPresent) {
 				if maxSpatial < dt.Layer.Spatial {
@@ -120,7 +81,7 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*dd.DependencyDescr
 			}
 		}
 		r.logger.Debugw("max layer changed", "maxSpatial", maxSpatial, "maxTemporal", maxTemporal)
-		// RAJA-TODO: should this be called in a goroutine as the preivous invocation above is?
+		// DD-TODO: should this be called in a goroutine as the preivous invocation above is?
 		r.onMaxLayerChanged(maxSpatial, maxTemporal)
 	}
 
@@ -153,12 +114,6 @@ func ProcessFrameDependencyStructure(structure *dd.FrameDependencyStructure) []D
 
 	// sort decode target layer by spatial and temporal from high to low
 	sort.Slice(decodeTargets, func(i, j int) bool {
-		/* RAJA-REMOVE
-		if decodeTargets[i].Layer.Spatial == decodeTargets[j].Layer.Spatial {
-			return decodeTargets[i].Layer.Temporal > decodeTargets[j].Layer.Temporal
-		}
-		return decodeTargets[i].Layer.Spatial > decodeTargets[j].Layer.Spatial
-		*/
 		return decodeTargets[i].Layer.GreaterThan(decodeTargets[j].Layer)
 	})
 
