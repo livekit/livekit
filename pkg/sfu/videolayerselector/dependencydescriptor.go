@@ -210,7 +210,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		return
 	}
 
-	if dti == dede.DecodeTargetSwitch && d.currentLayer != highestDecodeTarget.Layer {
+	if d.currentLayer != highestDecodeTarget.Layer {
 		if !d.currentLayer.IsValid() {
 			result.IsResuming = true
 			d.logger.Infow(
@@ -247,7 +247,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		Descriptor: dd,
 		Structure:  d.structure,
 	}
-	if dd.AttachedStructure == nil && d.activeDecodeTargetsBitmask != nil {
+	if dd.AttachedStructure == nil {
 		if d.needsDecodeTargetBitmask {
 			d.needsDecodeTargetBitmask = false
 
@@ -255,11 +255,13 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 			d.logger.Debugw("setting decode target bitmask", "activeDecodeTargetsBitmask", d.activeDecodeTargetsBitmask)
 		}
 
-		// clone and override activebitmask
-		ddClone := *ddExtension.Descriptor
-		ddClone.ActiveDecodeTargetsBitmask = d.activeDecodeTargetsBitmask
-		ddExtension.Descriptor = &ddClone
-		// d.logger.Debugw("set active decode targets bitmask", "activeDecodeTargetsBitmask", d.activeDecodeTargetsBitmask)
+		if d.activeDecodeTargetsBitmask != nil {
+			// clone and override activebitmask
+			ddClone := *ddExtension.Descriptor
+			ddClone.ActiveDecodeTargetsBitmask = d.activeDecodeTargetsBitmask
+			ddExtension.Descriptor = &ddClone
+			// d.logger.Debugw("set active decode targets bitmask", "activeDecodeTargetsBitmask", d.activeDecodeTargetsBitmask)
+		}
 	}
 	bytes, err := ddExtension.Marshal()
 	if err != nil {
