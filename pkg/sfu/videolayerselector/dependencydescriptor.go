@@ -270,6 +270,17 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		result.DependencyDescriptorExtension = bytes
 	}
 
+	// DD-TODO START
+	// Ideally should add this frame only on the last packet of the frame and if all packets of the frame have been selected.
+	// But, adding on any packet so that any out-of-order packets within a frame can be fowarded.
+	// But, that could result in decodability/chain integrity to erroneously pass (i. e. in the case of lost packet in this
+	// frame, this frame is not decodable and hence the chain is broken).
+	//
+	// Note that packets can get lost in the forwarded path also. That will be handled by receiver sending PLI.
+	//
+	// Within SFU, there is more work to do to ensure integrity of forwarded packets/frames to adhere to the complete design
+	// goal of dependency descriptor
+	// DD-TODO END
 	d.decisions.AddForwarded(extFrameNum)
 	result.RTPMarker = extPkt.Packet.Header.Marker || (dd.LastPacketInFrame && d.currentLayer.Spatial == int32(fd.SpatialId))
 	result.IsSelected = true
