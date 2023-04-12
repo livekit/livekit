@@ -96,6 +96,16 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		}
 	}
 	if !isDecodable {
+		// DD-TODO START
+		// Not decodable could happen due to packet loss or out-of-order packets,
+		// Need to figure out better ways to handle this.
+		//
+		// 1. Should definitely check if this frame is not part of current decode target OR discardable.
+		//    In that case, forwarding can proceed without disruption.
+		// 2. Add a packet queue and try to de-jitter for some time. Safest is to packet copy to local queue on
+		//    all down tracks.
+		// 3. Force a PLI and wait for a key frame.
+		// DD-TODO END
 		d.decisions.AddDropped(extFrameNum)
 		return
 	}
