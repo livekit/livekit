@@ -620,6 +620,11 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	}
 
 	d.rtpStats.Update(hdr, len(payload), 0, time.Now().UnixNano())
+	/*
+		if d.kind == webrtc.RTPCodecTypeVideo {
+			d.logger.Infow("RAJA forwarding", "info", fmt.Sprintf("sn: %d, ts: %d, m: %+v, il: %+v, cl: %+v, tl: %+v, fn: %d", hdr.SequenceNumber, hdr.Timestamp, hdr.Marker, extPkt.VideoLayer, d.forwarder.CurrentLayer(), d.forwarder.TargetLayer(), extPkt.DependencyDescriptor.FrameNumber)) // REMOVE
+		}
+	*/
 	return nil
 }
 
@@ -1448,7 +1453,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		}
 
 		var extraExtensions []extensionData
-		if len(meta.ddBytes) > 0 {
+		if d.dependencyDescriptorID != 0 && len(meta.ddBytes) != 0 {
 			extraExtensions = append(extraExtensions, extensionData{
 				id:      uint8(d.dependencyDescriptorID),
 				payload: meta.ddBytes,
@@ -1521,6 +1526,7 @@ func (d *DownTrack) getTranslatedRTPHeader(extPkt *buffer.ExtPacket, tp *Transla
 
 	var extension []extensionData
 	if d.dependencyDescriptorID != 0 && len(tp.ddBytes) != 0 {
+		//d.logger.Infow("writing DD bytes", "ddBytes", tp.ddBytes) // REMOVE
 		extension = append(extension, extensionData{
 			id:      uint8(d.dependencyDescriptorID),
 			payload: tp.ddBytes,

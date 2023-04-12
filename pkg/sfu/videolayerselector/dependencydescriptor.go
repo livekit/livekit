@@ -2,39 +2,37 @@ package videolayerselector
 
 import (
 	"fmt"
-	"sort"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
+	dede "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
+	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/protocol/logger"
 )
-
-type decodeTarget struct {
-	Target int
-	Layer  buffer.VideoLayer
-}
 
 type DependencyDescriptor struct {
 	*Base
 
-	// DD-TODO : fields for frame chain detect
-	// frameNumberWrapper Uint16Wrapper
-	// expectKeyFrame      bool
+	frameNum  *utils.WrapAround[uint16, uint64]
+	decisions *SelectorDecisionCache
 
-	decodeTargets              []decodeTarget
+	decodeTargets              []buffer.DependencyDescriptorDecodeTarget // RAJA-TODO: get this from extPkt
 	activeDecodeTargetsBitmask *uint32
-	structure                  *dd.FrameDependencyStructure
+	structure                  *dede.FrameDependencyStructure
 }
 
 func NewDependencyDescriptor(logger logger.Logger) *DependencyDescriptor {
 	return &DependencyDescriptor{
-		Base: NewBase(logger),
+		Base:      NewBase(logger),
+		frameNum:  utils.NewWrapAround[uint16, uint64](),
+		decisions: NewSelectorDecisionCache(256),
 	}
 }
 
 func NewDependencyDescriptorFromNull(vls VideoLayerSelector) *DependencyDescriptor {
 	return &DependencyDescriptor{
-		Base: vls.(*Null).Base,
+		Base:      vls.(*Null).Base,
+		frameNum:  utils.NewWrapAround[uint16, uint64](),
+		decisions: NewSelectorDecisionCache(256),
 	}
 }
 
@@ -42,22 +40,86 @@ func (d *DependencyDescriptor) IsOvershootOkay() bool {
 	return false
 }
 
+// RAJA-TODO
+// - check frame diffs and decode chains
+// - frame number wrapper
+// - bit set to store forwarded frames
+//   o set on any packet of forwarded frame
+//   o when frame is forwarded, forward other packets without other checks
+//   o (maybe) use two bits to indicate missing, forwarded, dropped
+// - on a switch point, set current to decode target (both spatial and temporal)
+// - set RTP marker on current spatial match and end-of-frame
+// - need some notion of chain broken and wait for key frame
+// Questions
+// - what happens on packet loss?
+// - what happens on out-of-order?
+
 func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerSelectorResult) {
-	if extPkt.DependencyDescriptor == nil {
-		// packet don't have dependency descriptor
+	dd := extPkt.DependencyDescriptor
+	if dd == nil {
+		// packet doesn't have dependency descriptor
 		return
 	}
 
-	if !d.currentLayer.IsValid() && !extPkt.KeyFrame {
-		return
-	}
-
+	// a packet is relevant as long as it has DD extension
 	result.IsRelevant = true
 
-	if extPkt.DependencyDescriptor.AttachedStructure != nil {
+	frameNum := d.frameNum.Update(dd.FrameNumber)
+	extFrameNum := frameNum.ExtendedVal
+
+	fd := dd.FrameDependencies
+	incomingLayer := buffer.VideoLayer{
+		Spatial:  int32(fd.SpatialId),
+		Temporal: int32(fd.TemporalId),
+	}
+
+	// early return if this frame is already forwarded or dropped
+	sd, err := d.decisions.GetDecision(extFrameNum)
+	if err != nil {
+		// do not mark as dropped as only error is an old frame
+		return
+	}
+	switch sd {
+	case selectorDecisionForwarded:
+		result.RTPMarker = extPkt.Packet.Header.Marker || (dd.LastPacketInFrame && d.currentLayer.Spatial == int32(fd.SpatialId))
+		d.logger.Infow("RAJA forwarding2", "info", fmt.Sprintf("fn: %d/%d, incoming: %+v, current: %+v, marker: %+v", dd.FrameNumber, extFrameNum, incomingLayer, d.currentLayer, result.RTPMarker)) // REMOVE
+		result.IsSelected = true
+
+	case selectorDecisionDropped:
+		d.logger.Infow("RAJA dropping2", "info", fmt.Sprintf("fn: %d/%d, incoming: %+v, current: %+v, marker: %+v", dd.FrameNumber, extFrameNum, incomingLayer, d.currentLayer, result.RTPMarker)) // REMOVE
+		return
+	}
+
+	// RAJA-TODO - maybe add a struct field `waitingForKeyFrame` and add to check here
+	// RAJA-TODO - maybe this is not required
+	if !d.currentLayer.IsValid() && !extPkt.KeyFrame {
+		d.decisions.AddDropped(extFrameNum)
+		return
+	}
+
+	// check decodability using reference frames
+	isDecodable := true
+	for _, fdiff := range fd.FrameDiffs {
+		if fdiff == 0 {
+			continue
+		}
+
+		if sd, _ := d.decisions.GetDecision(extFrameNum - uint64(fdiff)); sd != selectorDecisionForwarded {
+			isDecodable = false
+			break
+		}
+	}
+	// RAJA-TODO: check if not decodable, can we drop this early?
+	if !isDecodable {
+		d.decisions.AddDropped(extFrameNum)
+		return
+	}
+
+	// RAJA-TODO should not update for out-of-order RTP packets
+	if dd.AttachedStructure != nil {
 		// update decode target layer and active decode targets
 		// DD-TODO : these targets info can be shared by all the downtracks, no need calculate in every selector
-		d.updateDependencyStructure(extPkt.DependencyDescriptor.AttachedStructure)
+		d.updateDependencyStructure(dd.AttachedStructure)
 	}
 
 	// DD-TODO : we don't have a rtp queue to ensure the order of packets now,
@@ -67,124 +129,152 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	// only check DTI of the active decode target.
 	// it is not effeciency, at last we need check frame chain integrity.
 
-	activeDecodeTargets := extPkt.DependencyDescriptor.ActiveDecodeTargetsBitmask
+	activeDecodeTargets := dd.ActiveDecodeTargetsBitmask
 	if activeDecodeTargets != nil {
 		d.logger.Debugw("active decode targets", "activeDecodeTargets", *activeDecodeTargets)
 	}
 
-	currentTarget := -1
+	// find decode target closest to targetLayer
+	highestDecodeTarget := buffer.DependencyDescriptorDecodeTarget{
+		Target: -1,
+		Layer:  buffer.InvalidLayer,
+	}
 	for _, dt := range d.decodeTargets {
-		// find target match with selected layer
-		if dt.Layer.Spatial <= d.targetLayer.Spatial && dt.Layer.Temporal <= d.targetLayer.Temporal {
-			if activeDecodeTargets == nil || ((*activeDecodeTargets)&(1<<dt.Target) != 0) {
-				// DD-TODO : check frame chain integrity
-				currentTarget = dt.Target
-				// d.logger.Debugw("select target", "target", currentTarget, "layer", dt.Target, "dtis", extPkt.DependencyDescriptor.FrameDependencies.DecodeTargetIndications)
-				break
+		if dt.Layer.Spatial > d.targetLayer.Spatial || dt.Layer.Temporal > d.targetLayer.Temporal {
+			continue
+		}
+
+		if activeDecodeTargets != nil && ((*activeDecodeTargets)&(1<<dt.Target) == 0) {
+			continue
+		}
+
+		if len(d.structure.DecodeTargetProtectedByChain) == 0 {
+			highestDecodeTarget = dt
+			//d.logger.Debugw("select target", "highestDecodeTarget", highestDecodeTarget, "dtis", fd.DecodeTargetIndications)
+			break
+		}
+
+		if len(d.structure.DecodeTargetProtectedByChain) < dt.Target {
+			// look for lower target
+			continue
+		}
+
+		chainID := d.structure.DecodeTargetProtectedByChain[dt.Target]
+		if len(fd.ChainDiffs) < chainID {
+			// look for lower target
+			continue
+		}
+
+		prevFrameInChain := extFrameNum - uint64(fd.ChainDiffs[chainID])
+		if prevFrameInChain != 0 && prevFrameInChain != extFrameNum {
+			if sd, err := d.decisions.GetDecision(prevFrameInChain); err != nil || sd != selectorDecisionForwarded {
+				// look for lower target
+				continue
 			}
 		}
+
+		highestDecodeTarget = dt
+		//d.logger.Debugw("select target", "highestDecodeTarget", highestDecodeTarget, "dtis", fd.DecodeTargetIndications)
+		break
 	}
 
-	if currentTarget < 0 {
-		//d.logger.Debugw(fmt.Sprintf("drop packet for no target found, decodeTargets %v, tagetLayer %v, s:%d, t:%d",
+	if highestDecodeTarget.Target < 0 {
+		//d.logger.Debugw(fmt.Sprintf("drop packet for no target found, decodeTargets %v, tagetLayer %v, incoming %v",
 		//d.decodeTargets,
 		//d.targetLayer,
-		//extPkt.DependencyDescriptor.FrameDependencies.SpatialId,
-		//extPkt.DependencyDescriptor.FrameDependencies.TemporalId,
+		//incomingLayer,
 		//))
+		d.logger.Debugw(fmt.Sprintf("RAJA drop packet for no target found, decodeTargets %v, tagetLayer %v, incoming %v, structure: %+v, fn: %d/%d, fd: %+v, dec: %+v",
+			d.decodeTargets,
+			d.targetLayer,
+			incomingLayer,
+			d.structure,
+			dd.FrameNumber,
+			extFrameNum,
+			fd,
+			isDecodable,
+		)) // REMOVE
 
 		// no active decode target, do not select
+		d.decisions.AddDropped(extFrameNum)
 		return
 	}
 
-	dtis := extPkt.DependencyDescriptor.FrameDependencies.DecodeTargetIndications
-	if len(dtis) < currentTarget {
+	dtis := fd.DecodeTargetIndications
+	if len(dtis) < highestDecodeTarget.Target {
 		// dtis error, dependency descriptor might lost
-		d.logger.Debugw(fmt.Sprintf("drop packet for dtis error, dtis %v, currentTarget %d, s:%d, t:%d",
+		d.logger.Debugw(fmt.Sprintf("drop packet for dtis error, dtis %v, highestDecodeTarget %+v, incoming: %v",
 			dtis,
-			currentTarget,
-			extPkt.DependencyDescriptor.FrameDependencies.SpatialId,
-			extPkt.DependencyDescriptor.FrameDependencies.TemporalId,
+			highestDecodeTarget,
+			incomingLayer,
 		))
+		d.logger.Debugw(fmt.Sprintf("RAJA drop packet for dtis error, dtis %v, highestTarget %+v, incoming %v, dec: %+v",
+			dtis,
+			highestDecodeTarget,
+			incomingLayer,
+			isDecodable,
+		)) // REMOVE
+		d.decisions.AddDropped(extFrameNum)
 		return
 	}
 
 	// DD-TODO : if bandwidth in congest, could drop the 'Discardable' packet
-	dti := dtis[currentTarget]
-	if dti == dd.DecodeTargetNotPresent {
-		//d.logger.Debugw(fmt.Sprintf("drop packet for decode target not present, dtis %v, currentTarget %d, s:%d, t:%d",
+	dti := dtis[highestDecodeTarget.Target]
+	if dti == dede.DecodeTargetNotPresent {
+		//d.logger.Debugw(fmt.Sprintf("drop packet for decode target not present, dtis %v, highestDecodeTarget %d, incoming %v, fn: %d/%d",
 		//dtis,
-		//currentTarget,
-		//extPkt.DependencyDescriptor.FrameDependencies.SpatialId,
-		//extPkt.DependencyDescriptor.FrameDependencies.TemporalId,
+		//highestDecodeTarget,
+		//incomingLayer,
+		//dd.FrameNumber,
+		//extFrameNum,
 		//))
+		d.logger.Debugw(fmt.Sprintf("RAJA drop packet for decode target not present, dtis %v, highestDecodeTarget %d, incoming %v, fn: %d/%d, dec: %+v",
+			dtis,
+			highestDecodeTarget,
+			incomingLayer,
+			dd.FrameNumber,
+			extFrameNum,
+			isDecodable,
+		)) // REMOVE
+		d.decisions.AddDropped(extFrameNum)
 		return
 	}
 
-	if dti == dd.DecodeTargetSwitch {
-		// dependency descriptor decode target switch is enabled at all potential switch points.
-		// So, setting current layer on every switch point will change current layer a lot.
-		//
-		// However `currentLayer` is not needed for layer selection in this selector.
-		// But, it is needed to signal things in the selector checks outside of this selector.
-		//
-		// The following cases are handled
-		//   1. To detect resumption
-		//   2. To detect target achieved so that key frame requests can be stopped
-		//   3. To detect reaching max spatial layer - checked when current hits target
+	if dti == dede.DecodeTargetSwitch && d.currentLayer != highestDecodeTarget.Layer {
+		d.logger.Infow("RAJA switching", "current", d.currentLayer, "incoming", incomingLayer, "target", d.targetLayer, "highestDecodeTarget", highestDecodeTarget) // REMOVE
 		if !d.currentLayer.IsValid() {
 			result.IsResuming = true
-
-			d.currentLayer = buffer.VideoLayer{
-				Spatial:  int32(extPkt.DependencyDescriptor.FrameDependencies.SpatialId),
-				Temporal: int32(extPkt.DependencyDescriptor.FrameDependencies.TemporalId),
-			}
-
 			d.logger.Infow(
 				"resuming at layer",
-				"current", d.currentLayer,
+				"current", incomingLayer,
 				"target", d.targetLayer,
 				"max", d.maxLayer,
-				"layer", extPkt.DependencyDescriptor.FrameDependencies.SpatialId,
+				"layer", fd.SpatialId,
 				"req", d.requestSpatial,
 				"maxSeen", d.maxSeenLayer,
 				"feed", extPkt.Packet.SSRC,
 			)
 		}
-
-		if d.currentLayer != d.targetLayer {
-			if d.currentLayer.Spatial != d.targetLayer.Spatial && int32(extPkt.DependencyDescriptor.FrameDependencies.SpatialId) == d.targetLayer.Spatial {
-				d.currentLayer.Spatial = d.targetLayer.Spatial
-
-				if d.currentLayer.Spatial == d.requestSpatial {
-					result.IsSwitchingToRequestSpatial = true
-				}
-
-				if d.currentLayer.Spatial == d.maxLayer.Spatial {
-					result.IsSwitchingToMaxSpatial = true
-					d.logger.Infow(
-						"reached max layer",
-						"current", d.currentLayer,
-						"target", d.targetLayer,
-						"max", d.maxLayer,
-						"layer", extPkt.DependencyDescriptor.FrameDependencies.SpatialId,
-						"req", d.requestSpatial,
-						"maxSeen", d.maxSeenLayer,
-						"feed", extPkt.Packet.SSRC,
-					)
-				}
-			}
-
-			if d.currentLayer.Temporal != d.targetLayer.Temporal && int32(extPkt.DependencyDescriptor.FrameDependencies.TemporalId) == d.targetLayer.Temporal {
-				d.currentLayer.Temporal = d.targetLayer.Temporal
-			}
+		d.currentLayer = highestDecodeTarget.Layer
+		if d.currentLayer.Spatial == d.requestSpatial {
+			result.IsSwitchingToRequestSpatial = true
+		}
+		if d.currentLayer.Spatial == d.maxLayer.Spatial {
+			result.IsSwitchingToMaxSpatial = true
+			d.logger.Infow(
+				"reached max layer",
+				"current", d.currentLayer,
+				"target", d.targetLayer,
+				"max", d.maxLayer,
+				"layer", fd.SpatialId,
+				"req", d.requestSpatial,
+				"maxSeen", d.maxSeenLayer,
+				"feed", extPkt.Packet.SSRC,
+			)
 		}
 	}
 
-	// DD-TODO : add frame to forwarded queue if entire frame is forwarded
-	// d.logger.Debugw("select packet", "target", currentTarget, "targetLayer", d.targetLayer)
-
-	ddExtension := &dd.DependencyDescriptorExtension{
+	ddExtension := &dede.DependencyDescriptorExtension{
 		Descriptor: extPkt.DependencyDescriptor,
 		Structure:  d.structure,
 	}
@@ -202,7 +292,9 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		result.DependencyDescriptorExtension = bytes
 	}
 
-	result.RTPMarker = extPkt.Packet.Header.Marker || (extPkt.DependencyDescriptor.LastPacketInFrame && d.targetLayer.Spatial == int32(extPkt.DependencyDescriptor.FrameDependencies.SpatialId))
+	d.decisions.AddForwarded(extFrameNum)
+	result.RTPMarker = extPkt.Packet.Header.Marker || (dd.LastPacketInFrame && d.currentLayer.Spatial == int32(fd.SpatialId))
+	d.logger.Infow("RAJA forwarding", "info", fmt.Sprintf("fn: %d/%d, incoming: %+v, current: %+v, marker: %+v, isDecodable: %+v", dd.FrameNumber, extFrameNum, incomingLayer, d.currentLayer, result.RTPMarker, isDecodable)) // REMOVE
 	result.IsSelected = true
 	return
 }
@@ -210,6 +302,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 func (d *DependencyDescriptor) SetTarget(targetLayer buffer.VideoLayer) {
 	d.Base.SetTarget(targetLayer)
 
+	/* RAJA-REMOVE
 	activeBitMask := uint32(0)
 	var maxSpatial, maxTemporal int32
 	for _, dt := range d.decodeTargets {
@@ -229,11 +322,14 @@ func (d *DependencyDescriptor) SetTarget(targetLayer buffer.VideoLayer) {
 	} else {
 		d.activeDecodeTargetsBitmask = &activeBitMask
 	}
+	*/
+	d.activeDecodeTargetsBitmask = buffer.GetActiveDecodeTargetBitmask(targetLayer, d.decodeTargets)
 	d.logger.Debugw("setting target", "targetlayer", targetLayer, "activeDecodeTargetsBitmask", d.activeDecodeTargetsBitmask)
 }
 
-func (d *DependencyDescriptor) updateDependencyStructure(structure *dd.FrameDependencyStructure) {
+func (d *DependencyDescriptor) updateDependencyStructure(structure *dede.FrameDependencyStructure) {
 	d.structure = structure
+	/* RAJA-REMOVE
 	d.decodeTargets = d.decodeTargets[:0]
 
 	for target := 0; target < structure.NumDecodeTargets; target++ {
@@ -255,30 +351,7 @@ func (d *DependencyDescriptor) updateDependencyStructure(structure *dd.FrameDepe
 	sort.Slice(d.decodeTargets, func(i, j int) bool {
 		return d.decodeTargets[i].Layer.GreaterThan(d.decodeTargets[j].Layer)
 	})
+	*/
+	d.decodeTargets = buffer.ProcessFrameDependencyStructure(structure)
 	d.logger.Debugw(fmt.Sprintf("update decode targets: %v", d.decodeTargets))
-}
-
-// DD-TODO : use generic wrapper when updated to go 1.18
-type Uint16Wrapper struct {
-	lastValue     *uint16
-	lastUnwrapped int32
-}
-
-func (w *Uint16Wrapper) Unwrap(value uint16) int32 {
-	if w.lastValue == nil {
-		w.lastValue = &value
-		w.lastUnwrapped = int32(value)
-		return int32(*w.lastValue)
-	}
-
-	diff := value - *w.lastValue
-	w.lastUnwrapped += int32(diff)
-	if diff == 0x8000 && value < *w.lastValue {
-		w.lastUnwrapped -= 0x10000
-	} else if diff > 0x8000 {
-		w.lastUnwrapped -= 0x10000
-	}
-
-	*w.lastValue = value
-	return w.lastUnwrapped
 }
