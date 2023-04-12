@@ -96,11 +96,6 @@ func (v *VP9) Select(extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerS
 					"feed", extPkt.Packet.SSRC,
 				)
 			}
-			if updatedLayer.GreaterThan(v.currentLayer) {
-				v.logger.Infow("RAJA switching up", "current", v.currentLayer, "updated", updatedLayer, "target", v.targetLayer) // REMOVE
-			} else {
-				v.logger.Infow("RAJA switching down", "current", v.currentLayer, "updated", updatedLayer, "target", v.targetLayer) // REMOVE
-			}
 
 			v.currentLayer = updatedLayer
 		}

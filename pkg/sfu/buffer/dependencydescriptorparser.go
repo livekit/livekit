@@ -29,7 +29,7 @@ func NewDependencyDescriptorParser(ddExtID uint8, logger logger.Logger, onMaxLay
 }
 
 func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*dd.DependencyDescriptor, VideoLayer, error) {
-	// RAJA-TODO: make sure out-of-order RTP packets do not update decode targets
+	// DD-TODO: make sure out-of-order RTP packets do not update decode targets
 	var videoLayer VideoLayer
 	ddBuf := pkt.GetExtension(r.ddExtID)
 	if ddBuf == nil {
