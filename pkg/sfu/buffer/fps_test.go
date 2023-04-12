@@ -31,10 +31,12 @@ func (f *testFrameInfo) toVP8() *ExtPacket {
 func (f *testFrameInfo) toDD() *ExtPacket {
 	return &ExtPacket{
 		Packet: &rtp.Packet{Header: f.header},
-		DependencyDescriptor: &dependencydescriptor.DependencyDescriptor{
-			FrameNumber: f.framenumber,
-			FrameDependencies: &dependencydescriptor.FrameDependencyTemplate{
-				FrameDiffs: f.frameDiff,
+		DependencyDescriptor: &DependencyDescriptorWithDecodeTarget{
+			Descriptor: &dependencydescriptor.DependencyDescriptor{
+				FrameNumber: f.framenumber,
+				FrameDependencies: &dependencydescriptor.FrameDependencyTemplate{
+					FrameDiffs: f.frameDiff,
+				},
 			},
 		},
 		VideoLayer: VideoLayer{Spatial: int32(f.spatial), Temporal: int32(f.temporal)},
