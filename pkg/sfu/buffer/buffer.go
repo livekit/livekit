@@ -42,7 +42,7 @@ type ExtPacket struct {
 	Payload              interface{}
 	KeyFrame             bool
 	RawPacket            []byte
-	DependencyDescriptor *dd.DependencyDescriptor
+	DependencyDescriptor *DependencyDescriptorWithDecodeTarget
 }
 
 // Buffer contains all packets
@@ -551,7 +551,7 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64) *ExtPack
 		if err == nil && ddVal != nil {
 			ep.DependencyDescriptor = ddVal
 			ep.VideoLayer = videoLayer
-			// TODO : notify active decode target change if changed.
+			// DD-TODO : notify active decode target change if changed.
 		}
 	}
 	switch b.mime {
@@ -779,7 +779,7 @@ func (b *Buffer) GetAudioLevel() (float64, bool) {
 	return b.audioLevel.GetLevel()
 }
 
-// TODO : now we rely on stream tracker for layer change, dependency still
+// DD-TODO : now we rely on stream tracker for layer change, dependency still
 // work for that too. Do we keep it unchanged or use both methods?
 func (b *Buffer) OnMaxLayerChanged(fn func(int32, int32)) {
 	b.maxLayerChangedCB = fn

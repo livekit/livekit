@@ -7,7 +7,7 @@ import (
 	"github.com/pion/rtp/codecs"
 )
 
-var minFramesForCalculation = [DefaultMaxLayerTemporal + 1]int{8, 15, 40}
+var minFramesForCalculation = [...]int{8, 15, 40}
 
 type frameInfo struct {
 	seq       uint16
@@ -357,7 +357,7 @@ func (f *FrameRateCalculatorDD) RecvPacket(ep *ExtPacket) bool {
 		return false
 	}
 
-	fn := ep.DependencyDescriptor.FrameNumber
+	fn := ep.DependencyDescriptor.Descriptor.FrameNumber
 	if f.baseFrame == nil {
 		f.baseFrame = &frameInfo{seq: ep.Packet.SequenceNumber, ts: ep.Packet.Timestamp, fn: fn}
 		f.fnReceived[0] = f.baseFrame
@@ -397,7 +397,7 @@ func (f *FrameRateCalculatorDD) RecvPacket(ep *ExtPacket) bool {
 		fn:        fn,
 		temporal:  temporal,
 		spatial:   spatial,
-		frameDiff: ep.DependencyDescriptor.FrameDependencies.FrameDiffs,
+		frameDiff: ep.DependencyDescriptor.Descriptor.FrameDependencies.FrameDiffs,
 	}
 	f.fnReceived[baseDiff] = fi
 
@@ -411,7 +411,7 @@ func (f *FrameRateCalculatorDD) RecvPacket(ep *ExtPacket) bool {
 	if chain.Len() == 0 {
 		chain.PushBack(fn)
 	}
-	for _, fdiff := range ep.DependencyDescriptor.FrameDependencies.FrameDiffs {
+	for _, fdiff := range ep.DependencyDescriptor.Descriptor.FrameDependencies.FrameDiffs {
 		dependFrame := fn - uint16(fdiff)
 		// frame too old, ignore
 		if dependFrame-f.secondFrames[spatial][temporal].fn > 0x8000 {
