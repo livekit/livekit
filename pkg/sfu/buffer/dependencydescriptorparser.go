@@ -28,7 +28,12 @@ func NewDependencyDescriptorParser(ddExtID uint8, logger logger.Logger, onMaxLay
 	}
 }
 
-func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*dd.DependencyDescriptor, VideoLayer, error) {
+type DependencyDescriptorWithDecodeTarget struct {
+	Descriptor    *dd.DependencyDescriptor
+	DecodeTargets []DependencyDescriptorDecodeTarget
+}
+
+func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*DependencyDescriptorWithDecodeTarget, VideoLayer, error) {
 	// DD-TODO: make sure out-of-order RTP packets do not update decode targets
 	var videoLayer VideoLayer
 	ddBuf := pkt.GetExtension(r.ddExtID)
@@ -85,7 +90,12 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*dd.DependencyDescr
 		r.onMaxLayerChanged(maxSpatial, maxTemporal)
 	}
 
-	return &ddVal, videoLayer, nil
+	withDecodeTargets := &DependencyDescriptorWithDecodeTarget{
+		Descriptor:    &ddVal,
+		DecodeTargets: r.decodeTargets,
+	}
+
+	return withDecodeTargets, videoLayer, nil
 }
 
 // ------------------------------------------------------------------------------

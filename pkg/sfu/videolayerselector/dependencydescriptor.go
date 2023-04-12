@@ -15,7 +15,7 @@ type DependencyDescriptor struct {
 	frameNum  *utils.WrapAround[uint16, uint64]
 	decisions *SelectorDecisionCache
 
-	decodeTargets              []buffer.DependencyDescriptorDecodeTarget
+	needsDecodeTargetBitmask   bool
 	activeDecodeTargetsBitmask *uint32
 	structure                  *dede.FrameDependencyStructure
 }
@@ -41,11 +41,13 @@ func (d *DependencyDescriptor) IsOvershootOkay() bool {
 }
 
 func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerSelectorResult) {
-	dd := extPkt.DependencyDescriptor
-	if dd == nil {
+	ddwdt := extPkt.DependencyDescriptor
+	if ddwdt == nil {
 		// packet doesn't have dependency descriptor
 		return
 	}
+
+	dd := ddwdt.Descriptor
 
 	// a packet is relevant as long as it has DD extension
 	result.IsRelevant = true
@@ -122,7 +124,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		Target: -1,
 		Layer:  buffer.InvalidLayer,
 	}
-	for _, dt := range d.decodeTargets {
+	for _, dt := range ddwdt.DecodeTargets {
 		if dt.Layer.Spatial > d.targetLayer.Spatial || dt.Layer.Temporal > d.targetLayer.Temporal {
 			continue
 		}
@@ -232,10 +234,17 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	}
 
 	ddExtension := &dede.DependencyDescriptorExtension{
-		Descriptor: extPkt.DependencyDescriptor,
+		Descriptor: dd,
 		Structure:  d.structure,
 	}
-	if extPkt.DependencyDescriptor.AttachedStructure == nil && d.activeDecodeTargetsBitmask != nil {
+	if dd.AttachedStructure == nil && d.activeDecodeTargetsBitmask != nil {
+		if d.needsDecodeTargetBitmask {
+			d.needsDecodeTargetBitmask = false
+
+			d.activeDecodeTargetsBitmask = buffer.GetActiveDecodeTargetBitmask(d.targetLayer, ddwdt.DecodeTargets)
+			d.logger.Debugw("setting decode target bitmask", "activeDecodeTargetsBitmask", d.activeDecodeTargetsBitmask)
+		}
+
 		// clone and override activebitmask
 		ddClone := *ddExtension.Descriptor
 		ddClone.ActiveDecodeTargetsBitmask = d.activeDecodeTargetsBitmask
@@ -256,15 +265,15 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 }
 
 func (d *DependencyDescriptor) SetTarget(targetLayer buffer.VideoLayer) {
+	if targetLayer == d.targetLayer {
+		return
+	}
+
 	d.Base.SetTarget(targetLayer)
 
-	d.activeDecodeTargetsBitmask = buffer.GetActiveDecodeTargetBitmask(targetLayer, d.decodeTargets)
-	d.logger.Debugw("setting target", "targetlayer", targetLayer, "activeDecodeTargetsBitmask", d.activeDecodeTargetsBitmask)
+	d.needsDecodeTargetBitmask = true
 }
 
 func (d *DependencyDescriptor) updateDependencyStructure(structure *dede.FrameDependencyStructure) {
 	d.structure = structure
-
-	d.decodeTargets = buffer.ProcessFrameDependencyStructure(structure)
-	d.logger.Debugw(fmt.Sprintf("update decode targets: %v", d.decodeTargets))
 }
