@@ -65,7 +65,7 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*DependencyDescript
 		r.decodeTargets = ProcessFrameDependencyStructure(ddVal.AttachedStructure)
 		if len(r.decodeTargets) != 0 {
 			r.logger.Debugw(fmt.Sprintf("update decode targets: %v", r.decodeTargets))
-			go r.onMaxLayerChanged(r.decodeTargets[0].Layer.Spatial, r.decodeTargets[0].Layer.Temporal)
+			r.onMaxLayerChanged(r.decodeTargets[0].Layer.Spatial, r.decodeTargets[0].Layer.Temporal)
 		}
 	}
 
@@ -86,7 +86,6 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*DependencyDescript
 			}
 		}
 		r.logger.Debugw("max layer changed", "maxSpatial", maxSpatial, "maxTemporal", maxTemporal)
-		// DD-TODO: should this be called in a goroutine as the preivous invocation above is?
 		r.onMaxLayerChanged(maxSpatial, maxTemporal)
 	}
 

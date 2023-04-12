@@ -57,7 +57,7 @@ func (s *SelectorDecisionCache) AddDropped(entity uint64) {
 }
 
 func (s *SelectorDecisionCache) GetDecision(entity uint64) (selectorDecision, error) {
-	if !s.initialized || entity > s.last {
+	if !s.initialized || entity > s.last || entity < s.base {
 		return selectorDecisionUnknown, nil
 	}
 
@@ -76,6 +76,11 @@ func (s *SelectorDecisionCache) addEntity(entity uint64, sd selectorDecision) {
 		s.base = entity
 		s.last = entity
 		s.setEntity(entity, sd)
+		return
+	}
+
+	if entity <= s.base {
+		// before base, too old
 		return
 	}
 
