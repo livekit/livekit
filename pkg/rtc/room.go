@@ -692,7 +692,7 @@ func (r *Room) OnMetadataUpdate(f func(metadata string)) {
 func (r *Room) SimulateScenario(participant types.LocalParticipant, simulateScenario *livekit.SimulateScenario) error {
 	switch scenario := simulateScenario.Scenario.(type) {
 	case *livekit.SimulateScenario_SpeakerUpdate:
-		r.Logger.Infow("simulating speaker update", "participant", participant.Identity(), "after", scenario.SpeakerUpdate)
+		r.Logger.Infow("simulating speaker update", "participant", participant.Identity(), "duration", scenario.SpeakerUpdate)
 		go func() {
 			<-time.After(time.Duration(scenario.SpeakerUpdate) * time.Second)
 			r.sendSpeakerChanges([]*livekit.SpeakerInfo{{
