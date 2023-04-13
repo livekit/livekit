@@ -1,11 +1,14 @@
-<!--BEGIN_BANNER_IMAGE--><!--END_BANNER_IMAGE-->
+<!--BEGIN_BANNER_IMAGE-->
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="/.github/banner_dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="/.github/banner_light.png">
+    <img style="width:100%;" alt="The LiveKit icon, the name of the repository and some sample code in the background." src="/.github/banner_light.png">
+  </picture>
+  <!--END_BANNER_IMAGE-->
 
 # LiveKit: Real-time video, audio and data for developers
 
-<!--BEGIN_DESCRIPTION-->
-[LiveKit](https://livekit.io) is an open source project that provides scalable, multi-user conferencing based on WebRTC.
-It's designed to provide everything you need to build real-time video/audio/data capabilities in your applications.
-<!--END_DESCRIPTION-->
+[LiveKit](https://livekit.io) is an open source project that provides scalable, multi-user conferencing based on WebRTC. It's designed to provide everything you need to build real-time video audio data capabilities in your applications.
 
 LiveKit's server is written in Go, using the awesome [Pion WebRTC](https://github.com/pion/webrtc) implementation.
 
@@ -286,4 +289,13 @@ We welcome your contributions toward improving LiveKit! Please join us
 
 LiveKit server is licensed under Apache License v2.0.
 
-<!--BEGIN_REPO_NAV--><!--END_REPO_NAV-->
+<!--BEGIN_REPO_NAV-->
+<br/><table>
+<thead><tr><th colspan="2">LiveKit Ecosystem</th></tr></thead>
+<tbody>
+<tr><td>Core Infra</td><td><b>livekit</b> · <a href="https://github.com/livekit/egress">egress</a> · <a href="https://github.com/livekit/ingress">ingress</a> · <a href="https://github.com/livekit/livekit-cli">livekit-cli</a></td></tr><tr></tr>
+<tr><td>Client SDKs</td><td><a href="https://github.com/livekit/components-js">Components</a> · <a href="https://github.com/livekit/client-sdk-js">JavaScript</a> · <a href="https://github.com/livekit/client-sdk-rust">Rust</a> · <a href="https://github.com/livekit/client-sdk-swift">iOS/macOS</a> · <a href="https://github.com/livekit/client-sdk-android">Android</a> · <a href="https://github.com/livekit/client-sdk-flutter">Flutter</a> · <a href="https://github.com/livekit/client-sdk-unity-web">Unity (web)</a> · <a href="https://github.com/livekit/client-sdk-react-native">React Native (beta)</a></td></tr><tr></tr>
+<tr><td>Server SDKs</td><td><a href="https://github.com/livekit/server-sdk-js">Node.js</a> · <a href="https://github.com/livekit/server-sdk-go">Golang</a> · <a href="https://github.com/livekit/server-sdk-ruby">Ruby</a> · <a href="https://github.com/livekit/server-sdk-kotlin">Java/Kotlin</a></td></tr>
+</tbody>
+</table>
+<!--END_REPO_NAV-->
