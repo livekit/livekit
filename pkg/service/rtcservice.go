@@ -103,6 +103,7 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 	publishParam := r.FormValue("publish")
 	adaptiveStreamParam := r.FormValue("adaptive_stream")
 	participantID := r.FormValue("sid")
+	subscriberAllowPauseParam := r.FormValue("subscriber_allow_pause")
 
 	if onlyName != "" {
 		roomName = onlyName
@@ -158,6 +159,10 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 	}
 	if adaptiveStreamParam != "" {
 		pi.AdaptiveStream = boolValue(adaptiveStreamParam)
+	}
+	if subscriberAllowPauseParam != "" {
+		subscriberAllowPause := boolValue(subscriberAllowPauseParam)
+		pi.SubscriberAllowPause = &subscriberAllowPause
 	}
 
 	return roomName, pi, http.StatusOK, nil
