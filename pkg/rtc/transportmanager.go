@@ -782,3 +782,11 @@ func (t *TransportManager) SetSignalSourceValid(valid bool) {
 	t.signalSourceValid.Store(valid)
 	t.params.Logger.Debugw("signal source valid", "valid", valid)
 }
+
+func (t *TransportManager) SetSubscriberAllowPause(allowPause bool) {
+	t.subscriber.SetAllowPauseOfStreamAllocator(allowPause)
+}
+
+func (t *TransportManager) SetSubscriberChannelCapacity(channelCapacity int64) {
+	t.subscriber.SetChannelCapacityOfStreamAllocator(channelCapacity)
+}

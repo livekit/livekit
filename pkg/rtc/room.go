@@ -692,7 +692,7 @@ func (r *Room) OnMetadataUpdate(f func(metadata string)) {
 func (r *Room) SimulateScenario(participant types.LocalParticipant, simulateScenario *livekit.SimulateScenario) error {
 	switch scenario := simulateScenario.Scenario.(type) {
 	case *livekit.SimulateScenario_SpeakerUpdate:
-		r.Logger.Infow("simulating speaker update", "participant", participant.Identity())
+		r.Logger.Infow("simulating speaker update", "participant", participant.Identity(), "duration", scenario.SpeakerUpdate)
 		go func() {
 			<-time.After(time.Duration(scenario.SpeakerUpdate) * time.Second)
 			r.sendSpeakerChanges([]*livekit.SpeakerInfo{{
@@ -723,13 +723,19 @@ func (r *Room) SimulateScenario(participant types.LocalParticipant, simulateScen
 		if err := participant.Close(true, types.ParticipantCloseReasonSimulateServerLeave); err != nil {
 			return err
 		}
-
 	case *livekit.SimulateScenario_SwitchCandidateProtocol:
 		r.Logger.Infow("simulating switch candidate protocol", "participant", participant.Identity())
 		participant.ICERestart(&livekit.ICEConfig{
 			PreferenceSubscriber: livekit.ICECandidateType(scenario.SwitchCandidateProtocol),
 			PreferencePublisher:  livekit.ICECandidateType(scenario.SwitchCandidateProtocol),
 		})
+	case *livekit.SimulateScenario_SubscriberBandwidth:
+		if scenario.SubscriberBandwidth > 0 {
+			r.Logger.Infow("simulating subscriber bandwidth start", "participant", participant.Identity(), "bandwidth", scenario.SubscriberBandwidth)
+		} else {
+			r.Logger.Infow("simulating subscriber bandwidth end", "participant", participant.Identity())
+		}
+		participant.SetSubscriberChannelCapacity(scenario.SubscriberBandwidth)
 	}
 	return nil
 }

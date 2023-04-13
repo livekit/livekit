@@ -88,6 +88,7 @@ type ParticipantParams struct {
 	VersionGenerator             utils.TimedVersionGenerator
 	TrackResolver                types.MediaTrackResolver
 	DisableDynacast              bool
+	SubscriberAllowPause         bool
 }
 
 type ParticipantImpl struct {
@@ -1035,6 +1036,8 @@ func (p *ParticipantImpl) setupTransportManager() error {
 	tm.OnAnyTransportNegotiationFailed(p.onAnyTransportNegotiationFailed)
 
 	tm.OnDataMessage(p.onDataMessage)
+
+	tm.SetSubscriberAllowPause(p.params.SubscriberAllowPause)
 	p.TransportManager = tm
 	return nil
 }
