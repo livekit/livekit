@@ -44,7 +44,7 @@ type ParticipantInit struct {
 	Region               string
 	AdaptiveStream       bool
 	ID                   livekit.ParticipantID
-	SubscriberAllowPause bool
+	SubscriberAllowPause *bool
 }
 
 type NewParticipantCallback func(
@@ -118,21 +118,26 @@ func (pi *ParticipantInit) ToStartSession(roomName livekit.RoomName, connectionI
 		return nil, err
 	}
 
-	return &livekit.StartSession{
+	ss := &livekit.StartSession{
 		RoomName: string(roomName),
 		Identity: string(pi.Identity),
 		Name:     string(pi.Name),
 		// connection id is to allow the RTC node to identify where to route the message back to
-		ConnectionId:         string(connectionID),
-		Reconnect:            pi.Reconnect,
-		ReconnectReason:      pi.ReconnectReason,
-		AutoSubscribe:        pi.AutoSubscribe,
-		Client:               pi.Client,
-		GrantsJson:           string(claims),
-		AdaptiveStream:       pi.AdaptiveStream,
-		ParticipantId:        string(pi.ID),
-		SubscriberAllowPause: pi.SubscriberAllowPause,
-	}, nil
+		ConnectionId:    string(connectionID),
+		Reconnect:       pi.Reconnect,
+		ReconnectReason: pi.ReconnectReason,
+		AutoSubscribe:   pi.AutoSubscribe,
+		Client:          pi.Client,
+		GrantsJson:      string(claims),
+		AdaptiveStream:  pi.AdaptiveStream,
+		ParticipantId:   string(pi.ID),
+	}
+	if pi.SubscriberAllowPause != nil {
+		subscriberAllowPause := *pi.SubscriberAllowPause
+		ss.SubscriberAllowPause = &subscriberAllowPause
+	}
+
+	return ss, nil
 }
 
 func ParticipantInitFromStartSession(ss *livekit.StartSession, region string) (*ParticipantInit, error) {
@@ -141,17 +146,22 @@ func ParticipantInitFromStartSession(ss *livekit.StartSession, region string) (*
 		return nil, err
 	}
 
-	return &ParticipantInit{
-		Identity:             livekit.ParticipantIdentity(ss.Identity),
-		Name:                 livekit.ParticipantName(ss.Name),
-		Reconnect:            ss.Reconnect,
-		ReconnectReason:      ss.ReconnectReason,
-		Client:               ss.Client,
-		AutoSubscribe:        ss.AutoSubscribe,
-		Grants:               claims,
-		Region:               region,
-		AdaptiveStream:       ss.AdaptiveStream,
-		ID:                   livekit.ParticipantID(ss.ParticipantId),
-		SubscriberAllowPause: ss.SubscriberAllowPause,
-	}, nil
+	pi := &ParticipantInit{
+		Identity:        livekit.ParticipantIdentity(ss.Identity),
+		Name:            livekit.ParticipantName(ss.Name),
+		Reconnect:       ss.Reconnect,
+		ReconnectReason: ss.ReconnectReason,
+		Client:          ss.Client,
+		AutoSubscribe:   ss.AutoSubscribe,
+		Grants:          claims,
+		Region:          region,
+		AdaptiveStream:  ss.AdaptiveStream,
+		ID:              livekit.ParticipantID(ss.ParticipantId),
+	}
+	if ss.SubscriberAllowPause != nil {
+		subscriberAllowPause := *ss.SubscriberAllowPause
+		pi.SubscriberAllowPause = &subscriberAllowPause
+	}
+
+	return pi, nil
 }
