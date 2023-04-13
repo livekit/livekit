@@ -103,8 +103,9 @@ func init() {
 
 func main() {
 	defer func() {
-		rtc.Recover(logger.GetLogger())
-		os.Exit(1)
+		if rtc.Recover(logger.GetLogger()) != nil {
+			os.Exit(1)
+		}
 	}()
 
 	generatedFlags, err := config.GenerateCLIFlags(baseFlags, true)

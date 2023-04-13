@@ -10,6 +10,7 @@ import (
 	"github.com/gammazero/deque"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
+	"github.com/pion/rtp/codecs"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
@@ -41,7 +42,7 @@ type ExtPacket struct {
 	Payload              interface{}
 	KeyFrame             bool
 	RawPacket            []byte
-	DependencyDescriptor *dd.DependencyDescriptor
+	DependencyDescriptor *DependencyDescriptorWithDecodeTarget
 }
 
 // Buffer contains all packets
@@ -193,8 +194,17 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	case strings.HasPrefix(b.mime, "video/"):
 		b.codecType = webrtc.RTPCodecTypeVideo
 		b.bucket = bucket.NewBucket(b.videoPool.Get().(*[]byte))
-		if b.frameRateCalculator[0] == nil && strings.EqualFold(codec.MimeType, webrtc.MimeTypeVP8) {
-			b.frameRateCalculator[0] = NewFrameRateCalculatorVP8(b.clockRate, b.logger)
+		if b.frameRateCalculator[0] == nil {
+			if strings.EqualFold(codec.MimeType, webrtc.MimeTypeVP8) {
+				b.frameRateCalculator[0] = NewFrameRateCalculatorVP8(b.clockRate, b.logger)
+			}
+
+			if strings.EqualFold(codec.MimeType, webrtc.MimeTypeVP9) {
+				frc := NewFrameRateCalculatorVP9(b.clockRate, b.logger)
+				for i := range b.frameRateCalculator {
+					b.frameRateCalculator[i] = frc.GetFrameRateCalculatorForSpatial(int32(i))
+				}
+			}
 		}
 
 	default:
@@ -541,7 +551,7 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64) *ExtPack
 		if err == nil && ddVal != nil {
 			ep.DependencyDescriptor = ddVal
 			ep.VideoLayer = videoLayer
-			// TODO : notify active decode target change if changed.
+			// DD-TODO : notify active decode target change if changed.
 		}
 	}
 	switch b.mime {
@@ -557,13 +567,28 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64) *ExtPack
 		} else {
 			// vp8 with DependencyDescriptor enabled, use the TID from the descriptor
 			vp8Packet.TID = uint8(ep.Temporal)
-			ep.Spatial = InvalidLayerSpatial // vp8 don't have spatial scalability, reset to -1
+			ep.Spatial = InvalidLayerSpatial // vp8 don't have spatial scalability, reset to invalid
 		}
 		ep.Payload = vp8Packet
+	case "video/vp9":
+		if ep.DependencyDescriptor == nil {
+			var vp9Packet codecs.VP9Packet
+			_, err := vp9Packet.Unmarshal(rtpPacket.Payload)
+			if err != nil {
+				b.logger.Warnw("could not unmarshal VP9 packet", err)
+				return nil
+			}
+			ep.VideoLayer = VideoLayer{
+				Spatial:  int32(vp9Packet.SID),
+				Temporal: int32(vp9Packet.TID),
+			}
+			ep.Payload = vp9Packet
+		}
+		ep.KeyFrame = IsVP9KeyFrame(rtpPacket.Payload)
 	case "video/h264":
-		ep.KeyFrame = IsH264Keyframe(rtpPacket.Payload)
+		ep.KeyFrame = IsH264KeyFrame(rtpPacket.Payload)
 	case "video/av1":
-		ep.KeyFrame = IsAV1Keyframe(rtpPacket.Payload)
+		ep.KeyFrame = IsAV1KeyFrame(rtpPacket.Payload)
 	}
 
 	if ep.KeyFrame {
@@ -754,7 +779,7 @@ func (b *Buffer) GetAudioLevel() (float64, bool) {
 	return b.audioLevel.GetLevel()
 }
 
-// TODO : now we rely on stream tracker for layer change, dependency still
+// DD-TODO : now we rely on stream tracker for layer change, dependency still
 // work for that too. Do we keep it unchanged or use both methods?
 func (b *Buffer) OnMaxLayerChanged(fn func(int32, int32)) {
 	b.maxLayerChangedCB = fn

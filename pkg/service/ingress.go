@@ -5,6 +5,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/telemetry"
+	"github.com/livekit/protocol/ingress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
@@ -90,12 +91,43 @@ func (s *IngressService) CreateIngressWithUrlPrefix(ctx context.Context, urlPref
 		State:               &livekit.IngressState{},
 	}
 
+	if err := ingress.ValidateForSerialization(info); err != nil {
+		return nil, err
+	}
+
 	if err = s.store.StoreIngress(ctx, info); err != nil {
 		logger.Errorw("could not write ingress info", err)
 		return nil, err
 	}
 
 	return info, nil
+}
+
+func updateInfoUsingRequest(req *livekit.UpdateIngressRequest, info *livekit.IngressInfo) error {
+	if req.Name != "" {
+		info.Name = req.Name
+	}
+	if req.RoomName != "" {
+		info.RoomName = req.RoomName
+	}
+	if req.ParticipantIdentity != "" {
+		info.ParticipantIdentity = req.ParticipantIdentity
+	}
+	if req.ParticipantName != "" {
+		info.ParticipantName = req.ParticipantName
+	}
+	if req.Audio != nil {
+		info.Audio = req.Audio
+	}
+	if req.Video != nil {
+		info.Video = req.Video
+	}
+
+	if err := ingress.ValidateForSerialization(info); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateIngressRequest) (*livekit.IngressInfo, error) {
@@ -132,28 +164,19 @@ func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateI
 		fallthrough
 
 	case livekit.IngressState_ENDPOINT_INACTIVE:
-		if req.Name != "" {
-			info.Name = req.Name
-		}
-		if req.RoomName != "" {
-			info.RoomName = req.RoomName
-		}
-		if req.ParticipantIdentity != "" {
-			info.ParticipantIdentity = req.ParticipantIdentity
-		}
-		if req.ParticipantName != "" {
-			info.ParticipantName = req.ParticipantName
-		}
-		if req.Audio != nil {
-			info.Audio = req.Audio
-		}
-		if req.Video != nil {
-			info.Video = req.Video
+		err = updateInfoUsingRequest(req, info)
+		if err != nil {
+			return nil, err
 		}
 
 	case livekit.IngressState_ENDPOINT_BUFFERING,
 		livekit.IngressState_ENDPOINT_PUBLISHING:
-		// Do not update store the returned state as the ingress service will do it
+		err := updateInfoUsingRequest(req, info)
+		if err != nil {
+			return nil, err
+		}
+
+		// Do not store the returned state as the ingress service will do it
 		if _, err = s.psrpcClient.UpdateIngress(ctx, req.IngressId, req); err != nil {
 			logger.Warnw("could not update active ingress", err)
 		}

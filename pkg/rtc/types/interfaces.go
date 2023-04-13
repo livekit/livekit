@@ -251,7 +251,7 @@ type LocalParticipant interface {
 	// permissions
 	ClaimGrants() *auth.ClaimGrants
 	SetPermission(permission *livekit.ParticipantPermission) bool
-	CanPublish() bool
+	CanPublishSource(source livekit.TrackSource) bool
 	CanSubscribe() bool
 	CanPublishData() bool
 
@@ -263,7 +263,7 @@ type LocalParticipant interface {
 
 	HandleAnswer(sdp webrtc.SessionDescription)
 	Negotiate(force bool)
-	ICERestart(iceConfig *livekit.ICEConfig, reason livekit.ReconnectReason)
+	ICERestart(iceConfig *livekit.ICEConfig)
 	AddTrackToSubscriber(trackLocal webrtc.TrackLocal, params AddTrackParams) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
 	AddTransceiverFromTrackToSubscriber(trackLocal webrtc.TrackLocal, params AddTrackParams) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
 	RemoveTrackFromSubscriber(sender *webrtc.RTPSender) error
@@ -295,7 +295,7 @@ type LocalParticipant interface {
 	SendConnectionQualityUpdate(update *livekit.ConnectionQualityUpdate) error
 	SubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool)
 	SendRefreshToken(token string) error
-	SendReconnectResponse(reconnectResponse *livekit.ReconnectResponse) error
+	HandleReconnectAndSendResponse(reconnectReason livekit.ReconnectReason, reconnectResponse *livekit.ReconnectResponse) error
 	IssueFullReconnect(reason ParticipantCloseReason)
 
 	// callbacks
@@ -333,6 +333,10 @@ type LocalParticipant interface {
 
 	UpdateSubscribedQuality(nodeID livekit.NodeID, trackID livekit.TrackID, maxQualities []SubscribedCodecQuality) error
 	UpdateMediaLoss(nodeID livekit.NodeID, trackID livekit.TrackID, fractionalLoss uint32) error
+
+	// down stream bandwidth management
+	SetSubscriberAllowPause(allowPause bool)
+	SetSubscriberChannelCapacity(channelCapacity int64)
 }
 
 // Room is a container of participants, and can provide room-level actions

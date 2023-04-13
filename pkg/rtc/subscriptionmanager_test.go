@@ -105,7 +105,9 @@ func TestSubscribe(t *testing.T) {
 		}, subSettleTimeout, subCheckInterval, "track was not resubscribed")
 
 		// was subscribed twice, unsubscribed once (due to close)
-		require.Equal(t, int32(2), numParticipantSubscribed.Load())
+		require.Eventually(t, func() bool {
+			return numParticipantSubscribed.Load() == 2
+		}, subSettleTimeout, subCheckInterval, "participant subscribe status was not updated twice")
 		require.Equal(t, int32(1), numParticipantUnsubscribed.Load())
 	})
 
@@ -325,7 +327,10 @@ func TestUpdateSettingsBeforeSubscription(t *testing.T) {
 	}, subSettleTimeout, subCheckInterval, "Track should be subscribed")
 
 	st := s.getSubscribedTrack().(*typesfakes.FakeSubscribedTrack)
-	require.Equal(t, 1, st.UpdateSubscriberSettingsCallCount())
+	require.Eventually(t, func() bool {
+		return st.UpdateSubscriberSettingsCallCount() == 1
+	}, subSettleTimeout, subCheckInterval, "UpdateSubscriberSettings should be called once")
+
 	applied := st.UpdateSubscriberSettingsArgsForCall(0)
 	require.Equal(t, settings.Disabled, applied.Disabled)
 	require.Equal(t, settings.Width, applied.Width)

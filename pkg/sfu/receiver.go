@@ -484,7 +484,7 @@ func (w *WebRTCReceiver) sendRTCP(packets []rtcp.Packet) {
 }
 
 func (w *WebRTCReceiver) SendPLI(layer int32, force bool) {
-	// TODO :  should send LRR (Layer Refresh Request) instead of PLI
+	// SVC-TODO :  should send LRR (Layer Refresh Request) instead of PLI
 	buff := w.getBuffer(layer)
 	if buff == nil {
 		return
@@ -626,10 +626,10 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 			return
 		}
 
-		// svc packet, dispatch to correct tracker
 		spatialTracker := tracker
 		spatialLayer := layer
 		if pkt.Spatial >= 0 {
+			// svc packet, dispatch to correct tracker
 			spatialLayer = pkt.Spatial
 			spatialTracker = w.streamTrackerManager.GetTracker(pkt.Spatial)
 			if spatialTracker == nil {

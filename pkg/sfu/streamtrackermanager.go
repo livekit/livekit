@@ -295,12 +295,12 @@ func (s *StreamTrackerManager) DistanceToDesired() float64 {
 
 	al, brs := s.getLayeredBitrateLocked()
 
-	maxLayers := buffer.InvalidLayers
+	maxLayer := buffer.InvalidLayer
 done:
 	for s := int32(len(brs)) - 1; s >= 0; s-- {
 		for t := int32(len(brs[0])) - 1; t >= 0; t-- {
 			if brs[s][t] != 0 {
-				maxLayers = buffer.VideoLayer{
+				maxLayer = buffer.VideoLayer{
 					Spatial:  s,
 					Temporal: t,
 				}
@@ -311,21 +311,21 @@ done:
 
 	// before bit rate measurement is available, stream tracker could declare layer seen, account for that
 	for _, layer := range al {
-		if layer > maxLayers.Spatial {
-			maxLayers.Spatial = layer
-			maxLayers.Temporal = s.maxTemporalLayerSeen // till bit rate measurement is available, assume max seen as temporal
+		if layer > maxLayer.Spatial {
+			maxLayer.Spatial = layer
+			maxLayer.Temporal = s.maxTemporalLayerSeen // till bit rate measurement is available, assume max seen as temporal
 		}
 	}
 
-	adjustedMaxLayers := maxLayers
-	if !maxLayers.IsValid() {
+	adjustedMaxLayers := maxLayer
+	if !maxLayer.IsValid() {
 		adjustedMaxLayers = buffer.VideoLayer{Spatial: 0, Temporal: 0}
 	}
 
 	distance :=
 		((s.maxExpectedLayer - adjustedMaxLayers.Spatial) * (s.maxTemporalLayerSeen + 1)) +
 			(s.maxTemporalLayerSeen - adjustedMaxLayers.Temporal)
-	if !maxLayers.IsValid() {
+	if !maxLayer.IsValid() {
 		distance++
 	}
 

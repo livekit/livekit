@@ -172,7 +172,9 @@ func (p *ParticipantImpl) SendRefreshToken(token string) error {
 	})
 }
 
-func (p *ParticipantImpl) SendReconnectResponse(reconnectResponse *livekit.ReconnectResponse) error {
+func (p *ParticipantImpl) HandleReconnectAndSendResponse(reconnectReason livekit.ReconnectReason, reconnectResponse *livekit.ReconnectResponse) error {
+	p.TransportManager.HandleClientReconnect(reconnectReason)
+
 	if !p.params.ClientInfo.CanHandleReconnectResponse() {
 		return nil
 	}

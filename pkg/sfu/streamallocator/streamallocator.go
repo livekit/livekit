@@ -48,6 +48,8 @@ const (
 	FlagAllowOvershootInCatchup                 = true
 )
 
+// ---------------------------------------------------------------------------
+
 var (
 	ChannelObserverParamsProbe = ChannelObserverParams{
 		Name:                           "probe",
@@ -70,6 +72,8 @@ var (
 	}
 )
 
+// ---------------------------------------------------------------------------
+
 type streamAllocatorState int
 
 const (
@@ -88,6 +92,8 @@ func (s streamAllocatorState) String() string {
 	}
 }
 
+// ---------------------------------------------------------------------------
+
 type streamAllocatorSignal int
 
 const (
@@ -98,7 +104,9 @@ const (
 	streamAllocatorSignalPeriodicPing
 	streamAllocatorSignalSendProbe
 	streamAllocatorSignalProbeClusterDone
-	streamAllocatorSignalTargetLayerFound
+	streamAllocatorSignalResume
+	streamAllocatorSignalSetAllowPause
+	streamAllocatorSignalSetChannelCapacity
 )
 
 func (s streamAllocatorSignal) String() string {
@@ -117,12 +125,18 @@ func (s streamAllocatorSignal) String() string {
 		return "SEND_PROBE"
 	case streamAllocatorSignalProbeClusterDone:
 		return "PROBE_CLUSTER_DONE"
-	case streamAllocatorSignalTargetLayerFound:
-		return "TARGET_LAYER_FOUND"
+	case streamAllocatorSignalResume:
+		return "RESUME"
+	case streamAllocatorSignalSetAllowPause:
+		return "SET_ALLOW_PAUSE"
+	case streamAllocatorSignalSetChannelCapacity:
+		return "SET_CHANNEL_CAPACITY"
 	default:
 		return fmt.Sprintf("%d", int(s))
 	}
 }
+
+// ---------------------------------------------------------------------------
 
 type Event struct {
 	Signal  streamAllocatorSignal
@@ -133,6 +147,8 @@ type Event struct {
 func (e Event) String() string {
 	return fmt.Sprintf("StreamAllocator:Event{signal: %s, trackID: %s, data: %+v}", e.Signal, e.TrackID, e.Data)
 }
+
+// ---------------------------------------------------------------------------
 
 type StreamAllocatorParams struct {
 	Config config.CongestionControlConfig
@@ -146,8 +162,11 @@ type StreamAllocator struct {
 
 	bwe cc.BandwidthEstimator
 
-	lastReceivedEstimate     int64
-	committedChannelCapacity int64
+	allowPause bool
+
+	lastReceivedEstimate      int64
+	committedChannelCapacity  int64
+	overriddenChannelCapacity int64
 
 	probeInterval         time.Duration
 	lastProbeStartTime    time.Time
@@ -176,7 +195,8 @@ type StreamAllocator struct {
 
 func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 	s := &StreamAllocator{
-		params: params,
+		params:     params,
+		allowPause: params.Config.AllowPause,
 		prober: NewProber(ProberParams{
 			Logger: params.Logger,
 		}),
@@ -272,6 +292,20 @@ func (s *StreamAllocator) SetTrackPriority(downTrack *sfu.DownTrack, priority ui
 		}
 	}
 	s.videoTracksMu.Unlock()
+}
+
+func (s *StreamAllocator) SetAllowPause(allowPause bool) {
+	s.postEvent(Event{
+		Signal: streamAllocatorSignalSetAllowPause,
+		Data:   allowPause,
+	})
+}
+
+func (s *StreamAllocator) SetChannelCapacity(channelCapacity int64) {
+	s.postEvent(Event{
+		Signal: streamAllocatorSignalSetChannelCapacity,
+		Data:   channelCapacity,
+	})
 }
 
 func (s *StreamAllocator) resetState() {
@@ -386,8 +420,13 @@ func (s *StreamAllocator) OnBitrateAvailabilityChanged(downTrack *sfu.DownTrack)
 	s.maybePostEventAllocateTrack(downTrack)
 }
 
-// called when feeding track's max publisher layer changes
-func (s *StreamAllocator) OnMaxPublishedLayerChanged(downTrack *sfu.DownTrack) {
+// called when feeding track's max published spatial layer changes
+func (s *StreamAllocator) OnMaxPublishedSpatialChanged(downTrack *sfu.DownTrack) {
+	s.maybePostEventAllocateTrack(downTrack)
+}
+
+// called when feeding track's max published temporal layer changes
+func (s *StreamAllocator) OnMaxPublishedTemporalChanged(downTrack *sfu.DownTrack) {
 	s.maybePostEventAllocateTrack(downTrack)
 }
 
@@ -396,12 +435,12 @@ func (s *StreamAllocator) OnSubscriptionChanged(downTrack *sfu.DownTrack) {
 	s.maybePostEventAllocateTrack(downTrack)
 }
 
-// called when subscribed layers changes (limiting max layers)
-func (s *StreamAllocator) OnSubscribedLayersChanged(downTrack *sfu.DownTrack, layers buffer.VideoLayer) {
+// called when subscribed layer changes (limiting max layer)
+func (s *StreamAllocator) OnSubscribedLayerChanged(downTrack *sfu.DownTrack, layer buffer.VideoLayer) {
 	shouldPost := false
 	s.videoTracksMu.Lock()
 	if track := s.videoTracks[livekit.TrackID(downTrack.ID())]; track != nil {
-		if track.SetMaxLayers(layers) && track.SetDirty(true) {
+		if track.SetMaxLayer(layer) && track.SetDirty(true) {
 			shouldPost = true
 		}
 	}
@@ -415,10 +454,10 @@ func (s *StreamAllocator) OnSubscribedLayersChanged(downTrack *sfu.DownTrack, la
 	}
 }
 
-// called when forwarder finds a target layer
-func (s *StreamAllocator) OnTargetLayerReached(downTrack *sfu.DownTrack) {
+// called when forwarder resumes a track
+func (s *StreamAllocator) OnResume(downTrack *sfu.DownTrack) {
 	s.postEvent(Event{
-		Signal:  streamAllocatorSignalTargetLayerFound,
+		Signal:  streamAllocatorSignalResume,
 		TrackID: livekit.TrackID(downTrack.ID()),
 	})
 }
@@ -529,8 +568,12 @@ func (s *StreamAllocator) handleEvent(event *Event) {
 		s.handleSignalSendProbe(event)
 	case streamAllocatorSignalProbeClusterDone:
 		s.handleSignalProbeClusterDone(event)
-	case streamAllocatorSignalTargetLayerFound:
-		s.handleSignalTargetLayerFound(event)
+	case streamAllocatorSignalResume:
+		s.handleSignalResume(event)
+	case streamAllocatorSignalSetAllowPause:
+		s.handleSignalSetAllowPause(event)
+	case streamAllocatorSignalSetChannelCapacity:
+		s.handleSignalSetChannelCapacity(event)
 	}
 }
 
@@ -630,7 +673,7 @@ func (s *StreamAllocator) handleSignalProbeClusterDone(event *Event) {
 	s.probeEndTime = s.lastProbeStartTime.Add(queueWait)
 }
 
-func (s *StreamAllocator) handleSignalTargetLayerFound(event *Event) {
+func (s *StreamAllocator) handleSignalResume(event *Event) {
 	s.videoTracksMu.Lock()
 	track := s.videoTracks[event.TrackID]
 	s.videoTracksMu.Unlock()
@@ -641,6 +684,20 @@ func (s *StreamAllocator) handleSignalTargetLayerFound(event *Event) {
 			update.HandleStreamingChange(false, track)
 		}
 		s.maybeSendUpdate(update)
+	}
+}
+
+func (s *StreamAllocator) handleSignalSetAllowPause(event *Event) {
+	s.allowPause = event.Data.(bool)
+}
+
+func (s *StreamAllocator) handleSignalSetChannelCapacity(event *Event) {
+	s.overriddenChannelCapacity = event.Data.(int64)
+	if s.overriddenChannelCapacity > 0 {
+		s.params.Logger.Infow("allocating on override channel capacity", "override", s.overriddenChannelCapacity)
+		s.allocateAllTracks()
+	} else {
+		s.params.Logger.Infow("clearing  override channel capacity")
 	}
 }
 
@@ -841,7 +898,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	}
 
 	// commit the track that needs change if enough could be acquired or pause not allowed
-	if !s.params.Config.AllowPause || bandwidthAcquired >= transition.BandwidthDelta {
+	if !s.allowPause || bandwidthAcquired >= transition.BandwidthDelta {
 		allocation := track.ProvisionalAllocateCommit()
 		if allocation.PauseReason == sfu.VideoPauseReasonBandwidth && track.SetPaused(true) {
 			update.HandleStreamingChange(true, track)
@@ -941,18 +998,26 @@ func (s *StreamAllocator) allocateAllTracks() {
 	//   1. Stream as many tracks as possible, i.e. no pauses.
 	//   2. Try to give fair allocation to all track.
 	//
-	// Start with the lowest layers and give each track a chance at that layer and keep going up.
-	// As long as there is enough bandwidth for tracks to stream at the lowest layers, the first goal is achieved.
+	// Start with the lowest layer and give each track a chance at that layer and keep going up.
+	// As long as there is enough bandwidth for tracks to stream at the lowest layer, the first goal is achieved.
 	//
-	// Tracks that have higher subscribed layers can use any additional available bandwidth. This tried to achieve the second goal.
+	// Tracks that have higher subscribed layer can use any additional available bandwidth. This tried to achieve the second goal.
 	//
-	// If there is not enough bandwidth even for the lowest layers, tracks at lower priorities will be paused.
+	// If there is not enough bandwidth even for the lowest layer, tracks at lower priorities will be paused.
 	//
 	update := NewStreamStateUpdate()
 
 	availableChannelCapacity := s.committedChannelCapacity
 	if s.params.Config.MinChannelCapacity > availableChannelCapacity {
 		availableChannelCapacity = s.params.Config.MinChannelCapacity
+		s.params.Logger.Debugw(
+			"stream allocator: overriding channel capacity with min channel capacity",
+			"actual", s.committedChannelCapacity,
+			"override", availableChannelCapacity,
+		)
+	}
+	if s.overriddenChannelCapacity > 0 {
+		availableChannelCapacity = s.overriddenChannelCapacity
 		s.params.Logger.Debugw(
 			"stream allocator: overriding channel capacity",
 			"actual", s.committedChannelCapacity,
@@ -982,7 +1047,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 	if availableChannelCapacity < 0 {
 		availableChannelCapacity = 0
 	}
-	if availableChannelCapacity == 0 && s.params.Config.AllowPause {
+	if availableChannelCapacity == 0 && s.allowPause {
 		// nothing left for managed tracks, pause them all
 		for _, track := range videoTracks {
 			if !track.IsManaged() {
@@ -1002,13 +1067,13 @@ func (s *StreamAllocator) allocateAllTracks() {
 
 		for spatial := int32(0); spatial <= buffer.DefaultMaxLayerSpatial; spatial++ {
 			for temporal := int32(0); temporal <= buffer.DefaultMaxLayerTemporal; temporal++ {
-				layers := buffer.VideoLayer{
+				layer := buffer.VideoLayer{
 					Spatial:  spatial,
 					Temporal: temporal,
 				}
 
 				for _, track := range sorted {
-					usedChannelCapacity := track.ProvisionalAllocate(availableChannelCapacity, layers, s.params.Config.AllowPause, FlagAllowOvershootWhileDeficient)
+					usedChannelCapacity := track.ProvisionalAllocate(availableChannelCapacity, layer, s.allowPause, FlagAllowOvershootWhileDeficient)
 					availableChannelCapacity -= usedChannelCapacity
 					if availableChannelCapacity < 0 {
 						availableChannelCapacity = 0
@@ -1150,7 +1215,8 @@ func (s *StreamAllocator) isInProbe() bool {
 }
 
 func (s *StreamAllocator) maybeProbe() {
-	if time.Since(s.lastProbeStartTime) < s.probeInterval || s.probeClusterId != ProbeClusterIdInvalid {
+	if time.Since(s.lastProbeStartTime) < s.probeInterval || s.probeClusterId != ProbeClusterIdInvalid || s.overriddenChannelCapacity > 0 {
+		// do not probe if channel capacity is overridden
 		return
 	}
 
@@ -1164,7 +1230,7 @@ func (s *StreamAllocator) maybeProbe() {
 }
 
 func (s *StreamAllocator) maybeProbeWithMedia() {
-	// boost deficient track farthest from desired layers
+	// boost deficient track farthest from desired layer
 	for _, track := range s.getMaxDistanceSortedDeficient() {
 		allocation, boosted := track.AllocateNextHigher(ChannelCapacityInfinity, FlagAllowOvershootInCatchup)
 		if !boosted {
@@ -1183,7 +1249,7 @@ func (s *StreamAllocator) maybeProbeWithMedia() {
 }
 
 func (s *StreamAllocator) maybeProbeWithPadding() {
-	// use deficient track farthest from desired layers to find how much to probe
+	// use deficient track farthest from desired layer to find how much to probe
 	for _, track := range s.getMaxDistanceSortedDeficient() {
 		transition, available := track.GetNextHigherTransition(FlagAllowOvershootInProbe)
 		if !available || transition.BandwidthDelta < 0 {
@@ -1202,7 +1268,7 @@ func (s *StreamAllocator) maybeProbeWithPadding() {
 
 func (s *StreamAllocator) getTracks() []*Track {
 	s.videoTracksMu.RLock()
-	var tracks []*Track
+	tracks := make([]*Track, 0, len(s.videoTracks))
 	for _, track := range s.videoTracks {
 		tracks = append(tracks, track)
 	}

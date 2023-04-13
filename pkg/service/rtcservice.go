@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/sebest/xff"
 	"github.com/ua-parser/uap-go/uaparser"
 
 	"github.com/livekit/livekit-server/pkg/utils"
@@ -104,6 +103,7 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 	publishParam := r.FormValue("publish")
 	adaptiveStreamParam := r.FormValue("adaptive_stream")
 	participantID := r.FormValue("sid")
+	subscriberAllowPauseParam := r.FormValue("subscriber_allow_pause")
 
 	if onlyName != "" {
 		roomName = onlyName
@@ -111,7 +111,7 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 
 	// this is new connection for existing participant -  with publish only permissions
 	if publishParam != "" {
-		// Make sure grant has CanPublish set,
+		// Make sure grant has GetCanPublish set,
 		if !claims.Video.GetCanPublish() {
 			return "", routing.ParticipantInit{}, http.StatusUnauthorized, rtc.ErrPermissionDenied
 		}
@@ -159,6 +159,10 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 	}
 	if adaptiveStreamParam != "" {
 		pi.AdaptiveStream = boolValue(adaptiveStreamParam)
+	}
+	if subscriberAllowPauseParam != "" {
+		subscriberAllowPause := boolValue(subscriberAllowPauseParam)
+		pi.SubscriberAllowPause = &subscriberAllowPause
 	}
 
 	return roomName, pi, http.StatusOK, nil
@@ -255,7 +259,12 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			signalStats.AddBytes(uint64(count), true)
 		}
 	}
-	pLogger.Infow("new client WS connected", "connID", cr.ConnectionID)
+	pLogger.Infow("new client WS connected",
+		"connID", cr.ConnectionID,
+		"reconnect", pi.Reconnect,
+		"reconnectReason", pi.ReconnectReason,
+		"adaptiveStream", pi.AdaptiveStream,
+	)
 
 	// handle responses
 	go func() {
@@ -404,10 +413,7 @@ func (s *RTCService) ParseClientInfo(r *http.Request) *livekit.ClientInfo {
 	ci.DeviceModel = values.Get("device_model")
 	ci.Network = values.Get("network")
 	// get real address (forwarded http header) - check Cloudflare headers first, fall back to X-Forwarded-For
-	ci.Address = r.Header.Get("CF-Connecting-IP")
-	if len(ci.Address) == 0 {
-		ci.Address = xff.GetRemoteAddr(r)
-	}
+	ci.Address = GetClientIP(r)
 
 	// attempt to parse types for SDKs that support browser as a platform
 	if ci.Sdk == livekit.ClientInfo_JS ||

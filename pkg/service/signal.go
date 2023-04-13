@@ -36,12 +36,13 @@ func NewSignalServer(
 	config config.SignalRelayConfig,
 	sessionHandler SessionHandler,
 ) (*SignalServer, error) {
-	ri := middleware.NewStreamRetryInterceptorFactory(middleware.RetryOptions{
-		MaxAttempts: config.MaxAttempts,
-		Timeout:     config.Timeout,
-		Backoff:     config.Backoff,
-	})
-	s, err := rpc.NewTypedSignalServer(nodeID, &signalService{region, sessionHandler}, bus, psrpc.WithServerStreamInterceptors(ri), psrpc.WithServerChannelSize(config.StreamBufferSize))
+	s, err := rpc.NewTypedSignalServer(
+		nodeID,
+		&signalService{region, sessionHandler, config},
+		bus,
+		middleware.WithServerMetrics(prometheus.PSRPCMetricsObserver{}),
+		psrpc.WithServerChannelSize(config.StreamBufferSize),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -69,6 +70,17 @@ func NewDefaultSignalServer(
 		responseSink routing.MessageSink,
 	) error {
 		prometheus.IncrementParticipantRtcInit(1)
+
+		if rr, ok := router.(*routing.RedisRouter); ok {
+			pKey := routing.ParticipantKeyLegacy(roomName, pi.Identity)
+			pKeyB62 := routing.ParticipantKey(roomName, pi.Identity)
+
+			// RTC session should start on this node
+			if err := rr.SetParticipantRTCNode(pKey, pKeyB62, currentNode.Id); err != nil {
+				return err
+			}
+		}
+
 		return roomManager.StartSession(ctx, roomName, pi, requestSource, responseSink)
 	}
 
@@ -82,6 +94,7 @@ func (r *SignalServer) Stop() {
 type signalService struct {
 	region         string
 	sessionHandler SessionHandler
+	config         config.SignalRelayConfig
 }
 
 func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest]) (err error) {
@@ -106,51 +119,62 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 		return errors.Wrap(err, "failed to read participant from session")
 	}
 
-	reqChan := routing.NewDefaultMessageChannel()
-	defer reqChan.Close()
-
-	err = r.sessionHandler(
-		ctx,
-		livekit.RoomName(ss.RoomName),
-		*pi,
-		livekit.ConnectionID(ss.ConnectionId),
-		reqChan,
-		&relaySignalResponseSink{stream},
-	)
-	if err != nil {
-		logger.Errorw("could not handle new participant", err,
-			"room", ss.RoomName,
-			"participant", ss.Identity,
-			"connectionID", ss.ConnectionId,
-		)
-	}
-
-	for msg := range stream.Channel() {
-		if err = reqChan.WriteMessage(msg.Request); err != nil {
-			break
-		}
-	}
-
-	logger.Debugw("participant signal stream closed",
+	l := logger.GetLogger().WithValues(
 		"room", ss.RoomName,
 		"participant", ss.Identity,
 		"connectionID", ss.ConnectionId,
 	)
+
+	reqChan := routing.NewDefaultMessageChannel()
+	defer reqChan.Close()
+
+	sink := routing.NewSignalMessageSink(routing.SignalSinkParams[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest]{
+		Logger: l,
+		Stream: stream,
+		Config: r.config,
+		Writer: signalResponseMessageWriter{},
+	})
+
+	err = r.sessionHandler(ctx, livekit.RoomName(ss.RoomName), *pi, livekit.ConnectionID(ss.ConnectionId), reqChan, sink)
+	if err != nil {
+		l.Errorw("could not handle new participant", err)
+	}
+
+	err = routing.CopySignalStreamToMessageChannel[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest](stream, reqChan, signalRequestMessageReader{}, r.config)
+	l.Debugw("participant signal stream closed", "error", err)
+
 	return
 }
 
-type relaySignalResponseSink struct {
-	psrpc.ServerStream[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest]
+type signalResponseMessageWriter struct{}
+
+func (e signalResponseMessageWriter) WriteOne(seq uint64, msg proto.Message) *rpc.RelaySignalResponse {
+	return &rpc.RelaySignalResponse{
+		Seq:      seq,
+		Response: msg.(*livekit.SignalResponse),
+	}
 }
 
-func (s *relaySignalResponseSink) Close() {
-	s.ServerStream.Close(nil)
+func (e signalResponseMessageWriter) WriteMany(seq uint64, msgs []proto.Message) *rpc.RelaySignalResponse {
+	r := &rpc.RelaySignalResponse{
+		Seq:       seq,
+		Responses: make([]*livekit.SignalResponse, 0, len(msgs)),
+	}
+	for _, m := range msgs {
+		r.Responses = append(r.Responses, m.(*livekit.SignalResponse))
+	}
+	return r
 }
 
-func (s *relaySignalResponseSink) IsClosed() bool {
-	return s.Context().Err() != nil
-}
+type signalRequestMessageReader struct{}
 
-func (s *relaySignalResponseSink) WriteMessage(msg proto.Message) error {
-	return s.Send(&rpc.RelaySignalResponse{Response: msg.(*livekit.SignalResponse)})
+func (e signalRequestMessageReader) Read(rm *rpc.RelaySignalRequest) ([]proto.Message, error) {
+	msgs := make([]proto.Message, 0, len(rm.Requests)+1)
+	if rm.Request != nil {
+		msgs = append(msgs, rm.Request)
+	}
+	for _, m := range rm.Requests {
+		msgs = append(msgs, m)
+	}
+	return msgs, nil
 }

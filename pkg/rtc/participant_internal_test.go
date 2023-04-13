@@ -176,6 +176,32 @@ func TestTrackPublishing(t *testing.T) {
 		// check SID is the same
 		require.Equal(t, p.pendingTracks["cid"].trackInfos[0].Sid, p.pendingTracks["cid"].trackInfos[1].Sid)
 	})
+
+	t.Run("should not allow adding disallowed sources", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		p.SetPermission(&livekit.ParticipantPermission{
+			CanPublish: true,
+			CanPublishSources: []livekit.TrackSource{
+				livekit.TrackSource_CAMERA,
+			},
+		})
+		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
+		p.AddTrack(&livekit.AddTrackRequest{
+			Cid:    "cid",
+			Name:   "webcam",
+			Source: livekit.TrackSource_CAMERA,
+			Type:   livekit.TrackType_VIDEO,
+		})
+		require.Equal(t, 1, sink.WriteMessageCallCount())
+
+		p.AddTrack(&livekit.AddTrackRequest{
+			Cid:    "cid2",
+			Name:   "rejected source",
+			Type:   livekit.TrackType_AUDIO,
+			Source: livekit.TrackSource_MICROPHONE,
+		})
+		require.Equal(t, 1, sink.WriteMessageCallCount())
+	})
 }
 
 func TestOutOfOrderUpdates(t *testing.T) {

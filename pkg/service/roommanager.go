@@ -278,6 +278,9 @@ func (r *RoomManager) StartSession(
 		"sdk", pi.Client.Sdk,
 		"sdkVersion", pi.Client.Version,
 		"protocol", pi.Client.Protocol,
+		"reconnect", pi.Reconnect,
+		"reconnectReason", pi.ReconnectReason,
+		"adaptiveStream", pi.AdaptiveStream,
 	)
 
 	clientConf := r.clientConfManager.GetConfiguration(pi.Client)
@@ -301,6 +304,10 @@ func (r *RoomManager) StartSession(
 	reconnectOnSubscriptionError := false
 	if r.config.RTC.ReconnectOnSubscriptionError != nil {
 		reconnectOnSubscriptionError = *r.config.RTC.ReconnectOnSubscriptionError
+	}
+	subscriberAllowPause := r.config.RTC.CongestionControl.AllowPause
+	if pi.SubscriberAllowPause != nil {
+		subscriberAllowPause = *pi.SubscriberAllowPause
 	}
 	participant, err = rtc.NewParticipant(rtc.ParticipantParams{
 		Identity:                pi.Identity,
@@ -333,6 +340,7 @@ func (r *RoomManager) StartSession(
 		ReconnectOnSubscriptionError: reconnectOnSubscriptionError,
 		VersionGenerator:             r.versionGenerator,
 		TrackResolver:                room.ResolveMediaTrackForSubscriber,
+		SubscriberAllowPause:         subscriberAllowPause,
 	})
 	if err != nil {
 		return err

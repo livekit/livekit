@@ -8,8 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/protocol/logger"
-
-	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
 func Test_sequencer(t *testing.T) {
@@ -103,83 +101,4 @@ func Test_sequencer_getNACKSeqNo(t *testing.T) {
 			}
 		})
 	}
-}
-
-func Test_packetMeta_VP8(t *testing.T) {
-	p := &packetMeta{}
-
-	vp8 := &buffer.VP8{
-		FirstByte:        25,
-		PictureIDPresent: 1,
-		PictureID:        55467,
-		MBit:             true,
-		TL0PICIDXPresent: 1,
-		TL0PICIDX:        233,
-		TIDPresent:       1,
-		TID:              13,
-		Y:                1,
-		KEYIDXPresent:    1,
-		KEYIDX:           23,
-		HeaderSize:       6,
-		IsKeyFrame:       true,
-	}
-
-	p.packVP8(vp8)
-
-	// booleans are not packed, so they will be `false` in unpacked.
-	// Also, TID is only two bits, so it should be modulo 3.
-	expectedVP8 := &buffer.VP8{
-		FirstByte:        25,
-		PictureIDPresent: 1,
-		PictureID:        55467 % 32768,
-		MBit:             true,
-		TL0PICIDXPresent: 1,
-		TL0PICIDX:        233,
-		TIDPresent:       1,
-		TID:              13 % 3,
-		Y:                1,
-		KEYIDXPresent:    1,
-		KEYIDX:           23,
-		HeaderSize:       6,
-		IsKeyFrame:       true,
-	}
-	unpackedVP8 := p.unpackVP8()
-	require.Equal(t, expectedVP8, unpackedVP8)
-
-	// short picture id and no TL0PICIDX
-	vp8 = &buffer.VP8{
-		FirstByte:        25,
-		PictureIDPresent: 1,
-		PictureID:        63,
-		MBit:             false,
-		TL0PICIDXPresent: 0,
-		TL0PICIDX:        233,
-		TIDPresent:       1,
-		TID:              2,
-		Y:                1,
-		KEYIDXPresent:    0,
-		KEYIDX:           23,
-		HeaderSize:       23,
-		IsKeyFrame:       true,
-	}
-
-	p.packVP8(vp8)
-
-	expectedVP8 = &buffer.VP8{
-		FirstByte:        25,
-		PictureIDPresent: 1,
-		PictureID:        63,
-		MBit:             false,
-		TL0PICIDXPresent: 0,
-		TL0PICIDX:        233,
-		TIDPresent:       1,
-		TID:              2,
-		Y:                1,
-		KEYIDXPresent:    0,
-		KEYIDX:           23,
-		HeaderSize:       23,
-		IsKeyFrame:       true,
-	}
-	unpackedVP8 = p.unpackVP8()
-	require.Equal(t, expectedVP8, unpackedVP8)
 }
