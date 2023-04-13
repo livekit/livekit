@@ -33,9 +33,9 @@ const (
 
 	// IngressKey is a hash of ingressID => ingress info
 	IngressKey         = "ingress"
-	StreamKeyKey       = "stream_key"
-	IngressStatePrefix = "ingress_state:"
-	RoomIngressPrefix  = "room_ingress:"
+	StreamKeyKey       = "{ingress}_stream_key"
+	IngressStatePrefix = "{ingress}_state:"
+	RoomIngressPrefix  = "room_{ingress}:"
 
 	// RoomParticipantsPrefix is hash of participant_name => ParticipantInfo
 	RoomParticipantsPrefix = "room_participants:"
@@ -320,10 +320,10 @@ func (s *RedisStore) StoreEgress(_ context.Context, info *livekit.EgressInfo) er
 		return err
 	}
 
-	tx := s.rc.TxPipeline()
-	tx.HSet(s.ctx, EgressKey, info.EgressId, data)
-	tx.SAdd(s.ctx, RoomEgressPrefix+info.RoomName, info.EgressId)
-	if _, err = tx.Exec(s.ctx); err != nil {
+	pp := s.rc.Pipeline()
+	pp.HSet(s.ctx, EgressKey, info.EgressId, data)
+	pp.SAdd(s.ctx, RoomEgressPrefix+info.RoomName, info.EgressId)
+	if _, err = pp.Exec(s.ctx); err != nil {
 		return errors.Wrap(err, "could not store egress info")
 	}
 
@@ -410,10 +410,10 @@ func (s *RedisStore) UpdateEgress(_ context.Context, info *livekit.EgressInfo) e
 	}
 
 	if info.EndedAt != 0 {
-		tx := s.rc.TxPipeline()
-		tx.HSet(s.ctx, EgressKey, info.EgressId, data)
-		tx.HSet(s.ctx, EndedEgressKey, info.EgressId, egressEndedValue(info.RoomName, info.EndedAt))
-		_, err = tx.Exec(s.ctx)
+		pp := s.rc.Pipeline()
+		pp.HSet(s.ctx, EgressKey, info.EgressId, data)
+		pp.HSet(s.ctx, EndedEgressKey, info.EgressId, egressEndedValue(info.RoomName, info.EndedAt))
+		_, err = pp.Exec(s.ctx)
 	} else {
 		err = s.rc.HSet(s.ctx, EgressKey, info.EgressId, data).Err()
 	}
@@ -457,11 +457,12 @@ func (s *RedisStore) CleanEndedEgress() error {
 		}
 
 		if endedAt < expiry {
-			tx := s.rc.TxPipeline()
-			tx.HDel(s.ctx, EndedEgressKey, egressID)
-			tx.SRem(s.ctx, RoomEgressPrefix+roomName, egressID)
-			tx.HDel(s.ctx, EgressKey, egressID)
-			if _, err := tx.Exec(s.ctx); err != nil {
+			pp := s.rc.Pipeline()
+			pp.SRem(s.ctx, RoomEgressPrefix+roomName, egressID)
+			pp.HDel(s.ctx, EgressKey, egressID)
+			// Delete the EndedEgressKey entry last so that future sweeper runs get another chance to delete dangling data is the deletion partially failed.
+			pp.HDel(s.ctx, EndedEgressKey, egressID)
+			if _, err := pp.Exec(s.ctx); err != nil {
 				return err
 			}
 		}
@@ -589,11 +590,6 @@ func (s *RedisStore) storeIngressState(_ context.Context, ingressId string, stat
 	txf := func(tx *redis.Tx) error {
 		var oldStartedAt int64
 
-		info, err := s.loadIngress(tx, ingressId)
-		if err != nil {
-			return err
-		}
-
 		oldState, err := s.loadIngressState(tx, ingressId)
 		switch err {
 		case ErrIngressNotFound:
@@ -611,7 +607,6 @@ func (s *RedisStore) storeIngressState(_ context.Context, ingressId string, stat
 			}
 
 			p.Set(s.ctx, IngressStatePrefix+ingressId, data, 0)
-			p.HSet(s.ctx, StreamKeyKey, info.StreamKey, info.IngressId)
 
 			return nil
 		})
@@ -631,7 +626,7 @@ func (s *RedisStore) storeIngressState(_ context.Context, ingressId string, stat
 
 	// Retry if the key has been changed.
 	for i := 0; i < maxRetries; i++ {
-		err := s.rc.Watch(s.ctx, txf, IngressKey, IngressStatePrefix+ingressId)
+		err := s.rc.Watch(s.ctx, txf, IngressStatePrefix+ingressId)
 		switch err {
 		case redis.TxFailedErr:
 			// Optimistic lock lost. Retry.
