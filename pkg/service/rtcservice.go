@@ -103,6 +103,7 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 	publishParam := r.FormValue("publish")
 	adaptiveStreamParam := r.FormValue("adaptive_stream")
 	participantID := r.FormValue("sid")
+	subscriberAllowPauseParam := r.FormValue("subscriber_allow_pause")
 
 	if onlyName != "" {
 		roomName = onlyName
@@ -140,14 +141,15 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 	}
 
 	pi = routing.ParticipantInit{
-		Reconnect:       boolValue(reconnectParam),
-		ReconnectReason: livekit.ReconnectReason(reconnectReason),
-		Identity:        livekit.ParticipantIdentity(claims.Identity),
-		Name:            livekit.ParticipantName(claims.Name),
-		AutoSubscribe:   true,
-		Client:          s.ParseClientInfo(r),
-		Grants:          claims,
-		Region:          region,
+		Reconnect:            boolValue(reconnectParam),
+		ReconnectReason:      livekit.ReconnectReason(reconnectReason),
+		Identity:             livekit.ParticipantIdentity(claims.Identity),
+		Name:                 livekit.ParticipantName(claims.Name),
+		AutoSubscribe:        true,
+		Client:               s.ParseClientInfo(r),
+		Grants:               claims,
+		Region:               region,
+		SubscriberAllowPause: s.config.RTC.CongestionControl.AllowPause,
 	}
 	if pi.Reconnect {
 		pi.ID = livekit.ParticipantID(participantID)
@@ -158,6 +160,9 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 	}
 	if adaptiveStreamParam != "" {
 		pi.AdaptiveStream = boolValue(adaptiveStreamParam)
+	}
+	if subscriberAllowPauseParam != "" {
+		pi.SubscriberAllowPause = boolValue(subscriberAllowPauseParam)
 	}
 
 	return roomName, pi, http.StatusOK, nil
