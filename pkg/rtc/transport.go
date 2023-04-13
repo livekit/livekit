@@ -1118,6 +1118,22 @@ func (t *PCTransport) RemoveTrackFromStreamAllocator(subTrack types.SubscribedTr
 	t.streamAllocator.RemoveTrack(subTrack.DownTrack())
 }
 
+func (t *PCTransport) SetAllowPauseOfStreamAllocator(allowPause bool) {
+	if t.streamAllocator == nil {
+		return
+	}
+
+	t.streamAllocator.SetAllowPause(allowPause)
+}
+
+func (t *PCTransport) SetChannelCapacityOfStreamAllocator(channelCapacity int64) {
+	if t.streamAllocator == nil {
+		return
+	}
+
+	t.streamAllocator.SetChannelCapacity(channelCapacity)
+}
+
 func (t *PCTransport) GetICEConnectionType() types.ICEConnectionType {
 	unknown := types.ICEConnectionTypeUnknown
 	if t.pc == nil {

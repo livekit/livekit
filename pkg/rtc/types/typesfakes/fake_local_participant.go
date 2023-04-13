@@ -659,6 +659,16 @@ type FakeLocalParticipant struct {
 	setSignalSourceValidArgsForCall []struct {
 		arg1 bool
 	}
+	SetSubscriberAllowPauseStub        func(bool)
+	setSubscriberAllowPauseMutex       sync.RWMutex
+	setSubscriberAllowPauseArgsForCall []struct {
+		arg1 bool
+	}
+	SetSubscriberChannelCapacityStub        func(int64)
+	setSubscriberChannelCapacityMutex       sync.RWMutex
+	setSubscriberChannelCapacityArgsForCall []struct {
+		arg1 int64
+	}
 	SetTrackMutedStub        func(livekit.TrackID, bool, bool)
 	setTrackMutedMutex       sync.RWMutex
 	setTrackMutedArgsForCall []struct {
@@ -4343,6 +4353,70 @@ func (fake *FakeLocalParticipant) SetSignalSourceValidArgsForCall(i int) bool {
 	return argsForCall.arg1
 }
 
+func (fake *FakeLocalParticipant) SetSubscriberAllowPause(arg1 bool) {
+	fake.setSubscriberAllowPauseMutex.Lock()
+	fake.setSubscriberAllowPauseArgsForCall = append(fake.setSubscriberAllowPauseArgsForCall, struct {
+		arg1 bool
+	}{arg1})
+	stub := fake.SetSubscriberAllowPauseStub
+	fake.recordInvocation("SetSubscriberAllowPause", []interface{}{arg1})
+	fake.setSubscriberAllowPauseMutex.Unlock()
+	if stub != nil {
+		fake.SetSubscriberAllowPauseStub(arg1)
+	}
+}
+
+func (fake *FakeLocalParticipant) SetSubscriberAllowPauseCallCount() int {
+	fake.setSubscriberAllowPauseMutex.RLock()
+	defer fake.setSubscriberAllowPauseMutex.RUnlock()
+	return len(fake.setSubscriberAllowPauseArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) SetSubscriberAllowPauseCalls(stub func(bool)) {
+	fake.setSubscriberAllowPauseMutex.Lock()
+	defer fake.setSubscriberAllowPauseMutex.Unlock()
+	fake.SetSubscriberAllowPauseStub = stub
+}
+
+func (fake *FakeLocalParticipant) SetSubscriberAllowPauseArgsForCall(i int) bool {
+	fake.setSubscriberAllowPauseMutex.RLock()
+	defer fake.setSubscriberAllowPauseMutex.RUnlock()
+	argsForCall := fake.setSubscriberAllowPauseArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) SetSubscriberChannelCapacity(arg1 int64) {
+	fake.setSubscriberChannelCapacityMutex.Lock()
+	fake.setSubscriberChannelCapacityArgsForCall = append(fake.setSubscriberChannelCapacityArgsForCall, struct {
+		arg1 int64
+	}{arg1})
+	stub := fake.SetSubscriberChannelCapacityStub
+	fake.recordInvocation("SetSubscriberChannelCapacity", []interface{}{arg1})
+	fake.setSubscriberChannelCapacityMutex.Unlock()
+	if stub != nil {
+		fake.SetSubscriberChannelCapacityStub(arg1)
+	}
+}
+
+func (fake *FakeLocalParticipant) SetSubscriberChannelCapacityCallCount() int {
+	fake.setSubscriberChannelCapacityMutex.RLock()
+	defer fake.setSubscriberChannelCapacityMutex.RUnlock()
+	return len(fake.setSubscriberChannelCapacityArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) SetSubscriberChannelCapacityCalls(stub func(int64)) {
+	fake.setSubscriberChannelCapacityMutex.Lock()
+	defer fake.setSubscriberChannelCapacityMutex.Unlock()
+	fake.SetSubscriberChannelCapacityStub = stub
+}
+
+func (fake *FakeLocalParticipant) SetSubscriberChannelCapacityArgsForCall(i int) int64 {
+	fake.setSubscriberChannelCapacityMutex.RLock()
+	defer fake.setSubscriberChannelCapacityMutex.RUnlock()
+	argsForCall := fake.setSubscriberChannelCapacityArgsForCall[i]
+	return argsForCall.arg1
+}
+
 func (fake *FakeLocalParticipant) SetTrackMuted(arg1 livekit.TrackID, arg2 bool, arg3 bool) {
 	fake.setTrackMutedMutex.Lock()
 	fake.setTrackMutedArgsForCall = append(fake.setTrackMutedArgsForCall, struct {
@@ -5368,6 +5442,10 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.setResponseSinkMutex.RUnlock()
 	fake.setSignalSourceValidMutex.RLock()
 	defer fake.setSignalSourceValidMutex.RUnlock()
+	fake.setSubscriberAllowPauseMutex.RLock()
+	defer fake.setSubscriberAllowPauseMutex.RUnlock()
+	fake.setSubscriberChannelCapacityMutex.RLock()
+	defer fake.setSubscriberChannelCapacityMutex.RUnlock()
 	fake.setTrackMutedMutex.RLock()
 	defer fake.setTrackMutedMutex.RUnlock()
 	fake.startMutex.RLock()

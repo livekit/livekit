@@ -48,6 +48,8 @@ const (
 	FlagAllowOvershootInCatchup                 = true
 )
 
+// ---------------------------------------------------------------------------
+
 var (
 	ChannelObserverParamsProbe = ChannelObserverParams{
 		Name:                           "probe",
@@ -70,6 +72,8 @@ var (
 	}
 )
 
+// ---------------------------------------------------------------------------
+
 type streamAllocatorState int
 
 const (
@@ -88,6 +92,8 @@ func (s streamAllocatorState) String() string {
 	}
 }
 
+// ---------------------------------------------------------------------------
+
 type streamAllocatorSignal int
 
 const (
@@ -99,6 +105,8 @@ const (
 	streamAllocatorSignalSendProbe
 	streamAllocatorSignalProbeClusterDone
 	streamAllocatorSignalResume
+	streamAllocatorSignalSetAllowPause
+	streamAllocatorSignalSetChannelCapacity
 )
 
 func (s streamAllocatorSignal) String() string {
@@ -119,10 +127,16 @@ func (s streamAllocatorSignal) String() string {
 		return "PROBE_CLUSTER_DONE"
 	case streamAllocatorSignalResume:
 		return "RESUME"
+	case streamAllocatorSignalSetAllowPause:
+		return "SET_ALLOW_PAUSE"
+	case streamAllocatorSignalSetChannelCapacity:
+		return "SET_CHANNEL_CAPACITY"
 	default:
 		return fmt.Sprintf("%d", int(s))
 	}
 }
+
+// ---------------------------------------------------------------------------
 
 type Event struct {
 	Signal  streamAllocatorSignal
@@ -133,6 +147,8 @@ type Event struct {
 func (e Event) String() string {
 	return fmt.Sprintf("StreamAllocator:Event{signal: %s, trackID: %s, data: %+v}", e.Signal, e.TrackID, e.Data)
 }
+
+// ---------------------------------------------------------------------------
 
 type StreamAllocatorParams struct {
 	Config config.CongestionControlConfig
@@ -146,8 +162,11 @@ type StreamAllocator struct {
 
 	bwe cc.BandwidthEstimator
 
-	lastReceivedEstimate     int64
-	committedChannelCapacity int64
+	allowPause bool
+
+	lastReceivedEstimate      int64
+	committedChannelCapacity  int64
+	overriddenChannelCapacity int64
 
 	probeInterval         time.Duration
 	lastProbeStartTime    time.Time
@@ -176,7 +195,8 @@ type StreamAllocator struct {
 
 func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 	s := &StreamAllocator{
-		params: params,
+		params:     params,
+		allowPause: params.Config.AllowPause,
 		prober: NewProber(ProberParams{
 			Logger: params.Logger,
 		}),
@@ -272,6 +292,20 @@ func (s *StreamAllocator) SetTrackPriority(downTrack *sfu.DownTrack, priority ui
 		}
 	}
 	s.videoTracksMu.Unlock()
+}
+
+func (s *StreamAllocator) SetAllowPause(allowPause bool) {
+	s.postEvent(Event{
+		Signal: streamAllocatorSignalSetAllowPause,
+		Data:   allowPause,
+	})
+}
+
+func (s *StreamAllocator) SetChannelCapacity(channelCapacity int64) {
+	s.postEvent(Event{
+		Signal: streamAllocatorSignalSetChannelCapacity,
+		Data:   channelCapacity,
+	})
 }
 
 func (s *StreamAllocator) resetState() {
@@ -536,6 +570,10 @@ func (s *StreamAllocator) handleEvent(event *Event) {
 		s.handleSignalProbeClusterDone(event)
 	case streamAllocatorSignalResume:
 		s.handleSignalResume(event)
+	case streamAllocatorSignalSetAllowPause:
+		s.handleSignalSetAllowPause(event)
+	case streamAllocatorSignalSetChannelCapacity:
+		s.handleSignalSetChannelCapacity(event)
 	}
 }
 
@@ -646,6 +684,20 @@ func (s *StreamAllocator) handleSignalResume(event *Event) {
 			update.HandleStreamingChange(false, track)
 		}
 		s.maybeSendUpdate(update)
+	}
+}
+
+func (s *StreamAllocator) handleSignalSetAllowPause(event *Event) {
+	s.allowPause = event.Data.(bool)
+}
+
+func (s *StreamAllocator) handleSignalSetChannelCapacity(event *Event) {
+	s.overriddenChannelCapacity = event.Data.(int64)
+	if s.overriddenChannelCapacity > 0 {
+		s.params.Logger.Infow("allocating on override channel capacity", "override", s.overriddenChannelCapacity)
+		s.allocateAllTracks()
+	} else {
+		s.params.Logger.Infow("clearing  override channel capacity")
 	}
 }
 
@@ -846,7 +898,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	}
 
 	// commit the track that needs change if enough could be acquired or pause not allowed
-	if !s.params.Config.AllowPause || bandwidthAcquired >= transition.BandwidthDelta {
+	if !s.allowPause || bandwidthAcquired >= transition.BandwidthDelta {
 		allocation := track.ProvisionalAllocateCommit()
 		if allocation.PauseReason == sfu.VideoPauseReasonBandwidth && track.SetPaused(true) {
 			update.HandleStreamingChange(true, track)
@@ -959,6 +1011,14 @@ func (s *StreamAllocator) allocateAllTracks() {
 	if s.params.Config.MinChannelCapacity > availableChannelCapacity {
 		availableChannelCapacity = s.params.Config.MinChannelCapacity
 		s.params.Logger.Debugw(
+			"stream allocator: overriding channel capacity with min channel capacity",
+			"actual", s.committedChannelCapacity,
+			"override", availableChannelCapacity,
+		)
+	}
+	if s.overriddenChannelCapacity > 0 {
+		availableChannelCapacity = s.overriddenChannelCapacity
+		s.params.Logger.Debugw(
 			"stream allocator: overriding channel capacity",
 			"actual", s.committedChannelCapacity,
 			"override", availableChannelCapacity,
@@ -987,7 +1047,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 	if availableChannelCapacity < 0 {
 		availableChannelCapacity = 0
 	}
-	if availableChannelCapacity == 0 && s.params.Config.AllowPause {
+	if availableChannelCapacity == 0 && s.allowPause {
 		// nothing left for managed tracks, pause them all
 		for _, track := range videoTracks {
 			if !track.IsManaged() {
@@ -1013,7 +1073,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 				}
 
 				for _, track := range sorted {
-					usedChannelCapacity := track.ProvisionalAllocate(availableChannelCapacity, layer, s.params.Config.AllowPause, FlagAllowOvershootWhileDeficient)
+					usedChannelCapacity := track.ProvisionalAllocate(availableChannelCapacity, layer, s.allowPause, FlagAllowOvershootWhileDeficient)
 					availableChannelCapacity -= usedChannelCapacity
 					if availableChannelCapacity < 0 {
 						availableChannelCapacity = 0
@@ -1155,7 +1215,8 @@ func (s *StreamAllocator) isInProbe() bool {
 }
 
 func (s *StreamAllocator) maybeProbe() {
-	if time.Since(s.lastProbeStartTime) < s.probeInterval || s.probeClusterId != ProbeClusterIdInvalid {
+	if time.Since(s.lastProbeStartTime) < s.probeInterval || s.probeClusterId != ProbeClusterIdInvalid || s.overriddenChannelCapacity > 0 {
+		// do not probe if channel capacity is overridden
 		return
 	}
 
@@ -1207,7 +1268,7 @@ func (s *StreamAllocator) maybeProbeWithPadding() {
 
 func (s *StreamAllocator) getTracks() []*Track {
 	s.videoTracksMu.RLock()
-	var tracks []*Track
+	tracks := make([]*Track, 0, len(s.videoTracks))
 	for _, track := range s.videoTracks {
 		tracks = append(tracks, track)
 	}
