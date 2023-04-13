@@ -336,6 +336,7 @@ func (r *RoomManager) StartSession(
 		ReconnectOnSubscriptionError: reconnectOnSubscriptionError,
 		VersionGenerator:             r.versionGenerator,
 		TrackResolver:                room.ResolveMediaTrackForSubscriber,
+		SubscriberAllowPause:         r.config.RTC.CongestionControl.AllowPause,
 	})
 	if err != nil {
 		return err
