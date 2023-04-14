@@ -615,7 +615,12 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 
 			alloc.RequestLayerSpatial = alloc.TargetLayer.Spatial
 		} else {
-			requestLayerSpatial := int32(math.Min(float64(maxLayer.Spatial), float64(maxSeenLayer.Spatial)))
+			requestLayerSpatial := int32(0)
+			for _, al := range availableLayers {
+				if al > requestLayerSpatial {
+					requestLayerSpatial = al
+				}
+			}
 			if currentLayer.IsValid() && requestLayerSpatial == requestSpatial && currentLayer.Spatial == requestSpatial {
 				// current is locked to desired, stay there
 				alloc.TargetLayer = buffer.VideoLayer{
