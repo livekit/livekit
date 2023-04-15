@@ -293,7 +293,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		BandwidthNeeded:     bitrates[2][1],
 		Bitrates:            bitrates,
 		TargetLayer:         buffer.DefaultMaxLayer,
-		RequestLayerSpatial: 2,
+		RequestLayerSpatial: 1,
 		MaxLayer:            buffer.DefaultMaxLayer,
 		DistanceToDesired:   -0.5,
 	}
@@ -310,7 +310,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		BandwidthDelta:      0 - bitrates[2][1],
 		Bitrates:            emptyBitrates,
 		TargetLayer:         buffer.DefaultMaxLayer,
-		RequestLayerSpatial: 2,
+		RequestLayerSpatial: 1,
 		MaxLayer:            buffer.DefaultMaxLayer,
 		DistanceToDesired:   -1.0,
 	}
@@ -330,7 +330,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		BandwidthNeeded:     bitrates[2][1],
 		Bitrates:            bitrates,
 		TargetLayer:         expectedTargetLayer,
-		RequestLayerSpatial: 2,
+		RequestLayerSpatial: 1,
 		MaxLayer:            buffer.DefaultMaxLayer,
 		DistanceToDesired:   -0.5,
 	}
@@ -338,10 +338,10 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 	require.Equal(t, expectedResult, result)
 	require.Equal(t, expectedResult, f.lastAllocation)
 
-	// switches to highest available if feed is not dry and current is valid and current is not available
+	// switches request layer to highest available if feed is not dry and current is valid and current is not available
 	f.vls.SetCurrent(buffer.VideoLayer{Spatial: 0, Temporal: 1})
 	expectedTargetLayer = buffer.VideoLayer{
-		Spatial:  1,
+		Spatial:  2,
 		Temporal: buffer.DefaultMaxLayerTemporal,
 	}
 	expectedResult = VideoAllocation{
@@ -353,7 +353,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		TargetLayer:         expectedTargetLayer,
 		RequestLayerSpatial: 1,
 		MaxLayer:            buffer.DefaultMaxLayer,
-		DistanceToDesired:   0.5,
+		DistanceToDesired:   -0.5,
 	}
 	result = f.AllocateOptimal([]int32{1}, bitrates, true)
 	require.Equal(t, expectedResult, result)
@@ -377,7 +377,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		MaxLayer:            f.vls.GetMax(),
 		DistanceToDesired:   0.0,
 	}
-	result = f.AllocateOptimal([]int32{0, 1}, emptyBitrates, true)
+	result = f.AllocateOptimal([]int32{0}, emptyBitrates, true)
 	require.Equal(t, expectedResult, result)
 	require.Equal(t, expectedResult, f.lastAllocation)
 
@@ -395,7 +395,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		BandwidthDelta:      0,
 		Bitrates:            emptyBitrates,
 		TargetLayer:         expectedTargetLayer,
-		RequestLayerSpatial: 2,
+		RequestLayerSpatial: 1,
 		MaxLayer:            f.vls.GetMax(),
 		DistanceToDesired:   -1,
 	}
