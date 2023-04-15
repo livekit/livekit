@@ -148,34 +148,27 @@ func (c *ChannelObserver) GetNackRatio() (uint32, uint32, float64) {
 
 func (c *ChannelObserver) GetTrend() (ChannelTrend, ChannelCongestionReason) {
 	estimateDirection := c.estimateTrend.GetDirection()
-	packets, repeatedNacks, nackRatio := c.GetNackRatio()
+	_, _, nackRatio := c.GetNackRatio()
 
 	switch {
 	case estimateDirection == TrendDirectionDownward:
-		c.logger.Debugw(
-			"stream allocator: channel observer: estimate is trending downward",
-			"name", c.params.Name,
-			"estimate", c.estimateTrend.ToString(),
-			"packets", packets,
-			"repeatedNacks", repeatedNacks,
-			"ratio", nackRatio,
-		)
+		c.logger.Debugw( "stream allocator: channel observer: estimate is trending downward", "channel", c.ToString())
 		return ChannelTrendCongesting, ChannelCongestionReasonEstimate
+
 	case c.params.NackWindowMinDuration != 0 && !c.nackWindowStartTime.IsZero() && time.Since(c.nackWindowStartTime) > c.params.NackWindowMinDuration && nackRatio > c.params.NackRatioThreshold:
-		c.logger.Debugw(
-			"stream allocator: channel observer: high rate of repeated NACKs",
-			"name", c.params.Name,
-			"estimate", c.estimateTrend.ToString(),
-			"packets", packets,
-			"repeatedNacks", repeatedNacks,
-			"ratio", nackRatio,
-		)
+		c.logger.Debugw( "stream allocator: channel observer: high rate of repeated NACKs", "channel", c.ToString())
 		return ChannelTrendCongesting, ChannelCongestionReasonLoss
+
 	case estimateDirection == TrendDirectionUpward:
 		return ChannelTrendClearing, ChannelCongestionReasonNone
 	}
 
 	return ChannelTrendNeutral, ChannelCongestionReasonNone
+}
+
+func (c *ChannelObserver) ToString() string {
+	packets, repeatedNacks, nackRatio := c.GetNackRatio()
+	return fmt.Sprintf("name: %s, estimate: %s, packets: %d, repeatedNacks: %d, nackRatio: %f", c.params.Name, c.estimateTrend.ToString(), packets, repeatedNacks, nackRatio)
 }
 
 // ------------------------------------------------
