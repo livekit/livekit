@@ -484,11 +484,11 @@ func (f *Forwarder) IsDeficient() bool {
 	return f.isDeficientLocked()
 }
 
-func (f *Forwarder) BandwidthRequested() int64 {
+func (f *Forwarder) BandwidthRequested(brs Bitrates) int64 {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
-	return f.lastAllocation.BandwidthRequested
+	return getBandwidthNeeded(brs, f.vls.GetTarget(), f.lastAllocation.BandwidthRequested)
 }
 
 func (f *Forwarder) DistanceToDesired(availableLayers []int32, brs Bitrates) float64 {
@@ -619,7 +619,7 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 	if alloc.TargetLayer.IsValid() {
 		alloc.BandwidthRequested = optimalBandwidthNeeded
 	}
-	alloc.BandwidthDelta = alloc.BandwidthRequested - f.lastAllocation.BandwidthRequested
+	alloc.BandwidthDelta = alloc.BandwidthRequested - getBandwidthNeeded(brs, f.vls.GetTarget(), f.lastAllocation.BandwidthRequested)
 	alloc.DistanceToDesired = getDistanceToDesired(
 		f.muted,
 		f.pubMuted,
@@ -719,22 +719,26 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot b
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
+	existingTargetLayer := f.vls.GetTarget()
 	if f.provisional.muted || f.provisional.pubMuted {
+		bandwidthRequired := int64(0)
 		f.provisional.allocatedLayer = buffer.InvalidLayer
 		if f.provisional.pubMuted {
 			// leave it at current for opportunistic forwarding, there is still bandwidth saving with publisher mute
 			f.provisional.allocatedLayer = f.provisional.currentLayer
+			if f.provisional.allocatedLayer.IsValid() {
+				bandwidthRequired = f.provisional.Bitrates[f.provisional.allocatedLayer.Spatial][f.provisional.allocatedLayer.Temporal]
+			}
 		}
 		return VideoTransition{
 			From:           f.vls.GetTarget(),
 			To:             f.provisional.allocatedLayer,
-			BandwidthDelta: 0 - f.lastAllocation.BandwidthRequested,
+			BandwidthDelta: bandwidthRequired - getBandwidthNeeded(f.provisional.Bitrates, existingTargetLayer, f.lastAllocation.BandwidthRequested),
 		}
 	}
 
 	// check if we should preserve current target
-	targetLayer := f.vls.GetTarget()
-	if targetLayer.IsValid() {
+	if existingTargetLayer.IsValid() {
 		// what is the highest that is available
 		maximalLayer := buffer.InvalidLayer
 		maximalBandwidthRequired := int64(0)
@@ -753,24 +757,24 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot b
 		}
 
 		if maximalLayer.IsValid() {
-			if !targetLayer.GreaterThan(maximalLayer) && f.provisional.Bitrates[targetLayer.Spatial][targetLayer.Temporal] != 0 {
-				// currently streaming and maybe wanting an upgrade (targetLayer <= maximalLayer),
+			if !existingTargetLayer.GreaterThan(maximalLayer) && f.provisional.Bitrates[existingTargetLayer.Spatial][existingTargetLayer.Temporal] != 0 {
+				// currently streaming and maybe wanting an upgrade (existingTargetLayer <= maximalLayer),
 				// just preserve current target in the cooperative scheme of things
-				f.provisional.allocatedLayer = targetLayer
+				f.provisional.allocatedLayer = existingTargetLayer
 				return VideoTransition{
-					From:           targetLayer,
-					To:             targetLayer,
+					From:           existingTargetLayer,
+					To:             existingTargetLayer,
 					BandwidthDelta: 0,
 				}
 			}
 
-			if targetLayer.GreaterThan(maximalLayer) {
-				// maximalLayer < targetLayer, make the down move
+			if existingTargetLayer.GreaterThan(maximalLayer) {
+				// maximalLayer < existingTargetLayer, make the down move
 				f.provisional.allocatedLayer = maximalLayer
 				return VideoTransition{
-					From:           targetLayer,
+					From:           existingTargetLayer,
 					To:             maximalLayer,
-					BandwidthDelta: maximalBandwidthRequired - f.lastAllocation.BandwidthRequested,
+					BandwidthDelta: maximalBandwidthRequired - getBandwidthNeeded(f.provisional.Bitrates, existingTargetLayer, f.lastAllocation.BandwidthRequested),
 				}
 			}
 		}
@@ -799,8 +803,9 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot b
 		return layers, bw
 	}
 
+	targetLayer := buffer.InvalidLayer
 	bandwidthRequired := int64(0)
-	if !targetLayer.IsValid() {
+	if !existingTargetLayer.IsValid() {
 		// currently not streaming, find minimal
 		// NOTE: a layer in feed could have paused and there could be other options than going back to minimal,
 		// but the cooperative scheme knocks things back to minimal
@@ -825,13 +830,17 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot b
 		} else {
 			targetLayer = f.provisional.currentLayer
 		}
+
+		if targetLayer.IsValid() {
+			bandwidthRequired = f.provisional.Bitrates[targetLayer.Spatial][targetLayer.Temporal]
+		}
 	}
 
 	f.provisional.allocatedLayer = targetLayer
 	return VideoTransition{
 		From:           f.vls.GetTarget(),
 		To:             targetLayer,
-		BandwidthDelta: bandwidthRequired - f.lastAllocation.BandwidthRequested,
+		BandwidthDelta: bandwidthRequired - getBandwidthNeeded(f.provisional.Bitrates, existingTargetLayer, f.lastAllocation.BandwidthRequested),
 	}
 }
 
@@ -856,15 +865,12 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 
 	targetLayer := f.vls.GetTarget()
 	if f.provisional.muted || f.provisional.pubMuted {
+		// if publisher muted, give up opportunistic resume and give back the bandwidth
 		f.provisional.allocatedLayer = buffer.InvalidLayer
-		if f.provisional.pubMuted {
-			// leave it at current for opportunistic forwarding, there is still bandwidth saving with publisher mute
-			f.provisional.allocatedLayer = f.provisional.currentLayer
-		}
 		return VideoTransition{
 			From:           targetLayer,
 			To:             f.provisional.allocatedLayer,
-			BandwidthDelta: 0 - f.lastAllocation.BandwidthRequested,
+			BandwidthDelta: 0 - getBandwidthNeeded(f.provisional.Bitrates, targetLayer, f.lastAllocation.BandwidthRequested),
 		}
 	}
 
@@ -893,12 +899,13 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 		return VideoTransition{
 			From:           targetLayer,
 			To:             f.provisional.allocatedLayer,
-			BandwidthDelta: 0 - f.lastAllocation.BandwidthRequested,
+			BandwidthDelta: 0 - getBandwidthNeeded(f.provisional.Bitrates, targetLayer, f.lastAllocation.BandwidthRequested),
 		}
 	}
 
 	// starting from minimum to target, find transition which gives the best
 	// transition taking into account bits saved vs cost of such a transition
+	existingBandwidthNeeded := getBandwidthNeeded(f.provisional.Bitrates, targetLayer, f.lastAllocation.BandwidthRequested)
 	bestLayer := buffer.InvalidLayer
 	bestBandwidthDelta := int64(0)
 	bestValue := float32(0)
@@ -908,7 +915,7 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 				break
 			}
 
-			BandwidthDelta := int64(math.Max(float64(0), float64(f.lastAllocation.BandwidthRequested-f.provisional.Bitrates[s][t])))
+			bandwidthDelta := int64(math.Max(float64(0), float64(existingBandwidthNeeded-f.provisional.Bitrates[s][t])))
 
 			transitionCost := int32(0)
 			// LK-TODO: SVC will need a different cost transition
@@ -920,11 +927,11 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 
 			value := float32(0)
 			if (transitionCost + qualityCost) != 0 {
-				value = float32(BandwidthDelta) / float32(transitionCost+qualityCost)
+				value = float32(bandwidthDelta) / float32(transitionCost+qualityCost)
 			}
-			if value > bestValue || (value == bestValue && BandwidthDelta > bestBandwidthDelta) {
+			if value > bestValue || (value == bestValue && bandwidthDelta > bestBandwidthDelta) {
 				bestValue = value
-				bestBandwidthDelta = BandwidthDelta
+				bestBandwidthDelta = bandwidthDelta
 				bestLayer = buffer.VideoLayer{Spatial: s, Temporal: t}
 			}
 		}
@@ -951,7 +958,7 @@ func (f *Forwarder) ProvisionalAllocateCommit() VideoAllocation {
 	)
 	alloc := VideoAllocation{
 		BandwidthRequested:  0,
-		BandwidthDelta:      -f.lastAllocation.BandwidthRequested,
+		BandwidthDelta:      0 - getBandwidthNeeded(f.provisional.Bitrates, f.vls.GetTarget(), f.lastAllocation.BandwidthRequested),
 		Bitrates:            f.provisional.Bitrates,
 		BandwidthNeeded:     optimalBandwidthNeeded,
 		TargetLayer:         f.provisional.allocatedLayer,
@@ -979,7 +986,7 @@ func (f *Forwarder) ProvisionalAllocateCommit() VideoAllocation {
 		if f.provisional.allocatedLayer.IsValid() {
 			// overshoot
 			alloc.BandwidthRequested = f.provisional.Bitrates[f.provisional.allocatedLayer.Spatial][f.provisional.allocatedLayer.Temporal]
-			alloc.BandwidthDelta = alloc.BandwidthRequested - f.lastAllocation.BandwidthRequested
+			alloc.BandwidthDelta = alloc.BandwidthRequested - getBandwidthNeeded(f.provisional.Bitrates, f.vls.GetTarget(), f.lastAllocation.BandwidthRequested)
 		} else {
 			alloc.PauseReason = VideoPauseReasonFeedDry
 
@@ -995,7 +1002,7 @@ func (f *Forwarder) ProvisionalAllocateCommit() VideoAllocation {
 		if f.provisional.allocatedLayer.IsValid() {
 			alloc.BandwidthRequested = f.provisional.Bitrates[f.provisional.allocatedLayer.Spatial][f.provisional.allocatedLayer.Temporal]
 		}
-		alloc.BandwidthDelta = alloc.BandwidthRequested - f.lastAllocation.BandwidthRequested
+		alloc.BandwidthDelta = alloc.BandwidthRequested - getBandwidthNeeded(f.provisional.Bitrates, f.vls.GetTarget(), f.lastAllocation.BandwidthRequested)
 
 		if f.provisional.allocatedLayer.GreaterThan(f.provisional.maxLayer) ||
 			alloc.BandwidthRequested >= getOptimalBandwidthNeeded(
@@ -1226,7 +1233,7 @@ func (f *Forwarder) Pause(availableLayers []int32, brs Bitrates) VideoAllocation
 	optimalBandwidthNeeded := getOptimalBandwidthNeeded(f.muted, f.pubMuted, maxSeenLayer.Spatial, brs, maxLayer)
 	alloc := VideoAllocation{
 		BandwidthRequested:  0,
-		BandwidthDelta:      0 - f.lastAllocation.BandwidthRequested,
+		BandwidthDelta:      0 - getBandwidthNeeded(brs, f.vls.GetTarget(), f.lastAllocation.BandwidthRequested),
 		Bitrates:            brs,
 		BandwidthNeeded:     optimalBandwidthNeeded,
 		TargetLayer:         buffer.InvalidLayer,
@@ -1604,6 +1611,14 @@ func getOptimalBandwidthNeeded(muted bool, pubMuted bool, maxPublishedLayer int3
 	//      But, listed differently as this could be a mis-detection.
 	//   3. Bitrate measurement is pending.
 	return 0
+}
+
+func getBandwidthNeeded(brs Bitrates, layer buffer.VideoLayer, fallback int64) int64 {
+	if layer.IsValid() && brs[layer.Spatial][layer.Temporal] > 0 {
+		return brs[layer.Spatial][layer.Temporal]
+	}
+
+	return fallback
 }
 
 func getDistanceToDesired(
