@@ -221,7 +221,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 	expectedResult = VideoAllocation{
 		PauseReason:         VideoPauseReasonNone,
 		BandwidthRequested:  bitrates[1][3],
-		BandwidthDelta:      bitrates[1][3],
+		BandwidthDelta:      bitrates[1][3] - bitrates[0][1],
 		BandwidthNeeded:     bitrates[1][3],
 		Bitrates:            bitrates,
 		TargetLayer:         buffer.DefaultMaxLayer,
