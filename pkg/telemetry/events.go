@@ -21,11 +21,9 @@ func (t *telemetryService) NotifyEvent(ctx context.Context, event *livekit.Webho
 	event.CreatedAt = time.Now().Unix()
 	event.Id = utils.NewGuid("EV_")
 
-	t.webhookPool.Submit(func() {
-		if err := t.notifier.Notify(ctx, event); err != nil {
-			logger.Warnw("failed to notify webhook", err, "event", event.Event)
-		}
-	})
+	if err := t.notifier.QueueNotify(ctx, event); err != nil {
+		logger.Warnw("failed to notify webhook", err, "event", event.Event)
+	}
 }
 
 func (t *telemetryService) RoomStarted(ctx context.Context, room *livekit.Room) {

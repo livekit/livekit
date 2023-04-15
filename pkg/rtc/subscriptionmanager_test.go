@@ -76,7 +76,10 @@ func TestSubscribe(t *testing.T) {
 
 		require.NotNil(t, s.getSubscribedTrack())
 		require.Len(t, sm.GetSubscribedTracks(), 1)
-		require.Len(t, sm.GetSubscribedParticipants(), 1)
+
+		require.Eventually(t, func() bool {
+			return len(sm.GetSubscribedParticipants()) == 1
+		}, subSettleTimeout, subCheckInterval, "GetSubscribedParticipants should have returned one item")
 		require.Equal(t, "pubID", string(sm.GetSubscribedParticipants()[0]))
 
 		// ensure telemetry events are sent

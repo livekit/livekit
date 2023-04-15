@@ -63,12 +63,12 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	notifier, err := createWebhookNotifier(conf, keyProvider)
+	queuedNotifier, err := createWebhookNotifier(conf, keyProvider)
 	if err != nil {
 		return nil, err
 	}
 	analyticsService := telemetry.NewAnalyticsService(conf, currentNode)
-	telemetryService := telemetry.NewTelemetryService(notifier, analyticsService)
+	telemetryService := telemetry.NewTelemetryService(queuedNotifier, analyticsService)
 	rtcEgressLauncher := NewEgressLauncher(egressClient, rpcClient, egressStore, telemetryService)
 	roomService, err := NewRoomService(roomConfig, apiConfig, router, roomAllocator, objectStore, rtcEgressLauncher)
 	if err != nil {
@@ -159,7 +159,7 @@ func createKeyProvider(conf *config.Config) (auth.KeyProvider, error) {
 	return auth.NewFileBasedKeyProviderFromMap(conf.Keys), nil
 }
 
-func createWebhookNotifier(conf *config.Config, provider auth.KeyProvider) (webhook.Notifier, error) {
+func createWebhookNotifier(conf *config.Config, provider auth.KeyProvider) (webhook.QueuedNotifier, error) {
 	wc := conf.WebHook
 	if len(wc.URLs) == 0 {
 		return nil, nil
@@ -169,7 +169,7 @@ func createWebhookNotifier(conf *config.Config, provider auth.KeyProvider) (webh
 		return nil, ErrWebHookMissingAPIKey
 	}
 
-	return webhook.NewNotifier(wc.APIKey, secret, wc.URLs), nil
+	return webhook.NewDefaultNotifier(wc.APIKey, secret, wc.URLs), nil
 }
 
 func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {
