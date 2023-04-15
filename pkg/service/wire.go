@@ -114,7 +114,7 @@ func createKeyProvider(conf *config.Config) (auth.KeyProvider, error) {
 	return auth.NewFileBasedKeyProviderFromMap(conf.Keys), nil
 }
 
-func createWebhookNotifier(conf *config.Config, provider auth.KeyProvider) (webhook.Notifier, error) {
+func createWebhookNotifier(conf *config.Config, provider auth.KeyProvider) (webhook.QueuedNotifier, error) {
 	wc := conf.WebHook
 	if len(wc.URLs) == 0 {
 		return nil, nil
@@ -124,7 +124,7 @@ func createWebhookNotifier(conf *config.Config, provider auth.KeyProvider) (webh
 		return nil, ErrWebHookMissingAPIKey
 	}
 
-	return webhook.NewNotifier(wc.APIKey, secret, wc.URLs), nil
+	return webhook.NewDefaultNotifier(wc.APIKey, secret, wc.URLs), nil
 }
 
 func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {

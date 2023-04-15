@@ -5,8 +5,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gammazero/workerpool"
-
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -72,22 +70,20 @@ const (
 type telemetryService struct {
 	AnalyticsService
 
-	notifier    webhook.Notifier
-	webhookPool *workerpool.WorkerPool
-	jobsChan    chan func()
+	notifier webhook.QueuedNotifier
+	jobsChan chan func()
 
 	lock    sync.RWMutex
 	workers map[livekit.ParticipantID]*StatsWorker
 }
 
-func NewTelemetryService(notifier webhook.Notifier, analytics AnalyticsService) TelemetryService {
+func NewTelemetryService(notifier webhook.QueuedNotifier, analytics AnalyticsService) TelemetryService {
 	t := &telemetryService{
 		AnalyticsService: analytics,
 
-		notifier:    notifier,
-		webhookPool: workerpool.New(maxWebhookWorkers),
-		jobsChan:    make(chan func(), jobQueueBufferSize),
-		workers:     make(map[livekit.ParticipantID]*StatsWorker),
+		notifier: notifier,
+		jobsChan: make(chan func(), jobQueueBufferSize),
+		workers:  make(map[livekit.ParticipantID]*StatsWorker),
 	}
 
 	go t.run()
