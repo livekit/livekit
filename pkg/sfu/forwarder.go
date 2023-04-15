@@ -578,54 +578,35 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 		alloc.TargetLayer = parkedLayer
 		alloc.RequestLayerSpatial = alloc.TargetLayer.Spatial
 
-	case len(availableLayers) == 0:
-		// feed may be dry
-		if currentLayer.IsValid() {
-			// let it continue at current layer if valid.
-			// Covers the cases of
+	default:
+		requestLayerSpatial := buffer.InvalidLayerSpatial
+		for _, al := range availableLayers {
+			if al > requestLayerSpatial {
+				requestLayerSpatial = al
+			}
+		}
+		maxLayerSpatialLimit := int32(math.Min(float64(maxLayer.Spatial), float64(maxSeenLayer.Spatial)))
+		if requestLayerSpatial > maxLayerSpatialLimit {
+			requestLayerSpatial = maxLayerSpatialLimit
+		}
+		if currentLayer.IsValid() && ((requestLayerSpatial == requestSpatial && currentLayer.Spatial == requestSpatial) || requestLayerSpatial == buffer.InvalidLayerSpatial) {
+			// 1. current is locked to desired, stay there
+			// OR
+			// 2. feed may be dry, let it continue at current layer if valid.
+			// covers the cases of
 			//   1. mis-detection of layer stop - can continue streaming
 			//   2. current layer resuming - can latch on when it starts
-			alloc.TargetLayer = currentLayer
+			alloc.TargetLayer = buffer.VideoLayer{
+				Spatial:  currentLayer.Spatial,
+				Temporal: getMaxTemporal(),
+			}
 			alloc.RequestLayerSpatial = alloc.TargetLayer.Spatial
 		} else {
 			// opportunistically latch on to anything
 			opportunisticAlloc()
-			alloc.RequestLayerSpatial = int32(math.Min(float64(maxLayer.Spatial), float64(maxSeenLayer.Spatial)))
-		}
-
-	default:
-		isCurrentLayerAvailable := false
-		if currentLayer.IsValid() {
-			for _, l := range availableLayers {
-				if l == currentLayer.Spatial {
-					isCurrentLayerAvailable = true
-					break
-				}
-			}
-		}
-
-		if !isCurrentLayerAvailable && currentLayer.IsValid() {
-			// current layer maybe stopped, move to highest available
-			for _, l := range availableLayers {
-				if l > alloc.TargetLayer.Spatial {
-					alloc.TargetLayer.Spatial = l
-				}
-			}
-			alloc.TargetLayer.Temporal = getMaxTemporal()
-
-			alloc.RequestLayerSpatial = alloc.TargetLayer.Spatial
-		} else {
-			requestLayerSpatial := int32(math.Min(float64(maxLayer.Spatial), float64(maxSeenLayer.Spatial)))
-			if currentLayer.IsValid() && requestLayerSpatial == requestSpatial && currentLayer.Spatial == requestSpatial {
-				// current is locked to desired, stay there
-				alloc.TargetLayer = buffer.VideoLayer{
-					Spatial:  requestSpatial,
-					Temporal: getMaxTemporal(),
-				}
-				alloc.RequestLayerSpatial = requestSpatial
+			if requestLayerSpatial == buffer.InvalidLayerSpatial {
+				alloc.RequestLayerSpatial = maxLayerSpatialLimit
 			} else {
-				// opportunistically latch on to anything
-				opportunisticAlloc()
 				alloc.RequestLayerSpatial = requestLayerSpatial
 			}
 		}
