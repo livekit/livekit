@@ -1333,6 +1333,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				numNACKs += uint32(len(packetList))
 				nacks = append(nacks, packetList...)
 			}
+			d.logger.Debugw("RAJA NACKs", "nacks", nacks) // REMOVE
 			go d.retransmitPackets(nacks)
 
 		case *rtcp.TransportLayerCC:
@@ -1423,6 +1424,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		}
 
 		if meta.nacked > 1 {
+			d.logger.Debugw("RAJA repeated NACKs", "repeated nack", meta.targetSeqNo, "attempt", meta.nacked) // REMOVE
 			numRepeatedNACKs++
 		}
 
