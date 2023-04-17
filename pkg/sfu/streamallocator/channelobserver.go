@@ -70,6 +70,7 @@ type ChannelObserver struct {
 	logger logger.Logger
 
 	estimateTrend *TrendDetector
+	nackTracker   *NackTracker
 
 	nackWindowStartTime time.Time
 	packets             uint32
@@ -87,6 +88,13 @@ func NewChannelObserver(params ChannelObserverParams, logger logger.Logger) *Cha
 			DownwardTrendThreshold: params.EstimateDownwardTrendThreshold,
 			CollapseValues:         params.EstimateCollapseValues,
 		}),
+		nackTracker: NewNackTracker(NackTrackerParams{
+			Name:              params.Name + "-estimate",
+			Logger:            logger,
+			WindowMinDuration: params.NackWindowMinDuration,
+			WindowMaxDuration: params.NackWindowMaxDuration,
+			RatioThreshold:    params.NackRatioThreshold,
+		}),
 	}
 }
 
@@ -94,36 +102,12 @@ func (c *ChannelObserver) SeedEstimate(estimate int64) {
 	c.estimateTrend.Seed(estimate)
 }
 
-func (c *ChannelObserver) SeedNack(packets uint32, repeatedNacks uint32) {
-	c.packets = packets
-	c.repeatedNacks = repeatedNacks
-}
-
 func (c *ChannelObserver) AddEstimate(estimate int64) {
 	c.estimateTrend.AddValue(estimate)
 }
 
 func (c *ChannelObserver) AddNack(packets uint32, repeatedNacks uint32) {
-	if c.params.NackWindowMaxDuration != 0 && !c.nackWindowStartTime.IsZero() && time.Since(c.nackWindowStartTime) > c.params.NackWindowMaxDuration {
-		c.nackWindowStartTime = time.Time{}
-		c.packets = 0
-		c.repeatedNacks = 0
-	}
-
-	//
-	// Start NACK monitoring window only when a repeated NACK happens.
-	// This allows locking tightly to when NACKs start happening and
-	// check if the NACKs keep adding up (potentially a sign of congestion)
-	// or isolated losses
-	//
-	if c.repeatedNacks == 0 && repeatedNacks != 0 {
-		c.nackWindowStartTime = time.Now()
-	}
-
-	if !c.nackWindowStartTime.IsZero() {
-		c.packets += packets
-		c.repeatedNacks += repeatedNacks
-	}
+	c.nackTracker.Add(packets, repeatedNacks)
 }
 
 func (c *ChannelObserver) GetLowestEstimate() int64 {
@@ -134,29 +118,20 @@ func (c *ChannelObserver) GetHighestEstimate() int64 {
 	return c.estimateTrend.GetHighest()
 }
 
-func (c *ChannelObserver) GetNackRatio() (uint32, uint32, float64) {
-	ratio := 0.0
-	if c.packets != 0 {
-		ratio = float64(c.repeatedNacks) / float64(c.packets)
-		if ratio > 1.0 {
-			ratio = 1.0
-		}
-	}
-
-	return c.packets, c.repeatedNacks, ratio
+func (c *ChannelObserver) GetNackRatio() float64 {
+	return c.nackTracker.GetRatio()
 }
 
 func (c *ChannelObserver) GetTrend() (ChannelTrend, ChannelCongestionReason) {
 	estimateDirection := c.estimateTrend.GetDirection()
-	_, _, nackRatio := c.GetNackRatio()
 
 	switch {
 	case estimateDirection == TrendDirectionDownward:
-		c.logger.Debugw( "stream allocator: channel observer: estimate is trending downward", "channel", c.ToString())
+		c.logger.Debugw("stream allocator: channel observer: estimate is trending downward", "channel", c.ToString())
 		return ChannelTrendCongesting, ChannelCongestionReasonEstimate
 
-	case c.params.NackWindowMinDuration != 0 && !c.nackWindowStartTime.IsZero() && time.Since(c.nackWindowStartTime) > c.params.NackWindowMinDuration && nackRatio > c.params.NackRatioThreshold:
-		c.logger.Debugw( "stream allocator: channel observer: high rate of repeated NACKs", "channel", c.ToString())
+	case c.nackTracker.IsTriggered():
+		c.logger.Debugw("stream allocator: channel observer: high rate of repeated NACKs", "channel", c.ToString())
 		return ChannelTrendCongesting, ChannelCongestionReasonLoss
 
 	case estimateDirection == TrendDirectionUpward:
@@ -167,8 +142,7 @@ func (c *ChannelObserver) GetTrend() (ChannelTrend, ChannelCongestionReason) {
 }
 
 func (c *ChannelObserver) ToString() string {
-	packets, repeatedNacks, nackRatio := c.GetNackRatio()
-	return fmt.Sprintf("name: %s, estimate: %s, packets: %d, repeatedNacks: %d, nackRatio: %f", c.params.Name, c.estimateTrend.ToString(), packets, repeatedNacks, nackRatio)
+	return fmt.Sprintf("name: %s, estimate: {%s}, nack {%s}", c.params.Name, c.estimateTrend.ToString(), c.nackTracker.ToString())
 }
 
 // ------------------------------------------------
