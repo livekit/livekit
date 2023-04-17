@@ -45,7 +45,7 @@ const (
 	FlagAllowOvershootWhileDeficient            = false
 	FlagAllowOvershootExemptTrackWhileDeficient = true
 	FlagAllowOvershootInProbe                   = true
-	FlagAllowOvershootInCatchup                 = true
+	FlagAllowOvershootInCatchup                 = false
 )
 
 // ---------------------------------------------------------------------------
@@ -55,7 +55,7 @@ var (
 		Name:                           "probe",
 		EstimateRequiredSamples:        3,
 		EstimateDownwardTrendThreshold: 0.0,
-		EstimateCollapseValues:         false,
+		EstimateCollapseThreshold:      0,
 		NackWindowMinDuration:          500 * time.Millisecond,
 		NackWindowMaxDuration:          1 * time.Second,
 		NackRatioThreshold:             0.04,
@@ -65,7 +65,7 @@ var (
 		Name:                           "non-probe",
 		EstimateRequiredSamples:        8,
 		EstimateDownwardTrendThreshold: -0.5,
-		EstimateCollapseValues:         true,
+		EstimateCollapseThreshold:      500 * time.Millisecond,
 		NackWindowMinDuration:          1 * time.Second,
 		NackWindowMaxDuration:          2 * time.Second,
 		NackRatioThreshold:             0.08,
