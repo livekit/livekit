@@ -190,10 +190,11 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// give it a few attempts to start session
 	var cr connectionResult
+	var initialResponse *livekit.SignalResponse
 	for i := 0; i < 3; i++ {
 		connectionTimeout := 3 * time.Second * time.Duration(i+1)
 		ctx := utils.ContextWithAttempt(r.Context(), i)
-		cr, err = s.startConnection(ctx, roomName, pi, connectionTimeout)
+		cr, initialResponse, err = s.startConnection(ctx, roomName, pi, connectionTimeout)
 		if err == nil {
 			break
 		}
@@ -210,8 +211,8 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	prometheus.IncrementParticipantJoin(1)
 
-	if !pi.Reconnect && cr.InitialResponse.GetJoin() != nil {
-		pi.ID = livekit.ParticipantID(cr.InitialResponse.GetJoin().GetParticipant().GetSid())
+	if !pi.Reconnect && initialResponse.GetJoin() != nil {
+		pi.ID = livekit.ParticipantID(initialResponse.GetJoin().GetParticipant().GetSid())
 	}
 
 	var signalStats *telemetry.BytesTrackStats
@@ -251,7 +252,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// websocket established
 	sigConn := NewWSSignalConnection(conn)
-	if count, err := sigConn.WriteResponse(cr.InitialResponse); err != nil {
+	if count, err := sigConn.WriteResponse(initialResponse); err != nil {
 		pLogger.Warnw("could not write initial response", err)
 		return
 	} else {
@@ -299,14 +300,6 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					pLogger.Debugw("sending offer", "offer", m)
 				case *livekit.SignalResponse_Answer:
 					pLogger.Debugw("sending answer", "answer", m)
-				}
-
-				if pi.ID == "" && cr.InitialResponse.GetJoin() != nil {
-					pi.ID = livekit.ParticipantID(cr.InitialResponse.GetJoin().GetParticipant().GetSid())
-					signalStats = telemetry.NewBytesTrackStats(
-						telemetry.BytesTrackIDForParticipantID(telemetry.BytesTrackTypeSignal, pi.ID),
-						pi.ID,
-						s.telemetry)
 				}
 
 				if count, err := sigConn.WriteResponse(res); err != nil {
@@ -443,38 +436,37 @@ func (s *RTCService) ParseClientInfo(r *http.Request) *livekit.ClientInfo {
 }
 
 type connectionResult struct {
-	Room            *livekit.Room
-	ConnectionID    livekit.ConnectionID
-	RequestSink     routing.MessageSink
-	ResponseSource  routing.MessageSource
-	InitialResponse *livekit.SignalResponse
+	Room           *livekit.Room
+	ConnectionID   livekit.ConnectionID
+	RequestSink    routing.MessageSink
+	ResponseSource routing.MessageSource
 }
 
-func (s *RTCService) startConnection(ctx context.Context, roomName livekit.RoomName, pi routing.ParticipantInit, timeout time.Duration) (connectionResult, error) {
+func (s *RTCService) startConnection(ctx context.Context, roomName livekit.RoomName, pi routing.ParticipantInit, timeout time.Duration) (connectionResult, *livekit.SignalResponse, error) {
 	var cr connectionResult
 	var err error
 	cr.Room, err = s.roomAllocator.CreateRoom(ctx, &livekit.CreateRoomRequest{Name: string(roomName)})
 	if err != nil {
-		return cr, err
+		return cr, nil, err
 	}
 
 	// this needs to be started first *before* using router functions on this node
 	cr.ConnectionID, cr.RequestSink, cr.ResponseSource, err = s.router.StartParticipantSignal(ctx, roomName, pi)
 	if err != nil {
-		return cr, err
+		return cr, nil, err
 	}
 
 	// wait for the first message before upgrading to websocket. If no one is
 	// responding to our connection attempt, we should terminate the connection
 	// instead of waiting forever on the WebSocket
-	cr.InitialResponse, err = readInitialResponse(cr.ResponseSource, timeout)
+	initialResponse, err := readInitialResponse(cr.ResponseSource, timeout)
 	if err != nil {
 		// close the connection to avoid leaking
 		cr.RequestSink.Close()
 		cr.ResponseSource.Close()
-		return cr, err
+		return cr, nil, err
 	}
-	return cr, nil
+	return cr, initialResponse, nil
 }
 
 func readInitialResponse(source routing.MessageSource, timeout time.Duration) (*livekit.SignalResponse, error) {
