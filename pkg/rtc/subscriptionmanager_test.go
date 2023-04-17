@@ -39,7 +39,7 @@ func init() {
 }
 
 const (
-	subSettleTimeout = 300 * time.Millisecond
+	subSettleTimeout = 600 * time.Millisecond
 	subCheckInterval = 10 * time.Millisecond
 )
 
