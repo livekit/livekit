@@ -1332,7 +1332,6 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				numNACKs += uint32(len(packetList))
 				nacks = append(nacks, packetList...)
 			}
-			d.logger.Infow("RAJA received NACKs", "received", nacks) // REMOVE
 			go d.retransmitPackets(nacks)
 
 		case *rtcp.TransportLayerCC:
@@ -1378,13 +1377,11 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	}
 
 	if FlagStopRTXOnPLI && d.isNACKThrottled.Load() {
-		d.logger.Infow("RAJA returning NACK throttled")	// REMOVE
 		return
 	}
 
 	filtered, disallowedLayers := d.forwarder.FilterRTX(nacks)
 	if len(filtered) == 0 {
-		d.logger.Infow("RAJA returning all filtered")	// REMOVE
 		return
 	}
 
@@ -1402,16 +1399,8 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	nackAcks := uint32(0)
 	nackMisses := uint32(0)
 	numRepeatedNACKs := uint32(0)
-	nackMap := make(map[uint16]uint8, len(filtered)) // REMOVE
-	paddingNacks := make([]uint16, 0, len(filtered))	// REMOVE
-	disallowedLayerNacks := make([]uint16, 0, len(filtered))	// REMOVE
 	for _, meta := range d.sequencer.getPacketsMeta(filtered) {
-		if meta.layer == -1 {
-			paddingNacks = append(paddingNacks, meta.targetSeqNo)
-			continue
-		}
 		if disallowedLayers[meta.layer] {
-			disallowedLayerNacks = append(disallowedLayerNacks, meta.targetSeqNo)	// REMOVE
 			continue
 		}
 
@@ -1432,7 +1421,6 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			continue
 		}
 
-		nackMap[meta.targetSeqNo] = meta.nacked // REMOVE
 		if meta.nacked > 1 {
 			numRepeatedNACKs++
 		}
@@ -1487,7 +1475,6 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	d.statsLock.Unlock()
 
 	d.rtpStats.UpdateNackProcessed(nackAcks, nackMisses, numRepeatedNACKs)
-	d.logger.Infow("RAJA NACKs", "incoming", nacks, "processed", nackMap, "padding", paddingNacks, "disallowed", disallowedLayerNacks) // REMOVE
 }
 
 type extensionData struct {

@@ -88,7 +88,6 @@ func (t *TrendDetector) AddValue(value int64) {
 	t.values = append(t.values, value)
 
 	t.updateDirection()
-	t.params.Logger.Infow("RAJA added value", "value", value, "state", t.ToString())	// REMOVE
 }
 
 func (t *TrendDetector) GetLowest() int64 {
