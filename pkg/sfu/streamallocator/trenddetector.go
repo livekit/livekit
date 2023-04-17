@@ -94,13 +94,17 @@ func (t *TrendDetector) AddValue(value int64) {
 	// But, on the flip side, estimate could fall once or twice withing a sliding window and stay there.
 	// In those cases, using a collapse window to record value even if it is duplicate. By doing that,
 	// a trend could be detected eventually. If will be delayed, but that is fine with slow changing estimates.
-	if len(t.values) != 0 && t.values[len(t.values)-1] == value && t.params.CollapseThreshold > 0 {
+	lastValue := int64(0)
+	if len(t.values) != 0 {
+		lastValue = t.values[len(t.values)-1]
+	}
+	if lastValue == value && t.params.CollapseThreshold > 0 {
 		if !t.hasFallen || (!t.lastSampleAt.IsZero() && time.Since(t.lastSampleAt) < t.params.CollapseThreshold) {
 			return
 		}
 	}
 
-	if len(t.values) != 0 && t.values[len(t.values)-1] > value {
+	if lastValue > value {
 		t.hasFallen = true
 	}
 	t.lastSampleAt = time.Now()
