@@ -563,22 +563,21 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		payload = d.translateVP8PacketTo(extPkt.Packet, &incomingVP8, tp.codecBytes, pool)
 	}
 
-	var meta *packetMeta
 	if d.sequencer != nil {
-		meta = d.sequencer.push(extPkt.Packet.SequenceNumber, tp.rtp.sequenceNumber, tp.rtp.timestamp, int8(layer))
-		if meta != nil {
-			meta.codecBytes = append(meta.codecBytes, tp.codecBytes...)
-		}
+		d.sequencer.push(
+			extPkt.Packet.SequenceNumber,
+			tp.rtp.sequenceNumber,
+			tp.rtp.timestamp,
+			int8(layer),
+			tp.codecBytes,
+			tp.ddBytes,
+		)
 	}
 
 	hdr, err := d.getTranslatedRTPHeader(extPkt, tp)
 	if err != nil {
 		d.logger.Errorw("write rtp packet failed", err)
 		return err
-	}
-
-	if meta != nil && d.dependencyDescriptorID != 0 {
-		meta.ddBytes = append(meta.ddBytes, tp.ddBytes...)
 	}
 
 	_, err = d.writeStream.WriteRTP(hdr, payload)
@@ -603,7 +602,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	if extPkt.KeyFrame {
 		d.isNACKThrottled.Store(false)
 		d.rtpStats.UpdateKeyFrame(1)
-		d.logger.Debugw("forwarding key frame", "layer", layer)
+		d.logger.Debugw("forwarding key frame", "layer", layer, "rtpsn", hdr.SequenceNumber, "rtpts", hdr.Timestamp)
 	}
 
 	if tp.isSwitchingToRequestSpatial {
@@ -1379,11 +1378,13 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	}
 
 	if FlagStopRTXOnPLI && d.isNACKThrottled.Load() {
+		d.logger.Infow("RAJA returning NACK throttled")	// REMOVE
 		return
 	}
 
 	filtered, disallowedLayers := d.forwarder.FilterRTX(nacks)
 	if len(filtered) == 0 {
+		d.logger.Infow("RAJA returning all filtered")	// REMOVE
 		return
 	}
 
@@ -1402,8 +1403,15 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	nackMisses := uint32(0)
 	numRepeatedNACKs := uint32(0)
 	nackMap := make(map[uint16]uint8, len(filtered)) // REMOVE
+	paddingNacks := make([]uint16, 0, len(filtered))	// REMOVE
+	disallowedLayerNacks := make([]uint16, 0, len(filtered))	// REMOVE
 	for _, meta := range d.sequencer.getPacketsMeta(filtered) {
+		if meta.layer == -1 {
+			paddingNacks = append(paddingNacks, meta.targetSeqNo)
+			continue
+		}
 		if disallowedLayers[meta.layer] {
+			disallowedLayerNacks = append(disallowedLayerNacks, meta.targetSeqNo)	// REMOVE
 			continue
 		}
 
@@ -1446,9 +1454,10 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 				continue
 			}
 
-			translatedVP8 := meta.codecBytes
-			pool = PacketFactory.Get().(*[]byte)
-			payload = d.translateVP8PacketTo(&pkt, &incomingVP8, translatedVP8, pool)
+			if len(meta.codecBytes) != 0 {
+				pool = PacketFactory.Get().(*[]byte)
+				payload = d.translateVP8PacketTo(&pkt, &incomingVP8, meta.codecBytes, pool)
+			}
 		}
 
 		var extraExtensions []extensionData
@@ -1478,7 +1487,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	d.statsLock.Unlock()
 
 	d.rtpStats.UpdateNackProcessed(nackAcks, nackMisses, numRepeatedNACKs)
-	d.logger.Infow("RAJA processed NACKs", "processed", nackMap) // REMOVE
+	d.logger.Infow("RAJA NACKs", "incoming", nacks, "processed", nackMap, "padding", paddingNacks, "disallowed", disallowedLayerNacks) // REMOVE
 }
 
 type extensionData struct {

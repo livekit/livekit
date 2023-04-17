@@ -340,6 +340,7 @@ func (s *StreamAllocator) OnREMB(downTrack *sfu.DownTrack, remb *rtcp.ReceiverEs
 	// LK-TODO-END
 	//
 
+	s.params.Logger.Infow("RAJA REMB", "capacity", remb.Bitrate)	// REMOVE
 	// if there are no video tracks, ignore any straggler REMB
 	s.videoTracksMu.Lock()
 	if len(s.videoTracks) == 0 {
@@ -389,6 +390,7 @@ func (s *StreamAllocator) OnREMB(downTrack *sfu.DownTrack, remb *rtcp.ReceiverEs
 	}
 	s.videoTracksMu.Unlock()
 
+	s.params.Logger.Infow("RAJA posting REMB", "capacity", remb.Bitrate)	// REMOVE
 	s.postEvent(Event{
 		Signal: streamAllocatorSignalEstimate,
 		Data:   int64(remb.Bitrate),
