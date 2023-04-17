@@ -488,7 +488,7 @@ func (c *Cluster) Process(pl ProberListener) {
 		pl.OnSendProbe(bytesShortFall)
 	}
 
-	// LK-TODO look at adapting sleep time based on how many bytes and how much time is left
+	// STREAM-ALLOCATOR-TODO look at adapting sleep time based on how many bytes and how much time is left
 }
 
 func (c *Cluster) String() string {

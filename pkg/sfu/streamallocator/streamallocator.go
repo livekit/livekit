@@ -46,7 +46,48 @@ const (
 	FlagAllowOvershootExemptTrackWhileDeficient = true
 	FlagAllowOvershootInProbe                   = true
 	FlagAllowOvershootInCatchup                 = false
+	FlagAllowOvershootInBoost                   = true
 )
+
+// ---------------------------------------------------------------------------
+
+type Piecewise struct {
+	Upper int64
+	Ratio float64
+}
+
+var (
+	ProbeMaxRatio = []Piecewise{
+		{Upper: 0, Ratio: 8.0},
+		{Upper: 200_000, Ratio: 4.0},
+		{Upper: 400_000, Ratio: 2.0},
+		{Upper: 600_000, Ratio: 1.5},
+		{Upper: 800_000, Ratio: 1.25},
+	}
+)
+
+func getProbeMax(value int64) int64 {
+	limit := float64(0.0)
+	for idx, pmr := range ProbeMaxRatio {
+		if value > pmr.Upper {
+			continue
+		}
+
+		if idx == 0 {
+			limit = pmr.Ratio * float64(value)
+		} else {
+			prev := ProbeMaxRatio[idx-1]
+			limit = ((float64(value-prev.Upper)*pmr.Ratio + float64(pmr.Upper-value)*prev.Ratio) / float64(pmr.Upper)) * float64(value)
+		}
+		break
+	}
+
+	if limit == 0.0 {
+		limit = float64(value) * ProbeMaxRatio[len(ProbeMaxRatio)-1].Ratio
+	}
+
+	return int64(limit)
+}
 
 // ---------------------------------------------------------------------------
 
@@ -259,7 +300,7 @@ func (s *StreamAllocator) AddTrack(downTrack *sfu.DownTrack, params AddTrackPara
 
 	downTrack.SetStreamAllocatorListener(s)
 	if s.prober.IsRunning() {
-		// LK-TODO: this can be changed to adapt to probe rate
+		// STREAM-ALLOCATOR-TODO: this can be changed to adapt to probe rate
 		downTrack.SetStreamAllocatorReportInterval(50 * time.Millisecond)
 	}
 
@@ -273,7 +314,7 @@ func (s *StreamAllocator) RemoveTrack(downTrack *sfu.DownTrack) {
 	}
 	s.videoTracksMu.Unlock()
 
-	// LK-TODO: use any saved bandwidth to re-distribute
+	// STREAM-ALLOCATOR-TODO: use any saved bandwidth to re-distribute
 	s.postEvent(Event{
 		Signal: streamAllocatorSignalAdjustState,
 	})
@@ -333,11 +374,11 @@ func (s *StreamAllocator) OnREMB(downTrack *sfu.DownTrack, remb *rtcp.ReceiverEs
 	//     callback from previous REMB comes after another down track's callback
 	//     from the new REMB. REMBs could fire very quickly especially when
 	//     the network is entering congestion.
-	// LK-TODO-START
+	// STREAM-ALLOCATOR-TODO-START
 	// Need to check if the same SSRC reports can somehow race, i.e. does pion send
 	// RTCP dispatch for same SSRC on different threads? If not, the tracking SSRC
 	// should prevent racing
-	// LK-TODO-END
+	// STREAM-ALLOCATOR-TODO-END
 	//
 
 	// if there are no video tracks, ignore any straggler REMB
@@ -487,7 +528,7 @@ func (s *StreamAllocator) OnProbeClusterDone(info ProbeClusterInfo) {
 func (s *StreamAllocator) OnActiveChanged(isActive bool) {
 	for _, t := range s.getTracks() {
 		if isActive {
-			// LK-TODO: this can be changed to adapt to probe rate
+			// STREAM-ALLOCATOR-TODO: this can be changed to adapt to probe rate
 			t.DownTrack().SetStreamAllocatorReportInterval(50 * time.Millisecond)
 		} else {
 			t.DownTrack().ClearStreamAllocatorReportInterval()
@@ -662,7 +703,7 @@ func (s *StreamAllocator) handleSignalProbeClusterDone(event *Event) {
 	}
 
 	// ensure probe queue is flushed
-	// LK-TODO: ProbeSettleWait should actually be a certain number of RTTs.
+	// STREAM-ALLOCATOR-TODO: ProbeSettleWait should actually be a certain number of RTTs.
 	lowestEstimate := int64(math.Min(float64(s.committedChannelCapacity), float64(s.channelObserver.GetLowestEstimate())))
 	expectedDuration := float64(info.BytesSent*8*1000) / float64(lowestEstimate)
 	queueTime := expectedDuration - float64(info.Duration.Milliseconds())
@@ -746,7 +787,7 @@ func (s *StreamAllocator) handleNewEstimateInProbe() {
 		//
 		// More of a safety net.
 		// In rare cases, the estimate gets stuck. Prevent from probe running amok
-		// LK-TODO: Need more testing here to ensure that probe does not cause a lot of damage
+		// STREAM-ALLOCATOR-TODO: Need more testing here to ensure that probe does not cause a lot of damage
 		//
 		s.params.Logger.Infow("stream allocator: probe: aborting, no trend", "cluster", s.probeClusterId)
 		s.abortProbe()
@@ -853,11 +894,11 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 
 		s.adjustState()
 		return
-		// LK-TODO-START
+		// STREAM-ALLOCATOR-TODO-START
 		// Should use the bits given back to start any paused track.
 		// Note layer downgrade may actually have positive delta (i.e. consume more bits)
 		// because of when the measurement is done. Watch for that.
-		// LK-TODO-END
+		// STREAM_ALLOCATOR-TODO-END
 	}
 
 	//
@@ -894,7 +935,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 			}
 		}
 
-		// LK-TODO if got too much extra, can potentially give it to some deficient track
+		// STREAM-ALLOCATOR-TODO if got too much extra, can potentially give it to some deficient track
 	}
 
 	// commit the track that needs change if enough could be acquired or pause not allowed
@@ -1040,7 +1081,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 			update.HandleStreamingChange(true, track)
 		}
 
-		// LK-TODO: optimistic allocation before bitrate is available will return 0. How to account for that?
+		// STREAM-ALLOCATOR-TODO: optimistic allocation before bitrate is available will return 0. How to account for that?
 		availableChannelCapacity -= allocation.BandwidthRequested
 	}
 
@@ -1148,6 +1189,27 @@ func (s *StreamAllocator) initProbe(probeRateBps int64) {
 	s.lastProbeStartTime = time.Now()
 
 	expectedBandwidthUsage := s.getExpectedBandwidthUsage()
+	if float64(expectedBandwidthUsage) > 1.5*float64(s.committedChannelCapacity) {
+		// STREAM-ALLOCATOR-TODO-START
+		// Should probably skip probing if the expected usage is much higher than committed channel capacity.
+		// But, give that bandwidth estimate is volatile at times and can drop down to small values,
+		// not probing means streaming stuck in a well for long.
+		// Observe this and figure out if there is a threshold from practical use cases that can be used to
+		// skip probing safely
+		// STREAM-ALLOCATOR-TODO-END
+		s.params.Logger.Warnw(
+			"stream allocator: starting probe alarm",
+			fmt.Errorf("expected too high, expected: %d, committed: %d", expectedBandwidthUsage, s.committedChannelCapacity),
+		)
+	}
+
+	maxProbeRateBps := getProbeMax(s.committedChannelCapacity)
+	if probeRateBps > maxProbeRateBps {
+		probeRateBps = maxProbeRateBps
+	}
+	if probeRateBps < ProbeMinBps {
+		probeRateBps = ProbeMinBps
+	}
 	s.probeGoalBps = expectedBandwidthUsage + probeRateBps
 
 	s.abortedProbeClusterId = ProbeClusterIdInvalid
@@ -1163,6 +1225,21 @@ func (s *StreamAllocator) initProbe(probeRateBps int64) {
 	s.channelObserver = s.newChannelObserverProbe()
 	s.channelObserver.SeedEstimate(s.lastReceivedEstimate)
 
+	// desiredRateBps is not always equal to probeGoalBps as committed channel capacity could be higher.
+	// In cases where loss based congestion is triggered, the committed channel capacity could be higher than
+	// current expected bandwidth usage, i. e. when that condition triggers, the committed channel capacity
+	// is set to a certain % of the previous expected bandwidth usage and then a re-allocation done.
+	// That re-allocation will push the expected lower than committed.
+	//
+	// STREAM-ALLOCATOR-TODO: See note above about possibly skipping probe when expected usage is
+	// (much) higher than committed chnanle capacity.
+	//
+	// NOTE: The committed value actually could be lower than last receved bandwidth estimate,
+	// i. e. for cases where intermediate routers drop packets to maintain queue fullness, it is possible that
+	// the estimated bandwidth does not drop. So, it is possible that the estimated bandwidth can already
+	// satisfy the probe goal. In that case, the probe will be declared a success soon after it is started.
+	// An option is to skip probing in that case and do a boosting. But, conscious choice to start probe,
+	// get an estimate and resolve it that way.
 	desiredRateBps := int(probeRateBps) + int(math.Max(float64(s.committedChannelCapacity), float64(expectedBandwidthUsage)))
 	s.probeClusterId = s.prober.AddCluster(
 		desiredRateBps,
@@ -1178,6 +1255,7 @@ func (s *StreamAllocator) initProbe(probeRateBps int64) {
 		"lastReceived", s.lastReceivedEstimate,
 		"channel", channelState,
 		"probeRateBps", probeRateBps,
+		"maxProbeRateBps", maxProbeRateBps,
 		"goalBps", s.probeGoalBps,
 	)
 }
@@ -1237,7 +1315,7 @@ func (s *StreamAllocator) maybeProbe() {
 func (s *StreamAllocator) maybeProbeWithMedia() {
 	// boost deficient track farthest from desired layer
 	for _, track := range s.getMaxDistanceSortedDeficient() {
-		allocation, boosted := track.AllocateNextHigher(ChannelCapacityInfinity, FlagAllowOvershootInCatchup)
+		allocation, boosted := track.AllocateNextHigher(ChannelCapacityInfinity, FlagAllowOvershootInBoost)
 		if !boosted {
 			continue
 		}
@@ -1265,6 +1343,7 @@ func (s *StreamAllocator) maybeProbeWithPadding() {
 		if probeRateBps < ProbeMinBps {
 			probeRateBps = ProbeMinBps
 		}
+		// RAJA-TODO: add a max
 
 		s.initProbe(probeRateBps)
 		break
