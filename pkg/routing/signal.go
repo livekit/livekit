@@ -180,7 +180,6 @@ func CopySignalStreamToMessageChannel[SendType, RecvType RelaySignalMessage](
 		config: config,
 	}
 	for msg := range stream.Channel() {
-		var res []proto.Message
 		res, err := r.Read(msg)
 		if err != nil {
 			return err
@@ -280,20 +279,17 @@ func (s *signalMessageSink[SendType, RecvType]) nextMessage() (msg SendType, n i
 func (s *signalMessageSink[SendType, RecvType]) write() {
 	interval := s.Config.MinRetryInterval
 	deadline := time.Now().Add(s.Config.RetryTimeout)
+	var err error
 
 	s.mu.Lock()
 	for {
 		msg, n := s.nextMessage()
 		if n == 0 || s.IsClosed() {
-			if s.draining {
-				s.Stream.Close(nil)
-			}
-			s.writing = false
 			break
 		}
 		s.mu.Unlock()
 
-		err := s.Stream.Send(msg, psrpc.WithTimeout(interval))
+		err = s.Stream.Send(msg, psrpc.WithTimeout(interval))
 		if err != nil {
 			if time.Now().After(deadline) {
 				s.Logger.Warnw("could not send signal message", err)
@@ -301,12 +297,7 @@ func (s *signalMessageSink[SendType, RecvType]) write() {
 				s.mu.Lock()
 				s.seq += uint64(len(s.queue))
 				s.queue = nil
-
-				if s.CloseOnFailure {
-					s.Stream.Close(ErrSignalFailed)
-				}
-				s.mu.Unlock()
-				return
+				break
 			}
 
 			interval *= 2
@@ -323,6 +314,14 @@ func (s *signalMessageSink[SendType, RecvType]) write() {
 			s.seq += uint64(n)
 			s.queue = s.queue[n:]
 		}
+	}
+
+	s.writing = false
+	if s.draining {
+		s.Stream.Close(nil)
+	}
+	if err != nil && s.CloseOnFailure {
+		s.Stream.Close(ErrSignalFailed)
 	}
 	s.mu.Unlock()
 }
