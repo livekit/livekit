@@ -77,9 +77,11 @@ func (n *NackTracker) IsTriggered() bool {
 func (n *NackTracker) ToString() string {
 	window := ""
 	if !n.windowStartTime.IsZero() {
-		window = fmt.Sprintf("t: %+v|%+v", n.windowStartTime, time.Since(n.windowStartTime))
+		now := time.Now()
+		elapsed := now.Sub(n.windowStartTime).Seconds()
+		window = fmt.Sprintf("t: %+v|%+v|%.2fs", n.windowStartTime.Format(time.UnixDate), now.Format(time.UnixDate), elapsed)
 	}
-	return fmt.Sprintf("n: %s, t: %s, p: %d,  rn: %d, rn/p: %f", n.params.Name, window, n.packets, n.repeatedNacks, n.GetRatio())
+	return fmt.Sprintf("n: %s, t: %s, p: %d,  rn: %d, rn/p: %.2f", n.params.Name, window, n.packets, n.repeatedNacks, n.GetRatio())
 }
 
 // ------------------------------------------------
