@@ -58,35 +58,42 @@ type Piecewise struct {
 
 var (
 	ProbeMaxRatio = []Piecewise{
-		{Upper: 0, Ratio: 8.0},
-		{Upper: 200_000, Ratio: 4.0},
-		{Upper: 400_000, Ratio: 2.0},
-		{Upper: 600_000, Ratio: 1.5},
-		{Upper: 800_000, Ratio: 1.25},
+		{Upper: 0, Ratio: 5.0},
+		{Upper: 100_000, Ratio: 4.0},
+		{Upper: 200_000, Ratio: 2.5},
+		{Upper: 300_000, Ratio: 2.0},
+		{Upper: 400_000, Ratio: 1.6},
+		{Upper: 500_000, Ratio: 1.4},
+		{Upper: 600_000, Ratio: 1.2},
+		{Upper: 800_000, Ratio: 1.0},
 	}
 )
 
 func getProbeMax(value int64) int64 {
-	limit := float64(0.0)
+	ratio := float64(0.0)
 	for idx, pmr := range ProbeMaxRatio {
 		if value > pmr.Upper {
 			continue
 		}
 
 		if idx == 0 {
-			limit = pmr.Ratio * float64(value)
+			ratio = pmr.Ratio
 		} else {
-			prev := ProbeMaxRatio[idx-1]
-			limit = ((float64(value-prev.Upper)*pmr.Ratio + float64(pmr.Upper-value)*prev.Ratio) / float64(pmr.Upper)) * float64(value)
+			ratio = float64(value - ProbeMaxRatio[idx-1].Upper) / float64(pmr.Upper - ProbeMaxRatio[idx-1].Upper)
+			ratio = ratio * pmr.Ratio + (1.0 - ratio) * ProbeMaxRatio[idx-1].Ratio
 		}
 		break
 	}
 
-	if limit == 0.0 {
-		limit = float64(value) * ProbeMaxRatio[len(ProbeMaxRatio)-1].Ratio
+	if ratio == 0.0 {
+		ratio = ProbeMaxRatio[len(ProbeMaxRatio)-1].Ratio
 	}
 
-	return int64(limit)
+	max := int64(float64(value) * ratio)
+	if max > ProbeMaxRatio[len(ProbeMaxRatio)-1].Upper {
+		max = ProbeMaxRatio[len(ProbeMaxRatio)-1].Upper
+	}
+	return max
 }
 
 // ---------------------------------------------------------------------------
@@ -1257,6 +1264,7 @@ func (s *StreamAllocator) initProbe(probeRateBps int64) {
 		"probeRateBps", probeRateBps,
 		"maxProbeRateBps", maxProbeRateBps,
 		"goalBps", s.probeGoalBps,
+		"desiredRateBps", desiredRateBps,
 	)
 }
 
