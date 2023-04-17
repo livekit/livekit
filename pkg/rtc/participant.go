@@ -1152,6 +1152,7 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 	p.params.Logger.Infow("mediaTrack published",
 		"kind", track.Kind().String(),
 		"trackID", publishedTrack.ID(),
+		"webrtcTrackID", track.ID(),
 		"rid", track.RID(),
 		"SSRC", track.SSRC(),
 		"mime", track.Codec().MimeType,
