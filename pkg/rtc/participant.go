@@ -89,6 +89,8 @@ type ParticipantParams struct {
 	TrackResolver                types.MediaTrackResolver
 	DisableDynacast              bool
 	SubscriberAllowPause         bool
+	SubscriptionLimitAudio       int32
+	SubscriptionLimitVideo       int32
 }
 
 type ParticipantImpl struct {
@@ -1063,13 +1065,15 @@ func (p *ParticipantImpl) setupUpTrackManager() {
 
 func (p *ParticipantImpl) setupSubscriptionManager() {
 	p.SubscriptionManager = NewSubscriptionManager(SubscriptionManagerParams{
-		Participant:         p,
-		Logger:              p.params.Logger.WithoutSampler(),
-		TrackResolver:       p.params.TrackResolver,
-		Telemetry:           p.params.Telemetry,
-		OnTrackSubscribed:   p.onTrackSubscribed,
-		OnTrackUnsubscribed: p.onTrackUnsubscribed,
-		OnSubscriptionError: p.onSubscriptionError,
+		Participant:            p,
+		Logger:                 p.params.Logger.WithoutSampler(),
+		TrackResolver:          p.params.TrackResolver,
+		Telemetry:              p.params.Telemetry,
+		OnTrackSubscribed:      p.onTrackSubscribed,
+		OnTrackUnsubscribed:    p.onTrackUnsubscribed,
+		OnSubscriptionError:    p.onSubscriptionError,
+		SubscriptionLimitVideo: p.params.SubscriptionLimitVideo,
+		SubscriptionLimitAudio: p.params.SubscriptionLimitAudio,
 	})
 }
 
