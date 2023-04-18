@@ -51,53 +51,6 @@ const (
 
 // ---------------------------------------------------------------------------
 
-type Piecewise struct {
-	Upper int64
-	Ratio float64
-}
-
-var (
-	ProbeMaxRatio = []Piecewise{
-		{Upper: 0, Ratio: 5.0},
-		{Upper: 100_000, Ratio: 4.0},
-		{Upper: 200_000, Ratio: 2.5},
-		{Upper: 300_000, Ratio: 2.0},
-		{Upper: 400_000, Ratio: 1.6},
-		{Upper: 500_000, Ratio: 1.4},
-		{Upper: 600_000, Ratio: 1.2},
-		{Upper: 800_000, Ratio: 1.0},
-	}
-)
-
-func getProbeMax(value int64) int64 {
-	ratio := float64(0.0)
-	for idx, pmr := range ProbeMaxRatio {
-		if value > pmr.Upper {
-			continue
-		}
-
-		if idx == 0 {
-			ratio = pmr.Ratio
-		} else {
-			ratio = float64(value-ProbeMaxRatio[idx-1].Upper) / float64(pmr.Upper-ProbeMaxRatio[idx-1].Upper)
-			ratio = ratio*pmr.Ratio + (1.0-ratio)*ProbeMaxRatio[idx-1].Ratio
-		}
-		break
-	}
-
-	if ratio == 0.0 {
-		ratio = ProbeMaxRatio[len(ProbeMaxRatio)-1].Ratio
-	}
-
-	max := int64(float64(value) * ratio)
-	if max > ProbeMaxRatio[len(ProbeMaxRatio)-1].Upper {
-		max = ProbeMaxRatio[len(ProbeMaxRatio)-1].Upper
-	}
-	return max
-}
-
-// ---------------------------------------------------------------------------
-
 var (
 	ChannelObserverParamsProbe = ChannelObserverParams{
 		Name:                           "probe",
@@ -1192,7 +1145,7 @@ func (s *StreamAllocator) newChannelObserverNonProbe() *ChannelObserver {
 	return NewChannelObserver(ChannelObserverParamsNonProbe, s.params.Logger)
 }
 
-func (s *StreamAllocator) initProbe(probeRateBps int64) {
+func (s *StreamAllocator) initProbe(probeGoalDeltaBps int64) {
 	s.lastProbeStartTime = time.Now()
 
 	expectedBandwidthUsage := s.getExpectedBandwidthUsage()
@@ -1209,15 +1162,8 @@ func (s *StreamAllocator) initProbe(probeRateBps int64) {
 			fmt.Errorf("expected too high, expected: %d, committed: %d", expectedBandwidthUsage, s.committedChannelCapacity),
 		)
 	}
-
-	maxProbeRateBps := getProbeMax(int64(math.Max(float64(s.committedChannelCapacity), float64(expectedBandwidthUsage))))
-	if probeRateBps > maxProbeRateBps {
-		probeRateBps = maxProbeRateBps
-	}
-	if probeRateBps < ProbeMinBps {
-		probeRateBps = ProbeMinBps
-	}
-	s.probeGoalBps = expectedBandwidthUsage + probeRateBps
+	// overshoot a bit to account for noise (in measurement/estimate etc)
+	s.probeGoalBps = expectedBandwidthUsage + ((probeGoalDeltaBps * ProbePct) / 100)
 
 	s.abortedProbeClusterId = ProbeClusterIdInvalid
 
@@ -1232,28 +1178,8 @@ func (s *StreamAllocator) initProbe(probeRateBps int64) {
 	s.channelObserver = s.newChannelObserverProbe()
 	s.channelObserver.SeedEstimate(s.lastReceivedEstimate)
 
-	// desiredRateBps is not always equal to probeGoalBps as committed channel capacity could be higher.
-	// In cases where loss based congestion is triggered, the committed channel capacity could be higher than
-	// current expected bandwidth usage, i. e. when that condition triggers, the committed channel capacity
-	// is set to a certain % of the previous expected bandwidth usage and then a re-allocation done.
-	// That re-allocation will push the expected lower than committed.
-	//
-	// Another case of this is a probe succeeding, but the resulting channel capacity is not enough to
-	// boost a deficient track. It would take one or more probe clusters starting at the committed channel
-	// caacity and going up before deficient tracks could be boosted.
-	//
-	// STREAM-ALLOCATOR-TODO: See note above about possibly skipping probe when expected usage is
-	// (much) higher than committed chnanle capacity.
-	//
-	// NOTE: The committed value actually could be lower than last receved bandwidth estimate,
-	// i. e. for cases where intermediate routers drop packets to maintain queue fullness, it is possible that
-	// the estimated bandwidth does not drop. So, it is possible that the estimated bandwidth can already
-	// satisfy the probe goal. In that case, the probe will be declared a success soon after it is started.
-	// An option is to skip probing in that case and do a boosting. But, conscious choice to start probe,
-	// get an estimate and resolve it that way.
-	desiredRateBps := int(probeRateBps) + int(math.Max(float64(s.committedChannelCapacity), float64(expectedBandwidthUsage)))
 	s.probeClusterId = s.prober.AddCluster(
-		desiredRateBps,
+		int(s.probeGoalBps),
 		int(expectedBandwidthUsage),
 		ProbeMinDuration,
 		ProbeMaxDuration,
@@ -1265,10 +1191,8 @@ func (s *StreamAllocator) initProbe(probeRateBps int64) {
 		"committed", s.committedChannelCapacity,
 		"lastReceived", s.lastReceivedEstimate,
 		"channel", channelState,
-		"probeRateBps", probeRateBps,
-		"maxProbeRateBps", maxProbeRateBps,
+		"probeGoalDeltaBps", probeGoalDeltaBps,
 		"goalBps", s.probeGoalBps,
-		"desiredRateBps", desiredRateBps,
 	)
 }
 
@@ -1351,13 +1275,7 @@ func (s *StreamAllocator) maybeProbeWithPadding() {
 			continue
 		}
 
-		probeRateBps := (transition.BandwidthDelta * ProbePct) / 100
-		if probeRateBps < ProbeMinBps {
-			probeRateBps = ProbeMinBps
-		}
-		// RAJA-TODO: add a max
-
-		s.initProbe(probeRateBps)
+		s.initProbe(transition.BandwidthDelta)
 		break
 	}
 }
