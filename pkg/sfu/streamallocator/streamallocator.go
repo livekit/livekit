@@ -79,8 +79,8 @@ func getProbeMax(value int64) int64 {
 		if idx == 0 {
 			ratio = pmr.Ratio
 		} else {
-			ratio = float64(value - ProbeMaxRatio[idx-1].Upper) / float64(pmr.Upper - ProbeMaxRatio[idx-1].Upper)
-			ratio = ratio * pmr.Ratio + (1.0 - ratio) * ProbeMaxRatio[idx-1].Ratio
+			ratio = float64(value-ProbeMaxRatio[idx-1].Upper) / float64(pmr.Upper-ProbeMaxRatio[idx-1].Upper)
+			ratio = ratio*pmr.Ratio + (1.0-ratio)*ProbeMaxRatio[idx-1].Ratio
 		}
 		break
 	}
@@ -1210,7 +1210,7 @@ func (s *StreamAllocator) initProbe(probeRateBps int64) {
 		)
 	}
 
-	maxProbeRateBps := getProbeMax(s.committedChannelCapacity)
+	maxProbeRateBps := getProbeMax(int64(math.Max(float64(s.committedChannelCapacity), float64(expectedBandwidthUsage))))
 	if probeRateBps > maxProbeRateBps {
 		probeRateBps = maxProbeRateBps
 	}
@@ -1237,6 +1237,10 @@ func (s *StreamAllocator) initProbe(probeRateBps int64) {
 	// current expected bandwidth usage, i. e. when that condition triggers, the committed channel capacity
 	// is set to a certain % of the previous expected bandwidth usage and then a re-allocation done.
 	// That re-allocation will push the expected lower than committed.
+	//
+	// Another case of this is a probe succeeding, but the resulting channel capacity is not enough to
+	// boost a deficient track. It would take one or more probe clusters starting at the committed channel
+	// caacity and going up before deficient tracks could be boosted.
 	//
 	// STREAM-ALLOCATOR-TODO: See note above about possibly skipping probe when expected usage is
 	// (much) higher than committed chnanle capacity.
