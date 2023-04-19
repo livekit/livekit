@@ -579,26 +579,51 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 		alloc.RequestLayerSpatial = alloc.TargetLayer.Spatial
 
 	default:
+		// lots of different events could end up here
+		//   1. Publisher side layer resuming/stopping
+		//   2. Bitrate becoming available
+		//   3. New max published spatial layer or max temporal layer seen
+		//   4. Subscriber layer changes
+		//
+		// to handle all of the above
+		//   1. Find highest that can be requested - takes into account available layers and overshoot.
+		//      This should catch scenarios like layers resuming/stopping.
+		//   2. If current is a valid layer, check against currently available layers and continue at current
+		//      if possible. Else, choose the highest available layer as the next target.
+		//   3. If current is not valid, set next target to be opportunistic.
+		maxLayerSpatialLimit := int32(math.Min(float64(maxLayer.Spatial), float64(maxSeenLayer.Spatial)))
+		highestAvailableLayer := buffer.InvalidLayerSpatial
 		requestLayerSpatial := buffer.InvalidLayerSpatial
 		for _, al := range availableLayers {
-			if al > requestLayerSpatial {
+			if al > requestLayerSpatial && al <= maxLayerSpatialLimit {
 				requestLayerSpatial = al
 			}
+			if al > highestAvailableLayer {
+				highestAvailableLayer = al
+			}
 		}
-		maxLayerSpatialLimit := int32(math.Min(float64(maxLayer.Spatial), float64(maxSeenLayer.Spatial)))
-		if requestLayerSpatial > maxLayerSpatialLimit {
-			requestLayerSpatial = maxLayerSpatialLimit
+		if requestLayerSpatial == buffer.InvalidLayerSpatial && highestAvailableLayer != buffer.InvalidLayerSpatial && allowOvershoot && f.vls.IsOvershootOkay() {
+			requestLayerSpatial = highestAvailableLayer
 		}
-		if currentLayer.IsValid() && ((requestLayerSpatial == requestSpatial && currentLayer.Spatial == requestSpatial) || requestLayerSpatial == buffer.InvalidLayerSpatial) {
-			// 1. current is locked to desired, stay there
-			// OR
-			// 2. feed may be dry, let it continue at current layer if valid.
-			// covers the cases of
-			//   1. mis-detection of layer stop - can continue streaming
-			//   2. current layer resuming - can latch on when it starts
-			alloc.TargetLayer = buffer.VideoLayer{
-				Spatial:  currentLayer.Spatial,
-				Temporal: getMaxTemporal(),
+
+		if currentLayer.IsValid() {
+			if (requestLayerSpatial == requestSpatial && currentLayer.Spatial == requestSpatial) || requestLayerSpatial == buffer.InvalidLayerSpatial {
+				// 1. current is locked to desired, stay there
+				// OR
+				// 2. feed may be dry, let it continue at current layer if valid.
+				// covers the cases of
+				//   1. mis-detection of layer stop - can continue streaming
+				//   2. current layer resuming - can latch on when it starts
+				alloc.TargetLayer = buffer.VideoLayer{
+					Spatial:  currentLayer.Spatial,
+					Temporal: getMaxTemporal(),
+				}
+			} else {
+				// current layer has stopped, switch to highest available
+				alloc.TargetLayer = buffer.VideoLayer{
+					Spatial:  requestLayerSpatial,
+					Temporal: getMaxTemporal(),
+				}
 			}
 			alloc.RequestLayerSpatial = alloc.TargetLayer.Spatial
 		} else {
