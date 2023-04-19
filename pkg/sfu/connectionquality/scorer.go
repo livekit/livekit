@@ -363,6 +363,10 @@ func (q *qualityScorer) getPacketLossWeight(stat *windowStat) float64 {
 		q.maxPPS = pps
 	}
 
+	if q.maxPPS == 0 {
+		return q.params.PacketLossWeight
+	}
+
 	return math.Sqrt(pps/q.maxPPS) * q.params.PacketLossWeight
 }
 
