@@ -34,22 +34,23 @@ const (
 )
 
 type TransportManagerParams struct {
-	Identity                livekit.ParticipantIdentity
-	SID                     livekit.ParticipantID
-	SubscriberAsPrimary     bool
-	Config                  *WebRTCConfig
-	ProtocolVersion         types.ProtocolVersion
-	Telemetry               telemetry.TelemetryService
-	CongestionControlConfig config.CongestionControlConfig
-	EnabledCodecs           []*livekit.Codec
-	SimTracks               map[uint32]SimulcastTrackInfo
-	ClientConf              *livekit.ClientConfiguration
-	ClientInfo              ClientInfo
-	Migration               bool
-	AllowTCPFallback        bool
-	TCPFallbackRTTThreshold int
-	TURNSEnabled            bool
-	Logger                  logger.Logger
+	Identity                 livekit.ParticipantIdentity
+	SID                      livekit.ParticipantID
+	SubscriberAsPrimary      bool
+	Config                   *WebRTCConfig
+	ProtocolVersion          types.ProtocolVersion
+	Telemetry                telemetry.TelemetryService
+	CongestionControlConfig  config.CongestionControlConfig
+	EnabledCodecs            []*livekit.Codec
+	SimTracks                map[uint32]SimulcastTrackInfo
+	ClientConf               *livekit.ClientConfiguration
+	ClientInfo               ClientInfo
+	Migration                bool
+	AllowTCPFallback         bool
+	TCPFallbackRTTThreshold  int
+	AllowUDPUnstableFallback bool
+	TURNSEnabled             bool
+	Logger                   logger.Logger
 }
 
 type TransportManager struct {
@@ -710,7 +711,7 @@ func (t *TransportManager) OnReceiverReport(dt *sfu.DownTrack, report *rtcp.Rece
 }
 
 func (t *TransportManager) onMediaLossUpdate(loss uint8) {
-	if t.params.TCPFallbackRTTThreshold == 0 {
+	if t.params.TCPFallbackRTTThreshold == 0 || !t.params.AllowUDPUnstableFallback {
 		return
 	}
 	t.lock.Lock()
