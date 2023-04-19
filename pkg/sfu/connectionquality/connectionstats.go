@@ -190,6 +190,7 @@ func (cs *ConnectionStats) getStat(at time.Time) {
 	streams := cs.params.GetDeltaStats()
 	if len(streams) == 0 {
 		if cs.isTooLongSinceLastStats() {
+			cs.updateLastStatsAt(at)
 			cs.updateScore(streams, at)
 		}
 		cs.clearInProcess()
