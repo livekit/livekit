@@ -256,7 +256,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 
 	switch strings.ToLower(codec.MimeType) {
 	case "video/vp8":
-		f.codecMunger = codecmunger.NewVP8(f.logger)
+		f.codecMunger = codecmunger.NewVP8FromNull(f.codecMunger, f.logger)
 		if f.vls != nil {
 			f.vls = videolayerselector.NewSimulcastFromNull(f.vls)
 		} else {

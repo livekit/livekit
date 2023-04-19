@@ -64,6 +64,17 @@ func NewVP8(logger logger.Logger) *VP8 {
 	}
 }
 
+func NewVP8FromNull(cm CodecMunger, logger logger.Logger) *VP8 {
+	v := &VP8{
+		logger:             logger,
+		missingPictureIds:  orderedmap.NewOrderedMap[int32, int32](),
+		droppedPictureIds:  orderedmap.NewOrderedMap[int32, bool](),
+		exemptedPictureIds: orderedmap.NewOrderedMap[int32, bool](),
+	}
+	v.SeedState(cm.(*Null).GetSeededState())
+	return v
+}
+
 func (v *VP8) GetState() interface{} {
 	return VP8State{
 		ExtLastPictureId: v.extLastPictureId,
