@@ -19,6 +19,9 @@ import (
 	"github.com/livekit/psrpc/middleware"
 )
 
+var ErrSignalWriteFailed = errors.New("signal write failed")
+var ErrSignalMessageDropped = errors.New("signal message dropped")
+
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
 
 //counterfeiter:generate . SignalClient
@@ -182,16 +185,18 @@ func CopySignalStreamToMessageChannel[SendType, RecvType RelaySignalMessage](
 	for msg := range stream.Channel() {
 		res, err := r.Read(msg)
 		if err != nil {
+			if errors.Is(err, ErrSignalMessageDropped) {
+				prometheus.MessageCounter.WithLabelValues("signal", "failure").Add(1)
+			}
 			return err
 		}
-
-		prometheus.MessageCounter.WithLabelValues("signal", "success").Add(float64(len(res)))
 
 		for _, r := range res {
 			if err = ch.WriteMessage(r); err != nil {
 				prometheus.MessageCounter.WithLabelValues("signal", "failure").Add(1)
 				return err
 			}
+			prometheus.MessageCounter.WithLabelValues("signal", "success").Add(1)
 		}
 	}
 	return stream.Err()
@@ -211,7 +216,7 @@ func (r *signalMessageReader[SendType, RecvType]) Read(msg RecvType) ([]proto.Me
 
 	if r.config.MinVersion >= 1 {
 		if r.seq < msg.GetSeq() {
-			return nil, errors.New("signal message dropped")
+			return nil, ErrSignalMessageDropped
 		}
 		if r.seq > msg.GetSeq() {
 			n := int(r.seq - msg.GetSeq())
@@ -238,8 +243,6 @@ func NewSignalMessageSink[SendType, RecvType RelaySignalMessage](params SignalSi
 		SignalSinkParams: params,
 	}
 }
-
-var ErrSignalFailed = errors.New("signal stream failed")
 
 type signalMessageSink[SendType, RecvType RelaySignalMessage] struct {
 	SignalSinkParams[SendType, RecvType]
@@ -321,7 +324,7 @@ func (s *signalMessageSink[SendType, RecvType]) write() {
 		s.Stream.Close(nil)
 	}
 	if err != nil && s.CloseOnFailure {
-		s.Stream.Close(ErrSignalFailed)
+		s.Stream.Close(ErrSignalWriteFailed)
 	}
 	s.mu.Unlock()
 }
