@@ -81,6 +81,7 @@ type ParticipantParams struct {
 	AdaptiveStream               bool
 	AllowTCPFallback             bool
 	TCPFallbackRTTThreshold      int
+	AllowUDPUnstableFallback     bool
 	TURNSEnabled                 bool
 	GetParticipantInfo           func(pID livekit.ParticipantID) *livekit.ParticipantInfo
 	ReconnectOnPublicationError  bool
@@ -977,20 +978,21 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		SID:      p.params.SID,
 		// primary connection does not change, canSubscribe can change if permission was updated
 		// after the participant has joined
-		SubscriberAsPrimary:     p.ProtocolVersion().SubscriberAsPrimary() && p.CanSubscribe(),
-		Config:                  p.params.Config,
-		ProtocolVersion:         p.params.ProtocolVersion,
-		Telemetry:               p.params.Telemetry,
-		CongestionControlConfig: p.params.CongestionControlConfig,
-		EnabledCodecs:           p.params.EnabledCodecs,
-		SimTracks:               p.params.SimTracks,
-		ClientConf:              p.params.ClientConf,
-		ClientInfo:              p.params.ClientInfo,
-		Migration:               p.params.Migration,
-		AllowTCPFallback:        p.params.AllowTCPFallback,
-		TCPFallbackRTTThreshold: p.params.TCPFallbackRTTThreshold,
-		TURNSEnabled:            p.params.TURNSEnabled,
-		Logger:                  p.params.Logger,
+		SubscriberAsPrimary:      p.ProtocolVersion().SubscriberAsPrimary() && p.CanSubscribe(),
+		Config:                   p.params.Config,
+		ProtocolVersion:          p.params.ProtocolVersion,
+		Telemetry:                p.params.Telemetry,
+		CongestionControlConfig:  p.params.CongestionControlConfig,
+		EnabledCodecs:            p.params.EnabledCodecs,
+		SimTracks:                p.params.SimTracks,
+		ClientConf:               p.params.ClientConf,
+		ClientInfo:               p.params.ClientInfo,
+		Migration:                p.params.Migration,
+		AllowTCPFallback:         p.params.AllowTCPFallback,
+		TCPFallbackRTTThreshold:  p.params.TCPFallbackRTTThreshold,
+		AllowUDPUnstableFallback: p.params.AllowUDPUnstableFallback,
+		TURNSEnabled:             p.params.TURNSEnabled,
+		Logger:                   p.params.Logger,
 	})
 	if err != nil {
 		return err
