@@ -6,6 +6,7 @@ import (
 )
 
 type Null struct {
+	seededState interface{}
 }
 
 func NewNull(_logger logger.Logger) *Null {
@@ -16,7 +17,12 @@ func (n *Null) GetState() interface{} {
 	return nil
 }
 
-func (n *Null) SeedState(_state interface{}) {
+func (n *Null) SeedState(state interface{}) {
+	n.seededState = state
+}
+
+func (n *Null) GetSeededState() interface{} {
+	return n.seededState
 }
 
 func (n *Null) SetLast(_extPkt *buffer.ExtPacket) {
