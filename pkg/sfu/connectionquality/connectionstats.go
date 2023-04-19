@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	UpdateInterval   = 5 * time.Second
-	processThreshold = 0.95
+	UpdateInterval           = 5 * time.Second
+	processThreshold         = 0.95
+	noStatsTooLongMultiplier = 2
 )
 
 type ConnectionStatsParams struct {
@@ -158,6 +159,17 @@ func (cs *ConnectionStats) updateLastStatsAt(at time.Time) {
 	cs.lastStatsAt = at
 }
 
+func (cs *ConnectionStats) isTooLongSinceLastStats() bool {
+	cs.lock.Lock()
+	defer cs.lock.Unlock()
+
+	interval := cs.params.UpdateInterval
+	if interval == 0 {
+		interval = UpdateInterval
+	}
+	return !cs.lastStatsAt.IsZero() && time.Since(cs.lastStatsAt) > interval*noStatsTooLongMultiplier
+}
+
 func (cs *ConnectionStats) clearInProcess() {
 	cs.lock.Lock()
 	defer cs.lock.Unlock()
@@ -177,6 +189,10 @@ func (cs *ConnectionStats) getStat(at time.Time) {
 
 	streams := cs.params.GetDeltaStats()
 	if len(streams) == 0 {
+		if cs.isTooLongSinceLastStats() {
+			cs.updateLastStatsAt(at)
+			cs.updateScore(streams, at)
+		}
 		cs.clearInProcess()
 		return
 	}
