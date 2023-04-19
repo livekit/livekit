@@ -302,6 +302,23 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 	require.Equal(t, expectedResult, f.lastAllocation)
 	require.Equal(t, buffer.DefaultMaxLayer, f.TargetLayer())
 
+	// opportunistic target if feed is dry and current is not valid, i. e. not forwarding
+	expectedResult = VideoAllocation{
+		PauseReason:         VideoPauseReasonNone,
+		BandwidthRequested:  bitrates[2][1],
+		BandwidthDelta:      0,
+		BandwidthNeeded:     bitrates[2][1],
+		Bitrates:            bitrates,
+		TargetLayer:         buffer.DefaultMaxLayer,
+		RequestLayerSpatial: 2,
+		MaxLayer:            buffer.DefaultMaxLayer,
+		DistanceToDesired:   -0.5,
+	}
+	result = f.AllocateOptimal(nil, bitrates, true)
+	require.Equal(t, expectedResult, result)
+	require.Equal(t, expectedResult, f.lastAllocation)
+	require.Equal(t, buffer.DefaultMaxLayer, f.TargetLayer())
+
 	// if feed is not dry and current is not locked, should be opportunistic (with and without overshoot)
 	f.vls.SetTarget(buffer.InvalidLayer)
 	expectedResult = VideoAllocation{
@@ -341,7 +358,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 	// switches request layer to highest available if feed is not dry and current is valid and current is not available
 	f.vls.SetCurrent(buffer.VideoLayer{Spatial: 0, Temporal: 1})
 	expectedTargetLayer = buffer.VideoLayer{
-		Spatial:  2,
+		Spatial:  1,
 		Temporal: buffer.DefaultMaxLayerTemporal,
 	}
 	expectedResult = VideoAllocation{
@@ -353,7 +370,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		TargetLayer:         expectedTargetLayer,
 		RequestLayerSpatial: 1,
 		MaxLayer:            buffer.DefaultMaxLayer,
-		DistanceToDesired:   -0.5,
+		DistanceToDesired:   0.5,
 	}
 	result = f.AllocateOptimal([]int32{1}, bitrates, true)
 	require.Equal(t, expectedResult, result)
@@ -378,28 +395,6 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		DistanceToDesired:   0.0,
 	}
 	result = f.AllocateOptimal([]int32{0}, emptyBitrates, true)
-	require.Equal(t, expectedResult, result)
-	require.Equal(t, expectedResult, f.lastAllocation)
-
-	// opportunistic if feed is not dry and current is valid, but request layer has changed
-	f.vls.SetMax(buffer.VideoLayer{Spatial: 2, Temporal: 1})
-	f.vls.SetCurrent(buffer.VideoLayer{Spatial: 0, Temporal: 1})
-	f.vls.SetRequestSpatial(0)
-	expectedTargetLayer = buffer.VideoLayer{
-		Spatial:  2,
-		Temporal: 1,
-	}
-	expectedResult = VideoAllocation{
-		PauseReason:         VideoPauseReasonFeedDry,
-		BandwidthRequested:  0,
-		BandwidthDelta:      0,
-		Bitrates:            emptyBitrates,
-		TargetLayer:         expectedTargetLayer,
-		RequestLayerSpatial: 1,
-		MaxLayer:            f.vls.GetMax(),
-		DistanceToDesired:   -1,
-	}
-	result = f.AllocateOptimal([]int32{0, 1}, emptyBitrates, true)
 	require.Equal(t, expectedResult, result)
 	require.Equal(t, expectedResult, f.lastAllocation)
 }
