@@ -476,7 +476,7 @@ func (s *StreamAllocator) OnNACK(downTrack *sfu.DownTrack, nacks map[uint16]uint
 	s.postEvent(Event{
 		Signal:  streamAllocatorSignalNACK,
 		TrackID: livekit.TrackID(downTrack.ID()),
-		Data: nacks,
+		Data:    nacks,
 	})
 }
 
@@ -622,7 +622,7 @@ func (s *StreamAllocator) handleSignalAdjustState(event *Event) {
 func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 	receivedEstimate, _ := event.Data.(int64)
 	s.lastReceivedEstimate = receivedEstimate
-	s.params.Logger.Infow("RAJA received estimate", "estimate", s.lastReceivedEstimate)	// REMOVE
+	s.params.Logger.Infow("RAJA received estimate", "estimate", s.lastReceivedEstimate) // REMOVE
 
 	// while probing, maintain estimate separately to enable keeping current committed estimate if probe fails
 	if s.isInProbe() {
@@ -1199,6 +1199,7 @@ func (s *StreamAllocator) initProbe(probeGoalDeltaBps int64) {
 	s.channelObserver.SeedEstimate(s.lastReceivedEstimate)
 
 	s.probeClusterId = s.prober.AddCluster(
+		ProbeClusterModeUniform,
 		int(s.probeGoalBps),
 		int(expectedBandwidthUsage),
 		ProbeMinDuration,
