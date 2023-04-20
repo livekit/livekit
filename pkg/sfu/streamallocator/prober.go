@@ -354,7 +354,7 @@ type ProbeClusterId uint32
 const (
 	ProbeClusterIdInvalid ProbeClusterId = 0
 
-	bucketMs        = 1000
+	bucketDuration  = time.Second
 	bytesPerProbe   = 1000
 	minProbeRateBps = 10000
 )
@@ -425,7 +425,7 @@ func NewCluster(id ProbeClusterId, mode ProbeClusterMode, desiredRateBps int, ex
 func (c *Cluster) initBuckets(desiredRateBps int, expectedRateBps int, minDuration time.Duration) {
 	// split into 1-second bucket
 	// NOTE: splitting even if mode is unitform
-	numBuckets := int((minDuration.Milliseconds() + bucketMs - 1) / bucketMs)
+	numBuckets := int((minDuration.Milliseconds() + bucketDuration.Milliseconds() - 1) / bucketDuration.Milliseconds())
 	if numBuckets < 1 {
 		numBuckets = 1
 	}
@@ -450,17 +450,17 @@ func (c *Cluster) initBuckets(desiredRateBps int, expectedRateBps int, minDurati
 		bucketProbeRateBytes := (bucketProbeRateBps + 7) / 8
 
 		// pace based on bytes per probe
-		numProbes := (bucketProbeRateBps + bytesPerProbe - 1) / bytesPerProbe
+		numProbes := (bucketProbeRateBytes + bytesPerProbe - 1) / bytesPerProbe
 		sleepDurationMicroSeconds := int(float64(1_000_000)/float64(numProbes) + 0.5)
 
 		runningDesiredBytes += bucketProbeRateBytes + expectedRateBytes
-		runningDesiredElapsedTime += bucketMs
+		runningDesiredElapsedTime += bucketDuration
 
-		c.buckets[bucketIdx] = clusterBucket{
+		c.buckets = append(c.buckets, clusterBucket{
 			desiredBytes:       runningDesiredBytes,
 			desiredElapsedTime: runningDesiredElapsedTime,
 			sleepDuration:      time.Duration(sleepDurationMicroSeconds) * time.Microsecond,
-		}
+		})
 	}
 }
 
