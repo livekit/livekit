@@ -302,6 +302,14 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					pLogger.Debugw("sending answer", "answer", m)
 				}
 
+				if pi.ID == "" && res.GetJoin() != nil {
+					pi.ID = livekit.ParticipantID(res.GetJoin().GetParticipant().GetSid())
+					signalStats = telemetry.NewBytesTrackStats(
+						telemetry.BytesTrackIDForParticipantID(telemetry.BytesTrackTypeSignal, pi.ID),
+						pi.ID,
+						s.telemetry)
+				}
+
 				if count, err := sigConn.WriteResponse(res); err != nil {
 					pLogger.Warnw("error writing to websocket", err)
 					return
