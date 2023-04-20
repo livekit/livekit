@@ -302,9 +302,8 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 				}
 			case ErrTrackNotFound:
 				// source track was never published or closed
-				// if after timeout, or reach the limit of subscription,
-				// we'd unsubscribe from it.
-				// this is the *only* two cases we'd change desired state
+				// if after timeout we'd unsubscribe from it.
+				// this is the *only* case we'd change desired state
 				if s.durationSinceStart() > notFoundTimeout {
 					s.maybeRecordError(m.params.Telemetry, m.params.Participant.ID(), err, true)
 					s.logger.Infow("unsubscribing from track after notFoundTimeout", "error", err)
