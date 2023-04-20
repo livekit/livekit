@@ -354,9 +354,9 @@ type ProbeClusterId uint32
 const (
 	ProbeClusterIdInvalid ProbeClusterId = 0
 
-	bucketMs      = 1000
-	bytesPerProbe = 1000
-	minRateBps    = 10000
+	bucketMs        = 1000
+	bytesPerProbe   = 1000
+	minProbeRateBps = 10000
 )
 
 // -----------------------------------
@@ -418,44 +418,45 @@ func NewCluster(id ProbeClusterId, mode ProbeClusterMode, desiredRateBps int, ex
 		maxDuration: maxDuration,
 	}
 	c.initBuckets(desiredRateBps, expectedRateBps, minDuration)
+	c.desiredBytes = c.buckets[len(c.buckets)-1].desiredBytes
 	return c
 }
 
 func (c *Cluster) initBuckets(desiredRateBps int, expectedRateBps int, minDuration time.Duration) {
-	// split into 1-second windows
+	// split into 1-second bucket
 	// NOTE: splitting even if mode is unitform
-	numWindows := int((minDuration.Milliseconds() + bucketMs - 1) / bucketMs)
-	if numWindows < 1 {
-		numWindows = 1
+	numBuckets := int((minDuration.Milliseconds() + bucketMs - 1) / bucketMs)
+	if numBuckets < 1 {
+		numBuckets = 1
 	}
 
 	expectedRateBytes := (expectedRateBps + 7) / 8
-	baseRateBps := (desiredRateBps - expectedRateBps + numWindows - 1) / numWindows
+	baseProbeRateBps := (desiredRateBps - expectedRateBps + numBuckets - 1) / numBuckets
 
 	runningDesiredBytes := 0
 	runningDesiredElapsedTime := time.Duration(0)
 
-	c.buckets = make([]clusterBucket, 0, numWindows)
-	for i := 0; i < numWindows; i++ {
-		multiplier := numWindows
+	c.buckets = make([]clusterBucket, 0, numBuckets)
+	for bucketIdx := 0; bucketIdx < numBuckets; bucketIdx++ {
+		multiplier := numBuckets
 		if c.mode == ProbeClusterModeLinearChirp {
-			multiplier = i + 1
+			multiplier = bucketIdx + 1
 		}
 
-		stepRateBps := baseRateBps * multiplier
-		if stepRateBps < minRateBps {
-			stepRateBps = minRateBps
+		bucketProbeRateBps := baseProbeRateBps * multiplier
+		if bucketProbeRateBps < minProbeRateBps {
+			bucketProbeRateBps = minProbeRateBps
 		}
-		stepRateBytes := (stepRateBps + 7) / 8
+		bucketProbeRateBytes := (bucketProbeRateBps + 7) / 8
 
 		// pace based on bytes per probe
-		numProbes := (stepRateBps + bytesPerProbe - 1) / bytesPerProbe
+		numProbes := (bucketProbeRateBps + bytesPerProbe - 1) / bytesPerProbe
 		sleepDurationMicroSeconds := int(float64(1_000_000)/float64(numProbes) + 0.5)
 
-		runningDesiredBytes += stepRateBytes + expectedRateBytes
+		runningDesiredBytes += bucketProbeRateBytes + expectedRateBytes
 		runningDesiredElapsedTime += bucketMs
 
-		c.buckets[i] = clusterBucket{
+		c.buckets[bucketIdx] = clusterBucket{
 			desiredBytes:       runningDesiredBytes,
 			desiredElapsedTime: runningDesiredElapsedTime,
 			sleepDuration:      time.Duration(sleepDurationMicroSeconds) * time.Microsecond,
