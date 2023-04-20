@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -108,6 +109,10 @@ func (c *ChannelObserver) AddEstimate(estimate int64) {
 
 func (c *ChannelObserver) AddNack(packets uint32, repeatedNacks uint32) {
 	c.nackTracker.Add(packets, repeatedNacks)
+}
+
+func (c *ChannelObserver) UpdateNack(trackID livekit.TrackID, nacks map[uint16]uint8) {
+	c.nackTracker.Update(trackID, nacks)
 }
 
 func (c *ChannelObserver) GetLowestEstimate() int64 {

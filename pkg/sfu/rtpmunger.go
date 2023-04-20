@@ -208,10 +208,12 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 	if extPkt.KeyFrame {
 		r.rtxGateSn = mungedSN
 		r.isInRtxGateRegion = true
+		r.logger.Infow("RAJA entering RTX region", "sn", mungedSN)	// REMOVE
 	}
 
 	if r.isInRtxGateRegion && (mungedSN-r.rtxGateSn) < (1<<15) && (mungedSN-r.rtxGateSn) > RtxGateWindow {
 		r.isInRtxGateRegion = false
+		r.logger.Infow("RAJA exiting RTX region", "sn", mungedSN)	// REMOVE
 	}
 
 	return &TranslationParamsRTP{

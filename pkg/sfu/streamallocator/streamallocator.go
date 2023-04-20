@@ -108,6 +108,7 @@ const (
 	streamAllocatorSignalResume
 	streamAllocatorSignalSetAllowPause
 	streamAllocatorSignalSetChannelCapacity
+	streamAllocatorSignalNACK
 )
 
 func (s streamAllocatorSignal) String() string {
@@ -132,6 +133,8 @@ func (s streamAllocatorSignal) String() string {
 		return "SET_ALLOW_PAUSE"
 	case streamAllocatorSignalSetChannelCapacity:
 		return "SET_CHANNEL_CAPACITY"
+	case streamAllocatorSignalNACK:
+		return "NACK"
 	default:
 		return fmt.Sprintf("%d", int(s))
 	}
@@ -463,9 +466,18 @@ func (s *StreamAllocator) OnResume(downTrack *sfu.DownTrack) {
 	})
 }
 
-// called when a video DownTrack sends a packet
+// called by a video DownTrack to report packet send
 func (s *StreamAllocator) OnPacketsSent(downTrack *sfu.DownTrack, size int) {
 	s.prober.PacketsSent(size)
+}
+
+// called by a video DownTrack when it processes NACKs
+func (s *StreamAllocator) OnNACK(downTrack *sfu.DownTrack, nacks map[uint16]uint8) {
+	s.postEvent(Event{
+		Signal:  streamAllocatorSignalNACK,
+		TrackID: livekit.TrackID(downTrack.ID()),
+		Data: nacks,
+	})
 }
 
 // called when prober wants to send packet(s)
@@ -575,6 +587,8 @@ func (s *StreamAllocator) handleEvent(event *Event) {
 		s.handleSignalSetAllowPause(event)
 	case streamAllocatorSignalSetChannelCapacity:
 		s.handleSignalSetChannelCapacity(event)
+	case streamAllocatorSignalNACK:
+		s.handleSignalNACK(event)
 	}
 }
 
@@ -608,6 +622,7 @@ func (s *StreamAllocator) handleSignalAdjustState(event *Event) {
 func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 	receivedEstimate, _ := event.Data.(int64)
 	s.lastReceivedEstimate = receivedEstimate
+	s.params.Logger.Infow("RAJA received estimate", "estimate", s.lastReceivedEstimate)	// REMOVE
 
 	// while probing, maintain estimate separately to enable keeping current committed estimate if probe fails
 	if s.isInProbe() {
@@ -700,6 +715,11 @@ func (s *StreamAllocator) handleSignalSetChannelCapacity(event *Event) {
 	} else {
 		s.params.Logger.Infow("clearing  override channel capacity")
 	}
+}
+
+func (s *StreamAllocator) handleSignalNACK(event *Event) {
+	nacks := event.Data.(map[uint16]uint8)
+	s.channelObserver.UpdateNack(event.TrackID, nacks)
 }
 
 func (s *StreamAllocator) setState(state streamAllocatorState) {
