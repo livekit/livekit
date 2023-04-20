@@ -341,6 +341,8 @@ func (r *RoomManager) StartSession(
 		VersionGenerator:             r.versionGenerator,
 		TrackResolver:                room.ResolveMediaTrackForSubscriber,
 		SubscriberAllowPause:         subscriberAllowPause,
+		SubscriptionLimitAudio:       r.config.Limit.SubscriptionLimitAudio,
+		SubscriptionLimitVideo:       r.config.Limit.SubscriptionLimitVideo,
 	})
 	if err != nil {
 		return err

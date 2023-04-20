@@ -90,6 +90,8 @@ type ParticipantParams struct {
 	TrackResolver                types.MediaTrackResolver
 	DisableDynacast              bool
 	SubscriberAllowPause         bool
+	SubscriptionLimitAudio       int32
+	SubscriptionLimitVideo       int32
 }
 
 type ParticipantImpl struct {
@@ -1065,13 +1067,15 @@ func (p *ParticipantImpl) setupUpTrackManager() {
 
 func (p *ParticipantImpl) setupSubscriptionManager() {
 	p.SubscriptionManager = NewSubscriptionManager(SubscriptionManagerParams{
-		Participant:         p,
-		Logger:              p.params.Logger.WithoutSampler(),
-		TrackResolver:       p.params.TrackResolver,
-		Telemetry:           p.params.Telemetry,
-		OnTrackSubscribed:   p.onTrackSubscribed,
-		OnTrackUnsubscribed: p.onTrackUnsubscribed,
-		OnSubscriptionError: p.onSubscriptionError,
+		Participant:            p,
+		Logger:                 p.params.Logger.WithoutSampler(),
+		TrackResolver:          p.params.TrackResolver,
+		Telemetry:              p.params.Telemetry,
+		OnTrackSubscribed:      p.onTrackSubscribed,
+		OnTrackUnsubscribed:    p.onTrackUnsubscribed,
+		OnSubscriptionError:    p.onSubscriptionError,
+		SubscriptionLimitVideo: p.params.SubscriptionLimitVideo,
+		SubscriptionLimitAudio: p.params.SubscriptionLimitAudio,
 	})
 }
 
@@ -1765,11 +1769,6 @@ func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackTyp
 	if pendingInfo == nil {
 	track_loop:
 		for cid, pti := range p.pendingTracks {
-			if cid == clientId {
-				pendingInfo = pti
-				signalCid = cid
-				break
-			}
 
 			ti := pti.trackInfos[0]
 			for _, c := range ti.Codecs {

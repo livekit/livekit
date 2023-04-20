@@ -340,7 +340,115 @@ func TestUpdateSettingsBeforeSubscription(t *testing.T) {
 	require.Equal(t, settings.Height, applied.Height)
 }
 
+func TestSubscriptionLimits(t *testing.T) {
+	sm := newTestSubscriptionManagerWithParams(t, testSubscriptionParams{
+		SubscriptionLimitAudio: 1,
+		SubscriptionLimitVideo: 1,
+	})
+	defer sm.Close(false)
+	resolver := newTestResolver(true, true, "pub", "pubID")
+	sm.params.TrackResolver = resolver.Resolve
+	subCount := atomic.Int32{}
+	failed := atomic.Bool{}
+	sm.params.OnTrackSubscribed = func(subTrack types.SubscribedTrack) {
+		subCount.Add(1)
+	}
+	sm.params.OnSubscriptionError = func(trackID livekit.TrackID) {
+		failed.Store(true)
+	}
+	numParticipantSubscribed := atomic.Int32{}
+	numParticipantUnsubscribed := atomic.Int32{}
+	sm.OnSubscribeStatusChanged(func(pubID livekit.ParticipantID, subscribed bool) {
+		if subscribed {
+			numParticipantSubscribed.Add(1)
+		} else {
+			numParticipantUnsubscribed.Add(1)
+		}
+	})
+
+	sm.SubscribeToTrack("track")
+	s := sm.subscriptions["track"]
+	require.True(t, s.isDesired())
+	require.Eventually(t, func() bool {
+		return subCount.Load() == 1
+	}, subSettleTimeout, subCheckInterval, "track was not subscribed")
+
+	require.NotNil(t, s.getSubscribedTrack())
+	require.Len(t, sm.GetSubscribedTracks(), 1)
+
+	require.Eventually(t, func() bool {
+		return len(sm.GetSubscribedParticipants()) == 1
+	}, subSettleTimeout, subCheckInterval, "GetSubscribedParticipants should have returned one item")
+	require.Equal(t, "pubID", string(sm.GetSubscribedParticipants()[0]))
+
+	// ensure telemetry events are sent
+	tm := sm.params.Telemetry.(*telemetryfakes.FakeTelemetryService)
+	require.Equal(t, 1, tm.TrackSubscribeRequestedCallCount())
+
+	// ensure bound
+	setTestSubscribedTrackBound(t, s.getSubscribedTrack())
+
+	require.Eventually(t, func() bool {
+		return !s.needsBind()
+	}, subSettleTimeout, subCheckInterval, "track was not bound")
+
+	// telemetry event should have been sent
+	require.Equal(t, 1, tm.TrackSubscribedCallCount())
+
+	// reach subscription limit, subscribe pending
+	sm.SubscribeToTrack("track2")
+	s2 := sm.subscriptions["track2"]
+	time.Sleep(subscriptionTimeout * 2)
+	require.True(t, s2.needsSubscribe())
+	require.Equal(t, 2, tm.TrackSubscribeRequestedCallCount())
+	require.Equal(t, 1, tm.TrackSubscribeFailedCallCount())
+	require.Len(t, sm.GetSubscribedTracks(), 1)
+
+	// unsubscribe track1, then track2 should be subscribed
+	sm.UnsubscribeFromTrack("track")
+	require.False(t, s.isDesired())
+	require.True(t, s.needsUnsubscribe())
+	// wait for unsubscribe to take effect
+	time.Sleep(reconcileInterval)
+	setTestSubscribedTrackClosed(t, s.getSubscribedTrack(), false)
+	require.Nil(t, s.getSubscribedTrack())
+
+	time.Sleep(reconcileInterval)
+	require.True(t, s2.isDesired())
+	require.False(t, s2.needsSubscribe())
+	require.EqualValues(t, 2, subCount.Load())
+	require.NotNil(t, s2.getSubscribedTrack())
+	require.Equal(t, 2, tm.TrackSubscribeRequestedCallCount())
+	require.Len(t, sm.GetSubscribedTracks(), 1)
+
+	// ensure bound
+	setTestSubscribedTrackBound(t, s2.getSubscribedTrack())
+
+	require.Eventually(t, func() bool {
+		return !s2.needsBind()
+	}, subSettleTimeout, subCheckInterval, "track was not bound")
+
+	// subscribe to track1 again, which should pending
+	sm.SubscribeToTrack("track")
+	s = sm.subscriptions["track"]
+	require.True(t, s.isDesired())
+	time.Sleep(subscriptionTimeout * 2)
+	require.True(t, s.needsSubscribe())
+	require.Equal(t, 3, tm.TrackSubscribeRequestedCallCount())
+	require.Equal(t, 2, tm.TrackSubscribeFailedCallCount())
+	require.Len(t, sm.GetSubscribedTracks(), 1)
+}
+
+type testSubscriptionParams struct {
+	SubscriptionLimitAudio int32
+	SubscriptionLimitVideo int32
+}
+
 func newTestSubscriptionManager(t *testing.T) *SubscriptionManager {
+	return newTestSubscriptionManagerWithParams(t, testSubscriptionParams{})
+}
+
+func newTestSubscriptionManagerWithParams(t *testing.T, params testSubscriptionParams) *SubscriptionManager {
 	p := &typesfakes.FakeLocalParticipant{}
 	p.CanSubscribeReturns(true)
 	p.IDReturns("subID")
@@ -354,7 +462,9 @@ func newTestSubscriptionManager(t *testing.T) *SubscriptionManager {
 		TrackResolver: func(identity livekit.ParticipantIdentity, trackID livekit.TrackID) types.MediaResolverResult {
 			return types.MediaResolverResult{}
 		},
-		Telemetry: &telemetryfakes.FakeTelemetryService{},
+		Telemetry:              &telemetryfakes.FakeTelemetryService{},
+		SubscriptionLimitAudio: params.SubscriptionLimitAudio,
+		SubscriptionLimitVideo: params.SubscriptionLimitVideo,
 	})
 }
 
