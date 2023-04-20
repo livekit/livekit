@@ -395,31 +395,30 @@ func TestSubscriptionLimits(t *testing.T) {
 	// telemetry event should have been sent
 	require.Equal(t, 1, tm.TrackSubscribedCallCount())
 
-	// reach subscription limit, subscribe failed
+	// reach subscription limit, subscribe pending
 	sm.SubscribeToTrack("track2")
 	s2 := sm.subscriptions["track2"]
-	require.Eventually(t, func() bool {
-		return (s2 == nil || (!s2.isDesired() && s2.getSubscribedTrack() == nil)) && subCount.Load() == 1
-	}, subSettleTimeout, subCheckInterval, "track2 should not be subscribed")
+	time.Sleep(subscriptionTimeout * 2)
+	require.True(t, s2.needsSubscribe())
 	require.Equal(t, 2, tm.TrackSubscribeRequestedCallCount())
 	require.Equal(t, 1, tm.TrackSubscribeFailedCallCount())
 	require.Len(t, sm.GetSubscribedTracks(), 1)
 
-	// unsubscribe track1 and resubscribe track2
+	// unsubscribe track1, then track2 should be subscribed
 	sm.UnsubscribeFromTrack("track")
-	setTestSubscribedTrackClosed(t, s.getSubscribedTrack(), false)
 	require.False(t, s.isDesired())
+	require.True(t, s.needsUnsubscribe())
+	// wait for unsubscribe to take effect
+	time.Sleep(reconcileInterval)
+	setTestSubscribedTrackClosed(t, s.getSubscribedTrack(), false)
 	require.Nil(t, s.getSubscribedTrack())
-	require.Len(t, sm.GetSubscribedTracks(), 0)
 
-	sm.SubscribeToTrack("track2")
-	s2 = sm.subscriptions["track2"]
+	time.Sleep(reconcileInterval)
 	require.True(t, s2.isDesired())
-	require.Eventually(t, func() bool {
-		return subCount.Load() == 2
-	}, subSettleTimeout, subCheckInterval, "track was not subscribed")
+	require.False(t, s2.needsSubscribe())
+	require.EqualValues(t, 2, subCount.Load())
 	require.NotNil(t, s2.getSubscribedTrack())
-	require.Equal(t, 3, tm.TrackSubscribeRequestedCallCount())
+	require.Equal(t, 2, tm.TrackSubscribeRequestedCallCount())
 	require.Len(t, sm.GetSubscribedTracks(), 1)
 
 	// ensure bound
@@ -428,6 +427,16 @@ func TestSubscriptionLimits(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return !s2.needsBind()
 	}, subSettleTimeout, subCheckInterval, "track was not bound")
+
+	// subscribe to track1 again, which should pending
+	sm.SubscribeToTrack("track")
+	s = sm.subscriptions["track"]
+	require.True(t, s.isDesired())
+	time.Sleep(subscriptionTimeout * 2)
+	require.True(t, s.needsSubscribe())
+	require.Equal(t, 3, tm.TrackSubscribeRequestedCallCount())
+	require.Equal(t, 2, tm.TrackSubscribeFailedCallCount())
+	require.Len(t, sm.GetSubscribedTracks(), 1)
 }
 
 type testSubscriptionParams struct {
