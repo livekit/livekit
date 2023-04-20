@@ -185,9 +185,7 @@ func CopySignalStreamToMessageChannel[SendType, RecvType RelaySignalMessage](
 	for msg := range stream.Channel() {
 		res, err := r.Read(msg)
 		if err != nil {
-			if errors.Is(err, ErrSignalMessageDropped) {
-				prometheus.MessageCounter.WithLabelValues("signal", "failure").Add(1)
-			}
+			prometheus.MessageCounter.WithLabelValues("signal", "failure").Add(1)
 			return err
 		}
 
