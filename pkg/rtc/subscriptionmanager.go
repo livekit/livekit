@@ -391,7 +391,7 @@ func (m *SubscriptionManager) reconcileWorker() {
 	}
 }
 
-func (m *SubscriptionManager) hasCapcityForSubscribption(kind livekit.TrackType) bool {
+func (m *SubscriptionManager) hasCapcityForSubscription(kind livekit.TrackType) bool {
 	switch kind {
 	case livekit.TrackType_VIDEO:
 		if m.params.SubscriptionLimitVideo > 0 && m.subscribedVideoCount.Load() >= m.params.SubscriptionLimitVideo {
@@ -413,7 +413,7 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 		return ErrNoSubscribePermission
 	}
 
-	if kind, ok := s.getKind(); ok && !m.hasCapcityForSubscribption(kind) {
+	if kind, ok := s.getKind(); ok && !m.hasCapcityForSubscription(kind) {
 		return ErrSubscriptionLimitExceeded
 	}
 
@@ -445,7 +445,7 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 		return ErrTrackNotFound
 	}
 	s.trySetKind(track.Kind())
-	if !m.hasCapcityForSubscribption(track.Kind()) {
+	if !m.hasCapcityForSubscription(track.Kind()) {
 		return ErrSubscriptionLimitExceeded
 	}
 
