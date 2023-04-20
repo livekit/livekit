@@ -547,9 +547,9 @@ func (m *SubscriptionManager) handleSubscribedTrackClose(s *trackSubscription, w
 	var relieveFromLimits bool
 	switch subTrack.MediaTrack().Kind() {
 	case livekit.TrackType_VIDEO:
-		relieveFromLimits = m.subscribedVideoCount.Dec() == m.params.SubscriptionLimitVideo-1
+		relieveFromLimits = m.params.SubscriptionLimitVideo > 0 && m.subscribedVideoCount.Dec() == m.params.SubscriptionLimitVideo-1
 	case livekit.TrackType_AUDIO:
-		relieveFromLimits = m.subscribedAudioCount.Dec() == m.params.SubscriptionLimitAudio-1
+		relieveFromLimits = m.params.SubscriptionLimitAudio > 0 && m.subscribedAudioCount.Dec() == m.params.SubscriptionLimitAudio-1
 	}
 
 	// remove from subscribedTo
