@@ -13,7 +13,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
-	"github.com/livekit/psrpc/middleware"
+	"github.com/livekit/psrpc/pkg/middleware"
 )
 
 type SessionHandler func(
