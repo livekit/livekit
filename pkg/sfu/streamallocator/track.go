@@ -20,6 +20,7 @@ type Track struct {
 
 	totalPackets       uint32
 	totalRepeatedNacks uint32
+	nackInfos map[uint16]sfu.NackInfo
 
 	isDirty bool
 
@@ -39,6 +40,7 @@ func NewTrack(
 		isSimulcast: isSimulcast,
 		publisherID: publisherID,
 		logger:      logger,
+		nackInfos: make(map[uint16]sfu.NackInfo),
 		isPaused:    true,
 	}
 	t.SetPriority(0)
@@ -174,6 +176,12 @@ func (t *Track) GetNackDelta() (uint32, uint32) {
 	t.totalRepeatedNacks = totalRepeatedNacks
 
 	return packetDelta, nackDelta
+}
+
+func (t *Track) UpdateNack(nackInfos []sfu.NackInfo) {
+	for _, ni := range nackInfos {
+		t.nackInfos[ni.SequenceNumber] = ni
+	}
 }
 
 // ------------------------------------------------

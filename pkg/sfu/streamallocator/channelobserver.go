@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -90,7 +89,7 @@ func NewChannelObserver(params ChannelObserverParams, logger logger.Logger) *Cha
 			CollapseThreshold:      params.EstimateCollapseThreshold,
 		}),
 		nackTracker: NewNackTracker(NackTrackerParams{
-			Name:              params.Name + "-estimate",
+			Name:              params.Name + "-nack",
 			Logger:            logger,
 			WindowMinDuration: params.NackWindowMinDuration,
 			WindowMaxDuration: params.NackWindowMaxDuration,
@@ -109,10 +108,6 @@ func (c *ChannelObserver) AddEstimate(estimate int64) {
 
 func (c *ChannelObserver) AddNack(packets uint32, repeatedNacks uint32) {
 	c.nackTracker.Add(packets, repeatedNacks)
-}
-
-func (c *ChannelObserver) UpdateNack(trackID livekit.TrackID, nacks map[uint16]uint8) {
-	c.nackTracker.Update(trackID, nacks)
 }
 
 func (c *ChannelObserver) GetLowestEstimate() int64 {

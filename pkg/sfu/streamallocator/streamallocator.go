@@ -66,7 +66,7 @@ var (
 		Name:                           "non-probe",
 		EstimateRequiredSamples:        8,
 		EstimateDownwardTrendThreshold: -0.5,
-		EstimateCollapseThreshold:      500 * time.Millisecond,
+		EstimateCollapseThreshold:      250 * time.Millisecond,
 		NackWindowMinDuration:          1 * time.Second,
 		NackWindowMaxDuration:          2 * time.Second,
 		NackRatioThreshold:             0.08,
@@ -472,11 +472,11 @@ func (s *StreamAllocator) OnPacketsSent(downTrack *sfu.DownTrack, size int) {
 }
 
 // called by a video DownTrack when it processes NACKs
-func (s *StreamAllocator) OnNACK(downTrack *sfu.DownTrack, nacks map[uint16]uint8) {
+func (s *StreamAllocator) OnNACK(downTrack *sfu.DownTrack, nackInfos []sfu.NackInfo) {
 	s.postEvent(Event{
 		Signal:  streamAllocatorSignalNACK,
 		TrackID: livekit.TrackID(downTrack.ID()),
-		Data:    nacks,
+		Data:    nackInfos,
 	})
 }
 
@@ -718,8 +718,15 @@ func (s *StreamAllocator) handleSignalSetChannelCapacity(event *Event) {
 }
 
 func (s *StreamAllocator) handleSignalNACK(event *Event) {
-	nacks := event.Data.(map[uint16]uint8)
-	s.channelObserver.UpdateNack(event.TrackID, nacks)
+	nackInfos := event.Data.([]sfu.NackInfo)
+
+	s.videoTracksMu.Lock()
+	track := s.videoTracks[event.TrackID]
+	s.videoTracksMu.Unlock()
+
+	if track != nil {
+		track.UpdateNack(nackInfos)
+	}
 }
 
 func (s *StreamAllocator) setState(state streamAllocatorState) {
@@ -939,7 +946,7 @@ func (s *StreamAllocator) finalizeProbe() {
 
 	//
 	// Reset estimator at the end of a probe irrespective of probe result to get fresh readings.
-	// With a failed probe, the latest estimate would be lower than committed estimate.
+	// With a failed probe, the latest estimate could be lower than committed estimate.
 	// As bandwidth estimator (remote in REMB case, local in TWCC case) holds state,
 	// subsequent estimates could start from the lower point. That should not trigger a
 	// downward trend and get latched to committed estimate as that would trigger a re-allocation.

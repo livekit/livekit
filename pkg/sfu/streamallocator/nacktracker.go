@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -24,26 +23,11 @@ type NackTracker struct {
 	windowStartTime time.Time
 	packets         uint32
 	repeatedNacks   uint32
-
-	trackNacks map[livekit.TrackID]map[uint16]uint8
 }
 
 func NewNackTracker(params NackTrackerParams) *NackTracker {
 	return &NackTracker{
 		params: params,
-		trackNacks: make(map[livekit.TrackID]map[uint16]uint8),
-	}
-}
-
-func (n *NackTracker) Update(trackID livekit.TrackID, nacks map[uint16]uint8) {
-	tn, ok := n.trackNacks[trackID]
-	if !ok {
-		tn = make(map[uint16]uint8)
-		n.trackNacks[trackID] = tn
-	}
-
-	for sn, cnt := range nacks {
-		tn[sn] = cnt
 	}
 }
 
@@ -98,7 +82,7 @@ func (n *NackTracker) ToString() string {
 		elapsed := now.Sub(n.windowStartTime).Seconds()
 		window = fmt.Sprintf("t: %+v|%+v|%.2fs", n.windowStartTime.Format(time.UnixDate), now.Format(time.UnixDate), elapsed)
 	}
-	return fmt.Sprintf("n: %s, t: %s, p: %d,  rn: %d, rn/p: %.2f, nacks: %+v", n.params.Name, window, n.packets, n.repeatedNacks, n.GetRatio(), n.trackNacks)
+	return fmt.Sprintf("n: %s, t: %s, p: %d,  rn: %d, rn/p: %.2f", n.params.Name, window, n.packets, n.repeatedNacks, n.GetRatio())
 }
 
 // ------------------------------------------------

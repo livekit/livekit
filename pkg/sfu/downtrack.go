@@ -119,6 +119,12 @@ func (d DownTrackState) String() string {
 
 // -------------------------------------------------------------------
 
+type NackInfo struct {
+	Timestamp uint32
+	SequenceNumber uint16
+	Attempts uint8
+}
+
 type DownTrackStreamAllocatorListener interface {
 	// RTCP received
 	OnREMB(dt *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate)
@@ -149,7 +155,7 @@ type DownTrackStreamAllocatorListener interface {
 	OnPacketsSent(dt *DownTrack, size int)
 
 	// NACKs received
-	OnNACK(dt *DownTrack, nacks map[uint16]uint8)
+	OnNACK(dt *DownTrack, nackInfos []NackInfo)
 }
 
 type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
@@ -714,7 +720,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool) int {
 
 		bytesSent += hdr.MarshalSize() + len(payload)
 	}
-	d.logger.Infow("RAJA sent padding", "start", snts[0].sequenceNumber, "end", snts[len(snts)-1].sequenceNumber)	// REMOVE
+	//d.logger.Infow("RAJA sent padding", "start", snts[0].sequenceNumber, "end", snts[len(snts)-1].sequenceNumber)	// REMOVE
 
 	return bytesSent
 }
@@ -1337,7 +1343,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				numNACKs += uint32(len(packetList))
 				nacks = append(nacks, packetList...)
 			}
-			d.logger.Infow("RAJA nacks received", "nacks", nacks)	// REMOVE
+			//d.logger.Infow("RAJA nacks received", "nacks", nacks)	// REMOVE
 			go d.retransmitPackets(nacks)
 
 		case *rtcp.TransportLayerCC:
@@ -1408,6 +1414,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	processedNacks := make(map[uint16]uint8, len(filtered))
 	disallowedNacks := make([]uint16, 0, len(filtered))
 	paddingNacks := make([]uint16, 0, len(filtered))
+	nackInfos := make([]NackInfo, 0, len(filtered))
 	for _, meta := range d.sequencer.getPacketsMeta(filtered) {
 		if meta.layer == -1 {
 			paddingNacks = append(paddingNacks, meta.targetSeqNo)
@@ -1420,6 +1427,12 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		}
 
 		nackAcks++
+		// RAJA-TODO: have a special ack field and only respond to that
+		nackInfos = append(nackInfos, NackInfo{
+			SequenceNumber: meta.targetSeqNo,
+			Timestamp: meta.timestamp,
+			Attempts: meta.nacked,
+		})
 
 		if pool != nil {
 			PacketFactory.Put(pool)
@@ -1493,8 +1506,8 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	d.rtpStats.UpdateNackProcessed(nackAcks, nackMisses, numRepeatedNACKs)
 	d.logger.Infow("RAJA nacks processed", "filtered", filtered, "processed", processedNacks, "padding", paddingNacks, "disallowed", disallowedNacks)	// REMOVE
 	// RAJA-TODO: get all Nacks even if SFU is not acknowledging?
-	if sal := d.getStreamAllocatorListener(); sal != nil {
-		sal.OnNACK(d, processedNacks)
+	if sal := d.getStreamAllocatorListener(); sal != nil && len(nackInfos) != 0 {
+		sal.OnNACK(d, nackInfos)
 	}
 }
 
