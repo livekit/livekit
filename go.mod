@@ -18,8 +18,8 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20230326055817-ed569ca13d26
-	github.com/livekit/protocol v1.5.4
-	github.com/livekit/psrpc v0.2.11-0.20230405191830-d76f71512630
+	github.com/livekit/protocol v1.5.5-0.20230421192204-0975cb52f603
+	github.com/livekit/psrpc v0.3.0
 	github.com/mackerelio/go-osstat v0.2.4
 	github.com/magefile/mage v1.14.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.6.1
@@ -33,13 +33,13 @@ require (
 	github.com/pion/rtp v1.7.13
 	github.com/pion/sdp/v3 v3.0.6
 	github.com/pion/stun v0.4.0
-	github.com/pion/transport/v2 v2.1.0
+	github.com/pion/transport/v2 v2.0.2
 	github.com/pion/turn/v2 v2.1.0
 	github.com/pion/webrtc/v3 v3.1.60
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.15.0
 	github.com/redis/go-redis/v9 v9.0.3
-	github.com/rs/cors v1.9.0
+	github.com/rs/cors v1.8.3
 	github.com/stretchr/testify v1.8.2
 	github.com/thoas/go-funk v0.9.3
 	github.com/twitchtv/twirp v8.1.3+incompatible
@@ -70,7 +70,6 @@ require (
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.2 // indirect
 	github.com/josharian/native v1.1.0 // indirect
-	github.com/lithammer/shortuuid/v3 v3.0.7 // indirect
 	github.com/lithammer/shortuuid/v4 v4.0.0 // indirect
 	github.com/mattn/go-runewidth v0.0.9 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
