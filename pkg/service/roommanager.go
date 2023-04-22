@@ -451,7 +451,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 		newRoom.Logger.Infow("room closed")
 	})
 
-	newRoom.OnMetadataUpdate(func(metadata string) {
+	newRoom.OnRoomUpdated(func() {
 		if err := r.roomStore.StoreRoom(ctx, newRoom.ToProto(), newRoom.Internal()); err != nil {
 			newRoom.Logger.Errorw("could not handle metadata update", err)
 		}
