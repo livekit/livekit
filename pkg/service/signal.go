@@ -73,6 +73,19 @@ func NewDefaultSignalServer(
 		prometheus.IncrementParticipantRtcInit(1)
 
 		if rr, ok := router.(*routing.RedisRouter); ok {
+			rtcNode, err := router.GetNodeForRoom(ctx, roomName)
+			if err != nil {
+				return err
+			}
+
+			if rtcNode.Id != currentNode.Id {
+				err = routing.ErrIncorrectRTCNode
+				logger.Errorw("called participant on incorrect node", err,
+					"rtcNode", rtcNode,
+				)
+				return err
+			}
+
 			pKey := routing.ParticipantKeyLegacy(roomName, pi.Identity)
 			pKeyB62 := routing.ParticipantKey(roomName, pi.Identity)
 
