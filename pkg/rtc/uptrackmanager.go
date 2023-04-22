@@ -30,7 +30,7 @@ type UpTrackManager struct {
 	// publishedTracks that participant is publishing
 	publishedTracks               map[livekit.TrackID]types.MediaTrack
 	subscriptionPermission        *livekit.SubscriptionPermission
-	subscriptionPermissionVersion *utils.TimedVersion
+	subscriptionPermissionVersion utils.TimedVersion
 	// subscriber permission for published tracks
 	subscriberPermissions map[livekit.ParticipantIdentity]*livekit.TrackPermission // subscriberIdentity => *livekit.TrackPermission
 
@@ -127,47 +127,36 @@ func (u *UpTrackManager) GetPublishedTracks() []types.MediaTrack {
 
 func (u *UpTrackManager) UpdateSubscriptionPermission(
 	subscriptionPermission *livekit.SubscriptionPermission,
-	timedVersion *livekit.TimedVersion,
+	timedVersion utils.TimedVersion,
 	resolverByIdentity func(participantIdentity livekit.ParticipantIdentity) types.LocalParticipant,
 	resolverBySid func(participantID livekit.ParticipantID) types.LocalParticipant,
 ) error {
 	u.lock.Lock()
-	if timedVersion != nil {
+	if !timedVersion.IsZero() {
 		// it's possible for permission updates to come from another node. In that case
 		// they would be the authority for this participant's permissions
 		// we do not want to initialize subscriptionPermissionVersion too early since if another machine is the
 		// owner for the data, we'd prefer to use their TimedVersion
-		if u.subscriptionPermissionVersion != nil {
-			tv := utils.NewTimedVersionFromProto(timedVersion)
-			// ignore older version
-			if !tv.After(u.subscriptionPermissionVersion) {
-				perms := ""
-				if u.subscriptionPermission != nil {
-					perms = u.subscriptionPermission.String()
-				}
-				u.params.Logger.Debugw(
-					"skipping older subscription permission version",
-					"existingValue", perms,
-					"existingVersion", u.subscriptionPermissionVersion.ToProto().String(),
-					"requestingValue", subscriptionPermission.String(),
-					"requestingVersion", timedVersion.String(),
-				)
-				u.lock.Unlock()
-				return nil
+		// ignore older version
+		if !timedVersion.After(&u.subscriptionPermissionVersion) {
+			perms := ""
+			if u.subscriptionPermission != nil {
+				perms = u.subscriptionPermission.String()
 			}
-			u.subscriptionPermissionVersion.Update(tv)
-		} else {
-			u.subscriptionPermissionVersion = utils.NewTimedVersionFromProto(timedVersion)
+			u.params.Logger.Debugw(
+				"skipping older subscription permission version",
+				"existingValue", perms,
+				"existingVersion", u.subscriptionPermissionVersion.ToProto().String(),
+				"requestingValue", subscriptionPermission.String(),
+				"requestingVersion", timedVersion.String(),
+			)
+			u.lock.Unlock()
+			return nil
 		}
+		u.subscriptionPermissionVersion.Update(&timedVersion)
 	} else {
 		// for requests coming from the current node, use local versions
-		tv := u.params.VersionGenerator.New()
-		// use current time as the new/updated version
-		if u.subscriptionPermissionVersion == nil {
-			u.subscriptionPermissionVersion = tv
-		} else {
-			u.subscriptionPermissionVersion.Update(tv)
-		}
+		u.subscriptionPermissionVersion.Update(u.params.VersionGenerator.New())
 	}
 
 	// store as is for use when migrating
@@ -205,15 +194,15 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 	return nil
 }
 
-func (u *UpTrackManager) SubscriptionPermission() (*livekit.SubscriptionPermission, *livekit.TimedVersion) {
+func (u *UpTrackManager) SubscriptionPermission() (*livekit.SubscriptionPermission, utils.TimedVersion) {
 	u.lock.RLock()
 	defer u.lock.RUnlock()
 
-	if u.subscriptionPermissionVersion == nil {
-		return nil, nil
+	if u.subscriptionPermissionVersion.IsZero() {
+		return nil, u.subscriptionPermissionVersion.Load()
 	}
 
-	return u.subscriptionPermission, u.subscriptionPermissionVersion.ToProto()
+	return u.subscriptionPermission, u.subscriptionPermissionVersion.Load()
 }
 
 func (u *UpTrackManager) HasPermission(trackID livekit.TrackID, subIdentity livekit.ParticipantIdentity) bool {

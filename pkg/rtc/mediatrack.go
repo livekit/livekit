@@ -13,6 +13,7 @@ import (
 	"github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
@@ -34,7 +35,8 @@ type MediaTrack struct {
 
 	dynacastManager *DynacastManager
 
-	lock sync.RWMutex
+	lock    sync.RWMutex
+	version utils.TimedVersion
 }
 
 type MediaTrackParams struct {
