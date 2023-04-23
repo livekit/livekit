@@ -10,6 +10,7 @@ import (
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/sfu"
@@ -195,12 +196,12 @@ type Participant interface {
 	Start()
 	Close(sendLeave bool, reason ParticipantCloseReason) error
 
-	SubscriptionPermission() (*livekit.SubscriptionPermission, *livekit.TimedVersion)
+	SubscriptionPermission() (*livekit.SubscriptionPermission, utils.TimedVersion)
 
 	// updates from remotes
 	UpdateSubscriptionPermission(
 		subscriptionPermission *livekit.SubscriptionPermission,
-		timedVersion *livekit.TimedVersion,
+		timedVersion utils.TimedVersion,
 		resolverByIdentity func(participantIdentity livekit.ParticipantIdentity) LocalParticipant,
 		resolverBySid func(participantID livekit.ParticipantID) LocalParticipant,
 	) error
@@ -228,6 +229,8 @@ type AddTrackParams struct {
 //counterfeiter:generate . LocalParticipant
 type LocalParticipant interface {
 	Participant
+
+	ToProtoWithVersion() (*livekit.ParticipantInfo, utils.TimedVersion)
 
 	// getters
 	GetLogger() logger.Logger

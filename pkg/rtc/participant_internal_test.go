@@ -683,6 +683,7 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 		ClientInfo:        ClientInfo{ClientInfo: opts.clientInfo},
 		Logger:            LoggerWithParticipant(logger.GetLogger(), identity, sid, false),
 		Telemetry:         &telemetryfakes.FakeTelemetryService{},
+		VersionGenerator:  utils.NewDefaultTimedVersionGenerator(),
 	})
 	p.isPublisher.Store(opts.publisher)
 	p.updateState(livekit.ParticipantInfo_ACTIVE)

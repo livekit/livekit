@@ -526,7 +526,7 @@ func (r *Room) SyncState(participant types.LocalParticipant, state *livekit.Sync
 }
 
 func (r *Room) UpdateSubscriptionPermission(participant types.LocalParticipant, subscriptionPermission *livekit.SubscriptionPermission) error {
-	if err := participant.UpdateSubscriptionPermission(subscriptionPermission, nil, r.GetParticipant, r.GetParticipantByID); err != nil {
+	if err := participant.UpdateSubscriptionPermission(subscriptionPermission, utils.TimedVersion{}, r.GetParticipant, r.GetParticipantByID); err != nil {
 		return err
 	}
 	for _, track := range participant.GetPublishedTracks() {
