@@ -39,7 +39,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.15.0
 	github.com/redis/go-redis/v9 v9.0.3
-	github.com/rs/cors v1.8.3
+	github.com/rs/cors v1.9.0
 	github.com/stretchr/testify v1.8.2
 	github.com/thoas/go-funk v0.9.3
 	github.com/twitchtv/twirp v8.1.3+incompatible
