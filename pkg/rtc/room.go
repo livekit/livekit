@@ -37,6 +37,7 @@ const (
 var (
 	// var to allow unit test override
 	RoomDepartureGrace uint32 = 20
+	roomUpdateInterval        = 5 * time.Second // frequency to update room participant counts
 )
 
 type broadcastOptions struct {
@@ -47,9 +48,10 @@ type broadcastOptions struct {
 type Room struct {
 	lock sync.RWMutex
 
-	protoRoom *livekit.Room
-	internal  *livekit.RoomInternal
-	Logger    logger.Logger
+	protoRoom  *livekit.Room
+	internal   *livekit.RoomInternal
+	protoProxy *utils.ProtoProxy[*livekit.Room]
+	Logger     logger.Logger
 
 	config         WebRTCConfig
 	audioConfig    *config.AudioConfig
@@ -76,7 +78,7 @@ type Room struct {
 	closed chan struct{}
 
 	onParticipantChanged func(p types.LocalParticipant)
-	onMetadataUpdate     func(metadata string)
+	onRoomUpdated        func()
 	onClose              func()
 }
 
@@ -110,6 +112,7 @@ func NewRoom(
 		batchedUpdates:            make(map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
 		closed:                    make(chan struct{}),
 	}
+	r.protoProxy = utils.NewProtoProxy[*livekit.Room](roomUpdateInterval, r.updateProto)
 	if r.protoRoom.EmptyTimeout == 0 {
 		r.protoRoom.EmptyTimeout = DefaultEmptyTimeout
 	}
@@ -119,16 +122,13 @@ func NewRoom(
 
 	go r.audioUpdateWorker()
 	go r.connectionQualityWorker()
-	go r.subscriberBroadcastWorker()
+	go r.changeUpdateWorker()
 
 	return r
 }
 
 func (r *Room) ToProto() *livekit.Room {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
-
-	return proto.Clone(r.protoRoom).(*livekit.Room)
+	return r.protoProxy.Get()
 }
 
 func (r *Room) Name() livekit.RoomName {
@@ -244,23 +244,19 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 	}
 
 	if r.protoRoom.MaxParticipants > 0 && !participant.IsRecorder() {
-		participantCount := 0
+		numParticipants := uint32(0)
 		for _, p := range r.participants {
 			if !p.IsRecorder() {
-				participantCount++
+				numParticipants++
 			}
 		}
-
-		if participantCount >= int(r.protoRoom.MaxParticipants) {
+		if numParticipants >= r.protoRoom.MaxParticipants {
 			return ErrMaxParticipantsExceeded
 		}
 	}
 
 	if r.FirstJoinedAt() == 0 {
 		r.joinedAt.Store(time.Now().Unix())
-	}
-	if !participant.Hidden() {
-		r.protoRoom.NumParticipants++
 	}
 
 	// it's important to set this before connection, we don't want to miss out on any published tracks
@@ -340,7 +336,9 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 
 	if participant.IsRecorder() && !r.protoRoom.ActiveRecording {
 		r.protoRoom.ActiveRecording = true
-		r.sendRoomUpdateLocked()
+		r.protoProxy.MarkDirty(true)
+	} else {
+		r.protoProxy.MarkDirty(false)
 	}
 
 	r.participants[participant.Identity()] = participant
@@ -419,10 +417,7 @@ func (r *Room) ResumeParticipant(p types.LocalParticipant, requestSource routing
 		return err
 	}
 
-	r.lock.RLock()
-	p.SendRoomUpdate(r.protoRoom)
-	r.lock.RUnlock()
-
+	p.SendRoomUpdate(r.ToProto())
 	p.ICERestart(nil)
 	return nil
 }
@@ -445,6 +440,7 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 		}
 	}
 
+	immediateChange := false
 	if (p != nil && p.IsRecorder()) || r.protoRoom.ActiveRecording {
 		activeRecording := false
 		for _, op := range r.participants {
@@ -456,10 +452,12 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 
 		if r.protoRoom.ActiveRecording != activeRecording {
 			r.protoRoom.ActiveRecording = activeRecording
-			r.sendRoomUpdateLocked()
+			immediateChange = true
+
 		}
 	}
 	r.lock.Unlock()
+	r.protoProxy.MarkDirty(immediateChange)
 
 	if !ok {
 		return
@@ -634,6 +632,7 @@ func (r *Room) Close() {
 	for _, p := range r.GetParticipants() {
 		_ = p.Close(true, types.ParticipantCloseReasonRoomClose)
 	}
+	r.protoProxy.Stop()
 	if r.onClose != nil {
 		r.onClose()
 	}
@@ -661,32 +660,26 @@ func (r *Room) SetMetadata(metadata string) {
 	r.lock.Lock()
 	r.protoRoom.Metadata = metadata
 	r.lock.Unlock()
-
-	r.lock.RLock()
-	r.sendRoomUpdateLocked()
-	r.lock.RUnlock()
-
-	if r.onMetadataUpdate != nil {
-		r.onMetadataUpdate(metadata)
-	}
+	r.protoProxy.MarkDirty(true)
 }
 
-func (r *Room) sendRoomUpdateLocked() {
+func (r *Room) sendRoomUpdate() {
+	roomInfo := r.ToProto()
 	// Send update to participants
-	for _, p := range r.participants {
+	for _, p := range r.GetParticipants() {
 		if !p.IsReady() {
 			continue
 		}
 
-		err := p.SendRoomUpdate(r.protoRoom)
+		err := p.SendRoomUpdate(roomInfo)
 		if err != nil {
 			r.Logger.Warnw("failed to send room update", err, "participant", p.Identity())
 		}
 	}
 }
 
-func (r *Room) OnMetadataUpdate(f func(metadata string)) {
-	r.onMetadataUpdate = f
+func (r *Room) OnRoomUpdated(f func()) {
+	r.onRoomUpdated = f
 }
 
 func (r *Room) SimulateScenario(participant types.LocalParticipant, simulateScenario *livekit.SimulateScenario) error {
@@ -760,11 +753,9 @@ func (r *Room) createJoinResponseLocked(participant types.LocalParticipant, iceS
 	}
 
 	return &livekit.JoinResponse{
-		Room:              r.protoRoom,
+		Room:              r.ToProto(),
 		Participant:       participant.ToProto(),
 		OtherParticipants: otherParticipants,
-		ServerVersion:     r.serverInfo.Version,
-		ServerRegion:      r.serverInfo.Region,
 		IceServers:        iceServers,
 		// indicates both server and client support subscriber as primary
 		SubscriberPrimary:   participant.SubscriberAsPrimary(),
@@ -1003,15 +994,39 @@ func (r *Room) pushAndDequeueUpdates(pi *livekit.ParticipantInfo, isImmediate bo
 	return updates
 }
 
-func (r *Room) subscriberBroadcastWorker() {
-	ticker := time.NewTicker(subscriberUpdateInterval)
-	defer ticker.Stop()
+func (r *Room) updateProto() *livekit.Room {
+	r.lock.RLock()
+	room := proto.Clone(r.protoRoom).(*livekit.Room)
+	r.lock.RUnlock()
+
+	room.NumPublishers = 0
+	room.NumParticipants = 0
+	for _, p := range r.GetParticipants() {
+		if !p.IsRecorder() {
+			room.NumParticipants++
+		}
+		if p.IsPublisher() {
+			room.NumPublishers++
+		}
+	}
+
+	return room
+}
+
+func (r *Room) changeUpdateWorker() {
+	subTicker := time.NewTicker(subscriberUpdateInterval)
+	defer subTicker.Stop()
 
 	for !r.IsClosed() {
 		select {
 		case <-r.closed:
 			return
-		case <-ticker.C:
+		case <-r.protoProxy.Updated():
+			if r.onRoomUpdated != nil {
+				r.onRoomUpdated()
+			}
+			r.sendRoomUpdate()
+		case <-subTicker.C:
 			r.batchedUpdatesMu.Lock()
 			updatesMap := r.batchedUpdates
 			r.batchedUpdates = make(map[livekit.ParticipantIdentity]*livekit.ParticipantInfo)

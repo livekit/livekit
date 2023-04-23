@@ -35,6 +35,7 @@ func init() {
 	})
 	// allow immediate closure in testing
 	RoomDepartureGrace = 1
+	roomUpdateInterval = defaultDelay
 }
 
 var iceServersForRoom = []*livekit.ICEServer{{Urls: []string{"stun:stun.l.google.com:19302"}}}
@@ -645,7 +646,7 @@ func TestHiddenParticipants(t *testing.T) {
 		require.Len(t, res.OtherParticipants, 2)
 		require.Len(t, rm.GetParticipants(), 4)
 		require.NotEmpty(t, res.IceServers)
-		require.Equal(t, "testregion", res.ServerRegion)
+		require.Equal(t, "testregion", res.ServerInfo.Region)
 	})
 
 	t.Run("hidden participant subscribes to tracks", func(t *testing.T) {
@@ -665,15 +666,35 @@ func TestHiddenParticipants(t *testing.T) {
 }
 
 func TestRoomUpdate(t *testing.T) {
+	t.Run("updates are sent when participant joined", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
+		defer rm.Close()
+
+		p1 := rm.GetParticipants()[0].(*typesfakes.FakeLocalParticipant)
+		require.Equal(t, 0, p1.SendRoomUpdateCallCount())
+
+		p2 := newMockParticipant("p2", types.CurrentProtocol, false, false)
+		require.NoError(t, rm.Join(p2, nil, nil, iceServersForRoom))
+
+		// p1 should have received an update
+		time.Sleep(2 * defaultDelay)
+		require.Equal(t, 1, p1.SendRoomUpdateCallCount())
+		require.EqualValues(t, 2, p1.SendRoomUpdateArgsForCall(0).NumParticipants)
+	})
+
 	t.Run("participants should receive metadata update", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
 		defer rm.Close()
 
 		rm.SetMetadata("test metadata...")
 
+		// callbacks are updated from goroutine
+		time.Sleep(2 * defaultDelay)
+
 		for _, op := range rm.GetParticipants() {
 			fp := op.(*typesfakes.FakeLocalParticipant)
-			require.Equal(t, 1, fp.SendRoomUpdateCallCount())
+			// room updates are now sent for both participant joining and room metadata
+			require.GreaterOrEqual(t, fp.SendRoomUpdateCallCount(), 1)
 		}
 	})
 }

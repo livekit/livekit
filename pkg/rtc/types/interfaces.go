@@ -181,6 +181,7 @@ type Participant interface {
 	SetName(name string)
 	SetMetadata(metadata string)
 
+	IsPublisher() bool
 	GetPublishedTrack(sid livekit.TrackID) MediaTrack
 	GetPublishedTracks() []MediaTrack
 	RemovePublishedTrack(track MediaTrack, willBeResumed bool, shouldClose bool)
@@ -284,7 +285,6 @@ type LocalParticipant interface {
 	// returns list of participant identities that the current participant is subscribed to
 	GetSubscribedParticipants() []livekit.ParticipantID
 	IsSubscribedTo(sid livekit.ParticipantID) bool
-	IsPublisher() bool
 
 	GetAudioLevel() (smoothedLevel float64, active bool)
 	GetConnectionQuality() *livekit.ConnectionQualityInfo
