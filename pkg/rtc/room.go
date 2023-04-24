@@ -417,7 +417,7 @@ func (r *Room) ResumeParticipant(p types.LocalParticipant, requestSource routing
 		return err
 	}
 
-	p.SendRoomUpdate(r.ToProto())
+	_ = p.SendRoomUpdate(r.ToProto())
 	p.ICERestart(nil)
 	return nil
 }
@@ -667,7 +667,9 @@ func (r *Room) sendRoomUpdate() {
 	roomInfo := r.ToProto()
 	// Send update to participants
 	for _, p := range r.GetParticipants() {
-		if !p.IsReady() {
+		// new participants receive the update as part of JoinResponse
+		// skip inactive participants
+		if p.State() != livekit.ParticipantInfo_ACTIVE {
 			continue
 		}
 
