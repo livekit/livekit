@@ -869,7 +869,7 @@ func (r *RTPStats) DeltaInfo(snapshotId uint32) *RTPDeltaInfo {
 	}
 	if packetsExpected == 0 {
 		if r.params.IsReceiverReportDriven {
-			// not received RTCP RR
+			// not received RTCP RR (OR) publisher is not producing any data
 			return nil
 		}
 
