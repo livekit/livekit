@@ -1421,10 +1421,6 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	numRepeatedNACKs := uint32(0)
 	nackInfos := make([]NackInfo, 0, len(filtered))
 	for _, meta := range d.sequencer.getPacketsMeta(filtered) {
-		if meta.layer == -1 {
-			continue
-		}
-
 		if disallowedLayers[meta.layer] {
 			continue
 		}
