@@ -183,15 +183,6 @@ func (s *sequencer) getPacketsMeta(seqNo []uint16) []packetMeta {
 
 		slot := s.wrap(s.step - int(diff) - 1)
 		seq := s.seq[slot]
-		// RAJA-REMOVE-START
-		if seq == nil {
-			meta = append(meta, packetMeta{
-				targetSeqNo: sn,
-				layer: -1,
-			})
-			continue
-		}
-		// RAJA-REMOVE-END
 		if seq == nil || seq.targetSeqNo != sn {
 			continue
 		}

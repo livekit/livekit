@@ -120,9 +120,9 @@ func (d DownTrackState) String() string {
 // -------------------------------------------------------------------
 
 type NackInfo struct {
-	Timestamp uint32
+	Timestamp      uint32
 	SequenceNumber uint16
-	Attempts uint8
+	Attempts       uint8
 }
 
 type DownTrackStreamAllocatorListener interface {
@@ -227,6 +227,7 @@ type DownTrack struct {
 	streamAllocatorListener         DownTrackStreamAllocatorListener
 	streamAllocatorReportGeneration int
 	streamAllocatorBytesCounter     atomic.Uint32
+	bytesSent                       atomic.Uint32
 
 	// update stats
 	onStatsUpdate func(dt *DownTrack, stat *livekit.AnalyticsStat)
@@ -601,7 +602,9 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		return err
 	}
 
+	// RAJA-TODO: remove this stream allocator bytes counter
 	d.streamAllocatorBytesCounter.Add(uint32(hdr.MarshalSize() + len(payload)))
+	d.bytesSent.Add(uint32(hdr.MarshalSize() + len(payload)))
 
 	if tp.isSwitchingToMaxSpatial && d.onMaxSubscribedLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
 		d.onMaxSubscribedLayerChanged(d, layer)
@@ -719,7 +722,6 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool) int {
 
 		bytesSent += hdr.MarshalSize() + len(payload)
 	}
-	//d.logger.Infow("RAJA sent padding", "start", snts[0].sequenceNumber, "end", snts[len(snts)-1].sequenceNumber)	// REMOVE
 
 	return bytesSent
 }
@@ -1175,6 +1177,7 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 				}
 
 				d.streamAllocatorBytesCounter.Add(uint32(pktSize))
+				d.bytesSent.Add(uint32(pktSize))
 
 				// only the first frame will need frameEndNeeded to close out the
 				// previous picture, rest are small key frames (for the video case)
@@ -1319,7 +1322,8 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				}
 				rr.Reports = append(rr.Reports, r)
 
-				d.logger.Infow("RAJA RR", "receiver erport", r)	// REMOVE
+				// RAJA-TODO: send this to stream allocator
+				d.logger.Infow("RAJA RR", "receiver erport", r) // REMOVE
 				rtt, isRttChanged := d.rtpStats.UpdateFromReceiverReport(r)
 				if isRttChanged {
 					rttToReport = rtt
@@ -1342,7 +1346,6 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				numNACKs += uint32(len(packetList))
 				nacks = append(nacks, packetList...)
 			}
-			//d.logger.Infow("RAJA nacks received", "nacks", nacks)	// REMOVE
 			go d.retransmitPackets(nacks)
 
 		case *rtcp.TransportLayerCC:
@@ -1410,27 +1413,21 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	nackAcks := uint32(0)
 	nackMisses := uint32(0)
 	numRepeatedNACKs := uint32(0)
-	processedNacks := make(map[uint16]uint8, len(filtered))
-	disallowedNacks := make([]uint16, 0, len(filtered))
-	paddingNacks := make([]uint16, 0, len(filtered))
 	nackInfos := make([]NackInfo, 0, len(filtered))
 	for _, meta := range d.sequencer.getPacketsMeta(filtered) {
 		if meta.layer == -1 {
-			paddingNacks = append(paddingNacks, meta.targetSeqNo)
 			continue
 		}
 
 		if disallowedLayers[meta.layer] {
-			disallowedNacks = append(disallowedNacks, meta.targetSeqNo)
 			continue
 		}
 
 		nackAcks++
-		// RAJA-TODO: have a special ack field and only respond to that
 		nackInfos = append(nackInfos, NackInfo{
 			SequenceNumber: meta.targetSeqNo,
-			Timestamp: meta.timestamp,
-			Attempts: meta.nacked,
+			Timestamp:      meta.timestamp,
+			Attempts:       meta.nacked,
 		})
 
 		if pool != nil {
@@ -1451,7 +1448,6 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		if meta.nacked > 1 {
 			numRepeatedNACKs++
 		}
-		processedNacks[meta.targetSeqNo] = meta.nacked
 
 		var pkt rtp.Packet
 		if err = pkt.Unmarshal(pktBuff[:n]); err != nil {
@@ -1493,6 +1489,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			d.logger.Errorw("writing rtx packet err", err)
 		} else {
 			d.streamAllocatorBytesCounter.Add(uint32(pkt.Header.MarshalSize() + len(payload)))
+			d.bytesSent.Add(uint32(pkt.Header.MarshalSize() + len(payload)))
 
 			d.rtpStats.Update(&pkt.Header, len(payload), 0, time.Now().UnixNano())
 		}
@@ -1501,8 +1498,18 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	d.totalRepeatedNACKs.Add(numRepeatedNACKs)
 
 	d.rtpStats.UpdateNackProcessed(nackAcks, nackMisses, numRepeatedNACKs)
-	d.logger.Infow("RAJA nacks processed", "filtered", filtered, "processed", processedNacks, "padding", paddingNacks, "disallowed", disallowedNacks)	// REMOVE
-	// RAJA-TODO: get all Nacks even if SFU is not acknowledging?
+	// STREAM-ALLOCATOR-EXPERIMENTAL-TODO-START
+	// Need to check on the following
+	//   - get all NACKs from sequencer even if SFU is not acknowledging,
+	//     i. e. SFU does not acknowledge even same sequence number is NACKed too closely,
+	//     but if sequencer return those also (even if not actually retransmitting),
+	//     will that provide a signal?
+	//   - get padding NACKs also? Maybe only look at them when their NACK count is 2?
+	//     because padding runs in a separate path, it could get out of order with
+	//     primary packets. So, it could be NACKed once. But, a repeat NACK means they
+	//     were probably lost. But, as we do not retransmit padding packets, more than
+	//     the second try does not provide any useful signal.
+	// STREAM-ALLOCATOR-EXPERIMENTAL-TODO-END
 	if sal := d.getStreamAllocatorListener(); sal != nil && len(nackInfos) != 0 {
 		sal.OnNACK(d, nackInfos)
 	}
@@ -1639,6 +1646,10 @@ func (d *DownTrack) GetNackStats() (totalPackets uint32, totalRepeatedNACKs uint
 	totalPackets = d.rtpStats.GetTotalPacketsPrimary()
 	totalRepeatedNACKs = d.totalRepeatedNACKs.Load()
 	return
+}
+
+func (d *DownTrack) GetAndResetBytesSent() uint32 {
+	return d.bytesSent.Swap(0)
 }
 
 func (d *DownTrack) onBindAndConnected() {

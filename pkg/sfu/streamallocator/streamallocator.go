@@ -183,6 +183,7 @@ type StreamAllocator struct {
 	prober *Prober
 
 	channelObserver *ChannelObserver
+	rateMonitor     *RateMonitor
 
 	videoTracksMu        sync.RWMutex
 	videoTracks          map[livekit.TrackID]*Track
@@ -204,8 +205,9 @@ func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 		prober: NewProber(ProberParams{
 			Logger: params.Logger,
 		}),
+		rateMonitor: NewRateMonitor(),
 		videoTracks: make(map[livekit.TrackID]*Track),
-		eventCh:     make(chan Event, 200),
+		eventCh:     make(chan Event, 1000),
 	}
 
 	s.resetState()
@@ -623,6 +625,7 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 	receivedEstimate, _ := event.Data.(int64)
 	s.lastReceivedEstimate = receivedEstimate
 	s.params.Logger.Infow("RAJA received estimate", "estimate", s.lastReceivedEstimate) // REMOVE
+	s.monitorRate(receivedEstimate)
 
 	// while probing, maintain estimate separately to enable keeping current committed estimate if probe fails
 	if s.isInProbe() {
@@ -632,6 +635,7 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 	}
 }
 
+// RAJA-TODO: maybe set periodic to run every 1/2 second
 func (s *StreamAllocator) handleSignalPeriodicPing(event *Event) {
 	// finalize probe if necessary
 	if s.isInProbe() && !s.probeEndTime.IsZero() && time.Now().After(s.probeEndTime) {
@@ -643,24 +647,7 @@ func (s *StreamAllocator) handleSignalPeriodicPing(event *Event) {
 		s.maybeProbe()
 	}
 
-
-	// RAJA-REMOVE-START
-	for _, track := range s.getTracks() {
-		l, h, nnd, nns, nr := track.GetAndResetNackStats()
-		spread := h - l + 1
-		density := float64(0.0)
-		if nnd != 0 {
-			density = float64(nnd) / float64(spread)
-		} else {
-			spread = 0
-		}
-		intensity := float64(0.0)
-		if nnd != 0 {
-			intensity = float64(nns) / float64(nnd)
-		}
-		s.params.Logger.Debugw("RAJA NACK stats", "stats", fmt.Sprintf("id: %s, l: %d, h: %d, spread: %d, nnd: %d, density: %.2f, nns: %d, intensity: %.2f, nr: %d", track.ID(), l, h, spread, nnd, density, nns, intensity, nr))
-	}
-	// RAJA-REMOVE-END
+	s.monitorNacks()
 }
 
 func (s *StreamAllocator) handleSignalSendProbe(event *Event) {
@@ -1387,6 +1374,64 @@ func (s *StreamAllocator) getMaxDistanceSortedDeficient() MaxDistanceSorter {
 	sort.Sort(maxDistanceSorter)
 
 	return maxDistanceSorter
+}
+
+// STREAM-ALLOCATOR-EXPERIMENTAL-TODO:
+// Idea is to check if this provides a good signal to detect congestion.
+// This measures a few things
+//   1. Spread: sequence number difference between highest and lowest NACK
+//      - shows how widespread the losses are
+//   2. Number of runs of length more than 1: Counts number of burst losses.
+//      - could be a sign of congestion when losses are bursty
+//   3. NACK density: how many sequence numbers in the spread were NACKed.
+//      - a high density could be a sign of congestion
+//   4. NACK intensity: how many times those sequence numbers were NACKed.
+//      - high intensity could be a sign of congestion
+//
+// While these all could be good signals, some challenges in making use of these
+// - aggregating across tracks
+// - proper thresholing, i. e. something based on averages should not trip
+//   because of small numbers, e. g. a single NACK run of 2 sequence numbers
+//   is technically a burst, but is it a signal of congestion?
+func (s *StreamAllocator) monitorNacks() {
+	for _, track := range s.getTracks() {
+		l, h, nnd, nns, nr := track.GetAndResetNackStats()
+		spread := h - l + 1
+		density := float64(0.0)
+		if nnd != 0 {
+			density = float64(nnd) / float64(spread)
+		} else {
+			spread = 0
+		}
+		intensity := float64(0.0)
+		if nnd != 0 {
+			intensity = float64(nns) / float64(nnd)
+		}
+		// RAJA-TODO: do not log this always - maybe log only on congestion?
+		s.params.Logger.Debugw("RAJA NACK stats", "stats", fmt.Sprintf("id: %s, l: %d, h: %d, spread: %d, nnd: %d, density: %.2f, nns: %d, intensity: %.2f, nr: %d", track.ID(), l, h, spread, nnd, density, nns, intensity, nr))
+	}
+}
+
+// STREAM-ALLOCATOR-EXPERIMENTAL-TODO
+// Monitor sent rate vs estimate to figure out queuing on congestion.
+// Idea here is to pause all managed tracks on congestion detection immediately till queue drains.
+// That will allow channel to clear up without more traffic added and a re-allocation can start afresh.
+// Some bits to work out
+//   - how good is queuing estimate?
+//   - should we pause unmanaged tracks also? But, they will restart at highest layer and request a key frame.
+//   - what should be the channel capacity to use when resume re-allocation happens?
+func (s *StreamAllocator) monitorRate(estimate int64) {
+	managedBytesSent := uint32(0)
+	unmanagedBytesSent := uint32(0)
+	for _, track := range s.getTracks() {
+		if track.IsManaged() {
+			managedBytesSent += track.GetAndResetBytesSent()
+		} else {
+			unmanagedBytesSent += track.GetAndResetBytesSent()
+		}
+	}
+
+	s.rateMonitor.Update(estimate, managedBytesSend, unmanagedBytesSent)
 }
 
 // ------------------------------------------------

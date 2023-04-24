@@ -22,7 +22,7 @@ type Track struct {
 
 	totalPackets       uint32
 	totalRepeatedNacks uint32
-	nackInfos map[uint16]sfu.NackInfo
+	nackInfos          map[uint16]sfu.NackInfo
 
 	isDirty bool
 
@@ -42,7 +42,7 @@ func NewTrack(
 		isSimulcast: isSimulcast,
 		publisherID: publisherID,
 		logger:      logger,
-		nackInfos: make(map[uint16]sfu.NackInfo),
+		nackInfos:   make(map[uint16]sfu.NackInfo),
 		isPaused:    true,
 	}
 	t.SetPriority(0)
@@ -193,10 +193,10 @@ func (t *Track) GetAndResetNackStats() (lowest uint16, highest uint16, numNacked
 
 	sns := make([]uint16, 0, len(t.nackInfos))
 	for _, ni := range t.nackInfos {
-		if lowest == 0 || ni.SequenceNumber - lowest > (1 << 15) {
+		if lowest == 0 || ni.SequenceNumber-lowest > (1<<15) {
 			lowest = ni.SequenceNumber
 		}
-		if highest == 0 || highest - ni.SequenceNumber > (1 << 15) {
+		if highest == 0 || highest-ni.SequenceNumber > (1<<15) {
 			highest = ni.SequenceNumber
 		}
 		numNacks += int(ni.Attempts)
@@ -212,7 +212,7 @@ func (t *Track) GetAndResetNackStats() (lowest uint16, highest uint16, numNacked
 	rsn := sns[0]
 	rsi := 0
 	for i := 1; i < len(sns); i++ {
-		if sns[i] == rsn + 1 {
+		if sns[i] == rsn+1 {
 			continue
 		}
 
@@ -226,6 +226,10 @@ func (t *Track) GetAndResetNackStats() (lowest uint16, highest uint16, numNacked
 
 	t.nackInfos = make(map[uint16]sfu.NackInfo)
 	return
+}
+
+func (t *Track) GetAndResetBytesSent() uint32 {
+	return t.downTrack.GetAndResetBytesSent()
 }
 
 // ------------------------------------------------
