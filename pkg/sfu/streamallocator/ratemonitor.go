@@ -80,7 +80,7 @@ func (r *RateMonitor) getRates(monitorDuration time.Duration) (float64, float64,
 	unmanagedBytesSentSamples := r.unmanagedBytesSent.GetSamplesAfter(threshold)
 	unmanagedBytesRetransmittedSamples := r.unmanagedBytesRetransmitted.GetSamplesAfter(threshold)
 
-	if len(bitrateEstimateSamples) == 0 || (len(managedBytesSentSamples)+len(managedBytesRetransmittedSamples)+len(unmanagedBytesSentSamples)+len(unmanagedBytesRetransmittedSamples)) == 0 {
+	if len(bitrateEstimateSamples) == 0 || (len(managedBytesSentSamples)+len(managedBytesRetransmittedSamples)+len(unmanagedBytesSentSamples)+len(unmanagedBytesRetransmittedSamples))  == 0 {
 		return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 	}
 
@@ -106,6 +106,10 @@ func (r *RateMonitor) updateHistory() {
 	}
 
 	e, m, mr, um, umr, qd := r.getRates(time.Second)
+	if e == 0.0 {
+		return
+	}
+
 	r.history = append(
 		r.history,
 		fmt.Sprintf("t: %+v, e: %.2f, m: %.2f/%.2f, um: %.2f/%.2f, qd: %.2f", time.Now().UnixMilli(), e, m, mr, um, umr, qd),
@@ -119,6 +123,10 @@ func (r *RateMonitor) GetHistory() []string {
 // ------------------------------------------------
 
 func getTimeWeightedSum[T int64 | uint32](samples []timeseries.TimeSeriesSample[T]) float64 {
+	if len(samples) < 2 {
+		return 0.0
+	}
+
 	sum := 0.0
 	for i := 1; i < len(samples); i++ {
 		diff := samples[i].At.Sub(samples[i-1].At).Seconds()
@@ -131,8 +139,13 @@ func getTimeWeightedSum[T int64 | uint32](samples []timeseries.TimeSeriesSample[
 }
 
 func getRate[T int64 | uint32](samples []timeseries.TimeSeriesSample[T]) float64 {
+	if len(samples) < 2 {
+		return 0.0
+	}
+
 	sum := 0.0
-	for i := 0; i < len(samples); i++ {
+	// start at 1 as the first sample duration is not available
+	for i := 1; i < len(samples); i++ {
 		sum += float64(samples[i].Value)
 	}
 
