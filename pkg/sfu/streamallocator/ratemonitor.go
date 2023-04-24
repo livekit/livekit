@@ -17,11 +17,11 @@ const (
 // ------------------------------------------------
 
 type RateMonitor struct {
-	bitrateEstimate *timeseries.TimeSeries[int64]
-	managedBytesSent    *timeseries.TimeSeries[uint32]
-	managedBytesRetransmitted    *timeseries.TimeSeries[uint32]
-	unmanagedBytesSent  *timeseries.TimeSeries[uint32]
-	unmanagedBytesRetransmitted  *timeseries.TimeSeries[uint32]
+	bitrateEstimate             *timeseries.TimeSeries[int64]
+	managedBytesSent            *timeseries.TimeSeries[uint32]
+	managedBytesRetransmitted   *timeseries.TimeSeries[uint32]
+	unmanagedBytesSent          *timeseries.TimeSeries[uint32]
+	unmanagedBytesRetransmitted *timeseries.TimeSeries[uint32]
 
 	// STREAM-ALLOCATOR-EXPERIMENTAL-TODO: remove after experimental
 	history []string
