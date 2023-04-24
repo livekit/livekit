@@ -261,3 +261,9 @@ keys:
 #   num_tracks: -1
 #   # defaults to 1 GB/s, or just under 10 Gbps
 #   bytes_per_sec: 1_000_000_000
+#   # how many tracks (audio / video) that a single participant can subscribe at same time.
+#   # if the limit is exceeded, subscriptions will be pending until any subscribed track has been unsubscribed.
+#   # value less or equal than 0 means no limit.
+#   subscription_limit_video: 0
+#   subscription_limit_audio: 0
+

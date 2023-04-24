@@ -341,6 +341,8 @@ func (r *RoomManager) StartSession(
 		VersionGenerator:             r.versionGenerator,
 		TrackResolver:                room.ResolveMediaTrackForSubscriber,
 		SubscriberAllowPause:         subscriberAllowPause,
+		SubscriptionLimitAudio:       r.config.Limit.SubscriptionLimitAudio,
+		SubscriptionLimitVideo:       r.config.Limit.SubscriptionLimitVideo,
 	})
 	if err != nil {
 		return err
@@ -449,7 +451,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 		newRoom.Logger.Infow("room closed")
 	})
 
-	newRoom.OnMetadataUpdate(func(metadata string) {
+	newRoom.OnRoomUpdated(func() {
 		if err := r.roomStore.StoreRoom(ctx, newRoom.ToProto(), newRoom.Internal()); err != nil {
 			newRoom.Logger.Errorw("could not handle metadata update", err)
 		}

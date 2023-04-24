@@ -246,8 +246,10 @@ type RegionConfig struct {
 }
 
 type LimitConfig struct {
-	NumTracks   int32   `yaml:"num_tracks,omitempty"`
-	BytesPerSec float32 `yaml:"bytes_per_sec,omitempty"`
+	NumTracks              int32   `yaml:"num_tracks,omitempty"`
+	BytesPerSec            float32 `yaml:"bytes_per_sec,omitempty"`
+	SubscriptionLimitVideo int32   `yaml:"subscription_limit_video,omitempty"`
+	SubscriptionLimitAudio int32   `yaml:"subscription_limit_audio,omitempty"`
 }
 
 type EgressConfig struct {

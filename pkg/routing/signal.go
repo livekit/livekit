@@ -16,7 +16,7 @@ import (
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/psrpc"
-	"github.com/livekit/psrpc/middleware"
+	"github.com/livekit/psrpc/pkg/middleware"
 )
 
 var ErrSignalWriteFailed = errors.New("signal write failed")
@@ -185,9 +185,7 @@ func CopySignalStreamToMessageChannel[SendType, RecvType RelaySignalMessage](
 	for msg := range stream.Channel() {
 		res, err := r.Read(msg)
 		if err != nil {
-			if errors.Is(err, ErrSignalMessageDropped) {
-				prometheus.MessageCounter.WithLabelValues("signal", "failure").Add(1)
-			}
+			prometheus.MessageCounter.WithLabelValues("signal", "failure").Add(1)
 			return err
 		}
 

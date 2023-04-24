@@ -13,7 +13,8 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
-	"github.com/livekit/psrpc/middleware"
+	"github.com/livekit/psrpc/pkg/metadata"
+	"github.com/livekit/psrpc/pkg/middleware"
 )
 
 type SessionHandler func(
@@ -72,6 +73,19 @@ func NewDefaultSignalServer(
 		prometheus.IncrementParticipantRtcInit(1)
 
 		if rr, ok := router.(*routing.RedisRouter); ok {
+			rtcNode, err := router.GetNodeForRoom(ctx, roomName)
+			if err != nil {
+				return err
+			}
+
+			if rtcNode.Id != currentNode.Id {
+				err = routing.ErrIncorrectRTCNode
+				logger.Errorw("called participant on incorrect node", err,
+					"rtcNode", rtcNode,
+				)
+				return err
+			}
+
 			pKey := routing.ParticipantKeyLegacy(roomName, pi.Identity)
 			pKeyB62 := routing.ParticipantKey(roomName, pi.Identity)
 
@@ -101,7 +115,7 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 	// copy the context to prevent a race between the session handler closing
 	// and the delivery of any parting messages from the client. take care to
 	// copy the incoming rpc headers to avoid dropping any session vars.
-	ctx, cancel := context.WithCancel(psrpc.NewContextWithIncomingHeader(context.Background(), psrpc.IncomingHeader(stream.Context())))
+	ctx, cancel := context.WithCancel(metadata.NewContextWithIncomingHeader(context.Background(), metadata.IncomingHeader(stream.Context())))
 	defer cancel()
 
 	req, ok := <-stream.Channel()
