@@ -156,6 +156,9 @@ type DownTrackStreamAllocatorListener interface {
 
 	// NACKs received
 	OnNACK(dt *DownTrack, nackInfos []NackInfo)
+
+	// RTCP Receiver Report received
+	OnRTCPReceiverReport(dt *DownTrack, rr rtcp.ReceptionReport)
 }
 
 type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
@@ -602,7 +605,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		return err
 	}
 
-	// RAJA-TODO: remove this stream allocator bytes counter
+	// STREAM-ALLOCATOR-TODO: remove this stream allocator bytes counter once stream allocator changes fully to pull bytes counter
 	d.streamAllocatorBytesCounter.Add(uint32(hdr.MarshalSize() + len(payload)))
 	d.bytesSent.Add(uint32(hdr.MarshalSize() + len(payload)))
 
@@ -1322,11 +1325,13 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				}
 				rr.Reports = append(rr.Reports, r)
 
-				// RAJA-TODO: send this to stream allocator
-				d.logger.Infow("RAJA RR", "receiver erport", r) // REMOVE
 				rtt, isRttChanged := d.rtpStats.UpdateFromReceiverReport(r)
 				if isRttChanged {
 					rttToReport = rtt
+				}
+
+				if sal := d.getStreamAllocatorListener(); sal != nil {
+					sal.OnRTCPReceiverReport(d, r)
 				}
 			}
 			if len(rr.Reports) > 0 {

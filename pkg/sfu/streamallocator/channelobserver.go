@@ -122,6 +122,10 @@ func (c *ChannelObserver) GetNackRatio() float64 {
 	return c.nackTracker.GetRatio()
 }
 
+func (c *ChannelObserver) GetNackHistory() []string {
+	return c.nackTracker.GetHistory()
+}
+
 func (c *ChannelObserver) GetTrend() (ChannelTrend, ChannelCongestionReason) {
 	estimateDirection := c.estimateTrend.GetDirection()
 
