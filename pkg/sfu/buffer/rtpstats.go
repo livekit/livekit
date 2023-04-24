@@ -521,7 +521,6 @@ func (r *RTPStats) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt uint32
 			"lastRR", r.lastRR,
 			"sinceLastRR", time.Since(r.lastRRTime),
 			"receivedRR", rr,
-			"highestSN", r.highestSN,	// REMOVE
 		)
 	}
 	return

@@ -261,6 +261,8 @@ func (t *Track) ProcessRTCPReceiverReport(rr rtcp.ReceptionReport) {
 			t.maxRTT = rtt
 		}
 	}
+
+	t.updateReceiverReportHistory()
 }
 
 func (t *Track) GetRTCPReceiverReportDelta() (uint32, uint32, uint32) {
@@ -276,17 +278,16 @@ func (t *Track) GetRTCPReceiverReportDelta() (uint32, uint32, uint32) {
 	return deltaLost, deltaPackets, maxRTT
 }
 
-func (t *Track) GetAndResetBytesSent() uint32 {
+func (t *Track) GetAndResetBytesSent() (uint32, uint32) {
 	return t.downTrack.GetAndResetBytesSent()
 }
 
 func (t *Track) UpdateHistory() {
 	t.updateNackHistory()
-	t.updateReceiverReportHistory()
 }
 
 func (t *Track) GetHistory() string {
-	return fmt.Sprintf("t: %+v, n: %+v, rr: %+v", time.Now().Format(time.UnixDate), t.nackHistory, t.receiverReportHistory)
+	return fmt.Sprintf("t: %+v, n: %+v, rr: %+v", time.Now(), t.nackHistory, t.receiverReportHistory)
 }
 
 // STREAM-ALLOCATOR-EXPERIMENTAL-TODO:
@@ -325,7 +326,7 @@ func (t *Track) updateNackHistory() {
 	}
 	t.nackHistory = append(
 		t.nackHistory,
-		fmt.Sprintf("l: %d, h: %d, sp: %d, nnd: %d, dens: %.2f, nns: %d, int: %.2f, nr: %d", l, h, spread, nnd, density, nns, intensity, nr),
+		fmt.Sprintf("t: %+v, l: %d, h: %d, sp: %d, nnd: %d, dens: %.2f, nns: %d, int: %.2f, nr: %d", time.Now().UnixMilli(), l, h, spread, nnd, density, nns, intensity, nr),
 	)
 }
 

@@ -660,7 +660,7 @@ func (s *StreamAllocator) handleSignalPeriodicPing(event *Event) {
 		s.maybeProbe()
 	}
 
-	s.updateHistory()
+	s.updateTracksHistory()
 }
 
 func (s *StreamAllocator) handleSignalSendProbe(event *Event) {
@@ -1418,21 +1418,24 @@ func (s *StreamAllocator) getMaxDistanceSortedDeficient() MaxDistanceSorter {
 //   - what should be the channel capacity to use when resume re-allocation happens?
 func (s *StreamAllocator) monitorRate(estimate int64) {
 	managedBytesSent := uint32(0)
+	managedBytesRetransmitted := uint32(0)
 	unmanagedBytesSent := uint32(0)
+	unmanagedBytesRetransmitted := uint32(0)
 	for _, track := range s.getTracks() {
+		b, r := track.GetAndResetBytesSent()
 		if track.IsManaged() {
-			managedBytesSent += track.GetAndResetBytesSent()
+			managedBytesSent += b
+			managedBytesRetransmitted += r
 		} else {
-			unmanagedBytesSent += track.GetAndResetBytesSent()
+			unmanagedBytesSent += b
+			unmanagedBytesRetransmitted += r
 		}
 	}
 
-	s.rateMonitor.Update(estimate, managedBytesSent, unmanagedBytesSent)
+	s.rateMonitor.Update(estimate, managedBytesSent, managedBytesRetransmitted, unmanagedBytesSent, unmanagedBytesRetransmitted)
 }
 
-func (s *StreamAllocator) updateHistory() {
-	s.rateMonitor.UpdateHistory()
-
+func (s *StreamAllocator) updateTracksHistory() {
 	for _, track := range s.getTracks() {
 		track.UpdateHistory()
 	}

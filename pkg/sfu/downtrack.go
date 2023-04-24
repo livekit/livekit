@@ -231,6 +231,7 @@ type DownTrack struct {
 	streamAllocatorReportGeneration int
 	streamAllocatorBytesCounter     atomic.Uint32
 	bytesSent                       atomic.Uint32
+	bytesRetransmitted              atomic.Uint32
 
 	// update stats
 	onStatsUpdate func(dt *DownTrack, stat *livekit.AnalyticsStat)
@@ -1494,7 +1495,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			d.logger.Errorw("writing rtx packet err", err)
 		} else {
 			d.streamAllocatorBytesCounter.Add(uint32(pkt.Header.MarshalSize() + len(payload)))
-			d.bytesSent.Add(uint32(pkt.Header.MarshalSize() + len(payload)))
+			d.bytesRetransmitted.Add(uint32(pkt.Header.MarshalSize() + len(payload)))
 
 			d.rtpStats.Update(&pkt.Header, len(payload), 0, time.Now().UnixNano())
 		}
@@ -1653,8 +1654,8 @@ func (d *DownTrack) GetNackStats() (totalPackets uint32, totalRepeatedNACKs uint
 	return
 }
 
-func (d *DownTrack) GetAndResetBytesSent() uint32 {
-	return d.bytesSent.Swap(0)
+func (d *DownTrack) GetAndResetBytesSent() (uint32, uint32) {
+	return d.bytesSent.Swap(0), d.bytesRetransmitted.Swap(0)
 }
 
 func (d *DownTrack) onBindAndConnected() {
