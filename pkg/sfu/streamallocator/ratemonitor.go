@@ -80,7 +80,7 @@ func (r *RateMonitor) getRates(monitorDuration time.Duration) (float64, float64,
 	unmanagedBytesSentSamples := r.unmanagedBytesSent.GetSamplesAfter(threshold)
 	unmanagedBytesRetransmittedSamples := r.unmanagedBytesRetransmitted.GetSamplesAfter(threshold)
 
-	if len(bitrateEstimateSamples) == 0 || (len(managedBytesSentSamples)+len(managedBytesRetransmittedSamples)+len(unmanagedBytesSentSamples)+len(unmanagedBytesRetransmittedSamples))  == 0 {
+	if len(bitrateEstimateSamples) == 0 || (len(managedBytesSentSamples)+len(managedBytesRetransmittedSamples)+len(unmanagedBytesSentSamples)+len(unmanagedBytesRetransmittedSamples)) == 0 {
 		return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 	}
 
