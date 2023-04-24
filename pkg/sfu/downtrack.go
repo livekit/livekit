@@ -207,8 +207,7 @@ type DownTrack struct {
 
 	rtpStats *buffer.RTPStats
 
-	statsLock          sync.RWMutex
-	totalRepeatedNACKs uint32
+	totalRepeatedNACKs atomic.Uint32
 
 	keyFrameRequestGeneration atomic.Uint32
 
@@ -1499,9 +1498,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		}
 	}
 
-	d.statsLock.Lock()
-	d.totalRepeatedNACKs += numRepeatedNACKs
-	d.statsLock.Unlock()
+	d.totalRepeatedNACKs.Add(numRepeatedNACKs)
 
 	d.rtpStats.UpdateNackProcessed(nackAcks, nackMisses, numRepeatedNACKs)
 	d.logger.Infow("RAJA nacks processed", "filtered", filtered, "processed", processedNacks, "padding", paddingNacks, "disallowed", disallowedNacks)	// REMOVE
@@ -1640,11 +1637,7 @@ func (d *DownTrack) getDeltaStats() map[uint32]*buffer.StreamStatsWithLayers {
 
 func (d *DownTrack) GetNackStats() (totalPackets uint32, totalRepeatedNACKs uint32) {
 	totalPackets = d.rtpStats.GetTotalPacketsPrimary()
-
-	d.statsLock.RLock()
-	totalRepeatedNACKs = d.totalRepeatedNACKs
-	d.statsLock.RUnlock()
-
+	totalRepeatedNACKs = d.totalRepeatedNACKs.Load()
 	return
 }
 

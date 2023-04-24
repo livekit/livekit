@@ -1,6 +1,8 @@
 package streamallocator
 
 import (
+	"sort"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -182,6 +184,48 @@ func (t *Track) UpdateNack(nackInfos []sfu.NackInfo) {
 	for _, ni := range nackInfos {
 		t.nackInfos[ni.SequenceNumber] = ni
 	}
+}
+
+func (t *Track) GetAndResetNackStats() (lowest uint16, highest uint16, numNacked int, numNacks int, numRuns int) {
+	if len(t.nackInfos) == 0 {
+		return
+	}
+
+	sns := make([]uint16, 0, len(t.nackInfos))
+	for _, ni := range t.nackInfos {
+		if lowest == 0 || ni.SequenceNumber - lowest > (1 << 15) {
+			lowest = ni.SequenceNumber
+		}
+		if highest == 0 || highest - ni.SequenceNumber > (1 << 15) {
+			highest = ni.SequenceNumber
+		}
+		numNacks += int(ni.Attempts)
+		sns = append(sns, ni.SequenceNumber)
+	}
+	numNacked = len(t.nackInfos)
+
+	// find number of runs, i. e. bursts of contiguous sequence numbers NACKed, does not include isolated NACKs
+	sort.Slice(sns, func(i, j int) bool {
+		return (sns[i] - sns[j]) > (1 << 15)
+	})
+
+	rsn := sns[0]
+	rsi := 0
+	for i := 1; i < len(sns); i++ {
+		if sns[i] == rsn + 1 {
+			continue
+		}
+
+		if (i - rsi - 1) > 0 {
+			numRuns++
+		}
+
+		rsn = sns[i]
+		rsi = i
+	}
+
+	t.nackInfos = make(map[uint16]sfu.NackInfo)
+	return
 }
 
 // ------------------------------------------------

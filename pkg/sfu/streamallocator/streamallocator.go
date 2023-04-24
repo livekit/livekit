@@ -550,7 +550,7 @@ func (s *StreamAllocator) processEvents() {
 }
 
 func (s *StreamAllocator) ping() {
-	ticker := time.NewTicker(time.Second)
+	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
 
 	for {
@@ -642,6 +642,25 @@ func (s *StreamAllocator) handleSignalPeriodicPing(event *Event) {
 	if s.state == streamAllocatorStateDeficient {
 		s.maybeProbe()
 	}
+
+
+	// RAJA-REMOVE-START
+	for _, track := range s.getTracks() {
+		l, h, nnd, nns, nr := track.GetAndResetNackStats()
+		spread := h - l + 1
+		density := float64(0.0)
+		if nnd != 0 {
+			density = float64(nnd) / float64(spread)
+		} else {
+			spread = 0
+		}
+		intensity := float64(0.0)
+		if nnd != 0 {
+			intensity = float64(nns) / float64(nnd)
+		}
+		s.params.Logger.Debugw("RAJA NACK stats", "stats", fmt.Sprintf("id: %s, l: %d, h: %d, spread: %d, nnd: %d, density: %.2f, nns: %d, intensity: %.2f, nr: %d", track.ID(), l, h, spread, nnd, density, nns, intensity, nr))
+	}
+	// RAJA-REMOVE-END
 }
 
 func (s *StreamAllocator) handleSignalSendProbe(event *Event) {
