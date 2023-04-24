@@ -102,7 +102,7 @@ func (r *RateMonitor) GetHistory() []string {
 
 func getExpectedValue[T int64 | uint32](samples []timeseries.TimeSeriesSample[T]) float64 {
 	sum := 0.0
-	for i := 1; 1 < len(samples); i++ {
+	for i := 1; i < len(samples); i++ {
 		diff := samples[i].At.Sub(samples[i-1].At).Seconds()
 		sum += diff * float64(samples[i-1].Value)
 	}
