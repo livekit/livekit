@@ -761,9 +761,11 @@ func (r *Room) createJoinResponseLocked(participant types.LocalParticipant, iceS
 		SubscriberPrimary:   participant.SubscriberAsPrimary(),
 		ClientConfiguration: participant.GetClientConfiguration(),
 		// sane defaults for ping interval & timeout
-		PingInterval: 10,
-		PingTimeout:  20,
-		ServerInfo:   r.serverInfo,
+		PingInterval:  10,
+		PingTimeout:   20,
+		ServerInfo:    r.serverInfo,
+		ServerVersion: r.serverInfo.Version,
+		ServerRegion:  r.serverInfo.Region,
 	}
 }
 
