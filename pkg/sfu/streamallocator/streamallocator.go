@@ -489,7 +489,7 @@ func (s *StreamAllocator) OnNACK(downTrack *sfu.DownTrack, nackInfos []sfu.NackI
 // STREAM-ALLOCATOR-TODO: this should probably be done for audio tracks also
 func (s *StreamAllocator) OnRTCPReceiverReport(downTrack *sfu.DownTrack, rr rtcp.ReceptionReport) {
 	s.postEvent(Event{
-		Signal:  streamAllocatorSignalNACK,
+		Signal:  streamAllocatorSignalRTCPReceiverReport,
 		TrackID: livekit.TrackID(downTrack.ID()),
 		Data:    rr,
 	})
