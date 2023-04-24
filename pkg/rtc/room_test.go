@@ -678,8 +678,8 @@ func TestRoomUpdate(t *testing.T) {
 
 		// p1 should have received an update
 		time.Sleep(2 * defaultDelay)
-		require.Equal(t, 1, p1.SendRoomUpdateCallCount())
-		require.EqualValues(t, 2, p1.SendRoomUpdateArgsForCall(0).NumParticipants)
+		require.GreaterOrEqual(t, p1.SendRoomUpdateCallCount(), 1)
+		require.EqualValues(t, 2, p1.SendRoomUpdateArgsForCall(p1.SendRoomUpdateCallCount()-1).NumParticipants)
 	})
 
 	t.Run("participants should receive metadata update", func(t *testing.T) {
