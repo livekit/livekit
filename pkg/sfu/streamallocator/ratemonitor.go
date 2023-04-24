@@ -85,10 +85,10 @@ func (r *RateMonitor) getRates(monitorDuration time.Duration) (float64, float64,
 	}
 
 	totalBitrateEstimate := getTimeWeightedSum(bitrateEstimateSamples)
-	totalManagedSent := getSum(managedBytesSentSamples) * 8
-	totalManagedRetransmitted := getSum(managedBytesRetransmittedSamples) * 8
-	totalUnmanagedSent := getSum(unmanagedBytesSentSamples) * 8
-	totalUnmanagedRetransmitted := getSum(unmanagedBytesRetransmittedSamples) * 8
+	totalManagedSent := getRate(managedBytesSentSamples) * 8
+	totalManagedRetransmitted := getRate(managedBytesRetransmittedSamples) * 8
+	totalUnmanagedSent := getRate(unmanagedBytesSentSamples) * 8
+	totalUnmanagedRetransmitted := getRate(unmanagedBytesRetransmittedSamples) * 8
 	totalBits := totalManagedSent + totalManagedRetransmitted + totalUnmanagedSent + totalUnmanagedRetransmitted
 
 	queuingDelay := float64(0.0)
@@ -130,11 +130,16 @@ func getTimeWeightedSum[T int64 | uint32](samples []timeseries.TimeSeriesSample[
 	return sum
 }
 
-func getSum[T int64 | uint32](samples []timeseries.TimeSeriesSample[T]) float64 {
+func getRate[T int64 | uint32](samples []timeseries.TimeSeriesSample[T]) float64 {
 	sum := 0.0
 	for i := 0; i < len(samples); i++ {
 		sum += float64(samples[i].Value)
 	}
 
-	return sum
+	duration := samples[len(samples)-1].At.Sub(samples[0].At)
+	if duration == 0 {
+		return 0.0
+	}
+
+	return sum / duration.Seconds()
 }
