@@ -1431,7 +1431,7 @@ func (s *StreamAllocator) monitorRate(estimate int64) {
 		}
 	}
 
-	s.rateMonitor.Update(estimate, managedBytesSend, unmanagedBytesSent)
+	s.rateMonitor.Update(estimate, managedBytesSent, unmanagedBytesSent)
 }
 
 // ------------------------------------------------
