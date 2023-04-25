@@ -19,7 +19,7 @@ require (
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20230326055817-ed569ca13d26
 	github.com/livekit/protocol v1.5.6-0.20230424073901-c54f5f7f4182
-	github.com/livekit/psrpc v0.3.1-0.20230424064451-65c6a2dd048b
+	github.com/livekit/psrpc v0.3.1-0.20230425025640-5390915734c3
 	github.com/mackerelio/go-osstat v0.2.4
 	github.com/magefile/mage v1.14.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.6.1
