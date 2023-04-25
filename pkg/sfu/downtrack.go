@@ -119,6 +119,12 @@ func (d DownTrackState) String() string {
 
 // -------------------------------------------------------------------
 
+type NackInfo struct {
+	Timestamp      uint32
+	SequenceNumber uint16
+	Attempts       uint8
+}
+
 type DownTrackStreamAllocatorListener interface {
 	// RTCP received
 	OnREMB(dt *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate)
@@ -147,6 +153,12 @@ type DownTrackStreamAllocatorListener interface {
 
 	// packet(s) sent
 	OnPacketsSent(dt *DownTrack, size int)
+
+	// NACKs received
+	OnNACK(dt *DownTrack, nackInfos []NackInfo)
+
+	// RTCP Receiver Report received
+	OnRTCPReceiverReport(dt *DownTrack, rr rtcp.ReceptionReport)
 }
 
 type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
@@ -198,8 +210,7 @@ type DownTrack struct {
 
 	rtpStats *buffer.RTPStats
 
-	statsLock          sync.RWMutex
-	totalRepeatedNACKs uint32
+	totalRepeatedNACKs atomic.Uint32
 
 	keyFrameRequestGeneration atomic.Uint32
 
@@ -219,6 +230,8 @@ type DownTrack struct {
 	streamAllocatorListener         DownTrackStreamAllocatorListener
 	streamAllocatorReportGeneration int
 	streamAllocatorBytesCounter     atomic.Uint32
+	bytesSent                       atomic.Uint32
+	bytesRetransmitted              atomic.Uint32
 
 	// update stats
 	onStatsUpdate func(dt *DownTrack, stat *livekit.AnalyticsStat)
@@ -593,7 +606,9 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		return err
 	}
 
+	// STREAM-ALLOCATOR-TODO: remove this stream allocator bytes counter once stream allocator changes fully to pull bytes counter
 	d.streamAllocatorBytesCounter.Add(uint32(hdr.MarshalSize() + len(payload)))
+	d.bytesSent.Add(uint32(hdr.MarshalSize() + len(payload)))
 
 	if tp.isSwitchingToMaxSpatial && d.onMaxSubscribedLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
 		d.onMaxSubscribedLayerChanged(d, layer)
@@ -1166,6 +1181,7 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 				}
 
 				d.streamAllocatorBytesCounter.Add(uint32(pktSize))
+				d.bytesSent.Add(uint32(pktSize))
 
 				// only the first frame will need frameEndNeeded to close out the
 				// previous picture, rest are small key frames (for the video case)
@@ -1314,6 +1330,10 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				if isRttChanged {
 					rttToReport = rtt
 				}
+
+				if sal := d.getStreamAllocatorListener(); sal != nil {
+					sal.OnRTCPReceiverReport(d, r)
+				}
 			}
 			if len(rr.Reports) > 0 {
 				d.listenerLock.RLock()
@@ -1399,12 +1419,18 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	nackAcks := uint32(0)
 	nackMisses := uint32(0)
 	numRepeatedNACKs := uint32(0)
+	nackInfos := make([]NackInfo, 0, len(filtered))
 	for _, meta := range d.sequencer.getPacketsMeta(filtered) {
 		if disallowedLayers[meta.layer] {
 			continue
 		}
 
 		nackAcks++
+		nackInfos = append(nackInfos, NackInfo{
+			SequenceNumber: meta.targetSeqNo,
+			Timestamp:      meta.timestamp,
+			Attempts:       meta.nacked,
+		})
 
 		if pool != nil {
 			PacketFactory.Put(pool)
@@ -1465,16 +1491,30 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			d.logger.Errorw("writing rtx packet err", err)
 		} else {
 			d.streamAllocatorBytesCounter.Add(uint32(pkt.Header.MarshalSize() + len(payload)))
+			d.bytesRetransmitted.Add(uint32(pkt.Header.MarshalSize() + len(payload)))
 
 			d.rtpStats.Update(&pkt.Header, len(payload), 0, time.Now().UnixNano())
 		}
 	}
 
-	d.statsLock.Lock()
-	d.totalRepeatedNACKs += numRepeatedNACKs
-	d.statsLock.Unlock()
+	d.totalRepeatedNACKs.Add(numRepeatedNACKs)
 
 	d.rtpStats.UpdateNackProcessed(nackAcks, nackMisses, numRepeatedNACKs)
+	// STREAM-ALLOCATOR-EXPERIMENTAL-TODO-START
+	// Need to check on the following
+	//   - get all NACKs from sequencer even if SFU is not acknowledging,
+	//     i. e. SFU does not acknowledge even same sequence number is NACKed too closely,
+	//     but if sequencer return those also (even if not actually retransmitting),
+	//     will that provide a signal?
+	//   - get padding NACKs also? Maybe only look at them when their NACK count is 2?
+	//     because padding runs in a separate path, it could get out of order with
+	//     primary packets. So, it could be NACKed once. But, a repeat NACK means they
+	//     were probably lost. But, as we do not retransmit padding packets, more than
+	//     the second try does not provide any useful signal.
+	// STREAM-ALLOCATOR-EXPERIMENTAL-TODO-END
+	if sal := d.getStreamAllocatorListener(); sal != nil && len(nackInfos) != 0 {
+		sal.OnNACK(d, nackInfos)
+	}
 }
 
 type extensionData struct {
@@ -1606,12 +1646,12 @@ func (d *DownTrack) getDeltaStats() map[uint32]*buffer.StreamStatsWithLayers {
 
 func (d *DownTrack) GetNackStats() (totalPackets uint32, totalRepeatedNACKs uint32) {
 	totalPackets = d.rtpStats.GetTotalPacketsPrimary()
-
-	d.statsLock.RLock()
-	totalRepeatedNACKs = d.totalRepeatedNACKs
-	d.statsLock.RUnlock()
-
+	totalRepeatedNACKs = d.totalRepeatedNACKs.Load()
 	return
+}
+
+func (d *DownTrack) GetAndResetBytesSent() (uint32, uint32) {
+	return d.bytesSent.Swap(0), d.bytesRetransmitted.Swap(0)
 }
 
 func (d *DownTrack) onBindAndConnected() {

@@ -195,13 +195,13 @@ func (p *Prober) Reset() {
 	p.processActiveStateQueue()
 }
 
-func (p *Prober) AddCluster(desiredRateBps int, expectedRateBps int, minDuration time.Duration, maxDuration time.Duration) ProbeClusterId {
+func (p *Prober) AddCluster(mode ProbeClusterMode, desiredRateBps int, expectedRateBps int, minDuration time.Duration, maxDuration time.Duration) ProbeClusterId {
 	if desiredRateBps <= 0 {
 		return ProbeClusterIdInvalid
 	}
 
 	clusterId := ProbeClusterId(p.clusterId.Inc())
-	cluster := NewCluster(clusterId, desiredRateBps, expectedRateBps, minDuration, maxDuration)
+	cluster := NewCluster(clusterId, mode, desiredRateBps, expectedRateBps, minDuration, maxDuration)
 	p.logger.Debugw("cluster added", "cluster", cluster.String())
 
 	p.pushBackClusterAndMaybeStart(cluster)
@@ -353,7 +353,33 @@ type ProbeClusterId uint32
 
 const (
 	ProbeClusterIdInvalid ProbeClusterId = 0
+
+	bucketDuration  = time.Second
+	bytesPerProbe   = 1000
+	minProbeRateBps = 10000
 )
+
+// -----------------------------------
+
+type ProbeClusterMode int
+
+const (
+	ProbeClusterModeUniform ProbeClusterMode = iota
+	ProbeClusterModeLinearChirp
+)
+
+func (p ProbeClusterMode) String() string {
+	switch p {
+	case ProbeClusterModeUniform:
+		return "UNIFORM"
+	case ProbeClusterModeLinearChirp:
+		return "LINEAR_CHIRP"
+	default:
+		return fmt.Sprintf("%d", int(p))
+	}
+}
+
+// ---------------------------------------------------------------------------
 
 type ProbeClusterInfo struct {
 	Id        ProbeClusterId
@@ -361,37 +387,81 @@ type ProbeClusterInfo struct {
 	Duration  time.Duration
 }
 
+type clusterBucket struct {
+	desiredBytes       int
+	desiredElapsedTime time.Duration
+	sleepDuration      time.Duration
+}
+
 type Cluster struct {
 	lock sync.RWMutex
 
 	id           ProbeClusterId
+	mode         ProbeClusterMode
 	desiredBytes int
 	minDuration  time.Duration
 	maxDuration  time.Duration
 
-	sleepDuration time.Duration
+	buckets   []clusterBucket
+	bucketIdx int
 
 	bytesSentProbe    int
 	bytesSentNonProbe int
 	startTime         time.Time
 }
 
-func NewCluster(id ProbeClusterId, desiredRateBps int, expectedRateBps int, minDuration time.Duration, maxDuration time.Duration) *Cluster {
-	minDurationMs := minDuration.Milliseconds()
-	desiredBytes := int((int64(desiredRateBps)*minDurationMs/time.Second.Milliseconds() + 7) / 8)
-	expectedBytes := int((int64(expectedRateBps)*minDurationMs/time.Second.Milliseconds() + 7) / 8)
-
-	// pace based on sending approximately 1000 bytes per probe
-	numProbes := (desiredBytes - expectedBytes + 999) / 1000
-	sleepDurationMicroSeconds := int(float64(minDurationMs*1000)/float64(numProbes) + 0.5)
+func NewCluster(id ProbeClusterId, mode ProbeClusterMode, desiredRateBps int, expectedRateBps int, minDuration time.Duration, maxDuration time.Duration) *Cluster {
 	c := &Cluster{
-		id:            id,
-		desiredBytes:  desiredBytes,
-		minDuration:   minDuration,
-		maxDuration:   maxDuration,
-		sleepDuration: time.Duration(sleepDurationMicroSeconds) * time.Microsecond,
+		id:          id,
+		mode:        mode,
+		minDuration: minDuration,
+		maxDuration: maxDuration,
 	}
+	c.initBuckets(desiredRateBps, expectedRateBps, minDuration)
+	c.desiredBytes = c.buckets[len(c.buckets)-1].desiredBytes
 	return c
+}
+
+func (c *Cluster) initBuckets(desiredRateBps int, expectedRateBps int, minDuration time.Duration) {
+	// split into 1-second bucket
+	// NOTE: splitting even if mode is unitform
+	numBuckets := int((minDuration.Milliseconds() + bucketDuration.Milliseconds() - 1) / bucketDuration.Milliseconds())
+	if numBuckets < 1 {
+		numBuckets = 1
+	}
+
+	expectedRateBytes := (expectedRateBps + 7) / 8
+	baseProbeRateBps := (desiredRateBps - expectedRateBps + numBuckets - 1) / numBuckets
+
+	runningDesiredBytes := 0
+	runningDesiredElapsedTime := time.Duration(0)
+
+	c.buckets = make([]clusterBucket, 0, numBuckets)
+	for bucketIdx := 0; bucketIdx < numBuckets; bucketIdx++ {
+		multiplier := numBuckets
+		if c.mode == ProbeClusterModeLinearChirp {
+			multiplier = bucketIdx + 1
+		}
+
+		bucketProbeRateBps := baseProbeRateBps * multiplier
+		if bucketProbeRateBps < minProbeRateBps {
+			bucketProbeRateBps = minProbeRateBps
+		}
+		bucketProbeRateBytes := (bucketProbeRateBps + 7) / 8
+
+		// pace based on bytes per probe
+		numProbes := (bucketProbeRateBytes + bytesPerProbe - 1) / bytesPerProbe
+		sleepDurationMicroSeconds := int(float64(1_000_000)/float64(numProbes) + 0.5)
+
+		runningDesiredBytes += bucketProbeRateBytes + expectedRateBytes
+		runningDesiredElapsedTime += bucketDuration
+
+		c.buckets = append(c.buckets, clusterBucket{
+			desiredBytes:       runningDesiredBytes,
+			desiredElapsedTime: runningDesiredElapsedTime,
+			sleepDuration:      time.Duration(sleepDurationMicroSeconds) * time.Microsecond,
+		})
+	}
 }
 
 func (c *Cluster) Start() {
@@ -407,7 +477,7 @@ func (c *Cluster) GetSleepDuration() time.Duration {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 
-	return c.sleepDuration
+	return c.buckets[c.bucketIdx].sleepDuration
 }
 
 func (c *Cluster) PacketsSent(size int) {
@@ -456,7 +526,6 @@ func (c *Cluster) GetInfo() ProbeClusterInfo {
 
 func (c *Cluster) Process(pl ProberListener) {
 	c.lock.RLock()
-
 	timeElapsed := time.Since(c.startTime)
 
 	// Calculate number of probe bytes that should have been sent since start.
@@ -464,14 +533,7 @@ func (c *Cluster) Process(pl ProberListener) {
 	// However, it is possible that timeElapsed is more than minDuration due
 	// to scheduling variance. When overshooting time budget, use a capped
 	// short fall if there is a grace period given.
-	windowDone := float64(timeElapsed) / float64(c.minDuration)
-	if windowDone > 1.0 {
-		// cluster has been running for longer than  minDuration
-		windowDone = 1.0
-	}
-
-	bytesShouldHaveBeenSent := int(windowDone * float64(c.desiredBytes))
-	bytesShortFall := bytesShouldHaveBeenSent - c.bytesSentProbe - c.bytesSentNonProbe
+	bytesShortFall := c.buckets[c.bucketIdx].desiredBytes - c.bytesSentProbe - c.bytesSentNonProbe
 	if bytesShortFall < 0 {
 		bytesShortFall = 0
 	}
@@ -482,6 +544,14 @@ func (c *Cluster) Process(pl ProberListener) {
 	}
 	// round up to packet size
 	bytesShortFall = ((bytesShortFall + 274) / 275) * 275
+
+	// move to next bucket if necessary
+	if timeElapsed > c.buckets[c.bucketIdx].desiredElapsedTime {
+		c.bucketIdx++
+		if c.bucketIdx >= len(c.buckets) {
+			c.bucketIdx = len(c.buckets) - 1
+		}
+	}
 	c.lock.RUnlock()
 
 	if bytesShortFall > 0 && pl != nil {
@@ -497,8 +567,9 @@ func (c *Cluster) String() string {
 		activeTimeMs = time.Since(c.startTime).Milliseconds()
 	}
 
-	return fmt.Sprintf("id: %d, bytes: desired %d / probe %d / non-probe %d / remaining: %d, time(ms): active %d / min %d / max %d",
+	return fmt.Sprintf("id: %d, mode: %s, bytes: desired %d / probe %d / non-probe %d / remaining: %d, time(ms): active %d / min %d / max %d",
 		c.id,
+		c.mode,
 		c.desiredBytes,
 		c.bytesSentProbe,
 		c.bytesSentNonProbe,
@@ -507,3 +578,5 @@ func (c *Cluster) String() string {
 		c.minDuration.Milliseconds(),
 		c.maxDuration.Milliseconds())
 }
+
+// ----------------------------------------------------------------------
