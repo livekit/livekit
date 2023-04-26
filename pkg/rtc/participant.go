@@ -1143,11 +1143,11 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 
 func (p *ParticipantImpl) setIsPublisher(isPublisher bool) {
 	if p.isPublisher.Swap(isPublisher) != isPublisher {
-		p.dirty.Store(true)
-
 		p.lock.Lock()
 		p.requireBroadcast = true
 		p.lock.Unlock()
+
+		p.dirty.Store(true)
 
 		// trigger update as well if participant is already fully connected
 		if p.State() == livekit.ParticipantInfo_ACTIVE {
