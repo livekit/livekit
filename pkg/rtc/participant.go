@@ -1682,7 +1682,9 @@ func (p *ParticipantImpl) addMigrateMutedTrack(cid string, ti *livekit.TrackInfo
 }
 
 func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *livekit.TrackInfo) *MediaTrack {
+	p.lock.Lock()
 	p.requireBroadcast = true
+	p.lock.Unlock()
 
 	mt := NewMediaTrack(MediaTrackParams{
 		TrackInfo:           proto.Clone(ti).(*livekit.TrackInfo),
