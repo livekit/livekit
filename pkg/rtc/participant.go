@@ -1145,6 +1145,10 @@ func (p *ParticipantImpl) setIsPublisher(isPublisher bool) {
 	if p.isPublisher.Swap(isPublisher) != isPublisher {
 		p.dirty.Store(true)
 
+		p.lock.Lock()
+		p.requireBroadcast = true
+		p.lock.Unlock()
+
 		// trigger update as well if participant is already fully connected
 		if p.State() == livekit.ParticipantInfo_ACTIVE {
 			p.lock.RLock()
@@ -1682,10 +1686,6 @@ func (p *ParticipantImpl) addMigrateMutedTrack(cid string, ti *livekit.TrackInfo
 }
 
 func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *livekit.TrackInfo) *MediaTrack {
-	p.lock.Lock()
-	p.requireBroadcast = true
-	p.lock.Unlock()
-
 	mt := NewMediaTrack(MediaTrackParams{
 		TrackInfo:           proto.Clone(ti).(*livekit.TrackInfo),
 		SignalCid:           signalCid,
