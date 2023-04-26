@@ -1091,7 +1091,6 @@ func (p *ParticipantImpl) setupUpTrackManager() {
 	p.UpTrackManager.OnPublishedTrackUpdated(func(track types.MediaTrack) {
 		p.lock.RLock()
 		onTrackUpdated := p.onTrackUpdated
-		p.requireBroadcast = true
 		p.lock.RUnlock()
 
 		p.dirty.Store(true)
@@ -1683,6 +1682,8 @@ func (p *ParticipantImpl) addMigrateMutedTrack(cid string, ti *livekit.TrackInfo
 }
 
 func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *livekit.TrackInfo) *MediaTrack {
+	p.requireBroadcast = true
+
 	mt := NewMediaTrack(MediaTrackParams{
 		TrackInfo:           proto.Clone(ti).(*livekit.TrackInfo),
 		SignalCid:           signalCid,
