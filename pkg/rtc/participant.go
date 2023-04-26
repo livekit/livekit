@@ -366,6 +366,9 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 	canSubscribe := video.GetCanSubscribe()
 	onParticipantUpdate := p.onParticipantUpdate
 	onClaimsChanged := p.onClaimsChanged
+
+	isPublisher := canPublish && p.TransportManager.IsPublisherEstablished()
+	p.requireBroadcast = p.requireBroadcast || isPublisher
 	p.lock.Unlock()
 
 	// publish permission has been revoked then remove offending tracks
@@ -392,7 +395,7 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 	}
 
 	// update isPublisher attribute
-	p.isPublisher.Store(canPublish && p.TransportManager.IsPublisherEstablished())
+	p.isPublisher.Store(isPublisher)
 
 	if onParticipantUpdate != nil {
 		onParticipantUpdate(p)
