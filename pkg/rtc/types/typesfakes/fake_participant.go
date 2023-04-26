@@ -10,6 +10,16 @@ import (
 )
 
 type FakeParticipant struct {
+	CanSkipBroadcastStub        func() bool
+	canSkipBroadcastMutex       sync.RWMutex
+	canSkipBroadcastArgsForCall []struct {
+	}
+	canSkipBroadcastReturns struct {
+		result1 bool
+	}
+	canSkipBroadcastReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	CloseStub        func(bool, types.ParticipantCloseReason) error
 	closeMutex       sync.RWMutex
 	closeArgsForCall []struct {
@@ -195,6 +205,59 @@ type FakeParticipant struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
+}
+
+func (fake *FakeParticipant) CanSkipBroadcast() bool {
+	fake.canSkipBroadcastMutex.Lock()
+	ret, specificReturn := fake.canSkipBroadcastReturnsOnCall[len(fake.canSkipBroadcastArgsForCall)]
+	fake.canSkipBroadcastArgsForCall = append(fake.canSkipBroadcastArgsForCall, struct {
+	}{})
+	stub := fake.CanSkipBroadcastStub
+	fakeReturns := fake.canSkipBroadcastReturns
+	fake.recordInvocation("CanSkipBroadcast", []interface{}{})
+	fake.canSkipBroadcastMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) CanSkipBroadcastCallCount() int {
+	fake.canSkipBroadcastMutex.RLock()
+	defer fake.canSkipBroadcastMutex.RUnlock()
+	return len(fake.canSkipBroadcastArgsForCall)
+}
+
+func (fake *FakeParticipant) CanSkipBroadcastCalls(stub func() bool) {
+	fake.canSkipBroadcastMutex.Lock()
+	defer fake.canSkipBroadcastMutex.Unlock()
+	fake.CanSkipBroadcastStub = stub
+}
+
+func (fake *FakeParticipant) CanSkipBroadcastReturns(result1 bool) {
+	fake.canSkipBroadcastMutex.Lock()
+	defer fake.canSkipBroadcastMutex.Unlock()
+	fake.CanSkipBroadcastStub = nil
+	fake.canSkipBroadcastReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeParticipant) CanSkipBroadcastReturnsOnCall(i int, result1 bool) {
+	fake.canSkipBroadcastMutex.Lock()
+	defer fake.canSkipBroadcastMutex.Unlock()
+	fake.CanSkipBroadcastStub = nil
+	if fake.canSkipBroadcastReturnsOnCall == nil {
+		fake.canSkipBroadcastReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.canSkipBroadcastReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
 }
 
 func (fake *FakeParticipant) Close(arg1 bool, arg2 types.ParticipantCloseReason) error {
@@ -1165,6 +1228,8 @@ func (fake *FakeParticipant) UpdateVideoLayersReturnsOnCall(i int, result1 error
 func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
+	fake.canSkipBroadcastMutex.RLock()
+	defer fake.canSkipBroadcastMutex.RUnlock()
 	fake.closeMutex.RLock()
 	defer fake.closeMutex.RUnlock()
 	fake.debugInfoMutex.RLock()

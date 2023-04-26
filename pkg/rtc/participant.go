@@ -131,6 +131,7 @@ type ParticipantImpl struct {
 	// keeps track of unpublished tracks in order to reuse trackID
 	unpublishedTracks []*livekit.TrackInfo
 
+	requireBroadcast bool
 	// queued participant updates before join response is sent
 	// guarded by updateLock
 	queuedUpdates []*livekit.ParticipantInfo
@@ -324,6 +325,7 @@ func (p *ParticipantImpl) SetMetadata(metadata string) {
 	}
 
 	p.grants.Metadata = metadata
+	p.requireBroadcast = p.requireBroadcast || metadata != ""
 	p.dirty.Store(true)
 
 	onParticipantUpdate := p.onParticipantUpdate
@@ -399,6 +401,12 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 		onClaimsChanged(p)
 	}
 	return true
+}
+
+func (p *ParticipantImpl) CanSkipBroadcast() bool {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return !p.requireBroadcast
 }
 
 func (p *ParticipantImpl) ToProtoWithVersion() (*livekit.ParticipantInfo, utils.TimedVersion) {
@@ -1081,10 +1089,12 @@ func (p *ParticipantImpl) setupUpTrackManager() {
 	})
 
 	p.UpTrackManager.OnPublishedTrackUpdated(func(track types.MediaTrack) {
-		p.dirty.Store(true)
 		p.lock.RLock()
 		onTrackUpdated := p.onTrackUpdated
+		p.requireBroadcast = true
 		p.lock.RUnlock()
+
+		p.dirty.Store(true)
 		if onTrackUpdated != nil {
 			onTrackUpdated(p, track)
 		}
