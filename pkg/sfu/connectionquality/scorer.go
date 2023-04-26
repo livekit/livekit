@@ -349,7 +349,7 @@ func (q *qualityScorer) isLayerMuted() bool {
 }
 
 func (q *qualityScorer) getPacketLossWeight(stat *windowStat) float64 {
-	if stat == nil {
+	if stat == nil || stat.duration == 0 {
 		return q.params.PacketLossWeight
 	}
 
