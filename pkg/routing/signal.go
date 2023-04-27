@@ -189,6 +189,7 @@ func CopySignalStreamToMessageChannel[SendType, RecvType RelaySignalMessage](
 		}
 
 		if msg.GetClose() {
+			stream.Close(nil)
 			return psrpc.ErrStreamClosed
 		}
 	}
