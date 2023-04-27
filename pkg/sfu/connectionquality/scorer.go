@@ -101,11 +101,12 @@ func (w *windowStat) calculateBitrateScore(expectedBitrate int64) float64 {
 }
 
 func (w *windowStat) String() string {
-	return fmt.Sprintf("start: %+v, dur: %+v, pe: %d, pl: %d, b: %d, rtt: %d, jitter: %0.2f",
+	return fmt.Sprintf("start: %+v, dur: %+v, pe: %d, pl: %d, pm: %d, b: %d, rtt: %d, jitter: %0.2f",
 		w.startedAt,
 		w.duration,
 		w.packetsExpected,
 		w.packetsLost,
+		w.packetsMissing,
 		w.bytes,
 		w.rttMax,
 		w.jitterMax,
