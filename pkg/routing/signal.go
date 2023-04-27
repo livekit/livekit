@@ -127,17 +127,11 @@ func (r *signalClient) StartParticipantSignal(
 
 type signalRequestMessageWriter struct{}
 
-func (e signalRequestMessageWriter) WriteOne(seq uint64, msg proto.Message) *rpc.RelaySignalRequest {
-	return &rpc.RelaySignalRequest{
-		Seq:     seq,
-		Request: msg.(*livekit.SignalRequest),
-	}
-}
-
-func (e signalRequestMessageWriter) WriteMany(seq uint64, msgs []proto.Message) *rpc.RelaySignalRequest {
+func (e signalRequestMessageWriter) Write(seq uint64, close bool, msgs []proto.Message) *rpc.RelaySignalRequest {
 	r := &rpc.RelaySignalRequest{
 		Seq:      seq,
 		Requests: make([]*livekit.SignalRequest, 0, len(msgs)),
+		Close:    close,
 	}
 	for _, m := range msgs {
 		r.Requests = append(r.Requests, m.(*livekit.SignalRequest))
@@ -148,10 +142,7 @@ func (e signalRequestMessageWriter) WriteMany(seq uint64, msgs []proto.Message) 
 type signalResponseMessageReader struct{}
 
 func (e signalResponseMessageReader) Read(rm *rpc.RelaySignalResponse) ([]proto.Message, error) {
-	msgs := make([]proto.Message, 0, len(rm.Responses)+1)
-	if rm.Response != nil {
-		msgs = append(msgs, rm.Response)
-	}
+	msgs := make([]proto.Message, 0, len(rm.Responses))
 	for _, m := range rm.Responses {
 		msgs = append(msgs, m)
 	}
@@ -161,11 +152,11 @@ func (e signalResponseMessageReader) Read(rm *rpc.RelaySignalResponse) ([]proto.
 type RelaySignalMessage interface {
 	proto.Message
 	GetSeq() uint64
+	GetClose() bool
 }
 
 type SignalMessageWriter[SendType RelaySignalMessage] interface {
-	WriteOne(seq uint64, msg proto.Message) SendType
-	WriteMany(seq uint64, msgs []proto.Message) SendType
+	Write(seq uint64, close bool, msgs []proto.Message) SendType
 }
 
 type SignalMessageReader[RecvType RelaySignalMessage] interface {
@@ -196,6 +187,10 @@ func CopySignalStreamToMessageChannel[SendType, RecvType RelaySignalMessage](
 			}
 			prometheus.MessageCounter.WithLabelValues("signal", "success").Add(1)
 		}
+
+		if msg.GetClose() {
+			return psrpc.ErrStreamClosed
+		}
 	}
 	return stream.Err()
 }
@@ -212,19 +207,18 @@ func (r *signalMessageReader[SendType, RecvType]) Read(msg RecvType) ([]proto.Me
 		return nil, err
 	}
 
-	if r.config.MinVersion >= 1 {
-		if r.seq < msg.GetSeq() {
-			return nil, ErrSignalMessageDropped
-		}
-		if r.seq > msg.GetSeq() {
-			n := int(r.seq - msg.GetSeq())
-			if n > len(res) {
-				n = len(res)
-			}
-			res = res[n:]
-		}
-		r.seq += uint64(len(res))
+	if r.seq < msg.GetSeq() {
+		return nil, ErrSignalMessageDropped
 	}
+	if r.seq > msg.GetSeq() {
+		n := int(r.seq - msg.GetSeq())
+		if n > len(res) {
+			n = len(res)
+		}
+		res = res[n:]
+	}
+	r.seq += uint64(len(res))
+
 	return res, nil
 }
 
@@ -256,7 +250,8 @@ func (s *signalMessageSink[SendType, RecvType]) Close() {
 	s.mu.Lock()
 	s.draining = true
 	if !s.writing {
-		s.Stream.Close(nil)
+		s.writing = true
+		go s.write()
 	}
 	s.mu.Unlock()
 
@@ -267,16 +262,6 @@ func (s *signalMessageSink[SendType, RecvType]) IsClosed() bool {
 	return s.Stream.Err() != nil
 }
 
-func (s *signalMessageSink[SendType, RecvType]) nextMessage() (msg SendType, n int) {
-	if len(s.queue) == 0 {
-		return
-	}
-	if s.Config.MinVersion >= 1 {
-		return s.Writer.WriteMany(s.seq, s.queue), len(s.queue)
-	}
-	return s.Writer.WriteOne(s.seq, s.queue[0]), 1
-}
-
 func (s *signalMessageSink[SendType, RecvType]) write() {
 	interval := s.Config.MinRetryInterval
 	deadline := time.Now().Add(s.Config.RetryTimeout)
@@ -284,10 +269,11 @@ func (s *signalMessageSink[SendType, RecvType]) write() {
 
 	s.mu.Lock()
 	for {
-		msg, n := s.nextMessage()
-		if n == 0 || s.IsClosed() {
+		close := s.draining
+		if (!close && len(s.queue) == 0) || s.IsClosed() {
 			break
 		}
+		msg, n := s.Writer.Write(s.seq, close, s.queue), len(s.queue)
 		s.mu.Unlock()
 
 		err = s.Stream.Send(msg, psrpc.WithTimeout(interval))
@@ -314,6 +300,10 @@ func (s *signalMessageSink[SendType, RecvType]) write() {
 
 			s.seq += uint64(n)
 			s.queue = s.queue[n:]
+
+			if close {
+				break
+			}
 		}
 	}
 

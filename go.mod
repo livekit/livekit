@@ -18,7 +18,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20230326055817-ed569ca13d26
-	github.com/livekit/protocol v1.5.6-0.20230424073901-c54f5f7f4182
+	github.com/livekit/protocol v1.5.6-0.20230427055046-79477e28a150
 	github.com/livekit/psrpc v0.3.1-0.20230425025640-5390915734c3
 	github.com/mackerelio/go-osstat v0.2.4
 	github.com/magefile/mage v1.14.0
@@ -27,7 +27,7 @@ require (
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/pion/dtls/v2 v2.2.6
 	github.com/pion/ice/v2 v2.3.2
-	github.com/pion/interceptor v0.1.12
+	github.com/pion/interceptor v0.1.13
 	github.com/pion/logging v0.2.2
 	github.com/pion/rtcp v1.2.10
 	github.com/pion/rtp v1.7.13
@@ -35,7 +35,7 @@ require (
 	github.com/pion/stun v0.4.0
 	github.com/pion/transport/v2 v2.2.0
 	github.com/pion/turn/v2 v2.1.0
-	github.com/pion/webrtc/v3 v3.1.61
+	github.com/pion/webrtc/v3 v3.1.62
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.15.0
 	github.com/redis/go-redis/v9 v9.0.3
@@ -92,7 +92,7 @@ require (
 	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	golang.org/x/crypto v0.8.0 // indirect
-	golang.org/x/exp v0.0.0-20230420155640-133eef4313cb // indirect
+	golang.org/x/exp v0.0.0-20230425010034-47ecfdc1ba53 // indirect
 	golang.org/x/mod v0.8.0 // indirect
 	golang.org/x/net v0.9.0 // indirect
 	golang.org/x/sys v0.7.0 // indirect

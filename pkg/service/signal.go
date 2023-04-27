@@ -162,17 +162,11 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 
 type signalResponseMessageWriter struct{}
 
-func (e signalResponseMessageWriter) WriteOne(seq uint64, msg proto.Message) *rpc.RelaySignalResponse {
-	return &rpc.RelaySignalResponse{
-		Seq:      seq,
-		Response: msg.(*livekit.SignalResponse),
-	}
-}
-
-func (e signalResponseMessageWriter) WriteMany(seq uint64, msgs []proto.Message) *rpc.RelaySignalResponse {
+func (e signalResponseMessageWriter) Write(seq uint64, close bool, msgs []proto.Message) *rpc.RelaySignalResponse {
 	r := &rpc.RelaySignalResponse{
 		Seq:       seq,
 		Responses: make([]*livekit.SignalResponse, 0, len(msgs)),
+		Close:     close,
 	}
 	for _, m := range msgs {
 		r.Responses = append(r.Responses, m.(*livekit.SignalResponse))
@@ -183,10 +177,7 @@ func (e signalResponseMessageWriter) WriteMany(seq uint64, msgs []proto.Message)
 type signalRequestMessageReader struct{}
 
 func (e signalRequestMessageReader) Read(rm *rpc.RelaySignalRequest) ([]proto.Message, error) {
-	msgs := make([]proto.Message, 0, len(rm.Requests)+1)
-	if rm.Request != nil {
-		msgs = append(msgs, rm.Request)
-	}
+	msgs := make([]proto.Message, 0, len(rm.Requests))
 	for _, m := range rm.Requests {
 		msgs = append(msgs, m)
 	}
