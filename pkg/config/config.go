@@ -742,3 +742,13 @@ func (conf *Config) unmarshalKeys(keys string) error {
 	}
 	return nil
 }
+
+// Note: only pass in logr.Logger with default depth
+func SetLogger(l logger.Logger) {
+	logger.SetLogger(l, "livekit")
+}
+
+func InitLoggerFromConfig(config config.LoggingConfig) {
+	pion.SetLogLevel(config.PionLevel)
+	logger.InitFromConfig(config.Config, "livekit")
+}
