@@ -111,13 +111,13 @@ func (r *signalClient) StartParticipantSignal(
 		r.active.Inc()
 		defer r.active.Dec()
 
-		err = CopySignalStreamToMessageChannel[*rpc.RelaySignalRequest, *rpc.RelaySignalResponse](
+		err := CopySignalStreamToMessageChannel[*rpc.RelaySignalRequest, *rpc.RelaySignalResponse](
 			stream,
 			resChan,
 			signalResponseMessageReader{},
 			r.config,
 		)
-		l.Debugw("participant signal stream closed", "error", err)
+		l.Infow("signal stream closed", "error", err)
 
 		resChan.Close()
 	}()
@@ -189,7 +189,7 @@ func CopySignalStreamToMessageChannel[SendType, RecvType RelaySignalMessage](
 		}
 
 		if msg.GetClose() {
-			return psrpc.ErrStreamClosed
+			return stream.Close(nil)
 		}
 	}
 	return stream.Err()
