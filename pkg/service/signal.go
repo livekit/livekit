@@ -152,10 +152,11 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 	err = r.sessionHandler(ctx, livekit.RoomName(ss.RoomName), *pi, livekit.ConnectionID(ss.ConnectionId), reqChan, sink)
 	if err != nil {
 		l.Errorw("could not handle new participant", err)
+		return
 	}
 
 	err = routing.CopySignalStreamToMessageChannel[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest](stream, reqChan, signalRequestMessageReader{}, r.config)
-	l.Debugw("participant signal stream closed", "error", err)
+	l.Infow("signal stream closed", "error", err)
 
 	return
 }
