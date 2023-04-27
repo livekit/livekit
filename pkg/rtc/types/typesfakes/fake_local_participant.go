@@ -89,6 +89,16 @@ type FakeLocalParticipant struct {
 	canPublishSourceReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	CanSkipBroadcastStub        func() bool
+	canSkipBroadcastMutex       sync.RWMutex
+	canSkipBroadcastArgsForCall []struct {
+	}
+	canSkipBroadcastReturns struct {
+		result1 bool
+	}
+	canSkipBroadcastReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	CanSubscribeStub        func() bool
 	canSubscribeMutex       sync.RWMutex
 	canSubscribeArgsForCall []struct {
@@ -339,10 +349,6 @@ type FakeLocalParticipant struct {
 	}
 	identityReturnsOnCall map[int]struct {
 		result1 livekit.ParticipantIdentity
-	}
-	InvalidateVersionStub        func()
-	invalidateVersionMutex       sync.RWMutex
-	invalidateVersionArgsForCall []struct {
 	}
 	IsClosedStub        func() bool
 	isClosedMutex       sync.RWMutex
@@ -1198,6 +1204,59 @@ func (fake *FakeLocalParticipant) CanPublishSourceReturnsOnCall(i int, result1 b
 		})
 	}
 	fake.canPublishSourceReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) CanSkipBroadcast() bool {
+	fake.canSkipBroadcastMutex.Lock()
+	ret, specificReturn := fake.canSkipBroadcastReturnsOnCall[len(fake.canSkipBroadcastArgsForCall)]
+	fake.canSkipBroadcastArgsForCall = append(fake.canSkipBroadcastArgsForCall, struct {
+	}{})
+	stub := fake.CanSkipBroadcastStub
+	fakeReturns := fake.canSkipBroadcastReturns
+	fake.recordInvocation("CanSkipBroadcast", []interface{}{})
+	fake.canSkipBroadcastMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) CanSkipBroadcastCallCount() int {
+	fake.canSkipBroadcastMutex.RLock()
+	defer fake.canSkipBroadcastMutex.RUnlock()
+	return len(fake.canSkipBroadcastArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) CanSkipBroadcastCalls(stub func() bool) {
+	fake.canSkipBroadcastMutex.Lock()
+	defer fake.canSkipBroadcastMutex.Unlock()
+	fake.CanSkipBroadcastStub = stub
+}
+
+func (fake *FakeLocalParticipant) CanSkipBroadcastReturns(result1 bool) {
+	fake.canSkipBroadcastMutex.Lock()
+	defer fake.canSkipBroadcastMutex.Unlock()
+	fake.CanSkipBroadcastStub = nil
+	fake.canSkipBroadcastReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) CanSkipBroadcastReturnsOnCall(i int, result1 bool) {
+	fake.canSkipBroadcastMutex.Lock()
+	defer fake.canSkipBroadcastMutex.Unlock()
+	fake.CanSkipBroadcastStub = nil
+	if fake.canSkipBroadcastReturnsOnCall == nil {
+		fake.canSkipBroadcastReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.canSkipBroadcastReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
 }
@@ -2535,30 +2594,6 @@ func (fake *FakeLocalParticipant) IdentityReturnsOnCall(i int, result1 livekit.P
 	fake.identityReturnsOnCall[i] = struct {
 		result1 livekit.ParticipantIdentity
 	}{result1}
-}
-
-func (fake *FakeLocalParticipant) InvalidateVersion() {
-	fake.invalidateVersionMutex.Lock()
-	fake.invalidateVersionArgsForCall = append(fake.invalidateVersionArgsForCall, struct {
-	}{})
-	stub := fake.InvalidateVersionStub
-	fake.recordInvocation("InvalidateVersion", []interface{}{})
-	fake.invalidateVersionMutex.Unlock()
-	if stub != nil {
-		fake.InvalidateVersionStub()
-	}
-}
-
-func (fake *FakeLocalParticipant) InvalidateVersionCallCount() int {
-	fake.invalidateVersionMutex.RLock()
-	defer fake.invalidateVersionMutex.RUnlock()
-	return len(fake.invalidateVersionArgsForCall)
-}
-
-func (fake *FakeLocalParticipant) InvalidateVersionCalls(stub func()) {
-	fake.invalidateVersionMutex.Lock()
-	defer fake.invalidateVersionMutex.Unlock()
-	fake.InvalidateVersionStub = stub
 }
 
 func (fake *FakeLocalParticipant) IsClosed() bool {
@@ -5405,6 +5440,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.canPublishDataMutex.RUnlock()
 	fake.canPublishSourceMutex.RLock()
 	defer fake.canPublishSourceMutex.RUnlock()
+	fake.canSkipBroadcastMutex.RLock()
+	defer fake.canSkipBroadcastMutex.RUnlock()
 	fake.canSubscribeMutex.RLock()
 	defer fake.canSubscribeMutex.RUnlock()
 	fake.claimGrantsMutex.RLock()
@@ -5457,8 +5494,6 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.iDMutex.RUnlock()
 	fake.identityMutex.RLock()
 	defer fake.identityMutex.RUnlock()
-	fake.invalidateVersionMutex.RLock()
-	defer fake.invalidateVersionMutex.RUnlock()
 	fake.isClosedMutex.RLock()
 	defer fake.isClosedMutex.RUnlock()
 	fake.isDisconnectedMutex.RLock()

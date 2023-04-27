@@ -131,6 +131,7 @@ type ParticipantImpl struct {
 	// keeps track of unpublished tracks in order to reuse trackID
 	unpublishedTracks []*livekit.TrackInfo
 
+	requireBroadcast bool
 	// queued participant updates before join response is sent
 	// guarded by updateLock
 	queuedUpdates []*livekit.ParticipantInfo
@@ -324,6 +325,7 @@ func (p *ParticipantImpl) SetMetadata(metadata string) {
 	}
 
 	p.grants.Metadata = metadata
+	p.requireBroadcast = p.requireBroadcast || metadata != ""
 	p.dirty.Store(true)
 
 	onParticipantUpdate := p.onParticipantUpdate
@@ -364,6 +366,9 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 	canSubscribe := video.GetCanSubscribe()
 	onParticipantUpdate := p.onParticipantUpdate
 	onClaimsChanged := p.onClaimsChanged
+
+	isPublisher := canPublish && p.TransportManager.IsPublisherEstablished()
+	p.requireBroadcast = p.requireBroadcast || isPublisher
 	p.lock.Unlock()
 
 	// publish permission has been revoked then remove offending tracks
@@ -390,7 +395,7 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 	}
 
 	// update isPublisher attribute
-	p.isPublisher.Store(canPublish && p.TransportManager.IsPublisherEstablished())
+	p.isPublisher.Store(isPublisher)
 
 	if onParticipantUpdate != nil {
 		onParticipantUpdate(p)
@@ -399,6 +404,12 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 		onClaimsChanged(p)
 	}
 	return true
+}
+
+func (p *ParticipantImpl) CanSkipBroadcast() bool {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return !p.requireBroadcast
 }
 
 func (p *ParticipantImpl) ToProtoWithVersion() (*livekit.ParticipantInfo, utils.TimedVersion) {
@@ -1081,10 +1092,11 @@ func (p *ParticipantImpl) setupUpTrackManager() {
 	})
 
 	p.UpTrackManager.OnPublishedTrackUpdated(func(track types.MediaTrack) {
-		p.dirty.Store(true)
 		p.lock.RLock()
 		onTrackUpdated := p.onTrackUpdated
 		p.lock.RUnlock()
+
+		p.dirty.Store(true)
 		if onTrackUpdated != nil {
 			onTrackUpdated(p, track)
 		}
@@ -1134,6 +1146,10 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 
 func (p *ParticipantImpl) setIsPublisher(isPublisher bool) {
 	if p.isPublisher.Swap(isPublisher) != isPublisher {
+		p.lock.Lock()
+		p.requireBroadcast = true
+		p.lock.Unlock()
+
 		p.dirty.Store(true)
 
 		// trigger update as well if participant is already fully connected

@@ -176,6 +176,7 @@ type Participant interface {
 	Identity() livekit.ParticipantIdentity
 	State() livekit.ParticipantInfo_State
 
+	CanSkipBroadcast() bool
 	ToProto() *livekit.ParticipantInfo
 
 	SetName(name string)
