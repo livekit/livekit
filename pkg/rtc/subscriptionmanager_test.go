@@ -214,9 +214,9 @@ func TestUnsubscribe(t *testing.T) {
 	st.OnClose(func(willBeResumed bool) {
 		sm.handleSubscribedTrackClose(s, willBeResumed)
 	})
-	res.Track.(*typesfakes.FakeMediaTrack).RemoveSubscriberStub = func(pID livekit.ParticipantID, willBeResumed bool) {
+	res.Track.(*typesfakes.FakeMediaTrack).RemoveSubscriberCalls(func(pID livekit.ParticipantID, willBeResumed bool) {
 		setTestSubscribedTrackClosed(t, st, willBeResumed)
-	}
+	})
 
 	sm.lock.Lock()
 	sm.subscriptions["track"] = s
@@ -280,12 +280,12 @@ func TestSubscribeStatusChanged(t *testing.T) {
 	st2.OnClose(func(willBeResumed bool) {
 		sm.handleSubscribedTrackClose(s2, willBeResumed)
 	})
-	st1.MediaTrack().(*typesfakes.FakeMediaTrack).RemoveSubscriberStub = func(pID livekit.ParticipantID, willBeResumed bool) {
+	st1.MediaTrack().(*typesfakes.FakeMediaTrack).RemoveSubscriberCalls(func(pID livekit.ParticipantID, willBeResumed bool) {
 		setTestSubscribedTrackClosed(t, st1, willBeResumed)
-	}
-	st2.MediaTrack().(*typesfakes.FakeMediaTrack).RemoveSubscriberStub = func(pID livekit.ParticipantID, willBeResumed bool) {
+	})
+	st2.MediaTrack().(*typesfakes.FakeMediaTrack).RemoveSubscriberCalls(func(pID livekit.ParticipantID, willBeResumed bool) {
 		setTestSubscribedTrackClosed(t, st2, willBeResumed)
-	}
+	})
 
 	require.Equal(t, int32(1), numParticipantSubscribed.Load())
 	require.Equal(t, int32(0), numParticipantUnsubscribed.Load())
