@@ -422,7 +422,7 @@ func TestDisableCodecs(t *testing.T) {
 	participant.SetResponseSink(sink)
 	var answer webrtc.SessionDescription
 	var answerReceived atomic.Bool
-	sink.WriteMessageStub = func(msg proto.Message) error {
+	sink.WriteMessageCalls(func(msg proto.Message) error {
 		if res, ok := msg.(*livekit.SignalResponse); ok {
 			if res.GetAnswer() != nil {
 				answer = FromProtoSessionDescription(res.GetAnswer())
@@ -430,7 +430,7 @@ func TestDisableCodecs(t *testing.T) {
 			}
 		}
 		return nil
-	}
+	})
 	participant.HandleOffer(sdp)
 
 	testutils.WithTimeout(t, func() string {
@@ -579,7 +579,7 @@ func TestPreferAudioCodecForRed(t *testing.T) {
 			participant.SetResponseSink(sink)
 			var answer webrtc.SessionDescription
 			var answerReceived atomic.Bool
-			sink.WriteMessageStub = func(msg proto.Message) error {
+			sink.WriteMessageCalls(func(msg proto.Message) error {
 				if res, ok := msg.(*livekit.SignalResponse); ok {
 					if res.GetAnswer() != nil {
 						answer = FromProtoSessionDescription(res.GetAnswer())
@@ -588,7 +588,7 @@ func TestPreferAudioCodecForRed(t *testing.T) {
 					}
 				}
 				return nil
-			}
+			})
 			participant.HandleOffer(sdp)
 
 			require.Eventually(t, func() bool { return answerReceived.Load() }, 5*time.Second, 10*time.Millisecond)
