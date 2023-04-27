@@ -1,8 +1,14 @@
 package streamallocator
 
 import (
+	"fmt"
+	"sort"
+	"time"
+
+	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/pion/rtcp"
 
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -21,6 +27,19 @@ type Track struct {
 	totalPackets       uint32
 	totalRepeatedNacks uint32
 
+	nackInfos map[uint16]sfu.NackInfo
+	// STREAM-ALLOCATOR-EXPERIMENTAL-TODO: remove after experimental
+	nackHistory []string
+
+	receiverReportInitialized       bool
+	totalLostAtLastRead             uint32
+	totalLost                       uint32
+	highestSequenceNumberAtLastRead uint32
+	highestSequenceNumber           uint32
+	maxRTT                          uint32
+	// STREAM-ALLOCATOR-EXPERIMENTAL-TODO: remove after experimental
+	receiverReportHistory []string
+
 	isDirty bool
 
 	isPaused bool
@@ -34,12 +53,15 @@ func NewTrack(
 	logger logger.Logger,
 ) *Track {
 	t := &Track{
-		downTrack:   downTrack,
-		source:      source,
-		isSimulcast: isSimulcast,
-		publisherID: publisherID,
-		logger:      logger,
-		isPaused:    true,
+		downTrack:             downTrack,
+		source:                source,
+		isSimulcast:           isSimulcast,
+		publisherID:           publisherID,
+		logger:                logger,
+		nackInfos:             make(map[uint16]sfu.NackInfo),
+		nackHistory:           make([]string, 0, 10),
+		receiverReportHistory: make([]string, 0, 10),
+		isPaused:              true,
 	}
 	t.SetPriority(0)
 	t.SetMaxLayer(downTrack.MaxLayer())
@@ -174,6 +196,150 @@ func (t *Track) GetNackDelta() (uint32, uint32) {
 	t.totalRepeatedNacks = totalRepeatedNacks
 
 	return packetDelta, nackDelta
+}
+
+func (t *Track) UpdateNack(nackInfos []sfu.NackInfo) {
+	for _, ni := range nackInfos {
+		t.nackInfos[ni.SequenceNumber] = ni
+	}
+}
+
+func (t *Track) GetAndResetNackStats() (lowest uint16, highest uint16, numNacked int, numNacks int, numRuns int) {
+	if len(t.nackInfos) == 0 {
+		return
+	}
+
+	sns := make([]uint16, 0, len(t.nackInfos))
+	for _, ni := range t.nackInfos {
+		if lowest == 0 || ni.SequenceNumber-lowest > (1<<15) {
+			lowest = ni.SequenceNumber
+		}
+		if highest == 0 || highest-ni.SequenceNumber > (1<<15) {
+			highest = ni.SequenceNumber
+		}
+		numNacks += int(ni.Attempts)
+		sns = append(sns, ni.SequenceNumber)
+	}
+	numNacked = len(t.nackInfos)
+
+	// find number of runs, i. e. bursts of contiguous sequence numbers NACKed, does not include isolated NACKs
+	sort.Slice(sns, func(i, j int) bool {
+		return (sns[i] - sns[j]) > (1 << 15)
+	})
+
+	rsn := sns[0]
+	rsi := 0
+	for i := 1; i < len(sns); i++ {
+		if sns[i] == rsn+1 {
+			continue
+		}
+
+		if (i - rsi - 1) > 0 {
+			numRuns++
+		}
+
+		rsn = sns[i]
+		rsi = i
+	}
+
+	t.nackInfos = make(map[uint16]sfu.NackInfo)
+	return
+}
+
+func (t *Track) ProcessRTCPReceiverReport(rr rtcp.ReceptionReport) {
+	if !t.receiverReportInitialized {
+		t.receiverReportInitialized = true
+		t.totalLostAtLastRead = rr.TotalLost
+		t.highestSequenceNumberAtLastRead = rr.LastSequenceNumber
+	}
+
+	t.totalLost = rr.TotalLost
+	t.highestSequenceNumber = rr.LastSequenceNumber
+
+	if rtt, err := mediatransportutil.GetRttMsFromReceiverReportOnly(&rr); err != nil {
+		if rtt > t.maxRTT {
+			t.maxRTT = rtt
+		}
+	}
+
+	t.updateReceiverReportHistory()
+}
+
+func (t *Track) GetRTCPReceiverReportDelta() (uint32, uint32, uint32) {
+	deltaPackets := t.highestSequenceNumber - t.highestSequenceNumberAtLastRead
+	t.highestSequenceNumberAtLastRead = t.highestSequenceNumber
+
+	deltaLost := t.totalLost - t.totalLostAtLastRead
+	t.totalLostAtLastRead = t.totalLost
+
+	maxRTT := t.maxRTT
+	t.maxRTT = 0
+
+	return deltaLost, deltaPackets, maxRTT
+}
+
+func (t *Track) GetAndResetBytesSent() (uint32, uint32) {
+	return t.downTrack.GetAndResetBytesSent()
+}
+
+func (t *Track) UpdateHistory() {
+	t.updateNackHistory()
+}
+
+func (t *Track) GetHistory() string {
+	return fmt.Sprintf("t: %+v, n: %+v, rr: %+v", time.Now(), t.nackHistory, t.receiverReportHistory)
+}
+
+// STREAM-ALLOCATOR-EXPERIMENTAL-TODO:
+// Idea is to check if this provides a good signal to detect congestion.
+// This measures a few things
+//   1. Spread: sequence number difference between highest and lowest NACK
+//      - shows how widespread the losses are
+//   2. Number of runs of length more than 1: Counts number of burst losses.
+//      - could be a sign of congestion when losses are bursty
+//   3. NACK density: how many sequence numbers in the spread were NACKed.
+//      - a high density could be a sign of congestion
+//   4. NACK intensity: how many times those sequence numbers were NACKed.
+//      - high intensity could be a sign of congestion
+//
+// While these all could be good signals, some challenges in making use of these
+// - aggregating across tracks
+// - proper thresholing, i. e. something based on averages should not trip
+//   because of small numbers, e. g. a single NACK run of 2 sequence numbers
+//   is technically a burst, but is it a signal of congestion?
+func (t *Track) updateNackHistory() {
+	if len(t.nackHistory) >= 10 {
+		t.nackHistory = t.nackHistory[1:]
+	}
+
+	l, h, nnd, nns, nr := t.GetAndResetNackStats()
+	spread := h - l + 1
+	density := float64(0.0)
+	if nnd != 0 {
+		density = float64(nnd) / float64(spread)
+	} else {
+		spread = 0
+	}
+	intensity := float64(0.0)
+	if nnd != 0 {
+		intensity = float64(nns) / float64(nnd)
+	}
+	t.nackHistory = append(
+		t.nackHistory,
+		fmt.Sprintf("t: %+v, l: %d, h: %d, sp: %d, nnd: %d, dens: %.2f, nns: %d, int: %.2f, nr: %d", time.Now().UnixMilli(), l, h, spread, nnd, density, nns, intensity, nr),
+	)
+}
+
+func (t *Track) updateReceiverReportHistory() {
+	if len(t.receiverReportHistory) >= 10 {
+		t.receiverReportHistory = t.receiverReportHistory[1:]
+	}
+
+	dl, dp, maxRTT := t.GetRTCPReceiverReportDelta()
+	t.receiverReportHistory = append(
+		t.receiverReportHistory,
+		fmt.Sprintf("t: %+v, l: %d, p: %d, rtt: %d", time.Now().Format(time.UnixDate), dl, dp, maxRTT),
+	)
 }
 
 // ------------------------------------------------

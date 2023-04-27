@@ -15,9 +15,10 @@ import (
 )
 
 const (
-	UpdateInterval           = 5 * time.Second
-	processThreshold         = 0.95
-	noStatsTooLongMultiplier = 2
+	UpdateInterval                   = 5 * time.Second
+	processThreshold                 = 0.95
+	noStatsTooLongMultiplier         = 2
+	noReceiverReportTooLongThreshold = 10 * time.Second
 )
 
 type ConnectionStatsParams struct {
@@ -38,9 +39,10 @@ type ConnectionStats struct {
 
 	onStatsUpdate func(cs *ConnectionStats, stat *livekit.AnalyticsStat)
 
-	lock           sync.RWMutex
-	lastStatsAt    time.Time
-	statsInProcess bool
+	lock                 sync.RWMutex
+	lastStatsAt          time.Time
+	statsInProcess       bool
+	lastReceiverReportAt time.Time
 
 	scorer *qualityScorer
 
@@ -103,6 +105,10 @@ func (cs *ConnectionStats) GetScoreAndQuality() (float32, livekit.ConnectionQual
 }
 
 func (cs *ConnectionStats) ReceiverReportReceived(at time.Time) {
+	cs.lock.Lock()
+	cs.lastReceiverReportAt = time.Now()
+	cs.lock.Unlock()
+
 	cs.getStat(at)
 }
 
@@ -160,14 +166,21 @@ func (cs *ConnectionStats) updateLastStatsAt(at time.Time) {
 }
 
 func (cs *ConnectionStats) isTooLongSinceLastStats() bool {
-	cs.lock.Lock()
-	defer cs.lock.Unlock()
+	cs.lock.RLock()
+	defer cs.lock.RUnlock()
 
 	interval := cs.params.UpdateInterval
 	if interval == 0 {
 		interval = UpdateInterval
 	}
 	return !cs.lastStatsAt.IsZero() && time.Since(cs.lastStatsAt) > interval*noStatsTooLongMultiplier
+}
+
+func (cs *ConnectionStats) isTooLongSinceLastReceiverReport() bool {
+	cs.lock.RLock()
+	defer cs.lock.RUnlock()
+
+	return !cs.lastReceiverReportAt.IsZero() && time.Since(cs.lastReceiverReportAt) > noReceiverReportTooLongThreshold
 }
 
 func (cs *ConnectionStats) clearInProcess() {
@@ -189,7 +202,7 @@ func (cs *ConnectionStats) getStat(at time.Time) {
 
 	streams := cs.params.GetDeltaStats()
 	if len(streams) == 0 {
-		if cs.isTooLongSinceLastStats() {
+		if cs.isTooLongSinceLastStats() && cs.isTooLongSinceLastReceiverReport() {
 			cs.updateLastStatsAt(at)
 			cs.updateScore(streams, at)
 		}

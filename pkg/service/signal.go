@@ -73,6 +73,19 @@ func NewDefaultSignalServer(
 		prometheus.IncrementParticipantRtcInit(1)
 
 		if rr, ok := router.(*routing.RedisRouter); ok {
+			rtcNode, err := router.GetNodeForRoom(ctx, roomName)
+			if err != nil {
+				return err
+			}
+
+			if rtcNode.Id != currentNode.Id {
+				err = routing.ErrIncorrectRTCNode
+				logger.Errorw("called participant on incorrect node", err,
+					"rtcNode", rtcNode,
+				)
+				return err
+			}
+
 			pKey := routing.ParticipantKeyLegacy(roomName, pi.Identity)
 			pKeyB62 := routing.ParticipantKey(roomName, pi.Identity)
 
@@ -139,27 +152,22 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 	err = r.sessionHandler(ctx, livekit.RoomName(ss.RoomName), *pi, livekit.ConnectionID(ss.ConnectionId), reqChan, sink)
 	if err != nil {
 		l.Errorw("could not handle new participant", err)
+		return
 	}
 
 	err = routing.CopySignalStreamToMessageChannel[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest](stream, reqChan, signalRequestMessageReader{}, r.config)
-	l.Debugw("participant signal stream closed", "error", err)
+	l.Infow("signal stream closed", "error", err)
 
 	return
 }
 
 type signalResponseMessageWriter struct{}
 
-func (e signalResponseMessageWriter) WriteOne(seq uint64, msg proto.Message) *rpc.RelaySignalResponse {
-	return &rpc.RelaySignalResponse{
-		Seq:      seq,
-		Response: msg.(*livekit.SignalResponse),
-	}
-}
-
-func (e signalResponseMessageWriter) WriteMany(seq uint64, msgs []proto.Message) *rpc.RelaySignalResponse {
+func (e signalResponseMessageWriter) Write(seq uint64, close bool, msgs []proto.Message) *rpc.RelaySignalResponse {
 	r := &rpc.RelaySignalResponse{
 		Seq:       seq,
 		Responses: make([]*livekit.SignalResponse, 0, len(msgs)),
+		Close:     close,
 	}
 	for _, m := range msgs {
 		r.Responses = append(r.Responses, m.(*livekit.SignalResponse))
@@ -170,10 +178,7 @@ func (e signalResponseMessageWriter) WriteMany(seq uint64, msgs []proto.Message)
 type signalRequestMessageReader struct{}
 
 func (e signalRequestMessageReader) Read(rm *rpc.RelaySignalRequest) ([]proto.Message, error) {
-	msgs := make([]proto.Message, 0, len(rm.Requests)+1)
-	if rm.Request != nil {
-		msgs = append(msgs, rm.Request)
-	}
+	msgs := make([]proto.Message, 0, len(rm.Requests))
 	for _, m := range rm.Requests {
 		msgs = append(msgs, m)
 	}

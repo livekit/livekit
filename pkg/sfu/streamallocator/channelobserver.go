@@ -89,7 +89,7 @@ func NewChannelObserver(params ChannelObserverParams, logger logger.Logger) *Cha
 			CollapseThreshold:      params.EstimateCollapseThreshold,
 		}),
 		nackTracker: NewNackTracker(NackTrackerParams{
-			Name:              params.Name + "-estimate",
+			Name:              params.Name + "-nack",
 			Logger:            logger,
 			WindowMinDuration: params.NackWindowMinDuration,
 			WindowMaxDuration: params.NackWindowMaxDuration,
@@ -120,6 +120,10 @@ func (c *ChannelObserver) GetHighestEstimate() int64 {
 
 func (c *ChannelObserver) GetNackRatio() float64 {
 	return c.nackTracker.GetRatio()
+}
+
+func (c *ChannelObserver) GetNackHistory() []string {
+	return c.nackTracker.GetHistory()
 }
 
 func (c *ChannelObserver) GetTrend() (ChannelTrend, ChannelCongestionReason) {
