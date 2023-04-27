@@ -190,10 +190,6 @@ func (t *TransportManager) Close() {
 	t.subscriber.Close()
 }
 
-func (t *TransportManager) HaveAllTransportEverConnected() bool {
-	return t.publisher.HasEverConnected() && t.subscriber.HasEverConnected()
-}
-
 func (t *TransportManager) SubscriberClose() {
 	t.subscriber.Close()
 }
@@ -215,6 +211,10 @@ func (t *TransportManager) OnPublisherInitialConnected(f func()) {
 
 func (t *TransportManager) OnPublisherTrack(f func(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver)) {
 	t.publisher.OnTrack(f)
+}
+
+func (t *TransportManager) HasPublisherEverConnected() bool {
+	return t.publisher.HasEverConnected()
 }
 
 func (t *TransportManager) IsPublisherEstablished() bool {

@@ -735,7 +735,11 @@ func (p *ParticipantImpl) clearMigrationTimer() {
 }
 
 func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
-	if !force && !p.TransportManager.HaveAllTransportEverConnected() {
+	allTransportConnected := p.TransportManager.HasSubscriberEverConnected()
+	if p.IsPublisher() {
+		allTransportConnected = allTransportConnected && p.TransportManager.HasPublisherEverConnected()
+	}
+	if !force && !allTransportConnected {
 		return false
 	}
 
