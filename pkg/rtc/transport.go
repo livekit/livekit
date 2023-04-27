@@ -22,7 +22,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/logger/pion"
+	"github.com/livekit/protocol/logger/pionlogger"
 	lksdp "github.com/livekit/protocol/sdp"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -298,7 +298,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 		}
 	}
 
-	lf := pion.NewLoggerFactory(params.Logger)
+	lf := pionlogger.NewLoggerFactory(params.Logger)
 	if lf != nil {
 		se.LoggerFactory = lf
 	}
