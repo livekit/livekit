@@ -16,7 +16,7 @@ import (
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/psrpc"
-	"github.com/livekit/psrpc/middleware"
+	"github.com/livekit/psrpc/pkg/middleware"
 )
 
 var ErrSignalWriteFailed = errors.New("signal write failed")

@@ -14,6 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/logger/pion"
 	redisLiveKit "github.com/livekit/protocol/redis"
 )
 
@@ -748,7 +749,7 @@ func SetLogger(l logger.Logger) {
 	logger.SetLogger(l, "livekit")
 }
 
-func InitLoggerFromConfig(config config.LoggingConfig) {
+func InitLoggerFromConfig(config LoggingConfig) {
 	pion.SetLogLevel(config.PionLevel)
 	logger.InitFromConfig(config.Config, "livekit")
 }

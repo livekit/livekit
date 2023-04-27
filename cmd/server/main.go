@@ -12,7 +12,6 @@ import (
 
 	"github.com/urfave/cli/v2"
 
-	serverlogger "github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/logger"
@@ -188,7 +187,7 @@ func getConfig(c *cli.Context) (*config.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	serverlogger.InitFromConfig(conf.Logging)
+	config.InitLoggerFromConfig(conf.Logging)
 
 	if c.String("config") == "" && c.String("config-body") == "" && conf.Development {
 		// use single port UDP when no config is provided

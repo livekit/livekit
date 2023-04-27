@@ -14,7 +14,6 @@ import (
 	"github.com/livekit/protocol/webhook"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	serverlogger "github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 	"github.com/livekit/livekit-server/pkg/sfu/audio"
@@ -30,7 +29,7 @@ const (
 )
 
 func init() {
-	serverlogger.InitFromConfig(config.LoggingConfig{
+	config.InitLoggerFromConfig(config.LoggingConfig{
 		Config: logger.Config{Level: "debug"},
 	})
 	// allow immediate closure in testing
