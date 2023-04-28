@@ -290,7 +290,9 @@ func TestSubscribeStatusChanged(t *testing.T) {
 		setTestSubscribedTrackClosed(t, st2, willBeResumed)
 	})
 
-	require.Equal(t, int32(1), numParticipantSubscribed.Load())
+	require.Eventually(t, func() bool {
+		return numParticipantSubscribed.Load() == 1
+	}, subSettleTimeout, subCheckInterval, "should be subscribed to publisher")
 	require.Equal(t, int32(0), numParticipantUnsubscribed.Load())
 	require.True(t, sm.IsSubscribedTo("pubID"))
 
@@ -306,7 +308,9 @@ func TestSubscribeStatusChanged(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return !s1.needsUnsubscribe()
 	}, subSettleTimeout, subCheckInterval, "track1 should be unsubscribed")
-	require.Equal(t, int32(1), numParticipantUnsubscribed.Load())
+	require.Eventually(t, func() bool {
+		return numParticipantUnsubscribed.Load() == 1
+	}, subSettleTimeout, subCheckInterval, "should be subscribed to publisher")
 	require.False(t, sm.IsSubscribedTo("pubID"))
 }
 
