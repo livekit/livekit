@@ -856,8 +856,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		d.logger.Debugw("closing sender", "kind", d.kind)
 		d.receiver.DeleteDownTrack(d.subscriberID)
 
-		// RAJA-RESTORE if d.rtcpReader != nil && flush {
-		if d.rtcpReader != nil {
+		if d.rtcpReader != nil && flush {
 			d.logger.Debugw("downtrack close rtcp reader")
 			d.rtcpReader.Close()
 			d.rtcpReader.OnPacket(nil)
