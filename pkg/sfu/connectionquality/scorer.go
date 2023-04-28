@@ -243,8 +243,6 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 	expectedBitrate := q.getExpectedBitsAndUpdateTransitions(at)
 	expectedDistance := q.getExpectedDistanceAndUpdateTransitions(at)
 
-	q.params.Logger.Debugw("incoming stat", "stat", stat, "isMuted", q.isMuted(), "isUnmuted", q.isUnmutedEnough(at), "layerMuted", q.isLayerMuted()) // REMOVE
-
 	// nothing to do when muted or not unmuted for long enough
 	// NOTE: it is possible that unmute -> mute -> unmute transition happens in the
 	//       same analysis window. On a transition to mute, state immediately moves
