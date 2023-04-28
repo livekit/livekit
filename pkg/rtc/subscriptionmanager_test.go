@@ -88,7 +88,6 @@ func TestSubscribe(t *testing.T) {
 
 		// ensure bound
 		setTestSubscribedTrackBound(t, s.getSubscribedTrack())
-
 		require.Eventually(t, func() bool {
 			return !s.needsBind()
 		}, subSettleTimeout, subCheckInterval, "track was not bound")
@@ -99,9 +98,13 @@ func TestSubscribe(t *testing.T) {
 		time.Sleep(notFoundTimeout)
 		require.False(t, failed.Load())
 
+		resolver.SetPause(true)
 		// ensure its resilience after being closed
 		setTestSubscribedTrackClosed(t, s.getSubscribedTrack(), false)
-		require.True(t, s.needsSubscribe())
+		require.Eventually(t, func() bool {
+			return s.needsSubscribe()
+		}, subSettleTimeout, subCheckInterval, "needs subscribe did not persist across track close")
+		resolver.SetPause(false)
 
 		require.Eventually(t, func() bool {
 			return s.isDesired() && !s.needsSubscribe()
@@ -287,7 +290,9 @@ func TestSubscribeStatusChanged(t *testing.T) {
 		setTestSubscribedTrackClosed(t, st2, willBeResumed)
 	})
 
-	require.Equal(t, int32(1), numParticipantSubscribed.Load())
+	require.Eventually(t, func() bool {
+		return numParticipantSubscribed.Load() == 1
+	}, subSettleTimeout, subCheckInterval, "should be subscribed to publisher")
 	require.Equal(t, int32(0), numParticipantUnsubscribed.Load())
 	require.True(t, sm.IsSubscribedTo("pubID"))
 
@@ -303,7 +308,9 @@ func TestSubscribeStatusChanged(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return !s1.needsUnsubscribe()
 	}, subSettleTimeout, subCheckInterval, "track1 should be unsubscribed")
-	require.Equal(t, int32(1), numParticipantUnsubscribed.Load())
+	require.Eventually(t, func() bool {
+		return numParticipantUnsubscribed.Load() == 1
+	}, subSettleTimeout, subCheckInterval, "should be subscribed to publisher")
 	require.False(t, sm.IsSubscribedTo("pubID"))
 }
 
@@ -387,7 +394,6 @@ func TestSubscriptionLimits(t *testing.T) {
 
 	// ensure bound
 	setTestSubscribedTrackBound(t, s.getSubscribedTrack())
-
 	require.Eventually(t, func() bool {
 		return !s.needsBind()
 	}, subSettleTimeout, subCheckInterval, "track was not bound")
@@ -423,7 +429,6 @@ func TestSubscriptionLimits(t *testing.T) {
 
 	// ensure bound
 	setTestSubscribedTrackBound(t, s2.getSubscribedTrack())
-
 	require.Eventually(t, func() bool {
 		return !s2.needsBind()
 	}, subSettleTimeout, subCheckInterval, "track was not bound")
@@ -474,6 +479,8 @@ type testResolver struct {
 	hasTrack      bool
 	pubIdentity   livekit.ParticipantIdentity
 	pubID         livekit.ParticipantID
+
+	paused bool
 }
 
 func newTestResolver(hasPermission bool, hasTrack bool, pubIdentity livekit.ParticipantIdentity, pubID livekit.ParticipantID) *testResolver {
@@ -483,6 +490,12 @@ func newTestResolver(hasPermission bool, hasTrack bool, pubIdentity livekit.Part
 		pubIdentity:   pubIdentity,
 		pubID:         pubID,
 	}
+}
+
+func (t *testResolver) SetPause(paused bool) {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	t.paused = paused
 }
 
 func (t *testResolver) Resolve(identity livekit.ParticipantIdentity, trackID livekit.TrackID) types.MediaResolverResult {
@@ -495,7 +508,7 @@ func (t *testResolver) Resolve(identity livekit.ParticipantIdentity, trackID liv
 		PublisherID:          t.pubID,
 		PublisherIdentity:    t.pubIdentity,
 	}
-	if t.hasTrack {
+	if t.hasTrack && !t.paused {
 		mt := &typesfakes.FakeMediaTrack{}
 		st := &typesfakes.FakeSubscribedTrack{}
 		st.IDReturns(trackID)
