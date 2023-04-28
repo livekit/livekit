@@ -1,12 +1,14 @@
 package rtc
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/psrpc"
 
 	"github.com/livekit/livekit-server/pkg/routing"
 )
@@ -265,7 +267,7 @@ func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
 	}
 
 	err := sink.WriteMessage(msg)
-	if err != nil {
+	if err != nil && !errors.Is(err, psrpc.ErrStreamClosed) {
 		p.params.Logger.Warnw("could not send message to participant", err,
 			"messageType", fmt.Sprintf("%T", msg.Message))
 		return err
