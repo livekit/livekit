@@ -22,10 +22,10 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/logger/pionlogger"
 	lksdp "github.com/livekit/protocol/sdp"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	serverlogger "github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	"github.com/livekit/livekit-server/pkg/telemetry"
@@ -298,7 +298,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 		}
 	}
 
-	lf := serverlogger.NewLoggerFactory(params.Logger)
+	lf := pionlogger.NewLoggerFactory(params.Logger)
 	if lf != nil {
 		se.LoggerFactory = lf
 	}

@@ -11,9 +11,9 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/logger/pionlogger"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	logging "github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
@@ -39,7 +39,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 	serverConfig := turn.ServerConfig{
 		Realm:         LivekitRealm,
 		AuthHandler:   authHandler,
-		LoggerFactory: logging.NewLoggerFactory(logger.GetLogger()),
+		LoggerFactory: pionlogger.NewLoggerFactory(logger.GetLogger()),
 	}
 	var relayAddrGen turn.RelayAddressGenerator = &turn.RelayAddressGeneratorPortRange{
 		RelayAddress: net.ParseIP(conf.RTC.NodeIP),

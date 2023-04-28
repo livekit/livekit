@@ -18,7 +18,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20230326055817-ed569ca13d26
-	github.com/livekit/protocol v1.5.6-0.20230427055046-79477e28a150
+	github.com/livekit/protocol v1.5.6-0.20230428011359-db5afb1c7f9b
 	github.com/livekit/psrpc v0.3.1-0.20230425025640-5390915734c3
 	github.com/mackerelio/go-osstat v0.2.4
 	github.com/magefile/mage v1.14.0
@@ -28,7 +28,6 @@ require (
 	github.com/pion/dtls/v2 v2.2.6
 	github.com/pion/ice/v2 v2.3.2
 	github.com/pion/interceptor v0.1.13
-	github.com/pion/logging v0.2.2
 	github.com/pion/rtcp v1.2.10
 	github.com/pion/rtp v1.7.13
 	github.com/pion/sdp/v3 v3.0.6
@@ -47,7 +46,6 @@ require (
 	github.com/urfave/cli/v2 v2.25.1
 	github.com/urfave/negroni/v3 v3.0.0
 	go.uber.org/atomic v1.10.0
-	go.uber.org/zap v1.24.0
 	golang.org/x/sync v0.1.0
 	google.golang.org/protobuf v1.30.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -79,6 +77,7 @@ require (
 	github.com/nats-io/nkeys v0.4.4 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/pion/datachannel v1.5.5 // indirect
+	github.com/pion/logging v0.2.2 // indirect
 	github.com/pion/mdns v0.0.7 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/sctp v1.8.6 // indirect
@@ -91,6 +90,7 @@ require (
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
+	go.uber.org/zap v1.24.0 // indirect
 	golang.org/x/crypto v0.8.0 // indirect
 	golang.org/x/exp v0.0.0-20230425010034-47ecfdc1ba53 // indirect
 	golang.org/x/mod v0.8.0 // indirect

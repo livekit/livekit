@@ -14,6 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/logger/pionlogger"
 	redisLiveKit "github.com/livekit/protocol/redis"
 )
 
@@ -743,4 +744,14 @@ func (conf *Config) unmarshalKeys(keys string) error {
 		}
 	}
 	return nil
+}
+
+// Note: only pass in logr.Logger with default depth
+func SetLogger(l logger.Logger) {
+	logger.SetLogger(l, "livekit")
+}
+
+func InitLoggerFromConfig(config LoggingConfig) {
+	pionlogger.SetLogLevel(config.PionLevel)
+	logger.InitFromConfig(config.Config, "livekit")
 }
