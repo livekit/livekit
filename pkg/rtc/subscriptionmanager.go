@@ -449,6 +449,8 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 		return ErrSubscriptionLimitExceeded
 	}
 
+	s.setPublisher(res.PublisherIdentity, res.PublisherID)
+
 	// since hasPermission defaults to true, we will want to send a message to the client the first time
 	// that we discover permissions were denied
 	permChanged := s.setHasPermission(res.HasPermission)
@@ -459,7 +461,6 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 		return ErrNoTrackPermission
 	}
 
-	s.setPublisher(res.PublisherIdentity, res.PublisherID)
 	subTrack, err := track.AddSubscriber(m.params.Participant)
 	if err != nil && err != errAlreadySubscribed {
 		// ignore already subscribed error

@@ -376,7 +376,7 @@ func (r *RoomManager) StartSession(
 
 	clientMeta := &livekit.AnalyticsClientMeta{Region: r.currentNode.Region, Node: r.currentNode.Id}
 	r.telemetry.ParticipantJoined(ctx, protoRoom, participant.ToProto(), pi.Client, clientMeta, true)
-	participant.OnClose(func(p types.LocalParticipant, disallowedSubscriptions map[livekit.TrackID]livekit.ParticipantID) {
+	participant.OnClose(func(p types.LocalParticipant) {
 		if err := r.roomStore.DeleteParticipant(ctx, roomName, p.Identity()); err != nil {
 			pLogger.Errorw("could not delete participant", err)
 		}
@@ -385,8 +385,6 @@ func (r *RoomManager) StartSession(
 		proto := room.ToProto()
 		persistRoomForParticipantCount(proto)
 		r.telemetry.ParticipantLeft(ctx, proto, p.ToProto(), true)
-
-		room.RemoveDisallowedSubscriptions(p, disallowedSubscriptions)
 	})
 	participant.OnClaimsChanged(func(participant types.LocalParticipant) {
 		pLogger.Debugw("refreshing client token after claims change")

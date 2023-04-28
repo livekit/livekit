@@ -315,7 +315,7 @@ type LocalParticipant interface {
 	OnParticipantUpdate(callback func(LocalParticipant))
 	OnDataPacket(callback func(LocalParticipant, *livekit.DataPacket))
 	OnSubscribeStatusChanged(fn func(publisherID livekit.ParticipantID, subscribed bool))
-	OnClose(callback func(LocalParticipant, map[livekit.TrackID]livekit.ParticipantID))
+	OnClose(callback func(LocalParticipant))
 	OnClaimsChanged(callback func(LocalParticipant))
 	OnReceiverReport(dt *sfu.DownTrack, report *rtcp.ReceiverReport)
 
