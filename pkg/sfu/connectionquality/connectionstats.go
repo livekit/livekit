@@ -18,17 +18,19 @@ const (
 	UpdateInterval                   = 5 * time.Second
 	processThreshold                 = 0.95
 	noStatsTooLongMultiplier         = 2
-	noReceiverReportTooLongThreshold = 10 * time.Second
+	noReceiverReportTooLongThreshold = 30 * time.Second
 )
 
 type ConnectionStatsParams struct {
-	UpdateInterval    time.Duration
-	MimeType          string
-	IsFECEnabled      bool
-	IsDependentRTT    bool
-	IsDependentJitter bool
-	GetDeltaStats     func() map[uint32]*buffer.StreamStatsWithLayers
-	Logger            logger.Logger
+	UpdateInterval            time.Duration
+	MimeType                  string
+	IsFECEnabled              bool
+	IsDependentRTT            bool
+	IsDependentJitter         bool
+	GetDeltaStats             func() map[uint32]*buffer.StreamStatsWithLayers
+	GetDeltaStatsOverridden   func() map[uint32]*buffer.StreamStatsWithLayers
+	GetLastReceiverReportTime func() time.Time
+	Logger                    logger.Logger
 }
 
 type ConnectionStats struct {
@@ -39,10 +41,8 @@ type ConnectionStats struct {
 
 	onStatsUpdate func(cs *ConnectionStats, stat *livekit.AnalyticsStat)
 
-	lock                 sync.RWMutex
-	lastStatsAt          time.Time
-	statsInProcess       bool
-	lastReceiverReportAt time.Time
+	lock               sync.RWMutex
+	streamingStartedAt time.Time
 
 	scorer *qualityScorer
 
@@ -68,8 +68,6 @@ func (cs *ConnectionStats) Start(trackInfo *livekit.TrackInfo, at time.Time) {
 	}
 
 	cs.isVideo.Store(trackInfo.Type == livekit.TrackType_VIDEO)
-
-	cs.updateLastStatsAt(time.Now()) // force an initial wait
 
 	cs.scorer.Start(at)
 
@@ -104,21 +102,7 @@ func (cs *ConnectionStats) GetScoreAndQuality() (float32, livekit.ConnectionQual
 	return cs.scorer.GetMOSAndQuality()
 }
 
-func (cs *ConnectionStats) ReceiverReportReceived(at time.Time) {
-	cs.lock.Lock()
-	cs.lastReceiverReportAt = time.Now()
-	cs.lock.Unlock()
-
-	cs.getStat(at)
-}
-
-func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWithLayers, at time.Time) float32 {
-	deltaInfoList := make([]*buffer.RTPDeltaInfo, 0, len(streams))
-	for _, s := range streams {
-		deltaInfoList = append(deltaInfoList, s.RTPStats)
-	}
-	agg := buffer.AggregateRTPDeltaInfo(deltaInfoList)
-
+func (cs *ConnectionStats) updateScoreWithAggregate(agg *buffer.RTPDeltaInfo, at time.Time) float32 {
 	var stat windowStat
 	if agg != nil {
 		stat.startedAt = agg.StartTime
@@ -136,58 +120,86 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 	return mos
 }
 
-func (cs *ConnectionStats) maybeMarkInProcess() bool {
-	cs.lock.Lock()
-	defer cs.lock.Unlock()
-
-	if cs.statsInProcess {
-		// already running
-		return false
+func (cs *ConnectionStats) updateScoreFromReceiverReport(at time.Time) float32 {
+	if cs.params.GetDeltaStatsOverridden == nil || cs.params.GetLastReceiverReportTime == nil {
+		return MinMOS
 	}
 
-	interval := cs.params.UpdateInterval
-	if interval == 0 {
-		interval = UpdateInterval
-	}
-
-	if cs.isStarted.Load() && time.Since(cs.lastStatsAt) > time.Duration(processThreshold*float64(interval)) {
-		cs.statsInProcess = true
-		return true
-	}
-
-	return false
-}
-
-func (cs *ConnectionStats) updateLastStatsAt(at time.Time) {
-	cs.lock.Lock()
-	defer cs.lock.Unlock()
-
-	cs.lastStatsAt = at
-}
-
-func (cs *ConnectionStats) isTooLongSinceLastStats() bool {
 	cs.lock.RLock()
-	defer cs.lock.RUnlock()
-
-	interval := cs.params.UpdateInterval
-	if interval == 0 {
-		interval = UpdateInterval
+	streamingStartedAt := cs.streamingStartedAt
+	cs.lock.RUnlock()
+	if streamingStartedAt.IsZero() {
+		// not streaming, just return current score
+		mos, _ := cs.scorer.GetMOSAndQuality()
+		return mos
 	}
-	return !cs.lastStatsAt.IsZero() && time.Since(cs.lastStatsAt) > interval*noStatsTooLongMultiplier
+
+	streams := cs.params.GetDeltaStatsOverridden()
+	if len(streams) == 0 {
+		//  check for receiver report not received for a while
+		marker := cs.params.GetLastReceiverReportTime()
+		if marker.IsZero() || streamingStartedAt.After(marker) {
+			marker = streamingStartedAt
+		}
+		if time.Since(marker) > noReceiverReportTooLongThreshold {
+			// have not received receiver report for a long time when streaming, run with nil stat
+			return cs.updateScoreWithAggregate(nil, at)
+		}
+
+		// wait for receiver report, return current score
+		mos, _ := cs.scorer.GetMOSAndQuality()
+		return mos
+	}
+
+	// delta stat duration could be large due to not receiving receiver report for a long time (for example, due to mute),
+	// adjust to streaming start if necessary
+	agg := toAggregateDeltaInfo(streams)
+	if streamingStartedAt.After(cs.params.GetLastReceiverReportTime()) {
+		// last receiver report was before streaming started, wait for next one
+		mos, _ := cs.scorer.GetMOSAndQuality()
+		return mos
+	}
+
+	if streamingStartedAt.After(agg.StartTime) {
+		agg.Duration = agg.StartTime.Add(agg.Duration).Sub(streamingStartedAt)
+		agg.StartTime = streamingStartedAt
+	}
+	return cs.updateScoreWithAggregate(agg, at)
 }
 
-func (cs *ConnectionStats) isTooLongSinceLastReceiverReport() bool {
-	cs.lock.RLock()
-	defer cs.lock.RUnlock()
+func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWithLayers, at time.Time) float32 {
+	deltaInfoList := make([]*buffer.RTPDeltaInfo, 0, len(streams))
+	for _, s := range streams {
+		deltaInfoList = append(deltaInfoList, s.RTPStats)
+	}
+	agg := buffer.AggregateRTPDeltaInfo(deltaInfoList)
+	if agg != nil && agg.Packets > 0 {
+		// not very accurate as streaming could have started part way in the window, but don't need accurate time
+		cs.maybeSetStreamingStart(agg.StartTime)
+	} else {
+		cs.clearStreamingStart()
+	}
 
-	return !cs.lastReceiverReportAt.IsZero() && time.Since(cs.lastReceiverReportAt) > noReceiverReportTooLongThreshold
+	if cs.params.GetDeltaStatsOverridden != nil {
+		// receiver report based quality scoring, use stats from receiver report for scoring
+		return cs.updateScoreFromReceiverReport(at)
+	}
+
+	return cs.updateScoreWithAggregate(agg, at)
 }
 
-func (cs *ConnectionStats) clearInProcess() {
+func (cs *ConnectionStats) maybeSetStreamingStart(at time.Time) {
 	cs.lock.Lock()
-	defer cs.lock.Unlock()
+	if cs.streamingStartedAt.IsZero() {
+		cs.streamingStartedAt = at
+	}
+	cs.lock.Unlock()
+}
 
-	cs.statsInProcess = false
+func (cs *ConnectionStats) clearStreamingStart() {
+	cs.lock.Lock()
+	cs.streamingStartedAt = time.Time{}
+	cs.lock.Unlock()
 }
 
 func (cs *ConnectionStats) getStat(at time.Time) {
@@ -195,23 +207,10 @@ func (cs *ConnectionStats) getStat(at time.Time) {
 		return
 	}
 
-	if !cs.maybeMarkInProcess() {
-		// not yet time to process
-		return
-	}
-
 	streams := cs.params.GetDeltaStats()
 	if len(streams) == 0 {
-		if cs.isTooLongSinceLastStats() && cs.isTooLongSinceLastReceiverReport() {
-			cs.updateLastStatsAt(at)
-			cs.updateScore(streams, at)
-		}
-		cs.clearInProcess()
 		return
 	}
-
-	// stats available, update last stats time
-	cs.updateLastStatsAt(at)
 
 	score := cs.updateScore(streams, at)
 
@@ -240,8 +239,6 @@ func (cs *ConnectionStats) getStat(at time.Time) {
 			Mime:    cs.params.MimeType,
 		})
 	}
-
-	cs.clearInProcess()
 }
 
 func (cs *ConnectionStats) updateStatsWorker() {
@@ -306,6 +303,14 @@ func getPacketLossWeight(mimeType string, isFecEnabled bool) float64 {
 	}
 
 	return plw
+}
+
+func toAggregateDeltaInfo(streams map[uint32]*buffer.StreamStatsWithLayers) *buffer.RTPDeltaInfo {
+	deltaInfoList := make([]*buffer.RTPDeltaInfo, 0, len(streams))
+	for _, s := range streams {
+		deltaInfoList = append(deltaInfoList, s.RTPStats)
+	}
+	return buffer.AggregateRTPDeltaInfo(deltaInfoList)
 }
 
 func toAnalyticsStream(ssrc uint32, deltaStats *buffer.RTPDeltaInfo) *livekit.AnalyticsStream {
