@@ -458,10 +458,10 @@ type FakeLocalParticipant struct {
 	onClaimsChangedArgsForCall []struct {
 		arg1 func(types.LocalParticipant)
 	}
-	OnCloseStub        func(func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID))
+	OnCloseStub        func(func(types.LocalParticipant))
 	onCloseMutex       sync.RWMutex
 	onCloseArgsForCall []struct {
-		arg1 func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID)
+		arg1 func(types.LocalParticipant)
 	}
 	OnDataPacketStub        func(func(types.LocalParticipant, *livekit.DataPacket))
 	onDataPacketMutex       sync.RWMutex
@@ -3186,10 +3186,10 @@ func (fake *FakeLocalParticipant) OnClaimsChangedArgsForCall(i int) func(types.L
 	return argsForCall.arg1
 }
 
-func (fake *FakeLocalParticipant) OnClose(arg1 func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID)) {
+func (fake *FakeLocalParticipant) OnClose(arg1 func(types.LocalParticipant)) {
 	fake.onCloseMutex.Lock()
 	fake.onCloseArgsForCall = append(fake.onCloseArgsForCall, struct {
-		arg1 func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID)
+		arg1 func(types.LocalParticipant)
 	}{arg1})
 	stub := fake.OnCloseStub
 	fake.recordInvocation("OnClose", []interface{}{arg1})
@@ -3205,13 +3205,13 @@ func (fake *FakeLocalParticipant) OnCloseCallCount() int {
 	return len(fake.onCloseArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) OnCloseCalls(stub func(func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID))) {
+func (fake *FakeLocalParticipant) OnCloseCalls(stub func(func(types.LocalParticipant))) {
 	fake.onCloseMutex.Lock()
 	defer fake.onCloseMutex.Unlock()
 	fake.OnCloseStub = stub
 }
 
-func (fake *FakeLocalParticipant) OnCloseArgsForCall(i int) func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID) {
+func (fake *FakeLocalParticipant) OnCloseArgsForCall(i int) func(types.LocalParticipant) {
 	fake.onCloseMutex.RLock()
 	defer fake.onCloseMutex.RUnlock()
 	argsForCall := fake.onCloseArgsForCall[i]

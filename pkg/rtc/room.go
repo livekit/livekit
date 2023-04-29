@@ -533,20 +533,6 @@ func (r *Room) UpdateSubscriptionPermission(participant types.LocalParticipant, 
 	return nil
 }
 
-func (r *Room) RemoveDisallowedSubscriptions(sub types.LocalParticipant, disallowedSubscriptions map[livekit.TrackID]livekit.ParticipantID) {
-	for trackID, publisherID := range disallowedSubscriptions {
-		pub := r.GetParticipantByID(publisherID)
-		if pub == nil {
-			continue
-		}
-
-		track := pub.GetPublishedTrack(trackID)
-		if track != nil {
-			track.RemoveSubscriber(sub.ID(), false)
-		}
-	}
-}
-
 func (r *Room) UpdateVideoLayers(participant types.Participant, updateVideoLayers *livekit.UpdateVideoLayers) error {
 	return participant.UpdateVideoLayers(updateVideoLayers)
 }

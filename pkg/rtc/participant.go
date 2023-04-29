@@ -126,8 +126,6 @@ type ParticipantImpl struct {
 	*UpTrackManager
 	*SubscriptionManager
 
-	// tracks and participants that this participant isn't allowed to subscribe to
-	disallowedSubscriptions map[livekit.TrackID]livekit.ParticipantID // trackID -> publisherID
 	// keeps track of unpublished tracks in order to reuse trackID
 	unpublishedTracks []*livekit.TrackInfo
 
@@ -163,7 +161,7 @@ type ParticipantImpl struct {
 
 	migrateState atomic.Value // types.MigrateState
 
-	onClose            func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID)
+	onClose            func(types.LocalParticipant)
 	onClaimsChanged    func(participant types.LocalParticipant)
 	onICEConfigChanged func(participant types.LocalParticipant, iceConfig *livekit.ICEConfig)
 
@@ -187,7 +185,6 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		rtcpCh:                  make(chan []rtcp.Packet, 100),
 		pendingTracks:           make(map[string]*pendingTrackInfo),
 		pendingPublishingTracks: make(map[livekit.TrackID]*pendingTrackInfo),
-		disallowedSubscriptions: make(map[livekit.TrackID]livekit.ParticipantID),
 		connectedAt:             time.Now(),
 		rttUpdatedAt:            time.Now(),
 		cachedDownTracks:        make(map[livekit.TrackID]*downTrackState),
@@ -496,7 +493,7 @@ func (p *ParticipantImpl) OnDataPacket(callback func(types.LocalParticipant, *li
 	p.lock.Unlock()
 }
 
-func (p *ParticipantImpl) OnClose(callback func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID)) {
+func (p *ParticipantImpl) OnClose(callback func(types.LocalParticipant)) {
 	p.lock.Lock()
 	p.onClose = callback
 	p.lock.Unlock()
@@ -684,13 +681,6 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 
 	p.UpTrackManager.Close(!sendLeave)
 
-	p.lock.Lock()
-	disallowedSubscriptions := make(map[livekit.TrackID]livekit.ParticipantID)
-	for trackID, publisherID := range p.disallowedSubscriptions {
-		disallowedSubscriptions[trackID] = publisherID
-	}
-	p.lock.Unlock()
-
 	p.updateState(livekit.ParticipantInfo_DISCONNECTED)
 
 	// ensure this is synchronized
@@ -699,7 +689,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	onClose := p.onClose
 	p.lock.RUnlock()
 	if onClose != nil {
-		onClose(p, disallowedSubscriptions)
+		onClose(p)
 	}
 
 	// Close peer connections without blocking participant Close. If peer connections are gathering candidates
@@ -976,14 +966,6 @@ func (p *ParticipantImpl) onTrackUnsubscribed(subTrack types.SubscribedTrack) {
 }
 
 func (p *ParticipantImpl) SubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool) {
-	p.lock.Lock()
-	if allowed {
-		delete(p.disallowedSubscriptions, trackID)
-	} else {
-		p.disallowedSubscriptions[trackID] = publisherID
-	}
-	p.lock.Unlock()
-
 	p.params.Logger.Debugw("sending subscription permission update", "publisherID", publisherID, "trackID", trackID, "allowed", allowed)
 	err := p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_SubscriptionPermissionUpdate{
