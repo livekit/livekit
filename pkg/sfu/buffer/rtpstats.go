@@ -124,6 +124,7 @@ type RTPStats struct {
 	lastRR                 rtcp.ReceptionReport
 
 	highestTS   uint32
+	tsCycles    uint32
 	highestTime int64
 
 	lastTransit uint32
@@ -214,6 +215,7 @@ func (r *RTPStats) Seed(from *RTPStats) {
 	r.lastRR = from.lastRR
 
 	r.highestTS = from.highestTS
+	r.tsCycles = from.tsCycles
 	r.highestTime = from.highestTime
 
 	r.lastTransit = from.lastTransit
@@ -338,6 +340,7 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 
 		r.extStartSN = uint32(rtph.SequenceNumber)
 		r.cycles = 0
+		r.tsCycles = 0
 
 		first = true
 
@@ -404,6 +407,9 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 			r.cycles++
 		}
 		r.highestSN = rtph.SequenceNumber
+		if rtph.Timestamp < r.highestTS && !first {
+			r.tsCycles++
+		}
 		r.highestTS = rtph.Timestamp
 		r.highestTime = packetTime
 	}
@@ -803,8 +809,8 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srDataExt *RTCPSenderReportD
 		rtpOffset := int32(nowRTP - r.highestTS - uint32(ntpDiff.Milliseconds()*int64(r.params.ClockRate)/1000))
 
 		timeSinceFirst := nowNTP.Time().Sub(r.firstSenderReportNTP.Time())
-		rtpDiffSinceFirst := nowRTP - r.firstSenderReportRTP // this will roll over in 13h (video) - 25h (audio at 48 KHz), but okay for debug purposes
-		drift := int32(uint32(timeSinceFirst.Milliseconds()*int64(r.params.ClockRate)/1000) - rtpDiffSinceFirst)
+		rtpDiffSinceFirst := getExtTS(nowRTP, r.tsCycles) - getExtTS(r.firstSenderReportRTP, 0)
+		drift := int64(uint64(timeSinceFirst.Milliseconds()*int64(r.params.ClockRate)/1000) - rtpDiffSinceFirst)
 		driftTime := float64(drift) / float64(r.params.ClockRate) / 1000
 		r.logger.Debugw(
 			"sender report",
@@ -1414,6 +1420,10 @@ func (r *RTPStats) getAndResetSnapshot(snapshotId uint32, override bool) (*Snaps
 }
 
 // ----------------------------------
+
+func getExtTS(ts uint32, cycles uint32) uint64 {
+	return (uint64(cycles) << 32) | uint64(ts)
+}
 
 func AggregateRTPStats(statsList []*livekit.RTPStats) *livekit.RTPStats {
 	if len(statsList) == 0 {
