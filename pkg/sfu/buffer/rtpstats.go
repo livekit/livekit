@@ -174,7 +174,9 @@ type RTPStats struct {
 	rtt    uint32
 	maxRtt uint32
 
-	srDataExt *RTCPSenderReportDataExt
+	srDataExt            *RTCPSenderReportDataExt
+	firstSenderReportNTP mediatransportutil.NtpTime
+	firstSenderReportRTP uint32
 
 	nextSnapshotId uint32
 	snapshots      map[uint32]*Snapshot
@@ -270,6 +272,8 @@ func (r *RTPStats) Seed(from *RTPStats) {
 	} else {
 		r.srDataExt = nil
 	}
+	r.firstSenderReportNTP = from.firstSenderReportNTP
+	r.firstSenderReportRTP = from.firstSenderReportRTP
 
 	r.nextSnapshotId = from.nextSnapshotId
 	for id, ss := range from.snapshots {
@@ -706,6 +710,11 @@ func (r *RTPStats) SetRtcpSenderReportData(srData *RTCPSenderReportData) {
 
 	// prevent against extreme case of anachronous sender reports
 	if r.srDataExt != nil && r.srDataExt.SenderReportData.NTPTimestamp > srData.NTPTimestamp {
+		r.logger.Debugw(
+			"anachronous RTCP sender report",
+			"current", srData.NTPTimestamp.Time(),
+			"last", r.srDataExt.SenderReportData.NTPTimestamp.Time(),
+		)
 		return
 	}
 
@@ -780,6 +789,37 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srDataExt *RTCPSenderReportD
 		nowRTP += uint32(now.Sub(time.Unix(0, r.highestTime)).Milliseconds() * int64(r.params.ClockRate) / 1000)
 	} else {
 		nowRTP = srDataExt.SenderReportData.RTPTimestamp + uint32(now.Sub(smoothedLocalTimeOfLatestSenderReportNTP).Milliseconds()*int64(r.params.ClockRate)/1000)
+	}
+
+	// TODO-REMOVE-AFTER-DEBUG
+	if r.firstSenderReportNTP == 0 {
+		r.firstSenderReportNTP = nowNTP
+		r.firstSenderReportRTP = nowRTP
+	} else {
+		highestTime := time.Unix(0, r.highestTime)
+		ntpTime := nowNTP.Time()
+		ntpDiff := ntpTime.Sub(highestTime)
+		rtpDiff := int32(nowRTP - r.highestTS)
+		rtpOffset := int32(nowRTP - r.highestTS - uint32(ntpDiff.Milliseconds()*int64(r.params.ClockRate)/1000))
+
+		timeSinceFirst := nowNTP.Time().Sub(r.firstSenderReportNTP.Time())
+		rtpDiffSinceFirst := nowRTP - r.firstSenderReportRTP // this will roll over in 13h (video) - 25h (audio at 48 KHz), but okay for debug purposes
+		drift := int32(uint32(timeSinceFirst.Milliseconds()*int64(r.params.ClockRate)/1000) - rtpDiffSinceFirst)
+		driftTime := float64(drift) / float64(r.params.ClockRate) / 1000
+		r.logger.Debugw(
+			"sender report",
+			"highestTS", r.highestTS,
+			"reportTS", nowRTP,
+			"rtpDiff", rtpDiff,
+			"highestTime", time.Unix(0, r.highestTime),
+			"reportTime", nowNTP.Time(),
+			"timeDiff", ntpDiff,
+			"rtpOffset", rtpOffset,
+			"timeSinceFirst", timeSinceFirst,
+			"rtpDiffSinceFirst", rtpDiffSinceFirst,
+			"drift", drift,
+			"driftTime(ms)", driftTime,
+		)
 	}
 
 	return &rtcp.SenderReport{
