@@ -765,8 +765,8 @@ func (r *RTPStats) GetRtcpSenderReportDataExt() *RTCPSenderReportDataExt {
 }
 
 func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srDataExt *RTCPSenderReportDataExt) *rtcp.SenderReport {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.lock.Lock()
+	defer r.lock.Unlock()
 
 	if !r.initialized {
 		return nil
