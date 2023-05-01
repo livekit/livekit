@@ -750,15 +750,27 @@ func (r *RTPStats) SetRtcpSenderReportData(srData *RTCPSenderReportData) {
 	if r.srDataExt != nil {
 		smoothedOwd = r.srDataExt.SmoothedOWD
 	}
+	smoothedOwd = (owd + smoothedOwd) / 2
+	// TODO-REMOVE-AFTER-DEBUG
+	if r.params.ClockRate != 90000 { // log only for audio as it is less frequent
+		r.logger.Debugw(
+			"received sender report",
+			"ntp", srData.NTPTimestamp.Time(),
+			"rtp", srData.RTPTimestamp,
+			"arrival", srData.ArrivalTime,
+			"owd", owd,
+			"smoothedOwd", smoothedOwd,
+		)
+	}
 	r.srDataExt = &RTCPSenderReportDataExt{
 		SenderReportData: *srData,
-		SmoothedOWD:      (owd + smoothedOwd) / 2,
+		SmoothedOWD:      smoothedOwd,
 	}
 }
 
 func (r *RTPStats) GetRtcpSenderReportDataExt() *RTCPSenderReportDataExt {
-	r.lock.Lock()
-	defer r.lock.Unlock()
+	r.lock.RLock()
+	defer r.lock.RUnlock()
 
 	if r.srDataExt == nil {
 		return nil
@@ -815,9 +827,14 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srDataExt *RTCPSenderReportD
 	} else {
 		highestTime := time.Unix(0, r.highestTime)
 		ntpTime := nowNTP.Time()
-		ntpDiff := ntpTime.Sub(highestTime)
-		rtpDiff := int32(nowRTP - r.highestTS)
-		rtpOffset := int32(nowRTP - r.highestTS - uint32(ntpDiff.Nanoseconds()*int64(r.params.ClockRate)/1e9))
+
+		ntpDiffLocal := ntpTime.Sub(highestTime)
+		rtpDiffLocal := int32(nowRTP - r.highestTS)
+		rtpOffsetLocal := int32(nowRTP - r.highestTS - uint32(ntpDiffLocal.Nanoseconds()*int64(r.params.ClockRate)/1e9))
+
+		ntpDiffSmoothed := ntpTime.Sub(smoothedLocalTimeOfLatestSenderReportNTP)
+		rtpDiffSmoothed := int32(nowRTP - srDataExt.SenderReportData.RTPTimestamp)
+		rtpOffsetSmoothed := int32(nowRTP - srDataExt.SenderReportData.RTPTimestamp - uint32(ntpDiffSmoothed.Nanoseconds()*int64(r.params.ClockRate)/1e9))
 
 		timeSinceFirst := nowNTP.Time().Sub(r.firstSenderReportNTP.Time())
 		rtpDiffSinceFirst := getExtTS(nowRTP, r.tsCycles) - getExtTS(r.firstSenderReportRTP, 0)
@@ -831,14 +848,18 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srDataExt *RTCPSenderReportD
 		feedDriftTime := (float64(feedDrift) * 1000) / float64(r.params.ClockRate)
 
 		r.logger.Debugw(
-			"sender report",
+			"sending sender report",
 			"highestTS", r.highestTS,
-			"reportTS", nowRTP,
-			"rtpDiff", rtpDiff,
 			"highestTime", highestTime,
+			"smoothedTime", smoothedLocalTimeOfLatestSenderReportNTP,
+			"reportTS", nowRTP,
 			"reportTime", ntpTime,
-			"timeDiff", ntpDiff,
-			"rtpOffset", rtpOffset,
+			"rtpDiffLocal", rtpDiffLocal,
+			"ntpDiffLocal", ntpDiffLocal,
+			"rtpOffsetLocal", rtpOffsetLocal,
+			"rtpDiffSmoothed", rtpDiffSmoothed,
+			"ntpDiffSmoothed", ntpDiffSmoothed,
+			"rtpOffsetSmoothed", rtpOffsetSmoothed,
 			"timeSinceFirst", timeSinceFirst,
 			"rtpDiffSinceFirst", rtpDiffSinceFirst,
 			"drift", drift,
