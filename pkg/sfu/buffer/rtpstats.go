@@ -407,10 +407,12 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 			r.cycles++
 		}
 		r.highestSN = rtph.SequenceNumber
+
 		if rtph.Timestamp < r.highestTS && !first {
 			r.tsCycles++
 		}
 		r.highestTS = rtph.Timestamp
+
 		r.highestTime = packetTime
 	}
 
@@ -785,8 +787,10 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srDataExt *RTCPSenderReportD
 	nowNTP := mediatransportutil.ToNtpTime(now)
 	nowRTP := r.highestTS
 
+	isUsingSmoothed := true
 	smoothedLocalTimeOfLatestSenderReportNTP := srDataExt.SenderReportData.NTPTimestamp.Time().Add(srDataExt.SmoothedOWD)
 	if smoothedLocalTimeOfLatestSenderReportNTP.After(now) {
+		isUsingSmoothed = false
 		r.logger.Debugw("smoothed time of NTP is ahead",
 			"now", now,
 			"smoothed", smoothedLocalTimeOfLatestSenderReportNTP,
@@ -806,12 +810,12 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srDataExt *RTCPSenderReportD
 		ntpTime := nowNTP.Time()
 		ntpDiff := ntpTime.Sub(highestTime)
 		rtpDiff := int32(nowRTP - r.highestTS)
-		rtpOffset := int32(nowRTP - r.highestTS - uint32(ntpDiff.Milliseconds()*int64(r.params.ClockRate)/1000))
+		rtpOffset := int32(nowRTP - r.highestTS - uint32(ntpDiff.Nanoseconds()*int64(r.params.ClockRate)/1e9))
 
 		timeSinceFirst := nowNTP.Time().Sub(r.firstSenderReportNTP.Time())
 		rtpDiffSinceFirst := getExtTS(nowRTP, r.tsCycles) - getExtTS(r.firstSenderReportRTP, 0)
-		drift := int64(uint64(timeSinceFirst.Milliseconds()*int64(r.params.ClockRate)/1000) - rtpDiffSinceFirst)
-		driftTime := float64(drift) / float64(r.params.ClockRate) / 1000
+		drift := int64(uint64(timeSinceFirst.Nanoseconds()*int64(r.params.ClockRate)/1e9) - rtpDiffSinceFirst)
+		driftTime := (float64(drift) * 1000) / float64(r.params.ClockRate)
 		r.logger.Debugw(
 			"sender report",
 			"highestTS", r.highestTS,
@@ -825,6 +829,11 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srDataExt *RTCPSenderReportD
 			"rtpDiffSinceFirst", rtpDiffSinceFirst,
 			"drift", drift,
 			"driftTime(ms)", driftTime,
+			"smoothed", isUsingSmoothed,
+			"feedRTP", srDataExt.SenderReportData.RTPTimestamp,
+			"feedNTP", srDataExt.SenderReportData.NTPTimestamp.Time(),
+			"feedArrival", srDataExt.SenderReportData.ArrivalTime,
+			"smoothedOWD", srDataExt.SmoothedOWD,
 		)
 	}
 
