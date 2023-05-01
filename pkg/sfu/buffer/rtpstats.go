@@ -175,9 +175,11 @@ type RTPStats struct {
 	rtt    uint32
 	maxRtt uint32
 
-	srDataExt            *RTCPSenderReportDataExt
-	firstSenderReportNTP mediatransportutil.NtpTime
-	firstSenderReportRTP uint32
+	srDataExt                *RTCPSenderReportDataExt
+	firstSenderReportNTP     mediatransportutil.NtpTime
+	firstSenderReportRTP     uint32
+	firstFeedSenderReportNTP mediatransportutil.NtpTime
+	firstFeedSenderReportRTP uint32
 
 	nextSnapshotId uint32
 	snapshots      map[uint32]*Snapshot
@@ -276,6 +278,8 @@ func (r *RTPStats) Seed(from *RTPStats) {
 	}
 	r.firstSenderReportNTP = from.firstSenderReportNTP
 	r.firstSenderReportRTP = from.firstSenderReportRTP
+	r.firstFeedSenderReportNTP = from.firstFeedSenderReportNTP
+	r.firstFeedSenderReportRTP = from.firstFeedSenderReportRTP
 
 	r.nextSnapshotId = from.nextSnapshotId
 	for id, ss := range from.snapshots {
@@ -805,6 +809,9 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srDataExt *RTCPSenderReportD
 	if r.firstSenderReportNTP == 0 {
 		r.firstSenderReportNTP = nowNTP
 		r.firstSenderReportRTP = nowRTP
+
+		r.firstFeedSenderReportNTP = srDataExt.SenderReportData.NTPTimestamp
+		r.firstFeedSenderReportRTP = srDataExt.SenderReportData.RTPTimestamp
 	} else {
 		highestTime := time.Unix(0, r.highestTime)
 		ntpTime := nowNTP.Time()
@@ -816,6 +823,13 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srDataExt *RTCPSenderReportD
 		rtpDiffSinceFirst := getExtTS(nowRTP, r.tsCycles) - getExtTS(r.firstSenderReportRTP, 0)
 		drift := int64(uint64(timeSinceFirst.Nanoseconds()*int64(r.params.ClockRate)/1e9) - rtpDiffSinceFirst)
 		driftTime := (float64(drift) * 1000) / float64(r.params.ClockRate)
+
+		feedTimeSinceFirst := srDataExt.SenderReportData.NTPTimestamp.Time().Sub(r.firstFeedSenderReportNTP.Time())
+		// using tsCycles for extending feed time stamp too
+		feedRtpDiffSinceFirst := getExtTS(srDataExt.SenderReportData.RTPTimestamp, r.tsCycles) - getExtTS(r.firstFeedSenderReportRTP, 0)
+		feedDrift := int64(uint64(feedTimeSinceFirst.Nanoseconds()*int64(r.params.ClockRate)/1e9) - feedRtpDiffSinceFirst)
+		feedDriftTime := (float64(feedDrift) * 1000) / float64(r.params.ClockRate)
+
 		r.logger.Debugw(
 			"sender report",
 			"highestTS", r.highestTS,
@@ -834,6 +848,10 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srDataExt *RTCPSenderReportD
 			"feedNTP", srDataExt.SenderReportData.NTPTimestamp.Time(),
 			"feedArrival", srDataExt.SenderReportData.ArrivalTime,
 			"smoothedOWD", srDataExt.SmoothedOWD,
+			"feedTimeSinceFirst", feedTimeSinceFirst,
+			"feedRtpDiffSinceFirst", feedRtpDiffSinceFirst,
+			"feedDrift", feedDrift,
+			"feedDriftTime(ms)", feedDriftTime,
 		)
 	}
 
