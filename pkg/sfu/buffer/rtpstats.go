@@ -827,9 +827,14 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srDataExt *RTCPSenderReportD
 	} else {
 		highestTime := time.Unix(0, r.highestTime)
 		ntpTime := nowNTP.Time()
-		ntpDiff := ntpTime.Sub(highestTime)
-		rtpDiff := int32(nowRTP - r.highestTS)
-		rtpOffset := int32(nowRTP - r.highestTS - uint32(ntpDiff.Nanoseconds()*int64(r.params.ClockRate)/1e9))
+
+		ntpDiffLocal := ntpTime.Sub(highestTime)
+		rtpDiffLocal := int32(nowRTP - r.highestTS)
+		rtpOffsetLocal := int32(nowRTP - r.highestTS - uint32(ntpDiffLocal.Nanoseconds()*int64(r.params.ClockRate)/1e9))
+
+		ntpDiffSmoothed := ntpTime.Sub(smoothedLocalTimeOfLatestSenderReportNTP)
+		rtpDiffSmoothed := int32(nowRTP - srDataExt.SenderReportData.RTPTimestamp)
+		rtpOffsetSmoothed := int32(nowRTP - srDataExt.SenderReportData.RTPTimestamp - uint32(ntpDiffSmoothed.Nanoseconds()*int64(r.params.ClockRate)/1e9))
 
 		timeSinceFirst := nowNTP.Time().Sub(r.firstSenderReportNTP.Time())
 		rtpDiffSinceFirst := getExtTS(nowRTP, r.tsCycles) - getExtTS(r.firstSenderReportRTP, 0)
@@ -845,12 +850,16 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srDataExt *RTCPSenderReportD
 		r.logger.Debugw(
 			"sending sender report",
 			"highestTS", r.highestTS,
-			"reportTS", nowRTP,
-			"rtpDiff", rtpDiff,
 			"highestTime", highestTime,
+			"smoothedTime", smoothedLocalTimeOfLatestSenderReportNTP,
+			"reportTS", nowRTP,
 			"reportTime", ntpTime,
-			"timeDiff", ntpDiff,
-			"rtpOffset", rtpOffset,
+			"rtpDiffLocal", rtpDiffLocal,
+			"ntpDiffLocal", ntpDiffLocal,
+			"rtpOffsetLocal", rtpOffsetLocal,
+			"rtpDiffSmoothed", rtpDiffSmoothed,
+			"ntpDiffSmoothed", ntpDiffSmoothed,
+			"rtpOffsetSmoothed", rtpOffsetSmoothed,
 			"timeSinceFirst", timeSinceFirst,
 			"rtpDiffSinceFirst", rtpDiffSinceFirst,
 			"drift", drift,

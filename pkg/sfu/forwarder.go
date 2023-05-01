@@ -1459,6 +1459,7 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 						// log jumps greater than 0.5 seconds
 						f.logger.Debugw("reference timestamp too far ahead", "lastTS", last.LastTS, "refTS", refTS, "td", td)
 					}
+					f.logger.Debugw("reference timestamp on switch", "lastTS", last.LastTS, "refTS", refTS, "td", int32(td), "switchingAt", time.Now())
 				} else {
 					f.logger.Debugw("reference timestamp get error, using default", "error", err)
 				}
