@@ -259,6 +259,7 @@ type EgressConfig struct {
 
 type IngressConfig struct {
 	RTMPBaseURL string `yaml:"rtmp_base_url"`
+	WHIPBaseURL string `yaml:"whip_base_url"`
 }
 
 // not exposed to YAML

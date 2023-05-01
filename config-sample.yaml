@@ -224,9 +224,9 @@ keys:
 # ingress server
 # ingress:
 #   # Prefix used to generate RTMP URLs for RTMP ingress.
-#   # The stream_key will be appended to this base and returned as part of the
-#   # ingress info
 #   rtmp_base_url: "rtmp://my.domain.com/live"
+#   # Prefix used to generate WHIP URLs for WHIP ingress.
+#   whip_base_url: "http://my.domain.com/whip"
 
 # egress server
 # egress:

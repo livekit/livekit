@@ -56,7 +56,17 @@ func (s *IngressService) CreateIngress(ctx context.Context, req *livekit.CreateI
 		AppendLogFields(ctx, fields...)
 	}()
 
-	ig, err := s.CreateIngressWithUrlPrefix(ctx, s.conf.RTMPBaseURL, req)
+	var urlPrefix string
+	switch req.InputType {
+	case livekit.IngressInput_RTMP_INPUT:
+		urlPrefix = s.conf.RTMPBaseURL
+	case livekit.IngressInput_WHIP_INPUT:
+		urlPrefix = s.conf.WHIPBaseURL
+	default:
+		return nil, ingress.ErrInvalidIngressType
+	}
+
+	ig, err := s.CreateIngressWithUrlPrefix(ctx, urlPrefix, req)
 	if err != nil {
 		return nil, err
 	}
