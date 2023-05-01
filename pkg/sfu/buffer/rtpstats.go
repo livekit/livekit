@@ -730,6 +730,11 @@ func (r *RTPStats) SetRtcpSenderReportData(srData *RTCPSenderReportData) {
 		return
 	}
 
+	// TODO-REMOVE-AFTER-DEBUG
+	if r.params.ClockRate != 90000 { // log only for audio as it is less frequent
+		r.logger.Debugw("received sender report", "ntp", srData.NTPTimestamp.Time(), "rtp", srData.RTPTimestamp, "arrival", srData.ArrivalTime)
+	}
+
 	// Low pass filter one-way-delay (owd) to normalize time stamp to local time base when sending RTCP Sender Report.
 	// Forwarding RTCP Sender Report would be ideal. But, there are a couple of issues with that
 	//   1. Senders could have different clocks.
@@ -757,8 +762,8 @@ func (r *RTPStats) SetRtcpSenderReportData(srData *RTCPSenderReportData) {
 }
 
 func (r *RTPStats) GetRtcpSenderReportDataExt() *RTCPSenderReportDataExt {
-	r.lock.Lock()
-	defer r.lock.Unlock()
+	r.lock.RLock()
+	defer r.lock.RUnlock()
 
 	if r.srDataExt == nil {
 		return nil
@@ -831,7 +836,7 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srDataExt *RTCPSenderReportD
 		feedDriftTime := (float64(feedDrift) * 1000) / float64(r.params.ClockRate)
 
 		r.logger.Debugw(
-			"sender report",
+			"sending sender report",
 			"highestTS", r.highestTS,
 			"reportTS", nowRTP,
 			"rtpDiff", rtpDiff,
