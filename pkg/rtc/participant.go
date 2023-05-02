@@ -31,7 +31,6 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
-	"github.com/livekit/psrpc"
 )
 
 const (
@@ -977,9 +976,7 @@ func (p *ParticipantImpl) SubscriptionPermissionUpdate(publisherID livekit.Parti
 			},
 		},
 	})
-	if errors.Is(err, psrpc.Canceled) {
-		p.params.Logger.Debugw("could not send subscription permission update", "error", err)
-	} else if err != nil {
+	if err != nil {
 		p.params.Logger.Errorw("could not send subscription permission update", err)
 	}
 }
