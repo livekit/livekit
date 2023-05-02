@@ -28,3 +28,5 @@ proto/
 .idea
 
 dist/
+
+config.local.yaml

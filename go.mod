@@ -4,11 +4,16 @@ go 1.18
 
 replace github.com/livekit/protocol v1.5.4 => github.com/dTelecom/protocol v1.0.3
 
+//replace github.com/livekit/protocol => /var/www/dtelekom/protocol
+//replace github.com/dTelecom/p2p-realtime-database => /var/www/dtelekom/p2p-database
+
 require (
 	github.com/bep/debounce v1.2.1
 	github.com/d5/tengo/v2 v2.14.0
+	github.com/dTelecom/p2p-realtime-database v1.0.1
 	github.com/dustin/go-humanize v1.0.1
 	github.com/elliotchance/orderedmap/v2 v2.2.0
+	github.com/ethereum/go-ethereum v1.11.6
 	github.com/florianl/go-tc v0.4.2
 	github.com/frostbyte73/core v0.0.5
 	github.com/gammazero/deque v0.2.1
@@ -69,7 +74,6 @@ require (
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
 	github.com/crackcomm/go-gitignore v0.0.0-20170627025303-887ab5e44cc3 // indirect
 	github.com/cskr/pubsub v1.0.2 // indirect
-	github.com/dTelecom/p2p-realtime-database v1.0.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/davidlazar/go-crypto v0.0.0-20200604182044-b73af7476f6c // indirect
 	github.com/deckarep/golang-set/v2 v2.1.0 // indirect
@@ -79,7 +83,6 @@ require (
 	github.com/eapache/channels v1.1.0 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
 	github.com/elastic/gosigar v0.14.2 // indirect
-	github.com/ethereum/go-ethereum v1.11.6 // indirect
 	github.com/flynn/noise v1.0.0 // indirect
 	github.com/francoispqt/gojay v1.2.13 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
@@ -210,12 +213,11 @@ require (
 	go.uber.org/fx v1.18.2 // indirect
 	go.uber.org/multierr v1.9.0 // indirect
 	golang.org/x/crypto v0.7.0 // indirect
-	golang.org/x/exp v0.0.0-20230321023759-10a507213a29 // indirect
+	golang.org/x/exp v0.0.0-20230213192124-5e25df0256eb // indirect
 	golang.org/x/mod v0.9.0 // indirect
 	golang.org/x/net v0.8.0 // indirect
 	golang.org/x/sys v0.7.0 // indirect
 	golang.org/x/text v0.8.0 // indirect
-	golang.org/x/time v0.3.0 // indirect
 	golang.org/x/tools v0.7.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	gonum.org/v1/gonum v0.11.0 // indirect

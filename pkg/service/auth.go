@@ -3,9 +3,12 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/protocol/auth"
@@ -28,10 +31,10 @@ var (
 
 // authentication middleware
 type APIKeyAuthMiddleware struct {
-	provider auth.KeyProvider
+	provider auth.KeyProviderPublicKey
 }
 
-func NewAPIKeyAuthMiddleware(provider auth.KeyProvider) *APIKeyAuthMiddleware {
+func NewAPIKeyAuthMiddleware(provider auth.KeyProviderPublicKey) *APIKeyAuthMiddleware {
 	return &APIKeyAuthMiddleware{
 		provider: provider,
 	}
@@ -64,15 +67,33 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 			return
 		}
 
-		secret := m.provider.GetSecret(v.APIKey())
-		if secret == "" {
-			handleError(w, http.StatusUnauthorized, errors.New("invalid API key: "+v.APIKey()))
+		pk := m.provider.GetPublicKey(v.APIKey())
+		if pk == "" {
+			handleError(w, http.StatusUnauthorized, errors.New(fmt.Sprintf("wallet %s not exists in contract", v.APIKey())))
 			return
 		}
 
-		grants, err := v.Verify(secret)
+		pkb, err := hexutil.Decode(pk)
 		if err != nil {
-			handleError(w, http.StatusUnauthorized, errors.New("invalid token: "+authToken+", error: "+err.Error()))
+			handleError(w, http.StatusUnauthorized, fmt.Errorf("cannot decode public key %s err %s", pk, err))
+			return
+		}
+
+		newKey, err := crypto.UnmarshalPubkey(pkb)
+		if err != nil {
+			handleError(w, http.StatusUnauthorized, fmt.Errorf("cannot unmarshal public key %s err %s", pk, err))
+			return
+		}
+
+		//secret := m.provider.GetSecret(v.APIKey())
+		//if secret == "" {
+		//	handleError(w, http.StatusUnauthorized, errors.New("invalid API key: "+v.APIKey()))
+		//	return
+		//}
+
+		grants, err := v.Verify(newKey)
+		if err != nil {
+			handleError(w, http.StatusUnauthorized, fmt.Errorf("invalid token: %s, error: %s", authToken, err))
 			return
 		}
 

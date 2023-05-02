@@ -7,14 +7,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mitchellh/go-homedir"
-	"github.com/pion/webrtc/v3"
-	"github.com/pkg/errors"
-	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/protocol/logger"
 	redisLiveKit "github.com/livekit/protocol/redis"
+	"github.com/mitchellh/go-homedir"
+	"github.com/pion/webrtc/v3"
+	"github.com/pkg/errors"
+	"github.com/urfave/cli/v2"
 )
 
 var DefaultStunServers = []string{
@@ -62,12 +62,21 @@ type Config struct {
 	Keys           map[string]string        `yaml:"keys,omitempty"`
 	Region         string                   `yaml:"region,omitempty"`
 	SignalRelay    SignalRelayConfig        `yaml:"signal_relay,omitempty"`
+	Ethereum       EthereumConfig           `yaml:"ethereum"`
 	// LogLevel is deprecated
 	LogLevel string        `yaml:"log_level,omitempty"`
 	Logging  LoggingConfig `yaml:"logging,omitempty"`
 	Limit    LimitConfig   `yaml:"limit,omitempty"`
 
 	Development bool `yaml:"development,omitempty"`
+}
+
+type EthereumConfig struct {
+	WalletAddress    string `yaml:"wallet_address"`
+	WalletPrivateKey string `yaml:"wallet_private_key"`
+	ContractAddress  string `yaml:"contract_address"`
+	NetworkHost      string `yaml:"network_host"`
+	NetworkKey       string `yaml:"network_key"`
 }
 
 type RTCConfig struct {
@@ -540,37 +549,19 @@ func (conf *Config) ToCLIFlagNames(existingFlags []cli.Flag) map[string]reflect.
 }
 
 func (conf *Config) ValidateKeys() error {
-	// prefer keyfile if set
-	if conf.KeyFile != "" {
-		if st, err := os.Stat(conf.KeyFile); err != nil {
-			return err
-		} else if st.Mode().Perm() != 0600 {
-			return ErrKeyFileIncorrectPermission
-		}
-		f, err := os.Open(conf.KeyFile)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			_ = f.Close()
-		}()
-		decoder := yaml.NewDecoder(f)
-		if err = decoder.Decode(conf.Keys); err != nil {
-			return err
-		}
+	switch {
+	case conf.Ethereum.WalletPrivateKey == "":
+		return errors.New("empty ethereum.wallet_private_key")
+	case conf.Ethereum.WalletAddress == "":
+		return errors.New("empty ethereum.wallet_address")
+	case conf.Ethereum.ContractAddress == "":
+		return errors.New("empty ethereum.contract_address")
+	case conf.Ethereum.NetworkKey == "":
+		return errors.New("empty ethereum.network_key")
+	case conf.Ethereum.NetworkHost == "":
+		return errors.New("empty ethereum.network_host")
 	}
 
-	if len(conf.Keys) == 0 {
-		return ErrKeysNotSet
-	}
-
-	if !conf.Development {
-		for key, secret := range conf.Keys {
-			if len(secret) < 32 {
-				logger.Errorw("secret is too short, should be at least 32 characters for security", nil, "apiKey", key)
-			}
-		}
-	}
 	return nil
 }
 
