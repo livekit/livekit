@@ -1,7 +1,6 @@
 package streamallocator
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -15,7 +14,6 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/psrpc"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/sfu"
@@ -1177,9 +1175,7 @@ func (s *StreamAllocator) maybeSendUpdate(update *StreamStateUpdate) {
 	}
 	if s.onStreamStateChange != nil {
 		err := s.onStreamStateChange(update)
-		if errors.Is(err, psrpc.Canceled) {
-			s.params.Logger.Debugw("could not send streamed tracks update", "error", err)
-		} else if err != nil {
+		if err != nil {
 			s.params.Logger.Errorw("could not send streamed tracks update", err)
 		}
 	}
