@@ -19,7 +19,7 @@ require (
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20230326055817-ed569ca13d26
 	github.com/livekit/protocol v1.5.6-0.20230428011359-db5afb1c7f9b
-	github.com/livekit/psrpc v0.3.1-0.20230425025640-5390915734c3
+	github.com/livekit/psrpc v0.3.1-0.20230502152150-df9dd21fba11
 	github.com/mackerelio/go-osstat v0.2.4
 	github.com/magefile/mage v1.14.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.6.1
@@ -37,7 +37,7 @@ require (
 	github.com/pion/webrtc/v3 v3.2.1
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.15.0
-	github.com/redis/go-redis/v9 v9.0.3
+	github.com/redis/go-redis/v9 v9.0.4
 	github.com/rs/cors v1.9.0
 	github.com/stretchr/testify v1.8.2
 	github.com/thoas/go-funk v0.9.3
