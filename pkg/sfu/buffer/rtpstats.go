@@ -753,11 +753,24 @@ func (r *RTPStats) SetRtcpSenderReportData(srData *RTCPSenderReportData) {
 	smoothedOwd = (owd + smoothedOwd) / 2
 	// TODO-REMOVE-AFTER-DEBUG
 	if r.params.ClockRate != 90000 { // log only for audio as it is less frequent
+		ntpTime := srData.NTPTimestamp.Time()
+
+		var ntpDiffSinceLast, arrivalDiffSinceLast time.Duration
+		var rtpDiffSinceLast uint32
+		if r.srDataExt != nil {
+			ntpDiffSinceLast = ntpTime.Sub(r.srDataExt.SenderReportData.NTPTimestamp.Time())
+			rtpDiffSinceLast = srData.RTPTimestamp - r.srDataExt.SenderReportData.RTPTimestamp
+			arrivalDiffSinceLast = srData.ArrivalTime.Sub(r.srDataExt.SenderReportData.ArrivalTime)
+		}
 		r.logger.Debugw(
 			"received sender report",
-			"ntp", srData.NTPTimestamp.Time(),
+			"ntp", ntpTime,
 			"rtp", srData.RTPTimestamp,
 			"arrival", srData.ArrivalTime,
+			"ntpDiff", ntpDiffSinceLast,
+			"rtpDiff", rtpDiffSinceLast,
+			"arrivalDiff", arrivalDiffSinceLast,
+			"expectedTimeDiff", float64(rtpDiffSinceLast)/float64(r.params.ClockRate),
 			"owd", owd,
 			"smoothedOwd", smoothedOwd,
 		)
@@ -1381,6 +1394,7 @@ func (r *RTPStats) getIntervalStats(startInclusive uint16, endExclusive uint16) 
 			"start", startInclusive,
 			"end", endExclusive,
 			"count", packetsNotFound,
+			"highestSN", r.highestSN,
 		)
 	}
 	return
