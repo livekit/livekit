@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/crypto"
+	eth_crypto "github.com/ethereum/go-ethereum/crypto"
 	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/protocol/auth"
@@ -79,19 +79,13 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 			return
 		}
 
-		newKey, err := crypto.UnmarshalPubkey(pkb)
+		publicKey, err := eth_crypto.UnmarshalPubkey(pkb)
 		if err != nil {
 			handleError(w, http.StatusUnauthorized, fmt.Errorf("cannot unmarshal public key %s err %s", pk, err))
 			return
 		}
 
-		//secret := m.provider.GetSecret(v.APIKey())
-		//if secret == "" {
-		//	handleError(w, http.StatusUnauthorized, errors.New("invalid API key: "+v.APIKey()))
-		//	return
-		//}
-
-		grants, err := v.Verify(newKey)
+		grants, err := v.Verify(publicKey)
 		if err != nil {
 			handleError(w, http.StatusUnauthorized, fmt.Errorf("invalid token: %s, error: %s", authToken, err))
 			return
