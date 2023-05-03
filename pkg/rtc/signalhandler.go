@@ -76,12 +76,7 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 
 	case *livekit.SignalRequest_UpdateMetadata:
 		if participant.ClaimGrants().Video.GetCanUpdateOwnMetadata() {
-			if msg.UpdateMetadata.Metadata != "" {
-				participant.SetMetadata(msg.UpdateMetadata.Metadata)
-			}
-			if msg.UpdateMetadata.Name != "" {
-				participant.SetName(msg.UpdateMetadata.Name)
-			}
+			room.UpdateParticipantMetadata(participant, msg.UpdateMetadata.Name, msg.UpdateMetadata.Metadata)
 		}
 	}
 	return nil

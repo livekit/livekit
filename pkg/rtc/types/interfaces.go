@@ -357,6 +357,7 @@ type Room interface {
 	UpdateVideoLayers(participant Participant, updateVideoLayers *livekit.UpdateVideoLayers) error
 	ResolveMediaTrackForSubscriber(subIdentity livekit.ParticipantIdentity, trackID livekit.TrackID) MediaResolverResult
 	GetLocalParticipants() []LocalParticipant
+	UpdateParticipantMetadata(participant LocalParticipant, name string, metadata string)
 }
 
 // MediaTrack represents a media track

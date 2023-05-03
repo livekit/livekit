@@ -649,6 +649,15 @@ func (r *Room) SetMetadata(metadata string) {
 	r.protoProxy.MarkDirty(true)
 }
 
+func (r *Room) UpdateParticipantMetadata(participant types.LocalParticipant, name string, metadata string) {
+	if metadata != "" {
+		participant.SetMetadata(metadata)
+	}
+	if name != "" {
+		participant.SetName(name)
+	}
+}
+
 func (r *Room) sendRoomUpdate() {
 	roomInfo := r.ToProto()
 	// Send update to participants
