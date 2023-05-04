@@ -469,13 +469,6 @@ func (f *Forwarder) TargetLayer() buffer.VideoLayer {
 	return f.vls.GetTarget()
 }
 
-func (f *Forwarder) GetReferenceLayerSpatial() int32 {
-	f.lock.RLock()
-	defer f.lock.RUnlock()
-
-	return f.referenceLayerSpatial
-}
-
 func (f *Forwarder) isDeficientLocked() bool {
 	return f.lastAllocation.IsDeficient
 }
