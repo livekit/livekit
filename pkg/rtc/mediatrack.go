@@ -190,6 +190,7 @@ func (t *MediaTrack) SetPendingCodecSid(codecs []*livekit.SimulcastCodec) {
 		}
 	}
 	t.params.TrackInfo = ti
+	t.MediaTrackReceiver.UpdateTrackInfo(ti)
 }
 
 // AddReceiver adds a new RTP receiver to the track, returns true when receiver represents a new codec
