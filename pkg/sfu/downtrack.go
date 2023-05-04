@@ -276,7 +276,12 @@ func NewDownTrack(
 		kind:           kind,
 		codec:          codecs[0].RTPCodecCapability,
 	}
-	d.forwarder = NewForwarder(d.kind, d.logger, d.receiver.GetReferenceLayerRTPTimestamp)
+	d.forwarder = NewForwarder(
+		d.kind,
+		d.logger,
+		d.receiver.GetReferenceLayerRTPTimestamp,
+		d.getExpectedRTPTimestamp,
+	)
 	d.forwarder.OnParkedLayerExpired(func() {
 		if sal := d.getStreamAllocatorListener(); sal != nil {
 			sal.OnSubscriptionChanged(d)
@@ -638,7 +643,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		}
 	}
 
-	d.rtpStats.Update(hdr, len(payload), 0, time.Now().UnixNano())
+	d.rtpStats.Update(hdr, len(payload), 0, extPkt.Arrival)
 	return nil
 }
 
@@ -717,7 +722,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool) int {
 		}
 
 		if !paddingOnMute {
-			d.rtpStats.Update(&hdr, 0, len(payload), time.Now().UnixNano())
+			d.rtpStats.Update(&hdr, 0, len(payload), time.Now())
 		}
 
 		//
@@ -1214,7 +1219,7 @@ func (d *DownTrack) writeOpusBlankFrame(hdr *rtp.Header, frameEndNeeded bool) (i
 
 	_, err := d.writeStream.WriteRTP(hdr, payload)
 	if err == nil {
-		d.rtpStats.Update(hdr, len(payload), 0, time.Now().UnixNano())
+		d.rtpStats.Update(hdr, len(payload), 0, time.Now())
 	}
 	return hdr.MarshalSize() + len(payload), err
 }
@@ -1233,7 +1238,7 @@ func (d *DownTrack) writeOpusRedBlankFrame(hdr *rtp.Header, frameEndNeeded bool)
 
 	_, err := d.writeStream.WriteRTP(hdr, payload)
 	if err == nil {
-		d.rtpStats.Update(hdr, len(payload), 0, time.Now().UnixNano())
+		d.rtpStats.Update(hdr, len(payload), 0, time.Now())
 	}
 	return hdr.MarshalSize() + len(payload), err
 }
@@ -1254,7 +1259,7 @@ func (d *DownTrack) writeVP8BlankFrame(hdr *rtp.Header, frameEndNeeded bool) (in
 
 	_, err = d.writeStream.WriteRTP(hdr, payload)
 	if err == nil {
-		d.rtpStats.Update(hdr, len(payload), 0, time.Now().UnixNano())
+		d.rtpStats.Update(hdr, len(payload), 0, time.Now())
 	}
 	return hdr.MarshalSize() + len(payload), err
 }
@@ -1276,7 +1281,7 @@ func (d *DownTrack) writeH264BlankFrame(hdr *rtp.Header, frameEndNeeded bool) (i
 	payload := buf[:offset]
 	_, err := d.writeStream.WriteRTP(hdr, payload)
 	if err == nil {
-		d.rtpStats.Update(hdr, len(payload), 0, time.Now().UnixNano())
+		d.rtpStats.Update(hdr, len(payload), 0, time.Now())
 	}
 	return hdr.MarshalSize() + offset, err
 }
@@ -1499,7 +1504,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			d.streamAllocatorBytesCounter.Add(uint32(pkt.Header.MarshalSize() + len(payload)))
 			d.bytesRetransmitted.Add(uint32(pkt.Header.MarshalSize() + len(payload)))
 
-			d.rtpStats.Update(&pkt.Header, len(payload), 0, time.Now().UnixNano())
+			d.rtpStats.Update(&pkt.Header, len(payload), 0, time.Now())
 		}
 	}
 
@@ -1622,6 +1627,10 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 		"CurrentSpatialLayer": d.forwarder.CurrentLayer().Spatial,
 		"Stats":               stats,
 	}
+}
+
+func (d *DownTrack) getExpectedRTPTimestamp(at time.Time) (uint32, error) {
+	return d.rtpStats.GetExpectedRTPTimestamp(at)
 }
 
 func (d *DownTrack) GetConnectionScoreAndQuality() (float32, livekit.ConnectionQuality) {

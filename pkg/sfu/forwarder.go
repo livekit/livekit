@@ -158,6 +158,7 @@ type Forwarder struct {
 	kind                          webrtc.RTPCodecType
 	logger                        logger.Logger
 	getReferenceLayerRTPTimestamp func(ts uint32, layer int32, referenceLayer int32) (uint32, error)
+	getExpectedRTPTimestamp       func(at time.Time) (uint32, error)
 
 	muted    bool
 	pubMuted bool
@@ -185,11 +186,13 @@ func NewForwarder(
 	kind webrtc.RTPCodecType,
 	logger logger.Logger,
 	getReferenceLayerRTPTimestamp func(ts uint32, layer int32, referenceLayer int32) (uint32, error),
+	getExpectedRTPTimestamp func(at time.Time) (uint32, error),
 ) *Forwarder {
 	f := &Forwarder{
 		kind:                          kind,
 		logger:                        logger,
 		getReferenceLayerRTPTimestamp: getReferenceLayerRTPTimestamp,
+		getExpectedRTPTimestamp:       getExpectedRTPTimestamp,
 		referenceLayerSpatial:         buffer.InvalidLayerSpatial,
 		lastAllocation:                VideoAllocationDefault,
 		rtpMunger:                     NewRTPMunger(logger),
@@ -1446,26 +1449,46 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 
 			// Compute how much time passed between the old RTP extPkt
 			// and the current packet, and fix timestamp on source change
-			td := uint32(1)
+			//
+			// There are three time stamps to consider here
+			//   1. lastTS -> time stamp of last sent packet
+			//   2. refTS -> time stamp of this packet (after munging) calculated using feed's RTCP sender report
+			//   3. expectedTS -> time stamp of this packet (after munging) calculated using this stream's RTCP sender report
+			// Ideally, refTS and expectedTS should be very close and lastTS should be before both of those.
+			// But, cases like muting/unmuting, clock vagaries make them not satisfy those conditions always.
+			//
+			// There are 6 orderings to consider (considering only inequalities). Resolve them using following rules
+			//   1. Timestamp has to move forward
+			//   2. Keep next time stamp close to expected
+			lastTS := f.rtpMunger.GetLast().LastTS
+			refTS := lastTS
+			expectedTS := lastTS
+			switchingAt := time.Now()
 			if f.getReferenceLayerRTPTimestamp != nil {
-				refTS, err := f.getReferenceLayerRTPTimestamp(extPkt.Packet.Timestamp, layer, f.referenceLayerSpatial)
+				ts, err := f.getReferenceLayerRTPTimestamp(extPkt.Packet.Timestamp, layer, f.referenceLayerSpatial)
 				if err == nil {
-					last := f.rtpMunger.GetLast()
-					td = refTS - last.LastTS
-					if td == 0 || td > (1<<31) {
-						f.logger.Debugw("reference timestamp out-of-order, using default", "lastTS", last.LastTS, "refTS", refTS, "td", int32(td))
-						td = 1
-					} else if td > uint32(0.5*float32(f.codec.ClockRate)) {
-						// log jumps greater than 0.5 seconds
-						f.logger.Debugw("reference timestamp too far ahead", "lastTS", last.LastTS, "refTS", refTS, "td", td)
-					}
-					f.logger.Debugw("reference timestamp on switch", "lastTS", last.LastTS, "refTS", refTS, "td", int32(td), "switchingAt", time.Now())
-				} else {
-					f.logger.Debugw("reference timestamp get error, using default", "error", err)
+					refTS = ts
 				}
 			}
+			if f.getExpectedRTPTimestamp != nil {
+				ts, err := f.getExpectedRTPTimestamp(switchingAt)
+				if err == nil {
+					expectedTS = ts
+				}
+			}
+			nextTS, explain := getNextTimestamp(lastTS, refTS, expectedTS)
+			f.logger.Debugw(
+				"next timestamp on switch",
+				"switchingAt", switchingAt.String(),
+				"lastTS", lastTS,
+				"refTS", refTS,
+				"expectedTS", expectedTS,
+				"nextTS", nextTS,
+				"jump", nextTS-lastTS,
+				"explanation", explain,
+			)
 
-			f.rtpMunger.UpdateSnTsOffsets(extPkt, 1, td)
+			f.rtpMunger.UpdateSnTsOffsets(extPkt, 1, nextTS-lastTS)
 			f.codecMunger.UpdateOffsets(extPkt)
 		}
 
@@ -1733,4 +1756,41 @@ done:
 	}
 
 	return float64(distance) / float64(maxSeenLayer.Temporal+1)
+}
+
+func getNextTimestamp(lastTS uint32, refTS uint32, expectedTS uint32) (uint32, string) {
+	isInOrder := func(val1, val2 uint32) bool {
+		diff := val1 - val2
+		return diff != 0 && diff < (1<<31)
+	}
+
+	rl := isInOrder(refTS, lastTS)
+	el := isInOrder(expectedTS, lastTS)
+	er := isInOrder(expectedTS, refTS)
+
+	nextTS := lastTS + 1
+	explain := "l = r = e"
+
+	switch {
+	case rl && el && er: // lastTS < refTS < expectedTS
+		nextTS = uint32(float64(refTS) + 0.95*float64(expectedTS-refTS))
+		explain = fmt.Sprintf("l < r < e, %d, %d", refTS-lastTS, expectedTS-refTS)
+	case rl && el && !er: // lastTS < expectedTS < refTS
+		nextTS = uint32(float64(expectedTS) + 0.5*float64(refTS-expectedTS))
+		explain = fmt.Sprintf("l < e < r, %d, %d", expectedTS-lastTS, refTS-expectedTS)
+	case !rl && el && er: // refTS < lastTS < expectedTS
+		nextTS = uint32(float64(lastTS) + 0.5*float64(expectedTS-lastTS))
+		explain = fmt.Sprintf("r < l < e, %d, %d", lastTS-refTS, expectedTS-lastTS)
+	case !rl && !el && er: // refTS < expectedTS < lastTS
+		nextTS = lastTS + 1
+		explain = fmt.Sprintf("r < e < l, %d, %d", expectedTS-refTS, lastTS-expectedTS)
+	case rl && !el && !er: // expectedTS < lastTS < refTS
+		nextTS = uint32(float64(lastTS) + 0.5*float64(refTS-lastTS))
+		explain = fmt.Sprintf("e < l < r, %d, %d", lastTS-expectedTS, refTS-lastTS)
+	case !rl && !el && !er: // expectedTS < refTS < lastTS
+		nextTS = lastTS + 1
+		explain = fmt.Sprintf("e < r < l, %d, %d", refTS-expectedTS, lastTS-refTS)
+	}
+
+	return nextTS, explain
 }

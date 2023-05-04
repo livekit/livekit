@@ -529,8 +529,9 @@ func (s *StreamTrackerManager) GetReferenceLayerRTPTimestamp(ts uint32, layer in
 	// NOTE: It is possible that reference layer has stopped (due to dynacast/adaptive streaming OR publisher
 	// constraints). It should be okay even if the layer has stopped for a long time when using modulo arithmetic for
 	// RTP time stamp (uint32 arithmetic).
-	ntpDiff := float64(int64(srRef.SenderReportData.NTPTimestamp-srLayer.SenderReportData.NTPTimestamp)) / float64(1<<32)
-	normalizedTS := srLayer.SenderReportData.RTPTimestamp + uint32(ntpDiff*float64(s.clockRate))
+	ntpDiff := srRef.SenderReportData.NTPTimestamp.Time().Sub(srLayer.SenderReportData.NTPTimestamp.Time())
+	rtpDiff := ntpDiff.Nanoseconds() * int64(s.clockRate) / 1e9
+	normalizedTS := srLayer.SenderReportData.RTPTimestamp + uint32(rtpDiff)
 
 	// now that both RTP timestamps correspond to roughly the same NTP time,
 	// the diff between them is the offset in RTP timestamp units between layer and referenceLayer.
