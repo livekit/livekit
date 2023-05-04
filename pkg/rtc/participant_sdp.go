@@ -112,8 +112,15 @@ func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(offer webrtc.Sess
 			continue
 		}
 
+		var info *livekit.TrackInfo
 		p.pendingTracksLock.RLock()
-		_, info := p.getPendingTrack(streamID, livekit.TrackType_VIDEO)
+		mt := p.getPublishedTrackBySdpCid(streamID)
+		if mt != nil {
+			info = mt.ToProto()
+		} else {
+			_, info = p.getPendingTrack(streamID, livekit.TrackType_VIDEO)
+		}
+
 		if info == nil {
 			p.pendingTracksLock.RUnlock()
 			continue
