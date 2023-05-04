@@ -1,6 +1,8 @@
 package testutils
 
 import (
+	"time"
+
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
 
@@ -18,7 +20,7 @@ type TestExtPacketParams struct {
 	SSRC           uint32
 	PayloadSize    int
 	PaddingSize    byte
-	ArrivalTime    int64
+	ArrivalTime    time.Time
 	VideoLayer     buffer.VideoLayer
 }
 

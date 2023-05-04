@@ -27,17 +27,17 @@ import (
 )
 
 const (
-	ReportDelta = 1e9
+	ReportDelta = time.Second
 )
 
 type pendingPacket struct {
-	arrivalTime int64
+	arrivalTime time.Time
 	packet      []byte
 }
 
 type ExtPacket struct {
 	VideoLayer
-	Arrival              int64
+	Arrival              time.Time
 	Packet               *rtp.Packet
 	Payload              interface{}
 	KeyFrame             bool
@@ -58,7 +58,7 @@ type Buffer struct {
 	closeOnce     sync.Once
 	mediaSSRC     uint32
 	clockRate     uint32
-	lastReport    int64
+	lastReport    time.Time
 	twccExt       uint8
 	audioLevelExt uint8
 	bound         bool
@@ -163,7 +163,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	b.deltaStatsSnapshotId = b.rtpStats.NewSnapshotId()
 
 	b.clockRate = codec.ClockRate
-	b.lastReport = time.Now().UnixNano()
+	b.lastReport = time.Now()
 	b.mime = strings.ToLower(codec.MimeType)
 
 	for _, ext := range params.HeaderExtensions {
@@ -260,12 +260,12 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 		copy(packet, pkt)
 		b.pPackets = append(b.pPackets, pendingPacket{
 			packet:      packet,
-			arrivalTime: time.Now().UnixNano(),
+			arrivalTime: time.Now(),
 		})
 		return
 	}
 
-	b.calc(pkt, time.Now().UnixNano())
+	b.calc(pkt, time.Now())
 	return
 }
 
@@ -392,7 +392,7 @@ func (b *Buffer) SetRTT(rtt uint32) {
 	}
 }
 
-func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
+func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 	pktBuf, err := b.bucket.AddPacket(pkt)
 	if err != nil {
 		//
@@ -486,7 +486,7 @@ func (b *Buffer) doFpsCalc(ep *ExtPacket) {
 	}
 }
 
-func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime int64) {
+func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime time.Time) {
 	flowState := b.rtpStats.Update(&p.Header, len(p.Payload), int(p.PaddingSize), arrivalTime)
 
 	if b.nacker != nil {
@@ -500,12 +500,12 @@ func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime int64) {
 	}
 }
 
-func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime int64) {
+func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime time.Time) {
 	// submit to TWCC even if it is a padding only packet. Clients use padding only packets as probes
 	// for bandwidth estimation
 	if b.twcc != nil && b.twccExt != 0 {
 		if ext := p.GetExtension(b.twccExt); ext != nil {
-			b.twcc.Push(binary.BigEndian.Uint16(ext[0:2]), arrivalTime, p.Marker)
+			b.twcc.Push(binary.BigEndian.Uint16(ext[0:2]), arrivalTime.UnixNano(), p.Marker)
 		}
 	}
 
@@ -530,7 +530,7 @@ func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime int64) {
 	}
 }
 
-func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64) *ExtPacket {
+func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime time.Time) *ExtPacket {
 	ep := &ExtPacket{
 		Packet:  rtpPacket,
 		Arrival: arrivalTime,
@@ -615,8 +615,8 @@ func (b *Buffer) doNACKs() {
 	}
 }
 
-func (b *Buffer) doReports(arrivalTime int64) {
-	timeDiff := arrivalTime - b.lastReport
+func (b *Buffer) doReports(arrivalTime time.Time) {
+	timeDiff := arrivalTime.Sub(b.lastReport)
 	if timeDiff < ReportDelta {
 		return
 	}
