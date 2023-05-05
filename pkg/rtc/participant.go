@@ -92,6 +92,7 @@ type ParticipantParams struct {
 	SubscriberAllowPause         bool
 	SubscriptionLimitAudio       int32
 	SubscriptionLimitVideo       int32
+	AllowTimestampAdjustment     bool
 }
 
 type ParticipantImpl struct {
@@ -226,6 +227,10 @@ func (p *ParticipantImpl) GetLogger() logger.Logger {
 
 func (p *ParticipantImpl) GetAdaptiveStream() bool {
 	return p.params.AdaptiveStream
+}
+
+func (p *ParticipantImpl) GetAllowTimestampAdjustment() bool {
+	return p.params.AllowTimestampAdjustment
 }
 
 func (p *ParticipantImpl) ID() livekit.ParticipantID {

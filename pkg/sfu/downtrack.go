@@ -185,6 +185,8 @@ type DownTrack struct {
 	sequencer     *sequencer
 	bufferFactory *buffer.Factory
 
+	allowTimestampAdjustment bool
+
 	forwarder *Forwarder
 
 	upstreamCodecs         []webrtc.RTPCodecParameters
@@ -252,6 +254,7 @@ func NewDownTrack(
 	bf *buffer.Factory,
 	subID livekit.ParticipantID,
 	mt int,
+	allowTimestampAdjustment bool,
 	logger logger.Logger,
 ) (*DownTrack, error) {
 	var kind webrtc.RTPCodecType
@@ -265,16 +268,17 @@ func NewDownTrack(
 	}
 
 	d := &DownTrack{
-		logger:         logger,
-		id:             r.TrackID(),
-		subscriberID:   subID,
-		maxTrack:       mt,
-		streamID:       r.StreamID(),
-		bufferFactory:  bf,
-		receiver:       r,
-		upstreamCodecs: codecs,
-		kind:           kind,
-		codec:          codecs[0].RTPCodecCapability,
+		logger:                   logger,
+		id:                       r.TrackID(),
+		subscriberID:             subID,
+		maxTrack:                 mt,
+		streamID:                 r.StreamID(),
+		bufferFactory:            bf,
+		allowTimestampAdjustment: allowTimestampAdjustment,
+		receiver:                 r,
+		upstreamCodecs:           codecs,
+		kind:                     kind,
+		codec:                    codecs[0].RTPCodecCapability,
 	}
 	d.forwarder = NewForwarder(
 		d.kind,
@@ -1113,7 +1117,11 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 		return nil
 	}
 
-	return d.rtpStats.GetRtcpSenderReport(d.ssrc)
+	sr, tsAdjust := d.rtpStats.GetRtcpSenderReport(d.ssrc)
+	if d.allowTimestampAdjustment {
+		d.forwarder.AdjustTimestamp(tsAdjust)
+	}
+	return sr
 }
 
 func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan struct{} {

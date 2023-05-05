@@ -309,6 +309,11 @@ func (r *RoomManager) StartSession(
 	if pi.SubscriberAllowPause != nil {
 		subscriberAllowPause = *pi.SubscriberAllowPause
 	}
+	// default do not allow timestamp adjustment
+	allowTimestampAdjustment := false
+	if r.config.RTC.AllowTimestampAdjustment != nil {
+		allowTimestampAdjustment = *r.config.RTC.AllowTimestampAdjustment
+	}
 	participant, err = rtc.NewParticipant(rtc.ParticipantParams{
 		Identity:                pi.Identity,
 		Name:                    pi.Name,
@@ -343,6 +348,7 @@ func (r *RoomManager) StartSession(
 		SubscriberAllowPause:         subscriberAllowPause,
 		SubscriptionLimitAudio:       r.config.Limit.SubscriptionLimitAudio,
 		SubscriptionLimitVideo:       r.config.Limit.SubscriptionLimitVideo,
+		AllowTimestampAdjustment:     allowTimestampAdjustment,
 	})
 	if err != nil {
 		return err

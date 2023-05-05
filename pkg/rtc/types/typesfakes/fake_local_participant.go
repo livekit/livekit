@@ -165,6 +165,16 @@ type FakeLocalParticipant struct {
 	getAdaptiveStreamReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	GetAllowTimestampAdjustmentStub        func() bool
+	getAllowTimestampAdjustmentMutex       sync.RWMutex
+	getAllowTimestampAdjustmentArgsForCall []struct {
+	}
+	getAllowTimestampAdjustmentReturns struct {
+		result1 bool
+	}
+	getAllowTimestampAdjustmentReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	GetAudioLevelStub        func() (float64, bool)
 	getAudioLevelMutex       sync.RWMutex
 	getAudioLevelArgsForCall []struct {
@@ -1608,6 +1618,59 @@ func (fake *FakeLocalParticipant) GetAdaptiveStreamReturnsOnCall(i int, result1 
 		})
 	}
 	fake.getAdaptiveStreamReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetAllowTimestampAdjustment() bool {
+	fake.getAllowTimestampAdjustmentMutex.Lock()
+	ret, specificReturn := fake.getAllowTimestampAdjustmentReturnsOnCall[len(fake.getAllowTimestampAdjustmentArgsForCall)]
+	fake.getAllowTimestampAdjustmentArgsForCall = append(fake.getAllowTimestampAdjustmentArgsForCall, struct {
+	}{})
+	stub := fake.GetAllowTimestampAdjustmentStub
+	fakeReturns := fake.getAllowTimestampAdjustmentReturns
+	fake.recordInvocation("GetAllowTimestampAdjustment", []interface{}{})
+	fake.getAllowTimestampAdjustmentMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) GetAllowTimestampAdjustmentCallCount() int {
+	fake.getAllowTimestampAdjustmentMutex.RLock()
+	defer fake.getAllowTimestampAdjustmentMutex.RUnlock()
+	return len(fake.getAllowTimestampAdjustmentArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) GetAllowTimestampAdjustmentCalls(stub func() bool) {
+	fake.getAllowTimestampAdjustmentMutex.Lock()
+	defer fake.getAllowTimestampAdjustmentMutex.Unlock()
+	fake.GetAllowTimestampAdjustmentStub = stub
+}
+
+func (fake *FakeLocalParticipant) GetAllowTimestampAdjustmentReturns(result1 bool) {
+	fake.getAllowTimestampAdjustmentMutex.Lock()
+	defer fake.getAllowTimestampAdjustmentMutex.Unlock()
+	fake.GetAllowTimestampAdjustmentStub = nil
+	fake.getAllowTimestampAdjustmentReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetAllowTimestampAdjustmentReturnsOnCall(i int, result1 bool) {
+	fake.getAllowTimestampAdjustmentMutex.Lock()
+	defer fake.getAllowTimestampAdjustmentMutex.Unlock()
+	fake.GetAllowTimestampAdjustmentStub = nil
+	if fake.getAllowTimestampAdjustmentReturnsOnCall == nil {
+		fake.getAllowTimestampAdjustmentReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.getAllowTimestampAdjustmentReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
 }
@@ -5456,6 +5519,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.debugInfoMutex.RUnlock()
 	fake.getAdaptiveStreamMutex.RLock()
 	defer fake.getAdaptiveStreamMutex.RUnlock()
+	fake.getAllowTimestampAdjustmentMutex.RLock()
+	defer fake.getAllowTimestampAdjustmentMutex.RUnlock()
 	fake.getAudioLevelMutex.RLock()
 	defer fake.getAudioLevelMutex.RUnlock()
 	fake.getBufferFactoryMutex.RLock()
