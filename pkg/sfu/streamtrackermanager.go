@@ -43,7 +43,7 @@ type StreamTrackerManager struct {
 	paused           bool
 
 	senderReportMu sync.RWMutex
-	senderReports  [buffer.DefaultMaxLayerSpatial + 1]*buffer.RTCPSenderReportDataExt
+	senderReports  [buffer.DefaultMaxLayerSpatial + 1]*buffer.RTCPSenderReportData
 
 	closed core.Fuse
 
@@ -475,7 +475,7 @@ func (s *StreamTrackerManager) maxExpectedLayerFromTrackInfo() {
 	}
 }
 
-func (s *StreamTrackerManager) SetRTCPSenderReportDataExt(layer int32, senderReport *buffer.RTCPSenderReportDataExt) {
+func (s *StreamTrackerManager) SetRTCPSenderReportData(layer int32, senderReport *buffer.RTCPSenderReportData) {
 	s.senderReportMu.Lock()
 	defer s.senderReportMu.Unlock()
 
@@ -484,17 +484,6 @@ func (s *StreamTrackerManager) SetRTCPSenderReportDataExt(layer int32, senderRep
 	}
 
 	s.senderReports[layer] = senderReport
-}
-
-func (s *StreamTrackerManager) GetRTCPSenderReportDataExt(layer int32) *buffer.RTCPSenderReportDataExt {
-	s.senderReportMu.RLock()
-	defer s.senderReportMu.RUnlock()
-
-	if layer < 0 || int(layer) >= len(s.senderReports) {
-		return nil
-	}
-
-	return s.senderReports[layer]
 }
 
 func (s *StreamTrackerManager) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error) {
@@ -509,19 +498,19 @@ func (s *StreamTrackerManager) GetReferenceLayerRTPTimestamp(ts uint32, layer in
 		return ts, nil
 	}
 
-	var srLayer *buffer.RTCPSenderReportDataExt
+	var srLayer *buffer.RTCPSenderReportData
 	if int(layer) < len(s.senderReports) {
 		srLayer = s.senderReports[layer]
 	}
-	if srLayer == nil || srLayer.SenderReportData.NTPTimestamp == 0 {
+	if srLayer == nil || srLayer.NTPTimestamp == 0 {
 		return 0, fmt.Errorf("layer rtcp sender report not available: %d", layer)
 	}
 
-	var srRef *buffer.RTCPSenderReportDataExt
+	var srRef *buffer.RTCPSenderReportData
 	if int(referenceLayer) < len(s.senderReports) {
 		srRef = s.senderReports[referenceLayer]
 	}
-	if srRef == nil || srRef.SenderReportData.NTPTimestamp == 0 {
+	if srRef == nil || srRef.NTPTimestamp == 0 {
 		return 0, fmt.Errorf("reference layer rtcp sender report not available: %d", referenceLayer)
 	}
 
@@ -529,15 +518,15 @@ func (s *StreamTrackerManager) GetReferenceLayerRTPTimestamp(ts uint32, layer in
 	// NOTE: It is possible that reference layer has stopped (due to dynacast/adaptive streaming OR publisher
 	// constraints). It should be okay even if the layer has stopped for a long time when using modulo arithmetic for
 	// RTP time stamp (uint32 arithmetic).
-	ntpDiff := srRef.SenderReportData.NTPTimestamp.Time().Sub(srLayer.SenderReportData.NTPTimestamp.Time())
+	ntpDiff := srRef.NTPTimestamp.Time().Sub(srLayer.NTPTimestamp.Time())
 	rtpDiff := ntpDiff.Nanoseconds() * int64(s.clockRate) / 1e9
-	normalizedTS := srLayer.SenderReportData.RTPTimestamp + uint32(rtpDiff)
+	normalizedTS := srLayer.RTPTimestamp + uint32(rtpDiff)
 
 	// now that both RTP timestamps correspond to roughly the same NTP time,
 	// the diff between them is the offset in RTP timestamp units between layer and referenceLayer.
 	// Add the offset to layer's ts to map it to corresponding RTP timestamp in
 	// the reference layer.
-	return ts + (srRef.SenderReportData.RTPTimestamp - normalizedTS), nil
+	return ts + (srRef.RTPTimestamp - normalizedTS), nil
 }
 
 func (s *StreamTrackerManager) GetMaxTemporalLayerSeen() int32 {
