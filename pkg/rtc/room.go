@@ -412,7 +412,8 @@ func (r *Room) ResumeParticipant(p types.LocalParticipant, requestSource routing
 		return err
 	}
 
-	updates := ToProtoParticipants(r.GetParticipants())
+	// include the local participant's info as well, since metadata could have been changed
+	updates := r.getOtherParticipantInfo("")
 	if err := p.SendParticipantUpdate(updates); err != nil {
 		return err
 	}
@@ -728,6 +729,18 @@ func (r *Room) SimulateScenario(participant types.LocalParticipant, simulateScen
 		participant.SetSubscriberChannelCapacity(scenario.SubscriberBandwidth)
 	}
 	return nil
+}
+
+func (r *Room) getOtherParticipantInfo(identity livekit.ParticipantIdentity) []*livekit.ParticipantInfo {
+	participants := r.GetParticipants()
+	pi := make([]*livekit.ParticipantInfo, 0, len(participants))
+	for _, p := range participants {
+		if !p.Hidden() && p.Identity() != identity {
+			pi = append(pi, p.ToProto())
+		}
+	}
+
+	return pi
 }
 
 // checks if participant should be autosubscribed to new tracks, assumes lock is already acquired
