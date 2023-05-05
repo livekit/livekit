@@ -177,7 +177,6 @@ type RTPStats struct {
 	srData        *RTCPSenderReportData
 	lastSRTime    time.Time
 	lastSRNTP     mediatransportutil.NtpTime
-	lastSRRTP     uint32
 	pidController *PIDController
 
 	nextSnapshotId uint32
@@ -285,7 +284,6 @@ func (r *RTPStats) Seed(from *RTPStats) {
 	}
 	r.lastSRTime = from.lastSRTime
 	r.lastSRNTP = from.lastSRNTP
-	r.lastSRRTP = from.lastSRRTP
 
 	r.nextSnapshotId = from.nextSnapshotId
 	for id, ss := range from.snapshots {
@@ -892,7 +890,6 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32) (*rtcp.SenderReport, float64
 
 	r.lastSRTime = now
 	r.lastSRNTP = nowNTP
-	r.lastSRRTP = nowRTP
 
 	return &rtcp.SenderReport{
 		SSRC:        ssrc,
