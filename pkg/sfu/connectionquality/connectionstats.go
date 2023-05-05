@@ -226,7 +226,10 @@ func (cs *ConnectionStats) getStat(at time.Time) {
 			//
 			if (len(streams) > 1 || len(stream.Layers) > 1) && cs.isVideo.Load() {
 				for layer, layerStats := range stream.Layers {
-					as.VideoLayers = append(as.VideoLayers, toAnalyticsVideoLayer(layer, layerStats))
+					avl := toAnalyticsVideoLayer(layer, layerStats)
+					if avl != nil {
+						as.VideoLayers = append(as.VideoLayers, avl)
+					}
 				}
 			}
 
@@ -333,10 +336,15 @@ func toAnalyticsStream(ssrc uint32, deltaStats *buffer.RTPDeltaInfo) *livekit.An
 }
 
 func toAnalyticsVideoLayer(layer int32, layerStats *buffer.RTPDeltaInfo) *livekit.AnalyticsVideoLayer {
-	return &livekit.AnalyticsVideoLayer{
+	avl := &livekit.AnalyticsVideoLayer{
 		Layer:   layer,
 		Packets: layerStats.Packets + layerStats.PacketsDuplicate + layerStats.PacketsPadding,
 		Bytes:   layerStats.Bytes + layerStats.BytesDuplicate + layerStats.BytesPadding,
 		Frames:  layerStats.Frames,
 	}
+	if avl.Packets == 0 || avl.Bytes == 0 || avl.Frames == 0 {
+		return nil
+	}
+
+	return avl
 }
