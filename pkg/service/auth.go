@@ -67,6 +67,7 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 			return
 		}
 
+		fmt.Printf("API KEY is %s\r\n", v.APIKey())
 		pk := m.provider.GetPublicKey(v.APIKey())
 		if pk == "" {
 			handleError(w, http.StatusUnauthorized, errors.New(fmt.Sprintf("wallet %s not exists in contract", v.APIKey())))

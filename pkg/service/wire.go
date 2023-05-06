@@ -4,6 +4,7 @@
 package service
 
 import (
+	"context"
 	p2p_database "github.com/dTelecom/p2p-realtime-database"
 	"github.com/google/wire"
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
@@ -121,11 +122,8 @@ func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {
 	return redisLiveKit.GetRedisClient(&conf.Redis)
 }
 
-func createStore(rc redis.UniversalClient) ObjectStore {
-	if rc != nil {
-		return NewRedisStore(rc)
-	}
-	return NewLocalStore()
+func createStore(rc redis.UniversalClient, conf *config.Config, nodeID livekit.NodeID) (ObjectStore, error) {
+	return NewP2pStore(context.Background(), nodeID, conf)
 }
 
 func getMessageBus(rc redis.UniversalClient) psrpc.MessageBus {

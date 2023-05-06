@@ -72,6 +72,8 @@ type Config struct {
 }
 
 type EthereumConfig struct {
+	P2pNodePort int `yaml:"p2p_node_port"`
+
 	WalletAddress    string `yaml:"wallet_address"`
 	WalletPrivateKey string `yaml:"wallet_private_key"`
 	ContractAddress  string `yaml:"contract_address"`
@@ -560,6 +562,8 @@ func (conf *Config) ValidateKeys() error {
 		return errors.New("empty ethereum.network_key")
 	case conf.Ethereum.NetworkHost == "":
 		return errors.New("empty ethereum.network_host")
+	case conf.Ethereum.P2pNodePort <= 0:
+		return errors.New("incorrect ethereum.p2p_node_port")
 	}
 
 	return nil

@@ -7,6 +7,7 @@
 package service
 
 import (
+	"context"
 	"github.com/dTelecom/p2p-realtime-database"
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
 	"github.com/livekit/livekit-server/pkg/config"
@@ -46,7 +47,10 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	router := routing.CreateRouter(conf, universalClient, currentNode, signalClient)
-	objectStore := createStore(universalClient)
+	objectStore, err := createStore(universalClient, conf, nodeID)
+	if err != nil {
+		return nil, err
+	}
 	roomAllocator, err := NewRoomAllocator(conf, router, objectStore)
 	if err != nil {
 		return nil, err
@@ -171,11 +175,8 @@ func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {
 	return redis2.GetRedisClient(&conf.Redis)
 }
 
-func createStore(rc redis.UniversalClient) ObjectStore {
-	if rc != nil {
-		return NewRedisStore(rc)
-	}
-	return NewLocalStore()
+func createStore(rc redis.UniversalClient, conf *config.Config, nodeID livekit.NodeID) (ObjectStore, error) {
+	return NewP2pStore(context.Background(), nodeID, conf)
 }
 
 func getMessageBus(rc redis.UniversalClient) psrpc.MessageBus {
