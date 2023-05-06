@@ -2,7 +2,7 @@ module github.com/livekit/livekit-server
 
 go 1.18
 
-replace github.com/livekit/protocol v1.5.4 => github.com/dTelecom/protocol v1.0.3
+replace github.com/livekit/protocol v1.5.4 => github.com/dTelecom/protocol v1.0.5
 
 //replace github.com/livekit/protocol => /var/www/dtelekom/protocol
 //replace github.com/dTelecom/p2p-realtime-database => /var/www/dtelekom/p2p-database
@@ -10,7 +10,7 @@ replace github.com/livekit/protocol v1.5.4 => github.com/dTelecom/protocol v1.0.
 require (
 	github.com/bep/debounce v1.2.1
 	github.com/d5/tengo/v2 v2.14.0
-	github.com/dTelecom/p2p-realtime-database v1.0.3
+	github.com/dTelecom/p2p-realtime-database v1.0.4
 	github.com/dustin/go-humanize v1.0.1
 	github.com/elliotchance/orderedmap/v2 v2.2.0
 	github.com/ethereum/go-ethereum v1.11.6
@@ -22,6 +22,7 @@ require (
 	github.com/gorilla/websocket v1.5.0
 	github.com/hashicorp/go-version v1.6.0
 	github.com/hashicorp/golang-lru/v2 v2.0.2
+	github.com/ipfs/go-log/v2 v2.5.1
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20230326055817-ed569ca13d26
@@ -122,7 +123,6 @@ require (
 	github.com/ipfs/go-ipld-format v0.4.0 // indirect
 	github.com/ipfs/go-ipld-legacy v0.1.1 // indirect
 	github.com/ipfs/go-log v1.0.5 // indirect
-	github.com/ipfs/go-log/v2 v2.5.1 // indirect
 	github.com/ipfs/go-metrics-interface v0.0.1 // indirect
 	github.com/ipfs/go-peertaskqueue v0.8.1 // indirect
 	github.com/ipld/go-codec-dagpb v1.6.0 // indirect
