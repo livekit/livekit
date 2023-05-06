@@ -1630,6 +1630,13 @@ func (f *Forwarder) GetRTPMungerParams() RTPMungerParams {
 	return f.rtpMunger.GetParams()
 }
 
+func (f *Forwarder) AdjustTimestamp(tsAdjust float64) {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	f.rtpMunger.UpdateTsOffset(uint32(tsAdjust))
+}
+
 // -----------------------------------------------------------------------------
 
 func getOptimalBandwidthNeeded(muted bool, pubMuted bool, maxPublishedLayer int32, brs Bitrates, maxLayer buffer.VideoLayer) int64 {

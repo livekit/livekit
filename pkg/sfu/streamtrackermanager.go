@@ -494,9 +494,11 @@ func (s *StreamTrackerManager) GetReferenceLayerRTPTimestamp(ts uint32, layer in
 		return 0, fmt.Errorf("invalid layer, target: %d, reference: %d", layer, referenceLayer)
 	}
 
+	/* TODO-RESTORE-AFTER-DEBUG - this is just fast path, below calculations should yield same
 	if layer == referenceLayer {
 		return ts, nil
 	}
+	*/
 
 	var srLayer *buffer.RTCPSenderReportData
 	if int(layer) < len(s.senderReports) {
@@ -521,6 +523,20 @@ func (s *StreamTrackerManager) GetReferenceLayerRTPTimestamp(ts uint32, layer in
 	ntpDiff := srRef.NTPTimestamp.Time().Sub(srLayer.NTPTimestamp.Time())
 	rtpDiff := ntpDiff.Nanoseconds() * int64(s.clockRate) / 1e9
 	normalizedTS := srLayer.RTPTimestamp + uint32(rtpDiff)
+	s.logger.Debugw(
+		"getting reference timestaml",
+		"layer", layer,
+		"referenceLayer", referenceLayer,
+		"incomingTS", ts,
+		"layerNTP", srLayer.NTPTimestamp.Time().String(),
+		"refNTP", srRef.NTPTimestamp.Time().String(),
+		"ntpDiff", ntpDiff.String(),
+		"layerRTP", srLayer.RTPTimestamp,
+		"refRTP", srRef.RTPTimestamp,
+		"rtpDiff", rtpDiff,
+		"normalizedTS", normalizedTS,
+		"mappedTS", ts+(srRef.RTPTimestamp-normalizedTS),
+	)
 
 	// now that both RTP timestamps correspond to roughly the same NTP time,
 	// the diff between them is the offset in RTP timestamp units between layer and referenceLayer.

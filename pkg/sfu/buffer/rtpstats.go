@@ -174,21 +174,28 @@ type RTPStats struct {
 	rtt    uint32
 	maxRtt uint32
 
-	srData     *RTCPSenderReportData
-	lastSRTime time.Time
-	lastSRNTP  mediatransportutil.NtpTime
+	srData        *RTCPSenderReportData
+	lastSRTime    time.Time
+	lastSRNTP     mediatransportutil.NtpTime
+	pidController *PIDController
 
 	nextSnapshotId uint32
 	snapshots      map[uint32]*Snapshot
 }
 
 func NewRTPStats(params RTPStatsParams) *RTPStats {
-	return &RTPStats{
+	r := &RTPStats{
 		params:         params,
 		logger:         params.Logger,
 		nextSnapshotId: FirstSnapshotId,
 		snapshots:      make(map[uint32]*Snapshot),
+		pidController:  NewPIDController(),
 	}
+
+	r.pidController.SetGains(2.0, 0.5, 0.25)
+	r.pidController.SetDerivativeLPF(0.02)
+	r.pidController.SetOutputLimits(-0.025*float64(params.ClockRate), 0.025*float64(params.ClockRate))
+	return r
 }
 
 func (r *RTPStats) Seed(from *RTPStats) {
@@ -731,37 +738,35 @@ func (r *RTPStats) SetRtcpSenderReportData(srData *RTCPSenderReportData) {
 	}
 
 	// TODO-REMOVE-AFTER-DEBUG-START
-	if r.params.ClockRate != 90000 { // log only for audio as it is less frequent
-		ntpTime := srData.NTPTimestamp.Time()
+	ntpTime := srData.NTPTimestamp.Time()
 
-		var ntpDiffSinceLast, arrivalDiffSinceLast time.Duration
-		var rtpDiffSinceLast uint32
-		if r.srData != nil {
-			ntpDiffSinceLast = ntpTime.Sub(r.srData.NTPTimestamp.Time())
-			rtpDiffSinceLast = srData.RTPTimestamp - r.srData.RTPTimestamp
-			arrivalDiffSinceLast = srData.ArrivalTime.Sub(r.srData.ArrivalTime)
-		}
-
-		timeSinceFirst := srData.NTPTimestamp.Time().Sub(r.firstTime)
-		rtpDiffSinceFirst := getExtTS(srData.RTPTimestamp, r.tsCycles) - r.extStartTS
-		drift := int64(uint64(timeSinceFirst.Nanoseconds()*int64(r.params.ClockRate)/1e9) - rtpDiffSinceFirst)
-		driftMs := (float64(drift) * 1000) / float64(r.params.ClockRate)
-
-		r.logger.Debugw(
-			"received sender report",
-			"ntp", ntpTime,
-			"rtp", srData.RTPTimestamp,
-			"arrival", srData.ArrivalTime,
-			"ntpDiff", ntpDiffSinceLast,
-			"rtpDiff", rtpDiffSinceLast,
-			"arrivalDiff", arrivalDiffSinceLast,
-			"expectedTimeDiff", float64(rtpDiffSinceLast)/float64(r.params.ClockRate),
-			"timeSinceFirst", timeSinceFirst,
-			"rtpDiffSinceFirst", rtpDiffSinceFirst,
-			"drift", drift,
-			"driftMs", driftMs,
-		)
+	var ntpDiffSinceLast, arrivalDiffSinceLast time.Duration
+	var rtpDiffSinceLast uint32
+	if r.srData != nil {
+		ntpDiffSinceLast = ntpTime.Sub(r.srData.NTPTimestamp.Time())
+		rtpDiffSinceLast = srData.RTPTimestamp - r.srData.RTPTimestamp
+		arrivalDiffSinceLast = srData.ArrivalTime.Sub(r.srData.ArrivalTime)
 	}
+
+	timeSinceFirst := time.Since(r.firstTime) // ideally should use NTP time from SR, but that is a different time base, now is a resonable approximation
+	rtpDiffSinceFirst := getExtTS(srData.RTPTimestamp, r.tsCycles) - r.extStartTS
+	drift := int64(uint64(timeSinceFirst.Nanoseconds()*int64(r.params.ClockRate)/1e9) - rtpDiffSinceFirst)
+	driftMs := (float64(drift) * 1000) / float64(r.params.ClockRate)
+
+	r.logger.Debugw(
+		"received sender report",
+		"ntp", ntpTime,
+		"rtp", srData.RTPTimestamp,
+		"arrival", srData.ArrivalTime,
+		"ntpDiff", ntpDiffSinceLast,
+		"rtpDiff", rtpDiffSinceLast,
+		"arrivalDiff", arrivalDiffSinceLast,
+		"expectedTimeDiff", float64(rtpDiffSinceLast)/float64(r.params.ClockRate),
+		"timeSinceFirst", timeSinceFirst,
+		"rtpDiffSinceFirst", rtpDiffSinceFirst,
+		"drift", drift,
+		"driftMs", driftMs,
+	)
 	// TODO-REMOVE-AFTER-DEBUG-END
 
 	srDataCopy := *srData
@@ -806,12 +811,12 @@ func (r *RTPStats) GetExpectedRTPTimestamp(at time.Time) (uint32, error) {
 	return uint32(expectedExtRTP), nil
 }
 
-func (r *RTPStats) GetRtcpSenderReport(ssrc uint32) *rtcp.SenderReport {
+func (r *RTPStats) GetRtcpSenderReport(ssrc uint32) (*rtcp.SenderReport, float64) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
 	if !r.initialized {
-		return nil
+		return nil, 0.0
 	}
 
 	// construct current time based on monotonic clock
@@ -837,14 +842,29 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32) *rtcp.SenderReport {
 	nowRTP := r.highestTS + uint32(timeSinceHighest.Nanoseconds()*int64(r.params.ClockRate)/1e9)
 
 	// TODO-REMOVE-AFTER-DEBUG-START
+	timeSinceFirst = nowNTP.Time().Sub(r.firstTime)
+	rtpDiffSinceFirst := getExtTS(nowRTP, r.tsCycles) - r.extStartTS
+	measurement := float64(rtpDiffSinceFirst) / timeSinceFirst.Seconds()
+	pidOutput := r.pidController.Update(
+		float64(r.params.ClockRate),
+		measurement,
+		now,
+	)
+	r.logger.Debugw(
+		"pid controller output",
+		"measurement", measurement,
+		"errorTerm", float64(r.params.ClockRate)-measurement,
+		"pidOutput", pidOutput,
+	)
+	// TODO-REMOVE-AFTER-DEBUG-STOP
+
+	// TODO-REMOVE-AFTER-DEBUG-START
 	ntpTime := nowNTP.Time()
 
 	ntpDiffLocal := ntpTime.Sub(r.highestTime)
 	rtpDiffLocal := int32(nowRTP - r.highestTS)
 	rtpOffsetLocal := int32(nowRTP - r.highestTS - uint32(ntpDiffLocal.Nanoseconds()*int64(r.params.ClockRate)/1e9))
 
-	timeSinceFirst = nowNTP.Time().Sub(r.firstTime)
-	rtpDiffSinceFirst := getExtTS(nowRTP, r.tsCycles) - r.extStartTS
 	drift := int64(uint64(timeSinceFirst.Nanoseconds()*int64(r.params.ClockRate)/1e9) - rtpDiffSinceFirst)
 	driftMs := (float64(drift) * 1000) / float64(r.params.ClockRate)
 
@@ -853,6 +873,7 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32) *rtcp.SenderReport {
 		"highestTS", r.highestTS,
 		"highestTime", r.highestTime.String(),
 		"reportTS", nowRTP,
+		"expectedTS", uint32(expectedExtRTP),
 		"reportTime", ntpTime.String(),
 		"rtpDiffLocal", rtpDiffLocal,
 		"ntpDiffLocal", ntpDiffLocal,
@@ -861,6 +882,7 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32) *rtcp.SenderReport {
 		"rtpDiffSinceFirst", rtpDiffSinceFirst,
 		"drift", drift,
 		"driftMs", driftMs,
+		"rate", measurement,
 	)
 	// TODO-REMOVE-AFTER-DEBUG-END
 
@@ -873,7 +895,7 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32) *rtcp.SenderReport {
 		RTPTime:     nowRTP,
 		PacketCount: r.getTotalPacketsPrimary() + r.packetsDuplicate + r.packetsPadding,
 		OctetCount:  uint32(r.bytes + r.bytesDuplicate + r.bytesPadding),
-	}
+	}, pidOutput
 }
 
 func (r *RTPStats) SnapshotRtcpReceptionReport(ssrc uint32, proxyFracLost uint8, snapshotId uint32) *rtcp.ReceptionReport {
@@ -1747,3 +1769,90 @@ func AggregateRTPDeltaInfo(deltaInfoList []*RTPDeltaInfo) *RTPDeltaInfo {
 		Firs:                 firs,
 	}
 }
+
+// -------------------------------------------------------------------
+
+type PIDController struct {
+	kp, ki, kd float64
+
+	tau float64 // low pass filter of D, time constant
+
+	outMin, outMax float64
+	isOutLimitsSet bool
+
+	iMin, iMax   float64
+	isILimitsSet bool
+
+	iVal, dVal float64
+
+	prevError, prevMeasurement float64
+	prevMeasurementTime        time.Time
+}
+
+func NewPIDController() *PIDController {
+	return &PIDController{}
+}
+
+func (p *PIDController) SetGains(kp, ki, kd float64) {
+	p.kp = kp
+	p.ki = ki
+	p.kd = kd
+}
+
+func (p *PIDController) SetDerivativeLPF(tau float64) {
+	p.tau = tau
+}
+
+func (p *PIDController) SetOutputLimits(min, max float64) {
+	p.outMin = min
+	p.outMax = max
+	p.isOutLimitsSet = true
+}
+
+func (p *PIDController) SetIntegralLimits(min, max float64) {
+	p.iMin = min
+	p.iMax = max
+	p.isILimitsSet = true
+}
+
+func (p *PIDController) Update(setpoint, measurement float64, at time.Time) float64 {
+	diff := setpoint - measurement
+	if p.prevMeasurementTime.IsZero() {
+		p.prevError = diff
+		p.prevMeasurement = measurement
+		p.prevMeasurementTime = at
+		return 0
+	}
+
+	proportional := p.kp * diff
+
+	duration := at.Sub(p.prevMeasurementTime).Seconds()
+	p.iVal = p.iVal + (0.5 * p.ki * duration * (diff + p.prevError))
+	if p.isILimitsSet {
+		if p.iVal > p.iMax {
+			p.iVal = p.iMax
+		}
+		if p.iVal < p.iMin {
+			p.iVal = p.iMin
+		}
+	}
+
+	p.dVal = (-2.0 * p.kd * (measurement - p.prevMeasurement)) + (((2.0*p.tau - duration) * p.dVal) / (2.0*p.tau + duration))
+
+	output := proportional + p.iVal + p.dVal
+	if p.isOutLimitsSet {
+		if output > p.outMax {
+			output = p.outMax
+		}
+		if output < p.outMin {
+			output = p.outMin
+		}
+	}
+
+	p.prevError = diff
+	p.prevMeasurement = measurement
+	p.prevMeasurementTime = at
+	return output
+}
+
+// -------------------------------------------------------------------
