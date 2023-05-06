@@ -738,37 +738,35 @@ func (r *RTPStats) SetRtcpSenderReportData(srData *RTCPSenderReportData) {
 	}
 
 	// TODO-REMOVE-AFTER-DEBUG-START
-	if r.params.ClockRate != 90000 { // log only for audio as it is less frequent
-		ntpTime := srData.NTPTimestamp.Time()
+	ntpTime := srData.NTPTimestamp.Time()
 
-		var ntpDiffSinceLast, arrivalDiffSinceLast time.Duration
-		var rtpDiffSinceLast uint32
-		if r.srData != nil {
-			ntpDiffSinceLast = ntpTime.Sub(r.srData.NTPTimestamp.Time())
-			rtpDiffSinceLast = srData.RTPTimestamp - r.srData.RTPTimestamp
-			arrivalDiffSinceLast = srData.ArrivalTime.Sub(r.srData.ArrivalTime)
-		}
-
-		timeSinceFirst := time.Since(r.firstTime) // ideally should use NTP time from SR, but that is a different time base, now is a resonable approximation
-		rtpDiffSinceFirst := getExtTS(srData.RTPTimestamp, r.tsCycles) - r.extStartTS
-		drift := int64(uint64(timeSinceFirst.Nanoseconds()*int64(r.params.ClockRate)/1e9) - rtpDiffSinceFirst)
-		driftMs := (float64(drift) * 1000) / float64(r.params.ClockRate)
-
-		r.logger.Debugw(
-			"received sender report",
-			"ntp", ntpTime,
-			"rtp", srData.RTPTimestamp,
-			"arrival", srData.ArrivalTime,
-			"ntpDiff", ntpDiffSinceLast,
-			"rtpDiff", rtpDiffSinceLast,
-			"arrivalDiff", arrivalDiffSinceLast,
-			"expectedTimeDiff", float64(rtpDiffSinceLast)/float64(r.params.ClockRate),
-			"timeSinceFirst", timeSinceFirst,
-			"rtpDiffSinceFirst", rtpDiffSinceFirst,
-			"drift", drift,
-			"driftMs", driftMs,
-		)
+	var ntpDiffSinceLast, arrivalDiffSinceLast time.Duration
+	var rtpDiffSinceLast uint32
+	if r.srData != nil {
+		ntpDiffSinceLast = ntpTime.Sub(r.srData.NTPTimestamp.Time())
+		rtpDiffSinceLast = srData.RTPTimestamp - r.srData.RTPTimestamp
+		arrivalDiffSinceLast = srData.ArrivalTime.Sub(r.srData.ArrivalTime)
 	}
+
+	timeSinceFirst := time.Since(r.firstTime) // ideally should use NTP time from SR, but that is a different time base, now is a resonable approximation
+	rtpDiffSinceFirst := getExtTS(srData.RTPTimestamp, r.tsCycles) - r.extStartTS
+	drift := int64(uint64(timeSinceFirst.Nanoseconds()*int64(r.params.ClockRate)/1e9) - rtpDiffSinceFirst)
+	driftMs := (float64(drift) * 1000) / float64(r.params.ClockRate)
+
+	r.logger.Debugw(
+		"received sender report",
+		"ntp", ntpTime,
+		"rtp", srData.RTPTimestamp,
+		"arrival", srData.ArrivalTime,
+		"ntpDiff", ntpDiffSinceLast,
+		"rtpDiff", rtpDiffSinceLast,
+		"arrivalDiff", arrivalDiffSinceLast,
+		"expectedTimeDiff", float64(rtpDiffSinceLast)/float64(r.params.ClockRate),
+		"timeSinceFirst", timeSinceFirst,
+		"rtpDiffSinceFirst", rtpDiffSinceFirst,
+		"drift", drift,
+		"driftMs", driftMs,
+	)
 	// TODO-REMOVE-AFTER-DEBUG-END
 
 	srDataCopy := *srData
