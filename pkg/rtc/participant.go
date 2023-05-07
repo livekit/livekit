@@ -391,7 +391,7 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 		p.SubscriptionManager.queueReconcile("")
 	} else {
 		// revoke all subscriptions
-		for _, st := range p.GetSubscribedTracks() {
+		for _, st := range p.SubscriptionManager.GetSubscribedTracks() {
 			st.MediaTrack().RemoveSubscriber(p.ID(), false)
 		}
 	}
@@ -1346,7 +1346,7 @@ func (p *ParticipantImpl) subscriberRTCPWorker() {
 			pkts = append(pkts, sr)
 			sd = append(sd, chunks...)
 			batchSize = batchSize + 1 + len(chunks)
-			if batchSize > sdBatchSize {
+			if batchSize >= sdBatchSize {
 				pkts = append(pkts, &rtcp.SourceDescription{Chunks: sd})
 				if err := p.TransportManager.WriteSubscriberRTCP(pkts); err != nil {
 					if err == io.EOF || err == io.ErrClosedPipe {
@@ -1968,7 +1968,7 @@ func (p *ParticipantImpl) postRtcp(pkts []rtcp.Packet) {
 }
 
 func (p *ParticipantImpl) setDowntracksConnected() {
-	for _, t := range p.GetSubscribedTracks() {
+	for _, t := range p.SubscriptionManager.GetSubscribedTracks() {
 		if dt := t.DownTrack(); dt != nil {
 			dt.SetConnected()
 		}
