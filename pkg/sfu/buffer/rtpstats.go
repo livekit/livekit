@@ -194,7 +194,9 @@ func NewRTPStats(params RTPStatsParams) *RTPStats {
 
 	r.pidController.SetGains(2.0, 0.5, 0.25)
 	r.pidController.SetDerivativeLPF(0.02)
-	r.pidController.SetOutputLimits(-0.025*float64(params.ClockRate), 0.025*float64(params.ClockRate))
+	outMin, outMax := -0.025*float64(params.ClockRate), 0.025*float64(params.ClockRate)
+	r.pidController.SetOutputLimits(outMin, outMax)
+	r.pidController.SetIntegralLimits(outMin/2.0, outMax/2.0)
 	return r
 }
 
@@ -1837,7 +1839,7 @@ func (p *PIDController) Update(setpoint, measurement float64, at time.Time) floa
 		}
 	}
 
-	p.dVal = (-2.0 * p.kd * (measurement - p.prevMeasurement)) + (((2.0*p.tau - duration) * p.dVal) / (2.0*p.tau + duration))
+	p.dVal = (-2.0*p.kd*(measurement-p.prevMeasurement) + (2.0*p.tau-duration)*p.dVal) / (2.0*p.tau + duration)
 
 	output := proportional + p.iVal + p.dVal
 	if p.isOutLimitsSet {
