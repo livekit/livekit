@@ -1634,7 +1634,7 @@ func (f *Forwarder) AdjustTimestamp(tsAdjust float64) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	f.rtpMunger.UpdateTsOffset(uint32(tsAdjust))
+	f.rtpMunger.UpdateTsOffset(uint32(tsAdjust + 0.5))
 }
 
 // -----------------------------------------------------------------------------
