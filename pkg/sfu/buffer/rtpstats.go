@@ -1855,7 +1855,7 @@ func (p *PIDController) Update(setpoint, measurement float64, at time.Time) floa
 	}
 	p.iVal = boundIVal
 
-	p.dVal = (-2.0*p.kd*(measurement-p.prevMeasurement) + (2.0*p.tau-duration)*p.dVal) / (2.0*p.tau + duration)
+	p.dVal = -(2.0*p.kd*(measurement-p.prevMeasurement) + (2.0*p.tau-duration)*p.dVal) / (2.0*p.tau + duration)
 
 	output := proportional + p.iVal + p.dVal
 	boundOutput := output
