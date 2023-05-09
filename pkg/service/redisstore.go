@@ -505,11 +505,10 @@ func (s *RedisStore) storeIngress(_ context.Context, info *livekit.IngressInfo) 
 	}
 
 	// ignore state
-	infoCopy := livekit.IngressInfo{}
-	infoCopy = *info
+	infoCopy := proto.Clone(info).(*livekit.IngressInfo)
 	infoCopy.State = nil
 
-	data, err := proto.Marshal(&infoCopy)
+	data, err := proto.Marshal(infoCopy)
 	if err != nil {
 		return err
 	}
