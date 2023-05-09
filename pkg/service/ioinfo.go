@@ -4,11 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/livekit/livekit-server/pkg/telemetry"
-	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
@@ -16,12 +14,11 @@ import (
 )
 
 type IOInfoService struct {
-	psrpcServer  rpc.IOInfoServer
-	es           EgressStore
-	is           IngressStore
-	telemetry    telemetry.TelemetryService
-	ecDeprecated egress.RPCClient
-	shutdown     chan struct{}
+	ioServer  rpc.IOInfoServer
+	es        EgressStore
+	is        IngressStore
+	telemetry telemetry.TelemetryService
+	shutdown  chan struct{}
 }
 
 func NewIOInfoService(
@@ -30,22 +27,20 @@ func NewIOInfoService(
 	es EgressStore,
 	is IngressStore,
 	ts telemetry.TelemetryService,
-	ec egress.RPCClient,
 ) (*IOInfoService, error) {
 	s := &IOInfoService{
-		es:           es,
-		is:           is,
-		telemetry:    ts,
-		ecDeprecated: ec,
-		shutdown:     make(chan struct{}),
+		es:        es,
+		is:        is,
+		telemetry: ts,
+		shutdown:  make(chan struct{}),
 	}
 
 	if bus != nil {
-		psrpcServer, err := rpc.NewIOInfoServer(string(nodeID), s, bus)
+		ioServer, err := rpc.NewIOInfoServer(string(nodeID), s, bus)
 		if err != nil {
 			return nil, err
 		}
-		s.psrpcServer = psrpcServer
+		s.ioServer = ioServer
 	}
 
 	return s, nil
@@ -59,8 +54,6 @@ func (s *IOInfoService) Start() error {
 			logger.Errorw("failed to start redis egress worker", err)
 			return err
 		}
-
-		go s.egressWorkerDeprecated()
 	}
 
 	return nil
@@ -126,45 +119,7 @@ func (s *IOInfoService) UpdateIngressState(ctx context.Context, req *rpc.UpdateI
 func (s *IOInfoService) Stop() {
 	close(s.shutdown)
 
-	if s.psrpcServer != nil {
-		s.psrpcServer.Shutdown()
+	if s.ioServer != nil {
+		s.ioServer.Shutdown()
 	}
-}
-
-// Deprecated
-func (s *IOInfoService) egressWorkerDeprecated() error {
-	if s.ecDeprecated == nil {
-		return nil
-	}
-
-	go func() {
-		sub, err := s.ecDeprecated.GetUpdateChannel(context.Background())
-		if err != nil {
-			logger.Errorw("failed to subscribe to results channel", err)
-		}
-
-		resChan := sub.Channel()
-		for {
-			select {
-			case msg := <-resChan:
-				b := sub.Payload(msg)
-				info := &livekit.EgressInfo{}
-				if err = proto.Unmarshal(b, info); err != nil {
-					logger.Errorw("failed to read results", err)
-					continue
-				}
-				_, err = s.UpdateEgressInfo(context.Background(), info)
-				if err != nil {
-					logger.Errorw("failed to update egress info", err)
-				}
-
-			case <-s.shutdown:
-				_ = sub.Close()
-				s.es.(*RedisStore).Stop()
-				return
-			}
-		}
-	}()
-
-	return nil
 }

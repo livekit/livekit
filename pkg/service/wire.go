@@ -18,7 +18,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/auth"
-	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	redisLiveKit "github.com/livekit/protocol/redis"
 	"github.com/livekit/protocol/rpc"
@@ -45,8 +44,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		telemetry.NewTelemetryService,
 		getMessageBus,
 		NewIOInfoService,
-		getEgressClient,
-		egress.NewRedisRPCClient,
+		rpc.NewEgressClient,
 		getEgressStore,
 		NewEgressLauncher,
 		NewEgressService,
@@ -146,14 +144,6 @@ func getMessageBus(rc redis.UniversalClient) psrpc.MessageBus {
 		return psrpc.NewLocalMessageBus()
 	}
 	return psrpc.NewRedisMessageBus(rc)
-}
-
-func getEgressClient(conf *config.Config, nodeID livekit.NodeID, bus psrpc.MessageBus) (rpc.EgressClient, error) {
-	if conf.Egress.UsePsRPC {
-		return rpc.NewEgressClient(nodeID, bus)
-	}
-
-	return nil, nil
 }
 
 func getEgressStore(s ObjectStore) EgressStore {
