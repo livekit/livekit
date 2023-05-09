@@ -1347,7 +1347,9 @@ func (p *ParticipantImpl) subscriberRTCPWorker() {
 			sd = append(sd, chunks...)
 			batchSize = batchSize + 1 + len(chunks)
 			if batchSize >= sdBatchSize {
-				pkts = append(pkts, &rtcp.SourceDescription{Chunks: sd})
+				if len(sd) != 0 {
+					pkts = append(pkts, &rtcp.SourceDescription{Chunks: sd})
+				}
 				if err := p.TransportManager.WriteSubscriberRTCP(pkts); err != nil {
 					if err == io.EOF || err == io.ErrClosedPipe {
 						return
@@ -1361,7 +1363,10 @@ func (p *ParticipantImpl) subscriberRTCPWorker() {
 			}
 		}
 
-		if len(pkts) != 0 {
+		if len(pkts) != 0 || len(sd) != 0 {
+			if len(sd) != 0 {
+				pkts = append(pkts, &rtcp.SourceDescription{Chunks: sd})
+			}
 			if err := p.TransportManager.WriteSubscriberRTCP(pkts); err != nil {
 				if err == io.EOF || err == io.ErrClosedPipe {
 					return
