@@ -54,14 +54,15 @@ func (r RTPMungerState) String() string {
 // ----------------------------------------------------------------------
 
 type RTPMungerParams struct {
-	started           bool
-	highestIncomingSN uint16
-	lastSN            uint16
-	snOffset          uint16
-	highestIncomingTS uint32
-	lastTS            uint32
-	tsOffset          uint32
-	lastMarker        bool
+	started            bool
+	highestIncomingSN  uint16
+	lastSN             uint16
+	snOffset           uint16
+	highestIncomingTS  uint32
+	lastTS             uint32
+	tsOffset           uint32
+	tsOffsetAdjustment uint32
+	lastMarker         bool
 
 	snOffsets          [SnOffsetCacheSize]uint16
 	snOffsetsWritePtr  int
@@ -143,7 +144,7 @@ func (r *RTPMunger) PacketDropped(extPkt *buffer.ExtPacket) {
 }
 
 func (r *RTPMunger) UpdateTsOffset(tsAdjust uint32) {
-	r.tsOffset -= tsAdjust
+	r.tsOffsetAdjustment = tsAdjust
 }
 
 func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationParamsRTP, error) {
@@ -197,6 +198,12 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 				snOrdering: SequenceNumberOrderingContiguous,
 			}, ErrPaddingOnlyPacket
 		}
+	}
+
+	// apply timestamp offset adjustment at the start of a frame only
+	if extPkt.Packet.Timestamp != r.highestIncomingTS && r.tsOffsetAdjustment != 0 {
+		r.tsOffset -= r.tsOffsetAdjustment
+		r.tsOffsetAdjustment = 0
 	}
 
 	// in-order incoming packet, may or may not be contiguous.
