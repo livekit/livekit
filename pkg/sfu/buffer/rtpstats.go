@@ -1107,7 +1107,7 @@ func (r *RTPStats) ToString() string {
 
 	str := fmt.Sprintf("t: %+v|%+v|%.2fs", p.StartTime.AsTime().Format(time.UnixDate), p.EndTime.AsTime().Format(time.UnixDate), p.Duration)
 
-	str += fmt.Sprintf(" sn: %d|%d", r.extStartSN, r.getExtHighestSN())
+	str += fmt.Sprintf(", sn: %d|%d", r.extStartSN, r.getExtHighestSN())
 	str += fmt.Sprintf(", ep: %d|%.2f/s", expectedPackets, expectedPacketRate)
 
 	str += fmt.Sprintf(", p: %d|%.2f/s", p.Packets, p.PacketRate)
