@@ -1361,6 +1361,15 @@ func (p *ParticipantImpl) subscriberRTCPWorker() {
 			}
 		}
 
+		if len(pkts) != 0 {
+			if err := p.TransportManager.WriteSubscriberRTCP(pkts); err != nil {
+				if err == io.EOF || err == io.ErrClosedPipe {
+					return
+				}
+				p.params.Logger.Errorw("could not send down track reports", err)
+			}
+		}
+
 		time.Sleep(3 * time.Second)
 	}
 }
