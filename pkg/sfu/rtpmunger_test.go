@@ -28,49 +28,11 @@ func TestSetLastSnTs(t *testing.T) {
 
 	r.SetLastSnTs(extPkt)
 	require.Equal(t, uint16(23332), r.highestIncomingSN)
+	require.Equal(t, uint32(0xabcdef), r.highestIncomingTS)
 	require.Equal(t, uint16(23333), r.lastSN)
 	require.Equal(t, uint32(0xabcdef), r.lastTS)
 	require.Equal(t, uint16(0), r.snOffset)
 	require.Equal(t, uint32(0), r.tsOffset)
-	require.True(t, r.started)
-
-	// force re-start
-	r.started = false
-
-	params = &testutils.TestExtPacketParams{
-		SequenceNumber: 43,
-		Timestamp:      0xabcdef,
-		SSRC:           0x12345678,
-	}
-	extPkt, err = testutils.GetTestExtPacket(params)
-	require.NoError(t, err)
-	require.NotNil(t, extPkt)
-
-	r.SetLastSnTs(extPkt)
-	require.Equal(t, uint16(42), r.highestIncomingSN)
-	require.Equal(t, uint16(43), r.lastSN)
-	require.Equal(t, uint32(0xabcdef), r.lastTS)
-	require.Equal(t, uint16(0), r.snOffset)
-	require.Equal(t, uint32(0), r.tsOffset)
-	require.True(t, r.started)
-
-	// set on a started munger
-	params = &testutils.TestExtPacketParams{
-		SequenceNumber: 23457,
-		Timestamp:      0xabcdef,
-		SSRC:           0x12345678,
-	}
-	extPkt, err = testutils.GetTestExtPacket(params)
-	require.NoError(t, err)
-	require.NotNil(t, extPkt)
-
-	r.SetLastSnTs(extPkt)
-	require.Equal(t, uint16(23456), r.highestIncomingSN)
-	require.Equal(t, uint16(43), r.lastSN)
-	require.Equal(t, uint32(0xabcdef), r.lastTS)
-	require.Equal(t, uint16(23413), r.snOffset)
-	require.Equal(t, uint32(0xffffffff), r.tsOffset)
-	require.True(t, r.started)
 }
 
 func TestUpdateSnTsOffsets(t *testing.T) {
@@ -92,6 +54,7 @@ func TestUpdateSnTsOffsets(t *testing.T) {
 	extPkt, _ = testutils.GetTestExtPacket(params)
 	r.UpdateSnTsOffsets(extPkt, 1, 1)
 	require.Equal(t, uint16(33332), r.highestIncomingSN)
+	require.Equal(t, uint32(0xabcdef), r.highestIncomingTS)
 	require.Equal(t, uint16(23333), r.lastSN)
 	require.Equal(t, uint32(0xabcdef), r.lastTS)
 	require.Equal(t, uint16(9999), r.snOffset)
@@ -109,9 +72,10 @@ func TestPacketDropped(t *testing.T) {
 	}
 	extPkt, _ := testutils.GetTestExtPacket(params)
 	r.SetLastSnTs(extPkt)
-	require.Equal(t, r.highestIncomingSN, uint16(23332))
-	require.Equal(t, r.lastSN, uint16(23333))
-	require.Equal(t, r.lastTS, uint32(0xabcdef))
+	require.Equal(t, uint16(23332), r.highestIncomingSN)
+	require.Equal(t, uint32(0xabcdef), r.highestIncomingTS)
+	require.Equal(t, uint16(23333), r.lastSN)
+	require.Equal(t, uint32(0xabcdef), r.lastTS)
 	require.Equal(t, uint16(0), r.snOffset)
 	require.Equal(t, uint32(0), r.tsOffset)
 
@@ -126,8 +90,8 @@ func TestPacketDropped(t *testing.T) {
 	}
 	extPkt, _ = testutils.GetTestExtPacket(params)
 	r.PacketDropped(extPkt)
-	require.Equal(t, r.highestIncomingSN, uint16(23333))
-	require.Equal(t, r.lastSN, uint16(23333))
+	require.Equal(t, uint16(23333), r.highestIncomingSN)
+	require.Equal(t, uint16(23333), r.lastSN)
 	require.Equal(t, uint16(0), r.snOffset)
 
 	// drop a head packet and check offset increases
@@ -160,7 +124,7 @@ func TestPacketDropped(t *testing.T) {
 	require.Equal(t, uint16(1), r.snOffsets[snOffsetWritePtr])
 	snOffsetWritePtr = (snOffsetWritePtr + 1) & SnOffsetCacheMask
 	require.Equal(t, snOffsetWritePtr, r.snOffsetsWritePtr)
-	require.Equal(t, r.lastSN, uint16(44444))
+	require.Equal(t, uint16(44444), r.lastSN)
 	require.Equal(t, uint16(1), r.snOffset)
 }
 
@@ -464,7 +428,7 @@ func TestUpdateAndGetPaddingSnTs(t *testing.T) {
 	r.SetLastSnTs(extPkt)
 
 	// getting padding without forcing marker should fail
-	_, err := r.UpdateAndGetPaddingSnTs(10, 10, 5, false)
+	_, err := r.UpdateAndGetPaddingSnTs(10, 10, 5, false, 0)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrPaddingNotOnFrameBoundary)
 
@@ -477,10 +441,10 @@ func TestUpdateAndGetPaddingSnTs(t *testing.T) {
 	for i := 0; i < numPadding; i++ {
 		sntsExpected[i] = SnTs{
 			sequenceNumber: params.SequenceNumber + uint16(i) + 1,
-			timestamp:      params.Timestamp + (uint32(i)*clockRate)/frameRate,
+			timestamp:      params.Timestamp + ((uint32(i)*clockRate)+frameRate-1)/frameRate,
 		}
 	}
-	snts, err := r.UpdateAndGetPaddingSnTs(numPadding, clockRate, frameRate, true)
+	snts, err := r.UpdateAndGetPaddingSnTs(numPadding, clockRate, frameRate, true, params.Timestamp)
 	require.NoError(t, err)
 	require.Equal(t, sntsExpected, snts)
 
@@ -488,10 +452,10 @@ func TestUpdateAndGetPaddingSnTs(t *testing.T) {
 	for i := 0; i < numPadding; i++ {
 		sntsExpected[i] = SnTs{
 			sequenceNumber: params.SequenceNumber + uint16(len(snts)) + uint16(i) + 1,
-			timestamp:      snts[len(snts)-1].timestamp + (uint32(i+1)*clockRate)/frameRate,
+			timestamp:      snts[len(snts)-1].timestamp + ((uint32(i+1)*clockRate)+frameRate-1)/frameRate,
 		}
 	}
-	snts, err = r.UpdateAndGetPaddingSnTs(numPadding, clockRate, frameRate, false)
+	snts, err = r.UpdateAndGetPaddingSnTs(numPadding, clockRate, frameRate, false, snts[len(snts)-1].timestamp)
 	require.NoError(t, err)
 	require.Equal(t, sntsExpected, snts)
 }
