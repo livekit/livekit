@@ -177,7 +177,6 @@ type RTPStats struct {
 	srData        *RTCPSenderReportData
 	lastSRTime    time.Time
 	lastSRNTP     mediatransportutil.NtpTime
-	lastSRRTP     uint32
 	pidController *PIDController
 
 	nextSnapshotId uint32
@@ -287,7 +286,6 @@ func (r *RTPStats) Seed(from *RTPStats) {
 	}
 	r.lastSRTime = from.lastSRTime
 	r.lastSRNTP = from.lastSRNTP
-	r.lastSRRTP = from.lastSRRTP
 
 	r.nextSnapshotId = from.nextSnapshotId
 	for id, ss := range from.snapshots {
@@ -848,17 +846,13 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32) (*rtcp.SenderReport, float64
 	nowRTP := r.highestTS + uint32(timeSinceHighest.Nanoseconds()*int64(r.params.ClockRate)/1e9)
 
 	// TODO-REMOVE-AFTER-DEBUG-START
-	pidOutput := float64(0.0)
-	if !r.lastSRTime.IsZero() {
-		timeSinceLast := now.Sub(r.lastSRTime)
-		rtpDiffSinceLast := nowRTP - r.lastSRRTP
-		rate := float64(rtpDiffSinceLast) / timeSinceLast.Seconds()
-		pidOutput = r.pidController.Update(
-			float64(r.params.ClockRate),
-			rate,
-			now,
-		)
-	}
+	rtpDiffSinceFirst := getExtTS(nowRTP, r.tsCycles) - r.extStartTS
+	rate := float64(rtpDiffSinceFirst) / timeSinceFirst.Seconds()
+	pidOutput := r.pidController.Update(
+		float64(r.params.ClockRate),
+		rate,
+		now,
+	)
 	// TODO-REMOVE-AFTER-DEBUG-STOP
 
 	// TODO-REMOVE-AFTER-DEBUG-START
@@ -868,7 +862,6 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32) (*rtcp.SenderReport, float64
 	rtpDiffLocal := int32(nowRTP - r.highestTS)
 	rtpOffsetLocal := int32(nowRTP - r.highestTS - uint32(ntpDiffLocal.Nanoseconds()*int64(r.params.ClockRate)/1e9))
 
-	rtpDiffSinceFirst := getExtTS(nowRTP, r.tsCycles) - r.extStartTS
 	drift := int64(rtpDiffSinceFirst - uint64(timeSinceFirst.Nanoseconds()*int64(r.params.ClockRate)/1e9))
 	driftMs := (float64(drift) * 1000) / float64(r.params.ClockRate)
 	r.logger.Debugw(
@@ -885,13 +878,12 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32) (*rtcp.SenderReport, float64
 		"rtpDiffSinceFirst", rtpDiffSinceFirst,
 		"drift", drift,
 		"driftMs", driftMs,
-		"rate", float64(rtpDiffSinceFirst)/timeSinceFirst.Seconds(),
+		"rate", rate,
 	)
 	// TODO-REMOVE-AFTER-DEBUG-END
 
 	r.lastSRTime = now
 	r.lastSRNTP = nowNTP
-	r.lastSRRTP = nowRTP
 
 	return &rtcp.SenderReport{
 		SSRC:        ssrc,
