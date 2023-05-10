@@ -68,7 +68,7 @@ type Config struct {
 }
 
 type RTCConfig struct {
-	rtcconfig.RTCConfig
+	rtcconfig.RTCConfig `yaml:",inline"`
 
 	StrictACKs bool `yaml:"strict_acks,omitempty"`
 
@@ -472,13 +472,22 @@ func (conf *Config) ToCLIFlagNames(existingFlags []cli.Flag) map[string]reflect.
 		for i := 0; i < currNode.TypeNode.NumField(); i++ {
 			// inspect yaml tag from struct field to get path
 			field := currNode.TypeNode.Type().Field(i)
-			yamlTag := strings.SplitN(field.Tag.Get("yaml"), ",", 2)[0]
-			if yamlTag == "" || yamlTag == "-" {
+			yamlTagArray := strings.SplitN(field.Tag.Get("yaml"), ",", 2)
+			yamlTag := yamlTagArray[0]
+			isInline := false
+			if len(yamlTagArray) > 1 && yamlTagArray[1] == "inline" {
+				isInline = true
+			}
+			if (yamlTag == "" && (!isInline || currNode.TagPrefix == "")) || yamlTag == "-" {
 				continue
 			}
 			yamlPath := yamlTag
 			if currNode.TagPrefix != "" {
-				yamlPath = fmt.Sprintf("%s.%s", currNode.TagPrefix, yamlTag)
+				if isInline {
+					yamlPath = currNode.TagPrefix
+				} else {
+					yamlPath = fmt.Sprintf("%s.%s", currNode.TagPrefix, yamlTag)
+				}
 			}
 			if existingFlagNames[yamlPath] {
 				continue

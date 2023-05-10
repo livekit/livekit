@@ -15,7 +15,7 @@ const (
 )
 
 type WebRTCConfig struct {
-	*rtcconfig.WebRTCConfig
+	rtcconfig.WebRTCConfig
 
 	BufferFactory *buffer.Factory
 	Receiver      ReceiverConfig
@@ -43,10 +43,10 @@ type DirectionConfig struct {
 	StrictACKs         bool
 }
 
-func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, error) {
+func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 	rtcConf := conf.RTC
 
-	webRTCConfig, err := rtcconfig.NewWebRTCConfig(&rtcConf.RTCConfig, externalIP, conf.Development)
+	webRTCConfig, err := rtcconfig.NewWebRTCConfig(&rtcConf.RTCConfig, conf.Development)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +108,7 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 	}
 
 	return &WebRTCConfig{
-		WebRTCConfig: webRTCConfig,
+		WebRTCConfig: *webRTCConfig,
 		Receiver: ReceiverConfig{
 			PacketBufferSize: rtcConf.PacketBufferSize,
 		},
