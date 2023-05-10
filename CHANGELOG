@@ -2,6 +2,44 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.2] - 2023-04-27
+### Added
+- VP9 codec with SVC support (#1586)
+- Support for source-specific permissions and client-initiated metadata updates (#1590)
+- Batch support for signal relay (#1593 #1596)
+- Support for simulating subscriber bandwidth (#1609)
+- Support for subscription limits (#1629)
+- Send Room updates when participant counts change (#1647)
+
+### Fixed
+- Fixed process return code to 0 (#1589)
+- Fixed VP9 stutter when not using dependency descriptors (#1595)
+- Fixed stutter when using dependency descriptors (#1600)
+- Fixed Redis cluster support when using Egress or Ingress (#1606)
+- Fixed simulcast parsing error for slower clients (camera and screenshare) (#1621)
+- Don't close RTCP reader if Downtrack will be resumed (#1632)
+- Restore VP8 munger state properly. (#1634)
+- Fixed incorrect node routing when using signal relay (#1645)
+- Do not send hidden participants to others after resume (#1689)
+- Fix for potential webhook delivery delays (#1690)
+
+### Changed
+- Refactored video layer selector (#1588 #1591 #1592)
+- Improved transport fallback when client is resuming (#1597)
+- Improved webhook reliability with delivery retries (#1607 #1615)
+- Congestion controller improvements (#1614 #1616 #1617 #1623 #1628 #1631 #1652)
+- Reduced memory usage by releasing ParticipantInfo after JoinResponse is transmitted (#1619)
+- Ensure safe access in sequencer (#1625)
+- Run quality scorer when there are no streams. (#1633)
+- Participant version is only incremented after updates (#1646)
+- Connection quality attribution improvements (#1653 #1664)
+- Remove disallowed subscriptions on close. (#1668)
+- A/V sync improvements (#1681 #1684 #1687 #1693 #1695 #1696 #1698 #1704)
+- RTCP sender reports every three seconds. (#1692)
+
+### Removed
+- Remove deprecated (non-psrpc) egress client (#1701)
+
 ## [1.4.1] - 2023-04-05
 ### Added
 - Added prometheus metrics for internal signaling API #1571
