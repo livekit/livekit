@@ -228,12 +228,6 @@ keys:
 #   # Prefix used to generate WHIP URLs for WHIP ingress.
 #   whip_base_url: "http://my.domain.com/whip"
 
-# egress server
-# egress:
-#   # Whether to use the PSRPC enabled RPC implementation. This requires livekit egress version >=1.5.4
-#   # The legacy, non PSRPC RPC implementation will be removed eventually
-#   use_psrpc: false
-
 # Region of the current node. Required if using regionaware node selector
 # region: us-west-2
 

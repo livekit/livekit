@@ -20,6 +20,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Don't close RTCP reader if Downtrack will be resumed (#1632)
 - Restore VP8 munger state properly. (#1634)
 - Fixed incorrect node routing when using signal relay (#1645)
+- Do not send hidden participants to others after resume (#1689)
+- Fix for potential webhook delivery delays (#1690)
 
 ### Changed
 - Refactored video layer selector (#1588 #1591 #1592)
@@ -30,6 +32,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Ensure safe access in sequencer (#1625)
 - Run quality scorer when there are no streams. (#1633)
 - Participant version is only incremented after updates (#1646)
+- Connection quality attribution improvements (#1653 #1664)
+- Remove disallowed subscriptions on close. (#1668)
+- A/V sync improvements (#1681 #1684 #1687 #1693 #1695 #1696 #1698 #1704)
+- RTCP sender reports every three seconds. (#1692)
+
+### Removed
+- Remove deprecated (non-psrpc) egress client (#1701)
 
 ## [1.4.1] - 2023-04-05
 ### Added
