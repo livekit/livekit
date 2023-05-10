@@ -8,7 +8,7 @@ require (
 	github.com/dustin/go-humanize v1.0.1
 	github.com/elliotchance/orderedmap/v2 v2.2.0
 	github.com/florianl/go-tc v0.4.2
-	github.com/frostbyte73/core v0.0.5
+	github.com/frostbyte73/core v0.0.9
 	github.com/gammazero/deque v0.2.1
 	github.com/gammazero/workerpool v1.1.3
 	github.com/google/wire v0.5.0
@@ -18,7 +18,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20230326055817-ed569ca13d26
-	github.com/livekit/protocol v1.5.6
+	github.com/livekit/protocol v1.5.7-0.20230510002113-cadccd54108e
 	github.com/livekit/psrpc v0.3.1-0.20230502152150-df9dd21fba11
 	github.com/mackerelio/go-osstat v0.2.4
 	github.com/magefile/mage v1.14.0
