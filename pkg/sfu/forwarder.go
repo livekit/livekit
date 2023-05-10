@@ -140,6 +140,7 @@ type TranslationParams struct {
 type ForwarderState struct {
 	Started      bool
 	PreStartTime time.Time
+	FirstTS      uint32
 	RefTSOffset  uint32
 	RTP          RTPMungerState
 	Codec        interface{}
@@ -151,7 +152,14 @@ func (f ForwarderState) String() string {
 	case codecmunger.VP8State:
 		codecString = codecState.String()
 	}
-	return fmt.Sprintf("ForwarderState{started: %v, preStartTime: %s, refTSOffset: %d, rtp: %s, codec: %s}", f.Started, f.PreStartTime.String(), f.RefTSOffset, f.RTP.String(), codecString)
+	return fmt.Sprintf("ForwarderState{started: %v, preStartTime: %s, firstTS: %d, refTSOffset: %d, rtp: %s, codec: %s}",
+		f.Started,
+		f.PreStartTime.String(),
+		f.FirstTS,
+		f.RefTSOffset,
+		f.RTP.String(),
+		codecString,
+	)
 }
 
 // -------------------------------------------------------------------
@@ -169,6 +177,7 @@ type Forwarder struct {
 
 	started               bool
 	preStartTime          time.Time
+	firstTS               uint32
 	lastSSRC              uint32
 	referenceLayerSpatial int32
 	refTSOffset           uint32
@@ -322,6 +331,7 @@ func (f *Forwarder) GetState() ForwarderState {
 	return ForwarderState{
 		Started:      f.started,
 		PreStartTime: f.preStartTime,
+		FirstTS:      f.firstTS,
 		RefTSOffset:  f.refTSOffset,
 		RTP:          f.rtpMunger.GetLast(),
 		Codec:        f.codecMunger.GetState(),
@@ -341,6 +351,7 @@ func (f *Forwarder) SeedState(state ForwarderState) {
 
 	f.started = true
 	f.preStartTime = state.PreStartTime
+	f.firstTS = state.FirstTS
 	f.refTSOffset = state.RefTSOffset
 }
 
@@ -1478,9 +1489,9 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 				} else {
 					rtpDiff := uint32(0)
 					if !f.preStartTime.IsZero() && f.refTSOffset == 0 {
-						timeSinceFirst := time.Now().Sub(f.preStartTime)
+						timeSinceFirst := time.Since(f.preStartTime)
 						rtpDiff = uint32(timeSinceFirst.Nanoseconds() * int64(f.codec.ClockRate) / 1e9)
-						f.refTSOffset = lastTS + rtpDiff - refTS
+						f.refTSOffset = f.firstTS + rtpDiff - refTS
 					}
 					expectedTS += rtpDiff
 				}
@@ -1622,6 +1633,8 @@ func (f *Forwarder) maybeStart() {
 		},
 	}
 	f.rtpMunger.SetLastSnTs(extPkt)
+
+	f.firstTS = extPkt.Packet.Timestamp
 }
 
 func (f *Forwarder) GetSnTsForPadding(num int) ([]SnTs, error) {
