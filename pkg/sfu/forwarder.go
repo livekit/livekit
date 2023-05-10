@@ -1636,7 +1636,7 @@ func (f *Forwarder) GetSnTsForPadding(num int) ([]SnTs, error) {
 	// force a frame marker as a restart of the stream will
 	// start with a key frame which will reset the decoder.
 	forceMarker := false
-	if !f.vls.GetTarget().IsValid() && !f.vls.GetParked().IsValid() {
+	if !f.vls.GetTarget().IsValid() {
 		forceMarker = true
 	}
 	return f.rtpMunger.UpdateAndGetPaddingSnTs(num, 0, 0, forceMarker, 0)
