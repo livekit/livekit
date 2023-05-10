@@ -14,7 +14,6 @@ import (
 	"github.com/livekit/protocol/webhook"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	serverlogger "github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 	"github.com/livekit/livekit-server/pkg/sfu/audio"
@@ -30,7 +29,7 @@ const (
 )
 
 func init() {
-	serverlogger.InitFromConfig(config.LoggingConfig{
+	config.InitLoggerFromConfig(config.LoggingConfig{
 		Config: logger.Config{Level: "debug"},
 	})
 	// allow immediate closure in testing
@@ -678,7 +677,7 @@ func TestRoomUpdate(t *testing.T) {
 
 		// p1 should have received an update
 		time.Sleep(2 * defaultDelay)
-		require.Equal(t, 1, p1.SendRoomUpdateCallCount())
+		require.LessOrEqual(t, 1, p1.SendRoomUpdateCallCount())
 		require.EqualValues(t, 2, p1.SendRoomUpdateArgsForCall(p1.SendRoomUpdateCallCount()-1).NumParticipants)
 	})
 

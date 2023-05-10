@@ -10,8 +10,6 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-
-	"github.com/livekit/livekit-server/pkg/rtc/types"
 )
 
 const (
@@ -43,14 +41,6 @@ func UnpackDataTrackLabel(packed string) (participantID livekit.ParticipantID, t
 	trackID = livekit.TrackID(parts[1])
 	label = parts[2]
 	return
-}
-
-func ToProtoParticipants(participants []types.LocalParticipant) []*livekit.ParticipantInfo {
-	infos := make([]*livekit.ParticipantInfo, 0, len(participants))
-	for _, op := range participants {
-		infos = append(infos, op.ToProto())
-	}
-	return infos
 }
 
 func ToProtoSessionDescription(sd webrtc.SessionDescription) *livekit.SessionDescription {

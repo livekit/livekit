@@ -391,7 +391,7 @@ func (m *SubscriptionManager) reconcileWorker() {
 	}
 }
 
-func (m *SubscriptionManager) hasCapcityForSubscription(kind livekit.TrackType) bool {
+func (m *SubscriptionManager) hasCapacityForSubscription(kind livekit.TrackType) bool {
 	switch kind {
 	case livekit.TrackType_VIDEO:
 		if m.params.SubscriptionLimitVideo > 0 && m.subscribedVideoCount.Load() >= m.params.SubscriptionLimitVideo {
@@ -413,7 +413,7 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 		return ErrNoSubscribePermission
 	}
 
-	if kind, ok := s.getKind(); ok && !m.hasCapcityForSubscription(kind) {
+	if kind, ok := s.getKind(); ok && !m.hasCapacityForSubscription(kind) {
 		return ErrSubscriptionLimitExceeded
 	}
 
@@ -445,9 +445,11 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 		return ErrTrackNotFound
 	}
 	s.trySetKind(track.Kind())
-	if !m.hasCapcityForSubscription(track.Kind()) {
+	if !m.hasCapacityForSubscription(track.Kind()) {
 		return ErrSubscriptionLimitExceeded
 	}
+
+	s.setPublisher(res.PublisherIdentity, res.PublisherID)
 
 	// since hasPermission defaults to true, we will want to send a message to the client the first time
 	// that we discover permissions were denied
@@ -459,7 +461,6 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 		return ErrNoTrackPermission
 	}
 
-	s.setPublisher(res.PublisherIdentity, res.PublisherID)
 	subTrack, err := track.AddSubscriber(m.params.Participant)
 	if err != nil && err != errAlreadySubscribed {
 		// ignore already subscribed error

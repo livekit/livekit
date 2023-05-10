@@ -412,7 +412,8 @@ func (r *Room) ResumeParticipant(p types.LocalParticipant, requestSource routing
 		return err
 	}
 
-	updates := ToProtoParticipants(r.GetParticipants())
+	// include the local participant's info as well, since metadata could have been changed
+	updates := r.getOtherParticipantInfo("")
 	if err := p.SendParticipantUpdate(updates); err != nil {
 		return err
 	}
@@ -533,20 +534,6 @@ func (r *Room) UpdateSubscriptionPermission(participant types.LocalParticipant, 
 	return nil
 }
 
-func (r *Room) RemoveDisallowedSubscriptions(sub types.LocalParticipant, disallowedSubscriptions map[livekit.TrackID]livekit.ParticipantID) {
-	for trackID, publisherID := range disallowedSubscriptions {
-		pub := r.GetParticipantByID(publisherID)
-		if pub == nil {
-			continue
-		}
-
-		track := pub.GetPublishedTrack(trackID)
-		if track != nil {
-			track.RemoveSubscriber(sub.ID(), false)
-		}
-	}
-}
-
 func (r *Room) UpdateVideoLayers(participant types.Participant, updateVideoLayers *livekit.UpdateVideoLayers) error {
 	return participant.UpdateVideoLayers(updateVideoLayers)
 }
@@ -663,6 +650,15 @@ func (r *Room) SetMetadata(metadata string) {
 	r.protoProxy.MarkDirty(true)
 }
 
+func (r *Room) UpdateParticipantMetadata(participant types.LocalParticipant, name string, metadata string) {
+	if metadata != "" {
+		participant.SetMetadata(metadata)
+	}
+	if name != "" {
+		participant.SetName(name)
+	}
+}
+
 func (r *Room) sendRoomUpdate() {
 	roomInfo := r.ToProto()
 	// Send update to participants
@@ -733,6 +729,18 @@ func (r *Room) SimulateScenario(participant types.LocalParticipant, simulateScen
 		participant.SetSubscriberChannelCapacity(scenario.SubscriberBandwidth)
 	}
 	return nil
+}
+
+func (r *Room) getOtherParticipantInfo(identity livekit.ParticipantIdentity) []*livekit.ParticipantInfo {
+	participants := r.GetParticipants()
+	pi := make([]*livekit.ParticipantInfo, 0, len(participants))
+	for _, p := range participants {
+		if !p.Hidden() && p.Identity() != identity {
+			pi = append(pi, p.ToProto())
+		}
+	}
+
+	return pi
 }
 
 // checks if participant should be autosubscribed to new tracks, assumes lock is already acquired

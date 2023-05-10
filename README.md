@@ -8,7 +8,8 @@
 
 # LiveKit: Real-time video, audio and data for developers
 
-[LiveKit](https://livekit.io) is an open source project that provides scalable, multi-user conferencing based on WebRTC. It's designed to provide everything you need to build real-time video audio data capabilities in your applications.
+[LiveKit](https://livekit.io) is an open source project that provides scalable, multi-user conferencing based on WebRTC.
+It's designed to provide everything you need to build real-time video audio data capabilities in your applications.
 
 LiveKit's server is written in Go, using the awesome [Pion WebRTC](https://github.com/pion/webrtc) implementation.
 
@@ -41,9 +42,10 @@ https://docs.livekit.io
 
 ## Live Demos
 
-- [LiveKit Meet](https://meet.livekit.io) ([source](https://github.com/livekit/meet))
+- [LiveKit Meet](https://meet.livekit.io) ([source](https://github.com/livekit-examples/meet))
 - [Spatial Audio](https://spatial-audio-demo.livekit.io/) ([source](https://github.com/livekit-examples/spatial-audio))
 - Livestreaming from OBS Studio ([source](https://github.com/livekit-examples/livestream))
+- [AI voice assistant using ChatGPT](https://livekit.io/kitt) ([source](https://github.com/livekit-examples/kitt))
 
 ## SDKs & Tools
 

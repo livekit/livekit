@@ -14,6 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/logger/pionlogger"
 	redisLiveKit "github.com/livekit/protocol/redis"
 )
 
@@ -54,7 +55,6 @@ type Config struct {
 	Video          VideoConfig              `yaml:"video,omitempty"`
 	Room           RoomConfig               `yaml:"room,omitempty"`
 	TURN           TURNConfig               `yaml:"turn,omitempty"`
-	Egress         EgressConfig             `yaml:"egress,omitempty"`
 	Ingress        IngressConfig            `yaml:"ingress,omitempty"`
 	WebHook        WebHookConfig            `yaml:"webhook,omitempty"`
 	NodeSelector   NodeSelectorConfig       `yaml:"node_selector,omitempty"`
@@ -106,6 +106,9 @@ type RTCConfig struct {
 
 	// force a reconnect on a subscription error
 	ReconnectOnSubscriptionError *bool `yaml:"reconnect_on_subscription_error,omitempty"`
+
+	// allow time stamp adjust to keep drift low, this is experimental
+	AllowTimestampAdjustment *bool `yaml:"allow_timestamp_adjustment,omitempty"`
 }
 
 type TURNServer struct {
@@ -252,12 +255,9 @@ type LimitConfig struct {
 	SubscriptionLimitAudio int32   `yaml:"subscription_limit_audio,omitempty"`
 }
 
-type EgressConfig struct {
-	UsePsRPC bool `yaml:"use_psrpc"`
-}
-
 type IngressConfig struct {
 	RTMPBaseURL string `yaml:"rtmp_base_url"`
+	WHIPBaseURL string `yaml:"whip_base_url"`
 }
 
 // not exposed to YAML
@@ -743,4 +743,14 @@ func (conf *Config) unmarshalKeys(keys string) error {
 		}
 	}
 	return nil
+}
+
+// Note: only pass in logr.Logger with default depth
+func SetLogger(l logger.Logger) {
+	logger.SetLogger(l, "livekit")
+}
+
+func InitLoggerFromConfig(config LoggingConfig) {
+	pionlogger.SetLogLevel(config.PionLevel)
+	logger.InitFromConfig(config.Config, "livekit")
 }

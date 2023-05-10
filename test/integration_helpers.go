@@ -12,7 +12,6 @@ import (
 	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	serverlogger "github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
@@ -42,7 +41,7 @@ const (
 var roomClient livekit.RoomService
 
 func init() {
-	serverlogger.InitFromConfig(config.LoggingConfig{
+	config.InitLoggerFromConfig(config.LoggingConfig{
 		Config: logger.Config{Level: "debug"},
 	})
 

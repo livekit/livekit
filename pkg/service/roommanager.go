@@ -309,6 +309,11 @@ func (r *RoomManager) StartSession(
 	if pi.SubscriberAllowPause != nil {
 		subscriberAllowPause = *pi.SubscriberAllowPause
 	}
+	// default do not allow timestamp adjustment
+	allowTimestampAdjustment := false
+	if r.config.RTC.AllowTimestampAdjustment != nil {
+		allowTimestampAdjustment = *r.config.RTC.AllowTimestampAdjustment
+	}
 	participant, err = rtc.NewParticipant(rtc.ParticipantParams{
 		Identity:                pi.Identity,
 		Name:                    pi.Name,
@@ -343,6 +348,7 @@ func (r *RoomManager) StartSession(
 		SubscriberAllowPause:         subscriberAllowPause,
 		SubscriptionLimitAudio:       r.config.Limit.SubscriptionLimitAudio,
 		SubscriptionLimitVideo:       r.config.Limit.SubscriptionLimitVideo,
+		AllowTimestampAdjustment:     allowTimestampAdjustment,
 	})
 	if err != nil {
 		return err
@@ -376,7 +382,7 @@ func (r *RoomManager) StartSession(
 
 	clientMeta := &livekit.AnalyticsClientMeta{Region: r.currentNode.Region, Node: r.currentNode.Id}
 	r.telemetry.ParticipantJoined(ctx, protoRoom, participant.ToProto(), pi.Client, clientMeta, true)
-	participant.OnClose(func(p types.LocalParticipant, disallowedSubscriptions map[livekit.TrackID]livekit.ParticipantID) {
+	participant.OnClose(func(p types.LocalParticipant) {
 		if err := r.roomStore.DeleteParticipant(ctx, roomName, p.Identity()); err != nil {
 			pLogger.Errorw("could not delete participant", err)
 		}
@@ -385,8 +391,6 @@ func (r *RoomManager) StartSession(
 		proto := room.ToProto()
 		persistRoomForParticipantCount(proto)
 		r.telemetry.ParticipantLeft(ctx, proto, p.ToProto(), true)
-
-		room.RemoveDisallowedSubscriptions(p, disallowedSubscriptions)
 	})
 	participant.OnClaimsChanged(func(participant types.LocalParticipant) {
 		pLogger.Debugw("refreshing client token after claims change")
@@ -592,12 +596,7 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomName livekit.Roo
 		}
 		pLogger.Debugw("updating participant", "metadata", rm.UpdateParticipant.Metadata,
 			"permission", rm.UpdateParticipant.Permission)
-		if rm.UpdateParticipant.Name != "" {
-			participant.SetName(rm.UpdateParticipant.Name)
-		}
-		if rm.UpdateParticipant.Metadata != "" {
-			participant.SetMetadata(rm.UpdateParticipant.Metadata)
-		}
+		room.UpdateParticipantMetadata(participant, rm.UpdateParticipant.Name, rm.UpdateParticipant.Metadata)
 		if rm.UpdateParticipant.Permission != nil {
 			participant.SetPermission(rm.UpdateParticipant.Permission)
 		}

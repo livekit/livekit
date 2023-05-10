@@ -315,7 +315,7 @@ type LocalParticipant interface {
 	OnParticipantUpdate(callback func(LocalParticipant))
 	OnDataPacket(callback func(LocalParticipant, *livekit.DataPacket))
 	OnSubscribeStatusChanged(fn func(publisherID livekit.ParticipantID, subscribed bool))
-	OnClose(callback func(LocalParticipant, map[livekit.TrackID]livekit.ParticipantID))
+	OnClose(callback func(LocalParticipant))
 	OnClaimsChanged(callback func(LocalParticipant))
 	OnReceiverReport(dt *sfu.DownTrack, report *rtcp.ReceiverReport)
 
@@ -341,6 +341,8 @@ type LocalParticipant interface {
 	// down stream bandwidth management
 	SetSubscriberAllowPause(allowPause bool)
 	SetSubscriberChannelCapacity(channelCapacity int64)
+
+	GetAllowTimestampAdjustment() bool
 }
 
 // Room is a container of participants, and can provide room-level actions
@@ -357,6 +359,7 @@ type Room interface {
 	UpdateVideoLayers(participant Participant, updateVideoLayers *livekit.UpdateVideoLayers) error
 	ResolveMediaTrackForSubscriber(subIdentity livekit.ParticipantIdentity, trackID livekit.TrackID) MediaResolverResult
 	GetLocalParticipants() []LocalParticipant
+	UpdateParticipantMetadata(participant LocalParticipant, name string, metadata string)
 }
 
 // MediaTrack represents a media track

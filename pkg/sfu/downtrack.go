@@ -107,9 +107,10 @@ var (
 // -------------------------------------------------------------------
 
 type DownTrackState struct {
-	RTPStats             *buffer.RTPStats
-	DeltaStatsSnapshotId uint32
-	ForwarderState       ForwarderState
+	RTPStats                       *buffer.RTPStats
+	DeltaStatsSnapshotId           uint32
+	DeltaStatsOverriddenSnapshotId uint32
+	ForwarderState                 ForwarderState
 }
 
 func (d DownTrackState) String() string {
@@ -184,6 +185,8 @@ type DownTrack struct {
 	sequencer     *sequencer
 	bufferFactory *buffer.Factory
 
+	allowTimestampAdjustment bool
+
 	forwarder *Forwarder
 
 	upstreamCodecs         []webrtc.RTPCodecParameters
@@ -216,8 +219,9 @@ type DownTrack struct {
 
 	blankFramesGeneration atomic.Uint32
 
-	connectionStats      *connectionquality.ConnectionStats
-	deltaStatsSnapshotId uint32
+	connectionStats                *connectionquality.ConnectionStats
+	deltaStatsSnapshotId           uint32
+	deltaStatsOverriddenSnapshotId uint32
 
 	// for throttling error logs
 	writeIOErrors atomic.Uint32
@@ -250,6 +254,7 @@ func NewDownTrack(
 	bf *buffer.Factory,
 	subID livekit.ParticipantID,
 	mt int,
+	allowTimestampAdjustment bool,
 	logger logger.Logger,
 ) (*DownTrack, error) {
 	var kind webrtc.RTPCodecType
@@ -263,34 +268,27 @@ func NewDownTrack(
 	}
 
 	d := &DownTrack{
-		logger:         logger,
-		id:             r.TrackID(),
-		subscriberID:   subID,
-		maxTrack:       mt,
-		streamID:       r.StreamID(),
-		bufferFactory:  bf,
-		receiver:       r,
-		upstreamCodecs: codecs,
-		kind:           kind,
-		codec:          codecs[0].RTPCodecCapability,
+		logger:                   logger,
+		id:                       r.TrackID(),
+		subscriberID:             subID,
+		maxTrack:                 mt,
+		streamID:                 r.StreamID(),
+		bufferFactory:            bf,
+		allowTimestampAdjustment: allowTimestampAdjustment,
+		receiver:                 r,
+		upstreamCodecs:           codecs,
+		kind:                     kind,
+		codec:                    codecs[0].RTPCodecCapability,
 	}
-	d.forwarder = NewForwarder(d.kind, d.logger, d.receiver.GetReferenceLayerRTPTimestamp)
+	d.forwarder = NewForwarder(
+		d.kind,
+		d.logger,
+		d.receiver.GetReferenceLayerRTPTimestamp,
+		d.getExpectedRTPTimestamp,
+	)
 	d.forwarder.OnParkedLayerExpired(func() {
 		if sal := d.getStreamAllocatorListener(); sal != nil {
 			sal.OnSubscriptionChanged(d)
-		}
-	})
-
-	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
-		MimeType:          codecs[0].MimeType, // LK-TODO have to notify on codec change
-		IsFECEnabled:      strings.EqualFold(codecs[0].MimeType, webrtc.MimeTypeOpus) && strings.Contains(strings.ToLower(codecs[0].SDPFmtpLine), "fec"),
-		IsDependentJitter: true,
-		GetDeltaStats:     d.getDeltaStats,
-		Logger:            d.logger.WithValues("direction", "down"),
-	})
-	d.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
-		if d.onStatsUpdate != nil {
-			d.onStatsUpdate(d, stat)
 		}
 	})
 
@@ -300,6 +298,22 @@ func NewDownTrack(
 		Logger:                 d.logger,
 	})
 	d.deltaStatsSnapshotId = d.rtpStats.NewSnapshotId()
+	d.deltaStatsOverriddenSnapshotId = d.rtpStats.NewSnapshotId()
+
+	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
+		MimeType:                  codecs[0].MimeType, // LK-TODO have to notify on codec change
+		IsFECEnabled:              strings.EqualFold(codecs[0].MimeType, webrtc.MimeTypeOpus) && strings.Contains(strings.ToLower(codecs[0].SDPFmtpLine), "fec"),
+		IsDependentJitter:         true,
+		GetDeltaStats:             d.getDeltaStats,
+		GetDeltaStatsOverridden:   d.getDeltaStatsOverridden,
+		GetLastReceiverReportTime: func() time.Time { return d.rtpStats.LastReceiverReport() },
+		Logger:                    d.logger.WithValues("direction", "down"),
+	})
+	d.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
+		if d.onStatsUpdate != nil {
+			d.onStatsUpdate(d, stat)
+		}
+	})
 
 	return d, nil
 }
@@ -633,7 +647,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		}
 	}
 
-	d.rtpStats.Update(hdr, len(payload), 0, time.Now().UnixNano())
+	d.rtpStats.Update(hdr, len(payload), 0, extPkt.Arrival)
 	return nil
 }
 
@@ -712,7 +726,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool) int {
 		}
 
 		if !paddingOnMute {
-			d.rtpStats.Update(&hdr, 0, len(payload), time.Now().UnixNano())
+			d.rtpStats.Update(&hdr, 0, len(payload), time.Now())
 		}
 
 		//
@@ -913,16 +927,19 @@ func (d *DownTrack) MaxLayer() buffer.VideoLayer {
 }
 
 func (d *DownTrack) GetState() DownTrackState {
-	return DownTrackState{
-		RTPStats:             d.rtpStats,
-		DeltaStatsSnapshotId: d.deltaStatsSnapshotId,
-		ForwarderState:       d.forwarder.GetState(),
+	dts := DownTrackState{
+		RTPStats:                       d.rtpStats,
+		DeltaStatsSnapshotId:           d.deltaStatsSnapshotId,
+		DeltaStatsOverriddenSnapshotId: d.deltaStatsOverriddenSnapshotId,
+		ForwarderState:                 d.forwarder.GetState(),
 	}
+	return dts
 }
 
 func (d *DownTrack) SeedState(state DownTrackState) {
 	d.rtpStats.Seed(state.RTPStats)
 	d.deltaStatsSnapshotId = state.DeltaStatsSnapshotId
+	d.deltaStatsOverriddenSnapshotId = state.DeltaStatsOverriddenSnapshotId
 	d.forwarder.SeedState(state.ForwarderState)
 }
 
@@ -1100,7 +1117,11 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 		return nil
 	}
 
-	return d.rtpStats.GetRtcpSenderReport(d.ssrc, d.receiver.GetRTCPSenderReportDataExt(d.forwarder.GetReferenceLayerSpatial()))
+	sr, tsAdjust := d.rtpStats.GetRtcpSenderReport(d.ssrc)
+	if d.allowTimestampAdjustment {
+		d.forwarder.AdjustTimestamp(tsAdjust)
+	}
+	return sr
 }
 
 func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan struct{} {
@@ -1206,7 +1227,7 @@ func (d *DownTrack) writeOpusBlankFrame(hdr *rtp.Header, frameEndNeeded bool) (i
 
 	_, err := d.writeStream.WriteRTP(hdr, payload)
 	if err == nil {
-		d.rtpStats.Update(hdr, len(payload), 0, time.Now().UnixNano())
+		d.rtpStats.Update(hdr, len(payload), 0, time.Now())
 	}
 	return hdr.MarshalSize() + len(payload), err
 }
@@ -1225,7 +1246,7 @@ func (d *DownTrack) writeOpusRedBlankFrame(hdr *rtp.Header, frameEndNeeded bool)
 
 	_, err := d.writeStream.WriteRTP(hdr, payload)
 	if err == nil {
-		d.rtpStats.Update(hdr, len(payload), 0, time.Now().UnixNano())
+		d.rtpStats.Update(hdr, len(payload), 0, time.Now())
 	}
 	return hdr.MarshalSize() + len(payload), err
 }
@@ -1246,7 +1267,7 @@ func (d *DownTrack) writeVP8BlankFrame(hdr *rtp.Header, frameEndNeeded bool) (in
 
 	_, err = d.writeStream.WriteRTP(hdr, payload)
 	if err == nil {
-		d.rtpStats.Update(hdr, len(payload), 0, time.Now().UnixNano())
+		d.rtpStats.Update(hdr, len(payload), 0, time.Now())
 	}
 	return hdr.MarshalSize() + len(payload), err
 }
@@ -1268,7 +1289,7 @@ func (d *DownTrack) writeH264BlankFrame(hdr *rtp.Header, frameEndNeeded bool) (i
 	payload := buf[:offset]
 	_, err := d.writeStream.WriteRTP(hdr, payload)
 	if err == nil {
-		d.rtpStats.Update(hdr, len(payload), 0, time.Now().UnixNano())
+		d.rtpStats.Update(hdr, len(payload), 0, time.Now())
 	}
 	return hdr.MarshalSize() + offset, err
 }
@@ -1341,8 +1362,6 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 					l(d, rr)
 				}
 				d.listenerLock.RUnlock()
-
-				d.connectionStats.ReceiverReportReceived(time.Now())
 			}
 
 		case *rtcp.TransportLayerNack:
@@ -1493,7 +1512,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			d.streamAllocatorBytesCounter.Add(uint32(pkt.Header.MarshalSize() + len(payload)))
 			d.bytesRetransmitted.Add(uint32(pkt.Header.MarshalSize() + len(payload)))
 
-			d.rtpStats.Update(&pkt.Header, len(payload), 0, time.Now().UnixNano())
+			d.rtpStats.Update(&pkt.Header, len(payload), 0, time.Now())
 		}
 	}
 
@@ -1618,6 +1637,10 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 	}
 }
 
+func (d *DownTrack) getExpectedRTPTimestamp(at time.Time) (uint32, error) {
+	return d.rtpStats.GetExpectedRTPTimestamp(at)
+}
+
 func (d *DownTrack) GetConnectionScoreAndQuality() (float32, livekit.ConnectionQuality) {
 	return d.connectionStats.GetScoreAndQuality()
 }
@@ -1626,22 +1649,28 @@ func (d *DownTrack) GetTrackStats() *livekit.RTPStats {
 	return d.rtpStats.ToProto()
 }
 
-func (d *DownTrack) getDeltaStats() map[uint32]*buffer.StreamStatsWithLayers {
-	streamStats := make(map[uint32]*buffer.StreamStatsWithLayers, 1)
-
-	deltaStats := d.rtpStats.DeltaInfo(d.deltaStatsSnapshotId)
-	if deltaStats == nil {
+func (d *DownTrack) deltaStats(ds *buffer.RTPDeltaInfo) map[uint32]*buffer.StreamStatsWithLayers {
+	if ds == nil {
 		return nil
 	}
 
+	streamStats := make(map[uint32]*buffer.StreamStatsWithLayers, 1)
 	streamStats[d.ssrc] = &buffer.StreamStatsWithLayers{
-		RTPStats: deltaStats,
+		RTPStats: ds,
 		Layers: map[int32]*buffer.RTPDeltaInfo{
-			0: deltaStats,
+			0: ds,
 		},
 	}
 
 	return streamStats
+}
+
+func (d *DownTrack) getDeltaStats() map[uint32]*buffer.StreamStatsWithLayers {
+	return d.deltaStats(d.rtpStats.DeltaInfo(d.deltaStatsSnapshotId))
+}
+
+func (d *DownTrack) getDeltaStatsOverridden() map[uint32]*buffer.StreamStatsWithLayers {
+	return d.deltaStats(d.rtpStats.DeltaInfoOverridden(d.deltaStatsOverriddenSnapshotId))
 }
 
 func (d *DownTrack) GetNackStats() (totalPackets uint32, totalRepeatedNACKs uint32) {

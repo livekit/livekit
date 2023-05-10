@@ -12,6 +12,7 @@ import (
 
 const (
 	MaxMOS = float32(4.5)
+	MinMOS = float32(1.0)
 
 	maxScore  = float64(100.0)
 	poorScore = float64(30.0)
@@ -362,6 +363,7 @@ func (q *qualityScorer) getPacketLossWeight(stat *windowStat) float64 {
 	pps := float64(stat.packetsExpected) / stat.duration.Seconds()
 	if pps > q.maxPPS {
 		q.maxPPS = pps
+		q.params.Logger.Debugw("updating maxPPS", "expected", stat.packetsExpected, "duration", stat.duration.Seconds(), "pps", pps)
 	}
 
 	if q.maxPPS == 0 {

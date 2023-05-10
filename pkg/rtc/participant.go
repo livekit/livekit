@@ -34,7 +34,7 @@ import (
 )
 
 const (
-	sdBatchSize       = 20
+	sdBatchSize       = 30
 	rttUpdateInterval = 5 * time.Second
 
 	disconnectCleanupDuration = 15 * time.Second
@@ -92,6 +92,7 @@ type ParticipantParams struct {
 	SubscriberAllowPause         bool
 	SubscriptionLimitAudio       int32
 	SubscriptionLimitVideo       int32
+	AllowTimestampAdjustment     bool
 }
 
 type ParticipantImpl struct {
@@ -126,8 +127,6 @@ type ParticipantImpl struct {
 	*UpTrackManager
 	*SubscriptionManager
 
-	// tracks and participants that this participant isn't allowed to subscribe to
-	disallowedSubscriptions map[livekit.TrackID]livekit.ParticipantID // trackID -> publisherID
 	// keeps track of unpublished tracks in order to reuse trackID
 	unpublishedTracks []*livekit.TrackInfo
 
@@ -163,7 +162,7 @@ type ParticipantImpl struct {
 
 	migrateState atomic.Value // types.MigrateState
 
-	onClose            func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID)
+	onClose            func(types.LocalParticipant)
 	onClaimsChanged    func(participant types.LocalParticipant)
 	onICEConfigChanged func(participant types.LocalParticipant, iceConfig *livekit.ICEConfig)
 
@@ -187,7 +186,6 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		rtcpCh:                  make(chan []rtcp.Packet, 100),
 		pendingTracks:           make(map[string]*pendingTrackInfo),
 		pendingPublishingTracks: make(map[livekit.TrackID]*pendingTrackInfo),
-		disallowedSubscriptions: make(map[livekit.TrackID]livekit.ParticipantID),
 		connectedAt:             time.Now(),
 		rttUpdatedAt:            time.Now(),
 		cachedDownTracks:        make(map[livekit.TrackID]*downTrackState),
@@ -229,6 +227,10 @@ func (p *ParticipantImpl) GetLogger() logger.Logger {
 
 func (p *ParticipantImpl) GetAdaptiveStream() bool {
 	return p.params.AdaptiveStream
+}
+
+func (p *ParticipantImpl) GetAllowTimestampAdjustment() bool {
+	return p.params.AllowTimestampAdjustment
 }
 
 func (p *ParticipantImpl) ID() livekit.ParticipantID {
@@ -389,7 +391,7 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 		p.SubscriptionManager.queueReconcile("")
 	} else {
 		// revoke all subscriptions
-		for _, st := range p.GetSubscribedTracks() {
+		for _, st := range p.SubscriptionManager.GetSubscribedTracks() {
 			st.MediaTrack().RemoveSubscriber(p.ID(), false)
 		}
 	}
@@ -496,7 +498,7 @@ func (p *ParticipantImpl) OnDataPacket(callback func(types.LocalParticipant, *li
 	p.lock.Unlock()
 }
 
-func (p *ParticipantImpl) OnClose(callback func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID)) {
+func (p *ParticipantImpl) OnClose(callback func(types.LocalParticipant)) {
 	p.lock.Lock()
 	p.onClose = callback
 	p.lock.Unlock()
@@ -684,13 +686,6 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 
 	p.UpTrackManager.Close(!sendLeave)
 
-	p.lock.Lock()
-	disallowedSubscriptions := make(map[livekit.TrackID]livekit.ParticipantID)
-	for trackID, publisherID := range p.disallowedSubscriptions {
-		disallowedSubscriptions[trackID] = publisherID
-	}
-	p.lock.Unlock()
-
 	p.updateState(livekit.ParticipantInfo_DISCONNECTED)
 
 	// ensure this is synchronized
@@ -699,7 +694,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	onClose := p.onClose
 	p.lock.RUnlock()
 	if onClose != nil {
-		onClose(p, disallowedSubscriptions)
+		onClose(p)
 	}
 
 	// Close peer connections without blocking participant Close. If peer connections are gathering candidates
@@ -976,14 +971,6 @@ func (p *ParticipantImpl) onTrackUnsubscribed(subTrack types.SubscribedTrack) {
 }
 
 func (p *ParticipantImpl) SubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool) {
-	p.lock.Lock()
-	if allowed {
-		delete(p.disallowedSubscriptions, trackID)
-	} else {
-		p.disallowedSubscriptions[trackID] = publisherID
-	}
-	p.lock.Unlock()
-
 	p.params.Logger.Debugw("sending subscription permission update", "publisherID", publisherID, "trackID", trackID, "allowed", allowed)
 	err := p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_SubscriptionPermissionUpdate{
@@ -1343,57 +1330,52 @@ func (p *ParticipantImpl) subscriberRTCPWorker() {
 			return
 		}
 
-		var srs []rtcp.Packet
-		var sd []rtcp.SourceDescriptionChunk
 		subscribedTracks := p.SubscriptionManager.GetSubscribedTracks()
-		p.lock.RLock()
+
+		// send in batches of sdBatchSize
+		batchSize := 0
+		var pkts []rtcp.Packet
+		var sd []rtcp.SourceDescriptionChunk
 		for _, subTrack := range subscribedTracks {
 			sr := subTrack.DownTrack().CreateSenderReport()
 			chunks := subTrack.DownTrack().CreateSourceDescriptionChunks()
 			if sr == nil || chunks == nil {
 				continue
 			}
-			srs = append(srs, sr)
+
+			pkts = append(pkts, sr)
 			sd = append(sd, chunks...)
-		}
-		p.lock.RUnlock()
-
-		// now send in batches of sdBatchSize
-		var batch []rtcp.SourceDescriptionChunk
-		var pkts []rtcp.Packet
-		batchSize := 0
-		for len(sd) > 0 || len(srs) > 0 {
-			numSRs := len(srs)
-			if numSRs > 0 {
-				if numSRs > sdBatchSize {
-					numSRs = sdBatchSize
+			batchSize = batchSize + 1 + len(chunks)
+			if batchSize >= sdBatchSize {
+				if len(sd) != 0 {
+					pkts = append(pkts, &rtcp.SourceDescription{Chunks: sd})
 				}
-				pkts = append(pkts, srs[:numSRs]...)
-				srs = srs[numSRs:]
-			}
-
-			size := len(sd)
-			spaceRemain := sdBatchSize - batchSize
-			if spaceRemain > 0 && size > 0 {
-				if size > spaceRemain {
-					size = spaceRemain
-				}
-				batch = sd[:size]
-				sd = sd[size:]
-				pkts = append(pkts, &rtcp.SourceDescription{Chunks: batch})
 				if err := p.TransportManager.WriteSubscriberRTCP(pkts); err != nil {
 					if err == io.EOF || err == io.ErrClosedPipe {
 						return
 					}
 					p.params.Logger.Errorw("could not send down track reports", err)
 				}
-			}
 
-			pkts = pkts[:0]
-			batchSize = 0
+				pkts = pkts[:0]
+				sd = sd[:0]
+				batchSize = 0
+			}
 		}
 
-		time.Sleep(5 * time.Second)
+		if len(pkts) != 0 || len(sd) != 0 {
+			if len(sd) != 0 {
+				pkts = append(pkts, &rtcp.SourceDescription{Chunks: sd})
+			}
+			if err := p.TransportManager.WriteSubscriberRTCP(pkts); err != nil {
+				if err == io.EOF || err == io.ErrClosedPipe {
+					return
+				}
+				p.params.Logger.Errorw("could not send down track reports", err)
+			}
+		}
+
+		time.Sleep(3 * time.Second)
 	}
 }
 
@@ -2000,7 +1982,7 @@ func (p *ParticipantImpl) postRtcp(pkts []rtcp.Packet) {
 }
 
 func (p *ParticipantImpl) setDowntracksConnected() {
-	for _, t := range p.GetSubscribedTracks() {
+	for _, t := range p.SubscriptionManager.GetSubscribedTracks() {
 		if dt := t.DownTrack(); dt != nil {
 			dt.SetConnected()
 		}
