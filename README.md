@@ -45,6 +45,7 @@ https://docs.livekit.io
 - [LiveKit Meet](https://meet.livekit.io) ([source](https://github.com/livekit-examples/meet))
 - [Spatial Audio](https://spatial-audio-demo.livekit.io/) ([source](https://github.com/livekit-examples/spatial-audio))
 - Livestreaming from OBS Studio ([source](https://github.com/livekit-examples/livestream))
+- [AI voice assistant using ChatGPT](https://livekit.io/kitt) ([source](https://github.com/livekit-examples/kitt))
 
 ## SDKs & Tools
 
