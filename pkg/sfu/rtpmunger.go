@@ -220,7 +220,7 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 	if extPkt.Packet.Timestamp != r.highestIncomingTS && (((mungedTS - r.lastTS) == 0) || (mungedTS-r.lastTS) > (1<<31)) {
 		adjustedMungedTS := r.lastTS + 1
 		adjustedTSOffset := extPkt.Packet.Timestamp - adjustedMungedTS
-		r.logger.Infow(
+		r.logger.Debugw(
 			"adjust out-of-order timestamp offset",
 			"mungedTS", mungedTS,
 			"lastTS", r.lastTS,
