@@ -3,10 +3,12 @@ package sfu
 import (
 	"fmt"
 	"math"
+	"math/rand"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/protocol/logger"
@@ -136,9 +138,12 @@ type TranslationParams struct {
 // -------------------------------------------------------------------
 
 type ForwarderState struct {
-	Started bool
-	RTP     RTPMungerState
-	Codec   interface{}
+	Started      bool
+	PreStartTime time.Time
+	FirstTS      uint32
+	RefTSOffset  uint32
+	RTP          RTPMungerState
+	Codec        interface{}
 }
 
 func (f ForwarderState) String() string {
@@ -147,7 +152,14 @@ func (f ForwarderState) String() string {
 	case codecmunger.VP8State:
 		codecString = codecState.String()
 	}
-	return fmt.Sprintf("ForwarderState{started: %v, rtp: %s, codec: %s}", f.Started, f.RTP.String(), codecString)
+	return fmt.Sprintf("ForwarderState{started: %v, preStartTime: %s, firstTS: %d, refTSOffset: %d, rtp: %s, codec: %s}",
+		f.Started,
+		f.PreStartTime.String(),
+		f.FirstTS,
+		f.RefTSOffset,
+		f.RTP.String(),
+		codecString,
+	)
 }
 
 // -------------------------------------------------------------------
@@ -164,8 +176,11 @@ type Forwarder struct {
 	pubMuted bool
 
 	started               bool
+	preStartTime          time.Time
+	firstTS               uint32
 	lastSSRC              uint32
 	referenceLayerSpatial int32
+	refTSOffset           uint32
 
 	parkedLayerTimer *time.Timer
 
@@ -313,13 +328,14 @@ func (f *Forwarder) GetState() ForwarderState {
 		return ForwarderState{}
 	}
 
-	state := ForwarderState{
-		Started: f.started,
-		RTP:     f.rtpMunger.GetLast(),
-		Codec:   f.codecMunger.GetState(),
+	return ForwarderState{
+		Started:      f.started,
+		PreStartTime: f.preStartTime,
+		FirstTS:      f.firstTS,
+		RefTSOffset:  f.refTSOffset,
+		RTP:          f.rtpMunger.GetLast(),
+		Codec:        f.codecMunger.GetState(),
 	}
-
-	return state
 }
 
 func (f *Forwarder) SeedState(state ForwarderState) {
@@ -334,6 +350,9 @@ func (f *Forwarder) SeedState(state ForwarderState) {
 	f.codecMunger.SeedState(state.Codec)
 
 	f.started = true
+	f.preStartTime = state.PreStartTime
+	f.firstTS = state.FirstTS
+	f.refTSOffset = state.RefTSOffset
 }
 
 func (f *Forwarder) Mute(muted bool) (bool, buffer.VideoLayer) {
@@ -1467,8 +1486,17 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 				ts, err := f.getExpectedRTPTimestamp(switchingAt)
 				if err == nil {
 					expectedTS = ts
+				} else {
+					rtpDiff := uint32(0)
+					if !f.preStartTime.IsZero() && f.refTSOffset == 0 {
+						timeSinceFirst := time.Since(f.preStartTime)
+						rtpDiff = uint32(timeSinceFirst.Nanoseconds() * int64(f.codec.ClockRate) / 1e9)
+						f.refTSOffset = f.firstTS + rtpDiff - refTS
+					}
+					expectedTS += rtpDiff
 				}
 			}
+			refTS += f.refTSOffset
 			nextTS, explain := getNextTimestamp(lastTS, refTS, expectedTS)
 			f.logger.Debugw(
 				"next timestamp on switch",
@@ -1588,12 +1616,35 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 	return tp, nil
 }
 
+func (f *Forwarder) maybeStart() {
+	if f.started {
+		return
+	}
+
+	f.started = true
+	f.preStartTime = time.Now()
+
+	extPkt := &buffer.ExtPacket{
+		Packet: &rtp.Packet{
+			Header: rtp.Header{
+				SequenceNumber: uint16(rand.Intn(1<<14)) + uint16(1<<15), // a random number in third quartile of sequence number space
+				Timestamp:      uint32(rand.Intn(1<<30)) + uint32(1<<31), // a random number in third quartile of time stamp space
+			},
+		},
+	}
+	f.rtpMunger.SetLastSnTs(extPkt)
+
+	f.firstTS = extPkt.Packet.Timestamp
+}
+
 func (f *Forwarder) GetSnTsForPadding(num int) ([]SnTs, error) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	// padding is used for probing. Padding packets should be
-	// at only the frame boundaries to ensure decoder sequencer does
+	f.maybeStart()
+
+	// padding is used for probing. Padding packets should only
+	// be at frame boundaries to ensure decoder sequencer does
 	// not get out-of-sync. But, when a stream is paused,
 	// force a frame marker as a restart of the stream will
 	// start with a key frame which will reset the decoder.
@@ -1601,18 +1652,30 @@ func (f *Forwarder) GetSnTsForPadding(num int) ([]SnTs, error) {
 	if !f.vls.GetTarget().IsValid() {
 		forceMarker = true
 	}
-	return f.rtpMunger.UpdateAndGetPaddingSnTs(num, 0, 0, forceMarker)
+	return f.rtpMunger.UpdateAndGetPaddingSnTs(num, 0, 0, forceMarker, 0)
 }
 
 func (f *Forwarder) GetSnTsForBlankFrames(frameRate uint32, numPackets int) ([]SnTs, bool, error) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
+	f.maybeStart()
+
 	frameEndNeeded := !f.rtpMunger.IsOnFrameBoundary()
 	if frameEndNeeded {
 		numPackets++
 	}
-	snts, err := f.rtpMunger.UpdateAndGetPaddingSnTs(numPackets, f.codec.ClockRate, frameRate, frameEndNeeded)
+
+	lastTS := f.rtpMunger.GetLast().LastTS
+	expectedTS := lastTS
+	if f.getExpectedRTPTimestamp != nil {
+		ts, err := f.getExpectedRTPTimestamp(time.Now())
+		if err == nil {
+			expectedTS = ts
+		}
+	}
+	nextTS, _ := getNextTimestamp(lastTS, expectedTS, expectedTS)
+	snts, err := f.rtpMunger.UpdateAndGetPaddingSnTs(numPackets, f.codec.ClockRate, frameRate, frameEndNeeded, nextTS)
 	return snts, frameEndNeeded, err
 }
 

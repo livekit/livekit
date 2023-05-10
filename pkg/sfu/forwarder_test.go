@@ -1844,9 +1844,15 @@ func TestForwardGetSnTsForBlankFrames(t *testing.T) {
 	frameRate := uint32(30)
 	var sntsExpected = make([]SnTs, numPadding)
 	for i := 0; i < numPadding; i++ {
+		// first blank frame should have same timestamp as last frame as end frame is synthesized
+		ts := params.Timestamp
+		if i != 0 {
+			// +1 here due to expected time stamp bumpint by at least one so that time stamp is always moving ahead
+			ts = params.Timestamp + 1 + ((uint32(i)*clockRate)+frameRate-1)/frameRate
+		}
 		sntsExpected[i] = SnTs{
 			sequenceNumber: params.SequenceNumber + uint16(i) + 1,
-			timestamp:      params.Timestamp + (uint32(i)*clockRate)/frameRate,
+			timestamp:      ts,
 		}
 	}
 	require.Equal(t, sntsExpected, snts)
@@ -1858,7 +1864,8 @@ func TestForwardGetSnTsForBlankFrames(t *testing.T) {
 	for i := 0; i < numPadding; i++ {
 		sntsExpected[i] = SnTs{
 			sequenceNumber: params.SequenceNumber + uint16(len(snts)) + uint16(i) + 1,
-			timestamp:      snts[len(snts)-1].timestamp + (uint32(i+1)*clockRate)/frameRate,
+			// +1 here due to expected time stamp bumpint by at least one so that time stamp is always moving ahead
+			timestamp: snts[len(snts)-1].timestamp + 1 + ((uint32(i+1)*clockRate)+frameRate-1)/frameRate,
 		}
 	}
 	snts, frameEndNeeded, err = f.GetSnTsForBlankFrames(30, numBlankFrames)

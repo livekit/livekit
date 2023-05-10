@@ -62,7 +62,6 @@ type TelemetryService interface {
 }
 
 const (
-	maxWebhookWorkers  = 50
 	workerCleanupWait  = 3 * time.Minute
 	jobQueueBufferSize = 10000
 )
