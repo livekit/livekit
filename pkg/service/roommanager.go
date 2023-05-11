@@ -11,6 +11,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/livekit-server/version"
+	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -67,7 +68,7 @@ func NewLocalRoomManager(
 	egressLauncher rtc.EgressLauncher,
 	versionGenerator utils.TimedVersionGenerator,
 ) (*RoomManager, error) {
-	rtcConf, err := rtc.NewWebRTCConfig(conf, currentNode.Ip)
+	rtcConf, err := rtc.NewWebRTCConfig(conf)
 	if err != nil {
 		return nil, err
 	}
@@ -687,7 +688,7 @@ func (r *RoomManager) iceServersForRoom(ri *livekit.Room, tlsOnly bool) []*livek
 	}
 
 	if !hasSTUN {
-		iceServers = append(iceServers, iceServerForStunServers(config.DefaultStunServers))
+		iceServers = append(iceServers, iceServerForStunServers(rtcconfig.DefaultStunServers))
 	}
 	return iceServers
 }

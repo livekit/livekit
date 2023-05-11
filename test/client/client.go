@@ -19,6 +19,7 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -120,7 +121,9 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 
 	conf := rtc.WebRTCConfig{
-		Configuration: rtcConf,
+		WebRTCConfig: rtcconfig.WebRTCConfig{
+			Configuration: rtcConf,
+		},
 	}
 	conf.SettingEngine.SetLite(false)
 	conf.SettingEngine.SetAnsweringDTLSRole(webrtc.DTLSRoleClient)
