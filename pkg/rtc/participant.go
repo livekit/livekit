@@ -26,6 +26,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	"github.com/livekit/livekit-server/pkg/telemetry"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
@@ -169,6 +170,8 @@ type ParticipantImpl struct {
 	cachedDownTracks map[livekit.TrackID]*downTrackState
 
 	supervisor *supervisor.ParticipantSupervisor
+
+	tracksQuality map[livekit.TrackID]livekit.ConnectionQuality
 }
 
 func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
@@ -193,7 +196,8 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 			telemetry.BytesTrackIDForParticipantID(telemetry.BytesTrackTypeData, params.SID),
 			params.SID,
 			params.Telemetry),
-		supervisor: supervisor.NewParticipantSupervisor(supervisor.ParticipantSupervisorParams{Logger: params.Logger}),
+		supervisor:    supervisor.NewParticipantSupervisor(supervisor.ParticipantSupervisorParams{Logger: params.Logger}),
+		tracksQuality: make(map[livekit.TrackID]livekit.ConnectionQuality),
 	}
 	p.version.Store(params.InitialVersion)
 	p.timedVersion.Update(params.VersionGenerator.New())
@@ -857,6 +861,10 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 	numTracks := 0
 	minQuality := livekit.ConnectionQuality_EXCELLENT
 	minScore := float32(0.0)
+	numUpDrops := 0
+	numDownDrops := 0
+
+	availableTracks := make(map[livekit.TrackID]bool)
 
 	for _, pt := range p.GetPublishedTracks() {
 		numTracks++
@@ -869,6 +877,19 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 		} else if quality == minQuality && score < minScore {
 			minScore = score
 		}
+
+		p.lock.Lock()
+		trackID := pt.ID()
+		if prevQuality, ok := p.tracksQuality[trackID]; ok {
+			// WARNING NOTE: comparing protobuf enums directly
+			if prevQuality > quality {
+				numUpDrops++
+			}
+		}
+		p.tracksQuality[trackID] = quality
+		p.lock.Unlock()
+
+		availableTracks[trackID] = true
 	}
 
 	subscribedTracks := p.SubscriptionManager.GetSubscribedTracks()
@@ -883,12 +904,36 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 		} else if quality == minQuality && score < minScore {
 			minScore = score
 		}
+
+		p.lock.Lock()
+		trackID := subTrack.ID()
+		if prevQuality, ok := p.tracksQuality[trackID]; ok {
+			// WARNING NOTE: comparing protobuf enums directly
+			if prevQuality > quality {
+				numDownDrops++
+			}
+		}
+		p.tracksQuality[trackID] = quality
+		p.lock.Unlock()
+
+		availableTracks[trackID] = true
 	}
 
 	if numTracks == 0 {
 		minQuality = livekit.ConnectionQuality_EXCELLENT
 		minScore = connectionquality.MaxMOS
 	}
+
+	prometheus.RecordQuality(minQuality, minScore, numUpDrops, numDownDrops)
+
+	// remove unavailable tracks from track quality cache
+	p.lock.Lock()
+	for trackID := range p.tracksQuality {
+		if !availableTracks[trackID] {
+			delete(p.tracksQuality, trackID)
+		}
+	}
+	p.lock.Unlock()
 
 	return &livekit.ConnectionQualityInfo{
 		ParticipantSid: string(p.ID()),
