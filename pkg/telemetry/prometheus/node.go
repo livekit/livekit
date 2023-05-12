@@ -96,6 +96,7 @@ func Init(nodeID string, nodeType livekit.NodeType, env string) {
 	initPacketStats(nodeID, nodeType, env)
 	initRoomStats(nodeID, nodeType, env)
 	initPSRPCStats(nodeID, nodeType, env)
+	initQualityStats(nodeID, nodeType, env)
 }
 
 func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats) (*livekit.NodeStats, bool, error) {
