@@ -3,6 +3,7 @@ package buffer
 import (
 	"errors"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -177,6 +178,7 @@ type RTPStats struct {
 	srData        *RTCPSenderReportData
 	lastSRTime    time.Time
 	lastSRNTP     mediatransportutil.NtpTime
+	lastSRRTP     uint32
 	pidController *PIDController
 
 	nextSnapshotId uint32
@@ -286,6 +288,7 @@ func (r *RTPStats) Seed(from *RTPStats) {
 	}
 	r.lastSRTime = from.lastSRTime
 	r.lastSRNTP = from.lastSRNTP
+	r.lastSRRTP = from.lastSRRTP
 
 	r.nextSnapshotId = from.nextSnapshotId
 	for id, ss := range from.snapshots {
@@ -732,7 +735,7 @@ func (r *RTPStats) SetRtcpSenderReportData(srData *RTCPSenderReportData) {
 
 	// prevent against extreme case of anachronous sender reports
 	if r.srData != nil && r.srData.NTPTimestamp > srData.NTPTimestamp {
-		r.logger.Debugw(
+		r.logger.Infow(
 			"received anachronous sender report",
 			"current", srData.NTPTimestamp.Time(),
 			"last", r.srData.NTPTimestamp.Time(),
@@ -740,38 +743,38 @@ func (r *RTPStats) SetRtcpSenderReportData(srData *RTCPSenderReportData) {
 		return
 	}
 
-	// TODO-REMOVE-AFTER-DEBUG-START
-	ntpTime := srData.NTPTimestamp.Time()
-
-	var ntpDiffSinceLast, arrivalDiffSinceLast time.Duration
-	var rtpDiffSinceLast uint32
+	// monitor and log RTP timestamp anomalies
+	isWarped := false
 	if r.srData != nil {
-		ntpDiffSinceLast = ntpTime.Sub(r.srData.NTPTimestamp.Time())
-		rtpDiffSinceLast = srData.RTPTimestamp - r.srData.RTPTimestamp
-		arrivalDiffSinceLast = srData.ArrivalTime.Sub(r.srData.ArrivalTime)
+		ntpDiffSinceLast := srData.NTPTimestamp.Time().Sub(r.srData.NTPTimestamp.Time())
+		rtpDiffSinceLast := srData.RTPTimestamp - r.srData.RTPTimestamp
+		arrivalDiffSinceLast := srData.ArrivalTime.Sub(r.srData.ArrivalTime)
+
+		expectedTimeDiffSinceLast := float64(rtpDiffSinceLast) / float64(r.params.ClockRate)
+		if math.Abs(expectedTimeDiffSinceLast-ntpDiffSinceLast.Seconds()) > 0.2 {
+			// more than 200 ms away from expected delta
+			isWarped = true
+		}
+
+		if isWarped {
+			timeSinceFirst, rtpDiffSinceFirst, drift, driftMs, sampleRate := r.getDrift()
+			r.logger.Infow(
+				"received sender report, time warp",
+				"ntp", srData.NTPTimestamp.Time().String(),
+				"rtp", srData.RTPTimestamp,
+				"arrival", srData.ArrivalTime.String(),
+				"ntpDiffSincelast", ntpDiffSinceLast.Seconds(),
+				"rtpDiffSincelast", rtpDiffSinceLast,
+				"arrivalDiffSincelast", arrivalDiffSinceLast.Seconds(),
+				"expectedTimeDiffSincelast", expectedTimeDiffSinceLast,
+				"timeSinceFirst", timeSinceFirst.Seconds(),
+				"rtpDiffSinceFirst", rtpDiffSinceFirst,
+				"drift", drift,
+				"driftMs", driftMs,
+				"sampleRate", sampleRate,
+			)
+		}
 	}
-
-	timeSinceFirst := time.Since(r.firstTime) // ideally should use NTP time from SR, but that is a different time base, now is a resonable approximation
-	rtpDiffSinceFirst := getExtTS(srData.RTPTimestamp, r.tsCycles) - r.extStartTS
-	drift := int64(rtpDiffSinceFirst - uint64(timeSinceFirst.Nanoseconds()*int64(r.params.ClockRate)/1e9))
-	driftMs := (float64(drift) * 1000) / float64(r.params.ClockRate)
-
-	r.logger.Debugw(
-		"received sender report",
-		"ntp", ntpTime,
-		"rtp", srData.RTPTimestamp,
-		"arrival", srData.ArrivalTime,
-		"ntpDiff", ntpDiffSinceLast,
-		"rtpDiff", rtpDiffSinceLast,
-		"arrivalDiff", arrivalDiffSinceLast,
-		"expectedTimeDiff", float64(rtpDiffSinceLast)/float64(r.params.ClockRate),
-		"timeSinceFirst", timeSinceFirst,
-		"rtpDiffSinceFirst", rtpDiffSinceFirst,
-		"drift", drift,
-		"driftMs", driftMs,
-		"rate", float64(rtpDiffSinceFirst)/timeSinceFirst.Seconds(),
-	)
-	// TODO-REMOVE-AFTER-DEBUG-END
 
 	srDataCopy := *srData
 	r.srData = &srDataCopy
@@ -828,24 +831,9 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32) (*rtcp.SenderReport, float64
 	now := r.firstTime.Add(timeSinceFirst)
 	nowNTP := mediatransportutil.ToNtpTime(now)
 
-	expectedExtRTP := r.extStartTS + uint64(timeSinceFirst.Nanoseconds()*int64(r.params.ClockRate)/1e9)
-	if getExtTS(r.highestTS, r.tsCycles) > expectedExtRTP || now.Before(r.highestTime) {
-		r.logger.Debugw(
-			"sending anachronous sender report",
-			"firstTime", r.firstTime.String(),
-			"currentTime", now.String(),
-			"highestTime", r.highestTime.String(),
-			"timeSinceFirst", timeSinceFirst,
-			"extStartTS", r.extStartTS,
-			"highestExtRTP", getExtTS(r.highestTS, r.tsCycles),
-			"expectedExtRTP", expectedExtRTP,
-		)
-	}
-
-	timeSinceHighest := time.Since(r.highestTime)
+	timeSinceHighest := now.Sub(r.highestTime)
 	nowRTP := r.highestTS + uint32(timeSinceHighest.Nanoseconds()*int64(r.params.ClockRate)/1e9)
 
-	// TODO-REMOVE-AFTER-DEBUG-START
 	rtpDiffSinceFirst := getExtTS(nowRTP, r.tsCycles) - r.extStartTS
 	rate := float64(rtpDiffSinceFirst) / timeSinceFirst.Seconds()
 	pidOutput := r.pidController.Update(
@@ -853,37 +841,51 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32) (*rtcp.SenderReport, float64
 		rate,
 		now,
 	)
-	// TODO-REMOVE-AFTER-DEBUG-STOP
 
-	// TODO-REMOVE-AFTER-DEBUG-START
-	ntpTime := nowNTP.Time()
+	// monitor and log RTP timestamp anomalies
+	isWarped := false
+	if r.lastSRNTP != 0 {
+		ntpDiffSinceLast := nowNTP.Time().Sub(r.lastSRNTP.Time())
+		rtpDiffSinceLast := nowRTP - r.lastSRRTP
+		departureDiffSinceLast := now.Sub(r.lastSRTime)
 
-	ntpDiffLocal := ntpTime.Sub(r.highestTime)
-	rtpDiffLocal := int32(nowRTP - r.highestTS)
-	rtpOffsetLocal := int32(nowRTP - r.highestTS - uint32(ntpDiffLocal.Nanoseconds()*int64(r.params.ClockRate)/1e9))
+		expectedTimeDiffSinceLast := float64(rtpDiffSinceLast) / float64(r.params.ClockRate)
+		if math.Abs(expectedTimeDiffSinceLast-ntpDiffSinceLast.Seconds()) > 0.2 {
+			// more than 200 ms away from expected delta
+			isWarped = true
+		}
 
-	drift := int64(rtpDiffSinceFirst - uint64(timeSinceFirst.Nanoseconds()*int64(r.params.ClockRate)/1e9))
-	driftMs := (float64(drift) * 1000) / float64(r.params.ClockRate)
-	r.logger.Debugw(
-		"sending sender report",
-		"highestTS", r.highestTS,
-		"highestTime", r.highestTime.String(),
-		"reportTS", nowRTP,
-		"expectedTS", uint32(expectedExtRTP),
-		"reportTime", ntpTime.String(),
-		"rtpDiffLocal", rtpDiffLocal,
-		"ntpDiffLocal", ntpDiffLocal,
-		"rtpOffsetLocal", rtpOffsetLocal,
-		"timeSinceFirst", timeSinceFirst,
-		"rtpDiffSinceFirst", rtpDiffSinceFirst,
-		"drift", drift,
-		"driftMs", driftMs,
-		"rate", rate,
-	)
-	// TODO-REMOVE-AFTER-DEBUG-END
+		if isWarped {
+			expectedExtRTP := r.extStartTS + uint64(timeSinceFirst.Nanoseconds()*int64(r.params.ClockRate)/1e9)
+			ntpDiffLocal := nowNTP.Time().Sub(r.highestTime)
+			rtpDiffLocal := int32(nowRTP - r.highestTS)
+			timeSinceFirst, rtpDiffSinceFirst, drift, driftMs, sampleRate := r.getDrift()
+			r.logger.Infow(
+				"sending sender report, time warp",
+				"ntp", nowNTP.Time().String(),
+				"rtp", nowRTP,
+				"expectedRTP", uint32(expectedExtRTP),
+				"departure", now.String(),
+				"ntpDiffSincelast", ntpDiffSinceLast.Seconds(),
+				"rtpDiffSincelast", rtpDiffSinceLast,
+				"departureDiffSincelast", departureDiffSinceLast.Seconds(),
+				"expectedTimeDiffSincelast", expectedTimeDiffSinceLast,
+				"timeSinceFirst", timeSinceFirst.Seconds(),
+				"rtpDiffSinceFirst", rtpDiffSinceFirst,
+				"drift", drift,
+				"driftMs", driftMs,
+				"sampleRate", sampleRate,
+				"highestTS", r.highestTS,
+				"highestTime", r.highestTime.String(),
+				"rtpDiffLocal", rtpDiffLocal,
+				"ntpDiffLocal", ntpDiffLocal,
+			)
+		}
+	}
 
 	r.lastSRTime = now
 	r.lastSRNTP = nowNTP
+	r.lastSRRTP = nowRTP
 
 	return &rtcp.SenderReport{
 		SSRC:        ssrc,
@@ -1152,6 +1154,12 @@ func (r *RTPStats) ToString() string {
 	str += ", rtt(ms):"
 	str += fmt.Sprintf("%d|%d", p.RttCurrent, p.RttMax)
 
+	str += ", drift(ms):"
+	str += fmt.Sprintf("%.2f", p.DriftMs)
+
+	str += ", sr(Hz):"
+	str += fmt.Sprintf("%.2f", p.SampleRate)
+
 	return str
 }
 
@@ -1199,6 +1207,8 @@ func (r *RTPStats) ToProto() *livekit.RTPStats {
 	jitterTime := jitter / float64(r.params.ClockRate) * 1e6
 	maxJitterTime := maxJitter / float64(r.params.ClockRate) * 1e6
 
+	_, _, _, driftMs, sampleRate := r.getDrift()
+
 	p := &livekit.RTPStats{
 		StartTime:            timestamppb.New(r.startTime),
 		EndTime:              timestamppb.New(endTime),
@@ -1240,6 +1250,8 @@ func (r *RTPStats) ToProto() *livekit.RTPStats {
 		LastFir:              timestamppb.New(r.lastFir),
 		RttCurrent:           r.rtt,
 		RttMax:               r.maxRtt,
+		DriftMs:              driftMs,
+		SampleRate:           sampleRate,
 	}
 
 	gapsPresent := false
@@ -1433,6 +1445,15 @@ func (r *RTPStats) updateJitter(rtph *rtp.Header, packetTime time.Time) {
 	r.lastJitterRTP = rtph.Timestamp
 }
 
+func (r *RTPStats) getDrift() (timeSinceFirst time.Duration, rtpDiffSinceFirst uint64, drift int64, driftMs float64, sampleRate float64) {
+	timeSinceFirst = r.highestTime.Sub(r.firstTime)
+	rtpDiffSinceFirst = getExtTS(r.highestTS, r.tsCycles) - r.extStartTS
+	drift = int64(rtpDiffSinceFirst - uint64(timeSinceFirst.Nanoseconds()*int64(r.params.ClockRate)/1e9))
+	driftMs = (float64(drift) * 1000) / float64(r.params.ClockRate)
+	sampleRate = float64(rtpDiffSinceFirst) / timeSinceFirst.Seconds()
+	return
+}
+
 func (r *RTPStats) updateGapHistogram(gap int) {
 	if gap < 2 {
 		return
@@ -1533,6 +1554,8 @@ func AggregateRTPStats(statsList []*livekit.RTPStats) *livekit.RTPStats {
 	lastFir := time.Time{}
 	rtt := uint32(0)
 	maxRtt := uint32(0)
+	driftMs := float64(0.0)
+	sampleRate := float64(0.0)
 
 	for _, stats := range statsList {
 		if startTime.IsZero() || startTime.After(stats.StartTime.AsTime()) {
@@ -1599,6 +1622,9 @@ func AggregateRTPStats(statsList []*livekit.RTPStats) *livekit.RTPStats {
 		if stats.RttMax > maxRtt {
 			maxRtt = stats.RttMax
 		}
+
+		driftMs += stats.DriftMs
+		sampleRate += stats.SampleRate
 	}
 
 	if endTime.IsZero() {
@@ -1661,6 +1687,8 @@ func AggregateRTPStats(statsList []*livekit.RTPStats) *livekit.RTPStats {
 		LastFir:              timestamppb.New(lastFir),
 		RttCurrent:           rtt / uint32(len(statsList)),
 		RttMax:               maxRtt,
+		DriftMs:              driftMs / float64(len(statsList)),
+		SampleRate:           sampleRate / float64(len(statsList)),
 	}
 }
 
