@@ -260,16 +260,16 @@ func (s *signalMessageSink[SendType, RecvType]) Close() {
 	// that the close message has been processed by the other side.
 	// In ideal conditions, waiting for it is a clean end.
 	//
-	// But, in cases the remote side going away abruptly, waiting
+	// But, in cases where the remote side goes away abruptly, waiting
 	// for stream context to be done could block connection progress
 	// till the timeout hits.
 	//
-	// The abrupt case especially happens when one side of the signal
+	// The abrupt case happens when one side of the signal
 	// relay is shut down due to scale down or a crash.
 	//
-	// Uncomment the following line to wait for close acknowledgement
-	// or if system can wait long enough (till timeout) without adverse
-	// impact to give enough chance for close to be processed.
+	// Uncomment the following line to wait for close acknowledgement,
+	// but the system should be able to wait long enough (till timeout)
+	// without adverse impact if waiting for close acknowledgement.
 	//<-s.Stream.Context().Done()
 }
 
