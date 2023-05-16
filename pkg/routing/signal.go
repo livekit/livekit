@@ -255,7 +255,22 @@ func (s *signalMessageSink[SendType, RecvType]) Close() {
 	}
 	s.mu.Unlock()
 
-	<-s.Stream.Context().Done()
+	// NOTE: not waiting for stream context to be done.
+	// Waiting for stream context to be done is confirmation
+	// that the close message has been processed by the other side.
+	// In ideal conditions, waiting for it is a clean end.
+	//
+	// But, in cases the remote side going away abruptly, waiting
+	// for stream context to be done could block connection progress
+	// till the timeout hits.
+	//
+	// The abrupt case especially happens when one side of the signal
+	// relay is shut down due to scale down or a crash.
+	//
+	// Uncomment the following line to wait for close acknowledgement
+	// or if system can wait long enough (till timeout) without adverse
+	// impact to give enough chance for close to be processed.
+	//<-s.Stream.Context().Done()
 }
 
 func (s *signalMessageSink[SendType, RecvType]) IsClosed() bool {
