@@ -375,9 +375,9 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 		},
 		SignalRelay: SignalRelayConfig{
 			Enabled:          false,
-			RetryTimeout:     30 * time.Second,
+			RetryTimeout:     7500 * time.Millisecond,
 			MinRetryInterval: 500 * time.Millisecond,
-			MaxRetryInterval: 5 * time.Second,
+			MaxRetryInterval: 4 * time.Second,
 			StreamBufferSize: 1000,
 		},
 		Keys: map[string]string{},
