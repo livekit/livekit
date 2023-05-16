@@ -744,29 +744,34 @@ func (r *RTPStats) SetRtcpSenderReportData(srData *RTCPSenderReportData) {
 	}
 
 	// monitor and log RTP timestamp anomalies
-	isWarped := false
 	if r.srData != nil {
 		ntpDiffSinceLast := srData.NTPTimestamp.Time().Sub(r.srData.NTPTimestamp.Time())
 		rtpDiffSinceLast := srData.RTPTimestamp - r.srData.RTPTimestamp
 		arrivalDiffSinceLast := srData.ArrivalTime.Sub(r.srData.ArrivalTime)
 
 		expectedTimeDiffSinceLast := float64(rtpDiffSinceLast) / float64(r.params.ClockRate)
-		if math.Abs(expectedTimeDiffSinceLast-ntpDiffSinceLast.Seconds()) > 0.2 {
-			// more than 200 ms away from expected delta
-			isWarped = true
+
+		var reason string
+		if (srData.RTPTimestamp - r.srData.RTPTimestamp) > (1 << 31) {
+			reason = "received sender report, out-of-order"
+		} else {
+			if math.Abs(expectedTimeDiffSinceLast-ntpDiffSinceLast.Seconds()) > 0.2 {
+				// more than 200 ms away from expected delta
+				reason = "received sender report, time warp"
+			}
 		}
 
-		if isWarped {
+		if reason != "" {
 			timeSinceFirst, rtpDiffSinceFirst, drift, driftMs, sampleRate := r.getDrift()
 			r.logger.Infow(
-				"received sender report, time warp",
+				reason,
 				"ntp", srData.NTPTimestamp.Time().String(),
 				"rtp", srData.RTPTimestamp,
 				"arrival", srData.ArrivalTime.String(),
-				"ntpDiffSincelast", ntpDiffSinceLast.Seconds(),
-				"rtpDiffSincelast", rtpDiffSinceLast,
-				"arrivalDiffSincelast", arrivalDiffSinceLast.Seconds(),
-				"expectedTimeDiffSincelast", expectedTimeDiffSinceLast,
+				"ntpDiffSinceLast", ntpDiffSinceLast.Seconds(),
+				"rtpDiffSinceLast", int32(rtpDiffSinceLast),
+				"arrivalDiffSinceLast", arrivalDiffSinceLast.Seconds(),
+				"expectedTimeDiffSinceLast", expectedTimeDiffSinceLast,
 				"timeSinceFirst", timeSinceFirst.Seconds(),
 				"rtpDiffSinceFirst", rtpDiffSinceFirst,
 				"drift", drift,
@@ -792,12 +797,12 @@ func (r *RTPStats) GetRtcpSenderReportData() *RTCPSenderReportData {
 	return &srDataCopy
 }
 
-func (r *RTPStats) GetExpectedRTPTimestamp(at time.Time) (uint32, error) {
+func (r *RTPStats) GetExpectedRTPTimestamp(at time.Time) (uint32, uint32, error) {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
 	if !r.initialized {
-		return 0, errors.New("uninitilaized")
+		return 0, 0, errors.New("uninitilaized")
 	}
 
 	timeDiff := at.Sub(r.firstTime)
@@ -815,7 +820,7 @@ func (r *RTPStats) GetExpectedRTPTimestamp(at time.Time) (uint32, error) {
 		"highestTS", r.highestTS,
 		"highestTime", r.highestTime.String(),
 	)
-	return uint32(expectedExtRTP), nil
+	return uint32(expectedExtRTP), r.lastSRRTP, nil
 }
 
 func (r *RTPStats) GetRtcpSenderReport(ssrc uint32) (*rtcp.SenderReport, float64) {
@@ -866,10 +871,10 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32) (*rtcp.SenderReport, float64
 				"rtp", nowRTP,
 				"expectedRTP", uint32(expectedExtRTP),
 				"departure", now.String(),
-				"ntpDiffSincelast", ntpDiffSinceLast.Seconds(),
-				"rtpDiffSincelast", rtpDiffSinceLast,
-				"departureDiffSincelast", departureDiffSinceLast.Seconds(),
-				"expectedTimeDiffSincelast", expectedTimeDiffSinceLast,
+				"ntpDiffSinceLast", ntpDiffSinceLast.Seconds(),
+				"rtpDiffSinceLast", rtpDiffSinceLast,
+				"departureDiffSinceLast", departureDiffSinceLast.Seconds(),
+				"expectedTimeDiffSinceLast", expectedTimeDiffSinceLast,
 				"timeSinceFirst", timeSinceFirst.Seconds(),
 				"rtpDiffSinceFirst", rtpDiffSinceFirst,
 				"drift", drift,
