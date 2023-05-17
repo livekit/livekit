@@ -1958,7 +1958,16 @@ func configureAudioTransceiver(tr *webrtc.RTPTransceiver, stereo bool, nack bool
 				c.SDPFmtpLine += ";sprop-stereo=1"
 			}
 			if nack {
-				c.RTCPFeedback = append(c.RTCPFeedback, webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBNACK})
+				var nackFound bool
+				for _, fb := range c.RTCPFeedback {
+					if fb.Type == webrtc.TypeRTCPFBNACK {
+						nackFound = true
+						break
+					}
+				}
+				if !nackFound {
+					c.RTCPFeedback = append(c.RTCPFeedback, webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBNACK})
+				}
 			}
 		}
 		configCodecs = append(configCodecs, c)
