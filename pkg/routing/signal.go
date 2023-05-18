@@ -104,6 +104,7 @@ func (r *signalClient) StartParticipantSignal(
 		Config:         r.config,
 		Writer:         signalRequestMessageWriter{},
 		CloseOnFailure: true,
+		BlockOnClose:   true,
 	})
 	resChan := NewDefaultMessageChannel()
 
@@ -228,6 +229,7 @@ type SignalSinkParams[SendType, RecvType RelaySignalMessage] struct {
 	Config         config.SignalRelayConfig
 	Writer         SignalMessageWriter[SendType]
 	CloseOnFailure bool
+	BlockOnClose   bool
 }
 
 func NewSignalMessageSink[SendType, RecvType RelaySignalMessage](params SignalSinkParams[SendType, RecvType]) MessageSink {
@@ -255,22 +257,19 @@ func (s *signalMessageSink[SendType, RecvType]) Close() {
 	}
 	s.mu.Unlock()
 
-	// NOTE: not waiting for stream context to be done.
-	// Waiting for stream context to be done is confirmation
-	// that the close message has been processed by the other side.
-	// In ideal conditions, waiting for it is a clean end.
+	// conditionally block while closing to wait for outgoing messages to drain
 	//
-	// But, in cases where the remote side goes away abruptly, waiting
-	// for stream context to be done could block connection progress
-	// till the timeout hits.
+	// on media the signal sink shares a goroutine with other signal connection
+	// attempts from the same participant so blocking delays establishing new
+	// sessions during reconnect.
 	//
-	// The abrupt case happens when one side of the signal
-	// relay is shut down due to scale down or a crash.
-	//
-	// Uncomment the following line to wait for close acknowledgement,
-	// but the system should be able to wait long enough (till timeout)
-	// without adverse impact if waiting for close acknowledgement.
-	//<-s.Stream.Context().Done()
+	// on controller closing without waiting for the outstanding messages to
+	// drain causes leave messages to be dropped from the write queue. when
+	// this happens other participants in the room aren't notified about the
+	// departure until the participant times out.
+	if s.BlockOnClose {
+		<-s.Stream.Context().Done()
+	}
 }
 
 func (s *signalMessageSink[SendType, RecvType]) IsClosed() bool {
