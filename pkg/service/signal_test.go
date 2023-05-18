@@ -28,7 +28,6 @@ func TestSignal(t *testing.T) {
 		MinRetryInterval: 500 * time.Millisecond,
 		MaxRetryInterval: 5 * time.Second,
 		StreamBufferSize: 1000,
-		MinVersion:       1,
 	}
 
 	reqMessageIn := &livekit.SignalRequest{

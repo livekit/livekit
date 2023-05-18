@@ -170,6 +170,7 @@ func createMultiNodeServer(nodeID string, port uint32) *service.LivekitServer {
 	conf.RTC.TCPPort = port + 2
 	conf.Redis.Address = "localhost:6379"
 	conf.Keys = map[string]string{testApiKey: testApiSecret}
+	conf.SignalRelay.Enabled = true
 
 	currentNode, err := routing.NewLocalNode(conf)
 	if err != nil {
