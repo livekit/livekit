@@ -20,7 +20,7 @@ type Packet struct {
 	TransportWideExtID uint8
 	WriteStream        webrtc.TrackLocalWriter
 	Metadata           interface{}
-	OnSent             func(md interface{}, sentHeader *rtp.Header, payloadSize int, sentTime time.Time)
+	OnSent             func(md interface{}, sentHeader *rtp.Header, payloadSize int, sentTime time.Time, sendError error)
 }
 
 type Pacer interface {

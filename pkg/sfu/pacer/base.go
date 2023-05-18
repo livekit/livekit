@@ -24,7 +24,15 @@ func NewBase(logger logger.Logger) *Base {
 }
 
 func (b *Base) SendPacket(p *Packet) error {
-	sendingAt, err := b.writeRTPHeaderExtensions(p)
+	var sendingAt time.Time
+	var err error
+	defer func() {
+		if p.OnSent != nil {
+			p.OnSent(p.Metadata, p.Header, len(p.Payload), sendingAt, err)
+		}
+	}()
+
+	sendingAt, err = b.writeRTPHeaderExtensions(p)
 	if err != nil {
 		b.logger.Errorw("writing rtp header extensions err", err)
 		return err
@@ -43,9 +51,6 @@ func (b *Base) SendPacket(p *Packet) error {
 		return err
 	}
 
-	if p.OnSent != nil {
-		p.OnSent(p.Metadata, p.Header, len(p.Payload), sendingAt)
-	}
 	return nil
 }
 

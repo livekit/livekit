@@ -1693,7 +1693,7 @@ type sendPacketMetadata struct {
 	pool            *[]byte
 }
 
-func (d *DownTrack) packetSent(md interface{}, hdr *rtp.Header, payloadSize int, sendTime time.Time) {
+func (d *DownTrack) packetSent(md interface{}, hdr *rtp.Header, payloadSize int, sendTime time.Time, sendError error) {
 	spmd, ok := md.(sendPacketMetadata)
 	if !ok {
 		d.logger.Errorw("invalid send packet metadata", nil)
@@ -1702,6 +1702,10 @@ func (d *DownTrack) packetSent(md interface{}, hdr *rtp.Header, payloadSize int,
 
 	if spmd.pool != nil {
 		PacketFactory.Put(spmd.pool)
+	}
+
+	if sendError != nil {
+		return
 	}
 
 	headerSize := hdr.MarshalSize()
