@@ -37,10 +37,15 @@ func (n *NoQueue) Stop() {
 
 func (n *NoQueue) Enqueue(p Packet) {
 	n.lock.Lock()
-	defer n.lock.Unlock()
-
 	n.packets.PushBack(p)
+
+	notify := false
 	if n.packets.Len() == 1 {
+		notify = true
+	}
+	n.lock.Unlock()
+
+	if notify {
 		n.wake <- struct{}{}
 	}
 }
