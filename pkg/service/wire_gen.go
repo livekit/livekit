@@ -48,10 +48,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	router := routing.CreateRouter(conf, universalClient, currentNode, signalClient)
-	objectStore, err := createStore(universalClient, conf, nodeID)
-	if err != nil {
-		return nil, err
-	}
+	p2p_databaseConfig := getDatabaseConfiguration(conf)
+	objectStore := createStore(universalClient, conf, p2p_databaseConfig, nodeID)
 	roomAllocator, err := NewRoomAllocator(conf, router, objectStore)
 	if err != nil {
 		return nil, err
@@ -100,8 +98,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	p2p_databaseConfig := getDatabaseConfiguration(conf)
-	signalServer, err := NewDefaultSignalServer(currentNode, messageBus, signalRelayConfig, router, roomManager, p2p_databaseConfig)
+	signalServer, err := NewDefaultSignalServer(currentNode, messageBus, signalRelayConfig, router, roomManager)
 	if err != nil {
 		return nil, err
 	}
@@ -146,20 +143,11 @@ func getDatabaseConfiguration(conf *config.Config) p2p_database.Config {
 	}
 }
 
-func createMainDatabaseP2P(conf *config.Config) (*p2p_database.DB, error) {
-	db, err := p2p_database.Connect(context.Background(), p2p_database.Config{
-		PeerListenPort:          conf.Ethereum.P2pNodePort,
-		EthereumNetworkHost:     conf.Ethereum.NetworkHost,
-		EthereumNetworkKey:      conf.Ethereum.NetworkKey,
-		EthereumContractAddress: conf.Ethereum.ContractAddress,
-		WalletPrivateKey:        conf.Ethereum.WalletPrivateKey,
-		DatabaseName:            conf.Ethereum.P2pMainDatabaseName,
-	}, log.Logger("db"))
-
+func createMainDatabaseP2P(conf p2p_database.Config) (*p2p_database.DB, error) {
+	db, err := p2p_database.Connect(context.Background(), conf, log.Logger("db"))
 	if err != nil {
 		return nil, errors.Wrap(err, "create main p2p db")
 	}
-
 	return db, nil
 }
 
@@ -205,8 +193,8 @@ func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {
 	return redis2.GetRedisClient(&conf.Redis)
 }
 
-func createStore(rc redis.UniversalClient, conf *config.Config, nodeID livekit.NodeID) (ObjectStore, error) {
-	return NewP2pStore(context.Background(), nodeID, conf)
+func createStore(rc redis.UniversalClient, conf *config.Config, p2pDbConfig p2p_database.Config, nodeID livekit.NodeID) ObjectStore {
+	return NewLocalStore(nodeID, p2pDbConfig)
 }
 
 func getMessageBus(rc redis.UniversalClient) psrpc.MessageBus {

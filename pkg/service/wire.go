@@ -29,6 +29,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	wire.Build(
 		getNodeID,
 		createRedisClient,
+		getDatabaseConfiguration,
 		createStore,
 		wire.Bind(new(ServiceStore), new(ObjectStore)),
 		createKeyProvider,
@@ -40,7 +41,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		config.DefaultAPIConfig,
 		//createMainDatabaseP2P,
 		//wire.Bind(new(MainP2PDatabase), new(*p2p_database.DB)),
-		getDatabaseConfiguration,
 		wire.Bind(new(routing.MessageRouter), new(routing.Router)),
 		wire.Bind(new(livekit.RoomService), new(*RoomService)),
 		telemetry.NewAnalyticsService,
@@ -95,20 +95,11 @@ func getDatabaseConfiguration(conf *config.Config) p2p_database.Config {
 	}
 }
 
-func createMainDatabaseP2P(conf *config.Config) (*p2p_database.DB, error) {
-	db, err := p2p_database.Connect(context.Background(), p2p_database.Config{
-		PeerListenPort:          conf.Ethereum.P2pNodePort,
-		EthereumNetworkHost:     conf.Ethereum.NetworkHost,
-		EthereumNetworkKey:      conf.Ethereum.NetworkKey,
-		EthereumContractAddress: conf.Ethereum.ContractAddress,
-		WalletPrivateKey:        conf.Ethereum.WalletPrivateKey,
-		DatabaseName:            conf.Ethereum.P2pMainDatabaseName,
-	}, logging.Logger("db"))
-
+func createMainDatabaseP2P(conf p2p_database.Config) (*p2p_database.DB, error) {
+	db, err := p2p_database.Connect(context.Background(), conf, logging.Logger("db"))
 	if err != nil {
 		return nil, errors.Wrap(err, "create main p2p db")
 	}
-
 	return db, nil
 }
 
@@ -154,8 +145,8 @@ func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {
 	return redisLiveKit.GetRedisClient(&conf.Redis)
 }
 
-func createStore(rc redis.UniversalClient, conf *config.Config, nodeID livekit.NodeID) (ObjectStore, error) {
-	return NewP2pStore(context.Background(), nodeID, conf)
+func createStore(rc redis.UniversalClient, conf *config.Config, p2pDbConfig p2p_database.Config, nodeID livekit.NodeID) ObjectStore {
+	return NewLocalStore(nodeID, p2pDbConfig)
 }
 
 func getMessageBus(rc redis.UniversalClient) psrpc.MessageBus {
