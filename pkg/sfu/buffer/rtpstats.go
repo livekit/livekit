@@ -1896,18 +1896,20 @@ func (p *PIDController) Update(setpoint, measurement float64, at time.Time) floa
 	p.prevError = errorTerm
 	p.prevMeasurement = measurement
 	p.prevMeasurementTime = at
-	p.logger.Debugw(
-		"pid controller",
-		"setpoint", setpoint,
-		"measurement", measurement,
-		"errorTerm", errorTerm,
-		"proportional", proportional,
-		"integral", iVal,
-		"integralLimited", boundIVal,
-		"derivative", p.dVal,
-		"output", output,
-		"outputLimited", boundOutput,
-	)
+	/*
+		p.logger.Debugw(
+			"pid controller",
+			"setpoint", setpoint,
+			"measurement", measurement,
+			"errorTerm", errorTerm,
+			"proportional", proportional,
+			"integral", iVal,
+			"integralLimited", boundIVal,
+			"derivative", p.dVal,
+			"output", output,
+			"outputLimited", boundOutput,
+		)
+	*/
 	return boundOutput
 }
 
