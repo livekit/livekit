@@ -11,6 +11,8 @@ import (
 type NoQueue struct {
 	*Base
 
+	logger logger.Logger
+
 	lock    sync.RWMutex
 	packets deque.Deque[Packet]
 	wake    chan struct{}
@@ -19,9 +21,10 @@ type NoQueue struct {
 
 func NewNoQueue(logger logger.Logger) *NoQueue {
 	n := &NoQueue{
-		Base: NewBase(logger),
-		wake: make(chan struct{}, 1),
-		stop: core.NewFuse(),
+		Base:   NewBase(logger),
+		logger: logger,
+		wake:   make(chan struct{}, 1),
+		stop:   core.NewFuse(),
 	}
 	n.packets.SetMinCapacity(9)
 
@@ -46,7 +49,11 @@ func (n *NoQueue) Enqueue(p Packet) {
 	n.lock.Unlock()
 
 	if notify {
-		n.wake <- struct{}{}
+		select {
+		case n.wake <- struct{}{}:
+		default:
+			n.logger.Warnw("wake channel full", nil)
+		}
 	}
 }
 
