@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"fmt"
+	p2p_database "github.com/dTelecom/p2p-realtime-database"
+	logging "github.com/ipfs/go-log/v2"
 	"sync"
 
 	"github.com/pkg/errors"
@@ -67,6 +69,7 @@ func NewDefaultSignalServer(
 	config config.SignalRelayConfig,
 	router routing.Router,
 	roomManager *RoomManager,
+	defaultDatabaseConfig p2p_database.Config,
 ) (r *SignalServer, err error) {
 	sessionHandler := func(
 		ctx context.Context,
@@ -86,6 +89,26 @@ func NewDefaultSignalServer(
 			if err := rr.SetParticipantRTCNode(pKey, pKeyB62, currentNode.Id); err != nil {
 				return err
 			}
+
+			defaultDatabaseConfig.DatabaseName = "livekit_" + string(roomName)
+			db, err := p2p_database.Connect(ctx, defaultDatabaseConfig, logging.Logger("db_"+string(roomName)))
+			if err != nil {
+				return err
+			}
+
+			communication := NewNodeCommunication(db)
+			_, err = communication.SendAsyncMessageToPeerId(ctx, currentNode.Id, "Hello!")
+			if err != nil {
+				return err
+			}
+
+			respCh, err := communication.ListenIncomingMessages(ctx)
+			if err != nil {
+				return err
+			}
+			resp := <-respCh
+
+			fmt.Println(resp.Message)
 		}
 
 		return roomManager.StartSession(ctx, roomName, pi, requestSource, responseSink)

@@ -100,7 +100,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	signalServer, err := NewDefaultSignalServer(currentNode, messageBus, signalRelayConfig, router, roomManager)
+	p2p_databaseConfig := getDatabaseConfiguration(conf)
+	signalServer, err := NewDefaultSignalServer(currentNode, messageBus, signalRelayConfig, router, roomManager, p2p_databaseConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -133,6 +134,17 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 }
 
 // wire.go:
+
+func getDatabaseConfiguration(conf *config.Config) p2p_database.Config {
+	return p2p_database.Config{
+		PeerListenPort:          conf.Ethereum.P2pNodePort,
+		EthereumNetworkHost:     conf.Ethereum.NetworkHost,
+		EthereumNetworkKey:      conf.Ethereum.NetworkKey,
+		EthereumContractAddress: conf.Ethereum.ContractAddress,
+		WalletPrivateKey:        conf.Ethereum.WalletPrivateKey,
+		DatabaseName:            conf.Ethereum.P2pMainDatabaseName,
+	}
+}
 
 func createMainDatabaseP2P(conf *config.Config) (*p2p_database.DB, error) {
 	db, err := p2p_database.Connect(context.Background(), p2p_database.Config{
