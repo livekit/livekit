@@ -32,7 +32,7 @@ func NewP2pStore(ctx context.Context, id livekit.NodeID, conf *config.Config) (*
 		EthereumNetworkKey:      conf.Ethereum.NetworkKey,
 		EthereumContractAddress: conf.Ethereum.ContractAddress,
 		WalletPrivateKey:        conf.Ethereum.WalletPrivateKey,
-		DatabaseName:            "livekit_" + string(id),
+		DatabaseName:            conf.Ethereum.P2pMainDatabaseName,
 	}, logging.Logger("db"))
 
 	if err != nil {

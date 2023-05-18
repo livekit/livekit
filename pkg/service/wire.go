@@ -7,6 +7,7 @@ import (
 	"context"
 	p2p_database "github.com/dTelecom/p2p-realtime-database"
 	"github.com/google/wire"
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -37,6 +38,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		routing.CreateRouter,
 		getRoomConf,
 		config.DefaultAPIConfig,
+		//createMainDatabaseP2P,
+		//wire.Bind(new(MainP2PDatabase), new(*p2p_database.DB)),
 		wire.Bind(new(routing.MessageRouter), new(routing.Router)),
 		wire.Bind(new(livekit.RoomService), new(*RoomService)),
 		telemetry.NewAnalyticsService,
@@ -78,6 +81,23 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 	)
 
 	return nil, nil
+}
+
+func createMainDatabaseP2P(conf *config.Config) (*p2p_database.DB, error) {
+	db, err := p2p_database.Connect(context.Background(), p2p_database.Config{
+		PeerListenPort:          conf.Ethereum.P2pNodePort,
+		EthereumNetworkHost:     conf.Ethereum.NetworkHost,
+		EthereumNetworkKey:      conf.Ethereum.NetworkKey,
+		EthereumContractAddress: conf.Ethereum.ContractAddress,
+		WalletPrivateKey:        conf.Ethereum.WalletPrivateKey,
+		DatabaseName:            conf.Ethereum.P2pMainDatabaseName,
+	}, logging.Logger("db"))
+
+	if err != nil {
+		return nil, errors.Wrap(err, "create main p2p db")
+	}
+
+	return db, nil
 }
 
 func getNodeID(currentNode routing.LocalNode) livekit.NodeID {
