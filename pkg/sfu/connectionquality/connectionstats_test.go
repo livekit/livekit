@@ -12,19 +12,19 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-func newConnectionStats(mimeType string, isFECEnabled bool, isDependentRTT bool, isDependentJitter bool) *ConnectionStats {
+func newConnectionStats(mimeType string, isFECEnabled bool, includeRTT bool, includeJitter bool) *ConnectionStats {
 	return NewConnectionStats(ConnectionStatsParams{
-		MimeType:          mimeType,
-		IsFECEnabled:      isFECEnabled,
-		IsDependentRTT:    isDependentRTT,
-		IsDependentJitter: isDependentJitter,
-		Logger:            logger.GetLogger(),
+		MimeType:      mimeType,
+		IsFECEnabled:  isFECEnabled,
+		IncludeRTT:    includeRTT,
+		IncludeJitter: includeJitter,
+		Logger:        logger.GetLogger(),
 	})
 }
 
 func TestConnectionQuality(t *testing.T) {
 	t.Run("quality scorer state machine", func(t *testing.T) {
-		cs := newConnectionStats("audio/opus", false, false, false)
+		cs := newConnectionStats("audio/opus", false, true, true)
 
 		duration := 5 * time.Second
 		now := time.Now()
@@ -184,7 +184,7 @@ func TestConnectionQuality(t *testing.T) {
 					StartTime:   now,
 					Duration:    duration,
 					Packets:     250,
-					PacketsLost: 25,
+					PacketsLost: 30,
 				},
 			},
 		}
@@ -239,7 +239,7 @@ func TestConnectionQuality(t *testing.T) {
 		cs.UpdateMute(false, now.Add(2*time.Second))
 
 		// with lesser number of packet (simulating DTX).
-		// even higher loss (like 10%) should only knock down quality to GOOD, typically would be POOR at that loss rate
+		// even higher loss (like 10%) should not knock down quality due to quadratic weighting of packet loss ratio
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
@@ -252,8 +252,8 @@ func TestConnectionQuality(t *testing.T) {
 		}
 		cs.updateScore(streams, now.Add(duration))
 		mos, quality = cs.GetScoreAndQuality()
-		require.Greater(t, float32(4.1), mos)
-		require.Equal(t, livekit.ConnectionQuality_GOOD, quality)
+		require.Greater(t, float32(4.6), mos)
+		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, quality)
 
 		// mute/unmute to bring quality back up
 		now = now.Add(duration)
@@ -269,7 +269,7 @@ func TestConnectionQuality(t *testing.T) {
 					Duration:    duration,
 					Packets:     250,
 					PacketsLost: 5,
-					RttMax:      300,
+					RttMax:      400,
 					JitterMax:   30000,
 				},
 			},
@@ -294,7 +294,7 @@ func TestConnectionQuality(t *testing.T) {
 					StartTime: now,
 					Duration:  duration,
 					Packets:   250,
-					Bytes:     8_000_000 / 8 / 4,
+					Bytes:     8_000_000 / 8 / 5,
 				},
 			},
 		}
@@ -320,7 +320,7 @@ func TestConnectionQuality(t *testing.T) {
 					StartTime: now,
 					Duration:  duration,
 					Packets:   250,
-					Bytes:     8_000_000 / 8 / 4,
+					Bytes:     8_000_000 / 8 / 5,
 				},
 			},
 		}
@@ -345,7 +345,7 @@ func TestConnectionQuality(t *testing.T) {
 					StartTime: now,
 					Duration:  duration,
 					Packets:   250,
-					Bytes:     8_000_000 / 8 / 4,
+					Bytes:     8_000_000 / 8 / 5,
 				},
 			},
 		}
@@ -356,7 +356,7 @@ func TestConnectionQuality(t *testing.T) {
 	})
 
 	t.Run("quality scorer dependent rtt", func(t *testing.T) {
-		cs := newConnectionStats("audio/opus", false, true, false)
+		cs := newConnectionStats("audio/opus", false, false, true)
 
 		duration := 5 * time.Second
 		now := time.Now()
@@ -384,7 +384,7 @@ func TestConnectionQuality(t *testing.T) {
 	})
 
 	t.Run("quality scorer dependent jitter", func(t *testing.T) {
-		cs := newConnectionStats("audio/opus", false, false, true)
+		cs := newConnectionStats("audio/opus", false, true, false)
 
 		duration := 5 * time.Second
 		now := time.Now()
@@ -462,46 +462,22 @@ func TestConnectionQuality(t *testing.T) {
 						expectedQuality:      livekit.ConnectionQuality_EXCELLENT,
 					},
 					{
-						packetLossPercentage: 4.1,
+						packetLossPercentage: 4.4,
 						expectedMOS:          4.1,
 						expectedQuality:      livekit.ConnectionQuality_GOOD,
 					},
 					{
-						packetLossPercentage: 13.2,
+						packetLossPercentage: 15.0,
 						expectedMOS:          2.1,
 						expectedQuality:      livekit.ConnectionQuality_POOR,
 					},
 				},
 			},
-			// "audio/red" - no fec - 0 <= loss < 6.66%: EXCELLENT, 6.66% <= loss < 20%: GOOD, >= 20%: POOR
+			// "audio/red" - no fec - 0 <= loss < 10%: EXCELLENT, 10% <= loss < 30%: GOOD, >= 30%: POOR
 			{
 				name:            "audio/red - no fec",
 				mimeType:        "audio/red",
 				isFECEnabled:    false,
-				packetsExpected: 200,
-				expectedQualities: []expectedQuality{
-					{
-						packetLossPercentage: 6.0,
-						expectedMOS:          4.6,
-						expectedQuality:      livekit.ConnectionQuality_EXCELLENT,
-					},
-					{
-						packetLossPercentage: 10.0,
-						expectedMOS:          4.1,
-						expectedQuality:      livekit.ConnectionQuality_GOOD,
-					},
-					{
-						packetLossPercentage: 23.0,
-						expectedMOS:          2.1,
-						expectedQuality:      livekit.ConnectionQuality_POOR,
-					},
-				},
-			},
-			// "audio/red" - fec - 0 <= loss < 10%: EXCELLENT, 10% <= loss < 30%: GOOD, >= 30%: POOR
-			{
-				name:            "audio/red - fec",
-				mimeType:        "audio/red",
-				isFECEnabled:    true,
 				packetsExpected: 200,
 				expectedQualities: []expectedQuality{
 					{
@@ -510,12 +486,36 @@ func TestConnectionQuality(t *testing.T) {
 						expectedQuality:      livekit.ConnectionQuality_EXCELLENT,
 					},
 					{
-						packetLossPercentage: 18.0,
+						packetLossPercentage: 12.0,
 						expectedMOS:          4.1,
 						expectedQuality:      livekit.ConnectionQuality_GOOD,
 					},
 					{
-						packetLossPercentage: 36.0,
+						packetLossPercentage: 39.0,
+						expectedMOS:          2.1,
+						expectedQuality:      livekit.ConnectionQuality_POOR,
+					},
+				},
+			},
+			// "audio/red" - fec - 0 <= loss < 15%: EXCELLENT, 15% <= loss < 45%: GOOD, >= 45%: POOR
+			{
+				name:            "audio/red - fec",
+				mimeType:        "audio/red",
+				isFECEnabled:    true,
+				packetsExpected: 200,
+				expectedQualities: []expectedQuality{
+					{
+						packetLossPercentage: 12.0,
+						expectedMOS:          4.6,
+						expectedQuality:      livekit.ConnectionQuality_EXCELLENT,
+					},
+					{
+						packetLossPercentage: 20.0,
+						expectedMOS:          4.1,
+						expectedQuality:      livekit.ConnectionQuality_GOOD,
+					},
+					{
+						packetLossPercentage: 60.0,
 						expectedMOS:          2.1,
 						expectedQuality:      livekit.ConnectionQuality_POOR,
 					},
@@ -534,12 +534,12 @@ func TestConnectionQuality(t *testing.T) {
 						expectedQuality:      livekit.ConnectionQuality_EXCELLENT,
 					},
 					{
-						packetLossPercentage: 2.5,
+						packetLossPercentage: 3.5,
 						expectedMOS:          4.1,
 						expectedQuality:      livekit.ConnectionQuality_GOOD,
 					},
 					{
-						packetLossPercentage: 7.0,
+						packetLossPercentage: 8.0,
 						expectedMOS:          2.1,
 						expectedQuality:      livekit.ConnectionQuality_POOR,
 					},
@@ -549,7 +549,7 @@ func TestConnectionQuality(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				cs := newConnectionStats(tc.mimeType, tc.isFECEnabled, false, false)
+				cs := newConnectionStats(tc.mimeType, tc.isFECEnabled, true, true)
 
 				duration := 5 * time.Second
 				now := time.Now()
@@ -619,7 +619,7 @@ func TestConnectionQuality(t *testing.T) {
 						offset:  3 * time.Second,
 					},
 				},
-				bytes:           uint64(math.Ceil(7_000_000.0 / 8.0 / 3.5)),
+				bytes:           uint64(math.Ceil(7_000_000.0 / 8.0 / 4.2)),
 				expectedMOS:     4.1,
 				expectedQuality: livekit.ConnectionQuality_GOOD,
 			},
@@ -634,7 +634,7 @@ func TestConnectionQuality(t *testing.T) {
 						offset:  3 * time.Second,
 					},
 				},
-				bytes:           uint64(math.Ceil(8_000_000.0 / 8.0 / 43.0)),
+				bytes:           uint64(math.Ceil(8_000_000.0 / 8.0 / 75.0)),
 				expectedMOS:     2.1,
 				expectedQuality: livekit.ConnectionQuality_POOR,
 			},
@@ -642,7 +642,7 @@ func TestConnectionQuality(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				cs := newConnectionStats("video/vp8", false, false, false)
+				cs := newConnectionStats("video/vp8", false, true, true)
 
 				duration := 5 * time.Second
 				now := time.Now()
@@ -718,7 +718,7 @@ func TestConnectionQuality(t *testing.T) {
 						distance: 2.0,
 					},
 					{
-						distance: 2.2,
+						distance: 2.6,
 						offset:   1 * time.Second,
 					},
 				},
@@ -729,7 +729,7 @@ func TestConnectionQuality(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				cs := newConnectionStats("video/vp8", false, false, false)
+				cs := newConnectionStats("video/vp8", false, true, true)
 
 				duration := 5 * time.Second
 				now := time.Now()

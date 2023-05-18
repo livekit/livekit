@@ -25,8 +25,8 @@ type ConnectionStatsParams struct {
 	UpdateInterval            time.Duration
 	MimeType                  string
 	IsFECEnabled              bool
-	IsDependentRTT            bool
-	IsDependentJitter         bool
+	IncludeRTT                bool
+	IncludeJitter             bool
 	GetDeltaStats             func() map[uint32]*buffer.StreamStatsWithLayers
 	GetDeltaStatsOverridden   func() map[uint32]*buffer.StreamStatsWithLayers
 	GetLastReceiverReportTime func() time.Time
@@ -53,10 +53,10 @@ func NewConnectionStats(params ConnectionStatsParams) *ConnectionStats {
 	return &ConnectionStats{
 		params: params,
 		scorer: newQualityScorer(qualityScorerParams{
-			PacketLossWeight:  getPacketLossWeight(params.MimeType, params.IsFECEnabled), // LK-TODO: have to notify codec change?
-			IsDependentRTT:    params.IsDependentRTT,
-			IsDependentJitter: params.IsDependentJitter,
-			Logger:            params.Logger,
+			PacketLossWeight: getPacketLossWeight(params.MimeType, params.IsFECEnabled), // LK-TODO: have to notify codec change?
+			IncludeRTT:       params.IncludeRTT,
+			IncludeJitter:    params.IncludeJitter,
+			Logger:           params.Logger,
 		}),
 		done: core.NewFuse(),
 	}
@@ -293,10 +293,10 @@ func getPacketLossWeight(mimeType string, isFecEnabled bool) float64 {
 		}
 
 	case strings.EqualFold(mimeType, "audio/red"):
-		// 6.66%: fall to GOOD, 20.0%: fall to POOR
-		plw = 3.0
+		// 10%: fall to GOOD, 30.0%: fall to POOR
+		plw = 2.0
 		if isFecEnabled {
-			// 10%: fall to GOOD, 30.0%: fall to POOR
+			// 15%: fall to GOOD, 45.0%: fall to POOR
 			plw /= 1.5
 		}
 
