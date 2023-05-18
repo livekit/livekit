@@ -13,10 +13,8 @@ func MedianFloat32(input []float32) float32 {
 	})
 	if num%2 != 0 {
 		return input[num/2]
-	} else {
-		left := input[(num-1)/2]
-		right := input[num/2]
-		return (left + right) / 2
 	}
-	return 0
+	left := input[(num-1)/2]
+	right := input[num/2]
+	return (left + right) / 2
 }
