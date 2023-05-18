@@ -4,8 +4,6 @@ import (
 	"context"
 	"testing"
 	"time"
-
-	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -19,7 +17,9 @@ func WithTimeout(t *testing.T, f func() string) {
 	for {
 		select {
 		case <-ctx.Done():
-			require.Empty(t, lastErr)
+			if lastErr != "" {
+				t.Fatalf("did not reach expected state after %v: %s", ConnectTimeout, lastErr)
+			}
 		case <-time.After(10 * time.Millisecond):
 			lastErr = f()
 			if lastErr == "" {
