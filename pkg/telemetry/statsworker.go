@@ -212,12 +212,16 @@ func coalesce(stats []*livekit.AnalyticsStat) *livekit.AnalyticsStat {
 		}
 	}
 
-	return &livekit.AnalyticsStat{
-		Score:       scoreSum / float32(len(scores)),
+	stat := &livekit.AnalyticsStat{
 		MinScore:    minScore,
 		MedianScore: utils.MedianFloat32(scores),
 		Streams:     []*livekit.AnalyticsStream{coalescedStream},
 	}
+	numScores := len(scores)
+	if numScores > 0 {
+		stat.Score = scoreSum / float32(numScores)
+	}
+	return stat
 }
 
 func isValid(stat *livekit.AnalyticsStat) bool {
