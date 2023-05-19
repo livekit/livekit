@@ -13,13 +13,16 @@ import (
 type Base struct {
 	logger logger.Logger
 
+	packetTime *PacketTime
+
 	// for throttling error logs
 	writeIOErrors atomic.Uint32
 }
 
 func NewBase(logger logger.Logger) *Base {
 	return &Base{
-		logger: logger,
+		logger:     logger,
+		packetTime: NewPacketTime(),
 	}
 }
 
@@ -69,7 +72,7 @@ func (b *Base) writeRTPHeaderExtensions(p *Packet) (time.Time, error) {
 		p.Header.SetExtension(ext.ID, ext.Payload)
 	}
 
-	sendingAt := time.Now()
+	sendingAt := b.packetTime.Get()
 	if p.AbsSendTimeExtID != 0 {
 		sendTime := rtp.NewAbsSendTimeExtension(sendingAt)
 		b, err := sendTime.Marshal()
