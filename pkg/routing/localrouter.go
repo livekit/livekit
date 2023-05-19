@@ -88,7 +88,7 @@ func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomName livek
 }
 
 func (r *LocalRouter) StartParticipantSignalWithNodeID(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit, nodeID livekit.NodeID) (connectionID livekit.ConnectionID, reqSink MessageSink, resSource MessageSource, err error) {
-	connectionID, reqSink, resSource, err = r.signalClient.StartParticipantSignal(ctx, roomName, pi, livekit.NodeID(r.currentNode.Id))
+	connectionID, reqSink, resSource, err = r.signalClient.StartParticipantSignal(ctx, roomName, pi, nodeID)
 	if err != nil {
 		logger.Errorw("could not handle new participant", err,
 			"room", roomName,

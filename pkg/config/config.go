@@ -69,6 +69,8 @@ type Config struct {
 type RTCConfig struct {
 	rtcconfig.RTCConfig `yaml:",inline"`
 
+	TURNServers []TURNServer `yaml:"turn_servers,omitempty"`
+
 	StrictACKs bool `yaml:"strict_acks,omitempty"`
 
 	// Number of packets to buffer for NACK
@@ -90,6 +92,14 @@ type RTCConfig struct {
 
 	// allow time stamp adjust to keep drift low, this is experimental
 	AllowTimestampAdjustment *bool `yaml:"allow_timestamp_adjustment,omitempty"`
+}
+
+type TURNServer struct {
+	Host       string `yaml:"host"`
+	Port       int    `yaml:"port"`
+	Protocol   string `yaml:"protocol"`
+	Username   string `yaml:"username,omitempty"`
+	Credential string `yaml:"credential,omitempty"`
 }
 
 type PLIThrottleConfig struct {
@@ -200,7 +210,6 @@ type SignalRelayConfig struct {
 	MinRetryInterval time.Duration `yaml:"min_retry_interval,omitempty"`
 	MaxRetryInterval time.Duration `yaml:"max_retry_interval,omitempty"`
 	StreamBufferSize int           `yaml:"stream_buffer_size,omitempty"`
-	MinVersion       int           `yaml:"min_version,omitempty"`
 }
 
 // RegionConfig lists available regions and their latitude/longitude, so the selector would prefer
