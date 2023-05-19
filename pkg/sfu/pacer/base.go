@@ -38,7 +38,7 @@ func (b *Base) SendPacket(p *Packet) error {
 		}
 	}()
 
-	sendingAt, err = b.writeRTPHeaderExtensions(p)
+	sendingAt, twSN, err := b.writeRTPHeaderExtensions(p)
 	if err != nil {
 		b.logger.Errorw("writing rtp header extensions err", err)
 		return err
@@ -57,11 +57,15 @@ func (b *Base) SendPacket(p *Packet) error {
 		return err
 	}
 
+	if p.AbsSendTimeExtID != 0 {
+		b.sendSideBWE.PacketSent(sendingAt, twSN, p.Header.MarshalSize(), len(p.Payload))
+	}
+
 	return nil
 }
 
 // writes RTP header extensions of track
-func (b *Base) writeRTPHeaderExtensions(p *Packet) (time.Time, error) {
+func (b *Base) writeRTPHeaderExtensions(p *Packet) (time.Time, uint16, error) {
 	// clear out extensions that may have been in the forwarded header
 	p.Header.Extension = false
 	p.Header.ExtensionProfile = 0
@@ -80,31 +84,33 @@ func (b *Base) writeRTPHeaderExtensions(p *Packet) (time.Time, error) {
 		sendTime := rtp.NewAbsSendTimeExtension(sendingAt)
 		b, err := sendTime.Marshal()
 		if err != nil {
-			return time.Time{}, err
+			return time.Time{}, 0, err
 		}
 
 		err = p.Header.SetExtension(p.AbsSendTimeExtID, b)
 		if err != nil {
-			return time.Time{}, err
+			return time.Time{}, 0, err
 		}
 	}
 
+	twSN := uint16(0)
 	if p.TransportWideExtID != 0 {
-		tw := b.sendSideBWE.Get()
+		twSN = b.sendSideBWE.GetNext()
+		tw := rtp.TransportCCExtension{
+			TransportSequence: twSN,
+		}
 		b, err := tw.Marshal()
 		if err != nil {
-			return time.Time{}, err
+			return time.Time{}, 0, err
 		}
 
 		err = p.Header.SetExtension(p.TransportWideExtID, b)
 		if err != nil {
-			return time.Time{}, err
+			return time.Time{}, 0, err
 		}
-
-		// SSBWE-TODO - send this to packet tracker
 	}
 
-	return sendingAt, nil
+	return sendingAt, twSN, nil
 }
 
 // ------------------------------------------------

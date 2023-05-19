@@ -27,6 +27,8 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/sfu/pacer"
+	"github.com/livekit/livekit-server/pkg/sfu/sendsidebwe"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
@@ -184,6 +186,10 @@ type PCTransport struct {
 
 	// stream allocator for subscriber PC
 	streamAllocator *streamallocator.StreamAllocator
+
+	// only for subscriber PC
+	sendSideBWE *sendsidebwe.SendSideBWE
+	pacer       pacer.Pacer
 
 	previousAnswer *webrtc.SessionDescription
 	// track id -> description map in previous offer sdp
@@ -360,6 +366,11 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 			Logger: params.Logger,
 		})
 		t.streamAllocator.Start()
+
+		if params.CongestionControlConfig.UseTWCC {
+			t.sendSideBWE = sendsidebwe.NewSendSideBWE(params.Logger)
+			t.pacer = pacer.NewPassThrough(params.Logger, t.sendSideBWE)
+		}
 	}
 
 	if err := t.createPeerConnection(); err != nil {
@@ -396,6 +407,10 @@ func (t *PCTransport) createPeerConnection() error {
 	}
 
 	return nil
+}
+
+func (t *PCTransport) GetPacer() pacer.Pacer {
+	return t.pacer
 }
 
 func (t *PCTransport) SetSignalingRTT(rtt uint32) {

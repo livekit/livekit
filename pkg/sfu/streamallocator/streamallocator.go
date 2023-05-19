@@ -409,7 +409,6 @@ func (s *StreamAllocator) OnTransportCCFeedback(downTrack *sfu.DownTrack, fb *rt
 	if s.bwe != nil {
 		s.bwe.WriteRTCP([]rtcp.Packet{fb}, nil)
 	}
-	// RAJA-TODO: this needs to send to sendsideBWE if active, maybe can make same interface as pion/bwe???
 }
 
 // called when target bitrate changes (send side bandwidth estimation)
