@@ -232,9 +232,7 @@ type TransportParams struct {
 }
 
 func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimator cc.BandwidthEstimator)) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
-	directionConfig := params.DirectionConfig
-
-	me, err := createMediaEngine(params.EnabledCodecs, directionConfig)
+	me, err := createMediaEngine(params.EnabledCodecs, params.DirectionConfig)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -305,21 +303,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 
 	ir := &interceptor.Registry{}
 	if params.IsSendSide {
-		isSendSideBWE := false
-		for _, ext := range directionConfig.RTPHeaderExtension.Video {
-			if ext == sdp.TransportCCURI {
-				isSendSideBWE = true
-				break
-			}
-		}
-		for _, ext := range directionConfig.RTPHeaderExtension.Audio {
-			if ext == sdp.TransportCCURI {
-				isSendSideBWE = true
-				break
-			}
-		}
-
-		if isSendSideBWE {
+		if params.CongestionControlConfig.UseSendSideBWE && !params.CongestionControlConfig.UseTWCC {
 			gf, err := cc.NewInterceptor(func() (cc.BandwidthEstimator, error) {
 				return gcc.NewSendSideBWE(
 					gcc.SendSideBWEInitialBitrate(1*1000*1000),

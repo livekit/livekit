@@ -5,6 +5,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/sfu/sendsidebwe"
 	"github.com/livekit/protocol/logger"
 	"github.com/pion/rtp"
 	"go.uber.org/atomic"
@@ -13,16 +14,18 @@ import (
 type Base struct {
 	logger logger.Logger
 
-	packetTime *PacketTime
+	packetTime  *PacketTime
+	sendSideBWE *sendsidebwe.SendSideBWE
 
 	// for throttling error logs
 	writeIOErrors atomic.Uint32
 }
 
-func NewBase(logger logger.Logger) *Base {
+func NewBase(logger logger.Logger, sendSideBWE *sendsidebwe.SendSideBWE) *Base {
 	return &Base{
-		logger:     logger,
-		packetTime: NewPacketTime(),
+		logger:      logger,
+		packetTime:  NewPacketTime(),
+		sendSideBWE: sendSideBWE,
 	}
 }
 
@@ -86,7 +89,21 @@ func (b *Base) writeRTPHeaderExtensions(p *Packet) (time.Time, error) {
 		}
 	}
 
-	// SSBWE-TODO - add transport wide extension as necessary
+	if p.TransportWideExtID != 0 {
+		tw := b.sendSideBWE.Get()
+		b, err := tw.Marshal()
+		if err != nil {
+			return time.Time{}, err
+		}
+
+		err = p.Header.SetExtension(p.TransportWideExtID, b)
+		if err != nil {
+			return time.Time{}, err
+		}
+
+		// SSBWE-TODO - send this to packet tracker
+	}
+
 	return sendingAt, nil
 }
 

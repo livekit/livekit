@@ -114,6 +114,7 @@ type CongestionControlConfig struct {
 	UseSendSideBWE     bool                       `yaml:"send_side_bandwidth_estimation,omitempty"`
 	ProbeMode          CongestionControlProbeMode `yaml:"padding_mode,omitempty"`
 	MinChannelCapacity int64                      `yaml:"min_channel_capacity,omitempty"`
+	UseTWCC            bool                       `yaml:"use_twcc"`
 }
 
 type AudioConfig struct {
@@ -272,6 +273,7 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 				Enabled:    true,
 				AllowPause: false,
 				ProbeMode:  CongestionControlProbeModePadding,
+				UseTWCC:    true,
 			},
 		},
 		Audio: AudioConfig{

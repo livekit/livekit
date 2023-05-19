@@ -25,6 +25,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
+	"github.com/livekit/livekit-server/pkg/sfu/sendsidebwe"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
@@ -202,7 +203,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 			params.Telemetry),
 		supervisor:    supervisor.NewParticipantSupervisor(supervisor.ParticipantSupervisorParams{Logger: params.Logger}),
 		tracksQuality: make(map[livekit.TrackID]livekit.ConnectionQuality),
-		pacer:         pacer.NewPassThrough(params.Logger),
+		pacer:         pacer.NewPassThrough(params.Logger, sendsidebwe.NewSendSideBWE(params.Logger)),
 	}
 	p.version.Store(params.InitialVersion)
 	p.timedVersion.Update(params.VersionGenerator.New())
