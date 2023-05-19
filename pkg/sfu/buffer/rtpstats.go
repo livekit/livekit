@@ -808,6 +808,11 @@ func (r *RTPStats) GetExpectedRTPTimestamp(at time.Time) (uint32, uint32, error)
 	timeDiff := at.Sub(r.firstTime)
 	expectedRTPDiff := timeDiff.Nanoseconds() * int64(r.params.ClockRate) / 1e9
 	expectedExtRTP := r.extStartTS + uint64(expectedRTPDiff)
+
+	minTS := r.lastSRRTP
+	if r.lastSRNTP == 0 {
+		minTS = uint32(expectedExtRTP)
+	}
 	r.logger.Debugw(
 		"expected RTP timestamp",
 		"firstTime", r.firstTime.String(),
@@ -817,10 +822,11 @@ func (r *RTPStats) GetExpectedRTPTimestamp(at time.Time) (uint32, uint32, error)
 		"expectedRTPDiff", expectedRTPDiff,
 		"expectedExtRTP", expectedExtRTP,
 		"expectedRTP", uint32(expectedExtRTP),
+		"minTS", minTS,
 		"highestTS", r.highestTS,
 		"highestTime", r.highestTime.String(),
 	)
-	return uint32(expectedExtRTP), r.lastSRRTP, nil
+	return uint32(expectedExtRTP), minTS, nil
 }
 
 func (r *RTPStats) GetRtcpSenderReport(ssrc uint32) (*rtcp.SenderReport, float64) {
