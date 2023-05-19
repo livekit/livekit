@@ -52,7 +52,6 @@ func (n *NoQueue) Enqueue(p Packet) {
 		select {
 		case n.wake <- struct{}{}:
 		default:
-			n.logger.Warnw("wake channel full", nil)
 		}
 	}
 }
