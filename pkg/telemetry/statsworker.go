@@ -8,6 +8,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -143,7 +144,9 @@ func coalesce(stats []*livekit.AnalyticsStat) *livekit.AnalyticsStat {
 	}
 
 	// find aggregates across streams
-	score := float32(0.0)
+	scoreSum := float32(0.0) // used for average
+	minScore := float32(0.0) // min score in batched stats
+	var scores []float32     // used for median
 	maxRtt := uint32(0)
 	maxJitter := uint32(0)
 	coalescedVideoLayers := make(map[int32]*livekit.AnalyticsVideoLayer)
@@ -154,7 +157,15 @@ func coalesce(stats []*livekit.AnalyticsStat) *livekit.AnalyticsStat {
 			continue
 		}
 
-		score += stat.Score
+		// only consider non-zero scores
+		if stat.Score > 0 {
+			if stat.Score < minScore {
+				minScore = stat.Score
+			}
+			scoreSum += stat.Score
+			scores = append(scores, stat.Score)
+		}
+
 		for _, analyticsStream := range stat.Streams {
 			if analyticsStream.Rtt > maxRtt {
 				maxRtt = analyticsStream.Rtt
@@ -201,10 +212,16 @@ func coalesce(stats []*livekit.AnalyticsStat) *livekit.AnalyticsStat {
 		}
 	}
 
-	return &livekit.AnalyticsStat{
-		Score:   score / float32(len(stats)),
-		Streams: []*livekit.AnalyticsStream{coalescedStream},
+	stat := &livekit.AnalyticsStat{
+		MinScore:    minScore,
+		MedianScore: utils.MedianFloat32(scores),
+		Streams:     []*livekit.AnalyticsStream{coalescedStream},
 	}
+	numScores := len(scores)
+	if numScores > 0 {
+		stat.Score = scoreSum / float32(numScores)
+	}
+	return stat
 }
 
 func isValid(stat *livekit.AnalyticsStat) bool {

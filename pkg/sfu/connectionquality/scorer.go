@@ -18,8 +18,8 @@ const (
 	poorScore = float64(30.0)
 	minScore  = float64(20.0)
 
-	increaseFactor = float64(0.4) // slow increase
-	decreaseFactor = float64(0.8) // fast decrease
+	increaseFactor = float64(0.4) // slower increase, i. e. when score is recovering move up slower -> conservative
+	decreaseFactor = float64(0.7) // faster decrease, i. e. when score is dropping move down faster -> aggressive to be responsive to quality drops
 
 	distanceWeight = float64(35.0) // each spatial layer missed drops a quality level
 
@@ -39,7 +39,7 @@ type windowStat struct {
 	jitterMax       float64
 }
 
-func (w *windowStat) calculatePacketScore(plw float64, isDependentRTT bool, isDependentJitter bool) float64 {
+func (w *windowStat) calculatePacketScore(plw float64, includeRTT bool, includeJitter bool) float64 {
 	// this is based on simplified E-model based on packet loss, rtt, jitter as
 	// outlined at https://www.pingman.com/kb/article/how-is-mos-calculated-in-pingplotter-pro-50.html.
 	effectiveDelay := 0.0
@@ -48,10 +48,10 @@ func (w *windowStat) calculatePacketScore(plw float64, isDependentRTT bool, isDe
 	// 1. in the up stream, RTT cannot be measured without RTCP-XR, it is using down stream RTT.
 	// 2. in the down stream, up stream jitter affects it. although jitter can be adjusted to account for up stream
 	//    jitter, this lever can be used to discount jitter in scoring.
-	if !isDependentRTT {
+	if includeRTT {
 		effectiveDelay += float64(w.rttMax) / 2.0
 	}
-	if !isDependentJitter {
+	if includeJitter {
 		effectiveDelay += (w.jitterMax * 2.0) / 1000.0
 	}
 	delayEffect := effectiveDelay / 40.0
@@ -127,10 +127,10 @@ type layerTransition struct {
 }
 
 type qualityScorerParams struct {
-	PacketLossWeight  float64
-	IsDependentRTT    bool
-	IsDependentJitter bool
-	Logger            logger.Logger
+	PacketLossWeight float64
+	IncludeRTT       bool
+	IncludeJitter    bool
+	Logger           logger.Logger
 }
 
 type qualityScorer struct {
@@ -261,7 +261,7 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 		reason = "dry"
 		score = poorScore
 	} else {
-		packetScore := stat.calculatePacketScore(plw, q.params.IsDependentRTT, q.params.IsDependentJitter)
+		packetScore := stat.calculatePacketScore(plw, q.params.IncludeRTT, q.params.IncludeJitter)
 		bitrateScore := stat.calculateBitrateScore(expectedBitrate)
 		layerScore := math.Max(math.Min(maxScore, maxScore-(expectedDistance*distanceWeight)), 0.0)
 
@@ -370,7 +370,8 @@ func (q *qualityScorer) getPacketLossWeight(stat *windowStat) float64 {
 		return q.params.PacketLossWeight
 	}
 
-	return math.Sqrt(pps/q.maxPPS) * q.params.PacketLossWeight
+	packetRatio := pps / q.maxPPS
+	return packetRatio * packetRatio * q.params.PacketLossWeight
 }
 
 func (q *qualityScorer) getExpectedBitsAndUpdateTransitions(at time.Time) int64 {
