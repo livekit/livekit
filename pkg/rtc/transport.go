@@ -1478,11 +1478,16 @@ func (t *PCTransport) handleLocalICECandidate(e *event) error {
 	c := e.data.(*webrtc.ICECandidate)
 
 	filtered := false
-	if t.preferTCP.Load() && c != nil && c.Protocol != webrtc.ICEProtocolTCP {
-		cstr := c.String()
-		t.params.Logger.Debugw("filtering out local candidate", "candidate", cstr)
-		t.filteredLocalCandidates = append(t.filteredLocalCandidates, cstr)
-		filtered = true
+	if c != nil {
+		if t.preferTCP.Load() && c.Protocol != webrtc.ICEProtocolTCP {
+			cstr := c.String()
+			t.params.Logger.Debugw("filtering out local candidate", "candidate", cstr)
+			t.filteredLocalCandidates = append(t.filteredLocalCandidates, cstr)
+			filtered = true
+		} else if c.Protocol == webrtc.ICEProtocolTCP && c.TCPType == ice.TCPTypeActive.String() {
+			// SFU should not support TCP active candidates. clients should connect to us
+			filtered = true
+		}
 	}
 
 	if filtered {
@@ -1512,6 +1517,11 @@ func (t *PCTransport) handleRemoteICECandidate(e *event) error {
 		t.params.Logger.Debugw("filtering out remote candidate", "candidate", c.Candidate)
 		t.filteredRemoteCandidates = append(t.filteredRemoteCandidates, c.Candidate)
 		filtered = true
+	} else if candidate, err := ice.UnmarshalCandidate(c.Candidate); err == nil {
+		if candidate != nil && candidate.TCPType() == ice.TCPTypePassive {
+			// SFU should ignore client's passive TCP, so Pion doesn't attempt to connect to it
+			filtered = true
+		}
 	}
 
 	if filtered {

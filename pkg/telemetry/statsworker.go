@@ -159,7 +159,9 @@ func coalesce(stats []*livekit.AnalyticsStat) *livekit.AnalyticsStat {
 
 		// only consider non-zero scores
 		if stat.Score > 0 {
-			if stat.Score < minScore {
+			if minScore == 0 {
+				minScore = stat.Score
+			} else if stat.Score < minScore {
 				minScore = stat.Score
 			}
 			scoreSum += stat.Score
