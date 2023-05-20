@@ -18,6 +18,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/sendsidebwe"
 )
 
 const (
@@ -167,7 +168,8 @@ type StreamAllocator struct {
 
 	onStreamStateChange func(update *StreamStateUpdate) error
 
-	bwe cc.BandwidthEstimator
+	bwe         cc.BandwidthEstimator
+	sendSideBWE *sendsidebwe.SendSideBWE
 
 	allowPause bool
 
@@ -245,6 +247,10 @@ func (s *StreamAllocator) SetBandwidthEstimator(bwe cc.BandwidthEstimator) {
 		bwe.OnTargetBitrateChange(s.onTargetBitrateChange)
 	}
 	s.bwe = bwe
+}
+
+func (s *StreamAllocator) SetSendSideBWE(sendSideBWE *sendsidebwe.SendSideBWE) {
+	s.sendSideBWE = sendSideBWE
 }
 
 type AddTrackParams struct {
@@ -408,6 +414,10 @@ func (s *StreamAllocator) OnREMB(downTrack *sfu.DownTrack, remb *rtcp.ReceiverEs
 func (s *StreamAllocator) OnTransportCCFeedback(downTrack *sfu.DownTrack, fb *rtcp.TransportLayerCC) {
 	if s.bwe != nil {
 		s.bwe.WriteRTCP([]rtcp.Packet{fb}, nil)
+	}
+
+	if s.sendSideBWE != nil {
+		s.sendSideBWE.HandleRTCP(fb)
 	}
 }
 

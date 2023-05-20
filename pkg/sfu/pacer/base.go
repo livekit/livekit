@@ -57,8 +57,8 @@ func (b *Base) SendPacket(p *Packet) error {
 		return err
 	}
 
-	if p.AbsSendTimeExtID != 0 {
-		b.sendSideBWE.PacketSent(sendingAt, twSN, p.Header.MarshalSize(), len(p.Payload))
+	if p.TransportWideExtID != 0 && b.sendSideBWE != nil {
+		b.sendSideBWE.PacketSent(twSN, sendingAt, p.Header.MarshalSize(), len(p.Payload))
 	}
 
 	return nil
@@ -94,7 +94,7 @@ func (b *Base) writeRTPHeaderExtensions(p *Packet) (time.Time, uint16, error) {
 	}
 
 	twSN := uint16(0)
-	if p.TransportWideExtID != 0 {
+	if p.TransportWideExtID != 0 && b.sendSideBWE != nil {
 		twSN = b.sendSideBWE.GetNext()
 		tw := rtp.TransportCCExtension{
 			TransportSequence: twSN,

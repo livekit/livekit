@@ -369,7 +369,11 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 
 		if params.CongestionControlConfig.UseTWCC {
 			t.sendSideBWE = sendsidebwe.NewSendSideBWE(params.Logger)
-			t.pacer = pacer.NewPassThrough(params.Logger, t.sendSideBWE)
+			t.pacer = pacer.NewNoQueue(params.Logger, t.sendSideBWE)
+
+			t.streamAllocator.SetSendSideBWE(t.sendSideBWE)
+		} else {
+			t.pacer = pacer.NewPassThrough(params.Logger, nil)
 		}
 	}
 
