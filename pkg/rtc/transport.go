@@ -1478,11 +1478,20 @@ func (t *PCTransport) handleLocalICECandidate(e *event) error {
 	c := e.data.(*webrtc.ICECandidate)
 
 	filtered := false
-	if t.preferTCP.Load() && c != nil && c.Protocol != webrtc.ICEProtocolTCP {
-		cstr := c.String()
-		t.params.Logger.Debugw("filtering out local candidate", "candidate", cstr)
-		t.filteredLocalCandidates = append(t.filteredLocalCandidates, cstr)
-		filtered = true
+	if c != nil {
+		if t.preferTCP.Load() && c.Protocol != webrtc.ICEProtocolTCP {
+			cstr := c.String()
+			t.params.Logger.Debugw("filtering out local candidate", "candidate", cstr)
+			t.filteredLocalCandidates = append(t.filteredLocalCandidates, cstr)
+			filtered = true
+		}
+		if c.Protocol == webrtc.ICEProtocolTCP && c.TCPType == ice.TCPTypeActive.String() {
+			// SFU should not support TCP active candidates. clients should connect to us
+			filtered = true
+		}
+		if strings.HasPrefix(c.Address, "10.") || strings.HasPrefix(c.Address, "172.") {
+			filtered = true
+		}
 	}
 
 	if filtered {
