@@ -96,6 +96,7 @@ func (s *LocalStore) StoreRoom(ctx context.Context, room *livekit.Room, internal
 				log.Fatalf("get connected nodes for db %s: %s", room.Name, err)
 			}
 			for _, k := range keys {
+				k = strings.TrimPrefix(k, "/")
 				if !strings.HasPrefix(k, prefixPeerKey) {
 					continue
 				}
