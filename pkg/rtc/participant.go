@@ -118,9 +118,6 @@ type ParticipantImpl struct {
 	// hold reference for MediaTrack
 	twcc *twcc.Responder
 
-	// down stream pacer
-	pacer pacer.Pacer
-
 	// client intended to publish, yet to be reconciled
 	pendingTracksLock       utils.RWMutex
 	pendingTracks           map[string]*pendingTrackInfo
@@ -202,7 +199,6 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 			params.Telemetry),
 		supervisor:    supervisor.NewParticipantSupervisor(supervisor.ParticipantSupervisorParams{Logger: params.Logger}),
 		tracksQuality: make(map[livekit.TrackID]livekit.ConnectionQuality),
-		pacer:         pacer.NewPassThrough(params.Logger),
 	}
 	p.version.Store(params.InitialVersion)
 	p.timedVersion.Update(params.VersionGenerator.New())
@@ -243,7 +239,7 @@ func (p *ParticipantImpl) GetAllowTimestampAdjustment() bool {
 }
 
 func (p *ParticipantImpl) GetPacer() pacer.Pacer {
-	return p.pacer
+	return p.TransportManager.GetSubscriberPacer()
 }
 
 func (p *ParticipantImpl) ID() livekit.ParticipantID {

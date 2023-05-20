@@ -5,6 +5,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/sfu/sendsidebwe"
 	"github.com/livekit/protocol/logger"
 	"github.com/pion/rtp"
 	"go.uber.org/atomic"
@@ -13,13 +14,18 @@ import (
 type Base struct {
 	logger logger.Logger
 
+	packetTime  *PacketTime
+	sendSideBWE *sendsidebwe.SendSideBWE
+
 	// for throttling error logs
 	writeIOErrors atomic.Uint32
 }
 
-func NewBase(logger logger.Logger) *Base {
+func NewBase(logger logger.Logger, sendSideBWE *sendsidebwe.SendSideBWE) *Base {
 	return &Base{
-		logger: logger,
+		logger:      logger,
+		packetTime:  NewPacketTime(),
+		sendSideBWE: sendSideBWE,
 	}
 }
 
@@ -32,7 +38,7 @@ func (b *Base) SendPacket(p *Packet) error {
 		}
 	}()
 
-	sendingAt, err = b.writeRTPHeaderExtensions(p)
+	sendingAt, twSN, err := b.writeRTPHeaderExtensions(p)
 	if err != nil {
 		b.logger.Errorw("writing rtp header extensions err", err)
 		return err
@@ -51,11 +57,15 @@ func (b *Base) SendPacket(p *Packet) error {
 		return err
 	}
 
+	if p.TransportWideExtID != 0 && b.sendSideBWE != nil {
+		b.sendSideBWE.PacketSent(twSN, sendingAt, p.Header.MarshalSize(), len(p.Payload))
+	}
+
 	return nil
 }
 
 // writes RTP header extensions of track
-func (b *Base) writeRTPHeaderExtensions(p *Packet) (time.Time, error) {
+func (b *Base) writeRTPHeaderExtensions(p *Packet) (time.Time, uint16, error) {
 	// clear out extensions that may have been in the forwarded header
 	p.Header.Extension = false
 	p.Header.ExtensionProfile = 0
@@ -69,22 +79,38 @@ func (b *Base) writeRTPHeaderExtensions(p *Packet) (time.Time, error) {
 		p.Header.SetExtension(ext.ID, ext.Payload)
 	}
 
-	sendingAt := time.Now()
+	sendingAt := b.packetTime.Get()
 	if p.AbsSendTimeExtID != 0 {
 		sendTime := rtp.NewAbsSendTimeExtension(sendingAt)
 		b, err := sendTime.Marshal()
 		if err != nil {
-			return time.Time{}, err
+			return time.Time{}, 0, err
 		}
 
 		err = p.Header.SetExtension(p.AbsSendTimeExtID, b)
 		if err != nil {
-			return time.Time{}, err
+			return time.Time{}, 0, err
 		}
 	}
 
-	// SSBWE-TODO - add transport wide extension as necessary
-	return sendingAt, nil
+	twSN := uint16(0)
+	if p.TransportWideExtID != 0 && b.sendSideBWE != nil {
+		twSN = b.sendSideBWE.GetNext()
+		tw := rtp.TransportCCExtension{
+			TransportSequence: twSN,
+		}
+		b, err := tw.Marshal()
+		if err != nil {
+			return time.Time{}, 0, err
+		}
+
+		err = p.Header.SetExtension(p.TransportWideExtID, b)
+		if err != nil {
+			return time.Time{}, 0, err
+		}
+	}
+
+	return sendingAt, twSN, nil
 }
 
 // ------------------------------------------------
