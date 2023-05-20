@@ -25,7 +25,7 @@ type TWCCFeedback struct {
 	lastFeedbackTime          time.Time
 	estimatedFeedbackInterval time.Duration
 	highestFeedbackCount      uint8
-	// RAJA-TODO- maybe just store some history of reports as is
+	// SSBWE-TODO- maybe store some history of reports as is?
 }
 
 func NewTWCCFeedback(logger logger.Logger) *TWCCFeedback {
@@ -63,6 +63,7 @@ func (t *TWCCFeedback) HandleRTCP(report *rtcp.TransportLayerCC) (uint16, []int6
 	t.lastFeedbackTime = now
 	t.highestFeedbackCount = report.FbPktCount
 
+	// reconstruct arrival times (at the remote end) of packets
 	arrivals := make([]int64, report.PacketStatusCount)
 	snIdx := 0
 	deltaIdx := 0
