@@ -2,13 +2,14 @@ package service
 
 import (
 	"context"
-	p2p_database "github.com/dTelecom/p2p-realtime-database"
-	logging "github.com/ipfs/go-log/v2"
-	"github.com/pkg/errors"
 	"log"
 	"strings"
 	"sync"
 	"time"
+
+	p2p_database "github.com/dTelecom/p2p-realtime-database"
+	logging "github.com/ipfs/go-log/v2"
+	"github.com/pkg/errors"
 
 	"github.com/thoas/go-funk"
 
@@ -57,7 +58,7 @@ func (s *LocalStore) StoreRoom(ctx context.Context, room *livekit.Room, internal
 
 	cfg := s.p2pDatabaseConfig
 	cfg.DatabaseName = "livekit_room_" + room.Name
-	db, err := p2p_database.Connect(ctx, cfg, logging.Logger("db_livekit_room_"+room.Name))
+	db, err := p2p_database.Connect(context.Background(), cfg, logging.Logger("db_livekit_room_"+room.Name))
 	if err != nil {
 		return errors.Wrapf(err, "create or connect livekit database room %s", room.Name)
 	}
