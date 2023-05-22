@@ -671,6 +671,7 @@ func (c *RTCClient) handleOffer(desc webrtc.SessionDescription) {
 // the client handles answer on the publisher PC
 func (c *RTCClient) handleAnswer(desc webrtc.SessionDescription) {
 	logger.Infow("handling server answer", "participant", c.localParticipant.Identity)
+
 	c.lastAnswer.Store(&desc)
 	// remote answered the offer, establish connection
 	c.publisher.HandleRemoteDescription(desc)

@@ -515,7 +515,11 @@ func TestDeviceCodecOverride(t *testing.T) {
 		return c1.LastAnswer() != nil
 	}, waitTimeout, waitTick, "did not receive answer")
 
-	answer, err := c1.LastAnswer().Unmarshal()
+	sd := webrtc.SessionDescription{
+		Type: webrtc.SDPTypeAnswer,
+		SDP:  c1.LastAnswer().SDP,
+	}
+	answer, err := sd.Unmarshal()
 	require.NoError(t, err)
 
 	// video and data channel
