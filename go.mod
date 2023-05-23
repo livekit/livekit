@@ -26,7 +26,7 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/pion/dtls/v2 v2.2.6
-	github.com/pion/ice/v2 v2.3.3
+	github.com/pion/ice/v2 v2.3.4
 	github.com/pion/interceptor v0.1.16
 	github.com/pion/rtcp v1.2.10
 	github.com/pion/rtp v1.7.13
