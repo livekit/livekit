@@ -95,18 +95,32 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 	}
 	t.mediaLossProxy.OnMediaLossUpdate(t.onMediaLossUpdate)
 
-	enabledCodecs := make([]*livekit.Codec, 0, len(params.EnabledCodecs))
-	for _, c := range params.EnabledCodecs {
-		var disabled bool
-		for _, disableCodec := range params.ClientConf.GetDisabledCodecs().GetCodecs() {
+	subscribeCodecs := make([]*livekit.Codec, 0, len(params.EnabledCodecs))
+	publishCodecs := make([]*livekit.Codec, 0, len(params.EnabledCodecs))
+	shouldDisable := func(c *livekit.Codec, disabledCodecs []*livekit.Codec) bool {
+		for _, disableCodec := range disabledCodecs {
 			// disable codec's fmtp is empty means disable this codec entirely
 			if strings.EqualFold(c.Mime, disableCodec.Mime) && (disableCodec.FmtpLine == "" || disableCodec.FmtpLine == c.FmtpLine) {
-				disabled = true
-				break
+				return true
 			}
 		}
-		if !disabled {
-			enabledCodecs = append(enabledCodecs, c)
+		return false
+	}
+	for _, c := range params.EnabledCodecs {
+		var publishDisabled bool
+		var subscribeDisabled bool
+		if shouldDisable(c, params.ClientConf.GetDisabledCodecs().GetCodecs()) {
+			publishDisabled = true
+			subscribeDisabled = true
+		}
+		if shouldDisable(c, params.ClientConf.GetDisabledCodecs().GetPublish()) {
+			publishDisabled = true
+		}
+		if !publishDisabled {
+			publishCodecs = append(publishCodecs, c)
+		}
+		if !subscribeDisabled {
+			subscribeCodecs = append(subscribeCodecs, c)
 		}
 	}
 
@@ -118,7 +132,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		DirectionConfig:         params.Config.Publisher,
 		CongestionControlConfig: params.CongestionControlConfig,
 		Telemetry:               params.Telemetry,
-		EnabledCodecs:           enabledCodecs,
+		EnabledCodecs:           publishCodecs,
 		Logger:                  LoggerWithPCTarget(params.Logger, livekit.SignalTarget_PUBLISHER),
 		SimTracks:               params.SimTracks,
 		ClientInfo:              params.ClientInfo,
@@ -150,7 +164,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		DirectionConfig:         params.Config.Subscriber,
 		CongestionControlConfig: params.CongestionControlConfig,
 		Telemetry:               params.Telemetry,
-		EnabledCodecs:           enabledCodecs,
+		EnabledCodecs:           subscribeCodecs,
 		Logger:                  LoggerWithPCTarget(params.Logger, livekit.SignalTarget_SUBSCRIBER),
 		ClientInfo:              params.ClientInfo,
 		IsOfferer:               true,

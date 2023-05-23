@@ -48,6 +48,7 @@ type RTCClient struct {
 	publisherFullyEstablished  atomic.Bool
 	subscriberFullyEstablished atomic.Bool
 	pongReceivedAt             atomic.Int64
+	lastAnswer                 atomic.Pointer[webrtc.SessionDescription]
 
 	// tracks waiting to be acked, cid => trackInfo
 	pendingPublishedTracks map[string]*livekit.TrackInfo
@@ -81,6 +82,7 @@ var (
 type Options struct {
 	AutoSubscribe bool
 	Publish       string
+	ClientInfo    *livekit.ClientInfo
 }
 
 func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error) {
@@ -93,8 +95,18 @@ func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error
 
 	connectUrl := u.String()
 	if opts != nil {
-		connectUrl = fmt.Sprintf("%s&auto_subscribe=%t&publish=%s",
-			connectUrl, opts.AutoSubscribe, opts.Publish)
+		connectUrl = fmt.Sprintf("%s&auto_subscribe=%t", connectUrl, opts.AutoSubscribe)
+		if opts.Publish != "" {
+			connectUrl += encodeQueryParam("publish", opts.Publish)
+		}
+		if opts.ClientInfo != nil {
+			if opts.ClientInfo.DeviceModel != "" {
+				connectUrl += encodeQueryParam("device_model", opts.ClientInfo.DeviceModel)
+			}
+			if opts.ClientInfo.Os != "" {
+				connectUrl += encodeQueryParam("os", opts.ClientInfo.Os)
+			}
+		}
 	}
 	conn, _, err := websocket.DefaultDialer.Dial(connectUrl, requestHeader)
 	return conn, err
@@ -610,6 +622,11 @@ func (c *RTCClient) GetPublishedTrackIDs() []string {
 	return trackIDs
 }
 
+// LastAnswer return SDP of the last answer for the publisher connection
+func (c *RTCClient) LastAnswer() *webrtc.SessionDescription {
+	return c.lastAnswer.Load()
+}
+
 func (c *RTCClient) ensurePublisherConnected() error {
 	if c.publisher.HasEverConnected() {
 		return nil
@@ -654,6 +671,8 @@ func (c *RTCClient) handleOffer(desc webrtc.SessionDescription) {
 // the client handles answer on the publisher PC
 func (c *RTCClient) handleAnswer(desc webrtc.SessionDescription) {
 	logger.Infow("handling server answer", "participant", c.localParticipant.Identity)
+
+	c.lastAnswer.Store(&desc)
 	// remote answered the offer, establish connection
 	c.publisher.HandleRemoteDescription(desc)
 }
@@ -743,4 +762,8 @@ func (c *RTCClient) SendNacks(count int) {
 	c.lock.Unlock()
 
 	_ = c.subscriber.WriteRTCP(packets)
+}
+
+func encodeQueryParam(key, value string) string {
+	return fmt.Sprintf("&%s=%s", url.QueryEscape(key), url.QueryEscape(value))
 }
