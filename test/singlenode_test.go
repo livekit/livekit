@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
 	"github.com/thoas/go-funk"
@@ -20,6 +21,11 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/testutils"
 	testclient "github.com/livekit/livekit-server/test/client"
+)
+
+const (
+	waitTick    = 10 * time.Millisecond
+	waitTimeout = 5 * time.Second
 )
 
 func TestClientCouldConnect(t *testing.T) {
@@ -476,4 +482,64 @@ func TestSingleNodeUpdateSubscriptionPermissions(t *testing.T) {
 			return fmt.Sprintf("expected 2 tracks subscribed, actual: %d", len(tracks))
 		}
 	})
+}
+
+// TestDeviceCodecOverride checks that codecs that are incompatible with a device is not
+// negotiated by the server
+func TestDeviceCodecOverride(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	_, finish := setupSingleNodeTest("TestDeviceCodecOverride")
+	defer finish()
+
+	// simulate device that isn't compatible with H.264
+	c1 := createRTCClient("c1", defaultServerPort, &testclient.Options{
+		ClientInfo: &livekit.ClientInfo{
+			Os:          "android",
+			DeviceModel: "Xiaomi 2201117TI",
+		},
+	})
+	defer c1.Stop()
+	waitUntilConnected(t, c1)
+
+	// it doesn't really matter what the codec set here is, uses default Pion MediaEngine codecs
+	tw, err := c1.AddStaticTrack("video/h264", "video", "webcam")
+	require.NoError(t, err)
+	defer stopWriters(tw)
+
+	// wait for server to receive track
+	require.Eventually(t, func() bool {
+		return c1.LastAnswer() != nil
+	}, waitTimeout, waitTick, "did not receive answer")
+
+	sd := webrtc.SessionDescription{
+		Type: webrtc.SDPTypeAnswer,
+		SDP:  c1.LastAnswer().SDP,
+	}
+	answer, err := sd.Unmarshal()
+	require.NoError(t, err)
+
+	// video and data channel
+	require.Len(t, answer.MediaDescriptions, 2)
+	var desc *sdp.MediaDescription
+	for _, md := range answer.MediaDescriptions {
+		if md.MediaName.Media == "video" {
+			desc = md
+			break
+		}
+	}
+	require.NotNil(t, desc)
+	hasSeenVP8 := false
+	for _, a := range desc.Attributes {
+		if a.Key == "rtpmap" {
+			require.NotContains(t, a.Value, "H264", "should not contain H264 codec")
+			if strings.Contains(a.Value, "VP8") {
+				hasSeenVP8 = true
+			}
+		}
+	}
+	require.True(t, hasSeenVP8, "should have seen VP8 codec in SDP")
 }
