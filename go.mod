@@ -50,6 +50,8 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
+replace github.com/pion/ice/v2 => github.com/pion/ice/v2 v2.3.3
+
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
