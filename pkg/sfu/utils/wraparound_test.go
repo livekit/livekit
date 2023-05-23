@@ -77,6 +77,21 @@ func TestWrapAroundUint16(t *testing.T) {
 			highest:         10,
 			extendedHighest: (1 << 16) + 10,
 		},
+		// out of order with highest, wrap back, but no restart
+		{
+			name:  "out of order - no restart",
+			input: (1 << 16) - 3,
+			updated: wrapAroundUpdateResult[uint32]{
+				IsRestart:          false,
+				PreExtendedStart:   0,
+				PreExtendedHighest: (1 << 16) + 10,
+				ExtendedVal:        (1 << 16) - 3,
+			},
+			start:           (1 << 16) - 12,
+			extendedStart:   (1 << 16) - 12,
+			highest:         10,
+			extendedHighest: (1 << 16) + 10,
+		},
 		// duplicate should return same as highest
 		{
 			name:  "duplicate",
@@ -95,32 +110,47 @@ func TestWrapAroundUint16(t *testing.T) {
 		// a significant jump in order should not reset start
 		{
 			name:  "big in-order jump",
-			input: 1 << 15,
+			input: (1 << 15) - 10,
 			updated: wrapAroundUpdateResult[uint32]{
 				IsRestart:          false,
 				PreExtendedStart:   0,
 				PreExtendedHighest: (1 << 16) + 10,
-				ExtendedVal:        (1 << 16) + (1 << 15),
+				ExtendedVal:        (1 << 16) + (1 << 15) - 10,
 			},
 			start:           (1 << 16) - 12,
 			extendedStart:   (1 << 16) - 12,
-			highest:         1 << 15,
-			extendedHighest: (1 << 16) + (1 << 15),
+			highest:         (1 << 15) - 10,
+			extendedHighest: (1 << 16) + (1 << 15) - 10,
 		},
 		// now out-of-order should not reset start as half the range has been seen
 		{
 			name:  "out-of-order after half range",
-			input: (1 << 15) - 1,
+			input: (1 << 15) - 11,
 			updated: wrapAroundUpdateResult[uint32]{
 				IsRestart:          false,
 				PreExtendedStart:   0,
-				PreExtendedHighest: (1 << 16) + (1 << 15),
-				ExtendedVal:        (1 << 16) + (1 << 15) - 1,
+				PreExtendedHighest: (1 << 16) + (1 << 15) - 10,
+				ExtendedVal:        (1 << 16) + (1 << 15) - 11,
 			},
 			start:           (1 << 16) - 12,
 			extendedStart:   (1 << 16) - 12,
-			highest:         1 << 15,
-			extendedHighest: (1 << 16) + (1 << 15),
+			highest:         (1 << 15) - 10,
+			extendedHighest: (1 << 16) + (1 << 15) - 10,
+		},
+		// wrap back out-of-order
+		{
+			name:  "wrap back out-of-order after half range",
+			input: (1 << 16) - 1,
+			updated: wrapAroundUpdateResult[uint32]{
+				IsRestart:          false,
+				PreExtendedStart:   0,
+				PreExtendedHighest: (1 << 16) + (1 << 15) - 10,
+				ExtendedVal:        (1 << 16) - 1,
+			},
+			start:           (1 << 16) - 12,
+			extendedStart:   (1 << 16) - 12,
+			highest:         (1 << 15) - 10,
+			extendedHighest: (1 << 16) + (1 << 15) - 10,
 		},
 		// in-order, should update highest
 		{
@@ -129,7 +159,7 @@ func TestWrapAroundUint16(t *testing.T) {
 			updated: wrapAroundUpdateResult[uint32]{
 				IsRestart:          false,
 				PreExtendedStart:   0,
-				PreExtendedHighest: (1 << 16) + (1 << 15),
+				PreExtendedHighest: (1 << 16) + (1 << 15) - 10,
 				ExtendedVal:        (1 << 16) + (1 << 15) + 3,
 			},
 			start:           (1 << 16) - 12,
