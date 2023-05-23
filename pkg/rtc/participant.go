@@ -919,11 +919,6 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 		availableTracks[trackID] = true
 	}
 
-	if numTracks == 0 {
-		minQuality = livekit.ConnectionQuality_EXCELLENT
-		minScore = connectionquality.MaxMOS
-	}
-
 	prometheus.RecordQuality(minQuality, minScore, numUpDrops, numDownDrops)
 
 	// remove unavailable tracks from track quality cache
