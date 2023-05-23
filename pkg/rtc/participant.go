@@ -860,7 +860,7 @@ func (p *ParticipantImpl) GetAudioLevel() (level float64, active bool) {
 func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo {
 	numTracks := 0
 	minQuality := livekit.ConnectionQuality_EXCELLENT
-	minScore := float32(0.0)
+	minScore := connectionquality.MaxMOS
 	numUpDrops := 0
 	numDownDrops := 0
 
@@ -917,11 +917,6 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 		p.lock.Unlock()
 
 		availableTracks[trackID] = true
-	}
-
-	if numTracks == 0 {
-		minQuality = livekit.ConnectionQuality_EXCELLENT
-		minScore = connectionquality.MaxMOS
 	}
 
 	prometheus.RecordQuality(minQuality, minScore, numUpDrops, numDownDrops)
