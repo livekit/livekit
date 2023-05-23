@@ -15,6 +15,13 @@ type packetInfo struct {
 	arrivalTime int64
 	headerSize  uint16
 	payloadSize uint16
+	// RAJA-TODO: possibly add the following fields - pertaining to this packet,
+	// idea is to be able to traverse back and find last packet with clean signal(s)
+	// in order to figure out bitrate at which congestion triggered.
+	// MPETau
+	// PeakDetectorSignal
+	// AcknowledgedBitrate
+	// ProbePacketInfo
 }
 
 type PacketTracker struct {
