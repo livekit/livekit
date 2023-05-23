@@ -97,8 +97,8 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 
 	subscribeCodecs := make([]*livekit.Codec, 0, len(params.EnabledCodecs))
 	publishCodecs := make([]*livekit.Codec, 0, len(params.EnabledCodecs))
-	shouldDisable := func(c *livekit.Codec) bool {
-		for _, disableCodec := range params.ClientConf.GetDisabledCodecs().GetCodecs() {
+	shouldDisable := func(c *livekit.Codec, disabledCodecs []*livekit.Codec) bool {
+		for _, disableCodec := range disabledCodecs {
 			// disable codec's fmtp is empty means disable this codec entirely
 			if strings.EqualFold(c.Mime, disableCodec.Mime) && (disableCodec.FmtpLine == "" || disableCodec.FmtpLine == c.FmtpLine) {
 				return true
@@ -109,18 +109,12 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 	for _, c := range params.EnabledCodecs {
 		var publishDisabled bool
 		var subscribeDisabled bool
-		for _, disableCodec := range params.ClientConf.GetDisabledCodecs().GetCodecs() {
-			if shouldDisable(disableCodec) {
-				publishDisabled = true
-				subscribeDisabled = true
-				break
-			}
+		if shouldDisable(c, params.ClientConf.GetDisabledCodecs().GetCodecs()) {
+			publishDisabled = true
+			subscribeDisabled = true
 		}
-		for _, disableCodec := range params.ClientConf.GetDisabledCodecs().GetPublish() {
-			if shouldDisable(disableCodec) {
-				publishDisabled = true
-				break
-			}
+		if shouldDisable(c, params.ClientConf.GetDisabledCodecs().GetPublish()) {
+			publishDisabled = true
 		}
 		if !publishDisabled {
 			publishCodecs = append(publishCodecs, c)
