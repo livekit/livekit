@@ -90,6 +90,8 @@ func (s *LocalStore) getOrCreateDatabase(room *livekit.Room) (*RoomDatabase, err
 			ctx:         ctx,
 			cancel:      cancel,
 		}
+
+		s.databases[livekit.RoomName(room.Name)] = roomDb
 	}
 
 	return roomDb, nil
@@ -118,18 +120,20 @@ func (s *LocalStore) StoreRoom(ctx context.Context, room *livekit.Room, internal
 
 		db := roomDb.p2pDatabase
 		nc := NewNodeCommunication(db)
-		backgroundCtx := context.Background()
+		backgroundCtx, cancel := context.WithCancel(context.Background())
 
 		go func() {
 			select {
 			case <-ctx.Done():
+				cancel()
 				return
 			case <-roomDb.ctx.Done():
+				cancel()
 				return
 			default:
 				responsesChannel, err := nc.ListenIncomingMessages(backgroundCtx)
 				if err != nil {
-					log.Fatalf("cannot listen incoming messsages database room %s", room.Name)
+					log.Fatalf("cannot listen incoming messsages database room %s %s", room.Name, err)
 				}
 
 				msg := <-responsesChannel
@@ -173,6 +177,10 @@ func (s *LocalStore) StoreRoom(ctx context.Context, room *livekit.Room, internal
 							continue
 						}
 						peerId := strings.TrimPrefix(k, prefixPeerKey)
+
+						if peerId == db.GetHost().ID().String() {
+							continue
+						}
 
 						_, alreadySynced := syncedPeers.Load(peerId)
 						if alreadySynced {
@@ -259,6 +267,7 @@ func (s *LocalStore) DeleteRoom(ctx context.Context, roomName livekit.RoomName) 
 		}
 		db.cancel()
 		delete(s.databases, roomName)
+		delete(s.roomCommunicationsInit, roomName)
 	}
 
 	return nil
