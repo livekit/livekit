@@ -901,6 +901,12 @@ func (t *PCTransport) Close() {
 	if t.streamAllocator != nil {
 		t.streamAllocator.Stop()
 	}
+	if t.pacer != nil {
+		t.pacer.Stop()
+	}
+	if t.sendSideBWE != nil {
+		t.sendSideBWE.Stop()
+	}
 
 	_ = t.pc.Close()
 

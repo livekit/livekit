@@ -5,23 +5,30 @@ import (
 	"time"
 
 	"github.com/MicahParks/peakdetect"
+	"github.com/frostbyte73/core"
+	"github.com/gammazero/deque"
 	"github.com/livekit/protocol/logger"
 	"github.com/pion/rtcp"
 )
 
 type packetInfo struct {
 	sendTime time.Time
-	// RAJA-TODO: may need a feedback report time to detect stale reports
+	// SSBWE-TODO: may need a feedback report time to detect stale reports
 	arrivalTime int64
 	headerSize  uint16
 	payloadSize uint16
-	// RAJA-TODO: possibly add the following fields - pertaining to this packet,
+	// SSBWE-TODO: possibly add the following fields - pertaining to this packet,
 	// idea is to be able to traverse back and find last packet with clean signal(s)
 	// in order to figure out bitrate at which congestion triggered.
-	// MPETau
-	// PeakDetectorSignal
-	// AcknowledgedBitrate
-	// ProbePacketInfo
+	//    MPETau - Mean Percentage Error trend - potentially an early signal of impending congestion
+	//    PeakDetectorSignal - A sustained peak could indicate definite congestion
+	//    AcknowledgedBitrate - Bitrate acknowledged by feedback
+	//    ProbePacketInfo - When probing, these packets could be analyzed separately to check if probing is successful
+}
+
+type feedbackInfo struct {
+	baseSN     uint16
+	numPackets uint16
 }
 
 type PacketTracker struct {
@@ -34,21 +41,37 @@ type PacketTracker struct {
 	ackedInitialized bool
 	highestAckedSN   uint16
 
-	// RAJA-TODO: make this a ring buffer as a lot more fields are needed
-	packetInfos [1 << 16]packetInfo
+	// SSBWE-TODO: make this a ring buffer as a lot more fields are needed
+	packetInfos   [1 << 16]packetInfo
+	feedbackInfos deque.Deque[feedbackInfo]
 
 	peakDetector peakdetect.PeakDetector
+
+	wake chan struct{}
+	stop core.Fuse
 }
 
 func NewPacketTracker(logger logger.Logger) *PacketTracker {
 	p := &PacketTracker{
 		logger:       logger,
 		peakDetector: peakdetect.NewPeakDetector(),
+		wake:         make(chan struct{}, 1),
+		stop:         core.NewFuse(),
 	}
 
-	// RAJA-TODO: make consts
+	// SSBWE-TODO: make consts
 	p.peakDetector.Initialize(0.1, 3.5, make([]float64, 60))
+
+	p.feedbackInfos.SetMinCapacity(3)
+
+	go p.worker()
 	return p
+}
+
+func (p *PacketTracker) Stop() {
+	p.stop.Once(func() {
+		close(p.wake)
+	})
 }
 
 func (p *PacketTracker) PacketSent(sn uint16, at time.Time, headerSize int, payloadSize int) {
@@ -101,17 +124,21 @@ func (p *PacketTracker) ProcessFeedback(baseSN uint16, arrivals []int64) {
 		}
 	}
 
-	// RAJA-TODO send notification to worker to update acknowledged bitrate
-	p.calculateAcknowledgedBitrate() // RAJA-TODO: this should run in worker
-
-	deltas := p.getDeltas(baseSN, baseSN+uint16(len(arrivals)))
-	signals := p.peakDetector.NextBatch(deltas)
-	p.logger.Infow("peaks", "deltas", deltas, "signals", signals) // REMOVE
-
-	p.calculateMPE() // RAJA-TODO: this should run in worker
+	p.feedbackInfos.PushBack(feedbackInfo{
+		baseSN:     baseSN,
+		numPackets: uint16(len(arrivals)),
+	})
+	// notify worker of a new feedback
+	select {
+	case p.wake <- struct{}{}:
+	default:
+	}
 }
 
-func (p *PacketTracker) getDeltas(startSNInclusive, endSNExclusive uint16) []float64 {
+func (p *PacketTracker) detectChangePoint(startSNInclusive, endSNExclusive uint16) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
 	deltas := make([]float64, 0, endSNExclusive-startSNInclusive)
 	for sn := startSNInclusive; sn != endSNExclusive; sn++ {
 		pi := &p.packetInfos[sn]
@@ -136,24 +163,28 @@ func (p *PacketTracker) getDeltas(startSNInclusive, endSNExclusive uint16) []flo
 		if delta < 0 && delta > -rtcp.TypeTCCDeltaScaleFactor {
 			// TWCC feedback has a resolution of 250 us inter packet interval,
 			// squash small send intervals getting coalesced on the receiver side.
+			// SSBWE-TODO: figure out proper adjustment for measurement resolution, this squelching is not always correct
 			delta = 0
 		}
 		deltas = append(deltas, float64(delta))
 		p.logger.Infow("delta", "sn", sn, "send", pi.sendTime, "sendp", piPrev.sendTime, "sd", sendDiff, "a", pi.arrivalTime, "ap", piPrev.arrivalTime, "adiff", arrivalDiff, "diff", arrivalDiff-sendDiff, "delta", delta) // REMOVE
 	}
 
-	return deltas
+	p.peakDetector.NextBatch(deltas)
 }
 
 func (p *PacketTracker) calculateMPE() {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
 	if !p.ackedInitialized {
 		return
 	}
 
 	sn := p.highestAckedSN
 	endTime := p.packetInfos[sn].arrivalTime
-	startTime := endTime - 500000 // RAJA-TODO - make this constant and tune for rate calculation
-	// RAJA-TODO: should this window be dynamic?
+	startTime := endTime - 500000 // SSBWE-TODO - make this constant and tune for rate calculation
+	// SSBWE-TODO: should this window be dynamic?
 
 	totalError := float64(0.0)
 	numDeltas := 0
@@ -184,8 +215,10 @@ func (p *PacketTracker) calculateMPE() {
 		if delta < 0 && delta > -rtcp.TypeTCCDeltaScaleFactor {
 			// TWCC feedback has a resolution of 250 us inter packet interval,
 			// squash small send intervals getting coalesced on the receiver side.
+			// SSBWE-TODO: figure out proper adjustment for measurement resolution, this squelching is not always correct
 			delta = 0
 		}
+		// SSBWE-TODO: the error is volatile, need to find a more stable signal - maybe accumulated delay?
 		if arrivalDiff != 0 {
 			totalError += float64(delta) / float64(arrivalDiff)
 			numDeltas++
@@ -203,14 +236,18 @@ func (p *PacketTracker) calculateMPE() {
 }
 
 func (p *PacketTracker) calculateAcknowledgedBitrate() {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
 	if !p.ackedInitialized {
 		return
 	}
 
 	sn := p.highestAckedSN
 	endTime := p.packetInfos[sn].arrivalTime
-	startTime := endTime - 500000 // RAJA-TODO - make this constant and tune for rate calculation
-	// RAJA-TODO: should this window be dynamic?
+	startTime := endTime - 500000 // SSBWE-TODO - make this constant and tune for rate calculation
+	// SSBWE-TODO: should this window be dynamic?
+	// SSBWE-TODO: need to protect against overcalculation when packets arrive too close to each other when congestion is relieving
 
 	highestTime := endTime
 	lowestTime := int64(0)
@@ -225,7 +262,7 @@ func (p *PacketTracker) calculateAcknowledgedBitrate() {
 			// lost packet or not sent packet
 			sn--
 			continue
-			// RAJA-TODO think about whether lost packet should be counted for bitrate calculation
+			// SSBWE-TODO think about whether lost packet should be counted for bitrate calculation, probably yes
 		}
 
 		if arrivalTime > endTime {
@@ -271,6 +308,32 @@ func (p *PacketTracker) calculateAcknowledgedBitrate() {
 		"numPackets", numPackets,
 		"packetRate", packetRate,
 	) // REMOVE
+}
+
+func (p *PacketTracker) worker() {
+	for {
+		select {
+		case <-p.wake:
+			for {
+				p.lock.Lock()
+				if p.feedbackInfos.Len() == 0 {
+					p.lock.Unlock()
+					break
+				}
+				fbi := p.feedbackInfos.PopFront()
+				p.lock.Unlock()
+
+				p.calculateAcknowledgedBitrate()
+
+				p.detectChangePoint(fbi.baseSN, fbi.baseSN+fbi.numPackets)
+
+				p.calculateMPE()
+			}
+
+		case <-p.stop.Watch():
+			return
+		}
+	}
 }
 
 // ------------------------------------------------
