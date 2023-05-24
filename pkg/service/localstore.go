@@ -161,8 +161,6 @@ func (s *LocalStore) StoreRoom(ctx context.Context, room *livekit.Room, internal
 					log.Printf("stop search new peers in room %s", room.Name)
 					return
 				default:
-					log.Printf("search new peers in room %s", room.Name)
-
 					keys, err := db.List(ctx)
 					if err != nil {
 						log.Fatalf("get connected nodes for db %s: %s", room.Name, err)
@@ -173,6 +171,10 @@ func (s *LocalStore) StoreRoom(ctx context.Context, room *livekit.Room, internal
 							continue
 						}
 						peerId := strings.TrimPrefix(k, prefixPeerKey)
+
+						if peerId == nc.GetLocalPeedID() {
+							continue
+						}
 
 						_, alreadySynced := syncedPeers.Load(peerId)
 						if alreadySynced {
