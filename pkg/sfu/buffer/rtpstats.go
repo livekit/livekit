@@ -518,7 +518,7 @@ func (r *RTPStats) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt uint32
 	if err == nil {
 		isRttChanged = rtt != r.rtt
 	} else {
-		if !errors.Is(err, mediatransportutil.ErrRttNotLastSenderReport) {
+		if !errors.Is(err, mediatransportutil.ErrRttNotLastSenderReport) && !errors.Is(err, mediatransportutil.ErrRttNoLastSenderReport) {
 			r.logger.Warnw("error getting rtt", err)
 		}
 	}
