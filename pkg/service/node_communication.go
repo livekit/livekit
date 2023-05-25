@@ -41,10 +41,6 @@ func (c *NodeCommunication) ListenIncomingMessages(ctx context.Context) (chan p2
 	return c.messages, nil
 }
 
-func (c *NodeCommunication) GetLocalPeedID() string {
-	return c.db.GetHost().ID().String()
-}
-
 func (c *NodeCommunication) messagesP2PTopicName(peerId string) string {
 	return prefixIncomingMessageTopic + peerId
 }
