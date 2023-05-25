@@ -170,7 +170,7 @@ type Forwarder struct {
 	kind                          webrtc.RTPCodecType
 	logger                        logger.Logger
 	getReferenceLayerRTPTimestamp func(ts uint32, layer int32, referenceLayer int32) (uint32, error)
-	getExpectedRTPTimestamp       func(at time.Time) (uint32, uint32, error)
+	getExpectedRTPTimestamp       func(at time.Time) (uint32, uint64, error)
 
 	muted    bool
 	pubMuted bool
@@ -201,7 +201,7 @@ func NewForwarder(
 	kind webrtc.RTPCodecType,
 	logger logger.Logger,
 	getReferenceLayerRTPTimestamp func(ts uint32, layer int32, referenceLayer int32) (uint32, error),
-	getExpectedRTPTimestamp func(at time.Time) (uint32, uint32, error),
+	getExpectedRTPTimestamp func(at time.Time) (uint32, uint64, error),
 ) *Forwarder {
 	f := &Forwarder{
 		kind:                          kind,
@@ -486,6 +486,13 @@ func (f *Forwarder) TargetLayer() buffer.VideoLayer {
 	defer f.lock.RUnlock()
 
 	return f.vls.GetTarget()
+}
+
+func (f *Forwarder) GetReferenceLayerSpatial() int32 {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+
+	return f.referenceLayerSpatial
 }
 
 func (f *Forwarder) isDeficientLocked() bool {
@@ -1475,7 +1482,7 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 			lastTS := f.rtpMunger.GetLast().LastTS
 			refTS := lastTS
 			expectedTS := lastTS
-			minTS := lastTS
+			minTS := uint64(lastTS)
 			switchingAt := time.Now()
 			if f.getReferenceLayerRTPTimestamp != nil {
 				ts, err := f.getReferenceLayerRTPTimestamp(extPkt.Packet.Timestamp, layer, f.referenceLayerSpatial)
@@ -1671,7 +1678,7 @@ func (f *Forwarder) GetSnTsForBlankFrames(frameRate uint32, numPackets int) ([]S
 
 	lastTS := f.rtpMunger.GetLast().LastTS
 	expectedTS := lastTS
-	minTS := lastTS
+	minTS := uint64(lastTS)
 	if f.getExpectedRTPTimestamp != nil {
 		ts, min, err := f.getExpectedRTPTimestamp(time.Now())
 		if err == nil {
@@ -1826,7 +1833,7 @@ done:
 	return float64(distance) / float64(maxSeenLayer.Temporal+1)
 }
 
-func getNextTimestamp(lastTS uint32, refTS uint32, expectedTS uint32, minTS uint32) (uint32, string) {
+func getNextTimestamp(lastTS uint32, refTS uint32, expectedTS uint32, minTS uint64) (uint32, string) {
 	isInOrder := func(val1, val2 uint32) bool {
 		diff := val1 - val2
 		return diff != 0 && diff < (1<<31)
@@ -1860,8 +1867,8 @@ func getNextTimestamp(lastTS uint32, refTS uint32, expectedTS uint32, minTS uint
 		explain = fmt.Sprintf("e < r < l, %d, %d", refTS-expectedTS, lastTS-refTS)
 	}
 
-	if !isInOrder(nextTS, minTS) {
-		nextTS = minTS + 1
+	if minTS != ^uint64(0) && !isInOrder(nextTS, uint32(minTS)) {
+		nextTS = uint32(minTS) + 1
 	}
 
 	return nextTS, explain
