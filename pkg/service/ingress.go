@@ -94,6 +94,7 @@ func (s *IngressService) CreateIngressWithUrlPrefix(ctx context.Context, urlPref
 		InputType:           req.InputType,
 		Audio:               req.Audio,
 		Video:               req.Video,
+		BypassTranscoding:   req.BypassTranscoding,
 		RoomName:            req.RoomName,
 		ParticipantIdentity: req.ParticipantIdentity,
 		ParticipantName:     req.ParticipantName,
@@ -125,6 +126,9 @@ func updateInfoUsingRequest(req *livekit.UpdateIngressRequest, info *livekit.Ing
 	}
 	if req.ParticipantName != "" {
 		info.ParticipantName = req.ParticipantName
+	}
+	if req.BypassTranscoding != nil {
+		info.BypassTranscoding = *req.BypassTranscoding
 	}
 	if req.Audio != nil {
 		info.Audio = req.Audio
