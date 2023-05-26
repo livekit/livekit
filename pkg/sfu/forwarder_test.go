@@ -1717,6 +1717,7 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	require.NoError(t, err)
 	expectedTP = TranslationParams{
 		isSwitchingToMaxSpatial: true,
+		maxSpatialLayer:         1,
 		rtp: &TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingContiguous,
 			sequenceNumber: 23339,

@@ -85,6 +85,7 @@ func (v *VP9) Select(extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerS
 
 			if v.currentLayer.Spatial != v.maxLayer.Spatial && updatedLayer.Spatial == v.maxLayer.Spatial {
 				result.IsSwitchingToMaxSpatial = true
+				result.MaxSpatialLayer = updatedLayer.Spatial
 				v.logger.Infow(
 					"reached max layer",
 					"current", v.currentLayer,
