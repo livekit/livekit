@@ -69,6 +69,7 @@ func (n *NoQueue) sendWorker() {
 		for {
 			n.lock.Lock()
 			if n.isStopped {
+				n.lock.Unlock()
 				return
 			}
 
