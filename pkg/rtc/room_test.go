@@ -140,7 +140,9 @@ func TestRoomJoin(t *testing.T) {
 
 	t.Run("cannot exceed max participants", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
+		rm.lock.Lock()
 		rm.protoRoom.MaxParticipants = 1
+		rm.lock.Unlock()
 		p := newMockParticipant("second", types.ProtocolVersion(0), false, false)
 
 		err := rm.Join(p, nil, nil, iceServersForRoom)
@@ -347,8 +349,10 @@ func TestRoomClosure(t *testing.T) {
 			isClosed = true
 		})
 		p := rm.GetParticipants()[0]
+		rm.lock.Lock()
 		// allows immediate close after
 		rm.protoRoom.EmptyTimeout = 0
+		rm.lock.Unlock()
 		rm.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonClientRequestLeave)
 
 		time.Sleep(time.Duration(RoomDepartureGrace)*time.Second + defaultDelay)
@@ -377,7 +381,9 @@ func TestRoomClosure(t *testing.T) {
 		rm.OnClose(func() {
 			isClosed = true
 		})
+		rm.lock.Lock()
 		rm.protoRoom.EmptyTimeout = 1
+		rm.lock.Unlock()
 
 		time.Sleep(1010 * time.Millisecond)
 		rm.CloseIfEmpty()

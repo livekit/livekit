@@ -624,7 +624,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	d.bytesSent.Add(uint32(hdr.MarshalSize() + len(payload)))
 
 	if tp.isSwitchingToMaxSpatial && d.onMaxSubscribedLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
-		d.onMaxSubscribedLayerChanged(d, d.forwarder.MaxLayer().Spatial)
+		d.onMaxSubscribedLayerChanged(d, tp.maxSpatialLayer)
 	}
 
 	if extPkt.KeyFrame {
