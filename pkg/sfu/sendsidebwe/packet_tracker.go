@@ -14,7 +14,7 @@ import (
 type packetInfo struct {
 	sendTime time.Time
 	// SSBWE-TODO: may need a feedback report time to detect stale reports
-	arrivalTime int64
+	receiveTime int64
 	headerSize  uint16
 	payloadSize uint16
 	// SSBWE-TODO: possibly add the following fields - pertaining to this packet,
@@ -111,7 +111,7 @@ func (p *PacketTracker) ProcessFeedback(baseSN uint16, arrivals []int64) {
 	defer p.lock.Unlock()
 
 	for i, arrival := range arrivals {
-		p.packetInfos[baseSN+uint16(i)].arrivalTime = arrival
+		p.packetInfos[baseSN+uint16(i)].receiveTime = arrival
 	}
 
 	lastAckedSN := baseSN + uint16(len(arrivals)) - 1
@@ -148,18 +148,18 @@ func (p *PacketTracker) detectChangePoint(startSNInclusive, endSNExclusive uint1
 		}
 
 		// lost packet(s)
-		if pi.arrivalTime == 0 || piPrev.arrivalTime == 0 {
+		if pi.receiveTime == 0 || piPrev.receiveTime == 0 {
 			continue
 		}
 
 		// ignore out-of-order arrivals
-		if piPrev.arrivalTime > pi.arrivalTime {
+		if piPrev.receiveTime > pi.receiveTime {
 			continue
 		}
 
-		sendDiff := pi.sendTime.Sub(piPrev.sendTime).Microseconds()
-		arrivalDiff := pi.arrivalTime - piPrev.arrivalTime
-		delta := arrivalDiff - sendDiff
+		sendDelta := pi.sendTime.Sub(piPrev.sendTime).Microseconds()
+		receiveDelta := pi.receiveTime - piPrev.receiveTime
+		delta := receiveDelta - sendDelta
 		if delta < 0 && delta > -rtcp.TypeTCCDeltaScaleFactor {
 			// TWCC feedback has a resolution of 250 us inter packet interval,
 			// squash small send intervals getting coalesced on the receiver side.
@@ -167,7 +167,7 @@ func (p *PacketTracker) detectChangePoint(startSNInclusive, endSNExclusive uint1
 			delta = 0
 		}
 		deltas = append(deltas, float64(delta))
-		p.logger.Infow("delta", "sn", sn, "send", pi.sendTime, "sendp", piPrev.sendTime, "sd", sendDiff, "a", pi.arrivalTime, "ap", piPrev.arrivalTime, "adiff", arrivalDiff, "diff", arrivalDiff-sendDiff, "delta", delta) // REMOVE
+		p.logger.Infow("delta", "sn", sn, "send", pi.sendTime, "sendp", piPrev.sendTime, "sd", sendDelta, "r", pi.receiveTime, "rp", piPrev.receiveTime, "rd", receiveDelta, "rawdelta", receiveDelta-sendDelta, "delta", delta) // REMOVE
 	}
 
 	p.peakDetector.NextBatch(deltas)
@@ -182,7 +182,7 @@ func (p *PacketTracker) calculateMPE() {
 	}
 
 	sn := p.highestAckedSN
-	endTime := p.packetInfos[sn].arrivalTime
+	endTime := p.packetInfos[sn].receiveTime
 	startTime := endTime - 500000 // SSBWE-TODO - make this constant and tune for rate calculation
 	// SSBWE-TODO: should this window be dynamic?
 
@@ -196,22 +196,22 @@ func (p *PacketTracker) calculateMPE() {
 		}
 
 		// lost packet(s)
-		if pi.arrivalTime == 0 || piPrev.arrivalTime == 0 {
+		if pi.receiveTime == 0 || piPrev.receiveTime == 0 {
 			continue
 		}
 
 		// ignore out-of-order arrivals
-		if piPrev.arrivalTime > pi.arrivalTime {
+		if piPrev.receiveTime > pi.receiveTime {
 			continue
 		}
 
-		if pi.arrivalTime < startTime || pi.sendTime.IsZero() {
+		if pi.receiveTime < startTime || pi.sendTime.IsZero() {
 			break
 		}
 
-		sendDiff := pi.sendTime.Sub(piPrev.sendTime).Microseconds()
-		arrivalDiff := pi.arrivalTime - piPrev.arrivalTime
-		delta := arrivalDiff - sendDiff
+		sendDelta := pi.sendTime.Sub(piPrev.sendTime).Microseconds()
+		receiveDelta := pi.receiveTime - piPrev.receiveTime
+		delta := receiveDelta - sendDelta
 		if delta < 0 && delta > -rtcp.TypeTCCDeltaScaleFactor {
 			// TWCC feedback has a resolution of 250 us inter packet interval,
 			// squash small send intervals getting coalesced on the receiver side.
@@ -219,10 +219,10 @@ func (p *PacketTracker) calculateMPE() {
 			delta = 0
 		}
 		// SSBWE-TODO: the error is volatile, need to find a more stable signal - maybe accumulated delay?
-		if arrivalDiff != 0 {
-			totalError += float64(delta) / float64(arrivalDiff)
+		if receiveDelta != 0 {
+			totalError += float64(delta) / float64(receiveDelta)
 			numDeltas++
-			p.logger.Infow("mpe delta", "sn", sn, "send", pi.sendTime, "sendp", piPrev.sendTime, "sd", sendDiff, "a", pi.arrivalTime, "ap", piPrev.arrivalTime, "adiff", arrivalDiff, "diff", arrivalDiff-sendDiff, "delta", delta, "error", float64(delta)/float64(arrivalDiff)) // REMOVE
+			p.logger.Infow("mpe delta", "sn", sn, "send", pi.sendTime, "sendp", piPrev.sendTime, "sd", sendDelta, "r", pi.receiveTime, "rp", piPrev.receiveTime, "rd", receiveDelta, "rawdelta", receiveDelta-sendDelta, "delta", delta, "error", float64(delta)/float64(receiveDelta)) // REMOVE
 		}
 		sn--
 	}
@@ -244,7 +244,7 @@ func (p *PacketTracker) calculateAcknowledgedBitrate() {
 	}
 
 	sn := p.highestAckedSN
-	endTime := p.packetInfos[sn].arrivalTime
+	endTime := p.packetInfos[sn].receiveTime
 	startTime := endTime - 500000 // SSBWE-TODO - make this constant and tune for rate calculation
 	// SSBWE-TODO: should this window be dynamic?
 	// SSBWE-TODO: need to protect against overcalculation when packets arrive too close to each other when congestion is relieving
@@ -257,29 +257,29 @@ func (p *PacketTracker) calculateAcknowledgedBitrate() {
 	numPackets := 0
 	for {
 		pi := &p.packetInfos[sn]
-		arrivalTime := pi.arrivalTime
-		if arrivalTime == 0 && !pi.sendTime.IsZero() {
+		receiveTime := pi.receiveTime
+		if receiveTime == 0 && !pi.sendTime.IsZero() {
 			// lost packet or not sent packet
 			sn--
 			continue
 			// SSBWE-TODO think about whether lost packet should be counted for bitrate calculation, probably yes
 		}
 
-		if arrivalTime > endTime {
+		if receiveTime > endTime {
 			// late arriving (out-of-order arriving) packet
 			sn--
 			continue
 		}
 
-		if arrivalTime < startTime || pi.sendTime.IsZero() {
+		if receiveTime < startTime || pi.sendTime.IsZero() {
 			break
 		}
 
-		if arrivalTime > highestTime {
-			highestTime = arrivalTime
+		if receiveTime > highestTime {
+			highestTime = receiveTime
 		}
-		if lowestTime == 0 || arrivalTime < lowestTime {
-			lowestTime = arrivalTime
+		if lowestTime == 0 || receiveTime < lowestTime {
+			lowestTime = receiveTime
 			lowestTimeBytes = int(pi.headerSize) + int(pi.payloadSize)
 		}
 

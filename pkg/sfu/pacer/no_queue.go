@@ -3,7 +3,6 @@ package pacer
 import (
 	"sync"
 
-	"github.com/frostbyte73/core"
 	"github.com/gammazero/deque"
 	"github.com/livekit/livekit-server/pkg/sfu/sendsidebwe"
 	"github.com/livekit/protocol/logger"
@@ -14,10 +13,10 @@ type NoQueue struct {
 
 	logger logger.Logger
 
-	lock    sync.RWMutex
-	packets deque.Deque[Packet]
-	wake    chan struct{}
-	stop    core.Fuse
+	lock      sync.RWMutex
+	packets   deque.Deque[Packet]
+	wake      chan struct{}
+	isStopped bool
 }
 
 func NewNoQueue(logger logger.Logger, sendSideBWE *sendsidebwe.SendSideBWE) *NoQueue {
@@ -25,7 +24,6 @@ func NewNoQueue(logger logger.Logger, sendSideBWE *sendsidebwe.SendSideBWE) *NoQ
 		Base:   NewBase(logger, sendSideBWE),
 		logger: logger,
 		wake:   make(chan struct{}, 1),
-		stop:   core.NewFuse(),
 	}
 	n.packets.SetMinCapacity(9)
 
@@ -34,9 +32,15 @@ func NewNoQueue(logger logger.Logger, sendSideBWE *sendsidebwe.SendSideBWE) *NoQ
 }
 
 func (n *NoQueue) Stop() {
-	n.stop.Once(func() {
-		close(n.wake)
-	})
+	n.lock.Lock()
+	if n.isStopped {
+		n.lock.Unlock()
+		return
+	}
+
+	close(n.wake)
+	n.isStopped = true
+	n.lock.Unlock()
 }
 
 func (n *NoQueue) Enqueue(p Packet) {
@@ -44,37 +48,38 @@ func (n *NoQueue) Enqueue(p Packet) {
 	n.packets.PushBack(p)
 
 	notify := false
-	if n.packets.Len() == 1 {
+	if n.packets.Len() == 1 && !n.isStopped {
 		notify = true
 	}
 	n.lock.Unlock()
 
-	if notify {
-		select {
-		case n.wake <- struct{}{}:
-		default:
-		}
+	if !notify {
+		return
+	}
+
+	select {
+	case n.wake <- struct{}{}:
+	default:
 	}
 }
 
 func (n *NoQueue) sendWorker() {
 	for {
-		select {
-		case <-n.wake:
-			for {
-				n.lock.Lock()
-				if n.packets.Len() == 0 {
-					n.lock.Unlock()
-					break
-				}
-				p := n.packets.PopFront()
-				n.lock.Unlock()
-
-				n.Base.SendPacket(&p)
+		<-n.wake
+		for {
+			n.lock.Lock()
+			if n.isStopped {
+				return
 			}
 
-		case <-n.stop.Watch():
-			return
+			if n.packets.Len() == 0 {
+				n.lock.Unlock()
+				break
+			}
+			p := n.packets.PopFront()
+			n.lock.Unlock()
+
+			n.Base.SendPacket(&p)
 		}
 	}
 }
