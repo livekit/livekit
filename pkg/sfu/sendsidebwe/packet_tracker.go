@@ -190,6 +190,7 @@ func (p *PacketTracker) populateDeltas(startSNInclusive, endSNExclusive uint16) 
 
 		// ignore out-of-order arrivals
 		if piPrev.receiveTime > pi.receiveTime {
+			// RAJA-TODO: should this not be ignored?
 			continue
 		}
 
