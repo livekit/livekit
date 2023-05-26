@@ -1745,7 +1745,7 @@ func (d *DownTrack) packetSent(md interface{}, hdr *rtp.Header, payloadSize int,
 
 	if spmd.tp != nil {
 		if spmd.tp.isSwitchingToMaxSpatial && d.onMaxSubscribedLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
-			d.onMaxSubscribedLayerChanged(d, spmd.layer)
+			d.onMaxSubscribedLayerChanged(d, spmd.tp.maxSpatialLayer)
 		}
 
 		if spmd.tp.isSwitchingToRequestSpatial {
