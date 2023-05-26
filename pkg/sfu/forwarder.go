@@ -129,6 +129,7 @@ type TranslationParams struct {
 	isResuming                  bool
 	isSwitchingToRequestSpatial bool
 	isSwitchingToMaxSpatial     bool
+	maxSpatialLayer             int32
 	rtp                         *TranslationParamsRTP
 	codecBytes                  []byte
 	ddBytes                     []byte
@@ -1570,6 +1571,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 	tp.isResuming = result.IsResuming
 	tp.isSwitchingToRequestSpatial = result.IsSwitchingToRequestSpatial
 	tp.isSwitchingToMaxSpatial = result.IsSwitchingToMaxSpatial
+	tp.maxSpatialLayer = result.MaxSpatialLayer
 	tp.ddBytes = result.DependencyDescriptorExtension
 	tp.marker = result.RTPMarker
 

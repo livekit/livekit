@@ -230,6 +230,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		}
 		if d.currentLayer.Spatial == d.maxLayer.Spatial {
 			result.IsSwitchingToMaxSpatial = true
+			result.MaxSpatialLayer = d.currentLayer.Spatial
 			d.logger.Infow(
 				"reached max layer",
 				"current", d.currentLayer,
