@@ -1097,7 +1097,8 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 		return nil
 	}
 
-	sr, tsAdjust := d.rtpStats.GetRtcpSenderReport(d.ssrc)
+	srFirst, srNewest := d.receiver.GetRTCPSenderReportData(d.forwarder.GetReferenceLayerSpatial())
+	sr, tsAdjust := d.rtpStats.GetRtcpSenderReport(d.ssrc, srFirst, srNewest)
 	if d.allowTimestampAdjustment {
 		d.forwarder.AdjustTimestamp(tsAdjust)
 	}
@@ -1540,7 +1541,7 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 	}
 }
 
-func (d *DownTrack) getExpectedRTPTimestamp(at time.Time) (uint32, uint32, error) {
+func (d *DownTrack) getExpectedRTPTimestamp(at time.Time) (uint32, uint64, error) {
 	return d.rtpStats.GetExpectedRTPTimestamp(at)
 }
 
