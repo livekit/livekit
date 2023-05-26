@@ -19,6 +19,10 @@ func NewSendSideBWE(logger logger.Logger) *SendSideBWE {
 	}
 }
 
+func (s *SendSideBWE) Stop() {
+	s.PacketTracker.Stop()
+}
+
 func (s *SendSideBWE) HandleRTCP(report *rtcp.TransportLayerCC) {
 	baseSN, arrivals, err := s.TWCCFeedback.HandleRTCP(report)
 	if err != nil {

@@ -94,6 +94,7 @@ func (t *TWCCFeedback) HandleRTCP(report *rtcp.TransportLayerCC) (uint16, []int6
 		}
 	}
 
+	t.logger.Infow("TWCC feedback", "report", report.String()) // REMOVE
 	return report.BaseSequenceNumber, arrivals, nil
 }
 
