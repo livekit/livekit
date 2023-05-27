@@ -1049,7 +1049,7 @@ func (r *RTPStats) DeltaInfo(snapshotId uint32) *RTPDeltaInfo {
 
 	packetsExpected := now.extStartSN - then.extStartSN
 	if packetsExpected > NumSequenceNumbers {
-		r.logger.Warnw(
+		r.logger.Errorw(
 			"too many packets expected in delta",
 			fmt.Errorf("start: %d, end: %d, expected: %d", then.extStartSN, now.extStartSN, packetsExpected),
 		)
