@@ -114,8 +114,8 @@ type DownTrackState struct {
 }
 
 func (d DownTrackState) String() string {
-	return fmt.Sprintf("DownTrackState{rtpStats: %s, delta: %d, forwarder: %s}",
-		d.RTPStats.ToString(), d.DeltaStatsSnapshotId, d.ForwarderState.String())
+	return fmt.Sprintf("DownTrackState{rtpStats: %s, delta: %d, deltaOverridden: %d, forwarder: %s}",
+		d.RTPStats.ToString(), d.DeltaStatsSnapshotId, d.DeltaStatsOverriddenSnapshotId, d.ForwarderState.String())
 }
 
 // -------------------------------------------------------------------
