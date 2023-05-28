@@ -3,7 +3,6 @@ package prometheus
 import (
 	"time"
 
-	"github.com/mackerelio/go-osstat/loadavg"
 	"github.com/mackerelio/go-osstat/memory"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
@@ -100,7 +99,7 @@ func Init(nodeID string, nodeType livekit.NodeType, env string) {
 }
 
 func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats) (*livekit.NodeStats, bool, error) {
-	loadAvg, err := loadavg.Get()
+	loadAvg, err := getLoadAvg()
 	if err != nil {
 		return nil, false, err
 	}
