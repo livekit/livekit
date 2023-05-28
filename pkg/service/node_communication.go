@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"log"
+
 	p2p_database "github.com/dTelecom/p2p-realtime-database"
 	"github.com/pkg/errors"
 )
@@ -21,6 +23,28 @@ func NewNodeCommunication(db *p2p_database.DB) *NodeCommunication {
 		messages: make(chan p2p_database.Event, defaultBufferMessagesChan),
 		db:       db,
 	}
+}
+
+func (c *NodeCommunication) Setup(
+	ctx context.Context,
+	onMessage func(e p2p_database.Event),
+) {
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			responsesChannel, err := c.ListenIncomingMessages(ctx)
+			if err != nil {
+				log.Fatalf("cannot listen incoming messsages database room %s %s", c.db.Name, err)
+			}
+
+			msg := <-responsesChannel
+			log.Printf("got message %s from node %s from database room %s: %s", msg.ID, msg.FromPeerId, c.db.Name, msg.Message)
+
+			onMessage(msg)
+		}
+	}()
 }
 
 func (c *NodeCommunication) SendAsyncMessageToPeerId(ctx context.Context, peerId string, message interface{}) (string, error) {

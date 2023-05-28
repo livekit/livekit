@@ -22,10 +22,9 @@ const (
 	pongMessage   = "pong"
 )
 
-var syncedPeers = sync.Map{}
-
 type RoomDatabase struct {
-	p2pDatabase *p2p_database.DB
+	p2p         *p2p_database.DB
+	syncedPeers sync.Map
 	ctx         context.Context
 	cancel      context.CancelFunc
 }
@@ -63,36 +62,27 @@ func NewLocalStore(currentNodeId livekit.NodeID, mainDatabase p2p_database.Confi
 
 func (s *LocalStore) getOrCreateDatabase(room *livekit.Room) (*RoomDatabase, error) {
 	roomDb, ok := s.databases[livekit.RoomName(room.Name)]
-
 	if !ok {
-		ctx, cancel := context.WithCancel(context.Background())
-
-		cfg := s.p2pDatabaseConfig
-		cfg.DatabaseName = "livekit_room_" + room.Name
-		db, err := p2p_database.Connect(ctx, cfg, logging.Logger("db_livekit_room_"+room.Name))
-		if err != nil {
-			cancel()
-			return nil, errors.Wrapf(err, "create or connect livekit database room %s", room.Name)
-		}
-
-		go func() {
-			<-ctx.Done()
-			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-			defer cancel()
-			err := db.Disconnect(ctx)
-			if err != nil {
-				log.Printf("try disconnect db room %s error: %s", room.Name, err)
-			}
-		}()
-
-		roomDb = &RoomDatabase{
-			p2pDatabase: db,
-			ctx:         ctx,
-			cancel:      cancel,
-		}
-
-		s.databases[livekit.RoomName(room.Name)] = roomDb
+		return roomDb, nil
 	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	cfg := s.p2pDatabaseConfig
+	cfg.DatabaseName = "livekit_room_" + room.Name
+	db, err := p2p_database.Connect(ctx, cfg, logging.Logger("db_livekit_room_"+room.Name))
+	if err != nil {
+		cancel()
+		return nil, errors.Wrapf(err, "create or connect livekit database room %s", room.Name)
+	}
+
+	roomDb = &RoomDatabase{
+		p2p:         db,
+		ctx:         ctx,
+		cancel:      cancel,
+		syncedPeers: sync.Map{},
+	}
+	s.databases[livekit.RoomName(room.Name)] = roomDb
 
 	return roomDb, nil
 }
@@ -101,8 +91,8 @@ func (s *LocalStore) StoreRoom(ctx context.Context, room *livekit.Room, internal
 	if room.CreationTime == 0 {
 		room.CreationTime = time.Now().Unix()
 	}
-	roomName := livekit.RoomName(room.Name)
 
+	roomName := livekit.RoomName(room.Name)
 	s.lock.Lock()
 	_, ok := s.roomCommunicationsInit[roomName]
 	if !ok {
@@ -113,41 +103,27 @@ func (s *LocalStore) StoreRoom(ctx context.Context, room *livekit.Room, internal
 	var err error
 	once := s.roomCommunicationsInit[roomName]
 	once.Do(func() {
-		roomDb, err := s.getOrCreateDatabase(room)
+		roomDatabase, err := s.getOrCreateDatabase(room)
 		if err != nil {
 			err = errors.Wrapf(err, "error init database for room %s", room.Name)
 		}
 
-		db := roomDb.p2pDatabase
+		db := roomDatabase.p2p
 		nc := NewNodeCommunication(db)
 		backgroundCtx, cancel := context.WithCancel(context.Background())
+		defer cancel()
 
-		go func() {
-			select {
-			case <-ctx.Done():
-				cancel()
+		nc.Setup(backgroundCtx, func(e p2p_database.Event) {
+			if e.Message != pingMessage {
 				return
-			case <-roomDb.ctx.Done():
-				cancel()
-				return
-			default:
-				responsesChannel, err := nc.ListenIncomingMessages(backgroundCtx)
-				if err != nil {
-					log.Fatalf("cannot listen incoming messsages database room %s %s", room.Name, err)
-				}
-
-				msg := <-responsesChannel
-				log.Printf("got message %s from node %s from database room %s: %s", msg.ID, msg.FromPeerId, room.Name, msg.Message)
-
-				if msg.Message == pingMessage {
-					msgId, err := nc.SendAsyncMessageToPeerId(backgroundCtx, msg.FromPeerId, pongMessage)
-					if err != nil {
-						log.Fatalf("cannot send pong message database room %s to peer msgId %s", room.Name, msg.FromPeerId)
-					}
-					log.Printf("send pong message %s db %s to peer %s", msgId, db.Name, msg.FromPeerId)
-				}
 			}
-		}()
+			msgId, err := nc.SendAsyncMessageToPeerId(ctx, e.FromPeerId, pongMessage)
+			if err != nil {
+				log.Fatalf("cannot send pong message database room %s to peer msgId %s", db.Name, e.FromPeerId)
+				return
+			}
+			log.Printf("send pong message %s db %s to peer %s", msgId, db.Name, e.FromPeerId)
+		})
 
 		err = db.Set(ctx, prefixPeerKey+db.GetHost().ID().String(), time.Now().String())
 		if err != nil {
@@ -158,7 +134,7 @@ func (s *LocalStore) StoreRoom(ctx context.Context, room *livekit.Room, internal
 		go func() {
 			for {
 				select {
-				case <-roomDb.ctx.Done():
+				case <-roomDatabase.ctx.Done():
 					log.Printf("stop search new peers in room %s", room.Name)
 					return
 				case <-ctx.Done():
@@ -180,7 +156,7 @@ func (s *LocalStore) StoreRoom(ctx context.Context, room *livekit.Room, internal
 							continue
 						}
 
-						_, alreadySynced := syncedPeers.Load(peerId)
+						_, alreadySynced := roomDatabase.syncedPeers.Load(peerId)
 						if alreadySynced {
 							continue
 						}
@@ -191,7 +167,7 @@ func (s *LocalStore) StoreRoom(ctx context.Context, room *livekit.Room, internal
 						}
 
 						log.Printf("send ping message to node %s in db %s", peerId, room.Name)
-						syncedPeers.Store(peerId, peerId)
+						roomDatabase.syncedPeers.Store(peerId, peerId)
 					}
 
 					time.Sleep(500 * time.Millisecond)
@@ -258,14 +234,14 @@ func (s *LocalStore) DeleteRoom(ctx context.Context, roomName livekit.RoomName) 
 
 	db, exists := s.databases[roomName]
 	if exists {
-		k := prefixPeerKey + db.p2pDatabase.GetHost().ID().String()
-		err := db.p2pDatabase.Remove(ctx, k)
+		k := prefixPeerKey + db.p2p.GetHost().ID().String()
+		err := db.p2p.Remove(ctx, k)
 		if err != nil {
 			log.Printf("try remove key %s for room db %s error: %s", k, room.Name, err)
 		}
 		db.cancel()
-		delete(s.databases, roomName)
-		delete(s.roomCommunicationsInit, roomName)
+		delete(s.databases, livekit.RoomName(room.Name))
+		delete(s.roomCommunicationsInit, livekit.RoomName(room.Name))
 	}
 
 	return nil
