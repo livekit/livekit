@@ -652,7 +652,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 
 // WritePaddingRTP tries to write as many padding only RTP packets as necessary
 // to satisfy given size to the DownTrack
-func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool) int {
+func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMarker bool) int {
 	if !d.rtpStats.IsActive() && !paddingOnMute {
 		return 0
 	}
@@ -684,7 +684,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool) int {
 		return 0
 	}
 
-	snts, err := d.forwarder.GetSnTsForPadding(num)
+	snts, err := d.forwarder.GetSnTsForPadding(num, forceMarker)
 	if err != nil {
 		return 0
 	}
@@ -1699,10 +1699,10 @@ func (d *DownTrack) onBindAndConnected() {
 }
 
 func (d *DownTrack) sendPaddingOnMute() {
-	d.logger.Debugw("sending padding on mute")
 	// let uptrack have chance to send packet before we send padding
 	time.Sleep(waitBeforeSendPaddingOnMute)
 
+	d.logger.Debugw("sending padding on mute")
 	if d.kind == webrtc.RTPCodecTypeVideo {
 		d.sendPaddingOnMuteForVideo()
 	} else if d.mime == "audio/opus" {
@@ -1717,7 +1717,7 @@ func (d *DownTrack) sendPaddingOnMuteForVideo() {
 		if d.rtpStats.IsActive() || d.IsClosed() {
 			return
 		}
-		d.WritePaddingRTP(20, true)
+		d.WritePaddingRTP(20, true, true)
 		time.Sleep(paddingOnMuteInterval)
 	}
 }

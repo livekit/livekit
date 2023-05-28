@@ -539,7 +539,9 @@ func (r *RTPStats) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt uint32
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	if !r.endTime.IsZero() || !r.params.IsReceiverReportDriven {
+	if !r.endTime.IsZero() || !r.params.IsReceiverReportDriven || rr.LastSequenceNumber < r.extStartSN {
+		// it is possible that the `LastSequenceNumber` in the receiver report is before the starting
+		// sequence number when dummy packets are used to trigger Pion's OnTrack path.
 		return
 	}
 
@@ -1107,7 +1109,7 @@ func (r *RTPStats) DeltaInfoOverridden(snapshotId uint32) *RTPDeltaInfo {
 	packetsExpected := now.extStartSNOverridden - then.extStartSNOverridden
 	if packetsExpected > NumSequenceNumbers {
 		r.logger.Warnw(
-			"too many packets expected in delta",
+			"too many packets expected in delta (overridden)",
 			fmt.Errorf("start: %d, end: %d, expected: %d", then.extStartSNOverridden, now.extStartSNOverridden, packetsExpected),
 		)
 		return nil
@@ -1558,7 +1560,7 @@ func (r *RTPStats) updateGapHistogram(gap int) {
 }
 
 func (r *RTPStats) getAndResetSnapshot(snapshotId uint32, override bool) (*Snapshot, *Snapshot) {
-	if !r.initialized || (r.params.IsReceiverReportDriven && r.lastRRTime.IsZero()) {
+	if !r.initialized || (override && r.lastRRTime.IsZero()) {
 		return nil, nil
 	}
 
@@ -1573,7 +1575,7 @@ func (r *RTPStats) getAndResetSnapshot(snapshotId uint32, override bool) (*Snaps
 	}
 
 	var startTime time.Time
-	if override && r.params.IsReceiverReportDriven {
+	if override {
 		startTime = r.lastRRTime
 	} else {
 		startTime = time.Now()

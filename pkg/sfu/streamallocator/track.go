@@ -135,7 +135,7 @@ func (t *Track) SetMaxLayer(layer buffer.VideoLayer) bool {
 }
 
 func (t *Track) WritePaddingRTP(bytesToSend int) int {
-	return t.downTrack.WritePaddingRTP(bytesToSend, false)
+	return t.downTrack.WritePaddingRTP(bytesToSend, false, false)
 }
 
 func (t *Track) AllocateOptimal(allowOvershoot bool) sfu.VideoAllocation {
