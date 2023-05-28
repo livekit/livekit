@@ -50,9 +50,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-// fix to version before active TCP was introduced, until there's a way to disable it
-replace github.com/pion/ice/v2 => github.com/pion/ice/v2 v2.3.6
-
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
