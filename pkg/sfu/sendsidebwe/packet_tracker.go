@@ -85,14 +85,19 @@ type PacketTracker struct {
 
 	wake chan struct{}
 	stop core.Fuse
+
+	estimatedChannelCapacity int64
+	congestionState          CongestionState
+	onCongestionStateChange  func(congestionState CongestionState, channelCapacity int64)
 }
 
 func NewPacketTracker(logger logger.Logger) *PacketTracker {
 	p := &PacketTracker{
-		logger:       logger,
-		peakDetector: peakdetect.NewPeakDetector(),
-		wake:         make(chan struct{}, 1),
-		stop:         core.NewFuse(),
+		logger:                   logger,
+		peakDetector:             peakdetect.NewPeakDetector(),
+		wake:                     make(chan struct{}, 1),
+		stop:                     core.NewFuse(),
+		estimatedChannelCapacity: 100_000_000,
 	}
 
 	// SSBWE-TODO: make consts
@@ -108,6 +113,24 @@ func (p *PacketTracker) Stop() {
 	p.stop.Once(func() {
 		close(p.wake)
 	})
+}
+
+func (p *PacketTracker) OnCongestionStateChange(f func(congestionState CongestionState, channelCapacity int64)) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	p.onCongestionStateChange = f
+}
+
+func (p *PacketTracker) GetCongestionState() CongestionState {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return p.congestionState
+}
+
+func (p *PacketTracker) GetEstimatedChannelCapacity() int64 {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return p.estimatedChannelCapacity
 }
 
 func (p *PacketTracker) PacketSent(sn uint16, at time.Time, headerSize int, payloadSize int) {
