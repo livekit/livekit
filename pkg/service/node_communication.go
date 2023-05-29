@@ -30,19 +30,19 @@ func (c *NodeCommunication) Setup(
 	onMessage func(e p2p_database.Event),
 ) {
 	go func() {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			responsesChannel, err := c.ListenIncomingMessages(ctx)
-			if err != nil {
-				log.Fatalf("cannot listen incoming messsages database room %s %s", c.db.Name, err)
+		responsesChannel, err := c.ListenIncomingMessages(ctx)
+		if err != nil {
+			log.Fatalf("cannot listen incoming messsages database room %s %s", c.db.Name, err)
+		}
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case msg := <-responsesChannel:
+				log.Printf("got message %s from node %s from database room %s: %s", msg.ID, msg.FromPeerId, c.db.Name, msg.Message)
+				onMessage(msg)
 			}
-
-			msg := <-responsesChannel
-			log.Printf("got message %s from node %s from database room %s: %s", msg.ID, msg.FromPeerId, c.db.Name, msg.Message)
-
-			onMessage(msg)
 		}
 	}()
 }

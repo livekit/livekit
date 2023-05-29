@@ -1,0 +1,17 @@
+port: 7885
+log_level: error
+
+rtc:
+  port_range_start: 50000
+  port_range_end: 60000
+  tcp_port: 7882
+  use_external_ip: true
+
+ethereum:
+  wallet_address: "0x0d8ea07b7b612247Ff947030890Ad638c4Ad9f26"
+  wallet_private_key: "30c370fb8ccf58df394ed24b39830ae63ce4f4d237b80fee206860b018469b37"
+  contract_address: "0xa99885B0Ce9cE7C8B93c15bFc4deeAec419f2393"
+  network_host: "https://arbitrum-goerli.infura.io/v3/"
+  network_key: "47d2344cdbaa4c89a395fea69d452261"
+  p2p_node_port: 3005
+  p2p_main_database_name: global
