@@ -71,8 +71,6 @@ func (p *ProbeController) Reset() {
 
 func (p *ProbeController) ProbeClusterDone(info ProbeClusterInfo, lowestEstimate int64) {
 	p.lock.Lock()
-	defer p.lock.Unlock()
-
 	if p.probeClusterId != info.Id {
 		p.lock.Unlock()
 		return
