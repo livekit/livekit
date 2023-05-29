@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	_ "net/http/pprof"
+	"runtime"
 	"runtime/pprof"
 	"time"
 
@@ -217,6 +218,9 @@ func (s *LivekitServer) Start() error {
 		values = append(values, "region", s.config.Region)
 	}
 	logger.Infow("starting LiveKit server", values...)
+	if runtime.GOOS == "windows" {
+		logger.Infow("Windows detected, capacity management is unavailable")
+	}
 
 	for _, promLn := range promListeners {
 		go s.promServer.Serve(promLn)
