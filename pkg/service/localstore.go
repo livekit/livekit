@@ -91,6 +91,7 @@ func (s *LocalStore) getOrCreateDatabase(room *livekit.Room) (*RoomDatabase, err
 }
 
 func (s *LocalStore) StoreRoom(ctx context.Context, room *livekit.Room, internal *livekit.RoomInternal) error {
+	log.Println("Calling localstore.StoreRoom")
 	if room.CreationTime == 0 {
 		room.CreationTime = time.Now().Unix()
 	}
@@ -138,11 +139,11 @@ func (s *LocalStore) StoreRoom(ctx context.Context, room *livekit.Room, internal
 			for {
 				select {
 				case <-roomDatabase.ctx.Done():
-					log.Printf("stop search new peers in room %s", room.Name)
+					log.Printf("stop search new peers in room %s (room db context)", room.Name)
 					cancel()
 					return
 				case <-ctx.Done():
-					log.Printf("stop search new peers in room %s", room.Name)
+					log.Printf("stop search new peers in room %s (main context)", room.Name)
 					cancel()
 					return
 				default:
@@ -150,7 +151,7 @@ func (s *LocalStore) StoreRoom(ctx context.Context, room *livekit.Room, internal
 					if err != nil {
 						log.Fatalf("get connected nodes for db %s: %s", room.Name, err)
 					}
-					//log.Printf("%s search new peers in room %s", db.GetHost().ID(), room.Name)
+					log.Printf("%s search new peers in room %s", db.GetHost().ID(), room.Name)
 					for _, k := range keys {
 						k = strings.TrimPrefix(k, "/")
 						if !strings.HasPrefix(k, prefixPeerKey) {
@@ -224,6 +225,8 @@ func (s *LocalStore) ListRooms(_ context.Context, roomNames []livekit.RoomName) 
 }
 
 func (s *LocalStore) DeleteRoom(ctx context.Context, roomName livekit.RoomName) error {
+	log.Println("Calling localstore.DeleteRoom")
+
 	room, _, err := s.LoadRoom(ctx, roomName, false)
 	if err == ErrRoomNotFound {
 		return nil
@@ -246,7 +249,6 @@ func (s *LocalStore) DeleteRoom(ctx context.Context, roomName livekit.RoomName) 
 			log.Printf("try remove key %s for room db %s error: %s", k, room.Name, err)
 		}
 		db.cancel()
-		db.p2p.Disconnect(context.Background())
 	}
 
 	delete(s.databases, livekit.RoomName(room.Name))
