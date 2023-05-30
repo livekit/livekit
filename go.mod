@@ -18,8 +18,8 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20230523035537-27577c4e1646
-	github.com/livekit/protocol v1.5.7
-	github.com/livekit/psrpc v0.3.1-0.20230528083849-53d664c6d912
+	github.com/livekit/protocol v1.5.8-0.20230525225706-52cca4239cf2
+	github.com/livekit/psrpc v0.3.1-0.20230518234341-6f6847e10b09
 	github.com/mackerelio/go-osstat v0.2.4
 	github.com/magefile/mage v1.15.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.6.1
