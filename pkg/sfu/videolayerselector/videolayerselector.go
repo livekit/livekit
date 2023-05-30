@@ -11,6 +11,7 @@ type VideoLayerSelectorResult struct {
 	IsResuming                    bool
 	IsSwitchingToRequestSpatial   bool
 	IsSwitchingToMaxSpatial       bool
+	MaxSpatialLayer               int32
 	RTPMarker                     bool
 	DependencyDescriptorExtension []byte
 }

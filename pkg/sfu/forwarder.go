@@ -129,6 +129,7 @@ type TranslationParams struct {
 	isResuming                  bool
 	isSwitchingToRequestSpatial bool
 	isSwitchingToMaxSpatial     bool
+	maxSpatialLayer             int32
 	rtp                         *TranslationParamsRTP
 	codecBytes                  []byte
 	ddBytes                     []byte
@@ -1570,6 +1571,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 	tp.isResuming = result.IsResuming
 	tp.isSwitchingToRequestSpatial = result.IsSwitchingToRequestSpatial
 	tp.isSwitchingToMaxSpatial = result.IsSwitchingToMaxSpatial
+	tp.maxSpatialLayer = result.MaxSpatialLayer
 	tp.ddBytes = result.DependencyDescriptorExtension
 	tp.marker = result.RTPMarker
 
@@ -1647,7 +1649,7 @@ func (f *Forwarder) maybeStart() {
 	f.firstTS = extPkt.Packet.Timestamp
 }
 
-func (f *Forwarder) GetSnTsForPadding(num int) ([]SnTs, error) {
+func (f *Forwarder) GetSnTsForPadding(num int, forceMarker bool) ([]SnTs, error) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -1658,7 +1660,6 @@ func (f *Forwarder) GetSnTsForPadding(num int) ([]SnTs, error) {
 	// not get out-of-sync. But, when a stream is paused,
 	// force a frame marker as a restart of the stream will
 	// start with a key frame which will reset the decoder.
-	forceMarker := false
 	if !f.vls.GetTarget().IsValid() {
 		forceMarker = true
 	}

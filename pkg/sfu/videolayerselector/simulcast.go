@@ -98,6 +98,7 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket, layer int32) (result VideoL
 
 			if s.currentLayer.Spatial >= s.maxLayer.Spatial {
 				result.IsSwitchingToMaxSpatial = true
+				result.MaxSpatialLayer = s.currentLayer.Spatial
 				s.logger.Infow(
 					"reached max layer",
 					"current", s.currentLayer,
@@ -136,6 +137,7 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket, layer int32) (result VideoL
 
 		if s.currentLayer.Spatial >= s.maxLayer.Spatial {
 			result.IsSwitchingToMaxSpatial = true
+			result.MaxSpatialLayer = s.currentLayer.Spatial
 		}
 
 		if s.currentLayer.Spatial >= s.maxLayer.Spatial || s.currentLayer.Spatial == s.maxSeenLayer.Spatial {
