@@ -543,3 +543,111 @@ func TestDeviceCodecOverride(t *testing.T) {
 	}
 	require.True(t, hasSeenVP8, "should have seen VP8 codec in SDP")
 }
+
+func TestSubscribeToCodecUnsupported(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	_, finish := setupSingleNodeTest("TestSubscribeToCodecUnsupported")
+	defer finish()
+
+	c1 := createRTCClient("c1", defaultServerPort, nil)
+	// create a client that doesn't support H264
+	c2 := createRTCClient("c2", defaultServerPort, &testclient.Options{
+		AutoSubscribe: true,
+		DisabledCodecs: []webrtc.RTPCodecCapability{
+			{MimeType: "video/H264"},
+		},
+	})
+	waitUntilConnected(t, c1, c2)
+
+	// publish a vp8 video track and ensure c2 receives it ok
+	t1, err := c1.AddStaticTrack("audio/opus", "audio", "webcam")
+	require.NoError(t, err)
+	defer t1.Stop()
+	t2, err := c1.AddStaticTrack("video/vp8", "video", "webcam")
+	require.NoError(t, err)
+	defer t2.Stop()
+
+	testutils.WithTimeout(t, func() string {
+		if len(c2.SubscribedTracks()) == 0 {
+			return "c2 was not subscribed to anything"
+		}
+		// should have received two tracks
+		if len(c2.SubscribedTracks()[c1.ID()]) != 2 {
+			return "c2 was not subscribed to tracks from c1"
+		}
+
+		tracks := c2.SubscribedTracks()[c1.ID()]
+		for _, t := range tracks {
+			if strings.EqualFold(t.Codec().MimeType, "video/vp8") {
+				return ""
+
+			}
+		}
+		return "did not receive track with vp8"
+	})
+	require.Nil(t, c2.GetSubscriptionResponseAndClear())
+
+	// publish a h264 track and ensure c2 got subscription error
+	t3, err := c1.AddStaticTrackWithCodec(webrtc.RTPCodecCapability{
+		MimeType:    "video/h264",
+		ClockRate:   90000,
+		SDPFmtpLine: "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
+	}, "videoscreen", "screen")
+	defer t3.Stop()
+	require.NoError(t, err)
+
+	var h264TrackID string
+	require.Eventually(t, func() bool {
+		remoteC1 := c2.GetRemoteParticipant(c1.ID())
+		require.NotNil(t, remoteC1)
+		for _, track := range remoteC1.Tracks {
+			if strings.EqualFold(track.MimeType, "video/h264") {
+				h264TrackID = track.Sid
+				return true
+			}
+		}
+		return false
+	}, time.Second, 10*time.Millisecond, "did not receive track info with h264")
+
+	require.Eventually(t, func() bool {
+		sr := c2.GetSubscriptionResponseAndClear()
+		if sr == nil {
+			return false
+		}
+		require.Equal(t, h264TrackID, sr.TrackSid)
+		require.Equal(t, livekit.SubscriptionError_SE_CODEC_UNSUPPORTED, sr.Err)
+		return true
+	}, time.Second, 10*time.Millisecond, "did not receive subscription response")
+
+	// publish another vp8 track again, ensure the transport recovered by sfu and c2 can receive it
+	t4, err := c1.AddStaticTrack("video/vp8", "video2", "webcam2")
+	require.NoError(t, err)
+	defer t4.Stop()
+
+	testutils.WithTimeout(t, func() string {
+		if len(c2.SubscribedTracks()) == 0 {
+			return "c2 was not subscribed to anything"
+		}
+		// should have received two tracks
+		if len(c2.SubscribedTracks()[c1.ID()]) != 3 {
+			return "c2 was not subscribed to tracks from c1"
+		}
+
+		var vp8Count int
+		tracks := c2.SubscribedTracks()[c1.ID()]
+		for _, t := range tracks {
+			if strings.EqualFold(t.Codec().MimeType, "video/vp8") {
+				vp8Count++
+			}
+		}
+		if vp8Count == 2 {
+			return ""
+		}
+		return "did not 2 receive track with vp8"
+	})
+	require.Nil(t, c2.GetSubscriptionResponseAndClear())
+}

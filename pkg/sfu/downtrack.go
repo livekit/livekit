@@ -199,7 +199,7 @@ type DownTrack struct {
 	writeStream            webrtc.TrackLocalWriter
 	rtcpReader             *buffer.RTCPReader
 	onCloseHandler         func(willBeResumed bool)
-	onBinding              func()
+	onBinding              func(error)
 
 	listenerLock            sync.RWMutex
 	receiverReportListeners []ReceiverReportListener
@@ -336,8 +336,14 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	}
 
 	if codec.MimeType == "" {
+		err := webrtc.ErrUnsupportedCodec
+		onBinding := d.onBinding
 		d.bindLock.Unlock()
-		return webrtc.RTPCodecParameters{}, webrtc.ErrUnsupportedCodec
+		d.logger.Infow("bind error for unsupported codec", "codecs", d.upstreamCodecs, "remoteParameters", t.CodecParameters())
+		if onBinding != nil {
+			onBinding(err)
+		}
+		return webrtc.RTPCodecParameters{}, err
 	}
 
 	// if a downtrack is closed before bind, it already unsubscribed from client, don't do subsequent operation and return here.
@@ -367,7 +373,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 
 	d.codec = codec.RTPCodecCapability
 	if d.onBinding != nil {
-		d.onBinding()
+		d.onBinding(nil)
 	}
 	d.bound.Store(true)
 	d.bindLock.Unlock()
@@ -990,7 +996,7 @@ func (d *DownTrack) OnCloseHandler(fn func(willBeResumed bool)) {
 	d.onCloseHandler = fn
 }
 
-func (d *DownTrack) OnBinding(fn func()) {
+func (d *DownTrack) OnBinding(fn func(error)) {
 	d.onBinding = fn
 }
 

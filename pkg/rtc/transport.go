@@ -1865,7 +1865,13 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription) e
 
 func (t *PCTransport) handleRemoteAnswerReceived(sd *webrtc.SessionDescription) error {
 	if err := t.setRemoteDescription(*sd); err != nil {
-		return err
+		// Pion will call RTPSender.Send method for each new added Downtrack, and return error if the DownTrack.Bind
+		// returns error. In case of Downtrack.Bind returns ErrUnsupportedCodec, the signal state will be stable as negotiation is aleady compelted
+		// before startRTPSenders, and the peerconnection state can be recovered by next negotiation which will be triggered
+		// by the SubscriptionManager unsubscribe the failure DownTrack. So don't treat this error as negotiation failure.
+		if !errors.Is(err, webrtc.ErrUnsupportedCodec) {
+			return err
+		}
 	}
 
 	t.clearSignalStateCheckTimer()
