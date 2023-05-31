@@ -997,7 +997,10 @@ func (p *ParticipantImpl) onTrackSubscribed(subTrack types.SubscribedTrack) {
 		subTrack.DownTrack().SetActivePaddingOnMuteUpTrack()
 	}
 
-	subTrack.AddOnBind(func() {
+	subTrack.AddOnBind(func(err error) {
+		if err != nil {
+			return
+		}
 		if p.TransportManager.HasSubscriberEverConnected() {
 			subTrack.DownTrack().SetConnected()
 		}
@@ -2083,8 +2086,25 @@ func (p *ParticipantImpl) onPublicationError(trackID livekit.TrackID) {
 	}
 }
 
-func (p *ParticipantImpl) onSubscriptionError(trackID livekit.TrackID) {
-	if p.params.ReconnectOnSubscriptionError {
+func (p *ParticipantImpl) onSubscriptionError(trackID livekit.TrackID, fatal bool, err error) {
+	signalErr := livekit.SubscriptionError_SE_UNKOWN
+	switch {
+	case errors.Is(err, webrtc.ErrUnsupportedCodec):
+		signalErr = livekit.SubscriptionError_SE_CODEC_UNSUPPORTED
+	case errors.Is(err, ErrTrackNotFound):
+		signalErr = livekit.SubscriptionError_SE_TRACK_NOTFOUND
+	}
+
+	_ = p.writeMessage(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_SubscriptionResponse{
+			SubscriptionResponse: &livekit.SubscriptionResponse{
+				TrackSid: string(trackID),
+				Err:      signalErr,
+			},
+		},
+	})
+
+	if p.params.ReconnectOnSubscriptionError && fatal {
 		p.params.Logger.Infow("issuing full reconnect on subscription error", "trackID", trackID)
 		p.IssueFullReconnect(types.ParticipantCloseReasonPublicationError)
 	}

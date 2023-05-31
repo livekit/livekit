@@ -54,7 +54,7 @@ func TestSubscribe(t *testing.T) {
 		sm.params.OnTrackSubscribed = func(subTrack types.SubscribedTrack) {
 			subCount.Add(1)
 		}
-		sm.params.OnSubscriptionError = func(trackID livekit.TrackID) {
+		sm.params.OnSubscriptionError = func(trackID livekit.TrackID, fatal bool, err error) {
 			failed.Store(true)
 		}
 		numParticipantSubscribed := atomic.Int32{}
@@ -123,7 +123,7 @@ func TestSubscribe(t *testing.T) {
 		resolver := newTestResolver(false, true, "pub", "pubID")
 		sm.params.TrackResolver = resolver.Resolve
 		failed := atomic.Bool{}
-		sm.params.OnSubscriptionError = func(trackID livekit.TrackID) {
+		sm.params.OnSubscriptionError = func(trackID livekit.TrackID, fatal bool, err error) {
 			failed.Store(true)
 		}
 
@@ -164,7 +164,7 @@ func TestSubscribe(t *testing.T) {
 		resolver := newTestResolver(true, true, "pub", "pubID")
 		sm.params.TrackResolver = resolver.Resolve
 		failed := atomic.Bool{}
-		sm.params.OnSubscriptionError = func(trackID livekit.TrackID) {
+		sm.params.OnSubscriptionError = func(trackID livekit.TrackID, fatal bool, err error) {
 			failed.Store(true)
 		}
 
@@ -360,7 +360,7 @@ func TestSubscriptionLimits(t *testing.T) {
 	sm.params.OnTrackSubscribed = func(subTrack types.SubscribedTrack) {
 		subCount.Add(1)
 	}
-	sm.params.OnSubscriptionError = func(trackID livekit.TrackID) {
+	sm.params.OnSubscriptionError = func(trackID livekit.TrackID, fatal bool, err error) {
 		failed.Store(true)
 	}
 	numParticipantSubscribed := atomic.Int32{}
@@ -463,7 +463,7 @@ func newTestSubscriptionManagerWithParams(t *testing.T, params testSubscriptionP
 		Logger:              logger.GetLogger(),
 		OnTrackSubscribed:   func(subTrack types.SubscribedTrack) {},
 		OnTrackUnsubscribed: func(subTrack types.SubscribedTrack) {},
-		OnSubscriptionError: func(trackID livekit.TrackID) {},
+		OnSubscriptionError: func(trackID livekit.TrackID, fatal bool, err error) {},
 		TrackResolver: func(identity livekit.ParticipantIdentity, trackID livekit.TrackID) types.MediaResolverResult {
 			return types.MediaResolverResult{}
 		},
@@ -526,7 +526,7 @@ func setTestSubscribedTrackBound(t *testing.T, st types.SubscribedTrack) {
 	require.True(t, ok)
 
 	for i := 0; i < fst.AddOnBindCallCount(); i++ {
-		fst.AddOnBindArgsForCall(i)()
+		fst.AddOnBindArgsForCall(i)(nil)
 	}
 }
 

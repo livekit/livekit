@@ -196,7 +196,7 @@ func createRTCClient(name string, port int, opts *testclient.Options) *testclien
 		panic(err)
 	}
 
-	c, err := testclient.NewRTCClient(ws)
+	c, err := testclient.NewRTCClient(ws, opts)
 	if err != nil {
 		panic(err)
 	}
@@ -213,7 +213,7 @@ func createRTCClientWithToken(token string, port int, opts *testclient.Options) 
 		panic(err)
 	}
 
-	c, err := testclient.NewRTCClient(ws)
+	c, err := testclient.NewRTCClient(ws, opts)
 	if err != nil {
 		panic(err)
 	}

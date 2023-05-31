@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -61,6 +62,8 @@ type RTCClient struct {
 	// map of livekit.ParticipantID and last packet
 	lastPackets   map[livekit.ParticipantID]*rtp.Packet
 	bytesReceived map[livekit.ParticipantID]uint64
+
+	subscriptionResponse atomic.Pointer[livekit.SubscriptionResponse]
 }
 
 var (
@@ -80,9 +83,10 @@ var (
 )
 
 type Options struct {
-	AutoSubscribe bool
-	Publish       string
-	ClientInfo    *livekit.ClientInfo
+	AutoSubscribe  bool
+	Publish        string
+	ClientInfo     *livekit.ClientInfo
+	DisabledCodecs []webrtc.RTPCodecCapability
 }
 
 func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error) {
@@ -116,7 +120,7 @@ func SetAuthorizationToken(header http.Header, token string) {
 	header.Set("Authorization", "Bearer "+token)
 }
 
-func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
+func NewRTCClient(conn *websocket.Conn, opts *Options) (*RTCClient, error) {
 	var err error
 
 	c := &RTCClient{
@@ -139,7 +143,8 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 	}
 	conf.SettingEngine.SetLite(false)
 	conf.SettingEngine.SetAnsweringDTLSRole(webrtc.DTLSRoleClient)
-	codecs := []*livekit.Codec{
+	var codecs []*livekit.Codec
+	for _, codec := range []*livekit.Codec{
 		{
 			Mime: "audio/opus",
 		},
@@ -149,7 +154,21 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 		{
 			Mime: "video/h264",
 		},
+	} {
+		var disabled bool
+		if opts != nil {
+			for _, dc := range opts.DisabledCodecs {
+				if strings.EqualFold(dc.MimeType, codec.Mime) && (dc.SDPFmtpLine == "" || dc.SDPFmtpLine == codec.FmtpLine) {
+					disabled = true
+					break
+				}
+			}
+		}
+		if !disabled {
+			codecs = append(codecs, codec)
+		}
 	}
+
 	//
 	// The signal targets are from point of view of server.
 	// From client side, they are flipped,
@@ -348,6 +367,8 @@ func (c *RTCClient) Run() error {
 			c.lock.Unlock()
 		case *livekit.SignalResponse_Pong:
 			c.pongReceivedAt.Store(msg.Pong)
+		case *livekit.SignalResponse_SubscriptionResponse:
+			c.subscriptionResponse.Store(msg.SubscriptionResponse)
 		}
 	}
 }
@@ -450,6 +471,10 @@ func (c *RTCClient) RefreshToken() string {
 
 func (c *RTCClient) PongReceivedAt() int64 {
 	return c.pongReceivedAt.Load()
+}
+
+func (c *RTCClient) GetSubscriptionResponseAndClear() *livekit.SubscriptionResponse {
+	return c.subscriptionResponse.Swap(nil)
 }
 
 func (c *RTCClient) SendPing() error {
