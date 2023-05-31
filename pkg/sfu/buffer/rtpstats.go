@@ -865,19 +865,21 @@ func (r *RTPStats) GetExpectedRTPTimestamp(at time.Time) (uint32, uint64, error)
 	if r.srNewest != nil {
 		minTS = r.srNewest.RTPTimestampExt
 	}
-	r.logger.Debugw(
-		"expected RTP timestamp",
-		"firstTime", r.firstTime.String(),
-		"checkAt", at.String(),
-		"timeDiff", timeDiff,
-		"firstRTP", r.extStartTS,
-		"expectedRTPDiff", expectedRTPDiff,
-		"expectedExtRTP", expectedExtRTP,
-		"expectedRTP", uint32(expectedExtRTP),
-		"minTS", minTS,
-		"highestTS", r.highestTS,
-		"highestTime", r.highestTime.String(),
-	)
+	/*
+		r.logger.Debugw(
+			"expected RTP timestamp",
+			"firstTime", r.firstTime.String(),
+			"checkAt", at.String(),
+			"timeDiff", timeDiff,
+			"firstRTP", r.extStartTS,
+			"expectedRTPDiff", expectedRTPDiff,
+			"expectedExtRTP", expectedExtRTP,
+			"expectedRTP", uint32(expectedExtRTP),
+			"minTS", minTS,
+			"highestTS", r.highestTS,
+			"highestTime", r.highestTime.String(),
+		)
+	*/
 	return uint32(expectedExtRTP), minTS, nil
 }
 

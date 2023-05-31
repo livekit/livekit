@@ -19,7 +19,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20230523035537-27577c4e1646
-	github.com/livekit/protocol v1.5.7
+	github.com/livekit/protocol v1.5.8-0.20230531030840-2a4d1a607ba3
 	github.com/livekit/psrpc v0.3.1-0.20230528083849-53d664c6d912
 	github.com/mackerelio/go-osstat v0.2.4
 	github.com/magefile/mage v1.15.0
@@ -37,13 +37,13 @@ require (
 	github.com/pion/webrtc/v3 v3.2.8
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.15.1
-	github.com/redis/go-redis/v9 v9.0.4
+	github.com/redis/go-redis/v9 v9.0.5
 	github.com/rs/cors v1.9.0
 	github.com/stretchr/testify v1.8.3
 	github.com/thoas/go-funk v0.9.3
 	github.com/twitchtv/twirp v8.1.3+incompatible
 	github.com/ua-parser/uap-go v0.0.0-20211112212520-00c877edfe0f
-	github.com/urfave/cli/v2 v2.25.4
+	github.com/urfave/cli/v2 v2.25.5
 	github.com/urfave/negroni/v3 v3.0.0
 	go.uber.org/atomic v1.11.0
 	golang.org/x/sync v0.2.0

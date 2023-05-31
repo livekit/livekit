@@ -52,7 +52,7 @@ type SubscriptionManagerParams struct {
 	TrackResolver       types.MediaTrackResolver
 	OnTrackSubscribed   func(subTrack types.SubscribedTrack)
 	OnTrackUnsubscribed func(subTrack types.SubscribedTrack)
-	OnSubscriptionError func(trackID livekit.TrackID)
+	OnSubscriptionError func(trackID livekit.TrackID, fatal bool, err error)
 	Telemetry           telemetry.TelemetryService
 
 	SubscriptionLimitVideo, SubscriptionLimitAudio int32
@@ -309,6 +309,7 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 					s.logger.Infow("unsubscribing from track after notFoundTimeout", "error", err)
 					s.setDesired(false)
 					m.queueReconcile(s.trackID)
+					m.params.OnSubscriptionError(s.trackID, false, err)
 				}
 			default:
 				// all other errors
@@ -317,7 +318,7 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 						"attempt", numAttempts,
 					)
 					s.maybeRecordError(m.params.Telemetry, m.params.Participant.ID(), err, false)
-					m.params.OnSubscriptionError(s.trackID)
+					m.params.OnSubscriptionError(s.trackID, true, err)
 				} else {
 					s.logger.Debugw("failed to subscribe, retrying",
 						"error", err,
@@ -353,7 +354,7 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 		if s.durationSinceStart() > subscriptionTimeout {
 			s.logger.Errorw("track not bound after timeout", nil)
 			s.maybeRecordError(m.params.Telemetry, m.params.Participant.ID(), ErrTrackNotBound, false)
-			m.params.OnSubscriptionError(s.trackID)
+			m.params.OnSubscriptionError(s.trackID, true, ErrTrackNotBound)
 		}
 	}
 }
@@ -470,7 +471,14 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 		subTrack.OnClose(func(willBeResumed bool) {
 			m.handleSubscribedTrackClose(s, willBeResumed)
 		})
-		subTrack.AddOnBind(func() {
+		subTrack.AddOnBind(func(err error) {
+			if err != nil {
+				s.logger.Infow("failed to bind track", "err", err)
+				s.maybeRecordError(m.params.Telemetry, m.params.Participant.ID(), err, true)
+				m.UnsubscribeFromTrack(s.trackID)
+				m.params.OnSubscriptionError(s.trackID, false, err)
+				return
+			}
 			s.setBound()
 			s.maybeRecordSuccess(m.params.Telemetry, m.params.Participant.ID())
 		})
