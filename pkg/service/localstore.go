@@ -73,6 +73,8 @@ func (s *LocalStore) getOrCreateDatabase(room *livekit.Room) (*RoomDatabase, err
 
 	cfg := s.p2pDatabaseConfig
 	cfg.DatabaseName = "livekit_room_" + room.Name
+
+	_ = logging.SetLogLevel("*", "error")
 	db, err := p2p_database.Connect(ctx, cfg, logging.Logger("db_livekit_room_"+room.Name))
 	if err != nil {
 		cancel()
@@ -151,7 +153,7 @@ func (s *LocalStore) StoreRoom(ctx context.Context, room *livekit.Room, internal
 					if err != nil {
 						log.Fatalf("get connected nodes for db %s: %s", room.Name, err)
 					}
-					log.Printf("%s search new peers in room %s", db.GetHost().ID(), room.Name)
+					//log.Printf("%s search new peers in room %s", db.GetHost().ID(), room.Name)
 					for _, k := range keys {
 						k = strings.TrimPrefix(k, "/")
 						if !strings.HasPrefix(k, prefixPeerKey) {
