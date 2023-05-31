@@ -309,6 +309,7 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 					s.logger.Infow("unsubscribing from track after notFoundTimeout", "error", err)
 					s.setDesired(false)
 					m.queueReconcile(s.trackID)
+					m.params.OnSubscriptionError(s.trackID, false, err)
 				}
 			default:
 				// all other errors

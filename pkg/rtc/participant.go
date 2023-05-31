@@ -2088,13 +2088,16 @@ func (p *ParticipantImpl) onPublicationError(trackID livekit.TrackID) {
 
 func (p *ParticipantImpl) onSubscriptionError(trackID livekit.TrackID, fatal bool, err error) {
 	signalErr := livekit.SubscriptionError_SE_UNKOWN
-	if errors.Is(err, webrtc.ErrUnsupportedCodec) {
+	switch {
+	case errors.Is(err, webrtc.ErrUnsupportedCodec):
 		signalErr = livekit.SubscriptionError_SE_CODEC_UNSUPPORTED
+	case errors.Is(err, ErrTrackNotFound):
+		signalErr = livekit.SubscriptionError_SE_TRACK_NOTFOUND
 	}
 
 	_ = p.writeMessage(&livekit.SignalResponse{
-		Message: &livekit.SignalResponse_SubscribptionResponse{
-			SubscribptionResponse: &livekit.SubscriptionResponse{
+		Message: &livekit.SignalResponse_SubscriptionResponse{
+			SubscriptionResponse: &livekit.SubscriptionResponse{
 				TrackSid: string(trackID),
 				Err:      signalErr,
 			},
