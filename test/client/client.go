@@ -367,8 +367,8 @@ func (c *RTCClient) Run() error {
 			c.lock.Unlock()
 		case *livekit.SignalResponse_Pong:
 			c.pongReceivedAt.Store(msg.Pong)
-		case *livekit.SignalResponse_SubscribptionResponse:
-			c.subscriptionResponse.Store(msg.SubscribptionResponse)
+		case *livekit.SignalResponse_SubscriptionResponse:
+			c.subscriptionResponse.Store(msg.SubscriptionResponse)
 		}
 	}
 }
