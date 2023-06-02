@@ -110,6 +110,7 @@ func (s *IngressService) CreateIngressWithUrlPrefix(ctx context.Context, urlPref
 		logger.Errorw("could not write ingress info", err)
 		return nil, err
 	}
+	s.telemetry.IngressCreated(ctx, info)
 
 	return info, nil
 }
@@ -254,5 +255,8 @@ func (s *IngressService) DeleteIngress(ctx context.Context, req *livekit.DeleteI
 	}
 
 	info.State.Status = livekit.IngressState_ENDPOINT_INACTIVE
+
+	s.telemetry.IngressDeleted(ctx, info)
+
 	return info, nil
 }

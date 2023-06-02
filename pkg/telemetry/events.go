@@ -429,6 +429,40 @@ func (t *telemetryService) EgressEnded(ctx context.Context, info *livekit.Egress
 	})
 }
 
+func (t *telemetryService) IngressCreated(ctx context.Context, info *livekit.IngressInfo) {
+	t.enqueue(func() {
+		t.SendEvent(ctx, newIngressEvent(livekit.AnalyticsEventType_INGRESS_CREATED, info))
+	})
+}
+
+func (t *telemetryService) IngressDeleted(ctx context.Context, info *livekit.IngressInfo) {
+	t.enqueue(func() {
+		t.SendEvent(ctx, newIngressEvent(livekit.AnalyticsEventType_INGRESS_DELETED, info))
+	})
+}
+
+func (t *telemetryService) IngressStarted(ctx context.Context, info *livekit.IngressInfo) {
+	t.enqueue(func() {
+		t.NotifyEvent(ctx, &livekit.WebhookEvent{
+			Event:       webhook.EventIngressStarted,
+			IngressInfo: info,
+		})
+
+		t.SendEvent(ctx, newIngressEvent(livekit.AnalyticsEventType_INGRESS_STARTED, info))
+	})
+}
+
+func (t *telemetryService) IngressEnded(ctx context.Context, info *livekit.IngressInfo) {
+	t.enqueue(func() {
+		t.NotifyEvent(ctx, &livekit.WebhookEvent{
+			Event:       webhook.EventIngressEnded,
+			IngressInfo: info,
+		})
+
+		t.SendEvent(ctx, newIngressEvent(livekit.AnalyticsEventType_INGRESS_ENDED, info))
+	})
+}
+
 // returns a livekit.Room with only name and sid filled out
 // returns nil if room is not found
 func (t *telemetryService) getRoomDetails(participantID livekit.ParticipantID) *livekit.Room {
@@ -481,5 +515,14 @@ func newEgressEvent(event livekit.AnalyticsEventType, egress *livekit.EgressInfo
 		EgressId:  egress.EgressId,
 		RoomId:    egress.RoomId,
 		Egress:    egress,
+	}
+}
+
+func newIngressEvent(event livekit.AnalyticsEventType, ingress *livekit.IngressInfo) *livekit.AnalyticsEvent {
+	return &livekit.AnalyticsEvent{
+		Type:      event,
+		Timestamp: timestamppb.Now(),
+		IngressId: ingress.IngressId,
+		Ingress:   ingress,
 	}
 }
