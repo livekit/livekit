@@ -98,9 +98,7 @@ func (r *RedPrimaryReceiver) CanClose() bool {
 
 func (r *RedPrimaryReceiver) Close() {
 	r.closed.Store(true)
-	for _, dt := range r.downTrackSpreader.ResetAndGetDownTracks() {
-		dt.Close()
-	}
+	closeTrackSenders(r.downTrackSpreader.ResetAndGetDownTracks())
 }
 
 func (r *RedPrimaryReceiver) ReadRTP(buf []byte, layer uint8, sn uint16) (int, error) {
