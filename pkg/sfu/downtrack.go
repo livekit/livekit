@@ -830,7 +830,7 @@ func (d *DownTrack) Close() {
 	d.CloseWithFlush(true)
 }
 
-// Close track, flush used to indicate whether send blank frame to flush
+// CloseWithFlush - flush used to indicate whether send blank frame to flush
 // decoder of client.
 //  1. When transceiver is reused by other participant's video track,
 //     set flush=true to avoid previous video shows before new stream is displayed.

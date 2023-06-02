@@ -236,6 +236,9 @@ func TestUnsubscribe(t *testing.T) {
 		if s.needsUnsubscribe() {
 			return false
 		}
+		if sm.pendingUnsubscribes.Load() != 0 {
+			return false
+		}
 		sm.lock.RLock()
 		subLen := len(sm.subscriptions)
 		sm.lock.RUnlock()
