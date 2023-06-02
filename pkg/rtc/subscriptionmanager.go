@@ -40,6 +40,7 @@ var (
 	// amount of time to try otherwise before flagging subscription as failed
 	subscriptionTimeout    = iceFailedTimeout
 	trackRemoveGracePeriod = time.Second
+	maxUnsubscribeWait     = time.Second
 )
 
 const (
@@ -60,9 +61,10 @@ type SubscriptionManagerParams struct {
 
 // SubscriptionManager manages a participant's subscriptions
 type SubscriptionManager struct {
-	params        SubscriptionManagerParams
-	lock          sync.RWMutex
-	subscriptions map[livekit.TrackID]*trackSubscription
+	params              SubscriptionManagerParams
+	lock                sync.RWMutex
+	subscriptions       map[livekit.TrackID]*trackSubscription
+	pendingUnsubscribes atomic.Int32
 
 	subscribedVideoCount, subscribedAudioCount atomic.Int32
 
@@ -109,8 +111,15 @@ func (m *SubscriptionManager) Close(willBeResumed bool) {
 		}
 	}
 
-	for _, dt := range downTracksToClose {
-		dt.CloseWithFlush(!willBeResumed)
+	if willBeResumed {
+		for _, dt := range downTracksToClose {
+			dt.CloseWithFlush(false)
+		}
+	} else {
+		// flush blocks, so execute in parallel
+		for _, dt := range downTracksToClose {
+			go dt.CloseWithFlush(true)
+		}
 	}
 }
 
@@ -274,6 +283,15 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 		return
 	}
 	if s.needsSubscribe() {
+		if m.pendingUnsubscribes.Load() != 0 && s.durationSinceStart() < maxUnsubscribeWait {
+			// enqueue this in a bit, after pending unsubscribes are complete
+			go func() {
+				time.Sleep(time.Duration(sfu.RTPBlankFramesCloseSeconds * float32(time.Second)))
+				m.queueReconcile(s.trackID)
+			}()
+			return
+		}
+
 		numAttempts := s.getNumAttempts()
 		if numAttempts == 0 {
 			m.params.Telemetry.TrackSubscribeRequested(
@@ -498,7 +516,7 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 		go m.params.OnTrackSubscribed(subTrack)
 	}
 
-	m.params.Logger.Debugw("subscribed to track", "track", s.trackID, "subscribedAudioCount", m.subscribedAudioCount.Load(), "subscribedVideoCount", m.subscribedVideoCount.Load())
+	m.params.Logger.Debugw("subscribed to track", "trackID", s.trackID, "subscribedAudioCount", m.subscribedAudioCount.Load(), "subscribedVideoCount", m.subscribedVideoCount.Load())
 
 	// add mark the participant as someone we've subscribed to
 	firstSubscribe := false
@@ -531,7 +549,11 @@ func (m *SubscriptionManager) unsubscribe(s *trackSubscription) error {
 
 	track := subTrack.MediaTrack()
 	pID := m.params.Participant.ID()
-	track.RemoveSubscriber(pID, false)
+	m.pendingUnsubscribes.Inc()
+	go func() {
+		defer m.pendingUnsubscribes.Dec()
+		track.RemoveSubscriber(pID, false)
+	}()
 
 	return nil
 }

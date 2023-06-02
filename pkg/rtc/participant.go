@@ -1686,7 +1686,7 @@ func (p *ParticipantImpl) addMigrateMutedTrack(cid string, ti *livekit.TrackInfo
 	p.params.Logger.Debugw("add migrate muted track", "cid", cid, "track", ti.String())
 	rtpReceiver := p.TransportManager.GetPublisherRTPReceiver(ti.Mid)
 	if rtpReceiver == nil {
-		p.params.Logger.Errorw("could not find receiver for migrated track", nil, "track", ti.Sid)
+		p.params.Logger.Errorw("could not find receiver for migrated track", nil, "trackID", ti.Sid)
 		return nil
 	}
 

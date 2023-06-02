@@ -662,9 +662,7 @@ func (w *WebRTCReceiver) closeTracks() {
 	w.connectionStats.Close()
 	w.streamTrackerManager.Close()
 
-	for _, dt := range w.downTrackSpreader.ResetAndGetDownTracks() {
-		dt.Close()
-	}
+	closeTrackSenders(w.downTrackSpreader.ResetAndGetDownTracks())
 
 	if w.onCloseHandler != nil {
 		w.onCloseHandler()
@@ -752,4 +750,18 @@ func (w *WebRTCReceiver) GetRTCPSenderReportData(layer int32) (*buffer.RTCPSende
 
 func (w *WebRTCReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error) {
 	return w.streamTrackerManager.GetReferenceLayerRTPTimestamp(ts, layer, referenceLayer)
+}
+
+// closes all track senders in parallel, returns when all are closed
+func closeTrackSenders(senders []TrackSender) {
+	wg := sync.WaitGroup{}
+	for _, dt := range senders {
+		dt := dt
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			dt.Close()
+		}()
+	}
+	wg.Wait()
 }

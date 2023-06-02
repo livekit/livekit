@@ -212,7 +212,7 @@ func (s *RoomService) RemoveParticipant(ctx context.Context, req *livekit.RoomPa
 }
 
 func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteRoomTrackRequest) (*livekit.MuteRoomTrackResponse, error) {
-	AppendLogFields(ctx, "room", req.Room, "participant", req.Identity, "track", req.TrackSid, "muted", req.Muted)
+	AppendLogFields(ctx, "room", req.Room, "participant", req.Identity, "trackID", req.TrackSid, "muted", req.Muted)
 	if err := EnsureAdminPermission(ctx, livekit.RoomName(req.Room)); err != nil {
 		return nil, twirpAuthError(err)
 	}
@@ -298,7 +298,7 @@ func (s *RoomService) UpdateSubscriptions(ctx context.Context, req *livekit.Upda
 	for _, pt := range req.ParticipantTracks {
 		trackSIDs = append(trackSIDs, pt.TrackSids...)
 	}
-	AppendLogFields(ctx, "room", req.Room, "participant", req.Identity, "track", trackSIDs)
+	AppendLogFields(ctx, "room", req.Room, "participant", req.Identity, "trackID", trackSIDs)
 	err := s.writeParticipantMessage(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity), &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_UpdateSubscriptions{
 			UpdateSubscriptions: req,
