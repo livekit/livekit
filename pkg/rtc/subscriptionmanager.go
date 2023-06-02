@@ -516,7 +516,7 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 		go m.params.OnTrackSubscribed(subTrack)
 	}
 
-	m.params.Logger.Debugw("subscribed to track", "track", s.trackID, "subscribedAudioCount", m.subscribedAudioCount.Load(), "subscribedVideoCount", m.subscribedVideoCount.Load())
+	m.params.Logger.Debugw("subscribed to track", "trackID", s.trackID, "subscribedAudioCount", m.subscribedAudioCount.Load(), "subscribedVideoCount", m.subscribedVideoCount.Load())
 
 	// add mark the participant as someone we've subscribed to
 	firstSubscribe := false
@@ -539,7 +539,7 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 }
 
 func (m *SubscriptionManager) unsubscribe(s *trackSubscription) error {
-	s.logger.Debugw("executing unsubscribe", "track", s.trackID)
+	s.logger.Debugw("executing unsubscribe")
 
 	subTrack := s.getSubscribedTrack()
 	if subTrack == nil {
