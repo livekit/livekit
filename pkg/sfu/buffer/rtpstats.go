@@ -830,6 +830,22 @@ func (r *RTPStats) SetRtcpSenderReportData(srData *RTCPSenderReportData) {
 			"highestTS", r.highestTS,
 			"highestTime", r.highestTime.String(),
 		)
+	} else {
+		packetDriftResult, reportDriftResult := r.getDrift()
+		r.logger.Debugw(
+			"received sender report",
+			"ntp", srData.NTPTimestamp.Time().String(),
+			"rtp", srData.RTPTimestamp,
+			"arrival", srData.At.String(),
+			"ntpDiffSinceLast", ntpDiffSinceLast.Seconds(),
+			"rtpDiffSinceLast", int32(rtpDiffSinceLast),
+			"arrivalDiffSinceLast", arrivalDiffSinceLast.Seconds(),
+			"expectedTimeDiffSinceLast", expectedTimeDiffSinceLast,
+			"packetDrift", packetDriftResult.String(),
+			"reportDrift", reportDriftResult.String(),
+			"highestTS", r.highestTS,
+			"highestTime", r.highestTime.String(),
+		)
 	}
 }
 
@@ -865,21 +881,19 @@ func (r *RTPStats) GetExpectedRTPTimestamp(at time.Time) (uint32, uint64, error)
 	if r.srNewest != nil {
 		minTS = r.srNewest.RTPTimestampExt
 	}
-	/*
-		r.logger.Debugw(
-			"expected RTP timestamp",
-			"firstTime", r.firstTime.String(),
-			"checkAt", at.String(),
-			"timeDiff", timeDiff,
-			"firstRTP", r.extStartTS,
-			"expectedRTPDiff", expectedRTPDiff,
-			"expectedExtRTP", expectedExtRTP,
-			"expectedRTP", uint32(expectedExtRTP),
-			"minTS", minTS,
-			"highestTS", r.highestTS,
-			"highestTime", r.highestTime.String(),
-		)
-	*/
+	r.logger.Debugw(
+		"expected RTP timestamp",
+		"firstTime", r.firstTime.String(),
+		"checkAt", at.String(),
+		"timeDiff", timeDiff,
+		"firstRTP", r.extStartTS,
+		"expectedRTPDiff", expectedRTPDiff,
+		"expectedExtRTP", expectedExtRTP,
+		"expectedRTP", uint32(expectedExtRTP),
+		"minTS", minTS,
+		"highestTS", r.highestTS,
+		"highestTime", r.highestTime.String(),
+	)
 	return uint32(expectedExtRTP), minTS, nil
 }
 
@@ -959,6 +973,22 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srFirst *RTCPSenderReportDat
 		packetDriftResult, reportDriftResult := r.getDrift()
 		r.logger.Infow(
 			"sending sender report, time warp",
+			"ntp", nowNTP.Time().String(),
+			"rtp", nowRTP,
+			"departure", now.String(),
+			"ntpDiffSinceLast", ntpDiffSinceLast.Seconds(),
+			"rtpDiffSinceLast", int32(rtpDiffSinceLast),
+			"departureDiffSinceLast", departureDiffSinceLast.Seconds(),
+			"expectedTimeDiffSinceLast", expectedTimeDiffSinceLast,
+			"packetDrift", packetDriftResult.String(),
+			"reportDrift", reportDriftResult.String(),
+			"highestTS", r.highestTS,
+			"highestTime", r.highestTime.String(),
+		)
+	} else {
+		packetDriftResult, reportDriftResult := r.getDrift()
+		r.logger.Debugw(
+			"sending sender report",
 			"ntp", nowNTP.Time().String(),
 			"rtp", nowRTP,
 			"departure", now.String(),
@@ -1985,20 +2015,18 @@ func (p *PIDController) Update(setpoint, measurement float64, at time.Time) floa
 	p.prevError = errorTerm
 	p.prevMeasurement = measurement
 	p.prevMeasurementTime = at
-	/*
-		p.logger.Debugw(
-			"pid controller",
-			"setpoint", setpoint,
-			"measurement", measurement,
-			"errorTerm", errorTerm,
-			"proportional", proportional,
-			"integral", iVal,
-			"integralLimited", boundIVal,
-			"derivative", p.dVal,
-			"output", output,
-			"outputLimited", boundOutput,
-		)
-	*/
+	p.logger.Debugw(
+		"pid controller",
+		"setpoint", setpoint,
+		"measurement", measurement,
+		"errorTerm", errorTerm,
+		"proportional", proportional,
+		"integral", iVal,
+		"integralLimited", boundIVal,
+		"derivative", p.dVal,
+		"output", output,
+		"outputLimited", boundOutput,
+	)
 	return boundOutput
 }
 
