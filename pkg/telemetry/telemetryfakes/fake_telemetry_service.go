@@ -32,6 +32,30 @@ type FakeTelemetryService struct {
 	flushStatsMutex       sync.RWMutex
 	flushStatsArgsForCall []struct {
 	}
+	IngressCreatedStub        func(context.Context, *livekit.IngressInfo)
+	ingressCreatedMutex       sync.RWMutex
+	ingressCreatedArgsForCall []struct {
+		arg1 context.Context
+		arg2 *livekit.IngressInfo
+	}
+	IngressDeletedStub        func(context.Context, *livekit.IngressInfo)
+	ingressDeletedMutex       sync.RWMutex
+	ingressDeletedArgsForCall []struct {
+		arg1 context.Context
+		arg2 *livekit.IngressInfo
+	}
+	IngressEndedStub        func(context.Context, *livekit.IngressInfo)
+	ingressEndedMutex       sync.RWMutex
+	ingressEndedArgsForCall []struct {
+		arg1 context.Context
+		arg2 *livekit.IngressInfo
+	}
+	IngressStartedStub        func(context.Context, *livekit.IngressInfo)
+	ingressStartedMutex       sync.RWMutex
+	ingressStartedArgsForCall []struct {
+		arg1 context.Context
+		arg2 *livekit.IngressInfo
+	}
 	NotifyEventStub        func(context.Context, *livekit.WebhookEvent)
 	notifyEventMutex       sync.RWMutex
 	notifyEventArgsForCall []struct {
@@ -335,6 +359,138 @@ func (fake *FakeTelemetryService) FlushStatsCalls(stub func()) {
 	fake.flushStatsMutex.Lock()
 	defer fake.flushStatsMutex.Unlock()
 	fake.FlushStatsStub = stub
+}
+
+func (fake *FakeTelemetryService) IngressCreated(arg1 context.Context, arg2 *livekit.IngressInfo) {
+	fake.ingressCreatedMutex.Lock()
+	fake.ingressCreatedArgsForCall = append(fake.ingressCreatedArgsForCall, struct {
+		arg1 context.Context
+		arg2 *livekit.IngressInfo
+	}{arg1, arg2})
+	stub := fake.IngressCreatedStub
+	fake.recordInvocation("IngressCreated", []interface{}{arg1, arg2})
+	fake.ingressCreatedMutex.Unlock()
+	if stub != nil {
+		fake.IngressCreatedStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeTelemetryService) IngressCreatedCallCount() int {
+	fake.ingressCreatedMutex.RLock()
+	defer fake.ingressCreatedMutex.RUnlock()
+	return len(fake.ingressCreatedArgsForCall)
+}
+
+func (fake *FakeTelemetryService) IngressCreatedCalls(stub func(context.Context, *livekit.IngressInfo)) {
+	fake.ingressCreatedMutex.Lock()
+	defer fake.ingressCreatedMutex.Unlock()
+	fake.IngressCreatedStub = stub
+}
+
+func (fake *FakeTelemetryService) IngressCreatedArgsForCall(i int) (context.Context, *livekit.IngressInfo) {
+	fake.ingressCreatedMutex.RLock()
+	defer fake.ingressCreatedMutex.RUnlock()
+	argsForCall := fake.ingressCreatedArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeTelemetryService) IngressDeleted(arg1 context.Context, arg2 *livekit.IngressInfo) {
+	fake.ingressDeletedMutex.Lock()
+	fake.ingressDeletedArgsForCall = append(fake.ingressDeletedArgsForCall, struct {
+		arg1 context.Context
+		arg2 *livekit.IngressInfo
+	}{arg1, arg2})
+	stub := fake.IngressDeletedStub
+	fake.recordInvocation("IngressDeleted", []interface{}{arg1, arg2})
+	fake.ingressDeletedMutex.Unlock()
+	if stub != nil {
+		fake.IngressDeletedStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeTelemetryService) IngressDeletedCallCount() int {
+	fake.ingressDeletedMutex.RLock()
+	defer fake.ingressDeletedMutex.RUnlock()
+	return len(fake.ingressDeletedArgsForCall)
+}
+
+func (fake *FakeTelemetryService) IngressDeletedCalls(stub func(context.Context, *livekit.IngressInfo)) {
+	fake.ingressDeletedMutex.Lock()
+	defer fake.ingressDeletedMutex.Unlock()
+	fake.IngressDeletedStub = stub
+}
+
+func (fake *FakeTelemetryService) IngressDeletedArgsForCall(i int) (context.Context, *livekit.IngressInfo) {
+	fake.ingressDeletedMutex.RLock()
+	defer fake.ingressDeletedMutex.RUnlock()
+	argsForCall := fake.ingressDeletedArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeTelemetryService) IngressEnded(arg1 context.Context, arg2 *livekit.IngressInfo) {
+	fake.ingressEndedMutex.Lock()
+	fake.ingressEndedArgsForCall = append(fake.ingressEndedArgsForCall, struct {
+		arg1 context.Context
+		arg2 *livekit.IngressInfo
+	}{arg1, arg2})
+	stub := fake.IngressEndedStub
+	fake.recordInvocation("IngressEnded", []interface{}{arg1, arg2})
+	fake.ingressEndedMutex.Unlock()
+	if stub != nil {
+		fake.IngressEndedStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeTelemetryService) IngressEndedCallCount() int {
+	fake.ingressEndedMutex.RLock()
+	defer fake.ingressEndedMutex.RUnlock()
+	return len(fake.ingressEndedArgsForCall)
+}
+
+func (fake *FakeTelemetryService) IngressEndedCalls(stub func(context.Context, *livekit.IngressInfo)) {
+	fake.ingressEndedMutex.Lock()
+	defer fake.ingressEndedMutex.Unlock()
+	fake.IngressEndedStub = stub
+}
+
+func (fake *FakeTelemetryService) IngressEndedArgsForCall(i int) (context.Context, *livekit.IngressInfo) {
+	fake.ingressEndedMutex.RLock()
+	defer fake.ingressEndedMutex.RUnlock()
+	argsForCall := fake.ingressEndedArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeTelemetryService) IngressStarted(arg1 context.Context, arg2 *livekit.IngressInfo) {
+	fake.ingressStartedMutex.Lock()
+	fake.ingressStartedArgsForCall = append(fake.ingressStartedArgsForCall, struct {
+		arg1 context.Context
+		arg2 *livekit.IngressInfo
+	}{arg1, arg2})
+	stub := fake.IngressStartedStub
+	fake.recordInvocation("IngressStarted", []interface{}{arg1, arg2})
+	fake.ingressStartedMutex.Unlock()
+	if stub != nil {
+		fake.IngressStartedStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeTelemetryService) IngressStartedCallCount() int {
+	fake.ingressStartedMutex.RLock()
+	defer fake.ingressStartedMutex.RUnlock()
+	return len(fake.ingressStartedArgsForCall)
+}
+
+func (fake *FakeTelemetryService) IngressStartedCalls(stub func(context.Context, *livekit.IngressInfo)) {
+	fake.ingressStartedMutex.Lock()
+	defer fake.ingressStartedMutex.Unlock()
+	fake.IngressStartedStub = stub
+}
+
+func (fake *FakeTelemetryService) IngressStartedArgsForCall(i int) (context.Context, *livekit.IngressInfo) {
+	fake.ingressStartedMutex.RLock()
+	defer fake.ingressStartedMutex.RUnlock()
+	argsForCall := fake.ingressStartedArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeTelemetryService) NotifyEvent(arg1 context.Context, arg2 *livekit.WebhookEvent) {
@@ -1152,6 +1308,14 @@ func (fake *FakeTelemetryService) Invocations() map[string][][]interface{} {
 	defer fake.egressUpdatedMutex.RUnlock()
 	fake.flushStatsMutex.RLock()
 	defer fake.flushStatsMutex.RUnlock()
+	fake.ingressCreatedMutex.RLock()
+	defer fake.ingressCreatedMutex.RUnlock()
+	fake.ingressDeletedMutex.RLock()
+	defer fake.ingressDeletedMutex.RUnlock()
+	fake.ingressEndedMutex.RLock()
+	defer fake.ingressEndedMutex.RUnlock()
+	fake.ingressStartedMutex.RLock()
+	defer fake.ingressStartedMutex.RUnlock()
 	fake.notifyEventMutex.RLock()
 	defer fake.notifyEventMutex.RUnlock()
 	fake.participantActiveMutex.RLock()

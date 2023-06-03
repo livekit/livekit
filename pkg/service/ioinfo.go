@@ -109,10 +109,37 @@ func (s *IOInfoService) loadIngressFromInfoRequest(req *rpc.GetIngressInfoReques
 }
 
 func (s *IOInfoService) UpdateIngressState(ctx context.Context, req *rpc.UpdateIngressStateRequest) (*emptypb.Empty, error) {
+	info, err := s.is.LoadIngress(ctx, req.IngressId)
+	if err != nil {
+		return nil, err
+	}
+
 	if err := s.is.UpdateIngressState(ctx, req.IngressId, req.State); err != nil {
 		logger.Errorw("could not update ingress", err)
 		return nil, err
 	}
+
+	if info.State.Status != req.State.Status {
+		info.State = req.State
+
+		switch req.State.Status {
+		case livekit.IngressState_ENDPOINT_ERROR,
+			livekit.IngressState_ENDPOINT_INACTIVE:
+			s.telemetry.IngressEnded(ctx, info)
+
+			if req.State.Error != "" {
+				logger.Infow("ingress failed", "error", req.State.Error, "ingressID", req.IngressId)
+			} else {
+				logger.Infow("ingress ended", "ingressID", req.IngressId)
+			}
+
+		case livekit.IngressState_ENDPOINT_PUBLISHING:
+			s.telemetry.IngressStarted(ctx, info)
+
+			logger.Infow("ingress started", "ingressID", req.IngressId)
+		}
+	}
+
 	return &emptypb.Empty{}, nil
 }
 
