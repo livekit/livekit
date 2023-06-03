@@ -17,12 +17,12 @@ import (
 )
 
 const (
-	GapHistogramNumBins = 101
-	NumSequenceNumbers  = 65536
-	FirstSnapshotId     = 1
-	SnInfoSize          = 8192
-	SnInfoMask          = SnInfoSize - 1
-	TooLargeOWDDelta    = 400 * time.Millisecond
+	GapHistogramNumBins         = 101
+	NumSequenceNumbers          = 65536
+	FirstSnapshotId             = 1
+	SnInfoSize                  = 8192
+	SnInfoMask                  = SnInfoSize - 1
+	MeasurementWindowSecondsMin = float64(5.0)
 )
 
 // -------------------------------------------------------
@@ -933,13 +933,16 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srFirst *RTCPSenderReportDat
 		}
 	}
 
-	rtpDiffSinceFirst := nowRTPExt - r.extStartTS
-	rate := float64(rtpDiffSinceFirst) / timeSinceFirst.Seconds()
-	pidOutput := r.pidController.Update(
-		float64(r.params.ClockRate),
-		rate,
-		now,
-	)
+	pidOutput := float64(0.0)
+	if timeSinceFirst.Seconds() > MeasurementWindowSecondsMin {
+		rtpDiffSinceFirst := nowRTPExt - r.extStartTS
+		rate := float64(rtpDiffSinceFirst) / timeSinceFirst.Seconds()
+		pidOutput = r.pidController.Update(
+			float64(r.params.ClockRate),
+			rate,
+			now,
+		)
+	}
 
 	// monitor and log RTP timestamp anomalies
 	var ntpDiffSinceLast time.Duration
