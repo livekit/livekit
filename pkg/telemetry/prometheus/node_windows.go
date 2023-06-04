@@ -18,6 +18,8 @@
 
 package prometheus
 
+import "github.com/mackerelio/go-osstat/loadavg"
+
 func getLoadAvg() (*loadavg.Stats, error) {
 	return &loadavg.Stats{}, nil
 }
