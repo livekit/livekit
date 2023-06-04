@@ -2,6 +2,33 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.3] - 2023-06-03
+
+### Added
+- Send quality stats to prometheus. (#1708)
+- Support for disabling publishing codec on specific devices (#1728)
+- Add support for bypass_transcoding field in ingress (#1741)
+- Include await_start_signal for Web Egress (#1759)
+
+### Fixed
+- Handle time stamp increment across mute for A/V sync (#1705)
+- Additional A/V sync improvements (#1712 #1724 #1737 #1738 #1764)
+- Check egress status on UpdateStream failure (#1716)
+- Start signal relay sessions with the correct node (#1721)
+- Fix unwrap for out-of-order packet (#1729)
+- Fix dynacast for svc codec (#1742 #1743)
+- Ignore receiver reports that have a sequence number before first packet (#1745)
+- Fix node stats updates on Windows (#1748)
+- Avoid reconnect loop for unsupported downtrack (#1754)
+- Perform unsubscribe in parallel to avoid blocking (#1760)
+
+### Changed
+- Make signal close async. (#1711 #1722)
+- Don't add nack if it is already present in track codec (#1714)
+- Tweaked connection quality algorithm to be less sensitive to jitter (#1719)
+- Adjust sender report time stamp for slow publishers (#1740)
+- Split probe controller from StreamAllocator (#1751)
+
 ## [1.4.2] - 2023-04-27
 ### Added
 - VP9 codec with SVC support (#1586)
