@@ -2,6 +2,8 @@ package sendsidebwe
 
 import (
 	"errors"
+	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -89,6 +91,8 @@ type PacketTracker struct {
 	estimatedChannelCapacity int64
 	congestionState          CongestionState
 	onCongestionStateChange  func(congestionState CongestionState, channelCapacity int64)
+
+	debugFile *os.File
 }
 
 func NewPacketTracker(logger logger.Logger) *PacketTracker {
@@ -105,6 +109,8 @@ func NewPacketTracker(logger logger.Logger) *PacketTracker {
 
 	p.feedbackInfos.SetMinCapacity(3)
 
+	p.debugFile, _ = os.CreateTemp("/tmp", "twcc")
+
 	go p.worker()
 	return p
 }
@@ -112,6 +118,9 @@ func NewPacketTracker(logger logger.Logger) *PacketTracker {
 func (p *PacketTracker) Stop() {
 	p.stop.Once(func() {
 		close(p.wake)
+		if p.debugFile != nil {
+			p.debugFile.Close()
+		}
 	})
 }
 
@@ -168,8 +177,33 @@ func (p *PacketTracker) ProcessFeedback(baseSN uint16, arrivals []int64) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
+	now := time.Now()
+	if p.debugFile != nil {
+		toWrite := fmt.Sprintf("REPORT: start: %d", now.UnixMicro())
+		p.debugFile.WriteString(toWrite)
+		p.debugFile.WriteString("\n")
+	}
 	for i, arrival := range arrivals {
-		p.packetInfos[baseSN+uint16(i)].receiveTime = arrival
+		sn := baseSN + uint16(i)
+		p.packetInfos[sn].receiveTime = arrival
+		if p.debugFile != nil {
+			pi := p.packetInfos[sn]
+			toWrite := fmt.Sprintf(
+				"PACKET: sn: %d, headerSize: %d, payloadSize: %d, sendTime: %d, receiveTime: %d",
+				sn,
+				pi.headerSize,
+				pi.payloadSize,
+				pi.sendTime.UnixMicro(),
+				arrival,
+			)
+			p.debugFile.WriteString(toWrite)
+			p.debugFile.WriteString("\n")
+		}
+	}
+	if p.debugFile != nil {
+		toWrite := fmt.Sprintf("REPORT: end: %d", now.UnixMicro())
+		p.debugFile.WriteString(toWrite)
+		p.debugFile.WriteString("\n")
 	}
 
 	/* RAJA-REMOVE
