@@ -1508,7 +1508,7 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 			}
 			refTS += f.refTSOffset
 			nextTS, explain := getNextTimestamp(lastTS, refTS, expectedTS, minTS)
-			f.logger.Debugw(
+			f.logger.Infow(
 				"next timestamp on switch",
 				"switchingAt", switchingAt.String(),
 				"lastTS", lastTS,
