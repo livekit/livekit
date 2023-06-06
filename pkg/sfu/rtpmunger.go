@@ -52,14 +52,12 @@ func (r RTPMungerState) String() string {
 // ----------------------------------------------------------------------
 
 type RTPMungerParams struct {
-	highestIncomingSN  uint16
-	lastSN             uint16
-	snOffset           uint16
-	highestIncomingTS  uint32
-	lastTS             uint32
-	tsOffset           uint32
-	tsOffsetAdjustment uint32
-	lastMarker         bool
+	highestIncomingSN uint16
+	lastSN            uint16
+	snOffset          uint16
+	lastTS            uint32
+	tsOffset          uint32
+	lastMarker        bool
 
 	snOffsets          [SnOffsetCacheSize]uint16
 	snOffsetsWritePtr  int
@@ -86,7 +84,6 @@ func (r *RTPMunger) GetParams() RTPMungerParams {
 		highestIncomingSN: r.highestIncomingSN,
 		lastSN:            r.lastSN,
 		snOffset:          r.snOffset,
-		highestIncomingTS: r.highestIncomingTS,
 		lastTS:            r.lastTS,
 		tsOffset:          r.tsOffset,
 		lastMarker:        r.lastMarker,
@@ -107,14 +104,12 @@ func (r *RTPMunger) SeedLast(state RTPMungerState) {
 
 func (r *RTPMunger) SetLastSnTs(extPkt *buffer.ExtPacket) {
 	r.highestIncomingSN = extPkt.Packet.SequenceNumber - 1
-	r.highestIncomingTS = extPkt.Packet.Timestamp
 	r.lastSN = extPkt.Packet.SequenceNumber
 	r.lastTS = extPkt.Packet.Timestamp
 }
 
 func (r *RTPMunger) UpdateSnTsOffsets(extPkt *buffer.ExtPacket, snAdjust uint16, tsAdjust uint32) {
 	r.highestIncomingSN = extPkt.Packet.SequenceNumber - 1
-	r.highestIncomingTS = extPkt.Packet.Timestamp
 	r.snOffset = extPkt.Packet.SequenceNumber - r.lastSN - snAdjust
 	r.tsOffset = extPkt.Packet.Timestamp - r.lastTS - tsAdjust
 
@@ -129,10 +124,6 @@ func (r *RTPMunger) PacketDropped(extPkt *buffer.ExtPacket) {
 	}
 	r.snOffset++
 	r.lastSN = extPkt.Packet.SequenceNumber - r.snOffset
-}
-
-func (r *RTPMunger) UpdateTsOffset(tsAdjust uint32) {
-	r.tsOffsetAdjustment = tsAdjust
 }
 
 func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationParamsRTP, error) {
@@ -188,12 +179,6 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 		}
 	}
 
-	// apply timestamp offset adjustment at the start of a frame only
-	if extPkt.Packet.Timestamp != r.highestIncomingTS && r.tsOffsetAdjustment != 0 {
-		r.tsOffset -= r.tsOffsetAdjustment
-		r.tsOffsetAdjustment = 0
-	}
-
 	// in-order incoming packet, may or may not be contiguous.
 	// In the case of loss (i.e. incoming sequence number is not contiguous),
 	// forward even if it is a padding only packet. With temporal scalability,
@@ -203,27 +188,8 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 	mungedSN := extPkt.Packet.SequenceNumber - r.snOffset
 	mungedTS := extPkt.Packet.Timestamp - r.tsOffset
 
-	// with timestamp adjustment, it is possible that the adjustment causes munged timestamp to move backwards,
-	// detect that and adjust so that it does not move back
-	if extPkt.Packet.Timestamp != r.highestIncomingTS && (((mungedTS - r.lastTS) == 0) || (mungedTS-r.lastTS) > (1<<31)) {
-		adjustedMungedTS := r.lastTS + 1
-		adjustedTSOffset := extPkt.Packet.Timestamp - adjustedMungedTS
-		r.logger.Debugw(
-			"adjust out-of-order timestamp offset",
-			"mungedTS", mungedTS,
-			"lastTS", r.lastTS,
-			"incomingTS", extPkt.Packet.Timestamp,
-			"offset", r.tsOffset,
-			"adjustedMungedTS", adjustedMungedTS,
-			"adjustedTSOffset", adjustedTSOffset,
-		)
-		mungedTS = adjustedMungedTS
-		r.tsOffset = adjustedTSOffset
-	}
-
 	r.highestIncomingSN = extPkt.Packet.SequenceNumber
 	r.lastSN = mungedSN
-	r.highestIncomingTS = extPkt.Packet.Timestamp
 	r.lastTS = mungedTS
 	r.lastMarker = extPkt.Packet.Marker
 

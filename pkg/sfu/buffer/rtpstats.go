@@ -17,12 +17,11 @@ import (
 )
 
 const (
-	GapHistogramNumBins         = 101
-	NumSequenceNumbers          = 65536
-	FirstSnapshotId             = 1
-	SnInfoSize                  = 8192
-	SnInfoMask                  = SnInfoSize - 1
-	MeasurementWindowSecondsMin = float64(5.0)
+	GapHistogramNumBins = 101
+	NumSequenceNumbers  = 65536
+	FirstSnapshotId     = 1
+	SnInfoSize          = 8192
+	SnInfoMask          = SnInfoSize - 1
 )
 
 // -------------------------------------------------------
@@ -201,27 +200,17 @@ type RTPStats struct {
 	srFirst  *RTCPSenderReportData
 	srNewest *RTCPSenderReportData
 
-	pidController *PIDController
-
 	nextSnapshotId uint32
 	snapshots      map[uint32]*Snapshot
 }
 
 func NewRTPStats(params RTPStatsParams) *RTPStats {
-	r := &RTPStats{
+	return &RTPStats{
 		params:         params,
 		logger:         params.Logger,
 		nextSnapshotId: FirstSnapshotId,
 		snapshots:      make(map[uint32]*Snapshot),
-		pidController:  NewPIDController(params.Logger),
 	}
-
-	r.pidController.SetGains(2.0, 0.5, 0.25)
-	r.pidController.SetDerivativeLPF(0.02)
-	outMin, outMax := -0.025*float64(r.params.ClockRate), 0.025*float64(r.params.ClockRate)
-	r.pidController.SetOutputLimits(outMin, outMax)
-	r.pidController.SetIntegralLimits(outMin/2.0, outMax/2.0)
-	return r
 }
 
 func (r *RTPStats) Seed(from *RTPStats) {
@@ -324,7 +313,6 @@ func (r *RTPStats) Seed(from *RTPStats) {
 
 func (r *RTPStats) SetLogger(logger logger.Logger) {
 	r.logger = logger
-	r.pidController.SetLogger(logger)
 }
 
 func (r *RTPStats) Stop() {
@@ -897,12 +885,12 @@ func (r *RTPStats) GetExpectedRTPTimestamp(at time.Time) (uint32, uint64, error)
 	return uint32(expectedExtRTP), minTS, nil
 }
 
-func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srFirst *RTCPSenderReportData, srNewest *RTCPSenderReportData) (*rtcp.SenderReport, float64) {
+func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srFirst *RTCPSenderReportData, srNewest *RTCPSenderReportData) *rtcp.SenderReport {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
 	if !r.initialized {
-		return nil, 0.0
+		return nil
 	}
 
 	// construct current time based on monotonic clock
@@ -931,17 +919,6 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srFirst *RTCPSenderReportDat
 			nowRTPExt = nowRTPExtUsingRate
 			nowRTP = uint32(nowRTPExtUsingRate)
 		}
-	}
-
-	pidOutput := float64(0.0)
-	if timeSinceFirst.Seconds() > MeasurementWindowSecondsMin {
-		rtpDiffSinceFirst := nowRTPExt - r.extStartTS
-		rate := float64(rtpDiffSinceFirst) / timeSinceFirst.Seconds()
-		pidOutput = r.pidController.Update(
-			float64(r.params.ClockRate),
-			rate,
-			now,
-		)
 	}
 
 	// monitor and log RTP timestamp anomalies
@@ -1012,7 +989,7 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srFirst *RTCPSenderReportDat
 		RTPTime:     nowRTP,
 		PacketCount: r.getTotalPacketsPrimary() + r.packetsDuplicate + r.packetsPadding,
 		OctetCount:  uint32(r.bytes + r.bytesDuplicate + r.bytesPadding),
-	}, pidOutput
+	}
 }
 
 func (r *RTPStats) SnapshotRtcpReceptionReport(ssrc uint32, proxyFracLost uint8, snapshotId uint32) *rtcp.ReceptionReport {
@@ -1919,118 +1896,6 @@ func AggregateRTPDeltaInfo(deltaInfoList []*RTPDeltaInfo) *RTPDeltaInfo {
 		Plis:                 plis,
 		Firs:                 firs,
 	}
-}
-
-// -------------------------------------------------------------------
-
-type PIDController struct {
-	logger logger.Logger
-
-	kp, ki, kd float64
-
-	tau float64 // low pass filter of D, time constant
-
-	outMin, outMax float64
-	isOutLimitsSet bool
-
-	iMin, iMax   float64
-	isILimitsSet bool
-
-	iVal, dVal float64
-
-	prevError, prevMeasurement float64
-	prevMeasurementTime        time.Time
-}
-
-func NewPIDController(logger logger.Logger) *PIDController {
-	return &PIDController{
-		logger: logger,
-	}
-}
-
-func (p *PIDController) SetLogger(logger logger.Logger) {
-	p.logger = logger
-}
-
-func (p *PIDController) SetGains(kp, ki, kd float64) {
-	p.kp = kp
-	p.ki = ki
-	p.kd = kd
-}
-
-func (p *PIDController) SetDerivativeLPF(tau float64) {
-	p.tau = tau
-}
-
-func (p *PIDController) SetOutputLimits(min, max float64) {
-	p.outMin = min
-	p.outMax = max
-	p.isOutLimitsSet = true
-}
-
-func (p *PIDController) SetIntegralLimits(min, max float64) {
-	p.iMin = min
-	p.iMax = max
-	p.isILimitsSet = true
-}
-
-func (p *PIDController) Update(setpoint, measurement float64, at time.Time) float64 {
-	errorTerm := setpoint - measurement
-	if p.prevMeasurementTime.IsZero() {
-		p.prevError = errorTerm
-		p.prevMeasurement = measurement
-		p.prevMeasurementTime = at
-		return 0
-	}
-
-	duration := at.Sub(p.prevMeasurementTime).Seconds()
-	if duration == 0 {
-		return 0
-	}
-
-	proportional := p.kp * errorTerm
-
-	iVal := p.iVal + (0.5 * p.ki * duration * (errorTerm + p.prevError))
-	boundIVal := iVal
-	if p.isILimitsSet {
-		if iVal > p.iMax {
-			boundIVal = p.iMax
-		}
-		if iVal < p.iMin {
-			boundIVal = p.iMin
-		}
-	}
-	p.iVal = boundIVal
-
-	p.dVal = -(2.0*p.kd*(measurement-p.prevMeasurement) + (2.0*p.tau-duration)*p.dVal) / (2.0*p.tau + duration)
-
-	output := proportional + p.iVal + p.dVal
-	boundOutput := output
-	if p.isOutLimitsSet {
-		if output > p.outMax {
-			boundOutput = p.outMax
-		}
-		if output < p.outMin {
-			boundOutput = p.outMin
-		}
-	}
-
-	p.prevError = errorTerm
-	p.prevMeasurement = measurement
-	p.prevMeasurementTime = at
-	p.logger.Debugw(
-		"pid controller",
-		"setpoint", setpoint,
-		"measurement", measurement,
-		"errorTerm", errorTerm,
-		"proportional", proportional,
-		"integral", iVal,
-		"integralLimited", boundIVal,
-		"derivative", p.dVal,
-		"output", output,
-		"outputLimited", boundOutput,
-	)
-	return boundOutput
 }
 
 // -------------------------------------------------------------------
