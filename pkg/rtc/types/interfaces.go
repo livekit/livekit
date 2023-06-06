@@ -343,8 +343,6 @@ type LocalParticipant interface {
 	SetSubscriberAllowPause(allowPause bool)
 	SetSubscriberChannelCapacity(channelCapacity int64)
 
-	GetAllowTimestampAdjustment() bool
-
 	GetPacer() pacer.Pacer
 }
 

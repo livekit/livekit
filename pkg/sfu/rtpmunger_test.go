@@ -28,7 +28,6 @@ func TestSetLastSnTs(t *testing.T) {
 
 	r.SetLastSnTs(extPkt)
 	require.Equal(t, uint16(23332), r.highestIncomingSN)
-	require.Equal(t, uint32(0xabcdef), r.highestIncomingTS)
 	require.Equal(t, uint16(23333), r.lastSN)
 	require.Equal(t, uint32(0xabcdef), r.lastTS)
 	require.Equal(t, uint16(0), r.snOffset)
@@ -54,7 +53,6 @@ func TestUpdateSnTsOffsets(t *testing.T) {
 	extPkt, _ = testutils.GetTestExtPacket(params)
 	r.UpdateSnTsOffsets(extPkt, 1, 1)
 	require.Equal(t, uint16(33332), r.highestIncomingSN)
-	require.Equal(t, uint32(0xabcdef), r.highestIncomingTS)
 	require.Equal(t, uint16(23333), r.lastSN)
 	require.Equal(t, uint32(0xabcdef), r.lastTS)
 	require.Equal(t, uint16(9999), r.snOffset)
@@ -73,7 +71,6 @@ func TestPacketDropped(t *testing.T) {
 	extPkt, _ := testutils.GetTestExtPacket(params)
 	r.SetLastSnTs(extPkt)
 	require.Equal(t, uint16(23332), r.highestIncomingSN)
-	require.Equal(t, uint32(0xabcdef), r.highestIncomingTS)
 	require.Equal(t, uint16(23333), r.lastSN)
 	require.Equal(t, uint32(0xabcdef), r.lastTS)
 	require.Equal(t, uint16(0), r.snOffset)

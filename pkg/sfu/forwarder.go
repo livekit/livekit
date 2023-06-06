@@ -1508,7 +1508,7 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 			}
 			refTS += f.refTSOffset
 			nextTS, explain := getNextTimestamp(lastTS, refTS, expectedTS, minTS)
-			f.logger.Debugw(
+			f.logger.Infow(
 				"next timestamp on switch",
 				"switchingAt", switchingAt.String(),
 				"lastTS", lastTS,
@@ -1704,13 +1704,6 @@ func (f *Forwarder) GetRTPMungerParams() RTPMungerParams {
 	defer f.lock.RUnlock()
 
 	return f.rtpMunger.GetParams()
-}
-
-func (f *Forwarder) AdjustTimestamp(tsAdjust float64) {
-	f.lock.Lock()
-	defer f.lock.Unlock()
-
-	f.rtpMunger.UpdateTsOffset(uint32(tsAdjust + 0.5))
 }
 
 // -----------------------------------------------------------------------------
