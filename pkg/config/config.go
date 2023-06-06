@@ -89,9 +89,6 @@ type RTCConfig struct {
 
 	// force a reconnect on a subscription error
 	ReconnectOnSubscriptionError *bool `yaml:"reconnect_on_subscription_error,omitempty"`
-
-	// allow time stamp adjust to keep drift low, this is experimental
-	AllowTimestampAdjustment *bool `yaml:"allow_timestamp_adjustment,omitempty"`
 }
 
 type TURNServer struct {

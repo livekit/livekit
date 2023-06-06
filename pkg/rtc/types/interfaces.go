@@ -341,8 +341,6 @@ type LocalParticipant interface {
 	// down stream bandwidth management
 	SetSubscriberAllowPause(allowPause bool)
 	SetSubscriberChannelCapacity(channelCapacity int64)
-
-	GetAllowTimestampAdjustment() bool
 }
 
 // Room is a container of participants, and can provide room-level actions
