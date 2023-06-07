@@ -255,12 +255,6 @@ func (s *EgressService) UpdateStream(ctx context.Context, req *livekit.UpdateStr
 		}
 	}
 
-	go func() {
-		if err := s.es.UpdateEgress(ctx, info); err != nil {
-			logger.Errorw("could not write egress info", err)
-		}
-	}()
-
 	return info, nil
 }
 
