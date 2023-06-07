@@ -39,7 +39,7 @@ type ProbeController struct {
 	probeTrendObserved    bool
 	probeEndTime          time.Time
 
-	onProbeSuccess func()
+	onProbeDone func(isSuccessful bool)
 }
 
 func NewProbeController(params ProbeControllerParams) *ProbeController {
@@ -51,11 +51,11 @@ func NewProbeController(params ProbeControllerParams) *ProbeController {
 	return p
 }
 
-func (p *ProbeController) OnProbeSuccess(f func()) {
+func (p *ProbeController) OnProbeDone(f func(isSuccessful bool)) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	p.onProbeSuccess = f
+	p.onProbeDone = f
 }
 
 func (p *ProbeController) Reset() {
@@ -79,15 +79,11 @@ func (p *ProbeController) ProbeClusterDone(info ProbeClusterInfo, lowestEstimate
 	if p.abortedProbeClusterId == ProbeClusterIdInvalid {
 		// successful probe, finalize
 		isSuccessful := p.finalizeProbeLocked()
-
-		var onProbeSuccess func()
-		if isSuccessful {
-			onProbeSuccess = p.onProbeSuccess
-		}
+		onProbeDone := p.onProbeDone
 		p.lock.Unlock()
 
-		if onProbeSuccess != nil {
-			onProbeSuccess()
+		if onProbeDone != nil {
+			onProbeDone(isSuccessful)
 		}
 		return
 	}
@@ -145,19 +141,16 @@ func (p *ProbeController) CheckProbe(trend ChannelTrend, highestEstimate int64) 
 
 func (p *ProbeController) MaybeFinalizeProbe() {
 	p.lock.Lock()
+	var onProbeDone func(bool)
 	isSuccessful := false
 	if p.isInProbeLocked() && !p.probeEndTime.IsZero() && time.Now().After(p.probeEndTime) {
 		isSuccessful = p.finalizeProbeLocked()
-	}
-
-	var onProbeSuccess func()
-	if isSuccessful {
-		onProbeSuccess = p.onProbeSuccess
+		onProbeDone = p.onProbeDone
 	}
 	p.lock.Unlock()
 
-	if onProbeSuccess != nil {
-		onProbeSuccess()
+	if onProbeDone != nil {
+		onProbeDone(isSuccessful)
 	}
 }
 
