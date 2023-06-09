@@ -440,7 +440,7 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 func (b *Buffer) patchExtPacket(ep *ExtPacket, buf []byte) *ExtPacket {
 	n, err := b.getPacket(buf, ep.Packet.SequenceNumber)
 	if err != nil {
-		b.logger.Warnw("could not get packet", err, "sn", ep.Packet.SequenceNumber)
+		b.logger.Warnw("could not get packet", err, "sn", ep.Packet.SequenceNumber, "headSN", b.bucket.HeadSequenceNumber())
 		return nil
 	}
 	ep.RawPacket = buf[:n]

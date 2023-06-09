@@ -1493,7 +1493,7 @@ func (r *RTPStats) getIntervalStats(startInclusive uint16, endExclusive uint16) 
 	}
 
 	if packetsNotFound != 0 {
-		r.logger.Warnw(
+		r.logger.Errorw(
 			"could not find some packets", nil,
 			"start", startInclusive,
 			"end", endExclusive,
