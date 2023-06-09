@@ -200,7 +200,6 @@ func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 		Prober: s.prober,
 		Logger: params.Logger,
 	})
-	s.probeController.OnProbeDone(s.onProbeDone)
 
 	s.resetState()
 
@@ -492,7 +491,7 @@ func (s *StreamAllocator) OnSendProbe(bytesToSend int) {
 	})
 }
 
-// called when prober wants to send packet(s)
+// called when prober finishes a probe cluster, could be called when prober is reset which stops an active cluster
 func (s *StreamAllocator) OnProbeClusterDone(info ProbeClusterInfo) {
 	s.postEvent(Event{
 		Signal: streamAllocatorSignalProbeClusterDone,
@@ -640,7 +639,10 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 
 func (s *StreamAllocator) handleSignalPeriodicPing(event *Event) {
 	// finalize probe if necessary
-	s.probeController.MaybeFinalizeProbe()
+	isHandled, isSuccessful := s.probeController.MaybeFinalizeProbe()
+	if isHandled {
+		s.onProbeDone(isSuccessful)
+	}
 
 	// probe if necessary and timing is right
 	if s.state == streamAllocatorStateDeficient {
@@ -673,7 +675,10 @@ func (s *StreamAllocator) handleSignalSendProbe(event *Event) {
 
 func (s *StreamAllocator) handleSignalProbeClusterDone(event *Event) {
 	info, _ := event.Data.(ProbeClusterInfo)
-	s.probeController.ProbeClusterDone(info, int64(math.Min(float64(s.committedChannelCapacity), float64(s.channelObserver.GetLowestEstimate()))))
+	isHandled := s.probeController.ProbeClusterDone(info, int64(math.Min(float64(s.committedChannelCapacity), float64(s.channelObserver.GetLowestEstimate()))))
+	if isHandled {
+		s.onProbeDone(true)
+	}
 }
 
 func (s *StreamAllocator) handleSignalResume(event *Event) {
