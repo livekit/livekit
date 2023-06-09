@@ -16,8 +16,6 @@ import (
 
 const (
 	UpdateInterval                   = 5 * time.Second
-	processThreshold                 = 0.95
-	noStatsTooLongMultiplier         = 2
 	noReceiverReportTooLongThreshold = 30 * time.Second
 )
 
@@ -120,9 +118,9 @@ func (cs *ConnectionStats) updateScoreWithAggregate(agg *buffer.RTPDeltaInfo, at
 	return mos
 }
 
-func (cs *ConnectionStats) updateScoreFromReceiverReport(at time.Time) float32 {
+func (cs *ConnectionStats) updateScoreFromReceiverReport(at time.Time) (float32, map[uint32]*buffer.StreamStatsWithLayers) {
 	if cs.params.GetDeltaStatsOverridden == nil || cs.params.GetLastReceiverReportTime == nil {
-		return MinMOS
+		return MinMOS, nil
 	}
 
 	cs.lock.RLock()
@@ -131,7 +129,7 @@ func (cs *ConnectionStats) updateScoreFromReceiverReport(at time.Time) float32 {
 	if streamingStartedAt.IsZero() {
 		// not streaming, just return current score
 		mos, _ := cs.scorer.GetMOSAndQuality()
-		return mos
+		return mos, nil
 	}
 
 	streams := cs.params.GetDeltaStatsOverridden()
@@ -143,12 +141,12 @@ func (cs *ConnectionStats) updateScoreFromReceiverReport(at time.Time) float32 {
 		}
 		if time.Since(marker) > noReceiverReportTooLongThreshold {
 			// have not received receiver report for a long time when streaming, run with nil stat
-			return cs.updateScoreWithAggregate(nil, at)
+			return cs.updateScoreWithAggregate(nil, at), nil
 		}
 
 		// wait for receiver report, return current score
 		mos, _ := cs.scorer.GetMOSAndQuality()
-		return mos
+		return mos, nil
 	}
 
 	// delta stat duration could be large due to not receiving receiver report for a long time (for example, due to mute),
@@ -157,17 +155,27 @@ func (cs *ConnectionStats) updateScoreFromReceiverReport(at time.Time) float32 {
 	if streamingStartedAt.After(cs.params.GetLastReceiverReportTime()) {
 		// last receiver report was before streaming started, wait for next one
 		mos, _ := cs.scorer.GetMOSAndQuality()
-		return mos
+		return mos, streams
 	}
 
 	if streamingStartedAt.After(agg.StartTime) {
 		agg.Duration = agg.StartTime.Add(agg.Duration).Sub(streamingStartedAt)
 		agg.StartTime = streamingStartedAt
 	}
-	return cs.updateScoreWithAggregate(agg, at)
+	return cs.updateScoreWithAggregate(agg, at), streams
 }
 
-func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWithLayers, at time.Time) float32 {
+func (cs *ConnectionStats) updateScore(at time.Time) (float32, map[uint32]*buffer.StreamStatsWithLayers) {
+	if cs.params.GetDeltaStats == nil {
+		return MinMOS, nil
+	}
+
+	streams := cs.params.GetDeltaStats()
+	if len(streams) == 0 {
+		mos, _ := cs.scorer.GetMOSAndQuality()
+		return mos, nil
+	}
+
 	deltaInfoList := make([]*buffer.RTPDeltaInfo, 0, len(streams))
 	for _, s := range streams {
 		deltaInfoList = append(deltaInfoList, s.RTPStats)
@@ -185,7 +193,7 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 		return cs.updateScoreFromReceiverReport(at)
 	}
 
-	return cs.updateScoreWithAggregate(agg, at)
+	return cs.updateScoreWithAggregate(agg, at), streams
 }
 
 func (cs *ConnectionStats) maybeSetStreamingStart(at time.Time) {
@@ -203,18 +211,9 @@ func (cs *ConnectionStats) clearStreamingStart() {
 }
 
 func (cs *ConnectionStats) getStat(at time.Time) {
-	if cs.params.GetDeltaStats == nil {
-		return
-	}
+	score, streams := cs.updateScore(at)
 
-	streams := cs.params.GetDeltaStats()
-	if len(streams) == 0 {
-		return
-	}
-
-	score := cs.updateScore(streams, at)
-
-	if cs.onStatsUpdate != nil {
+	if cs.onStatsUpdate != nil && len(streams) != 0 {
 		analyticsStreams := make([]*livekit.AnalyticsStream, 0, len(streams))
 		for ssrc, stream := range streams {
 			as := toAnalyticsStream(ssrc, stream.RTPStats)
@@ -317,6 +316,13 @@ func toAggregateDeltaInfo(streams map[uint32]*buffer.StreamStatsWithLayers) *buf
 }
 
 func toAnalyticsStream(ssrc uint32, deltaStats *buffer.RTPDeltaInfo) *livekit.AnalyticsStream {
+	// discount the feed side loss when reporting forwarded track stats
+	packetsLost := deltaStats.PacketsLost
+	if deltaStats.PacketsMissing > packetsLost {
+		packetsLost = 0
+	} else {
+		packetsLost -= deltaStats.PacketsMissing
+	}
 	return &livekit.AnalyticsStream{
 		Ssrc:              ssrc,
 		PrimaryPackets:    deltaStats.Packets,
@@ -325,7 +331,7 @@ func toAnalyticsStream(ssrc uint32, deltaStats *buffer.RTPDeltaInfo) *livekit.An
 		RetransmitBytes:   deltaStats.BytesDuplicate,
 		PaddingPackets:    deltaStats.PacketsPadding,
 		PaddingBytes:      deltaStats.BytesPadding,
-		PacketsLost:       deltaStats.PacketsLost,
+		PacketsLost:       packetsLost,
 		Frames:            deltaStats.Frames,
 		Rtt:               deltaStats.RttMax,
 		Jitter:            uint32(deltaStats.JitterMax),
