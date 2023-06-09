@@ -155,7 +155,7 @@ func (cs *ConnectionStats) updateScoreFromReceiverReport(at time.Time) (float32,
 	if streamingStartedAt.After(cs.params.GetLastReceiverReportTime()) {
 		// last receiver report was before streaming started, wait for next one
 		mos, _ := cs.scorer.GetMOSAndQuality()
-		return mos, nil
+		return mos, streams
 	}
 
 	if streamingStartedAt.After(agg.StartTime) {
