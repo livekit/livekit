@@ -12,6 +12,7 @@ const (
 	ProbeBackoffFactor = 1.5
 	ProbeWaitMax       = 30 * time.Second
 	ProbeSettleWait    = 250
+	ProbeSettleWaitMax = 10 * time.Second
 	ProbeTrendWait     = 2 * time.Second
 
 	ProbePct         = 120
@@ -82,6 +83,9 @@ func (p *ProbeController) ProbeClusterDone(info ProbeClusterInfo, lowestEstimate
 		queueTime = 0.0
 	}
 	queueWait := time.Duration(queueTime+float64(ProbeSettleWait)) * time.Millisecond
+	if queueWait > ProbeSettleWaitMax {
+		queueWait = ProbeSettleWaitMax
+	}
 	p.probeEndTime = p.lastProbeStartTime.Add(queueWait)
 	p.params.Logger.Infow(
 		"setting probe end time",

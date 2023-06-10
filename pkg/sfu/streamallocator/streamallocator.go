@@ -743,6 +743,8 @@ func (s *StreamAllocator) setState(state streamAllocatorState) {
 
 	// reset probe to enforce a delay after state change before probing
 	s.probeController.Reset()
+	// a fresh channel observer after state transition to get clean data
+	s.channelObserver = s.newChannelObserverNonProbe()
 }
 
 func (s *StreamAllocator) adjustState() {
