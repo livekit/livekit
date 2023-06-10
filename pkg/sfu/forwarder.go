@@ -1842,7 +1842,7 @@ func getNextTimestamp(lastTS uint32, refTS uint32, expectedTS uint32, minTS uint
 
 	switch {
 	case rl && el && er: // lastTS < refTS < expectedTS
-		nextTS = uint32(float64(refTS) + 0.95*float64(expectedTS-refTS))
+		nextTS = uint32(float64(refTS) + 0.05*float64(expectedTS-refTS))
 		explain = fmt.Sprintf("l < r < e, %d, %d", refTS-lastTS, expectedTS-refTS)
 	case rl && el && !er: // lastTS < expectedTS < refTS
 		nextTS = uint32(float64(expectedTS) + 0.5*float64(refTS-expectedTS))
@@ -1854,7 +1854,7 @@ func getNextTimestamp(lastTS uint32, refTS uint32, expectedTS uint32, minTS uint
 		nextTS = lastTS + 1
 		explain = fmt.Sprintf("r < e < l, %d, %d", expectedTS-refTS, lastTS-expectedTS)
 	case rl && !el && !er: // expectedTS < lastTS < refTS
-		nextTS = uint32(float64(lastTS) + 0.5*float64(refTS-lastTS))
+		nextTS = uint32(float64(lastTS) + 0.75*float64(refTS-lastTS))
 		explain = fmt.Sprintf("e < l < r, %d, %d", lastTS-expectedTS, refTS-lastTS)
 	case !rl && !el && !er: // expectedTS < refTS < lastTS
 		nextTS = lastTS + 1
