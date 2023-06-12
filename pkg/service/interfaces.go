@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/livekit"
+
+	"github.com/livekit/livekit-server/pkg/p2p"
 )
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
@@ -29,7 +31,7 @@ type ObjectStore interface {
 
 //counterfeiter:generate . ServiceStore
 type ServiceStore interface {
-	LoadRoom(ctx context.Context, roomName livekit.RoomName, includeInternal bool) (*livekit.Room, *livekit.RoomInternal, error)
+	LoadRoom(ctx context.Context, roomName livekit.RoomName, includeInternal bool) (*livekit.Room, *livekit.RoomInternal, p2p.RoomCommunicator, error)
 
 	// ListRooms returns currently active rooms. if names is not nil, it'll filter and return
 	// only rooms that match

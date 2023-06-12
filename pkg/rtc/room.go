@@ -2,6 +2,8 @@ package rtc
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"io"
 	"math"
@@ -9,13 +11,19 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pion/webrtc/v3"
+
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
+	"github.com/livekit/livekit-server/pkg/p2p"
+	"github.com/livekit/livekit-server/pkg/rtc/relay"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
+
+	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -23,6 +31,8 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
+
+	cfg "github.com/livekit/livekit-server/pkg/config"
 )
 
 const (
@@ -51,7 +61,7 @@ type Room struct {
 	internal  *livekit.RoomInternal
 	Logger    logger.Logger
 
-	config         WebRTCConfig
+	Config         WebRTCConfig
 	audioConfig    *config.AudioConfig
 	serverInfo     *livekit.ServerInfo
 	telemetry      telemetry.TelemetryService
@@ -67,6 +77,10 @@ type Room struct {
 	// batch update participant info for non-publishers
 	batchedUpdates   map[livekit.ParticipantIdentity]*livekit.ParticipantInfo
 	batchedUpdatesMu sync.Mutex
+
+	relayedParticipants   map[livekit.ParticipantIdentity]*RelayedParticipantImpl
+	relayedParticipantsMu sync.Mutex
+	outRelayCollection    *relay.Collection
 
 	// time the first participant joined the room
 	joinedAt atomic.Int64
@@ -84,6 +98,51 @@ type ParticipantOptions struct {
 	AutoSubscribe bool
 }
 
+type signalPeerMessage struct {
+	ReplyTo string `json:"replyTo"`
+	Signal  string `json:"signal"`
+}
+
+func packSignalPeerMessage(replyTo string, signal []byte) interface{} {
+	return &signalPeerMessage{
+		ReplyTo: replyTo,
+		Signal:  base64.StdEncoding.EncodeToString(signal),
+	}
+}
+
+func unpackSignalPeerMessage(message interface{}) (replyTo string, signal []byte, err error) {
+	messageMap, ok := message.(map[string]interface{})
+	if !ok {
+		err = errors.New("cannot cast")
+		return
+	}
+
+	replyToValue, ok := messageMap["replyTo"]
+	if !ok {
+		err = errors.New("ReplyTo undefined")
+		return
+	}
+	replyTo, ok = replyToValue.(string)
+	if !ok {
+		err = errors.New("cannot cast ReplyTo to string")
+		return
+	}
+
+	signalBase64Value, ok := messageMap["signal"]
+	if !ok {
+		err = errors.New("Signal undefined")
+		return
+	}
+	signalBase64, ok := signalBase64Value.(string)
+	if !ok {
+		err = errors.New("cannot cast Signal to string")
+		return
+	}
+	signal, err = base64.StdEncoding.DecodeString(signalBase64)
+
+	return
+}
+
 func NewRoom(
 	room *livekit.Room,
 	internal *livekit.RoomInternal,
@@ -92,12 +151,17 @@ func NewRoom(
 	serverInfo *livekit.ServerInfo,
 	telemetry telemetry.TelemetryService,
 	egressLauncher EgressLauncher,
+	roomP2PCommunicator p2p.RoomCommunicator,
 ) *Room {
+	bufferFactory := buffer.NewFactoryOfBufferFactory(config.Receiver.PacketBufferSize)
+	logger := LoggerWithRoom(logger.GetLogger(), livekit.RoomName(room.Name), livekit.RoomID(room.Sid))
+	config.SetBufferFactory(bufferFactory.CreateBufferFactory())
+
 	r := &Room{
 		protoRoom:                 proto.Clone(room).(*livekit.Room),
 		internal:                  internal,
-		Logger:                    LoggerWithRoom(logger.GetLogger(), livekit.RoomName(room.Name), livekit.RoomID(room.Sid)),
-		config:                    config,
+		Logger:                    logger,
+		Config:                    config,
 		audioConfig:               audioConfig,
 		telemetry:                 telemetry,
 		egressLauncher:            egressLauncher,
@@ -106,9 +170,12 @@ func NewRoom(
 		participants:              make(map[livekit.ParticipantIdentity]types.LocalParticipant),
 		participantOpts:           make(map[livekit.ParticipantIdentity]*ParticipantOptions),
 		participantRequestSources: make(map[livekit.ParticipantIdentity]routing.MessageSource),
-		bufferFactory:             buffer.NewFactoryOfBufferFactory(config.Receiver.PacketBufferSize),
+		bufferFactory:             bufferFactory,
 		batchedUpdates:            make(map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
 		closed:                    make(chan struct{}),
+
+		relayedParticipants: make(map[livekit.ParticipantIdentity]*RelayedParticipantImpl),
+		outRelayCollection:  relay.NewCollection(),
 	}
 	if r.protoRoom.EmptyTimeout == 0 {
 		r.protoRoom.EmptyTimeout = DefaultEmptyTimeout
@@ -121,7 +188,249 @@ func NewRoom(
 	go r.connectionQualityWorker()
 	go r.subscriberBroadcastWorker()
 
+	pendingAnswers := map[string]chan []byte{}
+	pendingAnswersMu := sync.Mutex{}
+
+	roomP2PCommunicator.ForEachPeer(func(peerId string) {
+		rel, err := relay.NewRelay(logger, &relay.RelayConfig{
+			BufferFactory: config.BufferFactory,
+			SettingEngine: config.SettingEngine,
+			ICEServers:    config.Configuration.ICEServers,
+		})
+		if err != nil {
+			logger.Errorw("New out relay", err)
+			return
+		}
+
+		rel.OnReady(func() {
+			logger.Infow("Out relay is ready")
+			r.outRelayCollection.AddRelay(rel)
+		})
+
+		rel.OnConnectionStateChange(func(state webrtc.ICETransportState) {
+			logger.Infow("Out relay connection state changed", "state", state)
+		})
+
+		signalFn := func(offer []byte) ([]byte, error) {
+			answer := make(chan []byte, 1)
+
+			pendingAnswersMu.Lock()
+			msgId, sendErr := roomP2PCommunicator.SendMessage(peerId, packSignalPeerMessage("", offer))
+			if sendErr != nil {
+				pendingAnswersMu.Unlock()
+				return nil, err
+			}
+			logger.Infow("offer sent")
+			pendingAnswers[msgId] = answer
+			pendingAnswersMu.Unlock()
+
+			defer func() {
+				pendingAnswersMu.Lock()
+				delete(pendingAnswers, msgId)
+				pendingAnswersMu.Unlock()
+			}()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			select {
+			case a := <-answer:
+				return a, nil
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		if err := rel.Offer(signalFn); err != nil {
+			logger.Errorw("Relay Offer", err)
+		}
+	})
+
+	roomP2PCommunicator.OnMessage(func(message interface{}, fromPeerId string, eventId string) {
+		replyTo, signal, err := unpackSignalPeerMessage(message)
+		if err != nil {
+			logger.Errorw("Unmarshal signal peer message", err)
+			return
+		}
+		if len(replyTo) > 0 {
+			// Answer
+			pendingAnswersMu.Lock()
+			if answer, ok := pendingAnswers[replyTo]; ok {
+				answer <- signal
+			}
+			pendingAnswersMu.Unlock()
+		} else {
+			// Offer
+			rel, err := relay.NewRelay(logger, &relay.RelayConfig{
+				BufferFactory: config.BufferFactory,
+				SettingEngine: config.SettingEngine,
+				ICEServers:    config.Configuration.ICEServers,
+			})
+			if err != nil {
+				logger.Errorw("New in relay", err)
+				return
+			}
+
+			rel.OnReady(func() {
+				logger.Infow("In relay is ready")
+				// TODO
+			})
+
+			rel.OnConnectionStateChange(func(state webrtc.ICETransportState) {
+				logger.Infow("In relay connection state changed", "state", state)
+			})
+
+			answer, answerErr := rel.Answer(signal)
+			if answerErr != nil {
+				logger.Errorw("In relay answer", answerErr)
+				return
+			}
+
+			if _, err := roomP2PCommunicator.SendMessage(fromPeerId, packSignalPeerMessage(eventId, answer)); err != nil {
+				logger.Errorw("can not send answer", err)
+				return
+			}
+
+			logger.Infow("answer sent")
+
+			rel.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, mid string, trackId string, streamId string, rid string, meta string) {
+				r.onRelayAddTrack(rel, track, receiver, mid, trackId, streamId, rid, meta)
+			})
+		}
+	})
+
 	return r
+}
+
+func (r *Room) onRelayAddTrack(rel *relay.Relay, track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, mid string, trackId string, streamId string, rid string, meta string) {
+	logger.Infow("Track published", "mid", mid)
+	var participantInfo livekit.ParticipantInfo
+	if err := json.Unmarshal([]byte(meta), &participantInfo); err != nil {
+		panic(err)
+	}
+
+	participantIdentity := livekit.ParticipantIdentity(participantInfo.Identity)
+
+	var remoteParticipant *RelayedParticipantImpl
+
+	func() {
+		r.relayedParticipantsMu.Lock()
+		defer r.relayedParticipantsMu.Unlock()
+
+		var exists bool
+		remoteParticipant, exists = r.relayedParticipants[participantIdentity]
+		if !exists {
+			remoteParticipant, _ = NewRelayedParticipant(RelayedParticipantParams{
+				Identity: participantIdentity,
+				Name:     livekit.ParticipantName(participantInfo.Name),
+				SID:      livekit.ParticipantID(participantInfo.Sid),
+				Config:   &r.Config,
+				AudioConfig: cfg.AudioConfig{
+					ActiveLevel:     35, // -35dBov
+					MinPercentile:   40,
+					UpdateInterval:  400,
+					SmoothIntervals: 2,
+				},
+				VideoConfig: cfg.VideoConfig{
+					DynacastPauseDelay: 5 * time.Second,
+					StreamTracker: cfg.StreamTrackersConfig{
+						Video: cfg.StreamTrackerConfig{
+							StreamTrackerType: cfg.StreamTrackerTypePacket,
+							BitrateReportInterval: map[int32]time.Duration{
+								0: 1 * time.Second,
+								1: 1 * time.Second,
+								2: 1 * time.Second,
+							},
+							PacketTracker: map[int32]cfg.StreamTrackerPacketConfig{
+								0: {
+									SamplesRequired: 1,
+									CyclesRequired:  4,
+									CycleDuration:   500 * time.Millisecond,
+								},
+								1: {
+									SamplesRequired: 5,
+									CyclesRequired:  20,
+									CycleDuration:   500 * time.Millisecond,
+								},
+								2: {
+									SamplesRequired: 5,
+									CyclesRequired:  20,
+									CycleDuration:   500 * time.Millisecond,
+								},
+							},
+							FrameTracker: map[int32]cfg.StreamTrackerFrameConfig{
+								0: {
+									MinFPS: 5.0,
+								},
+								1: {
+									MinFPS: 5.0,
+								},
+								2: {
+									MinFPS: 5.0,
+								},
+							},
+						},
+						Screenshare: cfg.StreamTrackerConfig{
+							StreamTrackerType: cfg.StreamTrackerTypePacket,
+							BitrateReportInterval: map[int32]time.Duration{
+								0: 4 * time.Second,
+								1: 4 * time.Second,
+								2: 4 * time.Second,
+							},
+							PacketTracker: map[int32]cfg.StreamTrackerPacketConfig{
+								0: {
+									SamplesRequired: 1,
+									CyclesRequired:  1,
+									CycleDuration:   2 * time.Second,
+								},
+								1: {
+									SamplesRequired: 1,
+									CyclesRequired:  1,
+									CycleDuration:   2 * time.Second,
+								},
+								2: {
+									SamplesRequired: 1,
+									CyclesRequired:  1,
+									CycleDuration:   2 * time.Second,
+								},
+							},
+							FrameTracker: map[int32]cfg.StreamTrackerFrameConfig{
+								0: {
+									MinFPS: 0.5,
+								},
+								1: {
+									MinFPS: 0.5,
+								},
+								2: {
+									MinFPS: 0.5,
+								},
+							},
+						},
+					},
+				},
+				Logger: LoggerWithParticipant(r.Logger, livekit.ParticipantIdentity(participantInfo.Identity), livekit.ParticipantID(participantInfo.Sid), true),
+				// SimTracks: nil,
+				// InitialVersion: 0,
+				Telemetry: r.telemetry,
+				PLIThrottleConfig: cfg.PLIThrottleConfig{
+					LowQuality:  500 * time.Millisecond,
+					MidQuality:  time.Second,
+					HighQuality: time.Second,
+				},
+				VersionGenerator: utils.NewDefaultTimedVersionGenerator(),
+				Relay:            rel,
+			})
+			opts := ParticipantOptions{
+				AutoSubscribe: false,
+			}
+			if err := r.Join(remoteParticipant, nil, &opts, nil); err != nil {
+				logger.Errorw("Can not join remote participant", err)
+			} else {
+				logger.Infow("Remote participant joined")
+				r.relayedParticipants[participantIdentity] = remoteParticipant
+			}
+		}
+	}()
+	remoteParticipant.OnMediaTrack(track, receiver, mid, trackId, streamId, rid, participantInfo.Tracks)
 }
 
 func (r *Room) ToProto() *livekit.Room {
@@ -1159,6 +1468,10 @@ func (r *Room) DebugInfo() map[string]interface{} {
 	info["Participants"] = participantInfo
 
 	return info
+}
+
+func (r *Room) GetOutRelayCollection() *relay.Collection {
+	return r.outRelayCollection
 }
 
 func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, dp *livekit.DataPacket, logger logger.Logger) {

@@ -158,6 +158,7 @@ type Forwarder struct {
 
 	muted    bool
 	pubMuted bool
+	ssrc     uint32
 
 	maxPublishedLayer    int32
 	maxTemporalLayerSeen int32
@@ -190,6 +191,7 @@ type Forwarder struct {
 func NewForwarder(
 	kind webrtc.RTPCodecType,
 	logger logger.Logger,
+	ssrc uint32,
 	getReferenceLayerRTPTimestamp func(ts uint32, layer int32, referenceLayer int32) (uint32, error),
 ) *Forwarder {
 	f := &Forwarder{
@@ -211,6 +213,8 @@ func NewForwarder(
 		lastAllocation: VideoAllocationDefault,
 
 		rtpMunger: NewRTPMunger(logger),
+
+		ssrc: ssrc,
 	}
 
 	if f.kind == webrtc.RTPCodecTypeVideo {
@@ -1343,21 +1347,29 @@ func (f *Forwarder) GetTranslationParams(extPkt *buffer.ExtPacket, layer int32) 
 		}, nil
 	}
 
-	switch f.kind {
-	case webrtc.RTPCodecTypeAudio:
-		// Audio: Blank frames are injected on publisher mute to ensure decoder does not get stuck at a noise frame. So, do not forward.
-		if f.pubMuted {
-			return &TranslationParams{
-				shouldDrop: true,
-			}, nil
+	if f.ssrc > 0 {
+		if extPkt.Packet.Header.SSRC == f.ssrc {
+			return f.getTranslationParamsCommon(extPkt, layer, nil)
+		} else {
+			return &TranslationParams{shouldDrop: true}, nil
+		}
+	} else {
+		switch f.kind {
+		case webrtc.RTPCodecTypeAudio:
+			// Audio: Blank frames are injected on publisher mute to ensure decoder does not get stuck at a noise frame. So, do not forward.
+			if f.pubMuted {
+				return &TranslationParams{
+					shouldDrop: true,
+				}, nil
+			}
+
+			return f.getTranslationParamsAudio(extPkt, layer)
+		case webrtc.RTPCodecTypeVideo:
+			return f.getTranslationParamsVideo(extPkt, layer)
 		}
 
-		return f.getTranslationParamsAudio(extPkt, layer)
-	case webrtc.RTPCodecTypeVideo:
-		return f.getTranslationParamsVideo(extPkt, layer)
+		return nil, ErrUnknownKind
 	}
-
-	return nil, ErrUnknownKind
 }
 
 // should be called with lock held

@@ -193,11 +193,11 @@ func (t *MediaTrack) SetPendingCodecSid(codecs []*livekit.SimulcastCodec) {
 }
 
 // AddReceiver adds a new RTP receiver to the track, returns true when receiver represents a new codec
-func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, twcc *twcc.Responder, mid string) bool {
+func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, trackRid string, twcc *twcc.Responder, mid string) bool {
 	var newCodec bool
 	buff, rtcpReader := t.params.BufferFactory.GetBufferPair(uint32(track.SSRC()))
 	if buff == nil || rtcpReader == nil {
-		t.params.Logger.Errorw("could not retrieve buffer pair", nil)
+		t.params.Logger.Errorw("could not retrieve buffer pair", nil, "ssrc", track.SSRC())
 		return newCodec
 	}
 
@@ -220,7 +220,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 
 	t.lock.Lock()
 	mime := strings.ToLower(track.Codec().MimeType)
-	layer := buffer.RidToSpatialLayer(track.RID(), t.trackInfo)
+	layer := buffer.RidToSpatialLayer(trackRid, t.trackInfo)
 	t.params.Logger.Debugw("AddReceiver", "mime", track.Codec().MimeType)
 	wr := t.MediaTrackReceiver.Receiver(mime)
 	if wr == nil {
@@ -293,16 +293,16 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	}
 	t.lock.Unlock()
 
-	wr.(*sfu.WebRTCReceiver).AddUpTrack(track, buff)
+	wr.(*sfu.WebRTCReceiver).AddUpTrack(track, trackRid, buff)
 
 	// LK-TODO: can remove this completely when VideoLayers protocol becomes the default as it has info from client or if we decide to use TrackInfo.Simulcast
-	if t.numUpTracks.Inc() > 1 || track.RID() != "" {
+	if t.numUpTracks.Inc() > 1 || trackRid != "" {
 		// cannot only rely on numUpTracks since we fire metadata events immediately after the first layer
 		t.SetSimulcast(true)
 	}
 
 	if t.IsSimulcast() {
-		t.MediaTrackReceiver.SetLayerSsrc(mime, track.RID(), uint32(track.SSRC()))
+		t.MediaTrackReceiver.SetLayerSsrc(mime, trackRid, uint32(track.SSRC()))
 	}
 
 	buff.Bind(receiver.GetParameters(), track.Codec().RTPCodecCapability)
