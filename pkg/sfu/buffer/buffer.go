@@ -230,7 +230,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 				return
 			}
 			b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBNACK)
-			b.nacker = nack.NewNACKQueue()
+			b.nacker = nack.NewNACKQueue(nack.NackQueueParamsDefault)
 		}
 	}
 
