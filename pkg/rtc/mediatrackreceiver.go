@@ -207,8 +207,9 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority 
 }
 
 func (t *MediaTrackReceiver) SetPotentialCodecs(codecs []webrtc.RTPCodecParameters, headers []webrtc.RTPHeaderExtensionParameter) {
-	// The potential codecs have not published yet, so we can't get the actual Extensions, assume they will have
-	// same extensions as the primary codec except for the dependency descriptor
+	// The potential codecs have not published yet, so we can't get the actual Extensions, the client/browser uses same extensions
+	// for all video codecs so we assume they will have same extensions as the primary codec except for the dependency descriptor
+	// that is munged in svc codec.
 	headersWithoutDD := make([]webrtc.RTPHeaderExtensionParameter, 0, len(headers))
 	for _, h := range headers {
 		if h.URI != dependencydescriptor.ExtensionUrl {

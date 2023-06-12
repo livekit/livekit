@@ -31,8 +31,8 @@ type StreamTrackerDependencyDescriptor struct {
 func NewStreamTrackerDependencyDescriptor(params StreamTrackerParams) *StreamTrackerDependencyDescriptor {
 	return &StreamTrackerDependencyDescriptor{
 		params:           params,
-		maxSpatialLayer:  -1,
-		maxTemporalLayer: -1,
+		maxSpatialLayer:  buffer.InvalidLayerSpatial,
+		maxTemporalLayer: buffer.InvalidLayerTemporal,
 	}
 }
 func (s *StreamTrackerDependencyDescriptor) Start() {
