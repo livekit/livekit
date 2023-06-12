@@ -20,6 +20,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/audio"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
+	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
 )
 
 var (
@@ -215,6 +216,13 @@ func NewWebRTCReceiver(
 		}
 	})
 	w.connectionStats.Start(w.trackInfo, time.Now())
+
+	for _, ext := range receiver.GetParameters().HeaderExtensions {
+		if ext.URI == dd.ExtensionUrl {
+			w.streamTrackerManager.AddDependencyDescriptorTrackers()
+			break
+		}
+	}
 
 	return w
 }
@@ -644,6 +652,7 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 				len(pkt.Packet.Payload),
 				pkt.Packet.Marker,
 				pkt.Packet.Timestamp,
+				pkt.DependencyDescriptor,
 			)
 		}
 
