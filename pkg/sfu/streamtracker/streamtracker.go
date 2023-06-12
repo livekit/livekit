@@ -7,6 +7,7 @@ import (
 
 	"go.uber.org/atomic"
 
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -175,6 +176,7 @@ func (s *StreamTracker) Observe(
 	payloadSize int,
 	hasMarker bool,
 	ts uint32,
+	_ *buffer.DependencyDescriptorWithDecodeTarget,
 ) {
 	s.lock.Lock()
 

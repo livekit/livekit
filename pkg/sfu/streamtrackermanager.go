@@ -41,7 +41,8 @@ type StreamTrackerManager struct {
 	maxPublishedLayer    int32
 	maxTemporalLayerSeen int32
 
-	trackers [buffer.DefaultMaxLayerSpatial + 1]*streamtracker.StreamTracker
+	ddTracker *streamtracker.StreamTrackerDependencyDescriptor
+	trackers  [buffer.DefaultMaxLayerSpatial + 1]streamtracker.StreamTrackerWorker
 
 	availableLayers  []int32
 	maxExpectedLayer int32
@@ -133,28 +134,58 @@ func (s *StreamTrackerManager) createStreamTrackerFrame(layer int32) streamtrack
 	return streamtracker.NewStreamTrackerFrame(params)
 }
 
-func (s *StreamTrackerManager) AddTracker(layer int32) *streamtracker.StreamTracker {
+func (s *StreamTrackerManager) AddDependencyDescriptorTrackers() {
+	bitrateInterval, ok := s.trackerConfig.BitrateReportInterval[0]
+	if !ok {
+		return
+	}
+	s.lock.Lock()
+	var addAllTrackers bool
+	if s.ddTracker == nil {
+		s.ddTracker = streamtracker.NewStreamTrackerDependencyDescriptor(streamtracker.StreamTrackerParams{
+			BitrateReportInterval: bitrateInterval,
+			Logger:                s.logger.WithValues("layer", 0),
+		})
+		addAllTrackers = true
+	}
+	s.lock.Unlock()
+	if addAllTrackers {
+		for i := 0; i <= int(buffer.DefaultMaxLayerSpatial); i++ {
+			s.AddTracker(int32(i))
+		}
+	}
+}
+
+func (s *StreamTrackerManager) AddTracker(layer int32) streamtracker.StreamTrackerWorker {
 	bitrateInterval, ok := s.trackerConfig.BitrateReportInterval[layer]
 	if !ok {
 		return nil
 	}
 
-	var trackerImpl streamtracker.StreamTrackerImpl
-	switch s.trackerConfig.StreamTrackerType {
-	case config.StreamTrackerTypePacket:
-		trackerImpl = s.createStreamTrackerPacket(layer)
-	case config.StreamTrackerTypeFrame:
-		trackerImpl = s.createStreamTrackerFrame(layer)
+	var tracker streamtracker.StreamTrackerWorker
+	s.lock.Lock()
+	if s.ddTracker != nil {
+		tracker = s.ddTracker.LayeredTracker(layer)
 	}
-	if trackerImpl == nil {
-		return nil
-	}
+	s.lock.Unlock()
+	if tracker == nil {
+		var trackerImpl streamtracker.StreamTrackerImpl
+		switch s.trackerConfig.StreamTrackerType {
+		case config.StreamTrackerTypePacket:
+			trackerImpl = s.createStreamTrackerPacket(layer)
+		case config.StreamTrackerTypeFrame:
+			trackerImpl = s.createStreamTrackerFrame(layer)
+		}
+		if trackerImpl == nil {
+			return nil
+		}
 
-	tracker := streamtracker.NewStreamTracker(streamtracker.StreamTrackerParams{
-		StreamTrackerImpl:     trackerImpl,
-		BitrateReportInterval: bitrateInterval,
-		Logger:                s.logger.WithValues("layer", layer),
-	})
+		tracker = streamtracker.NewStreamTracker(streamtracker.StreamTrackerParams{
+			StreamTrackerImpl:     trackerImpl,
+			BitrateReportInterval: bitrateInterval,
+			Logger:                s.logger.WithValues("layer", layer),
+		})
+	}
 
 	s.logger.Debugw("StreamTrackerManager add track", "layer", layer)
 	tracker.OnStatusChanged(func(status streamtracker.StreamStatus) {
@@ -213,6 +244,8 @@ func (s *StreamTrackerManager) RemoveAllTrackers() {
 	s.availableLayers = make([]int32, 0)
 	s.maxExpectedLayerFromTrackInfo()
 	s.paused = false
+	ddTracker := s.ddTracker
+	s.ddTracker = nil
 	s.lock.Unlock()
 
 	for _, tracker := range trackers {
@@ -220,9 +253,12 @@ func (s *StreamTrackerManager) RemoveAllTrackers() {
 			tracker.Stop()
 		}
 	}
+	if ddTracker != nil {
+		ddTracker.Stop()
+	}
 }
 
-func (s *StreamTrackerManager) GetTracker(layer int32) *streamtracker.StreamTracker {
+func (s *StreamTrackerManager) GetTracker(layer int32) streamtracker.StreamTrackerWorker {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 
@@ -270,7 +306,7 @@ func (s *StreamTrackerManager) SetMaxExpectedSpatialLayer(layer int32) int32 {
 	// But, those conditions should be rare. In those cases, the restart will
 	// take longer.
 	//
-	var trackersToReset []*streamtracker.StreamTracker
+	var trackersToReset []streamtracker.StreamTrackerWorker
 	for l := s.maxExpectedLayer + 1; l <= layer; l++ {
 		if s.hasSpatialLayerLocked(l) {
 			continue
@@ -367,7 +403,8 @@ func (s *StreamTrackerManager) getLayeredBitrateLocked() ([]int32, Bitrates) {
 		}
 	}
 
-	if s.isSVC {
+	// accumulate bitrates for SVC streams without dependency descriptor
+	if s.isSVC && s.ddTracker == nil {
 		for i := len(br) - 1; i >= 1; i-- {
 			for j := len(br[i]) - 1; j >= 0; j-- {
 				if br[i][j] != 0 {
