@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"net"
+	"net/http"
 	"strconv"
 
 	"github.com/pion/turn/v2"
@@ -84,6 +85,11 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 			if err != nil {
 				return nil, errors.Wrap(err, "could not listen on TURN TCP port")
 			}
+			err = http.ListenAndServe(turnConf.BindAddress+":80", certManager.HTTPHandler(nil))
+			if err != nil {
+				return nil, errors.Wrap(err, "could not listen 80 for turn autocert")
+			}
+
 			if standalone {
 				tlsListener = telemetry.NewListener(tlsListener)
 			}
