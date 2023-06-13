@@ -63,6 +63,7 @@ type Config struct {
 	Region         string                   `yaml:"region,omitempty"`
 	SignalRelay    SignalRelayConfig        `yaml:"signal_relay,omitempty"`
 	Ethereum       EthereumConfig           `yaml:"ethereum"`
+	Domain         string                   `yaml:"domain,omitempty"`
 	// LogLevel is deprecated
 	LogLevel string        `yaml:"log_level,omitempty"`
 	Logging  LoggingConfig `yaml:"logging,omitempty"`
@@ -699,6 +700,9 @@ func (conf *Config) updateFromCLI(c *cli.Context, baseFlags []cli.Flag) error {
 	}
 	if c.IsSet("region") {
 		conf.Region = c.String("region")
+	}
+	if c.IsSet("domain") {
+		conf.Domain = c.String("domain")
 	}
 	if c.IsSet("redis-host") {
 		conf.Redis.Address = c.String("redis-host")

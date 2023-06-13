@@ -25,6 +25,11 @@ import (
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"golang.org/x/crypto/acme/autocert"
+	"os"
+	"os/user"
+	"path/filepath"
+	"crypto/tls"
 )
 
 type LivekitServer struct {
@@ -32,6 +37,7 @@ type LivekitServer struct {
 	ioService    *IOInfoService
 	rtcService   *RTCService
 	httpServer   *http.Server
+	httpsServer   *http.Server
 	promServer   *http.Server
 	router       routing.Router
 	roomManager  *RoomManager
@@ -111,9 +117,32 @@ func NewLivekitServer(conf *config.Config,
 	mux.HandleFunc("/rtc/validate", rtcService.Validate)
 	mux.HandleFunc("/", s.defaultHandler)
 
-	s.httpServer = &http.Server{
-		Handler: configureMiddlewares(mux, middlewares...),
-	}
+    if conf.Domain != "" {
+		certManager := autocert.Manager{
+			Prompt:     autocert.AcceptTOS,
+			HostPolicy: autocert.HostWhitelist(conf.Domain),
+		}
+
+		dir := cacheDir()
+		if dir != "" {
+			certManager.Cache = autocert.DirCache(dir)
+		}
+		s.httpsServer = &http.Server{
+			Addr: ":https",
+			TLSConfig: &tls.Config{
+				GetCertificate: certManager.GetCertificate,
+			},
+			Handler: configureMiddlewares(mux, middlewares...),
+		}
+		s.httpServer = &http.Server{
+			Addr: ":http",
+			Handler: certManager.HTTPHandler(nil),
+		}
+	} else {
+		s.httpServer = &http.Server{
+			Handler: configureMiddlewares(mux, middlewares...),
+		}
+    }
 
 	if conf.PrometheusPort > 0 {
 		s.promServer = &http.Server{
@@ -222,19 +251,35 @@ func (s *LivekitServer) Start() error {
 		go s.promServer.Serve(promLn)
 	}
 
-	httpGroup := &errgroup.Group{}
-	for _, ln := range listeners {
-		l := ln
+    if s.config.Domain != "" {
+		httpGroup := &errgroup.Group{}
 		httpGroup.Go(func() error {
-			return s.httpServer.Serve(l)
+			return s.httpServer.ListenAndServe()
 		})
-	}
-	go func() {
-		if err := httpGroup.Wait(); err != http.ErrServerClosed {
-			logger.Errorw("could not start server", err)
-			s.Stop(true)
+		httpGroup.Go(func() error {
+			return s.httpsServer.ListenAndServeTLS("", "")
+		})
+		go func() {
+			if err := httpGroup.Wait(); err != http.ErrServerClosed {
+				logger.Errorw("could not start server", err)
+				s.Stop(true)
+			}
+		}()
+    } else {
+		httpGroup := &errgroup.Group{}
+		for _, ln := range listeners {
+			l := ln
+			httpGroup.Go(func() error {
+				return s.httpServer.Serve(l)
+			})
 		}
-	}()
+		go func() {
+			if err := httpGroup.Wait(); err != http.ErrServerClosed {
+				logger.Errorw("could not start server", err)
+				s.Stop(true)
+			}
+		}()
+    }
 
 	go s.backgroundWorker()
 
@@ -354,4 +399,14 @@ func configureMiddlewares(handler http.Handler, middlewares ...negroni.Handler) 
 	}
 	n.UseHandler(handler)
 	return n
+}
+
+func cacheDir() (dir string) {
+	if u, _ := user.Current(); u != nil {
+		dir = filepath.Join(os.TempDir(), "cache-golang-autocert-"+u.Username)
+		if err := os.MkdirAll(dir, 0700); err == nil {
+			return dir
+		}
+	}
+	return ""
 }
