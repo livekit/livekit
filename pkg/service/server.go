@@ -274,7 +274,7 @@ func (s *LivekitServer) Start() error {
 		for _, lnHTTPS := range listenersHTTPS {
 			l := lnHTTPS
 			httpGroup.Go(func() error {
-				return s.httpServer.ServeTLS(l, "", "")
+				return s.httpsServer.ServeTLS(l, "", "")
 			})
 		}
 		go func() {
