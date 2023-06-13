@@ -79,7 +79,6 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 
 			tlsListener, err := tls.Listen("tcp4", turnConf.BindAddress+":"+strconv.Itoa(turnConf.TLSPort),
 				&tls.Config{
-					MinVersion:     tls.VersionTLS12,
 					GetCertificate: certManager.GetCertificate,
 				})
 			if err != nil {
