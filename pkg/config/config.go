@@ -225,6 +225,7 @@ type TURNConfig struct {
 	RelayPortRangeStart uint16 `yaml:"relay_range_start,omitempty"`
 	RelayPortRangeEnd   uint16 `yaml:"relay_range_end,omitempty"`
 	ExternalTLS         bool   `yaml:"external_tls"`
+	BindAddress         string `yaml:"bind_address"`
 }
 
 type WebHookConfig struct {
@@ -700,9 +701,6 @@ func (conf *Config) updateFromCLI(c *cli.Context, baseFlags []cli.Flag) error {
 	}
 	if c.IsSet("region") {
 		conf.Region = c.String("region")
-	}
-	if c.IsSet("domain") {
-		conf.Domain = c.String("domain")
 	}
 	if c.IsSet("redis-host") {
 		conf.Redis.Address = c.String("redis-host")

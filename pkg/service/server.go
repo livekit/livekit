@@ -27,9 +27,6 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"golang.org/x/crypto/acme/autocert"
-	"os"
-	"os/user"
-	"path/filepath"
 )
 
 type LivekitServer struct {
@@ -421,14 +418,4 @@ func configureMiddlewares(handler http.Handler, middlewares ...negroni.Handler) 
 	}
 	n.UseHandler(handler)
 	return n
-}
-
-func cacheDir() (dir string) {
-	if u, _ := user.Current(); u != nil {
-		dir = filepath.Join(os.TempDir(), "cache-golang-autocert-"+u.Username)
-		if err := os.MkdirAll(dir, 0700); err == nil {
-			return dir
-		}
-	}
-	return ""
 }
