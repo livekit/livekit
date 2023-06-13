@@ -77,7 +77,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 				certManager.Cache = autocert.DirCache(dir)
 			}
 
-			tlsListener, err := tls.Listen("tcp4", turnConf.BindAddress+strconv.Itoa(turnConf.TLSPort),
+			tlsListener, err := tls.Listen("tcp4", turnConf.BindAddress+":"+strconv.Itoa(turnConf.TLSPort),
 				&tls.Config{
 					MinVersion:     tls.VersionTLS12,
 					GetCertificate: certManager.GetCertificate,
@@ -95,7 +95,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 			}
 			serverConfig.ListenerConfigs = append(serverConfig.ListenerConfigs, listenerConfig)
 		} else {
-			tcpListener, err := net.Listen("tcp4", turnConf.BindAddress+strconv.Itoa(turnConf.TLSPort))
+			tcpListener, err := net.Listen("tcp4", turnConf.BindAddress+":"+strconv.Itoa(turnConf.TLSPort))
 			if err != nil {
 				return nil, errors.Wrap(err, "could not listen on TURN TCP port")
 			}
