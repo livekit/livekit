@@ -85,10 +85,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 			if err != nil {
 				return nil, errors.Wrap(err, "could not listen on TURN TCP port")
 			}
-			err = http.ListenAndServe(turnConf.BindAddress+":80", certManager.HTTPHandler(nil))
-			if err != nil {
-				return nil, errors.Wrap(err, "could not listen 80 for turn autocert")
-			}
+			go http.ListenAndServe(turnConf.BindAddress+":80", certManager.HTTPHandler(nil))
 
 			if standalone {
 				tlsListener = telemetry.NewListener(tlsListener)
