@@ -295,6 +295,10 @@ func (s *LivekitServer) Start() error {
 	defer cancel()
 	_ = s.httpServer.Shutdown(ctx)
 
+	if s.httpsServer != nil {
+		_ = s.httpsServer.Shutdown(ctx)
+	}
+
 	if s.turnServer != nil {
 		_ = s.turnServer.Close()
 	}
