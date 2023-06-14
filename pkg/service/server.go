@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,14 +20,14 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
-	"crypto/tls"
-	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/livekit-server/version"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"golang.org/x/crypto/acme/autocert"
+
+	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/version"
 )
 
 type LivekitServer struct {
@@ -365,7 +366,7 @@ func (s *LivekitServer) debugInfo(w http.ResponseWriter, _ *http.Request) {
 	}
 	s.roomManager.lock.RUnlock()
 
-	b, err := json.Marshal(info)
+	b, err := json.MarshalIndent(info, "", "\t")
 	if err != nil {
 		w.WriteHeader(400)
 		_, _ = w.Write([]byte(err.Error()))

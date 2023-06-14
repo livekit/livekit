@@ -169,6 +169,9 @@ type ParticipantImpl struct {
 
 	cachedDownTracks map[livekit.TrackID]*downTrackState
 
+	relayDownTracks   map[livekit.ParticipantID]*sfu.DownTrack
+	relayDownTracksMu sync.RWMutex
+
 	supervisor *supervisor.ParticipantSupervisor
 }
 
@@ -191,6 +194,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		connectedAt:             time.Now(),
 		rttUpdatedAt:            time.Now(),
 		cachedDownTracks:        make(map[livekit.TrackID]*downTrackState),
+		relayDownTracks:         make(map[livekit.ParticipantID]*sfu.DownTrack),
 		dataChannelStats: telemetry.NewBytesTrackStats(
 			telemetry.BytesTrackIDForParticipantID(telemetry.BytesTrackTypeData, params.SID),
 			params.SID,
@@ -1205,6 +1209,10 @@ func (p *ParticipantImpl) forwardTrackToRelays(publishedTrack *MediaTrack, track
 			p.params.Logger.Errorw("add relayed down track", err)
 		}
 		dt.SetConnected()
+
+		p.relayDownTracksMu.Lock()
+		p.relayDownTracks[dt.SubscriberID()] = dt
+		p.relayDownTracksMu.Unlock()
 	})
 }
 
@@ -2008,6 +2016,14 @@ func (p *ParticipantImpl) DebugInfo() map[string]interface{} {
 	info["PendingTracks"] = pendingTrackInfo
 
 	info["UpTrackManager"] = p.UpTrackManager.DebugInfo()
+
+	relayDownTracksInfo := make(map[string]interface{})
+	p.relayDownTracksMu.RLock()
+	for downTrackId, dt := range p.relayDownTracks {
+		relayDownTracksInfo[string(downTrackId)] = dt.DebugInfo()
+	}
+	p.relayDownTracksMu.RUnlock()
+	info["RelayDownTracks"] = relayDownTracksInfo
 
 	return info
 }
