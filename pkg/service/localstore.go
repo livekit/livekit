@@ -60,7 +60,7 @@ func NewLocalStore(currentNodeId livekit.NodeID, mainDatabase p2p_database.Confi
 	}
 }
 
-func (s *LocalStore) getOrCreateDatabase(room *livekit.Room) (*RoomDatabase, error) {
+func (s *LocalStore) getOrCreateDatabase(room *livekit.Room, cfg p2p_database.Config) (*RoomDatabase, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
@@ -70,8 +70,6 @@ func (s *LocalStore) getOrCreateDatabase(room *livekit.Room) (*RoomDatabase, err
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-
-	cfg := s.p2pDatabaseConfig
 	cfg.DatabaseName = "livekit_room_" + room.Name
 
 	_ = logging.SetLogLevel("*", "error")
@@ -93,7 +91,6 @@ func (s *LocalStore) getOrCreateDatabase(room *livekit.Room) (*RoomDatabase, err
 }
 
 func (s *LocalStore) StoreRoom(ctx context.Context, room *livekit.Room, internal *livekit.RoomInternal) error {
-	log.Println("Calling localstore.StoreRoom")
 	if room.CreationTime == 0 {
 		room.CreationTime = time.Now().Unix()
 	}
@@ -109,16 +106,47 @@ func (s *LocalStore) StoreRoom(ctx context.Context, room *livekit.Room, internal
 	var err error
 	once := s.roomCommunicationsInit[roomName]
 	once.Do(func() {
-		roomDatabase, err := s.getOrCreateDatabase(room)
-		if err != nil {
-			err = errors.Wrapf(err, "error init database for room %s", room.Name)
+		var (
+			db           *p2p_database.DB
+			roomDatabase *RoomDatabase
+			nc           *NodeCommunication
+		)
+
+		cfg := s.p2pDatabaseConfig
+		cfg.NewKeyCallback = func(k string) {
+			k = strings.TrimPrefix(k, "/")
+			if !strings.HasPrefix(k, prefixPeerKey) {
+				return
+			}
+			peerId := strings.TrimPrefix(k, prefixPeerKey)
+			if peerId == db.GetHost().ID().String() {
+				return
+			}
+
+			_, alreadySynced := roomDatabase.syncedPeers.Load(peerId)
+			if alreadySynced {
+				return
+			}
+
+			_, err = nc.SendAsyncMessageToPeerId(ctx, peerId, pingMessage)
+			if err != nil {
+				log.Fatalf("cannot send ping message for node %s in db %s: %s", peerId, room.Name, err)
+			} else {
+				log.Printf("%s send ping message to node %s in db %s", db.GetHost().ID(), peerId, room.Name)
+				roomDatabase.syncedPeers.Store(peerId, peerId)
+			}
 		}
 
-		db := roomDatabase.p2p
-		nc := NewNodeCommunication(db)
-		backgroundCtx, cancel := context.WithCancel(context.Background())
+		roomDatabase, err = s.getOrCreateDatabase(room, cfg)
+		if err != nil {
+			err = errors.Wrapf(err, "error init database for room %s", room.Name)
+			return
+		}
 
-		nc.Setup(backgroundCtx, func(e p2p_database.Event) {
+		db = roomDatabase.p2p
+		nc = NewNodeCommunication(db)
+
+		nc.Setup(context.Background(), func(e p2p_database.Event) {
 			if e.Message != pingMessage {
 				return
 			}
@@ -133,56 +161,8 @@ func (s *LocalStore) StoreRoom(ctx context.Context, room *livekit.Room, internal
 		err = db.Set(ctx, prefixPeerKey+db.GetHost().ID().String(), time.Now().String())
 		if err != nil {
 			err = errors.Wrapf(err, "cannot set node id to db %s", room.Name)
-			cancel()
 			return
 		}
-
-		go func() {
-			for {
-				select {
-				case <-roomDatabase.ctx.Done():
-					log.Printf("stop search new peers in room %s (room db context)", room.Name)
-					cancel()
-					return
-				case <-ctx.Done():
-					log.Printf("stop search new peers in room %s (main context)", room.Name)
-					cancel()
-					return
-				default:
-					keys, err := db.List(ctx)
-					if err != nil {
-						log.Fatalf("get connected nodes for db %s: %s", room.Name, err)
-					}
-					//log.Printf("%s search new peers in room %s", db.GetHost().ID(), room.Name)
-					for _, k := range keys {
-						k = strings.TrimPrefix(k, "/")
-						if !strings.HasPrefix(k, prefixPeerKey) {
-							continue
-						}
-						peerId := strings.TrimPrefix(k, prefixPeerKey)
-
-						if peerId == db.GetHost().ID().String() {
-							continue
-						}
-
-						_, alreadySynced := roomDatabase.syncedPeers.Load(peerId)
-						if alreadySynced {
-							continue
-						}
-
-						_, err := nc.SendAsyncMessageToPeerId(ctx, peerId, pingMessage)
-						if err != nil {
-							log.Fatalf("cannot send ping message for node %s in db %s: %s", peerId, room.Name, err)
-						}
-
-						log.Printf("%s send ping message to node %s in db %s", db.GetHost().ID(), peerId, room.Name)
-						roomDatabase.syncedPeers.Store(peerId, peerId)
-					}
-
-					time.Sleep(500 * time.Millisecond)
-				}
-			}
-		}()
 	})
 
 	if err != nil {
@@ -227,8 +207,6 @@ func (s *LocalStore) ListRooms(_ context.Context, roomNames []livekit.RoomName) 
 }
 
 func (s *LocalStore) DeleteRoom(ctx context.Context, roomName livekit.RoomName) error {
-	log.Println("Calling localstore.DeleteRoom")
-
 	room, _, err := s.LoadRoom(ctx, roomName, false)
 	if err == ErrRoomNotFound {
 		return nil
