@@ -256,11 +256,6 @@ func (s *LocalStore) StoreParticipant(ctx context.Context, roomName livekit.Room
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	err := s.participantCounter.IncrementCurrentValue(ctx)
-	if err != nil {
-		return errors.Wrap(err, "increment participant count")
-	}
-
 	roomParticipants := s.participants[roomName]
 	if roomParticipants == nil {
 		roomParticipants = make(map[livekit.ParticipantIdentity]*livekit.ParticipantInfo)
@@ -306,11 +301,6 @@ func (s *LocalStore) ListParticipants(_ context.Context, roomName livekit.RoomNa
 func (s *LocalStore) DeleteParticipant(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-
-	err := s.participantCounter.DecrementCurrentValue(ctx)
-	if err != nil {
-		return errors.Wrap(err, "decrement participant count")
-	}
 
 	roomParticipants := s.participants[roomName]
 	if roomParticipants != nil {

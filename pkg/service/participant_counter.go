@@ -23,12 +23,11 @@ func NewParticipantCounter(mainDatabase *p2p_database.DB) *ParticipantCounter {
 	}
 }
 
-func (c *ParticipantCounter) IncrementCurrentValue(ctx context.Context) error {
+func (c *ParticipantCounter) Increment(ctx context.Context, peerId string) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	peerId := c.mainDatabase.GetHost().ID().String()
-	current, err := c.GetValueForPeerId(ctx, peerId)
+	current, err := c.GetCurrentValue(ctx, peerId)
 	if err != nil {
 		return err
 	}
@@ -37,12 +36,11 @@ func (c *ParticipantCounter) IncrementCurrentValue(ctx context.Context) error {
 	return c.mainDatabase.Set(ctx, c.generateKey(peerId), strconv.Itoa(current))
 }
 
-func (c *ParticipantCounter) DecrementCurrentValue(ctx context.Context) error {
+func (c *ParticipantCounter) Decrement(ctx context.Context, peerId string) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	peerId := c.mainDatabase.GetHost().ID().String()
-	current, err := c.GetValueForPeerId(ctx, peerId)
+	current, err := c.GetCurrentValue(ctx, peerId)
 	if err != nil {
 		return err
 	}
@@ -55,7 +53,7 @@ func (c *ParticipantCounter) DecrementCurrentValue(ctx context.Context) error {
 	return c.mainDatabase.Set(ctx, c.generateKey(peerId), strconv.Itoa(current))
 }
 
-func (c *ParticipantCounter) GetValueForPeerId(ctx context.Context, peerId string) (int, error) {
+func (c *ParticipantCounter) GetCurrentValue(ctx context.Context, peerId string) (int, error) {
 	var currentCounter int
 
 	currentCounterValue, err := c.mainDatabase.Get(ctx, c.generateKey(peerId))
