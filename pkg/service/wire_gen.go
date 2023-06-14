@@ -53,7 +53,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	participantCounter := createParticipantCounter(db, nodeID)
+	participantCounter := createParticipantCounter(db)
 	objectStore := createStore(p2p_databaseConfig, nodeID, participantCounter)
 	roomAllocator, err := NewRoomAllocator(conf, router, objectStore)
 	if err != nil {
@@ -137,8 +137,8 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 
 // wire.go:
 
-func createParticipantCounter(mainDatabase *p2p_database.DB, nodeId livekit.NodeID) *ParticipantCounter {
-	return NewParticipantCounter(nodeId, mainDatabase)
+func createParticipantCounter(mainDatabase *p2p_database.DB) *ParticipantCounter {
+	return NewParticipantCounter(mainDatabase)
 }
 
 func getDatabaseConfiguration(conf *config.Config) p2p_database.Config {

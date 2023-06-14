@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	p2p_database "github.com/dTelecom/p2p-realtime-database"
-	"github.com/livekit/protocol/livekit"
 	"strconv"
 	"sync"
 )
@@ -13,39 +12,37 @@ import (
 const prefixParticipantCounterKey = "participant_counter_"
 
 type ParticipantCounter struct {
-	currentNodeId livekit.NodeID
-	mainDatabase  *p2p_database.DB
-	lock          sync.Mutex
+	mainDatabase *p2p_database.DB
+	lock         sync.Mutex
 }
 
-func NewParticipantCounter(currentNodeId livekit.NodeID, mainDatabase *p2p_database.DB) *ParticipantCounter {
-	counter := &ParticipantCounter{
-		currentNodeId: currentNodeId,
-		mainDatabase:  mainDatabase,
-		lock:          sync.Mutex{},
+func NewParticipantCounter(mainDatabase *p2p_database.DB) *ParticipantCounter {
+	return &ParticipantCounter{
+		mainDatabase: mainDatabase,
+		lock:         sync.Mutex{},
 	}
-
-	return counter
 }
 
-func (c *ParticipantCounter) Increment(ctx context.Context) error {
+func (c *ParticipantCounter) IncrementCurrentValue(ctx context.Context) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	current, err := c.getCurrentValue(ctx)
+	peerId := c.mainDatabase.GetHost().ID().String()
+	current, err := c.GetValueForPeerId(ctx, peerId)
 	if err != nil {
 		return err
 	}
 	current++
 
-	return c.mainDatabase.Set(ctx, c.generateKey(), strconv.Itoa(current))
+	return c.mainDatabase.Set(ctx, c.generateKey(peerId), strconv.Itoa(current))
 }
 
-func (c *ParticipantCounter) Decrement(ctx context.Context) error {
+func (c *ParticipantCounter) DecrementCurrentValue(ctx context.Context) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	current, err := c.getCurrentValue(ctx)
+	peerId := c.mainDatabase.GetHost().ID().String()
+	current, err := c.GetValueForPeerId(ctx, peerId)
 	if err != nil {
 		return err
 	}
@@ -55,13 +52,13 @@ func (c *ParticipantCounter) Decrement(ctx context.Context) error {
 	}
 	current--
 
-	return c.mainDatabase.Set(ctx, c.generateKey(), strconv.Itoa(current))
+	return c.mainDatabase.Set(ctx, c.generateKey(peerId), strconv.Itoa(current))
 }
 
-func (c *ParticipantCounter) getCurrentValue(ctx context.Context) (int, error) {
+func (c *ParticipantCounter) GetValueForPeerId(ctx context.Context, peerId string) (int, error) {
 	var currentCounter int
 
-	currentCounterValue, err := c.mainDatabase.Get(ctx, c.generateKey())
+	currentCounterValue, err := c.mainDatabase.Get(ctx, c.generateKey(peerId))
 	switch {
 	case errors.Is(err, p2p_database.ErrKeyNotFound):
 		currentCounter = 0
@@ -77,6 +74,6 @@ func (c *ParticipantCounter) getCurrentValue(ctx context.Context) (int, error) {
 	return currentCounter, nil
 }
 
-func (c *ParticipantCounter) generateKey() string {
-	return prefixParticipantCounterKey + string(c.currentNodeId)
+func (c *ParticipantCounter) generateKey(peerId string) string {
+	return prefixParticipantCounterKey + peerId
 }

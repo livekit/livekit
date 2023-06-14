@@ -85,8 +85,8 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 	return nil, nil
 }
 
-func createParticipantCounter(mainDatabase *p2p_database.DB, nodeId livekit.NodeID) *ParticipantCounter {
-	return NewParticipantCounter(nodeId, mainDatabase)
+func createParticipantCounter(mainDatabase *p2p_database.DB) *ParticipantCounter {
+	return NewParticipantCounter(mainDatabase)
 }
 
 func getDatabaseConfiguration(conf *config.Config) p2p_database.Config {
