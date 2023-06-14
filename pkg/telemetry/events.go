@@ -415,6 +415,7 @@ func (t *telemetryService) EgressUpdated(ctx context.Context, info *livekit.Egre
 			Event:      webhook.EventEgressUpdated,
 			EgressInfo: info,
 		})
+		t.SendEvent(ctx, newEgressEvent(livekit.AnalyticsEventType_EGRESS_UPDATED, info))
 	})
 }
 

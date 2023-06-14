@@ -94,9 +94,8 @@ type Buffer struct {
 	logger logger.Logger
 
 	// dependency descriptor
-	ddExt             uint8
-	ddParser          *DependencyDescriptorParser
-	maxLayerChangedCB func(int32, int32)
+	ddExt    uint8
+	ddParser *DependencyDescriptorParser
 
 	paused              bool
 	frameRateCalculator [DefaultMaxLayerSpatial + 1]FrameRateCalculator
@@ -175,9 +174,6 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 				b.frameRateCalculator[i] = frc.GetFrameRateCalculatorForSpatial(int32(i))
 			}
 			b.ddParser = NewDependencyDescriptorParser(b.ddExt, b.logger, func(spatial, temporal int32) {
-				if b.maxLayerChangedCB != nil {
-					b.maxLayerChangedCB(spatial, temporal)
-				}
 				frc.SetMaxLayer(spatial, temporal)
 			})
 
@@ -234,7 +230,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 				return
 			}
 			b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBNACK)
-			b.nacker = nack.NewNACKQueue()
+			b.nacker = nack.NewNACKQueue(nack.NackQueueParamsDefault)
 		}
 	}
 
@@ -440,7 +436,7 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 func (b *Buffer) patchExtPacket(ep *ExtPacket, buf []byte) *ExtPacket {
 	n, err := b.getPacket(buf, ep.Packet.SequenceNumber)
 	if err != nil {
-		b.logger.Warnw("could not get packet", err, "sn", ep.Packet.SequenceNumber)
+		b.logger.Warnw("could not get packet", err, "sn", ep.Packet.SequenceNumber, "headSN", b.bucket.HeadSequenceNumber())
 		return nil
 	}
 	ep.RawPacket = buf[:n]
@@ -777,12 +773,6 @@ func (b *Buffer) GetAudioLevel() (float64, bool) {
 	}
 
 	return b.audioLevel.GetLevel()
-}
-
-// DD-TODO : now we rely on stream tracker for layer change, dependency still
-// work for that too. Do we keep it unchanged or use both methods?
-func (b *Buffer) OnMaxLayerChanged(fn func(int32, int32)) {
-	b.maxLayerChangedCB = fn
 }
 
 func (b *Buffer) OnFpsChanged(f func()) {

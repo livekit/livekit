@@ -200,7 +200,6 @@ func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 		Prober: s.prober,
 		Logger: params.Logger,
 	})
-	s.probeController.OnProbeSuccess(s.onProbeSuccess)
 
 	s.resetState()
 
@@ -492,7 +491,7 @@ func (s *StreamAllocator) OnSendProbe(bytesToSend int) {
 	})
 }
 
-// called when prober wants to send packet(s)
+// called when prober finishes a probe cluster, could be called when prober is reset which stops an active cluster
 func (s *StreamAllocator) OnProbeClusterDone(info ProbeClusterInfo) {
 	s.postEvent(Event{
 		Signal: streamAllocatorSignalProbeClusterDone,
@@ -640,7 +639,10 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 
 func (s *StreamAllocator) handleSignalPeriodicPing(event *Event) {
 	// finalize probe if necessary
-	s.probeController.MaybeFinalizeProbe()
+	isHandled, isSuccessful := s.probeController.MaybeFinalizeProbe()
+	if isHandled {
+		s.onProbeDone(isSuccessful)
+	}
 
 	// probe if necessary and timing is right
 	if s.state == streamAllocatorStateDeficient {
@@ -673,7 +675,10 @@ func (s *StreamAllocator) handleSignalSendProbe(event *Event) {
 
 func (s *StreamAllocator) handleSignalProbeClusterDone(event *Event) {
 	info, _ := event.Data.(ProbeClusterInfo)
-	s.probeController.ProbeClusterDone(info, int64(math.Min(float64(s.committedChannelCapacity), float64(s.channelObserver.GetLowestEstimate()))))
+	isHandled := s.probeController.ProbeClusterDone(info, int64(math.Min(float64(s.committedChannelCapacity), float64(s.channelObserver.GetLowestEstimate()))))
+	if isHandled {
+		s.onProbeDone(true)
+	}
 }
 
 func (s *StreamAllocator) handleSignalResume(event *Event) {
@@ -738,6 +743,8 @@ func (s *StreamAllocator) setState(state streamAllocatorState) {
 
 	// reset probe to enforce a delay after state change before probing
 	s.probeController.Reset()
+	// a fresh channel observer after state transition to get clean data
+	s.channelObserver = s.newChannelObserverNonProbe()
 }
 
 func (s *StreamAllocator) adjustState() {
@@ -916,7 +923,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	s.adjustState()
 }
 
-func (s *StreamAllocator) onProbeSuccess() {
+func (s *StreamAllocator) onProbeDone(isSuccessful bool) {
 	highestEstimateInProbe := s.channelObserver.GetHighestEstimate()
 
 	//
@@ -931,6 +938,9 @@ func (s *StreamAllocator) onProbeSuccess() {
 	// the send side is in full control of bandwidth estimation.
 	//
 	s.channelObserver = s.newChannelObserverNonProbe()
+	if !isSuccessful {
+		return
+	}
 
 	// probe estimate is same or higher, commit it and try to allocate deficient tracks
 	s.params.Logger.Infow(

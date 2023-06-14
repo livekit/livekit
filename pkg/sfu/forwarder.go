@@ -1461,6 +1461,13 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 			f.referenceLayerSpatial = layer
 			f.rtpMunger.SetLastSnTs(extPkt)
 			f.codecMunger.SetLast(extPkt)
+			f.logger.Infow(
+				"starting forwarding",
+				"sequenceNumber", extPkt.Packet.SequenceNumber,
+				"timestamp", extPkt.Packet.Timestamp,
+				"layer", layer,
+				"referenceLayerSpatial", f.referenceLayerSpatial,
+			)
 		} else {
 			if f.referenceLayerSpatial == buffer.InvalidLayerSpatial {
 				// on a resume, reference layer may not be set, so only set when it is invalid
@@ -1483,7 +1490,7 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 			lastTS := f.rtpMunger.GetLast().LastTS
 			refTS := lastTS
 			expectedTS := lastTS
-			minTS := uint64(lastTS)
+			minTS := ^uint64(0)
 			switchingAt := time.Now()
 			if f.getReferenceLayerRTPTimestamp != nil {
 				ts, err := f.getReferenceLayerRTPTimestamp(extPkt.Packet.Timestamp, layer, f.referenceLayerSpatial)
@@ -1502,6 +1509,15 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 						timeSinceFirst := time.Since(f.preStartTime)
 						rtpDiff = uint32(timeSinceFirst.Nanoseconds() * int64(f.codec.ClockRate) / 1e9)
 						f.refTSOffset = f.firstTS + rtpDiff - refTS
+						f.logger.Infow(
+							"calculating refTSOffset",
+							"preStartTime", f.preStartTime.String(),
+							"firstTS", f.firstTS,
+							"timeSinceFirst", timeSinceFirst,
+							"rtpDiff", rtpDiff,
+							"refTS", refTS,
+							"refTSOffset", f.refTSOffset,
+						)
 					}
 					expectedTS += rtpDiff
 				}
@@ -1511,8 +1527,11 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 			f.logger.Infow(
 				"next timestamp on switch",
 				"switchingAt", switchingAt.String(),
+				"layer", layer,
 				"lastTS", lastTS,
 				"refTS", refTS,
+				"refTSOffset", f.refTSOffset,
+				"referenceLayerSpatial", f.referenceLayerSpatial,
 				"expectedTS", expectedTS,
 				"minTS", minTS,
 				"nextTS", nextTS,
@@ -1647,6 +1666,12 @@ func (f *Forwarder) maybeStart() {
 	f.rtpMunger.SetLastSnTs(extPkt)
 
 	f.firstTS = extPkt.Packet.Timestamp
+	f.logger.Infow(
+		"starting with dummy forwarding",
+		"sequenceNumber", extPkt.Packet.SequenceNumber,
+		"timestamp", extPkt.Packet.Timestamp,
+		"preStartTime", f.preStartTime,
+	)
 }
 
 func (f *Forwarder) GetSnTsForPadding(num int, forceMarker bool) ([]SnTs, error) {
@@ -1679,7 +1704,7 @@ func (f *Forwarder) GetSnTsForBlankFrames(frameRate uint32, numPackets int) ([]S
 
 	lastTS := f.rtpMunger.GetLast().LastTS
 	expectedTS := lastTS
-	minTS := uint64(lastTS)
+	minTS := ^uint64(0)
 	if f.getExpectedRTPTimestamp != nil {
 		ts, min, err := f.getExpectedRTPTimestamp(time.Now())
 		if err == nil {
@@ -1842,7 +1867,7 @@ func getNextTimestamp(lastTS uint32, refTS uint32, expectedTS uint32, minTS uint
 
 	switch {
 	case rl && el && er: // lastTS < refTS < expectedTS
-		nextTS = uint32(float64(refTS) + 0.95*float64(expectedTS-refTS))
+		nextTS = uint32(float64(refTS) + 0.05*float64(expectedTS-refTS))
 		explain = fmt.Sprintf("l < r < e, %d, %d", refTS-lastTS, expectedTS-refTS)
 	case rl && el && !er: // lastTS < expectedTS < refTS
 		nextTS = uint32(float64(expectedTS) + 0.5*float64(refTS-expectedTS))
@@ -1854,7 +1879,7 @@ func getNextTimestamp(lastTS uint32, refTS uint32, expectedTS uint32, minTS uint
 		nextTS = lastTS + 1
 		explain = fmt.Sprintf("r < e < l, %d, %d", expectedTS-refTS, lastTS-expectedTS)
 	case rl && !el && !er: // expectedTS < lastTS < refTS
-		nextTS = uint32(float64(lastTS) + 0.5*float64(refTS-lastTS))
+		nextTS = uint32(float64(lastTS) + 0.75*float64(refTS-lastTS))
 		explain = fmt.Sprintf("e < l < r, %d, %d", lastTS-expectedTS, refTS-lastTS)
 	case !rl && !el && !er: // expectedTS < refTS < lastTS
 		nextTS = lastTS + 1

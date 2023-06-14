@@ -69,7 +69,7 @@ func TestNack(t *testing.T) {
 				continue
 			}
 			if i < 14 {
-				time.Sleep(time.Duration(float64(rtt)*math.Pow(nack.BackoffFactor, float64(i))+10) * time.Millisecond)
+				time.Sleep(time.Duration(float64(rtt)*math.Pow(nack.NackQueueParamsDefault.BackoffFactor, float64(i))+10) * time.Millisecond)
 			} else {
 				time.Sleep(500 * time.Millisecond) // even a long wait should not exceed max retries
 			}
@@ -128,7 +128,7 @@ func TestNack(t *testing.T) {
 				continue
 			}
 			if i < 14 {
-				time.Sleep(time.Duration(float64(rtt)*math.Pow(nack.BackoffFactor, float64(i))+10) * time.Millisecond)
+				time.Sleep(time.Duration(float64(rtt)*math.Pow(nack.NackQueueParamsDefault.BackoffFactor, float64(i))+10) * time.Millisecond)
 			} else {
 				time.Sleep(500 * time.Millisecond) // even a long wait should not exceed max retries
 			}

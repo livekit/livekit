@@ -3,6 +3,8 @@ package streamtracker
 import (
 	"fmt"
 	"time"
+
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
 // ------------------------------------------------------------
@@ -39,4 +41,16 @@ type StreamTrackerImpl interface {
 
 	Observe(hasMarker bool, ts uint32) StreamStatusChange
 	CheckStatus() StreamStatusChange
+}
+
+type StreamTrackerWorker interface {
+	Start()
+	Stop()
+	Reset()
+	OnStatusChanged(f func(status StreamStatus))
+	OnBitrateAvailable(f func())
+	Status() StreamStatus
+	BitrateTemporalCumulative() []int64
+	SetPaused(paused bool)
+	Observe(temporalLayer int32, pktSize int, payloadSize int, hasMarker bool, ts uint32, dd *buffer.DependencyDescriptorWithDecodeTarget)
 }

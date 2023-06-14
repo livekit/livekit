@@ -12,6 +12,7 @@ const (
 	ProbeBackoffFactor = 1.5
 	ProbeWaitMax       = 30 * time.Second
 	ProbeSettleWait    = 250
+	ProbeSettleWaitMax = 10 * time.Second
 	ProbeTrendWait     = 2 * time.Second
 
 	ProbePct         = 120
@@ -38,8 +39,6 @@ type ProbeController struct {
 	abortedProbeClusterId ProbeClusterId
 	probeTrendObserved    bool
 	probeEndTime          time.Time
-
-	onProbeSuccess func()
 }
 
 func NewProbeController(params ProbeControllerParams) *ProbeController {
@@ -49,13 +48,6 @@ func NewProbeController(params ProbeControllerParams) *ProbeController {
 
 	p.Reset()
 	return p
-}
-
-func (p *ProbeController) OnProbeSuccess(f func()) {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	p.onProbeSuccess = f
 }
 
 func (p *ProbeController) Reset() {
@@ -69,27 +61,18 @@ func (p *ProbeController) Reset() {
 	p.clearProbeLocked()
 }
 
-func (p *ProbeController) ProbeClusterDone(info ProbeClusterInfo, lowestEstimate int64) {
+func (p *ProbeController) ProbeClusterDone(info ProbeClusterInfo, lowestEstimate int64) bool {
 	p.lock.Lock()
+	defer p.lock.Unlock()
+
 	if p.probeClusterId != info.Id {
-		p.lock.Unlock()
-		return
+		p.params.Logger.Infow("not expected probe cluster", "probeClusterId", p.probeClusterId, "resetProbeClusterId", info.Id)
+		return false
 	}
 
 	if p.abortedProbeClusterId == ProbeClusterIdInvalid {
 		// successful probe, finalize
-		isSuccessful := p.finalizeProbeLocked()
-
-		var onProbeSuccess func()
-		if isSuccessful {
-			onProbeSuccess = p.onProbeSuccess
-		}
-		p.lock.Unlock()
-
-		if onProbeSuccess != nil {
-			onProbeSuccess()
-		}
-		return
+		return p.finalizeProbeLocked()
 	}
 
 	// ensure probe queue is flushed
@@ -100,8 +83,19 @@ func (p *ProbeController) ProbeClusterDone(info ProbeClusterInfo, lowestEstimate
 		queueTime = 0.0
 	}
 	queueWait := time.Duration(queueTime+float64(ProbeSettleWait)) * time.Millisecond
+	if queueWait > ProbeSettleWaitMax {
+		queueWait = ProbeSettleWaitMax
+	}
 	p.probeEndTime = p.lastProbeStartTime.Add(queueWait)
-	p.lock.Unlock()
+	p.params.Logger.Infow(
+		"setting probe end time",
+		"probeClusterId", p.probeClusterId,
+		"expectedDuration", expectedDuration,
+		"queueTime", queueTime,
+		"queueWait", queueWait,
+		"probeEndTime", p.probeEndTime,
+	)
+	return false
 }
 
 func (p *ProbeController) CheckProbe(trend ChannelTrend, highestEstimate int64) {
@@ -143,22 +137,15 @@ func (p *ProbeController) CheckProbe(trend ChannelTrend, highestEstimate int64) 
 	}
 }
 
-func (p *ProbeController) MaybeFinalizeProbe() {
+func (p *ProbeController) MaybeFinalizeProbe() (isHandled bool, isSuccessful bool) {
 	p.lock.Lock()
-	isSuccessful := false
+	defer p.lock.Unlock()
+
 	if p.isInProbeLocked() && !p.probeEndTime.IsZero() && time.Now().After(p.probeEndTime) {
-		isSuccessful = p.finalizeProbeLocked()
+		return true, p.finalizeProbeLocked()
 	}
 
-	var onProbeSuccess func()
-	if isSuccessful {
-		onProbeSuccess = p.onProbeSuccess
-	}
-	p.lock.Unlock()
-
-	if onProbeSuccess != nil {
-		onProbeSuccess()
-	}
+	return false, false
 }
 
 func (p *ProbeController) DoesProbeNeedFinalize() bool {
