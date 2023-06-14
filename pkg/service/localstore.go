@@ -31,8 +31,9 @@ type RoomDatabase struct {
 
 // encapsulates CRUD operations for room settings
 type LocalStore struct {
-	currentNodeId     livekit.NodeID
-	p2pDatabaseConfig p2p_database.Config
+	currentNodeId      livekit.NodeID
+	p2pDatabaseConfig  p2p_database.Config
+	participantCounter *ParticipantCounter
 
 	// map of roomName => room
 	rooms        map[livekit.RoomName]*livekit.Room
@@ -47,16 +48,19 @@ type LocalStore struct {
 	globalLock sync.Mutex
 }
 
-func NewLocalStore(currentNodeId livekit.NodeID, mainDatabase p2p_database.Config) *LocalStore {
+func NewLocalStore(currentNodeId livekit.NodeID, mainDatabase p2p_database.Config, participantCounter *ParticipantCounter) *LocalStore {
 	return &LocalStore{
-		currentNodeId:          currentNodeId,
-		p2pDatabaseConfig:      mainDatabase,
+		currentNodeId:      currentNodeId,
+		p2pDatabaseConfig:  mainDatabase,
+		participantCounter: participantCounter,
+
 		rooms:                  make(map[livekit.RoomName]*livekit.Room),
 		roomInternal:           make(map[livekit.RoomName]*livekit.RoomInternal),
 		participants:           make(map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
 		databases:              make(map[livekit.RoomName]*RoomDatabase),
 		roomCommunicationsInit: map[livekit.RoomName]*sync.Once{},
-		lock:                   sync.RWMutex{},
+
+		lock: sync.RWMutex{},
 	}
 }
 
@@ -248,9 +252,15 @@ func (s *LocalStore) UnlockRoom(_ context.Context, _ livekit.RoomName, _ string)
 	return nil
 }
 
-func (s *LocalStore) StoreParticipant(_ context.Context, roomName livekit.RoomName, participant *livekit.ParticipantInfo) error {
+func (s *LocalStore) StoreParticipant(ctx context.Context, roomName livekit.RoomName, participant *livekit.ParticipantInfo) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
+
+	err := s.participantCounter.Increment(ctx)
+	if err != nil {
+		return errors.Wrap(err, "increment participant count")
+	}
+
 	roomParticipants := s.participants[roomName]
 	if roomParticipants == nil {
 		roomParticipants = make(map[livekit.ParticipantIdentity]*livekit.ParticipantInfo)
@@ -293,9 +303,14 @@ func (s *LocalStore) ListParticipants(_ context.Context, roomName livekit.RoomNa
 	return items, nil
 }
 
-func (s *LocalStore) DeleteParticipant(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) error {
+func (s *LocalStore) DeleteParticipant(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
+
+	err := s.participantCounter.Decrement(ctx)
+	if err != nil {
+		return errors.Wrap(err, "decrement participant count")
+	}
 
 	roomParticipants := s.participants[roomName]
 	if roomParticipants != nil {
