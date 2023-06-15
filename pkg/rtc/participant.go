@@ -1160,7 +1160,7 @@ func (p *ParticipantImpl) forwardTrackToRelays(publishedTrack *MediaTrack, track
 			rtpCodecParameters,
 			tr,
 			relay.GetBufferFactory(),
-			livekit.ParticipantID(fmt.Sprintf("relay-%v-%v", track.ID(), track.RID())),
+			livekit.ParticipantID(fmt.Sprintf("relay--%v--%v", track.ID(), track.RID())),
 			p.params.Config.Receiver.PacketBufferSize,
 			uint32(track.SSRC()),
 			p.GetLogger(),
