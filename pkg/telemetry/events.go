@@ -91,10 +91,10 @@ func (t *telemetryService) ParticipantActive(
 	room *livekit.Room,
 	participant *livekit.ParticipantInfo,
 	clientMeta *livekit.AnalyticsClientMeta,
-	isResume bool,
+	isMigration bool,
 ) {
 	t.enqueue(func() {
-		if !isResume {
+		if !isMigration {
 			// consider participant joined only when they became active
 			t.NotifyEvent(ctx, &livekit.WebhookEvent{
 				Event:       webhook.EventParticipantJoined,
