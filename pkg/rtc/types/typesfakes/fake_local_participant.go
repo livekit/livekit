@@ -131,9 +131,10 @@ type FakeLocalParticipant struct {
 	closeReturnsOnCall map[int]struct {
 		result1 error
 	}
-	CloseSignalConnectionStub        func()
+	CloseSignalConnectionStub        func(types.SignallingCloseReason)
 	closeSignalConnectionMutex       sync.RWMutex
 	closeSignalConnectionArgsForCall []struct {
+		arg1 types.SignallingCloseReason
 	}
 	ConnectedAtStub        func() time.Time
 	connectedAtMutex       sync.RWMutex
@@ -1429,15 +1430,16 @@ func (fake *FakeLocalParticipant) CloseReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) CloseSignalConnection() {
+func (fake *FakeLocalParticipant) CloseSignalConnection(arg1 types.SignallingCloseReason) {
 	fake.closeSignalConnectionMutex.Lock()
 	fake.closeSignalConnectionArgsForCall = append(fake.closeSignalConnectionArgsForCall, struct {
-	}{})
+		arg1 types.SignallingCloseReason
+	}{arg1})
 	stub := fake.CloseSignalConnectionStub
-	fake.recordInvocation("CloseSignalConnection", []interface{}{})
+	fake.recordInvocation("CloseSignalConnection", []interface{}{arg1})
 	fake.closeSignalConnectionMutex.Unlock()
 	if stub != nil {
-		fake.CloseSignalConnectionStub()
+		fake.CloseSignalConnectionStub(arg1)
 	}
 }
 
@@ -1447,10 +1449,17 @@ func (fake *FakeLocalParticipant) CloseSignalConnectionCallCount() int {
 	return len(fake.closeSignalConnectionArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) CloseSignalConnectionCalls(stub func()) {
+func (fake *FakeLocalParticipant) CloseSignalConnectionCalls(stub func(types.SignallingCloseReason)) {
 	fake.closeSignalConnectionMutex.Lock()
 	defer fake.closeSignalConnectionMutex.Unlock()
 	fake.CloseSignalConnectionStub = stub
+}
+
+func (fake *FakeLocalParticipant) CloseSignalConnectionArgsForCall(i int) types.SignallingCloseReason {
+	fake.closeSignalConnectionMutex.RLock()
+	defer fake.closeSignalConnectionMutex.RUnlock()
+	argsForCall := fake.closeSignalConnectionArgsForCall[i]
+	return argsForCall.arg1
 }
 
 func (fake *FakeLocalParticipant) ConnectedAt() time.Time {

@@ -285,6 +285,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			case msg := <-cr.ResponseSource.ReadChan():
 				if msg == nil {
+					pLogger.Infow("nothing to read from response source", "connID", cr.ConnectionID)
 					return
 				}
 				res, ok := msg.(*livekit.SignalResponse)
@@ -323,16 +324,15 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// handle incoming requests from websocket
 	for {
 		req, count, err := sigConn.ReadRequest()
-		// normal closure
 		if err != nil {
+			// normal/expected closure
 			if err == io.EOF || strings.HasSuffix(err.Error(), "use of closed network connection") ||
 				websocket.IsCloseError(err, websocket.CloseAbnormalClosure, websocket.CloseGoingAway, websocket.CloseNormalClosure, websocket.CloseNoStatusReceived) {
-				pLogger.Debugw("exit ws read loop for closed connection", "connID", cr.ConnectionID)
-				return
+				pLogger.Infow("exit ws read loop for closed connection", "connID", cr.ConnectionID, "wsError", err)
 			} else {
 				pLogger.Errorw("error reading from websocket", err)
-				return
 			}
+			return
 		}
 		if signalStats != nil {
 			signalStats.AddBytes(uint64(count), false)
@@ -374,8 +374,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if err := cr.RequestSink.WriteMessage(req); err != nil {
-			pLogger.Warnw("error writing to request sink", err,
-				"connID", cr.ConnectionID)
+			pLogger.Warnw("error writing to request sink", err, "connID", cr.ConnectionID)
 		}
 	}
 }

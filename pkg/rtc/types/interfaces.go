@@ -86,6 +86,7 @@ const (
 	ParticipantCloseReasonMigrationRequested
 	ParticipantCloseReasonOvercommitted
 	ParticipantCloseReasonPublicationError
+	ParticipantCloseReasonSubscriptionError
 )
 
 func (p ParticipantCloseReason) String() string {
@@ -130,6 +131,8 @@ func (p ParticipantCloseReason) String() string {
 		return "OVERCOMMITTED"
 	case ParticipantCloseReasonPublicationError:
 		return "PUBLICATION_ERROR"
+	case ParticipantCloseReasonSubscriptionError:
+		return "SUBSCRIPTION_ERROR"
 	default:
 		return fmt.Sprintf("%d", int(p))
 	}
@@ -160,11 +163,49 @@ func (p ParticipantCloseReason) ToDisconnectReason() livekit.DisconnectReason {
 		return livekit.DisconnectReason_SERVER_SHUTDOWN
 	case ParticipantCloseReasonOvercommitted:
 		return livekit.DisconnectReason_SERVER_SHUTDOWN
-	case ParticipantCloseReasonNegotiateFailed, ParticipantCloseReasonPublicationError:
+	case ParticipantCloseReasonNegotiateFailed, ParticipantCloseReasonPublicationError, ParticipantCloseReasonSubscriptionError:
 		return livekit.DisconnectReason_STATE_MISMATCH
 	default:
 		// the other types will map to unknown reason
 		return livekit.DisconnectReason_UNKNOWN_REASON
+	}
+}
+
+// ---------------------------------------------
+
+type SignallingCloseReason int
+
+const (
+	SignallingCloseReasonUnknown SignallingCloseReason = iota
+	SignallingCloseReasonMigration
+	SignallingCloseReasonResume
+	SignallingCloseReasonTransportFailure
+	SignallingCloseReasonFullReconnectPublicationError
+	SignallingCloseReasonFullReconnectSubscriptionError
+	SignallingCloseReasonFullReconnectNegotiateFailed
+	SignallingCloseReasonParticipantClose
+)
+
+func (s SignallingCloseReason) String() string {
+	switch s {
+	case SignallingCloseReasonUnknown:
+		return "UNKNOWN"
+	case SignallingCloseReasonMigration:
+		return "MIGRATION"
+	case SignallingCloseReasonResume:
+		return "RESUME"
+	case SignallingCloseReasonTransportFailure:
+		return "TRANSPORT_FAILURE"
+	case SignallingCloseReasonFullReconnectPublicationError:
+		return "FULL_RECONNECT_PUBLICATION_ERROR"
+	case SignallingCloseReasonFullReconnectSubscriptionError:
+		return "FULL_RECONNECT_SUBSCRIPTION_ERROR"
+	case SignallingCloseReasonFullReconnectNegotiateFailed:
+		return "FULL_RECONNECT_NEGOTIATE_FAILED"
+	case SignallingCloseReasonParticipantClose:
+		return "PARTICIPANT_CLOSE"
+	default:
+		return fmt.Sprintf("%d", int(s))
 	}
 }
 
@@ -249,7 +290,7 @@ type LocalParticipant interface {
 	GetBufferFactory() *buffer.Factory
 
 	SetResponseSink(sink routing.MessageSink)
-	CloseSignalConnection()
+	CloseSignalConnection(reason SignallingCloseReason)
 	UpdateLastSeenSignal()
 	SetSignalSourceValid(valid bool)
 
