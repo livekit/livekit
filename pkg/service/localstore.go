@@ -57,7 +57,8 @@ func (s *LocalStore) StoreRoom(_ context.Context, room *livekit.Room, internal *
 	s.rooms[roomName] = room
 	s.roomInternal[roomName] = internal
 	if _, ok := s.roomCommunicators[roomName]; !ok {
-		s.roomCommunicators[roomName] = p2p.NewRoomCommunicatorImpl(room, s.p2pDatabaseConfig)
+		cfg := s.p2pDatabaseConfig
+		s.roomCommunicators[roomName] = p2p.NewRoomCommunicatorImpl(room, cfg)
 	}
 	s.lock.Unlock()
 

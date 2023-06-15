@@ -45,7 +45,7 @@ func NewRoomCommunicatorImpl(room *livekit.Room, cfg p2p_database.Config) *RoomC
 
 	cfg.DatabaseName = "livekit_room_" + room.Name
 	_ = logging.SetLogLevel("*", "error")
-	go roomCommunicator.init(cfg)
+	roomCommunicator.init(cfg)
 
 	return roomCommunicator
 }
@@ -61,19 +61,27 @@ func (c *RoomCommunicatorImpl) Close() {
 func (c *RoomCommunicatorImpl) init(cfg p2p_database.Config) {
 
 	var (
-		db *p2p_database.DB
+		db  *p2p_database.DB
 		err error
 	)
 
 	cfg.NewKeyCallback = func(k string) {
+		log.Printf("New key added %v", k)
+
 		k = strings.TrimPrefix(k, "/")
 		if !strings.HasPrefix(k, prefixPeerKey) {
 			return
 		}
+
+		log.Printf("New key added trim %v", k)
+
 		peerId := strings.TrimPrefix(k, prefixPeerKey)
 		if peerId == db.GetHost().ID().String() {
 			return
 		}
+
+		log.Printf("New key added peer %v", peerId)
+
 		c.checkNewPeer(peerId)
 	}
 
@@ -97,19 +105,22 @@ func (c *RoomCommunicatorImpl) init(cfg p2p_database.Config) {
 func (c *RoomCommunicatorImpl) checkNewPeer(peerId string) {
 	c.mu.Lock()
 	if _, ok := c.peers[peerId]; ok {
+		log.Printf("New key added peer exist %v", peerId)
 		c.mu.Unlock()
 	} else {
+		log.Printf("New key added peer not exist %v", peerId)
 		c.peers[peerId] = struct{}{}
 		for _, peerHandler := range c.peerHandlers {
 			go peerHandler(peerId)
 		}
 		c.mu.Unlock()
+		log.Printf("New key added peer added %v", peerId)
 
 		_, pubErr := c.db.Publish(c.ctx, p2pTopicName(peerId), pingMessage)
 		if pubErr != nil {
 			log.Fatalf("cannot send ping message for node %s in db %s: %s", peerId, c.room.Name, pubErr)
 		} else {
-			log.Println("PING message sent")
+			log.Printf("PING message sent to %v", peerId)
 		}
 	}
 }
@@ -121,10 +132,10 @@ func (c *RoomCommunicatorImpl) dbHandler(event p2p_database.Event) {
 		if _, err := c.db.Publish(c.ctx, p2pTopicName(event.FromPeerId), pongMessage); err != nil {
 			log.Fatalf("cannot send pong message for node %s in db %s: %s", event.FromPeerId, c.room.Name, err)
 		} else {
-			log.Println("PONG message sent")
+			log.Printf("PONG message sent to %v", event.FromPeerId)
 		}
 	} else if event.Message == pongMessage {
-		log.Println("PONG message received")
+		log.Printf("PONG message received from %v", event.FromPeerId)
 	} else {
 		c.mu.Lock()
 		for _, messageHandler := range c.messageHandlers {
