@@ -16,8 +16,9 @@ import (
 
 // encapsulates CRUD operations for room settings
 type LocalStore struct {
-	currentNodeId     livekit.NodeID
-	p2pDatabaseConfig p2p_database.Config
+	currentNodeId      livekit.NodeID
+	p2pDatabaseConfig  p2p_database.Config
+	participantCounter *ParticipantCounter
 
 	// map of roomName => room
 	rooms        map[livekit.RoomName]*livekit.Room
@@ -31,15 +32,16 @@ type LocalStore struct {
 	globalLock sync.Mutex
 }
 
-func NewLocalStore(currentNodeId livekit.NodeID, mainDatabase p2p_database.Config) *LocalStore {
+func NewLocalStore(currentNodeId livekit.NodeID, mainDatabase p2p_database.Config, participantCounter *ParticipantCounter) *LocalStore {
 	return &LocalStore{
-		currentNodeId:     currentNodeId,
-		p2pDatabaseConfig: mainDatabase,
-		rooms:             make(map[livekit.RoomName]*livekit.Room),
-		roomInternal:      make(map[livekit.RoomName]*livekit.RoomInternal),
-		participants:      make(map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
-		roomCommunicators: make(map[livekit.RoomName]*p2p.RoomCommunicatorImpl),
-		lock:              sync.RWMutex{},
+		currentNodeId:      currentNodeId,
+		p2pDatabaseConfig:  mainDatabase,
+		participantCounter: participantCounter,
+		rooms:              make(map[livekit.RoomName]*livekit.Room),
+		roomInternal:       make(map[livekit.RoomName]*livekit.RoomInternal),
+		participants:       make(map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
+		roomCommunicators:  make(map[livekit.RoomName]*p2p.RoomCommunicatorImpl),
+		lock:               sync.RWMutex{},
 	}
 }
 

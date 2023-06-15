@@ -59,6 +59,23 @@ func (c *RoomCommunicatorImpl) Close() {
 }
 
 func (c *RoomCommunicatorImpl) init(cfg p2p_database.Config) {
+
+	var (
+		db *p2p_database.DB
+	)
+
+	cfg.NewKeyCallback = func(k string) {
+		k = strings.TrimPrefix(k, "/")
+		if !strings.HasPrefix(k, prefixPeerKey) {
+			return
+		}
+		peerId := strings.TrimPrefix(k, prefixPeerKey)
+		if peerId == db.GetHost().ID().String() {
+			return
+		}
+		c.checkNewPeer(peerId)
+	}
+
 	db, err := p2p_database.Connect(c.ctx, cfg, logging.Logger("db_livekit_room_"+c.room.Name))
 	if err != nil {
 		log.Fatalf("cannot connect to database")
@@ -73,30 +90,6 @@ func (c *RoomCommunicatorImpl) init(cfg p2p_database.Config) {
 	setErr := db.Set(c.ctx, prefixPeerKey+db.GetHost().ID().String(), time.Now().String())
 	if setErr != nil {
 		log.Fatalf("cannot set")
-	}
-
-	for {
-		keys, listErr := db.List(c.ctx)
-		if listErr != nil {
-			log.Fatalf("cannot list")
-		}
-		for _, k := range keys {
-			k = strings.TrimPrefix(k, "/")
-			if !strings.HasPrefix(k, prefixPeerKey) {
-				continue
-			}
-			peerId := strings.TrimPrefix(k, prefixPeerKey)
-
-			if peerId == db.GetHost().ID().String() {
-				continue
-			}
-
-			c.checkNewPeer(peerId)
-		}
-		time.Sleep(500 * time.Millisecond)
-		if c.ctx.Err() != nil {
-			break
-		}
 	}
 }
 

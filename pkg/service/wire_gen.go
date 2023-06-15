@@ -49,7 +49,12 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	router := routing.CreateRouter(conf, universalClient, currentNode, signalClient)
 	p2p_databaseConfig := getDatabaseConfiguration(conf)
-	objectStore := createStore(universalClient, conf, p2p_databaseConfig, nodeID)
+	db, err := createMainDatabaseP2P(p2p_databaseConfig)
+	if err != nil {
+		return nil, err
+	}
+	participantCounter := createParticipantCounter(db)
+	objectStore := createStore(p2p_databaseConfig, nodeID, participantCounter)
 	roomAllocator, err := NewRoomAllocator(conf, router, objectStore)
 	if err != nil {
 		return nil, err
@@ -132,6 +137,10 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 
 // wire.go:
 
+func createParticipantCounter(mainDatabase *p2p_database.DB) *ParticipantCounter {
+	return NewParticipantCounter(mainDatabase)
+}
+
 func getDatabaseConfiguration(conf *config.Config) p2p_database.Config {
 	return p2p_database.Config{
 		PeerListenPort:          conf.Ethereum.P2pNodePort,
@@ -193,8 +202,8 @@ func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {
 	return redis2.GetRedisClient(&conf.Redis)
 }
 
-func createStore(rc redis.UniversalClient, conf *config.Config, p2pDbConfig p2p_database.Config, nodeID livekit.NodeID) ObjectStore {
-	return NewLocalStore(nodeID, p2pDbConfig)
+func createStore(p2pDbConfig p2p_database.Config, nodeID livekit.NodeID, participantCounter *ParticipantCounter) ObjectStore {
+	return NewLocalStore(nodeID, p2pDbConfig, participantCounter)
 }
 
 func getMessageBus(rc redis.UniversalClient) psrpc.MessageBus {

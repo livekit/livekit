@@ -39,7 +39,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		routing.CreateRouter,
 		getRoomConf,
 		config.DefaultAPIConfig,
-		//createMainDatabaseP2P,
+		createMainDatabaseP2P,
+		createParticipantCounter,
 		//wire.Bind(new(MainP2PDatabase), new(*p2p_database.DB)),
 		wire.Bind(new(routing.MessageRouter), new(routing.Router)),
 		wire.Bind(new(livekit.RoomService), new(*RoomService)),
@@ -82,6 +83,10 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 	)
 
 	return nil, nil
+}
+
+func createParticipantCounter(mainDatabase *p2p_database.DB) *ParticipantCounter {
+	return NewParticipantCounter(mainDatabase)
 }
 
 func getDatabaseConfiguration(conf *config.Config) p2p_database.Config {
@@ -145,8 +150,8 @@ func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {
 	return redisLiveKit.GetRedisClient(&conf.Redis)
 }
 
-func createStore(rc redis.UniversalClient, conf *config.Config, p2pDbConfig p2p_database.Config, nodeID livekit.NodeID) ObjectStore {
-	return NewLocalStore(nodeID, p2pDbConfig)
+func createStore(p2pDbConfig p2p_database.Config, nodeID livekit.NodeID, participantCounter *ParticipantCounter) ObjectStore {
+	return NewLocalStore(nodeID, p2pDbConfig, participantCounter)
 }
 
 func getMessageBus(rc redis.UniversalClient) psrpc.MessageBus {
