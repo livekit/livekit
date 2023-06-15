@@ -62,6 +62,7 @@ func (c *RoomCommunicatorImpl) init(cfg p2p_database.Config) {
 
 	var (
 		db *p2p_database.DB
+		err error
 	)
 
 	cfg.NewKeyCallback = func(k string) {
@@ -76,7 +77,7 @@ func (c *RoomCommunicatorImpl) init(cfg p2p_database.Config) {
 		c.checkNewPeer(peerId)
 	}
 
-	db, err := p2p_database.Connect(c.ctx, cfg, logging.Logger("db_livekit_room_"+c.room.Name))
+	db, err = p2p_database.Connect(c.ctx, cfg, logging.Logger("db_livekit_room_"+c.room.Name))
 	if err != nil {
 		log.Fatalf("cannot connect to database")
 	}
