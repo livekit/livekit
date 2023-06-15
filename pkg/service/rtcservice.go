@@ -5,14 +5,17 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/ua-parser/uap-go/uaparser"
+	"golang.org/x/exp/maps"
 
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
@@ -37,6 +40,9 @@ type RTCService struct {
 	limits        config.LimitConfig
 	parser        *uaparser.Parser
 	telemetry     telemetry.TelemetryService
+
+	mu          sync.Mutex
+	connections map[*websocket.Conn]struct{}
 }
 
 func NewRTCService(
@@ -58,6 +64,7 @@ func NewRTCService(
 		limits:        conf.Limit,
 		parser:        uaparser.NewFromSaved(),
 		telemetry:     telemetry,
+		connections:   map[*websocket.Conn]struct{}{},
 	}
 
 	// allow connections from any origin, since script may be hosted anywhere
@@ -250,6 +257,16 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.mu.Lock()
+	s.connections[conn] = struct{}{}
+	s.mu.Unlock()
+
+	defer func() {
+		s.mu.Lock()
+		delete(s.connections, conn)
+		s.mu.Unlock()
+	}()
+
 	// websocket established
 	sigConn := NewWSSignalConnection(conn)
 	if count, err := sigConn.WriteResponse(initialResponse); err != nil {
@@ -440,6 +457,23 @@ func (s *RTCService) ParseClientInfo(r *http.Request) *livekit.ClientInfo {
 	}
 
 	return ci
+}
+
+func (s *RTCService) DrainConnections(interval time.Duration) {
+	s.mu.Lock()
+	conns := maps.Clone(s.connections)
+	s.mu.Unlock()
+
+	// jitter drain start
+	time.Sleep(time.Duration(rand.Int63n(int64(interval))))
+
+	t := time.NewTicker(interval)
+	defer t.Stop()
+
+	for c := range conns {
+		c.Close()
+		<-t.C
+	}
 }
 
 type connectionResult struct {
