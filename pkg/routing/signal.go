@@ -105,8 +105,9 @@ func (r *signalClient) StartParticipantSignal(
 		Writer:         signalRequestMessageWriter{},
 		CloseOnFailure: true,
 		BlockOnClose:   true,
+		ConnectionID:   connectionID,
 	})
-	resChan := NewDefaultMessageChannel()
+	resChan := NewDefaultMessageChannel(connectionID)
 
 	go func() {
 		r.active.Inc()
@@ -230,6 +231,7 @@ type SignalSinkParams[SendType, RecvType RelaySignalMessage] struct {
 	Writer         SignalMessageWriter[SendType]
 	CloseOnFailure bool
 	BlockOnClose   bool
+	ConnectionID   livekit.ConnectionID
 }
 
 func NewSignalMessageSink[SendType, RecvType RelaySignalMessage](params SignalSinkParams[SendType, RecvType]) MessageSink {
@@ -347,4 +349,8 @@ func (s *signalMessageSink[SendType, RecvType]) WriteMessage(msg proto.Message) 
 		go s.write()
 	}
 	return nil
+}
+
+func (s *signalMessageSink[SendType, RecvType]) ConnectionID() livekit.ConnectionID {
+	return s.SignalSinkParams.ConnectionID
 }

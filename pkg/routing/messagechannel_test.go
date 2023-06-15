@@ -11,7 +11,7 @@ import (
 
 func TestMessageChannel_WriteMessageClosed(t *testing.T) {
 	// ensure it doesn't panic when written to after closing
-	m := routing.NewMessageChannel(routing.DefaultMessageChannelSize)
+	m := routing.NewMessageChannel(livekit.ConnectionID("test"), routing.DefaultMessageChannelSize)
 	go func() {
 		for msg := range m.ReadChan() {
 			if msg == nil {

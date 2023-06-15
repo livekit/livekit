@@ -688,7 +688,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	p.updateState(livekit.ParticipantInfo_DISCONNECTED)
 
 	// ensure this is synchronized
-	p.CloseSignalConnection()
+	p.CloseSignalConnection(types.SignallingCloseReasonParticipantClose)
 	p.lock.RLock()
 	onClose := p.onClose
 	p.lock.RUnlock()
@@ -741,7 +741,7 @@ func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
 		onStart()
 	}
 
-	p.CloseSignalConnection()
+	p.CloseSignalConnection(types.SignallingCloseReasonMigration)
 
 	//
 	// On subscriber peer connection, remote side will try ICE on both
@@ -1349,7 +1349,7 @@ func (p *ParticipantImpl) setupDisconnectTimer() {
 
 func (p *ParticipantImpl) onAnyTransportFailed() {
 	// clients support resuming of connections when websocket becomes disconnected
-	p.CloseSignalConnection()
+	p.CloseSignalConnection(types.SignallingCloseReasonTransportFailure)
 
 	// detect when participant has actually left.
 	p.setupDisconnectTimer()
@@ -2068,7 +2068,17 @@ func (p *ParticipantImpl) IssueFullReconnect(reason types.ParticipantCloseReason
 			},
 		},
 	})
-	p.CloseSignalConnection()
+
+	scr := types.SignallingCloseReasonUnknown
+	switch reason {
+	case types.ParticipantCloseReasonPublicationError:
+		scr = types.SignallingCloseReasonFullReconnectPublicationError
+	case types.ParticipantCloseReasonSubscriptionError:
+		scr = types.SignallingCloseReasonFullReconnectSubscriptionError
+	case types.ParticipantCloseReasonNegotiateFailed:
+		scr = types.SignallingCloseReasonFullReconnectNegotiateFailed
+	}
+	p.CloseSignalConnection(scr)
 
 	// on a full reconnect, no need to supervise this participant anymore
 	p.supervisor.Stop()
@@ -2101,7 +2111,7 @@ func (p *ParticipantImpl) onSubscriptionError(trackID livekit.TrackID, fatal boo
 
 	if p.params.ReconnectOnSubscriptionError && fatal {
 		p.params.Logger.Infow("issuing full reconnect on subscription error", "trackID", trackID)
-		p.IssueFullReconnect(types.ParticipantCloseReasonPublicationError)
+		p.IssueFullReconnect(types.ParticipantCloseReasonSubscriptionError)
 	}
 }
 

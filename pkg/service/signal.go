@@ -136,17 +136,18 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 	l := logger.GetLogger().WithValues(
 		"room", ss.RoomName,
 		"participant", ss.Identity,
-		"connectionID", ss.ConnectionId,
+		"connID", ss.ConnectionId,
 	)
 
-	reqChan := routing.NewDefaultMessageChannel()
+	reqChan := routing.NewDefaultMessageChannel(livekit.ConnectionID(ss.ConnectionId))
 	defer reqChan.Close()
 
 	sink := routing.NewSignalMessageSink(routing.SignalSinkParams[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest]{
-		Logger: l,
-		Stream: stream,
-		Config: r.config,
-		Writer: signalResponseMessageWriter{},
+		Logger:       l,
+		Stream:       stream,
+		Config:       r.config,
+		Writer:       signalResponseMessageWriter{},
+		ConnectionID: livekit.ConnectionID(ss.ConnectionId),
 	})
 
 	err = r.sessionHandler(ctx, livekit.RoomName(ss.RoomName), *pi, livekit.ConnectionID(ss.ConnectionId), reqChan, sink)

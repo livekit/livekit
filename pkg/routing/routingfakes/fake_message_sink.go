@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/protocol/livekit"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
@@ -12,6 +13,16 @@ type FakeMessageSink struct {
 	CloseStub        func()
 	closeMutex       sync.RWMutex
 	closeArgsForCall []struct {
+	}
+	ConnectionIDStub        func() livekit.ConnectionID
+	connectionIDMutex       sync.RWMutex
+	connectionIDArgsForCall []struct {
+	}
+	connectionIDReturns struct {
+		result1 livekit.ConnectionID
+	}
+	connectionIDReturnsOnCall map[int]struct {
+		result1 livekit.ConnectionID
 	}
 	IsClosedStub        func() bool
 	isClosedMutex       sync.RWMutex
@@ -60,6 +71,59 @@ func (fake *FakeMessageSink) CloseCalls(stub func()) {
 	fake.closeMutex.Lock()
 	defer fake.closeMutex.Unlock()
 	fake.CloseStub = stub
+}
+
+func (fake *FakeMessageSink) ConnectionID() livekit.ConnectionID {
+	fake.connectionIDMutex.Lock()
+	ret, specificReturn := fake.connectionIDReturnsOnCall[len(fake.connectionIDArgsForCall)]
+	fake.connectionIDArgsForCall = append(fake.connectionIDArgsForCall, struct {
+	}{})
+	stub := fake.ConnectionIDStub
+	fakeReturns := fake.connectionIDReturns
+	fake.recordInvocation("ConnectionID", []interface{}{})
+	fake.connectionIDMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeMessageSink) ConnectionIDCallCount() int {
+	fake.connectionIDMutex.RLock()
+	defer fake.connectionIDMutex.RUnlock()
+	return len(fake.connectionIDArgsForCall)
+}
+
+func (fake *FakeMessageSink) ConnectionIDCalls(stub func() livekit.ConnectionID) {
+	fake.connectionIDMutex.Lock()
+	defer fake.connectionIDMutex.Unlock()
+	fake.ConnectionIDStub = stub
+}
+
+func (fake *FakeMessageSink) ConnectionIDReturns(result1 livekit.ConnectionID) {
+	fake.connectionIDMutex.Lock()
+	defer fake.connectionIDMutex.Unlock()
+	fake.ConnectionIDStub = nil
+	fake.connectionIDReturns = struct {
+		result1 livekit.ConnectionID
+	}{result1}
+}
+
+func (fake *FakeMessageSink) ConnectionIDReturnsOnCall(i int, result1 livekit.ConnectionID) {
+	fake.connectionIDMutex.Lock()
+	defer fake.connectionIDMutex.Unlock()
+	fake.ConnectionIDStub = nil
+	if fake.connectionIDReturnsOnCall == nil {
+		fake.connectionIDReturnsOnCall = make(map[int]struct {
+			result1 livekit.ConnectionID
+		})
+	}
+	fake.connectionIDReturnsOnCall[i] = struct {
+		result1 livekit.ConnectionID
+	}{result1}
 }
 
 func (fake *FakeMessageSink) IsClosed() bool {
@@ -181,6 +245,8 @@ func (fake *FakeMessageSink) Invocations() map[string][][]interface{} {
 	defer fake.invocationsMutex.RUnlock()
 	fake.closeMutex.RLock()
 	defer fake.closeMutex.RUnlock()
+	fake.connectionIDMutex.RLock()
+	defer fake.connectionIDMutex.RUnlock()
 	fake.isClosedMutex.RLock()
 	defer fake.isClosedMutex.RUnlock()
 	fake.writeMessageMutex.RLock()

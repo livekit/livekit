@@ -174,7 +174,7 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livek
 	// set up response channel before sending StartSession and be ready to receive responses.
 	resChan := r.getOrCreateMessageChannel(r.responseChannels, string(connectionID))
 
-	sink := NewRTCNodeSink(r.rc, livekit.NodeID(rtcNode.Id), pKey, pKeyB62)
+	sink := NewRTCNodeSink(r.rc, livekit.NodeID(rtcNode.Id), connectionID, pKey, pKeyB62)
 
 	// serialize claims
 	ss, err := pi.ToStartSession(roomName, connectionID)
@@ -199,7 +199,7 @@ func (r *RedisRouter) WriteParticipantRTC(_ context.Context, roomName livekit.Ro
 		return err
 	}
 
-	rtcSink := NewRTCNodeSink(r.rc, livekit.NodeID(rtcNode), pkey, pkeyB62)
+	rtcSink := NewRTCNodeSink(r.rc, livekit.NodeID(rtcNode), livekit.ConnectionID("ephemeral"), pkey, pkeyB62)
 	msg.ParticipantKey = string(ParticipantKeyLegacy(roomName, identity))
 	msg.ParticipantKeyB62 = string(ParticipantKey(roomName, identity))
 	return r.writeRTCMessage(rtcSink, msg)
@@ -216,7 +216,7 @@ func (r *RedisRouter) WriteRoomRTC(ctx context.Context, roomName livekit.RoomNam
 }
 
 func (r *RedisRouter) WriteNodeRTC(_ context.Context, rtcNodeID string, msg *livekit.RTCNodeMessage) error {
-	rtcSink := NewRTCNodeSink(r.rc, livekit.NodeID(rtcNodeID), livekit.ParticipantKey(msg.ParticipantKey), livekit.ParticipantKey(msg.ParticipantKeyB62))
+	rtcSink := NewRTCNodeSink(r.rc, livekit.NodeID(rtcNodeID), livekit.ConnectionID("ephemeral"), livekit.ParticipantKey(msg.ParticipantKey), livekit.ParticipantKey(msg.ParticipantKeyB62))
 	return r.writeRTCMessage(rtcSink, msg)
 }
 
