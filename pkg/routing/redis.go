@@ -98,16 +98,24 @@ func publishSignalMessage(rc redis.UniversalClient, nodeID livekit.NodeID, conne
 type RTCNodeSink struct {
 	rc                redis.UniversalClient
 	nodeID            livekit.NodeID
+	connectionID      livekit.ConnectionID
 	participantKey    livekit.ParticipantKey
 	participantKeyB62 livekit.ParticipantKey
 	isClosed          atomic.Bool
 	onClose           func()
 }
 
-func NewRTCNodeSink(rc redis.UniversalClient, nodeID livekit.NodeID, participantKey livekit.ParticipantKey, participantKeyB62 livekit.ParticipantKey) *RTCNodeSink {
+func NewRTCNodeSink(
+	rc redis.UniversalClient,
+	nodeID livekit.NodeID,
+	connectionID livekit.ConnectionID,
+	participantKey livekit.ParticipantKey,
+	participantKeyB62 livekit.ParticipantKey,
+) *RTCNodeSink {
 	return &RTCNodeSink{
 		rc:                rc,
 		nodeID:            nodeID,
+		connectionID:      connectionID,
 		participantKey:    participantKey,
 		participantKeyB62: participantKeyB62,
 	}
@@ -136,6 +144,12 @@ func (s *RTCNodeSink) IsClosed() bool {
 func (s *RTCNodeSink) OnClose(f func()) {
 	s.onClose = f
 }
+
+func (s *RTCNodeSink) ConnectionID() livekit.ConnectionID {
+	return s.connectionID
+}
+
+// ----------------------------------------------------------------------
 
 type SignalNodeSink struct {
 	rc           redis.UniversalClient
@@ -176,4 +190,8 @@ func (s *SignalNodeSink) IsClosed() bool {
 
 func (s *SignalNodeSink) OnClose(f func()) {
 	s.onClose = f
+}
+
+func (s *SignalNodeSink) ConnectionID() livekit.ConnectionID {
+	return s.connectionID
 }

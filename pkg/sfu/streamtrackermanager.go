@@ -577,7 +577,7 @@ func (s *StreamTrackerManager) GetReferenceLayerRTPTimestamp(ts uint32, layer in
 	ntpDiff := srRef.NTPTimestamp.Time().Sub(srLayer.NTPTimestamp.Time())
 	rtpDiff := ntpDiff.Nanoseconds() * int64(s.clockRate) / 1e9
 	normalizedTS := srLayer.RTPTimestamp + uint32(rtpDiff)
-	s.logger.Debugw(
+	s.logger.Infow(
 		"getting reference timestamp",
 		"layer", layer,
 		"referenceLayer", referenceLayer,

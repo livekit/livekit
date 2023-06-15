@@ -400,7 +400,7 @@ func (r *Room) GetParticipantRequestSource(identity livekit.ParticipantIdentity)
 func (r *Room) ResumeParticipant(p types.LocalParticipant, requestSource routing.MessageSource, responseSink routing.MessageSink, iceServers []*livekit.ICEServer, reason livekit.ReconnectReason) error {
 	r.ReplaceParticipantRequestSource(p.Identity(), requestSource)
 	// close previous sink, and link to new one
-	p.CloseSignalConnection()
+	p.CloseSignalConnection(types.SignallingCloseReasonResume)
 	p.SetResponseSink(responseSink)
 
 	p.SetSignalSourceValid(true)

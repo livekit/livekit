@@ -23,6 +23,7 @@ type MessageSink interface {
 	WriteMessage(msg proto.Message) error
 	IsClosed() bool
 	Close()
+	ConnectionID() livekit.ConnectionID
 }
 
 //counterfeiter:generate . MessageSource
@@ -31,6 +32,7 @@ type MessageSource interface {
 	ReadChan() <-chan proto.Message
 	IsClosed() bool
 	Close()
+	ConnectionID() livekit.ConnectionID
 }
 
 type ParticipantInit struct {

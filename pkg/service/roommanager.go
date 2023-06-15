@@ -485,7 +485,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 		false,
 	)
 	defer func() {
-		pLogger.Debugw("RTC session finishing")
+		pLogger.Debugw("RTC session finishing", "connID", requestSource.ConnectionID())
 		requestSource.Close()
 	}()
 
@@ -511,7 +511,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 		case <-tokenTicker.C:
 			// refresh token with the first API Key/secret pair
 			if err := r.refreshToken(participant); err != nil {
-				pLogger.Errorw("could not refresh token", err)
+				pLogger.Errorw("could not refresh token", err, "connID", requestSource.ConnectionID())
 			}
 		case obj := <-requestSource.ReadChan():
 			// In single node mode, the request source is directly tied to the signal message channel
