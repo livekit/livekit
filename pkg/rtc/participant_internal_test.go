@@ -229,7 +229,7 @@ func TestOutOfOrderUpdates(t *testing.T) {
 func TestDisconnectTiming(t *testing.T) {
 	t.Run("Negotiate doesn't panic after channel closed", func(t *testing.T) {
 		p := newParticipantForTest("test")
-		msg := routing.NewMessageChannel(routing.DefaultMessageChannelSize)
+		msg := routing.NewMessageChannel(livekit.ConnectionID("test"), routing.DefaultMessageChannelSize)
 		p.params.Sink = msg
 		go func() {
 			for msg := range msg.ReadChan() {
