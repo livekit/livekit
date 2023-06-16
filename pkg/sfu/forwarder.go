@@ -364,6 +364,25 @@ func (f *Forwarder) Mute(muted bool) (bool, buffer.VideoLayer) {
 		return false, f.vls.GetMax()
 	}
 
+	// Do not mute when paused due to bandwidth limitation.
+	// There are two issues
+	//   1. Muting means probing cannot happen on this track.
+	//   2. Muting also triggers notification to publisher about layers this forwarder needs.
+	//      If this forwarder does not need any layer, publisher could turn off all layers.
+	// So, muting could lead to not being able to restart the track.
+	// To avoid that, ignore mute when paused due to bandwidth limitations.
+	//
+	// NOTE: The above scenario refers to mute getting triggered due
+	// to video stream visibility changes. When a stream is paused, it is possible
+	// that the receiver hides the video tile triggering subscription mute.
+	// The work around here to ignore mute does ignore an intentional mute.
+	// It could result in some bandwidth consumed for stream without visibility in
+	// the case of intentional mute.
+	if muted && f.isDeficientLocked() && f.lastAllocation.PauseReason == VideoPauseReasonBandwidth {
+		f.logger.Infow("ignoring forwarder mute, paused due to congestion")
+		return false, f.vls.GetMax()
+	}
+
 	f.logger.Debugw("setting forwarder mute", "muted", muted)
 	f.muted = muted
 
