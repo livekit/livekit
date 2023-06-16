@@ -570,7 +570,7 @@ func (p *ParticipantImpl) handleMigrateMutedTrack() {
 		}
 
 		if len(pti.trackInfos) > 1 {
-			p.params.Logger.Warnw("too many pending migrated tracks", nil, "count", len(pti.trackInfos), "cid", cid)
+			p.params.Logger.Warnw("too many pending migrated tracks", nil, "trackID", pti.trackInfos[0].Sid, "count", len(pti.trackInfos), "cid", cid)
 		}
 
 		ti := pti.trackInfos[0]
@@ -643,6 +643,7 @@ func (p *ParticipantImpl) SetMigrateInfo(
 		p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
 
 		p.pendingTracks[t.GetCid()] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}, migrated: true}
+		p.params.Logger.Infow("pending track added (migration)", "trackID", ti.Sid, "track", ti.String())
 	}
 	p.pendingTracksLock.Unlock()
 
@@ -792,7 +793,7 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 		return
 	}
 
-	p.params.Logger.Debugw("SetMigrateState", "state", s)
+	p.params.Logger.Infow("SetMigrateState", "state", s)
 	p.migrateState.Store(s)
 	p.dirty.Store(true)
 
@@ -1683,7 +1684,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 }
 
 func (p *ParticipantImpl) addMigrateMutedTrack(cid string, ti *livekit.TrackInfo) *MediaTrack {
-	p.params.Logger.Debugw("add migrate muted track", "cid", cid, "track", ti.String())
+	p.params.Logger.Infow("add migrate muted track", "cid", cid, "trackID", ti.Sid, "track", ti.String())
 	rtpReceiver := p.TransportManager.GetPublisherRTPReceiver(ti.Mid)
 	if rtpReceiver == nil {
 		p.params.Logger.Errorw("could not find receiver for migrated track", nil, "trackID", ti.Sid)
