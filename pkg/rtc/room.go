@@ -280,10 +280,15 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 			// start the workers once connectivity is established
 			p.Start()
 
-			r.telemetry.ParticipantActive(context.Background(), r.ToProto(), p.ToProto(), &livekit.AnalyticsClientMeta{
-				ClientConnectTime: uint32(time.Since(p.ConnectedAt()).Milliseconds()),
-				ConnectionType:    string(p.GetICEConnectionType()),
-			})
+			r.telemetry.ParticipantActive(context.Background(),
+				r.ToProto(),
+				p.ToProto(),
+				&livekit.AnalyticsClientMeta{
+					ClientConnectTime: uint32(time.Since(p.ConnectedAt()).Milliseconds()),
+					ConnectionType:    string(p.GetICEConnectionType()),
+				},
+				false,
+			)
 		} else if state == livekit.ParticipantInfo_DISCONNECTED {
 			// remove participant from room
 			go r.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonStateDisconnected)

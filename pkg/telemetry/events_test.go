@@ -69,7 +69,7 @@ func Test_OnParticipantLeft_EventIsSent(t *testing.T) {
 	participantInfo := &livekit.ParticipantInfo{Sid: partSID}
 
 	// do
-	fixture.sut.ParticipantActive(context.Background(), room, participantInfo, &livekit.AnalyticsClientMeta{})
+	fixture.sut.ParticipantActive(context.Background(), room, participantInfo, &livekit.AnalyticsClientMeta{}, false)
 	fixture.sut.ParticipantLeft(context.Background(), room, participantInfo, true)
 	time.Sleep(time.Millisecond * 500)
 
@@ -159,7 +159,7 @@ func Test_OnParticipantActive_EventIsSent(t *testing.T) {
 		ClientConnectTime: 420,
 	}
 
-	fixture.sut.ParticipantActive(context.Background(), room, participantInfo, clientMetaConnect)
+	fixture.sut.ParticipantActive(context.Background(), room, participantInfo, clientMetaConnect, false)
 	time.Sleep(time.Millisecond * 500)
 
 	require.Equal(t, 2, fixture.analytics.SendEventCallCount())
