@@ -569,7 +569,7 @@ func (p *ParticipantImpl) handleMigrateMutedTrack() {
 		}
 
 		ti := pti.trackInfos[0]
-		if ti.Muted && ti.Type == livekit.TrackType_VIDEO {
+		if ti.Muted {
 			mt := p.addMigrateMutedTrack(cid, ti)
 			if mt != nil {
 				addedTracks = append(addedTracks, mt)
