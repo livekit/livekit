@@ -374,7 +374,7 @@ func (f *Forwarder) Mute(muted bool) (bool, buffer.VideoLayer) {
 	//
 	// NOTE: The above scenario refers to mute getting triggered due
 	// to video stream visibility changes. When a stream is paused, it is possible
-	// that the receiver hides the video tile leading triggering subscription mute.
+	// that the receiver hides the video tile triggering subscription mute.
 	// The work around here to ignore mute does ignore an intentional mute.
 	// It could result in some bandwidth consumed for stream without visibility in
 	// the case of intentional mute.
