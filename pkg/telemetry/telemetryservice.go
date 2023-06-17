@@ -57,6 +57,7 @@ type TelemetryService interface {
 	IngressCreated(ctx context.Context, info *livekit.IngressInfo)
 	IngressDeleted(ctx context.Context, info *livekit.IngressInfo)
 	IngressStarted(ctx context.Context, info *livekit.IngressInfo)
+	IngressUpdated(ctx context.Context, info *livekit.IngressInfo)
 	IngressEnded(ctx context.Context, info *livekit.IngressInfo)
 
 	// helpers

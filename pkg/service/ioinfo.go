@@ -137,6 +137,11 @@ func (s *IOInfoService) UpdateIngressState(ctx context.Context, req *rpc.UpdateI
 			s.telemetry.IngressStarted(ctx, info)
 
 			logger.Infow("ingress started", "ingressID", req.IngressId)
+
+		case livekit.IngressState_ENDPOINT_BUFFERING:
+			s.telemetry.IngressUpdated(ctx, info)
+
+			logger.Infow("ingress buffering", "ingressID", req.IngressId)
 		}
 	}
 

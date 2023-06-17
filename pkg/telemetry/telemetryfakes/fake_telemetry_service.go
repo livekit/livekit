@@ -56,6 +56,12 @@ type FakeTelemetryService struct {
 		arg1 context.Context
 		arg2 *livekit.IngressInfo
 	}
+	IngressUpdatedStub        func(context.Context, *livekit.IngressInfo)
+	ingressUpdatedMutex       sync.RWMutex
+	ingressUpdatedArgsForCall []struct {
+		arg1 context.Context
+		arg2 *livekit.IngressInfo
+	}
 	NotifyEventStub        func(context.Context, *livekit.WebhookEvent)
 	notifyEventMutex       sync.RWMutex
 	notifyEventArgsForCall []struct {
@@ -491,6 +497,39 @@ func (fake *FakeTelemetryService) IngressStartedArgsForCall(i int) (context.Cont
 	fake.ingressStartedMutex.RLock()
 	defer fake.ingressStartedMutex.RUnlock()
 	argsForCall := fake.ingressStartedArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeTelemetryService) IngressUpdated(arg1 context.Context, arg2 *livekit.IngressInfo) {
+	fake.ingressUpdatedMutex.Lock()
+	fake.ingressUpdatedArgsForCall = append(fake.ingressUpdatedArgsForCall, struct {
+		arg1 context.Context
+		arg2 *livekit.IngressInfo
+	}{arg1, arg2})
+	stub := fake.IngressUpdatedStub
+	fake.recordInvocation("IngressUpdated", []interface{}{arg1, arg2})
+	fake.ingressUpdatedMutex.Unlock()
+	if stub != nil {
+		fake.IngressUpdatedStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeTelemetryService) IngressUpdatedCallCount() int {
+	fake.ingressUpdatedMutex.RLock()
+	defer fake.ingressUpdatedMutex.RUnlock()
+	return len(fake.ingressUpdatedArgsForCall)
+}
+
+func (fake *FakeTelemetryService) IngressUpdatedCalls(stub func(context.Context, *livekit.IngressInfo)) {
+	fake.ingressUpdatedMutex.Lock()
+	defer fake.ingressUpdatedMutex.Unlock()
+	fake.IngressUpdatedStub = stub
+}
+
+func (fake *FakeTelemetryService) IngressUpdatedArgsForCall(i int) (context.Context, *livekit.IngressInfo) {
+	fake.ingressUpdatedMutex.RLock()
+	defer fake.ingressUpdatedMutex.RUnlock()
+	argsForCall := fake.ingressUpdatedArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2
 }
 
@@ -1318,6 +1357,8 @@ func (fake *FakeTelemetryService) Invocations() map[string][][]interface{} {
 	defer fake.ingressEndedMutex.RUnlock()
 	fake.ingressStartedMutex.RLock()
 	defer fake.ingressStartedMutex.RUnlock()
+	fake.ingressUpdatedMutex.RLock()
+	defer fake.ingressUpdatedMutex.RUnlock()
 	fake.notifyEventMutex.RLock()
 	defer fake.notifyEventMutex.RUnlock()
 	fake.participantActiveMutex.RLock()
