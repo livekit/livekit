@@ -86,7 +86,7 @@ func (p *ProbeController) ProbeClusterDone(info ProbeClusterInfo, lowestEstimate
 	if queueWait > ProbeSettleWaitMax {
 		queueWait = ProbeSettleWaitMax
 	}
-	p.probeEndTime = p.lastProbeStartTime.Add(queueWait)
+	p.probeEndTime = p.lastProbeStartTime.Add(queueWait + info.Duration)
 	p.params.Logger.Infow(
 		"setting probe end time",
 		"probeClusterId", p.probeClusterId,
