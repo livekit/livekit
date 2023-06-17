@@ -56,7 +56,7 @@ var (
 		Name:                           "non-probe",
 		EstimateRequiredSamples:        8,
 		EstimateDownwardTrendThreshold: -0.5,
-		EstimateCollapseThreshold:      250 * time.Millisecond,
+		EstimateCollapseThreshold:      500 * time.Millisecond,
 		EstimateValidityWindow:         10 * time.Second,
 		NackWindowMinDuration:          1 * time.Second,
 		NackWindowMaxDuration:          2 * time.Second,
