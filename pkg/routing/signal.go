@@ -80,7 +80,7 @@ func (r *signalClient) StartParticipantSignal(
 		"room", roomName,
 		"reqNodeID", nodeID,
 		"participant", pi.Identity,
-		"connectionID", connectionID,
+		"connID", connectionID,
 	)
 
 	l.Debugw("starting signal connection")
