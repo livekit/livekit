@@ -139,7 +139,22 @@ func (t *TrendDetector) prune() {
 		t.samples = t.samples[len(t.samples)-t.params.RequiredSamples:]
 	}
 
-	//  2. If all sample values are same, collapse to just the last one
+	// 2. drop samples that are too old
+	if len(t.samples) != 0 && t.params.ValidityWindow > 0 {
+		cutoffTime := time.Now().Add(-t.params.ValidityWindow)
+		cutoffIndex := -1
+		for i := 0; i < len(t.samples); i++ {
+			if t.samples[i].at.After(cutoffTime) {
+				cutoffIndex = i
+				break
+			}
+		}
+		if cutoffIndex >= 0 {
+			t.samples = t.samples[cutoffIndex:]
+		}
+	}
+
+	//  3. If all sample values are same, collapse to just the last one
 	if len(t.samples) != 0 {
 		sameValue := true
 		firstValue := t.samples[0].value
@@ -152,21 +167,6 @@ func (t *TrendDetector) prune() {
 
 		if sameValue {
 			t.samples = t.samples[len(t.samples)-1:]
-		}
-	}
-
-	// 3. drop samples that are too old
-	if len(t.samples) != 0 && t.params.ValidityWindow > 0 {
-		cutoffTime := time.Now().Add(-t.params.ValidityWindow)
-		cutoffIndex := -1
-		for i := 0; i < len(t.samples); i++ {
-			if t.samples[i].at.After(cutoffTime) {
-				cutoffIndex = i
-				break
-			}
-		}
-		if cutoffIndex >= 0 {
-			t.samples = t.samples[cutoffIndex:]
 		}
 	}
 }
