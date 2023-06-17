@@ -160,8 +160,9 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livek
 		return
 	}
 
-	// create a new connection id
-	connectionID = livekit.ConnectionID(utils.NewGuid("CO_"))
+	if connectionID == "" {
+		connectionID = livekit.ConnectionID(utils.NewGuid("CO_"))
+	}
 	pKey := ParticipantKeyLegacy(roomName, pi.Identity)
 	pKeyB62 := ParticipantKey(roomName, pi.Identity)
 
