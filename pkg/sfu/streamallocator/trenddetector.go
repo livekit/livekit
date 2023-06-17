@@ -49,7 +49,6 @@ type TrendDetector struct {
 	lowestValue  int64
 	highestValue int64
 
-	hasFallen    bool
 	lastSampleAt time.Time
 
 	direction TrendDirection
@@ -70,7 +69,6 @@ func (t *TrendDetector) Seed(value int64) {
 
 	t.values = append(t.values, value)
 	t.lastSampleAt = time.Now()
-	t.hasFallen = false
 }
 
 func (t *TrendDetector) AddValue(value int64) {
@@ -91,22 +89,26 @@ func (t *TrendDetector) AddValue(value int64) {
 	// the reaction is not too fast, i. e. reacting to falling values too quick could mean a lot of re-allocation
 	// resulting in layer switches, key frames and more congestion.
 	//
-	// But, on the flip side, estimate could fall once or twice withing a sliding window and stay there.
-	// In those cases, using a collapse window to record value even if it is duplicate. By doing that,
+	// But, on the flip side, estimate could fall once or twice within a sliding window and stay there.
+	// In those cases, using a collapse window to record a value even if it is duplicate. By doing that,
 	// a trend could be detected eventually. If will be delayed, but that is fine with slow changing estimates.
 	lastValue := int64(0)
 	if len(t.values) != 0 {
 		lastValue = t.values[len(t.values)-1]
 	}
 	if lastValue == value && t.params.CollapseThreshold > 0 {
-		if !t.hasFallen || (!t.lastSampleAt.IsZero() && time.Since(t.lastSampleAt) < t.params.CollapseThreshold) {
+		hasFallen := false
+		for idx := 1; idx < len(t.values); idx++ {
+			if t.values[idx] < t.values[idx-1] {
+				hasFallen = true
+				break
+			}
+		}
+		if !hasFallen || (!t.lastSampleAt.IsZero() && time.Since(t.lastSampleAt) < t.params.CollapseThreshold) {
 			return
 		}
 	}
 
-	if lastValue > value {
-		t.hasFallen = true
-	}
 	t.lastSampleAt = time.Now()
 
 	if len(t.values) == t.params.RequiredSamples {

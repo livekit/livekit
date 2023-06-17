@@ -456,6 +456,12 @@ func (t *telemetryService) IngressStarted(ctx context.Context, info *livekit.Ing
 	})
 }
 
+func (t *telemetryService) IngressUpdated(ctx context.Context, info *livekit.IngressInfo) {
+	t.enqueue(func() {
+		t.SendEvent(ctx, newIngressEvent(livekit.AnalyticsEventType_INGRESS_UPDATED, info))
+	})
+}
+
 func (t *telemetryService) IngressEnded(ctx context.Context, info *livekit.IngressInfo) {
 	t.enqueue(func() {
 		t.NotifyEvent(ctx, &livekit.WebhookEvent{
