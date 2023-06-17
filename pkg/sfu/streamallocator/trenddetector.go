@@ -32,12 +32,20 @@ func (t TrendDirection) String() string {
 
 // ------------------------------------------------
 
+type trendDetectorSample struct {
+	value int64
+	at    time.Time
+}
+
+// ------------------------------------------------
+
 type TrendDetectorParams struct {
 	Name                   string
 	Logger                 logger.Logger
 	RequiredSamples        int
 	DownwardTrendThreshold float64
 	CollapseThreshold      time.Duration
+	ValidityWindow         time.Duration
 }
 
 type TrendDetector struct {
@@ -45,11 +53,9 @@ type TrendDetector struct {
 
 	startTime    time.Time
 	numSamples   int
-	values       []int64
+	samples      []trendDetectorSample
 	lowestValue  int64
 	highestValue int64
-
-	lastSampleAt time.Time
 
 	direction TrendDirection
 }
@@ -63,12 +69,11 @@ func NewTrendDetector(params TrendDetectorParams) *TrendDetector {
 }
 
 func (t *TrendDetector) Seed(value int64) {
-	if len(t.values) != 0 {
+	if len(t.samples) != 0 {
 		return
 	}
 
-	t.values = append(t.values, value)
-	t.lastSampleAt = time.Now()
+	t.samples = append(t.samples, trendDetectorSample{value: value, at: time.Now()})
 }
 
 func (t *TrendDetector) AddValue(value int64) {
@@ -92,30 +97,16 @@ func (t *TrendDetector) AddValue(value int64) {
 	// But, on the flip side, estimate could fall once or twice within a sliding window and stay there.
 	// In those cases, using a collapse window to record a value even if it is duplicate. By doing that,
 	// a trend could be detected eventually. If will be delayed, but that is fine with slow changing estimates.
-	lastValue := int64(0)
-	if len(t.values) != 0 {
-		lastValue = t.values[len(t.values)-1]
+	var lastSample *trendDetectorSample
+	if len(t.samples) != 0 {
+		lastSample = &t.samples[len(t.samples)-1]
 	}
-	if lastValue == value && t.params.CollapseThreshold > 0 {
-		hasFallen := false
-		for idx := 1; idx < len(t.values); idx++ {
-			if t.values[idx] < t.values[idx-1] {
-				hasFallen = true
-				break
-			}
-		}
-		if !hasFallen || (!t.lastSampleAt.IsZero() && time.Since(t.lastSampleAt) < t.params.CollapseThreshold) {
-			return
-		}
+	if lastSample != nil && lastSample.value == value && t.params.CollapseThreshold > 0 && time.Since(lastSample.at) < t.params.CollapseThreshold {
+		return
 	}
 
-	t.lastSampleAt = time.Now()
-
-	if len(t.values) == t.params.RequiredSamples {
-		t.values = t.values[1:]
-	}
-	t.values = append(t.values, value)
-
+	t.samples = append(t.samples, trendDetectorSample{value: value, at: time.Now()})
+	t.prune()
 	t.updateDirection()
 }
 
@@ -125,10 +116,6 @@ func (t *TrendDetector) GetLowest() int64 {
 
 func (t *TrendDetector) GetHighest() int64 {
 	return t.highestValue
-}
-
-func (t *TrendDetector) GetValues() []int64 {
-	return t.values
 }
 
 func (t *TrendDetector) GetDirection() TrendDirection {
@@ -141,17 +128,57 @@ func (t *TrendDetector) ToString() string {
 	return fmt.Sprintf("n: %s, t: %+v|%+v|%.2fs, v: %d|%d|%d|%+v|%.2f",
 		t.params.Name,
 		t.startTime.Format(time.UnixDate), now.Format(time.UnixDate), elapsed,
-		t.numSamples, t.lowestValue, t.highestValue, t.values, kendallsTau(t.values))
+		t.numSamples, t.lowestValue, t.highestValue, t.samples, kendallsTau(t.samples),
+	)
+}
+
+func (t *TrendDetector) prune() {
+	// prune based on a few rules
+	//  1. If there are more than required samples
+	if len(t.samples) > t.params.RequiredSamples {
+		t.samples = t.samples[len(t.samples)-t.params.RequiredSamples:]
+	}
+
+	// 2. drop samples that are too old
+	if len(t.samples) != 0 && t.params.ValidityWindow > 0 {
+		cutoffTime := time.Now().Add(-t.params.ValidityWindow)
+		cutoffIndex := -1
+		for i := 0; i < len(t.samples); i++ {
+			if t.samples[i].at.After(cutoffTime) {
+				cutoffIndex = i
+				break
+			}
+		}
+		if cutoffIndex >= 0 {
+			t.samples = t.samples[cutoffIndex:]
+		}
+	}
+
+	//  3. If all sample values are same, collapse to just the last one
+	if len(t.samples) != 0 {
+		sameValue := true
+		firstValue := t.samples[0].value
+		for i := 0; i < len(t.samples); i++ {
+			if t.samples[i].value != firstValue {
+				sameValue = false
+				break
+			}
+		}
+
+		if sameValue {
+			t.samples = t.samples[len(t.samples)-1:]
+		}
+	}
 }
 
 func (t *TrendDetector) updateDirection() {
-	if len(t.values) < t.params.RequiredSamples {
+	if len(t.samples) < t.params.RequiredSamples {
 		t.direction = TrendDirectionNeutral
 		return
 	}
 
 	// using Kendall's Tau to find trend
-	kt := kendallsTau(t.values)
+	kt := kendallsTau(t.samples)
 
 	t.direction = TrendDirectionNeutral
 	switch {
@@ -164,15 +191,15 @@ func (t *TrendDetector) updateDirection() {
 
 // ------------------------------------------------
 
-func kendallsTau(values []int64) float64 {
+func kendallsTau(samples []trendDetectorSample) float64 {
 	concordantPairs := 0
 	discordantPairs := 0
 
-	for i := 0; i < len(values)-1; i++ {
-		for j := i + 1; j < len(values); j++ {
-			if values[i] < values[j] {
+	for i := 0; i < len(samples)-1; i++ {
+		for j := i + 1; j < len(samples); j++ {
+			if samples[i].value < samples[j].value {
 				concordantPairs++
-			} else if values[i] > values[j] {
+			} else if samples[i].value > samples[j].value {
 				discordantPairs++
 			}
 		}
