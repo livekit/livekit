@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"net"
+	"net/http"
 	"strconv"
 
 	"github.com/pion/turn/v2"
@@ -16,6 +17,7 @@ import (
 	logging "github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
+	"golang.org/x/crypto/acme/autocert"
 )
 
 const (
@@ -43,7 +45,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 	}
 	var relayAddrGen turn.RelayAddressGenerator = &turn.RelayAddressGeneratorPortRange{
 		RelayAddress: net.ParseIP(conf.RTC.NodeIP),
-		Address:      "0.0.0.0",
+		Address:      turnConf.BindAddress,
 		MinPort:      turnConf.RelayPortRangeStart,
 		MaxPort:      turnConf.RelayPortRangeEnd,
 		MaxRetries:   allocateRetries,
@@ -66,19 +68,25 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 		}
 
 		if !turnConf.ExternalTLS {
-			cert, err := tls.LoadX509KeyPair(turnConf.CertFile, turnConf.KeyFile)
-			if err != nil {
-				return nil, errors.Wrap(err, "TURN tls cert required")
+			certManager := autocert.Manager{
+				Prompt:     autocert.AcceptTOS,
+				HostPolicy: autocert.HostWhitelist(turnConf.Domain),
 			}
 
-			tlsListener, err := tls.Listen("tcp4", "0.0.0.0:"+strconv.Itoa(turnConf.TLSPort),
+			dir := cacheDir()
+			if dir != "" {
+				certManager.Cache = autocert.DirCache(dir)
+			}
+
+			tlsListener, err := tls.Listen("tcp4", turnConf.BindAddress+":"+strconv.Itoa(turnConf.TLSPort),
 				&tls.Config{
-					MinVersion:   tls.VersionTLS12,
-					Certificates: []tls.Certificate{cert},
+					GetCertificate: certManager.GetCertificate,
 				})
 			if err != nil {
 				return nil, errors.Wrap(err, "could not listen on TURN TCP port")
 			}
+			go http.ListenAndServe(turnConf.BindAddress+":80", certManager.HTTPHandler(nil))
+
 			if standalone {
 				tlsListener = telemetry.NewListener(tlsListener)
 			}
@@ -89,7 +97,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 			}
 			serverConfig.ListenerConfigs = append(serverConfig.ListenerConfigs, listenerConfig)
 		} else {
-			tcpListener, err := net.Listen("tcp4", "0.0.0.0:"+strconv.Itoa(turnConf.TLSPort))
+			tcpListener, err := net.Listen("tcp4", turnConf.BindAddress+":"+strconv.Itoa(turnConf.TLSPort))
 			if err != nil {
 				return nil, errors.Wrap(err, "could not listen on TURN TCP port")
 			}
@@ -131,7 +139,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 func newTurnAuthHandler(roomStore ObjectStore) turn.AuthHandler {
 	return func(username, realm string, srcAddr net.Addr) (key []byte, ok bool) {
 		// room id should be the username, create a hashed room id
-		rm, _, err := roomStore.LoadRoom(context.Background(), livekit.RoomName(username), false)
+		rm, _, _, err := roomStore.LoadRoom(context.Background(), livekit.RoomName(username), false)
 		if err != nil {
 			return nil, false
 		}

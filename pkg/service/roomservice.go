@@ -10,11 +10,12 @@ import (
 	"github.com/twitchtv/twirp"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/rpc"
+
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/rpc"
 )
 
 // A rooms service that supports a single node
@@ -73,7 +74,7 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 
 	// ensure it's created correctly
 	err = s.confirmExecution(func() error {
-		_, _, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Name), false)
+		_, _, _, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Name), false)
 		if err != nil {
 			return ErrOperationFailed
 		} else {
@@ -136,7 +137,7 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 
 	// we should not return until when the room is confirmed deleted
 	err = s.confirmExecution(func() error {
-		_, _, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false)
+		_, _, _, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false)
 		if err == nil {
 			return ErrOperationFailed
 		} else if err != ErrRoomNotFound {
@@ -341,7 +342,7 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 		return nil, twirpAuthError(err)
 	}
 
-	room, _, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false)
+	room, _, _, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false)
 	if err != nil {
 		return nil, err
 	}
@@ -366,7 +367,7 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 	}
 
 	err = s.confirmExecution(func() error {
-		room, _, err = s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false)
+		room, _, _, err = s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false)
 		if err != nil {
 			return err
 		}

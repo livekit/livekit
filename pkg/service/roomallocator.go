@@ -46,7 +46,7 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 	}()
 
 	// find existing room and update it
-	rm, internal, err := r.roomStore.LoadRoom(ctx, livekit.RoomName(req.Name), true)
+	rm, internal, _, err := r.roomStore.LoadRoom(ctx, livekit.RoomName(req.Name), true)
 	if err == ErrRoomNotFound {
 		rm = &livekit.Room{
 			Sid:          utils.NewGuid(utils.RoomPrefix),
@@ -120,7 +120,7 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 func (r *StandardRoomAllocator) ValidateCreateRoom(ctx context.Context, roomName livekit.RoomName) error {
 	// when auto create is disabled, we'll check to ensure it's already created
 	if !r.config.Room.AutoCreate {
-		_, _, err := r.roomStore.LoadRoom(ctx, roomName, false)
+		_, _, _, err := r.roomStore.LoadRoom(ctx, roomName, false)
 		if err != nil {
 			return err
 		}

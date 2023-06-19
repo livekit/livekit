@@ -2,12 +2,18 @@ package rtc
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/pion/transport/v2/packetio"
+
+	"github.com/livekit/livekit-server/pkg/rtc/relay"
 
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/pion/rtcp"
@@ -16,6 +22,12 @@ import (
 	"github.com/pkg/errors"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/livekit/mediatransportutil/pkg/twcc"
+	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -26,11 +38,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	"github.com/livekit/livekit-server/pkg/telemetry"
-	"github.com/livekit/mediatransportutil/pkg/twcc"
-	"github.com/livekit/protocol/auth"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
 )
 
 const (
@@ -88,6 +95,7 @@ type ParticipantParams struct {
 	VersionGenerator             utils.TimedVersionGenerator
 	TrackResolver                types.MediaTrackResolver
 	DisableDynacast              bool
+	RelayCollection              *relay.Collection
 }
 
 type ParticipantImpl struct {
@@ -161,6 +169,9 @@ type ParticipantImpl struct {
 
 	cachedDownTracks map[livekit.TrackID]*downTrackState
 
+	relayDownTracks   map[livekit.ParticipantID]*sfu.DownTrack
+	relayDownTracksMu sync.RWMutex
+
 	supervisor *supervisor.ParticipantSupervisor
 }
 
@@ -183,6 +194,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		connectedAt:             time.Now(),
 		rttUpdatedAt:            time.Now(),
 		cachedDownTracks:        make(map[livekit.TrackID]*downTrackState),
+		relayDownTracks:         make(map[livekit.ParticipantID]*sfu.DownTrack),
 		dataChannelStats: telemetry.NewBytesTrackStats(
 			telemetry.BytesTrackIDForParticipantID(telemetry.BytesTrackTypeData, params.SID),
 			params.SID,
@@ -1130,6 +1142,80 @@ func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription) err
 	})
 }
 
+func (p *ParticipantImpl) forwardTrackToRelays(publishedTrack *MediaTrack, track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
+	p.params.RelayCollection.ForEach(func(relay *relay.Relay) {
+		codec := track.Codec()
+		tr := publishedTrack.MediaTrackReceiver.Receiver(track.Codec().MimeType)
+		rtpCodecParameters := []webrtc.RTPCodecParameters{{
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType:     codec.MimeType,
+				ClockRate:    codec.ClockRate,
+				Channels:     codec.Channels,
+				SDPFmtpLine:  codec.SDPFmtpLine,
+				RTCPFeedback: []webrtc.RTCPFeedback{{"nack", ""}, {"nack", "pli"}},
+			},
+			PayloadType: track.PayloadType(),
+		}}
+		dt, err := sfu.NewDownTrack(
+			rtpCodecParameters,
+			tr,
+			relay.GetBufferFactory(),
+			livekit.ParticipantID(fmt.Sprintf("relay--%v--%v", track.ID(), track.RID())),
+			p.params.Config.Receiver.PacketBufferSize,
+			uint32(track.SSRC()),
+			p.GetLogger(),
+		)
+		if err != nil {
+			p.params.Logger.Errorw("new down track", err)
+		}
+		pi := p.ToProto()
+		for _, ti := range pi.Tracks {
+			for _, l := range ti.Layers {
+				l.Ssrc = 0
+			}
+		}
+		participantInfo, _ := json.Marshal(pi)
+		sdr, err := relay.AddTrack(tr.(*sfu.WebRTCReceiver).GetRTPParameters(), track, dt, p.TransportManager.GetPublisherMid(rtpReceiver), string(participantInfo))
+		if err != nil {
+			p.params.Logger.Errorw("add track to relay", err)
+			return
+		}
+
+		p.params.Config.BufferFactory.GetOrNew(packetio.RTCPBufferPacket, uint32(sdr.GetParameters().Encodings[0].SSRC)).(*buffer.RTCPReader).OnPacket(func(bytes []byte) {
+			pkts, err := rtcp.Unmarshal(bytes)
+			if err != nil {
+				p.params.Logger.Errorw("Unmarshal rtcp reports", err)
+				return
+			}
+			var rpkts []rtcp.Packet
+			for _, pkt := range pkts {
+				switch pk := pkt.(type) {
+				case *rtcp.PictureLossIndication:
+					rpkts = append(rpkts, &rtcp.PictureLossIndication{
+						SenderSSRC: pk.MediaSSRC,
+						MediaSSRC:  uint32(track.SSRC()),
+					})
+				}
+			}
+
+			if len(rpkts) > 0 {
+				if err := relay.WriteRTCP(rpkts); err != nil {
+					p.params.Logger.Errorw("Sending rtcp relay reports", err)
+				}
+			}
+		})
+
+		if err := tr.AddDownTrack(dt); err != nil {
+			p.params.Logger.Errorw("add relayed down track", err)
+		}
+		dt.SetConnected()
+
+		p.relayDownTracksMu.Lock()
+		p.relayDownTracks[dt.SubscriberID()] = dt
+		p.relayDownTracksMu.Unlock()
+	})
+}
+
 // when a new remoteTrack is created, creates a Track and adds it to room
 func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
 	if p.IsDisconnected() {
@@ -1151,6 +1237,8 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 			"SSRC", track.SSRC(),
 			"mime", track.Codec().MimeType,
 		)
+
+		p.forwardTrackToRelays(publishedTrack, track, rtpReceiver)
 	} else {
 		p.params.Logger.Warnw("webrtc Track published but can't find MediaTrack", nil,
 			"kind", track.Kind().String(),
@@ -1585,7 +1673,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	}
 	p.pendingTracksLock.Unlock()
 
-	if mt.AddReceiver(rtpReceiver, track, p.twcc, mid) {
+	if mt.AddReceiver(rtpReceiver, track, track.RID(), p.twcc, mid) {
 		p.removeMutedTrackNotFired(mt)
 		if newTrack {
 			go p.handleTrackPublished(mt)
@@ -1928,6 +2016,14 @@ func (p *ParticipantImpl) DebugInfo() map[string]interface{} {
 	info["PendingTracks"] = pendingTrackInfo
 
 	info["UpTrackManager"] = p.UpTrackManager.DebugInfo()
+
+	relayDownTracksInfo := make(map[string]interface{})
+	p.relayDownTracksMu.RLock()
+	for downTrackId, dt := range p.relayDownTracks {
+		relayDownTracksInfo[string(downTrackId)] = dt.DebugInfo()
+	}
+	p.relayDownTracksMu.RUnlock()
+	info["RelayDownTracks"] = relayDownTracksInfo
 
 	return info
 }

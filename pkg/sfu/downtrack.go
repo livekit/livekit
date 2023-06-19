@@ -239,6 +239,7 @@ func NewDownTrack(
 	bf *buffer.Factory,
 	subID livekit.ParticipantID,
 	mt int,
+	ssrc uint32,
 	logger logger.Logger,
 ) (*DownTrack, error) {
 	var kind webrtc.RTPCodecType
@@ -263,7 +264,7 @@ func NewDownTrack(
 		kind:           kind,
 		codec:          codecs[0].RTPCodecCapability,
 	}
-	d.forwarder = NewForwarder(d.kind, d.logger, d.receiver.GetReferenceLayerRTPTimestamp)
+	d.forwarder = NewForwarder(d.kind, d.logger, ssrc, d.receiver.GetReferenceLayerRTPTimestamp)
 	d.forwarder.OnParkedLayersExpired(func() {
 		if sal := d.getStreamAllocatorListener(); sal != nil {
 			sal.OnSubscriptionChanged(d)
@@ -573,7 +574,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	}
 
 	var meta *packetMeta
-	if d.sequencer != nil {
+	if d.sequencer != nil && !strings.HasPrefix(string(d.subscriberID), "relay--") {
 		meta = d.sequencer.push(extPkt.Packet.SequenceNumber, tp.rtp.sequenceNumber, tp.rtp.timestamp, int8(layer))
 		if meta != nil && tp.vp8 != nil {
 			meta.packVP8(tp.vp8.Header)
@@ -1276,7 +1277,14 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 	pliOnce := true
 	sendPliOnce := func() {
 		if pliOnce {
-			_, layer := d.forwarder.CheckSync()
+			var layer int32
+			if strings.HasPrefix(string(d.subscriberID), "relay--") {
+				// TODO: pass rid or layer to downtrack in other way
+				relayParts := strings.Split(string(d.subscriberID), "--")
+				layer = buffer.RidToSpatialLayer(relayParts[2], nil)
+			} else {
+				_, layer = d.forwarder.CheckSync()
+			}
 			if layer != buffer.InvalidLayerSpatial && !d.forwarder.IsAnyMuted() {
 				d.logger.Debugw("sending PLI RTCP", "layer", layer)
 				d.receiver.SendPLI(layer, false)

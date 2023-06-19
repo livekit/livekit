@@ -1,11 +1,13 @@
 package service
 
 import (
+	"github.com/livekit/protocol/logger"
 	"net"
 	"net/http"
+	"os"
+	"os/user"
+	"path/filepath"
 	"regexp"
-
-	"github.com/livekit/protocol/logger"
 )
 
 func handleError(w http.ResponseWriter, status int, err error, keysAndValues ...interface{}) {
@@ -17,6 +19,16 @@ func handleError(w http.ResponseWriter, status int, err error, keysAndValues ...
 
 func boolValue(s string) bool {
 	return s == "1" || s == "true"
+}
+
+func cacheDir() (dir string) {
+	if u, _ := user.Current(); u != nil {
+		dir = filepath.Join(os.TempDir(), "cache-golang-autocert-"+u.Username)
+		if err := os.MkdirAll(dir, 0700); err == nil {
+			return dir
+		}
+	}
+	return ""
 }
 
 func IsValidDomain(domain string) bool {

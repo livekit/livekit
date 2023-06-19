@@ -292,14 +292,14 @@ func (w *WebRTCReceiver) Kind() webrtc.RTPCodecType {
 	return w.kind
 }
 
-func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buffer) {
+func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, trackRid string, buff *buffer.Buffer) {
 	if w.closed.Load() {
 		return
 	}
 
 	layer := int32(0)
 	if w.Kind() == webrtc.RTPCodecTypeVideo && !w.isSVC {
-		layer = buffer.RidToSpatialLayer(track.RID(), w.trackInfo)
+		layer = buffer.RidToSpatialLayer(trackRid, w.trackInfo)
 	}
 	buff.SetLogger(w.logger.WithValues("layer", layer))
 	buff.SetTWCC(w.twcc)
@@ -752,4 +752,8 @@ func (w *WebRTCReceiver) GetRTCPSenderReportDataExt(layer int32) *buffer.RTCPSen
 
 func (w *WebRTCReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error) {
 	return w.streamTrackerManager.GetReferenceLayerRTPTimestamp(ts, layer, referenceLayer)
+}
+
+func (w *WebRTCReceiver) GetRTPParameters() webrtc.RTPParameters {
+	return w.receiver.GetParameters()
 }

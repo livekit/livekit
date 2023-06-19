@@ -104,6 +104,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		sub.GetBufferFactory(),
 		subscriberID,
 		t.params.ReceiverConfig.PacketBufferSize,
+		0,
 		LoggerWithTrack(sub.GetLogger(), trackID, t.params.IsRelayed),
 	)
 	if err != nil {

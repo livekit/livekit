@@ -12,11 +12,13 @@ import (
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/livekit-server/version"
 	"github.com/livekit/protocol/ingress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
+
+	"github.com/livekit/livekit-server/pkg/p2p"
+	"github.com/livekit/livekit-server/version"
 )
 
 const (
@@ -130,7 +132,7 @@ func (s *RedisStore) StoreRoom(_ context.Context, room *livekit.Room, internal *
 	return nil
 }
 
-func (s *RedisStore) LoadRoom(_ context.Context, roomName livekit.RoomName, includeInternal bool) (*livekit.Room, *livekit.RoomInternal, error) {
+func (s *RedisStore) LoadRoom(_ context.Context, roomName livekit.RoomName, includeInternal bool) (*livekit.Room, *livekit.RoomInternal, p2p.RoomCommunicator, error) {
 	pp := s.rc.Pipeline()
 	pp.HGet(s.ctx, RoomsKey, string(roomName))
 	if includeInternal {
@@ -140,7 +142,7 @@ func (s *RedisStore) LoadRoom(_ context.Context, roomName livekit.RoomName, incl
 	res, err := pp.Exec(s.ctx)
 	if err != nil && err != redis.Nil {
 		// if the room exists but internal does not, the pipeline will still return redis.Nil
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	room := &livekit.Room{}
@@ -149,10 +151,10 @@ func (s *RedisStore) LoadRoom(_ context.Context, roomName livekit.RoomName, incl
 		if err == redis.Nil {
 			err = ErrRoomNotFound
 		}
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if err = proto.Unmarshal([]byte(roomData), room); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	var internal *livekit.RoomInternal
@@ -161,14 +163,14 @@ func (s *RedisStore) LoadRoom(_ context.Context, roomName livekit.RoomName, incl
 		if err == nil {
 			internal = &livekit.RoomInternal{}
 			if err = proto.Unmarshal([]byte(internalData), internal); err != nil {
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
 		} else if err != redis.Nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 
-	return room, internal, nil
+	return room, internal, nil, nil
 }
 
 func (s *RedisStore) ListRooms(_ context.Context, roomNames []livekit.RoomName) ([]*livekit.Room, error) {
@@ -207,7 +209,7 @@ func (s *RedisStore) ListRooms(_ context.Context, roomNames []livekit.RoomName) 
 }
 
 func (s *RedisStore) DeleteRoom(ctx context.Context, roomName livekit.RoomName) error {
-	_, _, err := s.LoadRoom(ctx, roomName, false)
+	_, _, _, err := s.LoadRoom(ctx, roomName, false)
 	if err == ErrRoomNotFound {
 		return nil
 	}

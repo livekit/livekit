@@ -154,7 +154,7 @@ func (v *VP8) Unmarshal(payload []byte) error {
 }
 
 func (v *VP8) MarshalTo(buf []byte) error {
-	if len(buf) < v.HeaderSize {
+	if len(buf) == 0 || len(buf) < v.HeaderSize {
 		return errShortPacket
 	}
 

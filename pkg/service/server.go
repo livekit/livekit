@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,12 +20,14 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/livekit-server/version"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"golang.org/x/crypto/acme/autocert"
+
+	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/version"
 )
 
 type LivekitServer struct {
@@ -32,6 +35,7 @@ type LivekitServer struct {
 	ioService    *IOInfoService
 	rtcService   *RTCService
 	httpServer   *http.Server
+	httpsServer  *http.Server
 	promServer   *http.Server
 	router       routing.Router
 	roomManager  *RoomManager
@@ -111,8 +115,29 @@ func NewLivekitServer(conf *config.Config,
 	mux.HandleFunc("/rtc/validate", rtcService.Validate)
 	mux.HandleFunc("/", s.defaultHandler)
 
-	s.httpServer = &http.Server{
-		Handler: configureMiddlewares(mux, middlewares...),
+	if conf.Domain != "" {
+		certManager := autocert.Manager{
+			Prompt:     autocert.AcceptTOS,
+			HostPolicy: autocert.HostWhitelist(conf.Domain),
+		}
+
+		dir := cacheDir()
+		if dir != "" {
+			certManager.Cache = autocert.DirCache(dir)
+		}
+		s.httpsServer = &http.Server{
+			TLSConfig: &tls.Config{
+				GetCertificate: certManager.GetCertificate,
+			},
+			Handler: configureMiddlewares(mux, middlewares...),
+		}
+		s.httpServer = &http.Server{
+			Handler: certManager.HTTPHandler(nil),
+		}
+	} else {
+		s.httpServer = &http.Server{
+			Handler: configureMiddlewares(mux, middlewares...),
+		}
 	}
 
 	if conf.PrometheusPort > 0 {
@@ -174,16 +199,30 @@ func (s *LivekitServer) Start() error {
 
 	// ensure we could listen
 	listeners := make([]net.Listener, 0)
+	listenersHTTPS := make([]net.Listener, 0)
 	promListeners := make([]net.Listener, 0)
 	for _, addr := range addresses {
-		ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", addr, s.config.Port))
-		if err != nil {
-			return err
+		if s.config.Domain != "" {
+			ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", addr, 80))
+			if err != nil {
+				return err
+			}
+			listeners = append(listeners, ln)
+			lnHTTPS, err := net.Listen("tcp", fmt.Sprintf("%s:%d", addr, 443))
+			if err != nil {
+				return err
+			}
+			listenersHTTPS = append(listenersHTTPS, lnHTTPS)
+		} else {
+			ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", addr, s.config.Port))
+			if err != nil {
+				return err
+			}
+			listeners = append(listeners, ln)
 		}
-		listeners = append(listeners, ln)
 
 		if s.promServer != nil {
-			ln, err = net.Listen("tcp", fmt.Sprintf("%s:%d", addr, s.config.PrometheusPort))
+			ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", addr, s.config.PrometheusPort))
 			if err != nil {
 				return err
 			}
@@ -222,19 +261,41 @@ func (s *LivekitServer) Start() error {
 		go s.promServer.Serve(promLn)
 	}
 
-	httpGroup := &errgroup.Group{}
-	for _, ln := range listeners {
-		l := ln
-		httpGroup.Go(func() error {
-			return s.httpServer.Serve(l)
-		})
-	}
-	go func() {
-		if err := httpGroup.Wait(); err != http.ErrServerClosed {
-			logger.Errorw("could not start server", err)
-			s.Stop(true)
+	if s.config.Domain != "" {
+		httpGroup := &errgroup.Group{}
+		for _, ln := range listeners {
+			l := ln
+			httpGroup.Go(func() error {
+				return s.httpServer.Serve(l)
+			})
 		}
-	}()
+		for _, lnHTTPS := range listenersHTTPS {
+			l := lnHTTPS
+			httpGroup.Go(func() error {
+				return s.httpsServer.ServeTLS(l, "", "")
+			})
+		}
+		go func() {
+			if err := httpGroup.Wait(); err != http.ErrServerClosed {
+				logger.Errorw("could not start server", err)
+				s.Stop(true)
+			}
+		}()
+	} else {
+		httpGroup := &errgroup.Group{}
+		for _, ln := range listeners {
+			l := ln
+			httpGroup.Go(func() error {
+				return s.httpServer.Serve(l)
+			})
+		}
+		go func() {
+			if err := httpGroup.Wait(); err != http.ErrServerClosed {
+				logger.Errorw("could not start server", err)
+				s.Stop(true)
+			}
+		}()
+	}
 
 	go s.backgroundWorker()
 
@@ -249,6 +310,10 @@ func (s *LivekitServer) Start() error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 	_ = s.httpServer.Shutdown(ctx)
+
+	if s.httpsServer != nil {
+		_ = s.httpsServer.Shutdown(ctx)
+	}
 
 	if s.turnServer != nil {
 		_ = s.turnServer.Close()
@@ -301,7 +366,7 @@ func (s *LivekitServer) debugInfo(w http.ResponseWriter, _ *http.Request) {
 	}
 	s.roomManager.lock.RUnlock()
 
-	b, err := json.Marshal(info)
+	b, err := json.MarshalIndent(info, "", "\t")
 	if err != nil {
 		w.WriteHeader(400)
 		_, _ = w.Write([]byte(err.Error()))
