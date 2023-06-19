@@ -2093,7 +2093,7 @@ func (p *ParticipantImpl) onPublicationError(trackID livekit.TrackID) {
 }
 
 func (p *ParticipantImpl) onSubscriptionError(trackID livekit.TrackID, fatal bool, err error) {
-	signalErr := livekit.SubscriptionError_SE_UNKOWN
+	signalErr := livekit.SubscriptionError_SE_UNKNOWN
 	switch {
 	case errors.Is(err, webrtc.ErrUnsupportedCodec):
 		signalErr = livekit.SubscriptionError_SE_CODEC_UNSUPPORTED
