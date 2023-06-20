@@ -7,6 +7,7 @@ import (
 	"github.com/pion/rtp"
 
 	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
+	"github.com/livekit/livekit-server/pkg/sfu/utils"
 
 	"github.com/livekit/protocol/logger"
 )
@@ -17,6 +18,11 @@ type DependencyDescriptorParser struct {
 	logger            logger.Logger
 	onMaxLayerChanged func(int32, int32)
 	decodeTargets     []DependencyDescriptorDecodeTarget
+
+	wrapAround                *utils.WrapAround[uint16, uint64]
+	structureExtSeq           uint64
+	activeDecodeTargetsExtSeq uint64
+	activeDecodeTargetsMask   uint32
 }
 
 func NewDependencyDescriptorParser(ddExtID uint8, logger logger.Logger, onMaxLayerChanged func(int32, int32)) *DependencyDescriptorParser {
@@ -25,6 +31,7 @@ func NewDependencyDescriptorParser(ddExtID uint8, logger logger.Logger, onMaxLay
 		ddExtID:           ddExtID,
 		logger:            logger,
 		onMaxLayerChanged: onMaxLayerChanged,
+		wrapAround:        utils.NewWrapAround[uint16, uint64](),
 	}
 }
 
@@ -52,41 +59,41 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*DependencyDescript
 		return nil, videoLayer, err
 	}
 
+	extSeq := r.wrapAround.Update(pkt.SequenceNumber).ExtendedVal
+
 	if ddVal.FrameDependencies != nil {
 		videoLayer.Spatial, videoLayer.Temporal = int32(ddVal.FrameDependencies.SpatialId), int32(ddVal.FrameDependencies.TemporalId)
 	}
-	if ddVal.AttachedStructure != nil && !ddVal.FirstPacketInFrame {
-		// r.logger.Debugw("ignoring non-first packet in frame with attached structure")
-		return nil, videoLayer, nil
-	}
 
 	if ddVal.AttachedStructure != nil {
-		r.structure = ddVal.AttachedStructure
-		r.decodeTargets = ProcessFrameDependencyStructure(ddVal.AttachedStructure)
-		if len(r.decodeTargets) != 0 {
-			r.logger.Debugw(fmt.Sprintf("update decode targets: %v", r.decodeTargets))
-			r.onMaxLayerChanged(r.decodeTargets[0].Layer.Spatial, r.decodeTargets[0].Layer.Temporal)
+		r.logger.Debugw(fmt.Sprintf("parsed dependency descriptor\n%s", ddVal.String()))
+		if extSeq > r.structureExtSeq {
+			r.structure = ddVal.AttachedStructure
+			r.decodeTargets = ProcessFrameDependencyStructure(ddVal.AttachedStructure)
+			r.structureExtSeq = extSeq
+			// The dependency descriptor reader will always set ActiveDecodeTargetsBitmask for TemplateDependencyStructure is present,
+			// so don't need to notify max layer change here.
 		}
 	}
 
-	if ddVal.AttachedStructure != nil && ddVal.FirstPacketInFrame {
-		r.logger.Debugw(fmt.Sprintf("parsed dependency descriptor\n%s", ddVal.String()))
-	}
-
-	if mask := ddVal.ActiveDecodeTargetsBitmask; mask != nil {
-		var maxSpatial, maxTemporal int32
-		for _, dt := range r.decodeTargets {
-			if *mask&(1<<dt.Target) != uint32(dd.DecodeTargetNotPresent) {
-				if maxSpatial < dt.Layer.Spatial {
-					maxSpatial = dt.Layer.Spatial
-				}
-				if maxTemporal < dt.Layer.Temporal {
-					maxTemporal = dt.Layer.Temporal
+	if mask := ddVal.ActiveDecodeTargetsBitmask; mask != nil && extSeq > r.activeDecodeTargetsExtSeq {
+		r.activeDecodeTargetsExtSeq = extSeq
+		if *mask != r.activeDecodeTargetsMask {
+			r.activeDecodeTargetsMask = *mask
+			var maxSpatial, maxTemporal int32
+			for _, dt := range r.decodeTargets {
+				if *mask&(1<<dt.Target) != uint32(dd.DecodeTargetNotPresent) {
+					if maxSpatial < dt.Layer.Spatial {
+						maxSpatial = dt.Layer.Spatial
+					}
+					if maxTemporal < dt.Layer.Temporal {
+						maxTemporal = dt.Layer.Temporal
+					}
 				}
 			}
+			r.logger.Debugw("max layer changed", "maxSpatial", maxSpatial, "maxTemporal", maxTemporal)
+			r.onMaxLayerChanged(maxSpatial, maxTemporal)
 		}
-		r.logger.Debugw("max layer changed", "maxSpatial", maxSpatial, "maxTemporal", maxTemporal)
-		r.onMaxLayerChanged(maxSpatial, maxTemporal)
 	}
 
 	withDecodeTargets := &DependencyDescriptorWithDecodeTarget{

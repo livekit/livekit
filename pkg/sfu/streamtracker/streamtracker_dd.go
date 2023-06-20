@@ -8,6 +8,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
+	"github.com/livekit/livekit-server/pkg/sfu/utils"
 )
 
 type StreamTrackerDependencyDescriptor struct {
@@ -21,9 +22,12 @@ type StreamTrackerDependencyDescriptor struct {
 	onStatusChanged    [buffer.DefaultMaxLayerSpatial + 1]func(status StreamStatus)
 	onBitrateAvailable [buffer.DefaultMaxLayerSpatial + 1]func()
 
-	lastBitrateReport time.Time
-	bytesForBitrate   [buffer.DefaultMaxLayerSpatial + 1][buffer.DefaultMaxLayerTemporal + 1]int64
-	bitrate           [buffer.DefaultMaxLayerSpatial + 1][buffer.DefaultMaxLayerTemporal + 1]int64
+	lastBitrateReport         time.Time
+	bytesForBitrate           [buffer.DefaultMaxLayerSpatial + 1][buffer.DefaultMaxLayerTemporal + 1]int64
+	bitrate                   [buffer.DefaultMaxLayerSpatial + 1][buffer.DefaultMaxLayerTemporal + 1]int64
+	wrapAround                *utils.WrapAround[uint16, uint64]
+	activeDecodeTargetsExtSeq uint64
+	activeDecodeTargetsMask   uint32
 
 	isStopped bool
 }
@@ -33,6 +37,7 @@ func NewStreamTrackerDependencyDescriptor(params StreamTrackerParams) *StreamTra
 		params:           params,
 		maxSpatialLayer:  buffer.InvalidLayerSpatial,
 		maxTemporalLayer: buffer.InvalidLayerTemporal,
+		wrapAround:       utils.NewWrapAround[uint16, uint64](),
 	}
 }
 func (s *StreamTrackerDependencyDescriptor) Start() {
@@ -123,7 +128,7 @@ func (s *StreamTrackerDependencyDescriptor) SetPaused(paused bool) {
 
 }
 
-func (s *StreamTrackerDependencyDescriptor) Observe(temporalLayer int32, pktSize int, payloadSize int, hasMarker bool, ts uint32, ddVal *buffer.DependencyDescriptorWithDecodeTarget) {
+func (s *StreamTrackerDependencyDescriptor) Observe(temporalLayer int32, pktSize int, payloadSize int, hasMarker bool, ts uint32, seq uint16, ddVal *buffer.DependencyDescriptorWithDecodeTarget) {
 	s.lock.Lock()
 
 	if s.isStopped || s.paused || payloadSize == 0 || ddVal == nil {
@@ -133,47 +138,50 @@ func (s *StreamTrackerDependencyDescriptor) Observe(temporalLayer int32, pktSize
 
 	var notifyFns []func(status StreamStatus)
 	var notifyStatus StreamStatus
-	if mask := ddVal.Descriptor.ActiveDecodeTargetsBitmask; mask != nil {
-		var maxSpatial, maxTemporal int32
-		for _, dt := range ddVal.DecodeTargets {
-			if *mask&(1<<dt.Target) != uint32(dd.DecodeTargetNotPresent) {
-				if maxSpatial < dt.Layer.Spatial {
-					maxSpatial = dt.Layer.Spatial
+	extSeq := s.wrapAround.Update(seq).ExtendedVal
+	if mask := ddVal.Descriptor.ActiveDecodeTargetsBitmask; mask != nil && extSeq > s.activeDecodeTargetsExtSeq {
+		s.activeDecodeTargetsExtSeq = extSeq
+		if *mask != s.activeDecodeTargetsMask {
+			var maxSpatial, maxTemporal int32
+			for _, dt := range ddVal.DecodeTargets {
+				if *mask&(1<<dt.Target) != uint32(dd.DecodeTargetNotPresent) {
+					if maxSpatial < dt.Layer.Spatial {
+						maxSpatial = dt.Layer.Spatial
+					}
+					if maxTemporal < dt.Layer.Temporal {
+						maxTemporal = dt.Layer.Temporal
+					}
 				}
-				if maxTemporal < dt.Layer.Temporal {
-					maxTemporal = dt.Layer.Temporal
+			}
+			if maxSpatial > buffer.DefaultMaxLayerSpatial {
+				maxSpatial = buffer.DefaultMaxLayerSpatial
+				s.params.Logger.Warnw("max spatial layer exceeded", nil, "maxSpatial", maxSpatial)
+			}
+			if maxTemporal > buffer.DefaultMaxLayerTemporal {
+				maxTemporal = buffer.DefaultMaxLayerTemporal
+				s.params.Logger.Warnw("max temporal layer exceeded", nil, "maxTemporal", maxTemporal)
+			}
+
+			s.params.Logger.Debugw("max layer changed", "maxSpatial", maxSpatial, "maxTemporal", maxTemporal)
+			oldMaxSpatial := s.maxSpatialLayer
+			s.maxSpatialLayer, s.maxTemporalLayer = maxSpatial, maxTemporal
+			if oldMaxSpatial == -1 {
+				s.lastBitrateReport = time.Now()
+				go s.worker(s.generation.Inc())
+			}
+
+			if oldMaxSpatial > s.maxSpatialLayer {
+				notifyStatus = StreamStatusStopped
+				for i := s.maxSpatialLayer + 1; i <= oldMaxSpatial; i++ {
+					notifyFns = append(notifyFns, s.onStatusChanged[i])
+				}
+			} else if oldMaxSpatial < s.maxSpatialLayer {
+				notifyStatus = StreamStatusActive
+				for i := oldMaxSpatial + 1; i <= s.maxSpatialLayer; i++ {
+					notifyFns = append(notifyFns, s.onStatusChanged[i])
 				}
 			}
 		}
-		if maxSpatial > buffer.DefaultMaxLayerSpatial {
-			maxSpatial = buffer.DefaultMaxLayerSpatial
-			s.params.Logger.Warnw("max spatial layer exceeded", nil, "maxSpatial", maxSpatial)
-		}
-		if maxTemporal > buffer.DefaultMaxLayerTemporal {
-			maxTemporal = buffer.DefaultMaxLayerTemporal
-			s.params.Logger.Warnw("max temporal layer exceeded", nil, "maxTemporal", maxTemporal)
-		}
-
-		s.params.Logger.Debugw("max layer changed", "maxSpatial", maxSpatial, "maxTemporal", maxTemporal)
-		oldMaxSpatial := s.maxSpatialLayer
-		s.maxSpatialLayer, s.maxTemporalLayer = maxSpatial, maxTemporal
-		if oldMaxSpatial == -1 {
-			s.lastBitrateReport = time.Now()
-			go s.worker(s.generation.Inc())
-		}
-
-		if oldMaxSpatial > s.maxSpatialLayer {
-			notifyStatus = StreamStatusStopped
-			for i := s.maxSpatialLayer + 1; i <= oldMaxSpatial; i++ {
-				notifyFns = append(notifyFns, s.onStatusChanged[i])
-			}
-		} else if oldMaxSpatial < s.maxSpatialLayer {
-			notifyStatus = StreamStatusActive
-			for i := oldMaxSpatial + 1; i <= s.maxSpatialLayer; i++ {
-				notifyFns = append(notifyFns, s.onStatusChanged[i])
-			}
-		}
-
 	}
 
 	dtis := ddVal.Descriptor.FrameDependencies.DecodeTargetIndications

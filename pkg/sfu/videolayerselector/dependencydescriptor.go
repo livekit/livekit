@@ -18,13 +18,16 @@ type DependencyDescriptor struct {
 	needsDecodeTargetBitmask   bool
 	activeDecodeTargetsBitmask *uint32
 	structure                  *dede.FrameDependencyStructure
+	seqWrapAround              *utils.WrapAround[uint16, uint64]
+	structureExtSeq            uint64
 }
 
 func NewDependencyDescriptor(logger logger.Logger) *DependencyDescriptor {
 	return &DependencyDescriptor{
-		Base:      NewBase(logger),
-		frameNum:  utils.NewWrapAround[uint16, uint64](),
-		decisions: NewSelectorDecisionCache(256),
+		Base:          NewBase(logger),
+		frameNum:      utils.NewWrapAround[uint16, uint64](),
+		decisions:     NewSelectorDecisionCache(256),
+		seqWrapAround: utils.NewWrapAround[uint16, uint64](),
 	}
 }
 
@@ -54,6 +57,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 
 	frameNum := d.frameNum.Update(dd.FrameNumber)
 	extFrameNum := frameNum.ExtendedVal
+	extSeq := d.seqWrapAround.Update(extPkt.Packet.SequenceNumber).ExtendedVal
 
 	fd := dd.FrameDependencies
 	incomingLayer := buffer.VideoLayer{
@@ -110,11 +114,11 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		return
 	}
 
-	// DD-TODO should not update for out-of-order RTP packets
 	if dd.AttachedStructure != nil {
-		// update decode target layer and active decode targets
-		// DD-TODO : these targets info can be shared by all the downtracks, no need calculate in every selector
-		d.updateDependencyStructure(dd.AttachedStructure)
+		if extSeq > d.structureExtSeq {
+			d.structureExtSeq = extSeq
+			d.structure = dd.AttachedStructure
+		}
 	}
 
 	// DD-TODO : we don't have a rtp queue to ensure the order of packets now,
@@ -139,6 +143,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 			continue
 		}
 
+		// DD-TODO : if activeDecodeTargets is nil, use last seen activeDecodeTargets
 		if activeDecodeTargets != nil && ((*activeDecodeTargets)&(1<<dt.Target) == 0) {
 			continue
 		}
@@ -252,6 +257,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		if d.needsDecodeTargetBitmask {
 			d.needsDecodeTargetBitmask = false
 
+			// DD-TODO : should use currentLayer instead of targetLayer, and update it every time we switch layer(not only when we switch targetLayer)
 			d.activeDecodeTargetsBitmask = buffer.GetActiveDecodeTargetBitmask(d.targetLayer, ddwdt.DecodeTargets)
 			d.logger.Debugw("setting decode target bitmask", "activeDecodeTargetsBitmask", d.activeDecodeTargetsBitmask)
 		}
