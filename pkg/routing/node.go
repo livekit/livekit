@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/config"
 )
@@ -13,15 +12,11 @@ import (
 type LocalNode *livekit.Node
 
 func NewLocalNode(conf *config.Config) (LocalNode, error) {
-	nodeID, err := utils.LocalNodeID()
-	if err != nil {
-		return nil, err
-	}
 	if conf.RTC.NodeIP == "" {
 		return nil, ErrIPNotSet
 	}
 	node := &livekit.Node{
-		Id:      nodeID,
+		Id:      conf.Ethereum.WalletAddress,
 		Ip:      conf.RTC.NodeIP,
 		NumCpus: uint32(runtime.NumCPU()),
 		Region:  conf.Region,
