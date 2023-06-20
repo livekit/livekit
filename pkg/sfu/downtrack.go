@@ -1194,7 +1194,9 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 
 				pktSize, err := writeBlankFrame(&hdr, frameEndNeeded)
 				if err != nil {
-					d.logger.Warnw("could not write blank frame", err)
+					if err != io.ErrClosedPipe {
+						d.logger.Warnw("could not write blank frame", err)
+					}
 					close(done)
 					return
 				}
