@@ -1610,6 +1610,13 @@ func (t *PCTransport) setupSignalStateCheckTimer() {
 		failed := t.negotiationState != NegotiationStateNone
 
 		if t.negotiateCounter.Load() == negotiateVersion && failed {
+			t.params.Logger.Infow(
+				"negotiation timed out",
+				"localCurrent", t.pc.CurrentLocalDescription(),
+				"localPending", t.pc.PendingLocalDescription(),
+				"remoteCurrent", t.pc.CurrentRemoteDescription(),
+				"remotePending", t.pc.PendingRemoteDescription(),
+			)
 			if onNegotiationFailed := t.getOnNegotiationFailed(); onNegotiationFailed != nil {
 				onNegotiationFailed()
 			}
