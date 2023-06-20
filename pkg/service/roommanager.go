@@ -55,7 +55,7 @@ type RoomManager struct {
 
 	rooms map[livekit.RoomName]*rtc.Room
 
-	iceConfigCache map[livekit.ParticipantIdentity]*iceConfigCacheEntry
+	iceConfigCache map[livekit.ParticipantID]*iceConfigCacheEntry
 }
 
 func NewLocalRoomManager(
@@ -86,7 +86,7 @@ func NewLocalRoomManager(
 
 		rooms: make(map[livekit.RoomName]*rtc.Room),
 
-		iceConfigCache: make(map[livekit.ParticipantIdentity]*iceConfigCacheEntry),
+		iceConfigCache: make(map[livekit.ParticipantID]*iceConfigCacheEntry),
 
 		serverInfo: &livekit.ServerInfo{
 			Edition:  livekit.ServerInfo_Standard,
@@ -388,7 +388,7 @@ func (r *RoomManager) StartSession(
 	})
 	participant.OnICEConfigChanged(func(participant types.LocalParticipant, iceConfig *livekit.ICEConfig) {
 		r.lock.Lock()
-		r.iceConfigCache[participant.Identity()] = &iceConfigCacheEntry{
+		r.iceConfigCache[participant.ID()] = &iceConfigCacheEntry{
 			iceConfig:  iceConfig,
 			modifiedAt: time.Now(),
 		}
@@ -718,9 +718,9 @@ func (r *RoomManager) setIceConfig(participant types.LocalParticipant) *livekit.
 func (r *RoomManager) getIceConfig(participant types.LocalParticipant) *livekit.ICEConfig {
 	r.lock.Lock()
 	defer r.lock.Unlock()
-	iceConfigCacheEntry, ok := r.iceConfigCache[participant.Identity()]
+	iceConfigCacheEntry, ok := r.iceConfigCache[participant.ID()]
 	if !ok || time.Since(iceConfigCacheEntry.modifiedAt) > iceConfigTTL {
-		delete(r.iceConfigCache, participant.Identity())
+		delete(r.iceConfigCache, participant.ID())
 		return nil
 	}
 	return iceConfigCacheEntry.iceConfig
