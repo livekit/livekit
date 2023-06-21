@@ -487,7 +487,7 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 
 	// close participant as well
 	r.Logger.Debugw("closing participant for removal", "pID", p.ID(), "participant", p.Identity())
-	_ = p.Close(true, reason)
+	_ = p.Close(true, reason, false)
 
 	r.leftAt.Store(time.Now().Unix())
 
@@ -622,7 +622,7 @@ func (r *Room) Close() {
 	r.lock.Unlock()
 	r.Logger.Infow("closing room")
 	for _, p := range r.GetParticipants() {
-		_ = p.Close(true, types.ParticipantCloseReasonRoomClose)
+		_ = p.Close(true, types.ParticipantCloseReasonRoomClose, false)
 	}
 	r.protoProxy.Stop()
 	if r.onClose != nil {
@@ -705,18 +705,18 @@ func (r *Room) SimulateScenario(participant types.LocalParticipant, simulateScen
 	case *livekit.SimulateScenario_Migration:
 		r.Logger.Infow("simulating migration", "participant", participant.Identity())
 		// drop participant without necessarily cleaning up
-		if err := participant.Close(false, types.ParticipantCloseReasonSimulateMigration); err != nil {
+		if err := participant.Close(false, types.ParticipantCloseReasonSimulateMigration, true); err != nil {
 			return err
 		}
 	case *livekit.SimulateScenario_NodeFailure:
 		r.Logger.Infow("simulating node failure", "participant", participant.Identity())
 		// drop participant without necessarily cleaning up
-		if err := participant.Close(false, types.ParticipantCloseReasonSimulateNodeFailure); err != nil {
+		if err := participant.Close(false, types.ParticipantCloseReasonSimulateNodeFailure, true); err != nil {
 			return err
 		}
 	case *livekit.SimulateScenario_ServerLeave:
 		r.Logger.Infow("simulating server leave", "participant", participant.Identity())
-		if err := participant.Close(true, types.ParticipantCloseReasonSimulateServerLeave); err != nil {
+		if err := participant.Close(true, types.ParticipantCloseReasonSimulateServerLeave, false); err != nil {
 			return err
 		}
 	case *livekit.SimulateScenario_SwitchCandidateProtocol:
