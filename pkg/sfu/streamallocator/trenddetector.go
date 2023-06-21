@@ -125,10 +125,23 @@ func (t *TrendDetector) GetDirection() TrendDirection {
 func (t *TrendDetector) ToString() string {
 	now := time.Now()
 	elapsed := now.Sub(t.startTime).Seconds()
-	return fmt.Sprintf("n: %s, t: %+v|%+v|%.2fs, v: %d|%d|%d|%+v|%.2f",
+	samplesStr := ""
+	if len(t.samples) > 0 {
+		firstTime := t.samples[0].at
+		samplesStr += "["
+		for i, sample := range t.samples {
+			suffix := ", "
+			if i == len(t.samples)-1 {
+				suffix = ""
+			}
+			samplesStr += fmt.Sprintf("%d(%d)%s", sample.value, sample.at.Sub(firstTime).Milliseconds(), suffix)
+		}
+		samplesStr += "]"
+	}
+	return fmt.Sprintf("n: %s, t: %+v|%+v|%.2fs, v: %d|%d|%d|%s|%.2f",
 		t.params.Name,
 		t.startTime.Format(time.UnixDate), now.Format(time.UnixDate), elapsed,
-		t.numSamples, t.lowestValue, t.highestValue, t.samples, kendallsTau(t.samples),
+		t.numSamples, t.lowestValue, t.highestValue, samplesStr, kendallsTau(t.samples),
 	)
 }
 
