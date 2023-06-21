@@ -222,9 +222,6 @@ type DownTrack struct {
 	deltaStatsSnapshotId           uint32
 	deltaStatsOverriddenSnapshotId uint32
 
-	// for throttling error logs
-	writeIOErrors atomic.Uint32
-
 	isNACKThrottled atomic.Bool
 
 	activePaddingOnMuteUpTrack atomic.Bool
