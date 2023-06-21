@@ -208,7 +208,7 @@ func getConfig(c *cli.Context) (*config.Config, error) {
 			if conf.BindAddresses == nil {
 				conf.BindAddresses = []string{
 					"127.0.0.1",
-					"[::1]",
+					"::1",
 				}
 			}
 		}
