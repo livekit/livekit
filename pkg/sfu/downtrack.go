@@ -221,9 +221,6 @@ type DownTrack struct {
 	deltaStatsSnapshotId           uint32
 	deltaStatsOverriddenSnapshotId uint32
 
-	// for throttling error logs
-	writeIOErrors atomic.Uint32
-
 	isNACKThrottled atomic.Bool
 
 	activePaddingOnMuteUpTrack atomic.Bool
@@ -610,12 +607,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 
 	_, err = d.writeStream.WriteRTP(hdr, payload)
 	if err != nil {
-		if errors.Is(err, io.ErrClosedPipe) {
-			writeIOErrors := d.writeIOErrors.Inc()
-			if (writeIOErrors % 100) == 1 {
-				d.logger.Errorw("write rtp packet failed", err, "count", writeIOErrors)
-			}
-		} else {
+		if !errors.Is(err, io.ErrClosedPipe) {
 			d.logger.Errorw("write rtp packet failed", err)
 		}
 		return err

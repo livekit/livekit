@@ -347,7 +347,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				websocket.IsCloseError(err, websocket.CloseAbnormalClosure, websocket.CloseGoingAway, websocket.CloseNormalClosure, websocket.CloseNoStatusReceived) {
 				pLogger.Infow("exit ws read loop for closed connection", "connID", cr.ConnectionID, "wsError", err)
 			} else {
-				pLogger.Errorw("error reading from websocket", err)
+				pLogger.Errorw("error reading from websocket", err, "connID", cr.ConnectionID)
 			}
 			return
 		}

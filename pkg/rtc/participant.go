@@ -2,7 +2,6 @@ package rtc
 
 import (
 	"context"
-	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -1390,7 +1389,7 @@ func (p *ParticipantImpl) subscriberRTCPWorker() {
 					pkts = append(pkts, &rtcp.SourceDescription{Chunks: sd})
 				}
 				if err := p.TransportManager.WriteSubscriberRTCP(pkts); err != nil {
-					if err == io.EOF || err == io.ErrClosedPipe {
+					if IsEOF(err) {
 						return
 					}
 					p.params.Logger.Errorw("could not send down track reports", err)
@@ -1407,7 +1406,7 @@ func (p *ParticipantImpl) subscriberRTCPWorker() {
 				pkts = append(pkts, &rtcp.SourceDescription{Chunks: sd})
 			}
 			if err := p.TransportManager.WriteSubscriberRTCP(pkts); err != nil {
-				if err == io.EOF || err == io.ErrClosedPipe {
+				if IsEOF(err) {
 					return
 				}
 				p.params.Logger.Errorw("could not send down track reports", err)
@@ -1980,7 +1979,9 @@ func (p *ParticipantImpl) publisherRTCPWorker() {
 		}
 
 		if err := p.TransportManager.WritePublisherRTCP(pkts); err != nil {
-			p.params.Logger.Errorw("could not write RTCP to participant", err)
+			if !IsEOF(err) {
+				p.params.Logger.Errorw("could not write RTCP to participant", err)
+			}
 		}
 	}
 }
