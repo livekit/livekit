@@ -211,6 +211,9 @@ func getConfig(c *cli.Context) (*config.Config, error) {
 					"::1",
 				}
 			}
+			for _, bindAddr := range conf.BindAddresses {
+				conf.RTC.IPs.Includes = append(conf.RTC.IPs.Includes, bindAddr + "/24")
+			}
 		}
 	}
 	return conf, nil
