@@ -48,7 +48,7 @@ type ParticipantInit struct {
 
 type NewParticipantCallback func(
 	ctx context.Context,
-	roomName livekit.RoomName,
+	roomKey livekit.RoomKey,
 	pi ParticipantInit,
 	requestSource MessageSource,
 	responseSink MessageSink,
@@ -56,7 +56,7 @@ type NewParticipantCallback func(
 
 type RTCMessageCallback func(
 	ctx context.Context,
-	roomName livekit.RoomName,
+	roomKey livekit.RoomKey,
 	identity livekit.ParticipantIdentity,
 	msg *livekit.RTCNodeMessage,
 )
@@ -73,9 +73,9 @@ type Router interface {
 
 	ListNodes() ([]*livekit.Node, error)
 
-	GetNodeForRoom(ctx context.Context, roomName livekit.RoomName) (*livekit.Node, error)
-	SetNodeForRoom(ctx context.Context, roomName livekit.RoomName, nodeId livekit.NodeID) error
-	ClearRoomState(ctx context.Context, roomName livekit.RoomName) error
+	GetNodeForRoom(ctx context.Context, roomKey livekit.RoomKey) (*livekit.Node, error)
+	SetNodeForRoom(ctx context.Context, roomKey livekit.RoomKey, nodeId livekit.NodeID) error
+	ClearRoomState(ctx context.Context, roomKey livekit.RoomKey) error
 
 	GetRegion() string
 
@@ -92,33 +92,29 @@ type Router interface {
 
 type MessageRouter interface {
 	// StartParticipantSignal participant signal connection is ready to start
-	StartParticipantSignal(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit) (connectionID livekit.ConnectionID, reqSink MessageSink, resSource MessageSource, err error)
+	StartParticipantSignal(ctx context.Context, roomKey livekit.RoomKey, pi ParticipantInit) (connectionID livekit.ConnectionID, reqSink MessageSink, resSource MessageSource, err error)
 
 	// Write a message to a participant or room
-	WriteParticipantRTC(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) error
-	WriteRoomRTC(ctx context.Context, roomName livekit.RoomName, msg *livekit.RTCNodeMessage) error
+	WriteParticipantRTC(ctx context.Context, roomKey livekit.RoomKey, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) error
+	WriteRoomRTC(ctx context.Context, roomKey livekit.RoomKey, msg *livekit.RTCNodeMessage) error
 }
 
 func CreateRouter(config *config.Config, rc redis.UniversalClient, node LocalNode, signalClient SignalClient) Router {
 	lr := NewLocalRouter(node, signalClient)
-
-	if rc != nil {
-		return NewRedisRouter(config, lr, rc)
-	}
 
 	// local routing and store
 	logger.Infow("using single-node routing")
 	return lr
 }
 
-func (pi *ParticipantInit) ToStartSession(roomName livekit.RoomName, connectionID livekit.ConnectionID) (*livekit.StartSession, error) {
+func (pi *ParticipantInit) ToStartSession(roomKey livekit.RoomKey, connectionID livekit.ConnectionID) (*livekit.StartSession, error) {
 	claims, err := json.Marshal(pi.Grants)
 	if err != nil {
 		return nil, err
 	}
 
 	return &livekit.StartSession{
-		RoomName: string(roomName),
+		RoomName: string(roomKey),
 		Identity: string(pi.Identity),
 		Name:     string(pi.Name),
 		// connection id is to allow the RTC node to identify where to route the message back to

@@ -32,7 +32,6 @@ import (
 
 type LivekitServer struct {
 	config       *config.Config
-	ioService    *IOInfoService
 	rtcService   *RTCService
 	httpServer   *http.Server
 	httpsServer  *http.Server
@@ -51,7 +50,6 @@ func NewLivekitServer(conf *config.Config,
 	roomService livekit.RoomService,
 	egressService *EgressService,
 	ingressService *IngressService,
-	ioService *IOInfoService,
 	rtcService *RTCService,
 	keyProvider auth.KeyProviderPublicKey,
 	router routing.Router,
@@ -62,7 +60,6 @@ func NewLivekitServer(conf *config.Config,
 ) (s *LivekitServer, err error) {
 	s = &LivekitServer{
 		config:       conf,
-		ioService:    ioService,
 		rtcService:   rtcService,
 		router:       router,
 		roomManager:  roomManager,
@@ -185,10 +182,6 @@ func (s *LivekitServer) Start() error {
 	}()
 
 	if err := s.router.Start(); err != nil {
-		return err
-	}
-
-	if err := s.ioService.Start(); err != nil {
 		return err
 	}
 
@@ -321,7 +314,6 @@ func (s *LivekitServer) Start() error {
 
 	s.roomManager.Stop()
 	s.signalServer.Stop()
-	s.ioService.Stop()
 
 	close(s.closedChan)
 	return nil

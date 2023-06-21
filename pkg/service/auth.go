@@ -22,6 +22,7 @@ const (
 )
 
 type grantsKey struct{}
+type apiKeyKey struct{}
 
 var (
 	ErrPermissionDenied          = errors.New("permissions denied")
@@ -93,8 +94,10 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 		}
 
 		// set grants in context
-		ctx := r.Context()
-		r = r.WithContext(context.WithValue(ctx, grantsKey{}, grants))
+		ctx := context.WithValue(r.Context(), grantsKey{}, grants)
+		ctx = context.WithValue(ctx, apiKeyKey{}, v.APIKey())
+
+		r = r.WithContext(ctx)
 	}
 
 	next.ServeHTTP(w, r)
@@ -107,6 +110,15 @@ func GetGrants(ctx context.Context) *auth.ClaimGrants {
 		return nil
 	}
 	return claims
+}
+
+func GetApiKey(ctx context.Context) livekit.ApiKey {
+	val := ctx.Value(apiKeyKey{})
+	apiKey, ok := val.(string)
+	if !ok {
+		return livekit.ApiKey("")
+	}
+	return livekit.ApiKey(apiKey)
 }
 
 func WithGrants(ctx context.Context, grants *auth.ClaimGrants) context.Context {

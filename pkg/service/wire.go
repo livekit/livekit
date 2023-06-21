@@ -47,7 +47,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		telemetry.NewAnalyticsService,
 		telemetry.NewTelemetryService,
 		getMessageBus,
-		NewIOInfoService,
 		getEgressClient,
 		egress.NewRedisRPCClient,
 		getEgressStore,
@@ -170,21 +169,11 @@ func getEgressClient(conf *config.Config, nodeID livekit.NodeID, bus psrpc.Messa
 }
 
 func getEgressStore(s ObjectStore) EgressStore {
-	switch store := s.(type) {
-	case *RedisStore:
-		return store
-	default:
-		return nil
-	}
+	return nil
 }
 
 func getIngressStore(s ObjectStore) IngressStore {
-	switch store := s.(type) {
-	case *RedisStore:
-		return store
-	default:
-		return nil
-	}
+	return nil
 }
 
 func getIngressConfig(conf *config.Config) *config.IngressConfig {

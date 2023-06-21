@@ -12,6 +12,7 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	lkutils "github.com/livekit/livekit-server/pkg/utils"
 )
 
 const (
@@ -143,10 +144,15 @@ func LoggerWithParticipant(l logger.Logger, identity livekit.ParticipantIdentity
 	return l.WithValues(values...)
 }
 
-func LoggerWithRoom(l logger.Logger, name livekit.RoomName, roomID livekit.RoomID) logger.Logger {
+func LoggerWithRoom(l logger.Logger, roomKey livekit.RoomKey, roomID livekit.RoomID) logger.Logger {
+	roomName, apiKey, _ := lkutils.ParseRoomKey(roomKey)
+
 	values := make([]interface{}, 0, 2)
-	if name != "" {
-		values = append(values, "room", name)
+	if roomName != "" {
+		values = append(values, "room", roomName)
+	}
+	if apiKey != "" {
+		values = append(values, "apiKey", apiKey)
 	}
 	if roomID != "" {
 		values = append(values, "roomID", roomID)

@@ -8,6 +8,7 @@ import (
 
 	"github.com/twitchtv/twirp"
 
+	lkutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -73,6 +74,9 @@ func NewEgressService(
 }
 
 func (s *EgressService) StartRoomCompositeEgress(ctx context.Context, req *livekit.RoomCompositeEgressRequest) (*livekit.EgressInfo, error) {
+	apiKey := GetApiKey(ctx)
+	roomKey := lkutils.RoomKey(livekit.RoomName(req.RoomName), apiKey)
+
 	fields := []interface{}{"room", req.RoomName, "baseUrl", req.CustomBaseUrl}
 	if t := reflect.TypeOf(req.Output); t != nil {
 		fields = append(fields, "outputType", t.String())
@@ -80,7 +84,7 @@ func (s *EgressService) StartRoomCompositeEgress(ctx context.Context, req *livek
 	defer func() {
 		AppendLogFields(ctx, fields...)
 	}()
-	ei, err := s.startEgress(ctx, livekit.RoomName(req.RoomName), &rpc.StartEgressRequest{
+	ei, err := s.startEgress(ctx, roomKey, &rpc.StartEgressRequest{
 		Request: &rpc.StartEgressRequest_RoomComposite{
 			RoomComposite: req,
 		},
@@ -93,8 +97,11 @@ func (s *EgressService) StartRoomCompositeEgress(ctx context.Context, req *livek
 }
 
 func (s *EgressService) StartTrackCompositeEgress(ctx context.Context, req *livekit.TrackCompositeEgressRequest) (*livekit.EgressInfo, error) {
+	apiKey := GetApiKey(ctx)
+	roomKey := lkutils.RoomKey(livekit.RoomName(req.RoomName), apiKey)
+
 	fields := []interface{}{
-		"room", req.RoomName, "audioTrackID", req.AudioTrackId, "videoTrackID", req.VideoTrackId,
+		"room", roomKey, "audioTrackID", req.AudioTrackId, "videoTrackID", req.VideoTrackId,
 	}
 	if t := reflect.TypeOf(req.Output); t != nil {
 		fields = append(fields, "outputType", t.String())
@@ -102,7 +109,7 @@ func (s *EgressService) StartTrackCompositeEgress(ctx context.Context, req *live
 	defer func() {
 		AppendLogFields(ctx, fields...)
 	}()
-	ei, err := s.startEgress(ctx, livekit.RoomName(req.RoomName), &rpc.StartEgressRequest{
+	ei, err := s.startEgress(ctx, roomKey, &rpc.StartEgressRequest{
 		Request: &rpc.StartEgressRequest_TrackComposite{
 			TrackComposite: req,
 		},
@@ -115,14 +122,17 @@ func (s *EgressService) StartTrackCompositeEgress(ctx context.Context, req *live
 }
 
 func (s *EgressService) StartTrackEgress(ctx context.Context, req *livekit.TrackEgressRequest) (*livekit.EgressInfo, error) {
-	fields := []interface{}{"room", req.RoomName, "trackID", req.TrackId}
+	apiKey := GetApiKey(ctx)
+	roomKey := lkutils.RoomKey(livekit.RoomName(req.RoomName), apiKey)
+
+	fields := []interface{}{"room", roomKey, "trackID", req.TrackId}
 	if t := reflect.TypeOf(req.Output); t != nil {
 		fields = append(fields, "outputType", t.String())
 	}
 	defer func() {
 		AppendLogFields(ctx, fields...)
 	}()
-	ei, err := s.startEgress(ctx, livekit.RoomName(req.RoomName), &rpc.StartEgressRequest{
+	ei, err := s.startEgress(ctx, roomKey, &rpc.StartEgressRequest{
 		Request: &rpc.StartEgressRequest_Track{
 			Track: req,
 		},
@@ -154,15 +164,15 @@ func (s *EgressService) StartWebEgress(ctx context.Context, req *livekit.WebEgre
 	return ei, err
 }
 
-func (s *EgressService) startEgress(ctx context.Context, roomName livekit.RoomName, req *rpc.StartEgressRequest) (*livekit.EgressInfo, error) {
+func (s *EgressService) startEgress(ctx context.Context, roomKey livekit.RoomKey, req *rpc.StartEgressRequest) (*livekit.EgressInfo, error) {
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	} else if s.launcher == nil {
 		return nil, ErrEgressNotConnected
 	}
 
-	if roomName != "" {
-		room, _, _, err := s.store.LoadRoom(ctx, roomName, false)
+	if roomKey != "" {
+		room, _, _, err := s.store.LoadRoom(ctx, roomKey, false)
 		if err != nil {
 			return nil, err
 		}

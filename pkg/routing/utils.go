@@ -9,14 +9,14 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
-func ParticipantKeyLegacy(roomName livekit.RoomName, identity livekit.ParticipantIdentity) livekit.ParticipantKey {
-	return livekit.ParticipantKey(string(roomName) + "|" + string(identity))
+func ParticipantKeyLegacy(roomKey livekit.RoomKey, identity livekit.ParticipantIdentity) livekit.ParticipantKey {
+	return livekit.ParticipantKey(string(roomKey) + "|" + string(identity))
 }
 
-func parseParticipantKeyLegacy(pkey livekit.ParticipantKey) (roomName livekit.RoomName, identity livekit.ParticipantIdentity, err error) {
+func parseParticipantKeyLegacy(pkey livekit.ParticipantKey) (roomKey livekit.RoomKey, identity livekit.ParticipantIdentity, err error) {
 	parts := strings.Split(string(pkey), "|")
 	if len(parts) == 2 {
-		roomName = livekit.RoomName(parts[0])
+		roomKey = livekit.RoomKey(parts[0])
 		identity = livekit.ParticipantIdentity(parts[1])
 		return
 	}
@@ -25,17 +25,17 @@ func parseParticipantKeyLegacy(pkey livekit.ParticipantKey) (roomName livekit.Ro
 	return
 }
 
-func ParticipantKey(roomName livekit.RoomName, identity livekit.ParticipantIdentity) livekit.ParticipantKey {
-	return livekit.ParticipantKey(encode(string(roomName), string(identity)))
+func ParticipantKey(roomKey livekit.RoomKey, identity livekit.ParticipantIdentity) livekit.ParticipantKey {
+	return livekit.ParticipantKey(encode(string(roomKey), string(identity)))
 }
 
-func parseParticipantKey(pkey livekit.ParticipantKey) (roomName livekit.RoomName, identity livekit.ParticipantIdentity, err error) {
+func parseParticipantKey(pkey livekit.ParticipantKey) (roomKey livekit.RoomKey, identity livekit.ParticipantIdentity, err error) {
 	parts, err := decode(string(pkey))
 	if err != nil {
 		return
 	}
 	if len(parts) == 2 {
-		roomName = livekit.RoomName(parts[0])
+		roomKey = livekit.RoomKey(parts[0])
 		identity = livekit.ParticipantIdentity(parts[1])
 		return
 	}
