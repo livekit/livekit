@@ -272,8 +272,10 @@ func (r *RoomManager) StartSession(
 				participant,
 				requestSource,
 				responseSink,
-				r.iceServersForRoom(protoRoom,
-					iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS),
+				r.iceServersForRoom(
+					protoRoom,
+					iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS,
+				),
 				pi.ReconnectReason,
 			); err != nil {
 				logger.Warnw("could not resume participant", err, "participant", pi.Identity)
