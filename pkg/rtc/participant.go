@@ -650,13 +650,13 @@ func (p *ParticipantImpl) Start() {
 	})
 }
 
-func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseReason) error {
+func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseReason, isExpectedToResume bool) error {
 	if p.isClosed.Swap(true) {
 		// already closed
 		return nil
 	}
 
-	p.params.Logger.Infow("participant closing", "sendLeave", sendLeave, "reason", reason.String())
+	p.params.Logger.Infow("participant closing", "sendLeave", sendLeave, "reason", reason.String(), "isExpectedToResume", isExpectedToResume)
 	p.clearDisconnectTimer()
 	p.clearMigrationTimer()
 
@@ -680,10 +680,10 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	p.pendingTracksLock.Unlock()
 
 	for _, t := range closeMutedTrack {
-		t.Close(!sendLeave)
+		t.Close(isExpectedToResume)
 	}
 
-	p.UpTrackManager.Close(!sendLeave)
+	p.UpTrackManager.Close(isExpectedToResume)
 
 	p.updateState(livekit.ParticipantInfo_DISCONNECTED)
 
@@ -699,7 +699,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	// Close peer connections without blocking participant Close. If peer connections are gathering candidates
 	// Close will block.
 	go func() {
-		p.SubscriptionManager.Close(!sendLeave)
+		p.SubscriptionManager.Close(isExpectedToResume)
 		p.TransportManager.Close()
 	}()
 
@@ -760,7 +760,7 @@ func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
 	p.migrationTimer = time.AfterFunc(migrationWaitDuration, func() {
 		p.clearMigrationTimer()
 
-		if p.isClosed.Load() || p.IsDisconnected() {
+		if p.IsClosed() || p.IsDisconnected() {
 			return
 		}
 		// TODO: change to debug once we are confident
@@ -1338,11 +1338,11 @@ func (p *ParticipantImpl) setupDisconnectTimer() {
 	p.disconnectTimer = time.AfterFunc(disconnectCleanupDuration, func() {
 		p.clearDisconnectTimer()
 
-		if p.isClosed.Load() || p.IsDisconnected() {
+		if p.IsClosed() || p.IsDisconnected() {
 			return
 		}
 		p.params.Logger.Infow("closing disconnected participant")
-		_ = p.Close(true, types.ParticipantCloseReasonPeerConnectionDisconnected)
+		_ = p.Close(true, types.ParticipantCloseReasonPeerConnectionDisconnected, false)
 	})
 	p.lock.Unlock()
 }
@@ -2082,8 +2082,8 @@ func (p *ParticipantImpl) IssueFullReconnect(reason types.ParticipantCloseReason
 	}
 	p.CloseSignalConnection(scr)
 
-	// on a full reconnect, no need to supervise this participant anymore
-	p.supervisor.Stop()
+	// a full reconnect == client should connect back with a new session, close current one
+	p.Close(false, reason, false)
 }
 
 func (p *ParticipantImpl) onPublicationError(trackID livekit.TrackID) {
