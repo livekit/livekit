@@ -143,6 +143,13 @@ func (s *IOInfoService) UpdateIngressState(ctx context.Context, req *rpc.UpdateI
 
 			logger.Infow("ingress buffering", "ingressID", req.IngressId)
 		}
+	} else {
+		// Status didn't change, send Updated event
+		info.State = req.State
+
+		s.telemetry.IngressUpdated(ctx, info)
+
+		logger.Infow("ingress updated", "ingressID", req.IngressId)
 	}
 
 	return &emptypb.Empty{}, nil
