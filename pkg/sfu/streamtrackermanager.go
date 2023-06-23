@@ -548,11 +548,9 @@ func (s *StreamTrackerManager) GetReferenceLayerRTPTimestamp(ts uint32, layer in
 		return 0, fmt.Errorf("invalid layer, target: %d, reference: %d", layer, referenceLayer)
 	}
 
-	/* TODO-RESTORE-AFTER-DEBUG - this is just fast path, below calculations should yield same
 	if layer == referenceLayer {
 		return ts, nil
 	}
-	*/
 
 	var srLayer *buffer.RTCPSenderReportData
 	if int(layer) < len(s.senderReports) {
