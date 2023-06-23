@@ -154,7 +154,7 @@ func NewRoom(
 	roomP2PCommunicator p2p.RoomCommunicator,
 ) *Room {
 	bufferFactory := buffer.NewFactoryOfBufferFactory(config.Receiver.PacketBufferSize)
-	logger := LoggerWithRoom(logger.GetLogger(), livekit.RoomName(room.Name), livekit.RoomID(room.Sid))
+	logger := LoggerWithRoom(logger.GetLogger(), livekit.RoomKey(room.Key), livekit.RoomID(room.Sid))
 	config.SetBufferFactory(bufferFactory.CreateBufferFactory())
 
 	r := &Room{
@@ -442,6 +442,10 @@ func (r *Room) ToProto() *livekit.Room {
 
 func (r *Room) Name() livekit.RoomName {
 	return livekit.RoomName(r.protoRoom.Name)
+}
+
+func (r *Room) Key() livekit.RoomKey {
+	return livekit.RoomKey(r.protoRoom.Key)
 }
 
 func (r *Room) ID() livekit.RoomID {

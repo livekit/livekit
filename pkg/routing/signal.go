@@ -21,7 +21,7 @@ import (
 //counterfeiter:generate . SignalClient
 type SignalClient interface {
 	ActiveCount() int
-	StartParticipantSignal(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit, nodeID livekit.NodeID) (connectionID livekit.ConnectionID, reqSink MessageSink, resSource MessageSource, err error)
+	StartParticipantSignal(ctx context.Context, roomKey livekit.RoomKey, pi ParticipantInit, nodeID livekit.NodeID) (connectionID livekit.ConnectionID, reqSink MessageSink, resSource MessageSource, err error)
 }
 
 type signalClient struct {
@@ -60,7 +60,7 @@ func (r *signalClient) ActiveCount() int {
 
 func (r *signalClient) StartParticipantSignal(
 	ctx context.Context,
-	roomName livekit.RoomName,
+	roomKey livekit.RoomKey,
 	pi ParticipantInit,
 	nodeID livekit.NodeID,
 ) (
@@ -70,14 +70,14 @@ func (r *signalClient) StartParticipantSignal(
 	err error,
 ) {
 	connectionID = livekit.ConnectionID(utils.NewGuid("CO_"))
-	ss, err := pi.ToStartSession(roomName, connectionID)
+	ss, err := pi.ToStartSession(roomKey, connectionID)
 	if err != nil {
 		return
 	}
 
 	logger.Debugw(
 		"starting signal connection",
-		"room", roomName,
+		"room", roomKey,
 		"reqNodeID", nodeID,
 		"participant", pi.Identity,
 		"connectionID", connectionID,

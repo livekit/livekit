@@ -19,25 +19,25 @@ type ObjectStore interface {
 
 	// enable locking on a specific room to prevent race
 	// returns a (lock uuid, error)
-	LockRoom(ctx context.Context, roomName livekit.RoomName, duration time.Duration) (string, error)
-	UnlockRoom(ctx context.Context, roomName livekit.RoomName, uid string) error
+	LockRoom(ctx context.Context, roomKey livekit.RoomKey, duration time.Duration) (string, error)
+	UnlockRoom(ctx context.Context, roomKey livekit.RoomKey, uid string) error
 
-	StoreRoom(ctx context.Context, room *livekit.Room, internal *livekit.RoomInternal) error
-	DeleteRoom(ctx context.Context, roomName livekit.RoomName) error
+	StoreRoom(ctx context.Context, room *livekit.Room, roomKey livekit.RoomKey, internal *livekit.RoomInternal) error
+	DeleteRoom(ctx context.Context, roomKey livekit.RoomKey) error
 
-	StoreParticipant(ctx context.Context, roomName livekit.RoomName, participant *livekit.ParticipantInfo) error
-	DeleteParticipant(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) error
+	StoreParticipant(ctx context.Context, roomKey livekit.RoomKey, participant *livekit.ParticipantInfo) error
+	DeleteParticipant(ctx context.Context, roomKey livekit.RoomKey, identity livekit.ParticipantIdentity) error
 }
 
 //counterfeiter:generate . ServiceStore
 type ServiceStore interface {
-	LoadRoom(ctx context.Context, roomName livekit.RoomName, includeInternal bool) (*livekit.Room, *livekit.RoomInternal, p2p.RoomCommunicator, error)
+	LoadRoom(ctx context.Context, roomKey livekit.RoomKey, includeInternal bool) (*livekit.Room, *livekit.RoomInternal, p2p.RoomCommunicator, error)
 
 	// ListRooms returns currently active rooms. if names is not nil, it'll filter and return
 	// only rooms that match
-	ListRooms(ctx context.Context, roomNames []livekit.RoomName) ([]*livekit.Room, error)
-	LoadParticipant(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) (*livekit.ParticipantInfo, error)
-	ListParticipants(ctx context.Context, roomName livekit.RoomName) ([]*livekit.ParticipantInfo, error)
+	ListRooms(ctx context.Context, roomKeys []livekit.RoomKey) ([]*livekit.Room, error)
+	LoadParticipant(ctx context.Context, roomKey livekit.RoomKey, identity livekit.ParticipantIdentity) (*livekit.ParticipantInfo, error)
+	ListParticipants(ctx context.Context, roomKey livekit.RoomKey) ([]*livekit.ParticipantInfo, error)
 }
 
 //counterfeiter:generate . EgressStore
@@ -61,6 +61,6 @@ type IngressStore interface {
 
 //counterfeiter:generate . RoomAllocator
 type RoomAllocator interface {
-	CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (*livekit.Room, error)
-	ValidateCreateRoom(ctx context.Context, roomName livekit.RoomName) error
+	CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest, apiKey livekit.ApiKey) (*livekit.Room, error)
+	ValidateCreateRoom(ctx context.Context, roomKey livekit.RoomKey) error
 }

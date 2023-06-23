@@ -20,7 +20,7 @@ import (
 
 type SessionHandler func(
 	ctx context.Context,
-	roomName livekit.RoomName,
+	roomKey livekit.RoomKey,
 	pi routing.ParticipantInit,
 	connectionID livekit.ConnectionID,
 	requestSource routing.MessageSource,
@@ -70,7 +70,7 @@ func NewDefaultSignalServer(
 ) (r *SignalServer, err error) {
 	sessionHandler := func(
 		ctx context.Context,
-		roomName livekit.RoomName,
+		roomKey livekit.RoomKey,
 		pi routing.ParticipantInit,
 		connectionID livekit.ConnectionID,
 		requestSource routing.MessageSource,
@@ -78,17 +78,7 @@ func NewDefaultSignalServer(
 	) error {
 		prometheus.IncrementParticipantRtcInit(1)
 
-		if rr, ok := router.(*routing.RedisRouter); ok {
-			pKey := routing.ParticipantKeyLegacy(roomName, pi.Identity)
-			pKeyB62 := routing.ParticipantKey(roomName, pi.Identity)
-
-			// RTC session should start on this node
-			if err := rr.SetParticipantRTCNode(pKey, pKeyB62, currentNode.Id); err != nil {
-				return err
-			}
-		}
-
-		return roomManager.StartSession(ctx, roomName, pi, requestSource, responseSink)
+		return roomManager.StartSession(ctx, roomKey, pi, requestSource, responseSink)
 	}
 
 	return NewSignalServer(livekit.NodeID(currentNode.Id), currentNode.Region, bus, config, sessionHandler)
@@ -136,7 +126,7 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 
 	err = r.sessionHandler(
 		ctx,
-		livekit.RoomName(ss.RoomName),
+		livekit.RoomKey(ss.RoomName),
 		*pi,
 		livekit.ConnectionID(ss.ConnectionId),
 		reqChan,

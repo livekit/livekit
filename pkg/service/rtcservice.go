@@ -78,35 +78,34 @@ func (s *RTCService) Validate(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("success"))
 }
 
-func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.ParticipantInit, int, error) {
+func (s *RTCService) validate(r *http.Request) (livekit.RoomKey, routing.ParticipantInit, int, error) {
 	claims := GetGrants(r.Context())
+	apiKey := GetApiKey(r.Context())
+
 	var pi routing.ParticipantInit
 
 	// require a claim
-	if claims == nil || claims.Video == nil {
+	if claims == nil || claims.Video == nil || apiKey == "" {
 		return "", pi, http.StatusUnauthorized, rtc.ErrPermissionDenied
 	}
 
-	onlyName, err := EnsureJoinPermission(r.Context())
+	roomName, err := EnsureJoinPermission(r.Context())
 	if err != nil {
 		return "", pi, http.StatusUnauthorized, err
 	}
+
+	roomKey := utils.RoomKey(roomName, apiKey)
 
 	if claims.Identity == "" {
 		return "", pi, http.StatusBadRequest, ErrIdentityEmpty
 	}
 
-	roomName := livekit.RoomName(r.FormValue("room"))
 	reconnectParam := r.FormValue("reconnect")
 	reconnectReason, _ := strconv.Atoi(r.FormValue("reconnect_reason")) // 0 means unknown reason
 	autoSubParam := r.FormValue("auto_subscribe")
 	publishParam := r.FormValue("publish")
 	adaptiveStreamParam := r.FormValue("adaptive_stream")
 	participantID := r.FormValue("sid")
-
-	if onlyName != "" {
-		roomName = onlyName
-	}
 
 	// this is new connection for existing participant -  with publish only permissions
 	if publishParam != "" {
@@ -120,7 +119,7 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 	}
 
 	// room allocator validations
-	err = s.roomAllocator.ValidateCreateRoom(r.Context(), roomName)
+	err = s.roomAllocator.ValidateCreateRoom(r.Context(), roomKey)
 	if err != nil {
 		if errors.Is(err, ErrRoomNotFound) {
 			return "", pi, http.StatusNotFound, err
@@ -132,7 +131,7 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 	region := ""
 	if router, ok := s.router.(routing.Router); ok {
 		region = router.GetRegion()
-		if foundNode, err := router.GetNodeForRoom(r.Context(), roomName); err == nil {
+		if foundNode, err := router.GetNodeForRoom(r.Context(), roomKey); err == nil {
 			if selector.LimitsReached(s.limits, foundNode.Stats) {
 				return "", pi, http.StatusServiceUnavailable, rtc.ErrLimitExceeded
 			}
@@ -160,7 +159,7 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 		pi.AdaptiveStream = boolValue(adaptiveStreamParam)
 	}
 
-	return roomName, pi, http.StatusOK, nil
+	return roomKey, pi, http.StatusOK, nil
 }
 
 func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -170,7 +169,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	roomName, pi, code, err := s.validate(r)
+	roomKey, pi, code, err := s.validate(r)
 	if err != nil {
 		handleError(w, code, err)
 		return
@@ -179,7 +178,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// for logger
 	loggerFields := []interface{}{
 		"participant", pi.Identity,
-		"room", roomName,
+		"room", roomKey,
 		"remote", false,
 	}
 
@@ -188,7 +187,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for i := 0; i < 3; i++ {
 		connectionTimeout := 3 * time.Second * time.Duration(i+1)
 		ctx := utils.ContextWithAttempt(r.Context(), i)
-		cr, err = s.startConnection(ctx, roomName, pi, connectionTimeout)
+		cr, err = s.startConnection(ctx, roomKey, pi, connectionTimeout)
 		if err == nil {
 			break
 		}
@@ -218,7 +217,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pLogger := rtc.LoggerWithParticipant(
-		rtc.LoggerWithRoom(logger.GetLogger(), roomName, livekit.RoomID(cr.Room.Sid)),
+		rtc.LoggerWithRoom(logger.GetLogger(), roomKey, livekit.RoomID(cr.Room.Sid)),
 		pi.Identity,
 		pi.ID,
 		false,
@@ -440,16 +439,23 @@ type connectionResult struct {
 	InitialResponse *livekit.SignalResponse
 }
 
-func (s *RTCService) startConnection(ctx context.Context, roomName livekit.RoomName, pi routing.ParticipantInit, timeout time.Duration) (connectionResult, error) {
+func (s *RTCService) startConnection(ctx context.Context, roomKey livekit.RoomKey, pi routing.ParticipantInit, timeout time.Duration) (connectionResult, error) {
 	var cr connectionResult
 	var err error
-	cr.Room, err = s.roomAllocator.CreateRoom(ctx, &livekit.CreateRoomRequest{Name: string(roomName)})
+
+	roomName, apiKey, err := utils.ParseRoomKey(roomKey)
+
+	if err != nil {
+		return cr, err
+	}
+
+	cr.Room, err = s.roomAllocator.CreateRoom(ctx, &livekit.CreateRoomRequest{Name: string(roomName)}, apiKey)
 	if err != nil {
 		return cr, err
 	}
 
 	// this needs to be started first *before* using router functions on this node
-	cr.ConnectionID, cr.RequestSink, cr.ResponseSource, err = s.router.StartParticipantSignal(ctx, roomName, pi)
+	cr.ConnectionID, cr.RequestSink, cr.ResponseSource, err = s.router.StartParticipantSignal(ctx, roomKey, pi)
 	if err != nil {
 		return cr, err
 	}

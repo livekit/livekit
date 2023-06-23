@@ -88,10 +88,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	ingressStore := getIngressStore(objectStore)
 	ingressService := NewIngressService(ingressConfig, nodeID, messageBus, ingressClient, ingressStore, roomService, telemetryService)
-	ioInfoService, err := NewIOInfoService(nodeID, messageBus, egressStore, ingressStore, telemetryService, rpcClient)
-	if err != nil {
-		return nil, err
-	}
 	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode, telemetryService)
 	keyProviderPublicKey, err := createKeyPublicKeyProvider(conf)
 	if err != nil {
@@ -112,7 +108,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, ioInfoService, rtcService, keyProviderPublicKey, router, roomManager, signalServer, server, currentNode)
+	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, rtcService, keyProviderPublicKey, router, roomManager, signalServer, server, currentNode)
 	if err != nil {
 		return nil, err
 	}
@@ -222,21 +218,11 @@ func getEgressClient(conf *config.Config, nodeID livekit.NodeID, bus psrpc.Messa
 }
 
 func getEgressStore(s ObjectStore) EgressStore {
-	switch store := s.(type) {
-	case *RedisStore:
-		return store
-	default:
-		return nil
-	}
+	return nil
 }
 
 func getIngressStore(s ObjectStore) IngressStore {
-	switch store := s.(type) {
-	case *RedisStore:
-		return store
-	default:
-		return nil
-	}
+	return nil
 }
 
 func getIngressConfig(conf *config.Config) *config.IngressConfig {
