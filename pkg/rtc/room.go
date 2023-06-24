@@ -550,6 +550,7 @@ func (r *Room) SyncState(participant types.LocalParticipant, state *livekit.Sync
 		}
 		if !found {
 			pLogger.Warnw("unknown track during resume", nil, "trackID", ti.Sid)
+			shouldReconnect = true
 			break
 		}
 	}
