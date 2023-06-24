@@ -556,8 +556,15 @@ func (r *Room) SyncState(participant types.LocalParticipant, state *livekit.Sync
 	if shouldReconnect {
 		pLogger.Warnw("unable to resume due to missing published tracks, starting full reconnect", nil)
 		participant.IssueFullReconnect(types.ParticipantCloseReasonPublicationError)
+		return nil
 	}
 
+	r.UpdateSubscriptions(
+		participant,
+		livekit.StringsAsTrackIDs(state.Subscription.TrackSids),
+		state.Subscription.ParticipantTracks,
+		state.Subscription.Subscribe,
+	)
 	return nil
 }
 
