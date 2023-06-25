@@ -1371,7 +1371,7 @@ func (t *PCTransport) postEvent(event event) {
 func (t *PCTransport) processEvents() {
 	for event := range t.eventCh {
 		if t.isClosed.Load() {
-			// just drain the channel with processing events
+			// just drain the channel without processing events
 			continue
 		}
 
