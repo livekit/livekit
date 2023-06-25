@@ -1370,6 +1370,11 @@ func (t *PCTransport) postEvent(event event) {
 
 func (t *PCTransport) processEvents() {
 	for event := range t.eventCh {
+		if t.isClosed.Load() {
+			// just drain the channel without processing events
+			continue
+		}
+
 		err := t.handleEvent(&event)
 		if err != nil {
 			t.params.Logger.Errorw("error handling event", err, "event", event.String())

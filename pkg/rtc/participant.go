@@ -538,6 +538,10 @@ func (p *ParticipantImpl) HandleAnswer(answer webrtc.SessionDescription) {
 }
 
 func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) error {
+	if p.IsClosed() || p.IsDisconnected() {
+		return nil
+	}
+
 	p.params.Logger.Debugw("sending answer", "transport", livekit.SignalTarget_PUBLISHER)
 	answer = p.configurePublisherAnswer(answer)
 	if err := p.writeMessage(&livekit.SignalResponse{
@@ -1290,7 +1294,7 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 }
 
 func (p *ParticipantImpl) onICECandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) error {
-	if c == nil || p.IsDisconnected() {
+	if c == nil || p.IsDisconnected() || p.IsClosed() {
 		return nil
 	}
 
