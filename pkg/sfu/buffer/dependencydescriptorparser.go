@@ -35,12 +35,15 @@ func NewDependencyDescriptorParser(ddExtID uint8, logger logger.Logger, onMaxLay
 	}
 }
 
-type DependencyDescriptorWithDecodeTarget struct {
-	Descriptor    *dd.DependencyDescriptor
-	DecodeTargets []DependencyDescriptorDecodeTarget
+type ExtDependencyDescriptor struct {
+	Descriptor *dd.DependencyDescriptor
+
+	DecodeTargets              []DependencyDescriptorDecodeTarget
+	StructureUpdated           bool
+	ActiveDecodeTargetsUpdated bool
 }
 
-func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*DependencyDescriptorWithDecodeTarget, VideoLayer, error) {
+func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescriptor, VideoLayer, error) {
 	// DD-TODO: make sure out-of-order RTP packets do not update decode targets
 	var videoLayer VideoLayer
 	ddBuf := pkt.GetExtension(r.ddExtID)
@@ -65,12 +68,18 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*DependencyDescript
 		videoLayer.Spatial, videoLayer.Temporal = int32(ddVal.FrameDependencies.SpatialId), int32(ddVal.FrameDependencies.TemporalId)
 	}
 
+	extDD := &ExtDependencyDescriptor{
+		Descriptor: &ddVal,
+	}
+
 	if ddVal.AttachedStructure != nil {
 		r.logger.Debugw(fmt.Sprintf("parsed dependency descriptor\n%s", ddVal.String()))
 		if extSeq > r.structureExtSeq {
 			r.structure = ddVal.AttachedStructure
 			r.decodeTargets = ProcessFrameDependencyStructure(ddVal.AttachedStructure)
 			r.structureExtSeq = extSeq
+			extDD.StructureUpdated = true
+			extDD.ActiveDecodeTargetsUpdated = true
 			// The dependency descriptor reader will always set ActiveDecodeTargetsBitmask for TemplateDependencyStructure is present,
 			// so don't need to notify max layer change here.
 		}
@@ -80,6 +89,7 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*DependencyDescript
 		r.activeDecodeTargetsExtSeq = extSeq
 		if *mask != r.activeDecodeTargetsMask {
 			r.activeDecodeTargetsMask = *mask
+			extDD.ActiveDecodeTargetsUpdated = true
 			var maxSpatial, maxTemporal int32
 			for _, dt := range r.decodeTargets {
 				if *mask&(1<<dt.Target) != uint32(dd.DecodeTargetNotPresent) {
@@ -96,12 +106,9 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*DependencyDescript
 		}
 	}
 
-	withDecodeTargets := &DependencyDescriptorWithDecodeTarget{
-		Descriptor:    &ddVal,
-		DecodeTargets: r.decodeTargets,
-	}
+	extDD.DecodeTargets = r.decodeTargets
 
-	return withDecodeTargets, videoLayer, nil
+	return extDD, videoLayer, nil
 }
 
 // ------------------------------------------------------------------------------

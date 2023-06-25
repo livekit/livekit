@@ -176,8 +176,7 @@ func (s *StreamTracker) Observe(
 	payloadSize int,
 	hasMarker bool,
 	ts uint32,
-	seq uint16,
-	_ *buffer.DependencyDescriptorWithDecodeTarget,
+	_ *buffer.ExtDependencyDescriptor,
 ) {
 	s.lock.Lock()
 

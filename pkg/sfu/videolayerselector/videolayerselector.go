@@ -32,6 +32,8 @@ type VideoLayerSelector interface {
 	SetRequestSpatial(layer int32)
 	GetRequestSpatial() int32
 
+	CheckSync() (locked bool, layer int32)
+
 	SetMaxSeen(maxSeenLayer buffer.VideoLayer)
 	SetMaxSeenSpatial(layer int32)
 	SetMaxSeenTemporal(layer int32)

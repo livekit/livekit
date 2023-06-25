@@ -11,7 +11,7 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-func createDescriptorDependencyForTargets(maxSpatial, maxTemporal int) *buffer.DependencyDescriptorWithDecodeTarget {
+func createDescriptorDependencyForTargets(maxSpatial, maxTemporal int) *buffer.ExtDependencyDescriptor {
 	var targets []buffer.DependencyDescriptorDecodeTarget
 	var mask uint32
 	for i := 0; i <= maxSpatial; i++ {
@@ -26,14 +26,15 @@ func createDescriptorDependencyForTargets(maxSpatial, maxTemporal int) *buffer.D
 		dtis[t.Target] = dd.DecodeTargetRequired
 	}
 
-	return &buffer.DependencyDescriptorWithDecodeTarget{
+	return &buffer.ExtDependencyDescriptor{
 		Descriptor: &dd.DependencyDescriptor{
 			ActiveDecodeTargetsBitmask: &mask,
 			FrameDependencies: &dd.FrameDependencyTemplate{
 				DecodeTargetIndications: dtis,
 			},
 		},
-		DecodeTargets: targets,
+		DecodeTargets:              targets,
+		ActiveDecodeTargetsUpdated: true,
 	}
 }
 
@@ -65,27 +66,19 @@ func TestStreamTrackerDD(t *testing.T) {
 	}
 	defer ddTracker.Stop()
 
-	seq := uint16(1234)
 	// no active layers
-	ddTracker.Observe(0, 1000, 1000, false, 0, seq, nil)
+	ddTracker.Observe(0, 1000, 1000, false, 0, nil)
 	checkStatues(t, statuses, StreamStatusActive, int(buffer.InvalidLayerSpatial))
 
-	seq++
 	// layer seen [0,1]
-	ddTracker.Observe(0, 1000, 1000, false, 0, seq, createDescriptorDependencyForTargets(1, 1))
+	ddTracker.Observe(0, 1000, 1000, false, 0, createDescriptorDependencyForTargets(1, 1))
 	checkStatues(t, statuses, StreamStatusActive, 1)
 
-	seq++
 	// layer seen [0,1,2]
-	ddTracker.Observe(0, 1000, 1000, false, 0, seq, createDescriptorDependencyForTargets(2, 1))
+	ddTracker.Observe(0, 1000, 1000, false, 0, createDescriptorDependencyForTargets(2, 1))
 	checkStatues(t, statuses, StreamStatusActive, 2)
 
-	// unordered packet, layer not changed
-	ddTracker.Observe(0, 1000, 1000, false, 0, seq-1, createDescriptorDependencyForTargets(0, 1))
-	checkStatues(t, statuses, StreamStatusActive, 2)
-
-	seq++
 	// layer 2 gone, layer seen [0,1]
-	ddTracker.Observe(0, 1000, 1000, false, 0, seq, createDescriptorDependencyForTargets(1, 1))
+	ddTracker.Observe(0, 1000, 1000, false, 0, createDescriptorDependencyForTargets(1, 1))
 	checkStatues(t, statuses, StreamStatusActive, 1)
 }

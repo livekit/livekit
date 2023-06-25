@@ -652,7 +652,6 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 				len(pkt.Packet.Payload),
 				pkt.Packet.Marker,
 				pkt.Packet.Timestamp,
-				pkt.Packet.SequenceNumber,
 				pkt.DependencyDescriptor,
 			)
 		}
