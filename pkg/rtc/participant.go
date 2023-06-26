@@ -279,6 +279,12 @@ func (p *ParticipantImpl) ConnectedAt() time.Time {
 	return p.connectedAt
 }
 
+func (p *ParticipantImpl) GetClientInfo() *livekit.ClientInfo {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return p.params.ClientInfo.ClientInfo
+}
+
 func (p *ParticipantImpl) GetClientConfiguration() *livekit.ClientConfiguration {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
