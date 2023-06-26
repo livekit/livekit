@@ -137,9 +137,6 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	}
 	d.decodeTargetsLock.RUnlock()
 
-	// DD-TODO : if no decode target is found, continue use the current layer and forward the packet if
-	// it is belong to current layer, otherwise drop it.
-
 	// DD-TODO : we don't have a rtp queue to ensure the order of packets now,
 	// so we don't know packet is lost/out of order, that cause us can't detect
 	// frame integrity, entire frame is forwareded, whether frame chain is broken.
