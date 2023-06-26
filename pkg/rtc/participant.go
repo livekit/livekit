@@ -1707,6 +1707,24 @@ func (p *ParticipantImpl) addMigrateMutedTrack(cid string, ti *livekit.TrackInfo
 			}
 		}
 	}
+	// check for mime_type for tracks that do not have simulcast_codecs set
+	if ti.MimeType != "" {
+		for _, nc := range parameters.Codecs {
+			if strings.EqualFold(nc.MimeType, ti.MimeType) {
+				alreadyAdded := false
+				for _, pc := range potentialCodecs {
+					if strings.EqualFold(pc.MimeType, ti.MimeType) {
+						alreadyAdded = true
+						break
+					}
+				}
+				if !alreadyAdded {
+					potentialCodecs = append(potentialCodecs, nc)
+				}
+				break
+			}
+		}
+	}
 	mt.SetPotentialCodecs(potentialCodecs, parameters.HeaderExtensions)
 
 	for _, codec := range ti.Codecs {
