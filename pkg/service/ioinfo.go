@@ -4,11 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/livekit/livekit-server/pkg/telemetry"
-	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
@@ -16,12 +14,11 @@ import (
 )
 
 type IOInfoService struct {
-	psrpcServer  rpc.IOInfoServer
-	es           EgressStore
-	is           IngressStore
-	telemetry    telemetry.TelemetryService
-	ecDeprecated egress.RPCClient
-	shutdown     chan struct{}
+	ioServer  rpc.IOInfoServer
+	es        EgressStore
+	is        IngressStore
+	telemetry telemetry.TelemetryService
+	shutdown  chan struct{}
 }
 
 func NewIOInfoService(
@@ -30,22 +27,20 @@ func NewIOInfoService(
 	es EgressStore,
 	is IngressStore,
 	ts telemetry.TelemetryService,
-	ec egress.RPCClient,
 ) (*IOInfoService, error) {
 	s := &IOInfoService{
-		es:           es,
-		is:           is,
-		telemetry:    ts,
-		ecDeprecated: ec,
-		shutdown:     make(chan struct{}),
+		es:        es,
+		is:        is,
+		telemetry: ts,
+		shutdown:  make(chan struct{}),
 	}
 
 	if bus != nil {
-		psrpcServer, err := rpc.NewIOInfoServer(string(nodeID), s, bus)
+		ioServer, err := rpc.NewIOInfoServer(string(nodeID), s, bus)
 		if err != nil {
 			return nil, err
 		}
-		s.psrpcServer = psrpcServer
+		s.ioServer = ioServer
 	}
 
 	return s, nil
@@ -59,8 +54,6 @@ func (s *IOInfoService) Start() error {
 			logger.Errorw("failed to start redis egress worker", err)
 			return err
 		}
-
-		go s.egressWorkerDeprecated()
 	}
 
 	return nil
@@ -116,55 +109,56 @@ func (s *IOInfoService) loadIngressFromInfoRequest(req *rpc.GetIngressInfoReques
 }
 
 func (s *IOInfoService) UpdateIngressState(ctx context.Context, req *rpc.UpdateIngressStateRequest) (*emptypb.Empty, error) {
+	info, err := s.is.LoadIngress(ctx, req.IngressId)
+	if err != nil {
+		return nil, err
+	}
+
 	if err := s.is.UpdateIngressState(ctx, req.IngressId, req.State); err != nil {
 		logger.Errorw("could not update ingress", err)
 		return nil, err
 	}
+
+	if info.State.Status != req.State.Status {
+		info.State = req.State
+
+		switch req.State.Status {
+		case livekit.IngressState_ENDPOINT_ERROR,
+			livekit.IngressState_ENDPOINT_INACTIVE:
+			s.telemetry.IngressEnded(ctx, info)
+
+			if req.State.Error != "" {
+				logger.Infow("ingress failed", "error", req.State.Error, "ingressID", req.IngressId)
+			} else {
+				logger.Infow("ingress ended", "ingressID", req.IngressId)
+			}
+
+		case livekit.IngressState_ENDPOINT_PUBLISHING:
+			s.telemetry.IngressStarted(ctx, info)
+
+			logger.Infow("ingress started", "ingressID", req.IngressId)
+
+		case livekit.IngressState_ENDPOINT_BUFFERING:
+			s.telemetry.IngressUpdated(ctx, info)
+
+			logger.Infow("ingress buffering", "ingressID", req.IngressId)
+		}
+	} else {
+		// Status didn't change, send Updated event
+		info.State = req.State
+
+		s.telemetry.IngressUpdated(ctx, info)
+
+		logger.Infow("ingress updated", "ingressID", req.IngressId)
+	}
+
 	return &emptypb.Empty{}, nil
 }
 
 func (s *IOInfoService) Stop() {
 	close(s.shutdown)
 
-	if s.psrpcServer != nil {
-		s.psrpcServer.Shutdown()
+	if s.ioServer != nil {
+		s.ioServer.Shutdown()
 	}
-}
-
-// Deprecated
-func (s *IOInfoService) egressWorkerDeprecated() error {
-	if s.ecDeprecated == nil {
-		return nil
-	}
-
-	go func() {
-		sub, err := s.ecDeprecated.GetUpdateChannel(context.Background())
-		if err != nil {
-			logger.Errorw("failed to subscribe to results channel", err)
-		}
-
-		resChan := sub.Channel()
-		for {
-			select {
-			case msg := <-resChan:
-				b := sub.Payload(msg)
-				info := &livekit.EgressInfo{}
-				if err = proto.Unmarshal(b, info); err != nil {
-					logger.Errorw("failed to read results", err)
-					continue
-				}
-				_, err = s.UpdateEgressInfo(context.Background(), info)
-				if err != nil {
-					logger.Errorw("failed to update egress info", err)
-				}
-
-			case <-s.shutdown:
-				_ = sub.Close()
-				s.es.(*RedisStore).Stop()
-				return
-			}
-		}
-	}()
-
-	return nil
 }

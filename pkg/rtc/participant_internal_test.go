@@ -229,7 +229,7 @@ func TestOutOfOrderUpdates(t *testing.T) {
 func TestDisconnectTiming(t *testing.T) {
 	t.Run("Negotiate doesn't panic after channel closed", func(t *testing.T) {
 		p := newParticipantForTest("test")
-		msg := routing.NewMessageChannel(routing.DefaultMessageChannelSize)
+		msg := routing.NewMessageChannel(livekit.ConnectionID("test"), routing.DefaultMessageChannelSize)
 		p.params.Sink = msg
 		go func() {
 			for msg := range msg.ReadChan() {
@@ -422,7 +422,7 @@ func TestDisableCodecs(t *testing.T) {
 	participant.SetResponseSink(sink)
 	var answer webrtc.SessionDescription
 	var answerReceived atomic.Bool
-	sink.WriteMessageStub = func(msg proto.Message) error {
+	sink.WriteMessageCalls(func(msg proto.Message) error {
 		if res, ok := msg.(*livekit.SignalResponse); ok {
 			if res.GetAnswer() != nil {
 				answer = FromProtoSessionDescription(res.GetAnswer())
@@ -430,7 +430,7 @@ func TestDisableCodecs(t *testing.T) {
 			}
 		}
 		return nil
-	}
+	})
 	participant.HandleOffer(sdp)
 
 	testutils.WithTimeout(t, func() string {
@@ -579,7 +579,7 @@ func TestPreferAudioCodecForRed(t *testing.T) {
 			participant.SetResponseSink(sink)
 			var answer webrtc.SessionDescription
 			var answerReceived atomic.Bool
-			sink.WriteMessageStub = func(msg proto.Message) error {
+			sink.WriteMessageCalls(func(msg proto.Message) error {
 				if res, ok := msg.(*livekit.SignalResponse); ok {
 					if res.GetAnswer() != nil {
 						answer = FromProtoSessionDescription(res.GetAnswer())
@@ -588,7 +588,7 @@ func TestPreferAudioCodecForRed(t *testing.T) {
 					}
 				}
 				return nil
-			}
+			})
 			participant.HandleOffer(sdp)
 
 			require.Eventually(t, func() bool { return answerReceived.Load() }, 5*time.Second, 10*time.Millisecond)
@@ -649,7 +649,7 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 	// disable mux, it doesn't play too well with unit test
 	conf.RTC.UDPPort = 0
 	conf.RTC.TCPPort = 0
-	rtcConf, err := NewWebRTCConfig(conf, "")
+	rtcConf, err := NewWebRTCConfig(conf)
 	if err != nil {
 		panic(err)
 	}
@@ -683,6 +683,7 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 		ClientInfo:        ClientInfo{ClientInfo: opts.clientInfo},
 		Logger:            LoggerWithParticipant(logger.GetLogger(), identity, sid, false),
 		Telemetry:         &telemetryfakes.FakeTelemetryService{},
+		VersionGenerator:  utils.NewDefaultTimedVersionGenerator(),
 	})
 	p.isPublisher.Store(opts.publisher)
 	p.updateState(livekit.ParticipantInfo_ACTIVE)

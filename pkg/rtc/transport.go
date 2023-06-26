@@ -22,10 +22,10 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/logger/pionlogger"
 	lksdp "github.com/livekit/protocol/sdp"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	serverlogger "github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	"github.com/livekit/livekit-server/pkg/telemetry"
@@ -298,7 +298,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 		}
 	}
 
-	lf := serverlogger.NewLoggerFactory(params.Logger)
+	lf := pionlogger.NewLoggerFactory(params.Logger)
 	if lf != nil {
 		se.LoggerFactory = lf
 	}
@@ -1370,6 +1370,11 @@ func (t *PCTransport) postEvent(event event) {
 
 func (t *PCTransport) processEvents() {
 	for event := range t.eventCh {
+		if t.isClosed.Load() {
+			// just drain the channel without processing events
+			continue
+		}
+
 		err := t.handleEvent(&event)
 		if err != nil {
 			t.params.Logger.Errorw("error handling event", err, "event", event.String())
@@ -1610,6 +1615,13 @@ func (t *PCTransport) setupSignalStateCheckTimer() {
 		failed := t.negotiationState != NegotiationStateNone
 
 		if t.negotiateCounter.Load() == negotiateVersion && failed {
+			t.params.Logger.Infow(
+				"negotiation timed out",
+				"localCurrent", t.pc.CurrentLocalDescription(),
+				"localPending", t.pc.PendingLocalDescription(),
+				"remoteCurrent", t.pc.CurrentRemoteDescription(),
+				"remotePending", t.pc.PendingRemoteDescription(),
+			)
 			if onNegotiationFailed := t.getOnNegotiationFailed(); onNegotiationFailed != nil {
 				onNegotiationFailed()
 			}
@@ -1865,7 +1877,13 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription) e
 
 func (t *PCTransport) handleRemoteAnswerReceived(sd *webrtc.SessionDescription) error {
 	if err := t.setRemoteDescription(*sd); err != nil {
-		return err
+		// Pion will call RTPSender.Send method for each new added Downtrack, and return error if the DownTrack.Bind
+		// returns error. In case of Downtrack.Bind returns ErrUnsupportedCodec, the signal state will be stable as negotiation is aleady compelted
+		// before startRTPSenders, and the peerconnection state can be recovered by next negotiation which will be triggered
+		// by the SubscriptionManager unsubscribe the failure DownTrack. So don't treat this error as negotiation failure.
+		if !errors.Is(err, webrtc.ErrUnsupportedCodec) {
+			return err
+		}
 	}
 
 	t.clearSignalStateCheckTimer()
@@ -1958,7 +1976,16 @@ func configureAudioTransceiver(tr *webrtc.RTPTransceiver, stereo bool, nack bool
 				c.SDPFmtpLine += ";sprop-stereo=1"
 			}
 			if nack {
-				c.RTCPFeedback = append(c.RTCPFeedback, webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBNACK})
+				var nackFound bool
+				for _, fb := range c.RTCPFeedback {
+					if fb.Type == webrtc.TypeRTCPFBNACK {
+						nackFound = true
+						break
+					}
+				}
+				if !nackFound {
+					c.RTCPFeedback = append(c.RTCPFeedback, webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBNACK})
+				}
 			}
 		}
 		configCodecs = append(configCodecs, c)

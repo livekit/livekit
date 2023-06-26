@@ -21,6 +21,7 @@ var defaultUptrackManagerParams = UpTrackManagerParams{
 func TestUpdateSubscriptionPermission(t *testing.T) {
 	t.Run("updates subscription permission", func(t *testing.T) {
 		um := NewUpTrackManager(defaultUptrackManagerParams)
+		vg := utils.NewDefaultTimedVersionGenerator()
 
 		tra := &typesfakes.FakeMediaTrack{}
 		tra.IDReturns("audio")
@@ -34,14 +35,14 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 		subscriptionPermission := &livekit.SubscriptionPermission{
 			AllParticipants: true,
 		}
-		um.UpdateSubscriptionPermission(subscriptionPermission, nil, nil, nil)
+		um.UpdateSubscriptionPermission(subscriptionPermission, vg.Next(), nil, nil)
 		require.Nil(t, um.subscriberPermissions)
 
 		// nobody is allowed to subscribe
 		subscriptionPermission = &livekit.SubscriptionPermission{
 			TrackPermissions: []*livekit.TrackPermission{},
 		}
-		um.UpdateSubscriptionPermission(subscriptionPermission, nil, nil, nil)
+		um.UpdateSubscriptionPermission(subscriptionPermission, vg.Next(), nil, nil)
 		require.NotNil(t, um.subscriberPermissions)
 		require.Equal(t, 0, len(um.subscriberPermissions))
 
@@ -77,7 +78,7 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 				perms2,
 			},
 		}
-		um.UpdateSubscriptionPermission(subscriptionPermission, nil, nil, sidResolver)
+		um.UpdateSubscriptionPermission(subscriptionPermission, vg.Next(), nil, sidResolver)
 		require.Equal(t, 2, len(um.subscriberPermissions))
 		require.EqualValues(t, perms1, um.subscriberPermissions["p1"])
 		require.EqualValues(t, perms2, um.subscriberPermissions["p2"])
@@ -102,7 +103,7 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 				perms3,
 			},
 		}
-		um.UpdateSubscriptionPermission(subscriptionPermission, nil, nil, nil)
+		um.UpdateSubscriptionPermission(subscriptionPermission, vg.Next(), nil, nil)
 		require.Equal(t, 3, len(um.subscriberPermissions))
 		require.EqualValues(t, perms1, um.subscriberPermissions["p1"])
 		require.EqualValues(t, perms2, um.subscriberPermissions["p2"])
@@ -111,6 +112,7 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 
 	t.Run("updates subscription permission using both", func(t *testing.T) {
 		um := NewUpTrackManager(defaultUptrackManagerParams)
+		vg := utils.NewDefaultTimedVersionGenerator()
 
 		tra := &typesfakes.FakeMediaTrack{}
 		tra.IDReturns("audio")
@@ -154,7 +156,7 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 				perms2,
 			},
 		}
-		err := um.UpdateSubscriptionPermission(subscriptionPermission, nil, nil, sidResolver)
+		err := um.UpdateSubscriptionPermission(subscriptionPermission, vg.Next(), nil, sidResolver)
 		require.NoError(t, err)
 		require.Equal(t, 2, len(um.subscriberPermissions))
 		require.EqualValues(t, perms1, um.subscriberPermissions["p1"])
@@ -173,17 +175,37 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 			return nil
 		}
 
-		err = um.UpdateSubscriptionPermission(subscriptionPermission, nil, nil, badSidResolver)
+		err = um.UpdateSubscriptionPermission(subscriptionPermission, vg.Next(), nil, badSidResolver)
 		require.NoError(t, err)
 		require.Equal(t, 2, len(um.subscriberPermissions))
 		require.EqualValues(t, perms1, um.subscriberPermissions["p1"])
 		require.EqualValues(t, perms2, um.subscriberPermissions["p2"])
+	})
+
+	t.Run("update versions", func(t *testing.T) {
+		um := NewUpTrackManager(defaultUptrackManagerParams)
+		vg := utils.NewDefaultTimedVersionGenerator()
+
+		v0, v1, v2 := vg.Next(), vg.Next(), vg.Next()
+
+		um.UpdateSubscriptionPermission(&livekit.SubscriptionPermission{}, v1, nil, nil)
+		require.Equal(t, v1.Load(), um.subscriptionPermissionVersion.Load(), "first update should be applied")
+
+		um.UpdateSubscriptionPermission(&livekit.SubscriptionPermission{}, v2, nil, nil)
+		require.Equal(t, v2.Load(), um.subscriptionPermissionVersion.Load(), "ordered updates should be applied")
+
+		um.UpdateSubscriptionPermission(&livekit.SubscriptionPermission{}, v0, nil, nil)
+		require.Equal(t, v2.Load(), um.subscriptionPermissionVersion.Load(), "out of order updates should be ignored")
+
+		um.UpdateSubscriptionPermission(&livekit.SubscriptionPermission{}, utils.TimedVersion{}, nil, nil)
+		require.True(t, um.subscriptionPermissionVersion.After(&v2), "zero version in updates should use next local version")
 	})
 }
 
 func TestSubscriptionPermission(t *testing.T) {
 	t.Run("checks subscription permission", func(t *testing.T) {
 		um := NewUpTrackManager(defaultUptrackManagerParams)
+		vg := utils.NewDefaultTimedVersionGenerator()
 
 		tra := &typesfakes.FakeMediaTrack{}
 		tra.IDReturns("audio")
@@ -197,7 +219,7 @@ func TestSubscriptionPermission(t *testing.T) {
 		subscriptionPermission := &livekit.SubscriptionPermission{
 			AllParticipants: true,
 		}
-		um.UpdateSubscriptionPermission(subscriptionPermission, nil, nil, nil)
+		um.UpdateSubscriptionPermission(subscriptionPermission, vg.Next(), nil, nil)
 		require.True(t, um.hasPermissionLocked("audio", "p1"))
 		require.True(t, um.hasPermissionLocked("audio", "p2"))
 
@@ -205,7 +227,7 @@ func TestSubscriptionPermission(t *testing.T) {
 		subscriptionPermission = &livekit.SubscriptionPermission{
 			TrackPermissions: []*livekit.TrackPermission{},
 		}
-		um.UpdateSubscriptionPermission(subscriptionPermission, nil, nil, nil)
+		um.UpdateSubscriptionPermission(subscriptionPermission, vg.Next(), nil, nil)
 		require.False(t, um.hasPermissionLocked("audio", "p1"))
 		require.False(t, um.hasPermissionLocked("audio", "p2"))
 
@@ -222,7 +244,7 @@ func TestSubscriptionPermission(t *testing.T) {
 				},
 			},
 		}
-		um.UpdateSubscriptionPermission(subscriptionPermission, nil, nil, nil)
+		um.UpdateSubscriptionPermission(subscriptionPermission, vg.Next(), nil, nil)
 		require.True(t, um.hasPermissionLocked("audio", "p1"))
 		require.True(t, um.hasPermissionLocked("video", "p1"))
 		require.True(t, um.hasPermissionLocked("audio", "p2"))
@@ -257,7 +279,7 @@ func TestSubscriptionPermission(t *testing.T) {
 				},
 			},
 		}
-		um.UpdateSubscriptionPermission(subscriptionPermission, nil, nil, nil)
+		um.UpdateSubscriptionPermission(subscriptionPermission, vg.Next(), nil, nil)
 		require.True(t, um.hasPermissionLocked("audio", "p1"))
 		require.True(t, um.hasPermissionLocked("video", "p1"))
 		require.True(t, um.hasPermissionLocked("screen", "p1"))

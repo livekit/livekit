@@ -224,15 +224,9 @@ keys:
 # ingress server
 # ingress:
 #   # Prefix used to generate RTMP URLs for RTMP ingress.
-#   # The stream_key will be appended to this base and returned as part of the
-#   # ingress info
 #   rtmp_base_url: "rtmp://my.domain.com/live"
-
-# egress server
-# egress:
-#   # Whether to use the PSRPC enabled RPC implementation. This requires livekit egress version >=1.5.4
-#   # The legacy, non PSRPC RPC implementation will be removed eventually
-#   use_psrpc: false
+#   # Prefix used to generate WHIP URLs for WHIP ingress.
+#   whip_base_url: "http://my.domain.com/whip"
 
 # Region of the current node. Required if using regionaware node selector
 # region: us-west-2
@@ -261,3 +255,9 @@ keys:
 #   num_tracks: -1
 #   # defaults to 1 GB/s, or just under 10 Gbps
 #   bytes_per_sec: 1_000_000_000
+#   # how many tracks (audio / video) that a single participant can subscribe at same time.
+#   # if the limit is exceeded, subscriptions will be pending until any subscribed track has been unsubscribed.
+#   # value less or equal than 0 means no limit.
+#   subscription_limit_video: 0
+#   subscription_limit_audio: 0
+

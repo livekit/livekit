@@ -34,22 +34,23 @@ const (
 )
 
 type TransportManagerParams struct {
-	Identity                livekit.ParticipantIdentity
-	SID                     livekit.ParticipantID
-	SubscriberAsPrimary     bool
-	Config                  *WebRTCConfig
-	ProtocolVersion         types.ProtocolVersion
-	Telemetry               telemetry.TelemetryService
-	CongestionControlConfig config.CongestionControlConfig
-	EnabledCodecs           []*livekit.Codec
-	SimTracks               map[uint32]SimulcastTrackInfo
-	ClientConf              *livekit.ClientConfiguration
-	ClientInfo              ClientInfo
-	Migration               bool
-	AllowTCPFallback        bool
-	TCPFallbackRTTThreshold int
-	TURNSEnabled            bool
-	Logger                  logger.Logger
+	Identity                 livekit.ParticipantIdentity
+	SID                      livekit.ParticipantID
+	SubscriberAsPrimary      bool
+	Config                   *WebRTCConfig
+	ProtocolVersion          types.ProtocolVersion
+	Telemetry                telemetry.TelemetryService
+	CongestionControlConfig  config.CongestionControlConfig
+	EnabledCodecs            []*livekit.Codec
+	SimTracks                map[uint32]SimulcastTrackInfo
+	ClientConf               *livekit.ClientConfiguration
+	ClientInfo               ClientInfo
+	Migration                bool
+	AllowTCPFallback         bool
+	TCPFallbackRTTThreshold  int
+	AllowUDPUnstableFallback bool
+	TURNSEnabled             bool
+	Logger                   logger.Logger
 }
 
 type TransportManager struct {
@@ -94,18 +95,32 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 	}
 	t.mediaLossProxy.OnMediaLossUpdate(t.onMediaLossUpdate)
 
-	enabledCodecs := make([]*livekit.Codec, 0, len(params.EnabledCodecs))
-	for _, c := range params.EnabledCodecs {
-		var disabled bool
-		for _, disableCodec := range params.ClientConf.GetDisabledCodecs().GetCodecs() {
+	subscribeCodecs := make([]*livekit.Codec, 0, len(params.EnabledCodecs))
+	publishCodecs := make([]*livekit.Codec, 0, len(params.EnabledCodecs))
+	shouldDisable := func(c *livekit.Codec, disabledCodecs []*livekit.Codec) bool {
+		for _, disableCodec := range disabledCodecs {
 			// disable codec's fmtp is empty means disable this codec entirely
 			if strings.EqualFold(c.Mime, disableCodec.Mime) && (disableCodec.FmtpLine == "" || disableCodec.FmtpLine == c.FmtpLine) {
-				disabled = true
-				break
+				return true
 			}
 		}
-		if !disabled {
-			enabledCodecs = append(enabledCodecs, c)
+		return false
+	}
+	for _, c := range params.EnabledCodecs {
+		var publishDisabled bool
+		var subscribeDisabled bool
+		if shouldDisable(c, params.ClientConf.GetDisabledCodecs().GetCodecs()) {
+			publishDisabled = true
+			subscribeDisabled = true
+		}
+		if shouldDisable(c, params.ClientConf.GetDisabledCodecs().GetPublish()) {
+			publishDisabled = true
+		}
+		if !publishDisabled {
+			publishCodecs = append(publishCodecs, c)
+		}
+		if !subscribeDisabled {
+			subscribeCodecs = append(subscribeCodecs, c)
 		}
 	}
 
@@ -117,7 +132,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		DirectionConfig:         params.Config.Publisher,
 		CongestionControlConfig: params.CongestionControlConfig,
 		Telemetry:               params.Telemetry,
-		EnabledCodecs:           enabledCodecs,
+		EnabledCodecs:           publishCodecs,
 		Logger:                  LoggerWithPCTarget(params.Logger, livekit.SignalTarget_PUBLISHER),
 		SimTracks:               params.SimTracks,
 		ClientInfo:              params.ClientInfo,
@@ -149,7 +164,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		DirectionConfig:         params.Config.Subscriber,
 		CongestionControlConfig: params.CongestionControlConfig,
 		Telemetry:               params.Telemetry,
-		EnabledCodecs:           enabledCodecs,
+		EnabledCodecs:           subscribeCodecs,
 		Logger:                  LoggerWithPCTarget(params.Logger, livekit.SignalTarget_SUBSCRIBER),
 		ClientInfo:              params.ClientInfo,
 		IsOfferer:               true,
@@ -189,10 +204,6 @@ func (t *TransportManager) Close() {
 	t.subscriber.Close()
 }
 
-func (t *TransportManager) HaveAllTransportEverConnected() bool {
-	return t.publisher.HasEverConnected() && t.subscriber.HasEverConnected()
-}
-
 func (t *TransportManager) SubscriberClose() {
 	t.subscriber.Close()
 }
@@ -214,6 +225,10 @@ func (t *TransportManager) OnPublisherInitialConnected(f func()) {
 
 func (t *TransportManager) OnPublisherTrack(f func(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver)) {
 	t.publisher.OnTrack(f)
+}
+
+func (t *TransportManager) HasPublisherEverConnected() bool {
+	return t.publisher.HasEverConnected()
 }
 
 func (t *TransportManager) IsPublisherEstablished() bool {
@@ -710,7 +725,7 @@ func (t *TransportManager) OnReceiverReport(dt *sfu.DownTrack, report *rtcp.Rece
 }
 
 func (t *TransportManager) onMediaLossUpdate(loss uint8) {
-	if t.params.TCPFallbackRTTThreshold == 0 {
+	if t.params.TCPFallbackRTTThreshold == 0 || !t.params.AllowUDPUnstableFallback {
 		return
 	}
 	t.lock.Lock()

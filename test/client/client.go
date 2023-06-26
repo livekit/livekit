@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -47,6 +49,7 @@ type RTCClient struct {
 	publisherFullyEstablished  atomic.Bool
 	subscriberFullyEstablished atomic.Bool
 	pongReceivedAt             atomic.Int64
+	lastAnswer                 atomic.Pointer[webrtc.SessionDescription]
 
 	// tracks waiting to be acked, cid => trackInfo
 	pendingPublishedTracks map[string]*livekit.TrackInfo
@@ -59,6 +62,8 @@ type RTCClient struct {
 	// map of livekit.ParticipantID and last packet
 	lastPackets   map[livekit.ParticipantID]*rtp.Packet
 	bytesReceived map[livekit.ParticipantID]uint64
+
+	subscriptionResponse atomic.Pointer[livekit.SubscriptionResponse]
 }
 
 var (
@@ -78,8 +83,10 @@ var (
 )
 
 type Options struct {
-	AutoSubscribe bool
-	Publish       string
+	AutoSubscribe  bool
+	Publish        string
+	ClientInfo     *livekit.ClientInfo
+	DisabledCodecs []webrtc.RTPCodecCapability
 }
 
 func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error) {
@@ -92,8 +99,18 @@ func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error
 
 	connectUrl := u.String()
 	if opts != nil {
-		connectUrl = fmt.Sprintf("%s&auto_subscribe=%t&publish=%s",
-			connectUrl, opts.AutoSubscribe, opts.Publish)
+		connectUrl = fmt.Sprintf("%s&auto_subscribe=%t", connectUrl, opts.AutoSubscribe)
+		if opts.Publish != "" {
+			connectUrl += encodeQueryParam("publish", opts.Publish)
+		}
+		if opts.ClientInfo != nil {
+			if opts.ClientInfo.DeviceModel != "" {
+				connectUrl += encodeQueryParam("device_model", opts.ClientInfo.DeviceModel)
+			}
+			if opts.ClientInfo.Os != "" {
+				connectUrl += encodeQueryParam("os", opts.ClientInfo.Os)
+			}
+		}
 	}
 	conn, _, err := websocket.DefaultDialer.Dial(connectUrl, requestHeader)
 	return conn, err
@@ -103,7 +120,7 @@ func SetAuthorizationToken(header http.Header, token string) {
 	header.Set("Authorization", "Bearer "+token)
 }
 
-func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
+func NewRTCClient(conn *websocket.Conn, opts *Options) (*RTCClient, error) {
 	var err error
 
 	c := &RTCClient{
@@ -120,11 +137,14 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 
 	conf := rtc.WebRTCConfig{
-		Configuration: rtcConf,
+		WebRTCConfig: rtcconfig.WebRTCConfig{
+			Configuration: rtcConf,
+		},
 	}
 	conf.SettingEngine.SetLite(false)
 	conf.SettingEngine.SetAnsweringDTLSRole(webrtc.DTLSRoleClient)
-	codecs := []*livekit.Codec{
+	var codecs []*livekit.Codec
+	for _, codec := range []*livekit.Codec{
 		{
 			Mime: "audio/opus",
 		},
@@ -134,7 +154,21 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 		{
 			Mime: "video/h264",
 		},
+	} {
+		var disabled bool
+		if opts != nil {
+			for _, dc := range opts.DisabledCodecs {
+				if strings.EqualFold(dc.MimeType, codec.Mime) && (dc.SDPFmtpLine == "" || dc.SDPFmtpLine == codec.FmtpLine) {
+					disabled = true
+					break
+				}
+			}
+		}
+		if !disabled {
+			codecs = append(codecs, codec)
+		}
 	}
+
 	//
 	// The signal targets are from point of view of server.
 	// From client side, they are flipped,
@@ -333,6 +367,8 @@ func (c *RTCClient) Run() error {
 			c.lock.Unlock()
 		case *livekit.SignalResponse_Pong:
 			c.pongReceivedAt.Store(msg.Pong)
+		case *livekit.SignalResponse_SubscriptionResponse:
+			c.subscriptionResponse.Store(msg.SubscriptionResponse)
 		}
 	}
 }
@@ -435,6 +471,10 @@ func (c *RTCClient) RefreshToken() string {
 
 func (c *RTCClient) PongReceivedAt() int64 {
 	return c.pongReceivedAt.Load()
+}
+
+func (c *RTCClient) GetSubscriptionResponseAndClear() *livekit.SubscriptionResponse {
+	return c.subscriptionResponse.Swap(nil)
 }
 
 func (c *RTCClient) SendPing() error {
@@ -607,6 +647,11 @@ func (c *RTCClient) GetPublishedTrackIDs() []string {
 	return trackIDs
 }
 
+// LastAnswer return SDP of the last answer for the publisher connection
+func (c *RTCClient) LastAnswer() *webrtc.SessionDescription {
+	return c.lastAnswer.Load()
+}
+
 func (c *RTCClient) ensurePublisherConnected() error {
 	if c.publisher.HasEverConnected() {
 		return nil
@@ -651,6 +696,8 @@ func (c *RTCClient) handleOffer(desc webrtc.SessionDescription) {
 // the client handles answer on the publisher PC
 func (c *RTCClient) handleAnswer(desc webrtc.SessionDescription) {
 	logger.Infow("handling server answer", "participant", c.localParticipant.Identity)
+
+	c.lastAnswer.Store(&desc)
 	// remote answered the offer, establish connection
 	c.publisher.HandleRemoteDescription(desc)
 }
@@ -740,4 +787,8 @@ func (c *RTCClient) SendNacks(count int) {
 	c.lock.Unlock()
 
 	_ = c.subscriber.WriteRTCP(packets)
+}
+
+func encodeQueryParam(key, value string) string {
+	return fmt.Sprintf("&%s=%s", url.QueryEscape(key), url.QueryEscape(value))
 }

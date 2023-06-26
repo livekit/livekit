@@ -1,14 +1,17 @@
 package rtc
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/psrpc"
 
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 )
 
 func (p *ParticipantImpl) getResponseSink() routing.MessageSink {
@@ -265,7 +268,11 @@ func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
 	}
 
 	err := sink.WriteMessage(msg)
-	if err != nil {
+	if errors.Is(err, psrpc.Canceled) {
+		p.params.Logger.Debugw("could not send message to participant",
+			"error", err, "messageType", fmt.Sprintf("%T", msg.Message))
+		return nil
+	} else if err != nil {
 		p.params.Logger.Warnw("could not send message to participant", err,
 			"messageType", fmt.Sprintf("%T", msg.Message))
 		return err
@@ -274,10 +281,10 @@ func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
 }
 
 // closes signal connection to notify client to resume/reconnect
-func (p *ParticipantImpl) CloseSignalConnection() {
+func (p *ParticipantImpl) CloseSignalConnection(reason types.SignallingCloseReason) {
 	sink := p.getResponseSink()
 	if sink != nil {
-		p.params.Logger.Infow("closing signal connection")
+		p.params.Logger.Infow("closing signal connection", "reason", reason, "connID", sink.ConnectionID())
 		sink.Close()
 		p.SetResponseSink(nil)
 	}

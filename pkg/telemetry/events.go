@@ -98,14 +98,17 @@ func (t *telemetryService) ParticipantActive(
 	room *livekit.Room,
 	participant *livekit.ParticipantInfo,
 	clientMeta *livekit.AnalyticsClientMeta,
+	isMigration bool,
 ) {
 	t.enqueue(func() {
-		// consider participant joined only when they became active
-		t.NotifyEvent(ctx, &livekit.WebhookEvent{
-			Event:       webhook.EventParticipantJoined,
-			Room:        room,
-			Participant: participant,
-		})
+		if !isMigration {
+			// consider participant joined only when they became active
+			t.NotifyEvent(ctx, &livekit.WebhookEvent{
+				Event:       webhook.EventParticipantJoined,
+				Room:        room,
+				Participant: participant,
+			})
+		}
 
 		worker, ok := t.getWorker(livekit.ParticipantID(participant.Sid))
 		if !ok {
@@ -422,6 +425,7 @@ func (t *telemetryService) EgressUpdated(ctx context.Context, info *livekit.Egre
 			Event:      webhook.EventEgressUpdated,
 			EgressInfo: info,
 		})
+		t.SendEvent(ctx, newEgressEvent(livekit.AnalyticsEventType_EGRESS_UPDATED, info))
 	})
 }
 
@@ -433,6 +437,46 @@ func (t *telemetryService) EgressEnded(ctx context.Context, info *livekit.Egress
 		})
 
 		t.SendEvent(ctx, newEgressEvent(livekit.AnalyticsEventType_EGRESS_ENDED, info))
+	})
+}
+
+func (t *telemetryService) IngressCreated(ctx context.Context, info *livekit.IngressInfo) {
+	t.enqueue(func() {
+		t.SendEvent(ctx, newIngressEvent(livekit.AnalyticsEventType_INGRESS_CREATED, info))
+	})
+}
+
+func (t *telemetryService) IngressDeleted(ctx context.Context, info *livekit.IngressInfo) {
+	t.enqueue(func() {
+		t.SendEvent(ctx, newIngressEvent(livekit.AnalyticsEventType_INGRESS_DELETED, info))
+	})
+}
+
+func (t *telemetryService) IngressStarted(ctx context.Context, info *livekit.IngressInfo) {
+	t.enqueue(func() {
+		t.NotifyEvent(ctx, &livekit.WebhookEvent{
+			Event:       webhook.EventIngressStarted,
+			IngressInfo: info,
+		})
+
+		t.SendEvent(ctx, newIngressEvent(livekit.AnalyticsEventType_INGRESS_STARTED, info))
+	})
+}
+
+func (t *telemetryService) IngressUpdated(ctx context.Context, info *livekit.IngressInfo) {
+	t.enqueue(func() {
+		t.SendEvent(ctx, newIngressEvent(livekit.AnalyticsEventType_INGRESS_UPDATED, info))
+	})
+}
+
+func (t *telemetryService) IngressEnded(ctx context.Context, info *livekit.IngressInfo) {
+	t.enqueue(func() {
+		t.NotifyEvent(ctx, &livekit.WebhookEvent{
+			Event:       webhook.EventIngressEnded,
+			IngressInfo: info,
+		})
+
+		t.SendEvent(ctx, newIngressEvent(livekit.AnalyticsEventType_INGRESS_ENDED, info))
 	})
 }
 
@@ -488,5 +532,14 @@ func newEgressEvent(event livekit.AnalyticsEventType, egress *livekit.EgressInfo
 		EgressId:  egress.EgressId,
 		RoomId:    egress.RoomId,
 		Egress:    egress,
+	}
+}
+
+func newIngressEvent(event livekit.AnalyticsEventType, ingress *livekit.IngressInfo) *livekit.AnalyticsEvent {
+	return &livekit.AnalyticsEvent{
+		Type:      event,
+		Timestamp: timestamppb.Now(),
+		IngressId: ingress.IngressId,
+		Ingress:   ingress,
 	}
 }

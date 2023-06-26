@@ -10,7 +10,6 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/telemetry"
-	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
@@ -18,42 +17,37 @@ import (
 )
 
 type EgressService struct {
-	psrpcClient      rpc.EgressClient
-	clientDeprecated egress.RPCClient
-	store            ServiceStore
-	es               EgressStore
-	roomService      livekit.RoomService
-	telemetry        telemetry.TelemetryService
-	launcher         rtc.EgressLauncher
+	client      rpc.EgressClient
+	store       ServiceStore
+	es          EgressStore
+	roomService livekit.RoomService
+	telemetry   telemetry.TelemetryService
+	launcher    rtc.EgressLauncher
 }
 
 type egressLauncher struct {
-	psrpcClient      rpc.EgressClient
-	clientDeprecated egress.RPCClient
-	es               EgressStore
-	telemetry        telemetry.TelemetryService
+	client    rpc.EgressClient
+	es        EgressStore
+	telemetry telemetry.TelemetryService
 }
 
 func NewEgressLauncher(
-	psrpcClient rpc.EgressClient,
-	clientDeprecated egress.RPCClient,
+	client rpc.EgressClient,
 	es EgressStore,
 	ts telemetry.TelemetryService) rtc.EgressLauncher {
-	if psrpcClient == nil && clientDeprecated == nil {
+	if client == nil {
 		return nil
 	}
 
 	return &egressLauncher{
-		psrpcClient:      psrpcClient,
-		clientDeprecated: clientDeprecated,
-		es:               es,
-		telemetry:        ts,
+		client:    client,
+		es:        es,
+		telemetry: ts,
 	}
 }
 
 func NewEgressService(
-	psrpcClient rpc.EgressClient,
-	clientDeprecated egress.RPCClient,
+	client rpc.EgressClient,
 	store ServiceStore,
 	es EgressStore,
 	rs livekit.RoomService,
@@ -61,13 +55,12 @@ func NewEgressService(
 	launcher rtc.EgressLauncher,
 ) *EgressService {
 	return &EgressService{
-		psrpcClient:      psrpcClient,
-		clientDeprecated: clientDeprecated,
-		store:            store,
-		es:               es,
-		roomService:      rs,
-		telemetry:        ts,
-		launcher:         launcher,
+		client:      client,
+		store:       store,
+		es:          es,
+		roomService: rs,
+		telemetry:   ts,
+		launcher:    launcher,
 	}
 }
 
@@ -175,21 +168,12 @@ func (s *egressLauncher) StartEgress(ctx context.Context, req *rpc.StartEgressRe
 	return s.StartEgressWithClusterId(ctx, "", req)
 }
 func (s *egressLauncher) StartEgressWithClusterId(ctx context.Context, clusterId string, req *rpc.StartEgressRequest) (*livekit.EgressInfo, error) {
-	var info *livekit.EgressInfo
-	var err error
-
 	// Ensure we have an Egress ID
 	if req.EgressId == "" {
 		req.EgressId = utils.NewGuid(utils.EgressPrefix)
 	}
 
-	if s.psrpcClient != nil {
-		info, err = s.psrpcClient.StartEgress(ctx, clusterId, req)
-	} else {
-		logger.Warnw("Using deprecated egress client. Upgrade egress to v1.5.6+ and use egress:use_psrpc:true in your livekit config", nil)
-		// SendRequest will transform rpc.StartEgressRequest into deprecated livekit.StartEgressRequest
-		info, err = s.clientDeprecated.SendRequest(ctx, req)
-	}
+	info, err := s.client.StartEgress(ctx, clusterId, req)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +197,7 @@ func (s *EgressService) UpdateLayout(ctx context.Context, req *livekit.UpdateLay
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
-	if s.psrpcClient == nil && s.clientDeprecated == nil {
+	if s.client == nil {
 		return nil, ErrEgressNotConnected
 	}
 
@@ -249,36 +233,27 @@ func (s *EgressService) UpdateStream(ctx context.Context, req *livekit.UpdateStr
 		return nil, twirpAuthError(err)
 	}
 
-	if s.psrpcClient == nil && s.clientDeprecated == nil {
+	if s.client == nil {
 		return nil, ErrEgressNotConnected
 	}
 
-	race := rpc.NewRace[livekit.EgressInfo](ctx)
-	if s.clientDeprecated != nil {
-		race.Go(func(ctx context.Context) (*livekit.EgressInfo, error) {
-			return s.clientDeprecated.SendRequest(ctx, &livekit.EgressRequest{
-				EgressId: req.EgressId,
-				Request: &livekit.EgressRequest_UpdateStream{
-					UpdateStream: req,
-				},
-			})
-		})
-	}
-	if s.psrpcClient != nil {
-		race.Go(func(ctx context.Context) (*livekit.EgressInfo, error) {
-			return s.psrpcClient.UpdateStream(ctx, req.EgressId, req)
-		})
-	}
-	_, info, err := race.Wait()
+	info, err := s.client.UpdateStream(ctx, req.EgressId, req)
 	if err != nil {
-		return nil, err
-	}
-
-	go func() {
-		if err := s.es.UpdateEgress(ctx, info); err != nil {
-			logger.Errorw("could not write egress info", err)
+		var loadErr error
+		info, loadErr = s.es.LoadEgress(ctx, req.EgressId)
+		if loadErr != nil {
+			return nil, loadErr
 		}
-	}()
+
+		switch info.Status {
+		case livekit.EgressStatus_EGRESS_STARTING,
+			livekit.EgressStatus_EGRESS_ACTIVE:
+			return nil, err
+		default:
+			return nil, twirp.NewError(twirp.FailedPrecondition,
+				fmt.Sprintf("egress with status %s cannot be updated", info.Status.String()))
+		}
+	}
 
 	return info, nil
 }
@@ -290,7 +265,7 @@ func (s *EgressService) ListEgress(ctx context.Context, req *livekit.ListEgressR
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
-	if s.psrpcClient == nil && s.clientDeprecated == nil {
+	if s.client == nil {
 		return nil, ErrEgressNotConnected
 	}
 
@@ -321,39 +296,26 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 		return nil, twirpAuthError(err)
 	}
 
-	if s.psrpcClient == nil && s.clientDeprecated == nil {
+	if s.client == nil {
 		return nil, ErrEgressNotConnected
 	}
 
-	info, err := s.es.LoadEgress(ctx, req.EgressId)
+	info, err := s.client.StopEgress(ctx, req.EgressId, req)
 	if err != nil {
-		return nil, err
-	} else {
-		if info.Status != livekit.EgressStatus_EGRESS_STARTING &&
-			info.Status != livekit.EgressStatus_EGRESS_ACTIVE {
-			return nil, twirp.NewError(twirp.FailedPrecondition, fmt.Sprintf("egress with status %s cannot be stopped", info.Status.String()))
+		var loadErr error
+		info, loadErr = s.es.LoadEgress(ctx, req.EgressId)
+		if loadErr != nil {
+			return nil, loadErr
 		}
-	}
 
-	race := rpc.NewRace[livekit.EgressInfo](ctx)
-	if s.clientDeprecated != nil {
-		race.Go(func(ctx context.Context) (*livekit.EgressInfo, error) {
-			return s.clientDeprecated.SendRequest(ctx, &livekit.EgressRequest{
-				EgressId: req.EgressId,
-				Request: &livekit.EgressRequest_Stop{
-					Stop: req,
-				},
-			})
-		})
-	}
-	if s.psrpcClient != nil {
-		race.Go(func(ctx context.Context) (*livekit.EgressInfo, error) {
-			return s.psrpcClient.StopEgress(ctx, req.EgressId, req)
-		})
-	}
-	_, info, err = race.Wait()
-	if err != nil {
-		return nil, err
+		switch info.Status {
+		case livekit.EgressStatus_EGRESS_STARTING,
+			livekit.EgressStatus_EGRESS_ACTIVE:
+			return nil, err
+		default:
+			return nil, twirp.NewError(twirp.FailedPrecondition,
+				fmt.Sprintf("egress with status %s cannot be stopped", info.Status.String()))
+		}
 	}
 
 	go func() {

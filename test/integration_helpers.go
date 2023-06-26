@@ -12,7 +12,6 @@ import (
 	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	serverlogger "github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
@@ -42,7 +41,7 @@ const (
 var roomClient livekit.RoomService
 
 func init() {
-	serverlogger.InitFromConfig(config.LoggingConfig{
+	config.InitLoggerFromConfig(config.LoggingConfig{
 		Config: logger.Config{Level: "debug"},
 	})
 
@@ -171,6 +170,7 @@ func createMultiNodeServer(nodeID string, port uint32) *service.LivekitServer {
 	conf.RTC.TCPPort = port + 2
 	conf.Redis.Address = "localhost:6379"
 	conf.Keys = map[string]string{testApiKey: testApiSecret}
+	conf.SignalRelay.Enabled = true
 
 	currentNode, err := routing.NewLocalNode(conf)
 	if err != nil {
@@ -196,7 +196,7 @@ func createRTCClient(name string, port int, opts *testclient.Options) *testclien
 		panic(err)
 	}
 
-	c, err := testclient.NewRTCClient(ws)
+	c, err := testclient.NewRTCClient(ws, opts)
 	if err != nil {
 		panic(err)
 	}
@@ -213,7 +213,7 @@ func createRTCClientWithToken(token string, port int, opts *testclient.Options) 
 		panic(err)
 	}
 
-	c, err := testclient.NewRTCClient(ws)
+	c, err := testclient.NewRTCClient(ws, opts)
 	if err != nil {
 		panic(err)
 	}

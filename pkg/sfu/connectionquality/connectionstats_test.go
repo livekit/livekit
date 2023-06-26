@@ -12,19 +12,30 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-func newConnectionStats(mimeType string, isFECEnabled bool, isDependentRTT bool, isDependentJitter bool) *ConnectionStats {
+func newConnectionStats(
+	mimeType string,
+	isFECEnabled bool,
+	includeRTT bool,
+	includeJitter bool,
+	getDeltaStats func() map[uint32]*buffer.StreamStatsWithLayers,
+) *ConnectionStats {
 	return NewConnectionStats(ConnectionStatsParams{
-		MimeType:          mimeType,
-		IsFECEnabled:      isFECEnabled,
-		IsDependentRTT:    isDependentRTT,
-		IsDependentJitter: isDependentJitter,
-		Logger:            logger.GetLogger(),
+		MimeType:      mimeType,
+		IsFECEnabled:  isFECEnabled,
+		IncludeRTT:    includeRTT,
+		IncludeJitter: includeJitter,
+		GetDeltaStats: getDeltaStats,
+		Logger:        logger.GetLogger(),
 	})
 }
 
 func TestConnectionQuality(t *testing.T) {
 	t.Run("quality scorer state machine", func(t *testing.T) {
-		cs := newConnectionStats("audio/opus", false, false, false)
+		var streams map[uint32]*buffer.StreamStatsWithLayers
+		getDeltaStats := func() map[uint32]*buffer.StreamStatsWithLayers {
+			return streams
+		}
+		cs := newConnectionStats("audio/opus", false, true, true, getDeltaStats)
 
 		duration := 5 * time.Second
 		now := time.Now()
@@ -32,13 +43,13 @@ func TestConnectionQuality(t *testing.T) {
 		cs.UpdateMute(false, now.Add(-1*time.Second))
 
 		// no data and not enough unmute time should return default state which is EXCELLENT quality
-		cs.updateScore(nil, now)
+		cs.updateScore(now)
 		mos, quality := cs.GetScoreAndQuality()
 		require.Greater(t, float32(4.6), mos)
 		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, quality)
 
 		// best conditions (no loss, jitter/rtt = 0) - quality should stay EXCELLENT
-		streams := map[uint32]*buffer.StreamStatsWithLayers{
+		streams = map[uint32]*buffer.StreamStatsWithLayers{
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
@@ -47,7 +58,7 @@ func TestConnectionQuality(t *testing.T) {
 				},
 			},
 		}
-		cs.updateScore(streams, now.Add(duration))
+		cs.updateScore(now.Add(duration))
 		mos, quality = cs.GetScoreAndQuality()
 		require.Greater(t, float32(4.6), mos)
 		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, quality)
@@ -72,7 +83,7 @@ func TestConnectionQuality(t *testing.T) {
 				},
 			},
 		}
-		cs.updateScore(streams, now.Add(duration))
+		cs.updateScore(now.Add(duration))
 		mos, quality = cs.GetScoreAndQuality()
 		require.Greater(t, float32(2.1), mos)
 		require.Equal(t, livekit.ConnectionQuality_POOR, quality)
@@ -90,7 +101,7 @@ func TestConnectionQuality(t *testing.T) {
 				},
 			},
 		}
-		cs.updateScore(streams, now.Add(duration))
+		cs.updateScore(now.Add(duration))
 		mos, quality = cs.GetScoreAndQuality()
 		require.Greater(t, float32(4.1), mos)
 		require.Equal(t, livekit.ConnectionQuality_GOOD, quality)
@@ -106,7 +117,7 @@ func TestConnectionQuality(t *testing.T) {
 				},
 			},
 		}
-		cs.updateScore(streams, now.Add(duration))
+		cs.updateScore(now.Add(duration))
 		mos, quality = cs.GetScoreAndQuality()
 		require.Greater(t, float32(4.1), mos)
 		require.Equal(t, livekit.ConnectionQuality_GOOD, quality)
@@ -122,7 +133,7 @@ func TestConnectionQuality(t *testing.T) {
 				},
 			},
 		}
-		cs.updateScore(streams, now.Add(duration))
+		cs.updateScore(now.Add(duration))
 		mos, quality = cs.GetScoreAndQuality()
 		require.Greater(t, float32(4.6), mos)
 		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, quality)
@@ -139,7 +150,7 @@ func TestConnectionQuality(t *testing.T) {
 				},
 			},
 		}
-		cs.updateScore(streams, now.Add(duration))
+		cs.updateScore(now.Add(duration))
 		mos, quality = cs.GetScoreAndQuality()
 		require.Greater(t, float32(4.1), mos)
 		require.Equal(t, livekit.ConnectionQuality_GOOD, quality)
@@ -155,7 +166,7 @@ func TestConnectionQuality(t *testing.T) {
 				},
 			},
 		}
-		cs.updateScore(streams, now.Add(duration))
+		cs.updateScore(now.Add(duration))
 		mos, quality = cs.GetScoreAndQuality()
 		require.Greater(t, float32(4.1), mos)
 		require.Equal(t, livekit.ConnectionQuality_GOOD, quality)
@@ -171,7 +182,7 @@ func TestConnectionQuality(t *testing.T) {
 				},
 			},
 		}
-		cs.updateScore(streams, now.Add(duration))
+		cs.updateScore(now.Add(duration))
 		mos, quality = cs.GetScoreAndQuality()
 		require.Greater(t, float32(4.6), mos)
 		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, quality)
@@ -184,11 +195,11 @@ func TestConnectionQuality(t *testing.T) {
 					StartTime:   now,
 					Duration:    duration,
 					Packets:     250,
-					PacketsLost: 25,
+					PacketsLost: 30,
 				},
 			},
 		}
-		cs.updateScore(streams, now.Add(duration))
+		cs.updateScore(now.Add(duration))
 		mos, quality = cs.GetScoreAndQuality()
 		require.Greater(t, float32(2.1), mos)
 		require.Equal(t, livekit.ConnectionQuality_POOR, quality)
@@ -212,7 +223,7 @@ func TestConnectionQuality(t *testing.T) {
 				},
 			},
 		}
-		cs.updateScore(streams, now.Add(duration))
+		cs.updateScore(now.Add(duration))
 		mos, quality = cs.GetScoreAndQuality()
 		require.Greater(t, float32(4.6), mos)
 		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, quality)
@@ -228,7 +239,7 @@ func TestConnectionQuality(t *testing.T) {
 				},
 			},
 		}
-		cs.updateScore(streams, now.Add(duration))
+		cs.updateScore(now.Add(duration))
 		mos, quality = cs.GetScoreAndQuality()
 		require.Greater(t, float32(2.1), mos)
 		require.Equal(t, livekit.ConnectionQuality_POOR, quality)
@@ -239,7 +250,7 @@ func TestConnectionQuality(t *testing.T) {
 		cs.UpdateMute(false, now.Add(2*time.Second))
 
 		// with lesser number of packet (simulating DTX).
-		// even higher loss (like 10%) should only knock down quality to GOOD, typically would be POOR at that loss rate
+		// even higher loss (like 10%) should not knock down quality due to quadratic weighting of packet loss ratio
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
@@ -250,10 +261,10 @@ func TestConnectionQuality(t *testing.T) {
 				},
 			},
 		}
-		cs.updateScore(streams, now.Add(duration))
+		cs.updateScore(now.Add(duration))
 		mos, quality = cs.GetScoreAndQuality()
-		require.Greater(t, float32(4.1), mos)
-		require.Equal(t, livekit.ConnectionQuality_GOOD, quality)
+		require.Greater(t, float32(4.6), mos)
+		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, quality)
 
 		// mute/unmute to bring quality back up
 		now = now.Add(duration)
@@ -269,12 +280,12 @@ func TestConnectionQuality(t *testing.T) {
 					Duration:    duration,
 					Packets:     250,
 					PacketsLost: 5,
-					RttMax:      300,
+					RttMax:      400,
 					JitterMax:   30000,
 				},
 			},
 		}
-		cs.updateScore(streams, now.Add(duration))
+		cs.updateScore(now.Add(duration))
 		mos, quality = cs.GetScoreAndQuality()
 		require.Greater(t, float32(4.1), mos)
 		require.Equal(t, livekit.ConnectionQuality_GOOD, quality)
@@ -294,11 +305,11 @@ func TestConnectionQuality(t *testing.T) {
 					StartTime: now,
 					Duration:  duration,
 					Packets:   250,
-					Bytes:     8_000_000 / 8 / 4,
+					Bytes:     8_000_000 / 8 / 5,
 				},
 			},
 		}
-		cs.updateScore(streams, now.Add(duration))
+		cs.updateScore(now.Add(duration))
 		mos, quality = cs.GetScoreAndQuality()
 		require.Greater(t, float32(4.1), mos)
 		require.Equal(t, livekit.ConnectionQuality_GOOD, quality)
@@ -320,11 +331,11 @@ func TestConnectionQuality(t *testing.T) {
 					StartTime: now,
 					Duration:  duration,
 					Packets:   250,
-					Bytes:     8_000_000 / 8 / 4,
+					Bytes:     8_000_000 / 8 / 5,
 				},
 			},
 		}
-		cs.updateScore(streams, now.Add(duration))
+		cs.updateScore(now.Add(duration))
 		mos, quality = cs.GetScoreAndQuality()
 		require.Greater(t, float32(4.1), mos)
 		require.Equal(t, livekit.ConnectionQuality_GOOD, quality)
@@ -345,18 +356,22 @@ func TestConnectionQuality(t *testing.T) {
 					StartTime: now,
 					Duration:  duration,
 					Packets:   250,
-					Bytes:     8_000_000 / 8 / 4,
+					Bytes:     8_000_000 / 8 / 5,
 				},
 			},
 		}
-		cs.updateScore(streams, now.Add(duration))
+		cs.updateScore(now.Add(duration))
 		mos, quality = cs.GetScoreAndQuality()
 		require.Greater(t, float32(4.1), mos)
 		require.Equal(t, livekit.ConnectionQuality_GOOD, quality)
 	})
 
 	t.Run("quality scorer dependent rtt", func(t *testing.T) {
-		cs := newConnectionStats("audio/opus", false, true, false)
+		var streams map[uint32]*buffer.StreamStatsWithLayers
+		getDeltaStats := func() map[uint32]*buffer.StreamStatsWithLayers {
+			return streams
+		}
+		cs := newConnectionStats("audio/opus", false, false, true, getDeltaStats)
 
 		duration := 5 * time.Second
 		now := time.Now()
@@ -366,7 +381,7 @@ func TestConnectionQuality(t *testing.T) {
 		// RTT does not knock quality down because it is dependent and hence not taken into account
 		// at 2% loss, quality should stay at EXCELLENT purely based on loss. With high RTT (700 ms)
 		// quality should drop to GOOD if RTT were taken into consideration
-		streams := map[uint32]*buffer.StreamStatsWithLayers{
+		streams = map[uint32]*buffer.StreamStatsWithLayers{
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime:   now,
@@ -377,14 +392,18 @@ func TestConnectionQuality(t *testing.T) {
 				},
 			},
 		}
-		cs.updateScore(streams, now.Add(duration))
+		cs.updateScore(now.Add(duration))
 		mos, quality := cs.GetScoreAndQuality()
 		require.Greater(t, float32(4.6), mos)
 		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, quality)
 	})
 
 	t.Run("quality scorer dependent jitter", func(t *testing.T) {
-		cs := newConnectionStats("audio/opus", false, false, true)
+		var streams map[uint32]*buffer.StreamStatsWithLayers
+		getDeltaStats := func() map[uint32]*buffer.StreamStatsWithLayers {
+			return streams
+		}
+		cs := newConnectionStats("audio/opus", false, true, false, getDeltaStats)
 
 		duration := 5 * time.Second
 		now := time.Now()
@@ -394,7 +413,7 @@ func TestConnectionQuality(t *testing.T) {
 		// Jitter does not knock quality down because it is dependent and hence not taken into account
 		// at 2% loss, quality should stay at EXCELLENT purely based on loss. With high jitter (200 ms)
 		// quality should drop to GOOD if jitter were taken into consideration
-		streams := map[uint32]*buffer.StreamStatsWithLayers{
+		streams = map[uint32]*buffer.StreamStatsWithLayers{
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime:   now,
@@ -405,7 +424,7 @@ func TestConnectionQuality(t *testing.T) {
 				},
 			},
 		}
-		cs.updateScore(streams, now.Add(duration))
+		cs.updateScore(now.Add(duration))
 		mos, quality := cs.GetScoreAndQuality()
 		require.Greater(t, float32(4.6), mos)
 		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, quality)
@@ -462,46 +481,22 @@ func TestConnectionQuality(t *testing.T) {
 						expectedQuality:      livekit.ConnectionQuality_EXCELLENT,
 					},
 					{
-						packetLossPercentage: 4.1,
+						packetLossPercentage: 4.4,
 						expectedMOS:          4.1,
 						expectedQuality:      livekit.ConnectionQuality_GOOD,
 					},
 					{
-						packetLossPercentage: 13.2,
+						packetLossPercentage: 15.0,
 						expectedMOS:          2.1,
 						expectedQuality:      livekit.ConnectionQuality_POOR,
 					},
 				},
 			},
-			// "audio/red" - no fec - 0 <= loss < 6.66%: EXCELLENT, 6.66% <= loss < 20%: GOOD, >= 20%: POOR
+			// "audio/red" - no fec - 0 <= loss < 10%: EXCELLENT, 10% <= loss < 30%: GOOD, >= 30%: POOR
 			{
 				name:            "audio/red - no fec",
 				mimeType:        "audio/red",
 				isFECEnabled:    false,
-				packetsExpected: 200,
-				expectedQualities: []expectedQuality{
-					{
-						packetLossPercentage: 6.0,
-						expectedMOS:          4.6,
-						expectedQuality:      livekit.ConnectionQuality_EXCELLENT,
-					},
-					{
-						packetLossPercentage: 10.0,
-						expectedMOS:          4.1,
-						expectedQuality:      livekit.ConnectionQuality_GOOD,
-					},
-					{
-						packetLossPercentage: 23.0,
-						expectedMOS:          2.1,
-						expectedQuality:      livekit.ConnectionQuality_POOR,
-					},
-				},
-			},
-			// "audio/red" - fec - 0 <= loss < 10%: EXCELLENT, 10% <= loss < 30%: GOOD, >= 30%: POOR
-			{
-				name:            "audio/red - fec",
-				mimeType:        "audio/red",
-				isFECEnabled:    true,
 				packetsExpected: 200,
 				expectedQualities: []expectedQuality{
 					{
@@ -510,12 +505,36 @@ func TestConnectionQuality(t *testing.T) {
 						expectedQuality:      livekit.ConnectionQuality_EXCELLENT,
 					},
 					{
-						packetLossPercentage: 18.0,
+						packetLossPercentage: 12.0,
 						expectedMOS:          4.1,
 						expectedQuality:      livekit.ConnectionQuality_GOOD,
 					},
 					{
-						packetLossPercentage: 36.0,
+						packetLossPercentage: 39.0,
+						expectedMOS:          2.1,
+						expectedQuality:      livekit.ConnectionQuality_POOR,
+					},
+				},
+			},
+			// "audio/red" - fec - 0 <= loss < 15%: EXCELLENT, 15% <= loss < 45%: GOOD, >= 45%: POOR
+			{
+				name:            "audio/red - fec",
+				mimeType:        "audio/red",
+				isFECEnabled:    true,
+				packetsExpected: 200,
+				expectedQualities: []expectedQuality{
+					{
+						packetLossPercentage: 12.0,
+						expectedMOS:          4.6,
+						expectedQuality:      livekit.ConnectionQuality_EXCELLENT,
+					},
+					{
+						packetLossPercentage: 20.0,
+						expectedMOS:          4.1,
+						expectedQuality:      livekit.ConnectionQuality_GOOD,
+					},
+					{
+						packetLossPercentage: 60.0,
 						expectedMOS:          2.1,
 						expectedQuality:      livekit.ConnectionQuality_POOR,
 					},
@@ -534,12 +553,12 @@ func TestConnectionQuality(t *testing.T) {
 						expectedQuality:      livekit.ConnectionQuality_EXCELLENT,
 					},
 					{
-						packetLossPercentage: 2.5,
+						packetLossPercentage: 3.5,
 						expectedMOS:          4.1,
 						expectedQuality:      livekit.ConnectionQuality_GOOD,
 					},
 					{
-						packetLossPercentage: 7.0,
+						packetLossPercentage: 8.0,
 						expectedMOS:          2.1,
 						expectedQuality:      livekit.ConnectionQuality_POOR,
 					},
@@ -549,14 +568,18 @@ func TestConnectionQuality(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				cs := newConnectionStats(tc.mimeType, tc.isFECEnabled, false, false)
+				var streams map[uint32]*buffer.StreamStatsWithLayers
+				getDeltaStats := func() map[uint32]*buffer.StreamStatsWithLayers {
+					return streams
+				}
+				cs := newConnectionStats(tc.mimeType, tc.isFECEnabled, true, true, getDeltaStats)
 
 				duration := 5 * time.Second
 				now := time.Now()
 				cs.Start(&livekit.TrackInfo{Type: livekit.TrackType_AUDIO}, now.Add(-duration))
 
 				for _, eq := range tc.expectedQualities {
-					streams := map[uint32]*buffer.StreamStatsWithLayers{
+					streams = map[uint32]*buffer.StreamStatsWithLayers{
 						123: {
 							RTPStats: &buffer.RTPDeltaInfo{
 								StartTime:   now,
@@ -566,7 +589,7 @@ func TestConnectionQuality(t *testing.T) {
 							},
 						},
 					}
-					cs.updateScore(streams, now.Add(duration))
+					cs.updateScore(now.Add(duration))
 					mos, quality := cs.GetScoreAndQuality()
 					require.Greater(t, eq.expectedMOS, mos)
 					require.Equal(t, eq.expectedQuality, quality)
@@ -619,7 +642,7 @@ func TestConnectionQuality(t *testing.T) {
 						offset:  3 * time.Second,
 					},
 				},
-				bytes:           uint64(math.Ceil(7_000_000.0 / 8.0 / 3.5)),
+				bytes:           uint64(math.Ceil(7_000_000.0 / 8.0 / 4.2)),
 				expectedMOS:     4.1,
 				expectedQuality: livekit.ConnectionQuality_GOOD,
 			},
@@ -634,7 +657,7 @@ func TestConnectionQuality(t *testing.T) {
 						offset:  3 * time.Second,
 					},
 				},
-				bytes:           uint64(math.Ceil(8_000_000.0 / 8.0 / 43.0)),
+				bytes:           uint64(math.Ceil(8_000_000.0 / 8.0 / 75.0)),
 				expectedMOS:     2.1,
 				expectedQuality: livekit.ConnectionQuality_POOR,
 			},
@@ -642,7 +665,11 @@ func TestConnectionQuality(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				cs := newConnectionStats("video/vp8", false, false, false)
+				var streams map[uint32]*buffer.StreamStatsWithLayers
+				getDeltaStats := func() map[uint32]*buffer.StreamStatsWithLayers {
+					return streams
+				}
+				cs := newConnectionStats("video/vp8", false, true, true, getDeltaStats)
 
 				duration := 5 * time.Second
 				now := time.Now()
@@ -652,7 +679,7 @@ func TestConnectionQuality(t *testing.T) {
 					cs.AddBitrateTransition(tr.bitrate, now.Add(tr.offset))
 				}
 
-				streams := map[uint32]*buffer.StreamStatsWithLayers{
+				streams = map[uint32]*buffer.StreamStatsWithLayers{
 					123: {
 						RTPStats: &buffer.RTPDeltaInfo{
 							StartTime: now,
@@ -662,7 +689,7 @@ func TestConnectionQuality(t *testing.T) {
 						},
 					},
 				}
-				cs.updateScore(streams, now.Add(duration))
+				cs.updateScore(now.Add(duration))
 				mos, quality := cs.GetScoreAndQuality()
 				require.Greater(t, tc.expectedMOS, mos)
 				require.Equal(t, tc.expectedQuality, quality)
@@ -718,7 +745,7 @@ func TestConnectionQuality(t *testing.T) {
 						distance: 2.0,
 					},
 					{
-						distance: 2.2,
+						distance: 2.6,
 						offset:   1 * time.Second,
 					},
 				},
@@ -729,7 +756,11 @@ func TestConnectionQuality(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				cs := newConnectionStats("video/vp8", false, false, false)
+				var streams map[uint32]*buffer.StreamStatsWithLayers
+				getDeltaStats := func() map[uint32]*buffer.StreamStatsWithLayers {
+					return streams
+				}
+				cs := newConnectionStats("video/vp8", false, true, true, getDeltaStats)
 
 				duration := 5 * time.Second
 				now := time.Now()
@@ -739,7 +770,7 @@ func TestConnectionQuality(t *testing.T) {
 					cs.AddLayerTransition(tr.distance, now.Add(tr.offset))
 				}
 
-				streams := map[uint32]*buffer.StreamStatsWithLayers{
+				streams = map[uint32]*buffer.StreamStatsWithLayers{
 					123: {
 						RTPStats: &buffer.RTPDeltaInfo{
 							StartTime: now,
@@ -748,7 +779,7 @@ func TestConnectionQuality(t *testing.T) {
 						},
 					},
 				}
-				cs.updateScore(streams, now.Add(duration))
+				cs.updateScore(now.Add(duration))
 				mos, quality := cs.GetScoreAndQuality()
 				require.Greater(t, tc.expectedMOS, mos)
 				require.Equal(t, tc.expectedQuality, quality)

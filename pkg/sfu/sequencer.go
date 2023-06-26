@@ -92,13 +92,13 @@ func (s *sequencer) setRTT(rtt uint32) {
 	}
 }
 
-func (s *sequencer) push(sn, offSn uint16, timeStamp uint32, layer int8) *packetMeta {
+func (s *sequencer) push(sn, offSn uint16, timeStamp uint32, layer int8, codecBytes []byte, ddBytes []byte) {
 	s.Lock()
 	defer s.Unlock()
 
 	slot, isValid := s.getSlot(offSn)
 	if !isValid {
-		return nil
+		return
 	}
 
 	s.meta[s.metaWritePtr] = packetMeta{
@@ -106,6 +106,8 @@ func (s *sequencer) push(sn, offSn uint16, timeStamp uint32, layer int8) *packet
 		targetSeqNo: offSn,
 		timestamp:   timeStamp,
 		layer:       layer,
+		codecBytes:  append([]byte{}, codecBytes...),
+		ddBytes:     append([]byte{}, ddBytes...),
 	}
 
 	s.seq[slot] = &s.meta[s.metaWritePtr]
@@ -114,8 +116,6 @@ func (s *sequencer) push(sn, offSn uint16, timeStamp uint32, layer int8) *packet
 	if s.metaWritePtr >= len(s.meta) {
 		s.metaWritePtr -= len(s.meta)
 	}
-
-	return s.seq[slot]
 }
 
 func (s *sequencer) pushPadding(offSn uint16) {
@@ -168,11 +168,11 @@ func (s *sequencer) getSlot(offSn uint16) (int, bool) {
 	return s.wrap(slot), true
 }
 
-func (s *sequencer) getPacketsMeta(seqNo []uint16) []*packetMeta {
+func (s *sequencer) getPacketsMeta(seqNo []uint16) []packetMeta {
 	s.Lock()
 	defer s.Unlock()
 
-	meta := make([]*packetMeta, 0, len(seqNo))
+	meta := make([]packetMeta, 0, len(seqNo))
 	refTime := uint32(time.Now().UnixNano()/1e6 - s.startTime)
 	for _, sn := range seqNo {
 		diff := s.headSN - sn
@@ -190,7 +190,11 @@ func (s *sequencer) getPacketsMeta(seqNo []uint16) []*packetMeta {
 		if seq.lastNack == 0 || refTime-seq.lastNack > uint32(math.Min(float64(ignoreRetransmission), float64(2*s.rtt))) {
 			seq.nacked++
 			seq.lastNack = refTime
-			meta = append(meta, seq)
+
+			pm := *seq
+			pm.codecBytes = append([]byte{}, seq.codecBytes...)
+			pm.ddBytes = append([]byte{}, seq.ddBytes...)
+			meta = append(meta, pm)
 		}
 	}
 

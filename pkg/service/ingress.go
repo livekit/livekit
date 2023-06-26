@@ -56,7 +56,17 @@ func (s *IngressService) CreateIngress(ctx context.Context, req *livekit.CreateI
 		AppendLogFields(ctx, fields...)
 	}()
 
-	ig, err := s.CreateIngressWithUrlPrefix(ctx, s.conf.RTMPBaseURL, req)
+	var urlPrefix string
+	switch req.InputType {
+	case livekit.IngressInput_RTMP_INPUT:
+		urlPrefix = s.conf.RTMPBaseURL
+	case livekit.IngressInput_WHIP_INPUT:
+		urlPrefix = s.conf.WHIPBaseURL
+	default:
+		return nil, ingress.ErrInvalidIngressType
+	}
+
+	ig, err := s.CreateIngressWithUrlPrefix(ctx, urlPrefix, req)
 	if err != nil {
 		return nil, err
 	}
@@ -84,6 +94,7 @@ func (s *IngressService) CreateIngressWithUrlPrefix(ctx context.Context, urlPref
 		InputType:           req.InputType,
 		Audio:               req.Audio,
 		Video:               req.Video,
+		BypassTranscoding:   req.BypassTranscoding,
 		RoomName:            req.RoomName,
 		ParticipantIdentity: req.ParticipantIdentity,
 		ParticipantName:     req.ParticipantName,
@@ -99,6 +110,7 @@ func (s *IngressService) CreateIngressWithUrlPrefix(ctx context.Context, urlPref
 		logger.Errorw("could not write ingress info", err)
 		return nil, err
 	}
+	s.telemetry.IngressCreated(ctx, info)
 
 	return info, nil
 }
@@ -115,6 +127,9 @@ func updateInfoUsingRequest(req *livekit.UpdateIngressRequest, info *livekit.Ing
 	}
 	if req.ParticipantName != "" {
 		info.ParticipantName = req.ParticipantName
+	}
+	if req.BypassTranscoding != nil {
+		info.BypassTranscoding = *req.BypassTranscoding
 	}
 	if req.Audio != nil {
 		info.Audio = req.Audio
@@ -240,5 +255,8 @@ func (s *IngressService) DeleteIngress(ctx context.Context, req *livekit.DeleteI
 	}
 
 	info.State.Status = livekit.IngressState_ENDPOINT_INACTIVE
+
+	s.telemetry.IngressDeleted(ctx, info)
+
 	return info, nil
 }

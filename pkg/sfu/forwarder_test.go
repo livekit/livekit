@@ -18,7 +18,7 @@ func disable(f *Forwarder) {
 }
 
 func newForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType) *Forwarder {
-	f := NewForwarder(kind, logger.GetLogger(), nil)
+	f := NewForwarder(kind, logger.GetLogger(), nil, nil)
 	f.DetermineCodec(codec, nil)
 	return f
 }
@@ -221,7 +221,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 	expectedResult = VideoAllocation{
 		PauseReason:         VideoPauseReasonNone,
 		BandwidthRequested:  bitrates[1][3],
-		BandwidthDelta:      bitrates[1][3],
+		BandwidthDelta:      bitrates[1][3] - bitrates[0][1],
 		BandwidthNeeded:     bitrates[1][3],
 		Bitrates:            bitrates,
 		TargetLayer:         buffer.DefaultMaxLayer,
@@ -293,11 +293,28 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		BandwidthNeeded:     bitrates[2][1],
 		Bitrates:            bitrates,
 		TargetLayer:         buffer.DefaultMaxLayer,
-		RequestLayerSpatial: 2,
+		RequestLayerSpatial: 1,
 		MaxLayer:            buffer.DefaultMaxLayer,
 		DistanceToDesired:   -0.5,
 	}
 	result = f.AllocateOptimal([]int32{0, 1}, bitrates, true)
+	require.Equal(t, expectedResult, result)
+	require.Equal(t, expectedResult, f.lastAllocation)
+	require.Equal(t, buffer.DefaultMaxLayer, f.TargetLayer())
+
+	// opportunistic target if feed is dry and current is not valid, i. e. not forwarding
+	expectedResult = VideoAllocation{
+		PauseReason:         VideoPauseReasonNone,
+		BandwidthRequested:  bitrates[2][1],
+		BandwidthDelta:      0,
+		BandwidthNeeded:     bitrates[2][1],
+		Bitrates:            bitrates,
+		TargetLayer:         buffer.DefaultMaxLayer,
+		RequestLayerSpatial: 2,
+		MaxLayer:            buffer.DefaultMaxLayer,
+		DistanceToDesired:   -0.5,
+	}
+	result = f.AllocateOptimal(nil, bitrates, true)
 	require.Equal(t, expectedResult, result)
 	require.Equal(t, expectedResult, f.lastAllocation)
 	require.Equal(t, buffer.DefaultMaxLayer, f.TargetLayer())
@@ -310,7 +327,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		BandwidthDelta:      0 - bitrates[2][1],
 		Bitrates:            emptyBitrates,
 		TargetLayer:         buffer.DefaultMaxLayer,
-		RequestLayerSpatial: 2,
+		RequestLayerSpatial: 1,
 		MaxLayer:            buffer.DefaultMaxLayer,
 		DistanceToDesired:   -1.0,
 	}
@@ -330,7 +347,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		BandwidthNeeded:     bitrates[2][1],
 		Bitrates:            bitrates,
 		TargetLayer:         expectedTargetLayer,
-		RequestLayerSpatial: 2,
+		RequestLayerSpatial: 1,
 		MaxLayer:            buffer.DefaultMaxLayer,
 		DistanceToDesired:   -0.5,
 	}
@@ -338,7 +355,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 	require.Equal(t, expectedResult, result)
 	require.Equal(t, expectedResult, f.lastAllocation)
 
-	// switches to highest available if feed is not dry and current is valid and current is not available
+	// switches request layer to highest available if feed is not dry and current is valid and current is not available
 	f.vls.SetCurrent(buffer.VideoLayer{Spatial: 0, Temporal: 1})
 	expectedTargetLayer = buffer.VideoLayer{
 		Spatial:  1,
@@ -377,29 +394,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 		MaxLayer:            f.vls.GetMax(),
 		DistanceToDesired:   0.0,
 	}
-	result = f.AllocateOptimal([]int32{0, 1}, emptyBitrates, true)
-	require.Equal(t, expectedResult, result)
-	require.Equal(t, expectedResult, f.lastAllocation)
-
-	// opportunistic if feed is not dry and current is valid, but request layer has changed
-	f.vls.SetMax(buffer.VideoLayer{Spatial: 2, Temporal: 1})
-	f.vls.SetCurrent(buffer.VideoLayer{Spatial: 0, Temporal: 1})
-	f.vls.SetRequestSpatial(0)
-	expectedTargetLayer = buffer.VideoLayer{
-		Spatial:  2,
-		Temporal: 1,
-	}
-	expectedResult = VideoAllocation{
-		PauseReason:         VideoPauseReasonFeedDry,
-		BandwidthRequested:  0,
-		BandwidthDelta:      0,
-		Bitrates:            emptyBitrates,
-		TargetLayer:         expectedTargetLayer,
-		RequestLayerSpatial: 2,
-		MaxLayer:            f.vls.GetMax(),
-		DistanceToDesired:   -1,
-	}
-	result = f.AllocateOptimal([]int32{0, 1}, emptyBitrates, true)
+	result = f.AllocateOptimal([]int32{0}, emptyBitrates, true)
 	require.Equal(t, expectedResult, result)
 	require.Equal(t, expectedResult, f.lastAllocation)
 }
@@ -1722,6 +1717,7 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	require.NoError(t, err)
 	expectedTP = TranslationParams{
 		isSwitchingToMaxSpatial: true,
+		maxSpatialLayer:         1,
 		rtp: &TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingContiguous,
 			sequenceNumber: 23339,
@@ -1774,7 +1770,7 @@ func TestForwardGetSnTsForPadding(t *testing.T) {
 	disable(f)
 
 	// should get back frame end needed as the last packet did not have RTP marker set
-	snts, err := f.GetSnTsForPadding(5)
+	snts, err := f.GetSnTsForPadding(5, false)
 	require.NoError(t, err)
 
 	numPadding := 5
@@ -1790,7 +1786,7 @@ func TestForwardGetSnTsForPadding(t *testing.T) {
 	require.Equal(t, sntsExpected, snts)
 
 	// now that there is a marker, timestamp should jump on first padding when asked again
-	snts, err = f.GetSnTsForPadding(numPadding)
+	snts, err = f.GetSnTsForPadding(numPadding, false)
 	require.NoError(t, err)
 
 	for i := 0; i < numPadding; i++ {
@@ -1849,9 +1845,15 @@ func TestForwardGetSnTsForBlankFrames(t *testing.T) {
 	frameRate := uint32(30)
 	var sntsExpected = make([]SnTs, numPadding)
 	for i := 0; i < numPadding; i++ {
+		// first blank frame should have same timestamp as last frame as end frame is synthesized
+		ts := params.Timestamp
+		if i != 0 {
+			// +1 here due to expected time stamp bumpint by at least one so that time stamp is always moving ahead
+			ts = params.Timestamp + 1 + ((uint32(i)*clockRate)+frameRate-1)/frameRate
+		}
 		sntsExpected[i] = SnTs{
 			sequenceNumber: params.SequenceNumber + uint16(i) + 1,
-			timestamp:      params.Timestamp + (uint32(i)*clockRate)/frameRate,
+			timestamp:      ts,
 		}
 	}
 	require.Equal(t, sntsExpected, snts)
@@ -1863,7 +1865,8 @@ func TestForwardGetSnTsForBlankFrames(t *testing.T) {
 	for i := 0; i < numPadding; i++ {
 		sntsExpected[i] = SnTs{
 			sequenceNumber: params.SequenceNumber + uint16(len(snts)) + uint16(i) + 1,
-			timestamp:      snts[len(snts)-1].timestamp + (uint32(i+1)*clockRate)/frameRate,
+			// +1 here due to expected time stamp bumpint by at least one so that time stamp is always moving ahead
+			timestamp: snts[len(snts)-1].timestamp + 1 + ((uint32(i+1)*clockRate)+frameRate-1)/frameRate,
 		}
 	}
 	snts, frameEndNeeded, err = f.GetSnTsForBlankFrames(30, numBlankFrames)

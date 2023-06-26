@@ -24,6 +24,11 @@ type StreamTrackerManagerListener interface {
 	OnBitrateReport(availableLayers []int32, bitrates Bitrates)
 }
 
+type endsSenderReport struct {
+	first  *buffer.RTCPSenderReportData
+	newest *buffer.RTCPSenderReportData
+}
+
 type StreamTrackerManager struct {
 	logger    logger.Logger
 	trackInfo *livekit.TrackInfo
@@ -36,14 +41,15 @@ type StreamTrackerManager struct {
 	maxPublishedLayer    int32
 	maxTemporalLayerSeen int32
 
-	trackers [buffer.DefaultMaxLayerSpatial + 1]*streamtracker.StreamTracker
+	ddTracker *streamtracker.StreamTrackerDependencyDescriptor
+	trackers  [buffer.DefaultMaxLayerSpatial + 1]streamtracker.StreamTrackerWorker
 
 	availableLayers  []int32
 	maxExpectedLayer int32
 	paused           bool
 
 	senderReportMu sync.RWMutex
-	senderReports  [buffer.DefaultMaxLayerSpatial + 1]*buffer.RTCPSenderReportDataExt
+	senderReports  [buffer.DefaultMaxLayerSpatial + 1]endsSenderReport
 
 	closed core.Fuse
 
@@ -128,28 +134,58 @@ func (s *StreamTrackerManager) createStreamTrackerFrame(layer int32) streamtrack
 	return streamtracker.NewStreamTrackerFrame(params)
 }
 
-func (s *StreamTrackerManager) AddTracker(layer int32) *streamtracker.StreamTracker {
+func (s *StreamTrackerManager) AddDependencyDescriptorTrackers() {
+	bitrateInterval, ok := s.trackerConfig.BitrateReportInterval[0]
+	if !ok {
+		return
+	}
+	s.lock.Lock()
+	var addAllTrackers bool
+	if s.ddTracker == nil {
+		s.ddTracker = streamtracker.NewStreamTrackerDependencyDescriptor(streamtracker.StreamTrackerParams{
+			BitrateReportInterval: bitrateInterval,
+			Logger:                s.logger.WithValues("layer", 0),
+		})
+		addAllTrackers = true
+	}
+	s.lock.Unlock()
+	if addAllTrackers {
+		for i := 0; i <= int(buffer.DefaultMaxLayerSpatial); i++ {
+			s.AddTracker(int32(i))
+		}
+	}
+}
+
+func (s *StreamTrackerManager) AddTracker(layer int32) streamtracker.StreamTrackerWorker {
 	bitrateInterval, ok := s.trackerConfig.BitrateReportInterval[layer]
 	if !ok {
 		return nil
 	}
 
-	var trackerImpl streamtracker.StreamTrackerImpl
-	switch s.trackerConfig.StreamTrackerType {
-	case config.StreamTrackerTypePacket:
-		trackerImpl = s.createStreamTrackerPacket(layer)
-	case config.StreamTrackerTypeFrame:
-		trackerImpl = s.createStreamTrackerFrame(layer)
+	var tracker streamtracker.StreamTrackerWorker
+	s.lock.Lock()
+	if s.ddTracker != nil {
+		tracker = s.ddTracker.LayeredTracker(layer)
 	}
-	if trackerImpl == nil {
-		return nil
-	}
+	s.lock.Unlock()
+	if tracker == nil {
+		var trackerImpl streamtracker.StreamTrackerImpl
+		switch s.trackerConfig.StreamTrackerType {
+		case config.StreamTrackerTypePacket:
+			trackerImpl = s.createStreamTrackerPacket(layer)
+		case config.StreamTrackerTypeFrame:
+			trackerImpl = s.createStreamTrackerFrame(layer)
+		}
+		if trackerImpl == nil {
+			return nil
+		}
 
-	tracker := streamtracker.NewStreamTracker(streamtracker.StreamTrackerParams{
-		StreamTrackerImpl:     trackerImpl,
-		BitrateReportInterval: bitrateInterval,
-		Logger:                s.logger.WithValues("layer", layer),
-	})
+		tracker = streamtracker.NewStreamTracker(streamtracker.StreamTrackerParams{
+			StreamTrackerImpl:     trackerImpl,
+			BitrateReportInterval: bitrateInterval,
+			Logger:                s.logger.WithValues("layer", layer),
+		})
+	}
 
 	s.logger.Debugw("StreamTrackerManager add track", "layer", layer)
 	tracker.OnStatusChanged(func(status streamtracker.StreamStatus) {
@@ -208,6 +244,8 @@ func (s *StreamTrackerManager) RemoveAllTrackers() {
 	s.availableLayers = make([]int32, 0)
 	s.maxExpectedLayerFromTrackInfo()
 	s.paused = false
+	ddTracker := s.ddTracker
+	s.ddTracker = nil
 	s.lock.Unlock()
 
 	for _, tracker := range trackers {
@@ -215,9 +253,12 @@ func (s *StreamTrackerManager) RemoveAllTrackers() {
 			tracker.Stop()
 		}
 	}
+	if ddTracker != nil {
+		ddTracker.Stop()
+	}
 }
 
-func (s *StreamTrackerManager) GetTracker(layer int32) *streamtracker.StreamTracker {
+func (s *StreamTrackerManager) GetTracker(layer int32) streamtracker.StreamTrackerWorker {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 
@@ -265,7 +306,7 @@ func (s *StreamTrackerManager) SetMaxExpectedSpatialLayer(layer int32) int32 {
 	// But, those conditions should be rare. In those cases, the restart will
 	// take longer.
 	//
-	var trackersToReset []*streamtracker.StreamTracker
+	var trackersToReset []streamtracker.StreamTrackerWorker
 	for l := s.maxExpectedLayer + 1; l <= layer; l++ {
 		if s.hasSpatialLayerLocked(l) {
 			continue
@@ -362,7 +403,8 @@ func (s *StreamTrackerManager) getLayeredBitrateLocked() ([]int32, Bitrates) {
 		}
 	}
 
-	if s.isSVC {
+	// accumulate bitrates for SVC streams without dependency descriptor
+	if s.isSVC && s.ddTracker == nil {
 		for i := len(br) - 1; i >= 1; i-- {
 			for j := len(br[i]) - 1; j >= 0; j-- {
 				if br[i][j] != 0 {
@@ -475,7 +517,7 @@ func (s *StreamTrackerManager) maxExpectedLayerFromTrackInfo() {
 	}
 }
 
-func (s *StreamTrackerManager) SetRTCPSenderReportDataExt(layer int32, senderReport *buffer.RTCPSenderReportDataExt) {
+func (s *StreamTrackerManager) SetRTCPSenderReportData(layer int32, srFirst *buffer.RTCPSenderReportData, srNewest *buffer.RTCPSenderReportData) {
 	s.senderReportMu.Lock()
 	defer s.senderReportMu.Unlock()
 
@@ -483,18 +525,19 @@ func (s *StreamTrackerManager) SetRTCPSenderReportDataExt(layer int32, senderRep
 		return
 	}
 
-	s.senderReports[layer] = senderReport
+	s.senderReports[layer].first = srFirst
+	s.senderReports[layer].newest = srNewest
 }
 
-func (s *StreamTrackerManager) GetRTCPSenderReportDataExt(layer int32) *buffer.RTCPSenderReportDataExt {
+func (s *StreamTrackerManager) GetRTCPSenderReportData(layer int32) (*buffer.RTCPSenderReportData, *buffer.RTCPSenderReportData) {
 	s.senderReportMu.RLock()
 	defer s.senderReportMu.RUnlock()
 
 	if layer < 0 || int(layer) >= len(s.senderReports) {
-		return nil
+		return nil, nil
 	}
 
-	return s.senderReports[layer]
+	return s.senderReports[layer].first, s.senderReports[layer].newest
 }
 
 func (s *StreamTrackerManager) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error) {
@@ -509,19 +552,19 @@ func (s *StreamTrackerManager) GetReferenceLayerRTPTimestamp(ts uint32, layer in
 		return ts, nil
 	}
 
-	var srLayer *buffer.RTCPSenderReportDataExt
+	var srLayer *buffer.RTCPSenderReportData
 	if int(layer) < len(s.senderReports) {
-		srLayer = s.senderReports[layer]
+		srLayer = s.senderReports[layer].newest
 	}
-	if srLayer == nil || srLayer.SenderReportData.NTPTimestamp == 0 {
+	if srLayer == nil || srLayer.NTPTimestamp == 0 {
 		return 0, fmt.Errorf("layer rtcp sender report not available: %d", layer)
 	}
 
-	var srRef *buffer.RTCPSenderReportDataExt
+	var srRef *buffer.RTCPSenderReportData
 	if int(referenceLayer) < len(s.senderReports) {
-		srRef = s.senderReports[referenceLayer]
+		srRef = s.senderReports[referenceLayer].newest
 	}
-	if srRef == nil || srRef.SenderReportData.NTPTimestamp == 0 {
+	if srRef == nil || srRef.NTPTimestamp == 0 {
 		return 0, fmt.Errorf("reference layer rtcp sender report not available: %d", referenceLayer)
 	}
 
@@ -529,14 +572,29 @@ func (s *StreamTrackerManager) GetReferenceLayerRTPTimestamp(ts uint32, layer in
 	// NOTE: It is possible that reference layer has stopped (due to dynacast/adaptive streaming OR publisher
 	// constraints). It should be okay even if the layer has stopped for a long time when using modulo arithmetic for
 	// RTP time stamp (uint32 arithmetic).
-	ntpDiff := float64(int64(srRef.SenderReportData.NTPTimestamp-srLayer.SenderReportData.NTPTimestamp)) / float64(1<<32)
-	normalizedTS := srLayer.SenderReportData.RTPTimestamp + uint32(ntpDiff*float64(s.clockRate))
+	ntpDiff := srRef.NTPTimestamp.Time().Sub(srLayer.NTPTimestamp.Time())
+	rtpDiff := ntpDiff.Nanoseconds() * int64(s.clockRate) / 1e9
+	normalizedTS := srLayer.RTPTimestamp + uint32(rtpDiff)
+	s.logger.Infow(
+		"getting reference timestamp",
+		"layer", layer,
+		"referenceLayer", referenceLayer,
+		"incomingTS", ts,
+		"layerNTP", srLayer.NTPTimestamp.Time().String(),
+		"refNTP", srRef.NTPTimestamp.Time().String(),
+		"ntpDiff", ntpDiff.String(),
+		"layerRTP", srLayer.RTPTimestamp,
+		"refRTP", srRef.RTPTimestamp,
+		"rtpDiff", rtpDiff,
+		"normalizedTS", normalizedTS,
+		"mappedTS", ts+(srRef.RTPTimestamp-normalizedTS),
+	)
 
 	// now that both RTP timestamps correspond to roughly the same NTP time,
 	// the diff between them is the offset in RTP timestamp units between layer and referenceLayer.
 	// Add the offset to layer's ts to map it to corresponding RTP timestamp in
 	// the reference layer.
-	return ts + (srRef.SenderReportData.RTPTimestamp - normalizedTS), nil
+	return ts + (srRef.RTPTimestamp - normalizedTS), nil
 }
 
 func (s *StreamTrackerManager) GetMaxTemporalLayerSeen() int32 {

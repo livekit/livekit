@@ -24,6 +24,6 @@ proto/
 .DS_Store
 
 # IDE
-.idea
+.idea/
 
 dist/

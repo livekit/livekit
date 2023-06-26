@@ -16,8 +16,11 @@ import (
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/psrpc"
-	"github.com/livekit/psrpc/middleware"
+	"github.com/livekit/psrpc/pkg/middleware"
 )
+
+var ErrSignalWriteFailed = errors.New("signal write failed")
+var ErrSignalMessageDropped = errors.New("signal message dropped")
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
 
@@ -77,19 +80,21 @@ func (r *signalClient) StartParticipantSignal(
 		"room", roomName,
 		"reqNodeID", nodeID,
 		"participant", pi.Identity,
-		"connectionID", connectionID,
+		"connID", connectionID,
 	)
 
 	l.Debugw("starting signal connection")
 
 	stream, err := r.client.RelaySignal(ctx, nodeID)
 	if err != nil {
+		prometheus.MessageCounter.WithLabelValues("signal", "failure").Add(1)
 		return
 	}
 
 	err = stream.Send(&rpc.RelaySignalRequest{StartSession: ss})
 	if err != nil {
 		stream.Close(err)
+		prometheus.MessageCounter.WithLabelValues("signal", "failure").Add(1)
 		return
 	}
 
@@ -99,20 +104,22 @@ func (r *signalClient) StartParticipantSignal(
 		Config:         r.config,
 		Writer:         signalRequestMessageWriter{},
 		CloseOnFailure: true,
+		BlockOnClose:   true,
+		ConnectionID:   connectionID,
 	})
-	resChan := NewDefaultMessageChannel()
+	resChan := NewDefaultMessageChannel(connectionID)
 
 	go func() {
 		r.active.Inc()
 		defer r.active.Dec()
 
-		err = CopySignalStreamToMessageChannel[*rpc.RelaySignalRequest, *rpc.RelaySignalResponse](
+		err := CopySignalStreamToMessageChannel[*rpc.RelaySignalRequest, *rpc.RelaySignalResponse](
 			stream,
 			resChan,
 			signalResponseMessageReader{},
 			r.config,
 		)
-		l.Debugw("participant signal stream closed", "error", err)
+		l.Infow("signal stream closed", "error", err)
 
 		resChan.Close()
 	}()
@@ -122,17 +129,11 @@ func (r *signalClient) StartParticipantSignal(
 
 type signalRequestMessageWriter struct{}
 
-func (e signalRequestMessageWriter) WriteOne(seq uint64, msg proto.Message) *rpc.RelaySignalRequest {
-	return &rpc.RelaySignalRequest{
-		Seq:     seq,
-		Request: msg.(*livekit.SignalRequest),
-	}
-}
-
-func (e signalRequestMessageWriter) WriteMany(seq uint64, msgs []proto.Message) *rpc.RelaySignalRequest {
+func (e signalRequestMessageWriter) Write(seq uint64, close bool, msgs []proto.Message) *rpc.RelaySignalRequest {
 	r := &rpc.RelaySignalRequest{
 		Seq:      seq,
 		Requests: make([]*livekit.SignalRequest, 0, len(msgs)),
+		Close:    close,
 	}
 	for _, m := range msgs {
 		r.Requests = append(r.Requests, m.(*livekit.SignalRequest))
@@ -143,10 +144,7 @@ func (e signalRequestMessageWriter) WriteMany(seq uint64, msgs []proto.Message) 
 type signalResponseMessageReader struct{}
 
 func (e signalResponseMessageReader) Read(rm *rpc.RelaySignalResponse) ([]proto.Message, error) {
-	msgs := make([]proto.Message, 0, len(rm.Responses)+1)
-	if rm.Response != nil {
-		msgs = append(msgs, rm.Response)
-	}
+	msgs := make([]proto.Message, 0, len(rm.Responses))
 	for _, m := range rm.Responses {
 		msgs = append(msgs, m)
 	}
@@ -156,11 +154,11 @@ func (e signalResponseMessageReader) Read(rm *rpc.RelaySignalResponse) ([]proto.
 type RelaySignalMessage interface {
 	proto.Message
 	GetSeq() uint64
+	GetClose() bool
 }
 
 type SignalMessageWriter[SendType RelaySignalMessage] interface {
-	WriteOne(seq uint64, msg proto.Message) SendType
-	WriteMany(seq uint64, msgs []proto.Message) SendType
+	Write(seq uint64, close bool, msgs []proto.Message) SendType
 }
 
 type SignalMessageReader[RecvType RelaySignalMessage] interface {
@@ -178,15 +176,22 @@ func CopySignalStreamToMessageChannel[SendType, RecvType RelaySignalMessage](
 		config: config,
 	}
 	for msg := range stream.Channel() {
-		var res []proto.Message
 		res, err := r.Read(msg)
 		if err != nil {
+			prometheus.MessageCounter.WithLabelValues("signal", "failure").Add(1)
 			return err
 		}
+
 		for _, r := range res {
 			if err = ch.WriteMessage(r); err != nil {
+				prometheus.MessageCounter.WithLabelValues("signal", "failure").Add(1)
 				return err
 			}
+			prometheus.MessageCounter.WithLabelValues("signal", "success").Add(1)
+		}
+
+		if msg.GetClose() {
+			return stream.Close(nil)
 		}
 	}
 	return stream.Err()
@@ -204,19 +209,18 @@ func (r *signalMessageReader[SendType, RecvType]) Read(msg RecvType) ([]proto.Me
 		return nil, err
 	}
 
-	if r.config.MinVersion >= 1 {
-		if r.seq < msg.GetSeq() {
-			return nil, errors.New("signal message dropped")
-		}
-		if r.seq > msg.GetSeq() {
-			n := int(r.seq - msg.GetSeq())
-			if n > len(res) {
-				n = len(res)
-			}
-			res = res[n:]
-		}
-		r.seq += uint64(len(res))
+	if r.seq < msg.GetSeq() {
+		return nil, ErrSignalMessageDropped
 	}
+	if r.seq > msg.GetSeq() {
+		n := int(r.seq - msg.GetSeq())
+		if n > len(res) {
+			n = len(res)
+		}
+		res = res[n:]
+	}
+	r.seq += uint64(len(res))
+
 	return res, nil
 }
 
@@ -226,6 +230,8 @@ type SignalSinkParams[SendType, RecvType RelaySignalMessage] struct {
 	Config         config.SignalRelayConfig
 	Writer         SignalMessageWriter[SendType]
 	CloseOnFailure bool
+	BlockOnClose   bool
+	ConnectionID   livekit.ConnectionID
 }
 
 func NewSignalMessageSink[SendType, RecvType RelaySignalMessage](params SignalSinkParams[SendType, RecvType]) MessageSink {
@@ -233,8 +239,6 @@ func NewSignalMessageSink[SendType, RecvType RelaySignalMessage](params SignalSi
 		SignalSinkParams: params,
 	}
 }
-
-var ErrSignalFailed = errors.New("signal stream failed")
 
 type signalMessageSink[SendType, RecvType RelaySignalMessage] struct {
 	SignalSinkParams[SendType, RecvType]
@@ -250,44 +254,45 @@ func (s *signalMessageSink[SendType, RecvType]) Close() {
 	s.mu.Lock()
 	s.draining = true
 	if !s.writing {
-		s.Stream.Close(nil)
+		s.writing = true
+		go s.write()
 	}
 	s.mu.Unlock()
 
-	<-s.Stream.Context().Done()
+	// conditionally block while closing to wait for outgoing messages to drain
+	//
+	// on media the signal sink shares a goroutine with other signal connection
+	// attempts from the same participant so blocking delays establishing new
+	// sessions during reconnect.
+	//
+	// on controller closing without waiting for the outstanding messages to
+	// drain causes leave messages to be dropped from the write queue. when
+	// this happens other participants in the room aren't notified about the
+	// departure until the participant times out.
+	if s.BlockOnClose {
+		<-s.Stream.Context().Done()
+	}
 }
 
 func (s *signalMessageSink[SendType, RecvType]) IsClosed() bool {
 	return s.Stream.Err() != nil
 }
 
-func (s *signalMessageSink[SendType, RecvType]) nextMessage() (msg SendType, n int) {
-	if len(s.queue) == 0 {
-		return
-	}
-	if s.Config.MinVersion >= 1 {
-		return s.Writer.WriteMany(s.seq, s.queue), len(s.queue)
-	}
-	return s.Writer.WriteOne(s.seq, s.queue[0]), 1
-}
-
 func (s *signalMessageSink[SendType, RecvType]) write() {
 	interval := s.Config.MinRetryInterval
 	deadline := time.Now().Add(s.Config.RetryTimeout)
+	var err error
 
 	s.mu.Lock()
 	for {
-		msg, n := s.nextMessage()
-		if n == 0 || s.IsClosed() {
-			if s.draining {
-				s.Stream.Close(nil)
-			}
-			s.writing = false
+		close := s.draining
+		if (!close && len(s.queue) == 0) || s.IsClosed() {
 			break
 		}
+		msg, n := s.Writer.Write(s.seq, close, s.queue), len(s.queue)
 		s.mu.Unlock()
 
-		err := s.Stream.Send(msg, psrpc.WithTimeout(interval))
+		err = s.Stream.Send(msg, psrpc.WithTimeout(interval))
 		if err != nil {
 			if time.Now().After(deadline) {
 				s.Logger.Warnw("could not send signal message", err)
@@ -295,12 +300,7 @@ func (s *signalMessageSink[SendType, RecvType]) write() {
 				s.mu.Lock()
 				s.seq += uint64(len(s.queue))
 				s.queue = nil
-
-				if s.CloseOnFailure {
-					s.Stream.Close(ErrSignalFailed)
-				}
-				s.mu.Unlock()
-				return
+				break
 			}
 
 			interval *= 2
@@ -316,7 +316,19 @@ func (s *signalMessageSink[SendType, RecvType]) write() {
 
 			s.seq += uint64(n)
 			s.queue = s.queue[n:]
+
+			if close {
+				break
+			}
 		}
+	}
+
+	s.writing = false
+	if s.draining {
+		s.Stream.Close(nil)
+	}
+	if err != nil && s.CloseOnFailure {
+		s.Stream.Close(ErrSignalWriteFailed)
 	}
 	s.mu.Unlock()
 }
@@ -337,4 +349,8 @@ func (s *signalMessageSink[SendType, RecvType]) WriteMessage(msg proto.Message) 
 		go s.write()
 	}
 	return nil
+}
+
+func (s *signalMessageSink[SendType, RecvType]) ConnectionID() livekit.ConnectionID {
+	return s.SignalSinkParams.ConnectionID
 }

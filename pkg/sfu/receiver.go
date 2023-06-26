@@ -20,6 +20,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/audio"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
+	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
 )
 
 var (
@@ -65,7 +66,7 @@ type TrackReceiver interface {
 
 	GetTemporalLayerFpsForSpatial(layer int32) []float32
 
-	GetRTCPSenderReportDataExt(layer int32) *buffer.RTCPSenderReportDataExt
+	GetRTCPSenderReportData(layer int32) (*buffer.RTCPSenderReportData, *buffer.RTCPSenderReportData)
 	GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error)
 }
 
@@ -204,11 +205,10 @@ func NewWebRTCReceiver(
 	})
 
 	w.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
-		MimeType:       w.codec.MimeType,
-		IsFECEnabled:   strings.EqualFold(w.codec.MimeType, webrtc.MimeTypeOpus) && strings.Contains(strings.ToLower(w.codec.SDPFmtpLine), "fec"),
-		IsDependentRTT: true,
-		GetDeltaStats:  w.getDeltaStats,
-		Logger:         w.logger.WithValues("direction", "up"),
+		MimeType:      w.codec.MimeType,
+		IsFECEnabled:  strings.EqualFold(w.codec.MimeType, webrtc.MimeTypeOpus) && strings.Contains(strings.ToLower(w.codec.SDPFmtpLine), "fec"),
+		GetDeltaStats: w.getDeltaStats,
+		Logger:        w.logger.WithValues("direction", "up"),
 	})
 	w.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
 		if w.onStatsUpdate != nil {
@@ -216,6 +216,13 @@ func NewWebRTCReceiver(
 		}
 	})
 	w.connectionStats.Start(w.trackInfo, time.Now())
+
+	for _, ext := range receiver.GetParameters().HeaderExtensions {
+		if ext.URI == dd.ExtensionUrl {
+			w.streamTrackerManager.AddDependencyDescriptorTrackers()
+			break
+		}
+	}
 
 	return w
 }
@@ -311,7 +318,8 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 	})
 	buff.OnRtcpFeedback(w.sendRTCP)
 	buff.OnRtcpSenderReport(func(srData *buffer.RTCPSenderReportData) {
-		w.streamTrackerManager.SetRTCPSenderReportDataExt(layer, buff.GetSenderReportDataExt())
+		srFirst, srNewest := buff.GetSenderReportData()
+		w.streamTrackerManager.SetRTCPSenderReportData(layer, srFirst, srNewest)
 
 		w.downTrackSpreader.Broadcast(func(dt TrackSender) {
 			_ = dt.HandleRTCPSenderReportData(w.codec.PayloadType, layer, srData)
@@ -644,6 +652,7 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 				len(pkt.Packet.Payload),
 				pkt.Packet.Marker,
 				pkt.Packet.Timestamp,
+				pkt.DependencyDescriptor,
 			)
 		}
 
@@ -662,9 +671,7 @@ func (w *WebRTCReceiver) closeTracks() {
 	w.connectionStats.Close()
 	w.streamTrackerManager.Close()
 
-	for _, dt := range w.downTrackSpreader.ResetAndGetDownTracks() {
-		dt.Close()
-	}
+	closeTrackSenders(w.downTrackSpreader.ResetAndGetDownTracks())
 
 	if w.onCloseHandler != nil {
 		w.onCloseHandler()
@@ -746,10 +753,24 @@ func (w *WebRTCReceiver) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
 	return b.GetTemporalLayerFpsForSpatial(layer)
 }
 
-func (w *WebRTCReceiver) GetRTCPSenderReportDataExt(layer int32) *buffer.RTCPSenderReportDataExt {
-	return w.streamTrackerManager.GetRTCPSenderReportDataExt(layer)
+func (w *WebRTCReceiver) GetRTCPSenderReportData(layer int32) (*buffer.RTCPSenderReportData, *buffer.RTCPSenderReportData) {
+	return w.streamTrackerManager.GetRTCPSenderReportData(layer)
 }
 
 func (w *WebRTCReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error) {
 	return w.streamTrackerManager.GetReferenceLayerRTPTimestamp(ts, layer, referenceLayer)
+}
+
+// closes all track senders in parallel, returns when all are closed
+func closeTrackSenders(senders []TrackSender) {
+	wg := sync.WaitGroup{}
+	for _, dt := range senders {
+		dt := dt
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			dt.Close()
+		}()
+	}
+	wg.Wait()
 }
