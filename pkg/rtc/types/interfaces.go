@@ -285,6 +285,7 @@ type LocalParticipant interface {
 	IsDisconnected() bool
 	IsIdle() bool
 	SubscriberAsPrimary() bool
+	GetClientInfo() *livekit.ClientInfo
 	GetClientConfiguration() *livekit.ClientConfiguration
 	GetICEConnectionType() ICEConnectionType
 	GetBufferFactory() *buffer.Factory
