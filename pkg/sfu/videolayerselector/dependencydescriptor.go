@@ -97,25 +97,6 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		d.updateActiveDecodeTargets(*dd.ActiveDecodeTargetsBitmask)
 	}
 
-	// check decodability using reference frames
-	isDecodable := true
-	for _, fdiff := range fd.FrameDiffs {
-		if fdiff == 0 {
-			continue
-		}
-
-		// use relaxed check for frame diff that we have chain intact detection and don't want
-		// to drop packet due to out-of-order packet or recoverable packet loss
-		if sd, _ := d.decisions.GetDecision(extFrameNum - uint64(fdiff)); sd == selectorDecisionDropped {
-			isDecodable = false
-			break
-		}
-	}
-	if !isDecodable {
-		d.decisions.AddDropped(extFrameNum)
-		return
-	}
-
 	for _, chain := range d.chains {
 		chain.OnFrame(extFrameNum, fd)
 	}
@@ -142,10 +123,16 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 			d.decisions.AddDropped(extFrameNum)
 			return
 		}
+
+		// try to keep lower spatial layer decodable so that we can switch to it seamlessly
 		if frameResult.TargetValid {
-			highestDecodeTarget = dt.DependencyDescriptorDecodeTarget
-			dti = frameResult.DTI
-			break
+			if highestDecodeTarget.Target == -1 {
+				highestDecodeTarget = dt.DependencyDescriptorDecodeTarget
+				dti = frameResult.DTI
+			} else if dt.Layer.Spatial < highestDecodeTarget.Layer.Spatial && dt.Layer.Temporal == 0 &&
+				frameResult.DTI != dede.DecodeTargetNotPresent && frameResult.DTI != dede.DecodeTargetDiscardable {
+				dti = frameResult.DTI
+			}
 		}
 	}
 	d.decodeTargetsLock.RUnlock()
@@ -162,24 +149,42 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 
 	if highestDecodeTarget.Target < 0 {
 		// no active decode target, do not select
-		//d.logger.Debugw(fmt.Sprintf("drop packet for no target found, decodeTargets %v, tagetLayer %v, incoming %v",
-		//d.decodeTargets,
-		//d.targetLayer,
-		//incomingLayer,
-		//))
+		// d.logger.Debugw(fmt.Sprintf("drop packet for no target found, decodeTargets %v, tagetLayer %v, incoming %v",
+		// 	d.decodeTargets,
+		// 	d.targetLayer,
+		// 	incomingLayer,
+		// ))
 		d.decisions.AddDropped(extFrameNum)
 		return
 	}
 
 	// // DD-TODO : if bandwidth in congest, could drop the 'Discardable' frame
 	if dti == dede.DecodeTargetNotPresent {
-		//d.logger.Debugw(fmt.Sprintf("drop packet for decode target not present, dtis %v, highestDecodeTarget %d, incoming %v, fn: %d/%d",
-		//dtis,
-		//highestDecodeTarget,
-		//incomingLayer,
-		//dd.FrameNumber,
-		//extFrameNum,
-		//))
+		// d.logger.Debugw(fmt.Sprintf("drop packet for decode target not present, highestDecodeTarget %d, incoming %v, fn: %d/%d",
+		// 	highestDecodeTarget,
+		// 	incomingLayer,
+		// 	dd.FrameNumber,
+		// 	extFrameNum,
+		// ))
+		d.decisions.AddDropped(extFrameNum)
+		return
+	}
+
+	// check decodability using reference frames
+	isDecodable := true
+	for _, fdiff := range fd.FrameDiffs {
+		if fdiff == 0 {
+			continue
+		}
+
+		// use relaxed check for frame diff that we have chain intact detection and don't want
+		// to drop packet due to out-of-order packet or recoverable packet loss
+		if sd, _ := d.decisions.GetDecision(extFrameNum - uint64(fdiff)); sd == selectorDecisionDropped {
+			isDecodable = false
+			break
+		}
+	}
+	if !isDecodable {
 		d.decisions.AddDropped(extFrameNum)
 		return
 	}
@@ -322,7 +327,7 @@ func (d *DependencyDescriptor) CheckSync() (locked bool, layer int32) {
 	d.decodeTargetsLock.RLock()
 	defer d.decodeTargetsLock.RUnlock()
 	for _, dt := range d.decodeTargets {
-		if dt.Layer.Spatial == layer && dt.Valid() {
+		if dt.Active() && dt.Layer.Spatial == layer && dt.Valid() {
 			return true, layer
 		}
 	}

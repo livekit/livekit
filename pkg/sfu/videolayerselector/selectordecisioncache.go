@@ -62,8 +62,12 @@ func (s *SelectorDecisionCache) AddDropped(entity uint64) {
 }
 
 func (s *SelectorDecisionCache) GetDecision(entity uint64) (selectorDecision, error) {
-	if !s.initialized || entity > s.last || entity < s.base {
+	if !s.initialized || entity < s.base {
 		return selectorDecisionMissing, nil
+	}
+
+	if entity > s.last {
+		return selectorDecisionUnknown, nil
 	}
 
 	offset := s.last - entity
@@ -76,7 +80,7 @@ func (s *SelectorDecisionCache) GetDecision(entity uint64) (selectorDecision, er
 }
 
 func (s *SelectorDecisionCache) ExpectDecision(entity uint64, f func(entity uint64, decision selectorDecision)) bool {
-	if !s.initialized || entity > s.last || entity < s.base {
+	if !s.initialized || entity < s.base {
 		return false
 	}
 

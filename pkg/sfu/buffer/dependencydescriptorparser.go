@@ -145,21 +145,10 @@ func ProcessFrameDependencyStructure(structure *dd.FrameDependencyStructure) []D
 
 func GetActiveDecodeTargetBitmask(layer VideoLayer, decodeTargets []DependencyDescriptorDecodeTarget) *uint32 {
 	activeBitMask := uint32(0)
-	var maxSpatial, maxTemporal int32
 	for _, dt := range decodeTargets {
-		if dt.Layer.Spatial > maxSpatial {
-			maxSpatial = dt.Layer.Spatial
-		}
-		if dt.Layer.Temporal > maxTemporal {
-			maxTemporal = dt.Layer.Temporal
-		}
 		if dt.Layer.Spatial <= layer.Spatial && dt.Layer.Temporal <= layer.Temporal {
 			activeBitMask |= 1 << dt.Target
 		}
-	}
-	if layer.Spatial == maxSpatial && layer.Temporal == maxTemporal {
-		// all the decode targets are selected
-		return nil
 	}
 
 	return &activeBitMask

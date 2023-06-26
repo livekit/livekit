@@ -35,6 +35,7 @@ func (fc *FrameChain) OnFrame(extFrameNum uint64, fd *dd.FrameDependencyTemplate
 	if fd.ChainDiffs[fc.chainIdx] == 0 {
 		if fc.broken {
 			fc.broken = false
+			fc.logger.Debugw("frame chain intact", "chanIdx", fc.chainIdx)
 		}
 		fc.expectFrames = fc.expectFrames[:0]
 		return true
@@ -63,6 +64,7 @@ func (fc *FrameChain) OnFrame(extFrameNum uint64, fd *dd.FrameDependencyTemplate
 
 	if !intact {
 		fc.broken = true
+		fc.logger.Debugw("frame chain broken", "chanIdx", fc.chainIdx, "sd", sd, "frame", extFrameNum, "prevFrame", prevFrameInChain)
 	}
 	return intact
 }
