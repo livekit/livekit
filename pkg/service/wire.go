@@ -66,6 +66,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		newTurnAuthHandler,
 		newInProcessTurnServer,
 		utils.NewDefaultTimedVersionGenerator,
+		createSmartContractClient,
+		createClientProvider,
 		NewLivekitServer,
 	)
 	return &LivekitServer{}, nil
@@ -82,6 +84,24 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 	)
 
 	return nil, nil
+}
+
+func createClientProvider(contract *p2p_database.EthSmartContract, db *p2p_database.DB) *ClientProvider {
+	return NewClientProvider(db, contract)
+}
+
+func createSmartContractClient(conf *config.Config) *p2p_database.EthSmartContract {
+	contract, err := p2p_database.NewEthSmartContract(p2p_database.Config{
+		EthereumNetworkHost:     conf.Ethereum.NetworkHost,
+		EthereumNetworkKey:      conf.Ethereum.NetworkKey,
+		EthereumContractAddress: conf.Ethereum.ContractAddress,
+	}, nil)
+
+	if err != nil {
+		return nil, errors.Wrap(err, "try create contract")
+	}
+
+	return contract
 }
 
 func createParticipantCounter(mainDatabase *p2p_database.DB) *ParticipantCounter {
