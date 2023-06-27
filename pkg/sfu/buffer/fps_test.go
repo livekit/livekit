@@ -31,7 +31,7 @@ func (f *testFrameInfo) toVP8() *ExtPacket {
 func (f *testFrameInfo) toDD() *ExtPacket {
 	return &ExtPacket{
 		Packet: &rtp.Packet{Header: f.header},
-		DependencyDescriptor: &DependencyDescriptorWithDecodeTarget{
+		DependencyDescriptor: &ExtDependencyDescriptor{
 			Descriptor: &dependencydescriptor.DependencyDescriptor{
 				FrameNumber: f.framenumber,
 				FrameDependencies: &dependencydescriptor.FrameDependencyTemplate{

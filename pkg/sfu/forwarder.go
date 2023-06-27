@@ -1409,9 +1409,7 @@ func (f *Forwarder) CheckSync() (locked bool, layer int32) {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
-	layer = f.vls.GetRequestSpatial()
-	locked = layer == f.vls.GetCurrent().Spatial || f.vls.GetParked().IsValid()
-	return
+	return f.vls.CheckSync()
 }
 
 func (f *Forwarder) FilterRTX(nacks []uint16) (filtered []uint16, disallowedLayers [buffer.DefaultMaxLayerSpatial + 1]bool) {
