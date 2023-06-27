@@ -108,6 +108,7 @@ func (cs *ConnectionStats) updateScoreWithAggregate(agg *buffer.RTPDeltaInfo, at
 		stat.packetsExpected = agg.Packets + agg.PacketsPadding
 		stat.packetsLost = agg.PacketsLost
 		stat.packetsMissing = agg.PacketsMissing
+		stat.packetsOutOfOrder = agg.PacketsOutOfOrder
 		stat.bytes = agg.Bytes - agg.HeaderBytes // only use media payload size
 		stat.rttMax = agg.RttMax
 		stat.jitterMax = agg.JitterMax

@@ -29,14 +29,15 @@ const (
 // ------------------------------------------
 
 type windowStat struct {
-	startedAt       time.Time
-	duration        time.Duration
-	packetsExpected uint32
-	packetsLost     uint32
-	packetsMissing  uint32
-	bytes           uint64
-	rttMax          uint32
-	jitterMax       float64
+	startedAt         time.Time
+	duration          time.Duration
+	packetsExpected   uint32
+	packetsLost       uint32
+	packetsMissing    uint32
+	packetsOutOfOrder uint32
+	bytes             uint64
+	rttMax            uint32
+	jitterMax         float64
 }
 
 func (w *windowStat) calculatePacketScore(plw float64, includeRTT bool, includeJitter bool) float64 {
@@ -59,7 +60,28 @@ func (w *windowStat) calculatePacketScore(plw float64, includeRTT bool, includeJ
 		delayEffect = (effectiveDelay - 120.0) / 10.0
 	}
 
-	actualLost := w.packetsLost - w.packetsMissing
+	// discount out-of-order packets from loss to deal with a scenario like
+	// 1. up stream has loss
+	// 2. down stream forwards with loss/hole in sequence number
+	// 3. down stream client reports a certain number of loss
+	// 4. while processing that, up stream could have retransmitted missing packets
+	// 5. those retransmitted packets are forwarded,
+	//    - server's view: it has forwarded those packets
+	//    - client's view: it had not seen those packets when sending RTCP RR
+	//    so those retransmitted packets appear like down stream loss to server.
+	//
+	// retransmitted packets would have arrived out-of-order. So, discounting them
+	// will account for it.
+	//
+	// Note that packets can arrive out-of-order in the upstream during regular
+	// streaming as well, i. e. without loss + NACK + retransmit. Those will be
+	// discounted too. And that will skew the real loss. For example, let
+	// us say that 40 out of 100 packets were reported lost by down stream.
+	// These could be real losses. In the same window, 40 packets could have been
+	// delivered out-of-order by the up stream, thus cancelling out the real loss.
+	// But, those situations should be rare and is a compromise for not letting
+	// up stream loss penalise down stream.
+	actualLost := w.packetsLost - w.packetsMissing - w.packetsOutOfOrder
 	if int32(actualLost) < 0 {
 		actualLost = 0
 	}
@@ -102,12 +124,13 @@ func (w *windowStat) calculateBitrateScore(expectedBitrate int64) float64 {
 }
 
 func (w *windowStat) String() string {
-	return fmt.Sprintf("start: %+v, dur: %+v, pe: %d, pl: %d, pm: %d, b: %d, rtt: %d, jitter: %0.2f",
+	return fmt.Sprintf("start: %+v, dur: %+v, pe: %d, pl: %d, pm: %d, pooo: %d, b: %d, rtt: %d, jitter: %0.2f",
 		w.startedAt,
 		w.duration,
 		w.packetsExpected,
 		w.packetsLost,
 		w.packetsMissing,
+		w.packetsOutOfOrder,
 		w.bytes,
 		w.rttMax,
 		w.jitterMax,
