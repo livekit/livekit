@@ -75,10 +75,10 @@ func (w *windowStat) calculatePacketScore(plw float64, includeRTT bool, includeJ
 	//
 	// Note that packets can arrive out-of-order in the upstream during regular
 	// streaming as well, i. e. without loss + NACK + retransmit. Those will be
-	// discounted as well. And that will skew the real loss. For example, let
+	// discounted too. And that will skew the real loss. For example, let
 	// us say that 40 out of 100 packets were reported lost by down stream.
 	// These could be real losses. In the same window, 40 packets could have been
-	// delivered out-of-order by the up stream, this cancelling out the real loss.
+	// delivered out-of-order by the up stream, thus cancelling out the real loss.
 	// But, those situations should be rare and is a compromise for not letting
 	// up stream loss penalise down stream.
 	actualLost := w.packetsLost - w.packetsMissing - w.packetsOutOfOrder
