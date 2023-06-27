@@ -48,7 +48,9 @@ func (dt *DecodeTarget) OnFrame(extFrameNum uint64, fd *dd.FrameDependencyTempla
 	}
 
 	result.DTI = fd.DecodeTargetIndications[dt.Target]
-	// DD-TODO: we only use chain to detect decode target broken now, so if a decode taget is not protected by chain, always return decodable
+	// The encoder can choose not to use frame chain in theory, and we need to trace every required frame is decodable in this case.
+	// But we don't observe this in browser and it makes no sense to not use the chain with svc, so only use chain to detect decode target broken now,
+	// and always return decodable if it is not protect by chain.
 	result.TargetValid = dt.Valid()
 	return result, nil
 }

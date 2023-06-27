@@ -57,9 +57,12 @@ func (fc *FrameChain) OnFrame(extFrameNum uint64, fd *dd.FrameDependencyTemplate
 		intact = true
 
 	case sd == selectorDecisionUnknown:
-		intact = true
-		fc.expectFrames = append(fc.expectFrames, prevFrameInChain)
-		fc.decisions.ExpectDecision(prevFrameInChain, fc.OnExpectFrameChanged)
+		// If the previous frame is unknown, means it has not arrived but could be recovered by NACK / out-of-order arrival,
+		// set up a expected callback here to determine if the chain is broken or intact
+		if fc.decisions.ExpectDecision(prevFrameInChain, fc.OnExpectFrameChanged) {
+			intact = true
+			fc.expectFrames = append(fc.expectFrames, prevFrameInChain)
+		}
 	}
 
 	if !intact {

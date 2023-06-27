@@ -16,7 +16,6 @@ type DependencyDescriptor struct {
 	frameNum  *utils.WrapAround[uint16, uint64]
 	decisions *SelectorDecisionCache
 
-	// needsDecodeTargetBitmask   bool
 	activeDecodeTargetsBitmask *uint32
 	structure                  *dede.FrameDependencyStructure
 
@@ -260,8 +259,6 @@ func (d *DependencyDescriptor) SetTarget(targetLayer buffer.VideoLayer) {
 	}
 
 	d.Base.SetTarget(targetLayer)
-
-	// d.needsDecodeTargetBitmask = true
 }
 
 func (d *DependencyDescriptor) updateDependencyStructure(structure *dede.FrameDependencyStructure, decodeTargets []buffer.DependencyDescriptorDecodeTarget) {

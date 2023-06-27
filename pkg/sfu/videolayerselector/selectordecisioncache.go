@@ -140,9 +140,12 @@ func (s *SelectorDecisionCache) addEntity(entity uint64, sd selectorDecision) {
 	s.setEntity(entity, sd)
 	s.last = entity
 
-	for e := range s.onExpectEntityChanged {
+	for e, fns := range s.onExpectEntityChanged {
 		if e+s.numEntries < s.last {
 			delete(s.onExpectEntityChanged, e)
+			for _, f := range fns {
+				f(e, selectorDecisionMissing)
+			}
 		}
 	}
 }
