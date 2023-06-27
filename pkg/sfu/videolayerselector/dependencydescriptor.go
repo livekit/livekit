@@ -74,11 +74,6 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		return
 	}
 	switch sd {
-	case selectorDecisionForwarded:
-		// a packet of an already forwarded frame, maintain decision
-		result.RTPMarker = extPkt.Packet.Header.Marker || (dd.LastPacketInFrame && d.currentLayer.Spatial == int32(fd.SpatialId))
-		result.IsSelected = true
-
 	case selectorDecisionDropped:
 		// a packet of an alreadty dropped frame, maintain decision
 		return
@@ -226,7 +221,6 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		Structure:  d.structure,
 	}
 	if dd.AttachedStructure == nil {
-
 		if d.activeDecodeTargetsBitmask != nil {
 			// clone and override activebitmask
 			// DD-TODO: if the packet that contains the bitmask is acknowledged by RR, then we don't need it until it changed.

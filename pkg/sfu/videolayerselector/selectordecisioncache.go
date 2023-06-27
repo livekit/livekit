@@ -84,9 +84,11 @@ func (s *SelectorDecisionCache) ExpectDecision(entity uint64, f func(entity uint
 		return false
 	}
 
-	offset := s.last - entity
-	if offset >= s.numEntries {
-		return false // too old
+	if entity < s.last {
+		offset := s.last - entity
+		if offset >= s.numEntries {
+			return false // too old
+		}
 	}
 
 	s.onExpectEntityChanged[entity] = append(s.onExpectEntityChanged[entity], f)
