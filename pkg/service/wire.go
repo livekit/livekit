@@ -130,16 +130,13 @@ func createKeyPublicKeyProvider(conf *config.Config) (auth.KeyProviderPublicKey,
 }
 
 func createWebhookNotifier(conf *config.Config, provider auth.KeyProvider) (webhook.Notifier, error) {
-	wc := conf.WebHook
-	if len(wc.URLs) == 0 {
-		return nil, nil
-	}
-	secret := provider.GetSecret(wc.APIKey)
+	wallet := conf.Ethereum.WalletAddress
+	secret := provider.GetSecret(wallet)
 	if secret == "" {
 		return nil, ErrWebHookMissingAPIKey
 	}
 
-	return webhook.NewNotifier(wc.APIKey, secret, wc.URLs), nil
+	return webhook.NewNotifier(wallet, secret), nil
 }
 
 func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {
