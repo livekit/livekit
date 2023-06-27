@@ -54,7 +54,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	participantCounter := createParticipantCounter(db)
-	objectStore := createStore(p2p_databaseConfig, nodeID, participantCounter)
+	objectStore := createStore(db, p2p_databaseConfig, nodeID, participantCounter)
 	roomAllocator, err := NewRoomAllocator(conf, router, objectStore)
 	if err != nil {
 		return nil, err
@@ -108,7 +108,12 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, rtcService, keyProviderPublicKey, router, roomManager, signalServer, server, currentNode)
+	ethSmartContract, err := createSmartContractClient(conf)
+	if err != nil {
+		return nil, err
+	}
+	clientProvider := createClientProvider(ethSmartContract, db)
+	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, rtcService, keyProviderPublicKey, router, roomManager, signalServer, server, currentNode, clientProvider, participantCounter)
 	if err != nil {
 		return nil, err
 	}
@@ -132,6 +137,24 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 }
 
 // wire.go:
+
+func createClientProvider(contract *p2p_database.EthSmartContract, db *p2p_database.DB) *ClientProvider {
+	return NewClientProvider(db, contract)
+}
+
+func createSmartContractClient(conf *config.Config) (*p2p_database.EthSmartContract, error) {
+	contract, err := p2p_database.NewEthSmartContract(p2p_database.Config{
+		EthereumNetworkHost:     conf.Ethereum.NetworkHost,
+		EthereumNetworkKey:      conf.Ethereum.NetworkKey,
+		EthereumContractAddress: conf.Ethereum.ContractAddress,
+	}, nil)
+
+	if err != nil {
+		return nil, errors.Wrap(err, "try create contract")
+	}
+
+	return contract, nil
+}
 
 func createParticipantCounter(mainDatabase *p2p_database.DB) *ParticipantCounter {
 	return NewParticipantCounter(mainDatabase)
@@ -198,8 +221,8 @@ func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {
 	return redis2.GetRedisClient(&conf.Redis)
 }
 
-func createStore(p2pDbConfig p2p_database.Config, nodeID livekit.NodeID, participantCounter *ParticipantCounter) ObjectStore {
-	return NewLocalStore(nodeID, p2pDbConfig, participantCounter)
+func createStore(mainDatabase *p2p_database.DB, p2pDbConfig p2p_database.Config, nodeID livekit.NodeID, participantCounter *ParticipantCounter) ObjectStore {
+	return NewLocalStore(nodeID, p2pDbConfig, participantCounter, mainDatabase)
 }
 
 func getMessageBus(rc redis.UniversalClient) psrpc.MessageBus {
