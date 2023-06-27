@@ -2,7 +2,6 @@ package rtc
 
 import (
 	"context"
-	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -280,6 +279,12 @@ func (p *ParticipantImpl) ConnectedAt() time.Time {
 	return p.connectedAt
 }
 
+func (p *ParticipantImpl) GetClientInfo() *livekit.ClientInfo {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return p.params.ClientInfo.ClientInfo
+}
+
 func (p *ParticipantImpl) GetClientConfiguration() *livekit.ClientConfiguration {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
@@ -539,6 +544,10 @@ func (p *ParticipantImpl) HandleAnswer(answer webrtc.SessionDescription) {
 }
 
 func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) error {
+	if p.IsClosed() || p.IsDisconnected() {
+		return nil
+	}
+
 	p.params.Logger.Debugw("sending answer", "transport", livekit.SignalTarget_PUBLISHER)
 	answer = p.configurePublisherAnswer(answer)
 	if err := p.writeMessage(&livekit.SignalResponse{
@@ -651,13 +660,13 @@ func (p *ParticipantImpl) Start() {
 	})
 }
 
-func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseReason) error {
+func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseReason, isExpectedToResume bool) error {
 	if p.isClosed.Swap(true) {
 		// already closed
 		return nil
 	}
 
-	p.params.Logger.Infow("participant closing", "sendLeave", sendLeave, "reason", reason.String())
+	p.params.Logger.Infow("participant closing", "sendLeave", sendLeave, "reason", reason.String(), "isExpectedToResume", isExpectedToResume)
 	p.clearDisconnectTimer()
 	p.clearMigrationTimer()
 
@@ -681,10 +690,10 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	p.pendingTracksLock.Unlock()
 
 	for _, t := range closeMutedTrack {
-		t.Close(!sendLeave)
+		t.Close(isExpectedToResume)
 	}
 
-	p.UpTrackManager.Close(!sendLeave)
+	p.UpTrackManager.Close(isExpectedToResume)
 
 	p.updateState(livekit.ParticipantInfo_DISCONNECTED)
 
@@ -700,7 +709,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	// Close peer connections without blocking participant Close. If peer connections are gathering candidates
 	// Close will block.
 	go func() {
-		p.SubscriptionManager.Close(!sendLeave)
+		p.SubscriptionManager.Close(isExpectedToResume)
 		p.TransportManager.Close()
 	}()
 
@@ -761,7 +770,7 @@ func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
 	p.migrationTimer = time.AfterFunc(migrationWaitDuration, func() {
 		p.clearMigrationTimer()
 
-		if p.isClosed.Load() || p.IsDisconnected() {
+		if p.IsClosed() || p.IsDisconnected() {
 			return
 		}
 		// TODO: change to debug once we are confident
@@ -1291,7 +1300,7 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 }
 
 func (p *ParticipantImpl) onICECandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) error {
-	if c == nil || p.IsDisconnected() {
+	if c == nil || p.IsDisconnected() || p.IsClosed() {
 		return nil
 	}
 
@@ -1339,11 +1348,11 @@ func (p *ParticipantImpl) setupDisconnectTimer() {
 	p.disconnectTimer = time.AfterFunc(disconnectCleanupDuration, func() {
 		p.clearDisconnectTimer()
 
-		if p.isClosed.Load() || p.IsDisconnected() {
+		if p.IsClosed() || p.IsDisconnected() {
 			return
 		}
 		p.params.Logger.Infow("closing disconnected participant")
-		_ = p.Close(true, types.ParticipantCloseReasonPeerConnectionDisconnected)
+		_ = p.Close(true, types.ParticipantCloseReasonPeerConnectionDisconnected, false)
 	})
 	p.lock.Unlock()
 }
@@ -1390,7 +1399,7 @@ func (p *ParticipantImpl) subscriberRTCPWorker() {
 					pkts = append(pkts, &rtcp.SourceDescription{Chunks: sd})
 				}
 				if err := p.TransportManager.WriteSubscriberRTCP(pkts); err != nil {
-					if err == io.EOF || err == io.ErrClosedPipe {
+					if IsEOF(err) {
 						return
 					}
 					p.params.Logger.Errorw("could not send down track reports", err)
@@ -1407,7 +1416,7 @@ func (p *ParticipantImpl) subscriberRTCPWorker() {
 				pkts = append(pkts, &rtcp.SourceDescription{Chunks: sd})
 			}
 			if err := p.TransportManager.WriteSubscriberRTCP(pkts); err != nil {
-				if err == io.EOF || err == io.ErrClosedPipe {
+				if IsEOF(err) {
 					return
 				}
 				p.params.Logger.Errorw("could not send down track reports", err)
@@ -1698,6 +1707,24 @@ func (p *ParticipantImpl) addMigrateMutedTrack(cid string, ti *livekit.TrackInfo
 			}
 		}
 	}
+	// check for mime_type for tracks that do not have simulcast_codecs set
+	if ti.MimeType != "" {
+		for _, nc := range parameters.Codecs {
+			if strings.EqualFold(nc.MimeType, ti.MimeType) {
+				alreadyAdded := false
+				for _, pc := range potentialCodecs {
+					if strings.EqualFold(pc.MimeType, ti.MimeType) {
+						alreadyAdded = true
+						break
+					}
+				}
+				if !alreadyAdded {
+					potentialCodecs = append(potentialCodecs, nc)
+				}
+				break
+			}
+		}
+	}
 	mt.SetPotentialCodecs(potentialCodecs, parameters.HeaderExtensions)
 
 	for _, codec := range ti.Codecs {
@@ -1980,7 +2007,9 @@ func (p *ParticipantImpl) publisherRTCPWorker() {
 		}
 
 		if err := p.TransportManager.WritePublisherRTCP(pkts); err != nil {
-			p.params.Logger.Errorw("could not write RTCP to participant", err)
+			if !IsEOF(err) {
+				p.params.Logger.Errorw("could not write RTCP to participant", err)
+			}
 		}
 	}
 }
@@ -2081,8 +2110,8 @@ func (p *ParticipantImpl) IssueFullReconnect(reason types.ParticipantCloseReason
 	}
 	p.CloseSignalConnection(scr)
 
-	// on a full reconnect, no need to supervise this participant anymore
-	p.supervisor.Stop()
+	// a full reconnect == client should connect back with a new session, close current one
+	p.Close(false, reason, false)
 }
 
 func (p *ParticipantImpl) onPublicationError(trackID livekit.TrackID) {

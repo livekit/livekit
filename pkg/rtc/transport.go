@@ -1370,6 +1370,11 @@ func (t *PCTransport) postEvent(event event) {
 
 func (t *PCTransport) processEvents() {
 	for event := range t.eventCh {
+		if t.isClosed.Load() {
+			// just drain the channel without processing events
+			continue
+		}
+
 		err := t.handleEvent(&event)
 		if err != nil {
 			t.params.Logger.Errorw("error handling event", err, "event", event.String())
@@ -1610,6 +1615,13 @@ func (t *PCTransport) setupSignalStateCheckTimer() {
 		failed := t.negotiationState != NegotiationStateNone
 
 		if t.negotiateCounter.Load() == negotiateVersion && failed {
+			t.params.Logger.Infow(
+				"negotiation timed out",
+				"localCurrent", t.pc.CurrentLocalDescription(),
+				"localPending", t.pc.PendingLocalDescription(),
+				"remoteCurrent", t.pc.CurrentRemoteDescription(),
+				"remotePending", t.pc.PendingRemoteDescription(),
+			)
 			if onNegotiationFailed := t.getOnNegotiationFailed(); onNegotiationFailed != nil {
 				onNegotiationFailed()
 			}

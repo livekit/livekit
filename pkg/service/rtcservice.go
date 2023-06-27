@@ -199,6 +199,10 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var cr connectionResult
 	var initialResponse *livekit.SignalResponse
 	for i := 0; i < 3; i++ {
+		if err = r.Context().Err(); err != nil {
+			break
+		}
+
 		connectionTimeout := 3 * time.Second * time.Duration(i+1)
 		ctx := utils.ContextWithAttempt(r.Context(), i)
 		cr, initialResponse, err = s.startConnection(ctx, roomName, pi, connectionTimeout)
@@ -347,7 +351,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				websocket.IsCloseError(err, websocket.CloseAbnormalClosure, websocket.CloseGoingAway, websocket.CloseNormalClosure, websocket.CloseNoStatusReceived) {
 				pLogger.Infow("exit ws read loop for closed connection", "connID", cr.ConnectionID, "wsError", err)
 			} else {
-				pLogger.Errorw("error reading from websocket", err)
+				pLogger.Errorw("error reading from websocket", err, "connID", cr.ConnectionID)
 			}
 			return
 		}

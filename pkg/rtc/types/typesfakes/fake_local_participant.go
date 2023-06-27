@@ -119,11 +119,12 @@ type FakeLocalParticipant struct {
 	claimGrantsReturnsOnCall map[int]struct {
 		result1 *auth.ClaimGrants
 	}
-	CloseStub        func(bool, types.ParticipantCloseReason) error
+	CloseStub        func(bool, types.ParticipantCloseReason, bool) error
 	closeMutex       sync.RWMutex
 	closeArgsForCall []struct {
 		arg1 bool
 		arg2 types.ParticipantCloseReason
+		arg3 bool
 	}
 	closeReturns struct {
 		result1 error
@@ -210,6 +211,16 @@ type FakeLocalParticipant struct {
 	}
 	getClientConfigurationReturnsOnCall map[int]struct {
 		result1 *livekit.ClientConfiguration
+	}
+	GetClientInfoStub        func() *livekit.ClientInfo
+	getClientInfoMutex       sync.RWMutex
+	getClientInfoArgsForCall []struct {
+	}
+	getClientInfoReturns struct {
+		result1 *livekit.ClientInfo
+	}
+	getClientInfoReturnsOnCall map[int]struct {
+		result1 *livekit.ClientInfo
 	}
 	GetConnectionQualityStub        func() *livekit.ConnectionQualityInfo
 	getConnectionQualityMutex       sync.RWMutex
@@ -1368,19 +1379,20 @@ func (fake *FakeLocalParticipant) ClaimGrantsReturnsOnCall(i int, result1 *auth.
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) Close(arg1 bool, arg2 types.ParticipantCloseReason) error {
+func (fake *FakeLocalParticipant) Close(arg1 bool, arg2 types.ParticipantCloseReason, arg3 bool) error {
 	fake.closeMutex.Lock()
 	ret, specificReturn := fake.closeReturnsOnCall[len(fake.closeArgsForCall)]
 	fake.closeArgsForCall = append(fake.closeArgsForCall, struct {
 		arg1 bool
 		arg2 types.ParticipantCloseReason
-	}{arg1, arg2})
+		arg3 bool
+	}{arg1, arg2, arg3})
 	stub := fake.CloseStub
 	fakeReturns := fake.closeReturns
-	fake.recordInvocation("Close", []interface{}{arg1, arg2})
+	fake.recordInvocation("Close", []interface{}{arg1, arg2, arg3})
 	fake.closeMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2)
+		return stub(arg1, arg2, arg3)
 	}
 	if specificReturn {
 		return ret.result1
@@ -1394,17 +1406,17 @@ func (fake *FakeLocalParticipant) CloseCallCount() int {
 	return len(fake.closeArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) CloseCalls(stub func(bool, types.ParticipantCloseReason) error) {
+func (fake *FakeLocalParticipant) CloseCalls(stub func(bool, types.ParticipantCloseReason, bool) error) {
 	fake.closeMutex.Lock()
 	defer fake.closeMutex.Unlock()
 	fake.CloseStub = stub
 }
 
-func (fake *FakeLocalParticipant) CloseArgsForCall(i int) (bool, types.ParticipantCloseReason) {
+func (fake *FakeLocalParticipant) CloseArgsForCall(i int) (bool, types.ParticipantCloseReason, bool) {
 	fake.closeMutex.RLock()
 	defer fake.closeMutex.RUnlock()
 	argsForCall := fake.closeArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
 func (fake *FakeLocalParticipant) CloseReturns(result1 error) {
@@ -1844,6 +1856,59 @@ func (fake *FakeLocalParticipant) GetClientConfigurationReturnsOnCall(i int, res
 	}
 	fake.getClientConfigurationReturnsOnCall[i] = struct {
 		result1 *livekit.ClientConfiguration
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetClientInfo() *livekit.ClientInfo {
+	fake.getClientInfoMutex.Lock()
+	ret, specificReturn := fake.getClientInfoReturnsOnCall[len(fake.getClientInfoArgsForCall)]
+	fake.getClientInfoArgsForCall = append(fake.getClientInfoArgsForCall, struct {
+	}{})
+	stub := fake.GetClientInfoStub
+	fakeReturns := fake.getClientInfoReturns
+	fake.recordInvocation("GetClientInfo", []interface{}{})
+	fake.getClientInfoMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) GetClientInfoCallCount() int {
+	fake.getClientInfoMutex.RLock()
+	defer fake.getClientInfoMutex.RUnlock()
+	return len(fake.getClientInfoArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) GetClientInfoCalls(stub func() *livekit.ClientInfo) {
+	fake.getClientInfoMutex.Lock()
+	defer fake.getClientInfoMutex.Unlock()
+	fake.GetClientInfoStub = stub
+}
+
+func (fake *FakeLocalParticipant) GetClientInfoReturns(result1 *livekit.ClientInfo) {
+	fake.getClientInfoMutex.Lock()
+	defer fake.getClientInfoMutex.Unlock()
+	fake.GetClientInfoStub = nil
+	fake.getClientInfoReturns = struct {
+		result1 *livekit.ClientInfo
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetClientInfoReturnsOnCall(i int, result1 *livekit.ClientInfo) {
+	fake.getClientInfoMutex.Lock()
+	defer fake.getClientInfoMutex.Unlock()
+	fake.GetClientInfoStub = nil
+	if fake.getClientInfoReturnsOnCall == nil {
+		fake.getClientInfoReturnsOnCall = make(map[int]struct {
+			result1 *livekit.ClientInfo
+		})
+	}
+	fake.getClientInfoReturnsOnCall[i] = struct {
+		result1 *livekit.ClientInfo
 	}{result1}
 }
 
@@ -5473,6 +5538,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.getCachedDownTrackMutex.RUnlock()
 	fake.getClientConfigurationMutex.RLock()
 	defer fake.getClientConfigurationMutex.RUnlock()
+	fake.getClientInfoMutex.RLock()
+	defer fake.getClientInfoMutex.RUnlock()
 	fake.getConnectionQualityMutex.RLock()
 	defer fake.getConnectionQualityMutex.RUnlock()
 	fake.getICEConnectionTypeMutex.RLock()

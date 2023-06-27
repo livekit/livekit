@@ -436,7 +436,8 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 		return ErrSubscriptionLimitExceeded
 	}
 
-	res := m.params.TrackResolver(m.params.Participant.Identity(), s.trackID)
+	trackID := s.trackID
+	res := m.params.TrackResolver(m.params.Participant.Identity(), trackID)
 	s.logger.Debugw("resolved track", "result", res)
 
 	if res.TrackChangedNotifier != nil && s.setChangedNotifier(res.TrackChangedNotifier) {
@@ -444,18 +445,18 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 		// we set the observer before checking for existence of track, so that we may get notified
 		// when the track becomes available
 		res.TrackChangedNotifier.AddObserver(string(m.params.Participant.ID()), func() {
-			m.queueReconcile(s.trackID)
+			m.queueReconcile(trackID)
 		})
 	}
 	if res.TrackRemovedNotifier != nil && s.setRemovedNotifier(res.TrackRemovedNotifier) {
 		res.TrackRemovedNotifier.AddObserver(string(m.params.Participant.ID()), func() {
 			// re-resolve the track in case the same track had been re-published
-			res := m.params.TrackResolver(m.params.Participant.Identity(), s.trackID)
+			res := m.params.TrackResolver(m.params.Participant.Identity(), trackID)
 			if res.Track != nil {
 				// do not unsubscribe, track is still available
 				return
 			}
-			s.handleSourceTrackRemoved()
+			m.handleSourceTrackRemoved(trackID)
 		})
 	}
 
@@ -474,7 +475,7 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 	// that we discover permissions were denied
 	permChanged := s.setHasPermission(res.HasPermission)
 	if permChanged {
-		m.params.Participant.SubscriptionPermissionUpdate(s.getPublisherID(), s.trackID, res.HasPermission)
+		m.params.Participant.SubscriptionPermissionUpdate(s.getPublisherID(), trackID, res.HasPermission)
 	}
 	if !res.HasPermission {
 		return ErrNoTrackPermission
@@ -493,8 +494,8 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 			if err != nil {
 				s.logger.Infow("failed to bind track", "err", err)
 				s.maybeRecordError(m.params.Telemetry, m.params.Participant.ID(), err, true)
-				m.UnsubscribeFromTrack(s.trackID)
-				m.params.OnSubscriptionError(s.trackID, false, err)
+				m.UnsubscribeFromTrack(trackID)
+				m.params.OnSubscriptionError(trackID, false, err)
 				return
 			}
 			s.setBound()
@@ -516,7 +517,7 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 		go m.params.OnTrackSubscribed(subTrack)
 	}
 
-	m.params.Logger.Debugw("subscribed to track", "trackID", s.trackID, "subscribedAudioCount", m.subscribedAudioCount.Load(), "subscribedVideoCount", m.subscribedVideoCount.Load())
+	m.params.Logger.Debugw("subscribed to track", "trackID", trackID, "subscribedAudioCount", m.subscribedAudioCount.Load(), "subscribedVideoCount", m.subscribedVideoCount.Load())
 
 	// add mark the participant as someone we've subscribed to
 	firstSubscribe := false
@@ -529,7 +530,7 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 		m.subscribedTo[publisherID] = pTracks
 		firstSubscribe = true
 	}
-	pTracks[s.trackID] = struct{}{}
+	pTracks[trackID] = struct{}{}
 	m.lock.Unlock()
 
 	if changedCB != nil && firstSubscribe {
@@ -556,6 +557,16 @@ func (m *SubscriptionManager) unsubscribe(s *trackSubscription) error {
 	}()
 
 	return nil
+}
+
+func (m *SubscriptionManager) handleSourceTrackRemoved(trackID livekit.TrackID) {
+	m.lock.Lock()
+	sub := m.subscriptions[trackID]
+	m.lock.Unlock()
+
+	if sub != nil {
+		sub.handleSourceTrackRemoved()
+	}
 }
 
 // DownTrack closing is how the publisher signifies that the subscription is no longer fulfilled

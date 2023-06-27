@@ -237,7 +237,7 @@ type Participant interface {
 	IsRecorder() bool
 
 	Start()
-	Close(sendLeave bool, reason ParticipantCloseReason) error
+	Close(sendLeave bool, reason ParticipantCloseReason, isExpectedToResume bool) error
 
 	SubscriptionPermission() (*livekit.SubscriptionPermission, utils.TimedVersion)
 
@@ -285,6 +285,7 @@ type LocalParticipant interface {
 	IsDisconnected() bool
 	IsIdle() bool
 	SubscriberAsPrimary() bool
+	GetClientInfo() *livekit.ClientInfo
 	GetClientConfiguration() *livekit.ClientConfiguration
 	GetICEConnectionType() ICEConnectionType
 	GetBufferFactory() *buffer.Factory
