@@ -67,7 +67,7 @@ func (w *windowStat) calculatePacketScore(plw float64, includeRTT bool, includeJ
 	// 4. while processing that, up stream could have retransmitted missing packets
 	// 5. those retransmitted packets are forwarded,
 	//    - server's view: it has forwarded those packets
-	//    - client's view: it had seen those packets when sending RTCP RR
+	//    - client's view: it had not seen those packets when sending RTCP RR
 	//    so those retransmitted packets appear like down stream loss to server.
 	//
 	// retransmitted packets would have arrived out-of-order. So, discounting them
