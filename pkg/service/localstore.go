@@ -2,10 +2,11 @@ package service
 
 import (
 	"context"
-	"github.com/livekit/protocol/logger"
 	"log"
 	"sync"
 	"time"
+
+	"github.com/livekit/protocol/logger"
 
 	p2p_database "github.com/dTelecom/p2p-realtime-database"
 	"github.com/thoas/go-funk"
@@ -151,7 +152,7 @@ func (s *LocalStore) StoreParticipant(ctx context.Context, roomKey livekit.RoomK
 	}
 
 	_, participantExists := roomParticipants[livekit.ParticipantIdentity(participant.Identity)]
-	if participantExists {
+	if !participantExists {
 		err := s.participantCounter.Increment(ctx, s.mainDatabase.GetHost().ID().String())
 		if err != nil {
 			logger.Errorw("cannot increment participant count", err)
@@ -202,7 +203,7 @@ func (s *LocalStore) DeleteParticipant(ctx context.Context, roomKey livekit.Room
 	roomParticipants := s.participants[roomKey]
 	if roomParticipants != nil {
 		delete(roomParticipants, identity)
-		err := s.participantCounter.Increment(ctx, s.mainDatabase.GetHost().ID().String())
+		err := s.participantCounter.Decrement(ctx, s.mainDatabase.GetHost().ID().String())
 		if err != nil {
 			logger.Errorw("cannot decrement participant count", err)
 		}
