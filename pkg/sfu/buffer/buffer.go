@@ -42,7 +42,7 @@ type ExtPacket struct {
 	Payload              interface{}
 	KeyFrame             bool
 	RawPacket            []byte
-	DependencyDescriptor *DependencyDescriptorWithDecodeTarget
+	DependencyDescriptor *ExtDependencyDescriptor
 }
 
 // Buffer contains all packets

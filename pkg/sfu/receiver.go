@@ -645,6 +645,14 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 			}
 		}
 
+		w.downTrackSpreader.Broadcast(func(dt TrackSender) {
+			_ = dt.WriteRTP(pkt, spatialLayer)
+		})
+
+		if redPktWriter != nil {
+			redPktWriter(pkt, spatialLayer)
+		}
+
 		if spatialTracker != nil {
 			spatialTracker.Observe(
 				pkt.Temporal,
@@ -654,14 +662,6 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 				pkt.Packet.Timestamp,
 				pkt.DependencyDescriptor,
 			)
-		}
-
-		w.downTrackSpreader.Broadcast(func(dt TrackSender) {
-			_ = dt.WriteRTP(pkt, spatialLayer)
-		})
-
-		if redPktWriter != nil {
-			redPktWriter(pkt, spatialLayer)
 		}
 	}
 }

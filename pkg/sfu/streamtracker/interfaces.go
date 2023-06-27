@@ -52,5 +52,5 @@ type StreamTrackerWorker interface {
 	Status() StreamStatus
 	BitrateTemporalCumulative() []int64
 	SetPaused(paused bool)
-	Observe(temporalLayer int32, pktSize int, payloadSize int, hasMarker bool, ts uint32, dd *buffer.DependencyDescriptorWithDecodeTarget)
+	Observe(temporalLayer int32, pktSize int, payloadSize int, hasMarker bool, ts uint32, dd *buffer.ExtDependencyDescriptor)
 }

@@ -73,6 +73,12 @@ func (b *Base) GetRequestSpatial() int32 {
 	return b.requestSpatial
 }
 
+func (b *Base) CheckSync() (locked bool, layer int32) {
+	layer = b.GetRequestSpatial()
+	locked = layer == b.GetCurrent().Spatial || b.GetParked().IsValid()
+	return
+}
+
 func (b *Base) SetMaxSeen(maxSeenLayer buffer.VideoLayer) {
 	b.maxSeenLayer = maxSeenLayer
 }
