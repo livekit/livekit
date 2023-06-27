@@ -600,7 +600,7 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 			r.telemetry.ParticipantActive(context.Background(), r.ToProto(), p.ToProto(), &livekit.AnalyticsClientMeta{
 				ClientConnectTime: uint32(time.Since(p.ConnectedAt()).Milliseconds()),
 				ConnectionType:    string(p.GetICEConnectionType()),
-			})
+			}, p.ClaimGrants().WebHookURL)
 		} else if state == livekit.ParticipantInfo_DISCONNECTED {
 			// remove participant from room
 			go r.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonStateDisconnected)

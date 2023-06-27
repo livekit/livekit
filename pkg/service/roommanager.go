@@ -376,7 +376,7 @@ func (r *RoomManager) StartSession(
 		// update room store with new numParticipants
 		proto := room.ToProto()
 		persistRoomForParticipantCount(proto)
-		r.telemetry.ParticipantLeft(ctx, proto, p.ToProto(), true)
+		r.telemetry.ParticipantLeft(ctx, proto, p.ToProto(), true, p.ClaimGrants().WebHookURL)
 
 		room.RemoveDisallowedSubscriptions(p, disallowedSubscriptions)
 	})
