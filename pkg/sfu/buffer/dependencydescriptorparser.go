@@ -44,7 +44,6 @@ type ExtDependencyDescriptor struct {
 }
 
 func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescriptor, VideoLayer, error) {
-	// DD-TODO: make sure out-of-order RTP packets do not update decode targets
 	var videoLayer VideoLayer
 	ddBuf := pkt.GetExtension(r.ddExtID)
 	if ddBuf == nil {

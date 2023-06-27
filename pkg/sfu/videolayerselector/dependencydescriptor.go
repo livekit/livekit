@@ -118,7 +118,9 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 			return
 		}
 
-		// try to keep lower spatial layer decodable so that we can switch to it seamlessly
+		// Keep forwarding the lower spatial with temporal layer 0 to keep the lower frame chain intact,
+		// it will cost a few extra bits as those frames might not be present in the current target
+		// but will make the subscriber switch to lower layer seamlessly without pli.
 		if frameResult.TargetValid {
 			if highestDecodeTarget.Target == -1 {
 				highestDecodeTarget = dt.DependencyDescriptorDecodeTarget
