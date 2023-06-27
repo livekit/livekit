@@ -11,7 +11,7 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-func createDescriptorDependencyForTargets(maxSpatial, maxTemporal int) *buffer.DependencyDescriptorWithDecodeTarget {
+func createDescriptorDependencyForTargets(maxSpatial, maxTemporal int) *buffer.ExtDependencyDescriptor {
 	var targets []buffer.DependencyDescriptorDecodeTarget
 	var mask uint32
 	for i := 0; i <= maxSpatial; i++ {
@@ -26,14 +26,15 @@ func createDescriptorDependencyForTargets(maxSpatial, maxTemporal int) *buffer.D
 		dtis[t.Target] = dd.DecodeTargetRequired
 	}
 
-	return &buffer.DependencyDescriptorWithDecodeTarget{
+	return &buffer.ExtDependencyDescriptor{
 		Descriptor: &dd.DependencyDescriptor{
 			ActiveDecodeTargetsBitmask: &mask,
 			FrameDependencies: &dd.FrameDependencyTemplate{
 				DecodeTargetIndications: dtis,
 			},
 		},
-		DecodeTargets: targets,
+		DecodeTargets:              targets,
+		ActiveDecodeTargetsUpdated: true,
 	}
 }
 

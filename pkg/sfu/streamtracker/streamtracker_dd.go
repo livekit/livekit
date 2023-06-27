@@ -123,7 +123,7 @@ func (s *StreamTrackerDependencyDescriptor) SetPaused(paused bool) {
 
 }
 
-func (s *StreamTrackerDependencyDescriptor) Observe(temporalLayer int32, pktSize int, payloadSize int, hasMarker bool, ts uint32, ddVal *buffer.DependencyDescriptorWithDecodeTarget) {
+func (s *StreamTrackerDependencyDescriptor) Observe(temporalLayer int32, pktSize int, payloadSize int, hasMarker bool, ts uint32, ddVal *buffer.ExtDependencyDescriptor) {
 	s.lock.Lock()
 
 	if s.isStopped || s.paused || payloadSize == 0 || ddVal == nil {
@@ -133,7 +133,7 @@ func (s *StreamTrackerDependencyDescriptor) Observe(temporalLayer int32, pktSize
 
 	var notifyFns []func(status StreamStatus)
 	var notifyStatus StreamStatus
-	if mask := ddVal.Descriptor.ActiveDecodeTargetsBitmask; mask != nil {
+	if mask := ddVal.Descriptor.ActiveDecodeTargetsBitmask; mask != nil && ddVal.ActiveDecodeTargetsUpdated {
 		var maxSpatial, maxTemporal int32
 		for _, dt := range ddVal.DecodeTargets {
 			if *mask&(1<<dt.Target) != uint32(dd.DecodeTargetNotPresent) {
@@ -173,7 +173,6 @@ func (s *StreamTrackerDependencyDescriptor) Observe(temporalLayer int32, pktSize
 				notifyFns = append(notifyFns, s.onStatusChanged[i])
 			}
 		}
-
 	}
 
 	dtis := ddVal.Descriptor.FrameDependencies.DecodeTargetIndications
