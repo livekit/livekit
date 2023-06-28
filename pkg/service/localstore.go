@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/livekit/protocol/logger"
+
 	p2p_database "github.com/dTelecom/p2p-realtime-database"
 	"github.com/thoas/go-funk"
 
@@ -19,6 +21,7 @@ type LocalStore struct {
 	currentNodeId      livekit.NodeID
 	p2pDatabaseConfig  p2p_database.Config
 	participantCounter *ParticipantCounter
+	mainDatabase       *p2p_database.DB
 
 	// map of roomKey => room
 	rooms        map[livekit.RoomKey]*livekit.Room
@@ -32,16 +35,23 @@ type LocalStore struct {
 	globalLock sync.Mutex
 }
 
-func NewLocalStore(currentNodeId livekit.NodeID, mainDatabase p2p_database.Config, participantCounter *ParticipantCounter) *LocalStore {
+func NewLocalStore(
+	currentNodeId livekit.NodeID,
+	mainDatabaseConfig p2p_database.Config,
+	participantCounter *ParticipantCounter,
+	mainDatabase *p2p_database.DB,
+) *LocalStore {
 	return &LocalStore{
 		currentNodeId:      currentNodeId,
-		p2pDatabaseConfig:  mainDatabase,
+		p2pDatabaseConfig:  mainDatabaseConfig,
 		participantCounter: participantCounter,
-		rooms:              make(map[livekit.RoomKey]*livekit.Room),
-		roomInternal:       make(map[livekit.RoomKey]*livekit.RoomInternal),
-		participants:       make(map[livekit.RoomKey]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
-		roomCommunicators:  make(map[livekit.RoomKey]*p2p.RoomCommunicatorImpl),
-		lock:               sync.RWMutex{},
+		mainDatabase:       mainDatabase,
+
+		rooms:             make(map[livekit.RoomKey]*livekit.Room),
+		roomInternal:      make(map[livekit.RoomKey]*livekit.RoomInternal),
+		participants:      make(map[livekit.RoomKey]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
+		roomCommunicators: make(map[livekit.RoomKey]*p2p.RoomCommunicatorImpl),
+		lock:              sync.RWMutex{},
 	}
 }
 
@@ -132,7 +142,7 @@ func (s *LocalStore) UnlockRoom(_ context.Context, _ livekit.RoomKey, _ string) 
 	return nil
 }
 
-func (s *LocalStore) StoreParticipant(_ context.Context, roomKey livekit.RoomKey, participant *livekit.ParticipantInfo) error {
+func (s *LocalStore) StoreParticipant(ctx context.Context, roomKey livekit.RoomKey, participant *livekit.ParticipantInfo) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	roomParticipants := s.participants[roomKey]
@@ -140,6 +150,15 @@ func (s *LocalStore) StoreParticipant(_ context.Context, roomKey livekit.RoomKey
 		roomParticipants = make(map[livekit.ParticipantIdentity]*livekit.ParticipantInfo)
 		s.participants[roomKey] = roomParticipants
 	}
+
+	_, participantExists := roomParticipants[livekit.ParticipantIdentity(participant.Identity)]
+	if !participantExists {
+		err := s.participantCounter.Increment(ctx, s.mainDatabase.GetHost().ID().String())
+		if err != nil {
+			logger.Errorw("cannot increment participant count", err)
+		}
+	}
+
 	roomParticipants[livekit.ParticipantIdentity(participant.Identity)] = participant
 	return nil
 }
@@ -177,13 +196,17 @@ func (s *LocalStore) ListParticipants(_ context.Context, roomKey livekit.RoomKey
 	return items, nil
 }
 
-func (s *LocalStore) DeleteParticipant(_ context.Context, roomKey livekit.RoomKey, identity livekit.ParticipantIdentity) error {
+func (s *LocalStore) DeleteParticipant(ctx context.Context, roomKey livekit.RoomKey, identity livekit.ParticipantIdentity) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
 	roomParticipants := s.participants[roomKey]
 	if roomParticipants != nil {
 		delete(roomParticipants, identity)
+		err := s.participantCounter.Decrement(ctx, s.mainDatabase.GetHost().ID().String())
+		if err != nil {
+			logger.Errorw("cannot decrement participant count", err)
+		}
 	}
 	return nil
 }
