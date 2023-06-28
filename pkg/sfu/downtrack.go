@@ -22,6 +22,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
+	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 )
 
 // TrackSender defines an interface send media to remote peer
@@ -187,17 +188,17 @@ type DownTrack struct {
 
 	forwarder *Forwarder
 
-	upstreamCodecs         []webrtc.RTPCodecParameters
-	codec                  webrtc.RTPCodecCapability
-	rtpHeaderExtensions    []webrtc.RTPHeaderExtensionParameter
-	absSendTimeID          int
-	dependencyDescriptorID int
-	receiver               TrackReceiver
-	transceiver            *webrtc.RTPTransceiver
-	writeStream            webrtc.TrackLocalWriter
-	rtcpReader             *buffer.RTCPReader
-	onCloseHandler         func(willBeResumed bool)
-	onBinding              func(error)
+	upstreamCodecs            []webrtc.RTPCodecParameters
+	codec                     webrtc.RTPCodecCapability
+	absSendTimeExtID          int
+	transportWideExtID        int
+	dependencyDescriptorExtID int
+	receiver                  TrackReceiver
+	transceiver               *webrtc.RTPTransceiver
+	writeStream               webrtc.TrackLocalWriter
+	rtcpReader                *buffer.RTCPReader
+	onCloseHandler            func(willBeResumed bool)
+	onBinding                 func(error)
 
 	listenerLock            sync.RWMutex
 	receiverReportListeners []ReceiverReportListener
@@ -232,6 +233,8 @@ type DownTrack struct {
 	bytesSent                       atomic.Uint32
 	bytesRetransmitted              atomic.Uint32
 
+	pacer pacer.Pacer
+
 	// update stats
 	onStatsUpdate func(dt *DownTrack, stat *livekit.AnalyticsStat)
 
@@ -249,6 +252,7 @@ func NewDownTrack(
 	bf *buffer.Factory,
 	subID livekit.ParticipantID,
 	mt int,
+	pacer pacer.Pacer,
 	logger logger.Logger,
 ) (*DownTrack, error) {
 	var kind webrtc.RTPCodecType
@@ -272,6 +276,7 @@ func NewDownTrack(
 		upstreamCodecs: codecs,
 		kind:           kind,
 		codec:          codecs[0].RTPCodecCapability,
+		pacer:          pacer,
 	}
 	d.forwarder = NewForwarder(
 		d.kind,
@@ -471,13 +476,14 @@ func (d *DownTrack) SubscriberID() livekit.ParticipantID { return d.subscriberID
 
 // Sets RTP header extensions for this track
 func (d *DownTrack) SetRTPHeaderExtensions(rtpHeaderExtensions []webrtc.RTPHeaderExtensionParameter) {
-	d.rtpHeaderExtensions = rtpHeaderExtensions
 	for _, ext := range rtpHeaderExtensions {
 		switch ext.URI {
 		case sdp.ABSSendTimeURI:
-			d.absSendTimeID = ext.ID
+			d.absSendTimeExtID = ext.ID
+		case sdp.TransportCCURI:
+			d.transportWideExtID = ext.ID
 		case dd.ExtensionUrl:
-			d.dependencyDescriptorID = ext.ID
+			d.dependencyDescriptorExtID = ext.ID
 		}
 	}
 }
@@ -561,14 +567,6 @@ func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
 
 // WriteRTP writes an RTP Packet to the DownTrack
 func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
-	var pool *[]byte
-	defer func() {
-		if pool != nil {
-			PacketFactory.Put(pool)
-			pool = nil
-		}
-	}()
-
 	if !d.bound.Load() || !d.connected.Load() {
 		return nil
 	}
@@ -581,11 +579,15 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		return err
 	}
 
-	payload := extPkt.Packet.Payload
+	var payload []byte
+	pool := PacketFactory.Get().(*[]byte)
 	if len(tp.codecBytes) != 0 {
 		incomingVP8, _ := extPkt.Payload.(buffer.VP8)
-		pool = PacketFactory.Get().(*[]byte)
 		payload = d.translateVP8PacketTo(extPkt.Packet, &incomingVP8, tp.codecBytes, pool)
+	}
+	if payload == nil {
+		payload = (*pool)[:len(extPkt.Packet.Payload)]
+		copy(payload, extPkt.Packet.Payload)
 	}
 
 	if d.sequencer != nil {
@@ -602,45 +604,28 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	hdr, err := d.getTranslatedRTPHeader(extPkt, tp)
 	if err != nil {
 		d.logger.Errorw("write rtp packet failed", err)
-		return err
-	}
-
-	_, err = d.writeStream.WriteRTP(hdr, payload)
-	if err != nil {
-		if !errors.Is(err, io.ErrClosedPipe) {
-			d.logger.Errorw("write rtp packet failed", err)
+		if pool != nil {
+			PacketFactory.Put(pool)
 		}
 		return err
 	}
 
-	// STREAM-ALLOCATOR-TODO: remove this stream allocator bytes counter once stream allocator changes fully to pull bytes counter
-	d.streamAllocatorBytesCounter.Add(uint32(hdr.MarshalSize() + len(payload)))
-	d.bytesSent.Add(uint32(hdr.MarshalSize() + len(payload)))
-
-	if tp.isSwitchingToMaxSpatial && d.onMaxSubscribedLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
-		d.onMaxSubscribedLayerChanged(d, tp.maxSpatialLayer)
-	}
-
-	if extPkt.KeyFrame {
-		d.isNACKThrottled.Store(false)
-		d.rtpStats.UpdateKeyFrame(1)
-		d.logger.Debugw("forwarding key frame", "layer", layer, "rtpsn", hdr.SequenceNumber, "rtpts", hdr.Timestamp)
-	}
-
-	if tp.isSwitchingToRequestSpatial {
-		locked, _ := d.forwarder.CheckSync()
-		if locked {
-			d.stopKeyFrameRequester()
-		}
-	}
-
-	if tp.isResuming {
-		if sal := d.getStreamAllocatorListener(); sal != nil {
-			sal.OnResume(d)
-		}
-	}
-
-	d.rtpStats.Update(hdr, len(payload), 0, extPkt.Arrival)
+	d.pacer.Enqueue(pacer.Packet{
+		Header:             hdr,
+		Extensions:         []pacer.ExtensionData{{ID: uint8(d.dependencyDescriptorExtID), Payload: tp.ddBytes}},
+		Payload:            payload,
+		AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
+		TransportWideExtID: uint8(d.transportWideExtID),
+		WriteStream:        d.writeStream,
+		Metadata: sendPacketMetadata{
+			layer:      layer,
+			arrival:    extPkt.Arrival,
+			isKeyFrame: extPkt.KeyFrame,
+			tp:         tp,
+			pool:       pool,
+		},
+		OnSent: d.packetSent,
+	})
 	return nil
 }
 
@@ -704,23 +689,23 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 			CSRC:           []uint32{},
 		}
 
-		err = d.writeRTPHeaderExtensions(&hdr)
-		if err != nil {
-			return bytesSent
-		}
-
 		payload := make([]byte, RTPPaddingMaxPayloadSize)
 		// last byte of padding has padding size including that byte
 		payload[RTPPaddingMaxPayloadSize-1] = byte(RTPPaddingMaxPayloadSize)
 
-		_, err = d.writeStream.WriteRTP(&hdr, payload)
-		if err != nil {
-			return bytesSent
-		}
-
-		if !paddingOnMute {
-			d.rtpStats.Update(&hdr, 0, len(payload), time.Now())
-		}
+		d.pacer.Enqueue(pacer.Packet{
+			Header:             &hdr,
+			Payload:            payload,
+			AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
+			TransportWideExtID: uint8(d.transportWideExtID),
+			WriteStream:        d.writeStream,
+			Metadata: sendPacketMetadata{
+				isPadding:       true,
+				disableCounter:  true,
+				disableRTPStats: paddingOnMute,
+			},
+			OnSent: d.packetSent,
+		})
 
 		//
 		// Register with sequencer with invalid layer so that NACKs for these can be filtered out.
@@ -734,6 +719,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 		bytesSent += hdr.MarshalSize() + len(payload)
 	}
 
+	// STREAM_ALLOCATOR-TODO: change this to pull this counter from stream allocator so that counter can be update in pacer callback
 	return bytesSent
 }
 
@@ -1123,16 +1109,16 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 			return
 		}
 
-		var writeBlankFrame func(*rtp.Header, bool) (int, error)
+		var getBlankFrame func(bool) ([]byte, error)
 		switch d.mime {
 		case "audio/opus":
-			writeBlankFrame = d.writeOpusBlankFrame
+			getBlankFrame = d.getOpusBlankFrame
 		case "audio/red":
-			writeBlankFrame = d.writeOpusRedBlankFrame
+			getBlankFrame = d.getOpusRedBlankFrame
 		case "video/vp8":
-			writeBlankFrame = d.writeVP8BlankFrame
+			getBlankFrame = d.getVP8BlankFrame
 		case "video/h264":
-			writeBlankFrame = d.writeH264BlankFrame
+			getBlankFrame = d.getH264BlankFrame
 		default:
 			close(done)
 			return
@@ -1177,24 +1163,24 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 					CSRC:           []uint32{},
 				}
 
-				err = d.writeRTPHeaderExtensions(&hdr)
+				payload, err := getBlankFrame(frameEndNeeded)
 				if err != nil {
-					d.logger.Warnw("could not write header extension for blank frame", err)
+					d.logger.Warnw("could not get blank frame", err)
 					close(done)
 					return
 				}
 
-				pktSize, err := writeBlankFrame(&hdr, frameEndNeeded)
-				if err != nil {
-					if err != io.ErrClosedPipe {
-						d.logger.Warnw("could not write blank frame", err)
-					}
-					close(done)
-					return
-				}
-
-				d.streamAllocatorBytesCounter.Add(uint32(pktSize))
-				d.bytesSent.Add(uint32(pktSize))
+				d.pacer.Enqueue(pacer.Packet{
+					Header:             &hdr,
+					Payload:            payload,
+					AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
+					TransportWideExtID: uint8(d.transportWideExtID),
+					WriteStream:        d.writeStream,
+					Metadata: sendPacketMetadata{
+						isBlankFrame: true,
+					},
+					OnSent: d.packetSent,
+				})
 
 				// only the first frame will need frameEndNeeded to close out the
 				// previous picture, rest are small key frames (for the video case)
@@ -1209,22 +1195,17 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 	return done
 }
 
-func (d *DownTrack) writeOpusBlankFrame(hdr *rtp.Header, frameEndNeeded bool) (int, error) {
+func (d *DownTrack) getOpusBlankFrame(_frameEndNeeded bool) ([]byte, error) {
 	// silence frame
 	// Used shortly after muting to ensure residual noise does not keep
 	// generating noise at the decoder after the stream is stopped
 	// i. e. comfort noise generation actually not producing something comfortable.
 	payload := make([]byte, len(OpusSilenceFrame))
 	copy(payload[0:], OpusSilenceFrame)
-
-	_, err := d.writeStream.WriteRTP(hdr, payload)
-	if err == nil {
-		d.rtpStats.Update(hdr, len(payload), 0, time.Now())
-	}
-	return hdr.MarshalSize() + len(payload), err
+	return payload, nil
 }
 
-func (d *DownTrack) writeOpusRedBlankFrame(hdr *rtp.Header, frameEndNeeded bool) (int, error) {
+func (d *DownTrack) getOpusRedBlankFrame(_frameEndNeeded bool) ([]byte, error) {
 	// primary only silence frame for opus/red, there is no need to contain redundant silent frames
 	payload := make([]byte, len(OpusSilenceFrame)+1)
 
@@ -1235,18 +1216,13 @@ func (d *DownTrack) writeOpusRedBlankFrame(hdr *rtp.Header, frameEndNeeded bool)
 	// +-+-+-+-+-+-+-+-+
 	payload[0] = opusPT
 	copy(payload[1:], OpusSilenceFrame)
-
-	_, err := d.writeStream.WriteRTP(hdr, payload)
-	if err == nil {
-		d.rtpStats.Update(hdr, len(payload), 0, time.Now())
-	}
-	return hdr.MarshalSize() + len(payload), err
+	return payload, nil
 }
 
-func (d *DownTrack) writeVP8BlankFrame(hdr *rtp.Header, frameEndNeeded bool) (int, error) {
+func (d *DownTrack) getVP8BlankFrame(frameEndNeeded bool) ([]byte, error) {
 	blankVP8, err := d.forwarder.GetPadding(frameEndNeeded)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
 	// 8x8 key frame
@@ -1256,15 +1232,10 @@ func (d *DownTrack) writeVP8BlankFrame(hdr *rtp.Header, frameEndNeeded bool) (in
 	payload := make([]byte, len(blankVP8)+len(VP8KeyFrame8x8))
 	copy(payload[:len(blankVP8)], blankVP8)
 	copy(payload[len(blankVP8):], VP8KeyFrame8x8)
-
-	_, err = d.writeStream.WriteRTP(hdr, payload)
-	if err == nil {
-		d.rtpStats.Update(hdr, len(payload), 0, time.Now())
-	}
-	return hdr.MarshalSize() + len(payload), err
+	return payload, nil
 }
 
-func (d *DownTrack) writeH264BlankFrame(hdr *rtp.Header, frameEndNeeded bool) (int, error) {
+func (d *DownTrack) getH264BlankFrame(_frameEndNeeded bool) ([]byte, error) {
 	// TODO - Jie Zeng
 	// now use STAP-A to compose sps, pps, idr together, most decoder support packetization-mode 1.
 	// if client only support packetization-mode 0, use single nalu unit packet
@@ -1279,11 +1250,7 @@ func (d *DownTrack) writeH264BlankFrame(hdr *rtp.Header, frameEndNeeded bool) (i
 		offset += len(payload)
 	}
 	payload := buf[:offset]
-	_, err := d.writeStream.WriteRTP(hdr, payload)
-	if err == nil {
-		d.rtpStats.Update(hdr, len(payload), 0, time.Now())
-	}
-	return hdr.MarshalSize() + offset, err
+	return payload, nil
 }
 
 func (d *DownTrack) handleRTCP(bytes []byte) {
@@ -1416,14 +1383,6 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		return
 	}
 
-	var pool *[]byte
-	defer func() {
-		if pool != nil {
-			PacketFactory.Put(pool)
-			pool = nil
-		}
-	}()
-
 	src := PacketFactory.Get().(*[]byte)
 	defer PacketFactory.Put(src)
 
@@ -1442,11 +1401,6 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			Timestamp:      meta.timestamp,
 			Attempts:       meta.nacked,
 		})
-
-		if pool != nil {
-			PacketFactory.Put(pool)
-			pool = nil
-		}
 
 		pktBuff := *src
 		n, err := d.receiver.ReadRTP(pktBuff, uint8(meta.layer), meta.sourceSeqNo)
@@ -1471,41 +1425,38 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		pkt.Header.SSRC = d.ssrc
 		pkt.Header.PayloadType = d.payloadType
 
-		payload := pkt.Payload
+		var payload []byte
+		pool := PacketFactory.Get().(*[]byte)
 		if d.mime == "video/vp8" && len(pkt.Payload) > 0 {
 			var incomingVP8 buffer.VP8
 			if err = incomingVP8.Unmarshal(pkt.Payload); err != nil {
 				d.logger.Errorw("unmarshalling VP8 packet err", err)
+				PacketFactory.Put(pool)
 				continue
 			}
 
 			if len(meta.codecBytes) != 0 {
-				pool = PacketFactory.Get().(*[]byte)
 				payload = d.translateVP8PacketTo(&pkt, &incomingVP8, meta.codecBytes, pool)
 			}
 		}
-
-		var extraExtensions []extensionData
-		if d.dependencyDescriptorID != 0 && len(meta.ddBytes) != 0 {
-			extraExtensions = append(extraExtensions, extensionData{
-				id:      uint8(d.dependencyDescriptorID),
-				payload: meta.ddBytes,
-			})
-		}
-		err = d.writeRTPHeaderExtensions(&pkt.Header, extraExtensions...)
-		if err != nil {
-			d.logger.Errorw("writing rtp header extensions err", err)
-			continue
+		if payload == nil {
+			payload = (*pool)[:len(pkt.Payload)]
+			copy(payload, pkt.Payload)
 		}
 
-		if _, err = d.writeStream.WriteRTP(&pkt.Header, payload); err != nil {
-			d.logger.Errorw("writing rtx packet err", err)
-		} else {
-			d.streamAllocatorBytesCounter.Add(uint32(pkt.Header.MarshalSize() + len(payload)))
-			d.bytesRetransmitted.Add(uint32(pkt.Header.MarshalSize() + len(payload)))
-
-			d.rtpStats.Update(&pkt.Header, len(payload), 0, time.Now())
-		}
+		d.pacer.Enqueue(pacer.Packet{
+			Header:             &pkt.Header,
+			Extensions:         []pacer.ExtensionData{{ID: uint8(d.dependencyDescriptorExtID), Payload: meta.ddBytes}},
+			Payload:            payload,
+			AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
+			TransportWideExtID: uint8(d.transportWideExtID),
+			WriteStream:        d.writeStream,
+			Metadata: sendPacketMetadata{
+				isRTX: true,
+				pool:  pool,
+			},
+			OnSent: d.packetSent,
+		})
 	}
 
 	d.totalRepeatedNACKs.Add(numRepeatedNACKs)
@@ -1528,38 +1479,6 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	}
 }
 
-type extensionData struct {
-	id      uint8
-	payload []byte
-}
-
-// writes RTP header extensions of track
-func (d *DownTrack) writeRTPHeaderExtensions(hdr *rtp.Header, extraExtensions ...extensionData) error {
-	// clear out extensions that may have been in the forwarded header
-	hdr.Extension = false
-	hdr.ExtensionProfile = 0
-	hdr.Extensions = []rtp.Extension{}
-
-	for _, ext := range extraExtensions {
-		hdr.SetExtension(ext.id, ext.payload)
-	}
-
-	if d.absSendTimeID != 0 {
-		sendTime := rtp.NewAbsSendTimeExtension(time.Now())
-		b, err := sendTime.Marshal()
-		if err != nil {
-			return err
-		}
-
-		err = hdr.SetExtension(uint8(d.absSendTimeID), b)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
 func (d *DownTrack) getTranslatedRTPHeader(extPkt *buffer.ExtPacket, tp *TranslationParams) (*rtp.Header, error) {
 	tpRTP := tp.rtp
 	hdr := extPkt.Packet.Header
@@ -1569,18 +1488,6 @@ func (d *DownTrack) getTranslatedRTPHeader(extPkt *buffer.ExtPacket, tp *Transla
 	hdr.SSRC = d.ssrc
 	if tp.marker {
 		hdr.Marker = tp.marker
-	}
-
-	var extension []extensionData
-	if d.dependencyDescriptorID != 0 && len(tp.ddBytes) != 0 {
-		extension = append(extension, extensionData{
-			id:      uint8(d.dependencyDescriptorID),
-			payload: tp.ddBytes,
-		})
-	}
-	err := d.writeRTPHeaderExtensions(&hdr, extension...)
-	if err != nil {
-		return nil, err
 	}
 
 	return &hdr, nil
@@ -1739,20 +1646,24 @@ func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
 				CSRC:           []uint32{},
 			}
 
-			err = d.writeRTPHeaderExtensions(&hdr)
+			payload, err := d.getOpusBlankFrame(false)
 			if err != nil {
-				d.logger.Warnw("could not write header extension for blank frame", err)
+				d.logger.Warnw("could not get blank frame", err)
 				return
 			}
 
-			payload := make([]byte, len(OpusSilenceFrame))
-			copy(payload[0:], OpusSilenceFrame)
-
-			_, err := d.writeStream.WriteRTP(&hdr, payload)
-			if err != nil {
-				d.logger.Warnw("could not write blank frame", err)
-				return
-			}
+			d.pacer.Enqueue(pacer.Packet{
+				Header:             &hdr,
+				Payload:            payload,
+				AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
+				TransportWideExtID: uint8(d.transportWideExtID),
+				WriteStream:        d.writeStream,
+				Metadata: sendPacketMetadata{
+					isBlankFrame:    true,
+					disableRTPStats: true,
+				},
+				OnSent: d.packetSent,
+			})
 		}
 
 		numFrames--
@@ -1763,3 +1674,88 @@ func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
 func (d *DownTrack) HandleRTCPSenderReportData(_payloadType webrtc.PayloadType, _layer int32, _srData *buffer.RTCPSenderReportData) error {
 	return nil
 }
+
+type sendPacketMetadata struct {
+	layer           int32
+	arrival         time.Time
+	isKeyFrame      bool
+	isRTX           bool
+	isPadding       bool
+	isBlankFrame    bool
+	disableCounter  bool
+	disableRTPStats bool
+	tp              *TranslationParams
+	pool            *[]byte
+}
+
+func (d *DownTrack) packetSent(md interface{}, hdr *rtp.Header, payloadSize int, sendTime time.Time, sendError error) {
+	spmd, ok := md.(sendPacketMetadata)
+	if !ok {
+		d.logger.Errorw("invalid send packet metadata", nil)
+		return
+	}
+
+	if spmd.pool != nil {
+		PacketFactory.Put(spmd.pool)
+	}
+
+	if sendError != nil {
+		return
+	}
+
+	headerSize := hdr.MarshalSize()
+	if !spmd.disableCounter {
+		// STREAM-ALLOCATOR-TODO: remove this stream allocator bytes counter once stream allocator changes fully to pull bytes counter
+		size := uint32(headerSize + payloadSize)
+		d.streamAllocatorBytesCounter.Add(size)
+		if spmd.isRTX {
+			d.bytesRetransmitted.Add(size)
+		} else {
+			d.bytesSent.Add(size)
+		}
+	}
+
+	if !spmd.disableRTPStats {
+		packetTime := spmd.arrival
+		if packetTime.IsZero() {
+			packetTime = sendTime
+		}
+		if spmd.isPadding {
+			d.rtpStats.Update(hdr, 0, payloadSize, packetTime)
+		} else {
+			d.rtpStats.Update(hdr, payloadSize, 0, packetTime)
+		}
+	}
+
+	if spmd.isKeyFrame {
+		d.isNACKThrottled.Store(false)
+		d.rtpStats.UpdateKeyFrame(1)
+		d.logger.Debugw(
+			"forwarding key frame",
+			"layer", spmd.layer,
+			"rtpsn", hdr.SequenceNumber,
+			"rtpts", hdr.Timestamp,
+		)
+	}
+
+	if spmd.tp != nil {
+		if spmd.tp.isSwitchingToMaxSpatial && d.onMaxSubscribedLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
+			d.onMaxSubscribedLayerChanged(d, spmd.tp.maxSpatialLayer)
+		}
+
+		if spmd.tp.isSwitchingToRequestSpatial {
+			locked, _ := d.forwarder.CheckSync()
+			if locked {
+				d.stopKeyFrameRequester()
+			}
+		}
+
+		if spmd.tp.isResuming {
+			if sal := d.getStreamAllocatorListener(); sal != nil {
+				sal.OnResume(d)
+			}
+		}
+	}
+}
+
+// -------------------------------------------------------------------------------

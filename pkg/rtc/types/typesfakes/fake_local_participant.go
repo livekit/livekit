@@ -9,6 +9,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -251,6 +252,16 @@ type FakeLocalParticipant struct {
 	}
 	getLoggerReturnsOnCall map[int]struct {
 		result1 logger.Logger
+	}
+	GetPacerStub        func() pacer.Pacer
+	getPacerMutex       sync.RWMutex
+	getPacerArgsForCall []struct {
+	}
+	getPacerReturns struct {
+		result1 pacer.Pacer
+	}
+	getPacerReturnsOnCall map[int]struct {
+		result1 pacer.Pacer
 	}
 	GetPublishedTrackStub        func(livekit.TrackID) types.MediaTrack
 	getPublishedTrackMutex       sync.RWMutex
@@ -2068,6 +2079,59 @@ func (fake *FakeLocalParticipant) GetLoggerReturnsOnCall(i int, result1 logger.L
 	}
 	fake.getLoggerReturnsOnCall[i] = struct {
 		result1 logger.Logger
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetPacer() pacer.Pacer {
+	fake.getPacerMutex.Lock()
+	ret, specificReturn := fake.getPacerReturnsOnCall[len(fake.getPacerArgsForCall)]
+	fake.getPacerArgsForCall = append(fake.getPacerArgsForCall, struct {
+	}{})
+	stub := fake.GetPacerStub
+	fakeReturns := fake.getPacerReturns
+	fake.recordInvocation("GetPacer", []interface{}{})
+	fake.getPacerMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) GetPacerCallCount() int {
+	fake.getPacerMutex.RLock()
+	defer fake.getPacerMutex.RUnlock()
+	return len(fake.getPacerArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) GetPacerCalls(stub func() pacer.Pacer) {
+	fake.getPacerMutex.Lock()
+	defer fake.getPacerMutex.Unlock()
+	fake.GetPacerStub = stub
+}
+
+func (fake *FakeLocalParticipant) GetPacerReturns(result1 pacer.Pacer) {
+	fake.getPacerMutex.Lock()
+	defer fake.getPacerMutex.Unlock()
+	fake.GetPacerStub = nil
+	fake.getPacerReturns = struct {
+		result1 pacer.Pacer
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetPacerReturnsOnCall(i int, result1 pacer.Pacer) {
+	fake.getPacerMutex.Lock()
+	defer fake.getPacerMutex.Unlock()
+	fake.GetPacerStub = nil
+	if fake.getPacerReturnsOnCall == nil {
+		fake.getPacerReturnsOnCall = make(map[int]struct {
+			result1 pacer.Pacer
+		})
+	}
+	fake.getPacerReturnsOnCall[i] = struct {
+		result1 pacer.Pacer
 	}{result1}
 }
 
@@ -5546,6 +5610,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.getICEConnectionTypeMutex.RUnlock()
 	fake.getLoggerMutex.RLock()
 	defer fake.getLoggerMutex.RUnlock()
+	fake.getPacerMutex.RLock()
+	defer fake.getPacerMutex.RUnlock()
 	fake.getPublishedTrackMutex.RLock()
 	defer fake.getPublishedTrackMutex.RUnlock()
 	fake.getPublishedTracksMutex.RLock()

@@ -15,6 +15,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 )
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
@@ -383,6 +384,8 @@ type LocalParticipant interface {
 	// down stream bandwidth management
 	SetSubscriberAllowPause(allowPause bool)
 	SetSubscriberChannelCapacity(channelCapacity int64)
+
+	GetPacer() pacer.Pacer
 }
 
 // Room is a container of participants, and can provide room-level actions

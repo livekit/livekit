@@ -27,6 +27,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
@@ -185,6 +186,9 @@ type PCTransport struct {
 	// stream allocator for subscriber PC
 	streamAllocator *streamallocator.StreamAllocator
 
+	// only for subscriber PC
+	pacer pacer.Pacer
+
 	previousAnswer *webrtc.SessionDescription
 	// track id -> description map in previous offer sdp
 	previousTrackDescription map[string]*trackDescription
@@ -232,9 +236,7 @@ type TransportParams struct {
 }
 
 func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimator cc.BandwidthEstimator)) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
-	directionConfig := params.DirectionConfig
-
-	me, err := createMediaEngine(params.EnabledCodecs, directionConfig)
+	me, err := createMediaEngine(params.EnabledCodecs, params.DirectionConfig)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -305,21 +307,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 
 	ir := &interceptor.Registry{}
 	if params.IsSendSide {
-		isSendSideBWE := false
-		for _, ext := range directionConfig.RTPHeaderExtension.Video {
-			if ext == sdp.TransportCCURI {
-				isSendSideBWE = true
-				break
-			}
-		}
-		for _, ext := range directionConfig.RTPHeaderExtension.Audio {
-			if ext == sdp.TransportCCURI {
-				isSendSideBWE = true
-				break
-			}
-		}
-
-		if isSendSideBWE {
+		if params.CongestionControlConfig.UseSendSideBWE {
 			gf, err := cc.NewInterceptor(func() (cc.BandwidthEstimator, error) {
 				return gcc.NewSendSideBWE(
 					gcc.SendSideBWEInitialBitrate(1*1000*1000),
@@ -376,6 +364,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 			Logger: params.Logger,
 		})
 		t.streamAllocator.Start()
+		t.pacer = pacer.NewPassThrough(params.Logger)
 	}
 
 	if err := t.createPeerConnection(); err != nil {
@@ -412,6 +401,10 @@ func (t *PCTransport) createPeerConnection() error {
 	}
 
 	return nil
+}
+
+func (t *PCTransport) GetPacer() pacer.Pacer {
+	return t.pacer
 }
 
 func (t *PCTransport) SetSignalingRTT(rtt uint32) {
@@ -897,6 +890,9 @@ func (t *PCTransport) Close() {
 
 	if t.streamAllocator != nil {
 		t.streamAllocator.Stop()
+	}
+	if t.pacer != nil {
+		t.pacer.Stop()
 	}
 
 	_ = t.pc.Close()

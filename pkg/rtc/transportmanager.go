@@ -17,6 +17,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/livekit"
@@ -281,6 +282,10 @@ func (t *TransportManager) RemoveTrackFromSubscriber(sender *webrtc.RTPSender) e
 
 func (t *TransportManager) WriteSubscriberRTCP(pkts []rtcp.Packet) error {
 	return t.subscriber.WriteRTCP(pkts)
+}
+
+func (t *TransportManager) GetSubscriberPacer() pacer.Pacer {
+	return t.subscriber.GetPacer()
 }
 
 func (t *TransportManager) OnPrimaryTransportInitialConnected(f func()) {
