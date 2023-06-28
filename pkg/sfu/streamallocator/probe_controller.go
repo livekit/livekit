@@ -4,26 +4,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/logger"
-)
-
-const (
-	ProbeWaitBase      = 5 * time.Second
-	ProbeBackoffFactor = 1.5
-	ProbeWaitMax       = 2 * time.Minute
-	ProbeSettleWait    = 250
-	ProbeSettleWaitMax = 10 * time.Second
-	ProbeTrendWait     = 2 * time.Second
-
-	ProbePct         = 120
-	ProbeMinBps      = 200 * 1000 // 200 kbps
-	ProbeMinDuration = 20 * time.Second
-	ProbeMaxDuration = 21 * time.Second
 )
 
 // ---------------------------------------------------------------------------
 
 type ProbeControllerParams struct {
+	Config config.CongestionControlProbeConfig
 	Prober *Prober
 	Logger logger.Logger
 }
@@ -76,15 +64,15 @@ func (p *ProbeController) ProbeClusterDone(info ProbeClusterInfo, lowestEstimate
 	}
 
 	// ensure probe queue is flushed
-	// STREAM-ALLOCATOR-TODO: ProbeSettleWait should actually be a certain number of RTTs.
+	// STREAM-ALLOCATOR-TODO: CongestionControlProbeConfig.SettleWait should actually be a certain number of RTTs.
 	expectedDuration := float64(info.BytesSent*8*1000) / float64(lowestEstimate)
 	queueTime := expectedDuration - float64(info.Duration.Milliseconds())
 	if queueTime < 0.0 {
 		queueTime = 0.0
 	}
-	queueWait := time.Duration(queueTime+float64(ProbeSettleWait)) * time.Millisecond
-	if queueWait > ProbeSettleWaitMax {
-		queueWait = ProbeSettleWaitMax
+	queueWait := time.Duration(queueTime+float64(p.params.Config.SettleWait)) * time.Millisecond
+	if queueWait > p.params.Config.SettleWaitMax {
+		queueWait = p.params.Config.SettleWaitMax
 	}
 	p.probeEndTime = p.lastProbeStartTime.Add(queueWait + info.Duration)
 	p.params.Logger.Infow(
@@ -111,7 +99,7 @@ func (p *ProbeController) CheckProbe(trend ChannelTrend, highestEstimate int64) 
 	}
 
 	switch {
-	case !p.probeTrendObserved && time.Since(p.lastProbeStartTime) > ProbeTrendWait:
+	case !p.probeTrendObserved && time.Since(p.lastProbeStartTime) > p.params.Config.TrendWait:
 		//
 		// More of a safety net.
 		// In rare cases, the estimate gets stuck. Prevent from probe running amok
@@ -178,9 +166,9 @@ func (p *ProbeController) InitProbe(probeGoalDeltaBps int64, expectedBandwidthUs
 	p.lastProbeStartTime = time.Now()
 
 	// overshoot a bit to account for noise (in measurement/estimate etc)
-	desiredIncreaseBps := (probeGoalDeltaBps * ProbePct) / 100
-	if desiredIncreaseBps < ProbeMinBps {
-		desiredIncreaseBps = ProbeMinBps
+	desiredIncreaseBps := (probeGoalDeltaBps * p.params.Config.OveragePct) / 100
+	if desiredIncreaseBps < p.params.Config.MinBps {
+		desiredIncreaseBps = p.params.Config.MinBps
 	}
 	p.probeGoalBps = expectedBandwidthUsage + desiredIncreaseBps
 
@@ -194,8 +182,8 @@ func (p *ProbeController) InitProbe(probeGoalDeltaBps int64, expectedBandwidthUs
 		ProbeClusterModeUniform,
 		int(p.probeGoalBps),
 		int(expectedBandwidthUsage),
-		ProbeMinDuration,
-		ProbeMaxDuration,
+		p.params.Config.MinDuration,
+		p.params.Config.MaxDuration,
 	)
 
 	return p.probeClusterId, p.probeGoalBps
@@ -207,14 +195,14 @@ func (p *ProbeController) clearProbeLocked() {
 }
 
 func (p *ProbeController) backoffProbeIntervalLocked() {
-	p.probeInterval = time.Duration(p.probeInterval.Seconds()*ProbeBackoffFactor) * time.Second
-	if p.probeInterval > ProbeWaitMax {
-		p.probeInterval = ProbeWaitMax
+	p.probeInterval = time.Duration(p.probeInterval.Seconds()*p.params.Config.BackoffFactor) * time.Second
+	if p.probeInterval > p.params.Config.MaxInterval {
+		p.probeInterval = p.params.Config.MaxInterval
 	}
 }
 
 func (p *ProbeController) resetProbeIntervalLocked() {
-	p.probeInterval = ProbeWaitBase
+	p.probeInterval = p.params.Config.BaseInterval
 }
 
 func (p *ProbeController) StopProbe() {

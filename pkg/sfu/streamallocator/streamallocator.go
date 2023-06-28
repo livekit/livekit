@@ -199,6 +199,7 @@ func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 	}
 
 	s.probeController = NewProbeController(ProbeControllerParams{
+		Config: s.params.Config.ProbeConfig,
 		Prober: s.prober,
 		Logger: params.Logger,
 	})
