@@ -612,6 +612,7 @@ func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionSta
 			}
 
 			t.maybeNotifyFullyEstablished()
+			t.logICECandidates()
 		}
 	case webrtc.PeerConnectionStateFailed:
 		t.params.Logger.Infow("peer connection failed")
