@@ -7,16 +7,12 @@ import (
 
 	"github.com/livekit/protocol/logger"
 	"github.com/pion/rtp"
-	"go.uber.org/atomic"
 )
 
 type Base struct {
 	logger logger.Logger
 
 	packetTime *PacketTime
-
-	// for throttling error logs
-	writeIOErrors atomic.Uint32
 }
 
 func NewBase(logger logger.Logger) *Base {
@@ -43,12 +39,7 @@ func (b *Base) SendPacket(p *Packet) error {
 
 	_, err = p.WriteStream.WriteRTP(p.Header, p.Payload)
 	if err != nil {
-		if errors.Is(err, io.ErrClosedPipe) {
-			writeIOErrors := b.writeIOErrors.Inc()
-			if (writeIOErrors % 100) == 1 {
-				b.logger.Errorw("write rtp packet failed", err, "count", writeIOErrors)
-			}
-		} else {
+		if !errors.Is(err, io.ErrClosedPipe) {
 			b.logger.Errorw("write rtp packet failed", err)
 		}
 		return err
