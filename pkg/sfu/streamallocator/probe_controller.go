@@ -114,15 +114,19 @@ func (p *ProbeController) MaybeFinalizeProbe(
 		return false, false, false
 	}
 
-	if p.probeEndTime.IsZero() && p.doneProbeClusterInfo.Id != ProbeClusterIdInvalid && p.doneProbeClusterInfo.Id == p.probeClusterId {
+	if isComplete && p.probeEndTime.IsZero() && p.doneProbeClusterInfo.Id != ProbeClusterIdInvalid && p.doneProbeClusterInfo.Id == p.probeClusterId {
+		p.params.Logger.Infow("RAJA estimates", "lowest", lowestEstimate, "highest", highestEstimate)	// REMOVE
 		// ensure any queueing due to probing is flushed
 		// STREAM-ALLOCATOR-TODO: CongestionControlProbeConfig.SettleWait should actually be a certain number of RTTs.
-		expectedDuration := float64(p.doneProbeClusterInfo.BytesSent*8*1000) / float64(lowestEstimate)
+		expectedDuration := float64(9.0)
+		if lowestEstimate != 0 {
+			expectedDuration = float64(p.doneProbeClusterInfo.BytesSent*8*1000) / float64(lowestEstimate)
+		}
 		queueTime := expectedDuration - float64(p.doneProbeClusterInfo.Duration.Milliseconds())
 		if queueTime < 0.0 {
 			queueTime = 0.0
 		}
-		queueWait := time.Duration(queueTime+float64(p.params.Config.SettleWait)) * time.Millisecond
+		queueWait := (time.Duration(queueTime) * time.Millisecond) + p.params.Config.SettleWait
 		if queueWait > p.params.Config.SettleWaitMax {
 			queueWait = p.params.Config.SettleWaitMax
 		}
@@ -138,7 +142,7 @@ func (p *ProbeController) MaybeFinalizeProbe(
 	}
 
 	if !p.probeEndTime.IsZero() && time.Now().After(p.probeEndTime) {
-		isNotFailing, isGoalReached := p.finalizeProbeLocked(highestEstimate)
+		isNotFailing, isGoalReached := p.finalizeProbeLocked(trend, highestEstimate)
 		return true, isNotFailing, isGoalReached
 	}
 
@@ -152,12 +156,12 @@ func (p *ProbeController) DoesProbeNeedFinalize() bool {
 	return p.abortedProbeClusterId != ProbeClusterIdInvalid
 }
 
-func (p *ProbeController) finalizeProbeLocked(highestEstimate int64) (isNotFailing bool, isGoalReached bool) {
+func (p *ProbeController) finalizeProbeLocked(trend ChannelTrend, highestEstimate int64) (isNotFailing bool, isGoalReached bool) {
 	aborted := p.probeClusterId == p.abortedProbeClusterId
 
 	p.clearProbeLocked()
 
-	if aborted {
+	if aborted || trend == ChannelTrendCongesting {
 		// failed probe, backoff
 		p.backoffProbeIntervalLocked()
 		return false, false

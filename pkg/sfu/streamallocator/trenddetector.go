@@ -75,6 +75,8 @@ func (t *TrendDetector) Seed(value int64) {
 
 	t.samples = append(t.samples, trendDetectorSample{value: value, at: time.Now()})
 	t.numSamples = 1
+	t.lowestValue = value
+	t.highestValue = value
 }
 
 func (t *TrendDetector) AddValue(value int64) {

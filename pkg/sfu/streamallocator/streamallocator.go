@@ -629,6 +629,7 @@ func (s *StreamAllocator) handleSignalAdjustState(event *Event) {
 func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 	receivedEstimate, _ := event.Data.(int64)
 	s.lastReceivedEstimate = receivedEstimate
+	s.params.Logger.Infow("RAJA new estimate", "estimate", receivedEstimate)	// REMOVE
 	s.monitorRate(receivedEstimate)
 
 	// while probing, maintain estimate separately to enable keeping current committed estimate if probe fails
