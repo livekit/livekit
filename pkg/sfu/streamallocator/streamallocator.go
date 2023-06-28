@@ -2,7 +2,6 @@ package streamallocator
 
 import (
 	"fmt"
-	"math"
 	"sort"
 	"sync"
 	"time"
@@ -556,7 +555,7 @@ func (s *StreamAllocator) processEvents() {
 }
 
 func (s *StreamAllocator) ping() {
-	ticker := time.NewTicker(500 * time.Millisecond)
+	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
 	for {
@@ -642,9 +641,15 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 
 func (s *StreamAllocator) handleSignalPeriodicPing(event *Event) {
 	// finalize probe if necessary
-	isHandled, isSuccessful := s.probeController.MaybeFinalizeProbe()
+	trend, _ := s.channelObserver.GetTrend()
+	isHandled, isNotFailing, isGoalReached := s.probeController.MaybeFinalizeProbe(
+		s.channelObserver.HasEnoughEstimateSamples(),
+		trend,
+		s.channelObserver.GetLowestEstimate(),
+		s.channelObserver.GetHighestEstimate(),
+	)
 	if isHandled {
-		s.onProbeDone(isSuccessful)
+		s.onProbeDone(isNotFailing, isGoalReached)
 	}
 
 	// probe if necessary and timing is right
@@ -678,10 +683,7 @@ func (s *StreamAllocator) handleSignalSendProbe(event *Event) {
 
 func (s *StreamAllocator) handleSignalProbeClusterDone(event *Event) {
 	info, _ := event.Data.(ProbeClusterInfo)
-	isHandled := s.probeController.ProbeClusterDone(info, int64(math.Min(float64(s.committedChannelCapacity), float64(s.channelObserver.GetLowestEstimate()))))
-	if isHandled {
-		s.onProbeDone(true)
-	}
+	s.probeController.ProbeClusterDone(info)
 }
 
 func (s *StreamAllocator) handleSignalResume(event *Event) {
@@ -926,7 +928,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	s.adjustState()
 }
 
-func (s *StreamAllocator) onProbeDone(isSuccessful bool) {
+func (s *StreamAllocator) onProbeDone(isNotFailing bool, isGoalReached bool) {
 	highestEstimateInProbe := s.channelObserver.GetHighestEstimate()
 
 	//
@@ -940,18 +942,22 @@ func (s *StreamAllocator) onProbeDone(isSuccessful bool) {
 	// NOTE: With TWCC, it is possible to reset bandwidth estimation to clean state as
 	// the send side is in full control of bandwidth estimation.
 	//
+	channelObserverString := s.channelObserver.ToString()
 	s.channelObserver = s.newChannelObserverNonProbe()
-	if !isSuccessful {
+	if !isNotFailing {
 		return
 	}
 
-	// probe estimate is same or higher, commit it and try to allocate deficient tracks
 	s.params.Logger.Infow(
-		"successful probe, updating channel capacity",
-		"old(bps)", s.committedChannelCapacity,
-		"new(bps)", highestEstimateInProbe,
+		"probe done",
+		"isGoalReached", isGoalReached,
+		"committedEstimate", s.committedChannelCapacity,
+		"highestEstimate", highestEstimateInProbe,
+		"channel", channelObserverString,
 	)
-	s.committedChannelCapacity = highestEstimateInProbe
+	if highestEstimateInProbe > s.committedChannelCapacity {
+		s.committedChannelCapacity = highestEstimateInProbe
+	}
 
 	s.maybeBoostDeficientTracks()
 }

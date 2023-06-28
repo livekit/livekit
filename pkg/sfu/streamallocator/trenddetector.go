@@ -74,6 +74,7 @@ func (t *TrendDetector) Seed(value int64) {
 	}
 
 	t.samples = append(t.samples, trendDetectorSample{value: value, at: time.Now()})
+	t.numSamples = 1
 }
 
 func (t *TrendDetector) AddValue(value int64) {
@@ -120,6 +121,10 @@ func (t *TrendDetector) GetHighest() int64 {
 
 func (t *TrendDetector) GetDirection() TrendDirection {
 	return t.direction
+}
+
+func (t *TrendDetector) HasEnoughSamples() bool {
+	return t.numSamples >= t.params.RequiredSamples
 }
 
 func (t *TrendDetector) ToString() string {
