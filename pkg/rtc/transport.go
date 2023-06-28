@@ -28,7 +28,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
-	"github.com/livekit/livekit-server/pkg/sfu/sendsidebwe"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
@@ -188,8 +187,7 @@ type PCTransport struct {
 	streamAllocator *streamallocator.StreamAllocator
 
 	// only for subscriber PC
-	sendSideBWE *sendsidebwe.SendSideBWE
-	pacer       pacer.Pacer
+	pacer pacer.Pacer
 
 	previousAnswer *webrtc.SessionDescription
 	// track id -> description map in previous offer sdp
@@ -309,7 +307,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 
 	ir := &interceptor.Registry{}
 	if params.IsSendSide {
-		if params.CongestionControlConfig.UseSendSideBWE && !params.CongestionControlConfig.UseTWCC {
+		if params.CongestionControlConfig.UseSendSideBWE {
 			gf, err := cc.NewInterceptor(func() (cc.BandwidthEstimator, error) {
 				return gcc.NewSendSideBWE(
 					gcc.SendSideBWEInitialBitrate(1*1000*1000),
@@ -366,15 +364,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 			Logger: params.Logger,
 		})
 		t.streamAllocator.Start()
-
-		if params.CongestionControlConfig.UseTWCC {
-			t.sendSideBWE = sendsidebwe.NewSendSideBWE(params.Logger)
-			t.pacer = pacer.NewNoQueue(params.Logger, t.sendSideBWE)
-
-			t.streamAllocator.SetSendSideBWE(t.sendSideBWE)
-		} else {
-			t.pacer = pacer.NewPassThrough(params.Logger, nil)
-		}
+		t.pacer = pacer.NewPassThrough(params.Logger)
 	}
 
 	if err := t.createPeerConnection(); err != nil {
@@ -903,9 +893,6 @@ func (t *PCTransport) Close() {
 	}
 	if t.pacer != nil {
 		t.pacer.Stop()
-	}
-	if t.sendSideBWE != nil {
-		t.sendSideBWE.Stop()
 	}
 
 	_ = t.pc.Close()

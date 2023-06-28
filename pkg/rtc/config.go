@@ -99,7 +99,7 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 			},
 		},
 	}
-	if rtcConf.CongestionControl.UseSendSideBWE || rtcConf.CongestionControl.UseTWCC {
+	if rtcConf.CongestionControl.UseSendSideBWE {
 		subscriberConfig.RTPHeaderExtension.Video = append(subscriberConfig.RTPHeaderExtension.Video, sdp.TransportCCURI)
 		subscriberConfig.RTCPFeedback.Video = append(subscriberConfig.RTCPFeedback.Video, webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBTransportCC})
 	} else {
