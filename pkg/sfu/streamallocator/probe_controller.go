@@ -10,7 +10,7 @@ import (
 const (
 	ProbeWaitBase      = 5 * time.Second
 	ProbeBackoffFactor = 1.5
-	ProbeWaitMax       = 30 * time.Second
+	ProbeWaitMax       = 2 * time.Minute
 	ProbeSettleWait    = 250
 	ProbeSettleWaitMax = 10 * time.Second
 	ProbeTrendWait     = 2 * time.Second
@@ -178,7 +178,11 @@ func (p *ProbeController) InitProbe(probeGoalDeltaBps int64, expectedBandwidthUs
 	p.lastProbeStartTime = time.Now()
 
 	// overshoot a bit to account for noise (in measurement/estimate etc)
-	p.probeGoalBps = expectedBandwidthUsage + ((probeGoalDeltaBps * ProbePct) / 100)
+	desiredIncreaseBps := (probeGoalDeltaBps * ProbePct) / 100
+	if desiredIncreaseBps < ProbeMinBps {
+		desiredIncreaseBps = ProbeMinBps
+	}
+	p.probeGoalBps = expectedBandwidthUsage + desiredIncreaseBps
 
 	p.abortedProbeClusterId = ProbeClusterIdInvalid
 
