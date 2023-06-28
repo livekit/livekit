@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	p2p_database "github.com/dTelecom/p2p-realtime-database"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/pkg/errors"
 	"log"
 	"math/big"
 	"strings"
 	"time"
+
+	p2p_database "github.com/dTelecom/p2p-realtime-database"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -64,7 +65,7 @@ func (c *ClientProvider) ClientByAddress(ctx context.Context, address string) (C
 }
 
 func (c *ClientProvider) getFromDatabase(ctx context.Context, address string) (Client, error) {
-	key := prefixParticipantCounterKey + "_" + address
+	key := databasePrefixClientKey + "_" + address
 
 	row, err := c.mainDatabase.Get(ctx, key)
 	if err != nil {
@@ -99,7 +100,7 @@ func (c *ClientProvider) saveInDatabase(ctx context.Context, address string, cli
 		return errors.Wrap(err, "marshal record")
 	}
 
-	err = c.mainDatabase.Set(ctx, prefixParticipantCounterKey+"_"+address, string(marshaled))
+	err = c.mainDatabase.Set(ctx, databasePrefixClientKey+"_"+address, string(marshaled))
 	if err != nil {
 		return errors.Wrap(err, "database set record")
 	}
@@ -136,7 +137,7 @@ func (c *ClientProvider) startRemovingExpiredRecord() {
 
 			for _, key := range keys {
 				key = strings.TrimPrefix("/", key)
-				if !strings.HasPrefix(key, prefixParticipantCounterKey) {
+				if !strings.HasPrefix(key, databasePrefixClientKey) {
 					continue
 				}
 
