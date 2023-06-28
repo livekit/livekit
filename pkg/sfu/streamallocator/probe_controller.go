@@ -115,7 +115,7 @@ func (p *ProbeController) MaybeFinalizeProbe(
 	}
 
 	if isComplete && p.probeEndTime.IsZero() && p.doneProbeClusterInfo.Id != ProbeClusterIdInvalid && p.doneProbeClusterInfo.Id == p.probeClusterId {
-		p.params.Logger.Infow("RAJA estimates", "lowest", lowestEstimate, "highest", highestEstimate)	// REMOVE
+		p.params.Logger.Infow("RAJA estimates", "lowest", lowestEstimate, "highest", highestEstimate) // REMOVE
 		// ensure any queueing due to probing is flushed
 		// STREAM-ALLOCATOR-TODO: CongestionControlProbeConfig.SettleWait should actually be a certain number of RTTs.
 		expectedDuration := float64(9.0)
