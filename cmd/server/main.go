@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"math/rand"
+	"net"
 	"os"
 	"os/signal"
 	"runtime"
@@ -204,15 +205,27 @@ func getConfig(c *cli.Context) (*config.Config, error) {
 			conf.Keys = map[string]string{
 				"devkey": "secret",
 			}
+			shouldMatchRTCIP := false
 			// when dev mode and using shared keys, we'll bind to localhost by default
 			if conf.BindAddresses == nil {
 				conf.BindAddresses = []string{
 					"127.0.0.1",
 					"::1",
 				}
+			} else {
+				// if non-loopback addresses are provided, then we'll match RTC IP to bind address
+				// our IP discovery ignores loopback addresses
+				for _, addr := range conf.BindAddresses {
+					ip := net.ParseIP(addr)
+					if ip != nil && !ip.IsLoopback() {
+						shouldMatchRTCIP = true
+					}
+				}
 			}
-			for _, bindAddr := range conf.BindAddresses {
-				conf.RTC.IPs.Includes = append(conf.RTC.IPs.Includes, bindAddr + "/24")
+			if shouldMatchRTCIP {
+				for _, bindAddr := range conf.BindAddresses {
+					conf.RTC.IPs.Includes = append(conf.RTC.IPs.Includes, bindAddr+"/24")
+				}
 			}
 		}
 	}
