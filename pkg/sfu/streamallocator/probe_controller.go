@@ -177,7 +177,7 @@ func (p *ProbeController) finalizeProbeLocked(trend ChannelTrend) (isNotFailing 
 		return false
 	}
 
-	// reset probe interval and increase probe duration on a non-failing probe
+	// reset probe interval and increase probe duration on a upward trending probe
 	p.resetProbeIntervalLocked()
 	if trend == ChannelTrendClearing {
 		p.increaseProbeDurationLocked()
