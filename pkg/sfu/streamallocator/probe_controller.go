@@ -19,22 +19,22 @@ type ProbeControllerParams struct {
 type ProbeController struct {
 	params ProbeControllerParams
 
-	lock                  sync.RWMutex
-	probeInterval         time.Duration
-	lastProbeStartTime    time.Time
-	probeGoalBps          int64
-	probeClusterId        ProbeClusterId
-	doneProbeClusterInfo  ProbeClusterInfo
-	abortedProbeClusterId ProbeClusterId
+	lock                      sync.RWMutex
+	probeInterval             time.Duration
+	lastProbeStartTime        time.Time
+	probeGoalBps              int64
+	probeClusterId            ProbeClusterId
+	doneProbeClusterInfo      ProbeClusterInfo
+	abortedProbeClusterId     ProbeClusterId
 	goalReachedProbeClusterId ProbeClusterId
-	probeTrendObserved    bool
-	probeEndTime          time.Time
-	probeDuration time.Duration
+	probeTrendObserved        bool
+	probeEndTime              time.Time
+	probeDuration             time.Duration
 }
 
 func NewProbeController(params ProbeControllerParams) *ProbeController {
 	p := &ProbeController{
-		params: params,
+		params:        params,
 		probeDuration: params.Config.MinDuration,
 	}
 
@@ -211,7 +211,7 @@ func (p *ProbeController) InitProbe(probeGoalDeltaBps int64, expectedBandwidthUs
 		int(p.probeGoalBps),
 		int(expectedBandwidthUsage),
 		p.probeDuration,
-		time.Duration(float64(p.probeDuration.Milliseconds()) * p.params.Config.DurationOverflowFactor) * time.Millisecond,
+		time.Duration(float64(p.probeDuration.Milliseconds())*p.params.Config.DurationOverflowFactor)*time.Millisecond,
 	)
 
 	return p.probeClusterId, p.probeGoalBps
@@ -240,7 +240,7 @@ func (p *ProbeController) resetProbeDurationLocked() {
 }
 
 func (p *ProbeController) increaseProbeDurationLocked() {
-	p.probeDuration = time.Duration(float64(p.probeDuration.Milliseconds()) * p.params.Config.DurationIncreaseFactor) * time.Millisecond
+	p.probeDuration = time.Duration(float64(p.probeDuration.Milliseconds())*p.params.Config.DurationIncreaseFactor) * time.Millisecond
 	if p.probeDuration > p.params.Config.MaxDuration {
 		p.probeDuration = p.params.Config.MaxDuration
 	}
