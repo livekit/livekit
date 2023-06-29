@@ -5,6 +5,7 @@ package service
 
 import (
 	"context"
+
 	p2p_database "github.com/dTelecom/p2p-realtime-database"
 	"github.com/google/wire"
 	logging "github.com/ipfs/go-log/v2"
@@ -95,7 +96,7 @@ func createSmartContractClient(conf *config.Config) (*p2p_database.EthSmartContr
 		EthereumNetworkHost:     conf.Ethereum.NetworkHost,
 		EthereumNetworkKey:      conf.Ethereum.NetworkKey,
 		EthereumContractAddress: conf.Ethereum.ContractAddress,
-	}, nil)
+	}, logging.Logger("eth-smart-contract-livekit"))
 
 	if err != nil {
 		return nil, errors.Wrap(err, "try create contract")
@@ -131,21 +132,11 @@ func getNodeID(currentNode routing.LocalNode) livekit.NodeID {
 	return livekit.NodeID(currentNode.Id)
 }
 
-func createKeyProvider(conf *config.Config) (auth.KeyProvider, error) {
-	return createKeyPublicKeyProvider(conf)
+func createKeyProvider(conf *config.Config, contract *p2p_database.EthSmartContract) (auth.KeyProvider, error) {
+	return createKeyPublicKeyProvider(conf, contract)
 }
 
-func createKeyPublicKeyProvider(conf *config.Config) (auth.KeyProviderPublicKey, error) {
-	contract, err := p2p_database.NewEthSmartContract(p2p_database.Config{
-		EthereumNetworkHost:     conf.Ethereum.NetworkHost,
-		EthereumNetworkKey:      conf.Ethereum.NetworkKey,
-		EthereumContractAddress: conf.Ethereum.ContractAddress,
-	}, nil)
-
-	if err != nil {
-		return nil, errors.Wrap(err, "try create contract")
-	}
-
+func createKeyPublicKeyProvider(conf *config.Config, contract *p2p_database.EthSmartContract) (auth.KeyProviderPublicKey, error) {
 	return auth.NewEthKeyProvider(*contract, conf.Ethereum.WalletAddress, conf.Ethereum.WalletPrivateKey), nil
 }
 

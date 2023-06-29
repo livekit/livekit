@@ -65,7 +65,11 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	rpcClient := egress.NewRedisRPCClient(nodeID, universalClient)
 	egressStore := getEgressStore(objectStore)
-	keyProvider, err := createKeyProvider(conf)
+	ethSmartContract, err := createSmartContractClient(conf)
+	if err != nil {
+		return nil, err
+	}
+	keyProvider, err := createKeyProvider(conf, ethSmartContract)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +93,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	ingressStore := getIngressStore(objectStore)
 	ingressService := NewIngressService(ingressConfig, nodeID, messageBus, ingressClient, ingressStore, roomService, telemetryService)
 	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode, telemetryService)
-	keyProviderPublicKey, err := createKeyPublicKeyProvider(conf)
+	keyProviderPublicKey, err := createKeyPublicKeyProvider(conf, ethSmartContract)
 	if err != nil {
 		return nil, err
 	}
@@ -105,10 +109,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	authHandler := newTurnAuthHandler(objectStore)
 	server, err := newInProcessTurnServer(conf, authHandler)
-	if err != nil {
-		return nil, err
-	}
-	ethSmartContract, err := createSmartContractClient(conf)
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +147,7 @@ func createSmartContractClient(conf *config.Config) (*p2p_database.EthSmartContr
 		EthereumNetworkHost:     conf.Ethereum.NetworkHost,
 		EthereumNetworkKey:      conf.Ethereum.NetworkKey,
 		EthereumContractAddress: conf.Ethereum.ContractAddress,
-	}, nil)
+	}, log.Logger("eth-smart-contract-livekit"))
 
 	if err != nil {
 		return nil, errors.Wrap(err, "try create contract")
@@ -183,21 +183,11 @@ func getNodeID(currentNode routing.LocalNode) livekit.NodeID {
 	return livekit.NodeID(currentNode.Id)
 }
 
-func createKeyProvider(conf *config.Config) (auth.KeyProvider, error) {
-	return createKeyPublicKeyProvider(conf)
+func createKeyProvider(conf *config.Config, contract *p2p_database.EthSmartContract) (auth.KeyProvider, error) {
+	return createKeyPublicKeyProvider(conf, contract)
 }
 
-func createKeyPublicKeyProvider(conf *config.Config) (auth.KeyProviderPublicKey, error) {
-	contract, err := p2p_database.NewEthSmartContract(p2p_database.Config{
-		EthereumNetworkHost:     conf.Ethereum.NetworkHost,
-		EthereumNetworkKey:      conf.Ethereum.NetworkKey,
-		EthereumContractAddress: conf.Ethereum.ContractAddress,
-	}, nil)
-
-	if err != nil {
-		return nil, errors.Wrap(err, "try create contract")
-	}
-
+func createKeyPublicKeyProvider(conf *config.Config, contract *p2p_database.EthSmartContract) (auth.KeyProviderPublicKey, error) {
 	return auth.NewEthKeyProvider(*contract, conf.Ethereum.WalletAddress, conf.Ethereum.WalletPrivateKey), nil
 }
 
