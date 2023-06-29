@@ -629,7 +629,6 @@ func (s *StreamAllocator) handleSignalAdjustState(event *Event) {
 func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 	receivedEstimate, _ := event.Data.(int64)
 	s.lastReceivedEstimate = receivedEstimate
-	s.params.Logger.Infow("RAJA new estimate", "estimate", receivedEstimate) // REMOVE
 	s.monitorRate(receivedEstimate)
 
 	// while probing, maintain estimate separately to enable keeping current committed estimate if probe fails
@@ -647,7 +646,6 @@ func (s *StreamAllocator) handleSignalPeriodicPing(event *Event) {
 		s.channelObserver.HasEnoughEstimateSamples(),
 		trend,
 		s.channelObserver.GetLowestEstimate(),
-		s.channelObserver.GetHighestEstimate(),
 	)
 	if isHandled {
 		s.onProbeDone(isNotFailing, isGoalReached)
@@ -945,17 +943,18 @@ func (s *StreamAllocator) onProbeDone(isNotFailing bool, isGoalReached bool) {
 	//
 	channelObserverString := s.channelObserver.ToString()
 	s.channelObserver = s.newChannelObserverNonProbe()
-	if !isNotFailing {
-		return
-	}
-
 	s.params.Logger.Infow(
 		"probe done",
+		"isNotFailing", isNotFailing,
 		"isGoalReached", isGoalReached,
 		"committedEstimate", s.committedChannelCapacity,
 		"highestEstimate", highestEstimateInProbe,
 		"channel", channelObserverString,
 	)
+	if !isNotFailing {
+		return
+	}
+
 	if highestEstimateInProbe > s.committedChannelCapacity {
 		s.committedChannelCapacity = highestEstimateInProbe
 	}

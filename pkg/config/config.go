@@ -119,6 +119,8 @@ type CongestionControlProbeConfig struct {
 	MinBps      int64         `yaml:"min_bps,omitempty"`
 	MinDuration time.Duration `yaml:"min_duration,omitempty"`
 	MaxDuration time.Duration `yaml:"max_duration,omitempty"`
+	DurationOverflowFactor float64 `yaml:"duration_overflow_factor,omitempty"`
+	DurationIncreaseFactor float64 `yaml:"duration_increase_factor,omitempty"`
 }
 
 type CongestionControlConfig struct {
@@ -287,7 +289,7 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 				AllowPause: true,
 				ProbeMode:  CongestionControlProbeModePadding,
 				ProbeConfig: CongestionControlProbeConfig{
-					BaseInterval:  5 * time.Second,
+					BaseInterval:  3 * time.Second,
 					BackoffFactor: 1.5,
 					MaxInterval:   2 * time.Minute,
 
@@ -299,7 +301,9 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 					OveragePct:  120,
 					MinBps:      200_000,
 					MinDuration: 200 * time.Millisecond,
-					MaxDuration: 300 * time.Millisecond,
+					MaxDuration: 20 * time.Second,
+					DurationOverflowFactor: 1.25,
+					DurationIncreaseFactor: 1.5,
 				},
 			},
 		},
