@@ -123,7 +123,13 @@ func TestGetQualityForDimension(t *testing.T) {
 			},
 		}})
 
-		mt2 := NewMediaTrack(MediaTrackParams{TrackInfo: &livekit.TrackInfo{
+		require.Equal(t, livekit.VideoQuality_LOW, mt.GetQualityForDimension(120, 120))
+		require.Equal(t, livekit.VideoQuality_LOW, mt.GetQualityForDimension(300, 300))
+		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(800, 500))
+		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(1000, 700))
+		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(1200, 800))
+
+		mt = NewMediaTrack(MediaTrackParams{TrackInfo: &livekit.TrackInfo{
 			Type:   livekit.TrackType_VIDEO,
 			Width:  1080,
 			Height: 720,
@@ -146,16 +152,10 @@ func TestGetQualityForDimension(t *testing.T) {
 			},
 		}})
 
-		require.Equal(t, livekit.VideoQuality_LOW, mt.GetQualityForDimension(120, 120))
-		require.Equal(t, livekit.VideoQuality_LOW, mt.GetQualityForDimension(300, 300))
+		require.Equal(t, livekit.VideoQuality_MEDIUM, mt.GetQualityForDimension(120, 120))
+		require.Equal(t, livekit.VideoQuality_MEDIUM, mt.GetQualityForDimension(300, 300))
 		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(800, 500))
 		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(1000, 700))
-		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(1200, 800))
-
-		require.Equal(t, livekit.VideoQuality_MEDIUM, mt2.GetQualityForDimension(120, 120))
-		require.Equal(t, livekit.VideoQuality_MEDIUM, mt2.GetQualityForDimension(300, 300))
-		require.Equal(t, livekit.VideoQuality_HIGH, mt2.GetQualityForDimension(800, 500))
-		require.Equal(t, livekit.VideoQuality_HIGH, mt2.GetQualityForDimension(1000, 700))
 		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(1200, 800))
 	})
 
