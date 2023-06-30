@@ -9,18 +9,20 @@ package service
 import (
 	"context"
 	"github.com/dTelecom/p2p-realtime-database"
+	"github.com/livekit/livekit-server"
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/egress"
-	"github.com/livekit/protocol/livekit"
+	livekit2 "github.com/livekit/protocol/livekit"
 	redis2 "github.com/livekit/protocol/redis"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
 	"github.com/livekit/psrpc"
+	"github.com/oschwald/geoip2-golang"
 	"github.com/pion/turn/v2"
 	"github.com/pkg/errors"
 	"github.com/redis/go-redis/v9"
@@ -48,7 +50,12 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	router := routing.CreateRouter(conf, universalClient, currentNode, signalClient)
 	p2p_databaseConfig := getDatabaseConfiguration(conf)
-	db, err := createMainDatabaseP2P(p2p_databaseConfig, conf)
+	reader, err := createGeoIP()
+	if err != nil {
+		return nil, err
+	}
+	nodeProvider := createNodeProvider(reader)
+	db, err := createMainDatabaseP2P(p2p_databaseConfig, conf, nodeProvider)
 	if err != nil {
 		return nil, err
 	}
@@ -137,6 +144,16 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 
 // wire.go:
 
+func createGeoIP() (*geoip2.Reader, error) {
+	return geoip2.FromBytes(livekit.MixmindDatabase)
+}
+
+func createNodeProvider(geo *geoip2.Reader) *NodeProvider {
+	return &NodeProvider{
+		geo: geo,
+	}
+}
+
 func createClientProvider(contract *p2p_database.EthSmartContract, db *p2p_database.DB) *ClientProvider {
 	return NewClientProvider(db, contract)
 }
@@ -170,7 +187,7 @@ func getDatabaseConfiguration(conf *config.Config) p2p_database.Config {
 	}
 }
 
-func createMainDatabaseP2P(conf p2p_database.Config, c *config.Config) (*p2p_database.DB, error) {
+func createMainDatabaseP2P(conf p2p_database.Config, c *config.Config, nodeProvider *NodeProvider) (*p2p_database.DB, error) {
 	db, err := p2p_database.Connect(context.Background(), conf, c.LoggingP2P)
 	if err != nil {
 		return nil, errors.Wrap(err, "create main p2p db")
@@ -178,8 +195,8 @@ func createMainDatabaseP2P(conf p2p_database.Config, c *config.Config) (*p2p_dat
 	return db, nil
 }
 
-func getNodeID(currentNode routing.LocalNode) livekit.NodeID {
-	return livekit.NodeID(currentNode.Id)
+func getNodeID(currentNode routing.LocalNode) livekit2.NodeID {
+	return livekit2.NodeID(currentNode.Id)
 }
 
 func createKeyProvider(conf *config.Config, contract *p2p_database.EthSmartContract) (auth.KeyProvider, error) {
@@ -210,7 +227,7 @@ func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {
 	return redis2.GetRedisClient(&conf.Redis)
 }
 
-func createStore(mainDatabase *p2p_database.DB, p2pDbConfig p2p_database.Config, nodeID livekit.NodeID, participantCounter *ParticipantCounter) ObjectStore {
+func createStore(mainDatabase *p2p_database.DB, p2pDbConfig p2p_database.Config, nodeID livekit2.NodeID, participantCounter *ParticipantCounter) ObjectStore {
 	return NewLocalStore(nodeID, p2pDbConfig, participantCounter, mainDatabase)
 }
 
@@ -221,7 +238,7 @@ func getMessageBus(rc redis.UniversalClient) psrpc.MessageBus {
 	return psrpc.NewRedisMessageBus(rc)
 }
 
-func getEgressClient(conf *config.Config, nodeID livekit.NodeID, bus psrpc.MessageBus) (rpc.EgressClient, error) {
+func getEgressClient(conf *config.Config, nodeID livekit2.NodeID, bus psrpc.MessageBus) (rpc.EgressClient, error) {
 	if conf.Egress.UsePsRPC {
 		return rpc.NewEgressClient(nodeID, bus)
 	}

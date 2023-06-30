@@ -8,6 +8,7 @@ import (
 
 	p2p_database "github.com/dTelecom/p2p-realtime-database"
 	"github.com/google/wire"
+	livekit2 "github.com/livekit/livekit-server"
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -20,6 +21,7 @@ import (
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
 	"github.com/livekit/psrpc"
+	"github.com/oschwald/geoip2-golang"
 	"github.com/pion/turn/v2"
 	"github.com/pkg/errors"
 	"github.com/redis/go-redis/v9"
@@ -68,6 +70,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		utils.NewDefaultTimedVersionGenerator,
 		createSmartContractClient,
 		createClientProvider,
+		createGeoIP,
+		createNodeProvider,
 		NewLivekitServer,
 	)
 	return &LivekitServer{}, nil
@@ -84,6 +88,16 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 	)
 
 	return nil, nil
+}
+
+func createGeoIP() (*geoip2.Reader, error) {
+	return geoip2.FromBytes(livekit2.MixmindDatabase)
+}
+
+func createNodeProvider(geo *geoip2.Reader) *NodeProvider {
+	return &NodeProvider{
+		geo: geo,
+	}
 }
 
 func createClientProvider(contract *p2p_database.EthSmartContract, db *p2p_database.DB) *ClientProvider {
@@ -119,7 +133,7 @@ func getDatabaseConfiguration(conf *config.Config) p2p_database.Config {
 	}
 }
 
-func createMainDatabaseP2P(conf p2p_database.Config, c *config.Config) (*p2p_database.DB, error) {
+func createMainDatabaseP2P(conf p2p_database.Config, c *config.Config, nodeProvider *NodeProvider) (*p2p_database.DB, error) {
 	db, err := p2p_database.Connect(context.Background(), conf, c.LoggingP2P)
 	if err != nil {
 		return nil, errors.Wrap(err, "create main p2p db")
