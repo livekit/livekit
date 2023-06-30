@@ -253,7 +253,7 @@ func (q *qualityScorer) AddLayerTransition(distance float64, at time.Time) {
 	defer q.lock.Unlock()
 
 	// TODO-REMOVE-AFTER-DEBUG
-	q.params.Logger.Debugw("adding layer transitions", "at", at, "distance", distance)
+	q.params.Logger.Debugw("adding layer transition", "at", at, "distance", distance)
 	q.layerTransitions = append(q.layerTransitions, layerTransition{
 		startedAt: at,
 		distance:  distance,
