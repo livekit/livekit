@@ -584,7 +584,6 @@ func TestSubscribeToCodecUnsupported(t *testing.T) {
 		for _, t := range tracks {
 			if strings.EqualFold(t.Codec().MimeType, "video/vp8") {
 				return ""
-
 			}
 		}
 		return "did not receive track with vp8"
