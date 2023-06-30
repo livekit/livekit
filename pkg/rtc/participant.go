@@ -1077,7 +1077,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		TCPFallbackRTTThreshold:  p.params.TCPFallbackRTTThreshold,
 		AllowUDPUnstableFallback: p.params.AllowUDPUnstableFallback,
 		TURNSEnabled:             p.params.TURNSEnabled,
-		AllowPlayoutDelay:        p.params.AllowPlayoutDelay,
+		AllowPlayoutDelay:        p.params.AllowPlayoutDelay && p.ProtocolVersion().SupportSyncStreamID(),
 		Logger:                   p.params.Logger,
 	})
 	if err != nil {
