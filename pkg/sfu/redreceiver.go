@@ -85,6 +85,15 @@ func (r *RedReceiver) DeleteDownTrack(subscriberID livekit.ParticipantID) {
 	r.downTrackSpreader.Free(subscriberID)
 }
 
+func (r *RedReceiver) SetRTT(rtt uint32) {
+	if r.closed.Load() {
+		return
+	}
+	r.downTrackSpreader.Broadcast(func(ts TrackSender) {
+		ts.SetUpstreamRTT(rtt)
+	})
+}
+
 func (r *RedReceiver) CanClose() bool {
 	return r.closed.Load() || r.downTrackSpreader.DownTrackCount() == 0
 }

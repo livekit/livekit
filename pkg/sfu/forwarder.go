@@ -293,7 +293,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 	searchDone:
 		for _, ext := range extensions {
 			switch ext.URI {
-			case dd.ExtensionUrl:
+			case dd.ExtensionURI:
 				isDDAvailable = true
 				break searchDone
 			}

@@ -196,6 +196,14 @@ keys:
 #   # enable red encoding downtrack for opus only audio up track
 #   active_red_encoding: true
 
+# customize video settings
+# video:
+#   # control playout delay in ms of video track (and associated audio track) 
+#   playout_delay:
+#     enabled: true
+#     min: 100
+#     max: 300
+
 # turn server
 # turn:
 #   # Uses TLS. Requires cert and key pem files by either:

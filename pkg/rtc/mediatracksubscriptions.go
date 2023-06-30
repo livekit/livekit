@@ -11,8 +11,10 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/rtpextension"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
@@ -38,6 +40,7 @@ type MediaTrackSubscriptionsParams struct {
 
 	ReceiverConfig   ReceiverConfig
 	SubscriberConfig DirectionConfig
+	VideoConfig      config.VideoConfig
 
 	Telemetry telemetry.TelemetryService
 
@@ -98,15 +101,25 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	for _, c := range codecs {
 		c.RTCPFeedback = rtcpFeedback
 	}
-	downTrack, err := sfu.NewDownTrack(
-		codecs,
-		wr,
-		sub.GetBufferFactory(),
-		subscriberID,
-		t.params.ReceiverConfig.PacketBufferSize,
-		sub.GetPacer(),
-		LoggerWithTrack(sub.GetLogger(), trackID, t.params.IsRelayed),
-	)
+
+	streamID := wr.StreamID()
+	if sub.ProtocolVersion().SupportSyncStreamID() && t.params.MediaTrack.Stream() != "" {
+		streamID = PackSyncStreamID(t.params.MediaTrack.PublisherID(), t.params.MediaTrack.Stream())
+	}
+	downTrack, err := sfu.NewDownTrack(sfu.DowntrackParams{
+		Codecs:        codecs,
+		Receiver:      wr,
+		BufferFactory: sub.GetBufferFactory(),
+		SubID:         subscriberID,
+		StreamID:      streamID,
+		MaxTrack:      t.params.ReceiverConfig.PacketBufferSize,
+		PlayoutDelayLimit: rtpextension.PlayOutDelay{
+			Min: uint16(t.params.VideoConfig.PlayoutDelay.Min / 10),
+			Max: uint16(t.params.VideoConfig.PlayoutDelay.Max / 10),
+		},
+		Pacer:  sub.GetPacer(),
+		Logger: LoggerWithTrack(sub.GetLogger(), trackID, t.params.IsRelayed),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -181,6 +194,8 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		reusingTransceiver.Store(true)
 		rtpSender := existingTransceiver.Sender()
 		if rtpSender != nil {
+			// replaced track will bind immediately without negotiation, SetTransceiver first before bind
+			downTrack.SetTransceiver(existingTransceiver)
 			err := rtpSender.ReplaceTrack(downTrack)
 			if err == nil {
 				sender = rtpSender
@@ -240,9 +255,6 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	// negotiation isn't required if we've replaced track
 	subTrack.SetNeedsNegotiation(!replacedTrack)
 	subTrack.SetRTPSender(sender)
-
-	sendParameters := sender.GetParameters()
-	downTrack.SetRTPHeaderExtensions(sendParameters.HeaderExtensions)
 
 	downTrack.SetTransceiver(transceiver)
 

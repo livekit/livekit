@@ -292,6 +292,16 @@ type FakeLocalMediaTrack struct {
 	sourceReturnsOnCall map[int]struct {
 		result1 livekit.TrackSource
 	}
+	StreamStub        func() string
+	streamMutex       sync.RWMutex
+	streamArgsForCall []struct {
+	}
+	streamReturns struct {
+		result1 string
+	}
+	streamReturnsOnCall map[int]struct {
+		result1 string
+	}
 	ToProtoStub        func() *livekit.TrackInfo
 	toProtoMutex       sync.RWMutex
 	toProtoArgsForCall []struct {
@@ -1830,6 +1840,59 @@ func (fake *FakeLocalMediaTrack) SourceReturnsOnCall(i int, result1 livekit.Trac
 	}{result1}
 }
 
+func (fake *FakeLocalMediaTrack) Stream() string {
+	fake.streamMutex.Lock()
+	ret, specificReturn := fake.streamReturnsOnCall[len(fake.streamArgsForCall)]
+	fake.streamArgsForCall = append(fake.streamArgsForCall, struct {
+	}{})
+	stub := fake.StreamStub
+	fakeReturns := fake.streamReturns
+	fake.recordInvocation("Stream", []interface{}{})
+	fake.streamMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalMediaTrack) StreamCallCount() int {
+	fake.streamMutex.RLock()
+	defer fake.streamMutex.RUnlock()
+	return len(fake.streamArgsForCall)
+}
+
+func (fake *FakeLocalMediaTrack) StreamCalls(stub func() string) {
+	fake.streamMutex.Lock()
+	defer fake.streamMutex.Unlock()
+	fake.StreamStub = stub
+}
+
+func (fake *FakeLocalMediaTrack) StreamReturns(result1 string) {
+	fake.streamMutex.Lock()
+	defer fake.streamMutex.Unlock()
+	fake.StreamStub = nil
+	fake.streamReturns = struct {
+		result1 string
+	}{result1}
+}
+
+func (fake *FakeLocalMediaTrack) StreamReturnsOnCall(i int, result1 string) {
+	fake.streamMutex.Lock()
+	defer fake.streamMutex.Unlock()
+	fake.StreamStub = nil
+	if fake.streamReturnsOnCall == nil {
+		fake.streamReturnsOnCall = make(map[int]struct {
+			result1 string
+		})
+	}
+	fake.streamReturnsOnCall[i] = struct {
+		result1 string
+	}{result1}
+}
+
 func (fake *FakeLocalMediaTrack) ToProto() *livekit.TrackInfo {
 	fake.toProtoMutex.Lock()
 	ret, specificReturn := fake.toProtoReturnsOnCall[len(fake.toProtoArgsForCall)]
@@ -1985,6 +2048,8 @@ func (fake *FakeLocalMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.signalCidMutex.RUnlock()
 	fake.sourceMutex.RLock()
 	defer fake.sourceMutex.RUnlock()
+	fake.streamMutex.RLock()
+	defer fake.streamMutex.RUnlock()
 	fake.toProtoMutex.RLock()
 	defer fake.toProtoMutex.RUnlock()
 	fake.updateVideoLayersMutex.RLock()

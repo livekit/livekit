@@ -375,6 +375,7 @@ func (r *RoomManager) StartSession(
 		SubscriberAllowPause:         subscriberAllowPause,
 		SubscriptionLimitAudio:       r.config.Limit.SubscriptionLimitAudio,
 		SubscriptionLimitVideo:       r.config.Limit.SubscriptionLimitVideo,
+		AllowPlayoutDelay:            r.config.Video.PlayoutDelay.Enabled,
 	})
 	if err != nil {
 		return err

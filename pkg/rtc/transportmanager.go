@@ -51,6 +51,7 @@ type TransportManagerParams struct {
 	TCPFallbackRTTThreshold  int
 	AllowUDPUnstableFallback bool
 	TURNSEnabled             bool
+	AllowPlayoutDelay        bool
 	Logger                   logger.Logger
 }
 
@@ -170,6 +171,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		ClientInfo:              params.ClientInfo,
 		IsOfferer:               true,
 		IsSendSide:              true,
+		AllowPlayoutDelay:       params.AllowPlayoutDelay,
 	})
 	if err != nil {
 		return nil, err

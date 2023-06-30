@@ -150,9 +150,16 @@ type StreamTrackersConfig struct {
 	Screenshare StreamTrackerConfig `yaml:"screenshare,omitempty"`
 }
 
+type PlayoutDelayConfig struct {
+	Enabled bool `yaml:"enabled,omitempty"`
+	Min     int  `yaml:"min,omitempty"`
+	Max     int  `yaml:"max,omitempty"`
+}
+
 type VideoConfig struct {
 	DynacastPauseDelay time.Duration        `yaml:"dynacast_pause_delay,omitempty"`
 	StreamTracker      StreamTrackersConfig `yaml:"stream_tracker,omitempty"`
+	PlayoutDelay       PlayoutDelayConfig   `yaml:"playout_delay,omitempty"`
 }
 
 type RoomConfig struct {

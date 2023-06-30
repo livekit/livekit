@@ -413,6 +413,7 @@ type MediaTrack interface {
 	Kind() livekit.TrackType
 	Name() string
 	Source() livekit.TrackSource
+	Stream() string
 
 	ToProto() *livekit.TrackInfo
 

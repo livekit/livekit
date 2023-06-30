@@ -72,6 +72,7 @@ func NewMediaTrack(params MediaTrackParams) *MediaTrack {
 		ReceiverConfig:      params.ReceiverConfig,
 		SubscriberConfig:    params.SubscriberConfig,
 		AudioConfig:         params.AudioConfig,
+		VideoConfig:         params.VideoConfig,
 		Telemetry:           params.Telemetry,
 		Logger:              params.Logger,
 	})

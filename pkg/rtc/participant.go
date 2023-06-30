@@ -93,6 +93,7 @@ type ParticipantParams struct {
 	SubscriberAllowPause         bool
 	SubscriptionLimitAudio       int32
 	SubscriptionLimitVideo       int32
+	AllowPlayoutDelay            bool
 }
 
 type ParticipantImpl struct {
@@ -1076,6 +1077,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		TCPFallbackRTTThreshold:  p.params.TCPFallbackRTTThreshold,
 		AllowUDPUnstableFallback: p.params.AllowUDPUnstableFallback,
 		TURNSEnabled:             p.params.TURNSEnabled,
+		AllowPlayoutDelay:        p.params.AllowPlayoutDelay,
 		Logger:                   p.params.Logger,
 	})
 	if err != nil {
@@ -1548,6 +1550,10 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		DisableRed: req.DisableRed,
 		Stereo:     req.Stereo,
 		Encryption: req.Encryption,
+		Stream:     req.Stream,
+	}
+	if ti.Stream == "" {
+		ti.Stream = StreamFromTrackSource(ti.Source)
 	}
 	p.setStableTrackID(req.Cid, ti)
 	for _, codec := range req.SimulcastCodecs {
