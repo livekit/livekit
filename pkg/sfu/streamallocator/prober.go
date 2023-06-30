@@ -354,7 +354,7 @@ type ProbeClusterId uint32
 const (
 	ProbeClusterIdInvalid ProbeClusterId = 0
 
-	bucketDuration  = time.Second
+	bucketDuration  = 100 * time.Millisecond
 	bytesPerProbe   = 1000
 	minProbeRateBps = 10000
 )
@@ -423,14 +423,14 @@ func NewCluster(id ProbeClusterId, mode ProbeClusterMode, desiredRateBps int, ex
 }
 
 func (c *Cluster) initBuckets(desiredRateBps int, expectedRateBps int, minDuration time.Duration) {
-	// split into 1-second bucket
+	// split into granular buckets
 	// NOTE: splitting even if mode is unitform
 	numBuckets := int((minDuration.Milliseconds() + bucketDuration.Milliseconds() - 1) / bucketDuration.Milliseconds())
 	if numBuckets < 1 {
 		numBuckets = 1
 	}
 
-	expectedRateBytes := (expectedRateBps + 7) / 8
+	expectedRateBytesPerSec := (expectedRateBps + 7) / 8
 	baseProbeRateBps := (desiredRateBps - expectedRateBps + numBuckets - 1) / numBuckets
 
 	runningDesiredBytes := 0
@@ -447,13 +447,13 @@ func (c *Cluster) initBuckets(desiredRateBps int, expectedRateBps int, minDurati
 		if bucketProbeRateBps < minProbeRateBps {
 			bucketProbeRateBps = minProbeRateBps
 		}
-		bucketProbeRateBytes := (bucketProbeRateBps + 7) / 8
+		bucketProbeRateBytesPerSec := (bucketProbeRateBps + 7) / 8
 
 		// pace based on bytes per probe
-		numProbes := (bucketProbeRateBytes + bytesPerProbe - 1) / bytesPerProbe
-		sleepDurationMicroSeconds := int(float64(1_000_000)/float64(numProbes) + 0.5)
+		numProbesPerSec := (bucketProbeRateBytesPerSec + bytesPerProbe - 1) / bytesPerProbe
+		sleepDurationMicroSeconds := int(float64(1_000_000)/float64(numProbesPerSec) + 0.5)
 
-		runningDesiredBytes += bucketProbeRateBytes + expectedRateBytes
+		runningDesiredBytes += (((bucketProbeRateBytesPerSec + expectedRateBytesPerSec) * int(bucketDuration.Milliseconds())) + 999) / 1000
 		runningDesiredElapsedTime += bucketDuration
 
 		c.buckets = append(c.buckets, clusterBucket{
@@ -537,10 +537,10 @@ func (c *Cluster) Process(pl ProberListener) {
 	if bytesShortFall < 0 {
 		bytesShortFall = 0
 	}
-	// cap short fall to limit to 8 packets in an iteration
+	// cap short fall to limit to 5 packets in an iteration
 	// 275 bytes per packet (255 max RTP padding payload + 20 bytes RTP header)
-	if bytesShortFall > (275 * 8) {
-		bytesShortFall = 275 * 8
+	if bytesShortFall > (275 * 5) {
+		bytesShortFall = 275 * 5
 	}
 	// round up to packet size
 	bytesShortFall = ((bytesShortFall + 274) / 275) * 275
