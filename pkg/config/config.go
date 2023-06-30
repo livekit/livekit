@@ -105,12 +105,31 @@ type PLIThrottleConfig struct {
 	HighQuality time.Duration `yaml:"high_quality,omitempty"`
 }
 
+type CongestionControlProbeConfig struct {
+	BaseInterval  time.Duration `yaml:"base_interval,omitempty"`
+	BackoffFactor float64       `yaml:"backoff_factor,omitempty"`
+	MaxInterval   time.Duration `yaml:"max_interval,omitempty"`
+
+	SettleWait    time.Duration `yaml:"settle_wait,omitempty"`
+	SettleWaitMax time.Duration `yaml:"settle_wait_max,omitempty"`
+
+	TrendWait time.Duration `yaml:"trend_wait,omitempty"`
+
+	OveragePct             int64         `yaml:"overage_pct,omitempty"`
+	MinBps                 int64         `yaml:"min_bps,omitempty"`
+	MinDuration            time.Duration `yaml:"min_duration,omitempty"`
+	MaxDuration            time.Duration `yaml:"max_duration,omitempty"`
+	DurationOverflowFactor float64       `yaml:"duration_overflow_factor,omitempty"`
+	DurationIncreaseFactor float64       `yaml:"duration_increase_factor,omitempty"`
+}
+
 type CongestionControlConfig struct {
-	Enabled            bool                       `yaml:"enabled"`
-	AllowPause         bool                       `yaml:"allow_pause"`
-	UseSendSideBWE     bool                       `yaml:"send_side_bandwidth_estimation,omitempty"`
-	ProbeMode          CongestionControlProbeMode `yaml:"padding_mode,omitempty"`
-	MinChannelCapacity int64                      `yaml:"min_channel_capacity,omitempty"`
+	Enabled            bool                         `yaml:"enabled"`
+	AllowPause         bool                         `yaml:"allow_pause"`
+	UseSendSideBWE     bool                         `yaml:"send_side_bandwidth_estimation,omitempty"`
+	ProbeMode          CongestionControlProbeMode   `yaml:"padding_mode,omitempty"`
+	MinChannelCapacity int64                        `yaml:"min_channel_capacity,omitempty"`
+	ProbeConfig        CongestionControlProbeConfig `yaml:"probe_config,omitempty"`
 }
 
 type AudioConfig struct {
@@ -269,6 +288,23 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 				Enabled:    true,
 				AllowPause: false,
 				ProbeMode:  CongestionControlProbeModePadding,
+				ProbeConfig: CongestionControlProbeConfig{
+					BaseInterval:  3 * time.Second,
+					BackoffFactor: 1.5,
+					MaxInterval:   2 * time.Minute,
+
+					SettleWait:    250 * time.Millisecond,
+					SettleWaitMax: 10 * time.Second,
+
+					TrendWait: 2 * time.Second,
+
+					OveragePct:             120,
+					MinBps:                 200_000,
+					MinDuration:            200 * time.Millisecond,
+					MaxDuration:            20 * time.Second,
+					DurationOverflowFactor: 1.25,
+					DurationIncreaseFactor: 1.5,
+				},
 			},
 		},
 		Audio: AudioConfig{
@@ -596,6 +632,13 @@ func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error)
 				Usage:   generatedCLIFlagUsage,
 				Hidden:  hidden,
 			}
+		case reflect.Float64:
+			flag = &cli.Float64Flag{
+				Name:    name,
+				EnvVars: []string{envVar},
+				Usage:   generatedCLIFlagUsage,
+				Hidden:  hidden,
+			}
 		case reflect.Slice:
 			// TODO
 			continue
@@ -646,6 +689,8 @@ func (conf *Config) updateFromCLI(c *cli.Context, baseFlags []cli.Flag) error {
 		case reflect.Uint8, reflect.Uint16, reflect.Uint32:
 			configValue.SetUint(c.Uint64(flagName))
 		case reflect.Float32:
+			configValue.SetFloat(c.Float64(flagName))
+		case reflect.Float64:
 			configValue.SetFloat(c.Float64(flagName))
 		// case reflect.Slice:
 		// 	// TODO

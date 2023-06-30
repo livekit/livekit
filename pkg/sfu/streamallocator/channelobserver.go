@@ -120,6 +120,10 @@ func (c *ChannelObserver) GetHighestEstimate() int64 {
 	return c.estimateTrend.GetHighest()
 }
 
+func (c *ChannelObserver) HasEnoughEstimateSamples() bool {
+	return c.estimateTrend.HasEnoughSamples()
+}
+
 func (c *ChannelObserver) GetNackRatio() float64 {
 	return c.nackTracker.GetRatio()
 }

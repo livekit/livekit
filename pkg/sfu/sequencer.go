@@ -11,6 +11,7 @@ import (
 const (
 	defaultRtt           = 70
 	ignoreRetransmission = 100 // Ignore packet retransmission after ignoreRetransmission milliseconds
+	maxAck               = 3
 )
 
 func btoi(b bool) int {
@@ -187,7 +188,7 @@ func (s *sequencer) getPacketsMeta(seqNo []uint16) []packetMeta {
 			continue
 		}
 
-		if seq.lastNack == 0 || refTime-seq.lastNack > uint32(math.Min(float64(ignoreRetransmission), float64(2*s.rtt))) {
+		if (seq.lastNack == 0 || refTime-seq.lastNack > uint32(math.Min(float64(ignoreRetransmission), float64(2*s.rtt)))) && seq.nacked < maxAck {
 			seq.nacked++
 			seq.lastNack = refTime
 
