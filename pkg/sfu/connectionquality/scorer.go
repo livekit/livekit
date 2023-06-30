@@ -252,6 +252,8 @@ func (q *qualityScorer) AddLayerTransition(distance float64, at time.Time) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
 
+	// TODO-REMOVE-AFTER-DEBUG
+	q.params.Logger.Debugw("adding layer transition", "at", at, "distance", distance)
 	q.layerTransitions = append(q.layerTransitions, layerTransition{
 		startedAt: at,
 		distance:  distance,
@@ -261,6 +263,9 @@ func (q *qualityScorer) AddLayerTransition(distance float64, at time.Time) {
 func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
+
+	// TODO-REMOVE-AFTER-DEBUG
+	q.params.Logger.Debugw("running update", "at", at, "stat", stat)
 
 	// always update transitions
 	expectedBitrate := q.getExpectedBitsAndUpdateTransitions(at)
