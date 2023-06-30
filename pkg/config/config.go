@@ -286,7 +286,7 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 			},
 			CongestionControl: CongestionControlConfig{
 				Enabled:    true,
-				AllowPause: true,
+				AllowPause: false,
 				ProbeMode:  CongestionControlProbeModePadding,
 				ProbeConfig: CongestionControlProbeConfig{
 					BaseInterval:  3 * time.Second,
