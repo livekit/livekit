@@ -167,42 +167,42 @@ func (d *DummyReceiver) StreamID() string {
 }
 
 func (d *DummyReceiver) Codec() webrtc.RTPCodecParameters {
-	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok && r != nil {
 		return r.Codec()
 	}
 	return d.codec
 }
 
 func (d *DummyReceiver) HeaderExtensions() []webrtc.RTPHeaderExtensionParameter {
-	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok && r != nil {
 		return r.HeaderExtensions()
 	}
 	return d.headerExtensions
 }
 
 func (d *DummyReceiver) ReadRTP(buf []byte, layer uint8, sn uint16) (int, error) {
-	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok && r != nil {
 		return r.ReadRTP(buf, layer, sn)
 	}
 	return 0, errors.New("no receiver")
 }
 
 func (d *DummyReceiver) GetLayeredBitrate() ([]int32, sfu.Bitrates) {
-	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok && r != nil {
 		return r.GetLayeredBitrate()
 	}
 	return nil, sfu.Bitrates{}
 }
 
 func (d *DummyReceiver) GetAudioLevel() (float64, bool) {
-	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok && r != nil {
 		return r.GetAudioLevel()
 	}
 	return 0, false
 }
 
 func (d *DummyReceiver) SendPLI(layer int32, force bool) {
-	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok && r != nil {
 		r.SendPLI(layer, force)
 	}
 }
@@ -210,7 +210,7 @@ func (d *DummyReceiver) SendPLI(layer int32, force bool) {
 func (d *DummyReceiver) SetUpTrackPaused(paused bool) {
 	d.settingsLock.Lock()
 	defer d.settingsLock.Unlock()
-	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok && r != nil {
 		d.pausedValid = false
 		r.SetUpTrackPaused(paused)
 	} else {
@@ -222,7 +222,7 @@ func (d *DummyReceiver) SetUpTrackPaused(paused bool) {
 func (d *DummyReceiver) SetMaxExpectedSpatialLayer(layer int32) {
 	d.settingsLock.Lock()
 	defer d.settingsLock.Unlock()
-	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok && r != nil {
 		d.maxExpectedLayerValid = false
 		r.SetMaxExpectedSpatialLayer(layer)
 	} else {
@@ -234,7 +234,7 @@ func (d *DummyReceiver) SetMaxExpectedSpatialLayer(layer int32) {
 func (d *DummyReceiver) AddDownTrack(track sfu.TrackSender) error {
 	d.downtrackLock.Lock()
 	defer d.downtrackLock.Unlock()
-	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok && r != nil {
 		r.AddDownTrack(track)
 	} else {
 		d.downtracks[track.SubscriberID()] = track
@@ -245,7 +245,7 @@ func (d *DummyReceiver) AddDownTrack(track sfu.TrackSender) error {
 func (d *DummyReceiver) DeleteDownTrack(participantID livekit.ParticipantID) {
 	d.downtrackLock.Lock()
 	defer d.downtrackLock.Unlock()
-	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok && r != nil {
 		r.DeleteDownTrack(participantID)
 	} else {
 		delete(d.downtracks, participantID)
@@ -253,28 +253,28 @@ func (d *DummyReceiver) DeleteDownTrack(participantID livekit.ParticipantID) {
 }
 
 func (d *DummyReceiver) DebugInfo() map[string]interface{} {
-	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok && r != nil {
 		return r.DebugInfo()
 	}
 	return nil
 }
 
 func (d *DummyReceiver) GetTemporalLayerFpsForSpatial(spatial int32) []float32 {
-	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok && r != nil {
 		return r.GetTemporalLayerFpsForSpatial(spatial)
 	}
 	return nil
 }
 
 func (d *DummyReceiver) TrackInfo() *livekit.TrackInfo {
-	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok && r != nil {
 		return r.TrackInfo()
 	}
 	return nil
 }
 
 func (d *DummyReceiver) IsClosed() bool {
-	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok && r != nil {
 		return r.IsClosed()
 	}
 	return false
@@ -290,14 +290,14 @@ func (d *DummyReceiver) GetRedReceiver() sfu.TrackReceiver {
 }
 
 func (d *DummyReceiver) GetRTCPSenderReportData(layer int32) (*buffer.RTCPSenderReportData, *buffer.RTCPSenderReportData) {
-	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok && r != nil {
 		return r.GetRTCPSenderReportData(layer)
 	}
 	return nil, nil
 }
 
 func (d *DummyReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error) {
-	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok && r != nil {
 		return r.GetReferenceLayerRTPTimestamp(ts, layer, referenceLayer)
 	}
 	return 0, errors.New("receiver not available")
