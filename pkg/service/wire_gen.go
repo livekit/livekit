@@ -9,7 +9,6 @@ package service
 import (
 	"context"
 	"github.com/dTelecom/p2p-realtime-database"
-	"github.com/ipfs/go-log/v2"
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -49,7 +48,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	router := routing.CreateRouter(conf, universalClient, currentNode, signalClient)
 	p2p_databaseConfig := getDatabaseConfiguration(conf)
-	db, err := createMainDatabaseP2P(p2p_databaseConfig)
+	db, err := createMainDatabaseP2P(p2p_databaseConfig, conf)
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +146,7 @@ func createSmartContractClient(conf *config.Config) (*p2p_database.EthSmartContr
 		EthereumNetworkHost:     conf.Ethereum.NetworkHost,
 		EthereumNetworkKey:      conf.Ethereum.NetworkKey,
 		EthereumContractAddress: conf.Ethereum.ContractAddress,
-	}, log.Logger("eth-smart-contract-livekit"))
+	}, conf.LoggingP2P)
 
 	if err != nil {
 		return nil, errors.Wrap(err, "try create contract")
@@ -171,8 +170,8 @@ func getDatabaseConfiguration(conf *config.Config) p2p_database.Config {
 	}
 }
 
-func createMainDatabaseP2P(conf p2p_database.Config) (*p2p_database.DB, error) {
-	db, err := p2p_database.Connect(context.Background(), conf, log.Logger("db"))
+func createMainDatabaseP2P(conf p2p_database.Config, c *config.Config) (*p2p_database.DB, error) {
+	db, err := p2p_database.Connect(context.Background(), conf, c.LoggingP2P)
 	if err != nil {
 		return nil, errors.Wrap(err, "create main p2p db")
 	}

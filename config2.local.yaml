@@ -1,5 +1,5 @@
 port: 7885
-log_level: warn
+log_level: debug
 
 rtc:
   port_range_start: 50000
