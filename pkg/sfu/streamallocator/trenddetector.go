@@ -122,6 +122,10 @@ func (t *TrendDetector) GetDirection() TrendDirection {
 	return t.direction
 }
 
+func (t *TrendDetector) HasEnoughSamples() bool {
+	return t.numSamples >= t.params.RequiredSamples
+}
+
 func (t *TrendDetector) ToString() string {
 	now := time.Now()
 	elapsed := now.Sub(t.startTime).Seconds()
