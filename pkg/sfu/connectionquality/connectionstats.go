@@ -81,18 +81,42 @@ func (cs *ConnectionStats) OnStatsUpdate(fn func(cs *ConnectionStats, stat *live
 }
 
 func (cs *ConnectionStats) UpdateMute(isMuted bool, at time.Time) {
+	/* TODO-RESTORE
+	if cs.done.IsBroken() {
+		return
+	}
+	*/
+
 	cs.scorer.UpdateMute(isMuted, at)
 }
 
 func (cs *ConnectionStats) AddBitrateTransition(bitrate int64, at time.Time) {
+	/* TODO-RESTORE
+	if cs.done.IsBroken() {
+		return
+	}
+	*/
+
 	cs.scorer.AddBitrateTransition(bitrate, at)
 }
 
 func (cs *ConnectionStats) UpdateLayerMute(isMuted bool, at time.Time) {
+	/* TODO-RESTORE
+	if cs.done.IsBroken() {
+		return
+	}
+	*/
+
 	cs.scorer.UpdateLayerMute(isMuted, at)
 }
 
 func (cs *ConnectionStats) AddLayerTransition(distance float64, at time.Time) {
+	/* TODO-RESTORE
+	if cs.done.IsBroken() {
+		return
+	}
+	*/
+
 	cs.scorer.AddLayerTransition(distance, at)
 }
 
@@ -253,10 +277,9 @@ func (cs *ConnectionStats) updateStatsWorker() {
 	tk := time.NewTicker(interval)
 	defer tk.Stop()
 
-	done := cs.done.Watch()
 	for {
 		select {
-		case <-done:
+		case <-cs.done.Watch():
 			return
 
 		case <-tk.C:
