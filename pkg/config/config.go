@@ -632,6 +632,13 @@ func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error)
 				Usage:   generatedCLIFlagUsage,
 				Hidden:  hidden,
 			}
+		case reflect.Float64:
+			flag = &cli.Float64Flag{
+				Name:    name,
+				EnvVars: []string{envVar},
+				Usage:   generatedCLIFlagUsage,
+				Hidden:  hidden,
+			}
 		case reflect.Slice:
 			// TODO
 			continue
@@ -682,6 +689,8 @@ func (conf *Config) updateFromCLI(c *cli.Context, baseFlags []cli.Flag) error {
 		case reflect.Uint8, reflect.Uint16, reflect.Uint32:
 			configValue.SetUint(c.Uint64(flagName))
 		case reflect.Float32:
+			configValue.SetFloat(c.Float64(flagName))
+		case reflect.Float64:
 			configValue.SetFloat(c.Float64(flagName))
 		// case reflect.Slice:
 		// 	// TODO
