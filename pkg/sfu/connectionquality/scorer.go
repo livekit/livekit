@@ -248,8 +248,14 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 	defer q.lock.Unlock()
 
 	// always update transitions
-	expectedBitrate, _ := q.aggregateBitrate.GetAggregateAndRestartAt(at)
-	expectedDistance := q.layerDistance.GetAverageAndRestartAt(at)
+	expectedBitrate, _, err := q.aggregateBitrate.GetAggregateAndRestartAt(at)
+	if err != nil {
+		q.params.Logger.Warnw("error getting expected bitrate", err)
+	}
+	expectedDistance, err := q.layerDistance.GetAverageAndRestartAt(at)
+	if err != nil {
+		q.params.Logger.Warnw("error getting expected distance", err)
+	}
 
 	// nothing to do when muted or not unmuted for long enough
 	// NOTE: it is possible that unmute -> mute -> unmute transition happens in the
