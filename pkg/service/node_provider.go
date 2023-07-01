@@ -97,15 +97,10 @@ func (p *NodeProvider) FetchRelevant(ctx context.Context, clientIP string) (Node
 			node.Participants,
 		)
 
-		nodes = append(nodes, nodeRow{
-			node:   node,
-			weight: weight,
-		})
+		nodes = append(nodes, nodeRow{node: node, weight: weight})
 	}
 
-	sort.SliceStable(nodes, func(i, j int) bool {
-		return nodes[i].weight > nodes[j].weight
-	})
+	sort.SliceStable(nodes, func(i, j int) bool { return nodes[i].weight > nodes[j].weight })
 
 	if len(nodes) == 0 {
 		return Node{}, errors.New("not found node")

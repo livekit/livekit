@@ -43,6 +43,7 @@ type LivekitServer struct {
 	currentNode        routing.LocalNode
 	clientProvider     *ClientProvider
 	participantCounter *ParticipantCounter
+	nodeProvider       *NodeProvider
 	running            atomic.Bool
 	doneChan           chan struct{}
 	closedChan         chan struct{}
@@ -61,6 +62,7 @@ func NewLivekitServer(conf *config.Config,
 	currentNode routing.LocalNode,
 	clientProvider *ClientProvider,
 	participantCounter *ParticipantCounter,
+	nodeProvider *NodeProvider,
 ) (s *LivekitServer, err error) {
 	s = &LivekitServer{
 		config:       conf,
@@ -73,6 +75,7 @@ func NewLivekitServer(conf *config.Config,
 		currentNode:        currentNode,
 		clientProvider:     clientProvider,
 		participantCounter: participantCounter,
+		nodeProvider:       nodeProvider,
 		closedChan:         make(chan struct{}),
 	}
 
@@ -148,6 +151,12 @@ func NewLivekitServer(conf *config.Config,
 			Handler: promhttp.Handler(),
 		}
 	}
+
+	nodeProvider.Save(context.Background(), Node{
+		Participants: 0,
+		Domain:       conf.Domain,
+		IP:           conf.BindAddresses[0],
+	})
 
 	// clean up old rooms on startup
 	if err = roomManager.CleanupRooms(); err != nil {
