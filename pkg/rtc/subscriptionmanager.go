@@ -139,13 +139,14 @@ func (m *SubscriptionManager) SubscribeToTrack(trackID livekit.TrackID) {
 		sLogger := m.params.Logger.WithValues(
 			"trackID", trackID,
 		)
-		sub := newTrackSubscription(m.params.Participant.ID(), trackID, sLogger)
+		sub = newTrackSubscription(m.params.Participant.ID(), trackID, sLogger)
 
 		m.lock.Lock()
 		m.subscriptions[trackID] = sub
 		m.lock.Unlock()
+
+		sub, desireChanged = m.setDesired(trackID, true)
 	}
-	sub, desireChanged = m.setDesired(trackID, true)
 	if desireChanged {
 		sub.logger.Infow("subscribing to track")
 	}
