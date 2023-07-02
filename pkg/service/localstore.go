@@ -168,7 +168,7 @@ func (s *LocalStore) StoreParticipant(ctx context.Context, roomKey livekit.RoomK
 			logger.Errorw("increment participants count", err)
 		}
 
-		err = s.clientParticipantCounter.Increment(ctx, string(apiKey))
+		err = s.clientParticipantCounter.Increment(ctx, string(apiKey), participant.Identity)
 		if err != nil {
 			logger.Errorw("cannot increment participant count", err)
 		}
@@ -223,7 +223,7 @@ func (s *LocalStore) DeleteParticipant(ctx context.Context, roomKey livekit.Room
 	roomParticipants := s.participants[roomKey]
 	if roomParticipants != nil {
 		delete(roomParticipants, identity)
-		err := s.clientParticipantCounter.Decrement(ctx, string(apiKey))
+		err := s.clientParticipantCounter.Decrement(ctx, string(apiKey), string(identity))
 		if err != nil {
 			logger.Errorw("cannot decrement participant count", err)
 		}

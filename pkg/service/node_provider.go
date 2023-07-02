@@ -33,9 +33,8 @@ const (
 	weightParticipantsCount = -0.01
 	weightDistance          = -0.1
 
-	intervalPingNode             = 5 * time.Second
-	intervalCheckingExpiredNodes = 15 * time.Second
-	deadlinePingNode             = 30 * time.Second
+	intervalPingNode = 5 * time.Second
+	deadlinePingNode = 30 * time.Second
 )
 
 type NodeProvider struct {

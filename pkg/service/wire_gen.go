@@ -54,7 +54,10 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	participantCounter := createParticipantCounter(db)
+	participantCounter, err := createParticipantCounter(db, conf)
+	if err != nil {
+		return nil, err
+	}
 	reader, err := createGeoIP()
 	if err != nil {
 		return nil, err
@@ -175,8 +178,8 @@ func createSmartContractClient(conf *config.Config) (*p2p_database.EthSmartContr
 	return contract, nil
 }
 
-func createParticipantCounter(mainDatabase *p2p_database.DB) *ParticipantCounter {
-	return NewParticipantCounter(mainDatabase)
+func createParticipantCounter(mainDatabase *p2p_database.DB, conf *config.Config) (*ParticipantCounter, error) {
+	return NewParticipantCounter(mainDatabase, conf.LoggingP2P)
 }
 
 func getDatabaseConfiguration(conf *config.Config) p2p_database.Config {

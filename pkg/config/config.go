@@ -83,6 +83,8 @@ type EthereumConfig struct {
 	ContractAddress  string `yaml:"contract_address"`
 	NetworkHost      string `yaml:"network_host"`
 	NetworkKey       string `yaml:"network_key"`
+
+	LogLevel string `yaml:"log_level"`
 }
 
 type RTCConfig struct {
@@ -484,9 +486,11 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 	}
 
 	conf.LoggingP2P = logging.Logger("p2p")
+	if conf.Ethereum.LogLevel != "" {
+		_ = logging.SetLogLevel("p2p", conf.Ethereum.LogLevel)
+	}
 
 	if conf.LogLevel != "" {
-		_ = logging.SetLogLevel("p2p", conf.LogLevel)
 		conf.Logging.Level = conf.LogLevel
 	}
 	if conf.Logging.Level == "" && conf.Development {
