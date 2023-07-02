@@ -25,7 +25,6 @@ type Node struct {
 	Country      string    `json:"country"`
 	Latitude     float64   `json:"latitude"`
 	Longitude    float64   `json:"longitude"`
-	LastPingAt   time.Time `json:"last_ping_at"`
 	CreatedAt    time.Time `json:"created_at"`
 }
 
@@ -54,8 +53,7 @@ func NewNodeProvider(db *p2p_database.DB, geo *geoip2.Reader, logger *log.ZapEve
 
 	backgroundCtx := context.Background()
 
-	provider.startPingProcess(backgroundCtx)
-	provider.startCleanupExpiredNodesProcess(backgroundCtx)
+	provider.refreshTTL(backgroundCtx)
 
 	return provider
 }
@@ -121,17 +119,6 @@ func (p *NodeProvider) FetchRelevant(ctx context.Context, clientIP string) (Node
 	return nodes[0].node, nil
 }
 
-func (p *NodeProvider) SetLastPing(ctx context.Context, nodeId string) error {
-	node, err := p.Get(ctx, nodeId)
-	if err != nil {
-		return errors.Wrapf(err, "get current value %s", nodeId)
-	}
-
-	node.LastPingAt = time.Now()
-
-	return p.save(ctx, node)
-}
-
 func (p *NodeProvider) IncrementParticipants(ctx context.Context, nodeId string) error {
 	node, err := p.Get(ctx, nodeId)
 	if err != nil {
@@ -151,8 +138,7 @@ func (p *NodeProvider) DecrementParticipants(ctx context.Context, nodeId string)
 }
 
 func (p *NodeProvider) Save(ctx context.Context, node Node) error {
-	data := strings.Split(node.IP, ":")
-	ip := net.ParseIP(data[0])
+	ip := net.ParseIP(node.IP)
 
 	country, err := p.geo.Country(ip)
 	if err != nil {
@@ -168,7 +154,6 @@ func (p *NodeProvider) Save(ctx context.Context, node Node) error {
 	node.Latitude = city.Location.Latitude
 	node.Longitude = city.Location.Longitude
 	node.CreatedAt = time.Now()
-	node.LastPingAt = time.Now()
 
 	return p.save(ctx, node)
 }
@@ -190,66 +175,34 @@ func (p *NodeProvider) Get(ctx context.Context, id string) (Node, error) {
 }
 
 func (p *NodeProvider) save(ctx context.Context, node Node) error {
+	k := prefixKeyNode + node.Id
+
 	marshaled, err := json.Marshal(node)
 	if err != nil {
 		return errors.Wrap(err, "marshal node")
 	}
 
-	err = p.db.Set(ctx, prefixKeyNode+node.Id, string(marshaled))
+	err = p.db.Set(ctx, k, string(marshaled))
 	if err != nil {
 		return errors.Wrap(err, "p2p db set")
+	}
+
+	err = p.db.TTL(ctx, k, deadlinePingNode)
+	if err != nil {
+		return errors.Wrap(err, "p2p db ttl")
 	}
 
 	return nil
 }
 
-func (p *NodeProvider) startPingProcess(ctx context.Context) {
+func (p *NodeProvider) refreshTTL(ctx context.Context) {
 	go func() {
 		ticker := time.NewTicker(intervalPingNode)
 		for {
-			err := p.SetLastPing(ctx, p.db.GetHost().ID().String())
-			if err != nil && !errors.Is(err, p2p_database.ErrKeyNotFound) {
-				p.logger.Errorw("set last ping error", err)
-				return
-			}
-			<-ticker.C
-		}
-	}()
-}
-
-func (p *NodeProvider) startCleanupExpiredNodesProcess(ctx context.Context) {
-	go func() {
-		ticker := time.NewTicker(intervalCheckingExpiredNodes)
-		for {
-			keys, err := p.db.List(ctx)
+			k := prefixKeyNode + p.db.GetHost().ID().String()
+			err := p.db.TTL(ctx, k, deadlinePingNode)
 			if err != nil {
-				p.logger.Errorw("list keys", err)
-				return
-			}
-
-			for _, key := range keys {
-				if !strings.HasPrefix(key, "/"+prefixKeyNode) {
-					continue
-				}
-				nodeId := strings.TrimLeft(key, "/"+prefixKeyNode)
-
-				node, err := p.Get(ctx, nodeId)
-				if err != nil {
-					p.logger.Errorw("get node by id", err)
-					return
-				}
-
-				deadlineAt := node.LastPingAt.Add(deadlinePingNode)
-				now := time.Now()
-
-				if deadlineAt.After(now) {
-					continue
-				}
-
-				err = p.db.Remove(ctx, key)
-				if err != nil {
-					p.logger.Errorw("remove expired key "+key, err)
-				}
+				p.logger.Errorw("refresh ttl", err)
 			}
 			<-ticker.C
 		}
