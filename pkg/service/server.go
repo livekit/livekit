@@ -12,6 +12,7 @@ import (
 	"runtime/pprof"
 	"time"
 
+	p2p_database "github.com/dTelecom/p2p-realtime-database"
 	"github.com/pion/turn/v2"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
@@ -63,6 +64,7 @@ func NewLivekitServer(conf *config.Config,
 	clientProvider *ClientProvider,
 	participantCounter *ParticipantCounter,
 	nodeProvider *NodeProvider,
+	db *p2p_database.DB,
 ) (s *LivekitServer, err error) {
 	s = &LivekitServer{
 		config:       conf,
@@ -152,11 +154,19 @@ func NewLivekitServer(conf *config.Config,
 		}
 	}
 
-	nodeProvider.Save(context.Background(), Node{
-		Participants: 0,
-		Domain:       conf.Domain,
-		IP:           conf.BindAddresses[0],
-	})
+	if len(conf.BindAddresses) == 0 {
+		conf.LoggingP2P.Error("bind address expect value")
+	} else {
+		err = nodeProvider.Save(context.Background(), Node{
+			Id:           db.GetHost().ID().String(),
+			Participants: 0,
+			Domain:       conf.Domain,
+			IP:           conf.BindAddresses[0],
+		})
+		if err != nil {
+			conf.LoggingP2P.Errorf("node provider save error: %s", err)
+		}
+	}
 
 	// clean up old rooms on startup
 	if err = roomManager.CleanupRooms(); err != nil {

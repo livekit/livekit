@@ -110,7 +110,8 @@ func (p *NodeProvider) FetchRelevant(ctx context.Context, clientIP string) (Node
 }
 
 func (p *NodeProvider) Save(ctx context.Context, node Node) error {
-	ip := net.ParseIP(node.IP)
+	data := strings.Split(node.IP, ":")
+	ip := net.ParseIP(data[0])
 
 	country, err := p.geo.Country(ip)
 	if err != nil {

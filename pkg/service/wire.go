@@ -94,10 +94,8 @@ func createGeoIP() (*geoip2.Reader, error) {
 	return geoip2.FromBytes(livekit2.MixmindDatabase)
 }
 
-func createNodeProvider(geo *geoip2.Reader) *NodeProvider {
-	return &NodeProvider{
-		geo: geo,
-	}
+func createNodeProvider(geo *geoip2.Reader, config *config.Config, db *p2p_database.DB) *NodeProvider {
+	return NewNodeProvider(db, geo, config.LoggingP2P)
 }
 
 func createClientProvider(contract *p2p_database.EthSmartContract, db *p2p_database.DB) *ClientProvider {
@@ -133,7 +131,7 @@ func getDatabaseConfiguration(conf *config.Config) p2p_database.Config {
 	}
 }
 
-func createMainDatabaseP2P(conf p2p_database.Config, c *config.Config, nodeProvider *NodeProvider) (*p2p_database.DB, error) {
+func createMainDatabaseP2P(conf p2p_database.Config, c *config.Config) (*p2p_database.DB, error) {
 	db, err := p2p_database.Connect(context.Background(), conf, c.LoggingP2P)
 	if err != nil {
 		return nil, errors.Wrap(err, "create main p2p db")
