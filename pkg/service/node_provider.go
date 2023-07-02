@@ -25,6 +25,7 @@ type Node struct {
 	Country      string    `json:"country"`
 	Latitude     float64   `json:"latitude"`
 	Longitude    float64   `json:"longitude"`
+	LastPingAt   time.Time `json:"last_ping_at"`
 	CreatedAt    time.Time `json:"created_at"`
 }
 
@@ -32,6 +33,10 @@ const (
 	weightEqualsCountries   = 1.0
 	weightParticipantsCount = -0.01
 	weightDistance          = -0.1
+
+	intervalPingNode             = 5 * time.Second
+	intervalCheckingExpiredNodes = 15 * time.Second
+	deadlinePingNode             = 30 * time.Second
 )
 
 type NodeProvider struct {
@@ -41,11 +46,18 @@ type NodeProvider struct {
 }
 
 func NewNodeProvider(db *p2p_database.DB, geo *geoip2.Reader, logger *log.ZapEventLogger) *NodeProvider {
-	return &NodeProvider{
+	provider := &NodeProvider{
 		db:     db,
 		geo:    geo,
 		logger: logger,
 	}
+
+	backgroundCtx := context.Background()
+
+	provider.startPingProcess(backgroundCtx)
+	provider.startCleanupExpiredNodesProcess(backgroundCtx)
+
+	return provider
 }
 
 func (p *NodeProvider) FetchRelevant(ctx context.Context, clientIP string) (Node, error) {
@@ -109,6 +121,17 @@ func (p *NodeProvider) FetchRelevant(ctx context.Context, clientIP string) (Node
 	return nodes[0].node, nil
 }
 
+func (p *NodeProvider) SetLastPing(ctx context.Context, nodeId string) error {
+	node, err := p.Get(ctx, nodeId)
+	if err != nil {
+		return errors.Wrap(err, "get current value")
+	}
+
+	node.LastPingAt = time.Now()
+
+	return p.save(ctx, node)
+}
+
 func (p *NodeProvider) IncrementParticipants(ctx context.Context, nodeId string) error {
 	node, err := p.Get(ctx, nodeId)
 	if err != nil {
@@ -145,6 +168,7 @@ func (p *NodeProvider) Save(ctx context.Context, node Node) error {
 	node.Latitude = city.Location.Latitude
 	node.Longitude = city.Location.Longitude
 	node.CreatedAt = time.Now()
+	node.LastPingAt = time.Now()
 
 	return p.save(ctx, node)
 }
@@ -177,6 +201,67 @@ func (p *NodeProvider) save(ctx context.Context, node Node) error {
 	}
 
 	return nil
+}
+
+func (p *NodeProvider) startPingProcess(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(intervalPingNode)
+		for {
+			select {
+			case <-ticker.C:
+				err := p.SetLastPing(ctx, p.db.GetHost().ID().String())
+				if err != nil {
+					p.logger.Errorw("set last ping error", err)
+					return
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+}
+
+func (p *NodeProvider) startCleanupExpiredNodesProcess(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(intervalCheckingExpiredNodes)
+		for {
+			select {
+			case <-ticker.C:
+				keys, err := p.db.List(ctx)
+				if err != nil {
+					p.logger.Errorw("list keys", err)
+					return
+				}
+
+				for _, key := range keys {
+					if !strings.HasPrefix(key, "/"+prefixKeyNode) {
+						continue
+					}
+					nodeId := strings.TrimLeft(key, "/"+prefixKeyNode)
+
+					node, err := p.Get(ctx, nodeId)
+					if err != nil {
+						p.logger.Errorw("get node by id", err)
+						return
+					}
+
+					deadlineAt := node.LastPingAt.Add(deadlinePingNode)
+					now := time.Now()
+
+					if deadlineAt.After(now) {
+						continue
+					}
+
+					err = p.db.Remove(ctx, key)
+					if err != nil {
+						p.logger.Errorw("remove expired key "+key, err)
+					}
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 }
 
 func distance(lat1 float64, lng1 float64, lat2 float64, lng2 float64) float64 {

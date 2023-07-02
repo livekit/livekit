@@ -20,11 +20,11 @@ import (
 
 // encapsulates CRUD operations for room settings
 type LocalStore struct {
-	currentNodeId      livekit.NodeID
-	p2pDatabaseConfig  p2p_database.Config
-	participantCounter *ParticipantCounter
-	nodeProvider       *NodeProvider
-	mainDatabase       *p2p_database.DB
+	currentNodeId            livekit.NodeID
+	p2pDatabaseConfig        p2p_database.Config
+	clientParticipantCounter *ParticipantCounter
+	nodeProvider             *NodeProvider
+	mainDatabase             *p2p_database.DB
 
 	// map of roomKey => room
 	rooms        map[livekit.RoomKey]*livekit.Room
@@ -45,11 +45,11 @@ func NewLocalStore(
 	nodeProvider *NodeProvider,
 ) *LocalStore {
 	return &LocalStore{
-		currentNodeId:      currentNodeId,
-		p2pDatabaseConfig:  mainDatabaseConfig,
-		participantCounter: participantCounter,
-		nodeProvider:       nodeProvider,
-		mainDatabase:       mainDatabase,
+		currentNodeId:            currentNodeId,
+		p2pDatabaseConfig:        mainDatabaseConfig,
+		clientParticipantCounter: participantCounter,
+		nodeProvider:             nodeProvider,
+		mainDatabase:             mainDatabase,
 
 		rooms:             make(map[livekit.RoomKey]*livekit.Room),
 		roomInternal:      make(map[livekit.RoomKey]*livekit.RoomInternal),
@@ -163,12 +163,12 @@ func (s *LocalStore) StoreParticipant(ctx context.Context, roomKey livekit.RoomK
 
 	_, participantExists := roomParticipants[livekit.ParticipantIdentity(participant.Identity)]
 	if !participantExists {
-		err := s.nodeProvider.IncrementParticipants(ctx, s.mainDatabase.GetHost().ID().String())
+		err = s.nodeProvider.IncrementParticipants(ctx, s.mainDatabase.GetHost().ID().String())
 		if err != nil {
 			logger.Errorw("increment participants count", err)
 		}
 
-		err = s.participantCounter.Increment(ctx, string(apiKey))
+		err = s.clientParticipantCounter.Increment(ctx, string(apiKey))
 		if err != nil {
 			logger.Errorw("cannot increment participant count", err)
 		}
@@ -223,7 +223,7 @@ func (s *LocalStore) DeleteParticipant(ctx context.Context, roomKey livekit.Room
 	roomParticipants := s.participants[roomKey]
 	if roomParticipants != nil {
 		delete(roomParticipants, identity)
-		err := s.participantCounter.Decrement(ctx, string(apiKey))
+		err := s.clientParticipantCounter.Decrement(ctx, string(apiKey))
 		if err != nil {
 			logger.Errorw("cannot decrement participant count", err)
 		}

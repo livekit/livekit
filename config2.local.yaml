@@ -15,8 +15,3 @@ ethereum:
   network_key: "47d2344cdbaa4c89a395fea69d452261"
   p2p_node_port: 3005
   p2p_main_database_name: global
-
-#bind_addresses:
-#  - 0.0.0.0
-
-domain: dtelecom.org
