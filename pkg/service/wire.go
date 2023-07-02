@@ -72,6 +72,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		createClientProvider,
 		createGeoIP,
 		createNodeProvider,
+		createRelevantNodesHandler,
 		NewLivekitServer,
 	)
 	return &LivekitServer{}, nil
@@ -88,6 +89,10 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 	)
 
 	return nil, nil
+}
+
+func createRelevantNodesHandler(conf *config.Config, nodeProvider *NodeProvider) *RelevantNodesHandler {
+	return NewRelevantNodesHandler(nodeProvider, conf.LoggingP2P)
 }
 
 func createGeoIP() (*geoip2.Reader, error) {

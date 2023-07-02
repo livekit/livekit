@@ -119,7 +119,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	clientProvider := createClientProvider(ethSmartContract, db)
-	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, rtcService, keyProviderPublicKey, router, roomManager, signalServer, server, currentNode, clientProvider, participantCounter, nodeProvider, db)
+	relevantNodesHandler := createRelevantNodesHandler(conf, nodeProvider)
+	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, rtcService, keyProviderPublicKey, router, roomManager, signalServer, server, currentNode, clientProvider, participantCounter, nodeProvider, db, relevantNodesHandler)
 	if err != nil {
 		return nil, err
 	}
@@ -143,6 +144,10 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 }
 
 // wire.go:
+
+func createRelevantNodesHandler(conf *config.Config, nodeProvider *NodeProvider) *RelevantNodesHandler {
+	return NewRelevantNodesHandler(nodeProvider, conf.LoggingP2P)
+}
 
 func createGeoIP() (*geoip2.Reader, error) {
 	return geoip2.FromBytes(livekit.MixmindDatabase)

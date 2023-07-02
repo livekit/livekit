@@ -65,6 +65,7 @@ func NewLivekitServer(conf *config.Config,
 	participantCounter *ParticipantCounter,
 	nodeProvider *NodeProvider,
 	db *p2p_database.DB,
+	relevantNodesHandler *RelevantNodesHandler,
 ) (s *LivekitServer, err error) {
 	s = &LivekitServer{
 		config:       conf,
@@ -121,6 +122,7 @@ func NewLivekitServer(conf *config.Config,
 	mux.Handle(ingressServer.PathPrefix(), ingressServer)
 	mux.Handle("/rtc", rtcService)
 	mux.HandleFunc("/rtc/validate", rtcService.Validate)
+	mux.HandleFunc("/relevant", relevantNodesHandler.HTTPHandler)
 	mux.HandleFunc("/", s.defaultHandler)
 
 	if conf.Domain != "" {
