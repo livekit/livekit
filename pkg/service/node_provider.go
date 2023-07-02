@@ -124,7 +124,7 @@ func (p *NodeProvider) FetchRelevant(ctx context.Context, clientIP string) (Node
 func (p *NodeProvider) SetLastPing(ctx context.Context, nodeId string) error {
 	node, err := p.Get(ctx, nodeId)
 	if err != nil {
-		return errors.Wrap(err, "get current value")
+		return errors.Wrapf(err, "get current value %s", nodeId)
 	}
 
 	node.LastPingAt = time.Now()
@@ -207,16 +207,12 @@ func (p *NodeProvider) startPingProcess(ctx context.Context) {
 	go func() {
 		ticker := time.NewTicker(intervalPingNode)
 		for {
-			select {
-			case <-ticker.C:
-				err := p.SetLastPing(ctx, p.db.GetHost().ID().String())
-				if err != nil {
-					p.logger.Errorw("set last ping error", err)
-					return
-				}
-			case <-ctx.Done():
+			err := p.SetLastPing(ctx, p.db.GetHost().ID().String())
+			if err != nil && !errors.Is(err, p2p_database.ErrKeyNotFound) {
+				p.logger.Errorw("set last ping error", err)
 				return
 			}
+			<-ticker.C
 		}
 	}()
 }
@@ -225,41 +221,37 @@ func (p *NodeProvider) startCleanupExpiredNodesProcess(ctx context.Context) {
 	go func() {
 		ticker := time.NewTicker(intervalCheckingExpiredNodes)
 		for {
-			select {
-			case <-ticker.C:
-				keys, err := p.db.List(ctx)
+			keys, err := p.db.List(ctx)
+			if err != nil {
+				p.logger.Errorw("list keys", err)
+				return
+			}
+
+			for _, key := range keys {
+				if !strings.HasPrefix(key, "/"+prefixKeyNode) {
+					continue
+				}
+				nodeId := strings.TrimLeft(key, "/"+prefixKeyNode)
+
+				node, err := p.Get(ctx, nodeId)
 				if err != nil {
-					p.logger.Errorw("list keys", err)
+					p.logger.Errorw("get node by id", err)
 					return
 				}
 
-				for _, key := range keys {
-					if !strings.HasPrefix(key, "/"+prefixKeyNode) {
-						continue
-					}
-					nodeId := strings.TrimLeft(key, "/"+prefixKeyNode)
+				deadlineAt := node.LastPingAt.Add(deadlinePingNode)
+				now := time.Now()
 
-					node, err := p.Get(ctx, nodeId)
-					if err != nil {
-						p.logger.Errorw("get node by id", err)
-						return
-					}
-
-					deadlineAt := node.LastPingAt.Add(deadlinePingNode)
-					now := time.Now()
-
-					if deadlineAt.After(now) {
-						continue
-					}
-
-					err = p.db.Remove(ctx, key)
-					if err != nil {
-						p.logger.Errorw("remove expired key "+key, err)
-					}
+				if deadlineAt.After(now) {
+					continue
 				}
-			case <-ctx.Done():
-				return
+
+				err = p.db.Remove(ctx, key)
+				if err != nil {
+					p.logger.Errorw("remove expired key "+key, err)
+				}
 			}
+			<-ticker.C
 		}
 	}()
 }
