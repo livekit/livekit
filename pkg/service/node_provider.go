@@ -109,6 +109,24 @@ func (p *NodeProvider) FetchRelevant(ctx context.Context, clientIP string) (Node
 	return nodes[0].node, nil
 }
 
+func (p *NodeProvider) IncrementParticipants(ctx context.Context, nodeId string) error {
+	node, err := p.Get(ctx, nodeId)
+	if err != nil {
+		return errors.Wrap(err, "get current value")
+	}
+	node.Participants++
+	return p.save(ctx, node)
+}
+
+func (p *NodeProvider) DecrementParticipants(ctx context.Context, nodeId string) error {
+	node, err := p.Get(ctx, nodeId)
+	if err != nil {
+		return errors.Wrap(err, "get current value")
+	}
+	node.Participants--
+	return p.save(ctx, node)
+}
+
 func (p *NodeProvider) Save(ctx context.Context, node Node) error {
 	data := strings.Split(node.IP, ":")
 	ip := net.ParseIP(data[0])
@@ -128,17 +146,7 @@ func (p *NodeProvider) Save(ctx context.Context, node Node) error {
 	node.Longitude = city.Location.Longitude
 	node.CreatedAt = time.Now()
 
-	marshaled, err := json.Marshal(node)
-	if err != nil {
-		return errors.Wrap(err, "marshal node")
-	}
-
-	err = p.db.Set(ctx, prefixKeyNode+node.Id, string(marshaled))
-	if err != nil {
-		return errors.Wrap(err, "p2p db set")
-	}
-
-	return nil
+	return p.save(ctx, node)
 }
 
 func (p *NodeProvider) Get(ctx context.Context, id string) (Node, error) {
@@ -155,6 +163,20 @@ func (p *NodeProvider) Get(ctx context.Context, id string) (Node, error) {
 	}
 
 	return res, nil
+}
+
+func (p *NodeProvider) save(ctx context.Context, node Node) error {
+	marshaled, err := json.Marshal(node)
+	if err != nil {
+		return errors.Wrap(err, "marshal node")
+	}
+
+	err = p.db.Set(ctx, prefixKeyNode+node.Id, string(marshaled))
+	if err != nil {
+		return errors.Wrap(err, "p2p db set")
+	}
+
+	return nil
 }
 
 func distance(lat1 float64, lng1 float64, lat2 float64, lng2 float64) float64 {

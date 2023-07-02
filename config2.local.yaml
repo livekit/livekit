@@ -16,7 +16,7 @@ ethereum:
   p2p_node_port: 3005
   p2p_main_database_name: global
 
-bind_addresses:
-  - 37.112.127.242
+#bind_addresses:
+#  - 0.0.0.0
 
 domain: dtelecom.org

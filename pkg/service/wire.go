@@ -171,8 +171,15 @@ func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {
 	return redisLiveKit.GetRedisClient(&conf.Redis)
 }
 
-func createStore(mainDatabase *p2p_database.DB, p2pDbConfig p2p_database.Config, nodeID livekit.NodeID, participantCounter *ParticipantCounter) ObjectStore {
-	return NewLocalStore(nodeID, p2pDbConfig, participantCounter, mainDatabase)
+func createStore(
+	mainDatabase *p2p_database.DB,
+	p2pDbConfig p2p_database.Config,
+	nodeID livekit.NodeID,
+	participantCounter *ParticipantCounter,
+	conf *config.Config,
+	nodeProvider *NodeProvider,
+) ObjectStore {
+	return NewLocalStore(nodeID, p2pDbConfig, participantCounter, mainDatabase, nodeProvider)
 }
 
 func getMessageBus(rc redis.UniversalClient) psrpc.MessageBus {

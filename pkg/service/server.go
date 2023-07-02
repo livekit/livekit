@@ -154,18 +154,22 @@ func NewLivekitServer(conf *config.Config,
 		}
 	}
 
+	var bindAddress string
 	if len(conf.BindAddresses) == 0 {
 		conf.LoggingP2P.Error("bind address expect value")
+		bindAddress = "127.0.0.1"
 	} else {
-		err = nodeProvider.Save(context.Background(), Node{
-			Id:           db.GetHost().ID().String(),
-			Participants: 0,
-			Domain:       conf.Domain,
-			IP:           conf.BindAddresses[0],
-		})
-		if err != nil {
-			conf.LoggingP2P.Errorf("node provider save error: %s", err)
-		}
+		bindAddress = conf.BindAddresses[0]
+	}
+
+	err = nodeProvider.Save(context.Background(), Node{
+		Id:           db.GetHost().ID().String(),
+		Participants: 0,
+		Domain:       conf.Domain,
+		IP:           bindAddress,
+	})
+	if err != nil {
+		conf.LoggingP2P.Errorf("node provider save error: %s", err)
 	}
 
 	// clean up old rooms on startup
