@@ -429,7 +429,7 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 	if confString != "" {
 		decoder := yaml.NewDecoder(strings.NewReader(confString))
 		decoder.KnownFields(strictMode)
-		if err := decoder.Decode(conf); err != nil {
+		if err := decoder.Decode(&conf); err != nil {
 			return nil, fmt.Errorf("could not parse config: %v", err)
 		}
 	}
