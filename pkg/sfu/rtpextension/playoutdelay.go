@@ -20,17 +20,29 @@ var (
 // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 // |  ID   | len=2 |       MIN delay       |       MAX delay       |
 // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+// The wired MIN/MAX delay is in 10ms unit
 
 type PlayOutDelay struct {
-	Min, Max uint16 // delay in 10ms
+	Min, Max uint16 // delay in ms
+}
+
+func PlayoutDelayFromValue(min, max uint16) PlayOutDelay {
+	if min >= (1<<12)*10 {
+		min = (1<<12 - 1) * 10
+	}
+	if max >= (1<<12)*10 {
+		max = (1<<12 - 1) * 10
+	}
+	return PlayOutDelay{Min: min, Max: max}
 }
 
 func (p PlayOutDelay) Marshal() ([]byte, error) {
-	if p.Min >= 1<<12 || p.Max >= 1<<12 {
+	min, max := p.Min/10, p.Max/10
+	if min >= 1<<12 || max >= 1<<12 {
 		return nil, errPlayoutDelayOverflow
 	}
 
-	return []byte{byte(p.Min >> 4), byte(p.Min<<4) | byte(p.Max>>8), byte(p.Max)}, nil
+	return []byte{byte(min >> 4), byte(min<<4) | byte(max>>8), byte(max)}, nil
 }
 
 func (p *PlayOutDelay) Unmarshal(rawData []byte) error {
@@ -38,7 +50,7 @@ func (p *PlayOutDelay) Unmarshal(rawData []byte) error {
 		return errTooSmall
 	}
 
-	p.Min = binary.BigEndian.Uint16(rawData) >> 4
-	p.Max = binary.BigEndian.Uint16(rawData[1:]) & 0x0FFF
+	p.Min = (binary.BigEndian.Uint16(rawData) >> 4) * 10
+	p.Max = (binary.BigEndian.Uint16(rawData[1:]) & 0x0FFF) * 10
 	return nil
 }

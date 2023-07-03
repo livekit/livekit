@@ -280,6 +280,7 @@ type LocalParticipant interface {
 	GetLogger() logger.Logger
 	GetAdaptiveStream() bool
 	ProtocolVersion() ProtocolVersion
+	SupportSyncStreamID() bool
 	ConnectedAt() time.Time
 	IsClosed() bool
 	IsReady() bool
@@ -290,6 +291,7 @@ type LocalParticipant interface {
 	GetClientConfiguration() *livekit.ClientConfiguration
 	GetICEConnectionType() ICEConnectionType
 	GetBufferFactory() *buffer.Factory
+	GetPlayoutDelayConfig() *livekit.PlayoutDelay
 
 	SetResponseSink(sink routing.MessageSink)
 	CloseSignalConnection(reason SignallingCloseReason)

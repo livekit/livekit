@@ -14,7 +14,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
-	"github.com/livekit/livekit-server/pkg/sfu/rtpextension"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
@@ -103,22 +102,19 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	}
 
 	streamID := wr.StreamID()
-	if sub.ProtocolVersion().SupportSyncStreamID() && t.params.MediaTrack.Stream() != "" {
+	if sub.SupportSyncStreamID() && t.params.MediaTrack.Stream() != "" {
 		streamID = PackSyncStreamID(t.params.MediaTrack.PublisherID(), t.params.MediaTrack.Stream())
 	}
 	downTrack, err := sfu.NewDownTrack(sfu.DowntrackParams{
-		Codecs:        codecs,
-		Receiver:      wr,
-		BufferFactory: sub.GetBufferFactory(),
-		SubID:         subscriberID,
-		StreamID:      streamID,
-		MaxTrack:      t.params.ReceiverConfig.PacketBufferSize,
-		PlayoutDelayLimit: rtpextension.PlayOutDelay{
-			Min: uint16(t.params.VideoConfig.PlayoutDelay.Min / 10),
-			Max: uint16(t.params.VideoConfig.PlayoutDelay.Max / 10),
-		},
-		Pacer:  sub.GetPacer(),
-		Logger: LoggerWithTrack(sub.GetLogger(), trackID, t.params.IsRelayed),
+		Codecs:            codecs,
+		Receiver:          wr,
+		BufferFactory:     sub.GetBufferFactory(),
+		SubID:             subscriberID,
+		StreamID:          streamID,
+		MaxTrack:          t.params.ReceiverConfig.PacketBufferSize,
+		PlayoutDelayLimit: sub.GetPlayoutDelayConfig(),
+		Pacer:             sub.GetPacer(),
+		Logger:            LoggerWithTrack(sub.GetLogger(), trackID, t.params.IsRelayed),
 	})
 	if err != nil {
 		return nil, err
