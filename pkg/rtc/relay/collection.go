@@ -5,8 +5,8 @@ import (
 )
 
 type Collection struct {
-	relays []*Relay
-	fs     []func(relay *Relay)
+	relays []Relay
+	fs     []func(relay Relay)
 
 	mu sync.Mutex
 }
@@ -16,7 +16,7 @@ func NewCollection() *Collection {
 }
 
 // TODO: async
-func (c *Collection) AddRelay(r *Relay) {
+func (c *Collection) AddRelay(r Relay) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -27,11 +27,20 @@ func (c *Collection) AddRelay(r *Relay) {
 }
 
 // TODO: async
-func (c *Collection) ForEach(f func(relay *Relay)) {
+func (c *Collection) OnceForEach(f func(relay Relay)) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	c.fs = append(c.fs, f)
+	for _, r := range c.relays {
+		f(r)
+	}
+}
+
+func (c *Collection) ForEach(f func(relay Relay)) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	for _, r := range c.relays {
 		f(r)
 	}
