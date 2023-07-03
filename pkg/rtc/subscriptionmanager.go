@@ -104,6 +104,7 @@ func (m *SubscriptionManager) Close(willBeResumed bool) {
 	subTracks := m.GetSubscribedTracks()
 	downTracksToClose := make([]*sfu.DownTrack, 0, len(subTracks))
 	for _, st := range subTracks {
+		m.setDesired(st.ID(), false)
 		dt := st.DownTrack()
 		// nil check exists primarily for tests
 		if dt != nil {
@@ -133,17 +134,19 @@ func (m *SubscriptionManager) isClosed() bool {
 }
 
 func (m *SubscriptionManager) SubscribeToTrack(trackID livekit.TrackID) {
-	m.lock.Lock()
-	sub, ok := m.subscriptions[trackID]
-	if !ok {
+	sub, desireChanged := m.setDesired(trackID, true)
+	if sub == nil {
 		sLogger := m.params.Logger.WithValues(
 			"trackID", trackID,
 		)
 		sub = newTrackSubscription(m.params.Participant.ID(), trackID, sLogger)
+
+		m.lock.Lock()
 		m.subscriptions[trackID] = sub
+		m.lock.Unlock()
+
+		sub, desireChanged = m.setDesired(trackID, true)
 	}
-	desireChanged := sub.setDesired(true)
-	m.lock.Unlock()
 	if desireChanged {
 		sub.logger.Infow("subscribing to track")
 	}
@@ -153,17 +156,13 @@ func (m *SubscriptionManager) SubscribeToTrack(trackID livekit.TrackID) {
 }
 
 func (m *SubscriptionManager) UnsubscribeFromTrack(trackID livekit.TrackID) {
-	m.lock.Lock()
-	sub, ok := m.subscriptions[trackID]
-	m.lock.Unlock()
-	if !ok {
+	sub, desireChanged := m.setDesired(trackID, false)
+	if sub == nil || !desireChanged {
 		return
 	}
 
-	if sub.setDesired(false) {
-		sub.logger.Infow("unsubscribing from track")
-		m.queueReconcile(trackID)
-	}
+	sub.logger.Infow("unsubscribing from track")
+	m.queueReconcile(trackID)
 }
 
 func (m *SubscriptionManager) GetSubscribedTracks() []types.SubscribedTrack {
@@ -255,6 +254,18 @@ func (m *SubscriptionManager) WaitUntilSubscribed(timeout time.Duration) error {
 	return context.DeadlineExceeded
 }
 
+func (m *SubscriptionManager) setDesired(trackID livekit.TrackID, desired bool) (*trackSubscription, bool) {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+
+	sub, ok := m.subscriptions[trackID]
+	if !ok {
+		return nil, false
+	}
+
+	return sub, sub.setDesired(desired)
+}
+
 func (m *SubscriptionManager) canReconcile() bool {
 	p := m.params.Participant
 	if m.isClosed() || p.IsClosed() || p.IsDisconnected() {
@@ -267,7 +278,7 @@ func (m *SubscriptionManager) reconcileSubscriptions() {
 	var needsToReconcile []*trackSubscription
 	m.lock.RLock()
 	for _, sub := range m.subscriptions {
-		if sub.needsSubscribe() || sub.needsUnsubscribe() || sub.needsBind() {
+		if sub.needsSubscribe() || sub.needsUnsubscribe() || sub.needsBind() || sub.needsCleanup() {
 			needsToReconcile = append(needsToReconcile, sub)
 		}
 	}
@@ -374,6 +385,12 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 			s.maybeRecordError(m.params.Telemetry, m.params.Participant.ID(), ErrTrackNotBound, false)
 			m.params.OnSubscriptionError(s.trackID, true, ErrTrackNotBound)
 		}
+	}
+
+	if s.needsCleanup() {
+		m.lock.Lock()
+		delete(m.subscriptions, s.trackID)
+		m.lock.Unlock()
 	}
 }
 
@@ -837,7 +854,6 @@ func (s *trackSubscription) setRemovedNotifier(notifier types.ChangeNotifier) bo
 
 func (s *trackSubscription) setRemovedNotifierLocked(notifier types.ChangeNotifier) bool {
 	if s.removedNotifier == notifier {
-
 		return false
 	}
 
@@ -962,4 +978,10 @@ func (s *trackSubscription) needsBind() bool {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 	return s.desired && s.subscribedTrack != nil && !s.bound
+}
+
+func (s *trackSubscription) needsCleanup() bool {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+	return !s.desired && s.subscribedTrack == nil
 }

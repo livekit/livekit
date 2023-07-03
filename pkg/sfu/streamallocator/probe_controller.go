@@ -4,26 +4,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/logger"
-)
-
-const (
-	ProbeWaitBase      = 5 * time.Second
-	ProbeBackoffFactor = 1.5
-	ProbeWaitMax       = 2 * time.Minute
-	ProbeSettleWait    = 250
-	ProbeSettleWaitMax = 10 * time.Second
-	ProbeTrendWait     = 2 * time.Second
-
-	ProbePct         = 120
-	ProbeMinBps      = 200 * 1000 // 200 kbps
-	ProbeMinDuration = 20 * time.Second
-	ProbeMaxDuration = 21 * time.Second
 )
 
 // ---------------------------------------------------------------------------
 
 type ProbeControllerParams struct {
+	Config config.CongestionControlProbeConfig
 	Prober *Prober
 	Logger logger.Logger
 }
@@ -31,19 +19,23 @@ type ProbeControllerParams struct {
 type ProbeController struct {
 	params ProbeControllerParams
 
-	lock                  sync.RWMutex
-	probeInterval         time.Duration
-	lastProbeStartTime    time.Time
-	probeGoalBps          int64
-	probeClusterId        ProbeClusterId
-	abortedProbeClusterId ProbeClusterId
-	probeTrendObserved    bool
-	probeEndTime          time.Time
+	lock                      sync.RWMutex
+	probeInterval             time.Duration
+	lastProbeStartTime        time.Time
+	probeGoalBps              int64
+	probeClusterId            ProbeClusterId
+	doneProbeClusterInfo      ProbeClusterInfo
+	abortedProbeClusterId     ProbeClusterId
+	goalReachedProbeClusterId ProbeClusterId
+	probeTrendObserved        bool
+	probeEndTime              time.Time
+	probeDuration             time.Duration
 }
 
 func NewProbeController(params ProbeControllerParams) *ProbeController {
 	p := &ProbeController{
-		params: params,
+		params:        params,
+		probeDuration: params.Config.MinDuration,
 	}
 
 	p.Reset()
@@ -57,45 +49,21 @@ func (p *ProbeController) Reset() {
 	p.lastProbeStartTime = time.Now()
 
 	p.resetProbeIntervalLocked()
+	p.resetProbeDurationLocked()
 
 	p.clearProbeLocked()
 }
 
-func (p *ProbeController) ProbeClusterDone(info ProbeClusterInfo, lowestEstimate int64) bool {
+func (p *ProbeController) ProbeClusterDone(info ProbeClusterInfo) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
 	if p.probeClusterId != info.Id {
 		p.params.Logger.Infow("not expected probe cluster", "probeClusterId", p.probeClusterId, "resetProbeClusterId", info.Id)
-		return false
+		return
 	}
 
-	if p.abortedProbeClusterId == ProbeClusterIdInvalid {
-		// successful probe, finalize
-		return p.finalizeProbeLocked()
-	}
-
-	// ensure probe queue is flushed
-	// STREAM-ALLOCATOR-TODO: ProbeSettleWait should actually be a certain number of RTTs.
-	expectedDuration := float64(info.BytesSent*8*1000) / float64(lowestEstimate)
-	queueTime := expectedDuration - float64(info.Duration.Milliseconds())
-	if queueTime < 0.0 {
-		queueTime = 0.0
-	}
-	queueWait := time.Duration(queueTime+float64(ProbeSettleWait)) * time.Millisecond
-	if queueWait > ProbeSettleWaitMax {
-		queueWait = ProbeSettleWaitMax
-	}
-	p.probeEndTime = p.lastProbeStartTime.Add(queueWait + info.Duration)
-	p.params.Logger.Infow(
-		"setting probe end time",
-		"probeClusterId", p.probeClusterId,
-		"expectedDuration", expectedDuration,
-		"queueTime", queueTime,
-		"queueWait", queueWait,
-		"probeEndTime", p.probeEndTime,
-	)
-	return false
+	p.doneProbeClusterInfo = info
 }
 
 func (p *ProbeController) CheckProbe(trend ChannelTrend, highestEstimate int64) {
@@ -111,7 +79,7 @@ func (p *ProbeController) CheckProbe(trend ChannelTrend, highestEstimate int64) 
 	}
 
 	switch {
-	case !p.probeTrendObserved && time.Since(p.lastProbeStartTime) > ProbeTrendWait:
+	case !p.probeTrendObserved && time.Since(p.lastProbeStartTime) > p.params.Config.TrendWait:
 		//
 		// More of a safety net.
 		// In rare cases, the estimate gets stuck. Prevent from probe running amok
@@ -133,41 +101,87 @@ func (p *ProbeController) CheckProbe(trend ChannelTrend, highestEstimate int64) 
 			"goal", p.probeGoalBps,
 			"highest", highestEstimate,
 		)
+		p.goalReachedProbeClusterId = p.probeClusterId
 		p.StopProbe()
 	}
 }
 
-func (p *ProbeController) MaybeFinalizeProbe() (isHandled bool, isSuccessful bool) {
+func (p *ProbeController) MaybeFinalizeProbe(
+	isComplete bool,
+	trend ChannelTrend,
+	lowestEstimate int64,
+) (isHandled bool, isNotFailing bool, isGoalReached bool) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	if p.isInProbeLocked() && !p.probeEndTime.IsZero() && time.Now().After(p.probeEndTime) {
-		return true, p.finalizeProbeLocked()
+	if !p.isInProbeLocked() {
+		return false, false, false
 	}
 
-	return false, false
+	if p.goalReachedProbeClusterId != ProbeClusterIdInvalid {
+		// finalise goal reached probe cluster
+		p.finalizeProbeLocked(ChannelTrendNeutral)
+		return true, true, true
+	}
+
+	if (isComplete || p.abortedProbeClusterId != ProbeClusterIdInvalid) && p.probeEndTime.IsZero() && p.doneProbeClusterInfo.Id != ProbeClusterIdInvalid && p.doneProbeClusterInfo.Id == p.probeClusterId {
+		// ensure any queueing due to probing is flushed
+		// STREAM-ALLOCATOR-TODO: CongestionControlProbeConfig.SettleWait should actually be a certain number of RTTs.
+		expectedDuration := float64(9.0)
+		if lowestEstimate != 0 {
+			expectedDuration = float64(p.doneProbeClusterInfo.BytesSent*8*1000) / float64(lowestEstimate)
+		}
+		queueTime := expectedDuration - float64(p.doneProbeClusterInfo.Duration.Milliseconds())
+		if queueTime < 0.0 {
+			queueTime = 0.0
+		}
+		queueWait := (time.Duration(queueTime) * time.Millisecond) + p.params.Config.SettleWait
+		if queueWait > p.params.Config.SettleWaitMax {
+			queueWait = p.params.Config.SettleWaitMax
+		}
+		p.probeEndTime = p.lastProbeStartTime.Add(queueWait + p.doneProbeClusterInfo.Duration)
+		p.params.Logger.Infow(
+			"setting probe end time",
+			"probeClusterId", p.probeClusterId,
+			"expectedDuration", expectedDuration,
+			"queueTime", queueTime,
+			"queueWait", queueWait,
+			"probeEndTime", p.probeEndTime,
+		)
+	}
+
+	if !p.probeEndTime.IsZero() && time.Now().After(p.probeEndTime) {
+		// finalisze aborted or non-failing but non-goal-reached probe cluster
+		return true, p.finalizeProbeLocked(trend), false
+	}
+
+	return false, false, false
 }
 
 func (p *ProbeController) DoesProbeNeedFinalize() bool {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
-	return p.abortedProbeClusterId != ProbeClusterIdInvalid
+	return p.abortedProbeClusterId != ProbeClusterIdInvalid || p.goalReachedProbeClusterId != ProbeClusterIdInvalid
 }
 
-func (p *ProbeController) finalizeProbeLocked() bool {
+func (p *ProbeController) finalizeProbeLocked(trend ChannelTrend) (isNotFailing bool) {
 	aborted := p.probeClusterId == p.abortedProbeClusterId
 
 	p.clearProbeLocked()
 
-	if aborted {
+	if aborted || trend == ChannelTrendCongesting {
 		// failed probe, backoff
 		p.backoffProbeIntervalLocked()
+		p.resetProbeDurationLocked()
 		return false
 	}
 
-	// reset probe interval on a successful probe
+	// reset probe interval and increase probe duration on a upward trending probe
 	p.resetProbeIntervalLocked()
+	if trend == ChannelTrendClearing {
+		p.increaseProbeDurationLocked()
+	}
 	return true
 }
 
@@ -178,13 +192,15 @@ func (p *ProbeController) InitProbe(probeGoalDeltaBps int64, expectedBandwidthUs
 	p.lastProbeStartTime = time.Now()
 
 	// overshoot a bit to account for noise (in measurement/estimate etc)
-	desiredIncreaseBps := (probeGoalDeltaBps * ProbePct) / 100
-	if desiredIncreaseBps < ProbeMinBps {
-		desiredIncreaseBps = ProbeMinBps
+	desiredIncreaseBps := (probeGoalDeltaBps * p.params.Config.OveragePct) / 100
+	if desiredIncreaseBps < p.params.Config.MinBps {
+		desiredIncreaseBps = p.params.Config.MinBps
 	}
 	p.probeGoalBps = expectedBandwidthUsage + desiredIncreaseBps
 
+	p.doneProbeClusterInfo = ProbeClusterInfo{Id: ProbeClusterIdInvalid}
 	p.abortedProbeClusterId = ProbeClusterIdInvalid
+	p.goalReachedProbeClusterId = ProbeClusterIdInvalid
 
 	p.probeTrendObserved = false
 
@@ -194,8 +210,8 @@ func (p *ProbeController) InitProbe(probeGoalDeltaBps int64, expectedBandwidthUs
 		ProbeClusterModeUniform,
 		int(p.probeGoalBps),
 		int(expectedBandwidthUsage),
-		ProbeMinDuration,
-		ProbeMaxDuration,
+		p.probeDuration,
+		time.Duration(float64(p.probeDuration.Milliseconds())*p.params.Config.DurationOverflowFactor)*time.Millisecond,
 	)
 
 	return p.probeClusterId, p.probeGoalBps
@@ -203,18 +219,31 @@ func (p *ProbeController) InitProbe(probeGoalDeltaBps int64, expectedBandwidthUs
 
 func (p *ProbeController) clearProbeLocked() {
 	p.probeClusterId = ProbeClusterIdInvalid
+	p.doneProbeClusterInfo = ProbeClusterInfo{Id: ProbeClusterIdInvalid}
 	p.abortedProbeClusterId = ProbeClusterIdInvalid
+	p.goalReachedProbeClusterId = ProbeClusterIdInvalid
 }
 
 func (p *ProbeController) backoffProbeIntervalLocked() {
-	p.probeInterval = time.Duration(p.probeInterval.Seconds()*ProbeBackoffFactor) * time.Second
-	if p.probeInterval > ProbeWaitMax {
-		p.probeInterval = ProbeWaitMax
+	p.probeInterval = time.Duration(p.probeInterval.Seconds()*p.params.Config.BackoffFactor) * time.Second
+	if p.probeInterval > p.params.Config.MaxInterval {
+		p.probeInterval = p.params.Config.MaxInterval
 	}
 }
 
 func (p *ProbeController) resetProbeIntervalLocked() {
-	p.probeInterval = ProbeWaitBase
+	p.probeInterval = p.params.Config.BaseInterval
+}
+
+func (p *ProbeController) resetProbeDurationLocked() {
+	p.probeDuration = p.params.Config.MinDuration
+}
+
+func (p *ProbeController) increaseProbeDurationLocked() {
+	p.probeDuration = time.Duration(float64(p.probeDuration.Milliseconds())*p.params.Config.DurationIncreaseFactor) * time.Millisecond
+	if p.probeDuration > p.params.Config.MaxDuration {
+		p.probeDuration = p.params.Config.MaxDuration
+	}
 }
 
 func (p *ProbeController) StopProbe() {

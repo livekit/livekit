@@ -878,13 +878,13 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 
 		d.bound.Store(false)
 		d.params.Logger.Debugw("closing sender", "kind", d.kind)
-		d.params.Receiver.DeleteDownTrack(d.params.SubID)
+	}
+	d.params.Receiver.DeleteDownTrack(d.params.SubID)
 
-		if d.rtcpReader != nil && flush {
-			d.params.Logger.Debugw("downtrack close rtcp reader")
-			d.rtcpReader.Close()
-			d.rtcpReader.OnPacket(nil)
-		}
+	if d.rtcpReader != nil && flush {
+		d.params.Logger.Debugw("downtrack close rtcp reader")
+		d.rtcpReader.Close()
+		d.rtcpReader.OnPacket(nil)
 	}
 
 	d.bindLock.Unlock()

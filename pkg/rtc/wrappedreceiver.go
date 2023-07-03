@@ -103,6 +103,14 @@ func (r *WrappedReceiver) Codecs() []webrtc.RTPCodecParameters {
 	return codecs
 }
 
+func (r *WrappedReceiver) DeleteDownTrack(participantID livekit.ParticipantID) {
+	if r.TrackReceiver != nil {
+		r.TrackReceiver.DeleteDownTrack(participantID)
+	}
+}
+
+// --------------------------------------------
+
 type DummyReceiver struct {
 	receiver         atomic.Value
 	trackID          livekit.TrackID
