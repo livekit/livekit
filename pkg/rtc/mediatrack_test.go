@@ -98,4 +98,65 @@ func TestGetQualityForDimension(t *testing.T) {
 		require.Equal(t, livekit.VideoQuality_MEDIUM, mt.GetQualityForDimension(800, 500))
 		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(1000, 700))
 	})
+
+	t.Run("highest layer with smallest dimensions", func(t *testing.T) {
+		mt := NewMediaTrack(MediaTrackParams{TrackInfo: &livekit.TrackInfo{
+			Type:   livekit.TrackType_VIDEO,
+			Width:  1080,
+			Height: 720,
+			Layers: []*livekit.VideoLayer{
+				{
+					Quality: livekit.VideoQuality_LOW,
+					Width:   480,
+					Height:  270,
+				},
+				{
+					Quality: livekit.VideoQuality_MEDIUM,
+					Width:   1080,
+					Height:  720,
+				},
+				{
+					Quality: livekit.VideoQuality_HIGH,
+					Width:   1080,
+					Height:  720,
+				},
+			},
+		}})
+
+		require.Equal(t, livekit.VideoQuality_LOW, mt.GetQualityForDimension(120, 120))
+		require.Equal(t, livekit.VideoQuality_LOW, mt.GetQualityForDimension(300, 300))
+		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(800, 500))
+		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(1000, 700))
+		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(1200, 800))
+
+		mt = NewMediaTrack(MediaTrackParams{TrackInfo: &livekit.TrackInfo{
+			Type:   livekit.TrackType_VIDEO,
+			Width:  1080,
+			Height: 720,
+			Layers: []*livekit.VideoLayer{
+				{
+					Quality: livekit.VideoQuality_LOW,
+					Width:   480,
+					Height:  270,
+				},
+				{
+					Quality: livekit.VideoQuality_MEDIUM,
+					Width:   480,
+					Height:  270,
+				},
+				{
+					Quality: livekit.VideoQuality_HIGH,
+					Width:   1080,
+					Height:  720,
+				},
+			},
+		}})
+
+		require.Equal(t, livekit.VideoQuality_MEDIUM, mt.GetQualityForDimension(120, 120))
+		require.Equal(t, livekit.VideoQuality_MEDIUM, mt.GetQualityForDimension(300, 300))
+		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(800, 500))
+		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(1000, 700))
+		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(1200, 800))
+	})
+
 }
