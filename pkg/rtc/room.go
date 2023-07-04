@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/p2p"
 	"github.com/livekit/livekit-server/pkg/rtc/relay"
+	"github.com/livekit/livekit-server/pkg/rtc/relay/pc"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -153,9 +155,7 @@ func NewRoom(
 	egressLauncher EgressLauncher,
 	roomP2PCommunicator p2p.RoomCommunicator,
 ) *Room {
-	bufferFactory := buffer.NewFactoryOfBufferFactory(config.Receiver.PacketBufferSize)
 	logger := LoggerWithRoom(logger.GetLogger(), livekit.RoomKey(room.Key), livekit.RoomID(room.Sid))
-	config.SetBufferFactory(bufferFactory.CreateBufferFactory())
 
 	r := &Room{
 		protoRoom:                 proto.Clone(room).(*livekit.Room),
@@ -170,7 +170,7 @@ func NewRoom(
 		participants:              make(map[livekit.ParticipantIdentity]types.LocalParticipant),
 		participantOpts:           make(map[livekit.ParticipantIdentity]*ParticipantOptions),
 		participantRequestSources: make(map[livekit.ParticipantIdentity]routing.MessageSource),
-		bufferFactory:             bufferFactory,
+		bufferFactory:             buffer.NewFactoryOfBufferFactory(config.Receiver.PacketBufferSize),
 		batchedUpdates:            make(map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
 		closed:                    make(chan struct{}),
 
@@ -192,8 +192,8 @@ func NewRoom(
 	pendingAnswersMu := sync.Mutex{}
 
 	roomP2PCommunicator.ForEachPeer(func(peerId string) {
-		rel, err := relay.NewRelay(logger, &relay.RelayConfig{
-			BufferFactory: config.BufferFactory,
+		rel, err := pc.NewRelay(logger, &relay.RelayConfig{
+			BufferFactory: r.GetBufferFactory(),
 			SettingEngine: config.SettingEngine,
 			ICEServers:    config.Configuration.ICEServers,
 		})
@@ -207,7 +207,7 @@ func NewRoom(
 			r.outRelayCollection.AddRelay(rel)
 		})
 
-		rel.OnConnectionStateChange(func(state webrtc.ICETransportState) {
+		rel.OnConnectionStateChange(func(state webrtc.ICEConnectionState) {
 			logger.Infow("Out relay connection state changed", "state", state)
 		})
 
@@ -260,28 +260,28 @@ func NewRoom(
 			pendingAnswersMu.Unlock()
 		} else {
 			// Offer
-			rel, err := relay.NewRelay(logger, &relay.RelayConfig{
-				BufferFactory: config.BufferFactory,
+			rel, err := pc.NewRelay(logger, &relay.RelayConfig{
+				BufferFactory: r.GetBufferFactory(),
 				SettingEngine: config.SettingEngine,
 				ICEServers:    config.Configuration.ICEServers,
 			})
 			if err != nil {
-				logger.Errorw("New in relay", err)
+				logger.Errorw("New in-relay", err)
 				return
 			}
 
 			rel.OnReady(func() {
-				logger.Infow("In relay is ready")
+				logger.Infow("In-relay is ready")
 				// TODO
 			})
 
-			rel.OnConnectionStateChange(func(state webrtc.ICETransportState) {
-				logger.Infow("In relay connection state changed", "state", state)
+			rel.OnConnectionStateChange(func(state webrtc.ICEConnectionState) {
+				logger.Infow("In-relay connection state changed", "state", state)
 			})
 
 			answer, answerErr := rel.Answer(signal)
 			if answerErr != nil {
-				logger.Errorw("In relay answer", answerErr)
+				logger.Errorw("In-relay answer", answerErr)
 				return
 			}
 
@@ -292,8 +292,8 @@ func NewRoom(
 
 			logger.Infow("answer sent")
 
-			rel.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, mid string, trackId string, streamId string, rid string, meta string) {
-				r.onRelayAddTrack(rel, track, receiver, mid, trackId, streamId, rid, meta)
+			rel.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, mid string, rid string, meta string) {
+				r.onRelayAddTrack(rel, track, receiver, mid, rid, meta)
 			})
 		}
 	})
@@ -301,8 +301,8 @@ func NewRoom(
 	return r
 }
 
-func (r *Room) onRelayAddTrack(rel *relay.Relay, track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, mid string, trackId string, streamId string, rid string, meta string) {
-	logger.Infow("Track published", "mid", mid)
+func (r *Room) onRelayAddTrack(rel relay.Relay, track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, mid string, rid string, meta string) {
+	logger.Infow("Relay track published", "mid", mid)
 	var participantInfo livekit.ParticipantInfo
 	if err := json.Unmarshal([]byte(meta), &participantInfo); err != nil {
 		panic(err)
@@ -319,11 +319,14 @@ func (r *Room) onRelayAddTrack(rel *relay.Relay, track *webrtc.TrackRemote, rece
 		var exists bool
 		remoteParticipant, exists = r.relayedParticipants[participantIdentity]
 		if !exists {
+			rtcConfig := r.Config
+			rtcConfig.SetBufferFactory(rel.GetBufferFactory())
+
 			remoteParticipant, _ = NewRelayedParticipant(RelayedParticipantParams{
 				Identity: participantIdentity,
 				Name:     livekit.ParticipantName(participantInfo.Name),
 				SID:      livekit.ParticipantID(participantInfo.Sid),
-				Config:   &r.Config,
+				Config:   &rtcConfig,
 				AudioConfig: cfg.AudioConfig{
 					ActiveLevel:     35, // -35dBov
 					MinPercentile:   40,
@@ -430,7 +433,7 @@ func (r *Room) onRelayAddTrack(rel *relay.Relay, track *webrtc.TrackRemote, rece
 			}
 		}
 	}()
-	remoteParticipant.OnMediaTrack(track, receiver, mid, trackId, streamId, rid, participantInfo.Tracks)
+	remoteParticipant.OnMediaTrack(track, receiver, mid, rid, participantInfo.Tracks)
 }
 
 func (r *Room) ToProto() *livekit.Room {
@@ -600,7 +603,7 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 			r.telemetry.ParticipantActive(context.Background(), r.ToProto(), p.ToProto(), &livekit.AnalyticsClientMeta{
 				ClientConnectTime: uint32(time.Since(p.ConnectedAt()).Milliseconds()),
 				ConnectionType:    string(p.GetICEConnectionType()),
-			})
+			}, p.ClaimGrants().WebHookURL)
 		} else if state == livekit.ParticipantInfo_DISCONNECTED {
 			// remove participant from room
 			go r.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonStateDisconnected)
@@ -1470,6 +1473,14 @@ func (r *Room) DebugInfo() map[string]interface{} {
 		participantInfo[string(p.Identity())] = p.DebugInfo()
 	}
 	info["Participants"] = participantInfo
+
+	outRelaysInfo := make(map[string]interface{})
+	i := 0
+	r.outRelayCollection.ForEach(func(relay relay.Relay) {
+		outRelaysInfo[strconv.Itoa(i)] = relay.DebugInfo()
+		i++
+	})
+	info["OutRelays"] = outRelaysInfo
 
 	return info
 }

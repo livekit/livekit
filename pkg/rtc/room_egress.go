@@ -38,7 +38,7 @@ func StartTrackEgress(
 				Error:    err.Error(),
 				Request:  &livekit.EgressInfo_Track{Track: req},
 			},
-		})
+		}, "")
 		return err
 	}
 	return nil

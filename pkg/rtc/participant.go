@@ -11,8 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pion/transport/v2/packetio"
-
 	"github.com/livekit/livekit-server/pkg/rtc/relay"
 
 	lru "github.com/hashicorp/golang-lru/v2"
@@ -1143,7 +1141,7 @@ func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription) err
 }
 
 func (p *ParticipantImpl) forwardTrackToRelays(publishedTrack *MediaTrack, track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
-	p.params.RelayCollection.ForEach(func(relay *relay.Relay) {
+	p.params.RelayCollection.OnceForEach(func(relay relay.Relay) {
 		codec := track.Codec()
 		tr := publishedTrack.MediaTrackReceiver.Receiver(track.Codec().MimeType)
 		rtpCodecParameters := []webrtc.RTPCodecParameters{{
@@ -1175,35 +1173,15 @@ func (p *ParticipantImpl) forwardTrackToRelays(publishedTrack *MediaTrack, track
 			}
 		}
 		participantInfo, _ := json.Marshal(pi)
-		sdr, err := relay.AddTrack(tr.(*sfu.WebRTCReceiver).GetRTPParameters(), track, dt, p.TransportManager.GetPublisherMid(rtpReceiver), string(participantInfo))
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		_, err = relay.AddTrack(ctx, dt, track.RID(), string(participantInfo))
 		if err != nil {
 			p.params.Logger.Errorw("add track to relay", err)
 			return
 		}
-
-		p.params.Config.BufferFactory.GetOrNew(packetio.RTCPBufferPacket, uint32(sdr.GetParameters().Encodings[0].SSRC)).(*buffer.RTCPReader).OnPacket(func(bytes []byte) {
-			pkts, err := rtcp.Unmarshal(bytes)
-			if err != nil {
-				p.params.Logger.Errorw("Unmarshal rtcp reports", err)
-				return
-			}
-			var rpkts []rtcp.Packet
-			for _, pkt := range pkts {
-				switch pk := pkt.(type) {
-				case *rtcp.PictureLossIndication:
-					rpkts = append(rpkts, &rtcp.PictureLossIndication{
-						SenderSSRC: pk.MediaSSRC,
-						MediaSSRC:  uint32(track.SSRC()),
-					})
-				}
-			}
-
-			if len(rpkts) > 0 {
-				if err := relay.WriteRTCP(rpkts); err != nil {
-					p.params.Logger.Errorw("Sending rtcp relay reports", err)
-				}
-			}
-		})
 
 		if err := tr.AddDownTrack(dt); err != nil {
 			p.params.Logger.Errorw("add relayed down track", err)

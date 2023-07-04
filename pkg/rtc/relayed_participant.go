@@ -39,7 +39,7 @@ type RelayedParticipantParams struct {
 	Telemetry         telemetry.TelemetryService
 	PLIThrottleConfig config.PLIThrottleConfig
 	VersionGenerator  utils.TimedVersionGenerator
-	Relay             *relay.Relay
+	Relay             relay.Relay
 }
 
 type RelayedParticipantImpl struct {
@@ -232,7 +232,8 @@ func (p *RelayedParticipantImpl) GetICEConnectionType() types.ICEConnectionType 
 }
 
 func (p *RelayedParticipantImpl) GetBufferFactory() *buffer.Factory {
-	return p.params.Config.BufferFactory
+	// return p.params.Config.BufferFactory
+	panic("not implemented")
 }
 
 func (p *RelayedParticipantImpl) SetResponseSink(sink routing.MessageSink) {
@@ -578,7 +579,7 @@ func (p *RelayedParticipantImpl) UpdateMediaLoss(nodeID livekit.NodeID, trackID 
 	panic("implement me")
 }
 
-func (p *RelayedParticipantImpl) OnMediaTrack(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver, mid, trackId, streamId, rid string, tracks []*livekit.TrackInfo) {
+func (p *RelayedParticipantImpl) OnMediaTrack(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver, mid, rid string, tracks []*livekit.TrackInfo) {
 	if p.IsDisconnected() {
 		return
 	}
@@ -588,21 +589,21 @@ func (p *RelayedParticipantImpl) OnMediaTrack(track *webrtc.TrackRemote, rtpRece
 		return
 	}
 
-	publishedTrack, isNewTrack := p.mediaTrackReceived(track, rtpReceiver, mid, trackId, streamId, rid, tracks)
+	publishedTrack, isNewTrack := p.mediaTrackReceived(track, rtpReceiver, mid, rid, tracks)
 
 	if publishedTrack != nil {
 		p.params.Logger.Infow("mediaTrack published",
 			"kind", track.Kind().String(),
 			"trackID", publishedTrack.ID(),
-			"rid", track.RID(),
+			"rid", rid,
 			"SSRC", track.SSRC(),
 			"mime", track.Codec().MimeType,
 		)
 	} else {
 		p.params.Logger.Warnw("webrtc Track published but can't find MediaTrack", nil,
 			"kind", track.Kind().String(),
-			"webrtcTrackID", trackId,
-			"rid", track.RID(),
+			"webrtcTrackID", track.ID(),
+			"rid", rid,
 			"SSRC", track.SSRC(),
 			"mime", track.Codec().MimeType,
 		)
@@ -618,25 +619,25 @@ func (p *RelayedParticipantImpl) OnMediaTrack(track *webrtc.TrackRemote, rtpRece
 	}
 }
 
-func (p *RelayedParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver, mid string, trackId string, streamId string, rid string, trackInfos []*livekit.TrackInfo) (*MediaTrack, bool) {
+func (p *RelayedParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver, mid string, rid string, trackInfos []*livekit.TrackInfo) (*MediaTrack, bool) {
 	newTrack := false
 
 	p.params.Logger.Debugw(
 		"media track received",
 		"kind", track.Kind().String(),
-		"trackID", trackId,
-		"rid", track.RID(),
+		"trackID", track.ID(),
+		"rid", rid,
 		"SSRC", track.SSRC(),
 		"mime", track.Codec().MimeType,
 	)
 
 	if mid == "" {
-		p.params.Logger.Warnw("could not get mid for track", nil, "trackID", trackId)
+		p.params.Logger.Warnw("could not get mid for track", nil, "trackID", track.ID())
 		return nil, false
 	}
 
 	// use existing media track to handle simulcast
-	mt, ok := p.getPublishedTrackBySdpCid(trackId).(*MediaTrack)
+	mt, ok := p.getPublishedTrackBySdpCid(track.ID()).(*MediaTrack)
 	if !ok {
 		var ti *livekit.TrackInfo
 
@@ -653,8 +654,8 @@ func (p *RelayedParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, r
 		}
 
 		ti.MimeType = track.Codec().MimeType
-		// TODO investigate difference between signalCid and sdpCid
-		mt = p.addMediaTrack(trackId, trackId, ti)
+		// TODO: investigate difference between signalCid and sdpCid
+		mt = p.addMediaTrack(track.ID(), track.ID(), ti)
 		newTrack = true
 	}
 
