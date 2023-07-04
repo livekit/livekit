@@ -42,7 +42,12 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 		return nil, err
 	}
 	defer func() {
-		_ = r.roomStore.UnlockRoom(ctx, livekit.RoomName(req.Name), token)
+		timeoutContext, cancelFunc := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancelFunc()
+		err = r.roomStore.UnlockRoom(timeoutContext, livekit.RoomName(req.Name), token)
+		if err != nil {
+			logger.Infow("failed to unlock room", "error", err, "room", req.Name)
+		}
 	}()
 
 	// find existing room and update it
