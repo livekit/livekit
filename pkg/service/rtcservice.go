@@ -264,6 +264,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}()
 		defer func() {
 			if r := rtc.Recover(pLogger); r != nil {
+				fmt.Printf("error recover %s", r)
 				os.Exit(1)
 			}
 		}()

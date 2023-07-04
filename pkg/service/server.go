@@ -12,6 +12,7 @@ import (
 	"runtime/pprof"
 	"time"
 
+	p2p_database "github.com/dTelecom/p2p-realtime-database"
 	"github.com/pion/turn/v2"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
@@ -43,6 +44,7 @@ type LivekitServer struct {
 	currentNode        routing.LocalNode
 	clientProvider     *ClientProvider
 	participantCounter *ParticipantCounter
+	nodeProvider       *NodeProvider
 	running            atomic.Bool
 	doneChan           chan struct{}
 	closedChan         chan struct{}
@@ -61,6 +63,9 @@ func NewLivekitServer(conf *config.Config,
 	currentNode routing.LocalNode,
 	clientProvider *ClientProvider,
 	participantCounter *ParticipantCounter,
+	nodeProvider *NodeProvider,
+	db *p2p_database.DB,
+	relevantNodesHandler *RelevantNodesHandler,
 ) (s *LivekitServer, err error) {
 	s = &LivekitServer{
 		config:       conf,
@@ -73,6 +78,7 @@ func NewLivekitServer(conf *config.Config,
 		currentNode:        currentNode,
 		clientProvider:     clientProvider,
 		participantCounter: participantCounter,
+		nodeProvider:       nodeProvider,
 		closedChan:         make(chan struct{}),
 	}
 
@@ -116,6 +122,7 @@ func NewLivekitServer(conf *config.Config,
 	mux.Handle(ingressServer.PathPrefix(), ingressServer)
 	mux.Handle("/rtc", rtcService)
 	mux.HandleFunc("/rtc/validate", rtcService.Validate)
+	mux.HandleFunc("/relevant", relevantNodesHandler.HTTPHandler)
 	mux.HandleFunc("/", s.defaultHandler)
 
 	if conf.Domain != "" {
@@ -147,6 +154,24 @@ func NewLivekitServer(conf *config.Config,
 		s.promServer = &http.Server{
 			Handler: promhttp.Handler(),
 		}
+	}
+
+	var bindAddress string
+	if len(conf.BindAddresses) == 0 {
+		conf.LoggingP2P.Error("bind address expect value")
+		bindAddress = "127.0.0.1"
+	} else {
+		bindAddress = conf.BindAddresses[0]
+	}
+
+	err = nodeProvider.Save(context.Background(), Node{
+		Id:           db.GetHost().ID().String(),
+		Participants: 0,
+		Domain:       conf.Domain,
+		IP:           bindAddress,
+	})
+	if err != nil {
+		conf.LoggingP2P.Errorf("node provider save error: %s", err)
 	}
 
 	// clean up old rooms on startup

@@ -9,19 +9,20 @@ package service
 import (
 	"context"
 	"github.com/dTelecom/p2p-realtime-database"
-	"github.com/ipfs/go-log/v2"
+	"github.com/livekit/livekit-server"
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/egress"
-	"github.com/livekit/protocol/livekit"
+	livekit2 "github.com/livekit/protocol/livekit"
 	redis2 "github.com/livekit/protocol/redis"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
 	"github.com/livekit/psrpc"
+	"github.com/oschwald/geoip2-golang"
 	"github.com/pion/turn/v2"
 	"github.com/pkg/errors"
 	"github.com/redis/go-redis/v9"
@@ -49,12 +50,20 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	router := routing.CreateRouter(conf, universalClient, currentNode, signalClient)
 	p2p_databaseConfig := getDatabaseConfiguration(conf)
-	db, err := createMainDatabaseP2P(p2p_databaseConfig)
+	db, err := createMainDatabaseP2P(p2p_databaseConfig, conf)
 	if err != nil {
 		return nil, err
 	}
-	participantCounter := createParticipantCounter(db)
-	objectStore := createStore(db, p2p_databaseConfig, nodeID, participantCounter)
+	participantCounter, err := createParticipantCounter(db, conf)
+	if err != nil {
+		return nil, err
+	}
+	reader, err := createGeoIP()
+	if err != nil {
+		return nil, err
+	}
+	nodeProvider := createNodeProvider(reader, conf, db)
+	objectStore := createStore(db, p2p_databaseConfig, nodeID, participantCounter, conf, nodeProvider)
 	roomAllocator, err := NewRoomAllocator(conf, router, objectStore)
 	if err != nil {
 		return nil, err
@@ -65,7 +74,11 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	rpcClient := egress.NewRedisRPCClient(nodeID, universalClient)
 	egressStore := getEgressStore(objectStore)
-	keyProvider, err := createKeyProvider(conf)
+	ethSmartContract, err := createSmartContractClient(conf)
+	if err != nil {
+		return nil, err
+	}
+	keyProvider, err := createKeyProvider(conf, ethSmartContract)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +102,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	ingressStore := getIngressStore(objectStore)
 	ingressService := NewIngressService(ingressConfig, nodeID, messageBus, ingressClient, ingressStore, roomService, telemetryService)
 	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode, telemetryService)
-	keyProviderPublicKey, err := createKeyPublicKeyProvider(conf)
+	keyProviderPublicKey, err := createKeyPublicKeyProvider(conf, ethSmartContract)
 	if err != nil {
 		return nil, err
 	}
@@ -108,12 +121,9 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	ethSmartContract, err := createSmartContractClient(conf)
-	if err != nil {
-		return nil, err
-	}
 	clientProvider := createClientProvider(ethSmartContract, db)
-	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, rtcService, keyProviderPublicKey, router, roomManager, signalServer, server, currentNode, clientProvider, participantCounter)
+	relevantNodesHandler := createRelevantNodesHandler(conf, nodeProvider)
+	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, rtcService, keyProviderPublicKey, router, roomManager, signalServer, server, currentNode, clientProvider, participantCounter, nodeProvider, db, relevantNodesHandler)
 	if err != nil {
 		return nil, err
 	}
@@ -138,6 +148,18 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 
 // wire.go:
 
+func createRelevantNodesHandler(conf *config.Config, nodeProvider *NodeProvider) *RelevantNodesHandler {
+	return NewRelevantNodesHandler(nodeProvider, conf.LoggingP2P)
+}
+
+func createGeoIP() (*geoip2.Reader, error) {
+	return geoip2.FromBytes(livekit.MixmindDatabase)
+}
+
+func createNodeProvider(geo *geoip2.Reader, config2 *config.Config, db *p2p_database.DB) *NodeProvider {
+	return NewNodeProvider(db, geo, config2.LoggingP2P)
+}
+
 func createClientProvider(contract *p2p_database.EthSmartContract, db *p2p_database.DB) *ClientProvider {
 	return NewClientProvider(db, contract)
 }
@@ -147,7 +169,7 @@ func createSmartContractClient(conf *config.Config) (*p2p_database.EthSmartContr
 		EthereumNetworkHost:     conf.Ethereum.NetworkHost,
 		EthereumNetworkKey:      conf.Ethereum.NetworkKey,
 		EthereumContractAddress: conf.Ethereum.ContractAddress,
-	}, nil)
+	}, conf.LoggingP2P)
 
 	if err != nil {
 		return nil, errors.Wrap(err, "try create contract")
@@ -156,8 +178,8 @@ func createSmartContractClient(conf *config.Config) (*p2p_database.EthSmartContr
 	return contract, nil
 }
 
-func createParticipantCounter(mainDatabase *p2p_database.DB) *ParticipantCounter {
-	return NewParticipantCounter(mainDatabase)
+func createParticipantCounter(mainDatabase *p2p_database.DB, conf *config.Config) (*ParticipantCounter, error) {
+	return NewParticipantCounter(mainDatabase, conf.LoggingP2P)
 }
 
 func getDatabaseConfiguration(conf *config.Config) p2p_database.Config {
@@ -171,33 +193,23 @@ func getDatabaseConfiguration(conf *config.Config) p2p_database.Config {
 	}
 }
 
-func createMainDatabaseP2P(conf p2p_database.Config) (*p2p_database.DB, error) {
-	db, err := p2p_database.Connect(context.Background(), conf, log.Logger("db"))
+func createMainDatabaseP2P(conf p2p_database.Config, c *config.Config) (*p2p_database.DB, error) {
+	db, err := p2p_database.Connect(context.Background(), conf, c.LoggingP2P)
 	if err != nil {
 		return nil, errors.Wrap(err, "create main p2p db")
 	}
 	return db, nil
 }
 
-func getNodeID(currentNode routing.LocalNode) livekit.NodeID {
-	return livekit.NodeID(currentNode.Id)
+func getNodeID(currentNode routing.LocalNode) livekit2.NodeID {
+	return livekit2.NodeID(currentNode.Id)
 }
 
-func createKeyProvider(conf *config.Config) (auth.KeyProvider, error) {
-	return createKeyPublicKeyProvider(conf)
+func createKeyProvider(conf *config.Config, contract *p2p_database.EthSmartContract) (auth.KeyProvider, error) {
+	return createKeyPublicKeyProvider(conf, contract)
 }
 
-func createKeyPublicKeyProvider(conf *config.Config) (auth.KeyProviderPublicKey, error) {
-	contract, err := p2p_database.NewEthSmartContract(p2p_database.Config{
-		EthereumNetworkHost:     conf.Ethereum.NetworkHost,
-		EthereumNetworkKey:      conf.Ethereum.NetworkKey,
-		EthereumContractAddress: conf.Ethereum.ContractAddress,
-	}, nil)
-
-	if err != nil {
-		return nil, errors.Wrap(err, "try create contract")
-	}
-
+func createKeyPublicKeyProvider(conf *config.Config, contract *p2p_database.EthSmartContract) (auth.KeyProviderPublicKey, error) {
 	return auth.NewEthKeyProvider(*contract, conf.Ethereum.WalletAddress, conf.Ethereum.WalletPrivateKey), nil
 }
 
@@ -218,8 +230,15 @@ func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {
 	return redis2.GetRedisClient(&conf.Redis)
 }
 
-func createStore(mainDatabase *p2p_database.DB, p2pDbConfig p2p_database.Config, nodeID livekit.NodeID, participantCounter *ParticipantCounter) ObjectStore {
-	return NewLocalStore(nodeID, p2pDbConfig, participantCounter, mainDatabase)
+func createStore(
+	mainDatabase *p2p_database.DB,
+	p2pDbConfig p2p_database.Config,
+	nodeID livekit2.NodeID,
+	participantCounter *ParticipantCounter,
+	conf *config.Config,
+	nodeProvider *NodeProvider,
+) ObjectStore {
+	return NewLocalStore(nodeID, p2pDbConfig, participantCounter, mainDatabase, nodeProvider)
 }
 
 func getMessageBus(rc redis.UniversalClient) psrpc.MessageBus {
@@ -229,7 +248,7 @@ func getMessageBus(rc redis.UniversalClient) psrpc.MessageBus {
 	return psrpc.NewRedisMessageBus(rc)
 }
 
-func getEgressClient(conf *config.Config, nodeID livekit.NodeID, bus psrpc.MessageBus) (rpc.EgressClient, error) {
+func getEgressClient(conf *config.Config, nodeID livekit2.NodeID, bus psrpc.MessageBus) (rpc.EgressClient, error) {
 	if conf.Egress.UsePsRPC {
 		return rpc.NewEgressClient(nodeID, bus)
 	}
