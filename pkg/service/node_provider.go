@@ -157,6 +157,15 @@ func (p *NodeProvider) Save(ctx context.Context, node Node) error {
 	return p.save(ctx, node)
 }
 
+func (p *NodeProvider) RemoveCurrentNode(ctx context.Context) error {
+	k := prefixKeyNode + p.db.GetHost().ID().String()
+	err := p.db.Remove(ctx, k)
+	if err != nil {
+		return errors.Wrap(err, "remove p2p key")
+	}
+	return nil
+}
+
 func (p *NodeProvider) Get(ctx context.Context, id string) (Node, error) {
 	var res Node
 

@@ -65,7 +65,7 @@ func (c *ClientProvider) ClientByAddress(ctx context.Context, address string) (C
 }
 
 func (c *ClientProvider) getFromDatabase(ctx context.Context, address string) (Client, error) {
-	key := databasePrefixClientKey + "_" + address
+	key := databasePrefixClientKey + address
 
 	row, err := c.mainDatabase.Get(ctx, key)
 	if err != nil {
@@ -100,7 +100,7 @@ func (c *ClientProvider) saveInDatabase(ctx context.Context, address string, cli
 		return errors.Wrap(err, "marshal record")
 	}
 
-	err = c.mainDatabase.Set(ctx, databasePrefixClientKey+"_"+address, string(marshaled))
+	err = c.mainDatabase.Set(ctx, databasePrefixClientKey+address, string(marshaled))
 	if err != nil {
 		return errors.Wrap(err, "database set record")
 	}

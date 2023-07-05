@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -13,7 +12,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-const prefixParticipantCounterKey = "participant_counter_"
+const prefixParticipantCounterKey = "participant-counter_"
 
 const (
 	intervalPingParticipantCounts = 5 * time.Second
@@ -21,26 +20,19 @@ const (
 )
 
 type ParticipantCounter struct {
-	mainDatabase      *p2p_database.DB
-	regularExpression *regexp.Regexp
-	lock              sync.Mutex
-	logger            *log.ZapEventLogger
+	mainDatabase *p2p_database.DB
+	lock         sync.Mutex
+	logger       *log.ZapEventLogger
 }
 
 func NewParticipantCounter(mainDatabase *p2p_database.DB, logger *log.ZapEventLogger) (*ParticipantCounter, error) {
-	regularExpression, err := regexp.Compile(`participant_counter_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)`)
-	if err != nil {
-		return nil, errors.Wrap(err, "regexp compile")
-	}
-
 	participantCounter := &ParticipantCounter{
-		mainDatabase:      mainDatabase,
-		lock:              sync.Mutex{},
-		regularExpression: regularExpression,
-		logger:            logger,
+		mainDatabase: mainDatabase,
+		lock:         sync.Mutex{},
+		logger:       logger,
 	}
 
-	err = participantCounter.refreshParticipantsTTL(context.Background())
+	err := participantCounter.refreshParticipantsTTL(context.Background())
 	if err != nil {
 		return nil, errors.Wrap(err, "start process refresh participants")
 	}
@@ -85,12 +77,14 @@ func (c *ParticipantCounter) GetCurrentValue(ctx context.Context, clientApiKey s
 
 	for _, k := range keys {
 		k = strings.TrimLeft(k, "/")
-
-		parts := c.regularExpression.FindStringSubmatch(k)
-		if len(parts) == 0 {
+		if !strings.HasPrefix(k, prefixParticipantCounterKey) {
 			continue
 		}
 
+		parts := strings.SplitN(k, "_", 4)
+		if len(parts) == 0 {
+			continue
+		}
 		if clientApiKey != parts[2] {
 			continue
 		}
@@ -99,6 +93,24 @@ func (c *ParticipantCounter) GetCurrentValue(ctx context.Context, clientApiKey s
 	}
 
 	return currentCounter, nil
+}
+
+func (c *ParticipantCounter) RemoveAllNodeKeys(ctx context.Context) error {
+	keys, err := c.mainDatabase.List(ctx)
+	if err != nil {
+		return errors.Wrap(err, "p2p list")
+	}
+	for _, k := range keys {
+		k = strings.TrimLeft("/", k)
+		if !strings.HasPrefix(k, c.generatePrefixNode()) {
+			continue
+		}
+		err = c.mainDatabase.Remove(ctx, k)
+		if err != nil {
+			c.logger.Errorw("remove key "+k, err)
+		}
+	}
+	return nil
 }
 
 func (c *ParticipantCounter) refreshParticipantsTTL(ctx context.Context) error {
@@ -131,6 +143,7 @@ func (c *ParticipantCounter) refreshParticipantsTTL(ctx context.Context) error {
 	return nil
 }
 
+// participant-counter_{nodeId}_{clientKey}_{participantId}
 func (c *ParticipantCounter) generateKey(clientApiKey, participantId string) string {
 	return c.generatePrefixNode() + clientApiKey + "_" + participantId
 }
