@@ -182,6 +182,31 @@ func (p *NodeProvider) Get(ctx context.Context, id string) (Node, error) {
 	return res, nil
 }
 
+func (p *NodeProvider) FindByIP(ctx context.Context, ip string) (Node, error) {
+	keys, err := p.db.List(ctx)
+	if err != nil {
+		return Node{}, errors.Wrap(err, "list keys")
+	}
+
+	for _, key := range keys {
+		if !strings.HasPrefix(key, "/"+prefixKeyNode) {
+			continue
+		}
+		nodeId := strings.TrimLeft(key, "/"+prefixKeyNode)
+
+		node, err := p.Get(ctx, nodeId)
+		if err != nil {
+			continue
+		}
+
+		if node.IP == ip {
+			return node, nil
+		}
+	}
+
+	return Node{}, errors.New("not found node")
+}
+
 func (p *NodeProvider) save(ctx context.Context, node Node) error {
 	k := prefixKeyNode + node.Id
 

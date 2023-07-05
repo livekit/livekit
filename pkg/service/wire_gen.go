@@ -49,8 +49,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	router := routing.CreateRouter(conf, universalClient, currentNode, signalClient)
-	p2p_databaseConfig := getDatabaseConfiguration(conf)
-	db, err := createMainDatabaseP2P(p2p_databaseConfig, conf)
+	p2p_databaseConfig := GetDatabaseConfiguration(conf)
+	db, err := CreateMainDatabaseP2P(p2p_databaseConfig, conf)
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +62,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	nodeProvider := createNodeProvider(reader, conf, db)
+	nodeProvider := CreateNodeProvider(reader, conf, db)
 	objectStore := createStore(db, p2p_databaseConfig, nodeID, participantCounter, conf, nodeProvider)
 	roomAllocator, err := NewRoomAllocator(conf, router, objectStore)
 	if err != nil {
@@ -156,7 +156,7 @@ func createGeoIP() (*geoip2.Reader, error) {
 	return geoip2.FromBytes(livekit.MixmindDatabase)
 }
 
-func createNodeProvider(geo *geoip2.Reader, config2 *config.Config, db *p2p_database.DB) *NodeProvider {
+func CreateNodeProvider(geo *geoip2.Reader, config2 *config.Config, db *p2p_database.DB) *NodeProvider {
 	return NewNodeProvider(db, geo, config2.LoggingP2P)
 }
 
@@ -182,7 +182,7 @@ func createParticipantCounter(mainDatabase *p2p_database.DB, conf *config.Config
 	return NewParticipantCounter(mainDatabase, conf.LoggingP2P)
 }
 
-func getDatabaseConfiguration(conf *config.Config) p2p_database.Config {
+func GetDatabaseConfiguration(conf *config.Config) p2p_database.Config {
 	return p2p_database.Config{
 		PeerListenPort:          conf.Ethereum.P2pNodePort,
 		EthereumNetworkHost:     conf.Ethereum.NetworkHost,
@@ -193,7 +193,7 @@ func getDatabaseConfiguration(conf *config.Config) p2p_database.Config {
 	}
 }
 
-func createMainDatabaseP2P(conf p2p_database.Config, c *config.Config) (*p2p_database.DB, error) {
+func CreateMainDatabaseP2P(conf p2p_database.Config, c *config.Config) (*p2p_database.DB, error) {
 	db, err := p2p_database.Connect(context.Background(), conf, c.LoggingP2P)
 	if err != nil {
 		return nil, errors.Wrap(err, "create main p2p db")
