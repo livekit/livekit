@@ -30,8 +30,8 @@ type Node struct {
 
 const (
 	weightEqualsCountries   = 1.0
-	weightParticipantsCount = -0.01
-	weightDistance          = -0.1
+	weightParticipantsCount = -0.1
+	weightDistance          = -0.001
 
 	intervalPingNode = 5 * time.Second
 	deadlinePingNode = 30 * time.Second
