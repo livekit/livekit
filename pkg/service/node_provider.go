@@ -30,8 +30,8 @@ type Node struct {
 
 const (
 	weightEqualsCountries   = 1.0
-	weightParticipantsCount = -0.01
-	weightDistance          = -0.1
+	weightParticipantsCount = -0.1
+	weightDistance          = -0.001
 
 	intervalPingNode = 5 * time.Second
 	deadlinePingNode = 30 * time.Second
@@ -157,6 +157,15 @@ func (p *NodeProvider) Save(ctx context.Context, node Node) error {
 	return p.save(ctx, node)
 }
 
+func (p *NodeProvider) RemoveCurrentNode(ctx context.Context) error {
+	k := prefixKeyNode + p.db.GetHost().ID().String()
+	err := p.db.Remove(ctx, k)
+	if err != nil {
+		return errors.Wrap(err, "remove p2p key")
+	}
+	return nil
+}
+
 func (p *NodeProvider) Get(ctx context.Context, id string) (Node, error) {
 	var res Node
 
@@ -171,6 +180,31 @@ func (p *NodeProvider) Get(ctx context.Context, id string) (Node, error) {
 	}
 
 	return res, nil
+}
+
+func (p *NodeProvider) FindByIP(ctx context.Context, ip string) (Node, error) {
+	keys, err := p.db.List(ctx)
+	if err != nil {
+		return Node{}, errors.Wrap(err, "list keys")
+	}
+
+	for _, key := range keys {
+		if !strings.HasPrefix(key, "/"+prefixKeyNode) {
+			continue
+		}
+		nodeId := strings.TrimLeft(key, "/"+prefixKeyNode)
+
+		node, err := p.Get(ctx, nodeId)
+		if err != nil {
+			continue
+		}
+
+		if node.IP == ip {
+			return node, nil
+		}
+	}
+
+	return Node{}, errors.New("not found node")
 }
 
 func (p *NodeProvider) save(ctx context.Context, node Node) error {

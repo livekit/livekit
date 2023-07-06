@@ -351,6 +351,16 @@ func (s *LivekitServer) Start() error {
 }
 
 func (s *LivekitServer) Stop(force bool) {
+	err := s.participantCounter.RemoveAllNodeKeys(context.Background())
+	if err != nil {
+		logger.Errorw("cannot remove all nodes participant counter keys", err)
+	}
+
+	err = s.nodeProvider.RemoveCurrentNode(context.Background())
+	if err != nil {
+		logger.Errorw("remove current node from db", err)
+	}
+
 	// wait for all participants to exit
 	s.router.Drain()
 	partTicker := time.NewTicker(5 * time.Second)

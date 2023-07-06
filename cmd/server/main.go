@@ -159,6 +159,18 @@ func main() {
 				Action: listNodes,
 			},
 			{
+				Name:   "relevant-node",
+				Usage:  "fetch relevant node from p2p network",
+				Action: relevantNode,
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:     "client-ip",
+						Usage:    "client ip",
+						Required: true,
+					},
+				},
+			},
+			{
 				Name:   "help-verbose",
 				Usage:  "prints app help, including all generated configuration flags",
 				Action: helpVerbose,

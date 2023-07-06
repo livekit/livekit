@@ -31,7 +31,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	wire.Build(
 		getNodeID,
 		createRedisClient,
-		getDatabaseConfiguration,
+		GetDatabaseConfiguration,
 		createStore,
 		wire.Bind(new(ServiceStore), new(ObjectStore)),
 		createKeyProvider,
@@ -41,7 +41,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		routing.CreateRouter,
 		getRoomConf,
 		config.DefaultAPIConfig,
-		createMainDatabaseP2P,
+		CreateMainDatabaseP2P,
 		createParticipantCounter,
 		//wire.Bind(new(MainP2PDatabase), new(*p2p_database.DB)),
 		wire.Bind(new(routing.MessageRouter), new(routing.Router)),
@@ -71,7 +71,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		createSmartContractClient,
 		createClientProvider,
 		createGeoIP,
-		createNodeProvider,
+		CreateNodeProvider,
 		createRelevantNodesHandler,
 		NewLivekitServer,
 	)
@@ -99,7 +99,7 @@ func createGeoIP() (*geoip2.Reader, error) {
 	return geoip2.FromBytes(livekit2.MixmindDatabase)
 }
 
-func createNodeProvider(geo *geoip2.Reader, config *config.Config, db *p2p_database.DB) *NodeProvider {
+func CreateNodeProvider(geo *geoip2.Reader, config *config.Config, db *p2p_database.DB) *NodeProvider {
 	return NewNodeProvider(db, geo, config.LoggingP2P)
 }
 
@@ -125,7 +125,7 @@ func createParticipantCounter(mainDatabase *p2p_database.DB, conf *config.Config
 	return NewParticipantCounter(mainDatabase, conf.LoggingP2P)
 }
 
-func getDatabaseConfiguration(conf *config.Config) p2p_database.Config {
+func GetDatabaseConfiguration(conf *config.Config) p2p_database.Config {
 	return p2p_database.Config{
 		PeerListenPort:          conf.Ethereum.P2pNodePort,
 		EthereumNetworkHost:     conf.Ethereum.NetworkHost,
@@ -136,7 +136,7 @@ func getDatabaseConfiguration(conf *config.Config) p2p_database.Config {
 	}
 }
 
-func createMainDatabaseP2P(conf p2p_database.Config, c *config.Config) (*p2p_database.DB, error) {
+func CreateMainDatabaseP2P(conf p2p_database.Config, c *config.Config) (*p2p_database.DB, error) {
 	db, err := p2p_database.Connect(context.Background(), conf, c.LoggingP2P)
 	if err != nil {
 		return nil, errors.Wrap(err, "create main p2p db")

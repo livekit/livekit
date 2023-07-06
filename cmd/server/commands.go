@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -8,7 +9,10 @@ import (
 	"time"
 
 	"github.com/dustin/go-humanize"
+	livekit2 "github.com/livekit/livekit-server"
 	"github.com/olekukonko/tablewriter"
+	"github.com/oschwald/geoip2-golang"
+	"github.com/pkg/errors"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
 
@@ -144,6 +148,35 @@ func createToken(c *cli.Context) error {
 	return nil
 }
 
+func relevantNode(c *cli.Context) error {
+	conf, err := getConfig(c)
+	if err != nil {
+		return errors.Wrap(err, "get config")
+	}
+
+	databaseConfig := service.GetDatabaseConfiguration(conf)
+	db, err := service.CreateMainDatabaseP2P(databaseConfig, conf)
+	if err != nil {
+		return errors.Wrap(err, "connect main db")
+	}
+	geoIp, err := geoip2.FromBytes(livekit2.MixmindDatabase)
+	if err != nil {
+		return errors.Wrap(err, "create mixmind")
+	}
+	nodeProvider := service.CreateNodeProvider(geoIp, conf, db)
+
+	clientIP := c.String("client-ip")
+
+	fmt.Printf("Search relevant node for %s\r\n", clientIP)
+	n, err := nodeProvider.FetchRelevant(context.Background(), clientIP)
+	if err != nil {
+		return errors.Wrap(err, "fetch relevant")
+	}
+
+	fmt.Printf("Relevant node is %v\r\n", n)
+	return nil
+}
+
 func listNodes(c *cli.Context) error {
 	conf, err := getConfig(c)
 	if err != nil {
@@ -165,6 +198,14 @@ func listNodes(c *cli.Context) error {
 		return err
 	}
 
+	databaseConfig := service.GetDatabaseConfiguration(conf)
+	db, err := service.CreateMainDatabaseP2P(databaseConfig, conf)
+	geoIp, err := geoip2.FromBytes(livekit2.MixmindDatabase)
+	if err != nil {
+		panic(err)
+	}
+	nodeProvider := service.CreateNodeProvider(geoIp, conf, db)
+
 	table := tablewriter.NewWriter(os.Stdout)
 	table.SetRowLine(true)
 	table.SetAutoWrapText(false)
@@ -175,6 +216,7 @@ func listNodes(c *cli.Context) error {
 		"Rooms", "Clients\nTracks In/Out",
 		"Bytes/s In/Out\nBytes Total", "Packets/s In/Out\nPackets Total", "System Dropped Pkts/s\nPkts/s Out/Dropped",
 		"Nack/s\nNack Total", "Retrans/s\nRetrans Total",
+		"Country", "Coordinates", "Participants", "Domain",
 		"Started At\nUpdated At",
 	})
 	table.SetColumnAlignment([]int{
@@ -184,6 +226,7 @@ func listNodes(c *cli.Context) error {
 		tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT,
 		tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT,
 		tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT,
+		tablewriter.ALIGN_CENTER, tablewriter.ALIGN_CENTER, tablewriter.ALIGN_CENTER, tablewriter.ALIGN_CENTER,
 		tablewriter.ALIGN_CENTER,
 	})
 
@@ -216,6 +259,14 @@ func listNodes(c *cli.Context) error {
 		startedAndUpdated := fmt.Sprintf("%s\n%s", time.Unix(stats.StartedAt, 0).UTC().UTC().Format("2006-01-02 15:04:05"),
 			time.Unix(stats.UpdatedAt, 0).UTC().Format("2006-01-02 15:04:05"))
 
+		var coordinates, participants string
+		n, err := nodeProvider.Get(context.Background(), node.Id)
+		if err != nil {
+			n, _ = nodeProvider.FindByIP(context.Background(), node.Ip)
+		}
+		coordinates = fmt.Sprintf("%f - %f", n.Longitude, n.Latitude)
+		participants = fmt.Sprintf("%d", n.Participants)
+
 		table.Append([]string{
 			idAndState, node.Ip, node.Region,
 			cpus, cpuUsageAndLoadAvg,
@@ -223,6 +274,7 @@ func listNodes(c *cli.Context) error {
 			rooms, clientsAndTracks,
 			bytes, packets, sysPackets,
 			nacks, retransmit,
+			n.Country, coordinates, participants, n.Domain,
 			startedAndUpdated,
 		})
 	}
