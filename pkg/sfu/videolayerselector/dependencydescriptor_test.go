@@ -4,11 +4,12 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/pion/rtp"
+	"github.com/stretchr/testify/require"
+
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
 	"github.com/livekit/protocol/logger"
-	"github.com/pion/rtp"
-	"github.com/stretchr/testify/require"
 )
 
 func TestDecodeTarget(t *testing.T) {
@@ -124,7 +125,7 @@ func TestDependencyDescriptor(t *testing.T) {
 	// no dd ext, dropped
 	ret := ddSelector.Select(&buffer.ExtPacket{}, 0)
 	require.False(t, ret.IsSelected)
-	require.False(t, ret.IsRelevant)
+	require.True(t, ret.IsRelevant)
 
 	// non key frame, dropped
 	ret = ddSelector.Select(&buffer.ExtPacket{
