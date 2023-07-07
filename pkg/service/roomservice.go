@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 )
 
@@ -273,20 +275,24 @@ func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.Update
 	}
 
 	var participant *livekit.ParticipantInfo
+	var detailedError error
 	err = s.confirmExecution(func() error {
 		participant, err = s.roomStore.LoadParticipant(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity))
 		if err != nil {
 			return err
 		}
 		if req.Metadata != "" && participant.Metadata != req.Metadata {
+			detailedError = fmt.Errorf("metadata does not match")
 			return ErrOperationFailed
 		}
 		if req.Permission != nil && !proto.Equal(req.Permission, participant.Permission) {
+			detailedError = fmt.Errorf("permissions do not match, expected: %v, actual: %v", req.Permission, participant.Permission)
 			return ErrOperationFailed
 		}
 		return nil
 	})
 	if err != nil {
+		logger.Warnw("could not confirm participant update", detailedError)
 		return nil, err
 	}
 
