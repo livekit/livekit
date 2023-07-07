@@ -5,7 +5,7 @@ go 1.18
 replace github.com/livekit/protocol v1.5.4 => github.com/dTelecom/protocol v1.0.11
 
 //replace github.com/livekit/protocol => /var/www/dtelekom/protocol
-//replace github.com/dTelecom/p2p-realtime-database => /var/www/dtelekom/p2p-database
+replace github.com/dTelecom/p2p-realtime-database => /var/www/dtelekom/p2p-database
 
 require (
 	github.com/bep/debounce v1.2.1

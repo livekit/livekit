@@ -171,6 +171,11 @@ func main() {
 				},
 			},
 			{
+				Name:   "list-p2p-nodes",
+				Usage:  "list p2p nodes",
+				Action: listP2pNodes,
+			},
+			{
 				Name:   "help-verbose",
 				Usage:  "prints app help, including all generated configuration flags",
 				Action: helpVerbose,

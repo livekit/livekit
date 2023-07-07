@@ -32,6 +32,73 @@ func generateKeys(_ *cli.Context) error {
 	return nil
 }
 
+func listP2pNodes(c *cli.Context) error {
+	conf, err := getConfig(c)
+	if err != nil {
+		return errors.Wrap(err, "get config")
+	}
+
+	databaseConfig := service.GetDatabaseConfiguration(conf)
+	db, err := service.CreateMainDatabaseP2P(databaseConfig, conf)
+	if err != nil {
+		return errors.Wrap(err, "connect main db")
+	}
+	geoIp, err := geoip2.FromBytes(livekit2.MixmindDatabase)
+	if err != nil {
+		return errors.Wrap(err, "create mixmind")
+	}
+	nodeProvider := service.CreateNodeProvider(geoIp, conf, db)
+	nodes, err := nodeProvider.List(context.Background())
+	if err != nil {
+		return errors.Wrap(err, "list nodes")
+	}
+
+	fmt.Println("Waiting p2p database sync")
+	time.Sleep(5 * time.Second)
+	fmt.Println("Done waiting p2p database sync")
+
+	table := tablewriter.NewWriter(os.Stdout)
+	table.SetRowLine(true)
+	table.SetAutoWrapText(false)
+	table.SetHeader([]string{
+		"ID",
+		"Participants",
+		"Domain",
+		"IP",
+		"Country",
+		"Latitude",
+		"Longitude",
+		"CreatedAt",
+	})
+
+	table.SetColumnAlignment([]int{
+		tablewriter.ALIGN_CENTER,
+		tablewriter.ALIGN_CENTER,
+		tablewriter.ALIGN_CENTER,
+		tablewriter.ALIGN_CENTER,
+		tablewriter.ALIGN_CENTER,
+		tablewriter.ALIGN_CENTER,
+		tablewriter.ALIGN_CENTER,
+		tablewriter.ALIGN_CENTER,
+	})
+
+	for _, node := range nodes {
+		table.Append([]string{
+			node.Id,
+			fmt.Sprintf("%d", node.Participants),
+			node.Domain,
+			node.IP,
+			node.Country,
+			fmt.Sprintf("%f", node.Latitude),
+			fmt.Sprintf("%f", node.Longitude),
+			node.CreatedAt.Format(time.RFC3339),
+		})
+	}
+
+	table.Render()
+	return nil
+}
+
 func printPorts(c *cli.Context) error {
 	conf, err := getConfig(c)
 	if err != nil {
