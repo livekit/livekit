@@ -5,12 +5,12 @@ go 1.18
 replace github.com/livekit/protocol v1.5.4 => github.com/dTelecom/protocol v1.0.11
 
 //replace github.com/livekit/protocol => /var/www/dtelekom/protocol
-replace github.com/dTelecom/p2p-realtime-database => /var/www/dtelekom/p2p-database
+//replace github.com/dTelecom/p2p-realtime-database => /var/www/dtelekom/p2p-database
 
 require (
 	github.com/bep/debounce v1.2.1
 	github.com/d5/tengo/v2 v2.14.0
-	github.com/dTelecom/p2p-realtime-database v1.0.13-0.20230704141502-97657aa18aa3
+	github.com/dTelecom/p2p-realtime-database v1.0.13-0.20230707024606-56f7ecbb73c5
 	github.com/dustin/go-humanize v1.0.1
 	github.com/elliotchance/orderedmap/v2 v2.2.0
 	github.com/ethereum/go-ethereum v1.11.6

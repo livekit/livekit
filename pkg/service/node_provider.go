@@ -68,7 +68,8 @@ func (p *NodeProvider) List(ctx context.Context) ([]Node, error) {
 		nodeId := strings.TrimLeft(k, "/"+prefixKeyNode)
 		node, err := p.Get(ctx, nodeId)
 		if err != nil {
-			return []Node{}, errors.Wrap(err, "get node by id")
+			p.logger.Errorw("key not found "+k, err)
+			continue
 		}
 		nodes = append(nodes, node)
 	}
