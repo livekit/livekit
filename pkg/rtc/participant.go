@@ -370,6 +370,8 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 		return false
 	}
 
+	p.GetLogger().Infow("updating participant permission", "permission", permission)
+
 	video.UpdateFromPermission(permission)
 	p.dirty.Store(true)
 
