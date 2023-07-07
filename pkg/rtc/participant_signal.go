@@ -86,6 +86,10 @@ func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.
 				isValid = false
 			}
 		}
+		if pi.Permission != nil && pi.Permission.Hidden && pi.Sid != string(p.params.SID) {
+			p.params.Logger.Debugw("skipping hidden participant update", "otherParticipant", pi.Identity)
+			isValid = false
+		}
 		if isValid {
 			p.updateCache.Add(pID, participantUpdateInfo{version: pi.Version, state: pi.State, updatedAt: time.Now()})
 			validUpdates = append(validUpdates, pi)
