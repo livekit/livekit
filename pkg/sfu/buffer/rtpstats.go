@@ -22,6 +22,8 @@ const (
 	FirstSnapshotId     = 1
 	SnInfoSize          = 8192
 	SnInfoMask          = SnInfoSize - 1
+
+	minDurationForSampleRateCalculation = 15 * time.Second
 )
 
 // -------------------------------------------------------
@@ -914,12 +916,14 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srFirst *RTCPSenderReportDat
 	if srFirst != nil && srNewest != nil && srFirst.RTPTimestamp != srNewest.RTPTimestamp {
 		// use incoming rate as a guide
 		tsf := srNewest.NTPTimestamp.Time().Sub(srFirst.NTPTimestamp.Time())
-		rdsf := srNewest.RTPTimestampExt - srFirst.RTPTimestampExt
-		sr := float64(rdsf) / tsf.Seconds()
-		nowRTPExtUsingRate := r.extStartTS + uint64(sr*timeSinceFirst.Seconds())
-		if nowRTPExtUsingRate > nowRTPExt {
-			nowRTPExt = nowRTPExtUsingRate
-			nowRTP = uint32(nowRTPExtUsingRate)
+		if tsf >= minDurationForSampleRateCalculation {
+			rdsf := srNewest.RTPTimestampExt - srFirst.RTPTimestampExt
+			sr := float64(rdsf) / tsf.Seconds()
+			nowRTPExtUsingRate := r.extStartTS + uint64(sr*timeSinceFirst.Seconds())
+			if nowRTPExtUsingRate > nowRTPExt {
+				nowRTPExt = nowRTPExtUsingRate
+				nowRTP = uint32(nowRTPExtUsingRate)
+			}
 		}
 	}
 
