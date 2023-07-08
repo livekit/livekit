@@ -625,14 +625,13 @@ func (p *ParticipantImpl) removeMutedTrackNotFired(mt *MediaTrack) {
 // AddTrack is called when client intends to publish track.
 // records track details and lets client know it's ok to proceed
 func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	if !p.grants.Video.GetCanPublishSource(req.Source) {
+	if !p.CanPublishSource(req.Source) {
 		p.params.Logger.Warnw("no permission to publish track", nil)
 		return
 	}
 
+	p.lock.Lock()
+	defer p.lock.Unlock()
 	ti := p.addPendingTrackLocked(req)
 	if ti == nil {
 		return
