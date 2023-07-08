@@ -1536,7 +1536,7 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 	}
 }
 
-func (d *DownTrack) getExpectedRTPTimestamp(at time.Time) (uint32, uint64, error) {
+func (d *DownTrack) getExpectedRTPTimestamp(at time.Time) (uint64, uint64, bool, error) {
 	return d.rtpStats.GetExpectedRTPTimestamp(at)
 }
 
