@@ -57,6 +57,26 @@ func NewNodeProvider(db *p2p_database.DB, geo *geoip2.Reader, logger *log.ZapEve
 	return provider
 }
 
+func (p *NodeProvider) List(ctx context.Context) ([]Node, error) {
+	keys, err := p.db.List(ctx)
+	if err != nil {
+		return []Node{}, errors.Wrap(err, "list keys")
+	}
+
+	var nodes []Node
+	for _, k := range keys {
+		nodeId := strings.TrimLeft(k, "/"+prefixKeyNode)
+		node, err := p.Get(ctx, nodeId)
+		if err != nil {
+			p.logger.Errorw("key not found "+k, err)
+			continue
+		}
+		nodes = append(nodes, node)
+	}
+
+	return nodes, nil
+}
+
 func (p *NodeProvider) FetchRelevant(ctx context.Context, clientIP string) (Node, error) {
 	keys, err := p.db.List(ctx)
 	if err != nil {
