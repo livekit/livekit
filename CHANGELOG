@@ -24,7 +24,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Changed
 - Improvements to A/V sync (#1773 #1781 #1784 )
 - Improved probing to be less disruptive in low bandwidth scenarios (#1782 #1834 #1839)
-- Do not mute forwarder when paused to bandwidth congestion. (#1796)
+- Do not mute forwarder when paused due to bandwidth congestion. (#1796)
 - Improvements to congestion controller (#1800 #1802 )
 - Close participant on full reconnect. (#1818)
 - Do not process events after participant close. (#1824)
