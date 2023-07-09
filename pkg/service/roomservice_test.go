@@ -17,7 +17,7 @@ import (
 )
 
 func TestDeleteRoom(t *testing.T) {
-	t.Run("normal deletion", func(t *testing.T) {
+	t.Run("delete non-existent", func(t *testing.T) {
 		svc := newTestRoomService(config.RoomConfig{})
 		grant := &auth.ClaimGrants{
 			Video: &auth.VideoGrant{
@@ -29,7 +29,12 @@ func TestDeleteRoom(t *testing.T) {
 		_, err := svc.DeleteRoom(ctx, &livekit.DeleteRoomRequest{
 			Room: "testroom",
 		})
-		require.NoError(t, err)
+		require.Error(t, err)
+		if terr, ok := err.(twirp.Error); ok {
+			require.Equal(t, twirp.NotFound, terr.Code())
+		} else {
+			require.Fail(t, "should be twirp error")
+		}
 	})
 
 	t.Run("missing permissions", func(t *testing.T) {
