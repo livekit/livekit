@@ -217,7 +217,7 @@ func getConfig(c *cli.Context) (*config.Config, error) {
 				// our IP discovery ignores loopback addresses
 				for _, addr := range conf.BindAddresses {
 					ip := net.ParseIP(addr)
-					if ip != nil && !ip.IsLoopback() {
+					if ip != nil && !ip.IsLoopback() && !ip.IsUnspecified() {
 						shouldMatchRTCIP = true
 					}
 				}
