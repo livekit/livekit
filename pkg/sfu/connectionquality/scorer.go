@@ -185,18 +185,19 @@ func (q *qualityScorer) Start(at time.Time) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
 
-	q.lastUpdateAt = at
+	q.lastUpdateAt = getTime(at)
 }
 
 func (q *qualityScorer) UpdateMute(isMuted bool, at time.Time) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
 
+	when := getTime(at)
 	if isMuted {
-		q.mutedAt = at
+		q.mutedAt = when
 		q.score = maxScore
 	} else {
-		q.unmutedAt = at
+		q.unmutedAt = when
 	}
 }
 
@@ -204,16 +205,17 @@ func (q *qualityScorer) AddBitrateTransition(bitrate int64, at time.Time) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
 
-	q.aggregateBitrate.AddSampleAt(bitrate, at)
+	when := getTime(at)
+	q.aggregateBitrate.AddSampleAt(bitrate, when)
 
 	if bitrate == 0 {
 		if !q.isLayerMuted() {
-			q.layerMutedAt = at
+			q.layerMutedAt = when
 			q.score = maxScore
 		}
 	} else {
 		if q.isLayerMuted() {
-			q.layerUnmutedAt = at
+			q.layerUnmutedAt = when
 		}
 	}
 }
@@ -222,16 +224,17 @@ func (q *qualityScorer) UpdateLayerMute(isMuted bool, at time.Time) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
 
+	when := getTime(at)
 	if isMuted {
 		if !q.isLayerMuted() {
-			q.aggregateBitrate.AddSampleAt(0, at)
-			q.layerDistance.AddSampleAt(0, at)
-			q.layerMutedAt = at
+			q.aggregateBitrate.AddSampleAt(0, when)
+			q.layerDistance.AddSampleAt(0, when)
+			q.layerMutedAt = when
 			q.score = maxScore
 		}
 	} else {
 		if q.isLayerMuted() {
-			q.layerUnmutedAt = at
+			q.layerUnmutedAt = when
 		}
 	}
 }
@@ -240,23 +243,21 @@ func (q *qualityScorer) AddLayerTransition(distance float64, at time.Time) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
 
-	q.layerDistance.AddSampleAt(distance, at)
+	q.layerDistance.AddSampleAt(distance, getTime(at))
 }
 
 func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
 
-	if at.IsZero() {
-		at = time.Now()
-	}
+	when := getTime(at)
 
 	// always update transitions
-	expectedBitrate, _, err := q.aggregateBitrate.GetAggregateAndRestartAt(at)
+	expectedBitrate, _, err := q.aggregateBitrate.GetAggregateAndRestartAt(when)
 	if err != nil {
 		q.params.Logger.Warnw("error getting expected bitrate", err)
 	}
-	expectedDistance, err := q.layerDistance.GetAverageAndRestartAt(at)
+	expectedDistance, err := q.layerDistance.GetAverageAndRestartAt(when)
 	if err != nil {
 		q.params.Logger.Warnw("error getting expected distance", err)
 	}
@@ -267,8 +268,8 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 	//       to stable and quality EXCELLENT for responsiveness. On an unmute, the
 	//       entire window data is considered (as long as enough time has passed since
 	//       unmute) including the data before mute.
-	if q.isMuted() || !q.isUnmutedEnough(at) || q.isLayerMuted() {
-		q.lastUpdateAt = at
+	if q.isMuted() || !q.isUnmutedEnough(when) || q.isLayerMuted() {
+		q.lastUpdateAt = when
 		return
 	}
 
@@ -332,7 +333,7 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 
 	q.score = score
 	q.stat = *stat
-	q.lastUpdateAt = at
+	q.lastUpdateAt = when
 }
 
 func (q *qualityScorer) isMuted() bool {
@@ -443,3 +444,11 @@ func scoreToMOS(score float64) float32 {
 }
 
 // ------------------------------------------
+
+func getTime(at time.Time) time.Time {
+	if at.IsZero() {
+		return time.Now()
+	}
+
+	return at
+}
