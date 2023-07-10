@@ -396,7 +396,7 @@ func (d *DownTrack) TrackInfoAvailable() {
 	if ti == nil {
 		return
 	}
-	d.connectionStats.Start(ti, time.Now())
+	d.connectionStats.Start(ti)
 }
 
 func (d *DownTrack) SetStreamAllocatorListener(listener DownTrackStreamAllocatorListener) {
@@ -740,7 +740,7 @@ func (d *DownTrack) handleMute(muted bool, isPub bool, changed bool, maxLayer bu
 		return
 	}
 
-	d.connectionStats.UpdateMute(d.forwarder.IsAnyMuted(), time.Now())
+	d.connectionStats.UpdateMute(d.forwarder.IsAnyMuted())
 
 	//
 	// Subscriber mute changes trigger a max layer notification.
@@ -955,7 +955,7 @@ func (d *DownTrack) maybeAddTransition(_bitrate int64, distance float64) {
 		return
 	}
 
-	d.connectionStats.AddLayerTransition(distance, time.Now())
+	d.connectionStats.AddLayerTransition(distance)
 }
 
 func (d *DownTrack) UpTrackBitrateReport(availableLayers []int32, bitrates Bitrates) {

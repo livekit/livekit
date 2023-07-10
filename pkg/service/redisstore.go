@@ -246,9 +246,9 @@ func (s *RedisStore) LockRoom(_ context.Context, roomName livekit.RoomName, dura
 	return "", ErrRoomLockFailed
 }
 
-func (s *RedisStore) UnlockRoom(ctx context.Context, roomName livekit.RoomName, uid string) error {
+func (s *RedisStore) UnlockRoom(_ context.Context, roomName livekit.RoomName, uid string) error {
 	key := RoomLockPrefix + string(roomName)
-	res, err := s.unlockScript.Run(ctx, s.rc, []string{key}, uid).Result()
+	res, err := s.unlockScript.Run(s.ctx, s.rc, []string{key}, uid).Result()
 	if err != nil {
 		return err
 	}
@@ -708,7 +708,7 @@ func (s *RedisStore) LoadIngressFromStreamKey(_ context.Context, streamKey strin
 	}
 }
 
-func (s *RedisStore) ListIngress(ctx context.Context, roomName livekit.RoomName) ([]*livekit.IngressInfo, error) {
+func (s *RedisStore) ListIngress(_ context.Context, roomName livekit.RoomName) ([]*livekit.IngressInfo, error) {
 	var infos []*livekit.IngressInfo
 
 	if roomName == "" {
