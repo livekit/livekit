@@ -279,7 +279,7 @@ func (cs *ConnectionStats) updateStatsWorker() {
 				return
 			}
 
-			cs.getStat(time.Now())
+			cs.getStat(time.Time{})
 		}
 	}
 }

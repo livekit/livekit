@@ -247,6 +247,10 @@ func (q *qualityScorer) Update(stat *windowStat, at time.Time) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
 
+	if at.IsZero() {
+		at = time.Now()
+	}
+
 	// always update transitions
 	expectedBitrate, _, err := q.aggregateBitrate.GetAggregateAndRestartAt(at)
 	if err != nil {
