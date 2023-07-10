@@ -60,16 +60,27 @@ func NewConnectionStats(params ConnectionStatsParams) *ConnectionStats {
 	}
 }
 
-func (cs *ConnectionStats) Start(trackInfo *livekit.TrackInfo, at time.Time) {
+func (cs *ConnectionStats) start(trackInfo *livekit.TrackInfo) {
+	cs.isVideo.Store(trackInfo.Type == livekit.TrackType_VIDEO)
+	go cs.updateStatsWorker()
+}
+
+func (cs *ConnectionStats) StartAt(trackInfo *livekit.TrackInfo, at time.Time) {
 	if cs.isStarted.Swap(true) {
 		return
 	}
 
-	cs.isVideo.Store(trackInfo.Type == livekit.TrackType_VIDEO)
+	cs.scorer.StartAt(at)
+	cs.start(trackInfo)
+}
 
-	cs.scorer.Start(at)
+func (cs *ConnectionStats) Start(trackInfo *livekit.TrackInfo) {
+	if cs.isStarted.Swap(true) {
+		return
+	}
 
-	go cs.updateStatsWorker()
+	cs.scorer.Start()
+	cs.start(trackInfo)
 }
 
 func (cs *ConnectionStats) Close() {
@@ -80,36 +91,68 @@ func (cs *ConnectionStats) OnStatsUpdate(fn func(cs *ConnectionStats, stat *live
 	cs.onStatsUpdate = fn
 }
 
-func (cs *ConnectionStats) UpdateMute(isMuted bool, at time.Time) {
+func (cs *ConnectionStats) UpdateMuteAt(isMuted bool, at time.Time) {
 	if cs.done.IsBroken() {
 		return
 	}
 
-	cs.scorer.UpdateMute(isMuted, at)
+	cs.scorer.UpdateMuteAt(isMuted, at)
 }
 
-func (cs *ConnectionStats) AddBitrateTransition(bitrate int64, at time.Time) {
+func (cs *ConnectionStats) UpdateMute(isMuted bool) {
 	if cs.done.IsBroken() {
 		return
 	}
 
-	cs.scorer.AddBitrateTransition(bitrate, at)
+	cs.scorer.UpdateMute(isMuted)
 }
 
-func (cs *ConnectionStats) UpdateLayerMute(isMuted bool, at time.Time) {
+func (cs *ConnectionStats) AddBitrateTransitionAt(bitrate int64, at time.Time) {
 	if cs.done.IsBroken() {
 		return
 	}
 
-	cs.scorer.UpdateLayerMute(isMuted, at)
+	cs.scorer.AddBitrateTransitionAt(bitrate, at)
 }
 
-func (cs *ConnectionStats) AddLayerTransition(distance float64, at time.Time) {
+func (cs *ConnectionStats) AddBitrateTransition(bitrate int64) {
 	if cs.done.IsBroken() {
 		return
 	}
 
-	cs.scorer.AddLayerTransition(distance, at)
+	cs.scorer.AddBitrateTransition(bitrate)
+}
+
+func (cs *ConnectionStats) UpdateLayerMuteAt(isMuted bool, at time.Time) {
+	if cs.done.IsBroken() {
+		return
+	}
+
+	cs.scorer.UpdateLayerMuteAt(isMuted, at)
+}
+
+func (cs *ConnectionStats) UpdateLayerMute(isMuted bool) {
+	if cs.done.IsBroken() {
+		return
+	}
+
+	cs.scorer.UpdateLayerMute(isMuted)
+}
+
+func (cs *ConnectionStats) AddLayerTransitionAt(distance float64, at time.Time) {
+	if cs.done.IsBroken() {
+		return
+	}
+
+	cs.scorer.AddLayerTransitionAt(distance, at)
+}
+
+func (cs *ConnectionStats) AddLayerTransition(distance float64) {
+	if cs.done.IsBroken() {
+		return
+	}
+
+	cs.scorer.AddLayerTransition(distance)
 }
 
 func (cs *ConnectionStats) GetScoreAndQuality() (float32, livekit.ConnectionQuality) {
@@ -129,7 +172,11 @@ func (cs *ConnectionStats) updateScoreWithAggregate(agg *buffer.RTPDeltaInfo, at
 		stat.rttMax = agg.RttMax
 		stat.jitterMax = agg.JitterMax
 	}
-	cs.scorer.Update(&stat, at)
+	if at.IsZero() {
+		cs.scorer.Update(&stat)
+	} else {
+		cs.scorer.UpdateAt(&stat, at)
+	}
 
 	mos, _ := cs.scorer.GetMOSAndQuality()
 	return mos
@@ -182,7 +229,7 @@ func (cs *ConnectionStats) updateScoreFromReceiverReport(at time.Time) (float32,
 	return cs.updateScoreWithAggregate(agg, at), streams
 }
 
-func (cs *ConnectionStats) updateScore(at time.Time) (float32, map[uint32]*buffer.StreamStatsWithLayers) {
+func (cs *ConnectionStats) updateScoreAt(at time.Time) (float32, map[uint32]*buffer.StreamStatsWithLayers) {
 	if cs.params.GetDeltaStats == nil {
 		return MinMOS, nil
 	}
@@ -227,8 +274,8 @@ func (cs *ConnectionStats) clearStreamingStart() {
 	cs.lock.Unlock()
 }
 
-func (cs *ConnectionStats) getStat(at time.Time) {
-	score, streams := cs.updateScore(at)
+func (cs *ConnectionStats) getStat() {
+	score, streams := cs.updateScoreAt(time.Time{})
 
 	if cs.onStatsUpdate != nil && len(streams) != 0 {
 		analyticsStreams := make([]*livekit.AnalyticsStream, 0, len(streams))
@@ -279,7 +326,7 @@ func (cs *ConnectionStats) updateStatsWorker() {
 				return
 			}
 
-			cs.getStat(time.Now())
+			cs.getStat()
 		}
 	}
 }

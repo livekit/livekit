@@ -127,6 +127,11 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 	if err := EnsureCreatePermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
+
+	if _, _, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false); err == ErrRoomNotFound {
+		return nil, twirp.NotFoundError("room not found")
+	}
+
 	err := s.router.WriteRoomRTC(ctx, livekit.RoomName(req.Room), &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_DeleteRoom{
 			DeleteRoom: req,
@@ -187,6 +192,11 @@ func (s *RoomService) GetParticipant(ctx context.Context, req *livekit.RoomParti
 
 func (s *RoomService) RemoveParticipant(ctx context.Context, req *livekit.RoomParticipantIdentity) (*livekit.RemoveParticipantResponse, error) {
 	AppendLogFields(ctx, "room", req.Room, "participant", req.Identity)
+
+	if _, err := s.roomStore.LoadParticipant(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)); err == ErrParticipantNotFound {
+		return nil, twirp.NotFoundError("participant not found")
+	}
+
 	err := s.writeParticipantMessage(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity), &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_RemoveParticipant{
 			RemoveParticipant: req,
