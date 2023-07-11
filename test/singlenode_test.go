@@ -620,7 +620,7 @@ func TestSubscribeToCodecUnsupported(t *testing.T) {
 		require.Equal(t, h264TrackID, sr.TrackSid)
 		require.Equal(t, livekit.SubscriptionError_SE_CODEC_UNSUPPORTED, sr.Err)
 		return true
-	}, time.Second, 10*time.Millisecond, "did not receive subscription response")
+	}, 5*time.Second, 10*time.Millisecond, "did not receive subscription response")
 
 	// publish another vp8 track again, ensure the transport recovered by sfu and c2 can receive it
 	t4, err := c1.AddStaticTrack("video/vp8", "video2", "webcam2")

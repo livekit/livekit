@@ -526,6 +526,13 @@ func (f *Forwarder) IsDeficient() bool {
 	return f.isDeficientLocked()
 }
 
+func (f *Forwarder) PauseReason() VideoPauseReason {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+
+	return f.lastAllocation.PauseReason
+}
+
 func (f *Forwarder) BandwidthRequested(brs Bitrates) int64 {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
@@ -1865,7 +1872,7 @@ done:
 		((adjustedMaxLayer.Spatial - adjustedTargetLayer.Spatial) * (maxSeenLayer.Temporal + 1)) +
 			(adjustedMaxLayer.Temporal - adjustedTargetLayer.Temporal)
 	if !targetLayer.IsValid() {
-		distance++
+		distance += (maxSeenLayer.Temporal + 1)
 	}
 
 	return float64(distance) / float64(maxSeenLayer.Temporal+1)

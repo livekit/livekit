@@ -162,6 +162,9 @@ type qualityScorer struct {
 	layerMutedAt   time.Time
 	layerUnmutedAt time.Time
 
+	pausedAt  time.Time
+	resumedAt time.Time
+
 	maxPPS float64
 
 	aggregateBitrate *utils.TimedAggregator[int64]
@@ -224,17 +227,6 @@ func (q *qualityScorer) UpdateMute(isMuted bool) {
 
 func (q *qualityScorer) addBitrateTransitionAtLocked(bitrate int64, at time.Time) {
 	q.aggregateBitrate.AddSampleAt(bitrate, at)
-
-	if bitrate == 0 {
-		if !q.isLayerMuted() {
-			q.layerMutedAt = at
-			q.score = maxScore
-		}
-	} else {
-		if q.isLayerMuted() {
-			q.layerUnmutedAt = at
-		}
-	}
 }
 
 func (q *qualityScorer) AddBitrateTransitionAt(bitrate int64, at time.Time) {
@@ -254,8 +246,9 @@ func (q *qualityScorer) AddBitrateTransition(bitrate int64) {
 func (q *qualityScorer) updateLayerMuteAtLocked(isMuted bool, at time.Time) {
 	if isMuted {
 		if !q.isLayerMuted() {
-			q.aggregateBitrate.AddSampleAt(0, at)
-			q.layerDistance.AddSampleAt(0, at)
+			q.aggregateBitrate.Reset()
+			q.layerDistance.Reset()
+
 			q.layerMutedAt = at
 			q.score = maxScore
 		}
@@ -278,6 +271,36 @@ func (q *qualityScorer) UpdateLayerMute(isMuted bool) {
 	defer q.lock.Unlock()
 
 	q.updateLayerMuteAtLocked(isMuted, time.Now())
+}
+
+func (q *qualityScorer) updatePauseAtLocked(isPaused bool, at time.Time) {
+	if isPaused {
+		if !q.isPaused() {
+			q.aggregateBitrate.Reset()
+			q.layerDistance.Reset()
+
+			q.pausedAt = at
+			q.score = poorScore
+		}
+	} else {
+		if q.isPaused() {
+			q.resumedAt = at
+		}
+	}
+}
+
+func (q *qualityScorer) UpdatePauseAt(isPaused bool, at time.Time) {
+	q.lock.Lock()
+	defer q.lock.Unlock()
+
+	q.updatePauseAtLocked(isPaused, at)
+}
+
+func (q *qualityScorer) UpdatePause(isPaused bool) {
+	q.lock.Lock()
+	defer q.lock.Unlock()
+
+	q.updatePauseAtLocked(isPaused, time.Now())
 }
 
 func (q *qualityScorer) addLayerTransitionAtLocked(distance float64, at time.Time) {
@@ -311,11 +334,14 @@ func (q *qualityScorer) updateAtLocked(stat *windowStat, at time.Time) {
 
 	// nothing to do when muted or not unmuted for long enough
 	// NOTE: it is possible that unmute -> mute -> unmute transition happens in the
-	//       same analysis window. On a transition to mute, state immediately moves
-	//       to stable and quality EXCELLENT for responsiveness. On an unmute, the
-	//       entire window data is considered (as long as enough time has passed since
-	//       unmute) including the data before mute.
-	if q.isMuted() || !q.isUnmutedEnough(at) || q.isLayerMuted() {
+	//       same analysis window. On a transition to mute, quality is immediately moved
+	//       EXCELLENT for responsiveness. On an unmute, the entire window data is
+	//       considered (as long as enough time has passed since unmute).
+	//
+	//       Similarly, when paused (possibly due to congestion), score is immediately
+	//       set to poorScore for responsiveness. The layer transision is reest.
+	//       On a resume, quality climbs back up using normal operation.
+	if q.isMuted() || !q.isUnmutedEnough(at) || q.isLayerMuted() || q.isPaused() {
 		q.lastUpdateAt = at
 		return
 	}
@@ -428,6 +454,10 @@ func (q *qualityScorer) isUnmutedEnough(at time.Time) bool {
 
 func (q *qualityScorer) isLayerMuted() bool {
 	return !q.layerMutedAt.IsZero() && (q.layerUnmutedAt.IsZero() || q.layerMutedAt.After(q.layerUnmutedAt))
+}
+
+func (q *qualityScorer) isPaused() bool {
+	return !q.pausedAt.IsZero() && (q.resumedAt.IsZero() || q.pausedAt.After(q.resumedAt))
 }
 
 func (q *qualityScorer) getPacketLossWeight(stat *windowStat) float64 {
