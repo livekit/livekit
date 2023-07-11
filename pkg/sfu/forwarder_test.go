@@ -562,7 +562,7 @@ func TestForwarderProvisionalAllocate(t *testing.T) {
 		TargetLayer:         expectedTargetLayer,
 		RequestLayerSpatial: expectedTargetLayer.Spatial,
 		MaxLayer:            expectedMaxLayer,
-		DistanceToDesired:   0.25,
+		DistanceToDesired:   1.0,
 	}
 	result = f.ProvisionalAllocateCommit()
 	require.Equal(t, expectedResult, result)
@@ -595,7 +595,7 @@ func TestForwarderProvisionalAllocate(t *testing.T) {
 		TargetLayer:         buffer.InvalidLayer,
 		RequestLayerSpatial: buffer.InvalidLayerSpatial,
 		MaxLayer:            expectedMaxLayer,
-		DistanceToDesired:   0.25,
+		DistanceToDesired:   1.0,
 	}
 	result = f.ProvisionalAllocateCommit()
 	require.Equal(t, expectedResult, result)
@@ -1114,7 +1114,7 @@ func TestForwarderPause(t *testing.T) {
 		TargetLayer:         buffer.InvalidLayer,
 		RequestLayerSpatial: buffer.InvalidLayerSpatial,
 		MaxLayer:            buffer.DefaultMaxLayer,
-		DistanceToDesired:   3,
+		DistanceToDesired:   3.75,
 	}
 	result := f.Pause(nil, bitrates)
 	require.Equal(t, expectedResult, result)

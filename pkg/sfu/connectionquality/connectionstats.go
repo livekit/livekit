@@ -139,6 +139,22 @@ func (cs *ConnectionStats) UpdateLayerMute(isMuted bool) {
 	cs.scorer.UpdateLayerMute(isMuted)
 }
 
+func (cs *ConnectionStats) UpdatePauseAt(isPaused bool, at time.Time) {
+	if cs.done.IsBroken() {
+		return
+	}
+
+	cs.scorer.UpdatePauseAt(isPaused, at)
+}
+
+func (cs *ConnectionStats) UpdatePause(isPaused bool) {
+	if cs.done.IsBroken() {
+		return
+	}
+
+	cs.scorer.UpdatePause(isPaused)
+}
+
 func (cs *ConnectionStats) AddLayerTransitionAt(distance float64, at time.Time) {
 	if cs.done.IsBroken() {
 		return
