@@ -950,18 +950,24 @@ func (d *DownTrack) UpTrackMaxTemporalLayerSeenChange(maxTemporalLayerSeen int32
 	}
 }
 
-func (d *DownTrack) maybeAddTransition(_bitrate int64, distance float64) {
+func (d *DownTrack) maybeAddTransition(_bitrate int64, distance float64, pauseReason VideoPauseReason) {
 	if d.kind == webrtc.RTPCodecTypeAudio {
 		return
 	}
 
-	d.connectionStats.AddLayerTransition(distance)
+	if pauseReason == VideoPauseReasonBandwidth {
+		d.connectionStats.UpdatePause(true)
+	} else {
+		d.connectionStats.UpdatePause(false)
+		d.connectionStats.AddLayerTransition(distance)
+	}
 }
 
 func (d *DownTrack) UpTrackBitrateReport(availableLayers []int32, bitrates Bitrates) {
 	d.maybeAddTransition(
 		d.forwarder.GetOptimalBandwidthNeeded(bitrates),
 		d.forwarder.DistanceToDesired(availableLayers, bitrates),
+		d.forwarder.PauseReason(),
 	)
 }
 
@@ -1011,7 +1017,7 @@ func (d *DownTrack) AllocateOptimal(allowOvershoot bool) VideoAllocation {
 	al, brs := d.receiver.GetLayeredBitrate()
 	allocation := d.forwarder.AllocateOptimal(al, brs, allowOvershoot)
 	d.maybeStartKeyFrameRequester()
-	d.maybeAddTransition(allocation.BandwidthNeeded, allocation.DistanceToDesired)
+	d.maybeAddTransition(allocation.BandwidthNeeded, allocation.DistanceToDesired, allocation.PauseReason)
 	return allocation
 }
 
@@ -1039,7 +1045,7 @@ func (d *DownTrack) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 func (d *DownTrack) ProvisionalAllocateCommit() VideoAllocation {
 	allocation := d.forwarder.ProvisionalAllocateCommit()
 	d.maybeStartKeyFrameRequester()
-	d.maybeAddTransition(allocation.BandwidthNeeded, allocation.DistanceToDesired)
+	d.maybeAddTransition(allocation.BandwidthNeeded, allocation.DistanceToDesired, allocation.PauseReason)
 	return allocation
 }
 
@@ -1047,7 +1053,7 @@ func (d *DownTrack) AllocateNextHigher(availableChannelCapacity int64, allowOver
 	al, brs := d.receiver.GetLayeredBitrate()
 	allocation, available := d.forwarder.AllocateNextHigher(availableChannelCapacity, al, brs, allowOvershoot)
 	d.maybeStartKeyFrameRequester()
-	d.maybeAddTransition(allocation.BandwidthNeeded, allocation.DistanceToDesired)
+	d.maybeAddTransition(allocation.BandwidthNeeded, allocation.DistanceToDesired, allocation.PauseReason)
 	return allocation, available
 }
 
@@ -1062,7 +1068,7 @@ func (d *DownTrack) Pause() VideoAllocation {
 	al, brs := d.receiver.GetLayeredBitrate()
 	allocation := d.forwarder.Pause(al, brs)
 	d.maybeStartKeyFrameRequester()
-	d.maybeAddTransition(allocation.BandwidthNeeded, allocation.DistanceToDesired)
+	d.maybeAddTransition(allocation.BandwidthNeeded, allocation.DistanceToDesired, allocation.PauseReason)
 	return allocation
 }
 

@@ -369,6 +369,7 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 			// successfully unsubscribed, remove from map
 			m.lock.Lock()
 			if !s.isDesired() {
+				s.logger.Debugw("unsubscribe removing subscription")
 				delete(m.subscriptions, s.trackID)
 			}
 			m.lock.Unlock()
@@ -389,7 +390,10 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 
 	if s.needsCleanup() {
 		m.lock.Lock()
-		delete(m.subscriptions, s.trackID)
+		if !s.isDesired() {
+			s.logger.Debugw("cleanup removing subscription")
+			delete(m.subscriptions, s.trackID)
+		}
 		m.lock.Unlock()
 	}
 }
