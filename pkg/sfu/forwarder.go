@@ -526,6 +526,13 @@ func (f *Forwarder) IsDeficient() bool {
 	return f.isDeficientLocked()
 }
 
+func (f *Forwarder) PauseReason() VideoPauseReason {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+
+	return f.lastAllocation.PauseReason
+}
+
 func (f *Forwarder) BandwidthRequested(brs Bitrates) int64 {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
