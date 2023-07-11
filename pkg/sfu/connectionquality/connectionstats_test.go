@@ -30,7 +30,7 @@ func newConnectionStats(
 }
 
 func TestConnectionQuality(t *testing.T) {
-	t.Run("quality scorer state machine", func(t *testing.T) {
+	t.Run("quality scorer operation", func(t *testing.T) {
 		var streams map[uint32]*buffer.StreamStatsWithLayers
 		getDeltaStats := func() map[uint32]*buffer.StreamStatsWithLayers {
 			return streams
@@ -314,13 +314,6 @@ func TestConnectionQuality(t *testing.T) {
 		require.Greater(t, float32(4.1), mos)
 		require.Equal(t, livekit.ConnectionQuality_GOOD, quality)
 
-		// a transition to 0 (all layers stopped) should flip quality to EXCELLENT
-		now = now.Add(duration)
-		cs.AddBitrateTransitionAt(0, now)
-		mos, quality = cs.GetScoreAndQuality()
-		require.Greater(t, float32(4.6), mos)
-		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, quality)
-
 		// test layer mute via UpdateLayerMute API
 		cs.AddBitrateTransitionAt(1_000_000, now)
 		cs.AddBitrateTransitionAt(2_000_000, now.Add(2*time.Second))
@@ -346,10 +339,36 @@ func TestConnectionQuality(t *testing.T) {
 		require.Greater(t, float32(4.6), mos)
 		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, quality)
 
-		// setting bit rate after layer mute should layer unmute automatically
-		cs.AddBitrateTransitionAt(1_000_000, now)
-		cs.AddBitrateTransitionAt(2_000_000, now.Add(2*time.Second))
+		// unmute layer
+		cs.UpdateLayerMuteAt(false, now.Add(2*time.Second))
 
+		streams = map[uint32]*buffer.StreamStatsWithLayers{
+			1: {
+				RTPStats: &buffer.RTPDeltaInfo{
+					StartTime: now,
+					Duration:  duration,
+					Packets:   250,
+					Bytes:     8_000_000 / 8 / 5,
+				},
+			},
+		}
+		cs.updateScoreAt(now.Add(duration))
+		mos, quality = cs.GetScoreAndQuality()
+		require.Greater(t, float32(4.6), mos)
+		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, quality)
+
+		// pause
+		now = now.Add(duration)
+		cs.UpdatePauseAt(true, now)
+		mos, quality = cs.GetScoreAndQuality()
+		require.Greater(t, float32(2.1), mos)
+		require.Equal(t, livekit.ConnectionQuality_POOR, quality)
+
+		// resume
+		cs.UpdatePauseAt(false, now.Add(2*time.Second))
+
+		// although conditions are perfect, climbing back from POOR (because of pause above)
+		// will only climb to GOOD.
 		streams = map[uint32]*buffer.StreamStatsWithLayers{
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{

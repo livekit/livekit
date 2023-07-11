@@ -162,7 +162,7 @@ type qualityScorer struct {
 	layerMutedAt   time.Time
 	layerUnmutedAt time.Time
 
-	pausedAt   time.Time
+	pausedAt  time.Time
 	resumedAt time.Time
 
 	maxPPS float64
