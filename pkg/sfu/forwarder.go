@@ -1872,7 +1872,7 @@ done:
 		((adjustedMaxLayer.Spatial - adjustedTargetLayer.Spatial) * (maxSeenLayer.Temporal + 1)) +
 			(adjustedMaxLayer.Temporal - adjustedTargetLayer.Temporal)
 	if !targetLayer.IsValid() {
-		distance++
+		distance += (maxSeenLayer.Temporal + 1)
 	}
 
 	return float64(distance) / float64(maxSeenLayer.Temporal+1)
