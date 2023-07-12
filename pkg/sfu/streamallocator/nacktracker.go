@@ -12,6 +12,7 @@ import (
 type NackTrackerParams struct {
 	Name              string
 	Logger            logger.Logger
+	MinPackets        uint32
 	WindowMinDuration time.Duration
 	WindowMaxDuration time.Duration
 	RatioThreshold    float64
@@ -62,7 +63,7 @@ func (n *NackTracker) Add(packets uint32, repeatedNacks uint32) {
 
 func (n *NackTracker) GetRatio() float64 {
 	ratio := 0.0
-	if n.packets != 0 {
+	if n.packets != 0 && n.packets >= n.params.MinPackets {
 		ratio = float64(n.repeatedNacks) / float64(n.packets)
 		if ratio > 1.0 {
 			ratio = 1.0
