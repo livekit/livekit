@@ -75,6 +75,7 @@ func (v *VP9) Select(extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerS
 		}
 
 		if updatedLayer != v.currentLayer {
+			result.IsSwitching = true
 			if !v.currentLayer.IsValid() && updatedLayer.IsValid() {
 				result.IsResuming = true
 			}
@@ -89,6 +90,7 @@ func (v *VP9) Select(extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerS
 				v.logger.Infow(
 					"reached max layer",
 					"current", v.currentLayer,
+					"updated", updatedLayer,
 					"target", v.targetLayer,
 					"max", v.maxLayer,
 					"layer", extPkt.VideoLayer.Spatial,
@@ -98,6 +100,7 @@ func (v *VP9) Select(extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerS
 				)
 			}
 
+			v.previousLayer = v.currentLayer
 			v.currentLayer = updatedLayer
 		}
 	}

@@ -16,8 +16,9 @@ type DependencyDescriptor struct {
 	frameNum  *utils.WrapAround[uint16, uint64]
 	decisions *SelectorDecisionCache
 
-	activeDecodeTargetsBitmask *uint32
-	structure                  *dede.FrameDependencyStructure
+	previousActiveDecodeTargetsBitmask *uint32
+	activeDecodeTargetsBitmask         *uint32
+	structure                          *dede.FrameDependencyStructure
 
 	chains []*FrameChain
 
@@ -183,6 +184,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	}
 
 	if d.currentLayer != highestDecodeTarget.Layer {
+		result.IsSwitching = true
 		if !d.currentLayer.IsValid() {
 			result.IsResuming = true
 			d.logger.Infow(
@@ -196,8 +198,13 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 				"feed", extPkt.Packet.SSRC,
 			)
 		}
+
+		d.previousLayer = d.currentLayer
 		d.currentLayer = highestDecodeTarget.Layer
+
+		d.previousActiveDecodeTargetsBitmask = d.activeDecodeTargetsBitmask
 		d.activeDecodeTargetsBitmask = buffer.GetActiveDecodeTargetBitmask(d.currentLayer, ddwdt.DecodeTargets)
+
 		if d.currentLayer.Spatial == d.requestSpatial {
 			result.IsSwitchingToRequestSpatial = true
 		}
@@ -206,7 +213,9 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 			result.MaxSpatialLayer = d.currentLayer.Spatial
 			d.logger.Infow(
 				"reached max layer",
+				"previous", d.previousLayer,
 				"current", d.currentLayer,
+				"previousTarget", d.previousTargetLayer,
 				"target", d.targetLayer,
 				"max", d.maxLayer,
 				"layer", fd.SpatialId,
@@ -255,12 +264,10 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	return
 }
 
-func (d *DependencyDescriptor) SetTarget(targetLayer buffer.VideoLayer) {
-	if targetLayer == d.targetLayer {
-		return
-	}
+func (d *DependencyDescriptor) Rollback() {
+	d.activeDecodeTargetsBitmask = d.previousActiveDecodeTargetsBitmask
 
-	d.Base.SetTarget(targetLayer)
+	d.Base.Rollback()
 }
 
 func (d *DependencyDescriptor) updateDependencyStructure(structure *dede.FrameDependencyStructure, decodeTargets []buffer.DependencyDescriptorDecodeTarget) {
