@@ -26,110 +26,11 @@ func (s *Simulcast) IsOvershootOkay() bool {
 }
 
 func (s *Simulcast) Select(extPkt *buffer.ExtPacket, layer int32) (result VideoLayerSelectorResult) {
-	if s.currentLayer.Spatial != s.targetLayer.Spatial {
-		// Three things to check when not locked to target
-		//   1. Resumable layer - don't need a key frame
-		//   2. Opportunistic layer upgrade - needs a key frame
-		//   3. Need to downgrade - needs a key frame
-		isActive := s.currentLayer.IsValid()
-		found := false
-		if s.parkedLayer.IsValid() {
-			if s.parkedLayer.Spatial == layer {
-				s.logger.Infow(
-					"resuming at parked layer",
-					"current", s.currentLayer,
-					"target", s.targetLayer,
-					"max", s.maxLayer,
-					"parked", s.parkedLayer,
-					"req", s.requestSpatial,
-					"maxSeen", s.maxSeenLayer,
-					"feed", extPkt.Packet.SSRC,
-				)
-				s.currentLayer = s.parkedLayer
-				found = true
-			}
-		} else {
-			if extPkt.KeyFrame {
-				if layer > s.currentLayer.Spatial && layer <= s.targetLayer.Spatial {
-					s.logger.Infow(
-						"upgrading layer",
-						"current", s.currentLayer,
-						"target", s.targetLayer,
-						"max", s.maxLayer,
-						"layer", layer,
-						"req", s.requestSpatial,
-						"maxSeen", s.maxSeenLayer,
-						"feed", extPkt.Packet.SSRC,
-					)
-					found = true
-				}
-
-				if layer < s.currentLayer.Spatial && layer >= s.targetLayer.Spatial {
-					s.logger.Infow(
-						"downgrading layer",
-						"current", s.currentLayer,
-						"target", s.targetLayer,
-						"max", s.maxLayer,
-						"layer", layer,
-						"req", s.requestSpatial,
-						"maxSeen", s.maxSeenLayer,
-						"feed", extPkt.Packet.SSRC,
-					)
-					found = true
-				}
-
-				if found {
-					s.currentLayer.Spatial = layer
-					s.currentLayer.Temporal = extPkt.VideoLayer.Temporal
-				}
-			}
+	populateSwitches := func(isActive bool, reason string) {
+		result.IsSwitching = true
+		if !isActive {
+			result.IsResuming = true
 		}
-
-		if found {
-			if !isActive {
-				result.IsResuming = true
-			}
-
-			s.SetParked(buffer.InvalidLayer)
-
-			if s.currentLayer.Spatial == s.requestSpatial {
-				result.IsSwitchingToRequestSpatial = true
-			}
-
-			if s.currentLayer.Spatial >= s.maxLayer.Spatial {
-				result.IsSwitchingToMaxSpatial = true
-				result.MaxSpatialLayer = s.currentLayer.Spatial
-				s.logger.Infow(
-					"reached max layer",
-					"current", s.currentLayer,
-					"target", s.targetLayer,
-					"max", s.maxLayer,
-					"layer", layer,
-					"req", s.requestSpatial,
-					"maxSeen", s.maxSeenLayer,
-					"feed", extPkt.Packet.SSRC,
-				)
-			}
-
-			if s.currentLayer.Spatial >= s.maxLayer.Spatial || s.currentLayer.Spatial == s.maxSeenLayer.Spatial {
-				s.targetLayer.Spatial = s.currentLayer.Spatial
-			}
-		}
-	}
-
-	// if locked to higher than max layer due to overshoot, check if it can be dialed back
-	if s.currentLayer.Spatial > s.maxLayer.Spatial && layer <= s.maxLayer.Spatial && extPkt.KeyFrame {
-		s.logger.Infow(
-			"adjusting overshoot",
-			"current", s.currentLayer,
-			"target", s.targetLayer,
-			"max", s.maxLayer,
-			"layer", layer,
-			"req", s.requestSpatial,
-			"maxSeen", s.maxSeenLayer,
-			"feed", extPkt.Packet.SSRC,
-		)
-		s.currentLayer.Spatial = layer
 
 		if s.currentLayer.Spatial == s.requestSpatial {
 			result.IsSwitchingToRequestSpatial = true
@@ -138,11 +39,92 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket, layer int32) (result VideoL
 		if s.currentLayer.Spatial >= s.maxLayer.Spatial {
 			result.IsSwitchingToMaxSpatial = true
 			result.MaxSpatialLayer = s.currentLayer.Spatial
+			if reason != "" {
+				reason += ", "
+			}
+			reason += "reached max layer"
 		}
 
+		if reason != "" {
+			s.logger.Infow(
+				reason,
+				"previous", s.previousLayer,
+				"current", s.currentLayer,
+				"previousParked", s.previousParkedLayer,
+				"parked", s.parkedLayer,
+				"previousTarget", s.previousTargetLayer,
+				"target", s.targetLayer,
+				"max", s.maxLayer,
+				"layer", layer,
+				"req", s.requestSpatial,
+				"maxSeen", s.maxSeenLayer,
+				"feed", extPkt.Packet.SSRC,
+			)
+		}
+	}
+
+	if s.currentLayer.Spatial != s.targetLayer.Spatial {
+		currentLayer := s.currentLayer
+
+		// Three things to check when not locked to target
+		//   1. Resumable layer - don't need a key frame
+		//   2. Opportunistic layer upgrade - needs a key frame
+		//   3. Need to downgrade - needs a key frame
+		isActive := s.currentLayer.IsValid()
+		found := false
+		reason := ""
+		if s.parkedLayer.IsValid() {
+			if s.parkedLayer.Spatial == layer {
+				reason = "resuming at parked layer"
+				currentLayer = s.parkedLayer
+				found = true
+			}
+		} else {
+			if extPkt.KeyFrame {
+				if layer > s.currentLayer.Spatial && layer <= s.targetLayer.Spatial {
+					reason = "upgrading layer"
+					found = true
+				}
+
+				if layer < s.currentLayer.Spatial && layer >= s.targetLayer.Spatial {
+					reason = "downgrading layer"
+					found = true
+				}
+
+				if found {
+					currentLayer.Spatial = layer
+					currentLayer.Temporal = extPkt.VideoLayer.Temporal
+				}
+			}
+		}
+
+		if found {
+			s.previousParkedLayer = s.parkedLayer
+			s.parkedLayer = buffer.InvalidLayer
+
+			s.previousLayer = s.currentLayer
+			s.currentLayer = currentLayer
+
+			s.previousTargetLayer = s.targetLayer
+			if s.currentLayer.Spatial >= s.maxLayer.Spatial || s.currentLayer.Spatial == s.maxSeenLayer.Spatial {
+				s.targetLayer.Spatial = s.currentLayer.Spatial
+			}
+
+			populateSwitches(isActive, reason)
+		}
+	}
+
+	// if locked to higher than max layer due to overshoot, check if it can be dialed back
+	if s.currentLayer.Spatial > s.maxLayer.Spatial && layer <= s.maxLayer.Spatial && extPkt.KeyFrame {
+		s.previousLayer = s.currentLayer
+		s.currentLayer.Spatial = layer
+
+		s.previousTargetLayer = s.targetLayer
 		if s.currentLayer.Spatial >= s.maxLayer.Spatial || s.currentLayer.Spatial == s.maxSeenLayer.Spatial {
 			s.targetLayer.Spatial = layer
 		}
+
+		populateSwitches(true, "adjusting overshoot")
 	}
 
 	result.RTPMarker = extPkt.Packet.Marker
