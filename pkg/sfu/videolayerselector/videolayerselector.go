@@ -8,6 +8,7 @@ import (
 type VideoLayerSelectorResult struct {
 	IsSelected                    bool
 	IsRelevant                    bool
+	IsSwitching                   bool
 	IsResuming                    bool
 	IsSwitchingToRequestSpatial   bool
 	IsSwitchingToMaxSpatial       bool
@@ -47,4 +48,5 @@ type VideoLayerSelector interface {
 
 	Select(extPkt *buffer.ExtPacket, layer int32) VideoLayerSelectorResult
 	SelectTemporal(extPkt *buffer.ExtPacket) int32
+	Rollback()
 }

@@ -11,25 +11,33 @@ type Base struct {
 
 	tls temporallayerselector.TemporalLayerSelector
 
-	maxLayer       buffer.VideoLayer
-	targetLayer    buffer.VideoLayer
+	maxLayer     buffer.VideoLayer
+	maxSeenLayer buffer.VideoLayer
+
+	targetLayer         buffer.VideoLayer
+	previousTargetLayer buffer.VideoLayer
+
 	requestSpatial int32
-	maxSeenLayer   buffer.VideoLayer
 
-	parkedLayer buffer.VideoLayer
+	parkedLayer         buffer.VideoLayer
+	previousParkedLayer buffer.VideoLayer
 
-	currentLayer buffer.VideoLayer
+	currentLayer  buffer.VideoLayer
+	previousLayer buffer.VideoLayer
 }
 
 func NewBase(logger logger.Logger) *Base {
 	return &Base{
-		logger:         logger,
-		maxLayer:       buffer.InvalidLayer,
-		targetLayer:    buffer.InvalidLayer, // start off with nothing, let streamallocator/opportunistic forwarder set the target
-		requestSpatial: buffer.InvalidLayerSpatial,
-		maxSeenLayer:   buffer.InvalidLayer,
-		parkedLayer:    buffer.InvalidLayer,
-		currentLayer:   buffer.InvalidLayer,
+		logger:              logger,
+		maxLayer:            buffer.InvalidLayer,
+		maxSeenLayer:        buffer.InvalidLayer,
+		targetLayer:         buffer.InvalidLayer, // start off with nothing, let streamallocator/opportunistic forwarder set the target
+		previousTargetLayer: buffer.InvalidLayer,
+		requestSpatial:      buffer.InvalidLayerSpatial,
+		parkedLayer:         buffer.InvalidLayer,
+		previousParkedLayer: buffer.InvalidLayer,
+		currentLayer:        buffer.InvalidLayer,
+		previousLayer:       buffer.InvalidLayer,
 	}
 }
 
@@ -58,6 +66,7 @@ func (b *Base) GetMax() buffer.VideoLayer {
 }
 
 func (b *Base) SetTarget(targetLayer buffer.VideoLayer) {
+	b.previousTargetLayer = targetLayer
 	b.targetLayer = targetLayer
 }
 
@@ -115,10 +124,43 @@ func (b *Base) Select(_extPkt *buffer.ExtPacket, _layer int32) (result VideoLaye
 	return
 }
 
+func (b *Base) Rollback() {
+	b.logger.Infow(
+		"rolling back",
+		"previous", b.previousLayer,
+		"current", b.currentLayer,
+		"previousParked", b.previousParkedLayer,
+		"parked", b.parkedLayer,
+		"previousTarget", b.previousTargetLayer,
+		"target", b.targetLayer,
+		"max", b.maxLayer,
+		"req", b.requestSpatial,
+		"maxSeen", b.maxSeenLayer,
+	)
+	b.parkedLayer = b.previousParkedLayer
+	b.currentLayer = b.previousLayer
+	b.targetLayer = b.previousTargetLayer
+}
+
 func (b *Base) SelectTemporal(extPkt *buffer.ExtPacket) int32 {
 	if b.tls != nil {
 		this, next := b.tls.Select(extPkt, b.currentLayer.Temporal, b.targetLayer.Temporal)
-		b.currentLayer.Temporal = next
+		if next != b.currentLayer.Temporal {
+			b.previousLayer = b.currentLayer
+			b.currentLayer.Temporal = next
+			b.logger.Infow(
+				"updating temporal layer",
+				"previous", b.previousLayer,
+				"current", b.currentLayer,
+				"previousParked", b.previousParkedLayer,
+				"parked", b.parkedLayer,
+				"previousTarget", b.previousTargetLayer,
+				"target", b.targetLayer,
+				"max", b.maxLayer,
+				"req", b.requestSpatial,
+				"maxSeen", b.maxSeenLayer,
+			)
+		}
 		return this
 	}
 

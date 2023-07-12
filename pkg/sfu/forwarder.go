@@ -1594,6 +1594,14 @@ func (f *Forwarder) getTranslationParamsAudio(extPkt *buffer.ExtPacket, layer in
 
 // should be called with lock held
 func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer int32) (*TranslationParams, error) {
+	maybeRollback := func(result videolayerselector.VideoLayerSelectorResult) {
+		if !result.IsSwitching {
+			return
+		}
+
+		f.vls.Rollback()
+	}
+
 	tp := &TranslationParams{}
 
 	if !f.vls.GetTarget().IsValid() {
@@ -1640,11 +1648,13 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		// To differentiate between the two cases, drop only when in DEFICIENT state.
 		//
 		tp.shouldDrop = true
+		maybeRollback(result)
 		return tp, nil
 	}
 
 	_, err := f.getTranslationParamsCommon(extPkt, layer, tp)
 	if tp.shouldDrop || len(extPkt.Packet.Payload) == 0 {
+		maybeRollback(result)
 		return tp, err
 	}
 
@@ -1663,9 +1673,11 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 				// filtered temporal layer, update sequence number offset to prevent holes
 				f.rtpMunger.PacketDropped(extPkt)
 			}
+			maybeRollback(result)
 			return tp, nil
 		}
 
+		maybeRollback(result)
 		return tp, err
 	}
 
