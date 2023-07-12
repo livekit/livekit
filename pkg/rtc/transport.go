@@ -597,6 +597,11 @@ func (t *PCTransport) onICEConnectionStateChange(state webrtc.ICEConnectionState
 
 	case webrtc.ICEConnectionStateChecking:
 		t.setICEStartedAt(time.Now())
+
+	case webrtc.ICEConnectionStateDisconnected:
+		fallthrough
+	case webrtc.ICEConnectionStateFailed:
+		t.params.Logger.Infow("ice connection state change unexpected", "state", state.String())
 	}
 }
 
