@@ -142,12 +142,16 @@ func (b *Base) Rollback() {
 	b.targetLayer = b.previousTargetLayer
 }
 
-func (b *Base) SelectTemporal(extPkt *buffer.ExtPacket) int32 {
+func (b *Base) SelectTemporal(extPkt *buffer.ExtPacket) (int32, bool) {
 	if b.tls != nil {
+		isSwitching := false
 		this, next := b.tls.Select(extPkt, b.currentLayer.Temporal, b.targetLayer.Temporal)
 		if next != b.currentLayer.Temporal {
+			isSwitching = true
+
 			b.previousLayer = b.currentLayer
 			b.currentLayer.Temporal = next
+
 			b.logger.Infow(
 				"updating temporal layer",
 				"previous", b.previousLayer,
@@ -161,8 +165,8 @@ func (b *Base) SelectTemporal(extPkt *buffer.ExtPacket) int32 {
 				"maxSeen", b.maxSeenLayer,
 			)
 		}
-		return this
+		return this, isSwitching
 	}
 
-	return b.currentLayer.Temporal
+	return b.currentLayer.Temporal, false
 }

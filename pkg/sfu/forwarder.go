@@ -1594,12 +1594,10 @@ func (f *Forwarder) getTranslationParamsAudio(extPkt *buffer.ExtPacket, layer in
 
 // should be called with lock held
 func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer int32) (*TranslationParams, error) {
-	maybeRollback := func(result videolayerselector.VideoLayerSelectorResult) {
-		if !result.IsSwitching {
-			return
+	maybeRollback := func(isSwitching bool) {
+		if isSwitching {
+			f.vls.Rollback()
 		}
-
-		f.vls.Rollback()
 	}
 
 	tp := &TranslationParams{}
@@ -1648,22 +1646,23 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		// To differentiate between the two cases, drop only when in DEFICIENT state.
 		//
 		tp.shouldDrop = true
-		maybeRollback(result)
+		maybeRollback(result.IsSwitching)
 		return tp, nil
 	}
 
 	_, err := f.getTranslationParamsCommon(extPkt, layer, tp)
 	if tp.shouldDrop || len(extPkt.Packet.Payload) == 0 {
-		maybeRollback(result)
+		maybeRollback(result.IsSwitching)
 		return tp, err
 	}
 
 	// codec specific forwarding check and any needed packet munging
+	tl, isSwitching := f.vls.SelectTemporal(extPkt)
 	codecBytes, err := f.codecMunger.UpdateAndGet(
 		extPkt,
 		tp.rtp.snOrdering == SequenceNumberOrderingOutOfOrder,
 		tp.rtp.snOrdering == SequenceNumberOrderingGap,
-		f.vls.SelectTemporal(extPkt),
+		tl,
 	)
 	if err != nil {
 		tp.rtp = nil
@@ -1673,11 +1672,11 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 				// filtered temporal layer, update sequence number offset to prevent holes
 				f.rtpMunger.PacketDropped(extPkt)
 			}
-			maybeRollback(result)
+			maybeRollback(result.IsSwitching || isSwitching)
 			return tp, nil
 		}
 
-		maybeRollback(result)
+		maybeRollback(result.IsSwitching || isSwitching)
 		return tp, err
 	}
 

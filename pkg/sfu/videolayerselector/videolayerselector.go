@@ -47,6 +47,6 @@ type VideoLayerSelector interface {
 	GetCurrent() buffer.VideoLayer
 
 	Select(extPkt *buffer.ExtPacket, layer int32) VideoLayerSelectorResult
-	SelectTemporal(extPkt *buffer.ExtPacket) int32
+	SelectTemporal(extPkt *buffer.ExtPacket) (int32, bool)
 	Rollback()
 }
