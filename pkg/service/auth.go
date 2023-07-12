@@ -116,7 +116,7 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 			log.Error("Max participant reached. Limit " + client.Limit.String() + ", current " + currentValueBigInt.String())
 			handleError(
 				w,
-				http.StatusUnauthorized,
+				http.StatusForbidden,
 				fmt.Errorf("max participant reached. Limit %s. Current %s", client.Limit.String(), currentValueBigInt.String()),
 			)
 			return
