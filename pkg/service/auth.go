@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/ethereum/go-ethereum/log"
 	"math/big"
 	"net/http"
 	"strings"
+
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	eth_crypto "github.com/ethereum/go-ethereum/crypto"
@@ -113,6 +114,12 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 		currentValueBigInt := big.NewInt(int64(currentValue))
 		if currentValueBigInt.Cmp(client.Limit) > 0 {
 			log.Error("Max participant reached. Limit " + client.Limit.String() + ", current " + currentValueBigInt.String())
+			handleError(
+				w,
+				http.StatusForbidden,
+				fmt.Errorf("max participant reached. Limit %s. Current %s", client.Limit.String(), currentValueBigInt.String()),
+			)
+			return
 		}
 
 		// set grants in context
