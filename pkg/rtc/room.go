@@ -828,6 +828,7 @@ func (r *Room) createJoinResponseLocked(participant types.LocalParticipant, iceS
 func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.MediaTrack) {
 	// publish participant update, since track state is changed
 	r.broadcastParticipantState(participant, broadcastOptions{skipSource: true})
+	r.protoProxy.MarkDirty(false)
 
 	r.lock.RLock()
 	// subscribe all existing participants to this MediaTrack
@@ -887,6 +888,7 @@ func (r *Room) onTrackUpdated(p types.LocalParticipant, _ types.MediaTrack) {
 
 func (r *Room) onTrackUnpublished(p types.LocalParticipant, track types.MediaTrack) {
 	r.trackManager.RemoveTrack(track)
+	r.protoProxy.MarkDirty(false)
 	if !p.IsClosed() {
 		r.broadcastParticipantState(p, broadcastOptions{skipSource: true})
 	}
