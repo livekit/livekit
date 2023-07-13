@@ -22,8 +22,6 @@ const (
 	FirstSnapshotId     = 1
 	SnInfoSize          = 8192
 	SnInfoMask          = SnInfoSize - 1
-
-	minDurationForSampleRateCalculation = 15 * time.Second
 )
 
 // -------------------------------------------------------
@@ -851,12 +849,7 @@ func (r *RTPStats) GetRtcpSenderReportData() (srFirst *RTCPSenderReportData, srN
 	return
 }
 
-func (r *RTPStats) GetExpectedRTPTimestamp(at time.Time) (
-	expectedTSExt uint64,
-	latestSRTSExt uint64,
-	isLatestSRTSExtValid bool,
-	err error,
-) {
+func (r *RTPStats) GetExpectedRTPTimestamp(at time.Time) (expectedTSExt uint64, err error) {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
@@ -868,11 +861,6 @@ func (r *RTPStats) GetExpectedRTPTimestamp(at time.Time) (
 	timeDiff := at.Sub(r.firstTime)
 	expectedRTPDiff := timeDiff.Nanoseconds() * int64(r.params.ClockRate) / 1e9
 	expectedTSExt = r.extStartTS + uint64(expectedRTPDiff)
-
-	if r.srNewest != nil {
-		latestSRTSExt = r.srNewest.RTPTimestampExt
-		isLatestSRTSExtValid = true
-	}
 	r.logger.Debugw(
 		"expected RTP timestamp",
 		"firstTime", r.firstTime.String(),
@@ -881,15 +869,13 @@ func (r *RTPStats) GetExpectedRTPTimestamp(at time.Time) (
 		"firstRTP", r.extStartTS,
 		"expectedRTPDiff", expectedRTPDiff,
 		"expectedTSExt", expectedTSExt,
-		"latestSRTSExt", latestSRTSExt,
-		"isLatestSRTSExtValid", isLatestSRTSExtValid,
 		"highestTS", r.highestTS,
 		"highestTime", r.highestTime.String(),
 	)
 	return
 }
 
-func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srFirst *RTCPSenderReportData, srNewest *RTCPSenderReportData) *rtcp.SenderReport {
+func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, calculatedClockRate uint32) *rtcp.SenderReport {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
@@ -907,23 +893,17 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, srFirst *RTCPSenderReportDat
 
 	// It is possible that publisher is pacing at a slower rate.
 	// That would make `highestTS` to be lagging the RTP time stamp in the RTCP Sender Report from publisher.
-	// Check for that and use the later time stamp if applicable.
+	// Check for that using calculated clock rate and use the later time stamp if applicable.
 	tsCycles := r.tsCycles
 	if nowRTP < r.highestTS {
 		tsCycles++
 	}
 	nowRTPExt := getExtTS(nowRTP, tsCycles)
-	if srFirst != nil && srNewest != nil && srFirst.RTPTimestamp != srNewest.RTPTimestamp {
-		// use incoming rate as a guide
-		tsf := srNewest.NTPTimestamp.Time().Sub(srFirst.NTPTimestamp.Time())
-		if tsf >= minDurationForSampleRateCalculation {
-			rdsf := srNewest.RTPTimestampExt - srFirst.RTPTimestampExt
-			sr := float64(rdsf) / tsf.Seconds()
-			nowRTPExtUsingRate := r.extStartTS + uint64(sr*timeSinceFirst.Seconds())
-			if nowRTPExtUsingRate > nowRTPExt {
-				nowRTPExt = nowRTPExtUsingRate
-				nowRTP = uint32(nowRTPExtUsingRate)
-			}
+	if calculatedClockRate != 0 {
+		nowRTPExtUsingRate := r.extStartTS + uint64(float64(calculatedClockRate)*timeSinceFirst.Seconds())
+		if nowRTPExtUsingRate > nowRTPExt {
+			nowRTPExt = nowRTPExtUsingRate
+			nowRTP = uint32(nowRTPExtUsingRate)
 		}
 	}
 
