@@ -77,6 +77,7 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket, layer int32) (result VideoL
 			if s.parkedLayer.Spatial == layer {
 				reason = "resuming at parked layer"
 				currentLayer = s.parkedLayer
+				isActive = true
 				found = true
 			}
 		} else {
