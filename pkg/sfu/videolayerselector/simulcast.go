@@ -26,8 +26,11 @@ func (s *Simulcast) IsOvershootOkay() bool {
 }
 
 func (s *Simulcast) Select(extPkt *buffer.ExtPacket, layer int32) (result VideoLayerSelectorResult) {
-	populateSwitches := func(isActive bool, reason string) {
-		result.IsSwitching = true
+	populateSwitches := func(isSwitching bool, isActive bool, reason string) {
+		if isSwitching {
+			result.IsSwitching = true
+		}
+
 		if !isActive {
 			result.IsResuming = true
 		}
@@ -70,6 +73,7 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket, layer int32) (result VideoL
 		//   1. Resumable layer - don't need a key frame
 		//   2. Opportunistic layer upgrade - needs a key frame
 		//   3. Need to downgrade - needs a key frame
+		isSwitching := true
 		isActive := s.currentLayer.IsValid()
 		found := false
 		reason := ""
@@ -77,6 +81,7 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket, layer int32) (result VideoL
 			if s.parkedLayer.Spatial == layer {
 				reason = "resuming at parked layer"
 				currentLayer = s.parkedLayer
+				isSwitching = false
 				found = true
 			}
 		} else {
@@ -110,7 +115,7 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket, layer int32) (result VideoL
 				s.targetLayer.Spatial = s.currentLayer.Spatial
 			}
 
-			populateSwitches(isActive, reason)
+			populateSwitches(isSwitching, isActive, reason)
 		}
 	}
 
@@ -124,7 +129,7 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket, layer int32) (result VideoL
 			s.targetLayer.Spatial = layer
 		}
 
-		populateSwitches(true, "adjusting overshoot")
+		populateSwitches(true, true, "adjusting overshoot")
 	}
 
 	result.RTPMarker = extPkt.Packet.Marker
