@@ -1102,8 +1102,7 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 		return nil
 	}
 
-	srFirst, srNewest := d.receiver.GetRTCPSenderReportData(d.forwarder.GetReferenceLayerSpatial())
-	return d.rtpStats.GetRtcpSenderReport(d.ssrc, srFirst, srNewest)
+	return d.rtpStats.GetRtcpSenderReport(d.ssrc, d.receiver.GetCalculatedClockRate(d.forwarder.CurrentLayer().Spatial))
 }
 
 func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan struct{} {
@@ -1542,7 +1541,7 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 	}
 }
 
-func (d *DownTrack) getExpectedRTPTimestamp(at time.Time) (uint32, uint64, error) {
+func (d *DownTrack) getExpectedRTPTimestamp(at time.Time) (uint64, error) {
 	return d.rtpStats.GetExpectedRTPTimestamp(at)
 }
 
