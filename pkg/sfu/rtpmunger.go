@@ -41,8 +41,9 @@ type SnTs struct {
 // ----------------------------------------------------------------------
 
 type RTPMungerState struct {
-	LastSN uint16
-	LastTS uint32
+	LastSN     uint16
+	LastTS     uint32
+	LastMarker bool
 }
 
 func (r RTPMungerState) String() string {
@@ -92,14 +93,16 @@ func (r *RTPMunger) GetParams() RTPMungerParams {
 
 func (r *RTPMunger) GetLast() RTPMungerState {
 	return RTPMungerState{
-		LastSN: r.lastSN,
-		LastTS: r.lastTS,
+		LastSN:     r.lastSN,
+		LastTS:     r.lastTS,
+		LastMarker: r.lastMarker,
 	}
 }
 
 func (r *RTPMunger) SeedLast(state RTPMungerState) {
 	r.lastSN = state.LastSN
 	r.lastTS = state.LastTS
+	r.lastMarker = state.LastMarker
 }
 
 func (r *RTPMunger) SetLastSnTs(extPkt *buffer.ExtPacket) {

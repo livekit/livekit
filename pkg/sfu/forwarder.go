@@ -1505,7 +1505,8 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 	//   3. expectedTS -> expected timestamp of this packet calculated based on elapsed time since first packet
 	// Ideally, refTS and expectedTS should be very close and lastTS should be before both of those.
 	// But, cases like muting/unmuting, clock vagaries, pacing, etc. make them not satisfy those conditions always.
-	lastTS := f.rtpMunger.GetLast().LastTS
+	rtpMungerState := f.rtpMunger.GetLast()
+	lastTS := rtpMungerState.LastTS
 	refTS := lastTS
 	expectedTS := lastTS
 	switchingAt := time.Now()
@@ -1625,8 +1626,29 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		"jump", nextTS-lastTS,
 	)
 
-	f.rtpMunger.UpdateSnTsOffsets(extPkt, 1, nextTS-lastTS)
+	snOffset := uint16(1)
+	if !rtpMungerState.LastMarker {
+		// If last forwarded packet is not end of frame, synthesise a break in sequence number.
+		// Else, decoders could try to interpret consecutive packets as part of the same frame
+		// and potentially cause video corruption.
+		snOffset++
+	}
+	f.rtpMunger.UpdateSnTsOffsets(extPkt, snOffset, nextTS-lastTS)
 	f.codecMunger.UpdateOffsets(extPkt)
+
+	f.logger.Infow(
+		"source switch",
+		"switchingAt", switchingAt.String(),
+		"layer", layer,
+		"lastTS", lastTS,
+		"refTS", refTS,
+		"refTSOffset", f.refTSOffset,
+		"referenceLayerSpatial", f.referenceLayerSpatial,
+		"expectedTS", expectedTS,
+		"nextTS", nextTS,
+		"tsOffset", nextTS-lastTS,
+		"snOffset", snOffset,
+	)
 	return nil
 }
 
