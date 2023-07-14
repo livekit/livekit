@@ -861,17 +861,6 @@ func (r *RTPStats) GetExpectedRTPTimestamp(at time.Time) (expectedTSExt uint64, 
 	timeDiff := at.Sub(r.firstTime)
 	expectedRTPDiff := timeDiff.Nanoseconds() * int64(r.params.ClockRate) / 1e9
 	expectedTSExt = r.extStartTS + uint64(expectedRTPDiff)
-	r.logger.Debugw(
-		"expected RTP timestamp",
-		"firstTime", r.firstTime.String(),
-		"checkAt", at.String(),
-		"timeDiff", timeDiff,
-		"firstRTP", r.extStartTS,
-		"expectedRTPDiff", expectedRTPDiff,
-		"expectedTSExt", expectedTSExt,
-		"highestTS", r.highestTS,
-		"highestTime", r.highestTime.String(),
-	)
 	return
 }
 

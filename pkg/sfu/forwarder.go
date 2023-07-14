@@ -1497,12 +1497,12 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 
 	// Compute how much time passed between the previous forwarded packet
 	// and the current incoming (to be forwarded) packet and calculate
-	// timestamp offset on source change
+	// timestamp offset on source change.
 	//
-	// There are three time stamps to consider here
-	//   1. lastTS -> time stamp of last sent packet
-	//   2. refTS -> time stamp of this packet (after munging) calculated using feed's RTCP sender report
-	//   3. expectedTS -> expectdd time stamp of this packet calculated based on elapsed time since first packet
+	// There are three timestamps to consider here
+	//   1. lastTS -> timestamp of last sent packet
+	//   2. refTS -> timestamp of this packet (after munging) calculated using feed's RTCP sender report
+	//   3. expectedTS -> expected timestamp of this packet calculated based on elapsed time since first packet
 	// Ideally, refTS and expectedTS should be very close and lastTS should be before both of those.
 	// But, cases like muting/unmuting, clock vagaries, pacing, etc. make them not satisfy those conditions always.
 	lastTS := f.rtpMunger.GetLast().LastTS
@@ -1548,16 +1548,16 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 
 	var nextTS uint32
 	if f.lastSSRC == 0 {
-		// If resuming (e. g. on unmute), keep next timestamp close to expected timestmap.
+		// If resuming (e. g. on unmute), keep next timestamp close to expected timestamp.
 		//
 		// Rationale:
-		// Case 1: If mute is implemented via something like stopping a track and resuming it on unmute,,
-		// the RTP time stamp may not have jumped across mute valley. In this case, old timestamp
+		// Case 1: If mute is implemented via something like stopping a track and resuming it on unmute,
+		// the RTP timestamp may not have jumped across mute valley. In this case, old timestamp
 		// should not be used.
 		//
 		// Case 2: OTOH, something like pacing may be adding latency in the publisher path (even if
-		// the time stamps incremented correctly across the mute valley). In this case, reference
-		// time stamp should be used as things will catch up to real time when channel capacity
+		// the timestamps incremented correctly across the mute valley). In this case, reference
+		// timestamp should be used as things will catch up to real time when channel capacity
 		// increases and pacer starts sending at faster rate.
 		//
 		// But, the challenege is distinguishing between the two cases. As a compromise, the difference
@@ -1588,17 +1588,17 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		// switching between layers, check if refTS is too far behind the last sent
 		diffSeconds := float64(refTS-lastTS) / float64(f.codec.ClockRate)
 		if diffSeconds < 0.0 {
-			if diffSeconds > LayerSwitchBehindThresholdSeconds {
+			if math.Abs(diffSeconds) > LayerSwitchBehindThresholdSeconds {
 				// AVSYNC-TODO: This could be due to pacer trickling out this layer. Should potentially return error here and wait for a more opportune time
 				// or some forcing function (like "have waited for too long for layer switch, nothing available, switch to whatever is available" kind of condition)
 				// to do the switch. Just logging it for now.
-				f.logger.Infow("layer switch, reference too far behind", "expectedTS", expectedTS, "refTS", refTS, "lastTS", lastTS, "diffSeconds", diffSeconds)
+				f.logger.Infow("layer switch, reference too far behind", "expectedTS", expectedTS, "refTS", refTS, "lastTS", lastTS, "diffSeconds", math.Abs(diffSeconds))
 			}
-			// use a nominal increase to ensure that time stamp is always moving forward
+			// use a nominal increase to ensure that timestamp is always moving forward
 			nextTS = lastTS + 1
 		} else {
 			diffSeconds = float64(expectedTS-refTS) / float64(f.codec.ClockRate)
-			if math.Abs(diffSeconds) > SwitchAheadThresholdSeconds {
+			if diffSeconds < 0.0 && math.Abs(diffSeconds) > SwitchAheadThresholdSeconds {
 				f.logger.Infow("layer switch, reference too far ahead", "expectedTS", expectedTS, "refTS", refTS, "diffSeconds", math.Abs(diffSeconds))
 				nextTS = expectedTS
 			} else {
@@ -1608,7 +1608,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 	}
 
 	if nextTS-lastTS == 0 || nextTS-lastTS > (1<<31) {
-		f.logger.Infow("next time stamp is before last, adjusting", "nextTS", nextTS, "lastTS", lastTS)
+		f.logger.Infow("next timestamp is before last, adjusting", "nextTS", nextTS, "lastTS", lastTS)
 		// nominal increase
 		nextTS = lastTS + 1
 	}
@@ -1721,7 +1721,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 	}
 
 	_, err := f.getTranslationParamsCommon(extPkt, layer, tp)
-	if tp.shouldDrop || len(extPkt.Packet.Payload) == 0 || err != nil {
+	if tp.shouldDrop || len(extPkt.Packet.Payload) == 0 {
 		maybeRollback(result.IsSwitching)
 		return tp, err
 	}
@@ -1766,7 +1766,7 @@ func (f *Forwarder) maybeStart() {
 		Packet: &rtp.Packet{
 			Header: rtp.Header{
 				SequenceNumber: uint16(rand.Intn(1<<14)) + uint16(1<<15), // a random number in third quartile of sequence number space
-				Timestamp:      uint32(rand.Intn(1<<30)) + uint32(1<<31), // a random number in third quartile of time stamp space
+				Timestamp:      uint32(rand.Intn(1<<30)) + uint32(1<<31), // a random number in third quartile of timestamp space
 			},
 		},
 	}
