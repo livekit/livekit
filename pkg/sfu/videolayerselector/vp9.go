@@ -80,26 +80,6 @@ func (v *VP9) Select(extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerS
 				result.IsResuming = true
 			}
 
-			if v.currentLayer.Spatial != v.requestSpatial && updatedLayer.Spatial == v.requestSpatial {
-				result.IsSwitchingToRequestSpatial = true
-			}
-
-			if v.currentLayer.Spatial != v.maxLayer.Spatial && updatedLayer.Spatial == v.maxLayer.Spatial {
-				result.IsSwitchingToMaxSpatial = true
-				result.MaxSpatialLayer = updatedLayer.Spatial
-				v.logger.Infow(
-					"reached max layer",
-					"current", v.currentLayer,
-					"updated", updatedLayer,
-					"target", v.targetLayer,
-					"max", v.maxLayer,
-					"layer", extPkt.VideoLayer.Spatial,
-					"req", v.requestSpatial,
-					"maxSeen", v.maxSeenLayer,
-					"feed", extPkt.Packet.SSRC,
-				)
-			}
-
 			v.previousLayer = v.currentLayer
 			v.currentLayer = updatedLayer
 		}

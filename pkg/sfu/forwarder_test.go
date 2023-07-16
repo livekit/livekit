@@ -26,13 +26,13 @@ func newForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType) *Fo
 func TestForwarderMute(t *testing.T) {
 	f := newForwarder(testutils.TestOpusCodec, webrtc.RTPCodecTypeAudio)
 	require.False(t, f.IsMuted())
-	muted, _ := f.Mute(false)
+	muted := f.Mute(false)
 	require.False(t, muted) // no change in mute state
 	require.False(t, f.IsMuted())
-	muted, _ = f.Mute(true)
+	muted = f.Mute(true)
 	require.True(t, muted)
 	require.True(t, f.IsMuted())
-	muted, _ = f.Mute(false)
+	muted = f.Mute(false)
 	require.True(t, muted)
 	require.False(t, f.IsMuted())
 }
@@ -45,15 +45,13 @@ func TestForwarderLayersAudio(t *testing.T) {
 	require.Equal(t, buffer.InvalidLayer, f.CurrentLayer())
 	require.Equal(t, buffer.InvalidLayer, f.TargetLayer())
 
-	changed, maxLayer, currentLayer := f.SetMaxSpatialLayer(1)
+	changed, maxLayer := f.SetMaxSpatialLayer(1)
 	require.False(t, changed)
 	require.Equal(t, buffer.InvalidLayer, maxLayer)
-	require.Equal(t, buffer.InvalidLayer, currentLayer)
 
-	changed, maxLayer, currentLayer = f.SetMaxTemporalLayer(1)
+	changed, maxLayer = f.SetMaxTemporalLayer(1)
 	require.False(t, changed)
 	require.Equal(t, buffer.InvalidLayer, maxLayer)
-	require.Equal(t, buffer.InvalidLayer, currentLayer)
 
 	require.Equal(t, buffer.InvalidLayer, f.MaxLayer())
 }
@@ -72,12 +70,11 @@ func TestForwarderLayersVideo(t *testing.T) {
 		Spatial:  buffer.DefaultMaxLayerSpatial,
 		Temporal: buffer.DefaultMaxLayerTemporal,
 	}
-	changed, maxLayer, currentLayer := f.SetMaxSpatialLayer(buffer.DefaultMaxLayerSpatial)
+	changed, maxLayer := f.SetMaxSpatialLayer(buffer.DefaultMaxLayerSpatial)
 	require.True(t, changed)
 	require.Equal(t, expectedLayers, maxLayer)
-	require.Equal(t, buffer.InvalidLayer, currentLayer)
 
-	changed, maxLayer, currentLayer = f.SetMaxSpatialLayer(buffer.DefaultMaxLayerSpatial - 1)
+	changed, maxLayer = f.SetMaxSpatialLayer(buffer.DefaultMaxLayerSpatial - 1)
 	require.True(t, changed)
 	expectedLayers = buffer.VideoLayer{
 		Spatial:  buffer.DefaultMaxLayerSpatial - 1,
@@ -85,21 +82,18 @@ func TestForwarderLayersVideo(t *testing.T) {
 	}
 	require.Equal(t, expectedLayers, maxLayer)
 	require.Equal(t, expectedLayers, f.MaxLayer())
-	require.Equal(t, buffer.InvalidLayer, currentLayer)
 
 	f.vls.SetCurrent(buffer.VideoLayer{Spatial: 0, Temporal: 1})
-	changed, maxLayer, currentLayer = f.SetMaxSpatialLayer(buffer.DefaultMaxLayerSpatial - 1)
+	changed, maxLayer = f.SetMaxSpatialLayer(buffer.DefaultMaxLayerSpatial - 1)
 	require.False(t, changed)
 	require.Equal(t, expectedLayers, maxLayer)
 	require.Equal(t, expectedLayers, f.MaxLayer())
-	require.Equal(t, buffer.VideoLayer{Spatial: 0, Temporal: 1}, currentLayer)
 
-	changed, maxLayer, currentLayer = f.SetMaxTemporalLayer(buffer.DefaultMaxLayerTemporal)
+	changed, maxLayer = f.SetMaxTemporalLayer(buffer.DefaultMaxLayerTemporal)
 	require.False(t, changed)
 	require.Equal(t, expectedLayers, maxLayer)
-	require.Equal(t, buffer.VideoLayer{Spatial: 0, Temporal: 1}, currentLayer)
 
-	changed, maxLayer, currentLayer = f.SetMaxTemporalLayer(buffer.DefaultMaxLayerTemporal - 1)
+	changed, maxLayer = f.SetMaxTemporalLayer(buffer.DefaultMaxLayerTemporal - 1)
 	require.True(t, changed)
 	expectedLayers = buffer.VideoLayer{
 		Spatial:  buffer.DefaultMaxLayerSpatial - 1,
@@ -107,7 +101,6 @@ func TestForwarderLayersVideo(t *testing.T) {
 	}
 	require.Equal(t, expectedLayers, maxLayer)
 	require.Equal(t, expectedLayers, f.MaxLayer())
-	require.Equal(t, buffer.VideoLayer{Spatial: 0, Temporal: 1}, currentLayer)
 }
 
 func TestForwarderAllocateOptimal(t *testing.T) {
@@ -1404,8 +1397,8 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	marshalledVP8, err := expectedVP8.Marshal()
 	require.NoError(t, err)
 	expectedTP = TranslationParams{
-		isSwitchingToMaxSpatial: true,
-		isResuming:              true,
+		isSwitching: true,
+		isResuming:  true,
 		rtp: &TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingContiguous,
 			sequenceNumber: 23333,
@@ -1716,8 +1709,7 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	marshalledVP8, err = expectedVP8.Marshal()
 	require.NoError(t, err)
 	expectedTP = TranslationParams{
-		isSwitchingToMaxSpatial: true,
-		maxSpatialLayer:         1,
+		isSwitching: true,
 		rtp: &TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingContiguous,
 			sequenceNumber: 23339,
