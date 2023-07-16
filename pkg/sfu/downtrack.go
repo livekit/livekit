@@ -652,10 +652,6 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		return err
 	}
 
-	if tp.isSwitching {
-		d.postMaxLayerNotifierEvent()
-	}
-
 	d.pacer.Enqueue(pacer.Packet{
 		Header:             hdr,
 		Extensions:         []pacer.ExtensionData{{ID: uint8(d.dependencyDescriptorExtID), Payload: tp.ddBytes}},
@@ -1811,6 +1807,10 @@ func (d *DownTrack) packetSent(md interface{}, hdr *rtp.Header, payloadSize int,
 	}
 
 	if spmd.tp != nil {
+		if spmd.tp.isSwitching {
+			d.postMaxLayerNotifierEvent()
+		}
+
 		if spmd.tp.isResuming {
 			if sal := d.getStreamAllocatorListener(); sal != nil {
 				sal.OnResume(d)
