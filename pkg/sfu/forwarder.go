@@ -129,14 +129,13 @@ func (v VideoTransition) String() string {
 // -------------------------------------------------------------------
 
 type TranslationParams struct {
-	shouldDrop              bool
-	isResuming              bool
-	isSwitchingToMaxSpatial bool
-	maxSpatialLayer         int32
-	rtp                     *TranslationParamsRTP
-	codecBytes              []byte
-	ddBytes                 []byte
-	marker                  bool
+	shouldDrop  bool
+	isResuming  bool
+	isSwitching bool
+	rtp         *TranslationParamsRTP
+	codecBytes  []byte
+	ddBytes     []byte
+	marker      bool
 }
 
 // -------------------------------------------------------------------
@@ -199,6 +198,8 @@ type Forwarder struct {
 	codecMunger codecmunger.CodecMunger
 
 	onParkedLayerExpired func()
+
+	isClosed bool
 }
 
 func NewForwarder(
@@ -359,12 +360,12 @@ func (f *Forwarder) SeedState(state ForwarderState) {
 	f.refTSOffset = state.RefTSOffset
 }
 
-func (f *Forwarder) Mute(muted bool) (bool, buffer.VideoLayer) {
+func (f *Forwarder) Mute(muted bool) bool {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
 	if f.muted == muted {
-		return false, f.vls.GetMax()
+		return false
 	}
 
 	// Do not mute when paused due to bandwidth limitation.
@@ -383,7 +384,7 @@ func (f *Forwarder) Mute(muted bool) (bool, buffer.VideoLayer) {
 	// the case of intentional mute.
 	if muted && f.isDeficientLocked() && f.lastAllocation.PauseReason == VideoPauseReasonBandwidth {
 		f.logger.Infow("ignoring forwarder mute, paused due to congestion")
-		return false, f.vls.GetMax()
+		return false
 	}
 
 	f.logger.Debugw("setting forwarder mute", "muted", muted)
@@ -394,7 +395,7 @@ func (f *Forwarder) Mute(muted bool) (bool, buffer.VideoLayer) {
 		f.resyncLocked()
 	}
 
-	return true, f.vls.GetMax()
+	return true
 }
 
 func (f *Forwarder) IsMuted() bool {
@@ -404,12 +405,12 @@ func (f *Forwarder) IsMuted() bool {
 	return f.muted
 }
 
-func (f *Forwarder) PubMute(pubMuted bool) (bool, buffer.VideoLayer) {
+func (f *Forwarder) PubMute(pubMuted bool) bool {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
 	if f.pubMuted == pubMuted {
-		return false, f.vls.GetMax()
+		return false
 	}
 
 	f.logger.Debugw("setting forwarder pub mute", "pubMuted", pubMuted)
@@ -431,7 +432,7 @@ func (f *Forwarder) PubMute(pubMuted bool) (bool, buffer.VideoLayer) {
 		}
 	}
 
-	return true, f.vls.GetMax()
+	return true
 }
 
 func (f *Forwarder) IsPubMuted() bool {
@@ -448,17 +449,17 @@ func (f *Forwarder) IsAnyMuted() bool {
 	return f.muted || f.pubMuted
 }
 
-func (f *Forwarder) SetMaxSpatialLayer(spatialLayer int32) (bool, buffer.VideoLayer, buffer.VideoLayer) {
+func (f *Forwarder) SetMaxSpatialLayer(spatialLayer int32) (bool, buffer.VideoLayer) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
 	if f.kind == webrtc.RTPCodecTypeAudio {
-		return false, buffer.InvalidLayer, buffer.InvalidLayer
+		return false, buffer.InvalidLayer
 	}
 
 	existingMax := f.vls.GetMax()
 	if spatialLayer == existingMax.Spatial {
-		return false, existingMax, f.vls.GetCurrent()
+		return false, existingMax
 	}
 
 	f.logger.Debugw("setting max spatial layer", "layer", spatialLayer)
@@ -466,7 +467,7 @@ func (f *Forwarder) SetMaxSpatialLayer(spatialLayer int32) (bool, buffer.VideoLa
 
 	f.clearParkedLayer()
 
-	return true, f.vls.GetMax(), f.vls.GetCurrent()
+	return true, f.vls.GetMax()
 }
 
 func (f *Forwarder) SetMaxTemporalLayer(temporalLayer int32) (bool, buffer.VideoLayer, buffer.VideoLayer) {
@@ -509,6 +510,25 @@ func (f *Forwarder) TargetLayer() buffer.VideoLayer {
 	defer f.lock.RUnlock()
 
 	return f.vls.GetTarget()
+}
+
+func (f *Forwarder) GetMaxSubscribedSpatial() int32 {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+
+	layer := buffer.InvalidLayerSpatial // covers muted case
+	if !f.muted {
+		layer = f.vls.GetMax().Spatial
+
+		// If current is higher, mark the current layer as max subscribed layer
+		// to prevent the current layer from stopping before forwarder switches
+		// to the new and lower max layer,
+		if layer < f.vls.GetCurrent().Spatial {
+			layer = f.vls.GetCurrent().Spatial
+		}
+	}
+
+	return layer
 }
 
 func (f *Forwarder) isDeficientLocked() bool {
@@ -1689,8 +1709,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		return tp, nil
 	}
 	tp.isResuming = result.IsResuming
-	tp.isSwitchingToMaxSpatial = result.IsSwitchingToMaxSpatial
-	tp.maxSpatialLayer = result.MaxSpatialLayer
+	tp.isSwitching = result.IsSwitching
 	tp.ddBytes = result.DependencyDescriptorExtension
 	tp.marker = result.RTPMarker
 
