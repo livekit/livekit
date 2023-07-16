@@ -35,10 +35,6 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket, layer int32) (result VideoL
 			result.IsResuming = true
 		}
 
-		if s.currentLayer.Spatial == s.requestSpatial {
-			result.IsSwitchingToRequestSpatial = true
-		}
-
 		if s.currentLayer.Spatial >= s.maxLayer.Spatial {
 			result.IsSwitchingToMaxSpatial = true
 			result.MaxSpatialLayer = s.currentLayer.Spatial

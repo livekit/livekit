@@ -562,6 +562,11 @@ func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
 		if generation != d.keyFrameRequestGeneration.Load() || !d.bound.Load() {
 			return
 		}
+
+		locked, _ := d.forwarder.CheckSync()
+		if locked {
+			return
+		}
 	}
 }
 
@@ -1746,13 +1751,6 @@ func (d *DownTrack) packetSent(md interface{}, hdr *rtp.Header, payloadSize int,
 	if spmd.tp != nil {
 		if spmd.tp.isSwitchingToMaxSpatial && d.onMaxSubscribedLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
 			d.onMaxSubscribedLayerChanged(d, spmd.tp.maxSpatialLayer)
-		}
-
-		if spmd.tp.isSwitchingToRequestSpatial {
-			locked, _ := d.forwarder.CheckSync()
-			if locked {
-				d.stopKeyFrameRequester()
-			}
 		}
 
 		if spmd.tp.isResuming {

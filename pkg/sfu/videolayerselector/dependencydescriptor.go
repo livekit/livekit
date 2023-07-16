@@ -205,9 +205,6 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		d.previousActiveDecodeTargetsBitmask = d.activeDecodeTargetsBitmask
 		d.activeDecodeTargetsBitmask = buffer.GetActiveDecodeTargetBitmask(d.currentLayer, ddwdt.DecodeTargets)
 
-		if d.currentLayer.Spatial == d.requestSpatial {
-			result.IsSwitchingToRequestSpatial = true
-		}
 		if d.currentLayer.Spatial == d.maxLayer.Spatial {
 			result.IsSwitchingToMaxSpatial = true
 			result.MaxSpatialLayer = d.currentLayer.Spatial
