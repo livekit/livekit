@@ -42,6 +42,8 @@ type TrackSender interface {
 	HandleRTCPSenderReportData(payloadType webrtc.PayloadType, layer int32, srData *buffer.RTCPSenderReportData) error
 }
 
+// -------------------------------------------------------------------
+
 const (
 	RTPPaddingMaxPayloadSize      = 255
 	RTPPaddingEstimatedHeaderSize = 20
@@ -59,6 +61,8 @@ const (
 	waitBeforeSendPaddingOnMute = 100 * time.Millisecond
 	maxPaddingOnMuteDuration    = 5 * time.Second
 )
+
+// -------------------------------------------------------------------
 
 var (
 	ErrUnknownKind                       = errors.New("unknown kind of codec")
@@ -197,14 +201,13 @@ type DownTrack struct {
 	transceiver               *webrtc.RTPTransceiver
 	writeStream               webrtc.TrackLocalWriter
 	rtcpReader                *buffer.RTCPReader
-	onCloseHandler            func(willBeResumed bool)
-	onBinding                 func(error)
 
 	listenerLock            sync.RWMutex
 	receiverReportListeners []ReceiverReportListener
 
-	bindLock sync.Mutex
-	bound    atomic.Bool
+	bindLock  sync.Mutex
+	bound     atomic.Bool
+	onBinding func(error)
 
 	isClosed             atomic.Bool
 	connected            atomic.Bool
@@ -235,14 +238,13 @@ type DownTrack struct {
 
 	pacer pacer.Pacer
 
-	// update stats
-	onStatsUpdate func(dt *DownTrack, stat *livekit.AnalyticsStat)
+	maxLayerNotifierCh chan struct{}
 
-	// when max subscribed layer changes
+	cbMu                        sync.RWMutex
+	onStatsUpdate               func(dt *DownTrack, stat *livekit.AnalyticsStat)
 	onMaxSubscribedLayerChanged func(dt *DownTrack, layer int32)
-
-	// update rtt
-	onRttUpdate func(dt *DownTrack, rtt uint32)
+	onRttUpdate                 func(dt *DownTrack, rtt uint32)
+	onCloseHandler              func(willBeResumed bool)
 }
 
 // NewDownTrack returns a DownTrack.
@@ -266,17 +268,18 @@ func NewDownTrack(
 	}
 
 	d := &DownTrack{
-		logger:         logger,
-		id:             r.TrackID(),
-		subscriberID:   subID,
-		maxTrack:       mt,
-		streamID:       r.StreamID(),
-		bufferFactory:  bf,
-		receiver:       r,
-		upstreamCodecs: codecs,
-		kind:           kind,
-		codec:          codecs[0].RTPCodecCapability,
-		pacer:          pacer,
+		logger:             logger,
+		id:                 r.TrackID(),
+		subscriberID:       subID,
+		maxTrack:           mt,
+		streamID:           r.StreamID(),
+		bufferFactory:      bf,
+		receiver:           r,
+		upstreamCodecs:     codecs,
+		kind:               kind,
+		codec:              codecs[0].RTPCodecCapability,
+		pacer:              pacer,
+		maxLayerNotifierCh: make(chan struct{}, 20),
 	}
 	d.forwarder = NewForwarder(
 		d.kind,
@@ -307,10 +310,14 @@ func NewDownTrack(
 		Logger:                    d.logger.WithValues("direction", "down"),
 	})
 	d.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
-		if d.onStatsUpdate != nil {
-			d.onStatsUpdate(d, stat)
+		if onStatsUpdate := d.getOnStatsUpdate(); onStatsUpdate != nil {
+			onStatsUpdate(d, stat)
 		}
 	})
+
+	if d.kind == webrtc.RTPCodecTypeVideo {
+		go d.maxLayerNotifierWorker()
+	}
 
 	return d, nil
 }
@@ -541,6 +548,7 @@ func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
 	if d.IsClosed() || layer == buffer.InvalidLayerSpatial {
 		return
 	}
+
 	interval := 2 * d.rtpStats.GetRtt()
 	if interval < keyFrameIntervalMin {
 		interval = keyFrameIntervalMin
@@ -550,7 +558,13 @@ func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
 	}
 	ticker := time.NewTicker(time.Duration(interval) * time.Millisecond)
 	defer ticker.Stop()
+
 	for {
+		locked, _ := d.forwarder.CheckSync()
+		if locked {
+			return
+		}
+
 		if d.connected.Load() {
 			d.logger.Debugw("sending PLI for layer lock", "generation", generation, "layer", layer)
 			d.receiver.SendPLI(layer, false)
@@ -561,6 +575,34 @@ func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
 
 		if generation != d.keyFrameRequestGeneration.Load() || !d.bound.Load() {
 			return
+		}
+	}
+}
+
+func (d *DownTrack) postMaxLayerNotifierEvent() {
+	if d.IsClosed() {
+		return
+	}
+
+	select {
+	case d.maxLayerNotifierCh <- struct{}{}:
+	default:
+		d.logger.Warnw("max layer notifier event queue full", nil)
+	}
+}
+
+func (d *DownTrack) maxLayerNotifierWorker() {
+	more := true
+	for more {
+		_, more = <-d.maxLayerNotifierCh
+
+		maxLayerSpatial := buffer.InvalidLayerSpatial
+		if more {
+			maxLayerSpatial = d.forwarder.GetMaxSubscribedSpatial()
+		}
+		if onMaxSubscribedLayerChanged := d.getOnMaxLayerChanged(); onMaxSubscribedLayerChanged != nil {
+			d.logger.Infow("max subscribed layer changed", maxLayerSpatial)
+			onMaxSubscribedLayerChanged(d, maxLayerSpatial)
 		}
 	}
 }
@@ -725,17 +767,17 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 
 // Mute enables or disables media forwarding - subscriber triggered
 func (d *DownTrack) Mute(muted bool) {
-	changed, maxLayer := d.forwarder.Mute(muted)
-	d.handleMute(muted, false, changed, maxLayer)
+	changed := d.forwarder.Mute(muted)
+	d.handleMute(muted, changed)
 }
 
 // PubMute enables or disables media forwarding - publisher side
 func (d *DownTrack) PubMute(pubMuted bool) {
-	changed, maxLayer := d.forwarder.PubMute(pubMuted)
-	d.handleMute(pubMuted, true, changed, maxLayer)
+	changed := d.forwarder.PubMute(pubMuted)
+	d.handleMute(pubMuted, changed)
 }
 
-func (d *DownTrack) handleMute(muted bool, isPub bool, changed bool, maxLayer buffer.VideoLayer) {
+func (d *DownTrack) handleMute(muted bool, changed bool) {
 	if !changed {
 		return
 	}
@@ -762,18 +804,7 @@ func (d *DownTrack) handleMute(muted bool, isPub bool, changed bool, maxLayer bu
 	// Note that while publisher mute is active, subscriber changes can also happen
 	// and that could turn on/off layers on publisher side.
 	//
-	if !isPub && d.onMaxSubscribedLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
-		notifyLayer := buffer.InvalidLayerSpatial
-		if !muted {
-			//
-			// When unmuting, don't wait for layer lock as
-			// client might need to be notified to start layers
-			// before locking can happen in the forwarder.
-			//
-			notifyLayer = maxLayer.Spatial
-		}
-		d.onMaxSubscribedLayerChanged(d, notifyLayer)
-	}
+	d.postMaxLayerNotifierEvent()
 
 	if sal := d.getStreamAllocatorListener(); sal != nil {
 		sal.OnSubscriptionChanged(d)
@@ -856,12 +887,10 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 	d.rtpStats.Stop()
 	d.logger.Infow("rtp stats", "direction", "downstream", "mime", d.mime, "ssrc", d.ssrc, "stats", d.rtpStats.ToString())
 
-	if d.onMaxSubscribedLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
-		d.onMaxSubscribedLayerChanged(d, buffer.InvalidLayerSpatial)
-	}
+	close(d.maxLayerNotifierCh)
 
-	if d.onCloseHandler != nil {
-		d.onCloseHandler(!flush)
+	if onCloseHandler := d.getOnCloseHandler(); onCloseHandler != nil {
+		onCloseHandler(!flush)
 	}
 
 	d.stopKeyFrameRequester()
@@ -869,21 +898,12 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 }
 
 func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
-	changed, maxLayer, currentLayer := d.forwarder.SetMaxSpatialLayer(spatialLayer)
+	changed, maxLayer := d.forwarder.SetMaxSpatialLayer(spatialLayer)
 	if !changed {
 		return
 	}
 
-	if d.onMaxSubscribedLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo && maxLayer.SpatialGreaterThanOrEqual(currentLayer) {
-		//
-		// Notify when new max is
-		//   1. Equal to current -> already locked to the new max
-		//   2. Greater than current -> two scenarios
-		//      a. is higher than previous max -> client may need to start higher layer before forwarder can lock
-		//      b. is lower than previous max -> client can stop higher layer(s)
-		//
-		d.onMaxSubscribedLayerChanged(d, maxLayer.Spatial)
-	}
+	d.postMaxLayerNotifierEvent()
 
 	if sal := d.getStreamAllocatorListener(); sal != nil {
 		sal.OnSubscribedLayerChanged(d, maxLayer)
@@ -891,7 +911,7 @@ func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
 }
 
 func (d *DownTrack) SetMaxTemporalLayer(temporalLayer int32) {
-	changed, maxLayer, _ := d.forwarder.SetMaxTemporalLayer(temporalLayer)
+	changed, maxLayer := d.forwarder.SetMaxTemporalLayer(temporalLayer)
 	if !changed {
 		return
 	}
@@ -973,10 +993,23 @@ func (d *DownTrack) UpTrackBitrateReport(availableLayers []int32, bitrates Bitra
 
 // OnCloseHandler method to be called on remote tracked removed
 func (d *DownTrack) OnCloseHandler(fn func(willBeResumed bool)) {
+	d.cbMu.Lock()
+	defer d.cbMu.Unlock()
+
 	d.onCloseHandler = fn
 }
 
+func (d *DownTrack) getOnCloseHandler() func(willBeResumed bool) {
+	d.cbMu.RLock()
+	defer d.cbMu.RUnlock()
+
+	return d.onCloseHandler
+}
+
 func (d *DownTrack) OnBinding(fn func(error)) {
+	d.bindLock.Lock()
+	defer d.bindLock.Unlock()
+
 	d.onBinding = fn
 }
 
@@ -988,15 +1021,45 @@ func (d *DownTrack) AddReceiverReportListener(listener ReceiverReportListener) {
 }
 
 func (d *DownTrack) OnStatsUpdate(fn func(dt *DownTrack, stat *livekit.AnalyticsStat)) {
+	d.cbMu.Lock()
+	defer d.cbMu.Unlock()
+
 	d.onStatsUpdate = fn
 }
 
+func (d *DownTrack) getOnStatsUpdate() func(dt *DownTrack, stat *livekit.AnalyticsStat) {
+	d.cbMu.RLock()
+	defer d.cbMu.RUnlock()
+
+	return d.onStatsUpdate
+}
+
 func (d *DownTrack) OnRttUpdate(fn func(dt *DownTrack, rtt uint32)) {
+	d.cbMu.Lock()
+	defer d.cbMu.Unlock()
+
 	d.onRttUpdate = fn
 }
 
+func (d *DownTrack) getOnRttUpdate() func(dt *DownTrack, rtt uint32) {
+	d.cbMu.RLock()
+	defer d.cbMu.RUnlock()
+
+	return d.onRttUpdate
+}
+
 func (d *DownTrack) OnMaxLayerChanged(fn func(dt *DownTrack, layer int32)) {
+	d.cbMu.Lock()
+	defer d.cbMu.Unlock()
+
 	d.onMaxSubscribedLayerChanged = fn
+}
+
+func (d *DownTrack) getOnMaxLayerChanged() func(dt *DownTrack, layer int32) {
+	d.cbMu.RLock()
+	defer d.cbMu.RUnlock()
+
+	return d.onMaxSubscribedLayerChanged
 }
 
 func (d *DownTrack) IsDeficient() bool {
@@ -1355,8 +1418,8 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			d.sequencer.setRTT(rttToReport)
 		}
 
-		if d.onRttUpdate != nil {
-			d.onRttUpdate(d, rttToReport)
+		if onRttUpdate := d.getOnRttUpdate(); onRttUpdate != nil {
+			onRttUpdate(d, rttToReport)
 		}
 	}
 }
@@ -1744,15 +1807,8 @@ func (d *DownTrack) packetSent(md interface{}, hdr *rtp.Header, payloadSize int,
 	}
 
 	if spmd.tp != nil {
-		if spmd.tp.isSwitchingToMaxSpatial && d.onMaxSubscribedLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
-			d.onMaxSubscribedLayerChanged(d, spmd.tp.maxSpatialLayer)
-		}
-
-		if spmd.tp.isSwitchingToRequestSpatial {
-			locked, _ := d.forwarder.CheckSync()
-			if locked {
-				d.stopKeyFrameRequester()
-			}
+		if spmd.tp.isSwitching {
+			d.postMaxLayerNotifierEvent()
 		}
 
 		if spmd.tp.isResuming {

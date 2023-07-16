@@ -581,6 +581,10 @@ func (s *StreamAllocator) postEvent(event Event) {
 
 func (s *StreamAllocator) processEvents() {
 	for event := range s.eventCh {
+		if s.isStopped.Load() {
+			break
+		}
+
 		s.handleEvent(&event)
 	}
 
