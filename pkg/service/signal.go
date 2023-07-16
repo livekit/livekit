@@ -112,12 +112,6 @@ type signalService struct {
 }
 
 func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest]) (err error) {
-	// copy the context to prevent a race between the session handler closing
-	// and the delivery of any parting messages from the client. take care to
-	// copy the incoming rpc headers to avoid dropping any session vars.
-	ctx, cancel := context.WithCancel(metadata.NewContextWithIncomingHeader(context.Background(), metadata.IncomingHeader(stream.Context())))
-	defer cancel()
-
 	req, ok := <-stream.Channel()
 	if !ok {
 		return nil
@@ -139,6 +133,11 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 		"connID", ss.ConnectionId,
 	)
 
+	// copy the context to prevent a race between the session handler closing
+	// and the delivery of any parting messages from the client. take care to
+	// copy the incoming rpc headers to avoid dropping any session vars.
+	ctx, cancel := context.WithCancel(metadata.NewContextWithIncomingHeader(context.Background(), metadata.IncomingHeader(stream.Context())))
+
 	sink := routing.NewSignalMessageSink(routing.SignalSinkParams[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest]{
 		Logger:       l,
 		Stream:       stream,
@@ -158,11 +157,13 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 		l.Infow("signal stream closed", "error", err)
 
 		reqChan.Close()
+		cancel()
 	}()
 
 	err = r.sessionHandler(ctx, livekit.RoomName(ss.RoomName), *pi, livekit.ConnectionID(ss.ConnectionId), reqChan, sink)
 	if err != nil {
 		l.Errorw("could not handle new participant", err)
+		cancel()
 		return
 	}
 
