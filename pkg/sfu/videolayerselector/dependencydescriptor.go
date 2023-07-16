@@ -204,26 +204,6 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 
 		d.previousActiveDecodeTargetsBitmask = d.activeDecodeTargetsBitmask
 		d.activeDecodeTargetsBitmask = buffer.GetActiveDecodeTargetBitmask(d.currentLayer, ddwdt.DecodeTargets)
-
-		if d.currentLayer.Spatial == d.requestSpatial {
-			result.IsSwitchingToRequestSpatial = true
-		}
-		if d.currentLayer.Spatial == d.maxLayer.Spatial {
-			result.IsSwitchingToMaxSpatial = true
-			result.MaxSpatialLayer = d.currentLayer.Spatial
-			d.logger.Infow(
-				"reached max layer",
-				"previous", d.previousLayer,
-				"current", d.currentLayer,
-				"previousTarget", d.previousTargetLayer,
-				"target", d.targetLayer,
-				"max", d.maxLayer,
-				"layer", fd.SpatialId,
-				"req", d.requestSpatial,
-				"maxSeen", d.maxSeenLayer,
-				"feed", extPkt.Packet.SSRC,
-			)
-		}
 	}
 
 	ddExtension := &dede.DependencyDescriptorExtension{
