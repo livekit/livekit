@@ -149,7 +149,7 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 	reqChan := routing.NewDefaultMessageChannel(livekit.ConnectionID(ss.ConnectionId))
 
 	go func() {
-		err = routing.CopySignalStreamToMessageChannel[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest](
+		err := routing.CopySignalStreamToMessageChannel[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest](
 			stream,
 			reqChan,
 			signalRequestMessageReader{},
