@@ -470,17 +470,17 @@ func (f *Forwarder) SetMaxSpatialLayer(spatialLayer int32) (bool, buffer.VideoLa
 	return true, f.vls.GetMax()
 }
 
-func (f *Forwarder) SetMaxTemporalLayer(temporalLayer int32) (bool, buffer.VideoLayer, buffer.VideoLayer) {
+func (f *Forwarder) SetMaxTemporalLayer(temporalLayer int32) (bool, buffer.VideoLayer) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
 	if f.kind == webrtc.RTPCodecTypeAudio {
-		return false, buffer.InvalidLayer, buffer.InvalidLayer
+		return false, buffer.InvalidLayer
 	}
 
 	existingMax := f.vls.GetMax()
 	if temporalLayer == existingMax.Temporal {
-		return false, existingMax, f.vls.GetCurrent()
+		return false, existingMax
 	}
 
 	f.logger.Debugw("setting max temporal layer", "layer", temporalLayer)
@@ -488,7 +488,7 @@ func (f *Forwarder) SetMaxTemporalLayer(temporalLayer int32) (bool, buffer.Video
 
 	f.clearParkedLayer()
 
-	return true, f.vls.GetMax(), f.vls.GetCurrent()
+	return true, f.vls.GetMax()
 }
 
 func (f *Forwarder) MaxLayer() buffer.VideoLayer {

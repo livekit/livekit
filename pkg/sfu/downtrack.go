@@ -916,7 +916,7 @@ func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
 }
 
 func (d *DownTrack) SetMaxTemporalLayer(temporalLayer int32) {
-	changed, maxLayer, _ := d.forwarder.SetMaxTemporalLayer(temporalLayer)
+	changed, maxLayer := d.forwarder.SetMaxTemporalLayer(temporalLayer)
 	if !changed {
 		return
 	}
