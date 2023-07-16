@@ -579,8 +579,8 @@ func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
 	}
 }
 
-func (d *DownTrack) postMaxLayerNotifierEvent(force bool) {
-	if !force && d.IsClosed() {
+func (d *DownTrack) postMaxLayerNotifierEvent() {
+	if d.IsClosed() {
 		return
 	}
 
@@ -653,7 +653,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	}
 
 	if tp.isSwitching {
-		d.postMaxLayerNotifierEvent(false)
+		d.postMaxLayerNotifierEvent()
 	}
 
 	d.pacer.Enqueue(pacer.Packet{
@@ -808,7 +808,7 @@ func (d *DownTrack) handleMute(muted bool, changed bool) {
 	// Note that while publisher mute is active, subscriber changes can also happen
 	// and that could turn on/off layers on publisher side.
 	//
-	d.postMaxLayerNotifierEvent(false)
+	d.postMaxLayerNotifierEvent()
 
 	if sal := d.getStreamAllocatorListener(); sal != nil {
 		sal.OnSubscriptionChanged(d)
@@ -891,7 +891,6 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 	d.rtpStats.Stop()
 	d.logger.Infow("rtp stats", "direction", "downstream", "mime", d.mime, "ssrc", d.ssrc, "stats", d.rtpStats.ToString())
 
-	d.postMaxLayerNotifierEvent(true)
 	close(d.maxLayerNotifierCh)
 
 	if onCloseHandler := d.getOnCloseHandler(); onCloseHandler != nil {
@@ -908,7 +907,7 @@ func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
 		return
 	}
 
-	d.postMaxLayerNotifierEvent(false)
+	d.postMaxLayerNotifierEvent()
 
 	if sal := d.getStreamAllocatorListener(); sal != nil {
 		sal.OnSubscribedLayerChanged(d, maxLayer)

@@ -198,8 +198,6 @@ type Forwarder struct {
 	codecMunger codecmunger.CodecMunger
 
 	onParkedLayerExpired func()
-
-	isClosed bool
 }
 
 func NewForwarder(
