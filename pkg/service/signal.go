@@ -138,6 +138,12 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 	// copy the incoming rpc headers to avoid dropping any session vars.
 	ctx, cancel := context.WithCancel(metadata.NewContextWithIncomingHeader(context.Background(), metadata.IncomingHeader(stream.Context())))
 
+	// wait until room setup finishes to cancel the session context even if the
+	// stream has closed. this is required to complete setup i/o after room api
+	// has discarded the temp client.
+	sessionHandlerDone := make(chan struct{})
+	defer close(sessionHandlerDone)
+
 	sink := routing.NewSignalMessageSink(routing.SignalSinkParams[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest]{
 		Logger:       l,
 		Stream:       stream,
@@ -157,13 +163,14 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 		l.Infow("signal stream closed", "error", err)
 
 		reqChan.Close()
+
+		<-sessionHandlerDone
 		cancel()
 	}()
 
 	err = r.sessionHandler(ctx, livekit.RoomName(ss.RoomName), *pi, livekit.ConnectionID(ss.ConnectionId), reqChan, sink)
 	if err != nil {
 		l.Errorw("could not handle new participant", err)
-		cancel()
 		return
 	}
 
