@@ -888,8 +888,9 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, calculatedClockRate uint32) 
 		tsCycles++
 	}
 	nowRTPExt := getExtTS(nowRTP, tsCycles)
+	var nowRTPExtUsingRate uint64
 	if calculatedClockRate != 0 {
-		nowRTPExtUsingRate := r.extStartTS + uint64(float64(calculatedClockRate)*timeSinceFirst.Seconds())
+		nowRTPExtUsingRate = r.extStartTS + uint64(float64(calculatedClockRate)*timeSinceFirst.Seconds())
 		if nowRTPExtUsingRate > nowRTPExt {
 			nowRTPExt = nowRTPExtUsingRate
 			nowRTP = uint32(nowRTPExtUsingRate)
@@ -939,6 +940,9 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, calculatedClockRate uint32) 
 			"reportDrift", reportDriftResult.String(),
 			"highestTS", r.highestTS,
 			"highestTime", r.highestTime.String(),
+			"calculatedClockRate", calculatedClockRate,
+			"nowRTPExt", nowRTPExt,
+			"nowRTPExtUsingRate", nowRTPExtUsingRate,
 		)
 	}
 
