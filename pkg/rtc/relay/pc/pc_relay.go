@@ -33,7 +33,7 @@ const (
 type addTrackSignal struct {
 	Encodings []webrtc.RTPEncodingParameters `json:"encodings,omitempty"`
 	Rid       string                         `json:"rid,omitempty"`
-	Meta      string                         `json:"meta,omitempty"`
+	Meta      []byte                         `json:"meta,omitempty"`
 }
 
 type dcEvent struct {
@@ -45,7 +45,7 @@ type dcEvent struct {
 
 type pendingInfoTrack struct {
 	rid  string
-	meta string
+	meta []byte
 }
 
 type pendingWebrtcTrack struct {
@@ -110,8 +110,9 @@ type PcRelay struct {
 	pendingWebrtcTracks map[webrtc.SSRC]pendingWebrtcTrack
 	pendingTracksMu     sync.Mutex
 
-	onReady atomic.Value // func()
-	onTrack atomic.Value // func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, meta *TrackMeta)
+	onReady   atomic.Value // func()
+	onTrack   atomic.Value // func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, meta *TrackMeta)
+	onMessage atomic.Value // func(message []byte)
 
 	offerMu sync.Mutex
 
@@ -361,7 +362,7 @@ func (r *PcRelay) WriteRTCP(pkts []rtcp.Packet) error {
 	return r.pc.WriteRTCP(pkts)
 }
 
-func (r *PcRelay) AddTrack(ctx context.Context, track webrtc.TrackLocal, trackRid string, trackMeta string) (*webrtc.RTPSender, error) {
+func (r *PcRelay) AddTrack(ctx context.Context, track webrtc.TrackLocal, trackRid string, trackMeta []byte) (*webrtc.RTPSender, error) {
 	if rtpSender, err := r.pc.AddTrack(track); err != nil {
 		return nil, err
 	} else {
@@ -403,7 +404,7 @@ func (r *PcRelay) OnReady(f func()) {
 	r.onReady.Store(f)
 }
 
-func (r *PcRelay) OnTrack(f func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, mid string, rid string, meta string)) {
+func (r *PcRelay) OnTrack(f func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, mid string, rid string, meta []byte)) {
 	r.onTrack.Store(f)
 }
 
@@ -470,7 +471,7 @@ func (r *PcRelay) onPeerConnectionTrack(trackRemote *webrtc.TrackRemote, rtpRece
 	if infoTrack, ok := r.pendingInfoTracks[trackRemote.SSRC()]; ok {
 		delete(r.pendingInfoTracks, trackRemote.SSRC())
 		if f := r.onTrack.Load(); f != nil {
-			f.(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, mid string, rid string, meta string))(
+			f.(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, mid string, rid string, meta []byte))(
 				trackRemote,
 				rtpReceiver,
 				r.getMid(rtpReceiver),
@@ -492,7 +493,7 @@ func (r *PcRelay) onAddTrackSignal(signal *addTrackSignal) {
 			delete(r.pendingWebrtcTracks, encoding.SSRC)
 			trackRemote, rtpReceiver, mid := webrtcTrack.trackRemote, webrtcTrack.rtpReceiver, webrtcTrack.mid
 			if f := r.onTrack.Load(); f != nil {
-				f.(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, mid string, rid string, meta string))(
+				f.(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, mid string, rid string, meta []byte))(
 					trackRemote,
 					rtpReceiver,
 					mid,
@@ -607,5 +608,13 @@ func (r *PcRelay) onSignalingDataChannelMessage(msg webrtc.DataChannelMessage) {
 		}
 	} else if event.Type == eventTypeCustom {
 		r.logger.Infow("custom received")
+
+		if f := r.onMessage.Load(); f != nil {
+			f.(func(id uint64, payload []byte))(event.ID, event.Payload)
+		}
 	}
+}
+
+func (r *PcRelay) OnMessage(f func(id uint64, payload []byte)) {
+	r.onMessage.Store(f)
 }
