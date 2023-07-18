@@ -312,6 +312,7 @@ func NewRoom(
 				for _, update := range updates {
 					r.onRelayParticipantUpdate(rel, update)
 				}
+				r.sendParticipantUpdates(updates)
 			})
 
 			rel.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, mid string, rid string, meta []byte) {
@@ -788,6 +789,11 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 		delete(r.participants, identity)
 		delete(r.participantOpts, identity)
 		delete(r.participantRequestSources, identity)
+
+		r.relayedParticipantsMu.Lock()
+		delete(r.relayedParticipants, identity)
+		r.relayedParticipantsMu.Unlock()
+
 		if !p.Hidden() {
 			r.protoRoom.NumParticipants--
 		}
@@ -1229,6 +1235,10 @@ func (r *Room) subscribeToExistingTracks(p types.LocalParticipant) {
 
 // broadcast an update about participant p
 func (r *Room) broadcastParticipantState(p types.LocalParticipant, opts broadcastOptions) {
+	if _, ok := p.(*RelayedParticipantImpl); ok {
+		return
+	}
+
 	pi := p.ToProto()
 
 	if p.Hidden() {
