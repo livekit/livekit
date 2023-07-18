@@ -1165,7 +1165,11 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 		return nil
 	}
 
-	return d.rtpStats.GetRtcpSenderReport(d.ssrc, d.receiver.GetCalculatedClockRate(d.forwarder.CurrentLayer().Spatial))
+	clockLayer := d.forwarder.CurrentLayer().Spatial
+	if clockLayer == buffer.InvalidLayerSpatial {
+		clockLayer = d.forwarder.GetReferenceLayerSpatial()
+	}
+	return d.rtpStats.GetRtcpSenderReport(d.ssrc, d.receiver.GetCalculatedClockRate(clockLayer))
 }
 
 func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan struct{} {

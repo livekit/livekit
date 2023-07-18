@@ -529,6 +529,13 @@ func (f *Forwarder) GetMaxSubscribedSpatial() int32 {
 	return layer
 }
 
+func (f *Forwarder) GetReferenceLayerSpatial() int32 {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+
+	return f.referenceLayerSpatial
+}
+
 func (f *Forwarder) isDeficientLocked() bool {
 	return f.lastAllocation.IsDeficient
 }
@@ -1970,6 +1977,18 @@ done:
 	if !targetLayer.IsValid() {
 		distance += (maxSeenLayer.Temporal + 1)
 	}
+	// TODO-REMOVE-AFTER-DEBUG
+	logger.Debugw(
+		"distance to desired",
+		"maxSeenLauer", maxSeenLayer,
+		"availableLayers", availableLayers,
+		"brs", brs,
+		"targetLayer", targetLayer,
+		"maxLayer", maxLayer,
+		"adjustedMaxLayer", adjustedMaxLayer,
+		"maxAvailableSpatial", maxAvailableSpatial,
+		"maxAvailableTemporal", maxAvailableTemporal,
+	)
 
 	return float64(distance) / float64(maxSeenLayer.Temporal+1)
 }

@@ -944,6 +944,25 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, calculatedClockRate uint32) 
 			"nowRTPExt", nowRTPExt,
 			"nowRTPExtUsingRate", nowRTPExtUsingRate,
 		)
+	} else {
+		packetDriftResult, reportDriftResult := r.getDrift()
+		r.logger.Debugw(
+			"sending sender report",
+			"ntp", nowNTP.Time().String(),
+			"rtp", nowRTP,
+			"departure", now.String(),
+			"ntpDiffSinceLast", ntpDiffSinceLast.Seconds(),
+			"rtpDiffSinceLast", int32(rtpDiffSinceLast),
+			"departureDiffSinceLast", departureDiffSinceLast.Seconds(),
+			"expectedTimeDiffSinceLast", expectedTimeDiffSinceLast,
+			"packetDrift", packetDriftResult.String(),
+			"reportDrift", reportDriftResult.String(),
+			"highestTS", r.highestTS,
+			"highestTime", r.highestTime.String(),
+			"calculatedClockRate", calculatedClockRate,
+			"nowRTPExt", nowRTPExt,
+			"nowRTPExtUsingRate", nowRTPExtUsingRate,
+		)
 	}
 
 	return &rtcp.SenderReport{
