@@ -1637,27 +1637,19 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		// nominal increase
 		nextTS = lastTS + 1
 	}
-	f.logger.Infow(
-		"next timestamp on switch",
-		"switchingAt", switchingAt.String(),
-		"layer", layer,
-		"lastTS", lastTS,
-		"refTS", refTS,
-		"refTSOffset", f.refTSOffset,
-		"referenceLayerSpatial", f.referenceLayerSpatial,
-		"expectedTS", expectedTS,
-		"nextTS", nextTS,
-		"jump", nextTS-lastTS,
-	)
 
 	snOffset := uint16(1)
+	tsOffset := nextTS - lastTS
 	if !rtpMungerState.LastMarker {
 		// If last forwarded packet is not end of frame, synthesise a break in sequence number.
 		// Else, decoders could try to interpret consecutive packets as part of the same frame
 		// and potentially cause video corruption.
 		snOffset++
+		if tsOffset < f.codec.ClockRate*33/1000 {
+			tsOffset = f.codec.ClockRate * 33 / 1000
+		}
 	}
-	f.rtpMunger.UpdateSnTsOffsets(extPkt, snOffset, nextTS-lastTS)
+	f.rtpMunger.UpdateSnTsOffsets(extPkt, snOffset, tsOffset)
 	f.codecMunger.UpdateOffsets(extPkt)
 
 	f.logger.Infow(
@@ -1670,7 +1662,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		"referenceLayerSpatial", f.referenceLayerSpatial,
 		"expectedTS", expectedTS,
 		"nextTS", nextTS,
-		"tsOffset", nextTS-lastTS,
+		"tsOffset", tsOffset,
 		"snOffset", snOffset,
 	)
 	return nil
