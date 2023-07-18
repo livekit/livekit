@@ -946,7 +946,7 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, calculatedClockRate uint32) 
 		)
 	} else {
 		packetDriftResult, reportDriftResult := r.getDrift()
-		r.logger.Infow(
+		r.logger.Debugw(
 			"sending sender report",
 			"ntp", nowNTP.Time().String(),
 			"rtp", nowRTP,
