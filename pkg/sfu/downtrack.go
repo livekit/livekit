@@ -652,6 +652,18 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		return err
 	}
 
+	if d.kind == webrtc.RTPCodecTypeVideo {
+		d.logger.Debugw(
+			"forwarding debug",
+			"layer", layer,
+			"isn", extPkt.Packet.SequenceNumber,
+			"its", extPkt.Packet.Timestamp,
+			"im", extPkt.Packet.Marker,
+			"osn", hdr.SequenceNumber,
+			"ots", hdr.Timestamp,
+			"om", hdr.Marker,
+		)
+	}
 	d.pacer.Enqueue(pacer.Packet{
 		Header:             hdr,
 		Extensions:         []pacer.ExtensionData{{ID: uint8(d.dependencyDescriptorExtID), Payload: tp.ddBytes}},
