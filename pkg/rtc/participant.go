@@ -370,13 +370,14 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 		return false
 	}
 
-	p.GetLogger().Infow("updating participant permission", "permission", permission)
+	p.params.Logger.Infow("updating participant permission", "permission", permission)
 
 	video.UpdateFromPermission(permission)
 	p.dirty.Store(true)
 
 	canPublish := video.GetCanPublish()
 	canSubscribe := video.GetCanSubscribe()
+
 	onParticipantUpdate := p.onParticipantUpdate
 	onClaimsChanged := p.onClaimsChanged
 
@@ -387,13 +388,7 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 	// publish permission has been revoked then remove offending tracks
 	for _, track := range p.GetPublishedTracks() {
 		if !video.GetCanPublishSource(track.Source()) {
-			p.RemovePublishedTrack(track, false, false)
-			if p.ProtocolVersion().SupportsUnpublish() {
-				p.sendTrackUnpublished(track.ID())
-			} else {
-				// for older clients that don't support unpublish, mute to avoid them sending data
-				p.sendTrackMuted(track.ID(), true)
-			}
+			p.removePublishedTrack(track)
 		}
 	}
 
@@ -1190,22 +1185,24 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 }
 
 func (p *ParticipantImpl) setIsPublisher(isPublisher bool) {
-	if p.isPublisher.Swap(isPublisher) != isPublisher {
-		p.lock.Lock()
-		p.requireBroadcast = true
-		p.lock.Unlock()
+	if p.isPublisher.Swap(isPublisher) == isPublisher {
+		return
+	}
 
-		p.dirty.Store(true)
+	p.lock.Lock()
+	p.requireBroadcast = true
+	p.lock.Unlock()
 
-		// trigger update as well if participant is already fully connected
-		if p.State() == livekit.ParticipantInfo_ACTIVE {
-			p.lock.RLock()
-			onParticipantUpdate := p.onParticipantUpdate
-			p.lock.RUnlock()
+	p.dirty.Store(true)
 
-			if onParticipantUpdate != nil {
-				onParticipantUpdate(p)
-			}
+	// trigger update as well if participant is already fully connected
+	if p.State() == livekit.ParticipantInfo_ACTIVE {
+		p.lock.RLock()
+		onParticipantUpdate := p.onParticipantUpdate
+		p.lock.RUnlock()
+
+		if onParticipantUpdate != nil {
+			onParticipantUpdate(p)
 		}
 	}
 }
@@ -1218,6 +1215,16 @@ func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription) err
 			Offer: ToProtoSessionDescription(offer),
 		},
 	})
+}
+
+func (p *ParticipantImpl) removePublishedTrack(track types.MediaTrack) {
+	p.RemovePublishedTrack(track, false, false)
+	if p.ProtocolVersion().SupportsUnpublish() {
+		p.sendTrackUnpublished(track.ID())
+	} else {
+		// for older clients that don't support unpublish, mute to avoid them sending data
+		p.sendTrackMuted(track.ID(), true)
+	}
 }
 
 // when a new remoteTrack is created, creates a Track and adds it to room
@@ -1242,12 +1249,12 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 		p.params.Logger.Warnw("no permission to publish mediaTrack", nil,
 			"source", publishedTrack.Source(),
 		)
+		p.removePublishedTrack(publishedTrack)
 		return
 	}
 
-	if !p.IsPublisher() {
-		p.setIsPublisher(true)
-	}
+	p.setIsPublisher(true)
+	p.dirty.Store(true)
 
 	p.params.Logger.Infow("mediaTrack published",
 		"kind", track.Kind().String(),
@@ -1257,8 +1264,6 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 		"SSRC", track.SSRC(),
 		"mime", track.Codec().MimeType,
 	)
-
-	p.dirty.Store(true)
 
 	if !isNewTrack && !publishedTrack.HasPendingCodec() && p.IsReady() {
 		p.lock.RLock()
@@ -1300,9 +1305,7 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		p.params.Logger.Warnw("received unsupported data packet", nil, "payload", payload)
 	}
 
-	if !p.IsPublisher() {
-		p.setIsPublisher(true)
-	}
+	p.setIsPublisher(true)
 }
 
 func (p *ParticipantImpl) onICECandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) error {
