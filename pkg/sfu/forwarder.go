@@ -1988,6 +1988,8 @@ done:
 		"adjustedMaxLayer", adjustedMaxLayer,
 		"maxAvailableSpatial", maxAvailableSpatial,
 		"maxAvailableTemporal", maxAvailableTemporal,
+		"distance", distance,
+		"distanceToDesired", float64(distance)/float64(maxSeenLayer.Temporal+1),
 	)
 
 	return float64(distance) / float64(maxSeenLayer.Temporal+1)
