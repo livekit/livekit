@@ -1140,7 +1140,7 @@ func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription) err
 	})
 }
 
-func (p *ParticipantImpl) forwardTrackToRelays(publishedTrack *MediaTrack, track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
+func (p *ParticipantImpl) forwardTrackToRelays(publishedTrack *MediaTrack, track *webrtc.TrackRemote) {
 	p.params.RelayCollection.OnceForEach(func(relay relay.Relay) {
 		codec := track.Codec()
 		tr := publishedTrack.MediaTrackReceiver.Receiver(track.Codec().MimeType)
@@ -1165,19 +1165,21 @@ func (p *ParticipantImpl) forwardTrackToRelays(publishedTrack *MediaTrack, track
 		)
 		if err != nil {
 			p.params.Logger.Errorw("new down track", err)
+			return
 		}
-		pi := p.ToProto()
-		for _, ti := range pi.Tracks {
-			for _, l := range ti.Layers {
-				l.Ssrc = 0
-			}
+
+		addTrackSignal := AddTrackSignal{string(p.Identity()), publishedTrack.trackInfo}
+
+		addTrackSignalPayload, marshalErr := json.Marshal(addTrackSignal)
+		if marshalErr != nil {
+			p.params.Logger.Errorw("marhsla err", err)
+			return
 		}
-		participantInfo, _ := json.Marshal(pi)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		_, err = relay.AddTrack(ctx, dt, track.RID(), string(participantInfo))
+		_, err = relay.AddTrack(ctx, dt, track.RID(), addTrackSignalPayload)
 		if err != nil {
 			p.params.Logger.Errorw("add track to relay", err)
 			return
@@ -1216,7 +1218,7 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 			"mime", track.Codec().MimeType,
 		)
 
-		p.forwardTrackToRelays(publishedTrack, track, rtpReceiver)
+		p.forwardTrackToRelays(publishedTrack, track)
 	} else {
 		p.params.Logger.Warnw("webrtc Track published but can't find MediaTrack", nil,
 			"kind", track.Kind().String(),

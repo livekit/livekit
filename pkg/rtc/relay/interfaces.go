@@ -14,10 +14,11 @@ type Relay interface {
 	Offer(signalFn func(signal []byte) ([]byte, error)) error
 	Answer(request []byte) ([]byte, error)
 	WriteRTCP(pkts []rtcp.Packet) error
-	AddTrack(ctx context.Context, track webrtc.TrackLocal, trackRid string, trackMeta string) (*webrtc.RTPSender, error)
+	AddTrack(ctx context.Context, track webrtc.TrackLocal, trackRid string, trackMeta []byte) (*webrtc.RTPSender, error)
 	OnReady(f func())
-	OnTrack(f func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, mid string, rid string, trackMeta string))
+	OnTrack(f func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, mid string, rid string, trackMeta []byte))
 	OnConnectionStateChange(f func(state webrtc.ICEConnectionState))
+	OnMessage(func(id uint64, payload []byte))
 	Send(payload []byte) error
 	SendReply(replyForID uint64, payload []byte) error
 	SendAndExpectReply(payload []byte) (<-chan []byte, error)

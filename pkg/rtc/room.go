@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"sort"
@@ -192,6 +193,7 @@ func NewRoom(
 	pendingAnswersMu := sync.Mutex{}
 
 	roomP2PCommunicator.ForEachPeer(func(peerId string) {
+		logger.Infow("New p2p peer", "peerId", peerId)
 		rel, err := pc.NewRelay(logger, &relay.RelayConfig{
 			BufferFactory: r.GetBufferFactory(),
 			SettingEngine: config.SettingEngine,
@@ -204,6 +206,14 @@ func NewRoom(
 
 		rel.OnReady(func() {
 			logger.Infow("Out relay is ready")
+			updates := ToProtoParticipants(r.GetParticipants())
+			if len(updates) > 0 {
+				if updatesForRelay, err := r.getUpdatesPayloadForRelay(updates); err != nil {
+					r.Logger.Errorw("could not create participant update for relay", err)
+				} else if err := rel.Send(updatesForRelay); err != nil {
+					r.Logger.Errorw("could not send participant updates to relay", err)
+				}
+			}
 			r.outRelayCollection.AddRelay(rel)
 		})
 
@@ -292,8 +302,27 @@ func NewRoom(
 
 			logger.Infow("answer sent")
 
-			rel.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, mid string, rid string, meta string) {
-				r.onRelayAddTrack(rel, track, receiver, mid, rid, meta)
+			rel.OnMessage(func(id uint64, payload []byte) {
+				logger.Infow("Relay message received")
+				var updates []*livekit.ParticipantInfo
+				if err := json.Unmarshal(payload, &updates); err != nil {
+					r.Logger.Errorw("could not unmarshal participant updates", err)
+					return
+				}
+				for _, update := range updates {
+					r.onRelayParticipantUpdate(rel, update)
+				}
+				r.sendParticipantUpdates(updates)
+			})
+
+			rel.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, mid string, rid string, meta []byte) {
+				logger.Infow("Relay track published", "mid", mid, "rid", rid)
+				var addTrackSignal AddTrackSignal
+				if err := json.Unmarshal(meta, &addTrackSignal); err != nil {
+					r.Logger.Errorw("unmarshal err", err)
+					return
+				}
+				r.onRelayAddTrack(rel, track, receiver, mid, rid, addTrackSignal)
 			})
 		}
 	})
@@ -301,139 +330,143 @@ func NewRoom(
 	return r
 }
 
-func (r *Room) onRelayAddTrack(rel relay.Relay, track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, mid string, rid string, meta string) {
-	logger.Infow("Relay track published", "mid", mid)
-	var participantInfo livekit.ParticipantInfo
-	if err := json.Unmarshal([]byte(meta), &participantInfo); err != nil {
-		panic(err)
-	}
+func (r *Room) onRelayParticipantUpdate(rel relay.Relay, pi *livekit.ParticipantInfo) {
+	r.relayedParticipantsMu.Lock()
+	defer r.relayedParticipantsMu.Unlock()
 
-	participantIdentity := livekit.ParticipantIdentity(participantInfo.Identity)
+	participantIdentity := livekit.ParticipantIdentity(pi.Identity)
 
-	var remoteParticipant *RelayedParticipantImpl
+	remoteParticipant, exists := r.relayedParticipants[participantIdentity]
+	if !exists {
+		rtcConfig := r.Config
+		rtcConfig.SetBufferFactory(rel.GetBufferFactory())
 
-	func() {
-		r.relayedParticipantsMu.Lock()
-		defer r.relayedParticipantsMu.Unlock()
-
-		var exists bool
-		remoteParticipant, exists = r.relayedParticipants[participantIdentity]
-		if !exists {
-			rtcConfig := r.Config
-			rtcConfig.SetBufferFactory(rel.GetBufferFactory())
-
-			remoteParticipant, _ = NewRelayedParticipant(RelayedParticipantParams{
-				Identity: participantIdentity,
-				Name:     livekit.ParticipantName(participantInfo.Name),
-				SID:      livekit.ParticipantID(participantInfo.Sid),
-				Config:   &rtcConfig,
-				AudioConfig: cfg.AudioConfig{
-					ActiveLevel:     35, // -35dBov
-					MinPercentile:   40,
-					UpdateInterval:  400,
-					SmoothIntervals: 2,
-				},
-				VideoConfig: cfg.VideoConfig{
-					DynacastPauseDelay: 5 * time.Second,
-					StreamTracker: cfg.StreamTrackersConfig{
-						Video: cfg.StreamTrackerConfig{
-							StreamTrackerType: cfg.StreamTrackerTypePacket,
-							BitrateReportInterval: map[int32]time.Duration{
-								0: 1 * time.Second,
-								1: 1 * time.Second,
-								2: 1 * time.Second,
+		remoteParticipant, _ = NewRelayedParticipant(RelayedParticipantParams{
+			Identity: participantIdentity,
+			Name:     livekit.ParticipantName(pi.Name),
+			SID:      livekit.ParticipantID(pi.Sid),
+			Config:   &rtcConfig,
+			AudioConfig: cfg.AudioConfig{
+				ActiveLevel:     35, // -35dBov
+				MinPercentile:   40,
+				UpdateInterval:  400,
+				SmoothIntervals: 2,
+			},
+			VideoConfig: cfg.VideoConfig{
+				DynacastPauseDelay: 5 * time.Second,
+				StreamTracker: cfg.StreamTrackersConfig{
+					Video: cfg.StreamTrackerConfig{
+						StreamTrackerType: cfg.StreamTrackerTypePacket,
+						BitrateReportInterval: map[int32]time.Duration{
+							0: 1 * time.Second,
+							1: 1 * time.Second,
+							2: 1 * time.Second,
+						},
+						PacketTracker: map[int32]cfg.StreamTrackerPacketConfig{
+							0: {
+								SamplesRequired: 1,
+								CyclesRequired:  4,
+								CycleDuration:   500 * time.Millisecond,
 							},
-							PacketTracker: map[int32]cfg.StreamTrackerPacketConfig{
-								0: {
-									SamplesRequired: 1,
-									CyclesRequired:  4,
-									CycleDuration:   500 * time.Millisecond,
-								},
-								1: {
-									SamplesRequired: 5,
-									CyclesRequired:  20,
-									CycleDuration:   500 * time.Millisecond,
-								},
-								2: {
-									SamplesRequired: 5,
-									CyclesRequired:  20,
-									CycleDuration:   500 * time.Millisecond,
-								},
+							1: {
+								SamplesRequired: 5,
+								CyclesRequired:  20,
+								CycleDuration:   500 * time.Millisecond,
 							},
-							FrameTracker: map[int32]cfg.StreamTrackerFrameConfig{
-								0: {
-									MinFPS: 5.0,
-								},
-								1: {
-									MinFPS: 5.0,
-								},
-								2: {
-									MinFPS: 5.0,
-								},
+							2: {
+								SamplesRequired: 5,
+								CyclesRequired:  20,
+								CycleDuration:   500 * time.Millisecond,
 							},
 						},
-						Screenshare: cfg.StreamTrackerConfig{
-							StreamTrackerType: cfg.StreamTrackerTypePacket,
-							BitrateReportInterval: map[int32]time.Duration{
-								0: 4 * time.Second,
-								1: 4 * time.Second,
-								2: 4 * time.Second,
+						FrameTracker: map[int32]cfg.StreamTrackerFrameConfig{
+							0: {
+								MinFPS: 5.0,
 							},
-							PacketTracker: map[int32]cfg.StreamTrackerPacketConfig{
-								0: {
-									SamplesRequired: 1,
-									CyclesRequired:  1,
-									CycleDuration:   2 * time.Second,
-								},
-								1: {
-									SamplesRequired: 1,
-									CyclesRequired:  1,
-									CycleDuration:   2 * time.Second,
-								},
-								2: {
-									SamplesRequired: 1,
-									CyclesRequired:  1,
-									CycleDuration:   2 * time.Second,
-								},
+							1: {
+								MinFPS: 5.0,
 							},
-							FrameTracker: map[int32]cfg.StreamTrackerFrameConfig{
-								0: {
-									MinFPS: 0.5,
-								},
-								1: {
-									MinFPS: 0.5,
-								},
-								2: {
-									MinFPS: 0.5,
-								},
+							2: {
+								MinFPS: 5.0,
+							},
+						},
+					},
+					Screenshare: cfg.StreamTrackerConfig{
+						StreamTrackerType: cfg.StreamTrackerTypePacket,
+						BitrateReportInterval: map[int32]time.Duration{
+							0: 4 * time.Second,
+							1: 4 * time.Second,
+							2: 4 * time.Second,
+						},
+						PacketTracker: map[int32]cfg.StreamTrackerPacketConfig{
+							0: {
+								SamplesRequired: 1,
+								CyclesRequired:  1,
+								CycleDuration:   2 * time.Second,
+							},
+							1: {
+								SamplesRequired: 1,
+								CyclesRequired:  1,
+								CycleDuration:   2 * time.Second,
+							},
+							2: {
+								SamplesRequired: 1,
+								CyclesRequired:  1,
+								CycleDuration:   2 * time.Second,
+							},
+						},
+						FrameTracker: map[int32]cfg.StreamTrackerFrameConfig{
+							0: {
+								MinFPS: 0.5,
+							},
+							1: {
+								MinFPS: 0.5,
+							},
+							2: {
+								MinFPS: 0.5,
 							},
 						},
 					},
 				},
-				Logger: LoggerWithParticipant(r.Logger, livekit.ParticipantIdentity(participantInfo.Identity), livekit.ParticipantID(participantInfo.Sid), true),
-				// SimTracks: nil,
-				// InitialVersion: 0,
-				Telemetry: r.telemetry,
-				PLIThrottleConfig: cfg.PLIThrottleConfig{
-					LowQuality:  500 * time.Millisecond,
-					MidQuality:  time.Second,
-					HighQuality: time.Second,
-				},
-				VersionGenerator: utils.NewDefaultTimedVersionGenerator(),
-				Relay:            rel,
-			})
-			opts := ParticipantOptions{
-				AutoSubscribe: false,
-			}
-			if err := r.Join(remoteParticipant, nil, &opts, nil); err != nil {
-				logger.Errorw("Can not join remote participant", err)
-			} else {
-				logger.Infow("Remote participant joined")
-				r.relayedParticipants[participantIdentity] = remoteParticipant
-			}
+			},
+			Logger: LoggerWithParticipant(r.Logger, livekit.ParticipantIdentity(pi.Identity), livekit.ParticipantID(pi.Sid), true),
+			// SimTracks: nil,
+			// InitialVersion: 0,
+			Telemetry: r.telemetry,
+			PLIThrottleConfig: cfg.PLIThrottleConfig{
+				LowQuality:  500 * time.Millisecond,
+				MidQuality:  time.Second,
+				HighQuality: time.Second,
+			},
+			VersionGenerator: utils.NewDefaultTimedVersionGenerator(),
+			Relay:            rel,
+		})
+		opts := ParticipantOptions{
+			AutoSubscribe: false,
 		}
-	}()
-	remoteParticipant.OnMediaTrack(track, receiver, mid, rid, participantInfo.Tracks)
+		if err := r.Join(remoteParticipant, nil, &opts, nil); err != nil {
+			logger.Errorw("Can not join remote participant", err, "Identity", remoteParticipant.Identity())
+			return
+		}
+		logger.Infow("Remote participant joined", "Identity", remoteParticipant.Identity())
+		r.relayedParticipants[participantIdentity] = remoteParticipant
+	}
+	remoteParticipant.SetName(pi.Name)
+	remoteParticipant.SetState(pi.State)
+	remoteParticipant.SetMetadata(pi.Metadata)
+}
+
+func (r *Room) onRelayAddTrack(rel relay.Relay, track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, mid string, rid string, addTrackSignal AddTrackSignal) {
+	participantIdentity := livekit.ParticipantIdentity(addTrackSignal.Identity)
+
+	r.relayedParticipantsMu.Lock()
+	defer r.relayedParticipantsMu.Unlock()
+
+	if remoteParticipant, exists := r.relayedParticipants[participantIdentity]; exists {
+		remoteParticipant.OnMediaTrack(track, receiver, mid, rid, addTrackSignal.Track)
+	} else {
+		r.Logger.Errorw("unknown relayed participant", nil)
+	}
 }
 
 func (r *Room) ToProto() *livekit.Room {
@@ -756,6 +789,11 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 		delete(r.participants, identity)
 		delete(r.participantOpts, identity)
 		delete(r.participantRequestSources, identity)
+
+		r.relayedParticipantsMu.Lock()
+		delete(r.relayedParticipants, identity)
+		r.relayedParticipantsMu.Unlock()
+
 		if !p.Hidden() {
 			r.protoRoom.NumParticipants--
 		}
@@ -1197,6 +1235,10 @@ func (r *Room) subscribeToExistingTracks(p types.LocalParticipant) {
 
 // broadcast an update about participant p
 func (r *Room) broadcastParticipantState(p types.LocalParticipant, opts broadcastOptions) {
+	if _, ok := p.(*RelayedParticipantImpl); ok {
+		return
+	}
+
 	pi := p.ToProto()
 
 	if p.Hidden() {
@@ -1213,6 +1255,7 @@ func (r *Room) broadcastParticipantState(p types.LocalParticipant, opts broadcas
 
 	updates := r.pushAndDequeueUpdates(pi, opts.immediate)
 	r.sendParticipantUpdates(updates)
+	r.sendParticipantUpdatesToRelays(updates)
 }
 
 func (r *Room) sendParticipantUpdates(updates []*livekit.ParticipantInfo) {
@@ -1226,6 +1269,38 @@ func (r *Room) sendParticipantUpdates(updates []*livekit.ParticipantInfo) {
 			r.Logger.Errorw("could not send update to participant", err,
 				"participant", op.Identity(), "pID", op.ID())
 		}
+	}
+}
+
+func (r *Room) getUpdatesPayloadForRelay(updates []*livekit.ParticipantInfo) ([]byte, error) {
+	updatesForRelay := make([]*livekit.ParticipantInfo, 0, len(updates))
+	for _, update := range updates {
+		if _, ok := r.relayedParticipants[livekit.ParticipantIdentity(update.Identity)]; ok {
+			continue
+		}
+		updatesForRelay = append(updatesForRelay, update)
+	}
+
+	if updatesPayload, err := json.Marshal(updatesForRelay); err != nil {
+		return nil, fmt.Errorf("could not marshal participant updates: %w", err)
+	} else {
+		return updatesPayload, nil
+	}
+}
+
+func (r *Room) sendParticipantUpdatesToRelays(updates []*livekit.ParticipantInfo) {
+	if len(updates) == 0 {
+		return
+	}
+
+	if updatesForRelay, err := r.getUpdatesPayloadForRelay(updates); err != nil {
+		r.Logger.Errorw("could not create participant update for relay", err)
+	} else if len(updatesForRelay) > 0 {
+		r.outRelayCollection.ForEach(func(relay relay.Relay) {
+			if err := relay.Send(updatesForRelay); err != nil {
+				r.Logger.Errorw("could not send participant updates to relay", err)
+			}
+		})
 	}
 }
 

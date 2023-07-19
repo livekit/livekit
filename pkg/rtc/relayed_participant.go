@@ -26,6 +26,11 @@ import (
 	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
+type AddTrackSignal struct {
+	Identity string             `json:"identity,omitempty"`
+	Track    *livekit.TrackInfo `json:"track,omitempty"`
+}
+
 type RelayedParticipantParams struct {
 	Identity          livekit.ParticipantIdentity
 	Name              livekit.ParticipantName
@@ -45,6 +50,8 @@ type RelayedParticipantParams struct {
 type RelayedParticipantImpl struct {
 	params RelayedParticipantParams
 
+	state atomic.Value // livekit.ParticipantInfo_State
+
 	grants *auth.ClaimGrants
 
 	connectedAt time.Time
@@ -62,7 +69,11 @@ type RelayedParticipantImpl struct {
 	onTrackPublished     func(types.LocalParticipant, types.MediaTrack)
 	onTrackUpdated       func(types.LocalParticipant, types.MediaTrack)
 	onTrackUnpublished   func(types.LocalParticipant, types.MediaTrack)
+	onStateChange        func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State)
 	onMigrateStateChange func(p types.LocalParticipant, migrateState types.MigrateState)
+	onParticipantUpdate  func(types.LocalParticipant)
+
+	onClaimsChanged func(participant types.LocalParticipant)
 
 	migrateState atomic.Value // types.MigrateState
 
@@ -94,6 +105,7 @@ func NewRelayedParticipant(params RelayedParticipantParams) (*RelayedParticipant
 		supervisor:  supervisor.NewParticipantSupervisor(supervisor.ParticipantSupervisorParams{Logger: params.Logger}),
 	}
 	p.version.Store(params.InitialVersion)
+	p.state.Store(livekit.ParticipantInfo_JOINING)
 
 	go p.publisherRTCPWorker()
 
@@ -131,7 +143,7 @@ func (p *RelayedParticipantImpl) Identity() livekit.ParticipantIdentity {
 }
 
 func (p *RelayedParticipantImpl) State() livekit.ParticipantInfo_State {
-	return livekit.ParticipantInfo_ACTIVE
+	return p.state.Load().(livekit.ParticipantInfo_State)
 }
 
 func (p *RelayedParticipantImpl) ToProto() *livekit.ParticipantInfo {
@@ -153,12 +165,66 @@ func (p *RelayedParticipantImpl) ToProto() *livekit.ParticipantInfo {
 	return info
 }
 
+func (p *RelayedParticipantImpl) SetState(state livekit.ParticipantInfo_State) {
+	oldState := p.State()
+	if state == oldState {
+		return
+	}
+	p.state.Store(state)
+	p.params.Logger.Debugw("updating relayed participant state", "state", state.String())
+	p.lock.RLock()
+	onStateChange := p.onStateChange
+	p.lock.RUnlock()
+	if onStateChange != nil {
+		go func() {
+			defer func() {
+				if r := Recover(p.GetLogger()); r != nil {
+					os.Exit(1)
+				}
+			}()
+			onStateChange(p, oldState)
+		}()
+	}
+}
+
 func (p *RelayedParticipantImpl) SetName(name string) {
-	// TODO implement me
+	p.lock.Lock()
+	changed := p.grants.Name != name
+	p.grants.Name = name
+	onParticipantUpdate := p.onParticipantUpdate
+	onClaimsChanged := p.onClaimsChanged
+	p.lock.Unlock()
+
+	if !changed {
+		return
+	}
+
+	if onParticipantUpdate != nil {
+		onParticipantUpdate(p)
+	}
+	if onClaimsChanged != nil {
+		onClaimsChanged(p)
+	}
 }
 
 func (p *RelayedParticipantImpl) SetMetadata(metadata string) {
-	// TODO implement me
+	p.lock.Lock()
+	changed := p.grants.Metadata != metadata
+	p.grants.Metadata = metadata
+	onParticipantUpdate := p.onParticipantUpdate
+	onClaimsChanged := p.onClaimsChanged
+	p.lock.Unlock()
+
+	if !changed {
+		return
+	}
+
+	if onParticipantUpdate != nil {
+		onParticipantUpdate(p)
+	}
+	if onClaimsChanged != nil {
+		onClaimsChanged(p)
+	}
 }
 
 func (p *RelayedParticipantImpl) HasPermission(trackID livekit.TrackID, subIdentity livekit.ParticipantIdentity) bool {
@@ -458,8 +524,10 @@ func (p *RelayedParticipantImpl) SendReconnectResponse(reconnectResponse *liveki
 
 func (p *RelayedParticipantImpl) IssueFullReconnect(reason types.ParticipantCloseReason) {}
 
-func (p *RelayedParticipantImpl) OnStateChange(f func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State)) {
-	// TODO implement me
+func (p *RelayedParticipantImpl) OnStateChange(callback func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State)) {
+	p.lock.Lock()
+	p.onStateChange = callback
+	p.lock.Unlock()
 }
 
 func (p *RelayedParticipantImpl) OnMigrateStateChange(f func(p types.LocalParticipant, migrateState types.MigrateState)) {
@@ -485,7 +553,9 @@ func (p *RelayedParticipantImpl) OnTrackUnpublished(callback func(types.LocalPar
 }
 
 func (p *RelayedParticipantImpl) OnParticipantUpdate(callback func(types.LocalParticipant)) {
-	// TODO implement me
+	p.lock.Lock()
+	p.onParticipantUpdate = callback
+	p.lock.Unlock()
 }
 
 func (p *RelayedParticipantImpl) OnDataPacket(callback func(types.LocalParticipant, *livekit.DataPacket)) {
@@ -501,7 +571,9 @@ func (p *RelayedParticipantImpl) OnClose(callback func(types.LocalParticipant, m
 }
 
 func (p *RelayedParticipantImpl) OnClaimsChanged(callback func(types.LocalParticipant)) {
-	// TODO implement me
+	p.lock.Lock()
+	p.onClaimsChanged = callback
+	p.lock.Unlock()
 }
 
 func (p *RelayedParticipantImpl) OnReceiverReport(dt *sfu.DownTrack, report *rtcp.ReceiverReport) {}
@@ -579,7 +651,7 @@ func (p *RelayedParticipantImpl) UpdateMediaLoss(nodeID livekit.NodeID, trackID 
 	panic("implement me")
 }
 
-func (p *RelayedParticipantImpl) OnMediaTrack(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver, mid, rid string, tracks []*livekit.TrackInfo) {
+func (p *RelayedParticipantImpl) OnMediaTrack(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver, mid, rid string, trackInfo *livekit.TrackInfo) {
 	if p.IsDisconnected() {
 		return
 	}
@@ -589,7 +661,7 @@ func (p *RelayedParticipantImpl) OnMediaTrack(track *webrtc.TrackRemote, rtpRece
 		return
 	}
 
-	publishedTrack, isNewTrack := p.mediaTrackReceived(track, rtpReceiver, mid, rid, tracks)
+	publishedTrack, isNewTrack := p.mediaTrackReceived(track, rtpReceiver, mid, rid, trackInfo)
 
 	if publishedTrack != nil {
 		p.params.Logger.Infow("mediaTrack published",
@@ -619,7 +691,7 @@ func (p *RelayedParticipantImpl) OnMediaTrack(track *webrtc.TrackRemote, rtpRece
 	}
 }
 
-func (p *RelayedParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver, mid string, rid string, trackInfos []*livekit.TrackInfo) (*MediaTrack, bool) {
+func (p *RelayedParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver, mid string, rid string, trackInfo *livekit.TrackInfo) (*MediaTrack, bool) {
 	newTrack := false
 
 	p.params.Logger.Debugw(
@@ -639,23 +711,13 @@ func (p *RelayedParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, r
 	// use existing media track to handle simulcast
 	mt, ok := p.getPublishedTrackBySdpCid(track.ID()).(*MediaTrack)
 	if !ok {
-		var ti *livekit.TrackInfo
-
-		// TODO
-		for _, trackInfo := range trackInfos {
-			if trackInfo.Type == livekit.TrackType_VIDEO && track.Kind() == webrtc.RTPCodecTypeVideo ||
-				trackInfo.Type == livekit.TrackType_AUDIO && track.Kind() == webrtc.RTPCodecTypeAudio {
-				ti = trackInfo
-			}
+		for _, layer := range trackInfo.Layers {
+			layer.Ssrc = 0
 		}
+		trackInfo.MimeType = track.Codec().MimeType
 
-		if ti == nil {
-			panic("ti == nil")
-		}
-
-		ti.MimeType = track.Codec().MimeType
 		// TODO: investigate difference between signalCid and sdpCid
-		mt = p.addMediaTrack(track.ID(), track.ID(), ti)
+		mt = p.addMediaTrack(track.ID(), track.ID(), trackInfo)
 		newTrack = true
 	}
 
