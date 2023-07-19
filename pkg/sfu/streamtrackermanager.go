@@ -2,6 +2,7 @@ package sfu
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"sync"
 	"time"
@@ -15,6 +16,14 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
+const (
+	senderReportThresholdSeconds = float64(60.0)
+
+	minDurationForClockRateCalculation = 15 * time.Second
+)
+
+// ---------------------------------------------------
+
 type StreamTrackerManagerListener interface {
 	OnAvailableLayersChanged()
 	OnBitrateAvailabilityChanged()
@@ -24,9 +33,12 @@ type StreamTrackerManagerListener interface {
 	OnBitrateReport(availableLayers []int32, bitrates Bitrates)
 }
 
+// ---------------------------------------------------
+
 type endsSenderReport struct {
-	first  *buffer.RTCPSenderReportData
-	newest *buffer.RTCPSenderReportData
+	first       *buffer.RTCPSenderReportData
+	newest      *buffer.RTCPSenderReportData
+	lastUpdated time.Time
 }
 
 type StreamTrackerManager struct {
@@ -50,6 +62,7 @@ type StreamTrackerManager struct {
 
 	senderReportMu sync.RWMutex
 	senderReports  [buffer.DefaultMaxLayerSpatial + 1]endsSenderReport
+	layerOffsets   [buffer.DefaultMaxLayerSpatial + 1][buffer.DefaultMaxLayerSpatial + 1]uint32
 
 	closed core.Fuse
 
@@ -517,6 +530,40 @@ func (s *StreamTrackerManager) maxExpectedLayerFromTrackInfo() {
 	}
 }
 
+func (s *StreamTrackerManager) updateLayerOffsetLocked(ref, other int32) {
+	srRef := s.senderReports[ref].newest
+	srOther := s.senderReports[other].newest
+	if srRef == nil || srRef.NTPTimestamp == 0 || srOther == nil || srOther.NTPTimestamp == 0 {
+		return
+	}
+
+	ntpDiff := srRef.NTPTimestamp.Time().Sub(srOther.NTPTimestamp.Time())
+	if math.Abs(ntpDiff.Seconds()) > senderReportThresholdSeconds {
+		// offset is updated only if the layers' sender reports are close enough.
+		//
+		// Rationale: higher layers could be paused for extended periods of time
+		// due to adaptive stream/dynacast or publisher constraints like CPU/bandwidth.
+		// The check is to avoid using very old reports.
+		return
+	}
+	rtpDiff := ntpDiff.Nanoseconds() * int64(s.clockRate) / 1e9
+
+	// calculate other layer's time stamp at the same time as ref layer's NTP time
+	normalizedOtherTS := srOther.RTPTimestamp + uint32(rtpDiff)
+
+	// now both layers' time stamp refer to the same NTP time and the diff is the offset between the layers
+	offset := srRef.RTPTimestamp - normalizedOtherTS
+
+	// use minimal offset to indicate value availability in the extremely unlikely case of
+	// both layers using the same timestamp
+	if offset == 0 {
+		s.logger.Infow("using default offset", "ref", ref, "other", other)
+		offset = 1
+	}
+
+	s.layerOffsets[ref][other] = offset
+}
+
 func (s *StreamTrackerManager) SetRTCPSenderReportData(layer int32, srFirst *buffer.RTCPSenderReportData, srNewest *buffer.RTCPSenderReportData) {
 	s.senderReportMu.Lock()
 	defer s.senderReportMu.Unlock()
@@ -527,74 +574,66 @@ func (s *StreamTrackerManager) SetRTCPSenderReportData(layer int32, srFirst *buf
 
 	s.senderReports[layer].first = srFirst
 	s.senderReports[layer].newest = srNewest
+	s.senderReports[layer].lastUpdated = time.Now()
+
+	// (re)fill offsets as necessary for received layer.
+	for i := int32(0); i < buffer.DefaultMaxLayerSpatial+1; i++ {
+		if i == layer {
+			continue
+		}
+
+		// treating layer for which report was received as reference layer
+		s.updateLayerOffsetLocked(layer, i)
+
+		// and the other way
+		s.updateLayerOffsetLocked(i, layer)
+	}
 }
 
-func (s *StreamTrackerManager) GetRTCPSenderReportData(layer int32) (*buffer.RTCPSenderReportData, *buffer.RTCPSenderReportData) {
+func (s *StreamTrackerManager) GetCalculatedClockRate(layer int32) uint32 {
 	s.senderReportMu.RLock()
 	defer s.senderReportMu.RUnlock()
 
 	if layer < 0 || int(layer) >= len(s.senderReports) {
-		return nil, nil
+		// invalid layer
+		return 0
 	}
 
-	return s.senderReports[layer].first, s.senderReports[layer].newest
+	srFirst := s.senderReports[layer].first
+	srNewest := s.senderReports[layer].newest
+	if srFirst == nil || srFirst.NTPTimestamp == 0 || srNewest == nil || srNewest.NTPTimestamp == 0 || srFirst.RTPTimestamp == srNewest.RTPTimestamp {
+		// sender reports invalid or same
+		return 0
+	}
+
+	if s.senderReports[layer].lastUpdated.IsZero() || time.Since(s.senderReports[layer].lastUpdated).Seconds() > senderReportThresholdSeconds {
+		// sender report updated too far back
+		return 0
+	}
+
+	tsf := srNewest.NTPTimestamp.Time().Sub(srFirst.NTPTimestamp.Time())
+	if tsf < minDurationForClockRateCalculation {
+		// not enough time has elapsed to get a stable clock rate calculation
+		return 0
+	}
+
+	rdsf := srNewest.RTPTimestampExt - srFirst.RTPTimestampExt
+	return uint32(float64(rdsf) / tsf.Seconds())
 }
 
 func (s *StreamTrackerManager) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error) {
 	s.senderReportMu.RLock()
 	defer s.senderReportMu.RUnlock()
 
-	if layer < 0 || referenceLayer < 0 {
+	if layer < 0 || int(layer) >= len(s.layerOffsets[0]) || referenceLayer < 0 || int(referenceLayer) >= len(s.layerOffsets) {
 		return 0, fmt.Errorf("invalid layer, target: %d, reference: %d", layer, referenceLayer)
 	}
 
-	if layer == referenceLayer {
-		return ts, nil
+	if layer != referenceLayer && s.layerOffsets[referenceLayer][layer] == 0 {
+		return 0, fmt.Errorf("offset unavailable, target: %d, reference: %d", layer, referenceLayer)
 	}
 
-	var srLayer *buffer.RTCPSenderReportData
-	if int(layer) < len(s.senderReports) {
-		srLayer = s.senderReports[layer].newest
-	}
-	if srLayer == nil || srLayer.NTPTimestamp == 0 {
-		return 0, fmt.Errorf("layer rtcp sender report not available: %d", layer)
-	}
-
-	var srRef *buffer.RTCPSenderReportData
-	if int(referenceLayer) < len(s.senderReports) {
-		srRef = s.senderReports[referenceLayer].newest
-	}
-	if srRef == nil || srRef.NTPTimestamp == 0 {
-		return 0, fmt.Errorf("reference layer rtcp sender report not available: %d", referenceLayer)
-	}
-
-	// line up the RTP time stamps using NTP time of most recent sender report of layer and referenceLayer
-	// NOTE: It is possible that reference layer has stopped (due to dynacast/adaptive streaming OR publisher
-	// constraints). It should be okay even if the layer has stopped for a long time when using modulo arithmetic for
-	// RTP time stamp (uint32 arithmetic).
-	ntpDiff := srRef.NTPTimestamp.Time().Sub(srLayer.NTPTimestamp.Time())
-	rtpDiff := ntpDiff.Nanoseconds() * int64(s.clockRate) / 1e9
-	normalizedTS := srLayer.RTPTimestamp + uint32(rtpDiff)
-	s.logger.Infow(
-		"getting reference timestamp",
-		"layer", layer,
-		"referenceLayer", referenceLayer,
-		"incomingTS", ts,
-		"layerNTP", srLayer.NTPTimestamp.Time().String(),
-		"refNTP", srRef.NTPTimestamp.Time().String(),
-		"ntpDiff", ntpDiff.String(),
-		"layerRTP", srLayer.RTPTimestamp,
-		"refRTP", srRef.RTPTimestamp,
-		"rtpDiff", rtpDiff,
-		"normalizedTS", normalizedTS,
-		"mappedTS", ts+(srRef.RTPTimestamp-normalizedTS),
-	)
-
-	// now that both RTP timestamps correspond to roughly the same NTP time,
-	// the diff between them is the offset in RTP timestamp units between layer and referenceLayer.
-	// Add the offset to layer's ts to map it to corresponding RTP timestamp in
-	// the reference layer.
-	return ts + (srRef.RTPTimestamp - normalizedTS), nil
+	return ts + s.layerOffsets[referenceLayer][layer], nil
 }
 
 func (s *StreamTrackerManager) GetMaxTemporalLayerSeen() int32 {

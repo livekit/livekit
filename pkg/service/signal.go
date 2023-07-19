@@ -112,12 +112,6 @@ type signalService struct {
 }
 
 func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest]) (err error) {
-	// copy the context to prevent a race between the session handler closing
-	// and the delivery of any parting messages from the client. take care to
-	// copy the incoming rpc headers to avoid dropping any session vars.
-	ctx, cancel := context.WithCancel(metadata.NewContextWithIncomingHeader(context.Background(), metadata.IncomingHeader(stream.Context())))
-	defer cancel()
-
 	req, ok := <-stream.Channel()
 	if !ok {
 		return nil
@@ -139,9 +133,6 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 		"connID", ss.ConnectionId,
 	)
 
-	reqChan := routing.NewDefaultMessageChannel(livekit.ConnectionID(ss.ConnectionId))
-	defer reqChan.Close()
-
 	sink := routing.NewSignalMessageSink(routing.SignalSinkParams[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest]{
 		Logger:       l,
 		Stream:       stream,
@@ -149,6 +140,24 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 		Writer:       signalResponseMessageWriter{},
 		ConnectionID: livekit.ConnectionID(ss.ConnectionId),
 	})
+	reqChan := routing.NewDefaultMessageChannel(livekit.ConnectionID(ss.ConnectionId))
+
+	go func() {
+		err := routing.CopySignalStreamToMessageChannel[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest](
+			stream,
+			reqChan,
+			signalRequestMessageReader{},
+			r.config,
+		)
+		l.Infow("signal stream closed", "error", err)
+
+		reqChan.Close()
+	}()
+
+	// copy the context to prevent a race between the session handler closing
+	// and the delivery of any parting messages from the client. take care to
+	// copy the incoming rpc headers to avoid dropping any session vars.
+	ctx := metadata.NewContextWithIncomingHeader(context.Background(), metadata.IncomingHeader(stream.Context()))
 
 	err = r.sessionHandler(ctx, livekit.RoomName(ss.RoomName), *pi, livekit.ConnectionID(ss.ConnectionId), reqChan, sink)
 	if err != nil {
@@ -156,9 +165,7 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 		return
 	}
 
-	err = routing.CopySignalStreamToMessageChannel[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest](stream, reqChan, signalRequestMessageReader{}, r.config)
-	l.Infow("signal stream closed", "error", err)
-
+	stream.Hijack()
 	return
 }
 

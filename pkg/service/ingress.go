@@ -216,10 +216,19 @@ func (s *IngressService) ListIngress(ctx context.Context, req *livekit.ListIngre
 		return nil, ErrIngressNotConnected
 	}
 
-	infos, err := s.store.ListIngress(ctx, livekit.RoomName(req.RoomName))
-	if err != nil {
-		logger.Errorw("could not list ingress info", err)
-		return nil, err
+	var infos []*livekit.IngressInfo
+	if req.IngressId != "" {
+		info, err := s.store.LoadIngress(ctx, req.IngressId)
+		if err != nil {
+			return nil, err
+		}
+		infos = []*livekit.IngressInfo{info}
+	} else {
+		infos, err = s.store.ListIngress(ctx, livekit.RoomName(req.RoomName))
+		if err != nil {
+			logger.Errorw("could not list ingress info", err)
+			return nil, err
+		}
 	}
 
 	return &livekit.ListIngressResponse{Items: infos}, nil
