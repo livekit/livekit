@@ -36,7 +36,7 @@ const (
 )
 
 var (
-	ErrKeyFileIncorrectPermission = errors.New("key file must have 0600 permission")
+	ErrKeyFileIncorrectPermission = errors.New("key file others permissions must be set to 0")
 	ErrKeysNotSet                 = errors.New("one of key-file or keys must be provided")
 )
 
@@ -547,9 +547,10 @@ func (conf *Config) ToCLIFlagNames(existingFlags []cli.Flag) map[string]reflect.
 func (conf *Config) ValidateKeys() error {
 	// prefer keyfile if set
 	if conf.KeyFile != "" {
+		var otherFilter os.FileMode = 0007
 		if st, err := os.Stat(conf.KeyFile); err != nil {
 			return err
-		} else if st.Mode().Perm() != 0600 {
+		} else if st.Mode().Perm()&otherFilter != 0000 {
 			return ErrKeyFileIncorrectPermission
 		}
 		f, err := os.Open(conf.KeyFile)
