@@ -40,25 +40,13 @@ func (n *NackTracker) Add(packets uint32, repeatedNacks uint32) {
 	if n.params.WindowMaxDuration != 0 && !n.windowStartTime.IsZero() && time.Since(n.windowStartTime) > n.params.WindowMaxDuration {
 		n.updateHistory()
 
-		n.windowStartTime = time.Time{}
+		n.windowStartTime = time.Now()
 		n.packets = 0
 		n.repeatedNacks = 0
 	}
 
-	//
-	// Start NACK monitoring window only when a repeated NACK happens.
-	// This allows locking tightly to when NACKs start happening and
-	// check if the NACKs keep adding up (potentially a sign of congestion)
-	// or isolated losses
-	//
-	if n.repeatedNacks == 0 && repeatedNacks != 0 {
-		n.windowStartTime = time.Now()
-	}
-
-	if !n.windowStartTime.IsZero() {
-		n.packets += packets
-		n.repeatedNacks += repeatedNacks
-	}
+	n.packets += packets
+	n.repeatedNacks += repeatedNacks
 }
 
 func (n *NackTracker) GetRatio() float64 {

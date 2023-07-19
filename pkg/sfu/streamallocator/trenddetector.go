@@ -44,7 +44,6 @@ type TrendDetectorParams struct {
 	Logger                 logger.Logger
 	RequiredSamples        int
 	DownwardTrendThreshold float64
-	CollapseThreshold      time.Duration
 	ValidityWindow         time.Duration
 }
 
@@ -85,7 +84,7 @@ func (t *TrendDetector) AddValue(value int64) {
 		t.highestValue = value
 	}
 
-	// Ignore duplicate values in collapse window.
+	// Collapse successive same value.
 	//
 	// Bandwidth estimate is received periodically. If the estimate does not change, it will be repeated.
 	// When there is congestion, there are several estimates received with decreasing values.
@@ -94,18 +93,21 @@ func (t *TrendDetector) AddValue(value int64) {
 	// the reaction is not too fast, i. e. reacting to falling values too quick could mean a lot of re-allocation
 	// resulting in layer switches, key frames and more congestion.
 	//
-	// But, on the flip side, estimate could fall once or twice within a sliding window and stay there.
-	// In those cases, using a collapse window to record a value even if it is duplicate. By doing that,
-	// a trend could be detected eventually. If will be delayed, but that is fine with slow changing estimates.
+	// On the flip side, estimate could fall once or twice within a sliding window and stay there.
+	// In those cases also, relying on multiple different value readings in the validity window.
+	// Those will trend down when there is congestion. If the value drops once and stays there
+	// for the entirety of the validity window, it will not be declared as congestion.
+	// This scheme is really relying on a series of falling values in a recent time window to declare congestion.
 	var lastSample *trendDetectorSample
 	if len(t.samples) != 0 {
 		lastSample = &t.samples[len(t.samples)-1]
 	}
-	if lastSample != nil && lastSample.value == value && t.params.CollapseThreshold > 0 && time.Since(lastSample.at) < t.params.CollapseThreshold {
-		return
+	if lastSample != nil && lastSample.value == value {
+		// update time of repeated value
+		lastSample.at = time.Now()
+	} else {
+		t.samples = append(t.samples, trendDetectorSample{value: value, at: time.Now()})
 	}
-
-	t.samples = append(t.samples, trendDetectorSample{value: value, at: time.Now()})
 	t.prune()
 	t.updateDirection()
 }
@@ -168,22 +170,6 @@ func (t *TrendDetector) prune() {
 		}
 		if cutoffIndex >= 0 {
 			t.samples = t.samples[cutoffIndex:]
-		}
-	}
-
-	//  3. If all sample values are same, collapse to just the last one
-	if len(t.samples) != 0 {
-		sameValue := true
-		firstValue := t.samples[0].value
-		for i := 0; i < len(t.samples); i++ {
-			if t.samples[i].value != firstValue {
-				sameValue = false
-				break
-			}
-		}
-
-		if sameValue {
-			t.samples = t.samples[len(t.samples)-1:]
 		}
 	}
 }
