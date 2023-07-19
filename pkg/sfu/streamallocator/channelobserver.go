@@ -61,7 +61,7 @@ type ChannelObserverParams struct {
 	EstimateDownwardTrendThreshold float64
 	EstimateCollapseThreshold      time.Duration
 	EstimateValidityWindow         time.Duration
-	NackMinPackets                 uint32
+	NackMinPPS                     uint32
 	NackWindowMinDuration          time.Duration
 	NackWindowMaxDuration          time.Duration
 	NackRatioThreshold             float64
@@ -90,7 +90,7 @@ func NewChannelObserver(params ChannelObserverParams, logger logger.Logger) *Cha
 		nackTracker: NewNackTracker(NackTrackerParams{
 			Name:              params.Name + "-nack",
 			Logger:            logger,
-			MinPackets:        params.NackMinPackets,
+			MinPPS:            params.NackMinPPS,
 			WindowMinDuration: params.NackWindowMinDuration,
 			WindowMaxDuration: params.NackWindowMaxDuration,
 			RatioThreshold:    params.NackRatioThreshold,
