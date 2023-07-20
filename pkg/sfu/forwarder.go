@@ -1670,7 +1670,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 	var eof *SnTs
 	if snOffset != 1 {
 		eof = &SnTs{
-			sequenceNumber: rtpMungerState.LastSN,
+			sequenceNumber: rtpMungerState.LastSN + 1,
 			timestamp:      rtpMungerState.LastTS,
 		}
 	}

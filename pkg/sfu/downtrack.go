@@ -607,8 +607,19 @@ func (d *DownTrack) maxLayerNotifierWorker() {
 	}
 }
 
-// writeEOF writes an empty packet with RTP Marker bit set to force end of frame
-// NOTE: The frame data won't be complete
+// writeEOF writes an empty packet with RTP Marker bit set to force end of frame.
+// Used when switching layers on a non-frame boundary.
+// NOTE: The frame data won't be complete, but used to trick the framer on the decoder
+// to close a frame. Frame validity check should fail and it should not be decoded.
+// The main goal is not let the framer wait for a frame close as layer switch would
+// provide a decodable frame.
+//
+// SVC-TODO: How does this affect SVC?
+//
+// TOOD: What happens after a burst loss? It is possible to have a burst loss,
+//       followed by a layer switch. The last packet sent before the burst loss could
+//       have been without the marker. Is it okay to insert an empty frame in that case too?
+//
 func (d *DownTrack) writeEOF(sn uint16, ts uint32) {
 	hdr := rtp.Header{
 		Version:        2,
@@ -626,6 +637,7 @@ func (d *DownTrack) writeEOF(sn uint16, ts uint32) {
 		AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 		TransportWideExtID: uint8(d.transportWideExtID),
 		WriteStream:        d.writeStream,
+		Metadata:           sendPacketMetadata{},
 		OnSent:             d.packetSent,
 	})
 }
