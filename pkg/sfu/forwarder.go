@@ -133,6 +133,7 @@ type TranslationParams struct {
 	isResuming  bool
 	isSwitching bool
 	rtp         *TranslationParamsRTP
+	eof         *SnTs
 	codecBytes  []byte
 	ddBytes     []byte
 	marker      bool
@@ -1498,7 +1499,7 @@ func (f *Forwarder) GetTranslationParams(extPkt *buffer.ExtPacket, layer int32) 
 	return nil, ErrUnknownKind
 }
 
-func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) error {
+func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (*SnTs, error) {
 	if !f.started {
 		f.started = true
 		f.referenceLayerSpatial = layer
@@ -1511,7 +1512,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			"layer", layer,
 			"referenceLayerSpatial", f.referenceLayerSpatial,
 		)
-		return nil
+		return nil, nil
 	}
 
 	if f.referenceLayerSpatial == buffer.InvalidLayerSpatial {
@@ -1665,19 +1666,32 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		"tsOffset", tsOffset,
 		"snOffset", snOffset,
 	)
-	return nil
+
+	var eof *SnTs
+	if snOffset != 1 {
+		eof = &SnTs{
+			sequenceNumber: rtpMungerState.LastSN,
+			timestamp:      rtpMungerState.LastTS,
+		}
+	}
+	return eof, nil
 }
 
 // should be called with lock held
 func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer int32, tp *TranslationParams) (*TranslationParams, error) {
+	var err error
 	if tp == nil {
 		tp = &TranslationParams{}
 	}
+
 	if f.lastSSRC != extPkt.Packet.SSRC {
-		if err := f.processSourceSwitch(extPkt, layer); err != nil {
+		if eof, err := f.processSourceSwitch(extPkt, layer); err != nil {
 			tp.shouldDrop = true
 			return tp, err
+		} else {
+			tp.eof = eof
 		}
+
 		f.logger.Debugw("switching feed", "from", f.lastSSRC, "to", extPkt.Packet.SSRC)
 		f.lastSSRC = extPkt.Packet.SSRC
 	}

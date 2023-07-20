@@ -607,6 +607,29 @@ func (d *DownTrack) maxLayerNotifierWorker() {
 	}
 }
 
+// writeEOF writes an empty packet with RTP Marker bit set to force end of frame
+// NOTE: The frame data won't be complete
+func (d *DownTrack) writeEOF(sn uint16, ts uint32) {
+	hdr := rtp.Header{
+		Version:        2,
+		Padding:        false,
+		Marker:         true,
+		PayloadType:    d.payloadType,
+		SequenceNumber: sn,
+		Timestamp:      ts,
+		SSRC:           d.ssrc,
+		CSRC:           []uint32{},
+	}
+
+	d.pacer.Enqueue(pacer.Packet{
+		Header:             &hdr,
+		AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
+		TransportWideExtID: uint8(d.transportWideExtID),
+		WriteStream:        d.writeStream,
+		OnSent:             d.packetSent,
+	})
+}
+
 // WriteRTP writes an RTP Packet to the DownTrack
 func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	if !d.bound.Load() || !d.connected.Load() {
@@ -619,6 +642,11 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			d.logger.Errorw("write rtp packet failed", err)
 		}
 		return err
+	}
+
+	if tp.eof != nil {
+		d.logger.Debugw("writing eof", "sn", tp.eof.sequenceNumber, "ts", tp.eof.timestamp)
+		d.writeEOF(tp.eof.sequenceNumber, tp.eof.timestamp)
 	}
 
 	var payload []byte
