@@ -44,7 +44,7 @@ func TestSignal(t *testing.T) {
 	client, err := routing.NewSignalClient(livekit.NodeID("node0"), bus, cfg)
 	require.NoError(t, err)
 
-	_, err = NewSignalServer(livekit.NodeID("node1"), "region", bus, cfg, func(
+	server, err := NewSignalServer(livekit.NodeID("node1"), "region", bus, cfg, func(
 		ctx context.Context,
 		roomName livekit.RoomName,
 		pi routing.ParticipantInit,
@@ -60,6 +60,9 @@ func TestSignal(t *testing.T) {
 		}()
 		return nil
 	})
+	require.NoError(t, err)
+
+	err = server.Start()
 	require.NoError(t, err)
 
 	_, reqSink, resSource, err := client.StartParticipantSignal(
