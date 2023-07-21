@@ -4,11 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strconv"
-	"strings"
 	"time"
 
-	"github.com/dustin/go-humanize"
 	livekit2 "github.com/livekit/livekit-server"
 	"github.com/olekukonko/tablewriter"
 	"github.com/oschwald/geoip2-golang"
@@ -20,7 +17,6 @@ import (
 	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
 )
 
@@ -241,111 +237,5 @@ func relevantNode(c *cli.Context) error {
 	}
 
 	fmt.Printf("Relevant node is %v\r\n", n)
-	return nil
-}
-
-func listNodes(c *cli.Context) error {
-	conf, err := getConfig(c)
-	if err != nil {
-		return err
-	}
-
-	currentNode, err := routing.NewLocalNode(conf)
-	if err != nil {
-		return err
-	}
-
-	router, err := service.InitializeRouter(conf, currentNode)
-	if err != nil {
-		return err
-	}
-
-	nodes, err := router.ListNodes()
-	if err != nil {
-		return err
-	}
-
-	databaseConfig := service.GetDatabaseConfiguration(conf)
-	db, err := service.CreateMainDatabaseP2P(databaseConfig, conf)
-	geoIp, err := geoip2.FromBytes(livekit2.MixmindDatabase)
-	if err != nil {
-		panic(err)
-	}
-	nodeProvider := service.CreateNodeProvider(geoIp, conf, db)
-
-	table := tablewriter.NewWriter(os.Stdout)
-	table.SetRowLine(true)
-	table.SetAutoWrapText(false)
-	table.SetHeader([]string{
-		"ID", "IP Address", "Region",
-		"CPUs", "CPU Usage\nLoad Avg",
-		"Memory Used/Total",
-		"Rooms", "Clients\nTracks In/Out",
-		"Bytes/s In/Out\nBytes Total", "Packets/s In/Out\nPackets Total", "System Dropped Pkts/s\nPkts/s Out/Dropped",
-		"Nack/s\nNack Total", "Retrans/s\nRetrans Total",
-		"Country", "Coordinates", "Participants", "Domain",
-		"Started At\nUpdated At",
-	})
-	table.SetColumnAlignment([]int{
-		tablewriter.ALIGN_CENTER, tablewriter.ALIGN_CENTER, tablewriter.ALIGN_CENTER,
-		tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT,
-		tablewriter.ALIGN_RIGHT,
-		tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT,
-		tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT,
-		tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT,
-		tablewriter.ALIGN_CENTER, tablewriter.ALIGN_CENTER, tablewriter.ALIGN_CENTER, tablewriter.ALIGN_CENTER,
-		tablewriter.ALIGN_CENTER,
-	})
-
-	for _, node := range nodes {
-		stats := node.Stats
-
-		// Id and state
-		idAndState := fmt.Sprintf("%s\n(%s)", node.Id, node.State.Enum().String())
-
-		// System stats
-		cpus := strconv.Itoa(int(stats.NumCpus))
-		cpuUsageAndLoadAvg := fmt.Sprintf("%.2f %%\n%.2f %.2f %.2f", stats.CpuLoad*100,
-			stats.LoadAvgLast1Min, stats.LoadAvgLast5Min, stats.LoadAvgLast15Min)
-		memUsage := fmt.Sprintf("%s / %s", humanize.Bytes(stats.MemoryUsed), humanize.Bytes(stats.MemoryTotal))
-
-		// Room stats
-		rooms := strconv.Itoa(int(stats.NumRooms))
-		clientsAndTracks := fmt.Sprintf("%d\n%d / %d", stats.NumClients, stats.NumTracksIn, stats.NumTracksOut)
-
-		// Packet stats
-		bytes := fmt.Sprintf("%sps / %sps\n%s / %s", humanize.Bytes(uint64(stats.BytesInPerSec)), humanize.Bytes(uint64(stats.BytesOutPerSec)),
-			humanize.Bytes(stats.BytesIn), humanize.Bytes(stats.BytesOut))
-		packets := fmt.Sprintf("%s / %s\n%s / %s", humanize.Comma(int64(stats.PacketsInPerSec)), humanize.Comma(int64(stats.PacketsOutPerSec)),
-			strings.TrimSpace(humanize.SIWithDigits(float64(stats.PacketsIn), 2, "")), strings.TrimSpace(humanize.SIWithDigits(float64(stats.PacketsOut), 2, "")))
-		sysPackets := fmt.Sprintf("%.2f %%\n%v / %v", stats.SysPacketsDroppedPctPerSec*100, float64(stats.SysPacketsOutPerSec), float64(stats.SysPacketsDroppedPerSec))
-		nacks := fmt.Sprintf("%.2f\n%s", stats.NackPerSec, strings.TrimSpace(humanize.SIWithDigits(float64(stats.NackTotal), 2, "")))
-		retransmit := fmt.Sprintf("%.2f\n%s", stats.RetransmitPacketsOutPerSec, strings.TrimSpace(humanize.SIWithDigits(float64(stats.RetransmitPacketsOut), 2, "")))
-
-		// Date
-		startedAndUpdated := fmt.Sprintf("%s\n%s", time.Unix(stats.StartedAt, 0).UTC().UTC().Format("2006-01-02 15:04:05"),
-			time.Unix(stats.UpdatedAt, 0).UTC().Format("2006-01-02 15:04:05"))
-
-		var coordinates, participants string
-		n, err := nodeProvider.Get(context.Background(), node.Id)
-		if err != nil {
-			n, _ = nodeProvider.FindByIP(context.Background(), node.Ip)
-		}
-		coordinates = fmt.Sprintf("%f - %f", n.Longitude, n.Latitude)
-		participants = fmt.Sprintf("%d", n.Participants)
-
-		table.Append([]string{
-			idAndState, node.Ip, node.Region,
-			cpus, cpuUsageAndLoadAvg,
-			memUsage,
-			rooms, clientsAndTracks,
-			bytes, packets, sysPackets,
-			nacks, retransmit,
-			n.Country, coordinates, participants, n.Domain,
-			startedAndUpdated,
-		})
-	}
-	table.Render()
-
 	return nil
 }

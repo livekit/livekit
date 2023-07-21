@@ -154,11 +154,6 @@ func main() {
 				},
 			},
 			{
-				Name:   "list-nodes",
-				Usage:  "list all nodes",
-				Action: listNodes,
-			},
-			{
 				Name:   "relevant-node",
 				Usage:  "fetch relevant node from p2p network",
 				Action: relevantNode,

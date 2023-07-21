@@ -48,12 +48,12 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	router := routing.CreateRouter(conf, universalClient, currentNode, signalClient)
 	p2p_databaseConfig := GetDatabaseConfiguration(conf)
 	db, err := CreateMainDatabaseP2P(p2p_databaseConfig, conf)
 	if err != nil {
 		return nil, err
 	}
+	router := routing.CreateRouter(conf, universalClient, currentNode, signalClient, db)
 	participantCounter, err := createParticipantCounter(db, conf)
 	if err != nil {
 		return nil, err
@@ -128,22 +128,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	return livekitServer, nil
-}
-
-func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routing.Router, error) {
-	universalClient, err := createRedisClient(conf)
-	if err != nil {
-		return nil, err
-	}
-	nodeID := getNodeID(currentNode)
-	messageBus := getMessageBus(universalClient)
-	signalRelayConfig := getSignalRelayConfig(conf)
-	signalClient, err := routing.NewSignalClient(nodeID, messageBus, signalRelayConfig)
-	if err != nil {
-		return nil, err
-	}
-	router := routing.CreateRouter(conf, universalClient, currentNode, signalClient)
-	return router, nil
 }
 
 // wire.go:

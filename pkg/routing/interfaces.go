@@ -7,6 +7,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/protobuf/proto"
 
+	p2p_database "github.com/dTelecom/p2p-realtime-database"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
@@ -99,8 +100,8 @@ type MessageRouter interface {
 	WriteRoomRTC(ctx context.Context, roomKey livekit.RoomKey, msg *livekit.RTCNodeMessage) error
 }
 
-func CreateRouter(config *config.Config, rc redis.UniversalClient, node LocalNode, signalClient SignalClient) Router {
-	lr := NewLocalRouter(node, signalClient)
+func CreateRouter(config *config.Config, rc redis.UniversalClient, node LocalNode, signalClient SignalClient, mainDatabase *p2p_database.DB) Router {
+	lr := NewLocalRouter(node, signalClient, mainDatabase)
 
 	// local routing and store
 	logger.Infow("using single-node routing")

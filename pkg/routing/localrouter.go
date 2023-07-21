@@ -2,12 +2,14 @@ package routing
 
 import (
 	"context"
+	"go.uber.org/atomic"
+	"google.golang.org/protobuf/proto"
+	"log"
 	"sync"
 	"time"
 
-	"go.uber.org/atomic"
-	"google.golang.org/protobuf/proto"
-
+	p2p_database "github.com/dTelecom/p2p-realtime-database"
+	"github.com/livekit/livekit-server/pkg/p2p"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -37,15 +39,20 @@ type LocalRouter struct {
 
 	onNewParticipant NewParticipantCallback
 	onRTCMessage     RTCMessageCallback
+
+	mainDatabase        *p2p_database.DB
+	routerCommunicators map[livekit.RoomKey]*p2p.RouterCommunicatorImpl
 }
 
-func NewLocalRouter(currentNode LocalNode, signalClient SignalClient) *LocalRouter {
+func NewLocalRouter(currentNode LocalNode, signalClient SignalClient, mainDatabase *p2p_database.DB) *LocalRouter {
 	return &LocalRouter{
-		currentNode:      currentNode,
-		signalClient:     signalClient,
-		requestChannels:  make(map[string]*MessageChannel),
-		responseChannels: make(map[string]*MessageChannel),
-		rtcMessageChan:   NewMessageChannel(localRTCChannelSize),
+		mainDatabase:        mainDatabase,
+		currentNode:         currentNode,
+		signalClient:        signalClient,
+		requestChannels:     make(map[string]*MessageChannel),
+		responseChannels:    make(map[string]*MessageChannel),
+		rtcMessageChan:      NewMessageChannel(localRTCChannelSize),
+		routerCommunicators: make(map[livekit.RoomKey]*p2p.RouterCommunicatorImpl),
 	}
 }
 
@@ -60,8 +67,15 @@ func (r *LocalRouter) SetNodeForRoom(_ context.Context, _ livekit.RoomKey, _ liv
 	return nil
 }
 
-func (r *LocalRouter) ClearRoomState(_ context.Context, _ livekit.RoomKey) error {
-	// do nothing
+func (r *LocalRouter) ClearRoomState(_ context.Context, roomKey livekit.RoomKey) error {
+
+	db, exists := r.routerCommunicators[roomKey]
+	if exists {
+		db.Close()
+	}
+
+	delete(r.routerCommunicators, roomKey)
+
 	return nil
 }
 
@@ -91,6 +105,14 @@ func (r *LocalRouter) ListNodes() ([]*livekit.Node, error) {
 }
 
 func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomKey livekit.RoomKey, pi ParticipantInit) (connectionID livekit.ConnectionID, reqSink MessageSink, resSource MessageSource, err error) {
+	log.Printf("StartParticipantSignal start")
+
+	if _, ok := r.routerCommunicators[roomKey]; !ok {
+		db := r.mainDatabase
+		r.routerCommunicators[roomKey] = p2p.NewRouterCommunicatorImpl(roomKey, db, r.writeFromP2P)
+	}
+	log.Printf("StartParticipantSignal progress")
+
 	return r.StartParticipantSignalWithNodeID(ctx, roomKey, pi, livekit.NodeID(r.currentNode.Id))
 }
 
@@ -118,7 +140,22 @@ func (r *LocalRouter) WriteParticipantRTC(_ context.Context, roomKey livekit.Roo
 	return r.writeRTCMessage(r.rtcMessageChan, msg)
 }
 
+func (r *LocalRouter) writeFromP2P(ctx context.Context, roomKey livekit.RoomKey, msg *livekit.RTCNodeMessage) error {
+	msg.ParticipantKey = string(ParticipantKeyLegacy(roomKey, ""))
+	msg.ParticipantKeyB62 = string(ParticipantKey(roomKey, ""))
+	return r.WriteNodeRTC(ctx, r.currentNode.Id, msg)
+}
+
+func (r *LocalRouter) writeToP2P(roomKey livekit.RoomKey, msg *livekit.RTCNodeMessage) {
+	if routerCommunicator, ok := r.routerCommunicators[roomKey]; !ok {
+		log.Printf("writeToP2P no routerCommunicator %v", roomKey)
+	} else {
+		routerCommunicator.Publish(msg)
+	}
+}
+
 func (r *LocalRouter) WriteRoomRTC(ctx context.Context, roomKey livekit.RoomKey, msg *livekit.RTCNodeMessage) error {
+	r.writeToP2P(roomKey, msg)
 	msg.ParticipantKey = string(ParticipantKeyLegacy(roomKey, ""))
 	msg.ParticipantKeyB62 = string(ParticipantKey(roomKey, ""))
 	return r.WriteNodeRTC(ctx, r.currentNode.Id, msg)
@@ -153,7 +190,6 @@ func (r *LocalRouter) Start() error {
 		return nil
 	}
 	go r.statsWorker()
-	// go r.memStatsWorker()
 	// on local routers, Start doesn't do anything, websocket connections initiate the connections
 	go r.rtcMessageWorker()
 	return nil
@@ -184,23 +220,6 @@ func (r *LocalRouter) statsWorker() {
 	}
 }
 
-/*
-	func (r *LocalRouter) memStatsWorker() {
-		ticker := time.NewTicker(time.Second * 30)
-		defer ticker.Stop()
-
-		for {
-			<-ticker.C
-
-			var m runtime.MemStats
-			runtime.ReadMemStats(&m)
-			logger.Infow("memstats",
-				"mallocs", m.Mallocs, "frees", m.Frees, "m-f", m.Mallocs-m.Frees,
-				"hinuse", m.HeapInuse, "halloc", m.HeapAlloc, "frag", m.HeapInuse-m.HeapAlloc,
-			)
-		}
-	}
-*/
 func (r *LocalRouter) rtcMessageWorker() {
 	// is a new channel available? if so swap to that one
 	if !r.isStarted.Load() {

@@ -78,19 +78,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	return &LivekitServer{}, nil
 }
 
-func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routing.Router, error) {
-	wire.Build(
-		createRedisClient,
-		getNodeID,
-		getMessageBus,
-		getSignalRelayConfig,
-		routing.NewSignalClient,
-		routing.CreateRouter,
-	)
-
-	return nil, nil
-}
-
 func createRelevantNodesHandler(conf *config.Config, nodeProvider *NodeProvider) *RelevantNodesHandler {
 	return NewRelevantNodesHandler(nodeProvider, conf.LoggingP2P)
 }
