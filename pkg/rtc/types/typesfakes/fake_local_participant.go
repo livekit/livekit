@@ -326,6 +326,10 @@ type FakeLocalParticipant struct {
 	handleReconnectAndSendResponseReturnsOnCall map[int]struct {
 		result1 error
 	}
+	HandleSignalSourceCloseStub        func()
+	handleSignalSourceCloseMutex       sync.RWMutex
+	handleSignalSourceCloseArgsForCall []struct {
+	}
 	HasPermissionStub        func(livekit.TrackID, livekit.ParticipantIdentity) bool
 	hasPermissionMutex       sync.RWMutex
 	hasPermissionArgsForCall []struct {
@@ -2479,6 +2483,30 @@ func (fake *FakeLocalParticipant) HandleReconnectAndSendResponseReturnsOnCall(i 
 	fake.handleReconnectAndSendResponseReturnsOnCall[i] = struct {
 		result1 error
 	}{result1}
+}
+
+func (fake *FakeLocalParticipant) HandleSignalSourceClose() {
+	fake.handleSignalSourceCloseMutex.Lock()
+	fake.handleSignalSourceCloseArgsForCall = append(fake.handleSignalSourceCloseArgsForCall, struct {
+	}{})
+	stub := fake.HandleSignalSourceCloseStub
+	fake.recordInvocation("HandleSignalSourceClose", []interface{}{})
+	fake.handleSignalSourceCloseMutex.Unlock()
+	if stub != nil {
+		fake.HandleSignalSourceCloseStub()
+	}
+}
+
+func (fake *FakeLocalParticipant) HandleSignalSourceCloseCallCount() int {
+	fake.handleSignalSourceCloseMutex.RLock()
+	defer fake.handleSignalSourceCloseMutex.RUnlock()
+	return len(fake.handleSignalSourceCloseArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) HandleSignalSourceCloseCalls(stub func()) {
+	fake.handleSignalSourceCloseMutex.Lock()
+	defer fake.handleSignalSourceCloseMutex.Unlock()
+	fake.HandleSignalSourceCloseStub = stub
 }
 
 func (fake *FakeLocalParticipant) HasPermission(arg1 livekit.TrackID, arg2 livekit.ParticipantIdentity) bool {
@@ -5626,6 +5654,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.handleOfferMutex.RUnlock()
 	fake.handleReconnectAndSendResponseMutex.RLock()
 	defer fake.handleReconnectAndSendResponseMutex.RUnlock()
+	fake.handleSignalSourceCloseMutex.RLock()
+	defer fake.handleSignalSourceCloseMutex.RUnlock()
 	fake.hasPermissionMutex.RLock()
 	defer fake.hasPermissionMutex.RUnlock()
 	fake.hiddenMutex.RLock()
