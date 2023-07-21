@@ -521,7 +521,7 @@ func (p *ParticipantImpl) HandleSignalSourceClose() {
 
 	if !p.TransportManager.HasPublisherEverConnected() && !p.TransportManager.HasSubscriberEverConnected() {
 		p.params.Logger.Infow("closing disconnected participant")
-		_ = p.Close(false, types.ParticipantCloseReasonPeerConnectionDisconnected, false)
+		_ = p.Close(false, types.ParticipantCloseReasonJoinFailed, false)
 	}
 }
 
