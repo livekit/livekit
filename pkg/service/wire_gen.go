@@ -136,7 +136,7 @@ func createKeyProvider(conf *config.Config) (auth.KeyProvider, error) {
 		if st, err := os.Stat(conf.KeyFile); err != nil {
 			return nil, err
 		} else if st.Mode().Perm()&otherFilter != 0000 {
-			return nil, fmt.Errorf("key file others permission must be set to 0")
+			return nil, fmt.Errorf("key file others permissions must be set to 0")
 		}
 		f, err := os.Open(conf.KeyFile)
 		if err != nil {

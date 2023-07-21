@@ -28,6 +28,11 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 )
 
+type SignalRequestHandler func(msg *livekit.SignalRequest) error
+type SignalRequestInterceptor func(msg *livekit.SignalRequest, next SignalRequestHandler) error
+type SignalResponseHandler func(msg *livekit.SignalResponse) error
+type SignalResponseInterceptor func(msg *livekit.SignalResponse, next SignalResponseHandler) error
+
 type RTCClient struct {
 	id         livekit.ParticipantID
 	conn       *websocket.Conn
@@ -44,6 +49,9 @@ type RTCClient struct {
 	subscribedTracks   map[livekit.ParticipantID][]*webrtc.TrackRemote
 	localParticipant   *livekit.ParticipantInfo
 	remoteParticipants map[livekit.ParticipantID]*livekit.ParticipantInfo
+
+	signalRequestInterceptor  SignalRequestInterceptor
+	signalResponseInterceptor SignalResponseInterceptor
 
 	subscriberAsPrimary        atomic.Bool
 	publisherFullyEstablished  atomic.Bool
@@ -83,10 +91,12 @@ var (
 )
 
 type Options struct {
-	AutoSubscribe  bool
-	Publish        string
-	ClientInfo     *livekit.ClientInfo
-	DisabledCodecs []webrtc.RTPCodecCapability
+	AutoSubscribe             bool
+	Publish                   string
+	ClientInfo                *livekit.ClientInfo
+	DisabledCodecs            []webrtc.RTPCodecCapability
+	SignalRequestInterceptor  SignalRequestInterceptor
+	SignalResponseInterceptor SignalResponseInterceptor
 }
 
 func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error) {
@@ -265,6 +275,11 @@ func NewRTCClient(conn *websocket.Conn, opts *Options) (*RTCClient, error) {
 		})
 	})
 
+	if opts != nil {
+		c.signalRequestInterceptor = opts.SignalRequestInterceptor
+		c.signalResponseInterceptor = opts.SignalResponseInterceptor
+	}
+
 	return c, nil
 }
 
@@ -290,87 +305,99 @@ func (c *RTCClient) Run() error {
 			logger.Errorw("error while reading", err)
 			return err
 		}
-		switch msg := res.Message.(type) {
-		case *livekit.SignalResponse_Join:
-			c.localParticipant = msg.Join.Participant
-			c.id = livekit.ParticipantID(msg.Join.Participant.Sid)
-			c.lock.Lock()
-			for _, p := range msg.Join.OtherParticipants {
-				c.remoteParticipants[livekit.ParticipantID(p.Sid)] = p
-			}
-			c.lock.Unlock()
-			// if publish only, negotiate
-			if !msg.Join.SubscriberPrimary {
-				c.subscriberAsPrimary.Store(false)
-				c.publisher.Negotiate(false)
-			} else {
-				c.subscriberAsPrimary.Store(true)
-			}
-
-			logger.Infow("join accepted, awaiting offer", "participant", msg.Join.Participant.Identity)
-		case *livekit.SignalResponse_Answer:
-			// logger.Debugw("received server answer",
-			//	"participant", c.localParticipant.Identity,
-			//	"answer", msg.Answer.Sdp)
-			c.handleAnswer(rtc.FromProtoSessionDescription(msg.Answer))
-		case *livekit.SignalResponse_Offer:
-			logger.Infow("received server offer",
-				"participant", c.localParticipant.Identity,
-			)
-			desc := rtc.FromProtoSessionDescription(msg.Offer)
-			c.handleOffer(desc)
-		case *livekit.SignalResponse_Trickle:
-			candidateInit, err := rtc.FromProtoTrickle(msg.Trickle)
-			if err != nil {
-				return err
-			}
-			if msg.Trickle.Target == livekit.SignalTarget_PUBLISHER {
-				c.publisher.AddICECandidate(candidateInit)
-			} else {
-				c.subscriber.AddICECandidate(candidateInit)
-			}
-		case *livekit.SignalResponse_Update:
-			c.lock.Lock()
-			for _, p := range msg.Update.Participants {
-				if livekit.ParticipantID(p.Sid) != c.id {
-					if p.State != livekit.ParticipantInfo_DISCONNECTED {
-						c.remoteParticipants[livekit.ParticipantID(p.Sid)] = p
-					} else {
-						delete(c.remoteParticipants, livekit.ParticipantID(p.Sid))
-					}
-				}
-			}
-			c.lock.Unlock()
-
-		case *livekit.SignalResponse_TrackPublished:
-			logger.Debugw("track published", "trackID", msg.TrackPublished.Track.Name, "participant", c.localParticipant.Sid,
-				"cid", msg.TrackPublished.Cid, "trackSid", msg.TrackPublished.Track.Sid)
-			c.lock.Lock()
-			c.pendingPublishedTracks[msg.TrackPublished.Cid] = msg.TrackPublished.Track
-			c.lock.Unlock()
-		case *livekit.SignalResponse_RefreshToken:
-			c.lock.Lock()
-			c.refreshToken = msg.RefreshToken
-			c.lock.Unlock()
-		case *livekit.SignalResponse_TrackUnpublished:
-			sid := msg.TrackUnpublished.TrackSid
-			c.lock.Lock()
-			sender := c.trackSenders[sid]
-			if sender != nil {
-				if err := c.publisher.RemoveTrack(sender); err != nil {
-					logger.Errorw("Could not unpublish track", err)
-				}
-				c.publisher.Negotiate(false)
-			}
-			delete(c.trackSenders, sid)
-			delete(c.localTracks, sid)
-			c.lock.Unlock()
-		case *livekit.SignalResponse_Pong:
-			c.pongReceivedAt.Store(msg.Pong)
-		case *livekit.SignalResponse_SubscriptionResponse:
-			c.subscriptionResponse.Store(msg.SubscriptionResponse)
+		if c.signalResponseInterceptor != nil {
+			err = c.signalResponseInterceptor(res, c.handleSignalResponse)
+		} else {
+			err = c.handleSignalResponse(res)
+		}
+		if err != nil {
+			return err
 		}
 	}
+}
+
+func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
+	switch msg := res.Message.(type) {
+	case *livekit.SignalResponse_Join:
+		c.localParticipant = msg.Join.Participant
+		c.id = livekit.ParticipantID(msg.Join.Participant.Sid)
+		c.lock.Lock()
+		for _, p := range msg.Join.OtherParticipants {
+			c.remoteParticipants[livekit.ParticipantID(p.Sid)] = p
+		}
+		c.lock.Unlock()
+		// if publish only, negotiate
+		if !msg.Join.SubscriberPrimary {
+			c.subscriberAsPrimary.Store(false)
+			c.publisher.Negotiate(false)
+		} else {
+			c.subscriberAsPrimary.Store(true)
+		}
+
+		logger.Infow("join accepted, awaiting offer", "participant", msg.Join.Participant.Identity)
+	case *livekit.SignalResponse_Answer:
+		// logger.Debugw("received server answer",
+		//	"participant", c.localParticipant.Identity,
+		//	"answer", msg.Answer.Sdp)
+		c.handleAnswer(rtc.FromProtoSessionDescription(msg.Answer))
+	case *livekit.SignalResponse_Offer:
+		logger.Infow("received server offer",
+			"participant", c.localParticipant.Identity,
+		)
+		desc := rtc.FromProtoSessionDescription(msg.Offer)
+		c.handleOffer(desc)
+	case *livekit.SignalResponse_Trickle:
+		candidateInit, err := rtc.FromProtoTrickle(msg.Trickle)
+		if err != nil {
+			return err
+		}
+		if msg.Trickle.Target == livekit.SignalTarget_PUBLISHER {
+			c.publisher.AddICECandidate(candidateInit)
+		} else {
+			c.subscriber.AddICECandidate(candidateInit)
+		}
+	case *livekit.SignalResponse_Update:
+		c.lock.Lock()
+		for _, p := range msg.Update.Participants {
+			if livekit.ParticipantID(p.Sid) != c.id {
+				if p.State != livekit.ParticipantInfo_DISCONNECTED {
+					c.remoteParticipants[livekit.ParticipantID(p.Sid)] = p
+				} else {
+					delete(c.remoteParticipants, livekit.ParticipantID(p.Sid))
+				}
+			}
+		}
+		c.lock.Unlock()
+
+	case *livekit.SignalResponse_TrackPublished:
+		logger.Debugw("track published", "trackID", msg.TrackPublished.Track.Name, "participant", c.localParticipant.Sid,
+			"cid", msg.TrackPublished.Cid, "trackSid", msg.TrackPublished.Track.Sid)
+		c.lock.Lock()
+		c.pendingPublishedTracks[msg.TrackPublished.Cid] = msg.TrackPublished.Track
+		c.lock.Unlock()
+	case *livekit.SignalResponse_RefreshToken:
+		c.lock.Lock()
+		c.refreshToken = msg.RefreshToken
+		c.lock.Unlock()
+	case *livekit.SignalResponse_TrackUnpublished:
+		sid := msg.TrackUnpublished.TrackSid
+		c.lock.Lock()
+		sender := c.trackSenders[sid]
+		if sender != nil {
+			if err := c.publisher.RemoveTrack(sender); err != nil {
+				logger.Errorw("Could not unpublish track", err)
+			}
+			c.publisher.Negotiate(false)
+		}
+		delete(c.trackSenders, sid)
+		delete(c.localTracks, sid)
+		c.lock.Unlock()
+	case *livekit.SignalResponse_Pong:
+		c.pongReceivedAt.Store(msg.Pong)
+	case *livekit.SignalResponse_SubscriptionResponse:
+		c.subscriptionResponse.Store(msg.SubscriptionResponse)
+	}
+	return nil
 }
 
 func (c *RTCClient) WaitUntilConnected() error {
@@ -486,6 +513,14 @@ func (c *RTCClient) SendPing() error {
 }
 
 func (c *RTCClient) SendRequest(msg *livekit.SignalRequest) error {
+	if c.signalRequestInterceptor != nil {
+		return c.signalRequestInterceptor(msg, c.sendRequest)
+	} else {
+		return c.sendRequest(msg)
+	}
+}
+
+func (c *RTCClient) sendRequest(msg *livekit.SignalRequest) error {
 	payload, err := proto.Marshal(msg)
 	if err != nil {
 		return err
