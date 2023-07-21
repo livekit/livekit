@@ -549,7 +549,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 			// this means ICE restart isn't possible in single node mode
 			if obj == nil {
 				if room.GetParticipantRequestSource(participant.Identity()) == requestSource {
-					participant.SetSignalSourceValid(false)
+					participant.HandleSignalSourceClose()
 				}
 				return
 			}
