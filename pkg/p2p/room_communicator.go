@@ -13,6 +13,7 @@ import (
 )
 
 const (
+	dbPrefix                   = "livekit_room_"
 	prefixIncomingMessageTopic = "incoming_messages_"
 	prefixPeerKey              = "node_"
 	pingMessage                = "ping"
@@ -43,7 +44,7 @@ func NewRoomCommunicatorImpl(room *livekit.Room, cfg p2p_database.Config) *RoomC
 		peers:  make(map[string]struct{}),
 	}
 
-	cfg.DatabaseName = "livekit_room_" + room.Name
+	cfg.DatabaseName = dbPrefix + room.Key
 	_ = logging.SetLogLevel("*", "error")
 	roomCommunicator.init(cfg)
 
@@ -85,7 +86,7 @@ func (c *RoomCommunicatorImpl) init(cfg p2p_database.Config) {
 		c.checkNewPeer(peerId)
 	}
 
-	db, err = p2p_database.Connect(c.ctx, cfg, logging.Logger("db_livekit_room_"+c.room.Name))
+	db, err = p2p_database.Connect(c.ctx, cfg, logging.Logger(dbPrefix+c.room.Key))
 	if err != nil {
 		log.Fatalf("cannot connect to database")
 	}
@@ -118,7 +119,7 @@ func (c *RoomCommunicatorImpl) checkNewPeer(peerId string) {
 
 		_, pubErr := c.db.Publish(c.ctx, p2pTopicName(peerId), pingMessage)
 		if pubErr != nil {
-			log.Fatalf("cannot send ping message for node %s in db %s: %s", peerId, c.room.Name, pubErr)
+			log.Fatalf("cannot send ping message for node %s in db %s: %s", peerId, c.room.Key, pubErr)
 		} else {
 			log.Printf("PING message sent to %v", peerId)
 		}
@@ -130,7 +131,7 @@ func (c *RoomCommunicatorImpl) dbHandler(event p2p_database.Event) {
 	if event.Message == pingMessage {
 		log.Println("PING message received")
 		if _, err := c.db.Publish(c.ctx, p2pTopicName(event.FromPeerId), pongMessage); err != nil {
-			log.Fatalf("cannot send pong message for node %s in db %s: %s", event.FromPeerId, c.room.Name, err)
+			log.Fatalf("cannot send pong message for node %s in db %s: %s", event.FromPeerId, c.room.Key, err)
 		} else {
 			log.Printf("PONG message sent to %v", event.FromPeerId)
 		}
