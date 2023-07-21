@@ -28,6 +28,7 @@ type SessionHandler func(
 
 type SignalServer struct {
 	server rpc.TypedSignalServer
+	nodeID livekit.NodeID
 }
 
 func NewSignalServer(
@@ -47,12 +48,7 @@ func NewSignalServer(
 	if err != nil {
 		return nil, err
 	}
-	logger.Debugw("starting relay signal server", "topic", nodeID)
-	if err := s.RegisterRelaySignalTopic(nodeID); err != nil {
-		return nil, err
-	}
-
-	return &SignalServer{s}, nil
+	return &SignalServer{s, nodeID}, nil
 }
 
 func NewDefaultSignalServer(
@@ -99,6 +95,11 @@ func NewDefaultSignalServer(
 	}
 
 	return NewSignalServer(livekit.NodeID(currentNode.Id), currentNode.Region, bus, config, sessionHandler)
+}
+
+func (s *SignalServer) Start() error {
+	logger.Debugw("starting relay signal server", "topic", s.nodeID)
+	return s.server.RegisterRelaySignalTopic(s.nodeID)
 }
 
 func (r *SignalServer) Stop() {
