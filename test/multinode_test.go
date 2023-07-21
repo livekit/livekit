@@ -271,20 +271,20 @@ func TestCloseDisconnectedParticipantOnSignalClose(t *testing.T) {
 	waitUntilConnected(t, c1)
 
 	c2 := createRTCClient("c2", defaultServerPort, &client.Options{
-		SignalRequestInterceptor: func(res *livekit.SignalRequest, next client.SignalRequestHandler) error {
-			switch res.Message.(type) {
+		SignalRequestInterceptor: func(msg *livekit.SignalRequest, next client.SignalRequestHandler) error {
+			switch msg.Message.(type) {
 			case *livekit.SignalRequest_Offer, *livekit.SignalRequest_Answer, *livekit.SignalRequest_Leave:
 				return nil
 			default:
-				return next(res)
+				return next(msg)
 			}
 		},
-		SignalResponseInterceptor: func(res *livekit.SignalResponse, next client.SignalResponseHandler) error {
-			switch res.Message.(type) {
+		SignalResponseInterceptor: func(msg *livekit.SignalResponse, next client.SignalResponseHandler) error {
+			switch msg.Message.(type) {
 			case *livekit.SignalResponse_Offer, *livekit.SignalResponse_Answer:
 				return nil
 			default:
-				return next(res)
+				return next(msg)
 			}
 		},
 	})
