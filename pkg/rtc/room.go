@@ -195,6 +195,7 @@ func NewRoom(
 	roomP2PCommunicator.ForEachPeer(func(peerId string) {
 		logger.Infow("New p2p peer", "peerId", peerId)
 		rel, err := pc.NewRelay(logger, &relay.RelayConfig{
+			ID:            peerId,
 			BufferFactory: r.GetBufferFactory(),
 			SettingEngine: config.SettingEngine,
 			ICEServers:    config.Configuration.ICEServers,
@@ -271,6 +272,7 @@ func NewRoom(
 		} else {
 			// Offer
 			rel, err := pc.NewRelay(logger, &relay.RelayConfig{
+				ID:            fromPeerId,
 				BufferFactory: r.GetBufferFactory(),
 				SettingEngine: config.SettingEngine,
 				ICEServers:    config.Configuration.ICEServers,

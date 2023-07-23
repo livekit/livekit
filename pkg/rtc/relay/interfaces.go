@@ -10,6 +10,7 @@ import (
 )
 
 type Relay interface {
+	ID() string
 	GetBufferFactory() *buffer.Factory
 	Offer(signalFn func(signal []byte) ([]byte, error)) error
 	Answer(request []byte) ([]byte, error)
