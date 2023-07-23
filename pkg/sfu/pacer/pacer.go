@@ -26,6 +26,9 @@ type Packet struct {
 type Pacer interface {
 	Enqueue(p Packet)
 	Stop()
+
+	SetInterval(interval time.Duration)
+	SetBitrate(bitrate int)
 }
 
 // ------------------------------------------------

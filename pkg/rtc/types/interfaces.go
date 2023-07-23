@@ -295,6 +295,7 @@ type LocalParticipant interface {
 	CloseSignalConnection(reason SignallingCloseReason)
 	UpdateLastSeenSignal()
 	SetSignalSourceValid(valid bool)
+	HandleSignalSourceClose()
 
 	// permissions
 	ClaimGrants() *auth.ClaimGrants
