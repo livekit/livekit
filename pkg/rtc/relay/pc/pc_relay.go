@@ -27,7 +27,7 @@ type eventType string
 const (
 	eventTypeAddTrack eventType = "add_rack"
 	eventTypeOffer    eventType = "offer"
-	eventTypeCustom   eventType = "custom"
+	eventTypeMessage  eventType = "message"
 )
 
 type addTrackSignal struct {
@@ -418,31 +418,31 @@ func (r *PcRelay) OnConnectionStateChange(f func(state webrtc.ICEConnectionState
 	r.pc.OnICEConnectionStateChange(f)
 }
 
-func (r *PcRelay) Send(payload []byte) error {
+func (r *PcRelay) SendMessage(payload []byte) error {
 	event := dcEvent{
 		ID:      r.rand.Uint64(),
-		Type:    eventTypeCustom,
+		Type:    eventTypeMessage,
 		Payload: payload,
 	}
 	_, err := r.send(event, false)
 	return err
 }
 
-func (r *PcRelay) SendReply(replyForID uint64, payload []byte) error {
+func (r *PcRelay) SendReplyMessage(replyForID uint64, payload []byte) error {
 	event := dcEvent{
 		ID:         r.rand.Uint64(),
 		ReplyForID: &replyForID,
-		Type:       eventTypeCustom,
+		Type:       eventTypeMessage,
 		Payload:    payload,
 	}
 	_, err := r.send(event, false)
 	return err
 }
 
-func (r *PcRelay) SendAndExpectReply(payload []byte) (<-chan []byte, error) {
+func (r *PcRelay) SendMessageAndExpectReply(payload []byte) (<-chan []byte, error) {
 	event := dcEvent{
 		ID:      r.rand.Uint64(),
-		Type:    eventTypeCustom,
+		Type:    eventTypeMessage,
 		Payload: payload,
 	}
 	return r.send(event, true)
@@ -612,7 +612,7 @@ func (r *PcRelay) onSignalingDataChannelMessage(msg webrtc.DataChannelMessage) {
 			r.logger.Errorw("Error replying message", err)
 			return
 		}
-	} else if event.Type == eventTypeCustom {
+	} else if event.Type == eventTypeMessage {
 		r.logger.Infow("custom received")
 
 		if f := r.onMessage.Load(); f != nil {
