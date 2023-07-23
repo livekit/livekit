@@ -147,7 +147,7 @@ func (s *LocalStore) UnlockRoom(_ context.Context, _ livekit.RoomKey, _ string) 
 	return nil
 }
 
-func (s *LocalStore) StoreParticipant(ctx context.Context, roomKey livekit.RoomKey, participant *livekit.ParticipantInfo) error {
+func (s *LocalStore) StoreParticipant(ctx context.Context, roomKey livekit.RoomKey, participant *livekit.ParticipantInfo, relayed bool) error {
 	_, apiKey, err := utils.ParseRoomKey(roomKey)
 	if err != nil {
 		return errors.Wrap(err, "parse room key")
