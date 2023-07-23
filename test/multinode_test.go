@@ -11,6 +11,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/testutils"
+	"github.com/livekit/livekit-server/test/client"
 )
 
 func TestMultiNodeRouting(t *testing.T) {
@@ -257,6 +258,49 @@ func TestMultiNodeRevokePublishPermission(t *testing.T) {
 		}
 		if len(remoteC1.Tracks) != 0 {
 			return "c2 still has c1's tracks"
+		}
+		return ""
+	})
+}
+
+func TestCloseDisconnectedParticipantOnSignalClose(t *testing.T) {
+	_, _, finish := setupMultiNodeTest("TestCloseDisconnectedParticipantOnSignalClose")
+	defer finish()
+
+	c1 := createRTCClient("c1", secondServerPort, nil)
+	waitUntilConnected(t, c1)
+
+	c2 := createRTCClient("c2", defaultServerPort, &client.Options{
+		SignalRequestInterceptor: func(msg *livekit.SignalRequest, next client.SignalRequestHandler) error {
+			switch msg.Message.(type) {
+			case *livekit.SignalRequest_Offer, *livekit.SignalRequest_Answer, *livekit.SignalRequest_Leave:
+				return nil
+			default:
+				return next(msg)
+			}
+		},
+		SignalResponseInterceptor: func(msg *livekit.SignalResponse, next client.SignalResponseHandler) error {
+			switch msg.Message.(type) {
+			case *livekit.SignalResponse_Offer, *livekit.SignalResponse_Answer:
+				return nil
+			default:
+				return next(msg)
+			}
+		},
+	})
+
+	testutils.WithTimeout(t, func() string {
+		if len(c1.RemoteParticipants()) != 1 {
+			return "c1 did not see c2 join"
+		}
+		return ""
+	})
+
+	c2.Stop()
+
+	testutils.WithTimeout(t, func() string {
+		if len(c1.RemoteParticipants()) != 0 {
+			return "c1 did not see c2 removed"
 		}
 		return ""
 	})

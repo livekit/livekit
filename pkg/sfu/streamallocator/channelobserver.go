@@ -72,10 +72,6 @@ type ChannelObserver struct {
 
 	estimateTrend *TrendDetector
 	nackTracker   *NackTracker
-
-	nackWindowStartTime time.Time
-	packets             uint32
-	repeatedNacks       uint32
 }
 
 func NewChannelObserver(params ChannelObserverParams, logger logger.Logger) *ChannelObserver {

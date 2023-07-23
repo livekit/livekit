@@ -227,6 +227,10 @@ func (s *LivekitServer) Start() error {
 		go s.promServer.Serve(promLn)
 	}
 
+	if err := s.signalServer.Start(); err != nil {
+		return err
+	}
+
 	httpGroup := &errgroup.Group{}
 	for _, ln := range listeners {
 		l := ln

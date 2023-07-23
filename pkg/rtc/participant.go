@@ -516,6 +516,15 @@ func (p *ParticipantImpl) OnClaimsChanged(callback func(types.LocalParticipant))
 	p.lock.Unlock()
 }
 
+func (p *ParticipantImpl) HandleSignalSourceClose() {
+	p.TransportManager.SetSignalSourceValid(false)
+
+	if !p.TransportManager.HasPublisherEverConnected() && !p.TransportManager.HasSubscriberEverConnected() {
+		p.params.Logger.Infow("closing disconnected participant")
+		_ = p.Close(false, types.ParticipantCloseReasonJoinFailed, false)
+	}
+}
+
 // HandleOffer an offer from remote participant, used when clients make the initial connection
 func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) {
 	p.params.Logger.Debugw("received offer", "transport", livekit.SignalTarget_PUBLISHER)
