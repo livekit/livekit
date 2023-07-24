@@ -54,7 +54,11 @@ func NewRoomCommunicatorImpl(room *livekit.Room, cfg p2p_database.Config) *RoomC
 func (c *RoomCommunicatorImpl) Close() {
 	removeErr := c.db.Remove(c.ctx, prefixPeerKey+c.db.GetHost().ID().String())
 	if removeErr != nil {
-		log.Fatalf("cannot remove")
+		log.Printf("cannot remove: %v", removeErr)
+	}
+	disconnectErr := c.db.Disconnect(c.ctx)
+	if disconnectErr != nil {
+		log.Printf("cannot disconnect: %v", disconnectErr)
 	}
 	c.cancel()
 }
@@ -88,18 +92,18 @@ func (c *RoomCommunicatorImpl) init(cfg p2p_database.Config) {
 
 	db, err = p2p_database.Connect(c.ctx, cfg, logging.Logger(dbPrefix+c.room.Key))
 	if err != nil {
-		log.Fatalf("cannot connect to database")
+		log.Printf("cannot connect to database")
 	}
 	c.db = db
 
 	subErr := db.Subscribe(c.ctx, p2pTopicName(db.GetHost().ID().String()), c.dbHandler)
 	if subErr != nil {
-		log.Fatalf("cannot subscribe to topic")
+		log.Printf("cannot subscribe to topic")
 	}
 
 	setErr := db.Set(c.ctx, prefixPeerKey+db.GetHost().ID().String(), time.Now().String())
 	if setErr != nil {
-		log.Fatalf("cannot set")
+		log.Printf("cannot set")
 	}
 }
 
@@ -119,7 +123,7 @@ func (c *RoomCommunicatorImpl) checkNewPeer(peerId string) {
 
 		_, pubErr := c.db.Publish(c.ctx, p2pTopicName(peerId), pingMessage)
 		if pubErr != nil {
-			log.Fatalf("cannot send ping message for node %s in db %s: %s", peerId, c.room.Key, pubErr)
+			log.Printf("cannot send ping message for node %s in db %s: %s", peerId, c.room.Key, pubErr)
 		} else {
 			log.Printf("PING message sent to %v", peerId)
 		}
@@ -131,7 +135,7 @@ func (c *RoomCommunicatorImpl) dbHandler(event p2p_database.Event) {
 	if event.Message == pingMessage {
 		log.Println("PING message received")
 		if _, err := c.db.Publish(c.ctx, p2pTopicName(event.FromPeerId), pongMessage); err != nil {
-			log.Fatalf("cannot send pong message for node %s in db %s: %s", event.FromPeerId, c.room.Key, err)
+			log.Printf("cannot send pong message for node %s in db %s: %s", event.FromPeerId, c.room.Key, err)
 		} else {
 			log.Printf("PONG message sent to %v", event.FromPeerId)
 		}

@@ -189,8 +189,6 @@ func (r *PcRelay) resignal() {
 		return
 	}
 
-	fmt.Printf("Offer SDP:\n%v\n", offer.SDP)
-
 	if err := r.pc.SetLocalDescription(offer); err != nil {
 		r.logger.Errorw("SetLocalDescription error", offerErr)
 		return
@@ -224,8 +222,6 @@ func (r *PcRelay) resignal() {
 			r.logger.Errorw("Unmarshal error", err)
 			return
 		}
-
-		fmt.Printf("Answer SDP:\n%v\n", answer.SDP)
 
 		if err := r.pc.SetRemoteDescription(answer); err != nil {
 			r.logger.Errorw("SetRemoteDescription error", err)
