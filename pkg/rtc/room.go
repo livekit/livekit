@@ -310,7 +310,7 @@ func NewRoom(
 			logger.Infow("answer sent")
 
 			rel.OnMessage(func(id uint64, payload []byte) {
-				logger.Infow("Relay message received")
+				logger.Debugw("Relay message received")
 				var msg relayMessage
 
 				if err := json.Unmarshal(payload, &msg); err != nil {

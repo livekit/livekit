@@ -545,7 +545,7 @@ func (r *PcRelay) onAddTrackOffer(offer webrtc.SessionDescription) ([]byte, erro
 }
 
 func (r *PcRelay) onSignalingDataChannelMessage(msg webrtc.DataChannelMessage) {
-	r.logger.Infow("onSignalingDataChannelMessage")
+	r.logger.Debugw("onSignalingDataChannelMessage")
 
 	event := &dcEvent{}
 	if err := json.Unmarshal(msg.Data, event); err != nil {
@@ -613,7 +613,7 @@ func (r *PcRelay) onSignalingDataChannelMessage(msg webrtc.DataChannelMessage) {
 			return
 		}
 	} else if event.Type == eventTypeMessage {
-		r.logger.Infow("custom received")
+		r.logger.Debugw("custom received")
 
 		if f := r.onMessage.Load(); f != nil {
 			f.(func(id uint64, payload []byte))(event.ID, event.Payload)
