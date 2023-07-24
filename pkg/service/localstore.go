@@ -148,6 +148,8 @@ func (s *LocalStore) UnlockRoom(_ context.Context, _ livekit.RoomKey, _ string) 
 }
 
 func (s *LocalStore) StoreParticipant(ctx context.Context, roomKey livekit.RoomKey, participant *livekit.ParticipantInfo, relayed bool) error {
+	log.Println("Calling localstore.StoreParticipant")
+
 	participant.Relayed = relayed
 	_, apiKey, err := utils.ParseRoomKey(roomKey)
 	if err != nil {
@@ -215,6 +217,8 @@ func (s *LocalStore) ListParticipants(_ context.Context, roomKey livekit.RoomKey
 }
 
 func (s *LocalStore) DeleteParticipant(ctx context.Context, roomKey livekit.RoomKey, identity livekit.ParticipantIdentity) error {
+	log.Println("Calling localstore.DeleteParticipant")
+
 	s.lock.Lock()
 	defer s.lock.Unlock()
 

@@ -254,7 +254,7 @@ func (r *PcRelay) Offer(signalFn func(offerData []byte) ([]byte, error)) error {
 		return offerErr
 	}
 
-	r.logger.Infow(offer.SDP)
+	r.logger.Debugw(offer.SDP)
 
 	doneCh := make(chan struct{})
 	var iceCandidates []webrtc.ICECandidateInit
@@ -331,7 +331,7 @@ func (r *PcRelay) Answer(offerData []byte) ([]byte, error) {
 		return nil, answerErr
 	}
 
-	r.logger.Infow(answer.SDP)
+	r.logger.Debugw(answer.SDP)
 
 	if err := r.pc.SetLocalDescription(answer); err != nil {
 		return nil, err
