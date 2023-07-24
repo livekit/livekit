@@ -137,12 +137,11 @@ func (r *LocalRouter) WriteParticipantRTC(_ context.Context, roomKey livekit.Roo
 	r.lock.Unlock()
 	msg.ParticipantKey = string(ParticipantKeyLegacy(roomKey, identity))
 	msg.ParticipantKeyB62 = string(ParticipantKey(roomKey, identity))
+	r.writeToP2P(roomKey, msg)
 	return r.writeRTCMessage(r.rtcMessageChan, msg)
 }
 
 func (r *LocalRouter) writeFromP2P(ctx context.Context, roomKey livekit.RoomKey, msg *livekit.RTCNodeMessage) error {
-	msg.ParticipantKey = string(ParticipantKeyLegacy(roomKey, ""))
-	msg.ParticipantKeyB62 = string(ParticipantKey(roomKey, ""))
 	return r.WriteNodeRTC(ctx, r.currentNode.Id, msg)
 }
 
@@ -155,9 +154,9 @@ func (r *LocalRouter) writeToP2P(roomKey livekit.RoomKey, msg *livekit.RTCNodeMe
 }
 
 func (r *LocalRouter) WriteRoomRTC(ctx context.Context, roomKey livekit.RoomKey, msg *livekit.RTCNodeMessage) error {
-	r.writeToP2P(roomKey, msg)
 	msg.ParticipantKey = string(ParticipantKeyLegacy(roomKey, ""))
 	msg.ParticipantKeyB62 = string(ParticipantKey(roomKey, ""))
+	r.writeToP2P(roomKey, msg)
 	return r.WriteNodeRTC(ctx, r.currentNode.Id, msg)
 }
 
