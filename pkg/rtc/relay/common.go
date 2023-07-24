@@ -7,6 +7,7 @@ import (
 )
 
 type RelayConfig struct {
+	ID            string
 	SettingEngine webrtc.SettingEngine
 	ICEServers    []webrtc.ICEServer
 	BufferFactory *buffer.Factory

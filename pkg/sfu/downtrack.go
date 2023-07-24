@@ -1281,7 +1281,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			if strings.HasPrefix(string(d.subscriberID), "relay--") {
 				// TODO: pass rid or layer to downtrack in other way
 				relayParts := strings.Split(string(d.subscriberID), "--")
-				layer = buffer.RidToSpatialLayer(relayParts[2], nil)
+				layer = buffer.RidToSpatialLayer(relayParts[3], nil)
 			} else {
 				_, layer = d.forwarder.CheckSync()
 			}

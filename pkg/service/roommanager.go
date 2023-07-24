@@ -350,7 +350,7 @@ func (r *RoomManager) StartSession(
 		_ = participant.Close(true, types.ParticipantCloseReasonJoinFailed)
 		return err
 	}
-	if err = r.roomStore.StoreParticipant(ctx, roomKey, participant.ToProto()); err != nil {
+	if err = r.roomStore.StoreParticipant(ctx, roomKey, participant.ToProto(), false); err != nil {
 		pLogger.Errorw("could not store participant", err)
 	}
 
@@ -451,7 +451,8 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 
 	newRoom.OnParticipantChanged(func(p types.LocalParticipant) {
 		if !p.IsDisconnected() {
-			if err := r.roomStore.StoreParticipant(ctx, roomKey, p.ToProto()); err != nil {
+			_, relayed := p.(*rtc.RelayedParticipantImpl)
+			if err := r.roomStore.StoreParticipant(ctx, roomKey, p.ToProto(), relayed); err != nil {
 				newRoom.Logger.Errorw("could not handle participant change", err)
 			}
 		}

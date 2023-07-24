@@ -1158,7 +1158,7 @@ func (p *ParticipantImpl) forwardTrackToRelays(publishedTrack *MediaTrack, track
 			rtpCodecParameters,
 			tr,
 			relay.GetBufferFactory(),
-			livekit.ParticipantID(fmt.Sprintf("relay--%v--%v", track.ID(), track.RID())),
+			livekit.ParticipantID(fmt.Sprintf("relay--%v--%v--%v", relay.ID(), track.ID(), track.RID())),
 			p.params.Config.Receiver.PacketBufferSize,
 			uint32(track.SSRC()),
 			p.GetLogger(),
@@ -1172,7 +1172,7 @@ func (p *ParticipantImpl) forwardTrackToRelays(publishedTrack *MediaTrack, track
 
 		addTrackSignalPayload, marshalErr := json.Marshal(addTrackSignal)
 		if marshalErr != nil {
-			p.params.Logger.Errorw("marhsla err", err)
+			p.params.Logger.Errorw("marshal err", err)
 			return
 		}
 
