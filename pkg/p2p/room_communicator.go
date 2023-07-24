@@ -56,10 +56,6 @@ func (c *RoomCommunicatorImpl) Close() {
 	if removeErr != nil {
 		log.Printf("cannot remove: %v", removeErr)
 	}
-	disconnectErr := c.db.Disconnect(c.ctx)
-	if disconnectErr != nil {
-		log.Printf("cannot disconnect: %v", disconnectErr)
-	}
 	c.cancel()
 }
 
