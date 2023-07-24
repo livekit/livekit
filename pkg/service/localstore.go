@@ -230,8 +230,7 @@ func (s *LocalStore) DeleteParticipant(ctx context.Context, roomKey livekit.Room
 	roomParticipants := s.participants[roomKey]
 	if roomParticipants != nil {
 		participant, participantExists := roomParticipants[identity]
-		if !participantExists {
-
+		if participantExists {
 			delete(roomParticipants, identity)
 			if participant.Relayed == false {
 				err := s.clientParticipantCounter.Decrement(ctx, string(apiKey), string(identity))

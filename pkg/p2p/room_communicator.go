@@ -45,7 +45,7 @@ func NewRoomCommunicatorImpl(room *livekit.Room, cfg p2p_database.Config) *RoomC
 	}
 
 	cfg.DatabaseName = dbPrefix + room.Key
-	_ = logging.SetLogLevel("*", "info")
+	_ = logging.SetLogLevel("*", "error")
 	roomCommunicator.init(cfg)
 
 	return roomCommunicator
