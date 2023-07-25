@@ -408,34 +408,34 @@ func (w *WebRTCReceiver) SetMaxExpectedSpatialLayer(layer int32) {
 
 // StreamTrackerManagerListener.OnAvailableLayersChanged
 func (w *WebRTCReceiver) OnAvailableLayersChanged() {
-	for _, dt := range w.downTrackSpreader.GetDownTracks() {
+	w.downTrackSpreader.Broadcast(func(dt TrackSender) {
 		dt.UpTrackLayersChange()
-	}
+	})
 
 	w.connectionStats.AddLayerTransition(w.streamTrackerManager.DistanceToDesired())
 }
 
 // StreamTrackerManagerListener.OnBitrateAvailabilityChanged
 func (w *WebRTCReceiver) OnBitrateAvailabilityChanged() {
-	for _, dt := range w.downTrackSpreader.GetDownTracks() {
+	w.downTrackSpreader.Broadcast(func(dt TrackSender) {
 		dt.UpTrackBitrateAvailabilityChange()
-	}
+	})
 }
 
 // StreamTrackerManagerListener.OnMaxPublishedLayerChanged
 func (w *WebRTCReceiver) OnMaxPublishedLayerChanged(maxPublishedLayer int32) {
-	for _, dt := range w.downTrackSpreader.GetDownTracks() {
+	w.downTrackSpreader.Broadcast(func(dt TrackSender) {
 		dt.UpTrackMaxPublishedLayerChange(maxPublishedLayer)
-	}
+	})
 
 	w.connectionStats.AddLayerTransition(w.streamTrackerManager.DistanceToDesired())
 }
 
 // StreamTrackerManagerListener.OnMaxTemporalLayerSeenChanged
 func (w *WebRTCReceiver) OnMaxTemporalLayerSeenChanged(maxTemporalLayerSeen int32) {
-	for _, dt := range w.downTrackSpreader.GetDownTracks() {
+	w.downTrackSpreader.Broadcast(func(dt TrackSender) {
 		dt.UpTrackMaxTemporalLayerSeenChange(maxTemporalLayerSeen)
-	}
+	})
 
 	w.connectionStats.AddLayerTransition(w.streamTrackerManager.DistanceToDesired())
 }
