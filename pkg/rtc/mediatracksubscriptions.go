@@ -41,6 +41,8 @@ type MediaTrackSubscriptionsParams struct {
 
 	Telemetry telemetry.TelemetryService
 
+	Trailer string
+
 	Logger logger.Logger
 }
 
@@ -110,6 +112,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	if err != nil {
 		return nil, err
 	}
+	downTrack.SetTrailer(t.params.Trailer)
 
 	if t.onDownTrackCreated != nil {
 		t.onDownTrackCreated(downTrack)

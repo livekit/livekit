@@ -240,6 +240,9 @@ type DownTrack struct {
 
 	maxLayerNotifierCh chan struct{}
 
+	trailerMu sync.RWMutex
+	trailer   string
+
 	cbMu                        sync.RWMutex
 	onStatsUpdate               func(dt *DownTrack, stat *livekit.AnalyticsStat)
 	onMaxSubscribedLayerChanged func(dt *DownTrack, layer int32)
@@ -396,6 +399,20 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 func (d *DownTrack) Unbind(_ webrtc.TrackLocalContext) error {
 	d.bound.Store(false)
 	return nil
+}
+
+func (d *DownTrack) SetTrailer(trailer string) {
+	d.trailerMu.Lock()
+	defer d.trailerMu.Unlock()
+
+	d.trailer = trailer
+}
+
+func (d *DownTrack) getTrailer() string {
+	d.trailerMu.RLock()
+	defer d.trailerMu.RUnlock()
+
+	return d.trailer
 }
 
 func (d *DownTrack) TrackInfoAvailable() {
@@ -1319,19 +1336,31 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 	return done
 }
 
+func (d *DownTrack) maybeAddTrailer(buf []byte) int {
+	trailer := d.getTrailer()
+	if trailer == "" {
+		return 0
+	}
+
+	copy(buf, trailer)
+	buf[len(trailer)] = byte(len(trailer))
+	return len(trailer) + 1
+}
+
 func (d *DownTrack) getOpusBlankFrame(_frameEndNeeded bool) ([]byte, error) {
 	// silence frame
 	// Used shortly after muting to ensure residual noise does not keep
 	// generating noise at the decoder after the stream is stopped
 	// i. e. comfort noise generation actually not producing something comfortable.
-	payload := make([]byte, len(OpusSilenceFrame))
+	payload := make([]byte, 1000)
 	copy(payload[0:], OpusSilenceFrame)
-	return payload, nil
+	trailerLen := d.maybeAddTrailer(payload[len(OpusSilenceFrame):])
+	return payload[:len(OpusSilenceFrame)+trailerLen], nil
 }
 
 func (d *DownTrack) getOpusRedBlankFrame(_frameEndNeeded bool) ([]byte, error) {
 	// primary only silence frame for opus/red, there is no need to contain redundant silent frames
-	payload := make([]byte, len(OpusSilenceFrame)+1)
+	payload := make([]byte, 1000)
 
 	// primary header
 	//  0 1 2 3 4 5 6 7
@@ -1340,7 +1369,8 @@ func (d *DownTrack) getOpusRedBlankFrame(_frameEndNeeded bool) ([]byte, error) {
 	// +-+-+-+-+-+-+-+-+
 	payload[0] = opusPT
 	copy(payload[1:], OpusSilenceFrame)
-	return payload, nil
+	trailerLen := d.maybeAddTrailer(payload[1+len(OpusSilenceFrame):])
+	return payload[:1+len(OpusSilenceFrame)+trailerLen], nil
 }
 
 func (d *DownTrack) getVP8BlankFrame(frameEndNeeded bool) ([]byte, error) {
@@ -1353,10 +1383,11 @@ func (d *DownTrack) getVP8BlankFrame(frameEndNeeded bool) ([]byte, error) {
 	// Used even when closing out a previous frame. Looks like receivers
 	// do not care about content (it will probably end up being an undecodable
 	// frame, but that should be okay as there are key frames following)
-	payload := make([]byte, len(blankVP8)+len(VP8KeyFrame8x8))
+	payload := make([]byte, 1000)
 	copy(payload[:len(blankVP8)], blankVP8)
 	copy(payload[len(blankVP8):], VP8KeyFrame8x8)
-	return payload, nil
+	trailerLen := d.maybeAddTrailer(payload[len(blankVP8)+len(VP8KeyFrame8x8):])
+	return payload[:len(blankVP8)+len(VP8KeyFrame8x8)+trailerLen], nil
 }
 
 func (d *DownTrack) getH264BlankFrame(_frameEndNeeded bool) ([]byte, error) {
@@ -1373,8 +1404,8 @@ func (d *DownTrack) getH264BlankFrame(_frameEndNeeded bool) ([]byte, error) {
 		copy(buf[offset:offset+len(payload)], payload)
 		offset += len(payload)
 	}
-	payload := buf[:offset]
-	return payload, nil
+	offset += d.maybeAddTrailer(buf[offset:])
+	return buf[:offset], nil
 }
 
 func (d *DownTrack) handleRTCP(bytes []byte) {

@@ -53,6 +53,7 @@ type MediaTrackParams struct {
 	AudioConfig       config.AudioConfig
 	VideoConfig       config.VideoConfig
 	Telemetry         telemetry.TelemetryService
+	Trailer           string
 	Logger            logger.Logger
 	SimTracks         map[uint32]SimulcastTrackInfo
 }
@@ -73,6 +74,7 @@ func NewMediaTrack(params MediaTrackParams) *MediaTrack {
 		SubscriberConfig:    params.SubscriberConfig,
 		AudioConfig:         params.AudioConfig,
 		Telemetry:           params.Telemetry,
+		Trailer:             params.Trailer,
 		Logger:              params.Logger,
 	})
 	t.MediaTrackReceiver.OnVideoLayerUpdate(func(layers []*livekit.VideoLayer) {
