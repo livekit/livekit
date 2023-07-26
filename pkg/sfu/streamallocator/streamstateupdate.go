@@ -48,7 +48,7 @@ func NewStreamStateUpdate() *StreamStateUpdate {
 func (s *StreamStateUpdate) HandleStreamingChange(track *Track, streamState StreamState) {
 	switch streamState {
 	case StreamStateInactive:
-		// inactive is not a not a notification, could get into this state because of mute
+		// inactive is not a notification, could get into this state because of mute
 	case StreamStateActive:
 		s.StreamStates = append(s.StreamStates, &StreamStateInfo{
 			ParticipantID: track.PublisherID(),
