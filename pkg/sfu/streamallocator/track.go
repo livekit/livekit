@@ -146,6 +146,10 @@ func (t *Track) ProvisionalAllocatePrepare() {
 	t.downTrack.ProvisionalAllocatePrepare()
 }
 
+func (t *Track) ProvisionalAllocateReset() {
+	t.downTrack.ProvisionalAllocateReset()
+}
+
 func (t *Track) ProvisionalAllocate(availableChannelCapacity int64, layer buffer.VideoLayer, allowPause bool, allowOvershoot bool) int64 {
 	return t.downTrack.ProvisionalAllocate(availableChannelCapacity, layer, allowPause, allowOvershoot)
 }
