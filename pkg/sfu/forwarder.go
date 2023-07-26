@@ -747,6 +747,13 @@ func (f *Forwarder) ProvisionalAllocatePrepare(availableLayers []int32, Bitrates
 	copy(f.provisional.availableLayers, availableLayers)
 }
 
+func (f *Forwarder) ProvisionalAllocateReset() {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	f.provisional.allocatedLayer = buffer.InvalidLayer
+}
+
 func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layer buffer.VideoLayer, allowPause bool, allowOvershoot bool) int64 {
 	f.lock.Lock()
 	defer f.lock.Unlock()
