@@ -847,7 +847,7 @@ func TestForwarderProvisionalAllocateGetBestWeightedTransition(t *testing.T) {
 	expectedTransition := VideoTransition{
 		From:           f.TargetLayer(),
 		To:             buffer.VideoLayer{Spatial: 2, Temporal: 0},
-		BandwidthDelta: 2,
+		BandwidthDelta: -2,
 	}
 	transition := f.ProvisionalAllocateGetBestWeightedTransition()
 	require.Equal(t, expectedTransition, transition)

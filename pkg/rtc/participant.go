@@ -1894,7 +1894,6 @@ func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackTyp
 	if pendingInfo == nil {
 	track_loop:
 		for cid, pti := range p.pendingTracks {
-
 			ti := pti.trackInfos[0]
 			for _, c := range ti.Codecs {
 				if c.Cid == clientId {

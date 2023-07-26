@@ -747,6 +747,13 @@ func (f *Forwarder) ProvisionalAllocatePrepare(availableLayers []int32, Bitrates
 	copy(f.provisional.availableLayers, availableLayers)
 }
 
+func (f *Forwarder) ProvisionalAllocateReset() {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	f.provisional.allocatedLayer = buffer.InvalidLayer
+}
+
 func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layer buffer.VideoLayer, allowPause bool, allowOvershoot bool) int64 {
 	f.lock.Lock()
 	defer f.lock.Unlock()
@@ -1013,7 +1020,7 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 			bandwidthDelta := int64(math.Max(float64(0), float64(existingBandwidthNeeded-f.provisional.Bitrates[s][t])))
 
 			transitionCost := int32(0)
-			// LK-TODO: SVC will need a different cost transition
+			// SVC-TODO: SVC will need a different cost transition
 			if targetLayer.Spatial != s {
 				transitionCost = TransitionCostSpatial
 			}
@@ -1036,7 +1043,7 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 	return VideoTransition{
 		From:           targetLayer,
 		To:             bestLayer,
-		BandwidthDelta: bestBandwidthDelta,
+		BandwidthDelta: -bestBandwidthDelta,
 	}
 }
 

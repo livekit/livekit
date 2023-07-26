@@ -1,6 +1,8 @@
 package streamallocator
 
 import (
+	"fmt"
+
 	"github.com/livekit/protocol/livekit"
 )
 
@@ -9,18 +11,21 @@ import (
 type StreamState int
 
 const (
-	StreamStateActive StreamState = iota
+	StreamStateInactive StreamState = iota
+	StreamStateActive
 	StreamStatePaused
 )
 
 func (s StreamState) String() string {
 	switch s {
+	case StreamStateInactive:
+		return "INACTIVE"
 	case StreamStateActive:
-		return "active"
+		return "ACTIVE"
 	case StreamStatePaused:
-		return "paused"
+		return "PAUSED"
 	default:
-		return "unknown"
+		return fmt.Sprintf("UNKNOWN: %d", int(s))
 	}
 }
 
@@ -40,18 +45,21 @@ func NewStreamStateUpdate() *StreamStateUpdate {
 	return &StreamStateUpdate{}
 }
 
-func (s *StreamStateUpdate) HandleStreamingChange(isPaused bool, track *Track) {
-	if isPaused {
-		s.StreamStates = append(s.StreamStates, &StreamStateInfo{
-			ParticipantID: track.PublisherID(),
-			TrackID:       track.ID(),
-			State:         StreamStatePaused,
-		})
-	} else {
+func (s *StreamStateUpdate) HandleStreamingChange(track *Track, streamState StreamState) {
+	switch streamState {
+	case StreamStateInactive:
+		// inactive is not a notification, could get into this state because of mute
+	case StreamStateActive:
 		s.StreamStates = append(s.StreamStates, &StreamStateInfo{
 			ParticipantID: track.PublisherID(),
 			TrackID:       track.ID(),
 			State:         StreamStateActive,
+		})
+	case StreamStatePaused:
+		s.StreamStates = append(s.StreamStates, &StreamStateInfo{
+			ParticipantID: track.PublisherID(),
+			TrackID:       track.ID(),
+			State:         StreamStatePaused,
 		})
 	}
 }
