@@ -42,7 +42,7 @@ type Track struct {
 
 	isDirty bool
 
-	isPaused bool
+	streamState StreamState
 }
 
 func NewTrack(
@@ -61,7 +61,7 @@ func NewTrack(
 		nackInfos:             make(map[uint16]sfu.NackInfo),
 		nackHistory:           make([]string, 0, 10),
 		receiverReportHistory: make([]string, 0, 10),
-		isPaused:              true,
+		streamState:           StreamStateInactive,
 	}
 	t.SetPriority(0)
 	t.SetMaxLayer(downTrack.MaxLayer())
@@ -78,12 +78,12 @@ func (t *Track) SetDirty(isDirty bool) bool {
 	return true
 }
 
-func (t *Track) SetPaused(isPaused bool) bool {
-	if t.isPaused == isPaused {
+func (t *Track) SetStreamState(streamState StreamState) bool {
+	if t.streamState == streamState {
 		return false
 	}
 
-	t.isPaused = isPaused
+	t.streamState = streamState
 	return true
 }
 
@@ -144,6 +144,10 @@ func (t *Track) AllocateOptimal(allowOvershoot bool) sfu.VideoAllocation {
 
 func (t *Track) ProvisionalAllocatePrepare() {
 	t.downTrack.ProvisionalAllocatePrepare()
+}
+
+func (t *Track) ProvisionalAllocateReset() {
+	t.downTrack.ProvisionalAllocateReset()
 }
 
 func (t *Track) ProvisionalAllocate(availableChannelCapacity int64, layer buffer.VideoLayer, allowPause bool, allowOvershoot bool) int64 {
