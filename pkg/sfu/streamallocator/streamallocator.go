@@ -79,7 +79,7 @@ func (s streamAllocatorState) String() string {
 	case streamAllocatorStateDeficient:
 		return "DEFICIENT"
 	default:
-		return fmt.Sprintf("%d", int(s))
+		return fmt.Sprintf("UNKNOWN: %d", int(s))
 	}
 }
 
@@ -696,8 +696,8 @@ func (s *StreamAllocator) handleSignalResume(event *Event) {
 
 	if track != nil {
 		update := NewStreamStateUpdate()
-		if track.SetPaused(false) {
-			update.HandleStreamingChange(false, track)
+		if track.SetStreamState(StreamStateActive) {
+			update.HandleStreamingChange(track, StreamStateActive)
 		}
 		s.maybeSendUpdate(update)
 	}
@@ -840,9 +840,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	if !s.params.Config.Enabled || s.state == streamAllocatorStateStable || !track.IsManaged() {
 		update := NewStreamStateUpdate()
 		allocation := track.AllocateOptimal(FlagAllowOvershootWhileOptimal)
-		if allocation.PauseReason == sfu.VideoPauseReasonBandwidth && track.SetPaused(true) {
-			update.HandleStreamingChange(true, track)
-		}
+		updateStreamStateChange(track, allocation, update)
 		s.maybeSendUpdate(update)
 		return
 	}
@@ -867,9 +865,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 		allocation := track.ProvisionalAllocateCommit()
 
 		update := NewStreamStateUpdate()
-		if allocation.PauseReason == sfu.VideoPauseReasonBandwidth && track.SetPaused(true) {
-			update.HandleStreamingChange(true, track)
-		}
+		updateStreamStateChange(track, allocation, update)
 		s.maybeSendUpdate(update)
 
 		s.adjustState()
@@ -910,9 +906,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 		// commit the tracks that contributed
 		for _, t := range contributingTracks {
 			allocation := t.ProvisionalAllocateCommit()
-			if allocation.PauseReason == sfu.VideoPauseReasonBandwidth && track.SetPaused(true) {
-				update.HandleStreamingChange(true, t)
-			}
+			updateStreamStateChange(t, allocation, update)
 		}
 
 		// STREAM-ALLOCATOR-TODO if got too much extra, can potentially give it to some deficient track
@@ -921,9 +915,11 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	// commit the track that needs change if enough could be acquired or pause not allowed
 	if !s.allowPause || bandwidthAcquired >= transition.BandwidthDelta {
 		allocation := track.ProvisionalAllocateCommit()
-		if allocation.PauseReason == sfu.VideoPauseReasonBandwidth && track.SetPaused(true) {
-			update.HandleStreamingChange(true, track)
-		}
+		updateStreamStateChange(track, allocation, update)
+	} else {
+		// explicitly pause to ensure stream state update happens if a track coming out of mute cannot be allocated
+		allocation := track.Pause()
+		updateStreamStateChange(track, allocation, update)
 	}
 
 	s.maybeSendUpdate(update)
@@ -989,9 +985,7 @@ func (s *StreamAllocator) maybeBoostDeficientTracks() {
 			continue
 		}
 
-		if allocation.PauseReason == sfu.VideoPauseReasonBandwidth && track.SetPaused(true) {
-			update.HandleStreamingChange(true, track)
-		}
+		updateStreamStateChange(track, allocation, update)
 
 		availableChannelCapacity -= allocation.BandwidthDelta
 		if availableChannelCapacity <= 0 {
@@ -1053,9 +1047,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 		}
 
 		allocation := track.AllocateOptimal(FlagAllowOvershootExemptTrackWhileDeficient)
-		if allocation.PauseReason == sfu.VideoPauseReasonBandwidth && track.SetPaused(true) {
-			update.HandleStreamingChange(true, track)
-		}
+		updateStreamStateChange(track, allocation, update)
 
 		// STREAM-ALLOCATOR-TODO: optimistic allocation before bitrate is available will return 0. How to account for that?
 		availableChannelCapacity -= allocation.BandwidthRequested
@@ -1072,9 +1064,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 			}
 
 			allocation := track.Pause()
-			if allocation.PauseReason == sfu.VideoPauseReasonBandwidth && track.SetPaused(true) {
-				update.HandleStreamingChange(true, track)
-			}
+			updateStreamStateChange(track, allocation, update)
 		}
 	} else {
 		sorted := s.getSorted()
@@ -1101,9 +1091,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 
 		for _, track := range sorted {
 			allocation := track.ProvisionalAllocateCommit()
-			if allocation.PauseReason == sfu.VideoPauseReasonBandwidth && track.SetPaused(true) {
-				update.HandleStreamingChange(true, track)
-			}
+			updateStreamStateChange(track, allocation, update)
 		}
 	}
 
@@ -1225,9 +1213,7 @@ func (s *StreamAllocator) maybeProbeWithMedia() {
 		}
 
 		update := NewStreamStateUpdate()
-		if allocation.PauseReason == sfu.VideoPauseReasonBandwidth && track.SetPaused(true) {
-			update.HandleStreamingChange(true, track)
-		}
+		updateStreamStateChange(track, allocation, update)
 		s.maybeSendUpdate(update)
 
 		s.probeController.Reset()
@@ -1351,6 +1337,29 @@ func (s *StreamAllocator) getTracksHistory() map[livekit.TrackID]string {
 	}
 
 	return history
+}
+
+// ------------------------------------------------
+
+func updateStreamStateChange(track *Track, allocation sfu.VideoAllocation, update *StreamStateUpdate) {
+	updated := false
+	streamState := StreamStateInactive
+	switch allocation.PauseReason {
+	case sfu.VideoPauseReasonMuted:
+		fallthrough
+
+	case sfu.VideoPauseReasonPubMuted:
+		streamState = StreamStateInactive
+		updated = track.SetStreamState(streamState)
+
+	case sfu.VideoPauseReasonBandwidth:
+		streamState = StreamStatePaused
+		updated = track.SetStreamState(streamState)
+	}
+
+	if updated {
+		update.HandleStreamingChange(track, streamState)
+	}
 }
 
 // ------------------------------------------------
