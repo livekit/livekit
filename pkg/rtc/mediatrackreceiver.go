@@ -800,4 +800,11 @@ func (t *MediaTrackReceiver) GetTemporalLayerForSpatialFps(spatial int32, fps ui
 	return buffer.DefaultMaxLayerTemporal
 }
 
+func (t *MediaTrackReceiver) IsEncrypted() bool {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return t.trackInfo.Encryption != livekit.Encryption_NONE
+}
+
 // ---------------------------

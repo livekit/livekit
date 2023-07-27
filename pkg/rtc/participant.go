@@ -68,6 +68,7 @@ type ParticipantParams struct {
 	VideoConfig                  config.VideoConfig
 	ProtocolVersion              types.ProtocolVersion
 	Telemetry                    telemetry.TelemetryService
+	Trailer                      []byte
 	PLIThrottleConfig            config.PLIThrottleConfig
 	CongestionControlConfig      config.CongestionControlConfig
 	EnabledCodecs                []*livekit.Codec
@@ -222,6 +223,12 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p.setupSubscriptionManager()
 
 	return p, nil
+}
+
+func (p *ParticipantImpl) GetTrailer() []byte {
+	trailer := make([]byte, len(p.params.Trailer))
+	copy(trailer, p.params.Trailer)
+	return trailer
 }
 
 func (p *ParticipantImpl) GetLogger() logger.Logger {

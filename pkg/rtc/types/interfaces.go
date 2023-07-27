@@ -277,6 +277,7 @@ type LocalParticipant interface {
 	ToProtoWithVersion() (*livekit.ParticipantInfo, utils.TimedVersion)
 
 	// getters
+	GetTrailer() []byte
 	GetLogger() logger.Logger
 	GetAdaptiveStream() bool
 	ProtocolVersion() ProtocolVersion
@@ -449,6 +450,8 @@ type MediaTrack interface {
 
 	Receivers() []sfu.TrackReceiver
 	ClearAllReceivers(willBeResumed bool)
+
+	IsEncrypted() bool
 }
 
 //counterfeiter:generate . LocalMediaTrack

@@ -77,6 +77,8 @@ type Room struct {
 	leftAt atomic.Int64
 	closed chan struct{}
 
+	trailer []byte
+
 	onParticipantChanged func(p types.LocalParticipant)
 	onRoomUpdated        func()
 	onClose              func()
@@ -111,6 +113,7 @@ func NewRoom(
 		bufferFactory:             buffer.NewFactoryOfBufferFactory(config.Receiver.PacketBufferSize),
 		batchedUpdates:            make(map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
 		closed:                    make(chan struct{}),
+		trailer:                   []byte(utils.RandomSecret()),
 	}
 	r.protoProxy = utils.NewProtoProxy[*livekit.Room](roomUpdateInterval, r.updateProto)
 	if r.protoRoom.EmptyTimeout == 0 {
@@ -137,6 +140,15 @@ func (r *Room) Name() livekit.RoomName {
 
 func (r *Room) ID() livekit.RoomID {
 	return livekit.RoomID(r.protoRoom.Sid)
+}
+
+func (r *Room) Trailer() []byte {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	trailer := make([]byte, len(r.trailer))
+	copy(trailer, r.trailer)
+	return trailer
 }
 
 func (r *Room) GetParticipant(identity livekit.ParticipantIdentity) types.LocalParticipant {
@@ -821,6 +833,7 @@ func (r *Room) createJoinResponseLocked(participant types.LocalParticipant, iceS
 		ServerInfo:    r.serverInfo,
 		ServerVersion: r.serverInfo.Version,
 		ServerRegion:  r.serverInfo.Region,
+		SifTrailer:    r.trailer,
 	}
 }
 
