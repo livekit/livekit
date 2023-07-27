@@ -73,10 +73,15 @@ func (fc *FrameChain) OnFrame(extFrameNum uint64, fd *dd.FrameDependencyTemplate
 }
 
 func (fc *FrameChain) OnExpectFrameChanged(frameNum uint64, decision selectorDecision) {
+	if fc.broken {
+		return
+	}
+
 	for i, f := range fc.expectFrames {
 		if f == frameNum {
 			if decision != selectorDecisionForwarded {
 				fc.broken = true
+				fc.logger.Debugw("frame chain broken", "chanIdx", fc.chainIdx, "sd", decision, "frame", frameNum)
 			}
 			fc.expectFrames[i] = fc.expectFrames[len(fc.expectFrames)-1]
 			fc.expectFrames = fc.expectFrames[:len(fc.expectFrames)-1]

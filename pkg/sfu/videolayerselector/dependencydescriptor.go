@@ -6,14 +6,12 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	dede "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
-	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/protocol/logger"
 )
 
 type DependencyDescriptor struct {
 	*Base
 
-	frameNum  *utils.WrapAround[uint16, uint64]
 	decisions *SelectorDecisionCache
 
 	previousActiveDecodeTargetsBitmask *uint32
@@ -29,7 +27,6 @@ type DependencyDescriptor struct {
 func NewDependencyDescriptor(logger logger.Logger) *DependencyDescriptor {
 	return &DependencyDescriptor{
 		Base:      NewBase(logger),
-		frameNum:  utils.NewWrapAround[uint16, uint64](),
 		decisions: NewSelectorDecisionCache(256, 80),
 	}
 }
@@ -37,7 +34,6 @@ func NewDependencyDescriptor(logger logger.Logger) *DependencyDescriptor {
 func NewDependencyDescriptorFromNull(vls VideoLayerSelector) *DependencyDescriptor {
 	return &DependencyDescriptor{
 		Base:      vls.(*Null).Base,
-		frameNum:  utils.NewWrapAround[uint16, uint64](),
 		decisions: NewSelectorDecisionCache(256, 80),
 	}
 }
@@ -58,8 +54,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 
 	dd := ddwdt.Descriptor
 
-	frameNum := d.frameNum.Update(dd.FrameNumber)
-	extFrameNum := frameNum.ExtendedVal
+	extFrameNum := ddwdt.ExtFrameNum
 
 	fd := dd.FrameDependencies
 	incomingLayer := buffer.VideoLayer{
@@ -103,6 +98,8 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	}
 	var dti dede.DecodeTargetIndication
 	d.decodeTargetsLock.RLock()
+
+	// decodeTargets be sorted from high to low, find the highest decode target that is active and integrity
 	for _, dt := range d.decodeTargets {
 		if !dt.Active() || dt.Layer.Spatial > d.targetLayer.Spatial || dt.Layer.Temporal > d.targetLayer.Temporal {
 			continue
@@ -119,27 +116,13 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 			return
 		}
 
-		// Keep forwarding the lower spatial with temporal layer 0 to keep the lower frame chain intact,
-		// it will cost a few extra bits as those frames might not be present in the current target
-		// but will make the subscriber switch to lower layer seamlessly without pli.
 		if frameResult.TargetValid {
-			if highestDecodeTarget.Target == -1 {
-				highestDecodeTarget = dt.DependencyDescriptorDecodeTarget
-				dti = frameResult.DTI
-			} else if dt.Layer.Spatial < highestDecodeTarget.Layer.Spatial && dt.Layer.Temporal == 0 &&
-				frameResult.DTI != dede.DecodeTargetNotPresent && frameResult.DTI != dede.DecodeTargetDiscardable {
-				dti = frameResult.DTI
-			}
+			highestDecodeTarget = dt.DependencyDescriptorDecodeTarget
+			dti = frameResult.DTI
+			break
 		}
 	}
 	d.decodeTargetsLock.RUnlock()
-
-	// DD-TODO : we don't have a rtp queue to ensure the order of packets now,
-	// so we don't know packet is lost/out of order, that cause us can't detect
-	// frame integrity, entire frame is forwareded, whether frame chain is broken.
-	// So use a simple check here, assume all the reference frame is forwarded and
-	// only check DTI of the active decode target.
-	// it is not effeciency, at last we need check frame chain integrity.
 
 	if highestDecodeTarget.Target < 0 {
 		// no active decode target, do not select
@@ -204,6 +187,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 
 		d.previousActiveDecodeTargetsBitmask = d.activeDecodeTargetsBitmask
 		d.activeDecodeTargetsBitmask = buffer.GetActiveDecodeTargetBitmask(d.currentLayer, ddwdt.DecodeTargets)
+		d.logger.Debugw("switch to target", "highest", highestDecodeTarget.Layer, "current", d.currentLayer, "bitmask", *d.activeDecodeTargetsBitmask)
 	}
 
 	ddExtension := &dede.DependencyDescriptorExtension{
@@ -227,18 +211,9 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		result.DependencyDescriptorExtension = bytes
 	}
 
-	// DD-TODO START
-	// Ideally should add this frame only on the last packet of the frame and if all packets of the frame have been selected.
-	// But, adding on any packet so that any out-of-order packets within a frame can be fowarded.
-	// But, that could result in decodability/chain integrity to erroneously pass (i. e. in the case of lost packet in this
-	// frame, this frame is not decodable and hence the chain is broken).
-	//
-	// Note that packets can get lost in the forwarded path also. That will be handled by receiver sending PLI.
-	//
-	// Within SFU, there is more work to do to ensure integrity of forwarded packets/frames to adhere to the complete design
-	// goal of dependency descriptor
-	// DD-TODO END
-	d.decisions.AddForwarded(extFrameNum)
+	if ddwdt.Integrity {
+		d.decisions.AddForwarded(extFrameNum)
+	}
 	result.RTPMarker = extPkt.Packet.Header.Marker || (dd.LastPacketInFrame && d.currentLayer.Spatial == int32(fd.SpatialId))
 	result.IsSelected = true
 	return
