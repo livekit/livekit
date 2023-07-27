@@ -1333,6 +1333,11 @@ func (d *DownTrack) maybeAddTrailer(buf []byte) int {
 	d.trailerMu.RLock()
 	defer d.trailerMu.RUnlock()
 
+	if len(buf) < len(d.trailer) {
+		d.logger.Warnw("trailer too big", nil, "bufLen", len(buf), "trailerLen", len(d.trailer))
+		return 0
+	}
+
 	copy(buf, d.trailer)
 	return len(d.trailer)
 }
@@ -1384,7 +1389,7 @@ func (d *DownTrack) getH264BlankFrame(_frameEndNeeded bool) ([]byte, error) {
 	// TODO - Jie Zeng
 	// now use STAP-A to compose sps, pps, idr together, most decoder support packetization-mode 1.
 	// if client only support packetization-mode 0, use single nalu unit packet
-	buf := make([]byte, 1462)
+	buf := make([]byte, 1000)
 	offset := 0
 	buf[0] = 0x18 // STAP-A
 	offset++
