@@ -68,7 +68,7 @@ type ParticipantParams struct {
 	VideoConfig                  config.VideoConfig
 	ProtocolVersion              types.ProtocolVersion
 	Telemetry                    telemetry.TelemetryService
-	Trailer                      string
+	Trailer                      []byte
 	PLIThrottleConfig            config.PLIThrottleConfig
 	CongestionControlConfig      config.CongestionControlConfig
 	EnabledCodecs                []*livekit.Codec
@@ -223,6 +223,12 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p.setupSubscriptionManager()
 
 	return p, nil
+}
+
+func (p *ParticipantImpl) GetTrailer() []byte {
+	trailer := make([]byte, len(p.params.Trailer))
+	copy(trailer, p.params.Trailer)
+	return trailer
 }
 
 func (p *ParticipantImpl) GetLogger() logger.Logger {
@@ -1760,10 +1766,6 @@ func (p *ParticipantImpl) addMigrateMutedTrack(cid string, ti *livekit.TrackInfo
 }
 
 func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *livekit.TrackInfo) *MediaTrack {
-	trailer := ""
-	if ti.Encryption != livekit.Encryption_NONE {
-		trailer = p.params.Trailer
-	}
 	mt := NewMediaTrack(MediaTrackParams{
 		TrackInfo:           proto.Clone(ti).(*livekit.TrackInfo),
 		SignalCid:           signalCid,
@@ -1777,7 +1779,6 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 		AudioConfig:         p.params.AudioConfig,
 		VideoConfig:         p.params.VideoConfig,
 		Telemetry:           p.params.Telemetry,
-		Trailer:             trailer,
 		Logger:              LoggerWithTrack(p.params.Logger, livekit.TrackID(ti.Sid), false),
 		SubscriberConfig:    p.params.Config.Subscriber,
 		PLIThrottleConfig:   p.params.PLIThrottleConfig,

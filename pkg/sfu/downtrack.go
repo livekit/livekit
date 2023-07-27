@@ -241,7 +241,7 @@ type DownTrack struct {
 	maxLayerNotifierCh chan struct{}
 
 	trailerMu sync.RWMutex
-	trailer   string
+	trailer   []byte
 
 	cbMu                        sync.RWMutex
 	onStatsUpdate               func(dt *DownTrack, stat *livekit.AnalyticsStat)
@@ -401,18 +401,11 @@ func (d *DownTrack) Unbind(_ webrtc.TrackLocalContext) error {
 	return nil
 }
 
-func (d *DownTrack) SetTrailer(trailer string) {
+func (d *DownTrack) SetTrailer(trailer []byte) {
 	d.trailerMu.Lock()
 	defer d.trailerMu.Unlock()
 
 	d.trailer = trailer
-}
-
-func (d *DownTrack) getTrailer() string {
-	d.trailerMu.RLock()
-	defer d.trailerMu.RUnlock()
-
-	return d.trailer
 }
 
 func (d *DownTrack) TrackInfoAvailable() {
@@ -1337,14 +1330,11 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 }
 
 func (d *DownTrack) maybeAddTrailer(buf []byte) int {
-	trailer := d.getTrailer()
-	if trailer == "" {
-		return 0
-	}
+	d.trailerMu.RLock()
+	defer d.trailerMu.RUnlock()
 
-	copy(buf, trailer)
-	buf[len(trailer)] = byte(len(trailer))
-	return len(trailer) + 1
+	copy(buf, d.trailer)
+	return len(d.trailer)
 }
 
 func (d *DownTrack) getOpusBlankFrame(_frameEndNeeded bool) ([]byte, error) {

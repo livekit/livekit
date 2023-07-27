@@ -78,7 +78,6 @@ type MediaTrackReceiverParams struct {
 	SubscriberConfig    DirectionConfig
 	AudioConfig         config.AudioConfig
 	Telemetry           telemetry.TelemetryService
-	Trailer             string
 	Logger              logger.Logger
 }
 
@@ -117,7 +116,6 @@ func NewMediaTrackReceiver(params MediaTrackReceiverParams) *MediaTrackReceiver 
 		ReceiverConfig:   params.ReceiverConfig,
 		SubscriberConfig: params.SubscriberConfig,
 		Telemetry:        params.Telemetry,
-		Trailer:          params.Trailer,
 		Logger:           params.Logger,
 	})
 	t.MediaTrackSubscriptions.OnDownTrackCreated(t.onDownTrackCreated)
@@ -800,6 +798,13 @@ func (t *MediaTrackReceiver) GetTemporalLayerForSpatialFps(spatial int32, fps ui
 		}
 	}
 	return buffer.DefaultMaxLayerTemporal
+}
+
+func (t *MediaTrackReceiver) IsEncrypted() bool {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return t.trackInfo.Encryption != livekit.Encryption_NONE
 }
 
 // ---------------------------
