@@ -634,17 +634,6 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		copy(payload, extPkt.Packet.Payload)
 	}
 
-	if d.sequencer != nil {
-		d.sequencer.push(
-			extPkt.Packet.SequenceNumber,
-			tp.rtp.sequenceNumber,
-			tp.rtp.timestamp,
-			int8(layer),
-			tp.codecBytes,
-			tp.ddBytes,
-		)
-	}
-
 	hdr, err := d.getTranslatedRTPHeader(extPkt, tp)
 	if err != nil {
 		d.logger.Errorw("write rtp packet failed", err)
@@ -652,6 +641,18 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			PacketFactory.Put(pool)
 		}
 		return err
+	}
+
+	if d.sequencer != nil {
+		d.sequencer.push(
+			extPkt.Packet.SequenceNumber,
+			tp.rtp.sequenceNumber,
+			tp.rtp.timestamp,
+			hdr.Marker,
+			int8(layer),
+			tp.codecBytes,
+			tp.ddBytes,
+		)
 	}
 
 	d.pacer.Enqueue(pacer.Packet{
@@ -1499,6 +1500,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			d.logger.Errorw("unmarshalling rtp packet failed in retransmit", err)
 			continue
 		}
+		pkt.Header.Marker = meta.marker
 		pkt.Header.SequenceNumber = meta.targetSeqNo
 		pkt.Header.Timestamp = meta.timestamp
 		pkt.Header.SSRC = d.ssrc

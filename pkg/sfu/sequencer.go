@@ -39,6 +39,8 @@ type packetMeta struct {
 	// Modified timestamp for current associated
 	// down track.
 	timestamp uint32
+	// Modified marker
+	marker bool
 	// The last time this packet was nack requested.
 	// Sometimes clients request the same packet more than once, so keep
 	// track of the requested packets helps to avoid writing multiple times
@@ -93,7 +95,14 @@ func (s *sequencer) setRTT(rtt uint32) {
 	}
 }
 
-func (s *sequencer) push(sn, offSn uint16, timeStamp uint32, layer int8, codecBytes []byte, ddBytes []byte) {
+func (s *sequencer) push(
+	sn, offSn uint16,
+	timeStamp uint32,
+	marker bool,
+	layer int8,
+	codecBytes []byte,
+	ddBytes []byte,
+) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -106,6 +115,7 @@ func (s *sequencer) push(sn, offSn uint16, timeStamp uint32, layer int8, codecBy
 		sourceSeqNo: sn,
 		targetSeqNo: offSn,
 		timestamp:   timeStamp,
+		marker:      marker,
 		layer:       layer,
 		codecBytes:  append([]byte{}, codecBytes...),
 		ddBytes:     append([]byte{}, ddBytes...),
