@@ -240,8 +240,7 @@ type DownTrack struct {
 
 	maxLayerNotifierCh chan struct{}
 
-	trailerMu sync.RWMutex
-	trailer   []byte
+	trailer []byte
 
 	cbMu                        sync.RWMutex
 	onStatsUpdate               func(dt *DownTrack, stat *livekit.AnalyticsStat)
@@ -258,6 +257,7 @@ func NewDownTrack(
 	subID livekit.ParticipantID,
 	mt int,
 	pacer pacer.Pacer,
+	trailer []byte,
 	logger logger.Logger,
 ) (*DownTrack, error) {
 	var kind webrtc.RTPCodecType
@@ -282,6 +282,7 @@ func NewDownTrack(
 		kind:               kind,
 		codec:              codecs[0].RTPCodecCapability,
 		pacer:              pacer,
+		trailer:            trailer,
 		maxLayerNotifierCh: make(chan struct{}, 20),
 	}
 	d.forwarder = NewForwarder(
@@ -399,13 +400,6 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 func (d *DownTrack) Unbind(_ webrtc.TrackLocalContext) error {
 	d.bound.Store(false)
 	return nil
-}
-
-func (d *DownTrack) SetTrailer(trailer []byte) {
-	d.trailerMu.Lock()
-	defer d.trailerMu.Unlock()
-
-	d.trailer = trailer
 }
 
 func (d *DownTrack) TrackInfoAvailable() {
@@ -1330,9 +1324,6 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 }
 
 func (d *DownTrack) maybeAddTrailer(buf []byte) int {
-	d.trailerMu.RLock()
-	defer d.trailerMu.RUnlock()
-
 	if len(buf) < len(d.trailer) {
 		d.logger.Warnw("trailer too big", nil, "bufLen", len(buf), "trailerLen", len(d.trailer))
 		return 0

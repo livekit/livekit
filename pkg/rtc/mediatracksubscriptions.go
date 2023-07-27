@@ -98,6 +98,10 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	for _, c := range codecs {
 		c.RTCPFeedback = rtcpFeedback
 	}
+	var trailer []byte
+	if t.params.MediaTrack.IsEncrypted() {
+		trailer = sub.GetTrailer()
+	}
 	downTrack, err := sfu.NewDownTrack(
 		codecs,
 		wr,
@@ -105,13 +109,11 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		subscriberID,
 		t.params.ReceiverConfig.PacketBufferSize,
 		sub.GetPacer(),
+		trailer,
 		LoggerWithTrack(sub.GetLogger(), trackID, t.params.IsRelayed),
 	)
 	if err != nil {
 		return nil, err
-	}
-	if t.params.MediaTrack.IsEncrypted() {
-		downTrack.SetTrailer(sub.GetTrailer())
 	}
 
 	if t.onDownTrackCreated != nil {
