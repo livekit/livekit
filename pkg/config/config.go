@@ -124,7 +124,7 @@ type CongestionControlProbeConfig struct {
 }
 
 type CongestionControlChannelObserverConfig struct {
-	EstimateRequiredSamples        int           `yaml:"estimate_required_samples,omitmpety"`
+	EstimateRequiredSamples        int           `yaml:"estimate_required_samples,omitempty"`
 	EstimateDownwardTrendThreshold float64       `yaml:"estimate_downward_trend_threshold,omitempty"`
 	EstimateCollapseThreshold      time.Duration `yaml:"estimate_collapse_threshold,omitempty"`
 	EstimateValidityWindow         time.Duration `yaml:"estimate_validity_window,omitempty"`
