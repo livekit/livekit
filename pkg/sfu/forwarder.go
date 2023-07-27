@@ -1984,20 +1984,6 @@ done:
 	if !targetLayer.IsValid() {
 		distance += (maxSeenLayer.Temporal + 1)
 	}
-	// TODO-REMOVE-AFTER-DEBUG
-	logger.Debugw(
-		"distance to desired",
-		"maxSeenLauer", maxSeenLayer,
-		"availableLayers", availableLayers,
-		"brs", brs,
-		"targetLayer", targetLayer,
-		"maxLayer", maxLayer,
-		"adjustedMaxLayer", adjustedMaxLayer,
-		"maxAvailableSpatial", maxAvailableSpatial,
-		"maxAvailableTemporal", maxAvailableTemporal,
-		"distance", distance,
-		"distanceToDesired", float64(distance)/float64(maxSeenLayer.Temporal+1),
-	)
 
 	return float64(distance) / float64(maxSeenLayer.Temporal+1)
 }
