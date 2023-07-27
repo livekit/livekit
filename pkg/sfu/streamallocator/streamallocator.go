@@ -39,32 +39,6 @@ const (
 
 // ---------------------------------------------------------------------------
 
-var (
-	ChannelObserverParamsProbe = ChannelObserverParams{
-		Name:                           "probe",
-		EstimateRequiredSamples:        3,
-		EstimateDownwardTrendThreshold: 0.0,
-		EstimateCollapseThreshold:      0,
-		EstimateValidityWindow:         10 * time.Second,
-		NackWindowMinDuration:          500 * time.Millisecond,
-		NackWindowMaxDuration:          1 * time.Second,
-		NackRatioThreshold:             0.04,
-	}
-
-	ChannelObserverParamsNonProbe = ChannelObserverParams{
-		Name:                           "non-probe",
-		EstimateRequiredSamples:        8,
-		EstimateDownwardTrendThreshold: -0.5,
-		EstimateCollapseThreshold:      500 * time.Millisecond,
-		EstimateValidityWindow:         10 * time.Second,
-		NackWindowMinDuration:          1 * time.Second,
-		NackWindowMaxDuration:          2 * time.Second,
-		NackRatioThreshold:             0.08,
-	}
-)
-
-// ---------------------------------------------------------------------------
-
 type streamAllocatorState int
 
 const (
@@ -1193,11 +1167,23 @@ func (s *StreamAllocator) getNackDelta() (uint32, uint32) {
 }
 
 func (s *StreamAllocator) newChannelObserverProbe() *ChannelObserver {
-	return NewChannelObserver(ChannelObserverParamsProbe, s.params.Logger)
+	return NewChannelObserver(
+		ChannelObserverParams{
+			Name:   "probe",
+			Config: s.params.Config.ChannelObserverProbeConfig,
+		},
+		s.params.Logger,
+	)
 }
 
 func (s *StreamAllocator) newChannelObserverNonProbe() *ChannelObserver {
-	return NewChannelObserver(ChannelObserverParamsNonProbe, s.params.Logger)
+	return NewChannelObserver(
+		ChannelObserverParams{
+			Name:   "non-probe",
+			Config: s.params.Config.ChannelObserverNonProbeConfig,
+		},
+		s.params.Logger,
+	)
 }
 
 func (s *StreamAllocator) initProbe(probeGoalDeltaBps int64) {
