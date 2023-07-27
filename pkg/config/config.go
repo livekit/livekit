@@ -123,14 +123,26 @@ type CongestionControlProbeConfig struct {
 	DurationIncreaseFactor float64       `yaml:"duration_increase_factor,omitempty"`
 }
 
+type CongestionControlChannelObserverConfig struct {
+	EstimateRequiredSamples        int           `yaml:"estimate_required_samples,omitmpety"`
+	EstimateDownwardTrendThreshold float64       `yaml:"estimate_downward_trend_threshold,omitempty"`
+	EstimateCollapseThreshold      time.Duration `yaml:"estimate_collapse_threshold,omitempty"`
+	EstimateValidityWindow         time.Duration `yaml:"estimate_validity_window,omitempty"`
+	NackWindowMinDuration          time.Duration `yaml:"nack_window_min_duration,omitempty"`
+	NackWindowMaxDuration          time.Duration `yaml:"nack_window_max_duration,omitempty"`
+	NackRatioThreshold             float64       `yaml:"nack_ratio_threshold,omitempty"`
+}
+
 type CongestionControlConfig struct {
-	Enabled            bool                         `yaml:"enabled"`
-	AllowPause         bool                         `yaml:"allow_pause"`
-	UseSendSideBWE     bool                         `yaml:"send_side_bandwidth_estimation,omitempty"`
-	ProbeMode          CongestionControlProbeMode   `yaml:"padding_mode,omitempty"`
-	MinChannelCapacity int64                        `yaml:"min_channel_capacity,omitempty"`
-	ProbeConfig        CongestionControlProbeConfig `yaml:"probe_config,omitempty"`
-	UseTWCC            bool                         `yaml:"use_twcc"`
+	Enabled                       bool                                   `yaml:"enabled"`
+	AllowPause                    bool                                   `yaml:"allow_pause"`
+	UseSendSideBWE                bool                                   `yaml:"send_side_bandwidth_estimation,omitempty"`
+	ProbeMode                     CongestionControlProbeMode             `yaml:"padding_mode,omitempty"`
+	MinChannelCapacity            int64                                  `yaml:"min_channel_capacity,omitempty"`
+	ProbeConfig                   CongestionControlProbeConfig           `yaml:"probe_config,omitempty"`
+	ChannelObserverProbeConfig    CongestionControlChannelObserverConfig `yaml:"channel_observer_probe_config,omitempty"`
+	ChannelObserverNonProbeConfig CongestionControlChannelObserverConfig `yaml:"channel_observer_non_probe_config,omitempty"`
+	UseTWCC                       bool                                   `yaml:"use_twcc,omitempty"`
 }
 
 type AudioConfig struct {
@@ -303,6 +315,24 @@ var DefaultConfig = Config{
 				MaxDuration:            20 * time.Second,
 				DurationOverflowFactor: 1.25,
 				DurationIncreaseFactor: 1.5,
+			},
+			ChannelObserverProbeConfig: CongestionControlChannelObserverConfig{
+				EstimateRequiredSamples:        3,
+				EstimateDownwardTrendThreshold: 0.0,
+				EstimateCollapseThreshold:      0,
+				EstimateValidityWindow:         10 * time.Second,
+				NackWindowMinDuration:          500 * time.Millisecond,
+				NackWindowMaxDuration:          1 * time.Second,
+				NackRatioThreshold:             0.04,
+			},
+			ChannelObserverNonProbeConfig: CongestionControlChannelObserverConfig{
+				EstimateRequiredSamples:        8,
+				EstimateDownwardTrendThreshold: -0.5,
+				EstimateCollapseThreshold:      500 * time.Millisecond,
+				EstimateValidityWindow:         10 * time.Second,
+				NackWindowMinDuration:          1 * time.Second,
+				NackWindowMaxDuration:          2 * time.Second,
+				NackRatioThreshold:             0.08,
 			},
 			UseTWCC: true,
 		},

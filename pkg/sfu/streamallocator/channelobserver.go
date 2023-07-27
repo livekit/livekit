@@ -2,8 +2,8 @@ package streamallocator
 
 import (
 	"fmt"
-	"time"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -56,14 +56,8 @@ func (c ChannelCongestionReason) String() string {
 // ------------------------------------------------
 
 type ChannelObserverParams struct {
-	Name                           string
-	EstimateRequiredSamples        int
-	EstimateDownwardTrendThreshold float64
-	EstimateCollapseThreshold      time.Duration
-	EstimateValidityWindow         time.Duration
-	NackWindowMinDuration          time.Duration
-	NackWindowMaxDuration          time.Duration
-	NackRatioThreshold             float64
+	Name   string
+	Config config.CongestionControlChannelObserverConfig
 }
 
 type ChannelObserver struct {
@@ -81,17 +75,17 @@ func NewChannelObserver(params ChannelObserverParams, logger logger.Logger) *Cha
 		estimateTrend: NewTrendDetector(TrendDetectorParams{
 			Name:                   params.Name + "-estimate",
 			Logger:                 logger,
-			RequiredSamples:        params.EstimateRequiredSamples,
-			DownwardTrendThreshold: params.EstimateDownwardTrendThreshold,
-			CollapseThreshold:      params.EstimateCollapseThreshold,
-			ValidityWindow:         params.EstimateValidityWindow,
+			RequiredSamples:        params.Config.EstimateRequiredSamples,
+			DownwardTrendThreshold: params.Config.EstimateDownwardTrendThreshold,
+			CollapseThreshold:      params.Config.EstimateCollapseThreshold,
+			ValidityWindow:         params.Config.EstimateValidityWindow,
 		}),
 		nackTracker: NewNackTracker(NackTrackerParams{
 			Name:              params.Name + "-nack",
 			Logger:            logger,
-			WindowMinDuration: params.NackWindowMinDuration,
-			WindowMaxDuration: params.NackWindowMaxDuration,
-			RatioThreshold:    params.NackRatioThreshold,
+			WindowMinDuration: params.Config.NackWindowMinDuration,
+			WindowMaxDuration: params.Config.NackWindowMaxDuration,
+			RatioThreshold:    params.Config.NackRatioThreshold,
 		}),
 	}
 }

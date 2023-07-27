@@ -621,25 +621,11 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		return err
 	}
 
-	var iPID, iTL0PICIDX, iKEYIDX, iTID, oPID, oTL0PICIDX, oKEYIDX, oTID int // TOOD-REMOVE-AFTER-DEBUG
 	var payload []byte
 	pool := PacketFactory.Get().(*[]byte)
 	if len(tp.codecBytes) != 0 {
 		incomingVP8, ok := extPkt.Payload.(buffer.VP8)
 		if ok {
-			iPID = int(incomingVP8.PictureID)
-			iTL0PICIDX = int(incomingVP8.TL0PICIDX)
-			iKEYIDX = int(incomingVP8.KEYIDX)
-			iTID = int(incomingVP8.TID)
-
-			var outgoingVP8 buffer.VP8
-			if uerr := outgoingVP8.Unmarshal(append(tp.codecBytes, 0x0)); uerr == nil {
-				oPID = int(outgoingVP8.PictureID)
-				oTL0PICIDX = int(outgoingVP8.TL0PICIDX)
-				oKEYIDX = int(outgoingVP8.KEYIDX)
-				oTID = int(outgoingVP8.TID)
-			}
-
 			payload = d.translateVP8PacketTo(extPkt.Packet, &incomingVP8, tp.codecBytes, pool)
 		}
 	}
@@ -666,28 +652,6 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			PacketFactory.Put(pool)
 		}
 		return err
-	}
-
-	if d.kind == webrtc.RTPCodecTypeVideo {
-		d.logger.Debugw(
-			"packet debug (forwarding)",
-			"layer", layer,
-			"isn", extPkt.Packet.SequenceNumber,
-			"its", extPkt.Packet.Timestamp,
-			"im", extPkt.Packet.Marker,
-			"osn", hdr.SequenceNumber,
-			"ots", hdr.Timestamp,
-			"om", hdr.Marker,
-			"len", len(payload),
-			"iPID", iPID,
-			"iTL0PICIDX", iTL0PICIDX,
-			"iKEYIDX", iKEYIDX,
-			"iTID", iTID,
-			"oPID", oPID,
-			"oTL0PICIDX", oTL0PICIDX,
-			"oKEYIDX", oKEYIDX,
-			"oTID", oTID,
-		)
 	}
 
 	d.pacer.Enqueue(pacer.Packet{
@@ -772,16 +736,6 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 		payload := make([]byte, RTPPaddingMaxPayloadSize)
 		// last byte of padding has padding size including that byte
 		payload[RTPPaddingMaxPayloadSize-1] = byte(RTPPaddingMaxPayloadSize)
-
-		if d.kind == webrtc.RTPCodecTypeVideo {
-			d.logger.Debugw(
-				"packet debug (padding)",
-				"osn", hdr.SequenceNumber,
-				"ots", hdr.Timestamp,
-				"om", hdr.Marker,
-				"len", len(payload),
-			)
-		}
 
 		d.pacer.Enqueue(pacer.Packet{
 			Header:             &hdr,
@@ -1540,19 +1494,16 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			numRepeatedNACKs++
 		}
 
-		var incomingHdr rtp.Header // TODO-REMOVE-AFTER-DEBUG
 		var pkt rtp.Packet
 		if err = pkt.Unmarshal(pktBuff[:n]); err != nil {
 			d.logger.Errorw("unmarshalling rtp packet failed in retransmit", err)
 			continue
 		}
-		incomingHdr = pkt.Header
 		pkt.Header.SequenceNumber = meta.targetSeqNo
 		pkt.Header.Timestamp = meta.timestamp
 		pkt.Header.SSRC = d.ssrc
 		pkt.Header.PayloadType = d.payloadType
 
-		var iPID, iTL0PICIDX, iKEYIDX, iTID, oPID, oTL0PICIDX, oKEYIDX, oTID int // TOOD-REMOVE-AFTER-DEBUG
 		var payload []byte
 		pool := PacketFactory.Get().(*[]byte)
 		if d.mime == "video/vp8" && len(pkt.Payload) > 0 && len(meta.codecBytes) != 0 {
@@ -1563,46 +1514,11 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 				continue
 			}
 
-			iPID = int(incomingVP8.PictureID)
-			iTL0PICIDX = int(incomingVP8.TL0PICIDX)
-			iKEYIDX = int(incomingVP8.KEYIDX)
-			iTID = int(incomingVP8.TID)
-
-			var outgoingVP8 buffer.VP8
-			if uerr := outgoingVP8.Unmarshal(append(meta.codecBytes, 0x0)); uerr == nil {
-				oPID = int(outgoingVP8.PictureID)
-				oTL0PICIDX = int(outgoingVP8.TL0PICIDX)
-				oKEYIDX = int(outgoingVP8.KEYIDX)
-				oTID = int(outgoingVP8.TID)
-			}
-
 			payload = d.translateVP8PacketTo(&pkt, &incomingVP8, meta.codecBytes, pool)
 		}
 		if payload == nil {
 			payload = (*pool)[:len(pkt.Payload)]
 			copy(payload, pkt.Payload)
-		}
-
-		if d.kind == webrtc.RTPCodecTypeVideo {
-			d.logger.Debugw(
-				"packet debug (retransmit)",
-				"layer", meta.layer,
-				"isn", incomingHdr.SequenceNumber,
-				"its", incomingHdr.Timestamp,
-				"im", incomingHdr.Marker,
-				"osn", pkt.Header.SequenceNumber,
-				"ots", pkt.Header.Timestamp,
-				"om", pkt.Header.Marker,
-				"len", len(payload),
-				"iPID", iPID,
-				"iTL0PICIDX", iTL0PICIDX,
-				"iKEYIDX", iKEYIDX,
-				"iTID", iTID,
-				"oPID", oPID,
-				"oTL0PICIDX", oTL0PICIDX,
-				"oKEYIDX", oKEYIDX,
-				"oTID", oTID,
-			)
 		}
 
 		d.pacer.Enqueue(pacer.Packet{
@@ -1892,7 +1808,7 @@ func (d *DownTrack) packetSent(md interface{}, hdr *rtp.Header, payloadSize int,
 		d.isNACKThrottled.Store(false)
 		d.rtpStats.UpdateKeyFrame(1)
 		d.logger.Debugw(
-			"forwarding key frame",
+			"forwarded key frame",
 			"layer", spmd.layer,
 			"rtpsn", hdr.SequenceNumber,
 			"rtpts", hdr.Timestamp,
