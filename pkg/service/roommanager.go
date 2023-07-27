@@ -351,6 +351,7 @@ func (r *RoomManager) StartSession(
 		VideoConfig:             r.config.Video,
 		ProtocolVersion:         pv,
 		Telemetry:               r.telemetry,
+		Trailer:                 room.Trailer(),
 		PLIThrottleConfig:       r.config.RTC.PLIThrottle,
 		CongestionControlConfig: r.config.RTC.CongestionControl,
 		EnabledCodecs:           protoRoom.EnabledCodecs,
