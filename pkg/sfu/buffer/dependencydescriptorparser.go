@@ -33,10 +33,12 @@ type DependencyDescriptorParser struct {
 	onMaxLayerChanged func(int32, int32)
 	decodeTargets     []DependencyDescriptorDecodeTarget
 
-	wrapAround                *utils.WrapAround[uint16, uint64]
+	seqWrapAround             *utils.WrapAround[uint16, uint64]
+	frameWrapAround           *utils.WrapAround[uint16, uint64]
 	structureExtSeq           uint64
 	activeDecodeTargetsExtSeq uint64
 	activeDecodeTargetsMask   uint32
+	frameChecker              *FrameIntegrityChecker
 }
 
 func NewDependencyDescriptorParser(ddExtID uint8, logger logger.Logger, onMaxLayerChanged func(int32, int32)) *DependencyDescriptorParser {
@@ -45,7 +47,9 @@ func NewDependencyDescriptorParser(ddExtID uint8, logger logger.Logger, onMaxLay
 		ddExtID:           ddExtID,
 		logger:            logger,
 		onMaxLayerChanged: onMaxLayerChanged,
-		wrapAround:        utils.NewWrapAround[uint16, uint64](),
+		seqWrapAround:     utils.NewWrapAround[uint16, uint64](),
+		frameWrapAround:   utils.NewWrapAround[uint16, uint64](),
+		frameChecker:      NewFrameIntegrityChecker(180, 1024), // 2seconds for L3T3 30fps video
 	}
 }
 
@@ -55,6 +59,8 @@ type ExtDependencyDescriptor struct {
 	DecodeTargets              []DependencyDescriptorDecodeTarget
 	StructureUpdated           bool
 	ActiveDecodeTargetsUpdated bool
+	Integrity                  bool
+	ExtFrameNum                uint64
 }
 
 func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescriptor, VideoLayer, error) {
@@ -75,14 +81,19 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 		return nil, videoLayer, err
 	}
 
-	extSeq := r.wrapAround.Update(pkt.SequenceNumber).ExtendedVal
+	extSeq := r.seqWrapAround.Update(pkt.SequenceNumber).ExtendedVal
 
 	if ddVal.FrameDependencies != nil {
 		videoLayer.Spatial, videoLayer.Temporal = int32(ddVal.FrameDependencies.SpatialId), int32(ddVal.FrameDependencies.TemporalId)
 	}
 
+	extFN := r.frameWrapAround.Update(ddVal.FrameNumber).ExtendedVal
+	r.frameChecker.AddPacket(extSeq, extFN, &ddVal)
+
 	extDD := &ExtDependencyDescriptor{
-		Descriptor: &ddVal,
+		Descriptor:  &ddVal,
+		ExtFrameNum: extFN,
+		Integrity:   r.frameChecker.FrameIntegrity(extFN),
 	}
 
 	if ddVal.AttachedStructure != nil {

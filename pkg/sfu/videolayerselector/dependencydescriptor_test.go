@@ -321,6 +321,8 @@ func createDDFrames(maxLayer buffer.VideoLayer, startFrameNumber uint16) []*buff
 			DecodeTargets:              decodeTargets,
 			StructureUpdated:           true,
 			ActiveDecodeTargetsUpdated: true,
+			Integrity:                  true,
+			ExtFrameNum:                uint64(startFrameNumber),
 		},
 		Packet: &rtp.Packet{
 			Header: rtp.Header{
@@ -370,6 +372,8 @@ func createDDFrames(maxLayer buffer.VideoLayer, startFrameNumber uint16) []*buff
 						},
 					},
 					DecodeTargets: decodeTargets,
+					Integrity:     true,
+					ExtFrameNum:   uint64(startFrameNumber),
 				},
 				Packet: &rtp.Packet{
 					Header: rtp.Header{
