@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"reflect"
 
@@ -227,31 +226,32 @@ func (s *EgressService) UpdateLayout(ctx context.Context, req *livekit.UpdateLay
 	if s.psrpcClient == nil && s.clientDeprecated == nil {
 		return nil, ErrEgressNotConnected
 	}
+	return nil, ErrEgressNotConnected
 
-	info, err := s.es.LoadEgress(ctx, req.EgressId)
-	if err != nil {
-		return nil, err
-	}
+	// info, err := s.es.LoadEgress(ctx, req.EgressId)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	metadata, err := json.Marshal(&LayoutMetadata{Layout: req.Layout})
-	if err != nil {
-		return nil, err
-	}
+	// metadata, err := json.Marshal(&LayoutMetadata{Layout: req.Layout})
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	grants := GetGrants(ctx)
-	grants.Video.Room = info.RoomName
-	grants.Video.RoomAdmin = true
+	// grants := GetGrants(ctx)
+	// grants.Video.Room = info.RoomName
+	// grants.Video.RoomAdmin = true
 
-	_, err = s.roomService.UpdateParticipant(ctx, &livekit.UpdateParticipantRequest{
-		Room:     info.RoomName,
-		Identity: info.EgressId,
-		Metadata: string(metadata),
-	})
-	if err != nil {
-		return nil, err
-	}
+	// _, err = s.roomService.UpdateParticipant(ctx, &livekit.UpdateParticipantRequest{
+	// 	Room:     info.RoomName,
+	// 	Identity: info.EgressId,
+	// 	Metadata: string(metadata),
+	// })
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	return info, nil
+	// return info, nil
 }
 
 func (s *EgressService) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRequest) (*livekit.EgressInfo, error) {

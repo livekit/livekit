@@ -10,6 +10,7 @@ import (
 )
 
 type Relay interface {
+	ID() string
 	GetBufferFactory() *buffer.Factory
 	Offer(signalFn func(signal []byte) ([]byte, error)) error
 	Answer(request []byte) ([]byte, error)
@@ -19,8 +20,8 @@ type Relay interface {
 	OnTrack(f func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, mid string, rid string, trackMeta []byte))
 	OnConnectionStateChange(f func(state webrtc.ICEConnectionState))
 	OnMessage(func(id uint64, payload []byte))
-	Send(payload []byte) error
-	SendReply(replyForID uint64, payload []byte) error
-	SendAndExpectReply(payload []byte) (<-chan []byte, error)
+	SendMessage(payload []byte) error
+	SendReplyMessage(replyForID uint64, payload []byte) error
+	SendMessageAndExpectReply(payload []byte) (<-chan []byte, error)
 	DebugInfo() map[string]interface{}
 }

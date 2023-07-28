@@ -106,6 +106,11 @@ type signalPeerMessage struct {
 	Signal  string `json:"signal"`
 }
 
+type relayMessage struct {
+	Updates    []*livekit.ParticipantInfo `json:"updates,omitempty"`
+	DataPacket []byte
+}
+
 func packSignalPeerMessage(replyTo string, signal []byte) interface{} {
 	return &signalPeerMessage{
 		ReplyTo: replyTo,
@@ -195,6 +200,7 @@ func NewRoom(
 	roomP2PCommunicator.ForEachPeer(func(peerId string) {
 		logger.Infow("New p2p peer", "peerId", peerId)
 		rel, err := pc.NewRelay(logger, &relay.RelayConfig{
+			ID:            peerId,
 			BufferFactory: r.GetBufferFactory(),
 			SettingEngine: config.SettingEngine,
 			ICEServers:    config.Configuration.ICEServers,
@@ -210,7 +216,7 @@ func NewRoom(
 			if len(updates) > 0 {
 				if updatesForRelay, err := r.getUpdatesPayloadForRelay(updates); err != nil {
 					r.Logger.Errorw("could not create participant update for relay", err)
-				} else if err := rel.Send(updatesForRelay); err != nil {
+				} else if err := rel.SendMessage(updatesForRelay); err != nil {
 					r.Logger.Errorw("could not send participant updates to relay", err)
 				}
 			}
@@ -271,6 +277,7 @@ func NewRoom(
 		} else {
 			// Offer
 			rel, err := pc.NewRelay(logger, &relay.RelayConfig{
+				ID:            fromPeerId,
 				BufferFactory: r.GetBufferFactory(),
 				SettingEngine: config.SettingEngine,
 				ICEServers:    config.Configuration.ICEServers,
@@ -303,16 +310,28 @@ func NewRoom(
 			logger.Infow("answer sent")
 
 			rel.OnMessage(func(id uint64, payload []byte) {
-				logger.Infow("Relay message received")
-				var updates []*livekit.ParticipantInfo
-				if err := json.Unmarshal(payload, &updates); err != nil {
-					r.Logger.Errorw("could not unmarshal participant updates", err)
+				logger.Debugw("Relay message received")
+				var msg relayMessage
+
+				if err := json.Unmarshal(payload, &msg); err != nil {
+					r.Logger.Errorw("could not unmarshal relay message", err)
 					return
 				}
-				for _, update := range updates {
-					r.onRelayParticipantUpdate(rel, update)
+				if len(msg.Updates) > 0 {
+					for _, update := range msg.Updates {
+						r.onRelayParticipantUpdate(rel, update)
+					}
+					r.sendParticipantUpdates(msg.Updates)
 				}
-				r.sendParticipantUpdates(updates)
+				if len(msg.DataPacket) > 0 {
+					dp := livekit.DataPacket{}
+					if err := proto.Unmarshal(msg.DataPacket, &dp); err != nil {
+						r.Logger.Errorw("could not unmarshal relay data packet", err)
+						return
+					} else {
+						BroadcastDataPacketForRoom(r, nil, &dp, r.Logger)
+					}
+				}
 			})
 
 			rel.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, mid string, rid string, meta []byte) {
@@ -1204,6 +1223,7 @@ func (r *Room) onParticipantUpdate(p types.LocalParticipant) {
 }
 
 func (r *Room) onDataPacket(source types.LocalParticipant, dp *livekit.DataPacket) {
+	r.sendDataPacketToRelays(dp)
 	BroadcastDataPacketForRoom(r, source, dp, r.Logger)
 }
 
@@ -1281,7 +1301,7 @@ func (r *Room) getUpdatesPayloadForRelay(updates []*livekit.ParticipantInfo) ([]
 		updatesForRelay = append(updatesForRelay, update)
 	}
 
-	if updatesPayload, err := json.Marshal(updatesForRelay); err != nil {
+	if updatesPayload, err := json.Marshal(relayMessage{Updates: updatesForRelay}); err != nil {
 		return nil, fmt.Errorf("could not marshal participant updates: %w", err)
 	} else {
 		return updatesPayload, nil
@@ -1297,8 +1317,25 @@ func (r *Room) sendParticipantUpdatesToRelays(updates []*livekit.ParticipantInfo
 		r.Logger.Errorw("could not create participant update for relay", err)
 	} else if len(updatesForRelay) > 0 {
 		r.outRelayCollection.ForEach(func(relay relay.Relay) {
-			if err := relay.Send(updatesForRelay); err != nil {
+			if err := relay.SendMessage(updatesForRelay); err != nil {
 				r.Logger.Errorw("could not send participant updates to relay", err)
+			}
+		})
+	}
+}
+
+func (r *Room) sendDataPacketToRelays(dp *livekit.DataPacket) {
+	dpData, err := proto.Marshal(dp)
+	if err != nil {
+		r.Logger.Errorw("could not marshal data packet", err)
+		return
+	}
+	if messageData, err := json.Marshal(relayMessage{DataPacket: dpData}); err != nil {
+		r.Logger.Errorw("could not create data packet message for relay", err)
+	} else {
+		r.outRelayCollection.ForEach(func(relay relay.Relay) {
+			if err := relay.SendMessage(messageData); err != nil {
+				r.Logger.Errorw("could not send data packet to relay", err, "relayId", relay.ID())
 			}
 		})
 	}

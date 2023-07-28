@@ -27,7 +27,7 @@ type eventType string
 const (
 	eventTypeAddTrack eventType = "add_rack"
 	eventTypeOffer    eventType = "offer"
-	eventTypeCustom   eventType = "custom"
+	eventTypeMessage  eventType = "message"
 )
 
 type addTrackSignal struct {
@@ -100,6 +100,7 @@ var vp8RtxCodec = webrtc.RTPCodecParameters{
 }
 
 type PcRelay struct {
+	id             string
 	pc             *webrtc.PeerConnection
 	rand           *rand.Rand
 	bufferFactory  *buffer.Factory
@@ -146,6 +147,7 @@ func NewRelay(logger logger.Logger, conf *relay.RelayConfig) (*PcRelay, error) {
 	}
 
 	r := &PcRelay{
+		id:            conf.ID,
 		pc:            pc,
 		bufferFactory: conf.BufferFactory,
 		logger:        logger,
@@ -187,8 +189,6 @@ func (r *PcRelay) resignal() {
 		return
 	}
 
-	fmt.Printf("Offer SDP:\n%v\n", offer.SDP)
-
 	if err := r.pc.SetLocalDescription(offer); err != nil {
 		r.logger.Errorw("SetLocalDescription error", offerErr)
 		return
@@ -223,8 +223,6 @@ func (r *PcRelay) resignal() {
 			return
 		}
 
-		fmt.Printf("Answer SDP:\n%v\n", answer.SDP)
-
 		if err := r.pc.SetRemoteDescription(answer); err != nil {
 			r.logger.Errorw("SetRemoteDescription error", err)
 			return
@@ -256,7 +254,7 @@ func (r *PcRelay) Offer(signalFn func(offerData []byte) ([]byte, error)) error {
 		return offerErr
 	}
 
-	r.logger.Infow(offer.SDP)
+	r.logger.Debugw(offer.SDP)
 
 	doneCh := make(chan struct{})
 	var iceCandidates []webrtc.ICECandidateInit
@@ -333,7 +331,7 @@ func (r *PcRelay) Answer(offerData []byte) ([]byte, error) {
 		return nil, answerErr
 	}
 
-	r.logger.Infow(answer.SDP)
+	r.logger.Debugw(answer.SDP)
 
 	if err := r.pc.SetLocalDescription(answer); err != nil {
 		return nil, err
@@ -352,6 +350,10 @@ func (r *PcRelay) Answer(offerData []byte) ([]byte, error) {
 	}
 
 	return json.Marshal(sessionDescriptionWithIceCandidates{answer, iceCandidates})
+}
+
+func (r *PcRelay) ID() string {
+	return r.id
 }
 
 func (r *PcRelay) GetBufferFactory() *buffer.Factory {
@@ -412,31 +414,31 @@ func (r *PcRelay) OnConnectionStateChange(f func(state webrtc.ICEConnectionState
 	r.pc.OnICEConnectionStateChange(f)
 }
 
-func (r *PcRelay) Send(payload []byte) error {
+func (r *PcRelay) SendMessage(payload []byte) error {
 	event := dcEvent{
 		ID:      r.rand.Uint64(),
-		Type:    eventTypeCustom,
+		Type:    eventTypeMessage,
 		Payload: payload,
 	}
 	_, err := r.send(event, false)
 	return err
 }
 
-func (r *PcRelay) SendReply(replyForID uint64, payload []byte) error {
+func (r *PcRelay) SendReplyMessage(replyForID uint64, payload []byte) error {
 	event := dcEvent{
 		ID:         r.rand.Uint64(),
 		ReplyForID: &replyForID,
-		Type:       eventTypeCustom,
+		Type:       eventTypeMessage,
 		Payload:    payload,
 	}
 	_, err := r.send(event, false)
 	return err
 }
 
-func (r *PcRelay) SendAndExpectReply(payload []byte) (<-chan []byte, error) {
+func (r *PcRelay) SendMessageAndExpectReply(payload []byte) (<-chan []byte, error) {
 	event := dcEvent{
 		ID:      r.rand.Uint64(),
-		Type:    eventTypeCustom,
+		Type:    eventTypeMessage,
 		Payload: payload,
 	}
 	return r.send(event, true)
@@ -539,7 +541,7 @@ func (r *PcRelay) onAddTrackOffer(offer webrtc.SessionDescription) ([]byte, erro
 }
 
 func (r *PcRelay) onSignalingDataChannelMessage(msg webrtc.DataChannelMessage) {
-	r.logger.Infow("onSignalingDataChannelMessage")
+	r.logger.Debugw("onSignalingDataChannelMessage")
 
 	event := &dcEvent{}
 	if err := json.Unmarshal(msg.Data, event); err != nil {
@@ -606,8 +608,8 @@ func (r *PcRelay) onSignalingDataChannelMessage(msg webrtc.DataChannelMessage) {
 			r.logger.Errorw("Error replying message", err)
 			return
 		}
-	} else if event.Type == eventTypeCustom {
-		r.logger.Infow("custom received")
+	} else if event.Type == eventTypeMessage {
+		r.logger.Debugw("custom received")
 
 		if f := r.onMessage.Load(); f != nil {
 			f.(func(id uint64, payload []byte))(event.ID, event.Payload)

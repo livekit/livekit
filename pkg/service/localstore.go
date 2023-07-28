@@ -147,7 +147,10 @@ func (s *LocalStore) UnlockRoom(_ context.Context, _ livekit.RoomKey, _ string) 
 	return nil
 }
 
-func (s *LocalStore) StoreParticipant(ctx context.Context, roomKey livekit.RoomKey, participant *livekit.ParticipantInfo) error {
+func (s *LocalStore) StoreParticipant(ctx context.Context, roomKey livekit.RoomKey, participant *livekit.ParticipantInfo, relayed bool) error {
+	log.Println("Calling localstore.StoreParticipant")
+
+	participant.Relayed = relayed
 	_, apiKey, err := utils.ParseRoomKey(roomKey)
 	if err != nil {
 		return errors.Wrap(err, "parse room key")
@@ -161,16 +164,18 @@ func (s *LocalStore) StoreParticipant(ctx context.Context, roomKey livekit.RoomK
 		s.participants[roomKey] = roomParticipants
 	}
 
-	_, participantExists := roomParticipants[livekit.ParticipantIdentity(participant.Identity)]
-	if !participantExists {
-		err = s.nodeProvider.IncrementParticipants(ctx, s.mainDatabase.GetHost().ID().String())
-		if err != nil {
-			logger.Errorw("increment participants count", err)
-		}
+	if participant.Relayed == false {
+		_, participantExists := roomParticipants[livekit.ParticipantIdentity(participant.Identity)]
+		if !participantExists {
+			err = s.nodeProvider.IncrementParticipants(ctx, s.mainDatabase.GetHost().ID().String())
+			if err != nil {
+				logger.Errorw("increment participants count", err)
+			}
 
-		err = s.clientParticipantCounter.Increment(ctx, string(apiKey), participant.Identity)
-		if err != nil {
-			logger.Errorw("cannot increment participant count", err)
+			err = s.clientParticipantCounter.Increment(ctx, string(apiKey), participant.Identity)
+			if err != nil {
+				logger.Errorw("cannot increment participant count", err)
+			}
 		}
 	}
 
@@ -212,6 +217,8 @@ func (s *LocalStore) ListParticipants(_ context.Context, roomKey livekit.RoomKey
 }
 
 func (s *LocalStore) DeleteParticipant(ctx context.Context, roomKey livekit.RoomKey, identity livekit.ParticipantIdentity) error {
+	log.Println("Calling localstore.DeleteParticipant")
+
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
@@ -222,14 +229,19 @@ func (s *LocalStore) DeleteParticipant(ctx context.Context, roomKey livekit.Room
 
 	roomParticipants := s.participants[roomKey]
 	if roomParticipants != nil {
-		delete(roomParticipants, identity)
-		err := s.clientParticipantCounter.Decrement(ctx, string(apiKey), string(identity))
-		if err != nil {
-			logger.Errorw("cannot decrement participant count", err)
-		}
-		err = s.nodeProvider.DecrementParticipants(ctx, s.mainDatabase.GetHost().ID().String())
-		if err != nil {
-			logger.Errorw("decrement participants count: %s", err)
+		participant, participantExists := roomParticipants[identity]
+		if participantExists {
+			delete(roomParticipants, identity)
+			if participant.Relayed == false {
+				err := s.clientParticipantCounter.Decrement(ctx, string(apiKey), string(identity))
+				if err != nil {
+					logger.Errorw("cannot decrement participant count", err)
+				}
+				err = s.nodeProvider.DecrementParticipants(ctx, s.mainDatabase.GetHost().ID().String())
+				if err != nil {
+					logger.Errorw("decrement participants count: %s", err)
+				}
+			}
 		}
 	}
 	return nil
