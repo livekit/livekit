@@ -108,7 +108,7 @@ func (ph *PacketHistory) set(seq uint64, received bool) {
 	}
 }
 
-func (ph *PacketHistory) PacketsConsective(start, end uint64) bool {
+func (ph *PacketHistory) PacketsConsecutive(start, end uint64) bool {
 	if start > end {
 		return false
 	}
@@ -165,7 +165,7 @@ func NewFrameIntegrityChecker(frameCount, packetCount int) *FrameIntegrityChecke
 	}
 
 	for i := range fc.frames {
-		fc.frames[i].packetsConsective = fc.pktHistory.PacketsConsective
+		fc.frames[i].packetsConsective = fc.pktHistory.PacketsConsecutive
 		fc.frames[i].Reset()
 	}
 	return fc
