@@ -32,6 +32,41 @@ func generateKeys(_ *cli.Context) error {
 	return nil
 }
 
+func listConnectedPeers(c *cli.Context) error {
+	conf, err := getConfig(c)
+	if err != nil {
+		return errors.Wrap(err, "get config")
+	}
+
+	databaseConfig := service.GetDatabaseConfiguration(conf)
+	db, err := service.CreateMainDatabaseP2P(databaseConfig, conf)
+	if err != nil {
+		return errors.Wrap(err, "connect main db")
+	}
+
+	table := tablewriter.NewWriter(os.Stdout)
+	table.SetRowLine(true)
+	table.SetAutoWrapText(false)
+	table.SetHeader([]string{
+		"ID",
+		"Remote address",
+	})
+	table.SetColumnAlignment([]int{
+		tablewriter.ALIGN_CENTER,
+		tablewriter.ALIGN_CENTER,
+	})
+
+	for _, node := range db.ConnectedPeers() {
+		table.Append([]string{
+			node.ID.String(),
+			node.Addrs[0].String(),
+		})
+	}
+
+	table.Render()
+	return nil
+}
+
 func listP2pNodes(c *cli.Context) error {
 	conf, err := getConfig(c)
 	if err != nil {

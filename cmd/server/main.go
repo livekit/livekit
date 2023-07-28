@@ -176,6 +176,11 @@ func main() {
 				Action: listP2pNodes,
 			},
 			{
+				Name:   "list-p2p-connected-peers",
+				Usage:  "list p2p connected peers",
+				Action: listConnectedPeers,
+			},
+			{
 				Name:   "help-verbose",
 				Usage:  "prints app help, including all generated configuration flags",
 				Action: helpVerbose,
