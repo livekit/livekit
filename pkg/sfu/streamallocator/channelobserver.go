@@ -1,9 +1,23 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package streamallocator
 
 import (
 	"fmt"
-	"time"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -56,14 +70,8 @@ func (c ChannelCongestionReason) String() string {
 // ------------------------------------------------
 
 type ChannelObserverParams struct {
-	Name                           string
-	EstimateRequiredSamples        int
-	EstimateDownwardTrendThreshold float64
-	EstimateValidityWindow         time.Duration
-	NackMinPPS                     uint32
-	NackWindowMinDuration          time.Duration
-	NackWindowMaxDuration          time.Duration
-	NackRatioThreshold             float64
+	Name   string
+	Config config.CongestionControlChannelObserverConfig
 }
 
 type ChannelObserver struct {
@@ -81,17 +89,17 @@ func NewChannelObserver(params ChannelObserverParams, logger logger.Logger) *Cha
 		estimateTrend: NewTrendDetector(TrendDetectorParams{
 			Name:                   params.Name + "-estimate",
 			Logger:                 logger,
-			RequiredSamples:        params.EstimateRequiredSamples,
-			DownwardTrendThreshold: params.EstimateDownwardTrendThreshold,
-			ValidityWindow:         params.EstimateValidityWindow,
+			RequiredSamples:        params.Config.EstimateRequiredSamples,
+			DownwardTrendThreshold: params.Config.EstimateDownwardTrendThreshold,
+			ValidityWindow:         params.Config.EstimateValidityWindow,
 		}),
 		nackTracker: NewNackTracker(NackTrackerParams{
 			Name:              params.Name + "-nack",
 			Logger:            logger,
-			MinPPS:            params.NackMinPPS,
-			WindowMinDuration: params.NackWindowMinDuration,
-			WindowMaxDuration: params.NackWindowMaxDuration,
-			RatioThreshold:    params.NackRatioThreshold,
+			MinPPS:            params.Config.NackMinPPS,
+			WindowMinDuration: params.Config.NackWindowMinDuration,
+			WindowMaxDuration: params.Config.NackWindowMaxDuration,
+			RatioThreshold:    params.Config.NackRatioThreshold,
 		}),
 	}
 }

@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package sfu
 
 import (
@@ -240,6 +254,8 @@ type DownTrack struct {
 
 	maxLayerNotifierCh chan struct{}
 
+	trailer []byte
+
 	cbMu                        sync.RWMutex
 	onStatsUpdate               func(dt *DownTrack, stat *livekit.AnalyticsStat)
 	onMaxSubscribedLayerChanged func(dt *DownTrack, layer int32)
@@ -255,6 +271,7 @@ func NewDownTrack(
 	subID livekit.ParticipantID,
 	mt int,
 	pacer pacer.Pacer,
+	trailer []byte,
 	logger logger.Logger,
 ) (*DownTrack, error) {
 	var kind webrtc.RTPCodecType
@@ -279,6 +296,7 @@ func NewDownTrack(
 		kind:               kind,
 		codec:              codecs[0].RTPCodecCapability,
 		pacer:              pacer,
+		trailer:            trailer,
 		maxLayerNotifierCh: make(chan struct{}, 20),
 	}
 	d.forwarder = NewForwarder(
@@ -624,23 +642,14 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	var payload []byte
 	pool := PacketFactory.Get().(*[]byte)
 	if len(tp.codecBytes) != 0 {
-		incomingVP8, _ := extPkt.Payload.(buffer.VP8)
-		payload = d.translateVP8PacketTo(extPkt.Packet, &incomingVP8, tp.codecBytes, pool)
+		incomingVP8, ok := extPkt.Payload.(buffer.VP8)
+		if ok {
+			payload = d.translateVP8PacketTo(extPkt.Packet, &incomingVP8, tp.codecBytes, pool)
+		}
 	}
 	if payload == nil {
 		payload = (*pool)[:len(extPkt.Packet.Payload)]
 		copy(payload, extPkt.Packet.Payload)
-	}
-
-	if d.sequencer != nil {
-		d.sequencer.push(
-			extPkt.Packet.SequenceNumber,
-			tp.rtp.sequenceNumber,
-			tp.rtp.timestamp,
-			int8(layer),
-			tp.codecBytes,
-			tp.ddBytes,
-		)
 	}
 
 	hdr, err := d.getTranslatedRTPHeader(extPkt, tp)
@@ -650,6 +659,18 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			PacketFactory.Put(pool)
 		}
 		return err
+	}
+
+	if d.sequencer != nil {
+		d.sequencer.push(
+			extPkt.Packet.SequenceNumber,
+			tp.rtp.sequenceNumber,
+			tp.rtp.timestamp,
+			hdr.Marker,
+			int8(layer),
+			tp.codecBytes,
+			tp.ddBytes,
+		)
 	}
 
 	d.pacer.Enqueue(pacer.Packet{
@@ -1089,6 +1110,10 @@ func (d *DownTrack) ProvisionalAllocatePrepare() {
 	d.forwarder.ProvisionalAllocatePrepare(al, brs)
 }
 
+func (d *DownTrack) ProvisionalAllocateReset() {
+	d.forwarder.ProvisionalAllocateReset()
+}
+
 func (d *DownTrack) ProvisionalAllocate(availableChannelCapacity int64, layers buffer.VideoLayer, allowPause bool, allowOvershoot bool) int64 {
 	return d.forwarder.ProvisionalAllocate(availableChannelCapacity, layers, allowPause, allowOvershoot)
 }
@@ -1267,19 +1292,30 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 	return done
 }
 
+func (d *DownTrack) maybeAddTrailer(buf []byte) int {
+	if len(buf) < len(d.trailer) {
+		d.logger.Warnw("trailer too big", nil, "bufLen", len(buf), "trailerLen", len(d.trailer))
+		return 0
+	}
+
+	copy(buf, d.trailer)
+	return len(d.trailer)
+}
+
 func (d *DownTrack) getOpusBlankFrame(_frameEndNeeded bool) ([]byte, error) {
 	// silence frame
 	// Used shortly after muting to ensure residual noise does not keep
 	// generating noise at the decoder after the stream is stopped
 	// i. e. comfort noise generation actually not producing something comfortable.
-	payload := make([]byte, len(OpusSilenceFrame))
+	payload := make([]byte, 1000)
 	copy(payload[0:], OpusSilenceFrame)
-	return payload, nil
+	trailerLen := d.maybeAddTrailer(payload[len(OpusSilenceFrame):])
+	return payload[:len(OpusSilenceFrame)+trailerLen], nil
 }
 
 func (d *DownTrack) getOpusRedBlankFrame(_frameEndNeeded bool) ([]byte, error) {
 	// primary only silence frame for opus/red, there is no need to contain redundant silent frames
-	payload := make([]byte, len(OpusSilenceFrame)+1)
+	payload := make([]byte, 1000)
 
 	// primary header
 	//  0 1 2 3 4 5 6 7
@@ -1288,7 +1324,8 @@ func (d *DownTrack) getOpusRedBlankFrame(_frameEndNeeded bool) ([]byte, error) {
 	// +-+-+-+-+-+-+-+-+
 	payload[0] = opusPT
 	copy(payload[1:], OpusSilenceFrame)
-	return payload, nil
+	trailerLen := d.maybeAddTrailer(payload[1+len(OpusSilenceFrame):])
+	return payload[:1+len(OpusSilenceFrame)+trailerLen], nil
 }
 
 func (d *DownTrack) getVP8BlankFrame(frameEndNeeded bool) ([]byte, error) {
@@ -1301,17 +1338,18 @@ func (d *DownTrack) getVP8BlankFrame(frameEndNeeded bool) ([]byte, error) {
 	// Used even when closing out a previous frame. Looks like receivers
 	// do not care about content (it will probably end up being an undecodable
 	// frame, but that should be okay as there are key frames following)
-	payload := make([]byte, len(blankVP8)+len(VP8KeyFrame8x8))
+	payload := make([]byte, 1000)
 	copy(payload[:len(blankVP8)], blankVP8)
 	copy(payload[len(blankVP8):], VP8KeyFrame8x8)
-	return payload, nil
+	trailerLen := d.maybeAddTrailer(payload[len(blankVP8)+len(VP8KeyFrame8x8):])
+	return payload[:len(blankVP8)+len(VP8KeyFrame8x8)+trailerLen], nil
 }
 
 func (d *DownTrack) getH264BlankFrame(_frameEndNeeded bool) ([]byte, error) {
 	// TODO - Jie Zeng
 	// now use STAP-A to compose sps, pps, idr together, most decoder support packetization-mode 1.
 	// if client only support packetization-mode 0, use single nalu unit packet
-	buf := make([]byte, 1462)
+	buf := make([]byte, 1000)
 	offset := 0
 	buf[0] = 0x18 // STAP-A
 	offset++
@@ -1321,8 +1359,8 @@ func (d *DownTrack) getH264BlankFrame(_frameEndNeeded bool) ([]byte, error) {
 		copy(buf[offset:offset+len(payload)], payload)
 		offset += len(payload)
 	}
-	payload := buf[:offset]
-	return payload, nil
+	offset += d.maybeAddTrailer(buf[offset:])
+	return buf[:offset], nil
 }
 
 func (d *DownTrack) handleRTCP(bytes []byte) {
@@ -1490,8 +1528,10 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 
 		var pkt rtp.Packet
 		if err = pkt.Unmarshal(pktBuff[:n]); err != nil {
+			d.logger.Errorw("unmarshalling rtp packet failed in retransmit", err)
 			continue
 		}
+		pkt.Header.Marker = meta.marker
 		pkt.Header.SequenceNumber = meta.targetSeqNo
 		pkt.Header.Timestamp = meta.timestamp
 		pkt.Header.SSRC = d.ssrc
@@ -1499,7 +1539,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 
 		var payload []byte
 		pool := PacketFactory.Get().(*[]byte)
-		if d.mime == "video/vp8" && len(pkt.Payload) > 0 {
+		if d.mime == "video/vp8" && len(pkt.Payload) > 0 && len(meta.codecBytes) != 0 {
 			var incomingVP8 buffer.VP8
 			if err = incomingVP8.Unmarshal(pkt.Payload); err != nil {
 				d.logger.Errorw("unmarshalling VP8 packet err", err)
@@ -1507,9 +1547,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 				continue
 			}
 
-			if len(meta.codecBytes) != 0 {
-				payload = d.translateVP8PacketTo(&pkt, &incomingVP8, meta.codecBytes, pool)
-			}
+			payload = d.translateVP8PacketTo(&pkt, &incomingVP8, meta.codecBytes, pool)
 		}
 		if payload == nil {
 			payload = (*pool)[:len(pkt.Payload)]
@@ -1803,7 +1841,7 @@ func (d *DownTrack) packetSent(md interface{}, hdr *rtp.Header, payloadSize int,
 		d.isNACKThrottled.Store(false)
 		d.rtpStats.UpdateKeyFrame(1)
 		d.logger.Debugw(
-			"forwarding key frame",
+			"forwarded key frame",
 			"layer", spmd.layer,
 			"rtpsn", hdr.SequenceNumber,
 			"rtpts", hdr.Timestamp,
