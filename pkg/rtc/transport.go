@@ -66,6 +66,8 @@ const (
 	minConnectTimeoutAfterICE = 10 * time.Second
 	maxConnectTimeoutAfterICE = 20 * time.Second // max duration for waiting pc to connect after ICE is connected
 
+	maxICECandidates = 20
+
 	shortConnectionThreshold = 90 * time.Second
 )
 
@@ -228,10 +230,10 @@ type PCTransport struct {
 	pendingRestartIceOffer    *webrtc.SessionDescription
 
 	// for cleaner logging
-	allowedLocalCandidates   utils.DedupedSlice[string]
-	allowedRemoteCandidates  utils.DedupedSlice[string]
-	filteredLocalCandidates  utils.DedupedSlice[string]
-	filteredRemoteCandidates utils.DedupedSlice[string]
+	allowedLocalCandidates   *utils.DedupedSlice[string]
+	allowedRemoteCandidates  *utils.DedupedSlice[string]
+	filteredLocalCandidates  *utils.DedupedSlice[string]
+	filteredRemoteCandidates *utils.DedupedSlice[string]
 }
 
 type TransportParams struct {
@@ -372,6 +374,10 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		eventCh:                  make(chan event, 50),
 		previousTrackDescription: make(map[string]*trackDescription),
 		canReuseTransceiver:      true,
+		allowedLocalCandidates:   utils.NewDedupedSlice[string](maxICECandidates),
+		allowedRemoteCandidates:  utils.NewDedupedSlice[string](maxICECandidates),
+		filteredLocalCandidates:  utils.NewDedupedSlice[string](maxICECandidates),
+		filteredRemoteCandidates: utils.NewDedupedSlice[string](maxICECandidates),
 	}
 	if params.IsSendSide {
 		t.streamAllocator = streamallocator.NewStreamAllocator(streamallocator.StreamAllocatorParams{
