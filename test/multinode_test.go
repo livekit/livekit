@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package test
 
 import (
@@ -11,6 +25,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/testutils"
+	"github.com/livekit/livekit-server/test/client"
 )
 
 func TestMultiNodeRouting(t *testing.T) {
@@ -257,6 +272,49 @@ func TestMultiNodeRevokePublishPermission(t *testing.T) {
 		}
 		if len(remoteC1.Tracks) != 0 {
 			return "c2 still has c1's tracks"
+		}
+		return ""
+	})
+}
+
+func TestCloseDisconnectedParticipantOnSignalClose(t *testing.T) {
+	_, _, finish := setupMultiNodeTest("TestCloseDisconnectedParticipantOnSignalClose")
+	defer finish()
+
+	c1 := createRTCClient("c1", secondServerPort, nil)
+	waitUntilConnected(t, c1)
+
+	c2 := createRTCClient("c2", defaultServerPort, &client.Options{
+		SignalRequestInterceptor: func(msg *livekit.SignalRequest, next client.SignalRequestHandler) error {
+			switch msg.Message.(type) {
+			case *livekit.SignalRequest_Offer, *livekit.SignalRequest_Answer, *livekit.SignalRequest_Leave:
+				return nil
+			default:
+				return next(msg)
+			}
+		},
+		SignalResponseInterceptor: func(msg *livekit.SignalResponse, next client.SignalResponseHandler) error {
+			switch msg.Message.(type) {
+			case *livekit.SignalResponse_Offer, *livekit.SignalResponse_Answer:
+				return nil
+			default:
+				return next(msg)
+			}
+		},
+	})
+
+	testutils.WithTimeout(t, func() string {
+		if len(c1.RemoteParticipants()) != 1 {
+			return "c1 did not see c2 join"
+		}
+		return ""
+	})
+
+	c2.Stop()
+
+	testutils.WithTimeout(t, func() string {
+		if len(c1.RemoteParticipants()) != 0 {
+			return "c1 did not see c2 removed"
 		}
 		return ""
 	})

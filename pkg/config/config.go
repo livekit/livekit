@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package config
 
 import (
@@ -36,7 +50,7 @@ const (
 )
 
 var (
-	ErrKeyFileIncorrectPermission = errors.New("key file must have 0600 permission")
+	ErrKeyFileIncorrectPermission = errors.New("key file others permissions must be set to 0")
 	ErrKeysNotSet                 = errors.New("one of key-file or keys must be provided")
 )
 
@@ -123,13 +137,25 @@ type CongestionControlProbeConfig struct {
 	DurationIncreaseFactor float64       `yaml:"duration_increase_factor,omitempty"`
 }
 
+type CongestionControlChannelObserverConfig struct {
+	EstimateRequiredSamples        int           `yaml:"estimate_required_samples,omitempty"`
+	EstimateDownwardTrendThreshold float64       `yaml:"estimate_downward_trend_threshold,omitempty"`
+	EstimateCollapseThreshold      time.Duration `yaml:"estimate_collapse_threshold,omitempty"`
+	EstimateValidityWindow         time.Duration `yaml:"estimate_validity_window,omitempty"`
+	NackWindowMinDuration          time.Duration `yaml:"nack_window_min_duration,omitempty"`
+	NackWindowMaxDuration          time.Duration `yaml:"nack_window_max_duration,omitempty"`
+	NackRatioThreshold             float64       `yaml:"nack_ratio_threshold,omitempty"`
+}
+
 type CongestionControlConfig struct {
-	Enabled            bool                         `yaml:"enabled"`
-	AllowPause         bool                         `yaml:"allow_pause"`
-	UseSendSideBWE     bool                         `yaml:"send_side_bandwidth_estimation,omitempty"`
-	ProbeMode          CongestionControlProbeMode   `yaml:"padding_mode,omitempty"`
-	MinChannelCapacity int64                        `yaml:"min_channel_capacity,omitempty"`
-	ProbeConfig        CongestionControlProbeConfig `yaml:"probe_config,omitempty"`
+	Enabled                       bool                                   `yaml:"enabled"`
+	AllowPause                    bool                                   `yaml:"allow_pause"`
+	UseSendSideBWE                bool                                   `yaml:"send_side_bandwidth_estimation,omitempty"`
+	ProbeMode                     CongestionControlProbeMode             `yaml:"padding_mode,omitempty"`
+	MinChannelCapacity            int64                                  `yaml:"min_channel_capacity,omitempty"`
+	ProbeConfig                   CongestionControlProbeConfig           `yaml:"probe_config,omitempty"`
+	ChannelObserverProbeConfig    CongestionControlChannelObserverConfig `yaml:"channel_observer_probe_config,omitempty"`
+	ChannelObserverNonProbeConfig CongestionControlChannelObserverConfig `yaml:"channel_observer_non_probe_config,omitempty"`
 }
 
 type AudioConfig struct {
@@ -302,6 +328,24 @@ var DefaultConfig = Config{
 				MaxDuration:            20 * time.Second,
 				DurationOverflowFactor: 1.25,
 				DurationIncreaseFactor: 1.5,
+			},
+			ChannelObserverProbeConfig: CongestionControlChannelObserverConfig{
+				EstimateRequiredSamples:        3,
+				EstimateDownwardTrendThreshold: 0.0,
+				EstimateCollapseThreshold:      0,
+				EstimateValidityWindow:         10 * time.Second,
+				NackWindowMinDuration:          500 * time.Millisecond,
+				NackWindowMaxDuration:          1 * time.Second,
+				NackRatioThreshold:             0.04,
+			},
+			ChannelObserverNonProbeConfig: CongestionControlChannelObserverConfig{
+				EstimateRequiredSamples:        8,
+				EstimateDownwardTrendThreshold: -0.5,
+				EstimateCollapseThreshold:      500 * time.Millisecond,
+				EstimateValidityWindow:         10 * time.Second,
+				NackWindowMinDuration:          1 * time.Second,
+				NackWindowMaxDuration:          2 * time.Second,
+				NackRatioThreshold:             0.08,
 			},
 		},
 	},
@@ -547,9 +591,10 @@ func (conf *Config) ToCLIFlagNames(existingFlags []cli.Flag) map[string]reflect.
 func (conf *Config) ValidateKeys() error {
 	// prefer keyfile if set
 	if conf.KeyFile != "" {
+		var otherFilter os.FileMode = 0007
 		if st, err := os.Stat(conf.KeyFile); err != nil {
 			return err
-		} else if st.Mode().Perm() != 0600 {
+		} else if st.Mode().Perm()&otherFilter != 0000 {
 			return ErrKeyFileIncorrectPermission
 		}
 		f, err := os.Open(conf.KeyFile)

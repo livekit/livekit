@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package sfu
 
 import (
@@ -748,6 +762,13 @@ func (f *Forwarder) ProvisionalAllocatePrepare(availableLayers []int32, Bitrates
 	copy(f.provisional.availableLayers, availableLayers)
 }
 
+func (f *Forwarder) ProvisionalAllocateReset() {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	f.provisional.allocatedLayer = buffer.InvalidLayer
+}
+
 func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layer buffer.VideoLayer, allowPause bool, allowOvershoot bool) int64 {
 	f.lock.Lock()
 	defer f.lock.Unlock()
@@ -1014,7 +1035,7 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 			bandwidthDelta := int64(math.Max(float64(0), float64(existingBandwidthNeeded-f.provisional.Bitrates[s][t])))
 
 			transitionCost := int32(0)
-			// LK-TODO: SVC will need a different cost transition
+			// SVC-TODO: SVC will need a different cost transition
 			if targetLayer.Spatial != s {
 				transitionCost = TransitionCostSpatial
 			}
@@ -1037,7 +1058,7 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 	return VideoTransition{
 		From:           targetLayer,
 		To:             bestLayer,
-		BandwidthDelta: bestBandwidthDelta,
+		BandwidthDelta: -bestBandwidthDelta,
 	}
 }
 
@@ -2005,18 +2026,6 @@ done:
 	if !targetLayer.IsValid() {
 		distance += (maxSeenLayer.Temporal + 1)
 	}
-	// TODO-REMOVE-AFTER-DEBUG
-	logger.Debugw(
-		"distance to desired",
-		"maxSeenLauer", maxSeenLayer,
-		"availableLayers", availableLayers,
-		"brs", brs,
-		"targetLayer", targetLayer,
-		"maxLayer", maxLayer,
-		"adjustedMaxLayer", adjustedMaxLayer,
-		"maxAvailableSpatial", maxAvailableSpatial,
-		"maxAvailableTemporal", maxAvailableTemporal,
-	)
 
 	return float64(distance) / float64(maxSeenLayer.Temporal+1)
 }

@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package service
 
 import (
@@ -28,6 +42,7 @@ type SessionHandler func(
 
 type SignalServer struct {
 	server rpc.TypedSignalServer
+	nodeID livekit.NodeID
 }
 
 func NewSignalServer(
@@ -47,12 +62,7 @@ func NewSignalServer(
 	if err != nil {
 		return nil, err
 	}
-	logger.Debugw("starting relay signal server", "topic", nodeID)
-	if err := s.RegisterRelaySignalTopic(nodeID); err != nil {
-		return nil, err
-	}
-
-	return &SignalServer{s}, nil
+	return &SignalServer{s, nodeID}, nil
 }
 
 func NewDefaultSignalServer(
@@ -99,6 +109,11 @@ func NewDefaultSignalServer(
 	}
 
 	return NewSignalServer(livekit.NodeID(currentNode.Id), currentNode.Region, bus, config, sessionHandler)
+}
+
+func (s *SignalServer) Start() error {
+	logger.Debugw("starting relay signal server", "topic", s.nodeID)
+	return s.server.RegisterRelaySignalTopic(s.nodeID)
 }
 
 func (r *SignalServer) Stop() {
