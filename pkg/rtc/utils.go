@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package rtc
 
 import (
@@ -10,8 +24,6 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-
-	"github.com/livekit/livekit-server/pkg/rtc/types"
 )
 
 const (
@@ -43,14 +55,6 @@ func UnpackDataTrackLabel(packed string) (participantID livekit.ParticipantID, t
 	trackID = livekit.TrackID(parts[1])
 	label = parts[2]
 	return
-}
-
-func ToProtoParticipants(participants []types.LocalParticipant) []*livekit.ParticipantInfo {
-	infos := make([]*livekit.ParticipantInfo, 0, len(participants))
-	for _, op := range participants {
-		infos = append(infos, op.ToProto())
-	}
-	return infos
 }
 
 func ToProtoSessionDescription(sd webrtc.SessionDescription) *livekit.SessionDescription {
@@ -140,7 +144,7 @@ func LoggerWithParticipant(l logger.Logger, identity livekit.ParticipantIdentity
 	}
 	values = append(values, "remote", isRemote)
 	// enable sampling per participant
-	return l.WithItemSampler().WithValues(values...)
+	return l.WithValues(values...)
 }
 
 func LoggerWithRoom(l logger.Logger, name livekit.RoomName, roomID livekit.RoomID) logger.Logger {

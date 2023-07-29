@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package sfu
 
 import (
@@ -122,14 +136,8 @@ func (r *RTPMunger) PacketDropped(extPkt *buffer.ExtPacket) {
 	if r.highestIncomingSN != extPkt.Packet.SequenceNumber {
 		return
 	}
-	r.snOffset += 1
+	r.snOffset++
 	r.lastSN = extPkt.Packet.SequenceNumber - r.snOffset
-
-	r.snOffsetsWritePtr = (r.snOffsetsWritePtr - 1) & SnOffsetCacheMask
-	r.snOffsetsOccupancy--
-	if r.snOffsetsOccupancy < 0 {
-		r.logger.Warnw("sequence number offset cache is invalid", nil, "occupancy", r.snOffsetsOccupancy)
-	}
 }
 
 func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationParamsRTP, error) {
@@ -177,7 +185,7 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 		// sequence number offset.
 		if len(extPkt.Packet.Payload) == 0 {
 			r.highestIncomingSN = extPkt.Packet.SequenceNumber
-			r.snOffset += 1
+			r.snOffset++
 
 			return &TranslationParamsRTP{
 				snOrdering: SequenceNumberOrderingContiguous,
@@ -230,7 +238,8 @@ func (r *RTPMunger) FilterRTX(nacks []uint16) []uint16 {
 	return filtered
 }
 
-func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate uint32, forceMarker bool) ([]SnTs, error) {
+func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate uint32, forceMarker bool, rtpTimestamp uint32) ([]SnTs, error) {
+	useLastTSForFirst := false
 	tsOffset := 0
 	if !r.lastMarker {
 		if !forceMarker {
@@ -238,14 +247,25 @@ func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate
 		}
 
 		// if forcing frame end, use timestamp of latest received frame for the first one
+		useLastTSForFirst = true
 		tsOffset = 1
 	}
 
+	lastTS := r.lastTS
 	vals := make([]SnTs, num)
 	for i := 0; i < num; i++ {
 		vals[i].sequenceNumber = r.lastSN + uint16(i) + 1
 		if frameRate != 0 {
-			vals[i].timestamp = r.lastTS + uint32(i+1-tsOffset)*(clockRate/frameRate)
+			if useLastTSForFirst && i == 0 {
+				vals[i].timestamp = r.lastTS
+			} else {
+				ts := rtpTimestamp + ((uint32(i+1-tsOffset)*clockRate)+frameRate-1)/frameRate
+				if (ts-lastTS) == 0 || (ts-lastTS) > (1<<31) {
+					ts = lastTS + 1
+					lastTS = ts
+				}
+				vals[i].timestamp = ts
+			}
 		} else {
 			vals[i].timestamp = r.lastTS
 		}

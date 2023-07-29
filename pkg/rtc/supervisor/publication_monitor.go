@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package supervisor
 
 import (
@@ -34,7 +48,7 @@ type PublicationMonitor struct {
 	params PublicationMonitorParams
 
 	lock             sync.RWMutex
-	desiredPublishes deque.Deque
+	desiredPublishes deque.Deque[*publish]
 
 	isConnected bool
 
@@ -128,7 +142,7 @@ func (p *PublicationMonitor) Check() error {
 	p.lock.RLock()
 	var pub *publish
 	if p.desiredPublishes.Len() > 0 {
-		pub = p.desiredPublishes.Front().(*publish)
+		pub = p.desiredPublishes.Front()
 	}
 
 	isMuted := p.isMuted
@@ -160,7 +174,7 @@ func (p *PublicationMonitor) update() {
 	for {
 		var pub *publish
 		if p.desiredPublishes.Len() > 0 {
-			pub = p.desiredPublishes.PopFront().(*publish)
+			pub = p.desiredPublishes.PopFront()
 		}
 
 		if pub == nil {

@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package rtc
 
 import (
@@ -98,12 +112,18 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	for _, c := range codecs {
 		c.RTCPFeedback = rtcpFeedback
 	}
+	var trailer []byte
+	if t.params.MediaTrack.IsEncrypted() {
+		trailer = sub.GetTrailer()
+	}
 	downTrack, err := sfu.NewDownTrack(
 		codecs,
 		wr,
 		sub.GetBufferFactory(),
 		subscriberID,
 		t.params.ReceiverConfig.PacketBufferSize,
+		sub.GetPacer(),
+		trailer,
 		LoggerWithTrack(sub.GetLogger(), trackID, t.params.IsRelayed),
 	)
 	if err != nil {
@@ -127,7 +147,11 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	// Bind callback can happen from replaceTrack, so set it up early
 	var reusingTransceiver atomic.Bool
 	var dtState sfu.DownTrackState
-	downTrack.OnBinding(func() {
+	downTrack.OnBinding(func(err error) {
+		if err != nil {
+			go subTrack.Bound(err)
+			return
+		}
 		wr.DetermineReceiver(downTrack.Codec())
 		if reusingTransceiver.Load() {
 			downTrack.SeedState(dtState)
@@ -141,7 +165,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 			)
 		}
 
-		go subTrack.Bound()
+		go subTrack.Bound(nil)
 
 		subTrack.SetPublisherMuted(t.params.MediaTrack.IsMuted())
 	})

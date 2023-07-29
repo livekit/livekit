@@ -1,33 +1,43 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package rtc
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/psrpc"
 
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 )
 
 func (p *ParticipantImpl) getResponseSink() routing.MessageSink {
-	if !p.resSinkValid.Load() {
-		return nil
-	}
-	sink := p.resSink.Load()
-	if s, ok := sink.(routing.MessageSink); ok {
-		return s
-	}
-	return nil
+	p.resSinkMu.Lock()
+	defer p.resSinkMu.Unlock()
+	return p.resSink
 }
 
 func (p *ParticipantImpl) SetResponseSink(sink routing.MessageSink) {
-	p.resSinkValid.Store(sink != nil)
-	if sink != nil {
-		// cannot store nil into atomic.Value
-		p.resSink.Store(sink)
-	}
+	p.resSinkMu.Lock()
+	defer p.resSinkMu.Unlock()
+	p.resSink = sink
 }
 
 func (p *ParticipantImpl) SendJoinResponse(joinResponse *livekit.JoinResponse) error {
@@ -89,6 +99,10 @@ func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.
 				p.params.Logger.Debugw("skipping outdated participant update", "version", pi.Version, "lastVersion", lastVersion)
 				isValid = false
 			}
+		}
+		if pi.Permission != nil && pi.Permission.Hidden && pi.Sid != string(p.params.SID) {
+			p.params.Logger.Debugw("skipping hidden participant update", "otherParticipant", pi.Identity)
+			isValid = false
 		}
 		if isValid {
 			p.updateCache.Add(pID, participantUpdateInfo{version: pi.Version, state: pi.State, updatedAt: time.Now()})
@@ -179,7 +193,9 @@ func (p *ParticipantImpl) SendRefreshToken(token string) error {
 	})
 }
 
-func (p *ParticipantImpl) SendReconnectResponse(reconnectResponse *livekit.ReconnectResponse) error {
+func (p *ParticipantImpl) HandleReconnectAndSendResponse(reconnectReason livekit.ReconnectReason, reconnectResponse *livekit.ReconnectResponse) error {
+	p.TransportManager.HandleClientReconnect(reconnectReason)
+
 	if !p.params.ClientInfo.CanHandleReconnectResponse() {
 		return nil
 	}
@@ -265,12 +281,16 @@ func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
 
 	sink := p.getResponseSink()
 	if sink == nil {
-		p.params.Logger.Infow("could not send message to participant", "messageType", fmt.Sprintf("%T", msg.Message))
+		p.params.Logger.Debugw("could not send message to participant", "messageType", fmt.Sprintf("%T", msg.Message))
 		return nil
 	}
 
 	err := sink.WriteMessage(msg)
-	if err != nil {
+	if errors.Is(err, psrpc.Canceled) {
+		p.params.Logger.Debugw("could not send message to participant",
+			"error", err, "messageType", fmt.Sprintf("%T", msg.Message))
+		return nil
+	} else if err != nil {
 		p.params.Logger.Warnw("could not send message to participant", err,
 			"messageType", fmt.Sprintf("%T", msg.Message))
 		return err
@@ -279,10 +299,10 @@ func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
 }
 
 // closes signal connection to notify client to resume/reconnect
-func (p *ParticipantImpl) CloseSignalConnection() {
+func (p *ParticipantImpl) CloseSignalConnection(reason types.SignallingCloseReason) {
 	sink := p.getResponseSink()
 	if sink != nil {
-		p.params.Logger.Infow("closing signal connection")
+		p.params.Logger.Infow("closing signal connection", "reason", reason, "connID", sink.ConnectionID())
 		sink.Close()
 		p.SetResponseSink(nil)
 	}

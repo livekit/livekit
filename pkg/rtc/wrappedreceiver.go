@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package rtc
 
 import (
@@ -12,7 +26,6 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu"
-	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
 // wrapper around WebRTC receiver, overriding its ID
@@ -102,6 +115,14 @@ func (r *WrappedReceiver) Codecs() []webrtc.RTPCodecParameters {
 	copy(codecs, r.codecs)
 	return codecs
 }
+
+func (r *WrappedReceiver) DeleteDownTrack(participantID livekit.ParticipantID) {
+	if r.TrackReceiver != nil {
+		r.TrackReceiver.DeleteDownTrack(participantID)
+	}
+}
+
+// --------------------------------------------
 
 type DummyReceiver struct {
 	receiver         atomic.Value
@@ -296,11 +317,11 @@ func (d *DummyReceiver) GetRedReceiver() sfu.TrackReceiver {
 	return d
 }
 
-func (d *DummyReceiver) GetRTCPSenderReportDataExt(layer int32) *buffer.RTCPSenderReportDataExt {
+func (d *DummyReceiver) GetCalculatedClockRate(layer int32) uint32 {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
-		return r.GetRTCPSenderReportDataExt(layer)
+		return r.GetCalculatedClockRate(layer)
 	}
-	return nil
+	return 0
 }
 
 func (d *DummyReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error) {

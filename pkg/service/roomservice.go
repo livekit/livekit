@@ -1,7 +1,22 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package service
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -14,6 +29,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 )
 
@@ -125,6 +141,11 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 	if err := EnsureCreatePermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
+
+	if _, _, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false); err == ErrRoomNotFound {
+		return nil, twirp.NotFoundError("room not found")
+	}
+
 	err := s.router.WriteRoomRTC(ctx, livekit.RoomName(req.Room), &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_DeleteRoom{
 			DeleteRoom: req,
@@ -185,6 +206,11 @@ func (s *RoomService) GetParticipant(ctx context.Context, req *livekit.RoomParti
 
 func (s *RoomService) RemoveParticipant(ctx context.Context, req *livekit.RoomParticipantIdentity) (*livekit.RemoveParticipantResponse, error) {
 	AppendLogFields(ctx, "room", req.Room, "participant", req.Identity)
+
+	if _, err := s.roomStore.LoadParticipant(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)); err == ErrParticipantNotFound {
+		return nil, twirp.NotFoundError("participant not found")
+	}
+
 	err := s.writeParticipantMessage(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity), &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_RemoveParticipant{
 			RemoveParticipant: req,
@@ -212,7 +238,7 @@ func (s *RoomService) RemoveParticipant(ctx context.Context, req *livekit.RoomPa
 }
 
 func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteRoomTrackRequest) (*livekit.MuteRoomTrackResponse, error) {
-	AppendLogFields(ctx, "room", req.Room, "participant", req.Identity, "track", req.TrackSid, "muted", req.Muted)
+	AppendLogFields(ctx, "room", req.Room, "participant", req.Identity, "trackID", req.TrackSid, "muted", req.Muted)
 	if err := EnsureAdminPermission(ctx, livekit.RoomName(req.Room)); err != nil {
 		return nil, twirpAuthError(err)
 	}
@@ -273,20 +299,24 @@ func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.Update
 	}
 
 	var participant *livekit.ParticipantInfo
+	var detailedError error
 	err = s.confirmExecution(func() error {
 		participant, err = s.roomStore.LoadParticipant(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity))
 		if err != nil {
 			return err
 		}
 		if req.Metadata != "" && participant.Metadata != req.Metadata {
+			detailedError = fmt.Errorf("metadata does not match")
 			return ErrOperationFailed
 		}
 		if req.Permission != nil && !proto.Equal(req.Permission, participant.Permission) {
+			detailedError = fmt.Errorf("permissions do not match, expected: %v, actual: %v", req.Permission, participant.Permission)
 			return ErrOperationFailed
 		}
 		return nil
 	})
 	if err != nil {
+		logger.Warnw("could not confirm participant update", detailedError)
 		return nil, err
 	}
 
@@ -298,7 +328,7 @@ func (s *RoomService) UpdateSubscriptions(ctx context.Context, req *livekit.Upda
 	for _, pt := range req.ParticipantTracks {
 		trackSIDs = append(trackSIDs, pt.TrackSids...)
 	}
-	AppendLogFields(ctx, "room", req.Room, "participant", req.Identity, "track", trackSIDs)
+	AppendLogFields(ctx, "room", req.Room, "participant", req.Identity, "trackID", trackSIDs)
 	err := s.writeParticipantMessage(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity), &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_UpdateSubscriptions{
 			UpdateSubscriptions: req,

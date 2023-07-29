@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package client
 
 import (
@@ -8,6 +22,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,12 +34,18 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 )
+
+type SignalRequestHandler func(msg *livekit.SignalRequest) error
+type SignalRequestInterceptor func(msg *livekit.SignalRequest, next SignalRequestHandler) error
+type SignalResponseHandler func(msg *livekit.SignalResponse) error
+type SignalResponseInterceptor func(msg *livekit.SignalResponse, next SignalResponseHandler) error
 
 type RTCClient struct {
 	id         livekit.ParticipantID
@@ -43,10 +64,14 @@ type RTCClient struct {
 	localParticipant   *livekit.ParticipantInfo
 	remoteParticipants map[livekit.ParticipantID]*livekit.ParticipantInfo
 
+	signalRequestInterceptor  SignalRequestInterceptor
+	signalResponseInterceptor SignalResponseInterceptor
+
 	subscriberAsPrimary        atomic.Bool
 	publisherFullyEstablished  atomic.Bool
 	subscriberFullyEstablished atomic.Bool
 	pongReceivedAt             atomic.Int64
+	lastAnswer                 atomic.Pointer[webrtc.SessionDescription]
 
 	// tracks waiting to be acked, cid => trackInfo
 	pendingPublishedTracks map[string]*livekit.TrackInfo
@@ -59,6 +84,8 @@ type RTCClient struct {
 	// map of livekit.ParticipantID and last packet
 	lastPackets   map[livekit.ParticipantID]*rtp.Packet
 	bytesReceived map[livekit.ParticipantID]uint64
+
+	subscriptionResponse atomic.Pointer[livekit.SubscriptionResponse]
 }
 
 var (
@@ -78,8 +105,12 @@ var (
 )
 
 type Options struct {
-	AutoSubscribe bool
-	Publish       string
+	AutoSubscribe             bool
+	Publish                   string
+	ClientInfo                *livekit.ClientInfo
+	DisabledCodecs            []webrtc.RTPCodecCapability
+	SignalRequestInterceptor  SignalRequestInterceptor
+	SignalResponseInterceptor SignalResponseInterceptor
 }
 
 func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error) {
@@ -92,8 +123,18 @@ func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error
 
 	connectUrl := u.String()
 	if opts != nil {
-		connectUrl = fmt.Sprintf("%s&auto_subscribe=%t&publish=%s",
-			connectUrl, opts.AutoSubscribe, opts.Publish)
+		connectUrl = fmt.Sprintf("%s&auto_subscribe=%t", connectUrl, opts.AutoSubscribe)
+		if opts.Publish != "" {
+			connectUrl += encodeQueryParam("publish", opts.Publish)
+		}
+		if opts.ClientInfo != nil {
+			if opts.ClientInfo.DeviceModel != "" {
+				connectUrl += encodeQueryParam("device_model", opts.ClientInfo.DeviceModel)
+			}
+			if opts.ClientInfo.Os != "" {
+				connectUrl += encodeQueryParam("os", opts.ClientInfo.Os)
+			}
+		}
 	}
 	conn, _, err := websocket.DefaultDialer.Dial(connectUrl, requestHeader)
 	return conn, err
@@ -103,7 +144,7 @@ func SetAuthorizationToken(header http.Header, token string) {
 	header.Set("Authorization", "Bearer "+token)
 }
 
-func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
+func NewRTCClient(conn *websocket.Conn, opts *Options) (*RTCClient, error) {
 	var err error
 
 	c := &RTCClient{
@@ -120,11 +161,14 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 
 	conf := rtc.WebRTCConfig{
-		Configuration: rtcConf,
+		WebRTCConfig: rtcconfig.WebRTCConfig{
+			Configuration: rtcConf,
+		},
 	}
 	conf.SettingEngine.SetLite(false)
 	conf.SettingEngine.SetAnsweringDTLSRole(webrtc.DTLSRoleClient)
-	codecs := []*livekit.Codec{
+	var codecs []*livekit.Codec
+	for _, codec := range []*livekit.Codec{
 		{
 			Mime: "audio/opus",
 		},
@@ -134,7 +178,21 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 		{
 			Mime: "video/h264",
 		},
+	} {
+		var disabled bool
+		if opts != nil {
+			for _, dc := range opts.DisabledCodecs {
+				if strings.EqualFold(dc.MimeType, codec.Mime) && (dc.SDPFmtpLine == "" || dc.SDPFmtpLine == codec.FmtpLine) {
+					disabled = true
+					break
+				}
+			}
+		}
+		if !disabled {
+			codecs = append(codecs, codec)
+		}
 	}
+
 	//
 	// The signal targets are from point of view of server.
 	// From client side, they are flipped,
@@ -231,6 +289,11 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 		})
 	})
 
+	if opts != nil {
+		c.signalRequestInterceptor = opts.SignalRequestInterceptor
+		c.signalResponseInterceptor = opts.SignalResponseInterceptor
+	}
+
 	return c, nil
 }
 
@@ -256,85 +319,99 @@ func (c *RTCClient) Run() error {
 			logger.Errorw("error while reading", err)
 			return err
 		}
-		switch msg := res.Message.(type) {
-		case *livekit.SignalResponse_Join:
-			c.localParticipant = msg.Join.Participant
-			c.id = livekit.ParticipantID(msg.Join.Participant.Sid)
-			c.lock.Lock()
-			for _, p := range msg.Join.OtherParticipants {
-				c.remoteParticipants[livekit.ParticipantID(p.Sid)] = p
-			}
-			c.lock.Unlock()
-			// if publish only, negotiate
-			if !msg.Join.SubscriberPrimary {
-				c.subscriberAsPrimary.Store(false)
-				c.publisher.Negotiate(false)
-			} else {
-				c.subscriberAsPrimary.Store(true)
-			}
-
-			logger.Infow("join accepted, awaiting offer", "participant", msg.Join.Participant.Identity)
-		case *livekit.SignalResponse_Answer:
-			// logger.Debugw("received server answer",
-			//	"participant", c.localParticipant.Identity,
-			//	"answer", msg.Answer.Sdp)
-			c.handleAnswer(rtc.FromProtoSessionDescription(msg.Answer))
-		case *livekit.SignalResponse_Offer:
-			logger.Infow("received server offer",
-				"participant", c.localParticipant.Identity,
-			)
-			desc := rtc.FromProtoSessionDescription(msg.Offer)
-			c.handleOffer(desc)
-		case *livekit.SignalResponse_Trickle:
-			candidateInit, err := rtc.FromProtoTrickle(msg.Trickle)
-			if err != nil {
-				return err
-			}
-			if msg.Trickle.Target == livekit.SignalTarget_PUBLISHER {
-				c.publisher.AddICECandidate(candidateInit)
-			} else {
-				c.subscriber.AddICECandidate(candidateInit)
-			}
-		case *livekit.SignalResponse_Update:
-			c.lock.Lock()
-			for _, p := range msg.Update.Participants {
-				if livekit.ParticipantID(p.Sid) != c.id {
-					if p.State != livekit.ParticipantInfo_DISCONNECTED {
-						c.remoteParticipants[livekit.ParticipantID(p.Sid)] = p
-					} else {
-						delete(c.remoteParticipants, livekit.ParticipantID(p.Sid))
-					}
-				}
-			}
-			c.lock.Unlock()
-
-		case *livekit.SignalResponse_TrackPublished:
-			logger.Debugw("track published", "trackID", msg.TrackPublished.Track.Name, "participant", c.localParticipant.Sid,
-				"cid", msg.TrackPublished.Cid, "trackSid", msg.TrackPublished.Track.Sid)
-			c.lock.Lock()
-			c.pendingPublishedTracks[msg.TrackPublished.Cid] = msg.TrackPublished.Track
-			c.lock.Unlock()
-		case *livekit.SignalResponse_RefreshToken:
-			c.lock.Lock()
-			c.refreshToken = msg.RefreshToken
-			c.lock.Unlock()
-		case *livekit.SignalResponse_TrackUnpublished:
-			sid := msg.TrackUnpublished.TrackSid
-			c.lock.Lock()
-			sender := c.trackSenders[sid]
-			if sender != nil {
-				if err := c.publisher.RemoveTrack(sender); err != nil {
-					logger.Errorw("Could not unpublish track", err)
-				}
-				c.publisher.Negotiate(false)
-			}
-			delete(c.trackSenders, sid)
-			delete(c.localTracks, sid)
-			c.lock.Unlock()
-		case *livekit.SignalResponse_Pong:
-			c.pongReceivedAt.Store(msg.Pong)
+		if c.signalResponseInterceptor != nil {
+			err = c.signalResponseInterceptor(res, c.handleSignalResponse)
+		} else {
+			err = c.handleSignalResponse(res)
+		}
+		if err != nil {
+			return err
 		}
 	}
+}
+
+func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
+	switch msg := res.Message.(type) {
+	case *livekit.SignalResponse_Join:
+		c.localParticipant = msg.Join.Participant
+		c.id = livekit.ParticipantID(msg.Join.Participant.Sid)
+		c.lock.Lock()
+		for _, p := range msg.Join.OtherParticipants {
+			c.remoteParticipants[livekit.ParticipantID(p.Sid)] = p
+		}
+		c.lock.Unlock()
+		// if publish only, negotiate
+		if !msg.Join.SubscriberPrimary {
+			c.subscriberAsPrimary.Store(false)
+			c.publisher.Negotiate(false)
+		} else {
+			c.subscriberAsPrimary.Store(true)
+		}
+
+		logger.Infow("join accepted, awaiting offer", "participant", msg.Join.Participant.Identity)
+	case *livekit.SignalResponse_Answer:
+		// logger.Debugw("received server answer",
+		//	"participant", c.localParticipant.Identity,
+		//	"answer", msg.Answer.Sdp)
+		c.handleAnswer(rtc.FromProtoSessionDescription(msg.Answer))
+	case *livekit.SignalResponse_Offer:
+		logger.Infow("received server offer",
+			"participant", c.localParticipant.Identity,
+		)
+		desc := rtc.FromProtoSessionDescription(msg.Offer)
+		c.handleOffer(desc)
+	case *livekit.SignalResponse_Trickle:
+		candidateInit, err := rtc.FromProtoTrickle(msg.Trickle)
+		if err != nil {
+			return err
+		}
+		if msg.Trickle.Target == livekit.SignalTarget_PUBLISHER {
+			c.publisher.AddICECandidate(candidateInit)
+		} else {
+			c.subscriber.AddICECandidate(candidateInit)
+		}
+	case *livekit.SignalResponse_Update:
+		c.lock.Lock()
+		for _, p := range msg.Update.Participants {
+			if livekit.ParticipantID(p.Sid) != c.id {
+				if p.State != livekit.ParticipantInfo_DISCONNECTED {
+					c.remoteParticipants[livekit.ParticipantID(p.Sid)] = p
+				} else {
+					delete(c.remoteParticipants, livekit.ParticipantID(p.Sid))
+				}
+			}
+		}
+		c.lock.Unlock()
+
+	case *livekit.SignalResponse_TrackPublished:
+		logger.Debugw("track published", "trackID", msg.TrackPublished.Track.Name, "participant", c.localParticipant.Sid,
+			"cid", msg.TrackPublished.Cid, "trackSid", msg.TrackPublished.Track.Sid)
+		c.lock.Lock()
+		c.pendingPublishedTracks[msg.TrackPublished.Cid] = msg.TrackPublished.Track
+		c.lock.Unlock()
+	case *livekit.SignalResponse_RefreshToken:
+		c.lock.Lock()
+		c.refreshToken = msg.RefreshToken
+		c.lock.Unlock()
+	case *livekit.SignalResponse_TrackUnpublished:
+		sid := msg.TrackUnpublished.TrackSid
+		c.lock.Lock()
+		sender := c.trackSenders[sid]
+		if sender != nil {
+			if err := c.publisher.RemoveTrack(sender); err != nil {
+				logger.Errorw("Could not unpublish track", err)
+			}
+			c.publisher.Negotiate(false)
+		}
+		delete(c.trackSenders, sid)
+		delete(c.localTracks, sid)
+		c.lock.Unlock()
+	case *livekit.SignalResponse_Pong:
+		c.pongReceivedAt.Store(msg.Pong)
+	case *livekit.SignalResponse_SubscriptionResponse:
+		c.subscriptionResponse.Store(msg.SubscriptionResponse)
+	}
+	return nil
 }
 
 func (c *RTCClient) WaitUntilConnected() error {
@@ -437,6 +514,10 @@ func (c *RTCClient) PongReceivedAt() int64 {
 	return c.pongReceivedAt.Load()
 }
 
+func (c *RTCClient) GetSubscriptionResponseAndClear() *livekit.SubscriptionResponse {
+	return c.subscriptionResponse.Swap(nil)
+}
+
 func (c *RTCClient) SendPing() error {
 	return c.SendRequest(&livekit.SignalRequest{
 		Message: &livekit.SignalRequest_Ping{
@@ -446,6 +527,14 @@ func (c *RTCClient) SendPing() error {
 }
 
 func (c *RTCClient) SendRequest(msg *livekit.SignalRequest) error {
+	if c.signalRequestInterceptor != nil {
+		return c.signalRequestInterceptor(msg, c.sendRequest)
+	} else {
+		return c.sendRequest(msg)
+	}
+}
+
+func (c *RTCClient) sendRequest(msg *livekit.SignalRequest) error {
 	payload, err := proto.Marshal(msg)
 	if err != nil {
 		return err
@@ -607,6 +696,11 @@ func (c *RTCClient) GetPublishedTrackIDs() []string {
 	return trackIDs
 }
 
+// LastAnswer return SDP of the last answer for the publisher connection
+func (c *RTCClient) LastAnswer() *webrtc.SessionDescription {
+	return c.lastAnswer.Load()
+}
+
 func (c *RTCClient) ensurePublisherConnected() error {
 	if c.publisher.HasEverConnected() {
 		return nil
@@ -630,7 +724,7 @@ func (c *RTCClient) ensurePublisherConnected() error {
 	}
 }
 
-func (c *RTCClient) handleDataMessage(kind livekit.DataPacket_Kind, data []byte) {
+func (c *RTCClient) handleDataMessage(_ livekit.DataPacket_Kind, data []byte) {
 	dp := &livekit.DataPacket{}
 	err := proto.Unmarshal(data, dp)
 	if err != nil {
@@ -651,6 +745,8 @@ func (c *RTCClient) handleOffer(desc webrtc.SessionDescription) {
 // the client handles answer on the publisher PC
 func (c *RTCClient) handleAnswer(desc webrtc.SessionDescription) {
 	logger.Infow("handling server answer", "participant", c.localParticipant.Identity)
+
+	c.lastAnswer.Store(&desc)
 	// remote answered the offer, establish connection
 	c.publisher.HandleRemoteDescription(desc)
 }
@@ -740,4 +836,8 @@ func (c *RTCClient) SendNacks(count int) {
 	c.lock.Unlock()
 
 	_ = c.subscriber.WriteRTCP(packets)
+}
+
+func encodeQueryParam(key, value string) string {
+	return fmt.Sprintf("&%s=%s", url.QueryEscape(key), url.QueryEscape(value))
 }

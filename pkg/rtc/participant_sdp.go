@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package rtc
 
 import (
@@ -112,8 +126,15 @@ func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(offer webrtc.Sess
 			continue
 		}
 
+		var info *livekit.TrackInfo
 		p.pendingTracksLock.RLock()
-		_, info := p.getPendingTrack(streamID, livekit.TrackType_VIDEO)
+		mt := p.getPublishedTrackBySdpCid(streamID)
+		if mt != nil {
+			info = mt.ToProto()
+		} else {
+			_, info = p.getPendingTrack(streamID, livekit.TrackType_VIDEO)
+		}
+
 		if info == nil {
 			p.pendingTracksLock.RUnlock()
 			continue
@@ -131,8 +152,8 @@ func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(offer webrtc.Sess
 		p.pendingTracksLock.RUnlock()
 
 		mime = strings.ToUpper(mime)
-		// remove dd extension if av1 not preferred
-		if !strings.Contains(mime, "AV1") {
+		// remove dd extension if av1/vp9 not preferred
+		if !strings.Contains(strings.ToLower(mime), "av1") && !strings.Contains(strings.ToLower(mime), "vp9") {
 			for i, attr := range unmatchVideo.Attributes {
 				if strings.Contains(attr.Value, dd.ExtensionUrl) {
 					unmatchVideo.Attributes[i] = unmatchVideo.Attributes[len(unmatchVideo.Attributes)-1]

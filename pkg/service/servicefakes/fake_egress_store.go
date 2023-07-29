@@ -10,11 +10,12 @@ import (
 )
 
 type FakeEgressStore struct {
-	ListEgressStub        func(context.Context, livekit.RoomName) ([]*livekit.EgressInfo, error)
+	ListEgressStub        func(context.Context, livekit.RoomName, bool) ([]*livekit.EgressInfo, error)
 	listEgressMutex       sync.RWMutex
 	listEgressArgsForCall []struct {
 		arg1 context.Context
 		arg2 livekit.RoomName
+		arg3 bool
 	}
 	listEgressReturns struct {
 		result1 []*livekit.EgressInfo
@@ -66,19 +67,20 @@ type FakeEgressStore struct {
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeEgressStore) ListEgress(arg1 context.Context, arg2 livekit.RoomName) ([]*livekit.EgressInfo, error) {
+func (fake *FakeEgressStore) ListEgress(arg1 context.Context, arg2 livekit.RoomName, arg3 bool) ([]*livekit.EgressInfo, error) {
 	fake.listEgressMutex.Lock()
 	ret, specificReturn := fake.listEgressReturnsOnCall[len(fake.listEgressArgsForCall)]
 	fake.listEgressArgsForCall = append(fake.listEgressArgsForCall, struct {
 		arg1 context.Context
 		arg2 livekit.RoomName
-	}{arg1, arg2})
+		arg3 bool
+	}{arg1, arg2, arg3})
 	stub := fake.ListEgressStub
 	fakeReturns := fake.listEgressReturns
-	fake.recordInvocation("ListEgress", []interface{}{arg1, arg2})
+	fake.recordInvocation("ListEgress", []interface{}{arg1, arg2, arg3})
 	fake.listEgressMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2)
+		return stub(arg1, arg2, arg3)
 	}
 	if specificReturn {
 		return ret.result1, ret.result2
@@ -92,17 +94,17 @@ func (fake *FakeEgressStore) ListEgressCallCount() int {
 	return len(fake.listEgressArgsForCall)
 }
 
-func (fake *FakeEgressStore) ListEgressCalls(stub func(context.Context, livekit.RoomName) ([]*livekit.EgressInfo, error)) {
+func (fake *FakeEgressStore) ListEgressCalls(stub func(context.Context, livekit.RoomName, bool) ([]*livekit.EgressInfo, error)) {
 	fake.listEgressMutex.Lock()
 	defer fake.listEgressMutex.Unlock()
 	fake.ListEgressStub = stub
 }
 
-func (fake *FakeEgressStore) ListEgressArgsForCall(i int) (context.Context, livekit.RoomName) {
+func (fake *FakeEgressStore) ListEgressArgsForCall(i int) (context.Context, livekit.RoomName, bool) {
 	fake.listEgressMutex.RLock()
 	defer fake.listEgressMutex.RUnlock()
 	argsForCall := fake.listEgressArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
 func (fake *FakeEgressStore) ListEgressReturns(result1 []*livekit.EgressInfo, result2 error) {

@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package rtc
 
 import (
@@ -21,7 +35,7 @@ func newMockParticipant(identity livekit.ParticipantIdentity, protocol types.Pro
 	p.StateReturns(livekit.ParticipantInfo_JOINED)
 	p.ProtocolVersionReturns(protocol)
 	p.CanSubscribeReturns(true)
-	p.CanPublishReturns(!hidden)
+	p.CanPublishSourceReturns(!hidden)
 	p.CanPublishDataReturns(!hidden)
 	p.HiddenReturns(hidden)
 	p.ToProtoReturns(&livekit.ParticipantInfo{
@@ -31,7 +45,7 @@ func newMockParticipant(identity livekit.ParticipantIdentity, protocol types.Pro
 		IsPublisher: publisher,
 	})
 
-	p.SetMetadataStub = func(m string) {
+	p.SetMetadataCalls(func(m string) {
 		var f func(participant types.LocalParticipant)
 		if p.OnParticipantUpdateCallCount() > 0 {
 			f = p.OnParticipantUpdateArgsForCall(p.OnParticipantUpdateCallCount() - 1)
@@ -39,7 +53,7 @@ func newMockParticipant(identity livekit.ParticipantIdentity, protocol types.Pro
 		if f != nil {
 			f(p)
 		}
-	}
+	})
 	updateTrack := func() {
 		var f func(participant types.LocalParticipant, track types.MediaTrack)
 		if p.OnTrackUpdatedCallCount() > 0 {
@@ -50,12 +64,12 @@ func newMockParticipant(identity livekit.ParticipantIdentity, protocol types.Pro
 		}
 	}
 
-	p.SetTrackMutedStub = func(sid livekit.TrackID, muted bool, fromServer bool) {
+	p.SetTrackMutedCalls(func(sid livekit.TrackID, muted bool, fromServer bool) {
 		updateTrack()
-	}
-	p.AddTrackStub = func(req *livekit.AddTrackRequest) {
+	})
+	p.AddTrackCalls(func(req *livekit.AddTrackRequest) {
 		updateTrack()
-	}
+	})
 
 	return p
 }

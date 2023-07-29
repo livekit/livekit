@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package sfu
 
 import (
@@ -8,8 +22,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/protocol/logger"
-
-	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
 func Test_sequencer(t *testing.T) {
@@ -17,11 +29,11 @@ func Test_sequencer(t *testing.T) {
 	off := uint16(15)
 
 	for i := uint16(1); i < 518; i++ {
-		seq.push(i, i+off, 123, 2)
+		seq.push(i, i+off, 123, true, 2, nil, nil)
 	}
 	// send the last two out-of-order
-	seq.push(519, 519+off, 123, 2)
-	seq.push(518, 518+off, 123, 2)
+	seq.push(519, 519+off, 123, false, 2, nil, nil)
+	seq.push(518, 518+off, 123, true, 2, nil, nil)
 
 	time.Sleep(60 * time.Millisecond)
 	req := []uint16{57, 58, 62, 63, 513, 514, 515, 516, 517}
@@ -43,11 +55,11 @@ func Test_sequencer(t *testing.T) {
 		require.Equal(t, val.layer, int8(2))
 	}
 
-	seq.push(521, 521+off, 123, 1)
+	seq.push(521, 521+off, 123, true, 1, nil, nil)
 	m := seq.getPacketsMeta([]uint16{521 + off})
 	require.Equal(t, 1, len(m))
 
-	seq.push(505, 505+off, 123, 1)
+	seq.push(505, 505+off, 123, false, 1, nil, nil)
 	m = seq.getPacketsMeta([]uint16{505 + off})
 	require.Equal(t, 1, len(m))
 }
@@ -57,9 +69,15 @@ func Test_sequencer_getNACKSeqNo(t *testing.T) {
 		seqNo []uint16
 	}
 	type fields struct {
-		input   []uint16
-		padding []uint16
-		offset  uint16
+		input          []uint16
+		padding        []uint16
+		offset         uint16
+		markerOdd      bool
+		markerEven     bool
+		codecBytesOdd  []byte
+		codecBytesEven []byte
+		ddBytesOdd     []byte
+		ddBytesEven    []byte
 	}
 
 	tests := []struct {
@@ -71,9 +89,15 @@ func Test_sequencer_getNACKSeqNo(t *testing.T) {
 		{
 			name: "Should get correct seq numbers",
 			fields: fields{
-				input:   []uint16{2, 3, 4, 7, 8, 11},
-				padding: []uint16{9, 10},
-				offset:  5,
+				input:          []uint16{2, 3, 4, 7, 8, 11},
+				padding:        []uint16{9, 10},
+				offset:         5,
+				markerOdd:      true,
+				markerEven:     false,
+				codecBytesOdd:  []byte{1, 2, 3, 4},
+				codecBytesEven: []byte{5, 6, 7},
+				ddBytesOdd:     []byte{8, 9, 10},
+				ddBytesEven:    []byte{11, 12},
 			},
 			args: args{
 				seqNo: []uint16{4 + 5, 5 + 5, 8 + 5, 9 + 5, 10 + 5, 11 + 5},
@@ -87,7 +111,11 @@ func Test_sequencer_getNACKSeqNo(t *testing.T) {
 			n := newSequencer(5, 10, logger.GetLogger())
 
 			for _, i := range tt.fields.input {
-				n.push(i, i+tt.fields.offset, 123, 3)
+				if i%2 == 0 {
+					n.push(i, i+tt.fields.offset, 123, tt.fields.markerEven, 3, tt.fields.codecBytesEven, tt.fields.ddBytesEven)
+				} else {
+					n.push(i, i+tt.fields.offset, 123, tt.fields.markerOdd, 3, tt.fields.codecBytesOdd, tt.fields.ddBytesOdd)
+				}
 			}
 			for _, i := range tt.fields.padding {
 				n.pushPadding(i + tt.fields.offset)
@@ -97,89 +125,19 @@ func Test_sequencer_getNACKSeqNo(t *testing.T) {
 			var got []uint16
 			for _, sn := range g {
 				got = append(got, sn.sourceSeqNo)
+				if sn.sourceSeqNo%2 == 0 {
+					require.Equal(t, tt.fields.markerEven, sn.marker)
+					require.Equal(t, tt.fields.codecBytesEven, sn.codecBytes)
+					require.Equal(t, tt.fields.ddBytesEven, sn.ddBytes)
+				} else {
+					require.Equal(t, tt.fields.markerOdd, sn.marker)
+					require.Equal(t, tt.fields.codecBytesOdd, sn.codecBytes)
+					require.Equal(t, tt.fields.ddBytesOdd, sn.ddBytes)
+				}
 			}
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("getPacketsMeta() = %v, want %v", got, tt.want)
 			}
 		})
 	}
-}
-
-func Test_packetMeta_VP8(t *testing.T) {
-	p := &packetMeta{}
-
-	vp8 := &buffer.VP8{
-		FirstByte:        25,
-		PictureIDPresent: 1,
-		PictureID:        55467,
-		MBit:             true,
-		TL0PICIDXPresent: 1,
-		TL0PICIDX:        233,
-		TIDPresent:       1,
-		TID:              13,
-		Y:                1,
-		KEYIDXPresent:    1,
-		KEYIDX:           23,
-		HeaderSize:       6,
-		IsKeyFrame:       true,
-	}
-
-	p.packVP8(vp8)
-
-	// booleans are not packed, so they will be `false` in unpacked.
-	// Also, TID is only two bits, so it should be modulo 3.
-	expectedVP8 := &buffer.VP8{
-		FirstByte:        25,
-		PictureIDPresent: 1,
-		PictureID:        55467 % 32768,
-		MBit:             true,
-		TL0PICIDXPresent: 1,
-		TL0PICIDX:        233,
-		TIDPresent:       1,
-		TID:              13 % 3,
-		Y:                1,
-		KEYIDXPresent:    1,
-		KEYIDX:           23,
-		HeaderSize:       6,
-		IsKeyFrame:       true,
-	}
-	unpackedVP8 := p.unpackVP8()
-	require.Equal(t, expectedVP8, unpackedVP8)
-
-	// short picture id and no TL0PICIDX
-	vp8 = &buffer.VP8{
-		FirstByte:        25,
-		PictureIDPresent: 1,
-		PictureID:        63,
-		MBit:             false,
-		TL0PICIDXPresent: 0,
-		TL0PICIDX:        233,
-		TIDPresent:       1,
-		TID:              2,
-		Y:                1,
-		KEYIDXPresent:    0,
-		KEYIDX:           23,
-		HeaderSize:       23,
-		IsKeyFrame:       true,
-	}
-
-	p.packVP8(vp8)
-
-	expectedVP8 = &buffer.VP8{
-		FirstByte:        25,
-		PictureIDPresent: 1,
-		PictureID:        63,
-		MBit:             false,
-		TL0PICIDXPresent: 0,
-		TL0PICIDX:        233,
-		TIDPresent:       1,
-		TID:              2,
-		Y:                1,
-		KEYIDXPresent:    0,
-		KEYIDX:           23,
-		HeaderSize:       23,
-		IsKeyFrame:       true,
-	}
-	unpackedVP8 = p.unpackVP8()
-	require.Equal(t, expectedVP8, unpackedVP8)
 }

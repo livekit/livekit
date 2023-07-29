@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package service
 
 import (
@@ -11,6 +25,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/livekit-server/version"
+	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -67,7 +82,7 @@ func NewLocalRoomManager(
 	egressLauncher rtc.EgressLauncher,
 	versionGenerator utils.TimedVersionGenerator,
 ) (*RoomManager, error) {
-	rtcConf, err := rtc.NewWebRTCConfig(conf, currentNode.Ip)
+	rtcConf, err := rtc.NewWebRTCConfig(conf)
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +208,7 @@ func (r *RoomManager) Stop() {
 
 	for _, room := range rooms {
 		for _, p := range room.GetParticipants() {
-			_ = p.Close(true, types.ParticipantCloseReasonRoomManagerStop)
+			_ = p.Close(true, types.ParticipantCloseReasonRoomManagerStop, false)
 		}
 		room.Close()
 	}
@@ -228,11 +243,35 @@ func (r *RoomManager) StartSession(
 	if pi.Identity == "" {
 		return nil
 	}
+
 	participant := room.GetParticipant(pi.Identity)
 	if participant != nil {
-		// When reconnecting, it means WS has interrupted by underlying peer connection is still ok
-		// in this mode, we'll keep the participant SID, and just swap the sink for the underlying connection
+		// When reconnecting, it means WS has interrupted but underlying peer connection is still ok in this state,
+		// we'll keep the participant SID, and just swap the sink for the underlying connection
 		if pi.Reconnect {
+			if participant.IsClosed() {
+				// Send leave request if participant is closed, i. e. handle the case of client trying to resume crossing wires with
+				// server closing the participant due to some irrecoverable condition. Such a condition would have triggered
+				// a full reconnect when that condition occurred.
+				//
+				// It is possible that the client did not get that send request. So, send it again.
+				logger.Infow("cannot restart a closed participant",
+					"room", roomName,
+					"nodeID", r.currentNode.Id,
+					"participant", pi.Identity,
+					"reason", pi.ReconnectReason,
+				)
+				_ = responseSink.WriteMessage(&livekit.SignalResponse{
+					Message: &livekit.SignalResponse_Leave{
+						Leave: &livekit.LeaveRequest{
+							CanReconnect: true,
+							Reason:       livekit.DisconnectReason_STATE_MISMATCH,
+						},
+					},
+				})
+				return errors.New("could not restart closed participant")
+			}
+
 			logger.Infow("resuming RTC session",
 				"room", roomName,
 				"nodeID", r.currentNode.Id,
@@ -243,20 +282,27 @@ func (r *RoomManager) StartSession(
 			if iceConfig == nil {
 				iceConfig = &livekit.ICEConfig{}
 			}
-			if err = room.ResumeParticipant(participant, requestSource, responseSink,
-				r.iceServersForRoom(protoRoom, iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS),
-				pi.ReconnectReason); err != nil {
+			if err = room.ResumeParticipant(
+				participant,
+				requestSource,
+				responseSink,
+				r.iceServersForRoom(
+					protoRoom,
+					iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS,
+				),
+				pi.ReconnectReason,
+			); err != nil {
 				logger.Warnw("could not resume participant", err, "participant", pi.Identity)
 				return err
 			}
 			r.telemetry.ParticipantResumed(ctx, room.ToProto(), participant.ToProto(), livekit.NodeID(r.currentNode.Id), pi.ReconnectReason)
 			go r.rtcSessionWorker(room, participant, requestSource)
 			return nil
-		} else {
-			participant.GetLogger().Infow("removing duplicate participant")
-			// we need to clean up the existing participant, so a new one can join
-			room.RemoveParticipant(participant.Identity(), participant.ID(), types.ParticipantCloseReasonDuplicateIdentity)
 		}
+
+		// we need to clean up the existing participant, so a new one can join
+		participant.GetLogger().Infow("removing duplicate participant")
+		room.RemoveParticipant(participant.Identity(), participant.ID(), types.ParticipantCloseReasonDuplicateIdentity)
 	} else if pi.Reconnect {
 		// send leave request if participant is trying to reconnect without keep subscribe state
 		// but missing from the room
@@ -278,6 +324,9 @@ func (r *RoomManager) StartSession(
 		"sdk", pi.Client.Sdk,
 		"sdkVersion", pi.Client.Version,
 		"protocol", pi.Client.Protocol,
+		"reconnect", pi.Reconnect,
+		"reconnectReason", pi.ReconnectReason,
+		"adaptiveStream", pi.AdaptiveStream,
 	)
 
 	clientConf := r.clientConfManager.GetConfiguration(pi.Client)
@@ -302,6 +351,10 @@ func (r *RoomManager) StartSession(
 	if r.config.RTC.ReconnectOnSubscriptionError != nil {
 		reconnectOnSubscriptionError = *r.config.RTC.ReconnectOnSubscriptionError
 	}
+	subscriberAllowPause := r.config.RTC.CongestionControl.AllowPause
+	if pi.SubscriberAllowPause != nil {
+		subscriberAllowPause = *pi.SubscriberAllowPause
+	}
 	participant, err = rtc.NewParticipant(rtc.ParticipantParams{
 		Identity:                pi.Identity,
 		Name:                    pi.Name,
@@ -312,6 +365,7 @@ func (r *RoomManager) StartSession(
 		VideoConfig:             r.config.Video,
 		ProtocolVersion:         pv,
 		Telemetry:               r.telemetry,
+		Trailer:                 room.Trailer(),
 		PLIThrottleConfig:       r.config.RTC.PLIThrottle,
 		CongestionControlConfig: r.config.RTC.CongestionControl,
 		EnabledCodecs:           protoRoom.EnabledCodecs,
@@ -333,6 +387,9 @@ func (r *RoomManager) StartSession(
 		ReconnectOnSubscriptionError: reconnectOnSubscriptionError,
 		VersionGenerator:             r.versionGenerator,
 		TrackResolver:                room.ResolveMediaTrackForSubscriber,
+		SubscriberAllowPause:         subscriberAllowPause,
+		SubscriptionLimitAudio:       r.config.Limit.SubscriptionLimitAudio,
+		SubscriptionLimitVideo:       r.config.Limit.SubscriptionLimitVideo,
 	})
 	if err != nil {
 		return err
@@ -345,7 +402,7 @@ func (r *RoomManager) StartSession(
 	}
 	if err = room.Join(participant, requestSource, &opts, r.iceServersForRoom(protoRoom, iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS)); err != nil {
 		pLogger.Errorw("could not join room", err)
-		_ = participant.Close(true, types.ParticipantCloseReasonJoinFailed)
+		_ = participant.Close(true, types.ParticipantCloseReasonJoinFailed, false)
 		return err
 	}
 	if err = r.roomStore.StoreParticipant(ctx, roomName, participant.ToProto()); err != nil {
@@ -366,7 +423,7 @@ func (r *RoomManager) StartSession(
 
 	clientMeta := &livekit.AnalyticsClientMeta{Region: r.currentNode.Region, Node: r.currentNode.Id}
 	r.telemetry.ParticipantJoined(ctx, protoRoom, participant.ToProto(), pi.Client, clientMeta, true)
-	participant.OnClose(func(p types.LocalParticipant, disallowedSubscriptions map[livekit.TrackID]livekit.ParticipantID) {
+	participant.OnClose(func(p types.LocalParticipant) {
 		if err := r.roomStore.DeleteParticipant(ctx, roomName, p.Identity()); err != nil {
 			pLogger.Errorw("could not delete participant", err)
 		}
@@ -375,8 +432,6 @@ func (r *RoomManager) StartSession(
 		proto := room.ToProto()
 		persistRoomForParticipantCount(proto)
 		r.telemetry.ParticipantLeft(ctx, proto, p.ToProto(), true)
-
-		room.RemoveDisallowedSubscriptions(p, disallowedSubscriptions)
 	})
 	participant.OnClaimsChanged(func(participant types.LocalParticipant) {
 		pLogger.Debugw("refreshing client token after claims change")
@@ -441,7 +496,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 		newRoom.Logger.Infow("room closed")
 	})
 
-	newRoom.OnMetadataUpdate(func(metadata string) {
+	newRoom.OnRoomUpdated(func() {
 		if err := r.roomStore.StoreRoom(ctx, newRoom.ToProto(), newRoom.Internal()); err != nil {
 			newRoom.Logger.Errorw("could not handle metadata update", err)
 		}
@@ -476,7 +531,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 		false,
 	)
 	defer func() {
-		pLogger.Debugw("RTC session finishing")
+		pLogger.Debugw("RTC session finishing", "connID", requestSource.ConnectionID())
 		requestSource.Close()
 	}()
 
@@ -502,14 +557,14 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 		case <-tokenTicker.C:
 			// refresh token with the first API Key/secret pair
 			if err := r.refreshToken(participant); err != nil {
-				pLogger.Errorw("could not refresh token", err)
+				pLogger.Errorw("could not refresh token", err, "connID", requestSource.ConnectionID())
 			}
 		case obj := <-requestSource.ReadChan():
 			// In single node mode, the request source is directly tied to the signal message channel
 			// this means ICE restart isn't possible in single node mode
 			if obj == nil {
 				if room.GetParticipantRequestSource(participant.Identity()) == requestSource {
-					participant.SetSignalSourceValid(false)
+					participant.HandleSignalSourceClose()
 				}
 				return
 			}
@@ -582,19 +637,14 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomName livekit.Roo
 		}
 		pLogger.Debugw("updating participant", "metadata", rm.UpdateParticipant.Metadata,
 			"permission", rm.UpdateParticipant.Permission)
-		if rm.UpdateParticipant.Name != "" {
-			participant.SetName(rm.UpdateParticipant.Name)
-		}
-		if rm.UpdateParticipant.Metadata != "" {
-			participant.SetMetadata(rm.UpdateParticipant.Metadata)
-		}
+		room.UpdateParticipantMetadata(participant, rm.UpdateParticipant.Name, rm.UpdateParticipant.Metadata)
 		if rm.UpdateParticipant.Permission != nil {
 			participant.SetPermission(rm.UpdateParticipant.Permission)
 		}
 	case *livekit.RTCNodeMessage_DeleteRoom:
 		room.Logger.Infow("deleting room")
 		for _, p := range room.GetParticipants() {
-			_ = p.Close(true, types.ParticipantCloseReasonServiceRequestDeleteRoom)
+			_ = p.Close(true, types.ParticipantCloseReasonServiceRequestDeleteRoom, false)
 		}
 		room.Close()
 	case *livekit.RTCNodeMessage_UpdateSubscriptions:
@@ -678,7 +728,7 @@ func (r *RoomManager) iceServersForRoom(ri *livekit.Room, tlsOnly bool) []*livek
 	}
 
 	if !hasSTUN {
-		iceServers = append(iceServers, iceServerForStunServers(config.DefaultStunServers))
+		iceServers = append(iceServers, iceServerForStunServers(rtcconfig.DefaultStunServers))
 	}
 	return iceServers
 }

@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package dependencydescriptor
 
 import (
@@ -9,21 +23,18 @@ import (
 // DependencyDescriptorExtension is a extension payload format in
 // https://aomediacodec.github.io/av1-rtp-spec/#dependency-descriptor-rtp-header-extension
 
+func formatBitmask(b *uint32) string {
+	if b == nil {
+		return "-"
+	}
+	return strconv.FormatInt(int64(*b), 2)
+}
+
+// ------------------------------------------------------------------------------
+
 type DependencyDescriptorExtension struct {
 	Descriptor *DependencyDescriptor
 	Structure  *FrameDependencyStructure
-}
-
-func (d *DependencyDescriptor) MarshalSize() (int, error) {
-	return d.MarshalSizeWithActiveChains(^uint32(0))
-}
-
-func (d *DependencyDescriptor) MarshalSizeWithActiveChains(activeChains uint32) (int, error) {
-	writer, err := NewDependencyDescriptorWriter(nil, d.AttachedStructure, activeChains, d)
-	if err != nil {
-		return 0, err
-	}
-	return int(math.Ceil(float64(writer.ValueSizeBits()) / 8)), nil
 }
 
 func (d *DependencyDescriptorExtension) Marshal() ([]byte, error) {
@@ -48,6 +59,8 @@ func (d *DependencyDescriptorExtension) Unmarshal(buf []byte) (int, error) {
 	return reader.Parse()
 }
 
+// ------------------------------------------------------------------------------
+
 const (
 	MaxSpatialIds    = 4
 	MaxTemporalIds   = 8
@@ -59,9 +72,11 @@ const (
 	ExtensionUrl = "https://aomediacodec.github.io/av1-rtp-spec/#dependency-descriptor-rtp-header-extension"
 )
 
+// ------------------------------------------------------------------------------
+
 type DependencyDescriptor struct {
-	FirstPacketInFrame         bool // = true;
-	LastPacketInFrame          bool // = true;
+	FirstPacketInFrame         bool
+	LastPacketInFrame          bool
 	FrameNumber                uint16
 	FrameDependencies          *FrameDependencyTemplate
 	Resolution                 *RenderResolution
@@ -69,11 +84,16 @@ type DependencyDescriptor struct {
 	AttachedStructure          *FrameDependencyStructure
 }
 
-func formatBitmask(b *uint32) string {
-	if b == nil {
-		return "-"
+func (d *DependencyDescriptor) MarshalSize() (int, error) {
+	return d.MarshalSizeWithActiveChains(^uint32(0))
+}
+
+func (d *DependencyDescriptor) MarshalSizeWithActiveChains(activeChains uint32) (int, error) {
+	writer, err := NewDependencyDescriptorWriter(nil, d.AttachedStructure, activeChains, d)
+	if err != nil {
+		return 0, err
 	}
-	return strconv.FormatInt(int64(*b), 2)
+	return int(math.Ceil(float64(writer.ValueSizeBits()) / 8)), nil
 }
 
 func (d *DependencyDescriptor) String() string {
@@ -81,21 +101,23 @@ func (d *DependencyDescriptor) String() string {
 		d.FirstPacketInFrame, d.LastPacketInFrame, d.FrameNumber, *d.FrameDependencies, *d.Resolution, formatBitmask(d.ActiveDecodeTargetsBitmask), d.AttachedStructure)
 }
 
+// ------------------------------------------------------------------------------
+
 // Relationship of a frame to a Decode target.
 type DecodeTargetIndication int
 
 const (
-	DecodeTargetNotPresent DecodeTargetIndication = iota // DecodeTargetInfo symbol '-'
-	DecodeTargetDiscadable                               // DecodeTargetInfo symbol 'D'
-	DecodeTargetSwitch                                   // DecodeTargetInfo symbol 'S'
-	DecodeTargetRequired                                 // DecodeTargetInfo symbol 'R'
+	DecodeTargetNotPresent  DecodeTargetIndication = iota // DecodeTargetInfo symbol '-'
+	DecodeTargetDiscardable                               // DecodeTargetInfo symbol 'D'
+	DecodeTargetSwitch                                    // DecodeTargetInfo symbol 'S'
+	DecodeTargetRequired                                  // DecodeTargetInfo symbol 'R'
 )
 
 func (i DecodeTargetIndication) String() string {
 	switch i {
 	case DecodeTargetNotPresent:
 		return "-"
-	case DecodeTargetDiscadable:
+	case DecodeTargetDiscardable:
 		return "D"
 	case DecodeTargetSwitch:
 		return "S"
@@ -105,6 +127,8 @@ func (i DecodeTargetIndication) String() string {
 		return "Unknown"
 	}
 }
+
+// ------------------------------------------------------------------------------
 
 type FrameDependencyTemplate struct {
 	SpatialId               int
@@ -132,6 +156,8 @@ func (t *FrameDependencyTemplate) Clone() *FrameDependencyTemplate {
 	return t2
 }
 
+// ------------------------------------------------------------------------------
+
 type FrameDependencyStructure struct {
 	StructureId      int
 	NumDecodeTargets int
@@ -156,7 +182,11 @@ func (f *FrameDependencyStructure) String() string {
 	return str
 }
 
+// ------------------------------------------------------------------------------
+
 type RenderResolution struct {
 	Width  int
 	Height int
 }
+
+// ------------------------------------------------------------------------------

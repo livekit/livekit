@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package service
 
 import (
@@ -27,16 +41,15 @@ const (
 	RoomInternalKey = "room_internal"
 
 	// EgressKey is a hash of egressID => egress info
-	EgressKey                  = "egress"
-	EndedEgressKey             = "ended_egress"
-	RoomEgressPrefix           = "egress:room:"
-	DeprecatedRoomEgressPrefix = "room_egress:"
+	EgressKey        = "egress"
+	EndedEgressKey   = "ended_egress"
+	RoomEgressPrefix = "egress:room:"
 
 	// IngressKey is a hash of ingressID => ingress info
 	IngressKey         = "ingress"
-	StreamKeyKey       = "stream_key"
-	IngressStatePrefix = "ingress_state:"
-	RoomIngressPrefix  = "room_ingress:"
+	StreamKeyKey       = "{ingress}_stream_key"
+	IngressStatePrefix = "{ingress}_state:"
+	RoomIngressPrefix  = "room_{ingress}:"
 
 	// RoomParticipantsPrefix is hash of participant_name => ParticipantInfo
 	RoomParticipantsPrefix = "room_participants:"
@@ -247,9 +260,9 @@ func (s *RedisStore) LockRoom(_ context.Context, roomName livekit.RoomName, dura
 	return "", ErrRoomLockFailed
 }
 
-func (s *RedisStore) UnlockRoom(ctx context.Context, roomName livekit.RoomName, uid string) error {
+func (s *RedisStore) UnlockRoom(_ context.Context, roomName livekit.RoomName, uid string) error {
 	key := RoomLockPrefix + string(roomName)
-	res, err := s.unlockScript.Run(ctx, s.rc, []string{key}, uid).Result()
+	res, err := s.unlockScript.Run(s.ctx, s.rc, []string{key}, uid).Result()
 	if err != nil {
 		return err
 	}
@@ -321,10 +334,10 @@ func (s *RedisStore) StoreEgress(_ context.Context, info *livekit.EgressInfo) er
 		return err
 	}
 
-	tx := s.rc.TxPipeline()
-	tx.HSet(s.ctx, EgressKey, info.EgressId, data)
-	tx.SAdd(s.ctx, RoomEgressPrefix+info.RoomName, info.EgressId)
-	if _, err = tx.Exec(s.ctx); err != nil {
+	pp := s.rc.Pipeline()
+	pp.HSet(s.ctx, EgressKey, info.EgressId, data)
+	pp.SAdd(s.ctx, RoomEgressPrefix+info.RoomName, info.EgressId)
+	if _, err = pp.Exec(s.ctx); err != nil {
 		return errors.Wrap(err, "could not store egress info")
 	}
 
@@ -350,7 +363,7 @@ func (s *RedisStore) LoadEgress(_ context.Context, egressID string) (*livekit.Eg
 	}
 }
 
-func (s *RedisStore) ListEgress(_ context.Context, roomName livekit.RoomName) ([]*livekit.EgressInfo, error) {
+func (s *RedisStore) ListEgress(_ context.Context, roomName livekit.RoomName, active bool) ([]*livekit.EgressInfo, error) {
 	var infos []*livekit.EgressInfo
 
 	if roomName == "" {
@@ -368,7 +381,11 @@ func (s *RedisStore) ListEgress(_ context.Context, roomName livekit.RoomName) ([
 			if err != nil {
 				return nil, err
 			}
-			infos = append(infos, info)
+
+			// if active, filter status starting, active, and ending
+			if !active || int32(info.Status) < int32(livekit.EgressStatus_EGRESS_COMPLETE) {
+				infos = append(infos, info)
+			}
 		}
 	} else {
 		egressIDs, err := s.rc.SMembers(s.ctx, RoomEgressPrefix+string(roomName)).Result()
@@ -389,7 +406,11 @@ func (s *RedisStore) ListEgress(_ context.Context, roomName livekit.RoomName) ([
 			if err != nil {
 				return nil, err
 			}
-			infos = append(infos, info)
+
+			// if active, filter status starting, active, and ending
+			if !active || int32(info.Status) < int32(livekit.EgressStatus_EGRESS_COMPLETE) {
+				infos = append(infos, info)
+			}
 		}
 	}
 
@@ -403,10 +424,10 @@ func (s *RedisStore) UpdateEgress(_ context.Context, info *livekit.EgressInfo) e
 	}
 
 	if info.EndedAt != 0 {
-		tx := s.rc.TxPipeline()
-		tx.HSet(s.ctx, EgressKey, info.EgressId, data)
-		tx.HSet(s.ctx, EndedEgressKey, info.EgressId, egressEndedValue(info.RoomName, info.EndedAt))
-		_, err = tx.Exec(s.ctx)
+		pp := s.rc.Pipeline()
+		pp.HSet(s.ctx, EgressKey, info.EgressId, data)
+		pp.HSet(s.ctx, EndedEgressKey, info.EgressId, egressEndedValue(info.RoomName, info.EndedAt))
+		_, err = pp.Exec(s.ctx)
 	} else {
 		err = s.rc.HSet(s.ctx, EgressKey, info.EgressId, data).Err()
 	}
@@ -450,11 +471,12 @@ func (s *RedisStore) CleanEndedEgress() error {
 		}
 
 		if endedAt < expiry {
-			tx := s.rc.TxPipeline()
-			tx.HDel(s.ctx, EndedEgressKey, egressID)
-			tx.SRem(s.ctx, RoomEgressPrefix+roomName, egressID)
-			tx.HDel(s.ctx, EgressKey, egressID)
-			if _, err := tx.Exec(s.ctx); err != nil {
+			pp := s.rc.Pipeline()
+			pp.SRem(s.ctx, RoomEgressPrefix+roomName, egressID)
+			pp.HDel(s.ctx, EgressKey, egressID)
+			// Delete the EndedEgressKey entry last so that future sweeper runs get another chance to delete dangling data is the deletion partially failed.
+			pp.HDel(s.ctx, EndedEgressKey, egressID)
+			if _, err := pp.Exec(s.ctx); err != nil {
 				return err
 			}
 		}
@@ -497,11 +519,10 @@ func (s *RedisStore) storeIngress(_ context.Context, info *livekit.IngressInfo) 
 	}
 
 	// ignore state
-	infoCopy := livekit.IngressInfo{}
-	infoCopy = *info
+	infoCopy := proto.Clone(info).(*livekit.IngressInfo)
 	infoCopy.State = nil
 
-	data, err := proto.Marshal(&infoCopy)
+	data, err := proto.Marshal(infoCopy)
 	if err != nil {
 		return err
 	}
@@ -582,11 +603,6 @@ func (s *RedisStore) storeIngressState(_ context.Context, ingressId string, stat
 	txf := func(tx *redis.Tx) error {
 		var oldStartedAt int64
 
-		info, err := s.loadIngress(tx, ingressId)
-		if err != nil {
-			return err
-		}
-
 		oldState, err := s.loadIngressState(tx, ingressId)
 		switch err {
 		case ErrIngressNotFound:
@@ -604,7 +620,6 @@ func (s *RedisStore) storeIngressState(_ context.Context, ingressId string, stat
 			}
 
 			p.Set(s.ctx, IngressStatePrefix+ingressId, data, 0)
-			p.HSet(s.ctx, StreamKeyKey, info.StreamKey, info.IngressId)
 
 			return nil
 		})
@@ -624,7 +639,7 @@ func (s *RedisStore) storeIngressState(_ context.Context, ingressId string, stat
 
 	// Retry if the key has been changed.
 	for i := 0; i < maxRetries; i++ {
-		err := s.rc.Watch(s.ctx, txf, IngressKey, IngressStatePrefix+ingressId)
+		err := s.rc.Watch(s.ctx, txf, IngressStatePrefix+ingressId)
 		switch err {
 		case redis.TxFailedErr:
 			// Optimistic lock lost. Retry.
@@ -707,7 +722,7 @@ func (s *RedisStore) LoadIngressFromStreamKey(_ context.Context, streamKey strin
 	}
 }
 
-func (s *RedisStore) ListIngress(ctx context.Context, roomName livekit.RoomName) ([]*livekit.IngressInfo, error) {
+func (s *RedisStore) ListIngress(_ context.Context, roomName livekit.RoomName) ([]*livekit.IngressInfo, error) {
 	var infos []*livekit.IngressInfo
 
 	if roomName == "" {

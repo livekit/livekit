@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package service
 
 import (
@@ -13,7 +27,8 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
-	"github.com/livekit/psrpc/middleware"
+	"github.com/livekit/psrpc/pkg/metadata"
+	"github.com/livekit/psrpc/pkg/middleware"
 )
 
 type SessionHandler func(
@@ -27,6 +42,7 @@ type SessionHandler func(
 
 type SignalServer struct {
 	server rpc.TypedSignalServer
+	nodeID livekit.NodeID
 }
 
 func NewSignalServer(
@@ -36,21 +52,17 @@ func NewSignalServer(
 	config config.SignalRelayConfig,
 	sessionHandler SessionHandler,
 ) (*SignalServer, error) {
-	ri := middleware.NewStreamRetryInterceptorFactory(middleware.RetryOptions{
-		MaxAttempts: config.MaxAttempts,
-		Timeout:     config.Timeout,
-		Backoff:     config.Backoff,
-	})
-	s, err := rpc.NewTypedSignalServer(nodeID, &signalService{region, sessionHandler}, bus, psrpc.WithServerStreamInterceptors(ri), psrpc.WithServerChannelSize(config.StreamBufferSize))
+	s, err := rpc.NewTypedSignalServer(
+		nodeID,
+		&signalService{region, sessionHandler, config},
+		bus,
+		middleware.WithServerMetrics(prometheus.PSRPCMetricsObserver{}),
+		psrpc.WithServerChannelSize(config.StreamBufferSize),
+	)
 	if err != nil {
 		return nil, err
 	}
-	logger.Debugw("starting relay signal server", "topic", nodeID)
-	if err := s.RegisterRelaySignalTopic(nodeID); err != nil {
-		return nil, err
-	}
-
-	return &SignalServer{s}, nil
+	return &SignalServer{s, nodeID}, nil
 }
 
 func NewDefaultSignalServer(
@@ -69,10 +81,39 @@ func NewDefaultSignalServer(
 		responseSink routing.MessageSink,
 	) error {
 		prometheus.IncrementParticipantRtcInit(1)
+
+		if rr, ok := router.(*routing.RedisRouter); ok {
+			rtcNode, err := router.GetNodeForRoom(ctx, roomName)
+			if err != nil {
+				return err
+			}
+
+			if rtcNode.Id != currentNode.Id {
+				err = routing.ErrIncorrectRTCNode
+				logger.Errorw("called participant on incorrect node", err,
+					"rtcNode", rtcNode,
+				)
+				return err
+			}
+
+			pKey := routing.ParticipantKeyLegacy(roomName, pi.Identity)
+			pKeyB62 := routing.ParticipantKey(roomName, pi.Identity)
+
+			// RTC session should start on this node
+			if err := rr.SetParticipantRTCNode(pKey, pKeyB62, currentNode.Id); err != nil {
+				return err
+			}
+		}
+
 		return roomManager.StartSession(ctx, roomName, pi, requestSource, responseSink)
 	}
 
 	return NewSignalServer(livekit.NodeID(currentNode.Id), currentNode.Region, bus, config, sessionHandler)
+}
+
+func (s *SignalServer) Start() error {
+	logger.Debugw("starting relay signal server", "topic", s.nodeID)
+	return s.server.RegisterRelaySignalTopic(s.nodeID)
 }
 
 func (r *SignalServer) Stop() {
@@ -82,15 +123,10 @@ func (r *SignalServer) Stop() {
 type signalService struct {
 	region         string
 	sessionHandler SessionHandler
+	config         config.SignalRelayConfig
 }
 
 func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest]) (err error) {
-	// copy the context to prevent a race between the session handler closing
-	// and the delivery of any parting messages from the client. take care to
-	// copy the incoming rpc headers to avoid dropping any session vars.
-	ctx, cancel := context.WithCancel(psrpc.NewContextWithIncomingHeader(context.Background(), psrpc.IncomingHeader(stream.Context())))
-	defer cancel()
-
 	req, ok := <-stream.Channel()
 	if !ok {
 		return nil
@@ -106,51 +142,68 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 		return errors.Wrap(err, "failed to read participant from session")
 	}
 
-	reqChan := routing.NewDefaultMessageChannel()
-	defer reqChan.Close()
-
-	err = r.sessionHandler(
-		ctx,
-		livekit.RoomName(ss.RoomName),
-		*pi,
-		livekit.ConnectionID(ss.ConnectionId),
-		reqChan,
-		&relaySignalResponseSink{stream},
-	)
-	if err != nil {
-		logger.Errorw("could not handle new participant", err,
-			"room", ss.RoomName,
-			"participant", ss.Identity,
-			"connectionID", ss.ConnectionId,
-		)
-	}
-
-	for msg := range stream.Channel() {
-		if err = reqChan.WriteMessage(msg.Request); err != nil {
-			break
-		}
-	}
-
-	logger.Debugw("participant signal stream closed",
+	l := logger.GetLogger().WithValues(
 		"room", ss.RoomName,
 		"participant", ss.Identity,
-		"connectionID", ss.ConnectionId,
+		"connID", ss.ConnectionId,
 	)
+
+	sink := routing.NewSignalMessageSink(routing.SignalSinkParams[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest]{
+		Logger:       l,
+		Stream:       stream,
+		Config:       r.config,
+		Writer:       signalResponseMessageWriter{},
+		ConnectionID: livekit.ConnectionID(ss.ConnectionId),
+	})
+	reqChan := routing.NewDefaultMessageChannel(livekit.ConnectionID(ss.ConnectionId))
+
+	go func() {
+		err := routing.CopySignalStreamToMessageChannel[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest](
+			stream,
+			reqChan,
+			signalRequestMessageReader{},
+			r.config,
+		)
+		l.Infow("signal stream closed", "error", err)
+
+		reqChan.Close()
+	}()
+
+	// copy the context to prevent a race between the session handler closing
+	// and the delivery of any parting messages from the client. take care to
+	// copy the incoming rpc headers to avoid dropping any session vars.
+	ctx := metadata.NewContextWithIncomingHeader(context.Background(), metadata.IncomingHeader(stream.Context()))
+
+	err = r.sessionHandler(ctx, livekit.RoomName(ss.RoomName), *pi, livekit.ConnectionID(ss.ConnectionId), reqChan, sink)
+	if err != nil {
+		l.Errorw("could not handle new participant", err)
+		return
+	}
+
+	stream.Hijack()
 	return
 }
 
-type relaySignalResponseSink struct {
-	psrpc.ServerStream[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest]
+type signalResponseMessageWriter struct{}
+
+func (e signalResponseMessageWriter) Write(seq uint64, close bool, msgs []proto.Message) *rpc.RelaySignalResponse {
+	r := &rpc.RelaySignalResponse{
+		Seq:       seq,
+		Responses: make([]*livekit.SignalResponse, 0, len(msgs)),
+		Close:     close,
+	}
+	for _, m := range msgs {
+		r.Responses = append(r.Responses, m.(*livekit.SignalResponse))
+	}
+	return r
 }
 
-func (s *relaySignalResponseSink) Close() {
-	s.ServerStream.Close(nil)
-}
+type signalRequestMessageReader struct{}
 
-func (s *relaySignalResponseSink) IsClosed() bool {
-	return s.Context().Err() != nil
-}
-
-func (s *relaySignalResponseSink) WriteMessage(msg proto.Message) error {
-	return s.Send(&rpc.RelaySignalResponse{Response: msg.(*livekit.SignalResponse)})
+func (e signalRequestMessageReader) Read(rm *rpc.RelaySignalRequest) ([]proto.Message, error) {
+	msgs := make([]proto.Message, 0, len(rm.Requests))
+	for _, m := range rm.Requests {
+		msgs = append(msgs, m)
+	}
+	return msgs, nil
 }

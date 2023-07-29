@@ -1,12 +1,27 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package buffer
 
 import (
 	"container/list"
 
 	"github.com/livekit/protocol/logger"
+	"github.com/pion/rtp/codecs"
 )
 
-var minFramesForCalculation = [DefaultMaxLayerTemporal + 1]int{8, 15, 40}
+var minFramesForCalculation = [...]int{8, 15, 40}
 
 type frameInfo struct {
 	seq       uint16
@@ -24,8 +39,9 @@ type FrameRateCalculator interface {
 }
 
 // -----------------------------
-// FrameRateCalculator based on PictureID in VP8
-type FrameRateCalculatorVP8 struct {
+
+// FrameRateCalculator based on PictureID in VPx
+type frameRateCalculatorVPx struct {
 	frameRates   [DefaultMaxLayerTemporal + 1]float32
 	clockRate    uint32
 	logger       logger.Logger
@@ -36,27 +52,21 @@ type FrameRateCalculatorVP8 struct {
 	completed    bool
 }
 
-func NewFrameRateCalculatorVP8(clockRate uint32, logger logger.Logger) *FrameRateCalculatorVP8 {
-	return &FrameRateCalculatorVP8{
+func newFrameRateCalculatorVPx(clockRate uint32, logger logger.Logger) *frameRateCalculatorVPx {
+	return &frameRateCalculatorVPx{
 		clockRate: clockRate,
 		logger:    logger,
 	}
 }
 
-func (f *FrameRateCalculatorVP8) Completed() bool {
+func (f *frameRateCalculatorVPx) Completed() bool {
 	return f.completed
 }
 
-func (f *FrameRateCalculatorVP8) RecvPacket(ep *ExtPacket) bool {
+func (f *frameRateCalculatorVPx) RecvPacket(ep *ExtPacket, fn uint16) bool {
 	if f.completed {
 		return true
 	}
-	vp8, ok := ep.Payload.(VP8)
-	if !ok {
-		f.logger.Debugw("no vp8 payload", "sn", ep.Packet.SequenceNumber)
-		return false
-	}
-	fn := vp8.PictureID
 
 	if ep.Temporal >= int32(len(f.frameRates)) {
 		f.logger.Warnw("invalid temporal layer", nil, "temporal", ep.Temporal)
@@ -113,9 +123,9 @@ func (f *FrameRateCalculatorVP8) RecvPacket(ep *ExtPacket) bool {
 	return f.calc()
 }
 
-func (f *FrameRateCalculatorVP8) calc() bool {
+func (f *frameRateCalculatorVPx) calc() bool {
 	var rateCounter int
-	for currentTemporal := int32(0); currentTemporal <= int32(DefaultMaxLayerTemporal); currentTemporal++ {
+	for currentTemporal := int32(0); currentTemporal <= DefaultMaxLayerTemporal; currentTemporal++ {
 		if f.frameRates[currentTemporal] > 0 {
 			rateCounter++
 			continue
@@ -156,14 +166,13 @@ func (f *FrameRateCalculatorVP8) calc() bool {
 		if f.frameRates[2] > 0 && f.frameRates[2] > f.frameRates[1]*3 {
 			f.frameRates[1] = f.frameRates[2] / 2
 		}
-		f.logger.Debugw("frame rate calculated", "rate", f.frameRates)
 		f.reset()
 		return true
 	}
 	return false
 }
 
-func (f *FrameRateCalculatorVP8) reset() {
+func (f *frameRateCalculatorVPx) reset() {
 	for i := range f.firstFrames {
 		f.firstFrames[i] = nil
 		f.secondFrames[i] = nil
@@ -175,20 +184,146 @@ func (f *FrameRateCalculatorVP8) reset() {
 	f.baseFrame = nil
 }
 
-func (f *FrameRateCalculatorVP8) GetFrameRate() (bool, []float32) {
+func (f *frameRateCalculatorVPx) GetFrameRate() (bool, []float32) {
 	return f.completed, f.frameRates[:]
 }
 
 // -----------------------------
-// FrameRateCalculator based on Dependency descriptor
 
+// FrameRateCalculator based on PictureID in VP8
+type FrameRateCalculatorVP8 struct {
+	*frameRateCalculatorVPx
+	logger logger.Logger
+}
+
+func NewFrameRateCalculatorVP8(clockRate uint32, logger logger.Logger) *FrameRateCalculatorVP8 {
+	return &FrameRateCalculatorVP8{
+		frameRateCalculatorVPx: newFrameRateCalculatorVPx(clockRate, logger),
+		logger:                 logger,
+	}
+}
+
+func (f *FrameRateCalculatorVP8) RecvPacket(ep *ExtPacket) bool {
+	if f.frameRateCalculatorVPx.Completed() {
+		return true
+	}
+
+	vp8, ok := ep.Payload.(VP8)
+	if !ok {
+		f.logger.Debugw("no vp8 payload", "sn", ep.Packet.SequenceNumber)
+		return false
+	}
+	success := f.frameRateCalculatorVPx.RecvPacket(ep, vp8.PictureID)
+
+	if f.frameRateCalculatorVPx.Completed() {
+		_, rate := f.frameRateCalculatorVPx.GetFrameRate()
+		f.logger.Debugw("frame rate calculated", "rate", rate)
+	}
+
+	return success
+}
+
+// -----------------------------
+
+// FrameRateCalculator based on PictureID in VP9
+type FrameRateCalculatorVP9 struct {
+	logger    logger.Logger
+	completed bool
+
+	// VP9-TODO - this is assuming three spatial layers. As `completed` marker relies on all layers being finished, have to assume this. FIX.
+	//            Maybe look at number of layers in livekit.TrackInfo and declare completed once advertised layers are measured
+	frameRateCalculatorsVPx [DefaultMaxLayerSpatial + 1]*frameRateCalculatorVPx
+}
+
+func NewFrameRateCalculatorVP9(clockRate uint32, logger logger.Logger) *FrameRateCalculatorVP9 {
+	f := &FrameRateCalculatorVP9{
+		logger: logger,
+	}
+
+	for i := range f.frameRateCalculatorsVPx {
+		f.frameRateCalculatorsVPx[i] = newFrameRateCalculatorVPx(clockRate, logger)
+	}
+
+	return f
+}
+
+func (f *FrameRateCalculatorVP9) Completed() bool {
+	return f.completed
+}
+
+func (f *FrameRateCalculatorVP9) RecvPacket(ep *ExtPacket) bool {
+	if f.completed {
+		return true
+	}
+
+	vp9, ok := ep.Payload.(codecs.VP9Packet)
+	if !ok {
+		f.logger.Debugw("no vp9 payload", "sn", ep.Packet.SequenceNumber)
+		return false
+	}
+
+	if ep.Spatial < 0 || ep.Spatial >= int32(len(f.frameRateCalculatorsVPx)) || f.frameRateCalculatorsVPx[ep.Spatial] == nil {
+		f.logger.Debugw("invalid spatial layer", "sn", ep.Packet.SequenceNumber, "spatial", ep.Spatial)
+		return false
+	}
+
+	success := f.frameRateCalculatorsVPx[ep.Spatial].RecvPacket(ep, vp9.PictureID)
+
+	completed := true
+	for _, frc := range f.frameRateCalculatorsVPx {
+		if !frc.Completed() {
+			completed = false
+			break
+		}
+	}
+
+	if completed {
+		f.completed = true
+
+		var frameRates [DefaultMaxLayerSpatial + 1][]float32
+		for i := range f.frameRateCalculatorsVPx {
+			_, frameRates[i] = f.frameRateCalculatorsVPx[i].GetFrameRate()
+		}
+		f.logger.Debugw("frame rate calculated", "rate", frameRates)
+	}
+
+	return success
+}
+
+func (f *FrameRateCalculatorVP9) GetFrameRateForSpatial(spatial int32) (bool, []float32) {
+	if spatial < 0 || spatial >= int32(len(f.frameRateCalculatorsVPx)) || f.frameRateCalculatorsVPx[spatial] == nil {
+		return false, nil
+	}
+	return f.frameRateCalculatorsVPx[spatial].GetFrameRate()
+}
+
+func (f *FrameRateCalculatorVP9) GetFrameRateCalculatorForSpatial(spatial int32) *FrameRateCalculatorForVP9Layer {
+	return &FrameRateCalculatorForVP9Layer{
+		FrameRateCalculatorVP9: f,
+		spatial:                spatial,
+	}
+}
+
+// -----------------------------
+
+type FrameRateCalculatorForVP9Layer struct {
+	*FrameRateCalculatorVP9
+	spatial int32
+}
+
+func (f *FrameRateCalculatorForVP9Layer) GetFrameRate() (bool, []float32) {
+	return f.FrameRateCalculatorVP9.GetFrameRateForSpatial(f.spatial)
+}
+
+// -----------------------------------------------
+
+// FrameRateCalculator based on Dependency descriptor
 type FrameRateCalculatorDD struct {
 	frameRates   [DefaultMaxLayerSpatial + 1][DefaultMaxLayerTemporal + 1]float32
 	clockRate    uint32
 	logger       logger.Logger
 	firstFrames  [DefaultMaxLayerSpatial + 1][DefaultMaxLayerTemporal + 1]*frameInfo
 	secondFrames [DefaultMaxLayerSpatial + 1][DefaultMaxLayerTemporal + 1]*frameInfo
-	spatial      int
 	fnReceived   [256]*frameInfo
 	baseFrame    *frameInfo
 	completed    bool
@@ -222,7 +357,7 @@ func (f *FrameRateCalculatorDD) RecvPacket(ep *ExtPacket) bool {
 	}
 
 	if ep.DependencyDescriptor == nil {
-		f.logger.Infow("dependency descriptor is nil")
+		f.logger.Debugw("dependency descriptor is nil")
 		return false
 	}
 
@@ -237,7 +372,7 @@ func (f *FrameRateCalculatorDD) RecvPacket(ep *ExtPacket) bool {
 		return false
 	}
 
-	fn := ep.DependencyDescriptor.FrameNumber
+	fn := ep.DependencyDescriptor.Descriptor.FrameNumber
 	if f.baseFrame == nil {
 		f.baseFrame = &frameInfo{seq: ep.Packet.SequenceNumber, ts: ep.Packet.Timestamp, fn: fn}
 		f.fnReceived[0] = f.baseFrame
@@ -277,7 +412,7 @@ func (f *FrameRateCalculatorDD) RecvPacket(ep *ExtPacket) bool {
 		fn:        fn,
 		temporal:  temporal,
 		spatial:   spatial,
-		frameDiff: ep.DependencyDescriptor.FrameDependencies.FrameDiffs,
+		frameDiff: ep.DependencyDescriptor.Descriptor.FrameDependencies.FrameDiffs,
 	}
 	f.fnReceived[baseDiff] = fi
 
@@ -291,7 +426,7 @@ func (f *FrameRateCalculatorDD) RecvPacket(ep *ExtPacket) bool {
 	if chain.Len() == 0 {
 		chain.PushBack(fn)
 	}
-	for _, fdiff := range ep.DependencyDescriptor.FrameDependencies.FrameDiffs {
+	for _, fdiff := range ep.DependencyDescriptor.Descriptor.FrameDependencies.FrameDiffs {
 		dependFrame := fn - uint16(fdiff)
 		// frame too old, ignore
 		if dependFrame-f.secondFrames[spatial][temporal].fn > 0x8000 {
@@ -385,7 +520,7 @@ func (f *FrameRateCalculatorDD) calc() bool {
 		f.completed = true
 		f.close()
 
-		f.logger.Debugw("frame rate calculated", "spatial", f.spatial, "rate", f.frameRates)
+		f.logger.Debugw("frame rate calculated", "rate", f.frameRates)
 		return true
 	}
 	return false
@@ -424,6 +559,8 @@ func (f *FrameRateCalculatorDD) GetFrameRateCalculatorForSpatial(spatial int32) 
 	}
 }
 
+// -----------------------------------------------
+
 type FrameRateCalculatorForDDLayer struct {
 	*FrameRateCalculatorDD
 	spatial int32
@@ -432,3 +569,5 @@ type FrameRateCalculatorForDDLayer struct {
 func (f *FrameRateCalculatorForDDLayer) GetFrameRate() (bool, []float32) {
 	return f.FrameRateCalculatorDD.GetFrameRateForSpatial(f.spatial)
 }
+
+// -----------------------------------------------

@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package rtc
 
 import (
@@ -10,7 +24,7 @@ import (
 func HandleParticipantSignal(room types.Room, participant types.LocalParticipant, req *livekit.SignalRequest, pLogger logger.Logger) error {
 	participant.UpdateLastSeenSignal()
 
-	switch msg := req.Message.(type) {
+	switch msg := req.GetMessage().(type) {
 	case *livekit.SignalRequest_Offer:
 		participant.HandleOffer(FromProtoSessionDescription(msg.Offer))
 	case *livekit.SignalRequest_Answer:
@@ -72,6 +86,11 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 	case *livekit.SignalRequest_PingReq:
 		if msg.PingReq.Rtt > 0 {
 			participant.UpdateSignalingRTT(uint32(msg.PingReq.Rtt))
+		}
+
+	case *livekit.SignalRequest_UpdateMetadata:
+		if participant.ClaimGrants().Video.GetCanUpdateOwnMetadata() {
+			room.UpdateParticipantMetadata(participant, msg.UpdateMetadata.Name, msg.UpdateMetadata.Metadata)
 		}
 	}
 	return nil

@@ -10,6 +10,16 @@ import (
 )
 
 type FakeSignalClient struct {
+	ActiveCountStub        func() int
+	activeCountMutex       sync.RWMutex
+	activeCountArgsForCall []struct {
+	}
+	activeCountReturns struct {
+		result1 int
+	}
+	activeCountReturnsOnCall map[int]struct {
+		result1 int
+	}
 	StartParticipantSignalStub        func(context.Context, livekit.RoomName, routing.ParticipantInit, livekit.NodeID) (livekit.ConnectionID, routing.MessageSink, routing.MessageSource, error)
 	startParticipantSignalMutex       sync.RWMutex
 	startParticipantSignalArgsForCall []struct {
@@ -32,6 +42,59 @@ type FakeSignalClient struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
+}
+
+func (fake *FakeSignalClient) ActiveCount() int {
+	fake.activeCountMutex.Lock()
+	ret, specificReturn := fake.activeCountReturnsOnCall[len(fake.activeCountArgsForCall)]
+	fake.activeCountArgsForCall = append(fake.activeCountArgsForCall, struct {
+	}{})
+	stub := fake.ActiveCountStub
+	fakeReturns := fake.activeCountReturns
+	fake.recordInvocation("ActiveCount", []interface{}{})
+	fake.activeCountMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeSignalClient) ActiveCountCallCount() int {
+	fake.activeCountMutex.RLock()
+	defer fake.activeCountMutex.RUnlock()
+	return len(fake.activeCountArgsForCall)
+}
+
+func (fake *FakeSignalClient) ActiveCountCalls(stub func() int) {
+	fake.activeCountMutex.Lock()
+	defer fake.activeCountMutex.Unlock()
+	fake.ActiveCountStub = stub
+}
+
+func (fake *FakeSignalClient) ActiveCountReturns(result1 int) {
+	fake.activeCountMutex.Lock()
+	defer fake.activeCountMutex.Unlock()
+	fake.ActiveCountStub = nil
+	fake.activeCountReturns = struct {
+		result1 int
+	}{result1}
+}
+
+func (fake *FakeSignalClient) ActiveCountReturnsOnCall(i int, result1 int) {
+	fake.activeCountMutex.Lock()
+	defer fake.activeCountMutex.Unlock()
+	fake.ActiveCountStub = nil
+	if fake.activeCountReturnsOnCall == nil {
+		fake.activeCountReturnsOnCall = make(map[int]struct {
+			result1 int
+		})
+	}
+	fake.activeCountReturnsOnCall[i] = struct {
+		result1 int
+	}{result1}
 }
 
 func (fake *FakeSignalClient) StartParticipantSignal(arg1 context.Context, arg2 livekit.RoomName, arg3 routing.ParticipantInit, arg4 livekit.NodeID) (livekit.ConnectionID, routing.MessageSink, routing.MessageSource, error) {
@@ -110,6 +173,8 @@ func (fake *FakeSignalClient) StartParticipantSignalReturnsOnCall(i int, result1
 func (fake *FakeSignalClient) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
+	fake.activeCountMutex.RLock()
+	defer fake.activeCountMutex.RUnlock()
 	fake.startParticipantSignalMutex.RLock()
 	defer fake.startParticipantSignalMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}

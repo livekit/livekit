@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package rtc
 
 import (
@@ -246,7 +260,7 @@ func TestFirstAnswerMissedDuringICERestart(t *testing.T) {
 	// exchange ICE
 	handleICEExchange(t, transportA, transportB)
 
-	// first anwser missed
+	// first answer missed
 	var firstAnswerReceived atomic.Bool
 	transportB.OnAnswer(func(sd webrtc.SessionDescription) error {
 		if firstAnswerReceived.Load() {
@@ -505,4 +519,41 @@ func connectTransports(t *testing.T, offerer, answerer *PCTransport, isICERestar
 	require.Eventually(t, func() bool {
 		return answerer.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected
 	}, 10*time.Second, time.Millisecond*10, "answerer did not become connected")
+}
+
+func TestConfigureAudioTransceiver(t *testing.T) {
+	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	require.NoError(t, err)
+	defer pc.Close()
+
+	for _, testcase := range []struct {
+		nack   bool
+		stereo bool
+	}{
+		{false, false},
+		{true, false},
+		{false, true},
+		{true, true},
+	} {
+		t.Run(fmt.Sprintf("nack=%v,stereo=%v", testcase.nack, testcase.stereo), func(t *testing.T) {
+			tr, err := pc.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio, webrtc.RtpTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendonly})
+			require.NoError(t, err)
+
+			configureAudioTransceiver(tr, testcase.stereo, testcase.nack)
+			codecs := tr.Sender().GetParameters().Codecs
+			for _, codec := range codecs {
+				if strings.Contains(codec.MimeType, webrtc.MimeTypeOpus) {
+					require.Equal(t, testcase.stereo, strings.Contains(codec.SDPFmtpLine, "sprop-stereo=1"))
+					var nackEnabled bool
+					for _, fb := range codec.RTCPFeedback {
+						if fb.Type == webrtc.TypeRTCPFBNACK {
+							nackEnabled = true
+							break
+						}
+					}
+					require.Equal(t, testcase.nack, nackEnabled)
+				}
+			}
+		})
+	}
 }

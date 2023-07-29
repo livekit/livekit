@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package buffer
 
 import (
@@ -84,7 +98,7 @@ func RidToSpatialLayer(rid string, trackInfo *livekit.TrackInfo) int32 {
 			logger.Warnw("unexpected rid f with only two qualities, low and high", nil)
 			return 1
 		case lp[livekit.VideoQuality_MEDIUM] && lp[livekit.VideoQuality_HIGH]:
-			logger.Warnw("unexpected rid f with only two qualities, medum and high", nil)
+			logger.Warnw("unexpected rid f with only two qualities, medium and high", nil)
 			return 1
 
 		default:
@@ -156,7 +170,7 @@ func SpatialLayerToRid(layer int32, trackInfo *livekit.TrackInfo) string {
 			logger.Warnw("unexpected layer 2 with only two qualities, low and high", nil)
 			return HalfResolution
 		case lp[livekit.VideoQuality_MEDIUM] && lp[livekit.VideoQuality_HIGH]:
-			logger.Warnw("unexpected layer 2 with only two qualities, medum and high", nil)
+			logger.Warnw("unexpected layer 2 with only two qualities, medium and high", nil)
 			return HalfResolution
 
 		default:

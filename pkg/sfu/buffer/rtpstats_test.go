@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package buffer
 
 import (
@@ -43,7 +57,7 @@ func TestRTPStats(t *testing.T) {
 		timestamp += uint32(now.Sub(lastFrameTime).Seconds() * float64(clockRate))
 		for i := 0; i < packetsPerFrame; i++ {
 			packet := getPacket(sequenceNumber, timestamp, packetSize)
-			r.Update(&packet.Header, len(packet.Payload), 0, time.Now().UnixNano())
+			r.Update(&packet.Header, len(packet.Payload), 0, time.Now())
 			if (sequenceNumber % 100) == 0 {
 				jump := uint16(rand.Float64() * 120.0)
 				sequenceNumber += jump
@@ -70,7 +84,7 @@ func TestRTPStats_Update(t *testing.T) {
 	sequenceNumber := uint16(rand.Float64() * float64(1<<16))
 	timestamp := uint32(rand.Float64() * float64(1<<32))
 	packet := getPacket(sequenceNumber, timestamp, 1000)
-	flowState := r.Update(&packet.Header, len(packet.Payload), 0, time.Now().UnixNano())
+	flowState := r.Update(&packet.Header, len(packet.Payload), 0, time.Now())
 	require.False(t, flowState.HasLoss)
 	require.True(t, r.initialized)
 	require.Equal(t, sequenceNumber, r.highestSN)
@@ -80,14 +94,14 @@ func TestRTPStats_Update(t *testing.T) {
 	sequenceNumber++
 	timestamp += 3000
 	packet = getPacket(sequenceNumber, timestamp, 1000)
-	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now().UnixNano())
+	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now())
 	require.False(t, flowState.HasLoss)
 	require.Equal(t, sequenceNumber, r.highestSN)
 	require.Equal(t, timestamp, r.highestTS)
 
 	// out-of-order
 	packet = getPacket(sequenceNumber-10, timestamp-30000, 1000)
-	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now().UnixNano())
+	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now())
 	require.False(t, flowState.HasLoss)
 	require.Equal(t, sequenceNumber, r.highestSN)
 	require.Equal(t, timestamp, r.highestTS)
@@ -96,7 +110,7 @@ func TestRTPStats_Update(t *testing.T) {
 
 	// duplicate
 	packet = getPacket(sequenceNumber-10, timestamp-30000, 1000)
-	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now().UnixNano())
+	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now())
 	require.False(t, flowState.HasLoss)
 	require.Equal(t, sequenceNumber, r.highestSN)
 	require.Equal(t, timestamp, r.highestTS)
@@ -107,7 +121,7 @@ func TestRTPStats_Update(t *testing.T) {
 	sequenceNumber += 10
 	timestamp += 30000
 	packet = getPacket(sequenceNumber, timestamp, 1000)
-	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now().UnixNano())
+	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now())
 	require.True(t, flowState.HasLoss)
 	require.Equal(t, sequenceNumber-9, flowState.LossStartInclusive)
 	require.Equal(t, sequenceNumber, flowState.LossEndExclusive)
@@ -115,7 +129,7 @@ func TestRTPStats_Update(t *testing.T) {
 
 	// out-of-order should decrement number of lost packets
 	packet = getPacket(sequenceNumber-15, timestamp-45000, 1000)
-	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now().UnixNano())
+	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now())
 	require.False(t, flowState.HasLoss)
 	require.Equal(t, sequenceNumber, r.highestSN)
 	require.Equal(t, timestamp, r.highestTS)

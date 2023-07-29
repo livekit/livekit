@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package routing
 
 import (
@@ -38,7 +52,7 @@ func NewLocalRouter(currentNode LocalNode, signalClient SignalClient) *LocalRout
 		signalClient:     signalClient,
 		requestChannels:  make(map[string]*MessageChannel),
 		responseChannels: make(map[string]*MessageChannel),
-		rtcMessageChan:   NewMessageChannel(localRTCChannelSize),
+		rtcMessageChan:   NewMessageChannel(livekit.ConnectionID("local"), localRTCChannelSize),
 	}
 }
 
@@ -88,12 +102,12 @@ func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomName livek
 }
 
 func (r *LocalRouter) StartParticipantSignalWithNodeID(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit, nodeID livekit.NodeID) (connectionID livekit.ConnectionID, reqSink MessageSink, resSource MessageSource, err error) {
-	connectionID, reqSink, resSource, err = r.signalClient.StartParticipantSignal(ctx, roomName, pi, livekit.NodeID(r.currentNode.Id))
+	connectionID, reqSink, resSource, err = r.signalClient.StartParticipantSignal(ctx, roomName, pi, nodeID)
 	if err != nil {
 		logger.Errorw("could not handle new participant", err,
 			"room", roomName,
 			"participant", pi.Identity,
-			"connectionID", connectionID,
+			"connID", connectionID,
 		)
 	}
 	return
@@ -103,17 +117,17 @@ func (r *LocalRouter) WriteParticipantRTC(_ context.Context, roomName livekit.Ro
 	r.lock.Lock()
 	if r.rtcMessageChan.IsClosed() {
 		// create a new one
-		r.rtcMessageChan = NewMessageChannel(localRTCChannelSize)
+		r.rtcMessageChan = NewMessageChannel(livekit.ConnectionID("local"), localRTCChannelSize)
 	}
 	r.lock.Unlock()
-	msg.ParticipantKey = string(participantKeyLegacy(roomName, identity))
-	msg.ParticipantKeyB62 = string(participantKey(roomName, identity))
+	msg.ParticipantKey = string(ParticipantKeyLegacy(roomName, identity))
+	msg.ParticipantKeyB62 = string(ParticipantKey(roomName, identity))
 	return r.writeRTCMessage(r.rtcMessageChan, msg)
 }
 
 func (r *LocalRouter) WriteRoomRTC(ctx context.Context, roomName livekit.RoomName, msg *livekit.RTCNodeMessage) error {
-	msg.ParticipantKey = string(participantKeyLegacy(roomName, ""))
-	msg.ParticipantKeyB62 = string(participantKey(roomName, ""))
+	msg.ParticipantKey = string(ParticipantKeyLegacy(roomName, ""))
+	msg.ParticipantKeyB62 = string(ParticipantKey(roomName, ""))
 	return r.WriteNodeRTC(ctx, r.currentNode.Id, msg)
 }
 
@@ -121,7 +135,7 @@ func (r *LocalRouter) WriteNodeRTC(_ context.Context, _ string, msg *livekit.RTC
 	r.lock.Lock()
 	if r.rtcMessageChan.IsClosed() {
 		// create a new one
-		r.rtcMessageChan = NewMessageChannel(localRTCChannelSize)
+		r.rtcMessageChan = NewMessageChannel(livekit.ConnectionID("local"), localRTCChannelSize)
 	}
 	r.lock.Unlock()
 	return r.writeRTCMessage(r.rtcMessageChan, msg)
@@ -254,7 +268,7 @@ func (r *LocalRouter) getOrCreateMessageChannel(target map[string]*MessageChanne
 		return mc
 	}
 
-	mc = NewMessageChannel(DefaultMessageChannelSize)
+	mc = NewMessageChannel(livekit.ConnectionID(key), DefaultMessageChannelSize)
 	mc.OnClose(func() {
 		r.lock.Lock()
 		delete(target, key)

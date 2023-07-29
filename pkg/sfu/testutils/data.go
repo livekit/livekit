@@ -1,6 +1,22 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package testutils
 
 import (
+	"time"
+
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
 
@@ -18,7 +34,8 @@ type TestExtPacketParams struct {
 	SSRC           uint32
 	PayloadSize    int
 	PaddingSize    byte
-	ArrivalTime    int64
+	ArrivalTime    time.Time
+	VideoLayer     buffer.VideoLayer
 }
 
 // -----------------------------------------------------------
@@ -44,10 +61,11 @@ func GetTestExtPacket(params *TestExtPacketParams) (*buffer.ExtPacket, error) {
 	}
 
 	ep := &buffer.ExtPacket{
-		Arrival:   params.ArrivalTime,
-		Packet:    &packet,
-		KeyFrame:  params.IsKeyFrame,
-		RawPacket: raw,
+		VideoLayer: params.VideoLayer,
+		Arrival:    params.ArrivalTime,
+		Packet:     &packet,
+		KeyFrame:   params.IsKeyFrame,
+		RawPacket:  raw,
 	}
 
 	return ep, nil

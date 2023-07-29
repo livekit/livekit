@@ -1,7 +1,15 @@
-# LiveKit: High-performance WebRTC
+<!--BEGIN_BANNER_IMAGE-->
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="/.github/banner_dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="/.github/banner_light.png">
+    <img style="width:100%;" alt="The LiveKit icon, the name of the repository and some sample code in the background." src="/.github/banner_light.png">
+  </picture>
+  <!--END_BANNER_IMAGE-->
 
-LiveKit is an open source project that provides scalable, multi-user conferencing based on WebRTC. It's designed to
-provide everything you need to build real-time video/audio/data capabilities in your applications.
+# LiveKit: Real-time video, audio and data for developers
+
+[LiveKit](https://livekit.io) is an open source project that provides scalable, multi-user conferencing based on WebRTC.
+It's designed to provide everything you need to build real-time video audio data capabilities in your applications.
 
 LiveKit's server is written in Go, using the awesome [Pion WebRTC](https://github.com/pion/webrtc) implementation.
 
@@ -9,7 +17,7 @@ LiveKit's server is written in Go, using the awesome [Pion WebRTC](https://githu
 [![Slack community](https://img.shields.io/endpoint?url=https%3A%2F%2Flivekit.io%2Fbadges%2Fslack)](https://livekit.io/join-slack)
 [![Twitter Follow](https://img.shields.io/twitter/follow/livekitted)](https://twitter.com/livekitted)
 [![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/livekit/livekit)](https://github.com/livekit/livekit/releases/latest)
-[![GitHub Workflow Status](https://img.shields.io/github/workflow/status/livekit/livekit/Test)](https://github.com/livekit/livekit/actions/workflows/buildtest.yaml)
+[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/livekit/livekit/buildtest.yaml?branch=master)](https://github.com/livekit/livekit/actions/workflows/buildtest.yaml)
 [![License](https://img.shields.io/github/license/livekit/livekit)](https://github.com/livekit/livekit/blob/master/LICENSE)
 
 ## Features
@@ -32,10 +40,12 @@ LiveKit's server is written in Go, using the awesome [Pion WebRTC](https://githu
 
 https://docs.livekit.io
 
-## Try it live
+## Live Demos
 
-Head to [our playground](https://livekit.io/playground) and give it a spin. Build a Zoom-like conferencing app in under
-100 lines of code!
+- [LiveKit Meet](https://meet.livekit.io) ([source](https://github.com/livekit-examples/meet))
+- [Spatial Audio](https://spatial-audio-demo.livekit.io/) ([source](https://github.com/livekit-examples/spatial-audio))
+- Livestreaming from OBS Studio ([source](https://github.com/livekit-examples/livestream))
+- [AI voice assistant using ChatGPT](https://livekit.io/kitt) ([source](https://github.com/livekit-examples/kitt))
 
 ## SDKs & Tools
 
@@ -107,8 +117,9 @@ Client SDKs enable your frontend to include interactive, multi-user experiences.
       <a href="https://github.com/livekit/client-sdk-android/tree/main/sample-app-compose/src/main/java/io/livekit/android/composesample" target="_blank" rel="noopener noreferrer">Compose example</a>
     </td>
   </tr>
+<!-- Flutter -->
   <tr>
-    <td>Flutter</td>
+    <td>Flutter (all platforms)</td>
     <td>
       <a href="https://github.com/livekit/client-sdk-flutter" target="_blank" rel="noopener noreferrer">client-sdk-flutter</a>
     </td>
@@ -139,6 +150,15 @@ Client SDKs enable your frontend to include interactive, multi-user experiences.
     <td>native</td>
     <td></td>
   </tr>
+  <!-- Rust -->
+  <tr>
+    <td>Rust</td>
+    <td>
+      <a href="https://github.com/livekit/client-sdk-rust" target="_blank" rel="noopener noreferrer">client-sdk-rust</a>
+    </td>
+    <td></td>
+    <td></td>
+  </tr>
 </table>
 
 ### Server SDKs
@@ -159,8 +179,9 @@ enabling you to build automations that behave like end-users.
 
 ### Ecosystem & Tools
 
-- [Egress](https://github.com/livekit/egress) - export and record your rooms
 - [CLI](https://github.com/livekit/livekit-cli) - command line interface & load tester
+- [Egress](https://github.com/livekit/egress) - export and record your rooms
+- [Ingress](https://github.com/livekit/ingress) - ingest streams from RTMP / OBS Studio
 - [Docker image](https://hub.docker.com/r/livekit/livekit-server)
 - [Helm charts](https://github.com/livekit/livekit-helm)
 
@@ -235,11 +256,14 @@ simulation.
 ## Deployment
 
 ### Use LiveKit Cloud
-LiveKit Cloud is the fastest and most reliable way to run LiveKit. Every project gets free monthly bandwidth and transcoding credits.
+
+LiveKit Cloud is the fastest and most reliable way to run LiveKit. Every project gets free monthly bandwidth and
+transcoding credits.
 
 Sign up for [LiveKit Cloud](https://cloud.livekit.io/).
 
 ### Self-host
+
 Read our [deployment docs](https://docs.livekit.io/deploy/) for more information.
 
 ## Building from source
@@ -266,3 +290,15 @@ We welcome your contributions toward improving LiveKit! Please join us
 ## License
 
 LiveKit server is licensed under Apache License v2.0.
+
+<!--BEGIN_REPO_NAV-->
+<br/><table>
+<thead><tr><th colspan="2">LiveKit Ecosystem</th></tr></thead>
+<tbody>
+<tr><td>Client SDKs</td><td><a href="https://github.com/livekit/components-js">Components</a> · <a href="https://github.com/livekit/client-sdk-js">JavaScript</a> · <a href="https://github.com/livekit/client-sdk-swift">iOS/macOS</a> · <a href="https://github.com/livekit/client-sdk-android">Android</a> · <a href="https://github.com/livekit/client-sdk-flutter">Flutter</a> · <a href="https://github.com/livekit/client-sdk-react-native">React Native</a> · <a href="https://github.com/livekit/client-sdk-rust">Rust</a> · <a href="https://github.com/livekit/client-sdk-python">Python</a> · <a href="https://github.com/livekit/client-sdk-unity-web">Unity (web)</a> · <a href="https://github.com/livekit/client-sdk-unity">Unity (beta)</a></td></tr><tr></tr>
+<tr><td>Server SDKs</td><td><a href="https://github.com/livekit/server-sdk-js">Node.js</a> · <a href="https://github.com/livekit/server-sdk-go">Golang</a> · <a href="https://github.com/livekit/server-sdk-ruby">Ruby</a> · <a href="https://github.com/livekit/server-sdk-kotlin">Java/Kotlin</a> · <a href="https://github.com/agence104/livekit-server-sdk-php">PHP (community)</a> · <a href="https://github.com/tradablebits/livekit-server-sdk-python">Python (community)</a></td></tr><tr></tr>
+<tr><td>Services</td><td><b>Livekit server</b> · <a href="https://github.com/livekit/egress">Egress</a> · <a href="https://github.com/livekit/ingress">Ingress</a></td></tr><tr></tr>
+<tr><td>Resources</td><td><a href="https://docs.livekit.io">Docs</a> · <a href="https://github.com/livekit-examples">Example apps</a> · <a href="https://livekit.io/cloud">Cloud</a> · <a href="https://docs.livekit.io/oss/deployment">Self-hosting</a> · <a href="https://github.com/livekit/livekit-cli">CLI</a></td></tr>
+</tbody>
+</table>
+<!--END_REPO_NAV-->

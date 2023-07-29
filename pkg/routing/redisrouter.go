@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package routing
 
 import (
@@ -150,13 +164,19 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livek
 	}
 
 	if r.usePSRPCSignal {
-		return r.StartParticipantSignalWithNodeID(ctx, roomName, pi, livekit.NodeID(rtcNode.Id))
+		connectionID, reqSink, resSource, err = r.StartParticipantSignalWithNodeID(ctx, roomName, pi, livekit.NodeID(rtcNode.Id))
+		if err != nil {
+			return
+		}
+
+		// map signal & rtc nodes
+		err = r.setParticipantSignalNode(connectionID, r.currentNode.Id)
+		return
 	}
 
-	// create a new connection id
 	connectionID = livekit.ConnectionID(utils.NewGuid("CO_"))
-	pKey := participantKeyLegacy(roomName, pi.Identity)
-	pKeyB62 := participantKey(roomName, pi.Identity)
+	pKey := ParticipantKeyLegacy(roomName, pi.Identity)
+	pKeyB62 := ParticipantKey(roomName, pi.Identity)
 
 	// map signal & rtc nodes
 	if err = r.setParticipantSignalNode(connectionID, r.currentNode.Id); err != nil {
@@ -167,7 +187,7 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livek
 	// set up response channel before sending StartSession and be ready to receive responses.
 	resChan := r.getOrCreateMessageChannel(r.responseChannels, string(connectionID))
 
-	sink := NewRTCNodeSink(r.rc, livekit.NodeID(rtcNode.Id), pKey, pKeyB62)
+	sink := NewRTCNodeSink(r.rc, livekit.NodeID(rtcNode.Id), connectionID, pKey, pKeyB62)
 
 	// serialize claims
 	ss, err := pi.ToStartSession(roomName, connectionID)
@@ -185,16 +205,16 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livek
 }
 
 func (r *RedisRouter) WriteParticipantRTC(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) error {
-	pkey := participantKeyLegacy(roomName, identity)
-	pkeyB62 := participantKey(roomName, identity)
+	pkey := ParticipantKeyLegacy(roomName, identity)
+	pkeyB62 := ParticipantKey(roomName, identity)
 	rtcNode, err := r.getParticipantRTCNode(pkey, pkeyB62)
 	if err != nil {
 		return err
 	}
 
-	rtcSink := NewRTCNodeSink(r.rc, livekit.NodeID(rtcNode), pkey, pkeyB62)
-	msg.ParticipantKey = string(participantKeyLegacy(roomName, identity))
-	msg.ParticipantKeyB62 = string(participantKey(roomName, identity))
+	rtcSink := NewRTCNodeSink(r.rc, livekit.NodeID(rtcNode), livekit.ConnectionID("ephemeral"), pkey, pkeyB62)
+	msg.ParticipantKey = string(ParticipantKeyLegacy(roomName, identity))
+	msg.ParticipantKeyB62 = string(ParticipantKey(roomName, identity))
 	return r.writeRTCMessage(rtcSink, msg)
 }
 
@@ -203,13 +223,13 @@ func (r *RedisRouter) WriteRoomRTC(ctx context.Context, roomName livekit.RoomNam
 	if err != nil {
 		return err
 	}
-	msg.ParticipantKey = string(participantKeyLegacy(roomName, ""))
-	msg.ParticipantKeyB62 = string(participantKey(roomName, ""))
+	msg.ParticipantKey = string(ParticipantKeyLegacy(roomName, ""))
+	msg.ParticipantKeyB62 = string(ParticipantKey(roomName, ""))
 	return r.WriteNodeRTC(ctx, node.Id, msg)
 }
 
 func (r *RedisRouter) WriteNodeRTC(_ context.Context, rtcNodeID string, msg *livekit.RTCNodeMessage) error {
-	rtcSink := NewRTCNodeSink(r.rc, livekit.NodeID(rtcNodeID), livekit.ParticipantKey(msg.ParticipantKey), livekit.ParticipantKey(msg.ParticipantKeyB62))
+	rtcSink := NewRTCNodeSink(r.rc, livekit.NodeID(rtcNodeID), livekit.ConnectionID("ephemeral"), livekit.ParticipantKey(msg.ParticipantKey), livekit.ParticipantKey(msg.ParticipantKeyB62))
 	return r.writeRTCMessage(rtcSink, msg)
 }
 
@@ -229,7 +249,7 @@ func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantK
 		return err
 	}
 
-	if err := r.setParticipantRTCNode(participantKey, participantKeyB62, rtcNode.Id); err != nil {
+	if err := r.SetParticipantRTCNode(participantKey, participantKeyB62, rtcNode.Id); err != nil {
 		return err
 	}
 
@@ -328,7 +348,7 @@ func (r *RedisRouter) Stop() {
 	r.cancel()
 }
 
-func (r *RedisRouter) setParticipantRTCNode(participantKey livekit.ParticipantKey, participantKeyB62 livekit.ParticipantKey, nodeID string) error {
+func (r *RedisRouter) SetParticipantRTCNode(participantKey livekit.ParticipantKey, participantKeyB62 livekit.ParticipantKey, nodeID string) error {
 	var err error
 	if participantKey != "" {
 		err1 := r.rc.Set(r.ctx, participantRTCKey(participantKey), nodeID, participantMappingTTL).Err()

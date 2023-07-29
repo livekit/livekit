@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package sfu
 
 import (
@@ -27,25 +41,9 @@ func TestSetLastSnTs(t *testing.T) {
 	require.NotNil(t, extPkt)
 
 	r.SetLastSnTs(extPkt)
-	require.True(t, r.highestIncomingSN == 23332)
-	require.True(t, r.lastSN == 23333)
-	require.True(t, r.lastTS == 0xabcdef)
-	require.Equal(t, uint16(0), r.snOffset)
-	require.Equal(t, uint32(0), r.tsOffset)
-
-	params = &testutils.TestExtPacketParams{
-		SequenceNumber: 0,
-		Timestamp:      0xabcdef,
-		SSRC:           0x12345678,
-	}
-	extPkt, err = testutils.GetTestExtPacket(params)
-	require.NoError(t, err)
-	require.NotNil(t, extPkt)
-
-	r.SetLastSnTs(extPkt)
-	require.True(t, r.highestIncomingSN == 65535)
-	require.True(t, r.lastSN == 0)
-	require.True(t, r.lastTS == 0xabcdef)
+	require.Equal(t, uint16(23332), r.highestIncomingSN)
+	require.Equal(t, uint16(23333), r.lastSN)
+	require.Equal(t, uint32(0xabcdef), r.lastTS)
 	require.Equal(t, uint16(0), r.snOffset)
 	require.Equal(t, uint32(0), r.tsOffset)
 }
@@ -68,9 +66,9 @@ func TestUpdateSnTsOffsets(t *testing.T) {
 	}
 	extPkt, _ = testutils.GetTestExtPacket(params)
 	r.UpdateSnTsOffsets(extPkt, 1, 1)
-	require.True(t, r.highestIncomingSN == 33332)
-	require.True(t, r.lastSN == 23333)
-	require.True(t, r.lastTS == 0xabcdef)
+	require.Equal(t, uint16(33332), r.highestIncomingSN)
+	require.Equal(t, uint16(23333), r.lastSN)
+	require.Equal(t, uint32(0xabcdef), r.lastTS)
 	require.Equal(t, uint16(9999), r.snOffset)
 	require.Equal(t, uint32(0xffffffff), r.tsOffset)
 }
@@ -82,14 +80,18 @@ func TestPacketDropped(t *testing.T) {
 		SequenceNumber: 23333,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
+		PayloadSize:    10,
 	}
 	extPkt, _ := testutils.GetTestExtPacket(params)
 	r.SetLastSnTs(extPkt)
-	require.Equal(t, r.highestIncomingSN, uint16(23332))
-	require.Equal(t, r.lastSN, uint16(23333))
-	require.Equal(t, r.lastTS, uint32(0xabcdef))
+	require.Equal(t, uint16(23332), r.highestIncomingSN)
+	require.Equal(t, uint16(23333), r.lastSN)
+	require.Equal(t, uint32(0xabcdef), r.lastTS)
 	require.Equal(t, uint16(0), r.snOffset)
 	require.Equal(t, uint32(0), r.tsOffset)
+
+	r.UpdateAndGetSnTs(extPkt) // update sequence number offset
+	require.Equal(t, 1, r.snOffsetsWritePtr)
 
 	// drop a non-head packet, should cause no change in internals
 	params = &testutils.TestExtPacketParams{
@@ -99,8 +101,8 @@ func TestPacketDropped(t *testing.T) {
 	}
 	extPkt, _ = testutils.GetTestExtPacket(params)
 	r.PacketDropped(extPkt)
-	require.Equal(t, r.highestIncomingSN, uint16(23332))
-	require.Equal(t, r.lastSN, uint16(23333))
+	require.Equal(t, uint16(23333), r.highestIncomingSN)
+	require.Equal(t, uint16(23333), r.lastSN)
 	require.Equal(t, uint16(0), r.snOffset)
 
 	// drop a head packet and check offset increases
@@ -108,11 +110,32 @@ func TestPacketDropped(t *testing.T) {
 		SequenceNumber: 44444,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
+		PayloadSize:    20,
 	}
 	extPkt, _ = testutils.GetTestExtPacket(params)
-	r.highestIncomingSN = 44444
+
+	r.UpdateAndGetSnTs(extPkt) // update sequence number offset
+	snOffsetWritePtr := (44444 - 23333 + 1) & SnOffsetCacheMask
+	require.Equal(t, snOffsetWritePtr, r.snOffsetsWritePtr)
+	require.Equal(t, SnOffsetCacheSize, r.snOffsetsOccupancy)
+
 	r.PacketDropped(extPkt)
 	require.Equal(t, r.lastSN, uint16(44443))
+	require.Equal(t, uint16(1), r.snOffset)
+
+	params = &testutils.TestExtPacketParams{
+		SequenceNumber: 44445,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
+		PayloadSize:    20,
+	}
+	extPkt, _ = testutils.GetTestExtPacket(params)
+
+	r.UpdateAndGetSnTs(extPkt) // update sequence number offset
+	require.Equal(t, uint16(1), r.snOffsets[snOffsetWritePtr])
+	snOffsetWritePtr = (snOffsetWritePtr + 1) & SnOffsetCacheMask
+	require.Equal(t, snOffsetWritePtr, r.snOffsetsWritePtr)
+	require.Equal(t, uint16(44444), r.lastSN)
 	require.Equal(t, uint16(1), r.snOffset)
 }
 
@@ -207,8 +230,8 @@ func TestPaddingOnlyPacket(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrPaddingOnlyPacket)
 	require.Equal(t, tpExpected, *tp)
-	require.True(t, r.highestIncomingSN == 23333)
-	require.True(t, r.lastSN == 23333)
+	require.Equal(t, uint16(23333), r.highestIncomingSN)
+	require.Equal(t, uint16(23333), r.lastSN)
 	require.Equal(t, uint16(1), r.snOffset)
 
 	// padding only packet with a gap should not report an error
@@ -228,8 +251,8 @@ func TestPaddingOnlyPacket(t *testing.T) {
 	tp, err = r.UpdateAndGetSnTs(extPkt)
 	require.NoError(t, err)
 	require.Equal(t, tpExpected, *tp)
-	require.True(t, r.highestIncomingSN == 23335)
-	require.True(t, r.lastSN == 23334)
+	require.Equal(t, uint16(23335), r.highestIncomingSN)
+	require.Equal(t, uint16(23334), r.lastSN)
 	require.Equal(t, uint16(1), r.snOffset)
 }
 
@@ -266,8 +289,8 @@ func TestGapInSequenceNumber(t *testing.T) {
 	tp, err := r.UpdateAndGetSnTs(extPkt)
 	require.NoError(t, err)
 	require.Equal(t, tpExpected, *tp)
-	require.True(t, r.highestIncomingSN == 1)
-	require.True(t, r.lastSN == 1)
+	require.Equal(t, uint16(1), r.highestIncomingSN)
+	require.Equal(t, uint16(1), r.lastSN)
 	require.Equal(t, uint16(0), r.snOffset)
 
 	// ensure missing sequence numbers got recorded in cache
@@ -294,8 +317,8 @@ func TestGapInSequenceNumber(t *testing.T) {
 	tp, err = r.UpdateAndGetSnTs(extPkt)
 	require.ErrorIs(t, err, ErrPaddingOnlyPacket)
 	require.Equal(t, tpExpected, *tp)
-	require.True(t, r.highestIncomingSN == 2)
-	require.True(t, r.lastSN == 1)
+	require.Equal(t, uint16(2), r.highestIncomingSN)
+	require.Equal(t, uint16(1), r.lastSN)
 	require.Equal(t, uint16(1), r.snOffset)
 
 	// a packet with a gap should be adding to missing cache
@@ -316,8 +339,8 @@ func TestGapInSequenceNumber(t *testing.T) {
 	tp, err = r.UpdateAndGetSnTs(extPkt)
 	require.NoError(t, err)
 	require.Equal(t, tpExpected, *tp)
-	require.True(t, r.highestIncomingSN == 4)
-	require.True(t, r.lastSN == 3)
+	require.Equal(t, uint16(4), r.highestIncomingSN)
+	require.Equal(t, uint16(3), r.lastSN)
 	require.Equal(t, uint16(1), r.snOffset)
 
 	// another contiguous padding only packet should be dropped
@@ -335,8 +358,8 @@ func TestGapInSequenceNumber(t *testing.T) {
 	tp, err = r.UpdateAndGetSnTs(extPkt)
 	require.ErrorIs(t, err, ErrPaddingOnlyPacket)
 	require.Equal(t, tpExpected, *tp)
-	require.True(t, r.highestIncomingSN == 5)
-	require.True(t, r.lastSN == 3)
+	require.Equal(t, uint16(5), r.highestIncomingSN)
+	require.Equal(t, uint16(3), r.lastSN)
 	require.Equal(t, uint16(2), r.snOffset)
 
 	// a packet with a gap should be adding to missing cache
@@ -357,8 +380,8 @@ func TestGapInSequenceNumber(t *testing.T) {
 	tp, err = r.UpdateAndGetSnTs(extPkt)
 	require.NoError(t, err)
 	require.Equal(t, tpExpected, *tp)
-	require.True(t, r.highestIncomingSN == 7)
-	require.True(t, r.lastSN == 5)
+	require.Equal(t, uint16(7), r.highestIncomingSN)
+	require.Equal(t, uint16(5), r.lastSN)
 	require.Equal(t, uint16(2), r.snOffset)
 
 	// check the missing packets
@@ -378,8 +401,8 @@ func TestGapInSequenceNumber(t *testing.T) {
 	tp, err = r.UpdateAndGetSnTs(extPkt)
 	require.NoError(t, err)
 	require.Equal(t, tpExpected, *tp)
-	require.True(t, r.highestIncomingSN == 7)
-	require.True(t, r.lastSN == 5)
+	require.Equal(t, uint16(7), r.highestIncomingSN)
+	require.Equal(t, uint16(5), r.lastSN)
 	require.Equal(t, uint16(2), r.snOffset)
 
 	params = &testutils.TestExtPacketParams{
@@ -398,8 +421,8 @@ func TestGapInSequenceNumber(t *testing.T) {
 	tp, err = r.UpdateAndGetSnTs(extPkt)
 	require.NoError(t, err)
 	require.Equal(t, tpExpected, *tp)
-	require.True(t, r.highestIncomingSN == 7)
-	require.True(t, r.lastSN == 5)
+	require.Equal(t, uint16(7), r.highestIncomingSN)
+	require.Equal(t, uint16(5), r.lastSN)
 	require.Equal(t, uint16(2), r.snOffset)
 }
 
@@ -416,7 +439,7 @@ func TestUpdateAndGetPaddingSnTs(t *testing.T) {
 	r.SetLastSnTs(extPkt)
 
 	// getting padding without forcing marker should fail
-	_, err := r.UpdateAndGetPaddingSnTs(10, 10, 5, false)
+	_, err := r.UpdateAndGetPaddingSnTs(10, 10, 5, false, 0)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrPaddingNotOnFrameBoundary)
 
@@ -429,10 +452,10 @@ func TestUpdateAndGetPaddingSnTs(t *testing.T) {
 	for i := 0; i < numPadding; i++ {
 		sntsExpected[i] = SnTs{
 			sequenceNumber: params.SequenceNumber + uint16(i) + 1,
-			timestamp:      params.Timestamp + (uint32(i)*clockRate)/frameRate,
+			timestamp:      params.Timestamp + ((uint32(i)*clockRate)+frameRate-1)/frameRate,
 		}
 	}
-	snts, err := r.UpdateAndGetPaddingSnTs(numPadding, clockRate, frameRate, true)
+	snts, err := r.UpdateAndGetPaddingSnTs(numPadding, clockRate, frameRate, true, params.Timestamp)
 	require.NoError(t, err)
 	require.Equal(t, sntsExpected, snts)
 
@@ -440,10 +463,10 @@ func TestUpdateAndGetPaddingSnTs(t *testing.T) {
 	for i := 0; i < numPadding; i++ {
 		sntsExpected[i] = SnTs{
 			sequenceNumber: params.SequenceNumber + uint16(len(snts)) + uint16(i) + 1,
-			timestamp:      snts[len(snts)-1].timestamp + (uint32(i+1)*clockRate)/frameRate,
+			timestamp:      snts[len(snts)-1].timestamp + ((uint32(i+1)*clockRate)+frameRate-1)/frameRate,
 		}
 	}
-	snts, err = r.UpdateAndGetPaddingSnTs(numPadding, clockRate, frameRate, false)
+	snts, err = r.UpdateAndGetPaddingSnTs(numPadding, clockRate, frameRate, false, snts[len(snts)-1].timestamp)
 	require.NoError(t, err)
 	require.Equal(t, sntsExpected, snts)
 }

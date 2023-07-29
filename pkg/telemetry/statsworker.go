@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package telemetry
 
 import (
@@ -8,6 +22,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -143,7 +158,9 @@ func coalesce(stats []*livekit.AnalyticsStat) *livekit.AnalyticsStat {
 	}
 
 	// find aggregates across streams
-	score := float32(0.0)
+	scoreSum := float32(0.0) // used for average
+	minScore := float32(0.0) // min score in batched stats
+	var scores []float32     // used for median
 	maxRtt := uint32(0)
 	maxJitter := uint32(0)
 	coalescedVideoLayers := make(map[int32]*livekit.AnalyticsVideoLayer)
@@ -154,7 +171,17 @@ func coalesce(stats []*livekit.AnalyticsStat) *livekit.AnalyticsStat {
 			continue
 		}
 
-		score += stat.Score
+		// only consider non-zero scores
+		if stat.Score > 0 {
+			if minScore == 0 {
+				minScore = stat.Score
+			} else if stat.Score < minScore {
+				minScore = stat.Score
+			}
+			scoreSum += stat.Score
+			scores = append(scores, stat.Score)
+		}
+
 		for _, analyticsStream := range stat.Streams {
 			if analyticsStream.Rtt > maxRtt {
 				maxRtt = analyticsStream.Rtt
@@ -201,10 +228,16 @@ func coalesce(stats []*livekit.AnalyticsStat) *livekit.AnalyticsStat {
 		}
 	}
 
-	return &livekit.AnalyticsStat{
-		Score:   score / float32(len(stats)),
-		Streams: []*livekit.AnalyticsStream{coalescedStream},
+	stat := &livekit.AnalyticsStat{
+		MinScore:    minScore,
+		MedianScore: utils.MedianFloat32(scores),
+		Streams:     []*livekit.AnalyticsStream{coalescedStream},
 	}
+	numScores := len(scores)
+	if numScores > 0 {
+		stat.Score = scoreSum / float32(numScores)
+	}
+	return stat
 }
 
 func isValid(stat *livekit.AnalyticsStat) bool {

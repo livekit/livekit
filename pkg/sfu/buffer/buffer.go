@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package buffer
 
 import (
@@ -10,6 +24,7 @@ import (
 	"github.com/gammazero/deque"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
+	"github.com/pion/rtp/codecs"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
@@ -26,22 +41,22 @@ import (
 )
 
 const (
-	ReportDelta = 1e9
+	ReportDelta = time.Second
 )
 
 type pendingPacket struct {
-	arrivalTime int64
+	arrivalTime time.Time
 	packet      []byte
 }
 
 type ExtPacket struct {
 	VideoLayer
-	Arrival              int64
+	Arrival              time.Time
 	Packet               *rtp.Packet
 	Payload              interface{}
 	KeyFrame             bool
 	RawPacket            []byte
-	DependencyDescriptor *dd.DependencyDescriptor
+	DependencyDescriptor *ExtDependencyDescriptor
 }
 
 // Buffer contains all packets
@@ -52,12 +67,12 @@ type Buffer struct {
 	videoPool     *sync.Pool
 	audioPool     *sync.Pool
 	codecType     webrtc.RTPCodecType
-	extPackets    deque.Deque
+	extPackets    deque.Deque[*ExtPacket]
 	pPackets      []pendingPacket
 	closeOnce     sync.Once
 	mediaSSRC     uint32
 	clockRate     uint32
-	lastReport    int64
+	lastReport    time.Time
 	twccExt       uint8
 	audioLevelExt uint8
 	bound         bool
@@ -92,10 +107,9 @@ type Buffer struct {
 	// logger
 	logger logger.Logger
 
-	// depencency descriptor
-	ddExt             uint8
-	ddParser          *DependencyDescriptorParser
-	maxLayerChangedCB func(int32, int32)
+	// dependency descriptor
+	ddExt    uint8
+	ddParser *DependencyDescriptorParser
 
 	paused              bool
 	frameRateCalculator [DefaultMaxLayerSpatial + 1]FrameRateCalculator
@@ -162,7 +176,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	b.deltaStatsSnapshotId = b.rtpStats.NewSnapshotId()
 
 	b.clockRate = codec.ClockRate
-	b.lastReport = time.Now().UnixNano()
+	b.lastReport = time.Now()
 	b.mime = strings.ToLower(codec.MimeType)
 
 	for _, ext := range params.HeaderExtensions {
@@ -174,9 +188,6 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 				b.frameRateCalculator[i] = frc.GetFrameRateCalculatorForSpatial(int32(i))
 			}
 			b.ddParser = NewDependencyDescriptorParser(b.ddExt, b.logger, func(spatial, temporal int32) {
-				if b.maxLayerChangedCB != nil {
-					b.maxLayerChangedCB(spatial, temporal)
-				}
 				frc.SetMaxLayer(spatial, temporal)
 			})
 
@@ -193,8 +204,17 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	case strings.HasPrefix(b.mime, "video/"):
 		b.codecType = webrtc.RTPCodecTypeVideo
 		b.bucket = bucket.NewBucket(b.videoPool.Get().(*[]byte))
-		if b.frameRateCalculator[0] == nil && strings.EqualFold(codec.MimeType, webrtc.MimeTypeVP8) {
-			b.frameRateCalculator[0] = NewFrameRateCalculatorVP8(b.clockRate, b.logger)
+		if b.frameRateCalculator[0] == nil {
+			if strings.EqualFold(codec.MimeType, webrtc.MimeTypeVP8) {
+				b.frameRateCalculator[0] = NewFrameRateCalculatorVP8(b.clockRate, b.logger)
+			}
+
+			if strings.EqualFold(codec.MimeType, webrtc.MimeTypeVP9) {
+				frc := NewFrameRateCalculatorVP9(b.clockRate, b.logger)
+				for i := range b.frameRateCalculator {
+					b.frameRateCalculator[i] = frc.GetFrameRateCalculatorForSpatial(int32(i))
+				}
+			}
 		}
 
 	default:
@@ -224,7 +244,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 				return
 			}
 			b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBNACK)
-			b.nacker = nack.NewNACKQueue()
+			b.nacker = nack.NewNACKQueue(nack.NackQueueParamsDefault)
 		}
 	}
 
@@ -250,12 +270,12 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 		copy(packet, pkt)
 		b.pPackets = append(b.pPackets, pendingPacket{
 			packet:      packet,
-			arrivalTime: time.Now().UnixNano(),
+			arrivalTime: time.Now(),
 		})
 		return
 	}
 
-	b.calc(pkt, time.Now().UnixNano())
+	b.calc(pkt, time.Now())
 	return
 }
 
@@ -290,7 +310,7 @@ func (b *Buffer) ReadExtended(buf []byte) (*ExtPacket, error) {
 		}
 		b.Lock()
 		if b.extPackets.Len() > 0 {
-			ep := b.extPackets.PopFront().(*ExtPacket)
+			ep := b.extPackets.PopFront()
 			ep = b.patchExtPacket(ep, buf)
 			if ep == nil {
 				b.Unlock()
@@ -382,7 +402,7 @@ func (b *Buffer) SetRTT(rtt uint32) {
 	}
 }
 
-func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
+func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 	pktBuf, err := b.bucket.AddPacket(pkt)
 	if err != nil {
 		//
@@ -430,21 +450,21 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 func (b *Buffer) patchExtPacket(ep *ExtPacket, buf []byte) *ExtPacket {
 	n, err := b.getPacket(buf, ep.Packet.SequenceNumber)
 	if err != nil {
-		b.logger.Warnw("could not get packet", err, "sn", ep.Packet.SequenceNumber)
+		b.logger.Warnw("could not get packet", err, "sn", ep.Packet.SequenceNumber, "headSN", b.bucket.HeadSequenceNumber())
 		return nil
 	}
 	ep.RawPacket = buf[:n]
 
 	// patch RTP packet to point payload to new buffer
-	rtp := *ep.Packet
+	pkt := *ep.Packet
 	payloadStart := ep.Packet.Header.MarshalSize()
 	payloadEnd := payloadStart + len(ep.Packet.Payload)
 	if payloadEnd > n {
 		b.logger.Warnw("unexpected marshal size", nil, "max", n, "need", payloadEnd)
 		return nil
 	}
-	rtp.Payload = buf[payloadStart:payloadEnd]
-	ep.Packet = &rtp
+	pkt.Payload = buf[payloadStart:payloadEnd]
+	ep.Packet = &pkt
 
 	return ep
 }
@@ -485,7 +505,7 @@ func (b *Buffer) doFpsCalc(ep *ExtPacket) {
 	}
 }
 
-func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime int64) {
+func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime time.Time) {
 	flowState := b.rtpStats.Update(&p.Header, len(p.Payload), int(p.PaddingSize), arrivalTime)
 
 	if b.nacker != nil {
@@ -499,12 +519,12 @@ func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime int64) {
 	}
 }
 
-func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime int64) {
+func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime time.Time) {
 	// submit to TWCC even if it is a padding only packet. Clients use padding only packets as probes
 	// for bandwidth estimation
 	if b.twcc != nil && b.twccExt != 0 {
 		if ext := p.GetExtension(b.twccExt); ext != nil {
-			b.twcc.Push(binary.BigEndian.Uint16(ext[0:2]), arrivalTime, p.Marker)
+			b.twcc.Push(binary.BigEndian.Uint16(ext[0:2]), arrivalTime.UnixNano(), p.Marker)
 		}
 	}
 
@@ -529,7 +549,7 @@ func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime int64) {
 	}
 }
 
-func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64) *ExtPacket {
+func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime time.Time) *ExtPacket {
 	ep := &ExtPacket{
 		Packet:  rtpPacket,
 		Arrival: arrivalTime,
@@ -550,7 +570,7 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64) *ExtPack
 		if err == nil && ddVal != nil {
 			ep.DependencyDescriptor = ddVal
 			ep.VideoLayer = videoLayer
-			// TODO : notify active decode target change if changed.
+			// DD-TODO : notify active decode target change if changed.
 		}
 	}
 	switch b.mime {
@@ -566,13 +586,28 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64) *ExtPack
 		} else {
 			// vp8 with DependencyDescriptor enabled, use the TID from the descriptor
 			vp8Packet.TID = uint8(ep.Temporal)
-			ep.Spatial = InvalidLayerSpatial // vp8 don't have spatial scalability, reset to -1
+			ep.Spatial = InvalidLayerSpatial // vp8 don't have spatial scalability, reset to invalid
 		}
 		ep.Payload = vp8Packet
+	case "video/vp9":
+		if ep.DependencyDescriptor == nil {
+			var vp9Packet codecs.VP9Packet
+			_, err := vp9Packet.Unmarshal(rtpPacket.Payload)
+			if err != nil {
+				b.logger.Warnw("could not unmarshal VP9 packet", err)
+				return nil
+			}
+			ep.VideoLayer = VideoLayer{
+				Spatial:  int32(vp9Packet.SID),
+				Temporal: int32(vp9Packet.TID),
+			}
+			ep.Payload = vp9Packet
+		}
+		ep.KeyFrame = IsVP9KeyFrame(rtpPacket.Payload)
 	case "video/h264":
-		ep.KeyFrame = IsH264Keyframe(rtpPacket.Payload)
+		ep.KeyFrame = IsH264KeyFrame(rtpPacket.Payload)
 	case "video/av1":
-		ep.KeyFrame = IsAV1Keyframe(rtpPacket.Payload)
+		ep.KeyFrame = IsAV1KeyFrame(rtpPacket.Payload)
 	}
 
 	if ep.KeyFrame {
@@ -599,8 +634,8 @@ func (b *Buffer) doNACKs() {
 	}
 }
 
-func (b *Buffer) doReports(arrivalTime int64) {
-	timeDiff := arrivalTime - b.lastReport
+func (b *Buffer) doReports(arrivalTime time.Time) {
+	timeDiff := arrivalTime.Sub(b.lastReport)
 	if timeDiff < ReportDelta {
 		return
 	}
@@ -638,7 +673,7 @@ func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64) {
 	srData := &RTCPSenderReportData{
 		RTPTimestamp: rtpTime,
 		NTPTimestamp: mediatransportutil.NtpTime(ntpTime),
-		ArrivalTime:  time.Now(),
+		At:           time.Now(),
 	}
 
 	b.RLock()
@@ -652,15 +687,15 @@ func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64) {
 	}
 }
 
-func (b *Buffer) GetSenderReportDataExt() *RTCPSenderReportDataExt {
+func (b *Buffer) GetSenderReportData() (*RTCPSenderReportData, *RTCPSenderReportData) {
 	b.RLock()
 	defer b.RUnlock()
 
 	if b.rtpStats != nil {
-		return b.rtpStats.GetRtcpSenderReportDataExt()
+		return b.rtpStats.GetRtcpSenderReportData()
 	}
 
-	return nil
+	return nil, nil
 }
 
 func (b *Buffer) SetLastFractionLostReport(lost uint8) {
@@ -761,12 +796,6 @@ func (b *Buffer) GetAudioLevel() (float64, bool) {
 	}
 
 	return b.audioLevel.GetLevel()
-}
-
-// TODO : now we rely on stream tracker for layer change, dependency still
-// work for that too. Do we keep it unchange or use both methods?
-func (b *Buffer) OnMaxLayerChanged(fn func(int32, int32)) {
-	b.maxLayerChangedCB = fn
 }
 
 func (b *Buffer) OnFpsChanged(f func()) {

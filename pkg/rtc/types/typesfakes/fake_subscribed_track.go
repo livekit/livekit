@@ -11,10 +11,10 @@ import (
 )
 
 type FakeSubscribedTrack struct {
-	AddOnBindStub        func(func())
+	AddOnBindStub        func(func(error))
 	addOnBindMutex       sync.RWMutex
 	addOnBindArgsForCall []struct {
-		arg1 func()
+		arg1 func(error)
 	}
 	CloseStub        func(bool)
 	closeMutex       sync.RWMutex
@@ -174,10 +174,10 @@ type FakeSubscribedTrack struct {
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeSubscribedTrack) AddOnBind(arg1 func()) {
+func (fake *FakeSubscribedTrack) AddOnBind(arg1 func(error)) {
 	fake.addOnBindMutex.Lock()
 	fake.addOnBindArgsForCall = append(fake.addOnBindArgsForCall, struct {
-		arg1 func()
+		arg1 func(error)
 	}{arg1})
 	stub := fake.AddOnBindStub
 	fake.recordInvocation("AddOnBind", []interface{}{arg1})
@@ -193,13 +193,13 @@ func (fake *FakeSubscribedTrack) AddOnBindCallCount() int {
 	return len(fake.addOnBindArgsForCall)
 }
 
-func (fake *FakeSubscribedTrack) AddOnBindCalls(stub func(func())) {
+func (fake *FakeSubscribedTrack) AddOnBindCalls(stub func(func(error))) {
 	fake.addOnBindMutex.Lock()
 	defer fake.addOnBindMutex.Unlock()
 	fake.AddOnBindStub = stub
 }
 
-func (fake *FakeSubscribedTrack) AddOnBindArgsForCall(i int) func() {
+func (fake *FakeSubscribedTrack) AddOnBindArgsForCall(i int) func(error) {
 	fake.addOnBindMutex.RLock()
 	defer fake.addOnBindMutex.RUnlock()
 	argsForCall := fake.addOnBindArgsForCall[i]

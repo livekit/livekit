@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package telemetry_test
 
 import (
@@ -69,7 +83,7 @@ func Test_OnParticipantLeft_EventIsSent(t *testing.T) {
 	participantInfo := &livekit.ParticipantInfo{Sid: partSID}
 
 	// do
-	fixture.sut.ParticipantActive(context.Background(), room, participantInfo, &livekit.AnalyticsClientMeta{})
+	fixture.sut.ParticipantActive(context.Background(), room, participantInfo, &livekit.AnalyticsClientMeta{}, false)
 	fixture.sut.ParticipantLeft(context.Background(), room, participantInfo, true)
 	time.Sleep(time.Millisecond * 500)
 
@@ -159,7 +173,7 @@ func Test_OnParticipantActive_EventIsSent(t *testing.T) {
 		ClientConnectTime: 420,
 	}
 
-	fixture.sut.ParticipantActive(context.Background(), room, participantInfo, clientMetaConnect)
+	fixture.sut.ParticipantActive(context.Background(), room, participantInfo, clientMetaConnect, false)
 	time.Sleep(time.Millisecond * 500)
 
 	require.Equal(t, 2, fixture.analytics.SendEventCallCount())

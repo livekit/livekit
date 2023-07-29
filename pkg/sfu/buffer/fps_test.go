@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package buffer
 
 import (
@@ -31,10 +45,12 @@ func (f *testFrameInfo) toVP8() *ExtPacket {
 func (f *testFrameInfo) toDD() *ExtPacket {
 	return &ExtPacket{
 		Packet: &rtp.Packet{Header: f.header},
-		DependencyDescriptor: &dependencydescriptor.DependencyDescriptor{
-			FrameNumber: f.framenumber,
-			FrameDependencies: &dependencydescriptor.FrameDependencyTemplate{
-				FrameDiffs: f.frameDiff,
+		DependencyDescriptor: &ExtDependencyDescriptor{
+			Descriptor: &dependencydescriptor.DependencyDescriptor{
+				FrameNumber: f.framenumber,
+				FrameDependencies: &dependencydescriptor.FrameDependencyTemplate{
+					FrameDiffs: f.frameDiff,
+				},
 			},
 		},
 		VideoLayer: VideoLayer{Spatial: int32(f.spatial), Temporal: int32(f.temporal)},
@@ -147,7 +163,7 @@ func TestFpsVP8(t *testing.T) {
 		testCase := c
 		t.Run(name, func(t *testing.T) {
 			fps := testCase.fps
-			frames := [][]*testFrameInfo{}
+			frames := make([][]*testFrameInfo, 0)
 			vp8calcs := make([]*FrameRateCalculatorVP8, len(fps))
 			for i := range vp8calcs {
 				vp8calcs[i] = NewFrameRateCalculatorVP8(90000, logger.GetLogger())
@@ -178,7 +194,7 @@ func TestFpsVP8(t *testing.T) {
 	}
 	t.Run("packet lost and duplicate", func(t *testing.T) {
 		fps := [][]float32{{7.5, 15}, {7.5, 15}, {15, 30}}
-		frames := [][]*testFrameInfo{}
+		frames := make([][]*testFrameInfo, 0)
 		vp8calcs := make([]*FrameRateCalculatorVP8, len(fps))
 		for i := range vp8calcs {
 			vp8calcs[i] = NewFrameRateCalculatorVP8(90000, logger.GetLogger())

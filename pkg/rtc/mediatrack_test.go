@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package rtc
 
 import (
@@ -98,4 +112,65 @@ func TestGetQualityForDimension(t *testing.T) {
 		require.Equal(t, livekit.VideoQuality_MEDIUM, mt.GetQualityForDimension(800, 500))
 		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(1000, 700))
 	})
+
+	t.Run("highest layer with smallest dimensions", func(t *testing.T) {
+		mt := NewMediaTrack(MediaTrackParams{TrackInfo: &livekit.TrackInfo{
+			Type:   livekit.TrackType_VIDEO,
+			Width:  1080,
+			Height: 720,
+			Layers: []*livekit.VideoLayer{
+				{
+					Quality: livekit.VideoQuality_LOW,
+					Width:   480,
+					Height:  270,
+				},
+				{
+					Quality: livekit.VideoQuality_MEDIUM,
+					Width:   1080,
+					Height:  720,
+				},
+				{
+					Quality: livekit.VideoQuality_HIGH,
+					Width:   1080,
+					Height:  720,
+				},
+			},
+		}})
+
+		require.Equal(t, livekit.VideoQuality_LOW, mt.GetQualityForDimension(120, 120))
+		require.Equal(t, livekit.VideoQuality_LOW, mt.GetQualityForDimension(300, 300))
+		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(800, 500))
+		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(1000, 700))
+		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(1200, 800))
+
+		mt = NewMediaTrack(MediaTrackParams{TrackInfo: &livekit.TrackInfo{
+			Type:   livekit.TrackType_VIDEO,
+			Width:  1080,
+			Height: 720,
+			Layers: []*livekit.VideoLayer{
+				{
+					Quality: livekit.VideoQuality_LOW,
+					Width:   480,
+					Height:  270,
+				},
+				{
+					Quality: livekit.VideoQuality_MEDIUM,
+					Width:   480,
+					Height:  270,
+				},
+				{
+					Quality: livekit.VideoQuality_HIGH,
+					Width:   1080,
+					Height:  720,
+				},
+			},
+		}})
+
+		require.Equal(t, livekit.VideoQuality_MEDIUM, mt.GetQualityForDimension(120, 120))
+		require.Equal(t, livekit.VideoQuality_MEDIUM, mt.GetQualityForDimension(300, 300))
+		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(800, 500))
+		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(1000, 700))
+		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(1200, 800))
+	})
+
 }

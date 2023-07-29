@@ -2,6 +2,148 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.4] - 2023-07-08
+
+### Added
+- Add dependency descriptor stream tracker for svc codecs (#1788)
+- Full reconnect on publication mismatch on resume. (#1823)
+- Pacer interface in down stream path. (#1835)
+- retry egress on timeout/resource exhausted (#1852)
+
+### Fixed
+- Send Room metadata updates immediately after update (#1787)
+- Do not send ParticipantJoined webhook if connection was resumed (#1795)
+- Reduce memory leaks by avoiding references in closure. (#1809)
+- Honor bind address passed as `--bind` also for RTC ports (#1815)
+- Avoid dangling downtracks by always deleting them in receiver close. (#1842)
+- Better cleanup of subscriptions with needsCleanup. (#1845)
+- Fix nack issue for svc codecs (#1856)
+- Fixed hidden participant update were still sent when track is published (#1857)
+- Fixed Redis lockup when unlocking room with canceled request context (#1859)
+
+### Changed
+- Improvements to A/V sync (#1773 #1781 #1784 )
+- Improved probing to be less disruptive in low bandwidth scenarios (#1782 #1834 #1839)
+- Do not mute forwarder when paused due to bandwidth congestion. (#1796)
+- Improvements to congestion controller (#1800 #1802 )
+- Close participant on full reconnect. (#1818)
+- Do not process events after participant close. (#1824)
+- Improvements to dependency descriptor based selection forwarder (#1808)
+- Discount out-of-order packets in downstream score. (#1831)
+- Adaptive stream to select highest layer of equal dimensions (#1841)
+- Return 404 with DeleteRoom/RemoveParticipant when deleting non-existent resources (#1860)
+
+## [1.4.3] - 2023-06-03
+
+### Added
+- Send quality stats to prometheus. (#1708)
+- Support for disabling publishing codec on specific devices (#1728)
+- Add support for bypass_transcoding field in ingress (#1741)
+- Include await_start_signal for Web Egress (#1759)
+
+### Fixed
+- Handle time stamp increment across mute for A/V sync (#1705)
+- Additional A/V sync improvements (#1712 #1724 #1737 #1738 #1764)
+- Check egress status on UpdateStream failure (#1716)
+- Start signal relay sessions with the correct node (#1721)
+- Fix unwrap for out-of-order packet (#1729)
+- Fix dynacast for svc codec (#1742 #1743)
+- Ignore receiver reports that have a sequence number before first packet (#1745)
+- Fix node stats updates on Windows (#1748)
+- Avoid reconnect loop for unsupported downtrack (#1754)
+- Perform unsubscribe in parallel to avoid blocking (#1760)
+
+### Changed
+- Make signal close async. (#1711 #1722)
+- Don't add nack if it is already present in track codec (#1714)
+- Tweaked connection quality algorithm to be less sensitive to jitter (#1719)
+- Adjust sender report time stamp for slow publishers (#1740)
+- Split probe controller from StreamAllocator (#1751)
+
+## [1.4.2] - 2023-04-27
+### Added
+- VP9 codec with SVC support (#1586)
+- Support for source-specific permissions and client-initiated metadata updates (#1590)
+- Batch support for signal relay (#1593 #1596)
+- Support for simulating subscriber bandwidth (#1609)
+- Support for subscription limits (#1629)
+- Send Room updates when participant counts change (#1647)
+
+### Fixed
+- Fixed process return code to 0 (#1589)
+- Fixed VP9 stutter when not using dependency descriptors (#1595)
+- Fixed stutter when using dependency descriptors (#1600)
+- Fixed Redis cluster support when using Egress or Ingress (#1606)
+- Fixed simulcast parsing error for slower clients (camera and screenshare) (#1621)
+- Don't close RTCP reader if Downtrack will be resumed (#1632)
+- Restore VP8 munger state properly. (#1634)
+- Fixed incorrect node routing when using signal relay (#1645)
+- Do not send hidden participants to others after resume (#1689)
+- Fix for potential webhook delivery delays (#1690)
+
+### Changed
+- Refactored video layer selector (#1588 #1591 #1592)
+- Improved transport fallback when client is resuming (#1597)
+- Improved webhook reliability with delivery retries (#1607 #1615)
+- Congestion controller improvements (#1614 #1616 #1617 #1623 #1628 #1631 #1652)
+- Reduced memory usage by releasing ParticipantInfo after JoinResponse is transmitted (#1619)
+- Ensure safe access in sequencer (#1625)
+- Run quality scorer when there are no streams. (#1633)
+- Participant version is only incremented after updates (#1646)
+- Connection quality attribution improvements (#1653 #1664)
+- Remove disallowed subscriptions on close. (#1668)
+- A/V sync improvements (#1681 #1684 #1687 #1693 #1695 #1696 #1698 #1704)
+- RTCP sender reports every three seconds. (#1692)
+
+### Removed
+- Remove deprecated (non-psrpc) egress client (#1701)
+
+## [1.4.1] - 2023-04-05
+### Added
+- Added prometheus metrics for internal signaling API #1571
+
+### Fixed
+- Fix regressions in RTC when using redis with psrpc signaling #1584 #1582 #1580 #1567
+- Fix required bitrate assessment under channel congestion #1577
+
+### Changed
+- Improve DTLS reliability in regions with internet filters #1568
+- Reduce memory usage from logging #1576
+
+## [1.4.0] - 2023-03-27
+### Added
+- Added config to disable active RED encoding. Use NACK instead #1476 #1477
+- Added option to skip TCP fallback if TCP RTT is high #1484
+- psrpc based signaling between signal and RTC #1485
+- Connection quality algorithm revamp #1490 #1491 #1493 #1496 #1497 #1500 #1505 #1507 #1509 #1516 #1520 #1521 #1527 #1528 #1536
+- Support for topics in data channel messages #1489
+- Added active filter to ListEgress #1517
+- Handling for React Native and Rust SDK ClientInfo #1544
+
+### Fixed
+- Fixed unsubscribed speakers stuck as speaking to clients #1475
+- Do not include packet in RED if timestamp is too far back #1478
+- Prevent PLI layer lock getting stuck #1481
+- Fix a case of changing video quality not succeeding #1483
+- Resync on pub muted for audio to avoid jump in sequence numbers on unmute #1487
+- Fixed a case of data race #1492
+- Inform reconnecting participant about recently disconnected users #1495
+- Send room update that may be missed by reconnected participant #1499
+- Fixed regression for AV1 forwarding #1538
+- Ensure sequence number continuity #1539
+- Give proper grace period when recorder is still in the room #1547
+- Fix sequence number offset on packet drop #1556
+- Fix signal client message buffer size #1561
+
+### Changed
+- Reduce lock scope getting RTCP sender reports #1473
+- Avoid duplicate queueReconcile in subscription manager #1474
+- Do not log TURN errors with prefix "error when handling datagram" #1494
+- Improvements to TCP fallback mode #1498
+- Unify forwarder between dependency descriptor and no DD case. #1543
+- Increase sequence number cache to handle high rate tracks #1560
+
+
 ## [1.3.5] - 2023-02-25
 ### Added
 - Allow for strict ACKs to be disabled or subscriber peer connections #1410
