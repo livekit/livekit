@@ -38,6 +38,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/logger/pionlogger"
 	lksdp "github.com/livekit/protocol/sdp"
+	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
@@ -64,6 +65,8 @@ const (
 
 	minConnectTimeoutAfterICE = 10 * time.Second
 	maxConnectTimeoutAfterICE = 20 * time.Second // max duration for waiting pc to connect after ICE is connected
+
+	maxICECandidates = 20
 
 	shortConnectionThreshold = 90 * time.Second
 )
@@ -227,10 +230,10 @@ type PCTransport struct {
 	pendingRestartIceOffer    *webrtc.SessionDescription
 
 	// for cleaner logging
-	allowedLocalCandidates   []string
-	allowedRemoteCandidates  []string
-	filteredLocalCandidates  []string
-	filteredRemoteCandidates []string
+	allowedLocalCandidates   *utils.DedupedSlice[string]
+	allowedRemoteCandidates  *utils.DedupedSlice[string]
+	filteredLocalCandidates  *utils.DedupedSlice[string]
+	filteredRemoteCandidates *utils.DedupedSlice[string]
 }
 
 type TransportParams struct {
@@ -371,6 +374,10 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		eventCh:                  make(chan event, 50),
 		previousTrackDescription: make(map[string]*trackDescription),
 		canReuseTransceiver:      true,
+		allowedLocalCandidates:   utils.NewDedupedSlice[string](maxICECandidates),
+		allowedRemoteCandidates:  utils.NewDedupedSlice[string](maxICECandidates),
+		filteredLocalCandidates:  utils.NewDedupedSlice[string](maxICECandidates),
+		filteredRemoteCandidates: utils.NewDedupedSlice[string](maxICECandidates),
 	}
 	if params.IsSendSide {
 		t.streamAllocator = streamallocator.NewStreamAllocator(streamallocator.StreamAllocatorParams{
@@ -1167,7 +1174,7 @@ func (t *PCTransport) GetICEConnectionType() types.ICEConnectionType {
 		// Pion would have created a prflx candidate with the same address as the relay candidate.
 		// to report an accurate connection type, we'll compare to see if existing relay candidates match
 		t.lock.RLock()
-		allowedRemoteCandidates := t.allowedRemoteCandidates
+		allowedRemoteCandidates := t.allowedRemoteCandidates.Get()
 		t.lock.RUnlock()
 
 		for _, ci := range allowedRemoteCandidates {
@@ -1487,12 +1494,12 @@ func (t *PCTransport) clearLocalDescriptionSent() {
 	t.cacheLocalCandidates = true
 	t.cachedLocalCandidates = nil
 
-	t.allowedLocalCandidates = nil
+	t.allowedLocalCandidates.Clear()
 	t.lock.Lock()
-	t.allowedRemoteCandidates = nil
+	t.allowedRemoteCandidates.Clear()
 	t.lock.Unlock()
-	t.filteredLocalCandidates = nil
-	t.filteredRemoteCandidates = nil
+	t.filteredLocalCandidates.Clear()
+	t.filteredRemoteCandidates.Clear()
 }
 
 func (t *PCTransport) handleLocalICECandidate(e *event) error {
@@ -1502,7 +1509,7 @@ func (t *PCTransport) handleLocalICECandidate(e *event) error {
 	if t.preferTCP.Load() && c != nil && c.Protocol != webrtc.ICEProtocolTCP {
 		cstr := c.String()
 		t.params.Logger.Debugw("filtering out local candidate", "candidate", cstr)
-		t.filteredLocalCandidates = append(t.filteredLocalCandidates, cstr)
+		t.filteredLocalCandidates.Add(cstr)
 		filtered = true
 	}
 
@@ -1511,7 +1518,7 @@ func (t *PCTransport) handleLocalICECandidate(e *event) error {
 	}
 
 	if c != nil {
-		t.allowedLocalCandidates = append(t.allowedLocalCandidates, c.String())
+		t.allowedLocalCandidates.Add(c.String())
 	}
 	if t.cacheLocalCandidates {
 		t.cachedLocalCandidates = append(t.cachedLocalCandidates, c)
@@ -1531,7 +1538,7 @@ func (t *PCTransport) handleRemoteICECandidate(e *event) error {
 	filtered := false
 	if t.preferTCP.Load() && !strings.Contains(c.Candidate, "tcp") {
 		t.params.Logger.Debugw("filtering out remote candidate", "candidate", c.Candidate)
-		t.filteredRemoteCandidates = append(t.filteredRemoteCandidates, c.Candidate)
+		t.filteredRemoteCandidates.Add(c.Candidate)
 		filtered = true
 	}
 
@@ -1540,7 +1547,7 @@ func (t *PCTransport) handleRemoteICECandidate(e *event) error {
 	}
 
 	t.lock.Lock()
-	t.allowedRemoteCandidates = append(t.allowedRemoteCandidates, c.Candidate)
+	t.allowedRemoteCandidates.Add(c.Candidate)
 	t.lock.Unlock()
 
 	if t.pc.RemoteDescription() == nil {
@@ -1558,10 +1565,10 @@ func (t *PCTransport) handleRemoteICECandidate(e *event) error {
 func (t *PCTransport) handleLogICECandidates(e *event) error {
 	t.params.Logger.Infow(
 		"ice candidates",
-		"lc", t.allowedLocalCandidates,
-		"rc", t.allowedRemoteCandidates,
-		"lc (filtered)", t.filteredLocalCandidates,
-		"rc (filtered)", t.filteredRemoteCandidates,
+		"lc", t.allowedLocalCandidates.Get(),
+		"rc", t.allowedRemoteCandidates.Get(),
+		"lc (filtered)", t.filteredLocalCandidates.Get(),
+		"rc (filtered)", t.filteredRemoteCandidates.Get(),
 	)
 
 	return nil
