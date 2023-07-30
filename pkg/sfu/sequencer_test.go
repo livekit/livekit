@@ -38,6 +38,11 @@ func Test_sequencer(t *testing.T) {
 	time.Sleep(60 * time.Millisecond)
 	req := []uint16{57, 58, 62, 63, 513, 514, 515, 516, 517}
 	res := seq.getPacketsMeta(req)
+	// nothing should be return as not enough time has elapsed since sending packet
+	require.Equal(t, 0, len(res))
+
+	time.Sleep(60 * time.Millisecond)
+	res = seq.getPacketsMeta(req)
 	require.Equal(t, len(req), len(res))
 	for i, val := range res {
 		require.Equal(t, val.targetSeqNo, req[i])
@@ -46,7 +51,7 @@ func Test_sequencer(t *testing.T) {
 	}
 	res = seq.getPacketsMeta(req)
 	require.Equal(t, 0, len(res))
-	time.Sleep(150 * time.Millisecond)
+	time.Sleep((ignoreRetransmission + 10) * time.Millisecond)
 	res = seq.getPacketsMeta(req)
 	require.Equal(t, len(req), len(res))
 	for i, val := range res {
@@ -57,9 +62,15 @@ func Test_sequencer(t *testing.T) {
 
 	seq.push(521, 521+off, 123, true, 1, nil, nil)
 	m := seq.getPacketsMeta([]uint16{521 + off})
+	require.Equal(t, 0, len(m))
+	time.Sleep((ignoreRetransmission + 10) * time.Millisecond)
+	m = seq.getPacketsMeta([]uint16{521 + off})
 	require.Equal(t, 1, len(m))
 
 	seq.push(505, 505+off, 123, false, 1, nil, nil)
+	m = seq.getPacketsMeta([]uint16{505 + off})
+	require.Equal(t, 0, len(m))
+	time.Sleep((ignoreRetransmission + 10) * time.Millisecond)
 	m = seq.getPacketsMeta([]uint16{505 + off})
 	require.Equal(t, 1, len(m))
 }
@@ -121,6 +132,7 @@ func Test_sequencer_getNACKSeqNo(t *testing.T) {
 				n.pushPadding(i + tt.fields.offset)
 			}
 
+			time.Sleep((ignoreRetransmission + 10) * time.Millisecond)
 			g := n.getPacketsMeta(tt.args.seqNo)
 			var got []uint16
 			for _, sn := range g {

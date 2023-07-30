@@ -133,6 +133,7 @@ func (s *sequencer) push(
 		layer:       layer,
 		codecBytes:  append([]byte{}, codecBytes...),
 		ddBytes:     append([]byte{}, ddBytes...),
+		lastNack:    s.getRefTime(), // delay retransmissions after the original transmission
 	}
 
 	s.seq[slot] = &s.meta[s.metaWritePtr]
@@ -198,7 +199,7 @@ func (s *sequencer) getPacketsMeta(seqNo []uint16) []packetMeta {
 	defer s.Unlock()
 
 	meta := make([]packetMeta, 0, len(seqNo))
-	refTime := uint32(time.Now().UnixNano()/1e6 - s.startTime)
+	refTime := s.getRefTime()
 	for _, sn := range seqNo {
 		diff := s.headSN - sn
 		if diff > (1<<15) || int(diff) >= s.max {
@@ -212,7 +213,7 @@ func (s *sequencer) getPacketsMeta(seqNo []uint16) []packetMeta {
 			continue
 		}
 
-		if (seq.lastNack == 0 || refTime-seq.lastNack > uint32(math.Min(float64(ignoreRetransmission), float64(2*s.rtt)))) && seq.nacked < maxAck {
+		if refTime-seq.lastNack > uint32(math.Min(float64(ignoreRetransmission), float64(2*s.rtt))) && seq.nacked < maxAck {
 			seq.nacked++
 			seq.lastNack = refTime
 
@@ -236,4 +237,8 @@ func (s *sequencer) wrap(slot int) int {
 	}
 
 	return slot
+}
+
+func (s *sequencer) getRefTime() uint32 {
+	return uint32(time.Now().UnixNano()/1e6 - s.startTime)
 }
