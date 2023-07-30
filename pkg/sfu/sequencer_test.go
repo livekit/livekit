@@ -35,13 +35,12 @@ func Test_sequencer(t *testing.T) {
 	seq.push(519, 519+off, 123, false, 2, nil, nil)
 	seq.push(518, 518+off, 123, true, 2, nil, nil)
 
-	time.Sleep(60 * time.Millisecond)
 	req := []uint16{57, 58, 62, 63, 513, 514, 515, 516, 517}
 	res := seq.getPacketsMeta(req)
 	// nothing should be return as not enough time has elapsed since sending packet
 	require.Equal(t, 0, len(res))
 
-	time.Sleep(60 * time.Millisecond)
+	time.Sleep((ignoreRetransmission + 10) * time.Millisecond)
 	res = seq.getPacketsMeta(req)
 	require.Equal(t, len(req), len(res))
 	for i, val := range res {
