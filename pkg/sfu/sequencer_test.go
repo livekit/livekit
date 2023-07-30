@@ -37,7 +37,7 @@ func Test_sequencer(t *testing.T) {
 
 	req := []uint16{57, 58, 62, 63, 513, 514, 515, 516, 517}
 	res := seq.getPacketsMeta(req)
-	// nothing should be return as not enough time has elapsed since sending packet
+	// nothing should be returned as not enough time has elapsed since sending packet
 	require.Equal(t, 0, len(res))
 
 	time.Sleep((ignoreRetransmission + 10) * time.Millisecond)
