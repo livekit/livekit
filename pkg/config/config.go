@@ -312,7 +312,7 @@ var DefaultConfig = Config{
 		},
 		CongestionControl: CongestionControlConfig{
 			Enabled:    true,
-			AllowPause: true,
+			AllowPause: false,
 			ProbeMode:  CongestionControlProbeModePadding,
 			ProbeConfig: CongestionControlProbeConfig{
 				BaseInterval:  3 * time.Second,
