@@ -139,7 +139,9 @@ type CongestionControlProbeConfig struct {
 
 type CongestionControlChannelObserverConfig struct {
 	EstimateRequiredSamples        int           `yaml:"estimate_required_samples,omitempty"`
+	EstimateRequiredSamplesMin        int           `yaml:"estimate_required_samples_min,omitempty"`
 	EstimateDownwardTrendThreshold float64       `yaml:"estimate_downward_trend_threshold,omitempty"`
+	EstimateDownwardTrendMaxWait time.Duration       `yaml:"estimate_downward_trend_max_wait,omitempty"`
 	EstimateCollapseThreshold      time.Duration `yaml:"estimate_collapse_threshold,omitempty"`
 	EstimateValidityWindow         time.Duration `yaml:"estimate_validity_window,omitempty"`
 	NackWindowMinDuration          time.Duration `yaml:"nack_window_min_duration,omitempty"`
@@ -310,7 +312,7 @@ var DefaultConfig = Config{
 		},
 		CongestionControl: CongestionControlConfig{
 			Enabled:    true,
-			AllowPause: false,
+			AllowPause: true,
 			ProbeMode:  CongestionControlProbeModePadding,
 			ProbeConfig: CongestionControlProbeConfig{
 				BaseInterval:  3 * time.Second,
@@ -331,7 +333,9 @@ var DefaultConfig = Config{
 			},
 			ChannelObserverProbeConfig: CongestionControlChannelObserverConfig{
 				EstimateRequiredSamples:        3,
+				EstimateRequiredSamplesMin:        3,
 				EstimateDownwardTrendThreshold: 0.0,
+				EstimateDownwardTrendMaxWait: 5 * time.Second,
 				EstimateCollapseThreshold:      0,
 				EstimateValidityWindow:         10 * time.Second,
 				NackWindowMinDuration:          500 * time.Millisecond,
@@ -339,12 +343,14 @@ var DefaultConfig = Config{
 				NackRatioThreshold:             0.04,
 			},
 			ChannelObserverNonProbeConfig: CongestionControlChannelObserverConfig{
-				EstimateRequiredSamples:        8,
-				EstimateDownwardTrendThreshold: -0.5,
+				EstimateRequiredSamples:        12,
+				EstimateRequiredSamplesMin:        8,
+				EstimateDownwardTrendThreshold: -0.6,
+				EstimateDownwardTrendMaxWait: 5 * time.Second,
 				EstimateCollapseThreshold:      500 * time.Millisecond,
 				EstimateValidityWindow:         10 * time.Second,
-				NackWindowMinDuration:          1 * time.Second,
-				NackWindowMaxDuration:          2 * time.Second,
+				NackWindowMinDuration:          2 * time.Second,
+				NackWindowMaxDuration:          3 * time.Second,
 				NackRatioThreshold:             0.08,
 			},
 		},

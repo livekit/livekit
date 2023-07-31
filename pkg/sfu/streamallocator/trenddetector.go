@@ -57,7 +57,9 @@ type TrendDetectorParams struct {
 	Name                   string
 	Logger                 logger.Logger
 	RequiredSamples        int
+	RequiredSamplesMin        int
 	DownwardTrendThreshold float64
+	DownwardTrendMaxWait time.Duration
 	CollapseThreshold      time.Duration
 	ValidityWindow         time.Duration
 }
@@ -203,7 +205,7 @@ func (t *TrendDetector) prune() {
 }
 
 func (t *TrendDetector) updateDirection() {
-	if len(t.samples) < t.params.RequiredSamples {
+	if len(t.samples) < t.params.RequiredSamplesMin {
 		t.direction = TrendDirectionNeutral
 		return
 	}
@@ -213,9 +215,9 @@ func (t *TrendDetector) updateDirection() {
 
 	t.direction = TrendDirectionNeutral
 	switch {
-	case kt > 0:
+	case kt > 0 && len(t.samples) >= t.params.RequiredSamples:
 		t.direction = TrendDirectionUpward
-	case kt < t.params.DownwardTrendThreshold:
+	case kt < t.params.DownwardTrendThreshold && (len(t.samples) >= t.params.RequiredSamples || t.samples[len(t.samples)-1].at.Sub(t.samples[0].at) > t.params.DownwardTrendMaxWait):
 		t.direction = TrendDirectionDownward
 	}
 }
