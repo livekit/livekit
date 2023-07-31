@@ -2,22 +2,23 @@ package p2p
 
 import (
 	"context"
+	"fmt"
 	"log"
-	"strings"
 	"sync"
 	"time"
 
 	p2p_database "github.com/dTelecom/p2p-realtime-database"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/livekit/protocol/livekit"
+	"github.com/pkg/errors"
 )
 
 const (
-	dbPrefix                   = "livekit_room_"
-	prefixIncomingMessageTopic = "incoming_messages_"
-	prefixPeerKey              = "node_"
-	pingMessage                = "ping"
-	pongMessage                = "pong"
+	roomMessagesTopicFmt     = "room_messages_%v"
+	incomingMessagesTopicFmt = "incoming_messages_%v_%v"
+	pingMessage              = "ping"
+	pongMessage              = "pong"
+	adMessage                = "ad"
 )
 
 type RoomCommunicatorImpl struct {
@@ -26,7 +27,7 @@ type RoomCommunicatorImpl struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	db *p2p_database.DB
+	mainDatabase *p2p_database.DB
 
 	peers           map[string]struct{}
 	peerHandlers    []func(peerId string)
@@ -35,78 +36,66 @@ type RoomCommunicatorImpl struct {
 	mu sync.Mutex
 }
 
-func NewRoomCommunicatorImpl(room *livekit.Room, cfg p2p_database.Config) *RoomCommunicatorImpl {
+func NewRoomCommunicatorImpl(room *livekit.Room, mainDatabase *p2p_database.DB) (*RoomCommunicatorImpl, error) {
 	ctx, cancel := context.WithCancel(context.Background())
+
 	roomCommunicator := &RoomCommunicatorImpl{
-		room:   room,
-		ctx:    ctx,
-		cancel: cancel,
-		peers:  make(map[string]struct{}),
+		room:         room,
+		ctx:          ctx,
+		cancel:       cancel,
+		mainDatabase: mainDatabase,
+		peers:        make(map[string]struct{}),
 	}
 
-	cfg.DatabaseName = dbPrefix + room.Key
 	_ = logging.SetLogLevel("*", "error")
-	roomCommunicator.init(cfg)
+	if err := roomCommunicator.init(); err != nil {
+		return nil, errors.Wrap(err, "cannot init room communicator")
+	}
 
-	return roomCommunicator
+	return roomCommunicator, nil
 }
 
 func (c *RoomCommunicatorImpl) Close() {
-	removeErr := c.db.Remove(c.ctx, prefixPeerKey+c.db.GetHost().ID().String())
-	if removeErr != nil {
-		log.Printf("cannot remove: %v", removeErr)
-	}
 	c.cancel()
 }
 
-func (c *RoomCommunicatorImpl) init(cfg p2p_database.Config) {
+func (c *RoomCommunicatorImpl) init() error {
+	incomingMessagesTopic := formatIncomingMessagesTopic(c.room.Key, c.mainDatabase.GetHost().ID().String())
+	if err := c.mainDatabase.Subscribe(c.ctx, incomingMessagesTopic, c.incomingMessageHandler); err != nil {
+		return errors.Wrap(err, "cannot subscribe to incoming messages topic")
+	}
+	log.Printf("subscribed to topic %v", incomingMessagesTopic)
 
-	var (
-		db  *p2p_database.DB
-		err error
-	)
+	roomMessagesTopic := formatRoomMessageTopic(c.room.Key)
+	if err := c.mainDatabase.Subscribe(c.ctx, roomMessagesTopic, c.roomMessageHandler); err != nil {
+		return errors.Wrap(err, "cannot subscribe to room messages topic")
+	}
+	log.Printf("subscribed to topic %v", roomMessagesTopic)
 
-	cfg.NewKeyCallback = func(k string) {
-		log.Printf("New key added %v", k)
-
-		k = strings.TrimPrefix(k, "/")
-		if !strings.HasPrefix(k, prefixPeerKey) {
-			return
+	go func() {
+		for {
+			if _, err := c.mainDatabase.Publish(c.ctx, roomMessagesTopic, adMessage); err != nil {
+				if c.ctx.Err() == nil {
+					log.Fatalf("cannot publish ad message: %v", err)
+				} else {
+					return
+				}
+			}
+			select {
+			case <-c.ctx.Done():
+				return
+			case <-time.After(5 * time.Second):
+				continue
+			}
 		}
+	}()
 
-		log.Printf("New key added trim %v", k)
-
-		peerId := strings.TrimPrefix(k, prefixPeerKey)
-		if peerId == db.GetHost().ID().String() {
-			return
-		}
-
-		log.Printf("New key added peer %v", peerId)
-
-		c.checkNewPeer(peerId)
-	}
-
-	db, err = p2p_database.Connect(c.ctx, cfg, logging.Logger(dbPrefix+c.room.Key))
-	if err != nil {
-		log.Printf("cannot connect to database")
-	}
-	c.db = db
-
-	subErr := db.Subscribe(c.ctx, p2pTopicName(db.GetHost().ID().String()), c.dbHandler)
-	if subErr != nil {
-		log.Printf("cannot subscribe to topic")
-	}
-
-	setErr := db.Set(c.ctx, prefixPeerKey+db.GetHost().ID().String(), time.Now().String())
-	if setErr != nil {
-		log.Printf("cannot set")
-	}
+	return nil
 }
 
-func (c *RoomCommunicatorImpl) checkNewPeer(peerId string) {
+func (c *RoomCommunicatorImpl) checkPeer(peerId string) {
 	c.mu.Lock()
 	if _, ok := c.peers[peerId]; ok {
-		log.Printf("New key added peer exist %v", peerId)
 		c.mu.Unlock()
 	} else {
 		log.Printf("New key added peer not exist %v", peerId)
@@ -117,7 +106,8 @@ func (c *RoomCommunicatorImpl) checkNewPeer(peerId string) {
 		c.mu.Unlock()
 		log.Printf("New key added peer added %v", peerId)
 
-		_, pubErr := c.db.Publish(c.ctx, p2pTopicName(peerId), pingMessage)
+		incomingMessageTopic := formatIncomingMessagesTopic(c.room.Key, peerId)
+		_, pubErr := c.mainDatabase.Publish(c.ctx, incomingMessageTopic, pingMessage)
 		if pubErr != nil {
 			log.Printf("cannot send ping message for node %s in db %s: %s", peerId, c.room.Key, pubErr)
 		} else {
@@ -126,11 +116,11 @@ func (c *RoomCommunicatorImpl) checkNewPeer(peerId string) {
 	}
 }
 
-func (c *RoomCommunicatorImpl) dbHandler(event p2p_database.Event) {
-	c.checkNewPeer(event.FromPeerId)
+func (c *RoomCommunicatorImpl) incomingMessageHandler(event p2p_database.Event) {
 	if event.Message == pingMessage {
 		log.Println("PING message received")
-		if _, err := c.db.Publish(c.ctx, p2pTopicName(event.FromPeerId), pongMessage); err != nil {
+		incomingMessageTopic := formatIncomingMessagesTopic(c.room.Key, event.FromPeerId)
+		if _, err := c.mainDatabase.Publish(c.ctx, incomingMessageTopic, pongMessage); err != nil {
 			log.Printf("cannot send pong message for node %s in db %s: %s", event.FromPeerId, c.room.Key, err)
 		} else {
 			log.Printf("PONG message sent to %v", event.FromPeerId)
@@ -146,6 +136,14 @@ func (c *RoomCommunicatorImpl) dbHandler(event p2p_database.Event) {
 	}
 }
 
+func (c *RoomCommunicatorImpl) roomMessageHandler(event p2p_database.Event) {
+	if event.Message == adMessage {
+		c.checkPeer(event.FromPeerId)
+	} else {
+		log.Printf("unknown room message from peer: %v", event.FromPeerId)
+	}
+}
+
 func (c *RoomCommunicatorImpl) ForEachPeer(peerHandler func(peerId string)) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -157,8 +155,12 @@ func (c *RoomCommunicatorImpl) ForEachPeer(peerHandler func(peerId string)) {
 }
 
 func (c *RoomCommunicatorImpl) SendMessage(peerId string, message interface{}) (string, error) {
-	event, err := c.db.Publish(c.ctx, p2pTopicName(peerId), message)
-	return event.ID, err
+	incomingMessagesTopic := formatIncomingMessagesTopic(c.room.Key, peerId)
+	event, err := c.mainDatabase.Publish(c.ctx, incomingMessagesTopic, message)
+	if err != nil {
+		return "", errors.Wrap(err, "publish error")
+	}
+	return event.ID, nil
 }
 
 func (c *RoomCommunicatorImpl) OnMessage(messageHandler func(message interface{}, fromPeerId string, eventId string)) {
@@ -168,6 +170,10 @@ func (c *RoomCommunicatorImpl) OnMessage(messageHandler func(message interface{}
 	c.messageHandlers = append(c.messageHandlers, messageHandler)
 }
 
-func p2pTopicName(peerId string) string {
-	return prefixIncomingMessageTopic + peerId
+func formatRoomMessageTopic(roomKey string) string {
+	return fmt.Sprintf(roomMessagesTopicFmt, roomKey)
+}
+
+func formatIncomingMessagesTopic(roomKey, peerId string) string {
+	return fmt.Sprintf(incomingMessagesTopicFmt, roomKey, peerId)
 }

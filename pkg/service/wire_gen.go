@@ -63,7 +63,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	nodeProvider := CreateNodeProvider(reader, conf, db)
-	objectStore := createStore(db, p2p_databaseConfig, nodeID, participantCounter, conf, nodeProvider)
+	objectStore := createStore(db, nodeID, participantCounter, conf, nodeProvider)
 	roomAllocator, err := NewRoomAllocator(conf, router, objectStore)
 	if err != nil {
 		return nil, err
@@ -216,13 +216,12 @@ func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {
 
 func createStore(
 	mainDatabase *p2p_database.DB,
-	p2pDbConfig p2p_database.Config,
 	nodeID livekit2.NodeID,
 	participantCounter *ParticipantCounter,
 	conf *config.Config,
 	nodeProvider *NodeProvider,
 ) ObjectStore {
-	return NewLocalStore(nodeID, p2pDbConfig, participantCounter, mainDatabase, nodeProvider)
+	return NewLocalStore(nodeID, participantCounter, mainDatabase, nodeProvider)
 }
 
 func getMessageBus(rc redis.UniversalClient) psrpc.MessageBus {

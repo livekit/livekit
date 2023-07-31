@@ -24,4 +24,5 @@ type Relay interface {
 	SendReplyMessage(replyForID uint64, payload []byte) error
 	SendMessageAndExpectReply(payload []byte) (<-chan []byte, error)
 	DebugInfo() map[string]interface{}
+	Close()
 }
