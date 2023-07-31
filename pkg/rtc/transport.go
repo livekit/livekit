@@ -72,13 +72,14 @@ const (
 )
 
 var (
-	ErrIceRestartWithoutLocalSDP = errors.New("ICE restart without local SDP settled")
-	ErrNoTransceiver             = errors.New("no transceiver")
-	ErrNoSender                  = errors.New("no sender")
-	ErrNoICECandidateHandler     = errors.New("no ICE candidate handler")
-	ErrNoOfferHandler            = errors.New("no offer handler")
-	ErrNoAnswerHandler           = errors.New("no answer handler")
-	ErrMidNotFound               = errors.New("mid not found")
+	ErrIceRestartWithoutLocalSDP        = errors.New("ICE restart without local SDP settled")
+	ErrIceRestartOnClosedPeerConnection = errors.New("ICE restart on closed peer connection")
+	ErrNoTransceiver                    = errors.New("no transceiver")
+	ErrNoSender                         = errors.New("no sender")
+	ErrNoICECandidateHandler            = errors.New("no ICE candidate handler")
+	ErrNoOfferHandler                   = errors.New("no offer handler")
+	ErrNoAnswerHandler                  = errors.New("no answer handler")
+	ErrMidNotFound                      = errors.New("mid not found")
 )
 
 // -------------------------------------------------------------------------
@@ -1103,10 +1104,16 @@ func (t *PCTransport) Negotiate(force bool) {
 	}
 }
 
-func (t *PCTransport) ICERestart() {
+func (t *PCTransport) ICERestart() error {
+	if t.pc.ConnectionState() == webrtc.PeerConnectionStateClosed {
+		t.params.Logger.Warnw("trying to restart ICE on closed peer connection", nil)
+		return ErrIceRestartOnClosedPeerConnection
+	}
+
 	t.postEvent(event{
 		signal: signalICERestart,
 	})
+	return nil
 }
 
 func (t *PCTransport) ResetShortConnOnICERestart() {

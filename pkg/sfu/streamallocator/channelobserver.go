@@ -90,7 +90,9 @@ func NewChannelObserver(params ChannelObserverParams, logger logger.Logger) *Cha
 			Name:                   params.Name + "-estimate",
 			Logger:                 logger,
 			RequiredSamples:        params.Config.EstimateRequiredSamples,
+			RequiredSamplesMin:     params.Config.EstimateRequiredSamplesMin,
 			DownwardTrendThreshold: params.Config.EstimateDownwardTrendThreshold,
+			DownwardTrendMaxWait:   params.Config.EstimateDownwardTrendMaxWait,
 			ValidityWindow:         params.Config.EstimateValidityWindow,
 		}),
 		nackTracker: NewNackTracker(NackTrackerParams{
