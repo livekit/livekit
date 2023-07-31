@@ -863,7 +863,9 @@ func (p *ParticipantImpl) ICERestart(iceConfig *livekit.ICEConfig) {
 		t.(types.LocalMediaTrack).Restart()
 	}
 
-	p.TransportManager.ICERestart(iceConfig)
+	if err := p.TransportManager.ICERestart(iceConfig); err != nil {
+		p.IssueFullReconnect(types.ParticipantCloseReasonNegotiateFailed)
+	}
 }
 
 func (p *ParticipantImpl) OnICEConfigChanged(f func(participant types.LocalParticipant, iceConfig *livekit.ICEConfig)) {
