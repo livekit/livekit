@@ -57,9 +57,9 @@ type TrendDetectorParams struct {
 	Name                   string
 	Logger                 logger.Logger
 	RequiredSamples        int
-	RequiredSamplesMin        int
+	RequiredSamplesMin     int
 	DownwardTrendThreshold float64
-	DownwardTrendMaxWait time.Duration
+	DownwardTrendMaxWait   time.Duration
 	CollapseThreshold      time.Duration
 	ValidityWindow         time.Duration
 }
