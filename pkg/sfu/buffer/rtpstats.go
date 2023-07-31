@@ -807,8 +807,10 @@ func (r *RTPStats) SetRtcpSenderReportData(srData *RTCPSenderReportData) {
 			r.logger.Infow(
 				"received sender report, out-of-order, resetting",
 				"prevTSExt", r.srNewest.RTPTimestampExt,
+				"prevRTP", r.srNewest.RTPTimestamp,
 				"prevNTP", r.srNewest.NTPTimestamp.Time().String(),
 				"currTSExt", srDataCopy.RTPTimestampExt,
+				"currRTP", srDataCopy.RTPTimestamp,
 				"currNTP", srDataCopy.NTPTimestamp.Time().String(),
 			)
 			r.srFirst = &srDataCopy
@@ -914,7 +916,9 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, calculatedClockRate uint32) 
 	}
 
 	if r.srNewest != nil && nowRTPExt < r.srNewest.RTPTimestampExt {
-		// If report being generated is behind, use the time different and clock rate of codec to produce next report.
+		// If report being generated is behind, use the time difference and
+		// clock rate of codec to produce next report.
+		//
 		// Current report could be behind due to the following
 		//  - Publisher pacing
 		//  - Due to above, report from publisher side is ahead of packet timestamps.
@@ -926,8 +930,10 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, calculatedClockRate uint32) 
 		r.logger.Infow(
 			"sending sender report, out-of-order, repairing",
 			"prevTSExt", r.srNewest.RTPTimestampExt,
+			"prevRTP", r.srNewest.RTPTimestamp,
 			"prevNTP", r.srNewest.NTPTimestamp.Time().String(),
 			"currTSExt", nowRTPExt,
+			"currRTP", nowRTP,
 			"currNTP", nowNTP.Time().String(),
 		)
 		ntpDiffSinceLast := nowNTP.Time().Sub(r.srNewest.NTPTimestamp.Time())
