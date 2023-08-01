@@ -234,7 +234,7 @@ func NewRoom(
 			msgId, sendErr := roomP2PCommunicator.SendMessage(peerId, packSignalPeerMessage("", offer))
 			if sendErr != nil {
 				pendingAnswersMu.Unlock()
-				return nil, err
+				return nil, fmt.Errorf("cannot send message to room commmunicator: %w", sendErr)
 			}
 			logger.Infow("offer sent")
 			pendingAnswers[msgId] = answer
@@ -253,7 +253,7 @@ func NewRoom(
 			case a := <-answer:
 				return a, nil
 			case <-ctx.Done():
-				return nil, ctx.Err()
+				return nil, fmt.Errorf("cannot receive answer: %w", ctx.Err())
 			}
 		}
 		if err := rel.Offer(signalFn); err != nil {
@@ -1007,6 +1007,9 @@ func (r *Room) Close() {
 	for _, p := range r.GetParticipants() {
 		_ = p.Close(true, types.ParticipantCloseReasonRoomClose)
 	}
+	r.outRelayCollection.ForEach(func(relay relay.Relay) {
+		relay.Close()
+	})
 	if r.onClose != nil {
 		r.onClose()
 	}

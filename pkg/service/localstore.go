@@ -6,9 +6,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/logger"
 	"github.com/pkg/errors"
+
+	"github.com/livekit/livekit-server/pkg/utils"
 
 	p2p_database "github.com/dTelecom/p2p-realtime-database"
 	"github.com/thoas/go-funk"
@@ -21,7 +22,6 @@ import (
 // encapsulates CRUD operations for room settings
 type LocalStore struct {
 	currentNodeId            livekit.NodeID
-	p2pDatabaseConfig        p2p_database.Config
 	clientParticipantCounter *ParticipantCounter
 	nodeProvider             *NodeProvider
 	mainDatabase             *p2p_database.DB
@@ -39,14 +39,12 @@ type LocalStore struct {
 
 func NewLocalStore(
 	currentNodeId livekit.NodeID,
-	mainDatabaseConfig p2p_database.Config,
 	participantCounter *ParticipantCounter,
 	mainDatabase *p2p_database.DB,
 	nodeProvider *NodeProvider,
 ) *LocalStore {
 	return &LocalStore{
 		currentNodeId:            currentNodeId,
-		p2pDatabaseConfig:        mainDatabaseConfig,
 		clientParticipantCounter: participantCounter,
 		nodeProvider:             nodeProvider,
 		mainDatabase:             mainDatabase,
@@ -70,8 +68,14 @@ func (s *LocalStore) StoreRoom(_ context.Context, room *livekit.Room, roomKey li
 	s.rooms[roomKey] = room
 	s.roomInternal[roomKey] = internal
 	if _, ok := s.roomCommunicators[roomKey]; !ok {
-		cfg := s.p2pDatabaseConfig
-		s.roomCommunicators[roomKey] = p2p.NewRoomCommunicatorImpl(room, cfg)
+		if roomCommunicator, err := p2p.NewRoomCommunicatorImpl(room, s.mainDatabase); err != nil {
+			return errors.Wrap(err, "cannot create room communicator")
+		} else {
+			s.roomCommunicators[roomKey] = roomCommunicator
+			log.Println("New room communicator has been created")
+		}
+	} else {
+		log.Println("Room communicator already exists")
 	}
 	s.lock.Unlock()
 
@@ -129,9 +133,8 @@ func (s *LocalStore) DeleteRoom(ctx context.Context, roomKey livekit.RoomKey) er
 	db, exists := s.roomCommunicators[roomKey]
 	if exists {
 		db.Close()
+		delete(s.roomCommunicators, roomKey)
 	}
-
-	delete(s.roomCommunicators, roomKey)
 
 	return nil
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
+	"github.com/pkg/errors"
 
 	"github.com/livekit/livekit-server/pkg/rtc/relay"
 	"github.com/livekit/livekit-server/pkg/sfu"
@@ -239,7 +240,7 @@ func (r *PcRelay) Offer(signalFn func(offerData []byte) ([]byte, error)) error {
 		Ordered: &ordered,
 	})
 	if dcErr != nil {
-		return fmt.Errorf("CreateDataChannel error: %w", dcErr)
+		return errors.Wrap(dcErr, "CreateDataChannel error")
 	}
 
 	r.signalingDC.OnMessage(r.onSignalingDataChannelMessage)
@@ -251,10 +252,10 @@ func (r *PcRelay) Offer(signalFn func(offerData []byte) ([]byte, error)) error {
 
 	offer, offerErr := r.pc.CreateOffer(nil)
 	if offerErr != nil {
-		return offerErr
+		return errors.Wrap(offerErr, "CreateOffer error")
 	}
 
-	r.logger.Debugw(offer.SDP)
+	// r.logger.Debugw(offer.SDP)
 
 	doneCh := make(chan struct{})
 	var iceCandidates []webrtc.ICECandidateInit
@@ -268,7 +269,7 @@ func (r *PcRelay) Offer(signalFn func(offerData []byte) ([]byte, error)) error {
 	})
 
 	if err := r.pc.SetLocalDescription(offer); err != nil {
-		return err
+		return errors.Wrap(err, "SetLocalDescription error")
 	}
 
 	select {
@@ -279,26 +280,26 @@ func (r *PcRelay) Offer(signalFn func(offerData []byte) ([]byte, error)) error {
 
 	offerData, marshalErr := json.Marshal(sessionDescriptionWithIceCandidates{offer, iceCandidates})
 	if marshalErr != nil {
-		return marshalErr
+		return errors.Wrap(marshalErr, "json marshal error")
 	}
 
 	answerData, signalErr := signalFn(offerData)
 	if signalErr != nil {
-		return fmt.Errorf("signalFn error: %w", signalErr)
+		return errors.Wrap(signalErr, "signalFn error")
 	}
 
 	answerWithIceCandidates := sessionDescriptionWithIceCandidates{}
 	if err := json.Unmarshal(answerData, &answerWithIceCandidates); err != nil {
-		return err
+		return errors.Wrap(err, "json unmarshal error")
 	}
 
 	if err := r.pc.SetRemoteDescription(answerWithIceCandidates.SessionDescription); err != nil {
-		return fmt.Errorf("SetRemoteDescription error: %w", err)
+		return errors.Wrap(err, "SetRemoteDescription error")
 	}
 
 	for _, candidate := range answerWithIceCandidates.IceCandidates {
 		if err := r.pc.AddICECandidate(candidate); err != nil {
-			return fmt.Errorf("AddICECandidate error: %w", err)
+			return errors.Wrap(err, "AddICECandidate error")
 		}
 	}
 
@@ -308,7 +309,7 @@ func (r *PcRelay) Offer(signalFn func(offerData []byte) ([]byte, error)) error {
 func (r *PcRelay) Answer(offerData []byte) ([]byte, error) {
 	offerWithIceCandidates := sessionDescriptionWithIceCandidates{}
 	if err := json.Unmarshal(offerData, &offerWithIceCandidates); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "json unmarshal error")
 	}
 
 	doneCh := make(chan struct{})
@@ -323,23 +324,23 @@ func (r *PcRelay) Answer(offerData []byte) ([]byte, error) {
 	})
 
 	if err := r.pc.SetRemoteDescription(offerWithIceCandidates.SessionDescription); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "SetRemoteDescription error")
 	}
 
 	answer, answerErr := r.pc.CreateAnswer(nil)
 	if answerErr != nil {
-		return nil, answerErr
+		return nil, errors.Wrap(answerErr, "CreateAnswer error")
 	}
 
-	r.logger.Debugw(answer.SDP)
+	// r.logger.Debugw(answer.SDP)
 
 	if err := r.pc.SetLocalDescription(answer); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "SetLocalDescription error")
 	}
 
 	for _, candidate := range offerWithIceCandidates.IceCandidates {
 		if err := r.pc.AddICECandidate(candidate); err != nil {
-			return nil, fmt.Errorf("AddICECandidate error: %w", err)
+			return nil, errors.Wrap(err, "AddICECandidate error")
 		}
 	}
 
@@ -349,7 +350,11 @@ func (r *PcRelay) Answer(offerData []byte) ([]byte, error) {
 		r.logger.Warnw("timeout when waiting ice candidates", nil)
 	}
 
-	return json.Marshal(sessionDescriptionWithIceCandidates{answer, iceCandidates})
+	data, marshalErr := json.Marshal(sessionDescriptionWithIceCandidates{answer, iceCandidates})
+	if marshalErr != nil {
+		return nil, errors.Wrap(marshalErr, "json marshal error")
+	}
+	return data, nil
 }
 
 func (r *PcRelay) ID() string {
@@ -619,4 +624,8 @@ func (r *PcRelay) onSignalingDataChannelMessage(msg webrtc.DataChannelMessage) {
 
 func (r *PcRelay) OnMessage(f func(id uint64, payload []byte)) {
 	r.onMessage.Store(f)
+}
+
+func (r *PcRelay) Close() {
+	_ = r.pc.Close()
 }
