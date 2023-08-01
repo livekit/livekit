@@ -50,7 +50,7 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket, layer int32) (result VideoL
 		}
 
 		if reason != "" {
-			s.logger.Infow(
+			s.logger.Debugw(
 				reason,
 				"previous", s.previousLayer,
 				"current", s.currentLayer,

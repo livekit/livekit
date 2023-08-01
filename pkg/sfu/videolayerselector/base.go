@@ -166,7 +166,7 @@ func (b *Base) SelectTemporal(extPkt *buffer.ExtPacket) (int32, bool) {
 			b.previousLayer = b.currentLayer
 			b.currentLayer.Temporal = next
 
-			b.logger.Infow(
+			b.logger.Debugw(
 				"updating temporal layer",
 				"previous", b.previousLayer,
 				"current", b.currentLayer,
