@@ -91,7 +91,6 @@ type MediaTrackReceiverParams struct {
 	ReceiverConfig      ReceiverConfig
 	SubscriberConfig    DirectionConfig
 	AudioConfig         config.AudioConfig
-	VideoConfig         config.VideoConfig
 	Telemetry           telemetry.TelemetryService
 	Logger              logger.Logger
 }
@@ -130,7 +129,6 @@ func NewMediaTrackReceiver(params MediaTrackReceiverParams) *MediaTrackReceiver 
 		IsRelayed:        params.IsRelayed,
 		ReceiverConfig:   params.ReceiverConfig,
 		SubscriberConfig: params.SubscriberConfig,
-		VideoConfig:      params.VideoConfig,
 		Telemetry:        params.Telemetry,
 		Logger:           params.Logger,
 	})
