@@ -309,7 +309,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 	searchDone:
 		for _, ext := range extensions {
 			switch ext.URI {
-			case dd.ExtensionUrl:
+			case dd.ExtensionURI:
 				isDDAvailable = true
 				break searchDone
 			}
@@ -395,7 +395,7 @@ func (f *Forwarder) Mute(muted bool) bool {
 	// It could result in some bandwidth consumed for stream without visibility in
 	// the case of intentional mute.
 	if muted && f.isDeficientLocked() && f.lastAllocation.PauseReason == VideoPauseReasonBandwidth {
-		f.logger.Infow("ignoring forwarder mute, paused due to congestion")
+		f.logger.Debugw("ignoring forwarder mute, paused due to congestion")
 		return false
 	}
 
@@ -1525,7 +1525,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		f.referenceLayerSpatial = layer
 		f.rtpMunger.SetLastSnTs(extPkt)
 		f.codecMunger.SetLast(extPkt)
-		f.logger.Infow(
+		f.logger.Debugw(
 			"starting forwarding",
 			"sequenceNumber", extPkt.Packet.SequenceNumber,
 			"timestamp", extPkt.Packet.Timestamp,
@@ -1657,7 +1657,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		// nominal increase
 		nextTS = lastTS + 1
 	}
-	f.logger.Infow(
+	f.logger.Debugw(
 		"next timestamp on switch",
 		"switchingAt", switchingAt.String(),
 		"layer", layer,
@@ -1816,7 +1816,7 @@ func (f *Forwarder) maybeStart() {
 	f.rtpMunger.SetLastSnTs(extPkt)
 
 	f.firstTS = extPkt.Packet.Timestamp
-	f.logger.Infow(
+	f.logger.Debugw(
 		"starting with dummy forwarding",
 		"sequenceNumber", extPkt.Packet.SequenceNumber,
 		"timestamp", extPkt.Packet.Timestamp,

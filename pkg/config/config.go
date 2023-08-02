@@ -198,6 +198,12 @@ type StreamTrackersConfig struct {
 	Screenshare StreamTrackerConfig `yaml:"screenshare,omitempty"`
 }
 
+type PlayoutDelayConfig struct {
+	Enabled bool `yaml:"enabled,omitempty"`
+	Min     int  `yaml:"min,omitempty"`
+	Max     int  `yaml:"max,omitempty"`
+}
+
 type VideoConfig struct {
 	DynacastPauseDelay time.Duration        `yaml:"dynacast_pause_delay,omitempty"`
 	StreamTracker      StreamTrackersConfig `yaml:"stream_tracker,omitempty"`
@@ -205,12 +211,13 @@ type VideoConfig struct {
 
 type RoomConfig struct {
 	// enable rooms to be automatically created
-	AutoCreate         bool        `yaml:"auto_create,omitempty"`
-	EnabledCodecs      []CodecSpec `yaml:"enabled_codecs,omitempty"`
-	MaxParticipants    uint32      `yaml:"max_participants,omitempty"`
-	EmptyTimeout       uint32      `yaml:"empty_timeout,omitempty"`
-	EnableRemoteUnmute bool        `yaml:"enable_remote_unmute,omitempty"`
-	MaxMetadataSize    uint32      `yaml:"max_metadata_size,omitempty"`
+	AutoCreate         bool               `yaml:"auto_create,omitempty"`
+	EnabledCodecs      []CodecSpec        `yaml:"enabled_codecs,omitempty"`
+	MaxParticipants    uint32             `yaml:"max_participants,omitempty"`
+	EmptyTimeout       uint32             `yaml:"empty_timeout,omitempty"`
+	EnableRemoteUnmute bool               `yaml:"enable_remote_unmute,omitempty"`
+	MaxMetadataSize    uint32             `yaml:"max_metadata_size,omitempty"`
+	PlayoutDelay       PlayoutDelayConfig `yaml:"playout_delay,omitempty"`
 }
 
 type CodecSpec struct {

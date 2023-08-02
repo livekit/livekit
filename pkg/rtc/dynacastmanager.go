@@ -238,7 +238,7 @@ func (d *DynacastManager) update(force bool) {
 	// clear debounce on send
 	d.maxSubscribedQualityDebounce(func() {})
 
-	d.params.Logger.Infow("committing quality change",
+	d.params.Logger.Debugw("committing quality change",
 		"force", force,
 		"committedMaxSubscribedQuality", d.committedMaxSubscribedQuality,
 		"maxSubscribedQuality", d.maxSubscribedQuality,

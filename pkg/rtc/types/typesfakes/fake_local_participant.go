@@ -263,6 +263,16 @@ type FakeLocalParticipant struct {
 	getPacerReturnsOnCall map[int]struct {
 		result1 pacer.Pacer
 	}
+	GetPlayoutDelayConfigStub        func() *livekit.PlayoutDelay
+	getPlayoutDelayConfigMutex       sync.RWMutex
+	getPlayoutDelayConfigArgsForCall []struct {
+	}
+	getPlayoutDelayConfigReturns struct {
+		result1 *livekit.PlayoutDelay
+	}
+	getPlayoutDelayConfigReturnsOnCall map[int]struct {
+		result1 *livekit.PlayoutDelay
+	}
 	GetPublishedTrackStub        func(livekit.TrackID) types.MediaTrack
 	getPublishedTrackMutex       sync.RWMutex
 	getPublishedTrackArgsForCall []struct {
@@ -771,6 +781,16 @@ type FakeLocalParticipant struct {
 		arg1 livekit.ParticipantID
 		arg2 livekit.TrackID
 		arg3 bool
+	}
+	SupportSyncStreamIDStub        func() bool
+	supportSyncStreamIDMutex       sync.RWMutex
+	supportSyncStreamIDArgsForCall []struct {
+	}
+	supportSyncStreamIDReturns struct {
+		result1 bool
+	}
+	supportSyncStreamIDReturnsOnCall map[int]struct {
+		result1 bool
 	}
 	ToProtoStub        func() *livekit.ParticipantInfo
 	toProtoMutex       sync.RWMutex
@@ -2146,6 +2166,59 @@ func (fake *FakeLocalParticipant) GetPacerReturnsOnCall(i int, result1 pacer.Pac
 	}
 	fake.getPacerReturnsOnCall[i] = struct {
 		result1 pacer.Pacer
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetPlayoutDelayConfig() *livekit.PlayoutDelay {
+	fake.getPlayoutDelayConfigMutex.Lock()
+	ret, specificReturn := fake.getPlayoutDelayConfigReturnsOnCall[len(fake.getPlayoutDelayConfigArgsForCall)]
+	fake.getPlayoutDelayConfigArgsForCall = append(fake.getPlayoutDelayConfigArgsForCall, struct {
+	}{})
+	stub := fake.GetPlayoutDelayConfigStub
+	fakeReturns := fake.getPlayoutDelayConfigReturns
+	fake.recordInvocation("GetPlayoutDelayConfig", []interface{}{})
+	fake.getPlayoutDelayConfigMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) GetPlayoutDelayConfigCallCount() int {
+	fake.getPlayoutDelayConfigMutex.RLock()
+	defer fake.getPlayoutDelayConfigMutex.RUnlock()
+	return len(fake.getPlayoutDelayConfigArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) GetPlayoutDelayConfigCalls(stub func() *livekit.PlayoutDelay) {
+	fake.getPlayoutDelayConfigMutex.Lock()
+	defer fake.getPlayoutDelayConfigMutex.Unlock()
+	fake.GetPlayoutDelayConfigStub = stub
+}
+
+func (fake *FakeLocalParticipant) GetPlayoutDelayConfigReturns(result1 *livekit.PlayoutDelay) {
+	fake.getPlayoutDelayConfigMutex.Lock()
+	defer fake.getPlayoutDelayConfigMutex.Unlock()
+	fake.GetPlayoutDelayConfigStub = nil
+	fake.getPlayoutDelayConfigReturns = struct {
+		result1 *livekit.PlayoutDelay
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetPlayoutDelayConfigReturnsOnCall(i int, result1 *livekit.PlayoutDelay) {
+	fake.getPlayoutDelayConfigMutex.Lock()
+	defer fake.getPlayoutDelayConfigMutex.Unlock()
+	fake.GetPlayoutDelayConfigStub = nil
+	if fake.getPlayoutDelayConfigReturnsOnCall == nil {
+		fake.getPlayoutDelayConfigReturnsOnCall = make(map[int]struct {
+			result1 *livekit.PlayoutDelay
+		})
+	}
+	fake.getPlayoutDelayConfigReturnsOnCall[i] = struct {
+		result1 *livekit.PlayoutDelay
 	}{result1}
 }
 
@@ -5008,6 +5081,59 @@ func (fake *FakeLocalParticipant) SubscriptionPermissionUpdateArgsForCall(i int)
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
+func (fake *FakeLocalParticipant) SupportSyncStreamID() bool {
+	fake.supportSyncStreamIDMutex.Lock()
+	ret, specificReturn := fake.supportSyncStreamIDReturnsOnCall[len(fake.supportSyncStreamIDArgsForCall)]
+	fake.supportSyncStreamIDArgsForCall = append(fake.supportSyncStreamIDArgsForCall, struct {
+	}{})
+	stub := fake.SupportSyncStreamIDStub
+	fakeReturns := fake.supportSyncStreamIDReturns
+	fake.recordInvocation("SupportSyncStreamID", []interface{}{})
+	fake.supportSyncStreamIDMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) SupportSyncStreamIDCallCount() int {
+	fake.supportSyncStreamIDMutex.RLock()
+	defer fake.supportSyncStreamIDMutex.RUnlock()
+	return len(fake.supportSyncStreamIDArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) SupportSyncStreamIDCalls(stub func() bool) {
+	fake.supportSyncStreamIDMutex.Lock()
+	defer fake.supportSyncStreamIDMutex.Unlock()
+	fake.SupportSyncStreamIDStub = stub
+}
+
+func (fake *FakeLocalParticipant) SupportSyncStreamIDReturns(result1 bool) {
+	fake.supportSyncStreamIDMutex.Lock()
+	defer fake.supportSyncStreamIDMutex.Unlock()
+	fake.SupportSyncStreamIDStub = nil
+	fake.supportSyncStreamIDReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) SupportSyncStreamIDReturnsOnCall(i int, result1 bool) {
+	fake.supportSyncStreamIDMutex.Lock()
+	defer fake.supportSyncStreamIDMutex.Unlock()
+	fake.SupportSyncStreamIDStub = nil
+	if fake.supportSyncStreamIDReturnsOnCall == nil {
+		fake.supportSyncStreamIDReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.supportSyncStreamIDReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
 func (fake *FakeLocalParticipant) ToProto() *livekit.ParticipantInfo {
 	fake.toProtoMutex.Lock()
 	ret, specificReturn := fake.toProtoReturnsOnCall[len(fake.toProtoArgsForCall)]
@@ -5703,6 +5829,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.getLoggerMutex.RUnlock()
 	fake.getPacerMutex.RLock()
 	defer fake.getPacerMutex.RUnlock()
+	fake.getPlayoutDelayConfigMutex.RLock()
+	defer fake.getPlayoutDelayConfigMutex.RUnlock()
 	fake.getPublishedTrackMutex.RLock()
 	defer fake.getPublishedTrackMutex.RUnlock()
 	fake.getPublishedTracksMutex.RLock()
@@ -5831,6 +5959,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.subscriptionPermissionMutex.RUnlock()
 	fake.subscriptionPermissionUpdateMutex.RLock()
 	defer fake.subscriptionPermissionUpdateMutex.RUnlock()
+	fake.supportSyncStreamIDMutex.RLock()
+	defer fake.supportSyncStreamIDMutex.RUnlock()
 	fake.toProtoMutex.RLock()
 	defer fake.toProtoMutex.RUnlock()
 	fake.toProtoWithVersionMutex.RLock()
