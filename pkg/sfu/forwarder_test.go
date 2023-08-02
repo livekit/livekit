@@ -201,34 +201,13 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 
 	f.PubMute(false)
 
-	// when parked layers valid, should stay there
-	f.vls.SetParked(buffer.VideoLayer{
-		Spatial:  0,
-		Temporal: 1,
-	})
-	expectedResult = VideoAllocation{
-		PauseReason:         VideoPauseReasonFeedDry,
-		BandwidthRequested:  0,
-		BandwidthDelta:      0,
-		Bitrates:            emptyBitrates,
-		TargetLayer:         f.vls.GetParked(),
-		RequestLayerSpatial: f.vls.GetParked().Spatial,
-		MaxLayer:            buffer.DefaultMaxLayer,
-		DistanceToDesired:   0,
-	}
-	result = f.AllocateOptimal(nil, emptyBitrates, true)
-	require.Equal(t, expectedResult, result)
-	require.Equal(t, expectedResult, f.lastAllocation)
-	require.Equal(t, f.vls.GetParked(), f.TargetLayer())
-	f.vls.SetParked(buffer.InvalidLayer)
-
 	// when max layers changes, target is opportunistic, but requested spatial layer should be at max
 	f.SetMaxTemporalLayerSeen(3)
 	f.vls.SetMax(buffer.VideoLayer{Spatial: 1, Temporal: 3})
 	expectedResult = VideoAllocation{
 		PauseReason:         VideoPauseReasonNone,
 		BandwidthRequested:  bitrates[1][3],
-		BandwidthDelta:      bitrates[1][3] - bitrates[0][1],
+		BandwidthDelta:      bitrates[1][3],
 		BandwidthNeeded:     bitrates[1][3],
 		Bitrates:            bitrates,
 		TargetLayer:         buffer.DefaultMaxLayer,

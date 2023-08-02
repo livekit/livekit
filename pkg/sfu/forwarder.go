@@ -36,10 +36,9 @@ import (
 
 // Forwarder
 const (
-	FlagPauseOnDowngrade    = true
-	FlagFilterRTX           = true
-	TransitionCostSpatial   = 10
-	ParkedLayerWaitDuration = 2 * time.Second
+	FlagPauseOnDowngrade  = true
+	FlagFilterRTX         = true
+	TransitionCostSpatial = 10
 
 	ResumeBehindThresholdSeconds      = float64(0.1)   // 100ms
 	LayerSwitchBehindThresholdSeconds = float64(0.05)  // 50ms
@@ -124,7 +123,6 @@ type VideoAllocationProvisional struct {
 	Bitrates        Bitrates
 	maxLayer        buffer.VideoLayer
 	currentLayer    buffer.VideoLayer
-	parkedLayer     buffer.VideoLayer
 	allocatedLayer  buffer.VideoLayer
 }
 
@@ -199,8 +197,6 @@ type Forwarder struct {
 	referenceLayerSpatial int32
 	refTSOffset           uint32
 
-	parkedLayerTimer *time.Timer
-
 	provisional *VideoAllocationProvisional
 
 	lastAllocation VideoAllocation
@@ -210,8 +206,6 @@ type Forwarder struct {
 	vls videolayerselector.VideoLayerSelector
 
 	codecMunger codecmunger.CodecMunger
-
-	onParkedLayerExpired func()
 }
 
 func NewForwarder(
@@ -264,20 +258,6 @@ func (f *Forwarder) SetMaxTemporalLayerSeen(maxTemporalLayerSeen int32) bool {
 	f.vls.SetMaxSeenTemporal(maxTemporalLayerSeen)
 	f.logger.Debugw("setting max temporal layer seen", "maxTemporalLayerSeen", maxTemporalLayerSeen)
 	return true
-}
-
-func (f *Forwarder) OnParkedLayerExpired(fn func()) {
-	f.lock.Lock()
-	defer f.lock.Unlock()
-
-	f.onParkedLayerExpired = fn
-}
-
-func (f *Forwarder) getOnParkedLayerExpired() func() {
-	f.lock.RLock()
-	defer f.lock.RUnlock()
-
-	return f.onParkedLayerExpired
 }
 
 func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions []webrtc.RTPHeaderExtensionParameter) {
@@ -428,22 +408,10 @@ func (f *Forwarder) PubMute(pubMuted bool) bool {
 	f.logger.Debugw("setting forwarder pub mute", "pubMuted", pubMuted)
 	f.pubMuted = pubMuted
 
-	if f.kind == webrtc.RTPCodecTypeAudio {
-		// for audio resync when pub muted so that sequence numbers do not jump on unmute
-		// audio stops forwarding during pub mute too
-		if pubMuted {
-			f.resyncLocked()
-		}
-	} else {
-		// Do not resync on publisher mute as forwarding can continue on unmute using same layer.
-		// On unmute, park current layers as streaming can continue without a key frame when publisher starts the stream.
-		targetLayer := f.vls.GetTarget()
-		if !pubMuted && targetLayer.IsValid() && f.vls.GetCurrent().Spatial == targetLayer.Spatial {
-			f.setupParkedLayer(targetLayer)
-			f.vls.SetCurrent(buffer.InvalidLayer)
-		}
+	// resync when pub muted so that sequence numbers do not jump on unmute
+	if pubMuted {
+		f.resyncLocked()
 	}
-
 	return true
 }
 
@@ -476,9 +444,6 @@ func (f *Forwarder) SetMaxSpatialLayer(spatialLayer int32) (bool, buffer.VideoLa
 
 	f.logger.Debugw("setting max spatial layer", "layer", spatialLayer)
 	f.vls.SetMaxSpatial(spatialLayer)
-
-	f.clearParkedLayer()
-
 	return true, f.vls.GetMax()
 }
 
@@ -497,9 +462,6 @@ func (f *Forwarder) SetMaxTemporalLayer(temporalLayer int32) (bool, buffer.Video
 
 	f.logger.Debugw("setting max temporal layer", "layer", temporalLayer)
 	f.vls.SetMaxTemporal(temporalLayer)
-
-	f.clearParkedLayer()
-
 	return true, f.vls.GetMax()
 }
 
@@ -607,7 +569,6 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 
 	maxLayer := f.vls.GetMax()
 	maxSeenLayer := f.vls.GetMaxSeen()
-	parkedLayer := f.vls.GetParked()
 	currentLayer := f.vls.GetCurrent()
 	requestSpatial := f.vls.GetRequestSpatial()
 	alloc := VideoAllocation{
@@ -653,14 +614,6 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 
 	case f.pubMuted:
 		alloc.PauseReason = VideoPauseReasonPubMuted
-		// leave it at current layers for opportunistic resume
-		alloc.TargetLayer = currentLayer
-		alloc.RequestLayerSpatial = alloc.TargetLayer.Spatial
-
-	case parkedLayer.IsValid():
-		// if parked on a layer, let it continue
-		alloc.TargetLayer = parkedLayer
-		alloc.RequestLayerSpatial = alloc.TargetLayer.Spatial
 
 	default:
 		// lots of different events could end up here
@@ -754,7 +707,6 @@ func (f *Forwarder) ProvisionalAllocatePrepare(availableLayers []int32, Bitrates
 		Bitrates:       Bitrates,
 		maxLayer:       f.vls.GetMax(),
 		currentLayer:   f.vls.GetCurrent(),
-		parkedLayer:    f.vls.GetParked(),
 	}
 
 	f.provisional.availableLayers = make([]int32, len(availableLayers))
@@ -837,19 +789,11 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot b
 
 	existingTargetLayer := f.vls.GetTarget()
 	if f.provisional.muted || f.provisional.pubMuted {
-		bandwidthRequired := int64(0)
 		f.provisional.allocatedLayer = buffer.InvalidLayer
-		if f.provisional.pubMuted {
-			// leave it at current for opportunistic forwarding, there is still bandwidth saving with publisher mute
-			f.provisional.allocatedLayer = f.provisional.currentLayer
-			if f.provisional.allocatedLayer.IsValid() {
-				bandwidthRequired = f.provisional.Bitrates[f.provisional.allocatedLayer.Spatial][f.provisional.allocatedLayer.Temporal]
-			}
-		}
 		return VideoTransition{
 			From:           f.vls.GetTarget(),
 			To:             f.provisional.allocatedLayer,
-			BandwidthDelta: bandwidthRequired - getBandwidthNeeded(f.provisional.Bitrates, existingTargetLayer, f.lastAllocation.BandwidthRequested),
+			BandwidthDelta: -getBandwidthNeeded(f.provisional.Bitrates, existingTargetLayer, f.lastAllocation.BandwidthRequested),
 		}
 	}
 
@@ -941,12 +885,7 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot b
 
 	// if nothing available, just leave target at current to enable opportunistic forwarding in case current resumes
 	if !targetLayer.IsValid() {
-		if f.provisional.parkedLayer.IsValid() {
-			targetLayer = f.provisional.parkedLayer
-		} else {
-			targetLayer = f.provisional.currentLayer
-		}
-
+		targetLayer = f.provisional.currentLayer
 		if targetLayer.IsValid() {
 			bandwidthRequired = f.provisional.Bitrates[targetLayer.Spatial][targetLayer.Temporal]
 		}
@@ -981,7 +920,6 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 
 	targetLayer := f.vls.GetTarget()
 	if f.provisional.muted || f.provisional.pubMuted {
-		// if publisher muted, give up opportunistic resume and give back the bandwidth
 		f.provisional.allocatedLayer = buffer.InvalidLayer
 		return VideoTransition{
 			From:           targetLayer,
@@ -1007,11 +945,7 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 		// feed has gone dry, just leave target at current to enable opportunistic forwarding in case current resumes.
 		// Note that this is giving back bits and opportunistic forwarding resuming might trigger congestion again,
 		// but that should be handled by stream allocator.
-		if f.provisional.parkedLayer.IsValid() {
-			f.provisional.allocatedLayer = f.provisional.parkedLayer
-		} else {
-			f.provisional.allocatedLayer = f.provisional.currentLayer
-		}
+		f.provisional.allocatedLayer = f.provisional.currentLayer
 		return VideoTransition{
 			From:           targetLayer,
 			To:             f.provisional.allocatedLayer,
@@ -1138,7 +1072,6 @@ func (f *Forwarder) ProvisionalAllocateCommit() VideoAllocation {
 		}
 	}
 
-	f.clearParkedLayer()
 	return f.updateAllocation(alloc, "cooperative")
 }
 
@@ -1382,7 +1315,6 @@ func (f *Forwarder) Pause(availableLayers []int32, brs Bitrates) VideoAllocation
 		alloc.PauseReason = VideoPauseReasonBandwidth
 	}
 
-	f.clearParkedLayer()
 	return f.updateAllocation(alloc, "pause")
 }
 
@@ -1427,31 +1359,6 @@ func (f *Forwarder) Resync() {
 func (f *Forwarder) resyncLocked() {
 	f.vls.SetCurrent(buffer.InvalidLayer)
 	f.lastSSRC = 0
-	f.clearParkedLayer()
-}
-
-func (f *Forwarder) clearParkedLayer() {
-	f.vls.SetParked(buffer.InvalidLayer)
-	if f.parkedLayerTimer != nil {
-		f.parkedLayerTimer.Stop()
-		f.parkedLayerTimer = nil
-	}
-}
-
-func (f *Forwarder) setupParkedLayer(parkedLayer buffer.VideoLayer) {
-	f.clearParkedLayer()
-
-	f.vls.SetParked(parkedLayer)
-	f.parkedLayerTimer = time.AfterFunc(ParkedLayerWaitDuration, func() {
-		f.lock.Lock()
-		notify := f.vls.GetParked().IsValid()
-		f.clearParkedLayer()
-		f.lock.Unlock()
-
-		if onParkedLayerExpired := f.getOnParkedLayerExpired(); onParkedLayerExpired != nil && notify {
-			onParkedLayerExpired()
-		}
-	})
 }
 
 func (f *Forwarder) CheckSync() (locked bool, layer int32) {
@@ -1495,8 +1402,7 @@ func (f *Forwarder) GetTranslationParams(extPkt *buffer.ExtPacket, layer int32) 
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	// Video: Do not drop on publisher mute to enable resume on publisher unmute without a key frame.
-	if f.muted {
+	if f.muted || f.pubMuted {
 		return &TranslationParams{
 			shouldDrop: true,
 		}, nil
@@ -1504,13 +1410,6 @@ func (f *Forwarder) GetTranslationParams(extPkt *buffer.ExtPacket, layer int32) 
 
 	switch f.kind {
 	case webrtc.RTPCodecTypeAudio:
-		// Audio: Blank frames are injected on publisher mute to ensure decoder does not get stuck at a noise frame. So, do not forward.
-		if f.pubMuted {
-			return &TranslationParams{
-				shouldDrop: true,
-			}, nil
-		}
-
 		return f.getTranslationParamsAudio(extPkt, layer)
 	case webrtc.RTPCodecTypeVideo:
 		return f.getTranslationParamsVideo(extPkt, layer)
