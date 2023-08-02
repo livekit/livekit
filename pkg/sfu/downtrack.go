@@ -302,11 +302,6 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		d.params.Receiver.GetReferenceLayerRTPTimestamp,
 		d.getExpectedRTPTimestamp,
 	)
-	d.forwarder.OnParkedLayerExpired(func() {
-		if sal := d.getStreamAllocatorListener(); sal != nil {
-			sal.OnSubscriptionChanged(d)
-		}
-	})
 
 	d.rtpStats = buffer.NewRTPStats(buffer.RTPStatsParams{
 		ClockRate:              d.codec.ClockRate,

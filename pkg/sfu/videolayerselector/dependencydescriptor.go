@@ -286,10 +286,6 @@ func (d *DependencyDescriptor) updateActiveDecodeTargets(activeDecodeTargetsBitm
 
 func (d *DependencyDescriptor) CheckSync() (locked bool, layer int32) {
 	layer = d.GetRequestSpatial()
-	if d.GetParked().IsValid() {
-		return true, layer
-	}
-
 	d.decodeTargetsLock.RLock()
 	defer d.decodeTargetsLock.RUnlock()
 	for _, dt := range d.decodeTargets {
