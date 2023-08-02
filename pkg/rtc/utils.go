@@ -42,6 +42,25 @@ func PackStreamID(participantID livekit.ParticipantID, trackID livekit.TrackID) 
 	return string(participantID) + trackIdSeparator + string(trackID)
 }
 
+func PackSyncStreamID(participantID livekit.ParticipantID, stream string) string {
+	return string(participantID) + trackIdSeparator + stream
+}
+
+func StreamFromTrackSource(source livekit.TrackSource) string {
+	// group camera/mic, screenshare/audio together
+	switch source {
+	case livekit.TrackSource_SCREEN_SHARE:
+		return "screen"
+	case livekit.TrackSource_SCREEN_SHARE_AUDIO:
+		return "screen"
+	case livekit.TrackSource_CAMERA:
+		return "camera"
+	case livekit.TrackSource_MICROPHONE:
+		return "camera"
+	}
+	return "unknown"
+}
+
 func PackDataTrackLabel(participantID livekit.ParticipantID, trackID livekit.TrackID, label string) string {
 	return string(participantID) + trackIdSeparator + string(trackID) + trackIdSeparator + label
 }

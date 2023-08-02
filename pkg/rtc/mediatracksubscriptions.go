@@ -112,20 +112,29 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	for _, c := range codecs {
 		c.RTCPFeedback = rtcpFeedback
 	}
+
+	streamID := wr.StreamID()
+	if sub.SupportSyncStreamID() && t.params.MediaTrack.Stream() != "" {
+		streamID = PackSyncStreamID(t.params.MediaTrack.PublisherID(), t.params.MediaTrack.Stream())
+	}
+
 	var trailer []byte
 	if t.params.MediaTrack.IsEncrypted() {
 		trailer = sub.GetTrailer()
 	}
-	downTrack, err := sfu.NewDownTrack(
-		codecs,
-		wr,
-		sub.GetBufferFactory(),
-		subscriberID,
-		t.params.ReceiverConfig.PacketBufferSize,
-		sub.GetPacer(),
-		trailer,
-		LoggerWithTrack(sub.GetLogger(), trackID, t.params.IsRelayed),
-	)
+
+	downTrack, err := sfu.NewDownTrack(sfu.DowntrackParams{
+		Codecs:            codecs,
+		Receiver:          wr,
+		BufferFactory:     sub.GetBufferFactory(),
+		SubID:             subscriberID,
+		StreamID:          streamID,
+		MaxTrack:          t.params.ReceiverConfig.PacketBufferSize,
+		PlayoutDelayLimit: sub.GetPlayoutDelayConfig(),
+		Pacer:             sub.GetPacer(),
+		Trailer:           trailer,
+		Logger:            LoggerWithTrack(sub.GetLogger(), trackID, t.params.IsRelayed),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -200,6 +209,8 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		reusingTransceiver.Store(true)
 		rtpSender := existingTransceiver.Sender()
 		if rtpSender != nil {
+			// replaced track will bind immediately without negotiation, SetTransceiver first before bind
+			downTrack.SetTransceiver(existingTransceiver)
 			err := rtpSender.ReplaceTrack(downTrack)
 			if err == nil {
 				sender = rtpSender
@@ -259,9 +270,6 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	// negotiation isn't required if we've replaced track
 	subTrack.SetNeedsNegotiation(!replacedTrack)
 	subTrack.SetRTPSender(sender)
-
-	sendParameters := sender.GetParameters()
-	downTrack.SetRTPHeaderExtensions(sendParameters.HeaderExtensions)
 
 	downTrack.SetTransceiver(transceiver)
 
