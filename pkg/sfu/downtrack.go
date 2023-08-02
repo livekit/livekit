@@ -55,7 +55,6 @@ type TrackSender interface {
 	SubscriberID() livekit.ParticipantID
 	TrackInfoAvailable()
 	HandleRTCPSenderReportData(payloadType webrtc.PayloadType, layer int32, srData *buffer.RTCPSenderReportData) error
-	SetUpstreamRTT(rttMs uint32)
 }
 
 // -------------------------------------------------------------------
@@ -76,8 +75,6 @@ const (
 
 	waitBeforeSendPaddingOnMute = 100 * time.Millisecond
 	maxPaddingOnMuteDuration    = 5 * time.Second
-
-	playoutDelayUpdateInterval = 1 * time.Second
 )
 
 // -------------------------------------------------------------------
@@ -262,11 +259,9 @@ type DownTrack struct {
 	streamAllocatorBytesCounter     atomic.Uint32
 	bytesSent                       atomic.Uint32
 	bytesRetransmitted              atomic.Uint32
-	upstreamRtt                     atomic.Uint32
-	playoutDelay                    atomic.Value //rtpextension.PlayOutDelay
-	playoutDelayBytes               atomic.Value //bytes of marshalled playout delay
-	playoutUpdateLock               sync.RWMutex
-	lastPlayoutUpdateAt             time.Time
+
+	playoutDelayBytes atomic.Value //bytes of marshalled playout delay
+	playoudDelayAcked atomic.Bool
 
 	pacer pacer.Pacer
 
@@ -338,11 +333,11 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 	// set initial playout delay to minimum value
 
 	if d.params.PlayoutDelayLimit.GetEnabled() && d.params.PlayoutDelayLimit.GetMin() > 0 {
-		d.playoutDelay.Store(rtpextension.PlayoutDelayFromValue(
+		delay := rtpextension.PlayoutDelayFromValue(
 			uint16(d.params.PlayoutDelayLimit.GetMin()),
 			uint16(d.params.PlayoutDelayLimit.GetMax()),
-		))
-		b, err := d.playoutDelay.Load().(rtpextension.PlayOutDelay).Marshal()
+		)
+		b, err := delay.Marshal()
 		if err == nil {
 			d.playoutDelayBytes.Store(b)
 		}
@@ -686,9 +681,8 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	}
 
 	extensions := []pacer.ExtensionData{{ID: uint8(d.dependencyDescriptorExtID), Payload: tp.ddBytes}}
-	if d.playoutDelayExtID != 0 {
+	if d.playoutDelayExtID != 0 && !d.playoudDelayAcked.Load() {
 		if val := d.playoutDelayBytes.Load(); val != nil {
-			// TODO: if current playout delay is acknowledged by RR, stop sending it until delay changed
 			extensions = append(extensions, pacer.ExtensionData{ID: uint8(d.playoutDelayExtID), Payload: val.([]byte)})
 		}
 	}
@@ -1455,6 +1449,8 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				if sal := d.getStreamAllocatorListener(); sal != nil {
 					sal.OnRTCPReceiverReport(d, r)
 				}
+
+				d.playoudDelayAcked.Store(true)
 			}
 			if len(rr.Reports) > 0 {
 				d.listenerLock.RLock()
@@ -1494,8 +1490,6 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 		if onRttUpdate := d.getOnRttUpdate(); onRttUpdate != nil {
 			onRttUpdate(d, rttToReport)
 		}
-
-		d.updatePlayoutDelay()
 	}
 }
 
@@ -1816,66 +1810,6 @@ func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
 
 func (d *DownTrack) HandleRTCPSenderReportData(_payloadType webrtc.PayloadType, _layer int32, _srData *buffer.RTCPSenderReportData) error {
 	return nil
-}
-
-func (d *DownTrack) SetUpstreamRTT(rttMs uint32) {
-	if d.upstreamRtt.Load() == rttMs {
-		return
-	}
-
-	d.upstreamRtt.Store(rttMs)
-	d.updatePlayoutDelay()
-}
-
-func (d *DownTrack) updatePlayoutDelay() {
-	if d.playoutDelayExtID == 0 || !d.params.PlayoutDelayLimit.GetEnabled() {
-		return
-	}
-
-	d.playoutUpdateLock.Lock()
-	if time.Since(d.lastPlayoutUpdateAt) < playoutDelayUpdateInterval {
-		d.playoutUpdateLock.Unlock()
-		return
-	}
-	d.lastPlayoutUpdateAt = time.Now()
-	d.playoutUpdateLock.Unlock()
-
-	rttMax := d.upstreamRtt.Load()
-	if rtt := d.rtpStats.GetRtt(); rtt > rttMax {
-		rttMax = rtt
-	}
-
-	// target delay is 50% more than RTT
-	targetDelay := rttMax * 15 / 10
-	currentDelay := d.playoutDelay.Load()
-	if currentDelay != nil {
-		currentTargetDelay := uint32(currentDelay.(rtpextension.PlayOutDelay).Min)
-		targetDelay = (currentTargetDelay + targetDelay) / 2
-	}
-
-	playoutDelay := rtpextension.PlayOutDelay{
-		Min: uint16(targetDelay),
-		Max: uint16(d.params.PlayoutDelayLimit.Max),
-	}
-
-	if playoutDelay.Min < uint16(d.params.PlayoutDelayLimit.Min) {
-		playoutDelay.Min = uint16(d.params.PlayoutDelayLimit.Min)
-	}
-
-	if playoutDelay.Min > uint16(d.params.PlayoutDelayLimit.Max) {
-		playoutDelay.Min = uint16(d.params.PlayoutDelayLimit.Max)
-	}
-
-	if currentDelay == nil || playoutDelay != currentDelay.(rtpextension.PlayOutDelay) {
-		b, err := playoutDelay.Marshal()
-		if err != nil {
-			d.params.Logger.Warnw("could not marshal playout delay", err, "playoutdelay", playoutDelay, "upstreamrtt", d.upstreamRtt.Load(), "downstreamrtt", d.rtpStats.GetRtt())
-		} else {
-			d.params.Logger.Debugw("setting playout delay", "playoutdelay", playoutDelay, "upstreamrtt", d.upstreamRtt.Load(), "downstreamrtt", d.rtpStats.GetRtt())
-			d.playoutDelayBytes.Store(b)
-			d.playoutDelay.Store(playoutDelay)
-		}
-	}
 }
 
 type sendPacketMetadata struct {

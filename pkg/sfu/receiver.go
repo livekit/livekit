@@ -281,18 +281,6 @@ func (w *WebRTCReceiver) SetRTT(rtt uint32) {
 
 		buff.SetRTT(rtt)
 	}
-
-	w.downTrackSpreader.Broadcast(func(ts TrackSender) {
-		ts.SetUpstreamRTT(rtt)
-	})
-
-	if rr := w.redReceiver.Load(); rr != nil {
-		rr.SetRTT(rtt)
-	}
-
-	if rr := w.primaryReceiver.Load(); rr != nil {
-		rr.SetRTT(rtt)
-	}
 }
 
 func (w *WebRTCReceiver) StreamID() string {
