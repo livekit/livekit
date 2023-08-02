@@ -151,4 +151,9 @@ func applyDefaultRoomConfig(room *livekit.Room, conf *config.RoomConfig) {
 			FmtpLine: codec.FmtpLine,
 		})
 	}
+	room.PlayoutDelay = &livekit.PlayoutDelay{
+		Enabled: conf.PlayoutDelay.Enabled,
+		Min:     uint32(conf.PlayoutDelay.Min),
+		Max:     uint32(conf.PlayoutDelay.Max),
+	}
 }

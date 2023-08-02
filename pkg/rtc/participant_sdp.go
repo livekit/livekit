@@ -155,7 +155,7 @@ func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(offer webrtc.Sess
 		// remove dd extension if av1/vp9 not preferred
 		if !strings.Contains(strings.ToLower(mime), "av1") && !strings.Contains(strings.ToLower(mime), "vp9") {
 			for i, attr := range unmatchVideo.Attributes {
-				if strings.Contains(attr.Value, dd.ExtensionUrl) {
+				if strings.Contains(attr.Value, dd.ExtensionURI) {
 					unmatchVideo.Attributes[i] = unmatchVideo.Attributes[len(unmatchVideo.Attributes)-1]
 					unmatchVideo.Attributes = unmatchVideo.Attributes[:len(unmatchVideo.Attributes)-1]
 					break

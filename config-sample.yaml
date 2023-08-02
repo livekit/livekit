@@ -152,6 +152,11 @@ keys:
 #   enable_remote_unmute: true
 #   # limit size of room and participant's metadata, 0 for no limit
 #   max_metadata_size: 0
+#   # control playout delay in ms of video track (and associated audio track) 
+#   playout_delay:
+#     enabled: true
+#     min: 100
+#     max: 300
 
 # Webhooks
 # when configured, LiveKit notifies your URL handler with room events

@@ -69,7 +69,7 @@ const (
 
 	AllChainsAreActive = uint32(0)
 
-	ExtensionUrl = "https://aomediacodec.github.io/av1-rtp-spec/#dependency-descriptor-rtp-header-extension"
+	ExtensionURI = "https://aomediacodec.github.io/av1-rtp-spec/#dependency-descriptor-rtp-header-extension"
 )
 
 // ------------------------------------------------------------------------------
