@@ -51,9 +51,6 @@ type VideoLayerSelector interface {
 	SetMaxSeenTemporal(layer int32)
 	GetMaxSeen() buffer.VideoLayer
 
-	SetParked(parkedLayer buffer.VideoLayer)
-	GetParked() buffer.VideoLayer
-
 	SetCurrent(currentLayer buffer.VideoLayer)
 	GetCurrent() buffer.VideoLayer
 
