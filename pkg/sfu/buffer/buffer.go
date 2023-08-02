@@ -181,7 +181,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 
 	for _, ext := range params.HeaderExtensions {
 		switch ext.URI {
-		case dd.ExtensionUrl:
+		case dd.ExtensionURI:
 			b.ddExt = uint8(ext.ID)
 			frc := NewFrameRateCalculatorDD(b.clockRate, b.logger)
 			for i := range b.frameRateCalculator {

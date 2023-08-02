@@ -43,6 +43,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
+	"github.com/livekit/livekit-server/pkg/sfu/rtpextension"
 	"github.com/livekit/livekit-server/pkg/sfu/sendsidebwe"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	"github.com/livekit/livekit-server/pkg/telemetry"
@@ -253,10 +254,17 @@ type TransportParams struct {
 	ClientInfo              ClientInfo
 	IsOfferer               bool
 	IsSendSide              bool
+	AllowPlayoutDelay       bool
 }
 
 func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimator cc.BandwidthEstimator)) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
-	me, err := createMediaEngine(params.EnabledCodecs, params.DirectionConfig)
+	directionConfig := params.DirectionConfig
+
+	if params.AllowPlayoutDelay {
+		directionConfig.RTPHeaderExtension.Video = append(directionConfig.RTPHeaderExtension.Video, rtpextension.PlayoutDelayURI)
+	}
+
+	me, err := createMediaEngine(params.EnabledCodecs, directionConfig)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -193,7 +193,7 @@ func (t *SubscribedTrack) UpdateSubscriberSettings(settings *livekit.UpdateTrack
 	t.settings.Store(settings)
 
 	if prevDisabled != settings.Disabled {
-		t.logger.Infow("updated subscribed track enabled", "enabled", !settings.Disabled)
+		t.logger.Debugw("updated subscribed track enabled", "enabled", !settings.Disabled)
 	}
 
 	// avoid frequent changes to mute & video layers, unless it became visible

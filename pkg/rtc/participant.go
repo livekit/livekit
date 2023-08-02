@@ -108,6 +108,7 @@ type ParticipantParams struct {
 	SubscriberAllowPause         bool
 	SubscriptionLimitAudio       int32
 	SubscriptionLimitVideo       int32
+	PlayoutDelay                 *livekit.PlayoutDelay
 }
 
 type ParticipantImpl struct {
@@ -1104,6 +1105,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		TCPFallbackRTTThreshold:  p.params.TCPFallbackRTTThreshold,
 		AllowUDPUnstableFallback: p.params.AllowUDPUnstableFallback,
 		TURNSEnabled:             p.params.TURNSEnabled,
+		AllowPlayoutDelay:        p.params.PlayoutDelay.GetEnabled() && p.SupportSyncStreamID(),
 		Logger:                   p.params.Logger,
 	})
 	if err != nil {
@@ -1584,6 +1586,10 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		DisableRed: req.DisableRed,
 		Stereo:     req.Stereo,
 		Encryption: req.Encryption,
+		Stream:     req.Stream,
+	}
+	if ti.Stream == "" {
+		ti.Stream = StreamFromTrackSource(ti.Source)
 	}
 	p.setStableTrackID(req.Cid, ti)
 	for _, codec := range req.SimulcastCodecs {
@@ -2212,6 +2218,14 @@ func (p *ParticipantImpl) UpdateMediaLoss(nodeID livekit.NodeID, trackID livekit
 
 	track.(types.LocalMediaTrack).NotifySubscriberNodeMediaLoss(nodeID, uint8(fractionalLoss))
 	return nil
+}
+
+func (p *ParticipantImpl) GetPlayoutDelayConfig() *livekit.PlayoutDelay {
+	return p.params.PlayoutDelay
+}
+
+func (p *ParticipantImpl) SupportSyncStreamID() bool {
+	return p.ProtocolVersion().SupportSyncStreamID() && !p.params.ClientInfo.isFirefox()
 }
 
 func codecsFromMediaDescription(m *sdp.MediaDescription) (out []sdp.Codec, err error) {
