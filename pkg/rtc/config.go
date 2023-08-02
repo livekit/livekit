@@ -86,7 +86,7 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 				sdp.SDESRTPStreamIDURI,
 				sdp.TransportCCURI,
 				frameMarking,
-				dd.ExtensionUrl,
+				dd.ExtensionURI,
 			},
 		},
 		RTCPFeedback: RTCPFeedbackConfig{
@@ -106,7 +106,7 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 	subscriberConfig := DirectionConfig{
 		StrictACKs: conf.RTC.StrictACKs,
 		RTPHeaderExtension: RTPHeaderExtensionConfig{
-			Video: []string{dd.ExtensionUrl},
+			Video: []string{dd.ExtensionURI},
 		},
 		RTCPFeedback: RTCPFeedbackConfig{
 			Video: []webrtc.RTCPFeedback{

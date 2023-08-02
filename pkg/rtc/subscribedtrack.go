@@ -193,7 +193,7 @@ func (t *SubscribedTrack) UpdateSubscriberSettings(settings *livekit.UpdateTrack
 	t.settings.Store(settings)
 
 	if prevDisabled != settings.Disabled {
-		t.logger.Infow("updated subscribed track enabled", "enabled", !settings.Disabled)
+		t.logger.Debugw("updated subscribed track enabled", "enabled", !settings.Disabled)
 	}
 
 	// avoid frequent changes to mute & video layers, unless it became visible
@@ -215,14 +215,14 @@ func (t *SubscribedTrack) UpdateVideoLayer() {
 		return
 	}
 
-	t.logger.Debugw("updating video layer",
-		"settings", settings,
-	)
+	t.logger.Debugw("updating video layer", "settings", settings)
 
-	spatial := t.spatialLayerFromSettings(settings)
-	t.DownTrack().SetMaxSpatialLayer(spatial)
-	if settings.Fps > 0 {
-		t.DownTrack().SetMaxTemporalLayer(t.MediaTrack().GetTemporalLayerForSpatialFps(spatial, settings.Fps, t.DownTrack().Codec().MimeType))
+	if settings.Width > 0 || settings.Fps > 0 {
+		spatial := t.spatialLayerFromSettings(settings)
+		t.DownTrack().SetMaxSpatialLayer(spatial)
+		if settings.Fps > 0 {
+			t.DownTrack().SetMaxTemporalLayer(t.MediaTrack().GetTemporalLayerForSpatialFps(spatial, settings.Fps, t.DownTrack().Codec().MimeType))
+		}
 	}
 }
 

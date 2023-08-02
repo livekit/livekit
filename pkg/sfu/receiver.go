@@ -126,8 +126,8 @@ type WebRTCReceiver struct {
 	onStatsUpdate    func(w *WebRTCReceiver, stat *livekit.AnalyticsStat)
 	onMaxLayerChange func(maxLayer int32)
 
-	primaryReceiver atomic.Value // *RedPrimaryReceiver
-	redReceiver     atomic.Value // *RedReceiver
+	primaryReceiver atomic.Pointer[RedPrimaryReceiver]
+	redReceiver     atomic.Pointer[RedReceiver]
 	redPktWriter    func(pkt *buffer.ExtPacket, spatialLayer int32)
 }
 
@@ -232,7 +232,7 @@ func NewWebRTCReceiver(
 	w.connectionStats.Start(w.trackInfo)
 
 	for _, ext := range receiver.GetParameters().HeaderExtensions {
-		if ext.URI == dd.ExtensionUrl {
+		if ext.URI == dd.ExtensionURI {
 			w.streamTrackerManager.AddDependencyDescriptorTrackers()
 			break
 		}
@@ -624,10 +624,10 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 			w.closed.Store(true)
 			w.closeTracks()
 			if pr := w.primaryReceiver.Load(); pr != nil {
-				pr.(*RedPrimaryReceiver).Close()
+				pr.Close()
 			}
 			if pr := w.redReceiver.Load(); pr != nil {
-				pr.(*RedReceiver).Close()
+				pr.Close()
 			}
 		})
 
@@ -731,7 +731,7 @@ func (w *WebRTCReceiver) GetPrimaryReceiverForRed() TrackReceiver {
 			w.bufferMu.Unlock()
 		}
 	}
-	return w.primaryReceiver.Load().(*RedPrimaryReceiver)
+	return w.primaryReceiver.Load()
 }
 
 func (w *WebRTCReceiver) GetRedReceiver() TrackReceiver {
@@ -750,7 +750,7 @@ func (w *WebRTCReceiver) GetRedReceiver() TrackReceiver {
 			w.bufferMu.Unlock()
 		}
 	}
-	return w.redReceiver.Load().(*RedReceiver)
+	return w.redReceiver.Load()
 }
 
 func (w *WebRTCReceiver) GetTemporalLayerFpsForSpatial(layer int32) []float32 {

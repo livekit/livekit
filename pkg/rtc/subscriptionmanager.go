@@ -148,7 +148,7 @@ func (m *SubscriptionManager) SubscribeToTrack(trackID livekit.TrackID) {
 		sub, desireChanged = m.setDesired(trackID, true)
 	}
 	if desireChanged {
-		sub.logger.Infow("subscribing to track")
+		sub.logger.Debugw("subscribing to track")
 	}
 
 	// always reconcile, since SubscribeToTrack could be called when the track is ready
@@ -161,7 +161,7 @@ func (m *SubscriptionManager) UnsubscribeFromTrack(trackID livekit.TrackID) {
 		return
 	}
 
-	sub.logger.Infow("unsubscribing from track")
+	sub.logger.Debugw("unsubscribing from track")
 	m.queueReconcile(trackID)
 }
 

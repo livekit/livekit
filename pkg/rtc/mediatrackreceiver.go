@@ -226,7 +226,7 @@ func (t *MediaTrackReceiver) SetPotentialCodecs(codecs []webrtc.RTPCodecParamete
 	// that is munged in svc codec.
 	headersWithoutDD := make([]webrtc.RTPHeaderExtensionParameter, 0, len(headers))
 	for _, h := range headers {
-		if h.URI != dependencydescriptor.ExtensionUrl {
+		if h.URI != dependencydescriptor.ExtensionURI {
 			headersWithoutDD = append(headersWithoutDD, h)
 		}
 	}
@@ -399,6 +399,13 @@ func (t *MediaTrackReceiver) Source() livekit.TrackSource {
 	defer t.lock.RUnlock()
 
 	return t.trackInfo.Source
+}
+
+func (t *MediaTrackReceiver) Stream() string {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return t.trackInfo.Stream
 }
 
 func (t *MediaTrackReceiver) PublisherID() livekit.ParticipantID {
