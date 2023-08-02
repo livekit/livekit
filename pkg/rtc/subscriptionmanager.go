@@ -148,7 +148,7 @@ func (m *SubscriptionManager) SubscribeToTrack(trackID livekit.TrackID) {
 		sub, desireChanged = m.setDesired(trackID, true)
 	}
 	if desireChanged {
-		sub.logger.Infow("subscribing to track")
+		sub.logger.Debugw("subscribing to track")
 	}
 
 	// always reconcile, since SubscribeToTrack could be called when the track is ready
@@ -161,7 +161,7 @@ func (m *SubscriptionManager) UnsubscribeFromTrack(trackID livekit.TrackID) {
 		return
 	}
 
-	sub.logger.Infow("unsubscribing from track")
+	sub.logger.Debugw("unsubscribing from track")
 	m.queueReconcile(trackID)
 }
 
@@ -369,6 +369,7 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 			// successfully unsubscribed, remove from map
 			m.lock.Lock()
 			if !s.isDesired() {
+				s.logger.Debugw("unsubscribe removing subscription")
 				delete(m.subscriptions, s.trackID)
 			}
 			m.lock.Unlock()
@@ -389,7 +390,10 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 
 	if s.needsCleanup() {
 		m.lock.Lock()
-		delete(m.subscriptions, s.trackID)
+		if !s.isDesired() {
+			s.logger.Debugw("cleanup removing subscription")
+			delete(m.subscriptions, s.trackID)
+		}
 		m.lock.Unlock()
 	}
 }

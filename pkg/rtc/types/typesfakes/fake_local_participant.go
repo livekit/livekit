@@ -314,6 +314,16 @@ type FakeLocalParticipant struct {
 	getSubscribedTracksReturnsOnCall map[int]struct {
 		result1 []types.SubscribedTrack
 	}
+	GetTrailerStub        func() []byte
+	getTrailerMutex       sync.RWMutex
+	getTrailerArgsForCall []struct {
+	}
+	getTrailerReturns struct {
+		result1 []byte
+	}
+	getTrailerReturnsOnCall map[int]struct {
+		result1 []byte
+	}
 	HandleAnswerStub        func(webrtc.SessionDescription)
 	handleAnswerMutex       sync.RWMutex
 	handleAnswerArgsForCall []struct {
@@ -335,6 +345,10 @@ type FakeLocalParticipant struct {
 	}
 	handleReconnectAndSendResponseReturnsOnCall map[int]struct {
 		result1 error
+	}
+	HandleSignalSourceCloseStub        func()
+	handleSignalSourceCloseMutex       sync.RWMutex
+	handleSignalSourceCloseArgsForCall []struct {
 	}
 	HasPermissionStub        func(livekit.TrackID, livekit.ParticipantIdentity) bool
 	hasPermissionMutex       sync.RWMutex
@@ -2428,6 +2442,59 @@ func (fake *FakeLocalParticipant) GetSubscribedTracksReturnsOnCall(i int, result
 	}{result1}
 }
 
+func (fake *FakeLocalParticipant) GetTrailer() []byte {
+	fake.getTrailerMutex.Lock()
+	ret, specificReturn := fake.getTrailerReturnsOnCall[len(fake.getTrailerArgsForCall)]
+	fake.getTrailerArgsForCall = append(fake.getTrailerArgsForCall, struct {
+	}{})
+	stub := fake.GetTrailerStub
+	fakeReturns := fake.getTrailerReturns
+	fake.recordInvocation("GetTrailer", []interface{}{})
+	fake.getTrailerMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) GetTrailerCallCount() int {
+	fake.getTrailerMutex.RLock()
+	defer fake.getTrailerMutex.RUnlock()
+	return len(fake.getTrailerArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) GetTrailerCalls(stub func() []byte) {
+	fake.getTrailerMutex.Lock()
+	defer fake.getTrailerMutex.Unlock()
+	fake.GetTrailerStub = stub
+}
+
+func (fake *FakeLocalParticipant) GetTrailerReturns(result1 []byte) {
+	fake.getTrailerMutex.Lock()
+	defer fake.getTrailerMutex.Unlock()
+	fake.GetTrailerStub = nil
+	fake.getTrailerReturns = struct {
+		result1 []byte
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetTrailerReturnsOnCall(i int, result1 []byte) {
+	fake.getTrailerMutex.Lock()
+	defer fake.getTrailerMutex.Unlock()
+	fake.GetTrailerStub = nil
+	if fake.getTrailerReturnsOnCall == nil {
+		fake.getTrailerReturnsOnCall = make(map[int]struct {
+			result1 []byte
+		})
+	}
+	fake.getTrailerReturnsOnCall[i] = struct {
+		result1 []byte
+	}{result1}
+}
+
 func (fake *FakeLocalParticipant) HandleAnswer(arg1 webrtc.SessionDescription) {
 	fake.handleAnswerMutex.Lock()
 	fake.handleAnswerArgsForCall = append(fake.handleAnswerArgsForCall, struct {
@@ -2552,6 +2619,30 @@ func (fake *FakeLocalParticipant) HandleReconnectAndSendResponseReturnsOnCall(i 
 	fake.handleReconnectAndSendResponseReturnsOnCall[i] = struct {
 		result1 error
 	}{result1}
+}
+
+func (fake *FakeLocalParticipant) HandleSignalSourceClose() {
+	fake.handleSignalSourceCloseMutex.Lock()
+	fake.handleSignalSourceCloseArgsForCall = append(fake.handleSignalSourceCloseArgsForCall, struct {
+	}{})
+	stub := fake.HandleSignalSourceCloseStub
+	fake.recordInvocation("HandleSignalSourceClose", []interface{}{})
+	fake.handleSignalSourceCloseMutex.Unlock()
+	if stub != nil {
+		fake.HandleSignalSourceCloseStub()
+	}
+}
+
+func (fake *FakeLocalParticipant) HandleSignalSourceCloseCallCount() int {
+	fake.handleSignalSourceCloseMutex.RLock()
+	defer fake.handleSignalSourceCloseMutex.RUnlock()
+	return len(fake.handleSignalSourceCloseArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) HandleSignalSourceCloseCalls(stub func()) {
+	fake.handleSignalSourceCloseMutex.Lock()
+	defer fake.handleSignalSourceCloseMutex.Unlock()
+	fake.HandleSignalSourceCloseStub = stub
 }
 
 func (fake *FakeLocalParticipant) HasPermission(arg1 livekit.TrackID, arg2 livekit.ParticipantIdentity) bool {
@@ -5748,12 +5839,16 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.getSubscribedParticipantsMutex.RUnlock()
 	fake.getSubscribedTracksMutex.RLock()
 	defer fake.getSubscribedTracksMutex.RUnlock()
+	fake.getTrailerMutex.RLock()
+	defer fake.getTrailerMutex.RUnlock()
 	fake.handleAnswerMutex.RLock()
 	defer fake.handleAnswerMutex.RUnlock()
 	fake.handleOfferMutex.RLock()
 	defer fake.handleOfferMutex.RUnlock()
 	fake.handleReconnectAndSendResponseMutex.RLock()
 	defer fake.handleReconnectAndSendResponseMutex.RUnlock()
+	fake.handleSignalSourceCloseMutex.RLock()
+	defer fake.handleSignalSourceCloseMutex.RUnlock()
 	fake.hasPermissionMutex.RLock()
 	defer fake.hasPermissionMutex.RUnlock()
 	fake.hiddenMutex.RLock()

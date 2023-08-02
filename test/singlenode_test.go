@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package test
 
 import (
@@ -620,7 +634,7 @@ func TestSubscribeToCodecUnsupported(t *testing.T) {
 		require.Equal(t, h264TrackID, sr.TrackSid)
 		require.Equal(t, livekit.SubscriptionError_SE_CODEC_UNSUPPORTED, sr.Err)
 		return true
-	}, time.Second, 10*time.Millisecond, "did not receive subscription response")
+	}, 5*time.Second, 10*time.Millisecond, "did not receive subscription response")
 
 	// publish another vp8 track again, ensure the transport recovered by sfu and c2 can receive it
 	t4, err := c1.AddStaticTrack("video/vp8", "video2", "webcam2")

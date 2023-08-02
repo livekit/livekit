@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package service
 
 import (
@@ -28,6 +42,7 @@ type SessionHandler func(
 
 type SignalServer struct {
 	server rpc.TypedSignalServer
+	nodeID livekit.NodeID
 }
 
 func NewSignalServer(
@@ -47,12 +62,7 @@ func NewSignalServer(
 	if err != nil {
 		return nil, err
 	}
-	logger.Debugw("starting relay signal server", "topic", nodeID)
-	if err := s.RegisterRelaySignalTopic(nodeID); err != nil {
-		return nil, err
-	}
-
-	return &SignalServer{s}, nil
+	return &SignalServer{s, nodeID}, nil
 }
 
 func NewDefaultSignalServer(
@@ -101,6 +111,11 @@ func NewDefaultSignalServer(
 	return NewSignalServer(livekit.NodeID(currentNode.Id), currentNode.Region, bus, config, sessionHandler)
 }
 
+func (s *SignalServer) Start() error {
+	logger.Debugw("starting relay signal server", "topic", s.nodeID)
+	return s.server.RegisterRelaySignalTopic(s.nodeID)
+}
+
 func (r *SignalServer) Stop() {
 	r.server.Kill()
 }
@@ -112,12 +127,6 @@ type signalService struct {
 }
 
 func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest]) (err error) {
-	// copy the context to prevent a race between the session handler closing
-	// and the delivery of any parting messages from the client. take care to
-	// copy the incoming rpc headers to avoid dropping any session vars.
-	ctx, cancel := context.WithCancel(metadata.NewContextWithIncomingHeader(context.Background(), metadata.IncomingHeader(stream.Context())))
-	defer cancel()
-
 	req, ok := <-stream.Channel()
 	if !ok {
 		return nil
@@ -139,9 +148,6 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 		"connID", ss.ConnectionId,
 	)
 
-	reqChan := routing.NewDefaultMessageChannel(livekit.ConnectionID(ss.ConnectionId))
-	defer reqChan.Close()
-
 	sink := routing.NewSignalMessageSink(routing.SignalSinkParams[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest]{
 		Logger:       l,
 		Stream:       stream,
@@ -149,6 +155,24 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 		Writer:       signalResponseMessageWriter{},
 		ConnectionID: livekit.ConnectionID(ss.ConnectionId),
 	})
+	reqChan := routing.NewDefaultMessageChannel(livekit.ConnectionID(ss.ConnectionId))
+
+	go func() {
+		err := routing.CopySignalStreamToMessageChannel[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest](
+			stream,
+			reqChan,
+			signalRequestMessageReader{},
+			r.config,
+		)
+		l.Infow("signal stream closed", "error", err)
+
+		reqChan.Close()
+	}()
+
+	// copy the context to prevent a race between the session handler closing
+	// and the delivery of any parting messages from the client. take care to
+	// copy the incoming rpc headers to avoid dropping any session vars.
+	ctx := metadata.NewContextWithIncomingHeader(context.Background(), metadata.IncomingHeader(stream.Context()))
 
 	err = r.sessionHandler(ctx, livekit.RoomName(ss.RoomName), *pi, livekit.ConnectionID(ss.ConnectionId), reqChan, sink)
 	if err != nil {
@@ -156,9 +180,7 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 		return
 	}
 
-	err = routing.CopySignalStreamToMessageChannel[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest](stream, reqChan, signalRequestMessageReader{}, r.config)
-	l.Infow("signal stream closed", "error", err)
-
+	stream.Hijack()
 	return
 }
 

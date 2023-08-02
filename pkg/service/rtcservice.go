@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package service
 
 import (
@@ -347,8 +361,16 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		req, count, err := sigConn.ReadRequest()
 		if err != nil {
 			// normal/expected closure
-			if err == io.EOF || strings.HasSuffix(err.Error(), "use of closed network connection") ||
-				websocket.IsCloseError(err, websocket.CloseAbnormalClosure, websocket.CloseGoingAway, websocket.CloseNormalClosure, websocket.CloseNoStatusReceived) {
+			if err == io.EOF ||
+				strings.HasSuffix(err.Error(), "use of closed network connection") ||
+				strings.HasSuffix(err.Error(), "connection reset by peer") ||
+				websocket.IsCloseError(
+					err,
+					websocket.CloseAbnormalClosure,
+					websocket.CloseGoingAway,
+					websocket.CloseNormalClosure,
+					websocket.CloseNoStatusReceived,
+				) {
 				pLogger.Infow("exit ws read loop for closed connection", "connID", cr.ConnectionID, "wsError", err)
 			} else {
 				pLogger.Errorw("error reading from websocket", err, "connID", cr.ConnectionID)

@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package streamallocator
 
 import (
@@ -43,7 +57,9 @@ type TrendDetectorParams struct {
 	Name                   string
 	Logger                 logger.Logger
 	RequiredSamples        int
+	RequiredSamplesMin     int
 	DownwardTrendThreshold float64
+	DownwardTrendMaxWait   time.Duration
 	CollapseThreshold      time.Duration
 	ValidityWindow         time.Duration
 }
@@ -189,7 +205,7 @@ func (t *TrendDetector) prune() {
 }
 
 func (t *TrendDetector) updateDirection() {
-	if len(t.samples) < t.params.RequiredSamples {
+	if len(t.samples) < t.params.RequiredSamplesMin {
 		t.direction = TrendDirectionNeutral
 		return
 	}
@@ -199,9 +215,9 @@ func (t *TrendDetector) updateDirection() {
 
 	t.direction = TrendDirectionNeutral
 	switch {
-	case kt > 0:
+	case kt > 0 && len(t.samples) >= t.params.RequiredSamples:
 		t.direction = TrendDirectionUpward
-	case kt < t.params.DownwardTrendThreshold:
+	case kt < t.params.DownwardTrendThreshold && (len(t.samples) >= t.params.RequiredSamples || t.samples[len(t.samples)-1].at.Sub(t.samples[0].at) > t.params.DownwardTrendMaxWait):
 		t.direction = TrendDirectionDownward
 	}
 }

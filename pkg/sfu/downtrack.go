@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package sfu
 
 import (
@@ -44,6 +58,8 @@ type TrackSender interface {
 	SetUpstreamRTT(rttMs uint32)
 }
 
+// -------------------------------------------------------------------
+
 const (
 	RTPPaddingMaxPayloadSize      = 255
 	RTPPaddingEstimatedHeaderSize = 20
@@ -63,6 +79,8 @@ const (
 
 	playoutDelayUpdateInterval = 1 * time.Second
 )
+
+// -------------------------------------------------------------------
 
 var (
 	ErrUnknownKind                       = errors.New("unknown kind of codec")
@@ -179,6 +197,7 @@ type DowntrackParams struct {
 	PlayoutDelayLimit *livekit.PlayoutDelay
 	Pacer             pacer.Pacer
 	Logger            logger.Logger
+	Trailer           []byte
 }
 
 // DownTrack implements TrackLocal, is the track used to write packets
@@ -209,14 +228,13 @@ type DownTrack struct {
 	transceiver               atomic.Pointer[webrtc.RTPTransceiver]
 	writeStream               webrtc.TrackLocalWriter
 	rtcpReader                *buffer.RTCPReader
-	onCloseHandler            func(willBeResumed bool)
-	onBinding                 func(error)
 
 	listenerLock            sync.RWMutex
 	receiverReportListeners []ReceiverReportListener
 
-	bindLock sync.Mutex
-	bound    atomic.Bool
+	bindLock  sync.Mutex
+	bound     atomic.Bool
+	onBinding func(error)
 
 	isClosed             atomic.Bool
 	connected            atomic.Bool
@@ -252,14 +270,13 @@ type DownTrack struct {
 
 	pacer pacer.Pacer
 
-	// update stats
-	onStatsUpdate func(dt *DownTrack, stat *livekit.AnalyticsStat)
+	maxLayerNotifierCh chan struct{}
 
-	// when max subscribed layer changes
+	cbMu                        sync.RWMutex
+	onStatsUpdate               func(dt *DownTrack, stat *livekit.AnalyticsStat)
 	onMaxSubscribedLayerChanged func(dt *DownTrack, layer int32)
-
-	// update rtt
-	onRttUpdate func(dt *DownTrack, rtt uint32)
+	onRttUpdate                 func(dt *DownTrack, rtt uint32)
+	onCloseHandler              func(willBeResumed bool)
 }
 
 // NewDownTrack returns a DownTrack.
@@ -276,12 +293,13 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 	}
 
 	d := &DownTrack{
-		params:         params,
-		id:             params.Receiver.TrackID(),
-		upstreamCodecs: codecs,
-		kind:           kind,
-		codec:          codecs[0].RTPCodecCapability,
-		pacer:          params.Pacer,
+		params:             params,
+		id:                 params.Receiver.TrackID(),
+		upstreamCodecs:     codecs,
+		kind:               kind,
+		codec:              codecs[0].RTPCodecCapability,
+		pacer:              params.Pacer,
+		maxLayerNotifierCh: make(chan struct{}, 20),
 	}
 	d.forwarder = NewForwarder(
 		d.kind,
@@ -312,8 +330,8 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		Logger:                    params.Logger.WithValues("direction", "down"),
 	})
 	d.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
-		if d.onStatsUpdate != nil {
-			d.onStatsUpdate(d, stat)
+		if onStatsUpdate := d.getOnStatsUpdate(); onStatsUpdate != nil {
+			onStatsUpdate(d, stat)
 		}
 	})
 
@@ -328,6 +346,9 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		if err == nil {
 			d.playoutDelayBytes.Store(b)
 		}
+	}
+	if d.kind == webrtc.RTPCodecTypeVideo {
+		go d.maxLayerNotifierWorker()
 	}
 
 	return d, nil
@@ -423,7 +444,7 @@ func (d *DownTrack) TrackInfoAvailable() {
 	if ti == nil {
 		return
 	}
-	d.connectionStats.Start(ti, time.Now())
+	d.connectionStats.Start(ti)
 }
 
 func (d *DownTrack) SetStreamAllocatorListener(listener DownTrackStreamAllocatorListener) {
@@ -569,6 +590,7 @@ func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
 	if d.IsClosed() || layer == buffer.InvalidLayerSpatial {
 		return
 	}
+
 	interval := 2 * d.rtpStats.GetRtt()
 	if interval < keyFrameIntervalMin {
 		interval = keyFrameIntervalMin
@@ -578,7 +600,13 @@ func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
 	}
 	ticker := time.NewTicker(time.Duration(interval) * time.Millisecond)
 	defer ticker.Stop()
+
 	for {
+		locked, _ := d.forwarder.CheckSync()
+		if locked {
+			return
+		}
+
 		if d.connected.Load() {
 			d.params.Logger.Debugw("sending PLI for layer lock", "generation", generation, "layer", layer)
 			d.params.Receiver.SendPLI(layer, false)
@@ -589,6 +617,34 @@ func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
 
 		if generation != d.keyFrameRequestGeneration.Load() || !d.bound.Load() {
 			return
+		}
+	}
+}
+
+func (d *DownTrack) postMaxLayerNotifierEvent() {
+	if d.IsClosed() {
+		return
+	}
+
+	select {
+	case d.maxLayerNotifierCh <- struct{}{}:
+	default:
+		d.params.Logger.Warnw("max layer notifier event queue full", nil)
+	}
+}
+
+func (d *DownTrack) maxLayerNotifierWorker() {
+	more := true
+	for more {
+		_, more = <-d.maxLayerNotifierCh
+
+		maxLayerSpatial := buffer.InvalidLayerSpatial
+		if more {
+			maxLayerSpatial = d.forwarder.GetMaxSubscribedSpatial()
+		}
+		if onMaxSubscribedLayerChanged := d.getOnMaxLayerChanged(); onMaxSubscribedLayerChanged != nil {
+			d.params.Logger.Infow("max subscribed layer changed", "maxLayerSpatial", maxLayerSpatial)
+			onMaxSubscribedLayerChanged(d, maxLayerSpatial)
 		}
 	}
 }
@@ -610,23 +666,14 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	var payload []byte
 	pool := PacketFactory.Get().(*[]byte)
 	if len(tp.codecBytes) != 0 {
-		incomingVP8, _ := extPkt.Payload.(buffer.VP8)
-		payload = d.translateVP8PacketTo(extPkt.Packet, &incomingVP8, tp.codecBytes, pool)
+		incomingVP8, ok := extPkt.Payload.(buffer.VP8)
+		if ok {
+			payload = d.translateVP8PacketTo(extPkt.Packet, &incomingVP8, tp.codecBytes, pool)
+		}
 	}
 	if payload == nil {
 		payload = (*pool)[:len(extPkt.Packet.Payload)]
 		copy(payload, extPkt.Packet.Payload)
-	}
-
-	if d.sequencer != nil {
-		d.sequencer.push(
-			extPkt.Packet.SequenceNumber,
-			tp.rtp.sequenceNumber,
-			tp.rtp.timestamp,
-			int8(layer),
-			tp.codecBytes,
-			tp.ddBytes,
-		)
 	}
 
 	hdr, err := d.getTranslatedRTPHeader(extPkt, tp)
@@ -644,6 +691,17 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			// TODO: if current playout delay is acknowledged by RR, stop sending it until delay changed
 			extensions = append(extensions, pacer.ExtensionData{ID: uint8(d.playoutDelayExtID), Payload: val.([]byte)})
 		}
+	}
+	if d.sequencer != nil {
+		d.sequencer.push(
+			extPkt.Packet.SequenceNumber,
+			tp.rtp.sequenceNumber,
+			tp.rtp.timestamp,
+			hdr.Marker,
+			int8(layer),
+			tp.codecBytes,
+			tp.ddBytes,
+		)
 	}
 
 	d.pacer.Enqueue(pacer.Packet{
@@ -761,22 +819,22 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 
 // Mute enables or disables media forwarding - subscriber triggered
 func (d *DownTrack) Mute(muted bool) {
-	changed, maxLayer := d.forwarder.Mute(muted)
-	d.handleMute(muted, false, changed, maxLayer)
+	changed := d.forwarder.Mute(muted)
+	d.handleMute(muted, changed)
 }
 
 // PubMute enables or disables media forwarding - publisher side
 func (d *DownTrack) PubMute(pubMuted bool) {
-	changed, maxLayer := d.forwarder.PubMute(pubMuted)
-	d.handleMute(pubMuted, true, changed, maxLayer)
+	changed := d.forwarder.PubMute(pubMuted)
+	d.handleMute(pubMuted, changed)
 }
 
-func (d *DownTrack) handleMute(muted bool, isPub bool, changed bool, maxLayer buffer.VideoLayer) {
+func (d *DownTrack) handleMute(muted bool, changed bool) {
 	if !changed {
 		return
 	}
 
-	d.connectionStats.UpdateMute(d.forwarder.IsAnyMuted(), time.Now())
+	d.connectionStats.UpdateMute(d.forwarder.IsAnyMuted())
 
 	//
 	// Subscriber mute changes trigger a max layer notification.
@@ -798,18 +856,7 @@ func (d *DownTrack) handleMute(muted bool, isPub bool, changed bool, maxLayer bu
 	// Note that while publisher mute is active, subscriber changes can also happen
 	// and that could turn on/off layers on publisher side.
 	//
-	if !isPub && d.onMaxSubscribedLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
-		notifyLayer := buffer.InvalidLayerSpatial
-		if !muted {
-			//
-			// When unmuting, don't wait for layer lock as
-			// client might need to be notified to start layers
-			// before locking can happen in the forwarder.
-			//
-			notifyLayer = maxLayer.Spatial
-		}
-		d.onMaxSubscribedLayerChanged(d, notifyLayer)
-	}
+	d.postMaxLayerNotifierEvent()
 
 	if sal := d.getStreamAllocatorListener(); sal != nil {
 		sal.OnSubscriptionChanged(d)
@@ -892,12 +939,10 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 	d.rtpStats.Stop()
 	d.params.Logger.Infow("rtp stats", "direction", "downstream", "mime", d.mime, "ssrc", d.ssrc, "stats", d.rtpStats.ToString())
 
-	if d.onMaxSubscribedLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
-		d.onMaxSubscribedLayerChanged(d, buffer.InvalidLayerSpatial)
-	}
+	close(d.maxLayerNotifierCh)
 
-	if d.onCloseHandler != nil {
-		d.onCloseHandler(!flush)
+	if onCloseHandler := d.getOnCloseHandler(); onCloseHandler != nil {
+		onCloseHandler(!flush)
 	}
 
 	d.stopKeyFrameRequester()
@@ -905,21 +950,12 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 }
 
 func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
-	changed, maxLayer, currentLayer := d.forwarder.SetMaxSpatialLayer(spatialLayer)
+	changed, maxLayer := d.forwarder.SetMaxSpatialLayer(spatialLayer)
 	if !changed {
 		return
 	}
 
-	if d.onMaxSubscribedLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo && maxLayer.SpatialGreaterThanOrEqual(currentLayer) {
-		//
-		// Notify when new max is
-		//   1. Equal to current -> already locked to the new max
-		//   2. Greater than current -> two scenarios
-		//      a. is higher than previous max -> client may need to start higher layer before forwarder can lock
-		//      b. is lower than previous max -> client can stop higher layer(s)
-		//
-		d.onMaxSubscribedLayerChanged(d, maxLayer.Spatial)
-	}
+	d.postMaxLayerNotifierEvent()
 
 	if sal := d.getStreamAllocatorListener(); sal != nil {
 		sal.OnSubscribedLayerChanged(d, maxLayer)
@@ -927,7 +963,7 @@ func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
 }
 
 func (d *DownTrack) SetMaxTemporalLayer(temporalLayer int32) {
-	changed, maxLayer, _ := d.forwarder.SetMaxTemporalLayer(temporalLayer)
+	changed, maxLayer := d.forwarder.SetMaxTemporalLayer(temporalLayer)
 	if !changed {
 		return
 	}
@@ -986,27 +1022,46 @@ func (d *DownTrack) UpTrackMaxTemporalLayerSeenChange(maxTemporalLayerSeen int32
 	}
 }
 
-func (d *DownTrack) maybeAddTransition(_bitrate int64, distance float64) {
+func (d *DownTrack) maybeAddTransition(_bitrate int64, distance float64, pauseReason VideoPauseReason) {
 	if d.kind == webrtc.RTPCodecTypeAudio {
 		return
 	}
 
-	d.connectionStats.AddLayerTransition(distance, time.Now())
+	if pauseReason == VideoPauseReasonBandwidth {
+		d.connectionStats.UpdatePause(true)
+	} else {
+		d.connectionStats.UpdatePause(false)
+		d.connectionStats.AddLayerTransition(distance)
+	}
 }
 
 func (d *DownTrack) UpTrackBitrateReport(availableLayers []int32, bitrates Bitrates) {
 	d.maybeAddTransition(
 		d.forwarder.GetOptimalBandwidthNeeded(bitrates),
 		d.forwarder.DistanceToDesired(availableLayers, bitrates),
+		d.forwarder.PauseReason(),
 	)
 }
 
 // OnCloseHandler method to be called on remote tracked removed
 func (d *DownTrack) OnCloseHandler(fn func(willBeResumed bool)) {
+	d.cbMu.Lock()
+	defer d.cbMu.Unlock()
+
 	d.onCloseHandler = fn
 }
 
+func (d *DownTrack) getOnCloseHandler() func(willBeResumed bool) {
+	d.cbMu.RLock()
+	defer d.cbMu.RUnlock()
+
+	return d.onCloseHandler
+}
+
 func (d *DownTrack) OnBinding(fn func(error)) {
+	d.bindLock.Lock()
+	defer d.bindLock.Unlock()
+
 	d.onBinding = fn
 }
 
@@ -1018,15 +1073,45 @@ func (d *DownTrack) AddReceiverReportListener(listener ReceiverReportListener) {
 }
 
 func (d *DownTrack) OnStatsUpdate(fn func(dt *DownTrack, stat *livekit.AnalyticsStat)) {
+	d.cbMu.Lock()
+	defer d.cbMu.Unlock()
+
 	d.onStatsUpdate = fn
 }
 
+func (d *DownTrack) getOnStatsUpdate() func(dt *DownTrack, stat *livekit.AnalyticsStat) {
+	d.cbMu.RLock()
+	defer d.cbMu.RUnlock()
+
+	return d.onStatsUpdate
+}
+
 func (d *DownTrack) OnRttUpdate(fn func(dt *DownTrack, rtt uint32)) {
+	d.cbMu.Lock()
+	defer d.cbMu.Unlock()
+
 	d.onRttUpdate = fn
 }
 
+func (d *DownTrack) getOnRttUpdate() func(dt *DownTrack, rtt uint32) {
+	d.cbMu.RLock()
+	defer d.cbMu.RUnlock()
+
+	return d.onRttUpdate
+}
+
 func (d *DownTrack) OnMaxLayerChanged(fn func(dt *DownTrack, layer int32)) {
+	d.cbMu.Lock()
+	defer d.cbMu.Unlock()
+
 	d.onMaxSubscribedLayerChanged = fn
+}
+
+func (d *DownTrack) getOnMaxLayerChanged() func(dt *DownTrack, layer int32) {
+	d.cbMu.RLock()
+	defer d.cbMu.RUnlock()
+
+	return d.onMaxSubscribedLayerChanged
 }
 
 func (d *DownTrack) IsDeficient() bool {
@@ -1047,13 +1132,17 @@ func (d *DownTrack) AllocateOptimal(allowOvershoot bool) VideoAllocation {
 	al, brs := d.params.Receiver.GetLayeredBitrate()
 	allocation := d.forwarder.AllocateOptimal(al, brs, allowOvershoot)
 	d.maybeStartKeyFrameRequester()
-	d.maybeAddTransition(allocation.BandwidthNeeded, allocation.DistanceToDesired)
+	d.maybeAddTransition(allocation.BandwidthNeeded, allocation.DistanceToDesired, allocation.PauseReason)
 	return allocation
 }
 
 func (d *DownTrack) ProvisionalAllocatePrepare() {
 	al, brs := d.params.Receiver.GetLayeredBitrate()
 	d.forwarder.ProvisionalAllocatePrepare(al, brs)
+}
+
+func (d *DownTrack) ProvisionalAllocateReset() {
+	d.forwarder.ProvisionalAllocateReset()
 }
 
 func (d *DownTrack) ProvisionalAllocate(availableChannelCapacity int64, layers buffer.VideoLayer, allowPause bool, allowOvershoot bool) int64 {
@@ -1075,7 +1164,7 @@ func (d *DownTrack) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 func (d *DownTrack) ProvisionalAllocateCommit() VideoAllocation {
 	allocation := d.forwarder.ProvisionalAllocateCommit()
 	d.maybeStartKeyFrameRequester()
-	d.maybeAddTransition(allocation.BandwidthNeeded, allocation.DistanceToDesired)
+	d.maybeAddTransition(allocation.BandwidthNeeded, allocation.DistanceToDesired, allocation.PauseReason)
 	return allocation
 }
 
@@ -1083,7 +1172,7 @@ func (d *DownTrack) AllocateNextHigher(availableChannelCapacity int64, allowOver
 	al, brs := d.params.Receiver.GetLayeredBitrate()
 	allocation, available := d.forwarder.AllocateNextHigher(availableChannelCapacity, al, brs, allowOvershoot)
 	d.maybeStartKeyFrameRequester()
-	d.maybeAddTransition(allocation.BandwidthNeeded, allocation.DistanceToDesired)
+	d.maybeAddTransition(allocation.BandwidthNeeded, allocation.DistanceToDesired, allocation.PauseReason)
 	return allocation, available
 }
 
@@ -1098,7 +1187,7 @@ func (d *DownTrack) Pause() VideoAllocation {
 	al, brs := d.params.Receiver.GetLayeredBitrate()
 	allocation := d.forwarder.Pause(al, brs)
 	d.maybeStartKeyFrameRequester()
-	d.maybeAddTransition(allocation.BandwidthNeeded, allocation.DistanceToDesired)
+	d.maybeAddTransition(allocation.BandwidthNeeded, allocation.DistanceToDesired, allocation.PauseReason)
 	return allocation
 }
 
@@ -1132,8 +1221,11 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 		return nil
 	}
 
-	srFirst, srNewest := d.params.Receiver.GetRTCPSenderReportData(d.forwarder.GetReferenceLayerSpatial())
-	return d.rtpStats.GetRtcpSenderReport(d.ssrc, srFirst, srNewest)
+	clockLayer := d.forwarder.CurrentLayer().Spatial
+	if clockLayer == buffer.InvalidLayerSpatial {
+		clockLayer = d.forwarder.GetReferenceLayerSpatial()
+	}
+	return d.rtpStats.GetRtcpSenderReport(d.ssrc, d.params.Receiver.GetCalculatedClockRate(clockLayer))
 }
 
 func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan struct{} {
@@ -1231,19 +1323,30 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 	return done
 }
 
+func (d *DownTrack) maybeAddTrailer(buf []byte) int {
+	if len(buf) < len(d.params.Trailer) {
+		d.params.Logger.Warnw("trailer too big", nil, "bufLen", len(buf), "trailerLen", len(d.params.Trailer))
+		return 0
+	}
+
+	copy(buf, d.params.Trailer)
+	return len(d.params.Trailer)
+}
+
 func (d *DownTrack) getOpusBlankFrame(_frameEndNeeded bool) ([]byte, error) {
 	// silence frame
 	// Used shortly after muting to ensure residual noise does not keep
 	// generating noise at the decoder after the stream is stopped
 	// i. e. comfort noise generation actually not producing something comfortable.
-	payload := make([]byte, len(OpusSilenceFrame))
+	payload := make([]byte, 1000)
 	copy(payload[0:], OpusSilenceFrame)
-	return payload, nil
+	trailerLen := d.maybeAddTrailer(payload[len(OpusSilenceFrame):])
+	return payload[:len(OpusSilenceFrame)+trailerLen], nil
 }
 
 func (d *DownTrack) getOpusRedBlankFrame(_frameEndNeeded bool) ([]byte, error) {
 	// primary only silence frame for opus/red, there is no need to contain redundant silent frames
-	payload := make([]byte, len(OpusSilenceFrame)+1)
+	payload := make([]byte, 1000)
 
 	// primary header
 	//  0 1 2 3 4 5 6 7
@@ -1252,7 +1355,8 @@ func (d *DownTrack) getOpusRedBlankFrame(_frameEndNeeded bool) ([]byte, error) {
 	// +-+-+-+-+-+-+-+-+
 	payload[0] = opusPT
 	copy(payload[1:], OpusSilenceFrame)
-	return payload, nil
+	trailerLen := d.maybeAddTrailer(payload[1+len(OpusSilenceFrame):])
+	return payload[:1+len(OpusSilenceFrame)+trailerLen], nil
 }
 
 func (d *DownTrack) getVP8BlankFrame(frameEndNeeded bool) ([]byte, error) {
@@ -1265,17 +1369,18 @@ func (d *DownTrack) getVP8BlankFrame(frameEndNeeded bool) ([]byte, error) {
 	// Used even when closing out a previous frame. Looks like receivers
 	// do not care about content (it will probably end up being an undecodable
 	// frame, but that should be okay as there are key frames following)
-	payload := make([]byte, len(blankVP8)+len(VP8KeyFrame8x8))
+	payload := make([]byte, 1000)
 	copy(payload[:len(blankVP8)], blankVP8)
 	copy(payload[len(blankVP8):], VP8KeyFrame8x8)
-	return payload, nil
+	trailerLen := d.maybeAddTrailer(payload[len(blankVP8)+len(VP8KeyFrame8x8):])
+	return payload[:len(blankVP8)+len(VP8KeyFrame8x8)+trailerLen], nil
 }
 
 func (d *DownTrack) getH264BlankFrame(_frameEndNeeded bool) ([]byte, error) {
 	// TODO - Jie Zeng
 	// now use STAP-A to compose sps, pps, idr together, most decoder support packetization-mode 1.
 	// if client only support packetization-mode 0, use single nalu unit packet
-	buf := make([]byte, 1462)
+	buf := make([]byte, 1000)
 	offset := 0
 	buf[0] = 0x18 // STAP-A
 	offset++
@@ -1285,8 +1390,8 @@ func (d *DownTrack) getH264BlankFrame(_frameEndNeeded bool) ([]byte, error) {
 		copy(buf[offset:offset+len(payload)], payload)
 		offset += len(payload)
 	}
-	payload := buf[:offset]
-	return payload, nil
+	offset += d.maybeAddTrailer(buf[offset:])
+	return buf[:offset], nil
 }
 
 func (d *DownTrack) handleRTCP(bytes []byte) {
@@ -1386,8 +1491,8 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			d.sequencer.setRTT(rttToReport)
 		}
 
-		if d.onRttUpdate != nil {
-			d.onRttUpdate(d, rttToReport)
+		if onRttUpdate := d.getOnRttUpdate(); onRttUpdate != nil {
+			onRttUpdate(d, rttToReport)
 		}
 
 		d.updatePlayoutDelay()
@@ -1456,8 +1561,10 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 
 		var pkt rtp.Packet
 		if err = pkt.Unmarshal(pktBuff[:n]); err != nil {
+			d.params.Logger.Errorw("unmarshalling rtp packet failed in retransmit", err)
 			continue
 		}
+		pkt.Header.Marker = meta.marker
 		pkt.Header.SequenceNumber = meta.targetSeqNo
 		pkt.Header.Timestamp = meta.timestamp
 		pkt.Header.SSRC = d.ssrc
@@ -1465,7 +1572,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 
 		var payload []byte
 		pool := PacketFactory.Get().(*[]byte)
-		if d.mime == "video/vp8" && len(pkt.Payload) > 0 {
+		if d.mime == "video/vp8" && len(pkt.Payload) > 0 && len(meta.codecBytes) != 0 {
 			var incomingVP8 buffer.VP8
 			if err = incomingVP8.Unmarshal(pkt.Payload); err != nil {
 				d.params.Logger.Errorw("unmarshalling VP8 packet err", err)
@@ -1473,9 +1580,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 				continue
 			}
 
-			if len(meta.codecBytes) != 0 {
-				payload = d.translateVP8PacketTo(&pkt, &incomingVP8, meta.codecBytes, pool)
-			}
+			payload = d.translateVP8PacketTo(&pkt, &incomingVP8, meta.codecBytes, pool)
 		}
 		if payload == nil {
 			payload = (*pool)[:len(pkt.Payload)]
@@ -1574,7 +1679,7 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 	}
 }
 
-func (d *DownTrack) getExpectedRTPTimestamp(at time.Time) (uint32, uint64, error) {
+func (d *DownTrack) getExpectedRTPTimestamp(at time.Time) (uint64, error) {
 	return d.rtpStats.GetExpectedRTPTimestamp(at)
 }
 
@@ -1829,7 +1934,7 @@ func (d *DownTrack) packetSent(md interface{}, hdr *rtp.Header, payloadSize int,
 		d.isNACKThrottled.Store(false)
 		d.rtpStats.UpdateKeyFrame(1)
 		d.params.Logger.Debugw(
-			"forwarding key frame",
+			"forwarded key frame",
 			"layer", spmd.layer,
 			"rtpsn", hdr.SequenceNumber,
 			"rtpts", hdr.Timestamp,
@@ -1837,15 +1942,8 @@ func (d *DownTrack) packetSent(md interface{}, hdr *rtp.Header, payloadSize int,
 	}
 
 	if spmd.tp != nil {
-		if spmd.tp.isSwitchingToMaxSpatial && d.onMaxSubscribedLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
-			d.onMaxSubscribedLayerChanged(d, spmd.tp.maxSpatialLayer)
-		}
-
-		if spmd.tp.isSwitchingToRequestSpatial {
-			locked, _ := d.forwarder.CheckSync()
-			if locked {
-				d.stopKeyFrameRequester()
-			}
+		if spmd.tp.isSwitching {
+			d.postMaxLayerNotifierEvent()
 		}
 
 		if spmd.tp.isResuming {

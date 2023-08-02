@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package rtc
 
 import (
@@ -179,7 +193,7 @@ func (t *SubscribedTrack) UpdateSubscriberSettings(settings *livekit.UpdateTrack
 	t.settings.Store(settings)
 
 	if prevDisabled != settings.Disabled {
-		t.logger.Infow("updated subscribed track enabled", "enabled", !settings.Disabled)
+		t.logger.Debugw("updated subscribed track enabled", "enabled", !settings.Disabled)
 	}
 
 	// avoid frequent changes to mute & video layers, unless it became visible

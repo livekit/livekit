@@ -2,6 +2,37 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.4] - 2023-07-08
+
+### Added
+- Add dependency descriptor stream tracker for svc codecs (#1788)
+- Full reconnect on publication mismatch on resume. (#1823)
+- Pacer interface in down stream path. (#1835)
+- retry egress on timeout/resource exhausted (#1852)
+
+### Fixed
+- Send Room metadata updates immediately after update (#1787)
+- Do not send ParticipantJoined webhook if connection was resumed (#1795)
+- Reduce memory leaks by avoiding references in closure. (#1809)
+- Honor bind address passed as `--bind` also for RTC ports (#1815)
+- Avoid dangling downtracks by always deleting them in receiver close. (#1842)
+- Better cleanup of subscriptions with needsCleanup. (#1845)
+- Fix nack issue for svc codecs (#1856)
+- Fixed hidden participant update were still sent when track is published (#1857)
+- Fixed Redis lockup when unlocking room with canceled request context (#1859)
+
+### Changed
+- Improvements to A/V sync (#1773 #1781 #1784 )
+- Improved probing to be less disruptive in low bandwidth scenarios (#1782 #1834 #1839)
+- Do not mute forwarder when paused due to bandwidth congestion. (#1796)
+- Improvements to congestion controller (#1800 #1802 )
+- Close participant on full reconnect. (#1818)
+- Do not process events after participant close. (#1824)
+- Improvements to dependency descriptor based selection forwarder (#1808)
+- Discount out-of-order packets in downstream score. (#1831)
+- Adaptive stream to select highest layer of equal dimensions (#1841)
+- Return 404 with DeleteRoom/RemoveParticipant when deleting non-existent resources (#1860)
+
 ## [1.4.3] - 2023-06-03
 
 ### Added

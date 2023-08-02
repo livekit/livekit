@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package sfu
 
 import (
@@ -39,6 +53,8 @@ type packetMeta struct {
 	// Modified timestamp for current associated
 	// down track.
 	timestamp uint32
+	// Modified marker
+	marker bool
 	// The last time this packet was nack requested.
 	// Sometimes clients request the same packet more than once, so keep
 	// track of the requested packets helps to avoid writing multiple times
@@ -93,7 +109,14 @@ func (s *sequencer) setRTT(rtt uint32) {
 	}
 }
 
-func (s *sequencer) push(sn, offSn uint16, timeStamp uint32, layer int8, codecBytes []byte, ddBytes []byte) {
+func (s *sequencer) push(
+	sn, offSn uint16,
+	timeStamp uint32,
+	marker bool,
+	layer int8,
+	codecBytes []byte,
+	ddBytes []byte,
+) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -106,9 +129,11 @@ func (s *sequencer) push(sn, offSn uint16, timeStamp uint32, layer int8, codecBy
 		sourceSeqNo: sn,
 		targetSeqNo: offSn,
 		timestamp:   timeStamp,
+		marker:      marker,
 		layer:       layer,
 		codecBytes:  append([]byte{}, codecBytes...),
 		ddBytes:     append([]byte{}, ddBytes...),
+		lastNack:    s.getRefTime(), // delay retransmissions after the original transmission
 	}
 
 	s.seq[slot] = &s.meta[s.metaWritePtr]
@@ -174,7 +199,7 @@ func (s *sequencer) getPacketsMeta(seqNo []uint16) []packetMeta {
 	defer s.Unlock()
 
 	meta := make([]packetMeta, 0, len(seqNo))
-	refTime := uint32(time.Now().UnixNano()/1e6 - s.startTime)
+	refTime := s.getRefTime()
 	for _, sn := range seqNo {
 		diff := s.headSN - sn
 		if diff > (1<<15) || int(diff) >= s.max {
@@ -188,7 +213,7 @@ func (s *sequencer) getPacketsMeta(seqNo []uint16) []packetMeta {
 			continue
 		}
 
-		if (seq.lastNack == 0 || refTime-seq.lastNack > uint32(math.Min(float64(ignoreRetransmission), float64(2*s.rtt)))) && seq.nacked < maxAck {
+		if refTime-seq.lastNack > uint32(math.Min(float64(ignoreRetransmission), float64(2*s.rtt))) && seq.nacked < maxAck {
 			seq.nacked++
 			seq.lastNack = refTime
 
@@ -212,4 +237,8 @@ func (s *sequencer) wrap(slot int) int {
 	}
 
 	return slot
+}
+
+func (s *sequencer) getRefTime() uint32 {
+	return uint32(time.Now().UnixNano()/1e6 - s.startTime)
 }

@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package service
 
 import (
@@ -246,9 +260,9 @@ func (s *RedisStore) LockRoom(_ context.Context, roomName livekit.RoomName, dura
 	return "", ErrRoomLockFailed
 }
 
-func (s *RedisStore) UnlockRoom(ctx context.Context, roomName livekit.RoomName, uid string) error {
+func (s *RedisStore) UnlockRoom(_ context.Context, roomName livekit.RoomName, uid string) error {
 	key := RoomLockPrefix + string(roomName)
-	res, err := s.unlockScript.Run(ctx, s.rc, []string{key}, uid).Result()
+	res, err := s.unlockScript.Run(s.ctx, s.rc, []string{key}, uid).Result()
 	if err != nil {
 		return err
 	}
@@ -708,7 +722,7 @@ func (s *RedisStore) LoadIngressFromStreamKey(_ context.Context, streamKey strin
 	}
 }
 
-func (s *RedisStore) ListIngress(ctx context.Context, roomName livekit.RoomName) ([]*livekit.IngressInfo, error) {
+func (s *RedisStore) ListIngress(_ context.Context, roomName livekit.RoomName) ([]*livekit.IngressInfo, error) {
 	var infos []*livekit.IngressInfo
 
 	if roomName == "" {

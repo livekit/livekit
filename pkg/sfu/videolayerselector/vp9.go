@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package videolayerselector
 
 import (
@@ -75,29 +89,12 @@ func (v *VP9) Select(extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerS
 		}
 
 		if updatedLayer != v.currentLayer {
+			result.IsSwitching = true
 			if !v.currentLayer.IsValid() && updatedLayer.IsValid() {
 				result.IsResuming = true
 			}
 
-			if v.currentLayer.Spatial != v.requestSpatial && updatedLayer.Spatial == v.requestSpatial {
-				result.IsSwitchingToRequestSpatial = true
-			}
-
-			if v.currentLayer.Spatial != v.maxLayer.Spatial && updatedLayer.Spatial == v.maxLayer.Spatial {
-				result.IsSwitchingToMaxSpatial = true
-				result.MaxSpatialLayer = updatedLayer.Spatial
-				v.logger.Infow(
-					"reached max layer",
-					"current", v.currentLayer,
-					"target", v.targetLayer,
-					"max", v.maxLayer,
-					"layer", extPkt.VideoLayer.Spatial,
-					"req", v.requestSpatial,
-					"maxSeen", v.maxSeenLayer,
-					"feed", extPkt.Packet.SSRC,
-				)
-			}
-
+			v.previousLayer = v.currentLayer
 			v.currentLayer = updatedLayer
 		}
 	}
