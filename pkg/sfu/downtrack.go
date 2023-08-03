@@ -633,7 +633,7 @@ func (d *DownTrack) maxLayerNotifierWorker() {
 			maxLayerSpatial = d.forwarder.GetMaxSubscribedSpatial()
 		}
 		if onMaxSubscribedLayerChanged := d.getOnMaxLayerChanged(); onMaxSubscribedLayerChanged != nil {
-			d.params.Logger.Infow("max subscribed layer changed", "maxLayerSpatial", maxLayerSpatial)
+			d.params.Logger.Debugw("max subscribed layer changed", "maxLayerSpatial", maxLayerSpatial)
 			onMaxSubscribedLayerChanged(d, maxLayerSpatial)
 		}
 	}
