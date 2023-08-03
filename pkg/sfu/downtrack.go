@@ -330,7 +330,7 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 	if d.params.PlayoutDelayLimit.GetEnabled() && d.params.PlayoutDelayLimit.GetMin() > 0 {
 		delay := rtpextension.PlayoutDelayFromValue(
 			uint16(d.params.PlayoutDelayLimit.GetMin()),
-			uint16(d.params.PlayoutDelayLimit.GetMax()),
+			rtpextension.PlayoutDelayDefaultMax,
 		)
 		b, err := delay.Marshal()
 		if err == nil {
