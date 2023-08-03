@@ -612,7 +612,7 @@ func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
 }
 
 func (d *DownTrack) postMaxLayerNotifierEvent() {
-	if d.IsClosed() {
+	if d.IsClosed() || d.kind != webrtc.RTPCodecTypeVideo {
 		return
 	}
 
