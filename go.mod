@@ -18,7 +18,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20230716190407-fc4944cbc33a
-	github.com/livekit/protocol v1.5.11-0.20230729124740-d45d830f69e2
+	github.com/livekit/protocol v1.6.0
 	github.com/livekit/psrpc v0.3.2
 	github.com/mackerelio/go-osstat v0.2.4
 	github.com/magefile/mage v1.15.0
@@ -50,8 +50,6 @@ require (
 	google.golang.org/protobuf v1.31.0
 	gopkg.in/yaml.v3 v3.0.1
 )
-
-replace github.com/livekit/protocol => ../protocol
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
