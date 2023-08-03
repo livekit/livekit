@@ -34,6 +34,7 @@ import (
 	"github.com/pkg/errors"
 	"go.uber.org/atomic"
 
+	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/logger/pionlogger"
@@ -391,7 +392,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 	if params.IsSendSide {
 		t.streamAllocator = streamallocator.NewStreamAllocator(streamallocator.StreamAllocatorParams{
 			Config: params.CongestionControlConfig,
-			Logger: params.Logger,
+			Logger: params.Logger.WithComponent(sutils.ComponentCongestionControl),
 		})
 		t.streamAllocator.Start()
 		t.pacer = pacer.NewPassThrough(params.Logger)
