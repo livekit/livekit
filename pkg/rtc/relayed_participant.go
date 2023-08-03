@@ -367,7 +367,7 @@ func (p *RelayedParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 
 func (p *RelayedParticipantImpl) SetTrackMuted(trackID livekit.TrackID, muted bool, fromAdmin bool) {
 	// TODO implement me
-	panic("implement me")
+	// panic("implement me")
 }
 
 func (p *RelayedParticipantImpl) HandleAnswer(sdp webrtc.SessionDescription) {
