@@ -85,6 +85,9 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 	if req.Egress != nil && req.Egress.Tracks != nil {
 		internal = &livekit.RoomInternal{TrackEgress: req.Egress.Tracks}
 	}
+	if req.PlayoutDelay != nil {
+		rm.PlayoutDelay = req.PlayoutDelay
+	}
 
 	if err = r.roomStore.StoreRoom(ctx, rm, internal); err != nil {
 		return nil, err
