@@ -50,7 +50,8 @@ type RelayedParticipantParams struct {
 type RelayedParticipantImpl struct {
 	params RelayedParticipantParams
 
-	state atomic.Value // livekit.ParticipantInfo_State
+	isClosed atomic.Bool
+	state    atomic.Value // livekit.ParticipantInfo_State
 
 	grants *auth.ClaimGrants
 
@@ -73,6 +74,7 @@ type RelayedParticipantImpl struct {
 	onMigrateStateChange func(p types.LocalParticipant, migrateState types.MigrateState)
 	onParticipantUpdate  func(types.LocalParticipant)
 
+	onClose         func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID)
 	onClaimsChanged func(participant types.LocalParticipant)
 
 	migrateState atomic.Value // types.MigrateState
@@ -165,7 +167,7 @@ func (p *RelayedParticipantImpl) ToProto() *livekit.ParticipantInfo {
 	return info
 }
 
-func (p *RelayedParticipantImpl) SetState(state livekit.ParticipantInfo_State) {
+func (p *RelayedParticipantImpl) UpdateState(state livekit.ParticipantInfo_State) {
 	oldState := p.State()
 	if state == oldState {
 		return
@@ -244,7 +246,28 @@ func (p *RelayedParticipantImpl) Start() {
 }
 
 func (p *RelayedParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseReason) error {
-	// TODO implement me
+	if p.isClosed.Swap(true) {
+		// already closed
+		return nil
+	}
+
+	p.params.Logger.Infow("relayed participant closing", "sendLeave", sendLeave, "reason", reason.String())
+
+	p.supervisor.Stop()
+
+	p.UpTrackManager.Close(!sendLeave)
+
+	p.UpdateState(livekit.ParticipantInfo_DISCONNECTED)
+
+	// ensure this is synchronized
+	p.CloseSignalConnection()
+	p.lock.RLock()
+	onClose := p.onClose
+	p.lock.RUnlock()
+	if onClose != nil {
+		onClose(p, nil)
+	}
+
 	return nil
 }
 
@@ -265,8 +288,7 @@ func (p *RelayedParticipantImpl) ConnectedAt() time.Time {
 }
 
 func (p *RelayedParticipantImpl) IsClosed() bool {
-	// TODO implement me
-	return false
+	return p.isClosed.Load()
 }
 
 func (p *RelayedParticipantImpl) IsReady() bool {
@@ -567,7 +589,9 @@ func (p *RelayedParticipantImpl) OnSubscribeStatusChanged(fn func(publisherID li
 }
 
 func (p *RelayedParticipantImpl) OnClose(callback func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID)) {
-	// TODO implement me
+	p.lock.Lock()
+	p.onClose = callback
+	p.lock.Unlock()
 }
 
 func (p *RelayedParticipantImpl) OnClaimsChanged(callback func(types.LocalParticipant)) {

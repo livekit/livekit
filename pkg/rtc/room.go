@@ -81,9 +81,7 @@ type Room struct {
 	batchedUpdates   map[livekit.ParticipantIdentity]*livekit.ParticipantInfo
 	batchedUpdatesMu sync.Mutex
 
-	relayedParticipants   map[livekit.ParticipantIdentity]*RelayedParticipantImpl
-	relayedParticipantsMu sync.Mutex
-	outRelayCollection    *relay.Collection
+	outRelayCollection *relay.Collection
 
 	// time the first participant joined the room
 	joinedAt atomic.Int64
@@ -180,8 +178,7 @@ func NewRoom(
 		batchedUpdates:            make(map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
 		closed:                    make(chan struct{}),
 
-		relayedParticipants: make(map[livekit.ParticipantIdentity]*RelayedParticipantImpl),
-		outRelayCollection:  relay.NewCollection(),
+		outRelayCollection: relay.NewCollection(),
 	}
 	if r.protoRoom.EmptyTimeout == 0 {
 		r.protoRoom.EmptyTimeout = DefaultEmptyTimeout
@@ -350,139 +347,140 @@ func NewRoom(
 }
 
 func (r *Room) onRelayParticipantUpdate(rel relay.Relay, pi *livekit.ParticipantInfo) {
-	r.relayedParticipantsMu.Lock()
-	defer r.relayedParticipantsMu.Unlock()
-
 	participantIdentity := livekit.ParticipantIdentity(pi.Identity)
 
-	remoteParticipant, exists := r.relayedParticipants[participantIdentity]
-	if !exists {
-		rtcConfig := r.Config
-		rtcConfig.SetBufferFactory(rel.GetBufferFactory())
+	if pi.State == livekit.ParticipantInfo_DISCONNECTED {
+		r.RemoveParticipant(participantIdentity, livekit.ParticipantID(pi.Sid), types.ParticipantCloseReasonStateDisconnected)
+	} else {
+		participant := r.GetParticipant(participantIdentity)
+		if participant == nil {
+			rtcConfig := r.Config
+			rtcConfig.SetBufferFactory(rel.GetBufferFactory())
 
-		remoteParticipant, _ = NewRelayedParticipant(RelayedParticipantParams{
-			Identity: participantIdentity,
-			Name:     livekit.ParticipantName(pi.Name),
-			SID:      livekit.ParticipantID(pi.Sid),
-			Config:   &rtcConfig,
-			AudioConfig: cfg.AudioConfig{
-				ActiveLevel:     35, // -35dBov
-				MinPercentile:   40,
-				UpdateInterval:  400,
-				SmoothIntervals: 2,
-			},
-			VideoConfig: cfg.VideoConfig{
-				DynacastPauseDelay: 5 * time.Second,
-				StreamTracker: cfg.StreamTrackersConfig{
-					Video: cfg.StreamTrackerConfig{
-						StreamTrackerType: cfg.StreamTrackerTypePacket,
-						BitrateReportInterval: map[int32]time.Duration{
-							0: 1 * time.Second,
-							1: 1 * time.Second,
-							2: 1 * time.Second,
-						},
-						PacketTracker: map[int32]cfg.StreamTrackerPacketConfig{
-							0: {
-								SamplesRequired: 1,
-								CyclesRequired:  4,
-								CycleDuration:   500 * time.Millisecond,
+			participant, _ = NewRelayedParticipant(RelayedParticipantParams{
+				Identity: participantIdentity,
+				Name:     livekit.ParticipantName(pi.Name),
+				SID:      livekit.ParticipantID(pi.Sid),
+				Config:   &rtcConfig,
+				AudioConfig: cfg.AudioConfig{
+					ActiveLevel:     35, // -35dBov
+					MinPercentile:   40,
+					UpdateInterval:  400,
+					SmoothIntervals: 2,
+				},
+				VideoConfig: cfg.VideoConfig{
+					DynacastPauseDelay: 5 * time.Second,
+					StreamTracker: cfg.StreamTrackersConfig{
+						Video: cfg.StreamTrackerConfig{
+							StreamTrackerType: cfg.StreamTrackerTypePacket,
+							BitrateReportInterval: map[int32]time.Duration{
+								0: 1 * time.Second,
+								1: 1 * time.Second,
+								2: 1 * time.Second,
 							},
-							1: {
-								SamplesRequired: 5,
-								CyclesRequired:  20,
-								CycleDuration:   500 * time.Millisecond,
+							PacketTracker: map[int32]cfg.StreamTrackerPacketConfig{
+								0: {
+									SamplesRequired: 1,
+									CyclesRequired:  4,
+									CycleDuration:   500 * time.Millisecond,
+								},
+								1: {
+									SamplesRequired: 5,
+									CyclesRequired:  20,
+									CycleDuration:   500 * time.Millisecond,
+								},
+								2: {
+									SamplesRequired: 5,
+									CyclesRequired:  20,
+									CycleDuration:   500 * time.Millisecond,
+								},
 							},
-							2: {
-								SamplesRequired: 5,
-								CyclesRequired:  20,
-								CycleDuration:   500 * time.Millisecond,
-							},
-						},
-						FrameTracker: map[int32]cfg.StreamTrackerFrameConfig{
-							0: {
-								MinFPS: 5.0,
-							},
-							1: {
-								MinFPS: 5.0,
-							},
-							2: {
-								MinFPS: 5.0,
-							},
-						},
-					},
-					Screenshare: cfg.StreamTrackerConfig{
-						StreamTrackerType: cfg.StreamTrackerTypePacket,
-						BitrateReportInterval: map[int32]time.Duration{
-							0: 4 * time.Second,
-							1: 4 * time.Second,
-							2: 4 * time.Second,
-						},
-						PacketTracker: map[int32]cfg.StreamTrackerPacketConfig{
-							0: {
-								SamplesRequired: 1,
-								CyclesRequired:  1,
-								CycleDuration:   2 * time.Second,
-							},
-							1: {
-								SamplesRequired: 1,
-								CyclesRequired:  1,
-								CycleDuration:   2 * time.Second,
-							},
-							2: {
-								SamplesRequired: 1,
-								CyclesRequired:  1,
-								CycleDuration:   2 * time.Second,
+							FrameTracker: map[int32]cfg.StreamTrackerFrameConfig{
+								0: {
+									MinFPS: 5.0,
+								},
+								1: {
+									MinFPS: 5.0,
+								},
+								2: {
+									MinFPS: 5.0,
+								},
 							},
 						},
-						FrameTracker: map[int32]cfg.StreamTrackerFrameConfig{
-							0: {
-								MinFPS: 0.5,
+						Screenshare: cfg.StreamTrackerConfig{
+							StreamTrackerType: cfg.StreamTrackerTypePacket,
+							BitrateReportInterval: map[int32]time.Duration{
+								0: 4 * time.Second,
+								1: 4 * time.Second,
+								2: 4 * time.Second,
 							},
-							1: {
-								MinFPS: 0.5,
+							PacketTracker: map[int32]cfg.StreamTrackerPacketConfig{
+								0: {
+									SamplesRequired: 1,
+									CyclesRequired:  1,
+									CycleDuration:   2 * time.Second,
+								},
+								1: {
+									SamplesRequired: 1,
+									CyclesRequired:  1,
+									CycleDuration:   2 * time.Second,
+								},
+								2: {
+									SamplesRequired: 1,
+									CyclesRequired:  1,
+									CycleDuration:   2 * time.Second,
+								},
 							},
-							2: {
-								MinFPS: 0.5,
+							FrameTracker: map[int32]cfg.StreamTrackerFrameConfig{
+								0: {
+									MinFPS: 0.5,
+								},
+								1: {
+									MinFPS: 0.5,
+								},
+								2: {
+									MinFPS: 0.5,
+								},
 							},
 						},
 					},
 				},
-			},
-			Logger: LoggerWithParticipant(r.Logger, livekit.ParticipantIdentity(pi.Identity), livekit.ParticipantID(pi.Sid), true),
-			// SimTracks: nil,
-			// InitialVersion: 0,
-			Telemetry: r.telemetry,
-			PLIThrottleConfig: cfg.PLIThrottleConfig{
-				LowQuality:  500 * time.Millisecond,
-				MidQuality:  time.Second,
-				HighQuality: time.Second,
-			},
-			VersionGenerator: utils.NewDefaultTimedVersionGenerator(),
-			Relay:            rel,
-		})
-		opts := ParticipantOptions{
-			AutoSubscribe: false,
-		}
-		if err := r.Join(remoteParticipant, nil, &opts, nil); err != nil {
-			logger.Errorw("Can not join remote participant", err, "Identity", remoteParticipant.Identity())
+				Logger: LoggerWithParticipant(r.Logger, livekit.ParticipantIdentity(pi.Identity), livekit.ParticipantID(pi.Sid), true),
+				// SimTracks: nil,
+				// InitialVersion: 0,
+				Telemetry: r.telemetry,
+				PLIThrottleConfig: cfg.PLIThrottleConfig{
+					LowQuality:  500 * time.Millisecond,
+					MidQuality:  time.Second,
+					HighQuality: time.Second,
+				},
+				VersionGenerator: utils.NewDefaultTimedVersionGenerator(),
+				Relay:            rel,
+			})
+			opts := ParticipantOptions{
+				AutoSubscribe: false,
+			}
+			if err := r.Join(participant, nil, &opts, nil); err != nil {
+				logger.Errorw("Can not join remote participant", err, "Identity", participant.Identity())
+				return
+			}
+			logger.Infow("Remote participant joined", "Identity", participant.Identity())
+		} else if _, ok := participant.(*RelayedParticipantImpl); !ok {
+			logger.Errorw("Non relayed participant is already joined", nil, "Identity", participant.Identity())
 			return
 		}
-		logger.Infow("Remote participant joined", "Identity", remoteParticipant.Identity())
-		r.relayedParticipants[participantIdentity] = remoteParticipant
+		relayedParticipant := participant.(*RelayedParticipantImpl)
+		relayedParticipant.SetName(pi.Name)
+		relayedParticipant.UpdateState(pi.State)
+		relayedParticipant.SetMetadata(pi.Metadata)
 	}
-	remoteParticipant.SetName(pi.Name)
-	remoteParticipant.SetState(pi.State)
-	remoteParticipant.SetMetadata(pi.Metadata)
 }
 
 func (r *Room) onRelayAddTrack(rel relay.Relay, track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, mid string, rid string, addTrackSignal AddTrackSignal) {
 	participantIdentity := livekit.ParticipantIdentity(addTrackSignal.Identity)
 
-	r.relayedParticipantsMu.Lock()
-	defer r.relayedParticipantsMu.Unlock()
-
-	if remoteParticipant, exists := r.relayedParticipants[participantIdentity]; exists {
-		remoteParticipant.OnMediaTrack(track, receiver, mid, rid, addTrackSignal.Track)
+	if relayedParticipant, ok := r.GetParticipant(participantIdentity).(*RelayedParticipantImpl); ok {
+		relayedParticipant.OnMediaTrack(track, receiver, mid, rid, addTrackSignal.Track)
 	} else {
 		r.Logger.Errorw("unknown relayed participant", nil)
 	}
@@ -808,10 +806,6 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 		delete(r.participants, identity)
 		delete(r.participantOpts, identity)
 		delete(r.participantRequestSources, identity)
-
-		r.relayedParticipantsMu.Lock()
-		delete(r.relayedParticipants, identity)
-		r.relayedParticipantsMu.Unlock()
 
 		if !p.Hidden() {
 			r.protoRoom.NumParticipants--
@@ -1298,7 +1292,7 @@ func (r *Room) sendParticipantUpdates(updates []*livekit.ParticipantInfo) {
 func (r *Room) getUpdatesPayloadForRelay(updates []*livekit.ParticipantInfo) ([]byte, error) {
 	updatesForRelay := make([]*livekit.ParticipantInfo, 0, len(updates))
 	for _, update := range updates {
-		if _, ok := r.relayedParticipants[livekit.ParticipantIdentity(update.Identity)]; ok {
+		if _, ok := r.GetParticipant(livekit.ParticipantIdentity(update.Identity)).(*RelayedParticipantImpl); ok {
 			continue
 		}
 		updatesForRelay = append(updatesForRelay, update)
