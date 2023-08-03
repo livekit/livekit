@@ -294,7 +294,7 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		kind:               kind,
 		codec:              codecs[0].RTPCodecCapability,
 		pacer:              params.Pacer,
-		maxLayerNotifierCh: make(chan struct{}, 20),
+		maxLayerNotifierCh: make(chan struct{}, 1),
 	}
 	d.forwarder = NewForwarder(
 		d.kind,
@@ -619,7 +619,6 @@ func (d *DownTrack) postMaxLayerNotifierEvent() {
 	select {
 	case d.maxLayerNotifierCh <- struct{}{}:
 	default:
-		d.params.Logger.Warnw("max layer notifier event queue full", nil)
 	}
 }
 
