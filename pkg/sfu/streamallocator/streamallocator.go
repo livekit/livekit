@@ -804,6 +804,7 @@ func (s *StreamAllocator) handleNewEstimateInNonProbe() {
 		"new(bps)", estimateToCommit,
 		"lastReceived(bps)", s.lastReceivedEstimate,
 		"expectedUsage(bps)", expectedBandwidthUsage,
+		"commitThreshold(bps)", commitThreshold,
 		"channel", s.channelObserver.ToString(),
 	)
 	s.params.Logger.Infow(
