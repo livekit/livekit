@@ -29,8 +29,8 @@ import (
 	"github.com/livekit/psrpc"
 )
 
-type IngressStarter interface {
-	StartPullIngress(ctx context.Context, info *livekit.IngressInfo) (*livekit.IngressInfo, error)
+type IngressLauncher interface {
+	LaunchPullIngress(ctx context.Context, info *livekit.IngressInfo) (*livekit.IngressInfo, error)
 }
 
 type IngressService struct {
@@ -41,10 +41,10 @@ type IngressService struct {
 	store       IngressStore
 	roomService livekit.RoomService
 	telemetry   telemetry.TelemetryService
-	starter     IngressStarter
+	launcher    IngressLauncher
 }
 
-func NewIngressServiceWithIngressStarter(
+func NewIngressServiceWithIngressLauncher(
 	conf *config.IngressConfig,
 	nodeID livekit.NodeID,
 	bus psrpc.MessageBus,
@@ -52,7 +52,7 @@ func NewIngressServiceWithIngressStarter(
 	store IngressStore,
 	rs livekit.RoomService,
 	ts telemetry.TelemetryService,
-	starter IngressStarter,
+	launcher IngressLauncher,
 ) *IngressService {
 
 	return &IngressService{
@@ -63,7 +63,7 @@ func NewIngressServiceWithIngressStarter(
 		store:       store,
 		roomService: rs,
 		telemetry:   ts,
-		starter:     starter,
+		launcher:    launcher,
 	}
 }
 
@@ -76,9 +76,9 @@ func NewIngressService(
 	rs livekit.RoomService,
 	ts telemetry.TelemetryService,
 ) *IngressService {
-	s := NewIngressServiceWithIngressStarter(conf, nodeID, bus, psrpcClient, store, rs, ts, nil)
+	s := NewIngressServiceWithIngressLauncher(conf, nodeID, bus, psrpcClient, store, rs, ts, nil)
 
-	s.starter = s
+	s.launcher = s
 
 	return s
 }
@@ -167,8 +167,7 @@ func (s *IngressService) CreateIngressWithUrl(ctx context.Context, urlStr string
 	}
 
 	if req.InputType == livekit.IngressInput_URL_INPUT {
-		retInfo, err := s.starter.StartPullIngress(ctx, info)
-		fmt.Println("RET_INFO", retInfo, err)
+		retInfo, err := s.launcher.LaunchPullIngress(ctx, info)
 		if retInfo != nil {
 			info = retInfo
 		} else {
@@ -189,7 +188,7 @@ func (s *IngressService) CreateIngressWithUrl(ctx context.Context, urlStr string
 	return info, nil
 }
 
-func (s *IngressService) StartPullIngress(ctx context.Context, info *livekit.IngressInfo) (*livekit.IngressInfo, error) {
+func (s *IngressService) LaunchPullIngress(ctx context.Context, info *livekit.IngressInfo) (*livekit.IngressInfo, error) {
 	req := &rpc.StartIngressRequest{
 		Info: info,
 	}
