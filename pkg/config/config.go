@@ -149,8 +149,10 @@ type CongestionControlChannelObserverConfig struct {
 }
 
 type CongestionControlConfig struct {
-	Enabled                       bool                                   `yaml:"enabled"`
-	AllowPause                    bool                                   `yaml:"allow_pause"`
+	Enabled                       bool                                   `yaml:"enabled,omitempty"`
+	AllowPause                    bool                                   `yaml:"allow_pause,omitempty"`
+	NackRatioAttenuator           float64                                `yaml:"nack_ratio_attenuator,omitempty"`
+	ExpectedUsageThreshold        float64                                `yaml:"expected_usage_threshold,omitempty"`
 	UseSendSideBWE                bool                                   `yaml:"send_side_bandwidth_estimation,omitempty"`
 	ProbeMode                     CongestionControlProbeMode             `yaml:"padding_mode,omitempty"`
 	MinChannelCapacity            int64                                  `yaml:"min_channel_capacity,omitempty"`
@@ -317,9 +319,11 @@ var DefaultConfig = Config{
 			HighQuality: time.Second,
 		},
 		CongestionControl: CongestionControlConfig{
-			Enabled:    true,
-			AllowPause: false,
-			ProbeMode:  CongestionControlProbeModePadding,
+			Enabled:                true,
+			AllowPause:             false,
+			NackRatioAttenuator:    0.4,
+			ExpectedUsageThreshold: 0.95,
+			ProbeMode:              CongestionControlProbeModePadding,
 			ProbeConfig: CongestionControlProbeConfig{
 				BaseInterval:  3 * time.Second,
 				BackoffFactor: 1.5,
