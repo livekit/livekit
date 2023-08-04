@@ -294,7 +294,7 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		kind:               kind,
 		codec:              codecs[0].RTPCodecCapability,
 		pacer:              params.Pacer,
-		maxLayerNotifierCh: make(chan struct{}, 20),
+		maxLayerNotifierCh: make(chan struct{}, 1),
 	}
 	d.forwarder = NewForwarder(
 		d.kind,
@@ -330,7 +330,7 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 	if d.params.PlayoutDelayLimit.GetEnabled() && d.params.PlayoutDelayLimit.GetMin() > 0 {
 		delay := rtpextension.PlayoutDelayFromValue(
 			uint16(d.params.PlayoutDelayLimit.GetMin()),
-			uint16(d.params.PlayoutDelayLimit.GetMax()),
+			rtpextension.PlayoutDelayDefaultMax,
 		)
 		b, err := delay.Marshal()
 		if err == nil {
@@ -612,14 +612,13 @@ func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
 }
 
 func (d *DownTrack) postMaxLayerNotifierEvent() {
-	if d.IsClosed() {
+	if d.IsClosed() || d.kind != webrtc.RTPCodecTypeVideo {
 		return
 	}
 
 	select {
 	case d.maxLayerNotifierCh <- struct{}{}:
 	default:
-		d.params.Logger.Warnw("max layer notifier event queue full", nil)
 	}
 }
 
@@ -633,7 +632,7 @@ func (d *DownTrack) maxLayerNotifierWorker() {
 			maxLayerSpatial = d.forwarder.GetMaxSubscribedSpatial()
 		}
 		if onMaxSubscribedLayerChanged := d.getOnMaxLayerChanged(); onMaxSubscribedLayerChanged != nil {
-			d.params.Logger.Infow("max subscribed layer changed", "maxLayerSpatial", maxLayerSpatial)
+			d.params.Logger.Debugw("max subscribed layer changed", "maxLayerSpatial", maxLayerSpatial)
 			onMaxSubscribedLayerChanged(d, maxLayerSpatial)
 		}
 	}

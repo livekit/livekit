@@ -30,6 +30,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/livekit/livekit-server/pkg/sfu/audio"
+	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/mediatransportutil/pkg/bucket"
 	"github.com/livekit/mediatransportutil/pkg/nack"
@@ -124,7 +125,7 @@ func NewBuffer(ssrc uint32, vp, ap *sync.Pool) *Buffer {
 		videoPool:   vp,
 		audioPool:   ap,
 		pliThrottle: int64(500 * time.Millisecond),
-		logger:      l,
+		logger:      l.WithComponent(sutils.ComponentPub).WithComponent(sutils.ComponentSFU),
 	}
 	b.extPackets.SetMinCapacity(7)
 	return b
@@ -134,9 +135,9 @@ func (b *Buffer) SetLogger(logger logger.Logger) {
 	b.Lock()
 	defer b.Unlock()
 
-	b.logger = logger
+	b.logger = logger.WithComponent(sutils.ComponentSFU)
 	if b.rtpStats != nil {
-		b.rtpStats.SetLogger(logger)
+		b.rtpStats.SetLogger(b.logger)
 	}
 }
 
