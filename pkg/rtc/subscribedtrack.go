@@ -22,6 +22,7 @@ import (
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
 
+	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -64,7 +65,7 @@ type SubscribedTrack struct {
 func NewSubscribedTrack(params SubscribedTrackParams) *SubscribedTrack {
 	s := &SubscribedTrack{
 		params: params,
-		logger: params.Subscriber.GetLogger().WithValues(
+		logger: params.Subscriber.GetLogger().WithComponent(sutils.ComponentSub).WithValues(
 			"trackID", params.DownTrack.ID(),
 			"publisherID", params.PublisherID,
 			"publisher", params.PublisherIdentity,

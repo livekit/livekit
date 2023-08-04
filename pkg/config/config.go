@@ -29,7 +29,6 @@ import (
 
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/logger/pionlogger"
 	redisLiveKit "github.com/livekit/protocol/redis"
 )
 
@@ -150,8 +149,10 @@ type CongestionControlChannelObserverConfig struct {
 }
 
 type CongestionControlConfig struct {
-	Enabled                       bool                                   `yaml:"enabled"`
-	AllowPause                    bool                                   `yaml:"allow_pause"`
+	Enabled                       bool                                   `yaml:"enabled,omitempty"`
+	AllowPause                    bool                                   `yaml:"allow_pause,omitempty"`
+	NackRatioAttenuator           float64                                `yaml:"nack_ratio_attenuator,omitempty"`
+	ExpectedUsageThreshold        float64                                `yaml:"expected_usage_threshold,omitempty"`
 	UseSendSideBWE                bool                                   `yaml:"send_side_bandwidth_estimation,omitempty"`
 	ProbeMode                     CongestionControlProbeMode             `yaml:"padding_mode,omitempty"`
 	MinChannelCapacity            int64                                  `yaml:"min_channel_capacity,omitempty"`
@@ -200,7 +201,6 @@ type StreamTrackersConfig struct {
 type PlayoutDelayConfig struct {
 	Enabled bool `yaml:"enabled,omitempty"`
 	Min     int  `yaml:"min,omitempty"`
-	Max     int  `yaml:"max,omitempty"`
 }
 
 type VideoConfig struct {
@@ -318,9 +318,11 @@ var DefaultConfig = Config{
 			HighQuality: time.Second,
 		},
 		CongestionControl: CongestionControlConfig{
-			Enabled:    true,
-			AllowPause: false,
-			ProbeMode:  CongestionControlProbeModePadding,
+			Enabled:                true,
+			AllowPause:             false,
+			NackRatioAttenuator:    0.4,
+			ExpectedUsageThreshold: 0.95,
+			ProbeMode:              CongestionControlProbeModePadding,
 			ProbeConfig: CongestionControlProbeConfig{
 				BaseInterval:  3 * time.Second,
 				BackoffFactor: 1.5,
@@ -525,6 +527,13 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 	}
 	if conf.Logging.Level == "" && conf.Development {
 		conf.Logging.Level = "debug"
+	}
+	if conf.Logging.PionLevel != "" {
+		if conf.Logging.ComponentLevels == nil {
+			conf.Logging.ComponentLevels = map[string]string{}
+		}
+		conf.Logging.ComponentLevels["transport.pion"] = conf.Logging.PionLevel
+		conf.Logging.ComponentLevels["pion"] = conf.Logging.PionLevel
 	}
 
 	if conf.Development {
@@ -819,7 +828,6 @@ func SetLogger(l logger.Logger) {
 	logger.SetLogger(l, "livekit")
 }
 
-func InitLoggerFromConfig(config LoggingConfig) {
-	pionlogger.SetLogLevel(config.PionLevel)
-	logger.InitFromConfig(config.Config, "livekit")
+func InitLoggerFromConfig(config *LoggingConfig) {
+	logger.InitFromConfig(&config.Config, "livekit")
 }
