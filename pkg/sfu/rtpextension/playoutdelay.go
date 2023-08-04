@@ -6,7 +6,8 @@ import (
 )
 
 const (
-	PlayoutDelayURI = "http://www.webrtc.org/experiments/rtp-hdrext/playout-delay"
+	PlayoutDelayURI        = "http://www.webrtc.org/experiments/rtp-hdrext/playout-delay"
+	PlayoutDelayDefaultMax = 4000 // 4s
 
 	playoutDelayExtensionSize = 3
 )

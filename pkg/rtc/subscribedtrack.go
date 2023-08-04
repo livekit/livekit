@@ -22,6 +22,7 @@ import (
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
 
+	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -64,7 +65,7 @@ type SubscribedTrack struct {
 func NewSubscribedTrack(params SubscribedTrackParams) *SubscribedTrack {
 	s := &SubscribedTrack{
 		params: params,
-		logger: params.Subscriber.GetLogger().WithValues(
+		logger: params.Subscriber.GetLogger().WithComponent(sutils.ComponentSub).WithValues(
 			"trackID", params.DownTrack.ID(),
 			"publisherID", params.PublisherID,
 			"publisher", params.PublisherIdentity,
@@ -211,18 +212,15 @@ func (t *SubscribedTrack) UpdateVideoLayer() {
 	}
 
 	settings := t.settings.Load()
-	if settings == nil {
+	if settings == nil || settings.Disabled {
 		return
 	}
 
 	t.logger.Debugw("updating video layer", "settings", settings)
-
-	if settings.Width > 0 || settings.Fps > 0 {
-		spatial := t.spatialLayerFromSettings(settings)
-		t.DownTrack().SetMaxSpatialLayer(spatial)
-		if settings.Fps > 0 {
-			t.DownTrack().SetMaxTemporalLayer(t.MediaTrack().GetTemporalLayerForSpatialFps(spatial, settings.Fps, t.DownTrack().Codec().MimeType))
-		}
+	spatial := t.spatialLayerFromSettings(settings)
+	t.DownTrack().SetMaxSpatialLayer(spatial)
+	if settings.Fps > 0 {
+		t.DownTrack().SetMaxTemporalLayer(t.MediaTrack().GetTemporalLayerForSpatialFps(spatial, settings.Fps, t.DownTrack().Codec().MimeType))
 	}
 }
 
