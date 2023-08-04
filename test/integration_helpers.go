@@ -55,9 +55,7 @@ const (
 var roomClient livekit.RoomService
 
 func init() {
-	config.InitLoggerFromConfig(config.LoggingConfig{
-		Config: logger.Config{Level: "debug"},
-	})
+	config.InitLoggerFromConfig(&config.DefaultConfig.Logging)
 
 	prometheus.Init("test", livekit.NodeType_SERVER, "test")
 }
