@@ -169,6 +169,7 @@ func (t *TrendDetector) ToString() string {
 
 func (t *TrendDetector) prune() {
 	// prune based on a few rules
+
 	//  1. If there are more than required samples
 	if len(t.samples) > t.params.RequiredSamples {
 		t.samples = t.samples[len(t.samples)-t.params.RequiredSamples:]
