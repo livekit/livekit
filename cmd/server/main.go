@@ -202,7 +202,7 @@ func getConfig(c *cli.Context) (*config.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	config.InitLoggerFromConfig(conf.Logging)
+	config.InitLoggerFromConfig(&conf.Logging)
 
 	if c.String("config") == "" && c.String("config-body") == "" && conf.Development {
 		// use single port UDP when no config is provided

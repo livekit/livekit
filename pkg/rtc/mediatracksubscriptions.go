@@ -22,6 +22,7 @@ import (
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
 
+	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -133,7 +134,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		PlayoutDelayLimit: sub.GetPlayoutDelayConfig(),
 		Pacer:             sub.GetPacer(),
 		Trailer:           trailer,
-		Logger:            LoggerWithTrack(sub.GetLogger(), trackID, t.params.IsRelayed),
+		Logger:            LoggerWithTrack(sub.GetLogger().WithComponent(sutils.ComponentSub), trackID, t.params.IsRelayed),
 	})
 	if err != nil {
 		return nil, err

@@ -27,6 +27,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
+	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
@@ -113,9 +114,13 @@ func NewRoom(
 	egressLauncher EgressLauncher,
 ) *Room {
 	r := &Room{
-		protoRoom:                 proto.Clone(room).(*livekit.Room),
-		internal:                  internal,
-		Logger:                    LoggerWithRoom(logger.GetLogger(), livekit.RoomName(room.Name), livekit.RoomID(room.Sid)),
+		protoRoom: proto.Clone(room).(*livekit.Room),
+		internal:  internal,
+		Logger: LoggerWithRoom(
+			logger.GetLogger().WithComponent(sutils.ComponentRoom),
+			livekit.RoomName(room.Name),
+			livekit.RoomID(room.Sid),
+		),
 		config:                    config,
 		audioConfig:               audioConfig,
 		telemetry:                 telemetry,
