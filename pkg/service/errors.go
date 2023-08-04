@@ -24,6 +24,7 @@ var (
 	ErrIdentityEmpty         = psrpc.NewErrorf(psrpc.InvalidArgument, "identity cannot be empty")
 	ErrIngressNotConnected   = psrpc.NewErrorf(psrpc.Internal, "ingress not connected (redis required)")
 	ErrIngressNotFound       = psrpc.NewErrorf(psrpc.NotFound, "ingress does not exist")
+	ErrIngressNonReusable    = psrpc.NewErrorf(psrpc.InvalidArgument, "ingress is not reusable and cannot be modified")
 	ErrMetadataExceedsLimits = psrpc.NewErrorf(psrpc.InvalidArgument, "metadata size exceeds limits")
 	ErrOperationFailed       = psrpc.NewErrorf(psrpc.Internal, "operation cannot be completed")
 	ErrParticipantNotFound   = psrpc.NewErrorf(psrpc.NotFound, "participant does not exist")

@@ -250,6 +250,11 @@ func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateI
 		return nil, err
 	}
 
+	if !info.Reusable {
+		logger.Infow("ingress update attempted on non reusable ingress", "ingressID", info.IngressId)
+		return info, ErrIngressNonReusable
+	}
+
 	switch info.State.Status {
 	case livekit.IngressState_ENDPOINT_ERROR:
 		info.State.Status = livekit.IngressState_ENDPOINT_INACTIVE
