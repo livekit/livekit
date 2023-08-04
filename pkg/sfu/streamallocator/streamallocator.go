@@ -37,8 +37,6 @@ import (
 const (
 	ChannelCapacityInfinity = 100 * 1000 * 1000 // 100 Mbps
 
-	NackRatioAttenuator = 0.4 // how much to attenuate NACK ratio while calculating loss adjusted estimate
-
 	PriorityMin                = uint8(1)
 	PriorityMax                = uint8(255)
 	PriorityDefaultScreenshare = PriorityMax
@@ -842,30 +840,42 @@ func (s *StreamAllocator) handleNewEstimateInNonProbe() {
 	expectedBandwidthUsage := s.getExpectedBandwidthUsage()
 	switch reason {
 	case ChannelCongestionReasonLoss:
-		estimateToCommit = int64(float64(expectedBandwidthUsage) * (1.0 - NackRatioAttenuator*s.channelObserver.GetNackRatio()))
-		if estimateToCommit > s.lastReceivedEstimate {
-			estimateToCommit = s.lastReceivedEstimate
-		}
+		estimateToCommit = int64(float64(expectedBandwidthUsage) * (1.0 - s.params.Config.NackRatioAttenuator*s.channelObserver.GetNackRatio()))
 	default:
 		estimateToCommit = s.lastReceivedEstimate
 	}
+	if estimateToCommit > s.lastReceivedEstimate {
+		estimateToCommit = s.lastReceivedEstimate
+	}
+
+	commitThreshold := int64(s.params.Config.ExpectedUsageThreshold * float64(expectedBandwidthUsage))
+	action := "applying"
+	if estimateToCommit > commitThreshold {
+		action = "skipping"
+	}
 
 	s.params.Logger.Infow(
-		"stream allocator: channel congestion detected, updating channel capacity",
+		fmt.Sprintf("stream allocator: channel congestion detected, %s channel capacity update", action),
 		"reason", reason,
 		"old(bps)", s.committedChannelCapacity,
 		"new(bps)", estimateToCommit,
 		"lastReceived(bps)", s.lastReceivedEstimate,
 		"expectedUsage(bps)", expectedBandwidthUsage,
+		"commitThreshold(bps)", commitThreshold,
 		"channel", s.channelObserver.ToString(),
 	)
 	s.params.Logger.Infow(
-		"stream allocator: channel congestion detected, updating channel capacity: experimental",
+		fmt.Sprintf("stream allocator: channel congestion detected, %s channel capacity: experimental", action),
 		"rateHistory", s.rateMonitor.GetHistory(),
 		"expectedQueuing", s.rateMonitor.GetQueuingGuess(),
 		"nackHistory", s.channelObserver.GetNackHistory(),
 		"trackHistory", s.getTracksHistory(),
 	)
+	if estimateToCommit > commitThreshold {
+		// estimate to commit is either higher or within tolerance of expected uage, skip committing and re-allocating
+		return
+	}
+
 	s.committedChannelCapacity = estimateToCommit
 
 	// reset to get new set of samples for next trend
