@@ -167,6 +167,7 @@ func (t *TrendDetector) ToString() string {
 
 func (t *TrendDetector) prune() {
 	// prune based on a few rules
+
 	//  1. If there are more than required samples
 	if len(t.samples) > t.params.RequiredSamples {
 		t.samples = t.samples[len(t.samples)-t.params.RequiredSamples:]
@@ -187,18 +188,21 @@ func (t *TrendDetector) prune() {
 		}
 	}
 
-	//  3. If all sample values are same, collapse to just the last one
+	//  3. collapse same values at the front to just the last of those samples
 	if len(t.samples) != 0 {
-		sameValue := true
+		cutoffIndex := -1
 		firstValue := t.samples[0].value
-		for i := 0; i < len(t.samples); i++ {
+		for i := 1; i < len(t.samples); i++ {
 			if t.samples[i].value != firstValue {
-				sameValue = false
+				cutoffIndex = i - 1
 				break
 			}
 		}
 
-		if sameValue {
+		if cutoffIndex >= 0 {
+			t.samples = t.samples[cutoffIndex:]
+		} else {
+			// all values are the same, just keep the last one
 			t.samples = t.samples[len(t.samples)-1:]
 		}
 	}
