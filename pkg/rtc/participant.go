@@ -556,7 +556,7 @@ func (p *ParticipantImpl) HandleSignalSourceClose() {
 
 // HandleOffer an offer from remote participant, used when clients make the initial connection
 func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) {
-	p.subLogger.Debugw("received offer", "transport", livekit.SignalTarget_PUBLISHER)
+	p.pubLogger.Debugw("received offer", "transport", livekit.SignalTarget_PUBLISHER)
 	shouldPend := false
 	if p.MigrateState() == types.MigrateStateInit {
 		shouldPend = true
@@ -570,7 +570,7 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) {
 // HandleAnswer handles a client answer response, with subscriber PC, server initiates the
 // offer and client answers
 func (p *ParticipantImpl) HandleAnswer(answer webrtc.SessionDescription) {
-	p.pubLogger.Debugw("received answer", "transport", livekit.SignalTarget_SUBSCRIBER)
+	p.subLogger.Debugw("received answer", "transport", livekit.SignalTarget_SUBSCRIBER)
 
 	/* from server received join request to client answer
 	 * 1. server send join response & offer
