@@ -29,7 +29,6 @@ import (
 
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/logger/pionlogger"
 	redisLiveKit "github.com/livekit/protocol/redis"
 )
 
@@ -201,7 +200,6 @@ type StreamTrackersConfig struct {
 type PlayoutDelayConfig struct {
 	Enabled bool `yaml:"enabled,omitempty"`
 	Min     int  `yaml:"min,omitempty"`
-	Max     int  `yaml:"max,omitempty"`
 }
 
 type VideoConfig struct {
@@ -528,6 +526,13 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 	if conf.Logging.Level == "" && conf.Development {
 		conf.Logging.Level = "debug"
 	}
+	if conf.Logging.PionLevel != "" {
+		if conf.Logging.ComponentLevels == nil {
+			conf.Logging.ComponentLevels = map[string]string{}
+		}
+		conf.Logging.ComponentLevels["transport.pion"] = conf.Logging.PionLevel
+		conf.Logging.ComponentLevels["pion"] = conf.Logging.PionLevel
+	}
 
 	if conf.Development {
 		conf.Environment = "dev"
@@ -821,7 +826,6 @@ func SetLogger(l logger.Logger) {
 	logger.SetLogger(l, "livekit")
 }
 
-func InitLoggerFromConfig(config LoggingConfig) {
-	pionlogger.SetLogLevel(config.PionLevel)
-	logger.InitFromConfig(config.Config, "livekit")
+func InitLoggerFromConfig(config *LoggingConfig) {
+	logger.InitFromConfig(&config.Config, "livekit")
 }

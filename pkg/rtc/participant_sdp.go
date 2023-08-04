@@ -53,7 +53,7 @@ func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(offer webrtc.Se
 
 		codecs, err := codecsFromMediaDescription(unmatchAudio)
 		if err != nil {
-			p.params.Logger.Errorw("extract codecs from media section failed", err, "media", unmatchAudio)
+			p.pubLogger.Errorw("extract codecs from media section failed", err, "media", unmatchAudio)
 			continue
 		}
 
@@ -104,7 +104,7 @@ func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(offer webrtc.Se
 
 	bytes, err := parsed.Marshal()
 	if err != nil {
-		p.params.Logger.Errorw("failed to marshal offer", err)
+		p.pubLogger.Errorw("failed to marshal offer", err)
 		return offer
 	}
 
@@ -166,7 +166,7 @@ func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(offer webrtc.Sess
 		if mime != "" {
 			codecs, err := codecsFromMediaDescription(unmatchVideo)
 			if err != nil {
-				p.params.Logger.Errorw("extract codecs from media section failed", err, "media", unmatchVideo)
+				p.pubLogger.Errorw("extract codecs from media section failed", err, "media", unmatchVideo)
 				continue
 			}
 
@@ -186,7 +186,7 @@ func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(offer webrtc.Sess
 
 	bytes, err := parsed.Marshal()
 	if err != nil {
-		p.params.Logger.Errorw("failed to marshal offer", err)
+		p.pubLogger.Errorw("failed to marshal offer", err)
 		return offer
 	}
 
@@ -252,7 +252,7 @@ func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescript
 
 			opusPT, err := parsed.GetPayloadTypeForCodec(sdp.Codec{Name: "opus"})
 			if err != nil {
-				p.params.Logger.Infow("failed to get opus payload type", "error", err, "trakcID", ti.Sid)
+				p.pubLogger.Infow("failed to get opus payload type", "error", err, "trakcID", ti.Sid)
 				continue
 			}
 
@@ -275,7 +275,7 @@ func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescript
 
 	bytes, err := parsed.Marshal()
 	if err != nil {
-		p.params.Logger.Infow("failed to marshal answer", "error", err)
+		p.pubLogger.Infow("failed to marshal answer", "error", err)
 		return answer
 	}
 	answer.SDP = string(bytes)

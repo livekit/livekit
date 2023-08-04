@@ -24,7 +24,6 @@ import (
 
 	"github.com/livekit/livekit-server/version"
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/webhook"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -43,9 +42,7 @@ const (
 )
 
 func init() {
-	config.InitLoggerFromConfig(config.LoggingConfig{
-		Config: logger.Config{Level: "debug"},
-	})
+	config.InitLoggerFromConfig(&config.DefaultConfig.Logging)
 	// allow immediate closure in testing
 	RoomDepartureGrace = 1
 	roomUpdateInterval = defaultDelay
