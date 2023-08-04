@@ -556,7 +556,7 @@ func (p *ParticipantImpl) HandleSignalSourceClose() {
 
 // HandleOffer an offer from remote participant, used when clients make the initial connection
 func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) {
-	p.params.Logger.Debugw("received offer", "transport", livekit.SignalTarget_PUBLISHER)
+	p.pubLogger.Debugw("received offer", "transport", livekit.SignalTarget_PUBLISHER)
 	shouldPend := false
 	if p.MigrateState() == types.MigrateStateInit {
 		shouldPend = true
@@ -570,7 +570,7 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) {
 // HandleAnswer handles a client answer response, with subscriber PC, server initiates the
 // offer and client answers
 func (p *ParticipantImpl) HandleAnswer(answer webrtc.SessionDescription) {
-	p.params.Logger.Debugw("received answer", "transport", livekit.SignalTarget_SUBSCRIBER)
+	p.subLogger.Debugw("received answer", "transport", livekit.SignalTarget_SUBSCRIBER)
 
 	/* from server received join request to client answer
 	 * 1. server send join response & offer
@@ -588,7 +588,7 @@ func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) er
 		return nil
 	}
 
-	p.params.Logger.Debugw("sending answer", "transport", livekit.SignalTarget_PUBLISHER)
+	p.pubLogger.Debugw("sending answer", "transport", livekit.SignalTarget_PUBLISHER)
 	answer = p.configurePublisherAnswer(answer)
 	if err := p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Answer{
@@ -614,7 +614,7 @@ func (p *ParticipantImpl) handleMigrateMutedTrack() {
 		}
 
 		if len(pti.trackInfos) > 1 {
-			p.params.Logger.Warnw("too many pending migrated tracks", nil, "trackID", pti.trackInfos[0].Sid, "count", len(pti.trackInfos), "cid", cid)
+			p.pubLogger.Warnw("too many pending migrated tracks", nil, "trackID", pti.trackInfos[0].Sid, "count", len(pti.trackInfos), "cid", cid)
 		}
 
 		ti := pti.trackInfos[0]
@@ -623,7 +623,7 @@ func (p *ParticipantImpl) handleMigrateMutedTrack() {
 			if mt != nil {
 				addedTracks = append(addedTracks, mt)
 			} else {
-				p.params.Logger.Warnw("could not find migrated muted track", nil, "cid", cid)
+				p.pubLogger.Warnw("could not find migrated muted track", nil, "cid", cid)
 			}
 		}
 	}
@@ -659,7 +659,7 @@ func (p *ParticipantImpl) removeMutedTrackNotFired(mt *MediaTrack) {
 // records track details and lets client know it's ok to proceed
 func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 	if !p.CanPublishSource(req.Source) {
-		p.params.Logger.Warnw("no permission to publish track", nil)
+		p.pubLogger.Warnw("no permission to publish track", nil)
 		return
 	}
 
@@ -686,7 +686,7 @@ func (p *ParticipantImpl) SetMigrateInfo(
 		p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
 
 		p.pendingTracks[t.GetCid()] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}, migrated: true}
-		p.params.Logger.Infow("pending track added (migration)", "trackID", ti.Sid, "track", ti.String())
+		p.pubLogger.Infow("pending track added (migration)", "trackID", ti.Sid, "track", ti.String())
 	}
 	p.pendingTracksLock.Unlock()
 
@@ -813,7 +813,7 @@ func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
 			return
 		}
 		// TODO: change to debug once we are confident
-		p.params.Logger.Infow("closing subscriber peer connection to aid migration")
+		p.subLogger.Infow("closing subscriber peer connection to aid migration")
 
 		//
 		// Close all down tracks before closing subscriber peer connection.
@@ -1060,7 +1060,7 @@ func (p *ParticipantImpl) onTrackUnsubscribed(subTrack types.SubscribedTrack) {
 }
 
 func (p *ParticipantImpl) SubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool) {
-	p.params.Logger.Debugw("sending subscription permission update", "publisherID", publisherID, "trackID", trackID, "allowed", allowed)
+	p.subLogger.Debugw("sending subscription permission update", "publisherID", publisherID, "trackID", trackID, "allowed", allowed)
 	err := p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_SubscriptionPermissionUpdate{
 			SubscriptionPermissionUpdate: &livekit.SubscriptionPermissionUpdate{
@@ -1071,7 +1071,7 @@ func (p *ParticipantImpl) SubscriptionPermissionUpdate(publisherID livekit.Parti
 		},
 	})
 	if err != nil {
-		p.params.Logger.Errorw("could not send subscription permission update", err)
+		p.subLogger.Errorw("could not send subscription permission update", err)
 	}
 }
 
@@ -1250,7 +1250,7 @@ func (p *ParticipantImpl) setIsPublisher(isPublisher bool) {
 
 // when the server has an offer for participant
 func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription) error {
-	p.params.Logger.Debugw("sending offer", "transport", livekit.SignalTarget_SUBSCRIBER)
+	p.subLogger.Debugw("sending offer", "transport", livekit.SignalTarget_SUBSCRIBER)
 	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Offer{
 			Offer: ToProtoSessionDescription(offer),
