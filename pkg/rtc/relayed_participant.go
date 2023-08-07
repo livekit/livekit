@@ -26,11 +26,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
-type AddTrackSignal struct {
-	Identity string             `json:"identity,omitempty"`
-	Track    *livekit.TrackInfo `json:"track,omitempty"`
-}
-
 type RelayedParticipantParams struct {
 	Identity          livekit.ParticipantIdentity
 	Name              livekit.ParticipantName
