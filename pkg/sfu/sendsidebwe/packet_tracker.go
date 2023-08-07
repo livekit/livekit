@@ -156,7 +156,7 @@ func (p *PacketTracker) ProcessFeedback(baseSN uint16, arrivals []int64) {
 	}
 	if p.activePacketGroup == nil {
 		// RAJA-TODO - spread should be a config option
-		p.activePacketGroup = NewPacketGroup(20 * time.Millisecond)
+		p.activePacketGroup = NewPacketGroup(50 * time.Millisecond)
 	}
 	for i, arrival := range arrivals {
 		sn := baseSN + uint16(i)
@@ -164,7 +164,7 @@ func (p *PacketTracker) ProcessFeedback(baseSN uint16, arrivals []int64) {
 		pi.receiveTime = arrival
 		if err := p.activePacketGroup.Add(pi); err != nil {
 			p.packetGroups = append(p.packetGroups, p.activePacketGroup)
-			p.activePacketGroup = NewPacketGroup(20 * time.Millisecond)
+			p.activePacketGroup = NewPacketGroup(50 * time.Millisecond)
 			p.activePacketGroup.Add(pi)
 		}
 		if p.debugFile != nil {
