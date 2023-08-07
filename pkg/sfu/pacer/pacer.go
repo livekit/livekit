@@ -30,11 +30,12 @@ type Packet struct {
 	Header             *rtp.Header
 	Extensions         []ExtensionData
 	Payload            []byte
+	IsRTX              bool
 	AbsSendTimeExtID   uint8
 	TransportWideExtID uint8
 	WriteStream        webrtc.TrackLocalWriter
 	Metadata           interface{}
-	OnSent             func(md interface{}, sentHeader *rtp.Header, payloadSize int, sentTime time.Time, sendError error)
+	OnSent             func(md interface{}, sentHeader *rtp.Header, payloadSize int, isRTX bool, sentTime time.Time, sendError error)
 }
 
 type Pacer interface {

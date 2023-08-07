@@ -1579,12 +1579,12 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			Header:             &pkt.Header,
 			Extensions:         []pacer.ExtensionData{{ID: uint8(d.dependencyDescriptorExtID), Payload: meta.ddBytes}},
 			Payload:            payload,
+			IsRTX:              true,
 			AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 			TransportWideExtID: uint8(d.transportWideExtID),
 			WriteStream:        d.writeStream,
 			Metadata: sendPacketMetadata{
-				isRTX: true,
-				pool:  pool,
+				pool: pool,
 			},
 			OnSent: d.packetSent,
 		})
@@ -1810,7 +1810,6 @@ type sendPacketMetadata struct {
 	layer           int32
 	arrival         time.Time
 	isKeyFrame      bool
-	isRTX           bool
 	isPadding       bool
 	isBlankFrame    bool
 	disableCounter  bool
@@ -1819,7 +1818,7 @@ type sendPacketMetadata struct {
 	pool            *[]byte
 }
 
-func (d *DownTrack) packetSent(md interface{}, hdr *rtp.Header, payloadSize int, sendTime time.Time, sendError error) {
+func (d *DownTrack) packetSent(md interface{}, hdr *rtp.Header, payloadSize int, isRTX bool, sendTime time.Time, sendError error) {
 	spmd, ok := md.(sendPacketMetadata)
 	if !ok {
 		d.params.Logger.Errorw("invalid send packet metadata", nil)
@@ -1839,7 +1838,7 @@ func (d *DownTrack) packetSent(md interface{}, hdr *rtp.Header, payloadSize int,
 		// STREAM-ALLOCATOR-TODO: remove this stream allocator bytes counter once stream allocator changes fully to pull bytes counter
 		size := uint32(headerSize + payloadSize)
 		d.streamAllocatorBytesCounter.Add(size)
-		if spmd.isRTX {
+		if isRTX {
 			d.bytesRetransmitted.Add(size)
 		} else {
 			d.bytesSent.Add(size)

@@ -32,6 +32,7 @@ type packetInfo struct {
 	isDeltaValid bool
 	headerSize   uint16
 	payloadSize  uint16
+	isRTX        bool
 	// SSBWE-TODO: possibly add the following fields - pertaining to this packet,
 	// idea is to be able to traverse back and find last packet with clean signal(s)
 	// in order to figure out bitrate at which congestion triggered.
@@ -50,6 +51,7 @@ func (pi *packetInfo) Reset() {
 	pi.isDeltaValid = false
 	pi.headerSize = 0
 	pi.payloadSize = 0
+	pi.isRTX = false
 }
 
 func (pi *packetInfo) ResetReceiveAndDeltas() {
@@ -142,7 +144,7 @@ func (p *PacketTracker) GetEstimatedChannelCapacity() int64 {
 	return p.estimatedChannelCapacity
 }
 
-func (p *PacketTracker) PacketSent(sn uint16, at time.Time, headerSize int, payloadSize int) {
+func (p *PacketTracker) PacketSent(sn uint16, at time.Time, headerSize int, payloadSize int, isRTX bool) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
@@ -168,6 +170,7 @@ func (p *PacketTracker) PacketSent(sn uint16, at time.Time, headerSize int, payl
 	pi.sendTime = at
 	pi.headerSize = uint16(headerSize)
 	pi.payloadSize = uint16(payloadSize)
+	pi.isRTX = isRTX
 	pi.ResetReceiveAndDeltas()
 
 	p.highestSentSN = sn
@@ -183,16 +186,24 @@ func (p *PacketTracker) ProcessFeedback(baseSN uint16, arrivals []int64) {
 		p.debugFile.WriteString(toWrite)
 		p.debugFile.WriteString("\n")
 	}
+	toInt := func(a bool) int {
+		if a {
+			return 1
+		}
+
+		return 0
+	}
 	for i, arrival := range arrivals {
 		sn := baseSN + uint16(i)
 		p.packetInfos[sn].receiveTime = arrival
 		if p.debugFile != nil {
 			pi := p.packetInfos[sn]
 			toWrite := fmt.Sprintf(
-				"PACKET: sn: %d, headerSize: %d, payloadSize: %d, sendTime: %d, receiveTime: %d",
+				"PACKET: sn: %d, headerSize: %d, payloadSize: %d, isRTX: %d, sendTime: %d, receiveTime: %d",
 				sn,
 				pi.headerSize,
 				pi.payloadSize,
+				toInt(pi.isRTX),
 				pi.sendTime.UnixMicro(),
 				arrival,
 			)
@@ -352,9 +363,12 @@ func (p *PacketTracker) calculateAcknowledgedBitrate(startSNInclusive, endSNExcl
 	highestTime := endTime
 	lowestTime := int64(0)
 	lowestTimeBytes := 0
+	lowestTimeIsRTX := false
 
 	totalBytes := 0
 	numPackets := 0
+	totalRTXBytes := 0
+	numRTXPackets := 0
 	for {
 		pi := &p.packetInfos[sn]
 		receiveTime := pi.receiveTime
@@ -381,10 +395,16 @@ func (p *PacketTracker) calculateAcknowledgedBitrate(startSNInclusive, endSNExcl
 		if lowestTime == 0 || receiveTime < lowestTime {
 			lowestTime = receiveTime
 			lowestTimeBytes = int(pi.headerSize) + int(pi.payloadSize)
+			lowestTimeIsRTX = pi.isRTX
 		}
 
-		totalBytes += int(pi.headerSize) + int(pi.payloadSize)
-		numPackets++
+		if pi.isRTX {
+			totalRTXBytes += int(pi.headerSize) + int(pi.payloadSize)
+			numRTXPackets++
+		} else {
+			totalBytes += int(pi.headerSize) + int(pi.payloadSize)
+			numPackets++
+		}
 		sn--
 	}
 
@@ -394,19 +414,30 @@ func (p *PacketTracker) calculateAcknowledgedBitrate(startSNInclusive, endSNExcl
 	}
 
 	// take out the edge
-	numPackets--
-	totalBytes -= lowestTimeBytes
+	if lowestTimeIsRTX {
+		numRTXPackets--
+		totalRTXBytes -= lowestTimeBytes
+	} else {
+		numPackets--
+		totalBytes -= lowestTimeBytes
+	}
 
 	bitrate := float64(totalBytes) * 8 / interval
 	packetRate := float64(numPackets) / interval
+	bitrateRTX := float64(totalRTXBytes) * 8 / interval
+	packetRateRTX := float64(numRTXPackets) / interval
 	p.logger.Infow("bitrate calculation",
-		"totalBytes", totalBytes,
 		"highest", highestTime,
 		"lowest", lowestTime,
 		"interval", interval,
+		"totalBytes", totalBytes,
 		"bitrate", bitrate,
 		"numPackets", numPackets,
 		"packetRate", packetRate,
+		"totalRTXBytes", totalRTXBytes,
+		"bitrateRTX", bitrateRTX,
+		"numRTXPackets", numRTXPackets,
+		"packetRateRTX", packetRateRTX,
 	) // REMOVE
 }
 
