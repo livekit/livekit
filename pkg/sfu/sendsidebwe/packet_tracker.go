@@ -22,48 +22,6 @@ var (
 
 // -------------------------------------------------------------------------------
 
-type packetInfo struct {
-	sendTime  time.Time
-	sendDelta int32
-	// SSBWE-TODO: may need a feedback report time to detect stale reports
-	receiveTime  int64
-	receiveDelta int32
-	deltaOfDelta int32
-	isDeltaValid bool
-	headerSize   uint16
-	payloadSize  uint16
-	isRTX        bool
-	// SSBWE-TODO: possibly add the following fields - pertaining to this packet,
-	// idea is to be able to traverse back and find last packet with clean signal(s)
-	// in order to figure out bitrate at which congestion triggered.
-	//    MPETau - Mean Percentage Error trend - potentially an early signal of impending congestion
-	//    PeakDetectorSignal - A sustained peak could indicate definite congestion
-	//    AcknowledgedBitrate - Bitrate acknowledged by feedback
-	//    ProbePacketInfo - When probing, these packets could be analyzed separately to check if probing is successful
-}
-
-func (pi *packetInfo) Reset() {
-	pi.sendTime = time.Time{}
-	pi.sendDelta = 0
-	pi.receiveTime = 0
-	pi.receiveDelta = 0
-	pi.deltaOfDelta = 0
-	pi.isDeltaValid = false
-	pi.headerSize = 0
-	pi.payloadSize = 0
-	pi.isRTX = false
-}
-
-func (pi *packetInfo) ResetReceiveAndDeltas() {
-	pi.sendDelta = 0
-	pi.receiveTime = 0
-	pi.receiveDelta = 0
-	pi.deltaOfDelta = 0
-	pi.isDeltaValid = false
-}
-
-// -------------------------------------------------------------------------------
-
 type feedbackInfo struct {
 	baseSN     uint16
 	numPackets uint16
@@ -84,6 +42,9 @@ type PacketTracker struct {
 	// SSBWE-TODO: make this a ring buffer as a lot more fields are needed
 	packetInfos   [1 << 16]packetInfo
 	feedbackInfos deque.Deque[feedbackInfo]
+
+	packetGroups      []*PacketGroup // RAJA-TODO - prune packet groups to some recent history
+	activePacketGroup *PacketGroup
 
 	peakDetector peakdetect.PeakDetector
 
@@ -193,11 +154,20 @@ func (p *PacketTracker) ProcessFeedback(baseSN uint16, arrivals []int64) {
 
 		return 0
 	}
+	if p.activePacketGroup == nil {
+		// RAJA-TODO - spread should be a config option
+		p.activePacketGroup = NewPacketGroup(20 * time.Millisecond)
+	}
 	for i, arrival := range arrivals {
 		sn := baseSN + uint16(i)
-		p.packetInfos[sn].receiveTime = arrival
+		pi := &p.packetInfos[sn]
+		pi.receiveTime = arrival
+		if err := p.activePacketGroup.Add(pi); err != nil {
+			p.packetGroups = append(p.packetGroups, p.activePacketGroup)
+			p.activePacketGroup = NewPacketGroup(20 * time.Millisecond)
+			p.activePacketGroup.Add(pi)
+		}
 		if p.debugFile != nil {
-			pi := p.packetInfos[sn]
 			toWrite := fmt.Sprintf(
 				"PACKET: sn: %d, headerSize: %d, payloadSize: %d, isRTX: %d, sendTime: %d, receiveTime: %d",
 				sn,
