@@ -11,8 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/rtc/relay"
-
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/pion/rtcp"
 	"github.com/pion/sdp/v3"
@@ -20,6 +18,8 @@ import (
 	"github.com/pkg/errors"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/livekit/livekit-server/pkg/rtc/relay"
 
 	"github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/auth"
@@ -1141,7 +1141,7 @@ func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription) err
 }
 
 func (p *ParticipantImpl) forwardTrackToRelays(publishedTrack *MediaTrack, track *webrtc.TrackRemote) {
-	p.params.RelayCollection.OnceForEach(func(relay relay.Relay) {
+	p.params.RelayCollection.OnceForEach(func(rel relay.Relay) {
 		codec := track.Codec()
 		tr := publishedTrack.MediaTrackReceiver.Receiver(track.Codec().MimeType)
 		rtpCodecParameters := []webrtc.RTPCodecParameters{{
@@ -1157,8 +1157,8 @@ func (p *ParticipantImpl) forwardTrackToRelays(publishedTrack *MediaTrack, track
 		dt, err := sfu.NewDownTrack(
 			rtpCodecParameters,
 			tr,
-			relay.GetBufferFactory(),
-			livekit.ParticipantID(fmt.Sprintf("relay--%v--%v--%v", relay.ID(), track.ID(), track.RID())),
+			rel.GetBufferFactory(),
+			livekit.ParticipantID(fmt.Sprintf("relay--%v--%v--%v", rel.ID(), track.ID(), track.RID())),
 			p.params.Config.Receiver.PacketBufferSize,
 			uint32(track.SSRC()),
 			p.GetLogger(),
@@ -1168,7 +1168,7 @@ func (p *ParticipantImpl) forwardTrackToRelays(publishedTrack *MediaTrack, track
 			return
 		}
 
-		addTrackSignal := AddTrackSignal{string(p.Identity()), publishedTrack.trackInfo}
+		addTrackSignal := relay.AddTrackSignal{string(p.Identity()), publishedTrack.trackInfo}
 
 		addTrackSignalPayload, marshalErr := json.Marshal(addTrackSignal)
 		if marshalErr != nil {
@@ -1179,7 +1179,7 @@ func (p *ParticipantImpl) forwardTrackToRelays(publishedTrack *MediaTrack, track
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		_, err = relay.AddTrack(ctx, dt, track.RID(), addTrackSignalPayload)
+		_, err = rel.AddTrack(ctx, dt, track.RID(), addTrackSignalPayload)
 		if err != nil {
 			p.params.Logger.Errorw("add track to relay", err)
 			return
