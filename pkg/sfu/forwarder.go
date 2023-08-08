@@ -1512,7 +1512,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		// Ideally, refTS should not be ahead of expectedTS, but expectedTS uses the first packet's
 		// wall clock time. So, if the first packet experienced abmormal latency, it is possible
 		// for refTS > expectedTS
-		diffSeconds := float64(expectedTS-refTS) / float64(f.codec.ClockRate)
+		diffSeconds := float64(int32(expectedTS-refTS)) / float64(f.codec.ClockRate)
 		if diffSeconds >= 0.0 {
 			if diffSeconds > ResumeBehindThresholdSeconds {
 				f.logger.Infow("resume, reference too far behind", "expectedTS", expectedTS, "refTS", refTS, "diffSeconds", diffSeconds)
@@ -1530,7 +1530,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		}
 	} else {
 		// switching between layers, check if refTS is too far behind the last sent
-		diffSeconds := float64(refTS-lastTS) / float64(f.codec.ClockRate)
+		diffSeconds := float64(int32(refTS-lastTS)) / float64(f.codec.ClockRate)
 		if diffSeconds < 0.0 {
 			if math.Abs(diffSeconds) > LayerSwitchBehindThresholdSeconds {
 				// AVSYNC-TODO: This could be due to pacer trickling out this layer. Should potentially return error here and wait for a more opportune time
@@ -1541,7 +1541,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			// use a nominal increase to ensure that timestamp is always moving forward
 			nextTS = lastTS + 1
 		} else {
-			diffSeconds = float64(expectedTS-refTS) / float64(f.codec.ClockRate)
+			diffSeconds = float64(int32(expectedTS-refTS)) / float64(f.codec.ClockRate)
 			if diffSeconds < 0.0 && math.Abs(diffSeconds) > SwitchAheadThresholdSeconds {
 				f.logger.Infow("layer switch, reference too far ahead", "expectedTS", expectedTS, "refTS", refTS, "diffSeconds", math.Abs(diffSeconds))
 				nextTS = expectedTS
