@@ -483,7 +483,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 		}
 
 		if updatesForRelay, err := getUpdatesPayloadForRelay(newRoom, updates); err != nil {
-			newRoom.Logger.Errorw("could not create participant update for relay", err)
+			newRoom.Logger.Errorw("could not create updates for relay", err)
 		} else if len(updatesForRelay) > 0 {
 			outRelayCollection.ForEach(func(relay relay.Relay) {
 				if err := relay.SendMessage(updatesForRelay); err != nil {
@@ -505,6 +505,22 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 			outRelayCollection.ForEach(func(relay relay.Relay) {
 				if err := relay.SendMessage(messageData); err != nil {
 					newRoom.Logger.Errorw("could not send data packet to relay", err, "relayId", relay.ID())
+				}
+			})
+		}
+	})
+
+	newRoom.OnSpeakersChanged(func(speakers []*livekit.SpeakerInfo) {
+		if len(speakers) == 0 {
+			return
+		}
+
+		if speakersForRelay, err := getSpeakersPayloadForRelay(newRoom, speakers); err != nil {
+			newRoom.Logger.Errorw("could not create speakers payload for relay", err)
+		} else if len(speakersForRelay) > 0 {
+			outRelayCollection.ForEach(func(relay relay.Relay) {
+				if err := relay.SendMessage(speakersForRelay); err != nil {
+					newRoom.Logger.Errorw("could not send speakers to relay", err)
 				}
 			})
 		}
@@ -655,6 +671,9 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 					} else {
 						rtc.BroadcastDataPacketForRoom(newRoom, nil, &dp, newRoom.Logger)
 					}
+				}
+				if len(msg.Speakers) > 0 {
+					r.onRelaySpeakersChanged(newRoom, msg.Speakers)
 				}
 			})
 
@@ -966,6 +985,22 @@ func getUpdatesPayloadForRelay(room *rtc.Room, updates []*livekit.ParticipantInf
 	}
 }
 
+func getSpeakersPayloadForRelay(room *rtc.Room, speakers []*livekit.SpeakerInfo) ([]byte, error) {
+	speakersForRelay := make([]*livekit.SpeakerInfo, 0, len(speakers))
+	for _, speaker := range speakers {
+		if _, ok := room.GetParticipantByID(livekit.ParticipantID(speaker.GetSid())).(*rtc.RelayedParticipantImpl); ok {
+			continue
+		}
+		speakersForRelay = append(speakersForRelay, speaker)
+	}
+
+	if speakersPayload, err := json.Marshal(relayMessage{Speakers: speakersForRelay}); err != nil {
+		return nil, fmt.Errorf("could not marshal participant speakers: %w", err)
+	} else {
+		return speakersPayload, nil
+	}
+}
+
 func packSignalPeerMessage(replyTo string, signal []byte) interface{} {
 	return &signalPeerMessage{
 		ReplyTo: replyTo,
@@ -1063,6 +1098,16 @@ func (r *RoomManager) onRelayParticipantUpdate(room *rtc.Room, rel relay.Relay, 
 	}
 }
 
+func (r *RoomManager) onRelaySpeakersChanged(room *rtc.Room, speakers []*livekit.SpeakerInfo) {
+	for _, speaker := range speakers {
+		if relayedParticipant, ok := room.GetParticipantByID(livekit.ParticipantID(speaker.GetSid())).(*rtc.RelayedParticipantImpl); !ok {
+			continue
+		} else {
+			relayedParticipant.SetAudioLevel(float64(speaker.GetLevel()), speaker.GetActive())
+		}
+	}
+}
+
 func onRelayAddTrack(room *rtc.Room, track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, mid string, rid string, addTrackSignal relay.AddTrackSignal) {
 	participantIdentity := livekit.ParticipantIdentity(addTrackSignal.Identity)
 
@@ -1075,7 +1120,8 @@ func onRelayAddTrack(room *rtc.Room, track *webrtc.TrackRemote, receiver *webrtc
 
 type relayMessage struct {
 	Updates    []*livekit.ParticipantInfo `json:"updates,omitempty"`
-	DataPacket []byte
+	DataPacket []byte                     `json:"dataPacket,omitempty"`
+	Speakers   []*livekit.SpeakerInfo     `json:"speakers,omitempty"`
 }
 
 type signalPeerMessage struct {

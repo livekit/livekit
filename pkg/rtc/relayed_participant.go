@@ -48,6 +48,9 @@ type RelayedParticipantImpl struct {
 	isClosed atomic.Bool
 	state    atomic.Value // livekit.ParticipantInfo_State
 
+	audioLevel    float64
+	isAudioActive bool
+
 	grants *auth.ClaimGrants
 
 	connectedAt time.Time
@@ -456,21 +459,12 @@ func (p *RelayedParticipantImpl) IsPublisher() bool {
 	return true
 }
 
-func (p *RelayedParticipantImpl) GetAudioLevel() (level float64, active bool) {
-	level = 0
-	for _, pt := range p.GetPublishedTracks() {
-		mediaTrack := pt.(types.LocalMediaTrack)
-		if mediaTrack.Source() == livekit.TrackSource_MICROPHONE {
-			tl, ta := mediaTrack.GetAudioLevel()
-			if ta {
-				active = true
-				if tl > level {
-					level = tl
-				}
-			}
-		}
-	}
-	return
+func (p *RelayedParticipantImpl) SetAudioLevel(level float64, active bool) {
+	p.audioLevel, p.isAudioActive = level, active
+}
+
+func (p *RelayedParticipantImpl) GetAudioLevel() (float64, bool) {
+	return p.audioLevel, p.isAudioActive
 }
 
 func (p *RelayedParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo {

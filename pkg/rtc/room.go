@@ -78,6 +78,7 @@ type Room struct {
 
 	onSendParticipantUpdates func(updates []*livekit.ParticipantInfo)
 	onBroadcastDataPacket    func(dp *livekit.DataPacket)
+	onSpeakersChanged        func([]*livekit.SpeakerInfo)
 
 	onParticipantChanged func(p types.LocalParticipant)
 	onMetadataUpdate     func(metadata string)
@@ -658,6 +659,10 @@ func (r *Room) OnBroadcastDataPacket(f func(dp *livekit.DataPacket)) {
 	r.onBroadcastDataPacket = f
 }
 
+func (r *Room) OnSpeakersChanged(f func([]*livekit.SpeakerInfo)) {
+	r.onSpeakersChanged = f
+}
+
 func (r *Room) OnClose(f func()) {
 	r.onClose = f
 }
@@ -971,6 +976,7 @@ func (r *Room) sendActiveSpeakers(speakers []*livekit.SpeakerInfo) {
 
 // for protocol 3, send only changed updates
 func (r *Room) sendSpeakerChanges(speakers []*livekit.SpeakerInfo) {
+	r.onSpeakersChanged(speakers)
 	for _, p := range r.GetParticipants() {
 		if p.ProtocolVersion().SupportsSpeakerChanged() {
 			_ = p.SendSpeakerUpdate(speakers, false)
