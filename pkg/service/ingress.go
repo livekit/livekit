@@ -160,6 +160,15 @@ func (s *IngressService) CreateIngressWithUrl(ctx context.Context, urlStr string
 	case livekit.IngressInput_RTMP_INPUT,
 		livekit.IngressInput_WHIP_INPUT:
 		info.Reusable = true
+		if err := ingress.ValidateForSerialization(info); err != nil {
+			return nil, err
+		}
+	case livekit.IngressInput_URL_INPUT:
+		if err := ingress.Validate(info); err != nil {
+			return nil, err
+		}
+	default:
+		return nil, ingress.ErrInvalidIngressType
 	}
 
 	if err := ingress.ValidateForSerialization(info); err != nil {
