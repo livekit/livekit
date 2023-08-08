@@ -54,12 +54,12 @@ func (s *SendSideBWE) Stop() {
 }
 
 func (s *SendSideBWE) HandleRTCP(report *rtcp.TransportLayerCC) {
-	baseSN, arrivals, err := s.TWCCFeedback.HandleRTCP(report)
+	fb, err := s.TWCCFeedback.HandleRTCP(report)
 	if err != nil {
 		return
 	}
 
-	s.PacketTracker.ProcessFeedback(baseSN, arrivals)
+	s.PacketTracker.ProcessFeedback(fb)
 }
 
 // ------------------------------------------------

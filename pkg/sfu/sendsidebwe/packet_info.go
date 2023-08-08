@@ -1,16 +1,12 @@
 package sendsidebwe
 
-import (
-	"time"
-)
-
 type packetInfo struct {
-	sendTime  time.Time
-	sendDelta int32
+	sendTime  int64
+	sendDelta int64
 	// SSBWE-TODO: may need a feedback report time to detect stale reports
 	receiveTime  int64
-	receiveDelta int32
-	deltaOfDelta int32
+	receiveDelta int64
+	deltaOfDelta int64
 	isDeltaValid bool
 	headerSize   uint16
 	payloadSize  uint16
@@ -25,7 +21,7 @@ type packetInfo struct {
 }
 
 func (pi *packetInfo) Reset() {
-	pi.sendTime = time.Time{}
+	pi.sendTime = 0
 	pi.sendDelta = 0
 	pi.receiveTime = 0
 	pi.receiveDelta = 0

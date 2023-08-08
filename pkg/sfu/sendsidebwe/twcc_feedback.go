@@ -9,14 +9,27 @@ import (
 	"github.com/pion/rtcp"
 )
 
+// ------------------------------------------------------
+
 const (
 	outlierReportFactor            = 4
 	estimatedFeedbackIntervalAlpha = float64(0.9)
 )
 
+// ------------------------------------------------------
+
 var (
 	errFeedbackReportOutOfOrder = errors.New("feedback report out-of-order")
 )
+
+// ------------------------------------------------------
+
+type TWCCFeedbackInfo struct {
+	BaseSN   uint16
+	Arrivals []int64
+}
+
+// ------------------------------------------------------
 
 type TWCCFeedback struct {
 	logger logger.Logger
@@ -34,7 +47,7 @@ func NewTWCCFeedback(logger logger.Logger) *TWCCFeedback {
 	}
 }
 
-func (t *TWCCFeedback) HandleRTCP(report *rtcp.TransportLayerCC) (uint16, []int64, error) {
+func (t *TWCCFeedback) HandleRTCP(report *rtcp.TransportLayerCC) (*TWCCFeedbackInfo, error) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
@@ -57,7 +70,7 @@ func (t *TWCCFeedback) HandleRTCP(report *rtcp.TransportLayerCC) (uint16, []int6
 		}
 	}
 	if !isInOrder {
-		return 0, nil, errFeedbackReportOutOfOrder
+		return nil, errFeedbackReportOutOfOrder
 	}
 
 	t.lastFeedbackTime = now
@@ -95,7 +108,10 @@ func (t *TWCCFeedback) HandleRTCP(report *rtcp.TransportLayerCC) (uint16, []int6
 	}
 
 	t.logger.Infow("TWCC feedback", "report", report.String()) // REMOVE
-	return report.BaseSequenceNumber, arrivals, nil
+	return &TWCCFeedbackInfo{
+		BaseSN:   report.BaseSequenceNumber,
+		Arrivals: arrivals,
+	}, nil
 }
 
 // ------------------------------------------------

@@ -22,11 +22,6 @@ var (
 
 // -------------------------------------------------------------------------------
 
-type feedbackInfo struct {
-	baseSN     uint16
-	numPackets uint16
-}
-
 type PacketTracker struct {
 	logger logger.Logger
 
@@ -41,9 +36,9 @@ type PacketTracker struct {
 
 	// SSBWE-TODO: make this a ring buffer as a lot more fields are needed
 	packetInfos   [1 << 16]packetInfo
-	feedbackInfos deque.Deque[feedbackInfo]
+	feedbackInfos deque.Deque[*TWCCFeedbackInfo] // SSBWE-TODO: prune old entries
 
-	packetGroups      []*PacketGroup // RAJA-TODO - prune packet groups to some recent history
+	packetGroups      []*PacketGroup // SSBWE-TODO - prune packet groups to some recent history
 	activePacketGroup *PacketGroup
 
 	peakDetector peakdetect.PeakDetector
@@ -128,7 +123,7 @@ func (p *PacketTracker) PacketSent(sn uint16, at time.Time, headerSize int, payl
 	}
 
 	pi := &p.packetInfos[sn]
-	pi.sendTime = at
+	pi.sendTime = at.UnixMicro()
 	pi.headerSize = uint16(headerSize)
 	pi.payloadSize = uint16(payloadSize)
 	pi.isRTX = isRTX
@@ -137,10 +132,11 @@ func (p *PacketTracker) PacketSent(sn uint16, at time.Time, headerSize int, payl
 	p.highestSentSN = sn
 }
 
-func (p *PacketTracker) ProcessFeedback(baseSN uint16, arrivals []int64) {
+func (p *PacketTracker) ProcessFeedback(fbi *TWCCFeedbackInfo) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
+	/* RAJA-REMOVE
 	now := time.Now()
 	if p.debugFile != nil {
 		toWrite := fmt.Sprintf("REPORT: start: %d", now.UnixMicro())
@@ -155,7 +151,7 @@ func (p *PacketTracker) ProcessFeedback(baseSN uint16, arrivals []int64) {
 		return 0
 	}
 	if p.activePacketGroup == nil {
-		// RAJA-TODO - spread should be a config option
+		// SSBWE-TODO - spread should be a config option
 		p.activePacketGroup = NewPacketGroup(50 * time.Millisecond)
 	}
 	for i, arrival := range arrivals {
@@ -174,7 +170,7 @@ func (p *PacketTracker) ProcessFeedback(baseSN uint16, arrivals []int64) {
 				pi.headerSize,
 				pi.payloadSize,
 				toInt(pi.isRTX),
-				pi.sendTime.UnixMicro(),
+				pi.sendTime,
 				arrival,
 			)
 			p.debugFile.WriteString(toWrite)
@@ -186,6 +182,7 @@ func (p *PacketTracker) ProcessFeedback(baseSN uint16, arrivals []int64) {
 		p.debugFile.WriteString(toWrite)
 		p.debugFile.WriteString("\n")
 	}
+	*/
 
 	/* RAJA-REMOVE
 	lastAckedSN := baseSN + uint16(len(arrivals)) - 1
@@ -199,14 +196,62 @@ func (p *PacketTracker) ProcessFeedback(baseSN uint16, arrivals []int64) {
 	}
 	*/
 
-	p.feedbackInfos.PushBack(feedbackInfo{
-		baseSN:     baseSN,
-		numPackets: uint16(len(arrivals)),
-	})
+	p.feedbackInfos.PushBack(fbi)
 	// notify worker of a new feedback
 	select {
 	case p.wake <- struct{}{}:
 	default:
+	}
+}
+
+func (p *PacketTracker) processFeedback(fbi *TWCCFeedbackInfo) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	now := time.Now()
+	if p.debugFile != nil {
+		toWrite := fmt.Sprintf("REPORT: start: %d", now.UnixMicro())
+		p.debugFile.WriteString(toWrite)
+		p.debugFile.WriteString("\n")
+	}
+	toInt := func(a bool) int {
+		if a {
+			return 1
+		}
+
+		return 0
+	}
+	if p.activePacketGroup == nil {
+		// SSBWE-TODO - spread should be a config option
+		p.activePacketGroup = NewPacketGroup(50 * time.Millisecond)
+	}
+	for i, arrival := range fbi.Arrivals {
+		sn := fbi.BaseSN + uint16(i)
+		pi := &p.packetInfos[sn]
+		pi.receiveTime = arrival
+		if err := p.activePacketGroup.Add(pi); err != nil {
+			p.packetGroups = append(p.packetGroups, p.activePacketGroup)
+			p.activePacketGroup = NewPacketGroup(50 * time.Millisecond)
+			p.activePacketGroup.Add(pi)
+		}
+		if p.debugFile != nil {
+			toWrite := fmt.Sprintf(
+				"PACKET: sn: %d, headerSize: %d, payloadSize: %d, isRTX: %d, sendTime: %d, receiveTime: %d",
+				sn,
+				pi.headerSize,
+				pi.payloadSize,
+				toInt(pi.isRTX),
+				pi.sendTime,
+				arrival,
+			)
+			p.debugFile.WriteString(toWrite)
+			p.debugFile.WriteString("\n")
+		}
+	}
+	if p.debugFile != nil {
+		toWrite := fmt.Sprintf("REPORT: end: %d", now.UnixMicro())
+		p.debugFile.WriteString(toWrite)
+		p.debugFile.WriteString("\n")
 	}
 }
 
@@ -217,7 +262,7 @@ func (p *PacketTracker) populateDeltas(startSNInclusive, endSNExclusive uint16) 
 	for sn := startSNInclusive; sn != endSNExclusive; sn++ {
 		pi := &p.packetInfos[sn]
 		piPrev := &p.packetInfos[sn-1]
-		if pi.sendTime.IsZero() || piPrev.sendTime.IsZero() {
+		if pi.sendTime == 0 || piPrev.sendTime == 0 {
 			break
 		}
 
@@ -232,8 +277,8 @@ func (p *PacketTracker) populateDeltas(startSNInclusive, endSNExclusive uint16) 
 			continue
 		}
 
-		pi.sendDelta = int32(pi.sendTime.Sub(piPrev.sendTime).Microseconds())
-		pi.receiveDelta = int32(pi.receiveTime - piPrev.receiveTime)
+		pi.sendDelta = pi.sendTime - piPrev.sendTime
+		pi.receiveDelta = pi.receiveTime - piPrev.receiveTime
 		pi.deltaOfDelta = pi.receiveDelta - pi.sendDelta
 		if pi.deltaOfDelta < 0 && pi.deltaOfDelta > -rtcp.TypeTCCDeltaScaleFactor {
 			// TWCC feedback has a resolution of 250 us inter packet interval,
@@ -286,7 +331,7 @@ func (p *PacketTracker) calculateMPE(startSNInclusive, endSNExclusive uint16) {
 	numDeltas := 0
 	for {
 		pi := &p.packetInfos[sn]
-		if (pi.receiveTime != 0 && pi.receiveTime < startTime) || pi.sendTime.IsZero() {
+		if (pi.receiveTime != 0 && pi.receiveTime < startTime) || pi.sendTime == 0 {
 			break
 		}
 
@@ -342,7 +387,7 @@ func (p *PacketTracker) calculateAcknowledgedBitrate(startSNInclusive, endSNExcl
 	for {
 		pi := &p.packetInfos[sn]
 		receiveTime := pi.receiveTime
-		if receiveTime == 0 && !pi.sendTime.IsZero() {
+		if receiveTime == 0 && pi.sendTime != 0 {
 			// lost packet or not sent packet
 			sn--
 			continue
@@ -355,7 +400,7 @@ func (p *PacketTracker) calculateAcknowledgedBitrate(startSNInclusive, endSNExcl
 			continue
 		}
 
-		if receiveTime < startTime || pi.sendTime.IsZero() {
+		if receiveTime < startTime || pi.sendTime == 0 {
 			break
 		}
 
@@ -439,8 +484,10 @@ func (p *PacketTracker) worker() {
 				fbi := p.feedbackInfos.PopFront()
 				p.lock.Unlock()
 
-				startSNInclusive := fbi.baseSN
-				endSNExclusive := fbi.baseSN + fbi.numPackets
+				p.processFeedback(fbi)
+
+				startSNInclusive := fbi.BaseSN
+				endSNExclusive := fbi.BaseSN + uint16(len(fbi.Arrivals))
 
 				p.populateDeltas(startSNInclusive, endSNExclusive)
 
