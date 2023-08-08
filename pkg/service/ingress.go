@@ -16,6 +16,8 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"net/url"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/telemetry"
@@ -27,6 +29,10 @@ import (
 	"github.com/livekit/psrpc"
 )
 
+type IngressLauncher interface {
+	LaunchPullIngress(ctx context.Context, info *livekit.IngressInfo) (*livekit.IngressInfo, error)
+}
+
 type IngressService struct {
 	conf        *config.IngressConfig
 	nodeID      livekit.NodeID
@@ -35,6 +41,30 @@ type IngressService struct {
 	store       IngressStore
 	roomService livekit.RoomService
 	telemetry   telemetry.TelemetryService
+	launcher    IngressLauncher
+}
+
+func NewIngressServiceWithIngressLauncher(
+	conf *config.IngressConfig,
+	nodeID livekit.NodeID,
+	bus psrpc.MessageBus,
+	psrpcClient rpc.IngressClient,
+	store IngressStore,
+	rs livekit.RoomService,
+	ts telemetry.TelemetryService,
+	launcher IngressLauncher,
+) *IngressService {
+
+	return &IngressService{
+		conf:        conf,
+		nodeID:      nodeID,
+		bus:         bus,
+		psrpcClient: psrpcClient,
+		store:       store,
+		roomService: rs,
+		telemetry:   ts,
+		launcher:    launcher,
+	}
 }
 
 func NewIngressService(
@@ -46,16 +76,11 @@ func NewIngressService(
 	rs livekit.RoomService,
 	ts telemetry.TelemetryService,
 ) *IngressService {
+	s := NewIngressServiceWithIngressLauncher(conf, nodeID, bus, psrpcClient, store, rs, ts, nil)
 
-	return &IngressService{
-		conf:        conf,
-		nodeID:      nodeID,
-		bus:         bus,
-		psrpcClient: psrpcClient,
-		store:       store,
-		roomService: rs,
-		telemetry:   ts,
-	}
+	s.launcher = s
+
+	return s
 }
 
 func (s *IngressService) CreateIngress(ctx context.Context, req *livekit.CreateIngressRequest) (*livekit.IngressInfo, error) {
@@ -70,17 +95,18 @@ func (s *IngressService) CreateIngress(ctx context.Context, req *livekit.CreateI
 		AppendLogFields(ctx, fields...)
 	}()
 
-	var urlPrefix string
+	var url string
 	switch req.InputType {
 	case livekit.IngressInput_RTMP_INPUT:
-		urlPrefix = s.conf.RTMPBaseURL
+		url = s.conf.RTMPBaseURL
 	case livekit.IngressInput_WHIP_INPUT:
-		urlPrefix = s.conf.WHIPBaseURL
+		url = s.conf.WHIPBaseURL
+	case livekit.IngressInput_URL_INPUT:
 	default:
 		return nil, ingress.ErrInvalidIngressType
 	}
 
-	ig, err := s.CreateIngressWithUrlPrefix(ctx, urlPrefix, req)
+	ig, err := s.CreateIngressWithUrl(ctx, url, req)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +115,7 @@ func (s *IngressService) CreateIngress(ctx context.Context, req *livekit.CreateI
 	return ig, nil
 }
 
-func (s *IngressService) CreateIngressWithUrlPrefix(ctx context.Context, urlPrefix string, req *livekit.CreateIngressRequest) (*livekit.IngressInfo, error) {
+func (s *IngressService) CreateIngressWithUrl(ctx context.Context, urlStr string, req *livekit.CreateIngressRequest) (*livekit.IngressInfo, error) {
 	err := EnsureIngressAdminPermission(ctx)
 	if err != nil {
 		return nil, twirpAuthError(err)
@@ -98,13 +124,28 @@ func (s *IngressService) CreateIngressWithUrlPrefix(ctx context.Context, urlPref
 		return nil, ErrIngressNotConnected
 	}
 
+	if req.InputType == livekit.IngressInput_URL_INPUT {
+		if req.Url == "" {
+			return nil, ingress.ErrInvalidIngress("missing URL parameter")
+		}
+		urlObj, err := url.Parse(req.Url)
+		if err != nil {
+			return nil, psrpc.NewError(psrpc.InvalidArgument, err)
+		}
+		if urlObj.Scheme != "http" && urlObj.Scheme != "https" {
+			return nil, ingress.ErrInvalidIngress(fmt.Sprintf("invalid url scheme %s", urlObj.Scheme))
+		}
+		// Marshall the URL again for sanitization
+		urlStr = urlObj.String()
+	}
+
 	sk := utils.NewGuid("")
 
 	info := &livekit.IngressInfo{
 		IngressId:           utils.NewGuid(utils.IngressPrefix),
 		Name:                req.Name,
 		StreamKey:           sk,
-		Url:                 urlPrefix,
+		Url:                 urlStr,
 		InputType:           req.InputType,
 		Audio:               req.Audio,
 		Video:               req.Video,
@@ -112,12 +153,39 @@ func (s *IngressService) CreateIngressWithUrlPrefix(ctx context.Context, urlPref
 		RoomName:            req.RoomName,
 		ParticipantIdentity: req.ParticipantIdentity,
 		ParticipantName:     req.ParticipantName,
-		Reusable:            req.InputType == livekit.IngressInput_RTMP_INPUT,
 		State:               &livekit.IngressState{},
+	}
+
+	switch req.InputType {
+	case livekit.IngressInput_RTMP_INPUT,
+		livekit.IngressInput_WHIP_INPUT:
+		info.Reusable = true
+		if err := ingress.ValidateForSerialization(info); err != nil {
+			return nil, err
+		}
+	case livekit.IngressInput_URL_INPUT:
+		if err := ingress.Validate(info); err != nil {
+			return nil, err
+		}
+	default:
+		return nil, ingress.ErrInvalidIngressType
 	}
 
 	if err := ingress.ValidateForSerialization(info); err != nil {
 		return nil, err
+	}
+
+	if req.InputType == livekit.IngressInput_URL_INPUT {
+		retInfo, err := s.launcher.LaunchPullIngress(ctx, info)
+		if retInfo != nil {
+			info = retInfo
+		} else {
+			info.State.Status = livekit.IngressState_ENDPOINT_ERROR
+			info.State.Error = err.Error()
+		}
+		if err != nil {
+			return info, err
+		}
 	}
 
 	if err = s.store.StoreIngress(ctx, info); err != nil {
@@ -127,6 +195,14 @@ func (s *IngressService) CreateIngressWithUrlPrefix(ctx context.Context, urlPref
 	s.telemetry.IngressCreated(ctx, info)
 
 	return info, nil
+}
+
+func (s *IngressService) LaunchPullIngress(ctx context.Context, info *livekit.IngressInfo) (*livekit.IngressInfo, error) {
+	req := &rpc.StartIngressRequest{
+		Info: info,
+	}
+
+	return s.psrpcClient.StartIngress(ctx, req)
 }
 
 func updateInfoUsingRequest(req *livekit.UpdateIngressRequest, info *livekit.IngressInfo) error {
@@ -181,6 +257,11 @@ func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateI
 	if err != nil {
 		logger.Errorw("could not load ingress info", err)
 		return nil, err
+	}
+
+	if !info.Reusable {
+		logger.Infow("ingress update attempted on non reusable ingress", "ingressID", info.IngressId)
+		return info, ErrIngressNonReusable
 	}
 
 	switch info.State.Status {

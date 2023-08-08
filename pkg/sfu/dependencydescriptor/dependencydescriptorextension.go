@@ -97,8 +97,15 @@ func (d *DependencyDescriptor) MarshalSizeWithActiveChains(activeChains uint32) 
 }
 
 func (d *DependencyDescriptor) String() string {
-	return fmt.Sprintf("DependencyDescriptor{FirstPacketInFrame: %v, LastPacketInFrame: %v, FrameNumber: %v, FrameDependencies: %+v, Resolution: %+v, ActiveDecodeTargetsBitmask: %v, AttachedStructure: %v}",
-		d.FirstPacketInFrame, d.LastPacketInFrame, d.FrameNumber, *d.FrameDependencies, *d.Resolution, formatBitmask(d.ActiveDecodeTargetsBitmask), d.AttachedStructure)
+	resolution, dependencies := "-", "-"
+	if d.Resolution != nil {
+		resolution = fmt.Sprintf("%+v", *d.Resolution)
+	}
+	if d.FrameDependencies != nil {
+		dependencies = fmt.Sprintf("%+v", *d.FrameDependencies)
+	}
+	return fmt.Sprintf("DependencyDescriptor{FirstPacketInFrame: %v, LastPacketInFrame: %v, FrameNumber: %v, FrameDependencies: %s, Resolution: %s, ActiveDecodeTargetsBitmask: %v, AttachedStructure: %v}",
+		d.FirstPacketInFrame, d.LastPacketInFrame, d.FrameNumber, dependencies, resolution, formatBitmask(d.ActiveDecodeTargetsBitmask), d.AttachedStructure)
 }
 
 // ------------------------------------------------------------------------------
