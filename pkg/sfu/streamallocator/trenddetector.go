@@ -51,6 +51,23 @@ type trendDetectorSample struct {
 	at    time.Time
 }
 
+func trendDetectorSampleListToString(samples []trendDetectorSample) string {
+	samplesStr := ""
+	if len(samples) > 0 {
+		firstTime := samples[0].at
+		samplesStr += "["
+		for i, sample := range samples {
+			suffix := ", "
+			if i == len(samples)-1 {
+				suffix = ""
+			}
+			samplesStr += fmt.Sprintf("%d(%d)%s", sample.value, sample.at.Sub(firstTime).Milliseconds(), suffix)
+		}
+		samplesStr += "]"
+	}
+	return samplesStr
+}
+
 // ------------------------------------------------
 
 type TrendDetectorParams struct {
@@ -147,23 +164,10 @@ func (t *TrendDetector) HasEnoughSamples() bool {
 func (t *TrendDetector) ToString() string {
 	now := time.Now()
 	elapsed := now.Sub(t.startTime).Seconds()
-	samplesStr := ""
-	if len(t.samples) > 0 {
-		firstTime := t.samples[0].at
-		samplesStr += "["
-		for i, sample := range t.samples {
-			suffix := ", "
-			if i == len(t.samples)-1 {
-				suffix = ""
-			}
-			samplesStr += fmt.Sprintf("%d(%d)%s", sample.value, sample.at.Sub(firstTime).Milliseconds(), suffix)
-		}
-		samplesStr += "]"
-	}
 	return fmt.Sprintf("n: %s, t: %+v|%+v|%.2fs, v: %d|%d|%d|%s|%.2f",
 		t.params.Name,
 		t.startTime.Format(time.UnixDate), now.Format(time.UnixDate), elapsed,
-		t.numSamples, t.lowestValue, t.highestValue, samplesStr, kendallsTau(t.samples),
+		t.numSamples, t.lowestValue, t.highestValue, trendDetectorSampleListToString(t.samples), kendallsTau(t.samples),
 	)
 }
 
