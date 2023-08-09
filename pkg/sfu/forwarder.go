@@ -1424,7 +1424,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		f.referenceLayerSpatial = layer
 		f.rtpMunger.SetLastSnTs(extPkt)
 		f.codecMunger.SetLast(extPkt)
-		f.logger.Debugw(
+		f.logger.Infow(
 			"starting forwarding",
 			"sequenceNumber", extPkt.Packet.SequenceNumber,
 			"timestamp", extPkt.Packet.Timestamp,
@@ -1556,7 +1556,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		// nominal increase
 		nextTS = lastTS + 1
 	}
-	f.logger.Debugw(
+	f.logger.Infow(
 		"next timestamp on switch",
 		"switchingAt", switchingAt.String(),
 		"layer", layer,
