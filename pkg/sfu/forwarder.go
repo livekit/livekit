@@ -15,6 +15,7 @@
 package sfu
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"math/rand"
@@ -40,7 +41,7 @@ const (
 	FlagFilterRTX         = true
 	TransitionCostSpatial = 10
 
-	ResumeBehindThresholdSeconds      = float64(0.1)   // 100ms
+	ResumeBehindThresholdSeconds      = float64(0.2)   // 200ms
 	LayerSwitchBehindThresholdSeconds = float64(0.05)  // 50ms
 	SwitchAheadThresholdSeconds       = float64(0.025) // 25ms
 )
@@ -1424,7 +1425,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		f.referenceLayerSpatial = layer
 		f.rtpMunger.SetLastSnTs(extPkt)
 		f.codecMunger.SetLast(extPkt)
-		f.logger.Debugw(
+		f.logger.Infow(
 			"starting forwarding",
 			"sequenceNumber", extPkt.Packet.SequenceNumber,
 			"timestamp", extPkt.Packet.Timestamp,
@@ -1455,14 +1456,16 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 	switchingAt := time.Now()
 	if f.getReferenceLayerRTPTimestamp != nil {
 		ts, err := f.getReferenceLayerRTPTimestamp(extPkt.Packet.Timestamp, layer, f.referenceLayerSpatial)
-		if err == nil {
-			refTS = ts
+		if err != nil {
+			// error out if refTS is not available. It can happen when there is no sender report
+			// for the layer being switched to. Can especially happen at the start of the track when layer switches are
+			// potentially happening very quickly. Erroring out and waiting for a layer for which a sender report has been
+			// received will calculate a better offset, but may result in initial adaptation to take a bit longer depending
+			// on how often publisher/remote side sends RTCP sender report.
+			return err
 		}
-		// AVSYNC-TODO: can error out here if refTS is not available. It can happen when there is no sender report
-		// for the layer being switched to. Can especially happen at the start of the track when layer switches are
-		// potentially happening very quickly. Erroring out and waiting for a layer for which a sender report has been
-		// received will calculate a better offset, but may result in initial adaptation to take a bit longer depending
-		// on how often publisher/remote side sends RTCP sender report.
+
+		refTS = ts
 	}
 
 	if f.getExpectedRTPTimestamp != nil {
@@ -1508,11 +1511,11 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		// between expectedTS and refTS is thresholded. Difference below the threshold is treated as Case 2
 		// and above as Case 1.
 		//
-		// In the event of refTS > expectedTS, another threshold is used to pick the next timestamp.
+		// In the event of refTS > expectedTS, use refTS.
 		// Ideally, refTS should not be ahead of expectedTS, but expectedTS uses the first packet's
 		// wall clock time. So, if the first packet experienced abmormal latency, it is possible
 		// for refTS > expectedTS
-		diffSeconds := float64(expectedTS-refTS) / float64(f.codec.ClockRate)
+		diffSeconds := float64(int32(expectedTS-refTS)) / float64(f.codec.ClockRate)
 		if diffSeconds >= 0.0 {
 			if diffSeconds > ResumeBehindThresholdSeconds {
 				f.logger.Infow("resume, reference too far behind", "expectedTS", expectedTS, "refTS", refTS, "diffSeconds", diffSeconds)
@@ -1523,25 +1526,25 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		} else {
 			if math.Abs(diffSeconds) > SwitchAheadThresholdSeconds {
 				f.logger.Infow("resume, reference too far ahead", "expectedTS", expectedTS, "refTS", refTS, "diffSeconds", math.Abs(diffSeconds))
-				nextTS = expectedTS
-			} else {
-				nextTS = refTS
 			}
+			nextTS = refTS
 		}
 	} else {
 		// switching between layers, check if refTS is too far behind the last sent
-		diffSeconds := float64(refTS-lastTS) / float64(f.codec.ClockRate)
+		diffSeconds := float64(int32(refTS-lastTS)) / float64(f.codec.ClockRate)
 		if diffSeconds < 0.0 {
 			if math.Abs(diffSeconds) > LayerSwitchBehindThresholdSeconds {
-				// AVSYNC-TODO: This could be due to pacer trickling out this layer. Should potentially return error here and wait for a more opportune time
-				// or some forcing function (like "have waited for too long for layer switch, nothing available, switch to whatever is available" kind of condition)
-				// to do the switch. Just logging it for now.
+				// this could be due to pacer trickling out this layer. Error out and wait for a more opportune time.
+				// AVSYNC-TODO: Consider some forcing function to do the switch
+				// (like "have waited for too long for layer switch, nothing available, switch to whatever is available" kind of condition).
 				f.logger.Infow("layer switch, reference too far behind", "expectedTS", expectedTS, "refTS", refTS, "lastTS", lastTS, "diffSeconds", math.Abs(diffSeconds))
+				return errors.New("switch point too far behind")
 			}
 			// use a nominal increase to ensure that timestamp is always moving forward
+			f.logger.Infow("layer switch, reference is slghtly behind", "expectedTS", expectedTS, "refTS", refTS, "lastTS", lastTS, "diffSeconds", math.Abs(diffSeconds))
 			nextTS = lastTS + 1
 		} else {
-			diffSeconds = float64(expectedTS-refTS) / float64(f.codec.ClockRate)
+			diffSeconds = float64(int32(expectedTS-refTS)) / float64(f.codec.ClockRate)
 			if diffSeconds < 0.0 && math.Abs(diffSeconds) > SwitchAheadThresholdSeconds {
 				f.logger.Infow("layer switch, reference too far ahead", "expectedTS", expectedTS, "refTS", refTS, "diffSeconds", math.Abs(diffSeconds))
 				nextTS = expectedTS
@@ -1556,7 +1559,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		// nominal increase
 		nextTS = lastTS + 1
 	}
-	f.logger.Debugw(
+	f.logger.Infow(
 		"next timestamp on switch",
 		"switchingAt", switchingAt.String(),
 		"layer", layer,

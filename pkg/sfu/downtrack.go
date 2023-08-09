@@ -1802,7 +1802,10 @@ func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
 	}
 }
 
-func (d *DownTrack) HandleRTCPSenderReportData(_payloadType webrtc.PayloadType, _layer int32, _srData *buffer.RTCPSenderReportData) error {
+func (d *DownTrack) HandleRTCPSenderReportData(_payloadType webrtc.PayloadType, layer int32, srData *buffer.RTCPSenderReportData) error {
+	if layer == d.forwarder.GetReferenceLayerSpatial() {
+		d.rtpStats.MaybeAdjustFirstPacketTime(srData)
+	}
 	return nil
 }
 
