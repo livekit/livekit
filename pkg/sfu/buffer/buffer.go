@@ -101,7 +101,7 @@ type Buffer struct {
 	// callbacks
 	onClose            func()
 	onRtcpFeedback     func([]rtcp.Packet)
-	onRtcpSenderReport func(*RTCPSenderReportData)
+	onRtcpSenderReport func()
 	onFpsChanged       func()
 	onFinalRtpStats    func(*RTPStats)
 
@@ -684,7 +684,7 @@ func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64) {
 	b.RUnlock()
 
 	if b.onRtcpSenderReport != nil {
-		b.onRtcpSenderReport(srData)
+		b.onRtcpSenderReport()
 	}
 }
 
@@ -738,7 +738,7 @@ func (b *Buffer) OnRtcpFeedback(fn func(fb []rtcp.Packet)) {
 	b.onRtcpFeedback = fn
 }
 
-func (b *Buffer) OnRtcpSenderReport(fn func(srData *RTCPSenderReportData)) {
+func (b *Buffer) OnRtcpSenderReport(fn func()) {
 	b.onRtcpSenderReport = fn
 }
 
