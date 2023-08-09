@@ -770,7 +770,9 @@ func (r *RTPStats) MaybeAdjustFirstPacketTime(srData *RTCPSenderReportData) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	r.maybeAdjustFirstPacketTime(srData.RTPTimestampExt)
+	if srData != nil {
+		r.maybeAdjustFirstPacketTime(srData.RTPTimestampExt)
+	}
 }
 
 func (r *RTPStats) maybeAdjustFirstPacketTime(extTS uint64) {
