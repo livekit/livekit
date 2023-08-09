@@ -79,6 +79,7 @@ type Room struct {
 	onSendParticipantUpdates func(updates []*livekit.ParticipantInfo)
 	onBroadcastDataPacket    func(dp *livekit.DataPacket)
 	onSpeakersChanged        func([]*livekit.SpeakerInfo)
+	onConnectionQualityInfos func(map[livekit.ParticipantID]*livekit.ConnectionQualityInfo)
 
 	onParticipantChanged func(p types.LocalParticipant)
 	onMetadataUpdate     func(metadata string)
@@ -208,6 +209,23 @@ func (r *Room) GetActiveSpeakers() []*livekit.SpeakerInfo {
 	}
 
 	return speakers
+}
+
+func (r *Room) GetConnectionInfos() map[livekit.ParticipantID]*livekit.ConnectionQualityInfo {
+	participants := r.GetParticipants()
+	nowConnectionInfos := make(map[livekit.ParticipantID]*livekit.ConnectionQualityInfo, len(participants))
+
+	for _, p := range participants {
+		if p.State() != livekit.ParticipantInfo_ACTIVE {
+			continue
+		}
+
+		if q := p.GetConnectionQuality(); q != nil {
+			nowConnectionInfos[p.ID()] = q
+		}
+	}
+
+	return nowConnectionInfos
 }
 
 func (r *Room) GetBufferFactory() *buffer.Factory {
@@ -663,6 +681,10 @@ func (r *Room) OnSpeakersChanged(f func([]*livekit.SpeakerInfo)) {
 	r.onSpeakersChanged = f
 }
 
+func (r *Room) OnConnectionQualityInfos(f func(map[livekit.ParticipantID]*livekit.ConnectionQualityInfo)) {
+	r.onConnectionQualityInfos = f
+}
+
 func (r *Room) OnClose(f func()) {
 	r.onClose = f
 }
@@ -976,7 +998,6 @@ func (r *Room) sendActiveSpeakers(speakers []*livekit.SpeakerInfo) {
 
 // for protocol 3, send only changed updates
 func (r *Room) sendSpeakerChanges(speakers []*livekit.SpeakerInfo) {
-	r.onSpeakersChanged(speakers)
 	for _, p := range r.GetParticipants() {
 		if p.ProtocolVersion().SupportsSpeakerChanged() {
 			_ = p.SendSpeakerUpdate(speakers, false)
@@ -1091,6 +1112,9 @@ func (r *Room) audioUpdateWorker() {
 		if len(changedSpeakers) > 0 {
 			r.sendActiveSpeakers(activeSpeakers)
 			r.sendSpeakerChanges(changedSpeakers)
+			if r.onSpeakersChanged != nil {
+				r.onSpeakersChanged(changedSpeakers)
+			}
 		}
 
 		lastActiveMap = nextActiveMap
@@ -1144,6 +1168,10 @@ func (r *Room) connectionQualityWorker() {
 		if !sendUpdate {
 			prevConnectionInfos = nowConnectionInfos
 			continue
+		}
+
+		if r.onConnectionQualityInfos != nil {
+			r.onConnectionQualityInfos(nowConnectionInfos)
 		}
 
 		maybeAddToUpdate := func(pID livekit.ParticipantID, update *livekit.ConnectionQualityUpdate) {

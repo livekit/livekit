@@ -22,7 +22,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
@@ -50,6 +49,7 @@ type RelayedParticipantImpl struct {
 
 	audioLevel    float64
 	isAudioActive bool
+	connQuality   *livekit.ConnectionQualityInfo
 
 	grants *auth.ClaimGrants
 
@@ -463,38 +463,16 @@ func (p *RelayedParticipantImpl) SetAudioLevel(level float64, active bool) {
 	p.audioLevel, p.isAudioActive = level, active
 }
 
+func (p *RelayedParticipantImpl) SetConnectionQuality(connQuality *livekit.ConnectionQualityInfo) {
+	p.connQuality = connQuality
+}
+
 func (p *RelayedParticipantImpl) GetAudioLevel() (float64, bool) {
 	return p.audioLevel, p.isAudioActive
 }
 
 func (p *RelayedParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo {
-	numTracks := 0
-	minQuality := livekit.ConnectionQuality_EXCELLENT
-	minScore := float32(0.0)
-
-	for _, pt := range p.GetPublishedTracks() {
-		numTracks++
-
-		score, quality := pt.(types.LocalMediaTrack).GetConnectionScoreAndQuality()
-		if quality < minQuality {
-			// WARNING NOTE: comparing protobuf enums directly
-			minQuality = quality
-			minScore = score
-		} else if quality == minQuality && score < minScore {
-			minScore = score
-		}
-	}
-
-	if numTracks == 0 {
-		minQuality = livekit.ConnectionQuality_EXCELLENT
-		minScore = connectionquality.MaxMOS
-	}
-
-	return &livekit.ConnectionQualityInfo{
-		ParticipantSid: string(p.ID()),
-		Quality:        minQuality,
-		Score:          minScore,
-	}
+	return p.connQuality
 }
 
 func (p *RelayedParticipantImpl) SendJoinResponse(joinResponse *livekit.JoinResponse) error {
