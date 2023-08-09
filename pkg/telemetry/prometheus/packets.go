@@ -56,6 +56,15 @@ var (
 	promRTT             *prometheus.HistogramVec
 	promParticipantJoin *prometheus.CounterVec
 	promConnections     *prometheus.GaugeVec
+
+	promPacketTotalIncomingInitial    prometheus.Counter
+	promPacketTotalIncomingRetransmit prometheus.Counter
+	promPacketTotalOutgoingInitial    prometheus.Counter
+	promPacketTotalOutgoingRetransmit prometheus.Counter
+	promPacketBytesIncomingInitial    prometheus.Counter
+	promPacketBytesIncomingRetransmit prometheus.Counter
+	promPacketBytesOutgoingInitial    prometheus.Counter
+	promPacketBytesOutgoingRetransmit prometheus.Counter
 )
 
 func initPacketStats(nodeID string, nodeType livekit.NodeType, env string) {
@@ -140,13 +149,32 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType, env string) {
 	prometheus.MustRegister(promRTT)
 	prometheus.MustRegister(promParticipantJoin)
 	prometheus.MustRegister(promConnections)
+
+	promPacketTotalIncomingInitial = promPacketTotal.WithLabelValues(string(Incoming), transmissionInitial)
+	promPacketTotalIncomingRetransmit = promPacketTotal.WithLabelValues(string(Incoming), transmissionRetransmit)
+	promPacketTotalOutgoingInitial = promPacketTotal.WithLabelValues(string(Outgoing), transmissionInitial)
+	promPacketTotalOutgoingRetransmit = promPacketTotal.WithLabelValues(string(Outgoing), transmissionRetransmit)
+	promPacketBytesIncomingInitial = promPacketBytes.WithLabelValues(string(Incoming), transmissionInitial)
+	promPacketBytesIncomingRetransmit = promPacketBytes.WithLabelValues(string(Incoming), transmissionRetransmit)
+	promPacketBytesOutgoingInitial = promPacketBytes.WithLabelValues(string(Outgoing), transmissionInitial)
+	promPacketBytesOutgoingRetransmit = promPacketBytes.WithLabelValues(string(Outgoing), transmissionRetransmit)
 }
 
 func IncrementPackets(direction Direction, count uint64, retransmit bool) {
-	promPacketTotal.WithLabelValues(
-		string(direction),
-		transmissionLabel(retransmit),
-	).Add(float64(count))
+	if direction == Incoming {
+		if retransmit {
+			promPacketTotalIncomingRetransmit.Add(float64(count))
+		} else {
+			promPacketTotalIncomingInitial.Add(float64(count))
+		}
+	} else {
+		if retransmit {
+			promPacketTotalOutgoingRetransmit.Add(float64(count))
+		} else {
+			promPacketTotalOutgoingInitial.Add(float64(count))
+		}
+	}
+
 	if direction == Incoming {
 		packetsIn.Add(count)
 	} else {
@@ -158,10 +186,20 @@ func IncrementPackets(direction Direction, count uint64, retransmit bool) {
 }
 
 func IncrementBytes(direction Direction, count uint64, retransmit bool) {
-	promPacketBytes.WithLabelValues(
-		string(direction),
-		transmissionLabel(retransmit),
-	).Add(float64(count))
+	if direction == Incoming {
+		if retransmit {
+			promPacketBytesIncomingRetransmit.Add(float64(count))
+		} else {
+			promPacketBytesIncomingInitial.Add(float64(count))
+		}
+	} else {
+		if retransmit {
+			promPacketBytesOutgoingRetransmit.Add(float64(count))
+		} else {
+			promPacketBytesOutgoingInitial.Add(float64(count))
+		}
+	}
+
 	if direction == Incoming {
 		bytesIn.Add(count)
 	} else {
@@ -239,12 +277,4 @@ func AddConnection(direction Direction) {
 
 func SubConnection(direction Direction) {
 	promConnections.WithLabelValues(string(direction)).Sub(1)
-}
-
-func transmissionLabel(retransmit bool) string {
-	if !retransmit {
-		return transmissionInitial
-	} else {
-		return transmissionRetransmit
-	}
 }
