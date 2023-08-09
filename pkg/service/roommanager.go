@@ -560,6 +560,8 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 
 		rel.OnReady(func() {
 			logger.Infow("Out relay is ready")
+
+			// todo: combine messages
 			updates := rtc.ToProtoParticipants(newRoom.GetParticipants())
 			if len(updates) > 0 {
 				if updatesForRelay, err := getUpdatesPayloadForRelay(newRoom, updates); err != nil {
@@ -568,6 +570,27 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 					newRoom.Logger.Errorw("could not send participant updates to relay", err)
 				}
 			}
+
+			// todo: combine messages
+			speakers := newRoom.GetActiveSpeakers()
+			if len(speakers) > 0 {
+				if speakersForRelay, err := getSpeakersPayloadForRelay(newRoom, speakers); err != nil {
+					newRoom.Logger.Errorw("could not create speakers for relay", err)
+				} else if err := rel.SendMessage(speakersForRelay); err != nil {
+					newRoom.Logger.Errorw("could not send speakers to relay", err)
+				}
+			}
+
+			// todo: combine messages
+			connQualities := newRoom.GetConnectionInfos()
+			if len(connQualities) > 0 {
+				if connQualitiesForRelay, err := getConnQualitiesPayloadForRelay(newRoom, connQualities); err != nil {
+					newRoom.Logger.Errorw("could not create connection qualities for relay", err)
+				} else if err := rel.SendMessage(connQualitiesForRelay); err != nil {
+					newRoom.Logger.Errorw("could not send speakers to relay", err)
+				}
+			}
+
 			outRelayCollection.AddRelay(rel)
 		})
 
