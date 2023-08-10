@@ -189,8 +189,9 @@ type Forwarder struct {
 	getReferenceLayerRTPTimestamp func(ts uint32, layer int32, referenceLayer int32) (uint32, error)
 	getExpectedRTPTimestamp       func(at time.Time) (uint64, error)
 
-	muted    bool
-	pubMuted bool
+	muted                 bool
+	pubMuted              bool
+	resumeBehindThreshold float64
 
 	started               bool
 	preStartTime          time.Time
@@ -1361,6 +1362,9 @@ func (f *Forwarder) Resync() {
 func (f *Forwarder) resyncLocked() {
 	f.vls.SetCurrent(buffer.InvalidLayer)
 	f.lastSSRC = 0
+	if f.pubMuted {
+		f.resumeBehindThreshold = ResumeBehindThresholdSeconds
+	}
 }
 
 func (f *Forwarder) CheckSync() (locked bool, layer int32) {
@@ -1434,6 +1438,17 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 			"referenceLayerSpatial", f.referenceLayerSpatial,
 		)
 		return nil, nil
+	}
+
+	logTransition := func(message string, expectedTS, refTS, lastTS uint32, diffSeconds float64) {
+		f.logger.Infow(
+			message,
+			"layer", layer,
+			"expectedTS", expectedTS,
+			"refTS", refTS,
+			"lastTS", lastTS,
+			"diffSeconds", math.Abs(diffSeconds),
+		)
 	}
 
 	if f.referenceLayerSpatial == buffer.InvalidLayerSpatial {
@@ -1519,18 +1534,19 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 		// for refTS > expectedTS
 		diffSeconds := float64(int32(expectedTS-refTS)) / float64(f.codec.ClockRate)
 		if diffSeconds >= 0.0 {
-			if diffSeconds > ResumeBehindThresholdSeconds {
-				f.logger.Infow("resume, reference too far behind", "expectedTS", expectedTS, "refTS", refTS, "diffSeconds", diffSeconds)
+			if f.resumeBehindThreshold > 0 && diffSeconds > f.resumeBehindThreshold {
+				logTransition("resume, reference too far behind", expectedTS, refTS, lastTS, diffSeconds)
 				nextTS = expectedTS
 			} else {
 				nextTS = refTS
 			}
 		} else {
 			if math.Abs(diffSeconds) > SwitchAheadThresholdSeconds {
-				f.logger.Infow("resume, reference too far ahead", "expectedTS", expectedTS, "refTS", refTS, "diffSeconds", math.Abs(diffSeconds))
+				logTransition("resume, reference too far ahead", expectedTS, refTS, lastTS, diffSeconds)
 			}
 			nextTS = refTS
 		}
+		f.resumeBehindThreshold = 0.0
 	} else {
 		// switching between layers, check if refTS is too far behind the last sent
 		diffSeconds := float64(int32(refTS-lastTS)) / float64(f.codec.ClockRate)
@@ -1539,16 +1555,16 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 				// this could be due to pacer trickling out this layer. Error out and wait for a more opportune time.
 				// AVSYNC-TODO: Consider some forcing function to do the switch
 				// (like "have waited for too long for layer switch, nothing available, switch to whatever is available" kind of condition).
-				f.logger.Infow("layer switch, reference too far behind", "expectedTS", expectedTS, "refTS", refTS, "lastTS", lastTS, "diffSeconds", math.Abs(diffSeconds))
+				logTransition("layer switch, reference too far behind", expectedTS, refTS, lastTS, diffSeconds)
 				return nil, errors.New("switch point too far behind")
 			}
 			// use a nominal increase to ensure that timestamp is always moving forward
-			f.logger.Infow("layer switch, reference is slghtly behind", "expectedTS", expectedTS, "refTS", refTS, "lastTS", lastTS, "diffSeconds", math.Abs(diffSeconds))
+			logTransition("layer switch, reference is slightly behind", expectedTS, refTS, lastTS, diffSeconds)
 			nextTS = lastTS + 1
 		} else {
 			diffSeconds = float64(int32(expectedTS-refTS)) / float64(f.codec.ClockRate)
 			if diffSeconds < 0.0 && math.Abs(diffSeconds) > SwitchAheadThresholdSeconds {
-				f.logger.Infow("layer switch, reference too far ahead", "expectedTS", expectedTS, "refTS", refTS, "diffSeconds", math.Abs(diffSeconds))
+				logTransition("layer switch, reference too far ahead", expectedTS, refTS, lastTS, diffSeconds)
 				nextTS = expectedTS
 			} else {
 				nextTS = refTS
@@ -1608,12 +1624,12 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 	}
 
 	if f.lastSSRC != extPkt.Packet.SSRC {
-		if eof, err := f.processSourceSwitch(extPkt, layer); err != nil {
+		eof, err := f.processSourceSwitch(extPkt, layer)
+		if err != nil {
 			tp.shouldDrop = true
-			return tp, err
-		} else {
-			tp.eof = eof
+			return tp, nil
 		}
+		tp.eof = eof
 
 		f.logger.Debugw("switching feed", "from", f.lastSSRC, "to", extPkt.Packet.SSRC)
 		f.lastSSRC = extPkt.Packet.SSRC
