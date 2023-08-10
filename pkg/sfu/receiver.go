@@ -231,10 +231,12 @@ func NewWebRTCReceiver(
 	})
 	w.connectionStats.Start(w.trackInfo)
 
-	for _, ext := range receiver.GetParameters().HeaderExtensions {
-		if ext.URI == dd.ExtensionURI {
-			w.streamTrackerManager.AddDependencyDescriptorTrackers()
-			break
+	if w.isSVC {
+		for _, ext := range receiver.GetParameters().HeaderExtensions {
+			if ext.URI == dd.ExtensionURI {
+				w.streamTrackerManager.AddDependencyDescriptorTrackers()
+				break
+			}
 		}
 	}
 
