@@ -483,7 +483,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 		}
 
 		if updatesForRelay, err := getUpdatesPayloadForRelay(newRoom, updates); err != nil {
-			newRoom.Logger.Errorw("could not create participant update for relay", err)
+			newRoom.Logger.Errorw("could not create updates for relay", err)
 		} else if len(updatesForRelay) > 0 {
 			outRelayCollection.ForEach(func(relay relay.Relay) {
 				if err := relay.SendMessage(updatesForRelay); err != nil {
@@ -510,6 +510,38 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 		}
 	})
 
+	newRoom.OnSpeakersChanged(func(speakers []*livekit.SpeakerInfo) {
+		if len(speakers) == 0 {
+			return
+		}
+
+		if speakersForRelay, err := getSpeakersPayloadForRelay(newRoom, speakers); err != nil {
+			newRoom.Logger.Errorw("could not create speakers payload for relay", err)
+		} else if len(speakersForRelay) > 0 {
+			outRelayCollection.ForEach(func(relay relay.Relay) {
+				if err := relay.SendMessage(speakersForRelay); err != nil {
+					newRoom.Logger.Errorw("could not send speakers to relay", err)
+				}
+			})
+		}
+	})
+
+	newRoom.OnConnectionQualityInfos(func(qualityInfos map[livekit.ParticipantID]*livekit.ConnectionQualityInfo) {
+		if len(qualityInfos) == 0 {
+			return
+		}
+
+		if connQualitiesForRelay, err := getConnQualitiesPayloadForRelay(newRoom, qualityInfos); err != nil {
+			newRoom.Logger.Errorw("could not create connection qualities payload for relay", err)
+		} else if len(connQualitiesForRelay) > 0 {
+			outRelayCollection.ForEach(func(relay relay.Relay) {
+				if err := relay.SendMessage(connQualitiesForRelay); err != nil {
+					newRoom.Logger.Errorw("could not send connection qualities to relay", err)
+				}
+			})
+		}
+	})
+
 	pendingAnswers := map[string]chan []byte{}
 	pendingAnswersMu := sync.Mutex{}
 
@@ -528,6 +560,8 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 
 		rel.OnReady(func() {
 			logger.Infow("Out relay is ready")
+
+			// todo: combine messages
 			updates := rtc.ToProtoParticipants(newRoom.GetParticipants())
 			if len(updates) > 0 {
 				if updatesForRelay, err := getUpdatesPayloadForRelay(newRoom, updates); err != nil {
@@ -536,6 +570,27 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 					newRoom.Logger.Errorw("could not send participant updates to relay", err)
 				}
 			}
+
+			// todo: combine messages
+			speakers := newRoom.GetActiveSpeakers()
+			if len(speakers) > 0 {
+				if speakersForRelay, err := getSpeakersPayloadForRelay(newRoom, speakers); err != nil {
+					newRoom.Logger.Errorw("could not create speakers for relay", err)
+				} else if err := rel.SendMessage(speakersForRelay); err != nil {
+					newRoom.Logger.Errorw("could not send speakers to relay", err)
+				}
+			}
+
+			// todo: combine messages
+			connQualities := newRoom.GetConnectionInfos()
+			if len(connQualities) > 0 {
+				if connQualitiesForRelay, err := getConnQualitiesPayloadForRelay(newRoom, connQualities); err != nil {
+					newRoom.Logger.Errorw("could not create connection qualities for relay", err)
+				} else if err := rel.SendMessage(connQualitiesForRelay); err != nil {
+					newRoom.Logger.Errorw("could not send speakers to relay", err)
+				}
+			}
+
 			outRelayCollection.AddRelay(rel)
 		})
 
@@ -655,6 +710,12 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 					} else {
 						rtc.BroadcastDataPacketForRoom(newRoom, nil, &dp, newRoom.Logger)
 					}
+				}
+				if len(msg.Speakers) > 0 {
+					r.onRelaySpeakersChanged(newRoom, msg.Speakers)
+				}
+				if len(msg.ConnQualities) > 0 {
+					r.onRelayConnectionQualities(newRoom, msg.ConnQualities)
 				}
 			})
 
@@ -966,6 +1027,38 @@ func getUpdatesPayloadForRelay(room *rtc.Room, updates []*livekit.ParticipantInf
 	}
 }
 
+func getSpeakersPayloadForRelay(room *rtc.Room, speakers []*livekit.SpeakerInfo) ([]byte, error) {
+	speakersForRelay := make([]*livekit.SpeakerInfo, 0, len(speakers))
+	for _, speaker := range speakers {
+		if _, ok := room.GetParticipantByID(livekit.ParticipantID(speaker.GetSid())).(*rtc.RelayedParticipantImpl); ok {
+			continue
+		}
+		speakersForRelay = append(speakersForRelay, speaker)
+	}
+
+	if speakersPayload, err := json.Marshal(relayMessage{Speakers: speakersForRelay}); err != nil {
+		return nil, fmt.Errorf("could not marshal participant speakers: %w", err)
+	} else {
+		return speakersPayload, nil
+	}
+}
+
+func getConnQualitiesPayloadForRelay(room *rtc.Room, connQualities map[livekit.ParticipantID]*livekit.ConnectionQualityInfo) ([]byte, error) {
+	connQualitiesForRelay := make([]*livekit.ConnectionQualityInfo, 0, len(connQualities))
+	for participantID, connQuality := range connQualities {
+		if _, ok := room.GetParticipantByID(participantID).(*rtc.RelayedParticipantImpl); ok {
+			continue
+		}
+		connQualitiesForRelay = append(connQualitiesForRelay, connQuality)
+	}
+
+	if connQualitiesPayload, err := json.Marshal(relayMessage{ConnQualities: connQualitiesForRelay}); err != nil {
+		return nil, fmt.Errorf("could not marshal connection qualities: %w", err)
+	} else {
+		return connQualitiesPayload, nil
+	}
+}
+
 func packSignalPeerMessage(replyTo string, signal []byte) interface{} {
 	return &signalPeerMessage{
 		ReplyTo: replyTo,
@@ -1063,6 +1156,26 @@ func (r *RoomManager) onRelayParticipantUpdate(room *rtc.Room, rel relay.Relay, 
 	}
 }
 
+func (r *RoomManager) onRelaySpeakersChanged(room *rtc.Room, speakers []*livekit.SpeakerInfo) {
+	for _, speaker := range speakers {
+		if relayedParticipant, ok := room.GetParticipantByID(livekit.ParticipantID(speaker.GetSid())).(*rtc.RelayedParticipantImpl); !ok {
+			continue
+		} else {
+			relayedParticipant.SetAudioLevel(float64(speaker.GetLevel()), speaker.GetActive())
+		}
+	}
+}
+
+func (r *RoomManager) onRelayConnectionQualities(room *rtc.Room, connQualities []*livekit.ConnectionQualityInfo) {
+	for _, connQuality := range connQualities {
+		if relayedParticipant, ok := room.GetParticipantByID(livekit.ParticipantID(connQuality.GetParticipantSid())).(*rtc.RelayedParticipantImpl); !ok {
+			continue
+		} else {
+			relayedParticipant.SetConnectionQuality(connQuality)
+		}
+	}
+}
+
 func onRelayAddTrack(room *rtc.Room, track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, mid string, rid string, addTrackSignal relay.AddTrackSignal) {
 	participantIdentity := livekit.ParticipantIdentity(addTrackSignal.Identity)
 
@@ -1074,8 +1187,10 @@ func onRelayAddTrack(room *rtc.Room, track *webrtc.TrackRemote, receiver *webrtc
 }
 
 type relayMessage struct {
-	Updates    []*livekit.ParticipantInfo `json:"updates,omitempty"`
-	DataPacket []byte
+	Updates       []*livekit.ParticipantInfo       `json:"updates,omitempty"`
+	DataPacket    []byte                           `json:"dataPacket,omitempty"`
+	Speakers      []*livekit.SpeakerInfo           `json:"speakers,omitempty"`
+	ConnQualities []*livekit.ConnectionQualityInfo `json:"connQualities,omitempty"`
 }
 
 type signalPeerMessage struct {
