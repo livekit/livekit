@@ -1220,7 +1220,10 @@ func (f *Forwarder) GetNextHigherTransition(brs Bitrates, allowOvershoot bool) (
 		for s := minSpatial; s <= maxSpatial; s++ {
 			for t := minTemporal; t <= maxTemporal; t++ {
 				bandwidthRequested := brs[s][t]
-				if bandwidthRequested == 0 {
+				// traverse till finding a layer requiring more bits.
+				// NOTE: it possible that higher temporal layer of lower spatial layer
+				//       could use more bits than lower temporal layer of higher spatial layer.
+				if bandwidthRequested == 0 || bandwidthRequested < alreadyAllocated {
 					continue
 				}
 
