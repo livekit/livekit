@@ -1563,10 +1563,8 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			diffSeconds = float64(int32(expectedTS-refTS)) / float64(f.codec.ClockRate)
 			if diffSeconds < 0.0 && math.Abs(diffSeconds) > SwitchAheadThresholdSeconds {
 				logTransition("layer switch, reference too far ahead", expectedTS, refTS, lastTS, diffSeconds)
-				nextTS = expectedTS
-			} else {
-				nextTS = refTS
 			}
+			nextTS = refTS
 		}
 	}
 
