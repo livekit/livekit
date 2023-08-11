@@ -771,11 +771,11 @@ func (r *RTPStats) MaybeAdjustFirstPacketTime(srData *RTCPSenderReportData) {
 	defer r.lock.Unlock()
 
 	if srData != nil {
-		r.maybeAdjustFirstPacketTime(srData.RTPTimestampExt)
+		r.maybeAdjustFirstPacketTime(srData.RTPTimestamp)
 	}
 }
 
-func (r *RTPStats) maybeAdjustFirstPacketTime(extTS uint64) {
+func (r *RTPStats) maybeAdjustFirstPacketTime(ts uint32) {
 	if time.Since(r.startTime) > firstPacketTimeAdjustWindow {
 		return
 	}
@@ -786,7 +786,12 @@ func (r *RTPStats) maybeAdjustFirstPacketTime(extTS uint64) {
 	// abnormal delay (maybe due to pacing or maybe due to queuing
 	// in some network element along the way), push back first time
 	// to an earlier instance.
-	samplesDuration := time.Duration(float64(extTS-r.extStartTS) / float64(r.params.ClockRate) * float64(time.Second))
+	samplesDiff := int32(ts - uint32(r.extStartTS))
+	if samplesDiff < 0 {
+		// out-of-order, skip
+		return
+	}
+	samplesDuration := time.Duration(float64(samplesDiff) / float64(r.params.ClockRate) * float64(time.Second))
 	firstTime := time.Now().Add(-samplesDuration)
 	if firstTime.Before(r.firstTime) {
 		r.logger.Infow(
@@ -831,7 +836,7 @@ func (r *RTPStats) SetRtcpSenderReportData(srData *RTCPSenderReportData) {
 	srDataCopy := *srData
 	srDataCopy.RTPTimestampExt = uint64(srDataCopy.RTPTimestamp) + cycles
 
-	r.maybeAdjustFirstPacketTime(srDataCopy.RTPTimestampExt)
+	r.maybeAdjustFirstPacketTime(srDataCopy.RTPTimestamp)
 
 	// monitor and log RTP timestamp anomalies
 	var ntpDiffSinceLast time.Duration
