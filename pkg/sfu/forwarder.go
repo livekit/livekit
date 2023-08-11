@@ -1465,7 +1465,8 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 	//   3. expectedTS -> expected timestamp of this packet calculated based on elapsed time since first packet
 	// Ideally, refTS and expectedTS should be very close and lastTS should be before both of those.
 	// But, cases like muting/unmuting, clock vagaries, pacing, etc. make them not satisfy those conditions always.
-	lastTS := f.rtpMunger.GetLast().LastTS
+	rtpMungerState := f.rtpMunger.GetLast()
+	lastTS := rtpMungerState.LastTS
 	refTS := lastTS
 	expectedTS := lastTS
 	switchingAt := time.Now()
@@ -1583,7 +1584,8 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		"referenceLayerSpatial", f.referenceLayerSpatial,
 		"expectedTS", expectedTS,
 		"nextTS", nextTS,
-		"jump", nextTS-lastTS,
+		"tsJump", nextTS-lastTS,
+		"nextSN", rtpMungerState.LastSN+1,
 	)
 
 	f.rtpMunger.UpdateSnTsOffsets(extPkt, 1, nextTS-lastTS)
