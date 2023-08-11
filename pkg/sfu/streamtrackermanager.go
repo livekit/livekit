@@ -571,7 +571,15 @@ func (s *StreamTrackerManager) updateLayerOffsetLocked(ref, other int32) {
 	// use minimal offset to indicate value availability in the extremely unlikely case of
 	// both layers using the same timestamp
 	if offset == 0 {
-		s.logger.Infow("using default offset", "ref", ref, "other", other)
+		s.logger.Infow(
+			"using default offset",
+			"ref", ref,
+			"refNTP", srRef.NTPTimestamp.Time().String(),
+			"refRTP", srRef.RTPTimestamp,
+			"other", other,
+			"otherNTP", srOther.NTPTimestamp.Time().String(),
+			"otherRTP", srOther.RTPTimestamp,
+		)
 		offset = 1
 	}
 
