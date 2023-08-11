@@ -819,8 +819,10 @@ func (r *RTPStats) SetRtcpSenderReportData(srData *RTCPSenderReportData) {
 	if r.srNewest != nil && r.srNewest.NTPTimestamp > srData.NTPTimestamp {
 		r.logger.Infow(
 			"received anachronous sender report",
-			"current", srData.NTPTimestamp.Time(),
-			"last", r.srNewest.NTPTimestamp.Time(),
+			"currentNTP", srData.NTPTimestamp.Time(),
+			"currentRTP", srData.RTPTimestamp,
+			"lastNTP", r.srNewest.NTPTimestamp.Time(),
+			"lastRTP", r.srNewest.RTPTimestamp,
 		)
 		return
 	}
