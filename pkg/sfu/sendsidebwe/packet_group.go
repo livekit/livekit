@@ -14,21 +14,25 @@ var (
 
 // -------------------------------------------------------------
 
+type PacketGroupParams struct {
+	Spread time.Duration
+}
+
 type PacketGroup struct {
-	spread time.Duration
+	params PacketGroupParams
 
 	packetInfos []*packetInfo
 	minSendTime int64
 }
 
-func NewPacketGroup(spread time.Duration) *PacketGroup {
+func NewPacketGroup(params PacketGroupParams) *PacketGroup {
 	return &PacketGroup{
-		spread: spread,
+		params: params,
 	}
 }
 
 func (p *PacketGroup) Add(pi *packetInfo) error {
-	if p.minSendTime != 0 && (pi.sendTime-p.minSendTime) > p.spread.Microseconds() {
+	if p.minSendTime != 0 && (pi.sendTime-p.minSendTime) > p.params.Spread.Microseconds() {
 		// RAJA-TODO: add this packet also here to create overlap and leave out bytes from packet when calculating rates????
 		return errOutOfRange
 	}

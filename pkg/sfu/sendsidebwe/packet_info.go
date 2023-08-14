@@ -1,6 +1,7 @@
 package sendsidebwe
 
 type packetInfo struct {
+	sn        uint16
 	sendTime  int64
 	sendDelta int64
 	// SSBWE-TODO: may need a feedback report time to detect stale reports
@@ -8,8 +9,8 @@ type packetInfo struct {
 	receiveDelta int64
 	deltaOfDelta int64
 	isDeltaValid bool
-	headerSize   uint16
-	payloadSize  uint16
+	headerSize   int // RAJA-TODO: change type to use smaller size
+	payloadSize  int // RAJA-TODO: change type to use smaller size
 	isRTX        bool
 	// SSBWE-TODO: possibly add the following fields - pertaining to this packet,
 	// idea is to be able to traverse back and find last packet with clean signal(s)
@@ -20,7 +21,8 @@ type packetInfo struct {
 	//    ProbePacketInfo - When probing, these packets could be analyzed separately to check if probing is successful
 }
 
-func (pi *packetInfo) Reset() {
+func (pi *packetInfo) Reset(sn uint16) {
+	pi.sn = sn
 	pi.sendTime = 0
 	pi.sendDelta = 0
 	pi.receiveTime = 0

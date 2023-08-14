@@ -29,11 +29,6 @@ type PacketTracker struct {
 	sentInitialized bool
 	highestSentSN   uint16
 
-	/* RAJA-REMOVE
-	ackedInitialized bool
-	highestAckedSN   uint16
-	*/
-
 	// SSBWE-TODO: make this a ring buffer as a lot more fields are needed
 	packetInfos   [1 << 16]packetInfo
 	feedbackInfos deque.Deque[*TWCCFeedbackInfo] // SSBWE-TODO: prune old entries
@@ -46,6 +41,8 @@ type PacketTracker struct {
 	wake chan struct{}
 	stop core.Fuse
 
+	rateCalculator *RateCalculator
+
 	estimatedChannelCapacity int64
 	congestionState          CongestionState
 	onCongestionStateChange  func(congestionState CongestionState, channelCapacity int64)
@@ -55,10 +52,14 @@ type PacketTracker struct {
 
 func NewPacketTracker(logger logger.Logger) *PacketTracker {
 	p := &PacketTracker{
-		logger:                   logger,
-		peakDetector:             peakdetect.NewPeakDetector(),
-		wake:                     make(chan struct{}, 1),
-		stop:                     core.NewFuse(),
+		logger:       logger,
+		peakDetector: peakdetect.NewPeakDetector(),
+		wake:         make(chan struct{}, 1),
+		stop:         core.NewFuse(),
+		rateCalculator: NewRateCalculator(RateCalculatorParams{
+			MeasurementWindow: 500 * time.Millisecond, // RAJA-TODO: make this config
+			Overlap:           0.5,                    // RAJA-TODO: make this config
+		}),
 		estimatedChannelCapacity: 100_000_000,
 	}
 
@@ -109,23 +110,21 @@ func (p *PacketTracker) PacketSent(sn uint16, at time.Time, headerSize int, payl
 		p.sentInitialized = true
 	}
 
-	// should never happen, but just a sanity check
-	if (sn - p.highestSentSN) > (1 << 15) {
-		return
-	}
-
 	// clear slots occupied by missing packets,
 	// ideally this should never run as seequence numbers should be generated in order
 	// and packets sent in order.
-	for i := p.highestSentSN + 1; i != sn; i++ {
-		pi := &p.packetInfos[i]
-		pi.Reset()
+	if (sn - p.highestSentSN) < (1 << 15) {
+		for i := p.highestSentSN + 1; i != sn; i++ {
+			pi := &p.packetInfos[i]
+			pi.Reset(sn)
+		}
 	}
 
 	pi := &p.packetInfos[sn]
+	pi.sn = sn
 	pi.sendTime = at.UnixMicro()
-	pi.headerSize = uint16(headerSize)
-	pi.payloadSize = uint16(payloadSize)
+	pi.headerSize = headerSize
+	pi.payloadSize = payloadSize
 	pi.isRTX = isRTX
 	pi.ResetReceiveAndDeltas()
 
@@ -136,67 +135,8 @@ func (p *PacketTracker) ProcessFeedback(fbi *TWCCFeedbackInfo) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	/* RAJA-REMOVE
-	now := time.Now()
-	if p.debugFile != nil {
-		toWrite := fmt.Sprintf("REPORT: start: %d", now.UnixMicro())
-		p.debugFile.WriteString(toWrite)
-		p.debugFile.WriteString("\n")
-	}
-	toInt := func(a bool) int {
-		if a {
-			return 1
-		}
-
-		return 0
-	}
-	if p.activePacketGroup == nil {
-		// SSBWE-TODO - spread should be a config option
-		p.activePacketGroup = NewPacketGroup(50 * time.Millisecond)
-	}
-	for i, arrival := range arrivals {
-		sn := baseSN + uint16(i)
-		pi := &p.packetInfos[sn]
-		pi.receiveTime = arrival
-		if err := p.activePacketGroup.Add(pi); err != nil {
-			p.packetGroups = append(p.packetGroups, p.activePacketGroup)
-			p.activePacketGroup = NewPacketGroup(50 * time.Millisecond)
-			p.activePacketGroup.Add(pi)
-		}
-		if p.debugFile != nil {
-			toWrite := fmt.Sprintf(
-				"PACKET: sn: %d, headerSize: %d, payloadSize: %d, isRTX: %d, sendTime: %d, receiveTime: %d",
-				sn,
-				pi.headerSize,
-				pi.payloadSize,
-				toInt(pi.isRTX),
-				pi.sendTime,
-				arrival,
-			)
-			p.debugFile.WriteString(toWrite)
-			p.debugFile.WriteString("\n")
-		}
-	}
-	if p.debugFile != nil {
-		toWrite := fmt.Sprintf("REPORT: end: %d", now.UnixMicro())
-		p.debugFile.WriteString(toWrite)
-		p.debugFile.WriteString("\n")
-	}
-	*/
-
-	/* RAJA-REMOVE
-	lastAckedSN := baseSN + uint16(len(arrivals)) - 1
-	if !p.ackedInitialized {
-		p.highestAckedSN = lastAckedSN
-		p.ackedInitialized = true
-	} else {
-		if (lastAckedSN - p.highestAckedSN) < (1 << 15) {
-			p.highestAckedSN = lastAckedSN
-		}
-	}
-	*/
-
 	p.feedbackInfos.PushBack(fbi)
+
 	// notify worker of a new feedback
 	select {
 	case p.wake <- struct{}{}:
@@ -223,7 +163,7 @@ func (p *PacketTracker) processFeedback(fbi *TWCCFeedbackInfo) {
 	}
 	if p.activePacketGroup == nil {
 		// SSBWE-TODO - spread should be a config option
-		p.activePacketGroup = NewPacketGroup(50 * time.Millisecond)
+		p.activePacketGroup = NewPacketGroup(PacketGroupParams{Spread: 50 * time.Millisecond})
 	}
 	for i, arrival := range fbi.Arrivals {
 		sn := fbi.BaseSN + uint16(i)
@@ -231,7 +171,7 @@ func (p *PacketTracker) processFeedback(fbi *TWCCFeedbackInfo) {
 		pi.receiveTime = arrival
 		if err := p.activePacketGroup.Add(pi); err != nil {
 			p.packetGroups = append(p.packetGroups, p.activePacketGroup)
-			p.activePacketGroup = NewPacketGroup(50 * time.Millisecond)
+			p.activePacketGroup = NewPacketGroup(PacketGroupParams{Spread: 50 * time.Millisecond})
 			p.activePacketGroup.Add(pi)
 		}
 		if p.debugFile != nil {
@@ -492,6 +432,7 @@ func (p *PacketTracker) worker() {
 				p.populateDeltas(startSNInclusive, endSNExclusive)
 
 				p.calculateAcknowledgedBitrate(startSNInclusive, endSNExclusive)
+				p.rateCalculator.Update(p.packetInfos, startSNInclusive, endSNExclusive)
 
 				p.detectChangePoint(startSNInclusive, endSNExclusive)
 
