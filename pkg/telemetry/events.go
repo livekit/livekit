@@ -73,7 +73,11 @@ func (t *telemetryService) ParticipantJoined(
 ) {
 	t.enqueue(func() {
 		prometheus.IncrementParticipantRtcConnected(1)
-		prometheus.AddParticipant()
+		if participant.Relayed {
+			prometheus.AddRelayedParticipant()
+		} else {
+			prometheus.AddLocalParticipant()
+		}
 
 		t.createWorker(
 			ctx,
@@ -119,8 +123,13 @@ func (t *telemetryService) ParticipantActive(
 				livekit.ParticipantIdentity(participant.Identity),
 			)
 
-			// need to also account for participant count
-			prometheus.AddParticipant()
+			if participant.GetRelayed() {
+				// need to also account for participant count
+				prometheus.AddRelayedParticipant()
+			} else {
+				// need to also account for participant count
+				prometheus.AddLocalParticipant()
+			}
 		}
 		worker.SetConnected()
 
@@ -164,7 +173,11 @@ func (t *telemetryService) ParticipantLeft(ctx context.Context,
 
 		if hasWorker {
 			// signifies we had incremented participant count
-			prometheus.SubParticipant()
+			if participant.Relayed {
+				prometheus.SubRelayedParticipant()
+			} else {
+				prometheus.SubLocalParticipant()
+			}
 		}
 
 		if isConnected && shouldSendEvent {
