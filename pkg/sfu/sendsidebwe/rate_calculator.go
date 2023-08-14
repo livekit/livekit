@@ -22,20 +22,26 @@ func (b byteCounter) String() string {
 
 type measurement struct {
 	at           time.Time
-	receiveStart int64
-	receiveEnd   int64
+
 	primary      byteCounter
 	rtx          byteCounter
-	bitrate      float64
+
+	sendStart int64
+	sendEnd   int64
+	sendBitrate      float64
+
+	receiveStart int64
+	receiveEnd   int64
+	receiveBitrate      float64
 }
 
 func (m measurement) String() string {
-	return fmt.Sprintf("at: %s, span: %d/%d/%.2f, primary: (%s), rtx: (%s), bitrate: %.2f",
+	return fmt.Sprintf("at: %s, primary: (%s), rtx: (%s), send: (%d / %d / %.2f /  %.2f), receive: (%d / %d / %.2f / %.2f)",
 		m.at.String(),
-		m.receiveStart, m.receiveEnd, float64(m.receiveEnd-m.receiveStart)/1e6,
 		m.primary.String(),
 		m.rtx.String(),
-		m.bitrate,
+		m.sendStart, m.sendEnd, float64(m.sendEnd-m.sendStart)/1e6, m.sendBitrate,
+		m.receiveStart, m.receiveEnd, float64(m.receiveEnd-m.receiveStart)/1e6, m.receiveBitrate,
 	)
 }
 
@@ -115,7 +121,7 @@ func (r *RateCalculator) add(packetInfos [1 << 16]packetInfo, startSNInclusive, 
 		if pi.receiveTime >= r.nextMeasurementTime {
 			r.prune()
 			r.calculate()
-			r.nextMeasurementTime += r.params.MeasurementWindow.Microseconds()
+			r.nextMeasurementTime += int64((1.0-r.params.Overlap)*float64(r.params.MeasurementWindow.Microseconds()))
 		}
 	}
 	if latestReceiveTimeInCluster != 0 && latestReceiveTimeInCluster > r.latestReceiveTime {
@@ -150,11 +156,16 @@ func (r *RateCalculator) prune() {
 
 func (r *RateCalculator) calculate() {
 	first := r.packetInfos[0]
+	sendStart := first.sendTime
+	sendEnd := r.packetInfos[len(r.packetInfos)-1].sendTime
+	sendDuration := float64(sendEnd-sendStart) / 1e6
 	receiveStart := first.receiveTime
 	receiveEnd := r.packetInfos[len(r.packetInfos)-1].receiveTime
-	duration := float64(receiveEnd-receiveStart) / float64(time.Microsecond)
+	receiveDuration := float64(receiveEnd-receiveStart) / 1e6
 	m := measurement{
 		at:           time.Now(),
+		sendStart: sendStart,
+		sendEnd:   sendEnd,
 		receiveStart: receiveStart,
 		receiveEnd:   receiveEnd,
 	}
@@ -169,7 +180,8 @@ func (r *RateCalculator) calculate() {
 			payload: r.primary.payload - first.payloadSize,
 		}
 	}
-	m.bitrate = float64((m.primary.header+m.primary.payload+m.rtx.header+m.rtx.payload)*8) * float64(time.Second) / duration
+	m.sendBitrate = float64((m.primary.header+m.primary.payload+m.rtx.header+m.rtx.payload)*8) / sendDuration
+	m.receiveBitrate = float64((m.primary.header+m.primary.payload+m.rtx.header+m.rtx.payload)*8) / receiveDuration
 	r.params.Logger.Debugw("rate calculator measurement", "measurement", m.String()) // REMOVE
 	r.measurements = append(r.measurements, m)
 }
