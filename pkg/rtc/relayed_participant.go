@@ -158,6 +158,7 @@ func (p *RelayedParticipantImpl) ToProto() *livekit.ParticipantInfo {
 		Permission:  p.grants.Video.ToPermission(),
 		Metadata:    p.grants.Metadata,
 		IsPublisher: p.IsPublisher(),
+		Relayed:     true,
 	}
 	p.lock.RUnlock()
 	info.Tracks = p.UpTrackManager.ToProto()

@@ -119,12 +119,12 @@ func SubLocalParticipant() {
 }
 
 func AddRelayedParticipant() {
-	promLocalParticipantCurrent.Add(1)
+	promRelayedParticipantCurrent.Add(1)
 	participantCurrent.Inc()
 }
 
 func SubRelayedParticipant() {
-	promLocalParticipantCurrent.Sub(1)
+	promRelayedParticipantCurrent.Sub(1)
 	participantCurrent.Dec()
 }
 

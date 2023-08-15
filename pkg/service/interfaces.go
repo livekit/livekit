@@ -25,7 +25,7 @@ type ObjectStore interface {
 	StoreRoom(ctx context.Context, room *livekit.Room, roomKey livekit.RoomKey, internal *livekit.RoomInternal) error
 	DeleteRoom(ctx context.Context, roomKey livekit.RoomKey) error
 
-	StoreParticipant(ctx context.Context, roomKey livekit.RoomKey, participant *livekit.ParticipantInfo, relayed bool) error
+	StoreParticipant(ctx context.Context, roomKey livekit.RoomKey, participant *livekit.ParticipantInfo) error
 	DeleteParticipant(ctx context.Context, roomKey livekit.RoomKey, identity livekit.ParticipantIdentity) error
 }
 
