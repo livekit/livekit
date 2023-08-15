@@ -250,7 +250,7 @@ func (r *RoomManager) StartSession(
 		// we'll keep the participant SID, and just swap the sink for the underlying connection
 		if pi.Reconnect {
 			if participant.IsClosed() {
-				// Send leave request if participant is closed, i. e. handle the case of client trying to resume crossing wires with
+				// Send leave request if participant is closed, i.e. handle the case of client trying to resume crossing wires with
 				// server closing the participant due to some irrecoverable condition. Such a condition would have triggered
 				// a full reconnect when that condition occurred.
 				//

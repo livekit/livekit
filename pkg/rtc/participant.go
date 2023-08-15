@@ -987,10 +987,24 @@ func (p *ParticipantImpl) IsPublisher() bool {
 	return p.isPublisher.Load()
 }
 
+func (p *ParticipantImpl) IsAdmin() bool {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	return p.grants.Video.RoomAdmin
+}
+
 func (p *ParticipantImpl) CanPublishSource(source livekit.TrackSource) bool {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	return p.grants.Video.GetCanPublishSource(source)
+}
+
+func (p *ParticipantImpl) CanPublish() bool {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	return p.grants.Video.GetCanPublish()
 }
 
 func (p *ParticipantImpl) CanSubscribe() bool {

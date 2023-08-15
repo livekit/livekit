@@ -238,7 +238,9 @@ type Participant interface {
 	SetName(name string)
 	SetMetadata(metadata string)
 
+	CanPublish() bool
 	IsPublisher() bool
+	IsAdmin() bool
 	GetPublishedTrack(sid livekit.TrackID) MediaTrack
 	GetPublishedTracks() []MediaTrack
 	RemovePublishedTrack(track MediaTrack, willBeResumed bool, shouldClose bool)
@@ -248,6 +250,7 @@ type Participant interface {
 	HasPermission(trackID livekit.TrackID, subIdentity livekit.ParticipantIdentity) bool
 
 	// permissions
+
 	Hidden() bool
 	IsRecorder() bool
 
@@ -257,6 +260,7 @@ type Participant interface {
 	SubscriptionPermission() (*livekit.SubscriptionPermission, utils.TimedVersion)
 
 	// updates from remotes
+
 	UpdateSubscriptionPermission(
 		subscriptionPermission *livekit.SubscriptionPermission,
 		timedVersion utils.TimedVersion,

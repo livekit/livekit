@@ -20,6 +20,7 @@ var (
 	ErrRoomClosed              = errors.New("room has already closed")
 	ErrPermissionDenied        = errors.New("no permissions to access the room")
 	ErrMaxParticipantsExceeded = errors.New("room has exceeded its max participants")
+	ErrMaxPublishersExceeded   = errors.New("room has exceeded max publishers, set canPublish to false on subscribers")
 	ErrLimitExceeded           = errors.New("node has exceeded its configured limit")
 	ErrAlreadyJoined           = errors.New("a participant with the same identity is already in the room")
 	ErrDataChannelUnavailable  = errors.New("data channel is not available")

@@ -42,11 +42,11 @@ import (
 )
 
 const (
-	DefaultEmptyTimeout       = 5 * 60 // 5m
-	AudioLevelQuantization    = 8      // ideally power of 2 to minimize float decimal
-	invAudioLevelQuantization = 1.0 / AudioLevelQuantization
-	subscriberUpdateInterval  = 3 * time.Second
-
+	DefaultEmptyTimeout             = 5 * 60 // 5m
+	AudioLevelQuantization          = 8      // ideally power of 2 to minimize float decimal
+	LiveStreamPublisherLimit        = 25
+	invAudioLevelQuantization       = 1.0 / AudioLevelQuantization
+	subscriberUpdateInterval        = 3 * time.Second
 	dataForwardLoadBalanceThreshold = 20
 )
 
@@ -284,6 +284,17 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 		}
 		if numParticipants >= r.protoRoom.MaxParticipants {
 			return ErrMaxParticipantsExceeded
+		}
+	}
+	if r.protoRoom.AppMode == livekit.AppMode_AM_LIVESTREAM && participant.IsPublisher() {
+		numPublishers := 0
+		for _, p := range r.participants {
+			if p.CanPublish() {
+				numPublishers++
+			}
+		}
+		if numPublishers >= LiveStreamPublisherLimit {
+			return ErrMaxPublishersExceeded
 		}
 	}
 
@@ -990,6 +1001,37 @@ func (r *Room) broadcastParticipantState(p types.LocalParticipant, opts broadcas
 func (r *Room) sendParticipantUpdates(updates []*livekit.ParticipantInfo) {
 	if len(updates) == 0 {
 		return
+	}
+
+	if r.protoRoom.AppMode == livekit.AppMode_AM_LIVESTREAM {
+		otherUpdates := make([]*livekit.ParticipantInfo, 0, len(updates))
+		publisherUpdates := make([]*livekit.ParticipantInfo, 0, len(updates))
+		for _, u := range updates {
+			if u.Permission.CanPublish {
+				publisherUpdates = append(publisherUpdates, u)
+			} else {
+				otherUpdates = append(otherUpdates, u)
+			}
+		}
+
+		if len(otherUpdates) > 0 {
+			// non-publishers are only sent to admins
+			for _, op := range r.GetParticipants() {
+				if op.IsAdmin() {
+					err := op.SendParticipantUpdate(otherUpdates)
+					if err != nil {
+						r.Logger.Errorw("could not send update to participant", err,
+							"participant", op.Identity(), "pID", op.ID())
+					}
+				}
+			}
+		}
+
+		if len(publisherUpdates) == 0 {
+			return
+		}
+
+		updates = publisherUpdates
 	}
 
 	for _, op := range r.GetParticipants() {

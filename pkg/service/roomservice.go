@@ -76,6 +76,7 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 		return nil, err
 	}
 
+	// TODO: this should be a new API that is applies new updates on the node with the room
 	// actually start the room on an RTC node, to ensure metadata & empty timeout functionality
 	_, sink, source, err := s.router.StartParticipantSignal(ctx,
 		livekit.RoomName(req.Name),
