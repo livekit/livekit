@@ -965,7 +965,7 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, calculatedClockRate uint32) 
 		nowRTPExtUsingRate = r.extStartTS + uint64(float64(calculatedClockRate)*timeSinceFirst.Seconds())
 		if nowRTPExtUsingRate > nowRTPExt {
 			nowRTPExt = nowRTPExtUsingRate
-			nowRTP = uint32(nowRTPExtUsingRate)
+			nowRTP = uint32(nowRTPExt)
 		}
 	}
 
@@ -992,6 +992,7 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, calculatedClockRate uint32) 
 		)
 		ntpDiffSinceLast := nowNTP.Time().Sub(r.srNewest.NTPTimestamp.Time())
 		nowRTPExt = r.srNewest.RTPTimestampExt + uint64(ntpDiffSinceLast.Seconds()*float64(r.params.ClockRate))
+		nowRTP = uint32(nowRTPExt)
 	}
 
 	// monitor and log RTP timestamp anomalies
