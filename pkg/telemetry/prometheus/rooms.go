@@ -22,13 +22,14 @@ var (
 	// success rate by subtracting this from total attempts
 	trackSubscribeUserError atomic.Int32
 
-	promRoomCurrent            prometheus.Gauge
-	promRoomDuration           prometheus.Histogram
-	promParticipantCurrent     prometheus.Gauge
-	promTrackPublishedCurrent  *prometheus.GaugeVec
-	promTrackSubscribedCurrent *prometheus.GaugeVec
-	promTrackPublishCounter    *prometheus.CounterVec
-	promTrackSubscribeCounter  *prometheus.CounterVec
+	promRoomCurrent               prometheus.Gauge
+	promRoomDuration              prometheus.Histogram
+	promLocalParticipantCurrent   prometheus.Gauge
+	promRelayedParticipantCurrent prometheus.Gauge
+	promTrackPublishedCurrent     *prometheus.GaugeVec
+	promTrackSubscribedCurrent    *prometheus.GaugeVec
+	promTrackPublishCounter       *prometheus.CounterVec
+	promTrackSubscribeCounter     *prometheus.CounterVec
 )
 
 func initRoomStats(nodeID string, nodeType livekit.NodeType, env string) {
@@ -47,10 +48,16 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType, env string) {
 			5, 10, 60, 5 * 60, 10 * 60, 30 * 60, 60 * 60, 2 * 60 * 60, 5 * 60 * 60, 10 * 60 * 60,
 		},
 	})
-	promParticipantCurrent = prometheus.NewGauge(prometheus.GaugeOpts{
+	promLocalParticipantCurrent = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "participant",
-		Name:        "total",
+		Name:        "local_total",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String(), "env": env},
+	})
+	promRelayedParticipantCurrent = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "participant",
+		Name:        "relayed_total",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String(), "env": env},
 	})
 	promTrackPublishedCurrent = prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -80,7 +87,8 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType, env string) {
 
 	prometheus.MustRegister(promRoomCurrent)
 	prometheus.MustRegister(promRoomDuration)
-	prometheus.MustRegister(promParticipantCurrent)
+	prometheus.MustRegister(promLocalParticipantCurrent)
+	prometheus.MustRegister(promRelayedParticipantCurrent)
 	prometheus.MustRegister(promTrackPublishedCurrent)
 	prometheus.MustRegister(promTrackSubscribedCurrent)
 	prometheus.MustRegister(promTrackPublishCounter)
@@ -100,13 +108,23 @@ func RoomEnded(startedAt time.Time) {
 	roomCurrent.Dec()
 }
 
-func AddParticipant() {
-	promParticipantCurrent.Add(1)
+func AddLocalParticipant() {
+	promLocalParticipantCurrent.Add(1)
 	participantCurrent.Inc()
 }
 
-func SubParticipant() {
-	promParticipantCurrent.Sub(1)
+func SubLocalParticipant() {
+	promLocalParticipantCurrent.Sub(1)
+	participantCurrent.Dec()
+}
+
+func AddRelayedParticipant() {
+	promRelayedParticipantCurrent.Add(1)
+	participantCurrent.Inc()
+}
+
+func SubRelayedParticipant() {
+	promRelayedParticipantCurrent.Sub(1)
 	participantCurrent.Dec()
 }
 

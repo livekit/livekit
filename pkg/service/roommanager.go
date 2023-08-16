@@ -360,7 +360,7 @@ func (r *RoomManager) StartSession(
 		_ = participant.Close(true, types.ParticipantCloseReasonJoinFailed)
 		return err
 	}
-	if err = r.roomStore.StoreParticipant(ctx, roomKey, participant.ToProto(), false); err != nil {
+	if err = r.roomStore.StoreParticipant(ctx, roomKey, participant.ToProto()); err != nil {
 		pLogger.Errorw("could not store participant", err)
 	}
 
@@ -470,8 +470,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 
 	newRoom.OnParticipantChanged(func(p types.LocalParticipant) {
 		if !p.IsDisconnected() {
-			_, relayed := p.(*rtc.RelayedParticipantImpl)
-			if err := r.roomStore.StoreParticipant(ctx, roomKey, p.ToProto(), relayed); err != nil {
+			if err := r.roomStore.StoreParticipant(ctx, roomKey, p.ToProto()); err != nil {
 				newRoom.Logger.Errorw("could not handle participant change", err)
 			}
 		}
@@ -1136,13 +1135,17 @@ func (r *RoomManager) onRelayParticipantUpdate(room *rtc.Room, rel relay.Relay, 
 				logger.Errorw("Can not join remote participant", err, "Identity", participant.Identity())
 				return
 			}
-			if err := r.roomStore.StoreParticipant(context.TODO(), room.Key(), participant.ToProto(), false); err != nil {
+			if err := r.roomStore.StoreParticipant(context.TODO(), room.Key(), participant.ToProto()); err != nil {
 				logger.Errorw("could not store remote participant", err)
 			}
+
+			clientMeta := &livekit.AnalyticsClientMeta{Region: r.currentNode.Region, Node: r.currentNode.Id}
+			r.telemetry.ParticipantJoined(context.TODO(), room.ToProto(), participant.ToProto(), nil, clientMeta, true)
 			participant.OnClose(func(p types.LocalParticipant, m map[livekit.TrackID]livekit.ParticipantID) {
 				if err := r.roomStore.DeleteParticipant(context.TODO(), room.Key(), p.Identity()); err != nil {
 					logger.Errorw("could not delete remote participant", err)
 				}
+				r.telemetry.ParticipantLeft(context.TODO(), room.ToProto(), p.ToProto(), true, p.ClaimGrants().WebHookURL)
 			})
 			logger.Infow("Remote participant joined", "Identity", participant.Identity())
 		} else if _, ok := participant.(*rtc.RelayedParticipantImpl); !ok {
