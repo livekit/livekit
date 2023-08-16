@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/livekit/protocol/logger"
 	"github.com/pion/rtp"
 	"github.com/stretchr/testify/require"
 )
@@ -38,6 +39,7 @@ func TestRTPStats(t *testing.T) {
 	clockRate := uint32(90000)
 	r := NewRTPStats(RTPStatsParams{
 		ClockRate: clockRate,
+		Logger:    logger.GetLogger(),
 	})
 
 	totalDuration := 5 * time.Second
@@ -79,6 +81,7 @@ func TestRTPStats_Update(t *testing.T) {
 	clockRate := uint32(90000)
 	r := NewRTPStats(RTPStatsParams{
 		ClockRate: clockRate,
+		Logger:    logger.GetLogger(),
 	})
 
 	sequenceNumber := uint16(rand.Float64() * float64(1<<16))
