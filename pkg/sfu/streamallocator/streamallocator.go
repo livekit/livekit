@@ -1212,20 +1212,6 @@ func (s *StreamAllocator) newChannelObserverNonProbe() *ChannelObserver {
 
 func (s *StreamAllocator) initProbe(probeGoalDeltaBps int64) {
 	expectedBandwidthUsage := s.getExpectedBandwidthUsage()
-	if float64(expectedBandwidthUsage) > 1.5*float64(s.committedChannelCapacity) {
-		// STREAM-ALLOCATOR-TODO-START
-		// Should probably skip probing if the expected usage is much higher than committed channel capacity.
-		// But, give that bandwidth estimate is volatile at times and can drop down to small values,
-		// not probing means streaming stuck in a well for long.
-		// Observe this and figure out if there is a threshold from practical use cases that can be used to
-		// skip probing safely
-		// STREAM-ALLOCATOR-TODO-END
-		s.params.Logger.Warnw(
-			"stream allocator: starting probe alarm",
-			fmt.Errorf("expected too high, expected: %d, committed: %d", expectedBandwidthUsage, s.committedChannelCapacity),
-		)
-	}
-
 	probeClusterId, probeGoalBps := s.probeController.InitProbe(probeGoalDeltaBps, expectedBandwidthUsage)
 
 	channelState := ""
