@@ -740,9 +740,7 @@ func (r *Room) sendRoomUpdate() {
 	roomInfo := r.ToProto()
 	// Send update to participants
 	for _, p := range r.GetParticipants() {
-		// new participants receive the update as part of JoinResponse
-		// skip inactive participants
-		if p.State() != livekit.ParticipantInfo_ACTIVE {
+		if !p.IsReady() {
 			continue
 		}
 
