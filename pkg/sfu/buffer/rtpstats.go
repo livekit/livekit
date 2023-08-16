@@ -424,7 +424,7 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 		}
 
 		// adjust start to account for out-of-order packets before a cycle completes
-		if !r.maybeAdjustStartSN(rtph, pktSize, hdrSize, payloadSize) {
+		if !r.maybeAdjustStart(rtph, pktSize, hdrSize, payloadSize) {
 			if !r.isSnInfoLost(rtph.SequenceNumber) {
 				r.bytesDuplicate += pktSize
 				r.headerBytesDuplicate += hdrSize
@@ -497,7 +497,7 @@ func (r *RTPStats) ResyncOnNextPacket() {
 	r.resyncOnNextPacket = true
 }
 
-func (r *RTPStats) maybeAdjustStartSN(rtph *rtp.Header, pktSize uint64, hdrSize uint64, payloadSize int) bool {
+func (r *RTPStats) maybeAdjustStart(rtph *rtp.Header, pktSize uint64, hdrSize uint64, payloadSize int) bool {
 	if (r.getExtHighestSN() - r.extStartSN + 1) >= (NumSequenceNumbers / 2) {
 		return false
 	}
@@ -507,16 +507,36 @@ func (r *RTPStats) maybeAdjustStartSN(rtph *rtp.Header, pktSize uint64, hdrSize 
 	}
 
 	r.packetsLost += uint32(uint16(r.extStartSN)-rtph.SequenceNumber) - 1
-	beforeAdjust := r.extStartSN
+	snBeforeAdjust := r.extStartSN
 	r.extStartSN = uint32(rtph.SequenceNumber)
+	if r.extStartSN > snBeforeAdjust {
+		// wrapping back
+		r.cycles++
+	}
 
 	r.setSnInfo(rtph.SequenceNumber, uint16(pktSize), uint16(hdrSize), uint16(payloadSize), rtph.Marker, true)
 
 	for _, s := range r.snapshots {
-		if s.extStartSN == beforeAdjust {
+		if s.extStartSN == snBeforeAdjust {
 			s.extStartSN = r.extStartSN
 		}
 	}
+
+	tsBeforeAdjust := r.extStartTS
+	r.extStartTS = uint64(rtph.Timestamp)
+	if r.extStartTS > tsBeforeAdjust {
+		// wrapping back
+		r.tsCycles++
+	}
+	r.logger.Infow(
+		"adjusting starting sequence number",
+		"snBefore", snBeforeAdjust,
+		"snAfter", r.extStartSN,
+		"snCyles", r.cycles,
+		"tsBefore", tsBeforeAdjust,
+		"tsAfter", r.extStartTS,
+		"tsCyles", r.tsCycles,
+	)
 
 	return true
 }
