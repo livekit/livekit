@@ -309,6 +309,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 				f.vls = videolayerselector.NewVP9(f.logger)
 			}
 		}
+		// SVC-TODO: Support for VP9 simulcast. When DD is not available, have to pick selector based on VP9 SVC or Simulcast
 	case "video/av1":
 		// DD-TODO : we only enable dd layer selector for av1/vp9 now, in the future we can enable it for vp8 too
 		if f.vls != nil {
@@ -316,6 +317,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		} else {
 			f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
 		}
+		// SVC-TODO: Support for AV1 Simulcast or just single spatial layer - won't have DD in that case
 	}
 }
 
