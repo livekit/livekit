@@ -316,6 +316,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		} else {
 			f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
 		}
+		// AV1-TODO: Support for AV1 Simulcast or just single spatial layer - won't have DD in that case
 	}
 }
 
