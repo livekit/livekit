@@ -41,13 +41,6 @@ func (p *ParticipantImpl) SetResponseSink(sink routing.MessageSink) {
 }
 
 func (p *ParticipantImpl) SendJoinResponse(joinResponse *livekit.JoinResponse) error {
-	// keep track of participant updates and versions
-	p.updateLock.Lock()
-	for _, op := range joinResponse.OtherParticipants {
-		p.updateCache.Add(livekit.ParticipantID(op.Sid), participantUpdateInfo{version: op.Version, state: op.State, updatedAt: time.Now()})
-	}
-	p.updateLock.Unlock()
-
 	// send Join response
 	err := p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Join{
@@ -58,9 +51,12 @@ func (p *ParticipantImpl) SendJoinResponse(joinResponse *livekit.JoinResponse) e
 		return err
 	}
 
-	// update state after to sending message, so that no participant updates could slip through before JoinResponse is
-	// sent
+	// update state after to sending message, so that no participant updates could slip through before JoinResponse is sent
 	p.updateLock.Lock()
+	for _, op := range joinResponse.OtherParticipants {
+		p.updateCache.Add(livekit.ParticipantID(op.Sid), participantUpdateInfo{version: op.Version, state: op.State, updatedAt: time.Now()})
+	}
+
 	if p.State() == livekit.ParticipantInfo_JOINING {
 		p.updateState(livekit.ParticipantInfo_JOINED)
 	}
@@ -105,7 +101,6 @@ func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.
 			isValid = false
 		}
 		if isValid {
-			p.updateCache.Add(pID, participantUpdateInfo{version: pi.Version, state: pi.State, updatedAt: time.Now()})
 			validUpdates = append(validUpdates, pi)
 		}
 	}
@@ -115,13 +110,23 @@ func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.
 		return nil
 	}
 
-	return p.writeMessage(&livekit.SignalResponse{
+	err := p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Update{
 			Update: &livekit.ParticipantUpdate{
 				Participants: validUpdates,
 			},
 		},
 	})
+	if err != nil {
+		return err
+	}
+
+	p.updateLock.Lock()
+	for _, pi := range validUpdates {
+		p.updateCache.Add(livekit.ParticipantID(pi.Sid), participantUpdateInfo{version: pi.Version, state: pi.State, updatedAt: time.Now()})
+	}
+	p.updateLock.Unlock()
+	return nil
 }
 
 // SendSpeakerUpdate notifies participant changes to speakers. only send members that have changed since last update

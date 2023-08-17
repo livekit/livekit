@@ -1069,6 +1069,15 @@ func (r *Room) pushAndDequeueUpdates(pi *livekit.ParticipantInfo, isImmediate bo
 				return nil
 			}
 		}
+	} else {
+		ep := r.GetParticipant(identity)
+		if ep != nil {
+			epi := ep.ToProto()
+			if epi.JoinedAt > pi.JoinedAt {
+				// older session update, newer session has already become active, so nothing to do
+				return nil
+			}
+		}
 	}
 
 	if shouldSend {
