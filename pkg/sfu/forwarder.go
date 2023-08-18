@@ -1335,11 +1335,7 @@ func (f *Forwarder) updateAllocation(alloc VideoAllocation, reason string) Video
 		alloc.PauseReason != f.lastAllocation.PauseReason ||
 		alloc.TargetLayer != f.lastAllocation.TargetLayer ||
 		alloc.RequestLayerSpatial != f.lastAllocation.RequestLayerSpatial {
-		if reason == "optimal" {
-			f.logger.Debugw(fmt.Sprintf("stream allocation: %s", reason), "allocation", alloc)
-		} else {
-			f.logger.Infow(fmt.Sprintf("stream allocation: %s", reason), "allocation", alloc)
-		}
+		f.logger.Debugw(fmt.Sprintf("stream allocation: %s", reason), "allocation", alloc)
 	}
 	f.lastAllocation = alloc
 
@@ -1434,7 +1430,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		f.referenceLayerSpatial = layer
 		f.rtpMunger.SetLastSnTs(extPkt)
 		f.codecMunger.SetLast(extPkt)
-		f.logger.Infow(
+		f.logger.Debugw(
 			"starting forwarding",
 			"sequenceNumber", extPkt.Packet.SequenceNumber,
 			"timestamp", extPkt.Packet.Timestamp,
@@ -1445,7 +1441,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 	}
 
 	logTransition := func(message string, expectedTS, refTS, lastTS uint32, diffSeconds float64) {
-		f.logger.Infow(
+		f.logger.Debugw(
 			message,
 			"layer", layer,
 			"expectedTS", expectedTS,
@@ -1575,11 +1571,11 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 	}
 
 	if nextTS-lastTS == 0 || nextTS-lastTS > (1<<31) {
-		f.logger.Infow("next timestamp is before last, adjusting", "nextTS", nextTS, "lastTS", lastTS)
+		f.logger.Debugw("next timestamp is before last, adjusting", "nextTS", nextTS, "lastTS", lastTS)
 		// nominal increase
 		nextTS = lastTS + 1
 	}
-	f.logger.Infow(
+	f.logger.Debugw(
 		"next timestamp on switch",
 		"switchingAt", switchingAt.String(),
 		"layer", layer,
