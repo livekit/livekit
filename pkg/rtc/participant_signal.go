@@ -58,8 +58,7 @@ func (p *ParticipantImpl) SendJoinResponse(joinResponse *livekit.JoinResponse) e
 		return err
 	}
 
-	// update state after to sending message, so that no participant updates could slip through before JoinResponse is
-	// sent
+	// update state after sending message, so that no participant updates could slip through before JoinResponse is sent
 	p.updateLock.Lock()
 	if p.State() == livekit.ParticipantInfo_JOINING {
 		p.updateState(livekit.ParticipantInfo_JOINED)

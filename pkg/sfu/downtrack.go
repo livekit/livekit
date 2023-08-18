@@ -409,9 +409,11 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	// Bind is called under RTPSender.mu lock, call the RTPSender.GetParameters in goroutine to avoid deadlock
 	go func() {
 		if tr := d.transceiver.Load(); tr != nil {
-			extensions := tr.Sender().GetParameters().HeaderExtensions
-			d.params.Logger.Debugw("negotiated downtrack extensions", "extensions", extensions)
-			d.SetRTPHeaderExtensions(extensions)
+			if sender := tr.Sender(); sender != nil {
+				extensions := sender.GetParameters().HeaderExtensions
+				d.params.Logger.Debugw("negotiated downtrack extensions", "extensions", extensions)
+				d.SetRTPHeaderExtensions(extensions)
+			}
 		}
 	}()
 

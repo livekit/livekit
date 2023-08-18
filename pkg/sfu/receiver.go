@@ -132,6 +132,10 @@ type WebRTCReceiver struct {
 	redPktWriter    func(pkt *buffer.ExtPacket, spatialLayer int32)
 }
 
+// SVC-TODO: Have to use more conditions to differentiate between
+// SVC-TODO: SVC and non-SVC (could be single layer or simulcast).
+// SVC-TODO: May only need to differentiate between simulcast and non-simulcast
+// SVC-TODO: i. e. may be possible to treat single layer as SVC to get proper/intended functionality.
 func IsSvcCodec(mime string) bool {
 	switch strings.ToLower(mime) {
 	case "video/av1":
@@ -232,10 +236,13 @@ func NewWebRTCReceiver(
 	})
 	w.connectionStats.Start(w.trackInfo)
 
-	for _, ext := range receiver.GetParameters().HeaderExtensions {
-		if ext.URI == dd.ExtensionURI {
-			w.streamTrackerManager.AddDependencyDescriptorTrackers()
-			break
+	// SVC-TODO: Handle DD for non-SVC cases???
+	if w.isSVC {
+		for _, ext := range receiver.GetParameters().HeaderExtensions {
+			if ext.URI == dd.ExtensionURI {
+				w.streamTrackerManager.AddDependencyDescriptorTrackers()
+				break
+			}
 		}
 	}
 
