@@ -113,7 +113,7 @@ func (w *WrapAround[T, ET]) maybeAdjustStart(val T) (isRestart bool, preExtended
 
 	// re-adjust start if necessary. The conditions are
 	// 1. Not seen more than half the range yet
-	// 1. wrap around compared to start and not completed a half cycle, sequences like (10, 65530) in uint16 space
+	// 1. wrap back compared to start and not completed a half cycle, sequences like (10, 65530) in uint16 space
 	// 2. no wrap around, but out-of-order compared to start and not completed a half cycle , sequences like (10, 9), (65530, 65528) in uint16 space
 	cycles := w.cycles
 	totalNum := w.GetExtendedHighest() - w.GetExtendedStart() + 1

@@ -114,7 +114,7 @@ func (r *RedReceiver) Close() {
 
 func (r *RedReceiver) ReadRTP(buf []byte, layer uint8, sn uint16) (int, error) {
 	// red encoding don't support nack
-	return 0, bucket.ErrPacketNotFound
+	return 0, bucket.ErrPacketMismatch
 }
 
 func (r *RedReceiver) encodeRedForPrimary(pkt *rtp.Packet, redPayload []byte) (int, error) {

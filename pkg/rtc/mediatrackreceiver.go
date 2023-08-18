@@ -520,7 +520,7 @@ func (t *MediaTrackReceiver) RemoveSubscriber(subscriberID livekit.ParticipantID
 }
 
 func (t *MediaTrackReceiver) removeAllSubscribersForMime(mime string, willBeResumed bool) {
-	t.params.Logger.Infow("removing all subscribers for mime", "mime", mime)
+	t.params.Logger.Debugw("removing all subscribers for mime", "mime", mime)
 	for _, subscriberID := range t.MediaTrackSubscriptions.GetAllSubscribersForMime(mime) {
 		t.RemoveSubscriber(subscriberID, willBeResumed)
 	}
