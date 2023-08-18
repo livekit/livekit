@@ -909,23 +909,18 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	//
 	//   For both cases, do
 	//     a. Find cooperative transition from track that needs allocation.
-	//     b. If track is currently streaming at minimum, do not do anything.
-	//     c. If track is giving back bits, apply the transition and use bits given
+	//     b. If track is giving back bits, apply the transition and use bits given
 	//        back to boost any deficient track(s).
 	//
 	//   If track needs more bits, i.e. upward transition (may need resume or higher layer subscription),
 	//     a. Try to allocate using existing headroom. This can be tried to get the best
 	//        possible fit for the available headroom.
 	//     b. If there is not enough headroom to allocate anything, ask for best offer from
-	//        other tracks that are currently streaming and try to use it.
+	//        other tracks that are currently streaming and try to use it. This is done only if the
+	//        track needing change is not currently streaming, i. e. it has to be resumed.
 	//
 	track.ProvisionalAllocatePrepare()
 	transition := track.ProvisionalAllocateGetCooperativeTransition(FlagAllowOvershootWhileDeficient)
-
-	// track is currently streaming at minimum
-	if transition.BandwidthDelta == 0 {
-		return
-	}
 
 	// downgrade, giving back bits
 	if transition.From.GreaterThan(transition.To) {
@@ -983,6 +978,11 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 
 		track.ProvisionalAllocateReset()
 		transition = track.ProvisionalAllocateGetCooperativeTransition(FlagAllowOvershootWhileDeficient) // get transition again to reset above allocation attempt using available headroom
+	}
+
+	// track is currently streaming at minimum
+	if transition.BandwidthDelta == 0 {
+		return
 	}
 
 	// if there is not enough headroom, try to redistribute starting with tracks that are closest to their desired.
@@ -1269,20 +1269,6 @@ func (s *StreamAllocator) newChannelObserverNonProbe() *ChannelObserver {
 
 func (s *StreamAllocator) initProbe(probeGoalDeltaBps int64) {
 	expectedBandwidthUsage := s.getExpectedBandwidthUsage()
-	if float64(expectedBandwidthUsage) > 1.5*float64(s.committedChannelCapacity) {
-		// STREAM-ALLOCATOR-TODO-START
-		// Should probably skip probing if the expected usage is much higher than committed channel capacity.
-		// But, give that bandwidth estimate is volatile at times and can drop down to small values,
-		// not probing means streaming stuck in a well for long.
-		// Observe this and figure out if there is a threshold from practical use cases that can be used to
-		// skip probing safely
-		// STREAM-ALLOCATOR-TODO-END
-		s.params.Logger.Warnw(
-			"stream allocator: starting probe alarm",
-			fmt.Errorf("expected too high, expected: %d, committed: %d", expectedBandwidthUsage, s.committedChannelCapacity),
-		)
-	}
-
 	probeClusterId, probeGoalBps := s.probeController.InitProbe(probeGoalDeltaBps, expectedBandwidthUsage)
 
 	channelState := ""

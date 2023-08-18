@@ -309,6 +309,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 				f.vls = videolayerselector.NewVP9(f.logger)
 			}
 		}
+		// SVC-TODO: Support for VP9 simulcast. When DD is not available, have to pick selector based on VP9 SVC or Simulcast
 	case "video/av1":
 		// DD-TODO : we only enable dd layer selector for av1/vp9 now, in the future we can enable it for vp8 too
 		if f.vls != nil {
@@ -316,6 +317,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		} else {
 			f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
 		}
+		// SVC-TODO: Support for AV1 Simulcast or just single spatial layer - won't have DD in that case
 	}
 }
 
@@ -1220,7 +1222,10 @@ func (f *Forwarder) GetNextHigherTransition(brs Bitrates, allowOvershoot bool) (
 		for s := minSpatial; s <= maxSpatial; s++ {
 			for t := minTemporal; t <= maxTemporal; t++ {
 				bandwidthRequested := brs[s][t]
-				if bandwidthRequested == 0 {
+				// traverse till finding a layer requiring more bits.
+				// NOTE: it possible that higher temporal layer of lower spatial layer
+				//       could use more bits than lower temporal layer of higher spatial layer.
+				if bandwidthRequested == 0 || bandwidthRequested < alreadyAllocated {
 					continue
 				}
 
@@ -1330,11 +1335,7 @@ func (f *Forwarder) updateAllocation(alloc VideoAllocation, reason string) Video
 		alloc.PauseReason != f.lastAllocation.PauseReason ||
 		alloc.TargetLayer != f.lastAllocation.TargetLayer ||
 		alloc.RequestLayerSpatial != f.lastAllocation.RequestLayerSpatial {
-		if reason == "optimal" {
-			f.logger.Debugw(fmt.Sprintf("stream allocation: %s", reason), "allocation", alloc)
-		} else {
-			f.logger.Infow(fmt.Sprintf("stream allocation: %s", reason), "allocation", alloc)
-		}
+		f.logger.Debugw(fmt.Sprintf("stream allocation: %s", reason), "allocation", alloc)
 	}
 	f.lastAllocation = alloc
 
@@ -1429,7 +1430,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		f.referenceLayerSpatial = layer
 		f.rtpMunger.SetLastSnTs(extPkt)
 		f.codecMunger.SetLast(extPkt)
-		f.logger.Infow(
+		f.logger.Debugw(
 			"starting forwarding",
 			"sequenceNumber", extPkt.Packet.SequenceNumber,
 			"timestamp", extPkt.Packet.Timestamp,
@@ -1440,7 +1441,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 	}
 
 	logTransition := func(message string, expectedTS, refTS, lastTS uint32, diffSeconds float64) {
-		f.logger.Infow(
+		f.logger.Debugw(
 			message,
 			"layer", layer,
 			"expectedTS", expectedTS,
@@ -1465,7 +1466,8 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 	//   3. expectedTS -> expected timestamp of this packet calculated based on elapsed time since first packet
 	// Ideally, refTS and expectedTS should be very close and lastTS should be before both of those.
 	// But, cases like muting/unmuting, clock vagaries, pacing, etc. make them not satisfy those conditions always.
-	lastTS := f.rtpMunger.GetLast().LastTS
+	rtpMungerState := f.rtpMunger.GetLast()
+	lastTS := rtpMungerState.LastTS
 	refTS := lastTS
 	expectedTS := lastTS
 	switchingAt := time.Now()
@@ -1563,19 +1565,17 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			diffSeconds = float64(int32(expectedTS-refTS)) / float64(f.codec.ClockRate)
 			if diffSeconds < 0.0 && math.Abs(diffSeconds) > SwitchAheadThresholdSeconds {
 				logTransition("layer switch, reference too far ahead", expectedTS, refTS, lastTS, diffSeconds)
-				nextTS = expectedTS
-			} else {
-				nextTS = refTS
 			}
+			nextTS = refTS
 		}
 	}
 
 	if nextTS-lastTS == 0 || nextTS-lastTS > (1<<31) {
-		f.logger.Infow("next timestamp is before last, adjusting", "nextTS", nextTS, "lastTS", lastTS)
+		f.logger.Debugw("next timestamp is before last, adjusting", "nextTS", nextTS, "lastTS", lastTS)
 		// nominal increase
 		nextTS = lastTS + 1
 	}
-	f.logger.Infow(
+	f.logger.Debugw(
 		"next timestamp on switch",
 		"switchingAt", switchingAt.String(),
 		"layer", layer,
@@ -1585,7 +1585,8 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		"referenceLayerSpatial", f.referenceLayerSpatial,
 		"expectedTS", expectedTS,
 		"nextTS", nextTS,
-		"jump", nextTS-lastTS,
+		"tsJump", nextTS-lastTS,
+		"nextSN", rtpMungerState.LastSN+1,
 	)
 
 	f.rtpMunger.UpdateSnTsOffsets(extPkt, 1, nextTS-lastTS)
