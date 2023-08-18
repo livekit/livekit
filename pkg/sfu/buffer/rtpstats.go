@@ -424,7 +424,7 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 		}
 
 		// adjust start to account for out-of-order packets before a cycle completes
-		if !r.maybeAdjustStartSN(rtph, pktSize, hdrSize, payloadSize) {
+		if !r.maybeAdjustStart(rtph, pktSize, hdrSize, payloadSize) {
 			if !r.isSnInfoLost(rtph.SequenceNumber) {
 				r.bytesDuplicate += pktSize
 				r.headerBytesDuplicate += hdrSize
@@ -497,7 +497,7 @@ func (r *RTPStats) ResyncOnNextPacket() {
 	r.resyncOnNextPacket = true
 }
 
-func (r *RTPStats) maybeAdjustStartSN(rtph *rtp.Header, pktSize uint64, hdrSize uint64, payloadSize int) bool {
+func (r *RTPStats) maybeAdjustStart(rtph *rtp.Header, pktSize uint64, hdrSize uint64, payloadSize int) bool {
 	if (r.getExtHighestSN() - r.extStartSN + 1) >= (NumSequenceNumbers / 2) {
 		return false
 	}
@@ -507,16 +507,36 @@ func (r *RTPStats) maybeAdjustStartSN(rtph *rtp.Header, pktSize uint64, hdrSize 
 	}
 
 	r.packetsLost += uint32(uint16(r.extStartSN)-rtph.SequenceNumber) - 1
-	beforeAdjust := r.extStartSN
+	snBeforeAdjust := r.extStartSN
 	r.extStartSN = uint32(rtph.SequenceNumber)
+	if r.extStartSN > snBeforeAdjust {
+		// wrapping back
+		r.cycles++
+	}
 
 	r.setSnInfo(rtph.SequenceNumber, uint16(pktSize), uint16(hdrSize), uint16(payloadSize), rtph.Marker, true)
 
 	for _, s := range r.snapshots {
-		if s.extStartSN == beforeAdjust {
+		if s.extStartSN == snBeforeAdjust {
 			s.extStartSN = r.extStartSN
 		}
 	}
+
+	tsBeforeAdjust := r.extStartTS
+	r.extStartTS = uint64(rtph.Timestamp)
+	if r.extStartTS > tsBeforeAdjust {
+		// wrapping back
+		r.tsCycles++
+	}
+	r.logger.Infow(
+		"adjusting starting sequence number",
+		"snBefore", snBeforeAdjust,
+		"snAfter", r.extStartSN,
+		"snCyles", r.cycles,
+		"tsBefore", tsBeforeAdjust,
+		"tsAfter", r.extStartTS,
+		"tsCyles", r.tsCycles,
+	)
 
 	return true
 }
@@ -771,11 +791,11 @@ func (r *RTPStats) MaybeAdjustFirstPacketTime(srData *RTCPSenderReportData) {
 	defer r.lock.Unlock()
 
 	if srData != nil {
-		r.maybeAdjustFirstPacketTime(srData.RTPTimestampExt)
+		r.maybeAdjustFirstPacketTime(srData.RTPTimestamp)
 	}
 }
 
-func (r *RTPStats) maybeAdjustFirstPacketTime(extTS uint64) {
+func (r *RTPStats) maybeAdjustFirstPacketTime(ts uint32) {
 	if time.Since(r.startTime) > firstPacketTimeAdjustWindow {
 		return
 	}
@@ -786,16 +806,27 @@ func (r *RTPStats) maybeAdjustFirstPacketTime(extTS uint64) {
 	// abnormal delay (maybe due to pacing or maybe due to queuing
 	// in some network element along the way), push back first time
 	// to an earlier instance.
-	samplesDuration := time.Duration(float64(extTS-r.extStartTS) / float64(r.params.ClockRate) * float64(time.Second))
+	samplesDiff := int32(ts - uint32(r.extStartTS))
+	if samplesDiff < 0 {
+		// out-of-order, skip
+		return
+	}
+	samplesDuration := time.Duration(float64(samplesDiff) / float64(r.params.ClockRate) * float64(time.Second))
 	firstTime := time.Now().Add(-samplesDuration)
 	if firstTime.Before(r.firstTime) {
-		r.logger.Infow(
+		r.logger.Debugw(
 			"adjusting first packet time",
 			"before", r.firstTime.String(),
 			"after", firstTime.String(),
 		)
 		if r.firstTime.Sub(firstTime) > firstPacketTimeAdjustThreshold {
-			r.logger.Infow("first packet time adjustment too big, ignoring", "adjustment", r.firstTime.Sub(firstTime))
+			r.logger.Infow("first packet time adjustment too big, ignoring",
+				"adjustment", r.firstTime.Sub(firstTime),
+				"before", r.firstTime.String(),
+				"after", firstTime.String(),
+				"ts", ts,
+				"extStartTS", r.extStartTS,
+			)
 		} else {
 			r.firstTime = firstTime
 		}
@@ -814,8 +845,10 @@ func (r *RTPStats) SetRtcpSenderReportData(srData *RTCPSenderReportData) {
 	if r.srNewest != nil && r.srNewest.NTPTimestamp > srData.NTPTimestamp {
 		r.logger.Infow(
 			"received anachronous sender report",
-			"current", srData.NTPTimestamp.Time(),
-			"last", r.srNewest.NTPTimestamp.Time(),
+			"currentNTP", srData.NTPTimestamp.Time().String(),
+			"currentRTP", srData.RTPTimestamp,
+			"lastNTP", r.srNewest.NTPTimestamp.Time().String(),
+			"lastRTP", r.srNewest.RTPTimestamp,
 		)
 		return
 	}
@@ -831,7 +864,7 @@ func (r *RTPStats) SetRtcpSenderReportData(srData *RTCPSenderReportData) {
 	srDataCopy := *srData
 	srDataCopy.RTPTimestampExt = uint64(srDataCopy.RTPTimestamp) + cycles
 
-	r.maybeAdjustFirstPacketTime(srDataCopy.RTPTimestampExt)
+	r.maybeAdjustFirstPacketTime(srDataCopy.RTPTimestamp)
 
 	// monitor and log RTP timestamp anomalies
 	var ntpDiffSinceLast time.Duration
@@ -952,7 +985,7 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, calculatedClockRate uint32) 
 		nowRTPExtUsingRate = r.extStartTS + uint64(float64(calculatedClockRate)*timeSinceFirst.Seconds())
 		if nowRTPExtUsingRate > nowRTPExt {
 			nowRTPExt = nowRTPExtUsingRate
-			nowRTP = uint32(nowRTPExtUsingRate)
+			nowRTP = uint32(nowRTPExt)
 		}
 	}
 
@@ -979,6 +1012,7 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, calculatedClockRate uint32) 
 		)
 		ntpDiffSinceLast := nowNTP.Time().Sub(r.srNewest.NTPTimestamp.Time())
 		nowRTPExt = r.srNewest.RTPTimestampExt + uint64(ntpDiffSinceLast.Seconds()*float64(r.params.ClockRate))
+		nowRTP = uint32(nowRTPExt)
 	}
 
 	// monitor and log RTP timestamp anomalies

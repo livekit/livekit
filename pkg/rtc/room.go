@@ -740,9 +740,7 @@ func (r *Room) sendRoomUpdate() {
 	roomInfo := r.ToProto()
 	// Send update to participants
 	for _, p := range r.GetParticipants() {
-		// new participants receive the update as part of JoinResponse
-		// skip inactive participants
-		if p.State() != livekit.ParticipantInfo_ACTIVE {
+		if !p.IsReady() {
 			continue
 		}
 
@@ -1067,6 +1065,15 @@ func (r *Room) pushAndDequeueUpdates(pi *livekit.ParticipantInfo, isImmediate bo
 				existing.State = livekit.ParticipantInfo_DISCONNECTED
 				updates = append(updates, existing)
 			} else {
+				// older session update, newer session has already become active, so nothing to do
+				return nil
+			}
+		}
+	} else {
+		ep := r.GetParticipant(identity)
+		if ep != nil {
+			epi := ep.ToProto()
+			if epi.JoinedAt > pi.JoinedAt {
 				// older session update, newer session has already become active, so nothing to do
 				return nil
 			}

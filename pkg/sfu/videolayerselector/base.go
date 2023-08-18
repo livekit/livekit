@@ -126,7 +126,7 @@ func (b *Base) Select(_extPkt *buffer.ExtPacket, _layer int32) (result VideoLaye
 }
 
 func (b *Base) Rollback() {
-	b.logger.Infow(
+	b.logger.Debugw(
 		"rolling back",
 		"previous", b.previousLayer,
 		"current", b.currentLayer,
