@@ -1283,6 +1283,7 @@ func (r *Room) DebugInfo() map[string]interface{} {
 func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, dp *livekit.DataPacket, logger logger.Logger) {
 	dest := dp.GetUser().GetDestinationSids()
 	var dpData []byte
+	destIdentities := dp.GetUser().GetDestinationIdentities()
 
 	participants := r.GetLocalParticipants()
 	capacity := len(dest)
@@ -1302,6 +1303,12 @@ func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, dp 
 			found := false
 			for _, dID := range dest {
 				if op.ID() == livekit.ParticipantID(dID) {
+					found = true
+					break
+				}
+			}
+			for _, dIdentity := range destIdentities {
+				if op.Identity() == livekit.ParticipantIdentity(dIdentity) {
 					found = true
 					break
 				}
