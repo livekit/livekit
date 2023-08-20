@@ -1340,6 +1340,7 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		p.lock.RUnlock()
 		if onDataPacket != nil {
 			payload.User.ParticipantSid = string(p.params.SID)
+			payload.User.ParticipantIdentity = string(p.params.Identity)
 			onDataPacket(p, &dp)
 		}
 	default:
