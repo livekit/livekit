@@ -785,9 +785,8 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 			TransportWideExtID: uint8(d.transportWideExtID),
 			WriteStream:        d.writeStream,
 			Metadata: sendPacketMetadata{
-				isPadding:       true,
-				disableCounter:  true,
-				disableRTPStats: paddingOnMute,
+				isPadding:      true,
+				disableCounter: true,
 			},
 			OnSent: d.packetSent,
 		})
@@ -1295,10 +1294,8 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 					AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 					TransportWideExtID: uint8(d.transportWideExtID),
 					WriteStream:        d.writeStream,
-					Metadata: sendPacketMetadata{
-						isBlankFrame: true,
-					},
-					OnSent: d.packetSent,
+					Metadata:           sendPacketMetadata{},
+					OnSent:             d.packetSent,
 				})
 
 				// only the first frame will need frameEndNeeded to close out the
@@ -1792,11 +1789,8 @@ func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
 				AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 				TransportWideExtID: uint8(d.transportWideExtID),
 				WriteStream:        d.writeStream,
-				Metadata: sendPacketMetadata{
-					isBlankFrame:    true,
-					disableRTPStats: true,
-				},
-				OnSent: d.packetSent,
+				Metadata:           sendPacketMetadata{},
+				OnSent:             d.packetSent,
 			})
 		}
 
@@ -1817,16 +1811,14 @@ func (d *DownTrack) HandleTrackFrameRateReport(_payloadType webrtc.PayloadType, 
 }
 
 type sendPacketMetadata struct {
-	layer           int32
-	arrival         time.Time
-	isKeyFrame      bool
-	isRTX           bool
-	isPadding       bool
-	isBlankFrame    bool
-	disableCounter  bool
-	disableRTPStats bool
-	tp              *TranslationParams
-	pool            *[]byte
+	layer          int32
+	arrival        time.Time
+	isKeyFrame     bool
+	isRTX          bool
+	isPadding      bool
+	disableCounter bool
+	tp             *TranslationParams
+	pool           *[]byte
 }
 
 func (d *DownTrack) packetSent(md interface{}, hdr *rtp.Header, payloadSize int, sendTime time.Time, sendError error) {
@@ -1844,10 +1836,9 @@ func (d *DownTrack) packetSent(md interface{}, hdr *rtp.Header, payloadSize int,
 		return
 	}
 
-	headerSize := hdr.MarshalSize()
 	if !spmd.disableCounter {
 		// STREAM-ALLOCATOR-TODO: remove this stream allocator bytes counter once stream allocator changes fully to pull bytes counter
-		size := uint32(headerSize + payloadSize)
+		size := uint32(hdr.MarshalSize() + payloadSize)
 		d.streamAllocatorBytesCounter.Add(size)
 		if spmd.isRTX {
 			d.bytesRetransmitted.Add(size)
@@ -1856,16 +1847,15 @@ func (d *DownTrack) packetSent(md interface{}, hdr *rtp.Header, payloadSize int,
 		}
 	}
 
-	if !spmd.disableRTPStats {
-		packetTime := spmd.arrival
-		if packetTime.IsZero() {
-			packetTime = sendTime
-		}
-		if spmd.isPadding {
-			d.rtpStats.Update(hdr, 0, payloadSize, packetTime)
-		} else {
-			d.rtpStats.Update(hdr, payloadSize, 0, packetTime)
-		}
+	// update RTPStats
+	packetTime := spmd.arrival
+	if packetTime.IsZero() {
+		packetTime = sendTime
+	}
+	if spmd.isPadding {
+		d.rtpStats.Update(hdr, 0, payloadSize, packetTime)
+	} else {
+		d.rtpStats.Update(hdr, payloadSize, 0, packetTime)
 	}
 
 	if spmd.isKeyFrame {
