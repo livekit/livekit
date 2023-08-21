@@ -377,6 +377,11 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 
 	first := false
 	if !r.initialized {
+		if payloadSize == 0 {
+			// do not start on a padding only packet
+			return
+		}
+
 		r.initialized = true
 
 		r.startTime = time.Now()
@@ -402,6 +407,14 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 				extStartSNOverridden: r.extStartSN,
 			}
 		}
+
+		r.logger.Debugw(
+			"rtp stream start",
+			"startTime", r.startTime.String(),
+			"firstTime", r.firstTime.String(),
+			"startSN", r.extStartSN,
+			"startTS", r.extStartTS,
+		)
 	}
 
 	if r.resyncOnNextPacket {
@@ -506,6 +519,12 @@ func (r *RTPStats) maybeAdjustStart(rtph *rtp.Header, pktSize uint64, hdrSize ui
 		return false
 	}
 
+	if payloadSize == 0 {
+		// do not start on a padding only packet
+		r.logger.Infow("adjusting start, skipping on padding only packet")
+		return true
+	}
+
 	r.packetsLost += uint32(uint16(r.extStartSN)-rtph.SequenceNumber) - 1
 	snBeforeAdjust := r.extStartSN
 	r.extStartSN = uint32(rtph.SequenceNumber)
@@ -529,7 +548,7 @@ func (r *RTPStats) maybeAdjustStart(rtph *rtp.Header, pktSize uint64, hdrSize ui
 		r.tsCycles++
 	}
 	r.logger.Infow(
-		"adjusting starting sequence number",
+		"adjusting start",
 		"snBefore", snBeforeAdjust,
 		"snAfter", r.extStartSN,
 		"snCyles", r.cycles,
@@ -817,8 +836,13 @@ func (r *RTPStats) maybeAdjustFirstPacketTime(ts uint32) {
 	if firstTime.Before(r.firstTime) {
 		r.logger.Debugw(
 			"adjusting first packet time",
+			"startTime", r.startTime.String(),
+			"nowTime", now.String(),
 			"before", r.firstTime.String(),
 			"after", firstTime.String(),
+			"adjustment", r.firstTime.Sub(firstTime),
+			"nowTS", ts,
+			"extStartTS", r.extStartTS,
 		)
 		if r.firstTime.Sub(firstTime) > firstPacketTimeAdjustThreshold {
 			r.logger.Infow("first packet time adjustment too big, ignoring",
