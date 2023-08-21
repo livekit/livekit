@@ -377,6 +377,11 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 
 	first := false
 	if !r.initialized {
+		if payloadSize == 0 {
+			// do not start on a padding only packet
+			return
+		}
+
 		r.initialized = true
 
 		r.startTime = time.Now()
@@ -512,6 +517,12 @@ func (r *RTPStats) maybeAdjustStart(rtph *rtp.Header, pktSize uint64, hdrSize ui
 
 	if (rtph.SequenceNumber - uint16(r.extStartSN)) < (1 << 15) {
 		return false
+	}
+
+	if payloadSize == 0 {
+		// do not start on a padding only packet
+		r.logger.Infow("adjusting start, skipping on padding only packet")
+		return true
 	}
 
 	r.packetsLost += uint32(uint16(r.extStartSN)-rtph.SequenceNumber) - 1
