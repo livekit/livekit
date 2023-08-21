@@ -1293,6 +1293,7 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 					AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 					TransportWideExtID: uint8(d.transportWideExtID),
 					WriteStream:        d.writeStream,
+					Metadata:           sendPacketMetadata{},
 					OnSent:             d.packetSent,
 				})
 
@@ -1787,6 +1788,7 @@ func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
 				AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 				TransportWideExtID: uint8(d.transportWideExtID),
 				WriteStream:        d.writeStream,
+				Metadata:           sendPacketMetadata{},
 				OnSent:             d.packetSent,
 			})
 		}
