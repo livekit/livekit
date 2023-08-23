@@ -40,7 +40,7 @@ func TestRangeMapUint32(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint32(2), value)
 
-	// add a could of ranges, as the value is same should just extend
+	// add a couple of ranges, as the value is same should just extend
 	err = r.AddRange(10, 20)
 	require.NoError(t, err)
 	err = r.AddRange(30, 40)
