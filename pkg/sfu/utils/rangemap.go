@@ -26,6 +26,7 @@ const (
 
 var (
 	errReversedOrder = errors.New("end is before start")
+	errKeyNotFound   = errors.New("key not found")
 )
 
 type rangeType interface {
@@ -71,6 +72,9 @@ func (r *RangeMap[RT, VT]) AddRange(startInclusive RT, endExclusive RT) error {
 	// check if last range can be extended
 	if len(r.ranges) != 0 {
 		lr := &r.ranges[len(r.ranges)-1]
+		if startInclusive <= lr.end {
+			return errReversedOrder
+		}
 		if lr.value == r.runningValue {
 			lr.end = endExclusive - 1
 			isNewRange = false
@@ -91,14 +95,18 @@ func (r *RangeMap[RT, VT]) AddRange(startInclusive RT, endExclusive RT) error {
 	return nil
 }
 
-func (r *RangeMap[RT, VT]) GetValue(key RT) VT {
+func (r *RangeMap[RT, VT]) GetValue(key RT) (VT, error) {
+	if len(r.ranges) != 0 && key < r.ranges[0].start {
+		return 0, errKeyNotFound
+	}
+
 	for _, rv := range r.ranges {
 		if key-rv.start < r.halfRange && rv.end-key < r.halfRange {
-			return rv.value
+			return rv.value, nil
 		}
 	}
 
-	return r.runningValue
+	return r.runningValue, nil
 }
 
 func (r *RangeMap[RT, VT]) prune() {

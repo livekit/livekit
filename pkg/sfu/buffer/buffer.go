@@ -425,9 +425,14 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 
 	// add to RTX buffer using sequence number after accounting for dropped padding only packets
 	beforeSN := rtpPacket.Header.SequenceNumber // RAJA-REMOVE
-	rtpPacket.Header.SequenceNumber = uint16(extSeqNumber - b.snRangeMap.GetValue(extSeqNumber))
+	snAdjustment, err := b.snRangeMap.GetValue(extSeqNumber)
+	if err != nil {
+		b.logger.Errorw("could not get sequence number adjustment", err)
+		return
+	}
+	rtpPacket.Header.SequenceNumber = uint16(extSeqNumber - snAdjustment)
 	b.logger.Debugw("sn adjustment", "change", fmt.Sprintf("%d - %d", beforeSN, rtpPacket.Header.SequenceNumber)) // RAJA-REMOVE
-	_, err := b.bucket.AddPacketWithSequenceNumber(pkt, rtpPacket.Header.SequenceNumber)
+	_, err = b.bucket.AddPacketWithSequenceNumber(pkt, rtpPacket.Header.SequenceNumber)
 	if err != nil {
 		if err != bucket.ErrRTXPacket {
 			b.logger.Warnw("could not add RTP packet to bucket", err)
