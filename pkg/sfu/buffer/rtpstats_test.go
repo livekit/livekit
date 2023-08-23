@@ -126,8 +126,8 @@ func TestRTPStats_Update(t *testing.T) {
 	packet = getPacket(sequenceNumber, timestamp, 1000)
 	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now())
 	require.True(t, flowState.HasLoss)
-	require.Equal(t, sequenceNumber-9, flowState.LossStartInclusive)
-	require.Equal(t, sequenceNumber, flowState.LossEndExclusive)
+	require.Equal(t, uint32(sequenceNumber-9), flowState.LossStartInclusive)
+	require.Equal(t, uint32(sequenceNumber), flowState.LossEndExclusive)
 	require.Equal(t, uint32(17), r.packetsLost)
 
 	// out-of-order should decrement number of lost packets
