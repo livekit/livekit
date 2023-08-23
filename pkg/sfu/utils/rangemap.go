@@ -96,8 +96,15 @@ func (r *RangeMap[RT, VT]) AddRange(startInclusive RT, endExclusive RT) error {
 }
 
 func (r *RangeMap[RT, VT]) GetValue(key RT) (VT, error) {
-	if len(r.ranges) != 0 && key < r.ranges[0].start {
-		return 0, errKeyNotFound
+	numRanges := len(r.ranges)
+	if numRanges != 0 {
+		if key > r.ranges[numRanges-1].end {
+			return r.runningValue, nil
+		}
+
+		if key < r.ranges[0].start {
+			return 0, errKeyNotFound
+		}
 	}
 
 	for _, rv := range r.ranges {
