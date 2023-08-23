@@ -54,7 +54,7 @@ type RangeMap[RT rangeType, VT valueType] struct {
 func NewRangeMap[RT rangeType, VT valueType](size int) *RangeMap[RT, VT] {
 	var t RT
 	return &RangeMap[RT, VT]{
-		halfRange: 1 << (unsafe.Sizeof(t) * 8) >> 1,
+		halfRange: 1 << ((unsafe.Sizeof(t) * 8) - 1),
 		size:      int(math.Max(float64(size), float64(minRanges))),
 	}
 }
