@@ -65,8 +65,12 @@ func (d driftResult) String() string {
 
 type RTPFlowState struct {
 	HasLoss            bool
-	LossStartInclusive uint16
-	LossEndExclusive   uint16
+	LossStartInclusive uint32
+	LossEndExclusive   uint32
+
+	IsOutOfOrder bool
+
+	ExtSeqNumber uint32
 }
 
 type IntervalStats struct {
@@ -449,14 +453,16 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 			}
 		}
 
+		flowState.IsOutOfOrder = true
+
+		cycles := r.cycles
+		if rtph.SequenceNumber > r.highestSN {
+			cycles--
+		}
+		flowState.ExtSeqNumber = getExtSN(rtph.SequenceNumber, cycles)
+
 	// in-order
 	default:
-		if diff > 1 {
-			flowState.HasLoss = true
-			flowState.LossStartInclusive = r.highestSN + 1
-			flowState.LossEndExclusive = rtph.SequenceNumber
-		}
-
 		// update gap histogram
 		r.updateGapHistogram(int(diff))
 
@@ -465,6 +471,16 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 		r.packetsLost += uint32(diff - 1)
 
 		r.setSnInfo(rtph.SequenceNumber, uint16(pktSize), uint16(hdrSize), uint16(payloadSize), rtph.Marker, false)
+
+		if diff > 1 {
+			flowState.HasLoss = true
+
+			cycles := r.cycles
+			if r.highestSN+1 < r.highestSN {
+				cycles++
+			}
+			flowState.LossStartInclusive = getExtSN(r.highestSN+1, cycles)
+		}
 
 		if rtph.SequenceNumber < r.highestSN && !first {
 			r.cycles++
@@ -481,6 +497,11 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 			// NOTE: this may not be the first packet with this time stamp if there is packet loss.
 			r.highestTime = packetTime
 		}
+
+		if flowState.HasLoss {
+			flowState.LossEndExclusive = getExtSN(rtph.SequenceNumber, r.cycles)
+		}
+		flowState.ExtSeqNumber = getExtSN(rtph.SequenceNumber, r.cycles)
 	}
 
 	if !isDuplicate {
@@ -1732,6 +1753,10 @@ func (r *RTPStats) getAndResetSnapshot(snapshotId uint32, override bool) (*Snaps
 }
 
 // ----------------------------------
+
+func getExtSN(sn uint16, cycles uint16) uint32 {
+	return (uint32(cycles) << 16) | uint32(sn)
+}
 
 func getExtTS(ts uint32, cycles uint32) uint64 {
 	return (uint64(cycles) << 32) | uint64(ts)
