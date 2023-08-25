@@ -155,12 +155,13 @@ type TranslationParams struct {
 // -------------------------------------------------------------------
 
 type ForwarderState struct {
-	Started      bool
-	PreStartTime time.Time
-	FirstTS      uint32
-	RefTSOffset  uint32
-	RTP          RTPMungerState
-	Codec        interface{}
+	Started               bool
+	ReferenceLayerSpatial int32
+	PreStartTime          time.Time
+	FirstTS               uint32
+	RefTSOffset           uint32
+	RTP                   RTPMungerState
+	Codec                 interface{}
 }
 
 func (f ForwarderState) String() string {
@@ -169,8 +170,9 @@ func (f ForwarderState) String() string {
 	case codecmunger.VP8State:
 		codecString = codecState.String()
 	}
-	return fmt.Sprintf("ForwarderState{started: %v, preStartTime: %s, firstTS: %d, refTSOffset: %d, rtp: %s, codec: %s}",
+	return fmt.Sprintf("ForwarderState{started: %v, referenceLayerSpatial: %d, preStartTime: %s, firstTS: %d, refTSOffset: %d, rtp: %s, codec: %s}",
 		f.Started,
+		f.ReferenceLayerSpatial,
 		f.PreStartTime.String(),
 		f.FirstTS,
 		f.RefTSOffset,
@@ -331,12 +333,13 @@ func (f *Forwarder) GetState() ForwarderState {
 	}
 
 	return ForwarderState{
-		Started:      f.started,
-		PreStartTime: f.preStartTime,
-		FirstTS:      f.firstTS,
-		RefTSOffset:  f.refTSOffset,
-		RTP:          f.rtpMunger.GetLast(),
-		Codec:        f.codecMunger.GetState(),
+		Started:               f.started,
+		ReferenceLayerSpatial: f.referenceLayerSpatial,
+		PreStartTime:          f.preStartTime,
+		FirstTS:               f.firstTS,
+		RefTSOffset:           f.refTSOffset,
+		RTP:                   f.rtpMunger.GetLast(),
+		Codec:                 f.codecMunger.GetState(),
 	}
 }
 
@@ -352,6 +355,7 @@ func (f *Forwarder) SeedState(state ForwarderState) {
 	f.codecMunger.SeedState(state.Codec)
 
 	f.started = true
+	f.referenceLayerSpatial = state.ReferenceLayerSpatial
 	f.preStartTime = state.PreStartTime
 	f.firstTS = state.FirstTS
 	f.refTSOffset = state.RefTSOffset
@@ -1450,11 +1454,6 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 			"lastTS", lastTS,
 			"diffSeconds", math.Abs(diffSeconds),
 		)
-	}
-
-	if f.referenceLayerSpatial == buffer.InvalidLayerSpatial {
-		// on a resume, reference layer may not be set, so only set when it is invalid
-		f.referenceLayerSpatial = layer
 	}
 
 	// Compute how much time passed between the previous forwarded packet
