@@ -110,6 +110,7 @@ type ParticipantParams struct {
 	SubscriptionLimitAudio       int32
 	SubscriptionLimitVideo       int32
 	PlayoutDelay                 *livekit.PlayoutDelay
+	FilterOutH264HighProfile     bool
 }
 
 type ParticipantImpl struct {
@@ -1096,6 +1097,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		AllowUDPUnstableFallback: p.params.AllowUDPUnstableFallback,
 		TURNSEnabled:             p.params.TURNSEnabled,
 		AllowPlayoutDelay:        p.params.PlayoutDelay.GetEnabled() && p.SupportSyncStreamID(),
+		FilterOutH264HighProfile: p.params.FilterOutH264HighProfile,
 		Logger:                   p.params.Logger.WithComponent(sutils.ComponentTransport),
 	})
 	if err != nil {

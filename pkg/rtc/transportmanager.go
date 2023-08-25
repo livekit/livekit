@@ -66,6 +66,7 @@ type TransportManagerParams struct {
 	AllowUDPUnstableFallback bool
 	TURNSEnabled             bool
 	AllowPlayoutDelay        bool
+	FilterOutH264HighProfile bool
 	Logger                   logger.Logger
 }
 
@@ -173,19 +174,20 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 	})
 
 	subscriber, err := NewPCTransport(TransportParams{
-		ParticipantID:           params.SID,
-		ParticipantIdentity:     params.Identity,
-		ProtocolVersion:         params.ProtocolVersion,
-		Config:                  params.Config,
-		DirectionConfig:         params.Config.Subscriber,
-		CongestionControlConfig: params.CongestionControlConfig,
-		Telemetry:               params.Telemetry,
-		EnabledCodecs:           subscribeCodecs,
-		Logger:                  LoggerWithPCTarget(params.Logger, livekit.SignalTarget_SUBSCRIBER),
-		ClientInfo:              params.ClientInfo,
-		IsOfferer:               true,
-		IsSendSide:              true,
-		AllowPlayoutDelay:       params.AllowPlayoutDelay,
+		ParticipantID:            params.SID,
+		ParticipantIdentity:      params.Identity,
+		ProtocolVersion:          params.ProtocolVersion,
+		Config:                   params.Config,
+		DirectionConfig:          params.Config.Subscriber,
+		CongestionControlConfig:  params.CongestionControlConfig,
+		Telemetry:                params.Telemetry,
+		EnabledCodecs:            subscribeCodecs,
+		Logger:                   LoggerWithPCTarget(params.Logger, livekit.SignalTarget_SUBSCRIBER),
+		ClientInfo:               params.ClientInfo,
+		IsOfferer:                true,
+		IsSendSide:               true,
+		AllowPlayoutDelay:        params.AllowPlayoutDelay,
+		FilterOutH264HighProfile: params.FilterOutH264HighProfile,
 	})
 	if err != nil {
 		return nil, err

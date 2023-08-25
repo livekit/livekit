@@ -17,6 +17,7 @@ package rtc
 import (
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -71,6 +72,8 @@ const (
 	maxICECandidates = 20
 
 	shortConnectionThreshold = 90 * time.Second
+
+	h264HighProfile = "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=640032"
 )
 
 var (
@@ -240,20 +243,21 @@ type PCTransport struct {
 }
 
 type TransportParams struct {
-	ParticipantID           livekit.ParticipantID
-	ParticipantIdentity     livekit.ParticipantIdentity
-	ProtocolVersion         types.ProtocolVersion
-	Config                  *WebRTCConfig
-	DirectionConfig         DirectionConfig
-	CongestionControlConfig config.CongestionControlConfig
-	Telemetry               telemetry.TelemetryService
-	EnabledCodecs           []*livekit.Codec
-	Logger                  logger.Logger
-	SimTracks               map[uint32]SimulcastTrackInfo
-	ClientInfo              ClientInfo
-	IsOfferer               bool
-	IsSendSide              bool
-	AllowPlayoutDelay       bool
+	ParticipantID            livekit.ParticipantID
+	ParticipantIdentity      livekit.ParticipantIdentity
+	ProtocolVersion          types.ProtocolVersion
+	Config                   *WebRTCConfig
+	DirectionConfig          DirectionConfig
+	CongestionControlConfig  config.CongestionControlConfig
+	Telemetry                telemetry.TelemetryService
+	EnabledCodecs            []*livekit.Codec
+	Logger                   logger.Logger
+	SimTracks                map[uint32]SimulcastTrackInfo
+	ClientInfo               ClientInfo
+	IsOfferer                bool
+	IsSendSide               bool
+	AllowPlayoutDelay        bool
+	FilterOutH264HighProfile bool
 }
 
 func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimator cc.BandwidthEstimator)) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
@@ -1637,6 +1641,81 @@ func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription, preferTCP b
 	return sd
 }
 
+func (t *PCTransport) filterCodecs(sd webrtc.SessionDescription) webrtc.SessionDescription {
+	if !t.params.FilterOutH264HighProfile {
+		return sd
+	}
+
+	parsed, err := sd.Unmarshal()
+	if err != nil {
+		t.params.Logger.Errorw("could not unmarshal SDP to filter codecs", err)
+		return sd
+	}
+
+	// find H.264 high profile RTP payload type
+	pt := 0
+find_pt:
+	for _, m := range parsed.MediaDescriptions {
+		for _, a := range m.Attributes {
+			if a.Key == "fmtp" && strings.HasSuffix(a.Value, h264HighProfile) {
+				parts := strings.Split(a.Value, " ")
+				pt, err = strconv.Atoi(parts[0])
+				if err == nil {
+					break find_pt
+				}
+			}
+		}
+	}
+	if pt == 0 {
+		// H.264 high profile not found
+		return sd
+	}
+
+	filterFormats := func(formats []string, ignorePT int) []string {
+		filteredFormats := make([]string, 0, len(formats))
+		for _, f := range formats {
+			pt, err := strconv.Atoi(f)
+			if err == nil && pt == ignorePT {
+				// drop matching payload types
+				continue
+			}
+
+			filteredFormats = append(filteredFormats, f)
+		}
+		return filteredFormats
+	}
+
+	filterAttributes := func(attrs []sdp.Attribute, ignorePT int) []sdp.Attribute {
+		filteredAttrs := make([]sdp.Attribute, 0, len(attrs))
+		for _, a := range attrs {
+			if a.Key == "rtpmap" || a.Key == "rtcp-fb" || a.Key == "fmtp" {
+				parts := strings.Split(a.Value, " ")
+				pt, err := strconv.Atoi(parts[0])
+				if err == nil && pt == ignorePT {
+					// drop matching payload types
+					continue
+				}
+			}
+
+			filteredAttrs = append(filteredAttrs, a)
+		}
+		return filteredAttrs
+	}
+
+	for _, m := range parsed.MediaDescriptions {
+		m.MediaName.Formats = filterFormats(m.MediaName.Formats, pt)
+		m.Attributes = filterAttributes(m.Attributes, pt)
+	}
+
+	bytes, err := parsed.Marshal()
+	if err != nil {
+		t.params.Logger.Errorw("could not marshal SDP to filter codecs", err)
+		return sd
+	}
+	sd.SDP = string(bytes)
+	return sd
+}
+
 func (t *PCTransport) clearSignalStateCheckTimer() {
 	if t.signalStateCheckTimer != nil {
 		t.signalStateCheckTimer.Stop()
@@ -1747,6 +1826,8 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	if preferTCP {
 		t.params.Logger.Debugw("local offer (filtered)", "sdp", offer.SDP)
 	}
+
+	offer = t.filterCodecs(offer)
 
 	// indicate waiting for remote
 	t.setNegotiationState(NegotiationStateRemote)
