@@ -243,6 +243,8 @@ type Participant interface {
 	GetPublishedTracks() []MediaTrack
 	RemovePublishedTrack(track MediaTrack, willBeResumed bool, shouldClose bool)
 
+	GetAudioLevel() (smoothedLevel float64, active bool)
+
 	// HasPermission checks permission of the subscriber by identity. Returns true if subscriber is allowed to subscribe
 	// to the track with trackID
 	HasPermission(trackID livekit.TrackID, subIdentity livekit.ParticipantIdentity) bool
@@ -348,7 +350,6 @@ type LocalParticipant interface {
 	GetSubscribedParticipants() []livekit.ParticipantID
 	IsSubscribedTo(sid livekit.ParticipantID) bool
 
-	GetAudioLevel() (smoothedLevel float64, active bool)
 	GetConnectionQuality() *livekit.ConnectionQualityInfo
 
 	// server sent messages
@@ -445,6 +446,8 @@ type MediaTrack interface {
 	UpdateVideoLayers(layers []*livekit.VideoLayer)
 	IsSimulcast() bool
 
+	GetAudioLevel() (level float64, active bool)
+
 	Close(willBeResumed bool)
 	IsOpen() bool
 
@@ -480,7 +483,6 @@ type LocalMediaTrack interface {
 	SignalCid() string
 	HasSdpCid(cid string) bool
 
-	GetAudioLevel() (level float64, active bool)
 	GetConnectionScoreAndQuality() (float32, livekit.ConnectionQuality)
 
 	SetRTT(rtt uint32)
