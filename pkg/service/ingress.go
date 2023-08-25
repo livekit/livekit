@@ -139,7 +139,10 @@ func (s *IngressService) CreateIngressWithUrl(ctx context.Context, urlStr string
 		urlStr = urlObj.String()
 	}
 
-	sk := utils.NewGuid("")
+	var sk string
+	if req.InputType != livekit.IngressInput_URL_INPUT {
+		sk = utils.NewGuid("")
+	}
 
 	info := &livekit.IngressInfo{
 		IngressId:           utils.NewGuid(utils.IngressPrefix),

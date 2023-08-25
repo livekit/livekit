@@ -418,3 +418,19 @@ func (u *UpTrackManager) DebugInfo() map[string]interface{} {
 
 	return info
 }
+
+func (u *UpTrackManager) GetAudioLevel() (level float64, active bool) {
+	level = 0
+	for _, pt := range u.GetPublishedTracks() {
+		if pt.Source() == livekit.TrackSource_MICROPHONE {
+			tl, ta := pt.GetAudioLevel()
+			if ta {
+				active = true
+				if tl > level {
+					level = tl
+				}
+			}
+		}
+	}
+	return
+}
