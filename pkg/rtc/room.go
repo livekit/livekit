@@ -1330,7 +1330,8 @@ func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, dp 
 
 	utils.ParallelExec(destParticipants, dataForwardLoadBalanceThreshold, 1, func(op types.LocalParticipant) {
 		err := op.SendDataPacket(dp, dpData)
-		if err != nil && !errors.Is(err, io.ErrClosedPipe) && !errors.Is(err, psrpc.Canceled) {
+		if err != nil && !errors.Is(err, io.ErrClosedPipe) && !errors.Is(err, psrpc.Canceled) &&
+			errors.Is(err, psrpc.ErrStreamClosed) {
 			op.GetLogger().Infow("send data packet error", "error", err)
 		}
 	})
