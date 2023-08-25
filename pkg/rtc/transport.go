@@ -263,7 +263,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 		directionConfig.RTPHeaderExtension.Video = append(directionConfig.RTPHeaderExtension.Video, rtpextension.PlayoutDelayURI)
 	}
 
-	me, err := createMediaEngine(params.EnabledCodecs, directionConfig)
+	me, err := createMediaEngine(params.EnabledCodecs, directionConfig, params.IsOfferer)
 	if err != nil {
 		return nil, nil, err
 	}
