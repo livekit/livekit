@@ -30,6 +30,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/livekit/livekit-server/pkg/sfu/audio"
+	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/mediatransportutil/pkg/bucket"
@@ -80,6 +81,8 @@ type Buffer struct {
 	closed        atomic.Bool
 	mime          string
 
+	snRangeMap *utils.RangeMap[uint32, uint32]
+
 	// supported feedbacks
 	latestTSForAudioLevelInitialized bool
 	latestTSForAudioLevel            uint32
@@ -124,6 +127,7 @@ func NewBuffer(ssrc uint32, vp, ap *sync.Pool) *Buffer {
 		mediaSSRC:   ssrc,
 		videoPool:   vp,
 		audioPool:   ap,
+		snRangeMap:  utils.NewRangeMap[uint32, uint32](100),
 		pliThrottle: int64(500 * time.Millisecond),
 		logger:      l.WithComponent(sutils.ComponentPub).WithComponent(sutils.ComponentSFU),
 	}
@@ -404,42 +408,40 @@ func (b *Buffer) SetRTT(rtt uint32) {
 }
 
 func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
-	pktBuf, err := b.bucket.AddPacket(pkt)
-	if err != nil {
-		//
-		// Even when erroring, do
-		//  1. state update
-		//  2. TWCC just in case remote side is retransmitting an old packet for probing
-		//
-		// But, do not forward those packets
-		//
-		var rtpPacket rtp.Packet
-		if uerr := rtpPacket.Unmarshal(pkt); uerr == nil {
-			b.updateStreamState(&rtpPacket, arrivalTime)
-			b.processHeaderExtensions(&rtpPacket, arrivalTime)
-		}
+	var rtpPacket rtp.Packet
+	if err := rtpPacket.Unmarshal(pkt); err != nil {
+		b.logger.Errorw("could not unmarshal RTP packet", err)
+		return
+	}
 
+	extSeqNumber, isOutOfOrder := b.updateStreamState(&rtpPacket, arrivalTime)
+	b.processHeaderExtensions(&rtpPacket, arrivalTime)
+	if !isOutOfOrder && len(rtpPacket.Payload) == 0 {
+		// drop padding only in-order packet
+		b.snRangeMap.IncValue(1)
+		return
+	}
+
+	// add to RTX buffer using sequence number after accounting for dropped padding only packets
+	snAdjustment, err := b.snRangeMap.GetValue(extSeqNumber)
+	if err != nil {
+		b.logger.Errorw("could not get sequence number adjustment", err)
+		return
+	}
+	rtpPacket.Header.SequenceNumber = uint16(extSeqNumber - snAdjustment)
+	_, err = b.bucket.AddPacketWithSequenceNumber(pkt, rtpPacket.Header.SequenceNumber)
+	if err != nil {
 		if err != bucket.ErrRTXPacket {
 			b.logger.Warnw("could not add RTP packet to bucket", err)
 		}
 		return
 	}
 
-	var p rtp.Packet
-	err = p.Unmarshal(pktBuf)
-	if err != nil {
-		b.logger.Warnw("error unmarshaling RTP packet", err)
-		return
-	}
-
-	b.updateStreamState(&p, arrivalTime)
-	b.processHeaderExtensions(&p, arrivalTime)
-
 	b.doNACKs()
 
 	b.doReports(arrivalTime)
 
-	ep := b.getExtPacket(&p, arrivalTime)
+	ep := b.getExtPacket(&rtpPacket, arrivalTime)
 	if ep == nil {
 		return
 	}
@@ -497,18 +499,21 @@ func (b *Buffer) doFpsCalc(ep *ExtPacket) {
 	}
 }
 
-func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime time.Time) {
+func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime time.Time) (uint32, bool) {
 	flowState := b.rtpStats.Update(&p.Header, len(p.Payload), int(p.PaddingSize), arrivalTime)
 
 	if b.nacker != nil {
 		b.nacker.Remove(p.SequenceNumber)
 
 		if flowState.HasLoss {
+			b.snRangeMap.AddRange(flowState.LossStartInclusive, flowState.LossEndExclusive)
 			for lost := flowState.LossStartInclusive; lost != flowState.LossEndExclusive; lost++ {
-				b.nacker.Push(lost)
+				b.nacker.Push(uint16(lost))
 			}
 		}
 	}
+
+	return flowState.ExtSeqNumber, flowState.IsOutOfOrder
 }
 
 func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime time.Time) {

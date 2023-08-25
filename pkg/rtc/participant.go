@@ -886,23 +886,6 @@ func (p *ParticipantImpl) OnICEConfigChanged(f func(participant types.LocalParti
 // signal connection methods
 //
 
-func (p *ParticipantImpl) GetAudioLevel() (level float64, active bool) {
-	level = 0
-	for _, pt := range p.GetPublishedTracks() {
-		mediaTrack := pt.(types.LocalMediaTrack)
-		if mediaTrack.Source() == livekit.TrackSource_MICROPHONE {
-			tl, ta := mediaTrack.GetAudioLevel()
-			if ta {
-				active = true
-				if tl > level {
-					level = tl
-				}
-			}
-		}
-	}
-	return
-}
-
 func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo {
 	numTracks := 0
 	minQuality := livekit.ConnectionQuality_EXCELLENT
@@ -1704,6 +1687,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	)
 	mid := p.TransportManager.GetPublisherMid(rtpReceiver)
 	if mid == "" {
+		p.pendingTracksLock.Unlock()
 		p.pubLogger.Warnw("could not get mid for track", nil, "trackID", track.ID())
 		return nil, false
 	}
