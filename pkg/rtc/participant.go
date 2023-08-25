@@ -1687,6 +1687,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	)
 	mid := p.TransportManager.GetPublisherMid(rtpReceiver)
 	if mid == "" {
+		p.pendingTracksLock.Unlock()
 		p.pubLogger.Warnw("could not get mid for track", nil, "trackID", track.ID())
 		return nil, false
 	}
