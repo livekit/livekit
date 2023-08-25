@@ -1536,7 +1536,7 @@ func (p *ParticipantImpl) onSubscribedMaxQualityChange(trackID livekit.TrackID, 
 		)
 	}
 
-	p.pubLogger.Infow(
+	p.pubLogger.Debugw(
 		"sending max subscribed quality",
 		"trackID", trackID,
 		"qualities", subscribedQualities,
