@@ -49,14 +49,14 @@ func (w *WrapAround[T, ET]) Seed(from *WrapAround[T, ET]) {
 	w.cycles = from.cycles
 }
 
-type wrapAroundUpdateResult[ET extendedNumber] struct {
+type WrapAroundUpdateResult[ET extendedNumber] struct {
 	IsRestart          bool
 	PreExtendedStart   ET // valid only if IsRestart = true
 	PreExtendedHighest ET
 	ExtendedVal        ET
 }
 
-func (w *WrapAround[T, ET]) Update(val T) (result wrapAroundUpdateResult[ET]) {
+func (w *WrapAround[T, ET]) Update(val T) (result WrapAroundUpdateResult[ET]) {
 	if !w.initialized {
 		result.PreExtendedHighest = ET(val) - 1
 		result.ExtendedVal = ET(val)
@@ -82,8 +82,15 @@ func (w *WrapAround[T, ET]) Update(val T) (result wrapAroundUpdateResult[ET]) {
 	}
 	w.highest = val
 
-	result.ExtendedVal = ET(w.cycles)*w.fullRange + ET(val)
+	result.ExtendedVal = w.getExtendedHighest(w.cycles, val)
 	return
+}
+
+func (w *WrapAround[T, ET]) RollbackRestart(ev ET) {
+	if w.isWrapBack(w.start, T(ev)) {
+		w.cycles--
+	}
+	w.start = T(ev)
 }
 
 func (w *WrapAround[T, ET]) ResetHighest(val T) {
@@ -103,14 +110,10 @@ func (w *WrapAround[T, ET]) GetHighest() T {
 }
 
 func (w *WrapAround[T, ET]) GetExtendedHighest() ET {
-	return ET(w.cycles)*w.fullRange + ET(w.highest)
+	return w.getExtendedHighest(w.cycles, w.highest)
 }
 
 func (w *WrapAround[T, ET]) maybeAdjustStart(val T) (isRestart bool, preExtendedStart ET, extendedVal ET) {
-	isWrapBack := func() bool {
-		return ET(w.highest) < (w.fullRange>>1) && ET(val) >= (w.fullRange>>1)
-	}
-
 	// re-adjust start if necessary. The conditions are
 	// 1. Not seen more than half the range yet
 	// 1. wrap back compared to start and not completed a half cycle, sequences like (10, 65530) in uint16 space
@@ -118,10 +121,10 @@ func (w *WrapAround[T, ET]) maybeAdjustStart(val T) (isRestart bool, preExtended
 	cycles := w.cycles
 	totalNum := w.GetExtendedHighest() - w.GetExtendedStart() + 1
 	if totalNum > (w.fullRange >> 1) {
-		if isWrapBack() {
+		if w.isWrapBack(val, w.highest) {
 			cycles--
 		}
-		extendedVal = ET(cycles)*w.fullRange + ET(val)
+		extendedVal = w.getExtendedHighest(cycles, val)
 		return
 	}
 
@@ -130,17 +133,24 @@ func (w *WrapAround[T, ET]) maybeAdjustStart(val T) (isRestart bool, preExtended
 		isRestart = true
 		preExtendedStart = w.GetExtendedStart()
 
-		if val > w.highest {
-			// wrap around
+		if w.isWrapBack(val, w.highest) {
 			w.cycles = 1
 			cycles = 0
 		}
 		w.start = val
 	} else {
-		if isWrapBack() {
+		if w.isWrapBack(val, w.highest) {
 			cycles--
 		}
 	}
-	extendedVal = ET(cycles)*w.fullRange + ET(val)
+	extendedVal = w.getExtendedHighest(cycles, val)
 	return
+}
+
+func (w *WrapAround[T, ET]) isWrapBack(earlier T, later T) bool {
+	return ET(later) < (w.fullRange>>1) && ET(earlier) >= (w.fullRange>>1)
+}
+
+func (w *WrapAround[T, ET]) getExtendedHighest(cycles int, val T) ET {
+	return ET(cycles)*w.fullRange + ET(val)
 }
