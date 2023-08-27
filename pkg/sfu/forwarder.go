@@ -1576,7 +1576,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 		nextTS = lastTS + 1
 	}
 
-	snOffset := uint16(1)
+	snOffset := uint32(1)
 	tsOffset := nextTS - lastTS
 	if !rtpMungerState.LastMarker {
 		// If last forwarded packet is not end of frame, synthesise a break in sequence number.
@@ -1600,15 +1600,15 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 		"referenceLayerSpatial", f.referenceLayerSpatial,
 		"expectedTS", expectedTS,
 		"nextTS", nextTS,
-		"tsOffset", tsOffset,
-		"nextSN", rtpMungerState.LastSN+snOffset,
+		"tsJump", nextTS-lastTS,
+		"nextSN", rtpMungerState.ExtLastSN+snOffset,
 		"snOffset", snOffset,
 	)
 
 	var eof *SnTs
 	if snOffset != 1 {
 		eof = &SnTs{
-			sequenceNumber: rtpMungerState.LastSN + 1,
+			sequenceNumber: uint16(rtpMungerState.ExtLastSN + 1),
 			timestamp:      rtpMungerState.LastTS,
 		}
 	}
@@ -1819,11 +1819,11 @@ func (f *Forwarder) GetPadding(frameEndNeeded bool) ([]byte, error) {
 	return f.codecMunger.UpdateAndGetPadding(!frameEndNeeded)
 }
 
-func (f *Forwarder) GetRTPMungerParams() RTPMungerParams {
+func (f *Forwarder) RTPMungerDebugInfo() map[string]interface{} {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
-	return f.rtpMunger.GetParams()
+	return f.rtpMunger.DebugInfo()
 }
 
 // -----------------------------------------------------------------------------

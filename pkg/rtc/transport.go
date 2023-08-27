@@ -263,7 +263,10 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 		directionConfig.RTPHeaderExtension.Video = append(directionConfig.RTPHeaderExtension.Video, rtpextension.PlayoutDelayURI)
 	}
 
-	me, err := createMediaEngine(params.EnabledCodecs, directionConfig)
+	// Some of the browser clients do not handle H.264 High Profile in signalling properly.
+	// They still decode if the actual stream is H.264 High Profile, but do not handle it well in signalling.
+	// So, disable H.264 High Profile for SUBSCRIBER peer connection to ensure it is not offered.
+	me, err := createMediaEngine(params.EnabledCodecs, directionConfig, params.IsOfferer)
 	if err != nil {
 		return nil, nil, err
 	}
