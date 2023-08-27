@@ -32,7 +32,7 @@ type WrapAround[T number, ET extendedNumber] struct {
 	initialized bool
 	start       T
 	highest     T
-	cycles      int
+	cycles      ET
 }
 
 func NewWrapAround[T number, ET extendedNumber]() *WrapAround[T, ET] {
@@ -78,7 +78,7 @@ func (w *WrapAround[T, ET]) Update(val T) (result WrapAroundUpdateResult[ET]) {
 
 	// in-order
 	if val < w.highest {
-		w.cycles++
+		w.cycles += w.fullRange
 	}
 	w.highest = val
 
@@ -88,13 +88,14 @@ func (w *WrapAround[T, ET]) Update(val T) (result WrapAroundUpdateResult[ET]) {
 
 func (w *WrapAround[T, ET]) RollbackRestart(ev ET) {
 	if w.isWrapBack(w.start, T(ev)) {
-		w.cycles--
+		w.cycles -= w.fullRange
 	}
 	w.start = T(ev)
 }
 
-func (w *WrapAround[T, ET]) ResetHighest(val T) {
-	w.highest = val
+func (w *WrapAround[T, ET]) ResetHighest(ev ET) {
+	w.highest = T(ev)
+	w.cycles = ev & (w.fullRange - 1)
 }
 
 func (w *WrapAround[T, ET]) GetStart() T {
@@ -122,7 +123,7 @@ func (w *WrapAround[T, ET]) maybeAdjustStart(val T) (isRestart bool, preExtended
 	totalNum := w.GetExtendedHighest() - w.GetExtendedStart() + 1
 	if totalNum > (w.fullRange >> 1) {
 		if w.isWrapBack(val, w.highest) {
-			cycles--
+			cycles -= w.fullRange
 		}
 		extendedVal = w.getExtendedHighest(cycles, val)
 		return
@@ -134,13 +135,13 @@ func (w *WrapAround[T, ET]) maybeAdjustStart(val T) (isRestart bool, preExtended
 		preExtendedStart = w.GetExtendedStart()
 
 		if w.isWrapBack(val, w.highest) {
-			w.cycles = 1
+			w.cycles = w.fullRange
 			cycles = 0
 		}
 		w.start = val
 	} else {
 		if w.isWrapBack(val, w.highest) {
-			cycles--
+			cycles -= w.fullRange
 		}
 	}
 	extendedVal = w.getExtendedHighest(cycles, val)
@@ -151,6 +152,6 @@ func (w *WrapAround[T, ET]) isWrapBack(earlier T, later T) bool {
 	return ET(later) < (w.fullRange>>1) && ET(earlier) >= (w.fullRange>>1)
 }
 
-func (w *WrapAround[T, ET]) getExtendedHighest(cycles int, val T) ET {
-	return ET(cycles)*w.fullRange + ET(val)
+func (w *WrapAround[T, ET]) getExtendedHighest(cycles ET, val T) ET {
+	return cycles + ET(val)
 }
