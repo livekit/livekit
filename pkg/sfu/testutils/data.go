@@ -30,6 +30,7 @@ type TestExtPacketParams struct {
 	IsKeyFrame     bool
 	PayloadType    uint8
 	SequenceNumber uint16
+	SNCycles       int
 	Timestamp      uint32
 	SSRC           uint32
 	PayloadSize    int
@@ -61,11 +62,12 @@ func GetTestExtPacket(params *TestExtPacketParams) (*buffer.ExtPacket, error) {
 	}
 
 	ep := &buffer.ExtPacket{
-		VideoLayer: params.VideoLayer,
-		Arrival:    params.ArrivalTime,
-		Packet:     &packet,
-		KeyFrame:   params.IsKeyFrame,
-		RawPacket:  raw,
+		VideoLayer:        params.VideoLayer,
+		ExtSequenceNumber: uint32(params.SNCycles<<16) + uint32(params.SequenceNumber),
+		Arrival:           params.ArrivalTime,
+		Packet:            &packet,
+		KeyFrame:          params.IsKeyFrame,
+		RawPacket:         raw,
 	}
 
 	return ep, nil

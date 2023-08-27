@@ -85,6 +85,7 @@ var (
 	ErrOutOfOrderSequenceNumberCacheMiss = errors.New("out-of-order sequence number not found in cache")
 	ErrPaddingOnlyPacket                 = errors.New("padding only packet that need not be forwarded")
 	ErrDuplicatePacket                   = errors.New("duplicate packet")
+	ErrSequenceNumberOffsetNotFound      = errors.New("sequence number offset not found")
 	ErrPaddingNotOnFrameBoundary         = errors.New("padding cannot send on non-frame boundary")
 	ErrDownTrackAlreadyBound             = errors.New("already bound")
 )
@@ -1635,16 +1636,10 @@ func (d *DownTrack) translateVP8PacketTo(pkt *rtp.Packet, incomingVP8 *buffer.VP
 }
 
 func (d *DownTrack) DebugInfo() map[string]interface{} {
-	rtpMungerParams := d.forwarder.GetRTPMungerParams()
 	stats := map[string]interface{}{
-		"HighestIncomingSN": rtpMungerParams.highestIncomingSN,
-		"LastSN":            rtpMungerParams.lastSN,
-		"SNOffset":          rtpMungerParams.snOffset,
-		"LastTS":            rtpMungerParams.lastTS,
-		"TSOffset":          rtpMungerParams.tsOffset,
-		"LastMarker":        rtpMungerParams.lastMarker,
-		"LastPli":           d.rtpStats.LastPli(),
+		"LastPli": d.rtpStats.LastPli(),
 	}
+	stats["RTPMunger"] = d.forwarder.RTPMungerDebugInfo()
 
 	senderReport := d.CreateSenderReport()
 	if senderReport != nil {

@@ -54,6 +54,7 @@ type pendingPacket struct {
 type ExtPacket struct {
 	VideoLayer
 	Arrival              time.Time
+	ExtSequenceNumber    uint32
 	Packet               *rtp.Packet
 	Payload              interface{}
 	KeyFrame             bool
@@ -83,7 +84,6 @@ type Buffer struct {
 
 	snRangeMap *utils.RangeMap[uint32, uint32]
 
-	// supported feedbacks
 	latestTSForAudioLevelInitialized bool
 	latestTSForAudioLevel            uint32
 
@@ -441,7 +441,7 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 
 	b.doReports(arrivalTime)
 
-	ep := b.getExtPacket(&rtpPacket, arrivalTime)
+	ep := b.getExtPacket(&rtpPacket, extSeqNumber, arrivalTime)
 	if ep == nil {
 		return
 	}
@@ -555,10 +555,11 @@ func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime time.Time) {
 	}
 }
 
-func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime time.Time) *ExtPacket {
+func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, extSeqNumber uint32, arrivalTime time.Time) *ExtPacket {
 	ep := &ExtPacket{
-		Packet:  rtpPacket,
-		Arrival: arrivalTime,
+		Arrival:           arrivalTime,
+		ExtSequenceNumber: extSeqNumber,
+		Packet:            rtpPacket,
 		VideoLayer: VideoLayer{
 			Spatial:  InvalidLayerSpatial,
 			Temporal: InvalidLayerTemporal,
