@@ -32,7 +32,6 @@ type TestExtPacketParams struct {
 	SequenceNumber uint16
 	SNCycles       int
 	Timestamp      uint32
-	TSCycles       int
 	SSRC           uint32
 	PayloadSize    int
 	PaddingSize    byte
