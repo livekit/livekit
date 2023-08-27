@@ -59,12 +59,21 @@ func NewRangeMap[RT rangeType, VT valueType](size int) *RangeMap[RT, VT] {
 	}
 }
 
+func (r *RangeMap[RT, VT]) ClearAndResetValue(val VT) {
+	r.ranges = r.ranges[:0]
+	r.runningValue = val
+}
+
 func (r *RangeMap[RT, VT]) IncValue(inc VT) {
 	r.runningValue += inc
 }
 
+func (r *RangeMap[RT, VT]) DecValue(dec VT) {
+	r.runningValue -= dec
+}
+
 func (r *RangeMap[RT, VT]) AddRange(startInclusive RT, endExclusive RT) error {
-	if endExclusive-startInclusive > r.halfRange {
+	if endExclusive == startInclusive || endExclusive-startInclusive > r.halfRange {
 		return errReversedOrder
 	}
 

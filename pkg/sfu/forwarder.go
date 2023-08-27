@@ -1792,11 +1792,11 @@ func (f *Forwarder) GetPadding(frameEndNeeded bool) ([]byte, error) {
 	return f.codecMunger.UpdateAndGetPadding(!frameEndNeeded)
 }
 
-func (f *Forwarder) GetRTPMungerParams() RTPMungerParams {
+func (f *Forwarder) RTPMungerDebugInfo() map[string]interface{} {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
-	return f.rtpMunger.GetParams()
+	return f.rtpMunger.DebugInfo()
 }
 
 // -----------------------------------------------------------------------------

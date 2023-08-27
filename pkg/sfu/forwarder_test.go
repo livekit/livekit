@@ -1196,9 +1196,13 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expectedTP, *actualTP)
 
+	// add a missing sequence number to the cache
+	f.rtpMunger.snRangeMap.IncValue(10)
+	f.rtpMunger.snRangeMap.AddRange(23332, 23333)
+
 	// out-of-order packet not in cache should be dropped
 	params = &testutils.TestExtPacketParams{
-		SequenceNumber: 23332,
+		SequenceNumber: 23331,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
 		PayloadSize:    20,
@@ -1239,7 +1243,7 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingContiguous,
-			sequenceNumber: 23334,
+			sequenceNumber: 23324,
 			timestamp:      0xabcdef,
 		},
 	}
@@ -1247,7 +1251,7 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expectedTP, *actualTP)
 
-	// padding only packet after a gap should be forwarded
+	// padding only packet after a gap should not be dropped
 	params = &testutils.TestExtPacketParams{
 		SequenceNumber: 23337,
 		Timestamp:      0xabcdef,
@@ -1258,7 +1262,7 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingGap,
-			sequenceNumber: 23336,
+			sequenceNumber: 23326,
 			timestamp:      0xabcdef,
 		},
 	}
@@ -1278,7 +1282,7 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingOutOfOrder,
-			sequenceNumber: 23335,
+			sequenceNumber: 23325,
 			timestamp:      0xabcdef,
 		},
 	}
@@ -1298,7 +1302,7 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingContiguous,
-			sequenceNumber: 23337,
+			sequenceNumber: 23327,
 			timestamp:      0xabcdf0,
 		},
 	}
@@ -1716,7 +1720,7 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	require.Equal(t, f.lastSSRC, params.SSRC)
 }
 
-func TestForwardGetSnTsForPadding(t *testing.T) {
+func TestForwarderGetSnTsForPadding(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
 	params := &testutils.TestExtPacketParams{
@@ -1783,7 +1787,7 @@ func TestForwardGetSnTsForPadding(t *testing.T) {
 	require.Equal(t, sntsExpected, snts)
 }
 
-func TestForwardGetSnTsForBlankFrames(t *testing.T) {
+func TestForwarderGetSnTsForBlankFrames(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
 	params := &testutils.TestExtPacketParams{
@@ -1860,7 +1864,7 @@ func TestForwardGetSnTsForBlankFrames(t *testing.T) {
 	require.Equal(t, sntsExpected, snts)
 }
 
-func TestForwardGetPaddingVP8(t *testing.T) {
+func TestForwarderGetPaddingVP8(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
 	params := &testutils.TestExtPacketParams{
