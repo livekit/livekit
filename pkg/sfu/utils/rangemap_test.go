@@ -56,6 +56,7 @@ func TestRangeMapUint32(t *testing.T) {
 	value, err = r.GetValue(22)
 	require.NoError(t, err)
 	require.Equal(t, uint32(2), value)
+
 	// outside range should return 3
 	value, err = r.GetValue(662)
 	require.NoError(t, err)
@@ -119,4 +120,10 @@ func TestRangeMapUint32(t *testing.T) {
 	value, err = r.GetValue(3000)
 	require.NoError(t, err)
 	require.Equal(t, uint32(13), value)
+
+	// decrement running value
+	r.DecValue(23)
+	value, err = r.GetValue(3000)
+	require.NoError(t, err)
+	require.Equal(t, uint32((1<<32)-10), value)
 }

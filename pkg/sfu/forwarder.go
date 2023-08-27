@@ -1585,7 +1585,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		"expectedTS", expectedTS,
 		"nextTS", nextTS,
 		"tsJump", nextTS-lastTS,
-		"nextSN", rtpMungerState.LastSN+1,
+		"nextSN", rtpMungerState.ExtLastSN+1,
 	)
 
 	f.rtpMunger.UpdateSnTsOffsets(extPkt, 1, nextTS-lastTS)
@@ -1792,11 +1792,11 @@ func (f *Forwarder) GetPadding(frameEndNeeded bool) ([]byte, error) {
 	return f.codecMunger.UpdateAndGetPadding(!frameEndNeeded)
 }
 
-func (f *Forwarder) GetRTPMungerParams() RTPMungerParams {
+func (f *Forwarder) RTPMungerDebugInfo() map[string]interface{} {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
-	return f.rtpMunger.GetParams()
+	return f.rtpMunger.DebugInfo()
 }
 
 // -----------------------------------------------------------------------------
