@@ -1699,7 +1699,7 @@ func (d *DownTrack) getDeltaStatsOverridden() map[uint32]*buffer.StreamStatsWith
 }
 
 func (d *DownTrack) GetNackStats() (totalPackets uint32, totalRepeatedNACKs uint32) {
-	totalPackets = d.rtpStats.GetTotalPacketsPrimary()
+	totalPackets = uint32(d.rtpStats.GetTotalPacketsPrimary())
 	totalRepeatedNACKs = d.totalRepeatedNACKs.Load()
 	return
 }
