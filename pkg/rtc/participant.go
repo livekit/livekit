@@ -66,6 +66,7 @@ type ParticipantParams struct {
 	Identity                     livekit.ParticipantIdentity
 	Name                         livekit.ParticipantName
 	SID                          livekit.ParticipantID
+	ApiKey                       livekit.ApiKey
 	Config                       *WebRTCConfig
 	Sink                         routing.MessageSink
 	AudioConfig                  config.AudioConfig
@@ -222,6 +223,10 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p.setupSubscriptionManager()
 
 	return p, nil
+}
+
+func (p *ParticipantImpl) GetApiKey() livekit.ApiKey {
+	return p.params.ApiKey
 }
 
 func (p *ParticipantImpl) GetLogger() logger.Logger {

@@ -230,6 +230,7 @@ type LocalParticipant interface {
 	Participant
 
 	// getters
+	GetApiKey() livekit.ApiKey
 	GetLogger() logger.Logger
 	GetAdaptiveStream() bool
 	ProtocolVersion() ProtocolVersion

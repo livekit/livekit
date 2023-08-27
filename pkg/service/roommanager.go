@@ -60,6 +60,7 @@ type RoomManager struct {
 	clientConfManager clientconfiguration.ClientConfigurationManager
 	egressLauncher    rtc.EgressLauncher
 	versionGenerator  utils.TimedVersionGenerator
+	trafficManager    *TrafficManager
 
 	rooms               map[livekit.RoomKey]*rtc.Room
 	outRelayCollections map[livekit.RoomKey]*relay.Collection
@@ -76,6 +77,7 @@ func NewLocalRoomManager(
 	clientConfManager clientconfiguration.ClientConfigurationManager,
 	egressLauncher rtc.EgressLauncher,
 	versionGenerator utils.TimedVersionGenerator,
+	trafficManager *TrafficManager,
 ) (*RoomManager, error) {
 	rtcConf, err := rtc.NewWebRTCConfig(conf, currentNode.Ip)
 	if err != nil {
@@ -92,6 +94,7 @@ func NewLocalRoomManager(
 		clientConfManager: clientConfManager,
 		egressLauncher:    egressLauncher,
 		versionGenerator:  versionGenerator,
+		trafficManager:    trafficManager,
 
 		rooms:               make(map[livekit.RoomKey]*rtc.Room),
 		outRelayCollections: make(map[livekit.RoomKey]*relay.Collection),
@@ -178,6 +181,45 @@ func (r *RoomManager) CloseIdleRooms() {
 
 	for _, room := range rooms {
 		room.CloseIfEmpty()
+	}
+}
+
+func (r *RoomManager) SaveClientsBandwidth() {
+	r.lock.RLock()
+	rooms := make([]*rtc.Room, 0, len(r.rooms))
+	for _, rm := range r.rooms {
+		rooms = append(rooms, rm)
+	}
+	r.lock.RUnlock()
+
+	bandwidthByApiKey := make(map[livekit.ApiKey]int)
+
+	for _, room := range rooms {
+		localParticipants := room.GetLocalParticipants()
+		for _, p := range localParticipants {
+			for _, t := range p.GetPublishedTracks() {
+				bandwidth := 0
+				switch t.Kind() {
+				case livekit.TrackType_AUDIO:
+					bandwidth = 100
+				case livekit.TrackType_VIDEO:
+					bandwidth = 1000
+				}
+				oldBandwidth, _ := bandwidthByApiKey[p.GetApiKey()]
+				bandwidthByApiKey[p.GetApiKey()] = oldBandwidth + bandwidth
+			}
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+
+	for apiKey, bandwidth := range bandwidthByApiKey {
+		err := r.trafficManager.SetValue(ctx, string(apiKey), bandwidth)
+		if err != nil {
+			logger.Errorw("could not set bandwidth", err)
+			break
+		}
 	}
 }
 
@@ -317,6 +359,7 @@ func (r *RoomManager) StartSession(
 		Identity:                pi.Identity,
 		Name:                    pi.Name,
 		SID:                     sid,
+		ApiKey:                  pi.ApiKey,
 		Config:                  &rtcConf,
 		Sink:                    responseSink,
 		AudioConfig:             r.config.Audio,

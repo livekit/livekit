@@ -8,10 +8,11 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	p2p_database "github.com/dTelecom/p2p-realtime-database"
-	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+
+	"github.com/livekit/livekit-server/pkg/config"
 )
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
@@ -45,6 +46,7 @@ type ParticipantInit struct {
 	Region          string
 	AdaptiveStream  bool
 	ID              livekit.ParticipantID
+	ApiKey          livekit.ApiKey
 }
 
 type NewParticipantCallback func(
