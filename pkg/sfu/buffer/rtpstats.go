@@ -1491,7 +1491,7 @@ func (r *RTPStats) getPacketsLost() uint64 {
 }
 
 func (r *RTPStats) getSnInfoOutOfOrderPtr(esn uint64, ehsn uint64) int {
-	if int64(esn-ehsn) >= 0 {
+	if int64(esn-ehsn) > 0 {
 		return -1 // in-order, not expected, maybe too new
 	}
 
