@@ -54,7 +54,7 @@ type pendingPacket struct {
 type ExtPacket struct {
 	VideoLayer
 	Arrival              time.Time
-	ExtSequenceNumber    uint32
+	ExtSequenceNumber    uint64
 	ExtTimestamp         uint64
 	Packet               *rtp.Packet
 	Payload              interface{}
@@ -83,7 +83,7 @@ type Buffer struct {
 	closed        atomic.Bool
 	mime          string
 
-	snRangeMap *utils.RangeMap[uint32, uint32]
+	snRangeMap *utils.RangeMap[uint64, uint64]
 
 	latestTSForAudioLevelInitialized bool
 	latestTSForAudioLevel            uint32
@@ -128,7 +128,7 @@ func NewBuffer(ssrc uint32, vp, ap *sync.Pool) *Buffer {
 		mediaSSRC:   ssrc,
 		videoPool:   vp,
 		audioPool:   ap,
-		snRangeMap:  utils.NewRangeMap[uint32, uint32](100),
+		snRangeMap:  utils.NewRangeMap[uint64, uint64](100),
 		pliThrottle: int64(500 * time.Millisecond),
 		logger:      l.WithComponent(sutils.ComponentPub).WithComponent(sutils.ComponentSFU),
 	}

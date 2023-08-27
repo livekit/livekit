@@ -66,24 +66,24 @@ func (d driftResult) String() string {
 
 type RTPFlowState struct {
 	HasLoss            bool
-	LossStartInclusive uint32
-	LossEndExclusive   uint32
+	LossStartInclusive uint64
+	LossEndExclusive   uint64
 
 	IsOutOfOrder bool
 
-	ExtSequenceNumber uint32
+	ExtSequenceNumber uint64
 	ExtTimestamp      uint64
 }
 
 type IntervalStats struct {
-	packets            uint32
+	packets            uint64
 	bytes              uint64
 	headerBytes        uint64
-	packetsPadding     uint32
+	packetsPadding     uint64
 	bytesPadding       uint64
 	headerBytesPadding uint64
-	packetsLost        uint32
-	packetsOutOfOrder  uint32
+	packetsLost        uint64
+	packetsOutOfOrder  uint64
 	frames             uint32
 }
 
@@ -112,12 +112,12 @@ type RTPDeltaInfo struct {
 
 type Snapshot struct {
 	startTime             time.Time
-	extStartSN            uint32
-	extStartSNOverridden  uint32
-	packetsDuplicate      uint32
+	extStartSN            uint64
+	extStartSNOverridden  uint64
+	packetsDuplicate      uint64
 	bytesDuplicate        uint64
 	headerBytesDuplicate  uint64
-	packetsLostOverridden uint32
+	packetsLostOverridden uint64
 	nacks                 uint32
 	plis                  uint32
 	firs                  uint32
@@ -158,9 +158,9 @@ type RTPStats struct {
 	startTime time.Time
 	endTime   time.Time
 
-	sequenceNumber *utils.WrapAround[uint16, uint32]
+	sequenceNumber *utils.WrapAround[uint16, uint64]
 
-	extHighestSNOverridden uint32
+	extHighestSNOverridden uint64
 	lastRRTime             time.Time
 	lastRR                 rtcp.ReceptionReport
 
@@ -178,13 +178,13 @@ type RTPStats struct {
 	headerBytesDuplicate uint64
 	bytesPadding         uint64
 	headerBytesPadding   uint64
-	packetsDuplicate     uint32
-	packetsPadding       uint32
+	packetsDuplicate     uint64
+	packetsPadding       uint64
 
-	packetsOutOfOrder uint32
+	packetsOutOfOrder uint64
 
-	packetsLost           uint32
-	packetsLostOverridden uint32
+	packetsLost           uint64
+	packetsLostOverridden uint64
 
 	frames uint32
 
@@ -229,7 +229,7 @@ func NewRTPStats(params RTPStatsParams) *RTPStats {
 	return &RTPStats{
 		params:         params,
 		logger:         params.Logger,
-		sequenceNumber: utils.NewWrapAround[uint16, uint32](),
+		sequenceNumber: utils.NewWrapAround[uint16, uint64](),
 		timestamp:      utils.NewWrapAround[uint32, uint64](),
 		nextSnapshotId: FirstSnapshotId,
 		snapshots:      make(map[uint32]*Snapshot),
@@ -374,7 +374,7 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 		return
 	}
 
-	var resSN utils.WrapAroundUpdateResult[uint32]
+	var resSN utils.WrapAroundUpdateResult[uint64]
 	var resTS utils.WrapAroundUpdateResult[uint64]
 	if !r.initialized {
 		if payloadSize == 0 {
@@ -417,8 +417,8 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 	hdrSize := uint64(rtph.MarshalSize())
 	pktSize := hdrSize + uint64(payloadSize+paddingSize)
 	isDuplicate := false
-	gapSN := resSN.ExtendedVal - resSN.PreExtendedHighest
-	if gapSN == 0 || gapSN > (1<<31) { // duplicate OR out-of-order
+	gapSN := int64(resSN.ExtendedVal - resSN.PreExtendedHighest)
+	if gapSN <= 0 { // duplicate OR out-of-order
 		if payloadSize == 0 {
 			// do not start on a padding only packet
 			if resTS.IsRestart {
@@ -480,7 +480,7 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 
 		// update missing sequence numbers
 		r.clearSnInfos(resSN.PreExtendedHighest+1, resSN.ExtendedVal)
-		r.packetsLost += gapSN - 1
+		r.packetsLost += uint64(gapSN - 1)
 
 		r.setSnInfo(resSN.ExtendedVal, resSN.PreExtendedHighest, uint16(pktSize), uint16(hdrSize), uint16(payloadSize), rtph.Marker, false)
 
@@ -518,7 +518,7 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 	return
 }
 
-func (r *RTPStats) Resync(esn uint32, ets uint64, at time.Time) {
+func (r *RTPStats) Resync(esn uint64, ets uint64, at time.Time) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
@@ -530,18 +530,18 @@ func (r *RTPStats) Resync(esn uint32, ets uint64, at time.Time) {
 	r.highestTime = at
 }
 
-func (r *RTPStats) getPacketsExpected() uint32 {
+func (r *RTPStats) getPacketsExpected() uint64 {
 	return r.sequenceNumber.GetExtendedHighest() - r.sequenceNumber.GetExtendedStart() + 1
 }
 
-func (r *RTPStats) GetTotalPacketsPrimary() uint32 {
+func (r *RTPStats) GetTotalPacketsPrimary() uint64 {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
 	return r.getTotalPacketsPrimary()
 }
 
-func (r *RTPStats) getTotalPacketsPrimary() uint32 {
+func (r *RTPStats) getTotalPacketsPrimary() uint64 {
 	packetsExpected := r.getPacketsExpected()
 	if r.packetsLost > packetsExpected {
 		// should not happen
@@ -560,7 +560,19 @@ func (r *RTPStats) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt uint32
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	if !r.initialized || !r.endTime.IsZero() || !r.params.IsReceiverReportDriven || rr.LastSequenceNumber < r.sequenceNumber.GetExtendedHighest() {
+	if !r.initialized || !r.endTime.IsZero() || !r.params.IsReceiverReportDriven || uint64(rr.LastSequenceNumber) < r.sequenceNumber.GetExtendedHighest() {
+		// it is possible that the `LastSequenceNumber` in the receiver report is before the starting
+		// sequence number when dummy packets are used to trigger Pion's OnTrack path.
+		return
+	}
+
+	extHighestSNOverridden := r.extHighestSNOverridden&0xFFFF_FFFF_0000_0000 + uint64(rr.LastSequenceNumber)
+	if !r.lastRRTime.IsZero() {
+		if (rr.LastSequenceNumber-r.lastRR.LastSequenceNumber) < (1<<31) && rr.LastSequenceNumber < r.lastRR.LastSequenceNumber {
+			extHighestSNOverridden += (1 << 32)
+		}
+	}
+	if extHighestSNOverridden < r.sequenceNumber.GetExtendedHighest() {
 		// it is possible that the `LastSequenceNumber` in the receiver report is before the starting
 		// sequence number when dummy packets are used to trigger Pion's OnTrack path.
 		return
@@ -578,9 +590,14 @@ func (r *RTPStats) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt uint32
 		}
 	}
 
-	if r.lastRRTime.IsZero() || r.extHighestSNOverridden <= rr.LastSequenceNumber {
-		r.extHighestSNOverridden = rr.LastSequenceNumber
-		r.packetsLostOverridden = rr.TotalLost
+	if r.lastRRTime.IsZero() || r.extHighestSNOverridden <= extHighestSNOverridden {
+		r.extHighestSNOverridden = extHighestSNOverridden
+
+		packetsLostOverridden := r.packetsLostOverridden&0xFFFF_FFFF_0000_0000 + uint64(rr.TotalLost)
+		if (rr.TotalLost-r.lastRR.TotalLost) < (1<<31) && rr.TotalLost < r.lastRR.TotalLost {
+			packetsLostOverridden += (1 << 32)
+		}
+		r.packetsLostOverridden = packetsLostOverridden
 
 		if isRttChanged {
 			r.rtt = rtt
@@ -856,7 +873,7 @@ func (r *RTPStats) SetRtcpSenderReportData(srData *RTCPSenderReportData) {
 
 	cycles := uint64(0)
 	if r.srNewest != nil {
-		cycles = r.srNewest.RTPTimestampExt & 0xFF_FF_FF_FF_00_00_00_00
+		cycles = r.srNewest.RTPTimestampExt & 0xFFFF_FFFF_0000_0000
 		if (srData.RTPTimestamp-r.srNewest.RTPTimestamp) < (1<<31) && srData.RTPTimestamp < r.srNewest.RTPTimestamp {
 			cycles += (1 << 32)
 		}
@@ -1070,7 +1087,7 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, calculatedClockRate uint32) 
 		SSRC:        ssrc,
 		NTPTime:     uint64(nowNTP),
 		RTPTime:     nowRTP,
-		PacketCount: r.getTotalPacketsPrimary() + r.packetsDuplicate + r.packetsPadding,
+		PacketCount: uint32(r.getTotalPacketsPrimary() + r.packetsDuplicate + r.packetsPadding),
 		OctetCount:  uint32(r.bytes + r.bytesDuplicate + r.bytesPadding),
 	}
 }
@@ -1121,8 +1138,8 @@ func (r *RTPStats) SnapshotRtcpReceptionReport(ssrc uint32, proxyFracLost uint8,
 	return &rtcp.ReceptionReport{
 		SSRC:               ssrc,
 		FractionLost:       fracLost,
-		TotalLost:          r.packetsLost,
-		LastSequenceNumber: now.extStartSN,
+		TotalLost:          uint32(r.packetsLost),
+		LastSequenceNumber: uint32(now.extStartSN),
 		Jitter:             uint32(r.jitter),
 		LastSenderReport:   lastSR,
 		Delay:              dlsr,
@@ -1163,16 +1180,16 @@ func (r *RTPStats) DeltaInfo(snapshotId uint32) *RTPDeltaInfo {
 	return &RTPDeltaInfo{
 		StartTime:            startTime,
 		Duration:             endTime.Sub(startTime),
-		Packets:              packetsExpected - intervalStats.packetsPadding,
+		Packets:              uint32(packetsExpected - intervalStats.packetsPadding),
 		Bytes:                intervalStats.bytes,
 		HeaderBytes:          intervalStats.headerBytes,
-		PacketsDuplicate:     now.packetsDuplicate - then.packetsDuplicate,
+		PacketsDuplicate:     uint32(now.packetsDuplicate - then.packetsDuplicate),
 		BytesDuplicate:       now.bytesDuplicate - then.bytesDuplicate,
 		HeaderBytesDuplicate: now.headerBytesDuplicate - then.headerBytesDuplicate,
-		PacketsPadding:       intervalStats.packetsPadding,
+		PacketsPadding:       uint32(intervalStats.packetsPadding),
 		BytesPadding:         intervalStats.bytesPadding,
 		HeaderBytesPadding:   intervalStats.headerBytesPadding,
-		PacketsLost:          intervalStats.packetsLost,
+		PacketsLost:          uint32(intervalStats.packetsLost),
 		Frames:               intervalStats.frames,
 		RttMax:               then.maxRtt,
 		JitterMax:            then.maxJitter / float64(r.params.ClockRate) * 1e6,
@@ -1245,18 +1262,18 @@ func (r *RTPStats) DeltaInfoOverridden(snapshotId uint32) *RTPDeltaInfo {
 	return &RTPDeltaInfo{
 		StartTime:            startTime,
 		Duration:             endTime.Sub(startTime),
-		Packets:              packetsExpected - intervalStats.packetsPadding,
+		Packets:              uint32(packetsExpected - intervalStats.packetsPadding),
 		Bytes:                intervalStats.bytes,
 		HeaderBytes:          intervalStats.headerBytes,
-		PacketsDuplicate:     now.packetsDuplicate - then.packetsDuplicate,
+		PacketsDuplicate:     uint32(now.packetsDuplicate - then.packetsDuplicate),
 		BytesDuplicate:       now.bytesDuplicate - then.bytesDuplicate,
 		HeaderBytesDuplicate: now.headerBytesDuplicate - then.headerBytesDuplicate,
-		PacketsPadding:       intervalStats.packetsPadding,
+		PacketsPadding:       uint32(intervalStats.packetsPadding),
 		BytesPadding:         intervalStats.bytesPadding,
 		HeaderBytesPadding:   intervalStats.headerBytesPadding,
-		PacketsLost:          packetsLost,
-		PacketsMissing:       intervalStats.packetsLost,
-		PacketsOutOfOrder:    intervalStats.packetsOutOfOrder,
+		PacketsLost:          uint32(packetsLost),
+		PacketsMissing:       uint32(intervalStats.packetsLost),
+		PacketsOutOfOrder:    uint32(intervalStats.packetsOutOfOrder),
 		Frames:               intervalStats.frames,
 		RttMax:               then.maxRtt,
 		JitterMax:            maxJitterTime,
@@ -1392,25 +1409,25 @@ func (r *RTPStats) ToProto() *livekit.RTPStats {
 		StartTime:            timestamppb.New(r.startTime),
 		EndTime:              timestamppb.New(endTime),
 		Duration:             elapsed,
-		Packets:              packets,
+		Packets:              uint32(packets),
 		PacketRate:           packetRate,
 		Bytes:                r.bytes,
 		HeaderBytes:          r.headerBytes,
 		Bitrate:              bitrate,
-		PacketsLost:          packetsLost,
+		PacketsLost:          uint32(packetsLost),
 		PacketLossRate:       packetLostRate,
 		PacketLossPercentage: packetLostPercentage,
-		PacketsDuplicate:     r.packetsDuplicate,
+		PacketsDuplicate:     uint32(r.packetsDuplicate),
 		PacketDuplicateRate:  packetDuplicateRate,
 		BytesDuplicate:       r.bytesDuplicate,
 		HeaderBytesDuplicate: r.headerBytesDuplicate,
 		BitrateDuplicate:     bitrateDuplicate,
-		PacketsPadding:       r.packetsPadding,
+		PacketsPadding:       uint32(r.packetsPadding),
 		PacketPaddingRate:    packetPaddingRate,
 		BytesPadding:         r.bytesPadding,
 		HeaderBytesPadding:   r.headerBytesPadding,
 		BitratePadding:       bitratePadding,
-		PacketsOutOfOrder:    r.packetsOutOfOrder,
+		PacketsOutOfOrder:    uint32(r.packetsOutOfOrder),
 		Frames:               r.frames,
 		FrameRate:            frameRate,
 		KeyFrames:            r.keyFrames,
@@ -1457,7 +1474,7 @@ func (r *RTPStats) ToProto() *livekit.RTPStats {
 	return p
 }
 
-func (r *RTPStats) getExtHighestSNAdjusted() uint32 {
+func (r *RTPStats) getExtHighestSNAdjusted() uint64 {
 	if r.params.IsReceiverReportDriven && !r.lastRRTime.IsZero() {
 		return r.extHighestSNOverridden
 	}
@@ -1465,7 +1482,7 @@ func (r *RTPStats) getExtHighestSNAdjusted() uint32 {
 	return r.sequenceNumber.GetExtendedHighest()
 }
 
-func (r *RTPStats) getPacketsLost() uint32 {
+func (r *RTPStats) getPacketsLost() uint64 {
 	if r.params.IsReceiverReportDriven && !r.lastRRTime.IsZero() {
 		return r.packetsLostOverridden
 	}
@@ -1473,13 +1490,12 @@ func (r *RTPStats) getPacketsLost() uint32 {
 	return r.packetsLost
 }
 
-func (r *RTPStats) getSnInfoOutOfOrderPtr(esn uint32, ehsn uint32) int {
-	offset := esn - ehsn
-	if offset > 0 && offset < (1<<31) {
+func (r *RTPStats) getSnInfoOutOfOrderPtr(esn uint64, ehsn uint64) int {
+	if int64(esn-ehsn) >= 0 {
 		return -1 // in-order, not expected, maybe too new
 	}
 
-	offset = ehsn - esn
+	offset := ehsn - esn
 	if int(offset) >= SnInfoSize {
 		// too old, ignore
 		return -1
@@ -1488,9 +1504,9 @@ func (r *RTPStats) getSnInfoOutOfOrderPtr(esn uint32, ehsn uint32) int {
 	return (r.snInfoWritePtr - int(offset) - 1) & SnInfoMask
 }
 
-func (r *RTPStats) setSnInfo(esn uint32, ehsn uint32, pktSize uint16, hdrSize uint16, payloadSize uint16, marker bool, isOutOfOrder bool) {
+func (r *RTPStats) setSnInfo(esn uint64, ehsn uint64, pktSize uint16, hdrSize uint16, payloadSize uint16, marker bool, isOutOfOrder bool) {
 	writePtr := 0
-	ooo := (esn - ehsn) > (1 << 31)
+	ooo := int64(esn-ehsn) < 0
 	if !ooo {
 		writePtr = r.snInfoWritePtr
 		r.snInfoWritePtr = (writePtr + 1) & SnInfoMask
@@ -1509,7 +1525,7 @@ func (r *RTPStats) setSnInfo(esn uint32, ehsn uint32, pktSize uint16, hdrSize ui
 	snInfo.isOutOfOrder = isOutOfOrder
 }
 
-func (r *RTPStats) clearSnInfos(extStartInclusive uint32, extEndExclusive uint32) {
+func (r *RTPStats) clearSnInfos(extStartInclusive uint64, extEndExclusive uint64) {
 	for esn := extStartInclusive; esn != extEndExclusive; esn++ {
 		snInfo := &r.snInfos[r.snInfoWritePtr]
 		snInfo.pktSize = 0
@@ -1521,7 +1537,7 @@ func (r *RTPStats) clearSnInfos(extStartInclusive uint32, extEndExclusive uint32
 	}
 }
 
-func (r *RTPStats) isSnInfoLost(esn uint32, ehsn uint32) bool {
+func (r *RTPStats) isSnInfoLost(esn uint64, ehsn uint64) bool {
 	readPtr := r.getSnInfoOutOfOrderPtr(esn, ehsn)
 	if readPtr < 0 {
 		return false
@@ -1531,9 +1547,9 @@ func (r *RTPStats) isSnInfoLost(esn uint32, ehsn uint32) bool {
 	return snInfo.pktSize == 0
 }
 
-func (r *RTPStats) getIntervalStats(extStartInclusive uint32, extEndExclusive uint32) (intervalStats IntervalStats) {
+func (r *RTPStats) getIntervalStats(extStartInclusive uint64, extEndExclusive uint64) (intervalStats IntervalStats) {
 	packetsNotFound := uint32(0)
-	processESN := func(esn uint32, ehsn uint32) {
+	processESN := func(esn uint64, ehsn uint64) {
 		readPtr := r.getSnInfoOutOfOrderPtr(esn, ehsn)
 		if readPtr < 0 {
 			packetsNotFound++
