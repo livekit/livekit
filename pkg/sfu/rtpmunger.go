@@ -37,9 +37,6 @@ const (
 
 const (
 	RtxGateWindow = 2000
-
-	SnOffsetCacheSize = 4096
-	SnOffsetCacheMask = SnOffsetCacheSize - 1
 )
 
 type TranslationParamsRTP struct {
@@ -56,12 +53,12 @@ type SnTs struct {
 // ----------------------------------------------------------------------
 
 type RTPMungerState struct {
-	LastSN uint16
-	LastTS uint32
+	ExtLastSN uint32
+	LastTS    uint32
 }
 
 func (r RTPMungerState) String() string {
-	return fmt.Sprintf("RTPMungerState{lastSN: %d, lastTS: %d)", r.LastSN, r.LastTS)
+	return fmt.Sprintf("RTPMungerState{extLastSN: %d, lastTS: %d)", r.ExtLastSN, r.LastTS)
 }
 
 // ----------------------------------------------------------------------
@@ -72,12 +69,12 @@ type RTPMunger struct {
 	extHighestIncomingSN uint32
 	snRangeMap           *utils.RangeMap[uint32, uint32]
 
-	lastSN     uint16
+	extLastSN  uint32
 	lastTS     uint32
 	tsOffset   uint32
 	lastMarker bool
 
-	rtxGateSn         uint16
+	extRtxGateSn      uint32
 	isInRtxGateRegion bool
 }
 
@@ -92,7 +89,7 @@ func (r *RTPMunger) DebugInfo() map[string]interface{} {
 	snOffset, _ := r.snRangeMap.GetValue(r.extHighestIncomingSN)
 	return map[string]interface{}{
 		"ExtHighestIncomingSN": r.extHighestIncomingSN,
-		"LastSN":               r.lastSN,
+		"ExtLastSN":            r.extLastSN,
 		"SNOffset":             snOffset,
 		"LastTS":               r.lastTS,
 		"TSOffset":             r.tsOffset,
@@ -102,25 +99,25 @@ func (r *RTPMunger) DebugInfo() map[string]interface{} {
 
 func (r *RTPMunger) GetLast() RTPMungerState {
 	return RTPMungerState{
-		LastSN: r.lastSN,
-		LastTS: r.lastTS,
+		ExtLastSN: r.extLastSN,
+		LastTS:    r.lastTS,
 	}
 }
 
 func (r *RTPMunger) SeedLast(state RTPMungerState) {
-	r.lastSN = state.LastSN
+	r.extLastSN = state.ExtLastSN
 	r.lastTS = state.LastTS
 }
 
 func (r *RTPMunger) SetLastSnTs(extPkt *buffer.ExtPacket) {
 	r.extHighestIncomingSN = extPkt.ExtSequenceNumber - 1
-	r.lastSN = extPkt.Packet.SequenceNumber
+	r.extLastSN = extPkt.ExtSequenceNumber
 	r.lastTS = extPkt.Packet.Timestamp
 }
 
-func (r *RTPMunger) UpdateSnTsOffsets(extPkt *buffer.ExtPacket, snAdjust uint16, tsAdjust uint32) {
+func (r *RTPMunger) UpdateSnTsOffsets(extPkt *buffer.ExtPacket, snAdjust uint32, tsAdjust uint32) {
 	r.extHighestIncomingSN = extPkt.ExtSequenceNumber - 1
-	r.snRangeMap.ClearAndResetValue(uint32(extPkt.Packet.SequenceNumber - r.lastSN - snAdjust))
+	r.snRangeMap.ClearAndResetValue(extPkt.ExtSequenceNumber - r.extLastSN - snAdjust)
 	r.tsOffset = extPkt.Packet.Timestamp - r.lastTS - tsAdjust
 }
 
@@ -137,7 +134,7 @@ func (r *RTPMunger) PacketDropped(extPkt *buffer.ExtPacket) {
 		return
 	}
 
-	r.lastSN = uint16(extPkt.ExtSequenceNumber - snOffset)
+	r.extLastSN = extPkt.ExtSequenceNumber - snOffset
 }
 
 func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationParamsRTP, error) {
@@ -188,25 +185,25 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 		}, ErrSequenceNumberOffsetNotFound
 	}
 
-	mungedSN := uint16(extPkt.ExtSequenceNumber - snOffset)
+	extMungedSN := extPkt.ExtSequenceNumber - snOffset
 	mungedTS := extPkt.Packet.Timestamp - r.tsOffset
 
-	r.lastSN = mungedSN
+	r.extLastSN = extMungedSN
 	r.lastTS = mungedTS
 	r.lastMarker = extPkt.Packet.Marker
 
 	if extPkt.KeyFrame {
-		r.rtxGateSn = mungedSN
+		r.extRtxGateSn = extMungedSN
 		r.isInRtxGateRegion = true
 	}
 
-	if r.isInRtxGateRegion && (mungedSN-r.rtxGateSn) < (1<<15) && (mungedSN-r.rtxGateSn) > RtxGateWindow {
+	if r.isInRtxGateRegion && (extMungedSN-r.extRtxGateSn) > RtxGateWindow {
 		r.isInRtxGateRegion = false
 	}
 
 	return &TranslationParamsRTP{
 		snOrdering:     ordering,
-		sequenceNumber: mungedSN,
+		sequenceNumber: uint16(extMungedSN),
 		timestamp:      mungedTS,
 	}, nil
 }
@@ -218,7 +215,7 @@ func (r *RTPMunger) FilterRTX(nacks []uint16) []uint16 {
 
 	filtered := make([]uint16, 0, len(nacks))
 	for _, sn := range nacks {
-		if (sn - r.rtxGateSn) < (1 << 15) {
+		if (sn - uint16(r.extRtxGateSn)) < (1 << 15) {
 			filtered = append(filtered, sn)
 		}
 	}
@@ -239,10 +236,12 @@ func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate
 		tsOffset = 1
 	}
 
+	extLastSN := r.extLastSN
 	lastTS := r.lastTS
 	vals := make([]SnTs, num)
 	for i := 0; i < num; i++ {
-		vals[i].sequenceNumber = r.lastSN + uint16(i) + 1
+		extLastSN++
+		vals[i].sequenceNumber = uint16(extLastSN)
 		if frameRate != 0 {
 			if useLastTSForFirst && i == 0 {
 				vals[i].timestamp = r.lastTS
@@ -259,7 +258,7 @@ func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate
 		}
 	}
 
-	r.lastSN = vals[num-1].sequenceNumber
+	r.extLastSN = extLastSN
 	r.snRangeMap.DecValue(uint32(num))
 
 	r.tsOffset -= vals[num-1].timestamp - r.lastTS
