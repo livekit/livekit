@@ -252,6 +252,19 @@ func TestWrapAroundUint16RollbackRestart(t *testing.T) {
 	require.Equal(t, uint32(23), w.GetExtendedStart())
 	require.Equal(t, uint16(25), w.GetHighest())
 	require.Equal(t, uint32(25), w.GetExtendedHighest())
+
+	// reset highest
+	w.ResetHighest(0x1234)
+	require.Equal(t, uint16(23), w.GetStart())
+	require.Equal(t, uint32(23), w.GetExtendedStart())
+	require.Equal(t, uint16(0x1234), w.GetHighest())
+	require.Equal(t, uint32(0x1234), w.GetExtendedHighest())
+
+	w.ResetHighest(0x7f1234)
+	require.Equal(t, uint16(23), w.GetStart())
+	require.Equal(t, uint32(23), w.GetExtendedStart())
+	require.Equal(t, uint16(0x1234), w.GetHighest())
+	require.Equal(t, uint32(0x7f1234), w.GetExtendedHighest())
 }
 
 func TestWrapAroundUint32(t *testing.T) {

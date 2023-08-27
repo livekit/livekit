@@ -95,7 +95,7 @@ func (w *WrapAround[T, ET]) RollbackRestart(ev ET) {
 
 func (w *WrapAround[T, ET]) ResetHighest(ev ET) {
 	w.highest = T(ev)
-	w.cycles = ev & (w.fullRange - 1)
+	w.cycles = ev & ^(w.fullRange - 1)
 }
 
 func (w *WrapAround[T, ET]) GetStart() T {
