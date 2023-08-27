@@ -81,7 +81,7 @@ type TrackReceiver interface {
 	GetTemporalLayerFpsForSpatial(layer int32) []float32
 
 	GetCalculatedClockRate(layer int32) uint32
-	GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error)
+	GetReferenceLayerRTPTimestamp(ets uint64, layer int32, referenceLayer int32) (uint64, error)
 }
 
 // WebRTCReceiver receives a media track
@@ -777,8 +777,8 @@ func (w *WebRTCReceiver) GetCalculatedClockRate(layer int32) uint32 {
 	return w.streamTrackerManager.GetCalculatedClockRate(layer)
 }
 
-func (w *WebRTCReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error) {
-	return w.streamTrackerManager.GetReferenceLayerRTPTimestamp(ts, layer, referenceLayer)
+func (w *WebRTCReceiver) GetReferenceLayerRTPTimestamp(ets uint64, layer int32, referenceLayer int32) (uint64, error) {
+	return w.streamTrackerManager.GetReferenceLayerRTPTimestamp(ets, layer, referenceLayer)
 }
 
 // closes all track senders in parallel, returns when all are closed

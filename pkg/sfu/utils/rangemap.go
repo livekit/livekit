@@ -30,11 +30,11 @@ var (
 )
 
 type rangeType interface {
-	uint32
+	uint32 | uint64
 }
 
 type valueType interface {
-	uint32
+	uint32 | uint64
 }
 
 type rangeVal[RT rangeType, VT valueType] struct {
