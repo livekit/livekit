@@ -53,7 +53,7 @@ type SnTs struct {
 // ----------------------------------------------------------------------
 
 type RTPMungerState struct {
-	ExtLastSN uint32
+	ExtLastSN uint64
 	ExtLastTS uint64
 }
 
@@ -66,22 +66,22 @@ func (r RTPMungerState) String() string {
 type RTPMunger struct {
 	logger logger.Logger
 
-	extHighestIncomingSN uint32
-	snRangeMap           *utils.RangeMap[uint32, uint32]
+	extHighestIncomingSN uint64
+	snRangeMap           *utils.RangeMap[uint64, uint64]
 
-	extLastSN  uint32
+	extLastSN  uint64
 	extLastTS  uint64
 	tsOffset   uint64
 	lastMarker bool
 
-	extRtxGateSn      uint32
+	extRtxGateSn      uint64
 	isInRtxGateRegion bool
 }
 
 func NewRTPMunger(logger logger.Logger) *RTPMunger {
 	return &RTPMunger{
 		logger:     logger,
-		snRangeMap: utils.NewRangeMap[uint32, uint32](100),
+		snRangeMap: utils.NewRangeMap[uint64, uint64](100),
 	}
 }
 
@@ -115,7 +115,7 @@ func (r *RTPMunger) SetLastSnTs(extPkt *buffer.ExtPacket) {
 	r.extLastTS = extPkt.ExtTimestamp
 }
 
-func (r *RTPMunger) UpdateSnTsOffsets(extPkt *buffer.ExtPacket, snAdjust uint32, tsAdjust uint64) {
+func (r *RTPMunger) UpdateSnTsOffsets(extPkt *buffer.ExtPacket, snAdjust uint64, tsAdjust uint64) {
 	r.extHighestIncomingSN = extPkt.ExtSequenceNumber - 1
 	r.snRangeMap.ClearAndResetValue(extPkt.ExtSequenceNumber - r.extLastSN - snAdjust)
 	r.tsOffset = extPkt.ExtTimestamp - r.extLastTS - tsAdjust
@@ -260,7 +260,7 @@ func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate
 	}
 
 	r.extLastSN = extLastSN
-	r.snRangeMap.DecValue(uint32(num))
+	r.snRangeMap.DecValue(uint64(num))
 
 	r.tsOffset -= extLastTS - r.extLastTS
 	r.extLastTS = extLastTS

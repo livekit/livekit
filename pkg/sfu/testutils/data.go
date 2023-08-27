@@ -64,7 +64,7 @@ func GetTestExtPacket(params *TestExtPacketParams) (*buffer.ExtPacket, error) {
 
 	ep := &buffer.ExtPacket{
 		VideoLayer:        params.VideoLayer,
-		ExtSequenceNumber: uint32(params.SNCycles<<16) + uint32(params.SequenceNumber),
+		ExtSequenceNumber: uint64(params.SNCycles<<16) + uint64(params.SequenceNumber),
 		ExtTimestamp:      uint64(params.TSCycles<<32) + uint64(params.Timestamp),
 		Arrival:           params.ArrivalTime,
 		Packet:            &packet,
