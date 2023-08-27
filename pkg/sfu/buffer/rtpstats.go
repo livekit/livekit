@@ -71,7 +71,8 @@ type RTPFlowState struct {
 
 	IsOutOfOrder bool
 
-	ExtSeqNumber uint32
+	ExtSequenceNumber uint32
+	ExtTimestamp      uint64
 }
 
 type IntervalStats struct {
@@ -152,8 +153,7 @@ type RTPStats struct {
 
 	lock sync.RWMutex
 
-	initialized        bool
-	resyncOnNextPacket bool
+	initialized bool
 
 	startTime time.Time
 	endTime   time.Time
@@ -245,7 +245,6 @@ func (r *RTPStats) Seed(from *RTPStats) {
 	}
 
 	r.initialized = from.initialized
-	r.resyncOnNextPacket = from.resyncOnNextPacket
 
 	r.startTime = from.startTime
 	// do not clone endTime as a non-zero endTime indicates an ended object
@@ -375,16 +374,6 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 		return
 	}
 
-	if r.resyncOnNextPacket {
-		r.resyncOnNextPacket = false
-
-		if r.initialized {
-			r.sequenceNumber.ResetHighest(rtph.SequenceNumber - 1)
-			r.timestamp.ResetHighest(rtph.Timestamp)
-			r.highestTime = packetTime
-		}
-	}
-
 	var resSN utils.WrapAroundUpdateResult[uint32]
 	var resTS utils.WrapAroundUpdateResult[uint64]
 	if !r.initialized {
@@ -417,8 +406,8 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 			"rtp stream start",
 			"startTime", r.startTime.String(),
 			"firstTime", r.firstTime.String(),
-			"startSN", r.sequenceNumber.GetExtendedHighest(),
-			"startTS", r.timestamp.GetExtendedHighest(),
+			"startSN", r.sequenceNumber.GetExtendedStart(),
+			"startTS", r.timestamp.GetExtendedStart(),
 		)
 	} else {
 		resSN = r.sequenceNumber.Update(rtph.SequenceNumber)
@@ -483,7 +472,8 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 		}
 
 		flowState.IsOutOfOrder = true
-		flowState.ExtSeqNumber = resSN.ExtendedVal
+		flowState.ExtSequenceNumber = resSN.ExtendedVal
+		flowState.ExtTimestamp = resTS.ExtendedVal
 	} else { // in-order
 		// update gap histogram
 		r.updateGapHistogram(int(gapSN))
@@ -505,7 +495,8 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 			flowState.LossStartInclusive = resSN.PreExtendedHighest + 1
 			flowState.LossEndExclusive = resSN.ExtendedVal
 		}
-		flowState.ExtSeqNumber = resSN.ExtendedVal
+		flowState.ExtSequenceNumber = resSN.ExtendedVal
+		flowState.ExtTimestamp = resTS.ExtendedVal
 	}
 
 	if !isDuplicate {
@@ -527,11 +518,16 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 	return
 }
 
-func (r *RTPStats) ResyncOnNextPacket() {
+func (r *RTPStats) Resync(esn uint32, ets uint64, at time.Time) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	r.resyncOnNextPacket = true
+	if !r.initialized {
+		return
+	}
+	r.sequenceNumber.ResetHighest(esn - 1)
+	r.timestamp.ResetHighest(ets)
+	r.highestTime = at
 }
 
 func (r *RTPStats) getPacketsExpected() uint32 {
@@ -788,11 +784,11 @@ func (r *RTPStats) MaybeAdjustFirstPacketTime(srData *RTCPSenderReportData) {
 	defer r.lock.Unlock()
 
 	if srData != nil {
-		r.maybeAdjustFirstPacketTime(srData.RTPTimestamp)
+		r.maybeAdjustFirstPacketTime(srData.RTPTimestampExt)
 	}
 }
 
-func (r *RTPStats) maybeAdjustFirstPacketTime(ts uint32) {
+func (r *RTPStats) maybeAdjustFirstPacketTime(ets uint64) {
 	if time.Since(r.startTime) > firstPacketTimeAdjustWindow {
 		return
 	}
@@ -803,7 +799,7 @@ func (r *RTPStats) maybeAdjustFirstPacketTime(ts uint32) {
 	// abnormal delay (maybe due to pacing or maybe due to queuing
 	// in some network element along the way), push back first time
 	// to an earlier instance.
-	samplesDiff := int32(ts - uint32(r.timestamp.GetExtendedStart()))
+	samplesDiff := int64(ets - r.timestamp.GetExtendedStart())
 	if samplesDiff < 0 {
 		// out-of-order, skip
 		return
@@ -819,7 +815,7 @@ func (r *RTPStats) maybeAdjustFirstPacketTime(ts uint32) {
 			"before", r.firstTime.String(),
 			"after", firstTime.String(),
 			"adjustment", r.firstTime.Sub(firstTime),
-			"nowTS", ts,
+			"extNowTS", ets,
 			"extStartTS", r.timestamp.GetExtendedStart(),
 		)
 		if r.firstTime.Sub(firstTime) > firstPacketTimeAdjustThreshold {
@@ -829,7 +825,7 @@ func (r *RTPStats) maybeAdjustFirstPacketTime(ts uint32) {
 				"before", r.firstTime.String(),
 				"after", firstTime.String(),
 				"adjustment", r.firstTime.Sub(firstTime),
-				"nowTS", ts,
+				"extNowTS", ets,
 				"extStartTS", r.timestamp.GetExtendedStart(),
 			)
 		} else {
@@ -864,12 +860,17 @@ func (r *RTPStats) SetRtcpSenderReportData(srData *RTCPSenderReportData) {
 		if (srData.RTPTimestamp-r.srNewest.RTPTimestamp) < (1<<31) && srData.RTPTimestamp < r.srNewest.RTPTimestamp {
 			cycles += (1 << 32)
 		}
+
+		ntpDiffSinceLast := srData.NTPTimestamp.Time().Sub(r.srNewest.NTPTimestamp.Time())
+		rtpDiff := uint64(ntpDiffSinceLast.Seconds() * float64(r.params.ClockRate))
+		goArounds := rtpDiff / (1 << 32)
+		cycles += goArounds * (1 << 32)
 	}
 
 	srDataCopy := *srData
 	srDataCopy.RTPTimestampExt = uint64(srDataCopy.RTPTimestamp) + cycles
 
-	r.maybeAdjustFirstPacketTime(srDataCopy.RTPTimestamp)
+	r.maybeAdjustFirstPacketTime(srDataCopy.RTPTimestampExt)
 
 	// monitor and log RTP timestamp anomalies
 	var ntpDiffSinceLast time.Duration
@@ -1018,13 +1019,13 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, calculatedClockRate uint32) 
 
 	// monitor and log RTP timestamp anomalies
 	var ntpDiffSinceLast time.Duration
-	var rtpDiffSinceLast uint32
+	var rtpDiffSinceLast uint64
 	var departureDiffSinceLast time.Duration
 	var expectedTimeDiffSinceLast float64
 	var isWarped bool
 	if r.srNewest != nil {
 		ntpDiffSinceLast = nowNTP.Time().Sub(r.srNewest.NTPTimestamp.Time())
-		rtpDiffSinceLast = nowRTP - r.srNewest.RTPTimestamp
+		rtpDiffSinceLast = nowRTPExt - r.srNewest.RTPTimestampExt
 		departureDiffSinceLast = now.Sub(r.srNewest.At)
 
 		expectedTimeDiffSinceLast = float64(rtpDiffSinceLast) / float64(r.params.ClockRate)

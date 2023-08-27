@@ -54,11 +54,11 @@ type SnTs struct {
 
 type RTPMungerState struct {
 	ExtLastSN uint32
-	LastTS    uint32
+	ExtLastTS uint64
 }
 
 func (r RTPMungerState) String() string {
-	return fmt.Sprintf("RTPMungerState{extLastSN: %d, lastTS: %d)", r.ExtLastSN, r.LastTS)
+	return fmt.Sprintf("RTPMungerState{extLastSN: %d, extLastTS: %d)", r.ExtLastSN, r.ExtLastTS)
 }
 
 // ----------------------------------------------------------------------
@@ -70,8 +70,8 @@ type RTPMunger struct {
 	snRangeMap           *utils.RangeMap[uint32, uint32]
 
 	extLastSN  uint32
-	lastTS     uint32
-	tsOffset   uint32
+	extLastTS  uint64
+	tsOffset   uint64
 	lastMarker bool
 
 	extRtxGateSn      uint32
@@ -91,7 +91,7 @@ func (r *RTPMunger) DebugInfo() map[string]interface{} {
 		"ExtHighestIncomingSN": r.extHighestIncomingSN,
 		"ExtLastSN":            r.extLastSN,
 		"SNOffset":             snOffset,
-		"LastTS":               r.lastTS,
+		"ExtLastTS":            r.extLastTS,
 		"TSOffset":             r.tsOffset,
 		"LastMarker":           r.lastMarker,
 	}
@@ -100,25 +100,25 @@ func (r *RTPMunger) DebugInfo() map[string]interface{} {
 func (r *RTPMunger) GetLast() RTPMungerState {
 	return RTPMungerState{
 		ExtLastSN: r.extLastSN,
-		LastTS:    r.lastTS,
+		ExtLastTS: r.extLastTS,
 	}
 }
 
 func (r *RTPMunger) SeedLast(state RTPMungerState) {
 	r.extLastSN = state.ExtLastSN
-	r.lastTS = state.LastTS
+	r.extLastTS = state.ExtLastTS
 }
 
 func (r *RTPMunger) SetLastSnTs(extPkt *buffer.ExtPacket) {
 	r.extHighestIncomingSN = extPkt.ExtSequenceNumber - 1
 	r.extLastSN = extPkt.ExtSequenceNumber
-	r.lastTS = extPkt.Packet.Timestamp
+	r.extLastTS = extPkt.ExtTimestamp
 }
 
-func (r *RTPMunger) UpdateSnTsOffsets(extPkt *buffer.ExtPacket, snAdjust uint32, tsAdjust uint32) {
+func (r *RTPMunger) UpdateSnTsOffsets(extPkt *buffer.ExtPacket, snAdjust uint32, tsAdjust uint64) {
 	r.extHighestIncomingSN = extPkt.ExtSequenceNumber - 1
 	r.snRangeMap.ClearAndResetValue(extPkt.ExtSequenceNumber - r.extLastSN - snAdjust)
-	r.tsOffset = extPkt.Packet.Timestamp - r.lastTS - tsAdjust
+	r.tsOffset = extPkt.ExtTimestamp - r.extLastTS - tsAdjust
 }
 
 func (r *RTPMunger) PacketDropped(extPkt *buffer.ExtPacket) {
@@ -151,7 +151,7 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 		return &TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingOutOfOrder,
 			sequenceNumber: uint16(extPkt.ExtSequenceNumber - snOffset),
-			timestamp:      extPkt.Packet.Timestamp - r.tsOffset,
+			timestamp:      uint32(extPkt.ExtTimestamp - r.tsOffset),
 		}, nil
 	}
 
@@ -186,10 +186,10 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 	}
 
 	extMungedSN := extPkt.ExtSequenceNumber - snOffset
-	mungedTS := extPkt.Packet.Timestamp - r.tsOffset
+	extMungedTS := extPkt.ExtTimestamp - r.tsOffset
 
 	r.extLastSN = extMungedSN
-	r.lastTS = mungedTS
+	r.extLastTS = extMungedTS
 	r.lastMarker = extPkt.Packet.Marker
 
 	if extPkt.KeyFrame {
@@ -204,7 +204,7 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 	return &TranslationParamsRTP{
 		snOrdering:     ordering,
 		sequenceNumber: uint16(extMungedSN),
-		timestamp:      mungedTS,
+		timestamp:      uint32(extMungedTS),
 	}, nil
 }
 
@@ -223,7 +223,7 @@ func (r *RTPMunger) FilterRTX(nacks []uint16) []uint16 {
 	return filtered
 }
 
-func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate uint32, forceMarker bool, rtpTimestamp uint32) ([]SnTs, error) {
+func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate uint32, forceMarker bool, extRtpTimestamp uint64) ([]SnTs, error) {
 	useLastTSForFirst := false
 	tsOffset := 0
 	if !r.lastMarker {
@@ -237,32 +237,33 @@ func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate
 	}
 
 	extLastSN := r.extLastSN
-	lastTS := r.lastTS
+	extLastTS := r.extLastTS
 	vals := make([]SnTs, num)
 	for i := 0; i < num; i++ {
 		extLastSN++
 		vals[i].sequenceNumber = uint16(extLastSN)
+
 		if frameRate != 0 {
 			if useLastTSForFirst && i == 0 {
-				vals[i].timestamp = r.lastTS
+				vals[i].timestamp = uint32(r.extLastTS)
 			} else {
-				ts := rtpTimestamp + ((uint32(i+1-tsOffset)*clockRate)+frameRate-1)/frameRate
-				if (ts-lastTS) == 0 || (ts-lastTS) > (1<<31) {
-					ts = lastTS + 1
-					lastTS = ts
+				ets := extRtpTimestamp + uint64(((uint32(i+1-tsOffset)*clockRate)+frameRate-1)/frameRate)
+				if int64(ets-extLastTS) <= 0 {
+					ets = extLastTS + 1
 				}
-				vals[i].timestamp = ts
+				extLastTS = ets
+				vals[i].timestamp = uint32(ets)
 			}
 		} else {
-			vals[i].timestamp = r.lastTS
+			vals[i].timestamp = uint32(r.extLastTS)
 		}
 	}
 
 	r.extLastSN = extLastSN
 	r.snRangeMap.DecValue(uint32(num))
 
-	r.tsOffset -= vals[num-1].timestamp - r.lastTS
-	r.lastTS = vals[num-1].timestamp
+	r.tsOffset -= extLastTS - r.extLastTS
+	r.extLastTS = extLastTS
 
 	if forceMarker {
 		r.lastMarker = true
