@@ -54,7 +54,8 @@ type pendingPacket struct {
 type ExtPacket struct {
 	VideoLayer
 	Arrival              time.Time
-	ExtSequenceNumber    uint32
+	ExtSequenceNumber    uint64
+	ExtTimestamp         uint64
 	Packet               *rtp.Packet
 	Payload              interface{}
 	KeyFrame             bool
@@ -82,7 +83,7 @@ type Buffer struct {
 	closed        atomic.Bool
 	mime          string
 
-	snRangeMap *utils.RangeMap[uint32, uint32]
+	snRangeMap *utils.RangeMap[uint64, uint64]
 
 	latestTSForAudioLevelInitialized bool
 	latestTSForAudioLevel            uint32
@@ -127,7 +128,7 @@ func NewBuffer(ssrc uint32, vp, ap *sync.Pool) *Buffer {
 		mediaSSRC:   ssrc,
 		videoPool:   vp,
 		audioPool:   ap,
-		snRangeMap:  utils.NewRangeMap[uint32, uint32](100),
+		snRangeMap:  utils.NewRangeMap[uint64, uint64](100),
 		pliThrottle: int64(500 * time.Millisecond),
 		logger:      l.WithComponent(sutils.ComponentPub).WithComponent(sutils.ComponentSFU),
 	}
@@ -414,21 +415,21 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 		return
 	}
 
-	extSeqNumber, isOutOfOrder := b.updateStreamState(&rtpPacket, arrivalTime)
+	flowState := b.updateStreamState(&rtpPacket, arrivalTime)
 	b.processHeaderExtensions(&rtpPacket, arrivalTime)
-	if !isOutOfOrder && len(rtpPacket.Payload) == 0 {
+	if !flowState.IsOutOfOrder && len(rtpPacket.Payload) == 0 {
 		// drop padding only in-order packet
 		b.snRangeMap.IncValue(1)
 		return
 	}
 
 	// add to RTX buffer using sequence number after accounting for dropped padding only packets
-	snAdjustment, err := b.snRangeMap.GetValue(extSeqNumber)
+	snAdjustment, err := b.snRangeMap.GetValue(flowState.ExtSequenceNumber)
 	if err != nil {
 		b.logger.Errorw("could not get sequence number adjustment", err)
 		return
 	}
-	rtpPacket.Header.SequenceNumber = uint16(extSeqNumber - snAdjustment)
+	rtpPacket.Header.SequenceNumber = uint16(flowState.ExtSequenceNumber - snAdjustment)
 	_, err = b.bucket.AddPacketWithSequenceNumber(pkt, rtpPacket.Header.SequenceNumber)
 	if err != nil {
 		if err != bucket.ErrRTXPacket {
@@ -441,7 +442,7 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 
 	b.doReports(arrivalTime)
 
-	ep := b.getExtPacket(&rtpPacket, extSeqNumber, arrivalTime)
+	ep := b.getExtPacket(&rtpPacket, arrivalTime, flowState)
 	if ep == nil {
 		return
 	}
@@ -499,7 +500,7 @@ func (b *Buffer) doFpsCalc(ep *ExtPacket) {
 	}
 }
 
-func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime time.Time) (uint32, bool) {
+func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime time.Time) RTPFlowState {
 	flowState := b.rtpStats.Update(&p.Header, len(p.Payload), int(p.PaddingSize), arrivalTime)
 
 	if b.nacker != nil {
@@ -513,7 +514,7 @@ func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime time.Time) (uint32
 		}
 	}
 
-	return flowState.ExtSeqNumber, flowState.IsOutOfOrder
+	return flowState
 }
 
 func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime time.Time) {
@@ -546,10 +547,11 @@ func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime time.Time) {
 	}
 }
 
-func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, extSeqNumber uint32, arrivalTime time.Time) *ExtPacket {
+func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime time.Time, flowState RTPFlowState) *ExtPacket {
 	ep := &ExtPacket{
 		Arrival:           arrivalTime,
-		ExtSequenceNumber: extSeqNumber,
+		ExtSequenceNumber: flowState.ExtSequenceNumber,
+		ExtTimestamp:      flowState.ExtTimestamp,
 		Packet:            rtpPacket,
 		VideoLayer: VideoLayer{
 			Spatial:  InvalidLayerSpatial,

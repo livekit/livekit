@@ -114,8 +114,8 @@ func TestRTPStats_Update(t *testing.T) {
 	require.Equal(t, sequenceNumber, uint16(r.sequenceNumber.GetExtendedHighest()))
 	require.Equal(t, timestamp, r.timestamp.GetHighest())
 	require.Equal(t, timestamp, uint32(r.timestamp.GetExtendedHighest()))
-	require.Equal(t, uint32(1), r.packetsOutOfOrder)
-	require.Equal(t, uint32(0), r.packetsDuplicate)
+	require.Equal(t, uint64(1), r.packetsOutOfOrder)
+	require.Equal(t, uint64(0), r.packetsDuplicate)
 
 	// duplicate
 	packet = getPacket(sequenceNumber-10, timestamp-30000, 1000)
@@ -125,8 +125,8 @@ func TestRTPStats_Update(t *testing.T) {
 	require.Equal(t, sequenceNumber, uint16(r.sequenceNumber.GetExtendedHighest()))
 	require.Equal(t, timestamp, r.timestamp.GetHighest())
 	require.Equal(t, timestamp, uint32(r.timestamp.GetExtendedHighest()))
-	require.Equal(t, uint32(2), r.packetsOutOfOrder)
-	require.Equal(t, uint32(1), r.packetsDuplicate)
+	require.Equal(t, uint64(2), r.packetsOutOfOrder)
+	require.Equal(t, uint64(1), r.packetsDuplicate)
 
 	// loss
 	sequenceNumber += 10
@@ -134,9 +134,9 @@ func TestRTPStats_Update(t *testing.T) {
 	packet = getPacket(sequenceNumber, timestamp, 1000)
 	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now())
 	require.True(t, flowState.HasLoss)
-	require.Equal(t, uint32(sequenceNumber-9), flowState.LossStartInclusive)
-	require.Equal(t, uint32(sequenceNumber), flowState.LossEndExclusive)
-	require.Equal(t, uint32(17), r.packetsLost)
+	require.Equal(t, uint64(sequenceNumber-9), flowState.LossStartInclusive)
+	require.Equal(t, uint64(sequenceNumber), flowState.LossEndExclusive)
+	require.Equal(t, uint64(17), r.packetsLost)
 
 	// out-of-order should decrement number of lost packets
 	packet = getPacket(sequenceNumber-15, timestamp-45000, 1000)
@@ -146,11 +146,11 @@ func TestRTPStats_Update(t *testing.T) {
 	require.Equal(t, sequenceNumber, uint16(r.sequenceNumber.GetExtendedHighest()))
 	require.Equal(t, timestamp, r.timestamp.GetHighest())
 	require.Equal(t, timestamp, uint32(r.timestamp.GetExtendedHighest()))
-	require.Equal(t, uint32(3), r.packetsOutOfOrder)
-	require.Equal(t, uint32(1), r.packetsDuplicate)
-	require.Equal(t, uint32(16), r.packetsLost)
+	require.Equal(t, uint64(3), r.packetsOutOfOrder)
+	require.Equal(t, uint64(1), r.packetsDuplicate)
+	require.Equal(t, uint64(16), r.packetsLost)
 	intervalStats := r.getIntervalStats(r.sequenceNumber.GetExtendedStart(), r.sequenceNumber.GetExtendedHighest()+1)
-	require.Equal(t, uint32(16), intervalStats.packetsLost)
+	require.Equal(t, uint64(16), intervalStats.packetsLost)
 
 	r.Stop()
 }
