@@ -52,7 +52,7 @@ type VP8 struct {
 
 	I         bool
 	M         bool
-	PictureID uint16 /* 8 or 16 bits, picture ID */
+	PictureID uint16 /* 7 or 15 bits, picture ID */
 
 	L         bool
 	TL0PICIDX uint8 /* 8 bits temporal level zero index */
