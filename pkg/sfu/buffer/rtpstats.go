@@ -860,8 +860,10 @@ func (r *RTPStats) SetRtcpSenderReportData(srData *RTCPSenderReportData) {
 			"received anachronous sender report",
 			"currentNTP", srData.NTPTimestamp.Time().String(),
 			"currentRTP", srData.RTPTimestamp,
+			"currentAt", srData.At.String(),
 			"lastNTP", r.srNewest.NTPTimestamp.Time().String(),
 			"lastRTP", r.srNewest.RTPTimestamp,
+			"lastAt", r.srNewest.At.String(),
 		)
 		return
 	}
