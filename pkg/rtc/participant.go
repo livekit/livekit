@@ -836,7 +836,7 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 		return
 	}
 
-	p.params.Logger.Infow("SetMigrateState", "state", s)
+	p.params.Logger.Debugw("SetMigrateState", "state", s)
 	p.migrateState.Store(s)
 	p.dirty.Store(true)
 
@@ -1536,7 +1536,7 @@ func (p *ParticipantImpl) onSubscribedMaxQualityChange(trackID livekit.TrackID, 
 		)
 	}
 
-	p.pubLogger.Infow(
+	p.pubLogger.Debugw(
 		"sending max subscribed quality",
 		"trackID", trackID,
 		"qualities", subscribedQualities,
