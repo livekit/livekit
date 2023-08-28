@@ -17,6 +17,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 
@@ -158,6 +159,10 @@ func (s *EgressService) StartWebEgress(ctx context.Context, req *livekit.WebEgre
 	}
 	fields = append(fields, "egressID", ei.EgressId)
 	return ei, err
+}
+
+func (s *EgressService) StartParticipantEgress(ctx context.Context, req *livekit.ParticipantEgressRequest) (*livekit.EgressInfo, error) {
+	return nil, errors.New("under development")
 }
 
 func (s *EgressService) startEgress(ctx context.Context, roomName livekit.RoomName, req *rpc.StartEgressRequest) (*livekit.EgressInfo, error) {
