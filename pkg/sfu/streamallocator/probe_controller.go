@@ -163,7 +163,7 @@ func (p *ProbeController) MaybeFinalizeProbe(
 			queueWait = p.params.Config.SettleWaitMax
 		}
 		p.probeEndTime = p.lastProbeStartTime.Add(queueWait + p.doneProbeClusterInfo.Duration)
-		p.params.Logger.Infow(
+		p.params.Logger.Debugw(
 			"setting probe end time",
 			"probeClusterId", p.probeClusterId,
 			"expectedDuration", expectedDuration,

@@ -1048,7 +1048,7 @@ func (s *StreamAllocator) onProbeDone(isNotFailing bool, isGoalReached bool) {
 	//
 	channelObserverString := s.channelObserver.ToString()
 	s.channelObserver = s.newChannelObserverNonProbe()
-	s.params.Logger.Infow(
+	s.params.Logger.Debugw(
 		"probe done",
 		"isNotFailing", isNotFailing,
 		"isGoalReached", isGoalReached,
