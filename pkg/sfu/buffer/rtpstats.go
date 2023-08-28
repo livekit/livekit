@@ -896,9 +896,11 @@ func (r *RTPStats) SetRtcpSenderReportData(srData *RTCPSenderReportData) {
 			"prevTSExt", r.srNewest.RTPTimestampExt,
 			"prevRTP", r.srNewest.RTPTimestamp,
 			"prevNTP", r.srNewest.NTPTimestamp.Time().String(),
+			"prevAt", r.srNewest.At.String(),
 			"currTSExt", srDataCopy.RTPTimestampExt,
 			"currRTP", srDataCopy.RTPTimestamp,
 			"currNTP", srDataCopy.NTPTimestamp.Time().String(),
+			"currentAt", srDataCopy.At.String(),
 		)
 		r.srFirst = nil
 	}
