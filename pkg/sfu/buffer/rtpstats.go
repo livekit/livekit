@@ -838,7 +838,7 @@ func (r *RTPStats) maybeAdjustFirstPacketTime(ets uint64) {
 			"extStartTS", r.timestamp.GetExtendedStart(),
 		)
 		if r.firstTime.Sub(firstTime) > firstPacketTimeAdjustThreshold {
-			r.logger.Infow("first packet time adjustment too big, ignoring",
+			r.logger.Debugw("first packet time adjustment too big, ignoring",
 				"startTime", r.startTime.String(),
 				"nowTime", now.String(),
 				"before", r.firstTime.String(),
