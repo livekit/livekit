@@ -955,6 +955,7 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, calculatedClockRate uint32) 
 
 	timeSinceHighest := now.Sub(r.highestTime)
 	nowRTPExt := r.timestamp.GetExtendedHighest() + uint64(timeSinceHighest.Nanoseconds()*int64(r.params.ClockRate)/1e9)
+	nowRTPExtUsingTime := nowRTPExt
 	nowRTP := uint32(nowRTPExt)
 
 	// It is possible that publisher is pacing at a slower rate.
@@ -989,6 +990,14 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32, calculatedClockRate uint32) 
 			"currTSExt", nowRTPExt,
 			"currRTP", nowRTP,
 			"currNTP", nowNTP.Time().String(),
+			"timeNow", time.Now().String(),
+			"firstTime", r.firstTime.String(),
+			"timeSinceFirst", timeSinceFirst,
+			"highestTime", r.highestTime.String(),
+			"timeSinceHighest", timeSinceHighest,
+			"nowRTPExtUsingTime", nowRTPExtUsingTime,
+			"calculatedClockRate", calculatedClockRate,
+			"nowRTPExtUsingRate", nowRTPExtUsingRate,
 		)
 		ntpDiffSinceLast := nowNTP.Time().Sub(r.srNewest.NTPTimestamp.Time())
 		nowRTPExt = r.srNewest.RTPTimestampExt + uint64(ntpDiffSinceLast.Seconds()*float64(r.params.ClockRate))
