@@ -274,8 +274,6 @@ github.com/dTelecom/p2p-realtime-database v1.0.13-0.20230728050738-bcc97bc2a2fa 
 github.com/dTelecom/p2p-realtime-database v1.0.13-0.20230728050738-bcc97bc2a2fa/go.mod h1:krdCtS/W66L3xaWfQ7nBoeAVCqRT/6SLFxFVxxqd5yI=
 github.com/dTelecom/p2p-realtime-database v1.0.13-0.20230728051309-ca6c5076ddd2 h1:BkXUUGGvXvmnhgzmlaMlXjqkqtYYYP05JOrW4WfL2pM=
 github.com/dTelecom/p2p-realtime-database v1.0.13-0.20230728051309-ca6c5076ddd2/go.mod h1:krdCtS/W66L3xaWfQ7nBoeAVCqRT/6SLFxFVxxqd5yI=
-github.com/dTelecom/p2p-realtime-database v1.0.13-0.20230828161633-25557723dd55 h1:heGk9c2Dhvxt3f/9N/okpn9zyfFQ4mD+xCLYJD1uXzc=
-github.com/dTelecom/p2p-realtime-database v1.0.13-0.20230828161633-25557723dd55/go.mod h1:krdCtS/W66L3xaWfQ7nBoeAVCqRT/6SLFxFVxxqd5yI=
 github.com/dTelecom/protocol v1.0.8 h1:QxGzmzviRpKbPd/NjWiaC+i0sDRGfVvadYyC4dnvkQU=
 github.com/dTelecom/protocol v1.0.8/go.mod h1:0RHLm7rpjqZRyW61iiiZ2nVFGXVvloWrWJ88y+e/+24=
 github.com/dTelecom/protocol v1.0.9 h1:n8cu3/Fffhvm5+ZDJI0oUNV2j483wAdOXDqv/DczMvk=
