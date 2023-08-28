@@ -1677,7 +1677,7 @@ func (r *RTPStats) getAndResetSnapshot(snapshotId uint32, override bool) (*Snaps
 
 	then := r.snapshots[snapshotId]
 	if then == nil {
-		extStartSN := r.sequenceNumber.GetExtendedHighest()
+		extStartSN := r.sequenceNumber.GetExtendedStart()
 		then = &Snapshot{
 			startTime:            r.startTime,
 			extStartSN:           extStartSN,
