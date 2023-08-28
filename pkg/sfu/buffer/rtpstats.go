@@ -560,7 +560,7 @@ func (r *RTPStats) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt uint32
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	if !r.initialized || !r.endTime.IsZero() || !r.params.IsReceiverReportDriven || uint64(rr.LastSequenceNumber) < r.sequenceNumber.GetExtendedHighest() {
+	if !r.initialized || !r.endTime.IsZero() || !r.params.IsReceiverReportDriven {
 		// it is possible that the `LastSequenceNumber` in the receiver report is before the starting
 		// sequence number when dummy packets are used to trigger Pion's OnTrack path.
 		return
@@ -575,6 +575,8 @@ func (r *RTPStats) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt uint32
 	if extHighestSNOverridden < r.sequenceNumber.GetExtendedHighest() {
 		// it is possible that the `LastSequenceNumber` in the receiver report is before the starting
 		// sequence number when dummy packets are used to trigger Pion's OnTrack path.
+		r.lastRRTime = time.Now()
+		r.lastRR = rr
 		return
 	}
 
