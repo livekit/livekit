@@ -888,7 +888,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 		return
 	}
 
-	// this track is currently not streaming and needs bits to start OR streaming at some layers and wants more bits.
+	// this track is currently not streaming and needs bits to start OR streaming at some layer and wants more bits.
 	// NOTE: With co-operative transition, tracks should not be asking for more if already streaming, but handle that case any way.
 	// first try an allocation using available headroom, current consumption of this track is discounted to calculate headroom.
 	availableChannelCapacity := s.getAvailableHeadroomWithoutTracks(false, []*Track{track})
