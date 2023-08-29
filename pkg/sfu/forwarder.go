@@ -729,7 +729,7 @@ func (f *Forwarder) ProvisionalAllocateReset() {
 	f.provisional.allocatedLayer = buffer.InvalidLayer
 }
 
-func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layer buffer.VideoLayer, allowPause bool, allowOvershoot bool) int64 {
+func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layer buffer.VideoLayer, allowPause bool, allowOvershoot bool) (bool, int64) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -738,12 +738,12 @@ func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layer bu
 		f.provisional.maxSeenLayer.Spatial == buffer.InvalidLayerSpatial ||
 		!f.provisional.maxLayer.IsValid() ||
 		((!allowOvershoot || !f.vls.IsOvershootOkay()) && layer.GreaterThan(f.provisional.maxLayer)) {
-		return 0
+		return false, 0
 	}
 
 	requiredBitrate := f.provisional.Bitrates[layer.Spatial][layer.Temporal]
 	if requiredBitrate == 0 {
-		return 0
+		return false, 0
 	}
 
 	alreadyAllocatedBitrate := int64(0)
@@ -754,7 +754,7 @@ func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layer bu
 	// a layer under maximum fits, take it
 	if !layer.GreaterThan(f.provisional.maxLayer) && requiredBitrate <= (availableChannelCapacity+alreadyAllocatedBitrate) {
 		f.provisional.allocatedLayer = layer
-		return requiredBitrate - alreadyAllocatedBitrate
+		return true, requiredBitrate - alreadyAllocatedBitrate
 	}
 
 	//
@@ -767,10 +767,10 @@ func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layer bu
 	//
 	if !allowPause && (!f.provisional.allocatedLayer.IsValid() || !layer.GreaterThan(f.provisional.allocatedLayer)) {
 		f.provisional.allocatedLayer = layer
-		return requiredBitrate - alreadyAllocatedBitrate
+		return true, requiredBitrate - alreadyAllocatedBitrate
 	}
 
-	return 0
+	return false, 0
 }
 
 func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot bool) VideoTransition {
