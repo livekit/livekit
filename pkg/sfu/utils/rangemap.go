@@ -64,42 +64,37 @@ func (r *RangeMap[RT, VT]) ClearAndResetValue(val VT) {
 	r.runningValue = val
 }
 
-func (r *RangeMap[RT, VT]) IncValue(inc VT) {
+func (r *RangeMap[RT, VT]) CloseRangeAndIncValue(endExclusive RT, inc VT) error {
+	if err := r.closeRange(endExclusive); err != nil {
+		return err
+	}
 	r.runningValue += inc
+	return nil
 }
 
-func (r *RangeMap[RT, VT]) DecValue(dec VT) {
+func (r *RangeMap[RT, VT]) CloseRangeAndDecValue(endExclusive RT, dec VT) error {
+	if err := r.closeRange(endExclusive); err != nil {
+		return err
+	}
 	r.runningValue -= dec
+	return nil
 }
 
-func (r *RangeMap[RT, VT]) AddRange(startInclusive RT, endExclusive RT) error {
+func (r *RangeMap[RT, VT]) closeRange(endExclusive RT) error {
+	startInclusive := RT(0)
+	if len(r.ranges) != 0 {
+		startInclusive = r.ranges[len(r.ranges)-1].end + 1
+	}
 	if endExclusive == startInclusive || endExclusive-startInclusive > r.halfRange {
 		return errReversedOrder
 	}
 
-	isNewRange := true
-	// check if last range can be extended
-	if len(r.ranges) != 0 {
-		lr := &r.ranges[len(r.ranges)-1]
-		if startInclusive <= lr.end {
-			return errReversedOrder
-		}
-		if lr.value == r.runningValue {
-			lr.end = endExclusive - 1
-			isNewRange = false
-		} else {
-			// end last range before start and start a new range
-			lr.end = startInclusive - 1
-		}
-	}
+	r.ranges = append(r.ranges, rangeVal[RT, VT]{
+		start: startInclusive,
+		end:   endExclusive - 1,
+		value: r.runningValue,
+	})
 
-	if isNewRange {
-		r.ranges = append(r.ranges, rangeVal[RT, VT]{
-			start: startInclusive,
-			end:   endExclusive - 1,
-			value: r.runningValue,
-		})
-	}
 	r.prune()
 	return nil
 }

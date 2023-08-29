@@ -86,7 +86,7 @@ func NewRTPMunger(logger logger.Logger) *RTPMunger {
 }
 
 func (r *RTPMunger) DebugInfo() map[string]interface{} {
-	snOffset, _ := r.snRangeMap.GetValue(r.extHighestIncomingSN)
+	snOffset, _ := r.snRangeMap.GetValue(r.extHighestIncomingSN + 1)
 	return map[string]interface{}{
 		"ExtHighestIncomingSN": r.extHighestIncomingSN,
 		"ExtLastSN":            r.extLastSN,
@@ -126,7 +126,9 @@ func (r *RTPMunger) PacketDropped(extPkt *buffer.ExtPacket) {
 		return
 	}
 
-	r.snRangeMap.IncValue(1)
+	if err := r.snRangeMap.CloseRangeAndIncValue(r.extHighestIncomingSN+1, 1); err != nil {
+		r.logger.Errorw("could not close range", err, "sn", r.extHighestIncomingSN)
+	}
 
 	snOffset, err := r.snRangeMap.GetValue(extPkt.ExtSequenceNumber)
 	if err != nil {
@@ -166,14 +168,15 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 	ordering := SequenceNumberOrderingContiguous
 	if diff > 1 {
 		ordering = SequenceNumberOrderingGap
-		r.snRangeMap.AddRange(r.extHighestIncomingSN+1, extPkt.ExtSequenceNumber)
 	}
 
 	r.extHighestIncomingSN = extPkt.ExtSequenceNumber
 
 	// if padding only packet, can be dropped and sequence number adjusted, if contiguous
 	if diff == 1 && len(extPkt.Packet.Payload) == 0 {
-		r.snRangeMap.IncValue(1)
+		if err := r.snRangeMap.CloseRangeAndIncValue(r.extHighestIncomingSN+1, 1); err != nil {
+			r.logger.Errorw("could not close range", err, "sn", r.extHighestIncomingSN)
+		}
 		return &TranslationParamsRTP{
 			snOrdering: ordering,
 		}, ErrPaddingOnlyPacket
@@ -261,7 +264,9 @@ func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate
 	}
 
 	r.extLastSN = extLastSN
-	r.snRangeMap.DecValue(uint64(num))
+	if err := r.snRangeMap.CloseRangeAndDecValue(r.extHighestIncomingSN+1, uint64(num)); err != nil {
+		r.logger.Errorw("could not close range", err, "sn", r.extHighestIncomingSN, "dec", num)
+	}
 
 	r.tsOffset -= extLastTS - r.extLastTS
 	r.extLastTS = extLastTS

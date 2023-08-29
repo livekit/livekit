@@ -420,8 +420,24 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 	if len(rtpPacket.Payload) == 0 && (!flowState.IsOutOfOrder || flowState.IsDuplicate) {
 		// drop padding only in-order or duplicate packet
 		if !flowState.IsOutOfOrder {
-			// in-order packet - increment sequence number for subsequent packets
-			b.snRangeMap.IncValue(1)
+			// in-order packet - increment sequence number offset for subsequent packets
+			// Example:
+			//   40 - regular packet - pass through as sequence number 40
+			//   41 - missing packet - don't know what it is, could be padding or not
+			//   42 - padding only packet - in-order - drop - increment sequence number offset to 1 -
+			//        range[0, 42] = 0 offset
+			//   41 - arrives out of order - get offset 0 from cache - passed through as sequence number 41
+			//   43 - regular packet - offset = 1 (running offset) - passes through as sequence number 42
+			//   44 - padding only - in order - drop - increment sequence number offset to 2
+			//        range[0, 42] = 0 offset, range[43, 44] = 1 offset
+			//   43 - regular packet - out of order + duplicate - offset = 1 from cache -
+			//        adjusted sequence number is 42, will be dropped by RTX buffer AddPacket method as duplicate
+			//   45 - regular packet - offset = 2 (running offset) - passed through with adjusted sequence number as 43
+			//   44 - padding only - out-of-order + duplicate - dropped as duplicate
+			//
+			if err := b.snRangeMap.CloseRangeAndIncValue(flowState.ExtSequenceNumber+1, 1); err != nil {
+				b.logger.Errorw("could not close range", err, "sn", flowState.ExtSequenceNumber)
+			}
 		}
 		return
 	}
@@ -510,7 +526,6 @@ func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime time.Time) RTPFlow
 		b.nacker.Remove(p.SequenceNumber)
 
 		if flowState.HasLoss {
-			b.snRangeMap.AddRange(flowState.LossStartInclusive, flowState.LossEndExclusive)
 			for lost := flowState.LossStartInclusive; lost != flowState.LossEndExclusive; lost++ {
 				b.nacker.Push(uint16(lost))
 			}
