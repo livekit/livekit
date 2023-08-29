@@ -565,7 +565,7 @@ func (r *RTPStats) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt uint32
 			extHighestSNOverridden += (1 << 32)
 		}
 	}
-	if extHighestSNOverridden < r.sequenceNumber.GetExtendedHighest() {
+	if extHighestSNOverridden < r.sequenceNumber.GetExtendedStart() {
 		// it is possible that the `LastSequenceNumber` in the receiver report is before the starting
 		// sequence number when dummy packets are used to trigger Pion's OnTrack path.
 		r.lastRRTime = time.Now()
