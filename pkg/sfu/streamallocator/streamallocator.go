@@ -940,9 +940,15 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 		return
 	}
 
-	// this track is currently not streaming and needs bits to start.
-	// first try an allocation using available headroom
-	availableChannelCapacity := s.getAvailableHeadroom(false)
+	// already streaming at some layer and transition is not requesting any change, i. e. BandwidthDelta == 0
+	if transition.From.IsValid() && transition.BandwidthDelta == 0 {
+		return
+	}
+
+	// this track is currently not streaming and needs bits to start OR streaming at some layer and wants more bits.
+	// NOTE: With co-operative transition, tracks should not be asking for more if already streaming, but handle that case any way.
+	// first try an allocation using available headroom, current consumption of this track is discounted to calculate headroom.
+	availableChannelCapacity := s.getAvailableHeadroomWithoutTracks(false, []*Track{track})
 	if availableChannelCapacity > 0 {
 		track.ProvisionalAllocateReset() // to reset allocation from co-operative transition above and try fresh
 
@@ -956,21 +962,30 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 					Temporal: temporal,
 				}
 
-				usedChannelCapacity := track.ProvisionalAllocate(availableChannelCapacity, layer, s.allowPause, FlagAllowOvershootWhileDeficient)
+				isCandidate, usedChannelCapacity := track.ProvisionalAllocate(
+					availableChannelCapacity,
+					layer,
+					s.allowPause,
+					FlagAllowOvershootWhileDeficient,
+				)
 				if availableChannelCapacity < usedChannelCapacity {
 					break alloc_loop
 				}
 
-				bestLayer = layer
+				if isCandidate {
+					bestLayer = layer
+				}
 			}
 		}
 
 		if bestLayer.IsValid() {
-			// found layer that can fit in available headroom
-			update := NewStreamStateUpdate()
-			allocation := track.ProvisionalAllocateCommit()
-			updateStreamStateChange(track, allocation, update)
-			s.maybeSendUpdate(update)
+			if bestLayer.GreaterThan(transition.From) {
+				// found layer that can fit in available headroom, take it if it is better than existing
+				update := NewStreamStateUpdate()
+				allocation := track.ProvisionalAllocateCommit()
+				updateStreamStateChange(track, allocation, update)
+				s.maybeSendUpdate(update)
+			}
 
 			s.adjustState()
 			return
@@ -978,11 +993,6 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 
 		track.ProvisionalAllocateReset()
 		transition = track.ProvisionalAllocateGetCooperativeTransition(FlagAllowOvershootWhileDeficient) // get transition again to reset above allocation attempt using available headroom
-	}
-
-	// track is currently streaming at minimum
-	if transition.BandwidthDelta == 0 {
-		return
 	}
 
 	// if there is not enough headroom, try to redistribute starting with tracks that are closest to their desired.
@@ -1075,17 +1085,31 @@ func (s *StreamAllocator) maybeBoostDeficientTracks() {
 
 	update := NewStreamStateUpdate()
 
-	for _, track := range s.getMaxDistanceSortedDeficient() {
-		allocation, boosted := track.AllocateNextHigher(availableChannelCapacity, FlagAllowOvershootInCatchup)
-		if !boosted {
-			continue
+	sortedTracks := s.getMaxDistanceSortedDeficient()
+boost_loop:
+	for {
+		for idx, track := range sortedTracks {
+			allocation, boosted := track.AllocateNextHigher(availableChannelCapacity, FlagAllowOvershootInCatchup)
+			if !boosted {
+				if idx == len(sortedTracks)-1 {
+					// all tracks tried
+					break boost_loop
+				}
+				continue
+			}
+
+			updateStreamStateChange(track, allocation, update)
+
+			availableChannelCapacity -= allocation.BandwidthDelta
+			if availableChannelCapacity <= 0 {
+				break boost_loop
+			}
+
+			break // sort again below as the track that was just boosted could still be farthest from its desired
 		}
-
-		updateStreamStateChange(track, allocation, update)
-
-		availableChannelCapacity -= allocation.BandwidthDelta
-		if availableChannelCapacity <= 0 {
-			break
+		sortedTracks = s.getMaxDistanceSortedDeficient()
+		if len(sortedTracks) == 0 {
+			break // nothing available to boost
 		}
 	}
 
@@ -1160,7 +1184,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 				}
 
 				for _, track := range sorted {
-					usedChannelCapacity := track.ProvisionalAllocate(availableChannelCapacity, layer, s.allowPause, FlagAllowOvershootWhileDeficient)
+					_, usedChannelCapacity := track.ProvisionalAllocate(availableChannelCapacity, layer, s.allowPause, FlagAllowOvershootWhileDeficient)
 					availableChannelCapacity -= usedChannelCapacity
 					if availableChannelCapacity < 0 {
 						availableChannelCapacity = 0
@@ -1231,8 +1255,30 @@ func (s *StreamAllocator) getExpectedBandwidthUsage() int64 {
 	return expected
 }
 
+func (s *StreamAllocator) getExpectedBandwidthUsageWithoutTracks(filteredTracks []*Track) int64 {
+	expected := int64(0)
+	for _, track := range s.getTracks() {
+		filtered := false
+		for _, ft := range filteredTracks {
+			if ft == track {
+				filtered = true
+				break
+			}
+		}
+		if !filtered {
+			expected += track.BandwidthRequested()
+		}
+	}
+
+	return expected
+}
+
 func (s *StreamAllocator) getAvailableHeadroom(allowOverride bool) int64 {
 	return s.getAvailableChannelCapacity(allowOverride) - s.getExpectedBandwidthUsage()
+}
+
+func (s *StreamAllocator) getAvailableHeadroomWithoutTracks(allowOverride bool, filteredTracks []*Track) int64 {
+	return s.getAvailableChannelCapacity(allowOverride) - s.getExpectedBandwidthUsageWithoutTracks(filteredTracks)
 }
 
 func (s *StreamAllocator) getNackDelta() (uint32, uint32) {
