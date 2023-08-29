@@ -922,11 +922,13 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 		}
 
 		if bestLayer.IsValid() {
-			// found layer that can fit in available headroom
-			update := NewStreamStateUpdate()
-			allocation := track.ProvisionalAllocateCommit()
-			updateStreamStateChange(track, allocation, update)
-			s.maybeSendUpdate(update)
+			if bestLayer.GreaterThan(transition.From) {
+				// found layer that can fit in available headroom, take it if it is better than existing
+				update := NewStreamStateUpdate()
+				allocation := track.ProvisionalAllocateCommit()
+				updateStreamStateChange(track, allocation, update)
+				s.maybeSendUpdate(update)
+			}
 
 			s.adjustState()
 			return
