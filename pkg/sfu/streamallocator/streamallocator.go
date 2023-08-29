@@ -1029,9 +1029,13 @@ func (s *StreamAllocator) maybeBoostDeficientTracks() {
 	sortedTracks := s.getMaxDistanceSortedDeficient()
 boost_loop:
 	for {
-		for _, track := range sortedTracks {
+		for idx, track := range sortedTracks {
 			allocation, boosted := track.AllocateNextHigher(availableChannelCapacity, FlagAllowOvershootInCatchup)
 			if !boosted {
+				if idx == len(sortedTracks)-1 {
+					// all tracks tried
+					break boost_loop
+				}
 				continue
 			}
 
