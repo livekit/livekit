@@ -417,9 +417,12 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 
 	flowState := b.updateStreamState(&rtpPacket, arrivalTime)
 	b.processHeaderExtensions(&rtpPacket, arrivalTime)
-	if !flowState.IsOutOfOrder && len(rtpPacket.Payload) == 0 {
-		// drop padding only in-order packet
-		b.snRangeMap.IncValue(1)
+	if len(rtpPacket.Payload) == 0 && (!flowState.IsOutOfOrder || flowState.IsDuplicate) {
+		// drop padding only in-order or duplicate packet
+		if !flowState.IsOutOfOrder {
+			// in-order packet - increment sequence number for subsequent packets
+			b.snRangeMap.IncValue(1)
+		}
 		return
 	}
 
