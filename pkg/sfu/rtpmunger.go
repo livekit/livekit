@@ -195,6 +195,7 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 
 	snOffset, err := r.snRangeMap.GetValue(extPkt.ExtSequenceNumber)
 	if err != nil {
+		r.logger.Errorw("could not get sequence number adjustment", err, "sn", extPkt.ExtSequenceNumber, "payloadSize", len(extPkt.Packet.Payload))
 		return &TranslationParamsRTP{
 			snOrdering: ordering,
 		}, ErrSequenceNumberOffsetNotFound

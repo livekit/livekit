@@ -65,7 +65,17 @@ func TestRangeMapUint32(t *testing.T) {
 
 	// excluded range should return error
 	value, err = r.GetValue(10)
-	require.Error(t, err, errKeyNotFound)
+	require.ErrorIs(t, err, errKeyExcluded)
+
+	// out-of-order exclusion should return error
+	err = r.ExcludeRange(9, 10)
+	require.ErrorIs(t, err, errReversedOrder)
+
+	// flipped exclusion should return error
+	err = r.ExcludeRange(12, 11)
+	require.ErrorIs(t, err, errReversedOrder)
+	err = r.ExcludeRange(11, 11)
+	require.ErrorIs(t, err, errReversedOrder)
 
 	// add adjacent exclusion range of length = 1
 	err = r.ExcludeRange(11, 12)
@@ -87,7 +97,7 @@ func TestRangeMapUint32(t *testing.T) {
 
 	// excluded range should return error, now is excluded because exclusion range could be extended
 	value, err = r.GetValue(11)
-	require.Error(t, err, errKeyNotFound)
+	require.ErrorIs(t, err, errKeyExcluded)
 
 	// getting value in old range should return 0
 	value, err = r.GetValue(6)
@@ -118,7 +128,7 @@ func TestRangeMapUint32(t *testing.T) {
 
 	// excluded range should return error, now is excluded because exclusion range could be extended
 	value, err = r.GetValue(15)
-	require.Error(t, err, errKeyNotFound)
+	require.ErrorIs(t, err, errKeyExcluded)
 
 	// newer should return 12
 	value, err = r.GetValue(25)
@@ -183,15 +193,15 @@ func TestRangeMapUint32(t *testing.T) {
 
 	// excluded range should return error
 	value, err = r.GetValue(50)
-	require.Error(t, err, errKeyNotFound)
+	require.ErrorIs(t, err, errKeyExcluded)
 	value, err = r.GetValue(28)
-	require.Error(t, err, errKeyNotFound)
+	require.ErrorIs(t, err, errKeyExcluded)
 	value, err = r.GetValue(17)
-	require.Error(t, err, errKeyNotFound)
+	require.ErrorIs(t, err, errKeyTooOld)
 
 	// previously valid, but aged out key should return error
 	value, err = r.GetValue(5)
-	require.Error(t, err, errKeyNotFound)
+	require.ErrorIs(t, err, errKeyTooOld)
 
 	// valid range access should return values
 	value, err = r.GetValue(24)

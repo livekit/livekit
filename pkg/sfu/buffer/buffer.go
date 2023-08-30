@@ -445,7 +445,7 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 	// add to RTX buffer using sequence number after accounting for dropped padding only packets
 	snAdjustment, err := b.snRangeMap.GetValue(flowState.ExtSequenceNumber)
 	if err != nil {
-		b.logger.Errorw("could not get sequence number adjustment", err)
+		b.logger.Errorw("could not get sequence number adjustment", err, "sn", flowState.ExtSequenceNumber, "payloadSize", len(rtpPacket.Payload))
 		return
 	}
 	rtpPacket.Header.SequenceNumber = uint16(flowState.ExtSequenceNumber - snAdjustment)

@@ -25,8 +25,10 @@ const (
 )
 
 var (
-	errReversedOrder = errors.New("end is before start")
+	errReversedOrder = errors.New("end <= start")
 	errKeyNotFound   = errors.New("key not found")
+	errKeyTooOld     = errors.New("key too old")
+	errKeyExcluded   = errors.New("key excluded")
 )
 
 type rangeType interface {
@@ -122,21 +124,26 @@ func (r *RangeMap[RT, VT]) GetValue(key RT) (VT, error) {
 
 		if key < r.ranges[0].start {
 			// too old
-			return 0, errKeyNotFound
+			return 0, errKeyTooOld
 		}
 	}
 
-	for idx := numRanges - 2; idx >= 0; idx-- {
+	for idx := numRanges - 1; idx >= 0; idx-- {
 		rv := &r.ranges[idx]
-		if key-rv.start < r.halfRange && rv.end-key < r.halfRange {
-			return rv.value, nil
+		if idx != numRanges-1 {
+			// open range checked above
+			if key-rv.start < r.halfRange && rv.end-key < r.halfRange {
+				return rv.value, nil
+			}
 		}
 
 		if idx > 0 {
-			rvPrev := &r.ranges[idx]
-			if key-rvPrev.end < r.halfRange && rv.start-key < r.halfRange {
+			rvPrev := &r.ranges[idx-1]
+			beforeDiff := key - rvPrev.end
+			afterDiff := rv.start - key
+			if beforeDiff > 0 && beforeDiff < r.halfRange && afterDiff > 0 && afterDiff < r.halfRange {
 				// in excluded range
-				return 0, errKeyNotFound
+				return 0, errKeyExcluded
 			}
 		}
 	}
