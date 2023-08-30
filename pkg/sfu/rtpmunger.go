@@ -53,12 +53,13 @@ type SnTs struct {
 // ----------------------------------------------------------------------
 
 type RTPMungerState struct {
-	ExtLastSN uint64
-	ExtLastTS uint64
+	ExtLastSN       uint64
+	ExtSecondLastSN uint64
+	ExtLastTS       uint64
 }
 
 func (r RTPMungerState) String() string {
-	return fmt.Sprintf("RTPMungerState{extLastSN: %d, extLastTS: %d)", r.ExtLastSN, r.ExtLastTS)
+	return fmt.Sprintf("RTPMungerState{extLastSN: %d, extSecondLastSN: %d, extLastTS: %d)", r.ExtLastSN, r.ExtSecondLastSN, r.ExtLastTS)
 }
 
 // ----------------------------------------------------------------------
@@ -69,10 +70,11 @@ type RTPMunger struct {
 	extHighestIncomingSN uint64
 	snRangeMap           *utils.RangeMap[uint64, uint64]
 
-	extLastSN  uint64
-	extLastTS  uint64
-	tsOffset   uint64
-	lastMarker bool
+	extLastSN       uint64
+	extSecondLastSN uint64
+	extLastTS       uint64
+	tsOffset        uint64
+	lastMarker      bool
 
 	extRtxGateSn      uint64
 	isInRtxGateRegion bool
@@ -90,6 +92,7 @@ func (r *RTPMunger) DebugInfo() map[string]interface{} {
 	return map[string]interface{}{
 		"ExtHighestIncomingSN": r.extHighestIncomingSN,
 		"ExtLastSN":            r.extLastSN,
+		"ExtSecondLastSN":      r.extSecondLastSN,
 		"SNOffset":             snOffset,
 		"ExtLastTS":            r.extLastTS,
 		"TSOffset":             r.tsOffset,
@@ -99,19 +102,22 @@ func (r *RTPMunger) DebugInfo() map[string]interface{} {
 
 func (r *RTPMunger) GetLast() RTPMungerState {
 	return RTPMungerState{
-		ExtLastSN: r.extLastSN,
-		ExtLastTS: r.extLastTS,
+		ExtLastSN:       r.extLastSN,
+		ExtSecondLastSN: r.extSecondLastSN,
+		ExtLastTS:       r.extLastTS,
 	}
 }
 
 func (r *RTPMunger) SeedLast(state RTPMungerState) {
 	r.extLastSN = state.ExtLastSN
+	r.extSecondLastSN = state.ExtSecondLastSN
 	r.extLastTS = state.ExtLastTS
 }
 
 func (r *RTPMunger) SetLastSnTs(extPkt *buffer.ExtPacket) {
 	r.extHighestIncomingSN = extPkt.ExtSequenceNumber - 1
 	r.extLastSN = extPkt.ExtSequenceNumber
+	r.extSecondLastSN = r.extLastSN - 1
 	r.extLastTS = extPkt.ExtTimestamp
 }
 
@@ -126,17 +132,22 @@ func (r *RTPMunger) PacketDropped(extPkt *buffer.ExtPacket) {
 		return
 	}
 
+	snOffset, err := r.snRangeMap.GetValue(extPkt.ExtSequenceNumber)
+	if err == nil {
+		outSN := extPkt.ExtSequenceNumber - snOffset
+		if outSN != r.extLastSN {
+			r.logger.Warnw("last outgoing sequence number mismatch", nil, "expected", r.extLastSN, "got", outSN)
+		}
+	}
+	if r.extLastSN == r.extSecondLastSN {
+		r.logger.Warnw("cannot roll back on drop", nil, "extLastSN", r.extLastSN, "secondLastSN", r.extSecondLastSN)
+	}
+
 	if err := r.snRangeMap.CloseRangeAndIncValue(r.extHighestIncomingSN+1, 1); err != nil {
 		r.logger.Errorw("could not close range", err, "sn", r.extHighestIncomingSN)
 	}
 
-	snOffset, err := r.snRangeMap.GetValue(extPkt.ExtSequenceNumber)
-	if err != nil {
-		r.logger.Errorw("could not get sequence number offset", err)
-		return
-	}
-
-	r.extLastSN = extPkt.ExtSequenceNumber - snOffset
+	r.extLastSN = r.extSecondLastSN
 }
 
 func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationParamsRTP, error) {
@@ -192,6 +203,7 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 	extMungedSN := extPkt.ExtSequenceNumber - snOffset
 	extMungedTS := extPkt.ExtTimestamp - r.tsOffset
 
+	r.extSecondLastSN = r.extLastSN
 	r.extLastSN = extMungedSN
 	r.extLastTS = extMungedTS
 	r.lastMarker = extPkt.Packet.Marker
@@ -228,6 +240,10 @@ func (r *RTPMunger) FilterRTX(nacks []uint16) []uint16 {
 }
 
 func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate uint32, forceMarker bool, extRtpTimestamp uint64) ([]SnTs, error) {
+	if num == 0 {
+		return nil, nil
+	}
+
 	useLastTSForFirst := false
 	tsOffset := 0
 	if !r.lastMarker {
@@ -263,6 +279,7 @@ func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate
 		}
 	}
 
+	r.extSecondLastSN = extLastSN - 1
 	r.extLastSN = extLastSN
 	if err := r.snRangeMap.CloseRangeAndDecValue(r.extHighestIncomingSN+1, uint64(num)); err != nil {
 		r.logger.Errorw("could not close range", err, "sn", r.extHighestIncomingSN, "dec", num)

@@ -1214,10 +1214,9 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 	require.Equal(t, expectedTP, *actualTP)
 
 	// add a missing sequence number to the cache
-	f.rtpMunger.snRangeMap.IncValue(10)
-	f.rtpMunger.snRangeMap.AddRange(23332, 23333)
+	f.rtpMunger.snRangeMap.CloseRangeAndIncValue(23333, 10)
 
-	// out-of-order packet not in cache should be dropped
+	// out-of-order packet should get offset from cache
 	params = &testutils.TestExtPacketParams{
 		SequenceNumber: 23331,
 		Timestamp:      0xabcdef,
@@ -1227,7 +1226,11 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 	extPkt, _ = testutils.GetTestExtPacket(params)
 
 	expectedTP = TranslationParams{
-		shouldDrop: true,
+		rtp: &TranslationParamsRTP{
+			snOrdering:     SequenceNumberOrderingOutOfOrder,
+			sequenceNumber: 23331,
+			timestamp:      0xabcdef,
+		},
 	}
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
 	require.NoError(t, err)
