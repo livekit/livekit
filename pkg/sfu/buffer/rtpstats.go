@@ -62,6 +62,7 @@ type RTPFlowState struct {
 	LossStartInclusive uint64
 	LossEndExclusive   uint64
 
+	IsDuplicate  bool
 	IsOutOfOrder bool
 
 	ExtSequenceNumber uint64
@@ -409,7 +410,6 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 
 	hdrSize := uint64(rtph.MarshalSize())
 	pktSize := hdrSize + uint64(payloadSize+paddingSize)
-	isDuplicate := false
 	gapSN := int64(resSN.ExtendedVal - resSN.PreExtendedHighest)
 	if gapSN <= 0 { // duplicate OR out-of-order
 		if payloadSize == 0 {
@@ -458,7 +458,7 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 			r.bytesDuplicate += pktSize
 			r.headerBytesDuplicate += hdrSize
 			r.packetsDuplicate++
-			isDuplicate = true
+			flowState.IsDuplicate = true
 		} else {
 			r.packetsLost--
 			r.setSnInfo(resSN.ExtendedVal, resSN.PreExtendedHighest, uint16(pktSize), uint16(hdrSize), uint16(payloadSize), rtph.Marker, true)
@@ -492,7 +492,7 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 		flowState.ExtTimestamp = resTS.ExtendedVal
 	}
 
-	if !isDuplicate {
+	if !flowState.IsDuplicate {
 		if payloadSize == 0 {
 			r.packetsPadding++
 			r.bytesPadding += pktSize
