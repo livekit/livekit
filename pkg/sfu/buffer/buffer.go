@@ -416,7 +416,12 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 	}
 
 	flowState := b.updateStreamState(&rtpPacket, arrivalTime)
+	// process header extensions always as padding packets could be used for probing
 	b.processHeaderExtensions(&rtpPacket, arrivalTime)
+	if flowState.IsNotHandled {
+		return
+	}
+
 	if len(rtpPacket.Payload) == 0 && (!flowState.IsOutOfOrder || flowState.IsDuplicate) {
 		// drop padding only in-order or duplicate packet
 		if !flowState.IsOutOfOrder {
@@ -436,7 +441,7 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 			//   44 - padding only - out-of-order + duplicate - dropped as duplicate
 			//
 			if err := b.snRangeMap.ExcludeRange(flowState.ExtSequenceNumber, flowState.ExtSequenceNumber+1); err != nil {
-				b.logger.Errorw("could not exclude range", err, "sn", flowState.ExtSequenceNumber)
+				b.logger.Errorw("could not exclude range", err, "sn", rtpPacket.SequenceNumber, "esn", flowState.ExtSequenceNumber)
 			}
 		}
 		return
