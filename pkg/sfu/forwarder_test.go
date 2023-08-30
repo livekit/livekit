@@ -1214,10 +1214,9 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 	require.Equal(t, expectedTP, *actualTP)
 
 	// add a missing sequence number to the cache
-	f.rtpMunger.snRangeMap.IncValue(10)
-	f.rtpMunger.snRangeMap.AddRange(23332, 23333)
+	f.rtpMunger.snRangeMap.ExcludeRange(23332, 23333)
 
-	// out-of-order packet not in cache should be dropped
+	// out-of-order packet should get offset from cache
 	params = &testutils.TestExtPacketParams{
 		SequenceNumber: 23331,
 		Timestamp:      0xabcdef,
@@ -1227,7 +1226,11 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 	extPkt, _ = testutils.GetTestExtPacket(params)
 
 	expectedTP = TranslationParams{
-		shouldDrop: true,
+		rtp: &TranslationParamsRTP{
+			snOrdering:     SequenceNumberOrderingOutOfOrder,
+			sequenceNumber: 23331,
+			timestamp:      0xabcdef,
+		},
 	}
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
 	require.NoError(t, err)
@@ -1260,7 +1263,7 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingContiguous,
-			sequenceNumber: 23324,
+			sequenceNumber: 23333,
 			timestamp:      0xabcdef,
 		},
 	}
@@ -1279,7 +1282,7 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingGap,
-			sequenceNumber: 23326,
+			sequenceNumber: 23335,
 			timestamp:      0xabcdef,
 		},
 	}
@@ -1299,7 +1302,7 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingOutOfOrder,
-			sequenceNumber: 23325,
+			sequenceNumber: 23334,
 			timestamp:      0xabcdef,
 		},
 	}
@@ -1319,7 +1322,7 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingContiguous,
-			sequenceNumber: 23327,
+			sequenceNumber: 23336,
 			timestamp:      0xabcdf0,
 		},
 	}
