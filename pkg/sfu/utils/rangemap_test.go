@@ -49,10 +49,19 @@ func TestRangeMapUint32(t *testing.T) {
 	require.Equal(t, uint32(66666666), r.ranges[0].end)
 	require.Equal(t, uint32(0), r.ranges[0].value)
 
-	// out-or-order should fail
+	// duplicate should not create a new range
 	err = r.CloseRangeAndIncValue(66666667, 2)
-	require.Error(t, err, errReversedOrder)
+	require.NoError(t, err)
 
+	require.Equal(t, 1, len(r.ranges))
+
+	require.Equal(t, uint32(0), r.ranges[0].start)
+	require.Equal(t, uint32(66666666), r.ranges[0].end)
+	require.Equal(t, uint32(0), r.ranges[0].value)
+
+	require.Equal(t, uint32(4), r.runningValue)
+
+	// out-of-order should fail
 	err = r.CloseRangeAndIncValue(66666666, 2)
 	require.Error(t, err, errReversedOrder)
 
@@ -66,30 +75,30 @@ func TestRangeMapUint32(t *testing.T) {
 
 	require.Equal(t, uint32(66666667), r.ranges[1].start)
 	require.Equal(t, uint32(88888888), r.ranges[1].end)
-	require.Equal(t, uint32(2), r.ranges[1].value)
+	require.Equal(t, uint32(4), r.ranges[1].value)
 
 	err = r.CloseRangeAndIncValue(99999999, 2)
 	require.NoError(t, err)
 
 	require.Equal(t, uint32(66666667), r.ranges[0].start)
 	require.Equal(t, uint32(88888888), r.ranges[0].end)
-	require.Equal(t, uint32(2), r.ranges[0].value)
+	require.Equal(t, uint32(4), r.ranges[0].value)
 
 	require.Equal(t, uint32(88888889), r.ranges[1].start)
 	require.Equal(t, uint32(99999998), r.ranges[1].end)
-	require.Equal(t, uint32(4), r.ranges[1].value)
+	require.Equal(t, uint32(6), r.ranges[1].value)
 
 	// getting an old value should not succeed, but start of first range should return no error
 	value, err = r.GetValue(66666666)
 	require.Error(t, err, errKeyNotFound)
 	value, err = r.GetValue(66666667)
 	require.NoError(t, err)
-	require.Equal(t, uint32(2), value)
+	require.Equal(t, uint32(4), value)
 
 	// something newer than what is in ranges should return running value
 	value, err = r.GetValue(99999999)
 	require.NoError(t, err)
-	require.Equal(t, uint32(6), value)
+	require.Equal(t, uint32(8), value)
 
 	// decrement running value
 	err = r.CloseRangeAndDecValue(99999999+1000, 3)
@@ -97,17 +106,17 @@ func TestRangeMapUint32(t *testing.T) {
 
 	require.Equal(t, uint32(88888889), r.ranges[0].start)
 	require.Equal(t, uint32(99999998), r.ranges[0].end)
-	require.Equal(t, uint32(4), r.ranges[0].value)
+	require.Equal(t, uint32(6), r.ranges[0].value)
 
 	require.Equal(t, uint32(99999999), r.ranges[1].start)
 	require.Equal(t, uint32(99999999+999), r.ranges[1].end)
-	require.Equal(t, uint32(6), r.ranges[1].value)
+	require.Equal(t, uint32(8), r.ranges[1].value)
 
 	value, err = r.GetValue(99999999)
 	require.NoError(t, err)
-	require.Equal(t, uint32(6), value)
+	require.Equal(t, uint32(8), value)
 
 	value, err = r.GetValue(99999999 + 1000)
 	require.NoError(t, err)
-	require.Equal(t, uint32(3), value)
+	require.Equal(t, uint32(5), value)
 }

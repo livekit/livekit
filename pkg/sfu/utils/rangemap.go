@@ -81,9 +81,15 @@ func (r *RangeMap[RT, VT]) CloseRangeAndDecValue(endExclusive RT, dec VT) error 
 }
 
 func (r *RangeMap[RT, VT]) closeRange(endExclusive RT) error {
+	numRanges := len(r.ranges)
 	startInclusive := RT(0)
-	if len(r.ranges) != 0 {
-		startInclusive = r.ranges[len(r.ranges)-1].end + 1
+	if numRanges != 0 {
+		startInclusive = r.ranges[numRanges-1].end + 1
+
+		if endExclusive == r.ranges[numRanges-1].end+1 {
+			// key already in map and corresponding range recorded
+			return nil
+		}
 	}
 	if endExclusive == startInclusive || endExclusive-startInclusive > r.halfRange {
 		return errReversedOrder
