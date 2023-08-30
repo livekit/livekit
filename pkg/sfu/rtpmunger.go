@@ -53,13 +53,14 @@ type SnTs struct {
 // ----------------------------------------------------------------------
 
 type RTPMungerState struct {
-	ExtLastSN  uint64
-	ExtLastTS  uint64
-	LastMarker bool
+	ExtLastSN       uint64
+	ExtSecondLastSN uint64
+	ExtLastTS       uint64
+	LastMarker      bool
 }
 
 func (r RTPMungerState) String() string {
-	return fmt.Sprintf("RTPMungerState{extLastSN: %d, extLastTS: %d, lastMarker: %v)", r.ExtLastSN, r.ExtLastTS, r.LastMarker)
+	return fmt.Sprintf("RTPMungerState{extLastSN: %d, extSecondLastSN: %d, extLastTS: %d, lastMarker: %v)", r.ExtLastSN, r.ExtSecondLastSN, r.ExtLastTS, r.LastMarker)
 }
 
 // ----------------------------------------------------------------------
@@ -70,10 +71,11 @@ type RTPMunger struct {
 	extHighestIncomingSN uint64
 	snRangeMap           *utils.RangeMap[uint64, uint64]
 
-	extLastSN  uint64
-	extLastTS  uint64
-	tsOffset   uint64
-	lastMarker bool
+	extLastSN       uint64
+	extSecondLastSN uint64
+	extLastTS       uint64
+	tsOffset        uint64
+	lastMarker      bool
 
 	extRtxGateSn      uint64
 	isInRtxGateRegion bool
@@ -87,10 +89,11 @@ func NewRTPMunger(logger logger.Logger) *RTPMunger {
 }
 
 func (r *RTPMunger) DebugInfo() map[string]interface{} {
-	snOffset, _ := r.snRangeMap.GetValue(r.extHighestIncomingSN)
+	snOffset, _ := r.snRangeMap.GetValue(r.extHighestIncomingSN + 1)
 	return map[string]interface{}{
 		"ExtHighestIncomingSN": r.extHighestIncomingSN,
 		"ExtLastSN":            r.extLastSN,
+		"ExtSecondLastSN":      r.extSecondLastSN,
 		"SNOffset":             snOffset,
 		"ExtLastTS":            r.extLastTS,
 		"TSOffset":             r.tsOffset,
@@ -100,14 +103,16 @@ func (r *RTPMunger) DebugInfo() map[string]interface{} {
 
 func (r *RTPMunger) GetLast() RTPMungerState {
 	return RTPMungerState{
-		ExtLastSN:  r.extLastSN,
-		ExtLastTS:  r.extLastTS,
-		LastMarker: r.lastMarker,
+		ExtLastSN:       r.extLastSN,
+		ExtSecondLastSN: r.extSecondLastSN,
+		ExtLastTS:       r.extLastTS,
+		LastMarker:      r.lastMarker,
 	}
 }
 
 func (r *RTPMunger) SeedLast(state RTPMungerState) {
 	r.extLastSN = state.ExtLastSN
+	r.extSecondLastSN = state.ExtSecondLastSN
 	r.extLastTS = state.ExtLastTS
 	r.lastMarker = state.LastMarker
 }
@@ -115,6 +120,7 @@ func (r *RTPMunger) SeedLast(state RTPMungerState) {
 func (r *RTPMunger) SetLastSnTs(extPkt *buffer.ExtPacket) {
 	r.extHighestIncomingSN = extPkt.ExtSequenceNumber - 1
 	r.extLastSN = extPkt.ExtSequenceNumber
+	r.extSecondLastSN = r.extLastSN - 1
 	r.extLastTS = extPkt.ExtTimestamp
 }
 
@@ -129,15 +135,22 @@ func (r *RTPMunger) PacketDropped(extPkt *buffer.ExtPacket) {
 		return
 	}
 
-	r.snRangeMap.IncValue(1)
-
 	snOffset, err := r.snRangeMap.GetValue(extPkt.ExtSequenceNumber)
-	if err != nil {
-		r.logger.Errorw("could not get sequence number offset", err)
-		return
+	if err == nil {
+		outSN := extPkt.ExtSequenceNumber - snOffset
+		if outSN != r.extLastSN {
+			r.logger.Warnw("last outgoing sequence number mismatch", nil, "expected", r.extLastSN, "got", outSN)
+		}
+	}
+	if r.extLastSN == r.extSecondLastSN {
+		r.logger.Warnw("cannot roll back on drop", nil, "extLastSN", r.extLastSN, "secondLastSN", r.extSecondLastSN)
 	}
 
-	r.extLastSN = extPkt.ExtSequenceNumber - snOffset
+	if err := r.snRangeMap.ExcludeRange(r.extHighestIncomingSN, r.extHighestIncomingSN+1); err != nil {
+		r.logger.Errorw("could not exclude range", err, "sn", r.extHighestIncomingSN)
+	}
+
+	r.extLastSN = r.extSecondLastSN
 }
 
 func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationParamsRTP, error) {
@@ -169,14 +182,15 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 	ordering := SequenceNumberOrderingContiguous
 	if diff > 1 {
 		ordering = SequenceNumberOrderingGap
-		r.snRangeMap.AddRange(r.extHighestIncomingSN+1, extPkt.ExtSequenceNumber)
 	}
 
 	r.extHighestIncomingSN = extPkt.ExtSequenceNumber
 
 	// if padding only packet, can be dropped and sequence number adjusted, if contiguous
 	if diff == 1 && len(extPkt.Packet.Payload) == 0 {
-		r.snRangeMap.IncValue(1)
+		if err := r.snRangeMap.ExcludeRange(r.extHighestIncomingSN, r.extHighestIncomingSN+1); err != nil {
+			r.logger.Errorw("could not exclude range", err, "sn", r.extHighestIncomingSN)
+		}
 		return &TranslationParamsRTP{
 			snOrdering: ordering,
 		}, ErrPaddingOnlyPacket
@@ -184,6 +198,7 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 
 	snOffset, err := r.snRangeMap.GetValue(extPkt.ExtSequenceNumber)
 	if err != nil {
+		r.logger.Errorw("could not get sequence number adjustment", err, "sn", extPkt.ExtSequenceNumber, "payloadSize", len(extPkt.Packet.Payload))
 		return &TranslationParamsRTP{
 			snOrdering: ordering,
 		}, ErrSequenceNumberOffsetNotFound
@@ -192,6 +207,7 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 	extMungedSN := extPkt.ExtSequenceNumber - snOffset
 	extMungedTS := extPkt.ExtTimestamp - r.tsOffset
 
+	r.extSecondLastSN = r.extLastSN
 	r.extLastSN = extMungedSN
 	r.extLastTS = extMungedTS
 	r.lastMarker = extPkt.Packet.Marker
@@ -228,6 +244,10 @@ func (r *RTPMunger) FilterRTX(nacks []uint16) []uint16 {
 }
 
 func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate uint32, forceMarker bool, extRtpTimestamp uint64) ([]SnTs, error) {
+	if num == 0 {
+		return nil, nil
+	}
+
 	useLastTSForFirst := false
 	tsOffset := 0
 	if !r.lastMarker {
@@ -263,6 +283,7 @@ func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate
 		}
 	}
 
+	r.extSecondLastSN = extLastSN - 1
 	r.extLastSN = extLastSN
 	r.snRangeMap.DecValue(uint64(num))
 
