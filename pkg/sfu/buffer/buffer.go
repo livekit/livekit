@@ -453,7 +453,8 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 		b.logger.Errorw("could not get sequence number adjustment", err, "sn", flowState.ExtSequenceNumber, "payloadSize", len(rtpPacket.Payload))
 		return
 	}
-	rtpPacket.Header.SequenceNumber = uint16(flowState.ExtSequenceNumber - snAdjustment)
+	flowState.ExtSequenceNumber -= snAdjustment
+	rtpPacket.Header.SequenceNumber = uint16(flowState.ExtSequenceNumber)
 	_, err = b.bucket.AddPacketWithSequenceNumber(pkt, rtpPacket.Header.SequenceNumber)
 	if err != nil {
 		if err != bucket.ErrRTXPacket {
