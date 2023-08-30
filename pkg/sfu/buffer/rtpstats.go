@@ -525,6 +525,7 @@ func (r *RTPStats) Resync(esn uint64, ets uint64, at time.Time) {
 	r.sequenceNumber.ResetHighest(esn - 1)
 	r.timestamp.ResetHighest(ets)
 	r.highestTime = at
+	r.logger.Debugw("resync", "extSequenceNumber", esn, "extTimestamp", ets, "at", at)
 }
 
 func (r *RTPStats) getPacketsExpected() uint64 {
