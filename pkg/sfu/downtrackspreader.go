@@ -47,12 +47,7 @@ func NewDownTrackSpreader(params DownTrackSpreaderParams) *DownTrackSpreader {
 func (d *DownTrackSpreader) GetDownTracks() []TrackSender {
 	d.downTrackMu.RLock()
 	defer d.downTrackMu.RUnlock()
-
-	downTracks := make([]TrackSender, 0, len(d.downTracksShadow))
-	for _, dt := range d.downTracksShadow {
-		downTracks = append(downTracks, dt)
-	}
-	return downTracks
+	return d.downTracksShadow
 }
 
 func (d *DownTrackSpreader) ResetAndGetDownTracks() []TrackSender {
