@@ -62,6 +62,7 @@ type RTPFlowState struct {
 	LossStartInclusive uint64
 	LossEndExclusive   uint64
 
+	IsDuplicate  bool
 	IsOutOfOrder bool
 
 	ExtSequenceNumber uint64
@@ -409,7 +410,6 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 
 	hdrSize := uint64(rtph.MarshalSize())
 	pktSize := hdrSize + uint64(payloadSize+paddingSize)
-	isDuplicate := false
 	gapSN := int64(resSN.ExtendedVal - resSN.PreExtendedHighest)
 	if gapSN <= 0 { // duplicate OR out-of-order
 		if payloadSize == 0 {
@@ -458,7 +458,7 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 			r.bytesDuplicate += pktSize
 			r.headerBytesDuplicate += hdrSize
 			r.packetsDuplicate++
-			isDuplicate = true
+			flowState.IsDuplicate = true
 		} else {
 			r.packetsLost--
 			r.setSnInfo(resSN.ExtendedVal, resSN.PreExtendedHighest, uint16(pktSize), uint16(hdrSize), uint16(payloadSize), rtph.Marker, true)
@@ -492,7 +492,7 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 		flowState.ExtTimestamp = resTS.ExtendedVal
 	}
 
-	if !isDuplicate {
+	if !flowState.IsDuplicate {
 		if payloadSize == 0 {
 			r.packetsPadding++
 			r.bytesPadding += pktSize
@@ -565,7 +565,7 @@ func (r *RTPStats) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt uint32
 			extHighestSNOverridden += (1 << 32)
 		}
 	}
-	if extHighestSNOverridden < r.sequenceNumber.GetExtendedHighest() {
+	if extHighestSNOverridden < r.sequenceNumber.GetExtendedStart() {
 		// it is possible that the `LastSequenceNumber` in the receiver report is before the starting
 		// sequence number when dummy packets are used to trigger Pion's OnTrack path.
 		r.lastRRTime = time.Now()
@@ -1591,8 +1591,8 @@ func (r *RTPStats) getDrift() (packetDrift *livekit.RTPDrift, reportDrift *livek
 				StartTime:      timestamppb.New(r.srFirst.NTPTimestamp.Time()),
 				EndTime:        timestamppb.New(r.srNewest.NTPTimestamp.Time()),
 				Duration:       elapsed.Seconds(),
-				StartTimestamp: r.timestamp.GetExtendedStart(),
-				EndTimestamp:   r.timestamp.GetExtendedHighest(),
+				StartTimestamp: r.srFirst.RTPTimestampExt,
+				EndTimestamp:   r.srNewest.RTPTimestampExt,
 				RtpClockTicks:  rtpClockTicks,
 				DriftSamples:   driftSamples,
 				DriftMs:        (float64(driftSamples) * 1000) / float64(r.params.ClockRate),
