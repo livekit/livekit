@@ -58,6 +58,8 @@ func RTPDriftToString(r *livekit.RTPDrift) string {
 // -------------------------------------------------------
 
 type RTPFlowState struct {
+	IsNotHandled bool
+
 	HasLoss            bool
 	LossStartInclusive uint64
 	LossEndExclusive   uint64
@@ -365,6 +367,7 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 	defer r.lock.Unlock()
 
 	if !r.endTime.IsZero() {
+		flowState.IsNotHandled = true
 		return
 	}
 
@@ -373,6 +376,7 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 	if !r.initialized {
 		if payloadSize == 0 {
 			// do not start on a padding only packet
+			flowState.IsNotHandled = true
 			return
 		}
 
