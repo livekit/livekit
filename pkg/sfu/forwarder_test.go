@@ -1214,7 +1214,7 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 	require.Equal(t, expectedTP, *actualTP)
 
 	// add a missing sequence number to the cache
-	f.rtpMunger.snRangeMap.CloseRangeAndIncValue(23333, 10)
+	f.rtpMunger.snRangeMap.ExcludeRange(23332, 23333)
 
 	// out-of-order packet should get offset from cache
 	params = &testutils.TestExtPacketParams{
@@ -1263,7 +1263,7 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingContiguous,
-			sequenceNumber: 23324,
+			sequenceNumber: 23333,
 			timestamp:      0xabcdef,
 		},
 	}
@@ -1282,7 +1282,7 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingGap,
-			sequenceNumber: 23326,
+			sequenceNumber: 23335,
 			timestamp:      0xabcdef,
 		},
 	}
@@ -1302,7 +1302,7 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingOutOfOrder,
-			sequenceNumber: 23325,
+			sequenceNumber: 23334,
 			timestamp:      0xabcdef,
 		},
 	}
@@ -1322,7 +1322,7 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingContiguous,
-			sequenceNumber: 23327,
+			sequenceNumber: 23336,
 			timestamp:      0xabcdf0,
 		},
 	}

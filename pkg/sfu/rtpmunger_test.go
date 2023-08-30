@@ -127,8 +127,7 @@ func TestPacketDropped(t *testing.T) {
 	r.PacketDropped(extPkt)
 	require.Equal(t, uint64(23333), r.extLastSN)
 	snOffset, err = r.snRangeMap.GetValue(r.extHighestIncomingSN)
-	require.NoError(t, err)
-	require.Equal(t, uint64(0), snOffset)
+	require.Error(t, err)
 	snOffset, err = r.snRangeMap.GetValue(r.extHighestIncomingSN + 1)
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), snOffset)
@@ -162,7 +161,7 @@ func TestOutOfOrderSequenceNumber(t *testing.T) {
 	r.UpdateAndGetSnTs(extPkt)
 
 	// add a missing sequence number to the cache
-	r.snRangeMap.CloseRangeAndIncValue(23333, 10)
+	r.snRangeMap.ExcludeRange(23332, 23333)
 
 	// out-of-order sequence number should be munged using cache
 	params = &testutils.TestExtPacketParams{
@@ -192,13 +191,11 @@ func TestOutOfOrderSequenceNumber(t *testing.T) {
 	extPkt, _ = testutils.GetTestExtPacket(params)
 
 	tpExpected = TranslationParamsRTP{
-		snOrdering:     SequenceNumberOrderingOutOfOrder,
-		sequenceNumber: 23332,
-		timestamp:      0xabcdef,
+		snOrdering: SequenceNumberOrderingOutOfOrder,
 	}
 
 	tp, err = r.UpdateAndGetSnTs(extPkt)
-	require.NoError(t, err)
+	require.Error(t, err, ErrOutOfOrderSequenceNumberCacheMiss)
 	require.Equal(t, tpExpected, *tp)
 }
 
@@ -250,8 +247,7 @@ func TestPaddingOnlyPacket(t *testing.T) {
 	require.Equal(t, uint64(23333), r.extHighestIncomingSN)
 	require.Equal(t, uint64(23333), r.extLastSN)
 	snOffset, err := r.snRangeMap.GetValue(r.extHighestIncomingSN)
-	require.NoError(t, err)
-	require.Equal(t, uint64(0), snOffset)
+	require.Error(t, err)
 
 	// padding only packet with a gap should not report an error
 	params = &testutils.TestExtPacketParams{
@@ -343,8 +339,7 @@ func TestGapInSequenceNumber(t *testing.T) {
 	require.Equal(t, uint64(65536+2), r.extHighestIncomingSN)
 	require.Equal(t, uint64(65536+1), r.extLastSN)
 	snOffset, err = r.snRangeMap.GetValue(r.extHighestIncomingSN)
-	require.NoError(t, err)
-	require.Equal(t, uint64(0), snOffset)
+	require.Error(t, err)
 
 	// a packet with a gap should be adjusting for dropped padding packet
 	params = &testutils.TestExtPacketParams{
@@ -395,8 +390,7 @@ func TestGapInSequenceNumber(t *testing.T) {
 	require.Equal(t, uint64(65536+5), r.extHighestIncomingSN)
 	require.Equal(t, uint64(65536+3), r.extLastSN)
 	snOffset, err = r.snRangeMap.GetValue(r.extHighestIncomingSN)
-	require.NoError(t, err)
-	require.Equal(t, uint64(1), snOffset)
+	require.Error(t, err)
 
 	// a packet with a gap should be adjusting for dropped packets
 	params = &testutils.TestExtPacketParams{

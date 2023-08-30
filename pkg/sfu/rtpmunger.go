@@ -143,8 +143,8 @@ func (r *RTPMunger) PacketDropped(extPkt *buffer.ExtPacket) {
 		r.logger.Warnw("cannot roll back on drop", nil, "extLastSN", r.extLastSN, "secondLastSN", r.extSecondLastSN)
 	}
 
-	if err := r.snRangeMap.CloseRangeAndIncValue(r.extHighestIncomingSN+1, 1); err != nil {
-		r.logger.Errorw("could not close range", err, "sn", r.extHighestIncomingSN)
+	if err := r.snRangeMap.ExcludeRange(r.extHighestIncomingSN, r.extHighestIncomingSN+1); err != nil {
+		r.logger.Errorw("could not exclude range", err, "sn", r.extHighestIncomingSN)
 	}
 
 	r.extLastSN = r.extSecondLastSN
@@ -185,8 +185,8 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 
 	// if padding only packet, can be dropped and sequence number adjusted, if contiguous
 	if diff == 1 && len(extPkt.Packet.Payload) == 0 {
-		if err := r.snRangeMap.CloseRangeAndIncValue(r.extHighestIncomingSN+1, 1); err != nil {
-			r.logger.Errorw("could not close range", err, "sn", r.extHighestIncomingSN)
+		if err := r.snRangeMap.ExcludeRange(r.extHighestIncomingSN, r.extHighestIncomingSN+1); err != nil {
+			r.logger.Errorw("could not exclude range", err, "sn", r.extHighestIncomingSN)
 		}
 		return &TranslationParamsRTP{
 			snOrdering: ordering,
@@ -281,9 +281,7 @@ func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate
 
 	r.extSecondLastSN = extLastSN - 1
 	r.extLastSN = extLastSN
-	if err := r.snRangeMap.CloseRangeAndDecValue(r.extHighestIncomingSN+1, uint64(num)); err != nil {
-		r.logger.Errorw("could not close range", err, "sn", r.extHighestIncomingSN, "dec", num)
-	}
+	r.snRangeMap.DecValue(uint64(num))
 
 	r.tsOffset -= extLastTS - r.extLastTS
 	r.extLastTS = extLastTS

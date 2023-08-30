@@ -46,59 +46,66 @@ type rangeVal[RT rangeType, VT valueType] struct {
 type RangeMap[RT rangeType, VT valueType] struct {
 	halfRange RT
 
-	size         int
-	ranges       []rangeVal[RT, VT]
-	runningValue VT
+	size   int
+	ranges []rangeVal[RT, VT]
 }
 
 func NewRangeMap[RT rangeType, VT valueType](size int) *RangeMap[RT, VT] {
 	var t RT
-	return &RangeMap[RT, VT]{
+	r := &RangeMap[RT, VT]{
 		halfRange: 1 << ((unsafe.Sizeof(t) * 8) - 1),
 		size:      int(math.Max(float64(size), float64(minRanges))),
 	}
+	r.initRanges(0)
+	return r
 }
 
 func (r *RangeMap[RT, VT]) ClearAndResetValue(val VT) {
-	r.ranges = r.ranges[:0]
-	r.runningValue = val
+	r.initRanges(val)
 }
 
-func (r *RangeMap[RT, VT]) CloseRangeAndIncValue(endExclusive RT, inc VT) error {
-	if err := r.closeRange(endExclusive); err != nil {
-		return err
-	}
-	r.runningValue += inc
-	return nil
+func (r *RangeMap[RT, VT]) DecValue(dec VT) {
+	r.ranges[len(r.ranges)-1].value -= dec
 }
 
-func (r *RangeMap[RT, VT]) CloseRangeAndDecValue(endExclusive RT, dec VT) error {
-	if err := r.closeRange(endExclusive); err != nil {
-		return err
+func (r *RangeMap[RT, VT]) initRanges(val VT) {
+	r.ranges = []rangeVal[RT, VT]{
+		{
+			start: 0,
+			end:   0,
+			value: val,
+		},
 	}
-	r.runningValue -= dec
-	return nil
 }
 
-func (r *RangeMap[RT, VT]) closeRange(endExclusive RT) error {
-	numRanges := len(r.ranges)
-	startInclusive := RT(0)
-	if numRanges != 0 {
-		startInclusive = r.ranges[numRanges-1].end + 1
-
-		if endExclusive == r.ranges[numRanges-1].end+1 {
-			// key already in map and corresponding range recorded
-			return nil
-		}
-	}
+func (r *RangeMap[RT, VT]) ExcludeRange(startInclusive RT, endExclusive RT) error {
 	if endExclusive == startInclusive || endExclusive-startInclusive > r.halfRange {
 		return errReversedOrder
 	}
 
+	lr := &r.ranges[len(r.ranges)-1]
+	if lr.start > startInclusive {
+		// start of open range is after start of exclusion range, cannot close the open range
+		return errReversedOrder
+	}
+
+	newValue := lr.value + VT(endExclusive-startInclusive)
+
+	// if start of exclusion range matches start of open range, move the open range
+	if lr.start == startInclusive {
+		lr.start = endExclusive
+		lr.value = newValue
+		return nil
+	}
+
+	// close previous range
+	lr.end = startInclusive - 1
+
+	// start new open one after given exclusion range
 	r.ranges = append(r.ranges, rangeVal[RT, VT]{
-		start: startInclusive,
-		end:   endExclusive - 1,
-		value: r.runningValue,
+		start: endExclusive,
+		end:   0,
+		value: newValue,
 	})
 
 	r.prune()
@@ -108,26 +115,37 @@ func (r *RangeMap[RT, VT]) closeRange(endExclusive RT) error {
 func (r *RangeMap[RT, VT]) GetValue(key RT) (VT, error) {
 	numRanges := len(r.ranges)
 	if numRanges != 0 {
-		if key > r.ranges[numRanges-1].end {
-			return r.runningValue, nil
+		if key >= r.ranges[numRanges-1].start {
+			// in the open range
+			return r.ranges[numRanges-1].value, nil
 		}
 
 		if key < r.ranges[0].start {
+			// too old
 			return 0, errKeyNotFound
 		}
 	}
 
-	for _, rv := range r.ranges {
+	for idx := numRanges - 2; idx >= 0; idx-- {
+		rv := &r.ranges[idx]
 		if key-rv.start < r.halfRange && rv.end-key < r.halfRange {
 			return rv.value, nil
 		}
+
+		if idx > 0 {
+			rvPrev := &r.ranges[idx]
+			if key-rvPrev.end < r.halfRange && rv.start-key < r.halfRange {
+				// in excluded range
+				return 0, errKeyNotFound
+			}
+		}
 	}
 
-	return r.runningValue, nil
+	return 0, errKeyNotFound
 }
 
 func (r *RangeMap[RT, VT]) prune() {
-	if len(r.ranges) > r.size {
-		r.ranges = r.ranges[len(r.ranges)-r.size:]
+	if len(r.ranges) > r.size+1 { // +1 to accommodate the open range
+		r.ranges = r.ranges[len(r.ranges)-r.size-1:]
 	}
 }

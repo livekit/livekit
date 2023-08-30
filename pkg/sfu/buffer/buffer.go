@@ -435,8 +435,8 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 			//   45 - regular packet - offset = 2 (running offset) - passed through with adjusted sequence number as 43
 			//   44 - padding only - out-of-order + duplicate - dropped as duplicate
 			//
-			if err := b.snRangeMap.CloseRangeAndIncValue(flowState.ExtSequenceNumber+1, 1); err != nil {
-				b.logger.Errorw("could not close range", err, "sn", flowState.ExtSequenceNumber)
+			if err := b.snRangeMap.ExcludeRange(flowState.ExtSequenceNumber, flowState.ExtSequenceNumber+1); err != nil {
+				b.logger.Errorw("could not exclude range", err, "sn", flowState.ExtSequenceNumber)
 			}
 		}
 		return
