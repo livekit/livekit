@@ -83,7 +83,8 @@ type Buffer struct {
 	closed        atomic.Bool
 	mime          string
 
-	snRangeMap *utils.RangeMap[uint64, uint64]
+	snRangeMap       *utils.RangeMap[uint64, uint64]
+	paddingOnlyDrops uint64
 
 	latestTSForAudioLevelInitialized bool
 	latestTSForAudioLevel            uint32
@@ -416,7 +417,12 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 	}
 
 	flowState := b.updateStreamState(&rtpPacket, arrivalTime)
+	// process header extensions always as padding packets could be used for probing
 	b.processHeaderExtensions(&rtpPacket, arrivalTime)
+	if flowState.IsNotHandled {
+		return
+	}
+
 	if len(rtpPacket.Payload) == 0 && (!flowState.IsOutOfOrder || flowState.IsDuplicate) {
 		// drop padding only in-order or duplicate packet
 		if !flowState.IsOutOfOrder {
@@ -436,8 +442,9 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 			//   44 - padding only - out-of-order + duplicate - dropped as duplicate
 			//
 			if err := b.snRangeMap.ExcludeRange(flowState.ExtSequenceNumber, flowState.ExtSequenceNumber+1); err != nil {
-				b.logger.Errorw("could not exclude range", err, "sn", flowState.ExtSequenceNumber)
+				b.logger.Errorw("could not exclude range", err, "sn", rtpPacket.SequenceNumber, "esn", flowState.ExtSequenceNumber)
 			}
+			b.paddingOnlyDrops++
 		}
 		return
 	}
@@ -448,7 +455,8 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 		b.logger.Errorw("could not get sequence number adjustment", err, "sn", flowState.ExtSequenceNumber, "payloadSize", len(rtpPacket.Payload))
 		return
 	}
-	rtpPacket.Header.SequenceNumber = uint16(flowState.ExtSequenceNumber - snAdjustment)
+	flowState.ExtSequenceNumber -= snAdjustment
+	rtpPacket.Header.SequenceNumber = uint16(flowState.ExtSequenceNumber)
 	_, err = b.bucket.AddPacketWithSequenceNumber(pkt, rtpPacket.Header.SequenceNumber)
 	if err != nil {
 		if err != bucket.ErrRTXPacket {
@@ -687,14 +695,16 @@ func (b *Buffer) buildReceptionReport() *rtcp.ReceptionReport {
 	return b.rtpStats.SnapshotRtcpReceptionReport(b.mediaSSRC, b.lastFractionLostToReport, b.rrSnapshotId)
 }
 
-func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64) {
+func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64, packetCount uint32) {
+	b.RLock()
 	srData := &RTCPSenderReportData{
-		RTPTimestamp: rtpTime,
-		NTPTimestamp: mediatransportutil.NtpTime(ntpTime),
-		At:           time.Now(),
+		RTPTimestamp:     rtpTime,
+		NTPTimestamp:     mediatransportutil.NtpTime(ntpTime),
+		PacketCount:      packetCount,
+		PaddingOnlyDrops: b.paddingOnlyDrops,
+		At:               time.Now(),
 	}
 
-	b.RLock()
 	if b.rtpStats != nil {
 		b.rtpStats.SetRtcpSenderReportData(srData)
 	}
