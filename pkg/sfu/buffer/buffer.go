@@ -663,8 +663,7 @@ func (b *Buffer) doNACKs() {
 }
 
 func (b *Buffer) doReports(arrivalTime time.Time) {
-	timeDiff := arrivalTime.Sub(b.lastReport)
-	if timeDiff < ReportDelta {
+	if time.Since(b.lastReport) < ReportDelta {
 		return
 	}
 
