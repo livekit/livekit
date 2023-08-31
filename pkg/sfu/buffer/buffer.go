@@ -410,6 +410,12 @@ func (b *Buffer) SetRTT(rtt uint32) {
 }
 
 func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
+	defer func() {
+		b.doNACKs()
+
+		b.doReports(arrivalTime)
+	}()
+
 	var rtpPacket rtp.Packet
 	if err := rtpPacket.Unmarshal(pkt); err != nil {
 		b.logger.Errorw("could not unmarshal RTP packet", err)
@@ -464,10 +470,6 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 		}
 		return
 	}
-
-	b.doNACKs()
-
-	b.doReports(arrivalTime)
 
 	ep := b.getExtPacket(&rtpPacket, arrivalTime, flowState)
 	if ep == nil {
@@ -670,8 +672,7 @@ func (b *Buffer) doNACKs() {
 }
 
 func (b *Buffer) doReports(arrivalTime time.Time) {
-	timeDiff := arrivalTime.Sub(b.lastReport)
-	if timeDiff < ReportDelta {
+	if time.Since(b.lastReport) < ReportDelta {
 		return
 	}
 
