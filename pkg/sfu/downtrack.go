@@ -684,7 +684,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		}
 	}
 	if d.sequencer != nil {
-		isPushed := d.sequencer.push(
+		d.sequencer.push(
 			extPkt.Packet.SequenceNumber,
 			tp.rtp.sequenceNumber,
 			tp.rtp.timestamp,
@@ -693,12 +693,8 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			tp.codecBytes,
 			tp.ddBytes,
 		)
-		if !isPushed {
-			d.params.Logger.Debugw("PDBG sequencer push failed", "isn", extPkt.Packet.SequenceNumber, "iesn", extPkt.ExtSequenceNumber, "layer", layer, "osn", tp.rtp.sequenceNumber, "size", len(payload))	// REMOVE
-		}
 	}
 
-	d.params.Logger.Debugw("PDBG forwarding packet", "isn", extPkt.Packet.SequenceNumber, "iesn", extPkt.ExtSequenceNumber, "layer", layer, "osn", tp.rtp.sequenceNumber, "size", len(payload))	// REMOVE
 	d.pacer.Enqueue(pacer.Packet{
 		Header:             hdr,
 		Extensions:         extensions,

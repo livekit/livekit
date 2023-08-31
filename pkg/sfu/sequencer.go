@@ -116,13 +116,13 @@ func (s *sequencer) push(
 	layer int8,
 	codecBytes []byte,
 	ddBytes []byte,
-) bool {
+) {
 	s.Lock()
 	defer s.Unlock()
 
 	slot, isValid := s.getSlot(offSn)
 	if !isValid {
-		return false
+		return
 	}
 
 	s.meta[s.metaWritePtr] = packetMeta{
@@ -142,7 +142,6 @@ func (s *sequencer) push(
 	if s.metaWritePtr >= len(s.meta) {
 		s.metaWritePtr -= len(s.meta)
 	}
-	return true
 }
 
 func (s *sequencer) pushPadding(offSn uint16) {
