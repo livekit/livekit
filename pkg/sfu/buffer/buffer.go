@@ -83,7 +83,8 @@ type Buffer struct {
 	closed        atomic.Bool
 	mime          string
 
-	snRangeMap *utils.RangeMap[uint64, uint64]
+	snRangeMap       *utils.RangeMap[uint64, uint64]
+	paddingOnlyDrops uint64
 
 	latestTSForAudioLevelInitialized bool
 	latestTSForAudioLevel            uint32
@@ -440,12 +441,10 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 			//   45 - regular packet - offset = 2 (running offset) - passed through with adjusted sequence number as 43
 			//   44 - padding only - out-of-order + duplicate - dropped as duplicate
 			//
-			b.logger.Debugw("PDBG dropping padding", "sn", rtpPacket.Header.SequenceNumber, "esn", flowState.ExtSequenceNumber)	// REMOVE
 			if err := b.snRangeMap.ExcludeRange(flowState.ExtSequenceNumber, flowState.ExtSequenceNumber+1); err != nil {
 				b.logger.Errorw("could not exclude range", err, "sn", rtpPacket.SequenceNumber, "esn", flowState.ExtSequenceNumber)
 			}
-		} else {
-			b.logger.Debugw("PDBG dropping duplicate padding", "sn", rtpPacket.Header.SequenceNumber, "esn", flowState.ExtSequenceNumber)	// REMOVE
+			b.paddingOnlyDrops++
 		}
 		return
 	}
@@ -456,7 +455,6 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 		b.logger.Errorw("could not get sequence number adjustment", err, "sn", flowState.ExtSequenceNumber, "payloadSize", len(rtpPacket.Payload))
 		return
 	}
-	b.logger.Debugw("PDBG incoming packet", "sn", rtpPacket.Header.SequenceNumber, "esn", flowState.ExtSequenceNumber, "adjust", snAdjustment, "size", len(rtpPacket.Payload))	// REMOVE
 	flowState.ExtSequenceNumber -= snAdjustment
 	rtpPacket.Header.SequenceNumber = uint16(flowState.ExtSequenceNumber)
 	_, err = b.bucket.AddPacketWithSequenceNumber(pkt, rtpPacket.Header.SequenceNumber)
@@ -498,7 +496,6 @@ func (b *Buffer) patchExtPacket(ep *ExtPacket, buf []byte) *ExtPacket {
 	}
 	pkt.Payload = buf[payloadStart:payloadEnd]
 	ep.Packet = &pkt
-	b.logger.Debugw("PDBG forwarding packet", "sn", pkt.Header.SequenceNumber, "esn", ep.ExtSequenceNumber, "size", len(ep.Packet.Payload))	// REMOVE
 
 	return ep
 }
@@ -698,14 +695,16 @@ func (b *Buffer) buildReceptionReport() *rtcp.ReceptionReport {
 	return b.rtpStats.SnapshotRtcpReceptionReport(b.mediaSSRC, b.lastFractionLostToReport, b.rrSnapshotId)
 }
 
-func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64) {
+func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64, packetCount uint32) {
+	b.RLock()
 	srData := &RTCPSenderReportData{
-		RTPTimestamp: rtpTime,
-		NTPTimestamp: mediatransportutil.NtpTime(ntpTime),
-		At:           time.Now(),
+		RTPTimestamp:     rtpTime,
+		NTPTimestamp:     mediatransportutil.NtpTime(ntpTime),
+		PacketCount:      packetCount,
+		PaddingOnlyDrops: b.paddingOnlyDrops,
+		At:               time.Now(),
 	}
 
-	b.RLock()
 	if b.rtpStats != nil {
 		b.rtpStats.SetRtcpSenderReportData(srData)
 	}
