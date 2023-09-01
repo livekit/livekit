@@ -102,6 +102,9 @@ type RTCConfig struct {
 
 	// force a reconnect on a subscription error
 	ReconnectOnSubscriptionError *bool `yaml:"reconnect_on_subscription_error,omitempty"`
+
+	// force a reconnect on a data channel error
+	ReconnectOnDataChannelError *bool `yaml:"reconnect_on_data_channel_error,omitempty"`
 }
 
 type TURNServer struct {
