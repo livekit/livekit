@@ -23,7 +23,7 @@ var (
 	ErrLimitExceeded           = errors.New("node has exceeded its configured limit")
 	ErrAlreadyJoined           = errors.New("a participant with the same identity is already in the room")
 	ErrDataChannelUnavailable  = errors.New("data channel is not available")
-	ErrTransportFailure        = errors.New("transport faolure")
+	ErrTransportFailure        = errors.New("transport failure")
 	ErrEmptyIdentity           = errors.New("participant identity cannot be empty")
 	ErrEmptyParticipantID      = errors.New("participant ID cannot be empty")
 	ErrMissingGrants           = errors.New("VideoGrant is missing")
