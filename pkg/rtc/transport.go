@@ -714,9 +714,9 @@ func (t *PCTransport) maybeNotifyFullyEstablished() {
 
 func (t *PCTransport) isFullyEstablished() bool {
 	t.lock.RLock()
-	fullyEstablished := t.reliableDCOpened && t.lossyDCOpened && !t.connectedAt.IsZero()
-	t.lock.RUnlock()
-	return fullyEstablished
+	defer t.lock.RUnlock()
+
+	return t.reliableDCOpened && t.lossyDCOpened && !t.connectedAt.IsZero()
 }
 
 func (t *PCTransport) SetPreferTCP(preferTCP bool) {
@@ -823,22 +823,27 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 		return err
 	}
 
-	reliableDCReadyHandler := func() {
-		t.params.Logger.Debugw("reliable data channel open")
+	dcReadyHandler := func() {
 		t.lock.Lock()
-		t.reliableDCOpened = true
+		switch dc.Label() {
+		case ReliableDataChannel:
+			t.reliableDCOpened = true
+
+		case LossyDataChannel:
+			t.lossyDCOpened = true
+		}
 		t.lock.Unlock()
+		t.params.Logger.Debugw(dc.Label() + " data channel open")
 
 		t.maybeNotifyFullyEstablished()
 	}
 
-	lossyDCReadyHanlder := func() {
-		t.params.Logger.Debugw("lossy data channel open")
-		t.lock.Lock()
-		t.lossyDCOpened = true
-		t.lock.Unlock()
+	dcCloseHandler := func() {
+		t.params.Logger.Infow(dc.Label() + " data channel close")
+	}
 
-		t.maybeNotifyFullyEstablished()
+	dcErrorHandler := func(err error) {
+		t.params.Logger.Errorw(dc.Label()+" data channel close", err)
 	}
 
 	t.lock.Lock()
@@ -846,17 +851,21 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 	case ReliableDataChannel:
 		t.reliableDC = dc
 		if t.params.DirectionConfig.StrictACKs {
-			t.reliableDC.OnOpen(reliableDCReadyHandler)
+			t.reliableDC.OnOpen(dcReadyHandler)
 		} else {
-			t.reliableDC.OnDial(reliableDCReadyHandler)
+			t.reliableDC.OnDial(dcReadyHandler)
 		}
+		t.reliableDC.OnClose(dcCloseHandler)
+		t.reliableDC.OnError(dcErrorHandler)
 	case LossyDataChannel:
 		t.lossyDC = dc
 		if t.params.DirectionConfig.StrictACKs {
-			t.lossyDC.OnOpen(lossyDCReadyHanlder)
+			t.lossyDC.OnOpen(dcReadyHandler)
 		} else {
-			t.lossyDC.OnDial(lossyDCReadyHanlder)
+			t.lossyDC.OnDial(dcReadyHandler)
 		}
+		t.lossyDC.OnClose(dcCloseHandler)
+		t.lossyDC.OnError(dcErrorHandler)
 	default:
 		t.params.Logger.Errorw("unknown data channel label", nil, "label", dc.Label())
 	}
