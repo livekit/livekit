@@ -2244,3 +2244,15 @@ func codecsFromMediaDescription(m *sdp.MediaDescription) (out []sdp.Codec, err e
 
 	return out, nil
 }
+
+func (p *ParticipantImpl) SendDataPacket(dp *livekit.DataPacket, data []byte) error {
+	if p.State() != livekit.ParticipantInfo_ACTIVE {
+		return ErrDataChannelUnavailable
+	}
+
+	err := p.TransportManager.SendDataPacket(dp, data)
+	if err == nil {
+		p.dataChannelStats.AddBytes(uint64(len(data)), true)
+	}
+	return err
+}
