@@ -102,6 +102,7 @@ const (
 	ParticipantCloseReasonOvercommitted
 	ParticipantCloseReasonPublicationError
 	ParticipantCloseReasonSubscriptionError
+	ParticipantCloseReasonDataChannelError
 )
 
 func (p ParticipantCloseReason) String() string {
@@ -148,6 +149,8 @@ func (p ParticipantCloseReason) String() string {
 		return "PUBLICATION_ERROR"
 	case ParticipantCloseReasonSubscriptionError:
 		return "SUBSCRIPTION_ERROR"
+	case ParticipantCloseReasonDataChannelError:
+		return "DATA_CHANNEL_ERROR"
 	default:
 		return fmt.Sprintf("%d", int(p))
 	}
@@ -178,7 +181,7 @@ func (p ParticipantCloseReason) ToDisconnectReason() livekit.DisconnectReason {
 		return livekit.DisconnectReason_SERVER_SHUTDOWN
 	case ParticipantCloseReasonOvercommitted:
 		return livekit.DisconnectReason_SERVER_SHUTDOWN
-	case ParticipantCloseReasonNegotiateFailed, ParticipantCloseReasonPublicationError, ParticipantCloseReasonSubscriptionError:
+	case ParticipantCloseReasonNegotiateFailed, ParticipantCloseReasonPublicationError, ParticipantCloseReasonSubscriptionError, ParticipantCloseReasonDataChannelError:
 		return livekit.DisconnectReason_STATE_MISMATCH
 	default:
 		// the other types will map to unknown reason
@@ -197,6 +200,7 @@ const (
 	SignallingCloseReasonTransportFailure
 	SignallingCloseReasonFullReconnectPublicationError
 	SignallingCloseReasonFullReconnectSubscriptionError
+	SignallingCloseReasonFullReconnectDataChannelError
 	SignallingCloseReasonFullReconnectNegotiateFailed
 	SignallingCloseReasonParticipantClose
 )
@@ -215,6 +219,8 @@ func (s SignallingCloseReason) String() string {
 		return "FULL_RECONNECT_PUBLICATION_ERROR"
 	case SignallingCloseReasonFullReconnectSubscriptionError:
 		return "FULL_RECONNECT_SUBSCRIPTION_ERROR"
+	case SignallingCloseReasonFullReconnectDataChannelError:
+		return "FULL_RECONNECT_DATA_CHANNEL_ERROR"
 	case SignallingCloseReasonFullReconnectNegotiateFailed:
 		return "FULL_RECONNECT_NEGOTIATE_FAILED"
 	case SignallingCloseReasonParticipantClose:
