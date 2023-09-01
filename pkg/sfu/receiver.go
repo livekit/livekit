@@ -474,9 +474,9 @@ func (w *WebRTCReceiver) OnMaxAvailableLayerChanged(maxAvailableLayer int32) {
 
 // StreamTrackerManagerListener.OnBitrateReport
 func (w *WebRTCReceiver) OnBitrateReport(availableLayers []int32, bitrates Bitrates) {
-	for _, dt := range w.downTrackSpreader.GetDownTracks() {
+	w.downTrackSpreader.Broadcast(func(dt TrackSender) {
 		dt.UpTrackBitrateReport(availableLayers, bitrates)
-	}
+	})
 
 	w.connectionStats.AddLayerTransition(w.streamTrackerManager.DistanceToDesired())
 }

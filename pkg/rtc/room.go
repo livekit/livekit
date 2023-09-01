@@ -31,7 +31,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
-	"github.com/livekit/psrpc"
+	"github.com/pion/sctp"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -1330,8 +1330,7 @@ func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, dp 
 
 	utils.ParallelExec(destParticipants, dataForwardLoadBalanceThreshold, 1, func(op types.LocalParticipant) {
 		err := op.SendDataPacket(dp, dpData)
-		if err != nil && !errors.Is(err, io.ErrClosedPipe) && !errors.Is(err, psrpc.Canceled) &&
-			!errors.Is(err, psrpc.ErrStreamClosed) {
+		if err != nil && !errors.Is(err, io.ErrClosedPipe) && !errors.Is(err, sctp.ErrStreamClosed) {
 			op.GetLogger().Infow("send data packet error", "error", err)
 		}
 	})
