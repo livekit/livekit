@@ -152,7 +152,7 @@ keys:
 #   enable_remote_unmute: true
 #   # limit size of room and participant's metadata, 0 for no limit
 #   max_metadata_size: 0
-#   # control playout delay in ms of video track (and associated audio track) 
+#   # control playout delay in ms of video track (and associated audio track)
 #   playout_delay:
 #     enabled: true
 #     min: 100
@@ -171,7 +171,7 @@ keys:
 # since v1.4.0, a more reliable, psrpc based signal relay is available
 # this gives us the ability to reliably proxy messages between a signal server and RTC node
 # signal_relay:
-#   # disabled by default. will be enabled by default in future versions
+#   # enabled by default as of v1.5.0, legacy signal proxy will be removed in v1.6
 #   enabled: true
 #   # amount of time a message delivery is tried before giving up
 #   retry_timeout: 30s

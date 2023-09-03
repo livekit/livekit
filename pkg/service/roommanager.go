@@ -355,6 +355,11 @@ func (r *RoomManager) StartSession(
 	if r.config.RTC.ReconnectOnSubscriptionError != nil {
 		reconnectOnSubscriptionError = *r.config.RTC.ReconnectOnSubscriptionError
 	}
+	// default do not force full reconnect on a data channel error
+	reconnectOnDataChannelError := false
+	if r.config.RTC.ReconnectOnDataChannelError != nil {
+		reconnectOnDataChannelError = *r.config.RTC.ReconnectOnDataChannelError
+	}
 	subscriberAllowPause := r.config.RTC.CongestionControl.AllowPause
 	if pi.SubscriberAllowPause != nil {
 		subscriberAllowPause = *pi.SubscriberAllowPause
@@ -389,6 +394,7 @@ func (r *RoomManager) StartSession(
 		},
 		ReconnectOnPublicationError:  reconnectOnPublicationError,
 		ReconnectOnSubscriptionError: reconnectOnSubscriptionError,
+		ReconnectOnDataChannelError:  reconnectOnDataChannelError,
 		VersionGenerator:             r.versionGenerator,
 		TrackResolver:                room.ResolveMediaTrackForSubscriber,
 		SubscriberAllowPause:         subscriberAllowPause,
