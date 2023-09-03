@@ -102,6 +102,9 @@ type RTCConfig struct {
 
 	// force a reconnect on a subscription error
 	ReconnectOnSubscriptionError *bool `yaml:"reconnect_on_subscription_error,omitempty"`
+
+	// force a reconnect on a data channel error
+	ReconnectOnDataChannelError *bool `yaml:"reconnect_on_data_channel_error,omitempty"`
 }
 
 type TURNServer struct {
@@ -473,7 +476,7 @@ var DefaultConfig = Config{
 		CPULoadLimit: 0.9,
 	},
 	SignalRelay: SignalRelayConfig{
-		Enabled:          false,
+		Enabled:          true,
 		RetryTimeout:     7500 * time.Millisecond,
 		MinRetryInterval: 500 * time.Millisecond,
 		MaxRetryInterval: 4 * time.Second,
