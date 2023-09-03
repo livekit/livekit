@@ -197,13 +197,13 @@ func (r *RoomManager) SaveClientsBandwidth() {
 	for _, room := range rooms {
 		localParticipants := room.GetLocalParticipants()
 		for _, p := range localParticipants {
-			for _, t := range p.GetPublishedTracks() {
+			for _, t := range p.GetSubscribedTracks() {
 				bandwidth := 0
-				switch t.Kind() {
+				switch t.MediaTrack().Kind() {
 				case livekit.TrackType_AUDIO:
-					bandwidth = 100
+					bandwidth = AudioBandwidth
 				case livekit.TrackType_VIDEO:
-					bandwidth = 1000
+					bandwidth = VideoBanwith
 				}
 				oldBandwidth, _ := bandwidthByApiKey[p.GetApiKey()]
 				bandwidthByApiKey[p.GetApiKey()] = oldBandwidth + bandwidth
@@ -215,7 +215,7 @@ func (r *RoomManager) SaveClientsBandwidth() {
 	defer cancel()
 
 	for apiKey, bandwidth := range bandwidthByApiKey {
-		err := r.trafficManager.SetValue(ctx, string(apiKey), bandwidth)
+		err := r.trafficManager.SetValue(ctx, apiKey, bandwidth)
 		if err != nil {
 			logger.Errorw("could not set bandwidth", err)
 			break
@@ -387,7 +387,25 @@ func (r *RoomManager) StartSession(
 		ReconnectOnSubscriptionError: reconnectOnSubscriptionError,
 		VersionGenerator:             r.versionGenerator,
 		TrackResolver:                room.ResolveMediaTrackForSubscriber,
-		RelayCollection:              outRelayCollection,
+		BandwidthChecker: func(apiKey livekit.ApiKey, trackType livekit.TrackType) (bool, error) {
+			var requestBandwidth int
+			switch trackType {
+			case livekit.TrackType_VIDEO:
+				requestBandwidth = VideoBanwith
+			case livekit.TrackType_AUDIO:
+				requestBandwidth = AudioBandwidth
+			default:
+				return true, nil
+			}
+
+			bandwidthLimit, err := r.trafficManager.GetLimit(context.TODO(), apiKey)
+			if err != nil {
+				return false, err
+			}
+			currentBandwidth := r.trafficManager.GetValue(apiKey)
+			return currentBandwidth+requestBandwidth > bandwidthLimit, nil
+		},
+		RelayCollection: outRelayCollection,
 	})
 	if err != nil {
 		return err

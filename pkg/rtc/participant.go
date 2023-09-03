@@ -93,6 +93,7 @@ type ParticipantParams struct {
 	ReconnectOnSubscriptionError bool
 	VersionGenerator             utils.TimedVersionGenerator
 	TrackResolver                types.MediaTrackResolver
+	BandwidthChecker             types.BandwidthChecker
 	DisableDynacast              bool
 	RelayCollection              *relay.Collection
 }
@@ -1091,6 +1092,7 @@ func (p *ParticipantImpl) setupSubscriptionManager() {
 		Participant:         p,
 		Logger:              p.params.Logger.WithoutSampler(),
 		TrackResolver:       p.params.TrackResolver,
+		BandwidthChecker:    p.params.BandwidthChecker,
 		Telemetry:           p.params.Telemetry,
 		OnTrackSubscribed:   p.onTrackSubscribed,
 		OnTrackUnsubscribed: p.onTrackUnsubscribed,

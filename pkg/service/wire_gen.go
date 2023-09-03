@@ -8,12 +8,9 @@ package service
 
 import (
 	"context"
+	_ "net/http/pprof"
+
 	"github.com/dTelecom/p2p-realtime-database"
-	"github.com/livekit/livekit-server"
-	"github.com/livekit/livekit-server/pkg/clientconfiguration"
-	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/egress"
 	livekit2 "github.com/livekit/protocol/livekit"
@@ -26,10 +23,12 @@ import (
 	"github.com/pion/turn/v2"
 	"github.com/pkg/errors"
 	"github.com/redis/go-redis/v9"
-)
 
-import (
-	_ "net/http/pprof"
+	"github.com/livekit/livekit-server"
+	"github.com/livekit/livekit-server/pkg/clientconfiguration"
+	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
 // Injectors from wire.go:
@@ -108,7 +107,9 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	clientConfigurationManager := createClientConfiguration()
 	timedVersionGenerator := utils.NewDefaultTimedVersionGenerator()
-	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager, rtcEgressLauncher, timedVersionGenerator)
+	clientProvider := createClientProvider(ethSmartContract, db)
+	trafficManager := NewTrafficManager(db, clientProvider, conf.LoggingP2P)
+	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager, rtcEgressLauncher, timedVersionGenerator, trafficManager)
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +122,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	clientProvider := createClientProvider(ethSmartContract, db)
 	relevantNodesHandler := createRelevantNodesHandler(conf, nodeProvider)
 	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, rtcService, keyProviderPublicKey, router, roomManager, signalServer, server, currentNode, clientProvider, participantCounter, nodeProvider, db, relevantNodesHandler)
 	if err != nil {

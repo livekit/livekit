@@ -9,18 +9,21 @@ import (
 	p2p_database "github.com/dTelecom/p2p-realtime-database"
 	"github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/livekit/protocol/livekit"
 	"github.com/pkg/errors"
 )
 
 const (
-	trafficLimitPerClient       = 5000000
+	trafficLimitPerClient       = 5000_000
 	topicTrafficValuesStreaming = "clients_traffic"
+	AudioBandwidth              = 1500
+	VideoBanwith                = 1500_000
 )
 
 type TrafficMessage struct {
-	ClientApiKey string    `json:"clientApiKey"`
-	Value        int       `json:"value"`
-	CreatedAt    time.Time `json:"createdAt"`
+	ClientApiKey livekit.ApiKey `json:"clientApiKey"`
+	Value        int            `json:"value"`
+	CreatedAt    time.Time      `json:"createdAt"`
 }
 
 func (m *TrafficMessage) isExpired() bool {
@@ -31,7 +34,7 @@ type TrafficManager struct {
 	db                *p2p_database.DB
 	clientProvider    *ClientProvider
 	lock              sync.RWMutex
-	trafficsPerClient map[string]map[peer.ID]TrafficMessage
+	trafficsPerClient map[livekit.ApiKey]map[peer.ID]TrafficMessage
 	logger            *log.ZapEventLogger
 }
 
@@ -40,7 +43,7 @@ func NewTrafficManager(db *p2p_database.DB, clientProvider *ClientProvider, logg
 		db:                db,
 		clientProvider:    clientProvider,
 		lock:              sync.RWMutex{},
-		trafficsPerClient: make(map[string]map[peer.ID]TrafficMessage),
+		trafficsPerClient: make(map[livekit.ApiKey]map[peer.ID]TrafficMessage),
 		logger:            logger,
 	}
 
@@ -52,7 +55,7 @@ func NewTrafficManager(db *p2p_database.DB, clientProvider *ClientProvider, logg
 	return m
 }
 
-func (m *TrafficManager) GetValue(ctx context.Context, clientApiKey string) (int, error) {
+func (m *TrafficManager) GetValue(clientApiKey livekit.ApiKey) int {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
@@ -60,7 +63,7 @@ func (m *TrafficManager) GetValue(ctx context.Context, clientApiKey string) (int
 
 	traffics, ok := m.trafficsPerClient[clientApiKey]
 	if !ok {
-		return 0, nil
+		return 0
 	}
 
 	for peerId, traffic := range traffics {
@@ -71,10 +74,10 @@ func (m *TrafficManager) GetValue(ctx context.Context, clientApiKey string) (int
 		}
 	}
 
-	return value, nil
+	return value
 }
 
-func (m *TrafficManager) SetValue(ctx context.Context, clientApiKey string, value int) error {
+func (m *TrafficManager) SetValue(ctx context.Context, clientApiKey livekit.ApiKey, value int) error {
 	trafficMessage := TrafficMessage{
 		ClientApiKey: clientApiKey,
 		Value:        value,
@@ -94,8 +97,8 @@ func (m *TrafficManager) SetValue(ctx context.Context, clientApiKey string, valu
 	return nil
 }
 
-func (m *TrafficManager) GetLimit(ctx context.Context, clientApiKey string) (int, error) {
-	client, err := m.clientProvider.ClientByAddress(ctx, clientApiKey)
+func (m *TrafficManager) GetLimit(ctx context.Context, clientApiKey livekit.ApiKey) (int, error) {
+	client, err := m.clientProvider.ClientByAddress(ctx, string(clientApiKey))
 	if err != nil {
 		return 0, errors.Wrap(err, "client by address")
 	}
