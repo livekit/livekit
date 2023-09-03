@@ -27,10 +27,7 @@ import (
 type LocalNode *livekit.Node
 
 func NewLocalNode(conf *config.Config) (LocalNode, error) {
-	nodeID, err := utils.LocalNodeID()
-	if err != nil {
-		return nil, err
-	}
+	nodeID := utils.NewGuid(utils.NodePrefix)
 	if conf.RTC.NodeIP == "" {
 		return nil, ErrIPNotSet
 	}

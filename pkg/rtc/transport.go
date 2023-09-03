@@ -672,9 +672,9 @@ func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionSta
 }
 
 func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
+	t.params.Logger.Debugw(dc.Label() + " data channel open")
 	switch dc.Label() {
 	case ReliableDataChannel:
-		t.params.Logger.Debugw("reliable data channel open")
 		t.lock.Lock()
 		t.reliableDC = dc
 		t.reliableDCOpened = true
@@ -687,7 +687,6 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 
 		t.maybeNotifyFullyEstablished()
 	case LossyDataChannel:
-		t.params.Logger.Debugw("lossy data channel open")
 		t.lock.Lock()
 		t.lossyDC = dc
 		t.lossyDCOpened = true
@@ -772,7 +771,6 @@ func (t *PCTransport) AddTrack(trackLocal webrtc.TrackLocal, params types.AddTra
 	}
 
 	configureAudioTransceiver(transceiver, params.Stereo, !params.Red || !t.params.ClientInfo.SupportsAudioRED())
-
 	return
 }
 
@@ -843,7 +841,7 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 	}
 
 	dcErrorHandler := func(err error) {
-		t.params.Logger.Errorw(dc.Label()+" data channel close", err)
+		t.params.Logger.Errorw(dc.Label()+" data channel error", err)
 	}
 
 	t.lock.Lock()
@@ -932,6 +930,10 @@ func (t *PCTransport) SendDataPacket(dp *livekit.DataPacket, data []byte) error 
 
 	if dc == nil {
 		return ErrDataChannelUnavailable
+	}
+
+	if t.pc.ConnectionState() == webrtc.PeerConnectionStateFailed {
+		return ErrTransportFailure
 	}
 
 	return dc.Send(data)
