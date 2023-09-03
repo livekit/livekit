@@ -476,7 +476,7 @@ var DefaultConfig = Config{
 		CPULoadLimit: 0.9,
 	},
 	SignalRelay: SignalRelayConfig{
-		Enabled:          false,
+		Enabled:          true,
 		RetryTimeout:     7500 * time.Millisecond,
 		MinRetryInterval: 500 * time.Millisecond,
 		MaxRetryInterval: 4 * time.Second,
