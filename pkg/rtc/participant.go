@@ -16,6 +16,7 @@ package rtc
 
 import (
 	"context"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -24,6 +25,7 @@ import (
 
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/pion/rtcp"
+	"github.com/pion/sctp"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
 	"github.com/pkg/errors"
@@ -103,6 +105,7 @@ type ParticipantParams struct {
 	GetParticipantInfo           func(pID livekit.ParticipantID) *livekit.ParticipantInfo
 	ReconnectOnPublicationError  bool
 	ReconnectOnSubscriptionError bool
+	ReconnectOnDataChannelError  bool
 	VersionGenerator             utils.TimedVersionGenerator
 	TrackResolver                types.MediaTrackResolver
 	DisableDynacast              bool
@@ -2143,6 +2146,8 @@ func (p *ParticipantImpl) IssueFullReconnect(reason types.ParticipantCloseReason
 		scr = types.SignallingCloseReasonFullReconnectPublicationError
 	case types.ParticipantCloseReasonSubscriptionError:
 		scr = types.SignallingCloseReasonFullReconnectSubscriptionError
+	case types.ParticipantCloseReasonDataChannelError:
+		scr = types.SignallingCloseReasonFullReconnectDataChannelError
 	case types.ParticipantCloseReasonNegotiateFailed:
 		scr = types.SignallingCloseReasonFullReconnectNegotiateFailed
 	}
@@ -2251,7 +2256,12 @@ func (p *ParticipantImpl) SendDataPacket(dp *livekit.DataPacket, data []byte) er
 	}
 
 	err := p.TransportManager.SendDataPacket(dp, data)
-	if err == nil {
+	if err != nil {
+		if (err == sctp.ErrStreamClosed || err == io.ErrClosedPipe) && p.params.ReconnectOnDataChannelError {
+			p.params.Logger.Infow("issuing full reconnect on data channel error")
+			p.IssueFullReconnect(types.ParticipantCloseReasonDataChannelError)
+		}
+	} else {
 		p.dataChannelStats.AddBytes(uint64(len(data)), true)
 	}
 	return err

@@ -212,7 +212,7 @@ func (r *RedisRouter) WriteParticipantRTC(_ context.Context, roomName livekit.Ro
 		return err
 	}
 
-	rtcSink := NewRTCNodeSink(r.rc, livekit.NodeID(rtcNode), livekit.ConnectionID("ephemeral"), pkey, pkeyB62)
+	rtcSink := NewRTCNodeSink(r.rc, livekit.NodeID(rtcNode), "ephemeral", pkey, pkeyB62)
 	msg.ParticipantKey = string(ParticipantKeyLegacy(roomName, identity))
 	msg.ParticipantKeyB62 = string(ParticipantKey(roomName, identity))
 	return r.writeRTCMessage(rtcSink, msg)
@@ -229,7 +229,7 @@ func (r *RedisRouter) WriteRoomRTC(ctx context.Context, roomName livekit.RoomNam
 }
 
 func (r *RedisRouter) WriteNodeRTC(_ context.Context, rtcNodeID string, msg *livekit.RTCNodeMessage) error {
-	rtcSink := NewRTCNodeSink(r.rc, livekit.NodeID(rtcNodeID), livekit.ConnectionID("ephemeral"), livekit.ParticipantKey(msg.ParticipantKey), livekit.ParticipantKey(msg.ParticipantKeyB62))
+	rtcSink := NewRTCNodeSink(r.rc, livekit.NodeID(rtcNodeID), "ephemeral", livekit.ParticipantKey(msg.ParticipantKey), livekit.ParticipantKey(msg.ParticipantKeyB62))
 	return r.writeRTCMessage(rtcSink, msg)
 }
 
