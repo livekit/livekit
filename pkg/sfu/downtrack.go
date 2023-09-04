@@ -655,6 +655,17 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		return err
 	}
 
+	pool := PacketFactory.Get().(*[]byte)
+	payload := *pool
+	shouldForward, incomingHeaderSize, outgoingHeaderSize, err := d.forwarder.TranslateCodecHeader(extPkt, tp.rtp, payload)
+	if !shouldForward {
+		PacketFactory.Put(pool)
+		return err
+	}
+	copy(payload[outgoingHeaderSize:], extPkt.Packet.Payload[incomingHeaderSize:])
+	payload = payload[:outgoingHeaderSize+len(extPkt.Packet.Payload)-incomingHeaderSize]
+
+	/* RAJA-REMOVE
 	var payload []byte
 	pool := PacketFactory.Get().(*[]byte)
 	if len(tp.codecBytes) != 0 {
@@ -667,10 +678,22 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		payload = (*pool)[:len(extPkt.Packet.Payload)]
 		copy(payload, extPkt.Packet.Payload)
 	}
+	*/
+	/* RAJA-REMOVE
+	incomingHeaderSize := 0
+	if n != 0 {
+		incomingVP8, ok := extPkt.Payload.(buffer.VP8)
+		if ok {
+			incomingHeaderSize = incomingVP8.HeaderSize
+		}
+	}
+	copy(payload[n:], extPkt.Packet.Payload[incomingHeaderSize:])
+	payload = payload[:n+len(extPkt.Packet.Payload)-incomingHeaderSize]
+	*/
 
 	hdr, err := d.getTranslatedRTPHeader(extPkt, tp)
 	if err != nil {
-		d.params.Logger.Errorw("write rtp packet failed", err)
+		d.params.Logger.Errorw("could not translate RTP header", err)
 		if pool != nil {
 			PacketFactory.Put(pool)
 		}
@@ -693,7 +716,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			tp.rtp.timestamp,
 			hdr.Marker,
 			int8(layer),
-			tp.codecBytes,
+			payload[:outgoingHeaderSize],
 			tp.ddBytes,
 		)
 	}
@@ -1351,20 +1374,19 @@ func (d *DownTrack) getOpusRedBlankFrame(_frameEndNeeded bool) ([]byte, error) {
 }
 
 func (d *DownTrack) getVP8BlankFrame(frameEndNeeded bool) ([]byte, error) {
-	blankVP8, err := d.forwarder.GetPadding(frameEndNeeded)
-	if err != nil {
-		return nil, err
-	}
-
 	// 8x8 key frame
 	// Used even when closing out a previous frame. Looks like receivers
 	// do not care about content (it will probably end up being an undecodable
 	// frame, but that should be okay as there are key frames following)
 	payload := make([]byte, 1000)
-	copy(payload[:len(blankVP8)], blankVP8)
-	copy(payload[len(blankVP8):], VP8KeyFrame8x8)
-	trailerLen := d.maybeAddTrailer(payload[len(blankVP8)+len(VP8KeyFrame8x8):])
-	return payload[:len(blankVP8)+len(VP8KeyFrame8x8)+trailerLen], nil
+	n, err := d.forwarder.GetPadding(frameEndNeeded, payload)
+	if err != nil {
+		return nil, err
+	}
+
+	copy(payload[n:], VP8KeyFrame8x8)
+	trailerLen := d.maybeAddTrailer(payload[n+len(VP8KeyFrame8x8):])
+	return payload[:n+len(VP8KeyFrame8x8)+trailerLen], nil
 }
 
 func (d *DownTrack) getH264BlankFrame(_frameEndNeeded bool) ([]byte, error) {
@@ -1614,11 +1636,10 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 }
 
 func (d *DownTrack) getTranslatedRTPHeader(extPkt *buffer.ExtPacket, tp *TranslationParams) (*rtp.Header, error) {
-	tpRTP := tp.rtp
 	hdr := extPkt.Packet.Header
 	hdr.PayloadType = d.payloadType
-	hdr.Timestamp = tpRTP.timestamp
-	hdr.SequenceNumber = tpRTP.sequenceNumber
+	hdr.Timestamp = tp.rtp.timestamp
+	hdr.SequenceNumber = tp.rtp.sequenceNumber
 	hdr.SSRC = d.ssrc
 	if tp.marker {
 		hdr.Marker = tp.marker

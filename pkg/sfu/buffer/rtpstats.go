@@ -585,7 +585,7 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 				r.frames++
 			}
 
-			r.updateJitter(rtph, packetTime)
+			// RAJA-REMOVE r.updateJitter(rtph, packetTime)
 		}
 	}
 	return

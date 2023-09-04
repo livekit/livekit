@@ -146,7 +146,6 @@ type TranslationParams struct {
 	isResuming  bool
 	isSwitching bool
 	rtp         *TranslationParamsRTP
-	codecBytes  []byte
 	ddBytes     []byte
 	marker      bool
 }
@@ -1607,9 +1606,6 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 
 // should be called with lock held
 func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer int32, tp *TranslationParams) (*TranslationParams, error) {
-	if tp == nil {
-		tp = &TranslationParams{}
-	}
 	if f.lastSSRC != extPkt.Packet.SSRC {
 		if err := f.processSourceSwitch(extPkt, layer); err != nil {
 			tp.shouldDrop = true
@@ -1634,7 +1630,7 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 
 // should be called with lock held
 func (f *Forwarder) getTranslationParamsAudio(extPkt *buffer.ExtPacket, layer int32) (*TranslationParams, error) {
-	return f.getTranslationParamsCommon(extPkt, layer, nil)
+	return f.getTranslationParamsCommon(extPkt, layer, &TranslationParams{})
 }
 
 // should be called with lock held
@@ -1694,37 +1690,45 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 	}
 
 	_, err := f.getTranslationParamsCommon(extPkt, layer, tp)
-	if tp.shouldDrop || len(extPkt.Packet.Payload) == 0 {
+	if tp.shouldDrop {
 		maybeRollback(result.IsSwitching)
 		return tp, err
 	}
 
+	return tp, nil
+}
+
+func (f *Forwarder) TranslateCodecHeader(extPkt *buffer.ExtPacket, tpr *TranslationParamsRTP, outputBuffer []byte) (bool, int, int, error) {
+	maybeRollback := func(isSwitching bool) {
+		if isSwitching {
+			f.vls.Rollback()
+		}
+	}
+
 	// codec specific forwarding check and any needed packet munging
 	tl, isSwitching := f.vls.SelectTemporal(extPkt)
-	codecBytes, err := f.codecMunger.UpdateAndGet(
+	inputSize, outputSize, err := f.codecMunger.UpdateAndGet(
 		extPkt,
-		tp.rtp.snOrdering == SequenceNumberOrderingOutOfOrder,
-		tp.rtp.snOrdering == SequenceNumberOrderingGap,
+		tpr.snOrdering == SequenceNumberOrderingOutOfOrder,
+		tpr.snOrdering == SequenceNumberOrderingGap,
 		tl,
+		outputBuffer,
 	)
 	if err != nil {
-		tp.rtp = nil
-		tp.shouldDrop = true
 		if err == codecmunger.ErrFilteredVP8TemporalLayer || err == codecmunger.ErrOutOfOrderVP8PictureIdCacheMiss {
 			if err == codecmunger.ErrFilteredVP8TemporalLayer {
 				// filtered temporal layer, update sequence number offset to prevent holes
 				f.rtpMunger.PacketDropped(extPkt)
 			}
-			maybeRollback(result.IsSwitching || isSwitching)
-			return tp, nil
+			maybeRollback(isSwitching)
+			return false, 0, 0, nil
 		}
 
-		maybeRollback(result.IsSwitching || isSwitching)
-		return tp, err
+		maybeRollback(isSwitching)
+		return false, 0, 0, err
 	}
 
-	tp.codecBytes = codecBytes
-	return tp, nil
+	return true, inputSize, outputSize, nil
 }
 
 func (f *Forwarder) maybeStart() {
@@ -1797,11 +1801,11 @@ func (f *Forwarder) GetSnTsForBlankFrames(frameRate uint32, numPackets int) ([]S
 	return snts, frameEndNeeded, err
 }
 
-func (f *Forwarder) GetPadding(frameEndNeeded bool) ([]byte, error) {
+func (f *Forwarder) GetPadding(frameEndNeeded bool, outputBuffer []byte) (int, error) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	return f.codecMunger.UpdateAndGetPadding(!frameEndNeeded)
+	return f.codecMunger.UpdateAndGetPadding(!frameEndNeeded, outputBuffer)
 }
 
 func (f *Forwarder) RTPMungerDebugInfo() map[string]interface{} {
