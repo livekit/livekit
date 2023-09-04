@@ -138,11 +138,11 @@ func Test_sequencer_getNACKSeqNo(t *testing.T) {
 				got = append(got, sn.sourceSeqNo)
 				if sn.sourceSeqNo%2 == 0 {
 					require.Equal(t, tt.fields.markerEven, sn.marker)
-					require.Equal(t, tt.fields.codecBytesEven, sn.codecBytes)
+					require.Equal(t, tt.fields.codecBytesEven, sn.codecBytes[:sn.numCodecBytes])
 					require.Equal(t, tt.fields.ddBytesEven, sn.ddBytes)
 				} else {
 					require.Equal(t, tt.fields.markerOdd, sn.marker)
-					require.Equal(t, tt.fields.codecBytesOdd, sn.codecBytes)
+					require.Equal(t, tt.fields.codecBytesOdd, sn.codecBytes[:sn.numCodecBytes])
 					require.Equal(t, tt.fields.ddBytesOdd, sn.ddBytes)
 				}
 			}

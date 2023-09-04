@@ -665,32 +665,6 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	copy(payload[outgoingHeaderSize:], extPkt.Packet.Payload[incomingHeaderSize:])
 	payload = payload[:outgoingHeaderSize+len(extPkt.Packet.Payload)-incomingHeaderSize]
 
-	/* RAJA-REMOVE
-	var payload []byte
-	pool := PacketFactory.Get().(*[]byte)
-	if len(tp.codecBytes) != 0 {
-		incomingVP8, ok := extPkt.Payload.(buffer.VP8)
-		if ok {
-			payload = d.translateVP8PacketTo(extPkt.Packet, &incomingVP8, tp.codecBytes, pool)
-		}
-	}
-	if payload == nil {
-		payload = (*pool)[:len(extPkt.Packet.Payload)]
-		copy(payload, extPkt.Packet.Payload)
-	}
-	*/
-	/* RAJA-REMOVE
-	incomingHeaderSize := 0
-	if n != 0 {
-		incomingVP8, ok := extPkt.Payload.(buffer.VP8)
-		if ok {
-			incomingHeaderSize = incomingVP8.HeaderSize
-		}
-	}
-	copy(payload[n:], extPkt.Packet.Payload[incomingHeaderSize:])
-	payload = payload[:n+len(extPkt.Packet.Payload)-incomingHeaderSize]
-	*/
-
 	hdr, err := d.getTranslatedRTPHeader(extPkt, tp)
 	if err != nil {
 		d.params.Logger.Errorw("could not translate RTP header", err)
@@ -1583,9 +1557,11 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		pkt.Header.SSRC = d.ssrc
 		pkt.Header.PayloadType = d.payloadType
 
-		var payload []byte
 		pool := PacketFactory.Get().(*[]byte)
-		if d.mime == "video/vp8" && len(pkt.Payload) > 0 && len(meta.codecBytes) != 0 {
+		payload := *pool
+		incomingHeaderSize := 0
+		outgoingHeaderSize := 0
+		if d.mime == "video/vp8" && len(pkt.Payload) > 0 && meta.numCodecBytes != 0 {
 			var incomingVP8 buffer.VP8
 			if err = incomingVP8.Unmarshal(pkt.Payload); err != nil {
 				d.params.Logger.Errorw("unmarshalling VP8 packet err", err)
@@ -1593,12 +1569,12 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 				continue
 			}
 
-			payload = d.translateVP8PacketTo(&pkt, &incomingVP8, meta.codecBytes, pool)
+			incomingHeaderSize = incomingVP8.HeaderSize
+			outgoingHeaderSize = int(meta.numCodecBytes)
 		}
-		if payload == nil {
-			payload = (*pool)[:len(pkt.Payload)]
-			copy(payload, pkt.Payload)
-		}
+		copy(payload, meta.codecBytes[:outgoingHeaderSize])
+		copy(payload[outgoingHeaderSize:], pkt.Payload[incomingHeaderSize:])
+		payload = payload[:outgoingHeaderSize+len(pkt.Payload)-incomingHeaderSize]
 
 		d.pacer.Enqueue(pacer.Packet{
 			Header:             &pkt.Header,
