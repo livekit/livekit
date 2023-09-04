@@ -220,6 +220,7 @@ func (r *RoomManager) SaveClientsBandwidth() {
 			logger.Errorw("could not set bandwidth", err)
 			break
 		}
+		logger.Infow("bandwidth has been set", "apiKey", apiKey, "bandwidth", bandwidth)
 	}
 }
 
@@ -403,7 +404,7 @@ func (r *RoomManager) StartSession(
 				return false, err
 			}
 			currentBandwidth := r.trafficManager.GetValue(apiKey)
-			return currentBandwidth+requestBandwidth > bandwidthLimit, nil
+			return currentBandwidth+requestBandwidth <= bandwidthLimit, nil
 		},
 		RelayCollection: outRelayCollection,
 	})

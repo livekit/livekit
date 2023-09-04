@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"sync"
 	"time"
@@ -88,7 +89,7 @@ func (m *TrafficManager) SetValue(ctx context.Context, clientApiKey livekit.ApiK
 		return errors.Wrap(err, "marshal traffic message")
 	}
 
-	_, err = m.db.Publish(ctx, topicTrafficValuesStreaming, body)
+	_, err = m.db.Publish(ctx, topicTrafficValuesStreaming, base64.StdEncoding.EncodeToString(body))
 	if err != nil {
 		return errors.Wrap(err, "publish traffic message")
 	}
@@ -130,14 +131,20 @@ func (m *TrafficManager) init(ctx context.Context) error {
 	}()
 
 	return m.db.Subscribe(ctx, topicTrafficValuesStreaming, func(event p2p_database.Event) {
-		bytes, ok := event.Message.([]byte)
+		b64s, ok := event.Message.(string)
 		if !ok {
-			m.logger.Errorw("convert interface to bytes from message topic traffic values")
+			m.logger.Errorw("convert interface to string from message topic traffic values")
+			return
+		}
+
+		bytes, err := base64.StdEncoding.DecodeString(b64s)
+		if err != nil {
+			m.logger.Errorw("decode base64", err)
 			return
 		}
 
 		trafficMessage := TrafficMessage{}
-		err := json.Unmarshal(bytes, &trafficMessage)
+		err = json.Unmarshal(bytes, &trafficMessage)
 		if err != nil {
 			m.logger.Errorw("topic traffic values unmarshal error", err)
 			return

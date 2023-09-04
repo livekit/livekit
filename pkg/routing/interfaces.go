@@ -3,6 +3,8 @@ package routing
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/protobuf/proto"
@@ -118,7 +120,7 @@ func (pi *ParticipantInit) ToStartSession(roomKey livekit.RoomKey, connectionID 
 
 	return &livekit.StartSession{
 		RoomName: string(roomKey),
-		Identity: string(pi.Identity),
+		Identity: fmt.Sprintf("%v|||%v", pi.ApiKey, pi.Identity),
 		Name:     string(pi.Name),
 		// connection id is to allow the RTC node to identify where to route the message back to
 		ConnectionId:    string(connectionID),
@@ -138,8 +140,11 @@ func ParticipantInitFromStartSession(ss *livekit.StartSession, region string) (*
 		return nil, err
 	}
 
+	apiKeyIdentity := strings.Split(ss.Identity, "|||")
+
 	return &ParticipantInit{
-		Identity:        livekit.ParticipantIdentity(ss.Identity),
+		ApiKey:          livekit.ApiKey(apiKeyIdentity[0]),
+		Identity:        livekit.ParticipantIdentity(apiKeyIdentity[1]),
 		Name:            livekit.ParticipantName(ss.Name),
 		Reconnect:       ss.Reconnect,
 		ReconnectReason: ss.ReconnectReason,
