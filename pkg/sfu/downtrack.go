@@ -677,7 +677,10 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		return err
 	}
 
-	extensions := []pacer.ExtensionData{{ID: uint8(d.dependencyDescriptorExtID), Payload: tp.ddBytes}}
+	var extensions []pacer.ExtensionData
+	if tp.ddBytes != nil {
+		extensions = []pacer.ExtensionData{{ID: uint8(d.dependencyDescriptorExtID), Payload: tp.ddBytes}}
+	}
 	if d.playoutDelayExtID != 0 && !d.playoudDelayAcked.Load() {
 		if val := d.playoutDelayBytes.Load(); val != nil {
 			extensions = append(extensions, pacer.ExtensionData{ID: uint8(d.playoutDelayExtID), Payload: val.([]byte)})
