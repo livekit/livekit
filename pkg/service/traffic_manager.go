@@ -8,7 +8,6 @@ import (
 
 	p2p_database "github.com/dTelecom/p2p-realtime-database"
 	"github.com/ipfs/go-log/v2"
-	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/livekit/protocol/livekit"
 	"github.com/pkg/errors"
 )
@@ -34,7 +33,7 @@ type TrafficManager struct {
 	db                *p2p_database.DB
 	clientProvider    *ClientProvider
 	lock              sync.RWMutex
-	trafficsPerClient map[livekit.ApiKey]map[peer.ID]TrafficMessage
+	trafficsPerClient map[livekit.ApiKey]map[string]TrafficMessage
 	logger            *log.ZapEventLogger
 }
 
@@ -43,7 +42,7 @@ func NewTrafficManager(db *p2p_database.DB, clientProvider *ClientProvider, logg
 		db:                db,
 		clientProvider:    clientProvider,
 		lock:              sync.RWMutex{},
-		trafficsPerClient: make(map[livekit.ApiKey]map[peer.ID]TrafficMessage),
+		trafficsPerClient: make(map[livekit.ApiKey]map[string]TrafficMessage),
 		logger:            logger,
 	}
 
@@ -144,14 +143,14 @@ func (m *TrafficManager) init(ctx context.Context) error {
 			return
 		}
 
-		peerId, err := peer.IDFromString(event.FromPeerId)
+		peerId := event.FromPeerId
 		if err != nil {
 			m.logger.Errorw("form peer id from string ", peerId, err)
 			return
 		}
 
 		m.lock.Lock()
-		m.trafficsPerClient[trafficMessage.ClientApiKey] = map[peer.ID]TrafficMessage{
+		m.trafficsPerClient[trafficMessage.ClientApiKey] = map[string]TrafficMessage{
 			peerId: trafficMessage,
 		}
 		m.lock.Unlock()

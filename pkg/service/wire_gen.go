@@ -8,9 +8,12 @@ package service
 
 import (
 	"context"
-	_ "net/http/pprof"
-
 	"github.com/dTelecom/p2p-realtime-database"
+	"github.com/livekit/livekit-server"
+	"github.com/livekit/livekit-server/pkg/clientconfiguration"
+	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/egress"
 	livekit2 "github.com/livekit/protocol/livekit"
@@ -23,12 +26,10 @@ import (
 	"github.com/pion/turn/v2"
 	"github.com/pkg/errors"
 	"github.com/redis/go-redis/v9"
+)
 
-	"github.com/livekit/livekit-server"
-	"github.com/livekit/livekit-server/pkg/clientconfiguration"
-	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/livekit-server/pkg/telemetry"
+import (
+	_ "net/http/pprof"
 )
 
 // Injectors from wire.go:
@@ -108,7 +109,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	clientConfigurationManager := createClientConfiguration()
 	timedVersionGenerator := utils.NewDefaultTimedVersionGenerator()
 	clientProvider := createClientProvider(ethSmartContract, db)
-	trafficManager := NewTrafficManager(db, clientProvider, conf.LoggingP2P)
+	trafficManager := createTrafficManager(db, clientProvider, conf)
 	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager, rtcEgressLauncher, timedVersionGenerator, trafficManager)
 	if err != nil {
 		return nil, err
@@ -175,6 +176,10 @@ func GetDatabaseConfiguration(conf *config.Config) p2p_database.Config {
 		WalletPrivateKey:        conf.Ethereum.WalletPrivateKey,
 		DatabaseName:            conf.Ethereum.P2pMainDatabaseName,
 	}
+}
+
+func createTrafficManager(mainDatabase *p2p_database.DB, clientProvider *ClientProvider, configuration *config.Config) *TrafficManager {
+	return NewTrafficManager(mainDatabase, clientProvider, configuration.LoggingP2P)
 }
 
 func CreateMainDatabaseP2P(conf p2p_database.Config, c *config.Config) (*p2p_database.DB, error) {
