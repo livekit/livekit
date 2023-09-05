@@ -1453,6 +1453,15 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			"referenceLayerSpatial", f.referenceLayerSpatial,
 		)
 		return nil
+	} else if f.referenceLayerSpatial == buffer.InvalidLayerSpatial {
+		f.referenceLayerSpatial = layer
+		f.logger.Debugw(
+			"catch up forwarding",
+			"sequenceNumber", extPkt.Packet.SequenceNumber,
+			"timestamp", extPkt.Packet.Timestamp,
+			"layer", layer,
+			"referenceLayerSpatial", f.referenceLayerSpatial,
+		)
 	}
 
 	logTransition := func(message string, extExpectedTS, extRefTS, extLastTS uint64, diffSeconds float64) {

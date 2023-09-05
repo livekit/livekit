@@ -1761,8 +1761,11 @@ func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
 				AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 				TransportWideExtID: uint8(d.transportWideExtID),
 				WriteStream:        d.writeStream,
-				Metadata:           sendPacketMetadata{},
-				OnSent:             d.packetSent,
+				Metadata: sendPacketMetadata{
+					// although this is using empty frames, mark as padding as these are used to trigger Pion OnTrack only
+					isPadding: true,
+				},
+				OnSent: d.packetSent,
 			})
 		}
 
