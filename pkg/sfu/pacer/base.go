@@ -43,15 +43,13 @@ func (b *Base) SetBitrate(_bitrate int) {
 }
 
 func (b *Base) SendPacket(p *Packet) (int, error) {
-	var sendingAt time.Time
-	var err error
 	defer func() {
-		if p.OnSent != nil {
-			p.OnSent(p.Metadata, p.Header, len(p.Payload), sendingAt, err)
+		if p.Pool != nil && p.PoolEntity != nil {
+			p.Pool.Put(p.PoolEntity)
 		}
 	}()
 
-	sendingAt, err = b.writeRTPHeaderExtensions(p)
+	_, err := b.writeRTPHeaderExtensions(p)
 	if err != nil {
 		b.logger.Errorw("writing rtp header extensions err", err)
 		return 0, err

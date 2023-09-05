@@ -150,12 +150,12 @@ func (r *RTPMunger) PacketDropped(extPkt *buffer.ExtPacket) {
 	r.extLastSN = r.extSecondLastSN
 }
 
-func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationParamsRTP, error) {
+func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (TranslationParamsRTP, error) {
 	diff := int64(extPkt.ExtSequenceNumber - r.extHighestIncomingSN)
 
 	// can get duplicate packet due to FEC
 	if diff == 0 {
-		return &TranslationParamsRTP{
+		return TranslationParamsRTP{
 			snOrdering: SequenceNumberOrderingDuplicate,
 		}, ErrDuplicatePacket
 	}
@@ -164,12 +164,12 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 		// out-of-order, look up sequence number offset cache
 		snOffset, err := r.snRangeMap.GetValue(extPkt.ExtSequenceNumber)
 		if err != nil {
-			return &TranslationParamsRTP{
+			return TranslationParamsRTP{
 				snOrdering: SequenceNumberOrderingOutOfOrder,
 			}, ErrOutOfOrderSequenceNumberCacheMiss
 		}
 
-		return &TranslationParamsRTP{
+		return TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingOutOfOrder,
 			sequenceNumber: uint16(extPkt.ExtSequenceNumber - snOffset),
 			timestamp:      uint32(extPkt.ExtTimestamp - r.tsOffset),
@@ -188,7 +188,7 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 		if err := r.snRangeMap.ExcludeRange(r.extHighestIncomingSN, r.extHighestIncomingSN+1); err != nil {
 			r.logger.Errorw("could not exclude range", err, "sn", r.extHighestIncomingSN)
 		}
-		return &TranslationParamsRTP{
+		return TranslationParamsRTP{
 			snOrdering: ordering,
 		}, ErrPaddingOnlyPacket
 	}
@@ -196,7 +196,7 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 	snOffset, err := r.snRangeMap.GetValue(extPkt.ExtSequenceNumber)
 	if err != nil {
 		r.logger.Errorw("could not get sequence number adjustment", err, "sn", extPkt.ExtSequenceNumber, "payloadSize", len(extPkt.Packet.Payload))
-		return &TranslationParamsRTP{
+		return TranslationParamsRTP{
 			snOrdering: ordering,
 		}, ErrSequenceNumberOffsetNotFound
 	}
@@ -218,7 +218,7 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 		r.isInRtxGateRegion = false
 	}
 
-	return &TranslationParamsRTP{
+	return TranslationParamsRTP{
 		snOrdering:     ordering,
 		sequenceNumber: uint16(extMungedSN),
 		timestamp:      uint32(extMungedTS),

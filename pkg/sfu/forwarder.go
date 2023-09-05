@@ -145,7 +145,7 @@ type TranslationParams struct {
 	shouldDrop  bool
 	isResuming  bool
 	isSwitching bool
-	rtp         *TranslationParamsRTP
+	rtp         TranslationParamsRTP
 	ddBytes     []byte
 	marker      bool
 }
@@ -1419,12 +1419,12 @@ func (f *Forwarder) FilterRTX(nacks []uint16) (filtered []uint16, disallowedLaye
 	return
 }
 
-func (f *Forwarder) GetTranslationParams(extPkt *buffer.ExtPacket, layer int32) (*TranslationParams, error) {
+func (f *Forwarder) GetTranslationParams(extPkt *buffer.ExtPacket, layer int32) (TranslationParams, error) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
 	if f.muted || f.pubMuted {
-		return &TranslationParams{
+		return TranslationParams{
 			shouldDrop: true,
 		}, nil
 	}
@@ -1436,7 +1436,9 @@ func (f *Forwarder) GetTranslationParams(extPkt *buffer.ExtPacket, layer int32) 
 		return f.getTranslationParamsVideo(extPkt, layer)
 	}
 
-	return nil, ErrUnknownKind
+	return TranslationParams{
+		shouldDrop: true,
+	}, ErrUnknownKind
 }
 
 func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) error {
@@ -1498,6 +1500,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			// potentially happening very quickly. Erroring out and waiting for a layer for which a sender report has been
 			// received will calculate a better offset, but may result in initial adaptation to take a bit longer depending
 			// on how often publisher/remote side sends RTCP sender report.
+			f.logger.Errorw("could not get reference timestamp", err) // REMOVE
 			return err
 		}
 
@@ -1614,11 +1617,11 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 }
 
 // should be called with lock held
-func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer int32, tp *TranslationParams) (*TranslationParams, error) {
+func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer int32, tp *TranslationParams) error {
 	if f.lastSSRC != extPkt.Packet.SSRC {
 		if err := f.processSourceSwitch(extPkt, layer); err != nil {
 			tp.shouldDrop = true
-			return tp, nil
+			return nil
 		}
 		f.logger.Debugw("switching feed", "from", f.lastSSRC, "to", extPkt.Packet.SSRC)
 		f.lastSSRC = extPkt.Packet.SSRC
@@ -1628,30 +1631,34 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 	if err != nil {
 		tp.shouldDrop = true
 		if err == ErrPaddingOnlyPacket || err == ErrDuplicatePacket || err == ErrOutOfOrderSequenceNumberCacheMiss {
-			return tp, nil
+			return nil
 		}
-		return tp, err
+		return err
 	}
 
 	tp.rtp = tpRTP
+	return nil
+}
+
+// should be called with lock held
+func (f *Forwarder) getTranslationParamsAudio(extPkt *buffer.ExtPacket, layer int32) (TranslationParams, error) {
+	tp := TranslationParams{}
+	if err := f.getTranslationParamsCommon(extPkt, layer, &tp); err != nil {
+		tp.shouldDrop = true
+		return tp, err
+	}
 	return tp, nil
 }
 
 // should be called with lock held
-func (f *Forwarder) getTranslationParamsAudio(extPkt *buffer.ExtPacket, layer int32) (*TranslationParams, error) {
-	return f.getTranslationParamsCommon(extPkt, layer, &TranslationParams{})
-}
-
-// should be called with lock held
-func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer int32) (*TranslationParams, error) {
+func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer int32) (TranslationParams, error) {
 	maybeRollback := func(isSwitching bool) {
 		if isSwitching {
 			f.vls.Rollback()
 		}
 	}
 
-	tp := &TranslationParams{}
-
+	tp := TranslationParams{}
 	if !f.vls.GetTarget().IsValid() {
 		// stream is paused by streamallocator
 		tp.shouldDrop = true
@@ -1698,7 +1705,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		return tp, nil
 	}
 
-	_, err := f.getTranslationParamsCommon(extPkt, layer, tp)
+	err := f.getTranslationParamsCommon(extPkt, layer, &tp)
 	if tp.shouldDrop {
 		maybeRollback(result.IsSwitching)
 		return tp, err
