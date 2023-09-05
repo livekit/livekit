@@ -107,6 +107,18 @@ rtc:
   # # are disabled and clients don't ACK opened peer connections, only reliable, ordered delivery
   # # will be available.
   # strict_acks: true
+  # #
+  # # Settings for improving throughput in high stress forwarding load case.
+  # #
+  # # when set, Livekit will use UDP mux to listen on udp ports (up to runtime.NumCPU()) to
+  # # balance traffic between those ports, also superior to udp_port
+  # udp_ports: 7882-7892
+  # # enable batch write to merge network writting system calls to reduce cpu usage. Outgoing packet
+  # # will be queued until length of queue equal to `batch_size` or time elapsed since last write exceeds `max_flush_interval`.
+  # batch_io:
+  # #
+  #    batch_size: 128
+  #    max_flush_interval: 2ms
 
 # when enabled, LiveKit will expose prometheus metrics on :6789/metrics
 # prometheus_port: 6789
