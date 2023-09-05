@@ -196,10 +196,11 @@ func TestOutOfOrderPictureId(t *testing.T) {
 	vp8.PictureID = 13466
 	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
 
-	n, err := v.UpdateAndGet(extPkt, true, false, 2, buf)
+	nIn, nOut, err := v.UpdateAndGet(extPkt, true, false, 2, buf)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrOutOfOrderVP8PictureIdCacheMiss)
-	require.Equal(t, 0, n)
+	require.Equal(t, 0, nIn)
+	require.Equal(t, 0, nOut)
 
 	// create a hole in picture id
 	vp8.PictureID = 13469
@@ -222,9 +223,10 @@ func TestOutOfOrderPictureId(t *testing.T) {
 	}
 	marshalledVP8, err := expectedVP8.Marshal()
 	require.NoError(t, err)
-	n, err = v.UpdateAndGet(extPkt, false, true, 2, buf)
+	nIn, nOut, err = v.UpdateAndGet(extPkt, false, true, 2, buf)
 	require.NoError(t, err)
-	require.Equal(t, marshalledVP8, buf[:n])
+	require.Equal(t, 6, nIn)
+	require.Equal(t, marshalledVP8, buf[:nOut])
 
 	// all three, the last, the current and the in-between should have been added to missing picture id cache
 	value, ok := v.PictureIdOffset(13467)
@@ -260,9 +262,10 @@ func TestOutOfOrderPictureId(t *testing.T) {
 	}
 	marshalledVP8, err = expectedVP8.Marshal()
 	require.NoError(t, err)
-	n, err = v.UpdateAndGet(extPkt, true, false, 2, buf)
+	nIn, nOut, err = v.UpdateAndGet(extPkt, true, false, 2, buf)
 	require.NoError(t, err)
-	require.Equal(t, marshalledVP8, buf[:n])
+	require.Equal(t, 6, nIn)
+	require.Equal(t, marshalledVP8, buf[:nOut])
 }
 
 func TestTemporalLayerFiltering(t *testing.T) {
@@ -293,10 +296,11 @@ func TestTemporalLayerFiltering(t *testing.T) {
 	v.SetLast(extPkt)
 
 	// translate
-	n, err := v.UpdateAndGet(extPkt, false, false, 0, buf)
+	nIn, nOut, err := v.UpdateAndGet(extPkt, false, false, 0, buf)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrFilteredVP8TemporalLayer)
-	require.Equal(t, 0, n)
+	require.Equal(t, 0, nIn)
+	require.Equal(t, 0, nOut)
 	dropped, _ := v.droppedPictureIds.Get(13467)
 	require.True(t, dropped)
 	require.EqualValues(t, 1, v.pictureIdOffset)
@@ -306,10 +310,11 @@ func TestTemporalLayerFiltering(t *testing.T) {
 	params.SequenceNumber = 23334
 	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
 
-	n, err = v.UpdateAndGet(extPkt, false, false, 0, buf)
+	nIn, nOut, err = v.UpdateAndGet(extPkt, false, false, 0, buf)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrFilteredVP8TemporalLayer)
-	require.Equal(t, 0, n)
+	require.Equal(t, 0, nIn)
+	require.Equal(t, 0, nOut)
 	dropped, _ = v.droppedPictureIds.Get(13467)
 	require.True(t, dropped)
 	require.EqualValues(t, 1, v.pictureIdOffset)
@@ -319,10 +324,11 @@ func TestTemporalLayerFiltering(t *testing.T) {
 	params.SequenceNumber = 23337
 	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
 
-	n, err = v.UpdateAndGet(extPkt, false, false, 0, buf)
+	nIn, nOut, err = v.UpdateAndGet(extPkt, false, false, 0, buf)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrFilteredVP8TemporalLayer)
-	require.Equal(t, 0, n)
+	require.Equal(t, 0, nIn)
+	require.Equal(t, 0, nOut)
 	dropped, _ = v.droppedPictureIds.Get(13467)
 	require.True(t, dropped)
 	require.EqualValues(t, 1, v.pictureIdOffset)
@@ -373,9 +379,10 @@ func TestGapInSequenceNumberSamePicture(t *testing.T) {
 	}
 	marshalledVP8, err := expectedVP8.Marshal()
 	require.NoError(t, err)
-	n, err := v.UpdateAndGet(extPkt, false, false, 2, buf)
+	nIn, nOut, err := v.UpdateAndGet(extPkt, false, false, 2, buf)
 	require.NoError(t, err)
-	require.Equal(t, marshalledVP8, buf[:n])
+	require.Equal(t, 6, nIn)
+	require.Equal(t, marshalledVP8, buf[:nOut])
 
 	// telling there is a gap in sequence number will add pictures to missing picture cache
 	expectedVP8 = &buffer.VP8{
@@ -395,9 +402,10 @@ func TestGapInSequenceNumberSamePicture(t *testing.T) {
 	}
 	marshalledVP8, err = expectedVP8.Marshal()
 	require.NoError(t, err)
-	n, err = v.UpdateAndGet(extPkt, false, true, 2, buf)
+	nIn, nOut, err = v.UpdateAndGet(extPkt, false, true, 2, buf)
 	require.NoError(t, err)
-	require.Equal(t, marshalledVP8, buf[:n])
+	require.Equal(t, 6, nIn)
+	require.Equal(t, marshalledVP8, buf[:nOut])
 
 	value, ok := v.PictureIdOffset(13467)
 	require.True(t, ok)
