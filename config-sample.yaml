@@ -116,7 +116,6 @@ rtc:
   # # enable batch write to merge network writting system calls to reduce cpu usage. Outgoing packet
   # # will be queued until length of queue equal to `batch_size` or time elapsed since last write exceeds `max_flush_interval`.
   # batch_io:
-  # #
   #    batch_size: 128
   #    max_flush_interval: 2ms
 
