@@ -644,8 +644,6 @@ func (r *RTPStats) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt uint32
 	if extHighestSNOverridden < r.sequenceNumber.GetExtendedStart() {
 		// it is possible that the `LastSequenceNumber` in the receiver report is before the starting
 		// sequence number when dummy packets are used to trigger Pion's OnTrack path.
-		r.lastRRTime = time.Now()
-		r.lastRR = rr
 		return
 	}
 
@@ -1211,7 +1209,7 @@ func (r *RTPStats) DeltaInfo(snapshotId uint32) *RTPDeltaInfo {
 }
 
 func (r *RTPStats) DeltaInfoOverridden(snapshotId uint32) *RTPDeltaInfo {
-	if !r.params.IsReceiverReportDriven {
+	if !r.params.IsReceiverReportDriven || r.lastRRTime.IsZero() {
 		return nil
 	}
 
