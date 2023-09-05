@@ -66,8 +66,9 @@ type packetMeta struct {
 	// Spatial layer of packet
 	layer int8
 	// Information that differs depending on the codec
-	codecBytes    [8]byte
-	numCodecBytes uint8
+	codecBytes       [8]byte
+	numCodecBytesIn  uint8
+	numCodecBytesOut uint8
 	// Dependency Descriptor of packet
 	ddBytes []byte
 }
@@ -116,6 +117,7 @@ func (s *sequencer) push(
 	marker bool,
 	layer int8,
 	codecBytes []byte,
+	numCodecBytesIn int,
 	ddBytes []byte,
 ) {
 	s.Lock()
@@ -127,21 +129,21 @@ func (s *sequencer) push(
 	}
 
 	s.meta[s.metaWritePtr] = packetMeta{
-		sourceSeqNo: sn,
-		targetSeqNo: offSn,
-		timestamp:   timeStamp,
-		marker:      marker,
-		layer:       layer,
-		// RAJA-TODO codecBytes:  append([]byte{}, codecBytes...),
-		ddBytes:  append([]byte{}, ddBytes...),
-		lastNack: s.getRefTime(), // delay retransmissions after the original transmission
+		sourceSeqNo:     sn,
+		targetSeqNo:     offSn,
+		timestamp:       timeStamp,
+		marker:          marker,
+		layer:           layer,
+		numCodecBytesIn: uint8(numCodecBytesIn),
+		ddBytes:         append([]byte{}, ddBytes...),
+		lastNack:        s.getRefTime(), // delay retransmissions after the original transmission
 	}
 	pm := &s.meta[s.metaWritePtr]
-	pm.numCodecBytes = uint8(len(codecBytes))
-	if pm.numCodecBytes > uint8(len(pm.codecBytes)) {
+	pm.numCodecBytesOut = uint8(len(codecBytes))
+	if pm.numCodecBytesOut > uint8(len(pm.codecBytes)) {
 		return
 	}
-	copy(pm.codecBytes[:pm.numCodecBytes], codecBytes)
+	copy(pm.codecBytes[:pm.numCodecBytesOut], codecBytes)
 
 	s.seq[slot] = pm
 
@@ -225,8 +227,7 @@ func (s *sequencer) getPacketsMeta(seqNo []uint16) []packetMeta {
 			seq.lastNack = refTime
 
 			pm := *seq
-			// RAJA-REMOVE pm.codecBytes = append([]byte{}, seq.codecBytes...)
-			copy(pm.codecBytes[:pm.numCodecBytes], seq.codecBytes[:pm.numCodecBytes])
+			copy(pm.codecBytes[:pm.numCodecBytesOut], seq.codecBytes[:pm.numCodecBytesOut])
 			pm.ddBytes = append([]byte{}, seq.ddBytes...)
 			meta = append(meta, pm)
 		}

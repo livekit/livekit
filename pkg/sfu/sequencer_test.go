@@ -29,11 +29,11 @@ func Test_sequencer(t *testing.T) {
 	off := uint16(15)
 
 	for i := uint16(1); i < 518; i++ {
-		seq.push(i, i+off, 123, true, 2, nil, nil)
+		seq.push(i, i+off, 123, true, 2, nil, 0, nil)
 	}
 	// send the last two out-of-order
-	seq.push(519, 519+off, 123, false, 2, nil, nil)
-	seq.push(518, 518+off, 123, true, 2, nil, nil)
+	seq.push(519, 519+off, 123, false, 2, nil, 0, nil)
+	seq.push(518, 518+off, 123, true, 2, nil, 0, nil)
 
 	req := []uint16{57, 58, 62, 63, 513, 514, 515, 516, 517}
 	res := seq.getPacketsMeta(req)
@@ -59,14 +59,14 @@ func Test_sequencer(t *testing.T) {
 		require.Equal(t, val.layer, int8(2))
 	}
 
-	seq.push(521, 521+off, 123, true, 1, nil, nil)
+	seq.push(521, 521+off, 123, true, 1, nil, 0, nil)
 	m := seq.getPacketsMeta([]uint16{521 + off})
 	require.Equal(t, 0, len(m))
 	time.Sleep((ignoreRetransmission + 10) * time.Millisecond)
 	m = seq.getPacketsMeta([]uint16{521 + off})
 	require.Equal(t, 1, len(m))
 
-	seq.push(505, 505+off, 123, false, 1, nil, nil)
+	seq.push(505, 505+off, 123, false, 1, nil, 0, nil)
 	m = seq.getPacketsMeta([]uint16{505 + off})
 	require.Equal(t, 0, len(m))
 	time.Sleep((ignoreRetransmission + 10) * time.Millisecond)
@@ -79,15 +79,17 @@ func Test_sequencer_getNACKSeqNo(t *testing.T) {
 		seqNo []uint16
 	}
 	type fields struct {
-		input          []uint16
-		padding        []uint16
-		offset         uint16
-		markerOdd      bool
-		markerEven     bool
-		codecBytesOdd  []byte
-		codecBytesEven []byte
-		ddBytesOdd     []byte
-		ddBytesEven    []byte
+		input               []uint16
+		padding             []uint16
+		offset              uint16
+		markerOdd           bool
+		markerEven          bool
+		codecBytesOdd       []byte
+		numCodecBytesInOdd  int
+		codecBytesEven      []byte
+		numCodecBytesInEven int
+		ddBytesOdd          []byte
+		ddBytesEven         []byte
 	}
 
 	tests := []struct {
@@ -99,15 +101,17 @@ func Test_sequencer_getNACKSeqNo(t *testing.T) {
 		{
 			name: "Should get correct seq numbers",
 			fields: fields{
-				input:          []uint16{2, 3, 4, 7, 8, 11},
-				padding:        []uint16{9, 10},
-				offset:         5,
-				markerOdd:      true,
-				markerEven:     false,
-				codecBytesOdd:  []byte{1, 2, 3, 4},
-				codecBytesEven: []byte{5, 6, 7},
-				ddBytesOdd:     []byte{8, 9, 10},
-				ddBytesEven:    []byte{11, 12},
+				input:               []uint16{2, 3, 4, 7, 8, 11},
+				padding:             []uint16{9, 10},
+				offset:              5,
+				markerOdd:           true,
+				markerEven:          false,
+				codecBytesOdd:       []byte{1, 2, 3, 4},
+				numCodecBytesInOdd:  3,
+				codecBytesEven:      []byte{5, 6, 7},
+				numCodecBytesInEven: 4,
+				ddBytesOdd:          []byte{8, 9, 10},
+				ddBytesEven:         []byte{11, 12},
 			},
 			args: args{
 				seqNo: []uint16{4 + 5, 5 + 5, 8 + 5, 9 + 5, 10 + 5, 11 + 5},
@@ -122,9 +126,9 @@ func Test_sequencer_getNACKSeqNo(t *testing.T) {
 
 			for _, i := range tt.fields.input {
 				if i%2 == 0 {
-					n.push(i, i+tt.fields.offset, 123, tt.fields.markerEven, 3, tt.fields.codecBytesEven, tt.fields.ddBytesEven)
+					n.push(i, i+tt.fields.offset, 123, tt.fields.markerEven, 3, tt.fields.codecBytesEven, tt.fields.numCodecBytesInEven, tt.fields.ddBytesEven)
 				} else {
-					n.push(i, i+tt.fields.offset, 123, tt.fields.markerOdd, 3, tt.fields.codecBytesOdd, tt.fields.ddBytesOdd)
+					n.push(i, i+tt.fields.offset, 123, tt.fields.markerOdd, 3, tt.fields.codecBytesOdd, tt.fields.numCodecBytesInOdd, tt.fields.ddBytesOdd)
 				}
 			}
 			for _, i := range tt.fields.padding {
@@ -138,11 +142,13 @@ func Test_sequencer_getNACKSeqNo(t *testing.T) {
 				got = append(got, sn.sourceSeqNo)
 				if sn.sourceSeqNo%2 == 0 {
 					require.Equal(t, tt.fields.markerEven, sn.marker)
-					require.Equal(t, tt.fields.codecBytesEven, sn.codecBytes[:sn.numCodecBytes])
+					require.Equal(t, tt.fields.codecBytesEven, sn.codecBytes[:sn.numCodecBytesOut])
+					require.Equal(t, uint8(tt.fields.numCodecBytesInEven), sn.numCodecBytesIn)
 					require.Equal(t, tt.fields.ddBytesEven, sn.ddBytes)
 				} else {
 					require.Equal(t, tt.fields.markerOdd, sn.marker)
-					require.Equal(t, tt.fields.codecBytesOdd, sn.codecBytes[:sn.numCodecBytes])
+					require.Equal(t, tt.fields.codecBytesOdd, sn.codecBytes[:sn.numCodecBytesOut])
+					require.Equal(t, uint8(tt.fields.numCodecBytesInOdd), sn.numCodecBytesIn)
 					require.Equal(t, tt.fields.ddBytesOdd, sn.ddBytes)
 				}
 			}

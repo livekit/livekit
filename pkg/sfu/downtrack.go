@@ -691,6 +691,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			hdr.Marker,
 			int8(layer),
 			payload[:outgoingHeaderSize],
+			incomingHeaderSize,
 			tp.ddBytes,
 		)
 	}
@@ -1559,22 +1560,9 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 
 		pool := PacketFactory.Get().(*[]byte)
 		payload := *pool
-		incomingHeaderSize := 0
-		outgoingHeaderSize := 0
-		if d.mime == "video/vp8" && len(pkt.Payload) > 0 && meta.numCodecBytes != 0 {
-			var incomingVP8 buffer.VP8
-			if err = incomingVP8.Unmarshal(pkt.Payload); err != nil {
-				d.params.Logger.Errorw("unmarshalling VP8 packet err", err)
-				PacketFactory.Put(pool)
-				continue
-			}
-
-			incomingHeaderSize = incomingVP8.HeaderSize
-			outgoingHeaderSize = int(meta.numCodecBytes)
-		}
-		copy(payload, meta.codecBytes[:outgoingHeaderSize])
-		copy(payload[outgoingHeaderSize:], pkt.Payload[incomingHeaderSize:])
-		payload = payload[:outgoingHeaderSize+len(pkt.Payload)-incomingHeaderSize]
+		copy(payload, meta.codecBytes[:meta.numCodecBytesOut])
+		copy(payload[meta.numCodecBytesOut:], pkt.Payload[meta.numCodecBytesIn:])
+		payload = payload[:int(meta.numCodecBytesOut)+len(pkt.Payload)-int(meta.numCodecBytesIn)]
 
 		d.pacer.Enqueue(pacer.Packet{
 			Header:             &pkt.Header,
@@ -1622,16 +1610,6 @@ func (d *DownTrack) getTranslatedRTPHeader(extPkt *buffer.ExtPacket, tp *Transla
 	}
 
 	return &hdr, nil
-}
-
-func (d *DownTrack) translateVP8PacketTo(pkt *rtp.Packet, incomingVP8 *buffer.VP8, translatedVP8 []byte, outbuf *[]byte) []byte {
-	buf := (*outbuf)[:len(pkt.Payload)+len(translatedVP8)-incomingVP8.HeaderSize]
-	srcPayload := pkt.Payload[incomingVP8.HeaderSize:]
-	dstPayload := buf[len(translatedVP8):]
-	copy(dstPayload, srcPayload)
-
-	copy(buf[:len(translatedVP8)], translatedVP8)
-	return buf
 }
 
 func (d *DownTrack) DebugInfo() map[string]interface{} {
