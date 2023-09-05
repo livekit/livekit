@@ -112,6 +112,8 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 		}
 
 		currentValueBigInt := big.NewInt(int64(currentValue))
+		// audio only up to 10x more
+		currentValueBigInt.Mul(currentValueBigInt, big.NewInt(10))
 		if currentValueBigInt.Cmp(client.Limit) > 0 {
 			log.Error("Max participant reached. Limit " + client.Limit.String() + ", current " + currentValueBigInt.String())
 			handleError(
