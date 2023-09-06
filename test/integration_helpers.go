@@ -31,6 +31,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/livekit-server/pkg/testutils"
 	testclient "github.com/livekit/livekit-server/test/client"
+	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -178,7 +179,7 @@ func createMultiNodeServer(nodeID string, port uint32) *service.LivekitServer {
 		panic(fmt.Sprintf("could not create config: %v", err))
 	}
 	conf.Port = port
-	conf.RTC.UDPPort = port + 1
+	conf.RTC.UDPPort = rtcconfig.PortRange{Start: int(port) + 1}
 	conf.RTC.TCPPort = port + 2
 	conf.Redis.Address = "localhost:6379"
 	conf.Keys = map[string]string{testApiKey: testApiSecret}

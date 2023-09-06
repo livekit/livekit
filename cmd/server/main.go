@@ -29,6 +29,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
+	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -206,7 +207,7 @@ func getConfig(c *cli.Context) (*config.Config, error) {
 
 	if c.String("config") == "" && c.String("config-body") == "" && conf.Development {
 		// use single port UDP when no config is provided
-		conf.RTC.UDPPort = 7882
+		conf.RTC.UDPPort = rtcconfig.PortRange{Start: 7882}
 		conf.RTC.ICEPortRangeStart = 0
 		conf.RTC.ICEPortRangeEnd = 0
 		logger.Infow("starting in development mode")
