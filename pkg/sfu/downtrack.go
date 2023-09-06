@@ -421,7 +421,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	d.forwarder.DetermineCodec(d.codec, d.params.Receiver.HeaderExtensions())
 
 	d.params.Logger.Debugw("downtrack bound")
-	d.onBindAndConnected()
+	d.onBindAndConnectedChange()
 
 	return codec, nil
 }
@@ -430,7 +430,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 // because a track has been stopped.
 func (d *DownTrack) Unbind(_ webrtc.TrackLocalContext) error {
 	d.bound.Store(false)
-	d.onBindAndConnected()
+	d.onBindAndConnectedChange()
 	return nil
 }
 
@@ -602,7 +602,7 @@ func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
 			return
 		}
 
-		if d.connected.Load() {
+		if d.writable.Load() {
 			d.params.Logger.Debugw("sending PLI for layer lock", "generation", generation, "layer", layer)
 			d.params.Receiver.SendPLI(layer, false)
 			d.rtpStats.UpdateLayerLockPliAndTime(1)
@@ -610,7 +610,7 @@ func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
 
 		<-ticker.C
 
-		if generation != d.keyFrameRequestGeneration.Load() || !d.bound.Load() {
+		if generation != d.keyFrameRequestGeneration.Load() || !d.writable.Load() {
 			return
 		}
 	}
@@ -1498,7 +1498,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 
 func (d *DownTrack) SetConnected() {
 	if !d.connected.Swap(true) {
-		d.onBindAndConnected()
+		d.onBindAndConnectedChange()
 	}
 }
 
@@ -1716,7 +1716,7 @@ func (d *DownTrack) GetAndResetBytesSent() (uint32, uint32) {
 	return d.bytesSent.Swap(0), d.bytesRetransmitted.Swap(0)
 }
 
-func (d *DownTrack) onBindAndConnected() {
+func (d *DownTrack) onBindAndConnectedChange() {
 	if d.connected.Load() && d.bound.Load() && !d.bindAndConnectedOnce.Swap(true) {
 		if d.kind == webrtc.RTPCodecTypeVideo {
 			_, layer := d.forwarder.CheckSync()
