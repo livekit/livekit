@@ -801,7 +801,7 @@ func (conf *Config) updateFromCLI(c *cli.Context, baseFlags []cli.Flag) error {
 		conf.RTC.NodeIP = c.String("node-ip")
 	}
 	if c.IsSet("udp-port") {
-		conf.RTC.UDPPort = rtcconfig.PortRange{Start: (c.Int("udp-port"))}
+		conf.RTC.UDPPort.UnmarshalString(c.String("udp-port"))
 	}
 	if c.IsSet("bind") {
 		conf.BindAddresses = c.StringSlice("bind")

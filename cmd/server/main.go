@@ -71,9 +71,9 @@ var baseFlags = []cli.Flag{
 		Usage:   "IP address of the current node, used to advertise to clients. Automatically determined by default",
 		EnvVars: []string{"NODE_IP"},
 	},
-	&cli.IntFlag{
+	&cli.StringFlag{
 		Name:    "udp-port",
-		Usage:   "Single UDP port to use for WebRTC traffic",
+		Usage:   "UDP port(s) to use for WebRTC traffic",
 		EnvVars: []string{"UDP_PORT"},
 	},
 	&cli.StringFlag{
