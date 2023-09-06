@@ -274,6 +274,10 @@ func (p *RelayedParticipantImpl) GetApiKey() livekit.ApiKey {
 	return ""
 }
 
+func (p *RelayedParticipantImpl) GetLimit() int64 {
+	return 0
+}
+
 func (p *RelayedParticipantImpl) GetLogger() logger.Logger {
 	return p.params.Logger
 }

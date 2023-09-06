@@ -14,15 +14,15 @@ import (
 )
 
 const (
-	trafficLimitPerClient       = 5000_000
-	topicTrafficValuesStreaming = "clients_traffic"
+	TrafficLimitPerClient       = 5000_000
 	AudioBandwidth              = 1500
 	VideoBanwith                = 1500_000
+	topicTrafficValuesStreaming = "clients_traffic"
 )
 
 type TrafficMessage struct {
 	ClientApiKey livekit.ApiKey `json:"clientApiKey"`
-	Value        int            `json:"value"`
+	Value        int64          `json:"value"`
 	CreatedAt    time.Time      `json:"createdAt"`
 }
 
@@ -32,16 +32,14 @@ func (m *TrafficMessage) isExpired() bool {
 
 type TrafficManager struct {
 	db                *p2p_database.DB
-	clientProvider    *ClientProvider
 	lock              sync.RWMutex
 	trafficsPerClient map[livekit.ApiKey]map[string]TrafficMessage
 	logger            *log.ZapEventLogger
 }
 
-func NewTrafficManager(db *p2p_database.DB, clientProvider *ClientProvider, logger *log.ZapEventLogger) *TrafficManager {
+func NewTrafficManager(db *p2p_database.DB, logger *log.ZapEventLogger) *TrafficManager {
 	m := &TrafficManager{
 		db:                db,
-		clientProvider:    clientProvider,
 		lock:              sync.RWMutex{},
 		trafficsPerClient: make(map[livekit.ApiKey]map[string]TrafficMessage),
 		logger:            logger,
@@ -55,11 +53,11 @@ func NewTrafficManager(db *p2p_database.DB, clientProvider *ClientProvider, logg
 	return m
 }
 
-func (m *TrafficManager) GetValue(clientApiKey livekit.ApiKey) int {
+func (m *TrafficManager) GetValue(clientApiKey livekit.ApiKey) int64 {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
-	var value int
+	var value int64
 
 	traffics, ok := m.trafficsPerClient[clientApiKey]
 	if !ok {
@@ -77,7 +75,7 @@ func (m *TrafficManager) GetValue(clientApiKey livekit.ApiKey) int {
 	return value
 }
 
-func (m *TrafficManager) SetValue(ctx context.Context, clientApiKey livekit.ApiKey, value int) error {
+func (m *TrafficManager) SetValue(ctx context.Context, clientApiKey livekit.ApiKey, value int64) error {
 	trafficMessage := TrafficMessage{
 		ClientApiKey: clientApiKey,
 		Value:        value,
@@ -95,17 +93,6 @@ func (m *TrafficManager) SetValue(ctx context.Context, clientApiKey livekit.ApiK
 	}
 
 	return nil
-}
-
-func (m *TrafficManager) GetLimit(ctx context.Context, clientApiKey livekit.ApiKey) (int, error) {
-	client, err := m.clientProvider.ClientByAddress(ctx, string(clientApiKey))
-	if err != nil {
-		return 0, errors.Wrap(err, "client by address")
-	}
-
-	clientLimit := int(client.Limit.Int64())
-
-	return clientLimit * trafficLimitPerClient, nil
 }
 
 func (m *TrafficManager) init(ctx context.Context) error {

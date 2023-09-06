@@ -3,8 +3,6 @@ package routing
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"strings"
 
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/protobuf/proto"
@@ -49,6 +47,7 @@ type ParticipantInit struct {
 	AdaptiveStream  bool
 	ID              livekit.ParticipantID
 	ApiKey          livekit.ApiKey
+	Limit           int64
 }
 
 type NewParticipantCallback func(
@@ -112,15 +111,21 @@ func CreateRouter(config *config.Config, rc redis.UniversalClient, node LocalNod
 	return lr
 }
 
+type extendedGrants struct {
+	*auth.ClaimGrants
+	ApiKey string `json:"apiKey"`
+	Limit  int64  `json:"limit"`
+}
+
 func (pi *ParticipantInit) ToStartSession(roomKey livekit.RoomKey, connectionID livekit.ConnectionID) (*livekit.StartSession, error) {
-	claims, err := json.Marshal(pi.Grants)
+	claims, err := json.Marshal(extendedGrants{ClaimGrants: pi.Grants, ApiKey: string(pi.ApiKey), Limit: pi.Limit})
 	if err != nil {
 		return nil, err
 	}
 
 	return &livekit.StartSession{
 		RoomName: string(roomKey),
-		Identity: fmt.Sprintf("%v|||%v", pi.ApiKey, pi.Identity),
+		Identity: string(pi.Identity),
 		Name:     string(pi.Name),
 		// connection id is to allow the RTC node to identify where to route the message back to
 		ConnectionId:    string(connectionID),
@@ -135,24 +140,23 @@ func (pi *ParticipantInit) ToStartSession(roomKey livekit.RoomKey, connectionID 
 }
 
 func ParticipantInitFromStartSession(ss *livekit.StartSession, region string) (*ParticipantInit, error) {
-	claims := &auth.ClaimGrants{}
-	if err := json.Unmarshal([]byte(ss.GrantsJson), claims); err != nil {
+	extendedGrants := &extendedGrants{}
+	if err := json.Unmarshal([]byte(ss.GrantsJson), extendedGrants); err != nil {
 		return nil, err
 	}
 
-	apiKeyIdentity := strings.Split(ss.Identity, "|||")
-
 	return &ParticipantInit{
-		ApiKey:          livekit.ApiKey(apiKeyIdentity[0]),
-		Identity:        livekit.ParticipantIdentity(apiKeyIdentity[1]),
+		Identity:        livekit.ParticipantIdentity(ss.Identity),
 		Name:            livekit.ParticipantName(ss.Name),
 		Reconnect:       ss.Reconnect,
 		ReconnectReason: ss.ReconnectReason,
 		Client:          ss.Client,
 		AutoSubscribe:   ss.AutoSubscribe,
-		Grants:          claims,
+		Grants:          extendedGrants.ClaimGrants,
 		Region:          region,
 		AdaptiveStream:  ss.AdaptiveStream,
 		ID:              livekit.ParticipantID(ss.ParticipantId),
+		ApiKey:          livekit.ApiKey(extendedGrants.ApiKey),
+		Limit:           extendedGrants.Limit,
 	}, nil
 }

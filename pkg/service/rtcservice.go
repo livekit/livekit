@@ -149,6 +149,7 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomKey, routing.Partici
 		Grants:          claims,
 		Region:          region,
 		ApiKey:          apiKey,
+		Limit:           GetLimit(r.Context()),
 	}
 	if pi.Reconnect {
 		pi.ID = livekit.ParticipantID(participantID)

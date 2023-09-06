@@ -109,7 +109,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	clientConfigurationManager := createClientConfiguration()
 	timedVersionGenerator := utils.NewDefaultTimedVersionGenerator()
 	clientProvider := createClientProvider(ethSmartContract, db)
-	trafficManager := createTrafficManager(db, clientProvider, conf)
+	trafficManager := createTrafficManager(db, conf)
 	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager, rtcEgressLauncher, timedVersionGenerator, trafficManager)
 	if err != nil {
 		return nil, err
@@ -178,8 +178,8 @@ func GetDatabaseConfiguration(conf *config.Config) p2p_database.Config {
 	}
 }
 
-func createTrafficManager(mainDatabase *p2p_database.DB, clientProvider *ClientProvider, configuration *config.Config) *TrafficManager {
-	return NewTrafficManager(mainDatabase, clientProvider, configuration.LoggingP2P)
+func createTrafficManager(mainDatabase *p2p_database.DB, configuration *config.Config) *TrafficManager {
+	return NewTrafficManager(mainDatabase, configuration.LoggingP2P)
 }
 
 func CreateMainDatabaseP2P(conf p2p_database.Config, c *config.Config) (*p2p_database.DB, error) {

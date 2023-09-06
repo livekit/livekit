@@ -67,6 +67,7 @@ type ParticipantParams struct {
 	Name                         livekit.ParticipantName
 	SID                          livekit.ParticipantID
 	ApiKey                       livekit.ApiKey
+	Limit                        int64
 	Config                       *WebRTCConfig
 	Sink                         routing.MessageSink
 	AudioConfig                  config.AudioConfig
@@ -228,6 +229,10 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 
 func (p *ParticipantImpl) GetApiKey() livekit.ApiKey {
 	return p.params.ApiKey
+}
+
+func (p *ParticipantImpl) GetLimit() int64 {
+	return p.params.Limit
 }
 
 func (p *ParticipantImpl) GetLogger() logger.Logger {
@@ -1151,6 +1156,10 @@ func (p *ParticipantImpl) forwardTrackToRelays(publishedTrack *MediaTrack, track
 	p.params.RelayCollection.OnceForEach(func(rel relay.Relay) {
 		codec := track.Codec()
 		tr := publishedTrack.MediaTrackReceiver.Receiver(track.Codec().MimeType)
+		if tr == nil {
+			p.params.Logger.Warnw("no track receiver", nil)
+			return
+		}
 		rtpCodecParameters := []webrtc.RTPCodecParameters{{
 			RTPCodecCapability: webrtc.RTPCodecCapability{
 				MimeType:     codec.MimeType,

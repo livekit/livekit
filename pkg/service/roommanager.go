@@ -192,22 +192,21 @@ func (r *RoomManager) SaveClientsBandwidth() {
 	}
 	r.lock.RUnlock()
 
-	bandwidthByApiKey := make(map[livekit.ApiKey]int)
-
+	bandwidthByApiKey := make(map[livekit.ApiKey]int64)
 	for _, room := range rooms {
 		localParticipants := room.GetLocalParticipants()
 		for _, p := range localParticipants {
+			participantBandwidth := int64(0)
 			for _, t := range p.GetSubscribedTracks() {
-				bandwidth := 0
 				switch t.MediaTrack().Kind() {
 				case livekit.TrackType_AUDIO:
-					bandwidth = AudioBandwidth
+					participantBandwidth += AudioBandwidth
 				case livekit.TrackType_VIDEO:
-					bandwidth = VideoBanwith
+					participantBandwidth += VideoBanwith
 				}
-				oldBandwidth, _ := bandwidthByApiKey[p.GetApiKey()]
-				bandwidthByApiKey[p.GetApiKey()] = oldBandwidth + bandwidth
 			}
+			oldBandwidth, _ := bandwidthByApiKey[p.GetApiKey()]
+			bandwidthByApiKey[p.GetApiKey()] = oldBandwidth + participantBandwidth
 		}
 	}
 
@@ -361,6 +360,7 @@ func (r *RoomManager) StartSession(
 		Name:                    pi.Name,
 		SID:                     sid,
 		ApiKey:                  pi.ApiKey,
+		Limit:                   pi.Limit,
 		Config:                  &rtcConf,
 		Sink:                    responseSink,
 		AudioConfig:             r.config.Audio,
@@ -388,8 +388,8 @@ func (r *RoomManager) StartSession(
 		ReconnectOnSubscriptionError: reconnectOnSubscriptionError,
 		VersionGenerator:             r.versionGenerator,
 		TrackResolver:                room.ResolveMediaTrackForSubscriber,
-		BandwidthChecker: func(apiKey livekit.ApiKey, trackType livekit.TrackType) (bool, error) {
-			var requestBandwidth int
+		BandwidthChecker: func(apiKey livekit.ApiKey, trackType livekit.TrackType, limit int64) (bool, error) {
+			var requestBandwidth int64
 			switch trackType {
 			case livekit.TrackType_VIDEO:
 				requestBandwidth = VideoBanwith
@@ -399,10 +399,7 @@ func (r *RoomManager) StartSession(
 				return true, nil
 			}
 
-			bandwidthLimit, err := r.trafficManager.GetLimit(context.TODO(), apiKey)
-			if err != nil {
-				return false, err
-			}
+			bandwidthLimit := limit * TrafficLimitPerClient
 			currentBandwidth := r.trafficManager.GetValue(apiKey)
 			return currentBandwidth+requestBandwidth <= bandwidthLimit, nil
 		},
