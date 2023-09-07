@@ -274,6 +274,15 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 	}
 	f.codec = codec
 
+	ddAvailable := func(exts []webrtc.RTPHeaderExtensionParameter) bool {
+		for _, ext := range exts {
+			if ext.URI == dd.ExtensionURI {
+				return true
+			}
+		}
+		return false
+	}
+
 	switch strings.ToLower(codec.MimeType) {
 	case "video/vp8":
 		f.codecMunger = codecmunger.NewVP8FromNull(f.codecMunger, f.logger)
@@ -290,15 +299,8 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 			f.vls = videolayerselector.NewSimulcast(f.logger)
 		}
 	case "video/vp9":
-		isDDAvailable := false
-	searchDone:
-		for _, ext := range extensions {
-			switch ext.URI {
-			case dd.ExtensionURI:
-				isDDAvailable = true
-				break searchDone
-			}
-		}
+		isDDAvailable := ddAvailable(extensions)
+
 		if isDDAvailable {
 			if f.vls != nil {
 				f.vls = videolayerselector.NewDependencyDescriptorFromNull(f.vls)
@@ -315,12 +317,22 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		// SVC-TODO: Support for VP9 simulcast. When DD is not available, have to pick selector based on VP9 SVC or Simulcast
 	case "video/av1":
 		// DD-TODO : we only enable dd layer selector for av1/vp9 now, in the future we can enable it for vp8 too
-		if f.vls != nil {
-			f.vls = videolayerselector.NewDependencyDescriptorFromNull(f.vls)
+
+		isDDAvailable := ddAvailable(extensions)
+		if isDDAvailable {
+			if f.vls != nil {
+				f.vls = videolayerselector.NewDependencyDescriptorFromNull(f.vls)
+			} else {
+				f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
+			}
 		} else {
-			f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
+			if f.vls != nil {
+				f.vls = videolayerselector.NewSimulcastFromNull(f.vls)
+			} else {
+				f.vls = videolayerselector.NewSimulcast(f.logger)
+			}
 		}
-		// SVC-TODO: Support for AV1 Simulcast or just single spatial layer - won't have DD in that case
+		// SVC-TODO: Support for AV1 Simulcast
 	}
 }
 
@@ -800,7 +812,7 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot b
 	if f.provisional.muted || f.provisional.pubMuted {
 		f.provisional.allocatedLayer = buffer.InvalidLayer
 		return VideoTransition{
-			From:           f.vls.GetTarget(),
+			From:           existingTargetLayer,
 			To:             f.provisional.allocatedLayer,
 			BandwidthDelta: -getBandwidthNeeded(f.provisional.Bitrates, existingTargetLayer, f.lastAllocation.BandwidthRequested),
 		}
@@ -1289,12 +1301,18 @@ func (f *Forwarder) Pause(availableLayers []int32, brs Bitrates) VideoAllocation
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
+	existingTargetLayer := f.vls.GetTarget()
+	if !existingTargetLayer.IsValid() {
+		// already paused
+		return f.lastAllocation
+	}
+
 	maxLayer := f.vls.GetMax()
 	maxSeenLayer := f.vls.GetMaxSeen()
 	optimalBandwidthNeeded := getOptimalBandwidthNeeded(f.muted, f.pubMuted, maxSeenLayer.Spatial, brs, maxLayer)
 	alloc := VideoAllocation{
 		BandwidthRequested:  0,
-		BandwidthDelta:      0 - getBandwidthNeeded(brs, f.vls.GetTarget(), f.lastAllocation.BandwidthRequested),
+		BandwidthDelta:      0 - getBandwidthNeeded(brs, existingTargetLayer, f.lastAllocation.BandwidthRequested),
 		Bitrates:            brs,
 		BandwidthNeeded:     optimalBandwidthNeeded,
 		TargetLayer:         buffer.InvalidLayer,
@@ -1443,6 +1461,15 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 			"referenceLayerSpatial", f.referenceLayerSpatial,
 		)
 		return nil, nil
+	} else if f.referenceLayerSpatial == buffer.InvalidLayerSpatial {
+		f.referenceLayerSpatial = layer
+		f.logger.Debugw(
+			"catch up forwarding",
+			"sequenceNumber", extPkt.Packet.SequenceNumber,
+			"timestamp", extPkt.Packet.Timestamp,
+			"layer", layer,
+			"referenceLayerSpatial", f.referenceLayerSpatial,
+		)
 	}
 
 	logTransition := func(message string, extExpectedTS, extRefTS, extLastTS uint64, diffSeconds float64) {
@@ -1617,11 +1644,6 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 
 // should be called with lock held
 func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer int32, tp *TranslationParams) (*TranslationParams, error) {
-	var err error
-	if tp == nil {
-		tp = &TranslationParams{}
-	}
-
 	if f.lastSSRC != extPkt.Packet.SSRC {
 		eof, err := f.processSourceSwitch(extPkt, layer)
 		if err != nil {
@@ -1649,7 +1671,7 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 
 // should be called with lock held
 func (f *Forwarder) getTranslationParamsAudio(extPkt *buffer.ExtPacket, layer int32) (*TranslationParams, error) {
-	return f.getTranslationParamsCommon(extPkt, layer, nil)
+	return f.getTranslationParamsCommon(extPkt, layer, &TranslationParams{})
 }
 
 // should be called with lock held
@@ -1661,7 +1683,6 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 	}
 
 	tp := &TranslationParams{}
-
 	if !f.vls.GetTarget().IsValid() {
 		// stream is paused by streamallocator
 		tp.shouldDrop = true

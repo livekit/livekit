@@ -883,8 +883,8 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 		return
 	}
 
-	// already streaming at some layer and transition is not requesting any change, i. e. BandwidthDelta == 0
-	if transition.From.IsValid() && transition.BandwidthDelta == 0 {
+	// a no-op transition
+	if transition.From == transition.To {
 		return
 	}
 

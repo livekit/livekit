@@ -55,8 +55,9 @@ func printPorts(c *cli.Context) error {
 	if conf.RTC.TCPPort != 0 {
 		tcpPorts = append(tcpPorts, fmt.Sprintf("%d - ICE/TCP", conf.RTC.TCPPort))
 	}
-	if conf.RTC.UDPPort != 0 {
-		udpPorts = append(udpPorts, fmt.Sprintf("%d - ICE/UDP", conf.RTC.UDPPort))
+	if conf.RTC.UDPPort.Valid() {
+		portStr, _ := conf.RTC.UDPPort.MarshalYAML()
+		udpPorts = append(udpPorts, fmt.Sprintf("%s - ICE/UDP", portStr))
 	} else {
 		udpPorts = append(udpPorts, fmt.Sprintf("%d-%d - ICE/UDP range", conf.RTC.ICEPortRangeStart, conf.RTC.ICEPortRangeEnd))
 	}
