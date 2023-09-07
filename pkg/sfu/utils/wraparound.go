@@ -74,7 +74,7 @@ func (w *WrapAround[T, ET]) Update(val T) (result WrapAroundUpdateResult[ET]) {
 
 	gap := val - w.highest
 	if gap > T(w.fullRange>>1) {
-		// duplicate OR out-of-order
+		// out-of-order
 		result.IsRestart, result.PreExtendedStart, result.ExtendedVal = w.maybeAdjustStart(val)
 		return
 	}
