@@ -1699,7 +1699,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 	}
 
 	_, err := f.getTranslationParamsCommon(extPkt, layer, tp)
-	if tp.shouldDrop {
+	if tp.shouldDrop || len(extPkt.Packet.Payload) == 0 {
 		maybeRollback(result.IsSwitching)
 		return tp, err
 	}
