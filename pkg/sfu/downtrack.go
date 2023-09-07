@@ -237,6 +237,7 @@ type DownTrack struct {
 	isClosed             atomic.Bool
 	connected            atomic.Bool
 	bindAndConnectedOnce atomic.Bool
+	writable             atomic.Bool
 
 	rtpStats *buffer.RTPStats
 
@@ -420,7 +421,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	d.forwarder.DetermineCodec(d.codec, d.params.Receiver.HeaderExtensions())
 
 	d.params.Logger.Debugw("downtrack bound")
-	d.onBindAndConnected()
+	d.onBindAndConnectedChange()
 
 	return codec, nil
 }
@@ -429,6 +430,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 // because a track has been stopped.
 func (d *DownTrack) Unbind(_ webrtc.TrackLocalContext) error {
 	d.bound.Store(false)
+	d.onBindAndConnectedChange()
 	return nil
 }
 
@@ -600,7 +602,7 @@ func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
 			return
 		}
 
-		if d.connected.Load() {
+		if d.writable.Load() {
 			d.params.Logger.Debugw("sending PLI for layer lock", "generation", generation, "layer", layer)
 			d.params.Receiver.SendPLI(layer, false)
 			d.rtpStats.UpdateLayerLockPliAndTime(1)
@@ -608,7 +610,7 @@ func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
 
 		<-ticker.C
 
-		if generation != d.keyFrameRequestGeneration.Load() || !d.bound.Load() {
+		if generation != d.keyFrameRequestGeneration.Load() || !d.writable.Load() {
 			return
 		}
 	}
@@ -643,7 +645,7 @@ func (d *DownTrack) maxLayerNotifierWorker() {
 
 // WriteRTP writes an RTP Packet to the DownTrack
 func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
-	if !d.bound.Load() || !d.connected.Load() {
+	if !d.writable.Load() {
 		return nil
 	}
 
@@ -720,6 +722,10 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 // WritePaddingRTP tries to write as many padding only RTP packets as necessary
 // to satisfy given size to the DownTrack
 func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMarker bool) int {
+	if !d.writable.Load() {
+		return 0
+	}
+
 	if !d.rtpStats.IsActive() && !paddingOnMute {
 		return 0
 	}
@@ -1224,8 +1230,8 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan struct{} {
 	done := make(chan struct{})
 	go func() {
-		// don't send if nothing has been sent
-		if !d.rtpStats.IsActive() {
+		// don't send if not writable OR nothing has been sent
+		if !d.writable.Load() || !d.rtpStats.IsActive() {
 			close(done)
 			return
 		}
@@ -1492,7 +1498,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 
 func (d *DownTrack) SetConnected() {
 	if !d.connected.Swap(true) {
-		d.onBindAndConnected()
+		d.onBindAndConnectedChange()
 	}
 }
 
@@ -1710,7 +1716,7 @@ func (d *DownTrack) GetAndResetBytesSent() (uint32, uint32) {
 	return d.bytesSent.Swap(0), d.bytesRetransmitted.Swap(0)
 }
 
-func (d *DownTrack) onBindAndConnected() {
+func (d *DownTrack) onBindAndConnectedChange() {
 	if d.connected.Load() && d.bound.Load() && !d.bindAndConnectedOnce.Swap(true) {
 		if d.kind == webrtc.RTPCodecTypeVideo {
 			_, layer := d.forwarder.CheckSync()
@@ -1723,6 +1729,7 @@ func (d *DownTrack) onBindAndConnected() {
 			go d.sendPaddingOnMute()
 		}
 	}
+	d.writable.Store(d.connected.Load() && d.bound.Load())
 }
 
 func (d *DownTrack) sendPaddingOnMute() {
