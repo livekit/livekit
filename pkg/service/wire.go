@@ -71,6 +71,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		createSmartContractClient,
 		createClientProvider,
 		createGeoIP,
+		createTrafficManager,
 		CreateNodeProvider,
 		createRelevantNodesHandler,
 		NewLivekitServer,
@@ -121,6 +122,10 @@ func GetDatabaseConfiguration(conf *config.Config) p2p_database.Config {
 		WalletPrivateKey:        conf.Ethereum.WalletPrivateKey,
 		DatabaseName:            conf.Ethereum.P2pMainDatabaseName,
 	}
+}
+
+func createTrafficManager(mainDatabase *p2p_database.DB, configuration *config.Config) *TrafficManager {
+	return NewTrafficManager(mainDatabase, configuration.LoggingP2P)
 }
 
 func CreateMainDatabaseP2P(conf p2p_database.Config, c *config.Config) (*p2p_database.DB, error) {

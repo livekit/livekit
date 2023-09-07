@@ -270,6 +270,14 @@ func (p *RelayedParticipantImpl) Close(sendLeave bool, reason types.ParticipantC
 	return nil
 }
 
+func (p *RelayedParticipantImpl) GetApiKey() livekit.ApiKey {
+	return ""
+}
+
+func (p *RelayedParticipantImpl) GetLimit() int64 {
+	return 0
+}
+
 func (p *RelayedParticipantImpl) GetLogger() logger.Logger {
 	return p.params.Logger
 }

@@ -14,9 +14,10 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/ua-parser/uap-go/uaparser"
 
-	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+
+	"github.com/livekit/livekit-server/pkg/utils"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -147,6 +148,8 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomKey, routing.Partici
 		Client:          s.ParseClientInfo(r),
 		Grants:          claims,
 		Region:          region,
+		ApiKey:          apiKey,
+		Limit:           GetLimit(r.Context()),
 	}
 	if pi.Reconnect {
 		pi.ID = livekit.ParticipantID(participantID)

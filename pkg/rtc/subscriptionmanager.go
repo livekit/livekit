@@ -24,11 +24,12 @@ import (
 	"github.com/pion/webrtc/v3/pkg/rtcerr"
 	"go.uber.org/atomic"
 
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
+
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/telemetry"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 )
 
 // using var instead of const to override in tests
@@ -43,9 +44,11 @@ var (
 )
 
 type SubscriptionManagerParams struct {
-	Logger              logger.Logger
-	Participant         types.LocalParticipant
-	TrackResolver       types.MediaTrackResolver
+	Logger        logger.Logger
+	Participant   types.LocalParticipant
+	TrackResolver types.MediaTrackResolver
+
+	BandwidthChecker    types.BandwidthChecker
 	OnTrackSubscribed   func(subTrack types.SubscribedTrack)
 	OnTrackUnsubscribed func(subTrack types.SubscribedTrack)
 	OnSubscriptionError func(trackID livekit.TrackID)
@@ -435,6 +438,14 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 	}
 	if !res.HasPermission {
 		return ErrNoTrackPermission
+	}
+
+	bandwidthAvailable, err := m.params.BandwidthChecker(m.params.Participant.GetApiKey(), track.Kind(), m.params.Participant.GetLimit())
+	if err != nil {
+		return err
+	}
+	if !bandwidthAvailable {
+		return ErrClientBandwidthLimitReached
 	}
 
 	s.setPublisher(res.PublisherIdentity, res.PublisherID)

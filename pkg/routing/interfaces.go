@@ -8,10 +8,11 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	p2p_database "github.com/dTelecom/p2p-realtime-database"
-	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+
+	"github.com/livekit/livekit-server/pkg/config"
 )
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
@@ -45,6 +46,8 @@ type ParticipantInit struct {
 	Region          string
 	AdaptiveStream  bool
 	ID              livekit.ParticipantID
+	ApiKey          livekit.ApiKey
+	Limit           int64
 }
 
 type NewParticipantCallback func(
@@ -108,8 +111,14 @@ func CreateRouter(config *config.Config, rc redis.UniversalClient, node LocalNod
 	return lr
 }
 
+type extendedGrants struct {
+	*auth.ClaimGrants
+	ApiKey string `json:"apiKey"`
+	Limit  int64  `json:"limit"`
+}
+
 func (pi *ParticipantInit) ToStartSession(roomKey livekit.RoomKey, connectionID livekit.ConnectionID) (*livekit.StartSession, error) {
-	claims, err := json.Marshal(pi.Grants)
+	claims, err := json.Marshal(extendedGrants{ClaimGrants: pi.Grants, ApiKey: string(pi.ApiKey), Limit: pi.Limit})
 	if err != nil {
 		return nil, err
 	}
@@ -131,8 +140,8 @@ func (pi *ParticipantInit) ToStartSession(roomKey livekit.RoomKey, connectionID 
 }
 
 func ParticipantInitFromStartSession(ss *livekit.StartSession, region string) (*ParticipantInit, error) {
-	claims := &auth.ClaimGrants{}
-	if err := json.Unmarshal([]byte(ss.GrantsJson), claims); err != nil {
+	extendedGrants := &extendedGrants{}
+	if err := json.Unmarshal([]byte(ss.GrantsJson), extendedGrants); err != nil {
 		return nil, err
 	}
 
@@ -143,9 +152,11 @@ func ParticipantInitFromStartSession(ss *livekit.StartSession, region string) (*
 		ReconnectReason: ss.ReconnectReason,
 		Client:          ss.Client,
 		AutoSubscribe:   ss.AutoSubscribe,
-		Grants:          claims,
+		Grants:          extendedGrants.ClaimGrants,
 		Region:          region,
 		AdaptiveStream:  ss.AdaptiveStream,
 		ID:              livekit.ParticipantID(ss.ParticipantId),
+		ApiKey:          livekit.ApiKey(extendedGrants.ApiKey),
+		Limit:           extendedGrants.Limit,
 	}, nil
 }

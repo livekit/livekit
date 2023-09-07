@@ -230,6 +230,8 @@ type LocalParticipant interface {
 	Participant
 
 	// getters
+	GetApiKey() livekit.ApiKey
+	GetLimit() int64
 	GetLogger() logger.Logger
 	GetAdaptiveStream() bool
 	ProtocolVersion() ProtocolVersion
@@ -493,3 +495,5 @@ type OperationMonitor interface {
 	Check() error
 	IsIdle() bool
 }
+
+type BandwidthChecker func(apiKey livekit.ApiKey, trackType livekit.TrackType, limit int64) (bool, error)

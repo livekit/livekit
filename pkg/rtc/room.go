@@ -181,7 +181,15 @@ func (r *Room) GetParticipants() []types.LocalParticipant {
 }
 
 func (r *Room) GetLocalParticipants() []types.LocalParticipant {
-	return r.GetParticipants()
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+	participants := make([]types.LocalParticipant, 0, len(r.participants))
+	for _, p := range r.participants {
+		if _, ok := p.(*ParticipantImpl); ok {
+			participants = append(participants, p)
+		}
+	}
+	return participants
 }
 
 func (r *Room) GetActiveSpeakers() []*livekit.SpeakerInfo {
