@@ -72,9 +72,12 @@ type RTPMunger struct {
 
 	extLastSN       uint64
 	extSecondLastSN uint64
-	extLastTS       uint64
-	tsOffset        uint64
-	lastMarker      bool
+	snOffset        uint64
+
+	extLastTS uint64
+	tsOffset  uint64
+
+	lastMarker bool
 
 	extRtxGateSn      uint64
 	isInRtxGateRegion bool
@@ -88,12 +91,11 @@ func NewRTPMunger(logger logger.Logger) *RTPMunger {
 }
 
 func (r *RTPMunger) DebugInfo() map[string]interface{} {
-	snOffset, _ := r.snRangeMap.GetValue(r.extHighestIncomingSN + 1)
 	return map[string]interface{}{
 		"ExtHighestIncomingSN": r.extHighestIncomingSN,
 		"ExtLastSN":            r.extLastSN,
 		"ExtSecondLastSN":      r.extSecondLastSN,
-		"SNOffset":             snOffset,
+		"SNOffset":             r.snOffset,
 		"ExtLastTS":            r.extLastTS,
 		"TSOffset":             r.tsOffset,
 		"LastMarker":           r.lastMarker,
@@ -116,14 +118,20 @@ func (r *RTPMunger) SeedLast(state RTPMungerState) {
 
 func (r *RTPMunger) SetLastSnTs(extPkt *buffer.ExtPacket) {
 	r.extHighestIncomingSN = extPkt.ExtSequenceNumber - 1
+
 	r.extLastSN = extPkt.ExtSequenceNumber
 	r.extSecondLastSN = r.extLastSN - 1
+	r.updateSnOffset()
+
 	r.extLastTS = extPkt.ExtTimestamp
 }
 
 func (r *RTPMunger) UpdateSnTsOffsets(extPkt *buffer.ExtPacket, snAdjust uint64, tsAdjust uint64) {
 	r.extHighestIncomingSN = extPkt.ExtSequenceNumber - 1
+
 	r.snRangeMap.ClearAndResetValue(extPkt.ExtSequenceNumber - r.extLastSN - snAdjust)
+	r.updateSnOffset()
+
 	r.tsOffset = extPkt.ExtTimestamp - r.extLastTS - tsAdjust
 }
 
@@ -148,16 +156,42 @@ func (r *RTPMunger) PacketDropped(extPkt *buffer.ExtPacket) {
 	}
 
 	r.extLastSN = r.extSecondLastSN
+	r.updateSnOffset()
 }
 
 func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationParamsRTP, error) {
 	diff := int64(extPkt.ExtSequenceNumber - r.extHighestIncomingSN)
+	if (diff == 1 && len(extPkt.Packet.Payload) != 0) || diff > 1 {
+		// in-order - either contiguous packet with payload OR packet following a gap, may or may not have payload
+		r.extHighestIncomingSN = extPkt.ExtSequenceNumber
 
-	// can get duplicate packet due to FEC
-	if diff == 0 {
+		ordering := SequenceNumberOrderingContiguous
+		if diff > 1 {
+			ordering = SequenceNumberOrderingGap
+		}
+
+		extMungedSN := extPkt.ExtSequenceNumber - r.snOffset
+		extMungedTS := extPkt.ExtTimestamp - r.tsOffset
+
+		r.extSecondLastSN = r.extLastSN
+		r.extLastSN = extMungedSN
+		r.extLastTS = extMungedTS
+		r.lastMarker = extPkt.Packet.Marker
+
+		if extPkt.KeyFrame {
+			r.extRtxGateSn = extMungedSN
+			r.isInRtxGateRegion = true
+		}
+
+		if r.isInRtxGateRegion && (extMungedSN-r.extRtxGateSn) > RtxGateWindow {
+			r.isInRtxGateRegion = false
+		}
+
 		return &TranslationParamsRTP{
-			snOrdering: SequenceNumberOrderingDuplicate,
-		}, ErrDuplicatePacket
+			snOrdering:     ordering,
+			sequenceNumber: uint16(extMungedSN),
+			timestamp:      uint32(extMungedTS),
+		}, nil
 	}
 
 	if diff < 0 {
@@ -176,53 +210,25 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 		}, nil
 	}
 
-	ordering := SequenceNumberOrderingContiguous
-	if diff > 1 {
-		ordering = SequenceNumberOrderingGap
-	}
-
-	r.extHighestIncomingSN = extPkt.ExtSequenceNumber
-
 	// if padding only packet, can be dropped and sequence number adjusted, if contiguous
-	if diff == 1 && len(extPkt.Packet.Payload) == 0 {
+	if diff == 1 {
+		r.extHighestIncomingSN = extPkt.ExtSequenceNumber
+
 		if err := r.snRangeMap.ExcludeRange(r.extHighestIncomingSN, r.extHighestIncomingSN+1); err != nil {
 			r.logger.Errorw("could not exclude range", err, "sn", r.extHighestIncomingSN)
 		}
+
+		r.updateSnOffset()
+
 		return &TranslationParamsRTP{
-			snOrdering: ordering,
+			snOrdering: SequenceNumberOrderingContiguous,
 		}, ErrPaddingOnlyPacket
 	}
 
-	snOffset, err := r.snRangeMap.GetValue(extPkt.ExtSequenceNumber)
-	if err != nil {
-		r.logger.Errorw("could not get sequence number adjustment", err, "sn", extPkt.ExtSequenceNumber, "payloadSize", len(extPkt.Packet.Payload))
-		return &TranslationParamsRTP{
-			snOrdering: ordering,
-		}, ErrSequenceNumberOffsetNotFound
-	}
-
-	extMungedSN := extPkt.ExtSequenceNumber - snOffset
-	extMungedTS := extPkt.ExtTimestamp - r.tsOffset
-
-	r.extSecondLastSN = r.extLastSN
-	r.extLastSN = extMungedSN
-	r.extLastTS = extMungedTS
-	r.lastMarker = extPkt.Packet.Marker
-
-	if extPkt.KeyFrame {
-		r.extRtxGateSn = extMungedSN
-		r.isInRtxGateRegion = true
-	}
-
-	if r.isInRtxGateRegion && (extMungedSN-r.extRtxGateSn) > RtxGateWindow {
-		r.isInRtxGateRegion = false
-	}
-
+	// can get duplicate packet due to FEC
 	return &TranslationParamsRTP{
-		snOrdering:     ordering,
-		sequenceNumber: uint16(extMungedSN),
-		timestamp:      uint32(extMungedTS),
-	}, nil
+		snOrdering: SequenceNumberOrderingDuplicate,
+	}, ErrDuplicatePacket
 }
 
 func (r *RTPMunger) FilterRTX(nacks []uint16) []uint16 {
@@ -283,6 +289,7 @@ func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate
 	r.extSecondLastSN = extLastSN - 1
 	r.extLastSN = extLastSN
 	r.snRangeMap.DecValue(uint64(num))
+	r.updateSnOffset()
 
 	r.tsOffset -= extLastTS - r.extLastTS
 	r.extLastTS = extLastTS
@@ -296,4 +303,12 @@ func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate
 
 func (r *RTPMunger) IsOnFrameBoundary() bool {
 	return r.lastMarker
+}
+
+func (r *RTPMunger) updateSnOffset() {
+	snOffset, err := r.snRangeMap.GetValue(r.extHighestIncomingSN + 1)
+	if err != nil {
+		r.logger.Errorw("could not get SN offset", err)
+	}
+	r.snOffset = snOffset
 }

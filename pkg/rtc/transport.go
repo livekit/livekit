@@ -29,6 +29,7 @@ import (
 	"github.com/pion/interceptor/pkg/gcc"
 	"github.com/pion/interceptor/pkg/twcc"
 	"github.com/pion/rtcp"
+	"github.com/pion/sctp"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
 	"github.com/pkg/errors"
@@ -841,7 +842,9 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 	}
 
 	dcErrorHandler := func(err error) {
-		t.params.Logger.Errorw(dc.Label()+" data channel error", err)
+		if !errors.Is(err, sctp.ErrResetPacketInStateNotExist) {
+			t.params.Logger.Errorw(dc.Label()+" data channel error", err)
+		}
 	}
 
 	t.lock.Lock()
