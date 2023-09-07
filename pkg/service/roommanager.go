@@ -213,12 +213,9 @@ func (r *RoomManager) SaveClientsBandwidth() {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 
-	for apiKey, bandwidth := range bandwidthByApiKey {
-		err := r.trafficManager.SetValue(ctx, apiKey, bandwidth)
-		if err != nil {
-			logger.Errorw("could not set bandwidth", err)
-			break
-		}
+	err := r.trafficManager.SetValue(ctx, bandwidthByApiKey)
+	if err != nil {
+		logger.Errorw("could not set bandwidth", err)
 	}
 }
 
