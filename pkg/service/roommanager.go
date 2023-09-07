@@ -219,7 +219,6 @@ func (r *RoomManager) SaveClientsBandwidth() {
 			logger.Errorw("could not set bandwidth", err)
 			break
 		}
-		logger.Infow("bandwidth has been set", "apiKey", apiKey, "bandwidth", bandwidth)
 	}
 }
 
