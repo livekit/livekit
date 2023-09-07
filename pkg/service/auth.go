@@ -113,14 +113,18 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 		}
 
 		currentValueBigInt := big.NewInt(int64(currentValue))
+		clientLimitInt := client.Limit.Int64()
+
 		// audio only up to 10x more
-		currentValueBigInt.Mul(currentValueBigInt, big.NewInt(10))
-		if currentValueBigInt.Cmp(client.Limit) > 0 {
-			log.Error("Max participant reached. Limit " + client.Limit.String() + ", current " + currentValueBigInt.String())
+		currentLimit := new(big.Int).Set(client.Limit)
+		currentLimit.Mul(currentLimit, big.NewInt(10))
+
+		if currentValueBigInt.Cmp(currentLimit) > 0 {
+			log.Error("Max participant reached. Limit " + currentLimit.String() + ", current " + currentValueBigInt.String())
 			handleError(
 				w,
 				http.StatusForbidden,
-				fmt.Errorf("max participant reached. Limit %s. Current %s", client.Limit.String(), currentValueBigInt.String()),
+				fmt.Errorf("max participant reached. Limit %s. Current %s", currentLimit.String(), currentValueBigInt.String()),
 			)
 			return
 		}
@@ -128,7 +132,7 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 		// set grants in context
 		ctx := context.WithValue(r.Context(), grantsKey{}, grants)
 		ctx = context.WithValue(ctx, apiKeyKey{}, apiKey)
-		ctx = context.WithValue(ctx, limitKey{}, client.Limit.Int64())
+		ctx = context.WithValue(ctx, limitKey{}, clientLimitInt)
 
 		r = r.WithContext(ctx)
 	}
