@@ -108,7 +108,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	clientConfigurationManager := createClientConfiguration()
 	timedVersionGenerator := utils.NewDefaultTimedVersionGenerator()
-	clientProvider := createClientProvider(ethSmartContract, db)
 	trafficManager := createTrafficManager(db, conf)
 	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager, rtcEgressLauncher, timedVersionGenerator, trafficManager)
 	if err != nil {
@@ -123,6 +122,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
+	clientProvider := createClientProvider(ethSmartContract, db)
 	relevantNodesHandler := createRelevantNodesHandler(conf, nodeProvider)
 	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, rtcService, keyProviderPublicKey, router, roomManager, signalServer, server, currentNode, clientProvider, participantCounter, nodeProvider, db, relevantNodesHandler)
 	if err != nil {

@@ -124,8 +124,8 @@ func GetDatabaseConfiguration(conf *config.Config) p2p_database.Config {
 	}
 }
 
-func createTrafficManager(mainDatabase *p2p_database.DB, clientProvider *ClientProvider, configuration *config.Config) *TrafficManager {
-	return NewTrafficManager(mainDatabase, clientProvider, configuration.LoggingP2P)
+func createTrafficManager(mainDatabase *p2p_database.DB, configuration *config.Config) *TrafficManager {
+	return NewTrafficManager(mainDatabase, configuration.LoggingP2P)
 }
 
 func CreateMainDatabaseP2P(conf p2p_database.Config, c *config.Config) (*p2p_database.DB, error) {
