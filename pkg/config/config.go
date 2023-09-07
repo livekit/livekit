@@ -308,7 +308,6 @@ var DefaultConfig = Config{
 		RTCConfig: rtcconfig.RTCConfig{
 			UseExternalIP:     false,
 			TCPPort:           7881,
-			UDPPort:           0,
 			ICEPortRangeStart: 0,
 			ICEPortRangeEnd:   0,
 			STUNServers:       []string{},
@@ -802,7 +801,7 @@ func (conf *Config) updateFromCLI(c *cli.Context, baseFlags []cli.Flag) error {
 		conf.RTC.NodeIP = c.String("node-ip")
 	}
 	if c.IsSet("udp-port") {
-		conf.RTC.UDPPort = uint32(c.Int("udp-port"))
+		conf.RTC.UDPPort.UnmarshalString(c.String("udp-port"))
 	}
 	if c.IsSet("bind") {
 		conf.BindAddresses = c.StringSlice("bind")
