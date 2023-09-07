@@ -43,10 +43,10 @@ rtc:
   # that maps to an external one
   use_external_ip: true
   # # when set, LiveKit will attempt to use a UDP mux so all UDP traffic goes through
-  # # a single port. This simplifies deployment, but mux will become an overhead for
-  # # highly trafficked deployments.
+  # # listed port(s). To maximize system performance, we recommend using a range of ports 
+  # # greater or equal to the number of vCPUs on the machine.
   # # port_range_start & end must not be set for this config to take effect
-  # udp_port: 7882
+  # udp_port: 7882-7892
   # # when set to true, server will use a lite ice agent, that will speed up ice connection, but
   # # might cause connect issue if server running behind NAT.
   # use_ice_lite: true
@@ -107,6 +107,11 @@ rtc:
   # # are disabled and clients don't ACK opened peer connections, only reliable, ordered delivery
   # # will be available.
   # strict_acks: true
+  # # enable batch write to merge network write system calls to reduce cpu usage. Outgoing packets
+  # # will be queued until length of queue equal to `batch_size` or time elapsed since last write exceeds `max_flush_interval`.
+  # batch_io:
+  #    batch_size: 128
+  #    max_flush_interval: 2ms
 
 # when enabled, LiveKit will expose prometheus metrics on :6789/metrics
 # prometheus_port: 6789

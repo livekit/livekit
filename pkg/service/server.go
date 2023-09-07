@@ -220,7 +220,7 @@ func (s *LivekitServer) Start() error {
 	if s.config.RTC.TCPPort != 0 {
 		values = append(values, "rtc.portTCP", s.config.RTC.TCPPort)
 	}
-	if !s.config.RTC.ForceTCP && s.config.RTC.UDPPort != 0 {
+	if !s.config.RTC.ForceTCP && s.config.RTC.UDPPort.Valid() {
 		values = append(values, "rtc.portUDP", s.config.RTC.UDPPort)
 	} else {
 		values = append(values,

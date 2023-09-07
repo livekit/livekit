@@ -556,7 +556,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 	_ = r.refreshToken(participant)
 	tokenTicker := time.NewTicker(tokenRefreshInterval)
 	defer tokenTicker.Stop()
-	stateCheckTicker := time.NewTicker(time.Millisecond * 50)
+	stateCheckTicker := time.NewTicker(time.Millisecond * 500)
 	defer stateCheckTicker.Stop()
 	for {
 		select {
