@@ -1713,8 +1713,8 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	ssrc := uint32(track.SSRC())
 	if p.twcc == nil {
 		p.twcc = twcc.NewTransportWideCCResponder(ssrc)
-		p.twcc.OnFeedback(func(pkt rtcp.RawPacket) {
-			p.postRtcp([]rtcp.Packet{&pkt})
+		p.twcc.OnFeedback(func(pkts []rtcp.Packet) {
+			p.postRtcp(pkts)
 		})
 	}
 	p.pendingTracksLock.Unlock()
