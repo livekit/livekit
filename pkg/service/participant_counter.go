@@ -40,8 +40,8 @@ func NewParticipantCounter(mainDatabase *p2p_database.DB, logger *log.ZapEventLo
 	return participantCounter, nil
 }
 
-func (c *ParticipantCounter) Increment(ctx context.Context, clientApiKey, participantId string) error {
-	k := c.generateKey(clientApiKey, participantId)
+func (c *ParticipantCounter) Increment(ctx context.Context, clientApiKey, roomId, participantId string) error {
+	k := c.generateKey(clientApiKey, roomId, participantId)
 
 	err := c.mainDatabase.Set(ctx, k, time.Now().String())
 	if err != nil {
@@ -56,8 +56,8 @@ func (c *ParticipantCounter) Increment(ctx context.Context, clientApiKey, partic
 	return nil
 }
 
-func (c *ParticipantCounter) Decrement(ctx context.Context, clientApiKey, participantId string) error {
-	k := c.generateKey(clientApiKey, participantId)
+func (c *ParticipantCounter) Decrement(ctx context.Context, clientApiKey, roomId, participantId string) error {
+	k := c.generateKey(clientApiKey, roomId, participantId)
 
 	err := c.mainDatabase.Remove(ctx, k)
 	if err != nil && !errors.Is(err, p2p_database.ErrKeyNotFound) {
@@ -81,7 +81,7 @@ func (c *ParticipantCounter) GetCurrentValue(ctx context.Context, clientApiKey s
 			continue
 		}
 
-		parts := strings.SplitN(k, "_", 4)
+		parts := strings.SplitN(k, "_", 5)
 		if len(parts) == 0 {
 			continue
 		}
@@ -144,8 +144,8 @@ func (c *ParticipantCounter) refreshParticipantsTTL(ctx context.Context) error {
 }
 
 // participant-counter_{nodeId}_{clientKey}_{participantId}
-func (c *ParticipantCounter) generateKey(clientApiKey, participantId string) string {
-	return c.generatePrefixNode() + clientApiKey + "_" + participantId
+func (c *ParticipantCounter) generateKey(clientApiKey, roomId, participantId string) string {
+	return c.generatePrefixNode() + clientApiKey + "_" + roomId + "_" + participantId
 }
 
 func (c *ParticipantCounter) generatePrefixNode() string {
