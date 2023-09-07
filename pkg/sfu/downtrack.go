@@ -129,14 +129,13 @@ var (
 
 type DownTrackState struct {
 	RTPStats                       *buffer.RTPStats
-	DeltaStatsSnapshotId           uint32
 	DeltaStatsOverriddenSnapshotId uint32
 	ForwarderState                 ForwarderState
 }
 
 func (d DownTrackState) String() string {
-	return fmt.Sprintf("DownTrackState{rtpStats: %s, delta: %d, deltaOverridden: %d, forwarder: %s}",
-		d.RTPStats.ToString(), d.DeltaStatsSnapshotId, d.DeltaStatsOverriddenSnapshotId, d.ForwarderState.String())
+	return fmt.Sprintf("DownTrackState{rtpStats: %s, deltaOverridden: %d, forwarder: %s}",
+		d.RTPStats.ToString(), d.DeltaStatsOverriddenSnapshotId, d.ForwarderState.String())
 }
 
 // -------------------------------------------------------------------
@@ -248,7 +247,6 @@ type DownTrack struct {
 	blankFramesGeneration atomic.Uint32
 
 	connectionStats                *connectionquality.ConnectionStats
-	deltaStatsSnapshotId           uint32
 	deltaStatsOverriddenSnapshotId uint32
 
 	isNACKThrottled atomic.Bool
@@ -310,15 +308,14 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		IsReceiverReportDriven: true,
 		Logger:                 params.Logger,
 	})
-	d.deltaStatsSnapshotId = d.rtpStats.NewSnapshotId()
 	d.deltaStatsOverriddenSnapshotId = d.rtpStats.NewSnapshotId()
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
 		MimeType:                  codecs[0].MimeType, // LK-TODO have to notify on codec change
 		IsFECEnabled:              strings.EqualFold(codecs[0].MimeType, webrtc.MimeTypeOpus) && strings.Contains(strings.ToLower(codecs[0].SDPFmtpLine), "fec"),
-		GetDeltaStats:             d.getDeltaStats,
 		GetDeltaStatsOverridden:   d.getDeltaStatsOverridden,
-		GetLastReceiverReportTime: func() time.Time { return d.rtpStats.LastReceiverReport() },
+		GetLastReceiverReportTime: func() time.Time { return d.rtpStats.LastReceiverReportTime() },
+		GetTotalPacketsSent:       func() uint64 { return d.rtpStats.GetTotalPacketsPrimary() },
 		Logger:                    params.Logger.WithValues("direction", "down"),
 	})
 	d.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
@@ -328,7 +325,6 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 	})
 
 	// set initial playout delay to minimum value
-
 	if d.params.PlayoutDelayLimit.GetEnabled() && d.params.PlayoutDelayLimit.GetMin() > 0 {
 		delay := rtpextension.PlayoutDelayFromValue(
 			uint16(d.params.PlayoutDelayLimit.GetMin()),
@@ -730,13 +726,11 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 		return 0
 	}
 
-	// LK-TODO-START
 	// Ideally should look at header extensions negotiated for
 	// track and decide if padding can be sent. But, browsers behave
 	// in unexpected ways when using audio for bandwidth estimation and
 	// padding is mainly used to probe for excess available bandwidth.
 	// So, to be safe, limit to video tracks
-	// LK-TODO-END
 	if d.kind == webrtc.RTPCodecTypeAudio {
 		return 0
 	}
@@ -747,6 +741,12 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 	// will give more options.
 	// LK-TODO-END
 	if d.forwarder.IsMuted() && !paddingOnMute {
+		return 0
+	}
+
+	// Hold sending padding packets till first RTCP-RR is received for this RTP stream.
+	// That is definitive proof that the remote side knows about this RTP stream.
+	if d.rtpStats.LastReceiverReportTime().IsZero() && !paddingOnMute {
 		return 0
 	}
 
@@ -762,16 +762,8 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 		return 0
 	}
 
-	// LK-TODO Look at load balancing a la sfu.Receiver to spread across available CPUs
 	bytesSent := 0
 	for i := 0; i < len(snts); i++ {
-		// LK-TODO-START
-		// Hold sending padding packets till first RTCP-RR is received for this RTP stream.
-		// That is definitive proof that the remote side knows about this RTP stream.
-		// The packet count check at the beginning of this function gates sending padding
-		// on as yet unstarted streams which is a reasonable check.
-		// LK-TODO-END
-
 		hdr := rtp.Header{
 			Version:        2,
 			Padding:        true,
@@ -812,7 +804,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 		bytesSent += hdr.MarshalSize() + len(payload)
 	}
 
-	// STREAM_ALLOCATOR-TODO: change this to pull this counter from stream allocator so that counter can be update in pacer callback
+	// STREAM_ALLOCATOR-TODO: change this to pull this counter from stream allocator so that counter can be updated in pacer callback
 	return bytesSent
 }
 
@@ -979,7 +971,6 @@ func (d *DownTrack) MaxLayer() buffer.VideoLayer {
 func (d *DownTrack) GetState() DownTrackState {
 	dts := DownTrackState{
 		RTPStats:                       d.rtpStats,
-		DeltaStatsSnapshotId:           d.deltaStatsSnapshotId,
 		DeltaStatsOverriddenSnapshotId: d.deltaStatsOverriddenSnapshotId,
 		ForwarderState:                 d.forwarder.GetState(),
 	}
@@ -988,7 +979,6 @@ func (d *DownTrack) GetState() DownTrackState {
 
 func (d *DownTrack) SeedState(state DownTrackState) {
 	d.rtpStats.Seed(state.RTPStats)
-	d.deltaStatsSnapshotId = state.DeltaStatsSnapshotId
 	d.deltaStatsOverriddenSnapshotId = state.DeltaStatsOverriddenSnapshotId
 	d.forwarder.SeedState(state.ForwarderState)
 }
@@ -1696,10 +1686,6 @@ func (d *DownTrack) deltaStats(ds *buffer.RTPDeltaInfo) map[uint32]*buffer.Strea
 	}
 
 	return streamStats
-}
-
-func (d *DownTrack) getDeltaStats() map[uint32]*buffer.StreamStatsWithLayers {
-	return d.deltaStats(d.rtpStats.DeltaInfo(d.deltaStatsSnapshotId))
 }
 
 func (d *DownTrack) getDeltaStatsOverridden() map[uint32]*buffer.StreamStatsWithLayers {
