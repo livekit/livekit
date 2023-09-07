@@ -705,7 +705,7 @@ func (r *RTPStats) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt uint32
 	return
 }
 
-func (r *RTPStats) LastReceiverReport() time.Time {
+func (r *RTPStats) LastReceiverReportTime() time.Time {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 

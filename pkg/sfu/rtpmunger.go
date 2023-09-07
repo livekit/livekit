@@ -289,6 +289,7 @@ func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate
 	r.extSecondLastSN = extLastSN - 1
 	r.extLastSN = extLastSN
 	r.snRangeMap.DecValue(uint64(num))
+	r.updateSnOffset()
 
 	r.tsOffset -= extLastTS - r.extLastTS
 	r.extLastTS = extLastTS
