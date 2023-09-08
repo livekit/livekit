@@ -71,8 +71,6 @@ const (
 	keyFrameIntervalMax = 1000
 	flushTimeout        = 1 * time.Second
 
-	maxPadding = 2000
-
 	waitBeforeSendPaddingOnMute = 100 * time.Millisecond
 	maxPaddingOnMuteDuration    = 5 * time.Second
 )
@@ -393,11 +391,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.rtcpReader = rr
 	}
 
-	if d.kind == webrtc.RTPCodecTypeAudio {
-		d.sequencer = newSequencer(d.params.MaxTrack, 0, d.params.Logger)
-	} else {
-		d.sequencer = newSequencer(d.params.MaxTrack, maxPadding, d.params.Logger)
-	}
+	d.sequencer = newSequencer(d.params.MaxTrack, d.kind == webrtc.RTPCodecTypeVideo, d.params.Logger)
 
 	d.codec = codec.RTPCodecCapability
 	if d.onBinding != nil {
@@ -705,9 +699,10 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	}
 	if d.sequencer != nil {
 		d.sequencer.push(
-			extPkt.Packet.SequenceNumber,
-			tp.rtp.sequenceNumber,
-			tp.rtp.timestamp,
+			extPkt.Arrival,
+			extPkt.ExtSequenceNumber,
+			tp.rtp.extSequenceNumber,
+			tp.rtp.extTimestamp,
 			hdr.Marker,
 			int8(layer),
 			payload[:outgoingHeaderSize],
@@ -787,6 +782,15 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 		return 0
 	}
 
+	//
+	// Register with sequencer as padding only so that NACKs for these can be filtered out.
+	// Retransmission is probably a sign of network congestion/badness.
+	// So, retransmitting padding only packets is only going to make matters worse.
+	//
+	if d.sequencer != nil {
+		d.sequencer.pushPadding(snts[0].extSequenceNumber, snts[len(snts)-1].extSequenceNumber)
+	}
+
 	bytesSent := 0
 	for i := 0; i < len(snts); i++ {
 		hdr := rtp.Header{
@@ -794,8 +798,8 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 			Padding:        true,
 			Marker:         false,
 			PayloadType:    d.payloadType,
-			SequenceNumber: snts[i].sequenceNumber,
-			Timestamp:      snts[i].timestamp,
+			SequenceNumber: uint16(snts[i].extSequenceNumber),
+			Timestamp:      uint32(snts[i].extTimestamp),
 			SSRC:           d.ssrc,
 			CSRC:           []uint32{},
 		}
@@ -819,15 +823,6 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 				shouldDisableCounter: true,
 			},
 		)
-
-		//
-		// Register with sequencer with invalid layer so that NACKs for these can be filtered out.
-		// Retransmission is probably a sign of network congestion/badness.
-		// So, retransmitting padding packets is only going to make matters worse.
-		//
-		if d.sequencer != nil {
-			d.sequencer.pushPadding(hdr.SequenceNumber)
-		}
 
 		bytesSent += hdr.MarshalSize() + len(payload)
 	}
@@ -1302,8 +1297,8 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 					Padding:        false,
 					Marker:         true,
 					PayloadType:    d.payloadType,
-					SequenceNumber: snts[i].sequenceNumber,
-					Timestamp:      snts[i].timestamp,
+					SequenceNumber: uint16(snts[i].extSequenceNumber),
+					Timestamp:      uint32(snts[i].extTimestamp),
 					SSRC:           d.ssrc,
 					CSRC:           []uint32{},
 				}
@@ -1633,8 +1628,8 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 func (d *DownTrack) getTranslatedRTPHeader(extPkt *buffer.ExtPacket, tp *TranslationParams) (*rtp.Header, error) {
 	hdr := extPkt.Packet.Header
 	hdr.PayloadType = d.payloadType
-	hdr.Timestamp = tp.rtp.timestamp
-	hdr.SequenceNumber = tp.rtp.sequenceNumber
+	hdr.Timestamp = uint32(tp.rtp.extTimestamp)
+	hdr.SequenceNumber = uint16(tp.rtp.extSequenceNumber)
 	hdr.SSRC = d.ssrc
 	if tp.marker {
 		hdr.Marker = tp.marker
@@ -1771,8 +1766,8 @@ func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
 				Padding:        false,
 				Marker:         true,
 				PayloadType:    d.payloadType,
-				SequenceNumber: snts[i].sequenceNumber,
-				Timestamp:      snts[i].timestamp,
+				SequenceNumber: uint16(snts[i].extSequenceNumber),
+				Timestamp:      uint32(snts[i].extTimestamp),
 				SSRC:           d.ssrc,
 				CSRC:           []uint32{},
 			}

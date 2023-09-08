@@ -1133,17 +1133,17 @@ func (r *RTPStats) SnapshotRtcpReceptionReport(ssrc uint32, proxyFracLost uint8,
 		fracLost = proxyFracLost
 	}
 
-	var dlsr uint32
-	if r.srNewest != nil && !r.srNewest.At.IsZero() {
-		delayMS := uint32(time.Since(r.srNewest.At).Milliseconds())
-		dlsr = (delayMS / 1e3) << 16
-		dlsr |= (delayMS % 1e3) * 65536 / 1000
-	}
-
 	lastSR := uint32(0)
+	dlsr := uint32(0)
 	if r.srNewest != nil {
 		lastSR = uint32(r.srNewest.NTPTimestamp >> 16)
+		if !r.srNewest.At.IsZero() {
+			delayMS := uint32(time.Since(r.srNewest.At).Milliseconds())
+			dlsr = (delayMS / 1e3) << 16
+			dlsr |= (delayMS % 1e3) * 65536 / 1000
+		}
 	}
+
 	return &rtcp.ReceptionReport{
 		SSRC:               ssrc,
 		FractionLost:       fracLost,
