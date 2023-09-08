@@ -180,6 +180,9 @@ type DownTrackStreamAllocatorListener interface {
 
 	// RTCP Receiver Report received
 	OnRTCPReceiverReport(dt *DownTrack, rr rtcp.ReceptionReport)
+
+	// check if track should participate in BWE
+	IsBWEEnabled(dt *DownTrack) bool
 }
 
 type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
@@ -443,8 +446,13 @@ func (d *DownTrack) SetStreamAllocatorListener(listener DownTrackStreamAllocator
 	d.streamAllocatorListener = listener
 	d.streamAllocatorLock.Unlock()
 
-	// kick of a gratuitous allocation
 	if listener != nil {
+		if !listener.IsBWEEnabled(d) {
+			d.absSendTimeExtID = 0
+			d.transportWideExtID = 0
+		}
+
+		// kick of a gratuitous allocation
 		listener.OnSubscriptionChanged(d)
 	}
 }
@@ -515,16 +523,32 @@ func (d *DownTrack) SubscriberID() livekit.ParticipantID { return d.params.SubID
 
 // Sets RTP header extensions for this track
 func (d *DownTrack) SetRTPHeaderExtensions(rtpHeaderExtensions []webrtc.RTPHeaderExtensionParameter) {
+	d.streamAllocatorLock.RLock()
+	listener := d.streamAllocatorListener
+	d.streamAllocatorLock.RUnlock()
+
+	isBWEEnabled := true
+	if listener != nil {
+		isBWEEnabled = listener.IsBWEEnabled(d)
+	}
 	for _, ext := range rtpHeaderExtensions {
 		switch ext.URI {
 		case sdp.ABSSendTimeURI:
-			d.absSendTimeExtID = ext.ID
+			if isBWEEnabled {
+				d.absSendTimeExtID = ext.ID
+			} else {
+				d.absSendTimeExtID = 0
+			}
 		case dd.ExtensionURI:
 			d.dependencyDescriptorExtID = ext.ID
 		case rtpextension.PlayoutDelayURI:
 			d.playoutDelayExtID = ext.ID
 		case sdp.TransportCCURI:
-			d.transportWideExtID = ext.ID
+			if isBWEEnabled {
+				d.transportWideExtID = ext.ID
+			} else {
+				d.transportWideExtID = 0
+			}
 		}
 	}
 }
