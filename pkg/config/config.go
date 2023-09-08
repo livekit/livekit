@@ -152,16 +152,17 @@ type CongestionControlChannelObserverConfig struct {
 }
 
 type CongestionControlConfig struct {
-	Enabled                       bool                                   `yaml:"enabled,omitempty"`
-	AllowPause                    bool                                   `yaml:"allow_pause,omitempty"`
-	NackRatioAttenuator           float64                                `yaml:"nack_ratio_attenuator,omitempty"`
-	ExpectedUsageThreshold        float64                                `yaml:"expected_usage_threshold,omitempty"`
-	UseSendSideBWE                bool                                   `yaml:"send_side_bandwidth_estimation,omitempty"`
-	ProbeMode                     CongestionControlProbeMode             `yaml:"padding_mode,omitempty"`
-	MinChannelCapacity            int64                                  `yaml:"min_channel_capacity,omitempty"`
-	ProbeConfig                   CongestionControlProbeConfig           `yaml:"probe_config,omitempty"`
-	ChannelObserverProbeConfig    CongestionControlChannelObserverConfig `yaml:"channel_observer_probe_config,omitempty"`
-	ChannelObserverNonProbeConfig CongestionControlChannelObserverConfig `yaml:"channel_observer_non_probe_config,omitempty"`
+	Enabled                          bool                                   `yaml:"enabled,omitempty"`
+	AllowPause                       bool                                   `yaml:"allow_pause,omitempty"`
+	NackRatioAttenuator              float64                                `yaml:"nack_ratio_attenuator,omitempty"`
+	ExpectedUsageThreshold           float64                                `yaml:"expected_usage_threshold,omitempty"`
+	UseSendSideBWE                   bool                                   `yaml:"send_side_bandwidth_estimation,omitempty"`
+	ProbeMode                        CongestionControlProbeMode             `yaml:"padding_mode,omitempty"`
+	MinChannelCapacity               int64                                  `yaml:"min_channel_capacity,omitempty"`
+	ProbeConfig                      CongestionControlProbeConfig           `yaml:"probe_config,omitempty"`
+	ChannelObserverProbeConfig       CongestionControlChannelObserverConfig `yaml:"channel_observer_probe_config,omitempty"`
+	ChannelObserverNonProbeConfig    CongestionControlChannelObserverConfig `yaml:"channel_observer_non_probe_config,omitempty"`
+	DisableEstimationUnmanagedTracks bool                                   `yaml:"disable_etimation_unmanaged_tracks,omitempty"`
 }
 
 type AudioConfig struct {
