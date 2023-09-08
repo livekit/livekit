@@ -15,7 +15,6 @@
 package sfu
 
 import (
-	"fmt"
 	"math"
 	"sync"
 	"time"
@@ -236,7 +235,6 @@ func (s *sequencer) getPacketsMeta(seqNo []uint16) []packetMeta {
 			extSN -= (1 << 16)
 		}
 
-		fmt.Printf("retrieve esn: %d, highest: %d\n", extSN, s.extHighestSN)
 		if s.extHighestSN-extSN >= uint64(s.size) {
 			// too old
 			continue
