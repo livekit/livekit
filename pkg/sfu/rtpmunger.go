@@ -40,14 +40,14 @@ const (
 )
 
 type TranslationParamsRTP struct {
-	snOrdering     SequenceNumberOrdering
-	sequenceNumber uint16
-	timestamp      uint32
+	snOrdering        SequenceNumberOrdering
+	extSequenceNumber uint64
+	extTimestamp      uint64
 }
 
 type SnTs struct {
-	sequenceNumber uint16
-	timestamp      uint32
+	extSequenceNumber uint64
+	extTimestamp      uint64
 }
 
 // ----------------------------------------------------------------------
@@ -191,9 +191,9 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 		}
 
 		return &TranslationParamsRTP{
-			snOrdering:     ordering,
-			sequenceNumber: uint16(extMungedSN),
-			timestamp:      uint32(extMungedTS),
+			snOrdering:        ordering,
+			extSequenceNumber: extMungedSN,
+			extTimestamp:      extMungedTS,
 		}, nil
 	}
 
@@ -207,9 +207,9 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 		}
 
 		return &TranslationParamsRTP{
-			snOrdering:     SequenceNumberOrderingOutOfOrder,
-			sequenceNumber: uint16(extPkt.ExtSequenceNumber - snOffset),
-			timestamp:      uint32(extPkt.ExtTimestamp - r.tsOffset),
+			snOrdering:        SequenceNumberOrderingOutOfOrder,
+			extSequenceNumber: extPkt.ExtSequenceNumber - snOffset,
+			extTimestamp:      extPkt.ExtTimestamp - r.tsOffset,
 		}, nil
 	}
 
@@ -271,21 +271,21 @@ func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate
 	vals := make([]SnTs, num)
 	for i := 0; i < num; i++ {
 		extLastSN++
-		vals[i].sequenceNumber = uint16(extLastSN)
+		vals[i].extSequenceNumber = extLastSN
 
 		if frameRate != 0 {
 			if useLastTSForFirst && i == 0 {
-				vals[i].timestamp = uint32(r.extLastTS)
+				vals[i].extTimestamp = r.extLastTS
 			} else {
 				ets := extRtpTimestamp + uint64(((uint32(i+1-tsOffset)*clockRate)+frameRate-1)/frameRate)
 				if int64(ets-extLastTS) <= 0 {
 					ets = extLastTS + 1
 				}
 				extLastTS = ets
-				vals[i].timestamp = uint32(ets)
+				vals[i].extTimestamp = ets
 			}
 		} else {
-			vals[i].timestamp = uint32(r.extLastTS)
+			vals[i].extTimestamp = r.extLastTS
 		}
 	}
 
