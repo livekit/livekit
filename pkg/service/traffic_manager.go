@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"sync"
 	"time"
@@ -20,29 +19,33 @@ const (
 	topicTrafficValuesStreaming = "clients_traffic"
 )
 
-type TrafficMessage struct {
-	ClientApiKey livekit.ApiKey `json:"clientApiKey"`
-	Value        int64          `json:"value"`
-	CreatedAt    time.Time      `json:"createdAt"`
+type trafficMessage struct {
+	ValueByApiKey map[livekit.ApiKey]int64 `json:"valueByApiKey"`
+	CreatedAt     time.Time                `json:"createdAt"`
 }
 
-func (m *TrafficMessage) isExpired() bool {
-	return time.Now().Sub(m.CreatedAt).Seconds() >= 10
+type trafficValue struct {
+	value     int64
+	createdAt time.Time
+}
+
+func (v *trafficValue) isExpired() bool {
+	return time.Now().Sub(v.createdAt).Seconds() >= 10
 }
 
 type TrafficManager struct {
-	db                *p2p_database.DB
-	lock              sync.RWMutex
-	trafficsPerClient map[livekit.ApiKey]map[string]TrafficMessage
-	logger            *log.ZapEventLogger
+	db                    *p2p_database.DB
+	lock                  sync.RWMutex
+	trafficValuesByApiKey map[livekit.ApiKey]map[string]trafficValue
+	logger                *log.ZapEventLogger
 }
 
 func NewTrafficManager(db *p2p_database.DB, logger *log.ZapEventLogger) *TrafficManager {
 	m := &TrafficManager{
-		db:                db,
-		lock:              sync.RWMutex{},
-		trafficsPerClient: make(map[livekit.ApiKey]map[string]TrafficMessage),
-		logger:            logger,
+		db:                    db,
+		lock:                  sync.RWMutex{},
+		trafficValuesByApiKey: make(map[livekit.ApiKey]map[string]trafficValue),
+		logger:                logger,
 	}
 
 	err := m.init(context.Background())
@@ -57,37 +60,37 @@ func (m *TrafficManager) GetValue(clientApiKey livekit.ApiKey) int64 {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
-	var value int64
-
-	traffics, ok := m.trafficsPerClient[clientApiKey]
+	trafficValueByPeerId, ok := m.trafficValuesByApiKey[clientApiKey]
 	if !ok {
 		return 0
 	}
 
-	for peerId, traffic := range traffics {
-		if traffic.isExpired() {
-			delete(m.trafficsPerClient[clientApiKey], peerId)
+	var value int64
+	for peerId, trafficValue := range trafficValueByPeerId {
+		if trafficValue.isExpired() {
+			delete(m.trafficValuesByApiKey[clientApiKey], peerId)
 		} else {
-			value += traffic.Value
+			value += trafficValue.value
 		}
 	}
 
 	return value
 }
 
-func (m *TrafficManager) SetValue(ctx context.Context, clientApiKey livekit.ApiKey, value int64) error {
-	trafficMessage := TrafficMessage{
-		ClientApiKey: clientApiKey,
-		Value:        value,
-		CreatedAt:    time.Now().UTC(),
+func (m *TrafficManager) SetValue(ctx context.Context, valueByApiKey map[livekit.ApiKey]int64) error {
+	trafficMsg := trafficMessage{
+		ValueByApiKey: valueByApiKey,
+		CreatedAt:     time.Now().UTC(),
 	}
 
-	body, err := json.Marshal(trafficMessage)
+	m.handleTrafficMessage(trafficMsg, "local")
+
+	jsonMsg, err := json.Marshal(trafficMsg)
 	if err != nil {
 		return errors.Wrap(err, "marshal traffic message")
 	}
 
-	_, err = m.db.Publish(ctx, topicTrafficValuesStreaming, base64.StdEncoding.EncodeToString(body))
+	_, err = m.db.Publish(ctx, topicTrafficValuesStreaming, string(jsonMsg))
 	if err != nil {
 		return errors.Wrap(err, "publish traffic message")
 	}
@@ -103,13 +106,13 @@ func (m *TrafficManager) init(ctx context.Context) error {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				for clientApiKey, trafficsPerPeers := range m.trafficsPerClient {
+				for clientApiKey, trafficsPerPeers := range m.trafficValuesByApiKey {
 					for peerId, trafficMessage := range trafficsPerPeers {
 						if !trafficMessage.isExpired() {
 							continue
 						}
 						m.lock.Lock()
-						delete(m.trafficsPerClient[clientApiKey], peerId)
+						delete(m.trafficValuesByApiKey[clientApiKey], peerId)
 						m.lock.Unlock()
 					}
 				}
@@ -118,35 +121,36 @@ func (m *TrafficManager) init(ctx context.Context) error {
 	}()
 
 	return m.db.Subscribe(ctx, topicTrafficValuesStreaming, func(event p2p_database.Event) {
-		b64s, ok := event.Message.(string)
+		jsonMsg, ok := event.Message.(string)
 		if !ok {
 			m.logger.Errorw("convert interface to string from message topic traffic values")
 			return
 		}
 
-		bytes, err := base64.StdEncoding.DecodeString(b64s)
-		if err != nil {
-			m.logger.Errorw("decode base64", err)
-			return
-		}
-
-		trafficMessage := TrafficMessage{}
-		err = json.Unmarshal(bytes, &trafficMessage)
+		trafficMsg := trafficMessage{}
+		err := json.Unmarshal([]byte(jsonMsg), &trafficMsg)
 		if err != nil {
 			m.logger.Errorw("topic traffic values unmarshal error", err)
 			return
 		}
 
-		peerId := event.FromPeerId
-		if err != nil {
-			m.logger.Errorw("form peer id from string ", peerId, err)
-			return
-		}
-
-		m.lock.Lock()
-		m.trafficsPerClient[trafficMessage.ClientApiKey] = map[string]TrafficMessage{
-			peerId: trafficMessage,
-		}
-		m.lock.Unlock()
+		m.handleTrafficMessage(trafficMsg, event.FromPeerId)
 	})
+}
+
+func (m *TrafficManager) handleTrafficMessage(trafficMsg trafficMessage, fromPeerId string) {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	for apiKey, value := range trafficMsg.ValueByApiKey {
+		trafficValueByPeerId, ok := m.trafficValuesByApiKey[apiKey]
+		if !ok {
+			trafficValueByPeerId = map[string]trafficValue{}
+		}
+		trafficValueByPeerId[fromPeerId] = trafficValue{
+			value:     value,
+			createdAt: trafficMsg.CreatedAt,
+		}
+		m.trafficValuesByApiKey[apiKey] = trafficValueByPeerId
+	}
 }
