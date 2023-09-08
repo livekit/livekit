@@ -1194,9 +1194,9 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 	// should lock onto the first packet
 	expectedTP := TranslationParams{
 		rtp: &TranslationParamsRTP{
-			snOrdering:     SequenceNumberOrderingContiguous,
-			sequenceNumber: 23333,
-			timestamp:      0xabcdef,
+			snOrdering:        SequenceNumberOrderingContiguous,
+			extSequenceNumber: 23333,
+			extTimestamp:      0xabcdef,
 		},
 	}
 	actualTP, err := f.GetTranslationParams(extPkt, 0)
@@ -1227,9 +1227,9 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
-			snOrdering:     SequenceNumberOrderingOutOfOrder,
-			sequenceNumber: 23331,
-			timestamp:      0xabcdef,
+			snOrdering:        SequenceNumberOrderingOutOfOrder,
+			extSequenceNumber: 23331,
+			extTimestamp:      0xabcdef,
 		},
 	}
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
@@ -1262,9 +1262,9 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
-			snOrdering:     SequenceNumberOrderingContiguous,
-			sequenceNumber: 23333,
-			timestamp:      0xabcdef,
+			snOrdering:        SequenceNumberOrderingContiguous,
+			extSequenceNumber: 23333,
+			extTimestamp:      0xabcdef,
 		},
 	}
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
@@ -1281,9 +1281,9 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
-			snOrdering:     SequenceNumberOrderingGap,
-			sequenceNumber: 23335,
-			timestamp:      0xabcdef,
+			snOrdering:        SequenceNumberOrderingGap,
+			extSequenceNumber: 23335,
+			extTimestamp:      0xabcdef,
 		},
 	}
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
@@ -1301,9 +1301,9 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
-			snOrdering:     SequenceNumberOrderingOutOfOrder,
-			sequenceNumber: 23334,
-			timestamp:      0xabcdef,
+			snOrdering:        SequenceNumberOrderingOutOfOrder,
+			extSequenceNumber: 23334,
+			extTimestamp:      0xabcdef,
 		},
 	}
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
@@ -1321,9 +1321,9 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
-			snOrdering:     SequenceNumberOrderingContiguous,
-			sequenceNumber: 23336,
-			timestamp:      0xabcdf0,
+			snOrdering:        SequenceNumberOrderingContiguous,
+			extSequenceNumber: 23336,
+			extTimestamp:      0xabcdf0,
 		},
 	}
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
@@ -1417,9 +1417,9 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 		isSwitching: true,
 		isResuming:  true,
 		rtp: &TranslationParamsRTP{
-			snOrdering:     SequenceNumberOrderingContiguous,
-			sequenceNumber: 23333,
-			timestamp:      0xabcdef,
+			snOrdering:        SequenceNumberOrderingContiguous,
+			extSequenceNumber: 23333,
+			extTimestamp:      0xabcdef,
 		},
 		codecBytes: marshalledVP8,
 		marker:     true,
@@ -1495,9 +1495,9 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	require.NoError(t, err)
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
-			snOrdering:     SequenceNumberOrderingContiguous,
-			sequenceNumber: 23334,
-			timestamp:      0xabcdef,
+			snOrdering:        SequenceNumberOrderingContiguous,
+			extSequenceNumber: 23334,
+			extTimestamp:      0xabcdef,
 		},
 		codecBytes: marshalledVP8,
 	}
@@ -1548,9 +1548,9 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	require.NoError(t, err)
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
-			snOrdering:     SequenceNumberOrderingContiguous,
-			sequenceNumber: 23335,
-			timestamp:      0xabcdef,
+			snOrdering:        SequenceNumberOrderingContiguous,
+			extSequenceNumber: 23335,
+			extTimestamp:      0xabcdef,
 		},
 		codecBytes: marshalledVP8,
 	}
@@ -1630,9 +1630,9 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	require.NoError(t, err)
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
-			snOrdering:     SequenceNumberOrderingContiguous,
-			sequenceNumber: 23336,
-			timestamp:      0xabcdef,
+			snOrdering:        SequenceNumberOrderingContiguous,
+			extSequenceNumber: 23336,
+			extTimestamp:      0xabcdef,
 		},
 		codecBytes: marshalledVP8,
 	}
@@ -1650,9 +1650,9 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
-			snOrdering:     SequenceNumberOrderingGap,
-			sequenceNumber: 23338,
-			timestamp:      0xabcdef,
+			snOrdering:        SequenceNumberOrderingGap,
+			extSequenceNumber: 23338,
+			extTimestamp:      0xabcdef,
 		},
 	}
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
@@ -1669,9 +1669,9 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
-			snOrdering:     SequenceNumberOrderingOutOfOrder,
-			sequenceNumber: 23337,
-			timestamp:      0xabcdef,
+			snOrdering:        SequenceNumberOrderingOutOfOrder,
+			extSequenceNumber: 23337,
+			extTimestamp:      0xabcdef,
 		},
 	}
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
@@ -1728,9 +1728,9 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	expectedTP = TranslationParams{
 		isSwitching: true,
 		rtp: &TranslationParamsRTP{
-			snOrdering:     SequenceNumberOrderingContiguous,
-			sequenceNumber: 23339,
-			timestamp:      0xabcdf0,
+			snOrdering:        SequenceNumberOrderingContiguous,
+			extSequenceNumber: 23339,
+			extTimestamp:      0xabcdf0,
 		},
 		codecBytes: marshalledVP8,
 	}
@@ -1788,8 +1788,8 @@ func TestForwarderGetSnTsForPadding(t *testing.T) {
 	var sntsExpected = make([]SnTs, numPadding)
 	for i := 0; i < numPadding; i++ {
 		sntsExpected[i] = SnTs{
-			sequenceNumber: 23333 + uint16(i) + 1,
-			timestamp:      0xabcdef + (uint32(i)*clockRate)/frameRate,
+			extSequenceNumber: 23333 + uint64(i) + 1,
+			extTimestamp:      0xabcdef + (uint64(i)*uint64(clockRate))/uint64(frameRate),
 		}
 	}
 	require.Equal(t, sntsExpected, snts)
@@ -1800,8 +1800,8 @@ func TestForwarderGetSnTsForPadding(t *testing.T) {
 
 	for i := 0; i < numPadding; i++ {
 		sntsExpected[i] = SnTs{
-			sequenceNumber: 23338 + uint16(i) + 1,
-			timestamp:      0xabcdef + (uint32(i+1)*clockRate)/frameRate,
+			extSequenceNumber: 23338 + uint64(i) + 1,
+			extTimestamp:      0xabcdef + (uint64(i+1)*uint64(clockRate))/uint64(frameRate),
 		}
 	}
 	require.Equal(t, sntsExpected, snts)
@@ -1861,8 +1861,8 @@ func TestForwarderGetSnTsForBlankFrames(t *testing.T) {
 			ts = params.Timestamp + 1 + ((uint32(i)*clockRate)+frameRate-1)/frameRate
 		}
 		sntsExpected[i] = SnTs{
-			sequenceNumber: params.SequenceNumber + uint16(i) + 1,
-			timestamp:      ts,
+			extSequenceNumber: uint64(params.SequenceNumber) + uint64(i) + 1,
+			extTimestamp:      uint64(ts),
 		}
 	}
 	require.Equal(t, sntsExpected, snts)
@@ -1873,9 +1873,9 @@ func TestForwarderGetSnTsForBlankFrames(t *testing.T) {
 	sntsExpected = sntsExpected[:numPadding]
 	for i := 0; i < numPadding; i++ {
 		sntsExpected[i] = SnTs{
-			sequenceNumber: params.SequenceNumber + uint16(len(snts)) + uint16(i) + 1,
+			extSequenceNumber: uint64(params.SequenceNumber) + uint64(len(snts)) + uint64(i) + 1,
 			// +1 here due to expected time stamp bumpint by at least one so that time stamp is always moving ahead
-			timestamp: snts[len(snts)-1].timestamp + 1 + ((uint32(i+1)*clockRate)+frameRate-1)/frameRate,
+			extTimestamp: snts[len(snts)-1].extTimestamp + 1 + ((uint64(i+1)*uint64(clockRate))+uint64(frameRate)-1)/uint64(frameRate),
 		}
 	}
 	snts, frameEndNeeded, err = f.GetSnTsForBlankFrames(30, numBlankFrames)
