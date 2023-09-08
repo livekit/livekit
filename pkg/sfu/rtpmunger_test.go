@@ -173,9 +173,9 @@ func TestOutOfOrderSequenceNumber(t *testing.T) {
 	extPkt, _ = testutils.GetTestExtPacket(params)
 
 	tpExpected := TranslationParamsRTP{
-		snOrdering:     SequenceNumberOrderingOutOfOrder,
-		sequenceNumber: 23331,
-		timestamp:      0xabcdef,
+		snOrdering:        SequenceNumberOrderingOutOfOrder,
+		extSequenceNumber: 23331,
+		extTimestamp:      0xabcdef,
 	}
 
 	tp, err := r.UpdateAndGetSnTs(extPkt)
@@ -258,9 +258,9 @@ func TestPaddingOnlyPacket(t *testing.T) {
 	extPkt, _ = testutils.GetTestExtPacket(params)
 
 	tpExpected = TranslationParamsRTP{
-		snOrdering:     SequenceNumberOrderingGap,
-		sequenceNumber: 23334,
-		timestamp:      0xabcdef,
+		snOrdering:        SequenceNumberOrderingGap,
+		extSequenceNumber: 23334,
+		extTimestamp:      0xabcdef,
 	}
 
 	tp, err = r.UpdateAndGetSnTs(extPkt)
@@ -299,9 +299,9 @@ func TestGapInSequenceNumber(t *testing.T) {
 	extPkt, _ = testutils.GetTestExtPacket(params)
 
 	tpExpected := TranslationParamsRTP{
-		snOrdering:     SequenceNumberOrderingGap,
-		sequenceNumber: 1,
-		timestamp:      0xabcdef,
+		snOrdering:        SequenceNumberOrderingGap,
+		extSequenceNumber: 65536 + 1,
+		extTimestamp:      0xabcdef,
 	}
 
 	tp, err := r.UpdateAndGetSnTs(extPkt)
@@ -352,9 +352,9 @@ func TestGapInSequenceNumber(t *testing.T) {
 	extPkt, _ = testutils.GetTestExtPacket(params)
 
 	tpExpected = TranslationParamsRTP{
-		snOrdering:     SequenceNumberOrderingGap,
-		sequenceNumber: 3,
-		timestamp:      0xabcdef,
+		snOrdering:        SequenceNumberOrderingGap,
+		extSequenceNumber: 65536 + 3,
+		extTimestamp:      0xabcdef,
 	}
 
 	tp, err = r.UpdateAndGetSnTs(extPkt)
@@ -403,9 +403,9 @@ func TestGapInSequenceNumber(t *testing.T) {
 	extPkt, _ = testutils.GetTestExtPacket(params)
 
 	tpExpected = TranslationParamsRTP{
-		snOrdering:     SequenceNumberOrderingGap,
-		sequenceNumber: 5,
-		timestamp:      0xabcdef,
+		snOrdering:        SequenceNumberOrderingGap,
+		extSequenceNumber: 65536 + 5,
+		extTimestamp:      0xabcdef,
 	}
 
 	tp, err = r.UpdateAndGetSnTs(extPkt)
@@ -436,9 +436,9 @@ func TestGapInSequenceNumber(t *testing.T) {
 	extPkt, _ = testutils.GetTestExtPacket(params)
 
 	tpExpected = TranslationParamsRTP{
-		snOrdering:     SequenceNumberOrderingOutOfOrder,
-		sequenceNumber: 4,
-		timestamp:      0xabcdef,
+		snOrdering:        SequenceNumberOrderingOutOfOrder,
+		extSequenceNumber: 65536 + 4,
+		extTimestamp:      0xabcdef,
 	}
 
 	tp, err = r.UpdateAndGetSnTs(extPkt)
@@ -459,9 +459,9 @@ func TestGapInSequenceNumber(t *testing.T) {
 	extPkt, _ = testutils.GetTestExtPacket(params)
 
 	tpExpected = TranslationParamsRTP{
-		snOrdering:     SequenceNumberOrderingOutOfOrder,
-		sequenceNumber: 2,
-		timestamp:      0xabcdef,
+		snOrdering:        SequenceNumberOrderingOutOfOrder,
+		extSequenceNumber: 65536 + 2,
+		extTimestamp:      0xabcdef,
 	}
 
 	tp, err = r.UpdateAndGetSnTs(extPkt)
@@ -494,27 +494,27 @@ func TestUpdateAndGetPaddingSnTs(t *testing.T) {
 	// forcing a marker should not error out.
 	// And timestamp on first padding should be the same as the last one.
 	numPadding := 10
-	clockRate := uint32(10)
-	frameRate := uint32(5)
+	clockRate := uint64(10)
+	frameRate := uint64(5)
 	var sntsExpected = make([]SnTs, numPadding)
 	for i := 0; i < numPadding; i++ {
 		sntsExpected[i] = SnTs{
-			sequenceNumber: params.SequenceNumber + uint16(i) + 1,
-			timestamp:      params.Timestamp + ((uint32(i)*clockRate)+frameRate-1)/frameRate,
+			extSequenceNumber: uint64(params.SequenceNumber) + uint64(i) + 1,
+			extTimestamp:      uint64(params.Timestamp) + ((uint64(i)*clockRate)+frameRate-1)/frameRate,
 		}
 	}
-	snts, err := r.UpdateAndGetPaddingSnTs(numPadding, clockRate, frameRate, true, extPkt.ExtTimestamp)
+	snts, err := r.UpdateAndGetPaddingSnTs(numPadding, uint32(clockRate), uint32(frameRate), true, extPkt.ExtTimestamp)
 	require.NoError(t, err)
 	require.Equal(t, sntsExpected, snts)
 
 	// now that there is a marker, timestamp should jump on first padding when asked again
 	for i := 0; i < numPadding; i++ {
 		sntsExpected[i] = SnTs{
-			sequenceNumber: params.SequenceNumber + uint16(len(snts)) + uint16(i) + 1,
-			timestamp:      snts[len(snts)-1].timestamp + ((uint32(i+1)*clockRate)+frameRate-1)/frameRate,
+			extSequenceNumber: uint64(params.SequenceNumber) + uint64(len(snts)) + uint64(i) + 1,
+			extTimestamp:      snts[len(snts)-1].extTimestamp + ((uint64(i+1)*clockRate)+frameRate-1)/frameRate,
 		}
 	}
-	snts, err = r.UpdateAndGetPaddingSnTs(numPadding, clockRate, frameRate, false, uint64(snts[len(snts)-1].timestamp))
+	snts, err = r.UpdateAndGetPaddingSnTs(numPadding, uint32(clockRate), uint32(frameRate), false, snts[len(snts)-1].extTimestamp)
 	require.NoError(t, err)
 	require.Equal(t, sntsExpected, snts)
 }
