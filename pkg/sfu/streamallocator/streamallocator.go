@@ -47,7 +47,6 @@ const (
 	FlagAllowOvershootInProbe                   = true
 	FlagAllowOvershootInCatchup                 = false
 	FlagAllowOvershootInBoost                   = true
-	FlagBWEManagedTracksOnly                    = true
 )
 
 // ---------------------------------------------------------------------------
@@ -502,7 +501,7 @@ func (s *StreamAllocator) OnActiveChanged(isActive bool) {
 
 // called to check if track should participate in BWE
 func (s *StreamAllocator) IsBWEEnabled(downTrack *sfu.DownTrack) bool {
-	if !FlagBWEManagedTracksOnly {
+	if !s.params.Config.DisableEstimationUnmanagedTracks {
 		return true
 	}
 
@@ -1114,7 +1113,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 		updateStreamStateChange(track, allocation, update)
 
 		// STREAM-ALLOCATOR-TODO: optimistic allocation before bitrate is available will return 0. How to account for that?
-		if !FlagBWEManagedTracksOnly {
+		if !s.params.Config.DisableEstimationUnmanagedTracks {
 			availableChannelCapacity -= allocation.BandwidthRequested
 		}
 	}
