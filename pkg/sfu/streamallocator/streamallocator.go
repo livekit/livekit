@@ -47,6 +47,7 @@ const (
 	FlagAllowOvershootInProbe                   = true
 	FlagAllowOvershootInCatchup                 = false
 	FlagAllowOvershootInBoost                   = true
+	FlagBWEManagedTracksOnly                    = true
 )
 
 // ---------------------------------------------------------------------------
@@ -497,6 +498,22 @@ func (s *StreamAllocator) OnActiveChanged(isActive bool) {
 			t.DownTrack().ClearStreamAllocatorReportInterval()
 		}
 	}
+}
+
+// called to check if track should participate in BWE
+func (s *StreamAllocator) IsBWEEnabled(downTrack *sfu.DownTrack) bool {
+	if !FlagBWEManagedTracksOnly {
+		return true
+	}
+
+	s.videoTracksMu.Lock()
+	defer s.videoTracksMu.Unlock()
+
+	if track := s.videoTracks[livekit.TrackID(downTrack.ID())]; track != nil {
+		return track.IsManaged()
+	}
+
+	return true
 }
 
 func (s *StreamAllocator) maybePostEventAllocateTrack(downTrack *sfu.DownTrack) {
@@ -1097,7 +1114,9 @@ func (s *StreamAllocator) allocateAllTracks() {
 		updateStreamStateChange(track, allocation, update)
 
 		// STREAM-ALLOCATOR-TODO: optimistic allocation before bitrate is available will return 0. How to account for that?
-		availableChannelCapacity -= allocation.BandwidthRequested
+		if !FlagBWEManagedTracksOnly {
+			availableChannelCapacity -= allocation.BandwidthRequested
+		}
 	}
 
 	if availableChannelCapacity < 0 {
