@@ -758,9 +758,9 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 	}
 
 	//
-	// Register with sequencer with invalid layer so that NACKs for these can be filtered out.
+	// Register with sequencer as padding only so that NACKs for these can be filtered out.
 	// Retransmission is probably a sign of network congestion/badness.
-	// So, retransmitting padding packets is only going to make matters worse.
+	// So, retransmitting padding only packets is only going to make matters worse.
 	//
 	if d.sequencer != nil {
 		d.sequencer.pushPadding(snts[0].extSequenceNumber, snts[len(snts)-1].extSequenceNumber)
