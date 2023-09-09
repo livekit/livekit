@@ -532,6 +532,13 @@ func (f *Forwarder) GetReferenceLayerSpatial() int32 {
 	return f.referenceLayerSpatial
 }
 
+func (f *Forwarder) GetReferenceTimestampOffset() uint64 {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+
+	return f.refTSOffset
+}
+
 func (f *Forwarder) isDeficientLocked() bool {
 	return f.lastAllocation.IsDeficient
 }
@@ -1516,22 +1523,23 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		if err == nil {
 			extExpectedTS = tsExt
 		} else {
-			rtpDiff := uint64(0)
-			if !f.preStartTime.IsZero() && f.refTSOffset == 0 {
+			if !f.preStartTime.IsZero() {
 				timeSinceFirst := time.Since(f.preStartTime)
-				rtpDiff = uint64(timeSinceFirst.Nanoseconds() * int64(f.codec.ClockRate) / 1e9)
-				f.refTSOffset = f.extFirstTS + rtpDiff - extRefTS
-				f.logger.Infow(
-					"calculating refTSOffset",
-					"preStartTime", f.preStartTime.String(),
-					"extFirstTS", f.extFirstTS,
-					"timeSinceFirst", timeSinceFirst,
-					"rtpDiff", rtpDiff,
-					"extRefTS", extRefTS,
-					"refTSOffset", f.refTSOffset,
-				)
+				rtpDiff := uint64(timeSinceFirst.Nanoseconds() * int64(f.codec.ClockRate) / 1e9)
+				extExpectedTS = f.extFirstTS + rtpDiff
+				if f.refTSOffset == 0 {
+					f.refTSOffset = extExpectedTS - extRefTS
+					f.logger.Infow(
+						"calculating refTSOffset",
+						"preStartTime", f.preStartTime.String(),
+						"extFirstTS", f.extFirstTS,
+						"timeSinceFirst", timeSinceFirst,
+						"rtpDiff", rtpDiff,
+						"extRefTS", extRefTS,
+						"refTSOffset", f.refTSOffset,
+					)
+				}
 			}
-			extExpectedTS += rtpDiff
 		}
 	}
 	extRefTS += f.refTSOffset
@@ -1746,17 +1754,21 @@ func (f *Forwarder) maybeStart() {
 	f.started = true
 	f.preStartTime = time.Now()
 
+	sequenceNumber := uint16(rand.Intn(1<<14)) + uint16(1<<15) // a random number in third quartile of sequence number space
+	timestamp := uint32(rand.Intn(1<<30)) + uint32(1<<31)      // a random number in third quartile of timestamp space
 	extPkt := &buffer.ExtPacket{
 		Packet: &rtp.Packet{
 			Header: rtp.Header{
-				SequenceNumber: uint16(rand.Intn(1<<14)) + uint16(1<<15), // a random number in third quartile of sequence number space
-				Timestamp:      uint32(rand.Intn(1<<30)) + uint32(1<<31), // a random number in third quartile of timestamp space
+				SequenceNumber: sequenceNumber,
+				Timestamp:      timestamp,
 			},
 		},
+		ExtSequenceNumber: uint64(sequenceNumber),
+		ExtTimestamp:      uint64(timestamp),
 	}
 	f.rtpMunger.SetLastSnTs(extPkt)
 
-	f.extFirstTS = uint64(extPkt.Packet.Timestamp)
+	f.extFirstTS = uint64(timestamp)
 	f.logger.Debugw(
 		"starting with dummy forwarding",
 		"sequenceNumber", extPkt.Packet.SequenceNumber,
