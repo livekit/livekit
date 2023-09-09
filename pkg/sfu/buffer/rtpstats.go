@@ -194,8 +194,7 @@ type RTPStats struct {
 	jitterOverridden    float64
 	maxJitterOverridden float64
 
-	snInfos        [SnInfoSize]SnInfo
-	snInfoWritePtr int
+	snInfos [SnInfoSize]SnInfo
 
 	gapHistogram [GapHistogramNumBins]uint32
 
@@ -288,7 +287,6 @@ func (r *RTPStats) Seed(from *RTPStats) {
 	r.maxJitterOverridden = from.maxJitterOverridden
 
 	r.snInfos = from.snInfos
-	r.snInfoWritePtr = from.snInfoWritePtr
 
 	r.gapHistogram = from.gapHistogram
 
@@ -1495,33 +1493,27 @@ func (r *RTPStats) getPacketsLost() uint64 {
 }
 
 func (r *RTPStats) getSnInfoOutOfOrderPtr(esn uint64, ehsn uint64) int {
-	if int64(esn-ehsn) > 0 {
-		return -1 // in-order, not expected, maybe too new
-	}
-
-	offset := ehsn - esn
-	if int(offset) >= SnInfoSize {
-		// too old, ignore
+	offset := int64(ehsn - esn)
+	if offset >= SnInfoSize || offset < 0 {
+		// too old OR too new (i. e. ahead of highest)
 		return -1
 	}
 
-	return (r.snInfoWritePtr - int(offset) - 1) & SnInfoMask
+	return int(esn & SnInfoMask)
 }
 
 func (r *RTPStats) setSnInfo(esn uint64, ehsn uint64, pktSize uint16, hdrSize uint16, payloadSize uint16, marker bool, isOutOfOrder bool) {
-	writePtr := 0
-	ooo := int64(esn-ehsn) < 0
-	if !ooo {
-		writePtr = r.snInfoWritePtr
-		r.snInfoWritePtr = (writePtr + 1) & SnInfoMask
-	} else {
-		writePtr = r.getSnInfoOutOfOrderPtr(esn, ehsn)
-		if writePtr < 0 {
+	slot := 0
+	if int64(esn-ehsn) < 0 {
+		slot = r.getSnInfoOutOfOrderPtr(esn, ehsn)
+		if slot < 0 {
 			return
 		}
+	} else {
+		slot = int(esn & SnInfoMask)
 	}
 
-	snInfo := &r.snInfos[writePtr]
+	snInfo := &r.snInfos[slot]
 	snInfo.pktSize = pktSize
 	snInfo.hdrSize = hdrSize
 	snInfo.isPaddingOnly = payloadSize == 0
@@ -1531,36 +1523,33 @@ func (r *RTPStats) setSnInfo(esn uint64, ehsn uint64, pktSize uint16, hdrSize ui
 
 func (r *RTPStats) clearSnInfos(extStartInclusive uint64, extEndExclusive uint64) {
 	for esn := extStartInclusive; esn != extEndExclusive; esn++ {
-		snInfo := &r.snInfos[r.snInfoWritePtr]
+		snInfo := &r.snInfos[esn&SnInfoMask]
 		snInfo.pktSize = 0
 		snInfo.hdrSize = 0
 		snInfo.isPaddingOnly = false
 		snInfo.marker = false
-
-		r.snInfoWritePtr = (r.snInfoWritePtr + 1) & SnInfoMask
 	}
 }
 
 func (r *RTPStats) isSnInfoLost(esn uint64, ehsn uint64) bool {
-	readPtr := r.getSnInfoOutOfOrderPtr(esn, ehsn)
-	if readPtr < 0 {
+	slot := r.getSnInfoOutOfOrderPtr(esn, ehsn)
+	if slot < 0 {
 		return false
 	}
 
-	snInfo := &r.snInfos[readPtr]
-	return snInfo.pktSize == 0
+	return r.snInfos[slot].pktSize == 0
 }
 
 func (r *RTPStats) getIntervalStats(extStartInclusive uint64, extEndExclusive uint64) (intervalStats IntervalStats) {
 	packetsNotFound := uint32(0)
 	processESN := func(esn uint64, ehsn uint64) {
-		readPtr := r.getSnInfoOutOfOrderPtr(esn, ehsn)
-		if readPtr < 0 {
+		slot := r.getSnInfoOutOfOrderPtr(esn, ehsn)
+		if slot < 0 {
 			packetsNotFound++
 			return
 		}
 
-		snInfo := &r.snInfos[readPtr]
+		snInfo := &r.snInfos[slot]
 		switch {
 		case snInfo.pktSize == 0:
 			intervalStats.packetsLost++
