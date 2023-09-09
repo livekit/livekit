@@ -863,13 +863,11 @@ func (r *RTPStats) GetRtt() uint32 {
 	return r.rtt
 }
 
-func (r *RTPStats) MaybeAdjustFirstPacketTime(srData *RTCPSenderReportData) {
+func (r *RTPStats) MaybeAdjustFirstPacketTime(ets uint64) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	if srData != nil {
-		r.maybeAdjustFirstPacketTime(srData.RTPTimestampExt)
-	}
+	r.maybeAdjustFirstPacketTime(ets)
 }
 
 func (r *RTPStats) maybeAdjustFirstPacketTime(ets uint64) {

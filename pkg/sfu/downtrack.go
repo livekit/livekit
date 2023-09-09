@@ -1741,7 +1741,6 @@ func (d *DownTrack) sendPaddingOnMute() {
 	// let uptrack have chance to send packet before we send padding
 	time.Sleep(waitBeforeSendPaddingOnMute)
 
-	d.params.Logger.Debugw("sending padding on mute")
 	if d.kind == webrtc.RTPCodecTypeVideo {
 		d.sendPaddingOnMuteForVideo()
 	} else if d.mime == "audio/opus" {
@@ -1756,6 +1755,9 @@ func (d *DownTrack) sendPaddingOnMuteForVideo() {
 		if d.rtpStats.IsActive() || d.IsClosed() {
 			return
 		}
+		if i == 0 {
+			d.params.Logger.Debugw("sending padding on mute")
+		}
 		d.WritePaddingRTP(20, true, true)
 		time.Sleep(paddingOnMuteInterval)
 	}
@@ -1765,9 +1767,14 @@ func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
 	frameRate := uint32(50)
 	frameDuration := time.Duration(1000/frameRate) * time.Millisecond
 	numFrames := frameRate * uint32(maxPaddingOnMuteDuration/time.Second)
+	first := true
 	for {
 		if d.rtpStats.IsActive() || d.IsClosed() || numFrames <= 0 {
 			return
+		}
+		if first {
+			first = false
+			d.params.Logger.Debugw("sending padding on mute")
 		}
 		snts, _, err := d.forwarder.GetSnTsForBlankFrames(frameRate, 1)
 		if err != nil {
@@ -1812,8 +1819,8 @@ func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
 }
 
 func (d *DownTrack) HandleRTCPSenderReportData(_payloadType webrtc.PayloadType, layer int32, srData *buffer.RTCPSenderReportData) error {
-	if layer == d.forwarder.GetReferenceLayerSpatial() {
-		d.rtpStats.MaybeAdjustFirstPacketTime(srData)
+	if layer == d.forwarder.GetReferenceLayerSpatial() && srData != nil {
+		d.rtpStats.MaybeAdjustFirstPacketTime(srData.RTPTimestampExt + d.forwarder.GetReferenceTimestampOffset())
 	}
 	return nil
 }
