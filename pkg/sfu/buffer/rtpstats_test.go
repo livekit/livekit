@@ -152,5 +152,81 @@ func TestRTPStats_Update(t *testing.T) {
 	intervalStats := r.getIntervalStats(r.sequenceNumber.GetExtendedStart(), r.sequenceNumber.GetExtendedHighest()+1)
 	require.Equal(t, uint64(16), intervalStats.packetsLost)
 
+	// test sequence number cache
+	// with a gap
+	sequenceNumber += 2
+	timestamp += 6000
+	packet = getPacket(sequenceNumber, timestamp, 1000)
+	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now())
+	require.True(t, flowState.HasLoss)
+	require.Equal(t, uint64(sequenceNumber-1), flowState.LossStartInclusive)
+	require.Equal(t, uint64(sequenceNumber), flowState.LossEndExclusive)
+	require.Equal(t, uint64(17), r.packetsLost)
+	expectedSnInfo := SnInfo{
+		hdrSize:       12,
+		pktSize:       1012,
+		isPaddingOnly: false,
+		marker:        false,
+		isOutOfOrder:  false,
+	}
+	require.Equal(t, expectedSnInfo, r.snInfos[sequenceNumber&SnInfoMask])
+
+	// out-of-order
+	sequenceNumber--
+	timestamp -= 3000
+	packet = getPacket(sequenceNumber, timestamp, 999)
+	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now())
+	require.False(t, flowState.HasLoss)
+	require.Equal(t, uint64(16), r.packetsLost)
+	expectedSnInfo = SnInfo{
+		hdrSize:       12,
+		pktSize:       1011,
+		isPaddingOnly: false,
+		marker:        false,
+		isOutOfOrder:  true,
+	}
+	require.Equal(t, expectedSnInfo, r.snInfos[sequenceNumber&SnInfoMask])
+	// check that last one is still fine
+	expectedSnInfo = SnInfo{
+		hdrSize:       12,
+		pktSize:       1012,
+		isPaddingOnly: false,
+		marker:        false,
+		isOutOfOrder:  false,
+	}
+	require.Equal(t, expectedSnInfo, r.snInfos[(sequenceNumber+1)&SnInfoMask])
+
+	// padding only
+	sequenceNumber += 2
+	packet = getPacket(sequenceNumber, timestamp, 0)
+	flowState = r.Update(&packet.Header, len(packet.Payload), 25, time.Now())
+	require.False(t, flowState.HasLoss)
+	require.Equal(t, uint64(16), r.packetsLost)
+	expectedSnInfo = SnInfo{
+		hdrSize:       12,
+		pktSize:       37,
+		isPaddingOnly: true,
+		marker:        false,
+		isOutOfOrder:  false,
+	}
+	require.Equal(t, expectedSnInfo, r.snInfos[sequenceNumber&SnInfoMask])
+	// check that last two are still fine
+	expectedSnInfo = SnInfo{
+		hdrSize:       12,
+		pktSize:       1011,
+		isPaddingOnly: false,
+		marker:        false,
+		isOutOfOrder:  true,
+	}
+	require.Equal(t, expectedSnInfo, r.snInfos[(sequenceNumber-2)&SnInfoMask])
+	expectedSnInfo = SnInfo{
+		hdrSize:       12,
+		pktSize:       1012,
+		isPaddingOnly: false,
+		marker:        false,
+		isOutOfOrder:  false,
+	}
+	require.Equal(t, expectedSnInfo, r.snInfos[(sequenceNumber-1)&SnInfoMask])
+
 	r.Stop()
 }
