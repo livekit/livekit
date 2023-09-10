@@ -114,7 +114,7 @@ func (r *RTPStatsReceiver) Update(
 		}
 
 		r.logger.Debugw(
-			"rtp stream start",
+			"rtp receiver stream start",
 			"startTime", r.startTime.String(),
 			"firstTime", r.firstTime.String(),
 			"startSN", r.sequenceNumber.GetExtendedStart(),
