@@ -126,14 +126,14 @@ var (
 // -------------------------------------------------------------------
 
 type DownTrackState struct {
-	RTPStats                       *buffer.RTPStats
-	DeltaStatsOverriddenSnapshotId uint32
-	ForwarderState                 ForwarderState
+	RTPStats                   *buffer.RTPStatsSender
+	DeltaStatsSenderSnapshotId uint32
+	ForwarderState             ForwarderState
 }
 
 func (d DownTrackState) String() string {
-	return fmt.Sprintf("DownTrackState{rtpStats: %s, deltaOverridden: %d, forwarder: %s}",
-		d.RTPStats.ToString(), d.DeltaStatsOverriddenSnapshotId, d.ForwarderState.String())
+	return fmt.Sprintf("DownTrackState{rtpStats: %s, deltaSender: %d, forwarder: %s}",
+		d.RTPStats.ToString(), d.DeltaStatsSenderSnapshotId, d.ForwarderState.String())
 }
 
 // -------------------------------------------------------------------
@@ -239,7 +239,7 @@ type DownTrack struct {
 	bindAndConnectedOnce atomic.Bool
 	writable             atomic.Bool
 
-	rtpStats *buffer.RTPStats
+	rtpStats *buffer.RTPStatsSender
 
 	totalRepeatedNACKs atomic.Uint32
 
@@ -247,8 +247,8 @@ type DownTrack struct {
 
 	blankFramesGeneration atomic.Uint32
 
-	connectionStats                *connectionquality.ConnectionStats
-	deltaStatsOverriddenSnapshotId uint32
+	connectionStats            *connectionquality.ConnectionStats
+	deltaStatsSenderSnapshotId uint32
 
 	isNACKThrottled atomic.Bool
 
@@ -304,17 +304,16 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		d.getExpectedRTPTimestamp,
 	)
 
-	d.rtpStats = buffer.NewRTPStats(buffer.RTPStatsParams{
-		ClockRate:              d.codec.ClockRate,
-		IsReceiverReportDriven: true,
-		Logger:                 params.Logger,
+	d.rtpStats = buffer.NewRTPStatsSender(buffer.RTPStatsParams{
+		ClockRate: d.codec.ClockRate,
+		Logger:    params.Logger,
 	})
-	d.deltaStatsOverriddenSnapshotId = d.rtpStats.NewSnapshotId()
+	d.deltaStatsSenderSnapshotId = d.rtpStats.NewSenderSnapshotId()
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
 		MimeType:                  codecs[0].MimeType, // LK-TODO have to notify on codec change
 		IsFECEnabled:              strings.EqualFold(codecs[0].MimeType, webrtc.MimeTypeOpus) && strings.Contains(strings.ToLower(codecs[0].SDPFmtpLine), "fec"),
-		GetDeltaStatsOverridden:   d.getDeltaStatsOverridden,
+		GetDeltaStatsSender:       d.getDeltaStatsSender,
 		GetLastReceiverReportTime: func() time.Time { return d.rtpStats.LastReceiverReportTime() },
 		GetTotalPacketsSent:       func() uint64 { return d.rtpStats.GetTotalPacketsPrimary() },
 		Logger:                    params.Logger.WithValues("direction", "down"),
@@ -723,11 +722,13 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		TransportWideExtID: uint8(d.transportWideExtID),
 		WriteStream:        d.writeStream,
 		Metadata: sendPacketMetadata{
-			layer:      layer,
-			arrival:    extPkt.Arrival,
-			isKeyFrame: extPkt.KeyFrame,
-			tp:         tp,
-			pool:       pool,
+			layer:             layer,
+			arrival:           extPkt.Arrival,
+			extSequenceNumber: tp.rtp.extSequenceNumber,
+			extTimestamp:      tp.rtp.extTimestamp,
+			isKeyFrame:        extPkt.KeyFrame,
+			tp:                tp,
+			pool:              pool,
 		},
 		OnSent: d.packetSent,
 	})
@@ -814,8 +815,10 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 			TransportWideExtID: uint8(d.transportWideExtID),
 			WriteStream:        d.writeStream,
 			Metadata: sendPacketMetadata{
-				isPadding:      true,
-				disableCounter: true,
+				extSequenceNumber: snts[i].extSequenceNumber,
+				extTimestamp:      snts[i].extTimestamp,
+				isPadding:         true,
+				disableCounter:    true,
 			},
 			OnSent: d.packetSent,
 		})
@@ -989,16 +992,16 @@ func (d *DownTrack) MaxLayer() buffer.VideoLayer {
 
 func (d *DownTrack) GetState() DownTrackState {
 	dts := DownTrackState{
-		RTPStats:                       d.rtpStats,
-		DeltaStatsOverriddenSnapshotId: d.deltaStatsOverriddenSnapshotId,
-		ForwarderState:                 d.forwarder.GetState(),
+		RTPStats:                   d.rtpStats,
+		DeltaStatsSenderSnapshotId: d.deltaStatsSenderSnapshotId,
+		ForwarderState:             d.forwarder.GetState(),
 	}
 	return dts
 }
 
 func (d *DownTrack) SeedState(state DownTrackState) {
 	d.rtpStats.Seed(state.RTPStats)
-	d.deltaStatsOverriddenSnapshotId = state.DeltaStatsOverriddenSnapshotId
+	d.deltaStatsSenderSnapshotId = state.DeltaStatsSenderSnapshotId
 	d.forwarder.SeedState(state.ForwarderState)
 }
 
@@ -1312,8 +1315,11 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 					AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 					TransportWideExtID: uint8(d.transportWideExtID),
 					WriteStream:        d.writeStream,
-					Metadata:           sendPacketMetadata{},
-					OnSent:             d.packetSent,
+					Metadata: sendPacketMetadata{
+						extSequenceNumber: snts[i].extSequenceNumber,
+						extTimestamp:      snts[i].extTimestamp,
+					},
+					OnSent: d.packetSent,
 				})
 
 				// only the first frame will need frameEndNeeded to close out the
@@ -1601,6 +1607,8 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			TransportWideExtID: uint8(d.transportWideExtID),
 			WriteStream:        d.writeStream,
 			Metadata: sendPacketMetadata{
+				// RAJA-TODO extSequenceNumber: snts[i].extSequenceNumber,
+				// RAJA-TODO extTimestamp:      snts[i].extTimestamp,
 				isRTX: true,
 				pool:  pool,
 			},
@@ -1707,8 +1715,9 @@ func (d *DownTrack) deltaStats(ds *buffer.RTPDeltaInfo) map[uint32]*buffer.Strea
 	return streamStats
 }
 
-func (d *DownTrack) getDeltaStatsOverridden() map[uint32]*buffer.StreamStatsWithLayers {
-	return d.deltaStats(d.rtpStats.DeltaInfoOverridden(d.deltaStatsOverriddenSnapshotId))
+func (d *DownTrack) getDeltaStatsSender() map[uint32]*buffer.StreamStatsWithLayers {
+	return d.deltaStats(d.rtpStats.DeltaInfoSender(d.deltaStatsSenderSnapshotId))
+	return nil
 }
 
 func (d *DownTrack) GetNackStats() (totalPackets uint32, totalRepeatedNACKs uint32) {
@@ -1806,6 +1815,8 @@ func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
 				TransportWideExtID: uint8(d.transportWideExtID),
 				WriteStream:        d.writeStream,
 				Metadata: sendPacketMetadata{
+					extSequenceNumber: snts[i].extSequenceNumber,
+					extTimestamp:      snts[i].extTimestamp,
 					// although this is using empty frames, mark as padding as these are used to trigger Pion OnTrack only
 					isPadding: true,
 				},
@@ -1826,17 +1837,19 @@ func (d *DownTrack) HandleRTCPSenderReportData(_payloadType webrtc.PayloadType, 
 }
 
 type sendPacketMetadata struct {
-	layer          int32
-	arrival        time.Time
-	isKeyFrame     bool
-	isRTX          bool
-	isPadding      bool
-	disableCounter bool
-	tp             *TranslationParams
-	pool           *[]byte
+	layer             int32
+	arrival           time.Time
+	extSequenceNumber uint64
+	extTimestamp      uint64
+	isKeyFrame        bool
+	isRTX             bool
+	isPadding         bool
+	disableCounter    bool
+	tp                *TranslationParams
+	pool              *[]byte
 }
 
-func (d *DownTrack) packetSent(md interface{}, hdr *rtp.Header, payloadSize int, sendTime time.Time, sendError error) {
+func (d *DownTrack) packetSent(md interface{}, marker bool, hdrSize int, payloadSize int, sendTime time.Time, sendError error) {
 	spmd, ok := md.(sendPacketMetadata)
 	if !ok {
 		d.params.Logger.Errorw("invalid send packet metadata", nil)
@@ -1853,7 +1866,7 @@ func (d *DownTrack) packetSent(md interface{}, hdr *rtp.Header, payloadSize int,
 
 	if !spmd.disableCounter {
 		// STREAM-ALLOCATOR-TODO: remove this stream allocator bytes counter once stream allocator changes fully to pull bytes counter
-		size := uint32(hdr.MarshalSize() + payloadSize)
+		size := uint32(hdrSize + payloadSize)
 		d.streamAllocatorBytesCounter.Add(size)
 		if spmd.isRTX {
 			d.bytesRetransmitted.Add(size)
@@ -1868,9 +1881,9 @@ func (d *DownTrack) packetSent(md interface{}, hdr *rtp.Header, payloadSize int,
 		packetTime = sendTime
 	}
 	if spmd.isPadding {
-		d.rtpStats.Update(hdr, 0, payloadSize, packetTime)
+		d.rtpStats.Update(packetTime, spmd.extSequenceNumber, spmd.extTimestamp, marker, hdrSize, 0, payloadSize)
 	} else {
-		d.rtpStats.Update(hdr, payloadSize, 0, packetTime)
+		d.rtpStats.Update(packetTime, spmd.extSequenceNumber, spmd.extTimestamp, marker, hdrSize, payloadSize, 0)
 	}
 
 	if spmd.isKeyFrame {
@@ -1879,8 +1892,8 @@ func (d *DownTrack) packetSent(md interface{}, hdr *rtp.Header, payloadSize int,
 		d.params.Logger.Debugw(
 			"forwarded key frame",
 			"layer", spmd.layer,
-			"rtpsn", hdr.SequenceNumber,
-			"rtpts", hdr.Timestamp,
+			"rtpsn", spmd.extSequenceNumber,
+			"rtpts", spmd.extTimestamp,
 		)
 	}
 

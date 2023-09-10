@@ -40,7 +40,7 @@ type ConnectionStatsParams struct {
 	IncludeRTT                bool
 	IncludeJitter             bool
 	GetDeltaStats             func() map[uint32]*buffer.StreamStatsWithLayers
-	GetDeltaStatsOverridden   func() map[uint32]*buffer.StreamStatsWithLayers
+	GetDeltaStatsSender       func() map[uint32]*buffer.StreamStatsWithLayers
 	GetLastReceiverReportTime func() time.Time
 	GetTotalPacketsSent       func() uint64
 	Logger                    logger.Logger
@@ -215,7 +215,7 @@ func (cs *ConnectionStats) updateScoreWithAggregate(agg *buffer.RTPDeltaInfo, at
 }
 
 func (cs *ConnectionStats) updateScoreFromReceiverReport(at time.Time) (float32, map[uint32]*buffer.StreamStatsWithLayers) {
-	if cs.params.GetDeltaStatsOverridden == nil || cs.params.GetLastReceiverReportTime == nil || cs.params.GetTotalPacketsSent == nil {
+	if cs.params.GetDeltaStatsSender == nil || cs.params.GetLastReceiverReportTime == nil || cs.params.GetTotalPacketsSent == nil {
 		return MinMOS, nil
 	}
 
@@ -226,7 +226,7 @@ func (cs *ConnectionStats) updateScoreFromReceiverReport(at time.Time) (float32,
 		return mos, nil
 	}
 
-	streams := cs.params.GetDeltaStatsOverridden()
+	streams := cs.params.GetDeltaStatsSender()
 	if len(streams) == 0 {
 		//  check for receiver report not received for a while
 		marker := cs.params.GetLastReceiverReportTime()
@@ -260,7 +260,7 @@ func (cs *ConnectionStats) updateScoreFromReceiverReport(at time.Time) (float32,
 }
 
 func (cs *ConnectionStats) updateScoreAt(at time.Time) (float32, map[uint32]*buffer.StreamStatsWithLayers) {
-	if cs.params.GetDeltaStatsOverridden != nil {
+	if cs.params.GetDeltaStatsSender != nil {
 		// receiver report based quality scoring, use stats from receiver report for scoring
 		return cs.updateScoreFromReceiverReport(at)
 	}

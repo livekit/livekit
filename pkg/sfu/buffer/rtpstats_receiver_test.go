@@ -25,7 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func getPacket(sn uint16, ts uint32, payloadSize int) *rtp.Packet {
+func getPacketRAJA(sn uint16, ts uint32, payloadSize int) *rtp.Packet {
 	return &rtp.Packet{
 		Header: rtp.Header{
 			SequenceNumber: sn,
@@ -35,9 +35,9 @@ func getPacket(sn uint16, ts uint32, payloadSize int) *rtp.Packet {
 	}
 }
 
-func TestRTPStats(t *testing.T) {
+func Test_RTPStatsReceiver(t *testing.T) {
 	clockRate := uint32(90000)
-	r := NewRTPStats(RTPStatsParams{
+	r := NewRTPStatsReceiver(RTPStatsParamsRAJA{
 		ClockRate: clockRate,
 		Logger:    logger.GetLogger(),
 	})
@@ -58,8 +58,16 @@ func TestRTPStats(t *testing.T) {
 	for now.Sub(startTime) < totalDuration {
 		timestamp += uint32(now.Sub(lastFrameTime).Seconds() * float64(clockRate))
 		for i := 0; i < packetsPerFrame; i++ {
-			packet := getPacket(sequenceNumber, timestamp, packetSize)
-			r.Update(&packet.Header, len(packet.Payload), 0, time.Now())
+			packet := getPacketRAJA(sequenceNumber, timestamp, packetSize)
+			r.Update(
+				time.Now(),
+				packet.Header.SequenceNumber,
+				packet.Header.Timestamp,
+				packet.Header.Marker,
+				packet.Header.MarshalSize(),
+				len(packet.Payload),
+				0,
+			)
 			if (sequenceNumber % 100) == 0 {
 				jump := uint16(rand.Float64() * 120.0)
 				sequenceNumber += jump
@@ -77,17 +85,25 @@ func TestRTPStats(t *testing.T) {
 	fmt.Printf("%s\n", r.ToString())
 }
 
-func TestRTPStats_Update(t *testing.T) {
+func Test_RTPStatsReceiver_Update(t *testing.T) {
 	clockRate := uint32(90000)
-	r := NewRTPStats(RTPStatsParams{
+	r := NewRTPStatsReceiver(RTPStatsParamsRAJA{
 		ClockRate: clockRate,
 		Logger:    logger.GetLogger(),
 	})
 
 	sequenceNumber := uint16(rand.Float64() * float64(1<<16))
 	timestamp := uint32(rand.Float64() * float64(1<<32))
-	packet := getPacket(sequenceNumber, timestamp, 1000)
-	flowState := r.Update(&packet.Header, len(packet.Payload), 0, time.Now())
+	packet := getPacketRAJA(sequenceNumber, timestamp, 1000)
+	flowState := r.Update(
+		time.Now(),
+		packet.Header.SequenceNumber,
+		packet.Header.Timestamp,
+		packet.Header.Marker,
+		packet.Header.MarshalSize(),
+		len(packet.Payload),
+		0,
+	)
 	require.False(t, flowState.HasLoss)
 	require.True(t, r.initialized)
 	require.Equal(t, sequenceNumber, r.sequenceNumber.GetHighest())
@@ -98,8 +114,16 @@ func TestRTPStats_Update(t *testing.T) {
 	// in-order, no loss
 	sequenceNumber++
 	timestamp += 3000
-	packet = getPacket(sequenceNumber, timestamp, 1000)
-	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now())
+	packet = getPacketRAJA(sequenceNumber, timestamp, 1000)
+	flowState = r.Update(
+		time.Now(),
+		packet.Header.SequenceNumber,
+		packet.Header.Timestamp,
+		packet.Header.Marker,
+		packet.Header.MarshalSize(),
+		len(packet.Payload),
+		0,
+	)
 	require.False(t, flowState.HasLoss)
 	require.Equal(t, sequenceNumber, r.sequenceNumber.GetHighest())
 	require.Equal(t, sequenceNumber, uint16(r.sequenceNumber.GetExtendedHighest()))
@@ -107,8 +131,16 @@ func TestRTPStats_Update(t *testing.T) {
 	require.Equal(t, timestamp, uint32(r.timestamp.GetExtendedHighest()))
 
 	// out-of-order
-	packet = getPacket(sequenceNumber-10, timestamp-30000, 1000)
-	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now())
+	packet = getPacketRAJA(sequenceNumber-10, timestamp-30000, 1000)
+	flowState = r.Update(
+		time.Now(),
+		packet.Header.SequenceNumber,
+		packet.Header.Timestamp,
+		packet.Header.Marker,
+		packet.Header.MarshalSize(),
+		len(packet.Payload),
+		0,
+	)
 	require.False(t, flowState.HasLoss)
 	require.Equal(t, sequenceNumber, r.sequenceNumber.GetHighest())
 	require.Equal(t, sequenceNumber, uint16(r.sequenceNumber.GetExtendedHighest()))
@@ -118,8 +150,16 @@ func TestRTPStats_Update(t *testing.T) {
 	require.Equal(t, uint64(0), r.packetsDuplicate)
 
 	// duplicate
-	packet = getPacket(sequenceNumber-10, timestamp-30000, 1000)
-	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now())
+	packet = getPacketRAJA(sequenceNumber-10, timestamp-30000, 1000)
+	flowState = r.Update(
+		time.Now(),
+		packet.Header.SequenceNumber,
+		packet.Header.Timestamp,
+		packet.Header.Marker,
+		packet.Header.MarshalSize(),
+		len(packet.Payload),
+		0,
+	)
 	require.False(t, flowState.HasLoss)
 	require.Equal(t, sequenceNumber, r.sequenceNumber.GetHighest())
 	require.Equal(t, sequenceNumber, uint16(r.sequenceNumber.GetExtendedHighest()))
@@ -131,16 +171,32 @@ func TestRTPStats_Update(t *testing.T) {
 	// loss
 	sequenceNumber += 10
 	timestamp += 30000
-	packet = getPacket(sequenceNumber, timestamp, 1000)
-	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now())
+	packet = getPacketRAJA(sequenceNumber, timestamp, 1000)
+	flowState = r.Update(
+		time.Now(),
+		packet.Header.SequenceNumber,
+		packet.Header.Timestamp,
+		packet.Header.Marker,
+		packet.Header.MarshalSize(),
+		len(packet.Payload),
+		0,
+	)
 	require.True(t, flowState.HasLoss)
 	require.Equal(t, uint64(sequenceNumber-9), flowState.LossStartInclusive)
 	require.Equal(t, uint64(sequenceNumber), flowState.LossEndExclusive)
 	require.Equal(t, uint64(17), r.packetsLost)
 
 	// out-of-order should decrement number of lost packets
-	packet = getPacket(sequenceNumber-15, timestamp-45000, 1000)
-	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now())
+	packet = getPacketRAJA(sequenceNumber-15, timestamp-45000, 1000)
+	flowState = r.Update(
+		time.Now(),
+		packet.Header.SequenceNumber,
+		packet.Header.Timestamp,
+		packet.Header.Marker,
+		packet.Header.MarshalSize(),
+		len(packet.Payload),
+		0,
+	)
 	require.False(t, flowState.HasLoss)
 	require.Equal(t, sequenceNumber, r.sequenceNumber.GetHighest())
 	require.Equal(t, sequenceNumber, uint16(r.sequenceNumber.GetExtendedHighest()))
@@ -149,15 +205,27 @@ func TestRTPStats_Update(t *testing.T) {
 	require.Equal(t, uint64(3), r.packetsOutOfOrder)
 	require.Equal(t, uint64(1), r.packetsDuplicate)
 	require.Equal(t, uint64(16), r.packetsLost)
-	intervalStats := r.getIntervalStats(r.sequenceNumber.GetExtendedStart(), r.sequenceNumber.GetExtendedHighest()+1)
+	intervalStats := r.getIntervalStats(
+		r.sequenceNumber.GetExtendedStart(),
+		r.sequenceNumber.GetExtendedHighest()+1,
+		r.sequenceNumber.GetExtendedHighest(),
+	)
 	require.Equal(t, uint64(16), intervalStats.packetsLost)
 
 	// test sequence number cache
 	// with a gap
 	sequenceNumber += 2
 	timestamp += 6000
-	packet = getPacket(sequenceNumber, timestamp, 1000)
-	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now())
+	packet = getPacketRAJA(sequenceNumber, timestamp, 1000)
+	flowState = r.Update(
+		time.Now(),
+		packet.Header.SequenceNumber,
+		packet.Header.Timestamp,
+		packet.Header.Marker,
+		packet.Header.MarshalSize(),
+		len(packet.Payload),
+		0,
+	)
 	require.True(t, flowState.HasLoss)
 	require.Equal(t, uint64(sequenceNumber-1), flowState.LossStartInclusive)
 	require.Equal(t, uint64(sequenceNumber), flowState.LossEndExclusive)
@@ -174,8 +242,16 @@ func TestRTPStats_Update(t *testing.T) {
 	// out-of-order
 	sequenceNumber--
 	timestamp -= 3000
-	packet = getPacket(sequenceNumber, timestamp, 999)
-	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now())
+	packet = getPacketRAJA(sequenceNumber, timestamp, 999)
+	flowState = r.Update(
+		time.Now(),
+		packet.Header.SequenceNumber,
+		packet.Header.Timestamp,
+		packet.Header.Marker,
+		packet.Header.MarshalSize(),
+		len(packet.Payload),
+		0,
+	)
 	require.False(t, flowState.HasLoss)
 	require.Equal(t, uint64(16), r.packetsLost)
 	expectedSnInfo = SnInfo{
@@ -198,8 +274,16 @@ func TestRTPStats_Update(t *testing.T) {
 
 	// padding only
 	sequenceNumber += 2
-	packet = getPacket(sequenceNumber, timestamp, 0)
-	flowState = r.Update(&packet.Header, len(packet.Payload), 25, time.Now())
+	packet = getPacketRAJA(sequenceNumber, timestamp, 0)
+	flowState = r.Update(
+		time.Now(),
+		packet.Header.SequenceNumber,
+		packet.Header.Timestamp,
+		packet.Header.Marker,
+		packet.Header.MarshalSize(),
+		len(packet.Payload),
+		25,
+	)
 	require.False(t, flowState.HasLoss)
 	require.Equal(t, uint64(16), r.packetsLost)
 	expectedSnInfo = SnInfo{
