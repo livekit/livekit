@@ -1545,20 +1545,20 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	nackMisses := uint32(0)
 	numRepeatedNACKs := uint32(0)
 	nackInfos := make([]NackInfo, 0, len(filtered))
-	for _, meta := range d.sequencer.getPacketsMeta(filtered) {
-		if disallowedLayers[meta.layer] {
+	for _, epm := range d.sequencer.getExtPacketMetas(filtered) {
+		if disallowedLayers[epm.layer] {
 			continue
 		}
 
 		nackAcks++
 		nackInfos = append(nackInfos, NackInfo{
-			SequenceNumber: meta.targetSeqNo,
-			Timestamp:      meta.timestamp,
-			Attempts:       meta.nacked,
+			SequenceNumber: epm.targetSeqNo,
+			Timestamp:      epm.timestamp,
+			Attempts:       epm.nacked,
 		})
 
 		pktBuff := *src
-		n, err := d.params.Receiver.ReadRTP(pktBuff, uint8(meta.layer), meta.sourceSeqNo)
+		n, err := d.params.Receiver.ReadRTP(pktBuff, uint8(epm.layer), epm.sourceSeqNo)
 		if err != nil {
 			if err == io.EOF {
 				break
@@ -1567,7 +1567,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			continue
 		}
 
-		if meta.nacked > 1 {
+		if epm.nacked > 1 {
 			numRepeatedNACKs++
 		}
 
@@ -1576,15 +1576,15 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			d.params.Logger.Errorw("unmarshalling rtp packet failed in retransmit", err)
 			continue
 		}
-		pkt.Header.Marker = meta.marker
-		pkt.Header.SequenceNumber = meta.targetSeqNo
-		pkt.Header.Timestamp = meta.timestamp
+		pkt.Header.Marker = epm.marker
+		pkt.Header.SequenceNumber = epm.targetSeqNo
+		pkt.Header.Timestamp = epm.timestamp
 		pkt.Header.SSRC = d.ssrc
 		pkt.Header.PayloadType = d.payloadType
 
 		var payload []byte
 		pool := PacketFactory.Get().(*[]byte)
-		if d.mime == "video/vp8" && len(pkt.Payload) > 0 && len(meta.codecBytes) != 0 {
+		if d.mime == "video/vp8" && len(pkt.Payload) > 0 && len(epm.codecBytes) != 0 {
 			var incomingVP8 buffer.VP8
 			if err = incomingVP8.Unmarshal(pkt.Payload); err != nil {
 				d.params.Logger.Errorw("unmarshalling VP8 packet err", err)
@@ -1592,7 +1592,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 				continue
 			}
 
-			payload = d.translateVP8PacketTo(&pkt, &incomingVP8, meta.codecBytes, pool)
+			payload = d.translateVP8PacketTo(&pkt, &incomingVP8, epm.codecBytes, pool)
 		}
 		if payload == nil {
 			payload = (*pool)[:len(pkt.Payload)]
@@ -1601,16 +1601,16 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 
 		d.pacer.Enqueue(pacer.Packet{
 			Header:             &pkt.Header,
-			Extensions:         []pacer.ExtensionData{{ID: uint8(d.dependencyDescriptorExtID), Payload: meta.ddBytes}},
+			Extensions:         []pacer.ExtensionData{{ID: uint8(d.dependencyDescriptorExtID), Payload: epm.ddBytes}},
 			Payload:            payload,
 			AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 			TransportWideExtID: uint8(d.transportWideExtID),
 			WriteStream:        d.writeStream,
 			Metadata: sendPacketMetadata{
-				// RAJA-TODO extSequenceNumber: snts[i].extSequenceNumber,
-				// RAJA-TODO extTimestamp:      snts[i].extTimestamp,
-				isRTX: true,
-				pool:  pool,
+				extSequenceNumber: epm.extSequenceNumber,
+				extTimestamp:      epm.extTimestamp,
+				isRTX:             true,
+				pool:              pool,
 			},
 			OnSent: d.packetSent,
 		})
