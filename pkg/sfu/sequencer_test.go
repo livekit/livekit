@@ -36,41 +36,45 @@ func Test_sequencer(t *testing.T) {
 	seq.push(time.Now(), 518, 518+uint64(off), 123, true, 2, nil, 0, nil)
 
 	req := []uint16{57, 58, 62, 63, 513, 514, 515, 516, 517}
-	res := seq.getPacketsMeta(req)
+	res := seq.getExtPacketMetas(req)
 	// nothing should be returned as not enough time has elapsed since sending packet
 	require.Equal(t, 0, len(res))
 
 	time.Sleep((ignoreRetransmission + 10) * time.Millisecond)
-	res = seq.getPacketsMeta(req)
+	res = seq.getExtPacketMetas(req)
 	require.Equal(t, len(req), len(res))
 	for i, val := range res {
 		require.Equal(t, val.targetSeqNo, req[i])
 		require.Equal(t, val.sourceSeqNo, req[i]-off)
 		require.Equal(t, val.layer, int8(2))
+		require.Equal(t, val.extSequenceNumber, uint64(req[i]))
+		require.Equal(t, val.extTimestamp, uint64(123))
 	}
-	res = seq.getPacketsMeta(req)
+	res = seq.getExtPacketMetas(req)
 	require.Equal(t, 0, len(res))
 	time.Sleep((ignoreRetransmission + 10) * time.Millisecond)
-	res = seq.getPacketsMeta(req)
+	res = seq.getExtPacketMetas(req)
 	require.Equal(t, len(req), len(res))
 	for i, val := range res {
 		require.Equal(t, val.targetSeqNo, req[i])
 		require.Equal(t, val.sourceSeqNo, req[i]-off)
 		require.Equal(t, val.layer, int8(2))
+		require.Equal(t, val.extSequenceNumber, uint64(req[i]))
+		require.Equal(t, val.extTimestamp, uint64(123))
 	}
 
 	seq.push(time.Now(), 521, 521+uint64(off), 123, true, 1, nil, 0, nil)
-	m := seq.getPacketsMeta([]uint16{521 + off})
+	m := seq.getExtPacketMetas([]uint16{521 + off})
 	require.Equal(t, 0, len(m))
 	time.Sleep((ignoreRetransmission + 10) * time.Millisecond)
-	m = seq.getPacketsMeta([]uint16{521 + off})
+	m = seq.getExtPacketMetas([]uint16{521 + off})
 	require.Equal(t, 1, len(m))
 
 	seq.push(time.Now(), 505, 505+uint64(off), 123, false, 1, nil, 0, nil)
-	m = seq.getPacketsMeta([]uint16{505 + off})
+	m = seq.getExtPacketMetas([]uint16{505 + off})
 	require.Equal(t, 0, len(m))
 	time.Sleep((ignoreRetransmission + 10) * time.Millisecond)
-	m = seq.getPacketsMeta([]uint16{505 + off})
+	m = seq.getExtPacketMetas([]uint16{505 + off})
 	require.Equal(t, 1, len(m))
 }
 
@@ -152,7 +156,7 @@ func Test_sequencer_getNACKSeqNo_exclusion(t *testing.T) {
 			}
 
 			time.Sleep((ignoreRetransmission + 10) * time.Millisecond)
-			g := n.getPacketsMeta(tt.args.seqNo)
+			g := n.getExtPacketMetas(tt.args.seqNo)
 			var got []uint16
 			for _, sn := range g {
 				got = append(got, sn.sourceSeqNo)
@@ -169,7 +173,7 @@ func Test_sequencer_getNACKSeqNo_exclusion(t *testing.T) {
 				}
 			}
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("getPacketsMeta() = %v, want %v", got, tt.want)
+				t.Errorf("getExtPacketMetas() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -252,7 +256,7 @@ func Test_sequencer_getNACKSeqNo_no_exclusion(t *testing.T) {
 			}
 
 			time.Sleep((ignoreRetransmission + 10) * time.Millisecond)
-			g := n.getPacketsMeta(tt.args.seqNo)
+			g := n.getExtPacketMetas(tt.args.seqNo)
 			var got []uint16
 			for _, sn := range g {
 				got = append(got, sn.sourceSeqNo)
@@ -269,7 +273,7 @@ func Test_sequencer_getNACKSeqNo_no_exclusion(t *testing.T) {
 				}
 			}
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("getPacketsMeta() = %v, want %v", got, tt.want)
+				t.Errorf("getExtPacketMetas() = %v, want %v", got, tt.want)
 			}
 		})
 	}
