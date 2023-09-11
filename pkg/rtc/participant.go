@@ -16,6 +16,7 @@ package rtc
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"strconv"
@@ -69,11 +70,19 @@ type downTrackState struct {
 	downTrack   sfu.DownTrackState
 }
 
+// ---------------------------------------------------------------
+
 type participantUpdateInfo struct {
 	version   uint32
 	state     livekit.ParticipantInfo_State
 	updatedAt time.Time
 }
+
+func (p participantUpdateInfo) String() string {
+	return fmt.Sprintf("version: %d, state: %s, updatedAt: %s", p.version, p.state.String(), p.updatedAt.String())
+}
+
+// ---------------------------------------------------------------
 
 type ParticipantParams struct {
 	Identity                     livekit.ParticipantIdentity

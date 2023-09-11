@@ -327,14 +327,14 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		t.MediaTrackSubscriptions.UpdateVideoLayers()
 	})
 
-	buff.OnFinalRtpStats(func(stats *buffer.RTPStats) {
+	buff.OnFinalRtpStats(func(stats *livekit.RTPStats) {
 		t.params.Telemetry.TrackPublishRTPStats(
 			context.Background(),
 			t.params.ParticipantID,
 			t.ID(),
 			mime,
 			int(layer),
-			stats.ToProto(),
+			stats,
 		)
 	})
 	return newCodec
