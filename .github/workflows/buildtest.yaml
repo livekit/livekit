@@ -51,7 +51,7 @@ jobs:
           go mod tidy
 
       - name: Mage Build
-        uses: magefile/mage-action@v2
+        uses: magefile/mage-action@v3
         with:
           version: latest
           args: build
