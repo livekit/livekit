@@ -47,7 +47,7 @@ func (b *Base) SendPacket(p *Packet) (int, error) {
 	var err error
 	defer func() {
 		if p.OnSent != nil {
-			p.OnSent(p.Metadata, p.Header, len(p.Payload), sendingAt, err)
+			p.OnSent(p.Metadata, p.Header.Marker, p.Header.MarshalSize(), len(p.Payload), sendingAt, err)
 		}
 	}()
 
