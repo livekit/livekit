@@ -26,12 +26,13 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/pion/sctp"
+
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
-	"github.com/pion/sctp"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -1299,7 +1300,7 @@ func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, dp 
 		if source != nil && op.ID() == source.ID() {
 			continue
 		}
-		if len(dest) > 0 {
+		if len(dest) > 0 || len(destIdentities) > 0 {
 			found := false
 			for _, dID := range dest {
 				if op.ID() == livekit.ParticipantID(dID) {
