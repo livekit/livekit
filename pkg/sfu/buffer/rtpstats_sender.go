@@ -146,7 +146,7 @@ func (r *RTPStatsSender) Update(
 		r.highestTime = packetTime
 
 		r.extStartSN = extSequenceNumber
-		r.extHighestSN = extSequenceNumber
+		r.extHighestSN = extSequenceNumber - 1
 
 		r.extStartTS = extTimestamp
 		r.extHighestTS = extTimestamp
