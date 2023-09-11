@@ -97,7 +97,7 @@ type Buffer struct {
 
 	pliThrottle int64
 
-	rtpStats             *RTPStats
+	rtpStats             *RTPStatsReceiver
 	rrSnapshotId         uint32
 	deltaStatsSnapshotId uint32
 
@@ -108,7 +108,7 @@ type Buffer struct {
 	onRtcpFeedback     func([]rtcp.Packet)
 	onRtcpSenderReport func()
 	onFpsChanged       func()
-	onFinalRtpStats    func(*RTPStats)
+	onFinalRtpStats    func(*livekit.RTPStats)
 
 	// logger
 	logger logger.Logger
@@ -175,7 +175,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 		return
 	}
 
-	b.rtpStats = NewRTPStats(RTPStatsParams{
+	b.rtpStats = NewRTPStatsReceiver(RTPStatsParams{
 		ClockRate: codec.ClockRate,
 		Logger:    b.logger,
 	})
@@ -350,7 +350,7 @@ func (b *Buffer) Close() error {
 			b.rtpStats.Stop()
 			b.logger.Infow("rtp stats", "direction", "upstream", "stats", b.rtpStats.ToString())
 			if b.onFinalRtpStats != nil {
-				b.onFinalRtpStats(b.rtpStats)
+				b.onFinalRtpStats(b.rtpStats.ToProto())
 			}
 		}
 
@@ -530,7 +530,15 @@ func (b *Buffer) doFpsCalc(ep *ExtPacket) {
 }
 
 func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime time.Time) RTPFlowState {
-	flowState := b.rtpStats.Update(&p.Header, len(p.Payload), int(p.PaddingSize), arrivalTime)
+	flowState := b.rtpStats.Update(
+		arrivalTime,
+		p.Header.SequenceNumber,
+		p.Header.Timestamp,
+		p.Header.Marker,
+		p.Header.MarshalSize(),
+		len(p.Payload),
+		int(p.PaddingSize),
+	)
 
 	if b.nacker != nil {
 		b.nacker.Remove(p.SequenceNumber)
@@ -693,7 +701,7 @@ func (b *Buffer) buildReceptionReport() *rtcp.ReceptionReport {
 		return nil
 	}
 
-	return b.rtpStats.SnapshotRtcpReceptionReport(b.mediaSSRC, b.lastFractionLostToReport, b.rrSnapshotId)
+	return b.rtpStats.GetRtcpReceptionReport(b.mediaSSRC, b.lastFractionLostToReport, b.rrSnapshotId)
 }
 
 func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64, packetCount uint32) {
@@ -770,7 +778,7 @@ func (b *Buffer) OnRtcpSenderReport(fn func()) {
 	b.onRtcpSenderReport = fn
 }
 
-func (b *Buffer) OnFinalRtpStats(fn func(*RTPStats)) {
+func (b *Buffer) OnFinalRtpStats(fn func(*livekit.RTPStats)) {
 	b.onFinalRtpStats = fn
 }
 
