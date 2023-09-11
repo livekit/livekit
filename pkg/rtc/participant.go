@@ -830,7 +830,6 @@ func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
 		if p.IsClosed() || p.IsDisconnected() {
 			return
 		}
-		// TODO: change to debug once we are confident
 		p.subLogger.Infow("closing subscriber peer connection to aid migration")
 
 		//
