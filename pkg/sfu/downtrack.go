@@ -311,12 +311,10 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 	d.deltaStatsSenderSnapshotId = d.rtpStats.NewSenderSnapshotId()
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
-		MimeType:                  codecs[0].MimeType, // LK-TODO have to notify on codec change
-		IsFECEnabled:              strings.EqualFold(codecs[0].MimeType, webrtc.MimeTypeOpus) && strings.Contains(strings.ToLower(codecs[0].SDPFmtpLine), "fec"),
-		GetDeltaStatsSender:       d.getDeltaStatsSender,
-		GetLastReceiverReportTime: func() time.Time { return d.rtpStats.LastReceiverReportTime() },
-		GetTotalPacketsSent:       func() uint64 { return d.rtpStats.GetTotalPacketsPrimary() },
-		Logger:                    params.Logger.WithValues("direction", "down"),
+		MimeType:       codecs[0].MimeType, // LK-TODO have to notify on codec change
+		IsFECEnabled:   strings.EqualFold(codecs[0].MimeType, webrtc.MimeTypeOpus) && strings.Contains(strings.ToLower(codecs[0].SDPFmtpLine), "fec"),
+		SenderProvider: d,
+		Logger:         params.Logger.WithValues("direction", "down"),
 	})
 	d.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
 		if onStatsUpdate := d.getOnStatsUpdate(); onStatsUpdate != nil {
@@ -1715,9 +1713,16 @@ func (d *DownTrack) deltaStats(ds *buffer.RTPDeltaInfo) map[uint32]*buffer.Strea
 	return streamStats
 }
 
-func (d *DownTrack) getDeltaStatsSender() map[uint32]*buffer.StreamStatsWithLayers {
+func (d *DownTrack) GetDeltaStatsSender() map[uint32]*buffer.StreamStatsWithLayers {
 	return d.deltaStats(d.rtpStats.DeltaInfoSender(d.deltaStatsSenderSnapshotId))
-	return nil
+}
+
+func (d *DownTrack) GetLastReceiverReportTime() time.Time {
+	return d.rtpStats.LastReceiverReportTime()
+}
+
+func (d *DownTrack) GetTotalPacketsSent() uint64 {
+	return d.rtpStats.GetTotalPacketsPrimary()
 }
 
 func (d *DownTrack) GetNackStats() (totalPackets uint32, totalRepeatedNACKs uint32) {
