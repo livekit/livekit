@@ -310,7 +310,7 @@ func (cs *ConnectionStats) updateStreamingStart(at time.Time) time.Time {
 }
 
 func (cs *ConnectionStats) getStat() {
-	score, streams := cs.updateScoreAt(time.Time{})
+	score, streams := cs.updateScoreAt(time.Now())
 
 	if cs.onStatsUpdate != nil && len(streams) != 0 {
 		analyticsStreams := make([]*livekit.AnalyticsStream, 0, len(streams))
