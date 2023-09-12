@@ -1307,18 +1307,12 @@ func (f *Forwarder) Pause(availableLayers []int32, brs Bitrates) VideoAllocation
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	existingTargetLayer := f.vls.GetTarget()
-	if !existingTargetLayer.IsValid() {
-		// already paused
-		return f.lastAllocation
-	}
-
 	maxLayer := f.vls.GetMax()
 	maxSeenLayer := f.vls.GetMaxSeen()
 	optimalBandwidthNeeded := getOptimalBandwidthNeeded(f.muted, f.pubMuted, maxSeenLayer.Spatial, brs, maxLayer)
 	alloc := VideoAllocation{
 		BandwidthRequested:  0,
-		BandwidthDelta:      0 - getBandwidthNeeded(brs, existingTargetLayer, f.lastAllocation.BandwidthRequested),
+		BandwidthDelta:      0 - getBandwidthNeeded(brs, f.vls.GetTarget(), f.lastAllocation.BandwidthRequested),
 		Bitrates:            brs,
 		BandwidthNeeded:     optimalBandwidthNeeded,
 		TargetLayer:         buffer.InvalidLayer,
