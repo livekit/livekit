@@ -1456,7 +1456,9 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		f.logger.Debugw(
 			"starting forwarding",
 			"sequenceNumber", extPkt.Packet.SequenceNumber,
+			"extSequenceNumber", extPkt.ExtSequenceNumber,
 			"timestamp", extPkt.Packet.Timestamp,
+			"extTimestamp", extPkt.ExtTimestamp,
 			"layer", layer,
 			"referenceLayerSpatial", f.referenceLayerSpatial,
 		)
@@ -1466,7 +1468,9 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		f.logger.Debugw(
 			"catch up forwarding",
 			"sequenceNumber", extPkt.Packet.SequenceNumber,
+			"extSequenceNumber", extPkt.ExtSequenceNumber,
 			"timestamp", extPkt.Packet.Timestamp,
+			"extTimestamp", extPkt.ExtTimestamp,
 			"layer", layer,
 			"referenceLayerSpatial", f.referenceLayerSpatial,
 		)
