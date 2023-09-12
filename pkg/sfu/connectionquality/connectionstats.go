@@ -299,7 +299,11 @@ func (cs *ConnectionStats) updateStreamingStart(at time.Time) time.Time {
 	if packetsSent > cs.packetsSent {
 		if cs.streamingStartedAt.IsZero() {
 			// the start could be anywhere after last update, but using `at` as this is not required to be accurate
-			cs.streamingStartedAt = at
+			if at.IsZero() {
+				cs.streamingStartedAt = time.Now()
+			} else {
+				cs.streamingStartedAt = at
+			}
 		}
 	} else {
 		cs.streamingStartedAt = time.Time{}
@@ -310,7 +314,7 @@ func (cs *ConnectionStats) updateStreamingStart(at time.Time) time.Time {
 }
 
 func (cs *ConnectionStats) getStat() {
-	score, streams := cs.updateScoreAt(time.Now())
+	score, streams := cs.updateScoreAt(time.Time{})
 
 	if cs.onStatsUpdate != nil && len(streams) != 0 {
 		analyticsStreams := make([]*livekit.AnalyticsStream, 0, len(streams))
