@@ -16,6 +16,7 @@ package buffer
 
 import (
 	"encoding/binary"
+	"errors"
 	"io"
 	"strings"
 	"sync"
@@ -120,6 +121,9 @@ type Buffer struct {
 	paused              bool
 	frameRateCalculator [DefaultMaxLayerSpatial + 1]FrameRateCalculator
 	frameRateCalculated bool
+
+	packetNotFoundCount atomic.Uint32
+	packetTooOldCount   atomic.Uint32
 }
 
 // NewBuffer constructs a new Buffer
@@ -465,8 +469,13 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 	rtpPacket.Header.SequenceNumber = uint16(flowState.ExtSequenceNumber)
 	_, err = b.bucket.AddPacketWithSequenceNumber(pkt, rtpPacket.Header.SequenceNumber)
 	if err != nil {
-		if err != bucket.ErrRTXPacket {
-			b.logger.Warnw("could not add RTP packet to bucket", err)
+		if errors.Is(err, bucket.ErrPacketTooOld) {
+			packetTooOldCount := b.packetTooOldCount.Inc()
+			if packetTooOldCount%20 == 0 {
+				b.logger.Warnw("could not add packet to bucket", err, "count", packetTooOldCount)
+			}
+		} else if err != bucket.ErrRTXPacket {
+			b.logger.Warnw("could not add packet to bucket", err)
 		}
 		return
 	}
@@ -483,7 +492,10 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 func (b *Buffer) patchExtPacket(ep *ExtPacket, buf []byte) *ExtPacket {
 	n, err := b.getPacket(buf, ep.Packet.SequenceNumber)
 	if err != nil {
-		b.logger.Warnw("could not get packet", err, "sn", ep.Packet.SequenceNumber, "headSN", b.bucket.HeadSequenceNumber())
+		packetNotFoundCount := b.packetNotFoundCount.Inc()
+		if packetNotFoundCount%20 == 0 {
+			b.logger.Warnw("could not get packet from bucket", err, "sn", ep.Packet.SequenceNumber, "headSN", b.bucket.HeadSequenceNumber(), "count", packetNotFoundCount)
+		}
 		return nil
 	}
 	ep.RawPacket = buf[:n]

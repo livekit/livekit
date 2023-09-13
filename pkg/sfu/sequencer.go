@@ -135,6 +135,7 @@ func (s *sequencer) push(
 	defer s.Unlock()
 
 	if !s.initialized {
+		s.initialized = true
 		s.extHighestSN = extModifiedSN - 1
 		s.extHighestTS = extModifiedTS
 		s.updateSNOffset()
@@ -189,6 +190,7 @@ func (s *sequencer) pushPadding(extStartSNInclusive uint64, extEndSNInclusive ui
 	s.Lock()
 	defer s.Unlock()
 
+	s.logger.Debugw("sequencer padding", "extHighestSN", s.extHighestSN, "startSN", extStartSNInclusive, "endSN", extEndSNInclusive)
 	if s.snRangeMap == nil {
 		return
 	}
