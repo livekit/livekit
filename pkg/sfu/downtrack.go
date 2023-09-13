@@ -181,6 +181,9 @@ type DownTrackStreamAllocatorListener interface {
 
 	// check if track should participate in BWE
 	IsBWEEnabled(dt *DownTrack) bool
+
+	// check if subscription mute can be applied
+	IsSubscribeMutable(dt *DownTrack) bool
 }
 
 type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
@@ -830,7 +833,15 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 
 // Mute enables or disables media forwarding - subscriber triggered
 func (d *DownTrack) Mute(muted bool) {
-	changed := d.forwarder.Mute(muted)
+	d.streamAllocatorLock.RLock()
+	listener := d.streamAllocatorListener
+	d.streamAllocatorLock.RUnlock()
+
+	isSubscribeMutable := true
+	if listener != nil {
+		isSubscribeMutable = listener.IsSubscribeMutable(d)
+	}
+	changed := d.forwarder.Mute(muted, isSubscribeMutable)
 	d.handleMute(muted, changed)
 }
 
@@ -913,9 +924,8 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 	d.bindLock.Lock()
 	d.params.Logger.Debugw("close down track", "flushBlankFrame", flush)
 	if d.bound.Load() {
-		if d.forwarder != nil {
-			d.forwarder.Mute(true)
-		}
+		d.forwarder.Mute(true, true)
+
 		// write blank frames after disabling so that other frames do not interfere.
 		// Idea here is to send blank key frames to flush the decoder buffer at the remote end.
 		// Otherwise, with transceiver re-use last frame from previous stream is held in the
@@ -1159,14 +1169,24 @@ func (d *DownTrack) ProvisionalAllocate(availableChannelCapacity int64, layers b
 }
 
 func (d *DownTrack) ProvisionalAllocateGetCooperativeTransition(allowOvershoot bool) VideoTransition {
-	transition := d.forwarder.ProvisionalAllocateGetCooperativeTransition(allowOvershoot)
-	d.params.Logger.Debugw("stream: cooperative transition", "transition", transition)
+	transition, availableLayers, brs := d.forwarder.ProvisionalAllocateGetCooperativeTransition(allowOvershoot)
+	d.params.Logger.Debugw(
+		"stream: cooperative transition",
+		"transition", transition,
+		"availableLayers", availableLayers,
+		"bitrates", brs,
+	)
 	return transition
 }
 
 func (d *DownTrack) ProvisionalAllocateGetBestWeightedTransition() VideoTransition {
-	transition := d.forwarder.ProvisionalAllocateGetBestWeightedTransition()
-	d.params.Logger.Debugw("stream: best weighted transition", "transition", transition)
+	transition, availableLayers, brs := d.forwarder.ProvisionalAllocateGetBestWeightedTransition()
+	d.params.Logger.Debugw(
+		"stream: best weighted transition",
+		"transition", transition,
+		"availableLayers", availableLayers,
+		"bitrates", brs,
+	)
 	return transition
 }
 
@@ -1186,9 +1206,15 @@ func (d *DownTrack) AllocateNextHigher(availableChannelCapacity int64, allowOver
 }
 
 func (d *DownTrack) GetNextHigherTransition(allowOvershoot bool) (VideoTransition, bool) {
-	_, brs := d.params.Receiver.GetLayeredBitrate()
+	availableLayers, brs := d.params.Receiver.GetLayeredBitrate()
 	transition, available := d.forwarder.GetNextHigherTransition(brs, allowOvershoot)
-	d.params.Logger.Debugw("stream: get next higher layer", "transition", transition, "available", available, "bitrates", brs)
+	d.params.Logger.Debugw(
+		"stream: get next higher layer",
+		"transition", transition,
+		"available", available,
+		"availableLayers", availableLayers,
+		"bitrates", brs,
+	)
 	return transition, available
 }
 

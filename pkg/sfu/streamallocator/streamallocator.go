@@ -515,6 +515,18 @@ func (s *StreamAllocator) IsBWEEnabled(downTrack *sfu.DownTrack) bool {
 	return true
 }
 
+// called to check if track subscription mute can be applied
+func (s *StreamAllocator) IsSubscribeMutable(downTrack *sfu.DownTrack) bool {
+	s.videoTracksMu.Lock()
+	defer s.videoTracksMu.Unlock()
+
+	if track := s.videoTracks[livekit.TrackID(downTrack.ID())]; track != nil {
+		return track.IsSubscribeMutable()
+	}
+
+	return true
+}
+
 func (s *StreamAllocator) maybePostEventAllocateTrack(downTrack *sfu.DownTrack) {
 	shouldPost := false
 	s.videoTracksMu.Lock()
