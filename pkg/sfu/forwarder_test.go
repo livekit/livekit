@@ -651,13 +651,14 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 	f.SetMaxPublishedLayer(buffer.DefaultMaxLayerSpatial)
 	f.SetMaxTemporalLayerSeen(buffer.DefaultMaxLayerTemporal)
 
+	availableLayers := []int32{0, 1, 2}
 	bitrates := Bitrates{
 		{1, 2, 3, 4},
 		{5, 6, 7, 8},
 		{9, 10, 0, 0},
 	}
 
-	f.ProvisionalAllocatePrepare(nil, bitrates)
+	f.ProvisionalAllocatePrepare(availableLayers, bitrates)
 
 	// from scratch (buffer.InvalidLayer) should give back layer (0, 0)
 	expectedTransition := VideoTransition{
@@ -665,8 +666,10 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 		To:             buffer.VideoLayer{Spatial: 0, Temporal: 0},
 		BandwidthDelta: 1,
 	}
-	transition := f.ProvisionalAllocateGetCooperativeTransition(false)
+	transition, al, brs := f.ProvisionalAllocateGetCooperativeTransition(false)
 	require.Equal(t, expectedTransition, transition)
+	require.Equal(t, availableLayers, al)
+	require.Equal(t, bitrates, brs)
 
 	// committing should set target to (0, 0)
 	expectedLayers := buffer.VideoLayer{Spatial: 0, Temporal: 0}
@@ -695,8 +698,10 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 		To:             targetLayer,
 		BandwidthDelta: 0,
 	}
-	transition = f.ProvisionalAllocateGetCooperativeTransition(false)
+	transition, al, brs = f.ProvisionalAllocateGetCooperativeTransition(false)
 	require.Equal(t, expectedTransition, transition)
+	require.Equal(t, availableLayers, al)
+	require.Equal(t, bitrates, brs)
 
 	// committing should set target to (2, 1)
 	expectedLayers = buffer.VideoLayer{Spatial: 2, Temporal: 1}
@@ -723,14 +728,16 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 		To:             buffer.VideoLayer{Spatial: 2, Temporal: 1},
 		BandwidthDelta: 0,
 	}
-	transition = f.ProvisionalAllocateGetCooperativeTransition(false)
+	transition, al, brs = f.ProvisionalAllocateGetCooperativeTransition(false)
 	require.Equal(t, expectedTransition, transition)
+	require.Equal(t, availableLayers, al)
+	require.Equal(t, bitrates, brs)
 
 	f.ProvisionalAllocateCommit()
 
 	// mute
 	f.Mute(true)
-	f.ProvisionalAllocatePrepare(nil, bitrates)
+	f.ProvisionalAllocatePrepare(availableLayers, bitrates)
 
 	// mute should send target to buffer.InvalidLayer
 	expectedTransition = VideoTransition{
@@ -738,8 +745,10 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 		To:             buffer.InvalidLayer,
 		BandwidthDelta: -10,
 	}
-	transition = f.ProvisionalAllocateGetCooperativeTransition(false)
+	transition, al, brs = f.ProvisionalAllocateGetCooperativeTransition(false)
 	require.Equal(t, expectedTransition, transition)
+	require.Equal(t, availableLayers, al)
+	require.Equal(t, bitrates, brs)
 
 	f.ProvisionalAllocateCommit()
 
@@ -749,6 +758,7 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 	f.Mute(false)
 	f.SetMaxSpatialLayer(0)
 
+	availableLayers = []int32{1, 2}
 	bitrates = Bitrates{
 		{0, 0, 0, 0},
 		{5, 6, 7, 8},
@@ -756,7 +766,7 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 	}
 
 	f.vls.SetTarget(buffer.InvalidLayer)
-	f.ProvisionalAllocatePrepare(nil, bitrates)
+	f.ProvisionalAllocatePrepare(availableLayers, bitrates)
 
 	// from scratch (buffer.InvalidLayer) should go to a layer past maximum as overshoot is allowed
 	expectedTransition = VideoTransition{
@@ -764,8 +774,10 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 		To:             buffer.VideoLayer{Spatial: 1, Temporal: 0},
 		BandwidthDelta: 5,
 	}
-	transition = f.ProvisionalAllocateGetCooperativeTransition(true)
+	transition, al, brs = f.ProvisionalAllocateGetCooperativeTransition(true)
 	require.Equal(t, expectedTransition, transition)
+	require.Equal(t, availableLayers, al)
+	require.Equal(t, bitrates, brs)
 
 	// committing should set target to (1, 0)
 	expectedLayers = buffer.VideoLayer{Spatial: 1, Temporal: 0}
@@ -804,8 +816,10 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 		To:             buffer.VideoLayer{Spatial: 0, Temporal: 2},
 		BandwidthDelta: -5, // 5 was the bandwidth needed for the last allocation
 	}
-	transition = f.ProvisionalAllocateGetCooperativeTransition(true)
+	transition, al, brs = f.ProvisionalAllocateGetCooperativeTransition(true)
 	require.Equal(t, expectedTransition, transition)
+	require.Equal(t, []int32{}, al)
+	require.Equal(t, bitrates, brs)
 
 	// committing should set target to (0, 2)
 	expectedLayers = buffer.VideoLayer{Spatial: 0, Temporal: 2}
@@ -844,13 +858,14 @@ func TestForwarderProvisionalAllocateGetBestWeightedTransition(t *testing.T) {
 	f.SetMaxSpatialLayer(buffer.DefaultMaxLayerSpatial)
 	f.SetMaxTemporalLayer(buffer.DefaultMaxLayerTemporal)
 
+	availableLayers := []int32{0, 1, 2}
 	bitrates := Bitrates{
 		{1, 2, 3, 4},
 		{5, 6, 7, 8},
 		{9, 10, 11, 12},
 	}
 
-	f.ProvisionalAllocatePrepare(nil, bitrates)
+	f.ProvisionalAllocatePrepare(availableLayers, bitrates)
 
 	f.vls.SetTarget(buffer.VideoLayer{Spatial: 2, Temporal: 2})
 	f.lastAllocation.BandwidthRequested = bitrates[2][2]
@@ -859,8 +874,10 @@ func TestForwarderProvisionalAllocateGetBestWeightedTransition(t *testing.T) {
 		To:             buffer.VideoLayer{Spatial: 2, Temporal: 0},
 		BandwidthDelta: -2,
 	}
-	transition := f.ProvisionalAllocateGetBestWeightedTransition()
+	transition, al, brs := f.ProvisionalAllocateGetBestWeightedTransition()
 	require.Equal(t, expectedTransition, transition)
+	require.Equal(t, availableLayers, al)
+	require.Equal(t, bitrates, brs)
 }
 
 func TestForwarderAllocateNextHigher(t *testing.T) {
