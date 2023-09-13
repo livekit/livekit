@@ -472,10 +472,10 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 		if errors.Is(err, bucket.ErrPacketTooOld) {
 			packetTooOldCount := b.packetTooOldCount.Inc()
 			if packetTooOldCount%20 == 0 {
-				b.logger.Warnw("packet too old", err, "count", packetTooOldCount)
+				b.logger.Warnw("could not add packet to bucket", err, "count", packetTooOldCount)
 			}
 		} else if err != bucket.ErrRTXPacket {
-			b.logger.Warnw("could not add RTP packet to bucket", err)
+			b.logger.Warnw("could not add packet to bucket", err)
 		}
 		return
 	}
@@ -494,7 +494,7 @@ func (b *Buffer) patchExtPacket(ep *ExtPacket, buf []byte) *ExtPacket {
 	if err != nil {
 		packetNotFoundCount := b.packetNotFoundCount.Inc()
 		if packetNotFoundCount%20 == 0 {
-			b.logger.Warnw("could not get packet", err, "sn", ep.Packet.SequenceNumber, "headSN", b.bucket.HeadSequenceNumber(), "count", packetNotFoundCount)
+			b.logger.Warnw("could not get packet from bucket", err, "sn", ep.Packet.SequenceNumber, "headSN", b.bucket.HeadSequenceNumber(), "count", packetNotFoundCount)
 		}
 		return nil
 	}
