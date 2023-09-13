@@ -40,13 +40,19 @@ func newForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType) *Fo
 func TestForwarderMute(t *testing.T) {
 	f := newForwarder(testutils.TestOpusCodec, webrtc.RTPCodecTypeAudio)
 	require.False(t, f.IsMuted())
-	muted := f.Mute(false)
+	muted := f.Mute(false, true)
 	require.False(t, muted) // no change in mute state
 	require.False(t, f.IsMuted())
-	muted = f.Mute(true)
+
+	muted = f.Mute(true, false)
+	require.False(t, muted)
+	require.False(t, f.IsMuted())
+
+	muted = f.Mute(true, true)
 	require.True(t, muted)
 	require.True(t, f.IsMuted())
-	muted = f.Mute(false)
+
+	muted = f.Mute(false, true)
 	require.True(t, muted)
 	require.False(t, f.IsMuted())
 }
@@ -164,7 +170,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 	f.SetMaxPublishedLayer(buffer.DefaultMaxLayerSpatial)
 
 	// muted should not consume any bandwidth
-	f.Mute(true)
+	f.Mute(true, true)
 	disable(f)
 	expectedResult = VideoAllocation{
 		PauseReason:         VideoPauseReasonMuted,
@@ -180,7 +186,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 	require.Equal(t, expectedResult, result)
 	require.Equal(t, expectedResult, f.lastAllocation)
 
-	f.Mute(false)
+	f.Mute(false, true)
 
 	// pub muted should not consume any bandwidth
 	f.PubMute(true)
@@ -616,7 +622,7 @@ func TestForwarderProvisionalAllocateMute(t *testing.T) {
 		{9, 10, 11, 12},
 	}
 
-	f.Mute(true)
+	f.Mute(true, true)
 	f.ProvisionalAllocatePrepare(nil, bitrates)
 
 	isCandidate, usedBitrate := f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 0, Temporal: 0}, true, false)
@@ -736,7 +742,7 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 	f.ProvisionalAllocateCommit()
 
 	// mute
-	f.Mute(true)
+	f.Mute(true, true)
 	f.ProvisionalAllocatePrepare(availableLayers, bitrates)
 
 	// mute should send target to buffer.InvalidLayer
@@ -755,7 +761,7 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 	//
 	// Test allowOvershoot
 	//
-	f.Mute(false)
+	f.Mute(false, true)
 	f.SetMaxSpatialLayer(0)
 
 	availableLayers = []int32{1, 2}
@@ -1159,7 +1165,7 @@ func TestForwarderPauseMute(t *testing.T) {
 	// should have set target at (0, 0)
 	f.ProvisionalAllocateCommit()
 
-	f.Mute(true)
+	f.Mute(true, true)
 	expectedResult := VideoAllocation{
 		PauseReason:         VideoPauseReasonMuted,
 		BandwidthRequested:  0,
@@ -1178,7 +1184,7 @@ func TestForwarderPauseMute(t *testing.T) {
 
 func TestForwarderGetTranslationParamsMuted(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
-	f.Mute(true)
+	f.Mute(true, true)
 
 	params := &testutils.TestExtPacketParams{
 		SequenceNumber: 23333,
