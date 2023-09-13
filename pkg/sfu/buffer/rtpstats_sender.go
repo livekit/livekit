@@ -146,7 +146,7 @@ func (r *RTPStatsSender) Update(
 		r.highestTime = packetTime
 
 		r.extStartSN = extSequenceNumber
-		r.extHighestSN = extSequenceNumber
+		r.extHighestSN = extSequenceNumber - 1
 
 		r.extStartTS = extTimestamp
 		r.extHighestTS = extTimestamp
@@ -284,7 +284,7 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 			extHighestSNFromRR += (1 << 32)
 		}
 	}
-	if extHighestSNFromRR < r.extStartSN {
+	if (extHighestSNFromRR + (r.extStartSN & 0xFFFF_FFFF_FFFF_0000)) < r.extStartSN {
 		// it is possible that the `LastSequenceNumber` in the receiver report is before the starting
 		// sequence number when dummy packets are used to trigger Pion's OnTrack path.
 		return
@@ -343,7 +343,7 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 		r.lastRR = rr
 	} else {
 		r.logger.Debugw(
-			fmt.Sprintf("receiver report potentially out of order, highestSN: existing: %d, received: %d", r.extHighestSNFromRR, rr.LastSequenceNumber),
+			fmt.Sprintf("receiver report potentially out of order, highestSN: existing: %d, received: %d", r.extHighestSNFromRR, extHighestSNFromRR),
 			"lastRRTime", r.lastRRTime,
 			"lastRR", r.lastRR,
 			"sinceLastRR", time.Since(r.lastRRTime),
@@ -605,7 +605,7 @@ func (r *RTPStatsSender) getAndResetSenderSnapshot(senderSnapshotID uint32) (*se
 			maxJitter:            r.jitter,
 			maxRtt:               r.rtt,
 		},
-		extStartSNFromRR:  r.extHighestSNFromRR + 1,
+		extStartSNFromRR:  r.extHighestSNFromRR + (r.extStartSN & 0xFFFF_FFFF_FFFF_0000) + 1,
 		packetsLostFromRR: r.packetsLostFromRR,
 		maxJitterFromRR:   r.jitterFromRR,
 	}

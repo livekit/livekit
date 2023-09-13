@@ -717,7 +717,13 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 		return nil
 	}
 
-	p.params.Logger.Infow("participant closing", "sendLeave", sendLeave, "reason", reason.String(), "isExpectedToResume", isExpectedToResume)
+	p.params.Logger.Infow(
+		"participant closing",
+		"sendLeave", sendLeave,
+		"reason", reason.String(),
+		"isExpectedToResume", isExpectedToResume,
+		"clientInfo", p.params.ClientInfo.String(),
+	)
 	p.clearDisconnectTimer()
 	p.clearMigrationTimer()
 
@@ -824,7 +830,6 @@ func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
 		if p.IsClosed() || p.IsDisconnected() {
 			return
 		}
-		// TODO: change to debug once we are confident
 		p.subLogger.Infow("closing subscriber peer connection to aid migration")
 
 		//
