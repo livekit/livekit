@@ -321,7 +321,7 @@ func (r *RTPMunger) updateSnOffset(cause string) {
 	}
 	r.snOffset = snOffset
 	r.logger.Debugw(
-		"updateing sequence number offset",
+		"updating sequence number offset",
 		"cause", cause,
 		"extHighestIncomingSN", r.extHighestIncomingSN,
 		"snOffset", r.snOffset,
