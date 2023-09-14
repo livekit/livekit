@@ -35,9 +35,9 @@ func getPacket(sn uint16, ts uint32, payloadSize int) *rtp.Packet {
 	}
 }
 
-func TestRTPStats(t *testing.T) {
+func Test_RTPStatsReceiver(t *testing.T) {
 	clockRate := uint32(90000)
-	r := NewRTPStats(RTPStatsParams{
+	r := NewRTPStatsReceiver(RTPStatsParams{
 		ClockRate: clockRate,
 		Logger:    logger.GetLogger(),
 	})
@@ -59,7 +59,15 @@ func TestRTPStats(t *testing.T) {
 		timestamp += uint32(now.Sub(lastFrameTime).Seconds() * float64(clockRate))
 		for i := 0; i < packetsPerFrame; i++ {
 			packet := getPacket(sequenceNumber, timestamp, packetSize)
-			r.Update(&packet.Header, len(packet.Payload), 0, time.Now())
+			r.Update(
+				time.Now(),
+				packet.Header.SequenceNumber,
+				packet.Header.Timestamp,
+				packet.Header.Marker,
+				packet.Header.MarshalSize(),
+				len(packet.Payload),
+				0,
+			)
 			if (sequenceNumber % 100) == 0 {
 				jump := uint16(rand.Float64() * 120.0)
 				sequenceNumber += jump
@@ -77,9 +85,9 @@ func TestRTPStats(t *testing.T) {
 	fmt.Printf("%s\n", r.ToString())
 }
 
-func TestRTPStats_Update(t *testing.T) {
+func Test_RTPStatsReceiver_Update(t *testing.T) {
 	clockRate := uint32(90000)
-	r := NewRTPStats(RTPStatsParams{
+	r := NewRTPStatsReceiver(RTPStatsParams{
 		ClockRate: clockRate,
 		Logger:    logger.GetLogger(),
 	})
@@ -87,7 +95,15 @@ func TestRTPStats_Update(t *testing.T) {
 	sequenceNumber := uint16(rand.Float64() * float64(1<<16))
 	timestamp := uint32(rand.Float64() * float64(1<<32))
 	packet := getPacket(sequenceNumber, timestamp, 1000)
-	flowState := r.Update(&packet.Header, len(packet.Payload), 0, time.Now())
+	flowState := r.Update(
+		time.Now(),
+		packet.Header.SequenceNumber,
+		packet.Header.Timestamp,
+		packet.Header.Marker,
+		packet.Header.MarshalSize(),
+		len(packet.Payload),
+		0,
+	)
 	require.False(t, flowState.HasLoss)
 	require.True(t, r.initialized)
 	require.Equal(t, sequenceNumber, r.sequenceNumber.GetHighest())
@@ -99,7 +115,15 @@ func TestRTPStats_Update(t *testing.T) {
 	sequenceNumber++
 	timestamp += 3000
 	packet = getPacket(sequenceNumber, timestamp, 1000)
-	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now())
+	flowState = r.Update(
+		time.Now(),
+		packet.Header.SequenceNumber,
+		packet.Header.Timestamp,
+		packet.Header.Marker,
+		packet.Header.MarshalSize(),
+		len(packet.Payload),
+		0,
+	)
 	require.False(t, flowState.HasLoss)
 	require.Equal(t, sequenceNumber, r.sequenceNumber.GetHighest())
 	require.Equal(t, sequenceNumber, uint16(r.sequenceNumber.GetExtendedHighest()))
@@ -108,7 +132,15 @@ func TestRTPStats_Update(t *testing.T) {
 
 	// out-of-order
 	packet = getPacket(sequenceNumber-10, timestamp-30000, 1000)
-	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now())
+	flowState = r.Update(
+		time.Now(),
+		packet.Header.SequenceNumber,
+		packet.Header.Timestamp,
+		packet.Header.Marker,
+		packet.Header.MarshalSize(),
+		len(packet.Payload),
+		0,
+	)
 	require.False(t, flowState.HasLoss)
 	require.Equal(t, sequenceNumber, r.sequenceNumber.GetHighest())
 	require.Equal(t, sequenceNumber, uint16(r.sequenceNumber.GetExtendedHighest()))
@@ -119,7 +151,15 @@ func TestRTPStats_Update(t *testing.T) {
 
 	// duplicate
 	packet = getPacket(sequenceNumber-10, timestamp-30000, 1000)
-	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now())
+	flowState = r.Update(
+		time.Now(),
+		packet.Header.SequenceNumber,
+		packet.Header.Timestamp,
+		packet.Header.Marker,
+		packet.Header.MarshalSize(),
+		len(packet.Payload),
+		0,
+	)
 	require.False(t, flowState.HasLoss)
 	require.Equal(t, sequenceNumber, r.sequenceNumber.GetHighest())
 	require.Equal(t, sequenceNumber, uint16(r.sequenceNumber.GetExtendedHighest()))
@@ -132,7 +172,15 @@ func TestRTPStats_Update(t *testing.T) {
 	sequenceNumber += 10
 	timestamp += 30000
 	packet = getPacket(sequenceNumber, timestamp, 1000)
-	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now())
+	flowState = r.Update(
+		time.Now(),
+		packet.Header.SequenceNumber,
+		packet.Header.Timestamp,
+		packet.Header.Marker,
+		packet.Header.MarshalSize(),
+		len(packet.Payload),
+		0,
+	)
 	require.True(t, flowState.HasLoss)
 	require.Equal(t, uint64(sequenceNumber-9), flowState.LossStartInclusive)
 	require.Equal(t, uint64(sequenceNumber), flowState.LossEndExclusive)
@@ -140,7 +188,15 @@ func TestRTPStats_Update(t *testing.T) {
 
 	// out-of-order should decrement number of lost packets
 	packet = getPacket(sequenceNumber-15, timestamp-45000, 1000)
-	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now())
+	flowState = r.Update(
+		time.Now(),
+		packet.Header.SequenceNumber,
+		packet.Header.Timestamp,
+		packet.Header.Marker,
+		packet.Header.MarshalSize(),
+		len(packet.Payload),
+		0,
+	)
 	require.False(t, flowState.HasLoss)
 	require.Equal(t, sequenceNumber, r.sequenceNumber.GetHighest())
 	require.Equal(t, sequenceNumber, uint16(r.sequenceNumber.GetExtendedHighest()))
@@ -149,7 +205,11 @@ func TestRTPStats_Update(t *testing.T) {
 	require.Equal(t, uint64(3), r.packetsOutOfOrder)
 	require.Equal(t, uint64(1), r.packetsDuplicate)
 	require.Equal(t, uint64(16), r.packetsLost)
-	intervalStats := r.getIntervalStats(r.sequenceNumber.GetExtendedStart(), r.sequenceNumber.GetExtendedHighest()+1)
+	intervalStats := r.getIntervalStats(
+		r.sequenceNumber.GetExtendedStart(),
+		r.sequenceNumber.GetExtendedHighest()+1,
+		r.sequenceNumber.GetExtendedHighest(),
+	)
 	require.Equal(t, uint64(16), intervalStats.packetsLost)
 
 	// test sequence number cache
@@ -157,76 +217,100 @@ func TestRTPStats_Update(t *testing.T) {
 	sequenceNumber += 2
 	timestamp += 6000
 	packet = getPacket(sequenceNumber, timestamp, 1000)
-	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now())
+	flowState = r.Update(
+		time.Now(),
+		packet.Header.SequenceNumber,
+		packet.Header.Timestamp,
+		packet.Header.Marker,
+		packet.Header.MarshalSize(),
+		len(packet.Payload),
+		0,
+	)
 	require.True(t, flowState.HasLoss)
 	require.Equal(t, uint64(sequenceNumber-1), flowState.LossStartInclusive)
 	require.Equal(t, uint64(sequenceNumber), flowState.LossEndExclusive)
 	require.Equal(t, uint64(17), r.packetsLost)
-	expectedSnInfo := SnInfo{
+	expectedSnInfo := snInfo{
 		hdrSize:       12,
 		pktSize:       1012,
 		isPaddingOnly: false,
 		marker:        false,
 		isOutOfOrder:  false,
 	}
-	require.Equal(t, expectedSnInfo, r.snInfos[sequenceNumber&SnInfoMask])
+	require.Equal(t, expectedSnInfo, r.snInfos[sequenceNumber&cSnInfoMask])
 
 	// out-of-order
 	sequenceNumber--
 	timestamp -= 3000
 	packet = getPacket(sequenceNumber, timestamp, 999)
-	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now())
+	flowState = r.Update(
+		time.Now(),
+		packet.Header.SequenceNumber,
+		packet.Header.Timestamp,
+		packet.Header.Marker,
+		packet.Header.MarshalSize(),
+		len(packet.Payload),
+		0,
+	)
 	require.False(t, flowState.HasLoss)
 	require.Equal(t, uint64(16), r.packetsLost)
-	expectedSnInfo = SnInfo{
+	expectedSnInfo = snInfo{
 		hdrSize:       12,
 		pktSize:       1011,
 		isPaddingOnly: false,
 		marker:        false,
 		isOutOfOrder:  true,
 	}
-	require.Equal(t, expectedSnInfo, r.snInfos[sequenceNumber&SnInfoMask])
+	require.Equal(t, expectedSnInfo, r.snInfos[sequenceNumber&cSnInfoMask])
 	// check that last one is still fine
-	expectedSnInfo = SnInfo{
+	expectedSnInfo = snInfo{
 		hdrSize:       12,
 		pktSize:       1012,
 		isPaddingOnly: false,
 		marker:        false,
 		isOutOfOrder:  false,
 	}
-	require.Equal(t, expectedSnInfo, r.snInfos[(sequenceNumber+1)&SnInfoMask])
+	require.Equal(t, expectedSnInfo, r.snInfos[(sequenceNumber+1)&cSnInfoMask])
 
 	// padding only
 	sequenceNumber += 2
 	packet = getPacket(sequenceNumber, timestamp, 0)
-	flowState = r.Update(&packet.Header, len(packet.Payload), 25, time.Now())
+	flowState = r.Update(
+		time.Now(),
+		packet.Header.SequenceNumber,
+		packet.Header.Timestamp,
+		packet.Header.Marker,
+		packet.Header.MarshalSize(),
+		len(packet.Payload),
+		25,
+	)
 	require.False(t, flowState.HasLoss)
 	require.Equal(t, uint64(16), r.packetsLost)
-	expectedSnInfo = SnInfo{
+	expectedSnInfo = snInfo{
 		hdrSize:       12,
 		pktSize:       37,
 		isPaddingOnly: true,
 		marker:        false,
 		isOutOfOrder:  false,
 	}
-	require.Equal(t, expectedSnInfo, r.snInfos[sequenceNumber&SnInfoMask])
+	require.Equal(t, expectedSnInfo, r.snInfos[sequenceNumber&cSnInfoMask])
 	// check that last two are still fine
-	expectedSnInfo = SnInfo{
+	expectedSnInfo = snInfo{
 		hdrSize:       12,
 		pktSize:       1011,
 		isPaddingOnly: false,
 		marker:        false,
 		isOutOfOrder:  true,
 	}
-	require.Equal(t, expectedSnInfo, r.snInfos[(sequenceNumber-2)&SnInfoMask])
-	expectedSnInfo = SnInfo{
+	require.Equal(t, expectedSnInfo, r.snInfos[(sequenceNumber-2)&cSnInfoMask])
+	expectedSnInfo = snInfo{
 		hdrSize:       12,
 		pktSize:       1012,
 		isPaddingOnly: false,
 		marker:        false,
 		isOutOfOrder:  false,
 	}
-	require.Equal(t, expectedSnInfo, r.snInfos[(sequenceNumber-1)&SnInfoMask])
+	require.Equal(t, expectedSnInfo, r.snInfos[(sequenceNumber-1)&cSnInfoMask])
 
 	r.Stop()
 }

@@ -72,6 +72,12 @@ type packetMeta struct {
 	ddBytes []byte
 }
 
+type extPacketMeta struct {
+	packetMeta
+	extSequenceNumber uint64
+	extTimestamp      uint64
+}
+
 // Sequencer stores the packet sequence received by the down track
 type sequencer struct {
 	sync.Mutex
@@ -80,6 +86,7 @@ type sequencer struct {
 	initialized  bool
 	extHighestSN uint64
 	snOffset     uint64
+	extHighestTS uint64
 	meta         []packetMeta
 	snRangeMap   *utils.RangeMap[uint64, uint64]
 	rtt          uint32
@@ -125,7 +132,9 @@ func (s *sequencer) push(
 	defer s.Unlock()
 
 	if !s.initialized {
+		s.initialized = true
 		s.extHighestSN = extModifiedSN - 1
+		s.extHighestTS = extModifiedTS
 		s.updateSNOffset()
 	}
 
@@ -149,6 +158,10 @@ func (s *sequencer) push(
 		}
 	}
 
+	if int64(extModifiedTS-s.extHighestTS) >= 0 {
+		s.extHighestTS = extModifiedTS
+	}
+
 	slot := (extModifiedSN - snOffset) % uint64(s.size)
 	s.meta[slot] = packetMeta{
 		sourceSeqNo: uint16(extIncomingSN),
@@ -166,6 +179,7 @@ func (s *sequencer) pushPadding(extStartSNInclusive uint64, extEndSNInclusive ui
 	s.Lock()
 	defer s.Unlock()
 
+	s.logger.Debugw("sequencer padding", "extHighestSN", s.extHighestSN, "startSN", extStartSNInclusive, "endSN", extEndSNInclusive)
 	if s.snRangeMap == nil {
 		return
 	}
@@ -213,15 +227,16 @@ func (s *sequencer) pushPadding(extStartSNInclusive uint64, extEndSNInclusive ui
 	s.updateSNOffset()
 }
 
-func (s *sequencer) getPacketsMeta(seqNo []uint16) []packetMeta {
+func (s *sequencer) getExtPacketMetas(seqNo []uint16) []extPacketMeta {
 	s.Lock()
 	defer s.Unlock()
 
 	snOffset := uint64(0)
 	var err error
-	packetsMeta := make([]packetMeta, 0, len(seqNo))
+	extPacketMetas := make([]extPacketMeta, 0, len(seqNo))
 	refTime := s.getRefTime(time.Now())
 	highestSN := uint16(s.extHighestSN)
+	highestTS := uint32(s.extHighestTS)
 	for _, sn := range seqNo {
 		diff := highestSN - sn
 		if diff > (1 << 15) {
@@ -258,14 +273,22 @@ func (s *sequencer) getPacketsMeta(seqNo []uint16) []packetMeta {
 			meta.nacked++
 			meta.lastNack = refTime
 
-			pm := *meta
-			pm.codecBytes = append([]byte{}, meta.codecBytes...)
-			pm.ddBytes = append([]byte{}, meta.ddBytes...)
-			packetsMeta = append(packetsMeta, pm)
+			extTS := uint64(meta.timestamp) + (s.extHighestTS & 0xFFFF_FFFF_FFFF_0000)
+			if meta.timestamp > highestTS {
+				extTS -= (1 << 32)
+			}
+			epm := extPacketMeta{
+				packetMeta:        *meta,
+				extSequenceNumber: extSN,
+				extTimestamp:      extTS,
+			}
+			epm.codecBytes = append([]byte{}, meta.codecBytes...)
+			epm.ddBytes = append([]byte{}, meta.ddBytes...)
+			extPacketMetas = append(extPacketMetas, epm)
 		}
 	}
 
-	return packetsMeta
+	return extPacketMetas
 }
 
 func (s *sequencer) getRefTime(at time.Time) uint32 {

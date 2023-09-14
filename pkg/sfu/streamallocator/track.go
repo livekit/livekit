@@ -101,6 +101,10 @@ func (t *Track) SetStreamState(streamState StreamState) bool {
 	return true
 }
 
+func (t *Track) IsSubscribeMutable() bool {
+	return t.streamState != StreamStatePaused
+}
+
 func (t *Track) SetPriority(priority uint8) bool {
 	if priority == 0 {
 		switch t.source {

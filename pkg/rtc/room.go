@@ -1318,7 +1318,7 @@ func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, dp 
 		if source != nil && op.ID() == source.ID() {
 			continue
 		}
-		if len(dest) > 0 {
+		if len(dest) > 0 || len(destIdentities) > 0 {
 			found := false
 			for _, dID := range dest {
 				if op.ID() == livekit.ParticipantID(dID) {

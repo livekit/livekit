@@ -16,6 +16,7 @@ package rtc
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"strconv"
@@ -69,11 +70,19 @@ type downTrackState struct {
 	downTrack   sfu.DownTrackState
 }
 
+// ---------------------------------------------------------------
+
 type participantUpdateInfo struct {
 	version   uint32
 	state     livekit.ParticipantInfo_State
 	updatedAt time.Time
 }
+
+func (p participantUpdateInfo) String() string {
+	return fmt.Sprintf("version: %d, state: %s, updatedAt: %s", p.version, p.state.String(), p.updatedAt.String())
+}
+
+// ---------------------------------------------------------------
 
 type ParticipantParams struct {
 	Identity                     livekit.ParticipantIdentity
@@ -708,7 +717,13 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 		return nil
 	}
 
-	p.params.Logger.Infow("participant closing", "sendLeave", sendLeave, "reason", reason.String(), "isExpectedToResume", isExpectedToResume)
+	p.params.Logger.Infow(
+		"participant closing",
+		"sendLeave", sendLeave,
+		"reason", reason.String(),
+		"isExpectedToResume", isExpectedToResume,
+		"clientInfo", p.params.ClientInfo.String(),
+	)
 	p.clearDisconnectTimer()
 	p.clearMigrationTimer()
 
@@ -815,7 +830,6 @@ func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
 		if p.IsClosed() || p.IsDisconnected() {
 			return
 		}
-		// TODO: change to debug once we are confident
 		p.subLogger.Infow("closing subscriber peer connection to aid migration")
 
 		//
