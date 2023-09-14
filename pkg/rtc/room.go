@@ -26,12 +26,13 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/pion/sctp"
+
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
-	"github.com/pion/sctp"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -80,6 +81,7 @@ type Room struct {
 	participants              map[livekit.ParticipantIdentity]types.LocalParticipant
 	participantOpts           map[livekit.ParticipantIdentity]*ParticipantOptions
 	participantRequestSources map[livekit.ParticipantIdentity]routing.MessageSource
+	hasPublished              sync.Map // map of identity -> bool
 	bufferFactory             *buffer.FactoryOfBufferFactory
 
 	// batch update participant info for non-publishers
@@ -892,18 +894,35 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 
 	r.trackManager.AddTrack(track, participant.Identity(), participant.ID())
 
-	// auto track egress
-	if r.internal != nil && r.internal.TrackEgress != nil {
-		if err := StartTrackEgress(
-			context.Background(),
-			r.egressLauncher,
-			r.telemetry,
-			r.internal.TrackEgress,
-			track,
-			r.Name(),
-			r.ID(),
-		); err != nil {
-			r.Logger.Errorw("failed to launch track egress", err)
+	// auto egress
+	if r.internal != nil {
+		if r.internal.ParticipantEgress != nil {
+			if _, hasPublished := r.hasPublished.Swap(participant.Identity(), true); !hasPublished {
+				if err := StartParticipantEgress(
+					context.Background(),
+					r.egressLauncher,
+					r.telemetry,
+					r.internal.ParticipantEgress,
+					participant.Identity(),
+					r.Name(),
+					r.ID(),
+				); err != nil {
+					r.Logger.Errorw("failed to launch participant egress", err)
+				}
+			}
+		}
+		if r.internal.TrackEgress != nil {
+			if err := StartTrackEgress(
+				context.Background(),
+				r.egressLauncher,
+				r.telemetry,
+				r.internal.TrackEgress,
+				track,
+				r.Name(),
+				r.ID(),
+			); err != nil {
+				r.Logger.Errorw("failed to launch track egress", err)
+			}
 		}
 	}
 }
