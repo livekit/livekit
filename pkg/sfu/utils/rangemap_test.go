@@ -234,8 +234,7 @@ func TestRangeMapUint32(t *testing.T) {
 	require.Equal(t, uint32(23), value)
 
 	// decrement value and ensure that any key returns that value
-	err = r.CloseRangeAndDecValue(34, 12)
-	require.NoError(t, err)
+	r.DecValue(34, 12)
 
 	expectedRanges = []rangeVal[uint32, uint32]{
 		{
@@ -293,8 +292,7 @@ func TestRangeMapUint32(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint32(16), value)
 
-	err = r.CloseRangeAndDecValue(66, 6)
-	require.NoError(t, err)
+	r.DecValue(66, 6)
 
 	expectedRanges = []rangeVal[uint32, uint32]{
 		{
@@ -315,9 +313,6 @@ func TestRangeMapUint32(t *testing.T) {
 	}
 	require.Equal(t, expectedRanges, r.ranges)
 
-	err = r.CloseRangeAndDecValue(66, 6)
-	require.ErrorIs(t, err, errReversedOrder)
-
 	// aged out range access
 	value, err = r.GetValue(5)
 	require.ErrorIs(t, err, errKeyTooOld)
@@ -331,4 +326,31 @@ func TestRangeMapUint32(t *testing.T) {
 	value, err = r.GetValue(67)
 	require.NoError(t, err)
 	require.Equal(t, uint32(10), value)
+
+	// decrement with old end and check that open range gets decremented
+	r.DecValue(66, 6)
+
+	expectedRanges = []rangeVal[uint32, uint32]{
+		{
+			start: 35,
+			end:   39,
+			value: 11,
+		},
+		{
+			start: 45,
+			end:   66,
+			value: 16,
+		},
+		{
+			start: 67,
+			end:   0,
+			value: 4,
+		},
+	}
+	require.Equal(t, expectedRanges, r.ranges)
+
+	// open range access should get decremented value
+	value, err = r.GetValue(67)
+	require.NoError(t, err)
+	require.Equal(t, uint32(4), value)
 }
