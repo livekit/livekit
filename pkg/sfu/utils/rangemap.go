@@ -66,8 +66,23 @@ func (r *RangeMap[RT, VT]) ClearAndResetValue(val VT) {
 	r.initRanges(val)
 }
 
-func (r *RangeMap[RT, VT]) DecValue(dec VT) {
-	r.ranges[len(r.ranges)-1].value -= dec
+func (r *RangeMap[RT, VT]) CloseRangeAndDecValue(end RT, dec VT) error {
+	// close open range
+	lr := &r.ranges[len(r.ranges)-1]
+	if lr.start > end {
+		// start of open range is after given end
+		return errReversedOrder
+	}
+	lr.end = end
+
+	// start a new open one with decremented value
+	r.ranges = append(r.ranges, rangeVal[RT, VT]{
+		start: end + 1,
+		end:   0,
+		value: lr.value - dec,
+	})
+	r.prune()
+	return nil
 }
 
 func (r *RangeMap[RT, VT]) initRanges(val VT) {
