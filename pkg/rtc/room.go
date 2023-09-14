@@ -28,8 +28,6 @@ import (
 
 	"github.com/pion/sctp"
 
-	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
-	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
@@ -38,8 +36,10 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
+	sutils "github.com/livekit/livekit-server/pkg/utils"
 )
 
 const (
@@ -510,6 +510,7 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 	for _, t := range p.GetPublishedTracks() {
 		r.trackManager.RemoveTrack(t)
 	}
+	r.hasPublished.Delete(p.Identity())
 
 	p.OnTrackUpdated(nil)
 	p.OnTrackPublished(nil)
