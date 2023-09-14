@@ -297,7 +297,9 @@ func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate
 
 	r.extSecondLastSN = extLastSN - 1
 	r.extLastSN = extLastSN
-	r.snRangeMap.DecValue(uint64(num))
+	if err := r.snRangeMap.CloseRangeAndDecValue(r.extHighestIncomingSN, uint64(num)); err != nil {
+		r.logger.Errorw("could not close range", err, "sn", r.extHighestIncomingSN)
+	}
 	r.updateSnOffset("pad")
 
 	r.tsOffset -= extLastTS - r.extLastTS
