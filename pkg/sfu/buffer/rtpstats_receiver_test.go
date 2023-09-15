@@ -224,7 +224,7 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 	require.Equal(t, uint64(sequenceNumber-1), flowState.LossStartInclusive)
 	require.Equal(t, uint64(sequenceNumber), flowState.LossEndExclusive)
 	require.Equal(t, uint64(17), r.packetsLost)
-	require.True(t, r.isLost(uint64(sequenceNumber)-1, r.sequenceNumber.GetExtendedHighest()))
+	require.False(t, r.history.IsSet(uint64(sequenceNumber)-1))
 
 	// out-of-order
 	sequenceNumber--
@@ -242,7 +242,7 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 	require.False(t, flowState.HasLoss)
 	require.Equal(t, uint64(16), r.packetsLost)
 	require.Equal(t, uint64(4), r.packetsOutOfOrder)
-	require.False(t, r.isLost(uint64(sequenceNumber), r.sequenceNumber.GetExtendedHighest()))
+	require.True(t, r.history.IsSet(uint64(sequenceNumber)))
 
 	// padding only
 	sequenceNumber += 2
@@ -259,9 +259,9 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 	require.False(t, flowState.HasLoss)
 	require.Equal(t, uint64(16), r.packetsLost)
 	require.Equal(t, uint64(4), r.packetsOutOfOrder)
-	require.False(t, r.isLost(uint64(sequenceNumber), r.sequenceNumber.GetExtendedHighest()))
-	require.False(t, r.isLost(uint64(sequenceNumber)-1, r.sequenceNumber.GetExtendedHighest()))
-	require.False(t, r.isLost(uint64(sequenceNumber)-2, r.sequenceNumber.GetExtendedHighest()))
+	require.True(t, r.history.IsSet(uint64(sequenceNumber)))
+	require.True(t, r.history.IsSet(uint64(sequenceNumber)-1))
+	require.True(t, r.history.IsSet(uint64(sequenceNumber)-2))
 
 	r.Stop()
 }
