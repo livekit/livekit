@@ -51,14 +51,14 @@ type RTPStatsSender struct {
 	maxJitterFromRR float64
 
 	nextSenderSnapshotID uint32
-	senderSnapshots      map[uint32]*senderSnapshot
+	senderSnapshots      []senderSnapshot
 }
 
 func NewRTPStatsSender(params RTPStatsParams) *RTPStatsSender {
 	return &RTPStatsSender{
 		rtpStatsBase:         newRTPStatsBase(params),
 		nextSenderSnapshotID: cFirstSnapshotID,
-		senderSnapshots:      make(map[uint32]*senderSnapshot),
+		senderSnapshots:      make([]senderSnapshot, 2),
 	}
 }
 
@@ -86,10 +86,8 @@ func (r *RTPStatsSender) Seed(from *RTPStatsSender) {
 	r.maxJitterFromRR = from.maxJitterFromRR
 
 	r.nextSenderSnapshotID = from.nextSenderSnapshotID
-	for id, ss := range from.senderSnapshots {
-		ssCopy := *ss
-		r.senderSnapshots[id] = &ssCopy
-	}
+	r.senderSnapshots = make([]senderSnapshot, cap(from.senderSnapshots))
+	copy(r.senderSnapshots, from.senderSnapshots)
 }
 
 func (r *RTPStatsSender) NewSnapshotId() uint32 {
@@ -104,9 +102,18 @@ func (r *RTPStatsSender) NewSenderSnapshotId() uint32 {
 	defer r.lock.Unlock()
 
 	id := r.nextSenderSnapshotID
+	r.nextSenderSnapshotID++
+
+	if cap(r.senderSnapshots) < int(r.nextSenderSnapshotID) {
+		senderSnapshots := make([]senderSnapshot, r.nextSenderSnapshotID)
+		copy(senderSnapshots, r.senderSnapshots)
+		r.senderSnapshots = senderSnapshots
+	}
+
 	if r.initialized {
-		r.senderSnapshots[id] = &senderSnapshot{
+		r.senderSnapshots[id] = senderSnapshot{
 			snapshot: snapshot{
+				isValid:    true,
 				startTime:  time.Now(),
 				extStartSN: r.extStartSN,
 			},
@@ -153,14 +160,16 @@ func (r *RTPStatsSender) Update(
 
 		// initialize snapshots if any
 		for i := uint32(cFirstSnapshotID); i < r.nextSnapshotID; i++ {
-			r.snapshots[i] = &snapshot{
+			r.snapshots[i] = snapshot{
+				isValid:    true,
 				startTime:  r.startTime,
 				extStartSN: r.extStartSN,
 			}
 		}
 		for i := uint32(cFirstSnapshotID); i < r.nextSenderSnapshotID; i++ {
-			r.senderSnapshots[i] = &senderSnapshot{
+			r.senderSnapshots[i] = senderSnapshot{
 				snapshot: snapshot{
+					isValid:    true,
 					startTime:  r.startTime,
 					extStartSN: r.extStartSN,
 				},
@@ -580,9 +589,10 @@ func (r *RTPStatsSender) getAndResetSenderSnapshot(senderSnapshotID uint32) (*se
 	}
 
 	then := r.senderSnapshots[senderSnapshotID]
-	if then == nil {
-		then = &senderSnapshot{
+	if !then.isValid {
+		then = senderSnapshot{
 			snapshot: snapshot{
+				isValid:    true,
 				startTime:  r.startTime,
 				extStartSN: r.extStartSN,
 			},
@@ -592,8 +602,9 @@ func (r *RTPStatsSender) getAndResetSenderSnapshot(senderSnapshotID uint32) (*se
 	}
 
 	// snapshot now
-	r.senderSnapshots[senderSnapshotID] = &senderSnapshot{
+	r.senderSnapshots[senderSnapshotID] = senderSnapshot{
 		snapshot: snapshot{
+			isValid:              true,
 			startTime:            r.lastRRTime,
 			extStartSN:           r.extHighestSN + 1,
 			packetsDuplicate:     r.packetsDuplicate,
@@ -610,9 +621,8 @@ func (r *RTPStatsSender) getAndResetSenderSnapshot(senderSnapshotID uint32) (*se
 		maxJitterFromRR:   r.jitterFromRR,
 	}
 	// make a copy so that it can be used independently
-	now := *r.senderSnapshots[senderSnapshotID]
-
-	return then, &now
+	now := r.senderSnapshots[senderSnapshotID]
+	return &then, &now
 }
 
 // -------------------------------------------------------------------

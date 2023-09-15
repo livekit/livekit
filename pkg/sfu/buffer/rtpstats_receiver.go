@@ -107,10 +107,7 @@ func (r *RTPStatsReceiver) Update(
 
 		// initialize snapshots if any
 		for i := uint32(cFirstSnapshotID); i < r.nextSnapshotID; i++ {
-			r.snapshots[i] = &snapshot{
-				startTime:  r.startTime,
-				extStartSN: r.sequenceNumber.GetExtendedStart(),
-			}
+			r.snapshots[i] = r.initSnapshot(r.startTime, r.sequenceNumber.GetExtendedStart())
 		}
 
 		r.logger.Debugw(
@@ -409,8 +406,10 @@ func (r *RTPStatsReceiver) GetRtcpReceptionReport(ssrc uint32, proxyFracLost uin
 		return nil
 	}
 
-	intervalStats := r.getIntervalStats(then.extStartSN, now.extStartSN, extHighestSN)
-	packetsLost := intervalStats.packetsLost
+	packetsLost := uint32(now.packetsLost - then.packetsLost)
+	if int32(packetsLost) < 0 {
+		packetsLost = 0
+	}
 	lossRate := float32(packetsLost) / float32(packetsExpected)
 	fracLost := uint8(lossRate * 256.0)
 	if proxyFracLost > fracLost {
