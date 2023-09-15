@@ -316,11 +316,7 @@ func (r *rtpStatsBase) newSnapshotID(extStartSN uint64) uint32 {
 	}
 
 	if r.initialized {
-		r.snapshots[id] = snapshot{
-			isValid:    true,
-			startTime:  time.Now(),
-			extStartSN: extStartSN,
-		}
+		r.snapshots[id] = r.initSnapshot(time.Now(), extStartSN)
 	}
 	return id
 }

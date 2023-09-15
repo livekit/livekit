@@ -112,11 +112,7 @@ func (r *RTPStatsSender) NewSenderSnapshotId() uint32 {
 
 	if r.initialized {
 		r.senderSnapshots[id] = senderSnapshot{
-			snapshot: snapshot{
-				isValid:    true,
-				startTime:  time.Now(),
-				extStartSN: r.extStartSN,
-			},
+			snapshot:         r.initSnapshot(time.Now(), r.extStartSN),
 			extStartSNFromRR: r.extStartSN,
 		}
 	}
@@ -591,37 +587,20 @@ func (r *RTPStatsSender) getAndResetSenderSnapshot(senderSnapshotID uint32) (*se
 	then := r.senderSnapshots[senderSnapshotID]
 	if !then.isValid {
 		then = senderSnapshot{
-			snapshot: snapshot{
-				isValid:    true,
-				startTime:  r.startTime,
-				extStartSN: r.extStartSN,
-			},
+			snapshot:         r.initSnapshot(r.startTime, r.extStartSN),
 			extStartSNFromRR: r.extStartSN,
 		}
 		r.senderSnapshots[senderSnapshotID] = then
 	}
 
 	// snapshot now
-	r.senderSnapshots[senderSnapshotID] = senderSnapshot{
-		snapshot: snapshot{
-			isValid:              true,
-			startTime:            r.lastRRTime,
-			extStartSN:           r.extHighestSN + 1,
-			packetsDuplicate:     r.packetsDuplicate,
-			bytesDuplicate:       r.bytesDuplicate,
-			headerBytesDuplicate: r.headerBytesDuplicate,
-			nacks:                r.nacks,
-			plis:                 r.plis,
-			firs:                 r.firs,
-			maxJitter:            r.jitter,
-			maxRtt:               r.rtt,
-		},
+	now := senderSnapshot{
+		snapshot:          r.getSnapshot(r.lastRRTime, r.extHighestSN+1),
 		extStartSNFromRR:  r.extHighestSNFromRR + (r.extStartSN & 0xFFFF_FFFF_FFFF_0000) + 1,
 		packetsLostFromRR: r.packetsLostFromRR,
 		maxJitterFromRR:   r.jitterFromRR,
 	}
-	// make a copy so that it can be used independently
-	now := r.senderSnapshots[senderSnapshotID]
+	r.senderSnapshots[senderSnapshotID] = now
 	return &then, &now
 }
 
