@@ -16,6 +16,7 @@ package utils
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"unsafe"
 )
@@ -66,8 +67,24 @@ func (r *RangeMap[RT, VT]) ClearAndResetValue(val VT) {
 	r.initRanges(val)
 }
 
-func (r *RangeMap[RT, VT]) DecValue(dec VT) {
-	r.ranges[len(r.ranges)-1].value -= dec
+func (r *RangeMap[RT, VT]) DecValue(end RT, dec VT) {
+	lr := &r.ranges[len(r.ranges)-1]
+	if lr.start > end {
+		// modify existing value if end is in open range
+		lr.value -= dec
+		return
+	}
+
+	// close open range
+	lr.end = end
+
+	// start a new open one with decremented value
+	r.ranges = append(r.ranges, rangeVal[RT, VT]{
+		start: end + 1,
+		end:   0,
+		value: lr.value - dec,
+	})
+	r.prune()
 }
 
 func (r *RangeMap[RT, VT]) initRanges(val VT) {
@@ -82,13 +99,13 @@ func (r *RangeMap[RT, VT]) initRanges(val VT) {
 
 func (r *RangeMap[RT, VT]) ExcludeRange(startInclusive RT, endExclusive RT) error {
 	if endExclusive == startInclusive || endExclusive-startInclusive > r.halfRange {
-		return errReversedOrder
+		return fmt.Errorf("%w, start %d, end %d", errReversedOrder, startInclusive, endExclusive)
 	}
 
 	lr := &r.ranges[len(r.ranges)-1]
 	if lr.start > startInclusive {
 		// start of open range is after start of exclusion range, cannot close the open range
-		return errReversedOrder
+		return fmt.Errorf("%w, existingStart %d, newStart %d", errReversedOrder, lr.start, startInclusive)
 	}
 
 	newValue := lr.value + VT(endExclusive-startInclusive)

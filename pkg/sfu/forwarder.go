@@ -1621,6 +1621,8 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		"extNextTS", extNextTS,
 		"tsJump", extNextTS-extLastTS,
 		"nextSN", rtpMungerState.ExtLastSN+1,
+		"extIncomingSN", extPkt.ExtSequenceNumber,
+		"extIncomingTS", extPkt.ExtTimestamp,
 	)
 
 	f.rtpMunger.UpdateSnTsOffsets(extPkt, 1, extNextTS-extLastTS)
