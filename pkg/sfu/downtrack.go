@@ -670,14 +670,14 @@ func (d *DownTrack) maxLayerNotifierWorker() {
 //       followed by a layer switch. The last packet sent before the burst loss could
 //       have been without the marker. Is it okay to insert an empty frame in that case too?
 //
-func (d *DownTrack) writeEOF(sn uint16, ts uint32) {
+func (d *DownTrack) writeEOF(esn uint64, ets uint64) {
 	hdr := rtp.Header{
 		Version:        2,
 		Padding:        false,
 		Marker:         true,
 		PayloadType:    d.payloadType,
-		SequenceNumber: sn,
-		Timestamp:      ts,
+		SequenceNumber: uint16(esn),
+		Timestamp:      uint32(ets),
 		SSRC:           d.ssrc,
 		CSRC:           []uint32{},
 	}
@@ -687,8 +687,12 @@ func (d *DownTrack) writeEOF(sn uint16, ts uint32) {
 		AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 		TransportWideExtID: uint8(d.transportWideExtID),
 		WriteStream:        d.writeStream,
-		Metadata:           sendPacketMetadata{},
-		OnSent:             d.packetSent,
+		Metadata: sendPacketMetadata{
+			extSequenceNumber: esn,
+			extTimestamp:      ets,
+			isPadding:         true,
+		},
+		OnSent: d.packetSent,
 	})
 }
 
@@ -707,8 +711,8 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	}
 
 	if tp.eof != nil {
-		d.params.Logger.Debugw("writing eof", "sn", tp.eof.sequenceNumber, "ts", tp.eof.timestamp)
-		d.writeEOF(tp.eof.sequenceNumber, tp.eof.timestamp)
+		d.params.Logger.Debugw("writing eof", "sn", tp.eof.extSequenceNumber, "ts", tp.eof.extTimestamp)
+		d.writeEOF(tp.eof.extSequenceNumber, tp.eof.extTimestamp)
 	}
 
 	var payload []byte

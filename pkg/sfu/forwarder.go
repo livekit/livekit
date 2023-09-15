@@ -1633,16 +1633,18 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 		"referenceLayerSpatial", f.referenceLayerSpatial,
 		"extExpectedTS", extExpectedTS,
 		"extNextTS", extNextTS,
-		"tsJump", tsOffset,
-		"nextSN", rtpMungerState.ExtLastSN+snOffset,
+		"tsJump", extNextTS-extLastTS,
+		"nextSN", rtpMungerState.ExtLastSN+1,
 		"snOffset", snOffset,
+		"extIncomingSN", extPkt.ExtSequenceNumber,
+		"extIncomingTS", extPkt.ExtTimestamp,
 	)
 
 	var eof *SnTs
 	if snOffset != 1 {
 		eof = &SnTs{
-			sequenceNumber: uint16(rtpMungerState.ExtLastSN + 1),
-			timestamp:      uint32(rtpMungerState.ExtLastTS),
+			extSequenceNumber: rtpMungerState.ExtLastSN + 1,
+			extTimestamp:      rtpMungerState.ExtLastTS,
 		}
 	}
 	return eof, nil

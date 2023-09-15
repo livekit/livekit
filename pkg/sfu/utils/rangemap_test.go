@@ -28,30 +28,32 @@ func TestRangeMapUint32(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint32(0), value)
 
-	expectedRangeVal := rangeVal[uint32, uint32]{
-		start: 0,
-		end:   0,
-		value: 0,
+	expectedRanges := []rangeVal[uint32, uint32]{
+		{
+			start: 0,
+			end:   0,
+			value: 0,
+		},
 	}
-	require.Equal(t, expectedRangeVal, r.ranges[0])
+	require.Equal(t, expectedRanges, r.ranges)
 
 	// add an exclusion, should create a new range
 	err = r.ExcludeRange(10, 11)
 	require.NoError(t, err)
 
-	expectedRangeVal = rangeVal[uint32, uint32]{
-		start: 0,
-		end:   9,
-		value: 0,
+	expectedRanges = []rangeVal[uint32, uint32]{
+		{
+			start: 0,
+			end:   9,
+			value: 0,
+		},
+		{
+			start: 11,
+			end:   0,
+			value: 1,
+		},
 	}
-	require.Equal(t, expectedRangeVal, r.ranges[0])
-
-	expectedRangeVal = rangeVal[uint32, uint32]{
-		start: 11,
-		end:   0,
-		value: 1,
-	}
-	require.Equal(t, expectedRangeVal, r.ranges[1])
+	require.Equal(t, expectedRanges, r.ranges)
 
 	// getting value in old range should return 0
 	value, err = r.GetValue(6)
@@ -81,19 +83,19 @@ func TestRangeMapUint32(t *testing.T) {
 	err = r.ExcludeRange(11, 12)
 	require.NoError(t, err)
 
-	expectedRangeVal = rangeVal[uint32, uint32]{
-		start: 0,
-		end:   9,
-		value: 0,
+	expectedRanges = []rangeVal[uint32, uint32]{
+		{
+			start: 0,
+			end:   9,
+			value: 0,
+		},
+		{
+			start: 12,
+			end:   0,
+			value: 2,
+		},
 	}
-	require.Equal(t, expectedRangeVal, r.ranges[0])
-
-	expectedRangeVal = rangeVal[uint32, uint32]{
-		start: 12,
-		end:   0,
-		value: 2,
-	}
-	require.Equal(t, expectedRangeVal, r.ranges[1])
+	require.Equal(t, expectedRanges, r.ranges)
 
 	// excluded range should return error, now is excluded because exclusion range could be extended
 	value, err = r.GetValue(11)
@@ -112,19 +114,19 @@ func TestRangeMapUint32(t *testing.T) {
 	err = r.ExcludeRange(12, 22)
 	require.NoError(t, err)
 
-	expectedRangeVal = rangeVal[uint32, uint32]{
-		start: 0,
-		end:   9,
-		value: 0,
+	expectedRanges = []rangeVal[uint32, uint32]{
+		{
+			start: 0,
+			end:   9,
+			value: 0,
+		},
+		{
+			start: 22,
+			end:   0,
+			value: 12,
+		},
 	}
-	require.Equal(t, expectedRangeVal, r.ranges[0])
-
-	expectedRangeVal = rangeVal[uint32, uint32]{
-		start: 22,
-		end:   0,
-		value: 12,
-	}
-	require.Equal(t, expectedRangeVal, r.ranges[1])
+	require.Equal(t, expectedRanges, r.ranges)
 
 	// excluded range should return error, now is excluded because exclusion range could be extended
 	value, err = r.GetValue(15)
@@ -139,26 +141,24 @@ func TestRangeMapUint32(t *testing.T) {
 	err = r.ExcludeRange(26, 30)
 	require.NoError(t, err)
 
-	expectedRangeVal = rangeVal[uint32, uint32]{
-		start: 0,
-		end:   9,
-		value: 0,
+	expectedRanges = []rangeVal[uint32, uint32]{
+		{
+			start: 0,
+			end:   9,
+			value: 0,
+		},
+		{
+			start: 22,
+			end:   25,
+			value: 12,
+		},
+		{
+			start: 30,
+			end:   0,
+			value: 16,
+		},
 	}
-	require.Equal(t, expectedRangeVal, r.ranges[0])
-
-	expectedRangeVal = rangeVal[uint32, uint32]{
-		start: 22,
-		end:   25,
-		value: 12,
-	}
-	require.Equal(t, expectedRangeVal, r.ranges[1])
-
-	expectedRangeVal = rangeVal[uint32, uint32]{
-		start: 30,
-		end:   0,
-		value: 16,
-	}
-	require.Equal(t, expectedRangeVal, r.ranges[2])
+	require.Equal(t, expectedRanges, r.ranges)
 
 	// get a value from newly closed range [22, 25]
 	value, err = r.GetValue(23)
@@ -170,26 +170,24 @@ func TestRangeMapUint32(t *testing.T) {
 	require.NoError(t, err)
 
 	// previously first range would have been pruned due to size limitations
-	expectedRangeVal = rangeVal[uint32, uint32]{
-		start: 22,
-		end:   25,
-		value: 12,
+	expectedRanges = []rangeVal[uint32, uint32]{
+		{
+			start: 22,
+			end:   25,
+			value: 12,
+		},
+		{
+			start: 30,
+			end:   49,
+			value: 16,
+		},
+		{
+			start: 51,
+			end:   0,
+			value: 17,
+		},
 	}
-	require.Equal(t, expectedRangeVal, r.ranges[0])
-
-	expectedRangeVal = rangeVal[uint32, uint32]{
-		start: 30,
-		end:   49,
-		value: 16,
-	}
-	require.Equal(t, expectedRangeVal, r.ranges[1])
-
-	expectedRangeVal = rangeVal[uint32, uint32]{
-		start: 51,
-		end:   0,
-		value: 17,
-	}
-	require.Equal(t, expectedRangeVal, r.ranges[2])
+	require.Equal(t, expectedRanges, r.ranges)
 
 	// excluded range should return error
 	value, err = r.GetValue(50)
@@ -222,51 +220,70 @@ func TestRangeMapUint32(t *testing.T) {
 
 	// reset
 	r.ClearAndResetValue(23)
-	expectedRangeVal = rangeVal[uint32, uint32]{
-		start: 0,
-		end:   0,
-		value: 23,
+	expectedRanges = []rangeVal[uint32, uint32]{
+		{
+			start: 0,
+			end:   0,
+			value: 23,
+		},
 	}
-	require.Equal(t, expectedRangeVal, r.ranges[0])
+	require.Equal(t, expectedRanges, r.ranges)
 
 	value, err = r.GetValue(55555555)
 	require.NoError(t, err)
 	require.Equal(t, uint32(23), value)
 
 	// decrement value and ensure that any key returns that value
-	r.DecValue(12)
+	r.DecValue(34, 12)
 
-	expectedRangeVal = rangeVal[uint32, uint32]{
-		start: 0,
-		end:   0,
-		value: 11,
+	expectedRanges = []rangeVal[uint32, uint32]{
+		{
+			start: 0,
+			end:   34,
+			value: 23,
+		},
+		{
+			start: 35,
+			end:   0,
+			value: 11,
+		},
 	}
-	require.Equal(t, expectedRangeVal, r.ranges[0])
+	require.Equal(t, expectedRanges, r.ranges)
 
 	value, err = r.GetValue(55555555)
 	require.NoError(t, err)
 	require.Equal(t, uint32(11), value)
 
 	// add an exclusion and then decrement value
-	err = r.ExcludeRange(10, 15)
+	err = r.ExcludeRange(40, 45)
 	require.NoError(t, err)
 
-	expectedRangeVal = rangeVal[uint32, uint32]{
-		start: 0,
-		end:   9,
-		value: 11,
+	expectedRanges = []rangeVal[uint32, uint32]{
+		{
+			start: 0,
+			end:   34,
+			value: 23,
+		},
+		{
+			start: 35,
+			end:   39,
+			value: 11,
+		},
+		{
+			start: 45,
+			end:   0,
+			value: 16,
+		},
 	}
-	require.Equal(t, expectedRangeVal, r.ranges[0])
-
-	expectedRangeVal = rangeVal[uint32, uint32]{
-		start: 15,
-		end:   0,
-		value: 16,
-	}
-	require.Equal(t, expectedRangeVal, r.ranges[1])
+	require.Equal(t, expectedRanges, r.ranges)
 
 	// first range access
 	value, err = r.GetValue(5)
+	require.NoError(t, err)
+	require.Equal(t, uint32(23), value)
+
+	// second range access
+	value, err = r.GetValue(35)
 	require.NoError(t, err)
 	require.Equal(t, uint32(11), value)
 
@@ -275,29 +292,65 @@ func TestRangeMapUint32(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint32(16), value)
 
-	r.DecValue(6)
+	r.DecValue(66, 6)
 
-	expectedRangeVal = rangeVal[uint32, uint32]{
-		start: 0,
-		end:   9,
-		value: 11,
+	expectedRanges = []rangeVal[uint32, uint32]{
+		{
+			start: 35,
+			end:   39,
+			value: 11,
+		},
+		{
+			start: 45,
+			end:   66,
+			value: 16,
+		},
+		{
+			start: 67,
+			end:   0,
+			value: 10,
+		},
 	}
-	require.Equal(t, expectedRangeVal, r.ranges[0])
+	require.Equal(t, expectedRanges, r.ranges)
 
-	expectedRangeVal = rangeVal[uint32, uint32]{
-		start: 15,
-		end:   0,
-		value: 10,
-	}
-	require.Equal(t, expectedRangeVal, r.ranges[1])
-
-	// first range access
+	// aged out range access
 	value, err = r.GetValue(5)
+	require.ErrorIs(t, err, errKeyTooOld)
+
+	// access closed range before decrementing value
+	value, err = r.GetValue(66)
 	require.NoError(t, err)
-	require.Equal(t, uint32(11), value)
+	require.Equal(t, uint32(16), value)
 
 	// open range access
-	value, err = r.GetValue(55555555)
+	value, err = r.GetValue(67)
 	require.NoError(t, err)
 	require.Equal(t, uint32(10), value)
+
+	// decrement with old end and check that open range gets decremented
+	r.DecValue(66, 6)
+
+	expectedRanges = []rangeVal[uint32, uint32]{
+		{
+			start: 35,
+			end:   39,
+			value: 11,
+		},
+		{
+			start: 45,
+			end:   66,
+			value: 16,
+		},
+		{
+			start: 67,
+			end:   0,
+			value: 4,
+		},
+	}
+	require.Equal(t, expectedRanges, r.ranges)
+
+	// open range access should get decremented value
+	value, err = r.GetValue(67)
+	require.NoError(t, err)
+	require.Equal(t, uint32(4), value)
 }
