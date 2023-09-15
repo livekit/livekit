@@ -758,6 +758,7 @@ func (b *Buffer) getRTCP() []rtcp.Packet {
 	var pkts []rtcp.Packet
 
 	rr := b.buildReceptionReport()
+	b.logger.Debugw("RAJA RR", "rr", rr) // REMOVE
 	if rr != nil {
 		pkts = append(pkts, &rtcp.ReceiverReport{
 			SSRC:    b.mediaSSRC,
