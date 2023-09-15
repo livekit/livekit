@@ -24,6 +24,10 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
+const (
+	cHistorySize = 2048
+)
+
 type RTPFlowState struct {
 	IsNotHandled bool
 
@@ -47,6 +51,8 @@ type RTPStatsReceiver struct {
 	sequenceNumber *utils.WrapAround[uint16, uint64]
 
 	timestamp *utils.WrapAround[uint32, uint64]
+
+	history [cHistorySize / 64]uint64
 }
 
 func NewRTPStatsReceiver(params RTPStatsParams) *RTPStatsReceiver {
@@ -167,13 +173,14 @@ func (r *RTPStatsReceiver) Update(
 			)
 		}
 
-		if !r.isSnInfoLost(resSN.ExtendedVal, resSN.PreExtendedHighest) {
+		if !r.isLost(resSN.ExtendedVal, resSN.PreExtendedHighest) {
 			r.bytesDuplicate += pktSize
 			r.headerBytesDuplicate += uint64(hdrSize)
 			r.packetsDuplicate++
 			flowState.IsDuplicate = true
 		} else {
 			r.packetsLost--
+			r.setHistory(resSN.ExtendedVal, resSN.PreExtendedHighest)
 		}
 
 		flowState.IsOutOfOrder = true
@@ -183,7 +190,11 @@ func (r *RTPStatsReceiver) Update(
 		// update gap histogram
 		r.updateGapHistogram(int(gapSN))
 
+		// update missing sequence numbers
+		r.clearHistory(resSN.PreExtendedHighest+1, resSN.ExtendedVal, resSN.PreExtendedHighest)
 		r.packetsLost += uint64(gapSN - 1)
+
+		r.setHistory(resSN.ExtendedVal, resSN.PreExtendedHighest)
 
 		if timestamp != uint32(resTS.PreExtendedHighest) {
 			// update only on first packet as same timestamp could be in multiple packets.
@@ -460,6 +471,64 @@ func (r *RTPStatsReceiver) ToProto() *livekit.RTPStats {
 		r.packetsLost,
 		r.jitter, r.maxJitter,
 	)
+}
+
+func (r *RTPStatsReceiver) getOutOfOrderHistorySlot(esn uint64, ehsn uint64) (int, int) {
+	diff := int64(ehsn - esn)
+	if diff >= cHistorySize || diff < 0 {
+		// too old OR too new (i. e. ahead of highest)
+		return -1, -1
+	}
+
+	return int(esn) % len(r.history), int(esn & 63)
+}
+
+func (r *RTPStatsReceiver) getHistorySlot(esn uint64, ehsn uint64) (int, int) {
+	if int64(esn-ehsn) < 0 {
+		return r.getOutOfOrderHistorySlot(esn, ehsn)
+	}
+
+	return int(esn) % len(r.history), int(esn & 63)
+}
+
+func (r *RTPStatsReceiver) setHistory(esn uint64, ehsn uint64) {
+	slot, offset := r.getHistorySlot(esn, ehsn)
+	if slot < 0 {
+		return
+	}
+
+	r.history[slot] |= (1 << offset)
+}
+
+func (r *RTPStatsReceiver) clearHistory(extStartInclusive uint64, extEndExclusive uint64, ehsn uint64) {
+	if extEndExclusive <= extStartInclusive {
+		return
+	}
+
+	slot, offset := r.getHistorySlot(extStartInclusive, ehsn)
+	if slot < 0 {
+		return
+	}
+	for esn := extStartInclusive; esn != extEndExclusive; esn++ {
+		r.history[slot] &= ^(1 << offset)
+		offset++
+		if offset > 63 {
+			offset -= 64
+			slot++
+			if slot >= len(r.history) {
+				slot -= len(r.history)
+			}
+		}
+	}
+}
+
+func (r *RTPStatsReceiver) isLost(esn uint64, ehsn uint64) bool {
+	slot, offset := r.getHistorySlot(esn, ehsn)
+	if slot < 0 {
+		return false
+	}
+
+	return r.history[slot]&(1<<offset) == 0
 }
 
 // ----------------------------------
