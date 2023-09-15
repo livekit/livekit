@@ -205,14 +205,8 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 	require.Equal(t, uint64(3), r.packetsOutOfOrder)
 	require.Equal(t, uint64(1), r.packetsDuplicate)
 	require.Equal(t, uint64(16), r.packetsLost)
-	intervalStats := r.getIntervalStats(
-		r.sequenceNumber.GetExtendedStart(),
-		r.sequenceNumber.GetExtendedHighest()+1,
-		r.sequenceNumber.GetExtendedHighest(),
-	)
-	require.Equal(t, uint64(16), intervalStats.packetsLost)
 
-	// test sequence number cache
+	// test sequence number history
 	// with a gap
 	sequenceNumber += 2
 	timestamp += 6000
@@ -230,14 +224,7 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 	require.Equal(t, uint64(sequenceNumber-1), flowState.LossStartInclusive)
 	require.Equal(t, uint64(sequenceNumber), flowState.LossEndExclusive)
 	require.Equal(t, uint64(17), r.packetsLost)
-	expectedSnInfo := snInfo{
-		hdrSize:       12,
-		pktSize:       1012,
-		isPaddingOnly: false,
-		marker:        false,
-		isOutOfOrder:  false,
-	}
-	require.Equal(t, expectedSnInfo, r.snInfos[sequenceNumber&cSnInfoMask])
+	require.True(t, r.isLost(uint64(sequenceNumber)-1, r.sequenceNumber.GetExtendedHighest()))
 
 	// out-of-order
 	sequenceNumber--
@@ -254,23 +241,8 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 	)
 	require.False(t, flowState.HasLoss)
 	require.Equal(t, uint64(16), r.packetsLost)
-	expectedSnInfo = snInfo{
-		hdrSize:       12,
-		pktSize:       1011,
-		isPaddingOnly: false,
-		marker:        false,
-		isOutOfOrder:  true,
-	}
-	require.Equal(t, expectedSnInfo, r.snInfos[sequenceNumber&cSnInfoMask])
-	// check that last one is still fine
-	expectedSnInfo = snInfo{
-		hdrSize:       12,
-		pktSize:       1012,
-		isPaddingOnly: false,
-		marker:        false,
-		isOutOfOrder:  false,
-	}
-	require.Equal(t, expectedSnInfo, r.snInfos[(sequenceNumber+1)&cSnInfoMask])
+	require.Equal(t, uint64(4), r.packetsOutOfOrder)
+	require.False(t, r.isLost(uint64(sequenceNumber), r.sequenceNumber.GetExtendedHighest()))
 
 	// padding only
 	sequenceNumber += 2
@@ -286,31 +258,10 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 	)
 	require.False(t, flowState.HasLoss)
 	require.Equal(t, uint64(16), r.packetsLost)
-	expectedSnInfo = snInfo{
-		hdrSize:       12,
-		pktSize:       37,
-		isPaddingOnly: true,
-		marker:        false,
-		isOutOfOrder:  false,
-	}
-	require.Equal(t, expectedSnInfo, r.snInfos[sequenceNumber&cSnInfoMask])
-	// check that last two are still fine
-	expectedSnInfo = snInfo{
-		hdrSize:       12,
-		pktSize:       1011,
-		isPaddingOnly: false,
-		marker:        false,
-		isOutOfOrder:  true,
-	}
-	require.Equal(t, expectedSnInfo, r.snInfos[(sequenceNumber-2)&cSnInfoMask])
-	expectedSnInfo = snInfo{
-		hdrSize:       12,
-		pktSize:       1012,
-		isPaddingOnly: false,
-		marker:        false,
-		isOutOfOrder:  false,
-	}
-	require.Equal(t, expectedSnInfo, r.snInfos[(sequenceNumber-1)&cSnInfoMask])
+	require.Equal(t, uint64(4), r.packetsOutOfOrder)
+	require.False(t, r.isLost(uint64(sequenceNumber), r.sequenceNumber.GetExtendedHighest()))
+	require.False(t, r.isLost(uint64(sequenceNumber)-1, r.sequenceNumber.GetExtendedHighest()))
+	require.False(t, r.isLost(uint64(sequenceNumber)-2, r.sequenceNumber.GetExtendedHighest()))
 
 	r.Stop()
 }
