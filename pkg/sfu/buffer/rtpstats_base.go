@@ -105,6 +105,8 @@ type snapshot struct {
 	bytesDuplicate       uint64
 	headerBytesDuplicate uint64
 
+	packetsOutOfOrder uint64
+
 	packetsLost uint64
 
 	frames uint32
@@ -587,6 +589,7 @@ func (r *rtpStatsBase) deltaInfo(snapshotID uint32, extStartSN uint64, extHighes
 		BytesPadding:         now.bytesPadding - then.bytesPadding,
 		HeaderBytesPadding:   now.headerBytesPadding - then.headerBytesPadding,
 		PacketsLost:          packetsLost,
+		PacketsOutOfOrder:    uint32(now.packetsOutOfOrder - then.packetsOutOfOrder),
 		Frames:               now.frames - then.frames,
 		RttMax:               then.maxRtt,
 		JitterMax:            then.maxJitter / float64(r.params.ClockRate) * 1e6,
@@ -1003,6 +1006,7 @@ func (r *rtpStatsBase) getSnapshot(startTime time.Time, extStartSN uint64) snaps
 		bytesDuplicate:       r.bytesDuplicate,
 		headerBytesDuplicate: r.headerBytesDuplicate,
 		packetsLost:          r.packetsLost,
+		packetsOutOfOrder:    r.packetsOutOfOrder,
 		frames:               r.frames,
 		nacks:                r.nacks,
 		plis:                 r.plis,

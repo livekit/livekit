@@ -174,7 +174,6 @@ func (r *RTPStatsReceiver) Update(
 			flowState.IsDuplicate = true
 		} else {
 			r.packetsLost--
-			r.setSnInfo(resSN.ExtendedVal, resSN.PreExtendedHighest, uint16(pktSize), uint16(hdrSize), uint16(payloadSize), marker, true)
 		}
 
 		flowState.IsOutOfOrder = true
@@ -184,11 +183,7 @@ func (r *RTPStatsReceiver) Update(
 		// update gap histogram
 		r.updateGapHistogram(int(gapSN))
 
-		// update missing sequence numbers
-		r.clearSnInfos(resSN.PreExtendedHighest+1, resSN.ExtendedVal)
 		r.packetsLost += uint64(gapSN - 1)
-
-		r.setSnInfo(resSN.ExtendedVal, resSN.PreExtendedHighest, uint16(pktSize), uint16(hdrSize), uint16(payloadSize), marker, false)
 
 		if timestamp != uint32(resTS.PreExtendedHighest) {
 			// update only on first packet as same timestamp could be in multiple packets.
