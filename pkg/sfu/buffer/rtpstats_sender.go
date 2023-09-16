@@ -25,6 +25,25 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
+const (
+	cSnInfoSize = 8192
+	cSnInfoMask = cSnInfoSize - 1
+)
+
+type snInfoFlag byte
+
+const (
+	snInfoFlagMarker snInfoFlag = 1 << iota
+	snInfoFlagPadding
+	snInfoFlagOutOfOrder
+)
+
+type snInfo struct {
+	pktSize uint16
+	hdrSize uint8
+	flags   snInfoFlag
+}
+
 type senderSnapshot struct {
 	snapshot
 	extStartSNFromRR  uint64
@@ -49,6 +68,8 @@ type RTPStatsSender struct {
 
 	jitterFromRR    float64
 	maxJitterFromRR float64
+
+	snInfos [cSnInfoSize]snInfo
 
 	nextSenderSnapshotID uint32
 	senderSnapshots      []senderSnapshot
@@ -84,6 +105,8 @@ func (r *RTPStatsSender) Seed(from *RTPStatsSender) {
 
 	r.jitterFromRR = from.jitterFromRR
 	r.maxJitterFromRR = from.maxJitterFromRR
+
+	r.snInfos = from.snInfos
 
 	r.nextSenderSnapshotID = from.nextSenderSnapshotID
 	r.senderSnapshots = make([]senderSnapshot, cap(from.senderSnapshots))
@@ -224,7 +247,7 @@ func (r *RTPStatsSender) Update(
 			isDuplicate = true
 		} else {
 			r.packetsLost--
-			r.setSnInfo(extSequenceNumber, r.extHighestSN, uint16(pktSize), uint16(hdrSize), uint16(payloadSize), marker, true)
+			r.setSnInfo(extSequenceNumber, r.extHighestSN, uint16(pktSize), uint8(hdrSize), uint16(payloadSize), marker, true)
 		}
 	} else { // in-order
 		// update gap histogram
@@ -234,7 +257,7 @@ func (r *RTPStatsSender) Update(
 		r.clearSnInfos(r.extHighestSN+1, extSequenceNumber)
 		r.packetsLost += uint64(gapSN - 1)
 
-		r.setSnInfo(extSequenceNumber, r.extHighestSN, uint16(pktSize), uint16(hdrSize), uint16(payloadSize), marker, false)
+		r.setSnInfo(extSequenceNumber, r.extHighestSN, uint16(pktSize), uint8(hdrSize), uint16(payloadSize), marker, false)
 
 		if extTimestamp != r.extHighestTS {
 			// update only on first packet as same timestamp could be in multiple packets.
@@ -602,6 +625,112 @@ func (r *RTPStatsSender) getAndResetSenderSnapshot(senderSnapshotID uint32) (*se
 	}
 	r.senderSnapshots[senderSnapshotID] = now
 	return &then, &now
+}
+
+func (r *RTPStatsSender) getSnInfoOutOfOrderSlot(esn uint64, ehsn uint64) int {
+	offset := int64(ehsn - esn)
+	if offset >= cSnInfoSize || offset < 0 {
+		// too old OR too new (i. e. ahead of highest)
+		return -1
+	}
+
+	return int(esn & cSnInfoMask)
+}
+
+func (r *RTPStatsSender) setSnInfo(esn uint64, ehsn uint64, pktSize uint16, hdrSize uint8, payloadSize uint16, marker bool, isOutOfOrder bool) {
+	var slot int
+	if int64(esn-ehsn) < 0 {
+		slot = r.getSnInfoOutOfOrderSlot(esn, ehsn)
+		if slot < 0 {
+			return
+		}
+	} else {
+		slot = int(esn & cSnInfoMask)
+	}
+
+	snInfo := &r.snInfos[slot]
+	snInfo.pktSize = pktSize
+	snInfo.hdrSize = hdrSize
+	if marker {
+		snInfo.flags |= snInfoFlagMarker
+	}
+	if payloadSize == 0 {
+		snInfo.flags |= snInfoFlagPadding
+	}
+	if isOutOfOrder {
+		snInfo.flags |= snInfoFlagOutOfOrder
+	}
+}
+
+func (r *RTPStatsSender) clearSnInfos(extStartInclusive uint64, extEndExclusive uint64) {
+	if extEndExclusive <= extStartInclusive {
+		return
+	}
+
+	for esn := extStartInclusive; esn != extEndExclusive; esn++ {
+		snInfo := &r.snInfos[esn&cSnInfoMask]
+		snInfo.pktSize = 0
+		snInfo.hdrSize = 0
+		snInfo.flags = 0
+	}
+}
+
+func (r *RTPStatsSender) isSnInfoLost(esn uint64, ehsn uint64) bool {
+	slot := r.getSnInfoOutOfOrderSlot(esn, ehsn)
+	if slot < 0 {
+		return false
+	}
+
+	return r.snInfos[slot].pktSize == 0
+}
+
+func (r *RTPStatsSender) getIntervalStats(extStartInclusive uint64, extEndExclusive uint64, ehsn uint64) (intervalStats intervalStats) {
+	packetsNotFound := uint32(0)
+	processESN := func(esn uint64, ehsn uint64) {
+		slot := r.getSnInfoOutOfOrderSlot(esn, ehsn)
+		if slot < 0 {
+			packetsNotFound++
+			return
+		}
+
+		snInfo := &r.snInfos[slot]
+		switch {
+		case snInfo.pktSize == 0:
+			intervalStats.packetsLost++
+
+		case snInfo.flags&snInfoFlagPadding != 0:
+			intervalStats.packetsPadding++
+			intervalStats.bytesPadding += uint64(snInfo.pktSize)
+			intervalStats.headerBytesPadding += uint64(snInfo.hdrSize)
+
+		default:
+			intervalStats.packets++
+			intervalStats.bytes += uint64(snInfo.pktSize)
+			intervalStats.headerBytes += uint64(snInfo.hdrSize)
+			if (snInfo.flags & snInfoFlagOutOfOrder) != 0 {
+				intervalStats.packetsOutOfOrder++
+			}
+		}
+
+		if (snInfo.flags & snInfoFlagMarker) != 0 {
+			intervalStats.frames++
+		}
+	}
+
+	for esn := extStartInclusive; esn != extEndExclusive; esn++ {
+		processESN(esn, ehsn)
+	}
+
+	if packetsNotFound != 0 {
+		r.logger.Errorw(
+			"could not find some packets", nil,
+			"start", extStartInclusive,
+			"end", extEndExclusive,
+			"count", packetsNotFound,
+			"highestSN", ehsn,
+		)
+	}
+	return
 }
 
 // -------------------------------------------------------------------

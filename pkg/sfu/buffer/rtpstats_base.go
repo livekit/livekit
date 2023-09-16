@@ -30,8 +30,6 @@ const (
 	cGapHistogramNumBins = 101
 	cNumSequenceNumbers  = 65536
 	cFirstSnapshotID     = 1
-	cSnInfoSize          = 8192
-	cSnInfoMask          = cSnInfoSize - 1
 
 	cFirstPacketTimeAdjustWindow    = 2 * time.Minute
 	cFirstPacketTimeAdjustThreshold = 5 * time.Second
@@ -119,14 +117,6 @@ type snapshot struct {
 	maxJitter float64
 }
 
-type snInfo struct {
-	hdrSize       uint16
-	pktSize       uint16
-	isPaddingOnly bool
-	marker        bool
-	isOutOfOrder  bool
-}
-
 type RTCPSenderReportData struct {
 	RTPTimestamp     uint32
 	RTPTimestampExt  uint64
@@ -176,8 +166,6 @@ type rtpStatsBase struct {
 
 	jitter    float64
 	maxJitter float64
-
-	snInfos [cSnInfoSize]snInfo
 
 	gapHistogram [cGapHistogramNumBins]uint32
 
@@ -250,8 +238,6 @@ func (r *rtpStatsBase) seed(from *rtpStatsBase) bool {
 
 	r.jitter = from.jitter
 	r.maxJitter = from.maxJitter
-
-	r.snInfos = from.snInfos
 
 	r.gapHistogram = from.gapHistogram
 
@@ -770,107 +756,6 @@ func (r *rtpStatsBase) toProto(
 	}
 
 	return p
-}
-
-func (r *rtpStatsBase) getSnInfoOutOfOrderSlot(esn uint64, ehsn uint64) int {
-	offset := int64(ehsn - esn)
-	if offset >= cSnInfoSize || offset < 0 {
-		// too old OR too new (i. e. ahead of highest)
-		return -1
-	}
-
-	return int(esn & cSnInfoMask)
-}
-
-func (r *rtpStatsBase) setSnInfo(esn uint64, ehsn uint64, pktSize uint16, hdrSize uint16, payloadSize uint16, marker bool, isOutOfOrder bool) {
-	var slot int
-	if int64(esn-ehsn) < 0 {
-		slot = r.getSnInfoOutOfOrderSlot(esn, ehsn)
-		if slot < 0 {
-			return
-		}
-	} else {
-		slot = int(esn & cSnInfoMask)
-	}
-
-	snInfo := &r.snInfos[slot]
-	snInfo.pktSize = pktSize
-	snInfo.hdrSize = hdrSize
-	snInfo.isPaddingOnly = payloadSize == 0
-	snInfo.marker = marker
-	snInfo.isOutOfOrder = isOutOfOrder
-}
-
-func (r *rtpStatsBase) clearSnInfos(extStartInclusive uint64, extEndExclusive uint64) {
-	if extEndExclusive <= extStartInclusive {
-		return
-	}
-
-	for esn := extStartInclusive; esn != extEndExclusive; esn++ {
-		snInfo := &r.snInfos[esn&cSnInfoMask]
-		snInfo.pktSize = 0
-		snInfo.hdrSize = 0
-		snInfo.isPaddingOnly = false
-		snInfo.marker = false
-	}
-}
-
-func (r *rtpStatsBase) isSnInfoLost(esn uint64, ehsn uint64) bool {
-	slot := r.getSnInfoOutOfOrderSlot(esn, ehsn)
-	if slot < 0 {
-		return false
-	}
-
-	return r.snInfos[slot].pktSize == 0
-}
-
-func (r *rtpStatsBase) getIntervalStats(extStartInclusive uint64, extEndExclusive uint64, ehsn uint64) (intervalStats intervalStats) {
-	packetsNotFound := uint32(0)
-	processESN := func(esn uint64, ehsn uint64) {
-		slot := r.getSnInfoOutOfOrderSlot(esn, ehsn)
-		if slot < 0 {
-			packetsNotFound++
-			return
-		}
-
-		snInfo := &r.snInfos[slot]
-		switch {
-		case snInfo.pktSize == 0:
-			intervalStats.packetsLost++
-
-		case snInfo.isPaddingOnly:
-			intervalStats.packetsPadding++
-			intervalStats.bytesPadding += uint64(snInfo.pktSize)
-			intervalStats.headerBytesPadding += uint64(snInfo.hdrSize)
-
-		default:
-			intervalStats.packets++
-			intervalStats.bytes += uint64(snInfo.pktSize)
-			intervalStats.headerBytes += uint64(snInfo.hdrSize)
-			if snInfo.isOutOfOrder {
-				intervalStats.packetsOutOfOrder++
-			}
-		}
-
-		if snInfo.marker {
-			intervalStats.frames++
-		}
-	}
-
-	for esn := extStartInclusive; esn != extEndExclusive; esn++ {
-		processESN(esn, ehsn)
-	}
-
-	if packetsNotFound != 0 {
-		r.logger.Errorw(
-			"could not find some packets", nil,
-			"start", extStartInclusive,
-			"end", extEndExclusive,
-			"count", packetsNotFound,
-			"highestSN", ehsn,
-		)
-	}
-	return
 }
 
 func (r *rtpStatsBase) updateJitter(ets uint64, packetTime time.Time) float64 {
