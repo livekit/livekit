@@ -283,14 +283,14 @@ func (r *rtpStatsBase) newSnapshotID(extStartSN uint64) uint32 {
 	id := r.nextSnapshotID
 	r.nextSnapshotID++
 
-	if cap(r.snapshots) < int(r.nextSnapshotID) {
-		snapshots := make([]snapshot, r.nextSnapshotID)
+	if cap(r.snapshots) < int(r.nextSnapshotID-cFirstSnapshotID) {
+		snapshots := make([]snapshot, r.nextSnapshotID-cFirstSnapshotID)
 		copy(snapshots, r.snapshots)
 		r.snapshots = snapshots
 	}
 
 	if r.initialized {
-		r.snapshots[id] = r.initSnapshot(time.Now(), extStartSN)
+		r.snapshots[id-cFirstSnapshotID] = r.initSnapshot(time.Now(), extStartSN)
 	}
 	return id
 }
@@ -441,7 +441,8 @@ func (r *rtpStatsBase) UpdateRtt(rtt uint32) {
 		r.maxRtt = rtt
 	}
 
-	for _, s := range r.snapshots {
+	for i := uint32(0); i < r.nextSnapshotID-cFirstSnapshotID; i++ {
+		s := &r.snapshots[i]
 		if rtt > s.maxRtt {
 			s.maxRtt = rtt
 		}
@@ -519,7 +520,6 @@ func (r *rtpStatsBase) getTotalPacketsPrimary(extStartSN, extHighestSN uint64) u
 
 func (r *rtpStatsBase) deltaInfo(snapshotID uint32, extStartSN uint64, extHighestSN uint64) *RTPDeltaInfo {
 	then, now := r.getAndResetSnapshot(snapshotID, extStartSN, extHighestSN)
-
 	if now == nil || then == nil {
 		return nil
 	}
@@ -769,7 +769,8 @@ func (r *rtpStatsBase) updateJitter(ets uint64, packetTime time.Time) float64 {
 				r.maxJitter = r.jitter
 			}
 
-			for _, s := range r.snapshots {
+			for i := uint32(0); i < r.nextSnapshotID-cFirstSnapshotID; i++ {
+				s := &r.snapshots[i]
 				if r.jitter > s.maxJitter {
 					s.maxJitter = r.jitter
 				}
@@ -787,15 +788,16 @@ func (r *rtpStatsBase) getAndResetSnapshot(snapshotID uint32, extStartSN uint64,
 		return nil, nil
 	}
 
-	then := r.snapshots[snapshotID]
+	idx := snapshotID - cFirstSnapshotID
+	then := r.snapshots[idx]
 	if !then.isValid {
 		then = r.initSnapshot(r.startTime, extStartSN)
-		r.snapshots[snapshotID] = then
+		r.snapshots[idx] = then
 	}
 
 	// snapshot now
 	now := r.getSnapshot(time.Now(), extHighestSN+1)
-	r.snapshots[snapshotID] = now
+	r.snapshots[idx] = now
 	return &then, &now
 }
 
@@ -856,7 +858,7 @@ func (r *rtpStatsBase) updateGapHistogram(gap int) {
 func (r *rtpStatsBase) initSnapshot(startTime time.Time, extStartSN uint64) snapshot {
 	return snapshot{
 		isValid:    true,
-		startTime:  time.Now(),
+		startTime:  startTime,
 		extStartSN: extStartSN,
 	}
 }
@@ -864,7 +866,7 @@ func (r *rtpStatsBase) initSnapshot(startTime time.Time, extStartSN uint64) snap
 func (r *rtpStatsBase) getSnapshot(startTime time.Time, extStartSN uint64) snapshot {
 	return snapshot{
 		isValid:              true,
-		startTime:            time.Now(),
+		startTime:            startTime,
 		extStartSN:           extStartSN,
 		bytes:                r.bytes,
 		headerBytes:          r.headerBytes,
