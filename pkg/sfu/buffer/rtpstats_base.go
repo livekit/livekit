@@ -51,18 +51,6 @@ func RTPDriftToString(r *livekit.RTPDrift) string {
 
 // -------------------------------------------------------
 
-type intervalStats struct {
-	packets            uint64
-	bytes              uint64
-	headerBytes        uint64
-	packetsPadding     uint64
-	bytesPadding       uint64
-	headerBytesPadding uint64
-	packetsLost        uint64
-	packetsOutOfOrder  uint64
-	frames             uint32
-}
-
 type RTPDeltaInfo struct {
 	StartTime            time.Time
 	Duration             time.Duration
