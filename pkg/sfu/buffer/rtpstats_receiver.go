@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	cHistorySize = 2048
+	cHistorySize = 4096
 )
 
 type RTPFlowState struct {
