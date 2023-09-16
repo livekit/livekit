@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	cHistorySize = 2048
+	cHistorySize = 4096
 )
 
 type RTPFlowState struct {
@@ -69,7 +69,7 @@ func (r *RTPStatsReceiver) NewSnapshotId() uint32 {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	return r.newSnapshotID(r.sequenceNumber.GetExtendedStart())
+	return r.newSnapshotID(r.sequenceNumber.GetExtendedHighest())
 }
 
 func (r *RTPStatsReceiver) Update(
@@ -114,7 +114,7 @@ func (r *RTPStatsReceiver) Update(
 		resTS = r.timestamp.Update(timestamp)
 
 		// initialize snapshots if any
-		for i := uint32(cFirstSnapshotID); i < r.nextSnapshotID; i++ {
+		for i := uint32(0); i < r.nextSnapshotID-cFirstSnapshotID; i++ {
 			r.snapshots[i] = r.initSnapshot(r.startTime, r.sequenceNumber.GetExtendedStart())
 		}
 
@@ -154,7 +154,8 @@ func (r *RTPStatsReceiver) Update(
 			r.packetsLost += resSN.PreExtendedStart - resSN.ExtendedVal
 
 			extStartSN := r.sequenceNumber.GetExtendedStart()
-			for _, s := range r.snapshots {
+			for i := uint32(0); i < r.nextSnapshotID-cFirstSnapshotID; i++ {
+				s := &r.snapshots[i]
 				if s.extStartSN == resSN.PreExtendedStart {
 					s.extStartSN = extStartSN
 				}
