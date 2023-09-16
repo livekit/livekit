@@ -60,7 +60,7 @@ const (
 	dtlsRetransmissionInterval = 100 * time.Millisecond
 
 	iceDisconnectedTimeout = 10 * time.Second // compatible for ice-lite with firefox client
-	iceFailedTimeout       = 25 * time.Second // pion's default
+	iceFailedTimeout       = 5 * time.Second  // time between disconnected and failed
 	iceKeepaliveInterval   = 2 * time.Second  // pion's default
 
 	minTcpICEConnectTimeout = 5 * time.Second
