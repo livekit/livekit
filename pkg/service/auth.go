@@ -38,6 +38,7 @@ var (
 	ErrPermissionDenied          = errors.New("permissions denied")
 	ErrMissingAuthorization      = errors.New("invalid authorization header. Must start with " + bearerPrefix)
 	ErrInvalidAuthorizationToken = errors.New("invalid authorization token")
+	ErrInvalidAPIKey             = errors.New("invalid API key")
 )
 
 // authentication middleware

@@ -15,14 +15,18 @@
 package service
 
 import (
-	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"fmt"
 	"net"
 	"strconv"
+	"strings"
 
+	"github.com/jxskiss/base62"
 	"github.com/pion/turn/v2"
 	"github.com/pkg/errors"
 
+	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/logger/pionlogger"
@@ -142,14 +146,47 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 	return turn.NewServer(serverConfig)
 }
 
-func newTurnAuthHandler(roomStore ObjectStore) turn.AuthHandler {
-	return func(username, realm string, srcAddr net.Addr) (key []byte, ok bool) {
-		// room id should be the username, create a hashed room id
-		rm, _, err := roomStore.LoadRoom(context.Background(), livekit.RoomName(username), false)
-		if err != nil {
-			return nil, false
-		}
+func getTURNAuthHandlerFunc(handler *TURNAuthHandler) turn.AuthHandler {
+	return handler.HandleAuth
+}
 
-		return turn.GenerateAuthKey(username, LivekitRealm, rm.TurnPassword), true
+type TURNAuthHandler struct {
+	keyProvider auth.KeyProvider
+}
+
+func NewTURNAuthHandler(keyProvider auth.KeyProvider) *TURNAuthHandler {
+	return &TURNAuthHandler{
+		keyProvider: keyProvider,
 	}
+}
+
+func (h *TURNAuthHandler) CreateUsername(apiKey string, pID livekit.ParticipantID) string {
+	return base62.EncodeToString([]byte(fmt.Sprintf("%s|%s", apiKey, pID)))
+}
+
+func (h *TURNAuthHandler) CreatePassword(apiKey string, pID livekit.ParticipantID) (string, error) {
+	secret := h.keyProvider.GetSecret(apiKey)
+	if secret == "" {
+		return "", ErrInvalidAPIKey
+	}
+	keyInput := fmt.Sprintf("%s|%s", secret, pID)
+	sum := sha256.Sum256([]byte(keyInput))
+	return base62.EncodeToString(sum[:]), nil
+}
+
+func (h *TURNAuthHandler) HandleAuth(username, realm string, srcAddr net.Addr) (key []byte, ok bool) {
+	decoded, err := base62.DecodeString(username)
+	if err != nil {
+		return nil, false
+	}
+	parts := strings.Split(string(decoded), "|")
+	if len(parts) != 2 {
+		return nil, false
+	}
+	password, err := h.CreatePassword(parts[0], livekit.ParticipantID(parts[1]))
+	if err != nil {
+		logger.Warnw("could not create TURN password", err, "username", username)
+		return nil, false
+	}
+	return turn.GenerateAuthKey(username, LivekitRealm, password), true
 }
