@@ -582,6 +582,10 @@ func (r *Room) SyncState(participant types.LocalParticipant, state *livekit.Sync
 			}
 		}
 		if !found {
+			// is there a pending track?
+			found = participant.GetPendingTrack(livekit.TrackID(ti.Sid)) != nil
+		}
+		if !found {
 			pLogger.Warnw("unknown track during resume", nil, "trackID", ti.Sid)
 			shouldReconnect = true
 			break

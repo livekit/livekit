@@ -245,7 +245,8 @@ type Participant interface {
 	SetMetadata(metadata string)
 
 	IsPublisher() bool
-	GetPublishedTrack(sid livekit.TrackID) MediaTrack
+	GetPendingTrack(trackID livekit.TrackID) *livekit.TrackInfo
+	GetPublishedTrack(trackID livekit.TrackID) MediaTrack
 	GetPublishedTracks() []MediaTrack
 	RemovePublishedTrack(track MediaTrack, willBeResumed bool, shouldClose bool)
 

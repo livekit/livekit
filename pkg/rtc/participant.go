@@ -1637,6 +1637,19 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	return ti
 }
 
+func (p *ParticipantImpl) GetPendingTrack(trackID livekit.TrackID) *livekit.TrackInfo {
+	p.pendingTracksLock.RLock()
+	defer p.pendingTracksLock.RUnlock()
+
+	for _, t := range p.pendingTracks {
+		if livekit.TrackID(t.trackInfos[0].Sid) == trackID {
+			return t.trackInfos[0]
+		}
+	}
+
+	return nil
+}
+
 func (p *ParticipantImpl) sendTrackPublished(cid string, ti *livekit.TrackInfo) {
 	p.pubLogger.Debugw("sending track published", "cid", cid, "trackInfo", ti.String())
 	_ = p.writeMessage(&livekit.SignalResponse{

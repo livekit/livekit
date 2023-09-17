@@ -55,6 +55,17 @@ type FakeParticipant struct {
 		result1 float64
 		result2 bool
 	}
+	GetPendingTrackStub        func(livekit.TrackID) *livekit.TrackInfo
+	getPendingTrackMutex       sync.RWMutex
+	getPendingTrackArgsForCall []struct {
+		arg1 livekit.TrackID
+	}
+	getPendingTrackReturns struct {
+		result1 *livekit.TrackInfo
+	}
+	getPendingTrackReturnsOnCall map[int]struct {
+		result1 *livekit.TrackInfo
+	}
 	GetPublishedTrackStub        func(livekit.TrackID) types.MediaTrack
 	getPublishedTrackMutex       sync.RWMutex
 	getPublishedTrackArgsForCall []struct {
@@ -443,6 +454,67 @@ func (fake *FakeParticipant) GetAudioLevelReturnsOnCall(i int, result1 float64, 
 		result1 float64
 		result2 bool
 	}{result1, result2}
+}
+
+func (fake *FakeParticipant) GetPendingTrack(arg1 livekit.TrackID) *livekit.TrackInfo {
+	fake.getPendingTrackMutex.Lock()
+	ret, specificReturn := fake.getPendingTrackReturnsOnCall[len(fake.getPendingTrackArgsForCall)]
+	fake.getPendingTrackArgsForCall = append(fake.getPendingTrackArgsForCall, struct {
+		arg1 livekit.TrackID
+	}{arg1})
+	stub := fake.GetPendingTrackStub
+	fakeReturns := fake.getPendingTrackReturns
+	fake.recordInvocation("GetPendingTrack", []interface{}{arg1})
+	fake.getPendingTrackMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) GetPendingTrackCallCount() int {
+	fake.getPendingTrackMutex.RLock()
+	defer fake.getPendingTrackMutex.RUnlock()
+	return len(fake.getPendingTrackArgsForCall)
+}
+
+func (fake *FakeParticipant) GetPendingTrackCalls(stub func(livekit.TrackID) *livekit.TrackInfo) {
+	fake.getPendingTrackMutex.Lock()
+	defer fake.getPendingTrackMutex.Unlock()
+	fake.GetPendingTrackStub = stub
+}
+
+func (fake *FakeParticipant) GetPendingTrackArgsForCall(i int) livekit.TrackID {
+	fake.getPendingTrackMutex.RLock()
+	defer fake.getPendingTrackMutex.RUnlock()
+	argsForCall := fake.getPendingTrackArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeParticipant) GetPendingTrackReturns(result1 *livekit.TrackInfo) {
+	fake.getPendingTrackMutex.Lock()
+	defer fake.getPendingTrackMutex.Unlock()
+	fake.GetPendingTrackStub = nil
+	fake.getPendingTrackReturns = struct {
+		result1 *livekit.TrackInfo
+	}{result1}
+}
+
+func (fake *FakeParticipant) GetPendingTrackReturnsOnCall(i int, result1 *livekit.TrackInfo) {
+	fake.getPendingTrackMutex.Lock()
+	defer fake.getPendingTrackMutex.Unlock()
+	fake.GetPendingTrackStub = nil
+	if fake.getPendingTrackReturnsOnCall == nil {
+		fake.getPendingTrackReturnsOnCall = make(map[int]struct {
+			result1 *livekit.TrackInfo
+		})
+	}
+	fake.getPendingTrackReturnsOnCall[i] = struct {
+		result1 *livekit.TrackInfo
+	}{result1}
 }
 
 func (fake *FakeParticipant) GetPublishedTrack(arg1 livekit.TrackID) types.MediaTrack {
@@ -1306,6 +1378,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.debugInfoMutex.RUnlock()
 	fake.getAudioLevelMutex.RLock()
 	defer fake.getAudioLevelMutex.RUnlock()
+	fake.getPendingTrackMutex.RLock()
+	defer fake.getPendingTrackMutex.RUnlock()
 	fake.getPublishedTrackMutex.RLock()
 	defer fake.getPublishedTrackMutex.RUnlock()
 	fake.getPublishedTracksMutex.RLock()
