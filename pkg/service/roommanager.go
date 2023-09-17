@@ -247,7 +247,9 @@ func (r *RoomManager) StartSession(
 		return nil
 	}
 
-	apiKey, _, err := r.getFirstKeyPair()
+	// should not error out, error is logged in iceServersForParticipant even if it fails
+	// since this is used for TURN server credentials, we don't want to fail the request even if there's no TURN for the session
+	apiKey, _, _ := r.getFirstKeyPair()
 
 	participant := room.GetParticipant(pi.Identity)
 	if participant != nil {
