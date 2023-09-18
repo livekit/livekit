@@ -15,6 +15,7 @@
 package pacer
 
 import (
+	"sync"
 	"time"
 
 	"github.com/pion/rtp"
@@ -34,8 +35,8 @@ type Packet struct {
 	AbsSendTimeExtID   uint8
 	TransportWideExtID uint8
 	WriteStream        webrtc.TrackLocalWriter
-	Metadata           interface{}
-	OnSent             func(md interface{}, marker bool, hdrSize int, payloadSize int, isRTX bool, sentTime time.Time, sendError error)
+	Pool               *sync.Pool
+	PoolEntity         *[]byte
 }
 
 type Pacer interface {

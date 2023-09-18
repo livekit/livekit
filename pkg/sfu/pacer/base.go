@@ -46,11 +46,9 @@ func (b *Base) SetBitrate(_bitrate int) {
 }
 
 func (b *Base) SendPacket(p *Packet) (int, error) {
-	var sendingAt time.Time
-	var err error
 	defer func() {
-		if p.OnSent != nil {
-			p.OnSent(p.Metadata, p.Header.Marker, p.Header.MarshalSize(), len(p.Payload), p.IsRTX, sendingAt, err)
+		if p.Pool != nil && p.PoolEntity != nil {
+			p.Pool.Put(p.PoolEntity)
 		}
 	}()
 
