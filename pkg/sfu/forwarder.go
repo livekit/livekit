@@ -1511,7 +1511,6 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			// potentially happening very quickly. Erroring out and waiting for a layer for which a sender report has been
 			// received will calculate a better offset, but may result in initial adaptation to take a bit longer depending
 			// on how often publisher/remote side sends RTCP sender report.
-			f.logger.Errorw("could not get reference timestamp", err) // REMOVE
 			return err
 		}
 
