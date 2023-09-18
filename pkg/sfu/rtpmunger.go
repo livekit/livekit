@@ -124,7 +124,7 @@ func (r *RTPMunger) SetLastSnTs(extPkt *buffer.ExtPacket) {
 
 	r.extLastSN = extPkt.ExtSequenceNumber
 	r.extSecondLastSN = r.extLastSN - 1
-	r.updateSnOffset("init")
+	r.updateSnOffset()
 
 	r.extLastTS = extPkt.ExtTimestamp
 }
@@ -133,7 +133,7 @@ func (r *RTPMunger) UpdateSnTsOffsets(extPkt *buffer.ExtPacket, snAdjust uint64,
 	r.extHighestIncomingSN = extPkt.ExtSequenceNumber - 1
 
 	r.snRangeMap.ClearAndResetValue(extPkt.ExtSequenceNumber - r.extLastSN - snAdjust)
-	r.updateSnOffset("switch")
+	r.updateSnOffset()
 
 	r.tsOffset = extPkt.ExtTimestamp - r.extLastTS - tsAdjust
 }
@@ -159,7 +159,7 @@ func (r *RTPMunger) PacketDropped(extPkt *buffer.ExtPacket) {
 	}
 
 	r.extLastSN = r.extSecondLastSN
-	r.updateSnOffset("drop")
+	r.updateSnOffset()
 }
 
 func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationParamsRTP, error) {
@@ -200,15 +200,6 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 	if diff < 0 {
 		// out-of-order, look up sequence number offset cache
 		snOffset, err := r.snRangeMap.GetValue(extPkt.ExtSequenceNumber)
-		r.logger.Debugw(
-			"out-of-order packet",
-			"extHighestIncomingSN", r.extHighestIncomingSN,
-			"extLastSN", r.extLastSN,
-			"extSequenceNumber", extPkt.ExtSequenceNumber,
-			"snOffset", snOffset,
-			"error", err,
-			"outgoingSN", extPkt.ExtSequenceNumber-snOffset,
-		)
 		if err != nil {
 			return &TranslationParamsRTP{
 				snOrdering: SequenceNumberOrderingOutOfOrder,
@@ -230,7 +221,7 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 			r.logger.Errorw("could not exclude range", err, "sn", r.extHighestIncomingSN)
 		}
 
-		r.updateSnOffset("pad-drop")
+		r.updateSnOffset()
 
 		return &TranslationParamsRTP{
 			snOrdering: SequenceNumberOrderingContiguous,
@@ -301,7 +292,7 @@ func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate
 	r.extSecondLastSN = extLastSN - 1
 	r.extLastSN = extLastSN
 	r.snRangeMap.DecValue(r.extHighestIncomingSN, uint64(num))
-	r.updateSnOffset("pad")
+	r.updateSnOffset()
 
 	r.tsOffset -= extLastTS - r.extLastTS
 	r.extLastTS = extLastTS
@@ -317,16 +308,10 @@ func (r *RTPMunger) IsOnFrameBoundary() bool {
 	return r.lastMarker
 }
 
-func (r *RTPMunger) updateSnOffset(cause string) {
+func (r *RTPMunger) updateSnOffset() {
 	snOffset, err := r.snRangeMap.GetValue(r.extHighestIncomingSN + 1)
 	if err != nil {
 		r.logger.Errorw("could not get sequence number offset", err)
 	}
 	r.snOffset = snOffset
-	r.logger.Debugw(
-		"updating sequence number offset",
-		"cause", cause,
-		"extHighestIncomingSN", r.extHighestIncomingSN,
-		"snOffset", r.snOffset,
-	)
 }
