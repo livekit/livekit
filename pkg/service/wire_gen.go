@@ -87,7 +87,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode, telemetryService)
 	clientConfigurationManager := createClientConfiguration()
 	timedVersionGenerator := utils.NewDefaultTimedVersionGenerator()
-	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager, rtcEgressLauncher, timedVersionGenerator)
+	turnAuthHandler := NewTURNAuthHandler(keyProvider)
+	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager, rtcEgressLauncher, timedVersionGenerator, turnAuthHandler)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +96,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	authHandler := newTurnAuthHandler(objectStore)
+	authHandler := getTURNAuthHandlerFunc(turnAuthHandler)
 	server, err := newInProcessTurnServer(conf, authHandler)
 	if err != nil {
 		return nil, err

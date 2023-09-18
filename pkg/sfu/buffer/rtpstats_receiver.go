@@ -22,6 +22,11 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/protocol/livekit"
+	protoutils "github.com/livekit/protocol/utils"
+)
+
+const (
+	cHistorySize = 4096
 )
 
 type RTPFlowState struct {
@@ -47,6 +52,8 @@ type RTPStatsReceiver struct {
 	sequenceNumber *utils.WrapAround[uint16, uint64]
 
 	timestamp *utils.WrapAround[uint32, uint64]
+
+	history *protoutils.Bitmap[uint64]
 }
 
 func NewRTPStatsReceiver(params RTPStatsParams) *RTPStatsReceiver {
@@ -54,6 +61,7 @@ func NewRTPStatsReceiver(params RTPStatsParams) *RTPStatsReceiver {
 		rtpStatsBase:   newRTPStatsBase(params),
 		sequenceNumber: utils.NewWrapAround[uint16, uint64](),
 		timestamp:      utils.NewWrapAround[uint32, uint64](),
+		history:        protoutils.NewBitmap[uint64](cHistorySize),
 	}
 }
 
@@ -61,7 +69,7 @@ func (r *RTPStatsReceiver) NewSnapshotId() uint32 {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	return r.newSnapshotID(r.sequenceNumber.GetExtendedStart())
+	return r.newSnapshotID(r.sequenceNumber.GetExtendedHighest())
 }
 
 func (r *RTPStatsReceiver) Update(
@@ -106,11 +114,8 @@ func (r *RTPStatsReceiver) Update(
 		resTS = r.timestamp.Update(timestamp)
 
 		// initialize snapshots if any
-		for i := uint32(cFirstSnapshotID); i < r.nextSnapshotID; i++ {
-			r.snapshots[i] = &snapshot{
-				startTime:  r.startTime,
-				extStartSN: r.sequenceNumber.GetExtendedStart(),
-			}
+		for i := uint32(0); i < r.nextSnapshotID-cFirstSnapshotID; i++ {
+			r.snapshots[i] = r.initSnapshot(r.startTime, r.sequenceNumber.GetExtendedStart())
 		}
 
 		r.logger.Debugw(
@@ -149,7 +154,8 @@ func (r *RTPStatsReceiver) Update(
 			r.packetsLost += resSN.PreExtendedStart - resSN.ExtendedVal
 
 			extStartSN := r.sequenceNumber.GetExtendedStart()
-			for _, s := range r.snapshots {
+			for i := uint32(0); i < r.nextSnapshotID-cFirstSnapshotID; i++ {
+				s := &r.snapshots[i]
 				if s.extStartSN == resSN.PreExtendedStart {
 					s.extStartSN = extStartSN
 				}
@@ -170,14 +176,16 @@ func (r *RTPStatsReceiver) Update(
 			)
 		}
 
-		if !r.isSnInfoLost(resSN.ExtendedVal, resSN.PreExtendedHighest) {
-			r.bytesDuplicate += pktSize
-			r.headerBytesDuplicate += uint64(hdrSize)
-			r.packetsDuplicate++
-			flowState.IsDuplicate = true
-		} else {
-			r.packetsLost--
-			r.setSnInfo(resSN.ExtendedVal, resSN.PreExtendedHighest, uint16(pktSize), uint16(hdrSize), uint16(payloadSize), marker, true)
+		if r.isInRange(resSN.ExtendedVal, resSN.PreExtendedHighest) {
+			if r.history.IsSet(resSN.ExtendedVal) {
+				r.bytesDuplicate += pktSize
+				r.headerBytesDuplicate += uint64(hdrSize)
+				r.packetsDuplicate++
+				flowState.IsDuplicate = true
+			} else {
+				r.packetsLost--
+				r.history.Set(resSN.ExtendedVal)
+			}
 		}
 
 		flowState.IsOutOfOrder = true
@@ -188,10 +196,10 @@ func (r *RTPStatsReceiver) Update(
 		r.updateGapHistogram(int(gapSN))
 
 		// update missing sequence numbers
-		r.clearSnInfos(resSN.PreExtendedHighest+1, resSN.ExtendedVal)
+		r.history.ClearRange(resSN.PreExtendedHighest+1, resSN.ExtendedVal-1)
 		r.packetsLost += uint64(gapSN - 1)
 
-		r.setSnInfo(resSN.ExtendedVal, resSN.PreExtendedHighest, uint16(pktSize), uint16(hdrSize), uint16(payloadSize), marker, false)
+		r.history.Set(resSN.ExtendedVal)
 
 		if timestamp != uint32(resTS.PreExtendedHighest) {
 			// update only on first packet as same timestamp could be in multiple packets.
@@ -409,8 +417,10 @@ func (r *RTPStatsReceiver) GetRtcpReceptionReport(ssrc uint32, proxyFracLost uin
 		return nil
 	}
 
-	intervalStats := r.getIntervalStats(then.extStartSN, now.extStartSN, extHighestSN)
-	packetsLost := intervalStats.packetsLost
+	packetsLost := uint32(now.packetsLost - then.packetsLost)
+	if int32(packetsLost) < 0 {
+		packetsLost = 0
+	}
 	lossRate := float32(packetsLost) / float32(packetsExpected)
 	fracLost := uint8(lossRate * 256.0)
 	if proxyFracLost > fracLost {
@@ -466,6 +476,11 @@ func (r *RTPStatsReceiver) ToProto() *livekit.RTPStats {
 		r.packetsLost,
 		r.jitter, r.maxJitter,
 	)
+}
+
+func (r *RTPStatsReceiver) isInRange(esn uint64, ehsn uint64) bool {
+	diff := int64(ehsn - esn)
+	return diff >= 0 && diff < cHistorySize
 }
 
 // ----------------------------------
