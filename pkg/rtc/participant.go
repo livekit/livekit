@@ -56,7 +56,7 @@ const (
 	sdBatchSize       = 30
 	rttUpdateInterval = 5 * time.Second
 
-	disconnectCleanupDuration = 15 * time.Second
+	disconnectCleanupDuration = 5 * time.Second
 	migrationWaitDuration     = 3 * time.Second
 )
 
@@ -561,7 +561,9 @@ func (p *ParticipantImpl) HandleSignalSourceClose() {
 	p.TransportManager.SetSignalSourceValid(false)
 
 	if !p.TransportManager.HasPublisherEverConnected() && !p.TransportManager.HasSubscriberEverConnected() {
-		p.params.Logger.Infow("closing disconnected participant")
+		p.params.Logger.Infow("closing disconnected participant",
+			"reason", types.ParticipantCloseReasonJoinFailed,
+		)
 		_ = p.Close(false, types.ParticipantCloseReasonJoinFailed, false)
 	}
 }
@@ -1402,7 +1404,9 @@ func (p *ParticipantImpl) setupDisconnectTimer() {
 		if p.IsClosed() || p.IsDisconnected() {
 			return
 		}
-		p.params.Logger.Infow("closing disconnected participant")
+		p.params.Logger.Infow("closing disconnected participant",
+			"reason", types.ParticipantCloseReasonPeerConnectionDisconnected,
+		)
 		_ = p.Close(true, types.ParticipantCloseReasonPeerConnectionDisconnected, false)
 	})
 	p.lock.Unlock()
@@ -1631,6 +1635,19 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	p.pendingTracks[req.Cid] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}}
 	p.pubLogger.Infow("pending track added", "trackID", ti.Sid, "track", ti.String(), "request", req.String())
 	return ti
+}
+
+func (p *ParticipantImpl) GetPendingTrack(trackID livekit.TrackID) *livekit.TrackInfo {
+	p.pendingTracksLock.RLock()
+	defer p.pendingTracksLock.RUnlock()
+
+	for _, t := range p.pendingTracks {
+		if livekit.TrackID(t.trackInfos[0].Sid) == trackID {
+			return t.trackInfos[0]
+		}
+	}
+
+	return nil
 }
 
 func (p *ParticipantImpl) sendTrackPublished(cid string, ti *livekit.TrackInfo) {

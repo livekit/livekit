@@ -147,8 +147,8 @@ func (s *sequencer) push(
 		s.extHighestSN = extModifiedSN
 	} else {
 		if diff < -int64(s.size) {
-			s.logger.Debugw(
-				"old packet, cannot be sequenced",
+			s.logger.Warnw(
+				"old packet, cannot be sequenced", nil,
 				"extHighestSN", s.extHighestSN,
 				"extIncomingSN", extIncomingSN,
 				"extModifiedSN", extModifiedSN,
@@ -200,7 +200,6 @@ func (s *sequencer) pushPadding(extStartSNInclusive uint64, extEndSNInclusive ui
 	s.Lock()
 	defer s.Unlock()
 
-	s.logger.Debugw("sequencer padding", "extHighestSN", s.extHighestSN, "startSN", extStartSNInclusive, "endSN", extEndSNInclusive)
 	if s.snRangeMap == nil {
 		return
 	}
