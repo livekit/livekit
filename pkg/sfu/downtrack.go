@@ -711,18 +711,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		)
 	}
 
-	d.pacer.Enqueue(pacer.Packet{
-		Header:             hdr,
-		Extensions:         extensions,
-		Payload:            payload,
-		AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
-		TransportWideExtID: uint8(d.transportWideExtID),
-		WriteStream:        d.writeStream,
-		Pool:               PacketFactory,
-		PoolEntity:         poolEntity,
-	})
-
-	d.afterPacketSend(
+	d.sendingPacket(
 		hdr,
 		len(payload),
 		&sendPacketMetadata{
@@ -734,6 +723,16 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			tp:                &tp,
 		},
 	)
+	d.pacer.Enqueue(pacer.Packet{
+		Header:             hdr,
+		Extensions:         extensions,
+		Payload:            payload,
+		AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
+		TransportWideExtID: uint8(d.transportWideExtID),
+		WriteStream:        d.writeStream,
+		Pool:               PacketFactory,
+		PoolEntity:         poolEntity,
+	})
 	return nil
 }
 
@@ -810,14 +809,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 		// last byte of padding has padding size including that byte
 		payload[RTPPaddingMaxPayloadSize-1] = byte(RTPPaddingMaxPayloadSize)
 
-		d.pacer.Enqueue(pacer.Packet{
-			Header:             &hdr,
-			Payload:            payload,
-			AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
-			TransportWideExtID: uint8(d.transportWideExtID),
-			WriteStream:        d.writeStream,
-		})
-		d.afterPacketSend(
+		d.sendingPacket(
 			&hdr,
 			len(payload),
 			&sendPacketMetadata{
@@ -827,6 +819,13 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 				shouldDisableCounter: true,
 			},
 		)
+		d.pacer.Enqueue(pacer.Packet{
+			Header:             &hdr,
+			Payload:            payload,
+			AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
+			TransportWideExtID: uint8(d.transportWideExtID),
+			WriteStream:        d.writeStream,
+		})
 
 		bytesSent += hdr.MarshalSize() + len(payload)
 	}
@@ -1337,16 +1336,16 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 					return
 				}
 
+				d.sendingPacket(&hdr, len(payload), &sendPacketMetadata{
+					extSequenceNumber: snts[i].extSequenceNumber,
+					extTimestamp:      snts[i].extTimestamp,
+				})
 				d.pacer.Enqueue(pacer.Packet{
 					Header:             &hdr,
 					Payload:            payload,
 					AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 					TransportWideExtID: uint8(d.transportWideExtID),
 					WriteStream:        d.writeStream,
-				})
-				d.afterPacketSend(&hdr, len(payload), &sendPacketMetadata{
-					extSequenceNumber: snts[i].extSequenceNumber,
-					extTimestamp:      snts[i].extTimestamp,
 				})
 
 				// only the first frame will need frameEndNeeded to close out the
@@ -1614,17 +1613,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		copy(payload[epm.numCodecBytesOut:], pkt.Payload[epm.numCodecBytesIn:])
 		payload = payload[:int(epm.numCodecBytesOut)+len(pkt.Payload)-int(epm.numCodecBytesIn)]
 
-		d.pacer.Enqueue(pacer.Packet{
-			Header:             &pkt.Header,
-			Extensions:         []pacer.ExtensionData{{ID: uint8(d.dependencyDescriptorExtID), Payload: epm.ddBytes}},
-			Payload:            payload,
-			AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
-			TransportWideExtID: uint8(d.transportWideExtID),
-			WriteStream:        d.writeStream,
-			Pool:               PacketFactory,
-			PoolEntity:         poolEntity,
-		})
-		d.afterPacketSend(
+		d.sendingPacket(
 			&pkt.Header,
 			len(payload),
 			&sendPacketMetadata{
@@ -1635,6 +1624,16 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 				isRTX:             true,
 			},
 		)
+		d.pacer.Enqueue(pacer.Packet{
+			Header:             &pkt.Header,
+			Extensions:         []pacer.ExtensionData{{ID: uint8(d.dependencyDescriptorExtID), Payload: epm.ddBytes}},
+			Payload:            payload,
+			AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
+			TransportWideExtID: uint8(d.transportWideExtID),
+			WriteStream:        d.writeStream,
+			Pool:               PacketFactory,
+			PoolEntity:         poolEntity,
+		})
 	}
 
 	d.totalRepeatedNACKs.Add(numRepeatedNACKs)
@@ -1825,14 +1824,7 @@ func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
 				return
 			}
 
-			d.pacer.Enqueue(pacer.Packet{
-				Header:             &hdr,
-				Payload:            payload,
-				AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
-				TransportWideExtID: uint8(d.transportWideExtID),
-				WriteStream:        d.writeStream,
-			})
-			d.afterPacketSend(
+			d.sendingPacket(
 				&hdr,
 				len(payload),
 				&sendPacketMetadata{
@@ -1842,6 +1834,13 @@ func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
 					isPadding: true,
 				},
 			)
+			d.pacer.Enqueue(pacer.Packet{
+				Header:             &hdr,
+				Payload:            payload,
+				AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
+				TransportWideExtID: uint8(d.transportWideExtID),
+				WriteStream:        d.writeStream,
+			})
 		}
 
 		numFrames--
@@ -1868,7 +1867,7 @@ type sendPacketMetadata struct {
 	tp                   *TranslationParams
 }
 
-func (d *DownTrack) afterPacketSend(hdr *rtp.Header, payloadSize int, spmd *sendPacketMetadata) {
+func (d *DownTrack) sendingPacket(hdr *rtp.Header, payloadSize int, spmd *sendPacketMetadata) {
 	hdrSize := hdr.MarshalSize()
 	if !spmd.shouldDisableCounter {
 		// STREAM-ALLOCATOR-TODO: remove this stream allocator bytes counter once stream allocator changes fully to pull bytes counter
