@@ -30,8 +30,6 @@ const (
 	cGapHistogramNumBins = 101
 	cNumSequenceNumbers  = 65536
 	cFirstSnapshotID     = 1
-	cSnInfoSize          = 8192
-	cSnInfoMask          = cSnInfoSize - 1
 
 	cFirstPacketTimeAdjustWindow    = 2 * time.Minute
 	cFirstPacketTimeAdjustThreshold = 5 * time.Second
@@ -52,18 +50,6 @@ func RTPDriftToString(r *livekit.RTPDrift) string {
 }
 
 // -------------------------------------------------------
-
-type intervalStats struct {
-	packets            uint64
-	bytes              uint64
-	headerBytes        uint64
-	packetsPadding     uint64
-	bytesPadding       uint64
-	headerBytesPadding uint64
-	packetsLost        uint64
-	packetsOutOfOrder  uint64
-	frames             uint32
-}
 
 type RTPDeltaInfo struct {
 	StartTime            time.Time
@@ -89,25 +75,34 @@ type RTPDeltaInfo struct {
 }
 
 type snapshot struct {
-	startTime             time.Time
-	extStartSN            uint64
-	packetsDuplicate      uint64
-	bytesDuplicate        uint64
-	headerBytesDuplicate  uint64
-	packetsLostOverridden uint64
-	nacks                 uint32
-	plis                  uint32
-	firs                  uint32
-	maxRtt                uint32
-	maxJitter             float64
-}
+	isValid bool
 
-type snInfo struct {
-	hdrSize       uint16
-	pktSize       uint16
-	isPaddingOnly bool
-	marker        bool
-	isOutOfOrder  bool
+	startTime time.Time
+
+	extStartSN  uint64
+	bytes       uint64
+	headerBytes uint64
+
+	packetsPadding     uint64
+	bytesPadding       uint64
+	headerBytesPadding uint64
+
+	packetsDuplicate     uint64
+	bytesDuplicate       uint64
+	headerBytesDuplicate uint64
+
+	packetsOutOfOrder uint64
+
+	packetsLost uint64
+
+	frames uint32
+
+	nacks uint32
+	plis  uint32
+	firs  uint32
+
+	maxRtt    uint32
+	maxJitter float64
 }
 
 type RTCPSenderReportData struct {
@@ -153,15 +148,12 @@ type rtpStatsBase struct {
 
 	packetsOutOfOrder uint64
 
-	packetsLost           uint64
-	packetsLostOverridden uint64
+	packetsLost uint64
 
 	frames uint32
 
 	jitter    float64
 	maxJitter float64
-
-	snInfos [cSnInfoSize]snInfo
 
 	gapHistogram [cGapHistogramNumBins]uint32
 
@@ -189,7 +181,7 @@ type rtpStatsBase struct {
 	srNewest *RTCPSenderReportData
 
 	nextSnapshotID uint32
-	snapshots      map[uint32]*snapshot
+	snapshots      []snapshot
 }
 
 func newRTPStatsBase(params RTPStatsParams) *rtpStatsBase {
@@ -197,7 +189,7 @@ func newRTPStatsBase(params RTPStatsParams) *rtpStatsBase {
 		params:         params,
 		logger:         params.Logger,
 		nextSnapshotID: cFirstSnapshotID,
-		snapshots:      make(map[uint32]*snapshot),
+		snapshots:      make([]snapshot, 2),
 	}
 }
 
@@ -235,8 +227,6 @@ func (r *rtpStatsBase) seed(from *rtpStatsBase) bool {
 	r.jitter = from.jitter
 	r.maxJitter = from.maxJitter
 
-	r.snInfos = from.snInfos
-
 	r.gapHistogram = from.gapHistogram
 
 	r.nacks = from.nacks
@@ -273,10 +263,8 @@ func (r *rtpStatsBase) seed(from *rtpStatsBase) bool {
 	}
 
 	r.nextSnapshotID = from.nextSnapshotID
-	for id, ss := range from.snapshots {
-		ssCopy := *ss
-		r.snapshots[id] = &ssCopy
-	}
+	r.snapshots = make([]snapshot, cap(from.snapshots))
+	copy(r.snapshots, from.snapshots)
 	return true
 }
 
@@ -295,11 +283,14 @@ func (r *rtpStatsBase) newSnapshotID(extStartSN uint64) uint32 {
 	id := r.nextSnapshotID
 	r.nextSnapshotID++
 
+	if cap(r.snapshots) < int(r.nextSnapshotID-cFirstSnapshotID) {
+		snapshots := make([]snapshot, r.nextSnapshotID-cFirstSnapshotID)
+		copy(snapshots, r.snapshots)
+		r.snapshots = snapshots
+	}
+
 	if r.initialized {
-		r.snapshots[id] = &snapshot{
-			startTime:  time.Now(),
-			extStartSN: extStartSN,
-		}
+		r.snapshots[id-cFirstSnapshotID] = r.initSnapshot(time.Now(), extStartSN)
 	}
 	return id
 }
@@ -450,7 +441,8 @@ func (r *rtpStatsBase) UpdateRtt(rtt uint32) {
 		r.maxRtt = rtt
 	}
 
-	for _, s := range r.snapshots {
+	for i := uint32(0); i < r.nextSnapshotID-cFirstSnapshotID; i++ {
+		s := &r.snapshots[i]
 		if rtt > s.maxRtt {
 			s.maxRtt = rtt
 		}
@@ -528,7 +520,6 @@ func (r *rtpStatsBase) getTotalPacketsPrimary(extStartSN, extHighestSN uint64) u
 
 func (r *rtpStatsBase) deltaInfo(snapshotID uint32, extStartSN uint64, extHighestSN uint64) *RTPDeltaInfo {
 	then, now := r.getAndResetSnapshot(snapshotID, extStartSN, extHighestSN)
-
 	if now == nil || then == nil {
 		return nil
 	}
@@ -551,21 +542,25 @@ func (r *rtpStatsBase) deltaInfo(snapshotID uint32, extStartSN uint64, extHighes
 		}
 	}
 
-	intervalStats := r.getIntervalStats(then.extStartSN, now.extStartSN, extHighestSN)
+	packetsLost := uint32(now.packetsLost - then.packetsLost)
+	if int32(packetsLost) < 0 {
+		packetsLost = 0
+	}
 	return &RTPDeltaInfo{
 		StartTime:            startTime,
 		Duration:             endTime.Sub(startTime),
-		Packets:              uint32(packetsExpected - intervalStats.packetsPadding),
-		Bytes:                intervalStats.bytes,
-		HeaderBytes:          intervalStats.headerBytes,
+		Packets:              uint32(packetsExpected - (now.packetsPadding - then.packetsPadding)),
+		Bytes:                now.bytes - then.bytes,
+		HeaderBytes:          now.headerBytes - then.headerBytes,
 		PacketsDuplicate:     uint32(now.packetsDuplicate - then.packetsDuplicate),
 		BytesDuplicate:       now.bytesDuplicate - then.bytesDuplicate,
 		HeaderBytesDuplicate: now.headerBytesDuplicate - then.headerBytesDuplicate,
-		PacketsPadding:       uint32(intervalStats.packetsPadding),
-		BytesPadding:         intervalStats.bytesPadding,
-		HeaderBytesPadding:   intervalStats.headerBytesPadding,
-		PacketsLost:          uint32(intervalStats.packetsLost),
-		Frames:               intervalStats.frames,
+		PacketsPadding:       uint32(now.packetsPadding - then.packetsPadding),
+		BytesPadding:         now.bytesPadding - then.bytesPadding,
+		HeaderBytesPadding:   now.headerBytesPadding - then.headerBytesPadding,
+		PacketsLost:          packetsLost,
+		PacketsOutOfOrder:    uint32(now.packetsOutOfOrder - then.packetsOutOfOrder),
+		Frames:               now.frames - then.frames,
 		RttMax:               then.maxRtt,
 		JitterMax:            then.maxJitter / float64(r.params.ClockRate) * 1e6,
 		Nacks:                now.nacks - then.nacks,
@@ -751,107 +746,6 @@ func (r *rtpStatsBase) toProto(
 	return p
 }
 
-func (r *rtpStatsBase) getSnInfoOutOfOrderSlot(esn uint64, ehsn uint64) int {
-	offset := int64(ehsn - esn)
-	if offset >= cSnInfoSize || offset < 0 {
-		// too old OR too new (i. e. ahead of highest)
-		return -1
-	}
-
-	return int(esn & cSnInfoMask)
-}
-
-func (r *rtpStatsBase) setSnInfo(esn uint64, ehsn uint64, pktSize uint16, hdrSize uint16, payloadSize uint16, marker bool, isOutOfOrder bool) {
-	var slot int
-	if int64(esn-ehsn) < 0 {
-		slot = r.getSnInfoOutOfOrderSlot(esn, ehsn)
-		if slot < 0 {
-			return
-		}
-	} else {
-		slot = int(esn & cSnInfoMask)
-	}
-
-	snInfo := &r.snInfos[slot]
-	snInfo.pktSize = pktSize
-	snInfo.hdrSize = hdrSize
-	snInfo.isPaddingOnly = payloadSize == 0
-	snInfo.marker = marker
-	snInfo.isOutOfOrder = isOutOfOrder
-}
-
-func (r *rtpStatsBase) clearSnInfos(extStartInclusive uint64, extEndExclusive uint64) {
-	if extEndExclusive <= extStartInclusive {
-		return
-	}
-
-	for esn := extStartInclusive; esn != extEndExclusive; esn++ {
-		snInfo := &r.snInfos[esn&cSnInfoMask]
-		snInfo.pktSize = 0
-		snInfo.hdrSize = 0
-		snInfo.isPaddingOnly = false
-		snInfo.marker = false
-	}
-}
-
-func (r *rtpStatsBase) isSnInfoLost(esn uint64, ehsn uint64) bool {
-	slot := r.getSnInfoOutOfOrderSlot(esn, ehsn)
-	if slot < 0 {
-		return false
-	}
-
-	return r.snInfos[slot].pktSize == 0
-}
-
-func (r *rtpStatsBase) getIntervalStats(extStartInclusive uint64, extEndExclusive uint64, ehsn uint64) (intervalStats intervalStats) {
-	packetsNotFound := uint32(0)
-	processESN := func(esn uint64, ehsn uint64) {
-		slot := r.getSnInfoOutOfOrderSlot(esn, ehsn)
-		if slot < 0 {
-			packetsNotFound++
-			return
-		}
-
-		snInfo := &r.snInfos[slot]
-		switch {
-		case snInfo.pktSize == 0:
-			intervalStats.packetsLost++
-
-		case snInfo.isPaddingOnly:
-			intervalStats.packetsPadding++
-			intervalStats.bytesPadding += uint64(snInfo.pktSize)
-			intervalStats.headerBytesPadding += uint64(snInfo.hdrSize)
-
-		default:
-			intervalStats.packets++
-			intervalStats.bytes += uint64(snInfo.pktSize)
-			intervalStats.headerBytes += uint64(snInfo.hdrSize)
-			if snInfo.isOutOfOrder {
-				intervalStats.packetsOutOfOrder++
-			}
-		}
-
-		if snInfo.marker {
-			intervalStats.frames++
-		}
-	}
-
-	for esn := extStartInclusive; esn != extEndExclusive; esn++ {
-		processESN(esn, ehsn)
-	}
-
-	if packetsNotFound != 0 {
-		r.logger.Errorw(
-			"could not find some packets", nil,
-			"start", extStartInclusive,
-			"end", extEndExclusive,
-			"count", packetsNotFound,
-			"highestSN", ehsn,
-		)
-	}
-	return
-}
-
 func (r *rtpStatsBase) updateJitter(ets uint64, packetTime time.Time) float64 {
 	// Do not update jitter on multiple packets of same frame.
 	// All packets of a frame have the same time stamp.
@@ -875,7 +769,8 @@ func (r *rtpStatsBase) updateJitter(ets uint64, packetTime time.Time) float64 {
 				r.maxJitter = r.jitter
 			}
 
-			for _, s := range r.snapshots {
+			for i := uint32(0); i < r.nextSnapshotID-cFirstSnapshotID; i++ {
+				s := &r.snapshots[i]
 				if r.jitter > s.maxJitter {
 					s.maxJitter = r.jitter
 				}
@@ -893,32 +788,17 @@ func (r *rtpStatsBase) getAndResetSnapshot(snapshotID uint32, extStartSN uint64,
 		return nil, nil
 	}
 
-	then := r.snapshots[snapshotID]
-	if then == nil {
-		then = &snapshot{
-			startTime:  r.startTime,
-			extStartSN: extStartSN,
-		}
-		r.snapshots[snapshotID] = then
+	idx := snapshotID - cFirstSnapshotID
+	then := r.snapshots[idx]
+	if !then.isValid {
+		then = r.initSnapshot(r.startTime, extStartSN)
+		r.snapshots[idx] = then
 	}
 
 	// snapshot now
-	r.snapshots[snapshotID] = &snapshot{
-		startTime:            time.Now(),
-		extStartSN:           extHighestSN + 1,
-		packetsDuplicate:     r.packetsDuplicate,
-		bytesDuplicate:       r.bytesDuplicate,
-		headerBytesDuplicate: r.headerBytesDuplicate,
-		nacks:                r.nacks,
-		plis:                 r.plis,
-		firs:                 r.firs,
-		maxJitter:            r.jitter,
-		maxRtt:               r.rtt,
-	}
-	// make a copy so that it can be used independently
-	now := *r.snapshots[snapshotID]
-
-	return then, &now
+	now := r.getSnapshot(time.Now(), extHighestSN+1)
+	r.snapshots[idx] = now
+	return &then, &now
 }
 
 func (r *rtpStatsBase) getDrift(extStartTS, extHighestTS uint64) (packetDrift *livekit.RTPDrift, reportDrift *livekit.RTPDrift) {
@@ -972,6 +852,38 @@ func (r *rtpStatsBase) updateGapHistogram(gap int) {
 		r.gapHistogram[len(r.gapHistogram)-1]++
 	} else {
 		r.gapHistogram[missing-1]++
+	}
+}
+
+func (r *rtpStatsBase) initSnapshot(startTime time.Time, extStartSN uint64) snapshot {
+	return snapshot{
+		isValid:    true,
+		startTime:  startTime,
+		extStartSN: extStartSN,
+	}
+}
+
+func (r *rtpStatsBase) getSnapshot(startTime time.Time, extStartSN uint64) snapshot {
+	return snapshot{
+		isValid:              true,
+		startTime:            startTime,
+		extStartSN:           extStartSN,
+		bytes:                r.bytes,
+		headerBytes:          r.headerBytes,
+		packetsPadding:       r.packetsPadding,
+		bytesPadding:         r.bytesPadding,
+		headerBytesPadding:   r.headerBytesPadding,
+		packetsDuplicate:     r.packetsDuplicate,
+		bytesDuplicate:       r.bytesDuplicate,
+		headerBytesDuplicate: r.headerBytesDuplicate,
+		packetsLost:          r.packetsLost,
+		packetsOutOfOrder:    r.packetsOutOfOrder,
+		frames:               r.frames,
+		nacks:                r.nacks,
+		plis:                 r.plis,
+		firs:                 r.firs,
+		maxRtt:               r.rtt,
+		maxJitter:            r.jitter,
 	}
 }
 

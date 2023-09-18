@@ -18,7 +18,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20230906055425-e81fd5f6fb3f
-	github.com/livekit/protocol v1.7.3-0.20230914043855-933a0f5464f7
+	github.com/livekit/protocol v1.7.3-0.20230915202328-cf9f95141e0e
 	github.com/livekit/psrpc v0.3.3
 	github.com/mackerelio/go-osstat v0.2.4
 	github.com/magefile/mage v1.15.0
@@ -27,14 +27,14 @@ require (
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/pion/dtls/v2 v2.2.7
 	github.com/pion/ice/v2 v2.3.11
-	github.com/pion/interceptor v0.1.18
+	github.com/pion/interceptor v0.1.19
 	github.com/pion/rtcp v1.2.10
 	github.com/pion/rtp v1.8.1
-	github.com/pion/sctp v1.8.8
+	github.com/pion/sctp v1.8.9
 	github.com/pion/sdp/v3 v3.0.6
-	github.com/pion/transport/v2 v2.2.3
-	github.com/pion/turn/v2 v2.1.3
-	github.com/pion/webrtc/v3 v3.2.19
+	github.com/pion/transport/v2 v2.2.4
+	github.com/pion/turn/v2 v2.1.4
+	github.com/pion/webrtc/v3 v3.2.20
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.16.0
 	github.com/redis/go-redis/v9 v9.1.0

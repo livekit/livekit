@@ -263,6 +263,17 @@ type FakeLocalParticipant struct {
 	getPacerReturnsOnCall map[int]struct {
 		result1 pacer.Pacer
 	}
+	GetPendingTrackStub        func(livekit.TrackID) *livekit.TrackInfo
+	getPendingTrackMutex       sync.RWMutex
+	getPendingTrackArgsForCall []struct {
+		arg1 livekit.TrackID
+	}
+	getPendingTrackReturns struct {
+		result1 *livekit.TrackInfo
+	}
+	getPendingTrackReturnsOnCall map[int]struct {
+		result1 *livekit.TrackInfo
+	}
 	GetPlayoutDelayConfigStub        func() *livekit.PlayoutDelay
 	getPlayoutDelayConfigMutex       sync.RWMutex
 	getPlayoutDelayConfigArgsForCall []struct {
@@ -2166,6 +2177,67 @@ func (fake *FakeLocalParticipant) GetPacerReturnsOnCall(i int, result1 pacer.Pac
 	}
 	fake.getPacerReturnsOnCall[i] = struct {
 		result1 pacer.Pacer
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetPendingTrack(arg1 livekit.TrackID) *livekit.TrackInfo {
+	fake.getPendingTrackMutex.Lock()
+	ret, specificReturn := fake.getPendingTrackReturnsOnCall[len(fake.getPendingTrackArgsForCall)]
+	fake.getPendingTrackArgsForCall = append(fake.getPendingTrackArgsForCall, struct {
+		arg1 livekit.TrackID
+	}{arg1})
+	stub := fake.GetPendingTrackStub
+	fakeReturns := fake.getPendingTrackReturns
+	fake.recordInvocation("GetPendingTrack", []interface{}{arg1})
+	fake.getPendingTrackMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) GetPendingTrackCallCount() int {
+	fake.getPendingTrackMutex.RLock()
+	defer fake.getPendingTrackMutex.RUnlock()
+	return len(fake.getPendingTrackArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) GetPendingTrackCalls(stub func(livekit.TrackID) *livekit.TrackInfo) {
+	fake.getPendingTrackMutex.Lock()
+	defer fake.getPendingTrackMutex.Unlock()
+	fake.GetPendingTrackStub = stub
+}
+
+func (fake *FakeLocalParticipant) GetPendingTrackArgsForCall(i int) livekit.TrackID {
+	fake.getPendingTrackMutex.RLock()
+	defer fake.getPendingTrackMutex.RUnlock()
+	argsForCall := fake.getPendingTrackArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) GetPendingTrackReturns(result1 *livekit.TrackInfo) {
+	fake.getPendingTrackMutex.Lock()
+	defer fake.getPendingTrackMutex.Unlock()
+	fake.GetPendingTrackStub = nil
+	fake.getPendingTrackReturns = struct {
+		result1 *livekit.TrackInfo
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetPendingTrackReturnsOnCall(i int, result1 *livekit.TrackInfo) {
+	fake.getPendingTrackMutex.Lock()
+	defer fake.getPendingTrackMutex.Unlock()
+	fake.GetPendingTrackStub = nil
+	if fake.getPendingTrackReturnsOnCall == nil {
+		fake.getPendingTrackReturnsOnCall = make(map[int]struct {
+			result1 *livekit.TrackInfo
+		})
+	}
+	fake.getPendingTrackReturnsOnCall[i] = struct {
+		result1 *livekit.TrackInfo
 	}{result1}
 }
 
@@ -5829,6 +5901,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.getLoggerMutex.RUnlock()
 	fake.getPacerMutex.RLock()
 	defer fake.getPacerMutex.RUnlock()
+	fake.getPendingTrackMutex.RLock()
+	defer fake.getPendingTrackMutex.RUnlock()
 	fake.getPlayoutDelayConfigMutex.RLock()
 	defer fake.getPlayoutDelayConfigMutex.RUnlock()
 	fake.getPublishedTrackMutex.RLock()

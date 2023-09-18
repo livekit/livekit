@@ -672,23 +672,23 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	}
 
 	var payload []byte
-	pool := PacketFactory.Get().(*[]byte)
+	poolEntity := PacketFactory.Get().(*[]byte)
 	if len(tp.codecBytes) != 0 {
 		incomingVP8, ok := extPkt.Payload.(buffer.VP8)
 		if ok {
-			payload = d.translateVP8PacketTo(extPkt.Packet, &incomingVP8, tp.codecBytes, pool)
+			payload = d.translateVP8PacketTo(extPkt.Packet, &incomingVP8, tp.codecBytes, poolEntity)
 		}
 	}
 	if payload == nil {
-		payload = (*pool)[:len(extPkt.Packet.Payload)]
+		payload = (*poolEntity)[:len(extPkt.Packet.Payload)]
 		copy(payload, extPkt.Packet.Payload)
 	}
 
 	hdr, err := d.getTranslatedRTPHeader(extPkt, tp)
 	if err != nil {
 		d.params.Logger.Errorw("write rtp packet failed", err)
-		if pool != nil {
-			PacketFactory.Put(pool)
+		if poolEntity != nil {
+			PacketFactory.Put(poolEntity)
 		}
 		return err
 	}
@@ -715,6 +715,18 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		)
 	}
 
+	d.sendingPacket(
+		hdr,
+		len(payload),
+		&sendPacketMetadata{
+			layer:             layer,
+			packetTime:        extPkt.Arrival,
+			extSequenceNumber: tp.rtp.extSequenceNumber,
+			extTimestamp:      tp.rtp.extTimestamp,
+			isKeyFrame:        extPkt.KeyFrame,
+			tp:                tp,
+		},
+	)
 	d.pacer.Enqueue(pacer.Packet{
 		Header:             hdr,
 		Extensions:         extensions,
@@ -722,16 +734,8 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 		TransportWideExtID: uint8(d.transportWideExtID),
 		WriteStream:        d.writeStream,
-		Metadata: sendPacketMetadata{
-			layer:             layer,
-			arrival:           extPkt.Arrival,
-			extSequenceNumber: tp.rtp.extSequenceNumber,
-			extTimestamp:      tp.rtp.extTimestamp,
-			isKeyFrame:        extPkt.KeyFrame,
-			tp:                tp,
-			pool:              pool,
-		},
-		OnSent: d.packetSent,
+		Pool:               PacketFactory,
+		PoolEntity:         poolEntity,
 	})
 	return nil
 }
@@ -809,19 +813,22 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 		// last byte of padding has padding size including that byte
 		payload[RTPPaddingMaxPayloadSize-1] = byte(RTPPaddingMaxPayloadSize)
 
+		d.sendingPacket(
+			&hdr,
+			len(payload),
+			&sendPacketMetadata{
+				extSequenceNumber:    snts[i].extSequenceNumber,
+				extTimestamp:         snts[i].extTimestamp,
+				isPadding:            true,
+				shouldDisableCounter: true,
+			},
+		)
 		d.pacer.Enqueue(pacer.Packet{
 			Header:             &hdr,
 			Payload:            payload,
 			AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 			TransportWideExtID: uint8(d.transportWideExtID),
 			WriteStream:        d.writeStream,
-			Metadata: sendPacketMetadata{
-				extSequenceNumber: snts[i].extSequenceNumber,
-				extTimestamp:      snts[i].extTimestamp,
-				isPadding:         true,
-				disableCounter:    true,
-			},
-			OnSent: d.packetSent,
 		})
 
 		bytesSent += hdr.MarshalSize() + len(payload)
@@ -1302,7 +1309,7 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 		defer ticker.Stop()
 
 		for {
-			if generation != d.blankFramesGeneration.Load() || numFrames <= 0 {
+			if generation != d.blankFramesGeneration.Load() || numFrames <= 0 || !d.writable.Load() || !d.rtpStats.IsActive() {
 				close(done)
 				return
 			}
@@ -1333,17 +1340,16 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 					return
 				}
 
+				d.sendingPacket(&hdr, len(payload), &sendPacketMetadata{
+					extSequenceNumber: snts[i].extSequenceNumber,
+					extTimestamp:      snts[i].extTimestamp,
+				})
 				d.pacer.Enqueue(pacer.Packet{
 					Header:             &hdr,
 					Payload:            payload,
 					AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 					TransportWideExtID: uint8(d.transportWideExtID),
 					WriteStream:        d.writeStream,
-					Metadata: sendPacketMetadata{
-						extSequenceNumber: snts[i].extSequenceNumber,
-						extTimestamp:      snts[i].extTimestamp,
-					},
-					OnSent: d.packetSent,
 				})
 
 				// only the first frame will need frameEndNeeded to close out the
@@ -1607,22 +1613,33 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		pkt.Header.PayloadType = d.payloadType
 
 		var payload []byte
-		pool := PacketFactory.Get().(*[]byte)
+		poolEntity := PacketFactory.Get().(*[]byte)
 		if d.mime == "video/vp8" && len(pkt.Payload) > 0 && len(epm.codecBytes) != 0 {
 			var incomingVP8 buffer.VP8
 			if err = incomingVP8.Unmarshal(pkt.Payload); err != nil {
 				d.params.Logger.Errorw("unmarshalling VP8 packet err", err)
-				PacketFactory.Put(pool)
+				PacketFactory.Put(poolEntity)
 				continue
 			}
 
-			payload = d.translateVP8PacketTo(&pkt, &incomingVP8, epm.codecBytes, pool)
+			payload = d.translateVP8PacketTo(&pkt, &incomingVP8, epm.codecBytes, poolEntity)
 		}
 		if payload == nil {
-			payload = (*pool)[:len(pkt.Payload)]
+			payload = (*poolEntity)[:len(pkt.Payload)]
 			copy(payload, pkt.Payload)
 		}
 
+		d.sendingPacket(
+			&pkt.Header,
+			len(payload),
+			&sendPacketMetadata{
+				layer:             int32(epm.layer),
+				packetTime:        time.Now(),
+				extSequenceNumber: epm.extSequenceNumber,
+				extTimestamp:      epm.extTimestamp,
+				isRTX:             true,
+			},
+		)
 		d.pacer.Enqueue(pacer.Packet{
 			Header:             &pkt.Header,
 			Extensions:         []pacer.ExtensionData{{ID: uint8(d.dependencyDescriptorExtID), Payload: epm.ddBytes}},
@@ -1630,13 +1647,8 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 			TransportWideExtID: uint8(d.transportWideExtID),
 			WriteStream:        d.writeStream,
-			Metadata: sendPacketMetadata{
-				extSequenceNumber: epm.extSequenceNumber,
-				extTimestamp:      epm.extTimestamp,
-				isRTX:             true,
-				pool:              pool,
-			},
-			OnSent: d.packetSent,
+			Pool:               PacketFactory,
+			PoolEntity:         poolEntity,
 		})
 	}
 
@@ -1839,19 +1851,22 @@ func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
 				return
 			}
 
+			d.sendingPacket(
+				&hdr,
+				len(payload),
+				&sendPacketMetadata{
+					extSequenceNumber: snts[i].extSequenceNumber,
+					extTimestamp:      snts[i].extTimestamp,
+					// although this is using empty frames, mark as padding as these are used to trigger Pion OnTrack only
+					isPadding: true,
+				},
+			)
 			d.pacer.Enqueue(pacer.Packet{
 				Header:             &hdr,
 				Payload:            payload,
 				AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 				TransportWideExtID: uint8(d.transportWideExtID),
 				WriteStream:        d.writeStream,
-				Metadata: sendPacketMetadata{
-					extSequenceNumber: snts[i].extSequenceNumber,
-					extTimestamp:      snts[i].extTimestamp,
-					// although this is using empty frames, mark as padding as these are used to trigger Pion OnTrack only
-					isPadding: true,
-				},
-				OnSent: d.packetSent,
 			})
 		}
 
@@ -1868,34 +1883,20 @@ func (d *DownTrack) HandleRTCPSenderReportData(_payloadType webrtc.PayloadType, 
 }
 
 type sendPacketMetadata struct {
-	layer             int32
-	arrival           time.Time
-	extSequenceNumber uint64
-	extTimestamp      uint64
-	isKeyFrame        bool
-	isRTX             bool
-	isPadding         bool
-	disableCounter    bool
-	tp                *TranslationParams
-	pool              *[]byte
+	layer                int32
+	packetTime           time.Time
+	extSequenceNumber    uint64
+	extTimestamp         uint64
+	isKeyFrame           bool
+	isRTX                bool
+	isPadding            bool
+	shouldDisableCounter bool
+	tp                   *TranslationParams
 }
 
-func (d *DownTrack) packetSent(md interface{}, marker bool, hdrSize int, payloadSize int, sendTime time.Time, sendError error) {
-	spmd, ok := md.(sendPacketMetadata)
-	if !ok {
-		d.params.Logger.Errorw("invalid send packet metadata", nil)
-		return
-	}
-
-	if spmd.pool != nil {
-		PacketFactory.Put(spmd.pool)
-	}
-
-	if sendError != nil {
-		return
-	}
-
-	if !spmd.disableCounter {
+func (d *DownTrack) sendingPacket(hdr *rtp.Header, payloadSize int, spmd *sendPacketMetadata) {
+	hdrSize := hdr.MarshalSize()
+	if !spmd.shouldDisableCounter {
 		// STREAM-ALLOCATOR-TODO: remove this stream allocator bytes counter once stream allocator changes fully to pull bytes counter
 		size := uint32(hdrSize + payloadSize)
 		d.streamAllocatorBytesCounter.Add(size)
@@ -1907,14 +1908,10 @@ func (d *DownTrack) packetSent(md interface{}, marker bool, hdrSize int, payload
 	}
 
 	// update RTPStats
-	packetTime := spmd.arrival
-	if packetTime.IsZero() {
-		packetTime = sendTime
-	}
 	if spmd.isPadding {
-		d.rtpStats.Update(packetTime, spmd.extSequenceNumber, spmd.extTimestamp, marker, hdrSize, 0, payloadSize)
+		d.rtpStats.Update(spmd.packetTime, spmd.extSequenceNumber, spmd.extTimestamp, hdr.Marker, hdrSize, 0, payloadSize)
 	} else {
-		d.rtpStats.Update(packetTime, spmd.extSequenceNumber, spmd.extTimestamp, marker, hdrSize, payloadSize, 0)
+		d.rtpStats.Update(spmd.packetTime, spmd.extSequenceNumber, spmd.extTimestamp, hdr.Marker, hdrSize, payloadSize, 0)
 	}
 
 	if spmd.isKeyFrame {

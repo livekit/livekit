@@ -245,7 +245,7 @@ type Participant interface {
 	SetMetadata(metadata string)
 
 	IsPublisher() bool
-	GetPublishedTrack(sid livekit.TrackID) MediaTrack
+	GetPublishedTrack(trackID livekit.TrackID) MediaTrack
 	GetPublishedTracks() []MediaTrack
 	RemovePublishedTrack(track MediaTrack, willBeResumed bool, shouldClose bool)
 
@@ -315,6 +315,7 @@ type LocalParticipant interface {
 	GetICEConnectionType() ICEConnectionType
 	GetBufferFactory() *buffer.Factory
 	GetPlayoutDelayConfig() *livekit.PlayoutDelay
+	GetPendingTrack(trackID livekit.TrackID) *livekit.TrackInfo
 
 	SetResponseSink(sink routing.MessageSink)
 	CloseSignalConnection(reason SignallingCloseReason)

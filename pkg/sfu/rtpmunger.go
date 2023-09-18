@@ -288,7 +288,7 @@ func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate
 
 	r.extSecondLastSN = extLastSN - 1
 	r.extLastSN = extLastSN
-	r.snRangeMap.DecValue(uint64(num))
+	r.snRangeMap.DecValue(r.extHighestIncomingSN, uint64(num))
 	r.updateSnOffset()
 
 	r.tsOffset -= extLastTS - r.extLastTS
@@ -308,7 +308,7 @@ func (r *RTPMunger) IsOnFrameBoundary() bool {
 func (r *RTPMunger) updateSnOffset() {
 	snOffset, err := r.snRangeMap.GetValue(r.extHighestIncomingSN + 1)
 	if err != nil {
-		r.logger.Errorw("could not get SN offset", err)
+		r.logger.Errorw("could not get sequence number offset", err)
 	}
 	r.snOffset = snOffset
 }
