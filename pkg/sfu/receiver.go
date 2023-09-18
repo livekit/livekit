@@ -539,7 +539,7 @@ func (w *WebRTCReceiver) getBufferLocked(layer int32) *buffer.Buffer {
 		layer = 0
 	}
 
-	if int(layer) >= len(w.buffers) {
+	if layer < 0 || int(layer) >= len(w.buffers) {
 		return nil
 	}
 
