@@ -582,6 +582,10 @@ func (r *Room) SyncState(participant types.LocalParticipant, state *livekit.Sync
 			}
 		}
 		if !found {
+			// is there a pending track?
+			found = participant.GetPendingTrack(livekit.TrackID(ti.Sid)) != nil
+		}
+		if !found {
 			pLogger.Warnw("unknown track during resume", nil, "trackID", ti.Sid)
 			shouldReconnect = true
 			break
@@ -1331,7 +1335,8 @@ func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, dp 
 
 	utils.ParallelExec(destParticipants, dataForwardLoadBalanceThreshold, 1, func(op types.LocalParticipant) {
 		err := op.SendDataPacket(dp, dpData)
-		if err != nil && !errors.Is(err, io.ErrClosedPipe) && !errors.Is(err, sctp.ErrStreamClosed) {
+		if err != nil && !errors.Is(err, io.ErrClosedPipe) && !errors.Is(err, sctp.ErrStreamClosed) &&
+			!errors.Is(err, ErrTransportFailure) {
 			op.GetLogger().Infow("send data packet error", "error", err)
 		}
 	})
