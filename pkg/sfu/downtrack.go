@@ -1309,7 +1309,7 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 		defer ticker.Stop()
 
 		for {
-			if generation != d.blankFramesGeneration.Load() || numFrames <= 0 {
+			if generation != d.blankFramesGeneration.Load() || numFrames <= 0 || !d.writable.Load() || !d.rtpStats.IsActive() {
 				close(done)
 				return
 			}
