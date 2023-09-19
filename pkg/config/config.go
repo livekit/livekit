@@ -205,6 +205,7 @@ type StreamTrackersConfig struct {
 type PlayoutDelayConfig struct {
 	Enabled bool `yaml:"enabled,omitempty"`
 	Min     int  `yaml:"min,omitempty"`
+	Max     int  `yaml:"max,omitempty"`
 }
 
 type VideoConfig struct {

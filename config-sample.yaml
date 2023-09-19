@@ -161,6 +161,7 @@ keys:
 #   playout_delay:
 #     enabled: true
 #     min: 100
+#     max: 2000
 
 # Webhooks
 # when configured, LiveKit notifies your URL handler with room events
