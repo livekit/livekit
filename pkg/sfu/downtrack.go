@@ -824,6 +824,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 			&hdr,
 			len(payload),
 			&sendPacketMetadata{
+				packetTime:           time.Now(),
 				extSequenceNumber:    snts[i].extSequenceNumber,
 				extTimestamp:         snts[i].extTimestamp,
 				isPadding:            true,
@@ -1348,6 +1349,7 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 				}
 
 				d.sendingPacket(&hdr, len(payload), &sendPacketMetadata{
+					packetTime:        time.Now(),
 					extSequenceNumber: snts[i].extSequenceNumber,
 					extTimestamp:      snts[i].extTimestamp,
 				})
@@ -1862,6 +1864,7 @@ func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
 				&hdr,
 				len(payload),
 				&sendPacketMetadata{
+					packetTime:        time.Now(),
 					extSequenceNumber: snts[i].extSequenceNumber,
 					extTimestamp:      snts[i].extTimestamp,
 					// although this is using empty frames, mark as padding as these are used to trigger Pion OnTrack only
