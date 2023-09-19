@@ -326,14 +326,20 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 	})
 
 	// set initial playout delay to minimum value
-	if d.params.PlayoutDelayLimit.GetEnabled() && d.params.PlayoutDelayLimit.GetMin() > 0 {
+	if d.params.PlayoutDelayLimit.GetEnabled() {
+		maxDelay := uint32(rtpextension.PlayoutDelayDefaultMax)
+		if d.params.PlayoutDelayLimit.GetMax() > 0 {
+			maxDelay = d.params.PlayoutDelayLimit.GetMax()
+		}
 		delay := rtpextension.PlayoutDelayFromValue(
 			uint16(d.params.PlayoutDelayLimit.GetMin()),
-			rtpextension.PlayoutDelayDefaultMax,
+			uint16(maxDelay),
 		)
 		b, err := delay.Marshal()
 		if err == nil {
 			d.playoutDelayBytes.Store(b)
+		} else {
+			d.params.Logger.Errorw("failed to marshal playout delay", err, "playoutDelay", d.params.PlayoutDelayLimit)
 		}
 	}
 	if d.kind == webrtc.RTPCodecTypeVideo {
@@ -1353,7 +1359,7 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 		defer ticker.Stop()
 
 		for {
-			if generation != d.blankFramesGeneration.Load() || numFrames <= 0 {
+			if generation != d.blankFramesGeneration.Load() || numFrames <= 0 || !d.writable.Load() || !d.rtpStats.IsActive() {
 				close(done)
 				return
 			}
