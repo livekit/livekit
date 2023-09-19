@@ -85,10 +85,11 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 	if req.Egress != nil && req.Egress.Tracks != nil {
 		internal = &livekit.RoomInternal{TrackEgress: req.Egress.Tracks}
 	}
-	if req.MinPlayoutDelay > 0 {
+	if req.MinPlayoutDelay > 0 || req.MaxPlayoutDelay > 0 {
 		rm.PlayoutDelay = &livekit.PlayoutDelay{
 			Enabled: true,
 			Min:     req.MinPlayoutDelay,
+			Max:     req.MaxPlayoutDelay,
 		}
 	}
 
@@ -160,5 +161,6 @@ func applyDefaultRoomConfig(room *livekit.Room, conf *config.RoomConfig) {
 	room.PlayoutDelay = &livekit.PlayoutDelay{
 		Enabled: conf.PlayoutDelay.Enabled,
 		Min:     uint32(conf.PlayoutDelay.Min),
+		Max:     uint32(conf.PlayoutDelay.Max),
 	}
 }
