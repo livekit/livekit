@@ -107,3 +107,5 @@ require (
 )
 
 replace github.com/livekit/mediatransportutil => ../mediatransportutil
+
+replace github.com/livekit/protocol => ../protocol
