@@ -32,6 +32,67 @@ type EgressLauncher interface {
 	StartEgressWithClusterId(ctx context.Context, clusterId string, req *rpc.StartEgressRequest) (*livekit.EgressInfo, error)
 }
 
+func StartParticipantEgress(
+	ctx context.Context,
+	launcher EgressLauncher,
+	ts telemetry.TelemetryService,
+	opts *livekit.AutoParticipantEgress,
+	identity livekit.ParticipantIdentity,
+	roomName livekit.RoomName,
+	roomID livekit.RoomID,
+) error {
+	if req, err := startParticipantEgress(ctx, launcher, opts, identity, roomName, roomID); err != nil {
+		// send egress failed webhook
+		ts.NotifyEvent(ctx, &livekit.WebhookEvent{
+			Event: webhook.EventEgressEnded,
+			EgressInfo: &livekit.EgressInfo{
+				RoomId:   string(roomID),
+				RoomName: string(roomName),
+				Status:   livekit.EgressStatus_EGRESS_FAILED,
+				Error:    err.Error(),
+				Request:  &livekit.EgressInfo_Participant{Participant: req},
+			},
+		})
+		return err
+	}
+	return nil
+}
+
+func startParticipantEgress(
+	ctx context.Context,
+	launcher EgressLauncher,
+	opts *livekit.AutoParticipantEgress,
+	identity livekit.ParticipantIdentity,
+	roomName livekit.RoomName,
+	roomID livekit.RoomID,
+) (*livekit.ParticipantEgressRequest, error) {
+	req := &livekit.ParticipantEgressRequest{
+		RoomName:       string(roomName),
+		Identity:       string(identity),
+		FileOutputs:    opts.FileOutputs,
+		SegmentOutputs: opts.SegmentOutputs,
+	}
+
+	switch o := opts.Options.(type) {
+	case *livekit.AutoParticipantEgress_Preset:
+		req.Options = &livekit.ParticipantEgressRequest_Preset{Preset: o.Preset}
+	case *livekit.AutoParticipantEgress_Advanced:
+		req.Options = &livekit.ParticipantEgressRequest_Advanced{Advanced: o.Advanced}
+	}
+
+	if launcher == nil {
+		return req, errors.New("egress launcher not found")
+	}
+
+	_, err := launcher.StartEgress(ctx, &rpc.StartEgressRequest{
+		Request: &rpc.StartEgressRequest_Participant{
+			Participant: req,
+		},
+		RoomId: string(roomID),
+	})
+	return req, err
+}
+
 func StartTrackEgress(
 	ctx context.Context,
 	launcher EgressLauncher,
@@ -66,7 +127,6 @@ func startTrackEgress(
 	roomName livekit.RoomName,
 	roomID livekit.RoomID,
 ) (*livekit.TrackEgressRequest, error) {
-
 	output := &livekit.DirectFileOutput{
 		Filepath: getFilePath(opts.Filepath),
 	}
