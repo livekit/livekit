@@ -194,7 +194,7 @@ func (s *RedisStore) ListRooms(_ context.Context, roomNames []livekit.RoomName) 
 			return nil, errors.Wrap(err, "could not get rooms")
 		}
 	} else {
-		names := livekit.RoomNamesAsStrings(roomNames)
+		names := livekit.IDsAsStrings(roomNames)
 		var results []interface{}
 		results, err = s.rc.HMGet(s.ctx, RoomsKey, names...).Result()
 		if err != nil && err != redis.Nil {
