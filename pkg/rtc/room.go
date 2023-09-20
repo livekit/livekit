@@ -426,7 +426,6 @@ func (r *Room) ReplaceParticipantRequestSource(identity livekit.ParticipantIdent
 		rs.Close()
 	}
 	r.participantRequestSources[identity] = reqSource
-
 	r.lock.Unlock()
 }
 
