@@ -842,7 +842,7 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 	}
 
 	dcErrorHandler := func(err error) {
-		if !errors.Is(err, sctp.ErrResetPacketInStateNotExist) {
+		if !errors.Is(err, sctp.ErrResetPacketInStateNotExist) && !errors.Is(err, sctp.ErrChunk) {
 			t.params.Logger.Errorw(dc.Label()+" data channel error", err)
 		}
 	}

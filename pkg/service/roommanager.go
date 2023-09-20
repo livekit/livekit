@@ -674,7 +674,7 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomName livekit.Roo
 		pLogger.Debugw("updating participant subscriptions")
 		room.UpdateSubscriptions(
 			participant,
-			livekit.StringsAsTrackIDs(rm.UpdateSubscriptions.TrackSids),
+			livekit.StringsAsIDs[livekit.TrackID](rm.UpdateSubscriptions.TrackSids),
 			rm.UpdateSubscriptions.ParticipantTracks,
 			rm.UpdateSubscriptions.Subscribe,
 		)

@@ -426,7 +426,6 @@ func (r *Room) ReplaceParticipantRequestSource(identity livekit.ParticipantIdent
 		rs.Close()
 	}
 	r.participantRequestSources[identity] = reqSource
-
 	r.lock.Unlock()
 }
 
@@ -550,7 +549,7 @@ func (r *Room) UpdateSubscriptions(
 	}
 
 	for _, pt := range participantTracks {
-		for _, trackID := range livekit.StringsAsTrackIDs(pt.TrackSids) {
+		for _, trackID := range livekit.StringsAsIDs[livekit.TrackID](pt.TrackSids) {
 			if subscribe {
 				participant.SubscribeToTrack(trackID)
 			} else {
@@ -601,7 +600,7 @@ func (r *Room) SyncState(participant types.LocalParticipant, state *livekit.Sync
 
 	r.UpdateSubscriptions(
 		participant,
-		livekit.StringsAsTrackIDs(state.Subscription.TrackSids),
+		livekit.StringsAsIDs[livekit.TrackID](state.Subscription.TrackSids),
 		state.Subscription.ParticipantTracks,
 		state.Subscription.Subscribe,
 	)
