@@ -54,7 +54,7 @@ var (
 )
 
 type Config struct {
-	Port           uint32                   `yaml:"port"`
+	Port           uint32                   `yaml:"port,omitempty"`
 	BindAddresses  []string                 `yaml:"bind_addresses,omitempty"`
 	PrometheusPort uint32                   `yaml:"prometheus_port,omitempty"`
 	Environment    string                   `yaml:"environment,omitempty"`
@@ -108,9 +108,9 @@ type RTCConfig struct {
 }
 
 type TURNServer struct {
-	Host       string `yaml:"host"`
-	Port       int    `yaml:"port"`
-	Protocol   string `yaml:"protocol"`
+	Host       string `yaml:"host,omitempty"`
+	Port       int    `yaml:"port,omitempty"`
+	Protocol   string `yaml:"protocol,omitempty"`
 	Username   string `yaml:"username,omitempty"`
 	Credential string `yaml:"credential,omitempty"`
 }
@@ -157,7 +157,7 @@ type CongestionControlConfig struct {
 	NackRatioAttenuator              float64                                `yaml:"nack_ratio_attenuator,omitempty"`
 	ExpectedUsageThreshold           float64                                `yaml:"expected_usage_threshold,omitempty"`
 	UseSendSideBWE                   bool                                   `yaml:"send_side_bandwidth_estimation,omitempty"`
-	ProbeMode                        CongestionControlProbeMode             `yaml:"padding_mode,omitempty"`
+	ProbeMode                        CongestionControlProbeMode             `yaml:"probe_mode,omitempty"`
 	MinChannelCapacity               int64                                  `yaml:"min_channel_capacity,omitempty"`
 	ProbeConfig                      CongestionControlProbeConfig           `yaml:"probe_config,omitempty"`
 	ChannelObserverProbeConfig       CongestionControlChannelObserverConfig `yaml:"channel_observer_probe_config,omitempty"`
@@ -187,7 +187,7 @@ type StreamTrackerPacketConfig struct {
 }
 
 type StreamTrackerFrameConfig struct {
-	MinFPS float64 `yaml:"min_fps"`
+	MinFPS float64 `yaml:"min_fps,omitempty"`
 }
 
 type StreamTrackerConfig struct {
@@ -225,8 +225,8 @@ type RoomConfig struct {
 }
 
 type CodecSpec struct {
-	Mime     string `yaml:"mime"`
-	FmtpLine string `yaml:"fmtp_line"`
+	Mime     string `yaml:"mime,omitempty"`
+	FmtpLine string `yaml:"fmtp_line,omitempty"`
 }
 
 type LoggingConfig struct {
@@ -235,7 +235,7 @@ type LoggingConfig struct {
 }
 
 type TURNConfig struct {
-	Enabled             bool   `yaml:"enabled"`
+	Enabled             bool   `yaml:"enabled,omitempty"`
 	Domain              string `yaml:"domain,omitempty"`
 	CertFile            string `yaml:"cert_file,omitempty"`
 	KeyFile             string `yaml:"key_file,omitempty"`
@@ -247,13 +247,13 @@ type TURNConfig struct {
 }
 
 type WebHookConfig struct {
-	URLs []string `yaml:"urls"`
+	URLs []string `yaml:"urls,omitempty"`
 	// key to use for webhook
-	APIKey string `yaml:"api_key"`
+	APIKey string `yaml:"api_key,omitempty"`
 }
 
 type NodeSelectorConfig struct {
-	Kind         string         `yaml:"kind"`
+	Kind         string         `yaml:"kind,omitempty"`
 	SortBy       string         `yaml:"sort_by,omitempty"`
 	CPULoadLimit float32        `yaml:"cpu_load_limit,omitempty"`
 	SysloadLimit float32        `yaml:"sysload_limit,omitempty"`
@@ -261,7 +261,7 @@ type NodeSelectorConfig struct {
 }
 
 type SignalRelayConfig struct {
-	Enabled          bool          `yaml:"enabled"`
+	Enabled          bool          `yaml:"enabled,omitempty"`
 	RetryTimeout     time.Duration `yaml:"retry_timeout,omitempty"`
 	MinRetryInterval time.Duration `yaml:"min_retry_interval,omitempty"`
 	MaxRetryInterval time.Duration `yaml:"max_retry_interval,omitempty"`
@@ -271,9 +271,9 @@ type SignalRelayConfig struct {
 // RegionConfig lists available regions and their latitude/longitude, so the selector would prefer
 // regions that are closer
 type RegionConfig struct {
-	Name string  `yaml:"name"`
-	Lat  float64 `yaml:"lat"`
-	Lon  float64 `yaml:"lon"`
+	Name string  `yaml:"name,omitempty"`
+	Lat  float64 `yaml:"lat,omitempty"`
+	Lon  float64 `yaml:"lon,omitempty"`
 }
 
 type LimitConfig struct {
@@ -284,8 +284,8 @@ type LimitConfig struct {
 }
 
 type IngressConfig struct {
-	RTMPBaseURL string `yaml:"rtmp_base_url"`
-	WHIPBaseURL string `yaml:"whip_base_url"`
+	RTMPBaseURL string `yaml:"rtmp_base_url,omitempty"`
+	WHIPBaseURL string `yaml:"whip_base_url,omitempty"`
 }
 
 // not exposed to YAML
@@ -488,7 +488,17 @@ var DefaultConfig = Config{
 
 func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []cli.Flag) (*Config, error) {
 	// start with defaults
-	conf := DefaultConfig
+	marshalled, err := yaml.Marshal(&DefaultConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	var conf Config
+	err = yaml.Unmarshal(marshalled, &conf)
+	if err != nil {
+		return nil, err
+	}
+
 	if confString != "" {
 		decoder := yaml.NewDecoder(strings.NewReader(confString))
 		decoder.KnownFields(strictMode)
