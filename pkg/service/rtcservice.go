@@ -257,7 +257,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	)
 
 	done := make(chan struct{})
-	// function exits when websocket terminates, it'll close the event reading off of response sink as well
+	// function exits when websocket terminates, it'll close the event reading off of request sink and response source as well
 	defer func() {
 		pLogger.Infow("finishing WS connection", "connID", cr.ConnectionID)
 		cr.ResponseSource.Close()
@@ -288,13 +288,13 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// websocket established
 	sigConn := NewWSSignalConnection(conn)
-	if count, err := sigConn.WriteResponse(initialResponse); err != nil {
+	count, err := sigConn.WriteResponse(initialResponse)
+	if err != nil {
 		pLogger.Warnw("could not write initial response", err)
 		return
-	} else {
-		if signalStats != nil {
-			signalStats.AddBytes(uint64(count), true)
-		}
+	}
+	if signalStats != nil {
+		signalStats.AddBytes(uint64(count), true)
 	}
 	pLogger.Infow("new client WS connected",
 		"connID", cr.ConnectionID,
@@ -321,7 +321,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			case msg := <-cr.ResponseSource.ReadChan():
 				if msg == nil {
-					pLogger.Infow("nothing to read from response source", "connID", cr.ConnectionID)
+					pLogger.Debugw("nothing to read from response source", "connID", cr.ConnectionID)
 					return
 				}
 				res, ok := msg.(*livekit.SignalResponse)
@@ -372,7 +372,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					websocket.CloseNormalClosure,
 					websocket.CloseNoStatusReceived,
 				) {
-				pLogger.Debugw("exit ws read loop for closed connection", "connID", cr.ConnectionID, "wsError", err)
+				pLogger.Infow("exit ws read loop for closed connection", "connID", cr.ConnectionID, "wsError", err)
 			} else {
 				pLogger.Errorw("error reading from websocket", err, "connID", cr.ConnectionID)
 			}
