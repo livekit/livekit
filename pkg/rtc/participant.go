@@ -561,10 +561,9 @@ func (p *ParticipantImpl) HandleSignalSourceClose() {
 	p.TransportManager.SetSignalSourceValid(false)
 
 	if !p.TransportManager.HasPublisherEverConnected() && !p.TransportManager.HasSubscriberEverConnected() {
-		p.params.Logger.Infow("closing disconnected participant",
-			"reason", types.ParticipantCloseReasonJoinFailed,
-		)
-		_ = p.Close(false, types.ParticipantCloseReasonJoinFailed, false)
+		reason := types.ParticipantCloseReasonJoinFailed
+		p.params.Logger.Infow("closing disconnected participant", "reason", reason)
+		_ = p.Close(false, reason, false)
 	}
 }
 
@@ -1404,10 +1403,9 @@ func (p *ParticipantImpl) setupDisconnectTimer() {
 		if p.IsClosed() || p.IsDisconnected() {
 			return
 		}
-		p.params.Logger.Infow("closing disconnected participant",
-			"reason", types.ParticipantCloseReasonPeerConnectionDisconnected,
-		)
-		_ = p.Close(true, types.ParticipantCloseReasonPeerConnectionDisconnected, false)
+		reason := types.ParticipantCloseReasonPeerConnectionDisconnected
+		p.params.Logger.Infow("closing disconnected participant", "reason", reason)
+		_ = p.Close(true, reason, false)
 	})
 	p.lock.Unlock()
 }
