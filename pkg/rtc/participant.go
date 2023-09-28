@@ -122,6 +122,7 @@ type ParticipantParams struct {
 	SubscriptionLimitAudio       int32
 	SubscriptionLimitVideo       int32
 	PlayoutDelay                 *livekit.PlayoutDelay
+	SyncStreams                  bool
 }
 
 type ParticipantImpl struct {
@@ -1113,7 +1114,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		TCPFallbackRTTThreshold:  p.params.TCPFallbackRTTThreshold,
 		AllowUDPUnstableFallback: p.params.AllowUDPUnstableFallback,
 		TURNSEnabled:             p.params.TURNSEnabled,
-		AllowPlayoutDelay:        p.params.PlayoutDelay.GetEnabled() && p.SupportSyncStreamID(),
+		AllowPlayoutDelay:        p.params.PlayoutDelay.GetEnabled() && p.SupportsSyncStreamID(),
 		Logger:                   p.params.Logger.WithComponent(sutils.ComponentTransport),
 	})
 	if err != nil {
@@ -2250,8 +2251,12 @@ func (p *ParticipantImpl) GetPlayoutDelayConfig() *livekit.PlayoutDelay {
 	return p.params.PlayoutDelay
 }
 
-func (p *ParticipantImpl) SupportSyncStreamID() bool {
-	return p.ProtocolVersion().SupportSyncStreamID() && !p.params.ClientInfo.isFirefox()
+func (p *ParticipantImpl) SupportsSyncStreamID() bool {
+	return p.ProtocolVersion().SupportSyncStreamID() && !p.params.ClientInfo.isFirefox() && p.params.SyncStreams
+}
+
+func (p *ParticipantImpl) SupportsTransceiverReuse() bool {
+	return p.ProtocolVersion().SupportsTransceiverReuse() && !p.params.SyncStreams
 }
 
 func codecsFromMediaDescription(m *sdp.MediaDescription) (out []sdp.Codec, err error) {

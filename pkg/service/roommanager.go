@@ -409,6 +409,7 @@ func (r *RoomManager) StartSession(
 		SubscriptionLimitAudio:       r.config.Limit.SubscriptionLimitAudio,
 		SubscriptionLimitVideo:       r.config.Limit.SubscriptionLimitVideo,
 		PlayoutDelay:                 protoRoom.PlayoutDelay,
+		SyncStreams:                  protoRoom.SyncStreams,
 	})
 	if err != nil {
 		return err

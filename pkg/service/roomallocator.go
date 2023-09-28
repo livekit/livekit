@@ -92,6 +92,9 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 			Max:     req.MaxPlayoutDelay,
 		}
 	}
+	if req.SyncStreams {
+		rm.SyncStreams = true
+	}
 
 	if err = r.roomStore.StoreRoom(ctx, rm, internal); err != nil {
 		return nil, err
@@ -163,4 +166,5 @@ func applyDefaultRoomConfig(room *livekit.Room, conf *config.RoomConfig) {
 		Min:     uint32(conf.PlayoutDelay.Min),
 		Max:     uint32(conf.PlayoutDelay.Max),
 	}
+	room.SyncStreams = conf.SyncStreams
 }

@@ -162,6 +162,9 @@ keys:
 #     enabled: true
 #     min: 100
 #     max: 2000
+#   # improves A/V sync when playout_delay set to a value larger than 200ms. It will disables transceiver re-use 
+#   # so not recommended for rooms with frequent subscription changes
+#   sync_streams: true
 
 # Webhooks
 # when configured, LiveKit notifies your URL handler with room events
