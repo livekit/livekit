@@ -222,6 +222,7 @@ type RoomConfig struct {
 	EnableRemoteUnmute bool               `yaml:"enable_remote_unmute,omitempty"`
 	MaxMetadataSize    uint32             `yaml:"max_metadata_size,omitempty"`
 	PlayoutDelay       PlayoutDelayConfig `yaml:"playout_delay,omitempty"`
+	SyncStreams        bool               `yaml:"sync_streams,omitempty"`
 }
 
 type CodecSpec struct {

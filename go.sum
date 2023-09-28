@@ -127,10 +127,8 @@ github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1 h1:jm09419p0lqTkD
 github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1/go.mod h1:Rs3MhFwutWhGwmY1VQsygw28z5bWcnEYmS1OG9OxjOQ=
 github.com/livekit/mediatransportutil v0.0.0-20230919184714-b8f0fa0133c5 h1:CjXYkNKSrdIn7GMD1ySoXrURhL5U9d6vG32vxcUhzIU=
 github.com/livekit/mediatransportutil v0.0.0-20230919184714-b8f0fa0133c5/go.mod h1:+WIOYwiBMive5T81V8B2wdAc2zQNRjNQiJIcPxMTILY=
-github.com/livekit/protocol v1.7.3-0.20230919182418-0708b5a5bb84 h1:4WOaspDesbbrjGPsu6Vp1VjcWxTXVjyjdtQAzIUXn5s=
-github.com/livekit/protocol v1.7.3-0.20230919182418-0708b5a5bb84/go.mod h1:zbh0QPUcLGOeZeIO/VeigwWWbudz4Lv+Px94FnVfQH0=
-github.com/livekit/protocol v1.7.3-0.20230920084913-821c244d8ce2 h1:yIRqvyO3qDPO+4EdcHMjsINJYl6KE9AXJUgfChsw+0s=
-github.com/livekit/protocol v1.7.3-0.20230920084913-821c244d8ce2/go.mod h1:zbh0QPUcLGOeZeIO/VeigwWWbudz4Lv+Px94FnVfQH0=
+github.com/livekit/protocol v1.7.3-0.20230928065809-281e00a4a67d h1:JLc/seGGKdnv0JUDCkMprJYzud2E8ahQ3QZgP/Imb14=
+github.com/livekit/protocol v1.7.3-0.20230928065809-281e00a4a67d/go.mod h1:zbh0QPUcLGOeZeIO/VeigwWWbudz4Lv+Px94FnVfQH0=
 github.com/livekit/psrpc v0.3.3 h1:+lltbuN39IdaynXhLLxRShgYqYsRMWeeXKzv60oqyWo=
 github.com/livekit/psrpc v0.3.3/go.mod h1:n6JntEg+zT6Ji8InoyTpV7wusPNwGqqtxmHlkNhDN0U=
 github.com/mackerelio/go-osstat v0.2.4 h1:qxGbdPkFo65PXOb/F/nhDKpF2nGmGaCFDLXoZjJTtUs=
