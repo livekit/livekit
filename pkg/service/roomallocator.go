@@ -68,7 +68,8 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 			CreationTime: time.Now().Unix(),
 			TurnPassword: utils.RandomSecret(),
 		}
-		applyDefaultRoomConfig(rm, &r.config.Room)
+		internal = &livekit.RoomInternal{}
+		applyDefaultRoomConfig(rm, internal, &r.config.Room)
 	} else if err != nil {
 		return nil, err
 	}
@@ -83,17 +84,17 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 		rm.Metadata = req.Metadata
 	}
 	if req.Egress != nil && req.Egress.Tracks != nil {
-		internal = &livekit.RoomInternal{TrackEgress: req.Egress.Tracks}
+		internal.TrackEgress = req.Egress.Tracks
 	}
 	if req.MinPlayoutDelay > 0 || req.MaxPlayoutDelay > 0 {
-		rm.PlayoutDelay = &livekit.PlayoutDelay{
+		internal.PlayoutDelay = &livekit.PlayoutDelay{
 			Enabled: true,
 			Min:     req.MinPlayoutDelay,
 			Max:     req.MaxPlayoutDelay,
 		}
 	}
 	if req.SyncStreams {
-		rm.SyncStreams = true
+		internal.SyncStreams = true
 	}
 
 	if err = r.roomStore.StoreRoom(ctx, rm, internal); err != nil {
@@ -152,7 +153,7 @@ func (r *StandardRoomAllocator) ValidateCreateRoom(ctx context.Context, roomName
 	return nil
 }
 
-func applyDefaultRoomConfig(room *livekit.Room, conf *config.RoomConfig) {
+func applyDefaultRoomConfig(room *livekit.Room, internal *livekit.RoomInternal, conf *config.RoomConfig) {
 	room.EmptyTimeout = conf.EmptyTimeout
 	room.MaxParticipants = conf.MaxParticipants
 	for _, codec := range conf.EnabledCodecs {
@@ -161,10 +162,10 @@ func applyDefaultRoomConfig(room *livekit.Room, conf *config.RoomConfig) {
 			FmtpLine: codec.FmtpLine,
 		})
 	}
-	room.PlayoutDelay = &livekit.PlayoutDelay{
+	internal.PlayoutDelay = &livekit.PlayoutDelay{
 		Enabled: conf.PlayoutDelay.Enabled,
 		Min:     uint32(conf.PlayoutDelay.Min),
 		Max:     uint32(conf.PlayoutDelay.Max),
 	}
-	room.SyncStreams = conf.SyncStreams
+	internal.SyncStreams = conf.SyncStreams
 }

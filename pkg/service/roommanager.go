@@ -240,7 +240,7 @@ func (r *RoomManager) StartSession(
 	}
 	defer room.Release()
 
-	protoRoom := room.ToProto()
+	protoRoom, roomInternal := room.ToProto(), room.Internal()
 
 	// only create the room, but don't start a participant session
 	if pi.Identity == "" {
@@ -408,8 +408,8 @@ func (r *RoomManager) StartSession(
 		SubscriberAllowPause:         subscriberAllowPause,
 		SubscriptionLimitAudio:       r.config.Limit.SubscriptionLimitAudio,
 		SubscriptionLimitVideo:       r.config.Limit.SubscriptionLimitVideo,
-		PlayoutDelay:                 protoRoom.PlayoutDelay,
-		SyncStreams:                  protoRoom.SyncStreams,
+		PlayoutDelay:                 roomInternal.GetPlayoutDelay(),
+		SyncStreams:                  roomInternal.GetSyncStreams(),
 	})
 	if err != nil {
 		return err

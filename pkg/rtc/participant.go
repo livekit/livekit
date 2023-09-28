@@ -2256,7 +2256,7 @@ func (p *ParticipantImpl) SupportsSyncStreamID() bool {
 }
 
 func (p *ParticipantImpl) SupportsTransceiverReuse() bool {
-	return p.ProtocolVersion().SupportsTransceiverReuse() && !p.params.SyncStreams
+	return p.ProtocolVersion().SupportsTransceiverReuse() && !p.SupportsSyncStreamID()
 }
 
 func codecsFromMediaDescription(m *sdp.MediaDescription) (out []sdp.Codec, err error) {
