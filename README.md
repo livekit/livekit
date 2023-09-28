@@ -33,6 +33,8 @@ LiveKit's server is written in Go, using the awesome [Pion WebRTC](https://githu
     - [end-to-end optimizations](https://blog.livekit.io/livekit-one-dot-zero/)
     - [selective subscription](https://docs.livekit.io/guides/room/receive/#selective-subscription)
     - [moderation APIs](https://docs.livekit.io/guides/server-api/)
+    - end-to-end encryption
+    - SVC codecs (VP9, AV1)
     - [webhooks](https://docs.livekit.io/guides/webhooks/)
     - [distributed and multi-region](https://docs.livekit.io/deploy/distributed/)
 

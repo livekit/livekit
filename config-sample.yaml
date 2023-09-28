@@ -43,7 +43,7 @@ rtc:
   # that maps to an external one
   use_external_ip: true
   # # when set, LiveKit will attempt to use a UDP mux so all UDP traffic goes through
-  # # listed port(s). To maximize system performance, we recommend using a range of ports 
+  # # listed port(s). To maximize system performance, we recommend using a range of ports
   # # greater or equal to the number of vCPUs on the machine.
   # # port_range_start & end must not be set for this config to take effect
   # udp_port: 7882-7892
@@ -148,7 +148,7 @@ keys:
 #   max_participants: 0
 #   # only accept specific codecs for clients publishing to this room
 #   # this is useful to standardize codecs across clients
-#   # other supported codecs are video/h264
+#   # other supported codecs are video/h264, video/vp9, video/av1, audio/red
 #   enabled_codecs:
 #     - mime: audio/opus
 #     - mime: video/vp8
