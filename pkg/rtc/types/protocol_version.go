@@ -73,5 +73,5 @@ func (v ProtocolVersion) SupportHandlesDisconnectedUpdate() bool {
 }
 
 func (v ProtocolVersion) SupportSyncStreamID() bool {
-	return v > 10
+	return v > 9
 }
