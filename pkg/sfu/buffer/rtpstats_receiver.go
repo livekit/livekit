@@ -292,7 +292,7 @@ func (r *RTPStatsReceiver) resync(packetTime time.Time, sn uint16, ts uint32) {
 	r.sequenceNumber.ResetHighest(snCycles + uint64(sn) - 1)
 	r.timestamp.ResetHighest(tsCycles + uint64(ts))
 	r.highestTime = packetTime
-	r.logger.Debugw(
+	r.logger.Infow(
 		"resync",
 		"newestPacketCount", newestPacketCount,
 		"paddingOnlyDrops", paddingOnlyDrops,
@@ -300,6 +300,7 @@ func (r *RTPStatsReceiver) resync(packetTime time.Time, sn uint16, ts uint32) {
 		"expectedHighestSN", expectedHighestSN,
 		"snCycles", snCycles,
 		"rtpSN", sn,
+		"extStartSN", r.sequenceNumber.GetExtendedStart(),
 		"beforeExtHighestSN", extHighestSN,
 		"afterExtHighestSN", r.sequenceNumber.GetExtendedHighest(),
 		"newestTS", newestTS,
@@ -307,6 +308,7 @@ func (r *RTPStatsReceiver) resync(packetTime time.Time, sn uint16, ts uint32) {
 		"expectedHighestTS", expectedHighestTS,
 		"tsCycles", tsCycles,
 		"rtpTS", ts,
+		"extStartTS", r.timestamp.GetExtendedStart(),
 		"beforeExtHighestTS", extHighestTS,
 		"afterExtHighestTS", r.timestamp.GetExtendedHighest(),
 	)
