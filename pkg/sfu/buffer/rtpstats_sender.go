@@ -302,6 +302,10 @@ func (r *RTPStatsSender) Update(
 			r.setSnInfo(extSequenceNumber, r.extHighestSN, uint16(pktSize), uint8(hdrSize), uint16(payloadSize), marker, true)
 		}
 	} else { // in-order
+		if gapSN >= cNumSequenceNumbers {
+			r.logger.Warnw("large sequence number gap", nil, "prev", r.extHighestSN, "curr", extSequenceNumber, "gap", gapSN)
+		}
+
 		// update gap histogram
 		r.updateGapHistogram(int(gapSN))
 

@@ -106,11 +106,11 @@ type snapshot struct {
 }
 
 type RTCPSenderReportData struct {
-	RTPTimestamp     uint32
-	RTPTimestampExt  uint64
-	NTPTimestamp     mediatransportutil.NtpTime
-	PacketCount      uint32
-	PacketCountExt   uint64
+	RTPTimestamp    uint32
+	RTPTimestampExt uint64
+	NTPTimestamp    mediatransportutil.NtpTime
+	PacketCount     uint32
+	// RAJA-REMOVE PacketCountExt   uint64
 	PaddingOnlyDrops uint64
 	At               time.Time
 }
