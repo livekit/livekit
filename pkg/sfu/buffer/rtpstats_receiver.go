@@ -128,12 +128,25 @@ func (r *RTPStatsReceiver) Update(
 		if payloadSize == 0 {
 			// do not start on a padding only packet
 			if resTS.IsRestart {
-				r.logger.Infow("rolling back timestamp restart", "tsAfter", r.timestamp.GetExtendedStart(), "tsBefore", resTS.PreExtendedStart)
+				r.logger.Infow(
+					"rolling back timestamp restart",
+					"tsBefore", resTS.PreExtendedStart,
+					"tsAfter", r.timestamp.GetExtendedStart(),
+					"snBefore", resSN.PreExtendedStart,
+					"snAfter", r.sequenceNumber.GetExtendedStart(),
+				)
 				r.timestamp.RollbackRestart(resTS.PreExtendedStart)
 			}
 			if resSN.IsRestart {
-				r.logger.Infow("rolling back sequence number restart", "snAfter", r.sequenceNumber.GetExtendedStart(), "snBefore", resSN.PreExtendedStart)
+				r.logger.Infow(
+					"rolling back sequence number restart",
+					"snBefore", resSN.PreExtendedStart,
+					"snAfter", r.sequenceNumber.GetExtendedStart(),
+					"tsBefore", resTS.PreExtendedStart,
+					"tsAfter", r.timestamp.GetExtendedStart(),
+				)
 				r.sequenceNumber.RollbackRestart(resSN.PreExtendedStart)
+				flowState.IsNotHandled = true
 				return
 			}
 		}
@@ -157,6 +170,8 @@ func (r *RTPStatsReceiver) Update(
 				"adjusting start sequence number",
 				"snBefore", resSN.PreExtendedStart,
 				"snAfter", resSN.ExtendedVal,
+				"tsBefore", resTS.PreExtendedStart,
+				"tsAfter", resTS.ExtendedVal,
 			)
 		}
 
@@ -165,6 +180,8 @@ func (r *RTPStatsReceiver) Update(
 				"adjusting start timestamp",
 				"tsBefore", resTS.PreExtendedStart,
 				"tsAfter", resTS.ExtendedVal,
+				"snBefore", resSN.PreExtendedStart,
+				"snAfter", resSN.ExtendedVal,
 			)
 		}
 
