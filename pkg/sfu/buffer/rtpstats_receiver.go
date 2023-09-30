@@ -134,6 +134,7 @@ func (r *RTPStatsReceiver) Update(
 			if resSN.IsRestart {
 				r.logger.Infow("rolling back sequence number restart", "snAfter", r.sequenceNumber.GetExtendedStart(), "snBefore", resSN.PreExtendedStart)
 				r.sequenceNumber.RollbackRestart(resSN.PreExtendedStart)
+				flowState.IsNotHandled = true
 				return
 			}
 		}
