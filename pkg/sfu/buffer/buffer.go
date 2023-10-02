@@ -426,9 +426,10 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 		return
 	}
 
-	flowState := b.updateStreamState(&rtpPacket, arrivalTime)
 	// process header extensions always as padding packets could be used for probing
 	b.processHeaderExtensions(&rtpPacket, arrivalTime)
+
+	flowState := b.updateStreamState(&rtpPacket, arrivalTime)
 	if flowState.IsNotHandled {
 		return
 	}
