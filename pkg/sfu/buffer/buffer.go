@@ -252,7 +252,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 			// codec settings at track level for same codec type, so enable nack for all audio receivers but don't create nack queue
 			// for red codec.
 			if strings.EqualFold(b.mime, "audio/red") {
-				return
+				break
 			}
 			b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBNACK)
 			b.nacker = nack.NewNACKQueue(nack.NackQueueParamsDefault)
@@ -426,9 +426,10 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 		return
 	}
 
-	flowState := b.updateStreamState(&rtpPacket, arrivalTime)
 	// process header extensions always as padding packets could be used for probing
 	b.processHeaderExtensions(&rtpPacket, arrivalTime)
+
+	flowState := b.updateStreamState(&rtpPacket, arrivalTime)
 	if flowState.IsNotHandled {
 		return
 	}
