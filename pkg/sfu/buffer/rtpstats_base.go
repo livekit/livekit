@@ -474,7 +474,8 @@ func (r *rtpStatsBase) maybeAdjustFirstPacketTime(ets uint64, extStartTS uint64)
 	}
 
 	samplesDuration := time.Duration(float64(samplesDiff) / float64(r.params.ClockRate) * float64(time.Second))
-	now := time.Now()
+	timeSinceFirst := time.Since(r.firstTime)
+	now := r.firstTime.Add(timeSinceFirst)
 	firstTime := now.Add(-samplesDuration)
 	if firstTime.Before(r.firstTime) {
 		r.logger.Debugw(
