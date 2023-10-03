@@ -1456,6 +1456,7 @@ func (t *PCTransport) processEvents() {
 
 	t.clearSignalStateCheckTimer()
 	t.params.Logger.Debugw("leaving events processor")
+	t.handleLogICECandidates(nil)
 }
 
 func (t *PCTransport) handleEvent(e *event) error {

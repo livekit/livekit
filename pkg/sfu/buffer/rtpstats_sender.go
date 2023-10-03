@@ -281,10 +281,24 @@ func (r *RTPStatsSender) Update(
 				}
 			}
 
+			r.logger.Infow(
+				"adjusting start sequence number",
+				"snBefore", r.extStartSN,
+				"snAfter", extSequenceNumber,
+				"tsBefore", r.extStartTS,
+				"tsAfter", extTimestamp,
+			)
 			r.extStartSN = extSequenceNumber
 		}
 
 		if extTimestamp < r.extStartTS {
+			r.logger.Infow(
+				"adjusting start timestamp",
+				"snBefore", r.extStartSN,
+				"snAfter", extSequenceNumber,
+				"tsBefore", r.extStartTS,
+				"tsAfter", extTimestamp,
+			)
 			r.extStartTS = extTimestamp
 		}
 
@@ -302,6 +316,10 @@ func (r *RTPStatsSender) Update(
 			r.setSnInfo(extSequenceNumber, r.extHighestSN, uint16(pktSize), uint8(hdrSize), uint16(payloadSize), marker, true)
 		}
 	} else { // in-order
+		if gapSN >= cNumSequenceNumbers {
+			r.logger.Warnw("large sequence number gap", nil, "prev", r.extHighestSN, "curr", extSequenceNumber, "gap", gapSN)
+		}
+
 		// update gap histogram
 		r.updateGapHistogram(int(gapSN))
 
@@ -371,18 +389,6 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 		return
 	}
 
-	var err error
-	if r.srNewest != nil {
-		rtt, err = mediatransportutil.GetRttMs(&rr, r.srNewest.NTPTimestamp, r.srNewest.At)
-		if err == nil {
-			isRttChanged = rtt != r.rtt
-		} else {
-			if !errors.Is(err, mediatransportutil.ErrRttNotLastSenderReport) && !errors.Is(err, mediatransportutil.ErrRttNoLastSenderReport) {
-				r.logger.Warnw("error getting rtt", err)
-			}
-		}
-	}
-
 	if !r.lastRRTime.IsZero() && r.extHighestSNFromRR > extHighestSNFromRR {
 		r.logger.Debugw(
 			fmt.Sprintf("receiver report potentially out of order, highestSN: existing: %d, received: %d", r.extHighestSNFromRR, extHighestSNFromRR),
@@ -395,6 +401,18 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 	}
 
 	r.extHighestSNFromRR = extHighestSNFromRR
+
+	if r.srNewest != nil {
+		var err error
+		rtt, err = mediatransportutil.GetRttMs(&rr, r.srNewest.NTPTimestamp, r.srNewest.At)
+		if err == nil {
+			isRttChanged = rtt != r.rtt
+		} else {
+			if !errors.Is(err, mediatransportutil.ErrRttNotLastSenderReport) && !errors.Is(err, mediatransportutil.ErrRttNoLastSenderReport) {
+				r.logger.Warnw("error getting rtt", err)
+			}
+		}
+	}
 
 	packetsLostFromRR := r.packetsLostFromRR&0xFFFF_FFFF_0000_0000 + uint64(rr.TotalLost)
 	if (rr.TotalLost-r.lastRR.TotalLost) < (1<<31) && rr.TotalLost < r.lastRR.TotalLost {

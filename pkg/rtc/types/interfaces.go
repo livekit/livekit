@@ -303,7 +303,8 @@ type LocalParticipant interface {
 	GetLogger() logger.Logger
 	GetAdaptiveStream() bool
 	ProtocolVersion() ProtocolVersion
-	SupportSyncStreamID() bool
+	SupportsSyncStreamID() bool
+	SupportsTransceiverReuse() bool
 	ConnectedAt() time.Time
 	IsClosed() bool
 	IsReady() bool
