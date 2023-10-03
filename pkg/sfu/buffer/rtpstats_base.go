@@ -546,16 +546,26 @@ func (r *rtpStatsBase) deltaInfo(snapshotID uint32, extStartSN uint64, extHighes
 	if int32(packetsLost) < 0 {
 		packetsLost = 0
 	}
+
+	// padding packets delta could be higher than expected due to out-of-order padding packets
+	packetsPadding := now.packetsPadding - then.packetsPadding
+	if packetsExpected < packetsPadding {
+		r.logger.Infow("padding packets more than expected", "packetsExpected", packetsExpected, "packetsPadding", packetsPadding)
+		packetsExpected = 0
+	} else {
+		packetsExpected -= packetsPadding
+	}
+
 	return &RTPDeltaInfo{
 		StartTime:            startTime,
 		Duration:             endTime.Sub(startTime),
-		Packets:              uint32(packetsExpected - (now.packetsPadding - then.packetsPadding)),
+		Packets:              uint32(packetsExpected),
 		Bytes:                now.bytes - then.bytes,
 		HeaderBytes:          now.headerBytes - then.headerBytes,
 		PacketsDuplicate:     uint32(now.packetsDuplicate - then.packetsDuplicate),
 		BytesDuplicate:       now.bytesDuplicate - then.bytesDuplicate,
 		HeaderBytesDuplicate: now.headerBytesDuplicate - then.headerBytesDuplicate,
-		PacketsPadding:       uint32(now.packetsPadding - then.packetsPadding),
+		PacketsPadding:       uint32(packetsPadding),
 		BytesPadding:         now.bytesPadding - then.bytesPadding,
 		HeaderBytesPadding:   now.headerBytesPadding - then.headerBytesPadding,
 		PacketsLost:          packetsLost,
