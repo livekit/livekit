@@ -46,9 +46,6 @@ type RTPFlowState struct {
 type RTPStatsReceiver struct {
 	*rtpStatsBase
 
-	resyncOnNextPacket             bool
-	shouldDiscountPaddingOnlyDrops bool
-
 	sequenceNumber *utils.WrapAround[uint16, uint64]
 
 	timestamp *utils.WrapAround[uint32, uint64]
@@ -87,11 +84,6 @@ func (r *RTPStatsReceiver) Update(
 	if !r.endTime.IsZero() {
 		flowState.IsNotHandled = true
 		return
-	}
-
-	if r.resyncOnNextPacket {
-		r.resyncOnNextPacket = false
-		r.resync(packetTime, sequenceNumber, timestamp)
 	}
 
 	var resSN utils.WrapAroundUpdateResult[uint64]
@@ -136,12 +128,25 @@ func (r *RTPStatsReceiver) Update(
 		if payloadSize == 0 {
 			// do not start on a padding only packet
 			if resTS.IsRestart {
-				r.logger.Infow("rolling back timestamp restart", "tsBefore", r.timestamp.GetExtendedStart(), "tsAfter", resTS.PreExtendedStart)
+				r.logger.Infow(
+					"rolling back timestamp restart",
+					"tsBefore", resTS.PreExtendedStart,
+					"tsAfter", r.timestamp.GetExtendedStart(),
+					"snBefore", resSN.PreExtendedStart,
+					"snAfter", r.sequenceNumber.GetExtendedStart(),
+				)
 				r.timestamp.RollbackRestart(resTS.PreExtendedStart)
 			}
 			if resSN.IsRestart {
-				r.logger.Infow("rolling back sequence number restart", "snBefore", r.sequenceNumber.GetExtendedStart(), "snAfter", resSN.PreExtendedStart)
+				r.logger.Infow(
+					"rolling back sequence number restart",
+					"snBefore", resSN.PreExtendedStart,
+					"snAfter", r.sequenceNumber.GetExtendedStart(),
+					"tsBefore", resTS.PreExtendedStart,
+					"tsAfter", r.timestamp.GetExtendedStart(),
+				)
 				r.sequenceNumber.RollbackRestart(resSN.PreExtendedStart)
+				flowState.IsNotHandled = true
 				return
 			}
 		}
@@ -165,6 +170,8 @@ func (r *RTPStatsReceiver) Update(
 				"adjusting start sequence number",
 				"snBefore", resSN.PreExtendedStart,
 				"snAfter", resSN.ExtendedVal,
+				"tsBefore", resTS.PreExtendedStart,
+				"tsAfter", resTS.ExtendedVal,
 			)
 		}
 
@@ -173,6 +180,8 @@ func (r *RTPStatsReceiver) Update(
 				"adjusting start timestamp",
 				"tsBefore", resTS.PreExtendedStart,
 				"tsAfter", resTS.ExtendedVal,
+				"snBefore", resSN.PreExtendedStart,
+				"snAfter", resSN.ExtendedVal,
 			)
 		}
 
@@ -192,6 +201,10 @@ func (r *RTPStatsReceiver) Update(
 		flowState.ExtSequenceNumber = resSN.ExtendedVal
 		flowState.ExtTimestamp = resTS.ExtendedVal
 	} else { // in-order
+		if gapSN >= cNumSequenceNumbers {
+			r.logger.Warnw("large sequence number gap", nil, "prev", resSN.PreExtendedHighest, "curr", resSN.ExtendedVal, "gap", gapSN)
+		}
+
 		// update gap histogram
 		r.updateGapHistogram(int(gapSN))
 
@@ -235,83 +248,6 @@ func (r *RTPStatsReceiver) Update(
 	return
 }
 
-func (r *RTPStatsReceiver) ResyncOnNextPacket(shouldDiscountPaddingOnlyDrops bool) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
-
-	r.resyncOnNextPacket = true
-	r.shouldDiscountPaddingOnlyDrops = shouldDiscountPaddingOnlyDrops
-}
-
-func (r *RTPStatsReceiver) resync(packetTime time.Time, sn uint16, ts uint32) {
-	if !r.initialized {
-		return
-	}
-
-	extHighestSN := r.sequenceNumber.GetExtendedHighest()
-	var newestPacketCount uint64
-	var paddingOnlyDrops uint64
-	var extExpectedHighestSN uint64
-	var expectedHighestSN uint16
-	var snCycles uint64
-
-	extHighestTS := r.timestamp.GetExtendedHighest()
-	var newestTS uint64
-	var extExpectedHighestTS uint64
-	var expectedHighestTS uint32
-	var tsCycles uint64
-	if r.srNewest != nil {
-		newestPacketCount = r.srNewest.PacketCountExt
-		paddingOnlyDrops = r.srNewest.PaddingOnlyDrops
-		if newestPacketCount != 0 {
-			extExpectedHighestSN = r.sequenceNumber.GetExtendedStart() + newestPacketCount
-			if r.shouldDiscountPaddingOnlyDrops {
-				extExpectedHighestSN -= paddingOnlyDrops
-			}
-			expectedHighestSN = uint16(extExpectedHighestSN & 0xFFFF)
-			snCycles = extExpectedHighestSN & 0xFFFF_FFFF_FFFF_0000
-			if sn-expectedHighestSN < (1<<15) && sn < expectedHighestSN {
-				snCycles += (1 << 16)
-			}
-			if snCycles != 0 && expectedHighestSN-sn < (1<<15) && expectedHighestSN < sn {
-				snCycles -= (1 << 16)
-			}
-		}
-
-		newestTS = r.srNewest.RTPTimestampExt
-		extExpectedHighestTS = newestTS
-		expectedHighestTS = uint32(extExpectedHighestTS & 0xFFFF_FFFF)
-		tsCycles = extExpectedHighestTS & 0xFFFF_FFFF_0000_0000
-		if ts-expectedHighestTS < (1<<31) && ts < expectedHighestTS {
-			tsCycles += (1 << 32)
-		}
-		if tsCycles != 0 && expectedHighestTS-ts < (1<<31) && expectedHighestTS < ts {
-			tsCycles -= (1 << 32)
-		}
-	}
-	r.sequenceNumber.ResetHighest(snCycles + uint64(sn) - 1)
-	r.timestamp.ResetHighest(tsCycles + uint64(ts))
-	r.highestTime = packetTime
-	r.logger.Debugw(
-		"resync",
-		"newestPacketCount", newestPacketCount,
-		"paddingOnlyDrops", paddingOnlyDrops,
-		"extExpectedHighestSN", extExpectedHighestSN,
-		"expectedHighestSN", expectedHighestSN,
-		"snCycles", snCycles,
-		"rtpSN", sn,
-		"beforeExtHighestSN", extHighestSN,
-		"afterExtHighestSN", r.sequenceNumber.GetExtendedHighest(),
-		"newestTS", newestTS,
-		"extExpectedHighestTS", extExpectedHighestTS,
-		"expectedHighestTS", expectedHighestTS,
-		"tsCycles", tsCycles,
-		"rtpTS", ts,
-		"beforeExtHighestTS", extHighestTS,
-		"afterExtHighestTS", r.timestamp.GetExtendedHighest(),
-	)
-}
-
 func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
@@ -335,22 +271,15 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 	}
 
 	tsCycles := uint64(0)
-	pcCycles := uint64(0)
 	if r.srNewest != nil {
 		tsCycles = r.srNewest.RTPTimestampExt & 0xFFFF_FFFF_0000_0000
 		if (srData.RTPTimestamp-r.srNewest.RTPTimestamp) < (1<<31) && srData.RTPTimestamp < r.srNewest.RTPTimestamp {
 			tsCycles += (1 << 32)
 		}
-
-		pcCycles = r.srNewest.PacketCountExt & 0xFFFF_FFFF_0000_0000
-		if (srData.PacketCount-r.srNewest.PacketCount) < (1<<31) && srData.PacketCount < r.srNewest.PacketCount {
-			pcCycles += (1 << 32)
-		}
 	}
 
 	srDataCopy := *srData
 	srDataCopy.RTPTimestampExt = uint64(srDataCopy.RTPTimestamp) + tsCycles
-	srDataCopy.PacketCountExt = uint64(srDataCopy.PacketCount) + pcCycles
 
 	r.maybeAdjustFirstPacketTime(srDataCopy.RTPTimestampExt, r.timestamp.GetExtendedStart())
 

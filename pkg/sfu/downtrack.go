@@ -1782,19 +1782,16 @@ func (d *DownTrack) GetAndResetBytesSent() (uint32, uint32) {
 }
 
 func (d *DownTrack) onBindAndConnectedChange() {
+	d.writable.Store(d.connected.Load() && d.bound.Load())
 	if d.connected.Load() && d.bound.Load() && !d.bindAndConnectedOnce.Swap(true) {
 		if d.kind == webrtc.RTPCodecTypeVideo {
-			_, layer := d.forwarder.CheckSync()
-			if layer != buffer.InvalidLayerSpatial {
-				d.params.Receiver.SendPLI(layer, true)
-			}
+			d.maybeStartKeyFrameRequester()
 		}
 
 		if d.activePaddingOnMuteUpTrack.Load() {
 			go d.sendPaddingOnMute()
 		}
 	}
-	d.writable.Store(d.connected.Load() && d.bound.Load())
 }
 
 func (d *DownTrack) sendPaddingOnMute() {

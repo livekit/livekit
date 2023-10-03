@@ -106,11 +106,11 @@ type snapshot struct {
 }
 
 type RTCPSenderReportData struct {
-	RTPTimestamp     uint32
-	RTPTimestampExt  uint64
-	NTPTimestamp     mediatransportutil.NtpTime
-	PacketCount      uint32
-	PacketCountExt   uint64
+	RTPTimestamp    uint32
+	RTPTimestampExt uint64
+	NTPTimestamp    mediatransportutil.NtpTime
+	PacketCount     uint32
+	// RAJA-REMOVE PacketCountExt   uint64
 	PaddingOnlyDrops uint64
 	At               time.Time
 }
@@ -474,7 +474,8 @@ func (r *rtpStatsBase) maybeAdjustFirstPacketTime(ets uint64, extStartTS uint64)
 	}
 
 	samplesDuration := time.Duration(float64(samplesDiff) / float64(r.params.ClockRate) * float64(time.Second))
-	now := time.Now()
+	timeSinceFirst := time.Since(r.firstTime)
+	now := r.firstTime.Add(timeSinceFirst)
 	firstTime := now.Add(-samplesDuration)
 	if firstTime.Before(r.firstTime) {
 		r.logger.Debugw(
@@ -546,16 +547,26 @@ func (r *rtpStatsBase) deltaInfo(snapshotID uint32, extStartSN uint64, extHighes
 	if int32(packetsLost) < 0 {
 		packetsLost = 0
 	}
+
+	// padding packets delta could be higher than expected due to out-of-order padding packets
+	packetsPadding := now.packetsPadding - then.packetsPadding
+	if packetsExpected < packetsPadding {
+		r.logger.Infow("padding packets more than expected", "packetsExpected", packetsExpected, "packetsPadding", packetsPadding)
+		packetsExpected = 0
+	} else {
+		packetsExpected -= packetsPadding
+	}
+
 	return &RTPDeltaInfo{
 		StartTime:            startTime,
 		Duration:             endTime.Sub(startTime),
-		Packets:              uint32(packetsExpected - (now.packetsPadding - then.packetsPadding)),
+		Packets:              uint32(packetsExpected),
 		Bytes:                now.bytes - then.bytes,
 		HeaderBytes:          now.headerBytes - then.headerBytes,
 		PacketsDuplicate:     uint32(now.packetsDuplicate - then.packetsDuplicate),
 		BytesDuplicate:       now.bytesDuplicate - then.bytesDuplicate,
 		HeaderBytesDuplicate: now.headerBytesDuplicate - then.headerBytesDuplicate,
-		PacketsPadding:       uint32(now.packetsPadding - then.packetsPadding),
+		PacketsPadding:       uint32(packetsPadding),
 		BytesPadding:         now.bytesPadding - then.bytesPadding,
 		HeaderBytesPadding:   now.headerBytesPadding - then.headerBytesPadding,
 		PacketsLost:          packetsLost,

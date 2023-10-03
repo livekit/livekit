@@ -115,7 +115,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	}
 
 	streamID := wr.StreamID()
-	if sub.SupportSyncStreamID() && t.params.MediaTrack.Stream() != "" {
+	if sub.SupportsSyncStreamID() && t.params.MediaTrack.Stream() != "" {
 		streamID = PackSyncStreamID(t.params.MediaTrack.PublisherID(), t.params.MediaTrack.Stream())
 	}
 
@@ -246,7 +246,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		}
 
 		sub.VerifySubscribeParticipantInfo(subTrack.PublisherID(), subTrack.PublisherVersion())
-		if sub.ProtocolVersion().SupportsTransceiverReuse() {
+		if sub.SupportsTransceiverReuse() {
 			//
 			// AddTrack will create a new transceiver or re-use an unused one
 			// if the attributes match. This prevents SDP from bloating
