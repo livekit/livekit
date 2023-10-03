@@ -281,10 +281,24 @@ func (r *RTPStatsSender) Update(
 				}
 			}
 
+			r.logger.Infow(
+				"adjusting start sequence number",
+				"snBefore", r.extStartSN,
+				"snAfter", extSequenceNumber,
+				"tsBefore", r.extStartTS,
+				"tsAfter", extTimestamp,
+			)
 			r.extStartSN = extSequenceNumber
 		}
 
 		if extTimestamp < r.extStartTS {
+			r.logger.Infow(
+				"adjusting start timestamp",
+				"snBefore", r.extStartSN,
+				"snAfter", extSequenceNumber,
+				"tsBefore", r.extStartTS,
+				"tsAfter", extTimestamp,
+			)
 			r.extStartTS = extTimestamp
 		}
 
