@@ -550,6 +550,7 @@ func (r *rtpStatsBase) deltaInfo(snapshotID uint32, extStartSN uint64, extHighes
 	// padding packets delta could be higher than expected due to out-of-order padding packets
 	packetsPadding := now.packetsPadding - then.packetsPadding
 	if packetsExpected < packetsPadding {
+		r.logger.Infow("padding packets more than expected", "packetsExpected", packetsExpected, "packetsPadding", packetsPadding)
 		packetsExpected = 0
 	} else {
 		packetsExpected -= packetsPadding
