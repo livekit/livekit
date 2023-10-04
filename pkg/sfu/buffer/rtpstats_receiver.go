@@ -110,7 +110,7 @@ func (r *RTPStatsReceiver) Update(
 			r.snapshots[i] = r.initSnapshot(r.startTime, r.sequenceNumber.GetExtendedStart())
 		}
 
-		r.logger.Debugw(
+		r.logger.Infow(
 			"rtp receiver stream start",
 			"startTime", r.startTime.String(),
 			"firstTime", r.firstTime.String(),
