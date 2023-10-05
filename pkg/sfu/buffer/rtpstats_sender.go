@@ -600,8 +600,13 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) *RTPDeltaInfo 
 	packetsExpected := uint32(now.extStartSN - then.extStartSN)
 	if packetsExpected > cNumSequenceNumbers {
 		r.logger.Warnw(
-			"too many packets expected in delta (sender)",
-			fmt.Errorf("start: %d, end: %d, expected: %d", then.extStartSN, now.extStartSN, packetsExpected),
+			"too many packets expected in delta (sender)", nil,
+			"startSN", then.extStartSN,
+			"endSN", now.extStartSN,
+			"packetsExpected", packetsExpected,
+			"startTime", startTime,
+			"endTime", endTime,
+			"duration", endTime.Sub(startTime),
 		)
 		return nil
 	}
