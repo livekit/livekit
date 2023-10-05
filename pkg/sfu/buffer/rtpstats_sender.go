@@ -76,6 +76,25 @@ func (is *intervalStats) aggregate(other *intervalStats) {
 	is.packetsNotFound += other.packetsNotFound
 }
 
+func (is *intervalStats) ToString() string {
+	if is == nil {
+		return "-"
+	}
+
+	return fmt.Sprintf("p: %d, b: %d, hb: %d, pp: %d, bp: %d, hbp: %d, pl: %d, pooo: %d, f: %d, pnf: %d",
+		is.packets,
+		is.bytes,
+		is.headerBytes,
+		is.packetsPadding,
+		is.bytesPadding,
+		is.headerBytesPadding,
+		is.packetsLost,
+		is.packetsOutOfOrder,
+		is.frames,
+		is.packetsNotFound,
+	)
+}
+
 // -------------------------------------------------------------------
 
 type senderSnapshot struct {
@@ -454,7 +473,7 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 		}
 
 		// on every RR, calculate delta since last RR using packet metadata cache
-		is := r.getIntervalStats(s.extLastRRSN+1, extReceivedRRSN+1, r.extStartSN, r.extHighestSN)
+		is := r.getIntervalStats(s.extLastRRSN+1, extReceivedRRSN+1, r.extHighestSN)
 		eis := &s.intervalStats
 		eis.aggregate(&is)
 		if is.packetsNotFound != 0 {
@@ -468,6 +487,9 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 				"extHighestSN", r.extHighestSN,
 				"extLastRRSN", s.extLastRRSN,
 				"extReceivedRRSN", extReceivedRRSN,
+				"packetsInInterval", extReceivedRRSN-s.extLastRRSN,
+				"intervalStats", is.ToString(),
+				"aggregateIntervalStats", eis.ToString(),
 				"extHighestSNFromRR", r.extHighestSNFromRR,
 				"packetsLostFromRR", r.packetsLostFromRR,
 			)
@@ -825,7 +847,6 @@ func (r *RTPStatsSender) isSnInfoLost(esn uint64, ehsn uint64) bool {
 func (r *RTPStatsSender) getIntervalStats(
 	extStartInclusive uint64,
 	extEndExclusive uint64,
-	esn uint64,
 	ehsn uint64,
 ) (intervalStats intervalStats) {
 	processESN := func(esn uint64, ehsn uint64) {
@@ -861,18 +882,6 @@ func (r *RTPStatsSender) getIntervalStats(
 
 	for esn := extStartInclusive; esn != extEndExclusive; esn++ {
 		processESN(esn, ehsn)
-	}
-
-	if intervalStats.packetsNotFound != 0 {
-		r.logger.Warnw(
-			"could not find some packets", nil,
-			"startInterval", extStartInclusive,
-			"endInterval", extEndExclusive-1,
-			"packetsInInterval", extEndExclusive-extStartInclusive,
-			"packetsNotFound", intervalStats.packetsNotFound,
-			"extStartSN", esn,
-			"extHighestSN", ehsn,
-		)
 	}
 	return
 }
