@@ -243,7 +243,7 @@ func (r *RTPStatsSender) Update(
 			r.senderSnapshots[i] = r.initSenderSnapshot(r.startTime, r.extStartSN)
 		}
 
-		r.logger.Debugw(
+		r.logger.Infow(
 			"rtp sender stream start",
 			"startTime", r.startTime.String(),
 			"firstTime", r.firstTime.String(),
