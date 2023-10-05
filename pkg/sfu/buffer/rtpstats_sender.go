@@ -165,6 +165,18 @@ func NewRTPStatsSender(params RTPStatsParams) *RTPStatsSender {
 	}
 }
 
+func (r *RTPStatsSender) Restart() {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	// do not restart if already ended
+	if !r.endTime.IsZero() {
+		return
+	}
+
+	r.initialized = false
+}
+
 func (r *RTPStatsSender) Seed(from *RTPStatsSender) {
 	r.lock.Lock()
 	defer r.lock.Unlock()

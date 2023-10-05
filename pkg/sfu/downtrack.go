@@ -55,6 +55,7 @@ type TrackSender interface {
 	SubscriberID() livekit.ParticipantID
 	TrackInfoAvailable()
 	HandleRTCPSenderReportData(payloadType webrtc.PayloadType, layer int32, srData *buffer.RTCPSenderReportData) error
+	Resync()
 }
 
 // -------------------------------------------------------------------
@@ -1241,6 +1242,9 @@ func (d *DownTrack) Pause() VideoAllocation {
 }
 
 func (d *DownTrack) Resync() {
+	d.params.Logger.Infow("rtp stats (resync)", "direction", "downstream", "mime", d.mime, "ssrc", d.ssrc, "stats", d.rtpStats.ToString())
+	d.rtpStats.Restart()
+
 	d.forwarder.Resync()
 }
 
