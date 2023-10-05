@@ -47,7 +47,7 @@ const (
 func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone bool) (*turn.Server, error) {
 	turnConf := conf.TURN
 	if !turnConf.Enabled {
-		return nil, nil
+		return nil, errors.New("TURN not enabled")
 	}
 
 	if turnConf.TLSPort <= 0 && turnConf.UDPPort <= 0 {
