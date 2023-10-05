@@ -56,6 +56,7 @@ type intervalStats struct {
 	packetsLost        uint64
 	packetsOutOfOrder  uint64
 	frames             uint32
+	packetsNotFound    uint64
 }
 
 func (is *intervalStats) aggregate(other *intervalStats) {
@@ -72,6 +73,26 @@ func (is *intervalStats) aggregate(other *intervalStats) {
 	is.packetsLost += other.packetsLost
 	is.packetsOutOfOrder += other.packetsOutOfOrder
 	is.frames += other.frames
+	is.packetsNotFound += other.packetsNotFound
+}
+
+func (is *intervalStats) ToString() string {
+	if is == nil {
+		return "-"
+	}
+
+	return fmt.Sprintf("p: %d, b: %d, hb: %d, pp: %d, bp: %d, hbp: %d, pl: %d, pooo: %d, f: %d, pnf: %d",
+		is.packets,
+		is.bytes,
+		is.headerBytes,
+		is.packetsPadding,
+		is.bytesPadding,
+		is.headerBytesPadding,
+		is.packetsLost,
+		is.packetsOutOfOrder,
+		is.frames,
+		is.packetsNotFound,
+	)
 }
 
 // -------------------------------------------------------------------
@@ -440,7 +461,7 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 		}
 	}
 
-	extLastRRSN := r.extHighestSNFromRR + (r.extStartSN & 0xFFFF_FFFF_FFFF_0000)
+	extReceivedRRSN := r.extHighestSNFromRR + (r.extStartSN & 0xFFFF_FFFF_FFFF_0000)
 	for i := uint32(0); i < r.nextSenderSnapshotID-cFirstSnapshotID; i++ {
 		s := &r.senderSnapshots[i]
 		if isRttChanged && rtt > s.maxRtt {
@@ -452,10 +473,28 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 		}
 
 		// on every RR, calculate delta since last RR using packet metadata cache
-		is := r.getIntervalStats(s.extLastRRSN+1, extLastRRSN+1, r.extHighestSN)
+		is := r.getIntervalStats(s.extLastRRSN+1, extReceivedRRSN+1, r.extHighestSN)
 		eis := &s.intervalStats
 		eis.aggregate(&is)
-		s.extLastRRSN = extLastRRSN
+		if is.packetsNotFound != 0 {
+			r.logger.Warnw(
+				"potential sequence number de-sync", nil,
+				"lastRRTime", r.lastRRTime,
+				"lastRR", r.lastRR,
+				"sinceLastRR", time.Since(r.lastRRTime),
+				"receivedRR", rr,
+				"extStartSN", r.extStartSN,
+				"extHighestSN", r.extHighestSN,
+				"extLastRRSN", s.extLastRRSN,
+				"extReceivedRRSN", extReceivedRRSN,
+				"packetsInInterval", extReceivedRRSN-s.extLastRRSN,
+				"intervalStats", is.ToString(),
+				"aggregateIntervalStats", eis.ToString(),
+				"extHighestSNFromRR", r.extHighestSNFromRR,
+				"packetsLostFromRR", r.packetsLostFromRR,
+			)
+		}
+		s.extLastRRSN = extReceivedRRSN
 	}
 
 	r.lastRRTime = time.Now()
@@ -805,12 +844,15 @@ func (r *RTPStatsSender) isSnInfoLost(esn uint64, ehsn uint64) bool {
 	return r.snInfos[slot].pktSize == 0
 }
 
-func (r *RTPStatsSender) getIntervalStats(extStartInclusive uint64, extEndExclusive uint64, ehsn uint64) (intervalStats intervalStats) {
-	packetsNotFound := uint32(0)
+func (r *RTPStatsSender) getIntervalStats(
+	extStartInclusive uint64,
+	extEndExclusive uint64,
+	ehsn uint64,
+) (intervalStats intervalStats) {
 	processESN := func(esn uint64, ehsn uint64) {
 		slot := r.getSnInfoOutOfOrderSlot(esn, ehsn)
 		if slot < 0 {
-			packetsNotFound++
+			intervalStats.packetsNotFound++
 			return
 		}
 
@@ -840,16 +882,6 @@ func (r *RTPStatsSender) getIntervalStats(extStartInclusive uint64, extEndExclus
 
 	for esn := extStartInclusive; esn != extEndExclusive; esn++ {
 		processESN(esn, ehsn)
-	}
-
-	if packetsNotFound != 0 {
-		r.logger.Errorw(
-			"could not find some packets", nil,
-			"start", extStartInclusive,
-			"end", extEndExclusive,
-			"count", packetsNotFound,
-			"highestSN", ehsn,
-		)
 	}
 	return
 }
