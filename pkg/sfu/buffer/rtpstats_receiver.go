@@ -361,9 +361,8 @@ func (r *RTPStatsReceiver) GetRtcpReceptionReport(ssrc uint32, proxyFracLost uin
 	if r.srNewest != nil {
 		lastSR = uint32(r.srNewest.NTPTimestamp >> 16)
 		if !r.srNewest.At.IsZero() {
-			delayUS := uint32(time.Since(r.srNewest.At).Microseconds())
-			dlsr = (delayUS / 1e6) << 16
-			dlsr |= (delayUS % 1e6) * 65536 / 1e6
+			delayUS := time.Since(r.srNewest.At).Microseconds()
+			dlsr = uint32(delayUS * 65536 / 1e6)
 		}
 	}
 
