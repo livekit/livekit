@@ -1095,7 +1095,7 @@ func (p *ParticipantImpl) UpdateMediaRTT(rtt uint32) {
 }
 
 func (p *ParticipantImpl) setupTransportManager() error {
-	tm, err := NewTransportManager(TransportManagerParams{
+	params := TransportManagerParams{
 		Identity: p.params.Identity,
 		SID:      p.params.SID,
 		// primary connection does not change, canSubscribe can change if permission was updated
@@ -1116,7 +1116,13 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		TURNSEnabled:             p.params.TURNSEnabled,
 		AllowPlayoutDelay:        p.params.PlayoutDelay.GetEnabled(),
 		Logger:                   p.params.Logger.WithComponent(sutils.ComponentTransport),
-	})
+	}
+	if p.params.SyncStreams && p.params.PlayoutDelay.GetEnabled() && p.params.ClientInfo.isFirefox() {
+		// we will disable playout delay for Firefox if the user is expecting
+		// the streams to be synced. Firefox doesn't support SyncStreams
+		params.AllowPlayoutDelay = false
+	}
+	tm, err := NewTransportManager(params)
 	if err != nil {
 		return err
 	}
