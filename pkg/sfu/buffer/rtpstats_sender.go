@@ -281,6 +281,9 @@ func (r *RTPStatsSender) Update(
 			// do not start on a padding only packet
 			return
 		}
+		if gapSN <= cNumSequenceNumbers {
+			r.logger.Warnw("large sequence number gap negative", nil, "prev", r.extHighestSN, "curr", extSequenceNumber, "gap", gapSN)
+		}
 
 		if extSequenceNumber < r.extStartSN {
 			r.packetsLost += r.extStartSN - extSequenceNumber
