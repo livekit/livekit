@@ -150,7 +150,7 @@ func (r *RTPStatsReceiver) Update(
 				return
 			}
 		}
-		if gapSN <= cNumSequenceNumbers {
+		if -gapSN >= cNumSequenceNumbers {
 			r.logger.Warnw("large sequence number gap negative", nil, "prev", resSN.PreExtendedHighest, "curr", resSN.ExtendedVal, "gap", gapSN)
 		}
 
