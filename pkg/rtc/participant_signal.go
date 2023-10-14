@@ -58,8 +58,7 @@ func (p *ParticipantImpl) SendJoinResponse(joinResponse *livekit.JoinResponse) e
 		return err
 	}
 
-	// update state after to sending message, so that no participant updates could slip through before JoinResponse is
-	// sent
+	// update state after sending message, so that no participant updates could slip through before JoinResponse is sent
 	p.updateLock.Lock()
 	if p.State() == livekit.ParticipantInfo_JOINING {
 		p.updateState(livekit.ParticipantInfo_JOINED)
@@ -96,7 +95,7 @@ func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.
 			// this is a message delivered out of order, a more recent version of the message had already been
 			// sent.
 			if pi.Version < lastVersion.version {
-				p.params.Logger.Debugw("skipping outdated participant update", "version", pi.Version, "lastVersion", lastVersion)
+				p.params.Logger.Debugw("skipping outdated participant update", "otherParticipant", pi.Identity, "otherPID", pi.Sid, "version", pi.Version, "lastVersion", lastVersion)
 				isValid = false
 			}
 		}
@@ -153,18 +152,6 @@ func (p *ParticipantImpl) SendSpeakerUpdate(speakers []*livekit.SpeakerInfo, for
 			},
 		},
 	})
-}
-
-func (p *ParticipantImpl) SendDataPacket(dp *livekit.DataPacket, data []byte) error {
-	if p.State() != livekit.ParticipantInfo_ACTIVE {
-		return ErrDataChannelUnavailable
-	}
-
-	err := p.TransportManager.SendDataPacket(dp, data)
-	if err == nil {
-		p.dataChannelStats.AddBytes(uint64(len(data)), true)
-	}
-	return err
 }
 
 func (p *ParticipantImpl) SendRoomUpdate(room *livekit.Room) error {

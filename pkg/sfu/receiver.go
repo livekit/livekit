@@ -81,7 +81,7 @@ type TrackReceiver interface {
 	GetTemporalLayerFpsForSpatial(layer int32) []float32
 
 	GetCalculatedClockRate(layer int32) uint32
-	GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error)
+	GetReferenceLayerRTPTimestamp(ets uint64, layer int32, referenceLayer int32) (uint64, error)
 }
 
 // WebRTCReceiver receives a media track
@@ -131,6 +131,10 @@ type WebRTCReceiver struct {
 	redPktWriter    func(pkt *buffer.ExtPacket, spatialLayer int32)
 }
 
+// SVC-TODO: Have to use more conditions to differentiate between
+// SVC-TODO: SVC and non-SVC (could be single layer or simulcast).
+// SVC-TODO: May only need to differentiate between simulcast and non-simulcast
+// SVC-TODO: i. e. may be possible to treat single layer as SVC to get proper/intended functionality.
 func IsSvcCodec(mime string) bool {
 	switch strings.ToLower(mime) {
 	case "video/av1":
@@ -219,10 +223,10 @@ func NewWebRTCReceiver(
 	})
 
 	w.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
-		MimeType:      w.codec.MimeType,
-		IsFECEnabled:  strings.EqualFold(w.codec.MimeType, webrtc.MimeTypeOpus) && strings.Contains(strings.ToLower(w.codec.SDPFmtpLine), "fec"),
-		GetDeltaStats: w.getDeltaStats,
-		Logger:        w.logger.WithValues("direction", "up"),
+		MimeType:         w.codec.MimeType,
+		IsFECEnabled:     strings.EqualFold(w.codec.MimeType, webrtc.MimeTypeOpus) && strings.Contains(strings.ToLower(w.codec.SDPFmtpLine), "fec"),
+		ReceiverProvider: w,
+		Logger:           w.logger.WithValues("direction", "up"),
 	})
 	w.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
 		if w.onStatsUpdate != nil {
@@ -231,6 +235,7 @@ func NewWebRTCReceiver(
 	})
 	w.connectionStats.Start(w.trackInfo)
 
+	// SVC-TODO: Handle DD for non-SVC cases???
 	if w.isSVC {
 		for _, ext := range receiver.GetParameters().HeaderExtensions {
 			if ext.URI == dd.ExtensionURI {
@@ -469,9 +474,9 @@ func (w *WebRTCReceiver) OnMaxAvailableLayerChanged(maxAvailableLayer int32) {
 
 // StreamTrackerManagerListener.OnBitrateReport
 func (w *WebRTCReceiver) OnBitrateReport(availableLayers []int32, bitrates Bitrates) {
-	for _, dt := range w.downTrackSpreader.GetDownTracks() {
+	w.downTrackSpreader.Broadcast(func(dt TrackSender) {
 		dt.UpTrackBitrateReport(availableLayers, bitrates)
-	}
+	})
 
 	w.connectionStats.AddLayerTransition(w.streamTrackerManager.DistanceToDesired())
 }
@@ -534,7 +539,7 @@ func (w *WebRTCReceiver) getBufferLocked(layer int32) *buffer.Buffer {
 		layer = 0
 	}
 
-	if int(layer) >= len(w.buffers) {
+	if layer < 0 || int(layer) >= len(w.buffers) {
 		return nil
 	}
 
@@ -590,7 +595,7 @@ func (w *WebRTCReceiver) GetAudioLevel() (float64, bool) {
 	return 0, false
 }
 
-func (w *WebRTCReceiver) getDeltaStats() map[uint32]*buffer.StreamStatsWithLayers {
+func (w *WebRTCReceiver) GetDeltaStats() map[uint32]*buffer.StreamStatsWithLayers {
 	w.bufferMu.RLock()
 	defer w.bufferMu.RUnlock()
 
@@ -772,8 +777,8 @@ func (w *WebRTCReceiver) GetCalculatedClockRate(layer int32) uint32 {
 	return w.streamTrackerManager.GetCalculatedClockRate(layer)
 }
 
-func (w *WebRTCReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error) {
-	return w.streamTrackerManager.GetReferenceLayerRTPTimestamp(ts, layer, referenceLayer)
+func (w *WebRTCReceiver) GetReferenceLayerRTPTimestamp(ets uint64, layer int32, referenceLayer int32) (uint64, error) {
+	return w.streamTrackerManager.GetReferenceLayerRTPTimestamp(ets, layer, referenceLayer)
 }
 
 // closes all track senders in parallel, returns when all are closed

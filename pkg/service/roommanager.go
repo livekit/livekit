@@ -66,6 +66,7 @@ type RoomManager struct {
 	clientConfManager clientconfiguration.ClientConfigurationManager
 	egressLauncher    rtc.EgressLauncher
 	versionGenerator  utils.TimedVersionGenerator
+	turnAuthHandler   *TURNAuthHandler
 
 	rooms map[livekit.RoomName]*rtc.Room
 
@@ -81,6 +82,7 @@ func NewLocalRoomManager(
 	clientConfManager clientconfiguration.ClientConfigurationManager,
 	egressLauncher rtc.EgressLauncher,
 	versionGenerator utils.TimedVersionGenerator,
+	turnAuthHandler *TURNAuthHandler,
 ) (*RoomManager, error) {
 	rtcConf, err := rtc.NewWebRTCConfig(conf)
 	if err != nil {
@@ -97,6 +99,7 @@ func NewLocalRoomManager(
 		clientConfManager: clientConfManager,
 		egressLauncher:    egressLauncher,
 		versionGenerator:  versionGenerator,
+		turnAuthHandler:   turnAuthHandler,
 
 		rooms: make(map[livekit.RoomName]*rtc.Room),
 
@@ -237,12 +240,16 @@ func (r *RoomManager) StartSession(
 	}
 	defer room.Release()
 
-	protoRoom := room.ToProto()
+	protoRoom, roomInternal := room.ToProto(), room.Internal()
 
 	// only create the room, but don't start a participant session
 	if pi.Identity == "" {
 		return nil
 	}
+
+	// should not error out, error is logged in iceServersForParticipant even if it fails
+	// since this is used for TURN server credentials, we don't want to fail the request even if there's no TURN for the session
+	apiKey, _, _ := r.getFirstKeyPair()
 
 	participant := room.GetParticipant(pi.Identity)
 	if participant != nil {
@@ -286,8 +293,9 @@ func (r *RoomManager) StartSession(
 				participant,
 				requestSource,
 				responseSink,
-				r.iceServersForRoom(
-					protoRoom,
+				r.iceServersForParticipant(
+					apiKey,
+					participant,
 					iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS,
 				),
 				pi.ReconnectReason,
@@ -355,6 +363,11 @@ func (r *RoomManager) StartSession(
 	if r.config.RTC.ReconnectOnSubscriptionError != nil {
 		reconnectOnSubscriptionError = *r.config.RTC.ReconnectOnSubscriptionError
 	}
+	// default do not force full reconnect on a data channel error
+	reconnectOnDataChannelError := false
+	if r.config.RTC.ReconnectOnDataChannelError != nil {
+		reconnectOnDataChannelError = *r.config.RTC.ReconnectOnDataChannelError
+	}
 	subscriberAllowPause := r.config.RTC.CongestionControl.AllowPause
 	if pi.SubscriberAllowPause != nil {
 		subscriberAllowPause = *pi.SubscriberAllowPause
@@ -389,12 +402,14 @@ func (r *RoomManager) StartSession(
 		},
 		ReconnectOnPublicationError:  reconnectOnPublicationError,
 		ReconnectOnSubscriptionError: reconnectOnSubscriptionError,
+		ReconnectOnDataChannelError:  reconnectOnDataChannelError,
 		VersionGenerator:             r.versionGenerator,
 		TrackResolver:                room.ResolveMediaTrackForSubscriber,
 		SubscriberAllowPause:         subscriberAllowPause,
 		SubscriptionLimitAudio:       r.config.Limit.SubscriptionLimitAudio,
 		SubscriptionLimitVideo:       r.config.Limit.SubscriptionLimitVideo,
-		PlayoutDelay:                 protoRoom.PlayoutDelay,
+		PlayoutDelay:                 roomInternal.GetPlayoutDelay(),
+		SyncStreams:                  roomInternal.GetSyncStreams(),
 	})
 	if err != nil {
 		return err
@@ -405,7 +420,8 @@ func (r *RoomManager) StartSession(
 	opts := rtc.ParticipantOptions{
 		AutoSubscribe: pi.AutoSubscribe,
 	}
-	if err = room.Join(participant, requestSource, &opts, r.iceServersForRoom(protoRoom, iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS)); err != nil {
+	iceServers := r.iceServersForParticipant(apiKey, participant, iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS)
+	if err = room.Join(participant, requestSource, &opts, iceServers); err != nil {
 		pLogger.Errorw("could not join room", err)
 		_ = participant.Close(true, types.ParticipantCloseReasonJoinFailed, false)
 		return err
@@ -550,7 +566,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 	_ = r.refreshToken(participant)
 	tokenTicker := time.NewTicker(tokenRefreshInterval)
 	defer tokenTicker.Stop()
-	stateCheckTicker := time.NewTicker(time.Millisecond * 50)
+	stateCheckTicker := time.NewTicker(time.Millisecond * 500)
 	defer stateCheckTicker.Stop()
 	for {
 		select {
@@ -659,16 +675,17 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomName livekit.Roo
 		pLogger.Debugw("updating participant subscriptions")
 		room.UpdateSubscriptions(
 			participant,
-			livekit.StringsAsTrackIDs(rm.UpdateSubscriptions.TrackSids),
+			livekit.StringsAsIDs[livekit.TrackID](rm.UpdateSubscriptions.TrackSids),
 			rm.UpdateSubscriptions.ParticipantTracks,
 			rm.UpdateSubscriptions.Subscribe,
 		)
 	case *livekit.RTCNodeMessage_SendData:
 		pLogger.Debugw("api send data", "size", len(rm.SendData.Data))
 		up := &livekit.UserPacket{
-			Payload:         rm.SendData.Data,
-			DestinationSids: rm.SendData.DestinationSids,
-			Topic:           rm.SendData.Topic,
+			Payload:               rm.SendData.Data,
+			DestinationSids:       rm.SendData.DestinationSids,
+			DestinationIdentities: rm.SendData.DestinationIdentities,
+			Topic:                 rm.SendData.Topic,
 		}
 		room.SendDataPacket(up, rm.SendData.Kind)
 	case *livekit.RTCNodeMessage_UpdateRoomMetadata:
@@ -677,7 +694,7 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomName livekit.Roo
 	}
 }
 
-func (r *RoomManager) iceServersForRoom(ri *livekit.Room, tlsOnly bool) []*livekit.ICEServer {
+func (r *RoomManager) iceServersForParticipant(apiKey string, participant types.LocalParticipant, tlsOnly bool) []*livekit.ICEServer {
 	var iceServers []*livekit.ICEServer
 	rtcConf := r.config.RTC
 
@@ -698,11 +715,19 @@ func (r *RoomManager) iceServersForRoom(ri *livekit.Room, tlsOnly bool) []*livek
 			urls = append(urls, fmt.Sprintf("turns:%s:443?transport=tcp", r.config.TURN.Domain))
 		}
 		if len(urls) > 0 {
-			iceServers = append(iceServers, &livekit.ICEServer{
-				Urls:       urls,
-				Username:   ri.Name,
-				Credential: ri.TurnPassword,
-			})
+			username := r.turnAuthHandler.CreateUsername(apiKey, participant.ID())
+			password, err := r.turnAuthHandler.CreatePassword(apiKey, participant.ID())
+			if err != nil {
+				participant.GetLogger().Warnw("could not create turn password", err)
+				hasSTUN = false
+			} else {
+				logger.Infow("created TURN password", "username", username, "password", password)
+				iceServers = append(iceServers, &livekit.ICEServer{
+					Urls:       urls,
+					Username:   username,
+					Credential: password,
+				})
+			}
 		}
 	}
 
@@ -739,23 +764,26 @@ func (r *RoomManager) iceServersForRoom(ri *livekit.Room, tlsOnly bool) []*livek
 }
 
 func (r *RoomManager) refreshToken(participant types.LocalParticipant) error {
-	for key, secret := range r.config.Keys {
-		grants := participant.ClaimGrants()
-		token := auth.NewAccessToken(key, secret)
-		token.SetName(grants.Name).
-			SetIdentity(string(participant.Identity())).
-			SetValidFor(tokenDefaultTTL).
-			SetMetadata(grants.Metadata).
-			AddGrant(grants.Video)
-		jwt, err := token.ToJWT()
-		if err == nil {
-			err = participant.SendRefreshToken(jwt)
-		}
-		if err != nil {
-			return err
-		}
-		break
+	key, secret, err := r.getFirstKeyPair()
+	if err != nil {
+		return err
 	}
+
+	grants := participant.ClaimGrants()
+	token := auth.NewAccessToken(key, secret)
+	token.SetName(grants.Name).
+		SetIdentity(string(participant.Identity())).
+		SetValidFor(tokenDefaultTTL).
+		SetMetadata(grants.Metadata).
+		AddGrant(grants.Video)
+	jwt, err := token.ToJWT()
+	if err == nil {
+		err = participant.SendRefreshToken(jwt)
+	}
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -777,6 +805,13 @@ func (r *RoomManager) getIceConfig(participant types.LocalParticipant) *livekit.
 		return nil
 	}
 	return iceConfigCacheEntry.iceConfig
+}
+
+func (r *RoomManager) getFirstKeyPair() (string, string, error) {
+	for key, secret := range r.config.Keys {
+		return key, secret, nil
+	}
+	return "", "", errors.New("no API keys configured")
 }
 
 // ------------------------------------

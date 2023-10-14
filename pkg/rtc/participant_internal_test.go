@@ -661,7 +661,6 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 	}
 	conf, _ := config.NewConfig("", true, nil, nil)
 	// disable mux, it doesn't play too well with unit test
-	conf.RTC.UDPPort = 0
 	conf.RTC.TCPPort = 0
 	rtcConf, err := NewWebRTCConfig(conf)
 	if err != nil {

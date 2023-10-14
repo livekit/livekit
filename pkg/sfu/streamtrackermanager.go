@@ -76,7 +76,7 @@ type StreamTrackerManager struct {
 
 	senderReportMu sync.RWMutex
 	senderReports  [buffer.DefaultMaxLayerSpatial + 1]endsSenderReport
-	layerOffsets   [buffer.DefaultMaxLayerSpatial + 1][buffer.DefaultMaxLayerSpatial + 1]uint32
+	layerOffsets   [buffer.DefaultMaxLayerSpatial + 1][buffer.DefaultMaxLayerSpatial + 1]uint64
 
 	closed core.Fuse
 
@@ -563,15 +563,23 @@ func (s *StreamTrackerManager) updateLayerOffsetLocked(ref, other int32) {
 	rtpDiff := ntpDiff.Nanoseconds() * int64(s.clockRate) / 1e9
 
 	// calculate other layer's time stamp at the same time as ref layer's NTP time
-	normalizedOtherTS := srOther.RTPTimestamp + uint32(rtpDiff)
+	normalizedOtherTS := srOther.RTPTimestampExt + uint64(rtpDiff)
 
 	// now both layers' time stamp refer to the same NTP time and the diff is the offset between the layers
-	offset := srRef.RTPTimestamp - normalizedOtherTS
+	offset := srRef.RTPTimestampExt - normalizedOtherTS
 
 	// use minimal offset to indicate value availability in the extremely unlikely case of
 	// both layers using the same timestamp
 	if offset == 0 {
-		s.logger.Infow("using default offset", "ref", ref, "other", other)
+		s.logger.Debugw(
+			"using default offset",
+			"ref", ref,
+			"refNTP", srRef.NTPTimestamp.Time().String(),
+			"refRTP", srRef.RTPTimestamp,
+			"other", other,
+			"otherNTP", srOther.NTPTimestamp.Time().String(),
+			"otherRTP", srOther.RTPTimestamp,
+		)
 		offset = 1
 	}
 
@@ -635,7 +643,7 @@ func (s *StreamTrackerManager) GetCalculatedClockRate(layer int32) uint32 {
 	return uint32(float64(rdsf) / tsf.Seconds())
 }
 
-func (s *StreamTrackerManager) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error) {
+func (s *StreamTrackerManager) GetReferenceLayerRTPTimestamp(ets uint64, layer int32, referenceLayer int32) (uint64, error) {
 	s.senderReportMu.RLock()
 	defer s.senderReportMu.RUnlock()
 
@@ -647,7 +655,7 @@ func (s *StreamTrackerManager) GetReferenceLayerRTPTimestamp(ts uint32, layer in
 		return 0, fmt.Errorf("offset unavailable, target: %d, reference: %d", layer, referenceLayer)
 	}
 
-	return ts + s.layerOffsets[referenceLayer][layer], nil
+	return ets + s.layerOffsets[referenceLayer][layer], nil
 }
 
 func (s *StreamTrackerManager) GetMaxTemporalLayerSeen() int32 {

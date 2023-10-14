@@ -252,7 +252,7 @@ func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescript
 
 			opusPT, err := parsed.GetPayloadTypeForCodec(sdp.Codec{Name: "opus"})
 			if err != nil {
-				p.pubLogger.Infow("failed to get opus payload type", "error", err, "trakcID", ti.Sid)
+				p.pubLogger.Infow("failed to get opus payload type", "error", err, "trackID", ti.Sid)
 				continue
 			}
 

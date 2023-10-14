@@ -101,6 +101,10 @@ func (t *Track) SetStreamState(streamState StreamState) bool {
 	return true
 }
 
+func (t *Track) IsSubscribeMutable() bool {
+	return t.streamState != StreamStatePaused
+}
+
 func (t *Track) SetPriority(priority uint8) bool {
 	if priority == 0 {
 		switch t.source {
@@ -164,7 +168,7 @@ func (t *Track) ProvisionalAllocateReset() {
 	t.downTrack.ProvisionalAllocateReset()
 }
 
-func (t *Track) ProvisionalAllocate(availableChannelCapacity int64, layer buffer.VideoLayer, allowPause bool, allowOvershoot bool) int64 {
+func (t *Track) ProvisionalAllocate(availableChannelCapacity int64, layer buffer.VideoLayer, allowPause bool, allowOvershoot bool) (bool, int64) {
 	return t.downTrack.ProvisionalAllocate(availableChannelCapacity, layer, allowPause, allowOvershoot)
 }
 

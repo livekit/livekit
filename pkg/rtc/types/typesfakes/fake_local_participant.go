@@ -263,6 +263,17 @@ type FakeLocalParticipant struct {
 	getPacerReturnsOnCall map[int]struct {
 		result1 pacer.Pacer
 	}
+	GetPendingTrackStub        func(livekit.TrackID) *livekit.TrackInfo
+	getPendingTrackMutex       sync.RWMutex
+	getPendingTrackArgsForCall []struct {
+		arg1 livekit.TrackID
+	}
+	getPendingTrackReturns struct {
+		result1 *livekit.TrackInfo
+	}
+	getPendingTrackReturnsOnCall map[int]struct {
+		result1 *livekit.TrackInfo
+	}
 	GetPlayoutDelayConfigStub        func() *livekit.PlayoutDelay
 	getPlayoutDelayConfigMutex       sync.RWMutex
 	getPlayoutDelayConfigArgsForCall []struct {
@@ -782,14 +793,24 @@ type FakeLocalParticipant struct {
 		arg2 livekit.TrackID
 		arg3 bool
 	}
-	SupportSyncStreamIDStub        func() bool
-	supportSyncStreamIDMutex       sync.RWMutex
-	supportSyncStreamIDArgsForCall []struct {
+	SupportsSyncStreamIDStub        func() bool
+	supportsSyncStreamIDMutex       sync.RWMutex
+	supportsSyncStreamIDArgsForCall []struct {
 	}
-	supportSyncStreamIDReturns struct {
+	supportsSyncStreamIDReturns struct {
 		result1 bool
 	}
-	supportSyncStreamIDReturnsOnCall map[int]struct {
+	supportsSyncStreamIDReturnsOnCall map[int]struct {
+		result1 bool
+	}
+	SupportsTransceiverReuseStub        func() bool
+	supportsTransceiverReuseMutex       sync.RWMutex
+	supportsTransceiverReuseArgsForCall []struct {
+	}
+	supportsTransceiverReuseReturns struct {
+		result1 bool
+	}
+	supportsTransceiverReuseReturnsOnCall map[int]struct {
 		result1 bool
 	}
 	ToProtoStub        func() *livekit.ParticipantInfo
@@ -2166,6 +2187,67 @@ func (fake *FakeLocalParticipant) GetPacerReturnsOnCall(i int, result1 pacer.Pac
 	}
 	fake.getPacerReturnsOnCall[i] = struct {
 		result1 pacer.Pacer
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetPendingTrack(arg1 livekit.TrackID) *livekit.TrackInfo {
+	fake.getPendingTrackMutex.Lock()
+	ret, specificReturn := fake.getPendingTrackReturnsOnCall[len(fake.getPendingTrackArgsForCall)]
+	fake.getPendingTrackArgsForCall = append(fake.getPendingTrackArgsForCall, struct {
+		arg1 livekit.TrackID
+	}{arg1})
+	stub := fake.GetPendingTrackStub
+	fakeReturns := fake.getPendingTrackReturns
+	fake.recordInvocation("GetPendingTrack", []interface{}{arg1})
+	fake.getPendingTrackMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) GetPendingTrackCallCount() int {
+	fake.getPendingTrackMutex.RLock()
+	defer fake.getPendingTrackMutex.RUnlock()
+	return len(fake.getPendingTrackArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) GetPendingTrackCalls(stub func(livekit.TrackID) *livekit.TrackInfo) {
+	fake.getPendingTrackMutex.Lock()
+	defer fake.getPendingTrackMutex.Unlock()
+	fake.GetPendingTrackStub = stub
+}
+
+func (fake *FakeLocalParticipant) GetPendingTrackArgsForCall(i int) livekit.TrackID {
+	fake.getPendingTrackMutex.RLock()
+	defer fake.getPendingTrackMutex.RUnlock()
+	argsForCall := fake.getPendingTrackArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) GetPendingTrackReturns(result1 *livekit.TrackInfo) {
+	fake.getPendingTrackMutex.Lock()
+	defer fake.getPendingTrackMutex.Unlock()
+	fake.GetPendingTrackStub = nil
+	fake.getPendingTrackReturns = struct {
+		result1 *livekit.TrackInfo
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetPendingTrackReturnsOnCall(i int, result1 *livekit.TrackInfo) {
+	fake.getPendingTrackMutex.Lock()
+	defer fake.getPendingTrackMutex.Unlock()
+	fake.GetPendingTrackStub = nil
+	if fake.getPendingTrackReturnsOnCall == nil {
+		fake.getPendingTrackReturnsOnCall = make(map[int]struct {
+			result1 *livekit.TrackInfo
+		})
+	}
+	fake.getPendingTrackReturnsOnCall[i] = struct {
+		result1 *livekit.TrackInfo
 	}{result1}
 }
 
@@ -5081,15 +5163,15 @@ func (fake *FakeLocalParticipant) SubscriptionPermissionUpdateArgsForCall(i int)
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
-func (fake *FakeLocalParticipant) SupportSyncStreamID() bool {
-	fake.supportSyncStreamIDMutex.Lock()
-	ret, specificReturn := fake.supportSyncStreamIDReturnsOnCall[len(fake.supportSyncStreamIDArgsForCall)]
-	fake.supportSyncStreamIDArgsForCall = append(fake.supportSyncStreamIDArgsForCall, struct {
+func (fake *FakeLocalParticipant) SupportsSyncStreamID() bool {
+	fake.supportsSyncStreamIDMutex.Lock()
+	ret, specificReturn := fake.supportsSyncStreamIDReturnsOnCall[len(fake.supportsSyncStreamIDArgsForCall)]
+	fake.supportsSyncStreamIDArgsForCall = append(fake.supportsSyncStreamIDArgsForCall, struct {
 	}{})
-	stub := fake.SupportSyncStreamIDStub
-	fakeReturns := fake.supportSyncStreamIDReturns
-	fake.recordInvocation("SupportSyncStreamID", []interface{}{})
-	fake.supportSyncStreamIDMutex.Unlock()
+	stub := fake.SupportsSyncStreamIDStub
+	fakeReturns := fake.supportsSyncStreamIDReturns
+	fake.recordInvocation("SupportsSyncStreamID", []interface{}{})
+	fake.supportsSyncStreamIDMutex.Unlock()
 	if stub != nil {
 		return stub()
 	}
@@ -5099,37 +5181,90 @@ func (fake *FakeLocalParticipant) SupportSyncStreamID() bool {
 	return fakeReturns.result1
 }
 
-func (fake *FakeLocalParticipant) SupportSyncStreamIDCallCount() int {
-	fake.supportSyncStreamIDMutex.RLock()
-	defer fake.supportSyncStreamIDMutex.RUnlock()
-	return len(fake.supportSyncStreamIDArgsForCall)
+func (fake *FakeLocalParticipant) SupportsSyncStreamIDCallCount() int {
+	fake.supportsSyncStreamIDMutex.RLock()
+	defer fake.supportsSyncStreamIDMutex.RUnlock()
+	return len(fake.supportsSyncStreamIDArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) SupportSyncStreamIDCalls(stub func() bool) {
-	fake.supportSyncStreamIDMutex.Lock()
-	defer fake.supportSyncStreamIDMutex.Unlock()
-	fake.SupportSyncStreamIDStub = stub
+func (fake *FakeLocalParticipant) SupportsSyncStreamIDCalls(stub func() bool) {
+	fake.supportsSyncStreamIDMutex.Lock()
+	defer fake.supportsSyncStreamIDMutex.Unlock()
+	fake.SupportsSyncStreamIDStub = stub
 }
 
-func (fake *FakeLocalParticipant) SupportSyncStreamIDReturns(result1 bool) {
-	fake.supportSyncStreamIDMutex.Lock()
-	defer fake.supportSyncStreamIDMutex.Unlock()
-	fake.SupportSyncStreamIDStub = nil
-	fake.supportSyncStreamIDReturns = struct {
+func (fake *FakeLocalParticipant) SupportsSyncStreamIDReturns(result1 bool) {
+	fake.supportsSyncStreamIDMutex.Lock()
+	defer fake.supportsSyncStreamIDMutex.Unlock()
+	fake.SupportsSyncStreamIDStub = nil
+	fake.supportsSyncStreamIDReturns = struct {
 		result1 bool
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) SupportSyncStreamIDReturnsOnCall(i int, result1 bool) {
-	fake.supportSyncStreamIDMutex.Lock()
-	defer fake.supportSyncStreamIDMutex.Unlock()
-	fake.SupportSyncStreamIDStub = nil
-	if fake.supportSyncStreamIDReturnsOnCall == nil {
-		fake.supportSyncStreamIDReturnsOnCall = make(map[int]struct {
+func (fake *FakeLocalParticipant) SupportsSyncStreamIDReturnsOnCall(i int, result1 bool) {
+	fake.supportsSyncStreamIDMutex.Lock()
+	defer fake.supportsSyncStreamIDMutex.Unlock()
+	fake.SupportsSyncStreamIDStub = nil
+	if fake.supportsSyncStreamIDReturnsOnCall == nil {
+		fake.supportsSyncStreamIDReturnsOnCall = make(map[int]struct {
 			result1 bool
 		})
 	}
-	fake.supportSyncStreamIDReturnsOnCall[i] = struct {
+	fake.supportsSyncStreamIDReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) SupportsTransceiverReuse() bool {
+	fake.supportsTransceiverReuseMutex.Lock()
+	ret, specificReturn := fake.supportsTransceiverReuseReturnsOnCall[len(fake.supportsTransceiverReuseArgsForCall)]
+	fake.supportsTransceiverReuseArgsForCall = append(fake.supportsTransceiverReuseArgsForCall, struct {
+	}{})
+	stub := fake.SupportsTransceiverReuseStub
+	fakeReturns := fake.supportsTransceiverReuseReturns
+	fake.recordInvocation("SupportsTransceiverReuse", []interface{}{})
+	fake.supportsTransceiverReuseMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) SupportsTransceiverReuseCallCount() int {
+	fake.supportsTransceiverReuseMutex.RLock()
+	defer fake.supportsTransceiverReuseMutex.RUnlock()
+	return len(fake.supportsTransceiverReuseArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) SupportsTransceiverReuseCalls(stub func() bool) {
+	fake.supportsTransceiverReuseMutex.Lock()
+	defer fake.supportsTransceiverReuseMutex.Unlock()
+	fake.SupportsTransceiverReuseStub = stub
+}
+
+func (fake *FakeLocalParticipant) SupportsTransceiverReuseReturns(result1 bool) {
+	fake.supportsTransceiverReuseMutex.Lock()
+	defer fake.supportsTransceiverReuseMutex.Unlock()
+	fake.SupportsTransceiverReuseStub = nil
+	fake.supportsTransceiverReuseReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) SupportsTransceiverReuseReturnsOnCall(i int, result1 bool) {
+	fake.supportsTransceiverReuseMutex.Lock()
+	defer fake.supportsTransceiverReuseMutex.Unlock()
+	fake.SupportsTransceiverReuseStub = nil
+	if fake.supportsTransceiverReuseReturnsOnCall == nil {
+		fake.supportsTransceiverReuseReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.supportsTransceiverReuseReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
 }
@@ -5829,6 +5964,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.getLoggerMutex.RUnlock()
 	fake.getPacerMutex.RLock()
 	defer fake.getPacerMutex.RUnlock()
+	fake.getPendingTrackMutex.RLock()
+	defer fake.getPendingTrackMutex.RUnlock()
 	fake.getPlayoutDelayConfigMutex.RLock()
 	defer fake.getPlayoutDelayConfigMutex.RUnlock()
 	fake.getPublishedTrackMutex.RLock()
@@ -5959,8 +6096,10 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.subscriptionPermissionMutex.RUnlock()
 	fake.subscriptionPermissionUpdateMutex.RLock()
 	defer fake.subscriptionPermissionUpdateMutex.RUnlock()
-	fake.supportSyncStreamIDMutex.RLock()
-	defer fake.supportSyncStreamIDMutex.RUnlock()
+	fake.supportsSyncStreamIDMutex.RLock()
+	defer fake.supportsSyncStreamIDMutex.RUnlock()
+	fake.supportsTransceiverReuseMutex.RLock()
+	defer fake.supportsTransceiverReuseMutex.RUnlock()
 	fake.toProtoMutex.RLock()
 	defer fake.toProtoMutex.RUnlock()
 	fake.toProtoWithVersionMutex.RLock()

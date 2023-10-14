@@ -16,6 +16,8 @@ package rtc
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -24,6 +26,7 @@ import (
 
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/pion/rtcp"
+	"github.com/pion/sctp"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
 	"github.com/pkg/errors"
@@ -53,7 +56,7 @@ const (
 	sdBatchSize       = 30
 	rttUpdateInterval = 5 * time.Second
 
-	disconnectCleanupDuration = 15 * time.Second
+	disconnectCleanupDuration = 5 * time.Second
 	migrationWaitDuration     = 3 * time.Second
 )
 
@@ -67,11 +70,19 @@ type downTrackState struct {
 	downTrack   sfu.DownTrackState
 }
 
+// ---------------------------------------------------------------
+
 type participantUpdateInfo struct {
 	version   uint32
 	state     livekit.ParticipantInfo_State
 	updatedAt time.Time
 }
+
+func (p participantUpdateInfo) String() string {
+	return fmt.Sprintf("version: %d, state: %s, updatedAt: %s", p.version, p.state.String(), p.updatedAt.String())
+}
+
+// ---------------------------------------------------------------
 
 type ParticipantParams struct {
 	Identity                     livekit.ParticipantIdentity
@@ -103,6 +114,7 @@ type ParticipantParams struct {
 	GetParticipantInfo           func(pID livekit.ParticipantID) *livekit.ParticipantInfo
 	ReconnectOnPublicationError  bool
 	ReconnectOnSubscriptionError bool
+	ReconnectOnDataChannelError  bool
 	VersionGenerator             utils.TimedVersionGenerator
 	TrackResolver                types.MediaTrackResolver
 	DisableDynacast              bool
@@ -110,6 +122,7 @@ type ParticipantParams struct {
 	SubscriptionLimitAudio       int32
 	SubscriptionLimitVideo       int32
 	PlayoutDelay                 *livekit.PlayoutDelay
+	SyncStreams                  bool
 }
 
 type ParticipantImpl struct {
@@ -549,8 +562,9 @@ func (p *ParticipantImpl) HandleSignalSourceClose() {
 	p.TransportManager.SetSignalSourceValid(false)
 
 	if !p.TransportManager.HasPublisherEverConnected() && !p.TransportManager.HasSubscriberEverConnected() {
-		p.params.Logger.Infow("closing disconnected participant")
-		_ = p.Close(false, types.ParticipantCloseReasonJoinFailed, false)
+		reason := types.ParticipantCloseReasonJoinFailed
+		p.params.Logger.Infow("closing disconnected participant", "reason", reason)
+		_ = p.Close(false, reason, false)
 	}
 }
 
@@ -705,7 +719,13 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 		return nil
 	}
 
-	p.params.Logger.Infow("participant closing", "sendLeave", sendLeave, "reason", reason.String(), "isExpectedToResume", isExpectedToResume)
+	p.params.Logger.Infow(
+		"participant closing",
+		"sendLeave", sendLeave,
+		"reason", reason.String(),
+		"isExpectedToResume", isExpectedToResume,
+		"clientInfo", p.params.ClientInfo.String(),
+	)
 	p.clearDisconnectTimer()
 	p.clearMigrationTimer()
 
@@ -812,7 +832,6 @@ func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
 		if p.IsClosed() || p.IsDisconnected() {
 			return
 		}
-		// TODO: change to debug once we are confident
 		p.subLogger.Infow("closing subscriber peer connection to aid migration")
 
 		//
@@ -836,7 +855,7 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 		return
 	}
 
-	p.params.Logger.Infow("SetMigrateState", "state", s)
+	p.params.Logger.Debugw("SetMigrateState", "state", s)
 	p.migrateState.Store(s)
 	p.dirty.Store(true)
 
@@ -885,23 +904,6 @@ func (p *ParticipantImpl) OnICEConfigChanged(f func(participant types.LocalParti
 //
 // signal connection methods
 //
-
-func (p *ParticipantImpl) GetAudioLevel() (level float64, active bool) {
-	level = 0
-	for _, pt := range p.GetPublishedTracks() {
-		mediaTrack := pt.(types.LocalMediaTrack)
-		if mediaTrack.Source() == livekit.TrackSource_MICROPHONE {
-			tl, ta := mediaTrack.GetAudioLevel()
-			if ta {
-				active = true
-				if tl > level {
-					level = tl
-				}
-			}
-		}
-	}
-	return
-}
 
 func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo {
 	numTracks := 0
@@ -1107,7 +1109,7 @@ func (p *ParticipantImpl) UpdateMediaRTT(rtt uint32) {
 }
 
 func (p *ParticipantImpl) setupTransportManager() error {
-	tm, err := NewTransportManager(TransportManagerParams{
+	params := TransportManagerParams{
 		Identity: p.params.Identity,
 		SID:      p.params.SID,
 		// primary connection does not change, canSubscribe can change if permission was updated
@@ -1126,9 +1128,15 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		TCPFallbackRTTThreshold:  p.params.TCPFallbackRTTThreshold,
 		AllowUDPUnstableFallback: p.params.AllowUDPUnstableFallback,
 		TURNSEnabled:             p.params.TURNSEnabled,
-		AllowPlayoutDelay:        p.params.PlayoutDelay.GetEnabled() && p.SupportSyncStreamID(),
+		AllowPlayoutDelay:        p.params.PlayoutDelay.GetEnabled(),
 		Logger:                   p.params.Logger.WithComponent(sutils.ComponentTransport),
-	})
+	}
+	if p.params.SyncStreams && p.params.PlayoutDelay.GetEnabled() && p.params.ClientInfo.isFirefox() {
+		// we will disable playout delay for Firefox if the user is expecting
+		// the streams to be synced. Firefox doesn't support SyncStreams
+		params.AllowPlayoutDelay = false
+	}
+	tm, err := NewTransportManager(params)
 	if err != nil {
 		return err
 	}
@@ -1354,6 +1362,7 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		p.lock.RUnlock()
 		if onDataPacket != nil {
 			payload.User.ParticipantSid = string(p.params.SID)
+			payload.User.ParticipantIdentity = string(p.params.Identity)
 			onDataPacket(p, &dp)
 		}
 	default:
@@ -1415,8 +1424,9 @@ func (p *ParticipantImpl) setupDisconnectTimer() {
 		if p.IsClosed() || p.IsDisconnected() {
 			return
 		}
-		p.params.Logger.Infow("closing disconnected participant")
-		_ = p.Close(true, types.ParticipantCloseReasonPeerConnectionDisconnected, false)
+		reason := types.ParticipantCloseReasonPeerConnectionDisconnected
+		p.params.Logger.Infow("closing disconnected participant", "reason", reason)
+		_ = p.Close(true, reason, false)
 	})
 	p.lock.Unlock()
 }
@@ -1566,7 +1576,7 @@ func (p *ParticipantImpl) onSubscribedMaxQualityChange(trackID livekit.TrackID, 
 		)
 	}
 
-	p.pubLogger.Infow(
+	p.pubLogger.Debugw(
 		"sending max subscribed quality",
 		"trackID", trackID,
 		"qualities", subscribedQualities,
@@ -1646,6 +1656,19 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	return ti
 }
 
+func (p *ParticipantImpl) GetPendingTrack(trackID livekit.TrackID) *livekit.TrackInfo {
+	p.pendingTracksLock.RLock()
+	defer p.pendingTracksLock.RUnlock()
+
+	for _, t := range p.pendingTracks {
+		if livekit.TrackID(t.trackInfos[0].Sid) == trackID {
+			return t.trackInfos[0]
+		}
+	}
+
+	return nil
+}
+
 func (p *ParticipantImpl) sendTrackPublished(cid string, ti *livekit.TrackInfo) {
 	p.pubLogger.Debugw("sending track published", "cid", cid, "trackInfo", ti.String())
 	_ = p.writeMessage(&livekit.SignalResponse{
@@ -1717,6 +1740,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	)
 	mid := p.TransportManager.GetPublisherMid(rtpReceiver)
 	if mid == "" {
+		p.pendingTracksLock.Unlock()
 		p.pubLogger.Warnw("could not get mid for track", nil, "trackID", track.ID())
 		return nil, false
 	}
@@ -1739,8 +1763,8 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	ssrc := uint32(track.SSRC())
 	if p.twcc == nil {
 		p.twcc = twcc.NewTransportWideCCResponder(ssrc)
-		p.twcc.OnFeedback(func(pkt rtcp.RawPacket) {
-			p.postRtcp([]rtcp.Packet{&pkt})
+		p.twcc.OnFeedback(func(pkts []rtcp.Packet) {
+			p.postRtcp(pkts)
 		})
 	}
 	p.pendingTracksLock.Unlock()
@@ -2172,6 +2196,8 @@ func (p *ParticipantImpl) IssueFullReconnect(reason types.ParticipantCloseReason
 		scr = types.SignallingCloseReasonFullReconnectPublicationError
 	case types.ParticipantCloseReasonSubscriptionError:
 		scr = types.SignallingCloseReasonFullReconnectSubscriptionError
+	case types.ParticipantCloseReasonDataChannelError:
+		scr = types.SignallingCloseReasonFullReconnectDataChannelError
 	case types.ParticipantCloseReasonNegotiateFailed:
 		scr = types.SignallingCloseReasonFullReconnectNegotiateFailed
 	}
@@ -2245,8 +2271,12 @@ func (p *ParticipantImpl) GetPlayoutDelayConfig() *livekit.PlayoutDelay {
 	return p.params.PlayoutDelay
 }
 
-func (p *ParticipantImpl) SupportSyncStreamID() bool {
-	return p.ProtocolVersion().SupportSyncStreamID() && !p.params.ClientInfo.isFirefox()
+func (p *ParticipantImpl) SupportsSyncStreamID() bool {
+	return p.ProtocolVersion().SupportSyncStreamID() && !p.params.ClientInfo.isFirefox() && p.params.SyncStreams
+}
+
+func (p *ParticipantImpl) SupportsTransceiverReuse() bool {
+	return p.ProtocolVersion().SupportsTransceiverReuse() && !p.SupportsSyncStreamID()
 }
 
 func codecsFromMediaDescription(m *sdp.MediaDescription) (out []sdp.Codec, err error) {
@@ -2272,4 +2302,21 @@ func codecsFromMediaDescription(m *sdp.MediaDescription) (out []sdp.Codec, err e
 	}
 
 	return out, nil
+}
+
+func (p *ParticipantImpl) SendDataPacket(dp *livekit.DataPacket, data []byte) error {
+	if p.State() != livekit.ParticipantInfo_ACTIVE {
+		return ErrDataChannelUnavailable
+	}
+
+	err := p.TransportManager.SendDataPacket(dp, data)
+	if err != nil {
+		if (errors.Is(err, sctp.ErrStreamClosed) || errors.Is(err, io.ErrClosedPipe)) && p.params.ReconnectOnDataChannelError {
+			p.params.Logger.Infow("issuing full reconnect on data channel error")
+			p.IssueFullReconnect(types.ParticipantCloseReasonDataChannelError)
+		}
+	} else {
+		p.dataChannelStats.AddBytes(uint64(len(data)), true)
+	}
+	return err
 }

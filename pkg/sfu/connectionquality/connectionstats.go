@@ -33,16 +33,25 @@ const (
 	noReceiverReportTooLongThreshold = 30 * time.Second
 )
 
+type ConnectionStatsReceiverProvider interface {
+	GetDeltaStats() map[uint32]*buffer.StreamStatsWithLayers
+}
+
+type ConnectionStatsSenderProvider interface {
+	GetDeltaStatsSender() map[uint32]*buffer.StreamStatsWithLayers
+	GetLastReceiverReportTime() time.Time
+	GetTotalPacketsSent() uint64
+}
+
 type ConnectionStatsParams struct {
-	UpdateInterval            time.Duration
-	MimeType                  string
-	IsFECEnabled              bool
-	IncludeRTT                bool
-	IncludeJitter             bool
-	GetDeltaStats             func() map[uint32]*buffer.StreamStatsWithLayers
-	GetDeltaStatsOverridden   func() map[uint32]*buffer.StreamStatsWithLayers
-	GetLastReceiverReportTime func() time.Time
-	Logger                    logger.Logger
+	UpdateInterval   time.Duration
+	MimeType         string
+	IsFECEnabled     bool
+	IncludeRTT       bool
+	IncludeJitter    bool
+	ReceiverProvider ConnectionStatsReceiverProvider
+	SenderProvider   ConnectionStatsSenderProvider
+	Logger           logger.Logger
 }
 
 type ConnectionStats struct {
@@ -54,6 +63,7 @@ type ConnectionStats struct {
 	onStatsUpdate func(cs *ConnectionStats, stat *livekit.AnalyticsStat)
 
 	lock               sync.RWMutex
+	packetsSent        uint64
 	streamingStartedAt time.Time
 
 	scorer *qualityScorer
@@ -213,23 +223,21 @@ func (cs *ConnectionStats) updateScoreWithAggregate(agg *buffer.RTPDeltaInfo, at
 }
 
 func (cs *ConnectionStats) updateScoreFromReceiverReport(at time.Time) (float32, map[uint32]*buffer.StreamStatsWithLayers) {
-	if cs.params.GetDeltaStatsOverridden == nil || cs.params.GetLastReceiverReportTime == nil {
+	if cs.params.SenderProvider == nil {
 		return MinMOS, nil
 	}
 
-	cs.lock.RLock()
-	streamingStartedAt := cs.streamingStartedAt
-	cs.lock.RUnlock()
+	streamingStartedAt := cs.updateStreamingStart(at)
 	if streamingStartedAt.IsZero() {
 		// not streaming, just return current score
 		mos, _ := cs.scorer.GetMOSAndQuality()
 		return mos, nil
 	}
 
-	streams := cs.params.GetDeltaStatsOverridden()
+	streams := cs.params.SenderProvider.GetDeltaStatsSender()
 	if len(streams) == 0 {
 		//  check for receiver report not received for a while
-		marker := cs.params.GetLastReceiverReportTime()
+		marker := cs.params.SenderProvider.GetLastReceiverReportTime()
 		if marker.IsZero() || streamingStartedAt.After(marker) {
 			marker = streamingStartedAt
 		}
@@ -246,7 +254,7 @@ func (cs *ConnectionStats) updateScoreFromReceiverReport(at time.Time) (float32,
 	// delta stat duration could be large due to not receiving receiver report for a long time (for example, due to mute),
 	// adjust to streaming start if necessary
 	agg := toAggregateDeltaInfo(streams)
-	if streamingStartedAt.After(cs.params.GetLastReceiverReportTime()) {
+	if streamingStartedAt.After(cs.params.SenderProvider.GetLastReceiverReportTime()) {
 		// last receiver report was before streaming started, wait for next one
 		mos, _ := cs.scorer.GetMOSAndQuality()
 		return mos, streams
@@ -260,11 +268,16 @@ func (cs *ConnectionStats) updateScoreFromReceiverReport(at time.Time) (float32,
 }
 
 func (cs *ConnectionStats) updateScoreAt(at time.Time) (float32, map[uint32]*buffer.StreamStatsWithLayers) {
-	if cs.params.GetDeltaStats == nil {
+	if cs.params.SenderProvider != nil {
+		// receiver report based quality scoring, use stats from receiver report for scoring
+		return cs.updateScoreFromReceiverReport(at)
+	}
+
+	if cs.params.ReceiverProvider == nil {
 		return MinMOS, nil
 	}
 
-	streams := cs.params.GetDeltaStats()
+	streams := cs.params.ReceiverProvider.GetDeltaStats()
 	if len(streams) == 0 {
 		mos, _ := cs.scorer.GetMOSAndQuality()
 		return mos, nil
@@ -275,33 +288,29 @@ func (cs *ConnectionStats) updateScoreAt(at time.Time) (float32, map[uint32]*buf
 		deltaInfoList = append(deltaInfoList, s.RTPStats)
 	}
 	agg := buffer.AggregateRTPDeltaInfo(deltaInfoList)
-	if agg != nil && agg.Packets > 0 {
-		// not very accurate as streaming could have started part way in the window, but don't need accurate time
-		cs.maybeSetStreamingStart(agg.StartTime)
-	} else {
-		cs.clearStreamingStart()
-	}
-
-	if cs.params.GetDeltaStatsOverridden != nil {
-		// receiver report based quality scoring, use stats from receiver report for scoring
-		return cs.updateScoreFromReceiverReport(at)
-	}
-
 	return cs.updateScoreWithAggregate(agg, at), streams
 }
 
-func (cs *ConnectionStats) maybeSetStreamingStart(at time.Time) {
+func (cs *ConnectionStats) updateStreamingStart(at time.Time) time.Time {
 	cs.lock.Lock()
-	if cs.streamingStartedAt.IsZero() {
-		cs.streamingStartedAt = at
-	}
-	cs.lock.Unlock()
-}
+	defer cs.lock.Unlock()
 
-func (cs *ConnectionStats) clearStreamingStart() {
-	cs.lock.Lock()
-	cs.streamingStartedAt = time.Time{}
-	cs.lock.Unlock()
+	packetsSent := cs.params.SenderProvider.GetTotalPacketsSent()
+	if packetsSent > cs.packetsSent {
+		if cs.streamingStartedAt.IsZero() {
+			// the start could be anywhere after last update, but using `at` as this is not required to be accurate
+			if at.IsZero() {
+				cs.streamingStartedAt = time.Now()
+			} else {
+				cs.streamingStartedAt = at
+			}
+		}
+	} else {
+		cs.streamingStartedAt = time.Time{}
+	}
+	cs.packetsSent = packetsSent
+
+	return cs.streamingStartedAt
 }
 
 func (cs *ConnectionStats) getStat() {

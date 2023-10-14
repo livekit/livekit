@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -71,31 +72,40 @@ type packetMeta struct {
 	ddBytes []byte
 }
 
+type extPacketMeta struct {
+	packetMeta
+	extSequenceNumber uint64
+	extTimestamp      uint64
+}
+
 // Sequencer stores the packet sequence received by the down track
 type sequencer struct {
 	sync.Mutex
-	init         bool
-	max          int
-	seq          []*packetMeta
-	meta         []packetMeta
-	metaWritePtr int
-	step         int
-	headSN       uint16
+	size         int
 	startTime    int64
+	initialized  bool
+	extHighestSN uint64
+	snOffset     uint64
+	extHighestTS uint64
+	meta         []packetMeta
+	snRangeMap   *utils.RangeMap[uint64, uint64]
 	rtt          uint32
 	logger       logger.Logger
 }
 
-func newSequencer(maxTrack int, maxPadding int, logger logger.Logger) *sequencer {
-	return &sequencer{
-		startTime:    time.Now().UnixNano() / 1e6,
-		max:          maxTrack + maxPadding,
-		seq:          make([]*packetMeta, maxTrack+maxPadding),
-		meta:         make([]packetMeta, maxTrack),
-		metaWritePtr: 0,
-		rtt:          defaultRtt,
-		logger:       logger,
+func newSequencer(size int, maybeSparse bool, logger logger.Logger) *sequencer {
+	s := &sequencer{
+		size:      size,
+		startTime: time.Now().UnixMilli(),
+		meta:      make([]packetMeta, size),
+		rtt:       defaultRtt,
+		logger:    logger,
 	}
+
+	if maybeSparse {
+		s.snRangeMap = utils.NewRangeMap[uint64, uint64]((size + 1) / 2) // assume run lengths of at least 2 in between padding bursts
+	}
+	return s
 }
 
 func (s *sequencer) setRTT(rtt uint32) {
@@ -110,8 +120,9 @@ func (s *sequencer) setRTT(rtt uint32) {
 }
 
 func (s *sequencer) push(
-	sn, offSn uint16,
-	timeStamp uint32,
+	packetTime time.Time,
+	extIncomingSN, extModifiedSN uint64,
+	extModifiedTS uint64,
 	marker bool,
 	layer int8,
 	codecBytes []byte,
@@ -120,125 +131,192 @@ func (s *sequencer) push(
 	s.Lock()
 	defer s.Unlock()
 
-	slot, isValid := s.getSlot(offSn)
-	if !isValid {
-		return
+	if !s.initialized {
+		s.initialized = true
+		s.extHighestSN = extModifiedSN - 1
+		s.extHighestTS = extModifiedTS
+		s.updateSNOffset()
 	}
 
-	s.meta[s.metaWritePtr] = packetMeta{
-		sourceSeqNo: sn,
-		targetSeqNo: offSn,
-		timestamp:   timeStamp,
+	snOffset := s.snOffset
+	diff := int64(extModifiedSN - s.extHighestSN)
+	if diff >= 0 {
+		s.extHighestSN = extModifiedSN
+	} else {
+		if diff < -int64(s.size) {
+			s.logger.Warnw(
+				"old packet, cannot be sequenced", nil,
+				"extHighestSN", s.extHighestSN,
+				"extIncomingSN", extIncomingSN,
+				"extModifiedSN", extModifiedSN,
+			)
+			return
+		}
+
+		if s.snRangeMap != nil {
+			var err error
+			snOffset, err = s.snRangeMap.GetValue(extModifiedSN)
+			if err != nil {
+				s.logger.Errorw(
+					"could not get sequence number offset", err,
+					"extHighestSN", s.extHighestSN,
+					"extIncomingSN", extIncomingSN,
+					"extModifiedSN", extModifiedSN,
+				)
+				return
+			}
+		}
+	}
+
+	if int64(extModifiedTS-s.extHighestTS) >= 0 {
+		s.extHighestTS = extModifiedTS
+	}
+
+	slot := (extModifiedSN - snOffset) % uint64(s.size)
+	s.meta[slot] = packetMeta{
+		sourceSeqNo: uint16(extIncomingSN),
+		targetSeqNo: uint16(extModifiedSN),
+		timestamp:   uint32(extModifiedTS),
 		marker:      marker,
 		layer:       layer,
 		codecBytes:  append([]byte{}, codecBytes...),
 		ddBytes:     append([]byte{}, ddBytes...),
-		lastNack:    s.getRefTime(), // delay retransmissions after the original transmission
-	}
-
-	s.seq[slot] = &s.meta[s.metaWritePtr]
-
-	s.metaWritePtr++
-	if s.metaWritePtr >= len(s.meta) {
-		s.metaWritePtr -= len(s.meta)
+		lastNack:    s.getRefTime(packetTime), // delay retransmissions after the original transmission
 	}
 }
 
-func (s *sequencer) pushPadding(offSn uint16) {
+func (s *sequencer) pushPadding(extStartSNInclusive uint64, extEndSNInclusive uint64) {
 	s.Lock()
 	defer s.Unlock()
 
-	slot, isValid := s.getSlot(offSn)
-	if !isValid {
+	if s.snRangeMap == nil {
 		return
 	}
 
-	s.seq[slot] = nil
-}
-
-func (s *sequencer) getSlot(offSn uint16) (int, bool) {
-	if !s.init {
-		s.headSN = offSn - 1
-		s.init = true
-	}
-
-	diff := offSn - s.headSN
-	if diff == 0 {
-		// duplicate
-		return 0, false
-	}
-
-	slot := 0
-	if diff > (1 << 15) {
-		// out-of-order
-		back := int(s.headSN - offSn)
-		if back >= s.max {
-			s.logger.Debugw("old packet, can not be sequenced", "head", s.headSN, "received", offSn)
-			return 0, false
-		}
-		slot = s.step - back - 1
-	} else {
-		s.headSN = offSn
-
-		// invalidate intervening slots
-		for idx := 0; idx < int(diff)-1; idx++ {
-			s.seq[s.wrap(s.step+idx)] = nil
+	if extStartSNInclusive <= s.extHighestSN {
+		// a higher sequence number has already been recorded with an offset,
+		// adding an exclusion range before the highest means the offset of sequence numbers
+		// after the exclusion range will be affected and all those higher sequence numbers
+		// need to be patched.
+		//
+		// Not recording exclusion range means a few slots (of the size of exclusion range)
+		// are wasted in this cycle. That should be fine as the exclusion ranges should be
+		// a few packets at a time.
+		if extEndSNInclusive >= s.extHighestSN {
+			s.logger.Errorw("cannot exclude overlapping range", nil, "extHighestSN", s.extHighestSN, "startSN", extStartSNInclusive, "endSN", extEndSNInclusive)
+		} else {
+			s.logger.Warnw("cannot exclude old range", nil, "extHighestSN", s.extHighestSN, "startSN", extStartSNInclusive, "endSN", extEndSNInclusive)
 		}
 
-		slot = s.step + int(diff) - 1
+		// if exclusion range is before what has already been sequenced, invalidate exclusion range slots
+		for sn := extStartSNInclusive; sn != extEndSNInclusive+1; sn++ {
+			diff := int64(sn - s.extHighestSN)
+			if diff >= 0 || diff < -int64(s.size) {
+				// too old OR too new (too new should not happen, just be safe)
+				continue
+			}
 
-		// for next packet
-		s.step = s.wrap(s.step + int(diff))
+			snOffset, err := s.snRangeMap.GetValue(sn)
+			if err != nil {
+				s.logger.Errorw("could not get sequence number offset", err, "sn", sn)
+				continue
+			}
+
+			slot := (sn - snOffset) % uint64(s.size)
+			s.meta[slot] = packetMeta{
+				sourceSeqNo: 0,
+				targetSeqNo: 0,
+			}
+		}
+		return
 	}
 
-	return s.wrap(slot), true
+	if err := s.snRangeMap.ExcludeRange(extStartSNInclusive, extEndSNInclusive+1); err != nil {
+		s.logger.Errorw("could not exclude range", err, "startSN", extStartSNInclusive, "endSN", extEndSNInclusive)
+		return
+	}
+
+	s.extHighestSN = extEndSNInclusive
+	s.updateSNOffset()
 }
 
-func (s *sequencer) getPacketsMeta(seqNo []uint16) []packetMeta {
+func (s *sequencer) getExtPacketMetas(seqNo []uint16) []extPacketMeta {
 	s.Lock()
 	defer s.Unlock()
 
-	meta := make([]packetMeta, 0, len(seqNo))
-	refTime := s.getRefTime()
+	snOffset := uint64(0)
+	var err error
+	extPacketMetas := make([]extPacketMeta, 0, len(seqNo))
+	refTime := s.getRefTime(time.Now())
+	highestSN := uint16(s.extHighestSN)
+	highestTS := uint32(s.extHighestTS)
 	for _, sn := range seqNo {
-		diff := s.headSN - sn
-		if diff > (1<<15) || int(diff) >= s.max {
-			// out-of-order from head (should not happen) or too old
+		diff := highestSN - sn
+		if diff > (1 << 15) {
+			// out-of-order from head (should not happen, just be safe)
 			continue
 		}
 
-		slot := s.wrap(s.step - int(diff) - 1)
-		seq := s.seq[slot]
-		if seq == nil || seq.targetSeqNo != sn {
+		// find slot by adjusting for padding only packets that were not recorded in sequencer
+		extSN := uint64(sn) + (s.extHighestSN & 0xFFFF_FFFF_FFFF_0000)
+		if sn > highestSN {
+			extSN -= (1 << 16)
+		}
+
+		if s.extHighestSN-extSN >= uint64(s.size) {
+			// too old
 			continue
 		}
 
-		if refTime-seq.lastNack > uint32(math.Min(float64(ignoreRetransmission), float64(2*s.rtt))) && seq.nacked < maxAck {
-			seq.nacked++
-			seq.lastNack = refTime
+		if s.snRangeMap != nil {
+			snOffset, err = s.snRangeMap.GetValue(extSN)
+			if err != nil {
+				// could be padding packet which is excluded and will not have value
+				continue
+			}
+		}
 
-			pm := *seq
-			pm.codecBytes = append([]byte{}, seq.codecBytes...)
-			pm.ddBytes = append([]byte{}, seq.ddBytes...)
-			meta = append(meta, pm)
+		slot := (extSN - snOffset) % uint64(s.size)
+		meta := &s.meta[slot]
+		if meta.targetSeqNo != sn {
+			continue
+		}
+
+		if meta.nacked < maxAck && refTime-meta.lastNack > uint32(math.Min(float64(ignoreRetransmission), float64(2*s.rtt))) {
+			meta.nacked++
+			meta.lastNack = refTime
+
+			extTS := uint64(meta.timestamp) + (s.extHighestTS & 0xFFFF_FFFF_FFFF_0000)
+			if meta.timestamp > highestTS {
+				extTS -= (1 << 32)
+			}
+			epm := extPacketMeta{
+				packetMeta:        *meta,
+				extSequenceNumber: extSN,
+				extTimestamp:      extTS,
+			}
+			epm.codecBytes = append([]byte{}, meta.codecBytes...)
+			epm.ddBytes = append([]byte{}, meta.ddBytes...)
+			extPacketMetas = append(extPacketMetas, epm)
 		}
 	}
 
-	return meta
+	return extPacketMetas
 }
 
-func (s *sequencer) wrap(slot int) int {
-	for slot < 0 {
-		slot += s.max
-	}
-
-	for slot >= s.max {
-		slot -= s.max
-	}
-
-	return slot
+func (s *sequencer) getRefTime(at time.Time) uint32 {
+	return uint32(at.UnixMilli() - s.startTime)
 }
 
-func (s *sequencer) getRefTime() uint32 {
-	return uint32(time.Now().UnixNano()/1e6 - s.startTime)
+func (s *sequencer) updateSNOffset() {
+	if s.snRangeMap == nil {
+		return
+	}
+
+	snOffset, err := s.snRangeMap.GetValue(s.extHighestSN + 1)
+	if err != nil {
+		s.logger.Errorw("could not update sequence number offset", err, "extHighestSN", s.extHighestSN)
+		return
+	}
+	s.snOffset = snOffset
 }

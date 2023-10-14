@@ -29,6 +29,7 @@ import (
 	"github.com/pion/interceptor/pkg/gcc"
 	"github.com/pion/interceptor/pkg/twcc"
 	"github.com/pion/rtcp"
+	"github.com/pion/sctp"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
 	"github.com/pkg/errors"
@@ -59,7 +60,7 @@ const (
 	dtlsRetransmissionInterval = 100 * time.Millisecond
 
 	iceDisconnectedTimeout = 10 * time.Second // compatible for ice-lite with firefox client
-	iceFailedTimeout       = 25 * time.Second // pion's default
+	iceFailedTimeout       = 5 * time.Second  // time between disconnected and failed
 	iceKeepaliveInterval   = 2 * time.Second  // pion's default
 
 	minTcpICEConnectTimeout = 5 * time.Second
@@ -263,7 +264,10 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 		directionConfig.RTPHeaderExtension.Video = append(directionConfig.RTPHeaderExtension.Video, rtpextension.PlayoutDelayURI)
 	}
 
-	me, err := createMediaEngine(params.EnabledCodecs, directionConfig)
+	// Some of the browser clients do not handle H.264 High Profile in signalling properly.
+	// They still decode if the actual stream is H.264 High Profile, but do not handle it well in signalling.
+	// So, disable H.264 High Profile for SUBSCRIBER peer connection to ensure it is not offered.
+	me, err := createMediaEngine(params.EnabledCodecs, directionConfig, params.IsOfferer)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -659,9 +663,9 @@ func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionSta
 }
 
 func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
+	t.params.Logger.Debugw(dc.Label() + " data channel open")
 	switch dc.Label() {
 	case ReliableDataChannel:
-		t.params.Logger.Debugw("reliable data channel open")
 		t.lock.Lock()
 		t.reliableDC = dc
 		t.reliableDCOpened = true
@@ -674,7 +678,6 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 
 		t.maybeNotifyFullyEstablished()
 	case LossyDataChannel:
-		t.params.Logger.Debugw("lossy data channel open")
 		t.lock.Lock()
 		t.lossyDC = dc
 		t.lossyDCOpened = true
@@ -701,9 +704,9 @@ func (t *PCTransport) maybeNotifyFullyEstablished() {
 
 func (t *PCTransport) isFullyEstablished() bool {
 	t.lock.RLock()
-	fullyEstablished := t.reliableDCOpened && t.lossyDCOpened && !t.connectedAt.IsZero()
-	t.lock.RUnlock()
-	return fullyEstablished
+	defer t.lock.RUnlock()
+
+	return t.reliableDCOpened && t.lossyDCOpened && !t.connectedAt.IsZero()
 }
 
 func (t *PCTransport) SetPreferTCP(preferTCP bool) {
@@ -759,7 +762,6 @@ func (t *PCTransport) AddTrack(trackLocal webrtc.TrackLocal, params types.AddTra
 	}
 
 	configureAudioTransceiver(transceiver, params.Stereo, !params.Red || !t.params.ClientInfo.SupportsAudioRED())
-
 	return
 }
 
@@ -810,22 +812,29 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 		return err
 	}
 
-	reliableDCReadyHandler := func() {
-		t.params.Logger.Debugw("reliable data channel open")
+	dcReadyHandler := func() {
 		t.lock.Lock()
-		t.reliableDCOpened = true
+		switch dc.Label() {
+		case ReliableDataChannel:
+			t.reliableDCOpened = true
+
+		case LossyDataChannel:
+			t.lossyDCOpened = true
+		}
 		t.lock.Unlock()
+		t.params.Logger.Debugw(dc.Label() + " data channel open")
 
 		t.maybeNotifyFullyEstablished()
 	}
 
-	lossyDCReadyHanlder := func() {
-		t.params.Logger.Debugw("lossy data channel open")
-		t.lock.Lock()
-		t.lossyDCOpened = true
-		t.lock.Unlock()
+	dcCloseHandler := func() {
+		t.params.Logger.Infow(dc.Label() + " data channel close")
+	}
 
-		t.maybeNotifyFullyEstablished()
+	dcErrorHandler := func(err error) {
+		if !errors.Is(err, sctp.ErrResetPacketInStateNotExist) && !errors.Is(err, sctp.ErrChunk) {
+			t.params.Logger.Errorw(dc.Label()+" data channel error", err)
+		}
 	}
 
 	t.lock.Lock()
@@ -833,17 +842,21 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 	case ReliableDataChannel:
 		t.reliableDC = dc
 		if t.params.DirectionConfig.StrictACKs {
-			t.reliableDC.OnOpen(reliableDCReadyHandler)
+			t.reliableDC.OnOpen(dcReadyHandler)
 		} else {
-			t.reliableDC.OnDial(reliableDCReadyHandler)
+			t.reliableDC.OnDial(dcReadyHandler)
 		}
+		t.reliableDC.OnClose(dcCloseHandler)
+		t.reliableDC.OnError(dcErrorHandler)
 	case LossyDataChannel:
 		t.lossyDC = dc
 		if t.params.DirectionConfig.StrictACKs {
-			t.lossyDC.OnOpen(lossyDCReadyHanlder)
+			t.lossyDC.OnOpen(dcReadyHandler)
 		} else {
-			t.lossyDC.OnDial(lossyDCReadyHanlder)
+			t.lossyDC.OnDial(dcReadyHandler)
 		}
+		t.lossyDC.OnClose(dcCloseHandler)
+		t.lossyDC.OnError(dcErrorHandler)
 	default:
 		t.params.Logger.Errorw("unknown data channel label", nil, "label", dc.Label())
 	}
@@ -910,6 +923,10 @@ func (t *PCTransport) SendDataPacket(dp *livekit.DataPacket, data []byte) error 
 
 	if dc == nil {
 		return ErrDataChannelUnavailable
+	}
+
+	if t.pc.ConnectionState() == webrtc.PeerConnectionStateFailed {
+		return ErrTransportFailure
 	}
 
 	return dc.Send(data)
@@ -1426,6 +1443,7 @@ func (t *PCTransport) processEvents() {
 
 	t.clearSignalStateCheckTimer()
 	t.params.Logger.Debugw("leaving events processor")
+	t.handleLogICECandidates(nil)
 }
 
 func (t *PCTransport) handleEvent(e *event) error {

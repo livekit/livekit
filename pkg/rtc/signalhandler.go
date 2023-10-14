@@ -46,12 +46,12 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 		// permission check happens later in SubscriptionManager
 		room.UpdateSubscriptions(
 			participant,
-			livekit.StringsAsTrackIDs(msg.Subscription.TrackSids),
+			livekit.StringsAsIDs[livekit.TrackID](msg.Subscription.TrackSids),
 			msg.Subscription.ParticipantTracks,
 			msg.Subscription.Subscribe,
 		)
 	case *livekit.SignalRequest_TrackSetting:
-		for _, sid := range livekit.StringsAsTrackIDs(msg.TrackSetting.TrackSids) {
+		for _, sid := range livekit.StringsAsIDs[livekit.TrackID](msg.TrackSetting.TrackSids) {
 			participant.UpdateSubscribedTrackSettings(sid, msg.TrackSetting)
 		}
 	case *livekit.SignalRequest_Leave:

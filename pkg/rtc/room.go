@@ -26,19 +26,20 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
-	sutils "github.com/livekit/livekit-server/pkg/utils"
+	"github.com/pion/sctp"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
-	"github.com/livekit/psrpc"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
+	sutils "github.com/livekit/livekit-server/pkg/utils"
 )
 
 const (
@@ -80,6 +81,7 @@ type Room struct {
 	participants              map[livekit.ParticipantIdentity]types.LocalParticipant
 	participantOpts           map[livekit.ParticipantIdentity]*ParticipantOptions
 	participantRequestSources map[livekit.ParticipantIdentity]routing.MessageSource
+	hasPublished              sync.Map // map of identity -> bool
 	bufferFactory             *buffer.FactoryOfBufferFactory
 
 	// batch update participant info for non-publishers
@@ -435,7 +437,6 @@ func (r *Room) ReplaceParticipantRequestSource(identity livekit.ParticipantIdent
 		rs.Close()
 	}
 	r.participantRequestSources[identity] = reqSource
-
 	r.lock.Unlock()
 }
 
@@ -519,6 +520,7 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 	for _, t := range p.GetPublishedTracks() {
 		r.trackManager.RemoveTrack(t)
 	}
+	r.hasPublished.Delete(p.Identity())
 
 	p.OnTrackUpdated(nil)
 	p.OnTrackPublished(nil)
@@ -558,7 +560,7 @@ func (r *Room) UpdateSubscriptions(
 	}
 
 	for _, pt := range participantTracks {
-		for _, trackID := range livekit.StringsAsTrackIDs(pt.TrackSids) {
+		for _, trackID := range livekit.StringsAsIDs[livekit.TrackID](pt.TrackSids) {
 			if subscribe {
 				participant.SubscribeToTrack(trackID)
 			} else {
@@ -592,6 +594,10 @@ func (r *Room) SyncState(participant types.LocalParticipant, state *livekit.Sync
 			}
 		}
 		if !found {
+			// is there a pending track?
+			found = participant.GetPendingTrack(livekit.TrackID(ti.Sid)) != nil
+		}
+		if !found {
 			pLogger.Warnw("unknown track during resume", nil, "trackID", ti.Sid)
 			shouldReconnect = true
 			break
@@ -605,7 +611,7 @@ func (r *Room) SyncState(participant types.LocalParticipant, state *livekit.Sync
 
 	r.UpdateSubscriptions(
 		participant,
-		livekit.StringsAsTrackIDs(state.Subscription.TrackSids),
+		livekit.StringsAsIDs[livekit.TrackID](state.Subscription.TrackSids),
 		state.Subscription.ParticipantTracks,
 		state.Subscription.Subscribe,
 	)
@@ -751,9 +757,7 @@ func (r *Room) sendRoomUpdate() {
 	roomInfo := r.ToProto()
 	// Send update to participants
 	for _, p := range r.GetParticipants() {
-		// new participants receive the update as part of JoinResponse
-		// skip inactive participants
-		if p.State() != livekit.ParticipantInfo_ACTIVE {
+		if !p.IsReady() {
 			continue
 		}
 
@@ -905,18 +909,35 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 
 	r.trackManager.AddTrack(track, participant.Identity(), participant.ID())
 
-	// auto track egress
-	if r.internal != nil && r.internal.TrackEgress != nil {
-		if err := StartTrackEgress(
-			context.Background(),
-			r.egressLauncher,
-			r.telemetry,
-			r.internal.TrackEgress,
-			track,
-			r.Name(),
-			r.ID(),
-		); err != nil {
-			r.Logger.Errorw("failed to launch track egress", err)
+	// auto egress
+	if r.internal != nil {
+		if r.internal.ParticipantEgress != nil {
+			if _, hasPublished := r.hasPublished.Swap(participant.Identity(), true); !hasPublished {
+				if err := StartParticipantEgress(
+					context.Background(),
+					r.egressLauncher,
+					r.telemetry,
+					r.internal.ParticipantEgress,
+					participant.Identity(),
+					r.Name(),
+					r.ID(),
+				); err != nil {
+					r.Logger.Errorw("failed to launch participant egress", err)
+				}
+			}
+		}
+		if r.internal.TrackEgress != nil {
+			if err := StartTrackEgress(
+				context.Background(),
+				r.egressLauncher,
+				r.telemetry,
+				r.internal.TrackEgress,
+				track,
+				r.Name(),
+				r.ID(),
+			); err != nil {
+				r.Logger.Errorw("failed to launch track egress", err)
+			}
 		}
 	}
 }
@@ -1109,6 +1130,15 @@ func (r *Room) pushAndDequeueUpdates(pi *livekit.ParticipantInfo, isImmediate bo
 				existing.State = livekit.ParticipantInfo_DISCONNECTED
 				updates = append(updates, existing)
 			} else {
+				// older session update, newer session has already become active, so nothing to do
+				return nil
+			}
+		}
+	} else {
+		ep := r.GetParticipant(identity)
+		if ep != nil {
+			epi := ep.ToProto()
+			if epi.JoinedAt > pi.JoinedAt {
 				// older session update, newer session has already become active, so nothing to do
 				return nil
 			}
@@ -1318,6 +1348,7 @@ func (r *Room) DebugInfo() map[string]interface{} {
 func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, dp *livekit.DataPacket, logger logger.Logger) {
 	dest := dp.GetUser().GetDestinationSids()
 	var dpData []byte
+	destIdentities := dp.GetUser().GetDestinationIdentities()
 
 	participants := r.GetLocalParticipants()
 	capacity := len(dest)
@@ -1333,10 +1364,16 @@ func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, dp 
 		if source != nil && op.ID() == source.ID() {
 			continue
 		}
-		if len(dest) > 0 {
+		if len(dest) > 0 || len(destIdentities) > 0 {
 			found := false
 			for _, dID := range dest {
 				if op.ID() == livekit.ParticipantID(dID) {
+					found = true
+					break
+				}
+			}
+			for _, dIdentity := range destIdentities {
+				if op.Identity() == livekit.ParticipantIdentity(dIdentity) {
 					found = true
 					break
 				}
@@ -1358,7 +1395,8 @@ func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, dp 
 
 	utils.ParallelExec(destParticipants, dataForwardLoadBalanceThreshold, 1, func(op types.LocalParticipant) {
 		err := op.SendDataPacket(dp, dpData)
-		if err != nil && !errors.Is(err, io.ErrClosedPipe) && !errors.Is(err, psrpc.Canceled) {
+		if err != nil && !errors.Is(err, io.ErrClosedPipe) && !errors.Is(err, sctp.ErrStreamClosed) &&
+			!errors.Is(err, ErrTransportFailure) {
 			op.GetLogger().Infow("send data packet error", "error", err)
 		}
 	})

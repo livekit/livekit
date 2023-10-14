@@ -25,7 +25,7 @@ func TestWrapAroundUint16(t *testing.T) {
 	testCases := []struct {
 		name            string
 		input           uint16
-		updated         wrapAroundUpdateResult[uint32]
+		updated         WrapAroundUpdateResult[uint32]
 		start           uint16
 		extendedStart   uint32
 		highest         uint16
@@ -35,7 +35,7 @@ func TestWrapAroundUint16(t *testing.T) {
 		{
 			name:  "initialize",
 			input: 10,
-			updated: wrapAroundUpdateResult[uint32]{
+			updated: WrapAroundUpdateResult[uint32]{
 				IsRestart:          false,
 				PreExtendedStart:   0,
 				PreExtendedHighest: 9,
@@ -50,7 +50,7 @@ func TestWrapAroundUint16(t *testing.T) {
 		{
 			name:  "reset start no wrap around",
 			input: 8,
-			updated: wrapAroundUpdateResult[uint32]{
+			updated: WrapAroundUpdateResult[uint32]{
 				IsRestart:          true,
 				PreExtendedStart:   10,
 				PreExtendedHighest: 10,
@@ -65,7 +65,7 @@ func TestWrapAroundUint16(t *testing.T) {
 		{
 			name:  "reset start wrap around",
 			input: (1 << 16) - 6,
-			updated: wrapAroundUpdateResult[uint32]{
+			updated: WrapAroundUpdateResult[uint32]{
 				IsRestart:          true,
 				PreExtendedStart:   8,
 				PreExtendedHighest: 10,
@@ -80,7 +80,7 @@ func TestWrapAroundUint16(t *testing.T) {
 		{
 			name:  "reset start again",
 			input: (1 << 16) - 12,
-			updated: wrapAroundUpdateResult[uint32]{
+			updated: WrapAroundUpdateResult[uint32]{
 				IsRestart:          true,
 				PreExtendedStart:   (1 << 16) - 6,
 				PreExtendedHighest: (1 << 16) + 10,
@@ -95,7 +95,7 @@ func TestWrapAroundUint16(t *testing.T) {
 		{
 			name:  "out of order - no restart",
 			input: (1 << 16) - 3,
-			updated: wrapAroundUpdateResult[uint32]{
+			updated: WrapAroundUpdateResult[uint32]{
 				IsRestart:          false,
 				PreExtendedStart:   0,
 				PreExtendedHighest: (1 << 16) + 10,
@@ -110,7 +110,7 @@ func TestWrapAroundUint16(t *testing.T) {
 		{
 			name:  "duplicate",
 			input: 10,
-			updated: wrapAroundUpdateResult[uint32]{
+			updated: WrapAroundUpdateResult[uint32]{
 				IsRestart:          false,
 				PreExtendedStart:   0,
 				PreExtendedHighest: (1 << 16) + 10,
@@ -125,7 +125,7 @@ func TestWrapAroundUint16(t *testing.T) {
 		{
 			name:  "big in-order jump",
 			input: (1 << 15) - 10,
-			updated: wrapAroundUpdateResult[uint32]{
+			updated: WrapAroundUpdateResult[uint32]{
 				IsRestart:          false,
 				PreExtendedStart:   0,
 				PreExtendedHighest: (1 << 16) + 10,
@@ -140,7 +140,7 @@ func TestWrapAroundUint16(t *testing.T) {
 		{
 			name:  "out-of-order after half range",
 			input: (1 << 15) - 11,
-			updated: wrapAroundUpdateResult[uint32]{
+			updated: WrapAroundUpdateResult[uint32]{
 				IsRestart:          false,
 				PreExtendedStart:   0,
 				PreExtendedHighest: (1 << 16) + (1 << 15) - 10,
@@ -155,7 +155,7 @@ func TestWrapAroundUint16(t *testing.T) {
 		{
 			name:  "wrap back out-of-order after half range",
 			input: (1 << 16) - 1,
-			updated: wrapAroundUpdateResult[uint32]{
+			updated: WrapAroundUpdateResult[uint32]{
 				IsRestart:          false,
 				PreExtendedStart:   0,
 				PreExtendedHighest: (1 << 16) + (1 << 15) - 10,
@@ -170,7 +170,7 @@ func TestWrapAroundUint16(t *testing.T) {
 		{
 			name:  "in-order",
 			input: (1 << 15) + 3,
-			updated: wrapAroundUpdateResult[uint32]{
+			updated: WrapAroundUpdateResult[uint32]{
 				IsRestart:          false,
 				PreExtendedStart:   0,
 				PreExtendedHighest: (1 << 16) + (1 << 15) - 10,
@@ -194,12 +194,85 @@ func TestWrapAroundUint16(t *testing.T) {
 	}
 }
 
+func TestWrapAroundUint16RollbackRestartAndResetHighest(t *testing.T) {
+	w := NewWrapAround[uint16, uint64]()
+
+	// initialize
+	w.Update(23)
+	require.Equal(t, uint16(23), w.GetStart())
+	require.Equal(t, uint64(23), w.GetExtendedStart())
+	require.Equal(t, uint16(23), w.GetHighest())
+	require.Equal(t, uint64(23), w.GetExtendedHighest())
+
+	// an in-order update
+	w.Update(25)
+	require.Equal(t, uint16(23), w.GetStart())
+	require.Equal(t, uint64(23), w.GetExtendedStart())
+	require.Equal(t, uint16(25), w.GetHighest())
+	require.Equal(t, uint64(25), w.GetExtendedHighest())
+
+	// force restart without wrap
+	res := w.Update(12)
+	expectedResult := WrapAroundUpdateResult[uint64]{
+		IsRestart:          true,
+		PreExtendedStart:   23,
+		PreExtendedHighest: 25,
+		ExtendedVal:        12,
+	}
+	require.Equal(t, expectedResult, res)
+	require.Equal(t, uint16(12), w.GetStart())
+	require.Equal(t, uint64(12), w.GetExtendedStart())
+	require.Equal(t, uint16(25), w.GetHighest())
+	require.Equal(t, uint64(25), w.GetExtendedHighest())
+
+	// roll back restart
+	w.RollbackRestart(res.PreExtendedStart)
+	require.Equal(t, uint16(23), w.GetStart())
+	require.Equal(t, uint64(23), w.GetExtendedStart())
+	require.Equal(t, uint16(25), w.GetHighest())
+	require.Equal(t, uint64(25), w.GetExtendedHighest())
+
+	// force restart with wrap
+	res = w.Update(65533)
+	expectedResult = WrapAroundUpdateResult[uint64]{
+		IsRestart:          true,
+		PreExtendedStart:   23,
+		PreExtendedHighest: 25,
+		ExtendedVal:        65533,
+	}
+	require.Equal(t, expectedResult, res)
+	require.Equal(t, uint16(65533), w.GetStart())
+	require.Equal(t, uint64(65533), w.GetExtendedStart())
+	require.Equal(t, uint16(25), w.GetHighest())
+	require.Equal(t, uint64(65536+25), w.GetExtendedHighest())
+
+	// roll back restart
+	w.RollbackRestart(res.PreExtendedStart)
+	require.Equal(t, uint16(23), w.GetStart())
+	require.Equal(t, uint64(23), w.GetExtendedStart())
+	require.Equal(t, uint16(25), w.GetHighest())
+	require.Equal(t, uint64(25), w.GetExtendedHighest())
+
+	// reset highest
+	w.ResetHighest(0x1234)
+	require.Equal(t, uint16(23), w.GetStart())
+	require.Equal(t, uint64(23), w.GetExtendedStart())
+	require.Equal(t, uint16(0x1234), w.GetHighest())
+	require.Equal(t, uint64(0x1234), w.GetExtendedHighest())
+
+	w.ResetHighest(0x7f1234)
+	require.Equal(t, uint16(23), w.GetStart())
+	require.Equal(t, uint64(23), w.GetExtendedStart())
+	require.Equal(t, uint16(0x1234), w.GetHighest())
+	require.Equal(t, uint64(0x7f1234), w.GetExtendedHighest())
+}
+
 func TestWrapAroundUint32(t *testing.T) {
 	w := NewWrapAround[uint32, uint64]()
 	testCases := []struct {
 		name            string
 		input           uint32
-		updated         wrapAroundUpdateResult[uint64]
+		updated         WrapAroundUpdateResult[uint64]
 		start           uint32
 		extendedStart   uint64
 		highest         uint32
@@ -209,7 +282,7 @@ func TestWrapAroundUint32(t *testing.T) {
 		{
 			name:  "initialize",
 			input: 10,
-			updated: wrapAroundUpdateResult[uint64]{
+			updated: WrapAroundUpdateResult[uint64]{
 				IsRestart:          false,
 				PreExtendedStart:   0,
 				PreExtendedHighest: 9,
@@ -224,7 +297,7 @@ func TestWrapAroundUint32(t *testing.T) {
 		{
 			name:  "reset start no wrap around",
 			input: 8,
-			updated: wrapAroundUpdateResult[uint64]{
+			updated: WrapAroundUpdateResult[uint64]{
 				IsRestart:          true,
 				PreExtendedStart:   10,
 				PreExtendedHighest: 10,
@@ -239,7 +312,7 @@ func TestWrapAroundUint32(t *testing.T) {
 		{
 			name:  "reset start wrap around",
 			input: (1 << 32) - 6,
-			updated: wrapAroundUpdateResult[uint64]{
+			updated: WrapAroundUpdateResult[uint64]{
 				IsRestart:          true,
 				PreExtendedStart:   8,
 				PreExtendedHighest: 10,
@@ -254,7 +327,7 @@ func TestWrapAroundUint32(t *testing.T) {
 		{
 			name:  "reset start again",
 			input: (1 << 32) - 12,
-			updated: wrapAroundUpdateResult[uint64]{
+			updated: WrapAroundUpdateResult[uint64]{
 				IsRestart:          true,
 				PreExtendedStart:   (1 << 32) - 6,
 				PreExtendedHighest: (1 << 32) + 10,
@@ -269,7 +342,7 @@ func TestWrapAroundUint32(t *testing.T) {
 		{
 			name:  "duplicate",
 			input: 10,
-			updated: wrapAroundUpdateResult[uint64]{
+			updated: WrapAroundUpdateResult[uint64]{
 				IsRestart:          false,
 				PreExtendedStart:   0,
 				PreExtendedHighest: (1 << 32) + 10,
@@ -284,7 +357,7 @@ func TestWrapAroundUint32(t *testing.T) {
 		{
 			name:  "big in-order jump",
 			input: 1 << 31,
-			updated: wrapAroundUpdateResult[uint64]{
+			updated: WrapAroundUpdateResult[uint64]{
 				IsRestart:          false,
 				PreExtendedStart:   0,
 				PreExtendedHighest: (1 << 32) + 10,
@@ -299,7 +372,7 @@ func TestWrapAroundUint32(t *testing.T) {
 		{
 			name:  "out-of-order after half range",
 			input: (1 << 31) - 1,
-			updated: wrapAroundUpdateResult[uint64]{
+			updated: WrapAroundUpdateResult[uint64]{
 				IsRestart:          false,
 				PreExtendedStart:   0,
 				PreExtendedHighest: (1 << 32) + (1 << 31),
@@ -314,7 +387,7 @@ func TestWrapAroundUint32(t *testing.T) {
 		{
 			name:  "in-order",
 			input: (1 << 31) + 3,
-			updated: wrapAroundUpdateResult[uint64]{
+			updated: WrapAroundUpdateResult[uint64]{
 				IsRestart:          false,
 				PreExtendedStart:   0,
 				PreExtendedHighest: (1 << 32) + (1 << 31),

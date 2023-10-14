@@ -180,6 +180,7 @@ func TestNewBuffer(t *testing.T) {
 					Header: rtp.Header{
 						SequenceNumber: 65534,
 					},
+					Payload: []byte{1},
 				},
 				{
 					Header: rtp.Header{
@@ -201,8 +202,7 @@ func TestNewBuffer(t *testing.T) {
 			buff := NewBuffer(123, pool, pool)
 			buff.codecType = webrtc.RTPCodecTypeVideo
 			require.NotNil(t, buff)
-			buff.OnRtcpFeedback(func(_ []rtcp.Packet) {
-			})
+			buff.OnRtcpFeedback(func(_ []rtcp.Packet) {})
 			buff.Bind(webrtc.RTPParameters{
 				HeaderExtensions: nil,
 				Codecs:           []webrtc.RTPCodecParameters{vp8Codec},
@@ -212,8 +212,8 @@ func TestNewBuffer(t *testing.T) {
 				buf, _ := p.Marshal()
 				_, _ = buff.Write(buf)
 			}
-			require.Equal(t, uint16(1), buff.rtpStats.cycles)
-			require.Equal(t, uint16(2), buff.rtpStats.highestSN)
+			require.Equal(t, uint16(2), buff.rtpStats.sequenceNumber.GetHighest())
+			require.Equal(t, uint64(65536+2), buff.rtpStats.sequenceNumber.GetExtendedHighest())
 		})
 	}
 }

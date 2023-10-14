@@ -2,6 +2,45 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.5] - 2023-08-22
+
+### Added
+- Add ability to roll back video layer selection. (#1871)
+- Allow listing ingress by id (#1874)
+- E2EE trailer for server injected packets. (#1908)
+- Add support for ingress URL pull (#1938 #1939)
+- (experimental) Add control of playout delay (#1838 #1930)
+- Add option to advertise external ip only (#1962)
+- Allow data packet to be sent to participants by identity (#1982)
+
+### Fixed
+- Fix RTC IP when binding to 0.0.0.0 (#1862)
+- Prevent anachronous sample reading in connection stats (#1863)
+- Fixed resubscribe race due to desire changed before cleaning up (#1865)
+- Fixed numPublisher computation by marking dirty after track published changes (#1878)
+- Attempt to avoid out-of-order max subscribed layer notifications. (#1882)
+- Improved packet loss handling for SVC codecs (#1912 )
+- Frame integrity check for SVC codecs (#1914)
+- Issue full reconnect if subscriber PC is closed on ICERestart (#1919)
+- Do not post max layer event for audio. (#1932)
+- Never use dd tracker for non-svc codec (#1952)
+- Fix race condition causing new participants to have stale room metadata (#1969)
+- Fixed VP9 handling for non-SVC content. (#1973)
+- Ensure older session does not clobber newer session. (#1974)
+- Do not start RTPStats on a padding packet. (#1984)
+
+### Changed
+- Push track quality to poor on a bandwidth constrained pause (#1867)
+- AV sync improvements (#1875 #1892 #1944 #1951 #1955 #1956 #1968 #1971 #1986)
+- Do not send unnecessary room updates when content isn't changed (#1881)
+- start reading signal messages before session handler finishes (#1883)
+- changing key file permissions control to allow group readable (#1893)
+- close disconnected participants when signal channel fails (#1895)
+- Improved stream allocator handling during transitions and reallocation. (#1905 #1906)
+- Stream allocator tweaks to reduce re-allocation (#1936)
+- Reduce NACK traffic by delaying retransmission after first send. (#1918)
+- Temper stream allocator more to avoid false negative downgrades (#1920)
+
 ## [1.4.4] - 2023-07-08
 
 ### Added

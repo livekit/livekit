@@ -24,6 +24,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/telemetry"
+	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
@@ -79,9 +80,10 @@ func NewEgressService(
 }
 
 func (s *EgressService) StartRoomCompositeEgress(ctx context.Context, req *livekit.RoomCompositeEgressRequest) (*livekit.EgressInfo, error) {
-	fields := []interface{}{"room", req.RoomName, "baseUrl", req.CustomBaseUrl}
-	if t := reflect.TypeOf(req.Output); t != nil {
-		fields = append(fields, "outputType", t.String())
+	fields := []interface{}{
+		"room", req.RoomName,
+		"baseUrl", req.CustomBaseUrl,
+		"outputType", egress.GetOutputType(req),
 	}
 	defer func() {
 		AppendLogFields(ctx, fields...)
@@ -98,12 +100,53 @@ func (s *EgressService) StartRoomCompositeEgress(ctx context.Context, req *livek
 	return ei, err
 }
 
+func (s *EgressService) StartWebEgress(ctx context.Context, req *livekit.WebEgressRequest) (*livekit.EgressInfo, error) {
+	fields := []interface{}{
+		"url", req.Url,
+		"outputType", egress.GetOutputType(req),
+	}
+	defer func() {
+		AppendLogFields(ctx, fields...)
+	}()
+	ei, err := s.startEgress(ctx, "", &rpc.StartEgressRequest{
+		Request: &rpc.StartEgressRequest_Web{
+			Web: req,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	fields = append(fields, "egressID", ei.EgressId)
+	return ei, err
+}
+
+func (s *EgressService) StartParticipantEgress(ctx context.Context, req *livekit.ParticipantEgressRequest) (*livekit.EgressInfo, error) {
+	fields := []interface{}{
+		"room", req.RoomName,
+		"identity", req.Identity,
+		"outputType", egress.GetOutputType(req),
+	}
+	defer func() {
+		AppendLogFields(ctx, fields...)
+	}()
+	ei, err := s.startEgress(ctx, livekit.RoomName(req.RoomName), &rpc.StartEgressRequest{
+		Request: &rpc.StartEgressRequest_Participant{
+			Participant: req,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	fields = append(fields, "egressID", ei.EgressId)
+	return ei, err
+}
+
 func (s *EgressService) StartTrackCompositeEgress(ctx context.Context, req *livekit.TrackCompositeEgressRequest) (*livekit.EgressInfo, error) {
 	fields := []interface{}{
-		"room", req.RoomName, "audioTrackID", req.AudioTrackId, "videoTrackID", req.VideoTrackId,
-	}
-	if t := reflect.TypeOf(req.Output); t != nil {
-		fields = append(fields, "outputType", t.String())
+		"room", req.RoomName,
+		"audioTrackID", req.AudioTrackId,
+		"videoTrackID", req.VideoTrackId,
+		"outputType", egress.GetOutputType(req),
 	}
 	defer func() {
 		AppendLogFields(ctx, fields...)
@@ -131,26 +174,6 @@ func (s *EgressService) StartTrackEgress(ctx context.Context, req *livekit.Track
 	ei, err := s.startEgress(ctx, livekit.RoomName(req.RoomName), &rpc.StartEgressRequest{
 		Request: &rpc.StartEgressRequest_Track{
 			Track: req,
-		},
-	})
-	if err != nil {
-		return nil, err
-	}
-	fields = append(fields, "egressID", ei.EgressId)
-	return ei, err
-}
-
-func (s *EgressService) StartWebEgress(ctx context.Context, req *livekit.WebEgressRequest) (*livekit.EgressInfo, error) {
-	fields := []interface{}{"url", req.Url}
-	if t := reflect.TypeOf(req.Output); t != nil {
-		fields = append(fields, "outputType", t.String())
-	}
-	defer func() {
-		AppendLogFields(ctx, fields...)
-	}()
-	ei, err := s.startEgress(ctx, "", &rpc.StartEgressRequest{
-		Request: &rpc.StartEgressRequest_Web{
-			Web: req,
 		},
 	})
 	if err != nil {
@@ -270,6 +293,10 @@ func (s *EgressService) UpdateStream(ctx context.Context, req *livekit.UpdateStr
 	}
 
 	return info, nil
+}
+
+func (s *EgressService) UpdateOutputs(ctx context.Context, req *livekit.UpdateOutputsRequest) (*livekit.EgressInfo, error) {
+	return nil, twirp.NewError(twirp.Unimplemented, "Update Outputs unimplemented")
 }
 
 func (s *EgressService) ListEgress(ctx context.Context, req *livekit.ListEgressRequest) (*livekit.ListEgressResponse, error) {

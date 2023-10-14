@@ -102,6 +102,7 @@ const (
 	ParticipantCloseReasonOvercommitted
 	ParticipantCloseReasonPublicationError
 	ParticipantCloseReasonSubscriptionError
+	ParticipantCloseReasonDataChannelError
 )
 
 func (p ParticipantCloseReason) String() string {
@@ -148,6 +149,8 @@ func (p ParticipantCloseReason) String() string {
 		return "PUBLICATION_ERROR"
 	case ParticipantCloseReasonSubscriptionError:
 		return "SUBSCRIPTION_ERROR"
+	case ParticipantCloseReasonDataChannelError:
+		return "DATA_CHANNEL_ERROR"
 	default:
 		return fmt.Sprintf("%d", int(p))
 	}
@@ -178,7 +181,7 @@ func (p ParticipantCloseReason) ToDisconnectReason() livekit.DisconnectReason {
 		return livekit.DisconnectReason_SERVER_SHUTDOWN
 	case ParticipantCloseReasonOvercommitted:
 		return livekit.DisconnectReason_SERVER_SHUTDOWN
-	case ParticipantCloseReasonNegotiateFailed, ParticipantCloseReasonPublicationError, ParticipantCloseReasonSubscriptionError:
+	case ParticipantCloseReasonNegotiateFailed, ParticipantCloseReasonPublicationError, ParticipantCloseReasonSubscriptionError, ParticipantCloseReasonDataChannelError:
 		return livekit.DisconnectReason_STATE_MISMATCH
 	default:
 		// the other types will map to unknown reason
@@ -197,6 +200,7 @@ const (
 	SignallingCloseReasonTransportFailure
 	SignallingCloseReasonFullReconnectPublicationError
 	SignallingCloseReasonFullReconnectSubscriptionError
+	SignallingCloseReasonFullReconnectDataChannelError
 	SignallingCloseReasonFullReconnectNegotiateFailed
 	SignallingCloseReasonParticipantClose
 )
@@ -215,6 +219,8 @@ func (s SignallingCloseReason) String() string {
 		return "FULL_RECONNECT_PUBLICATION_ERROR"
 	case SignallingCloseReasonFullReconnectSubscriptionError:
 		return "FULL_RECONNECT_SUBSCRIPTION_ERROR"
+	case SignallingCloseReasonFullReconnectDataChannelError:
+		return "FULL_RECONNECT_DATA_CHANNEL_ERROR"
 	case SignallingCloseReasonFullReconnectNegotiateFailed:
 		return "FULL_RECONNECT_NEGOTIATE_FAILED"
 	case SignallingCloseReasonParticipantClose:
@@ -241,9 +247,11 @@ type Participant interface {
 	CanPublish() bool
 	IsPublisher() bool
 	IsAdmin() bool
-	GetPublishedTrack(sid livekit.TrackID) MediaTrack
+	GetPublishedTrack(trackID livekit.TrackID) MediaTrack
 	GetPublishedTracks() []MediaTrack
 	RemovePublishedTrack(track MediaTrack, willBeResumed bool, shouldClose bool)
+
+	GetAudioLevel() (smoothedLevel float64, active bool)
 
 	// HasPermission checks permission of the subscriber by identity. Returns true if subscriber is allowed to subscribe
 	// to the track with trackID
@@ -299,7 +307,8 @@ type LocalParticipant interface {
 	GetLogger() logger.Logger
 	GetAdaptiveStream() bool
 	ProtocolVersion() ProtocolVersion
-	SupportSyncStreamID() bool
+	SupportsSyncStreamID() bool
+	SupportsTransceiverReuse() bool
 	ConnectedAt() time.Time
 	IsClosed() bool
 	IsReady() bool
@@ -311,6 +320,7 @@ type LocalParticipant interface {
 	GetICEConnectionType() ICEConnectionType
 	GetBufferFactory() *buffer.Factory
 	GetPlayoutDelayConfig() *livekit.PlayoutDelay
+	GetPendingTrack(trackID livekit.TrackID) *livekit.TrackInfo
 
 	SetResponseSink(sink routing.MessageSink)
 	CloseSignalConnection(reason SignallingCloseReason)
@@ -352,7 +362,6 @@ type LocalParticipant interface {
 	GetSubscribedParticipants() []livekit.ParticipantID
 	IsSubscribedTo(sid livekit.ParticipantID) bool
 
-	GetAudioLevel() (smoothedLevel float64, active bool)
 	GetConnectionQuality() *livekit.ConnectionQualityInfo
 
 	// server sent messages
@@ -449,6 +458,8 @@ type MediaTrack interface {
 	UpdateVideoLayers(layers []*livekit.VideoLayer)
 	IsSimulcast() bool
 
+	GetAudioLevel() (level float64, active bool)
+
 	Close(willBeResumed bool)
 	IsOpen() bool
 
@@ -484,7 +495,6 @@ type LocalMediaTrack interface {
 	SignalCid() string
 	HasSdpCid(cid string) bool
 
-	GetAudioLevel() (level float64, active bool)
 	GetConnectionScoreAndQuality() (float32, livekit.ConnectionQuality)
 
 	SetRTT(rtt uint32)

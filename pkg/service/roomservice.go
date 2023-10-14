@@ -123,7 +123,7 @@ func (s *RoomService) ListRooms(ctx context.Context, req *livekit.ListRoomsReque
 
 	var names []livekit.RoomName
 	if len(req.Names) > 0 {
-		names = livekit.StringsAsRoomNames(req.Names)
+		names = livekit.StringsAsIDs[livekit.RoomName](req.Names)
 	}
 	rooms, err := s.roomStore.ListRooms(ctx, names)
 	if err != nil {
