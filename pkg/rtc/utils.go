@@ -198,6 +198,9 @@ func LoggerWithCodecMime(l logger.Logger, mime string) logger.Logger {
 }
 
 func UpdateRoomFromRequest(rm *livekit.Room, internal *livekit.RoomInternal, req *livekit.CreateRoomRequest) *livekit.RoomInternal {
+	if internal == nil {
+		internal = &livekit.RoomInternal{}
+	}
 	if req.EmptyTimeout > 0 {
 		rm.EmptyTimeout = req.EmptyTimeout
 	}
@@ -208,32 +211,17 @@ func UpdateRoomFromRequest(rm *livekit.Room, internal *livekit.RoomInternal, req
 		rm.Metadata = req.Metadata
 	}
 	if req.Egress != nil && req.Egress.Tracks != nil {
-		internal = &livekit.RoomInternal{TrackEgress: req.Egress.Tracks}
+		internal.TrackEgress = req.Egress.Tracks
 	}
-	if req.AppMode != nil {
-		rm.AppMode = *req.AppMode
-		if rm.AppMode == livekit.AppMode_AM_LIVESTREAM {
-			rm.PlayoutDelay = &livekit.PlayoutDelay{
-				Enabled: true,
-				// 150ms by default in livestream mode
-				Min: 150,
-			}
-		}
-	}
-	if rm.AppMode == livekit.AppMode_AM_DEFAULT {
-		if rm.MaxParticipants == 0 || rm.MaxParticipants > 3000 {
-			rm.MaxParticipants = 3000
-		}
-	}
-	if req.MinPlayoutDelay > 0 {
-		rm.PlayoutDelay = &livekit.PlayoutDelay{
+	if req.MinPlayoutDelay > 0 || req.MaxPlayoutDelay > 0 {
+		internal.PlayoutDelay = &livekit.PlayoutDelay{
 			Enabled: true,
 			Min:     req.MinPlayoutDelay,
+			Max:     req.MaxPlayoutDelay,
 		}
-	} else {
-		rm.PlayoutDelay = &livekit.PlayoutDelay{
-			Enabled: false,
-		}
+	}
+	if req.SyncStreams {
+		internal.SyncStreams = true
 	}
 	if len(req.EnabledCodecs) > 0 {
 		rm.EnabledCodecs = req.EnabledCodecs
