@@ -58,6 +58,9 @@ const (
 
 	disconnectCleanupDuration = 5 * time.Second
 	migrationWaitDuration     = 3 * time.Second
+
+	PingIntervalSeconds = 5
+	PingTimeoutSeconds  = 15
 )
 
 type pendingTrackInfo struct {
