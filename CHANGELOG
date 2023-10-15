@@ -2,6 +2,50 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2023-10-15
+
+### Added
+- Use RTCP SR to resync. (#2021)
+- Add option to issue full reconnect on data channel error. (#2026)
+- Support non-SVC AV1 track publishing (#2030)
+- Add batch i/o to improve throughput (#2033)
+- Integrate updated TWCC responder (#2038)
+- Allow RoomService.SendData to use participant identities (#2051 #2058)
+- Support for Participant Egress (#2070)
+- Add max playout delay config (#2089)
+- Enable SVC codecs by default (#2109)
+- Add SyncStreams flag to Room, protocol 10 (#2110)
+
+### Fixed
+- Unlock pendingTracksLock when mid is empty (#1994)
+- Do not offer H.264 high profile in subscriber offer, fixes negotiation failures (#1997)
+- Prevent erroneous stream pause. (#2008)
+- Handle duplicate padding packet in the up stream. (#2012)
+- Do not process packets not processed by RTPStats. (#2015)
+- Adjust extended sequence number to account for dropped packets (#2017)
+- Do not force reconnect on resume if there is a pending track (#2081)
+- Fix out-of-range access. (#2082)
+- Start key frame requester on start. (#2111)
+- Handle RED extended sequence number. (#2123)
+- Handle playoutDelay for Firefox (#2135)
+- Fix ICE connection fallback (#2144)
+
+### Changed
+- Drop padding only packets on publisher side. (#1990)
+- Do not generate a stream key for URL pull ingress (#1993)
+- RTPStats optimizations and improvements (#1999 #2000 #2001 #2002 #2003 #2004 #2078)
+- Remove sender report warp logs. (#2007)
+- Don't create new slice when return broadcast downtracks (#2013)
+- Disconnect participant when signal proxy is closed (#2024)
+- Use random NodeID instead of MAC based (#2029)
+- Split RTPStats into receiver and sender. (#2055)
+- Reduce packet meta data cache (#2073 #2078)
+- Reduce ghost participant disconnect timeout (#2077)
+- Per-session TURN credentials (#2080)
+- Use marshal + unmarshal to ensure unmarshallable fields are not copied. (#2092)
+- Allow playout delay even when sync stream isn't used. (#2133)
+- Increase accuracy of delay since last sender report. (#2136)
+
 ## [1.4.5] - 2023-08-22
 
 ### Added
