@@ -45,8 +45,11 @@ func TestSetLastSnTs(t *testing.T) {
 	require.Equal(t, uint64(23333), r.extLastSN)
 	require.Equal(t, uint64(0xabcdef), r.extLastTS)
 	snOffset, err := r.snRangeMap.GetValue(r.extHighestIncomingSN)
+	require.Error(t, err)
+	snOffset, err = r.snRangeMap.GetValue(r.extLastSN)
 	require.NoError(t, err)
 	require.Equal(t, uint64(0), snOffset)
+	require.Equal(t, uint64(0), r.snOffset)
 	require.Equal(t, uint64(0), r.tsOffset)
 }
 
@@ -71,9 +74,11 @@ func TestUpdateSnTsOffsets(t *testing.T) {
 	require.Equal(t, uint64(33332), r.extHighestIncomingSN)
 	require.Equal(t, uint64(23333), r.extLastSN)
 	require.Equal(t, uint64(0xabcdef), r.extLastTS)
-	snOffset, err := r.snRangeMap.GetValue(r.extHighestIncomingSN)
-	require.NoError(t, err)
-	require.Equal(t, uint64(9999), snOffset)
+	_, err := r.snRangeMap.GetValue(r.extHighestIncomingSN)
+	require.Error(t, err)
+	_, err = r.snRangeMap.GetValue(r.extLastSN)
+	require.Error(t, err)
+	require.Equal(t, uint64(9999), r.snOffset)
 	require.Equal(t, uint64(0xffff_ffff_ffff_ffff), r.tsOffset)
 }
 
@@ -92,6 +97,8 @@ func TestPacketDropped(t *testing.T) {
 	require.Equal(t, uint64(23333), r.extLastSN)
 	require.Equal(t, uint64(0xabcdef), r.extLastTS)
 	snOffset, err := r.snRangeMap.GetValue(r.extHighestIncomingSN)
+	require.Error(t, err)
+	snOffset, err = r.snRangeMap.GetValue(r.extLastSN)
 	require.NoError(t, err)
 	require.Equal(t, uint64(0), snOffset)
 	require.Equal(t, uint64(0), r.tsOffset)
@@ -160,10 +167,11 @@ func TestOutOfOrderSequenceNumber(t *testing.T) {
 	r.SetLastSnTs(extPkt)
 	r.UpdateAndGetSnTs(extPkt)
 
-	// add a missing sequence number to the cache
-	r.snRangeMap.ExcludeRange(23332, 23333)
+	// should not be able to add a missing sequence number to the cache that is before start
+	err := r.snRangeMap.ExcludeRange(23332, 23333)
+	require.Error(t, err)
 
-	// out-of-order sequence number should be munged using cache
+	// out-of-order sequence number before start should miss
 	params = &testutils.TestExtPacketParams{
 		SequenceNumber: 23331,
 		Timestamp:      0xabcdef,
@@ -172,13 +180,38 @@ func TestOutOfOrderSequenceNumber(t *testing.T) {
 	}
 	extPkt, _ = testutils.GetTestExtPacket(params)
 
+	tp, err := r.UpdateAndGetSnTs(extPkt)
+	require.Error(t, err)
+
+	//  add a missing sequence number to the cache
+	err = r.snRangeMap.ExcludeRange(23334, 23335)
+	require.NoError(t, err)
+
+	params = &testutils.TestExtPacketParams{
+		SequenceNumber: 23336,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
+		PayloadSize:    10,
+	}
+	extPkt, _ = testutils.GetTestExtPacket(params)
+	r.UpdateAndGetSnTs(extPkt)
+
+	// out-of-order sequence number should be munged from cache
+	params = &testutils.TestExtPacketParams{
+		SequenceNumber: 23335,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
+		PayloadSize:    10,
+	}
+	extPkt, _ = testutils.GetTestExtPacket(params)
+
 	tpExpected := TranslationParamsRTP{
 		snOrdering:        SequenceNumberOrderingOutOfOrder,
-		extSequenceNumber: 23331,
+		extSequenceNumber: 23334,
 		extTimestamp:      0xabcdef,
 	}
 
-	tp, err := r.UpdateAndGetSnTs(extPkt)
+	tp, err = r.UpdateAndGetSnTs(extPkt)
 	require.NoError(t, err)
 	require.Equal(t, tpExpected, *tp)
 

@@ -60,9 +60,10 @@ const (
 	negotiationFailedTimeout   = 15 * time.Second
 	dtlsRetransmissionInterval = 100 * time.Millisecond
 
-	iceDisconnectedTimeout = 10 * time.Second // compatible for ice-lite with firefox client
-	iceFailedTimeout       = 5 * time.Second  // time between disconnected and failed
-	iceKeepaliveInterval   = 2 * time.Second  // pion's default
+	iceDisconnectedTimeout = 10 * time.Second                          // compatible for ice-lite with firefox client
+	iceFailedTimeout       = 5 * time.Second                           // time between disconnected and failed
+	iceFailedTimeoutTotal  = iceFailedTimeout + iceDisconnectedTimeout // total time between connecting and failure
+	iceKeepaliveInterval   = 2 * time.Second                           // pion's default
 
 	minTcpICEConnectTimeout = 5 * time.Second
 	maxTcpICEConnectTimeout = 12 * time.Second // js-sdk has a default 15s timeout for first connection, let server detect failure earlier before that
