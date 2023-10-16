@@ -1237,11 +1237,23 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 	require.Equal(t, expectedTP, *actualTP)
 
 	// add a missing sequence number to the cache
-	f.rtpMunger.snRangeMap.ExcludeRange(23332, 23333)
+	err = f.rtpMunger.snRangeMap.ExcludeRange(23334, 23335)
+	require.NoError(t, err)
+
+	params = &testutils.TestExtPacketParams{
+		SequenceNumber: 23336,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
+		PayloadSize:    20,
+	}
+	extPkt, _ = testutils.GetTestExtPacket(params)
+
+	_, err = f.GetTranslationParams(extPkt, 0)
+	require.NoError(t, err)
 
 	// out-of-order packet should get offset from cache
 	params = &testutils.TestExtPacketParams{
-		SequenceNumber: 23331,
+		SequenceNumber: 23335,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
 		PayloadSize:    20,
@@ -1251,7 +1263,7 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
 			snOrdering:        SequenceNumberOrderingOutOfOrder,
-			extSequenceNumber: 23331,
+			extSequenceNumber: 23334,
 			extTimestamp:      0xabcdef,
 		},
 	}
@@ -1261,7 +1273,7 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 
 	// padding only packet in order should be dropped
 	params = &testutils.TestExtPacketParams{
-		SequenceNumber: 23334,
+		SequenceNumber: 23337,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
 	}
@@ -1276,7 +1288,7 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 
 	// in order packet should be forwarded
 	params = &testutils.TestExtPacketParams{
-		SequenceNumber: 23335,
+		SequenceNumber: 23338,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
 		PayloadSize:    20,
@@ -1286,7 +1298,7 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
 			snOrdering:        SequenceNumberOrderingContiguous,
-			extSequenceNumber: 23333,
+			extSequenceNumber: 23336,
 			extTimestamp:      0xabcdef,
 		},
 	}
@@ -1296,7 +1308,7 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 
 	// padding only packet after a gap should not be dropped
 	params = &testutils.TestExtPacketParams{
-		SequenceNumber: 23337,
+		SequenceNumber: 23340,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
 	}
@@ -1305,7 +1317,7 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
 			snOrdering:        SequenceNumberOrderingGap,
-			extSequenceNumber: 23335,
+			extSequenceNumber: 23338,
 			extTimestamp:      0xabcdef,
 		},
 	}
@@ -1325,7 +1337,7 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
 			snOrdering:        SequenceNumberOrderingOutOfOrder,
-			extSequenceNumber: 23334,
+			extSequenceNumber: 23335,
 			extTimestamp:      0xabcdef,
 		},
 	}
@@ -1345,7 +1357,7 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
 			snOrdering:        SequenceNumberOrderingContiguous,
-			extSequenceNumber: 23336,
+			extSequenceNumber: 23339,
 			extTimestamp:      0xabcdf0,
 		},
 	}

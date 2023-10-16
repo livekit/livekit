@@ -23,9 +23,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
 )
 
-//
 // RTPMunger
-//
 type SequenceNumberOrdering int
 
 const (
@@ -124,6 +122,7 @@ func (r *RTPMunger) SetLastSnTs(extPkt *buffer.ExtPacket) {
 
 	r.extLastSN = extPkt.ExtSequenceNumber
 	r.extSecondLastSN = r.extLastSN - 1
+	r.snRangeMap.ClearAndResetValue(extPkt.ExtSequenceNumber, 0)
 	r.updateSnOffset()
 
 	r.extLastTS = extPkt.ExtTimestamp
@@ -132,7 +131,7 @@ func (r *RTPMunger) SetLastSnTs(extPkt *buffer.ExtPacket) {
 func (r *RTPMunger) UpdateSnTsOffsets(extPkt *buffer.ExtPacket, snAdjust uint64, tsAdjust uint64) {
 	r.extHighestIncomingSN = extPkt.ExtSequenceNumber - 1
 
-	r.snRangeMap.ClearAndResetValue(extPkt.ExtSequenceNumber - r.extLastSN - snAdjust)
+	r.snRangeMap.ClearAndResetValue(extPkt.ExtSequenceNumber, extPkt.ExtSequenceNumber-r.extLastSN-snAdjust)
 	r.updateSnOffset()
 
 	r.tsOffset = extPkt.ExtTimestamp - r.extLastTS - tsAdjust

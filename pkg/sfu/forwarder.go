@@ -1794,7 +1794,7 @@ func (f *Forwarder) maybeStart() {
 	f.rtpMunger.SetLastSnTs(extPkt)
 
 	f.extFirstTS = uint64(timestamp)
-	f.logger.Debugw(
+	f.logger.Infow(
 		"starting with dummy forwarding",
 		"sequenceNumber", extPkt.Packet.SequenceNumber,
 		"timestamp", extPkt.Packet.Timestamp,
