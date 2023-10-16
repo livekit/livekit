@@ -1481,7 +1481,7 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expectedTP, actualTP)
 
-	// out-of-order packet not in cache (codec cache) should be dropped
+	// out-of-order packet not in cache should be dropped
 	params = &testutils.TestExtPacketParams{
 		SequenceNumber: 23332,
 		Timestamp:      0xabcdef,
@@ -1490,19 +1490,11 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	}
 	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
 	expectedTP = TranslationParams{
-		rtp: TranslationParamsRTP{
-			snOrdering:        SequenceNumberOrderingOutOfOrder,
-			extSequenceNumber: 23332,
-			extTimestamp:      0xabcdef,
-		},
+		shouldDrop: true,
 	}
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
 	require.NoError(t, err)
 	require.Equal(t, expectedTP, actualTP)
-
-	shouldForward, incomingHeaderSize, outgoingHeaderSize, err = f.TranslateCodecHeader(extPkt, &actualTP.rtp, buf)
-	require.NoError(t, err)
-	require.False(t, shouldForward)
 
 	// padding only packet in order should be dropped
 	params = &testutils.TestExtPacketParams{
