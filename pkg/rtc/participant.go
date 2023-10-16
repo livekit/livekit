@@ -58,6 +58,9 @@ const (
 
 	disconnectCleanupDuration = 5 * time.Second
 	migrationWaitDuration     = 3 * time.Second
+
+	PingIntervalSeconds = 5
+	PingTimeoutSeconds  = 15
 )
 
 type pendingTrackInfo struct {
@@ -1095,7 +1098,7 @@ func (p *ParticipantImpl) UpdateMediaRTT(rtt uint32) {
 }
 
 func (p *ParticipantImpl) setupTransportManager() error {
-	tm, err := NewTransportManager(TransportManagerParams{
+	params := TransportManagerParams{
 		Identity: p.params.Identity,
 		SID:      p.params.SID,
 		// primary connection does not change, canSubscribe can change if permission was updated
@@ -1114,9 +1117,15 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		TCPFallbackRTTThreshold:  p.params.TCPFallbackRTTThreshold,
 		AllowUDPUnstableFallback: p.params.AllowUDPUnstableFallback,
 		TURNSEnabled:             p.params.TURNSEnabled,
-		AllowPlayoutDelay:        p.params.PlayoutDelay.GetEnabled() && p.SupportsSyncStreamID(),
+		AllowPlayoutDelay:        p.params.PlayoutDelay.GetEnabled(),
 		Logger:                   p.params.Logger.WithComponent(sutils.ComponentTransport),
-	})
+	}
+	if p.params.SyncStreams && p.params.PlayoutDelay.GetEnabled() && p.params.ClientInfo.isFirefox() {
+		// we will disable playout delay for Firefox if the user is expecting
+		// the streams to be synced. Firefox doesn't support SyncStreams
+		params.AllowPlayoutDelay = false
+	}
+	tm, err := NewTransportManager(params)
 	if err != nil {
 		return err
 	}
@@ -2291,7 +2300,7 @@ func (p *ParticipantImpl) SendDataPacket(dp *livekit.DataPacket, data []byte) er
 
 	err := p.TransportManager.SendDataPacket(dp, data)
 	if err != nil {
-		if (err == sctp.ErrStreamClosed || err == io.ErrClosedPipe) && p.params.ReconnectOnDataChannelError {
+		if (errors.Is(err, sctp.ErrStreamClosed) || errors.Is(err, io.ErrClosedPipe)) && p.params.ReconnectOnDataChannelError {
 			p.params.Logger.Infow("issuing full reconnect on data channel error")
 			p.IssueFullReconnect(types.ParticipantCloseReasonDataChannelError)
 		}
