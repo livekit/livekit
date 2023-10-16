@@ -59,12 +59,12 @@ func NewRangeMap[RT rangeType, VT valueType](size int) *RangeMap[RT, VT] {
 		halfRange: 1 << ((unsafe.Sizeof(t) * 8) - 1),
 		size:      int(math.Max(float64(size), float64(minRanges))),
 	}
-	r.initRanges(0)
+	r.initRanges(0, 0)
 	return r
 }
 
-func (r *RangeMap[RT, VT]) ClearAndResetValue(val VT) {
-	r.initRanges(val)
+func (r *RangeMap[RT, VT]) ClearAndResetValue(start RT, val VT) {
+	r.initRanges(start, val)
 }
 
 func (r *RangeMap[RT, VT]) DecValue(end RT, dec VT) {
@@ -87,10 +87,10 @@ func (r *RangeMap[RT, VT]) DecValue(end RT, dec VT) {
 	r.prune()
 }
 
-func (r *RangeMap[RT, VT]) initRanges(val VT) {
+func (r *RangeMap[RT, VT]) initRanges(start RT, val VT) {
 	r.ranges = []rangeVal[RT, VT]{
 		{
-			start: 0,
+			start: start,
 			end:   0,
 			value: val,
 		},
