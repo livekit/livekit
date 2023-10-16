@@ -5,7 +5,6 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ## [1.5.0] - 2023-10-15
 
 ### Added
-- Use RTCP SR to resync. (#2021)
 - Add option to issue full reconnect on data channel error. (#2026)
 - Support non-SVC AV1 track publishing (#2030)
 - Add batch i/o to improve throughput (#2033)
