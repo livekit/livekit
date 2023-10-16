@@ -36,9 +36,9 @@ var (
 	reconcileInterval = 3 * time.Second
 	// amount of time to give up if a track or publisher isn't found
 	// ensuring this is longer than iceFailedTimeout so we are certain the participant won't return
-	notFoundTimeout = iceFailedTimeout
+	notFoundTimeout = time.Minute
 	// amount of time to try otherwise before flagging subscription as failed
-	subscriptionTimeout    = iceFailedTimeout
+	subscriptionTimeout    = iceFailedTimeoutTotal
 	trackRemoveGracePeriod = time.Second
 	maxUnsubscribeWait     = time.Second
 )

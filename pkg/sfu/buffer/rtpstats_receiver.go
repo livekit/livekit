@@ -110,7 +110,7 @@ func (r *RTPStatsReceiver) Update(
 			r.snapshots[i] = r.initSnapshot(r.startTime, r.sequenceNumber.GetExtendedStart())
 		}
 
-		r.logger.Debugw(
+		r.logger.Infow(
 			"rtp receiver stream start",
 			"startTime", r.startTime.String(),
 			"firstTime", r.firstTime.String(),
@@ -149,6 +149,9 @@ func (r *RTPStatsReceiver) Update(
 				flowState.IsNotHandled = true
 				return
 			}
+		}
+		if -gapSN >= cNumSequenceNumbers {
+			r.logger.Warnw("large sequence number gap negative", nil, "prev", resSN.PreExtendedHighest, "curr", resSN.ExtendedVal, "gap", gapSN)
 		}
 
 		if gapSN != 0 {
@@ -361,9 +364,8 @@ func (r *RTPStatsReceiver) GetRtcpReceptionReport(ssrc uint32, proxyFracLost uin
 	if r.srNewest != nil {
 		lastSR = uint32(r.srNewest.NTPTimestamp >> 16)
 		if !r.srNewest.At.IsZero() {
-			delayMS := uint32(time.Since(r.srNewest.At).Milliseconds())
-			dlsr = (delayMS / 1e3) << 16
-			dlsr |= (delayMS % 1e3) * 65536 / 1000
+			delayUS := time.Since(r.srNewest.At).Microseconds()
+			dlsr = uint32(delayUS * 65536 / 1e6)
 		}
 	}
 

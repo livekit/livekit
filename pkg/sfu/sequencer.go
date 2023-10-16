@@ -213,7 +213,11 @@ func (s *sequencer) pushPadding(extStartSNInclusive uint64, extEndSNInclusive ui
 		// Not recording exclusion range means a few slots (of the size of exclusion range)
 		// are wasted in this cycle. That should be fine as the exclusion ranges should be
 		// a few packets at a time.
-		s.logger.Warnw("cannot exclude old range", nil, "extHighestSN", s.extHighestSN, "startSN", extStartSNInclusive, "endSN", extEndSNInclusive)
+		if extEndSNInclusive >= s.extHighestSN {
+			s.logger.Errorw("cannot exclude overlapping range", nil, "extHighestSN", s.extHighestSN, "startSN", extStartSNInclusive, "endSN", extEndSNInclusive)
+		} else {
+			s.logger.Warnw("cannot exclude old range", nil, "extHighestSN", s.extHighestSN, "startSN", extStartSNInclusive, "endSN", extEndSNInclusive)
+		}
 
 		// if exclusion range is before what has already been sequenced, invalidate exclusion range slots
 		for sn := extStartSNInclusive; sn != extEndSNInclusive+1; sn++ {
