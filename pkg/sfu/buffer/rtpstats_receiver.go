@@ -359,6 +359,11 @@ func (r *RTPStatsReceiver) GetRtcpReceptionReport(ssrc uint32, proxyFracLost uin
 		fracLost = proxyFracLost
 	}
 
+	totalLost := r.packetsLost
+	if totalLost > 0xffffff { // 24-bits max
+		totalLost = 0xffffff
+	}
+
 	lastSR := uint32(0)
 	dlsr := uint32(0)
 	if r.srNewest != nil {
@@ -372,7 +377,7 @@ func (r *RTPStatsReceiver) GetRtcpReceptionReport(ssrc uint32, proxyFracLost uin
 	return &rtcp.ReceptionReport{
 		SSRC:               ssrc,
 		FractionLost:       fracLost,
-		TotalLost:          uint32(r.packetsLost),
+		TotalLost:          uint32(totalLost),
 		LastSequenceNumber: uint32(now.extStartSN),
 		Jitter:             uint32(r.jitter),
 		LastSenderReport:   lastSR,

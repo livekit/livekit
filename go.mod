@@ -17,7 +17,7 @@ require (
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
-	github.com/livekit/mediatransportutil v0.0.0-20231005043905-c137afffe71c
+	github.com/livekit/mediatransportutil v0.0.0-20231017082622-43f077b4e60e
 	github.com/livekit/protocol v1.8.0
 	github.com/livekit/psrpc v0.3.3
 	github.com/mackerelio/go-osstat v0.2.4

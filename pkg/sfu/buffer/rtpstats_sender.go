@@ -416,9 +416,9 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 	if !r.lastRRTime.IsZero() && r.extHighestSNFromRR > extHighestSNFromRR {
 		r.logger.Debugw(
 			fmt.Sprintf("receiver report potentially out of order, highestSN: existing: %d, received: %d", r.extHighestSNFromRR, extHighestSNFromRR),
-			"lastRRTime", r.lastRRTime,
+			"lastRRTime", r.lastRRTime.String(),
 			"lastRR", r.lastRR,
-			"sinceLastRR", time.Since(r.lastRRTime),
+			"sinceLastRR", time.Since(r.lastRRTime).String(),
 			"receivedRR", rr,
 		)
 		return
@@ -482,9 +482,9 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 		if is.packetsNotFound != 0 {
 			r.logger.Warnw(
 				"potential sequence number de-sync", nil,
-				"lastRRTime", r.lastRRTime,
+				"lastRRTime", r.lastRRTime.String(),
 				"lastRR", r.lastRR,
-				"sinceLastRR", time.Since(r.lastRRTime),
+				"sinceLastRR", time.Since(r.lastRRTime).String(),
 				"receivedRR", rr,
 				"extStartSN", r.extStartSN,
 				"extHighestSN", r.extHighestSN,
@@ -581,14 +581,15 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, calculatedClockRate ui
 			"prevTSExt", r.srNewest.RTPTimestampExt,
 			"prevRTP", r.srNewest.RTPTimestamp,
 			"prevNTP", r.srNewest.NTPTimestamp.Time().String(),
+			"extHighestTS", r.extHighestTS,
 			"currTSExt", nowRTPExt,
 			"currRTP", nowRTP,
 			"currNTP", nowNTP.Time().String(),
 			"timeNow", time.Now().String(),
 			"firstTime", r.firstTime.String(),
-			"timeSinceFirst", timeSinceFirst,
+			"timeSinceFirst", timeSinceFirst.String(),
 			"highestTime", r.highestTime.String(),
-			"timeSinceHighest", timeSinceHighest,
+			"timeSinceHighest", timeSinceHighest.String(),
 			"nowRTPExtUsingTime", nowRTPExtUsingTime,
 			"calculatedClockRate", calculatedClockRate,
 			"nowRTPExtUsingRate", nowRTPExtUsingRate,
@@ -646,9 +647,9 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) *RTPDeltaInfo 
 			"startSN", then.extStartSN,
 			"endSN", now.extStartSN,
 			"packetsExpected", packetsExpected,
-			"startTime", startTime,
-			"endTime", endTime,
-			"duration", endTime.Sub(startTime),
+			"startTime", startTime.String(),
+			"endTime", endTime.String(),
+			"duration", endTime.Sub(startTime).String(),
 		)
 		return nil
 	}
