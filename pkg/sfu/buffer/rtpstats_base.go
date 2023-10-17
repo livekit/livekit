@@ -109,7 +109,6 @@ type RTCPSenderReportData struct {
 	RTPTimestamp    uint32
 	RTPTimestampExt uint64
 	NTPTimestamp    mediatransportutil.NtpTime
-	PacketCount     uint32
 	At              time.Time
 }
 

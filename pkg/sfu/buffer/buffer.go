@@ -715,12 +715,11 @@ func (b *Buffer) buildReceptionReport() *rtcp.ReceptionReport {
 	return b.rtpStats.GetRtcpReceptionReport(b.mediaSSRC, b.lastFractionLostToReport, b.rrSnapshotId)
 }
 
-func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64, packetCount uint32) {
+func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64) {
 	b.RLock()
 	srData := &RTCPSenderReportData{
 		RTPTimestamp: rtpTime,
 		NTPTimestamp: mediatransportutil.NtpTime(ntpTime),
-		PacketCount:  packetCount,
 		At:           time.Now(),
 	}
 
