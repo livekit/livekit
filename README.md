@@ -272,7 +272,7 @@ Read our [deployment docs](https://docs.livekit.io/deploy/) for more information
 
 Pre-requisites:
 
-- Go 1.18+ is installed
+- Go 1.20+ is installed
 - GOPATH/bin is in your PATH
 
 Then run
