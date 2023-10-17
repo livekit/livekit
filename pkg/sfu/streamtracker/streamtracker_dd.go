@@ -192,6 +192,10 @@ func (s *StreamTrackerDependencyDescriptor) Observe(temporalLayer int32, pktSize
 	dtis := ddVal.Descriptor.FrameDependencies.DecodeTargetIndications
 
 	for _, dt := range ddVal.DecodeTargets {
+		if len(dtis) <= dt.Target {
+			s.params.Logger.Errorw("len(dtis) less than target", nil, "target", dt.Target, "dtls", dtis)
+			continue
+		}
 		// we are not dropping discardable frames now, so only ingore not present frames
 		if dtis[dt.Target] == dd.DecodeTargetNotPresent {
 			continue
