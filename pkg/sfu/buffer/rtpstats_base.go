@@ -32,7 +32,7 @@ const (
 	cFirstSnapshotID     = 1
 
 	cFirstPacketTimeAdjustWindow    = 2 * time.Minute
-	cFirstPacketTimeAdjustThreshold = 5 * time.Second
+	cFirstPacketTimeAdjustThreshold = 5 * time.Minute
 )
 
 // -------------------------------------------------------
@@ -110,9 +110,7 @@ type RTCPSenderReportData struct {
 	RTPTimestampExt uint64
 	NTPTimestamp    mediatransportutil.NtpTime
 	PacketCount     uint32
-	// RAJA-REMOVE PacketCountExt   uint64
-	PaddingOnlyDrops uint64
-	At               time.Time
+	At              time.Time
 }
 
 type RTPStatsParams struct {
@@ -484,7 +482,7 @@ func (r *rtpStatsBase) maybeAdjustFirstPacketTime(ets uint64, extStartTS uint64)
 			"nowTime", now.String(),
 			"before", r.firstTime.String(),
 			"after", firstTime.String(),
-			"adjustment", r.firstTime.Sub(firstTime),
+			"adjustment", r.firstTime.Sub(firstTime).String(),
 			"extNowTS", ets,
 			"extStartTS", extStartTS,
 		)
@@ -494,7 +492,7 @@ func (r *rtpStatsBase) maybeAdjustFirstPacketTime(ets uint64, extStartTS uint64)
 				"nowTime", now.String(),
 				"before", r.firstTime.String(),
 				"after", firstTime.String(),
-				"adjustment", r.firstTime.Sub(firstTime),
+				"adjustment", r.firstTime.Sub(firstTime).String(),
 				"extNowTS", ets,
 				"extStartTS", extStartTS,
 			)
@@ -537,7 +535,7 @@ func (r *rtpStatsBase) deltaInfo(snapshotID uint32, extStartSN uint64, extHighes
 			"packetsExpected", packetsExpected,
 			"startTime", startTime,
 			"endTime", endTime,
-			"duration", endTime.Sub(startTime),
+			"duration", endTime.Sub(startTime).String(),
 		)
 		return nil
 	}

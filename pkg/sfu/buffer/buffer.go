@@ -84,8 +84,7 @@ type Buffer struct {
 	closed        atomic.Bool
 	mime          string
 
-	snRangeMap       *utils.RangeMap[uint64, uint64]
-	paddingOnlyDrops uint64
+	snRangeMap *utils.RangeMap[uint64, uint64]
 
 	latestTSForAudioLevelInitialized bool
 	latestTSForAudioLevel            uint32
@@ -455,7 +454,6 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 			if err := b.snRangeMap.ExcludeRange(flowState.ExtSequenceNumber, flowState.ExtSequenceNumber+1); err != nil {
 				b.logger.Errorw("could not exclude range", err, "sn", rtpPacket.SequenceNumber, "esn", flowState.ExtSequenceNumber)
 			}
-			b.paddingOnlyDrops++
 		}
 		return
 	}
@@ -720,11 +718,10 @@ func (b *Buffer) buildReceptionReport() *rtcp.ReceptionReport {
 func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64, packetCount uint32) {
 	b.RLock()
 	srData := &RTCPSenderReportData{
-		RTPTimestamp:     rtpTime,
-		NTPTimestamp:     mediatransportutil.NtpTime(ntpTime),
-		PacketCount:      packetCount,
-		PaddingOnlyDrops: b.paddingOnlyDrops,
-		At:               time.Now(),
+		RTPTimestamp: rtpTime,
+		NTPTimestamp: mediatransportutil.NtpTime(ntpTime),
+		PacketCount:  packetCount,
+		At:           time.Now(),
 	}
 
 	if b.rtpStats != nil {
