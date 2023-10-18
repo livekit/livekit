@@ -42,6 +42,7 @@ const (
 	TransitionCostSpatial = 10
 
 	ResumeBehindThresholdSeconds      = float64(0.2)   // 200ms
+	ResumeBehindHighTresholdSeconds   = float64(2.0)   // 2 seconds
 	LayerSwitchBehindThresholdSeconds = float64(0.05)  // 50ms
 	SwitchAheadThresholdSeconds       = float64(0.025) // 25ms
 )
@@ -187,7 +188,7 @@ type Forwarder struct {
 	codec                         webrtc.RTPCodecCapability
 	kind                          webrtc.RTPCodecType
 	logger                        logger.Logger
-	getReferenceLayerRTPTimestamp func(ets uint64, layer int32, referenceLayer int32) (uint64, error)
+	getReferenceLayerRTPTimestamp func(ts uint32, layer int32, referenceLayer int32) (uint32, error)
 	getExpectedRTPTimestamp       func(at time.Time) (uint64, error)
 
 	muted                 bool
@@ -215,7 +216,7 @@ type Forwarder struct {
 func NewForwarder(
 	kind webrtc.RTPCodecType,
 	logger logger.Logger,
-	getReferenceLayerRTPTimestamp func(ets uint64, layer int32, referenceLayer int32) (uint64, error),
+	getReferenceLayerRTPTimestamp func(ts uint32, layer int32, referenceLayer int32) (uint32, error),
 	getExpectedRTPTimestamp func(at time.Time) (uint64, error),
 ) *Forwarder {
 	f := &Forwarder{
@@ -1499,11 +1500,11 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 	// But, cases like muting/unmuting, clock vagaries, pacing, etc. make them not satisfy those conditions always.
 	rtpMungerState := f.rtpMunger.GetLast()
 	extLastTS := rtpMungerState.ExtLastTS
-	extRefTS := extLastTS
 	extExpectedTS := extLastTS
+	extRefTS := extExpectedTS & 0xFFFF_FFFF_0000_0000
 	switchingAt := time.Now()
 	if f.getReferenceLayerRTPTimestamp != nil {
-		ets, err := f.getReferenceLayerRTPTimestamp(extPkt.ExtTimestamp, layer, f.referenceLayerSpatial)
+		ts, err := f.getReferenceLayerRTPTimestamp(extPkt.Packet.Timestamp, layer, f.referenceLayerSpatial)
 		if err != nil {
 			// error out if extRefTS is not available. It can happen when there is no sender report
 			// for the layer being switched to. Can especially happen at the start of the track when layer switches are
@@ -1513,7 +1514,15 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			return err
 		}
 
-		extRefTS = ets
+		extRefTS += uint64(ts)
+
+		expectedTS32 := uint32(extExpectedTS)
+		if (ts-expectedTS32) < 1<<31 && ts < expectedTS32 {
+			extRefTS += (1 << 32)
+		}
+		if (expectedTS32-ts) < 1<<31 && expectedTS32 < ts && extRefTS >= 1<<32 {
+			extRefTS -= (1 << 32)
+		}
 	}
 
 	if f.getExpectedRTPTimestamp != nil {
@@ -1568,6 +1577,17 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		if diffSeconds >= 0.0 {
 			if f.resumeBehindThreshold > 0 && diffSeconds > f.resumeBehindThreshold {
 				logTransition("resume, reference too far behind", extExpectedTS, extRefTS, extLastTS, diffSeconds)
+				extNextTS = extExpectedTS
+			} else if diffSeconds > ResumeBehindHighTresholdSeconds {
+				// could be due to incorrect reference calculation
+				f.logger.Infow(
+					"resume, reference very far behind",
+					"layer", layer,
+					"extExpectedTS", extExpectedTS,
+					"extRefTS", extRefTS,
+					"extLastTS", extLastTS,
+					"diffSeconds", diffSeconds,
+				)
 				extNextTS = extExpectedTS
 			} else {
 				extNextTS = extRefTS
