@@ -77,7 +77,6 @@ type IngressStore interface {
 //counterfeiter:generate . IOClient
 type IOClient interface {
 	CreateEgress(ctx context.Context, info *livekit.EgressInfo) (*emptypb.Empty, error)
-	UpdateEgress(ctx context.Context, info *livekit.EgressInfo) (*emptypb.Empty, error)
 	GetEgress(ctx context.Context, req *rpc.GetEgressRequest) (*livekit.EgressInfo, error)
 	ListEgress(ctx context.Context, req *livekit.ListEgressRequest) (*livekit.ListEgressResponse, error)
 }

@@ -54,20 +54,6 @@ type FakeIOClient struct {
 		result1 *livekit.ListEgressResponse
 		result2 error
 	}
-	UpdateEgressStub        func(context.Context, *livekit.EgressInfo) (*emptypb.Empty, error)
-	updateEgressMutex       sync.RWMutex
-	updateEgressArgsForCall []struct {
-		arg1 context.Context
-		arg2 *livekit.EgressInfo
-	}
-	updateEgressReturns struct {
-		result1 *emptypb.Empty
-		result2 error
-	}
-	updateEgressReturnsOnCall map[int]struct {
-		result1 *emptypb.Empty
-		result2 error
-	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
 }
@@ -267,71 +253,6 @@ func (fake *FakeIOClient) ListEgressReturnsOnCall(i int, result1 *livekit.ListEg
 	}{result1, result2}
 }
 
-func (fake *FakeIOClient) UpdateEgress(arg1 context.Context, arg2 *livekit.EgressInfo) (*emptypb.Empty, error) {
-	fake.updateEgressMutex.Lock()
-	ret, specificReturn := fake.updateEgressReturnsOnCall[len(fake.updateEgressArgsForCall)]
-	fake.updateEgressArgsForCall = append(fake.updateEgressArgsForCall, struct {
-		arg1 context.Context
-		arg2 *livekit.EgressInfo
-	}{arg1, arg2})
-	stub := fake.UpdateEgressStub
-	fakeReturns := fake.updateEgressReturns
-	fake.recordInvocation("UpdateEgress", []interface{}{arg1, arg2})
-	fake.updateEgressMutex.Unlock()
-	if stub != nil {
-		return stub(arg1, arg2)
-	}
-	if specificReturn {
-		return ret.result1, ret.result2
-	}
-	return fakeReturns.result1, fakeReturns.result2
-}
-
-func (fake *FakeIOClient) UpdateEgressCallCount() int {
-	fake.updateEgressMutex.RLock()
-	defer fake.updateEgressMutex.RUnlock()
-	return len(fake.updateEgressArgsForCall)
-}
-
-func (fake *FakeIOClient) UpdateEgressCalls(stub func(context.Context, *livekit.EgressInfo) (*emptypb.Empty, error)) {
-	fake.updateEgressMutex.Lock()
-	defer fake.updateEgressMutex.Unlock()
-	fake.UpdateEgressStub = stub
-}
-
-func (fake *FakeIOClient) UpdateEgressArgsForCall(i int) (context.Context, *livekit.EgressInfo) {
-	fake.updateEgressMutex.RLock()
-	defer fake.updateEgressMutex.RUnlock()
-	argsForCall := fake.updateEgressArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
-}
-
-func (fake *FakeIOClient) UpdateEgressReturns(result1 *emptypb.Empty, result2 error) {
-	fake.updateEgressMutex.Lock()
-	defer fake.updateEgressMutex.Unlock()
-	fake.UpdateEgressStub = nil
-	fake.updateEgressReturns = struct {
-		result1 *emptypb.Empty
-		result2 error
-	}{result1, result2}
-}
-
-func (fake *FakeIOClient) UpdateEgressReturnsOnCall(i int, result1 *emptypb.Empty, result2 error) {
-	fake.updateEgressMutex.Lock()
-	defer fake.updateEgressMutex.Unlock()
-	fake.UpdateEgressStub = nil
-	if fake.updateEgressReturnsOnCall == nil {
-		fake.updateEgressReturnsOnCall = make(map[int]struct {
-			result1 *emptypb.Empty
-			result2 error
-		})
-	}
-	fake.updateEgressReturnsOnCall[i] = struct {
-		result1 *emptypb.Empty
-		result2 error
-	}{result1, result2}
-}
-
 func (fake *FakeIOClient) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
@@ -341,8 +262,6 @@ func (fake *FakeIOClient) Invocations() map[string][][]interface{} {
 	defer fake.getEgressMutex.RUnlock()
 	fake.listEgressMutex.RLock()
 	defer fake.listEgressMutex.RUnlock()
-	fake.updateEgressMutex.RLock()
-	defer fake.updateEgressMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value
