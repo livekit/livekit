@@ -72,13 +72,12 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	ioInfoClient := NewIOClient(ioInfoService)
-	rtcEgressLauncher := NewEgressLauncher(egressClient, ioInfoClient)
+	rtcEgressLauncher := NewEgressLauncher(egressClient, ioInfoService)
 	roomService, err := NewRoomService(roomConfig, apiConfig, router, roomAllocator, objectStore, rtcEgressLauncher)
 	if err != nil {
 		return nil, err
 	}
-	egressService := NewEgressService(egressClient, objectStore, ioInfoClient, roomService, rtcEgressLauncher)
+	egressService := NewEgressService(egressClient, objectStore, ioInfoService, roomService, rtcEgressLauncher)
 	ingressConfig := getIngressConfig(conf)
 	ingressClient, err := rpc.NewIngressClient(nodeID, messageBus)
 	if err != nil {

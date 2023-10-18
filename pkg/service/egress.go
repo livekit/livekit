@@ -30,9 +30,8 @@ import (
 )
 
 type EgressService struct {
-	client rpc.EgressClient
-	io     rpc.IOInfoClient
-
+	client      rpc.EgressClient
+	io          IOClient
 	roomService livekit.RoomService
 	store       ServiceStore
 	launcher    rtc.EgressLauncher
@@ -40,10 +39,10 @@ type EgressService struct {
 
 type egressLauncher struct {
 	client rpc.EgressClient
-	io     rpc.IOInfoClient
+	io     IOClient
 }
 
-func NewEgressLauncher(client rpc.EgressClient, io rpc.IOInfoClient) rtc.EgressLauncher {
+func NewEgressLauncher(client rpc.EgressClient, io IOClient) rtc.EgressLauncher {
 	if client == nil {
 		return nil
 	}
@@ -56,7 +55,7 @@ func NewEgressLauncher(client rpc.EgressClient, io rpc.IOInfoClient) rtc.EgressL
 func NewEgressService(
 	client rpc.EgressClient,
 	store ServiceStore,
-	io rpc.IOInfoClient,
+	io IOClient,
 	rs livekit.RoomService,
 	launcher rtc.EgressLauncher,
 ) *EgressService {
