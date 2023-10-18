@@ -453,7 +453,7 @@ func (r *rtpStatsBase) GetRtt() uint32 {
 	return r.rtt
 }
 
-func (r *rtpStatsBase) maybeAdjustFirstPacketTime(ets uint64, extStartTS uint64) {
+func (r *rtpStatsBase) maybeAdjustFirstPacketTime(ts uint32, startTS uint32) {
 	if time.Since(r.startTime) > cFirstPacketTimeAdjustWindow {
 		return
 	}
@@ -464,7 +464,7 @@ func (r *rtpStatsBase) maybeAdjustFirstPacketTime(ets uint64, extStartTS uint64)
 	// abnormal delay (maybe due to pacing or maybe due to queuing
 	// in some network element along the way), push back first time
 	// to an earlier instance.
-	samplesDiff := int64(ets - extStartTS)
+	samplesDiff := int32(ts - startTS)
 	if samplesDiff < 0 {
 		// out-of-order, skip
 		return
@@ -482,8 +482,8 @@ func (r *rtpStatsBase) maybeAdjustFirstPacketTime(ets uint64, extStartTS uint64)
 			"before", r.firstTime.String(),
 			"after", firstTime.String(),
 			"adjustment", r.firstTime.Sub(firstTime).String(),
-			"extNowTS", ets,
-			"extStartTS", extStartTS,
+			"nowTS", ts,
+			"startTS", startTS,
 		)
 		if r.firstTime.Sub(firstTime) > cFirstPacketTimeAdjustThreshold {
 			r.logger.Infow("first packet time adjustment too big, ignoring",
@@ -492,8 +492,8 @@ func (r *rtpStatsBase) maybeAdjustFirstPacketTime(ets uint64, extStartTS uint64)
 				"before", r.firstTime.String(),
 				"after", firstTime.String(),
 				"adjustment", r.firstTime.Sub(firstTime).String(),
-				"extNowTS", ets,
-				"extStartTS", extStartTS,
+				"nowTS", ts,
+				"startTS", startTS,
 			)
 		} else {
 			r.firstTime = firstTime

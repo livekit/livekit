@@ -151,7 +151,19 @@ func (r *RTPStatsReceiver) Update(
 			}
 		}
 		if -gapSN >= cNumSequenceNumbers {
-			r.logger.Warnw("large sequence number gap negative", nil, "prev", resSN.PreExtendedHighest, "curr", resSN.ExtendedVal, "gap", gapSN)
+			r.logger.Warnw(
+				"large sequence number gap negative", nil,
+				"prev", resSN.PreExtendedHighest,
+				"curr", resSN.ExtendedVal,
+				"gap", gapSN,
+				"packetTime", packetTime.String(),
+				"sequenceNumber", sequenceNumber,
+				"timestamp", timestamp,
+				"marker", marker,
+				"hdrSize", hdrSize,
+				"payloadSize", payloadSize,
+				"paddingSize", paddingSize,
+			)
 		}
 
 		if gapSN != 0 {
@@ -205,7 +217,19 @@ func (r *RTPStatsReceiver) Update(
 		flowState.ExtTimestamp = resTS.ExtendedVal
 	} else { // in-order
 		if gapSN >= cNumSequenceNumbers {
-			r.logger.Warnw("large sequence number gap", nil, "prev", resSN.PreExtendedHighest, "curr", resSN.ExtendedVal, "gap", gapSN)
+			r.logger.Warnw(
+				"large sequence number gap", nil,
+				"prev", resSN.PreExtendedHighest,
+				"curr", resSN.ExtendedVal,
+				"gap", gapSN,
+				"packetTime", packetTime.String(),
+				"sequenceNumber", sequenceNumber,
+				"timestamp", timestamp,
+				"marker", marker,
+				"hdrSize", hdrSize,
+				"payloadSize", payloadSize,
+				"paddingSize", paddingSize,
+			)
 		}
 
 		// update gap histogram
@@ -284,7 +308,7 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 	srDataCopy := *srData
 	srDataCopy.RTPTimestampExt = uint64(srDataCopy.RTPTimestamp) + tsCycles
 
-	r.maybeAdjustFirstPacketTime(srDataCopy.RTPTimestampExt, r.timestamp.GetExtendedStart())
+	r.maybeAdjustFirstPacketTime(srDataCopy.RTPTimestamp, r.timestamp.GetStart())
 
 	if r.srNewest != nil && srDataCopy.RTPTimestampExt < r.srNewest.RTPTimestampExt {
 		// This can happen when a track is replaced with a null and then restored -

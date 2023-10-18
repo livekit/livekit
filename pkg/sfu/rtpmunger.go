@@ -202,9 +202,25 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 			}, ErrOutOfOrderSequenceNumberCacheMiss
 		}
 
+		extSequenceNumber := extPkt.ExtSequenceNumber - snOffset
+		if extSequenceNumber >= r.extLastSN {
+			// should not happen, just being paranoid
+			r.logger.Errorw(
+				"unexpected packet ordering", nil,
+				"extIncomingSN", extPkt.ExtSequenceNumber,
+				"extHighestIncominSN", r.extHighestIncomingSN,
+				"extLastSN", r.extLastSN,
+				"snOffsetIncoming", snOffset,
+				"snOffsetHighest", r.snOffset,
+			)
+			return &TranslationParamsRTP{
+				snOrdering: SequenceNumberOrderingOutOfOrder,
+			}, ErrOutOfOrderSequenceNumberCacheMiss
+		}
+
 		return &TranslationParamsRTP{
 			snOrdering:        SequenceNumberOrderingOutOfOrder,
-			extSequenceNumber: extPkt.ExtSequenceNumber - snOffset,
+			extSequenceNumber: extSequenceNumber,
 			extTimestamp:      extPkt.ExtTimestamp - r.tsOffset,
 		}, nil
 	}

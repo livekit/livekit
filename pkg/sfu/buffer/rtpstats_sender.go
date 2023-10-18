@@ -282,7 +282,19 @@ func (r *RTPStatsSender) Update(
 			return
 		}
 		if -gapSN >= cNumSequenceNumbers {
-			r.logger.Warnw("large sequence number gap negative", nil, "prev", r.extHighestSN, "curr", extSequenceNumber, "gap", gapSN)
+			r.logger.Warnw(
+				"large sequence number gap negative", nil,
+				"prev", r.extHighestSN,
+				"curr", extSequenceNumber,
+				"gap", gapSN,
+				"packetTime", packetTime.String(),
+				"sequenceNumber", extSequenceNumber,
+				"timestamp", extTimestamp,
+				"marker", marker,
+				"hdrSize", hdrSize,
+				"payloadSize", payloadSize,
+				"paddingSize", paddingSize,
+			)
 		}
 
 		if extSequenceNumber < r.extStartSN {
@@ -341,7 +353,19 @@ func (r *RTPStatsSender) Update(
 		}
 	} else { // in-order
 		if gapSN >= cNumSequenceNumbers {
-			r.logger.Warnw("large sequence number gap", nil, "prev", r.extHighestSN, "curr", extSequenceNumber, "gap", gapSN)
+			r.logger.Warnw(
+				"large sequence number gap", nil,
+				"prev", r.extHighestSN,
+				"curr", extSequenceNumber,
+				"gap", gapSN,
+				"packetTime", packetTime.String(),
+				"sequenceNumber", extSequenceNumber,
+				"timestamp", extTimestamp,
+				"marker", marker,
+				"hdrSize", hdrSize,
+				"payloadSize", payloadSize,
+				"paddingSize", paddingSize,
+			)
 		}
 
 		// update gap histogram
@@ -438,6 +462,7 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 		}
 	}
 
+	// This is 24-bit max in the protocol. So, technically doesn't need extended type. But, done for consistency.
 	packetsLostFromRR := r.packetsLostFromRR&0xFFFF_FFFF_0000_0000 + uint64(rr.TotalLost)
 	if (rr.TotalLost-r.lastRR.TotalLost) < (1<<31) && rr.TotalLost < r.lastRR.TotalLost {
 		packetsLostFromRR += (1 << 32)
@@ -512,11 +537,11 @@ func (r *RTPStatsSender) LastReceiverReportTime() time.Time {
 	return r.lastRRTime
 }
 
-func (r *RTPStatsSender) MaybeAdjustFirstPacketTime(ets uint64) {
+func (r *RTPStatsSender) MaybeAdjustFirstPacketTime(ts uint32) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	r.maybeAdjustFirstPacketTime(ets, r.extStartTS)
+	r.maybeAdjustFirstPacketTime(ts, uint32(r.extStartTS))
 }
 
 func (r *RTPStatsSender) GetExpectedRTPTimestamp(at time.Time) (expectedTSExt uint64, err error) {
