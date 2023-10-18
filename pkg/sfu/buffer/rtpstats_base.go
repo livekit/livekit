@@ -32,7 +32,7 @@ const (
 	cFirstSnapshotID     = 1
 
 	cFirstPacketTimeAdjustWindow    = 2 * time.Minute
-	cFirstPacketTimeAdjustThreshold = 5 * time.Second
+	cFirstPacketTimeAdjustThreshold = 5 * time.Minute
 )
 
 // -------------------------------------------------------
@@ -109,10 +109,7 @@ type RTCPSenderReportData struct {
 	RTPTimestamp    uint32
 	RTPTimestampExt uint64
 	NTPTimestamp    mediatransportutil.NtpTime
-	PacketCount     uint32
-	// RAJA-REMOVE PacketCountExt   uint64
-	PaddingOnlyDrops uint64
-	At               time.Time
+	At              time.Time
 }
 
 type RTPStatsParams struct {
@@ -456,7 +453,7 @@ func (r *rtpStatsBase) GetRtt() uint32 {
 	return r.rtt
 }
 
-func (r *rtpStatsBase) maybeAdjustFirstPacketTime(ets uint64, extStartTS uint64) {
+func (r *rtpStatsBase) maybeAdjustFirstPacketTime(ts uint32, startTS uint32) {
 	if time.Since(r.startTime) > cFirstPacketTimeAdjustWindow {
 		return
 	}
@@ -467,7 +464,7 @@ func (r *rtpStatsBase) maybeAdjustFirstPacketTime(ets uint64, extStartTS uint64)
 	// abnormal delay (maybe due to pacing or maybe due to queuing
 	// in some network element along the way), push back first time
 	// to an earlier instance.
-	samplesDiff := int64(ets - extStartTS)
+	samplesDiff := int32(ts - startTS)
 	if samplesDiff < 0 {
 		// out-of-order, skip
 		return
@@ -484,9 +481,9 @@ func (r *rtpStatsBase) maybeAdjustFirstPacketTime(ets uint64, extStartTS uint64)
 			"nowTime", now.String(),
 			"before", r.firstTime.String(),
 			"after", firstTime.String(),
-			"adjustment", r.firstTime.Sub(firstTime),
-			"extNowTS", ets,
-			"extStartTS", extStartTS,
+			"adjustment", r.firstTime.Sub(firstTime).String(),
+			"nowTS", ts,
+			"startTS", startTS,
 		)
 		if r.firstTime.Sub(firstTime) > cFirstPacketTimeAdjustThreshold {
 			r.logger.Infow("first packet time adjustment too big, ignoring",
@@ -494,9 +491,9 @@ func (r *rtpStatsBase) maybeAdjustFirstPacketTime(ets uint64, extStartTS uint64)
 				"nowTime", now.String(),
 				"before", r.firstTime.String(),
 				"after", firstTime.String(),
-				"adjustment", r.firstTime.Sub(firstTime),
-				"extNowTS", ets,
-				"extStartTS", extStartTS,
+				"adjustment", r.firstTime.Sub(firstTime).String(),
+				"nowTS", ts,
+				"startTS", startTS,
 			)
 		} else {
 			r.firstTime = firstTime
@@ -537,7 +534,7 @@ func (r *rtpStatsBase) deltaInfo(snapshotID uint32, extStartSN uint64, extHighes
 			"packetsExpected", packetsExpected,
 			"startTime", startTime,
 			"endTime", endTime,
-			"duration", endTime.Sub(startTime),
+			"duration", endTime.Sub(startTime).String(),
 		)
 		return nil
 	}

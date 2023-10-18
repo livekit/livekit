@@ -84,8 +84,8 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 	if err != nil {
 		return nil, err
 	}
-	sink.Close()
-	source.Close()
+	defer sink.Close()
+	defer source.Close()
 
 	// ensure it's created correctly
 	err = s.confirmExecution(func() error {
