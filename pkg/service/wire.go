@@ -58,6 +58,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		telemetry.NewTelemetryService,
 		getMessageBus,
 		NewIOInfoService,
+		NewIOClient,
 		rpc.NewEgressClient,
 		getEgressStore,
 		NewEgressLauncher,
