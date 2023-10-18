@@ -1856,7 +1856,7 @@ func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
 
 func (d *DownTrack) HandleRTCPSenderReportData(_payloadType webrtc.PayloadType, layer int32, srData *buffer.RTCPSenderReportData) error {
 	if layer == d.forwarder.GetReferenceLayerSpatial() && srData != nil {
-		d.rtpStats.MaybeAdjustFirstPacketTime(srData.RTPTimestampExt + d.forwarder.GetReferenceTimestampOffset())
+		d.rtpStats.MaybeAdjustFirstPacketTime(srData.RTPTimestamp + uint32(d.forwarder.GetReferenceTimestampOffset()))
 	}
 	return nil
 }
