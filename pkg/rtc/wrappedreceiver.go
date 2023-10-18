@@ -324,9 +324,9 @@ func (d *DummyReceiver) GetCalculatedClockRate(layer int32) uint32 {
 	return 0
 }
 
-func (d *DummyReceiver) GetReferenceLayerRTPTimestamp(ets uint64, layer int32, referenceLayer int32) (uint64, error) {
+func (d *DummyReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error) {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
-		return r.GetReferenceLayerRTPTimestamp(ets, layer, referenceLayer)
+		return r.GetReferenceLayerRTPTimestamp(ts, layer, referenceLayer)
 	}
 	return 0, errors.New("receiver not available")
 }
