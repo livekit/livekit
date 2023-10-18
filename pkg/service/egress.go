@@ -324,10 +324,5 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 		}
 	}
 
-	// TODO: remove
-	go func() {
-		_, _ = s.io.UpdateEgress(ctx, info)
-	}()
-
 	return info, nil
 }
