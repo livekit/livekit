@@ -381,14 +381,16 @@ func (r *RTPStatsSender) Update(
 			// update only on first packet as same timestamp could be in multiple packets.
 			// NOTE: this may not be the first packet with this time stamp if there is packet loss.
 			if payloadSize == 0 {
-				r.logger.Infow(
-					"updating highest time on padding packet",
+				r.logger.Errorw(
+					"updating highest time on padding packet", nil,
 					"extSequenceNumber", extSequenceNumber,
 					"extHighestSN", r.extHighestSN,
 					"extTimestamp", extTimestamp,
 					"extHighestTS", r.extHighestTS,
 					"highestTime", r.highestTime.String(),
 					"packetTime", packetTime.String(),
+					"hdrSize", hdrSize,
+					"paddingSize", paddingSize,
 				)
 			}
 			r.highestTime = packetTime
