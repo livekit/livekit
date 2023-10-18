@@ -282,7 +282,19 @@ func (r *RTPStatsSender) Update(
 			return
 		}
 		if -gapSN >= cNumSequenceNumbers {
-			r.logger.Warnw("large sequence number gap negative", nil, "prev", r.extHighestSN, "curr", extSequenceNumber, "gap", gapSN)
+			r.logger.Warnw(
+				"large sequence number gap negative", nil,
+				"prev", r.extHighestSN,
+				"curr", extSequenceNumber,
+				"gap", gapSN,
+				"packetTime", packetTime.String(),
+				"sequenceNumber", extSequenceNumber,
+				"timestamp", extTimestamp,
+				"marker", marker,
+				"hdrSize", hdrSize,
+				"payloadSize", payloadSize,
+				"paddingSize", paddingSize,
+			)
 		}
 
 		if extSequenceNumber < r.extStartSN {
@@ -341,7 +353,19 @@ func (r *RTPStatsSender) Update(
 		}
 	} else { // in-order
 		if gapSN >= cNumSequenceNumbers {
-			r.logger.Warnw("large sequence number gap", nil, "prev", r.extHighestSN, "curr", extSequenceNumber, "gap", gapSN)
+			r.logger.Warnw(
+				"large sequence number gap", nil,
+				"prev", r.extHighestSN,
+				"curr", extSequenceNumber,
+				"gap", gapSN,
+				"packetTime", packetTime.String(),
+				"sequenceNumber", extSequenceNumber,
+				"timestamp", extTimestamp,
+				"marker", marker,
+				"hdrSize", hdrSize,
+				"payloadSize", payloadSize,
+				"paddingSize", paddingSize,
+			)
 		}
 
 		// update gap histogram
@@ -416,9 +440,9 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 	if !r.lastRRTime.IsZero() && r.extHighestSNFromRR > extHighestSNFromRR {
 		r.logger.Debugw(
 			fmt.Sprintf("receiver report potentially out of order, highestSN: existing: %d, received: %d", r.extHighestSNFromRR, extHighestSNFromRR),
-			"lastRRTime", r.lastRRTime,
+			"lastRRTime", r.lastRRTime.String(),
 			"lastRR", r.lastRR,
-			"sinceLastRR", time.Since(r.lastRRTime),
+			"sinceLastRR", time.Since(r.lastRRTime).String(),
 			"receivedRR", rr,
 		)
 		return
@@ -438,6 +462,7 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 		}
 	}
 
+	// This is 24-bit max in the protocol. So, technically doesn't need extended type. But, done for consistency.
 	packetsLostFromRR := r.packetsLostFromRR&0xFFFF_FFFF_0000_0000 + uint64(rr.TotalLost)
 	if (rr.TotalLost-r.lastRR.TotalLost) < (1<<31) && rr.TotalLost < r.lastRR.TotalLost {
 		packetsLostFromRR += (1 << 32)
@@ -482,9 +507,9 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 		if is.packetsNotFound != 0 {
 			r.logger.Warnw(
 				"potential sequence number de-sync", nil,
-				"lastRRTime", r.lastRRTime,
+				"lastRRTime", r.lastRRTime.String(),
 				"lastRR", r.lastRR,
-				"sinceLastRR", time.Since(r.lastRRTime),
+				"sinceLastRR", time.Since(r.lastRRTime).String(),
 				"receivedRR", rr,
 				"extStartSN", r.extStartSN,
 				"extHighestSN", r.extHighestSN,
@@ -512,11 +537,11 @@ func (r *RTPStatsSender) LastReceiverReportTime() time.Time {
 	return r.lastRRTime
 }
 
-func (r *RTPStatsSender) MaybeAdjustFirstPacketTime(ets uint64) {
+func (r *RTPStatsSender) MaybeAdjustFirstPacketTime(ts uint32) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	r.maybeAdjustFirstPacketTime(ets, r.extStartTS)
+	r.maybeAdjustFirstPacketTime(ts, uint32(r.extStartTS))
 }
 
 func (r *RTPStatsSender) GetExpectedRTPTimestamp(at time.Time) (expectedTSExt uint64, err error) {
@@ -581,14 +606,15 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, calculatedClockRate ui
 			"prevTSExt", r.srNewest.RTPTimestampExt,
 			"prevRTP", r.srNewest.RTPTimestamp,
 			"prevNTP", r.srNewest.NTPTimestamp.Time().String(),
+			"extHighestTS", r.extHighestTS,
 			"currTSExt", nowRTPExt,
 			"currRTP", nowRTP,
 			"currNTP", nowNTP.Time().String(),
 			"timeNow", time.Now().String(),
 			"firstTime", r.firstTime.String(),
-			"timeSinceFirst", timeSinceFirst,
+			"timeSinceFirst", timeSinceFirst.String(),
 			"highestTime", r.highestTime.String(),
-			"timeSinceHighest", timeSinceHighest,
+			"timeSinceHighest", timeSinceHighest.String(),
 			"nowRTPExtUsingTime", nowRTPExtUsingTime,
 			"calculatedClockRate", calculatedClockRate,
 			"nowRTPExtUsingRate", nowRTPExtUsingRate,
@@ -646,9 +672,9 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) *RTPDeltaInfo 
 			"startSN", then.extStartSN,
 			"endSN", now.extStartSN,
 			"packetsExpected", packetsExpected,
-			"startTime", startTime,
-			"endTime", endTime,
-			"duration", endTime.Sub(startTime),
+			"startTime", startTime.String(),
+			"endTime", endTime.String(),
+			"duration", endTime.Sub(startTime).String(),
 		)
 		return nil
 	}
