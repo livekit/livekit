@@ -1501,7 +1501,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 	rtpMungerState := f.rtpMunger.GetLast()
 	extLastTS := rtpMungerState.ExtLastTS
 	extExpectedTS := extLastTS
-	extRefTS := extExpectedTS & 0xFFFF_FFFF_0000_0000
+	extRefTS := extExpectedTS
 	switchingAt := time.Now()
 	if f.getReferenceLayerRTPTimestamp != nil {
 		ts, err := f.getReferenceLayerRTPTimestamp(extPkt.Packet.Timestamp, layer, f.referenceLayerSpatial)
@@ -1514,7 +1514,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			return err
 		}
 
-		extRefTS += uint64(ts)
+		extRefTS = (extRefTS & 0xFFFF_FFFF_0000_0000) + uint64(ts)
 
 		expectedTS32 := uint32(extExpectedTS)
 		if (ts-expectedTS32) < 1<<31 && ts < expectedTS32 {
