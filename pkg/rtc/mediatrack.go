@@ -228,7 +228,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			case *rtcp.SourceDescription:
 			// do nothing for now
 			case *rtcp.SenderReport:
-				buff.SetSenderReportData(pkt.RTPTime, pkt.NTPTime, pkt.PacketCount)
+				buff.SetSenderReportData(pkt.RTPTime, pkt.NTPTime)
 			}
 		}
 	})
