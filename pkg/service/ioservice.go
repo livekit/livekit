@@ -33,7 +33,7 @@ type IOInfoService struct {
 	es        EgressStore
 	is        IngressStore
 	telemetry telemetry.TelemetryService
-	
+
 	shutdown chan struct{}
 }
 
@@ -76,6 +76,11 @@ func (s *IOInfoService) Start() error {
 }
 
 func (s *IOInfoService) CreateEgress(ctx context.Context, info *livekit.EgressInfo) (*emptypb.Empty, error) {
+	// check if egress already exists to avoid duplicate EgressStarted event
+	if _, err := s.es.LoadEgress(ctx, info.EgressId); err == nil {
+		return &emptypb.Empty{}, nil
+	}
+
 	err := s.es.StoreEgress(ctx, info)
 	if err != nil {
 		logger.Errorw("could not update egress", err)
@@ -125,6 +130,7 @@ func (s *IOInfoService) ListEgress(ctx context.Context, req *livekit.ListEgressR
 	if req.EgressId != "" {
 		info, err := s.es.LoadEgress(ctx, req.EgressId)
 		if err != nil {
+			logger.Errorw("failed to load egress", err)
 			return nil, err
 		}
 
@@ -135,6 +141,7 @@ func (s *IOInfoService) ListEgress(ctx context.Context, req *livekit.ListEgressR
 		var err error
 		items, err = s.es.ListEgress(ctx, livekit.RoomName(req.RoomName), req.Active)
 		if err != nil {
+			logger.Errorw("failed to list egress", err)
 			return nil, err
 		}
 	}
