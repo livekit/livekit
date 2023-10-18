@@ -220,7 +220,7 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 
 		return &TranslationParamsRTP{
 			snOrdering:        SequenceNumberOrderingOutOfOrder,
-			extSequenceNumber: extPkt.ExtSequenceNumber - snOffset,
+			extSequenceNumber: extSequenceNumber,
 			extTimestamp:      extPkt.ExtTimestamp - r.tsOffset,
 		}, nil
 	}
