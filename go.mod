@@ -19,7 +19,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20231017082622-43f077b4e60e
-	github.com/livekit/protocol v1.8.0
+	github.com/livekit/protocol v1.8.1-0.20231018194636-fac7f187fc16
 	github.com/livekit/psrpc v0.3.3
 	github.com/mackerelio/go-osstat v0.2.4
 	github.com/magefile/mage v1.15.0
@@ -28,7 +28,7 @@ require (
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/pion/dtls/v2 v2.2.7
 	github.com/pion/ice/v2 v2.3.11
-	github.com/pion/interceptor v0.1.23
+	github.com/pion/interceptor v0.1.24
 	github.com/pion/rtcp v1.2.10
 	github.com/pion/rtp v1.8.2
 	github.com/pion/sctp v1.8.9
@@ -72,7 +72,7 @@ require (
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/josharian/native v1.1.0 // indirect
 	github.com/klauspost/compress v1.17.0 // indirect
-	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
+	github.com/klauspost/cpuid/v2 v2.2.5 // indirect
 	github.com/lithammer/shortuuid/v4 v4.0.0 // indirect
 	github.com/mattn/go-runewidth v0.0.9 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
@@ -94,8 +94,8 @@ require (
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
-	go.uber.org/multierr v1.10.0 // indirect
-	go.uber.org/zap v1.25.0 // indirect
+	go.uber.org/multierr v1.11.0 // indirect
+	go.uber.org/zap v1.26.0 // indirect
 	golang.org/x/crypto v0.14.0 // indirect
 	golang.org/x/mod v0.13.0 // indirect
 	golang.org/x/net v0.17.0 // indirect
@@ -103,6 +103,6 @@ require (
 	golang.org/x/text v0.13.0 // indirect
 	golang.org/x/tools v0.14.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20231012201019-e917dd12ba7a // indirect
-	google.golang.org/grpc v1.58.3 // indirect
+	google.golang.org/grpc v1.59.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )

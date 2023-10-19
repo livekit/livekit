@@ -28,11 +28,13 @@ import (
 )
 
 type IOInfoService struct {
-	ioServer  rpc.IOInfoServer
+	ioServer rpc.IOInfoServer
+
 	es        EgressStore
 	is        IngressStore
 	telemetry telemetry.TelemetryService
-	shutdown  chan struct{}
+
+	shutdown chan struct{}
 }
 
 func NewIOInfoService(
@@ -73,33 +75,78 @@ func (s *IOInfoService) Start() error {
 	return nil
 }
 
-func (s *IOInfoService) UpdateEgressInfo(ctx context.Context, info *livekit.EgressInfo) (*emptypb.Empty, error) {
+func (s *IOInfoService) CreateEgress(ctx context.Context, info *livekit.EgressInfo) (*emptypb.Empty, error) {
+	// check if egress already exists to avoid duplicate EgressStarted event
+	if _, err := s.es.LoadEgress(ctx, info.EgressId); err == nil {
+		return &emptypb.Empty{}, nil
+	}
+
+	err := s.es.StoreEgress(ctx, info)
+	if err != nil {
+		logger.Errorw("could not update egress", err)
+		return nil, err
+	}
+
+	s.telemetry.EgressStarted(ctx, info)
+
+	return &emptypb.Empty{}, nil
+}
+
+func (s *IOInfoService) UpdateEgress(ctx context.Context, info *livekit.EgressInfo) (*emptypb.Empty, error) {
 	err := s.es.UpdateEgress(ctx, info)
 
 	switch info.Status {
-	case livekit.EgressStatus_EGRESS_ACTIVE:
+	case livekit.EgressStatus_EGRESS_ACTIVE,
+		livekit.EgressStatus_EGRESS_ENDING:
 		s.telemetry.EgressUpdated(ctx, info)
 
 	case livekit.EgressStatus_EGRESS_COMPLETE,
 		livekit.EgressStatus_EGRESS_FAILED,
 		livekit.EgressStatus_EGRESS_ABORTED,
 		livekit.EgressStatus_EGRESS_LIMIT_REACHED:
-
-		// log results
-		if info.Error != "" {
-			logger.Errorw("egress failed", errors.New(info.Error), "egressID", info.EgressId)
-		} else {
-			logger.Infow("egress ended", "egressID", info.EgressId)
-		}
-
 		s.telemetry.EgressEnded(ctx, info)
 	}
+
 	if err != nil {
 		logger.Errorw("could not update egress", err)
 		return nil, err
 	}
 
 	return &emptypb.Empty{}, nil
+}
+
+func (s *IOInfoService) GetEgress(ctx context.Context, req *rpc.GetEgressRequest) (*livekit.EgressInfo, error) {
+	info, err := s.es.LoadEgress(ctx, req.EgressId)
+	if err != nil {
+		logger.Errorw("failed to load egress", err)
+		return nil, err
+	}
+
+	return info, nil
+}
+
+func (s *IOInfoService) ListEgress(ctx context.Context, req *livekit.ListEgressRequest) (*livekit.ListEgressResponse, error) {
+	var items []*livekit.EgressInfo
+	if req.EgressId != "" {
+		info, err := s.es.LoadEgress(ctx, req.EgressId)
+		if err != nil {
+			logger.Errorw("failed to load egress", err)
+			return nil, err
+		}
+
+		if !req.Active || int32(info.Status) < int32(livekit.EgressStatus_EGRESS_COMPLETE) {
+			items = []*livekit.EgressInfo{info}
+		}
+	} else {
+		var err error
+		items, err = s.es.ListEgress(ctx, livekit.RoomName(req.RoomName), req.Active)
+		if err != nil {
+			logger.Errorw("failed to list egress", err)
+			return nil, err
+		}
+	}
+
+	return &livekit.ListEgressResponse{Items: items}, nil
 }
 
 func (s *IOInfoService) GetIngressInfo(ctx context.Context, req *rpc.GetIngressInfoRequest) (*rpc.GetIngressInfoResponse, error) {
@@ -128,7 +175,7 @@ func (s *IOInfoService) UpdateIngressState(ctx context.Context, req *rpc.UpdateI
 		return nil, err
 	}
 
-	if err := s.is.UpdateIngressState(ctx, req.IngressId, req.State); err != nil {
+	if err = s.is.UpdateIngressState(ctx, req.IngressId, req.State); err != nil {
 		logger.Errorw("could not update ingress", err)
 		return nil, err
 	}
@@ -175,4 +222,34 @@ func (s *IOInfoService) Stop() {
 	if s.ioServer != nil {
 		s.ioServer.Shutdown()
 	}
+}
+
+// deprecated
+func (s *IOInfoService) UpdateEgressInfo(ctx context.Context, info *livekit.EgressInfo) (*emptypb.Empty, error) {
+	err := s.es.UpdateEgress(ctx, info)
+
+	switch info.Status {
+	case livekit.EgressStatus_EGRESS_ACTIVE:
+		s.telemetry.EgressUpdated(ctx, info)
+
+	case livekit.EgressStatus_EGRESS_COMPLETE,
+		livekit.EgressStatus_EGRESS_FAILED,
+		livekit.EgressStatus_EGRESS_ABORTED,
+		livekit.EgressStatus_EGRESS_LIMIT_REACHED:
+
+		// log results
+		if info.Error != "" {
+			logger.Errorw("egress failed", errors.New(info.Error), "egressID", info.EgressId)
+		} else {
+			logger.Infow("egress ended", "egressID", info.EgressId)
+		}
+
+		s.telemetry.EgressEnded(ctx, info)
+	}
+	if err != nil {
+		logger.Errorw("could not update egress", err)
+		return nil, err
+	}
+
+	return &emptypb.Empty{}, nil
 }
