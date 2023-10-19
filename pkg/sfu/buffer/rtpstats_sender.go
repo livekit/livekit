@@ -327,17 +327,6 @@ func (r *RTPStatsSender) Update(
 			r.extStartSN = extSequenceNumber
 		}
 
-		if extTimestamp < r.extStartTS {
-			r.logger.Infow(
-				"adjusting start timestamp",
-				"snBefore", r.extStartSN,
-				"snAfter", extSequenceNumber,
-				"tsBefore", r.extStartTS,
-				"tsAfter", extTimestamp,
-			)
-			r.extStartTS = extTimestamp
-		}
-
 		if gapSN != 0 {
 			r.packetsOutOfOrder++
 		}
@@ -377,12 +366,27 @@ func (r *RTPStatsSender) Update(
 
 		r.setSnInfo(extSequenceNumber, r.extHighestSN, uint16(pktSize), uint8(hdrSize), uint16(payloadSize), marker, false)
 
-		if extTimestamp != r.extHighestTS {
-			// update only on first packet as same timestamp could be in multiple packets.
-			// NOTE: this may not be the first packet with this time stamp if there is packet loss.
+		r.extHighestSN = extSequenceNumber
+	}
+
+	if extTimestamp < r.extStartTS {
+		r.logger.Infow(
+			"adjusting start timestamp",
+			"snBefore", r.extStartSN,
+			"snAfter", extSequenceNumber,
+			"tsBefore", r.extStartTS,
+			"tsAfter", extTimestamp,
+		)
+		r.extStartTS = extTimestamp
+	}
+
+	if extTimestamp > r.extHighestTS {
+		// update only on first packet as same timestamp could be in multiple packets.
+		// NOTE: this may not be the first packet with this time stamp if there is packet loss.
+		if payloadSize > 0 {
+			// skip updating on padding only packets as they could re-use an old timestamp
 			r.highestTime = packetTime
 		}
-		r.extHighestSN = extSequenceNumber
 		r.extHighestTS = extTimestamp
 	}
 
