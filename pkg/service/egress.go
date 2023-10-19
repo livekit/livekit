@@ -25,6 +25,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 )
@@ -207,10 +208,10 @@ func (s *egressLauncher) StartEgressWithClusterId(ctx context.Context, clusterId
 		return nil, err
 	}
 
-	// TODO: remove
-	go func() {
-		_, _ = s.io.CreateEgress(ctx, info)
-	}()
+	_, err = s.io.CreateEgress(ctx, info)
+	if err != nil {
+		logger.Errorw("failed to create egress", err)
+	}
 
 	return info, nil
 }
