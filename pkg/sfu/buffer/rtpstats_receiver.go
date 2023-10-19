@@ -16,6 +16,7 @@ package buffer
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/pion/rtcp"
@@ -287,12 +288,8 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 	if r.srNewest != nil && r.srNewest.NTPTimestamp > srData.NTPTimestamp {
 		r.logger.Infow(
 			"received anachronous sender report",
-			"currentNTP", srData.NTPTimestamp.Time().String(),
-			"currentRTP", srData.RTPTimestamp,
-			"currentAt", srData.At.String(),
-			"lastNTP", r.srNewest.NTPTimestamp.Time().String(),
-			"lastRTP", r.srNewest.RTPTimestamp,
-			"lastAt", r.srNewest.At.String(),
+			"last", r.srNewest.ToString(),
+			"current", srData.ToString(),
 		)
 		return
 	}
@@ -310,6 +307,26 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 
 	r.maybeAdjustFirstPacketTime(srDataCopy.RTPTimestamp, r.timestamp.GetStart())
 
+	if r.srNewest != nil {
+		timeSinceLast := srData.NTPTimestamp.Time().Sub(r.srNewest.NTPTimestamp.Time()).Seconds()
+		rtpDiffSinceLast := srDataCopy.RTPTimestampExt - r.srNewest.RTPTimestampExt
+		calculatedClockRateFromLast := float64(rtpDiffSinceLast) / timeSinceLast
+
+		timeSinceFirst := srData.NTPTimestamp.Time().Sub(r.srFirst.NTPTimestamp.Time()).Seconds()
+		rtpDiffSinceFirst := srDataCopy.RTPTimestampExt - r.srFirst.RTPTimestampExt
+		calculatedClockRateFromFirst := float64(rtpDiffSinceFirst) / timeSinceFirst
+		if math.Abs(float64(r.params.ClockRate)-calculatedClockRateFromLast) > 0.2*float64(r.params.ClockRate) || math.Abs(float64(r.params.ClockRate)-calculatedClockRateFromFirst) > 0.2*float64(r.params.ClockRate) {
+			r.logger.Infow(
+				"clock rate skew",
+				"first", r.srFirst.ToString(),
+				"last", r.srNewest.ToString(),
+				"current", srDataCopy.ToString(),
+				"calculatedFirst", calculatedClockRateFromFirst,
+				"calculatedLast", calculatedClockRateFromLast,
+			)
+		}
+	}
+
 	if r.srNewest != nil && srDataCopy.RTPTimestampExt < r.srNewest.RTPTimestampExt {
 		// This can happen when a track is replaced with a null and then restored -
 		// i. e. muting replacing with null and unmute restoring the original track.
@@ -317,14 +334,8 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 		// Resetting will ensure sample rate calculations do not go haywire due to negative time.
 		r.logger.Infow(
 			"received sender report, out-of-order, resetting",
-			"prevTSExt", r.srNewest.RTPTimestampExt,
-			"prevRTP", r.srNewest.RTPTimestamp,
-			"prevNTP", r.srNewest.NTPTimestamp.Time().String(),
-			"prevAt", r.srNewest.At.String(),
-			"currTSExt", srDataCopy.RTPTimestampExt,
-			"currRTP", srDataCopy.RTPTimestamp,
-			"currNTP", srDataCopy.NTPTimestamp.Time().String(),
-			"currentAt", srDataCopy.At.String(),
+			"last", r.srNewest.ToString(),
+			"current", srDataCopy.ToString(),
 		)
 		r.srFirst = nil
 	}
