@@ -105,12 +105,24 @@ type snapshot struct {
 	maxJitter float64
 }
 
+// ------------------------------------------------------------------
+
 type RTCPSenderReportData struct {
 	RTPTimestamp    uint32
 	RTPTimestampExt uint64
 	NTPTimestamp    mediatransportutil.NtpTime
 	At              time.Time
 }
+
+func (r *RTCPSenderReportData) ToString() string {
+	if r == nil {
+		return ""
+	}
+
+	return fmt.Sprintf("ntp: %s, rtp: %d, extRtp: %d, at: %s", r.NTPTimestamp.Time().String(), r.RTPTimestamp, r.RTPTimestampExt, r.At.String())
+}
+
+// ------------------------------------------------------------------
 
 type RTPStatsParams struct {
 	ClockRate uint32
