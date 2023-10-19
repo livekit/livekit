@@ -39,6 +39,7 @@ import (
 const (
 	FlagPauseOnDowngrade  = true
 	FlagFilterRTX         = false
+	FlagFilterRTXLayers   = true
 	TransitionCostSpatial = 10
 
 	ResumeBehindThresholdSeconds      = float64(0.2)   // 200ms
@@ -1399,15 +1400,14 @@ func (f *Forwarder) CheckSync() (locked bool, layer int32) {
 }
 
 func (f *Forwarder) FilterRTX(nacks []uint16) (filtered []uint16, disallowedLayers [buffer.DefaultMaxLayerSpatial + 1]bool) {
-	if !FlagFilterRTX {
-		filtered = nacks
-		return
-	}
-
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
-	filtered = f.rtpMunger.FilterRTX(nacks)
+	if !FlagFilterRTX {
+		filtered = nacks
+	} else {
+		filtered = f.rtpMunger.FilterRTX(nacks)
+	}
 
 	//
 	// Curb RTX when deficient for two cases
@@ -1417,14 +1417,15 @@ func (f *Forwarder) FilterRTX(nacks []uint16) (filtered []uint16, disallowedLaye
 	//
 	// Without the curb, when congestion hits, RTX rate could be so high that it further congests the channel.
 	//
-	currentLayer := f.vls.GetCurrent()
-	targetLayer := f.vls.GetTarget()
-	for layer := int32(0); layer < buffer.DefaultMaxLayerSpatial+1; layer++ {
-		if f.isDeficientLocked() && (targetLayer.Spatial < currentLayer.Spatial || layer > currentLayer.Spatial) {
-			disallowedLayers[layer] = true
+	if FlagFilterRTXLayers {
+		currentLayer := f.vls.GetCurrent()
+		targetLayer := f.vls.GetTarget()
+		for layer := int32(0); layer < buffer.DefaultMaxLayerSpatial+1; layer++ {
+			if f.isDeficientLocked() && (targetLayer.Spatial < currentLayer.Spatial || layer > currentLayer.Spatial) {
+				disallowedLayers[layer] = true
+			}
 		}
 	}
-
 	return
 }
 
