@@ -688,17 +688,22 @@ func (d *DownTrack) writeEOF(esn uint64, ets uint64) {
 		CSRC:           []uint32{},
 	}
 
+	d.sendingPacket(
+		&hdr,
+		0,
+		&sendPacketMetadata{
+			packetTime:        time.Now(),
+			extSequenceNumber: esn,
+			extTimestamp:      ets,
+			isPadding:         true,
+		},
+	)
+
 	d.pacer.Enqueue(pacer.Packet{
 		Header:             &hdr,
 		AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 		TransportWideExtID: uint8(d.transportWideExtID),
 		WriteStream:        d.writeStream,
-		Metadata: sendPacketMetadata{
-			extSequenceNumber: esn,
-			extTimestamp:      ets,
-			isPadding:         true,
-		},
-		OnSent: d.packetSent,
 	})
 }
 
