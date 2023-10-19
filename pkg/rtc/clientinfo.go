@@ -64,7 +64,7 @@ func (c ClientInfo) SupportsICETCP() bool {
 	if c.ClientInfo == nil {
 		return false
 	}
-	if c.ClientInfo.Sdk == livekit.ClientInfo_GO {
+	if c.isGo() {
 		// Go does not support active TCP
 		return false
 	}

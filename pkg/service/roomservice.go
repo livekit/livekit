@@ -33,7 +33,7 @@ import (
 	"github.com/livekit/protocol/rpc"
 )
 
-// A rooms service that supports a single node
+// RoomService handles room related APIs
 type RoomService struct {
 	roomConf       config.RoomConfig
 	apiConf        config.APIConfig

@@ -223,6 +223,8 @@ type RoomConfig struct {
 	MaxMetadataSize    uint32             `yaml:"max_metadata_size,omitempty"`
 	PlayoutDelay       PlayoutDelayConfig `yaml:"playout_delay,omitempty"`
 	SyncStreams        bool               `yaml:"sync_streams,omitempty"`
+	// amount of time to wait after a transport failure before considering a participant to be disconnected
+	ParticipantDisconnectTimeout uint32 `yaml:"participant_disconnect_timeout,omitempty"`
 }
 
 type CodecSpec struct {

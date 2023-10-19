@@ -410,6 +410,7 @@ func (r *RoomManager) StartSession(
 		SubscriptionLimitVideo:       r.config.Limit.SubscriptionLimitVideo,
 		PlayoutDelay:                 roomInternal.GetPlayoutDelay(),
 		SyncStreams:                  roomInternal.GetSyncStreams(),
+		DisconnectTimeout:            time.Duration(r.config.Room.ParticipantDisconnectTimeout) * time.Second,
 	})
 	if err != nil {
 		return err

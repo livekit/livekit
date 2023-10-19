@@ -56,8 +56,8 @@ const (
 	sdBatchSize       = 30
 	rttUpdateInterval = 5 * time.Second
 
-	disconnectCleanupDuration = 5 * time.Second
-	migrationWaitDuration     = 3 * time.Second
+	defaultParticipantDisconnectTimeout = 5 * time.Second
+	migrationWaitDuration               = 3 * time.Second
 
 	PingIntervalSeconds = 5
 	PingTimeoutSeconds  = 15
@@ -126,6 +126,7 @@ type ParticipantParams struct {
 	SubscriptionLimitVideo       int32
 	PlayoutDelay                 *livekit.PlayoutDelay
 	SyncStreams                  bool
+	DisconnectTimeout            time.Duration
 }
 
 type ParticipantImpl struct {
@@ -1407,7 +1408,7 @@ func (p *ParticipantImpl) setupDisconnectTimer() {
 	p.clearDisconnectTimer()
 
 	p.lock.Lock()
-	p.disconnectTimer = time.AfterFunc(disconnectCleanupDuration, func() {
+	p.disconnectTimer = time.AfterFunc(p.getDisconnectTimeout(), func() {
 		p.clearDisconnectTimer()
 
 		if p.IsClosed() || p.IsDisconnected() {
@@ -2308,4 +2309,12 @@ func (p *ParticipantImpl) SendDataPacket(dp *livekit.DataPacket, data []byte) er
 		p.dataChannelStats.AddBytes(uint64(len(data)), true)
 	}
 	return err
+}
+
+func (p *ParticipantImpl) getDisconnectTimeout() time.Duration {
+	timeout := defaultParticipantDisconnectTimeout
+	if p.params.DisconnectTimeout > 0 {
+		timeout = p.params.DisconnectTimeout
+	}
+	return timeout
 }
