@@ -315,12 +315,14 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 		timeSinceFirst := srData.NTPTimestamp.Time().Sub(r.srFirst.NTPTimestamp.Time()).Seconds()
 		rtpDiffSinceFirst := srDataCopy.RTPTimestampExt - r.srFirst.RTPTimestampExt
 		calculatedClockRateFromFirst := float64(rtpDiffSinceFirst) / timeSinceFirst
-		if math.Abs(float64(r.params.ClockRate)-calculatedClockRateFromLast) > 0.9*float64(r.params.ClockRate) || math.Abs(float64(r.params.ClockRate)-calculatedClockRateFromFirst) > 0.9*float64(r.params.ClockRate) {
+		if math.Abs(float64(r.params.ClockRate)-calculatedClockRateFromLast) > 0.2*float64(r.params.ClockRate) || math.Abs(float64(r.params.ClockRate)-calculatedClockRateFromFirst) > 0.2*float64(r.params.ClockRate) {
 			r.logger.Infow(
 				"clock rate skew",
 				"first", r.srFirst.ToString(),
 				"last", r.srNewest.ToString(),
 				"current", srDataCopy.ToString(),
+				"calculatedFirst", calculatedClockRateFromFirst,
+				"calculatedLast", calculatedClockRateFromLast,
 			)
 		}
 	}
