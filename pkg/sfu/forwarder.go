@@ -38,7 +38,7 @@ import (
 // Forwarder
 const (
 	FlagPauseOnDowngrade  = true
-	FlagFilterRTX         = true
+	FlagFilterRTX         = false
 	TransitionCostSpatial = 10
 
 	ResumeBehindThresholdSeconds      = float64(0.2)   // 200ms
