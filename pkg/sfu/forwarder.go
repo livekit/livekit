@@ -1479,7 +1479,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 	}
 
 	logTransition := func(message string, extExpectedTS, extRefTS, extLastTS uint64, diffSeconds float64) {
-		f.logger.Debugw(
+		f.logger.Infow(
 			message,
 			"layer", layer,
 			"extExpectedTS", extExpectedTS,

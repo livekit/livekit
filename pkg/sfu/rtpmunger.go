@@ -179,6 +179,9 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 
 		extMungedSN := extPkt.ExtSequenceNumber - r.snOffset
 		extMungedTS := extPkt.ExtTimestamp - r.tsOffset
+		if extMungedTS > (r.extLastTS + 48000) {
+			r.logger.Infow("large jump in ts", "lastTS", r.extLastTS, "incomingTS", extPkt.ExtTimestamp, "mungedTS", extMungedTS, "tsOffset", r.tsOffset) // TODO-REMOVE-AFTER-DEBUG
+		}
 
 		r.extSecondLastSN = r.extLastSN
 		r.extLastSN = extMungedSN
