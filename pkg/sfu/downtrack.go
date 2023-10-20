@@ -743,14 +743,6 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		Pool:               PacketFactory,
 		PoolEntity:         poolEntity,
 	})
-	if d.kind == webrtc.RTPCodecTypeAudio {
-		d.params.Logger.Infow("forwarding debug",
-			"incomingSN", extPkt.ExtSequenceNumber,
-			"outgoingSN", tp.rtp.extSequenceNumber,
-			"incomingTS", extPkt.ExtTimestamp,
-			"outgoingTS", tp.rtp.extTimestamp,
-		) // TODO-REMOVE-AFTER-DEBUG
-	}
 	return nil
 }
 
