@@ -17,6 +17,7 @@ package buffer
 import (
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/pion/rtcp"
@@ -593,6 +594,37 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, calculatedClockRate ui
 		}
 	}
 
+	srData := &RTCPSenderReportData{
+		NTPTimestamp:    nowNTP,
+		RTPTimestamp:    nowRTP,
+		RTPTimestampExt: nowRTPExt,
+		At:              now,
+	}
+	if r.srNewest != nil {
+		timeSinceLastReport := nowNTP.Time().Sub(r.srNewest.NTPTimestamp.Time()).Seconds()
+		rtpDiffSinceLastReport := nowRTPExt - r.srNewest.RTPTimestampExt
+		windowClockRate := float64(rtpDiffSinceLastReport) / timeSinceLastReport
+		if timeSinceLastReport > 0.2 && math.Abs(float64(r.params.ClockRate)-windowClockRate) > 0.2*float64(r.params.ClockRate) {
+			r.logger.Infow(
+				"sending sender report, clock skew",
+				"last", r.srNewest.ToString(),
+				"curr", srData.ToString(),
+				"timeNow", time.Now().String(),
+				"extHighestTS", r.extHighestTS,
+				"highestTime", r.highestTime.String(),
+				"timeSinceHighest", timeSinceHighest.String(),
+				"firstTime", r.firstTime.String(),
+				"timeSinceFirst", timeSinceFirst.String(),
+				"nowRTPExtUsingTime", nowRTPExtUsingTime,
+				"calculatedClockRate", calculatedClockRate,
+				"nowRTPExtUsingRate", nowRTPExtUsingRate,
+				"timeSinceLastReport", timeSinceLastReport,
+				"rtpDiffSinceLastReport", rtpDiffSinceLastReport,
+				"windowClockRate", windowClockRate,
+			)
+		}
+	}
+
 	if r.srNewest != nil && nowRTPExt < r.srNewest.RTPTimestampExt {
 		// If report being generated is behind, use the time difference and
 		// clock rate of codec to produce next report.
@@ -607,18 +639,14 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, calculatedClockRate ui
 		//    That could end up behind the last report's timestamp in extreme cases
 		r.logger.Infow(
 			"sending sender report, out-of-order, repairing",
-			"prevTSExt", r.srNewest.RTPTimestampExt,
-			"prevRTP", r.srNewest.RTPTimestamp,
-			"prevNTP", r.srNewest.NTPTimestamp.Time().String(),
-			"extHighestTS", r.extHighestTS,
-			"currTSExt", nowRTPExt,
-			"currRTP", nowRTP,
-			"currNTP", nowNTP.Time().String(),
+			"last", r.srNewest.ToString(),
+			"curr", srData.ToString(),
 			"timeNow", time.Now().String(),
-			"firstTime", r.firstTime.String(),
-			"timeSinceFirst", timeSinceFirst.String(),
+			"extHighestTS", r.extHighestTS,
 			"highestTime", r.highestTime.String(),
 			"timeSinceHighest", timeSinceHighest.String(),
+			"firstTime", r.firstTime.String(),
+			"timeSinceFirst", timeSinceFirst.String(),
 			"nowRTPExtUsingTime", nowRTPExtUsingTime,
 			"calculatedClockRate", calculatedClockRate,
 			"nowRTPExtUsingRate", nowRTPExtUsingRate,
@@ -628,12 +656,7 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, calculatedClockRate ui
 		nowRTP = uint32(nowRTPExt)
 	}
 
-	r.srNewest = &RTCPSenderReportData{
-		NTPTimestamp:    nowNTP,
-		RTPTimestamp:    nowRTP,
-		RTPTimestampExt: nowRTPExt,
-		At:              now,
-	}
+	r.srNewest = srData
 	if r.srFirst == nil {
 		r.srFirst = r.srNewest
 	}
