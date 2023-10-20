@@ -844,6 +844,7 @@ func (r *RTPStatsSender) setSnInfo(esn uint64, ehsn uint64, pktSize uint16, hdrS
 	snInfo := &r.snInfos[slot]
 	snInfo.pktSize = pktSize
 	snInfo.hdrSize = hdrSize
+	snInfo.flags = 0
 	if marker {
 		snInfo.flags |= snInfoFlagMarker
 	}
