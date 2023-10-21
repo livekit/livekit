@@ -157,6 +157,12 @@ func (r *RTPStatsReceiver) Update(
 		if -gapSN >= cNumSequenceNumbers {
 			r.logger.Warnw(
 				"large sequence number gap negative", nil,
+				"extStartSN", r.sequenceNumber.GetExtendedStart(),
+				"extHighestSN", r.sequenceNumber.GetExtendedHighest(),
+				"extStartTS", r.timestamp.GetExtendedStart(),
+				"extHighestTS", r.timestamp.GetExtendedHighest(),
+				"firstTime", r.firstTime.String(),
+				"highestTime", r.highestTime.String(),
 				"prev", resSN.PreExtendedHighest,
 				"curr", resSN.ExtendedVal,
 				"gap", gapSN,
@@ -223,6 +229,12 @@ func (r *RTPStatsReceiver) Update(
 		if gapSN >= cNumSequenceNumbers {
 			r.logger.Warnw(
 				"large sequence number gap", nil,
+				"extStartSN", r.sequenceNumber.GetExtendedStart(),
+				"extHighestSN", r.sequenceNumber.GetExtendedHighest(),
+				"extStartTS", r.timestamp.GetExtendedStart(),
+				"extHighestTS", r.timestamp.GetExtendedHighest(),
+				"firstTime", r.firstTime.String(),
+				"highestTime", r.highestTime.String(),
 				"prev", resSN.PreExtendedHighest,
 				"curr", resSN.ExtendedVal,
 				"gap", gapSN,
