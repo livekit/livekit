@@ -52,6 +52,9 @@ type RTPStatsReceiver struct {
 	timestamp *utils.WrapAround[uint32, uint64]
 
 	history *protoutils.Bitmap[uint64]
+
+	clockSkewCount               int
+	outOfOrderSsenderReportCount int
 }
 
 func NewRTPStatsReceiver(params RTPStatsParams) *RTPStatsReceiver {
@@ -111,7 +114,7 @@ func (r *RTPStatsReceiver) Update(
 			r.snapshots[i] = r.initSnapshot(r.startTime, r.sequenceNumber.GetExtendedStart())
 		}
 
-		r.logger.Infow(
+		r.logger.Debugw(
 			"rtp receiver stream start",
 			"startTime", r.startTime.String(),
 			"firstTime", r.firstTime.String(),
@@ -318,14 +321,18 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 
 		if (timeSinceLast > 0.2 && math.Abs(float64(r.params.ClockRate)-calculatedClockRateFromLast) > 0.2*float64(r.params.ClockRate)) ||
 			(timeSinceFirst > 0.2 && math.Abs(float64(r.params.ClockRate)-calculatedClockRateFromFirst) > 0.2*float64(r.params.ClockRate)) {
-			r.logger.Infow(
-				"clock rate skew",
-				"first", r.srFirst.ToString(),
-				"last", r.srNewest.ToString(),
-				"current", srDataCopy.ToString(),
-				"calculatedFirst", calculatedClockRateFromFirst,
-				"calculatedLast", calculatedClockRateFromLast,
-			)
+			if r.clockSkewCount%10 == 0 {
+				r.logger.Infow(
+					"clock rate skew",
+					"first", r.srFirst.ToString(),
+					"last", r.srNewest.ToString(),
+					"current", srDataCopy.ToString(),
+					"calculatedFirst", calculatedClockRateFromFirst,
+					"calculatedLast", calculatedClockRateFromLast,
+					"count", r.clockSkewCount,
+				)
+			}
+			r.clockSkewCount++
 		}
 	}
 
@@ -334,11 +341,16 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 		// i. e. muting replacing with null and unmute restoring the original track.
 		// Under such a condition reset the sender reports to start from this point.
 		// Resetting will ensure sample rate calculations do not go haywire due to negative time.
-		r.logger.Infow(
-			"received sender report, out-of-order, resetting",
-			"last", r.srNewest.ToString(),
-			"current", srDataCopy.ToString(),
-		)
+		if r.outOfOrderSsenderReportCount%10 == 0 {
+			r.logger.Infow(
+				"received sender report, out-of-order, resetting",
+				"last", r.srNewest.ToString(),
+				"current", srDataCopy.ToString(),
+				"count", r.outOfOrderSsenderReportCount,
+			)
+		}
+		r.outOfOrderSsenderReportCount++
+
 		r.srFirst = nil
 	}
 
