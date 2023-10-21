@@ -211,9 +211,6 @@ func NewWebRTCReceiver(
 		isRED:     IsRedCodec(track.Codec().MimeType),
 	}
 
-	w.streamTrackerManager = NewStreamTrackerManager(logger, trackInfo, w.isSVC, w.codec.ClockRate, trackersConfig)
-	w.streamTrackerManager.SetListener(w)
-
 	for _, opt := range opts {
 		w = opt(w)
 	}
@@ -236,6 +233,8 @@ func NewWebRTCReceiver(
 	})
 	w.connectionStats.Start(w.trackInfo)
 
+	w.streamTrackerManager = NewStreamTrackerManager(logger, trackInfo, w.isSVC, w.codec.ClockRate, trackersConfig)
+	w.streamTrackerManager.SetListener(w)
 	// SVC-TODO: Handle DD for non-SVC cases???
 	if w.isSVC {
 		for _, ext := range receiver.GetParameters().HeaderExtensions {
