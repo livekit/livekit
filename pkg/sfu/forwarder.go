@@ -1581,14 +1581,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 				extNextTS = extExpectedTS
 			} else if diffSeconds > ResumeBehindHighTresholdSeconds {
 				// could be due to incorrect reference calculation
-				f.logger.Infow(
-					"resume, reference very far behind",
-					"layer", layer,
-					"extExpectedTS", extExpectedTS,
-					"extRefTS", extRefTS,
-					"extLastTS", extLastTS,
-					"diffSeconds", diffSeconds,
-				)
+				logTransition("resume, reference very far behind", extExpectedTS, extRefTS, extLastTS, diffSeconds)
 				extNextTS = extExpectedTS
 			} else {
 				extNextTS = extRefTS

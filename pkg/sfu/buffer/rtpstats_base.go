@@ -539,8 +539,8 @@ func (r *rtpStatsBase) deltaInfo(snapshotID uint32, extStartSN uint64, extHighes
 
 	packetsExpected := now.extStartSN - then.extStartSN
 	if packetsExpected > cNumSequenceNumbers {
-		r.logger.Errorw(
-			"too many packets expected in delta", nil,
+		r.logger.Infow(
+			"too many packets expected in delta",
 			"startSN", then.extStartSN,
 			"endSN", now.extStartSN,
 			"packetsExpected", packetsExpected,
