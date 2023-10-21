@@ -105,12 +105,24 @@ type snapshot struct {
 	maxJitter float64
 }
 
+// ------------------------------------------------------------------
+
 type RTCPSenderReportData struct {
 	RTPTimestamp    uint32
 	RTPTimestampExt uint64
 	NTPTimestamp    mediatransportutil.NtpTime
 	At              time.Time
 }
+
+func (r *RTCPSenderReportData) ToString() string {
+	if r == nil {
+		return ""
+	}
+
+	return fmt.Sprintf("ntp: %s, rtp: %d, extRtp: %d, at: %s", r.NTPTimestamp.Time().String(), r.RTPTimestamp, r.RTPTimestampExt, r.At.String())
+}
+
+// ------------------------------------------------------------------
 
 type RTPStatsParams struct {
 	ClockRate uint32
@@ -527,8 +539,8 @@ func (r *rtpStatsBase) deltaInfo(snapshotID uint32, extStartSN uint64, extHighes
 
 	packetsExpected := now.extStartSN - then.extStartSN
 	if packetsExpected > cNumSequenceNumbers {
-		r.logger.Errorw(
-			"too many packets expected in delta", nil,
+		r.logger.Infow(
+			"too many packets expected in delta",
 			"startSN", then.extStartSN,
 			"endSN", now.extStartSN,
 			"packetsExpected", packetsExpected,

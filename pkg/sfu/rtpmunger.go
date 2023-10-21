@@ -220,7 +220,7 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 			r.logger.Errorw(
 				"unexpected packet ordering", nil,
 				"extIncomingSN", extPkt.ExtSequenceNumber,
-				"extHighestIncominSN", r.extHighestIncomingSN,
+				"extHighestIncomingSN", r.extHighestIncomingSN,
 				"extLastSN", r.extLastSN,
 				"snOffsetIncoming", snOffset,
 				"snOffsetHighest", r.snOffset,

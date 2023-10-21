@@ -16,6 +16,7 @@ package buffer
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/pion/rtcp"
@@ -51,6 +52,9 @@ type RTPStatsReceiver struct {
 	timestamp *utils.WrapAround[uint32, uint64]
 
 	history *protoutils.Bitmap[uint64]
+
+	clockSkewCount               int
+	outOfOrderSsenderReportCount int
 }
 
 func NewRTPStatsReceiver(params RTPStatsParams) *RTPStatsReceiver {
@@ -110,7 +114,7 @@ func (r *RTPStatsReceiver) Update(
 			r.snapshots[i] = r.initSnapshot(r.startTime, r.sequenceNumber.GetExtendedStart())
 		}
 
-		r.logger.Infow(
+		r.logger.Debugw(
 			"rtp receiver stream start",
 			"startTime", r.startTime.String(),
 			"firstTime", r.firstTime.String(),
@@ -153,6 +157,12 @@ func (r *RTPStatsReceiver) Update(
 		if -gapSN >= cNumSequenceNumbers {
 			r.logger.Warnw(
 				"large sequence number gap negative", nil,
+				"extStartSN", r.sequenceNumber.GetExtendedStart(),
+				"extHighestSN", r.sequenceNumber.GetExtendedHighest(),
+				"extStartTS", r.timestamp.GetExtendedStart(),
+				"extHighestTS", r.timestamp.GetExtendedHighest(),
+				"firstTime", r.firstTime.String(),
+				"highestTime", r.highestTime.String(),
 				"prev", resSN.PreExtendedHighest,
 				"curr", resSN.ExtendedVal,
 				"gap", gapSN,
@@ -219,6 +229,12 @@ func (r *RTPStatsReceiver) Update(
 		if gapSN >= cNumSequenceNumbers {
 			r.logger.Warnw(
 				"large sequence number gap", nil,
+				"extStartSN", r.sequenceNumber.GetExtendedStart(),
+				"extHighestSN", r.sequenceNumber.GetExtendedHighest(),
+				"extStartTS", r.timestamp.GetExtendedStart(),
+				"extHighestTS", r.timestamp.GetExtendedHighest(),
+				"firstTime", r.firstTime.String(),
+				"highestTime", r.highestTime.String(),
 				"prev", resSN.PreExtendedHighest,
 				"curr", resSN.ExtendedVal,
 				"gap", gapSN,
@@ -287,12 +303,8 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 	if r.srNewest != nil && r.srNewest.NTPTimestamp > srData.NTPTimestamp {
 		r.logger.Infow(
 			"received anachronous sender report",
-			"currentNTP", srData.NTPTimestamp.Time().String(),
-			"currentRTP", srData.RTPTimestamp,
-			"currentAt", srData.At.String(),
-			"lastNTP", r.srNewest.NTPTimestamp.Time().String(),
-			"lastRTP", r.srNewest.RTPTimestamp,
-			"lastAt", r.srNewest.At.String(),
+			"last", r.srNewest.ToString(),
+			"current", srData.ToString(),
 		)
 		return
 	}
@@ -310,22 +322,47 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 
 	r.maybeAdjustFirstPacketTime(srDataCopy.RTPTimestamp, r.timestamp.GetStart())
 
+	if r.srNewest != nil {
+		timeSinceLast := srData.NTPTimestamp.Time().Sub(r.srNewest.NTPTimestamp.Time()).Seconds()
+		rtpDiffSinceLast := srDataCopy.RTPTimestampExt - r.srNewest.RTPTimestampExt
+		calculatedClockRateFromLast := float64(rtpDiffSinceLast) / timeSinceLast
+
+		timeSinceFirst := srData.NTPTimestamp.Time().Sub(r.srFirst.NTPTimestamp.Time()).Seconds()
+		rtpDiffSinceFirst := srDataCopy.RTPTimestampExt - r.srFirst.RTPTimestampExt
+		calculatedClockRateFromFirst := float64(rtpDiffSinceFirst) / timeSinceFirst
+
+		if (timeSinceLast > 0.2 && math.Abs(float64(r.params.ClockRate)-calculatedClockRateFromLast) > 0.2*float64(r.params.ClockRate)) ||
+			(timeSinceFirst > 0.2 && math.Abs(float64(r.params.ClockRate)-calculatedClockRateFromFirst) > 0.2*float64(r.params.ClockRate)) {
+			if r.clockSkewCount%10 == 0 {
+				r.logger.Infow(
+					"clock rate skew",
+					"first", r.srFirst.ToString(),
+					"last", r.srNewest.ToString(),
+					"current", srDataCopy.ToString(),
+					"calculatedFirst", calculatedClockRateFromFirst,
+					"calculatedLast", calculatedClockRateFromLast,
+					"count", r.clockSkewCount,
+				)
+			}
+			r.clockSkewCount++
+		}
+	}
+
 	if r.srNewest != nil && srDataCopy.RTPTimestampExt < r.srNewest.RTPTimestampExt {
 		// This can happen when a track is replaced with a null and then restored -
 		// i. e. muting replacing with null and unmute restoring the original track.
 		// Under such a condition reset the sender reports to start from this point.
 		// Resetting will ensure sample rate calculations do not go haywire due to negative time.
-		r.logger.Infow(
-			"received sender report, out-of-order, resetting",
-			"prevTSExt", r.srNewest.RTPTimestampExt,
-			"prevRTP", r.srNewest.RTPTimestamp,
-			"prevNTP", r.srNewest.NTPTimestamp.Time().String(),
-			"prevAt", r.srNewest.At.String(),
-			"currTSExt", srDataCopy.RTPTimestampExt,
-			"currRTP", srDataCopy.RTPTimestamp,
-			"currNTP", srDataCopy.NTPTimestamp.Time().String(),
-			"currentAt", srDataCopy.At.String(),
-		)
+		if r.outOfOrderSsenderReportCount%10 == 0 {
+			r.logger.Infow(
+				"received sender report, out-of-order, resetting",
+				"last", r.srNewest.ToString(),
+				"current", srDataCopy.ToString(),
+				"count", r.outOfOrderSsenderReportCount,
+			)
+		}
+		r.outOfOrderSsenderReportCount++
+
 		r.srFirst = nil
 	}
 
