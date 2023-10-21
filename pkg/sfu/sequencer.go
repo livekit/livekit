@@ -297,7 +297,7 @@ func (s *sequencer) getExtPacketMetas(seqNo []uint16) []extPacketMeta {
 			meta.nacked++
 			meta.lastNack = refTime
 
-			extTS := uint64(meta.timestamp) + (s.extHighestTS & 0xFFFF_FFFF_FFFF_0000)
+			extTS := uint64(meta.timestamp) + (s.extHighestTS & 0xFFFF_FFFF_0000_0000)
 			if meta.timestamp > highestTS {
 				extTS -= (1 << 32)
 			}

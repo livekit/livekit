@@ -672,7 +672,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	tp, err := d.forwarder.GetTranslationParams(extPkt, layer)
 	if tp.shouldDrop {
 		if err != nil {
-			d.params.Logger.Errorw("write rtp packet failed", err)
+			d.params.Logger.Errorw("could not get translation params", err)
 		}
 		return err
 	}
@@ -689,7 +689,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 
 	hdr, err := d.getTranslatedRTPHeader(extPkt, &tp)
 	if err != nil {
-		d.params.Logger.Errorw("could not translate RTP header", err)
+		d.params.Logger.Errorw("could not get translated RTP header", err)
 		PacketFactory.Put(poolEntity)
 		return err
 	}
@@ -1442,7 +1442,7 @@ func (d *DownTrack) getH264BlankFrame(_frameEndNeeded bool) ([]byte, error) {
 func (d *DownTrack) handleRTCP(bytes []byte) {
 	pkts, err := rtcp.Unmarshal(bytes)
 	if err != nil {
-		d.params.Logger.Errorw("unmarshal rtcp receiver packets err", err)
+		d.params.Logger.Errorw("could not unmarshal rtcp receiver packets", err)
 		return
 	}
 
@@ -1606,7 +1606,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 
 		var pkt rtp.Packet
 		if err = pkt.Unmarshal(pktBuff[:n]); err != nil {
-			d.params.Logger.Errorw("unmarshalling rtp packet failed in retransmit", err)
+			d.params.Logger.Errorw("could not unmarshal rtp packet in retransmit", err)
 			continue
 		}
 		pkt.Header.Marker = epm.marker
