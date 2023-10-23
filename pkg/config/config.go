@@ -271,7 +271,7 @@ type SignalRelayConfig struct {
 }
 
 type PSRPCConfig struct {
-	Enable      bool          `yaml:"enable,omitempty"`
+	Enabled     bool          `yaml:"enabled,omitempty"`
 	MaxAttempts int           `yaml:"retry_attempts,omitempty"`
 	Timeout     time.Duration `yaml:"retry_timeout,omitempty"`
 	Backoff     time.Duration `yaml:"retry_backoff,omitempty"`
