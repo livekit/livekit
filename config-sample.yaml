@@ -112,6 +112,15 @@ rtc:
   # batch_io:
   #    batch_size: 128
   #    max_flush_interval: 2ms
+  # # force a reconnect on a publication error
+  # reconnect_on_publication_error: true
+  # # force a reconnect on a subscription error
+  # reconnect_on_subscription_error: true
+  # # force a reconnect on a data channel error
+  # reconnect_on_data_channel_error: true
+  # # max number of bytes to buffer for data channel. 0 means unlimited.
+  # # when this limit is breached, data messages will be dropped till the buffered amount drops below this limit.
+  # data_channel_max_buffered_amount: 0
 
 # when enabled, LiveKit will expose prometheus metrics on :6789/metrics
 # prometheus_port: 6789
@@ -162,7 +171,7 @@ keys:
 #     enabled: true
 #     min: 100
 #     max: 2000
-#   # improves A/V sync when playout_delay set to a value larger than 200ms. It will disables transceiver re-use 
+#   # improves A/V sync when playout_delay set to a value larger than 200ms. It will disables transceiver re-use
 #   # so not recommended for rooms with frequent subscription changes
 #   sync_streams: true
 
@@ -192,6 +201,21 @@ keys:
 #   max_retry_interval: 5s
 #   # number of messages to buffer before dropping
 #   stream_buffer_size: 1000
+
+# PSRPC
+# since v1.5.1, a more reliable, psrpc based signal relay is available
+# this gives us the ability to reliably proxy messages between a signal server and RTC node
+# psrpc:
+#   # enable the internal psrpc api client for roomservice api calls
+#   enabled: true
+#   # maximum number of rpc attempts
+#   max_attempts: 3
+#   # initial time to wait for calls to complete
+#   timeout: 500ms
+#   # amount of time added to the timeout after each failure
+#   backoff: 500ms
+#   # number of messages to buffer before dropping
+#   buffer_size: 1000
 
 # customize audio level sensitivity
 # audio:
