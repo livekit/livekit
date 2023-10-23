@@ -1670,16 +1670,16 @@ func (p *ParticipantImpl) sendTrackPublished(cid string, ti *livekit.TrackInfo) 
 	})
 }
 
-func (p *ParticipantImpl) SetTrackMuted(trackID livekit.TrackID, muted bool, fromAdmin bool) {
+func (p *ParticipantImpl) SetTrackMuted(trackID livekit.TrackID, muted bool, fromAdmin bool) *livekit.TrackInfo {
 	// when request is coming from admin, send message to current participant
 	if fromAdmin {
 		p.sendTrackMuted(trackID, muted)
 	}
 
-	p.setTrackMuted(trackID, muted)
+	return p.setTrackMuted(trackID, muted)
 }
 
-func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) {
+func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) *livekit.TrackInfo {
 	p.dirty.Store(true)
 	p.supervisor.SetPublicationMute(trackID, muted)
 
@@ -1713,6 +1713,8 @@ func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) {
 	if !isPending && track == nil {
 		p.pubLogger.Warnw("could not locate track", nil, "trackID", trackID)
 	}
+
+	return trackInfo
 }
 
 func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) (*MediaTrack, bool) {

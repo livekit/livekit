@@ -73,6 +73,9 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		getSignalRelayConfig,
 		NewDefaultSignalServer,
 		routing.NewSignalClient,
+		getPSRPCConfig,
+		routing.NewTopicFormatter,
+		routing.NewRoomClient,
 		NewLocalRoomManager,
 		NewTURNAuthHandler,
 		getTURNAuthHandlerFunc,
@@ -195,6 +198,10 @@ func getRoomConf(config *config.Config) config.RoomConfig {
 
 func getSignalRelayConfig(config *config.Config) config.SignalRelayConfig {
 	return config.SignalRelay
+}
+
+func getPSRPCConfig(config *config.Config) config.PSRPCConfig {
+	return config.PSRPC
 }
 
 func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Server, error) {
