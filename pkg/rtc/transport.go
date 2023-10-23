@@ -242,20 +242,21 @@ type PCTransport struct {
 }
 
 type TransportParams struct {
-	ParticipantID           livekit.ParticipantID
-	ParticipantIdentity     livekit.ParticipantIdentity
-	ProtocolVersion         types.ProtocolVersion
-	Config                  *WebRTCConfig
-	DirectionConfig         DirectionConfig
-	CongestionControlConfig config.CongestionControlConfig
-	Telemetry               telemetry.TelemetryService
-	EnabledCodecs           []*livekit.Codec
-	Logger                  logger.Logger
-	SimTracks               map[uint32]SimulcastTrackInfo
-	ClientInfo              ClientInfo
-	IsOfferer               bool
-	IsSendSide              bool
-	AllowPlayoutDelay       bool
+	ParticipantID                livekit.ParticipantID
+	ParticipantIdentity          livekit.ParticipantIdentity
+	ProtocolVersion              types.ProtocolVersion
+	Config                       *WebRTCConfig
+	DirectionConfig              DirectionConfig
+	CongestionControlConfig      config.CongestionControlConfig
+	Telemetry                    telemetry.TelemetryService
+	EnabledCodecs                []*livekit.Codec
+	Logger                       logger.Logger
+	SimTracks                    map[uint32]SimulcastTrackInfo
+	ClientInfo                   ClientInfo
+	IsOfferer                    bool
+	IsSendSide                   bool
+	AllowPlayoutDelay            bool
+	DataChannelMaxBufferedAmount uint64
 }
 
 func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimator cc.BandwidthEstimator)) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
@@ -928,6 +929,10 @@ func (t *PCTransport) SendDataPacket(dp *livekit.DataPacket, data []byte) error 
 
 	if t.pc.ConnectionState() == webrtc.PeerConnectionStateFailed {
 		return ErrTransportFailure
+	}
+
+	if t.params.DataChannelMaxBufferedAmount > 0 && dc.BufferedAmount() > t.params.DataChannelMaxBufferedAmount {
+		return ErrDataChannelBufferFull
 	}
 
 	return dc.Send(data)

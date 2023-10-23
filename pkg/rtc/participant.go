@@ -118,6 +118,7 @@ type ParticipantParams struct {
 	ReconnectOnPublicationError  bool
 	ReconnectOnSubscriptionError bool
 	ReconnectOnDataChannelError  bool
+	DataChannelMaxBufferedAmount uint64
 	VersionGenerator             utils.TimedVersionGenerator
 	TrackResolver                types.MediaTrackResolver
 	DisableDynacast              bool
@@ -1103,22 +1104,23 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		SID:      p.params.SID,
 		// primary connection does not change, canSubscribe can change if permission was updated
 		// after the participant has joined
-		SubscriberAsPrimary:      p.ProtocolVersion().SubscriberAsPrimary() && p.CanSubscribe(),
-		Config:                   p.params.Config,
-		ProtocolVersion:          p.params.ProtocolVersion,
-		Telemetry:                p.params.Telemetry,
-		CongestionControlConfig:  p.params.CongestionControlConfig,
-		EnabledCodecs:            p.params.EnabledCodecs,
-		SimTracks:                p.params.SimTracks,
-		ClientConf:               p.params.ClientConf,
-		ClientInfo:               p.params.ClientInfo,
-		Migration:                p.params.Migration,
-		AllowTCPFallback:         p.params.AllowTCPFallback,
-		TCPFallbackRTTThreshold:  p.params.TCPFallbackRTTThreshold,
-		AllowUDPUnstableFallback: p.params.AllowUDPUnstableFallback,
-		TURNSEnabled:             p.params.TURNSEnabled,
-		AllowPlayoutDelay:        p.params.PlayoutDelay.GetEnabled(),
-		Logger:                   p.params.Logger.WithComponent(sutils.ComponentTransport),
+		SubscriberAsPrimary:          p.ProtocolVersion().SubscriberAsPrimary() && p.CanSubscribe(),
+		Config:                       p.params.Config,
+		ProtocolVersion:              p.params.ProtocolVersion,
+		Telemetry:                    p.params.Telemetry,
+		CongestionControlConfig:      p.params.CongestionControlConfig,
+		EnabledCodecs:                p.params.EnabledCodecs,
+		SimTracks:                    p.params.SimTracks,
+		ClientConf:                   p.params.ClientConf,
+		ClientInfo:                   p.params.ClientInfo,
+		Migration:                    p.params.Migration,
+		AllowTCPFallback:             p.params.AllowTCPFallback,
+		TCPFallbackRTTThreshold:      p.params.TCPFallbackRTTThreshold,
+		AllowUDPUnstableFallback:     p.params.AllowUDPUnstableFallback,
+		TURNSEnabled:                 p.params.TURNSEnabled,
+		AllowPlayoutDelay:            p.params.PlayoutDelay.GetEnabled(),
+		DataChannelMaxBufferedAmount: p.params.DataChannelMaxBufferedAmount,
+		Logger:                       p.params.Logger.WithComponent(sutils.ComponentTransport),
 	}
 	if p.params.SyncStreams && p.params.PlayoutDelay.GetEnabled() && p.params.ClientInfo.isFirefox() {
 		// we will disable playout delay for Firefox if the user is expecting
@@ -2300,8 +2302,8 @@ func (p *ParticipantImpl) SendDataPacket(dp *livekit.DataPacket, data []byte) er
 
 	err := p.TransportManager.SendDataPacket(dp, data)
 	if err != nil {
-		if (errors.Is(err, sctp.ErrStreamClosed) || errors.Is(err, io.ErrClosedPipe)) && p.params.ReconnectOnDataChannelError {
-			p.params.Logger.Infow("issuing full reconnect on data channel error")
+		if (errors.Is(err, sctp.ErrStreamClosed) || errors.Is(err, io.ErrClosedPipe) || (errors.Is(err, ErrDataChannelBufferFull) && dp.Kind == livekit.DataPacket_RELIABLE)) && p.params.ReconnectOnDataChannelError {
+			p.params.Logger.Infow("issuing full reconnect on data channel error", "error", err)
 			p.IssueFullReconnect(types.ParticipantCloseReasonDataChannelError)
 		}
 	} else {

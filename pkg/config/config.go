@@ -105,6 +105,10 @@ type RTCConfig struct {
 
 	// force a reconnect on a data channel error
 	ReconnectOnDataChannelError *bool `yaml:"reconnect_on_data_channel_error,omitempty"`
+
+	// max number of bytes to buffer for data channel. 0 means unlimited
+	// when this limit is reached, will drop data for unreliable channel, and issue a data channel error for reliable channel
+	DataChannelMaxBufferedAmount uint64 `yaml:"data_channel_max_buffered_amount,omitempty"`
 }
 
 type TURNServer struct {

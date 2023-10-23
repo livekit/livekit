@@ -23,6 +23,7 @@ var (
 	ErrLimitExceeded           = errors.New("node has exceeded its configured limit")
 	ErrAlreadyJoined           = errors.New("a participant with the same identity is already in the room")
 	ErrDataChannelUnavailable  = errors.New("data channel is not available")
+	ErrDataChannelBufferFull   = errors.New("data channel buffer is full")
 	ErrTransportFailure        = errors.New("transport failure")
 	ErrEmptyIdentity           = errors.New("participant identity cannot be empty")
 	ErrEmptyParticipantID      = errors.New("participant ID cannot be empty")

@@ -403,6 +403,7 @@ func (r *RoomManager) StartSession(
 		ReconnectOnPublicationError:  reconnectOnPublicationError,
 		ReconnectOnSubscriptionError: reconnectOnSubscriptionError,
 		ReconnectOnDataChannelError:  reconnectOnDataChannelError,
+		DataChannelMaxBufferedAmount: r.config.RTC.DataChannelMaxBufferedAmount,
 		VersionGenerator:             r.versionGenerator,
 		TrackResolver:                room.ResolveMediaTrackForSubscriber,
 		SubscriberAllowPause:         subscriberAllowPause,
