@@ -780,7 +780,7 @@ func (conf *Config) updateFromCLI(c *cli.Context, baseFlags []cli.Flag) error {
 			configValue.SetString(c.String(flagName))
 		case reflect.Int, reflect.Int32, reflect.Int64:
 			configValue.SetInt(c.Int64(flagName))
-		case reflect.Uint8, reflect.Uint16, reflect.Uint32:
+		case reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 			configValue.SetUint(c.Uint64(flagName))
 		case reflect.Float32:
 			configValue.SetFloat(c.Float64(flagName))
