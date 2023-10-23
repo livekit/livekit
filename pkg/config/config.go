@@ -71,7 +71,7 @@ type Config struct {
 	Keys           map[string]string        `yaml:"keys,omitempty"`
 	Region         string                   `yaml:"region,omitempty"`
 	SignalRelay    SignalRelayConfig        `yaml:"signal_relay,omitempty"`
-	PSRPC          PSRPCConfig              `yaml:"room_service,omitempty"`
+	PSRPC          PSRPCConfig              `yaml:"psrpc,omitempty"`
 	// LogLevel is deprecated
 	LogLevel string        `yaml:"log_level,omitempty"`
 	Logging  LoggingConfig `yaml:"logging,omitempty"`

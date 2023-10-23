@@ -639,15 +639,6 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomName livekit.Roo
 	}
 }
 
-func (r *RoomManager) participantLogger(room *rtc.Room, participant types.LocalParticipant) logger.Logger {
-	return rtc.LoggerWithParticipant(
-		rtc.LoggerWithRoom(logger.GetLogger(), room.Name(), room.ID()),
-		participant.Identity(),
-		participant.ID(),
-		false,
-	)
-}
-
 func (r *RoomManager) roomLogger(room *rtc.Room) logger.Logger {
 	return rtc.LoggerWithParticipant(rtc.LoggerWithRoom(logger.GetLogger(), room.Name(), room.ID()), "", "", false)
 }
@@ -663,7 +654,7 @@ func (r *RoomManager) RemoveParticipant(ctx context.Context, req *livekit.RoomPa
 		return nil, ErrParticipantNotFound
 	}
 
-	r.participantLogger(room, participant).Infow("removing participant")
+	participant.GetLogger().Infow("removing participant")
 	room.RemoveParticipant(livekit.ParticipantIdentity(req.Identity), "", types.ParticipantCloseReasonServiceRequestRemoveParticipant)
 	return &livekit.RemoveParticipantResponse{}, nil
 }
@@ -679,10 +670,10 @@ func (r *RoomManager) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 		return nil, ErrParticipantNotFound
 	}
 
-	r.participantLogger(room, participant).Debugw("setting track muted",
+	participant.GetLogger().Debugw("setting track muted",
 		"trackID", req.TrackSid, "muted", req.Muted)
 	if !req.Muted && !r.config.Room.EnableRemoteUnmute {
-		r.participantLogger(room, participant).Errorw("cannot unmute track, remote unmute is disabled", nil)
+		participant.GetLogger().Errorw("cannot unmute track, remote unmute is disabled", nil)
 		return nil, ErrRemoteUnmuteNoteEnabled
 	}
 	track := participant.SetTrackMuted(livekit.TrackID(req.TrackSid), req.Muted, true)
@@ -700,7 +691,7 @@ func (r *RoomManager) UpdateParticipant(ctx context.Context, req *livekit.Update
 		return nil, ErrParticipantNotFound
 	}
 
-	r.participantLogger(room, participant).Debugw("updating participant",
+	participant.GetLogger().Debugw("updating participant",
 		"metadata", req.Metadata, "permission", req.Permission)
 	room.UpdateParticipantMetadata(participant, req.Name, req.Metadata)
 	if req.Permission != nil {
@@ -740,7 +731,7 @@ func (r *RoomManager) UpdateSubscriptions(ctx context.Context, req *livekit.Upda
 		return nil, ErrParticipantNotFound
 	}
 
-	r.participantLogger(room, participant).Debugw("updating participant subscriptions")
+	participant.GetLogger().Debugw("updating participant subscriptions")
 	room.UpdateSubscriptions(
 		participant,
 		livekit.StringsAsIDs[livekit.TrackID](req.TrackSids),
