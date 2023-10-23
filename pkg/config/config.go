@@ -272,10 +272,10 @@ type SignalRelayConfig struct {
 
 type PSRPCConfig struct {
 	Enabled     bool          `yaml:"enabled,omitempty"`
-	MaxAttempts int           `yaml:"retry_attempts,omitempty"`
-	Timeout     time.Duration `yaml:"retry_timeout,omitempty"`
-	Backoff     time.Duration `yaml:"retry_backoff,omitempty"`
-	BufferSize  int           `yaml:"stream_buffer_size,omitempty"`
+	MaxAttempts int           `yaml:"max_attempts,omitempty"`
+	Timeout     time.Duration `yaml:"timeout,omitempty"`
+	Backoff     time.Duration `yaml:"backoff,omitempty"`
+	BufferSize  int           `yaml:"buffer_size,omitempty"`
 }
 
 // RegionConfig lists available regions and their latitude/longitude, so the selector would prefer

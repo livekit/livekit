@@ -162,7 +162,7 @@ keys:
 #     enabled: true
 #     min: 100
 #     max: 2000
-#   # improves A/V sync when playout_delay set to a value larger than 200ms. It will disables transceiver re-use 
+#   # improves A/V sync when playout_delay set to a value larger than 200ms. It will disables transceiver re-use
 #   # so not recommended for rooms with frequent subscription changes
 #   sync_streams: true
 
@@ -175,6 +175,21 @@ keys:
 #   # list of URLs to be notified of room events
 #   urls:
 #     - https://your-host.com/handler
+
+# PSRPC
+# since v1.5.1, a more reliable, psrpc based signal relay is available
+# this gives us the ability to reliably proxy messages between a signal server and RTC node
+# psrpc:
+#   # enable the internal psrpc api client for roomservice api calls
+#   enabled: true
+#   # maximum number of rpc attempts
+#   max_attempts: 3
+#   # initial time to wait for calls to complete
+#   timeout: 500ms
+#   # amount of time added to the timeout after each failure
+#   backoff: 500ms
+#   # number of messages to buffer before dropping
+#   buffer: 1000
 
 # Signal Relay
 # since v1.4.0, a more reliable, psrpc based signal relay is available
