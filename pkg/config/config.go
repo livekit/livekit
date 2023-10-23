@@ -712,6 +712,13 @@ func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error)
 				Usage:   generatedCLIFlagUsage,
 				Hidden:  hidden,
 			}
+		case reflect.Uint64:
+			flag = &cli.Uint64Flag{
+				Name:    name,
+				EnvVars: []string{envVar},
+				Usage:   generatedCLIFlagUsage,
+				Hidden:  hidden,
+			}
 		case reflect.Float32:
 			flag = &cli.Float64Flag{
 				Name:    name,
