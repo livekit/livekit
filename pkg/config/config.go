@@ -473,8 +473,6 @@ var DefaultConfig = Config{
 			{Mime: webrtc.MimeTypeAV1},
 		},
 		EmptyTimeout: 5 * 60,
-		// TODO: remove
-		EnablePSRPC: true,
 	},
 	Logging: LoggingConfig{
 		PionLevel: "error",
