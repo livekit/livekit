@@ -394,7 +394,18 @@ func (r *RTPStatsSender) Update(
 			"tsBefore", r.extStartTS,
 			"tsAfter", extTimestamp,
 		)
-		r.extStartTS = extTimestamp
+		if extTimestamp == 0 { // TODO-REMOVE-AFTER-DEBUG
+			r.logger.Errorw(
+				"invalid start timestamp", nil,
+				"snBefore", r.extStartSN,
+				"snAfter", extSequenceNumber,
+				"tsBefore", r.extStartTS,
+				"tsAfter", extTimestamp,
+			)
+		}
+		if extTimestamp != 0 {
+			r.extStartTS = extTimestamp
+		}
 	}
 
 	if extTimestamp > r.extHighestTS {
