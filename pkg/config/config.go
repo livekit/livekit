@@ -106,6 +106,9 @@ type RTCConfig struct {
 
 	// force a reconnect on a data channel error
 	ReconnectOnDataChannelError *bool `yaml:"reconnect_on_data_channel_error,omitempty"`
+
+	// max number of bytes to buffer for data channel. 0 means unlimited
+	DataChannelMaxBufferedAmount uint64 `yaml:"data_channel_max_buffered_amount,omitempty"`
 }
 
 type TURNServer struct {
@@ -272,11 +275,11 @@ type SignalRelayConfig struct {
 }
 
 type PSRPCConfig struct {
-	Enable      bool          `yaml:"enable,omitempty"`
-	MaxAttempts int           `yaml:"retry_attempts,omitempty"`
-	Timeout     time.Duration `yaml:"retry_timeout,omitempty"`
-	Backoff     time.Duration `yaml:"retry_backoff,omitempty"`
-	BufferSize  int           `yaml:"stream_buffer_size,omitempty"`
+	Enabled     bool          `yaml:"enabled,omitempty"`
+	MaxAttempts int           `yaml:"max_attempts,omitempty"`
+	Timeout     time.Duration `yaml:"timeout,omitempty"`
+	Backoff     time.Duration `yaml:"backoff,omitempty"`
+	BufferSize  int           `yaml:"buffer_size,omitempty"`
 }
 
 // RegionConfig lists available regions and their latitude/longitude, so the selector would prefer
@@ -725,6 +728,13 @@ func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error)
 				Usage:   generatedCLIFlagUsage,
 				Hidden:  hidden,
 			}
+		case reflect.Uint64:
+			flag = &cli.Uint64Flag{
+				Name:    name,
+				EnvVars: []string{envVar},
+				Usage:   generatedCLIFlagUsage,
+				Hidden:  hidden,
+			}
 		case reflect.Float32:
 			flag = &cli.Float64Flag{
 				Name:    name,
@@ -786,7 +796,7 @@ func (conf *Config) updateFromCLI(c *cli.Context, baseFlags []cli.Flag) error {
 			configValue.SetString(c.String(flagName))
 		case reflect.Int, reflect.Int32, reflect.Int64:
 			configValue.SetInt(c.Int64(flagName))
-		case reflect.Uint8, reflect.Uint16, reflect.Uint32:
+		case reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 			configValue.SetUint(c.Uint64(flagName))
 		case reflect.Float32:
 			configValue.SetFloat(c.Float64(flagName))

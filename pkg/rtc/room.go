@@ -1354,7 +1354,7 @@ func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, dp 
 	utils.ParallelExec(destParticipants, dataForwardLoadBalanceThreshold, 1, func(op types.LocalParticipant) {
 		err := op.SendDataPacket(dp, dpData)
 		if err != nil && !errors.Is(err, io.ErrClosedPipe) && !errors.Is(err, sctp.ErrStreamClosed) &&
-			!errors.Is(err, ErrTransportFailure) {
+			!errors.Is(err, ErrTransportFailure) && !errors.Is(err, ErrDataChannelBufferFull) {
 			op.GetLogger().Infow("send data packet error", "error", err)
 		}
 	})
