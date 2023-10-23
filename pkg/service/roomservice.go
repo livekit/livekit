@@ -37,6 +37,7 @@ import (
 type RoomService struct {
 	roomConf       config.RoomConfig
 	apiConf        config.APIConfig
+	psrpcConf      config.PSRPCConfig
 	router         routing.MessageRouter
 	roomAllocator  RoomAllocator
 	roomStore      ServiceStore
@@ -48,6 +49,7 @@ type RoomService struct {
 func NewRoomService(
 	roomConf config.RoomConfig,
 	apiConf config.APIConfig,
+	psrpcConf config.PSRPCConfig,
 	router routing.MessageRouter,
 	roomAllocator RoomAllocator,
 	serviceStore ServiceStore,
@@ -58,6 +60,7 @@ func NewRoomService(
 	svc = &RoomService{
 		roomConf:       roomConf,
 		apiConf:        apiConf,
+		psrpcConf:      psrpcConf,
 		router:         router,
 		roomAllocator:  roomAllocator,
 		roomStore:      serviceStore,
@@ -148,7 +151,7 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 		return nil, twirpAuthError(err)
 	}
 
-	if s.roomConf.EnablePSRPC {
+	if s.psrpcConf.Enable {
 		return s.roomClient.DeleteRoom(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
 	}
 
@@ -225,7 +228,7 @@ func (s *RoomService) RemoveParticipant(ctx context.Context, req *livekit.RoomPa
 		return nil, twirp.NotFoundError("participant not found")
 	}
 
-	if s.roomConf.EnablePSRPC {
+	if s.psrpcConf.Enable {
 		return s.roomClient.RemoveParticipant(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
 	}
 
@@ -261,7 +264,7 @@ func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 		return nil, twirpAuthError(err)
 	}
 
-	if s.roomConf.EnablePSRPC {
+	if s.psrpcConf.Enable {
 		return s.roomClient.MutePublishedTrack(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
 	}
 
@@ -315,7 +318,7 @@ func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.Update
 		return nil, twirpAuthError(err)
 	}
 
-	if s.roomConf.EnablePSRPC {
+	if s.psrpcConf.Enable {
 		return s.roomClient.UpdateParticipant(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
 	}
 
@@ -364,7 +367,7 @@ func (s *RoomService) UpdateSubscriptions(ctx context.Context, req *livekit.Upda
 		return nil, twirpAuthError(err)
 	}
 
-	if s.roomConf.EnablePSRPC {
+	if s.psrpcConf.Enable {
 		return s.roomClient.UpdateSubscriptions(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
 	}
 
@@ -387,7 +390,7 @@ func (s *RoomService) SendData(ctx context.Context, req *livekit.SendDataRequest
 		return nil, twirpAuthError(err)
 	}
 
-	if s.roomConf.EnablePSRPC {
+	if s.psrpcConf.Enable {
 		return s.roomClient.SendData(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
 	}
 
@@ -429,7 +432,7 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 		return nil, err
 	}
 
-	if s.roomConf.EnablePSRPC {
+	if s.psrpcConf.Enable {
 		_, err := s.roomClient.UpdateRoomMetadata(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
 		if err != nil {
 			return nil, err

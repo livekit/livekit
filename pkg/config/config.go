@@ -224,7 +224,6 @@ type RoomConfig struct {
 	MaxMetadataSize    uint32             `yaml:"max_metadata_size,omitempty"`
 	PlayoutDelay       PlayoutDelayConfig `yaml:"playout_delay,omitempty"`
 	SyncStreams        bool               `yaml:"sync_streams,omitempty"`
-	EnablePSRPC        bool               `yaml:"use_psrpc,omitempty"`
 }
 
 type CodecSpec struct {
@@ -272,6 +271,7 @@ type SignalRelayConfig struct {
 }
 
 type PSRPCConfig struct {
+	Enable      bool          `yaml:"enable,omitempty"`
 	MaxAttempts int           `yaml:"retry_attempts,omitempty"`
 	Timeout     time.Duration `yaml:"retry_timeout,omitempty"`
 	Backoff     time.Duration `yaml:"retry_backoff,omitempty"`

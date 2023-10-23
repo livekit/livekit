@@ -35,6 +35,7 @@ import (
 func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*LivekitServer, error) {
 	roomConfig := getRoomConf(conf)
 	apiConfig := config.DefaultAPIConfig()
+	psrpcConfig := getPSRPCConfig(conf)
 	universalClient, err := createRedisClient(conf)
 	if err != nil {
 		return nil, err
@@ -74,12 +75,11 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	rtcEgressLauncher := NewEgressLauncher(egressClient, ioInfoService)
 	topicFormatter := routing.NewTopicFormatter()
-	psrpcConfig := getPSRPCConfig(conf)
 	roomClient, err := routing.NewRoomClient(nodeID, messageBus, psrpcConfig)
 	if err != nil {
 		return nil, err
 	}
-	roomService, err := NewRoomService(roomConfig, apiConfig, router, roomAllocator, objectStore, rtcEgressLauncher, topicFormatter, roomClient)
+	roomService, err := NewRoomService(roomConfig, apiConfig, psrpcConfig, router, roomAllocator, objectStore, rtcEgressLauncher, topicFormatter, roomClient)
 	if err != nil {
 		return nil, err
 	}
