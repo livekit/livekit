@@ -131,6 +131,7 @@ func newTestRoomService(conf config.RoomConfig) *TestRoomService {
 	svc, err := service.NewRoomService(
 		conf,
 		config.APIConfig{ExecutionTimeout: 2},
+		config.PSRPCConfig{},
 		router,
 		allocator,
 		store,
