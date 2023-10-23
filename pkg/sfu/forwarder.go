@@ -1691,7 +1691,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		tp.shouldDrop = true
 		if f.started && result.IsRelevant {
 			// call to update highest incoming sequence number and other internal structures
-			if _, err := f.rtpMunger.UpdateAndGetSnTs(extPkt); err == nil {
+			if tpRTP, err := f.rtpMunger.UpdateAndGetSnTs(extPkt); err == nil && tpRTP.snOrdering == SequenceNumberOrderingContiguous {
 				f.rtpMunger.PacketDropped(extPkt)
 			}
 		}

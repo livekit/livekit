@@ -71,6 +71,7 @@ type Config struct {
 	Keys           map[string]string        `yaml:"keys,omitempty"`
 	Region         string                   `yaml:"region,omitempty"`
 	SignalRelay    SignalRelayConfig        `yaml:"signal_relay,omitempty"`
+	PSRPC          PSRPCConfig              `yaml:"psrpc,omitempty"`
 	// LogLevel is deprecated
 	LogLevel string        `yaml:"log_level,omitempty"`
 	Logging  LoggingConfig `yaml:"logging,omitempty"`
@@ -268,6 +269,14 @@ type SignalRelayConfig struct {
 	MinRetryInterval time.Duration `yaml:"min_retry_interval,omitempty"`
 	MaxRetryInterval time.Duration `yaml:"max_retry_interval,omitempty"`
 	StreamBufferSize int           `yaml:"stream_buffer_size,omitempty"`
+}
+
+type PSRPCConfig struct {
+	Enable      bool          `yaml:"enable,omitempty"`
+	MaxAttempts int           `yaml:"retry_attempts,omitempty"`
+	Timeout     time.Duration `yaml:"retry_timeout,omitempty"`
+	Backoff     time.Duration `yaml:"retry_backoff,omitempty"`
+	BufferSize  int           `yaml:"stream_buffer_size,omitempty"`
 }
 
 // RegionConfig lists available regions and their latitude/longitude, so the selector would prefer
@@ -485,6 +494,12 @@ var DefaultConfig = Config{
 		MinRetryInterval: 500 * time.Millisecond,
 		MaxRetryInterval: 4 * time.Second,
 		StreamBufferSize: 1000,
+	},
+	PSRPC: PSRPCConfig{
+		MaxAttempts: 3,
+		Timeout:     500 * time.Millisecond,
+		Backoff:     500 * time.Millisecond,
+		BufferSize:  1000,
 	},
 	Keys: map[string]string{},
 }
