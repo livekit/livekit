@@ -73,7 +73,13 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	rtcEgressLauncher := NewEgressLauncher(egressClient, ioInfoService)
-	roomService, err := NewRoomService(roomConfig, apiConfig, router, roomAllocator, objectStore, rtcEgressLauncher)
+	topicFormatter := routing.NewTopicFormatter()
+	psrpcConfig := getPSRPCConfig(conf)
+	roomClient, err := routing.NewRoomClient(nodeID, messageBus, psrpcConfig)
+	if err != nil {
+		return nil, err
+	}
+	roomService, err := NewRoomService(roomConfig, apiConfig, router, roomAllocator, objectStore, rtcEgressLauncher, topicFormatter, roomClient)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +94,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	clientConfigurationManager := createClientConfiguration()
 	timedVersionGenerator := utils.NewDefaultTimedVersionGenerator()
 	turnAuthHandler := NewTURNAuthHandler(keyProvider)
-	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager, rtcEgressLauncher, timedVersionGenerator, turnAuthHandler)
+	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager, rtcEgressLauncher, timedVersionGenerator, turnAuthHandler, messageBus)
 	if err != nil {
 		return nil, err
 	}
@@ -225,6 +231,10 @@ func getRoomConf(config2 *config.Config) config.RoomConfig {
 
 func getSignalRelayConfig(config2 *config.Config) config.SignalRelayConfig {
 	return config2.SignalRelay
+}
+
+func getPSRPCConfig(config2 *config.Config) config.PSRPCConfig {
+	return config2.PSRPC
 }
 
 func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Server, error) {
