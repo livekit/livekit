@@ -119,7 +119,7 @@ rtc:
   # # force a reconnect on a data channel error
   # reconnect_on_data_channel_error: true
   # # max number of bytes to buffer for data channel. 0 means unlimited.
-  # # when this limit is reached, will drop data messages and also issue a data channel error for reliable channel
+  # # when this limit is breached, data messages will be dropped till the buffered amount drops below this limit.
   # data_channel_max_buffered_amount: 0
 
 # when enabled, LiveKit will expose prometheus metrics on :6789/metrics

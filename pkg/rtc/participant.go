@@ -2302,7 +2302,7 @@ func (p *ParticipantImpl) SendDataPacket(dp *livekit.DataPacket, data []byte) er
 
 	err := p.TransportManager.SendDataPacket(dp, data)
 	if err != nil {
-		if (errors.Is(err, sctp.ErrStreamClosed) || errors.Is(err, io.ErrClosedPipe) || (errors.Is(err, ErrDataChannelBufferFull) && dp.Kind == livekit.DataPacket_RELIABLE)) && p.params.ReconnectOnDataChannelError {
+		if (errors.Is(err, sctp.ErrStreamClosed) || errors.Is(err, io.ErrClosedPipe)) && p.params.ReconnectOnDataChannelError {
 			p.params.Logger.Infow("issuing full reconnect on data channel error", "error", err)
 			p.IssueFullReconnect(types.ParticipantCloseReasonDataChannelError)
 		}
