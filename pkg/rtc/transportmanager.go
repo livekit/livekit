@@ -49,24 +49,25 @@ const (
 )
 
 type TransportManagerParams struct {
-	Identity                 livekit.ParticipantIdentity
-	SID                      livekit.ParticipantID
-	SubscriberAsPrimary      bool
-	Config                   *WebRTCConfig
-	ProtocolVersion          types.ProtocolVersion
-	Telemetry                telemetry.TelemetryService
-	CongestionControlConfig  config.CongestionControlConfig
-	EnabledCodecs            []*livekit.Codec
-	SimTracks                map[uint32]SimulcastTrackInfo
-	ClientConf               *livekit.ClientConfiguration
-	ClientInfo               ClientInfo
-	Migration                bool
-	AllowTCPFallback         bool
-	TCPFallbackRTTThreshold  int
-	AllowUDPUnstableFallback bool
-	TURNSEnabled             bool
-	AllowPlayoutDelay        bool
-	Logger                   logger.Logger
+	Identity                     livekit.ParticipantIdentity
+	SID                          livekit.ParticipantID
+	SubscriberAsPrimary          bool
+	Config                       *WebRTCConfig
+	ProtocolVersion              types.ProtocolVersion
+	Telemetry                    telemetry.TelemetryService
+	CongestionControlConfig      config.CongestionControlConfig
+	EnabledCodecs                []*livekit.Codec
+	SimTracks                    map[uint32]SimulcastTrackInfo
+	ClientConf                   *livekit.ClientConfiguration
+	ClientInfo                   ClientInfo
+	Migration                    bool
+	AllowTCPFallback             bool
+	TCPFallbackRTTThreshold      int
+	AllowUDPUnstableFallback     bool
+	TURNSEnabled                 bool
+	AllowPlayoutDelay            bool
+	DataChannelMaxBufferedAmount uint64
+	Logger                       logger.Logger
 }
 
 type TransportManager struct {
@@ -173,19 +174,20 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 	})
 
 	subscriber, err := NewPCTransport(TransportParams{
-		ParticipantID:           params.SID,
-		ParticipantIdentity:     params.Identity,
-		ProtocolVersion:         params.ProtocolVersion,
-		Config:                  params.Config,
-		DirectionConfig:         params.Config.Subscriber,
-		CongestionControlConfig: params.CongestionControlConfig,
-		Telemetry:               params.Telemetry,
-		EnabledCodecs:           subscribeCodecs,
-		Logger:                  LoggerWithPCTarget(params.Logger, livekit.SignalTarget_SUBSCRIBER),
-		ClientInfo:              params.ClientInfo,
-		IsOfferer:               true,
-		IsSendSide:              true,
-		AllowPlayoutDelay:       params.AllowPlayoutDelay,
+		ParticipantID:                params.SID,
+		ParticipantIdentity:          params.Identity,
+		ProtocolVersion:              params.ProtocolVersion,
+		Config:                       params.Config,
+		DirectionConfig:              params.Config.Subscriber,
+		CongestionControlConfig:      params.CongestionControlConfig,
+		Telemetry:                    params.Telemetry,
+		EnabledCodecs:                subscribeCodecs,
+		Logger:                       LoggerWithPCTarget(params.Logger, livekit.SignalTarget_SUBSCRIBER),
+		ClientInfo:                   params.ClientInfo,
+		IsOfferer:                    true,
+		IsSendSide:                   true,
+		AllowPlayoutDelay:            params.AllowPlayoutDelay,
+		DataChannelMaxBufferedAmount: params.DataChannelMaxBufferedAmount,
 	})
 	if err != nil {
 		return nil, err
