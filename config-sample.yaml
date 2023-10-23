@@ -112,6 +112,15 @@ rtc:
   # batch_io:
   #    batch_size: 128
   #    max_flush_interval: 2ms
+  # # force a reconnect on a publication error
+  # reconnect_on_publication_error: true
+  # # force a reconnect on a subscription error
+  # reconnect_on_subscription_error: true
+  # # force a reconnect on a data channel error
+  # reconnect_on_data_channel_error: true
+  # # max number of bytes to buffer for data channel. 0 means unlimited.
+  # # when this limit is breached, data messages will be dropped till the buffered amount drops below this limit.
+  # data_channel_max_buffered_amount: 0
 
 # when enabled, LiveKit will expose prometheus metrics on :6789/metrics
 # prometheus_port: 6789
