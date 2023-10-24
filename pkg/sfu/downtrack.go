@@ -650,7 +650,7 @@ func (d *DownTrack) postMaxLayerNotifierEvent() {
 		default:
 		}
 	}
-	d.maxLayerNotifierChMu.Unlock()
+	d.maxLayerNotifierChMu.RUnlock()
 }
 
 func (d *DownTrack) maxLayerNotifierWorker() {
