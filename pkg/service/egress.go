@@ -283,10 +283,6 @@ func (s *EgressService) UpdateStream(ctx context.Context, req *livekit.UpdateStr
 	return info, nil
 }
 
-func (s *EgressService) UpdateOutputs(ctx context.Context, req *livekit.UpdateOutputsRequest) (*livekit.EgressInfo, error) {
-	return nil, twirp.NewError(twirp.Unimplemented, "Update Outputs unimplemented")
-}
-
 func (s *EgressService) ListEgress(ctx context.Context, req *livekit.ListEgressRequest) (*livekit.ListEgressResponse, error) {
 	if req.RoomName != "" {
 		AppendLogFields(ctx, "room", req.RoomName)
