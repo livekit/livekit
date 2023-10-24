@@ -637,16 +637,14 @@ func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
 }
 
 func (d *DownTrack) postMaxLayerNotifierEvent() {
-	if d.kind != webrtc.RTPCodecTypeVideo {
+	if d.IsClosed() || d.kind != webrtc.RTPCodecTypeVideo {
 		return
 	}
 
 	d.bindLock.Lock()
-	if !d.IsClosed() {
-		select {
-		case d.maxLayerNotifierCh <- struct{}{}:
-		default:
-		}
+	select {
+	case d.maxLayerNotifierCh <- struct{}{}:
+	default:
 	}
 	d.bindLock.Unlock()
 }
