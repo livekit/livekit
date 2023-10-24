@@ -79,7 +79,7 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 		return nil, ErrEgressNotConnected
 	}
 
-	rm, err := s.roomAllocator.CreateRoom(ctx, req)
+	rm, created, err := s.roomAllocator.CreateRoom(ctx, req)
 	if err != nil {
 		err = errors.Wrap(err, "could not create room")
 		return nil, err
@@ -109,7 +109,7 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 		return nil, err
 	}
 
-	if req.Egress != nil && req.Egress.Room != nil {
+	if created && req.Egress != nil && req.Egress.Room != nil {
 		egress := &rpc.StartEgressRequest{
 			Request: &rpc.StartEgressRequest_RoomComposite{
 				RoomComposite: req.Egress.Room,
@@ -424,7 +424,7 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 
 	// no one has joined the room, would not have been created on an RTC node.
 	// in this case, we'd want to run create again
-	_, err = s.roomAllocator.CreateRoom(ctx, &livekit.CreateRoomRequest{
+	_, _, err = s.roomAllocator.CreateRoom(ctx, &livekit.CreateRoomRequest{
 		Name:     req.Room,
 		Metadata: req.Metadata,
 	})
