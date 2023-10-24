@@ -88,11 +88,6 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		return
 	}
 
-	if !d.currentLayer.IsValid() && !extPkt.KeyFrame {
-		d.decisions.AddDropped(extFrameNum)
-		return
-	}
-
 	if ddwdt.StructureUpdated {
 		d.updateDependencyStructure(dd.AttachedStructure, ddwdt.DecodeTargets)
 	}
