@@ -637,14 +637,16 @@ func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
 }
 
 func (d *DownTrack) postMaxLayerNotifierEvent() {
-	if d.IsClosed() || d.kind != webrtc.RTPCodecTypeVideo {
+	if d.kind != webrtc.RTPCodecTypeVideo {
 		return
 	}
 
 	d.bindLock.Lock()
-	select {
-	case d.maxLayerNotifierCh <- struct{}{}:
-	default:
+	if !d.IsClosed() {
+		select {
+		case d.maxLayerNotifierCh <- struct{}{}:
+		default:
+		}
 	}
 	d.bindLock.Unlock()
 }
@@ -932,12 +934,13 @@ func (d *DownTrack) Close() {
 //  2. in case of session migration, participant migrate from other node, video track should
 //     be resumed with same participant, set flush=false since we don't need to flush decoder.
 func (d *DownTrack) CloseWithFlush(flush bool) {
+	d.bindLock.Lock()
 	if d.isClosed.Swap(true) {
+		d.bindLock.Unlock()
 		// already closed
 		return
 	}
 
-	d.bindLock.Lock()
 	d.params.Logger.Debugw("close down track", "flushBlankFrame", flush)
 	if d.bound.Load() {
 		d.forwarder.Mute(true, true)
