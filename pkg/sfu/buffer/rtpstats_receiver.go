@@ -154,7 +154,7 @@ func (r *RTPStatsReceiver) Update(
 				return
 			}
 		}
-		if -gapSN >= cNumSequenceNumbers {
+		if -gapSN >= cNumSequenceNumbers/2 {
 			r.logger.Warnw(
 				"large sequence number gap negative", nil,
 				"extStartSN", r.sequenceNumber.GetExtendedStart(),
@@ -226,7 +226,7 @@ func (r *RTPStatsReceiver) Update(
 		flowState.ExtSequenceNumber = resSN.ExtendedVal
 		flowState.ExtTimestamp = resTS.ExtendedVal
 	} else { // in-order
-		if gapSN >= cNumSequenceNumbers {
+		if gapSN >= cNumSequenceNumbers/2 {
 			r.logger.Warnw(
 				"large sequence number gap", nil,
 				"extStartSN", r.sequenceNumber.GetExtendedStart(),
@@ -333,7 +333,7 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 
 		if (timeSinceLast > 0.2 && math.Abs(float64(r.params.ClockRate)-calculatedClockRateFromLast) > 0.2*float64(r.params.ClockRate)) ||
 			(timeSinceFirst > 0.2 && math.Abs(float64(r.params.ClockRate)-calculatedClockRateFromFirst) > 0.2*float64(r.params.ClockRate)) {
-			if r.clockSkewCount%10 == 0 {
+			if r.clockSkewCount%100 == 0 {
 				r.logger.Infow(
 					"clock rate skew",
 					"first", r.srFirst.ToString(),
