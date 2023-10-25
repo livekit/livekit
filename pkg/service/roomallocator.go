@@ -50,10 +50,10 @@ func NewRoomAllocator(conf *config.Config, router routing.Router, rs ObjectStore
 
 // CreateRoom creates a new room from a request and allocates it to a node to handle
 // it'll also monitor its state, and cleans it up when appropriate
-func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (*livekit.Room, error) {
+func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (*livekit.Room, bool, error) {
 	token, err := r.roomStore.LockRoom(ctx, livekit.RoomName(req.Name), 5*time.Second)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer func() {
 		_ = r.roomStore.UnlockRoom(ctx, livekit.RoomName(req.Name), token)
@@ -71,7 +71,7 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 		internal = &livekit.RoomInternal{}
 		applyDefaultRoomConfig(rm, internal, &r.config.Room)
 	} else if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	if req.EmptyTimeout > 0 {
@@ -98,23 +98,23 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 	}
 
 	if err = r.roomStore.StoreRoom(ctx, rm, internal); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	// check if room already assigned
 	existing, err := r.router.GetNodeForRoom(ctx, livekit.RoomName(rm.Name))
 	if err != routing.ErrNotFound && err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	// if already assigned and still available, keep it on that node
 	if err == nil && selector.IsAvailable(existing) {
 		// if node hosting the room is full, deny entry
 		if selector.LimitsReached(r.config.Limit, existing.Stats) {
-			return nil, routing.ErrNodeLimitReached
+			return nil, false, routing.ErrNodeLimitReached
 		}
 
-		return rm, nil
+		return rm, false, nil
 	}
 
 	// select a new node
@@ -122,12 +122,12 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 	if nodeID == "" {
 		nodes, err := r.router.ListNodes()
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 
 		node, err := r.selector.SelectNode(nodes)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 
 		nodeID = livekit.NodeID(node.Id)
@@ -136,10 +136,10 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 	logger.Infow("selected node for room", "room", rm.Name, "roomID", rm.Sid, "selectedNodeID", nodeID)
 	err = r.router.SetNodeForRoom(ctx, livekit.RoomName(rm.Name), nodeID)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
-	return rm, nil
+	return rm, true, nil
 }
 
 func (r *StandardRoomAllocator) ValidateCreateRoom(ctx context.Context, roomName livekit.RoomName) error {

@@ -133,7 +133,7 @@ func (r *signalClient) StartParticipantSignal(
 			signalResponseMessageReader{},
 			r.config,
 		)
-		l.Infow("signal stream closed", "error", err)
+		l.Debugw("signal stream closed", "error", err)
 
 		resChan.Close()
 	}()

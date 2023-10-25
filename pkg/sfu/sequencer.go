@@ -86,6 +86,7 @@ type sequencer struct {
 	size         int
 	startTime    int64
 	initialized  bool
+	extStartSN   uint64
 	extHighestSN uint64
 	snOffset     uint64
 	extHighestTS uint64
@@ -136,46 +137,61 @@ func (s *sequencer) push(
 
 	if !s.initialized {
 		s.initialized = true
-		s.extHighestSN = extModifiedSN - 1
+		s.extStartSN = extModifiedSN
+		s.extHighestSN = extModifiedSN
 		s.extHighestTS = extModifiedTS
 		s.updateSNOffset()
 	}
 
-	snOffset := s.snOffset
-	diff := int64(extModifiedSN - s.extHighestSN)
-	if diff >= 0 {
-		s.extHighestSN = extModifiedSN
-	} else {
-		if diff < -int64(s.size) {
-			s.logger.Warnw(
-				"old packet, cannot be sequenced", nil,
-				"extHighestSN", s.extHighestSN,
-				"extIncomingSN", extIncomingSN,
-				"extModifiedSN", extModifiedSN,
-			)
-			return
-		}
+	if extModifiedSN < s.extStartSN {
+		// old packet, should not happen
+		return
+	}
 
+	extHighestSNAdjusted := s.extHighestSN - s.snOffset
+	extModifiedSNAdjusted := extModifiedSN - s.snOffset
+	if extModifiedSN < s.extHighestSN {
 		if s.snRangeMap != nil {
-			var err error
-			snOffset, err = s.snRangeMap.GetValue(extModifiedSN)
+			snOffset, err := s.snRangeMap.GetValue(extModifiedSN)
 			if err != nil {
 				s.logger.Errorw(
 					"could not get sequence number offset", err,
+					"extStartSN", s.extStartSN,
 					"extHighestSN", s.extHighestSN,
 					"extIncomingSN", extIncomingSN,
 					"extModifiedSN", extModifiedSN,
+					"snOffset", s.snOffset,
 				)
 				return
+			}
+
+			extModifiedSNAdjusted = extModifiedSN - snOffset
+		}
+	}
+
+	if int64(extModifiedSNAdjusted-extHighestSNAdjusted) <= -int64(s.size) {
+		s.logger.Warnw(
+			"old packet, cannot be sequenced", nil,
+			"extHighestSN", s.extHighestSN,
+			"extIncomingSN", extIncomingSN,
+			"extModifiedSN", extModifiedSN,
+		)
+		return
+	}
+
+	// invalidate missing sequence numbers
+	if extModifiedSNAdjusted > extHighestSNAdjusted {
+		numInvalidated := 0
+		for esn := extHighestSNAdjusted + 1; esn != extModifiedSNAdjusted; esn++ {
+			s.invalidateSlot(int(esn % uint64(s.size)))
+			numInvalidated++
+			if numInvalidated >= s.size {
+				break
 			}
 		}
 	}
 
-	if int64(extModifiedTS-s.extHighestTS) >= 0 {
-		s.extHighestTS = extModifiedTS
-	}
-
-	slot := (extModifiedSN - snOffset) % uint64(s.size)
+	slot := extModifiedSNAdjusted % uint64(s.size)
 	s.meta[slot] = packetMeta{
 		sourceSeqNo:     uint16(extIncomingSN),
 		targetSeqNo:     uint16(extModifiedSN),
@@ -190,10 +206,17 @@ func (s *sequencer) push(
 	pm.numCodecBytesOut = uint8(len(codecBytes))
 	if pm.numCodecBytesOut > uint8(len(pm.codecBytes)) {
 		s.logger.Errorw("codec bytes too large", nil, "need", pm.numCodecBytesOut, "bufSize", len(pm.codecBytes))
-		s.meta[slot] = packetMeta{}
+		s.invalidateSlot(int(slot))
 		return
 	}
 	copy(pm.codecBytes[:pm.numCodecBytesOut], codecBytes)
+
+	if extModifiedSN > s.extHighestSN {
+		s.extHighestSN = extModifiedSN
+	}
+	if extModifiedTS > s.extHighestTS {
+		s.extHighestTS = extModifiedTS
+	}
 }
 
 func (s *sequencer) pushPadding(extStartSNInclusive uint64, extEndSNInclusive uint64) {
@@ -234,10 +257,7 @@ func (s *sequencer) pushPadding(extStartSNInclusive uint64, extEndSNInclusive ui
 			}
 
 			slot := (sn - snOffset) % uint64(s.size)
-			s.meta[slot] = packetMeta{
-				sourceSeqNo: 0,
-				targetSeqNo: 0,
-			}
+			s.invalidateSlot(int(slot))
 		}
 		return
 	}
@@ -254,6 +274,10 @@ func (s *sequencer) pushPadding(extStartSNInclusive uint64, extEndSNInclusive ui
 func (s *sequencer) getExtPacketMetas(seqNo []uint16) []extPacketMeta {
 	s.Lock()
 	defer s.Unlock()
+
+	if !s.initialized {
+		return nil
+	}
 
 	snOffset := uint64(0)
 	var err error
@@ -274,11 +298,6 @@ func (s *sequencer) getExtPacketMetas(seqNo []uint16) []extPacketMeta {
 			extSN -= (1 << 16)
 		}
 
-		if s.extHighestSN-extSN >= uint64(s.size) {
-			// too old
-			continue
-		}
-
 		if s.snRangeMap != nil {
 			snOffset, err = s.snRangeMap.GetValue(extSN)
 			if err != nil {
@@ -287,9 +306,17 @@ func (s *sequencer) getExtPacketMetas(seqNo []uint16) []extPacketMeta {
 			}
 		}
 
-		slot := (extSN - snOffset) % uint64(s.size)
+		extSNAdjusted := extSN - snOffset
+		extHighestSNAdjusted := s.extHighestSN - s.snOffset
+		if extHighestSNAdjusted-extSNAdjusted >= uint64(s.size) {
+			// too old
+			continue
+		}
+
+		slot := extSNAdjusted % uint64(s.size)
 		meta := &s.meta[slot]
-		if meta.targetSeqNo != sn {
+		if meta.targetSeqNo != sn || s.isInvalidSlot(int(slot)) {
+			// invalid slot access could happen if padding packets exclusion range could not be recorded
 			continue
 		}
 
@@ -330,4 +357,25 @@ func (s *sequencer) updateSNOffset() {
 		return
 	}
 	s.snOffset = snOffset
+}
+
+func (s *sequencer) invalidateSlot(slot int) {
+	if slot >= len(s.meta) {
+		return
+	}
+
+	s.meta[slot] = packetMeta{
+		sourceSeqNo: 0,
+		targetSeqNo: 0,
+		lastNack:    0,
+	}
+}
+
+func (s *sequencer) isInvalidSlot(slot int) bool {
+	if slot >= len(s.meta) {
+		return true
+	}
+
+	meta := &s.meta[slot]
+	return meta.sourceSeqNo == 0 && meta.targetSeqNo == 0 && meta.lastNack == 0
 }

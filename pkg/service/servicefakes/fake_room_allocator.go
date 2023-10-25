@@ -10,7 +10,7 @@ import (
 )
 
 type FakeRoomAllocator struct {
-	CreateRoomStub        func(context.Context, *livekit.CreateRoomRequest) (*livekit.Room, error)
+	CreateRoomStub        func(context.Context, *livekit.CreateRoomRequest) (*livekit.Room, bool, error)
 	createRoomMutex       sync.RWMutex
 	createRoomArgsForCall []struct {
 		arg1 context.Context
@@ -18,11 +18,13 @@ type FakeRoomAllocator struct {
 	}
 	createRoomReturns struct {
 		result1 *livekit.Room
-		result2 error
+		result2 bool
+		result3 error
 	}
 	createRoomReturnsOnCall map[int]struct {
 		result1 *livekit.Room
-		result2 error
+		result2 bool
+		result3 error
 	}
 	ValidateCreateRoomStub        func(context.Context, livekit.RoomName) error
 	validateCreateRoomMutex       sync.RWMutex
@@ -40,7 +42,7 @@ type FakeRoomAllocator struct {
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeRoomAllocator) CreateRoom(arg1 context.Context, arg2 *livekit.CreateRoomRequest) (*livekit.Room, error) {
+func (fake *FakeRoomAllocator) CreateRoom(arg1 context.Context, arg2 *livekit.CreateRoomRequest) (*livekit.Room, bool, error) {
 	fake.createRoomMutex.Lock()
 	ret, specificReturn := fake.createRoomReturnsOnCall[len(fake.createRoomArgsForCall)]
 	fake.createRoomArgsForCall = append(fake.createRoomArgsForCall, struct {
@@ -55,9 +57,9 @@ func (fake *FakeRoomAllocator) CreateRoom(arg1 context.Context, arg2 *livekit.Cr
 		return stub(arg1, arg2)
 	}
 	if specificReturn {
-		return ret.result1, ret.result2
+		return ret.result1, ret.result2, ret.result3
 	}
-	return fakeReturns.result1, fakeReturns.result2
+	return fakeReturns.result1, fakeReturns.result2, fakeReturns.result3
 }
 
 func (fake *FakeRoomAllocator) CreateRoomCallCount() int {
@@ -66,7 +68,7 @@ func (fake *FakeRoomAllocator) CreateRoomCallCount() int {
 	return len(fake.createRoomArgsForCall)
 }
 
-func (fake *FakeRoomAllocator) CreateRoomCalls(stub func(context.Context, *livekit.CreateRoomRequest) (*livekit.Room, error)) {
+func (fake *FakeRoomAllocator) CreateRoomCalls(stub func(context.Context, *livekit.CreateRoomRequest) (*livekit.Room, bool, error)) {
 	fake.createRoomMutex.Lock()
 	defer fake.createRoomMutex.Unlock()
 	fake.CreateRoomStub = stub
@@ -79,30 +81,33 @@ func (fake *FakeRoomAllocator) CreateRoomArgsForCall(i int) (context.Context, *l
 	return argsForCall.arg1, argsForCall.arg2
 }
 
-func (fake *FakeRoomAllocator) CreateRoomReturns(result1 *livekit.Room, result2 error) {
+func (fake *FakeRoomAllocator) CreateRoomReturns(result1 *livekit.Room, result2 bool, result3 error) {
 	fake.createRoomMutex.Lock()
 	defer fake.createRoomMutex.Unlock()
 	fake.CreateRoomStub = nil
 	fake.createRoomReturns = struct {
 		result1 *livekit.Room
-		result2 error
-	}{result1, result2}
+		result2 bool
+		result3 error
+	}{result1, result2, result3}
 }
 
-func (fake *FakeRoomAllocator) CreateRoomReturnsOnCall(i int, result1 *livekit.Room, result2 error) {
+func (fake *FakeRoomAllocator) CreateRoomReturnsOnCall(i int, result1 *livekit.Room, result2 bool, result3 error) {
 	fake.createRoomMutex.Lock()
 	defer fake.createRoomMutex.Unlock()
 	fake.CreateRoomStub = nil
 	if fake.createRoomReturnsOnCall == nil {
 		fake.createRoomReturnsOnCall = make(map[int]struct {
 			result1 *livekit.Room
-			result2 error
+			result2 bool
+			result3 error
 		})
 	}
 	fake.createRoomReturnsOnCall[i] = struct {
 		result1 *livekit.Room
-		result2 error
-	}{result1, result2}
+		result2 bool
+		result3 error
+	}{result1, result2, result3}
 }
 
 func (fake *FakeRoomAllocator) ValidateCreateRoom(arg1 context.Context, arg2 livekit.RoomName) error {
