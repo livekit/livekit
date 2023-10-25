@@ -269,7 +269,9 @@ type DownTrack struct {
 
 	pacer pacer.Pacer
 
-	maxLayerNotifierCh chan struct{}
+	maxLayerNotifierChMu     sync.RWMutex
+	maxLayerNotifierCh       chan struct{}
+	maxLayerNotifierChClosed bool
 
 	cbMu                        sync.RWMutex
 	onStatsUpdate               func(dt *DownTrack, stat *livekit.AnalyticsStat)
@@ -637,14 +639,18 @@ func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
 }
 
 func (d *DownTrack) postMaxLayerNotifierEvent() {
-	if d.IsClosed() || d.kind != webrtc.RTPCodecTypeVideo {
+	if d.kind != webrtc.RTPCodecTypeVideo {
 		return
 	}
 
-	select {
-	case d.maxLayerNotifierCh <- struct{}{}:
-	default:
+	d.maxLayerNotifierChMu.RLock()
+	if !d.maxLayerNotifierChClosed {
+		select {
+		case d.maxLayerNotifierCh <- struct{}{}:
+		default:
+		}
 	}
+	d.maxLayerNotifierChMu.RUnlock()
 }
 
 func (d *DownTrack) maxLayerNotifierWorker() {
@@ -959,6 +965,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		}
 
 		d.bound.Store(false)
+		d.onBindAndConnectedChange()
 		d.params.Logger.Debugw("closing sender", "kind", d.kind)
 	}
 	d.params.Receiver.DeleteDownTrack(d.params.SubID)
@@ -974,7 +981,10 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 	d.rtpStats.Stop()
 	d.params.Logger.Infow("rtp stats", "direction", "downstream", "mime", d.mime, "ssrc", d.ssrc, "stats", d.rtpStats.ToString())
 
+	d.maxLayerNotifierChMu.Lock()
+	d.maxLayerNotifierChClosed = true
 	close(d.maxLayerNotifierCh)
+	d.maxLayerNotifierChMu.Unlock()
 
 	if onCloseHandler := d.getOnCloseHandler(); onCloseHandler != nil {
 		onCloseHandler(!flush)

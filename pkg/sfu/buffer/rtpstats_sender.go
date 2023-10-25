@@ -286,7 +286,7 @@ func (r *RTPStatsSender) Update(
 			// do not start on a padding only packet
 			return
 		}
-		if -gapSN >= cNumSequenceNumbers {
+		if -gapSN >= cNumSequenceNumbers/2 {
 			r.logger.Warnw(
 				"large sequence number gap negative", nil,
 				"extStartSN", r.extStartSN,
@@ -352,7 +352,7 @@ func (r *RTPStatsSender) Update(
 			r.setSnInfo(extSequenceNumber, r.extHighestSN, uint16(pktSize), uint8(hdrSize), uint16(payloadSize), marker, true)
 		}
 	} else { // in-order
-		if gapSN >= cNumSequenceNumbers {
+		if gapSN >= cNumSequenceNumbers/2 {
 			r.logger.Warnw(
 				"large sequence number gap", nil,
 				"extStartSN", r.extStartSN,
@@ -394,7 +394,22 @@ func (r *RTPStatsSender) Update(
 			"tsBefore", r.extStartTS,
 			"tsAfter", extTimestamp,
 		)
-		r.extStartTS = extTimestamp
+		if extTimestamp == 0 { // TODO-REMOVE-AFTER-DEBUG
+			r.logger.Errorw(
+				"invalid start timestamp", nil,
+				"snBefore", r.extStartSN,
+				"snAfter", extSequenceNumber,
+				"snHighest", r.extHighestSN,
+				"tsBefore", r.extStartTS,
+				"tsAfter", extTimestamp,
+				"tsHighest", r.extHighestTS,
+				"firstTime", r.firstTime.String(),
+				"startTime", r.startTime.String(),
+			)
+		}
+		if extTimestamp != 0 {
+			r.extStartTS = extTimestamp
+		}
 	}
 
 	if extTimestamp > r.extHighestTS {

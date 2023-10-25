@@ -88,11 +88,6 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		return
 	}
 
-	if !d.currentLayer.IsValid() && !extPkt.KeyFrame {
-		d.decisions.AddDropped(extFrameNum)
-		return
-	}
-
 	if ddwdt.StructureUpdated {
 		d.updateDependencyStructure(dd.AttachedStructure, ddwdt.DecodeTargets)
 	}
@@ -149,7 +144,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		return
 	}
 
-	// // DD-TODO : if bandwidth in congest, could drop the 'Discardable' frame
+	// DD-TODO : if bandwidth in congest, could drop the 'Discardable' frame
 	if dti == dede.DecodeTargetNotPresent {
 		// d.logger.Debugw(fmt.Sprintf("drop packet for decode target not present, highestDecodeTarget %d, incoming %v, fn: %d/%d",
 		// 	highestDecodeTarget,
@@ -193,6 +188,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 				"req", d.requestSpatial,
 				"maxSeen", d.maxSeenLayer,
 				"feed", extPkt.Packet.SSRC,
+				"frame", extFrameNum,
 			)
 		}
 
@@ -201,7 +197,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 
 		d.previousActiveDecodeTargetsBitmask = d.activeDecodeTargetsBitmask
 		d.activeDecodeTargetsBitmask = buffer.GetActiveDecodeTargetBitmask(d.currentLayer, ddwdt.DecodeTargets)
-		d.logger.Debugw("switch to target", "highest", highestDecodeTarget.Layer, "current", d.currentLayer, "bitmask", *d.activeDecodeTargetsBitmask)
+		d.logger.Debugw("switch to target", "highest", highestDecodeTarget.Layer, "current", d.currentLayer, "bitmask", *d.activeDecodeTargetsBitmask, "frame", extFrameNum)
 	}
 
 	ddExtension := &dede.DependencyDescriptorExtension{
