@@ -164,7 +164,7 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 			signalRequestMessageReader{},
 			r.config,
 		)
-		l.Infow("signal stream closed", "error", err)
+		l.Debugw("signal stream closed", "error", err)
 
 		reqChan.Close()
 	}()

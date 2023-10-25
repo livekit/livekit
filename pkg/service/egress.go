@@ -190,7 +190,17 @@ func (s *EgressService) startEgress(ctx context.Context, roomName livekit.RoomNa
 }
 
 func (s *egressLauncher) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) (*livekit.EgressInfo, error) {
-	return s.StartEgressWithClusterId(ctx, "", req)
+	info, err := s.StartEgressWithClusterId(ctx, "", req)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = s.io.CreateEgress(ctx, info)
+	if err != nil {
+		logger.Errorw("failed to create egress", err)
+	}
+
+	return info, nil
 }
 
 func (s *egressLauncher) StartEgressWithClusterId(ctx context.Context, clusterId string, req *rpc.StartEgressRequest) (*livekit.EgressInfo, error) {
@@ -203,17 +213,7 @@ func (s *egressLauncher) StartEgressWithClusterId(ctx context.Context, clusterId
 		req.EgressId = utils.NewGuid(utils.EgressPrefix)
 	}
 
-	info, err := s.client.StartEgress(ctx, clusterId, req)
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = s.io.CreateEgress(ctx, info)
-	if err != nil {
-		logger.Errorw("failed to create egress", err)
-	}
-
-	return info, nil
+	return s.client.StartEgress(ctx, clusterId, req)
 }
 
 type LayoutMetadata struct {
@@ -281,10 +281,6 @@ func (s *EgressService) UpdateStream(ctx context.Context, req *livekit.UpdateStr
 	}
 
 	return info, nil
-}
-
-func (s *EgressService) UpdateOutputs(ctx context.Context, req *livekit.UpdateOutputsRequest) (*livekit.EgressInfo, error) {
-	return nil, twirp.NewError(twirp.Unimplemented, "Update Outputs unimplemented")
 }
 
 func (s *EgressService) ListEgress(ctx context.Context, req *livekit.ListEgressRequest) (*livekit.ListEgressResponse, error) {

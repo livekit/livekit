@@ -83,6 +83,6 @@ type IOClient interface {
 
 //counterfeiter:generate . RoomAllocator
 type RoomAllocator interface {
-	CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (*livekit.Room, error)
+	CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (*livekit.Room, bool, error)
 	ValidateCreateRoom(ctx context.Context, roomName livekit.RoomName) error
 }
