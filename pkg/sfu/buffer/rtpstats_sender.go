@@ -700,6 +700,9 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, calculatedClockRate ui
 		ntpDiffSinceLast := nowNTP.Time().Sub(r.srNewest.NTPTimestamp.Time())
 		nowRTPExt = r.srNewest.RTPTimestampExt + uint64(ntpDiffSinceLast.Seconds()*float64(r.params.ClockRate))
 		nowRTP = uint32(nowRTPExt)
+
+		srData.RTPTimestamp = nowRTP
+		srData.RTPTimestampExt = nowRTPExt
 	}
 
 	r.srNewest = srData
