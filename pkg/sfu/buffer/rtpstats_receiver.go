@@ -154,7 +154,7 @@ func (r *RTPStatsReceiver) Update(
 				return
 			}
 		}
-		if -gapSN >= cNumSequenceNumbers {
+		if -gapSN >= cNumSequenceNumbers/2 {
 			r.logger.Warnw(
 				"large sequence number gap negative", nil,
 				"extStartSN", r.sequenceNumber.GetExtendedStart(),
@@ -226,7 +226,7 @@ func (r *RTPStatsReceiver) Update(
 		flowState.ExtSequenceNumber = resSN.ExtendedVal
 		flowState.ExtTimestamp = resTS.ExtendedVal
 	} else { // in-order
-		if gapSN >= cNumSequenceNumbers {
+		if gapSN >= cNumSequenceNumbers/2 {
 			r.logger.Warnw(
 				"large sequence number gap", nil,
 				"extStartSN", r.sequenceNumber.GetExtendedStart(),
