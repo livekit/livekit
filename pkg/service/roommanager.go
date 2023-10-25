@@ -433,10 +433,12 @@ func (r *RoomManager) StartSession(
 		_ = participant.Close(true, types.ParticipantCloseReasonJoinFailed, false)
 		return err
 	}
-	if err := r.roomServer.RegisterAllParticipantTopics(rpc.FormatParticipantTopic(roomName, participant.Identity())); err != nil {
-		pLogger.Errorw("could not join register participant topic", err)
-		_ = participant.Close(true, types.ParticipantCloseReasonMessageBusFailed, false)
-		return err
+	if r.config.PSRPC.Enabled {
+		if err := r.roomServer.RegisterAllParticipantTopics(rpc.FormatParticipantTopic(roomName, participant.Identity())); err != nil {
+			pLogger.Errorw("could not join register participant topic", err)
+			_ = participant.Close(true, types.ParticipantCloseReasonMessageBusFailed, false)
+			return err
+		}
 	}
 	if err = r.roomStore.StoreParticipant(ctx, roomName, participant.ToProto()); err != nil {
 		pLogger.Errorw("could not store participant", err)
@@ -461,7 +463,9 @@ func (r *RoomManager) StartSession(
 			pLogger.Errorw("could not delete participant", err)
 		}
 
-		r.roomServer.DeregisterAllParticipantTopics(rpc.FormatParticipantTopic(roomName, participant.Identity()))
+		if r.config.PSRPC.Enabled {
+			r.roomServer.DeregisterAllParticipantTopics(rpc.FormatParticipantTopic(roomName, participant.Identity()))
+		}
 
 		// update room store with new numParticipants
 		proto := room.ToProto()
@@ -503,8 +507,10 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 		return nil, err
 	}
 
-	if err := r.roomServer.RegisterAllRoomTopics(rpc.FormatRoomTopic(roomName)); err != nil {
-		return nil, err
+	if r.config.PSRPC.Enabled {
+		if err := r.roomServer.RegisterAllRoomTopics(rpc.FormatRoomTopic(roomName)); err != nil {
+			return nil, err
+		}
 	}
 
 	r.lock.Lock()
@@ -525,7 +531,9 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 	newRoom := rtc.NewRoom(ri, internal, *r.rtcConfig, &r.config.Audio, r.serverInfo, r.telemetry, r.egressLauncher)
 
 	newRoom.OnClose(func() {
-		r.roomServer.DeregisterAllRoomTopics(rpc.FormatRoomTopic(roomName))
+		if r.config.PSRPC.Enabled {
+			r.roomServer.DeregisterAllRoomTopics(rpc.FormatRoomTopic(roomName))
+		}
 
 		roomInfo := newRoom.ToProto()
 		r.telemetry.RoomEnded(ctx, roomInfo)

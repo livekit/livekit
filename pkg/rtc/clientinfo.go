@@ -37,6 +37,10 @@ func (c ClientInfo) isGo() bool {
 	return c.ClientInfo != nil && c.ClientInfo.Sdk == livekit.ClientInfo_GO
 }
 
+func (c ClientInfo) isLinux() bool {
+	return c.ClientInfo != nil && strings.EqualFold(c.ClientInfo.Os, "linux")
+}
+
 func (c ClientInfo) SupportsAudioRED() bool {
 	return !c.isFirefox() && !c.isSafari()
 }
@@ -78,6 +82,10 @@ func (c ClientInfo) SupportsICETCP() bool {
 
 func (c ClientInfo) SupportsChangeRTPSenderEncodingActive() bool {
 	return !c.isFirefox()
+}
+
+func (c ClientInfo) ComplyWithCodecOrderInSDPAnswer() bool {
+	return !(c.isLinux() && c.isFirefox())
 }
 
 // compareVersion compares a semver against the current client SDK version

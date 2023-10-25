@@ -49,7 +49,7 @@ func (fc *FrameChain) OnFrame(extFrameNum uint64, fd *dd.FrameDependencyTemplate
 	if fd.ChainDiffs[fc.chainIdx] == 0 {
 		if fc.broken {
 			fc.broken = false
-			fc.logger.Debugw("frame chain intact", "chanIdx", fc.chainIdx)
+			fc.logger.Debugw("frame chain intact", "chanIdx", fc.chainIdx, "frame", extFrameNum)
 		}
 		fc.expectFrames = fc.expectFrames[:0]
 		return true
@@ -62,7 +62,7 @@ func (fc *FrameChain) OnFrame(extFrameNum uint64, fd *dd.FrameDependencyTemplate
 	prevFrameInChain := extFrameNum - uint64(fd.ChainDiffs[fc.chainIdx])
 	sd, err := fc.decisions.GetDecision(prevFrameInChain)
 	if err != nil {
-		fc.logger.Debugw("could not get decision", "err", err, "frame", extFrameNum, "prevFrame", prevFrameInChain)
+		fc.logger.Debugw("could not get decision", "err", err, "chanIdx", fc.chainIdx, "frame", extFrameNum, "prevFrame", prevFrameInChain)
 	}
 
 	var intact bool
