@@ -181,7 +181,7 @@ func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(offer webrtc.Sess
 
 			unmatchVideo.MediaName.Formats = append(unmatchVideo.MediaName.Formats[:0], preferredCodecs...)
 			// if the client don't comply with codec order in SDP answer, only keep preferred codecs to force client to use it
-			if !p.params.ClientInfo.ComplyWithCodecOrderInSDPAnswer() {
+			if p.params.ClientInfo.ComplyWithCodecOrderInSDPAnswer() {
 				unmatchVideo.MediaName.Formats = append(unmatchVideo.MediaName.Formats, leftCodecs...)
 			}
 		}
