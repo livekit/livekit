@@ -651,6 +651,12 @@ func (s *StreamTrackerManager) GetReferenceLayerRTPTimestamp(ts uint32, layer in
 		return 0, fmt.Errorf("invalid layer, target: %d, reference: %d", layer, referenceLayer)
 	}
 
+	// SVC-TODO: better SVC detection
+	if s.isSVC {
+		// there is only one stream in SVC
+		return ts, nil
+	}
+
 	if layer != referenceLayer && s.layerOffsets[referenceLayer][layer] == 0 {
 		return 0, fmt.Errorf("offset unavailable, target: %d, reference: %d", layer, referenceLayer)
 	}
