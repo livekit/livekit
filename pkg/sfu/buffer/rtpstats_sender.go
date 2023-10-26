@@ -541,12 +541,16 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 		eis := &s.intervalStats
 		eis.aggregate(&is)
 		if is.packetsNotFound != 0 {
+			timeSinceLastRR := time.Since(r.lastRRTime)
+			if r.lastRRTime.IsZero() {
+				timeSinceLastRR = time.Since(r.startTime)
+			}
 			if r.metadataCacheOverflowCount%10 == 0 {
 				r.logger.Infow(
 					"metadata cache overflow",
 					"lastRRTime", r.lastRRTime.String(),
 					"lastRR", r.lastRR,
-					"sinceLastRR", time.Since(r.lastRRTime).String(),
+					"timeSinceLastRR", timeSinceLastRR.String(),
 					"receivedRR", rr,
 					"extStartSN", r.extStartSN,
 					"extHighestSN", r.extHighestSN,
