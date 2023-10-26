@@ -54,7 +54,7 @@ type TrackSender interface {
 	ID() string
 	SubscriberID() livekit.ParticipantID
 	TrackInfoAvailable()
-	HandleRTCPSenderReportData(payloadType webrtc.PayloadType, layer int32, srData *buffer.RTCPSenderReportData) error
+	HandleRTCPSenderReportData(payloadType webrtc.PayloadType, isSVC bool, layer int32, srData *buffer.RTCPSenderReportData) error
 }
 
 // -------------------------------------------------------------------
@@ -1463,9 +1463,11 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 
 	pliOnce := true
 	sendPliOnce := func() {
+		_, layer := d.forwarder.CheckSync()
+		isAnyMuted := d.forwarder.IsAnyMuted()
+		d.params.Logger.Debugw("received PLI/FIR RTCP", "layer", layer, "isAnyMuted", isAnyMuted)
 		if pliOnce {
-			_, layer := d.forwarder.CheckSync()
-			if layer != buffer.InvalidLayerSpatial && !d.forwarder.IsAnyMuted() {
+			if layer != buffer.InvalidLayerSpatial && !isAnyMuted {
 				d.params.Logger.Debugw("sending PLI RTCP", "layer", layer)
 				d.params.Receiver.SendPLI(layer, false)
 				d.isNACKThrottled.Store(true)
@@ -1892,8 +1894,8 @@ func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
 	}
 }
 
-func (d *DownTrack) HandleRTCPSenderReportData(_payloadType webrtc.PayloadType, layer int32, srData *buffer.RTCPSenderReportData) error {
-	if layer == d.forwarder.GetReferenceLayerSpatial() && srData != nil {
+func (d *DownTrack) HandleRTCPSenderReportData(_payloadType webrtc.PayloadType, isSVC bool, layer int32, srData *buffer.RTCPSenderReportData) error {
+	if (layer == d.forwarder.GetReferenceLayerSpatial() || (layer == 0 && isSVC)) && srData != nil {
 		d.rtpStats.MaybeAdjustFirstPacketTime(srData.RTPTimestamp + uint32(d.forwarder.GetReferenceTimestampOffset()))
 	}
 	return nil

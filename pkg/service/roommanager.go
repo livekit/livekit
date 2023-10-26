@@ -119,7 +119,7 @@ func NewLocalRoomManager(
 		},
 	}
 
-	r.roomServer, err = rpc.NewTypedRoomServer(livekit.NodeID(r.currentNode.Id), r, bus)
+	r.roomServer, err = rpc.NewTypedRoomServer(r, bus)
 	if err != nil {
 		return nil, err
 	}
