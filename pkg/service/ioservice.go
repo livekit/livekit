@@ -52,7 +52,7 @@ func NewIOInfoService(
 	}
 
 	if bus != nil {
-		ioServer, err := rpc.NewIOInfoServer(string(nodeID), s, bus)
+		ioServer, err := rpc.NewIOInfoServer(s, bus)
 		if err != nil {
 			return nil, err
 		}
