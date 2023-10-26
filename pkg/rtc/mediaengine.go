@@ -132,3 +132,11 @@ func IsCodecEnabled(codecs []*livekit.Codec, cap webrtc.RTPCodecCapability) bool
 	}
 	return false
 }
+
+func selectAlternativeCodec(mime string) string {
+	if strings.EqualFold(mime, webrtc.MimeTypeVP8) {
+		return webrtc.MimeTypeH264
+	} else {
+		return webrtc.MimeTypeVP8
+	}
+}
