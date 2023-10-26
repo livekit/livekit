@@ -142,6 +142,12 @@ type DependencyDescriptorDecodeTarget struct {
 	Layer  VideoLayer
 }
 
+func (dt *DependencyDescriptorDecodeTarget) String() string {
+	return fmt.Sprintf("DecodeTarget{t: %d, l: %+v}", dt.Target, dt.Layer)
+}
+
+// ------------------------------------------------------------------------------
+
 func ProcessFrameDependencyStructure(structure *dd.FrameDependencyStructure) []DependencyDescriptorDecodeTarget {
 	decodeTargets := make([]DependencyDescriptorDecodeTarget, 0, structure.NumDecodeTargets)
 	for target := 0; target < structure.NumDecodeTargets; target++ {
