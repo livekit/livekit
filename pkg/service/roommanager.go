@@ -70,7 +70,7 @@ type RoomManager struct {
 	egressLauncher    rtc.EgressLauncher
 	versionGenerator  utils.TimedVersionGenerator
 	turnAuthHandler   *TURNAuthHandler
-	roomServer        rpc.TypedRoomServer
+	bus               psrpc.MessageBus
 
 	rooms map[livekit.RoomName]*rtc.Room
 
@@ -105,6 +105,7 @@ func NewLocalRoomManager(
 		egressLauncher:    egressLauncher,
 		versionGenerator:  versionGenerator,
 		turnAuthHandler:   turnAuthHandler,
+		bus:               bus,
 
 		rooms: make(map[livekit.RoomName]*rtc.Room),
 
@@ -117,11 +118,6 @@ func NewLocalRoomManager(
 			Region:   conf.Region,
 			NodeId:   currentNode.Id,
 		},
-	}
-
-	r.roomServer, err = rpc.NewTypedRoomServer(livekit.NodeID(r.currentNode.Id), r, bus)
-	if err != nil {
-		return nil, err
 	}
 
 	// hook up to router
@@ -219,8 +215,6 @@ func (r *RoomManager) Stop() {
 		}
 		room.Close()
 	}
-
-	r.roomServer.Kill()
 
 	if r.rtcConfig != nil {
 		if r.rtcConfig.UDPMux != nil {
@@ -433,12 +427,11 @@ func (r *RoomManager) StartSession(
 		_ = participant.Close(true, types.ParticipantCloseReasonJoinFailed, false)
 		return err
 	}
-	if r.config.PSRPC.Enabled {
-		if err := r.roomServer.RegisterAllParticipantTopics(rpc.FormatParticipantTopic(roomName, participant.Identity())); err != nil {
-			pLogger.Errorw("could not join register participant topic", err)
-			_ = participant.Close(true, types.ParticipantCloseReasonMessageBusFailed, false)
-			return err
-		}
+	participantServer := rpc.NewTypedParticipantServer(r, r.bus)
+	if err := participantServer.RegisterAllParticipantTopics(rpc.FormatParticipantTopic(roomName, participant.Identity())); err != nil {
+		pLogger.Errorw("could not join register participant topic", err)
+		_ = participant.Close(true, types.ParticipantCloseReasonMessageBusFailed, false)
+		return err
 	}
 	if err = r.roomStore.StoreParticipant(ctx, roomName, participant.ToProto()); err != nil {
 		pLogger.Errorw("could not store participant", err)
@@ -463,9 +456,7 @@ func (r *RoomManager) StartSession(
 			pLogger.Errorw("could not delete participant", err)
 		}
 
-		if r.config.PSRPC.Enabled {
-			r.roomServer.DeregisterAllParticipantTopics(rpc.FormatParticipantTopic(roomName, participant.Identity()))
-		}
+		participantServer.Kill()
 
 		// update room store with new numParticipants
 		proto := room.ToProto()
@@ -507,12 +498,6 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 		return nil, err
 	}
 
-	if r.config.PSRPC.Enabled {
-		if err := r.roomServer.RegisterAllRoomTopics(rpc.FormatRoomTopic(roomName)); err != nil {
-			return nil, err
-		}
-	}
-
 	r.lock.Lock()
 
 	currentRoom := r.rooms[roomName]
@@ -530,10 +515,13 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 	// construct ice servers
 	newRoom := rtc.NewRoom(ri, internal, *r.rtcConfig, &r.config.Audio, r.serverInfo, r.telemetry, r.egressLauncher)
 
+	roomServer := rpc.NewTypedRoomServer(r, r.bus)
+	if err := roomServer.RegisterAllRoomTopics(rpc.FormatRoomTopic(roomName)); err != nil {
+		return nil, err
+	}
+
 	newRoom.OnClose(func() {
-		if r.config.PSRPC.Enabled {
-			r.roomServer.DeregisterAllRoomTopics(rpc.FormatRoomTopic(roomName))
-		}
+		roomServer.Kill()
 
 		roomInfo := newRoom.ToProto()
 		r.telemetry.RoomEnded(ctx, roomInfo)

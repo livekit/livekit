@@ -75,7 +75,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		routing.NewSignalClient,
 		getPSRPCConfig,
 		routing.NewTopicFormatter,
-		routing.NewRoomClient,
 		NewLocalRoomManager,
 		NewTURNAuthHandler,
 		getTURNAuthHandlerFunc,

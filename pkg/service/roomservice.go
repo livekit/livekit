@@ -28,22 +28,27 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	protopsrpc "github.com/livekit/protocol/psrpc"
 	"github.com/livekit/protocol/rpc"
+	"github.com/livekit/psrpc"
+	"github.com/livekit/psrpc/pkg/middleware"
 )
 
 // A rooms service that supports a single node
 type RoomService struct {
-	roomConf       config.RoomConfig
-	apiConf        config.APIConfig
-	psrpcConf      config.PSRPCConfig
-	router         routing.MessageRouter
-	roomAllocator  RoomAllocator
-	roomStore      ServiceStore
-	egressLauncher rtc.EgressLauncher
-	topicFormatter rpc.TopicFormatter
-	roomClient     rpc.TypedRoomClient
+	roomConf          config.RoomConfig
+	apiConf           config.APIConfig
+	psrpcConf         config.PSRPCConfig
+	router            routing.MessageRouter
+	roomAllocator     RoomAllocator
+	roomStore         ServiceStore
+	egressLauncher    rtc.EgressLauncher
+	topicFormatter    rpc.TopicFormatter
+	roomClient        rpc.TypedRoomClient
+	participantClient rpc.TypedParticipantClient
 }
 
 func NewRoomService(
@@ -55,7 +60,7 @@ func NewRoomService(
 	serviceStore ServiceStore,
 	egressLauncher rtc.EgressLauncher,
 	topicFormatter rpc.TopicFormatter,
-	roomClient rpc.TypedRoomClient,
+	bus psrpc.MessageBus,
 ) (svc *RoomService, err error) {
 	svc = &RoomService{
 		roomConf:       roomConf,
@@ -66,8 +71,31 @@ func NewRoomService(
 		roomStore:      serviceStore,
 		egressLauncher: egressLauncher,
 		topicFormatter: topicFormatter,
-		roomClient:     roomClient,
 	}
+
+	if psrpcConf.Enabled {
+		clientOptions := []psrpc.ClientOption{
+			protopsrpc.WithClientLogger(logger.GetLogger()),
+			middleware.WithClientMetrics(prometheus.PSRPCMetricsObserver{}),
+			psrpc.WithClientChannelSize(psrpcConf.BufferSize),
+			middleware.WithRPCRetries(middleware.RetryOptions{
+				MaxAttempts: psrpcConf.MaxAttempts,
+				Timeout:     psrpcConf.Timeout,
+				Backoff:     psrpcConf.Backoff,
+			}),
+		}
+
+		svc.roomClient, err = rpc.NewTypedRoomClient(bus, clientOptions...)
+		if err != nil {
+			return nil, err
+		}
+
+		svc.participantClient, err = rpc.NewTypedParticipantClient(bus, clientOptions...)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return
 }
 
@@ -229,7 +257,7 @@ func (s *RoomService) RemoveParticipant(ctx context.Context, req *livekit.RoomPa
 	}
 
 	if s.psrpcConf.Enabled {
-		return s.roomClient.RemoveParticipant(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
+		return s.participantClient.RemoveParticipant(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
 	}
 
 	err := s.writeParticipantMessage(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity), &livekit.RTCNodeMessage{
@@ -265,7 +293,7 @@ func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 	}
 
 	if s.psrpcConf.Enabled {
-		return s.roomClient.MutePublishedTrack(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
+		return s.participantClient.MutePublishedTrack(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
 	}
 
 	err := s.writeParticipantMessage(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity), &livekit.RTCNodeMessage{
@@ -319,7 +347,7 @@ func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.Update
 	}
 
 	if s.psrpcConf.Enabled {
-		return s.roomClient.UpdateParticipant(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
+		return s.participantClient.UpdateParticipant(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
 	}
 
 	err := s.writeParticipantMessage(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity), &livekit.RTCNodeMessage{
@@ -368,7 +396,7 @@ func (s *RoomService) UpdateSubscriptions(ctx context.Context, req *livekit.Upda
 	}
 
 	if s.psrpcConf.Enabled {
-		return s.roomClient.UpdateSubscriptions(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
+		return s.participantClient.UpdateSubscriptions(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
 	}
 
 	err := s.writeParticipantMessage(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity), &livekit.RTCNodeMessage{
