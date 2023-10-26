@@ -1621,7 +1621,8 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		} else if req.Type == livekit.TrackType_AUDIO && !strings.HasPrefix(mime, "audio/") {
 			mime = "audio/" + mime
 		}
-		if IsCodecEnabled(p.params.EnabledCodecs, webrtc.RTPCodecCapability{MimeType: mime}) {
+		if IsCodecEnabled(p.params.EnabledCodecs, webrtc.RTPCodecCapability{MimeType: mime}) &&
+			!p.codecDisabledByConfig(mime, true) {
 			ti.Codecs = append(ti.Codecs, &livekit.SimulcastCodecInfo{
 				MimeType: mime,
 				Cid:      codec.Cid,
@@ -2312,4 +2313,22 @@ func (p *ParticipantImpl) SendDataPacket(dp *livekit.DataPacket, data []byte) er
 		p.dataChannelStats.AddBytes(uint64(len(data)), true)
 	}
 	return err
+}
+
+func (p *ParticipantImpl) codecDisabledByConfig(mime string, publish bool) bool {
+	if p.params.ClientConf.GetDisabledCodecs() == nil {
+		return false
+	}
+
+	findCodec := func(codecs []*livekit.Codec, target string) bool {
+		for _, c := range codecs {
+			if strings.EqualFold(c.Mime, target) {
+				return true
+			}
+		}
+		return false
+	}
+
+	return findCodec(p.params.ClientConf.GetDisabledCodecs().GetCodecs(), mime) ||
+		(publish && findCodec(p.params.ClientConf.GetDisabledCodecs().GetPublish(), mime))
 }
