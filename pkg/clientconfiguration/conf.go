@@ -33,7 +33,8 @@ var StaticConfigurations = []ConfigurationItem{
 	// 	Merge: false,
 	// },
 	{
-		Match: &ScriptMatch{Expr: `c.device_model == "Xiaomi 2201117TI" && c.os == "android"`},
+		Match: &ScriptMatch{Expr: `(c.device_model == "xiaomi 2201117ti" && c.os == "android) ||
+		  ((c.browser == "firefox" || c.browser == "firefox mobile") && (c.os == "linux" || c.os == "android"))`},
 		Configuration: &livekit.ClientConfiguration{
 			DisabledCodecs: &livekit.DisabledCodecs{
 				Publish: []*livekit.Codec{{Mime: "video/h264"}},
