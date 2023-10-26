@@ -75,11 +75,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	rtcEgressLauncher := NewEgressLauncher(egressClient, ioInfoService)
 	topicFormatter := routing.NewTopicFormatter()
-	roomClient, err := routing.NewInternalClient(nodeID, messageBus, psrpcConfig)
-	if err != nil {
-		return nil, err
-	}
-	roomService, err := NewRoomService(roomConfig, apiConfig, psrpcConfig, router, roomAllocator, objectStore, rtcEgressLauncher, topicFormatter, roomClient)
+	roomService, err := NewRoomService(roomConfig, apiConfig, psrpcConfig, router, roomAllocator, objectStore, rtcEgressLauncher, topicFormatter, messageBus)
 	if err != nil {
 		return nil, err
 	}
