@@ -69,7 +69,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	analyticsService := telemetry.NewAnalyticsService(conf, currentNode)
 	telemetryService := telemetry.NewTelemetryService(queuedNotifier, analyticsService)
-	ioInfoService, err := NewIOInfoService(nodeID, messageBus, egressStore, ingressStore, telemetryService)
+	ioInfoService, err := NewIOInfoService(messageBus, egressStore, ingressStore, telemetryService)
 	if err != nil {
 		return nil, err
 	}
