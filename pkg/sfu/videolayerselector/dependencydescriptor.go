@@ -63,7 +63,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	ddwdt := extPkt.DependencyDescriptor
 	if ddwdt == nil {
 		// packet doesn't have dependency descriptor
-		d.logger.Debugw(fmt.Sprintf("drop packet, no DD, incoming %v", extPkt.VideoLayer))
+		d.logger.Debugw(fmt.Sprintf("drop packet, no DD, incoming %v, sn: %d, isKeyFrame: %v", extPkt.VideoLayer, extPkt.Packet.SequenceNumber, extPkt.KeyFrame))
 		return
 	}
 
@@ -81,20 +81,22 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	sd, err := d.decisions.GetDecision(extFrameNum)
 	if err != nil {
 		// do not mark as dropped as only error is an old frame
-		d.logger.Debugw(fmt.Sprintf("drop packet on decision error, incoming %v, fn: %d/%d",
+		d.logger.Debugw(fmt.Sprintf("drop packet on decision error, incoming %v, fn: %d/%d, sn: %d",
 			incomingLayer,
 			dd.FrameNumber,
 			extFrameNum,
+			extPkt.Packet.SequenceNumber,
 		), "err", err)
 		return
 	}
 	switch sd {
 	case selectorDecisionDropped:
 		// a packet of an alreadty dropped frame, maintain decision
-		d.logger.Debugw(fmt.Sprintf("drop packet already dropped, incoming %v, fn: %d/%d",
+		d.logger.Debugw(fmt.Sprintf("drop packet already dropped, incoming %v, fn: %d/%d, sm: %d",
 			incomingLayer,
 			dd.FrameNumber,
 			extFrameNum,
+			extPkt.Packet.SequenceNumber,
 		))
 		return
 	}
@@ -144,23 +146,34 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 
 	if highestDecodeTarget.Target < 0 {
 		// no active decode target, do not select
-		d.logger.Debugw(fmt.Sprintf("drop packet for no target found, decodeTargets %v, tagetLayer %v, incoming %v",
-			d.decodeTargets,
-			d.targetLayer,
-			incomingLayer,
-		))
+		d.logger.Debugw(
+			"drop packet for no target found",
+			"highestDecodeTarget", highestDecodeTarget,
+			"decodeTargets", d.decodeTargets,
+			"tagetLayer", d.targetLayer,
+			"incoming", incomingLayer,
+			"fn", dd.FrameNumber,
+			"efn", extFrameNum,
+			"sn", extPkt.Packet.SequenceNumber,
+			"isKeyFrame", extPkt.KeyFrame,
+		)
 		d.decisions.AddDropped(extFrameNum)
 		return
 	}
 
 	// DD-TODO : if bandwidth in congest, could drop the 'Discardable' frame
 	if dti == dede.DecodeTargetNotPresent {
-		d.logger.Debugw(fmt.Sprintf("drop packet for decode target not present, highestDecodeTarget %d, incoming %v, fn: %d/%d",
-			highestDecodeTarget,
-			incomingLayer,
-			dd.FrameNumber,
-			extFrameNum,
-		))
+		d.logger.Debugw(
+			"drop packet for decode target not present",
+			"highestDecodeTarget", highestDecodeTarget,
+			"decodeTargets", d.decodeTargets,
+			"tagetLayer", d.targetLayer,
+			"incoming", incomingLayer,
+			"fn", dd.FrameNumber,
+			"efn", extFrameNum,
+			"sn", extPkt.Packet.SequenceNumber,
+			"isKeyFrame", extPkt.KeyFrame,
+		)
 		d.decisions.AddDropped(extFrameNum)
 		return
 	}
@@ -180,12 +193,17 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		}
 	}
 	if !isDecodable {
-		d.logger.Debugw(fmt.Sprintf("drop packet for not decodable, highestDecodeTarget %d, incoming %v, fn: %d/%d",
-			highestDecodeTarget,
-			incomingLayer,
-			dd.FrameNumber,
-			extFrameNum,
-		))
+		d.logger.Debugw(
+			"drop packet for not decodable",
+			"highestDecodeTarget", highestDecodeTarget,
+			"decodeTargets", d.decodeTargets,
+			"tagetLayer", d.targetLayer,
+			"incoming", incomingLayer,
+			"fn", dd.FrameNumber,
+			"efn", extFrameNum,
+			"sn", extPkt.Packet.SequenceNumber,
+			"isKeyFrame", extPkt.KeyFrame,
+		)
 		d.decisions.AddDropped(extFrameNum)
 		return
 	}
@@ -203,7 +221,10 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 				"req", d.requestSpatial,
 				"maxSeen", d.maxSeenLayer,
 				"feed", extPkt.Packet.SSRC,
-				"frame", extFrameNum,
+				"fn", dd.FrameNumber,
+				"efn", extFrameNum,
+				"sn", extPkt.Packet.SequenceNumber,
+				"isKeyFrame", extPkt.KeyFrame,
 			)
 		}
 
@@ -212,7 +233,16 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 
 		d.previousActiveDecodeTargetsBitmask = d.activeDecodeTargetsBitmask
 		d.activeDecodeTargetsBitmask = buffer.GetActiveDecodeTargetBitmask(d.currentLayer, ddwdt.DecodeTargets)
-		d.logger.Debugw("switch to target", "highest", highestDecodeTarget.Layer, "current", d.currentLayer, "bitmask", *d.activeDecodeTargetsBitmask, "frame", extFrameNum)
+		d.logger.Debugw(
+			"switch to target",
+			"highestDecodeTarget", highestDecodeTarget,
+			"current", d.currentLayer,
+			"bitmask", *d.activeDecodeTargetsBitmask,
+			"fn", dd.FrameNumber,
+			"efn", extFrameNum,
+			"sn", extPkt.Packet.SequenceNumber,
+			"isKeyFrame", extPkt.KeyFrame,
+		)
 	}
 
 	ddExtension := &dede.DependencyDescriptorExtension{
