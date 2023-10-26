@@ -55,7 +55,7 @@ func TestScriptMatchConfiguration(t *testing.T) {
 				Merge: true,
 			},
 			{
-				Match: &ScriptMatch{Expr: `c.sdk == "ANDROID"`},
+				Match: &ScriptMatch{Expr: `c.sdk == "android"`},
 				Configuration: &livekit.ClientConfiguration{
 					Video: &livekit.VideoConfiguration{
 						HardwareEncoder: livekit.ClientConfigSetting_DISABLED,
