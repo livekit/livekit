@@ -31,6 +31,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
+	"github.com/livekit/protocol/utils"
 )
 
 // A rooms service that supports a single node
@@ -41,7 +42,8 @@ type RoomService struct {
 	router         routing.MessageRouter
 	roomAllocator  RoomAllocator
 	roomStore      ServiceStore
-	egressLauncher rtc.EgressLauncher
+	agentClient    rtc.AgentClient
+	egressClient   rtc.EgressLauncher
 	topicFormatter rpc.TopicFormatter
 	roomClient     rpc.TypedRoomClient
 }
@@ -53,7 +55,8 @@ func NewRoomService(
 	router routing.MessageRouter,
 	roomAllocator RoomAllocator,
 	serviceStore ServiceStore,
-	egressLauncher rtc.EgressLauncher,
+	agentClient rtc.AgentClient,
+	egressClient rtc.EgressLauncher,
 	topicFormatter rpc.TopicFormatter,
 	roomClient rpc.TypedRoomClient,
 ) (svc *RoomService, err error) {
@@ -64,7 +67,8 @@ func NewRoomService(
 		router:         router,
 		roomAllocator:  roomAllocator,
 		roomStore:      serviceStore,
-		egressLauncher: egressLauncher,
+		agentClient:    agentClient,
+		egressClient:   egressClient,
 		topicFormatter: topicFormatter,
 		roomClient:     roomClient,
 	}
@@ -75,7 +79,7 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 	AppendLogFields(ctx, "room", req.Name, "request", req)
 	if err := EnsureCreatePermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
-	} else if req.Egress != nil && s.egressLauncher == nil {
+	} else if req.Egress != nil && s.egressClient == nil {
 		return nil, ErrEgressNotConnected
 	}
 
@@ -109,14 +113,23 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 		return nil, err
 	}
 
-	if created && req.Egress != nil && req.Egress.Room != nil {
-		egress := &rpc.StartEgressRequest{
-			Request: &rpc.StartEgressRequest_RoomComposite{
-				RoomComposite: req.Egress.Room,
-			},
-			RoomId: rm.Sid,
+	if created {
+		if s.agentClient != nil {
+			s.agentClient.JobRequest(ctx, &livekit.Job{
+				Id:   utils.NewGuid("JR_"),
+				Type: livekit.JobType_JT_ROOM,
+				Room: rm,
+			})
 		}
-		_, err = s.egressLauncher.StartEgress(ctx, egress)
+		if req.Egress != nil && req.Egress.Room != nil {
+			egress := &rpc.StartEgressRequest{
+				Request: &rpc.StartEgressRequest_RoomComposite{
+					RoomComposite: req.Egress.Room,
+				},
+				RoomId: rm.Sid,
+			}
+			_, err = s.egressClient.StartEgress(ctx, egress)
+		}
 	}
 
 	return rm, err
@@ -424,7 +437,7 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 
 	// no one has joined the room, would not have been created on an RTC node.
 	// in this case, we'd want to run create again
-	_, _, err = s.roomAllocator.CreateRoom(ctx, &livekit.CreateRoomRequest{
+	room, created, err := s.roomAllocator.CreateRoom(ctx, &livekit.CreateRoomRequest{
 		Name:     req.Room,
 		Metadata: req.Metadata,
 	})
@@ -460,6 +473,14 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	if created && s.agentClient != nil {
+		s.agentClient.JobRequest(ctx, &livekit.Job{
+			Id:   utils.NewGuid("JR_"),
+			Type: livekit.JobType_JT_ROOM,
+			Room: room,
+		})
 	}
 
 	return room, nil

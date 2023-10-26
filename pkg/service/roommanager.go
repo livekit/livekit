@@ -67,7 +67,8 @@ type RoomManager struct {
 	roomStore         ObjectStore
 	telemetry         telemetry.TelemetryService
 	clientConfManager clientconfiguration.ClientConfigurationManager
-	egressLauncher    rtc.EgressLauncher
+	agentClient       rtc.AgentClient
+	egressClient      rtc.EgressLauncher
 	versionGenerator  utils.TimedVersionGenerator
 	turnAuthHandler   *TURNAuthHandler
 	roomServer        rpc.TypedRoomServer
@@ -84,7 +85,8 @@ func NewLocalRoomManager(
 	router routing.Router,
 	telemetry telemetry.TelemetryService,
 	clientConfManager clientconfiguration.ClientConfigurationManager,
-	egressLauncher rtc.EgressLauncher,
+	agentClient rtc.AgentClient,
+	egressClient rtc.EgressLauncher,
 	versionGenerator utils.TimedVersionGenerator,
 	turnAuthHandler *TURNAuthHandler,
 	bus psrpc.MessageBus,
@@ -102,7 +104,8 @@ func NewLocalRoomManager(
 		roomStore:         roomStore,
 		telemetry:         telemetry,
 		clientConfManager: clientConfManager,
-		egressLauncher:    egressLauncher,
+		egressClient:      egressClient,
+		agentClient:       agentClient,
 		versionGenerator:  versionGenerator,
 		turnAuthHandler:   turnAuthHandler,
 
@@ -528,7 +531,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 	}
 
 	// construct ice servers
-	newRoom := rtc.NewRoom(ri, internal, *r.rtcConfig, &r.config.Audio, r.serverInfo, r.telemetry, r.egressLauncher)
+	newRoom := rtc.NewRoom(ri, internal, *r.rtcConfig, &r.config.Audio, r.serverInfo, r.telemetry, r.agentClient, r.egressClient)
 
 	newRoom.OnClose(func() {
 		if r.config.PSRPC.Enabled {

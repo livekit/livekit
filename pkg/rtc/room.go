@@ -70,12 +70,13 @@ type Room struct {
 	protoProxy *utils.ProtoProxy[*livekit.Room]
 	Logger     logger.Logger
 
-	config         WebRTCConfig
-	audioConfig    *config.AudioConfig
-	serverInfo     *livekit.ServerInfo
-	telemetry      telemetry.TelemetryService
-	egressLauncher EgressLauncher
-	trackManager   *RoomTrackManager
+	config       WebRTCConfig
+	audioConfig  *config.AudioConfig
+	serverInfo   *livekit.ServerInfo
+	telemetry    telemetry.TelemetryService
+	agentClient  AgentClient
+	egressClient EgressLauncher
+	trackManager *RoomTrackManager
 
 	// map of identity -> Participant
 	participants              map[livekit.ParticipantIdentity]types.LocalParticipant
@@ -113,7 +114,8 @@ func NewRoom(
 	audioConfig *config.AudioConfig,
 	serverInfo *livekit.ServerInfo,
 	telemetry telemetry.TelemetryService,
-	egressLauncher EgressLauncher,
+	agentClient AgentClient,
+	egressClient EgressLauncher,
 ) *Room {
 	r := &Room{
 		protoRoom: proto.Clone(room).(*livekit.Room),
@@ -126,7 +128,8 @@ func NewRoom(
 		config:                    config,
 		audioConfig:               audioConfig,
 		telemetry:                 telemetry,
-		egressLauncher:            egressLauncher,
+		egressClient:              egressClient,
+		agentClient:               agentClient,
 		trackManager:              NewRoomTrackManager(),
 		serverInfo:                serverInfo,
 		participants:              make(map[livekit.ParticipantIdentity]types.LocalParticipant),
@@ -898,13 +901,29 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 
 	r.trackManager.AddTrack(track, participant.Identity(), participant.ID())
 
-	// auto egress
-	if r.internal != nil {
-		if r.internal.ParticipantEgress != nil {
-			if _, hasPublished := r.hasPublished.Swap(participant.Identity(), true); !hasPublished {
+	// launch jobs
+	var wg sync.WaitGroup
+	_, hasPublished := r.hasPublished.Swap(participant.Identity(), true)
+	if !hasPublished {
+		if r.agentClient != nil {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				r.agentClient.JobRequest(context.Background(), &livekit.Job{
+					Id:          utils.NewGuid("JP_"),
+					Type:        livekit.JobType_JT_PARTICIPANT,
+					Room:        r.protoRoom,
+					Participant: participant.ToProto(),
+				})
+			}()
+		}
+		if r.internal != nil && r.internal.ParticipantEgress != nil {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
 				if err := StartParticipantEgress(
 					context.Background(),
-					r.egressLauncher,
+					r.egressClient,
 					r.telemetry,
 					r.internal.ParticipantEgress,
 					participant.Identity(),
@@ -913,12 +932,16 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 				); err != nil {
 					r.Logger.Errorw("failed to launch participant egress", err)
 				}
-			}
+			}()
 		}
-		if r.internal.TrackEgress != nil {
+	}
+	if r.internal != nil && r.internal.TrackEgress != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			if err := StartTrackEgress(
 				context.Background(),
-				r.egressLauncher,
+				r.egressClient,
 				r.telemetry,
 				r.internal.TrackEgress,
 				track,
@@ -927,8 +950,9 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 			); err != nil {
 				r.Logger.Errorw("failed to launch track egress", err)
 			}
-		}
+		}()
 	}
+	wg.Wait()
 }
 
 func (r *Room) onTrackUpdated(p types.LocalParticipant, _ types.MediaTrack) {

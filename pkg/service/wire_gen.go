@@ -53,6 +53,11 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
+	agentService, err := NewAgentService(messageBus)
+	if err != nil {
+		return nil, err
+	}
+	rtcAgentClient := NewAgentClient(agentService)
 	egressClient, err := rpc.NewEgressClient(messageBus)
 	if err != nil {
 		return nil, err
@@ -79,22 +84,22 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	roomService, err := NewRoomService(roomConfig, apiConfig, psrpcConfig, router, roomAllocator, objectStore, rtcEgressLauncher, topicFormatter, roomClient)
+	roomService, err := NewRoomService(roomConfig, apiConfig, psrpcConfig, router, roomAllocator, objectStore, rtcAgentClient, rtcEgressLauncher, topicFormatter, roomClient)
 	if err != nil {
 		return nil, err
 	}
-	egressService := NewEgressService(egressClient, objectStore, ioInfoService, roomService, rtcEgressLauncher)
+	egressService := NewEgressService(egressClient, rtcEgressLauncher, objectStore, ioInfoService, roomService)
 	ingressConfig := getIngressConfig(conf)
 	ingressClient, err := rpc.NewIngressClient(messageBus)
 	if err != nil {
 		return nil, err
 	}
 	ingressService := NewIngressService(ingressConfig, nodeID, messageBus, ingressClient, ingressStore, roomService, telemetryService)
-	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode, telemetryService)
+	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode, rtcAgentClient, telemetryService)
 	clientConfigurationManager := createClientConfiguration()
 	timedVersionGenerator := utils.NewDefaultTimedVersionGenerator()
 	turnAuthHandler := NewTURNAuthHandler(keyProvider)
-	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager, rtcEgressLauncher, timedVersionGenerator, turnAuthHandler, messageBus)
+	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager, rtcAgentClient, rtcEgressLauncher, timedVersionGenerator, turnAuthHandler, messageBus)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +112,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, ioInfoService, rtcService, keyProvider, router, roomManager, signalServer, server, currentNode)
+	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, ioInfoService, rtcService, agentService, keyProvider, router, roomManager, signalServer, server, currentNode)
 	if err != nil {
 		return nil, err
 	}
