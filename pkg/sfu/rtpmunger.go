@@ -51,14 +51,21 @@ type SnTs struct {
 // ----------------------------------------------------------------------
 
 type RTPMungerState struct {
-	ExtLastSN       uint64
-	ExtSecondLastSN uint64
-	ExtLastTS       uint64
-	ExtSecondLastTS uint64
+	ExtLastSN        uint64
+	ExtSecondLastSN  uint64
+	ExtLastTS        uint64
+	ExtSecondLastTS  uint64
+	LastMarker       bool
+	SecondLastMarker bool
 }
 
 func (r RTPMungerState) String() string {
-	return fmt.Sprintf("RTPMungerState{extLastSN: %d, extSecondLastSN: %d, extLastTS: %d, extSecondLastTS: %d)", r.ExtLastSN, r.ExtSecondLastSN, r.ExtLastTS, r.ExtSecondLastTS)
+	return fmt.Sprintf(
+		"RTPMungerState{extLastSN: %d, extSecondLastSN: %d, extLastTS: %d, extSecondLastTS: %d, lastMarker: %v, secondLastMarker: %v)",
+		r.ExtLastSN, r.ExtSecondLastSN,
+		r.ExtLastTS, r.ExtSecondLastTS,
+		r.LastMarker, r.SecondLastMarker,
+	)
 }
 
 // ----------------------------------------------------------------------
@@ -77,7 +84,8 @@ type RTPMunger struct {
 	extSecondLastTS uint64
 	tsOffset        uint64
 
-	lastMarker bool
+	lastMarker       bool
+	secondLastMarker bool
 
 	extRtxGateSn      uint64
 	isInRtxGateRegion bool
@@ -100,15 +108,18 @@ func (r *RTPMunger) DebugInfo() map[string]interface{} {
 		"ExtSecondLastTS":      r.extSecondLastTS,
 		"TSOffset":             r.tsOffset,
 		"LastMarker":           r.lastMarker,
+		"SecondLastMarker":     r.secondLastMarker,
 	}
 }
 
 func (r *RTPMunger) GetLast() RTPMungerState {
 	return RTPMungerState{
-		ExtLastSN:       r.extLastSN,
-		ExtSecondLastSN: r.extSecondLastSN,
-		ExtLastTS:       r.extLastTS,
-		ExtSecondLastTS: r.extSecondLastTS,
+		ExtLastSN:        r.extLastSN,
+		ExtSecondLastSN:  r.extSecondLastSN,
+		ExtLastTS:        r.extLastTS,
+		ExtSecondLastTS:  r.extSecondLastTS,
+		LastMarker:       r.lastMarker,
+		SecondLastMarker: r.secondLastMarker,
 	}
 }
 
@@ -117,6 +128,8 @@ func (r *RTPMunger) SeedLast(state RTPMungerState) {
 	r.extSecondLastSN = state.ExtSecondLastSN
 	r.extLastTS = state.ExtLastTS
 	r.extSecondLastTS = state.ExtSecondLastTS
+	r.lastMarker = state.LastMarker
+	r.secondLastMarker = state.SecondLastMarker
 }
 
 func (r *RTPMunger) SetLastSnTs(extPkt *buffer.ExtPacket) {
@@ -164,9 +177,10 @@ func (r *RTPMunger) PacketDropped(extPkt *buffer.ExtPacket) {
 	r.updateSnOffset()
 
 	r.extLastTS = r.extSecondLastTS
+	r.lastMarker = r.secondLastMarker
 }
 
-func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (TranslationParamsRTP, error) {
+func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket, marker bool) (TranslationParamsRTP, error) {
 	diff := int64(extPkt.ExtSequenceNumber - r.extHighestIncomingSN)
 	if (diff == 1 && len(extPkt.Packet.Payload) != 0) || diff > 1 {
 		// in-order - either contiguous packet with payload OR packet following a gap, may or may not have payload
@@ -184,7 +198,8 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (TranslationParam
 		r.extLastSN = extMungedSN
 		r.extSecondLastTS = r.extLastTS
 		r.extLastTS = extMungedTS
-		r.lastMarker = extPkt.Packet.Marker
+		r.secondLastMarker = r.lastMarker
+		r.lastMarker = marker
 
 		if extPkt.KeyFrame {
 			r.extRtxGateSn = extMungedSN

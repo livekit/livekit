@@ -1654,7 +1654,7 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 		f.lastSSRC = extPkt.Packet.SSRC
 	}
 
-	tpRTP, err := f.rtpMunger.UpdateAndGetSnTs(extPkt)
+	tpRTP, err := f.rtpMunger.UpdateAndGetSnTs(extPkt, tp.marker)
 	if err != nil {
 		tp.shouldDrop = true
 		if err == ErrPaddingOnlyPacket || err == ErrDuplicatePacket || err == ErrOutOfOrderSequenceNumberCacheMiss {
@@ -1697,7 +1697,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		tp.shouldDrop = true
 		if f.started && result.IsRelevant {
 			// call to update highest incoming sequence number and other internal structures
-			if tpRTP, err := f.rtpMunger.UpdateAndGetSnTs(extPkt); err == nil && tpRTP.snOrdering == SequenceNumberOrderingContiguous {
+			if tpRTP, err := f.rtpMunger.UpdateAndGetSnTs(extPkt, result.RTPMarker); err == nil && tpRTP.snOrdering == SequenceNumberOrderingContiguous {
 				f.rtpMunger.PacketDropped(extPkt)
 			}
 		}

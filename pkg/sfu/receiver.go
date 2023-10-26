@@ -342,7 +342,7 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 		w.streamTrackerManager.SetRTCPSenderReportData(layer, srFirst, srNewest)
 
 		w.downTrackSpreader.Broadcast(func(dt TrackSender) {
-			_ = dt.HandleRTCPSenderReportData(w.codec.PayloadType, layer, srNewest)
+			_ = dt.HandleRTCPSenderReportData(w.codec.PayloadType, w.isSVC, layer, srNewest)
 		})
 	})
 
