@@ -541,12 +541,16 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 		eis := &s.intervalStats
 		eis.aggregate(&is)
 		if is.packetsNotFound != 0 {
+			timeSinceLastRR := time.Since(r.lastRRTime)
+			if r.lastRRTime.IsZero() {
+				timeSinceLastRR = time.Since(r.startTime)
+			}
 			if r.metadataCacheOverflowCount%10 == 0 {
 				r.logger.Infow(
 					"metadata cache overflow",
 					"lastRRTime", r.lastRRTime.String(),
 					"lastRR", r.lastRR,
-					"sinceLastRR", time.Since(r.lastRRTime).String(),
+					"timeSinceLastRR", timeSinceLastRR.String(),
 					"receivedRR", rr,
 					"extStartSN", r.extStartSN,
 					"extHighestSN", r.extHighestSN,
@@ -636,10 +640,10 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, calculatedClockRate ui
 		At:              now,
 	}
 	if r.srNewest != nil {
-		timeSinceLastReport := nowNTP.Time().Sub(r.srNewest.NTPTimestamp.Time()).Seconds()
+		timeSinceLastReport := nowNTP.Time().Sub(r.srNewest.NTPTimestamp.Time())
 		rtpDiffSinceLastReport := nowRTPExt - r.srNewest.RTPTimestampExt
-		windowClockRate := float64(rtpDiffSinceLastReport) / timeSinceLastReport
-		if timeSinceLastReport > 0.2 && math.Abs(float64(r.params.ClockRate)-windowClockRate) > 0.2*float64(r.params.ClockRate) {
+		windowClockRate := float64(rtpDiffSinceLastReport) / timeSinceLastReport.Seconds()
+		if timeSinceLastReport.Seconds() > 0.2 && math.Abs(float64(r.params.ClockRate)-windowClockRate) > 0.2*float64(r.params.ClockRate) {
 			if r.clockSkewCount%10 == 0 {
 				r.logger.Infow(
 					"sending sender report, clock skew",
@@ -655,7 +659,7 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, calculatedClockRate ui
 					"nowRTPExtUsingTime", nowRTPExtUsingTime,
 					"calculatedClockRate", calculatedClockRate,
 					"nowRTPExtUsingRate", nowRTPExtUsingRate,
-					"timeSinceLastReport", timeSinceLastReport,
+					"timeSinceLastReport", timeSinceLastReport.String(),
 					"rtpDiffSinceLastReport", rtpDiffSinceLastReport,
 					"windowClockRate", windowClockRate,
 					"count", r.clockSkewCount,
@@ -700,6 +704,9 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, calculatedClockRate ui
 		ntpDiffSinceLast := nowNTP.Time().Sub(r.srNewest.NTPTimestamp.Time())
 		nowRTPExt = r.srNewest.RTPTimestampExt + uint64(ntpDiffSinceLast.Seconds()*float64(r.params.ClockRate))
 		nowRTP = uint32(nowRTPExt)
+
+		srData.RTPTimestamp = nowRTP
+		srData.RTPTimestampExt = nowRTPExt
 	}
 
 	r.srNewest = srData

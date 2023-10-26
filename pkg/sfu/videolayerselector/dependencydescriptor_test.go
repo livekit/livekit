@@ -137,7 +137,7 @@ func TestDependencyDescriptor(t *testing.T) {
 	ddSelector.SetRequestSpatial(1)
 
 	// no dd ext, dropped
-	ret := ddSelector.Select(&buffer.ExtPacket{}, 0)
+	ret := ddSelector.Select(&buffer.ExtPacket{Packet: &rtp.Packet{}}, 0)
 	require.False(t, ret.IsSelected)
 	require.True(t, ret.IsRelevant)
 
@@ -153,6 +153,7 @@ func TestDependencyDescriptor(t *testing.T) {
 				},
 			},
 		},
+		Packet: &rtp.Packet{},
 	}, 0)
 	require.False(t, ret.IsSelected)
 	require.True(t, ret.IsRelevant)
