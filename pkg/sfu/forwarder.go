@@ -1392,11 +1392,13 @@ func (f *Forwarder) resyncLocked() {
 	}
 }
 
-func (f *Forwarder) CheckSync() (locked bool, layer int32) {
+func (f *Forwarder) CheckSync() (isLockedToTarget bool, layer int32, isTargetActive bool) {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
-	return f.vls.CheckSync()
+	isLockedToTarget, layer = f.vls.CheckSync()
+	isTargetActive = f.vls.GetTarget().IsValid()
+	return
 }
 
 func (f *Forwarder) FilterRTX(nacks []uint16) (filtered []uint16, disallowedLayers [buffer.DefaultMaxLayerSpatial + 1]bool) {

@@ -332,6 +332,17 @@ func (d *DependencyDescriptor) CheckSync() (locked bool, layer int32) {
 		return false, layer
 	}
 
+	allBroken := true
+	for _, chain := range d.chains {
+		if !chain.Broken() {
+			allBroken = false
+			break
+		}
+	}
+	if allBroken {
+		return false, layer
+	}
+
 	d.decodeTargetsLock.RLock()
 	defer d.decodeTargetsLock.RUnlock()
 	for _, dt := range d.decodeTargets {
