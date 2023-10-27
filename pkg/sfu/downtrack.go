@@ -632,8 +632,8 @@ func (d *DownTrack) keyFrameRequester() {
 		case <-ticker.C:
 		}
 
-		isLockedToTarget, layer, isTargetActive := d.forwarder.CheckSync()
-		if !isLockedToTarget && isTargetActive && d.writable.Load() {
+		locked, layer := d.forwarder.CheckSync()
+		if !locked && layer != buffer.InvalidLayerSpatial && d.writable.Load() {
 			d.params.Logger.Debugw("sending PLI for layer lock", "layer", layer)
 			d.params.Receiver.SendPLI(layer, false)
 			d.rtpStats.UpdateLayerLockPliAndTime(1)
@@ -1471,10 +1471,10 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 
 	pliOnce := true
 	sendPliOnce := func() {
-		_, layer, isTargetActive := d.forwarder.CheckSync()
-		d.params.Logger.Debugw("received PLI/FIR RTCP", "layer", layer, "isTargetActive", isTargetActive)
+		_, layer := d.forwarder.CheckSync()
+		d.params.Logger.Debugw("received PLI/FIR RTCP", "layer", layer)
 		if pliOnce {
-			if layer != buffer.InvalidLayerSpatial && isTargetActive {
+			if layer != buffer.InvalidLayerSpatial {
 				d.params.Logger.Debugw("sending PLI RTCP", "layer", layer)
 				d.params.Receiver.SendPLI(layer, false)
 				d.isNACKThrottled.Store(true)
