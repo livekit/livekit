@@ -253,16 +253,11 @@ func TestDependencyDescriptor(t *testing.T) {
 	}
 	require.True(t, switchToLower)
 
-	// not sync with requested layer
+	// sync with requested layer
 	ddSelector.SetRequestSpatial(targetLayer.Spatial)
 	locked, layer := ddSelector.CheckSync()
-	require.False(t, locked)
-	require.Equal(t, targetLayer.Spatial, layer)
-
-	// request to current layer, sync
-	ddSelector.SetRequestSpatial(ddSelector.GetCurrent().Spatial)
-	locked, _ = ddSelector.CheckSync()
 	require.True(t, locked)
+	require.Equal(t, targetLayer.Spatial, layer)
 }
 
 func createDDFrames(maxLayer buffer.VideoLayer, startFrameNumber uint16) []*buffer.ExtPacket {
