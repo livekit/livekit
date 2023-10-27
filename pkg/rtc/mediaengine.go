@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/pion/webrtc/v3"
+	"golang.org/x/exp/slices"
 
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/protocol/livekit"
@@ -131,4 +132,23 @@ func IsCodecEnabled(codecs []*livekit.Codec, cap webrtc.RTPCodecCapability) bool
 		}
 	}
 	return false
+}
+
+func selectAlternativeCodec(enabledCodecs []*livekit.Codec) string {
+	// sort these by compatibility, since we are looking for backups
+	if slices.ContainsFunc(enabledCodecs, func(c *livekit.Codec) bool {
+		return strings.EqualFold(c.Mime, webrtc.MimeTypeVP8)
+	}) {
+		return webrtc.MimeTypeVP8
+	}
+	if slices.ContainsFunc(enabledCodecs, func(c *livekit.Codec) bool {
+		return strings.EqualFold(c.Mime, webrtc.MimeTypeH264)
+	}) {
+		return webrtc.MimeTypeH264
+	}
+	if len(enabledCodecs) > 0 {
+		return enabledCodecs[0].Mime
+	}
+	// uh oh. this should not happen
+	return ""
 }

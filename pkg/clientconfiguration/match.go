@@ -17,6 +17,7 @@ package clientconfiguration
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/d5/tengo/v2"
 
@@ -69,19 +70,19 @@ func (c *clientObject) IndexGet(index tengo.Object) (res tengo.Object, err error
 
 	switch field.Value {
 	case "sdk":
-		return &tengo.String{Value: c.info.Sdk.String()}, nil
+		return &tengo.String{Value: strings.ToLower(c.info.Sdk.String())}, nil
 	case "version":
 		return &tengo.String{Value: c.info.Version}, nil
 	case "protocol":
 		return &tengo.Int{Value: int64(c.info.Protocol)}, nil
 	case "os":
-		return &tengo.String{Value: c.info.Os}, nil
+		return &tengo.String{Value: strings.ToLower(c.info.Os)}, nil
 	case "os_version":
 		return &tengo.String{Value: c.info.OsVersion}, nil
 	case "device_model":
-		return &tengo.String{Value: c.info.DeviceModel}, nil
+		return &tengo.String{Value: strings.ToLower(c.info.DeviceModel)}, nil
 	case "browser":
-		return &tengo.String{Value: c.info.Browser}, nil
+		return &tengo.String{Value: strings.ToLower(c.info.Browser)}, nil
 	case "browser_version":
 		return &tengo.String{Value: c.info.BrowserVersion}, nil
 	case "address":
