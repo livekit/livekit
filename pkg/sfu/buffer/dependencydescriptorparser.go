@@ -26,6 +26,10 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
+var (
+	ErrFrameEarlierThanKeyFrame = fmt.Errorf("frame is earlier than current keyframe")
+)
+
 type DependencyDescriptorParser struct {
 	structure         *dd.FrameDependencyStructure
 	ddExtID           uint8
@@ -36,6 +40,7 @@ type DependencyDescriptorParser struct {
 	seqWrapAround             *utils.WrapAround[uint16, uint64]
 	frameWrapAround           *utils.WrapAround[uint16, uint64]
 	structureExtSeq           uint64
+	structureExtFrameNum      uint64
 	activeDecodeTargetsExtSeq uint64
 	activeDecodeTargetsMask   uint32
 	frameChecker              *FrameIntegrityChecker
@@ -88,6 +93,12 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 	}
 
 	extFN := r.frameWrapAround.Update(ddVal.FrameNumber).ExtendedVal
+
+	if extFN < r.structureExtFrameNum {
+		r.logger.Debugw("drop frame which is earlier than current structure", "frameNum", extFN, "structureFrameNum", r.structureExtFrameNum)
+		return nil, videoLayer, ErrFrameEarlierThanKeyFrame
+	}
+
 	r.frameChecker.AddPacket(extSeq, extFN, &ddVal)
 
 	extDD := &ExtDependencyDescriptor{
@@ -102,6 +113,7 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 			r.structure = ddVal.AttachedStructure
 			r.decodeTargets = ProcessFrameDependencyStructure(ddVal.AttachedStructure)
 			r.structureExtSeq = extSeq
+			r.structureExtFrameNum = extFN
 			extDD.StructureUpdated = true
 			extDD.ActiveDecodeTargetsUpdated = true
 			// The dependency descriptor reader will always set ActiveDecodeTargetsBitmask for TemplateDependencyStructure is present,
