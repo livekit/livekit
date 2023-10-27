@@ -108,7 +108,7 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 	}
 
 	if ddVal.AttachedStructure != nil {
-		r.logger.Debugw(fmt.Sprintf("parsed dependency descriptor\n%s", ddVal.String()))
+		r.logger.Debugw("parsed dependency descriptor", "extSeq", extSeq, "extFN", extFN, "structureID", ddVal.AttachedStructure.StructureId, "descriptor", ddVal.String())
 		if extSeq > r.structureExtSeq {
 			r.structure = ddVal.AttachedStructure
 			r.decodeTargets = ProcessFrameDependencyStructure(ddVal.AttachedStructure)
