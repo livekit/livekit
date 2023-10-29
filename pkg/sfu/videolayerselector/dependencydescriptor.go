@@ -58,7 +58,9 @@ func (d *DependencyDescriptor) IsOvershootOkay() bool {
 
 func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerSelectorResult) {
 	// a packet is always relevant for the svc codec
-	result.IsRelevant = true
+	if d.currentLayer.IsValid() {
+		result.IsRelevant = true
+	}
 
 	ddwdt := extPkt.DependencyDescriptor
 	if ddwdt == nil {
@@ -92,7 +94,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	switch sd {
 	case selectorDecisionDropped:
 		// a packet of an alreadty dropped frame, maintain decision
-		d.logger.Debugw(fmt.Sprintf("drop packet already dropped, incoming %v, fn: %d/%d, sm: %d",
+		d.logger.Debugw(fmt.Sprintf("drop packet already dropped, incoming %v, fn: %d/%d, sn: %d",
 			incomingLayer,
 			dd.FrameNumber,
 			extFrameNum,
@@ -243,6 +245,8 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 			"sn", extPkt.Packet.SequenceNumber,
 			"isKeyFrame", extPkt.KeyFrame,
 		)
+
+		result.IsRelevant = true
 	}
 
 	ddExtension := &dede.DependencyDescriptorExtension{
