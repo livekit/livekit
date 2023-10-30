@@ -67,8 +67,8 @@ func TestWrapAroundUint16(t *testing.T) {
 			input: (1 << 16) - 6,
 			updated: WrapAroundUpdateResult[uint32]{
 				IsRestart:          true,
-				PreExtendedStart:   8,
-				PreExtendedHighest: 10,
+				PreExtendedStart:   (1 << 16) + 8,
+				PreExtendedHighest: (1 << 16) + 10,
 				ExtendedVal:        (1 << 16) - 6,
 			},
 			start:           (1 << 16) - 6,
@@ -236,8 +236,8 @@ func TestWrapAroundUint16RollbackRestartAndResetHighest(t *testing.T) {
 	res = w.Update(65533)
 	expectedResult = WrapAroundUpdateResult[uint64]{
 		IsRestart:          true,
-		PreExtendedStart:   23,
-		PreExtendedHighest: 25,
+		PreExtendedStart:   (1 << 16) + 23,
+		PreExtendedHighest: (1 << 16) + 25,
 		ExtendedVal:        65533,
 	}
 	require.Equal(t, expectedResult, res)
@@ -265,6 +265,52 @@ func TestWrapAroundUint16RollbackRestartAndResetHighest(t *testing.T) {
 	require.Equal(t, uint64(23), w.GetExtendedStart())
 	require.Equal(t, uint16(0x1234), w.GetHighest())
 	require.Equal(t, uint64(0x7f1234), w.GetExtendedHighest())
+}
+
+func TestWrapAroundUint16WrapAroundRestartDuplicate(t *testing.T) {
+	w := NewWrapAround[uint16, uint64]()
+
+	// initialize
+	w.Update(65534)
+	require.Equal(t, uint16(65534), w.GetStart())
+	require.Equal(t, uint64(65534), w.GetExtendedStart())
+	require.Equal(t, uint16(65534), w.GetHighest())
+	require.Equal(t, uint64(65534), w.GetExtendedHighest())
+
+	// an in-order update with a roll over
+	w.Update(32)
+	require.Equal(t, uint16(65534), w.GetStart())
+	require.Equal(t, uint64(65534), w.GetExtendedStart())
+	require.Equal(t, uint16(32), w.GetHighest())
+	require.Equal(t, uint64(65568), w.GetExtendedHighest())
+
+	// duplicate of start
+	res := w.Update(65534)
+	expectedResult := WrapAroundUpdateResult[uint64]{
+		IsRestart:          false,
+		PreExtendedStart:   0,
+		PreExtendedHighest: 65568,
+		ExtendedVal:        65534,
+	}
+	require.Equal(t, expectedResult, res)
+	require.Equal(t, uint16(65534), w.GetStart())
+	require.Equal(t, uint64(65534), w.GetExtendedStart())
+	require.Equal(t, uint16(32), w.GetHighest())
+	require.Equal(t, uint64(65568), w.GetExtendedHighest())
+
+	// duplicate of start - again
+	res = w.Update(65534)
+	expectedResult = WrapAroundUpdateResult[uint64]{
+		IsRestart:          false,
+		PreExtendedStart:   0,
+		PreExtendedHighest: 65568,
+		ExtendedVal:        65534,
+	}
+	require.Equal(t, expectedResult, res)
+	require.Equal(t, uint16(65534), w.GetStart())
+	require.Equal(t, uint64(65534), w.GetExtendedStart())
+	require.Equal(t, uint16(32), w.GetHighest())
+	require.Equal(t, uint64(65568), w.GetExtendedHighest())
 }
 
 func TestWrapAroundUint32(t *testing.T) {
@@ -314,8 +360,8 @@ func TestWrapAroundUint32(t *testing.T) {
 			input: (1 << 32) - 6,
 			updated: WrapAroundUpdateResult[uint64]{
 				IsRestart:          true,
-				PreExtendedStart:   8,
-				PreExtendedHighest: 10,
+				PreExtendedStart:   (1 << 32) + 8,
+				PreExtendedHighest: (1 << 32) + 10,
 				ExtendedVal:        (1 << 32) - 6,
 			},
 			start:           (1 << 32) - 6,
