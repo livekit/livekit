@@ -70,13 +70,13 @@ type Room struct {
 	protoProxy *utils.ProtoProxy[*livekit.Room]
 	Logger     logger.Logger
 
-	config       WebRTCConfig
-	audioConfig  *config.AudioConfig
-	serverInfo   *livekit.ServerInfo
-	telemetry    telemetry.TelemetryService
-	agentClient  AgentClient
-	egressClient EgressLauncher
-	trackManager *RoomTrackManager
+	config         WebRTCConfig
+	audioConfig    *config.AudioConfig
+	serverInfo     *livekit.ServerInfo
+	telemetry      telemetry.TelemetryService
+	agentClient    AgentClient
+	egressLauncher EgressLauncher
+	trackManager   *RoomTrackManager
 
 	// map of identity -> Participant
 	participants              map[livekit.ParticipantIdentity]types.LocalParticipant
@@ -115,7 +115,7 @@ func NewRoom(
 	serverInfo *livekit.ServerInfo,
 	telemetry telemetry.TelemetryService,
 	agentClient AgentClient,
-	egressClient EgressLauncher,
+	egressLauncher EgressLauncher,
 ) *Room {
 	r := &Room{
 		protoRoom: proto.Clone(room).(*livekit.Room),
@@ -128,7 +128,7 @@ func NewRoom(
 		config:                    config,
 		audioConfig:               audioConfig,
 		telemetry:                 telemetry,
-		egressClient:              egressClient,
+		egressLauncher:            egressLauncher,
 		agentClient:               agentClient,
 		trackManager:              NewRoomTrackManager(),
 		serverInfo:                serverInfo,
@@ -923,7 +923,7 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 				defer wg.Done()
 				if err := StartParticipantEgress(
 					context.Background(),
-					r.egressClient,
+					r.egressLauncher,
 					r.telemetry,
 					r.internal.ParticipantEgress,
 					participant.Identity(),
@@ -941,7 +941,7 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 			defer wg.Done()
 			if err := StartTrackEgress(
 				context.Background(),
-				r.egressClient,
+				r.egressLauncher,
 				r.telemetry,
 				r.internal.TrackEgress,
 				track,

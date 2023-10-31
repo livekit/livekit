@@ -38,14 +38,14 @@ type EgressLauncher interface {
 
 func StartParticipantEgress(
 	ctx context.Context,
-	client EgressLauncher,
+	launcher EgressLauncher,
 	ts telemetry.TelemetryService,
 	opts *livekit.AutoParticipantEgress,
 	identity livekit.ParticipantIdentity,
 	roomName livekit.RoomName,
 	roomID livekit.RoomID,
 ) error {
-	if req, err := startParticipantEgress(ctx, client, opts, identity, roomName, roomID); err != nil {
+	if req, err := startParticipantEgress(ctx, launcher, opts, identity, roomName, roomID); err != nil {
 		// send egress failed webhook
 		ts.NotifyEvent(ctx, &livekit.WebhookEvent{
 			Event: webhook.EventEgressEnded,
@@ -64,7 +64,7 @@ func StartParticipantEgress(
 
 func startParticipantEgress(
 	ctx context.Context,
-	client EgressLauncher,
+	launcher EgressLauncher,
 	opts *livekit.AutoParticipantEgress,
 	identity livekit.ParticipantIdentity,
 	roomName livekit.RoomName,
@@ -84,11 +84,11 @@ func startParticipantEgress(
 		req.Options = &livekit.ParticipantEgressRequest_Advanced{Advanced: o.Advanced}
 	}
 
-	if client == nil {
+	if launcher == nil {
 		return req, errors.New("egress launcher not found")
 	}
 
-	_, err := client.StartEgress(ctx, &rpc.StartEgressRequest{
+	_, err := launcher.StartEgress(ctx, &rpc.StartEgressRequest{
 		Request: &rpc.StartEgressRequest_Participant{
 			Participant: req,
 		},
@@ -99,14 +99,14 @@ func startParticipantEgress(
 
 func StartTrackEgress(
 	ctx context.Context,
-	client EgressLauncher,
+	launcher EgressLauncher,
 	ts telemetry.TelemetryService,
 	opts *livekit.AutoTrackEgress,
 	track types.MediaTrack,
 	roomName livekit.RoomName,
 	roomID livekit.RoomID,
 ) error {
-	if req, err := startTrackEgress(ctx, client, opts, track, roomName, roomID); err != nil {
+	if req, err := startTrackEgress(ctx, launcher, opts, track, roomName, roomID); err != nil {
 		// send egress failed webhook
 		ts.NotifyEvent(ctx, &livekit.WebhookEvent{
 			Event: webhook.EventEgressEnded,
@@ -125,7 +125,7 @@ func StartTrackEgress(
 
 func startTrackEgress(
 	ctx context.Context,
-	client EgressLauncher,
+	launcher EgressLauncher,
 	opts *livekit.AutoTrackEgress,
 	track types.MediaTrack,
 	roomName livekit.RoomName,
@@ -152,11 +152,11 @@ func startTrackEgress(
 		},
 	}
 
-	if client == nil {
+	if launcher == nil {
 		return req, errors.New("egress launcher not found")
 	}
 
-	_, err := client.StartEgress(ctx, &rpc.StartEgressRequest{
+	_, err := launcher.StartEgress(ctx, &rpc.StartEgressRequest{
 		Request: &rpc.StartEgressRequest_Track{
 			Track: req,
 		},

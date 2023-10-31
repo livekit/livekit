@@ -43,7 +43,7 @@ type RoomService struct {
 	roomAllocator  RoomAllocator
 	roomStore      ServiceStore
 	agentClient    rtc.AgentClient
-	egressClient   rtc.EgressLauncher
+	egressLauncher rtc.EgressLauncher
 	topicFormatter rpc.TopicFormatter
 	roomClient     rpc.TypedRoomClient
 }
@@ -56,7 +56,7 @@ func NewRoomService(
 	roomAllocator RoomAllocator,
 	serviceStore ServiceStore,
 	agentClient rtc.AgentClient,
-	egressClient rtc.EgressLauncher,
+	egressLauncher rtc.EgressLauncher,
 	topicFormatter rpc.TopicFormatter,
 	roomClient rpc.TypedRoomClient,
 ) (svc *RoomService, err error) {
@@ -68,7 +68,7 @@ func NewRoomService(
 		roomAllocator:  roomAllocator,
 		roomStore:      serviceStore,
 		agentClient:    agentClient,
-		egressClient:   egressClient,
+		egressLauncher: egressLauncher,
 		topicFormatter: topicFormatter,
 		roomClient:     roomClient,
 	}
@@ -79,7 +79,7 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 	AppendLogFields(ctx, "room", req.Name, "request", req)
 	if err := EnsureCreatePermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
-	} else if req.Egress != nil && s.egressClient == nil {
+	} else if req.Egress != nil && s.egressLauncher == nil {
 		return nil, ErrEgressNotConnected
 	}
 
@@ -128,7 +128,7 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 				},
 				RoomId: rm.Sid,
 			}
-			_, err = s.egressClient.StartEgress(ctx, egress)
+			_, err = s.egressLauncher.StartEgress(ctx, egress)
 		}
 	}
 
