@@ -549,10 +549,8 @@ func (s *RTCService) startConnection(
 		return cr, nil, err
 	}
 
-	fmt.Println("Created", created, "nil client", s.agentClient == nil)
 	if created && s.agentClient != nil {
 		go func() {
-			fmt.Println("SENDING JOB REQEUST")
 			s.agentClient.JobRequest(ctx, &livekit.Job{
 				Id:   putil.NewGuid("JR_"),
 				Type: livekit.JobType_JT_ROOM,
