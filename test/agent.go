@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
-	"os/signal"
 	"sync"
 
 	"github.com/gorilla/websocket"
@@ -50,9 +48,6 @@ func newAgentClient(token string) (*agentClient, error) {
 }
 
 func (c *agentClient) Run() error {
-	interrupt := make(chan os.Signal, 1)
-	signal.Notify(interrupt, os.Interrupt)
-
 	go c.read()
 
 	workerID := utils.NewGuid("W_")
@@ -83,33 +78,33 @@ func (c *agentClient) Run() error {
 		return err
 	}
 
-	for {
-		select {
-		case <-interrupt:
-			close(c.done)
-		}
-	}
+	return nil
 }
 
 func (c *agentClient) read() {
 	for {
-		_, b, err := c.conn.ReadMessage()
-		if err != nil {
+		select {
+		case <-c.done:
 			return
-		}
+		default:
+			_, b, err := c.conn.ReadMessage()
+			if err != nil {
+				return
+			}
 
-		msg := &livekit.ServerMessage{}
-		if err = proto.Unmarshal(b, msg); err != nil {
-			return
-		}
+			msg := &livekit.ServerMessage{}
+			if err = proto.Unmarshal(b, msg); err != nil {
+				return
+			}
 
-		switch m := msg.Message.(type) {
-		case *livekit.ServerMessage_Assignment:
-			go c.handleAssignment(m.Assignment)
-		case *livekit.ServerMessage_Availability:
-			go c.handleAvailability(m.Availability)
-		case *livekit.ServerMessage_Register:
-			go c.handleRegister(m.Register)
+			switch m := msg.Message.(type) {
+			case *livekit.ServerMessage_Assignment:
+				go c.handleAssignment(m.Assignment)
+			case *livekit.ServerMessage_Availability:
+				go c.handleAvailability(m.Availability)
+			case *livekit.ServerMessage_Register:
+				go c.handleRegister(m.Register)
+			}
 		}
 	}
 }
@@ -155,7 +150,7 @@ func (c *agentClient) write(msg *livekit.WorkerMessage) error {
 	return c.conn.WriteMessage(websocket.BinaryMessage, b)
 }
 
-func (c *agentClient) Close() {
+func (c *agentClient) close() {
 	close(c.done)
 	_ = c.conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 	_ = c.conn.Close()

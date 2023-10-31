@@ -902,13 +902,10 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 	r.trackManager.AddTrack(track, participant.Identity(), participant.ID())
 
 	// launch jobs
-	var wg sync.WaitGroup
 	_, hasPublished := r.hasPublished.Swap(participant.Identity(), true)
 	if !hasPublished {
 		if r.agentClient != nil {
-			wg.Add(1)
 			go func() {
-				defer wg.Done()
 				r.agentClient.JobRequest(context.Background(), &livekit.Job{
 					Id:          utils.NewGuid("JP_"),
 					Type:        livekit.JobType_JT_PARTICIPANT,
@@ -918,9 +915,7 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 			}()
 		}
 		if r.internal != nil && r.internal.ParticipantEgress != nil {
-			wg.Add(1)
 			go func() {
-				defer wg.Done()
 				if err := StartParticipantEgress(
 					context.Background(),
 					r.egressLauncher,
@@ -936,9 +931,7 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 		}
 	}
 	if r.internal != nil && r.internal.TrackEgress != nil {
-		wg.Add(1)
 		go func() {
-			defer wg.Done()
 			if err := StartTrackEgress(
 				context.Background(),
 				r.egressLauncher,
@@ -952,7 +945,6 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 			}
 		}()
 	}
-	wg.Wait()
 }
 
 func (r *Room) onTrackUpdated(p types.LocalParticipant, _ types.MediaTrack) {

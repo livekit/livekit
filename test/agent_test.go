@@ -17,10 +17,10 @@ func TestAgents(t *testing.T) {
 	require.NoError(t, err)
 	ac2, err := newAgentClient(agentToken())
 	require.NoError(t, err)
-	defer ac1.Close()
-	defer ac2.Close()
-	go ac1.Run()
-	go ac2.Run()
+	defer ac1.close()
+	defer ac2.close()
+	ac1.Run()
+	ac2.Run()
 
 	time.Sleep(time.Second * 3)
 
