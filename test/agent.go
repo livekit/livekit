@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/gorilla/websocket"
+	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/livekit"
@@ -17,11 +18,11 @@ type agentClient struct {
 	mu   sync.Mutex
 	conn *websocket.Conn
 
-	registered              bool
-	roomAvailability        int
-	roomJobs                int
-	participantAvailability int
-	participantJobs         int
+	registered              atomic.Int32
+	roomAvailability        atomic.Int32
+	roomJobs                atomic.Int32
+	participantAvailability atomic.Int32
+	participantJobs         atomic.Int32
 
 	done chan struct{}
 }
@@ -111,17 +112,17 @@ func (c *agentClient) read() {
 
 func (c *agentClient) handleAssignment(req *livekit.JobAssignment) {
 	if req.Job.Type == livekit.JobType_JT_ROOM {
-		c.roomJobs++
+		c.roomJobs.Inc()
 	} else {
-		c.participantJobs++
+		c.participantJobs.Inc()
 	}
 }
 
 func (c *agentClient) handleAvailability(req *livekit.AvailabilityRequest) {
 	if req.Job.Type == livekit.JobType_JT_ROOM {
-		c.roomAvailability++
+		c.roomAvailability.Inc()
 	} else {
-		c.participantAvailability++
+		c.participantAvailability.Inc()
 	}
 
 	c.write(&livekit.WorkerMessage{
@@ -135,7 +136,7 @@ func (c *agentClient) handleAvailability(req *livekit.AvailabilityRequest) {
 }
 
 func (c *agentClient) handleRegister(req *livekit.RegisterWorkerResponse) {
-	c.registered = true
+	c.registered.Inc()
 }
 
 func (c *agentClient) write(msg *livekit.WorkerMessage) error {

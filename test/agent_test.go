@@ -24,8 +24,8 @@ func TestAgents(t *testing.T) {
 
 	time.Sleep(time.Second * 3)
 
-	require.Equal(t, true, ac1.registered)
-	require.Equal(t, true, ac2.registered)
+	require.Equal(t, int32(2), ac1.registered.Load())
+	require.Equal(t, int32(2), ac2.registered.Load())
 
 	c1 := createRTCClient("c1", defaultServerPort, nil)
 	c2 := createRTCClient("c2", defaultServerPort, nil)
@@ -41,8 +41,8 @@ func TestAgents(t *testing.T) {
 
 	time.Sleep(time.Second * 3)
 
-	require.Equal(t, 1, ac1.roomJobs+ac2.roomJobs)
-	require.Equal(t, 1, ac1.participantJobs+ac2.participantJobs)
+	require.Equal(t, int32(1), ac1.roomJobs.Load()+ac2.roomJobs.Load())
+	require.Equal(t, int32(1), ac1.participantJobs.Load()+ac2.participantJobs.Load())
 
 	// publish 2 tracks
 	t3, err := c2.AddStaticTrack("audio/opus", "audio", "webcam")
@@ -54,8 +54,8 @@ func TestAgents(t *testing.T) {
 
 	time.Sleep(time.Second * 3)
 
-	require.Equal(t, 1, ac1.roomJobs+ac2.roomJobs)
-	require.Equal(t, 2, ac1.participantJobs+ac2.participantJobs)
+	require.Equal(t, int32(1), ac1.roomJobs.Load()+ac2.roomJobs.Load())
+	require.Equal(t, int32(2), ac1.participantJobs.Load()+ac2.participantJobs.Load())
 }
 
 func agentToken() string {
