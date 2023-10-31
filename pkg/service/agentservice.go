@@ -214,6 +214,15 @@ func (s *AgentHandler) handleRegister(worker *worker, msg *livekit.RegisterWorke
 			}
 		}
 	}
+
+	worker.sigConn.WriteServerMessage(&livekit.ServerMessage{
+		Message: &livekit.ServerMessage_Register{
+			Register: &livekit.RegisterWorkerResponse{
+				WorkerId:      worker.id,
+				ServerVersion: "version",
+			},
+		},
+	})
 }
 
 func (s *AgentHandler) handleAvailability(w *worker, msg *livekit.AvailabilityResponse) {
@@ -346,6 +355,7 @@ func (s *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*empty
 						selected.mu.Lock()
 						selected.activeJobs++
 						selected.mu.Unlock()
+						return &emptypb.Empty{}, nil
 					}
 				}
 			}
