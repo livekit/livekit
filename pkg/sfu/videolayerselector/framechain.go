@@ -45,6 +45,11 @@ func (fc *FrameChain) OnFrame(extFrameNum uint64, fd *dd.FrameDependencyTemplate
 		return false
 	}
 
+	if len(fd.ChainDiffs) <= fc.chainIdx {
+		fc.logger.Warnw("invalid frame chain diff", nil, "chanIdx", fc.chainIdx, "frame", extFrameNum, "fd", fd)
+		return fc.broken
+	}
+
 	// A decodable frame with frame_chain_fdiff equal to 0 indicates that the Chain is intact.
 	if fd.ChainDiffs[fc.chainIdx] == 0 {
 		if fc.broken {
