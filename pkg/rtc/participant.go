@@ -1626,7 +1626,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		if req.Type == livekit.TrackType_VIDEO && !strings.HasPrefix(mime, "video/") {
 			mime = "video/" + mime
 			if !IsCodecEnabled(p.enabledPublishCodecs, webrtc.RTPCodecCapability{MimeType: mime}) {
-				altCodec := selectAlternativeCodec(p.enabledPublishCodecs)
+				altCodec := selectAlternativeVideoCodec(p.enabledPublishCodecs)
 				p.pubLogger.Infow("falling back to alternative codec",
 					"codec", mime,
 					"altCodec", altCodec,
@@ -1639,7 +1639,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 			mime = "audio/" + mime
 		}
 
-		if _, ok := seenCodecs[mime]; ok {
+		if _, ok := seenCodecs[mime]; ok || mime == "" {
 			continue
 		}
 		seenCodecs[mime] = struct{}{}
