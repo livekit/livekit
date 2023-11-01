@@ -1639,7 +1639,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 			mime = "audio/" + mime
 		}
 
-		if _, ok := seenCodecs[mime]; ok {
+		if _, ok := seenCodecs[mime]; ok || mime == "" {
 			continue
 		}
 		seenCodecs[mime] = struct{}{}
