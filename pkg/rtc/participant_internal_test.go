@@ -466,6 +466,71 @@ func TestDisableCodecs(t *testing.T) {
 	require.False(t, found264)
 }
 
+func TestDisablePublishCodec(t *testing.T) {
+	participant := newParticipantForTestWithOpts("123", &participantOpts{
+		publisher: true,
+		clientConf: &livekit.ClientConfiguration{
+			DisabledCodecs: &livekit.DisabledCodecs{
+				Publish: []*livekit.Codec{
+					{Mime: "video/h264"},
+				},
+			},
+		},
+	})
+
+	for _, codec := range participant.enabledPublishCodecs {
+		require.NotEqual(t, strings.ToLower(codec.Mime), "video/h264")
+	}
+
+	sink := &routingfakes.FakeMessageSink{}
+	participant.SetResponseSink(sink)
+	var publishReceived atomic.Bool
+	sink.WriteMessageCalls(func(msg proto.Message) error {
+		if res, ok := msg.(*livekit.SignalResponse); ok {
+			if published := res.GetTrackPublished(); published != nil {
+				publishReceived.Store(true)
+				require.NotEmpty(t, published.Track.Codecs)
+				require.Equal(t, "video/vp8", strings.ToLower(published.Track.Codecs[0].MimeType))
+			}
+		}
+		return nil
+	})
+
+	// simulcast codec response should pick an alternative
+	participant.AddTrack(&livekit.AddTrackRequest{
+		Cid:  "cid1",
+		Type: livekit.TrackType_VIDEO,
+		SimulcastCodecs: []*livekit.SimulcastCodec{{
+			Codec: "h264",
+			Cid:   "cid1",
+		}},
+	})
+
+	require.Eventually(t, func() bool { return publishReceived.Load() }, 5*time.Second, 10*time.Millisecond)
+
+	// publishing a supported codec should not change
+	publishReceived.Store(false)
+	sink.WriteMessageCalls(func(msg proto.Message) error {
+		if res, ok := msg.(*livekit.SignalResponse); ok {
+			if published := res.GetTrackPublished(); published != nil {
+				publishReceived.Store(true)
+				require.NotEmpty(t, published.Track.Codecs)
+				require.Equal(t, "video/vp8", strings.ToLower(published.Track.Codecs[0].MimeType))
+			}
+		}
+		return nil
+	})
+	participant.AddTrack(&livekit.AddTrackRequest{
+		Cid:  "cid2",
+		Type: livekit.TrackType_VIDEO,
+		SimulcastCodecs: []*livekit.SimulcastCodec{{
+			Codec: "vp8",
+			Cid:   "cid2",
+		}},
+	})
+	require.Eventually(t, func() bool { return publishReceived.Load() }, 5*time.Second, 10*time.Millisecond)
+}
+
 func TestPreferVideoCodecForPublisher(t *testing.T) {
 	participant := newParticipantForTestWithOpts("123", &participantOpts{
 		publisher: true,
@@ -641,7 +706,6 @@ func TestPreferAudioCodecForRed(t *testing.T) {
 			require.Equalf(t, !disableRed, redPreferred, "offer : \n%s\nanswer sdp: \n%s", sdp, answer.SDP)
 		})
 	}
-
 }
 
 type participantOpts struct {
