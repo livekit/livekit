@@ -623,7 +623,12 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime time.Time, flow
 	ep.Temporal = 0
 	if b.ddParser != nil {
 		ddVal, videoLayer, err := b.ddParser.Parse(ep.Packet)
-		if err == nil && ddVal != nil {
+		if err != nil {
+			if err != ErrFrameEarlierThanKeyFrame {
+				b.logger.Warnw("could not parse dependency descriptor", err)
+			}
+			return nil
+		} else if ddVal != nil {
 			ep.DependencyDescriptor = ddVal
 			ep.VideoLayer = videoLayer
 			// DD-TODO : notify active decode target change if changed.

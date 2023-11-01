@@ -304,14 +304,18 @@ func (t *MediaTrackSubscriptions) closeSubscribedTrack(subTrack types.Subscribed
 		return
 	}
 
-	dt.CloseWithFlush(!willBeResumed)
-
 	if willBeResumed {
+		dt.CloseWithFlush(false)
+
+		// cache transceiver for potential re-use on resume
 		tr := dt.GetTransceiver()
 		if tr != nil {
 			sub := subTrack.Subscriber()
 			sub.CacheDownTrack(subTrack.ID(), tr, dt.GetState())
 		}
+	} else {
+		// flushing blocks, avoid blocking when publisher removes all its subscribers
+		go dt.CloseWithFlush(true)
 	}
 }
 

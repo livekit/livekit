@@ -197,10 +197,9 @@ keys:
 #   stream_buffer_size: 1000
 
 # PSRPC
-# since v1.5.1, a more reliable, psrpc based signal relay is available
-# this gives us the ability to reliably proxy messages between a signal server and RTC node
+# since v1.5.1, a more reliable, psrpc based internal rpc
 # psrpc:
-#   # enable the internal psrpc api client for roomservice api calls
+#   # enable the psrpc internal api client for roomservice calls
 #   enabled: true
 #   # maximum number of rpc attempts
 #   max_attempts: 3
