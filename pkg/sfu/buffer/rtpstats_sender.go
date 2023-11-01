@@ -394,22 +394,7 @@ func (r *RTPStatsSender) Update(
 			"tsBefore", r.extStartTS,
 			"tsAfter", extTimestamp,
 		)
-		if extTimestamp == 0 { // TODO-REMOVE-AFTER-DEBUG
-			r.logger.Errorw(
-				"invalid start timestamp", nil,
-				"snBefore", r.extStartSN,
-				"snAfter", extSequenceNumber,
-				"snHighest", r.extHighestSN,
-				"tsBefore", r.extStartTS,
-				"tsAfter", extTimestamp,
-				"tsHighest", r.extHighestTS,
-				"firstTime", r.firstTime.String(),
-				"startTime", r.startTime.String(),
-			)
-		}
-		if extTimestamp != 0 {
-			r.extStartTS = extTimestamp
-		}
+		r.extStartTS = extTimestamp
 	}
 
 	if extTimestamp > r.extHighestTS {
@@ -554,7 +539,11 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 					"receivedRR", rr,
 					"extStartSN", r.extStartSN,
 					"extHighestSN", r.extHighestSN,
+					"extStartTS", r.extStartTS,
+					"extHighestTS", r.extHighestTS,
 					"extLastRRSN", s.extLastRRSN,
+					"firstTime", r.firstTime.String(),
+					"startTime", r.startTime.String(),
 					"extReceivedRRSN", extReceivedRRSN,
 					"packetsInInterval", extReceivedRRSN-s.extLastRRSN,
 					"intervalStats", is.ToString(),

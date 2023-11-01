@@ -1375,7 +1375,11 @@ func (f *Forwarder) updateAllocation(alloc VideoAllocation, reason string) Video
 
 func (f *Forwarder) setTargetLayer(targetLayer buffer.VideoLayer, requestLayerSpatial int32) {
 	f.vls.SetTarget(targetLayer)
-	f.vls.SetRequestSpatial(requestLayerSpatial)
+	if targetLayer.IsValid() {
+		f.vls.SetRequestSpatial(requestLayerSpatial)
+	} else {
+		f.vls.SetRequestSpatial(buffer.InvalidLayerSpatial)
+	}
 }
 
 func (f *Forwarder) Resync() {
@@ -1393,7 +1397,7 @@ func (f *Forwarder) resyncLocked() {
 	}
 }
 
-func (f *Forwarder) CheckSync() (locked bool, layer int32) {
+func (f *Forwarder) CheckSync() (bool, int32) {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
