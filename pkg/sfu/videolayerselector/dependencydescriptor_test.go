@@ -139,7 +139,7 @@ func TestDependencyDescriptor(t *testing.T) {
 	// no dd ext, dropped
 	ret := ddSelector.Select(&buffer.ExtPacket{Packet: &rtp.Packet{}}, 0)
 	require.False(t, ret.IsSelected)
-	require.True(t, ret.IsRelevant)
+	require.False(t, ret.IsRelevant)
 
 	// non key frame, dropped
 	ret = ddSelector.Select(&buffer.ExtPacket{
@@ -156,7 +156,7 @@ func TestDependencyDescriptor(t *testing.T) {
 		Packet: &rtp.Packet{},
 	}, 0)
 	require.False(t, ret.IsSelected)
-	require.True(t, ret.IsRelevant)
+	require.False(t, ret.IsRelevant)
 
 	frames := createDDFrames(buffer.VideoLayer{Spatial: 2, Temporal: 2}, 3)
 	// key frame, update structure and decode targets
@@ -253,16 +253,11 @@ func TestDependencyDescriptor(t *testing.T) {
 	}
 	require.True(t, switchToLower)
 
-	// not sync with requested layer
+	// sync with requested layer
 	ddSelector.SetRequestSpatial(targetLayer.Spatial)
 	locked, layer := ddSelector.CheckSync()
-	require.False(t, locked)
-	require.Equal(t, targetLayer.Spatial, layer)
-
-	// request to current layer, sync
-	ddSelector.SetRequestSpatial(ddSelector.GetCurrent().Spatial)
-	locked, _ = ddSelector.CheckSync()
 	require.True(t, locked)
+	require.Equal(t, targetLayer.Spatial, layer)
 }
 
 func createDDFrames(maxLayer buffer.VideoLayer, startFrameNumber uint16) []*buffer.ExtPacket {

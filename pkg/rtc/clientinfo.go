@@ -26,7 +26,7 @@ type ClientInfo struct {
 }
 
 func (c ClientInfo) isFirefox() bool {
-	return c.ClientInfo != nil && strings.EqualFold(c.ClientInfo.Browser, "firefox")
+	return c.ClientInfo != nil && (strings.EqualFold(c.ClientInfo.Browser, "firefox") || strings.EqualFold(c.ClientInfo.Browser, "firefox mobile"))
 }
 
 func (c ClientInfo) isSafari() bool {
@@ -39,6 +39,10 @@ func (c ClientInfo) isGo() bool {
 
 func (c ClientInfo) isLinux() bool {
 	return c.ClientInfo != nil && strings.EqualFold(c.ClientInfo.Os, "linux")
+}
+
+func (c ClientInfo) isAndroid() bool {
+	return c.ClientInfo != nil && strings.EqualFold(c.ClientInfo.Os, "android")
 }
 
 func (c ClientInfo) SupportsAudioRED() bool {
@@ -85,7 +89,7 @@ func (c ClientInfo) SupportsChangeRTPSenderEncodingActive() bool {
 }
 
 func (c ClientInfo) ComplyWithCodecOrderInSDPAnswer() bool {
-	return !(c.isLinux() && c.isFirefox())
+	return !((c.isLinux() || c.isAndroid()) && c.isFirefox())
 }
 
 // compareVersion compares a semver against the current client SDK version
