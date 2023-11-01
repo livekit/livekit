@@ -151,6 +151,6 @@ func selectAlternativeVideoCodec(enabledCodecs []*livekit.Codec) string {
 			return c.Mime
 		}
 	}
-	// uh oh. this should not happen
-	return ""
+	// no viable codec in the list of enabled codecs, fall back to the most widely supported codec
+	return webrtc.MimeTypeVP8
 }
