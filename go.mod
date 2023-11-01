@@ -27,7 +27,7 @@ require (
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/pion/dtls/v2 v2.2.7
 	github.com/pion/ice/v2 v2.3.11
-	github.com/pion/interceptor v0.1.24
+	github.com/pion/interceptor v0.1.25
 	github.com/pion/rtcp v1.2.10
 	github.com/pion/rtp v1.8.2
 	github.com/pion/sctp v1.8.9
