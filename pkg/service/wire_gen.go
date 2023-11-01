@@ -12,8 +12,10 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/telemetry"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	redis2 "github.com/livekit/protocol/redis"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
@@ -74,12 +76,17 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	rtcEgressLauncher := NewEgressLauncher(egressClient, ioInfoService)
-	topicFormatter := routing.NewTopicFormatter()
-	roomClient, err := routing.NewRoomClient(messageBus, psrpcConfig)
+	topicFormatter := rpc.NewTopicFormatter()
+	clientParams := getPSRPCClientParams(psrpcConfig, messageBus)
+	roomClient, err := rpc.NewTypedRoomClient(clientParams)
 	if err != nil {
 		return nil, err
 	}
-	roomService, err := NewRoomService(roomConfig, apiConfig, psrpcConfig, router, roomAllocator, objectStore, rtcEgressLauncher, topicFormatter, roomClient)
+	participantClient, err := rpc.NewTypedParticipantClient(clientParams)
+	if err != nil {
+		return nil, err
+	}
+	roomService, err := NewRoomService(roomConfig, apiConfig, psrpcConfig, router, roomAllocator, objectStore, rtcEgressLauncher, topicFormatter, roomClient, participantClient)
 	if err != nil {
 		return nil, err
 	}
@@ -233,8 +240,12 @@ func getSignalRelayConfig(config2 *config.Config) config.SignalRelayConfig {
 	return config2.SignalRelay
 }
 
-func getPSRPCConfig(config2 *config.Config) config.PSRPCConfig {
+func getPSRPCConfig(config2 *config.Config) rpc.PSRPCConfig {
 	return config2.PSRPC
+}
+
+func getPSRPCClientParams(config2 rpc.PSRPCConfig, bus psrpc.MessageBus) rpc.ClientParams {
+	return rpc.NewClientParams(config2, bus, logger.GetLogger(), prometheus.PSRPCMetricsObserver{})
 }
 
 func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Server, error) {
