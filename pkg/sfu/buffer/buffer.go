@@ -31,6 +31,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/livekit/livekit-server/pkg/sfu/audio"
+	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/mediatransportutil"
@@ -39,8 +40,6 @@ import (
 	"github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-
-	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
 )
 
 const (
@@ -615,7 +614,7 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime time.Time, flow
 	if b.ddParser != nil {
 		ddVal, videoLayer, err := b.ddParser.Parse(ep.Packet)
 		if err != nil {
-			if err != ErrFrameEarlierThanKeyFrame {
+			if !errors.Is(err, ErrFrameEarlierThanKeyFrame) && !errors.Is(err, dd.ErrDDReaderNoStructure) {
 				b.logger.Warnw("could not parse dependency descriptor", err)
 			}
 			return nil
