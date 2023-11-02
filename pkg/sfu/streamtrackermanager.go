@@ -214,9 +214,9 @@ func (s *StreamTrackerManager) AddTracker(layer int32) streamtracker.StreamTrack
 		})
 	}
 
-	s.logger.Debugw("StreamTrackerManager add track", "layer", layer)
+	s.logger.Debugw("stream tracker add track", "layer", layer)
 	tracker.OnStatusChanged(func(status streamtracker.StreamStatus) {
-		s.logger.Debugw("StreamTrackerManager OnStatusChanged", "layer", layer, "status", status)
+		s.logger.Debugw("stream tracker status changed", "layer", layer, "status", status)
 		if status == streamtracker.StreamStatusStopped {
 			s.removeAvailableLayer(layer)
 		} else {
@@ -289,6 +289,10 @@ func (s *StreamTrackerManager) GetTracker(layer int32) streamtracker.StreamTrack
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 
+	if int(layer) >= len(s.trackers) {
+		s.logger.Errorw("unexpcted layer", nil, "layer", layer)
+		return nil
+	}
 	return s.trackers[layer]
 }
 
