@@ -149,7 +149,7 @@ func (s *AgentHandler) HandleConnection(conn *websocket.Conn) {
 					s.roomRegistered = false
 					s.agentServer.DeregisterJobRequestTopic(s.roomTopic)
 				}
-			case livekit.JobType_JT_PARTICIPANT:
+			case livekit.JobType_JT_PUBLISHER:
 				delete(s.participantWorkers, w.id)
 				if s.participantRegistered && !s.participantAvailableLocked() {
 					s.participantRegistered = false
@@ -214,7 +214,7 @@ func (s *AgentHandler) handleRegister(worker *worker, msg *livekit.RegisterWorke
 			}
 		}
 
-	case livekit.JobType_JT_PARTICIPANT:
+	case livekit.JobType_JT_PUBLISHER:
 		worker.id = msg.WorkerId
 		delete(s.unregistered, worker.conn)
 		s.participantWorkers[worker.id] = worker
@@ -285,7 +285,7 @@ func (s *AgentHandler) handleStatus(w *worker, msg *livekit.UpdateWorkerStatus) 
 				s.roomRegistered = true
 			}
 		}
-	case livekit.JobType_JT_PARTICIPANT:
+	case livekit.JobType_JT_PUBLISHER:
 		if s.participantRegistered && !s.participantAvailableLocked() {
 			s.participantRegistered = false
 			s.agentServer.DeregisterJobRequestTopic(s.participantTopic)
@@ -315,7 +315,7 @@ func (s *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*empty
 	switch job.Type {
 	case livekit.JobType_JT_ROOM:
 		pool = s.roomWorkers
-	case livekit.JobType_JT_PARTICIPANT:
+	case livekit.JobType_JT_PUBLISHER:
 		pool = s.participantWorkers
 	}
 
@@ -385,7 +385,7 @@ func (s *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job)
 	switch job.Type {
 	case livekit.JobType_JT_ROOM:
 		pool = s.roomWorkers
-	case livekit.JobType_JT_PARTICIPANT:
+	case livekit.JobType_JT_PUBLISHER:
 		pool = s.participantWorkers
 	}
 

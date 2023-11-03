@@ -23,10 +23,10 @@ import (
 
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/rpc/rpcfakes"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/pkg/service/servicefakes"
@@ -131,14 +131,15 @@ func newTestRoomService(conf config.RoomConfig) *TestRoomService {
 	svc, err := service.NewRoomService(
 		conf,
 		config.APIConfig{ExecutionTimeout: 2},
-		config.PSRPCConfig{},
+		rpc.PSRPCConfig{},
 		router,
 		allocator,
 		store,
 		nil,
 		nil,
-		routing.NewTopicFormatter(),
+		rpc.NewTopicFormatter(),
 		&rpcfakes.FakeTypedRoomClient{},
+		&rpcfakes.FakeTypedParticipantClient{},
 	)
 	if err != nil {
 		panic(err)

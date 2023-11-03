@@ -26,6 +26,11 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
+var (
+	ErrFrameEarlierThanKeyFrame            = fmt.Errorf("frame is earlier than current keyframe")
+	ErrDDStructureAttachedToNonFirstPacket = fmt.Errorf("dependency descriptor structure is attached to non-first packet of a frame")
+)
+
 type DependencyDescriptorParser struct {
 	structure         *dd.FrameDependencyStructure
 	ddExtID           uint8
@@ -35,7 +40,7 @@ type DependencyDescriptorParser struct {
 
 	seqWrapAround             *utils.WrapAround[uint16, uint64]
 	frameWrapAround           *utils.WrapAround[uint16, uint64]
-	structureExtSeq           uint64
+	structureExtFrameNum      uint64
 	activeDecodeTargetsExtSeq uint64
 	activeDecodeTargetsMask   uint32
 	frameChecker              *FrameIntegrityChecker
@@ -61,12 +66,15 @@ type ExtDependencyDescriptor struct {
 	ActiveDecodeTargetsUpdated bool
 	Integrity                  bool
 	ExtFrameNum                uint64
+	// the frame number of the keyframe which the current frame depends on
+	ExtKeyFrameNum uint64
 }
 
 func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescriptor, VideoLayer, error) {
 	var videoLayer VideoLayer
 	ddBuf := pkt.GetExtension(r.ddExtID)
 	if ddBuf == nil {
+		r.logger.Warnw("dependency descriptor extension is not present", nil, "seq", pkt.SequenceNumber)
 		return nil, videoLayer, nil
 	}
 
@@ -77,7 +85,9 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 	}
 	_, err := ext.Unmarshal(ddBuf)
 	if err != nil {
-		// r.logger.Debugw("failed to parse generic dependency descriptor", "err", err, "payload", pkt.PayloadType, "ddbufLen", len(ddBuf))
+		if err != dd.ErrDDReaderNoStructure {
+			r.logger.Warnw("failed to parse generic dependency descriptor", err, "payload", pkt.PayloadType, "ddbufLen", len(ddBuf))
+		}
 		return nil, videoLayer, err
 	}
 
@@ -88,6 +98,12 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 	}
 
 	extFN := r.frameWrapAround.Update(ddVal.FrameNumber).ExtendedVal
+
+	if extFN < r.structureExtFrameNum {
+		r.logger.Debugw("drop frame which is earlier than current structure", "frameNum", extFN, "structureFrameNum", r.structureExtFrameNum)
+		return nil, videoLayer, ErrFrameEarlierThanKeyFrame
+	}
+
 	r.frameChecker.AddPacket(extSeq, extFN, &ddVal)
 
 	extDD := &ExtDependencyDescriptor{
@@ -97,16 +113,21 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 	}
 
 	if ddVal.AttachedStructure != nil {
-		r.logger.Debugw(fmt.Sprintf("parsed dependency descriptor\n%s", ddVal.String()))
-		if extSeq > r.structureExtSeq {
-			r.structure = ddVal.AttachedStructure
-			r.decodeTargets = ProcessFrameDependencyStructure(ddVal.AttachedStructure)
-			r.structureExtSeq = extSeq
-			extDD.StructureUpdated = true
-			extDD.ActiveDecodeTargetsUpdated = true
-			// The dependency descriptor reader will always set ActiveDecodeTargetsBitmask for TemplateDependencyStructure is present,
-			// so don't need to notify max layer change here.
+		if !ddVal.FirstPacketInFrame {
+			r.logger.Warnw("attached structure is not the first packet in frame", nil, "extSeq", extSeq, "extFN", extFN)
+			return nil, videoLayer, ErrDDStructureAttachedToNonFirstPacket
 		}
+
+		if r.structure == nil || ddVal.AttachedStructure.StructureId != r.structure.StructureId {
+			r.logger.Infow("structure updated", "structureID", ddVal.AttachedStructure.StructureId, "extSeq", extSeq, "extFN", extFN, "descriptor", ddVal.String())
+		}
+		r.structure = ddVal.AttachedStructure
+		r.decodeTargets = ProcessFrameDependencyStructure(ddVal.AttachedStructure)
+		r.structureExtFrameNum = extFN
+		extDD.StructureUpdated = true
+		extDD.ActiveDecodeTargetsUpdated = true
+		// The dependency descriptor reader will always set ActiveDecodeTargetsBitmask for TemplateDependencyStructure is present,
+		// so don't need to notify max layer change here.
 	}
 
 	if mask := ddVal.ActiveDecodeTargetsBitmask; mask != nil && extSeq > r.activeDecodeTargetsExtSeq {
@@ -131,6 +152,7 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 	}
 
 	extDD.DecodeTargets = r.decodeTargets
+	extDD.ExtKeyFrameNum = r.structureExtFrameNum
 
 	return extDD, videoLayer, nil
 }

@@ -69,7 +69,7 @@ func (c *agentClient) Run() error {
 	if err := c.write(&livekit.WorkerMessage{
 		Message: &livekit.WorkerMessage_Register{
 			Register: &livekit.RegisterWorkerRequest{
-				Type:     livekit.JobType_JT_PARTICIPANT,
+				Type:     livekit.JobType_JT_PUBLISHER,
 				WorkerId: workerID,
 				Version:  "version",
 				Name:     "name",

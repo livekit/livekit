@@ -908,7 +908,7 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 			go func() {
 				r.agentClient.JobRequest(context.Background(), &livekit.Job{
 					Id:          utils.NewGuid("JP_"),
-					Type:        livekit.JobType_JT_PARTICIPANT,
+					Type:        livekit.JobType_JT_PUBLISHER,
 					Room:        r.protoRoom,
 					Participant: participant.ToProto(),
 				})

@@ -31,8 +31,10 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/telemetry"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	redisLiveKit "github.com/livekit/protocol/redis"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
@@ -76,8 +78,10 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		NewDefaultSignalServer,
 		routing.NewSignalClient,
 		getPSRPCConfig,
-		routing.NewTopicFormatter,
-		routing.NewRoomClient,
+		getPSRPCClientParams,
+		rpc.NewTopicFormatter,
+		rpc.NewTypedRoomClient,
+		rpc.NewTypedParticipantClient,
 		NewLocalRoomManager,
 		NewTURNAuthHandler,
 		getTURNAuthHandlerFunc,
@@ -202,8 +206,12 @@ func getSignalRelayConfig(config *config.Config) config.SignalRelayConfig {
 	return config.SignalRelay
 }
 
-func getPSRPCConfig(config *config.Config) config.PSRPCConfig {
+func getPSRPCConfig(config *config.Config) rpc.PSRPCConfig {
 	return config.PSRPC
+}
+
+func getPSRPCClientParams(config rpc.PSRPCConfig, bus psrpc.MessageBus) rpc.ClientParams {
+	return rpc.NewClientParams(config, bus, logger.GetLogger(), prometheus.PSRPCMetricsObserver{})
 }
 
 func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Server, error) {

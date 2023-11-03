@@ -88,19 +88,21 @@ func (p participantUpdateInfo) String() string {
 // ---------------------------------------------------------------
 
 type ParticipantParams struct {
-	Identity                     livekit.ParticipantIdentity
-	Name                         livekit.ParticipantName
-	SID                          livekit.ParticipantID
-	Config                       *WebRTCConfig
-	Sink                         routing.MessageSink
-	AudioConfig                  config.AudioConfig
-	VideoConfig                  config.VideoConfig
-	ProtocolVersion              types.ProtocolVersion
-	Telemetry                    telemetry.TelemetryService
-	Trailer                      []byte
-	PLIThrottleConfig            config.PLIThrottleConfig
-	CongestionControlConfig      config.CongestionControlConfig
-	EnabledCodecs                []*livekit.Codec
+	Identity                livekit.ParticipantIdentity
+	Name                    livekit.ParticipantName
+	SID                     livekit.ParticipantID
+	Config                  *WebRTCConfig
+	Sink                    routing.MessageSink
+	AudioConfig             config.AudioConfig
+	VideoConfig             config.VideoConfig
+	ProtocolVersion         types.ProtocolVersion
+	Telemetry               telemetry.TelemetryService
+	Trailer                 []byte
+	PLIThrottleConfig       config.PLIThrottleConfig
+	CongestionControlConfig config.CongestionControlConfig
+	// codecs that are enabled for this room
+	PublishEnabledCodecs         []*livekit.Codec
+	SubscribeEnabledCodecs       []*livekit.Codec
 	Logger                       logger.Logger
 	SimTracks                    map[uint32]SimulcastTrackInfo
 	Grants                       *auth.ClaimGrants
@@ -156,6 +158,10 @@ type ParticipantImpl struct {
 	pendingPublishingTracks map[livekit.TrackID]*pendingTrackInfo
 	// migrated in muted tracks are not fired need close at participant close
 	mutedTrackNotFired []*MediaTrack
+
+	// supported codecs
+	enabledPublishCodecs   []*livekit.Codec
+	enabledSubscribeCodecs []*livekit.Codec
 
 	*TransportManager
 	*UpTrackManager
@@ -244,6 +250,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p.state.Store(livekit.ParticipantInfo_JOINING)
 	p.grants = params.Grants
 	p.SetResponseSink(params.Sink)
+	p.setupEnabledCodecs(params.PublishEnabledCodecs, params.SubscribeEnabledCodecs, params.ClientConf.GetDisabledCodecs())
 
 	p.supervisor.OnPublicationError(p.onPublicationError)
 
@@ -1109,9 +1116,9 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		ProtocolVersion:              p.params.ProtocolVersion,
 		Telemetry:                    p.params.Telemetry,
 		CongestionControlConfig:      p.params.CongestionControlConfig,
-		EnabledCodecs:                p.params.EnabledCodecs,
+		EnabledPublishCodecs:         p.enabledPublishCodecs,
+		EnabledSubscribeCodecs:       p.enabledSubscribeCodecs,
 		SimTracks:                    p.params.SimTracks,
-		ClientConf:                   p.params.ClientConf,
 		ClientInfo:                   p.params.ClientInfo,
 		Migration:                    p.params.Migration,
 		AllowTCPFallback:             p.params.AllowTCPFallback,
@@ -1614,19 +1621,33 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		ti.Stream = StreamFromTrackSource(ti.Source)
 	}
 	p.setStableTrackID(req.Cid, ti)
+	seenCodecs := make(map[string]struct{})
 	for _, codec := range req.SimulcastCodecs {
 		mime := codec.Codec
 		if req.Type == livekit.TrackType_VIDEO && !strings.HasPrefix(mime, "video/") {
 			mime = "video/" + mime
+			if !IsCodecEnabled(p.enabledPublishCodecs, webrtc.RTPCodecCapability{MimeType: mime}) {
+				altCodec := selectAlternativeVideoCodec(p.enabledPublishCodecs)
+				p.pubLogger.Infow("falling back to alternative codec",
+					"codec", mime,
+					"altCodec", altCodec,
+					"trackID", ti.Sid,
+				)
+				// select an alternative MIME type that's generally supported
+				mime = altCodec
+			}
 		} else if req.Type == livekit.TrackType_AUDIO && !strings.HasPrefix(mime, "audio/") {
 			mime = "audio/" + mime
 		}
-		if IsCodecEnabled(p.params.EnabledCodecs, webrtc.RTPCodecCapability{MimeType: mime}) {
-			ti.Codecs = append(ti.Codecs, &livekit.SimulcastCodecInfo{
-				MimeType: mime,
-				Cid:      codec.Cid,
-			})
+
+		if _, ok := seenCodecs[mime]; ok || mime == "" {
+			continue
 		}
+		seenCodecs[mime] = struct{}{}
+		ti.Codecs = append(ti.Codecs, &livekit.SimulcastCodecInfo{
+			MimeType: mime,
+			Cid:      codec.Cid,
+		})
 	}
 
 	p.params.Telemetry.TrackPublishRequested(context.Background(), p.ID(), p.Identity(), ti)
@@ -2312,4 +2333,34 @@ func (p *ParticipantImpl) SendDataPacket(dp *livekit.DataPacket, data []byte) er
 		p.dataChannelStats.AddBytes(uint64(len(data)), true)
 	}
 	return err
+}
+
+func (p *ParticipantImpl) setupEnabledCodecs(publishEnabledCodecs []*livekit.Codec, subscribeEnabledCodecs []*livekit.Codec, disabledCodecs *livekit.DisabledCodecs) {
+	shouldDisable := func(c *livekit.Codec, disabled []*livekit.Codec) bool {
+		for _, disableCodec := range disabled {
+			// disable codec's fmtp is empty means disable this codec entirely
+			if strings.EqualFold(c.Mime, disableCodec.Mime) {
+				return true
+			}
+		}
+		return false
+	}
+
+	publishCodecs := make([]*livekit.Codec, 0, len(publishEnabledCodecs))
+	for _, c := range publishEnabledCodecs {
+		if shouldDisable(c, disabledCodecs.GetCodecs()) || shouldDisable(c, disabledCodecs.GetPublish()) {
+			continue
+		}
+		publishCodecs = append(publishCodecs, c)
+	}
+	p.enabledPublishCodecs = publishCodecs
+
+	subscribeCodecs := make([]*livekit.Codec, 0, len(subscribeEnabledCodecs))
+	for _, c := range subscribeEnabledCodecs {
+		if shouldDisable(c, disabledCodecs.GetCodecs()) {
+			continue
+		}
+		subscribeCodecs = append(subscribeCodecs, c)
+	}
+	p.enabledSubscribeCodecs = subscribeCodecs
 }

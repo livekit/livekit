@@ -833,7 +833,7 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 	}
 
 	dcCloseHandler := func() {
-		t.params.Logger.Infow(dc.Label() + " data channel close")
+		t.params.Logger.Debugw(dc.Label() + " data channel close")
 	}
 
 	dcErrorHandler := func(err error) {

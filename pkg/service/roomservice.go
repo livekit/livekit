@@ -36,22 +36,23 @@ import (
 
 // A rooms service that supports a single node
 type RoomService struct {
-	roomConf       config.RoomConfig
-	apiConf        config.APIConfig
-	psrpcConf      config.PSRPCConfig
-	router         routing.MessageRouter
-	roomAllocator  RoomAllocator
-	roomStore      ServiceStore
-	agentClient    rtc.AgentClient
-	egressLauncher rtc.EgressLauncher
-	topicFormatter rpc.TopicFormatter
-	roomClient     rpc.TypedRoomClient
+	roomConf          config.RoomConfig
+	apiConf           config.APIConfig
+	psrpcConf         rpc.PSRPCConfig
+	router            routing.MessageRouter
+	roomAllocator     RoomAllocator
+	roomStore         ServiceStore
+	agentClient       rtc.AgentClient
+	egressLauncher    rtc.EgressLauncher
+	topicFormatter    rpc.TopicFormatter
+	roomClient        rpc.TypedRoomClient
+	participantClient rpc.TypedParticipantClient
 }
 
 func NewRoomService(
 	roomConf config.RoomConfig,
 	apiConf config.APIConfig,
-	psrpcConf config.PSRPCConfig,
+	psrpcConf rpc.PSRPCConfig,
 	router routing.MessageRouter,
 	roomAllocator RoomAllocator,
 	serviceStore ServiceStore,
@@ -59,18 +60,20 @@ func NewRoomService(
 	egressLauncher rtc.EgressLauncher,
 	topicFormatter rpc.TopicFormatter,
 	roomClient rpc.TypedRoomClient,
+	participantClient rpc.TypedParticipantClient,
 ) (svc *RoomService, err error) {
 	svc = &RoomService{
-		roomConf:       roomConf,
-		apiConf:        apiConf,
-		psrpcConf:      psrpcConf,
-		router:         router,
-		roomAllocator:  roomAllocator,
-		roomStore:      serviceStore,
-		agentClient:    agentClient,
-		egressLauncher: egressLauncher,
-		topicFormatter: topicFormatter,
-		roomClient:     roomClient,
+		roomConf:          roomConf,
+		apiConf:           apiConf,
+		psrpcConf:         psrpcConf,
+		router:            router,
+		roomAllocator:     roomAllocator,
+		roomStore:         serviceStore,
+		agentClient:       agentClient,
+		egressLauncher:    egressLauncher,
+		topicFormatter:    topicFormatter,
+		roomClient:        roomClient,
+		participantClient: participantClient,
 	}
 	return
 }
@@ -242,7 +245,7 @@ func (s *RoomService) RemoveParticipant(ctx context.Context, req *livekit.RoomPa
 	}
 
 	if s.psrpcConf.Enabled {
-		return s.roomClient.RemoveParticipant(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
+		return s.participantClient.RemoveParticipant(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
 	}
 
 	err := s.writeParticipantMessage(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity), &livekit.RTCNodeMessage{
@@ -278,7 +281,7 @@ func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 	}
 
 	if s.psrpcConf.Enabled {
-		return s.roomClient.MutePublishedTrack(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
+		return s.participantClient.MutePublishedTrack(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
 	}
 
 	err := s.writeParticipantMessage(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity), &livekit.RTCNodeMessage{
@@ -332,7 +335,7 @@ func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.Update
 	}
 
 	if s.psrpcConf.Enabled {
-		return s.roomClient.UpdateParticipant(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
+		return s.participantClient.UpdateParticipant(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
 	}
 
 	err := s.writeParticipantMessage(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity), &livekit.RTCNodeMessage{
@@ -381,7 +384,7 @@ func (s *RoomService) UpdateSubscriptions(ctx context.Context, req *livekit.Upda
 	}
 
 	if s.psrpcConf.Enabled {
-		return s.roomClient.UpdateSubscriptions(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
+		return s.participantClient.UpdateSubscriptions(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
 	}
 
 	err := s.writeParticipantMessage(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity), &livekit.RTCNodeMessage{

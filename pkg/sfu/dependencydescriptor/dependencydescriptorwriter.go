@@ -148,7 +148,7 @@ func (w *DependencyDescriptorWriter) calculateMatch(idx int, template *FrameDepe
 	result.NeedCustomDtis = w.descriptor.FrameDependencies.DecodeTargetIndications != nil && !reflect.DeepEqual(w.descriptor.FrameDependencies.DecodeTargetIndications, template.DecodeTargetIndications)
 
 	for i := 0; i < w.structure.NumChains; i++ {
-		if w.activeChains&(1<<i) != 0 && w.descriptor.FrameDependencies.ChainDiffs[i] != template.ChainDiffs[i] {
+		if w.activeChains&(1<<i) != 0 && (len(w.descriptor.FrameDependencies.ChainDiffs) <= i || len(template.ChainDiffs) <= i || w.descriptor.FrameDependencies.ChainDiffs[i] != template.ChainDiffs[i]) {
 			result.NeedCustomChains = true
 			break
 		}
