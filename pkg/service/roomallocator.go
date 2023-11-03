@@ -60,8 +60,10 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 	}()
 
 	// find existing room and update it
+	var created bool
 	rm, internal, err := r.roomStore.LoadRoom(ctx, livekit.RoomName(req.Name), true)
 	if err == ErrRoomNotFound {
+		created = true
 		rm = &livekit.Room{
 			Sid:          utils.NewGuid(utils.RoomPrefix),
 			Name:         req.Name,
@@ -114,7 +116,7 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 			return nil, false, routing.ErrNodeLimitReached
 		}
 
-		return rm, false, nil
+		return rm, created, nil
 	}
 
 	// select a new node

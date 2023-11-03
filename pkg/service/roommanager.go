@@ -69,6 +69,7 @@ type RoomManager struct {
 	roomStore         ObjectStore
 	telemetry         telemetry.TelemetryService
 	clientConfManager clientconfiguration.ClientConfigurationManager
+	agentClient       rtc.AgentClient
 	egressLauncher    rtc.EgressLauncher
 	versionGenerator  utils.TimedVersionGenerator
 	turnAuthHandler   *TURNAuthHandler
@@ -89,6 +90,7 @@ func NewLocalRoomManager(
 	router routing.Router,
 	telemetry telemetry.TelemetryService,
 	clientConfManager clientconfiguration.ClientConfigurationManager,
+	agentClient rtc.AgentClient,
 	egressLauncher rtc.EgressLauncher,
 	versionGenerator utils.TimedVersionGenerator,
 	turnAuthHandler *TURNAuthHandler,
@@ -108,6 +110,7 @@ func NewLocalRoomManager(
 		telemetry:         telemetry,
 		clientConfManager: clientConfManager,
 		egressLauncher:    egressLauncher,
+		agentClient:       agentClient,
 		versionGenerator:  versionGenerator,
 		turnAuthHandler:   turnAuthHandler,
 		bus:               bus,
@@ -527,7 +530,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 	}
 
 	// construct ice servers
-	newRoom := rtc.NewRoom(ri, internal, *r.rtcConfig, &r.config.Audio, r.serverInfo, r.telemetry, r.egressLauncher)
+	newRoom := rtc.NewRoom(ri, internal, *r.rtcConfig, &r.config.Audio, r.serverInfo, r.telemetry, r.agentClient, r.egressLauncher)
 
 	roomTopic := rpc.FormatRoomTopic(roomName)
 	roomServer := utils.Must(rpc.NewTypedRoomServer(r, r.bus))

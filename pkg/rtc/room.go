@@ -74,6 +74,7 @@ type Room struct {
 	audioConfig    *config.AudioConfig
 	serverInfo     *livekit.ServerInfo
 	telemetry      telemetry.TelemetryService
+	agentClient    AgentClient
 	egressLauncher EgressLauncher
 	trackManager   *RoomTrackManager
 
@@ -113,6 +114,7 @@ func NewRoom(
 	audioConfig *config.AudioConfig,
 	serverInfo *livekit.ServerInfo,
 	telemetry telemetry.TelemetryService,
+	agentClient AgentClient,
 	egressLauncher EgressLauncher,
 ) *Room {
 	r := &Room{
@@ -127,6 +129,7 @@ func NewRoom(
 		audioConfig:               audioConfig,
 		telemetry:                 telemetry,
 		egressLauncher:            egressLauncher,
+		agentClient:               agentClient,
 		trackManager:              NewRoomTrackManager(),
 		serverInfo:                serverInfo,
 		participants:              make(map[livekit.ParticipantIdentity]types.LocalParticipant),
@@ -898,10 +901,21 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 
 	r.trackManager.AddTrack(track, participant.Identity(), participant.ID())
 
-	// auto egress
-	if r.internal != nil {
-		if r.internal.ParticipantEgress != nil {
-			if _, hasPublished := r.hasPublished.Swap(participant.Identity(), true); !hasPublished {
+	// launch jobs
+	_, hasPublished := r.hasPublished.Swap(participant.Identity(), true)
+	if !hasPublished {
+		if r.agentClient != nil {
+			go func() {
+				r.agentClient.JobRequest(context.Background(), &livekit.Job{
+					Id:          utils.NewGuid("JP_"),
+					Type:        livekit.JobType_JT_PUBLISHER,
+					Room:        r.protoRoom,
+					Participant: participant.ToProto(),
+				})
+			}()
+		}
+		if r.internal != nil && r.internal.ParticipantEgress != nil {
+			go func() {
 				if err := StartParticipantEgress(
 					context.Background(),
 					r.egressLauncher,
@@ -913,9 +927,11 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 				); err != nil {
 					r.Logger.Errorw("failed to launch participant egress", err)
 				}
-			}
+			}()
 		}
-		if r.internal.TrackEgress != nil {
+	}
+	if r.internal != nil && r.internal.TrackEgress != nil {
+		go func() {
 			if err := StartTrackEgress(
 				context.Background(),
 				r.egressLauncher,
@@ -927,7 +943,7 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 			); err != nil {
 				r.Logger.Errorw("failed to launch track egress", err)
 			}
-		}
+		}()
 	}
 }
 

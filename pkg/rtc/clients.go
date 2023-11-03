@@ -27,6 +27,10 @@ import (
 	"github.com/livekit/protocol/webhook"
 )
 
+type AgentClient interface {
+	JobRequest(ctx context.Context, job *livekit.Job)
+}
+
 type EgressLauncher interface {
 	StartEgress(context.Context, *rpc.StartEgressRequest) (*livekit.EgressInfo, error)
 	StartEgressWithClusterId(ctx context.Context, clusterId string, req *rpc.StartEgressRequest) (*livekit.EgressInfo, error)
