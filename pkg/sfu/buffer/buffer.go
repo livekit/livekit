@@ -614,9 +614,6 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime time.Time, flow
 	if b.ddParser != nil {
 		ddVal, videoLayer, err := b.ddParser.Parse(ep.Packet)
 		if err != nil {
-			if !errors.Is(err, ErrFrameEarlierThanKeyFrame) && !errors.Is(err, dd.ErrDDReaderNoStructure) {
-				b.logger.Warnw("could not parse dependency descriptor", err)
-			}
 			return nil
 		} else if ddVal != nil {
 			ep.DependencyDescriptor = ddVal
