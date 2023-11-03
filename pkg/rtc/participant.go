@@ -101,7 +101,8 @@ type ParticipantParams struct {
 	PLIThrottleConfig       config.PLIThrottleConfig
 	CongestionControlConfig config.CongestionControlConfig
 	// codecs that are enabled for this room
-	EnabledCodecs                []*livekit.Codec
+	PublishEnabledCodecs         []*livekit.Codec
+	SubscribeEnabledCodecs       []*livekit.Codec
 	Logger                       logger.Logger
 	SimTracks                    map[uint32]SimulcastTrackInfo
 	Grants                       *auth.ClaimGrants
@@ -249,7 +250,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p.state.Store(livekit.ParticipantInfo_JOINING)
 	p.grants = params.Grants
 	p.SetResponseSink(params.Sink)
-	p.setupEnabledCodecs(params.EnabledCodecs, params.ClientConf.GetDisabledCodecs())
+	p.setupEnabledCodecs(params.PublishEnabledCodecs, params.SubscribeEnabledCodecs, params.ClientConf.GetDisabledCodecs())
 
 	p.supervisor.OnPublicationError(p.onPublicationError)
 
@@ -2334,9 +2335,7 @@ func (p *ParticipantImpl) SendDataPacket(dp *livekit.DataPacket, data []byte) er
 	return err
 }
 
-func (p *ParticipantImpl) setupEnabledCodecs(codecs []*livekit.Codec, disabledCodecs *livekit.DisabledCodecs) {
-	subscribeCodecs := make([]*livekit.Codec, 0, len(codecs))
-	publishCodecs := make([]*livekit.Codec, 0, len(codecs))
+func (p *ParticipantImpl) setupEnabledCodecs(publishEnabledCodecs []*livekit.Codec, subscribeEnabledCodecs []*livekit.Codec, disabledCodecs *livekit.DisabledCodecs) {
 	shouldDisable := func(c *livekit.Codec, disabled []*livekit.Codec) bool {
 		for _, disableCodec := range disabled {
 			// disable codec's fmtp is empty means disable this codec entirely
@@ -2346,22 +2345,22 @@ func (p *ParticipantImpl) setupEnabledCodecs(codecs []*livekit.Codec, disabledCo
 		}
 		return false
 	}
-	for _, c := range codecs {
-		var publishDisabled bool
-		var subscribeDisabled bool
+
+	publishCodecs := make([]*livekit.Codec, 0, len(publishEnabledCodecs))
+	for _, c := range publishEnabledCodecs {
+		if shouldDisable(c, disabledCodecs.GetCodecs()) || shouldDisable(c, disabledCodecs.GetPublish()) {
+			continue
+		}
+		publishCodecs = append(publishCodecs, c)
+	}
+	p.enabledPublishCodecs = publishCodecs
+
+	subscribeCodecs := make([]*livekit.Codec, 0, len(subscribeEnabledCodecs))
+	for _, c := range subscribeEnabledCodecs {
 		if shouldDisable(c, disabledCodecs.GetCodecs()) {
-			publishDisabled = true
-			subscribeDisabled = true
-		} else if shouldDisable(c, disabledCodecs.GetPublish()) {
-			publishDisabled = true
+			continue
 		}
-		if !publishDisabled {
-			publishCodecs = append(publishCodecs, c)
-		}
-		if !subscribeDisabled {
-			subscribeCodecs = append(subscribeCodecs, c)
-		}
+		subscribeCodecs = append(subscribeCodecs, c)
 	}
 	p.enabledSubscribeCodecs = subscribeCodecs
-	p.enabledPublishCodecs = publishCodecs
 }
