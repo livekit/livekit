@@ -258,6 +258,14 @@ func TestDependencyDescriptor(t *testing.T) {
 	locked, layer := ddSelector.CheckSync()
 	require.True(t, locked)
 	require.Equal(t, targetLayer.Spatial, layer)
+
+	// should drop frame that relies on a keyframe is not present in current selection
+	framesPrevious := createDDFrames(buffer.VideoLayer{Spatial: 2, Temporal: 2}, 1000)
+	ret = ddSelector.Select(framesPrevious[1], 0)
+	require.False(t, ret.IsSelected)
+	// keyframe lost, out of sync
+	locked, _ = ddSelector.CheckSync()
+	require.False(t, locked)
 }
 
 func createDDFrames(maxLayer buffer.VideoLayer, startFrameNumber uint16) []*buffer.ExtPacket {
@@ -279,7 +287,7 @@ func createDDFrames(maxLayer buffer.VideoLayer, startFrameNumber uint16) []*buff
 		return decodeTargets[i].Layer.GreaterThan(decodeTargets[j].Layer)
 	})
 
-	chainDiffs := make([]int, len(decodeTargets))
+	chainDiffs := make([]int, int(maxLayer.Spatial)+1)
 	dtis := make([]dd.DecodeTargetIndication, len(decodeTargets))
 	for _, dt := range decodeTargets {
 		dtis[dt.Target] = dd.DecodeTargetSwitch
@@ -319,6 +327,7 @@ func createDDFrames(maxLayer buffer.VideoLayer, startFrameNumber uint16) []*buff
 			ActiveDecodeTargetsUpdated: true,
 			Integrity:                  true,
 			ExtFrameNum:                uint64(startFrameNumber),
+			ExtKeyFrameNum:             uint64(startFrameNumber),
 		},
 		Packet: &rtp.Packet{
 			Header: rtp.Header{
@@ -356,7 +365,6 @@ func createDDFrames(maxLayer buffer.VideoLayer, startFrameNumber uint16) []*buff
 			}
 
 			frame := &buffer.ExtPacket{
-				KeyFrame: true,
 				DependencyDescriptor: &buffer.ExtDependencyDescriptor{
 					Descriptor: &dd.DependencyDescriptor{
 						FrameNumber: startFrameNumber,
@@ -367,9 +375,10 @@ func createDDFrames(maxLayer buffer.VideoLayer, startFrameNumber uint16) []*buff
 							DecodeTargetIndications: frameDtis,
 						},
 					},
-					DecodeTargets: decodeTargets,
-					Integrity:     true,
-					ExtFrameNum:   uint64(startFrameNumber),
+					DecodeTargets:  decodeTargets,
+					Integrity:      true,
+					ExtFrameNum:    uint64(startFrameNumber),
+					ExtKeyFrameNum: keyFrame.DependencyDescriptor.ExtFrameNum,
 				},
 				Packet: &rtp.Packet{
 					Header: rtp.Header{

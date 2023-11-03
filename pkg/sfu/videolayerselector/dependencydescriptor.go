@@ -65,10 +65,6 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		result.IsRelevant = true
 	}
 
-	if !d.keyFrameValid && !extPkt.KeyFrame {
-		return
-	}
-
 	ddwdt := extPkt.DependencyDescriptor
 	if ddwdt == nil {
 		// packet doesn't have dependency descriptor
@@ -84,6 +80,10 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	incomingLayer := buffer.VideoLayer{
 		Spatial:  int32(fd.SpatialId),
 		Temporal: int32(fd.TemporalId),
+	}
+
+	if !d.keyFrameValid && dd.AttachedStructure == nil {
+		return
 	}
 
 	// early return if this frame is already forwarded or dropped
