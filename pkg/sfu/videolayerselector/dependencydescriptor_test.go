@@ -253,11 +253,15 @@ func TestDependencyDescriptor(t *testing.T) {
 	}
 	require.True(t, switchToLower)
 
-	// sync with requested layer
+	// not sync with requested layer
 	ddSelector.SetRequestSpatial(targetLayer.Spatial)
 	locked, layer := ddSelector.CheckSync()
-	require.True(t, locked)
+	require.False(t, locked)
 	require.Equal(t, targetLayer.Spatial, layer)
+	// request to current layer, sync
+	ddSelector.SetRequestSpatial(ddSelector.GetCurrent().Spatial)
+	locked, _ = ddSelector.CheckSync()
+	require.True(t, locked)
 
 	// should drop frame that relies on a keyframe is not present in current selection
 	framesPrevious := createDDFrames(buffer.VideoLayer{Spatial: 2, Temporal: 2}, 1000)
