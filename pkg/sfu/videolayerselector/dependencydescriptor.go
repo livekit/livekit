@@ -404,7 +404,7 @@ func (d *DependencyDescriptor) invalidateKeyFrame() {
 
 func (d *DependencyDescriptor) CheckSync() (locked bool, layer int32) {
 	layer = d.GetRequestSpatial()
-	if !d.currentLayer.IsValid() {
+	if !d.currentLayer.IsValid() || !d.keyFrameValid {
 		// always declare not locked when trying to resume from nothing
 		return false, layer
 	}
@@ -412,7 +412,7 @@ func (d *DependencyDescriptor) CheckSync() (locked bool, layer int32) {
 	d.decodeTargetsLock.RLock()
 	defer d.decodeTargetsLock.RUnlock()
 	for _, dt := range d.decodeTargets {
-		if dt.Active() && dt.Layer.Spatial <= d.GetTarget().Spatial && dt.Valid() {
+		if dt.Active() && dt.Layer.Spatial == layer && dt.Valid() {
 			d.logger.Debugw(fmt.Sprintf("checking sync, matching decode target, layer: %d, dt: %s, dts: %+v", layer, dt, d.decodeTargets))
 			return true, layer
 		}
