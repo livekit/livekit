@@ -40,7 +40,6 @@ type DependencyDescriptorParser struct {
 
 	seqWrapAround             *utils.WrapAround[uint16, uint64]
 	frameWrapAround           *utils.WrapAround[uint16, uint64]
-	structureExtSeq           uint64
 	structureExtFrameNum      uint64
 	activeDecodeTargetsExtSeq uint64
 	activeDecodeTargetsMask   uint32
@@ -124,7 +123,6 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 		}
 		r.structure = ddVal.AttachedStructure
 		r.decodeTargets = ProcessFrameDependencyStructure(ddVal.AttachedStructure)
-		r.structureExtSeq = extSeq
 		r.structureExtFrameNum = extFN
 		extDD.StructureUpdated = true
 		extDD.ActiveDecodeTargetsUpdated = true
