@@ -160,8 +160,8 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 			u.params.Logger.Debugw(
 				"skipping older subscription permission version",
 				"existingValue", perms,
-				"existingVersion", u.subscriptionPermissionVersion.ToProto().String(),
-				"requestingValue", subscriptionPermission.String(),
+				"existingVersion", u.subscriptionPermissionVersion.String(),
+				"requestingValue", logger.Proto(subscriptionPermission),
 				"requestingVersion", timedVersion.String(),
 			)
 			u.lock.Unlock()
@@ -178,7 +178,7 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 	if subscriptionPermission == nil {
 		u.params.Logger.Debugw(
 			"updating subscription permission, setting to nil",
-			"version", u.subscriptionPermissionVersion.ToProto().String(),
+			"version", u.subscriptionPermissionVersion.String(),
 		)
 		// possible to get a nil when migrating
 		u.lock.Unlock()
@@ -187,8 +187,8 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 
 	u.params.Logger.Debugw(
 		"updating subscription permission",
-		"permissions", u.subscriptionPermission.String(),
-		"version", u.subscriptionPermissionVersion.ToProto().String(),
+		"permissions", logger.Proto(u.subscriptionPermission),
+		"version", u.subscriptionPermissionVersion.String(),
 	)
 	if err := u.parseSubscriptionPermissionsLocked(subscriptionPermission, func(pID livekit.ParticipantID) types.LocalParticipant {
 		u.lock.Unlock()
@@ -247,7 +247,7 @@ func (u *UpTrackManager) AddPublishedTrack(track types.MediaTrack) {
 		u.publishedTracks[track.ID()] = track
 	}
 	u.lock.Unlock()
-	u.params.Logger.Debugw("added published track", "trackID", track.ID(), "trackInfo", track.ToProto().String())
+	u.params.Logger.Debugw("added published track", "trackID", track.ID(), "trackInfo", logger.Proto(track.ToProto()))
 
 	track.AddOnClose(func() {
 		notifyClose := false
