@@ -139,6 +139,7 @@ type ParticipantImpl struct {
 	resSinkMu   sync.Mutex
 	resSink     routing.MessageSink
 	grants      *auth.ClaimGrants
+	hidden      atomic.Bool
 	isPublisher atomic.Bool
 
 	// when first connected
@@ -249,6 +250,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p.migrateState.Store(types.MigrateStateInit)
 	p.state.Store(livekit.ParticipantInfo_JOINING)
 	p.grants = params.Grants
+	p.hidden.Store(p.grants.Video.Hidden)
 	p.SetResponseSink(params.Sink)
 	p.setupEnabledCodecs(params.PublishEnabledCodecs, params.SubscribeEnabledCodecs, params.ClientConf.GetDisabledCodecs())
 
@@ -426,6 +428,7 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 	p.params.Logger.Infow("updating participant permission", "permission", permission)
 
 	video.UpdateFromPermission(permission)
+	p.hidden.Store(permission.Hidden)
 	p.dirty.Store(true)
 
 	canPublish := video.GetCanPublish()
@@ -1021,10 +1024,7 @@ func (p *ParticipantImpl) CanPublishData() bool {
 }
 
 func (p *ParticipantImpl) Hidden() bool {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-
-	return p.grants.Video.Hidden
+	return p.hidden.Load()
 }
 
 func (p *ParticipantImpl) IsRecorder() bool {
