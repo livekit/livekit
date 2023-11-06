@@ -70,6 +70,10 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		getIngressStore,
 		getIngressConfig,
 		NewIngressService,
+		rpc.NewSIPClient,
+		getSIPStore,
+		getSIPConfig,
+		NewSIPService,
 		NewRoomAllocator,
 		NewRoomService,
 		NewRTCService,
@@ -193,6 +197,19 @@ func getIngressStore(s ObjectStore) IngressStore {
 
 func getIngressConfig(conf *config.Config) *config.IngressConfig {
 	return &conf.Ingress
+}
+
+func getSIPStore(s ObjectStore) SIPStore {
+	switch store := s.(type) {
+	case *RedisStore:
+		return store
+	default:
+		return nil
+	}
+}
+
+func getSIPConfig(conf *config.Config) *config.SIPConfig {
+	return &conf.SIP
 }
 
 func createClientConfiguration() clientconfiguration.ClientConfigurationManager {

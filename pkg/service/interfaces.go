@@ -76,3 +76,21 @@ type RoomAllocator interface {
 	CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (*livekit.Room, bool, error)
 	ValidateCreateRoom(ctx context.Context, roomName livekit.RoomName) error
 }
+
+//counterfeiter:generate . SIPStore
+type SIPStore interface {
+	StoreSIPTrunk(ctx context.Context, info *livekit.SIPTrunkInfo) error
+	LoadSIPTrunk(ctx context.Context, sipTrunkID string) (*livekit.SIPTrunkInfo, error)
+	ListSIPTrunk(ctx context.Context) ([]*livekit.SIPTrunkInfo, error)
+	DeleteSIPTrunk(ctx context.Context, info *livekit.SIPTrunkInfo) error
+
+	StoreSIPDispatchRule(ctx context.Context, info *livekit.SIPDispatchRuleInfo) error
+	LoadSIPDispatchRule(ctx context.Context, sipDispatchRuleID string) (*livekit.SIPDispatchRuleInfo, error)
+	ListSIPDispatchRule(ctx context.Context) ([]*livekit.SIPDispatchRuleInfo, error)
+	DeleteSIPDispatchRule(ctx context.Context, info *livekit.SIPDispatchRuleInfo) error
+
+	StoreSIPParticipant(ctx context.Context, info *livekit.SIPParticipantInfo) error
+	LoadSIPParticipant(ctx context.Context, sipParticipantID string) (*livekit.SIPParticipantInfo, error)
+	ListSIPParticipant(ctx context.Context) ([]*livekit.SIPParticipantInfo, error)
+	DeleteSIPParticipant(ctx context.Context, info *livekit.SIPParticipantInfo) error
+}

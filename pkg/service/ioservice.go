@@ -17,6 +17,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"google.golang.org/protobuf/types/known/emptypb"
 
@@ -32,6 +33,7 @@ type IOInfoService struct {
 
 	es        EgressStore
 	is        IngressStore
+	ss        SIPStore
 	telemetry telemetry.TelemetryService
 
 	shutdown chan struct{}
@@ -41,11 +43,13 @@ func NewIOInfoService(
 	bus psrpc.MessageBus,
 	es EgressStore,
 	is IngressStore,
+	ss SIPStore,
 	ts telemetry.TelemetryService,
 ) (*IOInfoService, error) {
 	s := &IOInfoService{
 		es:        es,
 		is:        is,
+		ss:        ss,
 		telemetry: ts,
 		shutdown:  make(chan struct{}),
 	}
@@ -209,6 +213,31 @@ func (s *IOInfoService) UpdateIngressState(ctx context.Context, req *rpc.UpdateI
 	}
 
 	return &emptypb.Empty{}, nil
+}
+
+func (s *IOInfoService) EvaluateSIPDispatchRules(ctx context.Context, req *rpc.EvaluateSIPDispatchRulesRequest) (*rpc.EvaluateSIPDispatchRulesResponse, error) {
+	dispatchRules, err := s.ss.ListSIPDispatchRule(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(dispatchRules) == 0 {
+		return nil, fmt.Errorf("No SIP Dispatch Rule Found")
+	}
+
+	directDispatchRule := dispatchRules[0].Rule.GetDispatchRuleDirect()
+	if directDispatchRule == nil {
+		return nil, fmt.Errorf("No SIP Direct Dispatch Rule Found")
+	}
+
+	return &rpc.EvaluateSIPDispatchRulesResponse{
+		RoomName:            directDispatchRule.RoomName,
+		ParticipantIdentity: req.CallingNumber,
+	}, nil
+}
+
+func (s *IOInfoService) GetSIPTrunkAuthentication(ctx context.Context, req *rpc.GetSIPTrunkAuthenticationRequest) (*rpc.GetSIPTrunkAuthenticationResponse, error) {
+	return nil, nil
 }
 
 func (s *IOInfoService) Stop() {
