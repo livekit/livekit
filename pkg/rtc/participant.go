@@ -1624,8 +1624,10 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	seenCodecs := make(map[string]struct{})
 	for _, codec := range req.SimulcastCodecs {
 		mime := codec.Codec
-		if req.Type == livekit.TrackType_VIDEO && !strings.HasPrefix(mime, "video/") {
-			mime = "video/" + mime
+		if req.Type == livekit.TrackType_VIDEO {
+			if !strings.HasPrefix(mime, "video/") {
+				mime = "video/" + mime
+			}
 			if !IsCodecEnabled(p.enabledPublishCodecs, webrtc.RTPCodecCapability{MimeType: mime}) {
 				altCodec := selectAlternativeVideoCodec(p.enabledPublishCodecs)
 				p.pubLogger.Infow("falling back to alternative codec",
@@ -1762,10 +1764,30 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	// use existing media track to handle simulcast
 	mt, ok := p.getPublishedTrackBySdpCid(track.ID()).(*MediaTrack)
 	if !ok {
-		signalCid, ti := p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()))
+		signalCid, ti, migrated := p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()))
 		if ti == nil {
 			p.pendingTracksLock.Unlock()
 			return nil, false
+		}
+
+		// check if the migrated track has correct codec
+		if migrated && len(ti.Codecs) > 0 {
+			parameters := rtpReceiver.GetParameters()
+			var codecFound int
+			for _, c := range ti.Codecs {
+				for _, nc := range parameters.Codecs {
+					if strings.EqualFold(nc.MimeType, c.MimeType) {
+						codecFound++
+						break
+					}
+				}
+			}
+			if codecFound != len(ti.Codecs) {
+				p.params.Logger.Warnw("migrated track codec mismatched", nil, "track", logger.Proto(ti), "webrtcCodec", parameters)
+				p.pendingTracksLock.Unlock()
+				p.IssueFullReconnect(types.ParticipantCloseReasonMigrateCodecMismatch)
+				return nil, false
+			}
 		}
 
 		ti.MimeType = track.Codec().MimeType
@@ -1976,7 +1998,7 @@ func (p *ParticipantImpl) onUpTrackManagerClose() {
 	p.postRtcp(nil)
 }
 
-func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackType) (string, *livekit.TrackInfo) {
+func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackType) (string, *livekit.TrackInfo, bool) {
 	signalCid := clientId
 	pendingInfo := p.pendingTracks[clientId]
 	if pendingInfo == nil {
@@ -2012,10 +2034,10 @@ func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackTyp
 	// if still not found, we are done
 	if pendingInfo == nil {
 		p.pubLogger.Errorw("track info not published prior to track", nil, "clientId", clientId)
-		return signalCid, nil
+		return signalCid, nil, false
 	}
 
-	return signalCid, pendingInfo.trackInfos[0]
+	return signalCid, pendingInfo.trackInfos[0], pendingInfo.migrated
 }
 
 // setStableTrackID either generates a new TrackID or reuses a previously used one
@@ -2206,7 +2228,7 @@ func (p *ParticipantImpl) IssueFullReconnect(reason types.ParticipantCloseReason
 
 	scr := types.SignallingCloseReasonUnknown
 	switch reason {
-	case types.ParticipantCloseReasonPublicationError:
+	case types.ParticipantCloseReasonPublicationError, types.ParticipantCloseReasonMigrateCodecMismatch:
 		scr = types.SignallingCloseReasonFullReconnectPublicationError
 	case types.ParticipantCloseReasonSubscriptionError:
 		scr = types.SignallingCloseReasonFullReconnectSubscriptionError
