@@ -1783,6 +1783,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 			if codecFound != len(ti.Codecs) {
 				p.params.Logger.Warnw("migrated track codec mismatched", nil, "track", logger.Proto(ti), "webrtcCodec", parameters)
 				p.pendingTracksLock.Unlock()
+				p.IssueFullReconnect(types.ParticipantCloseReasonMigrateCodecMismatch)
 				return nil, false
 			}
 		}
@@ -2225,7 +2226,7 @@ func (p *ParticipantImpl) IssueFullReconnect(reason types.ParticipantCloseReason
 
 	scr := types.SignallingCloseReasonUnknown
 	switch reason {
-	case types.ParticipantCloseReasonPublicationError:
+	case types.ParticipantCloseReasonPublicationError, types.ParticipantCloseReasonMigrateCodecMismatch:
 		scr = types.SignallingCloseReasonFullReconnectPublicationError
 	case types.ParticipantCloseReasonSubscriptionError:
 		scr = types.SignallingCloseReasonFullReconnectSubscriptionError
