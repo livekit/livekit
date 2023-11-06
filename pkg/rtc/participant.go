@@ -1624,8 +1624,10 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	seenCodecs := make(map[string]struct{})
 	for _, codec := range req.SimulcastCodecs {
 		mime := codec.Codec
-		if req.Type == livekit.TrackType_VIDEO && !strings.HasPrefix(mime, "video/") {
-			mime = "video/" + mime
+		if req.Type == livekit.TrackType_VIDEO {
+			if !strings.HasPrefix(mime, "video/") {
+				mime = "video/" + mime
+			}
 			if !IsCodecEnabled(p.enabledPublishCodecs, webrtc.RTPCodecCapability{MimeType: mime}) {
 				altCodec := selectAlternativeVideoCodec(p.enabledPublishCodecs)
 				p.pubLogger.Infow("falling back to alternative codec",

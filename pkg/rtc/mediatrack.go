@@ -241,7 +241,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	if wr == nil {
 		priority := -1
 		for idx, c := range t.params.TrackInfo.Codecs {
-			if strings.HasSuffix(mime, c.MimeType) {
+			if strings.EqualFold(mime, c.MimeType) {
 				priority = idx
 				break
 			}
