@@ -1770,15 +1770,18 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 
 		// check if the migrated track has correct codec
 		if migrated && len(ti.Codecs) > 0 {
-			var codecFound bool
+			parameters := rtpReceiver.GetParameters()
+			var codecFound int
 			for _, c := range ti.Codecs {
-				if strings.EqualFold(c.MimeType, track.Codec().MimeType) {
-					codecFound = true
-					break
+				for _, nc := range parameters.Codecs {
+					if strings.EqualFold(nc.MimeType, c.MimeType) {
+						codecFound++
+						break
+					}
 				}
 			}
-			if !codecFound {
-				p.params.Logger.Warnw("migrated track codec mismatched", nil, "track", logger.Proto(ti), "webrtcCodec", track.Codec())
+			if codecFound != len(ti.Codecs) {
+				p.params.Logger.Warnw("migrated track codec mismatched", nil, "track", logger.Proto(ti), "webrtcCodec", parameters)
 				p.pendingTracksLock.Unlock()
 				return nil, false
 			}
