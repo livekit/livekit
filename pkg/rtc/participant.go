@@ -1762,10 +1762,26 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	// use existing media track to handle simulcast
 	mt, ok := p.getPublishedTrackBySdpCid(track.ID()).(*MediaTrack)
 	if !ok {
-		signalCid, ti := p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()))
+		signalCid, ti, migrated := p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()))
 		if ti == nil {
 			p.pendingTracksLock.Unlock()
 			return nil, false
+		}
+
+		// check if the migrated track has correct codec
+		if migrated && len(ti.Codecs) > 0 {
+			var codecFound bool
+			for _, c := range ti.Codecs {
+				if strings.EqualFold(c.MimeType, track.Codec().MimeType) {
+					codecFound = true
+					break
+				}
+			}
+			if !codecFound {
+				p.params.Logger.Warnw("migrated track codec mismatched", nil, "track", logger.Proto(ti), "webrtcCodec", track.Codec())
+				p.pendingTracksLock.Unlock()
+				return nil, false
+			}
 		}
 
 		ti.MimeType = track.Codec().MimeType
@@ -1976,7 +1992,7 @@ func (p *ParticipantImpl) onUpTrackManagerClose() {
 	p.postRtcp(nil)
 }
 
-func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackType) (string, *livekit.TrackInfo) {
+func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackType) (string, *livekit.TrackInfo, bool) {
 	signalCid := clientId
 	pendingInfo := p.pendingTracks[clientId]
 	if pendingInfo == nil {
@@ -2012,10 +2028,10 @@ func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackTyp
 	// if still not found, we are done
 	if pendingInfo == nil {
 		p.pubLogger.Errorw("track info not published prior to track", nil, "clientId", clientId)
-		return signalCid, nil
+		return signalCid, nil, false
 	}
 
-	return signalCid, pendingInfo.trackInfos[0]
+	return signalCid, pendingInfo.trackInfos[0], pendingInfo.migrated
 }
 
 // setStableTrackID either generates a new TrackID or reuses a previously used one
