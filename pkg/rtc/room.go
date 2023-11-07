@@ -153,27 +153,29 @@ func NewRoom(
 		r.protoRoom.CreationTime = time.Now().Unix()
 	}
 
-	go func() {
-		res := r.agentClient.CheckEnabled(context.Background(), &rpc.CheckEnabledRequest{})
-		if res.PublisherEnabled {
-			r.lock.Lock()
-			r.publisherAgentsEnabled.Store(true)
-			// if there are already published tracks, start the agents
-			r.hasPublished.Range(func(k, v interface{}) bool {
-				identity := k.(livekit.ParticipantIdentity)
-				go func() {
-					r.agentClient.JobRequest(context.Background(), &livekit.Job{
-						Id:          utils.NewGuid("JP_"),
-						Type:        livekit.JobType_JT_PUBLISHER,
-						Room:        room,
-						Participant: r.participants[identity].ToProto(),
-					})
-				}()
-				return true
-			})
-			r.lock.Unlock()
-		}
-	}()
+	if agentClient != nil {
+		go func() {
+			res := r.agentClient.CheckEnabled(context.Background(), &rpc.CheckEnabledRequest{})
+			if res.PublisherEnabled {
+				r.lock.Lock()
+				r.publisherAgentsEnabled.Store(true)
+				// if there are already published tracks, start the agents
+				r.hasPublished.Range(func(k, v interface{}) bool {
+					identity := k.(livekit.ParticipantIdentity)
+					go func() {
+						r.agentClient.JobRequest(context.Background(), &livekit.Job{
+							Id:          utils.NewGuid("JP_"),
+							Type:        livekit.JobType_JT_PUBLISHER,
+							Room:        room,
+							Participant: r.participants[identity].ToProto(),
+						})
+					}()
+					return true
+				})
+				r.lock.Unlock()
+			}
+		}()
+	}
 
 	go r.audioUpdateWorker()
 	go r.connectionQualityWorker()
