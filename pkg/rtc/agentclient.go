@@ -24,6 +24,11 @@ import (
 	"github.com/livekit/psrpc"
 )
 
+const (
+	RoomAgentTopic      = "room"
+	PublisherAgentTopic = "publisher"
+)
+
 type AgentClient interface {
 	CheckEnabled(ctx context.Context, req *rpc.CheckEnabledRequest) *rpc.CheckEnabledResponse
 	JobRequest(ctx context.Context, job *livekit.Job)
@@ -74,9 +79,9 @@ func (c *agentClient) JobRequest(ctx context.Context, job *livekit.Job) {
 	var logError bool
 	switch job.Type {
 	case livekit.JobType_JT_ROOM:
-		topic = "room"
+		topic = RoomAgentTopic
 	case livekit.JobType_JT_PUBLISHER:
-		topic = "publisher"
+		topic = PublisherAgentTopic
 		logError = true
 	}
 
