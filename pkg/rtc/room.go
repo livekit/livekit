@@ -30,6 +30,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -74,9 +75,12 @@ type Room struct {
 	audioConfig    *config.AudioConfig
 	serverInfo     *livekit.ServerInfo
 	telemetry      telemetry.TelemetryService
-	agentClient    AgentClient
 	egressLauncher EgressLauncher
 	trackManager   *RoomTrackManager
+
+	// agents
+	agentClient            AgentClient
+	publisherAgentsEnabled atomic.Bool
 
 	// map of identity -> Participant
 	participants              map[livekit.ParticipantIdentity]types.LocalParticipant
@@ -140,6 +144,7 @@ func NewRoom(
 		closed:                    make(chan struct{}),
 		trailer:                   []byte(utils.RandomSecret()),
 	}
+
 	r.protoProxy = utils.NewProtoProxy[*livekit.Room](roomUpdateInterval, r.updateProto)
 	if r.protoRoom.EmptyTimeout == 0 {
 		r.protoRoom.EmptyTimeout = DefaultEmptyTimeout
@@ -147,6 +152,28 @@ func NewRoom(
 	if r.protoRoom.CreationTime == 0 {
 		r.protoRoom.CreationTime = time.Now().Unix()
 	}
+
+	go func() {
+		res := r.agentClient.CheckEnabled(context.Background(), &rpc.CheckEnabledRequest{})
+		if res.PublisherEnabled {
+			r.lock.Lock()
+			r.publisherAgentsEnabled.Store(true)
+			// if there are already published tracks, start the agents
+			r.hasPublished.Range(func(k, v interface{}) bool {
+				identity := k.(livekit.ParticipantIdentity)
+				go func() {
+					r.agentClient.JobRequest(context.Background(), &livekit.Job{
+						Id:          utils.NewGuid("JP_"),
+						Type:        livekit.JobType_JT_PUBLISHER,
+						Room:        room,
+						Participant: r.participants[identity].ToProto(),
+					})
+				}()
+				return true
+			})
+			r.lock.Unlock()
+		}
+	}()
 
 	go r.audioUpdateWorker()
 	go r.connectionQualityWorker()
@@ -904,7 +931,7 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 	// launch jobs
 	_, hasPublished := r.hasPublished.Swap(participant.Identity(), true)
 	if !hasPublished {
-		if r.agentClient != nil {
+		if r.publisherAgentsEnabled.Load() {
 			go func() {
 				r.agentClient.JobRequest(context.Background(), &livekit.Job{
 					Id:          utils.NewGuid("JP_"),

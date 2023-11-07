@@ -117,25 +117,28 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 	}
 
 	if created {
-		if s.agentClient != nil {
+		go func() {
 			s.agentClient.JobRequest(ctx, &livekit.Job{
 				Id:   utils.NewGuid("JR_"),
 				Type: livekit.JobType_JT_ROOM,
 				Room: rm,
 			})
-		}
+		}()
+
 		if req.Egress != nil && req.Egress.Room != nil {
-			egress := &rpc.StartEgressRequest{
+			_, err = s.egressLauncher.StartEgress(ctx, &rpc.StartEgressRequest{
 				Request: &rpc.StartEgressRequest_RoomComposite{
 					RoomComposite: req.Egress.Room,
 				},
 				RoomId: rm.Sid,
+			})
+			if err != nil {
+				return nil, err
 			}
-			_, err = s.egressLauncher.StartEgress(ctx, egress)
 		}
 	}
 
-	return rm, err
+	return rm, nil
 }
 
 func (s *RoomService) ListRooms(ctx context.Context, req *livekit.ListRoomsRequest) (*livekit.ListRoomsResponse, error) {
@@ -478,12 +481,14 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 		return nil, err
 	}
 
-	if created && s.agentClient != nil {
-		s.agentClient.JobRequest(ctx, &livekit.Job{
-			Id:   utils.NewGuid("JR_"),
-			Type: livekit.JobType_JT_ROOM,
-			Room: room,
-		})
+	if created {
+		go func() {
+			s.agentClient.JobRequest(ctx, &livekit.Job{
+				Id:   utils.NewGuid("JR_"),
+				Type: livekit.JobType_JT_ROOM,
+				Room: room,
+			})
+		}()
 	}
 
 	return room, nil

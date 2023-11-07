@@ -34,6 +34,8 @@ import (
 	"github.com/livekit/psrpc"
 )
 
+const AgentServiceVersion = "0.1.0"
+
 type AgentService struct {
 	upgrader websocket.Upgrader
 
@@ -229,14 +231,17 @@ func (s *AgentHandler) handleRegister(worker *worker, msg *livekit.RegisterWorke
 		}
 	}
 
-	worker.sigConn.WriteServerMessage(&livekit.ServerMessage{
+	_, err := worker.sigConn.WriteServerMessage(&livekit.ServerMessage{
 		Message: &livekit.ServerMessage_Register{
 			Register: &livekit.RegisterWorkerResponse{
 				WorkerId:      worker.id,
-				ServerVersion: "version",
+				ServerVersion: AgentServiceVersion,
 			},
 		},
 	})
+	if err != nil {
+		logger.Errorw("failed to write server message", err)
+	}
 }
 
 func (s *AgentHandler) handleAvailability(w *worker, msg *livekit.AvailabilityResponse) {
@@ -297,6 +302,16 @@ func (s *AgentHandler) handleStatus(w *worker, msg *livekit.UpdateWorkerStatus) 
 			}
 		}
 	}
+}
+
+func (s *AgentHandler) CheckEnabled(_ context.Context, _ *rpc.CheckEnabledRequest) (*rpc.CheckEnabledResponse, error) {
+	s.mu.Lock()
+	res := &rpc.CheckEnabledResponse{
+		RoomEnabled:      len(s.roomWorkers) > 0,
+		PublisherEnabled: len(s.participantWorkers) > 0,
+	}
+	s.mu.Unlock()
+	return res, nil
 }
 
 func (s *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*emptypb.Empty, error) {
