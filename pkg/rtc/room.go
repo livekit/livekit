@@ -931,9 +931,13 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 	r.trackManager.AddTrack(track, participant.Identity(), participant.ID())
 
 	// launch jobs
+	r.lock.Lock()
 	_, hasPublished := r.hasPublished.Swap(participant.Identity(), true)
+	publisherAgentsEnabled := r.publisherAgentsEnabled.Load()
+	r.lock.Unlock()
+
 	if !hasPublished {
-		if r.publisherAgentsEnabled.Load() {
+		if publisherAgentsEnabled {
 			go func() {
 				r.agentClient.JobRequest(context.Background(), &livekit.Job{
 					Id:          utils.NewGuid("JP_"),
