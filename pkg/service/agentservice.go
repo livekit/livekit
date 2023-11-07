@@ -418,6 +418,13 @@ func (s *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job)
 	return affinity
 }
 
+func (s *AgentHandler) NumConnections() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return len(s.unregistered) + len(s.roomWorkers) + len(s.publisherWorkers)
+}
+
 func (s *AgentHandler) DrainConnections(interval time.Duration) {
 	// jitter drain start
 	time.Sleep(time.Duration(rand.Int63n(int64(interval))))
