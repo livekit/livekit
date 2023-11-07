@@ -264,6 +264,7 @@ type Participant interface {
 	// permissions
 	Hidden() bool
 	IsRecorder() bool
+	IsAgent() bool
 
 	Start()
 	Close(sendLeave bool, reason ParticipantCloseReason, isExpectedToResume bool) error

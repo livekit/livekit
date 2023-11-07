@@ -162,14 +162,7 @@ func NewRoom(
 				// if there are already published tracks, start the agents
 				r.hasPublished.Range(func(k, v interface{}) bool {
 					identity := k.(livekit.ParticipantIdentity)
-					go func() {
-						r.agentClient.JobRequest(context.Background(), &livekit.Job{
-							Id:          utils.NewGuid("JP_"),
-							Type:        livekit.JobType_JT_PUBLISHER,
-							Room:        room,
-							Participant: r.participants[identity].ToProto(),
-						})
-					}()
+					r.launchPublisherAgent(r.participants[identity])
 					return true
 				})
 				r.lock.Unlock()
@@ -938,14 +931,7 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 
 	if !hasPublished {
 		if publisherAgentsEnabled {
-			go func() {
-				r.agentClient.JobRequest(context.Background(), &livekit.Job{
-					Id:          utils.NewGuid("JP_"),
-					Type:        livekit.JobType_JT_PUBLISHER,
-					Room:        r.protoRoom,
-					Participant: participant.ToProto(),
-				})
-			}()
+			r.launchPublisherAgent(participant)
 		}
 		if r.internal != nil && r.internal.ParticipantEgress != nil {
 			go func() {
@@ -1333,6 +1319,21 @@ func (r *Room) connectionQualityWorker() {
 
 		prevConnectionInfos = nowConnectionInfos
 	}
+}
+
+func (r *Room) launchPublisherAgent(p types.Participant) {
+	if p == nil || p.IsRecorder() || p.IsAgent() {
+		return
+	}
+
+	go func() {
+		r.agentClient.JobRequest(context.Background(), &livekit.Job{
+			Id:          utils.NewGuid("JP_"),
+			Type:        livekit.JobType_JT_PUBLISHER,
+			Room:        r.ToProto(),
+			Participant: p.ToProto(),
+		})
+	}()
 }
 
 func (r *Room) DebugInfo() map[string]interface{} {
