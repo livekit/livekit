@@ -80,13 +80,13 @@ type Room struct {
 
 	// agents
 	agentClient            AgentClient
-	publisherAgentsEnabled atomic.Bool
+	publisherAgentsEnabled bool
 
 	// map of identity -> Participant
 	participants              map[livekit.ParticipantIdentity]types.LocalParticipant
 	participantOpts           map[livekit.ParticipantIdentity]*ParticipantOptions
 	participantRequestSources map[livekit.ParticipantIdentity]routing.MessageSource
-	hasPublished              sync.Map // map of identity -> bool
+	hasPublished              map[livekit.ParticipantIdentity]bool
 	bufferFactory             *buffer.FactoryOfBufferFactory
 
 	// batch update participant info for non-publishers
@@ -139,6 +139,7 @@ func NewRoom(
 		participants:              make(map[livekit.ParticipantIdentity]types.LocalParticipant),
 		participantOpts:           make(map[livekit.ParticipantIdentity]*ParticipantOptions),
 		participantRequestSources: make(map[livekit.ParticipantIdentity]routing.MessageSource),
+		hasPublished:              make(map[livekit.ParticipantIdentity]bool),
 		bufferFactory:             buffer.NewFactoryOfBufferFactory(config.Receiver.PacketBufferSize),
 		batchedUpdates:            make(map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
 		closed:                    make(chan struct{}),
@@ -158,13 +159,11 @@ func NewRoom(
 			res := r.agentClient.CheckEnabled(context.Background(), &rpc.CheckEnabledRequest{})
 			if res.PublisherEnabled {
 				r.lock.Lock()
-				r.publisherAgentsEnabled.Store(true)
+				r.publisherAgentsEnabled = true
 				// if there are already published tracks, start the agents
-				r.hasPublished.Range(func(k, v interface{}) bool {
-					identity := k.(livekit.ParticipantIdentity)
+				for identity := range r.hasPublished {
 					r.launchPublisherAgent(r.participants[identity])
-					return true
-				})
+				}
 				r.lock.Unlock()
 			}
 		}()
@@ -499,6 +498,7 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 		delete(r.participants, identity)
 		delete(r.participantOpts, identity)
 		delete(r.participantRequestSources, identity)
+		delete(r.hasPublished, identity)
 		if !p.Hidden() {
 			r.protoRoom.NumParticipants--
 		}
@@ -534,7 +534,6 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 	for _, t := range p.GetPublishedTracks() {
 		r.trackManager.RemoveTrack(t)
 	}
-	r.hasPublished.Delete(p.Identity())
 
 	p.OnTrackUpdated(nil)
 	p.OnTrackPublished(nil)
@@ -925,8 +924,9 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 
 	// launch jobs
 	r.lock.Lock()
-	_, hasPublished := r.hasPublished.Swap(participant.Identity(), true)
-	publisherAgentsEnabled := r.publisherAgentsEnabled.Load()
+	hasPublished := r.hasPublished[participant.Identity()]
+	r.hasPublished[participant.Identity()] = true
+	publisherAgentsEnabled := r.publisherAgentsEnabled
 	r.lock.Unlock()
 
 	if !hasPublished {
