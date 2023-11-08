@@ -87,7 +87,7 @@ func TestAudioLevel(t *testing.T) {
 		require.Less(t, level, ConvertAudioLevel(float64(25)))
 	})
 
-	t.Run("not noist when samples are stale", func(t *testing.T) {
+	t.Run("not noisy when samples are stale", func(t *testing.T) {
 		clock := time.Now()
 		a := createAudioLevel(defaultActiveLevel, defaultPercentile, defaultObserveDuration)
 
