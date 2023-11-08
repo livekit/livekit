@@ -104,6 +104,7 @@ const (
 	ParticipantCloseReasonPublicationError
 	ParticipantCloseReasonSubscriptionError
 	ParticipantCloseReasonDataChannelError
+	ParticipantCloseReasonMigrateCodecMismatch
 )
 
 func (p ParticipantCloseReason) String() string {
@@ -154,6 +155,8 @@ func (p ParticipantCloseReason) String() string {
 		return "SUBSCRIPTION_ERROR"
 	case ParticipantCloseReasonDataChannelError:
 		return "DATA_CHANNEL_ERROR"
+	case ParticipantCloseReasonMigrateCodecMismatch:
+		return "MIGRATE_CODEC_MISMATCH"
 	default:
 		return fmt.Sprintf("%d", int(p))
 	}
@@ -184,7 +187,7 @@ func (p ParticipantCloseReason) ToDisconnectReason() livekit.DisconnectReason {
 		return livekit.DisconnectReason_SERVER_SHUTDOWN
 	case ParticipantCloseReasonOvercommitted:
 		return livekit.DisconnectReason_SERVER_SHUTDOWN
-	case ParticipantCloseReasonNegotiateFailed, ParticipantCloseReasonPublicationError, ParticipantCloseReasonSubscriptionError, ParticipantCloseReasonDataChannelError:
+	case ParticipantCloseReasonNegotiateFailed, ParticipantCloseReasonPublicationError, ParticipantCloseReasonSubscriptionError, ParticipantCloseReasonDataChannelError, ParticipantCloseReasonMigrateCodecMismatch:
 		return livekit.DisconnectReason_STATE_MISMATCH
 	default:
 		// the other types will map to unknown reason
@@ -261,6 +264,7 @@ type Participant interface {
 	// permissions
 	Hidden() bool
 	IsRecorder() bool
+	IsAgent() bool
 
 	Start()
 	Close(sendLeave bool, reason ParticipantCloseReason, isExpectedToResume bool) error
