@@ -66,7 +66,7 @@ func NewAudioLevel(params AudioLevelParams) *AudioLevel {
 	return l
 }
 
-// Observes a new frame, must be called from the same thread
+// Observes a new frame
 func (l *AudioLevel) Observe(level uint8, durationMs uint32, arrivalTime time.Time) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
