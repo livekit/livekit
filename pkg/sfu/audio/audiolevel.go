@@ -16,8 +16,8 @@ package audio
 
 import (
 	"math"
-
-	"go.uber.org/atomic"
+	"sync"
+	"time"
 )
 
 const (
@@ -40,11 +40,13 @@ type AudioLevel struct {
 	smoothFactor      float64
 	activeThreshold   float64
 
-	smoothedLevel atomic.Float64
+	lock          sync.Mutex
+	smoothedLevel float64
 
 	loudestObservedLevel uint8
 	activeDuration       uint32 // ms
 	observedDuration     uint32 // ms
+	lastObservedAt       time.Time
 }
 
 func NewAudioLevel(params AudioLevelParams) *AudioLevel {
@@ -65,7 +67,12 @@ func NewAudioLevel(params AudioLevelParams) *AudioLevel {
 }
 
 // Observes a new frame, must be called from the same thread
-func (l *AudioLevel) Observe(level uint8, durationMs uint32) {
+func (l *AudioLevel) Observe(level uint8, durationMs uint32, arrivalTime time.Time) {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+
+	l.lastObservedAt = arrivalTime
+
 	l.observedDuration += durationMs
 
 	if level <= l.params.ActiveLevel {
@@ -76,6 +83,7 @@ func (l *AudioLevel) Observe(level uint8, durationMs uint32) {
 	}
 
 	if l.observedDuration >= l.params.ObserveDuration {
+		smoothedLevel := float64(0.0)
 		// compute and reset
 		if l.activeDuration >= l.minActiveDuration {
 			// adjust loudest observed level by how much of the window was active.
@@ -87,24 +95,38 @@ func (l *AudioLevel) Observe(level uint8, durationMs uint32) {
 			linearLevel := ConvertAudioLevel(adjustedLevel)
 
 			// exponential smoothing to dampen transients
-			smoothedLevel := l.smoothedLevel.Load()
-			smoothedLevel += (linearLevel - smoothedLevel) * l.smoothFactor
-			l.smoothedLevel.Store(smoothedLevel)
-		} else {
-			l.smoothedLevel.Store(0)
+			smoothedLevel = l.smoothedLevel + (linearLevel-l.smoothedLevel)*l.smoothFactor
 		}
-		l.loudestObservedLevel = silentAudioLevel
-		l.activeDuration = 0
-		l.observedDuration = 0
+		l.resetLocked(smoothedLevel)
 	}
 }
 
 // returns current soothed audio level
-func (l *AudioLevel) GetLevel() (float64, bool) {
-	smoothedLevel := l.smoothedLevel.Load()
-	active := smoothedLevel >= l.activeThreshold
-	return smoothedLevel, active
+func (l *AudioLevel) GetLevel(now time.Time) (float64, bool) {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+
+	l.resetIfStaleLocked(now)
+
+	return l.smoothedLevel, l.smoothedLevel >= l.activeThreshold
 }
+
+func (l *AudioLevel) resetIfStaleLocked(arrivalTime time.Time) {
+	if arrivalTime.Sub(l.lastObservedAt).Milliseconds() < int64(2*l.params.ObserveDuration) {
+		return
+	}
+
+	l.resetLocked(0.0)
+}
+
+func (l *AudioLevel) resetLocked(smoothedLevel float64) {
+	l.smoothedLevel = smoothedLevel
+	l.loudestObservedLevel = silentAudioLevel
+	l.activeDuration = 0
+	l.observedDuration = 0
+}
+
+// ---------------------------------------------------
 
 // convert decibel back to linear
 func ConvertAudioLevel(level float64) float64 {
