@@ -30,6 +30,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/auth"
@@ -62,16 +63,18 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		NewIOInfoService,
 		wire.Bind(new(IOClient), new(*IOInfoService)),
 		rpc.NewEgressClient,
+		rpc.NewIngressClient,
 		getEgressStore,
 		NewEgressLauncher,
 		NewEgressService,
-		rpc.NewIngressClient,
 		getIngressStore,
 		getIngressConfig,
 		NewIngressService,
 		NewRoomAllocator,
 		NewRoomService,
 		NewRTCService,
+		NewAgentService,
+		rtc.NewAgentClient,
 		getSignalRelayConfig,
 		NewDefaultSignalServer,
 		routing.NewSignalClient,

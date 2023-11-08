@@ -40,7 +40,7 @@ func (s *StaticClientConfigurationManager) GetConfiguration(clientInfo *livekit.
 	for _, c := range s.confs {
 		matched, err := c.Match.Match(clientInfo)
 		if err != nil {
-			logger.Errorw("matchrule failed", err, "clientInfo", clientInfo.String())
+			logger.Errorw("matchrule failed", err, "clientInfo", logger.Proto(clientInfo))
 			continue
 		}
 		if !matched {
