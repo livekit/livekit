@@ -100,7 +100,8 @@ func TestAudioLevel(t *testing.T) {
 
 		// let enough time pass to make the samples stale
 		clock = clock.Add(1500 * time.Millisecond)
-		_, noisy = a.GetLevel(clock)
+		level, noisy = a.GetLevel(clock)
+		require.Equal(t, float64(0.0), level)
 		require.False(t, noisy)
 	})
 }
