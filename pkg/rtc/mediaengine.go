@@ -134,7 +134,7 @@ func IsCodecEnabled(codecs []*livekit.Codec, cap webrtc.RTPCodecCapability) bool
 	return false
 }
 
-func selectAlternativeCodec(enabledCodecs []*livekit.Codec) string {
+func selectAlternativeVideoCodec(enabledCodecs []*livekit.Codec) string {
 	// sort these by compatibility, since we are looking for backups
 	if slices.ContainsFunc(enabledCodecs, func(c *livekit.Codec) bool {
 		return strings.EqualFold(c.Mime, webrtc.MimeTypeVP8)
@@ -146,9 +146,11 @@ func selectAlternativeCodec(enabledCodecs []*livekit.Codec) string {
 	}) {
 		return webrtc.MimeTypeH264
 	}
-	if len(enabledCodecs) > 0 {
-		return enabledCodecs[0].Mime
+	for _, c := range enabledCodecs {
+		if strings.HasPrefix(c.Mime, "video/") {
+			return c.Mime
+		}
 	}
-	// uh oh. this should not happen
-	return ""
+	// no viable codec in the list of enabled codecs, fall back to the most widely supported codec
+	return webrtc.MimeTypeVP8
 }

@@ -48,6 +48,7 @@ type LivekitServer struct {
 	config       *config.Config
 	ioService    *IOInfoService
 	rtcService   *RTCService
+	agentService *AgentService
 	httpServer   *http.Server
 	promServer   *http.Server
 	router       routing.Router
@@ -66,6 +67,7 @@ func NewLivekitServer(conf *config.Config,
 	ingressService *IngressService,
 	ioService *IOInfoService,
 	rtcService *RTCService,
+	agentService *AgentService,
 	keyProvider auth.KeyProvider,
 	router routing.Router,
 	roomManager *RoomManager,
@@ -77,6 +79,7 @@ func NewLivekitServer(conf *config.Config,
 		config:       conf,
 		ioService:    ioService,
 		rtcService:   rtcService,
+		agentService: agentService,
 		router:       router,
 		roomManager:  roomManager,
 		signalServer: signalServer,
@@ -125,6 +128,7 @@ func NewLivekitServer(conf *config.Config,
 	mux.Handle(egressServer.PathPrefix(), egressServer)
 	mux.Handle(ingressServer.PathPrefix(), ingressServer)
 	mux.Handle("/rtc", rtcService)
+	mux.Handle("/agent", agentService)
 	mux.HandleFunc("/rtc/validate", rtcService.Validate)
 	mux.HandleFunc("/", s.defaultHandler)
 

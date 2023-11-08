@@ -18,7 +18,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20231017082622-43f077b4e60e
-	github.com/livekit/protocol v1.8.2-0.20231101040827-02a4a42603b1
+	github.com/livekit/protocol v1.9.1-0.20231107185101-e230ee2d840e
 	github.com/livekit/psrpc v0.5.0
 	github.com/mackerelio/go-osstat v0.2.4
 	github.com/magefile/mage v1.15.0
@@ -27,7 +27,7 @@ require (
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/pion/dtls/v2 v2.2.7
 	github.com/pion/ice/v2 v2.3.11
-	github.com/pion/interceptor v0.1.24
+	github.com/pion/interceptor v0.1.25
 	github.com/pion/rtcp v1.2.10
 	github.com/pion/rtp v1.8.2
 	github.com/pion/sctp v1.8.9
@@ -47,7 +47,7 @@ require (
 	github.com/urfave/negroni/v3 v3.0.0
 	go.uber.org/atomic v1.11.0
 	golang.org/x/exp v0.0.0-20231006140011-7918f672742d
-	golang.org/x/sync v0.4.0
+	golang.org/x/sync v0.5.0
 	google.golang.org/protobuf v1.31.0
 	gopkg.in/yaml.v3 v3.0.1
 )

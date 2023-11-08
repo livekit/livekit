@@ -239,13 +239,22 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	t.params.Logger.Debugw("AddReceiver", "mime", track.Codec().MimeType)
 	wr := t.MediaTrackReceiver.Receiver(mime)
 	if wr == nil {
-		var priority int
+		priority := -1
 		for idx, c := range t.params.TrackInfo.Codecs {
-			if strings.HasSuffix(mime, c.MimeType) {
+			if strings.EqualFold(mime, c.MimeType) {
 				priority = idx
 				break
 			}
 		}
+		if len(t.params.TrackInfo.Codecs) == 0 {
+			priority = 0
+		}
+		if priority < 0 {
+			t.params.Logger.Warnw("could not find codec for webrtc receiver", nil, "webrtcCodec", mime, "track", logger.Proto(t.params.TrackInfo))
+			t.lock.Unlock()
+			return false
+		}
+
 		newWR := sfu.NewWebRTCReceiver(
 			receiver,
 			track,

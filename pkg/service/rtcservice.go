@@ -31,17 +31,17 @@ import (
 	"github.com/ua-parser/uap-go/uaparser"
 	"golang.org/x/exp/maps"
 
-	"github.com/livekit/livekit-server/pkg/utils"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
-	"github.com/livekit/psrpc"
-
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/routing/selector"
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
+	"github.com/livekit/livekit-server/pkg/utils"
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
+	putil "github.com/livekit/protocol/utils"
+	"github.com/livekit/psrpc"
 )
 
 type RTCService struct {
@@ -54,6 +54,7 @@ type RTCService struct {
 	isDev         bool
 	limits        config.LimitConfig
 	parser        *uaparser.Parser
+	agentClient   rtc.AgentClient
 	telemetry     telemetry.TelemetryService
 
 	mu          sync.Mutex
@@ -66,6 +67,7 @@ func NewRTCService(
 	store ServiceStore,
 	router routing.MessageRouter,
 	currentNode routing.LocalNode,
+	agentClient rtc.AgentClient,
 	telemetry telemetry.TelemetryService,
 ) *RTCService {
 	s := &RTCService{
@@ -78,6 +80,7 @@ func NewRTCService(
 		isDev:         conf.Development,
 		limits:        conf.Limit,
 		parser:        uaparser.NewFromSaved(),
+		agentClient:   agentClient,
 		telemetry:     telemetry,
 		connections:   map[*websocket.Conn]struct{}{},
 	}
@@ -229,6 +232,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			logger.Warnw("failed to start connection, retrying", err, fieldsWithAttempt...)
 		}
 	}
+
 	if err != nil {
 		prometheus.IncrementParticipantJoinFail(1)
 		handleError(w, http.StatusInternalServerError, err, loggerFields...)
@@ -514,10 +518,16 @@ type connectionResult struct {
 	ResponseSource routing.MessageSource
 }
 
-func (s *RTCService) startConnection(ctx context.Context, roomName livekit.RoomName, pi routing.ParticipantInit, timeout time.Duration) (connectionResult, *livekit.SignalResponse, error) {
+func (s *RTCService) startConnection(
+	ctx context.Context,
+	roomName livekit.RoomName,
+	pi routing.ParticipantInit,
+	timeout time.Duration,
+) (connectionResult, *livekit.SignalResponse, error) {
 	var cr connectionResult
+	var created bool
 	var err error
-	cr.Room, _, err = s.roomAllocator.CreateRoom(ctx, &livekit.CreateRoomRequest{Name: string(roomName)})
+	cr.Room, created, err = s.roomAllocator.CreateRoom(ctx, &livekit.CreateRoomRequest{Name: string(roomName)})
 	if err != nil {
 		return cr, nil, err
 	}
@@ -538,6 +548,17 @@ func (s *RTCService) startConnection(ctx context.Context, roomName livekit.RoomN
 		cr.ResponseSource.Close()
 		return cr, nil, err
 	}
+
+	if created && s.agentClient != nil {
+		go func() {
+			s.agentClient.JobRequest(ctx, &livekit.Job{
+				Id:   putil.NewGuid("JR_"),
+				Type: livekit.JobType_JT_ROOM,
+				Room: cr.Room,
+			})
+		}()
+	}
+
 	return cr, initialResponse, nil
 }
 
@@ -559,5 +580,4 @@ func readInitialResponse(source routing.MessageSource, timeout time.Duration) (*
 			return res, nil
 		}
 	}
-
 }

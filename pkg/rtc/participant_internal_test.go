@@ -284,7 +284,7 @@ func TestMuteSetting(t *testing.T) {
 			Muted: true,
 		})
 
-		_, ti := p.getPendingTrack("cid", livekit.TrackType_AUDIO)
+		_, ti, _ := p.getPendingTrack("cid", livekit.TrackType_AUDIO)
 		require.NotNil(t, ti)
 		require.True(t, ti.Muted)
 	})
@@ -748,19 +748,20 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 	}
 	sid := livekit.ParticipantID(utils.NewGuid(utils.ParticipantPrefix))
 	p, _ := NewParticipant(ParticipantParams{
-		SID:               sid,
-		Identity:          identity,
-		Config:            rtcConf,
-		Sink:              &routingfakes.FakeMessageSink{},
-		ProtocolVersion:   opts.protocolVersion,
-		PLIThrottleConfig: conf.RTC.PLIThrottle,
-		Grants:            grants,
-		EnabledCodecs:     enabledCodecs,
-		ClientConf:        opts.clientConf,
-		ClientInfo:        ClientInfo{ClientInfo: opts.clientInfo},
-		Logger:            LoggerWithParticipant(logger.GetLogger(), identity, sid, false),
-		Telemetry:         &telemetryfakes.FakeTelemetryService{},
-		VersionGenerator:  utils.NewDefaultTimedVersionGenerator(),
+		SID:                    sid,
+		Identity:               identity,
+		Config:                 rtcConf,
+		Sink:                   &routingfakes.FakeMessageSink{},
+		ProtocolVersion:        opts.protocolVersion,
+		PLIThrottleConfig:      conf.RTC.PLIThrottle,
+		Grants:                 grants,
+		PublishEnabledCodecs:   enabledCodecs,
+		SubscribeEnabledCodecs: enabledCodecs,
+		ClientConf:             opts.clientConf,
+		ClientInfo:             ClientInfo{ClientInfo: opts.clientInfo},
+		Logger:                 LoggerWithParticipant(logger.GetLogger(), identity, sid, false),
+		Telemetry:              &telemetryfakes.FakeTelemetryService{},
+		VersionGenerator:       utils.NewDefaultTimedVersionGenerator(),
 	})
 	p.isPublisher.Store(opts.publisher)
 	p.updateState(livekit.ParticipantInfo_ACTIVE)

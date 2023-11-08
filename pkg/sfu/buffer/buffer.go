@@ -31,6 +31,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/livekit/livekit-server/pkg/sfu/audio"
+	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/mediatransportutil"
@@ -39,8 +40,6 @@ import (
 	"github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-
-	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
 )
 
 const (
@@ -584,7 +583,7 @@ func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime time.Time) {
 				if (p.Timestamp - b.latestTSForAudioLevel) < (1 << 31) {
 					duration := (int64(p.Timestamp) - int64(b.latestTSForAudioLevel)) * 1e3 / int64(b.clockRate)
 					if duration > 0 {
-						b.audioLevel.Observe(ext.Level, uint32(duration))
+						b.audioLevel.Observe(ext.Level, uint32(duration), arrivalTime)
 					}
 
 					b.latestTSForAudioLevel = p.Timestamp
@@ -615,9 +614,6 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime time.Time, flow
 	if b.ddParser != nil {
 		ddVal, videoLayer, err := b.ddParser.Parse(ep.Packet)
 		if err != nil {
-			if err != ErrFrameEarlierThanKeyFrame {
-				b.logger.Warnw("could not parse dependency descriptor", err)
-			}
 			return nil
 		} else if ddVal != nil {
 			ep.DependencyDescriptor = ddVal
@@ -846,7 +842,7 @@ func (b *Buffer) GetAudioLevel() (float64, bool) {
 		return 0, false
 	}
 
-	return b.audioLevel.GetLevel()
+	return b.audioLevel.GetLevel(time.Now())
 }
 
 func (b *Buffer) OnFpsChanged(f func()) {
