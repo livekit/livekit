@@ -129,31 +129,30 @@ func (r *RTPStatsReceiver) Update(
 	pktSize := uint64(hdrSize + payloadSize + paddingSize)
 	gapSN := int64(resSN.ExtendedVal - resSN.PreExtendedHighest)
 	if gapSN <= 0 { // duplicate OR out-of-order
-		if payloadSize == 0 {
-			// do not start on a padding only packet
-			if resTS.IsRestart {
-				r.logger.Infow(
-					"rolling back timestamp restart",
-					"tsBefore", resTS.PreExtendedStart,
-					"tsAfter", r.timestamp.GetExtendedStart(),
-					"snBefore", resSN.PreExtendedStart,
-					"snAfter", r.sequenceNumber.GetExtendedStart(),
-				)
-				r.timestamp.RollbackRestart(resTS.PreExtendedStart)
-			}
-			if resSN.IsRestart {
-				r.logger.Infow(
-					"rolling back sequence number restart",
-					"snBefore", resSN.PreExtendedStart,
-					"snAfter", r.sequenceNumber.GetExtendedStart(),
-					"tsBefore", resTS.PreExtendedStart,
-					"tsAfter", r.timestamp.GetExtendedStart(),
-				)
-				r.sequenceNumber.RollbackRestart(resSN.PreExtendedStart)
-				flowState.IsNotHandled = true
-				return
-			}
+		// before start, don't restart
+		if resTS.IsRestart {
+			r.logger.Infow(
+				"rolling back timestamp restart",
+				"tsBefore", resTS.PreExtendedStart,
+				"tsAfter", r.timestamp.GetExtendedStart(),
+				"snBefore", resSN.PreExtendedStart,
+				"snAfter", r.sequenceNumber.GetExtendedStart(),
+			)
+			r.timestamp.RollbackRestart(resTS.PreExtendedStart)
 		}
+		if resSN.IsRestart {
+			r.logger.Infow(
+				"rolling back sequence number restart",
+				"snBefore", resSN.PreExtendedStart,
+				"snAfter", r.sequenceNumber.GetExtendedStart(),
+				"tsBefore", resTS.PreExtendedStart,
+				"tsAfter", r.timestamp.GetExtendedStart(),
+			)
+			r.sequenceNumber.RollbackRestart(resSN.PreExtendedStart)
+			flowState.IsNotHandled = true
+			return
+		}
+
 		if -gapSN >= cNumSequenceNumbers/2 {
 			r.logger.Warnw(
 				"large sequence number gap negative", nil,

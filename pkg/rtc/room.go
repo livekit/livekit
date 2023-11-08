@@ -30,6 +30,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -77,11 +78,15 @@ type Room struct {
 	egressLauncher EgressLauncher
 	trackManager   *RoomTrackManager
 
+	// agents
+	agentClient            AgentClient
+	publisherAgentsEnabled bool
+
 	// map of identity -> Participant
 	participants              map[livekit.ParticipantIdentity]types.LocalParticipant
 	participantOpts           map[livekit.ParticipantIdentity]*ParticipantOptions
 	participantRequestSources map[livekit.ParticipantIdentity]routing.MessageSource
-	hasPublished              sync.Map // map of identity -> bool
+	hasPublished              map[livekit.ParticipantIdentity]bool
 	bufferFactory             *buffer.FactoryOfBufferFactory
 
 	// batch update participant info for non-publishers
@@ -113,6 +118,7 @@ func NewRoom(
 	audioConfig *config.AudioConfig,
 	serverInfo *livekit.ServerInfo,
 	telemetry telemetry.TelemetryService,
+	agentClient AgentClient,
 	egressLauncher EgressLauncher,
 ) *Room {
 	r := &Room{
@@ -127,22 +133,40 @@ func NewRoom(
 		audioConfig:               audioConfig,
 		telemetry:                 telemetry,
 		egressLauncher:            egressLauncher,
+		agentClient:               agentClient,
 		trackManager:              NewRoomTrackManager(),
 		serverInfo:                serverInfo,
 		participants:              make(map[livekit.ParticipantIdentity]types.LocalParticipant),
 		participantOpts:           make(map[livekit.ParticipantIdentity]*ParticipantOptions),
 		participantRequestSources: make(map[livekit.ParticipantIdentity]routing.MessageSource),
+		hasPublished:              make(map[livekit.ParticipantIdentity]bool),
 		bufferFactory:             buffer.NewFactoryOfBufferFactory(config.Receiver.PacketBufferSize),
 		batchedUpdates:            make(map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
 		closed:                    make(chan struct{}),
 		trailer:                   []byte(utils.RandomSecret()),
 	}
+
 	r.protoProxy = utils.NewProtoProxy[*livekit.Room](roomUpdateInterval, r.updateProto)
 	if r.protoRoom.EmptyTimeout == 0 {
 		r.protoRoom.EmptyTimeout = DefaultEmptyTimeout
 	}
 	if r.protoRoom.CreationTime == 0 {
 		r.protoRoom.CreationTime = time.Now().Unix()
+	}
+
+	if agentClient != nil {
+		go func() {
+			res := r.agentClient.CheckEnabled(context.Background(), &rpc.CheckEnabledRequest{})
+			if res.PublisherEnabled {
+				r.lock.Lock()
+				r.publisherAgentsEnabled = true
+				// if there are already published tracks, start the agents
+				for identity := range r.hasPublished {
+					r.launchPublisherAgent(r.participants[identity])
+				}
+				r.lock.Unlock()
+			}
+		}()
 	}
 
 	go r.audioUpdateWorker()
@@ -474,6 +498,7 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 		delete(r.participants, identity)
 		delete(r.participantOpts, identity)
 		delete(r.participantRequestSources, identity)
+		delete(r.hasPublished, identity)
 		if !p.Hidden() {
 			r.protoRoom.NumParticipants--
 		}
@@ -509,7 +534,6 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 	for _, t := range p.GetPublishedTracks() {
 		r.trackManager.RemoveTrack(t)
 	}
-	r.hasPublished.Delete(p.Identity())
 
 	p.OnTrackUpdated(nil)
 	p.OnTrackPublished(nil)
@@ -898,10 +922,19 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 
 	r.trackManager.AddTrack(track, participant.Identity(), participant.ID())
 
-	// auto egress
-	if r.internal != nil {
-		if r.internal.ParticipantEgress != nil {
-			if _, hasPublished := r.hasPublished.Swap(participant.Identity(), true); !hasPublished {
+	// launch jobs
+	r.lock.Lock()
+	hasPublished := r.hasPublished[participant.Identity()]
+	r.hasPublished[participant.Identity()] = true
+	publisherAgentsEnabled := r.publisherAgentsEnabled
+	r.lock.Unlock()
+
+	if !hasPublished {
+		if publisherAgentsEnabled {
+			r.launchPublisherAgent(participant)
+		}
+		if r.internal != nil && r.internal.ParticipantEgress != nil {
+			go func() {
 				if err := StartParticipantEgress(
 					context.Background(),
 					r.egressLauncher,
@@ -913,9 +946,11 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 				); err != nil {
 					r.Logger.Errorw("failed to launch participant egress", err)
 				}
-			}
+			}()
 		}
-		if r.internal.TrackEgress != nil {
+	}
+	if r.internal != nil && r.internal.TrackEgress != nil {
+		go func() {
 			if err := StartTrackEgress(
 				context.Background(),
 				r.egressLauncher,
@@ -927,7 +962,7 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 			); err != nil {
 				r.Logger.Errorw("failed to launch track egress", err)
 			}
-		}
+		}()
 	}
 }
 
@@ -1284,6 +1319,21 @@ func (r *Room) connectionQualityWorker() {
 
 		prevConnectionInfos = nowConnectionInfos
 	}
+}
+
+func (r *Room) launchPublisherAgent(p types.Participant) {
+	if p == nil || p.IsRecorder() || p.IsAgent() {
+		return
+	}
+
+	go func() {
+		r.agentClient.JobRequest(context.Background(), &livekit.Job{
+			Id:          utils.NewGuid("JP_"),
+			Type:        livekit.JobType_JT_PUBLISHER,
+			Room:        r.ToProto(),
+			Participant: p.ToProto(),
+		})
+	}()
 }
 
 func (r *Room) DebugInfo() map[string]interface{} {
