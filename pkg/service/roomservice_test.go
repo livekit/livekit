@@ -136,6 +136,7 @@ func newTestRoomService(conf config.RoomConfig) *TestRoomService {
 		allocator,
 		store,
 		nil,
+		nil,
 		rpc.NewTopicFormatter(),
 		&rpcfakes.FakeTypedRoomClient{},
 		&rpcfakes.FakeTypedParticipantClient{},

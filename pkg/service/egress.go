@@ -25,40 +25,23 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
-	"github.com/livekit/protocol/utils"
 )
 
 type EgressService struct {
+	launcher    rtc.EgressLauncher
 	client      rpc.EgressClient
 	io          IOClient
 	roomService livekit.RoomService
 	store       ServiceStore
-	launcher    rtc.EgressLauncher
-}
-
-type egressLauncher struct {
-	client rpc.EgressClient
-	io     IOClient
-}
-
-func NewEgressLauncher(client rpc.EgressClient, io IOClient) rtc.EgressLauncher {
-	if client == nil {
-		return nil
-	}
-	return &egressLauncher{
-		client: client,
-		io:     io,
-	}
 }
 
 func NewEgressService(
 	client rpc.EgressClient,
+	launcher rtc.EgressLauncher,
 	store ServiceStore,
 	io IOClient,
 	rs livekit.RoomService,
-	launcher rtc.EgressLauncher,
 ) *EgressService {
 	return &EgressService{
 		client:      client,
@@ -187,33 +170,6 @@ func (s *EgressService) startEgress(ctx context.Context, roomName livekit.RoomNa
 		req.RoomId = room.Sid
 	}
 	return s.launcher.StartEgress(ctx, req)
-}
-
-func (s *egressLauncher) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) (*livekit.EgressInfo, error) {
-	info, err := s.StartEgressWithClusterId(ctx, "", req)
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = s.io.CreateEgress(ctx, info)
-	if err != nil {
-		logger.Errorw("failed to create egress", err)
-	}
-
-	return info, nil
-}
-
-func (s *egressLauncher) StartEgressWithClusterId(ctx context.Context, clusterId string, req *rpc.StartEgressRequest) (*livekit.EgressInfo, error) {
-	if s.client == nil {
-		return nil, ErrEgressNotConnected
-	}
-
-	// Ensure we have an Egress ID
-	if req.EgressId == "" {
-		req.EgressId = utils.NewGuid(utils.EgressPrefix)
-	}
-
-	return s.client.StartEgress(ctx, clusterId, req)
 }
 
 type LayoutMetadata struct {
