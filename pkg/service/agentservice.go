@@ -34,6 +34,8 @@ import (
 	"github.com/livekit/psrpc"
 )
 
+const AgentServiceVersion = "0.1.0"
+
 type AgentService struct {
 	upgrader websocket.Upgrader
 
@@ -41,17 +43,17 @@ type AgentService struct {
 }
 
 type AgentHandler struct {
-	agentServer      rpc.AgentInternalServer
-	roomTopic        string
-	participantTopic string
+	agentServer    rpc.AgentInternalServer
+	roomTopic      string
+	publisherTopic string
 
-	mu                    sync.Mutex
-	availability          map[string]chan *availability
-	unregistered          map[*websocket.Conn]*worker
-	roomRegistered        bool
-	roomWorkers           map[string]*worker
-	participantRegistered bool
-	participantWorkers    map[string]*worker
+	mu                  sync.Mutex
+	availability        map[string]chan *availability
+	unregistered        map[*websocket.Conn]*worker
+	roomRegistered      bool
+	roomWorkers         map[string]*worker
+	publisherRegistered bool
+	publisherWorkers    map[string]*worker
 }
 
 type worker struct {
@@ -85,7 +87,7 @@ func NewAgentService(bus psrpc.MessageBus) (*AgentService, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.AgentHandler = NewAgentHandler(agentServer, "room", "participant")
+	s.AgentHandler = NewAgentHandler(agentServer, rtc.RoomAgentTopic, rtc.PublisherAgentTopic)
 
 	return s, nil
 }
@@ -114,15 +116,15 @@ func (s *AgentService) ServeHTTP(writer http.ResponseWriter, r *http.Request) {
 	s.HandleConnection(conn)
 }
 
-func NewAgentHandler(agentServer rpc.AgentInternalServer, roomTopic, participantTopic string) *AgentHandler {
+func NewAgentHandler(agentServer rpc.AgentInternalServer, roomTopic, publisherTopic string) *AgentHandler {
 	return &AgentHandler{
-		agentServer:        agentServer,
-		roomTopic:          roomTopic,
-		participantTopic:   participantTopic,
-		availability:       make(map[string]chan *availability),
-		unregistered:       make(map[*websocket.Conn]*worker),
-		roomWorkers:        make(map[string]*worker),
-		participantWorkers: make(map[string]*worker),
+		agentServer:      agentServer,
+		roomTopic:        roomTopic,
+		publisherTopic:   publisherTopic,
+		availability:     make(map[string]chan *availability),
+		unregistered:     make(map[*websocket.Conn]*worker),
+		roomWorkers:      make(map[string]*worker),
+		publisherWorkers: make(map[string]*worker),
 	}
 }
 
@@ -150,10 +152,10 @@ func (s *AgentHandler) HandleConnection(conn *websocket.Conn) {
 					s.agentServer.DeregisterJobRequestTopic(s.roomTopic)
 				}
 			case livekit.JobType_JT_PUBLISHER:
-				delete(s.participantWorkers, w.id)
-				if s.participantRegistered && !s.participantAvailableLocked() {
-					s.participantRegistered = false
-					s.agentServer.DeregisterJobRequestTopic(s.participantTopic)
+				delete(s.publisherWorkers, w.id)
+				if s.publisherRegistered && !s.publisherAvailableLocked() {
+					s.publisherRegistered = false
+					s.agentServer.DeregisterJobRequestTopic(s.publisherTopic)
 				}
 			}
 		}
@@ -217,26 +219,29 @@ func (s *AgentHandler) handleRegister(worker *worker, msg *livekit.RegisterWorke
 	case livekit.JobType_JT_PUBLISHER:
 		worker.id = msg.WorkerId
 		delete(s.unregistered, worker.conn)
-		s.participantWorkers[worker.id] = worker
+		s.publisherWorkers[worker.id] = worker
 
-		if !s.participantRegistered {
-			err := s.agentServer.RegisterJobRequestTopic(s.participantTopic)
+		if !s.publisherRegistered {
+			err := s.agentServer.RegisterJobRequestTopic(s.publisherTopic)
 			if err != nil {
-				logger.Errorw("failed to register participant agents", err)
+				logger.Errorw("failed to register publisher agents", err)
 			} else {
-				s.participantRegistered = true
+				s.publisherRegistered = true
 			}
 		}
 	}
 
-	worker.sigConn.WriteServerMessage(&livekit.ServerMessage{
+	_, err := worker.sigConn.WriteServerMessage(&livekit.ServerMessage{
 		Message: &livekit.ServerMessage_Register{
 			Register: &livekit.RegisterWorkerResponse{
 				WorkerId:      worker.id,
-				ServerVersion: "version",
+				ServerVersion: AgentServiceVersion,
 			},
 		},
 	})
+	if err != nil {
+		logger.Errorw("failed to write server message", err)
+	}
 }
 
 func (s *AgentHandler) handleAvailability(w *worker, msg *livekit.AvailabilityResponse) {
@@ -286,17 +291,27 @@ func (s *AgentHandler) handleStatus(w *worker, msg *livekit.UpdateWorkerStatus) 
 			}
 		}
 	case livekit.JobType_JT_PUBLISHER:
-		if s.participantRegistered && !s.participantAvailableLocked() {
-			s.participantRegistered = false
-			s.agentServer.DeregisterJobRequestTopic(s.participantTopic)
-		} else if !s.participantRegistered && s.participantAvailableLocked() {
-			if err := s.agentServer.RegisterJobRequestTopic(s.participantTopic); err != nil {
-				logger.Errorw("failed to register participant agents", err)
+		if s.publisherRegistered && !s.publisherAvailableLocked() {
+			s.publisherRegistered = false
+			s.agentServer.DeregisterJobRequestTopic(s.publisherTopic)
+		} else if !s.publisherRegistered && s.publisherAvailableLocked() {
+			if err := s.agentServer.RegisterJobRequestTopic(s.publisherTopic); err != nil {
+				logger.Errorw("failed to register publisher agents", err)
 			} else {
-				s.participantRegistered = true
+				s.publisherRegistered = true
 			}
 		}
 	}
+}
+
+func (s *AgentHandler) CheckEnabled(_ context.Context, _ *rpc.CheckEnabledRequest) (*rpc.CheckEnabledResponse, error) {
+	s.mu.Lock()
+	res := &rpc.CheckEnabledResponse{
+		RoomEnabled:      len(s.roomWorkers) > 0,
+		PublisherEnabled: len(s.publisherWorkers) > 0,
+	}
+	s.mu.Unlock()
+	return res, nil
 }
 
 func (s *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*emptypb.Empty, error) {
@@ -316,7 +331,7 @@ func (s *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*empty
 	case livekit.JobType_JT_ROOM:
 		pool = s.roomWorkers
 	case livekit.JobType_JT_PUBLISHER:
-		pool = s.participantWorkers
+		pool = s.publisherWorkers
 	}
 
 	attempted := make(map[string]bool)
@@ -386,7 +401,7 @@ func (s *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job)
 	case livekit.JobType_JT_ROOM:
 		pool = s.roomWorkers
 	case livekit.JobType_JT_PUBLISHER:
-		pool = s.participantWorkers
+		pool = s.publisherWorkers
 	}
 
 	var affinity float32
@@ -401,6 +416,13 @@ func (s *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job)
 	}
 
 	return affinity
+}
+
+func (s *AgentHandler) NumConnections() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return len(s.unregistered) + len(s.roomWorkers) + len(s.publisherWorkers)
 }
 
 func (s *AgentHandler) DrainConnections(interval time.Duration) {
@@ -421,7 +443,7 @@ func (s *AgentHandler) DrainConnections(interval time.Duration) {
 		_ = w.conn.Close()
 		<-t.C
 	}
-	for _, w := range s.participantWorkers {
+	for _, w := range s.publisherWorkers {
 		_ = w.conn.Close()
 		<-t.C
 	}
@@ -436,8 +458,8 @@ func (s *AgentHandler) roomAvailableLocked() bool {
 	return false
 }
 
-func (s *AgentHandler) participantAvailableLocked() bool {
-	for _, w := range s.participantWorkers {
+func (s *AgentHandler) publisherAvailableLocked() bool {
+	for _, w := range s.publisherWorkers {
 		if w.status == livekit.WorkerStatus_WS_AVAILABLE {
 			return true
 		}

@@ -1034,6 +1034,13 @@ func (p *ParticipantImpl) IsRecorder() bool {
 	return p.grants.Video.Recorder
 }
 
+func (p *ParticipantImpl) IsAgent() bool {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	return p.grants.Video.Agent
+}
+
 func (p *ParticipantImpl) VerifySubscribeParticipantInfo(pID livekit.ParticipantID, version uint32) {
 	if !p.IsReady() {
 		// we have not sent a JoinResponse yet. metadata would be covered in JoinResponse
