@@ -199,8 +199,6 @@ func (s *AgentHandler) HandleConnection(conn *websocket.Conn) {
 
 func (s *AgentHandler) handleRegister(worker *worker, msg *livekit.RegisterWorkerRequest) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	switch msg.Type {
 	case livekit.JobType_JT_ROOM:
 		worker.id = msg.WorkerId
@@ -230,6 +228,7 @@ func (s *AgentHandler) handleRegister(worker *worker, msg *livekit.RegisterWorke
 			}
 		}
 	}
+	s.mu.Unlock()
 
 	_, err := worker.sigConn.WriteServerMessage(&livekit.ServerMessage{
 		Message: &livekit.ServerMessage_Register{
@@ -366,8 +365,7 @@ func (s *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*empty
 				Availability: &livekit.AvailabilityRequest{Job: job},
 			}})
 			if err != nil {
-				logger.Errorw("failed to send availability request", err)
-				return nil, err
+				logger.Errorw("failed to send availability request", err, "workerID", selected.id)
 			}
 
 			select {
@@ -379,7 +377,7 @@ func (s *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*empty
 						Assignment: &livekit.JobAssignment{Job: job},
 					}})
 					if err != nil {
-						logger.Errorw("failed to assign job", err)
+						logger.Errorw("failed to assign job", err, "workerID", selected.id)
 					} else {
 						selected.mu.Lock()
 						selected.activeJobs++
