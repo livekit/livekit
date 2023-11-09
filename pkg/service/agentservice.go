@@ -366,8 +366,7 @@ func (s *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*empty
 				Availability: &livekit.AvailabilityRequest{Job: job},
 			}})
 			if err != nil {
-				logger.Errorw("failed to send availability request", err)
-				return nil, err
+				logger.Errorw("failed to send availability request", err, "workerID", selected.id)
 			}
 
 			select {
@@ -379,7 +378,7 @@ func (s *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*empty
 						Assignment: &livekit.JobAssignment{Job: job},
 					}})
 					if err != nil {
-						logger.Errorw("failed to assign job", err)
+						logger.Errorw("failed to assign job", err, "workerID", selected.id)
 					} else {
 						selected.mu.Lock()
 						selected.activeJobs++
