@@ -198,10 +198,17 @@ func (s *AgentHandler) HandleConnection(conn *websocket.Conn) {
 }
 
 func (s *AgentHandler) handleRegister(worker *worker, msg *livekit.RegisterWorkerRequest) {
+	if msg.WorkerId == "" {
+		logger.Errorw("failed to register worker", errors.New("invalid worker id"), "workerID", msg.WorkerId, "jobType", msg.Type)
+		worker.conn.Close()
+		return
+	}
+
 	s.mu.Lock()
 	switch msg.Type {
 	case livekit.JobType_JT_ROOM:
 		worker.id = msg.WorkerId
+		worker.jobType = msg.Type
 		delete(s.unregistered, worker.conn)
 		s.roomWorkers[worker.id] = worker
 
@@ -216,6 +223,7 @@ func (s *AgentHandler) handleRegister(worker *worker, msg *livekit.RegisterWorke
 
 	case livekit.JobType_JT_PUBLISHER:
 		worker.id = msg.WorkerId
+		worker.jobType = msg.Type
 		delete(s.unregistered, worker.conn)
 		s.publisherWorkers[worker.id] = worker
 
@@ -227,6 +235,11 @@ func (s *AgentHandler) handleRegister(worker *worker, msg *livekit.RegisterWorke
 				s.publisherRegistered = true
 			}
 		}
+	default:
+		s.mu.Unlock()
+		logger.Errorw("failed to register worker", errors.New("invalid job type"), "workerID", msg.WorkerId, "jobType", msg.Type)
+		worker.conn.Close()
+		return
 	}
 	s.mu.Unlock()
 
