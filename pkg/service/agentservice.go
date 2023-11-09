@@ -198,18 +198,21 @@ func (s *AgentHandler) HandleConnection(conn *websocket.Conn) {
 }
 
 func (s *AgentHandler) handleRegister(worker *worker, msg *livekit.RegisterWorkerRequest) {
-	if msg.WorkerId == "" {
-		logger.Errorw("failed to register worker", errors.New("invalid worker id"), "workerID", msg.WorkerId, "jobType", msg.Type)
+	if err := s.doHandleRegister(worker, msg); err != nil {
+		logger.Errorw("failed to register worker", err, "workerID", msg.WorkerId, "jobType", msg.Type)
 		worker.conn.Close()
-		return
+	}
+}
+
+func (s *AgentHandler) doHandleRegister(worker *worker, msg *livekit.RegisterWorkerRequest) error {
+	if msg.WorkerId == "" {
+		return errors.New("invalid worker id")
 	}
 
 	s.mu.Lock()
 	if worker.id != "" {
 		s.mu.Unlock()
-		logger.Errorw("failed to register worker", errors.New("worker already registered"), "workerID", msg.WorkerId, "jobType", msg.Type)
-		worker.conn.Close()
-		return
+		return errors.New("worker already registered")
 	}
 
 	switch msg.Type {
@@ -244,9 +247,7 @@ func (s *AgentHandler) handleRegister(worker *worker, msg *livekit.RegisterWorke
 		}
 	default:
 		s.mu.Unlock()
-		logger.Errorw("failed to register worker", errors.New("invalid job type"), "workerID", msg.WorkerId, "jobType", msg.Type)
-		worker.conn.Close()
-		return
+		return errors.New("invalid job type")
 	}
 	s.mu.Unlock()
 
@@ -261,6 +262,8 @@ func (s *AgentHandler) handleRegister(worker *worker, msg *livekit.RegisterWorke
 	if err != nil {
 		logger.Errorw("failed to write server message", err)
 	}
+
+	return nil
 }
 
 func (s *AgentHandler) handleAvailability(w *worker, msg *livekit.AvailabilityResponse) {
