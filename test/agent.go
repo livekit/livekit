@@ -48,38 +48,38 @@ func newAgentClient(token string) (*agentClient, error) {
 	}, nil
 }
 
-func (c *agentClient) Run() error {
+func (c *agentClient) Run(jobType livekit.JobType) (err error) {
 	go c.read()
 
 	workerID := utils.NewGuid("W_")
 
-	if err := c.write(&livekit.WorkerMessage{
-		Message: &livekit.WorkerMessage_Register{
-			Register: &livekit.RegisterWorkerRequest{
-				Type:     livekit.JobType_JT_ROOM,
-				WorkerId: workerID,
-				Version:  "version",
-				Name:     "name",
+	switch jobType {
+	case livekit.JobType_JT_ROOM:
+		err = c.write(&livekit.WorkerMessage{
+			Message: &livekit.WorkerMessage_Register{
+				Register: &livekit.RegisterWorkerRequest{
+					Type:     livekit.JobType_JT_ROOM,
+					WorkerId: workerID,
+					Version:  "version",
+					Name:     "name",
+				},
 			},
-		},
-	}); err != nil {
-		return err
+		})
+
+	case livekit.JobType_JT_PUBLISHER:
+		err = c.write(&livekit.WorkerMessage{
+			Message: &livekit.WorkerMessage_Register{
+				Register: &livekit.RegisterWorkerRequest{
+					Type:     livekit.JobType_JT_PUBLISHER,
+					WorkerId: workerID,
+					Version:  "version",
+					Name:     "name",
+				},
+			},
+		})
 	}
 
-	if err := c.write(&livekit.WorkerMessage{
-		Message: &livekit.WorkerMessage_Register{
-			Register: &livekit.RegisterWorkerRequest{
-				Type:     livekit.JobType_JT_PUBLISHER,
-				WorkerId: workerID,
-				Version:  "version",
-				Name:     "name",
-			},
-		},
-	}); err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 func (c *agentClient) read() {
