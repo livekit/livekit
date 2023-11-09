@@ -83,7 +83,7 @@ func TestJoinedState(t *testing.T) {
 func TestRoomJoin(t *testing.T) {
 	t.Run("joining returns existing participant data", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: numParticipants})
-		pNew := newMockParticipant("new", types.CurrentProtocol, false, false)
+		pNew := NewMockParticipant("new", types.CurrentProtocol, false, false)
 
 		_ = rm.Join(pNew, nil, nil, iceServersForRoom)
 
@@ -98,7 +98,7 @@ func TestRoomJoin(t *testing.T) {
 	t.Run("subscribe to existing channels upon join", func(t *testing.T) {
 		numExisting := 3
 		rm := newRoomWithParticipants(t, testRoomOpts{num: numExisting})
-		p := newMockParticipant("new", types.CurrentProtocol, false, false)
+		p := NewMockParticipant("new", types.CurrentProtocol, false, false)
 
 		err := rm.Join(p, nil, &ParticipantOptions{AutoSubscribe: true}, iceServersForRoom)
 		require.NoError(t, err)
@@ -154,7 +154,7 @@ func TestRoomJoin(t *testing.T) {
 		rm.lock.Lock()
 		rm.protoRoom.MaxParticipants = 1
 		rm.lock.Unlock()
-		p := newMockParticipant("second", types.ProtocolVersion(0), false, false)
+		p := NewMockParticipant("second", types.ProtocolVersion(0), false, false)
 
 		err := rm.Join(p, nil, nil, iceServersForRoom)
 		require.Equal(t, ErrMaxParticipantsExceeded, err)
@@ -414,7 +414,7 @@ func TestNewTrack(t *testing.T) {
 		pub := participants[2].(*typesfakes.FakeLocalParticipant)
 
 		// pub adds track
-		track := newMockTrack(livekit.TrackType_VIDEO, "webcam")
+		track := NewMockTrack(livekit.TrackType_VIDEO, "webcam")
 		trackCB := pub.OnTrackPublishedArgsForCall(0)
 		require.NotNil(t, trackCB)
 		trackCB(pub, track)
@@ -653,7 +653,7 @@ func TestHiddenParticipants(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, numHidden: 1})
 		defer rm.Close()
 
-		pNew := newMockParticipant("new", types.CurrentProtocol, false, false)
+		pNew := NewMockParticipant("new", types.CurrentProtocol, false, false)
 		rm.Join(pNew, nil, nil, iceServersForRoom)
 
 		// expect new participant to get a JoinReply
@@ -667,7 +667,7 @@ func TestHiddenParticipants(t *testing.T) {
 
 	t.Run("hidden participant subscribes to tracks", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
-		hidden := newMockParticipant("hidden", types.CurrentProtocol, true, false)
+		hidden := NewMockParticipant("hidden", types.CurrentProtocol, true, false)
 
 		err := rm.Join(hidden, nil, &ParticipantOptions{AutoSubscribe: true}, iceServersForRoom)
 		require.NoError(t, err)
@@ -689,7 +689,7 @@ func TestRoomUpdate(t *testing.T) {
 		p1 := rm.GetParticipants()[0].(*typesfakes.FakeLocalParticipant)
 		require.Equal(t, 0, p1.SendRoomUpdateCallCount())
 
-		p2 := newMockParticipant("p2", types.CurrentProtocol, false, false)
+		p2 := NewMockParticipant("p2", types.CurrentProtocol, false, false)
 		require.NoError(t, rm.Join(p2, nil, nil, iceServersForRoom))
 
 		// p1 should have received an update
@@ -743,7 +743,7 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *Room {
 	)
 	for i := 0; i < opts.num+opts.numHidden; i++ {
 		identity := livekit.ParticipantIdentity(fmt.Sprintf("p%d", i))
-		participant := newMockParticipant(identity, opts.protocol, i >= opts.num, true)
+		participant := NewMockParticipant(identity, opts.protocol, i >= opts.num, true)
 		err := rm.Join(participant, nil, &ParticipantOptions{AutoSubscribe: true}, iceServersForRoom)
 		require.NoError(t, err)
 		participant.StateReturns(livekit.ParticipantInfo_ACTIVE)
