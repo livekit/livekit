@@ -205,6 +205,13 @@ func (s *AgentHandler) handleRegister(worker *worker, msg *livekit.RegisterWorke
 	}
 
 	s.mu.Lock()
+	if worker.id != "" {
+		s.mu.Unlock()
+		logger.Errorw("failed to register worker", errors.New("worker already registered"), "workerID", msg.WorkerId, "jobType", msg.Type)
+		worker.conn.Close()
+		return
+	}
+
 	switch msg.Type {
 	case livekit.JobType_JT_ROOM:
 		worker.id = msg.WorkerId
