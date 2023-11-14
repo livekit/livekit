@@ -17,15 +17,15 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
+
+	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
 type IOInfoService struct {
@@ -213,27 +213,6 @@ func (s *IOInfoService) UpdateIngressState(ctx context.Context, req *rpc.UpdateI
 	}
 
 	return &emptypb.Empty{}, nil
-}
-
-func (s *IOInfoService) EvaluateSIPDispatchRules(ctx context.Context, req *rpc.EvaluateSIPDispatchRulesRequest) (*rpc.EvaluateSIPDispatchRulesResponse, error) {
-	dispatchRules, err := s.ss.ListSIPDispatchRule(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(dispatchRules) == 0 {
-		return nil, fmt.Errorf("No SIP Dispatch Rule Found")
-	}
-
-	directDispatchRule := dispatchRules[0].Rule.GetDispatchRuleDirect()
-	if directDispatchRule == nil {
-		return nil, fmt.Errorf("No SIP Direct Dispatch Rule Found")
-	}
-
-	return &rpc.EvaluateSIPDispatchRulesResponse{
-		RoomName:            directDispatchRule.RoomName,
-		ParticipantIdentity: req.CallingNumber,
-	}, nil
 }
 
 func (s *IOInfoService) GetSIPTrunkAuthentication(ctx context.Context, req *rpc.GetSIPTrunkAuthenticationRequest) (*rpc.GetSIPTrunkAuthenticationResponse, error) {
