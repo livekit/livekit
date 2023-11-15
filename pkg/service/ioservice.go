@@ -215,10 +215,6 @@ func (s *IOInfoService) UpdateIngressState(ctx context.Context, req *rpc.UpdateI
 	return &emptypb.Empty{}, nil
 }
 
-func (s *IOInfoService) GetSIPTrunkAuthentication(ctx context.Context, req *rpc.GetSIPTrunkAuthenticationRequest) (*rpc.GetSIPTrunkAuthenticationResponse, error) {
-	return nil, nil
-}
-
 func (s *IOInfoService) Stop() {
 	close(s.shutdown)
 
