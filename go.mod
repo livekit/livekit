@@ -25,7 +25,7 @@ require (
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.7.0
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/olekukonko/tablewriter v0.0.5
-	github.com/pion/dtls/v2 v2.2.7
+	github.com/pion/dtls/v2 v2.2.8
 	github.com/pion/ice/v2 v2.3.11
 	github.com/pion/interceptor v0.1.25
 	github.com/pion/rtcp v1.2.12
@@ -71,7 +71,7 @@ require (
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/josharian/native v1.1.0 // indirect
 	github.com/klauspost/compress v1.17.2 // indirect
-	github.com/klauspost/cpuid/v2 v2.2.5 // indirect
+	github.com/klauspost/cpuid/v2 v2.2.6 // indirect
 	github.com/lithammer/shortuuid/v4 v4.0.0 // indirect
 	github.com/mattn/go-runewidth v0.0.9 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
