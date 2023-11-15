@@ -113,11 +113,7 @@ func TestSIPMatchTrunk(t *testing.T) {
 	for _, c := range cases {
 		c := c
 		t.Run(c.name, func(t *testing.T) {
-			req := &rpc.EvaluateSIPDispatchRulesRequest{
-				CallingNumber: sipNumber1,
-				CalledNumber:  sipNumber2,
-			}
-			got, err := sipMatchTrunk(c.trunks, req)
+			got, err := sipMatchTrunk(c.trunks, sipNumber1, sipNumber2)
 			if c.expErr {
 				require.Error(t, err)
 				require.Nil(t, got)

@@ -127,7 +127,7 @@ func sipGetPinAndRoom(info *livekit.SIPDispatchRuleInfo) (room, pin string, err 
 
 // sipMatchTrunk finds a SIP Trunk definition matching the request.
 // Returns nil if no rules matched or an error if there are conflicting definitions.
-func sipMatchTrunk(trunks []*livekit.SIPTrunkInfo, req *rpc.EvaluateSIPDispatchRulesRequest) (*livekit.SIPTrunkInfo, error) {
+func sipMatchTrunk(trunks []*livekit.SIPTrunkInfo, calling, called string) (*livekit.SIPTrunkInfo, error) {
 	var (
 		selectedTrunk   *livekit.SIPTrunkInfo
 		defaultTrunk    *livekit.SIPTrunkInfo
@@ -143,7 +143,7 @@ func sipMatchTrunk(trunks []*livekit.SIPTrunkInfo, req *rpc.EvaluateSIPDispatchR
 				logger.Errorw("cannot parse SIP trunk regexp", err, "trunkID", tr.SipTrunkId)
 				continue
 			}
-			if re.MatchString(req.CallingNumber) {
+			if re.MatchString(calling) {
 				matches = true
 				break
 			}
@@ -155,10 +155,10 @@ func sipMatchTrunk(trunks []*livekit.SIPTrunkInfo, req *rpc.EvaluateSIPDispatchR
 			// Default/wildcard trunk.
 			defaultTrunk = tr
 			defaultTrunkCnt++
-		} else if tr.OutboundNumber == req.CalledNumber {
+		} else if tr.OutboundNumber == called {
 			// Trunk specific to the number.
 			if selectedTrunk != nil {
-				return nil, fmt.Errorf("Multiple SIP Trunks matched for %q", req.CalledNumber)
+				return nil, fmt.Errorf("Multiple SIP Trunks matched for %q", called)
 			}
 			selectedTrunk = tr
 			// Keep searching! We want to know if there are any conflicting Trunk definitions.
@@ -168,7 +168,7 @@ func sipMatchTrunk(trunks []*livekit.SIPTrunkInfo, req *rpc.EvaluateSIPDispatchR
 		return selectedTrunk, nil
 	}
 	if defaultTrunkCnt > 1 {
-		return nil, fmt.Errorf("Multiple default SIP Trunks matched for %q", req.CalledNumber)
+		return nil, fmt.Errorf("Multiple default SIP Trunks matched for %q", called)
 	}
 	// Could still be nil here.
 	return defaultTrunk, nil
@@ -261,12 +261,12 @@ func sipMatchDispatchRule(trunk *livekit.SIPTrunkInfo, rules []*livekit.SIPDispa
 
 // matchSIPTrunk finds a SIP Trunk definition matching the request.
 // Returns nil if no rules matched or an error if there are conflicting definitions.
-func (s *IOInfoService) matchSIPTrunk(ctx context.Context, req *rpc.EvaluateSIPDispatchRulesRequest) (*livekit.SIPTrunkInfo, error) {
+func (s *IOInfoService) matchSIPTrunk(ctx context.Context, calling, called string) (*livekit.SIPTrunkInfo, error) {
 	trunks, err := s.ss.ListSIPTrunk(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return sipMatchTrunk(trunks, req)
+	return sipMatchTrunk(trunks, calling, called)
 }
 
 // matchSIPDispatchRule finds the best dispatch rule matching the request parameters. Returns an error if no rule matched.
@@ -282,7 +282,7 @@ func (s *IOInfoService) matchSIPDispatchRule(ctx context.Context, trunk *livekit
 }
 
 func (s *IOInfoService) EvaluateSIPDispatchRules(ctx context.Context, req *rpc.EvaluateSIPDispatchRulesRequest) (*rpc.EvaluateSIPDispatchRulesResponse, error) {
-	trunk, err := s.matchSIPTrunk(ctx, req)
+	trunk, err := s.matchSIPTrunk(ctx, req.CallingNumber, req.CalledNumber)
 	if err != nil {
 		return nil, err
 	}
@@ -325,5 +325,16 @@ func (s *IOInfoService) EvaluateSIPDispatchRules(ctx context.Context, req *rpc.E
 	return &rpc.EvaluateSIPDispatchRulesResponse{
 		RoomName:            room,
 		ParticipantIdentity: fromName,
+	}, nil
+}
+
+func (s *IOInfoService) GetSIPTrunkAuthentication(ctx context.Context, req *rpc.GetSIPTrunkAuthenticationRequest) (*rpc.GetSIPTrunkAuthenticationResponse, error) {
+	trunk, err := s.matchSIPTrunk(ctx, req.From, req.To)
+	if err != nil {
+		return nil, err
+	}
+	return &rpc.GetSIPTrunkAuthenticationResponse{
+		Username: trunk.Username,
+		Password: trunk.Password,
 	}, nil
 }
