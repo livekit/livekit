@@ -60,8 +60,8 @@ type RTPStatsReceiver struct {
 func NewRTPStatsReceiver(params RTPStatsParams) *RTPStatsReceiver {
 	return &RTPStatsReceiver{
 		rtpStatsBase:   newRTPStatsBase(params),
-		sequenceNumber: utils.NewWrapAround[uint16, uint64](),
-		timestamp:      utils.NewWrapAround[uint32, uint64](),
+		sequenceNumber: utils.NewWrapAround[uint16, uint64](utils.WrapAroundParams{IsRestartAllowed: false}),
+		timestamp:      utils.NewWrapAround[uint32, uint64](utils.WrapAroundParams{IsRestartAllowed: false}),
 		history:        protoutils.NewBitmap[uint64](cHistorySize),
 	}
 }
@@ -123,36 +123,16 @@ func (r *RTPStatsReceiver) Update(
 		)
 	} else {
 		resSN = r.sequenceNumber.Update(sequenceNumber)
+		if resSN.IsUnhandled {
+			flowState.IsNotHandled = true
+			return
+		}
 		resTS = r.timestamp.Update(timestamp)
 	}
 
 	pktSize := uint64(hdrSize + payloadSize + paddingSize)
 	gapSN := int64(resSN.ExtendedVal - resSN.PreExtendedHighest)
 	if gapSN <= 0 { // duplicate OR out-of-order
-		// before start, don't restart
-		if resTS.IsRestart {
-			r.logger.Infow(
-				"rolling back timestamp restart",
-				"tsBefore", resTS.PreExtendedStart,
-				"tsAfter", r.timestamp.GetExtendedStart(),
-				"snBefore", resSN.PreExtendedStart,
-				"snAfter", r.sequenceNumber.GetExtendedStart(),
-			)
-			r.timestamp.RollbackRestart(resTS.PreExtendedStart)
-		}
-		if resSN.IsRestart {
-			r.logger.Infow(
-				"rolling back sequence number restart",
-				"snBefore", resSN.PreExtendedStart,
-				"snAfter", r.sequenceNumber.GetExtendedStart(),
-				"tsBefore", resTS.PreExtendedStart,
-				"tsAfter", r.timestamp.GetExtendedStart(),
-			)
-			r.sequenceNumber.RollbackRestart(resSN.PreExtendedStart)
-			flowState.IsNotHandled = true
-			return
-		}
-
 		if -gapSN >= cNumSequenceNumbers/2 {
 			r.logger.Warnw(
 				"large sequence number gap negative", nil,
@@ -177,36 +157,6 @@ func (r *RTPStatsReceiver) Update(
 
 		if gapSN != 0 {
 			r.packetsOutOfOrder++
-		}
-
-		if resSN.IsRestart {
-			r.packetsLost += resSN.PreExtendedStart - resSN.ExtendedVal
-
-			extStartSN := r.sequenceNumber.GetExtendedStart()
-			for i := uint32(0); i < r.nextSnapshotID-cFirstSnapshotID; i++ {
-				s := &r.snapshots[i]
-				if s.extStartSN == resSN.PreExtendedStart {
-					s.extStartSN = extStartSN
-				}
-			}
-
-			r.logger.Infow(
-				"adjusting start sequence number",
-				"snBefore", resSN.PreExtendedStart,
-				"snAfter", resSN.ExtendedVal,
-				"tsBefore", resTS.PreExtendedStart,
-				"tsAfter", resTS.ExtendedVal,
-			)
-		}
-
-		if resTS.IsRestart {
-			r.logger.Infow(
-				"adjusting start timestamp",
-				"tsBefore", resTS.PreExtendedStart,
-				"tsAfter", resTS.ExtendedVal,
-				"snBefore", resSN.PreExtendedStart,
-				"snAfter", resSN.ExtendedVal,
-			)
 		}
 
 		if r.isInRange(resSN.ExtendedVal, resSN.PreExtendedHighest) {
