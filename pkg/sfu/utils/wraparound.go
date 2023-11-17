@@ -26,7 +26,12 @@ type extendedNumber interface {
 	uint32 | uint64
 }
 
+type WrapAroundParams struct {
+	IsRestartAllowed bool
+}
+
 type WrapAround[T number, ET extendedNumber] struct {
+	params    WrapAroundParams
 	fullRange ET
 
 	initialized     bool
@@ -36,9 +41,10 @@ type WrapAround[T number, ET extendedNumber] struct {
 	extendedHighest ET
 }
 
-func NewWrapAround[T number, ET extendedNumber]() *WrapAround[T, ET] {
+func NewWrapAround[T number, ET extendedNumber](params WrapAroundParams) *WrapAround[T, ET] {
 	var t T
 	return &WrapAround[T, ET]{
+		params:    params,
 		fullRange: 1 << (unsafe.Sizeof(t) * 8),
 	}
 }
@@ -52,6 +58,7 @@ func (w *WrapAround[T, ET]) Seed(from *WrapAround[T, ET]) {
 }
 
 type WrapAroundUpdateResult[ET extendedNumber] struct {
+	IsUnhandled        bool // when set, other fields are invalid
 	IsRestart          bool
 	PreExtendedStart   ET // valid only if IsRestart = true
 	PreExtendedHighest ET
@@ -140,20 +147,24 @@ func (w *WrapAround[T, ET]) maybeAdjustStart(val T) (result WrapAroundUpdateResu
 	}
 
 	if val-w.start > T(w.fullRange>>1) {
-		// out-of-order with existing start => a new start
-		result.IsRestart = true
-		if val > w.start {
-			result.PreExtendedStart = w.fullRange + ET(w.start)
-		} else {
-			result.PreExtendedStart = ET(w.start)
-		}
+		if w.params.IsRestartAllowed {
+			// out-of-order with existing start => a new start
+			result.IsRestart = true
+			if val > w.start {
+				result.PreExtendedStart = w.fullRange + ET(w.start)
+			} else {
+				result.PreExtendedStart = ET(w.start)
+			}
 
-		if w.isWrapBack(val, w.highest) {
-			w.cycles = w.fullRange
-			w.updateExtendedHighest()
-			cycles = 0
+			if w.isWrapBack(val, w.highest) {
+				w.cycles = w.fullRange
+				w.updateExtendedHighest()
+				cycles = 0
+			}
+			w.start = val
+		} else {
+			result.IsUnhandled = true
 		}
-		w.start = val
 	} else {
 		if w.isWrapBack(val, w.highest) {
 			cycles -= w.fullRange
