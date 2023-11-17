@@ -32,9 +32,6 @@ func sipRulePriority(info *livekit.SIPDispatchRuleInfo) int32 {
 			return 0
 		}
 		return 100
-	case *livekit.SIPDispatchRule_DispatchRulePin:
-		// TODO: If we assume that Pin is optional, this rule type is very similar to Direct. Could remove it?
-		return 0
 	case *livekit.SIPDispatchRule_DispatchRuleIndividual:
 		if rule.DispatchRuleIndividual.GetPin() != "" {
 			return 1
@@ -115,9 +112,6 @@ func sipGetPinAndRoom(info *livekit.SIPDispatchRuleInfo) (room, pin string, err 
 	case *livekit.SIPDispatchRule_DispatchRuleDirect:
 		pin = rule.DispatchRuleDirect.GetPin()
 		room = rule.DispatchRuleDirect.GetRoomName()
-	case *livekit.SIPDispatchRule_DispatchRulePin:
-		pin = rule.DispatchRulePin.GetPin()
-		room = rule.DispatchRulePin.GetRoomName()
 	case *livekit.SIPDispatchRule_DispatchRuleIndividual:
 		pin = rule.DispatchRuleIndividual.GetPin()
 		room = rule.DispatchRuleIndividual.GetRoomPrefix()
@@ -189,13 +183,7 @@ func sipMatchDispatchRule(trunk *livekit.SIPTrunkInfo, rules []*livekit.SIPDispa
 		specificRules []*livekit.SIPDispatchRuleInfo
 		defaultRules  []*livekit.SIPDispatchRuleInfo
 	)
-	// TODO: Apart from Pin, it would be nice to have a NoPin flag.
-	//       The way it would work is that we will first list the rules and figure out if at least one has a Pin required.
-	//       If it does, we will immediately respond with RequestPin=true. Now, on the SIP bridge side, we will run
-	//       audio prompt asking for a Pin. The user will have an options to skip the pin (e.g. press #) and only try
-	//       to match no-ping rooms. This will be very useful if only 1 number is available and has to route to both
-	//       private and public rooms.
-	noPin := false
+	noPin := req.NoPin
 	sentPin := req.GetPin()
 	for _, info := range rules {
 		_, rulePin, err := sipGetPinAndRoom(info)
