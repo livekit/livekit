@@ -71,7 +71,7 @@ func (s *DataStats) ToProtoActive() *livekit.RTPStats {
 
 	return &livekit.RTPStats{
 		StartTime: timestamppb.New(time.Unix(s.windowStart/1e9, s.windowStart%1e9)),
-		EndTime:   timestamppb.New(time.Unix(now/1e9, now%1e9)),
+		EndTime:   timestamppb.New(time.Unix(0, now)),
 		Duration:  float64(duration / 1e9),
 		Bytes:     uint64(s.windowBytes),
 		Bitrate:   float64(s.windowBytes) * 8 / float64(duration) / 1e9,
