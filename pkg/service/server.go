@@ -140,8 +140,16 @@ func NewLivekitServer(conf *config.Config,
 	}
 
 	if conf.PrometheusPort > 0 {
+		promHandler := promhttp.Handler()
+		logger.Infow("conf env", "env", conf.Environment)
+		if conf.PrometheusUsername != "" && conf.PrometheusPassword != "" {
+			protectedHandler := negroni.New()
+			protectedHandler.Use(negroni.HandlerFunc(GenMiddleware(conf.PrometheusUsername, conf.PrometheusPassword)))
+			protectedHandler.UseHandler(promHandler)
+			promHandler = protectedHandler
+		}
 		s.promServer = &http.Server{
-			Handler: promhttp.Handler(),
+			Handler: promHandler,
 		}
 	}
 
