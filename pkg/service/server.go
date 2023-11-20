@@ -144,7 +144,7 @@ func NewLivekitServer(conf *config.Config,
 		logger.Infow("conf env", "env", conf.Environment)
 		if conf.PrometheusUsername != "" && conf.PrometheusPassword != "" {
 			protectedHandler := negroni.New()
-			protectedHandler.Use(negroni.HandlerFunc(GenMiddleware(conf.PrometheusUsername, conf.PrometheusPassword)))
+			protectedHandler.Use(negroni.HandlerFunc(GenBasicAuthMiddleware(conf.PrometheusUsername, conf.PrometheusPassword)))
 			protectedHandler.UseHandler(promHandler)
 			promHandler = protectedHandler
 		}

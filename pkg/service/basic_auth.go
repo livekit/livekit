@@ -4,7 +4,7 @@ import (
 	"net/http"
 )
 
-func GenMiddleware(username string, password string) (func(http.ResponseWriter, *http.Request, http.HandlerFunc) ) {
+func GenBasicAuthMiddleware(username string, password string) (func(http.ResponseWriter, *http.Request, http.HandlerFunc) ) {
 	return func(rw http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		given_username, given_password, ok := r.BasicAuth()
 		unauthorized := func() {
