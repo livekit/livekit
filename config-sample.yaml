@@ -55,6 +55,8 @@ rtc:
   # stun_servers:
   #   - server1
   # # optional TURN servers for clients. This isn't necessary if using embedded TURN server (see below).
+  # # when the uri field is set, the server will user this uri to obtain a
+  # # dynamic TURN server configuration whenever a new user joins. If set other fields in the same list element will be ignored
   # turn_servers:
   #   - host: myhost.com
   #     port: 443
@@ -62,6 +64,7 @@ rtc:
   #     protocol: tls
   #     username: ""
   #     credential: ""
+  #     uri: ""
   # # allows LiveKit to monitor congestion when sending streams and automatically
   # # manage bandwidth utilization to avoid congestion/loss. Enabled by default
   # congestion_control:
