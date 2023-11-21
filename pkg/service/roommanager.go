@@ -935,19 +935,17 @@ func temporaryAuthForTurn(s config.TURNServer, is *livekit.ICEServer) error {
 	}
 
 	var response struct {
-		Username   string   `json:"username"`
-		Credential string   `json:"credential"`
-		TTL        int      `json:"ttl"`
-		URIs       []string `json:"uris"`
+		Username string   `json:"username"`
+		Password string   `json:"password"`
+		TTL      int      `json:"ttl"`
+		URIs     []string `json:"uris"`
 	}
 
 	err = json.Unmarshal(body, &response)
 
-	is = &livekit.ICEServer{
-		Urls:       response.URIs,
-		Username:   response.Username,
-		Credential: response.Credential,
-	}
+	is.Urls = response.URIs
+	is.Username = response.Username
+	is.Credential = response.Password
 
 	if err != nil {
 		return err
