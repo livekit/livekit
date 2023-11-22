@@ -657,12 +657,10 @@ func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionSta
 			}
 
 			t.maybeNotifyFullyEstablished()
-			t.logICECandidates()
 		}
 	case webrtc.PeerConnectionStateFailed:
 		t.params.Logger.Infow("peer connection failed")
 		t.clearConnTimer()
-		t.logICECandidates()
 		t.handleConnectionFailed(false)
 	}
 }
@@ -1606,13 +1604,17 @@ func (t *PCTransport) handleRemoteICECandidate(e *event) error {
 }
 
 func (t *PCTransport) handleLogICECandidates(e *event) error {
-	t.params.Logger.Infow(
-		"ice candidates",
-		"lc", t.allowedLocalCandidates.Get(),
-		"rc", t.allowedRemoteCandidates.Get(),
-		"lc (filtered)", t.filteredLocalCandidates.Get(),
-		"rc (filtered)", t.filteredRemoteCandidates.Get(),
-	)
+	lc := t.allowedLocalCandidates.Get()
+	rc := t.allowedRemoteCandidates.Get()
+	if len(lc) != 0 || len(rc) != 0 {
+		t.params.Logger.Infow(
+			"ice candidates",
+			"lc", lc,
+			"rc", rc,
+			"lc (filtered)", t.filteredLocalCandidates.Get(),
+			"rc (filtered)", t.filteredRemoteCandidates.Get(),
+		)
+	}
 
 	return nil
 }

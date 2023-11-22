@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/livekit"
 )
 
 func TestAgents(t *testing.T) {
@@ -31,15 +32,25 @@ func TestAgents(t *testing.T) {
 	require.NoError(t, err)
 	ac2, err := newAgentClient(agentToken())
 	require.NoError(t, err)
+	ac3, err := newAgentClient(agentToken())
+	require.NoError(t, err)
+	ac4, err := newAgentClient(agentToken())
+	require.NoError(t, err)
 	defer ac1.close()
 	defer ac2.close()
-	ac1.Run()
-	ac2.Run()
+	defer ac3.close()
+	defer ac4.close()
+	ac1.Run(livekit.JobType_JT_ROOM)
+	ac2.Run(livekit.JobType_JT_ROOM)
+	ac3.Run(livekit.JobType_JT_PUBLISHER)
+	ac4.Run(livekit.JobType_JT_PUBLISHER)
 
 	time.Sleep(time.Second * 3)
 
-	require.Equal(t, int32(2), ac1.registered.Load())
-	require.Equal(t, int32(2), ac2.registered.Load())
+	require.Equal(t, int32(1), ac1.registered.Load())
+	require.Equal(t, int32(1), ac2.registered.Load())
+	require.Equal(t, int32(1), ac3.registered.Load())
+	require.Equal(t, int32(1), ac4.registered.Load())
 
 	c1 := createRTCClient("c1", defaultServerPort, nil)
 	c2 := createRTCClient("c2", defaultServerPort, nil)
@@ -56,7 +67,7 @@ func TestAgents(t *testing.T) {
 	time.Sleep(time.Second * 3)
 
 	require.Equal(t, int32(1), ac1.roomJobs.Load()+ac2.roomJobs.Load())
-	require.Equal(t, int32(1), ac1.participantJobs.Load()+ac2.participantJobs.Load())
+	require.Equal(t, int32(1), ac3.participantJobs.Load()+ac4.participantJobs.Load())
 
 	// publish 2 tracks
 	t3, err := c2.AddStaticTrack("audio/opus", "audio", "webcam")
@@ -69,7 +80,7 @@ func TestAgents(t *testing.T) {
 	time.Sleep(time.Second * 3)
 
 	require.Equal(t, int32(1), ac1.roomJobs.Load()+ac2.roomJobs.Load())
-	require.Equal(t, int32(2), ac1.participantJobs.Load()+ac2.participantJobs.Load())
+	require.Equal(t, int32(2), ac3.participantJobs.Load()+ac4.participantJobs.Load())
 }
 
 func agentToken() string {
