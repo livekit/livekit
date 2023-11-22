@@ -198,12 +198,27 @@ func (s *AgentHandler) HandleConnection(conn *websocket.Conn) {
 }
 
 func (s *AgentHandler) handleRegister(worker *worker, msg *livekit.RegisterWorkerRequest) {
+	if err := s.doHandleRegister(worker, msg); err != nil {
+		logger.Errorw("failed to register worker", err, "workerID", msg.WorkerId, "jobType", msg.Type)
+		worker.conn.Close()
+	}
+}
+
+func (s *AgentHandler) doHandleRegister(worker *worker, msg *livekit.RegisterWorkerRequest) error {
+	if msg.WorkerId == "" {
+		return errors.New("invalid worker id")
+	}
+
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	if worker.id != "" {
+		s.mu.Unlock()
+		return errors.New("worker already registered")
+	}
 
 	switch msg.Type {
 	case livekit.JobType_JT_ROOM:
 		worker.id = msg.WorkerId
+		worker.jobType = msg.Type
 		delete(s.unregistered, worker.conn)
 		s.roomWorkers[worker.id] = worker
 
@@ -218,6 +233,7 @@ func (s *AgentHandler) handleRegister(worker *worker, msg *livekit.RegisterWorke
 
 	case livekit.JobType_JT_PUBLISHER:
 		worker.id = msg.WorkerId
+		worker.jobType = msg.Type
 		delete(s.unregistered, worker.conn)
 		s.publisherWorkers[worker.id] = worker
 
@@ -229,7 +245,11 @@ func (s *AgentHandler) handleRegister(worker *worker, msg *livekit.RegisterWorke
 				s.publisherRegistered = true
 			}
 		}
+	default:
+		s.mu.Unlock()
+		return errors.New("invalid job type")
 	}
+	s.mu.Unlock()
 
 	_, err := worker.sigConn.WriteServerMessage(&livekit.ServerMessage{
 		Message: &livekit.ServerMessage_Register{
@@ -242,6 +262,8 @@ func (s *AgentHandler) handleRegister(worker *worker, msg *livekit.RegisterWorke
 	if err != nil {
 		logger.Errorw("failed to write server message", err)
 	}
+
+	return nil
 }
 
 func (s *AgentHandler) handleAvailability(w *worker, msg *livekit.AvailabilityResponse) {
@@ -366,8 +388,7 @@ func (s *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*empty
 				Availability: &livekit.AvailabilityRequest{Job: job},
 			}})
 			if err != nil {
-				logger.Errorw("failed to send availability request", err)
-				return nil, err
+				logger.Errorw("failed to send availability request", err, "workerID", selected.id)
 			}
 
 			select {
@@ -379,7 +400,7 @@ func (s *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*empty
 						Assignment: &livekit.JobAssignment{Job: job},
 					}})
 					if err != nil {
-						logger.Errorw("failed to assign job", err)
+						logger.Errorw("failed to assign job", err, "workerID", selected.id)
 					} else {
 						selected.mu.Lock()
 						selected.activeJobs++

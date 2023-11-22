@@ -66,6 +66,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	egressStore := getEgressStore(objectStore)
 	ingressStore := getIngressStore(objectStore)
+	sipStore := getSIPStore(objectStore)
 	keyProvider, err := createKeyProvider(conf)
 	if err != nil {
 		return nil, err
@@ -76,7 +77,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	analyticsService := telemetry.NewAnalyticsService(conf, currentNode)
 	telemetryService := telemetry.NewTelemetryService(queuedNotifier, analyticsService)
-	ioInfoService, err := NewIOInfoService(messageBus, egressStore, ingressStore, telemetryService)
+	ioInfoService, err := NewIOInfoService(messageBus, egressStore, ingressStore, sipStore, telemetryService)
 	if err != nil {
 		return nil, err
 	}
@@ -102,6 +103,12 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	ingressService := NewIngressService(ingressConfig, nodeID, messageBus, ingressClient, ingressStore, roomService, telemetryService)
+	sipConfig := getSIPConfig(conf)
+	sipClient, err := rpc.NewSIPClient(messageBus)
+	if err != nil {
+		return nil, err
+	}
+	sipService := NewSIPService(sipConfig, nodeID, messageBus, sipClient, sipStore, roomService, telemetryService)
 	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode, agentClient, telemetryService)
 	agentService, err := NewAgentService(messageBus)
 	if err != nil {
@@ -123,7 +130,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, ioInfoService, rtcService, agentService, keyProvider, router, roomManager, signalServer, server, currentNode)
+	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, sipService, ioInfoService, rtcService, agentService, keyProvider, router, roomManager, signalServer, server, currentNode)
 	if err != nil {
 		return nil, err
 	}
@@ -235,6 +242,19 @@ func getIngressStore(s ObjectStore) IngressStore {
 
 func getIngressConfig(conf *config.Config) *config.IngressConfig {
 	return &conf.Ingress
+}
+
+func getSIPStore(s ObjectStore) SIPStore {
+	switch store := s.(type) {
+	case *RedisStore:
+		return store
+	default:
+		return nil
+	}
+}
+
+func getSIPConfig(conf *config.Config) *config.SIPConfig {
+	return &conf.SIP
 }
 
 func createClientConfiguration() clientconfiguration.ClientConfigurationManager {

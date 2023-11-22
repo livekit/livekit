@@ -66,6 +66,7 @@ type Config struct {
 	Room           RoomConfig               `yaml:"room,omitempty"`
 	TURN           TURNConfig               `yaml:"turn,omitempty"`
 	Ingress        IngressConfig            `yaml:"ingress,omitempty"`
+	SIP            SIPConfig                `yaml:"sip,omitempty"`
 	WebHook        WebHookConfig            `yaml:"webhook,omitempty"`
 	NodeSelector   NodeSelectorConfig       `yaml:"node_selector,omitempty"`
 	KeyFile        string                   `yaml:"key_file,omitempty"`
@@ -293,6 +294,9 @@ type LimitConfig struct {
 type IngressConfig struct {
 	RTMPBaseURL string `yaml:"rtmp_base_url,omitempty"`
 	WHIPBaseURL string `yaml:"whip_base_url,omitempty"`
+}
+
+type SIPConfig struct {
 }
 
 // not exposed to YAML
