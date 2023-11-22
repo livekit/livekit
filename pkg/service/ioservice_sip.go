@@ -317,12 +317,14 @@ func (s *IOInfoService) EvaluateSIPDispatchRules(ctx context.Context, req *rpc.E
 }
 
 func (s *IOInfoService) GetSIPTrunkAuthentication(ctx context.Context, req *rpc.GetSIPTrunkAuthenticationRequest) (*rpc.GetSIPTrunkAuthenticationResponse, error) {
-	trunk, err := s.matchSIPTrunk(ctx, req.From, req.To)
-	if err != nil {
-		return nil, err
-	}
+	/*
+		trunk, err := s.matchSIPTrunk(ctx, req.From, req.To)
+		if err != nil {
+			return nil, err
+		}
+	*/
 	return &rpc.GetSIPTrunkAuthenticationResponse{
-		Username: trunk.Username,
-		Password: trunk.Password,
+		//Username: trunk.Username,
+		//Password: trunk.Password,
 	}, nil
 }

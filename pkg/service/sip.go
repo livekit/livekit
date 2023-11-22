@@ -65,8 +65,8 @@ func (s *SIPService) CreateSIPTrunk(ctx context.Context, req *livekit.CreateSIPT
 		OutboundAddress:     req.OutboundAddress,
 		OutboundNumber:      req.OutboundNumber,
 		InboundNumbersRegex: req.InboundNumbersRegex,
-		Username:            req.Username,
-		Password:            req.Password,
+		//Username:            req.Username,
+		//Password:            req.Password,
 	}
 
 	if err := s.store.StoreSIPTrunk(ctx, info); err != nil {

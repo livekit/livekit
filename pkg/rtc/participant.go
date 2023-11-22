@@ -167,6 +167,7 @@ type ParticipantImpl struct {
 	*TransportManager
 	*UpTrackManager
 	*SubscriptionManager
+	*ParticipantTrafficLoad
 
 	// keeps track of unpublished tracks in order to reuse trackID
 	unpublishedTracks []*livekit.TrackInfo
@@ -269,6 +270,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 
 	p.setupUpTrackManager()
 	p.setupSubscriptionManager()
+	p.setupParticipantTrafficLoad()
 
 	return p, nil
 }
@@ -915,10 +917,6 @@ func (p *ParticipantImpl) OnICEConfigChanged(f func(participant types.LocalParti
 	p.lock.Unlock()
 }
 
-//
-// signal connection methods
-//
-
 func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo {
 	numTracks := 0
 	minQuality := livekit.ConnectionQuality_EXCELLENT
@@ -1224,6 +1222,14 @@ func (p *ParticipantImpl) setupSubscriptionManager() {
 		OnSubscriptionError:    p.onSubscriptionError,
 		SubscriptionLimitVideo: p.params.SubscriptionLimitVideo,
 		SubscriptionLimitAudio: p.params.SubscriptionLimitAudio,
+	})
+}
+
+func (p *ParticipantImpl) setupParticipantTrafficLoad() {
+	p.ParticipantTrafficLoad = NewParticipantTrafficLoad(ParticipantTrafficLoadParams{
+		Participant:      p,
+		DataChannelStats: p.dataChannelStats,
+		Logger:           p.pubLogger,
 	})
 }
 

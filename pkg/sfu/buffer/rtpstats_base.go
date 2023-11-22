@@ -1188,4 +1188,31 @@ func AggregateRTPDeltaInfo(deltaInfoList []*RTPDeltaInfo) *RTPDeltaInfo {
 	}
 }
 
+func DiffToTrafficStats(before, after *livekit.RTPStats) *livekit.TrafficStats {
+	if after == nil {
+		return nil
+	}
+
+	startTime := after.StartTime
+	if before != nil {
+		startTime = before.EndTime
+	}
+
+	if before == nil {
+		return &livekit.TrafficStats{
+			StartTime: startTime,
+			EndTime:   after.EndTime,
+			Packets:   after.Packets,
+			Bytes:     after.Bytes + after.BytesDuplicate + after.BytesPadding,
+		}
+	}
+
+	return &livekit.TrafficStats{
+		StartTime: startTime,
+		EndTime:   after.EndTime,
+		Packets:   after.Packets - before.Packets,
+		Bytes:     (after.Bytes + after.BytesDuplicate + after.BytesPadding) - (before.Bytes + before.BytesDuplicate + before.BytesPadding),
+	}
+}
+
 // -------------------------------------------------------------------
