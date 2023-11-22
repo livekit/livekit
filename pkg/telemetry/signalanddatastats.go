@@ -25,8 +25,6 @@ import (
 	"github.com/livekit/protocol/utils"
 )
 
-const statsReportInterval = 10 * time.Second
-
 type BytesTrackType string
 
 const (
