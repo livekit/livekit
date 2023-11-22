@@ -2,6 +2,40 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.1] - 2023-11-09
+
+Support for the Agent framework.
+
+### Added
+- PSRPC based room and participant service. disabled by default (#2171 #2205)
+- Add configuration to limit MaxBufferedAmount for data channel (#2170)
+- Agent framework worker support (#2203 #2227 #2230 #2231 #2232)
+
+### Fixed
+- Fixed panic in StreamTracker when SVC is used  (#2147)
+- fix CreateEgress not completing (#2156)
+- Do not update highest time on padding packet. (#2157)
+- Clear flags in packet metadata cache before setting them. (#2160)
+- Drop not relevant packet only if contiguous. (#2167)
+- Fixed edge cases in SVC codec support (#2176 #2185 #2191 #2196 #2197 #2214 #2215 #2216 #2218 #2219)
+- Do not post to closed channels. (#2179)
+- Only launch room egress once (#2175)
+- Remove un-preferred codecs for android firefox (#2183)
+- Fix pre-extended value on wrap back restart. (#2202)
+- Declare audio inactive if stale. (#2229)
+
+### Changed
+- Defer close of source and sink to prevent error logs. (#2149)
+- Continued AV Sync improvements (#2150 #2153)
+- Egress store/IO cleanup (required for Egress 1.8.0) (#2152)
+- More fine grained filtering NACKs after a key frame. (#2159)
+- Don't filter out ipv6 address for client don't support prflx over relay (#2193)
+- Disable h264 for android firefox (#2190)
+- Do not block on down track close with flush. (#2201)
+- Separate publish and subscribe enabled codecs for finer grained control. (#2217)
+- improve participant hidden (#2220)
+- Reject migration if codec mismatch with published tracks (#2225)
+
 ## [1.5.0] - 2023-10-15
 
 ### Added

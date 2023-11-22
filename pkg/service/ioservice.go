@@ -20,11 +20,12 @@ import (
 
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
+
+	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
 type IOInfoService struct {
@@ -32,6 +33,7 @@ type IOInfoService struct {
 
 	es        EgressStore
 	is        IngressStore
+	ss        SIPStore
 	telemetry telemetry.TelemetryService
 
 	shutdown chan struct{}
@@ -41,11 +43,13 @@ func NewIOInfoService(
 	bus psrpc.MessageBus,
 	es EgressStore,
 	is IngressStore,
+	ss SIPStore,
 	ts telemetry.TelemetryService,
 ) (*IOInfoService, error) {
 	s := &IOInfoService{
 		es:        es,
 		is:        is,
+		ss:        ss,
 		telemetry: ts,
 		shutdown:  make(chan struct{}),
 	}

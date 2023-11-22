@@ -786,7 +786,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 		p.TransportManager.Close()
 	}()
 
-	p.dataChannelStats.Report()
+	p.dataChannelStats.Stop()
 	return nil
 }
 

@@ -980,7 +980,10 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 	d.bindLock.Unlock()
 	d.connectionStats.Close()
 	d.rtpStats.Stop()
-	d.params.Logger.Infow("rtp stats", "direction", "downstream", "mime", d.mime, "ssrc", d.ssrc, "stats", d.rtpStats.ToString())
+	rtpStats := d.rtpStats.ToString()
+	if rtpStats != "" {
+		d.params.Logger.Infow("rtp stats", "direction", "downstream", "mime", d.mime, "ssrc", d.ssrc, "stats", rtpStats)
+	}
 
 	d.maxLayerNotifierChMu.Lock()
 	d.maxLayerNotifierChClosed = true

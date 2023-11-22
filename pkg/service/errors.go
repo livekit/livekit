@@ -34,4 +34,8 @@ var (
 	ErrRemoteUnmuteNoteEnabled = psrpc.NewErrorf(psrpc.FailedPrecondition, "remote unmute not enabled")
 	ErrTrackNotFound           = psrpc.NewErrorf(psrpc.NotFound, "track is not found")
 	ErrWebHookMissingAPIKey    = psrpc.NewErrorf(psrpc.InvalidArgument, "api_key is required to use webhooks")
+	ErrSIPNotConnected         = psrpc.NewErrorf(psrpc.Internal, "sip not connected (redis required)")
+	ErrSIPTrunkNotFound        = psrpc.NewErrorf(psrpc.NotFound, "requested sip trunk does not exist")
+	ErrSIPDispatchRuleNotFound = psrpc.NewErrorf(psrpc.NotFound, "requested sip dispatch rule does not exist")
+	ErrSIPParticipantNotFound  = psrpc.NewErrorf(psrpc.NotFound, "requested sip participant does not exist")
 )
