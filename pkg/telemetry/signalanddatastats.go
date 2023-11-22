@@ -20,6 +20,7 @@ import (
 
 	"go.uber.org/atomic"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 )
@@ -35,11 +36,11 @@ const (
 
 // stats for signal and data channel
 type BytesTrackStats struct {
-	trackID         livekit.TrackID
-	pID             livekit.ParticipantID
-	send, recv      atomic.Uint64
-	lastStatsReport atomic.Value // *time.Time
-	telemetry       TelemetryService
+	trackID    livekit.TrackID
+	pID        livekit.ParticipantID
+	send, recv atomic.Uint64
+	telemetry  TelemetryService
+	isStopped  atomic.Bool
 }
 
 func NewBytesTrackStats(trackID livekit.TrackID, pID livekit.ParticipantID, telemetry TelemetryService) *BytesTrackStats {
@@ -48,8 +49,7 @@ func NewBytesTrackStats(trackID livekit.TrackID, pID livekit.ParticipantID, tele
 		pID:       pID,
 		telemetry: telemetry,
 	}
-	now := time.Now()
-	s.lastStatsReport.Store(&now)
+	go s.reporter()
 	return s
 }
 
@@ -59,29 +59,13 @@ func (s *BytesTrackStats) AddBytes(bytes uint64, isSend bool) {
 	} else {
 		s.recv.Add(bytes)
 	}
-
-	s.report(false)
 }
 
-func (s *BytesTrackStats) Report() {
-	s.report(true)
+func (s *BytesTrackStats) Stop() {
+	s.isStopped.Store(true)
 }
 
-func (s *BytesTrackStats) report(force bool) {
-	now := time.Now()
-	if !force {
-		lr := s.lastStatsReport.Load().(*time.Time)
-		if time.Since(*lr) < statsReportInterval {
-			return
-		}
-
-		if !s.lastStatsReport.CompareAndSwap(lr, &now) {
-			return
-		}
-	} else {
-		s.lastStatsReport.Store(&now)
-	}
-
+func (s *BytesTrackStats) report() {
 	if recv := s.recv.Swap(0); recv > 0 {
 		s.telemetry.TrackStats(StatsKeyForData(livekit.StreamType_UPSTREAM, s.pID, s.trackID), &livekit.AnalyticsStat{
 			Streams: []*livekit.AnalyticsStream{
@@ -98,6 +82,20 @@ func (s *BytesTrackStats) report(force bool) {
 		})
 	}
 }
+
+func (s *BytesTrackStats) reporter() {
+	ticker := time.NewTicker(config.TelemetryStatsUpdateInterval)
+	defer ticker.Stop()
+
+	for !s.isStopped.Load() {
+		<-ticker.C
+		s.report()
+	}
+
+	s.report()
+}
+
+// -----------------------------------------------------------------------
 
 func BytesTrackIDForParticipantID(typ BytesTrackType, participantID livekit.ParticipantID) livekit.TrackID {
 	return livekit.TrackID(fmt.Sprintf("%s_%s%s", utils.TrackPrefix, string(typ), participantID))

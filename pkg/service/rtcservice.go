@@ -269,7 +269,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		close(done)
 
 		if signalStats != nil {
-			signalStats.Report()
+			signalStats.Stop()
 		}
 	}()
 
