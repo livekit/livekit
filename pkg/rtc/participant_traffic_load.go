@@ -16,13 +16,12 @@ package rtc
 
 import (
 	"sync"
-	"time"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -65,7 +64,7 @@ func (p *ParticipantTrafficLoad) GetTrafficLoad() *livekit.TrafficLoad {
 		lmt := pt.(types.LocalMediaTrack)
 		trackID := lmt.ID()
 		stats := lmt.GetTrackStats()
-		trafficStats := buffer.DiffToTrafficStats(p.tracksStatsMedia[trackID], stats)
+		trafficStats := utils.RTPStatsDiffToTrafficStats(p.tracksStatsMedia[trackID], stats)
 		if stats != nil {
 			p.tracksStatsMedia[trackID] = stats
 			availableTracks[trackID] = true
@@ -83,7 +82,7 @@ func (p *ParticipantTrafficLoad) GetTrafficLoad() *livekit.TrafficLoad {
 	for _, st := range subscribedTracks {
 		trackID := st.ID()
 		stats := st.DownTrack().GetTrackStats()
-		trafficStats := buffer.DiffToTrafficStats(p.tracksStatsMedia[trackID], stats)
+		trafficStats := utils.RTPStatsDiffToTrafficStats(p.tracksStatsMedia[trackID], stats)
 		if stats != nil {
 			p.tracksStatsMedia[trackID] = stats
 			availableTracks[trackID] = true
@@ -107,7 +106,7 @@ func (p *ParticipantTrafficLoad) GetTrafficLoad() *livekit.TrafficLoad {
 
 	trafficTypeStats := make([]*livekit.TrafficTypeStats, 0, 6)
 	addTypeStats := func(statsList []*livekit.TrafficStats, trackType livekit.TrackType, streamType livekit.StreamType) {
-		agg := AggregateTrafficStats(statsList)
+		agg := utils.AggregateTrafficStats(statsList)
 		if agg != nil {
 			trafficTypeStats = append(trafficTypeStats, &livekit.TrafficTypeStats{
 				TrackType:    trackType,
@@ -151,42 +150,5 @@ func (p *ParticipantTrafficLoad) GetTrafficLoad() *livekit.TrafficLoad {
 
 	return &livekit.TrafficLoad{
 		TrafficTypeStats: trafficTypeStats,
-	}
-}
-
-// ---------------------------------------------------------
-
-func AggregateTrafficStats(statsList []*livekit.TrafficStats) *livekit.TrafficStats {
-	if len(statsList) == 0 {
-		return nil
-	}
-
-	startTime := time.Time{}
-	endTime := time.Time{}
-
-	packets := uint32(0)
-	bytes := uint64(0)
-
-	for _, stats := range statsList {
-		if startTime.IsZero() || startTime.After(stats.StartTime.AsTime()) {
-			startTime = stats.StartTime.AsTime()
-		}
-
-		if endTime.IsZero() || endTime.Before(stats.EndTime.AsTime()) {
-			endTime = stats.EndTime.AsTime()
-		}
-
-		packets += stats.Packets
-		bytes += stats.Bytes
-	}
-
-	if endTime.IsZero() {
-		endTime = time.Now()
-	}
-	return &livekit.TrafficStats{
-		StartTime: timestamppb.New(startTime),
-		EndTime:   timestamppb.New(endTime),
-		Packets:   packets,
-		Bytes:     bytes,
 	}
 }
