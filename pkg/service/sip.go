@@ -16,14 +16,15 @@ package service
 
 import (
 	"context"
-	"fmt"
 
-	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/psrpc"
+
+	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
 type SIPService struct {
@@ -161,13 +162,42 @@ func (s *SIPService) CreateSIPParticipant(ctx context.Context, req *livekit.Crea
 	}
 
 	info := &livekit.SIPParticipantInfo{
-		SipParticipantId: utils.NewGuid(utils.SIPParticipantPrefix),
+		SipParticipantId:    utils.NewGuid(utils.SIPParticipantPrefix),
+		SipTrunkId:          req.SipTrunkId,
+		SipCallTo:           req.SipCallTo,
+		RoomName:            req.RoomName,
+		ParticipantIdentity: req.ParticipantIdentity,
 	}
 
 	if err := s.store.StoreSIPParticipant(ctx, info); err != nil {
 		return nil, err
 	}
+	s.updateParticipant(ctx, info)
 	return info, nil
+}
+
+func (s *SIPService) updateParticipant(ctx context.Context, info *livekit.SIPParticipantInfo) {
+	AppendLogFields(ctx, "participantId", info.SipParticipantId, "room", info.RoomName, "trunk", info.SipTrunkId, "to", info.SipCallTo)
+	req := &rpc.InternalUpdateSIPParticipantRequest{
+		ParticipantId:       info.SipParticipantId,
+		CallTo:              info.SipCallTo,
+		RoomName:            info.RoomName,
+		ParticipantIdentity: info.ParticipantIdentity,
+	}
+	if info.SipTrunkId != "" {
+		trunk, err := s.store.LoadSIPTrunk(ctx, info.SipTrunkId)
+		if err != nil {
+			logger.Errorw("cannot get trunk to update sip participant", err)
+			return
+		}
+		req.Address = trunk.OutboundAddress
+		req.Number = trunk.OutboundNumber
+		req.Username = trunk.OutboundUsername
+		req.Password = trunk.OutboundPassword
+	}
+	if _, err := s.psrpcClient.UpdateSIPParticipant(ctx, req); err != nil {
+		logger.Errorw("cannot update sip participant", err)
+	}
 }
 
 func (s *SIPService) ListSIPParticipant(ctx context.Context, req *livekit.ListSIPParticipantRequest) (*livekit.ListSIPParticipantResponse, error) {
@@ -196,7 +226,10 @@ func (s *SIPService) DeleteSIPParticipant(ctx context.Context, req *livekit.Dele
 	if err = s.store.DeleteSIPParticipant(ctx, info); err != nil {
 		return nil, err
 	}
-
+	// These indicate that the call should be disconnected
+	info.SipTrunkId = ""
+	info.SipCallTo = ""
+	s.updateParticipant(ctx, info)
 	return info, nil
 }
 
@@ -204,6 +237,13 @@ func (s *SIPService) SendSIPParticipantDTMF(ctx context.Context, req *livekit.Se
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
 	}
-
-	return nil, fmt.Errorf("TODO")
+	AppendLogFields(ctx, "participantId", req.SipParticipantId)
+	_, err := s.psrpcClient.SendSIPParticipantDTMF(ctx, &rpc.InternalSendSIPParticipantDTMFRequest{
+		ParticipantId: req.SipParticipantId,
+		Digits:        req.Digits,
+	})
+	if err != nil {
+		logger.Errorw("cannot send dtmf to sip participant", err)
+	}
+	return nil, err
 }
