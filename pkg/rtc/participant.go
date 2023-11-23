@@ -786,6 +786,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	go func() {
 		p.SubscriptionManager.Close(isExpectedToResume)
 		p.TransportManager.Close()
+		p.ParticipantTrafficLoad.Close()
 	}()
 
 	p.dataChannelStats.Stop()

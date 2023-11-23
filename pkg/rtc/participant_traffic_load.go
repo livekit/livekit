@@ -16,13 +16,19 @@ package rtc
 
 import (
 	"sync"
+	"time"
 
+	"github.com/frostbyte73/core"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	"google.golang.org/protobuf/types/known/timestamppb"
+)
+
+const (
+	reportInterval = 10 * time.Second
 )
 
 type ParticipantTrafficLoadParams struct {
@@ -34,19 +40,50 @@ type ParticipantTrafficLoadParams struct {
 type ParticipantTrafficLoad struct {
 	params ParticipantTrafficLoadParams
 
-	lock               sync.Mutex
+	lock               sync.RWMutex
+	onTrafficLoad      func(trafficLoad *livekit.TrafficLoad)
 	tracksStatsMedia   map[livekit.TrackID]*livekit.RTPStats
 	dataChannelTraffic *telemetry.TrafficTotals
+	trafficLoad        *livekit.TrafficLoad
+
+	closed core.Fuse
 }
 
 func NewParticipantTrafficLoad(params ParticipantTrafficLoadParams) *ParticipantTrafficLoad {
-	return &ParticipantTrafficLoad{
+	p := &ParticipantTrafficLoad{
 		params:           params,
 		tracksStatsMedia: make(map[livekit.TrackID]*livekit.RTPStats),
+		closed:           core.NewFuse(),
 	}
+	go p.reporter()
+	return p
+}
+
+func (p *ParticipantTrafficLoad) Close() {
+	p.closed.Break()
+}
+
+func (p *ParticipantTrafficLoad) OnTrafficLoad(f func(trafficLoad *livekit.TrafficLoad)) {
+	p.lock.Lock()
+	p.onTrafficLoad = f
+	p.lock.Unlock()
+}
+
+func (p *ParticipantTrafficLoad) getOnTrafficLoad() func(trafficLoad *livekit.TrafficLoad) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	return p.onTrafficLoad
 }
 
 func (p *ParticipantTrafficLoad) GetTrafficLoad() *livekit.TrafficLoad {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	return p.trafficLoad
+}
+
+func (p *ParticipantTrafficLoad) updateTrafficLoad() *livekit.TrafficLoad {
 	publishedTracks := p.params.Participant.GetPublishedTracks()
 	subscribedTracks := p.params.Participant.SubscriptionManager.GetSubscribedTracks()
 
@@ -148,7 +185,26 @@ func (p *ParticipantTrafficLoad) GetTrafficLoad() *livekit.TrafficLoad {
 		p.dataChannelTraffic = dataChannelTraffic
 	}
 
-	return &livekit.TrafficLoad{
+	p.trafficLoad = &livekit.TrafficLoad{
 		TrafficTypeStats: trafficTypeStats,
+	}
+	return p.trafficLoad
+}
+
+func (p *ParticipantTrafficLoad) reporter() {
+	ticker := time.NewTicker(reportInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-p.closed.Watch():
+			return
+
+		case <-ticker.C:
+			trafficLoad := p.updateTrafficLoad()
+			if onTrafficLoad := p.getOnTrafficLoad(); onTrafficLoad != nil {
+				onTrafficLoad(trafficLoad)
+			}
+		}
 	}
 }
