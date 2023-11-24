@@ -96,7 +96,7 @@ func (p *ParticipantTrafficLoad) updateTrafficLoad() *livekit.TrafficLoad {
 	downstreamVideoStats := make([]*livekit.TrafficStats, 0, len(subscribedTracks))
 
 	p.lock.Lock()
-	defer p.lock.Lock()
+	defer p.lock.Unlock()
 	for _, pt := range publishedTracks {
 		lmt := pt.(types.LocalMediaTrack)
 		trackID := lmt.ID()

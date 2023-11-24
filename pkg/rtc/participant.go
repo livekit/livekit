@@ -1230,7 +1230,7 @@ func (p *ParticipantImpl) setupParticipantTrafficLoad() {
 	p.ParticipantTrafficLoad = NewParticipantTrafficLoad(ParticipantTrafficLoadParams{
 		Participant:      p,
 		DataChannelStats: p.dataChannelStats,
-		Logger:           p.pubLogger,
+		Logger:           p.params.Logger,
 	})
 }
 
