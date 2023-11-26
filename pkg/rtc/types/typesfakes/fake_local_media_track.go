@@ -107,6 +107,16 @@ type FakeLocalMediaTrack struct {
 	getTemporalLayerForSpatialFpsReturnsOnCall map[int]struct {
 		result1 int32
 	}
+	GetTrackStatsStub        func() *livekit.RTPStats
+	getTrackStatsMutex       sync.RWMutex
+	getTrackStatsArgsForCall []struct {
+	}
+	getTrackStatsReturns struct {
+		result1 *livekit.RTPStats
+	}
+	getTrackStatsReturnsOnCall map[int]struct {
+		result1 *livekit.RTPStats
+	}
 	HasSdpCidStub        func(string) bool
 	hasSdpCidMutex       sync.RWMutex
 	hasSdpCidArgsForCall []struct {
@@ -831,6 +841,59 @@ func (fake *FakeLocalMediaTrack) GetTemporalLayerForSpatialFpsReturnsOnCall(i in
 	}
 	fake.getTemporalLayerForSpatialFpsReturnsOnCall[i] = struct {
 		result1 int32
+	}{result1}
+}
+
+func (fake *FakeLocalMediaTrack) GetTrackStats() *livekit.RTPStats {
+	fake.getTrackStatsMutex.Lock()
+	ret, specificReturn := fake.getTrackStatsReturnsOnCall[len(fake.getTrackStatsArgsForCall)]
+	fake.getTrackStatsArgsForCall = append(fake.getTrackStatsArgsForCall, struct {
+	}{})
+	stub := fake.GetTrackStatsStub
+	fakeReturns := fake.getTrackStatsReturns
+	fake.recordInvocation("GetTrackStats", []interface{}{})
+	fake.getTrackStatsMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalMediaTrack) GetTrackStatsCallCount() int {
+	fake.getTrackStatsMutex.RLock()
+	defer fake.getTrackStatsMutex.RUnlock()
+	return len(fake.getTrackStatsArgsForCall)
+}
+
+func (fake *FakeLocalMediaTrack) GetTrackStatsCalls(stub func() *livekit.RTPStats) {
+	fake.getTrackStatsMutex.Lock()
+	defer fake.getTrackStatsMutex.Unlock()
+	fake.GetTrackStatsStub = stub
+}
+
+func (fake *FakeLocalMediaTrack) GetTrackStatsReturns(result1 *livekit.RTPStats) {
+	fake.getTrackStatsMutex.Lock()
+	defer fake.getTrackStatsMutex.Unlock()
+	fake.GetTrackStatsStub = nil
+	fake.getTrackStatsReturns = struct {
+		result1 *livekit.RTPStats
+	}{result1}
+}
+
+func (fake *FakeLocalMediaTrack) GetTrackStatsReturnsOnCall(i int, result1 *livekit.RTPStats) {
+	fake.getTrackStatsMutex.Lock()
+	defer fake.getTrackStatsMutex.Unlock()
+	fake.GetTrackStatsStub = nil
+	if fake.getTrackStatsReturnsOnCall == nil {
+		fake.getTrackStatsReturnsOnCall = make(map[int]struct {
+			result1 *livekit.RTPStats
+		})
+	}
+	fake.getTrackStatsReturnsOnCall[i] = struct {
+		result1 *livekit.RTPStats
 	}{result1}
 }
 
@@ -2069,6 +2132,8 @@ func (fake *FakeLocalMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.getQualityForDimensionMutex.RUnlock()
 	fake.getTemporalLayerForSpatialFpsMutex.RLock()
 	defer fake.getTemporalLayerForSpatialFpsMutex.RUnlock()
+	fake.getTrackStatsMutex.RLock()
+	defer fake.getTrackStatsMutex.RUnlock()
 	fake.hasSdpCidMutex.RLock()
 	defer fake.hasSdpCidMutex.RUnlock()
 	fake.iDMutex.RLock()
