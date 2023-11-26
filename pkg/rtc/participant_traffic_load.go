@@ -96,7 +96,10 @@ func (p *ParticipantTrafficLoad) updateTrafficLoad() *types.TrafficLoad {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	for _, pt := range publishedTracks {
-		lmt := pt.(types.LocalMediaTrack)
+		lmt, ok := pt.(types.LocalMediaTrack)
+		if !ok {
+			continue
+		}
 		trackID := lmt.ID()
 		stats := lmt.GetTrackStats()
 		trafficStats := types.RTPStatsDiffToTrafficStats(p.tracksStatsMedia[trackID], stats)
