@@ -23,8 +23,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -41,10 +39,10 @@ type ParticipantTrafficLoad struct {
 	params ParticipantTrafficLoadParams
 
 	lock               sync.RWMutex
-	onTrafficLoad      func(trafficLoad *livekit.TrafficLoad)
+	onTrafficLoad      func(trafficLoad *types.TrafficLoad)
 	tracksStatsMedia   map[livekit.TrackID]*livekit.RTPStats
 	dataChannelTraffic *telemetry.TrafficTotals
-	trafficLoad        *livekit.TrafficLoad
+	trafficLoad        *types.TrafficLoad
 
 	closed core.Fuse
 }
@@ -63,37 +61,37 @@ func (p *ParticipantTrafficLoad) Close() {
 	p.closed.Break()
 }
 
-func (p *ParticipantTrafficLoad) OnTrafficLoad(f func(trafficLoad *livekit.TrafficLoad)) {
+func (p *ParticipantTrafficLoad) OnTrafficLoad(f func(trafficLoad *types.TrafficLoad)) {
 	p.lock.Lock()
 	p.onTrafficLoad = f
 	p.lock.Unlock()
 }
 
-func (p *ParticipantTrafficLoad) getOnTrafficLoad() func(trafficLoad *livekit.TrafficLoad) {
+func (p *ParticipantTrafficLoad) getOnTrafficLoad() func(trafficLoad *types.TrafficLoad) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
 	return p.onTrafficLoad
 }
 
-func (p *ParticipantTrafficLoad) GetTrafficLoad() *livekit.TrafficLoad {
+func (p *ParticipantTrafficLoad) GetTrafficLoad() *types.TrafficLoad {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
 	return p.trafficLoad
 }
 
-func (p *ParticipantTrafficLoad) updateTrafficLoad() *livekit.TrafficLoad {
+func (p *ParticipantTrafficLoad) updateTrafficLoad() *types.TrafficLoad {
 	publishedTracks := p.params.Participant.GetPublishedTracks()
 	subscribedTracks := p.params.Participant.SubscriptionManager.GetSubscribedTracks()
 
 	availableTracks := make(map[livekit.TrackID]bool, len(publishedTracks)+len(subscribedTracks))
 
-	upstreamAudioStats := make([]*livekit.TrafficStats, 0, len(publishedTracks))
-	upstreamVideoStats := make([]*livekit.TrafficStats, 0, len(publishedTracks))
+	upstreamAudioStats := make([]*types.TrafficStats, 0, len(publishedTracks))
+	upstreamVideoStats := make([]*types.TrafficStats, 0, len(publishedTracks))
 
-	downstreamAudioStats := make([]*livekit.TrafficStats, 0, len(subscribedTracks))
-	downstreamVideoStats := make([]*livekit.TrafficStats, 0, len(subscribedTracks))
+	downstreamAudioStats := make([]*types.TrafficStats, 0, len(subscribedTracks))
+	downstreamVideoStats := make([]*types.TrafficStats, 0, len(subscribedTracks))
 
 	p.lock.Lock()
 	defer p.lock.Unlock()
@@ -101,7 +99,7 @@ func (p *ParticipantTrafficLoad) updateTrafficLoad() *livekit.TrafficLoad {
 		lmt := pt.(types.LocalMediaTrack)
 		trackID := lmt.ID()
 		stats := lmt.GetTrackStats()
-		trafficStats := utils.RTPStatsDiffToTrafficStats(p.tracksStatsMedia[trackID], stats)
+		trafficStats := types.RTPStatsDiffToTrafficStats(p.tracksStatsMedia[trackID], stats)
 		if stats != nil {
 			p.tracksStatsMedia[trackID] = stats
 			availableTracks[trackID] = true
@@ -119,7 +117,7 @@ func (p *ParticipantTrafficLoad) updateTrafficLoad() *livekit.TrafficLoad {
 	for _, st := range subscribedTracks {
 		trackID := st.ID()
 		stats := st.DownTrack().GetTrackStats()
-		trafficStats := utils.RTPStatsDiffToTrafficStats(p.tracksStatsMedia[trackID], stats)
+		trafficStats := types.RTPStatsDiffToTrafficStats(p.tracksStatsMedia[trackID], stats)
 		if stats != nil {
 			p.tracksStatsMedia[trackID] = stats
 			availableTracks[trackID] = true
@@ -141,11 +139,11 @@ func (p *ParticipantTrafficLoad) updateTrafficLoad() *livekit.TrafficLoad {
 		}
 	}
 
-	trafficTypeStats := make([]*livekit.TrafficTypeStats, 0, 6)
-	addTypeStats := func(statsList []*livekit.TrafficStats, trackType livekit.TrackType, streamType livekit.StreamType) {
-		agg := utils.AggregateTrafficStats(statsList)
+	trafficTypeStats := make([]*types.TrafficTypeStats, 0, 6)
+	addTypeStats := func(statsList []*types.TrafficStats, trackType livekit.TrackType, streamType livekit.StreamType) {
+		agg := types.AggregateTrafficStats(statsList)
 		if agg != nil {
-			trafficTypeStats = append(trafficTypeStats, &livekit.TrafficTypeStats{
+			trafficTypeStats = append(trafficTypeStats, &types.TrafficTypeStats{
 				TrackType:    trackType,
 				StreamType:   streamType,
 				TrafficStats: agg,
@@ -160,23 +158,23 @@ func (p *ParticipantTrafficLoad) updateTrafficLoad() *livekit.TrafficLoad {
 	if p.params.DataChannelStats != nil {
 		dataChannelTraffic := p.params.DataChannelStats.GetTrafficTotals()
 		if p.dataChannelTraffic != nil {
-			trafficTypeStats = append(trafficTypeStats, &livekit.TrafficTypeStats{
+			trafficTypeStats = append(trafficTypeStats, &types.TrafficTypeStats{
 				TrackType:  livekit.TrackType_DATA,
 				StreamType: livekit.StreamType_UPSTREAM,
-				TrafficStats: &livekit.TrafficStats{
-					StartTime: timestamppb.New(p.dataChannelTraffic.At),
-					EndTime:   timestamppb.New(dataChannelTraffic.At),
+				TrafficStats: &types.TrafficStats{
+					StartTime: p.dataChannelTraffic.At,
+					EndTime:   dataChannelTraffic.At,
 					Packets:   dataChannelTraffic.RecvMessages - p.dataChannelTraffic.RecvMessages,
 					Bytes:     dataChannelTraffic.RecvBytes - p.dataChannelTraffic.RecvBytes,
 				},
 			})
 
-			trafficTypeStats = append(trafficTypeStats, &livekit.TrafficTypeStats{
+			trafficTypeStats = append(trafficTypeStats, &types.TrafficTypeStats{
 				TrackType:  livekit.TrackType_DATA,
 				StreamType: livekit.StreamType_DOWNSTREAM,
-				TrafficStats: &livekit.TrafficStats{
-					StartTime: timestamppb.New(p.dataChannelTraffic.At),
-					EndTime:   timestamppb.New(dataChannelTraffic.At),
+				TrafficStats: &types.TrafficStats{
+					StartTime: p.dataChannelTraffic.At,
+					EndTime:   dataChannelTraffic.At,
 					Packets:   dataChannelTraffic.SendMessages - p.dataChannelTraffic.SendMessages,
 					Bytes:     dataChannelTraffic.SendBytes - p.dataChannelTraffic.SendBytes,
 				},
@@ -185,7 +183,7 @@ func (p *ParticipantTrafficLoad) updateTrafficLoad() *livekit.TrafficLoad {
 		p.dataChannelTraffic = dataChannelTraffic
 	}
 
-	p.trafficLoad = &livekit.TrafficLoad{
+	p.trafficLoad = &types.TrafficLoad{
 		TrafficTypeStats: trafficTypeStats,
 	}
 	return p.trafficLoad

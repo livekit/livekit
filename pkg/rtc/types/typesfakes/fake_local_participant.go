@@ -325,15 +325,15 @@ type FakeLocalParticipant struct {
 	getSubscribedTracksReturnsOnCall map[int]struct {
 		result1 []types.SubscribedTrack
 	}
-	GetTrafficLoadStub        func() *livekit.TrafficLoad
+	GetTrafficLoadStub        func() *types.TrafficLoad
 	getTrafficLoadMutex       sync.RWMutex
 	getTrafficLoadArgsForCall []struct {
 	}
 	getTrafficLoadReturns struct {
-		result1 *livekit.TrafficLoad
+		result1 *types.TrafficLoad
 	}
 	getTrafficLoadReturnsOnCall map[int]struct {
-		result1 *livekit.TrafficLoad
+		result1 *types.TrafficLoad
 	}
 	GetTrailerStub        func() []byte
 	getTrailerMutex       sync.RWMutex
@@ -592,10 +592,10 @@ type FakeLocalParticipant struct {
 	onTrackUpdatedArgsForCall []struct {
 		arg1 func(types.LocalParticipant, types.MediaTrack)
 	}
-	OnTrafficLoadStub        func(func(trafficLoad *livekit.TrafficLoad))
+	OnTrafficLoadStub        func(func(trafficLoad *types.TrafficLoad))
 	onTrafficLoadMutex       sync.RWMutex
 	onTrafficLoadArgsForCall []struct {
-		arg1 func(trafficLoad *livekit.TrafficLoad)
+		arg1 func(trafficLoad *types.TrafficLoad)
 	}
 	ProtocolVersionStub        func() types.ProtocolVersion
 	protocolVersionMutex       sync.RWMutex
@@ -2555,7 +2555,7 @@ func (fake *FakeLocalParticipant) GetSubscribedTracksReturnsOnCall(i int, result
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) GetTrafficLoad() *livekit.TrafficLoad {
+func (fake *FakeLocalParticipant) GetTrafficLoad() *types.TrafficLoad {
 	fake.getTrafficLoadMutex.Lock()
 	ret, specificReturn := fake.getTrafficLoadReturnsOnCall[len(fake.getTrafficLoadArgsForCall)]
 	fake.getTrafficLoadArgsForCall = append(fake.getTrafficLoadArgsForCall, struct {
@@ -2579,32 +2579,32 @@ func (fake *FakeLocalParticipant) GetTrafficLoadCallCount() int {
 	return len(fake.getTrafficLoadArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) GetTrafficLoadCalls(stub func() *livekit.TrafficLoad) {
+func (fake *FakeLocalParticipant) GetTrafficLoadCalls(stub func() *types.TrafficLoad) {
 	fake.getTrafficLoadMutex.Lock()
 	defer fake.getTrafficLoadMutex.Unlock()
 	fake.GetTrafficLoadStub = stub
 }
 
-func (fake *FakeLocalParticipant) GetTrafficLoadReturns(result1 *livekit.TrafficLoad) {
+func (fake *FakeLocalParticipant) GetTrafficLoadReturns(result1 *types.TrafficLoad) {
 	fake.getTrafficLoadMutex.Lock()
 	defer fake.getTrafficLoadMutex.Unlock()
 	fake.GetTrafficLoadStub = nil
 	fake.getTrafficLoadReturns = struct {
-		result1 *livekit.TrafficLoad
+		result1 *types.TrafficLoad
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) GetTrafficLoadReturnsOnCall(i int, result1 *livekit.TrafficLoad) {
+func (fake *FakeLocalParticipant) GetTrafficLoadReturnsOnCall(i int, result1 *types.TrafficLoad) {
 	fake.getTrafficLoadMutex.Lock()
 	defer fake.getTrafficLoadMutex.Unlock()
 	fake.GetTrafficLoadStub = nil
 	if fake.getTrafficLoadReturnsOnCall == nil {
 		fake.getTrafficLoadReturnsOnCall = make(map[int]struct {
-			result1 *livekit.TrafficLoad
+			result1 *types.TrafficLoad
 		})
 	}
 	fake.getTrafficLoadReturnsOnCall[i] = struct {
-		result1 *livekit.TrafficLoad
+		result1 *types.TrafficLoad
 	}{result1}
 }
 
@@ -4060,10 +4060,10 @@ func (fake *FakeLocalParticipant) OnTrackUpdatedArgsForCall(i int) func(types.Lo
 	return argsForCall.arg1
 }
 
-func (fake *FakeLocalParticipant) OnTrafficLoad(arg1 func(trafficLoad *livekit.TrafficLoad)) {
+func (fake *FakeLocalParticipant) OnTrafficLoad(arg1 func(trafficLoad *types.TrafficLoad)) {
 	fake.onTrafficLoadMutex.Lock()
 	fake.onTrafficLoadArgsForCall = append(fake.onTrafficLoadArgsForCall, struct {
-		arg1 func(trafficLoad *livekit.TrafficLoad)
+		arg1 func(trafficLoad *types.TrafficLoad)
 	}{arg1})
 	stub := fake.OnTrafficLoadStub
 	fake.recordInvocation("OnTrafficLoad", []interface{}{arg1})
@@ -4079,13 +4079,13 @@ func (fake *FakeLocalParticipant) OnTrafficLoadCallCount() int {
 	return len(fake.onTrafficLoadArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) OnTrafficLoadCalls(stub func(func(trafficLoad *livekit.TrafficLoad))) {
+func (fake *FakeLocalParticipant) OnTrafficLoadCalls(stub func(func(trafficLoad *types.TrafficLoad))) {
 	fake.onTrafficLoadMutex.Lock()
 	defer fake.onTrafficLoadMutex.Unlock()
 	fake.OnTrafficLoadStub = stub
 }
 
-func (fake *FakeLocalParticipant) OnTrafficLoadArgsForCall(i int) func(trafficLoad *livekit.TrafficLoad) {
+func (fake *FakeLocalParticipant) OnTrafficLoadArgsForCall(i int) func(trafficLoad *types.TrafficLoad) {
 	fake.onTrafficLoadMutex.RLock()
 	defer fake.onTrafficLoadMutex.RUnlock()
 	argsForCall := fake.onTrafficLoadArgsForCall[i]

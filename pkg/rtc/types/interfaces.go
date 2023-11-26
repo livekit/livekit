@@ -395,7 +395,7 @@ type LocalParticipant interface {
 	OnClose(callback func(LocalParticipant))
 	OnClaimsChanged(callback func(LocalParticipant))
 	OnReceiverReport(dt *sfu.DownTrack, report *rtcp.ReceiverReport)
-	OnTrafficLoad(callback func(trafficLoad *livekit.TrafficLoad))
+	OnTrafficLoad(callback func(trafficLoad *TrafficLoad))
 
 	// session migration
 	MaybeStartMigration(force bool, onStart func()) bool
@@ -422,7 +422,7 @@ type LocalParticipant interface {
 
 	GetPacer() pacer.Pacer
 
-	GetTrafficLoad() *livekit.TrafficLoad
+	GetTrafficLoad() *TrafficLoad
 }
 
 // Room is a container of participants, and can provide room-level actions
