@@ -15,7 +15,6 @@
 package connectionquality
 
 import (
-	"fmt"
 	"math"
 	"testing"
 	"time"
@@ -302,7 +301,6 @@ func TestConnectionQuality(t *testing.T) {
 		}
 		cs.updateScoreAt(now.Add(duration))
 		mos, quality = cs.GetScoreAndQuality()
-		fmt.Printf("mos: %f, quality: %s\n", mos, quality.String()) // REMOVE
 		require.Greater(t, float32(4.6), mos)
 		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, quality)
 
