@@ -220,7 +220,7 @@ func (q *qualityScorer) Start() {
 func (q *qualityScorer) updateMuteAtLocked(isMuted bool, at time.Time) {
 	if isMuted {
 		q.mutedAt = at
-		// mting when DISCONNECTED should not push quality to EXCELLENT
+		// muting when DISCONNECTED should not push quality to EXCELLENT
 		if q.score != cDisconnectedScore {
 			q.score = cMaxScore
 		}
