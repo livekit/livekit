@@ -931,8 +931,7 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 		numTracks++
 
 		score, quality := pt.(types.LocalMediaTrack).GetConnectionScoreAndQuality()
-		if quality < minQuality {
-			// WARNING NOTE: comparing protobuf enums directly
+		if utils.IsConnectionQualityLower(minQuality, quality) {
 			minQuality = quality
 			minScore = score
 		} else if quality == minQuality && score < minScore {
@@ -942,8 +941,7 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 		p.lock.Lock()
 		trackID := pt.ID()
 		if prevQuality, ok := p.tracksQuality[trackID]; ok {
-			// WARNING NOTE: comparing protobuf enums directly
-			if prevQuality > quality {
+			if utils.IsConnectionQualityLower(prevQuality, quality) {
 				numUpDrops++
 			}
 		}
@@ -958,8 +956,7 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 		numTracks++
 
 		score, quality := subTrack.DownTrack().GetConnectionScoreAndQuality()
-		if quality < minQuality {
-			// WARNING NOTE: comparing protobuf enums directly
+		if utils.IsConnectionQualityLower(minQuality, quality) {
 			minQuality = quality
 			minScore = score
 		} else if quality == minQuality && score < minScore {
@@ -969,8 +966,7 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 		p.lock.Lock()
 		trackID := subTrack.ID()
 		if prevQuality, ok := p.tracksQuality[trackID]; ok {
-			// WARNING NOTE: comparing protobuf enums directly
-			if prevQuality > quality {
+			if utils.IsConnectionQualityLower(prevQuality, quality) {
 				numDownDrops++
 			}
 		}
