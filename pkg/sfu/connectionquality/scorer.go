@@ -29,10 +29,9 @@ const (
 	MaxMOS = float32(4.5)
 	MinMOS = float32(1.0)
 
-	cMaxScore          = float64(100.0)
-	cPoorScore         = float64(30.0)
-	cMinScore          = float64(20.0)
-	cDisconnectedScore = cMinScore
+	cMaxScore        = float64(100.0)
+	cMinScore        = float64(20.0)
+	cPausedPoorScore = float64(30.0)
 
 	increaseFactor = float64(0.4) // slower increase, i. e. when score is recovering move up slower -> conservative
 	decreaseFactor = float64(0.7) // faster decrease, i. e. when score is dropping move down faster -> aggressive to be responsive to quality drops
@@ -40,6 +39,14 @@ const (
 	distanceWeight = float64(35.0) // each spatial layer missed drops a quality level
 
 	unmuteTimeThreshold = float64(0.5)
+)
+
+var (
+	qualityTransisionScore = map[livekit.ConnectionQuality]float64{
+		livekit.ConnectionQuality_GOOD:         80,
+		livekit.ConnectionQuality_POOR:         40,
+		livekit.ConnectionQuality_DISCONNECTED: 20,
+	}
 )
 
 // ------------------------------------------
@@ -221,7 +228,7 @@ func (q *qualityScorer) updateMuteAtLocked(isMuted bool, at time.Time) {
 	if isMuted {
 		q.mutedAt = at
 		// muting when DISCONNECTED should not push quality to EXCELLENT
-		if q.score != cDisconnectedScore {
+		if q.score != qualityTransisionScore[livekit.ConnectionQuality_DISCONNECTED] {
 			q.score = cMaxScore
 		}
 	} else {
@@ -298,7 +305,7 @@ func (q *qualityScorer) updatePauseAtLocked(isPaused bool, at time.Time) {
 			q.layerDistance.Reset()
 
 			q.pausedAt = at
-			q.score = cPoorScore
+			q.score = cPausedPoorScore
 		}
 	} else {
 		if q.isPaused() {
@@ -357,7 +364,7 @@ func (q *qualityScorer) updateAtLocked(stat *windowStat, at time.Time) {
 	//       considered (as long as enough time has passed since unmute).
 	//
 	//       Similarly, when paused (possibly due to congestion), score is immediately
-	//       set to cPoorScore for responsiveness. The layer transision is reest.
+	//       set to cPausedPoorScore for responsiveness. The layer transision is reest.
 	//       On a resume, quality climbs back up using normal operation.
 	if q.isMuted() || !q.isUnmutedEnough(at) || q.isLayerMuted() || q.isPaused() {
 		q.lastUpdateAt = at
@@ -369,7 +376,7 @@ func (q *qualityScorer) updateAtLocked(stat *windowStat, at time.Time) {
 	var score float64
 	if stat.packetsExpected == 0 {
 		reason = "dry"
-		score = cDisconnectedScore
+		score = qualityTransisionScore[livekit.ConnectionQuality_DISCONNECTED]
 	} else {
 		packetScore := stat.calculatePacketScore(plw, q.params.IncludeRTT, q.params.IncludeJitter)
 		bitrateScore := stat.calculateBitrateScore(expectedBitrate)
@@ -528,15 +535,15 @@ func scoreToConnectionQuality(score float64) livekit.ConnectionQuality {
 	// that a score of 60 does not correspond to `POOR` quality. Repair
 	// mechanisms and use of algorithms like de-jittering makes the experience
 	// better even under harsh conditions.
-	if score > 80.0 {
+	if score > qualityTransisionScore[livekit.ConnectionQuality_GOOD] {
 		return livekit.ConnectionQuality_EXCELLENT
 	}
 
-	if score > 40.0 {
+	if score > qualityTransisionScore[livekit.ConnectionQuality_POOR] {
 		return livekit.ConnectionQuality_GOOD
 	}
 
-	if score > 20.0 {
+	if score > qualityTransisionScore[livekit.ConnectionQuality_DISCONNECTED] {
 		return livekit.ConnectionQuality_POOR
 	}
 
