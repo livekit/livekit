@@ -170,8 +170,6 @@ func (r *LocalRouter) Drain() {
 }
 
 func (r *LocalRouter) Stop() {
-	// make sure that rtcMessageWorker terminates
-	// r.isStarted.Swap(false)
 	r.rtcMessageChan.Close()
 }
 
