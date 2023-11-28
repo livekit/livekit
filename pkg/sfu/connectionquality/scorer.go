@@ -42,7 +42,7 @@ const (
 )
 
 var (
-	qualityTransisionScore = map[livekit.ConnectionQuality]float64{
+	qualityTransitionScore = map[livekit.ConnectionQuality]float64{
 		livekit.ConnectionQuality_GOOD:         80,
 		livekit.ConnectionQuality_POOR:         40,
 		livekit.ConnectionQuality_DISCONNECTED: 20,
@@ -228,7 +228,7 @@ func (q *qualityScorer) updateMuteAtLocked(isMuted bool, at time.Time) {
 	if isMuted {
 		q.mutedAt = at
 		// muting when DISCONNECTED should not push quality to EXCELLENT
-		if q.score != qualityTransisionScore[livekit.ConnectionQuality_DISCONNECTED] {
+		if q.score != qualityTransitionScore[livekit.ConnectionQuality_DISCONNECTED] {
 			q.score = cMaxScore
 		}
 	} else {
@@ -376,7 +376,7 @@ func (q *qualityScorer) updateAtLocked(stat *windowStat, at time.Time) {
 	var score float64
 	if stat.packetsExpected == 0 {
 		reason = "dry"
-		score = qualityTransisionScore[livekit.ConnectionQuality_DISCONNECTED]
+		score = qualityTransitionScore[livekit.ConnectionQuality_DISCONNECTED]
 	} else {
 		packetScore := stat.calculatePacketScore(plw, q.params.IncludeRTT, q.params.IncludeJitter)
 		bitrateScore := stat.calculateBitrateScore(expectedBitrate)
@@ -535,15 +535,15 @@ func scoreToConnectionQuality(score float64) livekit.ConnectionQuality {
 	// that a score of 60 does not correspond to `POOR` quality. Repair
 	// mechanisms and use of algorithms like de-jittering makes the experience
 	// better even under harsh conditions.
-	if score > qualityTransisionScore[livekit.ConnectionQuality_GOOD] {
+	if score > qualityTransitionScore[livekit.ConnectionQuality_GOOD] {
 		return livekit.ConnectionQuality_EXCELLENT
 	}
 
-	if score > qualityTransisionScore[livekit.ConnectionQuality_POOR] {
+	if score > qualityTransitionScore[livekit.ConnectionQuality_POOR] {
 		return livekit.ConnectionQuality_GOOD
 	}
 
-	if score > qualityTransisionScore[livekit.ConnectionQuality_DISCONNECTED] {
+	if score > qualityTransitionScore[livekit.ConnectionQuality_DISCONNECTED] {
 		return livekit.ConnectionQuality_POOR
 	}
 
