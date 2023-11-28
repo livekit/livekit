@@ -142,7 +142,6 @@ func (r *LocalRouter) WriteNodeRTC(_ context.Context, _ string, msg *livekit.RTC
 }
 
 func (r *LocalRouter) writeRTCMessage(sink MessageSink, msg *livekit.RTCNodeMessage) error {
-	defer sink.Close()
 	msg.SenderTime = time.Now().Unix()
 	return sink.WriteMessage(msg)
 }
@@ -171,6 +170,8 @@ func (r *LocalRouter) Drain() {
 }
 
 func (r *LocalRouter) Stop() {
+	// make sure that rtcMessageWorker terminates
+	// r.isStarted.Swap(false)
 	r.rtcMessageChan.Close()
 }
 
