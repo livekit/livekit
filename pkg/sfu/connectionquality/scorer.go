@@ -43,9 +43,9 @@ const (
 
 var (
 	qualityTransitionScore = map[livekit.ConnectionQuality]float64{
-		livekit.ConnectionQuality_GOOD:         80,
-		livekit.ConnectionQuality_POOR:         40,
-		livekit.ConnectionQuality_DISCONNECTED: 20,
+		livekit.ConnectionQuality_GOOD: 80,
+		livekit.ConnectionQuality_POOR: 40,
+		livekit.ConnectionQuality_LOST: 20,
 	}
 )
 
@@ -227,8 +227,8 @@ func (q *qualityScorer) Start() {
 func (q *qualityScorer) updateMuteAtLocked(isMuted bool, at time.Time) {
 	if isMuted {
 		q.mutedAt = at
-		// muting when DISCONNECTED should not push quality to EXCELLENT
-		if q.score != qualityTransitionScore[livekit.ConnectionQuality_DISCONNECTED] {
+		// muting when LOST should not push quality to EXCELLENT
+		if q.score != qualityTransitionScore[livekit.ConnectionQuality_LOST] {
 			q.score = cMaxScore
 		}
 	} else {
@@ -376,7 +376,7 @@ func (q *qualityScorer) updateAtLocked(stat *windowStat, at time.Time) {
 	var score float64
 	if stat.packetsExpected == 0 {
 		reason = "dry"
-		score = qualityTransitionScore[livekit.ConnectionQuality_DISCONNECTED]
+		score = qualityTransitionScore[livekit.ConnectionQuality_LOST]
 	} else {
 		packetScore := stat.calculatePacketScore(plw, q.params.IncludeRTT, q.params.IncludeJitter)
 		bitrateScore := stat.calculateBitrateScore(expectedBitrate)
@@ -543,11 +543,11 @@ func scoreToConnectionQuality(score float64) livekit.ConnectionQuality {
 		return livekit.ConnectionQuality_GOOD
 	}
 
-	if score > qualityTransitionScore[livekit.ConnectionQuality_DISCONNECTED] {
+	if score > qualityTransitionScore[livekit.ConnectionQuality_LOST] {
 		return livekit.ConnectionQuality_POOR
 	}
 
-	return livekit.ConnectionQuality_DISCONNECTED
+	return livekit.ConnectionQuality_LOST
 }
 
 // ------------------------------------------
