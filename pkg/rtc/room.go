@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"go.uber.org/atomic"
+	"golang.org/x/exp/maps"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/pion/sctp"
@@ -219,15 +220,19 @@ func (r *Room) GetParticipantByID(participantID livekit.ParticipantID) types.Loc
 func (r *Room) GetParticipants() []types.LocalParticipant {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
-	participants := make([]types.LocalParticipant, 0, len(r.participants))
-	for _, p := range r.participants {
-		participants = append(participants, p)
-	}
-	return participants
+
+	return maps.Values(r.participants)
 }
 
 func (r *Room) GetLocalParticipants() []types.LocalParticipant {
 	return r.GetParticipants()
+}
+
+func (r *Room) GetParticipantCount() int {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	return len(r.participants)
 }
 
 func (r *Room) GetActiveSpeakers() []*livekit.SpeakerInfo {
@@ -391,11 +396,13 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 		}
 
 	})
-	r.Logger.Infow("new participant joined",
+	r.Logger.Debugw("new participant joined",
 		"pID", participant.ID(),
 		"participant", participant.Identity(),
-		"protocol", participant.ProtocolVersion(),
-		"options", opts)
+		"clientInfo", logger.Proto(participant.GetClientInfo()),
+		"options", opts,
+		"numParticipants", len(r.participants),
+	)
 
 	if participant.IsRecorder() && !r.protoRoom.ActiveRecording {
 		r.protoRoom.ActiveRecording = true

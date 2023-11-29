@@ -290,11 +290,10 @@ func (r *RoomManager) StartSession(
 				return errors.New("could not restart closed participant")
 			}
 
-			logger.Infow("resuming RTC session",
-				"room", roomName,
+			participant.GetLogger().Infow("resuming RTC session",
 				"nodeID", r.currentNode.Id,
-				"participant", pi.Identity,
 				"reason", pi.ReconnectReason,
+				"numParticipants", room.GetParticipantCount(),
 			)
 			iceConfig := r.getIceConfig(participant)
 			if iceConfig == nil {
@@ -340,12 +339,11 @@ func (r *RoomManager) StartSession(
 		"room", roomName,
 		"nodeID", r.currentNode.Id,
 		"participant", pi.Identity,
-		"sdk", pi.Client.Sdk,
-		"sdkVersion", pi.Client.Version,
-		"protocol", pi.Client.Protocol,
+		"clientInfo", logger.Proto(pi.Client),
 		"reconnect", pi.Reconnect,
 		"reconnectReason", pi.ReconnectReason,
 		"adaptiveStream", pi.AdaptiveStream,
+		"numParticipants", room.GetParticipantCount(),
 	)
 
 	clientConf := r.clientConfManager.GetConfiguration(pi.Client)
