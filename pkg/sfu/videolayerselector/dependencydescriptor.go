@@ -252,7 +252,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		result.IsSwitching = true
 		if !d.currentLayer.IsValid() {
 			result.IsResuming = true
-			d.logger.Infow(
+			d.logger.Debugw(
 				"resuming at layer",
 				"current", incomingLayer,
 				"target", d.targetLayer,

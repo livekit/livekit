@@ -47,7 +47,6 @@ type DependencyDescriptorParser struct {
 }
 
 func NewDependencyDescriptorParser(ddExtID uint8, logger logger.Logger, onMaxLayerChanged func(int32, int32)) *DependencyDescriptorParser {
-	logger.Infow("creating dependency descriptor parser", "ddExtID", ddExtID)
 	return &DependencyDescriptorParser{
 		ddExtID:           ddExtID,
 		logger:            logger,
@@ -119,7 +118,7 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 		}
 
 		if r.structure == nil || ddVal.AttachedStructure.StructureId != r.structure.StructureId {
-			r.logger.Infow("structure updated", "structureID", ddVal.AttachedStructure.StructureId, "extSeq", extSeq, "extFN", extFN, "descriptor", ddVal.String())
+			r.logger.Debugw("structure updated", "structureID", ddVal.AttachedStructure.StructureId, "extSeq", extSeq, "extFN", extFN, "descriptor", ddVal.String())
 		}
 		r.structure = ddVal.AttachedStructure
 		r.decodeTargets = ProcessFrameDependencyStructure(ddVal.AttachedStructure)
