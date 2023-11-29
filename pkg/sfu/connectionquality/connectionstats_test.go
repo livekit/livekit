@@ -259,7 +259,7 @@ func TestConnectionQuality(t *testing.T) {
 		require.Greater(t, float32(4.6), mos)
 		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, quality)
 
-		// next update with no packets should knock quality down to DISCONNECTED
+		// next update with no packets should knock quality down to LOST
 		now = now.Add(duration)
 		trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
 			1: {
@@ -273,14 +273,14 @@ func TestConnectionQuality(t *testing.T) {
 		cs.updateScoreAt(now.Add(duration))
 		mos, quality = cs.GetScoreAndQuality()
 		require.Greater(t, float32(2.1), mos)
-		require.Equal(t, livekit.ConnectionQuality_DISCONNECTED, quality)
+		require.Equal(t, livekit.ConnectionQuality_LOST, quality)
 
-		// mute when DISCONNECTED should not bump up score/quality
+		// mute when LOST should not bump up score/quality
 		now = now.Add(duration)
 		cs.UpdateMuteAt(true, now.Add(1*time.Second))
 		mos, quality = cs.GetScoreAndQuality()
 		require.Greater(t, float32(2.1), mos)
-		require.Equal(t, livekit.ConnectionQuality_DISCONNECTED, quality)
+		require.Equal(t, livekit.ConnectionQuality_LOST, quality)
 
 		// unmute and send packets to bring quality back up
 		now = now.Add(duration)
