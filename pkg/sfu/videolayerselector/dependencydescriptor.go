@@ -111,8 +111,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	}
 
 	if ddwdt.StructureUpdated {
-		// TODO-REMOVE: remove this log after stable
-		d.logger.Infow("update dependency structure",
+		d.logger.Debugw("update dependency structure",
 			"structureID", dd.AttachedStructure.StructureId,
 			"structure", dd.AttachedStructure,
 			"decodeTargets", ddwdt.DecodeTargets,
@@ -127,8 +126,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 
 	if ddwdt.ExtKeyFrameNum != d.extKeyFrameNum {
 		// keyframe mismatch, drop and reset chains
-		// TODO-REMOVE: remove this log after stable
-		d.logger.Infow("drop packet for keyframe mismatch", "incoming", incomingLayer, "efn", extFrameNum, "sn", extPkt.Packet.SequenceNumber, "requiredKeyFrame", ddwdt.ExtKeyFrameNum, "structureKeyFrame", d.extKeyFrameNum)
+		d.logger.Debugw("drop packet for keyframe mismatch", "incoming", incomingLayer, "efn", extFrameNum, "sn", extPkt.Packet.SequenceNumber, "requiredKeyFrame", ddwdt.ExtKeyFrameNum, "structureKeyFrame", d.extKeyFrameNum)
 		d.decisions.AddDropped(extFrameNum)
 		d.invalidateKeyFrame()
 		return
@@ -138,9 +136,8 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		d.updateActiveDecodeTargets(*dd.ActiveDecodeTargetsBitmask)
 	}
 
-	// TODO-REMOVE: remove this log after stable
 	if len(fd.ChainDiffs) != len(d.chains) {
-		d.logger.Warnw("frame chain diff length mismatch", nil,
+		d.logger.Debugw("frame chain diff length mismatch", nil,
 			"incoming", incomingLayer,
 			"efn", extFrameNum,
 			"sn", extPkt.Packet.SequenceNumber,
@@ -255,7 +252,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		result.IsSwitching = true
 		if !d.currentLayer.IsValid() {
 			result.IsResuming = true
-			d.logger.Infow(
+			d.logger.Debugw(
 				"resuming at layer",
 				"current", incomingLayer,
 				"target", d.targetLayer,
