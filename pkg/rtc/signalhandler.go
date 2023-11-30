@@ -55,7 +55,7 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 			participant.UpdateSubscribedTrackSettings(sid, msg.TrackSetting)
 		}
 	case *livekit.SignalRequest_Leave:
-		pLogger.Infow("client leaving room")
+		pLogger.Debugw("client leaving room")
 		room.RemoveParticipant(participant.Identity(), participant.ID(), types.ParticipantCloseReasonClientRequestLeave)
 	case *livekit.SignalRequest_UpdateLayers:
 		err := room.UpdateVideoLayers(participant, msg.UpdateLayers)

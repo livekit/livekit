@@ -60,7 +60,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	egressClient, err := rpc.NewEgressClient(messageBus)
+	clientParams := getPSRPCClientParams(psrpcConfig, messageBus)
+	egressClient, err := rpc.NewEgressClient(clientParams)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +84,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	rtcEgressLauncher := NewEgressLauncher(egressClient, ioInfoService)
 	topicFormatter := rpc.NewTopicFormatter()
-	clientParams := getPSRPCClientParams(psrpcConfig, messageBus)
 	roomClient, err := rpc.NewTypedRoomClient(clientParams)
 	if err != nil {
 		return nil, err
@@ -98,7 +98,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	egressService := NewEgressService(egressClient, rtcEgressLauncher, objectStore, ioInfoService, roomService)
 	ingressConfig := getIngressConfig(conf)
-	ingressClient, err := rpc.NewIngressClient(messageBus)
+	ingressClient, err := rpc.NewIngressClient(clientParams)
 	if err != nil {
 		return nil, err
 	}
