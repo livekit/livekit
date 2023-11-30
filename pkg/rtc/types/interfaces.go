@@ -395,6 +395,7 @@ type LocalParticipant interface {
 	OnClose(callback func(LocalParticipant))
 	OnClaimsChanged(callback func(LocalParticipant))
 	OnReceiverReport(dt *sfu.DownTrack, report *rtcp.ReceiverReport)
+	OnTrafficLoad(callback func(trafficLoad *TrafficLoad))
 
 	// session migration
 	MaybeStartMigration(force bool, onStart func()) bool
@@ -420,6 +421,8 @@ type LocalParticipant interface {
 	SetSubscriberChannelCapacity(channelCapacity int64)
 
 	GetPacer() pacer.Pacer
+
+	GetTrafficLoad() *TrafficLoad
 }
 
 // Room is a container of participants, and can provide room-level actions
@@ -499,6 +502,7 @@ type LocalMediaTrack interface {
 	HasSdpCid(cid string) bool
 
 	GetConnectionScoreAndQuality() (float32, livekit.ConnectionQuality)
+	GetTrackStats() *livekit.RTPStats
 
 	SetRTT(rtt uint32)
 
