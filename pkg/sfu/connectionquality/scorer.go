@@ -29,9 +29,9 @@ const (
 	MaxMOS = float32(4.5)
 	MinMOS = float32(1.0)
 
-	maxScore  = float64(100.0)
-	poorScore = float64(30.0)
-	minScore  = float64(20.0)
+	cMaxScore        = float64(100.0)
+	cMinScore        = float64(20.0)
+	cPausedPoorScore = float64(30.0)
 
 	increaseFactor = float64(0.4) // slower increase, i. e. when score is recovering move up slower -> conservative
 	decreaseFactor = float64(0.7) // faster decrease, i. e. when score is dropping move down faster -> aggressive to be responsive to quality drops
@@ -39,6 +39,14 @@ const (
 	distanceWeight = float64(35.0) // each spatial layer missed drops a quality level
 
 	unmuteTimeThreshold = float64(0.5)
+)
+
+var (
+	qualityTransitionScore = map[livekit.ConnectionQuality]float64{
+		livekit.ConnectionQuality_GOOD: 80,
+		livekit.ConnectionQuality_POOR: 40,
+		livekit.ConnectionQuality_LOST: 20,
+	}
 )
 
 // ------------------------------------------
@@ -107,7 +115,7 @@ func (w *windowStat) calculatePacketScore(plw float64, includeRTT bool, includeJ
 	}
 	lossEffect *= plw
 
-	score := maxScore - delayEffect - lossEffect
+	score := cMaxScore - delayEffect - lossEffect
 	if score < 0.0 {
 		score = 0.0
 	}
@@ -118,7 +126,7 @@ func (w *windowStat) calculatePacketScore(plw float64, includeRTT bool, includeJ
 func (w *windowStat) calculateBitrateScore(expectedBitrate int64) float64 {
 	if expectedBitrate == 0 {
 		// unsupported mode OR all layers stopped
-		return maxScore
+		return cMaxScore
 	}
 
 	var score float64
@@ -126,9 +134,9 @@ func (w *windowStat) calculateBitrateScore(expectedBitrate int64) float64 {
 		// using the ratio of expectedBitrate / actualBitrate
 		// the quality inflection points are approximately
 		// GOOD at ~2.7x, POOR at ~20.1x
-		score = maxScore - 20*math.Log(float64(expectedBitrate)/float64(w.bytes*8))
-		if score > maxScore {
-			score = maxScore
+		score = cMaxScore - 20*math.Log(float64(expectedBitrate)/float64(w.bytes*8))
+		if score > cMaxScore {
+			score = cMaxScore
 		}
 		if score < 0.0 {
 			score = 0.0
@@ -188,7 +196,7 @@ type qualityScorer struct {
 func newQualityScorer(params qualityScorerParams) *qualityScorer {
 	return &qualityScorer{
 		params: params,
-		score:  maxScore,
+		score:  cMaxScore,
 		aggregateBitrate: utils.NewTimedAggregator[int64](utils.TimedAggregatorParams{
 			CapNegativeValues: true,
 		}),
@@ -219,7 +227,10 @@ func (q *qualityScorer) Start() {
 func (q *qualityScorer) updateMuteAtLocked(isMuted bool, at time.Time) {
 	if isMuted {
 		q.mutedAt = at
-		q.score = maxScore
+		// muting when LOST should not push quality to EXCELLENT
+		if q.score != qualityTransitionScore[livekit.ConnectionQuality_LOST] {
+			q.score = cMaxScore
+		}
 	} else {
 		q.unmutedAt = at
 	}
@@ -264,7 +275,7 @@ func (q *qualityScorer) updateLayerMuteAtLocked(isMuted bool, at time.Time) {
 			q.layerDistance.Reset()
 
 			q.layerMutedAt = at
-			q.score = maxScore
+			q.score = cMaxScore
 		}
 	} else {
 		if q.isLayerMuted() {
@@ -294,7 +305,7 @@ func (q *qualityScorer) updatePauseAtLocked(isPaused bool, at time.Time) {
 			q.layerDistance.Reset()
 
 			q.pausedAt = at
-			q.score = poorScore
+			q.score = cPausedPoorScore
 		}
 	} else {
 		if q.isPaused() {
@@ -353,7 +364,7 @@ func (q *qualityScorer) updateAtLocked(stat *windowStat, at time.Time) {
 	//       considered (as long as enough time has passed since unmute).
 	//
 	//       Similarly, when paused (possibly due to congestion), score is immediately
-	//       set to poorScore for responsiveness. The layer transision is reest.
+	//       set to cPausedPoorScore for responsiveness. The layer transision is reest.
 	//       On a resume, quality climbs back up using normal operation.
 	if q.isMuted() || !q.isUnmutedEnough(at) || q.isLayerMuted() || q.isPaused() {
 		q.lastUpdateAt = at
@@ -365,11 +376,11 @@ func (q *qualityScorer) updateAtLocked(stat *windowStat, at time.Time) {
 	var score float64
 	if stat.packetsExpected == 0 {
 		reason = "dry"
-		score = poorScore
+		score = qualityTransitionScore[livekit.ConnectionQuality_LOST]
 	} else {
 		packetScore := stat.calculatePacketScore(plw, q.params.IncludeRTT, q.params.IncludeJitter)
 		bitrateScore := stat.calculateBitrateScore(expectedBitrate)
-		layerScore := math.Max(math.Min(maxScore, maxScore-(expectedDistance*distanceWeight)), 0.0)
+		layerScore := math.Max(math.Min(cMaxScore, cMaxScore-(expectedDistance*distanceWeight)), 0.0)
 
 		minScore := math.Min(packetScore, bitrateScore)
 		minScore = math.Min(minScore, layerScore)
@@ -394,22 +405,23 @@ func (q *qualityScorer) updateAtLocked(stat *windowStat, at time.Time) {
 		}
 		score = factor*score + (1.0-factor)*q.score
 	}
-	if score < minScore {
+	if score < cMinScore {
 		// lower bound to prevent score from becoming very small values due to extreme conditions.
 		// Without a lower bound, it can get so low that it takes a long time to climb back to
 		// better quality even under excellent conditions.
-		score = minScore
+		score = cMinScore
 	}
-	// WARNING NOTE: comparing protobuf enum values directly (livekit.ConnectionQuality)
-	if scoreToConnectionQuality(q.score) > scoreToConnectionQuality(score) {
+	prevCQ := scoreToConnectionQuality(q.score)
+	currCQ := scoreToConnectionQuality(score)
+	if utils.IsConnectionQualityLower(prevCQ, currCQ) {
 		q.params.Logger.Infow(
 			"quality drop",
 			"reason", reason,
 			"prevScore", q.score,
-			"prevQuality", scoreToConnectionQuality(q.score),
+			"prevQuality", prevCQ,
 			"prevStat", &q.stat,
 			"score", score,
-			"quality", scoreToConnectionQuality(score),
+			"quality", currCQ,
 			"stat", stat,
 			"packetLossWeight", plw,
 			"maxPPS", q.maxPPS,
@@ -523,15 +535,19 @@ func scoreToConnectionQuality(score float64) livekit.ConnectionQuality {
 	// that a score of 60 does not correspond to `POOR` quality. Repair
 	// mechanisms and use of algorithms like de-jittering makes the experience
 	// better even under harsh conditions.
-	if score > 80.0 {
+	if score > qualityTransitionScore[livekit.ConnectionQuality_GOOD] {
 		return livekit.ConnectionQuality_EXCELLENT
 	}
 
-	if score > 40.0 {
+	if score > qualityTransitionScore[livekit.ConnectionQuality_POOR] {
 		return livekit.ConnectionQuality_GOOD
 	}
 
-	return livekit.ConnectionQuality_POOR
+	if score > qualityTransitionScore[livekit.ConnectionQuality_LOST] {
+		return livekit.ConnectionQuality_POOR
+	}
+
+	return livekit.ConnectionQuality_LOST
 }
 
 // ------------------------------------------

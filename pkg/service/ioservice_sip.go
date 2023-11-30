@@ -322,7 +322,7 @@ func (s *IOInfoService) GetSIPTrunkAuthentication(ctx context.Context, req *rpc.
 		return nil, err
 	}
 	return &rpc.GetSIPTrunkAuthenticationResponse{
-		Username: trunk.Username,
-		Password: trunk.Password,
+		Username: trunk.InboundUsername,
+		Password: trunk.InboundPassword,
 	}, nil
 }

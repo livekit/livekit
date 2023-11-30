@@ -32,7 +32,12 @@ func LayerPresenceFromTrackInfo(trackInfo *livekit.TrackInfo) *[livekit.VideoQua
 
 	var layerPresence [livekit.VideoQuality_HIGH + 1]bool
 	for _, layer := range trackInfo.Layers {
-		layerPresence[layer.Quality] = true
+		// WARNING: comparing protobuf enum
+		if layer.Quality <= livekit.VideoQuality_HIGH {
+			layerPresence[layer.Quality] = true
+		} else {
+			logger.Warnw("unexpected quality in track info", nil, "trackInfo", logger.Proto(trackInfo))
+		}
 	}
 
 	return &layerPresence

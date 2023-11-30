@@ -32,13 +32,27 @@ const (
 	BytesTrackTypeSignal BytesTrackType = "SG"
 )
 
+// -------------------------------
+
+type TrafficTotals struct {
+	At           time.Time
+	SendBytes    uint64
+	SendMessages uint32
+	RecvBytes    uint64
+	RecvMessages uint32
+}
+
+// --------------------------------
+
 // stats for signal and data channel
 type BytesTrackStats struct {
-	trackID    livekit.TrackID
-	pID        livekit.ParticipantID
-	send, recv atomic.Uint64
-	telemetry  TelemetryService
-	isStopped  atomic.Bool
+	trackID                              livekit.TrackID
+	pID                                  livekit.ParticipantID
+	send, recv                           atomic.Uint64
+	totalSendBytes, totalRecvBytes       atomic.Uint64
+	totalSendMessages, totalRecvMessages atomic.Uint32
+	telemetry                            TelemetryService
+	isStopped                            atomic.Bool
 }
 
 func NewBytesTrackStats(trackID livekit.TrackID, pID livekit.ParticipantID, telemetry TelemetryService) *BytesTrackStats {
@@ -54,8 +68,22 @@ func NewBytesTrackStats(trackID livekit.TrackID, pID livekit.ParticipantID, tele
 func (s *BytesTrackStats) AddBytes(bytes uint64, isSend bool) {
 	if isSend {
 		s.send.Add(bytes)
+		s.totalSendBytes.Add(bytes)
+		s.totalSendMessages.Inc()
 	} else {
 		s.recv.Add(bytes)
+		s.totalRecvBytes.Add(bytes)
+		s.totalRecvMessages.Inc()
+	}
+}
+
+func (s *BytesTrackStats) GetTrafficTotals() *TrafficTotals {
+	return &TrafficTotals{
+		At:           time.Now(),
+		SendBytes:    s.totalSendBytes.Load(),
+		SendMessages: s.totalSendMessages.Load(),
+		RecvBytes:    s.totalRecvBytes.Load(),
+		RecvMessages: s.totalRecvMessages.Load(),
 	}
 }
 

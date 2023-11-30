@@ -259,7 +259,7 @@ func TestConnectionQuality(t *testing.T) {
 		require.Greater(t, float32(4.6), mos)
 		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, quality)
 
-		// next update with no packets should knock quality down
+		// next update with no packets should knock quality down to LOST
 		now = now.Add(duration)
 		trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
 			1: {
@@ -273,12 +273,36 @@ func TestConnectionQuality(t *testing.T) {
 		cs.updateScoreAt(now.Add(duration))
 		mos, quality = cs.GetScoreAndQuality()
 		require.Greater(t, float32(2.1), mos)
-		require.Equal(t, livekit.ConnectionQuality_POOR, quality)
+		require.Equal(t, livekit.ConnectionQuality_LOST, quality)
 
-		// mute/unmute to bring quality back up
+		// mute when LOST should not bump up score/quality
 		now = now.Add(duration)
 		cs.UpdateMuteAt(true, now.Add(1*time.Second))
+		mos, quality = cs.GetScoreAndQuality()
+		require.Greater(t, float32(2.1), mos)
+		require.Equal(t, livekit.ConnectionQuality_LOST, quality)
+
+		// unmute and send packets to bring quality back up
+		now = now.Add(duration)
 		cs.UpdateMuteAt(false, now.Add(2*time.Second))
+		for i := 0; i < 3; i++ {
+			trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
+				1: {
+					RTPStats: &buffer.RTPDeltaInfo{
+						StartTime:   now,
+						Duration:    duration,
+						Packets:     250,
+						PacketsLost: 0,
+					},
+				},
+			})
+			cs.updateScoreAt(now.Add(duration))
+			now = now.Add(duration)
+		}
+		cs.updateScoreAt(now.Add(duration))
+		mos, quality = cs.GetScoreAndQuality()
+		require.Greater(t, float32(4.6), mos)
+		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, quality)
 
 		// with lesser number of packet (simulating DTX).
 		// even higher loss (like 10%) should not knock down quality due to quadratic weighting of packet loss ratio
