@@ -828,4 +828,20 @@ func (t *MediaTrackReceiver) IsEncrypted() bool {
 	return t.trackInfo.Encryption != livekit.Encryption_NONE
 }
 
+func (t *MediaTrackReceiver) GetTrackStats() *livekit.RTPStats {
+	t.lock.Lock()
+	receivers := t.receiversShadow
+	t.lock.Unlock()
+
+	stats := make([]*livekit.RTPStats, 0, len(receivers))
+	for _, receiver := range receivers {
+		receiverStats := receiver.GetTrackStats()
+		if receiverStats != nil {
+			stats = append(stats, receiverStats)
+		}
+	}
+
+	return buffer.AggregateRTPStats(stats)
+}
+
 // ---------------------------
