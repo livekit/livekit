@@ -117,6 +117,7 @@ type ParticipantParams struct {
 	AllowUDPUnstableFallback     bool
 	TURNSEnabled                 bool
 	GetParticipantInfo           func(pID livekit.ParticipantID) *livekit.ParticipantInfo
+	DisableSupervisor            bool
 	ReconnectOnPublicationError  bool
 	ReconnectOnSubscriptionError bool
 	ReconnectOnDataChannelError  bool
@@ -167,6 +168,7 @@ type ParticipantImpl struct {
 	*TransportManager
 	*UpTrackManager
 	*SubscriptionManager
+	*ParticipantTrafficLoad
 
 	// keeps track of unpublished tracks in order to reuse trackID
 	unpublishedTracks []*livekit.TrackInfo
@@ -240,10 +242,12 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 			telemetry.BytesTrackIDForParticipantID(telemetry.BytesTrackTypeData, params.SID),
 			params.SID,
 			params.Telemetry),
-		supervisor:    supervisor.NewParticipantSupervisor(supervisor.ParticipantSupervisorParams{Logger: params.Logger}),
 		tracksQuality: make(map[livekit.TrackID]livekit.ConnectionQuality),
 		pubLogger:     params.Logger.WithComponent(sutils.ComponentPub),
 		subLogger:     params.Logger.WithComponent(sutils.ComponentSub),
+	}
+	if !params.DisableSupervisor {
+		p.supervisor = supervisor.NewParticipantSupervisor(supervisor.ParticipantSupervisorParams{Logger: params.Logger})
 	}
 	p.version.Store(params.InitialVersion)
 	p.timedVersion.Update(params.VersionGenerator.New())
@@ -254,7 +258,9 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p.SetResponseSink(params.Sink)
 	p.setupEnabledCodecs(params.PublishEnabledCodecs, params.SubscribeEnabledCodecs, params.ClientConf.GetDisabledCodecs())
 
-	p.supervisor.OnPublicationError(p.onPublicationError)
+	if p.supervisor != nil {
+		p.supervisor.OnPublicationError(p.onPublicationError)
+	}
 
 	var err error
 	// keep last participants and when updates were sent
@@ -269,6 +275,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 
 	p.setupUpTrackManager()
 	p.setupSubscriptionManager()
+	p.setupParticipantTrafficLoad()
 
 	return p, nil
 }
@@ -710,8 +717,10 @@ func (p *ParticipantImpl) SetMigrateInfo(
 	for _, t := range mediaTracks {
 		ti := t.GetTrack()
 
-		p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
-		p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
+		if p.supervisor != nil {
+			p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
+			p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
+		}
 
 		p.pendingTracks[t.GetCid()] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}, migrated: true}
 		p.pubLogger.Infow("pending track added (migration)", "trackID", ti.Sid, "track", logger.Proto(ti))
@@ -754,7 +763,9 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 		})
 	}
 
-	p.supervisor.Stop()
+	if p.supervisor != nil {
+		p.supervisor.Stop()
+	}
 
 	p.pendingTracksLock.Lock()
 	p.pendingTracks = make(map[string]*pendingTrackInfo)
@@ -784,6 +795,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	go func() {
 		p.SubscriptionManager.Close(isExpectedToResume)
 		p.TransportManager.Close()
+		p.ParticipantTrafficLoad.Close()
 	}()
 
 	p.dataChannelStats.Stop()
@@ -915,10 +927,6 @@ func (p *ParticipantImpl) OnICEConfigChanged(f func(participant types.LocalParti
 	p.lock.Unlock()
 }
 
-//
-// signal connection methods
-//
-
 func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo {
 	numTracks := 0
 	minQuality := livekit.ConnectionQuality_EXCELLENT
@@ -932,8 +940,7 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 		numTracks++
 
 		score, quality := pt.(types.LocalMediaTrack).GetConnectionScoreAndQuality()
-		if quality < minQuality {
-			// WARNING NOTE: comparing protobuf enums directly
+		if utils.IsConnectionQualityLower(minQuality, quality) {
 			minQuality = quality
 			minScore = score
 		} else if quality == minQuality && score < minScore {
@@ -943,8 +950,7 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 		p.lock.Lock()
 		trackID := pt.ID()
 		if prevQuality, ok := p.tracksQuality[trackID]; ok {
-			// WARNING NOTE: comparing protobuf enums directly
-			if prevQuality > quality {
+			if utils.IsConnectionQualityLower(prevQuality, quality) {
 				numUpDrops++
 			}
 		}
@@ -959,8 +965,7 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 		numTracks++
 
 		score, quality := subTrack.DownTrack().GetConnectionScoreAndQuality()
-		if quality < minQuality {
-			// WARNING NOTE: comparing protobuf enums directly
+		if utils.IsConnectionQualityLower(minQuality, quality) {
 			minQuality = quality
 			minScore = score
 		} else if quality == minQuality && score < minScore {
@@ -970,8 +975,7 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 		p.lock.Lock()
 		trackID := subTrack.ID()
 		if prevQuality, ok := p.tracksQuality[trackID]; ok {
-			// WARNING NOTE: comparing protobuf enums directly
-			if prevQuality > quality {
+			if utils.IsConnectionQualityLower(prevQuality, quality) {
 				numDownDrops++
 			}
 		}
@@ -1227,6 +1231,14 @@ func (p *ParticipantImpl) setupSubscriptionManager() {
 	})
 }
 
+func (p *ParticipantImpl) setupParticipantTrafficLoad() {
+	p.ParticipantTrafficLoad = NewParticipantTrafficLoad(ParticipantTrafficLoadParams{
+		Participant:      p,
+		DataChannelStats: p.dataChannelStats,
+		Logger:           p.params.Logger,
+	})
+}
+
 func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 	oldState := p.State()
 	if state == oldState {
@@ -1390,7 +1402,9 @@ func (p *ParticipantImpl) onICECandidate(c *webrtc.ICECandidate, target livekit.
 }
 
 func (p *ParticipantImpl) onPublisherInitialConnected() {
-	p.supervisor.SetPublisherPeerConnectionConnected(true)
+	if p.supervisor != nil {
+		p.supervisor.SetPublisherPeerConnectionConnected(true)
+	}
 	go p.publisherRTCPWorker()
 }
 
@@ -1660,8 +1674,10 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	}
 
 	p.params.Telemetry.TrackPublishRequested(context.Background(), p.ID(), p.Identity(), ti)
-	p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
-	p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
+	if p.supervisor != nil {
+		p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
+		p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
+	}
 	if p.getPublishedTrackBySignalCid(req.Cid) != nil || p.getPublishedTrackBySdpCid(req.Cid) != nil || p.pendingTracks[req.Cid] != nil {
 		if p.pendingTracks[req.Cid] == nil {
 			p.pendingTracks[req.Cid] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}}
@@ -1713,7 +1729,9 @@ func (p *ParticipantImpl) SetTrackMuted(trackID livekit.TrackID, muted bool, fro
 
 func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) *livekit.TrackInfo {
 	p.dirty.Store(true)
-	p.supervisor.SetPublicationMute(trackID, muted)
+	if p.supervisor != nil {
+		p.supervisor.SetPublicationMute(trackID, muted)
+	}
 
 	track := p.UpTrackManager.SetPublishedTrackMuted(trackID, muted)
 	var trackInfo *livekit.TrackInfo
@@ -1898,7 +1916,9 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 	mt.OnSubscribedMaxQualityChange(p.onSubscribedMaxQualityChange)
 
 	// add to published and clean up pending
-	p.supervisor.SetPublishedTrack(livekit.TrackID(ti.Sid), mt)
+	if p.supervisor != nil {
+		p.supervisor.SetPublishedTrack(livekit.TrackID(ti.Sid), mt)
+	}
 	p.UpTrackManager.AddPublishedTrack(mt)
 
 	pti := p.pendingTracks[signalCid]
@@ -1919,7 +1939,9 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 
 	trackID := livekit.TrackID(ti.Sid)
 	mt.AddOnClose(func() {
-		p.supervisor.ClearPublishedTrack(trackID, mt)
+		if p.supervisor != nil {
+			p.supervisor.ClearPublishedTrack(trackID, mt)
+		}
 
 		// not logged when closing
 		p.params.Telemetry.TrackUnpublished(

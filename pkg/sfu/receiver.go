@@ -83,6 +83,8 @@ type TrackReceiver interface {
 
 	GetCalculatedClockRate(layer int32) uint32
 	GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error)
+
+	GetTrackStats() *livekit.RTPStats
 }
 
 // WebRTCReceiver receives a media track
@@ -559,7 +561,7 @@ func (w *WebRTCReceiver) GetTrackStats() *livekit.RTPStats {
 	w.bufferMu.RLock()
 	defer w.bufferMu.RUnlock()
 
-	var stats []*livekit.RTPStats
+	stats := make([]*livekit.RTPStats, 0, len(w.buffers))
 	for _, buff := range w.buffers {
 		if buff == nil {
 			continue
