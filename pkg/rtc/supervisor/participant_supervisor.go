@@ -62,10 +62,18 @@ func NewParticipantSupervisor(params ParticipantSupervisorParams) *ParticipantSu
 }
 
 func (p *ParticipantSupervisor) Stop() {
+	if p == nil {
+		return
+	}
+
 	p.isStopped.Store(true)
 }
 
 func (p *ParticipantSupervisor) OnPublicationError(f func(trackID livekit.TrackID)) {
+	if p == nil {
+		return
+	}
+
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
@@ -80,6 +88,10 @@ func (p *ParticipantSupervisor) getOnPublicationError() func(trackID livekit.Tra
 }
 
 func (p *ParticipantSupervisor) SetPublisherPeerConnectionConnected(isConnected bool) {
+	if p == nil {
+		return
+	}
+
 	p.lock.Lock()
 	p.isPublisherConnected = isConnected
 
@@ -90,6 +102,10 @@ func (p *ParticipantSupervisor) SetPublisherPeerConnectionConnected(isConnected 
 }
 
 func (p *ParticipantSupervisor) AddPublication(trackID livekit.TrackID) {
+	if p == nil {
+		return
+	}
+
 	p.lock.Lock()
 	pm, ok := p.publications[trackID]
 	if !ok {
@@ -109,6 +125,10 @@ func (p *ParticipantSupervisor) AddPublication(trackID livekit.TrackID) {
 }
 
 func (p *ParticipantSupervisor) SetPublicationMute(trackID livekit.TrackID, isMuted bool) {
+	if p == nil {
+		return
+	}
+
 	p.lock.Lock()
 	pm, ok := p.publications[trackID]
 	if ok {
@@ -118,6 +138,10 @@ func (p *ParticipantSupervisor) SetPublicationMute(trackID livekit.TrackID, isMu
 }
 
 func (p *ParticipantSupervisor) SetPublishedTrack(trackID livekit.TrackID, pubTrack types.LocalMediaTrack) {
+	if p == nil {
+		return
+	}
+
 	p.lock.RLock()
 	pm, ok := p.publications[trackID]
 	if ok {
@@ -127,6 +151,10 @@ func (p *ParticipantSupervisor) SetPublishedTrack(trackID livekit.TrackID, pubTr
 }
 
 func (p *ParticipantSupervisor) ClearPublishedTrack(trackID livekit.TrackID, pubTrack types.LocalMediaTrack) {
+	if p == nil {
+		return
+	}
+
 	p.lock.RLock()
 	pm, ok := p.publications[trackID]
 	if ok {

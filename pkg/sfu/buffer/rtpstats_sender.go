@@ -544,6 +544,7 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 					"extLastRRSN", s.extLastRRSN,
 					"firstTime", r.firstTime.String(),
 					"startTime", r.startTime.String(),
+					"highestTime", r.highestTime.String(),
 					"extReceivedRRSN", extReceivedRRSN,
 					"packetsInInterval", extReceivedRRSN-s.extLastRRSN,
 					"intervalStats", is.ToString(),

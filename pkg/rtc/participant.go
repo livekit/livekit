@@ -117,6 +117,7 @@ type ParticipantParams struct {
 	AllowUDPUnstableFallback     bool
 	TURNSEnabled                 bool
 	GetParticipantInfo           func(pID livekit.ParticipantID) *livekit.ParticipantInfo
+	DisableSupervisor            bool
 	ReconnectOnPublicationError  bool
 	ReconnectOnSubscriptionError bool
 	ReconnectOnDataChannelError  bool
@@ -241,10 +242,12 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 			telemetry.BytesTrackIDForParticipantID(telemetry.BytesTrackTypeData, params.SID),
 			params.SID,
 			params.Telemetry),
-		supervisor:    supervisor.NewParticipantSupervisor(supervisor.ParticipantSupervisorParams{Logger: params.Logger}),
 		tracksQuality: make(map[livekit.TrackID]livekit.ConnectionQuality),
 		pubLogger:     params.Logger.WithComponent(sutils.ComponentPub),
 		subLogger:     params.Logger.WithComponent(sutils.ComponentSub),
+	}
+	if !params.DisableSupervisor {
+		p.supervisor = supervisor.NewParticipantSupervisor(supervisor.ParticipantSupervisorParams{Logger: params.Logger})
 	}
 	p.version.Store(params.InitialVersion)
 	p.timedVersion.Update(params.VersionGenerator.New())
