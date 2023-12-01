@@ -1266,22 +1266,23 @@ func (d *DownTrack) Resync() {
 }
 
 func (d *DownTrack) CreateSourceDescriptionChunks() []rtcp.SourceDescriptionChunk {
-	if !d.bound.Load() || d.transceiver.Load() == nil {
+	transceiver := d.transceiver.Load()
+	if !d.bound.Load() || transceiver == nil {
 		return nil
 	}
 	return []rtcp.SourceDescriptionChunk{
 		{
 			Source: d.ssrc,
-			Items: []rtcp.SourceDescriptionItem{{
-				Type: rtcp.SDESCNAME,
-				Text: d.params.StreamID,
-			}},
-		}, {
-			Source: d.ssrc,
-			Items: []rtcp.SourceDescriptionItem{{
-				Type: rtcp.SDESType(15),
-				Text: d.transceiver.Load().Mid(),
-			}},
+			Items: []rtcp.SourceDescriptionItem{
+				{
+					Type: rtcp.SDESCNAME,
+					Text: d.params.StreamID,
+				},
+				{
+					Type: rtcp.SDESType(15),
+					Text: transceiver.Mid(),
+				},
+			},
 		},
 	}
 }

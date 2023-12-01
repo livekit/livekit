@@ -1486,7 +1486,11 @@ func (p *ParticipantImpl) subscriberRTCPWorker() {
 
 			pkts = append(pkts, sr)
 			sd = append(sd, chunks...)
-			batchSize = batchSize + 1 + len(chunks)
+			numItems := 0
+			for _, chunk := range chunks {
+				numItems += len(chunk.Items)
+			}
+			batchSize = batchSize + 1 + numItems
 			if batchSize >= sdBatchSize {
 				if len(sd) != 0 {
 					pkts = append(pkts, &rtcp.SourceDescription{Chunks: sd})
