@@ -466,10 +466,10 @@ func (t *PCTransport) setICEStartedAt(at time.Time) {
 				} else if tcpICETimeout > maxTcpICEConnectTimeout {
 					tcpICETimeout = maxTcpICEConnectTimeout
 				}
-				t.params.Logger.Debugw("set tcp ice connect timer", "timeout", tcpICETimeout, "signalRTT", signalingRTT)
+				t.params.Logger.Debugw("set TCP ICE connect timer", "timeout", tcpICETimeout, "signalRTT", signalingRTT)
 				t.tcpICETimer = time.AfterFunc(tcpICETimeout, func() {
 					if t.pc.ICEConnectionState() == webrtc.ICEConnectionStateChecking {
-						t.params.Logger.Infow("tcp ice connect timeout", "timeout", tcpICETimeout, "signalRTT", signalingRTT)
+						t.params.Logger.Infow("TCP ICE connect timeout", "timeout", tcpICETimeout, "signalRTT", signalingRTT)
 						t.handleConnectionFailed(true)
 					}
 				})
@@ -497,7 +497,7 @@ func (t *PCTransport) setICEConnectedAt(at time.Time) {
 		if connTimeoutAfterICE > maxConnectTimeoutAfterICE {
 			connTimeoutAfterICE = maxConnectTimeoutAfterICE
 		}
-		t.params.Logger.Debugw("setting connection timer after ice connected", "timeout", connTimeoutAfterICE, "iceDuration", iceDuration)
+		t.params.Logger.Debugw("setting connection timer after ICE connected", "timeout", connTimeoutAfterICE, "iceDuration", iceDuration)
 		t.connectAfterICETimer = time.AfterFunc(connTimeoutAfterICE, func() {
 			state := t.pc.ConnectionState()
 			// if pc is still checking or connected but not fully established after timeout, then fire connection fail
@@ -546,12 +546,12 @@ func (t *PCTransport) IsShortConnection(at time.Time) (bool, time.Duration) {
 }
 
 func (t *PCTransport) getSelectedPair() (*webrtc.ICECandidatePair, error) {
-	sctp := t.pc.SCTP()
-	if sctp == nil {
+	s := t.pc.SCTP()
+	if s == nil {
 		return nil, errors.New("no SCTP")
 	}
 
-	dtlsTransport := sctp.Transport()
+	dtlsTransport := s.Transport()
 	if dtlsTransport == nil {
 		return nil, errors.New("no DTLS transport")
 	}
@@ -629,11 +629,6 @@ func (t *PCTransport) onICEConnectionStateChange(state webrtc.ICEConnectionState
 	switch state {
 	case webrtc.ICEConnectionStateConnected:
 		t.setICEConnectedAt(time.Now())
-		if pair, err := t.getSelectedPair(); err != nil {
-			t.params.Logger.Errorw("error getting selected ICE candidate pair", err)
-		} else {
-			t.params.Logger.Infow("selected ICE candidate pair", "pair", pair)
-		}
 
 	case webrtc.ICEConnectionStateChecking:
 		t.setICEStartedAt(time.Now())
@@ -1268,7 +1263,7 @@ func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error 
 	// trying to replicate previous setup, read from previous answer and use that role.
 	//
 	se := webrtc.SettingEngine{}
-	se.SetAnsweringDTLSRole(lksdp.ExtractDTLSRole(parsed))
+	_ = se.SetAnsweringDTLSRole(lksdp.ExtractDTLSRole(parsed))
 	api := webrtc.NewAPI(
 		webrtc.WithSettingEngine(se),
 		webrtc.WithMediaEngine(t.me),
@@ -1446,9 +1441,11 @@ func (t *PCTransport) processEvents() {
 
 		err := t.handleEvent(&event)
 		if err != nil {
-			t.params.Logger.Errorw("error handling event", err, "event", event.String())
-			if onNegotiationFailed := t.getOnNegotiationFailed(); onNegotiationFailed != nil {
-				onNegotiationFailed()
+			if !t.isClosed.Load() {
+				t.params.Logger.Errorw("error handling event", err, "event", event.String())
+				if onNegotiationFailed := t.getOnNegotiationFailed(); onNegotiationFailed != nil {
+					onNegotiationFailed()
+				}
 			}
 			break
 		}
@@ -1480,7 +1477,7 @@ func (t *PCTransport) handleEvent(e *event) error {
 	return nil
 }
 
-func (t *PCTransport) handleICEGatheringComplete(e *event) error {
+func (t *PCTransport) handleICEGatheringComplete(_ *event) error {
 	if t.params.IsOfferer {
 		return t.handleICEGatheringCompleteOfferer()
 	} else {
@@ -1609,17 +1606,25 @@ func (t *PCTransport) handleRemoteICECandidate(e *event) error {
 	return nil
 }
 
-func (t *PCTransport) handleLogICECandidates(e *event) error {
+func (t *PCTransport) handleLogICECandidates(_ *event) error {
 	lc := t.allowedLocalCandidates.Get()
 	rc := t.allowedRemoteCandidates.Get()
+	var fields []interface{}
 	if len(lc) != 0 || len(rc) != 0 {
-		t.params.Logger.Infow(
-			"ice candidates",
+		fields = append(fields,
 			"lc", lc,
 			"rc", rc,
-			"lc (filtered)", t.filteredLocalCandidates.Get(),
-			"rc (filtered)", t.filteredRemoteCandidates.Get(),
+			"lc_filtered", t.filteredLocalCandidates.Get(),
+			"rc_filtered", t.filteredRemoteCandidates.Get(),
 		)
+
+	}
+	if pair, err := t.getSelectedPair(); err == nil {
+		fields = append(fields, "selected_pair", pair)
+	}
+
+	if len(fields) > 0 {
+		t.params.Logger.Infow("ice candidates", fields...)
 	}
 
 	return nil
@@ -1711,7 +1716,7 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 
 	// when there's an ongoing negotiation, let it finish and not disrupt its state
 	if t.negotiationState == NegotiationStateRemote {
-		t.params.Logger.Infow("skipping negotiation, trying again later")
+		t.params.Logger.Debugw("skipping negotiation, trying again later")
 		t.setNegotiationState(NegotiationStateRetry)
 		return nil
 	} else if t.negotiationState == NegotiationStateRetry {
@@ -1801,7 +1806,7 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	return ErrNoOfferHandler
 }
 
-func (t *PCTransport) handleSendOffer(e *event) error {
+func (t *PCTransport) handleSendOffer(_ *event) error {
 	return t.createAndSendOffer(nil)
 }
 
@@ -2030,7 +2035,7 @@ func (t *PCTransport) doICERestart() error {
 	}
 }
 
-func (t *PCTransport) handleICERestart(e *event) error {
+func (t *PCTransport) handleICERestart(_ *event) error {
 	return t.doICERestart()
 }
 

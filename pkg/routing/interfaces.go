@@ -107,9 +107,16 @@ type Router interface {
 	OnRTCMessage(callback RTCMessageCallback)
 }
 
+type StartParticipantSignalResults struct {
+	ConnectionID   livekit.ConnectionID
+	RequestSink    MessageSink
+	ResponseSource MessageSource
+	NodeID         livekit.NodeID
+}
+
 type MessageRouter interface {
 	// StartParticipantSignal participant signal connection is ready to start
-	StartParticipantSignal(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit) (connectionID livekit.ConnectionID, reqSink MessageSink, resSource MessageSource, err error)
+	StartParticipantSignal(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit) (res StartParticipantSignalResults, err error)
 
 	// Write a message to a participant or room
 	WriteParticipantRTC(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) error

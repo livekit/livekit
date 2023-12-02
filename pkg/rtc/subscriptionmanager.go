@@ -924,7 +924,7 @@ func (s *trackSubscription) handleSourceTrackRemoved() {
 	}
 
 	// source track removed, we would unsubscribe
-	s.logger.Infow("unsubscribing from track since source track was removed")
+	s.logger.Debugw("unsubscribing from track since source track was removed")
 	s.desired = false
 
 	s.setChangedNotifierLocked(nil)

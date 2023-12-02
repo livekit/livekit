@@ -350,7 +350,10 @@ func (b *Buffer) Close() error {
 
 		if b.rtpStats != nil {
 			b.rtpStats.Stop()
-			b.logger.Infow("rtp stats", "direction", "upstream", "stats", b.rtpStats.ToString())
+			b.logger.Debugw("rtp stats",
+				"direction", "upstream",
+				"stats", func() interface{} { return b.rtpStats.ToString() },
+			)
 			if b.onFinalRtpStats != nil {
 				b.onFinalRtpStats(b.rtpStats.ToProto())
 			}
