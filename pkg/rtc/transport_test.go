@@ -17,6 +17,7 @@ package rtc
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -38,7 +39,7 @@ func TestMissingAnswerDuringICERestart(t *testing.T) {
 	}
 	transportA, err := NewPCTransport(params)
 	require.NoError(t, err)
-	_, err = transportA.pc.CreateDataChannel("test", nil)
+	_, err = transportA.pc.CreateDataChannel(ReliableDataChannel, nil)
 	require.NoError(t, err)
 
 	paramsB := params
@@ -88,7 +89,7 @@ func TestNegotiationTiming(t *testing.T) {
 	}
 	transportA, err := NewPCTransport(params)
 	require.NoError(t, err)
-	_, err = transportA.pc.CreateDataChannel("test", nil)
+	_, err = transportA.pc.CreateDataChannel(LossyDataChannel, nil)
 	require.NoError(t, err)
 
 	paramsB := params
@@ -181,7 +182,7 @@ func TestFirstOfferMissedDuringICERestart(t *testing.T) {
 	}
 	transportA, err := NewPCTransport(params)
 	require.NoError(t, err)
-	_, err = transportA.pc.CreateDataChannel("test", nil)
+	_, err = transportA.pc.CreateDataChannel(ReliableDataChannel, nil)
 	require.NoError(t, err)
 
 	paramsB := params
@@ -249,7 +250,7 @@ func TestFirstAnswerMissedDuringICERestart(t *testing.T) {
 	}
 	transportA, err := NewPCTransport(params)
 	require.NoError(t, err)
-	_, err = transportA.pc.CreateDataChannel("test", nil)
+	_, err = transportA.pc.CreateDataChannel(LossyDataChannel, nil)
 	require.NoError(t, err)
 
 	paramsB := params
@@ -322,15 +323,21 @@ func TestNegotiationFailed(t *testing.T) {
 	}
 	transportA, err := NewPCTransport(params)
 	require.NoError(t, err)
+	_, err = transportA.pc.CreateDataChannel(ReliableDataChannel, nil)
+	require.NoError(t, err)
 
-	transportA.OnICECandidate(func(candidate *webrtc.ICECandidate) error {
-		if candidate == nil {
-			return nil
-		}
-		t.Logf("got ICE candidate from A: %v", candidate)
-		return nil
-	})
+	paramsB := params
+	paramsB.IsOfferer = false
+	transportB, err := NewPCTransport(paramsB)
+	require.NoError(t, err)
 
+	// exchange ICE
+	handleICEExchange(t, transportA, transportB)
+
+	// wait for transport to be connected before maiming the signalling channel
+	connectTransports(t, transportA, transportB, false, 1, 1)
+
+	// reset OnOffer to force a negotiation failure
 	transportA.OnOffer(func(sd webrtc.SessionDescription) error { return nil })
 	var failed atomic.Int32
 	transportA.OnNegotiationFailed(func() {
@@ -358,7 +365,7 @@ func TestFilteringCandidates(t *testing.T) {
 	transport, err := NewPCTransport(params)
 	require.NoError(t, err)
 
-	_, err = transport.pc.CreateDataChannel("test", nil)
+	_, err = transport.pc.CreateDataChannel(ReliableDataChannel, nil)
 	require.NoError(t, err)
 
 	_, err = transport.pc.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio)
@@ -519,6 +526,28 @@ func connectTransports(t *testing.T, offerer, answerer *PCTransport, isICERestar
 	require.Eventually(t, func() bool {
 		return answerer.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected
 	}, 10*time.Second, time.Millisecond*10, "answerer did not become connected")
+
+	transportsConnected := untilTransportsConnected(offerer, answerer)
+	transportsConnected.Wait()
+}
+
+func untilTransportsConnected(transports ...*PCTransport) *sync.WaitGroup {
+	var triggered sync.WaitGroup
+	triggered.Add(len(transports))
+
+	for _, t := range transports {
+		var done atomic.Value
+		done.Store(false)
+		hdlr := func() {
+			if val, ok := done.Load().(bool); ok && !val {
+				done.Store(true)
+				triggered.Done()
+			}
+		}
+
+		t.OnInitialConnected(hdlr)
+	}
+	return &triggered
 }
 
 func TestConfigureAudioTransceiver(t *testing.T) {

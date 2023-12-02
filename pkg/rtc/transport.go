@@ -998,6 +998,12 @@ func (t *PCTransport) OnInitialConnected(f func()) {
 	t.lock.Lock()
 	t.onInitialConnected = f
 	t.lock.Unlock()
+
+	if f != nil {
+		if t.pc.ConnectionState() == webrtc.PeerConnectionStateConnected {
+			go f()
+		}
+	}
 }
 
 func (t *PCTransport) getOnInitialConnected() func() {
