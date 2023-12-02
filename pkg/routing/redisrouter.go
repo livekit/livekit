@@ -156,7 +156,7 @@ func (r *RedisRouter) ListNodes() ([]*livekit.Node, error) {
 }
 
 // StartParticipantSignal signal connection sets up paths to the RTC node, and starts to route messages to that message queue
-func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit) (connectionID livekit.ConnectionID, reqSink MessageSink, resSource MessageSource, err error) {
+func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit) (res StartParticipantSignalResults, err error) {
 	// find the node where the room is hosted at
 	rtcNode, err := r.GetNodeForRoom(ctx, roomName)
 	if err != nil {
@@ -164,33 +164,33 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livek
 	}
 
 	if r.usePSRPCSignal {
-		connectionID, reqSink, resSource, err = r.StartParticipantSignalWithNodeID(ctx, roomName, pi, livekit.NodeID(rtcNode.Id))
+		res, err = r.StartParticipantSignalWithNodeID(ctx, roomName, pi, livekit.NodeID(rtcNode.Id))
 		if err != nil {
 			return
 		}
 
 		// map signal & rtc nodes
-		err = r.setParticipantSignalNode(connectionID, r.currentNode.Id)
+		err = r.setParticipantSignalNode(res.ConnectionID, r.currentNode.Id)
 		return
 	}
 
-	connectionID = livekit.ConnectionID(utils.NewGuid("CO_"))
+	res.ConnectionID = livekit.ConnectionID(utils.NewGuid("CO_"))
 	pKey := ParticipantKeyLegacy(roomName, pi.Identity)
 	pKeyB62 := ParticipantKey(roomName, pi.Identity)
 
 	// map signal & rtc nodes
-	if err = r.setParticipantSignalNode(connectionID, r.currentNode.Id); err != nil {
+	if err = r.setParticipantSignalNode(res.ConnectionID, r.currentNode.Id); err != nil {
 		return
 	}
 
 	// index by connectionID, since there may be multiple connections for the participant
 	// set up response channel before sending StartSession and be ready to receive responses.
-	resChan := r.getOrCreateMessageChannel(r.responseChannels, string(connectionID))
+	resChan := r.getOrCreateMessageChannel(r.responseChannels, string(res.ConnectionID))
 
-	sink := NewRTCNodeSink(r.rc, livekit.NodeID(rtcNode.Id), connectionID, pKey, pKeyB62)
+	sink := NewRTCNodeSink(r.rc, livekit.NodeID(rtcNode.Id), res.ConnectionID, pKey, pKeyB62)
 
 	// serialize claims
-	ss, err := pi.ToStartSession(roomName, connectionID)
+	ss, err := pi.ToStartSession(roomName, res.ConnectionID)
 	if err != nil {
 		return
 	}
@@ -201,7 +201,9 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livek
 		return
 	}
 
-	return connectionID, sink, resChan, nil
+	res.RequestSink = sink
+	res.ResponseSource = resChan
+	return res, nil
 }
 
 func (r *RedisRouter) WriteParticipantRTC(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) error {

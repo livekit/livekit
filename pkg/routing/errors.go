@@ -14,7 +14,9 @@
 
 package routing
 
-import "errors"
+import (
+	"errors"
+)
 
 var (
 	ErrNotFound             = errors.New("could not find object")
@@ -26,4 +28,9 @@ var (
 	ErrInvalidRouterMessage = errors.New("invalid router message")
 	ErrChannelClosed        = errors.New("channel closed")
 	ErrChannelFull          = errors.New("channel is full")
+
+	// errors when starting signal connection
+	ErrRequestChannelClosed       = errors.New("request channel closed")
+	ErrCouldNotMigrateParticipant = errors.New("could not migrate participant")
+	ErrClientInfoNotSet           = errors.New("client info not set")
 )

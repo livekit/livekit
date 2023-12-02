@@ -1297,7 +1297,7 @@ func (s *StreamAllocator) initProbe(probeGoalDeltaBps int64) {
 	s.channelObserver = s.newChannelObserverProbe()
 	s.channelObserver.SeedEstimate(s.lastReceivedEstimate)
 
-	s.params.Logger.Infow(
+	s.params.Logger.Debugw(
 		"stream allocator: starting probe",
 		"probeClusterId", probeClusterId,
 		"current usage", expectedBandwidthUsage,

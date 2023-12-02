@@ -28,6 +28,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/livekit/livekit-server/pkg/rtc"
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
@@ -65,6 +66,7 @@ type worker struct {
 	jobType    livekit.JobType
 	status     livekit.WorkerStatus
 	activeJobs int
+	logger     logger.Logger
 }
 
 type availability struct {
@@ -102,18 +104,18 @@ func (s *AgentService) ServeHTTP(writer http.ResponseWriter, r *http.Request) {
 	// require a claim
 	claims := GetGrants(r.Context())
 	if claims == nil || claims.Video == nil || !claims.Video.Agent {
-		handleError(writer, http.StatusUnauthorized, rtc.ErrPermissionDenied)
+		handleError(writer, r, http.StatusUnauthorized, rtc.ErrPermissionDenied)
 		return
 	}
 
 	// upgrade
 	conn, err := s.upgrader.Upgrade(writer, r, nil)
 	if err != nil {
-		handleError(writer, http.StatusInternalServerError, err)
+		handleError(writer, r, http.StatusInternalServerError, err)
 		return
 	}
 
-	s.HandleConnection(conn)
+	s.HandleConnection(r.Context(), conn)
 }
 
 func NewAgentHandler(agentServer rpc.AgentInternalServer, roomTopic, publisherTopic string) *AgentHandler {
@@ -128,11 +130,12 @@ func NewAgentHandler(agentServer rpc.AgentInternalServer, roomTopic, publisherTo
 	}
 }
 
-func (s *AgentHandler) HandleConnection(conn *websocket.Conn) {
+func (s *AgentHandler) HandleConnection(ctx context.Context, conn *websocket.Conn) {
 	sigConn := NewWSSignalConnection(conn)
 	w := &worker{
 		conn:    conn,
 		sigConn: sigConn,
+		logger:  utils.GetLogger(ctx),
 	}
 
 	s.mu.Lock()
@@ -177,9 +180,9 @@ func (s *AgentHandler) HandleConnection(conn *websocket.Conn) {
 					websocket.CloseNormalClosure,
 					websocket.CloseNoStatusReceived,
 				) {
-				logger.Infow("exit ws read loop for closed connection", "wsError", err)
+				w.logger.Infow("Agent worker closed WS connection", "wsError", err)
 			} else {
-				logger.Errorw("error reading from websocket", err)
+				w.logger.Errorw("error reading from websocket", err)
 			}
 			return
 		}
@@ -199,7 +202,7 @@ func (s *AgentHandler) HandleConnection(conn *websocket.Conn) {
 
 func (s *AgentHandler) handleRegister(worker *worker, msg *livekit.RegisterWorkerRequest) {
 	if err := s.doHandleRegister(worker, msg); err != nil {
-		logger.Errorw("failed to register worker", err, "workerID", msg.WorkerId, "jobType", msg.Type)
+		worker.logger.Errorw("failed to register worker", err, "workerID", msg.WorkerId, "jobType", msg.Type)
 		worker.conn.Close()
 	}
 }
@@ -225,7 +228,7 @@ func (s *AgentHandler) doHandleRegister(worker *worker, msg *livekit.RegisterWor
 		if !s.roomRegistered {
 			err := s.agentServer.RegisterJobRequestTopic(s.roomTopic)
 			if err != nil {
-				logger.Errorw("failed to register room agents", err)
+				worker.logger.Errorw("failed to register room agents", err)
 			} else {
 				s.roomRegistered = true
 			}
@@ -240,7 +243,7 @@ func (s *AgentHandler) doHandleRegister(worker *worker, msg *livekit.RegisterWor
 		if !s.publisherRegistered {
 			err := s.agentServer.RegisterJobRequestTopic(s.publisherTopic)
 			if err != nil {
-				logger.Errorw("failed to register publisher agents", err)
+				worker.logger.Errorw("failed to register publisher agents", err)
 			} else {
 				s.publisherRegistered = true
 			}
@@ -260,7 +263,7 @@ func (s *AgentHandler) doHandleRegister(worker *worker, msg *livekit.RegisterWor
 		},
 	})
 	if err != nil {
-		logger.Errorw("failed to write server message", err)
+		worker.logger.Errorw("failed to write server message", err)
 	}
 
 	return nil
@@ -282,9 +285,9 @@ func (s *AgentHandler) handleAvailability(w *worker, msg *livekit.AvailabilityRe
 func (s *AgentHandler) handleJobUpdate(w *worker, msg *livekit.JobStatusUpdate) {
 	switch msg.Status {
 	case livekit.JobStatus_JS_SUCCESS:
-		logger.Debugw("job complete", "jobID", msg.JobId)
+		w.logger.Debugw("job complete", "jobID", msg.JobId)
 	case livekit.JobStatus_JS_FAILED:
-		logger.Warnw("job failed", errors.New(msg.Error), "jobID", msg.JobId)
+		w.logger.Warnw("job failed", errors.New(msg.Error), "jobID", msg.JobId)
 	}
 
 	w.mu.Lock()
@@ -307,7 +310,7 @@ func (s *AgentHandler) handleStatus(w *worker, msg *livekit.UpdateWorkerStatus) 
 			s.agentServer.DeregisterJobRequestTopic(s.roomTopic)
 		} else if !s.roomRegistered && s.roomAvailableLocked() {
 			if err := s.agentServer.RegisterJobRequestTopic(s.roomTopic); err != nil {
-				logger.Errorw("failed to register room agents", err)
+				w.logger.Errorw("failed to register room agents", err)
 			} else {
 				s.roomRegistered = true
 			}
@@ -318,7 +321,7 @@ func (s *AgentHandler) handleStatus(w *worker, msg *livekit.UpdateWorkerStatus) 
 			s.agentServer.DeregisterJobRequestTopic(s.publisherTopic)
 		} else if !s.publisherRegistered && s.publisherAvailableLocked() {
 			if err := s.agentServer.RegisterJobRequestTopic(s.publisherTopic); err != nil {
-				logger.Errorw("failed to register publisher agents", err)
+				w.logger.Errorw("failed to register publisher agents", err)
 			} else {
 				s.publisherRegistered = true
 			}
@@ -388,7 +391,7 @@ func (s *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*empty
 				Availability: &livekit.AvailabilityRequest{Job: job},
 			}})
 			if err != nil {
-				logger.Errorw("failed to send availability request", err, "workerID", selected.id)
+				selected.logger.Errorw("failed to send availability request", err, "workerID", selected.id)
 			}
 
 			select {
@@ -400,7 +403,7 @@ func (s *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*empty
 						Assignment: &livekit.JobAssignment{Job: job},
 					}})
 					if err != nil {
-						logger.Errorw("failed to assign job", err, "workerID", selected.id)
+						selected.logger.Errorw("failed to assign job", err, "workerID", selected.id)
 					} else {
 						selected.mu.Lock()
 						selected.activeJobs++

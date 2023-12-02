@@ -584,7 +584,6 @@ func (p *ParticipantImpl) HandleSignalSourceClose() {
 
 	if !p.TransportManager.HasPublisherEverConnected() && !p.TransportManager.HasSubscriberEverConnected() {
 		reason := types.ParticipantCloseReasonJoinFailed
-		p.params.Logger.Infow("closing disconnected participant", "reason", reason)
 		_ = p.Close(false, reason, false)
 	}
 }
@@ -858,7 +857,7 @@ func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
 		if p.IsClosed() || p.IsDisconnected() {
 			return
 		}
-		p.subLogger.Infow("closing subscriber peer connection to aid migration")
+		p.subLogger.Debugw("closing subscriber peer connection to aid migration")
 
 		//
 		// Close all down tracks before closing subscriber peer connection.
@@ -1444,7 +1443,6 @@ func (p *ParticipantImpl) setupDisconnectTimer() {
 			return
 		}
 		reason := types.ParticipantCloseReasonPeerConnectionDisconnected
-		p.params.Logger.Infow("closing disconnected participant", "reason", reason)
 		_ = p.Close(true, reason, false)
 	})
 	p.lock.Unlock()
@@ -1693,7 +1691,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	}
 
 	p.pendingTracks[req.Cid] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}}
-	p.pubLogger.Infow("pending track added", "trackID", ti.Sid, "track", logger.Proto(ti), "request", logger.Proto(req))
+	p.pubLogger.Debugw("pending track added", "trackID", ti.Sid, "track", logger.Proto(ti), "request", logger.Proto(req))
 	return ti
 }
 

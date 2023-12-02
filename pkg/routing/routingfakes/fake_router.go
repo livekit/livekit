@@ -115,7 +115,7 @@ type FakeRouter struct {
 	startReturnsOnCall map[int]struct {
 		result1 error
 	}
-	StartParticipantSignalStub        func(context.Context, livekit.RoomName, routing.ParticipantInit) (livekit.ConnectionID, routing.MessageSink, routing.MessageSource, error)
+	StartParticipantSignalStub        func(context.Context, livekit.RoomName, routing.ParticipantInit) (routing.StartParticipantSignalResults, error)
 	startParticipantSignalMutex       sync.RWMutex
 	startParticipantSignalArgsForCall []struct {
 		arg1 context.Context
@@ -123,16 +123,12 @@ type FakeRouter struct {
 		arg3 routing.ParticipantInit
 	}
 	startParticipantSignalReturns struct {
-		result1 livekit.ConnectionID
-		result2 routing.MessageSink
-		result3 routing.MessageSource
-		result4 error
+		result1 routing.StartParticipantSignalResults
+		result2 error
 	}
 	startParticipantSignalReturnsOnCall map[int]struct {
-		result1 livekit.ConnectionID
-		result2 routing.MessageSink
-		result3 routing.MessageSource
-		result4 error
+		result1 routing.StartParticipantSignalResults
+		result2 error
 	}
 	StopStub        func()
 	stopMutex       sync.RWMutex
@@ -725,7 +721,7 @@ func (fake *FakeRouter) StartReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
-func (fake *FakeRouter) StartParticipantSignal(arg1 context.Context, arg2 livekit.RoomName, arg3 routing.ParticipantInit) (livekit.ConnectionID, routing.MessageSink, routing.MessageSource, error) {
+func (fake *FakeRouter) StartParticipantSignal(arg1 context.Context, arg2 livekit.RoomName, arg3 routing.ParticipantInit) (routing.StartParticipantSignalResults, error) {
 	fake.startParticipantSignalMutex.Lock()
 	ret, specificReturn := fake.startParticipantSignalReturnsOnCall[len(fake.startParticipantSignalArgsForCall)]
 	fake.startParticipantSignalArgsForCall = append(fake.startParticipantSignalArgsForCall, struct {
@@ -741,9 +737,9 @@ func (fake *FakeRouter) StartParticipantSignal(arg1 context.Context, arg2 liveki
 		return stub(arg1, arg2, arg3)
 	}
 	if specificReturn {
-		return ret.result1, ret.result2, ret.result3, ret.result4
+		return ret.result1, ret.result2
 	}
-	return fakeReturns.result1, fakeReturns.result2, fakeReturns.result3, fakeReturns.result4
+	return fakeReturns.result1, fakeReturns.result2
 }
 
 func (fake *FakeRouter) StartParticipantSignalCallCount() int {
@@ -752,7 +748,7 @@ func (fake *FakeRouter) StartParticipantSignalCallCount() int {
 	return len(fake.startParticipantSignalArgsForCall)
 }
 
-func (fake *FakeRouter) StartParticipantSignalCalls(stub func(context.Context, livekit.RoomName, routing.ParticipantInit) (livekit.ConnectionID, routing.MessageSink, routing.MessageSource, error)) {
+func (fake *FakeRouter) StartParticipantSignalCalls(stub func(context.Context, livekit.RoomName, routing.ParticipantInit) (routing.StartParticipantSignalResults, error)) {
 	fake.startParticipantSignalMutex.Lock()
 	defer fake.startParticipantSignalMutex.Unlock()
 	fake.StartParticipantSignalStub = stub
@@ -765,36 +761,30 @@ func (fake *FakeRouter) StartParticipantSignalArgsForCall(i int) (context.Contex
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
-func (fake *FakeRouter) StartParticipantSignalReturns(result1 livekit.ConnectionID, result2 routing.MessageSink, result3 routing.MessageSource, result4 error) {
+func (fake *FakeRouter) StartParticipantSignalReturns(result1 routing.StartParticipantSignalResults, result2 error) {
 	fake.startParticipantSignalMutex.Lock()
 	defer fake.startParticipantSignalMutex.Unlock()
 	fake.StartParticipantSignalStub = nil
 	fake.startParticipantSignalReturns = struct {
-		result1 livekit.ConnectionID
-		result2 routing.MessageSink
-		result3 routing.MessageSource
-		result4 error
-	}{result1, result2, result3, result4}
+		result1 routing.StartParticipantSignalResults
+		result2 error
+	}{result1, result2}
 }
 
-func (fake *FakeRouter) StartParticipantSignalReturnsOnCall(i int, result1 livekit.ConnectionID, result2 routing.MessageSink, result3 routing.MessageSource, result4 error) {
+func (fake *FakeRouter) StartParticipantSignalReturnsOnCall(i int, result1 routing.StartParticipantSignalResults, result2 error) {
 	fake.startParticipantSignalMutex.Lock()
 	defer fake.startParticipantSignalMutex.Unlock()
 	fake.StartParticipantSignalStub = nil
 	if fake.startParticipantSignalReturnsOnCall == nil {
 		fake.startParticipantSignalReturnsOnCall = make(map[int]struct {
-			result1 livekit.ConnectionID
-			result2 routing.MessageSink
-			result3 routing.MessageSource
-			result4 error
+			result1 routing.StartParticipantSignalResults
+			result2 error
 		})
 	}
 	fake.startParticipantSignalReturnsOnCall[i] = struct {
-		result1 livekit.ConnectionID
-		result2 routing.MessageSink
-		result3 routing.MessageSource
-		result4 error
-	}{result1, result2, result3, result4}
+		result1 routing.StartParticipantSignalResults
+		result2 error
+	}{result1, result2}
 }
 
 func (fake *FakeRouter) Stop() {

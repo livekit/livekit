@@ -93,15 +93,15 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 	}
 
 	// actually start the room on an RTC node, to ensure metadata & empty timeout functionality
-	_, sink, source, err := s.router.StartParticipantSignal(ctx,
+	res, err := s.router.StartParticipantSignal(ctx,
 		livekit.RoomName(req.Name),
 		routing.ParticipantInit{},
 	)
 	if err != nil {
 		return nil, err
 	}
-	defer sink.Close()
-	defer source.Close()
+	defer res.RequestSink.Close()
+	defer res.ResponseSource.Close()
 
 	// ensure it's created correctly
 	err = s.confirmExecution(func() error {
