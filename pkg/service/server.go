@@ -37,7 +37,6 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
-	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/version"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
@@ -107,7 +106,7 @@ func NewLivekitServer(conf *config.Config,
 		middlewares = append(middlewares, NewAPIKeyAuthMiddleware(keyProvider))
 	}
 
-	twirpLoggingHook := TwirpLogger(logger.GetLogger().WithComponent(sutils.ComponentAPI))
+	twirpLoggingHook := TwirpLogger()
 	twirpRequestStatusHook := TwirpRequestStatusReporter()
 	roomServer := livekit.NewRoomServiceServer(roomService, twirpLoggingHook)
 	egressServer := livekit.NewEgressServer(egressService, twirp.WithServerHooks(

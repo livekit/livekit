@@ -40,7 +40,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 	putil "github.com/livekit/protocol/utils"
 	"github.com/livekit/psrpc"
 )
@@ -98,7 +97,7 @@ func NewRTCService(
 func (s *RTCService) Validate(w http.ResponseWriter, r *http.Request) {
 	_, _, code, err := s.validate(r)
 	if err != nil {
-		handleError(w, code, err)
+		handleError(w, r, code, err)
 		return
 	}
 	_, _ = w.Write([]byte("success"))
@@ -203,7 +202,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	roomName, pi, code, err := s.validate(r)
 	if err != nil {
-		handleError(w, code, err)
+		handleError(w, r, code, err)
 		return
 	}
 
@@ -213,6 +212,8 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"room", roomName,
 		"remote", false,
 	}
+
+	l := utils.GetLogger(r.Context())
 
 	// give it a few attempts to start session
 	var cr connectionResult
@@ -230,13 +231,13 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		if i < 2 {
 			fieldsWithAttempt := append(loggerFields, "attempt", i)
-			logger.Warnw("failed to start connection, retrying", err, fieldsWithAttempt...)
+			l.Warnw("failed to start connection, retrying", err, fieldsWithAttempt...)
 		}
 	}
 
 	if err != nil {
 		prometheus.IncrementParticipantJoinFail(1)
-		handleError(w, http.StatusInternalServerError, err, loggerFields...)
+		handleError(w, r, http.StatusInternalServerError, err, loggerFields...)
 		return
 	}
 
@@ -255,7 +256,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pLogger := rtc.LoggerWithParticipant(
-		rtc.LoggerWithRoom(logger.GetLogger(), roomName, livekit.RoomID(cr.Room.Sid)),
+		rtc.LoggerWithRoom(l, roomName, livekit.RoomID(cr.Room.Sid)),
 		pi.Identity,
 		pi.ID,
 		false,
@@ -281,7 +282,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// upgrade only once the basics are good to go
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		handleError(w, http.StatusInternalServerError, err, loggerFields...)
+		handleError(w, r, http.StatusInternalServerError, err, loggerFields...)
 		return
 	}
 

@@ -22,8 +22,11 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-func handleError(w http.ResponseWriter, status int, err error, keysAndValues ...interface{}) {
+func handleError(w http.ResponseWriter, r *http.Request, status int, err error, keysAndValues ...interface{}) {
 	keysAndValues = append(keysAndValues, "status", status)
+	if r != nil {
+		keysAndValues = append(keysAndValues, "method", r.Method, "path", r.URL.Path)
+	}
 	logger.GetLogger().WithCallDepth(1).Warnw("error handling request", err, keysAndValues...)
 	w.WriteHeader(status)
 	_, _ = w.Write([]byte(err.Error()))
