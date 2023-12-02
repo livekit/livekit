@@ -555,7 +555,7 @@ func (s *StreamAllocator) postEvent(event Event) {
 	select {
 	case s.eventCh <- event:
 	default:
-		s.params.Logger.Warnw("stream allocator: event queue full", nil)
+		s.params.Logger.Warnw("stream allocator: event queue full", nil, "event", event.String())
 	}
 	s.eventChMu.RUnlock()
 }

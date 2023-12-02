@@ -390,7 +390,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		params:                   params,
 		debouncedNegotiate:       debounce.New(negotiationFrequency),
 		negotiationState:         NegotiationStateNone,
-		eventCh:                  make(chan event, 50),
+		eventCh:                  make(chan event, 100),
 		previousTrackDescription: make(map[string]*trackDescription),
 		canReuseTransceiver:      true,
 		allowedLocalCandidates:   utils.NewDedupedSlice[string](maxICECandidates),
@@ -998,6 +998,12 @@ func (t *PCTransport) OnInitialConnected(f func()) {
 	t.lock.Lock()
 	t.onInitialConnected = f
 	t.lock.Unlock()
+
+	if f != nil {
+		if t.pc.ConnectionState() == webrtc.PeerConnectionStateConnected {
+			go f()
+		}
+	}
 }
 
 func (t *PCTransport) getOnInitialConnected() func() {
@@ -1682,7 +1688,7 @@ func (t *PCTransport) setupSignalStateCheckTimer() {
 
 		failed := t.negotiationState != NegotiationStateNone
 
-		if t.negotiateCounter.Load() == negotiateVersion && failed {
+		if t.negotiateCounter.Load() == negotiateVersion && failed && t.pc.ConnectionState() == webrtc.PeerConnectionStateConnected {
 			t.params.Logger.Infow(
 				"negotiation timed out",
 				"localCurrent", t.pc.CurrentLocalDescription(),
@@ -1944,6 +1950,8 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription) e
 }
 
 func (t *PCTransport) handleRemoteAnswerReceived(sd *webrtc.SessionDescription) error {
+	t.clearSignalStateCheckTimer()
+
 	if err := t.setRemoteDescription(*sd); err != nil {
 		// Pion will call RTPSender.Send method for each new added Downtrack, and return error if the DownTrack.Bind
 		// returns error. In case of Downtrack.Bind returns ErrUnsupportedCodec, the signal state will be stable as negotiation is aleady compelted
@@ -1953,8 +1961,6 @@ func (t *PCTransport) handleRemoteAnswerReceived(sd *webrtc.SessionDescription) 
 			return err
 		}
 	}
-
-	t.clearSignalStateCheckTimer()
 
 	if t.negotiationState == NegotiationStateRetry {
 		t.setNegotiationState(NegotiationStateNone)
