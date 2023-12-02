@@ -2308,7 +2308,7 @@ func (p *ParticipantImpl) onSubscriptionError(trackID livekit.TrackID, fatal boo
 }
 
 func (p *ParticipantImpl) onAnyTransportNegotiationFailed() {
-	if p.TransportManager.SinceLastSignal() < negotiationFailedTimeout {
+	if p.TransportManager.SinceLastSignal() < negotiationFailedTimeout/2 {
 		p.params.Logger.Infow("negotiation failed, starting full reconnect")
 	}
 	p.IssueFullReconnect(types.ParticipantCloseReasonNegotiateFailed)
