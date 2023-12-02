@@ -24,7 +24,7 @@ import (
 
 func handleError(w http.ResponseWriter, r *http.Request, status int, err error, keysAndValues ...interface{}) {
 	keysAndValues = append(keysAndValues, "status", status)
-	if r != nil {
+	if r != nil && r.URL != nil {
 		keysAndValues = append(keysAndValues, "method", r.Method, "path", r.URL.Path)
 	}
 	logger.GetLogger().WithCallDepth(1).Warnw("error handling request", err, keysAndValues...)
