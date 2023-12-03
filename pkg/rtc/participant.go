@@ -742,7 +742,6 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 		"sendLeave", sendLeave,
 		"reason", reason.String(),
 		"isExpectedToResume", isExpectedToResume,
-		"clientInfo", logger.Proto(p.params.ClientInfo),
 	)
 	p.clearDisconnectTimer()
 	p.clearMigrationTimer()
