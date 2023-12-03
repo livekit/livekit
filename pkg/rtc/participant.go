@@ -1704,10 +1704,6 @@ func (p *ParticipantImpl) GetPendingTrack(trackID livekit.TrackID) *livekit.Trac
 	return nil
 }
 
-func (p *ParticipantImpl) GetICEConnectionDetails() []*types.ICEConnectionDetails {
-	return p.TransportManager.GetICEConnectionDetails()
-}
-
 func (p *ParticipantImpl) HasConnected() bool {
 	return p.TransportManager.HasSubscriberEverConnected() || p.TransportManager.HasPublisherEverConnected()
 }
