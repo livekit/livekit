@@ -21,6 +21,7 @@ import (
 	"io"
 	"math"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -1452,7 +1453,7 @@ func connectionDetailsFields(cds []*types.ICEConnectionDetails) []interface{} {
 			candidates = append(candidates, cStr)
 		}
 		if len(candidates) > 0 {
-			fields = append(fields, fmt.Sprintf("%sCandidates", cd.Transport.String()), candidates)
+			fields = append(fields, fmt.Sprintf("%sCandidates", strings.ToLower(cd.Transport.String())), candidates)
 		}
 		if cd.Type != types.ICEConnectionTypeUnknown {
 			connectionType = cd.Type
