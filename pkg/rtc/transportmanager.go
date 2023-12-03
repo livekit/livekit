@@ -561,7 +561,7 @@ func (t *TransportManager) GetICEConnectionDetails() []*types.ICEConnectionDetai
 	for _, pc := range []*PCTransport{t.publisher, t.subscriber} {
 		cd := pc.GetICEConnectionDetails()
 		if cd.HasCandidates() {
-			details = append(details, cd)
+			details = append(details, cd.Clone())
 		}
 	}
 	return details
