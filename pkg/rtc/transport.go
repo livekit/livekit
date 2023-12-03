@@ -23,7 +23,6 @@ import (
 
 	"github.com/bep/debounce"
 	"github.com/pion/dtls/v2/pkg/crypto/elliptic"
-	"github.com/pion/ice/v2"
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/cc"
 	"github.com/pion/interceptor/pkg/gcc"
@@ -35,13 +34,6 @@ import (
 	"github.com/pkg/errors"
 	"go.uber.org/atomic"
 
-	sutils "github.com/livekit/livekit-server/pkg/utils"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/logger/pionlogger"
-	lksdp "github.com/livekit/protocol/sdp"
-	"github.com/livekit/protocol/utils"
-
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
@@ -49,6 +41,11 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
+	sutils "github.com/livekit/livekit-server/pkg/utils"
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/logger/pionlogger"
+	lksdp "github.com/livekit/protocol/sdp"
 )
 
 const (
@@ -94,7 +91,6 @@ const (
 	signalICEGatheringComplete signal = iota
 	signalLocalICECandidate
 	signalRemoteICECandidate
-	signalLogICECandidates
 	signalSendOffer
 	signalRemoteDescriptionReceived
 	signalICERestart
@@ -108,8 +104,6 @@ func (s signal) String() string {
 		return "LOCAL_ICE_CANDIDATE"
 	case signalRemoteICECandidate:
 		return "REMOTE_ICE_CANDIDATE"
-	case signalLogICECandidates:
-		return "LOG_ICE_CANDIDATES"
 	case signalSendOffer:
 		return "SEND_OFFER"
 	case signalRemoteDescriptionReceived:
@@ -234,11 +228,7 @@ type PCTransport struct {
 	currentOfferIceCredential string // ice user:pwd, for publish side ice restart checking
 	pendingRestartIceOffer    *webrtc.SessionDescription
 
-	// for cleaner logging
-	allowedLocalCandidates   *utils.DedupedSlice[string]
-	allowedRemoteCandidates  *utils.DedupedSlice[string]
-	filteredLocalCandidates  *utils.DedupedSlice[string]
-	filteredRemoteCandidates *utils.DedupedSlice[string]
+	connectionDetails *types.ICEConnectionDetails
 }
 
 type TransportParams struct {
@@ -251,6 +241,7 @@ type TransportParams struct {
 	Telemetry                    telemetry.TelemetryService
 	EnabledCodecs                []*livekit.Codec
 	Logger                       logger.Logger
+	Transport                    livekit.SignalTarget
 	SimTracks                    map[uint32]SimulcastTrackInfo
 	ClientInfo                   ClientInfo
 	IsOfferer                    bool
@@ -393,10 +384,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		eventCh:                  make(chan event, 100),
 		previousTrackDescription: make(map[string]*trackDescription),
 		canReuseTransceiver:      true,
-		allowedLocalCandidates:   utils.NewDedupedSlice[string](maxICECandidates),
-		allowedRemoteCandidates:  utils.NewDedupedSlice[string](maxICECandidates),
-		filteredLocalCandidates:  utils.NewDedupedSlice[string](maxICECandidates),
-		filteredRemoteCandidates: utils.NewDedupedSlice[string](maxICECandidates),
+		connectionDetails:        types.NewICEConnectionDetails(params.Transport, params.Logger),
 	}
 	if params.IsSendSide {
 		t.streamAllocator = streamallocator.NewStreamAllocator(streamallocator.StreamAllocatorParams{
@@ -564,12 +552,6 @@ func (t *PCTransport) getSelectedPair() (*webrtc.ICECandidatePair, error) {
 	return iceTransport.GetSelectedCandidatePair()
 }
 
-func (t *PCTransport) logICECandidates() {
-	t.postEvent(event{
-		signal: signalLogICECandidates,
-	})
-}
-
 func (t *PCTransport) setConnectedAt(at time.Time) bool {
 	t.lock.Lock()
 	t.connectedAt = at
@@ -629,6 +611,14 @@ func (t *PCTransport) onICEConnectionStateChange(state webrtc.ICEConnectionState
 	switch state {
 	case webrtc.ICEConnectionStateConnected:
 		t.setICEConnectedAt(time.Now())
+		go func() {
+			pair, err := t.getSelectedPair()
+			if err != nil {
+				t.params.Logger.Warnw("failed to get selected candidate pair", err)
+				return
+			}
+			t.connectionDetails.SetSelectedPair(pair)
+		}()
 
 	case webrtc.ICEConnectionStateChecking:
 		t.setICEStartedAt(time.Now())
@@ -903,6 +893,10 @@ func (t *PCTransport) HasEverConnected() bool {
 	defer t.lock.RUnlock()
 
 	return !t.firstConnectedAt.IsZero()
+}
+
+func (t *PCTransport) GetICEConnectionDetails() *types.ICEConnectionDetails {
+	return t.connectionDetails
 }
 
 func (t *PCTransport) WriteRTCP(pkts []rtcp.Packet) error {
@@ -1198,44 +1192,6 @@ func (t *PCTransport) SetChannelCapacityOfStreamAllocator(channelCapacity int64)
 	t.streamAllocator.SetChannelCapacity(channelCapacity)
 }
 
-func (t *PCTransport) GetICEConnectionType() types.ICEConnectionType {
-	unknown := types.ICEConnectionTypeUnknown
-	if t.pc == nil {
-		return unknown
-	}
-	p, err := t.getSelectedPair()
-	if err != nil || p == nil {
-		return unknown
-	}
-
-	if p.Remote.Typ == webrtc.ICECandidateTypeRelay {
-		return types.ICEConnectionTypeTURN
-	} else if p.Remote.Typ == webrtc.ICECandidateTypePrflx {
-		// if the remote relay candidate pings us *before* we get a relay candidate,
-		// Pion would have created a prflx candidate with the same address as the relay candidate.
-		// to report an accurate connection type, we'll compare to see if existing relay candidates match
-		t.lock.RLock()
-		allowedRemoteCandidates := t.allowedRemoteCandidates.Get()
-		t.lock.RUnlock()
-
-		for _, ci := range allowedRemoteCandidates {
-			candidateValue := strings.TrimPrefix(ci, "candidate:")
-			candidate, err := ice.UnmarshalCandidate(candidateValue)
-			if err == nil && candidate.Type() == ice.CandidateTypeRelay {
-				if p.Remote.Address == candidate.Address() &&
-					p.Remote.Port == uint16(candidate.Port()) &&
-					p.Remote.Protocol.String() == candidate.NetworkType().NetworkShort() {
-					return types.ICEConnectionTypeTURN
-				}
-			}
-		}
-	}
-	if p.Remote.Protocol == webrtc.ICEProtocolTCP {
-		return types.ICEConnectionTypeTCP
-	}
-	return types.ICEConnectionTypeUDP
-}
-
 func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error {
 	// sticky data channel to first m-lines, if someday we don't send sdp without media streams to
 	// client's subscribe pc after joining, should change this step
@@ -1453,7 +1409,6 @@ func (t *PCTransport) processEvents() {
 
 	t.clearSignalStateCheckTimer()
 	t.params.Logger.Debugw("leaving events processor")
-	t.handleLogICECandidates(nil)
 }
 
 func (t *PCTransport) handleEvent(e *event) error {
@@ -1464,8 +1419,6 @@ func (t *PCTransport) handleEvent(e *event) error {
 		return t.handleLocalICECandidate(e)
 	case signalRemoteICECandidate:
 		return t.handleRemoteICECandidate(e)
-	case signalLogICECandidates:
-		return t.handleLogICECandidates(e)
 	case signalSendOffer:
 		return t.handleSendOffer(e)
 	case signalRemoteDescriptionReceived:
@@ -1537,33 +1490,28 @@ func (t *PCTransport) localDescriptionSent() error {
 func (t *PCTransport) clearLocalDescriptionSent() {
 	t.cacheLocalCandidates = true
 	t.cachedLocalCandidates = nil
-
-	t.allowedLocalCandidates.Clear()
-	t.lock.Lock()
-	t.allowedRemoteCandidates.Clear()
-	t.lock.Unlock()
-	t.filteredLocalCandidates.Clear()
-	t.filteredRemoteCandidates.Clear()
+	t.connectionDetails.Clear()
 }
 
 func (t *PCTransport) handleLocalICECandidate(e *event) error {
 	c := e.data.(*webrtc.ICECandidate)
 
 	filtered := false
-	if t.preferTCP.Load() && c != nil && c.Protocol != webrtc.ICEProtocolTCP {
-		cstr := c.String()
-		t.params.Logger.Debugw("filtering out local candidate", "candidate", cstr)
-		t.filteredLocalCandidates.Add(cstr)
-		filtered = true
+	if c != nil {
+		if t.preferTCP.Load() && c.Protocol != webrtc.ICEProtocolTCP {
+			t.params.Logger.Debugw("filtering out local candidate",
+				"candidate", func() interface{} {
+					return c.String()
+				})
+			filtered = true
+		}
+		t.connectionDetails.AddLocalCandidate(c, filtered)
 	}
 
 	if filtered {
 		return nil
 	}
 
-	if c != nil {
-		t.allowedLocalCandidates.Add(c.String())
-	}
 	if t.cacheLocalCandidates {
 		t.cachedLocalCandidates = append(t.cachedLocalCandidates, c)
 		return nil
@@ -1582,17 +1530,13 @@ func (t *PCTransport) handleRemoteICECandidate(e *event) error {
 	filtered := false
 	if t.preferTCP.Load() && !strings.Contains(c.Candidate, "tcp") {
 		t.params.Logger.Debugw("filtering out remote candidate", "candidate", c.Candidate)
-		t.filteredRemoteCandidates.Add(c.Candidate)
 		filtered = true
 	}
 
+	t.connectionDetails.AddRemoteCandidate(*c, filtered)
 	if filtered {
 		return nil
 	}
-
-	t.lock.Lock()
-	t.allowedRemoteCandidates.Add(c.Candidate)
-	t.lock.Unlock()
 
 	if t.pc.RemoteDescription() == nil {
 		t.pendingRemoteCandidates = append(t.pendingRemoteCandidates, c)
@@ -1601,30 +1545,6 @@ func (t *PCTransport) handleRemoteICECandidate(e *event) error {
 
 	if err := t.pc.AddICECandidate(*c); err != nil {
 		return errors.Wrap(err, "add ice candidate failed")
-	}
-
-	return nil
-}
-
-func (t *PCTransport) handleLogICECandidates(_ *event) error {
-	lc := t.allowedLocalCandidates.Get()
-	rc := t.allowedRemoteCandidates.Get()
-	var fields []interface{}
-	if len(lc) != 0 || len(rc) != 0 {
-		fields = append(fields,
-			"lc", lc,
-			"rc", rc,
-			"lc_filtered", t.filteredLocalCandidates.Get(),
-			"rc_filtered", t.filteredRemoteCandidates.Get(),
-		)
-
-	}
-	if pair, err := t.getSelectedPair(); err == nil {
-		fields = append(fields, "selected_pair", pair)
-	}
-
-	if len(fields) > 0 {
-		t.params.Logger.Infow("ice candidates", fields...)
 	}
 
 	return nil
