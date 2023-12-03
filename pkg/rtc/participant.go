@@ -578,7 +578,7 @@ func (p *ParticipantImpl) OnClaimsChanged(callback func(types.LocalParticipant))
 func (p *ParticipantImpl) HandleSignalSourceClose() {
 	p.TransportManager.SetSignalSourceValid(false)
 
-	if !p.TransportManager.HasPublisherEverConnected() && !p.TransportManager.HasSubscriberEverConnected() {
+	if !p.HasConnected() {
 		reason := types.ParticipantCloseReasonJoinFailed
 		_ = p.Close(false, reason, false)
 	}
