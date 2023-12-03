@@ -358,10 +358,6 @@ func (p *ParticipantImpl) GetClientConfiguration() *livekit.ClientConfiguration 
 	return p.params.ClientConf
 }
 
-func (p *ParticipantImpl) GetICEConnectionType() types.ICEConnectionType {
-	return p.TransportManager.GetICEConnectionType()
-}
-
 func (p *ParticipantImpl) GetBufferFactory() *buffer.Factory {
 	return p.params.Config.BufferFactory
 }
@@ -1706,6 +1702,14 @@ func (p *ParticipantImpl) GetPendingTrack(trackID livekit.TrackID) *livekit.Trac
 	}
 
 	return nil
+}
+
+func (p *ParticipantImpl) GetICEConnectionDetails() []*types.ICEConnectionDetails {
+	return p.TransportManager.GetICEConnectionDetails()
+}
+
+func (p *ParticipantImpl) HasConnected() bool {
+	return p.TransportManager.HasSubscriberEverConnected() || p.TransportManager.HasPublisherEverConnected()
 }
 
 func (p *ParticipantImpl) sendTrackPublished(cid string, ti *livekit.TrackInfo) {

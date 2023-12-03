@@ -124,6 +124,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		Logger:                  LoggerWithPCTarget(params.Logger, livekit.SignalTarget_PUBLISHER),
 		SimTracks:               params.SimTracks,
 		ClientInfo:              params.ClientInfo,
+		Transport:               livekit.SignalTarget_PUBLISHER,
 	})
 	if err != nil {
 		return nil, err
@@ -159,6 +160,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		IsSendSide:                   true,
 		AllowPlayoutDelay:            params.AllowPlayoutDelay,
 		DataChannelMaxBufferedAmount: params.DataChannelMaxBufferedAmount,
+		Transport:                    livekit.SignalTarget_SUBSCRIBER,
 	})
 	if err != nil {
 		return nil, err
@@ -554,8 +556,15 @@ func (t *TransportManager) SubscriberAsPrimary() bool {
 	return t.params.SubscriberAsPrimary
 }
 
-func (t *TransportManager) GetICEConnectionType() types.ICEConnectionType {
-	return t.getTransport(true).GetICEConnectionType()
+func (t *TransportManager) GetICEConnectionDetails() []*types.ICEConnectionDetails {
+	details := make([]*types.ICEConnectionDetails, 0, 2)
+	for _, pc := range []*PCTransport{t.publisher, t.subscriber} {
+		cd := pc.GetICEConnectionDetails()
+		if cd.HasCandidates() {
+			details = append(details, cd)
+		}
+	}
+	return details
 }
 
 func (t *TransportManager) getTransport(isPrimary bool) *PCTransport {

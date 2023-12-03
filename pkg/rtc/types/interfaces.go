@@ -285,15 +285,6 @@ type Participant interface {
 
 // -------------------------------------------------------
 
-type ICEConnectionType string
-
-const (
-	ICEConnectionTypeUDP     ICEConnectionType = "udp"
-	ICEConnectionTypeTCP     ICEConnectionType = "tcp"
-	ICEConnectionTypeTURN    ICEConnectionType = "turn"
-	ICEConnectionTypeUnknown ICEConnectionType = "unknown"
-)
-
 type AddTrackParams struct {
 	Stereo bool
 	Red    bool
@@ -320,10 +311,11 @@ type LocalParticipant interface {
 	SubscriberAsPrimary() bool
 	GetClientInfo() *livekit.ClientInfo
 	GetClientConfiguration() *livekit.ClientConfiguration
-	GetICEConnectionType() ICEConnectionType
 	GetBufferFactory() *buffer.Factory
 	GetPlayoutDelayConfig() *livekit.PlayoutDelay
 	GetPendingTrack(trackID livekit.TrackID) *livekit.TrackInfo
+	GetICEConnectionDetails() []*ICEConnectionDetails
+	HasConnected() bool
 
 	SetResponseSink(sink routing.MessageSink)
 	CloseSignalConnection(reason SignallingCloseReason)

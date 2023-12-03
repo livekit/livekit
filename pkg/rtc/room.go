@@ -17,6 +17,7 @@ package rtc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"sort"
@@ -325,11 +326,6 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 	// it's important to set this before connection, we don't want to miss out on any published tracks
 	participant.OnTrackPublished(r.onTrackPublished)
 	participant.OnStateChange(func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State) {
-		r.Logger.Infow("participant state changed",
-			"state", p.State(),
-			"participant", p.Identity(),
-			"pID", p.ID(),
-			"oldState", oldState)
 		if r.onParticipantChanged != nil {
 			r.onParticipantChanged(participant)
 		}
@@ -343,15 +339,24 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 			// start the workers once connectivity is established
 			p.Start()
 
+			meta := &livekit.AnalyticsClientMeta{
+				ClientConnectTime: uint32(time.Since(p.ConnectedAt()).Milliseconds()),
+			}
+			cds := participant.GetICEConnectionDetails()
+			for _, cd := range cds {
+				if cd.Type != types.ICEConnectionTypeUnknown {
+					meta.ConnectionType = string(cd.Type)
+					break
+				}
+			}
 			r.telemetry.ParticipantActive(context.Background(),
 				r.ToProto(),
 				p.ToProto(),
-				&livekit.AnalyticsClientMeta{
-					ClientConnectTime: uint32(time.Since(p.ConnectedAt()).Milliseconds()),
-					ConnectionType:    string(p.GetICEConnectionType()),
-				},
+				meta,
 				false,
 			)
+
+			p.GetLogger().Infow("participant active", connectionDetailsFields(cds)...)
 		} else if state == livekit.ParticipantInfo_DISCONNECTED {
 			// remove participant from room
 			go r.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonStateDisconnected)
@@ -495,24 +500,27 @@ func (r *Room) ResumeParticipant(p types.LocalParticipant, requestSource routing
 func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livekit.ParticipantID, reason types.ParticipantCloseReason) {
 	r.lock.Lock()
 	p, ok := r.participants[identity]
-	if ok {
-		if pID != "" && p.ID() != pID {
-			// participant session has been replaced
-			r.lock.Unlock()
-			return
-		}
+	if !ok {
+		r.lock.Unlock()
+		return
+	}
 
-		delete(r.participants, identity)
-		delete(r.participantOpts, identity)
-		delete(r.participantRequestSources, identity)
-		delete(r.hasPublished, identity)
-		if !p.Hidden() {
-			r.protoRoom.NumParticipants--
-		}
+	if pID != "" && p.ID() != pID {
+		// participant session has been replaced
+		r.lock.Unlock()
+		return
+	}
+
+	delete(r.participants, identity)
+	delete(r.participantOpts, identity)
+	delete(r.participantRequestSources, identity)
+	delete(r.hasPublished, identity)
+	if !p.Hidden() {
+		r.protoRoom.NumParticipants--
 	}
 
 	immediateChange := false
-	if (p != nil && p.IsRecorder()) || r.protoRoom.ActiveRecording {
+	if p.IsRecorder() {
 		activeRecording := false
 		for _, op := range r.participants {
 			if op.IsRecorder() {
@@ -524,14 +532,16 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 		if r.protoRoom.ActiveRecording != activeRecording {
 			r.protoRoom.ActiveRecording = activeRecording
 			immediateChange = true
-
 		}
 	}
 	r.lock.Unlock()
 	r.protoProxy.MarkDirty(immediateChange)
 
-	if !ok {
-		return
+	if !p.HasConnected() {
+		fields := append(connectionDetailsFields(p.GetICEConnectionDetails()),
+			"reason", reason.String(),
+		)
+		p.GetLogger().Infow("removing participant without connection", fields...)
 	}
 
 	// send broadcast only if it's not already closed
@@ -551,7 +561,6 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 	p.OnSubscribeStatusChanged(nil)
 
 	// close participant as well
-	r.Logger.Debugw("closing participant for removal", "pID", p.ID(), "participant", p.Identity())
 	_ = p.Close(true, reason, false)
 
 	r.leftAt.Store(time.Now().Unix())
@@ -1415,4 +1424,40 @@ func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, dp 
 			op.GetLogger().Infow("send data packet error", "error", err)
 		}
 	})
+}
+
+func connectionDetailsFields(cds []*types.ICEConnectionDetails) []interface{} {
+	var fields []interface{}
+	connectionType := types.ICEConnectionTypeUnknown
+	for _, cd := range cds {
+		candidates := make([]string, 0, len(cd.Remote)+len(cd.Local))
+		for _, c := range cd.Local {
+			cStr := "[local]"
+			if c.Selected {
+				cStr += "[selected]"
+			} else if c.Filtered {
+				cStr += "[filtered]"
+			}
+			cStr += " " + c.Local.String()
+			candidates = append(candidates, cStr)
+		}
+		for _, c := range cd.Remote {
+			cStr := "[remote]"
+			if c.Selected {
+				cStr += "[selected]"
+			} else if c.Filtered {
+				cStr += "[filtered]"
+			}
+			cStr += " " + c.Remote.String()
+			candidates = append(candidates, cStr)
+		}
+		if len(candidates) > 0 {
+			fields = append(fields, fmt.Sprintf("%sCandidates", cd.Transport.String()), candidates)
+		}
+		if cd.Type != types.ICEConnectionTypeUnknown {
+			connectionType = cd.Type
+		}
+	}
+	fields = append(fields, "connectionType", connectionType)
+	return fields
 }
