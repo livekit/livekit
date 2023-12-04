@@ -18,6 +18,7 @@ import (
 	"context"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/sip"
 )
@@ -49,10 +50,16 @@ func (s *IOInfoService) EvaluateSIPDispatchRules(ctx context.Context, req *rpc.E
 	if err != nil {
 		return nil, err
 	}
+	if trunk != nil {
+		logger.Debugw("SIP trunk matched", "trunkID", trunk.SipTrunkId, "called", req.CalledNumber, "calling", req.CallingNumber)
+	} else {
+		logger.Debugw("No SIP trunk matched", "trunkID", "", "called", req.CalledNumber, "calling", req.CallingNumber)
+	}
 	best, err := s.matchSIPDispatchRule(ctx, trunk, req)
 	if err != nil {
 		return nil, err
 	}
+	logger.Debugw("SIP dispatch rule matched", "dispatchRule", best.SipDispatchRuleId, "called", req.CalledNumber, "calling", req.CallingNumber)
 	return sip.EvaluateDispatchRule(best, req)
 }
 
@@ -62,8 +69,10 @@ func (s *IOInfoService) GetSIPTrunkAuthentication(ctx context.Context, req *rpc.
 		return nil, err
 	}
 	if trunk == nil {
+		logger.Debugw("No SIP trunk matched for auth", "trunkID", "", "called", req.To, "calling", req.From)
 		return &rpc.GetSIPTrunkAuthenticationResponse{}, nil
 	}
+	logger.Debugw("SIP trunk matched for auth", "trunkID", trunk.SipTrunkId, "called", req.To, "calling", req.From)
 	return &rpc.GetSIPTrunkAuthenticationResponse{
 		Username: trunk.InboundUsername,
 		Password: trunk.InboundPassword,
