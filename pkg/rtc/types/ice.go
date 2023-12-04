@@ -84,12 +84,14 @@ func (d *ICEConnectionDetails) Clone() *ICEConnectionDetails {
 		clone.Local = append(clone.Local, &ICECandidateExtended{
 			Local:    c.Local,
 			Filtered: c.Filtered,
+			Selected: c.Selected,
 		})
 	}
 	for _, c := range d.Remote {
 		clone.Remote = append(clone.Remote, &ICECandidateExtended{
 			Remote:   c.Remote,
 			Filtered: c.Filtered,
+			Selected: c.Selected,
 		})
 	}
 	return clone
