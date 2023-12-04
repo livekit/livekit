@@ -61,6 +61,9 @@ func (s *IOInfoService) GetSIPTrunkAuthentication(ctx context.Context, req *rpc.
 	if err != nil {
 		return nil, err
 	}
+	if trunk == nil {
+		return &rpc.GetSIPTrunkAuthenticationResponse{}, nil
+	}
 	return &rpc.GetSIPTrunkAuthenticationResponse{
 		Username: trunk.InboundUsername,
 		Password: trunk.InboundPassword,
