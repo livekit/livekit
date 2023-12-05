@@ -989,9 +989,8 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		"mime", d.mime,
 		"ssrc", d.ssrc,
 		// evaluate only if log level matches
-		"stats", func() interface{} {
-			return d.rtpStats.ToString()
-		})
+		"stats", d.rtpStats,
+	)
 
 	d.maxLayerNotifierChMu.Lock()
 	d.maxLayerNotifierChClosed = true

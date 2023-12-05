@@ -352,7 +352,7 @@ func (b *Buffer) Close() error {
 			b.rtpStats.Stop()
 			b.logger.Debugw("rtp stats",
 				"direction", "upstream",
-				"stats", func() interface{} { return b.rtpStats.ToString() },
+				"stats", b.rtpStats,
 			)
 			if b.onFinalRtpStats != nil {
 				b.onFinalRtpStats(b.rtpStats.ToProto())
