@@ -148,6 +148,7 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 		"connID", ss.ConnectionId,
 	)
 
+	stream.Hijack()
 	sink := routing.NewSignalMessageSink(routing.SignalSinkParams[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest]{
 		Logger:       l,
 		Stream:       stream,
@@ -176,11 +177,9 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 
 	err = r.sessionHandler(ctx, livekit.RoomName(ss.RoomName), *pi, livekit.ConnectionID(ss.ConnectionId), reqChan, sink)
 	if err != nil {
+		sink.Close()
 		l.Errorw("could not handle new participant", err)
-		return
 	}
-
-	stream.Hijack()
 	return
 }
 
