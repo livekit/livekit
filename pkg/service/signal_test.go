@@ -36,15 +36,16 @@ func init() {
 }
 
 func TestSignal(t *testing.T) {
+	cfg := config.SignalRelayConfig{
+		Enabled:          false,
+		RetryTimeout:     30 * time.Second,
+		MinRetryInterval: 500 * time.Millisecond,
+		MaxRetryInterval: 5 * time.Second,
+		StreamBufferSize: 1000,
+	}
+
 	t.Run("messages are delivered", func(t *testing.T) {
 		bus := psrpc.NewLocalMessageBus()
-		cfg := config.SignalRelayConfig{
-			Enabled:          false,
-			RetryTimeout:     30 * time.Second,
-			MinRetryInterval: 500 * time.Millisecond,
-			MaxRetryInterval: 5 * time.Second,
-			StreamBufferSize: 1000,
-		}
 
 		reqMessageIn := &livekit.SignalRequest{
 			Message: &livekit.SignalRequest_Ping{Ping: 123},
@@ -102,13 +103,6 @@ func TestSignal(t *testing.T) {
 
 	t.Run("messages are delivered when session handler fails", func(t *testing.T) {
 		bus := psrpc.NewLocalMessageBus()
-		cfg := config.SignalRelayConfig{
-			Enabled:          false,
-			RetryTimeout:     30 * time.Second,
-			MinRetryInterval: 500 * time.Millisecond,
-			MaxRetryInterval: 5 * time.Second,
-			StreamBufferSize: 1000,
-		}
 
 		resMessageIn := &livekit.SignalResponse{
 			Message: &livekit.SignalResponse_Pong{Pong: 321},
