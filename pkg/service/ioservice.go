@@ -148,6 +148,15 @@ func (s *IOInfoService) ListEgress(ctx context.Context, req *livekit.ListEgressR
 	return &livekit.ListEgressResponse{Items: items}, nil
 }
 
+func (s *IOInfoService) UpdateMetrics(ctx context.Context, req *rpc.UpdateMetricsRequest) (*emptypb.Empty, error) {
+	logger.Infow("received egress metrics",
+		"egressID", req.Info.EgressId,
+		"avgCpu", req.AvgCpuUsage,
+		"maxCpu", req.MaxCpuUsage,
+	)
+	return &emptypb.Empty{}, nil
+}
+
 func (s *IOInfoService) GetIngressInfo(ctx context.Context, req *rpc.GetIngressInfoRequest) (*rpc.GetIngressInfoResponse, error) {
 	info, err := s.loadIngressFromInfoRequest(req)
 	if err != nil {
