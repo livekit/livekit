@@ -990,6 +990,10 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 	}
 	p.lock.Unlock()
 
+	if minQuality == livekit.ConnectionQuality_LOST && !p.ProtocolVersion().SupportsConnectionQualityLost() {
+		minQuality = livekit.ConnectionQuality_POOR
+	}
+
 	return &livekit.ConnectionQualityInfo{
 		ParticipantSid: string(p.ID()),
 		Quality:        minQuality,

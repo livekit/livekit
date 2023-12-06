@@ -36,7 +36,7 @@ func LayerPresenceFromTrackInfo(trackInfo *livekit.TrackInfo) *[livekit.VideoQua
 		if layer.Quality <= livekit.VideoQuality_HIGH {
 			layerPresence[layer.Quality] = true
 		} else {
-			logger.Warnw("unexpected quality in track info", nil, "trackInfo", logger.Proto(trackInfo))
+			logger.Warnw("unexpected quality in track info", nil, "trackID", trackInfo.Sid, "trackInfo", logger.Proto(trackInfo))
 		}
 	}
 
@@ -97,13 +97,13 @@ func RidToSpatialLayer(rid string, trackInfo *livekit.TrackInfo) int32 {
 			return 2
 
 		case lp[livekit.VideoQuality_LOW] && lp[livekit.VideoQuality_MEDIUM]:
-			logger.Warnw("unexpected rid f with only two qualities, low and medium", nil)
+			logger.Warnw("unexpected rid f with only two qualities, low and medium", nil, "trackID", trackInfo.Sid, "trackInfo", logger.Proto(trackInfo))
 			return 1
 		case lp[livekit.VideoQuality_LOW] && lp[livekit.VideoQuality_HIGH]:
-			logger.Warnw("unexpected rid f with only two qualities, low and high", nil)
+			logger.Warnw("unexpected rid f with only two qualities, low and high", nil, "trackID", trackInfo.Sid, "trackInfo", logger.Proto(trackInfo))
 			return 1
 		case lp[livekit.VideoQuality_MEDIUM] && lp[livekit.VideoQuality_HIGH]:
-			logger.Warnw("unexpected rid f with only two qualities, medium and high", nil)
+			logger.Warnw("unexpected rid f with only two qualities, medium and high", nil, "trackID", trackInfo.Sid, "trackInfo", logger.Proto(trackInfo))
 			return 1
 
 		default:
@@ -169,13 +169,13 @@ func SpatialLayerToRid(layer int32, trackInfo *livekit.TrackInfo) string {
 			return FullResolution
 
 		case lp[livekit.VideoQuality_LOW] && lp[livekit.VideoQuality_MEDIUM]:
-			logger.Warnw("unexpected layer 2 with only two qualities, low and medium", nil)
+			logger.Warnw("unexpected layer 2 with only two qualities, low and medium", nil, "trackID", trackInfo.Sid, "trackInfo", logger.Proto(trackInfo))
 			return HalfResolution
 		case lp[livekit.VideoQuality_LOW] && lp[livekit.VideoQuality_HIGH]:
-			logger.Warnw("unexpected layer 2 with only two qualities, low and high", nil)
+			logger.Warnw("unexpected layer 2 with only two qualities, low and high", nil, "trackID", trackInfo.Sid, "trackInfo", logger.Proto(trackInfo))
 			return HalfResolution
 		case lp[livekit.VideoQuality_MEDIUM] && lp[livekit.VideoQuality_HIGH]:
-			logger.Warnw("unexpected layer 2 with only two qualities, medium and high", nil)
+			logger.Warnw("unexpected layer 2 with only two qualities, medium and high", nil, "trackID", trackInfo.Sid, "trackInfo", logger.Proto(trackInfo))
 			return HalfResolution
 
 		default:
@@ -240,7 +240,7 @@ func SpatialLayerToVideoQuality(layer int32, trackInfo *livekit.TrackInfo) livek
 			return livekit.VideoQuality_HIGH
 
 		default:
-			logger.Errorw("invalid layer", nil, "layer", layer, "trackInfo", trackInfo)
+			logger.Errorw("invalid layer", nil, "trackID", trackInfo.Sid, "layer", layer, "trackInfo", logger.Proto(trackInfo))
 			return livekit.VideoQuality_HIGH
 		}
 
@@ -250,7 +250,7 @@ func SpatialLayerToVideoQuality(layer int32, trackInfo *livekit.TrackInfo) livek
 			return livekit.VideoQuality_HIGH
 
 		default:
-			logger.Errorw("invalid layer", nil, "layer", layer, "trackInfo", trackInfo)
+			logger.Errorw("invalid layer", nil, "trackID", trackInfo.Sid, "layer", layer, "trackInfo", logger.Proto(trackInfo))
 			return livekit.VideoQuality_HIGH
 		}
 	}
