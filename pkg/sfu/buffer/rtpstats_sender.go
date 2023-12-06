@@ -807,7 +807,7 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) *RTPDeltaInfo 
 	}
 }
 
-func (r *RTPStatsSender) ToString() string {
+func (r *RTPStatsSender) String() string {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
