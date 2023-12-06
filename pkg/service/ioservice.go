@@ -151,8 +151,8 @@ func (s *IOInfoService) ListEgress(ctx context.Context, req *livekit.ListEgressR
 func (s *IOInfoService) UpdateMetrics(ctx context.Context, req *rpc.UpdateMetricsRequest) (*emptypb.Empty, error) {
 	logger.Infow("received egress metrics",
 		"egressID", req.Info.EgressId,
-		"avg_cpu", req.AvgCpuUsage,
-		"max_cpu", req.MaxCpuUsage,
+		"avgCpu", req.AvgCpuUsage,
+		"maxCpu", req.MaxCpuUsage,
 	)
 	return &emptypb.Empty{}, nil
 }
