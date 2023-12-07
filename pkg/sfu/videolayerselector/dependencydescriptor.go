@@ -39,12 +39,14 @@ type DependencyDescriptor struct {
 
 	decodeTargetsLock sync.RWMutex
 	decodeTargets     []*DecodeTarget
+	fnWrapper         FrameNumberWrapper
 }
 
 func NewDependencyDescriptor(logger logger.Logger) *DependencyDescriptor {
 	return &DependencyDescriptor{
 		Base:      NewBase(logger),
 		decisions: NewSelectorDecisionCache(256, 80),
+		fnWrapper: FrameNumberWrapper{logger: logger},
 	}
 }
 
@@ -52,6 +54,7 @@ func NewDependencyDescriptorFromNull(vls VideoLayerSelector) *DependencyDescript
 	return &DependencyDescriptor{
 		Base:      vls.(*Null).Base,
 		decisions: NewSelectorDecisionCache(256, 80),
+		fnWrapper: FrameNumberWrapper{logger: vls.(*Null).logger},
 	}
 }
 
@@ -291,13 +294,26 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		Descriptor: dd,
 		Structure:  d.structure,
 	}
+
+	unWrapFn := uint16(d.fnWrapper.UpdateAndGet(extFrameNum, ddwdt.StructureUpdated))
+	var ddClone *dede.DependencyDescriptor
+	if unWrapFn != dd.FrameNumber {
+		clone := *dd
+		ddClone = &clone
+		ddClone.FrameNumber = unWrapFn
+		ddExtension.Descriptor = ddClone
+	}
+
 	if dd.AttachedStructure == nil {
 		if d.activeDecodeTargetsBitmask != nil {
-			// clone and override activebitmask
-			// DD-TODO: if the packet that contains the bitmask is acknowledged by RR, then we don't need it until it changed.
-			ddClone := *ddExtension.Descriptor
+			if ddClone == nil {
+				// clone and override activebitmask
+				// DD-TODO: if the packet that contains the bitmask is acknowledged by RR, then we don't need it until it changed.
+				clone := *dd
+				ddClone = &clone
+				ddExtension.Descriptor = ddClone
+			}
 			ddClone.ActiveDecodeTargetsBitmask = d.activeDecodeTargetsBitmask
-			ddExtension.Descriptor = &ddClone
 			// d.logger.Debugw("set active decode targets bitmask", "activeDecodeTargetsBitmask", d.activeDecodeTargetsBitmask)
 		}
 	}
