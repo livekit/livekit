@@ -19,7 +19,7 @@ func TestFrameNumberWrapper(t *testing.T) {
 
 	fnWrapAround := utils.NewWrapAround[uint16, uint64](utils.WrapAroundParams{IsRestartAllowed: false})
 
-	firstKF := uint16(1000)
+	firstF := uint16(1000)
 
 	testFrameOrder := func(frame uint16, isKeyFrame bool, frame2 uint16, isKeyFrame2, expectInorder bool) {
 		frameUnwrap := fnWrapAround.Update(frame).ExtendedVal
@@ -38,35 +38,35 @@ func TestFrameNumberWrapper(t *testing.T) {
 		}
 	}
 
-	secondF := getFrame(firstKF, true)
-	testFrameOrder(firstKF, true, secondF, false, true)
+	secondF := getFrame(firstF, true)
+	testFrameOrder(firstF, true, secondF, false, true)
 
 	// non key frame keeps diff and order
 	for i := 0; i < 100; i++ {
 		// frame in order
-		firstKF = secondF
-		secondF = getFrame(firstKF, true)
-		testFrameOrder(firstKF, false, secondF, false, true)
+		firstF = secondF
+		secondF = getFrame(firstF, true)
+		testFrameOrder(firstF, false, secondF, false, true)
 
 		// frame out of order
-		firstKF = secondF
-		secondF = getFrame(firstKF, false)
-		testFrameOrder(firstKF, false, secondF, false, false)
+		firstF = secondF
+		secondF = getFrame(firstF, false)
+		testFrameOrder(firstF, false, secondF, false, false)
 
 		// key frame in order
-		firstKF = secondF
-		secondF = getFrame(firstKF, true)
-		testFrameOrder(firstKF, false, secondF, true, true)
+		firstF = secondF
+		secondF = getFrame(firstF, true)
+		testFrameOrder(firstF, false, secondF, true, true)
 
 		// frame in order
-		firstKF = secondF
-		secondF = getFrame(firstKF, true)
-		testFrameOrder(firstKF, false, secondF, false, true)
+		firstF = secondF
+		secondF = getFrame(firstF, true)
+		testFrameOrder(firstF, false, secondF, false, true)
 
 		// key frame out of order but should be in order after wrap around
-		firstKF = secondF
-		secondF = getFrame(firstKF, false)
-		testFrameOrder(firstKF, false, secondF, true, true)
+		firstF = secondF
+		secondF = getFrame(firstF, false)
+		testFrameOrder(firstF, false, secondF, true, true)
 	}
 }
 
