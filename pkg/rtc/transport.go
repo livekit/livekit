@@ -549,7 +549,16 @@ func (t *PCTransport) getSelectedPair() (*webrtc.ICECandidatePair, error) {
 		return nil, errors.New("no ICE transport")
 	}
 
-	return iceTransport.GetSelectedCandidatePair()
+	pair, err := iceTransport.GetSelectedCandidatePair()
+	if err != nil {
+		return nil, err
+	}
+
+	if pair == nil {
+		return nil, errors.New("no selected pair")
+	}
+
+	return pair, err
 }
 
 func (t *PCTransport) setConnectedAt(at time.Time) bool {
