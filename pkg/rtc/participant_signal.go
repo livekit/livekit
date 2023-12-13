@@ -212,9 +212,10 @@ func (p *ParticipantImpl) sendDisconnectUpdatesForReconnect() error {
 				break
 			} else if info.state == livekit.ParticipantInfo_DISCONNECTED {
 				disconnectedParticipants = append(disconnectedParticipants, &livekit.ParticipantInfo{
-					Sid:     string(keys[i]),
-					Version: info.version,
-					State:   livekit.ParticipantInfo_DISCONNECTED,
+					Sid:      string(keys[i]),
+					Identity: string(p.Identity()),
+					Version:  info.version,
+					State:    livekit.ParticipantInfo_DISCONNECTED,
 				})
 			}
 		}
