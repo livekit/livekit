@@ -17,7 +17,7 @@ require (
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
-	github.com/livekit/mediatransportutil v0.0.0-20231128042044-05525c8278cb
+	github.com/livekit/mediatransportutil v0.0.0-20231213053200-ec5227f9688a
 	github.com/livekit/protocol v1.9.4-0.20231206174612-7bba17ea7876
 	github.com/livekit/psrpc v0.5.2
 	github.com/mackerelio/go-osstat v0.2.4
@@ -28,7 +28,7 @@ require (
 	github.com/pion/dtls/v2 v2.2.8
 	github.com/pion/ice/v2 v2.3.11
 	github.com/pion/interceptor v0.1.25
-	github.com/pion/rtcp v1.2.12
+	github.com/pion/rtcp v1.2.13
 	github.com/pion/rtp v1.8.3
 	github.com/pion/sctp v1.8.9
 	github.com/pion/sdp/v3 v3.0.6
