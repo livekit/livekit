@@ -426,7 +426,6 @@ func (d *DependencyDescriptor) CheckSync() (locked bool, layer int32) {
 	defer d.decodeTargetsLock.RUnlock()
 	for _, dt := range d.decodeTargets {
 		if dt.Active() && dt.Layer.Spatial == layer && dt.Valid() {
-			d.logger.Debugw(fmt.Sprintf("checking sync, matching decode target, layer: %d, dt: %s, dts: %+v", layer, dt, d.decodeTargets))
 			return true, layer
 		}
 	}
