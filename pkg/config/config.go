@@ -652,6 +652,7 @@ func (conf *Config) ValidateKeys() error {
 			_ = f.Close()
 		}()
 		decoder := yaml.NewDecoder(f)
+		conf.Keys = map[string]string{}
 		if err = decoder.Decode(conf.Keys); err != nil {
 			return err
 		}
