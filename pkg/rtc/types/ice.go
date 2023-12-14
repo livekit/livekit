@@ -118,17 +118,21 @@ func (d *ICEConnectionDetails) AddRemoteCandidate(c webrtc.ICECandidateInit, fil
 		d.logger.Errorw("could not unmarshal candidate", err, "candidate", c)
 		return
 	}
+	if candidate == nil {
+		// end-of-candidates candidate
+		return
+	}
 
 	d.lock.Lock()
 	defer d.lock.Unlock()
 	compFn := func(e *ICECandidateExtended) bool {
-		return isICECandidateEqualTo(e.Remote, candidate)
+		return isICECandidateEqualTo(e.Remote, *candidate)
 	}
 	if slices.ContainsFunc[[]*ICECandidateExtended, *ICECandidateExtended](d.Remote, compFn) {
 		return
 	}
 	d.Remote = append(d.Remote, &ICECandidateExtended{
-		Remote:   candidate,
+		Remote:   *candidate,
 		Filtered: filtered,
 	})
 }
@@ -154,8 +158,11 @@ func (d *ICEConnectionDetails) SetSelectedPair(pair *webrtc.ICECandidatePair) {
 			d.logger.Errorw("could not unmarshal remote candidate", err, "candidate", pair.Remote)
 			return
 		}
+		if candidate == nil {
+			return
+		}
 		d.Remote = append(d.Remote, &ICECandidateExtended{
-			Remote:   candidate,
+			Remote:   *candidate,
 			Filtered: false,
 		})
 		remoteIdx = len(d.Remote) - 1
@@ -250,7 +257,16 @@ func isICECandidateEqualToCandidate(c1 ice.Candidate, c2 *webrtc.ICECandidate) b
 		c1.TCPType().String() == c2.TCPType
 }
 
-func unmarshalICECandidate(c webrtc.ICECandidateInit) (ice.Candidate, error) {
+func unmarshalICECandidate(c webrtc.ICECandidateInit) (*ice.Candidate, error) {
 	candidateValue := strings.TrimPrefix(c.Candidate, "candidate:")
-	return ice.UnmarshalCandidate(candidateValue)
+	if candidateValue == "" {
+		return nil, nil
+	}
+
+	candidate, err := ice.UnmarshalCandidate(candidateValue)
+	if err != nil {
+		return nil, err
+	}
+
+	return &candidate, nil
 }
