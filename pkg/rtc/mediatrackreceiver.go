@@ -212,7 +212,7 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority 
 	t.shadowReceiversLocked()
 
 	onSetupReceiver := t.onSetupReceiver
-	t.params.Logger.Debugw("setup receiver", "mime", receiver.Codec().MimeType, "priority", priority, "receivers", t.receiversShadow)
+	t.params.Logger.Debugw("setup receiver", "mime", receiver.Codec().MimeType, "priority", priority, "receivers", t.receiversShadow, "mid", mid)
 	t.lock.Unlock()
 
 	if onSetupReceiver != nil {
@@ -553,8 +553,18 @@ func (t *MediaTrackReceiver) RevokeDisallowedSubscribers(allowedSubscriberIdenti
 }
 
 func (t *MediaTrackReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
+	clonedInfo := proto.Clone(ti).(*livekit.TrackInfo)
 	t.lock.Lock()
-	t.trackInfo = proto.Clone(ti).(*livekit.TrackInfo)
+	originInfo := t.trackInfo
+	for _, ci := range clonedInfo.Codecs {
+		for _, originCi := range originInfo.Codecs {
+			if strings.EqualFold(ci.MimeType, originCi.MimeType) && originCi.Mid != "" {
+				ci.Mid = originCi.Mid
+				break
+			}
+		}
+	}
+	t.trackInfo = clonedInfo
 	t.lock.Unlock()
 
 	if ti != nil && t.Kind() == livekit.TrackType_VIDEO {
