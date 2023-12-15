@@ -76,13 +76,14 @@ type downTrackState struct {
 // ---------------------------------------------------------------
 
 type participantUpdateInfo struct {
+	identity  livekit.ParticipantIdentity
 	version   uint32
 	state     livekit.ParticipantInfo_State
 	updatedAt time.Time
 }
 
 func (p participantUpdateInfo) String() string {
-	return fmt.Sprintf("version: %d, state: %s, updatedAt: %s", p.version, p.state.String(), p.updatedAt.String())
+	return fmt.Sprintf("identity: %s, version: %d, state: %s, updatedAt: %s", p.identity, p.version, p.state.String(), p.updatedAt.String())
 }
 
 // ---------------------------------------------------------------
