@@ -835,7 +835,7 @@ func (s *StreamAllocator) handleNewEstimateInNonProbe() {
 		"commitThreshold(bps)", commitThreshold,
 		"channel", s.channelObserver.ToString(),
 	)
-	s.params.Logger.Infow(
+	s.params.Logger.Debugw(
 		fmt.Sprintf("stream allocator: channel congestion detected, %s channel capacity: experimental", action),
 		"rateHistory", s.rateMonitor.GetHistory(),
 		"expectedQueuing", s.rateMonitor.GetQueuingGuess(),
