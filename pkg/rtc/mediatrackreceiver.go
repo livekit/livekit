@@ -28,6 +28,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
@@ -642,6 +643,13 @@ func (t *MediaTrackReceiver) TrackInfo(generateLayer bool) *livekit.TrackInfo {
 	}
 
 	return ti
+}
+
+func (t *MediaTrackReceiver) Version() utils.TimedVersion {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return utils.TimedVersionFromProto(t.trackInfo.Version)
 }
 
 func (t *MediaTrackReceiver) UpdateVideoLayers(layers []*livekit.VideoLayer) {

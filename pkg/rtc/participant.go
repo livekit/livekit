@@ -1824,6 +1824,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 		}
 
 		ti.MimeType = track.Codec().MimeType
+		ti.Version = p.params.VersionGenerator.New().ToProto()
 		mt = p.addMediaTrack(signalCid, track.ID(), ti)
 		newTrack = true
 		p.dirty.Store(true)

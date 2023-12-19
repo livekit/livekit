@@ -19,7 +19,7 @@ require (
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20231128042044-05525c8278cb
 	github.com/livekit/protocol v1.9.4-0.20231206174612-7bba17ea7876
-	github.com/livekit/psrpc v0.5.2
+	github.com/livekit/psrpc v0.5.3-0.20231213230638-40783a3497a3
 	github.com/mackerelio/go-osstat v0.2.4
 	github.com/magefile/mage v1.15.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.7.0
@@ -51,6 +51,8 @@ require (
 	google.golang.org/protobuf v1.31.0
 	gopkg.in/yaml.v3 v3.0.1
 )
+
+replace github.com/livekit/protocol => ../protocol
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -102,6 +104,6 @@ require (
 	golang.org/x/text v0.14.0 // indirect
 	golang.org/x/tools v0.16.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20231127180814-3a041ad873d4 // indirect
-	google.golang.org/grpc v1.59.0 // indirect
+	google.golang.org/grpc v1.60.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
