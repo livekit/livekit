@@ -1824,7 +1824,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 		}
 
 		ti.MimeType = track.Codec().MimeType
-		if ti.Version == nil || utils.NewTimedVersionFromProto(ti.Version).IsZero() {
+		if utils.NewTimedVersionFromProto(ti.Version).IsZero() {
 			// only assign version on a fresh publish, i. e. avoid updating version in scenarios like migration
 			ti.Version = p.params.VersionGenerator.New().ToProto()
 		}
