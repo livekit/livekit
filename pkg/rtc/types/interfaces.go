@@ -446,7 +446,6 @@ type MediaTrack interface {
 
 	UpdateTrackInfo(ti *livekit.TrackInfo)
 	ToProto() *livekit.TrackInfo
-	Version() utils.TimedVersion
 
 	PublisherID() livekit.ParticipantID
 	PublisherIdentity() livekit.ParticipantIdentity

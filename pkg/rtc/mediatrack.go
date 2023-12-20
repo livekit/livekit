@@ -22,7 +22,6 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/livekit"
@@ -52,7 +51,6 @@ type MediaTrack struct {
 }
 
 type MediaTrackParams struct {
-	TrackInfo           *livekit.TrackInfo
 	SignalCid           string
 	SdpCid              string
 	ParticipantID       livekit.ParticipantID
@@ -71,13 +69,12 @@ type MediaTrackParams struct {
 	SimTracks         map[uint32]SimulcastTrackInfo
 }
 
-func NewMediaTrack(params MediaTrackParams) *MediaTrack {
+func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
 	t := &MediaTrack{
 		params: params,
 	}
 
 	t.MediaTrackReceiver = NewMediaTrackReceiver(MediaTrackReceiverParams{
-		TrackInfo:           params.TrackInfo,
 		MediaTrack:          t,
 		IsRelayed:           false,
 		ParticipantID:       params.ParticipantID,
@@ -88,19 +85,9 @@ func NewMediaTrack(params MediaTrackParams) *MediaTrack {
 		AudioConfig:         params.AudioConfig,
 		Telemetry:           params.Telemetry,
 		Logger:              params.Logger,
-	})
-	t.MediaTrackReceiver.OnVideoLayerUpdate(func(layers []*livekit.VideoLayer) {
-		t.params.Telemetry.TrackPublishedUpdate(context.Background(), t.PublisherID(),
-			&livekit.TrackInfo{
-				Sid:       string(t.ID()),
-				Type:      livekit.TrackType_VIDEO,
-				Muted:     t.IsMuted(),
-				Simulcast: t.IsSimulcast(),
-				Layers:    layers,
-			})
-	})
+	}, ti)
 
-	if params.TrackInfo.Type == livekit.TrackType_AUDIO {
+	if ti.Type == livekit.TrackType_AUDIO {
 		t.MediaLossProxy = NewMediaLossProxy(MediaLossProxyParams{
 			Logger: params.Logger,
 		})
@@ -113,7 +100,7 @@ func NewMediaTrack(params MediaTrackParams) *MediaTrack {
 		t.MediaTrackReceiver.OnMediaLossFeedback(t.MediaLossProxy.HandleMaxLossFeedback)
 	}
 
-	if params.TrackInfo.Type == livekit.TrackType_VIDEO {
+	if ti.Type == livekit.TrackType_VIDEO {
 		t.dynacastManager = NewDynacastManager(DynacastManagerParams{
 			DynacastPauseDelay: params.VideoConfig.DynacastPauseDelay,
 			Logger:             params.Logger,
@@ -126,7 +113,7 @@ func NewMediaTrack(params MediaTrackParams) *MediaTrack {
 				t.dynacastManager.NotifySubscriberMaxQuality(
 					subscriberID,
 					codec.MimeType,
-					buffer.SpatialLayerToVideoQuality(layer, t.params.TrackInfo),
+					buffer.SpatialLayerToVideoQuality(layer, t.MediaTrackReceiver.TrackInfo()),
 				)
 			},
 		)
@@ -154,7 +141,7 @@ func (t *MediaTrack) OnSubscribedMaxQualityChange(
 		for _, q := range maxSubscribedQualities {
 			receiver := t.Receiver(q.CodecMime)
 			if receiver != nil {
-				receiver.SetMaxExpectedSpatialLayer(buffer.VideoQualityToSpatialLayer(q.Quality, t.params.TrackInfo))
+				receiver.SetMaxExpectedSpatialLayer(buffer.VideoQualityToSpatialLayer(q.Quality, t.MediaTrackReceiver.TrackInfo()))
 			}
 		}
 	}
@@ -177,8 +164,8 @@ func (t *MediaTrack) HasSdpCid(cid string) bool {
 		return true
 	}
 
-	info := t.params.TrackInfo
-	for _, c := range info.Codecs {
+	ti := t.MediaTrackReceiver.TrackInfo()
+	for _, c := range ti.Codecs {
 		if c.Cid == cid {
 			return true
 		}
@@ -187,24 +174,11 @@ func (t *MediaTrack) HasSdpCid(cid string) bool {
 }
 
 func (t *MediaTrack) ToProto() *livekit.TrackInfo {
-	info := t.MediaTrackReceiver.TrackInfo(true)
-	info.Muted = t.IsMuted()
-	info.Simulcast = t.IsSimulcast()
-	return info
+	return t.MediaTrackReceiver.TrackInfo()
 }
 
 func (t *MediaTrack) SetPendingCodecSid(codecs []*livekit.SimulcastCodec) {
-	ti := proto.Clone(t.params.TrackInfo).(*livekit.TrackInfo)
-	for _, c := range codecs {
-		for _, origin := range ti.Codecs {
-			if strings.Contains(origin.MimeType, c.Codec) {
-				origin.Cid = c.Cid
-				break
-			}
-		}
-	}
-	t.params.TrackInfo = ti
-	t.MediaTrackReceiver.UpdateTrackInfo(ti)
+	t.MediaTrackReceiver.SetPendingCodecSid(codecs)
 }
 
 // AddReceiver adds a new RTP receiver to the track, returns true when receiver represents a new codec
@@ -233,24 +207,25 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		}
 	})
 
+	ti := t.MediaTrackReceiver.TrackInfo()
 	t.lock.Lock()
 	mime := strings.ToLower(track.Codec().MimeType)
-	layer := buffer.RidToSpatialLayer(track.RID(), t.trackInfo)
+	layer := buffer.RidToSpatialLayer(track.RID(), ti)
 	t.params.Logger.Debugw("AddReceiver", "mime", track.Codec().MimeType)
 	wr := t.MediaTrackReceiver.Receiver(mime)
 	if wr == nil {
 		priority := -1
-		for idx, c := range t.params.TrackInfo.Codecs {
+		for idx, c := range ti.Codecs {
 			if strings.EqualFold(mime, c.MimeType) {
 				priority = idx
 				break
 			}
 		}
-		if len(t.params.TrackInfo.Codecs) == 0 {
+		if len(ti.Codecs) == 0 {
 			priority = 0
 		}
 		if priority < 0 {
-			t.params.Logger.Warnw("could not find codec for webrtc receiver", nil, "webrtcCodec", mime, "track", logger.Proto(t.params.TrackInfo))
+			t.params.Logger.Warnw("could not find codec for webrtc receiver", nil, "webrtcCodec", mime, "track", logger.Proto(ti))
 			t.lock.Unlock()
 			return false
 		}
@@ -258,7 +233,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		newWR := sfu.NewWebRTCReceiver(
 			receiver,
 			track,
-			t.params.TrackInfo,
+			ti,
 			LoggerWithCodecMime(t.params.Logger, mime),
 			twcc,
 			t.params.VideoConfig.StreamTracker,
@@ -277,16 +252,19 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 				}
 			}
 		})
-		newWR.OnStatsUpdate(func(_ *sfu.WebRTCReceiver, stat *livekit.AnalyticsStat) {
-			// LK-TODO: this needs to be receiver/mime aware
-			key := telemetry.StatsKeyForTrack(livekit.StreamType_UPSTREAM, t.PublisherID(), t.ID(), t.params.TrackInfo.Source, t.params.TrackInfo.Type)
-			t.params.Telemetry.TrackStats(key, stat)
-		})
+		// TELEMETRY-MIME-TODO: these need to be receiver/mime aware, setting it up only for primary now
+		if priority == 0 {
+			newWR.OnStatsUpdate(func(_ *sfu.WebRTCReceiver, stat *livekit.AnalyticsStat) {
+				key := telemetry.StatsKeyForTrack(livekit.StreamType_UPSTREAM, t.PublisherID(), t.ID(), ti.Source, ti.Type)
+				t.params.Telemetry.TrackStats(key, stat)
+			})
+			newWR.OnMaxLayerChange(t.onMaxLayerChange)
+		}
 		if t.PrimaryReceiver() == nil {
 			// primary codec published, set potential codecs
-			potentialCodecs := make([]webrtc.RTPCodecParameters, 0, len(t.params.TrackInfo.Codecs))
+			potentialCodecs := make([]webrtc.RTPCodecParameters, 0, len(ti.Codecs))
 			parameters := receiver.GetParameters()
-			for _, c := range t.params.TrackInfo.Codecs {
+			for _, c := range ti.Codecs {
 				for _, nc := range parameters.Codecs {
 					if strings.EqualFold(nc.MimeType, c.MimeType) {
 						potentialCodecs = append(potentialCodecs, nc)
@@ -300,8 +278,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 				t.MediaTrackReceiver.SetPotentialCodecs(potentialCodecs, parameters.HeaderExtensions)
 			}
 		}
-
-		newWR.OnMaxLayerChange(t.onMaxLayerChange)
 
 		t.buffer = buff
 
@@ -367,17 +343,7 @@ func (t *MediaTrack) HasPendingCodec() bool {
 }
 
 func (t *MediaTrack) onMaxLayerChange(maxLayer int32) {
-	ti := &livekit.TrackInfo{
-		Sid:  t.trackInfo.Sid,
-		Type: t.trackInfo.Type,
-	}
-
-	if layer, ok := t.MediaTrackReceiver.layerDimensions[livekit.VideoQuality(maxLayer)]; ok {
-		ti.Layers = []*livekit.VideoLayer{{Quality: livekit.VideoQuality(maxLayer), Width: layer.Width, Height: layer.Height}}
-	} else if maxLayer == -1 {
-		ti.Layers = []*livekit.VideoLayer{{Quality: livekit.VideoQuality_OFF}}
-	}
-	t.params.Telemetry.TrackPublishedUpdate(context.Background(), t.PublisherID(), ti)
+	t.MediaTrackReceiver.NotifyMaxLayerChange(maxLayer)
 }
 
 func (t *MediaTrack) Restart() {

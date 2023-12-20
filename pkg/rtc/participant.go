@@ -1907,7 +1907,6 @@ func (p *ParticipantImpl) addMigrateMutedTrack(cid string, ti *livekit.TrackInfo
 
 func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *livekit.TrackInfo) *MediaTrack {
 	mt := NewMediaTrack(MediaTrackParams{
-		TrackInfo:           proto.Clone(ti).(*livekit.TrackInfo),
 		SignalCid:           signalCid,
 		SdpCid:              sdpCid,
 		ParticipantID:       p.params.SID,
@@ -1923,7 +1922,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 		SubscriberConfig:    p.params.Config.Subscriber,
 		PLIThrottleConfig:   p.params.PLIThrottleConfig,
 		SimTracks:           p.params.SimTracks,
-	})
+	}, ti)
 
 	mt.OnSubscribedMaxQualityChange(p.onSubscribedMaxQualityChange)
 
