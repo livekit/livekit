@@ -130,12 +130,6 @@ func NewMediaTrackReceiver(params MediaTrackReceiverParams, ti *livekit.TrackInf
 	if t.trackInfo.Muted {
 		t.SetMuted(true)
 	}
-
-	if t.trackInfo != nil && t.Kind() == livekit.TrackType_VIDEO {
-		t.updateVideoLayers(t.trackInfo.Layers)
-		// LK-TODO: maybe use this or simulcast flag in TrackInfo to set simulcasted here
-	}
-
 	return t
 }
 
@@ -268,9 +262,12 @@ func (t *MediaTrackReceiver) SetLayerSsrc(mime string, rid string, ssrc uint32) 
 	for _, receiver := range t.receivers {
 		if strings.EqualFold(receiver.Codec().MimeType, mime) && int(layer) < len(receiver.layerSSRCs) {
 			receiver.layerSSRCs[layer] = ssrc
-			return
+			break
 		}
 	}
+
+	// update trackInfo with SSRC changes
+	t.updateVideoLayersLocked(t.trackInfo.Layers)
 }
 
 func (t *MediaTrackReceiver) ClearReceiver(mime string, willBeResumed bool) {
@@ -562,7 +559,10 @@ func (t *MediaTrackReceiver) SetPendingCodecSid(codecs []*livekit.SimulcastCodec
 
 func (t *MediaTrackReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
 	clonedInfo := proto.Clone(ti).(*livekit.TrackInfo)
+
 	t.lock.Lock()
+	defer t.lock.Unlock()
+
 	originInfo := t.trackInfo
 	for _, ci := range clonedInfo.Codecs {
 		for _, originCi := range originInfo.Codecs {
@@ -573,10 +573,9 @@ func (t *MediaTrackReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
 		}
 	}
 	t.trackInfo = clonedInfo
-	t.lock.Unlock()
 
 	if ti != nil && t.Kind() == livekit.TrackType_VIDEO {
-		t.updateVideoLayers(ti.Layers)
+		t.updateVideoLayersLocked(ti.Layers)
 	}
 }
 
@@ -589,6 +588,13 @@ func (t *MediaTrackReceiver) TrackInfo() *livekit.TrackInfo {
 
 func (t *MediaTrackReceiver) UpdateVideoLayers(layers []*livekit.VideoLayer) {
 	t.lock.Lock()
+	t.updateVideoLayersLocked(layers)
+	t.lock.Unlock()
+
+	t.MediaTrackSubscriptions.UpdateVideoLayers()
+}
+
+func (t *MediaTrackReceiver) updateVideoLayersLocked(layers []*livekit.VideoLayer) {
 	// set video layer ssrc info
 	for i, ci := range t.trackInfo.Codecs {
 		for _, receiver := range t.receivers {
@@ -648,13 +654,6 @@ func (t *MediaTrackReceiver) UpdateVideoLayers(layers []*livekit.VideoLayer) {
 			}
 		}
 	}
-	t.lock.Unlock()
-
-	t.updateVideoLayers(layers)
-}
-
-func (t *MediaTrackReceiver) updateVideoLayers(layers []*livekit.VideoLayer) {
-	t.MediaTrackSubscriptions.UpdateVideoLayers()
 }
 
 func (t *MediaTrackReceiver) NotifyMaxLayerChange(maxLayer int32) {
