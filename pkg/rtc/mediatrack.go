@@ -252,12 +252,13 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 				}
 			}
 		})
-		// TELEMETRY-MIME-TODO: these need to be receiver/mime aware, setting it up only for primary now
+		// SIMULCAST-CODEC-TODO: these need to be receiver/mime aware, setting it up only for primary now
 		if priority == 0 {
 			newWR.OnStatsUpdate(func(_ *sfu.WebRTCReceiver, stat *livekit.AnalyticsStat) {
 				key := telemetry.StatsKeyForTrack(livekit.StreamType_UPSTREAM, t.PublisherID(), t.ID(), ti.Source, ti.Type)
 				t.params.Telemetry.TrackStats(key, stat)
 			})
+
 			newWR.OnMaxLayerChange(t.onMaxLayerChange)
 		}
 		if t.PrimaryReceiver() == nil {
