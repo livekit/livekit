@@ -55,6 +55,7 @@ type AgentHandler struct {
 	roomWorkers         map[string]*worker
 	publisherRegistered bool
 	publisherWorkers    map[string]*worker
+	onWorkerRegistered  func(handler *AgentHandler)
 }
 
 type worker struct {
@@ -128,6 +129,13 @@ func NewAgentHandler(agentServer rpc.AgentInternalServer, roomTopic, publisherTo
 		roomWorkers:      make(map[string]*worker),
 		publisherWorkers: make(map[string]*worker),
 	}
+}
+
+// OnWorkerRegistered registers a callback to be called when the first worker of each type is registered
+func (s *AgentHandler) OnWorkerRegistered(handler func(handler *AgentHandler)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onWorkerRegistered = handler
 }
 
 func (s *AgentHandler) HandleConnection(ctx context.Context, conn *websocket.Conn) {
@@ -218,6 +226,9 @@ func (s *AgentHandler) doHandleRegister(worker *worker, msg *livekit.RegisterWor
 		return errors.New("worker already registered")
 	}
 
+	onRegistered := s.onWorkerRegistered
+	firstWorker := false
+
 	switch msg.Type {
 	case livekit.JobType_JT_ROOM:
 		worker.id = msg.WorkerId
@@ -231,6 +242,7 @@ func (s *AgentHandler) doHandleRegister(worker *worker, msg *livekit.RegisterWor
 				worker.logger.Errorw("failed to register room agents", err)
 			} else {
 				s.roomRegistered = true
+				firstWorker = true
 			}
 		}
 
@@ -246,6 +258,7 @@ func (s *AgentHandler) doHandleRegister(worker *worker, msg *livekit.RegisterWor
 				worker.logger.Errorw("failed to register publisher agents", err)
 			} else {
 				s.publisherRegistered = true
+				firstWorker = true
 			}
 		}
 	default:
@@ -266,6 +279,9 @@ func (s *AgentHandler) doHandleRegister(worker *worker, msg *livekit.RegisterWor
 		worker.logger.Errorw("failed to write server message", err)
 	}
 
+	if firstWorker && onRegistered != nil {
+		onRegistered(s)
+	}
 	return nil
 }
 
