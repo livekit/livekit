@@ -444,6 +444,7 @@ type MediaTrack interface {
 	Source() livekit.TrackSource
 	Stream() string
 
+	UpdateTrackInfo(ti *livekit.TrackInfo)
 	ToProto() *livekit.TrackInfo
 	Version() utils.TimedVersion
 
