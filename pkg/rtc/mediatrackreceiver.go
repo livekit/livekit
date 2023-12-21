@@ -22,11 +22,9 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
-	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/livekit"
@@ -39,16 +37,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 )
-
-var writeOps, readOps atomic.Int64
-
-func init() {
-	go func() {
-		for range time.NewTicker(time.Second).C {
-			fmt.Printf("write %d read %d\n", writeOps.Load(), readOps.Load())
-		}
-	}()
-}
 
 const (
 	layerSelectionTolerance = 0.9
@@ -169,7 +157,6 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority 
 		return
 	}
 
-	writeOps.Inc()
 	receivers := slices.Clone(t.receivers)
 
 	// codec position maybe taken by DummyReceiver, check and upgrade to WebRTCReceiver
@@ -882,7 +869,6 @@ func (t *MediaTrackReceiver) Receivers() []sfu.TrackReceiver {
 }
 
 func (t *MediaTrackReceiver) loadReceivers() []*simulcastReceiver {
-	readOps.Inc()
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 	return t.receivers
