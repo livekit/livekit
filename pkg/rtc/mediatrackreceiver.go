@@ -197,14 +197,18 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority 
 		}
 	}
 
-	onSetupReceiver := t.onSetupReceiver
+	var receiverCodecs []string
+	for _, r := range t.receivers {
+		receiverCodecs = append(receiverCodecs, r.Codec().MimeType)
+	}
 	t.params.Logger.Debugw(
 		"setup receiver",
 		"mime", receiver.Codec().MimeType,
 		"priority", priority,
-		"receivers", t.receivers,
+		"receivers", receiverCodecs,
 		"mid", mid,
 	)
+	onSetupReceiver := t.onSetupReceiver
 	t.lock.Unlock()
 
 	if onSetupReceiver != nil {
