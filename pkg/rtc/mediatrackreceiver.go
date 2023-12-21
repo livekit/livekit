@@ -253,62 +253,6 @@ func (t *MediaTrackReceiver) SetPotentialCodecs(codecs []webrtc.RTPCodecParamete
 	t.lock.Unlock()
 }
 
-func (t *MediaTrackReceiver) SetLayerSsrc(mime string, rid string, ssrc uint32) {
-	t.lock.Lock()
-	defer t.lock.Unlock()
-
-	layer := buffer.RidToSpatialLayer(rid, t.trackInfo)
-	if layer == buffer.InvalidLayerSpatial {
-		// non-simulcast case will not have `rid`
-		layer = 0
-	}
-	quality := buffer.SpatialLayerToVideoQuality(layer, t.trackInfo)
-	// set video layer ssrc info
-	for _, ci := range t.trackInfo.Codecs {
-		if !strings.EqualFold(ci.MimeType, mime) {
-			continue
-		}
-
-		// if origin layer has ssrc, don't override it
-		var matchingLayer *livekit.VideoLayer
-		ssrcFound := false
-		for _, l := range ci.Layers {
-			if l.Quality == quality {
-				matchingLayer = l
-				if l.Ssrc != 0 {
-					ssrcFound = true
-				}
-				break
-			}
-		}
-		if !ssrcFound && matchingLayer != nil {
-			matchingLayer.Ssrc = ssrc
-		}
-		break
-	}
-
-	// for client don't use simulcast codecs (old client version or single codec)
-	if len(t.trackInfo.Codecs) == 0 {
-		// if origin layer has ssrc, don't override it
-		var matchingLayer *livekit.VideoLayer
-		ssrcFound := false
-		for _, l := range t.trackInfo.Layers {
-			if l.Quality == quality {
-				matchingLayer = l
-				if l.Ssrc != 0 {
-					ssrcFound = true
-				}
-				break
-			}
-		}
-		if !ssrcFound && matchingLayer != nil {
-			matchingLayer.Ssrc = ssrc
-		}
-	}
-
-	// RAJA-TOOD: call UpdateTrackInfo on all receivers
-}
-
 func (t *MediaTrackReceiver) ClearReceiver(mime string, willBeResumed bool) {
 	t.params.Logger.Debugw("clearing receiver", "mime", mime)
 	t.lock.Lock()
@@ -592,6 +536,61 @@ func (t *MediaTrackReceiver) updateTrackInfoOfReceivers() {
 	for _, r := range receivers {
 		r.UpdateTrackInfo(ti)
 	}
+}
+
+func (t *MediaTrackReceiver) SetLayerSsrc(mime string, rid string, ssrc uint32) {
+	t.lock.Lock()
+	layer := buffer.RidToSpatialLayer(rid, t.trackInfo)
+	if layer == buffer.InvalidLayerSpatial {
+		// non-simulcast case will not have `rid`
+		layer = 0
+	}
+	quality := buffer.SpatialLayerToVideoQuality(layer, t.trackInfo)
+	// set video layer ssrc info
+	for _, ci := range t.trackInfo.Codecs {
+		if !strings.EqualFold(ci.MimeType, mime) {
+			continue
+		}
+
+		// if origin layer has ssrc, don't override it
+		var matchingLayer *livekit.VideoLayer
+		ssrcFound := false
+		for _, l := range ci.Layers {
+			if l.Quality == quality {
+				matchingLayer = l
+				if l.Ssrc != 0 {
+					ssrcFound = true
+				}
+				break
+			}
+		}
+		if !ssrcFound && matchingLayer != nil {
+			matchingLayer.Ssrc = ssrc
+		}
+		break
+	}
+
+	// for client don't use simulcast codecs (old client version or single codec)
+	if len(t.trackInfo.Codecs) == 0 {
+		// if origin layer has ssrc, don't override it
+		var matchingLayer *livekit.VideoLayer
+		ssrcFound := false
+		for _, l := range t.trackInfo.Layers {
+			if l.Quality == quality {
+				matchingLayer = l
+				if l.Ssrc != 0 {
+					ssrcFound = true
+				}
+				break
+			}
+		}
+		if !ssrcFound && matchingLayer != nil {
+			matchingLayer.Ssrc = ssrc
+		}
+	}
+	t.lock.Unlock()
+
+	t.updateTrackInfoOfReceivers()
 }
 
 func (t *MediaTrackReceiver) UpdateCodecCid(codecs []*livekit.SimulcastCodec) {
