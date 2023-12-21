@@ -440,7 +440,7 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) (types.Su
 		return nil, ErrNotOpen
 	}
 
-	receivers := t.simulcastReceivers()
+	receivers := t.simulcastReceiversLocked()
 	potentialCodecs := make([]webrtc.RTPCodecParameters, len(t.potentialCodecs))
 	copy(potentialCodecs, t.potentialCodecs)
 	t.lock.RUnlock()
@@ -861,10 +861,7 @@ func (t *MediaTrackReceiver) Receivers() []sfu.TrackReceiver {
 	return receivers
 }
 
-func (t *MediaTrackReceiver) simulcastReceivers() []*simulcastReceiver {
-	t.lock.RLock()
-	defer t.lock.RUnlock()
-
+func (t *MediaTrackReceiver) simulcastReceiversLocked() []*simulcastReceiver {
 	receivers := make([]*simulcastReceiver, 0, len(t.receivers))
 	for _, r := range t.receivers {
 		receivers = append(receivers, r)
