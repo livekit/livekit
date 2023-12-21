@@ -22,7 +22,6 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/livekit"
@@ -165,7 +164,7 @@ func (t *MediaTrack) HasSdpCid(cid string) bool {
 		return true
 	}
 
-	ti := t.MediaTrackReceiver.TrackInfo()
+	ti := t.MediaTrackReceiver.TrackInfoClone()
 	for _, c := range ti.Codecs {
 		if c.Cid == cid {
 			return true
@@ -175,7 +174,7 @@ func (t *MediaTrack) HasSdpCid(cid string) bool {
 }
 
 func (t *MediaTrack) ToProto() *livekit.TrackInfo {
-	return proto.Clone(t.MediaTrackReceiver.TrackInfo()).(*livekit.TrackInfo)
+	return t.MediaTrackReceiver.TrackInfoClone()
 }
 
 func (t *MediaTrack) UpdateCodecCid(codecs []*livekit.SimulcastCodec) {
@@ -208,7 +207,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		}
 	})
 
-	ti := t.MediaTrackReceiver.TrackInfo()
+	ti := t.MediaTrackReceiver.TrackInfoClone()
 	t.lock.Lock()
 	mime := strings.ToLower(track.Codec().MimeType)
 	layer := buffer.RidToSpatialLayer(track.RID(), ti)

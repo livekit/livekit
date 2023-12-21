@@ -713,6 +713,13 @@ func (t *MediaTrackReceiver) TrackInfo() *livekit.TrackInfo {
 	return t.trackInfo
 }
 
+func (t *MediaTrackReceiver) TrackInfoClone() *livekit.TrackInfo {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return proto.Clone(t.trackInfo).(*livekit.TrackInfo)
+}
+
 func (t *MediaTrackReceiver) NotifyMaxLayerChange(maxLayer int32) {
 	t.lock.RLock()
 	quality := buffer.SpatialLayerToVideoQuality(maxLayer, t.trackInfo)
