@@ -633,6 +633,7 @@ func (t *MediaTrackReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
 					}
 				}
 			}
+			break
 		}
 
 		if i == 0 {
