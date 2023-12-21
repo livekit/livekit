@@ -7,7 +7,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/utils"
 )
 
 type FakeMediaTrack struct {
@@ -278,16 +277,6 @@ type FakeMediaTrack struct {
 	updateVideoLayersMutex       sync.RWMutex
 	updateVideoLayersArgsForCall []struct {
 		arg1 []*livekit.VideoLayer
-	}
-	VersionStub        func() utils.TimedVersion
-	versionMutex       sync.RWMutex
-	versionArgsForCall []struct {
-	}
-	versionReturns struct {
-		result1 utils.TimedVersion
-	}
-	versionReturnsOnCall map[int]struct {
-		result1 utils.TimedVersion
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
@@ -1743,59 +1732,6 @@ func (fake *FakeMediaTrack) UpdateVideoLayersArgsForCall(i int) []*livekit.Video
 	return argsForCall.arg1
 }
 
-func (fake *FakeMediaTrack) Version() utils.TimedVersion {
-	fake.versionMutex.Lock()
-	ret, specificReturn := fake.versionReturnsOnCall[len(fake.versionArgsForCall)]
-	fake.versionArgsForCall = append(fake.versionArgsForCall, struct {
-	}{})
-	stub := fake.VersionStub
-	fakeReturns := fake.versionReturns
-	fake.recordInvocation("Version", []interface{}{})
-	fake.versionMutex.Unlock()
-	if stub != nil {
-		return stub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeMediaTrack) VersionCallCount() int {
-	fake.versionMutex.RLock()
-	defer fake.versionMutex.RUnlock()
-	return len(fake.versionArgsForCall)
-}
-
-func (fake *FakeMediaTrack) VersionCalls(stub func() utils.TimedVersion) {
-	fake.versionMutex.Lock()
-	defer fake.versionMutex.Unlock()
-	fake.VersionStub = stub
-}
-
-func (fake *FakeMediaTrack) VersionReturns(result1 utils.TimedVersion) {
-	fake.versionMutex.Lock()
-	defer fake.versionMutex.Unlock()
-	fake.VersionStub = nil
-	fake.versionReturns = struct {
-		result1 utils.TimedVersion
-	}{result1}
-}
-
-func (fake *FakeMediaTrack) VersionReturnsOnCall(i int, result1 utils.TimedVersion) {
-	fake.versionMutex.Lock()
-	defer fake.versionMutex.Unlock()
-	fake.VersionStub = nil
-	if fake.versionReturnsOnCall == nil {
-		fake.versionReturnsOnCall = make(map[int]struct {
-			result1 utils.TimedVersion
-		})
-	}
-	fake.versionReturnsOnCall[i] = struct {
-		result1 utils.TimedVersion
-	}{result1}
-}
-
 func (fake *FakeMediaTrack) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
@@ -1857,8 +1793,6 @@ func (fake *FakeMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.updateTrackInfoMutex.RUnlock()
 	fake.updateVideoLayersMutex.RLock()
 	defer fake.updateVideoLayersMutex.RUnlock()
-	fake.versionMutex.RLock()
-	defer fake.versionMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

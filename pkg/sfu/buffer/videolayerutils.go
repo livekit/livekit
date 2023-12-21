@@ -25,6 +25,7 @@ const (
 	FullResolution    = "f"
 )
 
+// SIMULCAST-CODEC-TODO: these need to be codec mime aware if and when each codec suppports different layers
 func LayerPresenceFromTrackInfo(trackInfo *livekit.TrackInfo) *[livekit.VideoQuality_HIGH + 1]bool {
 	if trackInfo == nil || len(trackInfo.Layers) == 0 {
 		return nil

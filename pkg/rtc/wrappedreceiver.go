@@ -294,6 +294,12 @@ func (d *DummyReceiver) TrackInfo() *livekit.TrackInfo {
 	return nil
 }
 
+func (d *DummyReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+		r.UpdateTrackInfo(ti)
+	}
+}
+
 func (d *DummyReceiver) IsClosed() bool {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		return r.IsClosed()
