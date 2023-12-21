@@ -18,13 +18,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"sort"
 	"strings"
 	"sync"
 
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
+	"golang.org/x/exp/slices"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/livekit"
