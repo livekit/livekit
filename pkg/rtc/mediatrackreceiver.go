@@ -230,7 +230,6 @@ func (t *MediaTrackReceiver) SetPotentialCodecs(codecs []webrtc.RTPCodecParamete
 		}
 	}
 	t.lock.Lock()
-	writeOps.Inc()
 	receivers := slices.Clone(t.receivers)
 	t.potentialCodecs = codecs
 	for i, c := range codecs {
@@ -261,7 +260,6 @@ func (t *MediaTrackReceiver) SetPotentialCodecs(codecs []webrtc.RTPCodecParamete
 
 func (t *MediaTrackReceiver) ClearReceiver(mime string, willBeResumed bool) {
 	t.lock.Lock()
-	writeOps.Inc()
 	receivers := slices.Clone(t.receivers)
 	for idx, receiver := range receivers {
 		if strings.EqualFold(receiver.Codec().MimeType, mime) {
