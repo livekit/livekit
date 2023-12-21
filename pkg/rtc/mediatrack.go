@@ -22,6 +22,7 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/livekit"
@@ -174,7 +175,7 @@ func (t *MediaTrack) HasSdpCid(cid string) bool {
 }
 
 func (t *MediaTrack) ToProto() *livekit.TrackInfo {
-	return t.MediaTrackReceiver.TrackInfo()
+	return proto.Clone(t.MediaTrackReceiver.TrackInfo()).(*livekit.TrackInfo)
 }
 
 func (t *MediaTrack) UpdateCodecCid(codecs []*livekit.SimulcastCodec) {
