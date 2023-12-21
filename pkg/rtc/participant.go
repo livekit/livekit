@@ -1622,7 +1622,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 			return nil
 		}
 
-		track.(*MediaTrack).SetPendingCodecSid(req.SimulcastCodecs)
+		track.(*MediaTrack).UpdateCodecCid(req.SimulcastCodecs)
 		ti := track.ToProto()
 		return ti
 	}
