@@ -221,8 +221,17 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 				break
 			}
 		}
-		if len(ti.Codecs) == 0 {
-			priority = 0
+		if priority < 0 {
+			switch len(ti.Codecs) {
+			case 0:
+				// audio track
+				priority = 0
+			case 1:
+				// older clients or non simulcast-codec, mime type only set later
+				if ti.Codecs[0].MimeType == "" {
+					priority = 0
+				}
+			}
 		}
 		if priority < 0 {
 			t.params.Logger.Warnw("could not find codec for webrtc receiver", nil, "webrtcCodec", mime, "track", logger.Proto(ti))

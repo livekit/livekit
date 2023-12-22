@@ -1647,11 +1647,13 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	p.setStableTrackID(req.Cid, ti)
 
 	if len(req.SimulcastCodecs) == 0 {
-		// clients not supporting simulcast codecs, synthesise a codec
-		ti.Codecs = append(ti.Codecs, &livekit.SimulcastCodecInfo{
-			Cid:    req.Cid,
-			Layers: req.Layers,
-		})
+		if req.Type == livekit.TrackType_VIDEO {
+			// clients not supporting simulcast codecs, synthesise a codec
+			ti.Codecs = append(ti.Codecs, &livekit.SimulcastCodecInfo{
+				Cid:    req.Cid,
+				Layers: req.Layers,
+			})
+		}
 	} else {
 		seenCodecs := make(map[string]struct{})
 		for _, codec := range req.SimulcastCodecs {
