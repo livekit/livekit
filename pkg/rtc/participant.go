@@ -1646,16 +1646,11 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	}
 	p.setStableTrackID(req.Cid, ti)
 
-	clonedLayers := make([]*livekit.VideoLayer, 0, len(req.Layers))
-	for _, l := range req.Layers {
-		clonedLayers = append(clonedLayers, proto.Clone(l).(*livekit.VideoLayer))
-	}
-
 	if len(req.SimulcastCodecs) == 0 {
 		// clients not supporting simulcast codecs, synthesise a codec
 		ti.Codecs = append(ti.Codecs, &livekit.SimulcastCodecInfo{
 			Cid:    req.Cid,
-			Layers: clonedLayers,
+			Layers: req.Layers,
 		})
 	} else {
 		seenCodecs := make(map[string]struct{})
@@ -1684,6 +1679,10 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 			}
 			seenCodecs[mime] = struct{}{}
 
+			clonedLayers := make([]*livekit.VideoLayer, 0, len(req.Layers))
+			for _, l := range req.Layers {
+				clonedLayers = append(clonedLayers, proto.Clone(l).(*livekit.VideoLayer))
+			}
 			ti.Codecs = append(ti.Codecs, &livekit.SimulcastCodecInfo{
 				MimeType: mime,
 				Cid:      codec.Cid,
