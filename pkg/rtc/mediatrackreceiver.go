@@ -182,11 +182,6 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority 
 		if priority == 0 {
 			t.trackInfo.MimeType = receiver.Codec().MimeType
 			t.trackInfo.Mid = mid
-
-			// for clients don't have simulcast codecs (old version or single codec), add the primary codec
-			if len(t.trackInfo.Codecs) == 0 && t.trackInfo.Type == livekit.TrackType_VIDEO {
-				t.trackInfo.Codecs = append(t.trackInfo.Codecs, &livekit.SimulcastCodecInfo{})
-			}
 		}
 
 		for i, ci := range t.trackInfo.Codecs {
@@ -547,7 +542,7 @@ func (t *MediaTrackReceiver) SetLayerSsrc(mime string, rid string, ssrc uint32) 
 	}
 	quality := buffer.SpatialLayerToVideoQuality(layer, t.trackInfo)
 	// set video layer ssrc info
-	for _, ci := range t.trackInfo.Codecs {
+	for i, ci := range t.trackInfo.Codecs {
 		if !strings.EqualFold(ci.MimeType, mime) {
 			continue
 		}
@@ -567,26 +562,12 @@ func (t *MediaTrackReceiver) SetLayerSsrc(mime string, rid string, ssrc uint32) 
 		if !ssrcFound && matchingLayer != nil {
 			matchingLayer.Ssrc = ssrc
 		}
-		break
-	}
 
-	// for client don't use simulcast codecs (old client version or single codec)
-	if len(t.trackInfo.Codecs) == 0 {
-		// if origin layer has ssrc, don't override it
-		var matchingLayer *livekit.VideoLayer
-		ssrcFound := false
-		for _, l := range t.trackInfo.Layers {
-			if l.Quality == quality {
-				matchingLayer = l
-				if l.Ssrc != 0 {
-					ssrcFound = true
-				}
-				break
-			}
+		// for client don't use simulcast codecs (old client version or single codec)
+		if i == 0 {
+			t.trackInfo.Layers = ci.Layers
 		}
-		if !ssrcFound && matchingLayer != nil {
-			matchingLayer.Ssrc = ssrc
-		}
+		break
 	}
 	t.lock.Unlock()
 
@@ -636,25 +617,11 @@ func (t *MediaTrackReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
 			break
 		}
 
+		// for client don't use simulcast codecs (old client version or single codec)
 		if i == 0 {
 			clonedInfo.Layers = ci.Layers
 		}
 	}
-
-	// for client don't use simulcast codecs (old client version or single codec)
-	if len(clonedInfo.Codecs) == 0 {
-		for _, layer := range clonedInfo.Layers {
-			for _, originLayer := range t.trackInfo.Layers {
-				if layer.Quality == originLayer.Quality {
-					if originLayer.Ssrc != 0 {
-						layer.Ssrc = originLayer.Ssrc
-					}
-					break
-				}
-			}
-		}
-	}
-
 	t.trackInfo = clonedInfo
 	t.lock.Unlock()
 
@@ -679,25 +646,9 @@ func (t *MediaTrackReceiver) UpdateVideoLayers(layers []*livekit.VideoLayer) {
 			}
 		}
 
+		// for client don't use simulcast codecs (old client version or single codec)
 		if i == 0 {
 			t.trackInfo.Layers = ci.Layers
-		}
-	}
-
-	// for client don't use simulcast codecs (old client version or single codec)
-	if len(t.trackInfo.Codecs) == 0 {
-		originLayers := t.trackInfo.Layers
-		t.trackInfo.Layers = []*livekit.VideoLayer{}
-		for layerIdx, layer := range layers {
-			t.trackInfo.Layers = append(t.trackInfo.Layers, proto.Clone(layer).(*livekit.VideoLayer))
-			for _, l := range originLayers {
-				if l.Quality == t.trackInfo.Layers[layerIdx].Quality {
-					if l.Ssrc != 0 {
-						t.trackInfo.Layers[layerIdx].Ssrc = l.Ssrc
-					}
-					break
-				}
-			}
 		}
 	}
 	t.lock.Unlock()

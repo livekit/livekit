@@ -1645,41 +1645,51 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		ti.Stream = StreamFromTrackSource(ti.Source)
 	}
 	p.setStableTrackID(req.Cid, ti)
-	seenCodecs := make(map[string]struct{})
-	for _, codec := range req.SimulcastCodecs {
-		mime := codec.Codec
-		if req.Type == livekit.TrackType_VIDEO {
-			if !strings.HasPrefix(mime, "video/") {
-				mime = "video/" + mime
-			}
-			if !IsCodecEnabled(p.enabledPublishCodecs, webrtc.RTPCodecCapability{MimeType: mime}) {
-				altCodec := selectAlternativeVideoCodec(p.enabledPublishCodecs)
-				p.pubLogger.Infow("falling back to alternative codec",
-					"codec", mime,
-					"altCodec", altCodec,
-					"trackID", ti.Sid,
-				)
-				// select an alternative MIME type that's generally supported
-				mime = altCodec
-			}
-		} else if req.Type == livekit.TrackType_AUDIO && !strings.HasPrefix(mime, "audio/") {
-			mime = "audio/" + mime
-		}
 
-		if _, ok := seenCodecs[mime]; ok || mime == "" {
-			continue
-		}
-		seenCodecs[mime] = struct{}{}
+	clonedLayers := make([]*livekit.VideoLayer, 0, len(req.Layers))
+	for _, l := range req.Layers {
+		clonedLayers = append(clonedLayers, proto.Clone(l).(*livekit.VideoLayer))
+	}
 
-		clonedLayers := make([]*livekit.VideoLayer, 0, len(req.Layers))
-		for _, l := range req.Layers {
-			clonedLayers = append(clonedLayers, proto.Clone(l).(*livekit.VideoLayer))
-		}
+	if len(req.SimulcastCodecs) == 0 {
+		// clients not supporting simulcast codecs, synthesise a codec
 		ti.Codecs = append(ti.Codecs, &livekit.SimulcastCodecInfo{
-			MimeType: mime,
-			Cid:      codec.Cid,
-			Layers:   clonedLayers,
+			Cid:    req.Cid,
+			Layers: clonedLayers,
 		})
+	} else {
+		seenCodecs := make(map[string]struct{})
+		for _, codec := range req.SimulcastCodecs {
+			mime := codec.Codec
+			if req.Type == livekit.TrackType_VIDEO {
+				if !strings.HasPrefix(mime, "video/") {
+					mime = "video/" + mime
+				}
+				if !IsCodecEnabled(p.enabledPublishCodecs, webrtc.RTPCodecCapability{MimeType: mime}) {
+					altCodec := selectAlternativeVideoCodec(p.enabledPublishCodecs)
+					p.pubLogger.Infow("falling back to alternative codec",
+						"codec", mime,
+						"altCodec", altCodec,
+						"trackID", ti.Sid,
+					)
+					// select an alternative MIME type that's generally supported
+					mime = altCodec
+				}
+			} else if req.Type == livekit.TrackType_AUDIO && !strings.HasPrefix(mime, "audio/") {
+				mime = "audio/" + mime
+			}
+
+			if _, ok := seenCodecs[mime]; ok || mime == "" {
+				continue
+			}
+			seenCodecs[mime] = struct{}{}
+
+			ti.Codecs = append(ti.Codecs, &livekit.SimulcastCodecInfo{
+				MimeType: mime,
+				Cid:      codec.Cid,
+				Layers:   clonedLayers,
+			})
+		}
 	}
 
 	p.params.Telemetry.TrackPublishRequested(context.Background(), p.ID(), p.Identity(), ti)
@@ -1901,7 +1911,7 @@ func (p *ParticipantImpl) addMigrateMutedTrack(cid string, ti *livekit.TrackInfo
 	for _, codec := range ti.Codecs {
 		for ssrc, info := range p.params.SimTracks {
 			if info.Mid == codec.Mid {
-				mt.MediaTrackReceiver.SetLayerSsrc(codec.MimeType, info.Rid, ssrc)
+				mt.SetLayerSsrc(codec.MimeType, info.Rid, ssrc)
 			}
 		}
 	}
