@@ -73,6 +73,7 @@ type TelemetryService interface {
 	IngressStarted(ctx context.Context, info *livekit.IngressInfo)
 	IngressUpdated(ctx context.Context, info *livekit.IngressInfo)
 	IngressEnded(ctx context.Context, info *livekit.IngressInfo)
+	LocalRoomState(ctx context.Context, info *livekit.AnalyticsNodeRooms)
 
 	// helpers
 	AnalyticsService
@@ -186,4 +187,10 @@ func (t *telemetryService) cleanupWorkers() {
 			delete(t.workers, participantID)
 		}
 	}
+}
+
+func (t *telemetryService) LocalRoomState(ctx context.Context, info *livekit.AnalyticsNodeRooms) {
+	t.enqueue(func() {
+		t.SendNodeRoomStates(ctx, info)
+	})
 }

@@ -18,7 +18,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20231213075826-cccbf2b93d3f
-	github.com/livekit/protocol v1.9.4-0.20231221100346-e9e5fcd7d371
+	github.com/livekit/protocol v1.9.4-0.20231222234445-80e8b5a2d1fa
 	github.com/livekit/psrpc v0.5.3-0.20231214055026-06ce27a934c9
 	github.com/mackerelio/go-osstat v0.2.4
 	github.com/magefile/mage v1.15.0
@@ -48,7 +48,7 @@ require (
 	go.uber.org/atomic v1.11.0
 	golang.org/x/exp v0.0.0-20231219180239-dc181d75b848
 	golang.org/x/sync v0.5.0
-	google.golang.org/protobuf v1.31.0
+	google.golang.org/protobuf v1.32.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -61,7 +61,7 @@ require (
 	github.com/eapache/channels v1.1.0 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
 	github.com/go-jose/go-jose/v3 v3.0.1 // indirect
-	github.com/go-logr/logr v1.3.0 // indirect
+	github.com/go-logr/logr v1.4.1 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/google/go-cmp v0.5.9 // indirect
 	github.com/google/subcommands v1.2.0 // indirect
