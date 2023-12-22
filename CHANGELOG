@@ -21,7 +21,6 @@ Support for LiveKit SIP Bridge
 - Fix mid info lost when migrating multi-codec simulcast track (#2315)
 - Store identity in participant update cache. (#2320)
 - Fix panic occurs when starting livekit-server with key-file option (#2312) (#2313)
-- Prevent unsafe access (hopefully). (#2332)
 
 ### Changed
 - INFO logging reduction (#2243 #2273 #2275 #2281 #2283 #2285 #2322)
