@@ -186,8 +186,8 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority 
 
 		for i, ci := range t.trackInfo.Codecs {
 			if i == priority {
-				ci.Mid = mid
 				ci.MimeType = receiver.Codec().MimeType
+				ci.Mid = mid
 				break
 			}
 		}
