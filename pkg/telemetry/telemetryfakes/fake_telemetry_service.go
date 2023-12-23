@@ -62,6 +62,12 @@ type FakeTelemetryService struct {
 		arg1 context.Context
 		arg2 *livekit.IngressInfo
 	}
+	LocalRoomStateStub        func(context.Context, *livekit.AnalyticsNodeRooms)
+	localRoomStateMutex       sync.RWMutex
+	localRoomStateArgsForCall []struct {
+		arg1 context.Context
+		arg2 *livekit.AnalyticsNodeRooms
+	}
 	NotifyEventStub        func(context.Context, *livekit.WebhookEvent)
 	notifyEventMutex       sync.RWMutex
 	notifyEventArgsForCall []struct {
@@ -121,6 +127,12 @@ type FakeTelemetryService struct {
 	sendEventArgsForCall []struct {
 		arg1 context.Context
 		arg2 *livekit.AnalyticsEvent
+	}
+	SendNodeRoomStatesStub        func(context.Context, *livekit.AnalyticsNodeRooms)
+	sendNodeRoomStatesMutex       sync.RWMutex
+	sendNodeRoomStatesArgsForCall []struct {
+		arg1 context.Context
+		arg2 *livekit.AnalyticsNodeRooms
 	}
 	SendStatsStub        func(context.Context, []*livekit.AnalyticsStat)
 	sendStatsMutex       sync.RWMutex
@@ -533,6 +545,39 @@ func (fake *FakeTelemetryService) IngressUpdatedArgsForCall(i int) (context.Cont
 	return argsForCall.arg1, argsForCall.arg2
 }
 
+func (fake *FakeTelemetryService) LocalRoomState(arg1 context.Context, arg2 *livekit.AnalyticsNodeRooms) {
+	fake.localRoomStateMutex.Lock()
+	fake.localRoomStateArgsForCall = append(fake.localRoomStateArgsForCall, struct {
+		arg1 context.Context
+		arg2 *livekit.AnalyticsNodeRooms
+	}{arg1, arg2})
+	stub := fake.LocalRoomStateStub
+	fake.recordInvocation("LocalRoomState", []interface{}{arg1, arg2})
+	fake.localRoomStateMutex.Unlock()
+	if stub != nil {
+		fake.LocalRoomStateStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeTelemetryService) LocalRoomStateCallCount() int {
+	fake.localRoomStateMutex.RLock()
+	defer fake.localRoomStateMutex.RUnlock()
+	return len(fake.localRoomStateArgsForCall)
+}
+
+func (fake *FakeTelemetryService) LocalRoomStateCalls(stub func(context.Context, *livekit.AnalyticsNodeRooms)) {
+	fake.localRoomStateMutex.Lock()
+	defer fake.localRoomStateMutex.Unlock()
+	fake.LocalRoomStateStub = stub
+}
+
+func (fake *FakeTelemetryService) LocalRoomStateArgsForCall(i int) (context.Context, *livekit.AnalyticsNodeRooms) {
+	fake.localRoomStateMutex.RLock()
+	defer fake.localRoomStateMutex.RUnlock()
+	argsForCall := fake.localRoomStateArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
 func (fake *FakeTelemetryService) NotifyEvent(arg1 context.Context, arg2 *livekit.WebhookEvent) {
 	fake.notifyEventMutex.Lock()
 	fake.notifyEventArgsForCall = append(fake.notifyEventArgsForCall, struct {
@@ -806,6 +851,39 @@ func (fake *FakeTelemetryService) SendEventArgsForCall(i int) (context.Context, 
 	fake.sendEventMutex.RLock()
 	defer fake.sendEventMutex.RUnlock()
 	argsForCall := fake.sendEventArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeTelemetryService) SendNodeRoomStates(arg1 context.Context, arg2 *livekit.AnalyticsNodeRooms) {
+	fake.sendNodeRoomStatesMutex.Lock()
+	fake.sendNodeRoomStatesArgsForCall = append(fake.sendNodeRoomStatesArgsForCall, struct {
+		arg1 context.Context
+		arg2 *livekit.AnalyticsNodeRooms
+	}{arg1, arg2})
+	stub := fake.SendNodeRoomStatesStub
+	fake.recordInvocation("SendNodeRoomStates", []interface{}{arg1, arg2})
+	fake.sendNodeRoomStatesMutex.Unlock()
+	if stub != nil {
+		fake.SendNodeRoomStatesStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeTelemetryService) SendNodeRoomStatesCallCount() int {
+	fake.sendNodeRoomStatesMutex.RLock()
+	defer fake.sendNodeRoomStatesMutex.RUnlock()
+	return len(fake.sendNodeRoomStatesArgsForCall)
+}
+
+func (fake *FakeTelemetryService) SendNodeRoomStatesCalls(stub func(context.Context, *livekit.AnalyticsNodeRooms)) {
+	fake.sendNodeRoomStatesMutex.Lock()
+	defer fake.sendNodeRoomStatesMutex.Unlock()
+	fake.SendNodeRoomStatesStub = stub
+}
+
+func (fake *FakeTelemetryService) SendNodeRoomStatesArgsForCall(i int) (context.Context, *livekit.AnalyticsNodeRooms) {
+	fake.sendNodeRoomStatesMutex.RLock()
+	defer fake.sendNodeRoomStatesMutex.RUnlock()
+	argsForCall := fake.sendNodeRoomStatesArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2
 }
 
@@ -1359,6 +1437,8 @@ func (fake *FakeTelemetryService) Invocations() map[string][][]interface{} {
 	defer fake.ingressStartedMutex.RUnlock()
 	fake.ingressUpdatedMutex.RLock()
 	defer fake.ingressUpdatedMutex.RUnlock()
+	fake.localRoomStateMutex.RLock()
+	defer fake.localRoomStateMutex.RUnlock()
 	fake.notifyEventMutex.RLock()
 	defer fake.notifyEventMutex.RUnlock()
 	fake.participantActiveMutex.RLock()
@@ -1375,6 +1455,8 @@ func (fake *FakeTelemetryService) Invocations() map[string][][]interface{} {
 	defer fake.roomStartedMutex.RUnlock()
 	fake.sendEventMutex.RLock()
 	defer fake.sendEventMutex.RUnlock()
+	fake.sendNodeRoomStatesMutex.RLock()
+	defer fake.sendNodeRoomStatesMutex.RUnlock()
 	fake.sendStatsMutex.RLock()
 	defer fake.sendStatsMutex.RUnlock()
 	fake.trackMaxSubscribedVideoQualityMutex.RLock()

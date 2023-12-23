@@ -17,6 +17,9 @@ package telemetry
 import (
 	"context"
 
+	"go.uber.org/atomic"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -28,14 +31,17 @@ import (
 type AnalyticsService interface {
 	SendStats(ctx context.Context, stats []*livekit.AnalyticsStat)
 	SendEvent(ctx context.Context, events *livekit.AnalyticsEvent)
+	SendNodeRoomStates(ctx context.Context, nodeRooms *livekit.AnalyticsNodeRooms)
 }
 
 type analyticsService struct {
-	analyticsKey string
-	nodeID       string
+	analyticsKey   string
+	nodeID         string
+	sequenceNumber atomic.Uint64
 
-	events livekit.AnalyticsRecorderService_IngestEventsClient
-	stats  livekit.AnalyticsRecorderService_IngestStatsClient
+	events    livekit.AnalyticsRecorderService_IngestEventsClient
+	stats     livekit.AnalyticsRecorderService_IngestStatsClient
+	nodeRooms livekit.AnalyticsRecorderService_IngestNodeRoomStatesClient
 }
 
 func NewAnalyticsService(_ *config.Config, currentNode routing.LocalNode) AnalyticsService {
@@ -69,5 +75,18 @@ func (a *analyticsService) SendEvent(_ context.Context, event *livekit.Analytics
 		Events: []*livekit.AnalyticsEvent{event},
 	}); err != nil {
 		logger.Errorw("failed to send event", err, "eventType", event.Type.String())
+	}
+}
+
+func (a *analyticsService) SendNodeRoomStates(_ context.Context, nodeRooms *livekit.AnalyticsNodeRooms) {
+	if a.nodeRooms == nil {
+		return
+	}
+
+	nodeRooms.NodeId = a.nodeID
+	nodeRooms.SequenceNumber = a.sequenceNumber.Add(1)
+	nodeRooms.Timestamp = timestamppb.Now()
+	if err := a.nodeRooms.Send(nodeRooms); err != nil {
+		logger.Errorw("failed to send node room states", err)
 	}
 }
