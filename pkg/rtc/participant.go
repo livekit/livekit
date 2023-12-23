@@ -1833,7 +1833,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 				}
 			}
 			if codecFound != len(ti.Codecs) {
-				p.params.Logger.Warnw("migrated track codec mismatched", nil, "track", logger.Proto(ti), "webrtcCodec", parameters)
+				p.pubLogger.Warnw("migrated track codec mismatched", nil, "track", logger.Proto(ti), "webrtcCodec", parameters)
 				p.pendingTracksLock.Unlock()
 				p.IssueFullReconnect(types.ParticipantCloseReasonMigrateCodecMismatch)
 				return nil, false
@@ -1862,6 +1862,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	if mt.AddReceiver(rtpReceiver, track, p.twcc, mid) {
 		p.removeMutedTrackNotFired(mt)
 		if newTrack {
+			p.pubLogger.Debugw("track published", nil, "trackID", mt.ID(), "track", logger.Proto(mt.ToProto()))
 			go p.handleTrackPublished(mt)
 		}
 	}
@@ -1993,7 +1994,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 
 		if !p.IsClosed() {
 			// unpublished events aren't necessary when participant is closed
-			p.pubLogger.Infow("unpublished track", "trackID", ti.Sid, "trackInfo", ti)
+			p.pubLogger.Debugw("track unpublished", "trackID", ti.Sid, "track", logger.Proto(ti))
 			p.lock.RLock()
 			onTrackUnpublished := p.onTrackUnpublished
 			p.lock.RUnlock()

@@ -458,7 +458,7 @@ func (d *DownTrack) SetStreamAllocatorListener(listener DownTrackStreamAllocator
 			d.transportWideExtID = 0
 		}
 
-		// kick of a gratuitous allocation
+		// kick off a gratuitous allocation
 		listener.OnSubscriptionChanged(d)
 	}
 }

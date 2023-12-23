@@ -211,7 +211,13 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	t.lock.Lock()
 	mime := strings.ToLower(track.Codec().MimeType)
 	layer := buffer.RidToSpatialLayer(track.RID(), ti)
-	t.params.Logger.Debugw("AddReceiver", "mime", track.Codec().MimeType)
+	t.params.Logger.Debugw(
+		"AddReceiver",
+		"mime", track.Codec().MimeType,
+		"rid", track.RID(),
+		"layer", layer,
+		"ssrc", track.SSRC(),
+	)
 	wr := t.MediaTrackReceiver.Receiver(mime)
 	if wr == nil {
 		priority := -1
