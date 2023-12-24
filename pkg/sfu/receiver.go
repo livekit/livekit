@@ -421,6 +421,7 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) error {
 	track.UpTrackMaxTemporalLayerSeenChange(w.streamTrackerManager.GetMaxTemporalLayerSeen())
 
 	w.downTrackSpreader.Store(track)
+	w.logger.Debugw("downtrack added", "subscriberID", track.SubscriberID())
 	return nil
 }
 
@@ -505,6 +506,7 @@ func (w *WebRTCReceiver) DeleteDownTrack(subscriberID livekit.ParticipantID) {
 	}
 
 	w.downTrackSpreader.Free(subscriberID)
+	w.logger.Debugw("downtrack deleted", "subscriberID", subscriberID)
 }
 
 func (w *WebRTCReceiver) sendRTCP(packets []rtcp.Packet) {
