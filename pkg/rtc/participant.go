@@ -1862,7 +1862,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	if mt.AddReceiver(rtpReceiver, track, p.twcc, mid) {
 		p.removeMutedTrackNotFired(mt)
 		if newTrack {
-			p.pubLogger.Debugw("track published", nil, "trackID", mt.ID(), "track", logger.Proto(mt.ToProto()))
+			p.pubLogger.Debugw("track published", "trackID", mt.ID(), "track", logger.Proto(mt.ToProto()))
 			go p.handleTrackPublished(mt)
 		}
 	}
