@@ -1579,6 +1579,7 @@ func (d *DownTrack) SetConnected() {
 	if !d.connected.Swap(true) {
 		d.onBindAndConnectedChange()
 	}
+	d.params.Logger.Debugw("downtrack connected")
 }
 
 // SetActivePaddingOnMuteUpTrack will enable padding on the track when its uptrack is muted.
