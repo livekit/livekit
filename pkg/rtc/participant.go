@@ -1312,7 +1312,7 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 		return
 	}
 
-	publishedTrack, isNew := p.mediaTrackReceived(track, rtpReceiver)
+	publishedTrack, isNewTrack := p.mediaTrackReceived(track, rtpReceiver)
 	if publishedTrack == nil {
 		p.pubLogger.Warnw("webrtc Track published but can't find MediaTrack", nil,
 			"kind", track.Kind().String(),
@@ -1345,7 +1345,7 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 		"trackInfo", logger.Proto(publishedTrack.ToProto()),
 	)
 
-	if !isNew && !publishedTrack.HasPendingCodec() && p.IsReady() {
+	if !isNewTrack && !publishedTrack.HasPendingCodec() && p.IsReady() {
 		p.lock.RLock()
 		onTrackUpdated := p.onTrackUpdated
 		p.lock.RUnlock()
@@ -1793,6 +1793,7 @@ func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) *li
 
 func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) (*MediaTrack, bool) {
 	p.pendingTracksLock.Lock()
+	newTrack := false
 
 	mid := p.TransportManager.GetPublisherMid(rtpReceiver)
 	p.pubLogger.Debugw(
@@ -1845,6 +1846,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 			ti.Version = p.params.VersionGenerator.New().ToProto()
 		}
 		mt = p.addMediaTrack(signalCid, track.ID(), ti)
+		newTrack = true
 		p.dirty.Store(true)
 	}
 
@@ -1857,10 +1859,11 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	}
 	p.pendingTracksLock.Unlock()
 
-	isNew := mt.AddReceiver(rtpReceiver, track, p.twcc, mid)
-	if isNew {
+	if mt.AddReceiver(rtpReceiver, track, p.twcc, mid) {
 		p.removeMutedTrackNotFired(mt)
+	}
 
+	if newTrack {
 		go func() {
 			p.pubLogger.Debugw(
 				"track published",
@@ -1871,7 +1874,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 		}()
 	}
 
-	return mt, isNew
+	return mt, newTrack
 }
 
 func (p *ParticipantImpl) addMigrateMutedTrack(cid string, ti *livekit.TrackInfo) *MediaTrack {
