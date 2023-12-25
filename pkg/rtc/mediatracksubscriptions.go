@@ -207,6 +207,12 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	replacedTrack := false
 	existingTransceiver, dtState = sub.GetCachedDownTrack(trackID)
 	if existingTransceiver != nil {
+		sub.GetLogger().Debugw(
+			"trying to use existing transceiver",
+			"publisher", subTrack.PublisherIdentity(),
+			"publisherID", subTrack.PublisherID(),
+			"trackID", trackID,
+		)
 		reusingTransceiver.Store(true)
 		rtpSender := existingTransceiver.Sender()
 		if rtpSender != nil {
@@ -217,6 +223,12 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 				sender = rtpSender
 				transceiver = existingTransceiver
 				replacedTrack = true
+				sub.GetLogger().Debugw(
+					"track replaced",
+					"publisher", subTrack.PublisherIdentity(),
+					"publisherID", subTrack.PublisherID(),
+					"trackID", trackID,
+				)
 			}
 		}
 

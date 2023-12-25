@@ -351,6 +351,7 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		go d.maxLayerNotifierWorker()
 		go d.keyFrameRequester()
 	}
+	d.params.Logger.Debugw("downtrack created")
 
 	return d, nil
 }
