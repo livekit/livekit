@@ -108,10 +108,11 @@ type Router interface {
 }
 
 type StartParticipantSignalResults struct {
-	ConnectionID   livekit.ConnectionID
-	RequestSink    MessageSink
-	ResponseSource MessageSource
-	NodeID         livekit.NodeID
+	ConnectionID        livekit.ConnectionID
+	RequestSink         MessageSink
+	ResponseSource      MessageSource
+	NodeID              livekit.NodeID
+	NodeSelectionReason string
 }
 
 type MessageRouter interface {

@@ -312,6 +312,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"reconnectReason", pi.ReconnectReason,
 		"adaptiveStream", pi.AdaptiveStream,
 		"selectedNodeID", cr.NodeID,
+		"nodeSelectionReason", cr.NodeSelectionReason,
 	)
 
 	// handle responses
