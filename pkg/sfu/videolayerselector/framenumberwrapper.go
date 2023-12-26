@@ -32,8 +32,7 @@ func (f *FrameNumberWrapper) UpdateAndGet(new uint64, updateOffset bool) uint64 
 			prevOffset := f.offset
 			f.offset += uint64(65535 - diff + 6000)
 
-			// TODO: remove this
-			f.logger.Infow("wrap around frame number seen, update offset", "new", new, "last", f.last, "offset", f.offset, "prevOffset", prevOffset, "lastWrapFn", last16, "newWrapFn", new16)
+			f.logger.Debugw("wrap around frame number seen, update offset", "new", new, "last", f.last, "offset", f.offset, "prevOffset", prevOffset, "lastWrapFn", last16, "newWrapFn", new16)
 		}
 	}
 	f.last = new
