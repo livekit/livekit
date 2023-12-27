@@ -43,7 +43,7 @@ require (
 	github.com/thoas/go-funk v0.9.3
 	github.com/twitchtv/twirp v8.1.3+incompatible
 	github.com/ua-parser/uap-go v0.0.0-20230823213814-f77b3e91e9dc
-	github.com/urfave/cli/v2 v2.26.0
+	github.com/urfave/cli/v2 v2.27.0
 	github.com/urfave/negroni/v3 v3.0.0
 	go.uber.org/atomic v1.11.0
 	golang.org/x/exp v0.0.0-20231226003508-02704c960a9b
