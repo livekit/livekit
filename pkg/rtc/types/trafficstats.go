@@ -50,7 +50,7 @@ func RTPStatsDiffToTrafficStats(before, after *livekit.RTPStats) *TrafficStats {
 		startTime = before.EndTime
 	}
 
-	if before == nil {
+	getAfter := func() *TrafficStats {
 		return &TrafficStats{
 			StartTime:         startTime.AsTime(),
 			EndTime:           after.EndTime.AsTime(),
@@ -60,6 +60,19 @@ func RTPStatsDiffToTrafficStats(before, after *livekit.RTPStats) *TrafficStats {
 			PacketsOutOfOrder: after.PacketsOutOfOrder,
 			Bytes:             after.Bytes + after.BytesDuplicate + after.BytesPadding,
 		}
+	}
+
+	if before == nil {
+		return getAfter()
+	}
+
+	if (after.Packets - before.Packets) > (1 << 31) {
+		// after packets < before packets, probably got reset, just return after
+		return getAfter()
+	}
+	if ((after.Bytes + after.BytesDuplicate + after.BytesPadding) - (before.Bytes + before.BytesDuplicate + before.BytesPadding)) > (1 << 63) {
+		// after bytes < before bytes, probably got reset, just return after
+		return getAfter()
 	}
 
 	packetsLost := uint32(0)
