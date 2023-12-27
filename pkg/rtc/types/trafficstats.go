@@ -21,12 +21,13 @@ import (
 )
 
 type TrafficStats struct {
-	StartTime      time.Time
-	EndTime        time.Time
-	Packets        uint32
-	PacketsLost    uint32
-	PacketsPadding uint32
-	Bytes          uint64
+	StartTime         time.Time
+	EndTime           time.Time
+	Packets           uint32
+	PacketsLost       uint32
+	PacketsPadding    uint32
+	PacketsOutOfOrder uint32
+	Bytes             uint64
 }
 
 type TrafficTypeStats struct {
@@ -51,12 +52,13 @@ func RTPStatsDiffToTrafficStats(before, after *livekit.RTPStats) *TrafficStats {
 
 	if before == nil {
 		return &TrafficStats{
-			StartTime:      startTime.AsTime(),
-			EndTime:        after.EndTime.AsTime(),
-			Packets:        after.Packets,
-			PacketsLost:    after.PacketsLost,
-			PacketsPadding: after.PacketsPadding,
-			Bytes:          after.Bytes + after.BytesDuplicate + after.BytesPadding,
+			StartTime:         startTime.AsTime(),
+			EndTime:           after.EndTime.AsTime(),
+			Packets:           after.Packets,
+			PacketsLost:       after.PacketsLost,
+			PacketsPadding:    after.PacketsPadding,
+			PacketsOutOfOrder: after.PacketsOutOfOrder,
+			Bytes:             after.Bytes + after.BytesDuplicate + after.BytesPadding,
 		}
 	}
 
@@ -65,12 +67,13 @@ func RTPStatsDiffToTrafficStats(before, after *livekit.RTPStats) *TrafficStats {
 		packetsLost = after.PacketsLost - before.PacketsLost
 	}
 	return &TrafficStats{
-		StartTime:      startTime.AsTime(),
-		EndTime:        after.EndTime.AsTime(),
-		Packets:        after.Packets - before.Packets,
-		PacketsLost:    packetsLost,
-		PacketsPadding: after.PacketsPadding - before.PacketsPadding,
-		Bytes:          (after.Bytes + after.BytesDuplicate + after.BytesPadding) - (before.Bytes + before.BytesDuplicate + before.BytesPadding),
+		StartTime:         startTime.AsTime(),
+		EndTime:           after.EndTime.AsTime(),
+		Packets:           after.Packets - before.Packets,
+		PacketsLost:       packetsLost,
+		PacketsPadding:    after.PacketsPadding - before.PacketsPadding,
+		PacketsOutOfOrder: after.PacketsOutOfOrder - before.PacketsOutOfOrder,
+		Bytes:             (after.Bytes + after.BytesDuplicate + after.BytesPadding) - (before.Bytes + before.BytesDuplicate + before.BytesPadding),
 	}
 }
 
@@ -85,6 +88,7 @@ func AggregateTrafficStats(statsList ...*TrafficStats) *TrafficStats {
 	packets := uint32(0)
 	packetsLost := uint32(0)
 	packetsPadding := uint32(0)
+	packetsOutOfOrder := uint32(0)
 	bytes := uint64(0)
 
 	for _, stats := range statsList {
@@ -99,6 +103,7 @@ func AggregateTrafficStats(statsList ...*TrafficStats) *TrafficStats {
 		packets += stats.Packets
 		packetsLost += stats.PacketsLost
 		packetsPadding += stats.PacketsPadding
+		packetsOutOfOrder += stats.PacketsOutOfOrder
 		bytes += stats.Bytes
 	}
 
@@ -106,12 +111,13 @@ func AggregateTrafficStats(statsList ...*TrafficStats) *TrafficStats {
 		endTime = time.Now()
 	}
 	return &TrafficStats{
-		StartTime:      startTime,
-		EndTime:        endTime,
-		Packets:        packets,
-		PacketsLost:    packetsLost,
-		PacketsPadding: packetsPadding,
-		Bytes:          bytes,
+		StartTime:         startTime,
+		EndTime:           endTime,
+		Packets:           packets,
+		PacketsLost:       packetsLost,
+		PacketsPadding:    packetsPadding,
+		PacketsOutOfOrder: packetsOutOfOrder,
+		Bytes:             bytes,
 	}
 }
 
