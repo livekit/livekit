@@ -83,8 +83,9 @@ func AggregateTrafficStats(statsList ...*TrafficStats) *TrafficStats {
 	endTime := time.Time{}
 
 	packets := uint32(0)
-	bytes := uint64(0)
 	packetsLost := uint32(0)
+	packetsPadding := uint32(0)
+	bytes := uint64(0)
 
 	for _, stats := range statsList {
 		if startTime.IsZero() || startTime.After(stats.StartTime) {
@@ -96,19 +97,21 @@ func AggregateTrafficStats(statsList ...*TrafficStats) *TrafficStats {
 		}
 
 		packets += stats.Packets
-		bytes += stats.Bytes
 		packetsLost += stats.PacketsLost
+		packetsPadding += stats.PacketsPadding
+		bytes += stats.Bytes
 	}
 
 	if endTime.IsZero() {
 		endTime = time.Now()
 	}
 	return &TrafficStats{
-		StartTime:   startTime,
-		EndTime:     endTime,
-		Packets:     packets,
-		Bytes:       bytes,
-		PacketsLost: packetsLost,
+		StartTime:      startTime,
+		EndTime:        endTime,
+		Packets:        packets,
+		PacketsLost:    packetsLost,
+		PacketsPadding: packetsPadding,
+		Bytes:          bytes,
 	}
 }
 
