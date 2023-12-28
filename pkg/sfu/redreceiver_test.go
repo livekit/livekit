@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/protocol/logger"
 )
 
 const tsStep = uint32(48000 / 1000 * 10)
@@ -38,11 +39,17 @@ func (dt *dummyDowntrack) WriteRTP(p *buffer.ExtPacket, _ int32) error {
 	return nil
 }
 
+func (dt *dummyDowntrack) TrackInfoAvailable() {}
+
 func TestRedReceiver(t *testing.T) {
 	dt := &dummyDowntrack{TrackSender: &DownTrack{}}
 
 	t.Run("normal", func(t *testing.T) {
-		w := &WebRTCReceiver{isRED: true, kind: webrtc.RTPCodecTypeAudio}
+		w := &WebRTCReceiver{
+			isRED:  true,
+			kind:   webrtc.RTPCodecTypeAudio,
+			logger: logger.GetLogger(),
+		}
 		require.Equal(t, w.GetRedReceiver(), w)
 		w.isRED = false
 		red := w.GetRedReceiver().(*RedReceiver)
@@ -64,7 +71,10 @@ func TestRedReceiver(t *testing.T) {
 	})
 
 	t.Run("packet lost and jump", func(t *testing.T) {
-		w := &WebRTCReceiver{kind: webrtc.RTPCodecTypeAudio}
+		w := &WebRTCReceiver{
+			kind:   webrtc.RTPCodecTypeAudio,
+			logger: logger.GetLogger(),
+		}
 		red := w.GetRedReceiver().(*RedReceiver)
 		require.NoError(t, red.AddDownTrack(dt))
 
@@ -112,7 +122,10 @@ func TestRedReceiver(t *testing.T) {
 	})
 
 	t.Run("unorder and repeat", func(t *testing.T) {
-		w := &WebRTCReceiver{kind: webrtc.RTPCodecTypeAudio}
+		w := &WebRTCReceiver{
+			kind:   webrtc.RTPCodecTypeAudio,
+			logger: logger.GetLogger(),
+		}
 		red := w.GetRedReceiver().(*RedReceiver)
 		require.NoError(t, red.AddDownTrack(dt))
 
@@ -141,7 +154,11 @@ func TestRedReceiver(t *testing.T) {
 	})
 
 	t.Run("encoding exceed space", func(t *testing.T) {
-		w := &WebRTCReceiver{isRED: true, kind: webrtc.RTPCodecTypeAudio}
+		w := &WebRTCReceiver{
+			isRED:  true,
+			kind:   webrtc.RTPCodecTypeAudio,
+			logger: logger.GetLogger(),
+		}
 		require.Equal(t, w.GetRedReceiver(), w)
 		w.isRED = false
 		red := w.GetRedReceiver().(*RedReceiver)
@@ -162,7 +179,11 @@ func TestRedReceiver(t *testing.T) {
 	})
 
 	t.Run("large timestamp gap", func(t *testing.T) {
-		w := &WebRTCReceiver{isRED: true, kind: webrtc.RTPCodecTypeAudio}
+		w := &WebRTCReceiver{
+			isRED:  true,
+			kind:   webrtc.RTPCodecTypeAudio,
+			logger: logger.GetLogger(),
+		}
 		require.Equal(t, w.GetRedReceiver(), w)
 		w.isRED = false
 		red := w.GetRedReceiver().(*RedReceiver)
@@ -257,7 +278,10 @@ func generateRedPkts(t *testing.T, pkts []*rtp.Packet, redCount int) []*rtp.Pack
 
 func testRedRedPrimaryReceiver(t *testing.T, maxPktCount, redCount int, sendPktIdx, expectPktIdx []int) {
 	dt := &dummyDowntrack{TrackSender: &DownTrack{}}
-	w := &WebRTCReceiver{kind: webrtc.RTPCodecTypeAudio}
+	w := &WebRTCReceiver{
+		kind:   webrtc.RTPCodecTypeAudio,
+		logger: logger.GetLogger(),
+	}
 	require.Equal(t, w.GetPrimaryReceiverForRed(), w)
 	w.isRED = true
 	red := w.GetPrimaryReceiverForRed().(*RedPrimaryReceiver)
@@ -283,7 +307,10 @@ func testRedRedPrimaryReceiver(t *testing.T, maxPktCount, redCount int, sendPktI
 }
 
 func TestRedPrimaryReceiver(t *testing.T) {
-	w := &WebRTCReceiver{kind: webrtc.RTPCodecTypeAudio}
+	w := &WebRTCReceiver{
+		kind:   webrtc.RTPCodecTypeAudio,
+		logger: logger.GetLogger(),
+	}
 	require.Equal(t, w.GetPrimaryReceiverForRed(), w)
 	w.isRED = true
 	red := w.GetPrimaryReceiverForRed().(*RedPrimaryReceiver)
