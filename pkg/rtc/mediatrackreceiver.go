@@ -590,6 +590,7 @@ func (t *MediaTrackReceiver) UpdateCodecCid(codecs []*livekit.SimulcastCodec) {
 }
 
 func (t *MediaTrackReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
+	updateMute := false
 	clonedInfo := proto.Clone(ti).(*livekit.TrackInfo)
 
 	t.lock.Lock()
@@ -622,8 +623,15 @@ func (t *MediaTrackReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
 			clonedInfo.Layers = ci.Layers
 		}
 	}
+	if t.trackInfo.Muted != clonedInfo.Muted {
+		updateMute = true
+	}
 	t.trackInfo = clonedInfo
 	t.lock.Unlock()
+
+	if updateMute {
+		t.SetMuted(clonedInfo.Muted)
+	}
 
 	t.updateTrackInfoOfReceivers()
 }
