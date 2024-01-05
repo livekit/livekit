@@ -767,11 +767,11 @@ func (r *Room) SendDataPacket(up *livekit.UserPacket, kind livekit.DataPacket_Ki
 	r.onDataPacket(nil, dp)
 }
 
-func (r *Room) SetMetadata(metadata string) {
+func (r *Room) SetMetadata(metadata string) <-chan struct{} {
 	r.lock.Lock()
 	r.protoRoom.Metadata = metadata
 	r.lock.Unlock()
-	r.protoProxy.MarkDirty(true)
+	return r.protoProxy.MarkDirty(true)
 }
 
 func (r *Room) UpdateParticipantMetadata(participant types.LocalParticipant, name string, metadata string) {

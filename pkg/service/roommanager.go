@@ -776,7 +776,9 @@ func (r *RoomManager) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 	}
 
 	room.Logger.Debugw("updating room")
-	room.SetMetadata(req.Metadata)
+	done := room.SetMetadata(req.Metadata)
+	// wait till the update is applied
+	<-done
 	return room.ToProto(), nil
 }
 
