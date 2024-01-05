@@ -292,9 +292,12 @@ func startServer(c *cli.Context) error {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 
 	go func() {
-		sig := <-sigChan
-		logger.Infow("exit requested, shutting down", "signal", sig)
-		server.Stop(false)
+		for i := 0; i < 2; i++ {
+			sig := <-sigChan
+			force := i > 0
+			logger.Infow("exit requested, shutting down", "signal", sig, "force", force)
+			go server.Stop(force)
+		}
 	}()
 
 	return server.Start()
