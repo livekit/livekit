@@ -7,7 +7,7 @@ require (
 	github.com/d5/tengo/v2 v2.16.1
 	github.com/dustin/go-humanize v1.0.1
 	github.com/elliotchance/orderedmap/v2 v2.2.0
-	github.com/florianl/go-tc v0.4.2
+	github.com/florianl/go-tc v0.4.3
 	github.com/frostbyte73/core v0.0.9
 	github.com/gammazero/deque v0.2.1
 	github.com/gammazero/workerpool v1.1.3
@@ -63,7 +63,7 @@ require (
 	github.com/go-jose/go-jose/v3 v3.0.1 // indirect
 	github.com/go-logr/logr v1.4.1 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
-	github.com/google/go-cmp v0.5.9 // indirect
+	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/subcommands v1.2.0 // indirect
 	github.com/google/uuid v1.5.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
