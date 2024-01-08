@@ -193,7 +193,8 @@ func (s *IOInfoService) UpdateIngressState(ctx context.Context, req *rpc.UpdateI
 
 		switch req.State.Status {
 		case livekit.IngressState_ENDPOINT_ERROR,
-			livekit.IngressState_ENDPOINT_INACTIVE:
+			livekit.IngressState_ENDPOINT_INACTIVE,
+			livekit.IngressState_ENDPOINT_COMPLETE:
 			s.telemetry.IngressEnded(ctx, info)
 
 			if req.State.Error != "" {
@@ -218,7 +219,7 @@ func (s *IOInfoService) UpdateIngressState(ctx context.Context, req *rpc.UpdateI
 
 		s.telemetry.IngressUpdated(ctx, info)
 
-		logger.Infow("ingress updated", "ingressID", req.IngressId)
+		logger.Infow("ingress updated", "ingressID", req.IngressId, "status", info.State.Status)
 	}
 
 	return &emptypb.Empty{}, nil
