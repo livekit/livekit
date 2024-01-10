@@ -31,16 +31,18 @@ import (
 	"github.com/livekit/psrpc/pkg/middleware"
 )
 
-type SessionHandler func(
-	ctx context.Context,
-	roomName livekit.RoomName,
-	pi routing.ParticipantInit,
-	connectionID livekit.ConnectionID,
-	requestSource routing.MessageSource,
-	responseSink routing.MessageSink,
-) error
+type SessionHandler interface {
+	Logger(ctx context.Context) logger.Logger
 
-type LoggerFactory func(ctx context.Context) logger.Logger
+	HandleSession(
+		ctx context.Context,
+		roomName livekit.RoomName,
+		pi routing.ParticipantInit,
+		connectionID livekit.ConnectionID,
+		requestSource routing.MessageSource,
+		responseSink routing.MessageSink,
+	) error
+}
 
 type SignalServer struct {
 	server rpc.TypedSignalServer
@@ -52,12 +54,11 @@ func NewSignalServer(
 	region string,
 	bus psrpc.MessageBus,
 	config config.SignalRelayConfig,
-	loggerFactory LoggerFactory,
 	sessionHandler SessionHandler,
 ) (*SignalServer, error) {
 	s, err := rpc.NewTypedSignalServer(
 		nodeID,
-		&signalService{region, loggerFactory, sessionHandler, config},
+		&signalService{region, sessionHandler, config},
 		bus,
 		middleware.WithServerMetrics(prometheus.PSRPCMetricsObserver{}),
 		psrpc.WithServerChannelSize(config.StreamBufferSize),
@@ -75,47 +76,53 @@ func NewDefaultSignalServer(
 	router routing.Router,
 	roomManager *RoomManager,
 ) (r *SignalServer, err error) {
-	loggerFactory := func(ctx context.Context) logger.Logger {
-		return logger.GetLogger()
-	}
+	return NewSignalServer(livekit.NodeID(currentNode.Id), currentNode.Region, bus, config, &defaultSignalService{currentNode, router, roomManager})
+}
 
-	sessionHandler := func(
-		ctx context.Context,
-		roomName livekit.RoomName,
-		pi routing.ParticipantInit,
-		connectionID livekit.ConnectionID,
-		requestSource routing.MessageSource,
-		responseSink routing.MessageSink,
-	) error {
-		prometheus.IncrementParticipantRtcInit(1)
+type defaultSignalService struct {
+	currentNode routing.LocalNode
+	router      routing.Router
+	roomManager *RoomManager
+}
 
-		if rr, ok := router.(*routing.RedisRouter); ok {
-			rtcNode, err := router.GetNodeForRoom(ctx, roomName)
-			if err != nil {
-				return err
-			}
+func (s *defaultSignalService) Logger(ctx context.Context) logger.Logger {
+	return logger.GetLogger()
+}
 
-			if rtcNode.Id != currentNode.Id {
-				err = routing.ErrIncorrectRTCNode
-				logger.Errorw("called participant on incorrect node", err,
-					"rtcNode", rtcNode,
-				)
-				return err
-			}
+func (s *defaultSignalService) HandleSession(
+	ctx context.Context,
+	roomName livekit.RoomName,
+	pi routing.ParticipantInit,
+	connectionID livekit.ConnectionID,
+	requestSource routing.MessageSource,
+	responseSink routing.MessageSink,
+) error {
+	prometheus.IncrementParticipantRtcInit(1)
 
-			pKey := routing.ParticipantKeyLegacy(roomName, pi.Identity)
-			pKeyB62 := routing.ParticipantKey(roomName, pi.Identity)
-
-			// RTC session should start on this node
-			if err := rr.SetParticipantRTCNode(pKey, pKeyB62, currentNode.Id); err != nil {
-				return err
-			}
+	if rr, ok := s.router.(*routing.RedisRouter); ok {
+		rtcNode, err := s.router.GetNodeForRoom(ctx, roomName)
+		if err != nil {
+			return err
 		}
 
-		return roomManager.StartSession(ctx, roomName, pi, requestSource, responseSink)
+		if rtcNode.Id != s.currentNode.Id {
+			err = routing.ErrIncorrectRTCNode
+			logger.Errorw("called participant on incorrect node", err,
+				"rtcNode", rtcNode,
+			)
+			return err
+		}
+
+		pKey := routing.ParticipantKeyLegacy(roomName, pi.Identity)
+		pKeyB62 := routing.ParticipantKey(roomName, pi.Identity)
+
+		// RTC session should start on this node
+		if err := rr.SetParticipantRTCNode(pKey, pKeyB62, s.currentNode.Id); err != nil {
+			return err
+		}
 	}
 
-	return NewSignalServer(livekit.NodeID(currentNode.Id), currentNode.Region, bus, config, loggerFactory, sessionHandler)
+	return s.roomManager.StartSession(ctx, roomName, pi, requestSource, responseSink)
 }
 
 func (s *SignalServer) Start() error {
@@ -129,7 +136,6 @@ func (r *SignalServer) Stop() {
 
 type signalService struct {
 	region         string
-	loggerFactory  LoggerFactory
 	sessionHandler SessionHandler
 	config         config.SignalRelayConfig
 }
@@ -150,7 +156,7 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 		return errors.Wrap(err, "failed to read participant from session")
 	}
 
-	l := r.loggerFactory(stream.Context()).WithValues(
+	l := r.sessionHandler.Logger(stream.Context()).WithValues(
 		"room", ss.RoomName,
 		"participant", ss.Identity,
 		"connID", ss.ConnectionId,
@@ -183,7 +189,7 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 	// copy the incoming rpc headers to avoid dropping any session vars.
 	ctx := metadata.NewContextWithIncomingHeader(context.Background(), metadata.IncomingHeader(stream.Context()))
 
-	err = r.sessionHandler(ctx, livekit.RoomName(ss.RoomName), *pi, livekit.ConnectionID(ss.ConnectionId), reqChan, sink)
+	err = r.sessionHandler.HandleSession(ctx, livekit.RoomName(ss.RoomName), *pi, livekit.ConnectionID(ss.ConnectionId), reqChan, sink)
 	if err != nil {
 		sink.Close()
 		l.Errorw("could not handle new participant", err)
