@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package service
+package service_test
 
 import (
 	"context"
@@ -26,8 +26,11 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/service"
+	"github.com/livekit/livekit-server/pkg/service/servicefakes"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/psrpc"
 )
 
@@ -61,22 +64,26 @@ func TestSignal(t *testing.T) {
 		client, err := routing.NewSignalClient(livekit.NodeID("node0"), bus, cfg)
 		require.NoError(t, err)
 
-		server, err := NewSignalServer(livekit.NodeID("node1"), "region", bus, cfg, func(
-			ctx context.Context,
-			roomName livekit.RoomName,
-			pi routing.ParticipantInit,
-			connectionID livekit.ConnectionID,
-			requestSource routing.MessageSource,
-			responseSink routing.MessageSink,
-		) error {
-			go func() {
-				reqMessageOut = <-requestSource.ReadChan()
-				resErr = responseSink.WriteMessage(resMessageIn)
-				responseSink.Close()
-				close(done)
-			}()
-			return nil
-		})
+		handler := &servicefakes.FakeSessionHandler{
+			LoggerStub: func(context.Context) logger.Logger { return logger.GetLogger() },
+			HandleSessionStub: func(
+				ctx context.Context,
+				roomName livekit.RoomName,
+				pi routing.ParticipantInit,
+				connectionID livekit.ConnectionID,
+				requestSource routing.MessageSource,
+				responseSink routing.MessageSink,
+			) error {
+				go func() {
+					reqMessageOut = <-requestSource.ReadChan()
+					resErr = responseSink.WriteMessage(resMessageIn)
+					responseSink.Close()
+					close(done)
+				}()
+				return nil
+			},
+		}
+		server, err := service.NewSignalServer(livekit.NodeID("node1"), "region", bus, cfg, handler)
 		require.NoError(t, err)
 
 		err = server.Start()
@@ -114,18 +121,22 @@ func TestSignal(t *testing.T) {
 		client, err := routing.NewSignalClient(livekit.NodeID("node0"), bus, cfg)
 		require.NoError(t, err)
 
-		server, err := NewSignalServer(livekit.NodeID("node1"), "region", bus, cfg, func(
-			ctx context.Context,
-			roomName livekit.RoomName,
-			pi routing.ParticipantInit,
-			connectionID livekit.ConnectionID,
-			requestSource routing.MessageSource,
-			responseSink routing.MessageSink,
-		) error {
-			defer close(done)
-			resErr = responseSink.WriteMessage(resMessageIn)
-			return errors.New("start session failed")
-		})
+		handler := &servicefakes.FakeSessionHandler{
+			LoggerStub: func(context.Context) logger.Logger { return logger.GetLogger() },
+			HandleSessionStub: func(
+				ctx context.Context,
+				roomName livekit.RoomName,
+				pi routing.ParticipantInit,
+				connectionID livekit.ConnectionID,
+				requestSource routing.MessageSource,
+				responseSink routing.MessageSink,
+			) error {
+				defer close(done)
+				resErr = responseSink.WriteMessage(resMessageIn)
+				return errors.New("start session failed")
+			},
+		}
+		server, err := service.NewSignalServer(livekit.NodeID("node1"), "region", bus, cfg, handler)
 		require.NoError(t, err)
 
 		err = server.Start()
