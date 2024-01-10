@@ -40,6 +40,8 @@ type SessionHandler func(
 	responseSink routing.MessageSink,
 ) error
 
+type LoggerFactory func(ctx context.Context) logger.Logger
+
 type SignalServer struct {
 	server rpc.TypedSignalServer
 	nodeID livekit.NodeID
@@ -50,11 +52,12 @@ func NewSignalServer(
 	region string,
 	bus psrpc.MessageBus,
 	config config.SignalRelayConfig,
+	loggerFactory LoggerFactory,
 	sessionHandler SessionHandler,
 ) (*SignalServer, error) {
 	s, err := rpc.NewTypedSignalServer(
 		nodeID,
-		&signalService{region, sessionHandler, config},
+		&signalService{region, loggerFactory, sessionHandler, config},
 		bus,
 		middleware.WithServerMetrics(prometheus.PSRPCMetricsObserver{}),
 		psrpc.WithServerChannelSize(config.StreamBufferSize),
@@ -72,6 +75,10 @@ func NewDefaultSignalServer(
 	router routing.Router,
 	roomManager *RoomManager,
 ) (r *SignalServer, err error) {
+	loggerFactory := func(ctx context.Context) logger.Logger {
+		return logger.GetLogger()
+	}
+
 	sessionHandler := func(
 		ctx context.Context,
 		roomName livekit.RoomName,
@@ -108,7 +115,7 @@ func NewDefaultSignalServer(
 		return roomManager.StartSession(ctx, roomName, pi, requestSource, responseSink)
 	}
 
-	return NewSignalServer(livekit.NodeID(currentNode.Id), currentNode.Region, bus, config, sessionHandler)
+	return NewSignalServer(livekit.NodeID(currentNode.Id), currentNode.Region, bus, config, loggerFactory, sessionHandler)
 }
 
 func (s *SignalServer) Start() error {
@@ -122,6 +129,7 @@ func (r *SignalServer) Stop() {
 
 type signalService struct {
 	region         string
+	loggerFactory  LoggerFactory
 	sessionHandler SessionHandler
 	config         config.SignalRelayConfig
 }
@@ -142,7 +150,7 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 		return errors.Wrap(err, "failed to read participant from session")
 	}
 
-	l := logger.GetLogger().WithValues(
+	l := r.loggerFactory(stream.Context()).WithValues(
 		"room", ss.RoomName,
 		"participant", ss.Identity,
 		"connID", ss.ConnectionId,
