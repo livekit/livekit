@@ -76,20 +76,20 @@ func NewDefaultSignalServer(
 	router routing.Router,
 	roomManager *RoomManager,
 ) (r *SignalServer, err error) {
-	return NewSignalServer(livekit.NodeID(currentNode.Id), currentNode.Region, bus, config, &defaultSignalService{currentNode, router, roomManager})
+	return NewSignalServer(livekit.NodeID(currentNode.Id), currentNode.Region, bus, config, &defaultSessionHandler{currentNode, router, roomManager})
 }
 
-type defaultSignalService struct {
+type defaultSessionHandler struct {
 	currentNode routing.LocalNode
 	router      routing.Router
 	roomManager *RoomManager
 }
 
-func (s *defaultSignalService) Logger(ctx context.Context) logger.Logger {
+func (s *defaultSessionHandler) Logger(ctx context.Context) logger.Logger {
 	return logger.GetLogger()
 }
 
-func (s *defaultSignalService) HandleSession(
+func (s *defaultSessionHandler) HandleSession(
 	ctx context.Context,
 	roomName livekit.RoomName,
 	pi routing.ParticipantInit,
