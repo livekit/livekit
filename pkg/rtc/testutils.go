@@ -62,7 +62,7 @@ func NewMockParticipant(identity livekit.ParticipantIdentity, protocol types.Pro
 			f = p.OnTrackUpdatedArgsForCall(p.OnTrackUpdatedCallCount() - 1)
 		}
 		if f != nil {
-			f(p, nil)
+			f(p, NewMockTrack(livekit.TrackType_VIDEO, "testcam"))
 		}
 	}
 
