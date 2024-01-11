@@ -25,7 +25,7 @@ require (
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.7.0
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/olekukonko/tablewriter v0.0.5
-	github.com/pion/dtls/v2 v2.2.8
+	github.com/pion/dtls/v2 v2.2.9
 	github.com/pion/ice/v2 v2.3.12
 	github.com/pion/interceptor v0.1.25
 	github.com/pion/rtcp v1.2.13
