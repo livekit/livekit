@@ -504,9 +504,12 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 	}
 
 	subTrack, err := track.AddSubscriber(m.params.Participant)
-	if err != nil && !errors.Is(err, errAlreadySubscribed) && !errors.Is(err, ErrTrackNotAttached) && !errors.Is(err, ErrNoReceiver) {
-		// ignore errors: already subscribed OR waiting for track resolve
-		m.params.Logger.Warnw("add subscriber failed", err, "trackID", trackID)
+	if err != nil && !errors.Is(err, errAlreadySubscribed) {
+		// ignore error(s): already subscribed
+		if !errors.Is(err, ErrTrackNotAttached) && !errors.Is(err, ErrNoReceiver) {
+			// as track resolution could take some time, not logging errors due to waiting for track resolution
+			m.params.Logger.Warnw("add subscriber failed", err, "trackID", trackID)
+		}
 		return err
 	}
 	if err == errAlreadySubscribed {
