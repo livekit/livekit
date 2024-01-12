@@ -53,6 +53,8 @@ const (
 	subscriberUpdateInterval  = 3 * time.Second
 
 	dataForwardLoadBalanceThreshold = 20
+
+	simulateDisconnectSignalOnResumeTimeout = 5 * time.Second
 )
 
 var (
@@ -108,6 +110,9 @@ type Room struct {
 	onParticipantChanged func(p types.LocalParticipant)
 	onRoomUpdated        func()
 	onClose              func()
+
+	simulationLock                       sync.Mutex
+	disconnectSignalOnResumeParticipants map[livekit.ParticipantIdentity]time.Time
 }
 
 type ParticipantOptions struct {
@@ -132,21 +137,22 @@ func NewRoom(
 			livekit.RoomName(room.Name),
 			livekit.RoomID(room.Sid),
 		),
-		config:                    config,
-		audioConfig:               audioConfig,
-		telemetry:                 telemetry,
-		egressLauncher:            egressLauncher,
-		agentClient:               agentClient,
-		trackManager:              NewRoomTrackManager(),
-		serverInfo:                serverInfo,
-		participants:              make(map[livekit.ParticipantIdentity]types.LocalParticipant),
-		participantOpts:           make(map[livekit.ParticipantIdentity]*ParticipantOptions),
-		participantRequestSources: make(map[livekit.ParticipantIdentity]routing.MessageSource),
-		hasPublished:              make(map[livekit.ParticipantIdentity]bool),
-		bufferFactory:             buffer.NewFactoryOfBufferFactory(config.Receiver.PacketBufferSize),
-		batchedUpdates:            make(map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
-		closed:                    make(chan struct{}),
-		trailer:                   []byte(utils.RandomSecret()),
+		config:                               config,
+		audioConfig:                          audioConfig,
+		telemetry:                            telemetry,
+		egressLauncher:                       egressLauncher,
+		agentClient:                          agentClient,
+		trackManager:                         NewRoomTrackManager(),
+		serverInfo:                           serverInfo,
+		participants:                         make(map[livekit.ParticipantIdentity]types.LocalParticipant),
+		participantOpts:                      make(map[livekit.ParticipantIdentity]*ParticipantOptions),
+		participantRequestSources:            make(map[livekit.ParticipantIdentity]routing.MessageSource),
+		hasPublished:                         make(map[livekit.ParticipantIdentity]bool),
+		bufferFactory:                        buffer.NewFactoryOfBufferFactory(config.Receiver.PacketBufferSize),
+		batchedUpdates:                       make(map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
+		closed:                               make(chan struct{}),
+		trailer:                              []byte(utils.RandomSecret()),
+		disconnectSignalOnResumeParticipants: make(map[livekit.ParticipantIdentity]time.Time),
 	}
 
 	r.protoProxy = utils.NewProtoProxy[*livekit.Room](roomUpdateInterval, r.updateProto)
@@ -175,6 +181,7 @@ func NewRoom(
 	go r.audioUpdateWorker()
 	go r.connectionQualityWorker()
 	go r.changeUpdateWorker()
+	go r.simulationCleanupWorker()
 
 	return r
 }
@@ -495,6 +502,17 @@ func (r *Room) ResumeParticipant(p types.LocalParticipant, requestSource routing
 
 	_ = p.SendRoomUpdate(r.ToProto())
 	p.ICERestart(nil)
+
+	// check for simulated signal disconnect on resume
+	r.simulationLock.Lock()
+	if timeout, ok := r.disconnectSignalOnResumeParticipants[p.Identity()]; ok {
+		if time.Now().Before(timeout) {
+			p.CloseSignalConnection(types.SignallingCloseReasonDisconnectOnResume)
+		}
+		delete(r.disconnectSignalOnResumeParticipants, p.Identity())
+	}
+	r.simulationLock.Unlock()
+
 	return nil
 }
 
@@ -849,6 +867,11 @@ func (r *Room) SimulateScenario(participant types.LocalParticipant, simulateScen
 			r.Logger.Infow("simulating subscriber bandwidth end", "participant", participant.Identity())
 		}
 		participant.SetSubscriberChannelCapacity(scenario.SubscriberBandwidth)
+	case *livekit.SimulateScenario_DisconnectSignalOnResume:
+		participant.GetLogger().Infow("simulating disconnect signal on resume")
+		r.simulationLock.Lock()
+		r.disconnectSignalOnResumeParticipants[participant.Identity()] = time.Now().Add(simulateDisconnectSignalOnResumeTimeout)
+		r.simulationLock.Unlock()
 	}
 	return nil
 }
@@ -1335,6 +1358,25 @@ func (r *Room) connectionQualityWorker() {
 		}
 
 		prevConnectionInfos = nowConnectionInfos
+	}
+}
+
+func (r *Room) simulationCleanupWorker() {
+	for {
+		if r.IsClosed() {
+			return
+		}
+
+		now := time.Now()
+		r.simulationLock.Lock()
+		for identity, timeout := range r.disconnectSignalOnResumeParticipants {
+			if now.After(timeout) {
+				delete(r.disconnectSignalOnResumeParticipants, identity)
+			}
+		}
+		r.simulationLock.Unlock()
+
+		time.Sleep(10 * time.Second)
 	}
 }
 

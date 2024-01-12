@@ -187,7 +187,6 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 	}
 
 	t.signalSourceValid.Store(true)
-
 	return t, nil
 }
 
