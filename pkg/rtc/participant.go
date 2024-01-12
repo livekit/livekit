@@ -145,6 +145,7 @@ type ParticipantImpl struct {
 	hidden      atomic.Bool
 	isPublisher atomic.Bool
 
+	sessionStartRecorded atomic.Bool
 	// when first connected
 	connectedAt time.Time
 	// timer that's set when disconnect is detected on primary PC
@@ -1422,7 +1423,9 @@ func (p *ParticipantImpl) onPrimaryTransportInitialConnected() {
 }
 
 func (p *ParticipantImpl) onPrimaryTransportFullyEstablished() {
-	prometheus.RecordSessionStartTime(int(p.ProtocolVersion()), time.Since(p.params.SessionStartTime))
+	if !p.sessionStartRecorded.Swap(true) {
+		prometheus.RecordSessionStartTime(int(p.ProtocolVersion()), time.Since(p.params.SessionStartTime))
+	}
 	p.updateState(livekit.ParticipantInfo_ACTIVE)
 }
 
