@@ -44,7 +44,7 @@ var (
 	promTrackSubscribedCurrent *prometheus.GaugeVec
 	promTrackPublishCounter    *prometheus.CounterVec
 	promTrackSubscribeCounter  *prometheus.CounterVec
-	promSessionStartTime       prometheus.HistogramVec
+	promSessionStartTime       *prometheus.HistogramVec
 )
 
 func initRoomStats(nodeID string, nodeType livekit.NodeType, env string) {
@@ -93,12 +93,12 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType, env string) {
 		Name:        "subscribe_counter",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String(), "env": env},
 	}, []string{"state", "error"})
-	promSessionStartTime = *prometheus.NewHistogramVec(prometheus.HistogramOpts{
+	promSessionStartTime = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "session",
 		Name:        "start_time_ms",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String(), "env": env},
-		Buckets:     prometheus.ExponentialBucketsRange(100, 5000, 10),
+		Buckets:     prometheus.ExponentialBucketsRange(100, 10000, 15),
 	}, []string{"protocol_version"})
 
 	prometheus.MustRegister(promRoomCurrent)
