@@ -97,6 +97,7 @@ type ParticipantParams struct {
 	AudioConfig             config.AudioConfig
 	VideoConfig             config.VideoConfig
 	ProtocolVersion         types.ProtocolVersion
+	SessionStartTime        time.Time
 	Telemetry               telemetry.TelemetryService
 	Trailer                 []byte
 	PLIThrottleConfig       config.PLIThrottleConfig
@@ -1421,6 +1422,7 @@ func (p *ParticipantImpl) onPrimaryTransportInitialConnected() {
 }
 
 func (p *ParticipantImpl) onPrimaryTransportFullyEstablished() {
+	prometheus.RecordSessionStartTime(int(p.ProtocolVersion()), time.Since(p.params.SessionStartTime))
 	p.updateState(livekit.ParticipantInfo_ACTIVE)
 }
 
