@@ -245,6 +245,8 @@ func (r *RoomManager) StartSession(
 	requestSource routing.MessageSource,
 	responseSink routing.MessageSink,
 ) error {
+	sessionStartTime := time.Now()
+
 	room, err := r.getOrCreateRoom(ctx, roomName)
 	if err != nil {
 		return err
@@ -390,6 +392,7 @@ func (r *RoomManager) StartSession(
 		AudioConfig:             r.config.Audio,
 		VideoConfig:             r.config.Video,
 		ProtocolVersion:         pv,
+		SessionStartTime:        sessionStartTime,
 		Telemetry:               r.telemetry,
 		Trailer:                 room.Trailer(),
 		PLIThrottleConfig:       r.config.RTC.PLIThrottle,
