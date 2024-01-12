@@ -305,7 +305,7 @@ func (t *TransportManager) RemoveSubscribedTrack(subTrack types.SubscribedTrack)
 }
 
 func (t *TransportManager) OnDataMessage(f func(kind livekit.DataPacket_Kind, data []byte)) {
-	// upstream data is always comes in via publisher peer connection irrespective of which is primary
+	// upstream data always comes in via publisher peer connection irrespective of which is primary
 	t.publisher.OnDataPacket(f)
 }
 
