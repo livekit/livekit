@@ -40,7 +40,6 @@ func init() {
 
 func TestSignal(t *testing.T) {
 	cfg := config.SignalRelayConfig{
-		Enabled:          false,
 		RetryTimeout:     30 * time.Second,
 		MinRetryInterval: 500 * time.Millisecond,
 		MaxRetryInterval: 5 * time.Second,
