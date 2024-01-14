@@ -22,7 +22,7 @@ require (
 	github.com/livekit/psrpc v0.5.3-0.20231214055026-06ce27a934c9
 	github.com/mackerelio/go-osstat v0.2.4
 	github.com/magefile/mage v1.15.0
-	github.com/maxbrunsfeld/counterfeiter/v6 v6.7.0
+	github.com/maxbrunsfeld/counterfeiter/v6 v6.8.1
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/pion/dtls/v2 v2.2.8
@@ -42,7 +42,7 @@ require (
 	github.com/stretchr/testify v1.8.4
 	github.com/thoas/go-funk v0.9.3
 	github.com/twitchtv/twirp v8.1.3+incompatible
-	github.com/ua-parser/uap-go v0.0.0-20230823213814-f77b3e91e9dc
+	github.com/ua-parser/uap-go v0.0.0-20240113215029-33f8e6d47f38
 	github.com/urfave/cli/v2 v2.27.1
 	github.com/urfave/negroni/v3 v3.0.0
 	go.uber.org/atomic v1.11.0
