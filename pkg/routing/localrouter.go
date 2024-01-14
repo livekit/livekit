@@ -26,8 +26,7 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-// aggregated channel for all participants
-const localRTCChannelSize = 10000
+var _ Router = (*LocalRouter)(nil)
 
 // a router of messages on the same node, basic implementation for local testing
 type LocalRouter struct {
@@ -39,11 +38,6 @@ type LocalRouter struct {
 	requestChannels  map[string]*MessageChannel
 	responseChannels map[string]*MessageChannel
 	isStarted        atomic.Bool
-
-	rtcMessageChan *MessageChannel
-
-	onNewParticipant NewParticipantCallback
-	onRTCMessage     RTCMessageCallback
 }
 
 func NewLocalRouter(currentNode LocalNode, signalClient SignalClient) *LocalRouter {
@@ -52,7 +46,6 @@ func NewLocalRouter(currentNode LocalNode, signalClient SignalClient) *LocalRout
 		signalClient:     signalClient,
 		requestChannels:  make(map[string]*MessageChannel),
 		responseChannels: make(map[string]*MessageChannel),
-		rtcMessageChan:   NewMessageChannel(livekit.ConnectionID("local"), localRTCChannelSize),
 	}
 }
 
@@ -68,7 +61,6 @@ func (r *LocalRouter) SetNodeForRoom(_ context.Context, _ livekit.RoomName, _ li
 }
 
 func (r *LocalRouter) ClearRoomState(_ context.Context, _ livekit.RoomName) error {
-	// do nothing
 	return nil
 }
 
@@ -120,65 +112,22 @@ func (r *LocalRouter) StartParticipantSignalWithNodeID(ctx context.Context, room
 	return
 }
 
-func (r *LocalRouter) WriteParticipantRTC(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) error {
-	r.lock.Lock()
-	if r.rtcMessageChan.IsClosed() {
-		// create a new one
-		r.rtcMessageChan = NewMessageChannel(livekit.ConnectionID("local"), localRTCChannelSize)
-	}
-	r.lock.Unlock()
-	msg.ParticipantKey = string(ParticipantKeyLegacy(roomName, identity))
-	msg.ParticipantKeyB62 = string(ParticipantKey(roomName, identity))
-	return r.writeRTCMessage(r.rtcMessageChan, msg)
-}
-
-func (r *LocalRouter) WriteRoomRTC(ctx context.Context, roomName livekit.RoomName, msg *livekit.RTCNodeMessage) error {
-	msg.ParticipantKey = string(ParticipantKeyLegacy(roomName, ""))
-	msg.ParticipantKeyB62 = string(ParticipantKey(roomName, ""))
-	return r.WriteNodeRTC(ctx, r.currentNode.Id, msg)
-}
-
-func (r *LocalRouter) WriteNodeRTC(_ context.Context, _ string, msg *livekit.RTCNodeMessage) error {
-	r.lock.Lock()
-	if r.rtcMessageChan.IsClosed() {
-		// create a new one
-		r.rtcMessageChan = NewMessageChannel(livekit.ConnectionID("local"), localRTCChannelSize)
-	}
-	r.lock.Unlock()
-	return r.writeRTCMessage(r.rtcMessageChan, msg)
-}
-
-func (r *LocalRouter) writeRTCMessage(sink MessageSink, msg *livekit.RTCNodeMessage) error {
-	msg.SenderTime = time.Now().Unix()
-	return sink.WriteMessage(msg)
-}
-
-func (r *LocalRouter) OnNewParticipantRTC(callback NewParticipantCallback) {
-	r.onNewParticipant = callback
-}
-
-func (r *LocalRouter) OnRTCMessage(callback RTCMessageCallback) {
-	r.onRTCMessage = callback
-}
-
 func (r *LocalRouter) Start() error {
 	if r.isStarted.Swap(true) {
 		return nil
 	}
 	go r.statsWorker()
 	// go r.memStatsWorker()
-	// on local routers, Start doesn't do anything, websocket connections initiate the connections
-	go r.rtcMessageWorker()
 	return nil
 }
 
 func (r *LocalRouter) Drain() {
+	r.lock.Lock()
+	defer r.lock.Unlock()
 	r.currentNode.State = livekit.NodeState_SHUTTING_DOWN
 }
 
-func (r *LocalRouter) Stop() {
-	r.rtcMessageChan.Close()
-}
+func (r *LocalRouter) Stop() {}
 
 func (r *LocalRouter) GetRegion() string {
 	return r.currentNode.Region
@@ -214,73 +163,3 @@ func (r *LocalRouter) statsWorker() {
 		}
 	}
 */
-func (r *LocalRouter) rtcMessageWorker() {
-	// is a new channel available? if so swap to that one
-	if !r.isStarted.Load() {
-		return
-	}
-
-	// start a new worker after this finished
-	defer func() {
-		go r.rtcMessageWorker()
-	}()
-
-	r.lock.RLock()
-	isClosed := r.rtcMessageChan.IsClosed()
-	r.lock.RUnlock()
-	if isClosed {
-		// sleep and retry
-		time.Sleep(time.Second)
-	}
-
-	r.lock.RLock()
-	msgChan := r.rtcMessageChan.ReadChan()
-	r.lock.RUnlock()
-	// consume messages from
-	for msg := range msgChan {
-		if rtcMsg, ok := msg.(*livekit.RTCNodeMessage); ok {
-			var room livekit.RoomName
-			var identity livekit.ParticipantIdentity
-			var err error
-			if rtcMsg.ParticipantKeyB62 != "" {
-				room, identity, err = parseParticipantKey(livekit.ParticipantKey(rtcMsg.ParticipantKeyB62))
-			}
-			if err != nil {
-				room, identity, err = parseParticipantKeyLegacy(livekit.ParticipantKey(rtcMsg.ParticipantKey))
-			}
-			if err != nil {
-				logger.Errorw("could not process RTC message", err)
-				continue
-			}
-			if r.onRTCMessage != nil {
-				r.onRTCMessage(context.Background(), room, identity, rtcMsg)
-			}
-		}
-	}
-}
-
-func (r *LocalRouter) getMessageChannel(target map[string]*MessageChannel, key string) *MessageChannel {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
-	return target[key]
-}
-
-func (r *LocalRouter) getOrCreateMessageChannel(target map[string]*MessageChannel, key string) *MessageChannel {
-	r.lock.Lock()
-	defer r.lock.Unlock()
-	mc := target[key]
-
-	if mc != nil {
-		return mc
-	}
-
-	mc = NewMessageChannel(livekit.ConnectionID(key), DefaultMessageChannelSize)
-	mc.OnClose(func() {
-		r.lock.Lock()
-		delete(target, key)
-		r.lock.Unlock()
-	})
-	target[key] = mc
-
-	return mc
-}

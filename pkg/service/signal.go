@@ -102,27 +102,17 @@ func (s *defaultSessionHandler) HandleSession(
 ) error {
 	prometheus.IncrementParticipantRtcInit(1)
 
-	if rr, ok := s.router.(*routing.RedisRouter); ok {
-		rtcNode, err := s.router.GetNodeForRoom(ctx, roomName)
-		if err != nil {
-			return err
-		}
+	rtcNode, err := s.router.GetNodeForRoom(ctx, roomName)
+	if err != nil {
+		return err
+	}
 
-		if rtcNode.Id != s.currentNode.Id {
-			err = routing.ErrIncorrectRTCNode
-			logger.Errorw("called participant on incorrect node", err,
-				"rtcNode", rtcNode,
-			)
-			return err
-		}
-
-		pKey := routing.ParticipantKeyLegacy(roomName, pi.Identity)
-		pKeyB62 := routing.ParticipantKey(roomName, pi.Identity)
-
-		// RTC session should start on this node
-		if err := rr.SetParticipantRTCNode(pKey, pKeyB62, s.currentNode.Id); err != nil {
-			return err
-		}
+	if rtcNode.Id != s.currentNode.Id {
+		err = routing.ErrIncorrectRTCNode
+		logger.Errorw("called participant on incorrect node", err,
+			"rtcNode", rtcNode,
+		)
+		return err
 	}
 
 	return s.roomManager.StartSession(ctx, roomName, pi, requestSource, responseSink)

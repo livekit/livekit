@@ -101,7 +101,7 @@ func NewLocalRoomManager(
 		return nil, err
 	}
 
-	r := &RoomManager{
+	return &RoomManager{
 		config:            conf,
 		rtcConfig:         rtcConf,
 		currentNode:       currentNode,
@@ -126,12 +126,7 @@ func NewLocalRoomManager(
 			Region:   conf.Region,
 			NodeId:   currentNode.Id,
 		},
-	}
-
-	// hook up to router
-	router.OnNewParticipantRTC(r.StartSession)
-	router.OnRTCMessage(r.handleRTCMessage)
-	return r, nil
+	}, nil
 }
 
 func (r *RoomManager) GetRoom(_ context.Context, roomName livekit.RoomName) *rtc.Room {
@@ -635,26 +630,6 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 				return
 			}
 		}
-	}
-}
-
-// handles RTC messages resulted from Room API calls
-func (r *RoomManager) handleRTCMessage(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) {
-	switch rm := msg.Message.(type) {
-	case *livekit.RTCNodeMessage_RemoveParticipant:
-		r.RemoveParticipant(ctx, rm.RemoveParticipant)
-	case *livekit.RTCNodeMessage_MuteTrack:
-		r.MutePublishedTrack(ctx, rm.MuteTrack)
-	case *livekit.RTCNodeMessage_UpdateParticipant:
-		r.UpdateParticipant(ctx, rm.UpdateParticipant)
-	case *livekit.RTCNodeMessage_DeleteRoom:
-		r.DeleteRoom(ctx, rm.DeleteRoom)
-	case *livekit.RTCNodeMessage_UpdateSubscriptions:
-		r.UpdateSubscriptions(ctx, rm.UpdateSubscriptions)
-	case *livekit.RTCNodeMessage_SendData:
-		r.SendData(ctx, rm.SendData)
-	case *livekit.RTCNodeMessage_UpdateRoomMetadata:
-		r.UpdateRoomMetadata(ctx, rm.UpdateRoomMetadata)
 	}
 }
 
