@@ -21,7 +21,6 @@ import (
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -114,11 +113,11 @@ type MessageRouter interface {
 	StartParticipantSignal(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit) (res StartParticipantSignalResults, err error)
 }
 
-func CreateRouter(config *config.Config, rc redis.UniversalClient, node LocalNode, signalClient SignalClient) Router {
+func CreateRouter(rc redis.UniversalClient, node LocalNode, signalClient SignalClient) Router {
 	lr := NewLocalRouter(node, signalClient)
 
 	if rc != nil {
-		return NewRedisRouter(config, lr, rc)
+		return NewRedisRouter(lr, rc)
 	}
 
 	// local routing and store

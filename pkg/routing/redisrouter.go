@@ -29,7 +29,6 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
-	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing/selector"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
@@ -49,11 +48,10 @@ var _ Router = (*RedisRouter)(nil)
 type RedisRouter struct {
 	*LocalRouter
 
-	rc             redis.UniversalClient
-	usePSRPCSignal bool
-	ctx            context.Context
-	isStarted      atomic.Bool
-	nodeMu         sync.RWMutex
+	rc        redis.UniversalClient
+	ctx       context.Context
+	isStarted atomic.Bool
+	nodeMu    sync.RWMutex
 	// previous stats for computing averages
 	prevStats *livekit.NodeStats
 
@@ -61,11 +59,10 @@ type RedisRouter struct {
 	cancel func()
 }
 
-func NewRedisRouter(config *config.Config, lr *LocalRouter, rc redis.UniversalClient) *RedisRouter {
+func NewRedisRouter(lr *LocalRouter, rc redis.UniversalClient) *RedisRouter {
 	rr := &RedisRouter{
-		LocalRouter:    lr,
-		rc:             rc,
-		usePSRPCSignal: config.SignalRelay.Enabled,
+		LocalRouter: lr,
+		rc:          rc,
 	}
 	rr.ctx, rr.cancel = context.WithCancel(context.Background())
 	return rr
