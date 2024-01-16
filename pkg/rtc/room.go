@@ -887,7 +887,7 @@ func (r *Room) SimulateScenario(participant types.LocalParticipant, simulateScen
 		r.disconnectSignalOnResumeParticipants[participant.Identity()] = time.Now().Add(simulateDisconnectSignalTimeout)
 		r.simulationLock.Unlock()
 	case *livekit.SimulateScenario_DisconnectSignalOnResumeNoMessages:
-		participant.GetLogger().Infow("simulating disconnect signal on resume before reconnect response")
+		participant.GetLogger().Infow("simulating disconnect signal on resume before sending any response messages")
 		r.simulationLock.Lock()
 		r.disconnectSignalOnResumeNoMessagesParticipants[participant.Identity()] = time.Now().Add(simulateDisconnectSignalTimeout)
 		r.simulationLock.Unlock()
