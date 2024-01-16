@@ -54,7 +54,7 @@ const (
 
 	dataForwardLoadBalanceThreshold = 20
 
-	simulateDisconnectSignalOnResumeTimeout = 5 * time.Second
+	simulateDisconnectSignalTimeout = 5 * time.Second
 )
 
 var (
@@ -111,8 +111,9 @@ type Room struct {
 	onRoomUpdated        func()
 	onClose              func()
 
-	simulationLock                       sync.Mutex
-	disconnectSignalOnResumeParticipants map[livekit.ParticipantIdentity]time.Time
+	simulationLock                                 sync.Mutex
+	disconnectSignalOnResumeParticipants           map[livekit.ParticipantIdentity]time.Time
+	disconnectSignalOnResumeNoMessagesParticipants map[livekit.ParticipantIdentity]time.Time
 }
 
 type ParticipantOptions struct {
@@ -153,6 +154,7 @@ func NewRoom(
 		closed:                               make(chan struct{}),
 		trailer:                              []byte(utils.RandomSecret()),
 		disconnectSignalOnResumeParticipants: make(map[livekit.ParticipantIdentity]time.Time),
+		disconnectSignalOnResumeNoMessagesParticipants: make(map[livekit.ParticipantIdentity]time.Time),
 	}
 
 	r.protoProxy = utils.NewProtoProxy[*livekit.Room](roomUpdateInterval, r.updateProto)
@@ -486,6 +488,17 @@ func (r *Room) ResumeParticipant(p types.LocalParticipant, requestSource routing
 	p.SetResponseSink(responseSink)
 
 	p.SetSignalSourceValid(true)
+
+	r.simulationLock.Lock()
+	if timeout, ok := r.disconnectSignalOnResumeNoMessagesParticipants[p.Identity()]; ok {
+		if time.Now().Before(timeout) {
+			p.CloseSignalConnection(types.SignallingCloseReasonDisconnectOnResumeNoMessages)
+		}
+		delete(r.disconnectSignalOnResumeNoMessagesParticipants, p.Identity())
+		r.simulationLock.Unlock()
+		return nil
+	}
+	r.simulationLock.Unlock()
 
 	if err := p.HandleReconnectAndSendResponse(reason, &livekit.ReconnectResponse{
 		IceServers:          iceServers,
@@ -870,7 +883,12 @@ func (r *Room) SimulateScenario(participant types.LocalParticipant, simulateScen
 	case *livekit.SimulateScenario_DisconnectSignalOnResume:
 		participant.GetLogger().Infow("simulating disconnect signal on resume")
 		r.simulationLock.Lock()
-		r.disconnectSignalOnResumeParticipants[participant.Identity()] = time.Now().Add(simulateDisconnectSignalOnResumeTimeout)
+		r.disconnectSignalOnResumeParticipants[participant.Identity()] = time.Now().Add(simulateDisconnectSignalTimeout)
+		r.simulationLock.Unlock()
+	case *livekit.SimulateScenario_DisconnectSignalOnResumeNoMessages:
+		participant.GetLogger().Infow("simulating disconnect signal on resume before reconnect response")
+		r.simulationLock.Lock()
+		r.disconnectSignalOnResumeNoMessagesParticipants[participant.Identity()] = time.Now().Add(simulateDisconnectSignalTimeout)
 		r.simulationLock.Unlock()
 	}
 	return nil
@@ -1372,6 +1390,12 @@ func (r *Room) simulationCleanupWorker() {
 		for identity, timeout := range r.disconnectSignalOnResumeParticipants {
 			if now.After(timeout) {
 				delete(r.disconnectSignalOnResumeParticipants, identity)
+			}
+		}
+
+		for identity, timeout := range r.disconnectSignalOnResumeNoMessagesParticipants {
+			if now.After(timeout) {
+				delete(r.disconnectSignalOnResumeNoMessagesParticipants, identity)
 			}
 		}
 		r.simulationLock.Unlock()
