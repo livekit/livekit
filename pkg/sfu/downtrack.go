@@ -411,6 +411,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.onBinding(nil)
 	}
 	d.bound.Store(true)
+	d.onBindAndConnectedChange()
 	d.bindLock.Unlock()
 
 	// Bind is called under RTPSender.mu lock, call the RTPSender.GetParameters in goroutine to avoid deadlock
@@ -425,9 +426,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	}()
 
 	d.forwarder.DetermineCodec(d.codec, d.params.Receiver.HeaderExtensions())
-
 	d.params.Logger.Debugw("downtrack bound")
-	d.onBindAndConnectedChange()
 
 	return codec, nil
 }
@@ -435,8 +434,10 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 // Unbind implements the teardown logic when the track is no longer needed. This happens
 // because a track has been stopped.
 func (d *DownTrack) Unbind(_ webrtc.TrackLocalContext) error {
+	d.bindLock.Lock()
 	d.bound.Store(false)
 	d.onBindAndConnectedChange()
+	d.bindLock.Unlock()
 	return nil
 }
 
@@ -1577,10 +1578,12 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 }
 
 func (d *DownTrack) SetConnected() {
+	d.bindLock.Lock()
 	if !d.connected.Swap(true) {
 		d.onBindAndConnectedChange()
 	}
 	d.params.Logger.Debugw("downtrack connected")
+	d.bindLock.Unlock()
 }
 
 // SetActivePaddingOnMuteUpTrack will enable padding on the track when its uptrack is muted.
