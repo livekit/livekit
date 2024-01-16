@@ -489,6 +489,7 @@ func (r *Room) ResumeParticipant(p types.LocalParticipant, requestSource routing
 
 	p.SetSignalSourceValid(true)
 
+	// check for simulated signal disconnect on resume before sending any signal response messages
 	r.simulationLock.Lock()
 	if timeout, ok := r.disconnectSignalOnResumeNoMessagesParticipants[p.Identity()]; ok {
 		if time.Now().Before(timeout) {
