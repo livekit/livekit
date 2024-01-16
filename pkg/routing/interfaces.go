@@ -21,7 +21,6 @@ import (
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -99,12 +98,6 @@ type Router interface {
 	Start() error
 	Drain()
 	Stop()
-
-	// OnNewParticipantRTC is called to start a new participant's RTC connection
-	OnNewParticipantRTC(callback NewParticipantCallback)
-
-	// OnRTCMessage is called to execute actions on the RTC node
-	OnRTCMessage(callback RTCMessageCallback)
 }
 
 type StartParticipantSignalResults struct {
@@ -118,17 +111,13 @@ type StartParticipantSignalResults struct {
 type MessageRouter interface {
 	// StartParticipantSignal participant signal connection is ready to start
 	StartParticipantSignal(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit) (res StartParticipantSignalResults, err error)
-
-	// Write a message to a participant or room
-	WriteParticipantRTC(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) error
-	WriteRoomRTC(ctx context.Context, roomName livekit.RoomName, msg *livekit.RTCNodeMessage) error
 }
 
-func CreateRouter(config *config.Config, rc redis.UniversalClient, node LocalNode, signalClient SignalClient) Router {
+func CreateRouter(rc redis.UniversalClient, node LocalNode, signalClient SignalClient) Router {
 	lr := NewLocalRouter(node, signalClient)
 
 	if rc != nil {
-		return NewRedisRouter(config, lr, rc)
+		return NewRedisRouter(lr, rc)
 	}
 
 	// local routing and store

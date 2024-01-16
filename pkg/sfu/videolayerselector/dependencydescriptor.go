@@ -71,7 +71,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	ddwdt := extPkt.DependencyDescriptor
 	if ddwdt == nil {
 		// packet doesn't have dependency descriptor
-		d.logger.Debugw(fmt.Sprintf("drop packet, no DD, incoming %v, sn: %d, isKeyFrame: %v", extPkt.VideoLayer, extPkt.Packet.SequenceNumber, extPkt.KeyFrame))
+		// d.logger.Debugw(fmt.Sprintf("drop packet, no DD, incoming %v, sn: %d, isKeyFrame: %v", extPkt.VideoLayer, extPkt.Packet.SequenceNumber, extPkt.KeyFrame))
 		return
 	}
 
@@ -114,15 +114,15 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	}
 
 	if ddwdt.StructureUpdated {
-		d.logger.Debugw("update dependency structure",
-			"structureID", dd.AttachedStructure.StructureId,
-			"structure", dd.AttachedStructure,
-			"decodeTargets", ddwdt.DecodeTargets,
-			"efn", extFrameNum,
-			"sn", extPkt.Packet.SequenceNumber,
-			"isKeyFrame", extPkt.KeyFrame,
-			"currentKeyframe", d.extKeyFrameNum,
-		)
+		// d.logger.Debugw("update dependency structure",
+		// 	"structureID", dd.AttachedStructure.StructureId,
+		// 	"structure", dd.AttachedStructure,
+		// 	"decodeTargets", ddwdt.DecodeTargets,
+		// 	"efn", extFrameNum,
+		// 	"sn", extPkt.Packet.SequenceNumber,
+		// 	"isKeyFrame", extPkt.KeyFrame,
+		// 	"currentKeyframe", d.extKeyFrameNum,
+		// )
 
 		d.updateDependencyStructure(dd.AttachedStructure, ddwdt.DecodeTargets, extFrameNum)
 	}
