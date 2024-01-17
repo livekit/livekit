@@ -209,6 +209,8 @@ const (
 	SignallingCloseReasonFullReconnectDataChannelError
 	SignallingCloseReasonFullReconnectNegotiateFailed
 	SignallingCloseReasonParticipantClose
+	SignallingCloseReasonDisconnectOnResume
+	SignallingCloseReasonDisconnectOnResumeNoMessages
 )
 
 func (s SignallingCloseReason) String() string {
@@ -231,6 +233,10 @@ func (s SignallingCloseReason) String() string {
 		return "FULL_RECONNECT_NEGOTIATE_FAILED"
 	case SignallingCloseReasonParticipantClose:
 		return "PARTICIPANT_CLOSE"
+	case SignallingCloseReasonDisconnectOnResume:
+		return "DISCONNECT_ON_RESUME"
+	case SignallingCloseReasonDisconnectOnResumeNoMessages:
+		return "DISCONNECT_ON_RESUME_NO_MESSAGES"
 	default:
 		return fmt.Sprintf("%d", int(s))
 	}
