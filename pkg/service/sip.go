@@ -195,7 +195,7 @@ func (s *SIPService) updateParticipant(ctx context.Context, info *livekit.SIPPar
 		req.Username = trunk.OutboundUsername
 		req.Password = trunk.OutboundPassword
 	}
-	if _, err := s.psrpcClient.UpdateSIPParticipant(ctx, req); err != nil {
+	if _, err := s.psrpcClient.UpdateSIPParticipant(ctx, "", req); err != nil {
 		logger.Errorw("cannot update sip participant", err)
 	}
 }
