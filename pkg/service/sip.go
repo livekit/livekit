@@ -177,29 +177,27 @@ func (s *SIPService) CreateSIPParticipant(ctx context.Context, req *livekit.Crea
 }
 
 func (s *SIPService) updateParticipant(ctx context.Context, info *livekit.SIPParticipantInfo) {
-	/*
-		AppendLogFields(ctx, "participantId", info.SipParticipantId, "room", info.RoomName, "trunk", info.SipTrunkId, "to", info.SipCallTo)
-		req := &rpc.InternalUpdateSIPParticipantRequest{
-			ParticipantId:       info.SipParticipantId,
-			CallTo:              info.SipCallTo,
-			RoomName:            info.RoomName,
-			ParticipantIdentity: info.ParticipantIdentity,
+	AppendLogFields(ctx, "participantId", info.SipParticipantId, "room", info.RoomName, "trunk", info.SipTrunkId, "to", info.SipCallTo)
+	req := &rpc.InternalUpdateSIPParticipantRequest{
+		ParticipantId:       info.SipParticipantId,
+		CallTo:              info.SipCallTo,
+		RoomName:            info.RoomName,
+		ParticipantIdentity: info.ParticipantIdentity,
+	}
+	if info.SipTrunkId != "" {
+		trunk, err := s.store.LoadSIPTrunk(ctx, info.SipTrunkId)
+		if err != nil {
+			logger.Errorw("cannot get trunk to update sip participant", err)
+			return
 		}
-		if info.SipTrunkId != "" {
-			trunk, err := s.store.LoadSIPTrunk(ctx, info.SipTrunkId)
-			if err != nil {
-				logger.Errorw("cannot get trunk to update sip participant", err)
-				return
-			}
-			req.Address = trunk.OutboundAddress
-			req.Number = trunk.OutboundNumber
-			req.Username = trunk.OutboundUsername
-			req.Password = trunk.OutboundPassword
-		}
-		if _, err := s.psrpcClient.UpdateSIPParticipant(ctx, req); err != nil {
-			logger.Errorw("cannot update sip participant", err)
-		}
-	*/
+		req.Address = trunk.OutboundAddress
+		req.Number = trunk.OutboundNumber
+		req.Username = trunk.OutboundUsername
+		req.Password = trunk.OutboundPassword
+	}
+	if _, err := s.psrpcClient.UpdateSIPParticipant(ctx, req); err != nil {
+		logger.Errorw("cannot update sip participant", err)
+	}
 }
 
 func (s *SIPService) ListSIPParticipant(ctx context.Context, req *livekit.ListSIPParticipantRequest) (*livekit.ListSIPParticipantResponse, error) {
