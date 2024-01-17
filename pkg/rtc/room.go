@@ -498,15 +498,19 @@ func (r *Room) ResumeParticipant(p types.LocalParticipant, requestSource routing
 	r.simulationLock.Lock()
 	if state, ok := r.disconnectSignalOnResumeNoMessagesParticipants[p.Identity()]; ok {
 		// WARNING: this uses knowledge that service layer tries internally
+		simulated := false
 		if time.Now().Before(state.expiry) {
 			state.closedCount++
 			p.CloseSignalConnection(types.SignallingCloseReasonDisconnectOnResumeNoMessages)
+			simulated = true
 		}
 		if state.closedCount == 3 {
 			delete(r.disconnectSignalOnResumeNoMessagesParticipants, p.Identity())
 		}
-		r.simulationLock.Unlock()
-		return nil
+		if simulated {
+			r.simulationLock.Unlock()
+			return nil
+		}
 	}
 	r.simulationLock.Unlock()
 
