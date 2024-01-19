@@ -70,8 +70,6 @@ func TestSignal(t *testing.T) {
 				roomName livekit.RoomName,
 				pi routing.ParticipantInit,
 				connectionID livekit.ConnectionID,
-				controllerNodeID livekit.NodeID,
-				selectionReason string,
 				requestSource routing.MessageSource,
 				responseSink routing.MessageSink,
 			) error {
@@ -129,8 +127,6 @@ func TestSignal(t *testing.T) {
 				roomName livekit.RoomName,
 				pi routing.ParticipantInit,
 				connectionID livekit.ConnectionID,
-				controllerNodeID livekit.NodeID,
-				selectionReason string,
 				requestSource routing.MessageSource,
 				responseSink routing.MessageSink,
 			) error {
