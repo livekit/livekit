@@ -42,7 +42,7 @@ type SessionHandler interface {
 		roomName livekit.RoomName,
 		pi routing.ParticipantInit,
 		connectionID livekit.ConnectionID,
-		controllerID livekit.NodeID,
+		controllerNodeID livekit.NodeID,
 		selectionReason string,
 		requestSource routing.MessageSource,
 		responseSink routing.MessageSink,

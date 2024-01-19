@@ -12,15 +12,17 @@ import (
 )
 
 type FakeSessionHandler struct {
-	HandleSessionStub        func(context.Context, livekit.RoomName, routing.ParticipantInit, livekit.ConnectionID, routing.MessageSource, routing.MessageSink) error
+	HandleSessionStub        func(context.Context, livekit.RoomName, routing.ParticipantInit, livekit.ConnectionID, livekit.NodeID, string, routing.MessageSource, routing.MessageSink) error
 	handleSessionMutex       sync.RWMutex
 	handleSessionArgsForCall []struct {
 		arg1 context.Context
 		arg2 livekit.RoomName
 		arg3 routing.ParticipantInit
 		arg4 livekit.ConnectionID
-		arg5 routing.MessageSource
-		arg6 routing.MessageSink
+		arg5 livekit.NodeID
+		arg6 string
+		arg7 routing.MessageSource
+		arg8 routing.MessageSink
 	}
 	handleSessionReturns struct {
 		result1 error
@@ -43,7 +45,7 @@ type FakeSessionHandler struct {
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeSessionHandler) HandleSession(arg1 context.Context, arg2 livekit.RoomName, arg3 routing.ParticipantInit, arg4 livekit.ConnectionID, arg5 routing.MessageSource, arg6 routing.MessageSink) error {
+func (fake *FakeSessionHandler) HandleSession(arg1 context.Context, arg2 livekit.RoomName, arg3 routing.ParticipantInit, arg4 livekit.ConnectionID, arg5 livekit.NodeID, arg6 string, arg7 routing.MessageSource, arg8 routing.MessageSink) error {
 	fake.handleSessionMutex.Lock()
 	ret, specificReturn := fake.handleSessionReturnsOnCall[len(fake.handleSessionArgsForCall)]
 	fake.handleSessionArgsForCall = append(fake.handleSessionArgsForCall, struct {
@@ -51,15 +53,17 @@ func (fake *FakeSessionHandler) HandleSession(arg1 context.Context, arg2 livekit
 		arg2 livekit.RoomName
 		arg3 routing.ParticipantInit
 		arg4 livekit.ConnectionID
-		arg5 routing.MessageSource
-		arg6 routing.MessageSink
-	}{arg1, arg2, arg3, arg4, arg5, arg6})
+		arg5 livekit.NodeID
+		arg6 string
+		arg7 routing.MessageSource
+		arg8 routing.MessageSink
+	}{arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8})
 	stub := fake.HandleSessionStub
 	fakeReturns := fake.handleSessionReturns
-	fake.recordInvocation("HandleSession", []interface{}{arg1, arg2, arg3, arg4, arg5, arg6})
+	fake.recordInvocation("HandleSession", []interface{}{arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8})
 	fake.handleSessionMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2, arg3, arg4, arg5, arg6)
+		return stub(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8)
 	}
 	if specificReturn {
 		return ret.result1
@@ -73,17 +77,17 @@ func (fake *FakeSessionHandler) HandleSessionCallCount() int {
 	return len(fake.handleSessionArgsForCall)
 }
 
-func (fake *FakeSessionHandler) HandleSessionCalls(stub func(context.Context, livekit.RoomName, routing.ParticipantInit, livekit.ConnectionID, routing.MessageSource, routing.MessageSink) error) {
+func (fake *FakeSessionHandler) HandleSessionCalls(stub func(context.Context, livekit.RoomName, routing.ParticipantInit, livekit.ConnectionID, livekit.NodeID, string, routing.MessageSource, routing.MessageSink) error) {
 	fake.handleSessionMutex.Lock()
 	defer fake.handleSessionMutex.Unlock()
 	fake.HandleSessionStub = stub
 }
 
-func (fake *FakeSessionHandler) HandleSessionArgsForCall(i int) (context.Context, livekit.RoomName, routing.ParticipantInit, livekit.ConnectionID, routing.MessageSource, routing.MessageSink) {
+func (fake *FakeSessionHandler) HandleSessionArgsForCall(i int) (context.Context, livekit.RoomName, routing.ParticipantInit, livekit.ConnectionID, livekit.NodeID, string, routing.MessageSource, routing.MessageSink) {
 	fake.handleSessionMutex.RLock()
 	defer fake.handleSessionMutex.RUnlock()
 	argsForCall := fake.handleSessionArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4, argsForCall.arg5, argsForCall.arg6
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4, argsForCall.arg5, argsForCall.arg6, argsForCall.arg7, argsForCall.arg8
 }
 
 func (fake *FakeSessionHandler) HandleSessionReturns(result1 error) {
