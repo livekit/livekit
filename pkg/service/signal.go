@@ -165,7 +165,7 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 		"room", ss.RoomName,
 		"participant", ss.Identity,
 		"connID", ss.ConnectionId,
-		"controllerNodeID", ss.ControllerId,
+		"controllerNodeID", ss.ControllerNodeId,
 		"selectionReason", ss.SelectionReason,
 	)
 
@@ -201,7 +201,7 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 		livekit.RoomName(ss.RoomName),
 		*pi,
 		livekit.ConnectionID(ss.ConnectionId),
-		livekit.NodeID(ss.ControllerId),
+		livekit.NodeID(ss.ControllerNodeId),
 		ss.SelectionReason,
 		reqChan,
 		sink,
