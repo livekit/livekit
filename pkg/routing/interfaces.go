@@ -125,12 +125,7 @@ func CreateRouter(rc redis.UniversalClient, node LocalNode, signalClient SignalC
 	return lr
 }
 
-func (pi *ParticipantInit) ToStartSession(
-	roomName livekit.RoomName,
-	connectionID livekit.ConnectionID,
-	controllerNodeID livekit.NodeID,
-	selectionReason string,
-) (*livekit.StartSession, error) {
+func (pi *ParticipantInit) ToStartSession(roomName livekit.RoomName, connectionID livekit.ConnectionID) (*livekit.StartSession, error) {
 	claims, err := json.Marshal(pi.Grants)
 	if err != nil {
 		return nil, err
@@ -141,16 +136,14 @@ func (pi *ParticipantInit) ToStartSession(
 		Identity: string(pi.Identity),
 		Name:     string(pi.Name),
 		// connection id is to allow the RTC node to identify where to route the message back to
-		ConnectionId:     string(connectionID),
-		Reconnect:        pi.Reconnect,
-		ReconnectReason:  pi.ReconnectReason,
-		AutoSubscribe:    pi.AutoSubscribe,
-		Client:           pi.Client,
-		GrantsJson:       string(claims),
-		AdaptiveStream:   pi.AdaptiveStream,
-		ParticipantId:    string(pi.ID),
-		ControllerNodeId: string(controllerNodeID),
-		SelectionReason:  selectionReason,
+		ConnectionId:    string(connectionID),
+		Reconnect:       pi.Reconnect,
+		ReconnectReason: pi.ReconnectReason,
+		AutoSubscribe:   pi.AutoSubscribe,
+		Client:          pi.Client,
+		GrantsJson:      string(claims),
+		AdaptiveStream:  pi.AdaptiveStream,
+		ParticipantId:   string(pi.ID),
 	}
 	if pi.SubscriberAllowPause != nil {
 		subscriberAllowPause := *pi.SubscriberAllowPause

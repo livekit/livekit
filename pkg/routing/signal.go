@@ -92,10 +92,12 @@ func (r *signalClient) StartParticipantSignal(
 	err error,
 ) {
 	connectionID = livekit.ConnectionID(utils.NewGuid("CO_"))
-	ss, err := pi.ToStartSession(roomName, connectionID, r.nodeID, selectionReason)
+	ss, err := pi.ToStartSession(roomName, connectionID)
 	if err != nil {
 		return
 	}
+	ss.ControllerNodeId = string(r.nodeID)
+	ss.SelectionReason = selectionReason
 
 	l := logger.GetLogger().WithValues(
 		"room", roomName,
