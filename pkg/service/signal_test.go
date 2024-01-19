@@ -95,7 +95,6 @@ func TestSignal(t *testing.T) {
 			livekit.RoomName("room1"),
 			routing.ParticipantInit{},
 			livekit.NodeID("node1"),
-			"test",
 		)
 		require.NoError(t, err)
 
@@ -151,7 +150,6 @@ func TestSignal(t *testing.T) {
 			livekit.RoomName("room1"),
 			routing.ParticipantInit{},
 			livekit.NodeID("node1"),
-			"test",
 		)
 		require.NoError(t, err)
 
