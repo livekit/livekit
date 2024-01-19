@@ -161,7 +161,7 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livek
 		return
 	}
 
-	return r.StartParticipantSignalWithNodeID(ctx, roomName, pi, livekit.NodeID(rtcNode.Id))
+	return r.StartParticipantSignalWithNodeID(ctx, roomName, pi, livekit.NodeID(rtcNode.Id), "selector")
 }
 
 func (r *RedisRouter) WriteNodeRTC(_ context.Context, rtcNodeID string, msg *livekit.RTCNodeMessage) error {

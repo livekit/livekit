@@ -41,7 +41,13 @@ var ErrSignalMessageDropped = errors.New("signal message dropped")
 //counterfeiter:generate . SignalClient
 type SignalClient interface {
 	ActiveCount() int
-	StartParticipantSignal(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit, nodeID livekit.NodeID) (connectionID livekit.ConnectionID, reqSink MessageSink, resSource MessageSource, err error)
+	StartParticipantSignal(
+		ctx context.Context,
+		roomName livekit.RoomName,
+		pi ParticipantInit,
+		nodeID livekit.NodeID,
+		selectionReason string,
+	) (connectionID livekit.ConnectionID, reqSink MessageSink, resSource MessageSource, err error)
 }
 
 type signalClient struct {
@@ -78,6 +84,7 @@ func (r *signalClient) StartParticipantSignal(
 	roomName livekit.RoomName,
 	pi ParticipantInit,
 	nodeID livekit.NodeID,
+	selectionReason string,
 ) (
 	connectionID livekit.ConnectionID,
 	reqSink MessageSink,
@@ -85,7 +92,7 @@ func (r *signalClient) StartParticipantSignal(
 	err error,
 ) {
 	connectionID = livekit.ConnectionID(utils.NewGuid("CO_"))
-	ss, err := pi.ToStartSession(roomName, connectionID)
+	ss, err := pi.ToStartSession(roomName, connectionID, r.nodeID, selectionReason)
 	if err != nil {
 		return
 	}

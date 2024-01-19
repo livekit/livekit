@@ -237,6 +237,8 @@ func (r *RoomManager) StartSession(
 	ctx context.Context,
 	roomName livekit.RoomName,
 	pi routing.ParticipantInit,
+	controllerNodeID livekit.NodeID,
+	selectionReason string,
 	requestSource routing.MessageSource,
 	responseSink routing.MessageSink,
 ) error {
@@ -341,6 +343,8 @@ func (r *RoomManager) StartSession(
 		"reconnectReason", pi.ReconnectReason,
 		"adaptiveStream", pi.AdaptiveStream,
 		"numParticipants", room.GetParticipantCount(),
+		"controllerNodeID", controllerNodeID,
+		"selectionReason", selectionReason,
 	)
 
 	clientConf := r.clientConfManager.GetConfiguration(pi.Client)

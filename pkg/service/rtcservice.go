@@ -266,7 +266,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	done := make(chan struct{})
 	// function exits when websocket terminates, it'll close the event reading off of request sink and response source as well
 	defer func() {
-		pLogger.Infow("finishing WS connection",
+		pLogger.Debugw("finishing WS connection",
 			"connID", cr.ConnectionID,
 			"closedByClient", closedByClient.Load(),
 		)
@@ -306,7 +306,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if signalStats != nil {
 		signalStats.AddBytes(uint64(count), true)
 	}
-	pLogger.Infow("new client WS connected",
+	pLogger.Debugw("new client WS connected",
 		"connID", cr.ConnectionID,
 		"reconnect", pi.Reconnect,
 		"reconnectReason", pi.ReconnectReason,

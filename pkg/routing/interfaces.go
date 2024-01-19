@@ -125,7 +125,12 @@ func CreateRouter(rc redis.UniversalClient, node LocalNode, signalClient SignalC
 	return lr
 }
 
-func (pi *ParticipantInit) ToStartSession(roomName livekit.RoomName, connectionID livekit.ConnectionID) (*livekit.StartSession, error) {
+func (pi *ParticipantInit) ToStartSession(
+	roomName livekit.RoomName,
+	connectionID livekit.ConnectionID,
+	controllerID livekit.NodeID,
+	selectionReason string,
+) (*livekit.StartSession, error) {
 	claims, err := json.Marshal(pi.Grants)
 	if err != nil {
 		return nil, err
@@ -144,6 +149,8 @@ func (pi *ParticipantInit) ToStartSession(roomName livekit.RoomName, connectionI
 		GrantsJson:      string(claims),
 		AdaptiveStream:  pi.AdaptiveStream,
 		ParticipantId:   string(pi.ID),
+		ControllerId:    string(controllerID),
+		SelectionReason: selectionReason,
 	}
 	if pi.SubscriberAllowPause != nil {
 		subscriberAllowPause := *pi.SubscriberAllowPause

@@ -42,6 +42,8 @@ type SessionHandler interface {
 		roomName livekit.RoomName,
 		pi routing.ParticipantInit,
 		connectionID livekit.ConnectionID,
+		controllerID livekit.NodeID,
+		selectionReason string,
 		requestSource routing.MessageSource,
 		responseSink routing.MessageSink,
 	) error
@@ -97,6 +99,8 @@ func (s *defaultSessionHandler) HandleSession(
 	roomName livekit.RoomName,
 	pi routing.ParticipantInit,
 	connectionID livekit.ConnectionID,
+	controllerNodeID livekit.NodeID,
+	selectionReason string,
 	requestSource routing.MessageSource,
 	responseSink routing.MessageSink,
 ) error {
@@ -115,7 +119,15 @@ func (s *defaultSessionHandler) HandleSession(
 		return err
 	}
 
-	return s.roomManager.StartSession(ctx, roomName, pi, requestSource, responseSink)
+	return s.roomManager.StartSession(
+		ctx,
+		roomName,
+		pi,
+		controllerNodeID,
+		selectionReason,
+		requestSource,
+		responseSink,
+	)
 }
 
 func (s *SignalServer) Start() error {
@@ -153,6 +165,8 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 		"room", ss.RoomName,
 		"participant", ss.Identity,
 		"connID", ss.ConnectionId,
+		"controllerNodeID", ss.ControllerId,
+		"selectionReason", ss.SelectionReason,
 	)
 
 	stream.Hijack()
@@ -182,7 +196,16 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 	// copy the incoming rpc headers to avoid dropping any session vars.
 	ctx := metadata.NewContextWithIncomingHeader(context.Background(), metadata.IncomingHeader(stream.Context()))
 
-	err = r.sessionHandler.HandleSession(ctx, livekit.RoomName(ss.RoomName), *pi, livekit.ConnectionID(ss.ConnectionId), reqChan, sink)
+	err = r.sessionHandler.HandleSession(
+		ctx,
+		livekit.RoomName(ss.RoomName),
+		*pi,
+		livekit.ConnectionID(ss.ConnectionId),
+		livekit.NodeID(ss.ControllerId),
+		ss.SelectionReason,
+		reqChan,
+		sink,
+	)
 	if err != nil {
 		sink.Close()
 		l.Errorw("could not handle new participant", err)
