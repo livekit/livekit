@@ -63,21 +63,6 @@ type ParticipantInit struct {
 	SubscriberAllowPause *bool
 }
 
-type NewParticipantCallback func(
-	ctx context.Context,
-	roomName livekit.RoomName,
-	pi ParticipantInit,
-	requestSource MessageSource,
-	responseSink MessageSink,
-) error
-
-type RTCMessageCallback func(
-	ctx context.Context,
-	roomName livekit.RoomName,
-	identity livekit.ParticipantIdentity,
-	msg *livekit.RTCNodeMessage,
-)
-
 // Router allows multiple nodes to coordinate the participant session
 //
 //counterfeiter:generate . Router
