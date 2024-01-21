@@ -28,6 +28,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/rpc"
 
 	"github.com/livekit/livekit-server/pkg/routing/selector"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
@@ -38,6 +39,12 @@ const (
 	participantMappingTTL = 24 * time.Hour
 	statsUpdateInterval   = 2 * time.Second
 	statsMaxDelaySeconds  = 30
+
+	// hash of node_id => Node proto
+	NodesKey = "nodes"
+
+	// hash of room_name => node_id
+	NodeRoomKey = "room_node_map"
 )
 
 var _ Router = (*RedisRouter)(nil)
@@ -49,20 +56,21 @@ type RedisRouter struct {
 	*LocalRouter
 
 	rc        redis.UniversalClient
+	kps       rpc.KeepalivePubSub
 	ctx       context.Context
 	isStarted atomic.Bool
 	nodeMu    sync.RWMutex
 	// previous stats for computing averages
 	prevStats *livekit.NodeStats
 
-	pubsub *redis.PubSub
 	cancel func()
 }
 
-func NewRedisRouter(lr *LocalRouter, rc redis.UniversalClient) *RedisRouter {
+func NewRedisRouter(lr *LocalRouter, rc redis.UniversalClient, kps rpc.KeepalivePubSub) *RedisRouter {
 	rr := &RedisRouter{
 		LocalRouter: lr,
 		rc:          rc,
+		kps:         kps,
 	}
 	rr.ctx, rr.cancel = context.WithCancel(context.Background())
 	return rr
@@ -164,33 +172,17 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livek
 	return r.StartParticipantSignalWithNodeID(ctx, roomName, pi, livekit.NodeID(rtcNode.Id))
 }
 
-func (r *RedisRouter) WriteNodeRTC(_ context.Context, rtcNodeID string, msg *livekit.RTCNodeMessage) error {
-	rtcSink := NewRTCNodeSink(r.rc, livekit.NodeID(rtcNodeID), "ephemeral", livekit.ParticipantKey(msg.ParticipantKey), livekit.ParticipantKey(msg.ParticipantKeyB62))
-	defer rtcSink.Close()
-	return r.writeRTCMessage(rtcSink, msg)
-}
-
-func (r *LocalRouter) writeRTCMessage(sink MessageSink, msg *livekit.RTCNodeMessage) error {
-	msg.SenderTime = time.Now().Unix()
-	return sink.WriteMessage(msg)
-}
-
 func (r *RedisRouter) Start() error {
 	if r.isStarted.Swap(true) {
 		return nil
 	}
 
-	workerStarted := make(chan struct{})
+	workerStarted := make(chan error)
 	go r.statsWorker()
-	go r.redisWorker(workerStarted)
+	go r.keepaliveWorker(workerStarted)
 
 	// wait until worker is running
-	select {
-	case <-workerStarted:
-		return nil
-	case <-time.After(3 * time.Second):
-		return errors.New("Unable to start redis router")
-	}
+	return <-workerStarted
 }
 
 func (r *RedisRouter) Drain() {
@@ -207,7 +199,6 @@ func (r *RedisRouter) Stop() {
 		return
 	}
 	logger.Debugw("stopping RedisRouter")
-	_ = r.pubsub.Close()
 	_ = r.UnregisterNode()
 	r.cancel()
 }
@@ -219,9 +210,8 @@ func (r *RedisRouter) statsWorker() {
 		// update periodically
 		select {
 		case <-time.After(statsUpdateInterval):
-			_ = r.WriteNodeRTC(context.Background(), r.currentNode.Id, &livekit.RTCNodeMessage{
-				Message: &livekit.RTCNodeMessage_KeepAlive{},
-			})
+			r.kps.PublishPing(r.ctx, livekit.NodeID(r.currentNode.Id), &rpc.KeepalivePing{Timestamp: time.Now().Unix()})
+
 			r.nodeMu.RLock()
 			stats := r.currentNode.Stats
 			r.nodeMu.RUnlock()
@@ -245,44 +235,17 @@ func (r *RedisRouter) statsWorker() {
 	}
 }
 
-// worker that consumes redis messages intended for this node
-func (r *RedisRouter) redisWorker(startedChan chan struct{}) {
-	defer func() {
-		logger.Debugw("finishing redisWorker", "nodeID", r.currentNode.Id)
-	}()
-	logger.Debugw("starting redisWorker", "nodeID", r.currentNode.Id)
-
-	rtcChannel := rtcNodeChannel(livekit.NodeID(r.currentNode.Id))
-	r.pubsub = r.rc.Subscribe(r.ctx, rtcChannel)
-
-	close(startedChan)
-	for msg := range r.pubsub.Channel() {
-		if msg == nil {
-			return
-		}
-
-		if msg.Channel == rtcChannel {
-			rm := livekit.RTCNodeMessage{}
-			if err := proto.Unmarshal([]byte(msg.Payload), &rm); err != nil {
-				logger.Errorw("could not unmarshal RTC message on rtcchan", err)
-				prometheus.MessageCounter.WithLabelValues("rtc", "failure").Add(1)
-				continue
-			}
-			if err := r.handleRTCMessage(&rm); err != nil {
-				logger.Errorw("error processing RTC message", err)
-				prometheus.MessageCounter.WithLabelValues("rtc", "failure").Add(1)
-				continue
-			}
-			prometheus.MessageCounter.WithLabelValues("rtc", "success").Add(1)
-		}
+func (r *RedisRouter) keepaliveWorker(startedChan chan error) {
+	pings, err := r.kps.SubscribePing(r.ctx, livekit.NodeID(r.currentNode.Id))
+	if err != nil {
+		startedChan <- err
+		return
 	}
-}
+	close(startedChan)
 
-func (r *RedisRouter) handleRTCMessage(rm *livekit.RTCNodeMessage) error {
-	switch rm.Message.(type) {
-	case *livekit.RTCNodeMessage_KeepAlive:
-		if time.Since(time.Unix(rm.SenderTime, 0)) > statsUpdateInterval {
-			logger.Infow("keep alive too old, skipping", "senderTime", rm.SenderTime)
+	for ping := range pings.Channel() {
+		if time.Since(time.Unix(ping.Timestamp, 0)) > statsUpdateInterval {
+			logger.Infow("keep alive too old, skipping", "timestamp", ping.Timestamp)
 			break
 		}
 
@@ -294,7 +257,7 @@ func (r *RedisRouter) handleRTCMessage(rm *livekit.RTCNodeMessage) error {
 		if err != nil {
 			logger.Errorw("could not update node stats", err)
 			r.nodeMu.Unlock()
-			return err
+			continue
 		}
 		r.currentNode.Stats = updated
 		if computedAvg {
@@ -307,5 +270,4 @@ func (r *RedisRouter) handleRTCMessage(rm *livekit.RTCNodeMessage) error {
 			logger.Errorw("could not update node", err)
 		}
 	}
-	return nil
 }

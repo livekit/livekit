@@ -50,7 +50,12 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	router := routing.CreateRouter(universalClient, currentNode, signalClient)
+	clientParams := getPSRPCClientParams(psrpcConfig, messageBus)
+	keepalivePubSub, err := rpc.NewKeepalivePubSub(clientParams)
+	if err != nil {
+		return nil, err
+	}
+	router := routing.CreateRouter(universalClient, currentNode, signalClient, keepalivePubSub)
 	objectStore := createStore(universalClient)
 	roomAllocator, err := NewRoomAllocator(conf, router, objectStore)
 	if err != nil {
@@ -60,7 +65,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	clientParams := getPSRPCClientParams(psrpcConfig, messageBus)
 	egressClient, err := rpc.NewEgressClient(clientParams)
 	if err != nil {
 		return nil, err
@@ -149,7 +153,13 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 	if err != nil {
 		return nil, err
 	}
-	router := routing.CreateRouter(universalClient, currentNode, signalClient)
+	psrpcConfig := getPSRPCConfig(conf)
+	clientParams := getPSRPCClientParams(psrpcConfig, messageBus)
+	keepalivePubSub, err := rpc.NewKeepalivePubSub(clientParams)
+	if err != nil {
+		return nil, err
+	}
+	router := routing.CreateRouter(universalClient, currentNode, signalClient, keepalivePubSub)
 	return router, nil
 }
 
