@@ -24,6 +24,7 @@ import (
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/rpc"
 )
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
@@ -113,11 +114,11 @@ type MessageRouter interface {
 	StartParticipantSignal(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit) (res StartParticipantSignalResults, err error)
 }
 
-func CreateRouter(rc redis.UniversalClient, node LocalNode, signalClient SignalClient) Router {
+func CreateRouter(rc redis.UniversalClient, node LocalNode, signalClient SignalClient, kps rpc.KeepalivePubSub) Router {
 	lr := NewLocalRouter(node, signalClient)
 
 	if rc != nil {
-		return NewRedisRouter(lr, rc)
+		return NewRedisRouter(lr, rc, kps)
 	}
 
 	// local routing and store
