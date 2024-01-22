@@ -28,6 +28,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/psrpc"
 )
 
 // A rooms service that supports a single node
@@ -166,7 +167,13 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 		return nil, twirpAuthError(err)
 	}
 
-	return s.roomClient.DeleteRoom(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
+	_, err := s.roomClient.DeleteRoom(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
+	if !errors.Is(err, psrpc.ErrNoResponse) {
+		return &livekit.DeleteRoomResponse{}, err
+	}
+
+	err = s.roomStore.DeleteRoom(ctx, livekit.RoomName(req.Room))
+	return &livekit.DeleteRoomResponse{}, err
 }
 
 func (s *RoomService) ListParticipants(ctx context.Context, req *livekit.ListParticipantsRequest) (*livekit.ListParticipantsResponse, error) {
