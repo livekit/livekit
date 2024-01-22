@@ -1242,12 +1242,11 @@ func (p *ParticipantImpl) setupParticipantTrafficLoad() {
 
 func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 	oldState := p.State()
-	if state == oldState {
+	if !(p.state.Swap(state) != state) {
 		return
 	}
 
 	p.params.Logger.Debugw("updating participant state", "state", state.String())
-	p.state.Store(state)
 	p.dirty.Store(true)
 
 	p.lock.RLock()
