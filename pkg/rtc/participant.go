@@ -1867,7 +1867,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 }
 
 func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo) *MediaTrack {
-	p.pubLogger.Infow("add migrate muted track", "cid", cid, "trackID", ti.Sid, "track", logger.Proto(ti))
+	p.pubLogger.Infow("add migrated track", "cid", cid, "trackID", ti.Sid, "track", logger.Proto(ti))
 	rtpReceiver := p.TransportManager.GetPublisherRTPReceiver(ti.Mid)
 	if rtpReceiver == nil {
 		p.pubLogger.Errorw("could not find receiver for migrated track", nil, "trackID", ti.Sid)
@@ -1914,7 +1914,7 @@ func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo) *M
 		}
 	}
 	mt.SetSimulcast(ti.Simulcast)
-	mt.SetMuted(true)
+	mt.SetMuted(ti.Muted)
 
 	return mt
 }
