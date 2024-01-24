@@ -88,9 +88,4 @@ type SIPStore interface {
 	LoadSIPDispatchRule(ctx context.Context, sipDispatchRuleID string) (*livekit.SIPDispatchRuleInfo, error)
 	ListSIPDispatchRule(ctx context.Context) ([]*livekit.SIPDispatchRuleInfo, error)
 	DeleteSIPDispatchRule(ctx context.Context, info *livekit.SIPDispatchRuleInfo) error
-
-	StoreSIPParticipant(ctx context.Context, info *livekit.SIPParticipantInfo) error
-	LoadSIPParticipant(ctx context.Context, sipParticipantID string) (*livekit.SIPParticipantInfo, error)
-	ListSIPParticipant(ctx context.Context) ([]*livekit.SIPParticipantInfo, error)
-	DeleteSIPParticipant(ctx context.Context, info *livekit.SIPParticipantInfo) error
 }
