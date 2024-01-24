@@ -125,6 +125,7 @@ func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
 func (t *MediaTrack) OnSubscribedMaxQualityChange(
 	f func(
 		trackID livekit.TrackID,
+		trackInfo *livekit.TrackInfo,
 		subscribedQualities []*livekit.SubscribedCodec,
 		maxSubscribedQualities []types.SubscribedCodecQuality,
 	) error,
@@ -135,7 +136,7 @@ func (t *MediaTrack) OnSubscribedMaxQualityChange(
 
 	handler := func(subscribedQualities []*livekit.SubscribedCodec, maxSubscribedQualities []types.SubscribedCodecQuality) {
 		if f != nil && !t.IsMuted() {
-			_ = f(t.ID(), subscribedQualities, maxSubscribedQualities)
+			_ = f(t.ID(), t.ToProto(), subscribedQualities, maxSubscribedQualities)
 		}
 
 		for _, q := range maxSubscribedQualities {
