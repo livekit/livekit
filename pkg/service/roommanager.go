@@ -202,7 +202,14 @@ func (r *RoomManager) SaveClientsBandwidth() {
 				case livekit.TrackType_AUDIO:
 					participantBandwidth += AudioBandwidth
 				case livekit.TrackType_VIDEO:
-					participantBandwidth += VideoBanwith
+					switch t.DownTrack().CurrentLayers().Spatial {
+					case 2:
+						participantBandwidth += VideoBanwithHigh
+					case 1:
+						participantBandwidth += VideoBanwithMedium
+					case 0:
+						participantBandwidth += VideoBanwithLow
+					}
 				}
 			}
 			oldBandwidth, _ := bandwidthByApiKey[p.GetApiKey()]
@@ -384,20 +391,10 @@ func (r *RoomManager) StartSession(
 		ReconnectOnSubscriptionError: reconnectOnSubscriptionError,
 		VersionGenerator:             r.versionGenerator,
 		TrackResolver:                room.ResolveMediaTrackForSubscriber,
-		BandwidthChecker: func(apiKey livekit.ApiKey, trackType livekit.TrackType, limit int64) (bool, error) {
-			var requestBandwidth int64
-			switch trackType {
-			case livekit.TrackType_VIDEO:
-				requestBandwidth = VideoBanwith
-			case livekit.TrackType_AUDIO:
-				requestBandwidth = AudioBandwidth
-			default:
-				return true, nil
-			}
-
+		BandwidthChecker: func(apiKey livekit.ApiKey, limit int64) bool {
 			bandwidthLimit := limit * TrafficLimitPerClient
 			currentBandwidth := r.trafficManager.GetValue(apiKey)
-			return currentBandwidth+requestBandwidth <= bandwidthLimit, nil
+			return currentBandwidth < bandwidthLimit
 		},
 		RelayCollection: outRelayCollection,
 	})

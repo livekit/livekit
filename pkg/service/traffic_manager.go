@@ -14,8 +14,10 @@ import (
 
 const (
 	TrafficLimitPerClient       = 5000_000
-	AudioBandwidth              = 1500
-	VideoBanwith                = 1500_000
+	AudioBandwidth              = 1_500
+	VideoBanwithHigh            = 1500_000
+	VideoBanwithMedium          = 750_000
+	VideoBanwithLow             = 375_000
 	topicTrafficValuesStreaming = "clients_traffic"
 )
 

@@ -496,4 +496,4 @@ type OperationMonitor interface {
 	IsIdle() bool
 }
 
-type BandwidthChecker func(apiKey livekit.ApiKey, trackType livekit.TrackType, limit int64) (bool, error)
+type BandwidthChecker func(apiKey livekit.ApiKey, limit int64) bool
