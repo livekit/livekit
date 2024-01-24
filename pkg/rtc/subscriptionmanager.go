@@ -440,10 +440,8 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 		return ErrNoTrackPermission
 	}
 
-	bandwidthAvailable, err := m.params.BandwidthChecker(m.params.Participant.GetApiKey(), track.Kind(), m.params.Participant.GetLimit())
-	if err != nil {
-		return err
-	}
+	bandwidthAvailable := m.params.BandwidthChecker(m.params.Participant.GetApiKey(), m.params.Participant.GetLimit())
+
 	if !bandwidthAvailable {
 		return ErrClientBandwidthLimitReached
 	}

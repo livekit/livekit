@@ -910,6 +910,10 @@ func (d *DownTrack) MaxLayers() buffer.VideoLayer {
 	return d.forwarder.MaxLayers()
 }
 
+func (d *DownTrack) CurrentLayers() buffer.VideoLayer {
+	return d.forwarder.CurrentLayers()
+}
+
 func (d *DownTrack) GetState() DownTrackState {
 	return DownTrackState{
 		RTPStats:             d.rtpStats,
