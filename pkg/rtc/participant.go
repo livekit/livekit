@@ -767,11 +767,9 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 			leave.Regions = proto.Clone(p.regionSettings).(*livekit.RegionSettings)
 		}
 		p.lock.RUnlock()
-	} else {
-		if sendLeave {
-			leave = &livekit.LeaveRequest{
-				Reason: reason.ToDisconnectReason(),
-			}
+	} else if sendLeave {
+		leave = &livekit.LeaveRequest{
+			Reason: reason.ToDisconnectReason(),
 		}
 	}
 	if leave != nil {
