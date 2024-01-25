@@ -161,7 +161,7 @@ type ParticipantImpl struct {
 	pendingTracksLock       utils.RWMutex
 	pendingTracks           map[string]*pendingTrackInfo
 	pendingPublishingTracks map[livekit.TrackID]*pendingTrackInfo
-	// migrated in tracks are not fired need close at participant close
+	// migrated in tracks that have not fired need close at participant close
 	pendingMigratedTracks []*MediaTrack
 
 	// supported codecs
@@ -640,7 +640,7 @@ func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) er
 func (p *ParticipantImpl) handleMigrateTracks() {
 	// muted track won't send rtp packet, so it is required to add mediatrack manually.
 	// But, synthesising track publish for unmuted tracks keeps a consistent path.
-	// In both csaes (muted and unmuted), when publisher sends media packets, OnTrack would register and go from there.
+	// In both cases (muted and unmuted), when publisher sends media packets, OnTrack would register and go from there.
 	var addedTracks []*MediaTrack
 	p.pendingTracksLock.Lock()
 	for cid, pti := range p.pendingTracks {
@@ -656,7 +656,7 @@ func (p *ParticipantImpl) handleMigrateTracks() {
 		if mt != nil {
 			addedTracks = append(addedTracks, mt)
 		} else {
-			p.pubLogger.Warnw("could not find migrated muted track", nil, "cid", cid)
+			p.pubLogger.Warnw("could not find migrated track", nil, "cid", cid)
 		}
 	}
 	p.pendingMigratedTracks = append(p.pendingMigratedTracks, addedTracks...)
@@ -1567,10 +1567,21 @@ func (p *ParticipantImpl) onSubscribedMaxQualityChange(
 
 	// send layer info about max subscription changes to telemetry
 	for _, maxSubscribedQuality := range maxSubscribedQualities {
+		ti := &livekit.TrackInfo{
+			Sid:  trackInfo.Sid,
+			Type: trackInfo.Type,
+		}
+		for _, layer := range trackInfo.Layers {
+			if layer.Quality == maxSubscribedQuality.Quality {
+				ti.Width = layer.Width
+				ti.Height = layer.Height
+				break
+			}
+		}
 		p.params.Telemetry.TrackMaxSubscribedVideoQuality(
 			context.Background(),
 			p.ID(),
-			trackInfo,
+			ti,
 			maxSubscribedQuality.CodecMime,
 			maxSubscribedQuality.Quality,
 		)
