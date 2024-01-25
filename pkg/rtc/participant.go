@@ -754,9 +754,19 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	if p.ProtocolVersion().SupportsRegionsInLeaveRequest() {
 		leave = &livekit.LeaveRequest{
 			Reason: reason.ToDisconnectReason(),
-			Action: livekit.LeaveRequest_DISCONNECT,
-			// no need to send regions when disconnecting
 		}
+		if isExpectedToResume {
+			leave.Action = livekit.LeaveRequest_RESUME
+		} else {
+			leave.Action = livekit.LeaveRequest_DISCONNECT
+		}
+		// although regions are not needed when resuming OR disconnecting,
+		// send it if available, just in case clients want to fall back.
+		p.lock.RLock()
+		if p.regionSettings != nil {
+			leave.Regions = proto.Clone(p.regionSettings).(*livekit.RegionSettings)
+		}
+		p.lock.RUnlock()
 	} else {
 		if sendLeave {
 			leave = &livekit.LeaveRequest{
