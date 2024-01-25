@@ -9,8 +9,10 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
+type PlayoutDelayState int32
+
 const (
-	PlayoutDelayStateChanged int32 = iota
+	PlayoutDelayStateChanged PlayoutDelayState = iota
 	PlayoutDelaySending
 	PlayoutDelayAcked
 
@@ -18,6 +20,18 @@ const (
 	jitterHighMultiToDelay = 15
 	jitterHighThreshold    = 15
 )
+
+func (s PlayoutDelayState) String() string {
+	switch s {
+	case PlayoutDelayStateChanged:
+		return "StateChanged"
+	case PlayoutDelaySending:
+		return "Sending"
+	case PlayoutDelayAcked:
+		return "Acked"
+	}
+	return "Unknown"
+}
 
 type PlayoutDelayController struct {
 	lock               sync.Mutex
@@ -87,16 +101,16 @@ func (c *PlayoutDelayController) SetJitter(jitter uint32) {
 func (c *PlayoutDelayController) OnSeqAcked(seq uint16) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	if c.state.Load() == PlayoutDelaySending && (seq-c.sendingAtSeq) < 0x8000 {
-		c.state.Store(PlayoutDelayAcked)
+	if PlayoutDelayState(c.state.Load()) == PlayoutDelaySending && (seq-c.sendingAtSeq) < 0x8000 {
+		c.state.Store(int32(PlayoutDelayAcked))
 	}
 }
 
 func (c *PlayoutDelayController) GetDelayExtension(seq uint16) []byte {
-	switch c.state.Load() {
+	switch PlayoutDelayState(c.state.Load()) {
 	case PlayoutDelayStateChanged:
 		c.lock.Lock()
-		c.state.Store(PlayoutDelaySending)
+		c.state.Store(int32(PlayoutDelaySending))
 		c.sendingAtSeq = seq
 		c.lock.Unlock()
 		return c.extBytes.Load().([]byte)
