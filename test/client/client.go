@@ -114,7 +114,7 @@ type Options struct {
 }
 
 func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error) {
-	u, err := url.Parse(host + "/rtc?protocol=7")
+	u, err := url.Parse(host + fmt.Sprintf("/rtc?protocol=%d", types.CurrentProtocol))
 	if err != nil {
 		return nil, err
 	}
@@ -493,7 +493,10 @@ func (c *RTCClient) Stop() {
 	logger.Infow("stopping client", "ID", c.ID())
 	_ = c.SendRequest(&livekit.SignalRequest{
 		Message: &livekit.SignalRequest_Leave{
-			Leave: &livekit.LeaveRequest{},
+			Leave: &livekit.LeaveRequest{
+				Reason: livekit.DisconnectReason_CLIENT_INITIATED,
+				Action: livekit.LeaveRequest_DISCONNECT,
+			},
 		},
 	})
 	c.publisherFullyEstablished.Store(false)
