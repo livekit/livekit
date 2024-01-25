@@ -753,6 +753,11 @@ type FakeLocalParticipant struct {
 	setPermissionReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	SetRegionSettingsStub        func(*livekit.RegionSettings)
+	setRegionSettingsMutex       sync.RWMutex
+	setRegionSettingsArgsForCall []struct {
+		arg1 *livekit.RegionSettings
+	}
 	SetResponseSinkStub        func(routing.MessageSink)
 	setResponseSinkMutex       sync.RWMutex
 	setResponseSinkArgsForCall []struct {
@@ -4981,6 +4986,38 @@ func (fake *FakeLocalParticipant) SetPermissionReturnsOnCall(i int, result1 bool
 	}{result1}
 }
 
+func (fake *FakeLocalParticipant) SetRegionSettings(arg1 *livekit.RegionSettings) {
+	fake.setRegionSettingsMutex.Lock()
+	fake.setRegionSettingsArgsForCall = append(fake.setRegionSettingsArgsForCall, struct {
+		arg1 *livekit.RegionSettings
+	}{arg1})
+	stub := fake.SetRegionSettingsStub
+	fake.recordInvocation("SetRegionSettings", []interface{}{arg1})
+	fake.setRegionSettingsMutex.Unlock()
+	if stub != nil {
+		fake.SetRegionSettingsStub(arg1)
+	}
+}
+
+func (fake *FakeLocalParticipant) SetRegionSettingsCallCount() int {
+	fake.setRegionSettingsMutex.RLock()
+	defer fake.setRegionSettingsMutex.RUnlock()
+	return len(fake.setRegionSettingsArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) SetRegionSettingsCalls(stub func(*livekit.RegionSettings)) {
+	fake.setRegionSettingsMutex.Lock()
+	defer fake.setRegionSettingsMutex.Unlock()
+	fake.SetRegionSettingsStub = stub
+}
+
+func (fake *FakeLocalParticipant) SetRegionSettingsArgsForCall(i int) *livekit.RegionSettings {
+	fake.setRegionSettingsMutex.RLock()
+	defer fake.setRegionSettingsMutex.RUnlock()
+	argsForCall := fake.setRegionSettingsArgsForCall[i]
+	return argsForCall.arg1
+}
+
 func (fake *FakeLocalParticipant) SetResponseSink(arg1 routing.MessageSink) {
 	fake.setResponseSinkMutex.Lock()
 	fake.setResponseSinkArgsForCall = append(fake.setResponseSinkArgsForCall, struct {
@@ -6343,6 +6380,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.setNameMutex.RUnlock()
 	fake.setPermissionMutex.RLock()
 	defer fake.setPermissionMutex.RUnlock()
+	fake.setRegionSettingsMutex.RLock()
+	defer fake.setRegionSettingsMutex.RUnlock()
 	fake.setResponseSinkMutex.RLock()
 	defer fake.setResponseSinkMutex.RUnlock()
 	fake.setSignalSourceValidMutex.RLock()
