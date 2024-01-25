@@ -22,18 +22,6 @@ type FakeSIPStore struct {
 	deleteSIPDispatchRuleReturnsOnCall map[int]struct {
 		result1 error
 	}
-	DeleteSIPParticipantStub        func(context.Context, *livekit.SIPParticipantInfo) error
-	deleteSIPParticipantMutex       sync.RWMutex
-	deleteSIPParticipantArgsForCall []struct {
-		arg1 context.Context
-		arg2 *livekit.SIPParticipantInfo
-	}
-	deleteSIPParticipantReturns struct {
-		result1 error
-	}
-	deleteSIPParticipantReturnsOnCall map[int]struct {
-		result1 error
-	}
 	DeleteSIPTrunkStub        func(context.Context, *livekit.SIPTrunkInfo) error
 	deleteSIPTrunkMutex       sync.RWMutex
 	deleteSIPTrunkArgsForCall []struct {
@@ -57,19 +45,6 @@ type FakeSIPStore struct {
 	}
 	listSIPDispatchRuleReturnsOnCall map[int]struct {
 		result1 []*livekit.SIPDispatchRuleInfo
-		result2 error
-	}
-	ListSIPParticipantStub        func(context.Context) ([]*livekit.SIPParticipantInfo, error)
-	listSIPParticipantMutex       sync.RWMutex
-	listSIPParticipantArgsForCall []struct {
-		arg1 context.Context
-	}
-	listSIPParticipantReturns struct {
-		result1 []*livekit.SIPParticipantInfo
-		result2 error
-	}
-	listSIPParticipantReturnsOnCall map[int]struct {
-		result1 []*livekit.SIPParticipantInfo
 		result2 error
 	}
 	ListSIPTrunkStub        func(context.Context) ([]*livekit.SIPTrunkInfo, error)
@@ -99,20 +74,6 @@ type FakeSIPStore struct {
 		result1 *livekit.SIPDispatchRuleInfo
 		result2 error
 	}
-	LoadSIPParticipantStub        func(context.Context, string) (*livekit.SIPParticipantInfo, error)
-	loadSIPParticipantMutex       sync.RWMutex
-	loadSIPParticipantArgsForCall []struct {
-		arg1 context.Context
-		arg2 string
-	}
-	loadSIPParticipantReturns struct {
-		result1 *livekit.SIPParticipantInfo
-		result2 error
-	}
-	loadSIPParticipantReturnsOnCall map[int]struct {
-		result1 *livekit.SIPParticipantInfo
-		result2 error
-	}
 	LoadSIPTrunkStub        func(context.Context, string) (*livekit.SIPTrunkInfo, error)
 	loadSIPTrunkMutex       sync.RWMutex
 	loadSIPTrunkArgsForCall []struct {
@@ -137,18 +98,6 @@ type FakeSIPStore struct {
 		result1 error
 	}
 	storeSIPDispatchRuleReturnsOnCall map[int]struct {
-		result1 error
-	}
-	StoreSIPParticipantStub        func(context.Context, *livekit.SIPParticipantInfo) error
-	storeSIPParticipantMutex       sync.RWMutex
-	storeSIPParticipantArgsForCall []struct {
-		arg1 context.Context
-		arg2 *livekit.SIPParticipantInfo
-	}
-	storeSIPParticipantReturns struct {
-		result1 error
-	}
-	storeSIPParticipantReturnsOnCall map[int]struct {
 		result1 error
 	}
 	StoreSIPTrunkStub        func(context.Context, *livekit.SIPTrunkInfo) error
@@ -225,68 +174,6 @@ func (fake *FakeSIPStore) DeleteSIPDispatchRuleReturnsOnCall(i int, result1 erro
 		})
 	}
 	fake.deleteSIPDispatchRuleReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeSIPStore) DeleteSIPParticipant(arg1 context.Context, arg2 *livekit.SIPParticipantInfo) error {
-	fake.deleteSIPParticipantMutex.Lock()
-	ret, specificReturn := fake.deleteSIPParticipantReturnsOnCall[len(fake.deleteSIPParticipantArgsForCall)]
-	fake.deleteSIPParticipantArgsForCall = append(fake.deleteSIPParticipantArgsForCall, struct {
-		arg1 context.Context
-		arg2 *livekit.SIPParticipantInfo
-	}{arg1, arg2})
-	stub := fake.DeleteSIPParticipantStub
-	fakeReturns := fake.deleteSIPParticipantReturns
-	fake.recordInvocation("DeleteSIPParticipant", []interface{}{arg1, arg2})
-	fake.deleteSIPParticipantMutex.Unlock()
-	if stub != nil {
-		return stub(arg1, arg2)
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeSIPStore) DeleteSIPParticipantCallCount() int {
-	fake.deleteSIPParticipantMutex.RLock()
-	defer fake.deleteSIPParticipantMutex.RUnlock()
-	return len(fake.deleteSIPParticipantArgsForCall)
-}
-
-func (fake *FakeSIPStore) DeleteSIPParticipantCalls(stub func(context.Context, *livekit.SIPParticipantInfo) error) {
-	fake.deleteSIPParticipantMutex.Lock()
-	defer fake.deleteSIPParticipantMutex.Unlock()
-	fake.DeleteSIPParticipantStub = stub
-}
-
-func (fake *FakeSIPStore) DeleteSIPParticipantArgsForCall(i int) (context.Context, *livekit.SIPParticipantInfo) {
-	fake.deleteSIPParticipantMutex.RLock()
-	defer fake.deleteSIPParticipantMutex.RUnlock()
-	argsForCall := fake.deleteSIPParticipantArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
-}
-
-func (fake *FakeSIPStore) DeleteSIPParticipantReturns(result1 error) {
-	fake.deleteSIPParticipantMutex.Lock()
-	defer fake.deleteSIPParticipantMutex.Unlock()
-	fake.DeleteSIPParticipantStub = nil
-	fake.deleteSIPParticipantReturns = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeSIPStore) DeleteSIPParticipantReturnsOnCall(i int, result1 error) {
-	fake.deleteSIPParticipantMutex.Lock()
-	defer fake.deleteSIPParticipantMutex.Unlock()
-	fake.DeleteSIPParticipantStub = nil
-	if fake.deleteSIPParticipantReturnsOnCall == nil {
-		fake.deleteSIPParticipantReturnsOnCall = make(map[int]struct {
-			result1 error
-		})
-	}
-	fake.deleteSIPParticipantReturnsOnCall[i] = struct {
 		result1 error
 	}{result1}
 }
@@ -413,70 +300,6 @@ func (fake *FakeSIPStore) ListSIPDispatchRuleReturnsOnCall(i int, result1 []*liv
 	}
 	fake.listSIPDispatchRuleReturnsOnCall[i] = struct {
 		result1 []*livekit.SIPDispatchRuleInfo
-		result2 error
-	}{result1, result2}
-}
-
-func (fake *FakeSIPStore) ListSIPParticipant(arg1 context.Context) ([]*livekit.SIPParticipantInfo, error) {
-	fake.listSIPParticipantMutex.Lock()
-	ret, specificReturn := fake.listSIPParticipantReturnsOnCall[len(fake.listSIPParticipantArgsForCall)]
-	fake.listSIPParticipantArgsForCall = append(fake.listSIPParticipantArgsForCall, struct {
-		arg1 context.Context
-	}{arg1})
-	stub := fake.ListSIPParticipantStub
-	fakeReturns := fake.listSIPParticipantReturns
-	fake.recordInvocation("ListSIPParticipant", []interface{}{arg1})
-	fake.listSIPParticipantMutex.Unlock()
-	if stub != nil {
-		return stub(arg1)
-	}
-	if specificReturn {
-		return ret.result1, ret.result2
-	}
-	return fakeReturns.result1, fakeReturns.result2
-}
-
-func (fake *FakeSIPStore) ListSIPParticipantCallCount() int {
-	fake.listSIPParticipantMutex.RLock()
-	defer fake.listSIPParticipantMutex.RUnlock()
-	return len(fake.listSIPParticipantArgsForCall)
-}
-
-func (fake *FakeSIPStore) ListSIPParticipantCalls(stub func(context.Context) ([]*livekit.SIPParticipantInfo, error)) {
-	fake.listSIPParticipantMutex.Lock()
-	defer fake.listSIPParticipantMutex.Unlock()
-	fake.ListSIPParticipantStub = stub
-}
-
-func (fake *FakeSIPStore) ListSIPParticipantArgsForCall(i int) context.Context {
-	fake.listSIPParticipantMutex.RLock()
-	defer fake.listSIPParticipantMutex.RUnlock()
-	argsForCall := fake.listSIPParticipantArgsForCall[i]
-	return argsForCall.arg1
-}
-
-func (fake *FakeSIPStore) ListSIPParticipantReturns(result1 []*livekit.SIPParticipantInfo, result2 error) {
-	fake.listSIPParticipantMutex.Lock()
-	defer fake.listSIPParticipantMutex.Unlock()
-	fake.ListSIPParticipantStub = nil
-	fake.listSIPParticipantReturns = struct {
-		result1 []*livekit.SIPParticipantInfo
-		result2 error
-	}{result1, result2}
-}
-
-func (fake *FakeSIPStore) ListSIPParticipantReturnsOnCall(i int, result1 []*livekit.SIPParticipantInfo, result2 error) {
-	fake.listSIPParticipantMutex.Lock()
-	defer fake.listSIPParticipantMutex.Unlock()
-	fake.ListSIPParticipantStub = nil
-	if fake.listSIPParticipantReturnsOnCall == nil {
-		fake.listSIPParticipantReturnsOnCall = make(map[int]struct {
-			result1 []*livekit.SIPParticipantInfo
-			result2 error
-		})
-	}
-	fake.listSIPParticipantReturnsOnCall[i] = struct {
-		result1 []*livekit.SIPParticipantInfo
 		result2 error
 	}{result1, result2}
 }
@@ -610,71 +433,6 @@ func (fake *FakeSIPStore) LoadSIPDispatchRuleReturnsOnCall(i int, result1 *livek
 	}{result1, result2}
 }
 
-func (fake *FakeSIPStore) LoadSIPParticipant(arg1 context.Context, arg2 string) (*livekit.SIPParticipantInfo, error) {
-	fake.loadSIPParticipantMutex.Lock()
-	ret, specificReturn := fake.loadSIPParticipantReturnsOnCall[len(fake.loadSIPParticipantArgsForCall)]
-	fake.loadSIPParticipantArgsForCall = append(fake.loadSIPParticipantArgsForCall, struct {
-		arg1 context.Context
-		arg2 string
-	}{arg1, arg2})
-	stub := fake.LoadSIPParticipantStub
-	fakeReturns := fake.loadSIPParticipantReturns
-	fake.recordInvocation("LoadSIPParticipant", []interface{}{arg1, arg2})
-	fake.loadSIPParticipantMutex.Unlock()
-	if stub != nil {
-		return stub(arg1, arg2)
-	}
-	if specificReturn {
-		return ret.result1, ret.result2
-	}
-	return fakeReturns.result1, fakeReturns.result2
-}
-
-func (fake *FakeSIPStore) LoadSIPParticipantCallCount() int {
-	fake.loadSIPParticipantMutex.RLock()
-	defer fake.loadSIPParticipantMutex.RUnlock()
-	return len(fake.loadSIPParticipantArgsForCall)
-}
-
-func (fake *FakeSIPStore) LoadSIPParticipantCalls(stub func(context.Context, string) (*livekit.SIPParticipantInfo, error)) {
-	fake.loadSIPParticipantMutex.Lock()
-	defer fake.loadSIPParticipantMutex.Unlock()
-	fake.LoadSIPParticipantStub = stub
-}
-
-func (fake *FakeSIPStore) LoadSIPParticipantArgsForCall(i int) (context.Context, string) {
-	fake.loadSIPParticipantMutex.RLock()
-	defer fake.loadSIPParticipantMutex.RUnlock()
-	argsForCall := fake.loadSIPParticipantArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
-}
-
-func (fake *FakeSIPStore) LoadSIPParticipantReturns(result1 *livekit.SIPParticipantInfo, result2 error) {
-	fake.loadSIPParticipantMutex.Lock()
-	defer fake.loadSIPParticipantMutex.Unlock()
-	fake.LoadSIPParticipantStub = nil
-	fake.loadSIPParticipantReturns = struct {
-		result1 *livekit.SIPParticipantInfo
-		result2 error
-	}{result1, result2}
-}
-
-func (fake *FakeSIPStore) LoadSIPParticipantReturnsOnCall(i int, result1 *livekit.SIPParticipantInfo, result2 error) {
-	fake.loadSIPParticipantMutex.Lock()
-	defer fake.loadSIPParticipantMutex.Unlock()
-	fake.LoadSIPParticipantStub = nil
-	if fake.loadSIPParticipantReturnsOnCall == nil {
-		fake.loadSIPParticipantReturnsOnCall = make(map[int]struct {
-			result1 *livekit.SIPParticipantInfo
-			result2 error
-		})
-	}
-	fake.loadSIPParticipantReturnsOnCall[i] = struct {
-		result1 *livekit.SIPParticipantInfo
-		result2 error
-	}{result1, result2}
-}
-
 func (fake *FakeSIPStore) LoadSIPTrunk(arg1 context.Context, arg2 string) (*livekit.SIPTrunkInfo, error) {
 	fake.loadSIPTrunkMutex.Lock()
 	ret, specificReturn := fake.loadSIPTrunkReturnsOnCall[len(fake.loadSIPTrunkArgsForCall)]
@@ -802,68 +560,6 @@ func (fake *FakeSIPStore) StoreSIPDispatchRuleReturnsOnCall(i int, result1 error
 	}{result1}
 }
 
-func (fake *FakeSIPStore) StoreSIPParticipant(arg1 context.Context, arg2 *livekit.SIPParticipantInfo) error {
-	fake.storeSIPParticipantMutex.Lock()
-	ret, specificReturn := fake.storeSIPParticipantReturnsOnCall[len(fake.storeSIPParticipantArgsForCall)]
-	fake.storeSIPParticipantArgsForCall = append(fake.storeSIPParticipantArgsForCall, struct {
-		arg1 context.Context
-		arg2 *livekit.SIPParticipantInfo
-	}{arg1, arg2})
-	stub := fake.StoreSIPParticipantStub
-	fakeReturns := fake.storeSIPParticipantReturns
-	fake.recordInvocation("StoreSIPParticipant", []interface{}{arg1, arg2})
-	fake.storeSIPParticipantMutex.Unlock()
-	if stub != nil {
-		return stub(arg1, arg2)
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeSIPStore) StoreSIPParticipantCallCount() int {
-	fake.storeSIPParticipantMutex.RLock()
-	defer fake.storeSIPParticipantMutex.RUnlock()
-	return len(fake.storeSIPParticipantArgsForCall)
-}
-
-func (fake *FakeSIPStore) StoreSIPParticipantCalls(stub func(context.Context, *livekit.SIPParticipantInfo) error) {
-	fake.storeSIPParticipantMutex.Lock()
-	defer fake.storeSIPParticipantMutex.Unlock()
-	fake.StoreSIPParticipantStub = stub
-}
-
-func (fake *FakeSIPStore) StoreSIPParticipantArgsForCall(i int) (context.Context, *livekit.SIPParticipantInfo) {
-	fake.storeSIPParticipantMutex.RLock()
-	defer fake.storeSIPParticipantMutex.RUnlock()
-	argsForCall := fake.storeSIPParticipantArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
-}
-
-func (fake *FakeSIPStore) StoreSIPParticipantReturns(result1 error) {
-	fake.storeSIPParticipantMutex.Lock()
-	defer fake.storeSIPParticipantMutex.Unlock()
-	fake.StoreSIPParticipantStub = nil
-	fake.storeSIPParticipantReturns = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeSIPStore) StoreSIPParticipantReturnsOnCall(i int, result1 error) {
-	fake.storeSIPParticipantMutex.Lock()
-	defer fake.storeSIPParticipantMutex.Unlock()
-	fake.StoreSIPParticipantStub = nil
-	if fake.storeSIPParticipantReturnsOnCall == nil {
-		fake.storeSIPParticipantReturnsOnCall = make(map[int]struct {
-			result1 error
-		})
-	}
-	fake.storeSIPParticipantReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
-}
-
 func (fake *FakeSIPStore) StoreSIPTrunk(arg1 context.Context, arg2 *livekit.SIPTrunkInfo) error {
 	fake.storeSIPTrunkMutex.Lock()
 	ret, specificReturn := fake.storeSIPTrunkReturnsOnCall[len(fake.storeSIPTrunkArgsForCall)]
@@ -931,26 +627,18 @@ func (fake *FakeSIPStore) Invocations() map[string][][]interface{} {
 	defer fake.invocationsMutex.RUnlock()
 	fake.deleteSIPDispatchRuleMutex.RLock()
 	defer fake.deleteSIPDispatchRuleMutex.RUnlock()
-	fake.deleteSIPParticipantMutex.RLock()
-	defer fake.deleteSIPParticipantMutex.RUnlock()
 	fake.deleteSIPTrunkMutex.RLock()
 	defer fake.deleteSIPTrunkMutex.RUnlock()
 	fake.listSIPDispatchRuleMutex.RLock()
 	defer fake.listSIPDispatchRuleMutex.RUnlock()
-	fake.listSIPParticipantMutex.RLock()
-	defer fake.listSIPParticipantMutex.RUnlock()
 	fake.listSIPTrunkMutex.RLock()
 	defer fake.listSIPTrunkMutex.RUnlock()
 	fake.loadSIPDispatchRuleMutex.RLock()
 	defer fake.loadSIPDispatchRuleMutex.RUnlock()
-	fake.loadSIPParticipantMutex.RLock()
-	defer fake.loadSIPParticipantMutex.RUnlock()
 	fake.loadSIPTrunkMutex.RLock()
 	defer fake.loadSIPTrunkMutex.RUnlock()
 	fake.storeSIPDispatchRuleMutex.RLock()
 	defer fake.storeSIPDispatchRuleMutex.RUnlock()
-	fake.storeSIPParticipantMutex.RLock()
-	defer fake.storeSIPParticipantMutex.RUnlock()
 	fake.storeSIPTrunkMutex.RLock()
 	defer fake.storeSIPTrunkMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}

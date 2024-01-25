@@ -105,6 +105,7 @@ const (
 	ParticipantCloseReasonSubscriptionError
 	ParticipantCloseReasonDataChannelError
 	ParticipantCloseReasonMigrateCodecMismatch
+	ParticipantCloseReasonSignalSourceClose
 )
 
 func (p ParticipantCloseReason) String() string {
@@ -157,6 +158,8 @@ func (p ParticipantCloseReason) String() string {
 		return "DATA_CHANNEL_ERROR"
 	case ParticipantCloseReasonMigrateCodecMismatch:
 		return "MIGRATE_CODEC_MISMATCH"
+	case ParticipantCloseReasonSignalSourceClose:
+		return "SIGNAL_SOURCE_CLOSE"
 	default:
 		return fmt.Sprintf("%d", int(p))
 	}
@@ -173,22 +176,20 @@ func (p ParticipantCloseReason) ToDisconnectReason() livekit.DisconnectReason {
 		return livekit.DisconnectReason_JOIN_FAILURE
 	case ParticipantCloseReasonPeerConnectionDisconnected:
 		return livekit.DisconnectReason_STATE_MISMATCH
-	case ParticipantCloseReasonDuplicateIdentity, ParticipantCloseReasonMigrationComplete, ParticipantCloseReasonStale:
+	case ParticipantCloseReasonDuplicateIdentity, ParticipantCloseReasonStale:
 		return livekit.DisconnectReason_DUPLICATE_IDENTITY
+	case ParticipantCloseReasonMigrationComplete, ParticipantCloseReasonSimulateMigration:
+		return livekit.DisconnectReason_MIGRATION
 	case ParticipantCloseReasonServiceRequestRemoveParticipant:
 		return livekit.DisconnectReason_PARTICIPANT_REMOVED
 	case ParticipantCloseReasonServiceRequestDeleteRoom:
 		return livekit.DisconnectReason_ROOM_DELETED
-	case ParticipantCloseReasonSimulateMigration:
-		return livekit.DisconnectReason_DUPLICATE_IDENTITY
-	case ParticipantCloseReasonSimulateNodeFailure:
-		return livekit.DisconnectReason_SERVER_SHUTDOWN
-	case ParticipantCloseReasonSimulateServerLeave:
-		return livekit.DisconnectReason_SERVER_SHUTDOWN
-	case ParticipantCloseReasonOvercommitted:
+	case ParticipantCloseReasonSimulateNodeFailure, ParticipantCloseReasonSimulateServerLeave, ParticipantCloseReasonOvercommitted:
 		return livekit.DisconnectReason_SERVER_SHUTDOWN
 	case ParticipantCloseReasonNegotiateFailed, ParticipantCloseReasonPublicationError, ParticipantCloseReasonSubscriptionError, ParticipantCloseReasonDataChannelError, ParticipantCloseReasonMigrateCodecMismatch:
 		return livekit.DisconnectReason_STATE_MISMATCH
+	case ParticipantCloseReasonSignalSourceClose:
+		return livekit.DisconnectReason_SIGNAL_CLOSE
 	default:
 		// the other types will map to unknown reason
 		return livekit.DisconnectReason_UNKNOWN_REASON
@@ -421,6 +422,8 @@ type LocalParticipant interface {
 	GetPacer() pacer.Pacer
 
 	GetTrafficLoad() *TrafficLoad
+
+	SetRegionSettings(regionSettings *livekit.RegionSettings)
 }
 
 // Room is a container of participants, and can provide room-level actions

@@ -276,12 +276,23 @@ func (r *RoomManager) StartSession(
 					"participant", pi.Identity,
 					"reason", pi.ReconnectReason,
 				)
+
+				var leave *livekit.LeaveRequest
+				pv := types.ProtocolVersion(pi.Client.Protocol)
+				if pv.SupportsRegionsInLeaveRequest() {
+					leave = &livekit.LeaveRequest{
+						Reason: livekit.DisconnectReason_STATE_MISMATCH,
+						Action: livekit.LeaveRequest_RECONNECT,
+					}
+				} else {
+					leave = &livekit.LeaveRequest{
+						CanReconnect: true,
+						Reason:       livekit.DisconnectReason_STATE_MISMATCH,
+					}
+				}
 				_ = responseSink.WriteMessage(&livekit.SignalResponse{
 					Message: &livekit.SignalResponse_Leave{
-						Leave: &livekit.LeaveRequest{
-							CanReconnect: true,
-							Reason:       livekit.DisconnectReason_STATE_MISMATCH,
-						},
+						Leave: leave,
 					},
 				})
 				return errors.New("could not restart closed participant")
@@ -321,12 +332,22 @@ func (r *RoomManager) StartSession(
 	} else if pi.Reconnect {
 		// send leave request if participant is trying to reconnect without keep subscribe state
 		// but missing from the room
+		var leave *livekit.LeaveRequest
+		pv := types.ProtocolVersion(pi.Client.Protocol)
+		if pv.SupportsRegionsInLeaveRequest() {
+			leave = &livekit.LeaveRequest{
+				Reason: livekit.DisconnectReason_STATE_MISMATCH,
+				Action: livekit.LeaveRequest_RECONNECT,
+			}
+		} else {
+			leave = &livekit.LeaveRequest{
+				CanReconnect: true,
+				Reason:       livekit.DisconnectReason_STATE_MISMATCH,
+			}
+		}
 		_ = responseSink.WriteMessage(&livekit.SignalResponse{
 			Message: &livekit.SignalResponse_Leave{
-				Leave: &livekit.LeaveRequest{
-					CanReconnect: true,
-					Reason:       livekit.DisconnectReason_STATE_MISMATCH,
-				},
+				Leave: leave,
 			},
 		})
 		return errors.New("could not restart participant")
