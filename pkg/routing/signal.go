@@ -20,7 +20,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/avast/retry-go/v4"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
@@ -100,19 +99,13 @@ func (r *signalClient) StartParticipantSignal(
 
 	l.Debugw("starting signal connection")
 
-	var stream psrpc.ClientStream[*rpc.RelaySignalRequest, *rpc.RelaySignalResponse]
-	err = r.retry(ctx, func() (err error) {
-		stream, err = r.client.RelaySignal(ctx, nodeID)
-		return
-	})
+	stream, err := r.client.RelaySignal(ctx, nodeID)
 	if err != nil {
 		prometheus.MessageCounter.WithLabelValues("signal", "failure").Add(1)
 		return
 	}
 
-	err = r.retry(ctx, func() error {
-		return stream.Send(&rpc.RelaySignalRequest{StartSession: ss})
-	})
+	err = stream.Send(&rpc.RelaySignalRequest{StartSession: ss})
 	if err != nil {
 		stream.Close(err)
 		prometheus.MessageCounter.WithLabelValues("signal", "failure").Add(1)
@@ -146,16 +139,6 @@ func (r *signalClient) StartParticipantSignal(
 	}()
 
 	return connectionID, sink, resChan, nil
-}
-
-func (r *signalClient) retry(ctx context.Context, fn retry.RetryableFunc) error {
-	return retry.Do(
-		fn,
-		retry.Context(ctx),
-		retry.Delay(r.config.MinRetryInterval),
-		retry.MaxDelay(r.config.MaxRetryInterval),
-		retry.DelayType(retry.BackOffDelay),
-	)
 }
 
 type signalRequestMessageWriter struct{}
