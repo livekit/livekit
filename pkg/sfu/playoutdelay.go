@@ -46,8 +46,11 @@ type PlayoutDelayController struct {
 }
 
 func NewPlayoutDelayController(minDelay, maxDelay uint32, logger logger.Logger, rtpStats *buffer.RTPStatsSender) (*PlayoutDelayController, error) {
-	if maxDelay == 0 || maxDelay > rtpextension.PlayoutDelayDefaultMax {
-		maxDelay = rtpextension.PlayoutDelayDefaultMax
+	if maxDelay == 0 && minDelay > 0 {
+		maxDelay = rtpextension.MaxPlayoutDelayDefault
+	}
+	if maxDelay > rtpextension.PlayoutDelayMaxValue {
+		maxDelay = rtpextension.PlayoutDelayMaxValue
 	}
 	c := &PlayoutDelayController{
 		currentDelay: minDelay,
