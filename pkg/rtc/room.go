@@ -1099,10 +1099,12 @@ func (r *Room) subscribeToExistingTracks(p types.LocalParticipant) {
 
 // broadcast an update about participant p
 func (r *Room) broadcastParticipantState(p types.LocalParticipant, opts broadcastOptions) {
+	pi := p.ToProto()
+
 	if p.Hidden() {
 		if !opts.skipSource {
 			// send update only to hidden participant
-			err := p.SendParticipantUpdate([]*livekit.ParticipantInfo{p.ToProto()})
+			err := p.SendParticipantUpdate([]*livekit.ParticipantInfo{pi})
 			if err != nil {
 				p.GetLogger().Errorw("could not send update to participant", err)
 			}
@@ -1110,7 +1112,7 @@ func (r *Room) broadcastParticipantState(p types.LocalParticipant, opts broadcas
 		return
 	}
 
-	updates := r.pushAndDequeueUpdates(p, opts.immediate)
+	updates := r.pushAndDequeueUpdates(pi, p.ProtocolVersion(), opts.immediate)
 	r.sendParticipantUpdates(updates)
 }
 
@@ -1169,9 +1171,7 @@ func (r *Room) sendSpeakerChanges(speakers []*livekit.SpeakerInfo) {
 // * subscriber-only updates will be queued for batch updates
 // * publisher & immediate updates will be returned without queuing
 // * when the SID changes, it will return both updates, with the earlier participant set to disconnected
-func (r *Room) pushAndDequeueUpdates(p types.LocalParticipant, isImmediate bool) []*livekit.ParticipantInfo {
-	pi := p.ToProto()
-
+func (r *Room) pushAndDequeueUpdates(pi *livekit.ParticipantInfo, pv types.ProtocolVersion, isImmediate bool) []*livekit.ParticipantInfo {
 	r.batchedUpdatesMu.Lock()
 	defer r.batchedUpdatesMu.Unlock()
 
@@ -1202,7 +1202,7 @@ func (r *Room) pushAndDequeueUpdates(p types.LocalParticipant, isImmediate bool)
 				//    users of SDK to react to the transition in a disruptive way.
 				//    In this case, there is no need to synthesize `DISCONNECT`.
 				shouldSend = true
-				if !p.ProtocolVersion().SupportsIdentityBasedReconnection() {
+				if !pv.SupportsIdentityBasedReconnection() {
 					existing.State = livekit.ParticipantInfo_DISCONNECTED
 					updates = append(updates, existing)
 				}

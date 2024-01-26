@@ -268,6 +268,7 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 	testCases := []struct {
 		name      string
 		pi        *livekit.ParticipantInfo
+		pv        types.ProtocolVersion
 		immediate bool
 		existing  *livekit.ParticipantInfo
 		expected  []*livekit.ParticipantInfo
@@ -276,15 +277,18 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 		{
 			name:     "publisher updates are immediate",
 			pi:       publisher1v1,
+			pv:       types.CurrentProtocol,
 			expected: []*livekit.ParticipantInfo{publisher1v1},
 		},
 		{
 			name: "subscriber updates are queued",
 			pi:   subscriber1v1,
+			pv:   types.CurrentProtocol,
 		},
 		{
 			name:     "last version is enqueued",
 			pi:       subscriber1v2,
+			pv:       types.CurrentProtocol,
 			existing: subscriber1v1,
 			validate: func(t *testing.T, rm *Room, _ []*livekit.ParticipantInfo) {
 				queued := rm.batchedUpdates[livekit.ParticipantIdentity(identity)]
@@ -295,6 +299,7 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 		{
 			name:      "latest version when immediate",
 			pi:        subscriber1v2,
+			pv:        types.CurrentProtocol,
 			existing:  subscriber1v1,
 			immediate: true,
 			expected:  []*livekit.ParticipantInfo{subscriber1v2},
@@ -306,6 +311,7 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 		{
 			name:     "out of order updates are rejected",
 			pi:       subscriber1v1,
+			pv:       types.CurrentProtocol,
 			existing: subscriber1v2,
 			validate: func(t *testing.T, rm *Room, updates []*livekit.ParticipantInfo) {
 				queued := rm.batchedUpdates[livekit.ParticipantIdentity(identity)]
@@ -313,8 +319,9 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 			},
 		},
 		{
-			name:     "sid change is broadcasted immediately",
+			name:     "sid change is broadcasted immediately with synthsized disconnect",
 			pi:       publisher2,
+			pv:       11,
 			existing: subscriber1v2,
 			expected: []*livekit.ParticipantInfo{
 				{
@@ -327,8 +334,18 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 			},
 		},
 		{
+			name:     "sid change is broadcasted immediately for identity based reconnect",
+			pi:       publisher2,
+			pv:       types.CurrentProtocol,
+			existing: subscriber1v2,
+			expected: []*livekit.ParticipantInfo{
+				publisher2,
+			},
+		},
+		{
 			name:     "when switching to publisher, queue is cleared",
 			pi:       publisher1v2,
+			pv:       types.CurrentProtocol,
 			existing: subscriber1v1,
 			expected: []*livekit.ParticipantInfo{publisher1v2},
 			validate: func(t *testing.T, rm *Room, updates []*livekit.ParticipantInfo) {
@@ -344,7 +361,7 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 				// clone the existing value since it can be modified when setting to disconnected
 				rm.batchedUpdates[livekit.ParticipantIdentity(tc.existing.Identity)] = proto.Clone(tc.existing).(*livekit.ParticipantInfo)
 			}
-			updates := rm.pushAndDequeueUpdates(tc.pi, tc.immediate)
+			updates := rm.pushAndDequeueUpdates(tc.pi, tc.pv, tc.immediate)
 			require.Equal(t, len(tc.expected), len(updates))
 			for i, item := range tc.expected {
 				requirePIEquals(t, item, updates[i])
