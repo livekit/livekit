@@ -3,7 +3,6 @@ module github.com/livekit/livekit-server
 go 1.20
 
 require (
-	github.com/avast/retry-go/v4 v4.5.1
 	github.com/bep/debounce v1.2.1
 	github.com/d5/tengo/v2 v2.16.1
 	github.com/dustin/go-humanize v1.0.1
@@ -20,7 +19,7 @@ require (
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20231213075826-cccbf2b93d3f
 	github.com/livekit/protocol v1.9.7
-	github.com/livekit/psrpc v0.5.3-0.20231214055026-06ce27a934c9
+	github.com/livekit/psrpc v0.5.3-0.20240126182121-829a885bf21b
 	github.com/mackerelio/go-osstat v0.2.4
 	github.com/magefile/mage v1.15.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.8.1
@@ -71,7 +70,7 @@ require (
 	github.com/hashicorp/go-retryablehttp v0.7.5 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/josharian/native v1.1.0 // indirect
-	github.com/klauspost/compress v1.17.4 // indirect
+	github.com/klauspost/compress v1.17.5 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.6 // indirect
 	github.com/lithammer/shortuuid/v4 v4.0.0 // indirect
 	github.com/mattn/go-runewidth v0.0.9 // indirect
