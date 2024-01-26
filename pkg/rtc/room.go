@@ -1099,21 +1099,18 @@ func (r *Room) subscribeToExistingTracks(p types.LocalParticipant) {
 
 // broadcast an update about participant p
 func (r *Room) broadcastParticipantState(p types.LocalParticipant, opts broadcastOptions) {
-	pi := p.ToProto()
-
 	if p.Hidden() {
 		if !opts.skipSource {
 			// send update only to hidden participant
-			err := p.SendParticipantUpdate([]*livekit.ParticipantInfo{pi})
+			err := p.SendParticipantUpdate([]*livekit.ParticipantInfo{p.ToProto()})
 			if err != nil {
-				r.Logger.Errorw("could not send update to participant", err,
-					"participant", p.Identity(), "pID", p.ID())
+				p.GetLogger().Errorw("could not send update to participant", err)
 			}
 		}
 		return
 	}
 
-	updates := r.pushAndDequeueUpdates(pi, opts.immediate)
+	updates := r.pushAndDequeueUpdates(p, opts.immediate)
 	r.sendParticipantUpdates(updates)
 }
 
@@ -1172,7 +1169,9 @@ func (r *Room) sendSpeakerChanges(speakers []*livekit.SpeakerInfo) {
 // * subscriber-only updates will be queued for batch updates
 // * publisher & immediate updates will be returned without queuing
 // * when the SID changes, it will return both updates, with the earlier participant set to disconnected
-func (r *Room) pushAndDequeueUpdates(pi *livekit.ParticipantInfo, isImmediate bool) []*livekit.ParticipantInfo {
+func (r *Room) pushAndDequeueUpdates(p types.LocalParticipant, isImmediate bool) []*livekit.ParticipantInfo {
+	pi := p.ToProto()
+
 	r.batchedUpdatesMu.Lock()
 	defer r.batchedUpdatesMu.Unlock()
 
@@ -1191,11 +1190,22 @@ func (r *Room) pushAndDequeueUpdates(pi *livekit.ParticipantInfo, isImmediate bo
 		} else {
 			// different participant sessions
 			if existing.JoinedAt < pi.JoinedAt {
-				// existing is older, synthesize a DISCONNECT for older and
-				// send immediately along with newer session to signal switch
+				// existing is older, two scenarios to handle. In both cases,
+				// update is sent immediately as there is a new session.
+				// 1. Clients not using identity based reconnection:
+				//    synthesize a DISCONNECT for older session to ensure that
+				//    transition is explicit.
+				// 2. Clients that use identity to check for session changes:
+				//    these can handle session change without emitting events
+				//    that could be disruptive, i. e. emitting a `DISCONNECT`
+				//    state event followed by `ACTIVE` for same user could make
+				//    users of SDK to react to the transition in a disruptive way.
+				//    In this case, there is no need to synthesize `DISCONNECT`.
 				shouldSend = true
-				existing.State = livekit.ParticipantInfo_DISCONNECTED
-				updates = append(updates, existing)
+				if !p.ProtocolVersion().SupportsIdentityBasedReconnection() {
+					existing.State = livekit.ParticipantInfo_DISCONNECTED
+					updates = append(updates, existing)
+				}
 			} else {
 				// older session update, newer session has already become active, so nothing to do
 				return nil
