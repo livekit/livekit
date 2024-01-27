@@ -101,7 +101,7 @@ func NewLocalRoomManager(
 		return nil, err
 	}
 
-	r := &RoomManager{
+	return &RoomManager{
 		config:            conf,
 		rtcConfig:         rtcConf,
 		currentNode:       currentNode,
@@ -126,12 +126,7 @@ func NewLocalRoomManager(
 			Region:   conf.Region,
 			NodeId:   currentNode.Id,
 		},
-	}
-
-	// hook up to router
-	router.OnNewParticipantRTC(r.StartSession)
-	router.OnRTCMessage(r.handleRTCMessage)
-	return r, nil
+	}, nil
 }
 
 func (r *RoomManager) GetRoom(_ context.Context, roomName livekit.RoomName) *rtc.Room {
@@ -245,6 +240,8 @@ func (r *RoomManager) StartSession(
 	requestSource routing.MessageSource,
 	responseSink routing.MessageSink,
 ) error {
+	sessionStartTime := time.Now()
+
 	room, err := r.getOrCreateRoom(ctx, roomName)
 	if err != nil {
 		return err
@@ -279,12 +276,23 @@ func (r *RoomManager) StartSession(
 					"participant", pi.Identity,
 					"reason", pi.ReconnectReason,
 				)
+
+				var leave *livekit.LeaveRequest
+				pv := types.ProtocolVersion(pi.Client.Protocol)
+				if pv.SupportsRegionsInLeaveRequest() {
+					leave = &livekit.LeaveRequest{
+						Reason: livekit.DisconnectReason_STATE_MISMATCH,
+						Action: livekit.LeaveRequest_RECONNECT,
+					}
+				} else {
+					leave = &livekit.LeaveRequest{
+						CanReconnect: true,
+						Reason:       livekit.DisconnectReason_STATE_MISMATCH,
+					}
+				}
 				_ = responseSink.WriteMessage(&livekit.SignalResponse{
 					Message: &livekit.SignalResponse_Leave{
-						Leave: &livekit.LeaveRequest{
-							CanReconnect: true,
-							Reason:       livekit.DisconnectReason_STATE_MISMATCH,
-						},
+						Leave: leave,
 					},
 				})
 				return errors.New("could not restart closed participant")
@@ -324,12 +332,22 @@ func (r *RoomManager) StartSession(
 	} else if pi.Reconnect {
 		// send leave request if participant is trying to reconnect without keep subscribe state
 		// but missing from the room
+		var leave *livekit.LeaveRequest
+		pv := types.ProtocolVersion(pi.Client.Protocol)
+		if pv.SupportsRegionsInLeaveRequest() {
+			leave = &livekit.LeaveRequest{
+				Reason: livekit.DisconnectReason_STATE_MISMATCH,
+				Action: livekit.LeaveRequest_RECONNECT,
+			}
+		} else {
+			leave = &livekit.LeaveRequest{
+				CanReconnect: true,
+				Reason:       livekit.DisconnectReason_STATE_MISMATCH,
+			}
+		}
 		_ = responseSink.WriteMessage(&livekit.SignalResponse{
 			Message: &livekit.SignalResponse_Leave{
-				Leave: &livekit.LeaveRequest{
-					CanReconnect: true,
-					Reason:       livekit.DisconnectReason_STATE_MISMATCH,
-				},
+				Leave: leave,
 			},
 		})
 		return errors.New("could not restart participant")
@@ -390,6 +408,7 @@ func (r *RoomManager) StartSession(
 		AudioConfig:             r.config.Audio,
 		VideoConfig:             r.config.Video,
 		ProtocolVersion:         pv,
+		SessionStartTime:        sessionStartTime,
 		Telemetry:               r.telemetry,
 		Trailer:                 room.Trailer(),
 		PLIThrottleConfig:       r.config.RTC.PLIThrottle,
@@ -635,26 +654,6 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 	}
 }
 
-// handles RTC messages resulted from Room API calls
-func (r *RoomManager) handleRTCMessage(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) {
-	switch rm := msg.Message.(type) {
-	case *livekit.RTCNodeMessage_RemoveParticipant:
-		r.RemoveParticipant(ctx, rm.RemoveParticipant)
-	case *livekit.RTCNodeMessage_MuteTrack:
-		r.MutePublishedTrack(ctx, rm.MuteTrack)
-	case *livekit.RTCNodeMessage_UpdateParticipant:
-		r.UpdateParticipant(ctx, rm.UpdateParticipant)
-	case *livekit.RTCNodeMessage_DeleteRoom:
-		r.DeleteRoom(ctx, rm.DeleteRoom)
-	case *livekit.RTCNodeMessage_UpdateSubscriptions:
-		r.UpdateSubscriptions(ctx, rm.UpdateSubscriptions)
-	case *livekit.RTCNodeMessage_SendData:
-		r.SendData(ctx, rm.SendData)
-	case *livekit.RTCNodeMessage_UpdateRoomMetadata:
-		r.UpdateRoomMetadata(ctx, rm.UpdateRoomMetadata)
-	}
-}
-
 type participantReq interface {
 	GetRoom() string
 	GetIdentity() string
@@ -776,7 +775,9 @@ func (r *RoomManager) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 	}
 
 	room.Logger.Debugw("updating room")
-	room.SetMetadata(req.Metadata)
+	done := room.SetMetadata(req.Metadata)
+	// wait till the update is applied
+	<-done
 	return room.ToProto(), nil
 }
 

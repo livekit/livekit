@@ -2,6 +2,32 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.2] - 2023-12-21
+
+Support for LiveKit SIP Bridge
+
+### Added
+- Add SIP Support (#2240 #2241 #2244 #2250 #2263 #2291 #2293)
+- Introduce `LOST` connection quality. (#2265 #2276)
+- Expose detailed connection info with ICEConnectionDetails (#2287)
+- Add Version to TrackInfo. (#2324 #2325)
+
+### Fixed
+- Guard against bad quality in trackInfo (#2271)
+- Group SDES items for one SSRC in the same chunk. (#2280)
+- Avoid dropping data packets on local router (#2270)
+- Fix signal response delivery after session start failure (#2294)
+- Populate disconnect updates with participant identity (#2310)
+- Fix mid info lost when migrating multi-codec simulcast track (#2315)
+- Store identity in participant update cache. (#2320)
+- Fix panic occurs when starting livekit-server with key-file option (#2312) (#2313)
+
+### Changed
+- INFO logging reduction (#2243 #2273 #2275 #2281 #2283 #2285 #2322)
+- Clean up restart a bit. (#2247)
+- Use a worker to report signal/data stats. (#2260)
+- Consolidate TrackInfo.  (#2331)
+
 ## [1.5.1] - 2023-11-09
 
 Support for the Agent framework.

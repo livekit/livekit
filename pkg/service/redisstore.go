@@ -26,11 +26,12 @@ import (
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/livekit-server/version"
 	"github.com/livekit/protocol/ingress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
+
+	"github.com/livekit/livekit-server/version"
 )
 
 const (
@@ -53,7 +54,6 @@ const (
 
 	SIPTrunkKey        = "sip_trunk"
 	SIPDispatchRuleKey = "sip_dispatch_rule"
-	SIPParticipantKey  = "sip_participant"
 
 	// RoomParticipantsPrefix is hash of participant_name => ParticipantInfo
 	RoomParticipantsPrefix = "room_participants:"
@@ -907,38 +907,4 @@ func (s *RedisStore) ListSIPDispatchRule(ctx context.Context) (infos []*livekit.
 	})
 
 	return infos, err
-}
-
-func (s *RedisStore) StoreSIPParticipant(ctx context.Context, info *livekit.SIPParticipantInfo) error {
-	data, err := proto.Marshal(info)
-	if err != nil {
-		return err
-	}
-
-	return s.rc.HSet(s.ctx, SIPParticipantKey, info.SipParticipantId, data).Err()
-}
-func (s *RedisStore) LoadSIPParticipant(ctx context.Context, sipParticipantId string) (*livekit.SIPParticipantInfo, error) {
-	info := &livekit.SIPParticipantInfo{}
-	if err := s.loadOne(ctx, SIPParticipantKey, sipParticipantId, info, ErrSIPParticipantNotFound); err != nil {
-		return nil, err
-	}
-
-	return info, nil
-}
-
-func (s *RedisStore) DeleteSIPParticipant(ctx context.Context, info *livekit.SIPParticipantInfo) error {
-	return s.rc.HDel(s.ctx, SIPParticipantKey, info.SipParticipantId).Err()
-}
-
-func (s *RedisStore) ListSIPParticipant(ctx context.Context) (infos []*livekit.SIPParticipantInfo, err error) {
-	err = s.loadMany(ctx, SIPParticipantKey, func() proto.Message {
-		infos = append(infos, &livekit.SIPParticipantInfo{})
-		return infos[len(infos)-1]
-	})
-
-	return infos, err
-}
-
-func (s *RedisStore) SendSIPParticipantDTMF(ctx context.Context, info *livekit.SendSIPParticipantDTMFRequest) (*livekit.SIPParticipantDTMFInfo, error) {
-	return nil, fmt.Errorf("TODO")
 }

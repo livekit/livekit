@@ -588,7 +588,7 @@ func (s *StreamAllocator) postEvent(event Event) {
 	select {
 	case s.eventCh <- event:
 	default:
-		s.params.Logger.Warnw("stream allocator: event queue full", nil)
+		s.params.Logger.Warnw("stream allocator: event queue full", nil, "event", event.String())
 	}
 	s.eventChMu.RUnlock()
 }
@@ -892,7 +892,7 @@ func (s *StreamAllocator) handleNewEstimateInNonProbe() {
 		"commitThreshold(bps)", commitThreshold,
 		"channel", s.channelObserver.ToString(),
 	)
-	s.params.Logger.Infow(
+	s.params.Logger.Debugw(
 		fmt.Sprintf("stream allocator: channel congestion detected, %s channel capacity: experimental", action),
 		"rateHistory", s.rateMonitor.GetHistory(),
 		"expectedQueuing", s.rateMonitor.GetQueuingGuess(),
@@ -1354,7 +1354,7 @@ func (s *StreamAllocator) initProbe(probeGoalDeltaBps int64) {
 	s.channelObserver = s.newChannelObserverProbe()
 	s.channelObserver.SeedEstimate(s.lastReceivedEstimate)
 
-	s.params.Logger.Infow(
+	s.params.Logger.Debugw(
 		"stream allocator: starting probe",
 		"probeClusterId", probeClusterId,
 		"current usage", expectedBandwidthUsage,

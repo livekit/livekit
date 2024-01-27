@@ -105,6 +105,7 @@ const (
 	ParticipantCloseReasonSubscriptionError
 	ParticipantCloseReasonDataChannelError
 	ParticipantCloseReasonMigrateCodecMismatch
+	ParticipantCloseReasonSignalSourceClose
 )
 
 func (p ParticipantCloseReason) String() string {
@@ -157,6 +158,8 @@ func (p ParticipantCloseReason) String() string {
 		return "DATA_CHANNEL_ERROR"
 	case ParticipantCloseReasonMigrateCodecMismatch:
 		return "MIGRATE_CODEC_MISMATCH"
+	case ParticipantCloseReasonSignalSourceClose:
+		return "SIGNAL_SOURCE_CLOSE"
 	default:
 		return fmt.Sprintf("%d", int(p))
 	}
@@ -173,22 +176,20 @@ func (p ParticipantCloseReason) ToDisconnectReason() livekit.DisconnectReason {
 		return livekit.DisconnectReason_JOIN_FAILURE
 	case ParticipantCloseReasonPeerConnectionDisconnected:
 		return livekit.DisconnectReason_STATE_MISMATCH
-	case ParticipantCloseReasonDuplicateIdentity, ParticipantCloseReasonMigrationComplete, ParticipantCloseReasonStale:
+	case ParticipantCloseReasonDuplicateIdentity, ParticipantCloseReasonStale:
 		return livekit.DisconnectReason_DUPLICATE_IDENTITY
+	case ParticipantCloseReasonMigrationComplete, ParticipantCloseReasonSimulateMigration:
+		return livekit.DisconnectReason_MIGRATION
 	case ParticipantCloseReasonServiceRequestRemoveParticipant:
 		return livekit.DisconnectReason_PARTICIPANT_REMOVED
 	case ParticipantCloseReasonServiceRequestDeleteRoom:
 		return livekit.DisconnectReason_ROOM_DELETED
-	case ParticipantCloseReasonSimulateMigration:
-		return livekit.DisconnectReason_DUPLICATE_IDENTITY
-	case ParticipantCloseReasonSimulateNodeFailure:
-		return livekit.DisconnectReason_SERVER_SHUTDOWN
-	case ParticipantCloseReasonSimulateServerLeave:
-		return livekit.DisconnectReason_SERVER_SHUTDOWN
-	case ParticipantCloseReasonOvercommitted:
+	case ParticipantCloseReasonSimulateNodeFailure, ParticipantCloseReasonSimulateServerLeave, ParticipantCloseReasonOvercommitted:
 		return livekit.DisconnectReason_SERVER_SHUTDOWN
 	case ParticipantCloseReasonNegotiateFailed, ParticipantCloseReasonPublicationError, ParticipantCloseReasonSubscriptionError, ParticipantCloseReasonDataChannelError, ParticipantCloseReasonMigrateCodecMismatch:
 		return livekit.DisconnectReason_STATE_MISMATCH
+	case ParticipantCloseReasonSignalSourceClose:
+		return livekit.DisconnectReason_SIGNAL_CLOSE
 	default:
 		// the other types will map to unknown reason
 		return livekit.DisconnectReason_UNKNOWN_REASON
@@ -209,6 +210,8 @@ const (
 	SignallingCloseReasonFullReconnectDataChannelError
 	SignallingCloseReasonFullReconnectNegotiateFailed
 	SignallingCloseReasonParticipantClose
+	SignallingCloseReasonDisconnectOnResume
+	SignallingCloseReasonDisconnectOnResumeNoMessages
 )
 
 func (s SignallingCloseReason) String() string {
@@ -231,6 +234,10 @@ func (s SignallingCloseReason) String() string {
 		return "FULL_RECONNECT_NEGOTIATE_FAILED"
 	case SignallingCloseReasonParticipantClose:
 		return "PARTICIPANT_CLOSE"
+	case SignallingCloseReasonDisconnectOnResume:
+		return "DISCONNECT_ON_RESUME"
+	case SignallingCloseReasonDisconnectOnResumeNoMessages:
+		return "DISCONNECT_ON_RESUME_NO_MESSAGES"
 	default:
 		return fmt.Sprintf("%d", int(s))
 	}
@@ -285,15 +292,6 @@ type Participant interface {
 
 // -------------------------------------------------------
 
-type ICEConnectionType string
-
-const (
-	ICEConnectionTypeUDP     ICEConnectionType = "udp"
-	ICEConnectionTypeTCP     ICEConnectionType = "tcp"
-	ICEConnectionTypeTURN    ICEConnectionType = "turn"
-	ICEConnectionTypeUnknown ICEConnectionType = "unknown"
-)
-
 type AddTrackParams struct {
 	Stereo bool
 	Red    bool
@@ -320,10 +318,11 @@ type LocalParticipant interface {
 	SubscriberAsPrimary() bool
 	GetClientInfo() *livekit.ClientInfo
 	GetClientConfiguration() *livekit.ClientConfiguration
-	GetICEConnectionType() ICEConnectionType
 	GetBufferFactory() *buffer.Factory
 	GetPlayoutDelayConfig() *livekit.PlayoutDelay
 	GetPendingTrack(trackID livekit.TrackID) *livekit.TrackInfo
+	GetICEConnectionDetails() []*ICEConnectionDetails
+	HasConnected() bool
 
 	SetResponseSink(sink routing.MessageSink)
 	CloseSignalConnection(reason SignallingCloseReason)
@@ -423,6 +422,8 @@ type LocalParticipant interface {
 	GetPacer() pacer.Pacer
 
 	GetTrafficLoad() *TrafficLoad
+
+	SetRegionSettings(regionSettings *livekit.RegionSettings)
 }
 
 // Room is a container of participants, and can provide room-level actions
@@ -452,6 +453,7 @@ type MediaTrack interface {
 	Source() livekit.TrackSource
 	Stream() string
 
+	UpdateTrackInfo(ti *livekit.TrackInfo)
 	ToProto() *livekit.TrackInfo
 
 	PublisherID() livekit.ParticipantID

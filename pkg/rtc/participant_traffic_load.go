@@ -144,7 +144,7 @@ func (p *ParticipantTrafficLoad) updateTrafficLoad() *types.TrafficLoad {
 
 	trafficTypeStats := make([]*types.TrafficTypeStats, 0, 6)
 	addTypeStats := func(statsList []*types.TrafficStats, trackType livekit.TrackType, streamType livekit.StreamType) {
-		agg := types.AggregateTrafficStats(statsList)
+		agg := types.AggregateTrafficStats(statsList...)
 		if agg != nil {
 			trafficTypeStats = append(trafficTypeStats, &types.TrafficTypeStats{
 				TrackType:    trackType,

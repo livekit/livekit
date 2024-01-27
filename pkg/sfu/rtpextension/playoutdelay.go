@@ -7,7 +7,8 @@ import (
 
 const (
 	PlayoutDelayURI        = "http://www.webrtc.org/experiments/rtp-hdrext/playout-delay"
-	PlayoutDelayDefaultMax = 4000 // 4s
+	MaxPlayoutDelayDefault = 10000            // 10s, equal to chrome's default max playout delay
+	PlayoutDelayMaxValue   = 10 * (1<<12 - 1) // max value for playout delay can be represented
 
 	playoutDelayExtensionSize = 3
 )
@@ -28,11 +29,11 @@ type PlayOutDelay struct {
 }
 
 func PlayoutDelayFromValue(min, max uint16) PlayOutDelay {
-	if min >= (1<<12)*10 {
-		min = (1<<12 - 1) * 10
+	if min > PlayoutDelayMaxValue {
+		min = PlayoutDelayMaxValue
 	}
-	if max >= (1<<12)*10 {
-		max = (1<<12 - 1) * 10
+	if max > PlayoutDelayMaxValue {
+		max = PlayoutDelayMaxValue
 	}
 	return PlayOutDelay{Min: min, Max: max}
 }
