@@ -180,16 +180,13 @@ func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 		}),
 		rateMonitor: NewRateMonitor(),
 		videoTracks: make(map[livekit.TrackID]*Track),
-		eventsQueue: utils.NewOpsQueue("stream-allocator", 64),
+		eventsQueue: utils.NewOpsQueue("stream-allocator", 64, true),
 	}
 
 	s.probeController = NewProbeController(ProbeControllerParams{
 		Config: s.params.Config.ProbeConfig,
 		Prober: s.prober,
 		Logger: params.Logger,
-	})
-	s.eventsQueue.SetFinalize(func() {
-		s.probeController.StopProbe()
 	})
 
 	s.resetState()
@@ -209,7 +206,9 @@ func (s *StreamAllocator) Stop() {
 		return
 	}
 
-	s.eventsQueue.Stop()
+	// wait for eventsQueue to be done
+	<-s.eventsQueue.Stop()
+	s.probeController.StopProbe()
 }
 
 func (s *StreamAllocator) OnStreamStateChange(f func(update *StreamStateUpdate) error) {

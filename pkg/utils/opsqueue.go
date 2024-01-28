@@ -15,38 +15,33 @@
 package utils
 
 import (
+	"math/bits"
 	"sync"
 
 	"github.com/gammazero/deque"
+	"github.com/livekit/protocol/utils"
 )
 
 type OpsQueue struct {
-	name string
+	name        string
+	flushOnStop bool
 
 	lock      sync.Mutex
-	finalize  func()
 	ops       deque.Deque[func()]
 	wake      chan struct{}
 	isStarted bool
+	doneChan  chan struct{}
 	isStopped bool
 }
 
-func NewOpsQueue(name string, minSize uint) *OpsQueue {
+func NewOpsQueue(name string, minSize uint, flushOnStop bool) *OpsQueue {
 	oq := &OpsQueue{
-		name: name,
-		wake: make(chan struct{}, 1),
+		name:        name,
+		flushOnStop: flushOnStop,
+		wake:        make(chan struct{}, 1),
+		doneChan:    make(chan struct{}),
 	}
-	if minSize != 0 {
-		minSizeExp := uint(0)
-		for {
-			if (1<<minSizeExp) >= minSize || minSizeExp == 16 {
-				// guard against too large a min size
-				break
-			}
-			minSizeExp++
-		}
-		oq.ops.SetMinCapacity(minSizeExp)
-	}
+	oq.ops.SetMinCapacity(uint(utils.Min(bits.Len64(uint64(minSize-1)), 16)))
 	return oq
 }
 
@@ -63,22 +58,17 @@ func (oq *OpsQueue) Start() {
 	go oq.process()
 }
 
-func (oq *OpsQueue) Stop() {
+func (oq *OpsQueue) Stop() <-chan struct{} {
 	oq.lock.Lock()
 	if oq.isStopped {
 		oq.lock.Unlock()
-		return
+		return oq.doneChan
 	}
 
 	oq.isStopped = true
 	close(oq.wake)
 	oq.lock.Unlock()
-}
-
-func (oq *OpsQueue) SetFinalize(f func()) {
-	oq.lock.Lock()
-	oq.finalize = f
-	oq.lock.Unlock()
+	return oq.doneChan
 }
 
 func (oq *OpsQueue) Enqueue(op func()) {
@@ -116,10 +106,20 @@ done:
 		}
 	}
 
-	oq.lock.Lock()
-	finalize := oq.finalize
-	oq.lock.Unlock()
-	if finalize != nil {
-		finalize()
+	// flush events if queue is configured thus
+	if oq.flushOnStop {
+		for {
+			oq.lock.Lock()
+			if oq.ops.Len() == 0 {
+				oq.lock.Unlock()
+				break
+			}
+			op := oq.ops.PopFront()
+			oq.lock.Unlock()
+
+			op()
+		}
 	}
+
+	close(oq.doneChan)
 }

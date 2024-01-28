@@ -102,7 +102,7 @@ func NewTelemetryService(notifier webhook.QueuedNotifier, analytics AnalyticsSer
 		AnalyticsService: analytics,
 
 		notifier:  notifier,
-		jobsQueue: utils.NewOpsQueue("telemetry", jobsQueueMinSize),
+		jobsQueue: utils.NewOpsQueue("telemetry", jobsQueueMinSize, true),
 		workers:   make(map[livekit.ParticipantID]*StatsWorker),
 	}
 
