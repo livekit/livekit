@@ -17,31 +17,37 @@ package utils
 import (
 	"sync"
 
-	"github.com/livekit/protocol/logger"
+	"github.com/gammazero/deque"
 )
 
 type OpsQueue struct {
-	logger logger.Logger
-	name   string
-	size   int
+	name string
 
-	lock      sync.RWMutex
-	ops       chan func()
+	lock      sync.Mutex
+	finalize  func()
+	ops       deque.Deque[func()]
+	wake      chan struct{}
 	isStarted bool
 	isStopped bool
 }
 
-func NewOpsQueue(logger logger.Logger, name string, size int) *OpsQueue {
-	return &OpsQueue{
-		logger: logger,
-		name:   name,
-		size:   size,
-		ops:    make(chan func(), size),
+func NewOpsQueue(name string, minSize uint) *OpsQueue {
+	oq := &OpsQueue{
+		name: name,
+		wake: make(chan struct{}, 1),
 	}
-}
-
-func (oq *OpsQueue) SetLogger(logger logger.Logger) {
-	oq.logger = logger
+	if minSize != 0 {
+		minSizeExp := uint(0)
+		for {
+			if (1<<minSizeExp) >= minSize || minSizeExp == 16 {
+				// guard against too large a min size
+				break
+			}
+			minSizeExp++
+		}
+		oq.ops.SetMinCapacity(minSizeExp)
+	}
+	return oq
 }
 
 func (oq *OpsQueue) Start() {
@@ -65,34 +71,55 @@ func (oq *OpsQueue) Stop() {
 	}
 
 	oq.isStopped = true
-	close(oq.ops)
+	close(oq.wake)
 	oq.lock.Unlock()
 }
 
-func (oq *OpsQueue) IsStarted() bool {
-	oq.lock.RLock()
-	defer oq.lock.RUnlock()
-
-	return oq.isStarted
+func (oq *OpsQueue) SetFinalize(f func()) {
+	oq.lock.Lock()
+	oq.finalize = f
+	oq.lock.Unlock()
 }
 
 func (oq *OpsQueue) Enqueue(op func()) {
-	oq.lock.RLock()
-	if oq.isStopped {
-		oq.lock.RUnlock()
-		return
-	}
+	oq.lock.Lock()
+	defer oq.lock.Unlock()
 
-	select {
-	case oq.ops <- op:
-	default:
-		oq.logger.Errorw("ops queue full", nil, "name", oq.name, "size", oq.size)
+	oq.ops.PushBack(op)
+	if oq.ops.Len() == 1 && !oq.isStopped {
+		select {
+		case oq.wake <- struct{}{}:
+		default:
+		}
 	}
-	oq.lock.RUnlock()
 }
 
 func (oq *OpsQueue) process() {
-	for op := range oq.ops {
-		op()
+done:
+	for {
+		<-oq.wake
+		for {
+			oq.lock.Lock()
+			if oq.isStopped {
+				oq.lock.Unlock()
+				break done
+			}
+
+			if oq.ops.Len() == 0 {
+				oq.lock.Unlock()
+				break
+			}
+			op := oq.ops.PopFront()
+			oq.lock.Unlock()
+
+			op()
+		}
+	}
+
+	oq.lock.Lock()
+	finalize := oq.finalize
+	oq.lock.Unlock()
+	if finalize != nil {
+		finalize()
 	}
 }
