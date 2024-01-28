@@ -165,10 +165,6 @@ type FakeParticipant struct {
 	setNameArgsForCall []struct {
 		arg1 string
 	}
-	StartStub        func()
-	startMutex       sync.RWMutex
-	startArgsForCall []struct {
-	}
 	StateStub        func() livekit.ParticipantInfo_State
 	stateMutex       sync.RWMutex
 	stateArgsForCall []struct {
@@ -1047,30 +1043,6 @@ func (fake *FakeParticipant) SetNameArgsForCall(i int) string {
 	return argsForCall.arg1
 }
 
-func (fake *FakeParticipant) Start() {
-	fake.startMutex.Lock()
-	fake.startArgsForCall = append(fake.startArgsForCall, struct {
-	}{})
-	stub := fake.StartStub
-	fake.recordInvocation("Start", []interface{}{})
-	fake.startMutex.Unlock()
-	if stub != nil {
-		fake.StartStub()
-	}
-}
-
-func (fake *FakeParticipant) StartCallCount() int {
-	fake.startMutex.RLock()
-	defer fake.startMutex.RUnlock()
-	return len(fake.startArgsForCall)
-}
-
-func (fake *FakeParticipant) StartCalls(stub func()) {
-	fake.startMutex.Lock()
-	defer fake.startMutex.Unlock()
-	fake.StartStub = stub
-}
-
 func (fake *FakeParticipant) State() livekit.ParticipantInfo_State {
 	fake.stateMutex.Lock()
 	ret, specificReturn := fake.stateReturnsOnCall[len(fake.stateArgsForCall)]
@@ -1393,8 +1365,6 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.setMetadataMutex.RUnlock()
 	fake.setNameMutex.RLock()
 	defer fake.setNameMutex.RUnlock()
-	fake.startMutex.RLock()
-	defer fake.startMutex.RUnlock()
 	fake.stateMutex.RLock()
 	defer fake.stateMutex.RUnlock()
 	fake.subscriptionPermissionMutex.RLock()

@@ -39,7 +39,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpextension"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
-	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/livekit-server/pkg/utils"
 	sutils "github.com/livekit/livekit-server/pkg/utils"
@@ -238,7 +237,6 @@ type TransportParams struct {
 	Config                       *WebRTCConfig
 	DirectionConfig              DirectionConfig
 	CongestionControlConfig      config.CongestionControlConfig
-	Telemetry                    telemetry.TelemetryService
 	EnabledCodecs                []*livekit.Codec
 	Logger                       logger.Logger
 	Transport                    livekit.SignalTarget

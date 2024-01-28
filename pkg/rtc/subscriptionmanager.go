@@ -573,7 +573,7 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 	m.lock.Unlock()
 
 	if changedCB != nil && firstSubscribe {
-		go changedCB(publisherID, true)
+		changedCB(publisherID, true)
 	}
 	return nil
 }

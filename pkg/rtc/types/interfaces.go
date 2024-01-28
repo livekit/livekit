@@ -273,7 +273,6 @@ type Participant interface {
 	IsRecorder() bool
 	IsAgent() bool
 
-	Start()
 	Close(sendLeave bool, reason ParticipantCloseReason, isExpectedToResume bool) error
 
 	SubscriptionPermission() (*livekit.SubscriptionPermission, utils.TimedVersion)
@@ -379,7 +378,7 @@ type LocalParticipant interface {
 	IssueFullReconnect(reason ParticipantCloseReason)
 
 	// callbacks
-	OnStateChange(func(p LocalParticipant, oldState livekit.ParticipantInfo_State))
+	OnStateChange(func(p LocalParticipant, oldState livekit.ParticipantInfo_State, newState livekit.ParticipantInfo_State))
 	OnMigrateStateChange(func(p LocalParticipant, migrateState MigrateState))
 	// OnTrackPublished - remote added a track
 	OnTrackPublished(func(LocalParticipant, MediaTrack))
@@ -393,8 +392,9 @@ type LocalParticipant interface {
 	OnSubscribeStatusChanged(fn func(publisherID livekit.ParticipantID, subscribed bool))
 	OnClose(callback func(LocalParticipant))
 	OnClaimsChanged(callback func(LocalParticipant))
-	OnReceiverReport(dt *sfu.DownTrack, report *rtcp.ReceiverReport)
 	OnTrafficLoad(callback func(trafficLoad *TrafficLoad))
+
+	HandleReceiverReport(dt *sfu.DownTrack, report *rtcp.ReceiverReport)
 
 	// session migration
 	MaybeStartMigration(force bool, onStart func()) bool

@@ -100,7 +100,7 @@ func TestRoomJoin(t *testing.T) {
 		require.NotEmpty(t, res.IceServers)
 	})
 
-	t.Run("subscribe to existing channels upon join", func(t *testing.T) {
+	t.Run("subscribe to existing chennels upon join", func(t *testing.T) {
 		numExisting := 3
 		rm := newRoomWithParticipants(t, testRoomOpts{num: numExisting})
 		p := NewMockParticipant("new", types.CurrentProtocol, false, false)
@@ -110,8 +110,7 @@ func TestRoomJoin(t *testing.T) {
 
 		stateChangeCB := p.OnStateChangeArgsForCall(0)
 		require.NotNil(t, stateChangeCB)
-		p.StateReturns(livekit.ParticipantInfo_ACTIVE)
-		stateChangeCB(p, livekit.ParticipantInfo_JOINED)
+		stateChangeCB(p, livekit.ParticipantInfo_JOINED, livekit.ParticipantInfo_ACTIVE)
 
 		// it should become a subscriber when connectivity changes
 		numTracks := 0
@@ -122,7 +121,7 @@ func TestRoomJoin(t *testing.T) {
 
 			numTracks += len(op.GetPublishedTracks())
 		}
-		require.Equal(t, numTracks, p.SubscribeToTrackCallCount())
+		require.Eventually(t, func() bool { return p.SubscribeToTrackCallCount() == numTracks }, 5*time.Second, 10*time.Millisecond)
 	})
 
 	t.Run("participant state change is broadcasted to others", func(t *testing.T) {
@@ -218,7 +217,7 @@ func TestParticipantUpdate(t *testing.T) {
 					expected += 1
 				}
 				fp := p.(*typesfakes.FakeLocalParticipant)
-				require.Equal(t, expected, fp.SendParticipantUpdateCallCount())
+				require.Eventually(t, func() bool { return fp.SendParticipantUpdateCallCount() == expected }, 5*time.Second, 10*time.Millisecond)
 			}
 		})
 	}
@@ -424,8 +423,8 @@ func TestNewTrack(t *testing.T) {
 		require.NotNil(t, trackCB)
 		trackCB(pub, track)
 		// only p1 should've been subscribed to
+		require.Eventually(t, func() bool { return p1.SubscribeToTrackCallCount() == 1 }, 5*time.Second, 10*time.Millisecond)
 		require.Equal(t, 0, p0.SubscribeToTrackCallCount())
-		require.Equal(t, 1, p1.SubscribeToTrackCallCount())
 	})
 }
 
@@ -679,10 +678,9 @@ func TestHiddenParticipants(t *testing.T) {
 
 		stateChangeCB := hidden.OnStateChangeArgsForCall(0)
 		require.NotNil(t, stateChangeCB)
-		hidden.StateReturns(livekit.ParticipantInfo_ACTIVE)
-		stateChangeCB(hidden, livekit.ParticipantInfo_JOINED)
+		stateChangeCB(hidden, livekit.ParticipantInfo_JOINED, livekit.ParticipantInfo_ACTIVE)
 
-		require.Equal(t, 2, hidden.SubscribeToTrackCallCount())
+		require.Eventually(t, func() bool { return hidden.SubscribeToTrackCallCount() == 2 }, 5*time.Second, 10*time.Millisecond)
 	})
 }
 

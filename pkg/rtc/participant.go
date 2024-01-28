@@ -191,7 +191,6 @@ type ParticipantImpl struct {
 	lastRTT      uint32
 
 	lock utils.RWMutex
-	once sync.Once
 
 	dirty        atomic.Bool
 	version      atomic.Uint32
@@ -201,7 +200,7 @@ type ParticipantImpl struct {
 	onTrackPublished     func(types.LocalParticipant, types.MediaTrack)
 	onTrackUpdated       func(types.LocalParticipant, types.MediaTrack)
 	onTrackUnpublished   func(types.LocalParticipant, types.MediaTrack)
-	onStateChange        func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State)
+	onStateChange        func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State, newState livekit.ParticipantInfo_State)
 	onMigrateStateChange func(p types.LocalParticipant, migrateState types.MigrateState)
 	onParticipantUpdate  func(types.LocalParticipant)
 	onDataPacket         func(types.LocalParticipant, *livekit.DataPacket)
@@ -525,16 +524,34 @@ func (p *ParticipantImpl) OnTrackPublished(callback func(types.LocalParticipant,
 	p.lock.Unlock()
 }
 
+func (p *ParticipantImpl) getOnTrackPublished() func(types.LocalParticipant, types.MediaTrack) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return p.onTrackPublished
+}
+
 func (p *ParticipantImpl) OnTrackUnpublished(callback func(types.LocalParticipant, types.MediaTrack)) {
 	p.lock.Lock()
 	p.onTrackUnpublished = callback
 	p.lock.Unlock()
 }
 
-func (p *ParticipantImpl) OnStateChange(callback func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State)) {
+func (p *ParticipantImpl) getOnTrackUnpublished() func(types.LocalParticipant, types.MediaTrack) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return p.onTrackUnpublished
+}
+
+func (p *ParticipantImpl) OnStateChange(callback func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State, newState livekit.ParticipantInfo_State)) {
 	p.lock.Lock()
 	p.onStateChange = callback
 	p.lock.Unlock()
+}
+
+func (p *ParticipantImpl) getOnStateChange() func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State, newState livekit.ParticipantInfo_State) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return p.onStateChange
 }
 
 func (p *ParticipantImpl) OnMigrateStateChange(callback func(p types.LocalParticipant, state types.MigrateState)) {
@@ -546,7 +563,6 @@ func (p *ParticipantImpl) OnMigrateStateChange(callback func(p types.LocalPartic
 func (p *ParticipantImpl) getOnMigrateStateChange() func(p types.LocalParticipant, state types.MigrateState) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
-
 	return p.onMigrateStateChange
 }
 
@@ -554,6 +570,12 @@ func (p *ParticipantImpl) OnTrackUpdated(callback func(types.LocalParticipant, t
 	p.lock.Lock()
 	p.onTrackUpdated = callback
 	p.lock.Unlock()
+}
+
+func (p *ParticipantImpl) getOnTrackUpdated() func(types.LocalParticipant, types.MediaTrack) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return p.onTrackUpdated
 }
 
 func (p *ParticipantImpl) OnParticipantUpdate(callback func(types.LocalParticipant)) {
@@ -667,13 +689,9 @@ func (p *ParticipantImpl) handleMigrateTracks() {
 	}
 	p.pendingTracksLock.Unlock()
 
-	// launch callbacks in goroutine since they could block.
-	// callbacks handle webhooks as well as db persistence
-	go func() {
-		for _, t := range addedTracks {
-			p.handleTrackPublished(t)
-		}
-	}()
+	for _, t := range addedTracks {
+		p.handleTrackPublished(t)
+	}
 }
 
 func (p *ParticipantImpl) removePendingMigratedTrack(mt *MediaTrack) {
@@ -726,12 +744,6 @@ func (p *ParticipantImpl) SetMigrateInfo(
 	p.pendingTracksLock.Unlock()
 
 	p.TransportManager.SetMigrateInfo(previousOffer, previousAnswer, dataChannels)
-}
-
-func (p *ParticipantImpl) Start() {
-	p.once.Do(func() {
-		p.UpTrackManager.Start()
-	})
 }
 
 func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseReason, isExpectedToResume bool) error {
@@ -916,7 +928,7 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 	}
 
 	if onMigrateStateChange := p.getOnMigrateStateChange(); onMigrateStateChange != nil {
-		go onMigrateStateChange(p, s)
+		onMigrateStateChange(p, s)
 	}
 }
 
@@ -1146,7 +1158,6 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		SubscriberAsPrimary:          p.ProtocolVersion().SubscriberAsPrimary() && p.CanSubscribe(),
 		Config:                       p.params.Config,
 		ProtocolVersion:              p.params.ProtocolVersion,
-		Telemetry:                    p.params.Telemetry,
 		CongestionControlConfig:      p.params.CongestionControlConfig,
 		EnabledPublishCodecs:         p.enabledPublishCodecs,
 		EnabledSubscribeCodecs:       p.enabledSubscribeCodecs,
@@ -1225,12 +1236,8 @@ func (p *ParticipantImpl) setupUpTrackManager() {
 	})
 
 	p.UpTrackManager.OnPublishedTrackUpdated(func(track types.MediaTrack) {
-		p.lock.RLock()
-		onTrackUpdated := p.onTrackUpdated
-		p.lock.RUnlock()
-
 		p.dirty.Store(true)
-		if onTrackUpdated != nil {
+		if onTrackUpdated := p.getOnTrackUpdated(); onTrackUpdated != nil {
 			onTrackUpdated(p, track)
 		}
 	})
@@ -1261,26 +1268,16 @@ func (p *ParticipantImpl) setupParticipantTrafficLoad() {
 }
 
 func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
-	oldState := p.State()
-	if !(p.state.Swap(state) != state) {
+	oldState := p.state.Swap(state).(livekit.ParticipantInfo_State)
+	if oldState == state {
 		return
 	}
 
 	p.params.Logger.Debugw("updating participant state", "state", state.String())
 	p.dirty.Store(true)
 
-	p.lock.RLock()
-	onStateChange := p.onStateChange
-	p.lock.RUnlock()
-	if onStateChange != nil {
-		go func() {
-			defer func() {
-				if r := Recover(p.GetLogger()); r != nil {
-					os.Exit(1)
-				}
-			}()
-			onStateChange(p, oldState)
-		}()
+	if onStateChange := p.getOnStateChange(); onStateChange != nil {
+		onStateChange(p, oldState, state)
 	}
 }
 
@@ -1367,10 +1364,7 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 	)
 
 	if !isNewTrack && !publishedTrack.HasPendingCodec() && p.IsReady() {
-		p.lock.RLock()
-		onTrackUpdated := p.onTrackUpdated
-		p.lock.RUnlock()
-		if onTrackUpdated != nil {
+		if onTrackUpdated := p.getOnTrackUpdated(); onTrackUpdated != nil {
 			onTrackUpdated(p, publishedTrack)
 		}
 	}
@@ -1885,14 +1879,12 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	}
 
 	if newTrack {
-		go func() {
-			p.pubLogger.Debugw(
-				"track published",
-				"trackID", mt.ID(),
-				"track", logger.Proto(mt.ToProto()),
-			)
-			p.handleTrackPublished(mt)
-		}()
+		p.pubLogger.Debugw(
+			"track published",
+			"trackID", mt.ID(),
+			"track", logger.Proto(mt.ToProto()),
+		)
+		p.handleTrackPublished(mt)
 	}
 
 	return mt, newTrack
@@ -2000,15 +1992,6 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 			p.supervisor.ClearPublishedTrack(trackID, mt)
 		}
 
-		// not logged when closing
-		p.params.Telemetry.TrackUnpublished(
-			context.Background(),
-			p.ID(),
-			p.Identity(),
-			mt.ToProto(),
-			!p.IsClosed(),
-		)
-
 		// re-use Track sid
 		p.pendingTracksLock.Lock()
 		if pti := p.pendingTracks[signalCid]; pti != nil {
@@ -2023,10 +2006,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 		if !p.IsClosed() {
 			// unpublished events aren't necessary when participant is closed
 			p.pubLogger.Debugw("track unpublished", "trackID", ti.Sid, "track", logger.Proto(ti))
-			p.lock.RLock()
-			onTrackUnpublished := p.onTrackUnpublished
-			p.lock.RUnlock()
-			if onTrackUnpublished != nil {
+			if onTrackUnpublished := p.getOnTrackUnpublished(); onTrackUnpublished != nil {
 				onTrackUnpublished(p, mt)
 			}
 		}
@@ -2036,21 +2016,9 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 }
 
 func (p *ParticipantImpl) handleTrackPublished(track types.MediaTrack) {
-	p.lock.RLock()
-	onTrackPublished := p.onTrackPublished
-	p.lock.RUnlock()
-	if onTrackPublished != nil {
+	if onTrackPublished := p.getOnTrackPublished(); onTrackPublished != nil {
 		onTrackPublished(p, track)
 	}
-
-	// send webhook after callbacks are complete, persistence and state handling happens
-	// in `onTrackPublished` cb
-	p.params.Telemetry.TrackPublished(
-		context.Background(),
-		p.ID(),
-		p.Identity(),
-		track.ToProto(),
-	)
 
 	p.pendingTracksLock.Lock()
 	delete(p.pendingPublishingTracks, track.ID())
