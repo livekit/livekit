@@ -339,8 +339,11 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 		r.joinedAt.Store(time.Now().Unix())
 	}
 
-	participantWorker := sutils.NewOpsQueue(fmt.Sprintf("participant-worker-%s-%s", r.Name(), participant.Identity()), 0, true)
-	participantWorker.Start()
+	participantWorker := r.participantWorkers[participant.Identity()]
+	if participantWorker == nil {
+		participantWorker = sutils.NewOpsQueue(fmt.Sprintf("participant-worker-%s-%s", r.Name(), participant.Identity()), 0, true)
+		participantWorker.Start()
+	}
 
 	participant.OnStateChange(func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State, newState livekit.ParticipantInfo_State) {
 		participantWorker.Enqueue(func() {
