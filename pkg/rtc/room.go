@@ -346,14 +346,14 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 
 	pw := r.addParticipantWorkerLocked(participant)
 
-	participant.OnStateChange(func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State, newState livekit.ParticipantInfo_State) {
+	participant.OnStateChange(func(p types.LocalParticipant, state livekit.ParticipantInfo_State) {
 		pw.eventsQueue.Enqueue(func() {
 			if r.onParticipantChanged != nil {
 				r.onParticipantChanged(p)
 			}
 			r.broadcastParticipantState(p, broadcastOptions{skipSource: true})
 
-			if newState == livekit.ParticipantInfo_ACTIVE {
+			if state == livekit.ParticipantInfo_ACTIVE {
 				// subscribe participant to existing published tracks
 				r.subscribeToExistingTracks(p)
 
@@ -375,7 +375,7 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 				)
 
 				p.GetLogger().Infow("participant active", connectionDetailsFields(cds)...)
-			} else if newState == livekit.ParticipantInfo_DISCONNECTED {
+			} else if state == livekit.ParticipantInfo_DISCONNECTED {
 				// remove participant from room
 				r.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonStateDisconnected)
 			}

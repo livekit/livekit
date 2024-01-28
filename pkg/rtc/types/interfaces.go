@@ -378,7 +378,7 @@ type LocalParticipant interface {
 	IssueFullReconnect(reason ParticipantCloseReason)
 
 	// callbacks
-	OnStateChange(func(p LocalParticipant, oldState livekit.ParticipantInfo_State, newState livekit.ParticipantInfo_State))
+	OnStateChange(func(p LocalParticipant, state livekit.ParticipantInfo_State))
 	OnMigrateStateChange(func(p LocalParticipant, migrateState MigrateState))
 	// OnTrackPublished - remote added a track
 	OnTrackPublished(func(LocalParticipant, MediaTrack))

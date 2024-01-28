@@ -577,10 +577,10 @@ type FakeLocalParticipant struct {
 	onParticipantUpdateArgsForCall []struct {
 		arg1 func(types.LocalParticipant)
 	}
-	OnStateChangeStub        func(func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State, newState livekit.ParticipantInfo_State))
+	OnStateChangeStub        func(func(p types.LocalParticipant, state livekit.ParticipantInfo_State))
 	onStateChangeMutex       sync.RWMutex
 	onStateChangeArgsForCall []struct {
-		arg1 func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State, newState livekit.ParticipantInfo_State)
+		arg1 func(p types.LocalParticipant, state livekit.ParticipantInfo_State)
 	}
 	OnSubscribeStatusChangedStub        func(func(publisherID livekit.ParticipantID, subscribed bool))
 	onSubscribeStatusChangedMutex       sync.RWMutex
@@ -3964,10 +3964,10 @@ func (fake *FakeLocalParticipant) OnParticipantUpdateArgsForCall(i int) func(typ
 	return argsForCall.arg1
 }
 
-func (fake *FakeLocalParticipant) OnStateChange(arg1 func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State, newState livekit.ParticipantInfo_State)) {
+func (fake *FakeLocalParticipant) OnStateChange(arg1 func(p types.LocalParticipant, state livekit.ParticipantInfo_State)) {
 	fake.onStateChangeMutex.Lock()
 	fake.onStateChangeArgsForCall = append(fake.onStateChangeArgsForCall, struct {
-		arg1 func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State, newState livekit.ParticipantInfo_State)
+		arg1 func(p types.LocalParticipant, state livekit.ParticipantInfo_State)
 	}{arg1})
 	stub := fake.OnStateChangeStub
 	fake.recordInvocation("OnStateChange", []interface{}{arg1})
@@ -3983,13 +3983,13 @@ func (fake *FakeLocalParticipant) OnStateChangeCallCount() int {
 	return len(fake.onStateChangeArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) OnStateChangeCalls(stub func(func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State, newState livekit.ParticipantInfo_State))) {
+func (fake *FakeLocalParticipant) OnStateChangeCalls(stub func(func(p types.LocalParticipant, state livekit.ParticipantInfo_State))) {
 	fake.onStateChangeMutex.Lock()
 	defer fake.onStateChangeMutex.Unlock()
 	fake.OnStateChangeStub = stub
 }
 
-func (fake *FakeLocalParticipant) OnStateChangeArgsForCall(i int) func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State, newState livekit.ParticipantInfo_State) {
+func (fake *FakeLocalParticipant) OnStateChangeArgsForCall(i int) func(p types.LocalParticipant, state livekit.ParticipantInfo_State) {
 	fake.onStateChangeMutex.RLock()
 	defer fake.onStateChangeMutex.RUnlock()
 	argsForCall := fake.onStateChangeArgsForCall[i]
