@@ -373,7 +373,7 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 				p.GetLogger().Infow("participant active", connectionDetailsFields(cds)...)
 			} else if newState == livekit.ParticipantInfo_DISCONNECTED {
 				// remove participant from room
-				go r.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonStateDisconnected)
+				r.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonStateDisconnected)
 			}
 		})
 	})
