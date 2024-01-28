@@ -41,6 +41,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
+	"github.com/livekit/livekit-server/pkg/utils"
 	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -213,8 +214,7 @@ type PCTransport struct {
 	preferTCP atomic.Bool
 	isClosed  atomic.Bool
 
-	eventChMu sync.RWMutex
-	eventCh   chan event
+	eventsQueue *utils.OpsQueue
 
 	// the following should be accessed only in event processing go routine
 	cacheLocalCandidates      bool
@@ -381,7 +381,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		params:                   params,
 		debouncedNegotiate:       debounce.New(negotiationFrequency),
 		negotiationState:         NegotiationStateNone,
-		eventCh:                  make(chan event, 100),
+		eventsQueue:              utils.NewOpsQueue("transport", 64, false),
 		previousTrackDescription: make(map[string]*trackDescription),
 		canReuseTransceiver:      true,
 		connectionDetails:        types.NewICEConnectionDetails(params.Transport, params.Logger),
@@ -399,7 +399,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		return nil, err
 	}
 
-	go t.processEvents()
+	t.eventsQueue.Start()
 
 	return t, nil
 }
@@ -938,14 +938,12 @@ func (t *PCTransport) SendDataPacket(dp *livekit.DataPacket, data []byte) error 
 }
 
 func (t *PCTransport) Close() {
-	t.eventChMu.Lock()
 	if t.isClosed.Swap(true) {
-		t.eventChMu.Unlock()
 		return
 	}
 
-	close(t.eventCh)
-	t.eventChMu.Unlock()
+	<-t.eventsQueue.Stop()
+	t.clearSignalStateCheckTimer()
 
 	if t.streamAllocator != nil {
 		t.streamAllocator.Stop()
@@ -1383,27 +1381,7 @@ func (t *PCTransport) parseTrackMid(offer webrtc.SessionDescription, senders map
 }
 
 func (t *PCTransport) postEvent(event event) {
-	t.eventChMu.RLock()
-	if t.isClosed.Load() {
-		t.eventChMu.RUnlock()
-		return
-	}
-
-	select {
-	case t.eventCh <- event:
-	default:
-		t.params.Logger.Warnw("event queue full", nil, "event", event.String())
-	}
-	t.eventChMu.RUnlock()
-}
-
-func (t *PCTransport) processEvents() {
-	for event := range t.eventCh {
-		if t.isClosed.Load() {
-			// just drain the channel without processing events
-			continue
-		}
-
+	t.eventsQueue.Enqueue(func() {
 		err := t.handleEvent(&event)
 		if err != nil {
 			if !t.isClosed.Load() {
@@ -1412,12 +1390,8 @@ func (t *PCTransport) processEvents() {
 					onNegotiationFailed()
 				}
 			}
-			break
 		}
-	}
-
-	t.clearSignalStateCheckTimer()
-	t.params.Logger.Debugw("leaving events processor")
+	})
 }
 
 func (t *PCTransport) handleEvent(e *event) error {
