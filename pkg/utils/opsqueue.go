@@ -85,14 +85,15 @@ func (oq *OpsQueue) Enqueue(op func()) {
 }
 
 func (oq *OpsQueue) process() {
-done:
+	defer close(oq.doneChan)
+
 	for {
 		<-oq.wake
 		for {
 			oq.lock.Lock()
-			if oq.isStopped {
+			if oq.isStopped && (!oq.flushOnStop || oq.ops.Len() == 0) {
 				oq.lock.Unlock()
-				break done
+				return
 			}
 
 			if oq.ops.Len() == 0 {
@@ -105,20 +106,4 @@ done:
 			op()
 		}
 	}
-
-	if oq.flushOnStop {
-		for {
-			oq.lock.Lock()
-			if oq.ops.Len() == 0 {
-				oq.lock.Unlock()
-				break
-			}
-			op := oq.ops.PopFront()
-			oq.lock.Unlock()
-
-			op()
-		}
-	}
-
-	close(oq.doneChan)
 }
