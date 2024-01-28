@@ -33,7 +33,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
-	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -54,7 +53,6 @@ type TransportManagerParams struct {
 	SubscriberAsPrimary          bool
 	Config                       *WebRTCConfig
 	ProtocolVersion              types.ProtocolVersion
-	Telemetry                    telemetry.TelemetryService
 	CongestionControlConfig      config.CongestionControlConfig
 	EnabledSubscribeCodecs       []*livekit.Codec
 	EnabledPublishCodecs         []*livekit.Codec
@@ -119,7 +117,6 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		Config:                  params.Config,
 		DirectionConfig:         params.Config.Publisher,
 		CongestionControlConfig: params.CongestionControlConfig,
-		Telemetry:               params.Telemetry,
 		EnabledCodecs:           params.EnabledPublishCodecs,
 		Logger:                  LoggerWithPCTarget(params.Logger, livekit.SignalTarget_PUBLISHER),
 		SimTracks:               params.SimTracks,
@@ -152,7 +149,6 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		Config:                       params.Config,
 		DirectionConfig:              params.Config.Subscriber,
 		CongestionControlConfig:      params.CongestionControlConfig,
-		Telemetry:                    params.Telemetry,
 		EnabledCodecs:                params.EnabledSubscribeCodecs,
 		Logger:                       LoggerWithPCTarget(params.Logger, livekit.SignalTarget_SUBSCRIBER),
 		ClientInfo:                   params.ClientInfo,
@@ -722,7 +718,7 @@ func (t *TransportManager) ProcessPendingPublisherDataChannels() {
 	}
 }
 
-func (t *TransportManager) OnReceiverReport(dt *sfu.DownTrack, report *rtcp.ReceiverReport) {
+func (t *TransportManager) HandleReceiverReport(dt *sfu.DownTrack, report *rtcp.ReceiverReport) {
 	t.mediaLossProxy.HandleMaxLossFeedback(dt, report)
 }
 
