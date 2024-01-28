@@ -106,7 +106,6 @@ done:
 		}
 	}
 
-	// flush events if queue is configured thus
 	if oq.flushOnStop {
 		for {
 			oq.lock.Lock()
