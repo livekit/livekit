@@ -807,18 +807,11 @@ func (r *Room) Close() {
 	default:
 		// fall through
 	}
-
-	participantWorkers := r.participantWorkers
-	r.participantWorkers = make(map[livekit.ParticipantIdentity]*sutils.OpsQueue)
-
 	close(r.closed)
 	r.lock.Unlock()
 
 	r.Logger.Infow("closing room")
 	for _, p := range r.GetParticipants() {
-		if participantWorker, ok := participantWorkers[p.Identity()]; ok {
-			participantWorker.Stop()
-		}
 		_ = p.Close(true, types.ParticipantCloseReasonRoomClose, false)
 	}
 
