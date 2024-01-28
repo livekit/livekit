@@ -575,6 +575,8 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 		return
 	}
 
+	r.removeParticipantWorkerLocked(p)
+
 	if pID != "" && p.ID() != pID {
 		// participant session has been replaced
 		r.lock.Unlock()
@@ -582,7 +584,6 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 	}
 
 	delete(r.participants, identity)
-	r.removeParticipantWorkerLocked(p)
 	delete(r.participantOpts, identity)
 	delete(r.participantRequestSources, identity)
 	delete(r.hasPublished, identity)
@@ -1529,6 +1530,7 @@ func (r *Room) removeParticipantWorkerLocked(p types.LocalParticipant) {
 		for idx, participant := range pw.participants {
 			if p == participant {
 				pw.participants[idx] = pw.participants[n-1]
+				pw.participants[n-1] = nil
 				pw.participants = pw.participants[:n-1]
 				break
 			}
