@@ -73,6 +73,11 @@ type disconnectSignalOnResumeNoMessages struct {
 	closedCount int
 }
 
+type participantWorker struct {
+	eventsQueue *sutils.OpsQueue
+	refCount    int
+}
+
 type Room struct {
 	lock sync.RWMutex
 
@@ -94,7 +99,7 @@ type Room struct {
 
 	// map of identity -> Participant
 	participants              map[livekit.ParticipantIdentity]types.LocalParticipant
-	participantWorkers        map[livekit.ParticipantIdentity]*sutils.OpsQueue
+	participantWorkers        map[livekit.ParticipantIdentity]*participantWorker
 	participantOpts           map[livekit.ParticipantIdentity]*ParticipantOptions
 	participantRequestSources map[livekit.ParticipantIdentity]routing.MessageSource
 	hasPublished              map[livekit.ParticipantIdentity]bool
@@ -152,7 +157,7 @@ func NewRoom(
 		trackManager:                         NewRoomTrackManager(),
 		serverInfo:                           serverInfo,
 		participants:                         make(map[livekit.ParticipantIdentity]types.LocalParticipant),
-		participantWorkers:                   make(map[livekit.ParticipantIdentity]*sutils.OpsQueue),
+		participantWorkers:                   make(map[livekit.ParticipantIdentity]*participantWorker),
 		participantOpts:                      make(map[livekit.ParticipantIdentity]*ParticipantOptions),
 		participantRequestSources:            make(map[livekit.ParticipantIdentity]routing.MessageSource),
 		hasPublished:                         make(map[livekit.ParticipantIdentity]bool),
@@ -339,14 +344,18 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 		r.joinedAt.Store(time.Now().Unix())
 	}
 
-	participantWorker := r.participantWorkers[participant.Identity()]
-	if participantWorker == nil {
-		participantWorker = sutils.NewOpsQueue(fmt.Sprintf("participant-worker-%s-%s", r.Name(), participant.Identity()), 0, true)
-		participantWorker.Start()
+	pw := r.participantWorkers[participant.Identity()]
+	if pw == nil {
+		pw = &participantWorker{
+			eventsQueue: sutils.NewOpsQueue(fmt.Sprintf("participant-worker-%s-%s", r.Name(), participant.Identity()), 0, true),
+			refCount:    1,
+		}
+		pw.eventsQueue.Start()
+		r.participantWorkers[participant.Identity()] = pw
 	}
 
 	participant.OnStateChange(func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State, newState livekit.ParticipantInfo_State) {
-		participantWorker.Enqueue(func() {
+		pw.eventsQueue.Enqueue(func() {
 			if r.onParticipantChanged != nil {
 				r.onParticipantChanged(p)
 			}
@@ -382,28 +391,28 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 	})
 	// it's important to set this before connection, we don't want to miss out on any published tracks
 	participant.OnTrackPublished(func(p types.LocalParticipant, t types.MediaTrack) {
-		participantWorker.Enqueue(func() {
+		pw.eventsQueue.Enqueue(func() {
 			r.onTrackPublished(p, t)
 		})
 	})
 	participant.OnTrackUpdated(func(p types.LocalParticipant, t types.MediaTrack) {
-		participantWorker.Enqueue(func() {
+		pw.eventsQueue.Enqueue(func() {
 			r.onTrackUpdated(p, t)
 		})
 	})
 	participant.OnTrackUnpublished(func(p types.LocalParticipant, t types.MediaTrack) {
-		participantWorker.Enqueue(func() {
+		pw.eventsQueue.Enqueue(func() {
 			r.onTrackUnpublished(p, t)
 		})
 	})
 	participant.OnParticipantUpdate(func(p types.LocalParticipant) {
-		participantWorker.Enqueue(func() {
+		pw.eventsQueue.Enqueue(func() {
 			r.onParticipantUpdate(p)
 		})
 	})
 	participant.OnDataPacket(r.onDataPacket)
 	participant.OnSubscribeStatusChanged(func(publisherID livekit.ParticipantID, subscribed bool) {
-		participantWorker.Enqueue(func() {
+		pw.eventsQueue.Enqueue(func() {
 			if subscribed {
 				pub := r.GetParticipantByID(publisherID)
 				if pub != nil && pub.State() == livekit.ParticipantInfo_ACTIVE {
@@ -455,7 +464,6 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 	}
 
 	r.participants[participant.Identity()] = participant
-	r.participantWorkers[participant.Identity()] = participantWorker
 	r.participantOpts[participant.Identity()] = opts
 	r.participantRequestSources[participant.Identity()] = requestSource
 
@@ -582,10 +590,13 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 	}
 
 	delete(r.participants, identity)
-	if participantWorker, ok := r.participantWorkers[identity]; ok {
-		participantWorker.Stop()
+	if pw, ok := r.participantWorkers[identity]; ok {
+		pw.refCount--
+		if pw.refCount == 0 {
+			pw.eventsQueue.Stop()
+			delete(r.participantWorkers, identity)
+		}
 	}
-	delete(r.participantWorkers, identity)
 	delete(r.participantOpts, identity)
 	delete(r.participantRequestSources, identity)
 	delete(r.hasPublished, identity)
