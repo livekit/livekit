@@ -32,6 +32,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/sendsidebwe"
+	"github.com/livekit/livekit-server/pkg/utils"
 )
 
 const (
@@ -170,8 +171,7 @@ type StreamAllocator struct {
 
 	state streamAllocatorState
 
-	eventChMu sync.RWMutex
-	eventCh   chan Event
+	eventsQueue *utils.OpsQueue
 
 	isStopped atomic.Bool
 }
@@ -185,7 +185,7 @@ func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 		}),
 		rateMonitor: NewRateMonitor(),
 		videoTracks: make(map[livekit.TrackID]*Track),
-		eventCh:     make(chan Event, 1000),
+		eventsQueue: utils.NewOpsQueue("stream-allocator", 64, true),
 	}
 
 	s.probeController = NewProbeController(ProbeControllerParams{
@@ -202,19 +202,18 @@ func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 }
 
 func (s *StreamAllocator) Start() {
-	go s.processEvents()
+	s.eventsQueue.Start()
 	go s.ping()
 }
 
 func (s *StreamAllocator) Stop() {
-	s.eventChMu.Lock()
 	if s.isStopped.Swap(true) {
-		s.eventChMu.Unlock()
 		return
 	}
 
-	close(s.eventCh)
-	s.eventChMu.Unlock()
+	// wait for eventsQueue to be done
+	<-s.eventsQueue.Stop()
+	s.probeController.StopProbe()
 }
 
 func (s *StreamAllocator) OnStreamStateChange(f func(update *StreamStateUpdate) error) {
@@ -579,30 +578,9 @@ func (s *StreamAllocator) maybePostEventAllocateTrack(downTrack *sfu.DownTrack) 
 }
 
 func (s *StreamAllocator) postEvent(event Event) {
-	s.eventChMu.RLock()
-	if s.isStopped.Load() {
-		s.eventChMu.RUnlock()
-		return
-	}
-
-	select {
-	case s.eventCh <- event:
-	default:
-		s.params.Logger.Warnw("stream allocator: event queue full", nil, "event", event.String())
-	}
-	s.eventChMu.RUnlock()
-}
-
-func (s *StreamAllocator) processEvents() {
-	for event := range s.eventCh {
-		if s.isStopped.Load() {
-			break
-		}
-
+	s.eventsQueue.Enqueue(func() {
 		s.handleEvent(&event)
-	}
-
-	s.probeController.StopProbe()
+	})
 }
 
 func (s *StreamAllocator) ping() {
