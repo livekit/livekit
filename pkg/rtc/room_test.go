@@ -100,7 +100,7 @@ func TestRoomJoin(t *testing.T) {
 		require.NotEmpty(t, res.IceServers)
 	})
 
-	t.Run("subscribe to existing chennels upon join", func(t *testing.T) {
+	t.Run("subscribe to existing channels upon join", func(t *testing.T) {
 		numExisting := 3
 		rm := newRoomWithParticipants(t, testRoomOpts{num: numExisting})
 		p := NewMockParticipant("new", types.CurrentProtocol, false, false)
