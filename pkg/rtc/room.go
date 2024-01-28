@@ -74,8 +74,8 @@ type disconnectSignalOnResumeNoMessages struct {
 }
 
 type participantWorker struct {
-	eventsQueue *sutils.OpsQueue
-	refCount    int
+	eventsQueue  *sutils.OpsQueue
+	participants []types.LocalParticipant
 }
 
 type Room struct {
@@ -344,15 +344,7 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 		r.joinedAt.Store(time.Now().Unix())
 	}
 
-	pw := r.participantWorkers[participant.Identity()]
-	if pw == nil {
-		pw = &participantWorker{
-			eventsQueue: sutils.NewOpsQueue(fmt.Sprintf("participant-worker-%s-%s", r.Name(), participant.Identity()), 0, true),
-			refCount:    1,
-		}
-		pw.eventsQueue.Start()
-		r.participantWorkers[participant.Identity()] = pw
-	}
+	pw := r.addParticipantWorkerLocked(participant)
 
 	participant.OnStateChange(func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State, newState livekit.ParticipantInfo_State) {
 		pw.eventsQueue.Enqueue(func() {
@@ -590,13 +582,7 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 	}
 
 	delete(r.participants, identity)
-	if pw, ok := r.participantWorkers[identity]; ok {
-		pw.refCount--
-		if pw.refCount == 0 {
-			pw.eventsQueue.Stop()
-			delete(r.participantWorkers, identity)
-		}
-	}
+	r.removeParticipantWorkerLocked(p)
 	delete(r.participantOpts, identity)
 	delete(r.participantRequestSources, identity)
 	delete(r.hasPublished, identity)
@@ -1509,6 +1495,52 @@ func (r *Room) DebugInfo() map[string]interface{} {
 
 	return info
 }
+
+func (r *Room) addParticipantWorkerLocked(p types.LocalParticipant) *participantWorker {
+	identity := p.Identity()
+	pw := r.participantWorkers[identity]
+	if pw != nil {
+		found := false
+		for _, participant := range pw.participants {
+			if p == participant {
+				found = true
+				break
+			}
+		}
+		if !found {
+			pw.participants = append(pw.participants, p)
+		}
+		return pw
+	}
+
+	pw = &participantWorker{
+		eventsQueue:  sutils.NewOpsQueue(fmt.Sprintf("participant-worker-%s-%s", r.Name(), identity), 0, true),
+		participants: []types.LocalParticipant{p},
+	}
+	pw.eventsQueue.Start()
+	r.participantWorkers[identity] = pw
+	return pw
+}
+
+func (r *Room) removeParticipantWorkerLocked(p types.LocalParticipant) {
+	identity := p.Identity()
+	if pw, ok := r.participantWorkers[identity]; ok {
+		n := len(pw.participants)
+		for idx, participant := range pw.participants {
+			if p == participant {
+				pw.participants[idx] = pw.participants[n-1]
+				pw.participants = pw.participants[:n-1]
+				break
+			}
+		}
+		if len(pw.participants) == 0 {
+			pw.eventsQueue.Stop()
+			delete(r.participantWorkers, identity)
+		}
+	}
+}
+
+// ------------------------------------------------------------
 
 func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, dp *livekit.DataPacket, logger logger.Logger) {
 	dest := dp.GetUser().GetDestinationSids()
