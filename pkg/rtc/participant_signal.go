@@ -311,3 +311,34 @@ func (p *ParticipantImpl) CloseSignalConnection(reason types.SignallingCloseReas
 		p.SetResponseSink(nil)
 	}
 }
+
+func (p *ParticipantImpl) sendLeaveRequest(reason types.ParticipantCloseReason, isExpectedToResume bool, isExpectedToReconnect bool) {
+	var leave *livekit.LeaveRequest
+	if p.ProtocolVersion().SupportsRegionsInLeaveRequest() {
+		leave = &livekit.LeaveRequest{
+			Reason: reason.ToDisconnectReason(),
+		}
+		switch {
+		case isExpectedToResume:
+			leave.Action = livekit.LeaveRequest_RESUME
+		case isExpectedToReconnect:
+			leave.Action = livekit.LeaveRequest_RECONNECT
+		default:
+			leave.Action = livekit.LeaveRequest_DISCONNECT
+		}
+		if leave.Action != livekit.LeaveRequest_DISCONNECT && p.params.GetRegionSettings != nil {
+			// sending region settings even for RESUME just in case client wants to a full reconnect despite server saying RESUME
+			leave.Regions = p.params.GetRegionSettings(p.params.ClientInfo.Address)
+		}
+	} else {
+		leave = &livekit.LeaveRequest{
+			CanReconnect: isExpectedToReconnect,
+			Reason:       reason.ToDisconnectReason(),
+		}
+	}
+	_ = p.writeMessage(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_Leave{
+			Leave: leave,
+		},
+	})
+}
