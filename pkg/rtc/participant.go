@@ -36,6 +36,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/supervisor"
+	"github.com/livekit/livekit-server/pkg/rtc/transport"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -1149,13 +1150,91 @@ func (p *ParticipantImpl) UpdateMediaRTT(rtt uint32) {
 	}
 }
 
+type AnyTransportHandler struct {
+	transport.UnimplementedHandler
+	p *ParticipantImpl
+}
+
+func (h AnyTransportHandler) OnFailed(isShortLived bool) {
+	h.p.onAnyTransportFailed()
+}
+
+func (h AnyTransportHandler) OnNegotiationFailed() {
+	h.p.onAnyTransportNegotiationFailed()
+}
+
+func (h AnyTransportHandler) OnICECandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) error {
+	return h.p.onICECandidate(c, target)
+}
+
+type PublisherTransportHandler struct {
+	AnyTransportHandler
+}
+
+func (h PublisherTransportHandler) OnAnswer(sd webrtc.SessionDescription) error {
+	return h.p.onPublisherAnswer(sd)
+}
+
+func (h PublisherTransportHandler) OnTrack(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
+	h.p.onMediaTrack(track, rtpReceiver)
+}
+
+func (h PublisherTransportHandler) OnInitialConnected() {
+	h.p.onPublisherInitialConnected()
+}
+
+func (h PublisherTransportHandler) OnDataPacket(kind livekit.DataPacket_Kind, data []byte) {
+	h.p.onDataMessage(kind, data)
+}
+
+type SubscriberTransportHandler struct {
+	AnyTransportHandler
+}
+
+func (h SubscriberTransportHandler) OnOffer(sd webrtc.SessionDescription) error {
+	return h.p.onSubscriberOffer(sd)
+}
+
+func (h SubscriberTransportHandler) OnStreamStateChange(update *streamallocator.StreamStateUpdate) error {
+	return h.p.onStreamStateChange(update)
+}
+
+func (h SubscriberTransportHandler) OnInitialConnected() {
+	h.p.onSubscriberInitialConnected()
+}
+
+type PrimaryTransportHandler struct {
+	transport.Handler
+	p *ParticipantImpl
+}
+
+func (h PrimaryTransportHandler) OnInitialConnected() {
+	h.Handler.OnInitialConnected()
+	h.p.onPrimaryTransportInitialConnected()
+}
+
+func (h PrimaryTransportHandler) OnFullyEstablished() {
+	h.p.onPrimaryTransportFullyEstablished()
+}
+
 func (p *ParticipantImpl) setupTransportManager() error {
+	ath := AnyTransportHandler{p: p}
+	var pth transport.Handler = PublisherTransportHandler{ath}
+	var sth transport.Handler = SubscriberTransportHandler{ath}
+
+	subscriberAsPrimary := p.ProtocolVersion().SubscriberAsPrimary() && p.CanSubscribe()
+	if subscriberAsPrimary {
+		sth = PrimaryTransportHandler{sth, p}
+	} else {
+		pth = PrimaryTransportHandler{pth, p}
+	}
+
 	params := TransportManagerParams{
 		Identity: p.params.Identity,
 		SID:      p.params.SID,
 		// primary connection does not change, canSubscribe can change if permission was updated
 		// after the participant has joined
-		SubscriberAsPrimary:          p.ProtocolVersion().SubscriberAsPrimary() && p.CanSubscribe(),
+		SubscriberAsPrimary:          subscriberAsPrimary,
 		Config:                       p.params.Config,
 		ProtocolVersion:              p.params.ProtocolVersion,
 		CongestionControlConfig:      p.params.CongestionControlConfig,
@@ -1171,6 +1250,8 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		AllowPlayoutDelay:            p.params.PlayoutDelay.GetEnabled(),
 		DataChannelMaxBufferedAmount: p.params.DataChannelMaxBufferedAmount,
 		Logger:                       p.params.Logger.WithComponent(sutils.ComponentTransport),
+		PublisherHandler:             pth,
+		SubscriberHandler:            sth,
 	}
 	if p.params.SyncStreams && p.params.PlayoutDelay.GetEnabled() && p.params.ClientInfo.isFirefox() {
 		// we will disable playout delay for Firefox if the user is expecting
@@ -1201,27 +1282,6 @@ func (p *ParticipantImpl) setupTransportManager() error {
 			onICEConfigChanged(p, iceConfig)
 		}
 	})
-
-	tm.OnPublisherICECandidate(func(c *webrtc.ICECandidate) error {
-		return p.onICECandidate(c, livekit.SignalTarget_PUBLISHER)
-	})
-	tm.OnPublisherAnswer(p.onPublisherAnswer)
-	tm.OnPublisherTrack(p.onMediaTrack)
-	tm.OnPublisherInitialConnected(p.onPublisherInitialConnected)
-
-	tm.OnSubscriberOffer(p.onSubscriberOffer)
-	tm.OnSubscriberICECandidate(func(c *webrtc.ICECandidate) error {
-		return p.onICECandidate(c, livekit.SignalTarget_SUBSCRIBER)
-	})
-	tm.OnSubscriberInitialConnected(p.onSubscriberInitialConnected)
-	tm.OnSubscriberStreamStateChange(p.onStreamStateChange)
-
-	tm.OnPrimaryTransportInitialConnected(p.onPrimaryTransportInitialConnected)
-	tm.OnPrimaryTransportFullyEstablished(p.onPrimaryTransportFullyEstablished)
-	tm.OnAnyTransportFailed(p.onAnyTransportFailed)
-	tm.OnAnyTransportNegotiationFailed(p.onAnyTransportNegotiationFailed)
-
-	tm.OnDataMessage(p.onDataMessage)
 
 	tm.SetSubscriberAllowPause(p.params.SubscriberAllowPause)
 	p.TransportManager = tm
