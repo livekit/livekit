@@ -802,7 +802,7 @@ func (p *RelayedParticipantImpl) addMediaTrack(signalCid string, sdpCid string, 
 			p.ID(),
 			p.Identity(),
 			mt.ToProto(),
-			!p.IsClosed(),
+			false,
 		)
 
 		if !p.IsClosed() {
@@ -835,6 +835,7 @@ func (p *RelayedParticipantImpl) handleTrackPublished(track types.MediaTrack) {
 		p.ID(),
 		p.Identity(),
 		track.ToProto(),
+		false,
 	)
 
 	if !p.hasPendingMigratedTrack() {

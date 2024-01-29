@@ -1808,6 +1808,7 @@ func (p *ParticipantImpl) handleTrackPublished(track types.MediaTrack) {
 		p.ID(),
 		p.Identity(),
 		track.ToProto(),
+		true,
 	)
 
 	p.pendingTracksLock.Lock()

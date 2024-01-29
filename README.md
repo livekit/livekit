@@ -4,6 +4,11 @@
 
 dTelecom's server is written in Go, using the awesome [Pion WebRTC](https://github.com/pion/webrtc) implementation.
 
+## MacOS
+```shell
+sudo sysctl -w net.inet.udp.recvspace=2500000
+```
+
 ## Features
 
 - Scalable, distributed WebRTC SFU (Selective Forwarding Unit)

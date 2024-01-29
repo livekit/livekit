@@ -32,7 +32,7 @@ type TelemetryService interface {
 	// TrackPublishRequested - a publication attempt has been received
 	TrackPublishRequested(ctx context.Context, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo)
 	// TrackPublished - a publication attempt has been successful
-	TrackPublished(ctx context.Context, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo)
+	TrackPublished(ctx context.Context, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, shouldSendEvent bool)
 	// TrackUnpublished - a participant unpublished a track
 	TrackUnpublished(ctx context.Context, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, shouldSendEvent bool)
 	// TrackSubscribeRequested - a participant requested to subscribe to a track
