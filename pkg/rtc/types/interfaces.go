@@ -178,7 +178,7 @@ func (p ParticipantCloseReason) ToDisconnectReason() livekit.DisconnectReason {
 		return livekit.DisconnectReason_STATE_MISMATCH
 	case ParticipantCloseReasonDuplicateIdentity, ParticipantCloseReasonStale:
 		return livekit.DisconnectReason_DUPLICATE_IDENTITY
-	case ParticipantCloseReasonMigrationComplete, ParticipantCloseReasonSimulateMigration:
+	case ParticipantCloseReasonMigrationRequested, ParticipantCloseReasonMigrationComplete, ParticipantCloseReasonSimulateMigration:
 		return livekit.DisconnectReason_MIGRATION
 	case ParticipantCloseReasonServiceRequestRemoveParticipant:
 		return livekit.DisconnectReason_PARTICIPANT_REMOVED
@@ -422,8 +422,6 @@ type LocalParticipant interface {
 	GetPacer() pacer.Pacer
 
 	GetTrafficLoad() *TrafficLoad
-
-	SetRegionSettings(regionSettings *livekit.RegionSettings)
 }
 
 // Room is a container of participants, and can provide room-level actions

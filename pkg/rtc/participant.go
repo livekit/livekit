@@ -119,6 +119,7 @@ type ParticipantParams struct {
 	AllowUDPUnstableFallback     bool
 	TURNSEnabled                 bool
 	GetParticipantInfo           func(pID livekit.ParticipantID) *livekit.ParticipantInfo
+	GetRegionSettings            func(ip string) *livekit.RegionSettings
 	DisableSupervisor            bool
 	ReconnectOnPublicationError  bool
 	ReconnectOnSubscriptionError bool
@@ -220,8 +221,6 @@ type ParticipantImpl struct {
 	// loggers for publisher and subscriber
 	pubLogger logger.Logger
 	subLogger logger.Logger
-
-	regionSettings *livekit.RegionSettings
 }
 
 func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
@@ -761,35 +760,8 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	p.clearDisconnectTimer()
 	p.clearMigrationTimer()
 
-	// send leave message
-	var leave *livekit.LeaveRequest
-	if p.ProtocolVersion().SupportsRegionsInLeaveRequest() {
-		leave = &livekit.LeaveRequest{
-			Reason: reason.ToDisconnectReason(),
-		}
-		if isExpectedToResume {
-			leave.Action = livekit.LeaveRequest_RESUME
-		} else {
-			leave.Action = livekit.LeaveRequest_DISCONNECT
-		}
-		// although regions are not needed when resuming OR disconnecting,
-		// send it if available, just in case clients want to fall back.
-		p.lock.RLock()
-		if p.regionSettings != nil {
-			leave.Regions = proto.Clone(p.regionSettings).(*livekit.RegionSettings)
-		}
-		p.lock.RUnlock()
-	} else if sendLeave {
-		leave = &livekit.LeaveRequest{
-			Reason: reason.ToDisconnectReason(),
-		}
-	}
-	if leave != nil {
-		_ = p.writeMessage(&livekit.SignalResponse{
-			Message: &livekit.SignalResponse_Leave{
-				Leave: leave,
-			},
-		})
+	if sendLeave {
+		p.sendLeaveRequest(reason, isExpectedToResume, false)
 	}
 
 	if p.supervisor != nil {
@@ -865,6 +837,7 @@ func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
 		onStart()
 	}
 
+	p.sendLeaveRequest(types.ParticipantCloseReasonMigrationRequested, true, false)
 	p.CloseSignalConnection(types.SignallingCloseReasonMigration)
 
 	//
@@ -1469,6 +1442,7 @@ func (p *ParticipantImpl) setupDisconnectTimer() {
 
 func (p *ParticipantImpl) onAnyTransportFailed() {
 	// clients support resuming of connections when websocket becomes disconnected
+	p.sendLeaveRequest(types.ParticipantCloseReasonPeerConnectionDisconnected, true, false)
 	p.CloseSignalConnection(types.SignallingCloseReasonTransportFailure)
 
 	// detect when participant has actually left.
@@ -2271,28 +2245,7 @@ func (p *ParticipantImpl) GetCachedDownTrack(trackID livekit.TrackID) (*webrtc.R
 }
 
 func (p *ParticipantImpl) IssueFullReconnect(reason types.ParticipantCloseReason) {
-	var leave *livekit.LeaveRequest
-	if p.ProtocolVersion().SupportsRegionsInLeaveRequest() {
-		leave = &livekit.LeaveRequest{
-			Reason: reason.ToDisconnectReason(),
-			Action: livekit.LeaveRequest_RECONNECT,
-		}
-		p.lock.RLock()
-		if p.regionSettings != nil {
-			leave.Regions = proto.Clone(p.regionSettings).(*livekit.RegionSettings)
-		}
-		p.lock.RUnlock()
-	} else {
-		leave = &livekit.LeaveRequest{
-			CanReconnect: true,
-			Reason:       reason.ToDisconnectReason(),
-		}
-	}
-	_ = p.writeMessage(&livekit.SignalResponse{
-		Message: &livekit.SignalResponse_Leave{
-			Leave: leave,
-		},
-	})
+	p.sendLeaveRequest(reason, false, true)
 
 	scr := types.SignallingCloseReasonUnknown
 	switch reason {
@@ -2453,10 +2406,4 @@ func (p *ParticipantImpl) setupEnabledCodecs(publishEnabledCodecs []*livekit.Cod
 		subscribeCodecs = append(subscribeCodecs, c)
 	}
 	p.enabledSubscribeCodecs = subscribeCodecs
-}
-
-func (p *ParticipantImpl) SetRegionSettings(regionSettings *livekit.RegionSettings) {
-	p.lock.Lock()
-	p.regionSettings = proto.Clone(regionSettings).(*livekit.RegionSettings)
-	p.lock.Unlock()
 }
