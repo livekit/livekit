@@ -690,9 +690,13 @@ func (p *ParticipantImpl) handleMigrateTracks() {
 	}
 	p.pendingTracksLock.Unlock()
 
-	for _, t := range addedTracks {
-		p.handleTrackPublished(t)
-	}
+	// launch callbacks in goroutine since they could block.
+	// callbacks handle webhooks as well as db persistence
+	go func() {
+		for _, t := range addedTracks {
+			p.handleTrackPublished(t)
+		}
+	}()
 }
 
 func (p *ParticipantImpl) removePendingMigratedTrack(mt *MediaTrack) {
@@ -929,7 +933,7 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 	}
 
 	if onMigrateStateChange := p.getOnMigrateStateChange(); onMigrateStateChange != nil {
-		onMigrateStateChange(p, s)
+		go onMigrateStateChange(p, s)
 	}
 }
 
@@ -1337,7 +1341,7 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 	p.dirty.Store(true)
 
 	if onStateChange := p.getOnStateChange(); onStateChange != nil {
-		onStateChange(p, state)
+		go onStateChange(p, state)
 	}
 }
 
@@ -1939,12 +1943,14 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	}
 
 	if newTrack {
-		p.pubLogger.Debugw(
-			"track published",
-			"trackID", mt.ID(),
-			"track", logger.Proto(mt.ToProto()),
-		)
-		p.handleTrackPublished(mt)
+		go func() {
+			p.pubLogger.Debugw(
+				"track published",
+				"trackID", mt.ID(),
+				"track", logger.Proto(mt.ToProto()),
+			)
+			p.handleTrackPublished(mt)
+		}()
 	}
 
 	return mt, newTrack
@@ -2052,6 +2058,15 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 			p.supervisor.ClearPublishedTrack(trackID, mt)
 		}
 
+		// not logged when closing
+		p.params.Telemetry.TrackUnpublished(
+			context.Background(),
+			p.ID(),
+			p.Identity(),
+			mt.ToProto(),
+			!p.IsClosed(),
+		)
+
 		// re-use Track sid
 		p.pendingTracksLock.Lock()
 		if pti := p.pendingTracks[signalCid]; pti != nil {
@@ -2079,6 +2094,15 @@ func (p *ParticipantImpl) handleTrackPublished(track types.MediaTrack) {
 	if onTrackPublished := p.getOnTrackPublished(); onTrackPublished != nil {
 		onTrackPublished(p, track)
 	}
+
+	// send webhook after callbacks are complete, persistence and state handling happens
+	// in `onTrackPublished` cb
+	p.params.Telemetry.TrackPublished(
+		context.Background(),
+		p.ID(),
+		p.Identity(),
+		track.ToProto(),
+	)
 
 	p.pendingTracksLock.Lock()
 	delete(p.pendingPublishingTracks, track.ID())
