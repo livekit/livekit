@@ -127,7 +127,7 @@ func TestRoomJoin(t *testing.T) {
 	t.Run("participant state change is broadcasted to others", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: numParticipants})
 		var changedParticipant types.Participant
-		rm.OnParticipantChanged(func(participant types.LocalParticipant, _pi *livekit.ParticipantInfo) {
+		rm.OnParticipantChanged(func(participant types.LocalParticipant) {
 			changedParticipant = participant
 		})
 		participants := rm.GetParticipants()
