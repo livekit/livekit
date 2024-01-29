@@ -84,6 +84,10 @@ func (v ProtocolVersion) SupportsAsyncRoomID() bool {
 	return v > 11
 }
 
+func (v ProtocolVersion) SupportsSIDUpdates() bool {
+	return v > 11
+}
+
 func (v ProtocolVersion) SupportsRegionsInLeaveRequest() bool {
 	return v > 12
 }

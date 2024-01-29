@@ -271,7 +271,7 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 		immediate bool
 		existing  *livekit.ParticipantInfo
 		expected  []*livekit.ParticipantInfo
-		validate  func(t *testing.T, rm *Room, updates []*livekit.ParticipantInfo)
+		validate  func(t *testing.T, rm *Room, updates []types.PendingParticipantUpdate)
 	}{
 		{
 			name:     "publisher updates are immediate",
@@ -286,7 +286,7 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 			name:     "last version is enqueued",
 			pi:       subscriber1v2,
 			existing: subscriber1v1,
-			validate: func(t *testing.T, rm *Room, _ []*livekit.ParticipantInfo) {
+			validate: func(t *testing.T, rm *Room, _ []types.PendingParticipantUpdate) {
 				queued := rm.batchedUpdates[livekit.ParticipantIdentity(identity)]
 				require.NotNil(t, queued)
 				requirePIEquals(t, subscriber1v2, queued)
@@ -298,7 +298,7 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 			existing:  subscriber1v1,
 			immediate: true,
 			expected:  []*livekit.ParticipantInfo{subscriber1v2},
-			validate: func(t *testing.T, rm *Room, _ []*livekit.ParticipantInfo) {
+			validate: func(t *testing.T, rm *Room, _ []types.PendingParticipantUpdate) {
 				queued := rm.batchedUpdates[livekit.ParticipantIdentity(identity)]
 				require.Nil(t, queued)
 			},
@@ -307,7 +307,7 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 			name:     "out of order updates are rejected",
 			pi:       subscriber1v1,
 			existing: subscriber1v2,
-			validate: func(t *testing.T, rm *Room, updates []*livekit.ParticipantInfo) {
+			validate: func(t *testing.T, rm *Room, _ []types.PendingParticipantUpdate) {
 				queued := rm.batchedUpdates[livekit.ParticipantIdentity(identity)]
 				requirePIEquals(t, subscriber1v2, queued)
 			},
@@ -331,7 +331,7 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 			pi:       publisher1v2,
 			existing: subscriber1v1,
 			expected: []*livekit.ParticipantInfo{publisher1v2},
-			validate: func(t *testing.T, rm *Room, updates []*livekit.ParticipantInfo) {
+			validate: func(t *testing.T, rm *Room, _ []types.PendingParticipantUpdate) {
 				require.Empty(t, rm.batchedUpdates)
 			},
 		},
@@ -347,7 +347,7 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 			updates := rm.pushAndDequeueUpdates(tc.pi, tc.immediate)
 			require.Equal(t, len(tc.expected), len(updates))
 			for i, item := range tc.expected {
-				requirePIEquals(t, item, updates[i])
+				requirePIEquals(t, item, updates[i].Info)
 			}
 
 			if tc.validate != nil {

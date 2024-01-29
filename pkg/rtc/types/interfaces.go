@@ -282,7 +282,6 @@ type Participant interface {
 	UpdateSubscriptionPermission(
 		subscriptionPermission *livekit.SubscriptionPermission,
 		timedVersion utils.TimedVersion,
-		resolverByIdentity func(participantIdentity livekit.ParticipantIdentity) LocalParticipant,
 		resolverBySid func(participantID livekit.ParticipantID) LocalParticipant,
 	) error
 	UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error
@@ -368,7 +367,7 @@ type LocalParticipant interface {
 
 	// server sent messages
 	SendJoinResponse(joinResponse *livekit.JoinResponse) error
-	SendParticipantUpdate(participants []*livekit.ParticipantInfo) error
+	SendParticipantUpdate(participants []PendingParticipantUpdate) error
 	SendSpeakerUpdate(speakers []*livekit.SpeakerInfo, force bool) error
 	SendDataPacket(packet *livekit.DataPacket, data []byte) error
 	SendRoomUpdate(room *livekit.Room) error
@@ -424,6 +423,13 @@ type LocalParticipant interface {
 	GetTrafficLoad() *TrafficLoad
 
 	SetRegionSettings(regionSettings *livekit.RegionSettings)
+}
+
+// PendingParticipantUpdate holds a pending ParticipantInfo to be sent to clients
+type PendingParticipantUpdate struct {
+	Info             *livekit.ParticipantInfo
+	DisconnectReason livekit.DisconnectReason
+	PreviousID       livekit.ParticipantID
 }
 
 // Room is a container of participants, and can provide room-level actions

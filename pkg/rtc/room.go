@@ -65,7 +65,6 @@ var (
 
 type broadcastOptions struct {
 	skipSource bool
-	immediate  bool
 }
 
 type disconnectSignalOnResumeNoMessages struct {
@@ -694,7 +693,7 @@ func (r *Room) SyncState(participant types.LocalParticipant, state *livekit.Sync
 }
 
 func (r *Room) UpdateSubscriptionPermission(participant types.LocalParticipant, subscriptionPermission *livekit.SubscriptionPermission) error {
-	if err := participant.UpdateSubscriptionPermission(subscriptionPermission, utils.TimedVersion{}, r.GetParticipant, r.GetParticipantByID); err != nil {
+	if err := participant.UpdateSubscriptionPermission(subscriptionPermission, utils.TimedVersion{}, r.GetParticipantByID); err != nil {
 		return err
 	}
 	for _, track := range participant.GetPublishedTracks() {
@@ -910,16 +909,16 @@ func (r *Room) SimulateScenario(participant types.LocalParticipant, simulateScen
 	return nil
 }
 
-func (r *Room) getOtherParticipantInfo(identity livekit.ParticipantIdentity) []*livekit.ParticipantInfo {
+func (r *Room) getOtherParticipantInfo(identity livekit.ParticipantIdentity) []types.PendingParticipantUpdate {
 	participants := r.GetParticipants()
-	pi := make([]*livekit.ParticipantInfo, 0, len(participants))
+	pus := make([]types.PendingParticipantUpdate, 0, len(participants))
 	for _, p := range participants {
 		if !p.Hidden() && p.Identity() != identity {
-			pi = append(pi, p.ToProto())
+			pus = append(pus, types.PendingParticipantUpdate{Info: p.ToProto()})
 		}
 	}
 
-	return pi
+	return pus
 }
 
 // checks if participant should be autosubscribed to new tracks, assumes lock is already acquired
@@ -1061,7 +1060,7 @@ func (r *Room) onTrackUnpublished(p types.LocalParticipant, track types.MediaTra
 func (r *Room) onParticipantUpdate(p types.LocalParticipant) {
 	r.protoProxy.MarkDirty(false)
 	// immediately notify when permissions or metadata changed
-	r.broadcastParticipantState(p, broadcastOptions{immediate: true})
+	r.broadcastParticipantState(p, broadcastOptions{})
 	if r.onParticipantChanged != nil {
 		r.onParticipantChanged(p)
 	}
@@ -1104,7 +1103,7 @@ func (r *Room) broadcastParticipantState(p types.LocalParticipant, opts broadcas
 	if p.Hidden() {
 		if !opts.skipSource {
 			// send update only to hidden participant
-			err := p.SendParticipantUpdate([]*livekit.ParticipantInfo{pi})
+			err := p.SendParticipantUpdate([]types.PendingParticipantUpdate{{Info: pi}})
 			if err != nil {
 				r.Logger.Errorw("could not send update to participant", err,
 					"participant", p.Identity(), "pID", p.ID())
@@ -1113,11 +1112,11 @@ func (r *Room) broadcastParticipantState(p types.LocalParticipant, opts broadcas
 		return
 	}
 
-	updates := r.pushAndDequeueUpdates(pi, opts.immediate)
+	updates := r.pushAndDequeueUpdates(pi)
 	r.sendParticipantUpdates(updates)
 }
 
-func (r *Room) sendParticipantUpdates(updates []*livekit.ParticipantInfo) {
+func (r *Room) sendParticipantUpdates(updates []types.PendingParticipantUpdate) {
 	if len(updates) == 0 {
 		return
 	}
@@ -1172,56 +1171,16 @@ func (r *Room) sendSpeakerChanges(speakers []*livekit.SpeakerInfo) {
 // * subscriber-only updates will be queued for batch updates
 // * publisher & immediate updates will be returned without queuing
 // * when the SID changes, it will return both updates, with the earlier participant set to disconnected
-func (r *Room) pushAndDequeueUpdates(pi *livekit.ParticipantInfo, isImmediate bool) []*livekit.ParticipantInfo {
+func (r *Room) pushAndDequeueUpdates(pi *livekit.ParticipantInfo) []types.PendingParticipantUpdate {
 	r.batchedUpdatesMu.Lock()
 	defer r.batchedUpdatesMu.Unlock()
 
-	var updates []*livekit.ParticipantInfo
-	identity := livekit.ParticipantIdentity(pi.Identity)
-	existing := r.batchedUpdates[identity]
-	shouldSend := isImmediate || pi.IsPublisher
-
-	if existing != nil {
-		if pi.Sid == existing.Sid {
-			// same participant session
-			if pi.Version < existing.Version {
-				// out of order update
-				return nil
-			}
-		} else {
-			// different participant sessions
-			if existing.JoinedAt < pi.JoinedAt {
-				// existing is older, synthesize a DISCONNECT for older and
-				// send immediately along with newer session to signal switch
-				shouldSend = true
-				existing.State = livekit.ParticipantInfo_DISCONNECTED
-				updates = append(updates, existing)
-			} else {
-				// older session update, newer session has already become active, so nothing to do
-				return nil
-			}
-		}
-	} else {
-		ep := r.GetParticipant(identity)
-		if ep != nil {
-			epi := ep.ToProto()
-			if epi.JoinedAt > pi.JoinedAt {
-				// older session update, newer session has already become active, so nothing to do
-				return nil
-			}
-		}
+	getParticipant := func(identity livekit.ParticipantIdentity) types.Participant {
+		p := r.GetParticipant(identity)
+		return p
 	}
 
-	if shouldSend {
-		// include any queued update, and return
-		delete(r.batchedUpdates, identity)
-		updates = append(updates, pi)
-	} else {
-		// enqueue for batch
-		r.batchedUpdates[identity] = pi
-	}
-
-	return updates
+	return PushAndDequeueUpdates(r.batchedUpdates, getParticipant, pi)
 }
 
 func (r *Room) updateProto() *livekit.Room {
@@ -1266,9 +1225,9 @@ func (r *Room) changeUpdateWorker() {
 				continue
 			}
 
-			updates := make([]*livekit.ParticipantInfo, 0, len(updatesMap))
+			updates := make([]types.PendingParticipantUpdate, 0, len(updatesMap))
 			for _, pi := range updatesMap {
-				updates = append(updates, pi)
+				updates = append(updates, types.PendingParticipantUpdate{Info: pi})
 			}
 			r.sendParticipantUpdates(updates)
 		}
@@ -1450,6 +1409,63 @@ func (r *Room) DebugInfo() map[string]interface{} {
 	info["Participants"] = participantInfo
 
 	return info
+}
+
+func PushAndDequeueUpdates(
+	updatesMap map[livekit.ParticipantIdentity]*livekit.ParticipantInfo,
+	participantGetter func(livekit.ParticipantIdentity) types.Participant,
+	pu types.PendingParticipantUpdate,
+) []types.PendingParticipantUpdate {
+	var updates []types.PendingParticipantUpdate
+	pi := pu.Info
+	identity := livekit.ParticipantIdentity(pi.Identity)
+	existing := updatesMap[identity]
+	shouldSend := pi.IsPublisher
+
+	if existing != nil {
+		if pi.Sid == existing.Sid {
+			// same participant session
+			if pi.Version < existing.Version {
+				// out of order update
+				return nil
+			}
+		} else {
+			// different participant sessions
+			if existing.JoinedAt < pi.JoinedAt {
+				// existing is older, synthesize a DISCONNECT for older and
+				// send immediately along with newer session to signal switch
+				shouldSend = false
+				existing.State = livekit.ParticipantInfo_DISCONNECTED
+				updates = append(updates, types.PendingParticipantUpdate{
+					Info:              existing,
+					PossibleSIDChange: true,
+				})
+			} else {
+				// older session update, newer session has already become active, so nothing to do
+				return nil
+			}
+		}
+	} else {
+		ep := participantGetter(identity)
+		if ep != nil {
+			epi := ep.ToProto()
+			if epi.JoinedAt > pi.JoinedAt {
+				// older session update, newer session has already become active, so nothing to do
+				return nil
+			}
+		}
+	}
+
+	if shouldSend {
+		// include any queued update, and return
+		delete(updatesMap, identity)
+		updates = append(updates, types.PendingParticipantUpdate{Info: pi})
+	} else {
+		// enqueue for batch
+		updatesMap[identity] = pi
+	}
+
+	return updates
 }
 
 func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, dp *livekit.DataPacket, logger logger.Logger) {

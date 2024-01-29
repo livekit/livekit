@@ -230,8 +230,8 @@ func TestOutOfOrderUpdates(t *testing.T) {
 	require.Greater(t, pi2.Version, pi1.Version)
 
 	// send the second update first
-	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{pi2}))
-	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{pi1}))
+	require.NoError(t, p.SendParticipantUpdate([]types.PendingParticipantUpdate{{Info: pi2}}))
+	require.NoError(t, p.SendParticipantUpdate([]types.PendingParticipantUpdate{{Info: pi1}}))
 
 	// only sent once, and it's the earlier message
 	require.Equal(t, 1, sink.WriteMessageCallCount())

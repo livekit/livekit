@@ -179,7 +179,7 @@ type ParticipantImpl struct {
 	requireBroadcast bool
 	// queued participant updates before join response is sent
 	// guarded by updateLock
-	queuedUpdates []*livekit.ParticipantInfo
+	queuedUpdates []types.PendingParticipantUpdate
 	// cache of recently sent updates, to ensuring ordering by version
 	// guarded by updateLock
 	updateCache *lru.Cache[livekit.ParticipantID, participantUpdateInfo]
@@ -1077,7 +1077,9 @@ func (p *ParticipantImpl) VerifySubscribeParticipantInfo(pID livekit.Participant
 
 	if f := p.params.GetParticipantInfo; f != nil {
 		if info := f(pID); info != nil {
-			_ = p.SendParticipantUpdate([]*livekit.ParticipantInfo{info})
+			_ = p.SendParticipantUpdate([]types.PendingParticipantUpdate{
+				{Info: info},
+			})
 		}
 	}
 }

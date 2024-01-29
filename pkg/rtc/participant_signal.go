@@ -79,7 +79,7 @@ func (p *ParticipantImpl) SendJoinResponse(joinResponse *livekit.JoinResponse) e
 	return nil
 }
 
-func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.ParticipantInfo) error {
+func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []types.PendingParticipantUpdate) error {
 	p.updateLock.Lock()
 	if p.IsDisconnected() {
 		p.updateLock.Unlock()
@@ -93,30 +93,34 @@ func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.
 		return nil
 	}
 	validUpdates := make([]*livekit.ParticipantInfo, 0, len(participantsToUpdate))
-	for _, pi := range participantsToUpdate {
-		isValid := true
+	for _, pu := range participantsToUpdate {
+		pi := pu.Info
 		pID := livekit.ParticipantID(pi.Sid)
+		if pu.MaxProtocolVersion > 0 && p.ProtocolVersion() > pu.MaxProtocolVersion {
+			p.params.Logger.Infow("skipping participant update due to protocol version",
+				"otherParticipant", pi.Identity, "otherPID", pi.Sid, "version", pi.Version, "maxVersion", pu.MaxProtocolVersion)
+			continue
+		}
 		if lastVersion, ok := p.updateCache.Get(pID); ok {
 			// this is a message delivered out of order, a more recent version of the message had already been
 			// sent.
 			if pi.Version < lastVersion.version {
 				p.params.Logger.Debugw("skipping outdated participant update", "otherParticipant", pi.Identity, "otherPID", pi.Sid, "version", pi.Version, "lastVersion", lastVersion)
-				isValid = false
+				continue
 			}
 		}
 		if pi.Permission != nil && pi.Permission.Hidden && pi.Sid != string(p.params.SID) {
 			p.params.Logger.Debugw("skipping hidden participant update", "otherParticipant", pi.Identity)
-			isValid = false
+			continue
 		}
-		if isValid {
-			p.updateCache.Add(pID, participantUpdateInfo{
-				identity:  livekit.ParticipantIdentity(pi.Identity),
-				version:   pi.Version,
-				state:     pi.State,
-				updatedAt: time.Now(),
-			})
-			validUpdates = append(validUpdates, pi)
-		}
+		p.params.Logger.Infow("queuing valid participant update", "otherParticipant", pi.Identity, "sid", pi.Sid, "state", pi.State, "maxVersion", pu.MaxProtocolVersion)
+		p.updateCache.Add(pID, participantUpdateInfo{
+			identity:  livekit.ParticipantIdentity(pi.Identity),
+			version:   pi.Version,
+			state:     pi.State,
+			updatedAt: time.Now(),
+		})
+		validUpdates = append(validUpdates, pi)
 	}
 	p.updateLock.Unlock()
 
