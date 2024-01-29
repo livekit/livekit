@@ -121,7 +121,7 @@ func TestRoomJoin(t *testing.T) {
 
 			numTracks += len(op.GetPublishedTracks())
 		}
-		require.Eventually(t, func() bool { return p.SubscribeToTrackCallCount() == numTracks }, 5*time.Second, 10*time.Millisecond)
+		require.Equal(t, numTracks, p.SubscribeToTrackCallCount())
 	})
 
 	t.Run("participant state change is broadcasted to others", func(t *testing.T) {
@@ -217,7 +217,7 @@ func TestParticipantUpdate(t *testing.T) {
 					expected += 1
 				}
 				fp := p.(*typesfakes.FakeLocalParticipant)
-				require.Eventually(t, func() bool { return fp.SendParticipantUpdateCallCount() == expected }, 5*time.Second, 10*time.Millisecond)
+				require.Equal(t, expected, fp.SendParticipantUpdateCallCount())
 			}
 		})
 	}
@@ -423,8 +423,8 @@ func TestNewTrack(t *testing.T) {
 		require.NotNil(t, trackCB)
 		trackCB(pub, track)
 		// only p1 should've been subscribed to
-		require.Eventually(t, func() bool { return p1.SubscribeToTrackCallCount() == 1 }, 5*time.Second, 10*time.Millisecond)
 		require.Equal(t, 0, p0.SubscribeToTrackCallCount())
+		require.Equal(t, 1, p1.SubscribeToTrackCallCount())
 	})
 }
 
