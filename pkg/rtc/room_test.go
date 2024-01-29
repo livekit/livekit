@@ -121,7 +121,7 @@ func TestRoomJoin(t *testing.T) {
 
 			numTracks += len(op.GetPublishedTracks())
 		}
-		require.Equal(t, numTracks, p.SubscribeToTrackCallCount)
+		require.Equal(t, numTracks, p.SubscribeToTrackCallCount())
 	})
 
 	t.Run("participant state change is broadcasted to others", func(t *testing.T) {
