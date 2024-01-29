@@ -428,19 +428,11 @@ func (p *RelayedParticipantImpl) RemoveTrackFromSubscriber(sender *webrtc.RTPSen
 	panic("implement me")
 }
 
-func (p *RelayedParticipantImpl) SubscribeToTrack(trackID livekit.TrackID) {
-	// TODO implement me
-	panic("implement me")
-}
+func (p *RelayedParticipantImpl) SubscribeToTrack(trackID livekit.TrackID) {}
 
-func (p *RelayedParticipantImpl) UnsubscribeFromTrack(trackID livekit.TrackID) {
-	// TODO implement me
-	panic("implement me")
-}
+func (p *RelayedParticipantImpl) UnsubscribeFromTrack(trackID livekit.TrackID) {}
 
 func (p *RelayedParticipantImpl) UpdateSubscribedTrackSettings(trackID livekit.TrackID, settings *livekit.UpdateTrackSettings) {
-	// TODO implement me
-	panic("implement me")
 }
 
 func (p *RelayedParticipantImpl) GetSubscribedTracks() []types.SubscribedTrack {
