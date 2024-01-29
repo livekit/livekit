@@ -577,10 +577,10 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 		}
 	})
 
-	newRoom.OnParticipantChanged(func(p types.LocalParticipant) {
-		if !p.IsDisconnected() {
-			if err := r.roomStore.StoreParticipant(ctx, roomName, p.ToProto()); err != nil {
-				newRoom.Logger.Errorw("could not handle participant change", err)
+	newRoom.OnParticipantChanged(func(p types.LocalParticipant, pi *livekit.ParticipantInfo) {
+		if pi.State != livekit.ParticipantInfo_DISCONNECTED {
+			if err := r.roomStore.StoreParticipant(ctx, roomName, pi); err != nil {
+				p.GetLogger().Errorw("could not handle participant change", err)
 			}
 		}
 	})
