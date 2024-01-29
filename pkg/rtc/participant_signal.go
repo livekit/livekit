@@ -312,7 +312,12 @@ func (p *ParticipantImpl) CloseSignalConnection(reason types.SignallingCloseReas
 	}
 }
 
-func (p *ParticipantImpl) sendLeaveRequest(reason types.ParticipantCloseReason, isExpectedToResume bool, isExpectedToReconnect bool) {
+func (p *ParticipantImpl) sendLeaveRequest(
+	reason types.ParticipantCloseReason,
+	isExpectedToResume bool,
+	isExpectedToReconnect bool,
+	sendOnlyIfSupportingLeaveRequestWithAction bool,
+) error {
 	var leave *livekit.LeaveRequest
 	if p.ProtocolVersion().SupportsRegionsInLeaveRequest() {
 		leave = &livekit.LeaveRequest{
@@ -331,14 +336,20 @@ func (p *ParticipantImpl) sendLeaveRequest(reason types.ParticipantCloseReason, 
 			leave.Regions = p.params.GetRegionSettings(p.params.ClientInfo.Address)
 		}
 	} else {
-		leave = &livekit.LeaveRequest{
-			CanReconnect: isExpectedToReconnect,
-			Reason:       reason.ToDisconnectReason(),
+		if !sendOnlyIfSupportingLeaveRequestWithAction {
+			leave = &livekit.LeaveRequest{
+				CanReconnect: isExpectedToReconnect,
+				Reason:       reason.ToDisconnectReason(),
+			}
 		}
 	}
-	_ = p.writeMessage(&livekit.SignalResponse{
-		Message: &livekit.SignalResponse_Leave{
-			Leave: leave,
-		},
-	})
+	if leave != nil {
+		return p.writeMessage(&livekit.SignalResponse{
+			Message: &livekit.SignalResponse_Leave{
+				Leave: leave,
+			},
+		})
+	}
+
+	return nil
 }

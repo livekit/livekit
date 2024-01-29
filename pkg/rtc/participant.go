@@ -766,7 +766,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	p.clearMigrationTimer()
 
 	if sendLeave {
-		p.sendLeaveRequest(reason, isExpectedToResume, false)
+		p.sendLeaveRequest(reason, isExpectedToResume, false, false)
 	}
 
 	if p.supervisor != nil {
@@ -842,7 +842,7 @@ func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
 		onStart()
 	}
 
-	p.sendLeaveRequest(types.ParticipantCloseReasonMigrationRequested, true, false)
+	p.sendLeaveRequest(types.ParticipantCloseReasonMigrationRequested, true, false, true)
 	p.CloseSignalConnection(types.SignallingCloseReasonMigration)
 
 	//
@@ -1506,7 +1506,7 @@ func (p *ParticipantImpl) setupDisconnectTimer() {
 
 func (p *ParticipantImpl) onAnyTransportFailed() {
 	// clients support resuming of connections when websocket becomes disconnected
-	p.sendLeaveRequest(types.ParticipantCloseReasonPeerConnectionDisconnected, true, false)
+	p.sendLeaveRequest(types.ParticipantCloseReasonPeerConnectionDisconnected, true, false, true)
 	p.CloseSignalConnection(types.SignallingCloseReasonTransportFailure)
 
 	// detect when participant has actually left.
@@ -2329,7 +2329,7 @@ func (p *ParticipantImpl) GetCachedDownTrack(trackID livekit.TrackID) (*webrtc.R
 }
 
 func (p *ParticipantImpl) IssueFullReconnect(reason types.ParticipantCloseReason) {
-	p.sendLeaveRequest(reason, false, true)
+	p.sendLeaveRequest(reason, false, true, false)
 
 	scr := types.SignallingCloseReasonUnknown
 	switch reason {
