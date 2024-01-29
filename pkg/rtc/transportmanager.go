@@ -29,10 +29,10 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/rtc/transport"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
-	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -46,6 +46,25 @@ const (
 	// if in last 32 times RR, the unstable report count over this threshold, the connection is unstable
 	udpLossUnstableCountThreshold = 20
 )
+
+type TransportManagerTransportHandler struct {
+	transport.Handler
+	t *TransportManager
+}
+
+func (h TransportManagerTransportHandler) OnFailed(isShortLived bool) {
+	h.t.handleConnectionFailed(isShortLived)
+	h.Handler.OnFailed(isShortLived)
+}
+
+type TransportManagerPublisherTransportHandler struct {
+	TransportManagerTransportHandler
+}
+
+func (h TransportManagerPublisherTransportHandler) OnAnswer(sd webrtc.SessionDescription) error {
+	h.t.lastPublisherAnswer.Store(sd)
+	return h.Handler.OnAnswer(sd)
+}
 
 type TransportManagerParams struct {
 	Identity                     livekit.ParticipantIdentity
@@ -66,6 +85,8 @@ type TransportManagerParams struct {
 	AllowPlayoutDelay            bool
 	DataChannelMaxBufferedAmount uint64
 	Logger                       logger.Logger
+	PublisherHandler             transport.Handler
+	SubscriberHandler            transport.Handler
 }
 
 type TransportManager struct {
@@ -90,11 +111,6 @@ type TransportManager struct {
 	mediaLossProxy       *MediaLossProxy
 	udpLossUnstableCount uint32
 	signalingRTT, udpRTT uint32
-
-	onPublisherInitialConnected        func()
-	onSubscriberInitialConnected       func()
-	onPrimaryTransportInitialConnected func()
-	onAnyTransportFailed               func()
 
 	onICEConfigChanged func(iceConfig *livekit.ICEConfig)
 }
@@ -122,25 +138,12 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		SimTracks:               params.SimTracks,
 		ClientInfo:              params.ClientInfo,
 		Transport:               livekit.SignalTarget_PUBLISHER,
+		Handler:                 TransportManagerPublisherTransportHandler{TransportManagerTransportHandler{params.PublisherHandler, t}},
 	})
 	if err != nil {
 		return nil, err
 	}
 	t.publisher = publisher
-	t.publisher.OnInitialConnected(func() {
-		if t.onPublisherInitialConnected != nil {
-			t.onPublisherInitialConnected()
-		}
-		if !t.params.SubscriberAsPrimary && t.onPrimaryTransportInitialConnected != nil {
-			t.onPrimaryTransportInitialConnected()
-		}
-	})
-	t.publisher.OnFailed(func(isShortLived bool) {
-		t.handleConnectionFailed(isShortLived)
-		if t.onAnyTransportFailed != nil {
-			t.onAnyTransportFailed()
-		}
-	})
 
 	subscriber, err := NewPCTransport(TransportParams{
 		ParticipantID:                params.SID,
@@ -157,25 +160,12 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		AllowPlayoutDelay:            params.AllowPlayoutDelay,
 		DataChannelMaxBufferedAmount: params.DataChannelMaxBufferedAmount,
 		Transport:                    livekit.SignalTarget_SUBSCRIBER,
+		Handler:                      TransportManagerTransportHandler{params.SubscriberHandler, t},
 	})
 	if err != nil {
 		return nil, err
 	}
 	t.subscriber = subscriber
-	t.subscriber.OnInitialConnected(func() {
-		if t.onSubscriberInitialConnected != nil {
-			t.onSubscriberInitialConnected()
-		}
-		if t.params.SubscriberAsPrimary && t.onPrimaryTransportInitialConnected != nil {
-			t.onPrimaryTransportInitialConnected()
-		}
-	})
-	t.subscriber.OnFailed(func(isShortLived bool) {
-		t.handleConnectionFailed(isShortLived)
-		if t.onAnyTransportFailed != nil {
-			t.onAnyTransportFailed()
-		}
-	})
 	if !t.params.Migration {
 		if err := t.createDataChannelsForSubscriber(nil); err != nil {
 			return nil, err
@@ -193,25 +183,6 @@ func (t *TransportManager) Close() {
 
 func (t *TransportManager) SubscriberClose() {
 	t.subscriber.Close()
-}
-
-func (t *TransportManager) OnPublisherICECandidate(f func(c *webrtc.ICECandidate) error) {
-	t.publisher.OnICECandidate(f)
-}
-
-func (t *TransportManager) OnPublisherAnswer(f func(answer webrtc.SessionDescription) error) {
-	t.publisher.OnAnswer(func(sd webrtc.SessionDescription) error {
-		t.lastPublisherAnswer.Store(sd)
-		return f(sd)
-	})
-}
-
-func (t *TransportManager) OnPublisherInitialConnected(f func()) {
-	t.onPublisherInitialConnected = f
-}
-
-func (t *TransportManager) OnPublisherTrack(f func(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver)) {
-	t.publisher.OnTrack(f)
 }
 
 func (t *TransportManager) HasPublisherEverConnected() bool {
@@ -232,22 +203,6 @@ func (t *TransportManager) GetPublisherRTPReceiver(mid string) *webrtc.RTPReceiv
 
 func (t *TransportManager) WritePublisherRTCP(pkts []rtcp.Packet) error {
 	return t.publisher.WriteRTCP(pkts)
-}
-
-func (t *TransportManager) OnSubscriberICECandidate(f func(c *webrtc.ICECandidate) error) {
-	t.subscriber.OnICECandidate(f)
-}
-
-func (t *TransportManager) OnSubscriberOffer(f func(offer webrtc.SessionDescription) error) {
-	t.subscriber.OnOffer(f)
-}
-
-func (t *TransportManager) OnSubscriberInitialConnected(f func()) {
-	t.onSubscriberInitialConnected = f
-}
-
-func (t *TransportManager) OnSubscriberStreamStateChange(f func(update *streamallocator.StreamStateUpdate) error) {
-	t.subscriber.OnStreamStateChange(f)
 }
 
 func (t *TransportManager) HasSubscriberEverConnected() bool {
@@ -274,34 +229,12 @@ func (t *TransportManager) GetSubscriberPacer() pacer.Pacer {
 	return t.subscriber.GetPacer()
 }
 
-func (t *TransportManager) OnPrimaryTransportInitialConnected(f func()) {
-	t.onPrimaryTransportInitialConnected = f
-}
-
-func (t *TransportManager) OnPrimaryTransportFullyEstablished(f func()) {
-	t.getTransport(true).OnFullyEstablished(f)
-}
-
-func (t *TransportManager) OnAnyTransportFailed(f func()) {
-	t.onAnyTransportFailed = f
-}
-
-func (t *TransportManager) OnAnyTransportNegotiationFailed(f func()) {
-	t.publisher.OnNegotiationFailed(f)
-	t.subscriber.OnNegotiationFailed(f)
-}
-
 func (t *TransportManager) AddSubscribedTrack(subTrack types.SubscribedTrack) {
 	t.subscriber.AddTrackToStreamAllocator(subTrack)
 }
 
 func (t *TransportManager) RemoveSubscribedTrack(subTrack types.SubscribedTrack) {
 	t.subscriber.RemoveTrackFromStreamAllocator(subTrack)
-}
-
-func (t *TransportManager) OnDataMessage(f func(kind livekit.DataPacket_Kind, data []byte)) {
-	// upstream data always comes in via publisher peer connection irrespective of which is primary
-	t.publisher.OnDataPacket(f)
 }
 
 func (t *TransportManager) SendDataPacket(dp *livekit.DataPacket, data []byte) error {
@@ -736,10 +669,7 @@ func (t *TransportManager) onMediaLossUpdate(loss uint8) {
 				t.lock.Unlock()
 
 				t.params.Logger.Infow("udp connection unstable, switch to tcp", "signalingRTT", t.signalingRTT)
-				t.handleConnectionFailed(true)
-				if t.onAnyTransportFailed != nil {
-					t.onAnyTransportFailed()
-				}
+				t.params.SubscriberHandler.OnFailed(true)
 				return
 			}
 		}
