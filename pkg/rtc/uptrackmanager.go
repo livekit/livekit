@@ -62,9 +62,6 @@ func NewUpTrackManager(params UpTrackManagerParams) *UpTrackManager {
 	}
 }
 
-func (u *UpTrackManager) Start() {
-}
-
 func (u *UpTrackManager) Close(willBeResumed bool) {
 	u.lock.Lock()
 	u.closed = true

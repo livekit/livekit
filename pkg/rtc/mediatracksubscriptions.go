@@ -196,7 +196,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	})
 
 	downTrack.AddReceiverReportListener(func(dt *sfu.DownTrack, report *rtcp.ReceiverReport) {
-		sub.OnReceiverReport(dt, report)
+		sub.HandleReceiverReport(dt, report)
 	})
 
 	var transceiver *webrtc.RTPTransceiver

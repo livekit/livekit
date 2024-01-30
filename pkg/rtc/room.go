@@ -321,7 +321,6 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 	if r.participants[participant.Identity()] != nil {
 		return ErrAlreadyJoined
 	}
-
 	if r.protoRoom.MaxParticipants > 0 && !participant.IsRecorder() {
 		numParticipants := uint32(0)
 		for _, p := range r.participants {
@@ -338,26 +337,20 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 		r.joinedAt.Store(time.Now().Unix())
 	}
 
-	// it's important to set this before connection, we don't want to miss out on any published tracks
-	participant.OnTrackPublished(r.onTrackPublished)
-	participant.OnStateChange(func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State) {
+	participant.OnStateChange(func(p types.LocalParticipant, state livekit.ParticipantInfo_State) {
 		if r.onParticipantChanged != nil {
-			r.onParticipantChanged(participant)
+			r.onParticipantChanged(p)
 		}
 		r.broadcastParticipantState(p, broadcastOptions{skipSource: true})
 
-		state := p.State()
 		if state == livekit.ParticipantInfo_ACTIVE {
 			// subscribe participant to existing published tracks
 			r.subscribeToExistingTracks(p)
 
-			// start the workers once connectivity is established
-			p.Start()
-
 			meta := &livekit.AnalyticsClientMeta{
 				ClientConnectTime: uint32(time.Since(p.ConnectedAt()).Milliseconds()),
 			}
-			cds := participant.GetICEConnectionDetails()
+			cds := p.GetICEConnectionDetails()
 			for _, cd := range cds {
 				if cd.Type != types.ICEConnectionTypeUnknown {
 					meta.ConnectionType = string(cd.Type)
@@ -377,6 +370,8 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 			go r.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonStateDisconnected)
 		}
 	})
+	// it's important to set this before connection, we don't want to miss out on any published tracks
+	participant.OnTrackPublished(r.onTrackPublished)
 	participant.OnTrackUpdated(r.onTrackUpdated)
 	participant.OnTrackUnpublished(r.onTrackUnpublished)
 	participant.OnParticipantUpdate(r.onParticipantUpdate)
@@ -414,8 +409,8 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 				},
 			}, true)
 		}
-
 	})
+
 	r.Logger.Debugw("new participant joined",
 		"pID", participant.ID(),
 		"participant", participant.Identity(),
@@ -784,11 +779,14 @@ func (r *Room) Close() {
 	}
 	close(r.closed)
 	r.lock.Unlock()
+
 	r.Logger.Infow("closing room")
 	for _, p := range r.GetParticipants() {
 		_ = p.Close(true, types.ParticipantCloseReasonRoomClose, false)
 	}
+
 	r.protoProxy.Stop()
+
 	if r.onClose != nil {
 		r.onClose()
 	}
@@ -1461,6 +1459,8 @@ func (r *Room) DebugInfo() map[string]interface{} {
 
 	return info
 }
+
+// ------------------------------------------------------------
 
 func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, dp *livekit.DataPacket, logger logger.Logger) {
 	dest := dp.GetUser().GetDestinationSids()

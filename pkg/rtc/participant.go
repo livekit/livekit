@@ -36,6 +36,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/supervisor"
+	"github.com/livekit/livekit-server/pkg/rtc/transport"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -119,6 +120,7 @@ type ParticipantParams struct {
 	AllowUDPUnstableFallback     bool
 	TURNSEnabled                 bool
 	GetParticipantInfo           func(pID livekit.ParticipantID) *livekit.ParticipantInfo
+	GetRegionSettings            func(ip string) *livekit.RegionSettings
 	DisableSupervisor            bool
 	ReconnectOnPublicationError  bool
 	ReconnectOnSubscriptionError bool
@@ -191,7 +193,6 @@ type ParticipantImpl struct {
 	lastRTT      uint32
 
 	lock utils.RWMutex
-	once sync.Once
 
 	dirty        atomic.Bool
 	version      atomic.Uint32
@@ -201,7 +202,7 @@ type ParticipantImpl struct {
 	onTrackPublished     func(types.LocalParticipant, types.MediaTrack)
 	onTrackUpdated       func(types.LocalParticipant, types.MediaTrack)
 	onTrackUnpublished   func(types.LocalParticipant, types.MediaTrack)
-	onStateChange        func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State)
+	onStateChange        func(p types.LocalParticipant, state livekit.ParticipantInfo_State)
 	onMigrateStateChange func(p types.LocalParticipant, migrateState types.MigrateState)
 	onParticipantUpdate  func(types.LocalParticipant)
 	onDataPacket         func(types.LocalParticipant, *livekit.DataPacket)
@@ -221,8 +222,6 @@ type ParticipantImpl struct {
 	// loggers for publisher and subscriber
 	pubLogger logger.Logger
 	subLogger logger.Logger
-
-	regionSettings *livekit.RegionSettings
 }
 
 func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
@@ -525,16 +524,34 @@ func (p *ParticipantImpl) OnTrackPublished(callback func(types.LocalParticipant,
 	p.lock.Unlock()
 }
 
+func (p *ParticipantImpl) getOnTrackPublished() func(types.LocalParticipant, types.MediaTrack) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return p.onTrackPublished
+}
+
 func (p *ParticipantImpl) OnTrackUnpublished(callback func(types.LocalParticipant, types.MediaTrack)) {
 	p.lock.Lock()
 	p.onTrackUnpublished = callback
 	p.lock.Unlock()
 }
 
-func (p *ParticipantImpl) OnStateChange(callback func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State)) {
+func (p *ParticipantImpl) getOnTrackUnpublished() func(types.LocalParticipant, types.MediaTrack) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return p.onTrackUnpublished
+}
+
+func (p *ParticipantImpl) OnStateChange(callback func(p types.LocalParticipant, state livekit.ParticipantInfo_State)) {
 	p.lock.Lock()
 	p.onStateChange = callback
 	p.lock.Unlock()
+}
+
+func (p *ParticipantImpl) getOnStateChange() func(p types.LocalParticipant, state livekit.ParticipantInfo_State) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return p.onStateChange
 }
 
 func (p *ParticipantImpl) OnMigrateStateChange(callback func(p types.LocalParticipant, state types.MigrateState)) {
@@ -546,7 +563,6 @@ func (p *ParticipantImpl) OnMigrateStateChange(callback func(p types.LocalPartic
 func (p *ParticipantImpl) getOnMigrateStateChange() func(p types.LocalParticipant, state types.MigrateState) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
-
 	return p.onMigrateStateChange
 }
 
@@ -554,6 +570,12 @@ func (p *ParticipantImpl) OnTrackUpdated(callback func(types.LocalParticipant, t
 	p.lock.Lock()
 	p.onTrackUpdated = callback
 	p.lock.Unlock()
+}
+
+func (p *ParticipantImpl) getOnTrackUpdated() func(types.LocalParticipant, types.MediaTrack) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return p.onTrackUpdated
 }
 
 func (p *ParticipantImpl) OnParticipantUpdate(callback func(types.LocalParticipant)) {
@@ -728,12 +750,6 @@ func (p *ParticipantImpl) SetMigrateInfo(
 	p.TransportManager.SetMigrateInfo(previousOffer, previousAnswer, dataChannels)
 }
 
-func (p *ParticipantImpl) Start() {
-	p.once.Do(func() {
-		p.UpTrackManager.Start()
-	})
-}
-
 func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseReason, isExpectedToResume bool) error {
 	if p.isClosed.Swap(true) {
 		// already closed
@@ -749,35 +765,8 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	p.clearDisconnectTimer()
 	p.clearMigrationTimer()
 
-	// send leave message
-	var leave *livekit.LeaveRequest
-	if p.ProtocolVersion().SupportsRegionsInLeaveRequest() {
-		leave = &livekit.LeaveRequest{
-			Reason: reason.ToDisconnectReason(),
-		}
-		if isExpectedToResume {
-			leave.Action = livekit.LeaveRequest_RESUME
-		} else {
-			leave.Action = livekit.LeaveRequest_DISCONNECT
-		}
-		// although regions are not needed when resuming OR disconnecting,
-		// send it if available, just in case clients want to fall back.
-		p.lock.RLock()
-		if p.regionSettings != nil {
-			leave.Regions = proto.Clone(p.regionSettings).(*livekit.RegionSettings)
-		}
-		p.lock.RUnlock()
-	} else if sendLeave {
-		leave = &livekit.LeaveRequest{
-			Reason: reason.ToDisconnectReason(),
-		}
-	}
-	if leave != nil {
-		_ = p.writeMessage(&livekit.SignalResponse{
-			Message: &livekit.SignalResponse_Leave{
-				Leave: leave,
-			},
-		})
+	if sendLeave {
+		p.sendLeaveRequest(reason, isExpectedToResume, false, false)
 	}
 
 	if p.supervisor != nil {
@@ -853,6 +842,7 @@ func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
 		onStart()
 	}
 
+	p.sendLeaveRequest(types.ParticipantCloseReasonMigrationRequested, true, false, true)
 	p.CloseSignalConnection(types.SignallingCloseReasonMigration)
 
 	//
@@ -1137,16 +1127,93 @@ func (p *ParticipantImpl) UpdateMediaRTT(rtt uint32) {
 	}
 }
 
+type AnyTransportHandler struct {
+	transport.UnimplementedHandler
+	p *ParticipantImpl
+}
+
+func (h AnyTransportHandler) OnFailed(isShortLived bool) {
+	h.p.onAnyTransportFailed()
+}
+
+func (h AnyTransportHandler) OnNegotiationFailed() {
+	h.p.onAnyTransportNegotiationFailed()
+}
+
+func (h AnyTransportHandler) OnICECandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) error {
+	return h.p.onICECandidate(c, target)
+}
+
+type PublisherTransportHandler struct {
+	AnyTransportHandler
+}
+
+func (h PublisherTransportHandler) OnAnswer(sd webrtc.SessionDescription) error {
+	return h.p.onPublisherAnswer(sd)
+}
+
+func (h PublisherTransportHandler) OnTrack(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
+	h.p.onMediaTrack(track, rtpReceiver)
+}
+
+func (h PublisherTransportHandler) OnInitialConnected() {
+	h.p.onPublisherInitialConnected()
+}
+
+func (h PublisherTransportHandler) OnDataPacket(kind livekit.DataPacket_Kind, data []byte) {
+	h.p.onDataMessage(kind, data)
+}
+
+type SubscriberTransportHandler struct {
+	AnyTransportHandler
+}
+
+func (h SubscriberTransportHandler) OnOffer(sd webrtc.SessionDescription) error {
+	return h.p.onSubscriberOffer(sd)
+}
+
+func (h SubscriberTransportHandler) OnStreamStateChange(update *streamallocator.StreamStateUpdate) error {
+	return h.p.onStreamStateChange(update)
+}
+
+func (h SubscriberTransportHandler) OnInitialConnected() {
+	h.p.onSubscriberInitialConnected()
+}
+
+type PrimaryTransportHandler struct {
+	transport.Handler
+	p *ParticipantImpl
+}
+
+func (h PrimaryTransportHandler) OnInitialConnected() {
+	h.Handler.OnInitialConnected()
+	h.p.onPrimaryTransportInitialConnected()
+}
+
+func (h PrimaryTransportHandler) OnFullyEstablished() {
+	h.p.onPrimaryTransportFullyEstablished()
+}
+
 func (p *ParticipantImpl) setupTransportManager() error {
+	ath := AnyTransportHandler{p: p}
+	var pth transport.Handler = PublisherTransportHandler{ath}
+	var sth transport.Handler = SubscriberTransportHandler{ath}
+
+	subscriberAsPrimary := p.ProtocolVersion().SubscriberAsPrimary() && p.CanSubscribe()
+	if subscriberAsPrimary {
+		sth = PrimaryTransportHandler{sth, p}
+	} else {
+		pth = PrimaryTransportHandler{pth, p}
+	}
+
 	params := TransportManagerParams{
 		Identity: p.params.Identity,
 		SID:      p.params.SID,
 		// primary connection does not change, canSubscribe can change if permission was updated
 		// after the participant has joined
-		SubscriberAsPrimary:          p.ProtocolVersion().SubscriberAsPrimary() && p.CanSubscribe(),
+		SubscriberAsPrimary:          subscriberAsPrimary,
 		Config:                       p.params.Config,
 		ProtocolVersion:              p.params.ProtocolVersion,
-		Telemetry:                    p.params.Telemetry,
 		CongestionControlConfig:      p.params.CongestionControlConfig,
 		EnabledPublishCodecs:         p.enabledPublishCodecs,
 		EnabledSubscribeCodecs:       p.enabledSubscribeCodecs,
@@ -1160,6 +1227,8 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		AllowPlayoutDelay:            p.params.PlayoutDelay.GetEnabled(),
 		DataChannelMaxBufferedAmount: p.params.DataChannelMaxBufferedAmount,
 		Logger:                       p.params.Logger.WithComponent(sutils.ComponentTransport),
+		PublisherHandler:             pth,
+		SubscriberHandler:            sth,
 	}
 	if p.params.SyncStreams && p.params.PlayoutDelay.GetEnabled() && p.params.ClientInfo.isFirefox() {
 		// we will disable playout delay for Firefox if the user is expecting
@@ -1191,27 +1260,6 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		}
 	})
 
-	tm.OnPublisherICECandidate(func(c *webrtc.ICECandidate) error {
-		return p.onICECandidate(c, livekit.SignalTarget_PUBLISHER)
-	})
-	tm.OnPublisherAnswer(p.onPublisherAnswer)
-	tm.OnPublisherTrack(p.onMediaTrack)
-	tm.OnPublisherInitialConnected(p.onPublisherInitialConnected)
-
-	tm.OnSubscriberOffer(p.onSubscriberOffer)
-	tm.OnSubscriberICECandidate(func(c *webrtc.ICECandidate) error {
-		return p.onICECandidate(c, livekit.SignalTarget_SUBSCRIBER)
-	})
-	tm.OnSubscriberInitialConnected(p.onSubscriberInitialConnected)
-	tm.OnSubscriberStreamStateChange(p.onStreamStateChange)
-
-	tm.OnPrimaryTransportInitialConnected(p.onPrimaryTransportInitialConnected)
-	tm.OnPrimaryTransportFullyEstablished(p.onPrimaryTransportFullyEstablished)
-	tm.OnAnyTransportFailed(p.onAnyTransportFailed)
-	tm.OnAnyTransportNegotiationFailed(p.onAnyTransportNegotiationFailed)
-
-	tm.OnDataMessage(p.onDataMessage)
-
 	tm.SetSubscriberAllowPause(p.params.SubscriberAllowPause)
 	p.TransportManager = tm
 	return nil
@@ -1225,12 +1273,8 @@ func (p *ParticipantImpl) setupUpTrackManager() {
 	})
 
 	p.UpTrackManager.OnPublishedTrackUpdated(func(track types.MediaTrack) {
-		p.lock.RLock()
-		onTrackUpdated := p.onTrackUpdated
-		p.lock.RUnlock()
-
 		p.dirty.Store(true)
-		if onTrackUpdated != nil {
+		if onTrackUpdated := p.getOnTrackUpdated(); onTrackUpdated != nil {
 			onTrackUpdated(p, track)
 		}
 	})
@@ -1261,26 +1305,16 @@ func (p *ParticipantImpl) setupParticipantTrafficLoad() {
 }
 
 func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
-	oldState := p.State()
-	if !(p.state.Swap(state) != state) {
+	oldState := p.state.Swap(state).(livekit.ParticipantInfo_State)
+	if oldState == state {
 		return
 	}
 
 	p.params.Logger.Debugw("updating participant state", "state", state.String())
 	p.dirty.Store(true)
 
-	p.lock.RLock()
-	onStateChange := p.onStateChange
-	p.lock.RUnlock()
-	if onStateChange != nil {
-		go func() {
-			defer func() {
-				if r := Recover(p.GetLogger()); r != nil {
-					os.Exit(1)
-				}
-			}()
-			onStateChange(p, oldState)
-		}()
+	if onStateChange := p.getOnStateChange(); onStateChange != nil {
+		go onStateChange(p, state)
 	}
 }
 
@@ -1367,10 +1401,7 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 	)
 
 	if !isNewTrack && !publishedTrack.HasPendingCodec() && p.IsReady() {
-		p.lock.RLock()
-		onTrackUpdated := p.onTrackUpdated
-		p.lock.RUnlock()
-		if onTrackUpdated != nil {
+		if onTrackUpdated := p.getOnTrackUpdated(); onTrackUpdated != nil {
 			onTrackUpdated(p, publishedTrack)
 		}
 	}
@@ -1475,6 +1506,7 @@ func (p *ParticipantImpl) setupDisconnectTimer() {
 
 func (p *ParticipantImpl) onAnyTransportFailed() {
 	// clients support resuming of connections when websocket becomes disconnected
+	p.sendLeaveRequest(types.ParticipantCloseReasonPeerConnectionDisconnected, true, false, true)
 	p.CloseSignalConnection(types.SignallingCloseReasonTransportFailure)
 
 	// detect when participant has actually left.
@@ -2023,10 +2055,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 		if !p.IsClosed() {
 			// unpublished events aren't necessary when participant is closed
 			p.pubLogger.Debugw("track unpublished", "trackID", ti.Sid, "track", logger.Proto(ti))
-			p.lock.RLock()
-			onTrackUnpublished := p.onTrackUnpublished
-			p.lock.RUnlock()
-			if onTrackUnpublished != nil {
+			if onTrackUnpublished := p.getOnTrackUnpublished(); onTrackUnpublished != nil {
 				onTrackUnpublished(p, mt)
 			}
 		}
@@ -2036,10 +2065,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 }
 
 func (p *ParticipantImpl) handleTrackPublished(track types.MediaTrack) {
-	p.lock.RLock()
-	onTrackPublished := p.onTrackPublished
-	p.lock.RUnlock()
-	if onTrackPublished != nil {
+	if onTrackPublished := p.getOnTrackPublished(); onTrackPublished != nil {
 		onTrackPublished(p, track)
 	}
 
@@ -2303,28 +2329,7 @@ func (p *ParticipantImpl) GetCachedDownTrack(trackID livekit.TrackID) (*webrtc.R
 }
 
 func (p *ParticipantImpl) IssueFullReconnect(reason types.ParticipantCloseReason) {
-	var leave *livekit.LeaveRequest
-	if p.ProtocolVersion().SupportsRegionsInLeaveRequest() {
-		leave = &livekit.LeaveRequest{
-			Reason: reason.ToDisconnectReason(),
-			Action: livekit.LeaveRequest_RECONNECT,
-		}
-		p.lock.RLock()
-		if p.regionSettings != nil {
-			leave.Regions = proto.Clone(p.regionSettings).(*livekit.RegionSettings)
-		}
-		p.lock.RUnlock()
-	} else {
-		leave = &livekit.LeaveRequest{
-			CanReconnect: true,
-			Reason:       reason.ToDisconnectReason(),
-		}
-	}
-	_ = p.writeMessage(&livekit.SignalResponse{
-		Message: &livekit.SignalResponse_Leave{
-			Leave: leave,
-		},
-	})
+	p.sendLeaveRequest(reason, false, true, false)
 
 	scr := types.SignallingCloseReasonUnknown
 	switch reason {
@@ -2485,10 +2490,4 @@ func (p *ParticipantImpl) setupEnabledCodecs(publishEnabledCodecs []*livekit.Cod
 		subscribeCodecs = append(subscribeCodecs, c)
 	}
 	p.enabledSubscribeCodecs = subscribeCodecs
-}
-
-func (p *ParticipantImpl) SetRegionSettings(regionSettings *livekit.RegionSettings) {
-	p.lock.Lock()
-	p.regionSettings = proto.Clone(regionSettings).(*livekit.RegionSettings)
-	p.lock.Unlock()
 }

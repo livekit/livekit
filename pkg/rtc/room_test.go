@@ -110,8 +110,7 @@ func TestRoomJoin(t *testing.T) {
 
 		stateChangeCB := p.OnStateChangeArgsForCall(0)
 		require.NotNil(t, stateChangeCB)
-		p.StateReturns(livekit.ParticipantInfo_ACTIVE)
-		stateChangeCB(p, livekit.ParticipantInfo_JOINED)
+		stateChangeCB(p, livekit.ParticipantInfo_ACTIVE)
 
 		// it should become a subscriber when connectivity changes
 		numTracks := 0
@@ -696,10 +695,9 @@ func TestHiddenParticipants(t *testing.T) {
 
 		stateChangeCB := hidden.OnStateChangeArgsForCall(0)
 		require.NotNil(t, stateChangeCB)
-		hidden.StateReturns(livekit.ParticipantInfo_ACTIVE)
-		stateChangeCB(hidden, livekit.ParticipantInfo_JOINED)
+		stateChangeCB(hidden, livekit.ParticipantInfo_ACTIVE)
 
-		require.Equal(t, 2, hidden.SubscribeToTrackCallCount())
+		require.Eventually(t, func() bool { return hidden.SubscribeToTrackCallCount() == 2 }, 5*time.Second, 10*time.Millisecond)
 	})
 }
 

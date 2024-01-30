@@ -39,6 +39,7 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/rtc"
+	"github.com/livekit/livekit-server/pkg/rtc/transport/transportfakes"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 )
 
@@ -199,33 +200,37 @@ func NewRTCClient(conn *websocket.Conn, opts *Options) (*RTCClient, error) {
 	// i. e. the publisher transport on client side has SUBSCRIBER signal target (i. e. publisher is offerer).
 	// Same applies for subscriber transport also
 	//
+	publisherHandler := &transportfakes.FakeHandler{}
 	c.publisher, err = rtc.NewPCTransport(rtc.TransportParams{
 		Config:          &conf,
 		DirectionConfig: conf.Subscriber,
 		EnabledCodecs:   codecs,
 		IsOfferer:       true,
 		IsSendSide:      true,
+		Handler:         publisherHandler,
 	})
 	if err != nil {
 		return nil, err
 	}
+	subscriberHandler := &transportfakes.FakeHandler{}
 	c.subscriber, err = rtc.NewPCTransport(rtc.TransportParams{
 		Config:          &conf,
 		DirectionConfig: conf.Publisher,
 		EnabledCodecs:   codecs,
+		Handler:         subscriberHandler,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	c.publisher.OnICECandidate(func(ic *webrtc.ICECandidate) error {
+	publisherHandler.OnICECandidateCalls(func(ic *webrtc.ICECandidate, t livekit.SignalTarget) error {
 		if ic == nil {
 			return nil
 		}
 		return c.SendIceCandidate(ic, livekit.SignalTarget_PUBLISHER)
 	})
-	c.publisher.OnOffer(c.onOffer)
-	c.publisher.OnFullyEstablished(func() {
+	publisherHandler.OnOfferCalls(c.onOffer)
+	publisherHandler.OnFullyEstablishedCalls(func() {
 		logger.Debugw("publisher fully established", "participant", c.localParticipant.Identity, "pID", c.localParticipant.Sid)
 		c.publisherFullyEstablished.Store(true)
 	})
@@ -245,17 +250,17 @@ func NewRTCClient(conn *websocket.Conn, opts *Options) (*RTCClient, error) {
 		return nil, err
 	}
 
-	c.subscriber.OnICECandidate(func(ic *webrtc.ICECandidate) error {
+	subscriberHandler.OnICECandidateCalls(func(ic *webrtc.ICECandidate, t livekit.SignalTarget) error {
 		if ic == nil {
 			return nil
 		}
 		return c.SendIceCandidate(ic, livekit.SignalTarget_SUBSCRIBER)
 	})
-	c.subscriber.OnTrack(func(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
+	subscriberHandler.OnTrackCalls(func(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
 		go c.processTrack(track)
 	})
-	c.subscriber.OnDataPacket(c.handleDataMessage)
-	c.subscriber.OnInitialConnected(func() {
+	subscriberHandler.OnDataPacketCalls(c.handleDataMessage)
+	subscriberHandler.OnInitialConnectedCalls(func() {
 		logger.Debugw("subscriber initial connected", "participant", c.localParticipant.Identity)
 
 		c.lock.Lock()
@@ -272,11 +277,11 @@ func NewRTCClient(conn *websocket.Conn, opts *Options) (*RTCClient, error) {
 			go c.OnConnected()
 		}
 	})
-	c.subscriber.OnFullyEstablished(func() {
+	subscriberHandler.OnFullyEstablishedCalls(func() {
 		logger.Debugw("subscriber fully established", "participant", c.localParticipant.Identity, "pID", c.localParticipant.Sid)
 		c.subscriberFullyEstablished.Store(true)
 	})
-	c.subscriber.OnAnswer(func(answer webrtc.SessionDescription) error {
+	subscriberHandler.OnAnswerCalls(func(answer webrtc.SessionDescription) error {
 		// send remote an answer
 		logger.Infow("sending subscriber answer",
 			"participant", c.localParticipant.Identity,
