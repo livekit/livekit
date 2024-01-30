@@ -265,44 +265,40 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 		require.Equal(t, a.Version, b.Version)
 	}
 	testCases := []struct {
-		name      string
-		pi        *livekit.ParticipantInfo
-		pv        types.ProtocolVersion
-		immediate bool
-		existing  *livekit.ParticipantInfo
-		expected  []*livekit.ParticipantInfo
-		validate  func(t *testing.T, rm *Room, updates []*livekit.ParticipantInfo)
+		name        string
+		pi          *livekit.ParticipantInfo
+		closeReason types.ParticipantCloseReason
+		immediate   bool
+		existing    *participantUpdate
+		expected    []*participantUpdate
+		validate    func(t *testing.T, rm *Room, updates []*participantUpdate)
 	}{
 		{
 			name:     "publisher updates are immediate",
 			pi:       publisher1v1,
-			pv:       types.CurrentProtocol,
-			expected: []*livekit.ParticipantInfo{publisher1v1},
+			expected: []*participantUpdate{{pi: publisher1v1}},
 		},
 		{
 			name: "subscriber updates are queued",
 			pi:   subscriber1v1,
-			pv:   types.CurrentProtocol,
 		},
 		{
 			name:     "last version is enqueued",
 			pi:       subscriber1v2,
-			pv:       types.CurrentProtocol,
-			existing: subscriber1v1,
-			validate: func(t *testing.T, rm *Room, _ []*livekit.ParticipantInfo) {
+			existing: &participantUpdate{pi: proto.Clone(subscriber1v1).(*livekit.ParticipantInfo)}, // clone the existing value since it can be modified when setting to disconnected
+			validate: func(t *testing.T, rm *Room, _ []*participantUpdate) {
 				queued := rm.batchedUpdates[livekit.ParticipantIdentity(identity)]
 				require.NotNil(t, queued)
-				requirePIEquals(t, subscriber1v2, queued)
+				requirePIEquals(t, subscriber1v2, queued.pi)
 			},
 		},
 		{
 			name:      "latest version when immediate",
 			pi:        subscriber1v2,
-			pv:        types.CurrentProtocol,
-			existing:  subscriber1v1,
+			existing:  &participantUpdate{pi: proto.Clone(subscriber1v1).(*livekit.ParticipantInfo)},
 			immediate: true,
-			expected:  []*livekit.ParticipantInfo{subscriber1v2},
-			validate: func(t *testing.T, rm *Room, _ []*livekit.ParticipantInfo) {
+			expected:  []*participantUpdate{{pi: subscriber1v2}},
+			validate: func(t *testing.T, rm *Room, _ []*participantUpdate) {
 				queued := rm.batchedUpdates[livekit.ParticipantIdentity(identity)]
 				require.Nil(t, queued)
 			},
@@ -310,44 +306,37 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 		{
 			name:     "out of order updates are rejected",
 			pi:       subscriber1v1,
-			pv:       types.CurrentProtocol,
-			existing: subscriber1v2,
-			validate: func(t *testing.T, rm *Room, updates []*livekit.ParticipantInfo) {
+			existing: &participantUpdate{pi: proto.Clone(subscriber1v2).(*livekit.ParticipantInfo)},
+			validate: func(t *testing.T, rm *Room, updates []*participantUpdate) {
 				queued := rm.batchedUpdates[livekit.ParticipantIdentity(identity)]
-				requirePIEquals(t, subscriber1v2, queued)
+				requirePIEquals(t, subscriber1v2, queued.pi)
 			},
 		},
 		{
-			name:     "sid change is broadcasted immediately with synthsized disconnect",
-			pi:       publisher2,
-			pv:       11,
-			existing: subscriber1v2,
-			expected: []*livekit.ParticipantInfo{
+			name:        "sid change is broadcasted immediately with synthsized disconnect",
+			pi:          publisher2,
+			closeReason: types.ParticipantCloseReasonServiceRequestRemoveParticipant, // just to test if update contain the close reason
+			existing:    &participantUpdate{pi: proto.Clone(subscriber1v2).(*livekit.ParticipantInfo), closeReason: types.ParticipantCloseReasonStale},
+			expected: []*participantUpdate{
 				{
-					Identity: identity,
-					Sid:      "1",
-					Version:  2,
-					State:    livekit.ParticipantInfo_DISCONNECTED,
+					pi: &livekit.ParticipantInfo{
+						Identity: identity,
+						Sid:      "1",
+						Version:  2,
+						State:    livekit.ParticipantInfo_DISCONNECTED,
+					},
+					isSynthesizedDisconnect: true,
+					closeReason:             types.ParticipantCloseReasonStale,
 				},
-				publisher2,
-			},
-		},
-		{
-			name:     "sid change is broadcasted immediately for identity based reconnect",
-			pi:       publisher2,
-			pv:       types.CurrentProtocol,
-			existing: subscriber1v2,
-			expected: []*livekit.ParticipantInfo{
-				publisher2,
+				{pi: publisher2, closeReason: types.ParticipantCloseReasonServiceRequestRemoveParticipant},
 			},
 		},
 		{
 			name:     "when switching to publisher, queue is cleared",
 			pi:       publisher1v2,
-			pv:       types.CurrentProtocol,
-			existing: subscriber1v1,
-			expected: []*livekit.ParticipantInfo{publisher1v2},
-			validate: func(t *testing.T, rm *Room, updates []*livekit.ParticipantInfo) {
+			existing: &participantUpdate{pi: proto.Clone(subscriber1v1).(*livekit.ParticipantInfo)},
+			expected: []*participantUpdate{{pi: publisher1v2}},
+			validate: func(t *testing.T, rm *Room, updates []*participantUpdate) {
 				require.Empty(t, rm.batchedUpdates)
 			},
 		},
@@ -357,13 +346,14 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
 			if tc.existing != nil {
-				// clone the existing value since it can be modified when setting to disconnected
-				rm.batchedUpdates[livekit.ParticipantIdentity(tc.existing.Identity)] = proto.Clone(tc.existing).(*livekit.ParticipantInfo)
+				rm.batchedUpdates[livekit.ParticipantIdentity(tc.existing.pi.Identity)] = tc.existing
 			}
-			updates := rm.pushAndDequeueUpdates(tc.pi, tc.pv, tc.immediate)
+			updates := rm.pushAndDequeueUpdates(tc.pi, tc.closeReason, tc.immediate)
 			require.Equal(t, len(tc.expected), len(updates))
 			for i, item := range tc.expected {
-				requirePIEquals(t, item, updates[i])
+				requirePIEquals(t, item.pi, updates[i].pi)
+				require.Equal(t, item.isSynthesizedDisconnect, updates[i].isSynthesizedDisconnect)
+				require.Equal(t, item.closeReason, updates[i].closeReason)
 			}
 
 			if tc.validate != nil {

@@ -1125,25 +1125,31 @@ func (r *Room) sendParticipantUpdates(updates []*participantUpdate) {
 		return
 	}
 
-	for _, op := range r.GetParticipants() {
-		var filteredUpdates []*livekit.ParticipantInfo
-		if op.ProtocolVersion().SupportsIdentityBasedReconnection() {
-			// skip
-			// 1. synthesized DISCONNECT - this happens on SID change and clients can handle reconnection
-			//                             based on identity. Hence SID change is not necessary.
-			// 2. close reasons of DUPLICATE_IDENTITY/STALE  - A newer session for that identity exists.
-			for _, update := range updates {
-				if update.isSynthesizedDisconnect || IsCloseNotifySkippable(update.closeReason) {
-					continue
-				}
-				filteredUpdates = append(filteredUpdates, update.pi)
-			}
-		} else {
-			for _, update := range updates {
-				filteredUpdates = append(filteredUpdates, update.pi)
-			}
+	// For filtered updates, skip
+	// 1. synthesized DISCONNECT - this happens on SID change and clients can handle reconnection
+	//                             based on identity. Hence SID change is not necessary.
+	// 2. close reasons of DUPLICATE_IDENTITY/STALE  - A newer session for that identity exists.
+	// Filtered updates are used with clients that can handle identity based reconnect
+	var filteredUpdates []*livekit.ParticipantInfo
+	for _, update := range updates {
+		if update.isSynthesizedDisconnect || IsCloseNotifySkippable(update.closeReason) {
+			continue
 		}
-		err := op.SendParticipantUpdate(filteredUpdates)
+		filteredUpdates = append(filteredUpdates, update.pi)
+	}
+
+	var fullUpdates []*livekit.ParticipantInfo
+	for _, update := range updates {
+		fullUpdates = append(fullUpdates, update.pi)
+	}
+
+	for _, op := range r.GetParticipants() {
+		var err error
+		if op.ProtocolVersion().SupportsIdentityBasedReconnection() {
+			err = op.SendParticipantUpdate(filteredUpdates)
+		} else {
+			err = op.SendParticipantUpdate(fullUpdates)
+		}
 		if err != nil {
 			op.GetLogger().Errorw("could not send update to participant", err)
 		}
