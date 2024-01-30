@@ -140,9 +140,13 @@ type ParticipantImpl struct {
 	params ParticipantParams
 
 	isClosed    atomic.Bool
-	state       atomic.Value // livekit.ParticipantInfo_State
-	resSinkMu   sync.Mutex
-	resSink     routing.MessageSink
+	closeReason atomic.Value // types.ParticipantCloseReason
+
+	state atomic.Value // livekit.ParticipantInfo_State
+
+	resSinkMu sync.Mutex
+	resSink   routing.MessageSink
+
 	grants      *auth.ClaimGrants
 	hidden      atomic.Bool
 	isPublisher atomic.Bool
@@ -253,6 +257,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	if !params.DisableSupervisor {
 		p.supervisor = supervisor.NewParticipantSupervisor(supervisor.ParticipantSupervisorParams{Logger: params.Logger})
 	}
+	p.closeReason.Store(types.ParticipantCloseReasonNone)
 	p.version.Store(params.InitialVersion)
 	p.timedVersion.Update(params.VersionGenerator.New())
 	p.migrateState.Store(types.MigrateStateInit)
@@ -762,6 +767,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 		"reason", reason.String(),
 		"isExpectedToResume", isExpectedToResume,
 	)
+	p.closeReason.Store(reason)
 	p.clearDisconnectTimer()
 	p.clearMigrationTimer()
 
@@ -810,6 +816,10 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 
 func (p *ParticipantImpl) IsClosed() bool {
 	return p.isClosed.Load()
+}
+
+func (p *ParticipantImpl) CloseReason() types.ParticipantCloseReason {
+	return p.closeReason.Load().(types.ParticipantCloseReason)
 }
 
 // Negotiate subscriber SDP with client, if force is true, will cancel pending

@@ -81,7 +81,8 @@ type SubscribedCodecQuality struct {
 type ParticipantCloseReason int
 
 const (
-	ParticipantCloseReasonClientRequestLeave ParticipantCloseReason = iota
+	ParticipantCloseReasonNone ParticipantCloseReason = iota
+	ParticipantCloseReasonClientRequestLeave
 	ParticipantCloseReasonRoomManagerStop
 	ParticipantCloseReasonRoomClose
 	ParticipantCloseReasonVerifyFailed
@@ -110,6 +111,8 @@ const (
 
 func (p ParticipantCloseReason) String() string {
 	switch p {
+	case ParticipantCloseReasonNone:
+		return "NONE"
 	case ParticipantCloseReasonClientRequestLeave:
 		return "CLIENT_REQUEST_LEAVE"
 	case ParticipantCloseReasonRoomManagerStop:
@@ -250,6 +253,7 @@ type Participant interface {
 	ID() livekit.ParticipantID
 	Identity() livekit.ParticipantIdentity
 	State() livekit.ParticipantInfo_State
+	CloseReason() ParticipantCloseReason
 
 	CanSkipBroadcast() bool
 	ToProto() *livekit.ParticipantInfo

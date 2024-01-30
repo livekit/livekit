@@ -68,6 +68,12 @@ type broadcastOptions struct {
 	immediate  bool
 }
 
+type participantUpdate struct {
+	pi                      *livekit.ParticipantInfo
+	isSynthesizedDisconnect bool
+	closeReason             types.ParticipantCloseReason
+}
+
 type disconnectSignalOnResumeNoMessages struct {
 	expiry      time.Time
 	closedCount int
@@ -100,7 +106,7 @@ type Room struct {
 	bufferFactory             *buffer.FactoryOfBufferFactory
 
 	// batch update participant info for non-publishers
-	batchedUpdates   map[livekit.ParticipantIdentity]*livekit.ParticipantInfo
+	batchedUpdates   map[livekit.ParticipantIdentity]*participantUpdate
 	batchedUpdatesMu sync.Mutex
 
 	// time the first participant joined the room
@@ -155,7 +161,7 @@ func NewRoom(
 		participantRequestSources:            make(map[livekit.ParticipantIdentity]routing.MessageSource),
 		hasPublished:                         make(map[livekit.ParticipantIdentity]bool),
 		bufferFactory:                        buffer.NewFactoryOfBufferFactory(config.Receiver.PacketBufferSize),
-		batchedUpdates:                       make(map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
+		batchedUpdates:                       make(map[livekit.ParticipantIdentity]*participantUpdate),
 		closed:                               make(chan struct{}),
 		trailer:                              []byte(utils.RandomSecret()),
 		disconnectSignalOnResumeParticipants: make(map[livekit.ParticipantIdentity]time.Time),
@@ -1110,20 +1116,36 @@ func (r *Room) broadcastParticipantState(p types.LocalParticipant, opts broadcas
 		return
 	}
 
-	updates := r.pushAndDequeueUpdates(pi, p.ProtocolVersion(), opts.immediate)
+	updates := r.pushAndDequeueUpdates(pi, p.CloseReason(), opts.immediate)
 	r.sendParticipantUpdates(updates)
 }
 
-func (r *Room) sendParticipantUpdates(updates []*livekit.ParticipantInfo) {
+func (r *Room) sendParticipantUpdates(updates []*participantUpdate) {
 	if len(updates) == 0 {
 		return
 	}
 
 	for _, op := range r.GetParticipants() {
-		err := op.SendParticipantUpdate(updates)
+		var filteredUpdates []*livekit.ParticipantInfo
+		if op.ProtocolVersion().SupportsIdentityBasedReconnection() {
+			// skip
+			// 1. synthesized DISCONNECT - this happens on SID change and clients can handle reconnection
+			//                             based on identity. Hence SID change is not necessary.
+			// 2. close reasons of DUPLICATE_IDENTITY/STALE  - A newer session for that identity exists.
+			for _, update := range updates {
+				if update.isSynthesizedDisconnect || IsCloseNotifySkippable(update.closeReason) {
+					continue
+				}
+				filteredUpdates = append(filteredUpdates, update.pi)
+			}
+		} else {
+			for _, update := range updates {
+				filteredUpdates = append(filteredUpdates, update.pi)
+			}
+		}
+		err := op.SendParticipantUpdate(filteredUpdates)
 		if err != nil {
-			r.Logger.Errorw("could not send update to participant", err,
-				"participant", op.Identity(), "pID", op.ID())
+			op.GetLogger().Errorw("could not send update to participant", err)
 		}
 	}
 }
@@ -1169,41 +1191,35 @@ func (r *Room) sendSpeakerChanges(speakers []*livekit.SpeakerInfo) {
 // * subscriber-only updates will be queued for batch updates
 // * publisher & immediate updates will be returned without queuing
 // * when the SID changes, it will return both updates, with the earlier participant set to disconnected
-func (r *Room) pushAndDequeueUpdates(pi *livekit.ParticipantInfo, pv types.ProtocolVersion, isImmediate bool) []*livekit.ParticipantInfo {
+func (r *Room) pushAndDequeueUpdates(
+	pi *livekit.ParticipantInfo,
+	closeReason types.ParticipantCloseReason,
+	isImmediate bool,
+) []*participantUpdate {
 	r.batchedUpdatesMu.Lock()
 	defer r.batchedUpdatesMu.Unlock()
 
-	var updates []*livekit.ParticipantInfo
+	var updates []*participantUpdate
 	identity := livekit.ParticipantIdentity(pi.Identity)
 	existing := r.batchedUpdates[identity]
 	shouldSend := isImmediate || pi.IsPublisher
 
 	if existing != nil {
-		if pi.Sid == existing.Sid {
+		if pi.Sid == existing.pi.Sid {
 			// same participant session
-			if pi.Version < existing.Version {
+			if pi.Version < existing.pi.Version {
 				// out of order update
 				return nil
 			}
 		} else {
 			// different participant sessions
-			if existing.JoinedAt < pi.JoinedAt {
-				// existing is older, two scenarios to handle. In both cases,
-				// update is sent immediately as there is a new session.
-				// 1. Clients not using identity based reconnection:
-				//    synthesize a DISCONNECT for older session to ensure that
-				//    transition is explicit.
-				// 2. Clients that use identity to check for session changes:
-				//    these can handle session change without emitting events
-				//    that could be disruptive, i. e. emitting a `DISCONNECT`
-				//    state event followed by `ACTIVE` for same user could make
-				//    users of SDK to react to the transition in a disruptive way.
-				//    In this case, there is no need to synthesize `DISCONNECT`.
+			if existing.pi.JoinedAt < pi.JoinedAt {
+				// existing is older, synthesize a DISCONNECT for older and
+				// send immediately along with newer session to signal switch
 				shouldSend = true
-				if !pv.SupportsIdentityBasedReconnection() {
-					existing.State = livekit.ParticipantInfo_DISCONNECTED
-					updates = append(updates, existing)
-				}
+				existing.pi.State = livekit.ParticipantInfo_DISCONNECTED
+				existing.isSynthesizedDisconnect = true
+				updates = append(updates, existing)
 			} else {
 				// older session update, newer session has already become active, so nothing to do
 				return nil
@@ -1223,10 +1239,10 @@ func (r *Room) pushAndDequeueUpdates(pi *livekit.ParticipantInfo, pv types.Proto
 	if shouldSend {
 		// include any queued update, and return
 		delete(r.batchedUpdates, identity)
-		updates = append(updates, pi)
+		updates = append(updates, &participantUpdate{pi: pi, closeReason: closeReason})
 	} else {
 		// enqueue for batch
-		r.batchedUpdates[identity] = pi
+		r.batchedUpdates[identity] = &participantUpdate{pi: pi, closeReason: closeReason}
 	}
 
 	return updates
@@ -1267,18 +1283,14 @@ func (r *Room) changeUpdateWorker() {
 		case <-subTicker.C:
 			r.batchedUpdatesMu.Lock()
 			updatesMap := r.batchedUpdates
-			r.batchedUpdates = make(map[livekit.ParticipantIdentity]*livekit.ParticipantInfo)
+			r.batchedUpdates = make(map[livekit.ParticipantIdentity]*participantUpdate)
 			r.batchedUpdatesMu.Unlock()
 
 			if len(updatesMap) == 0 {
 				continue
 			}
 
-			updates := make([]*livekit.ParticipantInfo, 0, len(updatesMap))
-			for _, pi := range updatesMap {
-				updates = append(updates, pi)
-			}
-			r.sendParticipantUpdates(updates)
+			r.sendParticipantUpdates(maps.Values(updatesMap))
 		}
 	}
 }
@@ -1517,6 +1529,10 @@ func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, dp 
 			op.GetLogger().Infow("send data packet error", "error", err)
 		}
 	})
+}
+
+func IsCloseNotifySkippable(closeReason types.ParticipantCloseReason) bool {
+	return closeReason == types.ParticipantCloseReasonDuplicateIdentity || closeReason == types.ParticipantCloseReasonStale
 }
 
 func connectionDetailsFields(cds []*types.ICEConnectionDetails) []interface{} {
