@@ -1126,10 +1126,11 @@ func (r *Room) sendParticipantUpdates(updates []*participantUpdate) {
 	}
 
 	// For filtered updates, skip
-	// 1. synthesized DISCONNECT - this happens on SID change and clients can handle reconnection
-	//                             based on identity. Hence SID change is not necessary.
+	// 1. synthesized DISCONNECT - this happens on SID change
 	// 2. close reasons of DUPLICATE_IDENTITY/STALE  - A newer session for that identity exists.
-	// Filtered updates are used with clients that can handle identity based reconnect
+	//
+	// Filtered updates are used with clients that can handle identity based reconnect and hence those
+	// conditions can be skipped.
 	var filteredUpdates []*livekit.ParticipantInfo
 	for _, update := range updates {
 		if update.isSynthesizedDisconnect || IsCloseNotifySkippable(update.closeReason) {
