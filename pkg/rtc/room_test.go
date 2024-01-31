@@ -450,7 +450,7 @@ func TestActiveSpeakers(t *testing.T) {
 	audioUpdateDuration := (audioUpdateInterval + 10) * time.Millisecond
 	t.Run("participant should not be getting audio updates (protocol 2)", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 1, protocol: 2})
-		defer rm.Close()
+		defer rm.Close(types.ParticipantCloseReasonNone)
 		p := rm.GetParticipants()[0].(*typesfakes.FakeLocalParticipant)
 		require.Empty(t, rm.GetActiveSpeakers())
 
@@ -462,7 +462,7 @@ func TestActiveSpeakers(t *testing.T) {
 
 	t.Run("speakers should be sorted by loudness", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
-		defer rm.Close()
+		defer rm.Close(types.ParticipantCloseReasonNone)
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeLocalParticipant)
 		p2 := participants[1].(*typesfakes.FakeLocalParticipant)
@@ -477,7 +477,7 @@ func TestActiveSpeakers(t *testing.T) {
 
 	t.Run("participants are getting audio updates (protocol 3+)", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, protocol: 3})
-		defer rm.Close()
+		defer rm.Close(types.ParticipantCloseReasonNone)
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeLocalParticipant)
 		time.Sleep(time.Millisecond) // let the first update cycle run
@@ -516,7 +516,7 @@ func TestActiveSpeakers(t *testing.T) {
 
 	t.Run("audio level is smoothed", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, protocol: 3, audioSmoothIntervals: 3})
-		defer rm.Close()
+		defer rm.Close(types.ParticipantCloseReasonNone)
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeLocalParticipant)
 		op := participants[1].(*typesfakes.FakeLocalParticipant)
@@ -573,7 +573,7 @@ func TestDataChannel(t *testing.T) {
 
 	t.Run("participants should receive data", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 3})
-		defer rm.Close()
+		defer rm.Close(types.ParticipantCloseReasonNone)
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeLocalParticipant)
 
@@ -603,7 +603,7 @@ func TestDataChannel(t *testing.T) {
 
 	t.Run("only one participant should receive the data", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 4})
-		defer rm.Close()
+		defer rm.Close(types.ParticipantCloseReasonNone)
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeLocalParticipant)
 		p1 := participants[1].(*typesfakes.FakeLocalParticipant)
@@ -634,7 +634,7 @@ func TestDataChannel(t *testing.T) {
 
 	t.Run("publishing disallowed", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
-		defer rm.Close()
+		defer rm.Close(types.ParticipantCloseReasonNone)
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeLocalParticipant)
 		p.CanPublishDataReturns(false)
@@ -662,7 +662,7 @@ func TestDataChannel(t *testing.T) {
 func TestHiddenParticipants(t *testing.T) {
 	t.Run("other participants don't receive hidden updates", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, numHidden: 1})
-		defer rm.Close()
+		defer rm.Close(types.ParticipantCloseReasonNone)
 
 		pNew := NewMockParticipant("new", types.CurrentProtocol, false, false)
 		rm.Join(pNew, nil, nil, iceServersForRoom)
@@ -694,7 +694,7 @@ func TestHiddenParticipants(t *testing.T) {
 func TestRoomUpdate(t *testing.T) {
 	t.Run("updates are sent when participant joined", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
-		defer rm.Close()
+		defer rm.Close(types.ParticipantCloseReasonNone)
 
 		p1 := rm.GetParticipants()[0].(*typesfakes.FakeLocalParticipant)
 		require.Equal(t, 0, p1.SendRoomUpdateCallCount())
@@ -710,7 +710,7 @@ func TestRoomUpdate(t *testing.T) {
 
 	t.Run("participants should receive metadata update", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
-		defer rm.Close()
+		defer rm.Close(types.ParticipantCloseReasonNone)
 
 		rm.SetMetadata("test metadata...")
 
