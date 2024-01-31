@@ -213,10 +213,7 @@ func (r *RoomManager) Stop() {
 	r.lock.RUnlock()
 
 	for _, room := range rooms {
-		for _, p := range room.GetParticipants() {
-			_ = p.Close(true, types.ParticipantCloseReasonRoomManagerStop, false)
-		}
-		room.Close()
+		room.Close(types.ParticipantCloseReasonRoomManagerStop)
 	}
 
 	r.roomServers.Kill()
@@ -727,10 +724,7 @@ func (r *RoomManager) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 		}
 	} else {
 		room.Logger.Infow("deleting room")
-		for _, p := range room.GetParticipants() {
-			_ = p.Close(true, types.ParticipantCloseReasonServiceRequestDeleteRoom, false)
-		}
-		room.Close()
+		room.Close(types.ParticipantCloseReasonServiceRequestDeleteRoom)
 	}
 	return &livekit.DeleteRoomResponse{}, nil
 }

@@ -133,6 +133,16 @@ type FakeLocalParticipant struct {
 	closeReturnsOnCall map[int]struct {
 		result1 error
 	}
+	CloseReasonStub        func() types.ParticipantCloseReason
+	closeReasonMutex       sync.RWMutex
+	closeReasonArgsForCall []struct {
+	}
+	closeReasonReturns struct {
+		result1 types.ParticipantCloseReason
+	}
+	closeReasonReturnsOnCall map[int]struct {
+		result1 types.ParticipantCloseReason
+	}
 	CloseSignalConnectionStub        func(types.SignallingCloseReason)
 	closeSignalConnectionMutex       sync.RWMutex
 	closeSignalConnectionArgsForCall []struct {
@@ -1542,6 +1552,59 @@ func (fake *FakeLocalParticipant) CloseReturnsOnCall(i int, result1 error) {
 	}
 	fake.closeReturnsOnCall[i] = struct {
 		result1 error
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) CloseReason() types.ParticipantCloseReason {
+	fake.closeReasonMutex.Lock()
+	ret, specificReturn := fake.closeReasonReturnsOnCall[len(fake.closeReasonArgsForCall)]
+	fake.closeReasonArgsForCall = append(fake.closeReasonArgsForCall, struct {
+	}{})
+	stub := fake.CloseReasonStub
+	fakeReturns := fake.closeReasonReturns
+	fake.recordInvocation("CloseReason", []interface{}{})
+	fake.closeReasonMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) CloseReasonCallCount() int {
+	fake.closeReasonMutex.RLock()
+	defer fake.closeReasonMutex.RUnlock()
+	return len(fake.closeReasonArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) CloseReasonCalls(stub func() types.ParticipantCloseReason) {
+	fake.closeReasonMutex.Lock()
+	defer fake.closeReasonMutex.Unlock()
+	fake.CloseReasonStub = stub
+}
+
+func (fake *FakeLocalParticipant) CloseReasonReturns(result1 types.ParticipantCloseReason) {
+	fake.closeReasonMutex.Lock()
+	defer fake.closeReasonMutex.Unlock()
+	fake.CloseReasonStub = nil
+	fake.closeReasonReturns = struct {
+		result1 types.ParticipantCloseReason
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) CloseReasonReturnsOnCall(i int, result1 types.ParticipantCloseReason) {
+	fake.closeReasonMutex.Lock()
+	defer fake.closeReasonMutex.Unlock()
+	fake.CloseReasonStub = nil
+	if fake.closeReasonReturnsOnCall == nil {
+		fake.closeReasonReturnsOnCall = make(map[int]struct {
+			result1 types.ParticipantCloseReason
+		})
+	}
+	fake.closeReasonReturnsOnCall[i] = struct {
+		result1 types.ParticipantCloseReason
 	}{result1}
 }
 
@@ -6171,6 +6234,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.claimGrantsMutex.RUnlock()
 	fake.closeMutex.RLock()
 	defer fake.closeMutex.RUnlock()
+	fake.closeReasonMutex.RLock()
+	defer fake.closeReasonMutex.RUnlock()
 	fake.closeSignalConnectionMutex.RLock()
 	defer fake.closeSignalConnectionMutex.RUnlock()
 	fake.connectedAtMutex.RLock()
