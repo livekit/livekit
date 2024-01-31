@@ -35,6 +35,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/pkg/testutils"
 )
@@ -108,7 +109,7 @@ func TestWebhooks(t *testing.T) {
 
 	// room closed
 	rm := server.RoomManager().GetRoom(context.Background(), testRoom)
-	rm.Close()
+	rm.Close(types.ParticipantCloseReasonNone)
 	testutils.WithTimeout(t, func() string {
 		if ts.GetEvent(webhook.EventRoomFinished) == nil {
 			return "did not receive RoomFinished"
