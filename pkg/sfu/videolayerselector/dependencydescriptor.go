@@ -141,14 +141,15 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	}
 
 	if len(fd.ChainDiffs) != len(d.chains) {
-		// d.logger.Debugw("frame chain diff length mismatch", nil,
-		//	"incoming", incomingLayer,
-		//	"efn", extFrameNum,
-		//	"sn", extPkt.Packet.SequenceNumber,
-		//	"chainDiffs", fd.ChainDiffs,
-		//	"chains", len(d.chains),
-		//	"requiredKeyFrame", ddwdt.ExtKeyFrameNum,
-		//	"structureKeyFrame", d.extKeyFrameNum)
+		d.logger.Debugw("frame chain diff length mismatch", nil,
+			"incoming", incomingLayer,
+			"efn", extFrameNum,
+			"sn", extPkt.Packet.SequenceNumber,
+			"chainDiffs", fd.ChainDiffs,
+			"chains", len(d.chains),
+			"requiredKeyFrame", ddwdt.ExtKeyFrameNum,
+			"structureKeyFrame", d.extKeyFrameNum,
+		)
 		d.decisions.AddDropped(extFrameNum)
 		return
 	}
