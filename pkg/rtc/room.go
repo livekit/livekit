@@ -373,7 +373,8 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 			p.GetLogger().Infow("participant active", connectionDetailsFields(cds)...)
 		} else if state == livekit.ParticipantInfo_DISCONNECTED {
 			// remove participant from room
-			go r.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonStateDisconnected)
+			// participant should already be closed and have a close reason, so NONE is fine here
+			go r.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonNone)
 		}
 	})
 	// it's important to set this before connection, we don't want to miss out on any published tracks
@@ -770,11 +771,11 @@ func (r *Room) CloseIfEmpty() {
 	r.lock.Unlock()
 
 	if elapsed >= int64(timeout) {
-		r.Close()
+		r.Close(types.ParticipantCloseReasonNone)
 	}
 }
 
-func (r *Room) Close() {
+func (r *Room) Close(reason types.ParticipantCloseReason) {
 	r.lock.Lock()
 	select {
 	case <-r.closed:
@@ -788,7 +789,7 @@ func (r *Room) Close() {
 
 	r.Logger.Infow("closing room")
 	for _, p := range r.GetParticipants() {
-		_ = p.Close(true, types.ParticipantCloseReasonRoomClose, false)
+		_ = p.Close(true, reason, false)
 	}
 
 	r.protoProxy.Stop()
@@ -1539,7 +1540,7 @@ func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, dp 
 }
 
 func IsCloseNotifySkippable(closeReason types.ParticipantCloseReason) bool {
-	return closeReason == types.ParticipantCloseReasonDuplicateIdentity || closeReason == types.ParticipantCloseReasonStale
+	return closeReason == types.ParticipantCloseReasonDuplicateIdentity
 }
 
 func connectionDetailsFields(cds []*types.ICEConnectionDetails) []interface{} {

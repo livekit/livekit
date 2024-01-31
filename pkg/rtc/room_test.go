@@ -135,7 +135,7 @@ func TestRoomJoin(t *testing.T) {
 		disconnectedParticipant := participants[1].(*typesfakes.FakeLocalParticipant)
 		disconnectedParticipant.StateReturns(livekit.ParticipantInfo_DISCONNECTED)
 
-		rm.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonStateDisconnected)
+		rm.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonClientRequestLeave)
 		time.Sleep(defaultDelay)
 
 		require.Equal(t, p, changedParticipant)

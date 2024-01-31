@@ -84,12 +84,10 @@ const (
 	ParticipantCloseReasonNone ParticipantCloseReason = iota
 	ParticipantCloseReasonClientRequestLeave
 	ParticipantCloseReasonRoomManagerStop
-	ParticipantCloseReasonRoomClose
 	ParticipantCloseReasonVerifyFailed
 	ParticipantCloseReasonJoinFailed
 	ParticipantCloseReasonJoinTimeout
 	ParticipantCloseReasonMessageBusFailed
-	ParticipantCloseReasonStateDisconnected
 	ParticipantCloseReasonPeerConnectionDisconnected
 	ParticipantCloseReasonDuplicateIdentity
 	ParticipantCloseReasonMigrationComplete
@@ -101,7 +99,6 @@ const (
 	ParticipantCloseReasonSimulateServerLeave
 	ParticipantCloseReasonNegotiateFailed
 	ParticipantCloseReasonMigrationRequested
-	ParticipantCloseReasonOvercommitted
 	ParticipantCloseReasonPublicationError
 	ParticipantCloseReasonSubscriptionError
 	ParticipantCloseReasonDataChannelError
@@ -117,8 +114,6 @@ func (p ParticipantCloseReason) String() string {
 		return "CLIENT_REQUEST_LEAVE"
 	case ParticipantCloseReasonRoomManagerStop:
 		return "ROOM_MANAGER_STOP"
-	case ParticipantCloseReasonRoomClose:
-		return "ROOM_CLOSE"
 	case ParticipantCloseReasonVerifyFailed:
 		return "VERIFY_FAILED"
 	case ParticipantCloseReasonJoinFailed:
@@ -127,8 +122,6 @@ func (p ParticipantCloseReason) String() string {
 		return "JOIN_TIMEOUT"
 	case ParticipantCloseReasonMessageBusFailed:
 		return "MESSAGE_BUS_FAILED"
-	case ParticipantCloseReasonStateDisconnected:
-		return "STATE_DISCONNECTED"
 	case ParticipantCloseReasonPeerConnectionDisconnected:
 		return "PEER_CONNECTION_DISCONNECTED"
 	case ParticipantCloseReasonDuplicateIdentity:
@@ -151,8 +144,6 @@ func (p ParticipantCloseReason) String() string {
 		return "NEGOTIATE_FAILED"
 	case ParticipantCloseReasonMigrationRequested:
 		return "MIGRATION_REQUESTED"
-	case ParticipantCloseReasonOvercommitted:
-		return "OVERCOMMITTED"
 	case ParticipantCloseReasonPublicationError:
 		return "PUBLICATION_ERROR"
 	case ParticipantCloseReasonSubscriptionError:
@@ -187,7 +178,7 @@ func (p ParticipantCloseReason) ToDisconnectReason() livekit.DisconnectReason {
 		return livekit.DisconnectReason_PARTICIPANT_REMOVED
 	case ParticipantCloseReasonServiceRequestDeleteRoom:
 		return livekit.DisconnectReason_ROOM_DELETED
-	case ParticipantCloseReasonSimulateNodeFailure, ParticipantCloseReasonSimulateServerLeave, ParticipantCloseReasonOvercommitted:
+	case ParticipantCloseReasonSimulateNodeFailure, ParticipantCloseReasonSimulateServerLeave:
 		return livekit.DisconnectReason_SERVER_SHUTDOWN
 	case ParticipantCloseReasonNegotiateFailed, ParticipantCloseReasonPublicationError, ParticipantCloseReasonSubscriptionError, ParticipantCloseReasonDataChannelError, ParticipantCloseReasonMigrateCodecMismatch:
 		return livekit.DisconnectReason_STATE_MISMATCH
