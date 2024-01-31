@@ -457,6 +457,10 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 				b.logger.Errorw("could not exclude range", err, "sn", rtpPacket.SequenceNumber, "esn", flowState.ExtSequenceNumber)
 			}
 		}
+		// TODO-VP9-DEBUG-REMOVE-START
+		snAdjustment, err := b.snRangeMap.GetValue(flowState.ExtSequenceNumber)
+		b.logger.Debugw("dropping padding packet", "sn", rtpPacket.SequenceNumber, "osn", flowState.ExtSequenceNumber, "msn", flowState.ExtSequenceNumber-snAdjustment, "error", err)
+		// TODO-VP9-DEBUG-REMOVE-END
 		return
 	}
 

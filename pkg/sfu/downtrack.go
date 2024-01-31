@@ -1625,6 +1625,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			if err == io.EOF {
 				break
 			}
+			// TODO-VP9-DEBUG-REMOVE-START
 			d.params.Logger.Debugw(
 				"NACK miss",
 				"isn", epm.sourceSeqNo,
@@ -1634,6 +1635,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 				"eots", epm.extTimestamp,
 				"sid", epm.layer,
 			)
+			// TODO-VP9-DEBUG-REMOVE-END
 			nackMisses++
 			continue
 		}
