@@ -433,6 +433,7 @@ type SubscribedTrack interface {
 	MediaTrack() MediaTrack
 	RTPSender() *webrtc.RTPSender
 	IsMuted() bool
+	IsPublisherMuted() bool
 	SetPublisherMuted(muted bool)
 	UpdateSubscriberSettings(settings *livekit.UpdateTrackSettings)
 	// selects appropriate video layer according to subscriber preferences

@@ -167,6 +167,10 @@ func (t *SubscribedTrack) IsMuted() bool {
 	return t.subMuted.Load()
 }
 
+func (t *SubscribedTrack) IsPublisherMuted() bool {
+	return t.pubMuted.Load()
+}
+
 func (t *SubscribedTrack) SetPublisherMuted(muted bool) {
 	t.pubMuted.Store(muted)
 	t.updateDownTrackMute()

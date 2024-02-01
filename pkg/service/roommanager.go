@@ -200,15 +200,27 @@ func (r *RoomManager) SaveClientsBandwidth() {
 			for _, t := range p.GetSubscribedTracks() {
 				switch t.MediaTrack().Kind() {
 				case livekit.TrackType_AUDIO:
-					participantBandwidth += AudioBandwidth
+					if !t.IsPublisherMuted() {
+						if !t.IsMuted() {
+							participantBandwidth += AudioBandwidth
+						}
+					}
 				case livekit.TrackType_VIDEO:
-					switch t.DownTrack().CurrentLayers().Spatial {
-					case 2:
-						participantBandwidth += VideoBanwithHigh
-					case 1:
-						participantBandwidth += VideoBanwithMedium
-					case 0:
-						participantBandwidth += VideoBanwithLow
+					if !t.IsPublisherMuted() {
+						if t.MediaTrack().IsSimulcast() {
+							switch t.DownTrack().CurrentLayers().Spatial {
+							case 2:
+								participantBandwidth += VideoBanwithHigh
+							case 1:
+								participantBandwidth += VideoBanwithMedium
+							case 0:
+								participantBandwidth += VideoBanwithLow
+							}
+						} else {
+							if !t.IsMuted() {
+								participantBandwidth += VideoBanwithHigh
+							}
+						}
 					}
 				}
 			}
