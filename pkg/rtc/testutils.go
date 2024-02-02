@@ -62,7 +62,7 @@ func NewMockParticipant(identity livekit.ParticipantIdentity, protocol types.Pro
 			f = p.OnTrackUpdatedArgsForCall(p.OnTrackUpdatedCallCount() - 1)
 		}
 		if f != nil {
-			f(p, nil)
+			f(p, NewMockTrack(livekit.TrackType_VIDEO, "testcam"))
 		}
 	}
 
@@ -83,5 +83,9 @@ func NewMockTrack(kind livekit.TrackType, name string) *typesfakes.FakeMediaTrac
 	t.IDReturns(livekit.TrackID(utils.NewGuid(utils.TrackPrefix)))
 	t.KindReturns(kind)
 	t.NameReturns(name)
+	t.ToProtoReturns(&livekit.TrackInfo{
+		Type: kind,
+		Name: name,
+	})
 	return t
 }

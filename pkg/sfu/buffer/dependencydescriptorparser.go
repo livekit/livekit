@@ -19,6 +19,7 @@ import (
 	"sort"
 
 	"github.com/pion/rtp"
+	"go.uber.org/atomic"
 
 	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
@@ -44,6 +45,8 @@ type DependencyDescriptorParser struct {
 	activeDecodeTargetsExtSeq uint64
 	activeDecodeTargetsMask   uint32
 	frameChecker              *FrameIntegrityChecker
+
+	ddNotFoundCount atomic.Uint32
 }
 
 func NewDependencyDescriptorParser(ddExtID uint8, logger logger.Logger, onMaxLayerChanged func(int32, int32)) *DependencyDescriptorParser {
@@ -73,7 +76,10 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 	var videoLayer VideoLayer
 	ddBuf := pkt.GetExtension(r.ddExtID)
 	if ddBuf == nil {
-		r.logger.Warnw("dependency descriptor extension is not present", nil, "seq", pkt.SequenceNumber)
+		ddNotFoundCount := r.ddNotFoundCount.Inc()
+		if ddNotFoundCount%100 == 0 {
+			r.logger.Warnw("dependency descriptor extension is not present", nil, "seq", pkt.SequenceNumber, "count", ddNotFoundCount)
+		}
 		return nil, videoLayer, nil
 	}
 
