@@ -39,12 +39,14 @@ type DependencyDescriptor struct {
 
 	decodeTargetsLock sync.RWMutex
 	decodeTargets     []*DecodeTarget
+	fnWrapper         FrameNumberWrapper
 }
 
 func NewDependencyDescriptor(logger logger.Logger) *DependencyDescriptor {
 	return &DependencyDescriptor{
 		Base:      NewBase(logger),
 		decisions: NewSelectorDecisionCache(256, 80),
+		fnWrapper: FrameNumberWrapper{logger: logger},
 	}
 }
 
@@ -52,6 +54,7 @@ func NewDependencyDescriptorFromNull(vls VideoLayerSelector) *DependencyDescript
 	return &DependencyDescriptor{
 		Base:      vls.(*Null).Base,
 		decisions: NewSelectorDecisionCache(256, 80),
+		fnWrapper: FrameNumberWrapper{logger: vls.(*Null).logger},
 	}
 }
 
@@ -68,7 +71,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	ddwdt := extPkt.DependencyDescriptor
 	if ddwdt == nil {
 		// packet doesn't have dependency descriptor
-		d.logger.Debugw(fmt.Sprintf("drop packet, no DD, incoming %v, sn: %d, isKeyFrame: %v", extPkt.VideoLayer, extPkt.Packet.SequenceNumber, extPkt.KeyFrame))
+		// d.logger.Debugw(fmt.Sprintf("drop packet, no DD, incoming %v, sn: %d, isKeyFrame: %v", extPkt.VideoLayer, extPkt.Packet.SequenceNumber, extPkt.KeyFrame))
 		return
 	}
 
@@ -83,6 +86,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	}
 
 	if !d.keyFrameValid && dd.AttachedStructure == nil {
+		// d.logger.Debugw(fmt.Sprintf("drop packet, no attached structure, incoming %v, sn: %d, isKeyFrame: %v", extPkt.VideoLayer, extPkt.Packet.SequenceNumber, extPkt.KeyFrame))
 		return
 	}
 
@@ -91,10 +95,10 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	if err != nil {
 		// do not mark as dropped as only error is an old frame
 		// d.logger.Debugw(fmt.Sprintf("drop packet on decision error, incoming %v, fn: %d/%d, sn: %d",
-		// 	incomingLayer,
-		// 	dd.FrameNumber,
-		// 	extFrameNum,
-		// 	extPkt.Packet.SequenceNumber,
+		//	incomingLayer,
+		//	dd.FrameNumber,
+		//	extFrameNum,
+		//	extPkt.Packet.SequenceNumber,
 		// ), "err", err)
 		return
 	}
@@ -102,24 +106,24 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	case selectorDecisionDropped:
 		// a packet of an alreadty dropped frame, maintain decision
 		// d.logger.Debugw(fmt.Sprintf("drop packet already dropped, incoming %v, fn: %d/%d, sn: %d",
-		// 	incomingLayer,
-		// 	dd.FrameNumber,
-		// 	extFrameNum,
-		// 	extPkt.Packet.SequenceNumber,
+		//	incomingLayer,
+		//	dd.FrameNumber,
+		//	extFrameNum,
+		//	extPkt.Packet.SequenceNumber,
 		// ))
 		return
 	}
 
 	if ddwdt.StructureUpdated {
-		d.logger.Debugw("update dependency structure",
-			"structureID", dd.AttachedStructure.StructureId,
-			"structure", dd.AttachedStructure,
-			"decodeTargets", ddwdt.DecodeTargets,
-			"efn", extFrameNum,
-			"sn", extPkt.Packet.SequenceNumber,
-			"isKeyFrame", extPkt.KeyFrame,
-			"currentKeyframe", d.extKeyFrameNum,
-		)
+		// d.logger.Debugw("update dependency structure",
+		// 	"structureID", dd.AttachedStructure.StructureId,
+		// 	"structure", dd.AttachedStructure,
+		// 	"decodeTargets", ddwdt.DecodeTargets,
+		// 	"efn", extFrameNum,
+		// 	"sn", extPkt.Packet.SequenceNumber,
+		// 	"isKeyFrame", extPkt.KeyFrame,
+		// 	"currentKeyframe", d.extKeyFrameNum,
+		// )
 
 		d.updateDependencyStructure(dd.AttachedStructure, ddwdt.DecodeTargets, extFrameNum)
 	}
@@ -144,7 +148,8 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 			"chainDiffs", fd.ChainDiffs,
 			"chains", len(d.chains),
 			"requiredKeyFrame", ddwdt.ExtKeyFrameNum,
-			"structureKeyFrame", d.extKeyFrameNum)
+			"structureKeyFrame", d.extKeyFrameNum,
+		)
 		d.decisions.AddDropped(extFrameNum)
 		return
 	}
@@ -187,15 +192,15 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	if highestDecodeTarget.Target < 0 {
 		// no active decode target, do not select
 		// d.logger.Debugw(
-		// 	"drop packet for no target found",
-		// 	"highestDecodeTarget", highestDecodeTarget,
-		// 	"decodeTargets", d.decodeTargets,
-		// 	"tagetLayer", d.targetLayer,
-		// 	"incoming", incomingLayer,
-		// 	"fn", dd.FrameNumber,
-		// 	"efn", extFrameNum,
-		// 	"sn", extPkt.Packet.SequenceNumber,
-		// 	"isKeyFrame", extPkt.KeyFrame,
+		//	"drop packet for no target found",
+		//	"highestDecodeTarget", highestDecodeTarget,
+		//	"decodeTargets", d.decodeTargets,
+		//	"tagetLayer", d.targetLayer,
+		//	"incoming", incomingLayer,
+		//	"fn", dd.FrameNumber,
+		//	"efn", extFrameNum,
+		//	"sn", extPkt.Packet.SequenceNumber,
+		//	"isKeyFrame", extPkt.KeyFrame,
 		// )
 		d.decisions.AddDropped(extFrameNum)
 		return
@@ -204,15 +209,15 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	// DD-TODO : if bandwidth in congest, could drop the 'Discardable' frame
 	if dti == dede.DecodeTargetNotPresent {
 		// d.logger.Debugw(
-		// 	"drop packet for decode target not present",
-		// 	"highestDecodeTarget", highestDecodeTarget,
-		// 	"decodeTargets", d.decodeTargets,
-		// 	"tagetLayer", d.targetLayer,
-		// 	"incoming", incomingLayer,
-		// 	"fn", dd.FrameNumber,
-		// 	"efn", extFrameNum,
-		// 	"sn", extPkt.Packet.SequenceNumber,
-		// 	"isKeyFrame", extPkt.KeyFrame,
+		//	"drop packet for decode target not present",
+		//	"highestDecodeTarget", highestDecodeTarget,
+		//	"decodeTargets", d.decodeTargets,
+		//	"tagetLayer", d.targetLayer,
+		//	"incoming", incomingLayer,
+		//	"fn", dd.FrameNumber,
+		//	"efn", extFrameNum,
+		//	"sn", extPkt.Packet.SequenceNumber,
+		//	"isKeyFrame", extPkt.KeyFrame,
 		// )
 		d.decisions.AddDropped(extFrameNum)
 		return
@@ -234,15 +239,15 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	}
 	if !isDecodable {
 		// d.logger.Debugw(
-		// 	"drop packet for not decodable",
-		// 	"highestDecodeTarget", highestDecodeTarget,
-		// 	"decodeTargets", d.decodeTargets,
-		// 	"tagetLayer", d.targetLayer,
-		// 	"incoming", incomingLayer,
-		// 	"fn", dd.FrameNumber,
-		// 	"efn", extFrameNum,
-		// 	"sn", extPkt.Packet.SequenceNumber,
-		// 	"isKeyFrame", extPkt.KeyFrame,
+		//	"drop packet for not decodable",
+		//	"highestDecodeTarget", highestDecodeTarget,
+		//	"decodeTargets", d.decodeTargets,
+		//	"tagetLayer", d.targetLayer,
+		//	"incoming", incomingLayer,
+		//	"fn", dd.FrameNumber,
+		//	"efn", extFrameNum,
+		//	"sn", extPkt.Packet.SequenceNumber,
+		//	"isKeyFrame", extPkt.KeyFrame,
 		// )
 		d.decisions.AddDropped(extFrameNum)
 		return
@@ -291,13 +296,26 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		Descriptor: dd,
 		Structure:  d.structure,
 	}
+
+	unWrapFn := uint16(d.fnWrapper.UpdateAndGet(extFrameNum, ddwdt.StructureUpdated))
+	var ddClone *dede.DependencyDescriptor
+	if unWrapFn != dd.FrameNumber {
+		clone := *dd
+		ddClone = &clone
+		ddClone.FrameNumber = unWrapFn
+		ddExtension.Descriptor = ddClone
+	}
+
 	if dd.AttachedStructure == nil {
 		if d.activeDecodeTargetsBitmask != nil {
-			// clone and override activebitmask
-			// DD-TODO: if the packet that contains the bitmask is acknowledged by RR, then we don't need it until it changed.
-			ddClone := *ddExtension.Descriptor
+			if ddClone == nil {
+				// clone and override activebitmask
+				// DD-TODO: if the packet that contains the bitmask is acknowledged by RR, then we don't need it until it changed.
+				clone := *dd
+				ddClone = &clone
+				ddExtension.Descriptor = ddClone
+			}
 			ddClone.ActiveDecodeTargetsBitmask = d.activeDecodeTargetsBitmask
-			ddExtension.Descriptor = &ddClone
 			// d.logger.Debugw("set active decode targets bitmask", "activeDecodeTargetsBitmask", d.activeDecodeTargetsBitmask)
 		}
 	}
@@ -410,7 +428,6 @@ func (d *DependencyDescriptor) CheckSync() (locked bool, layer int32) {
 	defer d.decodeTargetsLock.RUnlock()
 	for _, dt := range d.decodeTargets {
 		if dt.Active() && dt.Layer.Spatial == layer && dt.Valid() {
-			d.logger.Debugw(fmt.Sprintf("checking sync, matching decode target, layer: %d, dt: %s, dts: %+v", layer, dt, d.decodeTargets))
 			return true, layer
 		}
 	}

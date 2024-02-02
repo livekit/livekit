@@ -82,6 +82,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		getSignalRelayConfig,
 		NewDefaultSignalServer,
 		routing.NewSignalClient,
+		rpc.NewKeepalivePubSub,
 		getPSRPCConfig,
 		getPSRPCClientParams,
 		rpc.NewTopicFormatter,
@@ -103,7 +104,10 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 		getNodeID,
 		getMessageBus,
 		getSignalRelayConfig,
+		getPSRPCConfig,
+		getPSRPCClientParams,
 		routing.NewSignalClient,
+		rpc.NewKeepalivePubSub,
 		routing.CreateRouter,
 	)
 

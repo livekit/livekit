@@ -132,7 +132,7 @@ func (s *IngressService) CreateIngressWithUrl(ctx context.Context, urlStr string
 		if err != nil {
 			return nil, psrpc.NewError(psrpc.InvalidArgument, err)
 		}
-		if urlObj.Scheme != "http" && urlObj.Scheme != "https" {
+		if urlObj.Scheme != "http" && urlObj.Scheme != "https" && urlObj.Scheme != "srt" {
 			return nil, ingress.ErrInvalidIngress(fmt.Sprintf("invalid url scheme %s", urlObj.Scheme))
 		}
 		// Marshall the URL again for sanitization

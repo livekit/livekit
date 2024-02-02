@@ -350,7 +350,10 @@ func (b *Buffer) Close() error {
 
 		if b.rtpStats != nil {
 			b.rtpStats.Stop()
-			b.logger.Infow("rtp stats", "direction", "upstream", "stats", b.rtpStats.ToString())
+			b.logger.Debugw("rtp stats",
+				"direction", "upstream",
+				"stats", b.rtpStats,
+			)
 			if b.onFinalRtpStats != nil {
 				b.onFinalRtpStats(b.rtpStats.ToProto())
 			}
@@ -454,6 +457,10 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 				b.logger.Errorw("could not exclude range", err, "sn", rtpPacket.SequenceNumber, "esn", flowState.ExtSequenceNumber)
 			}
 		}
+		// TODO-VP9-DEBUG-REMOVE-START
+		snAdjustment, err := b.snRangeMap.GetValue(flowState.ExtSequenceNumber)
+		b.logger.Debugw("dropping padding packet", "sn", rtpPacket.SequenceNumber, "osn", flowState.ExtSequenceNumber, "msn", flowState.ExtSequenceNumber-snAdjustment, "error", err)
+		// TODO-VP9-DEBUG-REMOVE-END
 		return
 	}
 
@@ -469,7 +476,7 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 	if err != nil {
 		if errors.Is(err, bucket.ErrPacketTooOld) {
 			packetTooOldCount := b.packetTooOldCount.Inc()
-			if packetTooOldCount%20 == 0 {
+			if (packetTooOldCount-1)%100 == 0 {
 				b.logger.Warnw("could not add packet to bucket", err, "count", packetTooOldCount)
 			}
 		} else if err != bucket.ErrRTXPacket {

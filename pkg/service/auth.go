@@ -62,7 +62,7 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 
 	if authHeader != "" {
 		if !strings.HasPrefix(authHeader, bearerPrefix) {
-			handleError(w, http.StatusUnauthorized, ErrMissingAuthorization)
+			handleError(w, r, http.StatusUnauthorized, ErrMissingAuthorization)
 			return
 		}
 
@@ -75,19 +75,19 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 	if authToken != "" {
 		v, err := auth.ParseAPIToken(authToken)
 		if err != nil {
-			handleError(w, http.StatusUnauthorized, ErrInvalidAuthorizationToken)
+			handleError(w, r, http.StatusUnauthorized, ErrInvalidAuthorizationToken)
 			return
 		}
 
 		secret := m.provider.GetSecret(v.APIKey())
 		if secret == "" {
-			handleError(w, http.StatusUnauthorized, errors.New("invalid API key: "+v.APIKey()))
+			handleError(w, r, http.StatusUnauthorized, errors.New("invalid API key: "+v.APIKey()))
 			return
 		}
 
 		grants, err := v.Verify(secret)
 		if err != nil {
-			handleError(w, http.StatusUnauthorized, errors.New("invalid token: "+authToken+", error: "+err.Error()))
+			handleError(w, r, http.StatusUnauthorized, errors.New("invalid token: "+authToken+", error: "+err.Error()))
 			return
 		}
 

@@ -242,7 +242,7 @@ func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescript
 						_, ti, _ = p.getPendingTrack(streamID, livekit.TrackType_AUDIO)
 						p.pendingTracksLock.RUnlock()
 					} else {
-						ti = track.TrackInfo(false)
+						ti = track.ToProto()
 					}
 					break
 				}

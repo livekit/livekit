@@ -268,7 +268,6 @@ type NodeSelectorConfig struct {
 }
 
 type SignalRelayConfig struct {
-	Enabled          bool          `yaml:"enabled,omitempty"`
 	RetryTimeout     time.Duration `yaml:"retry_timeout,omitempty"`
 	MinRetryInterval time.Duration `yaml:"min_retry_interval,omitempty"`
 	MaxRetryInterval time.Duration `yaml:"max_retry_interval,omitempty"`
@@ -487,7 +486,6 @@ var DefaultConfig = Config{
 		CPULoadLimit: 0.9,
 	},
 	SignalRelay: SignalRelayConfig{
-		Enabled:          true,
 		RetryTimeout:     7500 * time.Millisecond,
 		MinRetryInterval: 500 * time.Millisecond,
 		MaxRetryInterval: 4 * time.Second,
@@ -652,6 +650,7 @@ func (conf *Config) ValidateKeys() error {
 			_ = f.Close()
 		}()
 		decoder := yaml.NewDecoder(f)
+		conf.Keys = map[string]string{}
 		if err = decoder.Decode(conf.Keys); err != nil {
 			return err
 		}
