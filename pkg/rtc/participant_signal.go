@@ -44,7 +44,12 @@ func (p *ParticipantImpl) SendJoinResponse(joinResponse *livekit.JoinResponse) e
 	// keep track of participant updates and versions
 	p.updateLock.Lock()
 	for _, op := range joinResponse.OtherParticipants {
-		p.updateCache.Add(livekit.ParticipantID(op.Sid), participantUpdateInfo{version: op.Version, state: op.State, updatedAt: time.Now()})
+		p.updateCache.Add(livekit.ParticipantID(op.Sid), participantUpdateInfo{
+			identity:  livekit.ParticipantIdentity(op.Identity),
+			version:   op.Version,
+			state:     op.State,
+			updatedAt: time.Now(),
+		})
 	}
 	p.updateLock.Unlock()
 
@@ -104,7 +109,12 @@ func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.
 			isValid = false
 		}
 		if isValid {
-			p.updateCache.Add(pID, participantUpdateInfo{version: pi.Version, state: pi.State, updatedAt: time.Now()})
+			p.updateCache.Add(pID, participantUpdateInfo{
+				identity:  livekit.ParticipantIdentity(pi.Identity),
+				version:   pi.Version,
+				state:     pi.State,
+				updatedAt: time.Now(),
+			})
 			validUpdates = append(validUpdates, pi)
 		}
 	}
@@ -212,14 +222,19 @@ func (p *ParticipantImpl) sendDisconnectUpdatesForReconnect() error {
 				break
 			} else if info.state == livekit.ParticipantInfo_DISCONNECTED {
 				disconnectedParticipants = append(disconnectedParticipants, &livekit.ParticipantInfo{
-					Sid:     string(keys[i]),
-					Version: info.version,
-					State:   livekit.ParticipantInfo_DISCONNECTED,
+					Sid:      string(keys[i]),
+					Identity: string(info.identity),
+					Version:  info.version,
+					State:    livekit.ParticipantInfo_DISCONNECTED,
 				})
 			}
 		}
 	}
 	p.updateLock.Unlock()
+
+	if len(disconnectedParticipants) == 0 {
+		return nil
+	}
 
 	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Update{
@@ -289,8 +304,52 @@ func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
 func (p *ParticipantImpl) CloseSignalConnection(reason types.SignallingCloseReason) {
 	sink := p.getResponseSink()
 	if sink != nil {
-		p.params.Logger.Infow("closing signal connection", "reason", reason, "connID", sink.ConnectionID())
+		if reason != types.SignallingCloseReasonParticipantClose {
+			p.params.Logger.Infow("closing signal connection", "reason", reason, "connID", sink.ConnectionID())
+		}
 		sink.Close()
 		p.SetResponseSink(nil)
 	}
+}
+
+func (p *ParticipantImpl) sendLeaveRequest(
+	reason types.ParticipantCloseReason,
+	isExpectedToResume bool,
+	isExpectedToReconnect bool,
+	sendOnlyIfSupportingLeaveRequestWithAction bool,
+) error {
+	var leave *livekit.LeaveRequest
+	if p.ProtocolVersion().SupportsRegionsInLeaveRequest() {
+		leave = &livekit.LeaveRequest{
+			Reason: reason.ToDisconnectReason(),
+		}
+		switch {
+		case isExpectedToResume:
+			leave.Action = livekit.LeaveRequest_RESUME
+		case isExpectedToReconnect:
+			leave.Action = livekit.LeaveRequest_RECONNECT
+		default:
+			leave.Action = livekit.LeaveRequest_DISCONNECT
+		}
+		if leave.Action != livekit.LeaveRequest_DISCONNECT && p.params.GetRegionSettings != nil {
+			// sending region settings even for RESUME just in case client wants to a full reconnect despite server saying RESUME
+			leave.Regions = p.params.GetRegionSettings(p.params.ClientInfo.Address)
+		}
+	} else {
+		if !sendOnlyIfSupportingLeaveRequestWithAction {
+			leave = &livekit.LeaveRequest{
+				CanReconnect: isExpectedToReconnect,
+				Reason:       reason.ToDisconnectReason(),
+			}
+		}
+	}
+	if leave != nil {
+		return p.writeMessage(&livekit.SignalResponse{
+			Message: &livekit.SignalResponse_Leave{
+				Leave: leave,
+			},
+		})
+	}
+
+	return nil
 }

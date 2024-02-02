@@ -62,9 +62,6 @@ func NewUpTrackManager(params UpTrackManagerParams) *UpTrackManager {
 	}
 }
 
-func (u *UpTrackManager) Start() {
-}
-
 func (u *UpTrackManager) Close(willBeResumed bool) {
 	u.lock.Lock()
 	u.closed = true
@@ -111,7 +108,7 @@ func (u *UpTrackManager) SetPublishedTrackMuted(trackID livekit.TrackID, muted b
 		track.SetMuted(muted)
 
 		if currentMuted != track.IsMuted() {
-			u.params.Logger.Infow("publisher mute status changed", "trackID", trackID, "muted", track.IsMuted())
+			u.params.Logger.Debugw("publisher mute status changed", "trackID", trackID, "muted", track.IsMuted())
 			if u.onTrackUpdated != nil {
 				u.onTrackUpdated(track)
 			}
@@ -142,7 +139,7 @@ func (u *UpTrackManager) GetPublishedTracks() []types.MediaTrack {
 func (u *UpTrackManager) UpdateSubscriptionPermission(
 	subscriptionPermission *livekit.SubscriptionPermission,
 	timedVersion utils.TimedVersion,
-	resolverByIdentity func(participantIdentity livekit.ParticipantIdentity) types.LocalParticipant,
+	_ func(participantIdentity livekit.ParticipantIdentity) types.LocalParticipant, // TODO: separate PR to remove this argument
 	resolverBySid func(participantID livekit.ParticipantID) types.LocalParticipant,
 ) error {
 	u.lock.Lock()
@@ -203,7 +200,7 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 	}
 	u.lock.Unlock()
 
-	u.maybeRevokeSubscriptions(resolverByIdentity)
+	u.maybeRevokeSubscriptions()
 
 	return nil
 }
@@ -381,7 +378,7 @@ func (u *UpTrackManager) getAllowedSubscribersLocked(trackID livekit.TrackID) []
 	return allowed
 }
 
-func (u *UpTrackManager) maybeRevokeSubscriptions(resolver func(participantIdentity livekit.ParticipantIdentity) types.LocalParticipant) {
+func (u *UpTrackManager) maybeRevokeSubscriptions() {
 	u.lock.Lock()
 	defer u.lock.Unlock()
 

@@ -629,7 +629,7 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, calculatedClockRate ui
 		RTPTimestampExt: nowRTPExt,
 		At:              now,
 	}
-	if r.srNewest != nil {
+	if r.srNewest != nil && nowRTPExt >= r.srNewest.RTPTimestampExt {
 		timeSinceLastReport := nowNTP.Time().Sub(r.srNewest.NTPTimestamp.Time())
 		rtpDiffSinceLastReport := nowRTPExt - r.srNewest.RTPTimestampExt
 		windowClockRate := float64(rtpDiffSinceLastReport) / timeSinceLastReport.Seconds()
@@ -807,7 +807,7 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) *RTPDeltaInfo 
 	}
 }
 
-func (r *RTPStatsSender) ToString() string {
+func (r *RTPStatsSender) String() string {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 

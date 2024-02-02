@@ -16,6 +16,7 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -161,89 +162,43 @@ func (s *SIPService) CreateSIPParticipant(ctx context.Context, req *livekit.Crea
 		return nil, ErrSIPNotConnected
 	}
 
-	info := &livekit.SIPParticipantInfo{
-		SipParticipantId:    utils.NewGuid(utils.SIPParticipantPrefix),
-		SipTrunkId:          req.SipTrunkId,
-		SipCallTo:           req.SipCallTo,
+	AppendLogFields(ctx, "room", req.RoomName, "trunk", req.SipTrunkId, "to", req.SipCallTo)
+	ireq := &rpc.InternalCreateSIPParticipantRequest{
+		CallTo:              req.SipCallTo,
 		RoomName:            req.RoomName,
 		ParticipantIdentity: req.ParticipantIdentity,
 	}
-
-	if err := s.store.StoreSIPParticipant(ctx, info); err != nil {
-		return nil, err
-	}
-	s.updateParticipant(ctx, info)
-	return info, nil
-}
-
-func (s *SIPService) updateParticipant(ctx context.Context, info *livekit.SIPParticipantInfo) {
-	AppendLogFields(ctx, "participantId", info.SipParticipantId, "room", info.RoomName, "trunk", info.SipTrunkId, "to", info.SipCallTo)
-	req := &rpc.InternalUpdateSIPParticipantRequest{
-		ParticipantId:       info.SipParticipantId,
-		CallTo:              info.SipCallTo,
-		RoomName:            info.RoomName,
-		ParticipantIdentity: info.ParticipantIdentity,
-	}
-	if info.SipTrunkId != "" {
-		trunk, err := s.store.LoadSIPTrunk(ctx, info.SipTrunkId)
+	if req.SipTrunkId != "" {
+		trunk, err := s.store.LoadSIPTrunk(ctx, req.SipTrunkId)
 		if err != nil {
 			logger.Errorw("cannot get trunk to update sip participant", err)
-			return
+			return nil, err
 		}
-		req.Address = trunk.OutboundAddress
-		req.Number = trunk.OutboundNumber
-		req.Username = trunk.OutboundUsername
-		req.Password = trunk.OutboundPassword
+		ireq.Address = trunk.OutboundAddress
+		ireq.Number = trunk.OutboundNumber
+		ireq.Username = trunk.OutboundUsername
+		ireq.Password = trunk.OutboundPassword
 	}
-	if _, err := s.psrpcClient.UpdateSIPParticipant(ctx, req); err != nil {
+
+	// CreateSIPParticipant will wait for LiveKit Participant to be created and that can take some time.
+	// Thus, we must set a higher deadline for it, if it's not set already.
+	// TODO: support context timeouts in psrpc
+	timeout := 30 * time.Second
+	if deadline, ok := ctx.Deadline(); ok {
+		timeout = time.Until(deadline)
+	} else {
+		var cancel func()
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+	resp, err := s.psrpcClient.CreateSIPParticipant(ctx, "", ireq, psrpc.WithRequestTimeout(timeout))
+	if err != nil {
 		logger.Errorw("cannot update sip participant", err)
-	}
-}
-
-func (s *SIPService) ListSIPParticipant(ctx context.Context, req *livekit.ListSIPParticipantRequest) (*livekit.ListSIPParticipantResponse, error) {
-	if s.store == nil {
-		return nil, ErrSIPNotConnected
-	}
-
-	participants, err := s.store.ListSIPParticipant(ctx)
-	if err != nil {
 		return nil, err
 	}
-
-	return &livekit.ListSIPParticipantResponse{Items: participants}, nil
-}
-
-func (s *SIPService) DeleteSIPParticipant(ctx context.Context, req *livekit.DeleteSIPParticipantRequest) (*livekit.SIPParticipantInfo, error) {
-	if s.store == nil {
-		return nil, ErrSIPNotConnected
-	}
-
-	info, err := s.store.LoadSIPParticipant(ctx, req.SipParticipantId)
-	if err != nil {
-		return nil, err
-	}
-
-	if err = s.store.DeleteSIPParticipant(ctx, info); err != nil {
-		return nil, err
-	}
-	// These indicate that the call should be disconnected
-	info.SipTrunkId = ""
-	info.SipCallTo = ""
-	s.updateParticipant(ctx, info)
-	return info, nil
-}
-
-func (s *SIPService) SendSIPParticipantDTMF(ctx context.Context, req *livekit.SendSIPParticipantDTMFRequest) (*livekit.SIPParticipantDTMFInfo, error) {
-	if s.store == nil {
-		return nil, ErrSIPNotConnected
-	}
-	AppendLogFields(ctx, "participantId", req.SipParticipantId)
-	_, err := s.psrpcClient.SendSIPParticipantDTMF(ctx, &rpc.InternalSendSIPParticipantDTMFRequest{
-		ParticipantId: req.SipParticipantId,
-		Digits:        req.Digits,
-	})
-	if err != nil {
-		logger.Errorw("cannot send dtmf to sip participant", err)
-	}
-	return nil, err
+	return &livekit.SIPParticipantInfo{
+		ParticipantId:       resp.ParticipantId,
+		ParticipantIdentity: resp.ParticipantIdentity,
+		RoomName:            req.RoomName,
+	}, nil
 }

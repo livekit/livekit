@@ -148,6 +148,15 @@ func (s *IOInfoService) ListEgress(ctx context.Context, req *livekit.ListEgressR
 	return &livekit.ListEgressResponse{Items: items}, nil
 }
 
+func (s *IOInfoService) UpdateMetrics(ctx context.Context, req *rpc.UpdateMetricsRequest) (*emptypb.Empty, error) {
+	logger.Infow("received egress metrics",
+		"egressID", req.Info.EgressId,
+		"avgCpu", req.AvgCpuUsage,
+		"maxCpu", req.MaxCpuUsage,
+	)
+	return &emptypb.Empty{}, nil
+}
+
 func (s *IOInfoService) GetIngressInfo(ctx context.Context, req *rpc.GetIngressInfoRequest) (*rpc.GetIngressInfoResponse, error) {
 	info, err := s.loadIngressFromInfoRequest(req)
 	if err != nil {
@@ -184,7 +193,8 @@ func (s *IOInfoService) UpdateIngressState(ctx context.Context, req *rpc.UpdateI
 
 		switch req.State.Status {
 		case livekit.IngressState_ENDPOINT_ERROR,
-			livekit.IngressState_ENDPOINT_INACTIVE:
+			livekit.IngressState_ENDPOINT_INACTIVE,
+			livekit.IngressState_ENDPOINT_COMPLETE:
 			s.telemetry.IngressEnded(ctx, info)
 
 			if req.State.Error != "" {
@@ -209,7 +219,7 @@ func (s *IOInfoService) UpdateIngressState(ctx context.Context, req *rpc.UpdateI
 
 		s.telemetry.IngressUpdated(ctx, info)
 
-		logger.Infow("ingress updated", "ingressID", req.IngressId)
+		logger.Infow("ingress updated", "ingressID", req.IngressId, "status", info.State.Status)
 	}
 
 	return &emptypb.Empty{}, nil

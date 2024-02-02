@@ -81,14 +81,13 @@ type SubscribedCodecQuality struct {
 type ParticipantCloseReason int
 
 const (
-	ParticipantCloseReasonClientRequestLeave ParticipantCloseReason = iota
+	ParticipantCloseReasonNone ParticipantCloseReason = iota
+	ParticipantCloseReasonClientRequestLeave
 	ParticipantCloseReasonRoomManagerStop
-	ParticipantCloseReasonRoomClose
 	ParticipantCloseReasonVerifyFailed
 	ParticipantCloseReasonJoinFailed
 	ParticipantCloseReasonJoinTimeout
 	ParticipantCloseReasonMessageBusFailed
-	ParticipantCloseReasonStateDisconnected
 	ParticipantCloseReasonPeerConnectionDisconnected
 	ParticipantCloseReasonDuplicateIdentity
 	ParticipantCloseReasonMigrationComplete
@@ -100,21 +99,21 @@ const (
 	ParticipantCloseReasonSimulateServerLeave
 	ParticipantCloseReasonNegotiateFailed
 	ParticipantCloseReasonMigrationRequested
-	ParticipantCloseReasonOvercommitted
 	ParticipantCloseReasonPublicationError
 	ParticipantCloseReasonSubscriptionError
 	ParticipantCloseReasonDataChannelError
 	ParticipantCloseReasonMigrateCodecMismatch
+	ParticipantCloseReasonSignalSourceClose
 )
 
 func (p ParticipantCloseReason) String() string {
 	switch p {
+	case ParticipantCloseReasonNone:
+		return "NONE"
 	case ParticipantCloseReasonClientRequestLeave:
 		return "CLIENT_REQUEST_LEAVE"
 	case ParticipantCloseReasonRoomManagerStop:
 		return "ROOM_MANAGER_STOP"
-	case ParticipantCloseReasonRoomClose:
-		return "ROOM_CLOSE"
 	case ParticipantCloseReasonVerifyFailed:
 		return "VERIFY_FAILED"
 	case ParticipantCloseReasonJoinFailed:
@@ -123,8 +122,6 @@ func (p ParticipantCloseReason) String() string {
 		return "JOIN_TIMEOUT"
 	case ParticipantCloseReasonMessageBusFailed:
 		return "MESSAGE_BUS_FAILED"
-	case ParticipantCloseReasonStateDisconnected:
-		return "STATE_DISCONNECTED"
 	case ParticipantCloseReasonPeerConnectionDisconnected:
 		return "PEER_CONNECTION_DISCONNECTED"
 	case ParticipantCloseReasonDuplicateIdentity:
@@ -147,8 +144,6 @@ func (p ParticipantCloseReason) String() string {
 		return "NEGOTIATE_FAILED"
 	case ParticipantCloseReasonMigrationRequested:
 		return "MIGRATION_REQUESTED"
-	case ParticipantCloseReasonOvercommitted:
-		return "OVERCOMMITTED"
 	case ParticipantCloseReasonPublicationError:
 		return "PUBLICATION_ERROR"
 	case ParticipantCloseReasonSubscriptionError:
@@ -157,6 +152,8 @@ func (p ParticipantCloseReason) String() string {
 		return "DATA_CHANNEL_ERROR"
 	case ParticipantCloseReasonMigrateCodecMismatch:
 		return "MIGRATE_CODEC_MISMATCH"
+	case ParticipantCloseReasonSignalSourceClose:
+		return "SIGNAL_SOURCE_CLOSE"
 	default:
 		return fmt.Sprintf("%d", int(p))
 	}
@@ -173,22 +170,20 @@ func (p ParticipantCloseReason) ToDisconnectReason() livekit.DisconnectReason {
 		return livekit.DisconnectReason_JOIN_FAILURE
 	case ParticipantCloseReasonPeerConnectionDisconnected:
 		return livekit.DisconnectReason_STATE_MISMATCH
-	case ParticipantCloseReasonDuplicateIdentity, ParticipantCloseReasonMigrationComplete, ParticipantCloseReasonStale:
+	case ParticipantCloseReasonDuplicateIdentity, ParticipantCloseReasonStale:
 		return livekit.DisconnectReason_DUPLICATE_IDENTITY
+	case ParticipantCloseReasonMigrationRequested, ParticipantCloseReasonMigrationComplete, ParticipantCloseReasonSimulateMigration:
+		return livekit.DisconnectReason_MIGRATION
 	case ParticipantCloseReasonServiceRequestRemoveParticipant:
 		return livekit.DisconnectReason_PARTICIPANT_REMOVED
 	case ParticipantCloseReasonServiceRequestDeleteRoom:
 		return livekit.DisconnectReason_ROOM_DELETED
-	case ParticipantCloseReasonSimulateMigration:
-		return livekit.DisconnectReason_DUPLICATE_IDENTITY
-	case ParticipantCloseReasonSimulateNodeFailure:
-		return livekit.DisconnectReason_SERVER_SHUTDOWN
-	case ParticipantCloseReasonSimulateServerLeave:
-		return livekit.DisconnectReason_SERVER_SHUTDOWN
-	case ParticipantCloseReasonOvercommitted:
+	case ParticipantCloseReasonSimulateNodeFailure, ParticipantCloseReasonSimulateServerLeave:
 		return livekit.DisconnectReason_SERVER_SHUTDOWN
 	case ParticipantCloseReasonNegotiateFailed, ParticipantCloseReasonPublicationError, ParticipantCloseReasonSubscriptionError, ParticipantCloseReasonDataChannelError, ParticipantCloseReasonMigrateCodecMismatch:
 		return livekit.DisconnectReason_STATE_MISMATCH
+	case ParticipantCloseReasonSignalSourceClose:
+		return livekit.DisconnectReason_SIGNAL_CLOSE
 	default:
 		// the other types will map to unknown reason
 		return livekit.DisconnectReason_UNKNOWN_REASON
@@ -209,6 +204,8 @@ const (
 	SignallingCloseReasonFullReconnectDataChannelError
 	SignallingCloseReasonFullReconnectNegotiateFailed
 	SignallingCloseReasonParticipantClose
+	SignallingCloseReasonDisconnectOnResume
+	SignallingCloseReasonDisconnectOnResumeNoMessages
 )
 
 func (s SignallingCloseReason) String() string {
@@ -231,6 +228,10 @@ func (s SignallingCloseReason) String() string {
 		return "FULL_RECONNECT_NEGOTIATE_FAILED"
 	case SignallingCloseReasonParticipantClose:
 		return "PARTICIPANT_CLOSE"
+	case SignallingCloseReasonDisconnectOnResume:
+		return "DISCONNECT_ON_RESUME"
+	case SignallingCloseReasonDisconnectOnResumeNoMessages:
+		return "DISCONNECT_ON_RESUME_NO_MESSAGES"
 	default:
 		return fmt.Sprintf("%d", int(s))
 	}
@@ -243,6 +244,7 @@ type Participant interface {
 	ID() livekit.ParticipantID
 	Identity() livekit.ParticipantIdentity
 	State() livekit.ParticipantInfo_State
+	CloseReason() ParticipantCloseReason
 
 	CanSkipBroadcast() bool
 	ToProto() *livekit.ParticipantInfo
@@ -266,7 +268,6 @@ type Participant interface {
 	IsRecorder() bool
 	IsAgent() bool
 
-	Start()
 	Close(sendLeave bool, reason ParticipantCloseReason, isExpectedToResume bool) error
 
 	SubscriptionPermission() (*livekit.SubscriptionPermission, utils.TimedVersion)
@@ -284,15 +285,6 @@ type Participant interface {
 }
 
 // -------------------------------------------------------
-
-type ICEConnectionType string
-
-const (
-	ICEConnectionTypeUDP     ICEConnectionType = "udp"
-	ICEConnectionTypeTCP     ICEConnectionType = "tcp"
-	ICEConnectionTypeTURN    ICEConnectionType = "turn"
-	ICEConnectionTypeUnknown ICEConnectionType = "unknown"
-)
 
 type AddTrackParams struct {
 	Stereo bool
@@ -320,10 +312,11 @@ type LocalParticipant interface {
 	SubscriberAsPrimary() bool
 	GetClientInfo() *livekit.ClientInfo
 	GetClientConfiguration() *livekit.ClientConfiguration
-	GetICEConnectionType() ICEConnectionType
 	GetBufferFactory() *buffer.Factory
 	GetPlayoutDelayConfig() *livekit.PlayoutDelay
 	GetPendingTrack(trackID livekit.TrackID) *livekit.TrackInfo
+	GetICEConnectionDetails() []*ICEConnectionDetails
+	HasConnected() bool
 
 	SetResponseSink(sink routing.MessageSink)
 	CloseSignalConnection(reason SignallingCloseReason)
@@ -380,7 +373,7 @@ type LocalParticipant interface {
 	IssueFullReconnect(reason ParticipantCloseReason)
 
 	// callbacks
-	OnStateChange(func(p LocalParticipant, oldState livekit.ParticipantInfo_State))
+	OnStateChange(func(p LocalParticipant, state livekit.ParticipantInfo_State))
 	OnMigrateStateChange(func(p LocalParticipant, migrateState MigrateState))
 	// OnTrackPublished - remote added a track
 	OnTrackPublished(func(LocalParticipant, MediaTrack))
@@ -394,8 +387,9 @@ type LocalParticipant interface {
 	OnSubscribeStatusChanged(fn func(publisherID livekit.ParticipantID, subscribed bool))
 	OnClose(callback func(LocalParticipant))
 	OnClaimsChanged(callback func(LocalParticipant))
-	OnReceiverReport(dt *sfu.DownTrack, report *rtcp.ReceiverReport)
 	OnTrafficLoad(callback func(trafficLoad *TrafficLoad))
+
+	HandleReceiverReport(dt *sfu.DownTrack, report *rtcp.ReceiverReport)
 
 	// session migration
 	MaybeStartMigration(force bool, onStart func()) bool
@@ -452,6 +446,7 @@ type MediaTrack interface {
 	Source() livekit.TrackSource
 	Stream() string
 
+	UpdateTrackInfo(ti *livekit.TrackInfo)
 	ToProto() *livekit.TrackInfo
 
 	PublisherID() livekit.ParticipantID

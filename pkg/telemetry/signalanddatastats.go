@@ -49,6 +49,7 @@ type BytesTrackStats struct {
 	trackID                              livekit.TrackID
 	pID                                  livekit.ParticipantID
 	send, recv                           atomic.Uint64
+	sendMessages, recvMessages           atomic.Uint32
 	totalSendBytes, totalRecvBytes       atomic.Uint64
 	totalSendMessages, totalRecvMessages atomic.Uint32
 	telemetry                            TelemetryService
@@ -68,10 +69,12 @@ func NewBytesTrackStats(trackID livekit.TrackID, pID livekit.ParticipantID, tele
 func (s *BytesTrackStats) AddBytes(bytes uint64, isSend bool) {
 	if isSend {
 		s.send.Add(bytes)
+		s.sendMessages.Inc()
 		s.totalSendBytes.Add(bytes)
 		s.totalSendMessages.Inc()
 	} else {
 		s.recv.Add(bytes)
+		s.recvMessages.Inc()
 		s.totalRecvBytes.Add(bytes)
 		s.totalRecvMessages.Inc()
 	}
@@ -95,7 +98,10 @@ func (s *BytesTrackStats) report() {
 	if recv := s.recv.Swap(0); recv > 0 {
 		s.telemetry.TrackStats(StatsKeyForData(livekit.StreamType_UPSTREAM, s.pID, s.trackID), &livekit.AnalyticsStat{
 			Streams: []*livekit.AnalyticsStream{
-				{PrimaryBytes: recv},
+				{
+					PrimaryBytes:   recv,
+					PrimaryPackets: s.recvMessages.Swap(0),
+				},
 			},
 		})
 	}
@@ -103,7 +109,10 @@ func (s *BytesTrackStats) report() {
 	if send := s.send.Swap(0); send > 0 {
 		s.telemetry.TrackStats(StatsKeyForData(livekit.StreamType_DOWNSTREAM, s.pID, s.trackID), &livekit.AnalyticsStat{
 			Streams: []*livekit.AnalyticsStream{
-				{PrimaryBytes: send},
+				{
+					PrimaryBytes:   send,
+					PrimaryPackets: s.sendMessages.Swap(0),
+				},
 			},
 		})
 	}
