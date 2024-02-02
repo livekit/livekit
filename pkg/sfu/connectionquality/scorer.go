@@ -29,9 +29,8 @@ const (
 	MaxMOS = float32(4.5)
 	MinMOS = float32(1.0)
 
-	cMaxScore        = float64(100.0)
-	cMinScore        = float64(20.0)
-	cPausedPoorScore = float64(30.0)
+	cMaxScore = float64(100.0)
+	cMinScore = float64(30.0)
 
 	increaseFactor = float64(0.4) // slower increase, i. e. when score is recovering move up slower -> conservative
 	decreaseFactor = float64(0.7) // faster decrease, i. e. when score is dropping move down faster -> aggressive to be responsive to quality drops
@@ -305,7 +304,7 @@ func (q *qualityScorer) updatePauseAtLocked(isPaused bool, at time.Time) {
 			q.layerDistance.Reset()
 
 			q.pausedAt = at
-			q.score = cPausedPoorScore
+			q.score = cMinScore
 		}
 	} else {
 		if q.isPaused() {
@@ -364,7 +363,7 @@ func (q *qualityScorer) updateAtLocked(stat *windowStat, at time.Time) {
 	//       considered (as long as enough time has passed since unmute).
 	//
 	//       Similarly, when paused (possibly due to congestion), score is immediately
-	//       set to cPausedPoorScore for responsiveness. The layer transision is reest.
+	//       set to cMinScore for responsiveness. The layer transision is reest.
 	//       On a resume, quality climbs back up using normal operation.
 	if q.isMuted() || !q.isUnmutedEnough(at) || q.isLayerMuted() || q.isPaused() {
 		q.lastUpdateAt = at
@@ -404,12 +403,12 @@ func (q *qualityScorer) updateAtLocked(stat *windowStat, at time.Time) {
 			factor = decreaseFactor
 		}
 		score = factor*score + (1.0-factor)*q.score
-	}
-	if score < cMinScore {
-		// lower bound to prevent score from becoming very small values due to extreme conditions.
-		// Without a lower bound, it can get so low that it takes a long time to climb back to
-		// better quality even under excellent conditions.
-		score = cMinScore
+		if score < cMinScore {
+			// lower bound to prevent score from becoming very small values due to extreme conditions.
+			// Without a lower bound, it can get so low that it takes a long time to climb back to
+			// better quality even under excellent conditions.
+			score = cMinScore
+		}
 	}
 	prevCQ := scoreToConnectionQuality(q.score)
 	currCQ := scoreToConnectionQuality(score)

@@ -476,7 +476,7 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 	if err != nil {
 		if errors.Is(err, bucket.ErrPacketTooOld) {
 			packetTooOldCount := b.packetTooOldCount.Inc()
-			if packetTooOldCount%20 == 0 {
+			if (packetTooOldCount-1)%100 == 0 {
 				b.logger.Warnw("could not add packet to bucket", err, "count", packetTooOldCount)
 			}
 		} else if err != bucket.ErrRTXPacket {
