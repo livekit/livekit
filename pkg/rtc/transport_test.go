@@ -26,6 +26,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
+	"github.com/livekit/livekit-server/pkg/rtc/transport"
+	"github.com/livekit/livekit-server/pkg/rtc/transport/transportfakes"
 	"github.com/livekit/livekit-server/pkg/testutils"
 	"github.com/livekit/protocol/livekit"
 )
@@ -37,33 +39,39 @@ func TestMissingAnswerDuringICERestart(t *testing.T) {
 		Config:              &WebRTCConfig{},
 		IsOfferer:           true,
 	}
-	transportA, err := NewPCTransport(params)
+
+	paramsA := params
+	handlerA := &transportfakes.FakeHandler{}
+	paramsA.Handler = handlerA
+	transportA, err := NewPCTransport(paramsA)
 	require.NoError(t, err)
 	_, err = transportA.pc.CreateDataChannel(ReliableDataChannel, nil)
 	require.NoError(t, err)
 
 	paramsB := params
+	handlerB := &transportfakes.FakeHandler{}
+	paramsB.Handler = handlerB
 	paramsB.IsOfferer = false
 	transportB, err := NewPCTransport(paramsB)
 	require.NoError(t, err)
 
 	// exchange ICE
-	handleICEExchange(t, transportA, transportB)
+	handleICEExchange(t, transportA, transportB, handlerA, handlerB)
 
-	connectTransports(t, transportA, transportB, false, 1, 1)
+	connectTransports(t, transportA, transportB, handlerA, handlerB, false, 1, 1)
 	require.Equal(t, webrtc.ICEConnectionStateConnected, transportA.pc.ICEConnectionState())
 	require.Equal(t, webrtc.ICEConnectionStateConnected, transportB.pc.ICEConnectionState())
 
 	var negotiationState atomic.Value
-	transportA.OnNegotiationStateChanged(func(state NegotiationState) {
+	transportA.OnNegotiationStateChanged(func(state transport.NegotiationState) {
 		negotiationState.Store(state)
 	})
 
 	// offer again, but missed
 	var offerReceived atomic.Bool
-	transportA.OnOffer(func(sd webrtc.SessionDescription) error {
+	handlerA.OnOfferCalls(func(sd webrtc.SessionDescription) error {
 		require.Equal(t, webrtc.SignalingStateHaveLocalOffer, transportA.pc.SignalingState())
-		require.Equal(t, NegotiationStateRemote, negotiationState.Load().(NegotiationState))
+		require.Equal(t, transport.NegotiationStateRemote, negotiationState.Load().(transport.NegotiationState))
 		offerReceived.Store(true)
 		return nil
 	})
@@ -72,7 +80,7 @@ func TestMissingAnswerDuringICERestart(t *testing.T) {
 		return offerReceived.Load()
 	}, 10*time.Second, time.Millisecond*10, "transportA offer not received")
 
-	connectTransports(t, transportA, transportB, true, 1, 1)
+	connectTransports(t, transportA, transportB, handlerA, handlerB, true, 1, 1)
 	require.Equal(t, webrtc.ICEConnectionStateConnected, transportA.pc.ICEConnectionState())
 	require.Equal(t, webrtc.ICEConnectionStateConnected, transportB.pc.ICEConnectionState())
 
@@ -87,70 +95,76 @@ func TestNegotiationTiming(t *testing.T) {
 		Config:              &WebRTCConfig{},
 		IsOfferer:           true,
 	}
-	transportA, err := NewPCTransport(params)
+
+	paramsA := params
+	handlerA := &transportfakes.FakeHandler{}
+	paramsA.Handler = handlerA
+	transportA, err := NewPCTransport(paramsA)
 	require.NoError(t, err)
 	_, err = transportA.pc.CreateDataChannel(LossyDataChannel, nil)
 	require.NoError(t, err)
 
 	paramsB := params
+	handlerB := &transportfakes.FakeHandler{}
+	paramsB.Handler = handlerB
 	paramsB.IsOfferer = false
-	transportB, err := NewPCTransport(params)
+	transportB, err := NewPCTransport(paramsB)
 	require.NoError(t, err)
 
 	require.False(t, transportA.IsEstablished())
 	require.False(t, transportB.IsEstablished())
 
-	handleICEExchange(t, transportA, transportB)
+	handleICEExchange(t, transportA, transportB, handlerA, handlerB)
 	offer := atomic.Value{}
-	transportA.OnOffer(func(sd webrtc.SessionDescription) error {
+	handlerA.OnOfferCalls(func(sd webrtc.SessionDescription) error {
 		offer.Store(&sd)
 		return nil
 	})
 
 	var negotiationState atomic.Value
-	transportA.OnNegotiationStateChanged(func(state NegotiationState) {
+	transportA.OnNegotiationStateChanged(func(state transport.NegotiationState) {
 		negotiationState.Store(state)
 	})
 
 	// initial offer
 	transportA.Negotiate(true)
 	require.Eventually(t, func() bool {
-		state, ok := negotiationState.Load().(NegotiationState)
+		state, ok := negotiationState.Load().(transport.NegotiationState)
 		if !ok {
 			return false
 		}
 
-		return state == NegotiationStateRemote
+		return state == transport.NegotiationStateRemote
 	}, 10*time.Second, 10*time.Millisecond, "negotiation state does not match NegotiateStateRemote")
 
 	// second try, should've flipped transport status to retry
 	transportA.Negotiate(true)
 	require.Eventually(t, func() bool {
-		state, ok := negotiationState.Load().(NegotiationState)
+		state, ok := negotiationState.Load().(transport.NegotiationState)
 		if !ok {
 			return false
 		}
 
-		return state == NegotiationStateRetry
+		return state == transport.NegotiationStateRetry
 	}, 10*time.Second, 10*time.Millisecond, "negotiation state does not match NegotiateStateRetry")
 
 	// third try, should've stayed at retry
 	transportA.Negotiate(true)
 	time.Sleep(100 * time.Millisecond) // some time to process the negotiate event
 	require.Eventually(t, func() bool {
-		state, ok := negotiationState.Load().(NegotiationState)
+		state, ok := negotiationState.Load().(transport.NegotiationState)
 		if !ok {
 			return false
 		}
 
-		return state == NegotiationStateRetry
+		return state == transport.NegotiationStateRetry
 	}, 10*time.Second, 10*time.Millisecond, "negotiation state does not match NegotiateStateRetry")
 
 	time.Sleep(5 * time.Millisecond)
 	actualOffer, ok := offer.Load().(*webrtc.SessionDescription)
 	require.True(t, ok)
 
-	transportB.OnAnswer(func(answer webrtc.SessionDescription) error {
+	handlerB.OnAnswerCalls(func(answer webrtc.SessionDescription) error {
 		transportA.HandleRemoteDescription(answer)
 		return nil
 	})
@@ -164,7 +178,7 @@ func TestNegotiationTiming(t *testing.T) {
 	}, 10*time.Second, time.Millisecond*10, "transportB is not established")
 
 	// it should still be negotiating again
-	require.Equal(t, NegotiationStateRemote, negotiationState.Load().(NegotiationState))
+	require.Equal(t, transport.NegotiationStateRemote, negotiationState.Load().(transport.NegotiationState))
 	offer2, ok := offer.Load().(*webrtc.SessionDescription)
 	require.True(t, ok)
 	require.False(t, offer2 == actualOffer)
@@ -180,22 +194,28 @@ func TestFirstOfferMissedDuringICERestart(t *testing.T) {
 		Config:              &WebRTCConfig{},
 		IsOfferer:           true,
 	}
-	transportA, err := NewPCTransport(params)
+
+	paramsA := params
+	handlerA := &transportfakes.FakeHandler{}
+	paramsA.Handler = handlerA
+	transportA, err := NewPCTransport(paramsA)
 	require.NoError(t, err)
 	_, err = transportA.pc.CreateDataChannel(ReliableDataChannel, nil)
 	require.NoError(t, err)
 
 	paramsB := params
+	handlerB := &transportfakes.FakeHandler{}
+	paramsB.Handler = handlerB
 	paramsB.IsOfferer = false
 	transportB, err := NewPCTransport(paramsB)
 	require.NoError(t, err)
 
 	// exchange ICE
-	handleICEExchange(t, transportA, transportB)
+	handleICEExchange(t, transportA, transportB, handlerA, handlerB)
 
 	// first offer missed
 	var firstOfferReceived atomic.Bool
-	transportA.OnOffer(func(sd webrtc.SessionDescription) error {
+	handlerA.OnOfferCalls(func(sd webrtc.SessionDescription) error {
 		firstOfferReceived.Store(true)
 		return nil
 	})
@@ -207,13 +227,13 @@ func TestFirstOfferMissedDuringICERestart(t *testing.T) {
 	// set offer/answer with restart ICE, will negotiate twice,
 	// first one is recover from missed offer
 	// second one is restartICE
-	transportB.OnAnswer(func(answer webrtc.SessionDescription) error {
+	handlerB.OnAnswerCalls(func(answer webrtc.SessionDescription) error {
 		transportA.HandleRemoteDescription(answer)
 		return nil
 	})
 
 	var offerCount atomic.Int32
-	transportA.OnOffer(func(sd webrtc.SessionDescription) error {
+	handlerA.OnOfferCalls(func(sd webrtc.SessionDescription) error {
 		offerCount.Inc()
 
 		// the second offer is a ice restart offer, so we wait transportB complete the ice gathering
@@ -248,22 +268,28 @@ func TestFirstAnswerMissedDuringICERestart(t *testing.T) {
 		Config:              &WebRTCConfig{},
 		IsOfferer:           true,
 	}
-	transportA, err := NewPCTransport(params)
+
+	paramsA := params
+	handlerA := &transportfakes.FakeHandler{}
+	paramsA.Handler = handlerA
+	transportA, err := NewPCTransport(paramsA)
 	require.NoError(t, err)
 	_, err = transportA.pc.CreateDataChannel(LossyDataChannel, nil)
 	require.NoError(t, err)
 
 	paramsB := params
+	handlerB := &transportfakes.FakeHandler{}
+	paramsB.Handler = handlerB
 	paramsB.IsOfferer = false
 	transportB, err := NewPCTransport(paramsB)
 	require.NoError(t, err)
 
 	// exchange ICE
-	handleICEExchange(t, transportA, transportB)
+	handleICEExchange(t, transportA, transportB, handlerA, handlerB)
 
 	// first answer missed
 	var firstAnswerReceived atomic.Bool
-	transportB.OnAnswer(func(sd webrtc.SessionDescription) error {
+	handlerB.OnAnswerCalls(func(sd webrtc.SessionDescription) error {
 		if firstAnswerReceived.Load() {
 			transportA.HandleRemoteDescription(sd)
 		} else {
@@ -272,7 +298,7 @@ func TestFirstAnswerMissedDuringICERestart(t *testing.T) {
 		}
 		return nil
 	})
-	transportA.OnOffer(func(sd webrtc.SessionDescription) error {
+	handlerA.OnOfferCalls(func(sd webrtc.SessionDescription) error {
 		transportB.HandleRemoteDescription(sd)
 		return nil
 	})
@@ -286,7 +312,7 @@ func TestFirstAnswerMissedDuringICERestart(t *testing.T) {
 	// first one is recover from missed offer
 	// second one is restartICE
 	var offerCount atomic.Int32
-	transportA.OnOffer(func(sd webrtc.SessionDescription) error {
+	handlerA.OnOfferCalls(func(sd webrtc.SessionDescription) error {
 		offerCount.Inc()
 
 		// the second offer is a ice restart offer, so we wait transportB complete the ice gathering
@@ -321,26 +347,32 @@ func TestNegotiationFailed(t *testing.T) {
 		Config:              &WebRTCConfig{},
 		IsOfferer:           true,
 	}
-	transportA, err := NewPCTransport(params)
+
+	paramsA := params
+	handlerA := &transportfakes.FakeHandler{}
+	paramsA.Handler = handlerA
+	transportA, err := NewPCTransport(paramsA)
 	require.NoError(t, err)
 	_, err = transportA.pc.CreateDataChannel(ReliableDataChannel, nil)
 	require.NoError(t, err)
 
 	paramsB := params
+	handlerB := &transportfakes.FakeHandler{}
+	paramsB.Handler = handlerB
 	paramsB.IsOfferer = false
 	transportB, err := NewPCTransport(paramsB)
 	require.NoError(t, err)
 
 	// exchange ICE
-	handleICEExchange(t, transportA, transportB)
+	handleICEExchange(t, transportA, transportB, handlerA, handlerB)
 
 	// wait for transport to be connected before maiming the signalling channel
-	connectTransports(t, transportA, transportB, false, 1, 1)
+	connectTransports(t, transportA, transportB, handlerA, handlerB, false, 1, 1)
 
 	// reset OnOffer to force a negotiation failure
-	transportA.OnOffer(func(sd webrtc.SessionDescription) error { return nil })
+	handlerA.OnOfferCalls(func(sd webrtc.SessionDescription) error { return nil })
 	var failed atomic.Int32
-	transportA.OnNegotiationFailed(func() {
+	handlerA.OnNegotiationFailedCalls(func() {
 		failed.Inc()
 	})
 	transportA.Negotiate(true)
@@ -361,6 +393,7 @@ func TestFilteringCandidates(t *testing.T) {
 			{Mime: webrtc.MimeTypeVP8},
 			{Mime: webrtc.MimeTypeH264},
 		},
+		Handler: &transportfakes.FakeHandler{},
 	}
 	transport, err := NewPCTransport(params)
 	require.NoError(t, err)
@@ -471,8 +504,8 @@ func TestFilteringCandidates(t *testing.T) {
 	transport.Close()
 }
 
-func handleICEExchange(t *testing.T, a, b *PCTransport) {
-	a.OnICECandidate(func(candidate *webrtc.ICECandidate) error {
+func handleICEExchange(t *testing.T, a, b *PCTransport, ah, bh *transportfakes.FakeHandler) {
+	ah.OnICECandidateCalls(func(candidate *webrtc.ICECandidate, target livekit.SignalTarget) error {
 		if candidate == nil {
 			return nil
 		}
@@ -480,7 +513,7 @@ func handleICEExchange(t *testing.T, a, b *PCTransport) {
 		b.AddICECandidate(candidate.ToJSON())
 		return nil
 	})
-	b.OnICECandidate(func(candidate *webrtc.ICECandidate) error {
+	bh.OnICECandidateCalls(func(candidate *webrtc.ICECandidate, target livekit.SignalTarget) error {
 		if candidate == nil {
 			return nil
 		}
@@ -490,16 +523,16 @@ func handleICEExchange(t *testing.T, a, b *PCTransport) {
 	})
 }
 
-func connectTransports(t *testing.T, offerer, answerer *PCTransport, isICERestart bool, expectedOfferCount int32, expectedAnswerCount int32) {
+func connectTransports(t *testing.T, offerer, answerer *PCTransport, offererHandler, answererHandler *transportfakes.FakeHandler, isICERestart bool, expectedOfferCount int32, expectedAnswerCount int32) {
 	var offerCount atomic.Int32
 	var answerCount atomic.Int32
-	answerer.OnAnswer(func(answer webrtc.SessionDescription) error {
+	answererHandler.OnAnswerCalls(func(answer webrtc.SessionDescription) error {
 		answerCount.Inc()
 		offerer.HandleRemoteDescription(answer)
 		return nil
 	})
 
-	offerer.OnOffer(func(offer webrtc.SessionDescription) error {
+	offererHandler.OnOfferCalls(func(offer webrtc.SessionDescription) error {
 		offerCount.Inc()
 		answerer.HandleRemoteDescription(offer)
 		return nil
@@ -527,11 +560,11 @@ func connectTransports(t *testing.T, offerer, answerer *PCTransport, isICERestar
 		return answerer.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected
 	}, 10*time.Second, time.Millisecond*10, "answerer did not become connected")
 
-	transportsConnected := untilTransportsConnected(offerer, answerer)
+	transportsConnected := untilTransportsConnected(offererHandler, answererHandler)
 	transportsConnected.Wait()
 }
 
-func untilTransportsConnected(transports ...*PCTransport) *sync.WaitGroup {
+func untilTransportsConnected(transports ...*transportfakes.FakeHandler) *sync.WaitGroup {
 	var triggered sync.WaitGroup
 	triggered.Add(len(transports))
 
@@ -545,7 +578,10 @@ func untilTransportsConnected(transports ...*PCTransport) *sync.WaitGroup {
 			}
 		}
 
-		t.OnInitialConnected(hdlr)
+		if t.OnInitialConnectedCallCount() != 0 {
+			hdlr()
+		}
+		t.OnInitialConnectedCalls(hdlr)
 	}
 	return &triggered
 }

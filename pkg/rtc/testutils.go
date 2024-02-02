@@ -83,5 +83,9 @@ func NewMockTrack(kind livekit.TrackType, name string) *typesfakes.FakeMediaTrac
 	t.IDReturns(livekit.TrackID(utils.NewGuid(utils.TrackPrefix)))
 	t.KindReturns(kind)
 	t.NameReturns(name)
+	t.ToProtoReturns(&livekit.TrackInfo{
+		Type: kind,
+		Name: name,
+	})
 	return t
 }

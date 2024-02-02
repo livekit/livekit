@@ -19,14 +19,14 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20231213075826-cccbf2b93d3f
-	github.com/livekit/protocol v1.9.7
-	github.com/livekit/psrpc v0.5.3-0.20240126182121-829a885bf21b
+	github.com/livekit/protocol v1.9.8-0.20240130003842-54f76fc6865e
+	github.com/livekit/psrpc v0.5.3-0.20240129223932-473b29cda289
 	github.com/mackerelio/go-osstat v0.2.4
 	github.com/magefile/mage v1.15.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.8.1
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/olekukonko/tablewriter v0.0.5
-	github.com/pion/dtls/v2 v2.2.8
+	github.com/pion/dtls/v2 v2.2.9
 	github.com/pion/ice/v2 v2.3.12
 	github.com/pion/interceptor v0.1.25
 	github.com/pion/rtcp v1.2.13

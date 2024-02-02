@@ -86,6 +86,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	}
 
 	if !d.keyFrameValid && dd.AttachedStructure == nil {
+		// d.logger.Debugw(fmt.Sprintf("drop packet, no attached structure, incoming %v, sn: %d, isKeyFrame: %v", extPkt.VideoLayer, extPkt.Packet.SequenceNumber, extPkt.KeyFrame))
 		return
 	}
 
@@ -94,10 +95,10 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	if err != nil {
 		// do not mark as dropped as only error is an old frame
 		// d.logger.Debugw(fmt.Sprintf("drop packet on decision error, incoming %v, fn: %d/%d, sn: %d",
-		// 	incomingLayer,
-		// 	dd.FrameNumber,
-		// 	extFrameNum,
-		// 	extPkt.Packet.SequenceNumber,
+		//	incomingLayer,
+		//	dd.FrameNumber,
+		//	extFrameNum,
+		//	extPkt.Packet.SequenceNumber,
 		// ), "err", err)
 		return
 	}
@@ -105,10 +106,10 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	case selectorDecisionDropped:
 		// a packet of an alreadty dropped frame, maintain decision
 		// d.logger.Debugw(fmt.Sprintf("drop packet already dropped, incoming %v, fn: %d/%d, sn: %d",
-		// 	incomingLayer,
-		// 	dd.FrameNumber,
-		// 	extFrameNum,
-		// 	extPkt.Packet.SequenceNumber,
+		//	incomingLayer,
+		//	dd.FrameNumber,
+		//	extFrameNum,
+		//	extPkt.Packet.SequenceNumber,
 		// ))
 		return
 	}
@@ -147,7 +148,8 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 			"chainDiffs", fd.ChainDiffs,
 			"chains", len(d.chains),
 			"requiredKeyFrame", ddwdt.ExtKeyFrameNum,
-			"structureKeyFrame", d.extKeyFrameNum)
+			"structureKeyFrame", d.extKeyFrameNum,
+		)
 		d.decisions.AddDropped(extFrameNum)
 		return
 	}
@@ -190,15 +192,15 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	if highestDecodeTarget.Target < 0 {
 		// no active decode target, do not select
 		// d.logger.Debugw(
-		// 	"drop packet for no target found",
-		// 	"highestDecodeTarget", highestDecodeTarget,
-		// 	"decodeTargets", d.decodeTargets,
-		// 	"tagetLayer", d.targetLayer,
-		// 	"incoming", incomingLayer,
-		// 	"fn", dd.FrameNumber,
-		// 	"efn", extFrameNum,
-		// 	"sn", extPkt.Packet.SequenceNumber,
-		// 	"isKeyFrame", extPkt.KeyFrame,
+		//	"drop packet for no target found",
+		//	"highestDecodeTarget", highestDecodeTarget,
+		//	"decodeTargets", d.decodeTargets,
+		//	"tagetLayer", d.targetLayer,
+		//	"incoming", incomingLayer,
+		//	"fn", dd.FrameNumber,
+		//	"efn", extFrameNum,
+		//	"sn", extPkt.Packet.SequenceNumber,
+		//	"isKeyFrame", extPkt.KeyFrame,
 		// )
 		d.decisions.AddDropped(extFrameNum)
 		return
@@ -207,15 +209,15 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	// DD-TODO : if bandwidth in congest, could drop the 'Discardable' frame
 	if dti == dede.DecodeTargetNotPresent {
 		// d.logger.Debugw(
-		// 	"drop packet for decode target not present",
-		// 	"highestDecodeTarget", highestDecodeTarget,
-		// 	"decodeTargets", d.decodeTargets,
-		// 	"tagetLayer", d.targetLayer,
-		// 	"incoming", incomingLayer,
-		// 	"fn", dd.FrameNumber,
-		// 	"efn", extFrameNum,
-		// 	"sn", extPkt.Packet.SequenceNumber,
-		// 	"isKeyFrame", extPkt.KeyFrame,
+		//	"drop packet for decode target not present",
+		//	"highestDecodeTarget", highestDecodeTarget,
+		//	"decodeTargets", d.decodeTargets,
+		//	"tagetLayer", d.targetLayer,
+		//	"incoming", incomingLayer,
+		//	"fn", dd.FrameNumber,
+		//	"efn", extFrameNum,
+		//	"sn", extPkt.Packet.SequenceNumber,
+		//	"isKeyFrame", extPkt.KeyFrame,
 		// )
 		d.decisions.AddDropped(extFrameNum)
 		return
@@ -237,15 +239,15 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	}
 	if !isDecodable {
 		// d.logger.Debugw(
-		// 	"drop packet for not decodable",
-		// 	"highestDecodeTarget", highestDecodeTarget,
-		// 	"decodeTargets", d.decodeTargets,
-		// 	"tagetLayer", d.targetLayer,
-		// 	"incoming", incomingLayer,
-		// 	"fn", dd.FrameNumber,
-		// 	"efn", extFrameNum,
-		// 	"sn", extPkt.Packet.SequenceNumber,
-		// 	"isKeyFrame", extPkt.KeyFrame,
+		//	"drop packet for not decodable",
+		//	"highestDecodeTarget", highestDecodeTarget,
+		//	"decodeTargets", d.decodeTargets,
+		//	"tagetLayer", d.targetLayer,
+		//	"incoming", incomingLayer,
+		//	"fn", dd.FrameNumber,
+		//	"efn", extFrameNum,
+		//	"sn", extPkt.Packet.SequenceNumber,
+		//	"isKeyFrame", extPkt.KeyFrame,
 		// )
 		d.decisions.AddDropped(extFrameNum)
 		return

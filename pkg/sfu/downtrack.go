@@ -1471,7 +1471,6 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 	pliOnce := true
 	sendPliOnce := func() {
 		_, layer := d.forwarder.CheckSync()
-		d.params.Logger.Debugw("received PLI/FIR RTCP", "layer", layer)
 		if pliOnce {
 			if layer != buffer.InvalidLayerSpatial {
 				d.params.Logger.Debugw("sending PLI RTCP", "layer", layer)
@@ -1626,6 +1625,17 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			if err == io.EOF {
 				break
 			}
+			// TODO-VP9-DEBUG-REMOVE-START
+			d.params.Logger.Debugw(
+				"NACK miss",
+				"isn", epm.sourceSeqNo,
+				"osn", epm.targetSeqNo,
+				"ots", epm.timestamp,
+				"eosn", epm.extSequenceNumber,
+				"eots", epm.extTimestamp,
+				"sid", epm.layer,
+			)
+			// TODO-VP9-DEBUG-REMOVE-END
 			nackMisses++
 			continue
 		}
