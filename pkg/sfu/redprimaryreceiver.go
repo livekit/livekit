@@ -96,7 +96,10 @@ func (r *RedPrimaryReceiver) AddDownTrack(track TrackSender) error {
 		r.logger.Infow("subscriberID already exists, replacing downtrack", "subscriberID", track.SubscriberID())
 	}
 
+	track.TrackInfoAvailable()
+
 	r.downTrackSpreader.Store(track)
+	r.logger.Debugw("red primary receiver downtrack added", "subscriberID", track.SubscriberID())
 	return nil
 }
 
@@ -106,6 +109,7 @@ func (r *RedPrimaryReceiver) DeleteDownTrack(subscriberID livekit.ParticipantID)
 	}
 
 	r.downTrackSpreader.Free(subscriberID)
+	r.logger.Debugw("red primary receiver downtrack deleted", "subscriberID", subscriberID)
 }
 
 func (r *RedPrimaryReceiver) IsClosed() bool {

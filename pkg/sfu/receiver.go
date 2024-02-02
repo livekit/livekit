@@ -24,6 +24,7 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/mediatransportutil/pkg/bucket"
 	"github.com/livekit/mediatransportutil/pkg/twcc"
@@ -71,6 +72,7 @@ type TrackReceiver interface {
 	DebugInfo() map[string]interface{}
 
 	TrackInfo() *livekit.TrackInfo
+	UpdateTrackInfo(ti *livekit.TrackInfo)
 
 	// Get primary receiver if this receiver represents a RED codec; otherwise it will return itself
 	GetPrimaryReceiverForRed() TrackReceiver
@@ -105,7 +107,7 @@ type WebRTCReceiver struct {
 	closeOnce      sync.Once
 	closed         atomic.Bool
 	useTrackers    bool
-	trackInfo      *livekit.TrackInfo
+	trackInfo      atomic.Pointer[livekit.TrackInfo]
 
 	rtcpCh chan []rtcp.Packet
 
@@ -201,21 +203,21 @@ func NewWebRTCReceiver(
 	opts ...ReceiverOpts,
 ) *WebRTCReceiver {
 	w := &WebRTCReceiver{
-		logger:    logger,
-		receiver:  receiver,
-		trackID:   livekit.TrackID(track.ID()),
-		streamID:  track.StreamID(),
-		codec:     track.Codec(),
-		kind:      track.Kind(),
-		twcc:      twcc,
-		trackInfo: trackInfo,
-		isSVC:     IsSvcCodec(track.Codec().MimeType),
-		isRED:     IsRedCodec(track.Codec().MimeType),
+		logger:   logger,
+		receiver: receiver,
+		trackID:  livekit.TrackID(track.ID()),
+		streamID: track.StreamID(),
+		codec:    track.Codec(),
+		kind:     track.Kind(),
+		twcc:     twcc,
+		isSVC:    IsSvcCodec(track.Codec().MimeType),
+		isRED:    IsRedCodec(track.Codec().MimeType),
 	}
 
 	for _, opt := range opts {
 		w = opt(w)
 	}
+	w.trackInfo.Store(proto.Clone(trackInfo).(*livekit.TrackInfo))
 
 	w.downTrackSpreader = NewDownTrackSpreader(DownTrackSpreaderParams{
 		Threshold: w.lbThreshold,
@@ -233,7 +235,7 @@ func NewWebRTCReceiver(
 			w.onStatsUpdate(w, stat)
 		}
 	})
-	w.connectionStats.Start(w.trackInfo)
+	w.connectionStats.Start(trackInfo)
 
 	w.streamTrackerManager = NewStreamTrackerManager(logger, trackInfo, w.isSVC, w.codec.ClockRate, trackersConfig)
 	w.streamTrackerManager.SetListener(w)
@@ -251,7 +253,12 @@ func NewWebRTCReceiver(
 }
 
 func (w *WebRTCReceiver) TrackInfo() *livekit.TrackInfo {
-	return w.trackInfo
+	return w.trackInfo.Load()
+}
+
+func (w *WebRTCReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
+	w.trackInfo.Store(proto.Clone(ti).(*livekit.TrackInfo))
+	w.streamTrackerManager.UpdateTrackInfo(ti)
 }
 
 func (w *WebRTCReceiver) OnStatsUpdate(fn func(w *WebRTCReceiver, stat *livekit.AnalyticsStat)) {
@@ -329,7 +336,7 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 
 	layer := int32(0)
 	if w.Kind() == webrtc.RTPCodecTypeVideo && !w.isSVC {
-		layer = buffer.RidToSpatialLayer(track.RID(), w.trackInfo)
+		layer = buffer.RidToSpatialLayer(track.RID(), w.trackInfo.Load())
 	}
 	buff.SetLogger(w.logger.WithValues("layer", layer))
 	buff.SetTWCC(w.twcc)
@@ -415,6 +422,7 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) error {
 	track.UpTrackMaxTemporalLayerSeenChange(w.streamTrackerManager.GetMaxTemporalLayerSeen())
 
 	w.downTrackSpreader.Store(track)
+	w.logger.Debugw("downtrack added", "subscriberID", track.SubscriberID())
 	return nil
 }
 
@@ -499,6 +507,7 @@ func (w *WebRTCReceiver) DeleteDownTrack(subscriberID livekit.ParticipantID) {
 	}
 
 	w.downTrackSpreader.Free(subscriberID)
+	w.logger.Debugw("downtrack deleted", "subscriberID", subscriberID)
 }
 
 func (w *WebRTCReceiver) sendRTCP(packets []rtcp.Packet) {
@@ -701,9 +710,13 @@ func (w *WebRTCReceiver) closeTracks() {
 }
 
 func (w *WebRTCReceiver) DebugInfo() map[string]interface{} {
+	isSimulcast := !w.isSVC
+	if ti := w.trackInfo.Load(); ti != nil {
+		isSimulcast = isSimulcast && len(ti.Layers) > 1
+	}
 	info := map[string]interface{}{
 		"SVC":       w.isSVC,
-		"Simulcast": !w.isSVC && len(w.trackInfo.Layers) > 1,
+		"Simulcast": isSimulcast,
 	}
 
 	w.upTrackMu.RLock()

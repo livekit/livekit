@@ -402,7 +402,7 @@ func (r *RTPStatsReceiver) DeltaInfo(snapshotID uint32) *RTPDeltaInfo {
 	return r.deltaInfo(snapshotID, r.sequenceNumber.GetExtendedStart(), r.sequenceNumber.GetExtendedHighest())
 }
 
-func (r *RTPStatsReceiver) ToString() string {
+func (r *RTPStatsReceiver) String() string {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 

@@ -16,17 +16,33 @@
 
 package utils
 
-import "context"
+import (
+	"context"
 
-var attemptKey = struct{}{}
+	"github.com/livekit/protocol/logger"
+)
+
+type attemptKey struct{}
+type loggerKey = struct{}
 
 func ContextWithAttempt(ctx context.Context, attempt int) context.Context {
-	return context.WithValue(ctx, attemptKey, attempt)
+	return context.WithValue(ctx, attemptKey{}, attempt)
 }
 
 func GetAttempt(ctx context.Context) int {
-	if attempt, ok := ctx.Value(attemptKey).(int); ok {
+	if attempt, ok := ctx.Value(attemptKey{}).(int); ok {
 		return attempt
 	}
 	return 0
+}
+
+func ContextWithLogger(ctx context.Context, logger logger.Logger) context.Context {
+	return context.WithValue(ctx, loggerKey{}, logger)
+}
+
+func GetLogger(ctx context.Context) logger.Logger {
+	if l, ok := ctx.Value(loggerKey{}).(logger.Logger); ok {
+		return l
+	}
+	return logger.GetLogger()
 }

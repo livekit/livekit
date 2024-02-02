@@ -15,33 +15,34 @@
 package utils
 
 import (
+	"math/bits"
 	"sync"
 
-	"github.com/livekit/protocol/logger"
+	"github.com/gammazero/deque"
+	"github.com/livekit/protocol/utils"
 )
 
 type OpsQueue struct {
-	logger logger.Logger
-	name   string
-	size   int
+	name        string
+	flushOnStop bool
 
-	lock      sync.RWMutex
-	ops       chan func()
+	lock      sync.Mutex
+	ops       deque.Deque[func()]
+	wake      chan struct{}
 	isStarted bool
+	doneChan  chan struct{}
 	isStopped bool
 }
 
-func NewOpsQueue(logger logger.Logger, name string, size int) *OpsQueue {
-	return &OpsQueue{
-		logger: logger,
-		name:   name,
-		size:   size,
-		ops:    make(chan func(), size),
+func NewOpsQueue(name string, minSize uint, flushOnStop bool) *OpsQueue {
+	oq := &OpsQueue{
+		name:        name,
+		flushOnStop: flushOnStop,
+		wake:        make(chan struct{}, 1),
+		doneChan:    make(chan struct{}),
 	}
-}
-
-func (oq *OpsQueue) SetLogger(logger logger.Logger) {
-	oq.logger = logger
+	oq.ops.SetMinCapacity(uint(utils.Min(bits.Len64(uint64(minSize-1)), 16)))
+	return oq
 }
 
 func (oq *OpsQueue) Start() {
@@ -57,42 +58,52 @@ func (oq *OpsQueue) Start() {
 	go oq.process()
 }
 
-func (oq *OpsQueue) Stop() {
+func (oq *OpsQueue) Stop() <-chan struct{} {
 	oq.lock.Lock()
 	if oq.isStopped {
 		oq.lock.Unlock()
-		return
+		return oq.doneChan
 	}
 
 	oq.isStopped = true
-	close(oq.ops)
+	close(oq.wake)
 	oq.lock.Unlock()
-}
-
-func (oq *OpsQueue) IsStarted() bool {
-	oq.lock.RLock()
-	defer oq.lock.RUnlock()
-
-	return oq.isStarted
+	return oq.doneChan
 }
 
 func (oq *OpsQueue) Enqueue(op func()) {
-	oq.lock.RLock()
-	if oq.isStopped {
-		oq.lock.RUnlock()
-		return
-	}
+	oq.lock.Lock()
+	defer oq.lock.Unlock()
 
-	select {
-	case oq.ops <- op:
-	default:
-		oq.logger.Errorw("ops queue full", nil, "name", oq.name, "size", oq.size)
+	oq.ops.PushBack(op)
+	if oq.ops.Len() == 1 && !oq.isStopped {
+		select {
+		case oq.wake <- struct{}{}:
+		default:
+		}
 	}
-	oq.lock.RUnlock()
 }
 
 func (oq *OpsQueue) process() {
-	for op := range oq.ops {
-		op()
+	defer close(oq.doneChan)
+
+	for {
+		<-oq.wake
+		for {
+			oq.lock.Lock()
+			if oq.isStopped && (!oq.flushOnStop || oq.ops.Len() == 0) {
+				oq.lock.Unlock()
+				return
+			}
+
+			if oq.ops.Len() == 0 {
+				oq.lock.Unlock()
+				break
+			}
+			op := oq.ops.PopFront()
+			oq.lock.Unlock()
+
+			op()
+		}
 	}
 }
