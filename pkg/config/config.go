@@ -516,14 +516,14 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 		}
 	}
 
-	if err := conf.RTC.Validate(conf.Development); err != nil {
-		return nil, fmt.Errorf("could not validate RTC config: %v", err)
-	}
-
 	if c != nil {
 		if err := conf.updateFromCLI(c, baseFlags); err != nil {
 			return nil, err
 		}
+	}
+
+	if err := conf.RTC.Validate(conf.Development); err != nil {
+		return nil, fmt.Errorf("could not validate RTC config: %v", err)
 	}
 
 	// expand env vars in filenames
