@@ -160,6 +160,9 @@ type RTPStatsSender struct {
 	clockSkewCount              int
 	outOfOrderSenderReportCount int
 	metadataCacheOverflowCount  int
+
+	srFeedFirst  *RTCPSenderReportData
+	srFeedNewest *RTCPSenderReportData
 }
 
 func NewRTPStatsSender(params RTPStatsParams) *RTPStatsSender {
@@ -198,6 +201,15 @@ func (r *RTPStatsSender) Seed(from *RTPStatsSender) {
 	r.nextSenderSnapshotID = from.nextSenderSnapshotID
 	r.senderSnapshots = make([]senderSnapshot, cap(from.senderSnapshots))
 	copy(r.senderSnapshots, from.senderSnapshots)
+
+	if from.srFeedFirst != nil {
+		srFeedFirst := *from.srFeedFirst
+		r.srFeedFirst = &srFeedFirst
+	}
+	if from.srFeedNewest != nil {
+		srFeedNewest := *from.srFeedNewest
+		r.srFeedNewest = &srFeedNewest
+	}
 }
 
 func (r *RTPStatsSender) NewSnapshotId() uint32 {
@@ -571,9 +583,15 @@ func (r *RTPStatsSender) LastReceiverReportTime() time.Time {
 	return r.lastRRTime
 }
 
-func (r *RTPStatsSender) MaybeAdjustFirstPacketTime(ts uint32) {
+func (r *RTPStatsSender) MaybeAdjustFirstPacketTime(srData *RTCPSenderReportData, ts uint32) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
+
+	srDataCopy := *srData
+	if r.srFeedFirst == nil {
+		r.srFeedFirst = &srDataCopy
+	}
+	r.srFeedNewest = &srDataCopy
 
 	r.maybeAdjustFirstPacketTime(ts, uint32(r.extStartTS))
 }
@@ -637,8 +655,11 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, calculatedClockRate ui
 			if r.clockSkewCount%10 == 0 {
 				r.logger.Infow(
 					"sending sender report, clock skew",
+					"first", r.srFirst.ToString(),
 					"last", r.srNewest.ToString(),
 					"curr", srData.ToString(),
+					"firstFeed", r.srFeedFirst.ToString(),
+					"lastFeed", r.srFeedNewest.ToString(),
 					"timeNow", time.Now().String(),
 					"extStartTS", r.extStartTS,
 					"extHighestTS", r.extHighestTS,
@@ -674,8 +695,11 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, calculatedClockRate ui
 		if r.outOfOrderSenderReportCount%10 == 0 {
 			r.logger.Infow(
 				"sending sender report, out-of-order, repairing",
+				"first", r.srFirst.ToString(),
 				"last", r.srNewest.ToString(),
 				"curr", srData.ToString(),
+				"firstFeed", r.srFeedFirst.ToString(),
+				"lastFeed", r.srFeedNewest.ToString(),
 				"timeNow", time.Now().String(),
 				"extStartTS", r.extStartTS,
 				"extHighestTS", r.extHighestTS,
