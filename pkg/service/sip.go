@@ -157,7 +157,7 @@ func (s *SIPService) DeleteSIPDispatchRule(ctx context.Context, req *livekit.Del
 	return info, nil
 }
 
-func (s *SIPService) CreateSIPParticipant(ctx context.Context, req *livekit.CreateSIPParticipantRequest) (*livekit.SIPParticipantInfo, error) {
+func (s *SIPService) CreateSIPParticipantWithToken(ctx context.Context, req *livekit.CreateSIPParticipantRequest, wsUrl, token string) (*livekit.SIPParticipantInfo, error) {
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
 	}
@@ -167,6 +167,8 @@ func (s *SIPService) CreateSIPParticipant(ctx context.Context, req *livekit.Crea
 		CallTo:              req.SipCallTo,
 		RoomName:            req.RoomName,
 		ParticipantIdentity: req.ParticipantIdentity,
+		WsUrl:               wsUrl,
+		Token:               token,
 	}
 	if req.SipTrunkId != "" {
 		trunk, err := s.store.LoadSIPTrunk(ctx, req.SipTrunkId)
@@ -201,4 +203,7 @@ func (s *SIPService) CreateSIPParticipant(ctx context.Context, req *livekit.Crea
 		ParticipantIdentity: resp.ParticipantIdentity,
 		RoomName:            req.RoomName,
 	}, nil
+}
+func (s *SIPService) CreateSIPParticipant(ctx context.Context, req *livekit.CreateSIPParticipantRequest) (*livekit.SIPParticipantInfo, error) {
+	return s.CreateSIPParticipantWithToken(ctx, req, "", "")
 }
