@@ -264,7 +264,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	b.bound = true
 }
 
-// Write adds an RTP Packet, out of order, new packet may be arrived later
+// Write adds an RTP Packet, ordering is not guaranteed, newer packets may arrive later
 func (b *Buffer) Write(pkt []byte) (n int, err error) {
 	b.Lock()
 	defer b.Unlock()
