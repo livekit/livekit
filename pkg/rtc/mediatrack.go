@@ -23,7 +23,6 @@ import (
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
 
-	"github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -182,7 +181,7 @@ func (t *MediaTrack) UpdateCodecCid(codecs []*livekit.SimulcastCodec) {
 }
 
 // AddReceiver adds a new RTP receiver to the track, returns true when receiver represents a new codec
-func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, twcc *twcc.Responder, mid string) bool {
+func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, mid string) bool {
 	var newCodec bool
 	buff, rtcpReader := t.params.BufferFactory.GetBufferPair(uint32(track.SSRC()))
 	if buff == nil || rtcpReader == nil {
@@ -250,7 +249,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			track,
 			ti,
 			LoggerWithCodecMime(t.params.Logger, mime),
-			twcc,
 			t.params.OnRTCP,
 			t.params.VideoConfig.StreamTracker,
 			sfu.WithPliThrottleConfig(t.params.PLIThrottleConfig),
