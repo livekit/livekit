@@ -686,7 +686,7 @@ func (r *Room) SyncState(participant types.LocalParticipant, state *livekit.Sync
 		return nil
 	}
 
-	// synthesize a track setting for each disabled track
+	// synthesize a track setting for each disabled track,
 	// can be set before addding subscriptions,
 	// in fact it is done before so that setting can be updated immediately upon subscription.
 	for _, trackSid := range state.TrackSidsDisabled {
@@ -699,7 +699,6 @@ func (r *Room) SyncState(participant types.LocalParticipant, state *livekit.Sync
 		state.Subscription.ParticipantTracks,
 		state.Subscription.Subscribe,
 	)
-
 	return nil
 }
 
