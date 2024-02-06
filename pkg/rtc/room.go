@@ -692,6 +692,11 @@ func (r *Room) SyncState(participant types.LocalParticipant, state *livekit.Sync
 		state.Subscription.ParticipantTracks,
 		state.Subscription.Subscribe,
 	)
+
+	// synthesize a track setting for each disabled track
+	for _, trackSid := range state.TrackSidsDisabled {
+		participant.UpdateSubscribedTrackSettings(livekit.TrackID(trackSid), &livekit.UpdateTrackSettings{Disabled: true})
+	}
 	return nil
 }
 
