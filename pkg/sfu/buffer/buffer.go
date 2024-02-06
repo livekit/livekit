@@ -361,8 +361,6 @@ func (b *Buffer) writeRTX(rtxPkt *rtp.Packet) (n int, err error) {
 		return
 	}
 
-	b.logger.Debugw("repaired packet", "ssrc", b.mediaSSRC, "sn", videoPkt.SequenceNumber)
-
 	b.calc((*videoPktPtr)[:n], &videoPkt, time.Now(), true)
 	return
 }
