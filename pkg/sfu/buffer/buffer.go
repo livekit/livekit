@@ -120,8 +120,9 @@ type Buffer struct {
 	frameRateCalculator [DefaultMaxLayerSpatial + 1]FrameRateCalculator
 	frameRateCalculated bool
 
-	packetNotFoundCount atomic.Uint32
-	packetTooOldCount   atomic.Uint32
+	packetNotFoundCount   atomic.Uint32
+	packetTooOldCount     atomic.Uint32
+	extPacketTooMuchCount atomic.Uint32
 }
 
 // NewBuffer constructs a new Buffer
@@ -490,6 +491,12 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 		return
 	}
 	b.extPackets.PushBack(ep)
+
+	if b.extPackets.Len() > b.bucket.Capacity() {
+		if (b.extPacketTooMuchCount.Inc()-1)%100 == 0 {
+			b.logger.Warnw("too much ext packets", nil, "count", b.extPackets.Len())
+		}
+	}
 
 	b.doFpsCalc(ep)
 }
