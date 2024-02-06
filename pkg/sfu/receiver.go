@@ -197,7 +197,6 @@ func NewWebRTCReceiver(
 	track *webrtc.TrackRemote,
 	trackInfo *livekit.TrackInfo,
 	logger logger.Logger,
-	twcc *twcc.Responder,
 	onRTCP func([]rtcp.Packet),
 	trackersConfig config.StreamTrackersConfig,
 	opts ...ReceiverOpts,
@@ -209,7 +208,6 @@ func NewWebRTCReceiver(
 		streamID: track.StreamID(),
 		codec:    track.Codec(),
 		kind:     track.Kind(),
-		twcc:     twcc,
 		onRTCP:   onRTCP,
 		isSVC:    IsSvcCodec(track.Codec().MimeType),
 		isRED:    IsRedCodec(track.Codec().MimeType),
@@ -340,7 +338,6 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 		layer = buffer.RidToSpatialLayer(track.RID(), w.trackInfo.Load())
 	}
 	buff.SetLogger(w.logger.WithValues("layer", layer))
-	buff.SetTWCC(w.twcc)
 	buff.SetAudioLevelParams(audio.AudioLevelParams{
 		ActiveLevel:     w.audioConfig.ActiveLevel,
 		MinPercentile:   w.audioConfig.MinPercentile,
