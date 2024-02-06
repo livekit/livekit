@@ -1205,6 +1205,10 @@ func (h PrimaryTransportHandler) OnFullyEstablished() {
 }
 
 func (p *ParticipantImpl) setupTransportManager() error {
+	p.twcc = twcc.NewTransportWideCCResponder()
+	p.twcc.OnFeedback(func(pkts []rtcp.Packet) {
+		p.postRtcp(pkts)
+	})
 	ath := AnyTransportHandler{p: p}
 	var pth transport.Handler = PublisherTransportHandler{ath}
 	var sth transport.Handler = SubscriberTransportHandler{ath}
@@ -1223,6 +1227,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		// after the participant has joined
 		SubscriberAsPrimary:          subscriberAsPrimary,
 		Config:                       p.params.Config,
+		Twcc:                         p.twcc,
 		ProtocolVersion:              p.params.ProtocolVersion,
 		CongestionControlConfig:      p.params.CongestionControlConfig,
 		EnabledPublishCodecs:         p.enabledPublishCodecs,
@@ -1913,16 +1918,9 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 		p.dirty.Store(true)
 	}
 
-	ssrc := uint32(track.SSRC())
-	if p.twcc == nil {
-		p.twcc = twcc.NewTransportWideCCResponder(ssrc)
-		p.twcc.OnFeedback(func(pkts []rtcp.Packet) {
-			p.postRtcp(pkts)
-		})
-	}
 	p.pendingTracksLock.Unlock()
 
-	if mt.AddReceiver(rtpReceiver, track, p.twcc, mid) {
+	if mt.AddReceiver(rtpReceiver, track, mid) {
 		p.removePendingMigratedTrack(mt)
 	}
 
