@@ -38,6 +38,7 @@ import (
 	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpextension"
+	"github.com/livekit/livekit-server/pkg/sfu/utils"
 )
 
 // TrackSender defines an interface send media to remote peer
@@ -357,7 +358,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	}
 	var codec webrtc.RTPCodecParameters
 	for _, c := range d.upstreamCodecs {
-		matchCodec, err := codecParametersFuzzySearch(c, t.CodecParameters())
+		matchCodec, err := utils.CodecParametersFuzzySearch(c, t.CodecParameters())
 		if err == nil {
 			codec = matchCodec
 			break

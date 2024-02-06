@@ -33,6 +33,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
+	"github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -71,6 +72,7 @@ type TransportManagerParams struct {
 	SID                          livekit.ParticipantID
 	SubscriberAsPrimary          bool
 	Config                       *WebRTCConfig
+	Twcc                         *twcc.Responder
 	ProtocolVersion              types.ProtocolVersion
 	CongestionControlConfig      config.CongestionControlConfig
 	EnabledSubscribeCodecs       []*livekit.Codec
@@ -131,6 +133,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		ParticipantIdentity:     params.Identity,
 		ProtocolVersion:         params.ProtocolVersion,
 		Config:                  params.Config,
+		Twcc:                    params.Twcc,
 		DirectionConfig:         params.Config.Publisher,
 		CongestionControlConfig: params.CongestionControlConfig,
 		EnabledCodecs:           params.EnabledPublishCodecs,
