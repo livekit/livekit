@@ -2062,12 +2062,9 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 
 		p.dirty.Store(true)
 
-		if !p.IsClosed() {
-			// unpublished events aren't necessary when participant is closed
-			p.pubLogger.Debugw("track unpublished", "trackID", ti.Sid, "track", logger.Proto(ti))
-			if onTrackUnpublished := p.getOnTrackUnpublished(); onTrackUnpublished != nil {
-				onTrackUnpublished(p, mt)
-			}
+		p.pubLogger.Infow("track unpublished", "trackID", ti.Sid, "track", logger.Proto(ti))
+		if onTrackUnpublished := p.getOnTrackUnpublished(); onTrackUnpublished != nil {
+			onTrackUnpublished(p, mt)
 		}
 	})
 
