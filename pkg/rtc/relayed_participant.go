@@ -267,6 +267,10 @@ func (p *RelayedParticipantImpl) Close(sendLeave bool, reason types.ParticipantC
 		onClose(p, nil)
 	}
 
+	for _, t := range p.GetPublishedTracks() {
+		t.Close(false)
+	}
+
 	return nil
 }
 
