@@ -259,6 +259,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			sfu.WithStreamTrackers(),
 		)
 		newWR.OnCloseHandler(func() {
+			t.params.Logger.Infow("webrtc receiver closed")
 			t.MediaTrackReceiver.SetClosing()
 			t.MediaTrackReceiver.ClearReceiver(mime, false)
 			if t.MediaTrackReceiver.TryClose() {
