@@ -55,17 +55,16 @@ type MediaTrackParams struct {
 	ParticipantID       livekit.ParticipantID
 	ParticipantIdentity livekit.ParticipantIdentity
 	ParticipantVersion  uint32
-	// channel to send RTCP packets to the source
-	RTCPChan          chan []rtcp.Packet
-	BufferFactory     *buffer.Factory
-	ReceiverConfig    ReceiverConfig
-	SubscriberConfig  DirectionConfig
-	PLIThrottleConfig config.PLIThrottleConfig
-	AudioConfig       config.AudioConfig
-	VideoConfig       config.VideoConfig
-	Telemetry         telemetry.TelemetryService
-	Logger            logger.Logger
-	SimTracks         map[uint32]SimulcastTrackInfo
+	BufferFactory       *buffer.Factory
+	ReceiverConfig      ReceiverConfig
+	SubscriberConfig    DirectionConfig
+	PLIThrottleConfig   config.PLIThrottleConfig
+	AudioConfig         config.AudioConfig
+	VideoConfig         config.VideoConfig
+	Telemetry           telemetry.TelemetryService
+	Logger              logger.Logger
+	SimTracks           map[uint32]SimulcastTrackInfo
+	OnRTCP              func([]rtcp.Packet)
 }
 
 func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
@@ -250,13 +249,13 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			track,
 			ti,
 			LoggerWithCodecMime(t.params.Logger, mime),
+			t.params.OnRTCP,
 			t.params.VideoConfig.StreamTracker,
 			sfu.WithPliThrottleConfig(t.params.PLIThrottleConfig),
 			sfu.WithAudioConfig(t.params.AudioConfig),
 			sfu.WithLoadBalanceThreshold(20),
 			sfu.WithStreamTrackers(),
 		)
-		newWR.SetRTCPCh(t.params.RTCPChan)
 		newWR.OnCloseHandler(func() {
 			t.MediaTrackReceiver.SetClosing()
 			t.MediaTrackReceiver.ClearReceiver(mime, false)

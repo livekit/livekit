@@ -18,7 +18,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20240206022904-8e203f9db6af
-	github.com/livekit/protocol v1.9.8-0.20240130003842-54f76fc6865e
+	github.com/livekit/protocol v1.9.8
 	github.com/livekit/psrpc v0.5.3-0.20240129223932-473b29cda289
 	github.com/mackerelio/go-osstat v0.2.4
 	github.com/magefile/mage v1.15.0
@@ -81,17 +81,11 @@ require (
 	github.com/nats-io/nkeys v0.4.7 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/pion/datachannel v1.5.5 // indirect
-	github.com/pion/ice/v3 v3.0.2 // indirect
 	github.com/pion/logging v0.2.2 // indirect
 	github.com/pion/mdns v0.0.10 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/srtp/v2 v2.0.18 // indirect
-	github.com/pion/srtp/v3 v3.0.1 // indirect
 	github.com/pion/stun v0.6.1 // indirect
-	github.com/pion/stun/v2 v2.0.0 // indirect
-	github.com/pion/transport/v3 v3.0.1 // indirect
-	github.com/pion/turn/v3 v3.0.1 // indirect
-	github.com/pion/webrtc/v4 v4.0.0-beta.7 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_model v0.5.0 // indirect
 	github.com/prometheus/common v0.45.0 // indirect

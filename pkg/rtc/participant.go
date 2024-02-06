@@ -158,7 +158,7 @@ type ParticipantImpl struct {
 	disconnectTimer *time.Timer
 	migrationTimer  *time.Timer
 
-	rtcpCh chan []rtcp.Packet
+	pubRTCPQueue *sutils.OpsQueue
 
 	// hold reference for MediaTrack
 	twcc *twcc.Responder
@@ -240,7 +240,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	}
 	p := &ParticipantImpl{
 		params:                  params,
-		rtcpCh:                  make(chan []rtcp.Packet, 100),
+		pubRTCPQueue:            sutils.NewOpsQueue("pub-rtcp", 64, false),
 		pendingTracks:           make(map[string]*pendingTrackInfo),
 		pendingPublishingTracks: make(map[livekit.TrackID]*pendingTrackInfo),
 		connectedAt:             time.Now(),
@@ -1472,7 +1472,7 @@ func (p *ParticipantImpl) onPublisherInitialConnected() {
 	if p.supervisor != nil {
 		p.supervisor.SetPublisherPeerConnectionConnected(true)
 	}
-	go p.publisherRTCPWorker()
+	p.pubRTCPQueue.Start()
 }
 
 func (p *ParticipantImpl) onSubscriberInitialConnected() {
@@ -1998,7 +1998,6 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 		ParticipantID:       p.params.SID,
 		ParticipantIdentity: p.params.Identity,
 		ParticipantVersion:  p.version.Load(),
-		RTCPChan:            p.rtcpCh,
 		BufferFactory:       p.params.Config.BufferFactory,
 		ReceiverConfig:      p.params.Config.Receiver,
 		AudioConfig:         p.params.AudioConfig,
@@ -2008,6 +2007,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 		SubscriberConfig:    p.params.Config.Subscriber,
 		PLIThrottleConfig:   p.params.PLIThrottleConfig,
 		SimTracks:           p.params.SimTracks,
+		OnRTCP:              p.postRtcp,
 	}, ti)
 
 	mt.OnSubscribedMaxQualityChange(p.onSubscribedMaxQualityChange)
@@ -2115,7 +2115,7 @@ func (p *ParticipantImpl) hasPendingMigratedTrack() bool {
 }
 
 func (p *ParticipantImpl) onUpTrackManagerClose() {
-	p.postRtcp(nil)
+	p.pubRTCPQueue.Stop()
 }
 
 func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackType) (string, *livekit.TrackInfo, bool) {
@@ -2239,28 +2239,6 @@ func (p *ParticipantImpl) getPublishedTrackBySdpCid(clientId string) types.Media
 	return nil
 }
 
-func (p *ParticipantImpl) publisherRTCPWorker() {
-	defer func() {
-		if r := Recover(p.GetLogger()); r != nil {
-			os.Exit(1)
-		}
-	}()
-
-	// read from rtcpChan
-	for pkts := range p.rtcpCh {
-		if pkts == nil {
-			p.pubLogger.Debugw("exiting publisher RTCP worker")
-			return
-		}
-
-		if err := p.TransportManager.WritePublisherRTCP(pkts); err != nil {
-			if !IsEOF(err) {
-				p.pubLogger.Errorw("could not write RTCP to participant", err)
-			}
-		}
-	}
-}
-
 func (p *ParticipantImpl) DebugInfo() map[string]interface{} {
 	info := map[string]interface{}{
 		"ID":    p.params.SID,
@@ -2289,11 +2267,11 @@ func (p *ParticipantImpl) DebugInfo() map[string]interface{} {
 }
 
 func (p *ParticipantImpl) postRtcp(pkts []rtcp.Packet) {
-	select {
-	case p.rtcpCh <- pkts:
-	default:
-		p.params.Logger.Warnw("rtcp channel full", nil)
-	}
+	p.pubRTCPQueue.Enqueue(func() {
+		if err := p.TransportManager.WritePublisherRTCP(pkts); err != nil && !IsEOF(err) {
+			p.pubLogger.Errorw("could not write RTCP to participant", err)
+		}
+	})
 }
 
 func (p *ParticipantImpl) setDowntracksConnected() {

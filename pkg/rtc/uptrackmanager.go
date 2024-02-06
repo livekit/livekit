@@ -64,22 +64,37 @@ func NewUpTrackManager(params UpTrackManagerParams) *UpTrackManager {
 
 func (u *UpTrackManager) Close(willBeResumed bool) {
 	u.lock.Lock()
-	u.closed = true
-	notify := len(u.publishedTracks) == 0
-	u.lock.Unlock()
-
-	// remove all subscribers
-	for _, t := range u.GetPublishedTracks() {
-		t.ClearAllReceivers(willBeResumed)
+	if u.closed {
+		u.lock.Unlock()
+		return
 	}
 
-	if notify && u.onClose != nil {
-		u.onClose()
+	u.closed = true
+
+	publishedTracks := u.publishedTracks
+	u.publishedTracks = make(map[livekit.TrackID]types.MediaTrack)
+	u.lock.Unlock()
+
+	for _, t := range publishedTracks {
+		t.Close(willBeResumed)
+	}
+
+	if onClose := u.getOnUpTrackManagerClose(); onClose != nil {
+		onClose()
 	}
 }
 
 func (u *UpTrackManager) OnUpTrackManagerClose(f func()) {
+	u.lock.Lock()
 	u.onClose = f
+	u.lock.Unlock()
+}
+
+func (u *UpTrackManager) getOnUpTrackManagerClose() func() {
+	u.lock.RLock()
+	defer u.lock.RUnlock()
+
+	return u.onClose
 }
 
 func (u *UpTrackManager) ToProto() []*livekit.TrackInfo {
@@ -247,22 +262,10 @@ func (u *UpTrackManager) AddPublishedTrack(track types.MediaTrack) {
 	u.params.Logger.Debugw("added published track", "trackID", track.ID(), "trackInfo", logger.Proto(track.ToProto()))
 
 	track.AddOnClose(func() {
-		notifyClose := false
-
-		// cleanup
 		u.lock.Lock()
-		trackID := track.ID()
-		delete(u.publishedTracks, trackID)
+		delete(u.publishedTracks, track.ID())
 		// not modifying subscription permissions, will get reset on next update from participant
-
-		if u.closed && len(u.publishedTracks) == 0 {
-			notifyClose = true
-		}
 		u.lock.Unlock()
-
-		if notifyClose && u.onClose != nil {
-			u.onClose()
-		}
 	})
 }
 

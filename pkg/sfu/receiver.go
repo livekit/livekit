@@ -108,7 +108,7 @@ type WebRTCReceiver struct {
 	useTrackers    bool
 	trackInfo      atomic.Pointer[livekit.TrackInfo]
 
-	rtcpCh chan []rtcp.Packet
+	onRTCP func([]rtcp.Packet)
 
 	twcc *twcc.Responder
 
@@ -197,6 +197,7 @@ func NewWebRTCReceiver(
 	track *webrtc.TrackRemote,
 	trackInfo *livekit.TrackInfo,
 	logger logger.Logger,
+	onRTCP func([]rtcp.Packet),
 	trackersConfig config.StreamTrackersConfig,
 	opts ...ReceiverOpts,
 ) *WebRTCReceiver {
@@ -207,6 +208,7 @@ func NewWebRTCReceiver(
 		streamID: track.StreamID(),
 		codec:    track.Codec(),
 		kind:     track.Kind(),
+		onRTCP:   onRTCP,
 		isSVC:    IsSvcCodec(track.Codec().MimeType),
 		isRED:    IsRedCodec(track.Codec().MimeType),
 	}
@@ -511,10 +513,8 @@ func (w *WebRTCReceiver) sendRTCP(packets []rtcp.Packet) {
 		return
 	}
 
-	select {
-	case w.rtcpCh <- packets:
-	default:
-		w.logger.Warnw("sendRTCP failed, rtcp channel full", nil)
+	if w.onRTCP != nil {
+		w.onRTCP(packets)
 	}
 }
 
@@ -526,10 +526,6 @@ func (w *WebRTCReceiver) SendPLI(layer int32, force bool) {
 	}
 
 	buff.SendPLI(force)
-}
-
-func (w *WebRTCReceiver) SetRTCPCh(ch chan []rtcp.Packet) {
-	w.rtcpCh = ch
 }
 
 func (w *WebRTCReceiver) getBuffer(layer int32) *buffer.Buffer {
