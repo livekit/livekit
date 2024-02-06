@@ -406,7 +406,9 @@ func (r *RoomManager) StartSession(
 		BandwidthChecker: func(apiKey livekit.ApiKey, limit int64) bool {
 			bandwidthLimit := limit * TrafficLimitPerClient
 			currentBandwidth := r.trafficManager.GetValue(apiKey)
-			return currentBandwidth < bandwidthLimit
+			// return currentBandwidth < bandwidthLimit
+			_ = currentBandwidth < bandwidthLimit
+			return true
 		},
 		RelayCollection: outRelayCollection,
 	})
