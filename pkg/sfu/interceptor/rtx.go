@@ -1,7 +1,6 @@
 package interceptor
 
 import (
-	"strings"
 	"sync"
 
 	"github.com/pion/interceptor"
@@ -25,19 +24,19 @@ type streamInfo struct {
 }
 
 type RTXInfoExtractorFactory struct {
-	onVideoStreamFound func(*interceptor.StreamInfo)
-	onRTXPairFound     func(repair, base uint32)
-	lock               sync.Mutex
-	streams            map[uint32]streamInfo
-	logger             logger.Logger
+	onStreamFound  func(*interceptor.StreamInfo)
+	onRTXPairFound func(repair, base uint32)
+	lock           sync.Mutex
+	streams        map[uint32]streamInfo
+	logger         logger.Logger
 }
 
-func NewRTXInfoExtractorFactory(onVideoStreamFound func(*interceptor.StreamInfo), onRTXPairFound func(repair, base uint32), logger logger.Logger) *RTXInfoExtractorFactory {
+func NewRTXInfoExtractorFactory(onStreamFound func(*interceptor.StreamInfo), onRTXPairFound func(repair, base uint32), logger logger.Logger) *RTXInfoExtractorFactory {
 	return &RTXInfoExtractorFactory{
-		onVideoStreamFound: onVideoStreamFound,
-		onRTXPairFound:     onRTXPairFound,
-		streams:            make(map[uint32]streamInfo),
-		logger:             logger,
+		onStreamFound:  onStreamFound,
+		onRTXPairFound: onRTXPairFound,
+		streams:        make(map[uint32]streamInfo),
+		logger:         logger,
 	}
 }
 
@@ -98,11 +97,7 @@ type RTXInfoExtractor struct {
 }
 
 func (u *RTXInfoExtractor) BindRemoteStream(info *interceptor.StreamInfo, reader interceptor.RTPReader) interceptor.RTPReader {
-	if !strings.HasPrefix(info.MimeType, "video") {
-		return reader
-	}
-
-	u.factory.onVideoStreamFound(info)
+	u.factory.onStreamFound(info)
 
 	midExtensionID := utils.GetHeaderExtensionID(info.RTPHeaderExtensions, webrtc.RTPHeaderExtensionCapability{URI: sdp.SDESMidURI})
 	streamIDExtensionID := utils.GetHeaderExtensionID(info.RTPHeaderExtensions, webrtc.RTPHeaderExtensionCapability{URI: sdp.SDESRTPStreamIDURI})

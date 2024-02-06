@@ -333,6 +333,9 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	}
 
 	setTWCCForVideo := func(info *interceptor.StreamInfo) {
+		if !strings.HasPrefix(info.MimeType, "video") {
+			return
+		}
 		// rtx stream don't have rtcp feedback, always set twcc for rtx stream
 		twccFb := strings.HasSuffix(info.MimeType, "rtx")
 		if !twccFb {
@@ -357,7 +360,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 			}
 		}
 	}
-	// put rtx inteceptor behind unhandle simulcast interceptor so it can get the correct mid & rid
+	// put rtx interceptor behind unhandle simulcast interceptor so it can get the correct mid & rid
 	ir.Add(lkinterceptor.NewRTXInfoExtractorFactory(setTWCCForVideo, func(repair, base uint32) {
 		params.Logger.Debugw("rtx pair found from extension", "repair", repair, "base", base)
 		params.Config.BufferFactory.SetRTXPair(repair, base)
