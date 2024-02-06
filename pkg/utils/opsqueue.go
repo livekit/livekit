@@ -75,8 +75,12 @@ func (oq *OpsQueue) Enqueue(op func()) {
 	oq.lock.Lock()
 	defer oq.lock.Unlock()
 
+	if oq.isStopped {
+		return
+	}
+
 	oq.ops.PushBack(op)
-	if oq.ops.Len() == 1 && !oq.isStopped {
+	if oq.ops.Len() == 1 {
 		select {
 		case oq.wake <- struct{}{}:
 		default:
