@@ -189,7 +189,7 @@ func (t *SubscribedTrack) SetPublisherMuted(muted bool) {
 	t.updateDownTrackMute()
 }
 
-func (t *SubscribedTrack) UpdateSubscriberSettings(settings *livekit.UpdateTrackSettings) {
+func (t *SubscribedTrack) UpdateSubscriberSettings(settings *livekit.UpdateTrackSettings, isImmediate bool) {
 	prevDisabled := t.subMuted.Swap(settings.Disabled)
 	t.settings.Store(settings)
 
@@ -197,11 +197,15 @@ func (t *SubscribedTrack) UpdateSubscriberSettings(settings *livekit.UpdateTrack
 		t.logger.Debugw("updated subscribed track enabled", "enabled", !settings.Disabled)
 	}
 
-	// avoid frequent changes to mute & video layers, unless it became visible
-	if prevDisabled != settings.Disabled && !settings.Disabled {
+	if isImmediate {
 		t.UpdateVideoLayer()
 	} else {
-		t.debouncer(t.UpdateVideoLayer)
+		// avoid frequent changes to mute & video layers, unless it became visible
+		if prevDisabled != settings.Disabled && !settings.Disabled {
+			t.UpdateVideoLayer()
+		} else {
+			t.debouncer(t.UpdateVideoLayer)
+		}
 	}
 }
 
