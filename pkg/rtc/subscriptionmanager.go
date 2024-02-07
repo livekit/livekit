@@ -823,8 +823,8 @@ func (s *trackSubscription) setSubscribedTrack(track types.SubscribedTrack) {
 	s.lock.Unlock()
 
 	if settings != nil && track != nil {
-		s.logger.Debugw("restoring subscriber settings", "settings", settings)
-		track.UpdateSubscriberSettings(settings)
+		s.logger.Debugw("restoring subscriber settings", "settings", logger.Proto(settings))
+		track.UpdateSubscriberSettings(settings, true)
 	}
 	if oldTrack != nil {
 		oldTrack.OnClose(nil)
@@ -895,7 +895,7 @@ func (s *trackSubscription) setSettings(settings *livekit.UpdateTrackSettings) {
 	subTrack := s.subscribedTrack
 	s.lock.Unlock()
 	if subTrack != nil {
-		subTrack.UpdateSubscriberSettings(settings)
+		subTrack.UpdateSubscriberSettings(settings, false)
 	}
 }
 
