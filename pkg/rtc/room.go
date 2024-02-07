@@ -649,7 +649,7 @@ func (r *Room) UpdateSubscriptions(
 
 func (r *Room) SyncState(participant types.LocalParticipant, state *livekit.SyncState) error {
 	pLogger := participant.GetLogger()
-	pLogger.Infow("setting sync state", "state", state)
+	pLogger.Infow("setting sync state", "state", logger.Proto(state))
 
 	shouldReconnect := false
 	pubTracks := state.GetPublishTracks()
