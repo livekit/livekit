@@ -686,6 +686,34 @@ func (r *Room) SyncState(participant types.LocalParticipant, state *livekit.Sync
 		return nil
 	}
 
+	// synthesize a track setting for each disabled track,
+	// can be set before addding subscriptions,
+	// in fact it is done before so that setting can be updated immediately upon subscription.
+	for _, trackSid := range state.TrackSidsDisabled {
+		// skip if it is not present in the subscribe list
+		found := false
+		for _, sid := range state.Subscription.TrackSids {
+			if sid == trackSid {
+				found = true
+				break
+			}
+		}
+		if !found {
+		participant_tracks:
+			for _, pt := range state.Subscription.ParticipantTracks {
+				for _, sid := range pt.TrackSids {
+					if sid == trackSid {
+						found = true
+						break participant_tracks
+					}
+				}
+			}
+		}
+		if found {
+			participant.UpdateSubscribedTrackSettings(livekit.TrackID(trackSid), &livekit.UpdateTrackSettings{Disabled: true})
+		}
+	}
+
 	r.UpdateSubscriptions(
 		participant,
 		livekit.StringsAsIDs[livekit.TrackID](state.Subscription.TrackSids),
