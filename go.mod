@@ -3,6 +3,7 @@ module github.com/livekit/livekit-server
 go 1.20
 
 require (
+	github.com/avast/retry-go/v4 v4.5.1
 	github.com/bep/debounce v1.2.1
 	github.com/d5/tengo/v2 v2.16.1
 	github.com/dustin/go-humanize v1.0.1

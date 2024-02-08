@@ -297,19 +297,22 @@ type IngressConfig struct {
 type SIPConfig struct {
 }
 
-// not exposed to YAML
 type APIConfig struct {
 	// amount of time to wait for API to execute, default 2s
-	ExecutionTimeout time.Duration
+	ExecutionTimeout time.Duration `yaml:"execution_timeout,omitempty"`
 
-	// amount of time to wait before checking for operation complete
-	CheckInterval time.Duration
+	// min amount of time to wait before checking for operation complete
+	CheckInterval time.Duration `yaml:"check_interval,omitempty"`
+
+	// max amount of time to wait before checking for operation complete
+	MaxCheckInterval time.Duration `yaml:"max_check_interval,omitempty"`
 }
 
 func DefaultAPIConfig() APIConfig {
 	return APIConfig{
 		ExecutionTimeout: 2 * time.Second,
 		CheckInterval:    100 * time.Millisecond,
+		MaxCheckInterval: 300 * time.Second,
 	}
 }
 
