@@ -26,6 +26,7 @@ import (
 	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
@@ -52,9 +53,11 @@ type SubscribedTrack struct {
 	sender           atomic.Pointer[webrtc.RTPSender]
 	needsNegotiation atomic.Bool
 
-	settingsLock sync.Mutex
-	pubMuted     bool
-	settings     *livekit.UpdateTrackSettings
+	versionGenerator utils.TimedVersionGenerator
+	settingsLock     sync.Mutex
+	pubMuted         bool
+	settings         *livekit.UpdateTrackSettings
+	settingsVersion  *utils.TimedVersion
 
 	bindLock        sync.Mutex
 	bound           bool
@@ -73,7 +76,8 @@ func NewSubscribedTrack(params SubscribedTrackParams) *SubscribedTrack {
 			"publisherID", params.PublisherID,
 			"publisher", params.PublisherIdentity,
 		),
-		debouncer: debounce.New(subscriptionDebounceInterval),
+		versionGenerator: utils.NewDefaultTimedVersionGenerator(),
+		debouncer:        debounce.New(subscriptionDebounceInterval),
 	}
 
 	return s
@@ -114,22 +118,20 @@ func (t *SubscribedTrack) Bound(err error) {
 		//    (since there isn't any video frames coming through). this will leave the stream "stuck" on off, without
 		//    a trigger to re-enable it
 		t.settingsLock.Lock()
-		var settingsClone *livekit.UpdateTrackSettings
 		if t.settings != nil {
-			settingsClone = proto.Clone(t.settings).(*livekit.UpdateTrackSettings)
 			if t.params.AdaptiveStream {
 				// remove `disabled` flag to force a visibility update
-				settingsClone.Disabled = false
+				t.settings.Disabled = false
 			}
 		} else {
 			if t.params.AdaptiveStream {
-				settingsClone = &livekit.UpdateTrackSettings{Quality: livekit.VideoQuality_LOW}
+				t.settings = &livekit.UpdateTrackSettings{Quality: livekit.VideoQuality_LOW}
 			} else {
-				settingsClone = &livekit.UpdateTrackSettings{Quality: livekit.VideoQuality_HIGH}
+				t.settings = &livekit.UpdateTrackSettings{Quality: livekit.VideoQuality_HIGH}
 			}
 		}
-		t.updateSubscriberSettingsLocked(settingsClone, true)
 		t.settingsLock.Unlock()
+		t.applySettings()
 	}
 
 	for _, cb := range callbacks {
@@ -210,37 +212,26 @@ func (t *SubscribedTrack) isMutedLocked() bool {
 func (t *SubscribedTrack) SetPublisherMuted(muted bool) {
 	t.settingsLock.Lock()
 	t.pubMuted = muted
-	t.updateDownTrackMuteLocked()
+	t.DownTrack().PubMute(t.pubMuted)
 	t.settingsLock.Unlock()
 }
 
 func (t *SubscribedTrack) UpdateSubscriberSettings(settings *livekit.UpdateTrackSettings, isImmediate bool) {
 	t.settingsLock.Lock()
-	t.updateSubscriberSettingsLocked(settings, isImmediate)
-	t.settingsLock.Unlock()
-}
-
-func (t *SubscribedTrack) updateSubscriberSettingsLocked(settings *livekit.UpdateTrackSettings, isImmediate bool) {
 	if proto.Equal(t.settings, settings) {
+		t.settingsLock.Unlock()
 		return
 	}
 
-	prevDisabled := t.isMutedLocked()
-	if prevDisabled != settings.Disabled {
-		t.logger.Debugw("updated subscribed track enabled", "enabled", !settings.Disabled)
-	}
-
+	isImmediate = isImmediate || (!settings.Disabled && settings.Disabled != t.isMutedLocked())
 	t.settings = proto.Clone(settings).(*livekit.UpdateTrackSettings)
+	t.settingsLock.Unlock()
 
 	if isImmediate {
-		t.applySettingsLocked()
+		t.applySettings()
 	} else {
 		// avoid frequent changes to mute & video layers, unless it became visible
-		if prevDisabled != settings.Disabled && !settings.Disabled {
-			t.applySettingsLocked()
-		} else {
-			t.debouncer(t.applySettings)
-		}
+		t.debouncer(t.applySettings)
 	}
 }
 
@@ -250,28 +241,54 @@ func (t *SubscribedTrack) UpdateVideoLayer() {
 
 func (t *SubscribedTrack) applySettings() {
 	t.settingsLock.Lock()
-	t.applySettingsLocked()
-	t.settingsLock.Unlock()
-}
+	if t.settings == nil {
+		t.settingsLock.Unlock()
+		return
+	}
 
-func (t *SubscribedTrack) applySettingsLocked() {
-	t.updateDownTrackMuteLocked()
+	t.logger.Debugw("updating subscriber track settings", "settings", logger.Proto(t.settings))
+	t.settingsVersion = t.versionGenerator.New()
+	settingsVersion := t.settingsVersion
+	t.settingsLock.Unlock()
 
 	dt := t.DownTrack()
-	if dt.Kind() != webrtc.RTPCodecTypeVideo {
+	spatial := buffer.InvalidLayerSpatial
+	temporal := buffer.InvalidLayerTemporal
+	if dt.Kind() == webrtc.RTPCodecTypeVideo {
+		mt := t.MediaTrack()
+		quality := t.settings.Quality
+		if t.settings.Width > 0 {
+			quality = mt.GetQualityForDimension(t.settings.Width, t.settings.Height)
+		}
+
+		spatial = buffer.VideoQualityToSpatialLayer(quality, mt.ToProto())
+		if t.settings.Fps > 0 {
+			temporal = mt.GetTemporalLayerForSpatialFps(spatial, t.settings.Fps, dt.Codec().MimeType)
+		}
+	}
+
+	t.settingsLock.Lock()
+	if settingsVersion.Compare(t.settingsVersion) != 0 {
+		// a newer settings has superceded this one
+		t.settingsLock.Unlock()
 		return
 	}
 
-	if t.settings == nil || t.settings.Disabled {
+	if t.settings.Disabled {
+		dt.Mute(true)
+		t.settingsLock.Unlock()
 		return
+	} else {
+		dt.Mute(false)
 	}
 
-	t.logger.Debugw("updating video layer", "settings", logger.Proto(t.settings))
-	spatial := t.spatialLayerFromSettings()
-	dt.SetMaxSpatialLayer(spatial)
-	if t.settings.Fps > 0 {
-		dt.SetMaxTemporalLayer(t.MediaTrack().GetTemporalLayerForSpatialFps(spatial, t.settings.Fps, dt.Codec().MimeType))
+	if dt.Kind() == webrtc.RTPCodecTypeVideo {
+		dt.SetMaxSpatialLayer(spatial)
+		if temporal != buffer.InvalidLayerTemporal {
+			dt.SetMaxTemporalLayer(temporal)
+		}
 	}
+	t.settingsLock.Unlock()
 }
 
 func (t *SubscribedTrack) NeedsNegotiation() bool {
@@ -288,22 +305,4 @@ func (t *SubscribedTrack) RTPSender() *webrtc.RTPSender {
 
 func (t *SubscribedTrack) SetRTPSender(sender *webrtc.RTPSender) {
 	t.sender.Store(sender)
-}
-
-func (t *SubscribedTrack) updateDownTrackMuteLocked() {
-	t.DownTrack().Mute(t.isMutedLocked())
-	t.DownTrack().PubMute(t.pubMuted)
-}
-
-func (t *SubscribedTrack) spatialLayerFromSettings() int32 {
-	mt := t.MediaTrack()
-	quality := livekit.VideoQuality_LOW
-	if t.settings != nil {
-		quality = t.settings.Quality
-		if t.settings.Width > 0 {
-			quality = mt.GetQualityForDimension(t.settings.Width, t.settings.Height)
-		}
-	}
-
-	return buffer.VideoQualityToSpatialLayer(quality, mt.ToProto())
 }
