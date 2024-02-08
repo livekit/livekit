@@ -347,6 +347,8 @@ func (s *IngressService) DeleteIngress(ctx context.Context, req *livekit.DeleteI
 		return nil, err
 	}
 
+	// TODO ingress service calls io.DeleteIngress if active? If so, io service sends telemetry event.
+
 	switch info.State.Status {
 	case livekit.IngressState_ENDPOINT_BUFFERING,
 		livekit.IngressState_ENDPOINT_PUBLISHING:

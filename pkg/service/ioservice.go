@@ -157,6 +157,16 @@ func (s *IOInfoService) UpdateMetrics(ctx context.Context, req *rpc.UpdateMetric
 	return &emptypb.Empty{}, nil
 }
 
+func (s *IOInfoService) CreateIngress(ctx context.Context, info *livekit.IngressInfo) (*emptypb.Empty, error) {
+	err := s.is.StoreIngress(ctx, info)
+	if err != nil {
+		logger.Errorw("could not store ingress", err)
+		return nil, err
+	}
+
+	return &emptypb.Empty{}, nil
+}
+
 func (s *IOInfoService) GetIngressInfo(ctx context.Context, req *rpc.GetIngressInfoRequest) (*rpc.GetIngressInfoResponse, error) {
 	info, err := s.loadIngressFromInfoRequest(req)
 	if err != nil {
@@ -175,6 +185,17 @@ func (s *IOInfoService) loadIngressFromInfoRequest(req *rpc.GetIngressInfoReques
 		err = errors.New("request needs to specify either IngressId or StreamKey")
 	}
 	return info, err
+}
+
+func (s *IOInfoService) UpdateIngress(ctx context.Context, info *livekit.IngressInfo) (*emptypb.Empty, error) {
+	err = s.is.UpdateIngress(ctx, info)
+	if err != nil {
+		return nil, err
+	}
+
+	logger.Infow("ingress updated", "ingressID", req.IngressId)
+
+	return &emptypb.Empty{}, nil
 }
 
 func (s *IOInfoService) UpdateIngressState(ctx context.Context, req *rpc.UpdateIngressStateRequest) (*emptypb.Empty, error) {
@@ -219,10 +240,24 @@ func (s *IOInfoService) UpdateIngressState(ctx context.Context, req *rpc.UpdateI
 
 		s.telemetry.IngressUpdated(ctx, info)
 
-		logger.Infow("ingress updated", "ingressID", req.IngressId, "status", info.State.Status)
+		logger.Infow("ingress state updated", "ingressID", req.IngressId, "status", info.State.Status)
 	}
 
 	return &emptypb.Empty{}, nil
+}
+
+func (s *IOInfoService) DeleteIngress(ctx context.Context, req *livekit.DeleteIngressRequest) (*livekit.IngressInfo, error) {
+	info, err := s.store.LoadIngress(ctx, req.IngressId)
+	if err != nil {
+		return nil, err
+	}
+
+	err := s.is.DeleteIngress(info)
+	if err != nil {
+		return nil, err
+	}
+
+	return info, nil
 }
 
 func (s *IOInfoService) Stop() {
