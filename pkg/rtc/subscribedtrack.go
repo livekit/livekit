@@ -209,9 +209,7 @@ func (t *SubscribedTrack) isMutedLocked() bool {
 }
 
 func (t *SubscribedTrack) SetPublisherMuted(muted bool) {
-	t.settingsLock.Lock()
 	t.DownTrack().PubMute(muted)
-	t.settingsLock.Unlock()
 }
 
 func (t *SubscribedTrack) UpdateSubscriberSettings(settings *livekit.UpdateTrackSettings, isImmediate bool) {
