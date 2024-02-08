@@ -404,10 +404,7 @@ func (t *MediaTrackSubscriptions) DebugInfo() []map[string]interface{} {
 	subscribedTrackInfo := make([]map[string]interface{}, 0)
 	for _, val := range t.getAllSubscribedTracks() {
 		if st, ok := val.(*SubscribedTrack); ok {
-			dt := st.DownTrack().DebugInfo()
-			dt["PubMuted"] = st.pubMuted.Load()
-			dt["SubMuted"] = st.subMuted.Load()
-			subscribedTrackInfo = append(subscribedTrackInfo, dt)
+			subscribedTrackInfo = append(subscribedTrackInfo, st.DownTrack().DebugInfo())
 		}
 	}
 
