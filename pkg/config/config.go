@@ -33,8 +33,10 @@ import (
 	"github.com/livekit/protocol/rpc"
 )
 
-type CongestionControlProbeMode string
-type StreamTrackerType string
+type (
+	CongestionControlProbeMode string
+	StreamTrackerType          string
+)
 
 const (
 	generatedCLIFlagUsage = "generated"
@@ -294,8 +296,7 @@ type IngressConfig struct {
 	WHIPBaseURL string `yaml:"whip_base_url,omitempty"`
 }
 
-type SIPConfig struct {
-}
+type SIPConfig struct{}
 
 // not exposed to YAML
 type APIConfig struct {
@@ -636,10 +637,10 @@ func (conf *Config) ToCLIFlagNames(existingFlags []cli.Flag) map[string]reflect.
 func (conf *Config) ValidateKeys() error {
 	// prefer keyfile if set
 	if conf.KeyFile != "" {
-		var otherFilter os.FileMode = 0007
+		var otherFilter os.FileMode = 0o007
 		if st, err := os.Stat(conf.KeyFile); err != nil {
 			return err
-		} else if st.Mode().Perm()&otherFilter != 0000 {
+		} else if st.Mode().Perm()&otherFilter != 0o000 {
 			return ErrKeyFileIncorrectPermission
 		}
 		f, err := os.Open(conf.KeyFile)
@@ -742,6 +743,9 @@ func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error)
 			// TODO
 			continue
 		case reflect.Map:
+			// TODO
+			continue
+		case reflect.Struct:
 			// TODO
 			continue
 		default:
