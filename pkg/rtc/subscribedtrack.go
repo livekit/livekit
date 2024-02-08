@@ -55,7 +55,6 @@ type SubscribedTrack struct {
 
 	versionGenerator utils.TimedVersionGenerator
 	settingsLock     sync.Mutex
-	pubMuted         bool
 	settings         *livekit.UpdateTrackSettings
 	settingsVersion  *utils.TimedVersion
 
@@ -211,8 +210,7 @@ func (t *SubscribedTrack) isMutedLocked() bool {
 
 func (t *SubscribedTrack) SetPublisherMuted(muted bool) {
 	t.settingsLock.Lock()
-	t.pubMuted = muted
-	t.DownTrack().PubMute(t.pubMuted)
+	t.DownTrack().PubMute(muted)
 	t.settingsLock.Unlock()
 }
 
