@@ -39,6 +39,7 @@ type IngressService struct {
 	bus         psrpc.MessageBus
 	psrpcClient rpc.IngressClient
 	store       IngressStore
+	io          IOClient
 	roomService livekit.RoomService
 	telemetry   telemetry.TelemetryService
 	launcher    IngressLauncher
@@ -50,6 +51,7 @@ func NewIngressServiceWithIngressLauncher(
 	bus psrpc.MessageBus,
 	psrpcClient rpc.IngressClient,
 	store IngressStore,
+	io IOClient,
 	rs livekit.RoomService,
 	ts telemetry.TelemetryService,
 	launcher IngressLauncher,
@@ -61,6 +63,7 @@ func NewIngressServiceWithIngressLauncher(
 		bus:         bus,
 		psrpcClient: psrpcClient,
 		store:       store,
+		io:          io,
 		roomService: rs,
 		telemetry:   ts,
 		launcher:    launcher,
@@ -73,10 +76,11 @@ func NewIngressService(
 	bus psrpc.MessageBus,
 	psrpcClient rpc.IngressClient,
 	store IngressStore,
+	io IOClient,
 	rs livekit.RoomService,
 	ts telemetry.TelemetryService,
 ) *IngressService {
-	s := NewIngressServiceWithIngressLauncher(conf, nodeID, bus, psrpcClient, store, rs, ts, nil)
+	s := NewIngressServiceWithIngressLauncher(conf, nodeID, bus, psrpcClient, store, io, rs, ts, nil)
 
 	s.launcher = s
 
@@ -191,11 +195,12 @@ func (s *IngressService) CreateIngressWithUrl(ctx context.Context, urlStr string
 		}
 	}
 
-	if err = s.store.StoreIngress(ctx, info); err != nil {
+	// TODO Remocve this store Ingress call for URL pull as it is redundant since
+	// the ingress service sends a CreateIngress RPC
+	if _, err = s.io.CreateIngress(ctx, info); err != nil {
 		logger.Errorw("could not write ingress info", err)
 		return nil, err
 	}
-	s.telemetry.IngressCreated(ctx, info)
 
 	return info, nil
 }
@@ -270,7 +275,10 @@ func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateI
 	switch info.State.Status {
 	case livekit.IngressState_ENDPOINT_ERROR:
 		info.State.Status = livekit.IngressState_ENDPOINT_INACTIVE
-		err = s.store.UpdateIngressState(ctx, req.IngressId, info.State)
+		_, err = s.io.UpdateIngressState(ctx, &rpc.UpdateIngressStateRequest{
+			IngressId: req.IngressId,
+			State:     info.State,
+		})
 		if err != nil {
 			logger.Warnw("could not store ingress state", err)
 		}
@@ -346,8 +354,6 @@ func (s *IngressService) DeleteIngress(ctx context.Context, req *livekit.DeleteI
 	if err != nil {
 		return nil, err
 	}
-
-	// TODO ingress service calls io.DeleteIngress if active? If so, io service sends telemetry event.
 
 	switch info.State.Status {
 	case livekit.IngressState_ENDPOINT_BUFFERING,
