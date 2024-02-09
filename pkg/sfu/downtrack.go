@@ -802,7 +802,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 	// Retransmission is probably a sign of network congestion/badness.
 	// So, retransmitting padding only packets is only going to make matters worse.
 	//
-	if d.sequencer != nil {
+	if !paddingOnMute && d.sequencer != nil {
 		d.sequencer.pushPadding(snts[0].extSequenceNumber, snts[len(snts)-1].extSequenceNumber)
 	}
 
@@ -831,6 +831,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 				extSequenceNumber:    snts[i].extSequenceNumber,
 				extTimestamp:         snts[i].extTimestamp,
 				isPadding:            true,
+				skipStats:            paddingOnMute,
 				shouldDisableCounter: true,
 			},
 		)
@@ -1928,6 +1929,7 @@ type sendPacketMetadata struct {
 	isKeyFrame           bool
 	isRTX                bool
 	isPadding            bool
+	skipStats            bool
 	shouldDisableCounter bool
 	tp                   *TranslationParams
 }
@@ -1946,15 +1948,20 @@ func (d *DownTrack) sendingPacket(hdr *rtp.Header, payloadSize int, spmd *sendPa
 	}
 
 	// update RTPStats
-	if spmd.isPadding {
-		d.rtpStats.Update(spmd.packetTime, spmd.extSequenceNumber, spmd.extTimestamp, hdr.Marker, hdrSize, 0, payloadSize)
-	} else {
-		d.rtpStats.Update(spmd.packetTime, spmd.extSequenceNumber, spmd.extTimestamp, hdr.Marker, hdrSize, payloadSize, 0)
+	if !spmd.skipStats {
+		if spmd.isPadding {
+			d.rtpStats.Update(spmd.packetTime, spmd.extSequenceNumber, spmd.extTimestamp, hdr.Marker, hdrSize, 0, payloadSize)
+		} else {
+			d.rtpStats.Update(spmd.packetTime, spmd.extSequenceNumber, spmd.extTimestamp, hdr.Marker, hdrSize, payloadSize, 0)
+		}
+
+		if spmd.isKeyFrame {
+			d.rtpStats.UpdateKeyFrame(1)
+		}
 	}
 
 	if spmd.isKeyFrame {
 		d.isNACKThrottled.Store(false)
-		d.rtpStats.UpdateKeyFrame(1)
 		d.params.Logger.Debugw(
 			"forwarded key frame",
 			"layer", spmd.layer,
