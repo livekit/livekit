@@ -100,19 +100,6 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 	defer res.RequestSink.Close()
 	defer res.ResponseSource.Close()
 
-	// ensure it's created correctly
-	err = s.confirmExecution(ctx, func() error {
-		_, _, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Name), false)
-		if err != nil {
-			return ErrOperationFailed
-		} else {
-			return nil
-		}
-	})
-	if err != nil {
-		return nil, err
-	}
-
 	if created {
 		go func() {
 			s.agentClient.JobRequest(ctx, &livekit.Job{
