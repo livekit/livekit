@@ -1137,6 +1137,8 @@ func (p *ParticipantImpl) UpdateMediaRTT(rtt uint32) {
 	}
 }
 
+// ----------------------------------------------------------
+
 type AnyTransportHandler struct {
 	transport.UnimplementedHandler
 	p *ParticipantImpl
@@ -1153,6 +1155,8 @@ func (h AnyTransportHandler) OnNegotiationFailed() {
 func (h AnyTransportHandler) OnICECandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) error {
 	return h.p.onICECandidate(c, target)
 }
+
+// ----------------------------------------------------------
 
 type PublisherTransportHandler struct {
 	AnyTransportHandler
@@ -1174,6 +1178,8 @@ func (h PublisherTransportHandler) OnDataPacket(kind livekit.DataPacket_Kind, da
 	h.p.onDataMessage(kind, data)
 }
 
+// ----------------------------------------------------------
+
 type SubscriberTransportHandler struct {
 	AnyTransportHandler
 }
@@ -1190,6 +1196,8 @@ func (h SubscriberTransportHandler) OnInitialConnected() {
 	h.p.onSubscriberInitialConnected()
 }
 
+// ----------------------------------------------------------
+
 type PrimaryTransportHandler struct {
 	transport.Handler
 	p *ParticipantImpl
@@ -1203,6 +1211,8 @@ func (h PrimaryTransportHandler) OnInitialConnected() {
 func (h PrimaryTransportHandler) OnFullyEstablished() {
 	h.p.onPrimaryTransportFullyEstablished()
 }
+
+// ----------------------------------------------------------
 
 func (p *ParticipantImpl) setupTransportManager() error {
 	p.twcc = twcc.NewTransportWideCCResponder()
