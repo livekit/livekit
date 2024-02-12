@@ -55,7 +55,13 @@ type TrackSender interface {
 	ID() string
 	SubscriberID() livekit.ParticipantID
 	TrackInfoAvailable()
-	HandleRTCPSenderReportData(payloadType webrtc.PayloadType, isSVC bool, layer int32, srData *buffer.RTCPSenderReportData) error
+	HandleRTCPSenderReportData(
+		payloadType webrtc.PayloadType,
+		isSVC bool,
+		layer int32,
+		srFirst *buffer.RTCPSenderReportData,
+		srNewest *buffer.RTCPSenderReportData,
+	) error
 }
 
 // -------------------------------------------------------------------
@@ -1913,9 +1919,19 @@ func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
 	}
 }
 
-func (d *DownTrack) HandleRTCPSenderReportData(_payloadType webrtc.PayloadType, isSVC bool, layer int32, srData *buffer.RTCPSenderReportData) error {
-	if (layer == d.forwarder.GetReferenceLayerSpatial() || (layer == 0 && isSVC)) && srData != nil {
-		d.rtpStats.MaybeAdjustFirstPacketTime(srData, srData.RTPTimestamp+uint32(d.forwarder.GetReferenceTimestampOffset()))
+func (d *DownTrack) HandleRTCPSenderReportData(
+	_payloadType webrtc.PayloadType,
+	isSVC bool,
+	layer int32,
+	srFirst *buffer.RTCPSenderReportData,
+	srNewest *buffer.RTCPSenderReportData,
+) error {
+	if (layer == d.forwarder.GetReferenceLayerSpatial() || (layer == 0 && isSVC)) && srNewest != nil {
+		d.rtpStats.MaybeAdjustFirstPacketTime(
+			srFirst,
+			srNewest,
+			srNewest.RTPTimestamp+uint32(d.forwarder.GetReferenceTimestampOffset()),
+		)
 	}
 	return nil
 }
