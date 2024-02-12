@@ -583,15 +583,15 @@ func (r *RTPStatsSender) LastReceiverReportTime() time.Time {
 	return r.lastRRTime
 }
 
-func (r *RTPStatsSender) MaybeAdjustFirstPacketTime(srData *RTCPSenderReportData, ts uint32) {
+func (r *RTPStatsSender) MaybeAdjustFirstPacketTime(srFirst *RTCPSenderReportData, srNewest *RTCPSenderReportData, ts uint32) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	srDataCopy := *srData
-	if r.srFeedFirst == nil {
-		r.srFeedFirst = &srDataCopy
-	}
-	r.srFeedNewest = &srDataCopy
+	srFirstCopy := *srFirst
+	r.srFeedFirst = &srFirstCopy
+
+	srNewestCopy := *srNewest
+	r.srFeedNewest = &srNewestCopy
 
 	r.maybeAdjustFirstPacketTime(ts, uint32(r.extStartTS))
 }
