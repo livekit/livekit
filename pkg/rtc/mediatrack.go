@@ -309,7 +309,17 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	}
 	t.lock.Unlock()
 
-	wr.(*sfu.WebRTCReceiver).AddUpTrack(track, buff)
+	if err := wr.(*sfu.WebRTCReceiver).AddUpTrack(track, buff); err != nil {
+		t.params.Logger.Warnw(
+			"adding up track failed", err,
+			"rid", track.RID(),
+			"layer", layer,
+			"ssrc", track.SSRC(),
+			"newCodec", newCodec,
+		)
+		buff.Close()
+		return false
+	}
 
 	// LK-TODO: can remove this completely when VideoLayers protocol becomes the default as it has info from client or if we decide to use TrackInfo.Simulcast
 	if t.numUpTracks.Inc() > 1 || track.RID() != "" {
