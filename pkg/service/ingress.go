@@ -195,7 +195,7 @@ func (s *IngressService) CreateIngressWithUrl(ctx context.Context, urlStr string
 		}
 	}
 
-	// TODO Remocve this store Ingress call for URL pull as it is redundant since
+	// TODO Remove this store Ingress call for URL pull as it is redundant since
 	// the ingress service sends a CreateIngress RPC
 	_, err = s.io.CreateIngress(ctx, info)
 	switch err {
