@@ -2,8 +2,6 @@ module github.com/livekit/livekit-server
 
 go 1.20
 
-replace github.com/livekit/protocol => ../protocol
-
 require (
 	github.com/avast/retry-go/v4 v4.5.1
 	github.com/bep/debounce v1.2.1
