@@ -902,17 +902,12 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 	p.migrateState.Store(s)
 	p.dirty.Store(true)
 
-	processPendingOffer := false
-	if s == types.MigrateStateSync {
-		processPendingOffer = true
-	}
-
-	if s == types.MigrateStateComplete {
-		p.TransportManager.ProcessPendingPublisherDataChannels()
-	}
-
-	if processPendingOffer {
+	switch s {
+	case types.MigrateStateSync:
 		p.TransportManager.ProcessPendingPublisherOffer()
+
+	case types.MigrateStateComplete:
+		p.TransportManager.ProcessPendingPublisherDataChannels()
 	}
 
 	if onMigrateStateChange := p.getOnMigrateStateChange(); onMigrateStateChange != nil {
@@ -1484,9 +1479,14 @@ func (p *ParticipantImpl) onICECandidate(c *webrtc.ICECandidate, target livekit.
 }
 
 func (p *ParticipantImpl) onPublisherInitialConnected() {
+	if !p.hasPendingMigratedTrack() {
+		p.SetMigrateState(types.MigrateStateComplete)
+	}
+
 	if p.supervisor != nil {
 		p.supervisor.SetPublisherPeerConnectionConnected(true)
 	}
+
 	p.pubRTCPQueue.Start()
 }
 
@@ -1497,7 +1497,9 @@ func (p *ParticipantImpl) onSubscriberInitialConnected() {
 }
 
 func (p *ParticipantImpl) onPrimaryTransportInitialConnected() {
-	if !p.hasPendingMigratedTrack() && p.MigrateState() == types.MigrateStateSync {
+	if !p.hasPendingMigratedTrack() && len(p.GetPublishedTracks()) == 0 {
+		// if there are no published tracks, declare migration complete on primary transport initial connect,
+		// else, wait for all tracks to be published and publisher peer connection established
 		p.SetMigrateState(types.MigrateStateComplete)
 	}
 }
@@ -2102,7 +2104,7 @@ func (p *ParticipantImpl) handleTrackPublished(track types.MediaTrack) {
 	delete(p.pendingPublishingTracks, track.ID())
 	p.pendingTracksLock.Unlock()
 
-	if !p.hasPendingMigratedTrack() {
+	if !p.hasPendingMigratedTrack() && p.TransportManager.HasPublisherEverConnected() {
 		p.SetMigrateState(types.MigrateStateComplete)
 	}
 }
