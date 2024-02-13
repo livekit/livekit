@@ -537,6 +537,7 @@ func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime time.Tim
 				b.logger.Errorw("could not exclude range", err, "sn", rtpPacket.SequenceNumber, "esn", flowState.ExtSequenceNumber)
 			}
 		}
+		return
 	}
 
 	// add to RTX buffer using sequence number after accounting for dropped padding only packets
