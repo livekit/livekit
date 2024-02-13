@@ -147,7 +147,7 @@ func (b *Buffer) SetLogger(logger logger.Logger) {
 	b.Lock()
 	defer b.Unlock()
 
-	b.logger = logger.WithComponent(sutils.ComponentSFU)
+	b.logger = logger.WithComponent(sutils.ComponentSFU).WithValues("ssrc", b.mediaSSRC)
 	if b.rtpStats != nil {
 		b.rtpStats.SetLogger(b.logger)
 	}
@@ -537,10 +537,6 @@ func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime time.Tim
 				b.logger.Errorw("could not exclude range", err, "sn", rtpPacket.SequenceNumber, "esn", flowState.ExtSequenceNumber)
 			}
 		}
-		// TODO-VP9-DEBUG-REMOVE-START
-		snAdjustment, err := b.snRangeMap.GetValue(flowState.ExtSequenceNumber)
-		b.logger.Debugw("dropping padding packet", "sn", rtpPacket.SequenceNumber, "osn", flowState.ExtSequenceNumber, "msn", flowState.ExtSequenceNumber-snAdjustment, "error", err)
-		// TODO-VP9-DEBUG-REMOVE-END
 		return
 	}
 
@@ -584,7 +580,7 @@ func (b *Buffer) patchExtPacket(ep *ExtPacket, buf []byte) *ExtPacket {
 	n, err := b.getPacket(buf, ep.Packet.SequenceNumber)
 	if err != nil {
 		packetNotFoundCount := b.packetNotFoundCount.Inc()
-		if packetNotFoundCount%20 == 0 {
+		if (packetNotFoundCount-1)%20 == 0 {
 			b.logger.Warnw("could not get packet from bucket", err, "sn", ep.Packet.SequenceNumber, "headSN", b.bucket.HeadSequenceNumber(), "count", packetNotFoundCount)
 		}
 		return nil

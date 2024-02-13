@@ -902,17 +902,12 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 	p.migrateState.Store(s)
 	p.dirty.Store(true)
 
-	processPendingOffer := false
-	if s == types.MigrateStateSync {
-		processPendingOffer = true
-	}
-
-	if s == types.MigrateStateComplete {
-		p.TransportManager.ProcessPendingPublisherDataChannels()
-	}
-
-	if processPendingOffer {
+	switch s {
+	case types.MigrateStateSync:
 		p.TransportManager.ProcessPendingPublisherOffer()
+
+	case types.MigrateStateComplete:
+		p.TransportManager.ProcessPendingPublisherDataChannels()
 	}
 
 	if onMigrateStateChange := p.getOnMigrateStateChange(); onMigrateStateChange != nil {
@@ -1137,6 +1132,8 @@ func (p *ParticipantImpl) UpdateMediaRTT(rtt uint32) {
 	}
 }
 
+// ----------------------------------------------------------
+
 type AnyTransportHandler struct {
 	transport.UnimplementedHandler
 	p *ParticipantImpl
@@ -1153,6 +1150,8 @@ func (h AnyTransportHandler) OnNegotiationFailed() {
 func (h AnyTransportHandler) OnICECandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) error {
 	return h.p.onICECandidate(c, target)
 }
+
+// ----------------------------------------------------------
 
 type PublisherTransportHandler struct {
 	AnyTransportHandler
@@ -1174,6 +1173,8 @@ func (h PublisherTransportHandler) OnDataPacket(kind livekit.DataPacket_Kind, da
 	h.p.onDataMessage(kind, data)
 }
 
+// ----------------------------------------------------------
+
 type SubscriberTransportHandler struct {
 	AnyTransportHandler
 }
@@ -1190,6 +1191,8 @@ func (h SubscriberTransportHandler) OnInitialConnected() {
 	h.p.onSubscriberInitialConnected()
 }
 
+// ----------------------------------------------------------
+
 type PrimaryTransportHandler struct {
 	transport.Handler
 	p *ParticipantImpl
@@ -1203,6 +1206,8 @@ func (h PrimaryTransportHandler) OnInitialConnected() {
 func (h PrimaryTransportHandler) OnFullyEstablished() {
 	h.p.onPrimaryTransportFullyEstablished()
 }
+
+// ----------------------------------------------------------
 
 func (p *ParticipantImpl) setupTransportManager() error {
 	p.twcc = twcc.NewTransportWideCCResponder()
@@ -1445,8 +1450,13 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		onDataPacket := p.onDataPacket
 		p.lock.RUnlock()
 		if onDataPacket != nil {
-			payload.User.ParticipantSid = string(p.params.SID)
-			payload.User.ParticipantIdentity = string(p.params.Identity)
+			if p.Hidden() {
+				payload.User.ParticipantSid = ""
+				payload.User.ParticipantIdentity = ""
+			} else {
+				payload.User.ParticipantSid = string(p.params.SID)
+				payload.User.ParticipantIdentity = string(p.params.Identity)
+			}
 			onDataPacket(p, &dp)
 		}
 	default:
@@ -1469,9 +1479,14 @@ func (p *ParticipantImpl) onICECandidate(c *webrtc.ICECandidate, target livekit.
 }
 
 func (p *ParticipantImpl) onPublisherInitialConnected() {
+	if !p.hasPendingMigratedTrack() {
+		p.SetMigrateState(types.MigrateStateComplete)
+	}
+
 	if p.supervisor != nil {
 		p.supervisor.SetPublisherPeerConnectionConnected(true)
 	}
+
 	p.pubRTCPQueue.Start()
 }
 
@@ -1482,7 +1497,9 @@ func (p *ParticipantImpl) onSubscriberInitialConnected() {
 }
 
 func (p *ParticipantImpl) onPrimaryTransportInitialConnected() {
-	if !p.hasPendingMigratedTrack() && p.MigrateState() == types.MigrateStateSync {
+	if !p.hasPendingMigratedTrack() && len(p.GetPublishedTracks()) == 0 {
+		// if there are no published tracks, declare migration complete on primary transport initial connect,
+		// else, wait for all tracks to be published and publisher peer connection established
 		p.SetMigrateState(types.MigrateStateComplete)
 	}
 }
@@ -2087,7 +2104,7 @@ func (p *ParticipantImpl) handleTrackPublished(track types.MediaTrack) {
 	delete(p.pendingPublishingTracks, track.ID())
 	p.pendingTracksLock.Unlock()
 
-	if !p.hasPendingMigratedTrack() {
+	if !p.hasPendingMigratedTrack() && p.TransportManager.HasPublisherEverConnected() {
 		p.SetMigrateState(types.MigrateStateComplete)
 	}
 }

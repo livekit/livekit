@@ -572,15 +572,6 @@ func (s *StreamTrackerManager) updateLayerOffsetLocked(ref, other int32) {
 		// Rationale: higher layers could be paused for extended periods of time
 		// due to adaptive stream/dynacast or publisher constraints like CPU/bandwidth.
 		// The check is to avoid using very old reports.
-		s.logger.Infow(
-			"skipping offset update",
-			"ref", ref,
-			"refNTP", srRef.NTPTimestamp.Time().String(),
-			"refRTP", srRef.RTPTimestamp,
-			"other", other,
-			"otherNTP", srOther.NTPTimestamp.Time().String(),
-			"otherRTP", srOther.RTPTimestamp,
-		)
 		return
 	}
 	rtpDiff := ntpDiff.Nanoseconds() * int64(s.clockRate) / 1e9
