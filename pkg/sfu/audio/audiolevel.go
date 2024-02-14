@@ -17,6 +17,7 @@ package audio
 import (
 	"math"
 	"sync"
+	"time"
 )
 
 const (
@@ -111,7 +112,7 @@ func (l *AudioLevel) GetLevel(now int64) (float64, bool) {
 }
 
 func (l *AudioLevel) resetIfStaleLocked(arrivalTime int64) {
-	if arrivalTime - l.lastObservedAt < int64(2*l.params.ObserveDuration) {
+	if time.Duration(arrivalTime - l.lastObservedAt).Milliseconds() < int64(2*l.params.ObserveDuration) {
 		return
 	}
 
