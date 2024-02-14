@@ -510,7 +510,7 @@ func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime int64) {
 				if (p.Timestamp - b.latestTSForAudioLevel) < (1 << 31) {
 					duration := (int64(p.Timestamp) - int64(b.latestTSForAudioLevel)) * 1e3 / int64(b.clockRate)
 					if duration > 0 {
-						b.audioLevel.Observe(ext.Level, uint32(duration))
+						b.audioLevel.Observe(ext.Level, uint32(duration), arrivalTime)
 					}
 
 					b.latestTSForAudioLevel = p.Timestamp
@@ -751,7 +751,7 @@ func (b *Buffer) GetAudioLevel() (float64, bool) {
 		return 0, false
 	}
 
-	return b.audioLevel.GetLevel()
+	return b.audioLevel.GetLevel(time.Now().UnixNano())
 }
 
 // TODO : now we rely on stream tracker for layer change, dependency still
