@@ -1641,6 +1641,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 				"eosn", epm.extSequenceNumber,
 				"eots", epm.extTimestamp,
 				"sid", epm.layer,
+				"error", err,
 			)
 			// TODO-VP9-DEBUG-REMOVE-END
 			nackMisses++
