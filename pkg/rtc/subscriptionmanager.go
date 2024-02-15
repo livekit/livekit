@@ -344,7 +344,7 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 			default:
 				// all other errors
 				if s.durationSinceStart() > subscriptionTimeout {
-					s.logger.Errorw("failed to subscribe, triggering error handler", err,
+					s.logger.Warnw("failed to subscribe, triggering error handler", err,
 						"attempt", numAttempts,
 					)
 					s.maybeRecordError(m.params.Telemetry, m.params.Participant.ID(), err, false)
@@ -365,7 +365,7 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 
 	if s.needsUnsubscribe() {
 		if err := m.unsubscribe(s); err != nil {
-			s.logger.Errorw("failed to unsubscribe", err)
+			s.logger.Warnw("failed to unsubscribe", err)
 		} else {
 			// successfully unsubscribed, remove from map
 			m.lock.Lock()
@@ -383,7 +383,7 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 		// if a publisher leaves or closes the source track, SubscribedTrack will be closed as well and it will go
 		// back to needsSubscribe state
 		if s.durationSinceStart() > subscriptionTimeout {
-			s.logger.Errorw("track not bound after timeout", nil)
+			s.logger.Warnw("track not bound after timeout", nil)
 			s.maybeRecordError(m.params.Telemetry, m.params.Participant.ID(), ErrTrackNotBound, false)
 			m.params.OnSubscriptionError(s.trackID, true, ErrTrackNotBound)
 		}

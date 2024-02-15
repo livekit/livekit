@@ -326,7 +326,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	if len(params.SimTracks) > 0 {
 		f, err := NewUnhandleSimulcastInterceptorFactory(UnhandleSimulcastTracks(params.SimTracks))
 		if err != nil {
-			params.Logger.Errorw("NewUnhandleSimulcastInterceptorFactory failed", err)
+			params.Logger.Warnw("NewUnhandleSimulcastInterceptorFactory failed", err)
 		} else {
 			ir.Add(f)
 		}
@@ -356,7 +356,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 				params.Logger.Debugw("set rtx twcc and ext id", "ssrc", info.SSRC, "twccExtID", twccExtID)
 				buffer.SetTWCCAndExtID(params.Twcc, uint8(twccExtID))
 			} else {
-				params.Logger.Errorw("failed to get buffer for rtx stream", nil, "ssrc", info.SSRC)
+				params.Logger.Warnw("failed to get buffer for rtx stream", nil, "ssrc", info.SSRC)
 			}
 		}
 	}
@@ -604,7 +604,7 @@ func (t *PCTransport) handleConnectionFailed(forceShortConn bool) {
 		if isShort {
 			pair, err := t.getSelectedPair()
 			if err != nil {
-				t.params.Logger.Errorw("short ICE connection", err, "duration", duration)
+				t.params.Logger.Warnw("short ICE connection", err, "duration", duration)
 			} else {
 				t.params.Logger.Infow("short ICE connection", "pair", pair, "duration", duration)
 			}
@@ -632,11 +632,6 @@ func (t *PCTransport) onICEConnectionStateChange(state webrtc.ICEConnectionState
 
 	case webrtc.ICEConnectionStateChecking:
 		t.setICEStartedAt(time.Now())
-
-	case webrtc.ICEConnectionStateDisconnected:
-		t.params.Logger.Infow("ice connection state change unexpected", "state", state.String())
-	case webrtc.ICEConnectionStateFailed:
-		t.params.Logger.Debugw("ice connection state change unexpected", "state", state.String())
 	}
 }
 
@@ -652,7 +647,6 @@ func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionSta
 			t.maybeNotifyFullyEstablished()
 		}
 	case webrtc.PeerConnectionStateFailed:
-		t.params.Logger.Infow("peer connection failed")
 		t.clearConnTimer()
 		t.handleConnectionFailed(false)
 	}
@@ -823,7 +817,7 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 
 	dcErrorHandler := func(err error) {
 		if !errors.Is(err, sctp.ErrResetPacketInStateNotExist) && !errors.Is(err, sctp.ErrChunk) {
-			t.params.Logger.Errorw(dc.Label()+" data channel error", err)
+			t.params.Logger.Warnw(dc.Label()+" data channel error", err)
 		}
 	}
 
@@ -848,7 +842,7 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 		t.lossyDC.OnClose(dcCloseHandler)
 		t.lossyDC.OnError(dcErrorHandler)
 	default:
-		t.params.Logger.Errorw("unknown data channel label", nil, "label", dc.Label())
+		t.params.Logger.Warnw("unknown data channel label", nil, "label", dc.Label())
 	}
 	t.lock.Unlock()
 
@@ -864,7 +858,7 @@ func (t *PCTransport) CreateDataChannelIfEmpty(dcLabel string, dci *webrtc.DataC
 	case LossyDataChannel:
 		dc = t.lossyDC
 	default:
-		t.params.Logger.Errorw("unknown data channel label", nil, "label", label)
+		t.params.Logger.Warnw("unknown data channel label", nil, "label", label)
 		err = errors.New("unknown data channel label")
 	}
 	t.lock.RUnlock()
@@ -1164,7 +1158,7 @@ func (t *PCTransport) initPCWithPreviousAnswer(previousAnswer webrtc.SessionDesc
 			// because sdp can negotiate multi times before migration.(it will sticky to the last m-line atfirst negotiate)
 			// so use a dummy pc to negotiate sdp to fixed the datachannel's mid at same position with previous answer
 			if err := t.preparePC(previousAnswer); err != nil {
-				t.params.Logger.Errorw("prepare pc for migration failed", err)
+				t.params.Logger.Warnw("prepare pc for migration failed", err)
 				return senders, err
 			}
 			continue
@@ -1202,7 +1196,7 @@ func (t *PCTransport) SetPreviousSdp(offer, answer *webrtc.SessionDescription) {
 	if t.pc.RemoteDescription() == nil && t.previousAnswer == nil {
 		t.previousAnswer = answer
 		if senders, err := t.initPCWithPreviousAnswer(*t.previousAnswer); err != nil {
-			t.params.Logger.Errorw("initPCWithPreviousAnswer failed", err)
+			t.params.Logger.Warnw("initPCWithPreviousAnswer failed", err)
 			t.lock.Unlock()
 
 			t.params.Handler.OnNegotiationFailed()
@@ -1211,7 +1205,7 @@ func (t *PCTransport) SetPreviousSdp(offer, answer *webrtc.SessionDescription) {
 			// in migration case, can't reuse transceiver before negotiated except track subscribed at previous node
 			t.canReuseTransceiver = false
 			if err := t.parseTrackMid(*offer, senders); err != nil {
-				t.params.Logger.Errorw("parse previous offer failed", err, "offer", offer.SDP)
+				t.params.Logger.Warnw("parse previous offer failed", err, "offer", offer.SDP)
 			}
 		}
 	}
@@ -1251,7 +1245,7 @@ func (t *PCTransport) postEvent(event event) {
 		err := t.handleEvent(&event)
 		if err != nil {
 			if !t.isClosed.Load() {
-				t.params.Logger.Errorw("error handling event", err, "event", event.String())
+				t.params.Logger.Warnw("error handling event", err, "event", event.String())
 				t.params.Handler.OnNegotiationFailed()
 			}
 		}
@@ -1398,7 +1392,7 @@ func (t *PCTransport) setNegotiationState(state transport.NegotiationState) {
 func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription, preferTCP bool) webrtc.SessionDescription {
 	parsed, err := sd.Unmarshal()
 	if err != nil {
-		t.params.Logger.Errorw("could not unmarshal SDP to filter candidates", err)
+		t.params.Logger.Warnw("could not unmarshal SDP to filter candidates", err)
 		return sd
 	}
 
@@ -1428,7 +1422,7 @@ func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription, preferTCP b
 
 	bytes, err := parsed.Marshal()
 	if err != nil {
-		t.params.Logger.Errorw("could not marshal SDP to filter candidates", err)
+		t.params.Logger.Warnw("could not marshal SDP to filter candidates", err)
 		return sd
 	}
 	sd.SDP = string(bytes)
