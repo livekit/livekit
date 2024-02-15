@@ -15,6 +15,7 @@
 package rtc
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/pion/webrtc/v3"
@@ -24,8 +25,13 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
+const (
+	videoRTXMimeType = "video/rtx"
+)
+
 var opusCodecCapability = webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus, ClockRate: 48000, Channels: 2, SDPFmtpLine: "minptime=10;useinbandfec=1"}
 var redCodecCapability = webrtc.RTPCodecCapability{MimeType: sfu.MimeTypeAudioRed, ClockRate: 48000, Channels: 2, SDPFmtpLine: "111/111"}
+var videoRTX = webrtc.RTPCodecCapability{MimeType: videoRTXMimeType, ClockRate: 90000}
 
 func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedback RTCPFeedbackConfig, filterOutH264HighProfile bool) error {
 	opusCodec := opusCodecCapability
@@ -49,6 +55,8 @@ func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedbac
 			}
 		}
 	}
+
+	rtxEnabled := IsCodecEnabled(codecs, videoRTX)
 
 	h264HighProfileFmtp := "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=640032"
 	for _, codec := range []webrtc.RTPCodecParameters{
@@ -84,9 +92,24 @@ func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedbac
 		if filterOutH264HighProfile && codec.RTPCodecCapability.SDPFmtpLine == h264HighProfileFmtp {
 			continue
 		}
+		if codec.MimeType == videoRTXMimeType {
+			continue
+		}
 		if IsCodecEnabled(codecs, codec.RTPCodecCapability) {
 			if err := me.RegisterCodec(codec, webrtc.RTPCodecTypeVideo); err != nil {
 				return err
+			}
+			if rtxEnabled {
+				if err := me.RegisterCodec(webrtc.RTPCodecParameters{
+					RTPCodecCapability: webrtc.RTPCodecCapability{
+						MimeType:    videoRTXMimeType,
+						ClockRate:   90000,
+						SDPFmtpLine: fmt.Sprintf("apt=%d", codec.PayloadType),
+					},
+					PayloadType: codec.PayloadType + 1,
+				}, webrtc.RTPCodecTypeVideo); err != nil {
+					return err
+				}
 			}
 		}
 	}

@@ -160,6 +160,9 @@ type RTPStatsSender struct {
 	clockSkewCount              int
 	outOfOrderSenderReportCount int
 	metadataCacheOverflowCount  int
+
+	srFeedFirst  *RTCPSenderReportData
+	srFeedNewest *RTCPSenderReportData
 }
 
 func NewRTPStatsSender(params RTPStatsParams) *RTPStatsSender {
@@ -198,6 +201,15 @@ func (r *RTPStatsSender) Seed(from *RTPStatsSender) {
 	r.nextSenderSnapshotID = from.nextSenderSnapshotID
 	r.senderSnapshots = make([]senderSnapshot, cap(from.senderSnapshots))
 	copy(r.senderSnapshots, from.senderSnapshots)
+
+	if from.srFeedFirst != nil {
+		srFeedFirst := *from.srFeedFirst
+		r.srFeedFirst = &srFeedFirst
+	}
+	if from.srFeedNewest != nil {
+		srFeedNewest := *from.srFeedNewest
+		r.srFeedNewest = &srFeedNewest
+	}
 }
 
 func (r *RTPStatsSender) NewSnapshotId() uint32 {
@@ -544,6 +556,7 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 					"extLastRRSN", s.extLastRRSN,
 					"firstTime", r.firstTime.String(),
 					"startTime", r.startTime.String(),
+					"highestTime", r.highestTime.String(),
 					"extReceivedRRSN", extReceivedRRSN,
 					"packetsInInterval", extReceivedRRSN-s.extLastRRSN,
 					"intervalStats", is.ToString(),
@@ -570,9 +583,15 @@ func (r *RTPStatsSender) LastReceiverReportTime() time.Time {
 	return r.lastRRTime
 }
 
-func (r *RTPStatsSender) MaybeAdjustFirstPacketTime(ts uint32) {
+func (r *RTPStatsSender) MaybeAdjustFirstPacketTime(srFirst *RTCPSenderReportData, srNewest *RTCPSenderReportData, ts uint32) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
+
+	srFirstCopy := *srFirst
+	r.srFeedFirst = &srFirstCopy
+
+	srNewestCopy := *srNewest
+	r.srFeedNewest = &srNewestCopy
 
 	r.maybeAdjustFirstPacketTime(ts, uint32(r.extStartTS))
 }
@@ -628,7 +647,7 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, calculatedClockRate ui
 		RTPTimestampExt: nowRTPExt,
 		At:              now,
 	}
-	if r.srNewest != nil {
+	if r.srNewest != nil && nowRTPExt >= r.srNewest.RTPTimestampExt {
 		timeSinceLastReport := nowNTP.Time().Sub(r.srNewest.NTPTimestamp.Time())
 		rtpDiffSinceLastReport := nowRTPExt - r.srNewest.RTPTimestampExt
 		windowClockRate := float64(rtpDiffSinceLastReport) / timeSinceLastReport.Seconds()
@@ -636,8 +655,11 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, calculatedClockRate ui
 			if r.clockSkewCount%10 == 0 {
 				r.logger.Infow(
 					"sending sender report, clock skew",
+					"first", r.srFirst.ToString(),
 					"last", r.srNewest.ToString(),
 					"curr", srData.ToString(),
+					"firstFeed", r.srFeedFirst.ToString(),
+					"lastFeed", r.srFeedNewest.ToString(),
 					"timeNow", time.Now().String(),
 					"extStartTS", r.extStartTS,
 					"extHighestTS", r.extHighestTS,
@@ -673,8 +695,11 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, calculatedClockRate ui
 		if r.outOfOrderSenderReportCount%10 == 0 {
 			r.logger.Infow(
 				"sending sender report, out-of-order, repairing",
+				"first", r.srFirst.ToString(),
 				"last", r.srNewest.ToString(),
 				"curr", srData.ToString(),
+				"firstFeed", r.srFeedFirst.ToString(),
+				"lastFeed", r.srFeedNewest.ToString(),
 				"timeNow", time.Now().String(),
 				"extStartTS", r.extStartTS,
 				"extHighestTS", r.extHighestTS,
@@ -806,7 +831,7 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) *RTPDeltaInfo 
 	}
 }
 
-func (r *RTPStatsSender) ToString() string {
+func (r *RTPStatsSender) String() string {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 

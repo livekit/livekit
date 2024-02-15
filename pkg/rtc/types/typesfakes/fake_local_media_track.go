@@ -107,6 +107,16 @@ type FakeLocalMediaTrack struct {
 	getTemporalLayerForSpatialFpsReturnsOnCall map[int]struct {
 		result1 int32
 	}
+	GetTrackStatsStub        func() *livekit.RTPStats
+	getTrackStatsMutex       sync.RWMutex
+	getTrackStatsArgsForCall []struct {
+	}
+	getTrackStatsReturns struct {
+		result1 *livekit.RTPStats
+	}
+	getTrackStatsReturnsOnCall map[int]struct {
+		result1 *livekit.RTPStats
+	}
 	HasSdpCidStub        func(string) bool
 	hasSdpCidMutex       sync.RWMutex
 	hasSdpCidArgsForCall []struct {
@@ -321,6 +331,11 @@ type FakeLocalMediaTrack struct {
 	}
 	toProtoReturnsOnCall map[int]struct {
 		result1 *livekit.TrackInfo
+	}
+	UpdateTrackInfoStub        func(*livekit.TrackInfo)
+	updateTrackInfoMutex       sync.RWMutex
+	updateTrackInfoArgsForCall []struct {
+		arg1 *livekit.TrackInfo
 	}
 	UpdateVideoLayersStub        func([]*livekit.VideoLayer)
 	updateVideoLayersMutex       sync.RWMutex
@@ -831,6 +846,59 @@ func (fake *FakeLocalMediaTrack) GetTemporalLayerForSpatialFpsReturnsOnCall(i in
 	}
 	fake.getTemporalLayerForSpatialFpsReturnsOnCall[i] = struct {
 		result1 int32
+	}{result1}
+}
+
+func (fake *FakeLocalMediaTrack) GetTrackStats() *livekit.RTPStats {
+	fake.getTrackStatsMutex.Lock()
+	ret, specificReturn := fake.getTrackStatsReturnsOnCall[len(fake.getTrackStatsArgsForCall)]
+	fake.getTrackStatsArgsForCall = append(fake.getTrackStatsArgsForCall, struct {
+	}{})
+	stub := fake.GetTrackStatsStub
+	fakeReturns := fake.getTrackStatsReturns
+	fake.recordInvocation("GetTrackStats", []interface{}{})
+	fake.getTrackStatsMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalMediaTrack) GetTrackStatsCallCount() int {
+	fake.getTrackStatsMutex.RLock()
+	defer fake.getTrackStatsMutex.RUnlock()
+	return len(fake.getTrackStatsArgsForCall)
+}
+
+func (fake *FakeLocalMediaTrack) GetTrackStatsCalls(stub func() *livekit.RTPStats) {
+	fake.getTrackStatsMutex.Lock()
+	defer fake.getTrackStatsMutex.Unlock()
+	fake.GetTrackStatsStub = stub
+}
+
+func (fake *FakeLocalMediaTrack) GetTrackStatsReturns(result1 *livekit.RTPStats) {
+	fake.getTrackStatsMutex.Lock()
+	defer fake.getTrackStatsMutex.Unlock()
+	fake.GetTrackStatsStub = nil
+	fake.getTrackStatsReturns = struct {
+		result1 *livekit.RTPStats
+	}{result1}
+}
+
+func (fake *FakeLocalMediaTrack) GetTrackStatsReturnsOnCall(i int, result1 *livekit.RTPStats) {
+	fake.getTrackStatsMutex.Lock()
+	defer fake.getTrackStatsMutex.Unlock()
+	fake.GetTrackStatsStub = nil
+	if fake.getTrackStatsReturnsOnCall == nil {
+		fake.getTrackStatsReturnsOnCall = make(map[int]struct {
+			result1 *livekit.RTPStats
+		})
+	}
+	fake.getTrackStatsReturnsOnCall[i] = struct {
+		result1 *livekit.RTPStats
 	}{result1}
 }
 
@@ -2009,6 +2077,38 @@ func (fake *FakeLocalMediaTrack) ToProtoReturnsOnCall(i int, result1 *livekit.Tr
 	}{result1}
 }
 
+func (fake *FakeLocalMediaTrack) UpdateTrackInfo(arg1 *livekit.TrackInfo) {
+	fake.updateTrackInfoMutex.Lock()
+	fake.updateTrackInfoArgsForCall = append(fake.updateTrackInfoArgsForCall, struct {
+		arg1 *livekit.TrackInfo
+	}{arg1})
+	stub := fake.UpdateTrackInfoStub
+	fake.recordInvocation("UpdateTrackInfo", []interface{}{arg1})
+	fake.updateTrackInfoMutex.Unlock()
+	if stub != nil {
+		fake.UpdateTrackInfoStub(arg1)
+	}
+}
+
+func (fake *FakeLocalMediaTrack) UpdateTrackInfoCallCount() int {
+	fake.updateTrackInfoMutex.RLock()
+	defer fake.updateTrackInfoMutex.RUnlock()
+	return len(fake.updateTrackInfoArgsForCall)
+}
+
+func (fake *FakeLocalMediaTrack) UpdateTrackInfoCalls(stub func(*livekit.TrackInfo)) {
+	fake.updateTrackInfoMutex.Lock()
+	defer fake.updateTrackInfoMutex.Unlock()
+	fake.UpdateTrackInfoStub = stub
+}
+
+func (fake *FakeLocalMediaTrack) UpdateTrackInfoArgsForCall(i int) *livekit.TrackInfo {
+	fake.updateTrackInfoMutex.RLock()
+	defer fake.updateTrackInfoMutex.RUnlock()
+	argsForCall := fake.updateTrackInfoArgsForCall[i]
+	return argsForCall.arg1
+}
+
 func (fake *FakeLocalMediaTrack) UpdateVideoLayers(arg1 []*livekit.VideoLayer) {
 	var arg1Copy []*livekit.VideoLayer
 	if arg1 != nil {
@@ -2069,6 +2169,8 @@ func (fake *FakeLocalMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.getQualityForDimensionMutex.RUnlock()
 	fake.getTemporalLayerForSpatialFpsMutex.RLock()
 	defer fake.getTemporalLayerForSpatialFpsMutex.RUnlock()
+	fake.getTrackStatsMutex.RLock()
+	defer fake.getTrackStatsMutex.RUnlock()
 	fake.hasSdpCidMutex.RLock()
 	defer fake.hasSdpCidMutex.RUnlock()
 	fake.iDMutex.RLock()
@@ -2117,6 +2219,8 @@ func (fake *FakeLocalMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.streamMutex.RUnlock()
 	fake.toProtoMutex.RLock()
 	defer fake.toProtoMutex.RUnlock()
+	fake.updateTrackInfoMutex.RLock()
+	defer fake.updateTrackInfoMutex.RUnlock()
 	fake.updateVideoLayersMutex.RLock()
 	defer fake.updateVideoLayersMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}

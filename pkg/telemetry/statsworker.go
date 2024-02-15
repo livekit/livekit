@@ -126,8 +126,6 @@ func (s *StatsWorker) ClosedAt() time.Time {
 	return s.closedAt
 }
 
-// -------------------------------------------------------------------------
-
 func (s *StatsWorker) collectStats(
 	ts *timestamppb.Timestamp,
 	streamType livekit.StreamType,
@@ -150,6 +148,8 @@ func (s *StatsWorker) collectStats(
 	}
 	return stats
 }
+
+// -------------------------------------------------------------------------
 
 // create a single stream and single video layer post aggregation
 func coalesce(stats []*livekit.AnalyticsStat) *livekit.AnalyticsStat {

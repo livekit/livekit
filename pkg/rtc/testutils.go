@@ -16,18 +16,14 @@ package rtc
 
 import (
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
-	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
-func init() {
-	prometheus.Init("test", livekit.NodeType_SERVER, "test")
-}
-
-func newMockParticipant(identity livekit.ParticipantIdentity, protocol types.ProtocolVersion, hidden bool, publisher bool) *typesfakes.FakeLocalParticipant {
+func NewMockParticipant(identity livekit.ParticipantIdentity, protocol types.ProtocolVersion, hidden bool, publisher bool) *typesfakes.FakeLocalParticipant {
 	p := &typesfakes.FakeLocalParticipant{}
 	sid := utils.NewGuid(utils.ParticipantPrefix)
 	p.IDReturns(livekit.ParticipantID(sid))
@@ -44,6 +40,12 @@ func newMockParticipant(identity livekit.ParticipantIdentity, protocol types.Pro
 		State:       livekit.ParticipantInfo_JOINED,
 		IsPublisher: publisher,
 	})
+	p.ToProtoWithVersionReturns(&livekit.ParticipantInfo{
+		Sid:         sid,
+		Identity:    string(identity),
+		State:       livekit.ParticipantInfo_JOINED,
+		IsPublisher: publisher,
+	}, utils.TimedVersion{})
 
 	p.SetMetadataCalls(func(m string) {
 		var f func(participant types.LocalParticipant)
@@ -60,7 +62,7 @@ func newMockParticipant(identity livekit.ParticipantIdentity, protocol types.Pro
 			f = p.OnTrackUpdatedArgsForCall(p.OnTrackUpdatedCallCount() - 1)
 		}
 		if f != nil {
-			f(p, nil)
+			f(p, NewMockTrack(livekit.TrackType_VIDEO, "testcam"))
 		}
 	}
 
@@ -71,14 +73,19 @@ func newMockParticipant(identity livekit.ParticipantIdentity, protocol types.Pro
 	p.AddTrackCalls(func(req *livekit.AddTrackRequest) {
 		updateTrack()
 	})
+	p.GetLoggerReturns(logger.GetLogger())
 
 	return p
 }
 
-func newMockTrack(kind livekit.TrackType, name string) *typesfakes.FakeMediaTrack {
+func NewMockTrack(kind livekit.TrackType, name string) *typesfakes.FakeMediaTrack {
 	t := &typesfakes.FakeMediaTrack{}
 	t.IDReturns(livekit.TrackID(utils.NewGuid(utils.TrackPrefix)))
 	t.KindReturns(kind)
 	t.NameReturns(name)
+	t.ToProtoReturns(&livekit.TrackInfo{
+		Type: kind,
+		Name: name,
+	})
 	return t
 }

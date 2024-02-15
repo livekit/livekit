@@ -26,18 +26,6 @@ import (
 	"github.com/livekit/protocol/utils"
 )
 
-type agentClient struct {
-	s *AgentService
-}
-
-func NewAgentClient(s *AgentService) rtc.AgentClient {
-	return &agentClient{s}
-}
-
-func (c *agentClient) JobRequest(ctx context.Context, job *livekit.Job) {
-	_, _ = c.s.JobRequest(ctx, job)
-}
-
 type IOClient interface {
 	CreateEgress(ctx context.Context, info *livekit.EgressInfo) (*emptypb.Empty, error)
 	GetEgress(ctx context.Context, req *rpc.GetEgressRequest) (*livekit.EgressInfo, error)

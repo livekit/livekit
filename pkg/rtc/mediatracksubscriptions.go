@@ -196,7 +196,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	})
 
 	downTrack.AddReceiverReportListener(func(dt *sfu.DownTrack, report *rtcp.ReceiverReport) {
-		sub.OnReceiverReport(dt, report)
+		sub.HandleReceiverReport(dt, report)
 	})
 
 	var transceiver *webrtc.RTPTransceiver
@@ -207,6 +207,12 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	replacedTrack := false
 	existingTransceiver, dtState = sub.GetCachedDownTrack(trackID)
 	if existingTransceiver != nil {
+		sub.GetLogger().Debugw(
+			"trying to use existing transceiver",
+			"publisher", subTrack.PublisherIdentity(),
+			"publisherID", subTrack.PublisherID(),
+			"trackID", trackID,
+		)
 		reusingTransceiver.Store(true)
 		rtpSender := existingTransceiver.Sender()
 		if rtpSender != nil {
@@ -217,6 +223,12 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 				sender = rtpSender
 				transceiver = existingTransceiver
 				replacedTrack = true
+				sub.GetLogger().Debugw(
+					"track replaced",
+					"publisher", subTrack.PublisherIdentity(),
+					"publisherID", subTrack.PublisherID(),
+					"trackID", trackID,
+				)
 			}
 		}
 
@@ -392,10 +404,7 @@ func (t *MediaTrackSubscriptions) DebugInfo() []map[string]interface{} {
 	subscribedTrackInfo := make([]map[string]interface{}, 0)
 	for _, val := range t.getAllSubscribedTracks() {
 		if st, ok := val.(*SubscribedTrack); ok {
-			dt := st.DownTrack().DebugInfo()
-			dt["PubMuted"] = st.pubMuted.Load()
-			dt["SubMuted"] = st.subMuted.Load()
-			subscribedTrackInfo = append(subscribedTrackInfo, dt)
+			subscribedTrackInfo = append(subscribedTrackInfo, st.DownTrack().DebugInfo())
 		}
 	}
 

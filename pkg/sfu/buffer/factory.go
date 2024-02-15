@@ -51,6 +51,7 @@ func (f *FactoryOfBufferFactory) CreateBufferFactory() *Factory {
 		audioPool:   f.audioPool,
 		rtpBuffers:  make(map[uint32]*Buffer),
 		rtcpReaders: make(map[uint32]*RTCPReader),
+		rtxPair:     make(map[uint32]uint32),
 	}
 }
 
@@ -60,6 +61,7 @@ type Factory struct {
 	audioPool   *sync.Pool
 	rtpBuffers  map[uint32]*Buffer
 	rtcpReaders map[uint32]*RTCPReader
+	rtxPair     map[uint32]uint32 // repair -> base
 }
 
 func (f *Factory) GetOrNew(packetType packetio.BufferPacketType, ssrc uint32) io.ReadWriteCloser {
@@ -84,9 +86,25 @@ func (f *Factory) GetOrNew(packetType packetio.BufferPacketType, ssrc uint32) io
 		}
 		buffer := NewBuffer(ssrc, f.videoPool, f.audioPool)
 		f.rtpBuffers[ssrc] = buffer
+		for repair, base := range f.rtxPair {
+			if repair == ssrc {
+				baseBuffer, ok := f.rtpBuffers[base]
+				if ok {
+					buffer.SetPrimaryBufferForRTX(baseBuffer)
+				}
+				break
+			} else if base == ssrc {
+				repairBuffer, ok := f.rtpBuffers[repair]
+				if ok {
+					repairBuffer.SetPrimaryBufferForRTX(buffer)
+				}
+				break
+			}
+		}
 		buffer.OnClose(func() {
 			f.Lock()
 			delete(f.rtpBuffers, ssrc)
+			delete(f.rtxPair, ssrc)
 			f.Unlock()
 		})
 		return buffer
@@ -110,4 +128,16 @@ func (f *Factory) GetRTCPReader(ssrc uint32) *RTCPReader {
 	f.RLock()
 	defer f.RUnlock()
 	return f.rtcpReaders[ssrc]
+}
+
+func (f *Factory) SetRTXPair(repair, base uint32) {
+	f.Lock()
+	repairBuffer, baseBuffer := f.rtpBuffers[repair], f.rtpBuffers[base]
+	if repairBuffer == nil || baseBuffer == nil {
+		f.rtxPair[repair] = base
+	}
+	f.Unlock()
+	if repairBuffer != nil && baseBuffer != nil {
+		repairBuffer.SetPrimaryBufferForRTX(baseBuffer)
+	}
 }

@@ -28,11 +28,14 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/livekit/livekit-server/pkg/rtc"
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
 )
+
+const AgentServiceVersion = "0.1.0"
 
 type AgentService struct {
 	upgrader websocket.Upgrader
@@ -41,17 +44,18 @@ type AgentService struct {
 }
 
 type AgentHandler struct {
-	agentServer      rpc.AgentInternalServer
-	roomTopic        string
-	participantTopic string
+	agentServer    rpc.AgentInternalServer
+	roomTopic      string
+	publisherTopic string
 
-	mu                    sync.Mutex
-	availability          map[string]chan *availability
-	unregistered          map[*websocket.Conn]*worker
-	roomRegistered        bool
-	roomWorkers           map[string]*worker
-	participantRegistered bool
-	participantWorkers    map[string]*worker
+	mu                  sync.Mutex
+	availability        map[string]chan *availability
+	unregistered        map[*websocket.Conn]*worker
+	roomRegistered      bool
+	roomWorkers         map[string]*worker
+	publisherRegistered bool
+	publisherWorkers    map[string]*worker
+	onWorkerRegistered  func(handler *AgentHandler)
 }
 
 type worker struct {
@@ -63,6 +67,7 @@ type worker struct {
 	jobType    livekit.JobType
 	status     livekit.WorkerStatus
 	activeJobs int
+	logger     logger.Logger
 }
 
 type availability struct {
@@ -85,7 +90,7 @@ func NewAgentService(bus psrpc.MessageBus) (*AgentService, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.AgentHandler = NewAgentHandler(agentServer, "room", "participant")
+	s.AgentHandler = NewAgentHandler(agentServer, rtc.RoomAgentTopic, rtc.PublisherAgentTopic)
 
 	return s, nil
 }
@@ -100,37 +105,45 @@ func (s *AgentService) ServeHTTP(writer http.ResponseWriter, r *http.Request) {
 	// require a claim
 	claims := GetGrants(r.Context())
 	if claims == nil || claims.Video == nil || !claims.Video.Agent {
-		handleError(writer, http.StatusUnauthorized, rtc.ErrPermissionDenied)
+		handleError(writer, r, http.StatusUnauthorized, rtc.ErrPermissionDenied)
 		return
 	}
 
 	// upgrade
 	conn, err := s.upgrader.Upgrade(writer, r, nil)
 	if err != nil {
-		handleError(writer, http.StatusInternalServerError, err)
+		handleError(writer, r, http.StatusInternalServerError, err)
 		return
 	}
 
-	s.HandleConnection(conn)
+	s.HandleConnection(r.Context(), conn)
 }
 
-func NewAgentHandler(agentServer rpc.AgentInternalServer, roomTopic, participantTopic string) *AgentHandler {
+func NewAgentHandler(agentServer rpc.AgentInternalServer, roomTopic, publisherTopic string) *AgentHandler {
 	return &AgentHandler{
-		agentServer:        agentServer,
-		roomTopic:          roomTopic,
-		participantTopic:   participantTopic,
-		availability:       make(map[string]chan *availability),
-		unregistered:       make(map[*websocket.Conn]*worker),
-		roomWorkers:        make(map[string]*worker),
-		participantWorkers: make(map[string]*worker),
+		agentServer:      agentServer,
+		roomTopic:        roomTopic,
+		publisherTopic:   publisherTopic,
+		availability:     make(map[string]chan *availability),
+		unregistered:     make(map[*websocket.Conn]*worker),
+		roomWorkers:      make(map[string]*worker),
+		publisherWorkers: make(map[string]*worker),
 	}
 }
 
-func (s *AgentHandler) HandleConnection(conn *websocket.Conn) {
+// OnWorkerRegistered registers a callback to be called when the first worker of each type is registered
+func (s *AgentHandler) OnWorkerRegistered(handler func(handler *AgentHandler)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onWorkerRegistered = handler
+}
+
+func (s *AgentHandler) HandleConnection(ctx context.Context, conn *websocket.Conn) {
 	sigConn := NewWSSignalConnection(conn)
 	w := &worker{
 		conn:    conn,
 		sigConn: sigConn,
+		logger:  utils.GetLogger(ctx),
 	}
 
 	s.mu.Lock()
@@ -150,10 +163,10 @@ func (s *AgentHandler) HandleConnection(conn *websocket.Conn) {
 					s.agentServer.DeregisterJobRequestTopic(s.roomTopic)
 				}
 			case livekit.JobType_JT_PUBLISHER:
-				delete(s.participantWorkers, w.id)
-				if s.participantRegistered && !s.participantAvailableLocked() {
-					s.participantRegistered = false
-					s.agentServer.DeregisterJobRequestTopic(s.participantTopic)
+				delete(s.publisherWorkers, w.id)
+				if s.publisherRegistered && !s.publisherAvailableLocked() {
+					s.publisherRegistered = false
+					s.agentServer.DeregisterJobRequestTopic(s.publisherTopic)
 				}
 			}
 		}
@@ -175,9 +188,9 @@ func (s *AgentHandler) HandleConnection(conn *websocket.Conn) {
 					websocket.CloseNormalClosure,
 					websocket.CloseNoStatusReceived,
 				) {
-				logger.Infow("exit ws read loop for closed connection", "wsError", err)
+				w.logger.Infow("Agent worker closed WS connection", "wsError", err)
 			} else {
-				logger.Errorw("error reading from websocket", err)
+				w.logger.Errorw("error reading from websocket", err)
 			}
 			return
 		}
@@ -196,47 +209,80 @@ func (s *AgentHandler) HandleConnection(conn *websocket.Conn) {
 }
 
 func (s *AgentHandler) handleRegister(worker *worker, msg *livekit.RegisterWorkerRequest) {
+	if err := s.doHandleRegister(worker, msg); err != nil {
+		worker.logger.Errorw("failed to register worker", err, "workerID", msg.WorkerId, "jobType", msg.Type)
+		worker.conn.Close()
+	}
+}
+
+func (s *AgentHandler) doHandleRegister(worker *worker, msg *livekit.RegisterWorkerRequest) error {
+	if msg.WorkerId == "" {
+		return errors.New("invalid worker id")
+	}
+
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	if worker.id != "" {
+		s.mu.Unlock()
+		return errors.New("worker already registered")
+	}
+
+	onRegistered := s.onWorkerRegistered
+	firstWorker := false
 
 	switch msg.Type {
 	case livekit.JobType_JT_ROOM:
 		worker.id = msg.WorkerId
+		worker.jobType = msg.Type
 		delete(s.unregistered, worker.conn)
 		s.roomWorkers[worker.id] = worker
 
 		if !s.roomRegistered {
 			err := s.agentServer.RegisterJobRequestTopic(s.roomTopic)
 			if err != nil {
-				logger.Errorw("failed to register room agents", err)
+				worker.logger.Errorw("failed to register room agents", err)
 			} else {
 				s.roomRegistered = true
+				firstWorker = true
 			}
 		}
 
 	case livekit.JobType_JT_PUBLISHER:
 		worker.id = msg.WorkerId
+		worker.jobType = msg.Type
 		delete(s.unregistered, worker.conn)
-		s.participantWorkers[worker.id] = worker
+		s.publisherWorkers[worker.id] = worker
 
-		if !s.participantRegistered {
-			err := s.agentServer.RegisterJobRequestTopic(s.participantTopic)
+		if !s.publisherRegistered {
+			err := s.agentServer.RegisterJobRequestTopic(s.publisherTopic)
 			if err != nil {
-				logger.Errorw("failed to register participant agents", err)
+				worker.logger.Errorw("failed to register publisher agents", err)
 			} else {
-				s.participantRegistered = true
+				s.publisherRegistered = true
+				firstWorker = true
 			}
 		}
+	default:
+		s.mu.Unlock()
+		return errors.New("invalid job type")
 	}
+	s.mu.Unlock()
 
-	worker.sigConn.WriteServerMessage(&livekit.ServerMessage{
+	_, err := worker.sigConn.WriteServerMessage(&livekit.ServerMessage{
 		Message: &livekit.ServerMessage_Register{
 			Register: &livekit.RegisterWorkerResponse{
 				WorkerId:      worker.id,
-				ServerVersion: "version",
+				ServerVersion: AgentServiceVersion,
 			},
 		},
 	})
+	if err != nil {
+		worker.logger.Errorw("failed to write server message", err)
+	}
+
+	if firstWorker && onRegistered != nil {
+		onRegistered(s)
+	}
+	return nil
 }
 
 func (s *AgentHandler) handleAvailability(w *worker, msg *livekit.AvailabilityResponse) {
@@ -255,9 +301,9 @@ func (s *AgentHandler) handleAvailability(w *worker, msg *livekit.AvailabilityRe
 func (s *AgentHandler) handleJobUpdate(w *worker, msg *livekit.JobStatusUpdate) {
 	switch msg.Status {
 	case livekit.JobStatus_JS_SUCCESS:
-		logger.Debugw("job complete", "jobID", msg.JobId)
+		w.logger.Debugw("job complete", "jobID", msg.JobId)
 	case livekit.JobStatus_JS_FAILED:
-		logger.Warnw("job failed", errors.New(msg.Error), "jobID", msg.JobId)
+		w.logger.Warnw("job failed", errors.New(msg.Error), "jobID", msg.JobId)
 	}
 
 	w.mu.Lock()
@@ -280,23 +326,33 @@ func (s *AgentHandler) handleStatus(w *worker, msg *livekit.UpdateWorkerStatus) 
 			s.agentServer.DeregisterJobRequestTopic(s.roomTopic)
 		} else if !s.roomRegistered && s.roomAvailableLocked() {
 			if err := s.agentServer.RegisterJobRequestTopic(s.roomTopic); err != nil {
-				logger.Errorw("failed to register room agents", err)
+				w.logger.Errorw("failed to register room agents", err)
 			} else {
 				s.roomRegistered = true
 			}
 		}
 	case livekit.JobType_JT_PUBLISHER:
-		if s.participantRegistered && !s.participantAvailableLocked() {
-			s.participantRegistered = false
-			s.agentServer.DeregisterJobRequestTopic(s.participantTopic)
-		} else if !s.participantRegistered && s.participantAvailableLocked() {
-			if err := s.agentServer.RegisterJobRequestTopic(s.participantTopic); err != nil {
-				logger.Errorw("failed to register participant agents", err)
+		if s.publisherRegistered && !s.publisherAvailableLocked() {
+			s.publisherRegistered = false
+			s.agentServer.DeregisterJobRequestTopic(s.publisherTopic)
+		} else if !s.publisherRegistered && s.publisherAvailableLocked() {
+			if err := s.agentServer.RegisterJobRequestTopic(s.publisherTopic); err != nil {
+				w.logger.Errorw("failed to register publisher agents", err)
 			} else {
-				s.participantRegistered = true
+				s.publisherRegistered = true
 			}
 		}
 	}
+}
+
+func (s *AgentHandler) CheckEnabled(_ context.Context, _ *rpc.CheckEnabledRequest) (*rpc.CheckEnabledResponse, error) {
+	s.mu.Lock()
+	res := &rpc.CheckEnabledResponse{
+		RoomEnabled:      len(s.roomWorkers) > 0,
+		PublisherEnabled: len(s.publisherWorkers) > 0,
+	}
+	s.mu.Unlock()
+	return res, nil
 }
 
 func (s *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*emptypb.Empty, error) {
@@ -316,7 +372,7 @@ func (s *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*empty
 	case livekit.JobType_JT_ROOM:
 		pool = s.roomWorkers
 	case livekit.JobType_JT_PUBLISHER:
-		pool = s.participantWorkers
+		pool = s.publisherWorkers
 	}
 
 	attempted := make(map[string]bool)
@@ -351,8 +407,7 @@ func (s *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*empty
 				Availability: &livekit.AvailabilityRequest{Job: job},
 			}})
 			if err != nil {
-				logger.Errorw("failed to send availability request", err)
-				return nil, err
+				selected.logger.Errorw("failed to send availability request", err, "workerID", selected.id)
 			}
 
 			select {
@@ -364,7 +419,7 @@ func (s *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*empty
 						Assignment: &livekit.JobAssignment{Job: job},
 					}})
 					if err != nil {
-						logger.Errorw("failed to assign job", err)
+						selected.logger.Errorw("failed to assign job", err, "workerID", selected.id)
 					} else {
 						selected.mu.Lock()
 						selected.activeJobs++
@@ -386,7 +441,7 @@ func (s *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job)
 	case livekit.JobType_JT_ROOM:
 		pool = s.roomWorkers
 	case livekit.JobType_JT_PUBLISHER:
-		pool = s.participantWorkers
+		pool = s.publisherWorkers
 	}
 
 	var affinity float32
@@ -401,6 +456,13 @@ func (s *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job)
 	}
 
 	return affinity
+}
+
+func (s *AgentHandler) NumConnections() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return len(s.unregistered) + len(s.roomWorkers) + len(s.publisherWorkers)
 }
 
 func (s *AgentHandler) DrainConnections(interval time.Duration) {
@@ -421,7 +483,7 @@ func (s *AgentHandler) DrainConnections(interval time.Duration) {
 		_ = w.conn.Close()
 		<-t.C
 	}
-	for _, w := range s.participantWorkers {
+	for _, w := range s.publisherWorkers {
 		_ = w.conn.Close()
 		<-t.C
 	}
@@ -436,8 +498,8 @@ func (s *AgentHandler) roomAvailableLocked() bool {
 	return false
 }
 
-func (s *AgentHandler) participantAvailableLocked() bool {
-	for _, w := range s.participantWorkers {
+func (s *AgentHandler) publisherAvailableLocked() bool {
+	for _, w := range s.publisherWorkers {
 		if w.status == livekit.WorkerStatus_WS_AVAILABLE {
 			return true
 		}

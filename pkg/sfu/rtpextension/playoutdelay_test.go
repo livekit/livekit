@@ -32,4 +32,12 @@ func TestPlayoutDelay(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint16((1<<12)-1)*10, p5.Min)
 	require.Equal(t, uint16((1<<12)-1)*10, p5.Max)
+
+	p6 := PlayOutDelay{Min: 100, Max: PlayoutDelayMaxValue}
+	bytes, err := p6.Marshal()
+	require.NoError(t, err)
+	p6Unmarshal := PlayOutDelay{}
+	err = p6Unmarshal.Unmarshal(bytes)
+	require.NoError(t, err)
+	require.Equal(t, p6, p6Unmarshal)
 }

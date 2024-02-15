@@ -29,7 +29,6 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
-	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -205,11 +204,7 @@ func getConfig(c *cli.Context) (*config.Config, error) {
 	}
 	config.InitLoggerFromConfig(&conf.Logging)
 
-	if c.String("config") == "" && c.String("config-body") == "" && conf.Development {
-		// use single port UDP when no config is provided
-		conf.RTC.UDPPort = rtcconfig.PortRange{Start: 7882}
-		conf.RTC.ICEPortRangeStart = 0
-		conf.RTC.ICEPortRangeEnd = 0
+	if conf.Development {
 		logger.Infow("starting in development mode")
 
 		if len(conf.Keys) == 0 {
@@ -248,10 +243,6 @@ func getConfig(c *cli.Context) (*config.Config, error) {
 }
 
 func startServer(c *cli.Context) error {
-	rand.Seed(time.Now().UnixNano())
-
-	memProfile := c.String("memprofile")
-
 	conf, err := getConfig(c)
 	if err != nil {
 		return err
@@ -263,7 +254,7 @@ func startServer(c *cli.Context) error {
 		return err
 	}
 
-	if memProfile != "" {
+	if memProfile := c.String("memprofile"); memProfile != "" {
 		if f, err := os.Create(memProfile); err != nil {
 			return err
 		} else {
@@ -292,9 +283,12 @@ func startServer(c *cli.Context) error {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 
 	go func() {
-		sig := <-sigChan
-		logger.Infow("exit requested, shutting down", "signal", sig)
-		server.Stop(false)
+		for i := 0; i < 2; i++ {
+			sig := <-sigChan
+			force := i > 0
+			logger.Infow("exit requested, shutting down", "signal", sig, "force", force)
+			go server.Stop(force)
+		}
 	}()
 
 	return server.Start()

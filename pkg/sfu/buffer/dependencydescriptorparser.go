@@ -19,6 +19,7 @@ import (
 	"sort"
 
 	"github.com/pion/rtp"
+	"go.uber.org/atomic"
 
 	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
@@ -44,16 +45,17 @@ type DependencyDescriptorParser struct {
 	activeDecodeTargetsExtSeq uint64
 	activeDecodeTargetsMask   uint32
 	frameChecker              *FrameIntegrityChecker
+
+	ddNotFoundCount atomic.Uint32
 }
 
 func NewDependencyDescriptorParser(ddExtID uint8, logger logger.Logger, onMaxLayerChanged func(int32, int32)) *DependencyDescriptorParser {
-	logger.Infow("creating dependency descriptor parser", "ddExtID", ddExtID)
 	return &DependencyDescriptorParser{
 		ddExtID:           ddExtID,
 		logger:            logger,
 		onMaxLayerChanged: onMaxLayerChanged,
-		seqWrapAround:     utils.NewWrapAround[uint16, uint64](),
-		frameWrapAround:   utils.NewWrapAround[uint16, uint64](),
+		seqWrapAround:     utils.NewWrapAround[uint16, uint64](utils.WrapAroundParams{IsRestartAllowed: false}),
+		frameWrapAround:   utils.NewWrapAround[uint16, uint64](utils.WrapAroundParams{IsRestartAllowed: false}),
 		frameChecker:      NewFrameIntegrityChecker(180, 1024), // 2seconds for L3T3 30fps video
 	}
 }
@@ -74,7 +76,10 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 	var videoLayer VideoLayer
 	ddBuf := pkt.GetExtension(r.ddExtID)
 	if ddBuf == nil {
-		r.logger.Warnw("dependency descriptor extension is not present", nil, "seq", pkt.SequenceNumber)
+		ddNotFoundCount := r.ddNotFoundCount.Inc()
+		if ddNotFoundCount%100 == 0 {
+			r.logger.Warnw("dependency descriptor extension is not present", nil, "seq", pkt.SequenceNumber, "count", ddNotFoundCount)
+		}
 		return nil, videoLayer, nil
 	}
 
@@ -86,7 +91,7 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 	_, err := ext.Unmarshal(ddBuf)
 	if err != nil {
 		if err != dd.ErrDDReaderNoStructure {
-			r.logger.Warnw("failed to parse generic dependency descriptor", err, "payload", pkt.PayloadType, "ddbufLen", len(ddBuf))
+			r.logger.Infow("failed to parse generic dependency descriptor", err, "payload", pkt.PayloadType, "ddbufLen", len(ddBuf))
 		}
 		return nil, videoLayer, err
 	}
@@ -119,7 +124,7 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 		}
 
 		if r.structure == nil || ddVal.AttachedStructure.StructureId != r.structure.StructureId {
-			r.logger.Infow("structure updated", "structureID", ddVal.AttachedStructure.StructureId, "extSeq", extSeq, "extFN", extFN, "descriptor", ddVal.String())
+			r.logger.Debugw("structure updated", "structureID", ddVal.AttachedStructure.StructureId, "extSeq", extSeq, "extFN", extFN, "descriptor", ddVal.String())
 		}
 		r.structure = ddVal.AttachedStructure
 		r.decodeTargets = ProcessFrameDependencyStructure(ddVal.AttachedStructure)

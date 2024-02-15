@@ -116,7 +116,9 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType, env string) {
 		Subsystem:   "jitter",
 		Name:        "us",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String(), "env": env},
-		Buckets:     []float64{100, 500, 1500, 3000, 6000, 12000, 24000, 48000, 96000, 192000},
+
+		// 1ms, 10ms, 30ms, 50ms, 70ms, 100ms, 300ms, 600ms, 1s
+		Buckets: []float64{1000, 10000, 30000, 50000, 70000, 100000, 300000, 600000, 1000000},
 	}, promStreamLabels)
 	promRTT = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace:   livekitNamespace,

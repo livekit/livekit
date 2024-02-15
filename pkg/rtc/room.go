@@ -17,19 +17,23 @@ package rtc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	"go.uber.org/atomic"
+	"golang.org/x/exp/maps"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/pion/sctp"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -49,6 +53,8 @@ const (
 	subscriberUpdateInterval  = 3 * time.Second
 
 	dataForwardLoadBalanceThreshold = 20
+
+	simulateDisconnectSignalTimeout = 5 * time.Second
 )
 
 var (
@@ -60,6 +66,17 @@ var (
 type broadcastOptions struct {
 	skipSource bool
 	immediate  bool
+}
+
+type participantUpdate struct {
+	pi                      *livekit.ParticipantInfo
+	isSynthesizedDisconnect bool
+	closeReason             types.ParticipantCloseReason
+}
+
+type disconnectSignalOnResumeNoMessages struct {
+	expiry      time.Time
+	closedCount int
 }
 
 type Room struct {
@@ -74,19 +91,22 @@ type Room struct {
 	audioConfig    *config.AudioConfig
 	serverInfo     *livekit.ServerInfo
 	telemetry      telemetry.TelemetryService
-	agentClient    AgentClient
 	egressLauncher EgressLauncher
 	trackManager   *RoomTrackManager
+
+	// agents
+	agentClient            AgentClient
+	publisherAgentsEnabled bool
 
 	// map of identity -> Participant
 	participants              map[livekit.ParticipantIdentity]types.LocalParticipant
 	participantOpts           map[livekit.ParticipantIdentity]*ParticipantOptions
 	participantRequestSources map[livekit.ParticipantIdentity]routing.MessageSource
-	hasPublished              sync.Map // map of identity -> bool
+	hasPublished              map[livekit.ParticipantIdentity]bool
 	bufferFactory             *buffer.FactoryOfBufferFactory
 
 	// batch update participant info for non-publishers
-	batchedUpdates   map[livekit.ParticipantIdentity]*livekit.ParticipantInfo
+	batchedUpdates   map[livekit.ParticipantIdentity]*participantUpdate
 	batchedUpdatesMu sync.Mutex
 
 	// time the first participant joined the room
@@ -101,6 +121,10 @@ type Room struct {
 	onParticipantChanged func(p types.LocalParticipant)
 	onRoomUpdated        func()
 	onClose              func()
+
+	simulationLock                                 sync.Mutex
+	disconnectSignalOnResumeParticipants           map[livekit.ParticipantIdentity]time.Time
+	disconnectSignalOnResumeNoMessagesParticipants map[livekit.ParticipantIdentity]*disconnectSignalOnResumeNoMessages
 }
 
 type ParticipantOptions struct {
@@ -125,21 +149,25 @@ func NewRoom(
 			livekit.RoomName(room.Name),
 			livekit.RoomID(room.Sid),
 		),
-		config:                    config,
-		audioConfig:               audioConfig,
-		telemetry:                 telemetry,
-		egressLauncher:            egressLauncher,
-		agentClient:               agentClient,
-		trackManager:              NewRoomTrackManager(),
-		serverInfo:                serverInfo,
-		participants:              make(map[livekit.ParticipantIdentity]types.LocalParticipant),
-		participantOpts:           make(map[livekit.ParticipantIdentity]*ParticipantOptions),
-		participantRequestSources: make(map[livekit.ParticipantIdentity]routing.MessageSource),
-		bufferFactory:             buffer.NewFactoryOfBufferFactory(config.Receiver.PacketBufferSize),
-		batchedUpdates:            make(map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
-		closed:                    make(chan struct{}),
-		trailer:                   []byte(utils.RandomSecret()),
+		config:                               config,
+		audioConfig:                          audioConfig,
+		telemetry:                            telemetry,
+		egressLauncher:                       egressLauncher,
+		agentClient:                          agentClient,
+		trackManager:                         NewRoomTrackManager(),
+		serverInfo:                           serverInfo,
+		participants:                         make(map[livekit.ParticipantIdentity]types.LocalParticipant),
+		participantOpts:                      make(map[livekit.ParticipantIdentity]*ParticipantOptions),
+		participantRequestSources:            make(map[livekit.ParticipantIdentity]routing.MessageSource),
+		hasPublished:                         make(map[livekit.ParticipantIdentity]bool),
+		bufferFactory:                        buffer.NewFactoryOfBufferFactory(config.Receiver.PacketBufferSize),
+		batchedUpdates:                       make(map[livekit.ParticipantIdentity]*participantUpdate),
+		closed:                               make(chan struct{}),
+		trailer:                              []byte(utils.RandomSecret()),
+		disconnectSignalOnResumeParticipants: make(map[livekit.ParticipantIdentity]time.Time),
+		disconnectSignalOnResumeNoMessagesParticipants: make(map[livekit.ParticipantIdentity]*disconnectSignalOnResumeNoMessages),
 	}
+
 	r.protoProxy = utils.NewProtoProxy[*livekit.Room](roomUpdateInterval, r.updateProto)
 	if r.protoRoom.EmptyTimeout == 0 {
 		r.protoRoom.EmptyTimeout = DefaultEmptyTimeout
@@ -148,9 +176,25 @@ func NewRoom(
 		r.protoRoom.CreationTime = time.Now().Unix()
 	}
 
+	if agentClient != nil {
+		go func() {
+			res := r.agentClient.CheckEnabled(context.Background(), &rpc.CheckEnabledRequest{})
+			if res.PublisherEnabled {
+				r.lock.Lock()
+				r.publisherAgentsEnabled = true
+				// if there are already published tracks, start the agents
+				for identity := range r.hasPublished {
+					r.launchPublisherAgent(r.participants[identity])
+				}
+				r.lock.Unlock()
+			}
+		}()
+	}
+
 	go r.audioUpdateWorker()
 	go r.connectionQualityWorker()
 	go r.changeUpdateWorker()
+	go r.simulationCleanupWorker()
 
 	return r
 }
@@ -198,15 +242,19 @@ func (r *Room) GetParticipantByID(participantID livekit.ParticipantID) types.Loc
 func (r *Room) GetParticipants() []types.LocalParticipant {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
-	participants := make([]types.LocalParticipant, 0, len(r.participants))
-	for _, p := range r.participants {
-		participants = append(participants, p)
-	}
-	return participants
+
+	return maps.Values(r.participants)
 }
 
 func (r *Room) GetLocalParticipants() []types.LocalParticipant {
 	return r.GetParticipants()
+}
+
+func (r *Room) GetParticipantCount() int {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	return len(r.participants)
 }
 
 func (r *Room) GetActiveSpeakers() []*livekit.SpeakerInfo {
@@ -279,7 +327,6 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 	if r.participants[participant.Identity()] != nil {
 		return ErrAlreadyJoined
 	}
-
 	if r.protoRoom.MaxParticipants > 0 && !participant.IsRecorder() {
 		numParticipants := uint32(0)
 		for _, p := range r.participants {
@@ -296,41 +343,42 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 		r.joinedAt.Store(time.Now().Unix())
 	}
 
-	// it's important to set this before connection, we don't want to miss out on any published tracks
-	participant.OnTrackPublished(r.onTrackPublished)
-	participant.OnStateChange(func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State) {
-		r.Logger.Infow("participant state changed",
-			"state", p.State(),
-			"participant", p.Identity(),
-			"pID", p.ID(),
-			"oldState", oldState)
+	participant.OnStateChange(func(p types.LocalParticipant, state livekit.ParticipantInfo_State) {
 		if r.onParticipantChanged != nil {
-			r.onParticipantChanged(participant)
+			r.onParticipantChanged(p)
 		}
 		r.broadcastParticipantState(p, broadcastOptions{skipSource: true})
 
-		state := p.State()
 		if state == livekit.ParticipantInfo_ACTIVE {
 			// subscribe participant to existing published tracks
 			r.subscribeToExistingTracks(p)
 
-			// start the workers once connectivity is established
-			p.Start()
-
+			meta := &livekit.AnalyticsClientMeta{
+				ClientConnectTime: uint32(time.Since(p.ConnectedAt()).Milliseconds()),
+			}
+			cds := p.GetICEConnectionDetails()
+			for _, cd := range cds {
+				if cd.Type != types.ICEConnectionTypeUnknown {
+					meta.ConnectionType = string(cd.Type)
+					break
+				}
+			}
 			r.telemetry.ParticipantActive(context.Background(),
 				r.ToProto(),
 				p.ToProto(),
-				&livekit.AnalyticsClientMeta{
-					ClientConnectTime: uint32(time.Since(p.ConnectedAt()).Milliseconds()),
-					ConnectionType:    string(p.GetICEConnectionType()),
-				},
+				meta,
 				false,
 			)
+
+			p.GetLogger().Infow("participant active", connectionDetailsFields(cds)...)
 		} else if state == livekit.ParticipantInfo_DISCONNECTED {
 			// remove participant from room
-			go r.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonStateDisconnected)
+			// participant should already be closed and have a close reason, so NONE is fine here
+			go r.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonNone)
 		}
 	})
+	// it's important to set this before connection, we don't want to miss out on any published tracks
+	participant.OnTrackPublished(r.onTrackPublished)
 	participant.OnTrackUpdated(r.onTrackUpdated)
 	participant.OnTrackUnpublished(r.onTrackUnpublished)
 	participant.OnParticipantUpdate(r.onParticipantUpdate)
@@ -368,13 +416,15 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 				},
 			}, true)
 		}
-
 	})
-	r.Logger.Infow("new participant joined",
+
+	r.Logger.Debugw("new participant joined",
 		"pID", participant.ID(),
 		"participant", participant.Identity(),
-		"protocol", participant.ProtocolVersion(),
-		"options", opts)
+		"clientInfo", logger.Proto(participant.GetClientInfo()),
+		"options", opts,
+		"numParticipants", len(r.participants),
+	)
 
 	if participant.IsRecorder() && !r.protoRoom.ActiveRecording {
 		r.protoRoom.ActiveRecording = true
@@ -446,6 +496,26 @@ func (r *Room) ResumeParticipant(p types.LocalParticipant, requestSource routing
 
 	p.SetSignalSourceValid(true)
 
+	// check for simulated signal disconnect on resume before sending any signal response messages
+	r.simulationLock.Lock()
+	if state, ok := r.disconnectSignalOnResumeNoMessagesParticipants[p.Identity()]; ok {
+		// WARNING: this uses knowledge that service layer tries internally
+		simulated := false
+		if time.Now().Before(state.expiry) {
+			state.closedCount++
+			p.CloseSignalConnection(types.SignallingCloseReasonDisconnectOnResumeNoMessages)
+			simulated = true
+		}
+		if state.closedCount == 3 {
+			delete(r.disconnectSignalOnResumeNoMessagesParticipants, p.Identity())
+		}
+		if simulated {
+			r.simulationLock.Unlock()
+			return nil
+		}
+	}
+	r.simulationLock.Unlock()
+
 	if err := p.HandleReconnectAndSendResponse(reason, &livekit.ReconnectResponse{
 		IceServers:          iceServers,
 		ClientConfiguration: p.GetClientConfiguration(),
@@ -461,29 +531,44 @@ func (r *Room) ResumeParticipant(p types.LocalParticipant, requestSource routing
 
 	_ = p.SendRoomUpdate(r.ToProto())
 	p.ICERestart(nil)
+
+	// check for simulated signal disconnect on resume
+	r.simulationLock.Lock()
+	if timeout, ok := r.disconnectSignalOnResumeParticipants[p.Identity()]; ok {
+		if time.Now().Before(timeout) {
+			p.CloseSignalConnection(types.SignallingCloseReasonDisconnectOnResume)
+		}
+		delete(r.disconnectSignalOnResumeParticipants, p.Identity())
+	}
+	r.simulationLock.Unlock()
+
 	return nil
 }
 
 func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livekit.ParticipantID, reason types.ParticipantCloseReason) {
 	r.lock.Lock()
 	p, ok := r.participants[identity]
-	if ok {
-		if pID != "" && p.ID() != pID {
-			// participant session has been replaced
-			r.lock.Unlock()
-			return
-		}
+	if !ok {
+		r.lock.Unlock()
+		return
+	}
 
-		delete(r.participants, identity)
-		delete(r.participantOpts, identity)
-		delete(r.participantRequestSources, identity)
-		if !p.Hidden() {
-			r.protoRoom.NumParticipants--
-		}
+	if pID != "" && p.ID() != pID {
+		// participant session has been replaced
+		r.lock.Unlock()
+		return
+	}
+
+	delete(r.participants, identity)
+	delete(r.participantOpts, identity)
+	delete(r.participantRequestSources, identity)
+	delete(r.hasPublished, identity)
+	if !p.Hidden() {
+		r.protoRoom.NumParticipants--
 	}
 
 	immediateChange := false
-	if (p != nil && p.IsRecorder()) || r.protoRoom.ActiveRecording {
+	if p.IsRecorder() {
 		activeRecording := false
 		for _, op := range r.participants {
 			if op.IsRecorder() {
@@ -495,14 +580,16 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 		if r.protoRoom.ActiveRecording != activeRecording {
 			r.protoRoom.ActiveRecording = activeRecording
 			immediateChange = true
-
 		}
 	}
 	r.lock.Unlock()
 	r.protoProxy.MarkDirty(immediateChange)
 
-	if !ok {
-		return
+	if !p.HasConnected() {
+		fields := append(connectionDetailsFields(p.GetICEConnectionDetails()),
+			"reason", reason.String(),
+		)
+		p.GetLogger().Infow("removing participant without connection", fields...)
 	}
 
 	// send broadcast only if it's not already closed
@@ -512,7 +599,6 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 	for _, t := range p.GetPublishedTracks() {
 		r.trackManager.RemoveTrack(t)
 	}
-	r.hasPublished.Delete(p.Identity())
 
 	p.OnTrackUpdated(nil)
 	p.OnTrackPublished(nil)
@@ -523,7 +609,6 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 	p.OnSubscribeStatusChanged(nil)
 
 	// close participant as well
-	r.Logger.Debugw("closing participant for removal", "pID", p.ID(), "participant", p.Identity())
 	_ = p.Close(true, reason, false)
 
 	r.leftAt.Store(time.Now().Unix())
@@ -564,7 +649,7 @@ func (r *Room) UpdateSubscriptions(
 
 func (r *Room) SyncState(participant types.LocalParticipant, state *livekit.SyncState) error {
 	pLogger := participant.GetLogger()
-	pLogger.Infow("setting sync state", "state", state)
+	pLogger.Infow("setting sync state", "state", logger.Proto(state))
 
 	shouldReconnect := false
 	pubTracks := state.GetPublishTracks()
@@ -599,6 +684,13 @@ func (r *Room) SyncState(participant types.LocalParticipant, state *livekit.Sync
 		pLogger.Warnw("unable to resume due to missing published tracks, starting full reconnect", nil)
 		participant.IssueFullReconnect(types.ParticipantCloseReasonPublicationError)
 		return nil
+	}
+
+	// synthesize a track setting for each disabled track,
+	// can be set before addding subscriptions,
+	// in fact it is done before so that setting can be updated immediately upon subscription.
+	for _, trackSid := range state.TrackSidsDisabled {
+		participant.UpdateSubscribedTrackSettings(livekit.TrackID(trackSid), &livekit.UpdateTrackSettings{Disabled: true})
 	}
 
 	r.UpdateSubscriptions(
@@ -686,11 +778,11 @@ func (r *Room) CloseIfEmpty() {
 	r.lock.Unlock()
 
 	if elapsed >= int64(timeout) {
-		r.Close()
+		r.Close(types.ParticipantCloseReasonNone)
 	}
 }
 
-func (r *Room) Close() {
+func (r *Room) Close(reason types.ParticipantCloseReason) {
 	r.lock.Lock()
 	select {
 	case <-r.closed:
@@ -701,11 +793,14 @@ func (r *Room) Close() {
 	}
 	close(r.closed)
 	r.lock.Unlock()
+
 	r.Logger.Infow("closing room")
 	for _, p := range r.GetParticipants() {
-		_ = p.Close(true, types.ParticipantCloseReasonRoomClose, false)
+		_ = p.Close(true, reason, false)
 	}
+
 	r.protoProxy.Stop()
+
 	if r.onClose != nil {
 		r.onClose()
 	}
@@ -729,11 +824,11 @@ func (r *Room) SendDataPacket(up *livekit.UserPacket, kind livekit.DataPacket_Ki
 	r.onDataPacket(nil, dp)
 }
 
-func (r *Room) SetMetadata(metadata string) {
+func (r *Room) SetMetadata(metadata string) <-chan struct{} {
 	r.lock.Lock()
 	r.protoRoom.Metadata = metadata
 	r.lock.Unlock()
-	r.protoProxy.MarkDirty(true)
+	return r.protoProxy.MarkDirty(true)
 }
 
 func (r *Room) UpdateParticipantMetadata(participant types.LocalParticipant, name string, metadata string) {
@@ -811,6 +906,18 @@ func (r *Room) SimulateScenario(participant types.LocalParticipant, simulateScen
 			r.Logger.Infow("simulating subscriber bandwidth end", "participant", participant.Identity())
 		}
 		participant.SetSubscriberChannelCapacity(scenario.SubscriberBandwidth)
+	case *livekit.SimulateScenario_DisconnectSignalOnResume:
+		participant.GetLogger().Infow("simulating disconnect signal on resume")
+		r.simulationLock.Lock()
+		r.disconnectSignalOnResumeParticipants[participant.Identity()] = time.Now().Add(simulateDisconnectSignalTimeout)
+		r.simulationLock.Unlock()
+	case *livekit.SimulateScenario_DisconnectSignalOnResumeNoMessages:
+		participant.GetLogger().Infow("simulating disconnect signal on resume before sending any response messages")
+		r.simulationLock.Lock()
+		r.disconnectSignalOnResumeNoMessagesParticipants[participant.Identity()] = &disconnectSignalOnResumeNoMessages{
+			expiry: time.Now().Add(simulateDisconnectSignalTimeout),
+		}
+		r.simulationLock.Unlock()
 	}
 	return nil
 }
@@ -902,17 +1009,15 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 	r.trackManager.AddTrack(track, participant.Identity(), participant.ID())
 
 	// launch jobs
-	_, hasPublished := r.hasPublished.Swap(participant.Identity(), true)
+	r.lock.Lock()
+	hasPublished := r.hasPublished[participant.Identity()]
+	r.hasPublished[participant.Identity()] = true
+	publisherAgentsEnabled := r.publisherAgentsEnabled
+	r.lock.Unlock()
+
 	if !hasPublished {
-		if r.agentClient != nil {
-			go func() {
-				r.agentClient.JobRequest(context.Background(), &livekit.Job{
-					Id:          utils.NewGuid("JP_"),
-					Type:        livekit.JobType_JT_PUBLISHER,
-					Room:        r.protoRoom,
-					Participant: participant.ToProto(),
-				})
-			}()
+		if publisherAgentsEnabled {
+			r.launchPublisherAgent(participant)
 		}
 		if r.internal != nil && r.internal.ParticipantEgress != nil {
 			go func() {
@@ -1013,27 +1118,49 @@ func (r *Room) broadcastParticipantState(p types.LocalParticipant, opts broadcas
 			// send update only to hidden participant
 			err := p.SendParticipantUpdate([]*livekit.ParticipantInfo{pi})
 			if err != nil {
-				r.Logger.Errorw("could not send update to participant", err,
-					"participant", p.Identity(), "pID", p.ID())
+				p.GetLogger().Errorw("could not send update to participant", err)
 			}
 		}
 		return
 	}
 
-	updates := r.pushAndDequeueUpdates(pi, opts.immediate)
+	updates := r.pushAndDequeueUpdates(pi, p.CloseReason(), opts.immediate)
 	r.sendParticipantUpdates(updates)
 }
 
-func (r *Room) sendParticipantUpdates(updates []*livekit.ParticipantInfo) {
+func (r *Room) sendParticipantUpdates(updates []*participantUpdate) {
 	if len(updates) == 0 {
 		return
 	}
 
+	// For filtered updates, skip
+	// 1. synthesized DISCONNECT - this happens on SID change
+	// 2. close reasons of DUPLICATE_IDENTITY/STALE  - A newer session for that identity exists.
+	//
+	// Filtered updates are used with clients that can handle identity based reconnect and hence those
+	// conditions can be skipped.
+	var filteredUpdates []*livekit.ParticipantInfo
+	for _, update := range updates {
+		if update.isSynthesizedDisconnect || IsCloseNotifySkippable(update.closeReason) {
+			continue
+		}
+		filteredUpdates = append(filteredUpdates, update.pi)
+	}
+
+	var fullUpdates []*livekit.ParticipantInfo
+	for _, update := range updates {
+		fullUpdates = append(fullUpdates, update.pi)
+	}
+
 	for _, op := range r.GetParticipants() {
-		err := op.SendParticipantUpdate(updates)
+		var err error
+		if op.ProtocolVersion().SupportsIdentityBasedReconnection() {
+			err = op.SendParticipantUpdate(filteredUpdates)
+		} else {
+			err = op.SendParticipantUpdate(fullUpdates)
+		}
 		if err != nil {
-			r.Logger.Errorw("could not send update to participant", err,
-				"participant", op.Identity(), "pID", op.ID())
+			op.GetLogger().Errorw("could not send update to participant", err)
 		}
 	}
 }
@@ -1079,29 +1206,34 @@ func (r *Room) sendSpeakerChanges(speakers []*livekit.SpeakerInfo) {
 // * subscriber-only updates will be queued for batch updates
 // * publisher & immediate updates will be returned without queuing
 // * when the SID changes, it will return both updates, with the earlier participant set to disconnected
-func (r *Room) pushAndDequeueUpdates(pi *livekit.ParticipantInfo, isImmediate bool) []*livekit.ParticipantInfo {
+func (r *Room) pushAndDequeueUpdates(
+	pi *livekit.ParticipantInfo,
+	closeReason types.ParticipantCloseReason,
+	isImmediate bool,
+) []*participantUpdate {
 	r.batchedUpdatesMu.Lock()
 	defer r.batchedUpdatesMu.Unlock()
 
-	var updates []*livekit.ParticipantInfo
+	var updates []*participantUpdate
 	identity := livekit.ParticipantIdentity(pi.Identity)
 	existing := r.batchedUpdates[identity]
 	shouldSend := isImmediate || pi.IsPublisher
 
 	if existing != nil {
-		if pi.Sid == existing.Sid {
+		if pi.Sid == existing.pi.Sid {
 			// same participant session
-			if pi.Version < existing.Version {
+			if pi.Version < existing.pi.Version {
 				// out of order update
 				return nil
 			}
 		} else {
 			// different participant sessions
-			if existing.JoinedAt < pi.JoinedAt {
+			if existing.pi.JoinedAt < pi.JoinedAt {
 				// existing is older, synthesize a DISCONNECT for older and
 				// send immediately along with newer session to signal switch
 				shouldSend = true
-				existing.State = livekit.ParticipantInfo_DISCONNECTED
+				existing.pi.State = livekit.ParticipantInfo_DISCONNECTED
+				existing.isSynthesizedDisconnect = true
 				updates = append(updates, existing)
 			} else {
 				// older session update, newer session has already become active, so nothing to do
@@ -1122,10 +1254,10 @@ func (r *Room) pushAndDequeueUpdates(pi *livekit.ParticipantInfo, isImmediate bo
 	if shouldSend {
 		// include any queued update, and return
 		delete(r.batchedUpdates, identity)
-		updates = append(updates, pi)
+		updates = append(updates, &participantUpdate{pi: pi, closeReason: closeReason})
 	} else {
 		// enqueue for batch
-		r.batchedUpdates[identity] = pi
+		r.batchedUpdates[identity] = &participantUpdate{pi: pi, closeReason: closeReason}
 	}
 
 	return updates
@@ -1166,18 +1298,14 @@ func (r *Room) changeUpdateWorker() {
 		case <-subTicker.C:
 			r.batchedUpdatesMu.Lock()
 			updatesMap := r.batchedUpdates
-			r.batchedUpdates = make(map[livekit.ParticipantIdentity]*livekit.ParticipantInfo)
+			r.batchedUpdates = make(map[livekit.ParticipantIdentity]*participantUpdate)
 			r.batchedUpdatesMu.Unlock()
 
 			if len(updatesMap) == 0 {
 				continue
 			}
 
-			updates := make([]*livekit.ParticipantInfo, 0, len(updatesMap))
-			for _, pi := range updatesMap {
-				updates = append(updates, pi)
-			}
-			r.sendParticipantUpdates(updates)
+			r.sendParticipantUpdates(maps.Values(updatesMap))
 		}
 	}
 }
@@ -1302,6 +1430,46 @@ func (r *Room) connectionQualityWorker() {
 	}
 }
 
+func (r *Room) simulationCleanupWorker() {
+	for {
+		if r.IsClosed() {
+			return
+		}
+
+		now := time.Now()
+		r.simulationLock.Lock()
+		for identity, timeout := range r.disconnectSignalOnResumeParticipants {
+			if now.After(timeout) {
+				delete(r.disconnectSignalOnResumeParticipants, identity)
+			}
+		}
+
+		for identity, state := range r.disconnectSignalOnResumeNoMessagesParticipants {
+			if now.After(state.expiry) {
+				delete(r.disconnectSignalOnResumeNoMessagesParticipants, identity)
+			}
+		}
+		r.simulationLock.Unlock()
+
+		time.Sleep(10 * time.Second)
+	}
+}
+
+func (r *Room) launchPublisherAgent(p types.Participant) {
+	if p == nil || p.IsRecorder() || p.IsAgent() {
+		return
+	}
+
+	go func() {
+		r.agentClient.JobRequest(context.Background(), &livekit.Job{
+			Id:          utils.NewGuid("JP_"),
+			Type:        livekit.JobType_JT_PUBLISHER,
+			Room:        r.ToProto(),
+			Participant: p.ToProto(),
+		})
+	}()
+}
+
 func (r *Room) DebugInfo() map[string]interface{} {
 	info := map[string]interface{}{
 		"Name":      r.protoRoom.Name,
@@ -1318,6 +1486,8 @@ func (r *Room) DebugInfo() map[string]interface{} {
 
 	return info
 }
+
+// ------------------------------------------------------------
 
 func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, dp *livekit.DataPacket, logger logger.Logger) {
 	dest := dp.GetUser().GetDestinationSids()
@@ -1374,4 +1544,44 @@ func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, dp 
 			op.GetLogger().Infow("send data packet error", "error", err)
 		}
 	})
+}
+
+func IsCloseNotifySkippable(closeReason types.ParticipantCloseReason) bool {
+	return closeReason == types.ParticipantCloseReasonDuplicateIdentity
+}
+
+func connectionDetailsFields(cds []*types.ICEConnectionDetails) []interface{} {
+	var fields []interface{}
+	connectionType := types.ICEConnectionTypeUnknown
+	for _, cd := range cds {
+		candidates := make([]string, 0, len(cd.Remote)+len(cd.Local))
+		for _, c := range cd.Local {
+			cStr := "[local]"
+			if c.Selected {
+				cStr += "[selected]"
+			} else if c.Filtered {
+				cStr += "[filtered]"
+			}
+			cStr += " " + c.Local.String()
+			candidates = append(candidates, cStr)
+		}
+		for _, c := range cd.Remote {
+			cStr := "[remote]"
+			if c.Selected {
+				cStr += "[selected]"
+			} else if c.Filtered {
+				cStr += "[filtered]"
+			}
+			cStr += " " + c.Remote.String()
+			candidates = append(candidates, cStr)
+		}
+		if len(candidates) > 0 {
+			fields = append(fields, fmt.Sprintf("%sCandidates", strings.ToLower(cd.Transport.String())), candidates)
+		}
+		if cd.Type != types.ICEConnectionTypeUnknown {
+			connectionType = cd.Type
+		}
+	}
+	fields = append(fields, "connectionType", connectionType)
+	return fields
 }

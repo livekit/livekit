@@ -38,6 +38,7 @@ import (
 	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpextension"
+	"github.com/livekit/livekit-server/pkg/sfu/utils"
 )
 
 // TrackSender defines an interface send media to remote peer
@@ -54,7 +55,13 @@ type TrackSender interface {
 	ID() string
 	SubscriberID() livekit.ParticipantID
 	TrackInfoAvailable()
-	HandleRTCPSenderReportData(payloadType webrtc.PayloadType, isSVC bool, layer int32, srData *buffer.RTCPSenderReportData) error
+	HandleRTCPSenderReportData(
+		payloadType webrtc.PayloadType,
+		isSVC bool,
+		layer int32,
+		srFirst *buffer.RTCPSenderReportData,
+		srNewest *buffer.RTCPSenderReportData,
+	) error
 }
 
 // -------------------------------------------------------------------
@@ -133,7 +140,7 @@ type DownTrackState struct {
 
 func (d DownTrackState) String() string {
 	return fmt.Sprintf("DownTrackState{rtpStats: %s, deltaSender: %d, forwarder: %s}",
-		d.RTPStats.ToString(), d.DeltaStatsSenderSnapshotId, d.ForwarderState.String())
+		d.RTPStats, d.DeltaStatsSenderSnapshotId, d.ForwarderState.String())
 }
 
 // -------------------------------------------------------------------
@@ -262,8 +269,7 @@ type DownTrack struct {
 	bytesSent                       atomic.Uint32
 	bytesRetransmitted              atomic.Uint32
 
-	playoutDelayBytes atomic.Value //bytes of marshalled playout delay
-	playoudDelayAcked atomic.Bool
+	playoutDelay *PlayoutDelayController
 
 	pacer pacer.Pacer
 
@@ -318,6 +324,14 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 	})
 	d.deltaStatsSenderSnapshotId = d.rtpStats.NewSenderSnapshotId()
 
+	if delay := params.PlayoutDelayLimit; delay.GetEnabled() {
+		var err error
+		d.playoutDelay, err = NewPlayoutDelayController(delay.GetMin(), delay.GetMax(), params.Logger, d.rtpStats)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
 		MimeType:       codecs[0].MimeType, // LK-TODO have to notify on codec change
 		IsFECEnabled:   strings.EqualFold(codecs[0].MimeType, webrtc.MimeTypeOpus) && strings.Contains(strings.ToLower(codecs[0].SDPFmtpLine), "fec"),
@@ -330,27 +344,11 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		}
 	})
 
-	// set initial playout delay to minimum value
-	if d.params.PlayoutDelayLimit.GetEnabled() {
-		maxDelay := uint32(rtpextension.PlayoutDelayDefaultMax)
-		if d.params.PlayoutDelayLimit.GetMax() > 0 {
-			maxDelay = d.params.PlayoutDelayLimit.GetMax()
-		}
-		delay := rtpextension.PlayoutDelayFromValue(
-			uint16(d.params.PlayoutDelayLimit.GetMin()),
-			uint16(maxDelay),
-		)
-		b, err := delay.Marshal()
-		if err == nil {
-			d.playoutDelayBytes.Store(b)
-		} else {
-			d.params.Logger.Errorw("failed to marshal playout delay", err, "playoutDelay", d.params.PlayoutDelayLimit)
-		}
-	}
 	if d.kind == webrtc.RTPCodecTypeVideo {
 		go d.maxLayerNotifierWorker()
 		go d.keyFrameRequester()
 	}
+	d.params.Logger.Debugw("downtrack created")
 
 	return d, nil
 }
@@ -366,7 +364,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	}
 	var codec webrtc.RTPCodecParameters
 	for _, c := range d.upstreamCodecs {
-		matchCodec, err := codecParametersFuzzySearch(c, t.CodecParameters())
+		matchCodec, err := utils.CodecParametersFuzzySearch(c, t.CodecParameters())
 		if err == nil {
 			codec = matchCodec
 			break
@@ -410,6 +408,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.onBinding(nil)
 	}
 	d.bound.Store(true)
+	d.onBindAndConnectedChange()
 	d.bindLock.Unlock()
 
 	// Bind is called under RTPSender.mu lock, call the RTPSender.GetParameters in goroutine to avoid deadlock
@@ -424,9 +423,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	}()
 
 	d.forwarder.DetermineCodec(d.codec, d.params.Receiver.HeaderExtensions())
-
 	d.params.Logger.Debugw("downtrack bound")
-	d.onBindAndConnectedChange()
 
 	return codec, nil
 }
@@ -434,8 +431,10 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 // Unbind implements the teardown logic when the track is no longer needed. This happens
 // because a track has been stopped.
 func (d *DownTrack) Unbind(_ webrtc.TrackLocalContext) error {
+	d.bindLock.Lock()
 	d.bound.Store(false)
 	d.onBindAndConnectedChange()
+	d.bindLock.Unlock()
 	return nil
 }
 
@@ -458,7 +457,7 @@ func (d *DownTrack) SetStreamAllocatorListener(listener DownTrackStreamAllocator
 			d.transportWideExtID = 0
 		}
 
-		// kick of a gratuitous allocation
+		// kick off a gratuitous allocation
 		listener.OnSubscriptionChanged(d)
 	}
 }
@@ -714,9 +713,9 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	if tp.ddBytes != nil {
 		extensions = []pacer.ExtensionData{{ID: uint8(d.dependencyDescriptorExtID), Payload: tp.ddBytes}}
 	}
-	if d.playoutDelayExtID != 0 && !d.playoudDelayAcked.Load() {
-		if val := d.playoutDelayBytes.Load(); val != nil {
-			extensions = append(extensions, pacer.ExtensionData{ID: uint8(d.playoutDelayExtID), Payload: val.([]byte)})
+	if d.playoutDelayExtID != 0 && d.playoutDelay != nil {
+		if val := d.playoutDelay.GetDelayExtension(hdr.SequenceNumber); val != nil {
+			extensions = append(extensions, pacer.ExtensionData{ID: uint8(d.playoutDelayExtID), Payload: val})
 		}
 	}
 	if d.sequencer != nil {
@@ -984,7 +983,13 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 	d.bindLock.Unlock()
 	d.connectionStats.Close()
 	d.rtpStats.Stop()
-	d.params.Logger.Infow("rtp stats", "direction", "downstream", "mime", d.mime, "ssrc", d.ssrc, "stats", d.rtpStats.ToString())
+	d.params.Logger.Debugw("rtp stats",
+		"direction", "downstream",
+		"mime", d.mime,
+		"ssrc", d.ssrc,
+		// evaluate only if log level matches
+		"stats", d.rtpStats,
+	)
 
 	d.maxLayerNotifierChMu.Lock()
 	d.maxLayerNotifierChClosed = true
@@ -1263,22 +1268,23 @@ func (d *DownTrack) Resync() {
 }
 
 func (d *DownTrack) CreateSourceDescriptionChunks() []rtcp.SourceDescriptionChunk {
-	if !d.bound.Load() || d.transceiver.Load() == nil {
+	transceiver := d.transceiver.Load()
+	if !d.bound.Load() || transceiver == nil {
 		return nil
 	}
 	return []rtcp.SourceDescriptionChunk{
 		{
 			Source: d.ssrc,
-			Items: []rtcp.SourceDescriptionItem{{
-				Type: rtcp.SDESCNAME,
-				Text: d.params.StreamID,
-			}},
-		}, {
-			Source: d.ssrc,
-			Items: []rtcp.SourceDescriptionItem{{
-				Type: rtcp.SDESType(15),
-				Text: d.transceiver.Load().Mid(),
-			}},
+			Items: []rtcp.SourceDescriptionItem{
+				{
+					Type: rtcp.SDESCNAME,
+					Text: d.params.StreamID,
+				},
+				{
+					Type: rtcp.SDESType(15),
+					Text: transceiver.Mid(),
+				},
+			},
 		},
 	}
 }
@@ -1472,7 +1478,6 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 	pliOnce := true
 	sendPliOnce := func() {
 		_, layer := d.forwarder.CheckSync()
-		d.params.Logger.Debugw("received PLI/FIR RTCP", "layer", layer)
 		if pliOnce {
 			if layer != buffer.InvalidLayerSpatial {
 				d.params.Logger.Debugw("sending PLI RTCP", "layer", layer)
@@ -1525,7 +1530,11 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 					sal.OnRTCPReceiverReport(d, r)
 				}
 
-				d.playoudDelayAcked.Store(true)
+				if d.playoutDelay != nil {
+					jitterMs := uint64(r.Jitter*1e3) / uint64(d.codec.ClockRate)
+					d.playoutDelay.OnSeqAcked(uint16(r.LastSequenceNumber))
+					d.playoutDelay.SetJitter(uint32(jitterMs))
+				}
 			}
 			if len(rr.Reports) > 0 {
 				d.listenerLock.RLock()
@@ -1569,9 +1578,12 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 }
 
 func (d *DownTrack) SetConnected() {
+	d.bindLock.Lock()
 	if !d.connected.Swap(true) {
 		d.onBindAndConnectedChange()
 	}
+	d.params.Logger.Debugw("downtrack connected")
+	d.bindLock.Unlock()
 }
 
 // SetActivePaddingOnMuteUpTrack will enable padding on the track when its uptrack is muted.
@@ -1620,6 +1632,18 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			if err == io.EOF {
 				break
 			}
+			// TODO-VP9-DEBUG-REMOVE-START
+			d.params.Logger.Debugw(
+				"NACK miss",
+				"isn", epm.sourceSeqNo,
+				"osn", epm.targetSeqNo,
+				"ots", epm.timestamp,
+				"eosn", epm.extSequenceNumber,
+				"eots", epm.extTimestamp,
+				"sid", epm.layer,
+				"error", err,
+			)
+			// TODO-VP9-DEBUG-REMOVE-END
 			nackMisses++
 			continue
 		}
@@ -1896,9 +1920,19 @@ func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
 	}
 }
 
-func (d *DownTrack) HandleRTCPSenderReportData(_payloadType webrtc.PayloadType, isSVC bool, layer int32, srData *buffer.RTCPSenderReportData) error {
-	if (layer == d.forwarder.GetReferenceLayerSpatial() || (layer == 0 && isSVC)) && srData != nil {
-		d.rtpStats.MaybeAdjustFirstPacketTime(srData.RTPTimestamp + uint32(d.forwarder.GetReferenceTimestampOffset()))
+func (d *DownTrack) HandleRTCPSenderReportData(
+	_payloadType webrtc.PayloadType,
+	isSVC bool,
+	layer int32,
+	srFirst *buffer.RTCPSenderReportData,
+	srNewest *buffer.RTCPSenderReportData,
+) error {
+	if (layer == d.forwarder.GetReferenceLayerSpatial() || (layer == 0 && isSVC)) && srNewest != nil {
+		d.rtpStats.MaybeAdjustFirstPacketTime(
+			srFirst,
+			srNewest,
+			srNewest.RTPTimestamp+uint32(d.forwarder.GetReferenceTimestampOffset()),
+		)
 	}
 	return nil
 }

@@ -294,6 +294,12 @@ func (d *DummyReceiver) TrackInfo() *livekit.TrackInfo {
 	return nil
 }
 
+func (d *DummyReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+		r.UpdateTrackInfo(ti)
+	}
+}
+
 func (d *DummyReceiver) IsClosed() bool {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		return r.IsClosed()
@@ -322,4 +328,11 @@ func (d *DummyReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, re
 		return r.GetReferenceLayerRTPTimestamp(ts, layer, referenceLayer)
 	}
 	return 0, errors.New("receiver not available")
+}
+
+func (d *DummyReceiver) GetTrackStats() *livekit.RTPStats {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+		return r.GetTrackStats()
+	}
+	return nil
 }

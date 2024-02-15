@@ -16,6 +16,12 @@ type FakeAnalyticsService struct {
 		arg1 context.Context
 		arg2 *livekit.AnalyticsEvent
 	}
+	SendNodeRoomStatesStub        func(context.Context, *livekit.AnalyticsNodeRooms)
+	sendNodeRoomStatesMutex       sync.RWMutex
+	sendNodeRoomStatesArgsForCall []struct {
+		arg1 context.Context
+		arg2 *livekit.AnalyticsNodeRooms
+	}
 	SendStatsStub        func(context.Context, []*livekit.AnalyticsStat)
 	sendStatsMutex       sync.RWMutex
 	sendStatsArgsForCall []struct {
@@ -56,6 +62,39 @@ func (fake *FakeAnalyticsService) SendEventArgsForCall(i int) (context.Context, 
 	fake.sendEventMutex.RLock()
 	defer fake.sendEventMutex.RUnlock()
 	argsForCall := fake.sendEventArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeAnalyticsService) SendNodeRoomStates(arg1 context.Context, arg2 *livekit.AnalyticsNodeRooms) {
+	fake.sendNodeRoomStatesMutex.Lock()
+	fake.sendNodeRoomStatesArgsForCall = append(fake.sendNodeRoomStatesArgsForCall, struct {
+		arg1 context.Context
+		arg2 *livekit.AnalyticsNodeRooms
+	}{arg1, arg2})
+	stub := fake.SendNodeRoomStatesStub
+	fake.recordInvocation("SendNodeRoomStates", []interface{}{arg1, arg2})
+	fake.sendNodeRoomStatesMutex.Unlock()
+	if stub != nil {
+		fake.SendNodeRoomStatesStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeAnalyticsService) SendNodeRoomStatesCallCount() int {
+	fake.sendNodeRoomStatesMutex.RLock()
+	defer fake.sendNodeRoomStatesMutex.RUnlock()
+	return len(fake.sendNodeRoomStatesArgsForCall)
+}
+
+func (fake *FakeAnalyticsService) SendNodeRoomStatesCalls(stub func(context.Context, *livekit.AnalyticsNodeRooms)) {
+	fake.sendNodeRoomStatesMutex.Lock()
+	defer fake.sendNodeRoomStatesMutex.Unlock()
+	fake.SendNodeRoomStatesStub = stub
+}
+
+func (fake *FakeAnalyticsService) SendNodeRoomStatesArgsForCall(i int) (context.Context, *livekit.AnalyticsNodeRooms) {
+	fake.sendNodeRoomStatesMutex.RLock()
+	defer fake.sendNodeRoomStatesMutex.RUnlock()
+	argsForCall := fake.sendNodeRoomStatesArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2
 }
 
@@ -102,6 +141,8 @@ func (fake *FakeAnalyticsService) Invocations() map[string][][]interface{} {
 	defer fake.invocationsMutex.RUnlock()
 	fake.sendEventMutex.RLock()
 	defer fake.sendEventMutex.RUnlock()
+	fake.sendNodeRoomStatesMutex.RLock()
+	defer fake.sendNodeRoomStatesMutex.RUnlock()
 	fake.sendStatsMutex.RLock()
 	defer fake.sendStatsMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}

@@ -21,10 +21,10 @@ import (
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/rpc"
 )
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
@@ -63,21 +63,6 @@ type ParticipantInit struct {
 	SubscriberAllowPause *bool
 }
 
-type NewParticipantCallback func(
-	ctx context.Context,
-	roomName livekit.RoomName,
-	pi ParticipantInit,
-	requestSource MessageSource,
-	responseSink MessageSink,
-) error
-
-type RTCMessageCallback func(
-	ctx context.Context,
-	roomName livekit.RoomName,
-	identity livekit.ParticipantIdentity,
-	msg *livekit.RTCNodeMessage,
-)
-
 // Router allows multiple nodes to coordinate the participant session
 //
 //counterfeiter:generate . Router
@@ -99,28 +84,26 @@ type Router interface {
 	Start() error
 	Drain()
 	Stop()
+}
 
-	// OnNewParticipantRTC is called to start a new participant's RTC connection
-	OnNewParticipantRTC(callback NewParticipantCallback)
-
-	// OnRTCMessage is called to execute actions on the RTC node
-	OnRTCMessage(callback RTCMessageCallback)
+type StartParticipantSignalResults struct {
+	ConnectionID        livekit.ConnectionID
+	RequestSink         MessageSink
+	ResponseSource      MessageSource
+	NodeID              livekit.NodeID
+	NodeSelectionReason string
 }
 
 type MessageRouter interface {
 	// StartParticipantSignal participant signal connection is ready to start
-	StartParticipantSignal(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit) (connectionID livekit.ConnectionID, reqSink MessageSink, resSource MessageSource, err error)
-
-	// Write a message to a participant or room
-	WriteParticipantRTC(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) error
-	WriteRoomRTC(ctx context.Context, roomName livekit.RoomName, msg *livekit.RTCNodeMessage) error
+	StartParticipantSignal(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit) (res StartParticipantSignalResults, err error)
 }
 
-func CreateRouter(config *config.Config, rc redis.UniversalClient, node LocalNode, signalClient SignalClient) Router {
+func CreateRouter(rc redis.UniversalClient, node LocalNode, signalClient SignalClient, kps rpc.KeepalivePubSub) Router {
 	lr := NewLocalRouter(node, signalClient)
 
 	if rc != nil {
-		return NewRedisRouter(config, lr, rc)
+		return NewRedisRouter(lr, rc, kps)
 	}
 
 	// local routing and store

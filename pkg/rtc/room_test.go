@@ -31,9 +31,14 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 	"github.com/livekit/livekit-server/pkg/sfu/audio"
 	"github.com/livekit/livekit-server/pkg/telemetry"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/livekit-server/pkg/telemetry/telemetryfakes"
 	"github.com/livekit/livekit-server/pkg/testutils"
 )
+
+func init() {
+	prometheus.Init("test", livekit.NodeType_SERVER, "test")
+}
 
 const (
 	numParticipants     = 3
@@ -83,7 +88,7 @@ func TestJoinedState(t *testing.T) {
 func TestRoomJoin(t *testing.T) {
 	t.Run("joining returns existing participant data", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: numParticipants})
-		pNew := newMockParticipant("new", types.CurrentProtocol, false, false)
+		pNew := NewMockParticipant("new", types.CurrentProtocol, false, false)
 
 		_ = rm.Join(pNew, nil, nil, iceServersForRoom)
 
@@ -98,15 +103,14 @@ func TestRoomJoin(t *testing.T) {
 	t.Run("subscribe to existing channels upon join", func(t *testing.T) {
 		numExisting := 3
 		rm := newRoomWithParticipants(t, testRoomOpts{num: numExisting})
-		p := newMockParticipant("new", types.CurrentProtocol, false, false)
+		p := NewMockParticipant("new", types.CurrentProtocol, false, false)
 
 		err := rm.Join(p, nil, &ParticipantOptions{AutoSubscribe: true}, iceServersForRoom)
 		require.NoError(t, err)
 
 		stateChangeCB := p.OnStateChangeArgsForCall(0)
 		require.NotNil(t, stateChangeCB)
-		p.StateReturns(livekit.ParticipantInfo_ACTIVE)
-		stateChangeCB(p, livekit.ParticipantInfo_JOINED)
+		stateChangeCB(p, livekit.ParticipantInfo_ACTIVE)
 
 		// it should become a subscriber when connectivity changes
 		numTracks := 0
@@ -131,7 +135,7 @@ func TestRoomJoin(t *testing.T) {
 		disconnectedParticipant := participants[1].(*typesfakes.FakeLocalParticipant)
 		disconnectedParticipant.StateReturns(livekit.ParticipantInfo_DISCONNECTED)
 
-		rm.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonStateDisconnected)
+		rm.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonClientRequestLeave)
 		time.Sleep(defaultDelay)
 
 		require.Equal(t, p, changedParticipant)
@@ -154,7 +158,7 @@ func TestRoomJoin(t *testing.T) {
 		rm.lock.Lock()
 		rm.protoRoom.MaxParticipants = 1
 		rm.lock.Unlock()
-		p := newMockParticipant("second", types.ProtocolVersion(0), false, false)
+		p := NewMockParticipant("second", types.ProtocolVersion(0), false, false)
 
 		err := rm.Join(p, nil, nil, iceServersForRoom)
 		require.Equal(t, ErrMaxParticipantsExceeded, err)
@@ -261,17 +265,18 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 		require.Equal(t, a.Version, b.Version)
 	}
 	testCases := []struct {
-		name      string
-		pi        *livekit.ParticipantInfo
-		immediate bool
-		existing  *livekit.ParticipantInfo
-		expected  []*livekit.ParticipantInfo
-		validate  func(t *testing.T, rm *Room, updates []*livekit.ParticipantInfo)
+		name        string
+		pi          *livekit.ParticipantInfo
+		closeReason types.ParticipantCloseReason
+		immediate   bool
+		existing    *participantUpdate
+		expected    []*participantUpdate
+		validate    func(t *testing.T, rm *Room, updates []*participantUpdate)
 	}{
 		{
 			name:     "publisher updates are immediate",
 			pi:       publisher1v1,
-			expected: []*livekit.ParticipantInfo{publisher1v1},
+			expected: []*participantUpdate{{pi: publisher1v1}},
 		},
 		{
 			name: "subscriber updates are queued",
@@ -280,20 +285,20 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 		{
 			name:     "last version is enqueued",
 			pi:       subscriber1v2,
-			existing: subscriber1v1,
-			validate: func(t *testing.T, rm *Room, _ []*livekit.ParticipantInfo) {
+			existing: &participantUpdate{pi: proto.Clone(subscriber1v1).(*livekit.ParticipantInfo)}, // clone the existing value since it can be modified when setting to disconnected
+			validate: func(t *testing.T, rm *Room, _ []*participantUpdate) {
 				queued := rm.batchedUpdates[livekit.ParticipantIdentity(identity)]
 				require.NotNil(t, queued)
-				requirePIEquals(t, subscriber1v2, queued)
+				requirePIEquals(t, subscriber1v2, queued.pi)
 			},
 		},
 		{
 			name:      "latest version when immediate",
 			pi:        subscriber1v2,
-			existing:  subscriber1v1,
+			existing:  &participantUpdate{pi: proto.Clone(subscriber1v1).(*livekit.ParticipantInfo)},
 			immediate: true,
-			expected:  []*livekit.ParticipantInfo{subscriber1v2},
-			validate: func(t *testing.T, rm *Room, _ []*livekit.ParticipantInfo) {
+			expected:  []*participantUpdate{{pi: subscriber1v2}},
+			validate: func(t *testing.T, rm *Room, _ []*participantUpdate) {
 				queued := rm.batchedUpdates[livekit.ParticipantIdentity(identity)]
 				require.Nil(t, queued)
 			},
@@ -301,32 +306,37 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 		{
 			name:     "out of order updates are rejected",
 			pi:       subscriber1v1,
-			existing: subscriber1v2,
-			validate: func(t *testing.T, rm *Room, updates []*livekit.ParticipantInfo) {
+			existing: &participantUpdate{pi: proto.Clone(subscriber1v2).(*livekit.ParticipantInfo)},
+			validate: func(t *testing.T, rm *Room, updates []*participantUpdate) {
 				queued := rm.batchedUpdates[livekit.ParticipantIdentity(identity)]
-				requirePIEquals(t, subscriber1v2, queued)
+				requirePIEquals(t, subscriber1v2, queued.pi)
 			},
 		},
 		{
-			name:     "sid change is broadcasted immediately",
-			pi:       publisher2,
-			existing: subscriber1v2,
-			expected: []*livekit.ParticipantInfo{
+			name:        "sid change is broadcasted immediately with synthsized disconnect",
+			pi:          publisher2,
+			closeReason: types.ParticipantCloseReasonServiceRequestRemoveParticipant, // just to test if update contain the close reason
+			existing:    &participantUpdate{pi: proto.Clone(subscriber1v2).(*livekit.ParticipantInfo), closeReason: types.ParticipantCloseReasonStale},
+			expected: []*participantUpdate{
 				{
-					Identity: identity,
-					Sid:      "1",
-					Version:  2,
-					State:    livekit.ParticipantInfo_DISCONNECTED,
+					pi: &livekit.ParticipantInfo{
+						Identity: identity,
+						Sid:      "1",
+						Version:  2,
+						State:    livekit.ParticipantInfo_DISCONNECTED,
+					},
+					isSynthesizedDisconnect: true,
+					closeReason:             types.ParticipantCloseReasonStale,
 				},
-				publisher2,
+				{pi: publisher2, closeReason: types.ParticipantCloseReasonServiceRequestRemoveParticipant},
 			},
 		},
 		{
 			name:     "when switching to publisher, queue is cleared",
 			pi:       publisher1v2,
-			existing: subscriber1v1,
-			expected: []*livekit.ParticipantInfo{publisher1v2},
-			validate: func(t *testing.T, rm *Room, updates []*livekit.ParticipantInfo) {
+			existing: &participantUpdate{pi: proto.Clone(subscriber1v1).(*livekit.ParticipantInfo)},
+			expected: []*participantUpdate{{pi: publisher1v2}},
+			validate: func(t *testing.T, rm *Room, updates []*participantUpdate) {
 				require.Empty(t, rm.batchedUpdates)
 			},
 		},
@@ -336,13 +346,14 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
 			if tc.existing != nil {
-				// clone the existing value since it can be modified when setting to disconnected
-				rm.batchedUpdates[livekit.ParticipantIdentity(tc.existing.Identity)] = proto.Clone(tc.existing).(*livekit.ParticipantInfo)
+				rm.batchedUpdates[livekit.ParticipantIdentity(tc.existing.pi.Identity)] = tc.existing
 			}
-			updates := rm.pushAndDequeueUpdates(tc.pi, tc.immediate)
+			updates := rm.pushAndDequeueUpdates(tc.pi, tc.closeReason, tc.immediate)
 			require.Equal(t, len(tc.expected), len(updates))
 			for i, item := range tc.expected {
-				requirePIEquals(t, item, updates[i])
+				requirePIEquals(t, item.pi, updates[i].pi)
+				require.Equal(t, item.isSynthesizedDisconnect, updates[i].isSynthesizedDisconnect)
+				require.Equal(t, item.closeReason, updates[i].closeReason)
 			}
 
 			if tc.validate != nil {
@@ -414,7 +425,7 @@ func TestNewTrack(t *testing.T) {
 		pub := participants[2].(*typesfakes.FakeLocalParticipant)
 
 		// pub adds track
-		track := newMockTrack(livekit.TrackType_VIDEO, "webcam")
+		track := NewMockTrack(livekit.TrackType_VIDEO, "webcam")
 		trackCB := pub.OnTrackPublishedArgsForCall(0)
 		require.NotNil(t, trackCB)
 		trackCB(pub, track)
@@ -439,7 +450,7 @@ func TestActiveSpeakers(t *testing.T) {
 	audioUpdateDuration := (audioUpdateInterval + 10) * time.Millisecond
 	t.Run("participant should not be getting audio updates (protocol 2)", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 1, protocol: 2})
-		defer rm.Close()
+		defer rm.Close(types.ParticipantCloseReasonNone)
 		p := rm.GetParticipants()[0].(*typesfakes.FakeLocalParticipant)
 		require.Empty(t, rm.GetActiveSpeakers())
 
@@ -451,7 +462,7 @@ func TestActiveSpeakers(t *testing.T) {
 
 	t.Run("speakers should be sorted by loudness", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
-		defer rm.Close()
+		defer rm.Close(types.ParticipantCloseReasonNone)
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeLocalParticipant)
 		p2 := participants[1].(*typesfakes.FakeLocalParticipant)
@@ -466,7 +477,7 @@ func TestActiveSpeakers(t *testing.T) {
 
 	t.Run("participants are getting audio updates (protocol 3+)", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, protocol: 3})
-		defer rm.Close()
+		defer rm.Close(types.ParticipantCloseReasonNone)
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeLocalParticipant)
 		time.Sleep(time.Millisecond) // let the first update cycle run
@@ -505,7 +516,7 @@ func TestActiveSpeakers(t *testing.T) {
 
 	t.Run("audio level is smoothed", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, protocol: 3, audioSmoothIntervals: 3})
-		defer rm.Close()
+		defer rm.Close(types.ParticipantCloseReasonNone)
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeLocalParticipant)
 		op := participants[1].(*typesfakes.FakeLocalParticipant)
@@ -562,7 +573,7 @@ func TestDataChannel(t *testing.T) {
 
 	t.Run("participants should receive data", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 3})
-		defer rm.Close()
+		defer rm.Close(types.ParticipantCloseReasonNone)
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeLocalParticipant)
 
@@ -592,7 +603,7 @@ func TestDataChannel(t *testing.T) {
 
 	t.Run("only one participant should receive the data", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 4})
-		defer rm.Close()
+		defer rm.Close(types.ParticipantCloseReasonNone)
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeLocalParticipant)
 		p1 := participants[1].(*typesfakes.FakeLocalParticipant)
@@ -623,7 +634,7 @@ func TestDataChannel(t *testing.T) {
 
 	t.Run("publishing disallowed", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
-		defer rm.Close()
+		defer rm.Close(types.ParticipantCloseReasonNone)
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeLocalParticipant)
 		p.CanPublishDataReturns(false)
@@ -651,9 +662,9 @@ func TestDataChannel(t *testing.T) {
 func TestHiddenParticipants(t *testing.T) {
 	t.Run("other participants don't receive hidden updates", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, numHidden: 1})
-		defer rm.Close()
+		defer rm.Close(types.ParticipantCloseReasonNone)
 
-		pNew := newMockParticipant("new", types.CurrentProtocol, false, false)
+		pNew := NewMockParticipant("new", types.CurrentProtocol, false, false)
 		rm.Join(pNew, nil, nil, iceServersForRoom)
 
 		// expect new participant to get a JoinReply
@@ -667,29 +678,28 @@ func TestHiddenParticipants(t *testing.T) {
 
 	t.Run("hidden participant subscribes to tracks", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
-		hidden := newMockParticipant("hidden", types.CurrentProtocol, true, false)
+		hidden := NewMockParticipant("hidden", types.CurrentProtocol, true, false)
 
 		err := rm.Join(hidden, nil, &ParticipantOptions{AutoSubscribe: true}, iceServersForRoom)
 		require.NoError(t, err)
 
 		stateChangeCB := hidden.OnStateChangeArgsForCall(0)
 		require.NotNil(t, stateChangeCB)
-		hidden.StateReturns(livekit.ParticipantInfo_ACTIVE)
-		stateChangeCB(hidden, livekit.ParticipantInfo_JOINED)
+		stateChangeCB(hidden, livekit.ParticipantInfo_ACTIVE)
 
-		require.Equal(t, 2, hidden.SubscribeToTrackCallCount())
+		require.Eventually(t, func() bool { return hidden.SubscribeToTrackCallCount() == 2 }, 5*time.Second, 10*time.Millisecond)
 	})
 }
 
 func TestRoomUpdate(t *testing.T) {
 	t.Run("updates are sent when participant joined", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
-		defer rm.Close()
+		defer rm.Close(types.ParticipantCloseReasonNone)
 
 		p1 := rm.GetParticipants()[0].(*typesfakes.FakeLocalParticipant)
 		require.Equal(t, 0, p1.SendRoomUpdateCallCount())
 
-		p2 := newMockParticipant("p2", types.CurrentProtocol, false, false)
+		p2 := NewMockParticipant("p2", types.CurrentProtocol, false, false)
 		require.NoError(t, rm.Join(p2, nil, nil, iceServersForRoom))
 
 		// p1 should have received an update
@@ -700,7 +710,7 @@ func TestRoomUpdate(t *testing.T) {
 
 	t.Run("participants should receive metadata update", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
-		defer rm.Close()
+		defer rm.Close(types.ParticipantCloseReasonNone)
 
 		rm.SetMetadata("test metadata...")
 
@@ -743,7 +753,7 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *Room {
 	)
 	for i := 0; i < opts.num+opts.numHidden; i++ {
 		identity := livekit.ParticipantIdentity(fmt.Sprintf("p%d", i))
-		participant := newMockParticipant(identity, opts.protocol, i >= opts.num, true)
+		participant := NewMockParticipant(identity, opts.protocol, i >= opts.num, true)
 		err := rm.Join(participant, nil, &ParticipantOptions{AutoSubscribe: true}, iceServersForRoom)
 		require.NoError(t, err)
 		participant.StateReturns(livekit.ParticipantInfo_ACTIVE)

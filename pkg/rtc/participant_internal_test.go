@@ -753,6 +753,7 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 		Config:                 rtcConf,
 		Sink:                   &routingfakes.FakeMessageSink{},
 		ProtocolVersion:        opts.protocolVersion,
+		SessionStartTime:       time.Now(),
 		PLIThrottleConfig:      conf.RTC.PLIThrottle,
 		Grants:                 grants,
 		PublishEnabledCodecs:   enabledCodecs,

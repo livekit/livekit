@@ -132,7 +132,7 @@ func (s *IngressService) CreateIngressWithUrl(ctx context.Context, urlStr string
 		if err != nil {
 			return nil, psrpc.NewError(psrpc.InvalidArgument, err)
 		}
-		if urlObj.Scheme != "http" && urlObj.Scheme != "https" {
+		if urlObj.Scheme != "http" && urlObj.Scheme != "https" && urlObj.Scheme != "srt" {
 			return nil, ingress.ErrInvalidIngress(fmt.Sprintf("invalid url scheme %s", urlObj.Scheme))
 		}
 		// Marshall the URL again for sanitization
@@ -156,6 +156,7 @@ func (s *IngressService) CreateIngressWithUrl(ctx context.Context, urlStr string
 		RoomName:            req.RoomName,
 		ParticipantIdentity: req.ParticipantIdentity,
 		ParticipantName:     req.ParticipantName,
+		ParticipantMetadata: req.ParticipantMetadata,
 		State:               &livekit.IngressState{},
 	}
 
@@ -223,6 +224,9 @@ func updateInfoUsingRequest(req *livekit.UpdateIngressRequest, info *livekit.Ing
 	}
 	if req.BypassTranscoding != nil {
 		info.BypassTranscoding = *req.BypassTranscoding
+	}
+	if req.ParticipantMetadata != "" {
+		info.ParticipantMetadata = req.ParticipantMetadata
 	}
 	if req.Audio != nil {
 		info.Audio = req.Audio

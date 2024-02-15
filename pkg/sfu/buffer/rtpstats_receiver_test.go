@@ -20,9 +20,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livekit/protocol/logger"
 	"github.com/pion/rtp"
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/protocol/logger"
 )
 
 func getPacket(sn uint16, ts uint32, payloadSize int) *rtp.Packet {
@@ -82,7 +83,7 @@ func Test_RTPStatsReceiver(t *testing.T) {
 	}
 
 	r.Stop()
-	fmt.Printf("%s\n", r.ToString())
+	fmt.Printf("%s\n", r.String())
 }
 
 func Test_RTPStatsReceiver_Update(t *testing.T) {

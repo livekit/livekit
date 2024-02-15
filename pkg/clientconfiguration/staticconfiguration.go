@@ -17,6 +17,7 @@ package clientconfiguration
 import (
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -40,7 +41,9 @@ func (s *StaticClientConfigurationManager) GetConfiguration(clientInfo *livekit.
 	for _, c := range s.confs {
 		matched, err := c.Match.Match(clientInfo)
 		if err != nil {
-			logger.Errorw("matchrule failed", err, "clientInfo", logger.Proto(clientInfo))
+			logger.Errorw("matchrule failed", err,
+				"clientInfo", logger.Proto(utils.ClientInfoWithoutAddress(clientInfo)),
+			)
 			continue
 		}
 		if !matched {

@@ -183,8 +183,6 @@ keys:
 # since v1.4.0, a more reliable, psrpc based signal relay is available
 # this gives us the ability to reliably proxy messages between a signal server and RTC node
 # signal_relay:
-#   # enabled by default as of v1.5.0, legacy signal proxy will be removed in v1.6
-#   enabled: true
 #   # amount of time a message delivery is tried before giving up
 #   retry_timeout: 30s
 #   # minimum amount of time to wait for RTC node to ack,
@@ -199,8 +197,6 @@ keys:
 # PSRPC
 # since v1.5.1, a more reliable, psrpc based internal rpc
 # psrpc:
-#   # enable the psrpc internal api client for roomservice calls
-#   enabled: true
 #   # maximum number of rpc attempts
 #   max_attempts: 3
 #   # initial time to wait for calls to complete

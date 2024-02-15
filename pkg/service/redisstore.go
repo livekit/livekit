@@ -26,11 +26,12 @@ import (
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/livekit-server/version"
 	"github.com/livekit/protocol/ingress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
+
+	"github.com/livekit/livekit-server/version"
 )
 
 const (
@@ -50,6 +51,9 @@ const (
 	StreamKeyKey       = "{ingress}_stream_key"
 	IngressStatePrefix = "{ingress}_state:"
 	RoomIngressPrefix  = "room_{ingress}:"
+
+	SIPTrunkKey        = "sip_trunk"
+	SIPDispatchRuleKey = "sip_dispatch_rule"
 
 	// RoomParticipantsPrefix is hash of participant_name => ParticipantInfo
 	RoomParticipantsPrefix = "room_participants:"
@@ -811,4 +815,96 @@ func (s *RedisStore) DeleteIngress(_ context.Context, info *livekit.IngressInfo)
 	}
 
 	return nil
+}
+
+func (s *RedisStore) loadOne(ctx context.Context, key, id string, info proto.Message, notFoundErr error) error {
+	data, err := s.rc.HGet(s.ctx, key, id).Result()
+	switch err {
+	case nil:
+		return proto.Unmarshal([]byte(data), info)
+	case redis.Nil:
+		return notFoundErr
+	default:
+		return err
+	}
+}
+
+func (s *RedisStore) loadMany(ctx context.Context, key string, onResult func() proto.Message) error {
+	data, err := s.rc.HGetAll(s.ctx, key).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil
+		}
+		return err
+	}
+
+	for _, d := range data {
+		if err = proto.Unmarshal([]byte(d), onResult()); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *RedisStore) StoreSIPTrunk(ctx context.Context, info *livekit.SIPTrunkInfo) error {
+	data, err := proto.Marshal(info)
+	if err != nil {
+		return err
+	}
+
+	return s.rc.HSet(s.ctx, SIPTrunkKey, info.SipTrunkId, data).Err()
+}
+
+func (s *RedisStore) LoadSIPTrunk(ctx context.Context, sipTrunkId string) (*livekit.SIPTrunkInfo, error) {
+	info := &livekit.SIPTrunkInfo{}
+	if err := s.loadOne(ctx, SIPTrunkKey, sipTrunkId, info, ErrSIPTrunkNotFound); err != nil {
+		return nil, err
+	}
+
+	return info, nil
+}
+
+func (s *RedisStore) DeleteSIPTrunk(ctx context.Context, info *livekit.SIPTrunkInfo) error {
+	return s.rc.HDel(s.ctx, SIPTrunkKey, info.SipTrunkId).Err()
+}
+
+func (s *RedisStore) ListSIPTrunk(ctx context.Context) (infos []*livekit.SIPTrunkInfo, err error) {
+	err = s.loadMany(ctx, SIPTrunkKey, func() proto.Message {
+		infos = append(infos, &livekit.SIPTrunkInfo{})
+		return infos[len(infos)-1]
+	})
+
+	return infos, err
+}
+
+func (s *RedisStore) StoreSIPDispatchRule(ctx context.Context, info *livekit.SIPDispatchRuleInfo) error {
+	data, err := proto.Marshal(info)
+	if err != nil {
+		return err
+	}
+
+	return s.rc.HSet(s.ctx, SIPDispatchRuleKey, info.SipDispatchRuleId, data).Err()
+}
+
+func (s *RedisStore) LoadSIPDispatchRule(ctx context.Context, sipDispatchRuleId string) (*livekit.SIPDispatchRuleInfo, error) {
+	info := &livekit.SIPDispatchRuleInfo{}
+	if err := s.loadOne(ctx, SIPDispatchRuleKey, sipDispatchRuleId, info, ErrSIPDispatchRuleNotFound); err != nil {
+		return nil, err
+	}
+
+	return info, nil
+}
+
+func (s *RedisStore) DeleteSIPDispatchRule(ctx context.Context, info *livekit.SIPDispatchRuleInfo) error {
+	return s.rc.HDel(s.ctx, SIPDispatchRuleKey, info.SipDispatchRuleId).Err()
+}
+
+func (s *RedisStore) ListSIPDispatchRule(ctx context.Context) (infos []*livekit.SIPDispatchRuleInfo, err error) {
+	err = s.loadMany(ctx, SIPDispatchRuleKey, func() proto.Message {
+		infos = append(infos, &livekit.SIPDispatchRuleInfo{})
+		return infos[len(infos)-1]
+	})
+
+	return infos, err
 }

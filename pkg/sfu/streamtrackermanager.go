@@ -22,6 +22,8 @@ import (
 	"time"
 
 	"github.com/frostbyte73/core"
+	"go.uber.org/atomic"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -57,7 +59,7 @@ type endsSenderReport struct {
 
 type StreamTrackerManager struct {
 	logger    logger.Logger
-	trackInfo *livekit.TrackInfo
+	trackInfo atomic.Pointer[livekit.TrackInfo]
 	isSVC     bool
 	clockRate uint32
 
@@ -92,15 +94,15 @@ func NewStreamTrackerManager(
 ) *StreamTrackerManager {
 	s := &StreamTrackerManager{
 		logger:               logger,
-		trackInfo:            trackInfo,
 		isSVC:                isSVC,
 		maxPublishedLayer:    buffer.InvalidLayerSpatial,
 		maxTemporalLayerSeen: buffer.InvalidLayerTemporal,
 		clockRate:            clockRate,
 		closed:               core.NewFuse(),
 	}
+	s.trackInfo.Store(proto.Clone(trackInfo).(*livekit.TrackInfo))
 
-	switch s.trackInfo.Source {
+	switch trackInfo.Source {
 	case livekit.TrackSource_SCREEN_SHARE:
 		s.trackerConfig = trackersConfig.Screenshare
 	case livekit.TrackSource_CAMERA:
@@ -111,7 +113,7 @@ func NewStreamTrackerManager(
 
 	s.maxExpectedLayerFromTrackInfo()
 
-	if s.trackInfo.Type == livekit.TrackType_VIDEO {
+	if trackInfo.Type == livekit.TrackType_VIDEO {
 		go s.bitrateReporter()
 	}
 	return s
@@ -314,6 +316,11 @@ func (s *StreamTrackerManager) IsPaused() bool {
 	defer s.lock.RUnlock()
 
 	return s.paused
+}
+
+func (s *StreamTrackerManager) UpdateTrackInfo(ti *livekit.TrackInfo) {
+	s.trackInfo.Store(proto.Clone(ti).(*livekit.TrackInfo))
+	s.maxExpectedLayerFromTrackInfo()
 }
 
 func (s *StreamTrackerManager) SetMaxExpectedSpatialLayer(layer int32) int32 {
@@ -540,10 +547,13 @@ func (s *StreamTrackerManager) removeAvailableLayer(layer int32) {
 
 func (s *StreamTrackerManager) maxExpectedLayerFromTrackInfo() {
 	s.maxExpectedLayer = buffer.InvalidLayerSpatial
-	for _, layer := range s.trackInfo.Layers {
-		spatialLayer := buffer.VideoQualityToSpatialLayer(layer.Quality, s.trackInfo)
-		if spatialLayer > s.maxExpectedLayer {
-			s.maxExpectedLayer = spatialLayer
+	ti := s.trackInfo.Load()
+	if ti != nil {
+		for _, layer := range ti.Layers {
+			spatialLayer := buffer.VideoQualityToSpatialLayer(layer.Quality, ti)
+			if spatialLayer > s.maxExpectedLayer {
+				s.maxExpectedLayer = spatialLayer
+			}
 		}
 	}
 }

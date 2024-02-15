@@ -37,7 +37,6 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
-	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/version"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
@@ -65,6 +64,7 @@ func NewLivekitServer(conf *config.Config,
 	roomService livekit.RoomService,
 	egressService *EgressService,
 	ingressService *IngressService,
+	sipService *SIPService,
 	ioService *IOInfoService,
 	rtcService *RTCService,
 	agentService *AgentService,
@@ -106,7 +106,7 @@ func NewLivekitServer(conf *config.Config,
 		middlewares = append(middlewares, NewAPIKeyAuthMiddleware(keyProvider))
 	}
 
-	twirpLoggingHook := TwirpLogger(logger.GetLogger().WithComponent(sutils.ComponentAPI))
+	twirpLoggingHook := TwirpLogger()
 	twirpRequestStatusHook := TwirpRequestStatusReporter()
 	roomServer := livekit.NewRoomServiceServer(roomService, twirpLoggingHook)
 	egressServer := livekit.NewEgressServer(egressService, twirp.WithServerHooks(
@@ -116,6 +116,7 @@ func NewLivekitServer(conf *config.Config,
 		),
 	))
 	ingressServer := livekit.NewIngressServer(ingressService, twirpLoggingHook)
+	sipServer := livekit.NewSIPServer(sipService, twirpLoggingHook)
 
 	mux := http.NewServeMux()
 	if conf.Development {
@@ -127,6 +128,7 @@ func NewLivekitServer(conf *config.Config,
 	mux.Handle(roomServer.PathPrefix(), roomServer)
 	mux.Handle(egressServer.PathPrefix(), egressServer)
 	mux.Handle(ingressServer.PathPrefix(), ingressServer)
+	mux.Handle(sipServer.PathPrefix(), sipServer)
 	mux.Handle("/rtc", rtcService)
 	mux.Handle("/agent", agentService)
 	mux.HandleFunc("/rtc/validate", rtcService.Validate)

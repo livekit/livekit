@@ -161,10 +161,11 @@ type FakeSubscribedTrack struct {
 	subscriberIdentityReturnsOnCall map[int]struct {
 		result1 livekit.ParticipantIdentity
 	}
-	UpdateSubscriberSettingsStub        func(*livekit.UpdateTrackSettings)
+	UpdateSubscriberSettingsStub        func(*livekit.UpdateTrackSettings, bool)
 	updateSubscriberSettingsMutex       sync.RWMutex
 	updateSubscriberSettingsArgsForCall []struct {
 		arg1 *livekit.UpdateTrackSettings
+		arg2 bool
 	}
 	UpdateVideoLayerStub        func()
 	updateVideoLayerMutex       sync.RWMutex
@@ -991,16 +992,17 @@ func (fake *FakeSubscribedTrack) SubscriberIdentityReturnsOnCall(i int, result1 
 	}{result1}
 }
 
-func (fake *FakeSubscribedTrack) UpdateSubscriberSettings(arg1 *livekit.UpdateTrackSettings) {
+func (fake *FakeSubscribedTrack) UpdateSubscriberSettings(arg1 *livekit.UpdateTrackSettings, arg2 bool) {
 	fake.updateSubscriberSettingsMutex.Lock()
 	fake.updateSubscriberSettingsArgsForCall = append(fake.updateSubscriberSettingsArgsForCall, struct {
 		arg1 *livekit.UpdateTrackSettings
-	}{arg1})
+		arg2 bool
+	}{arg1, arg2})
 	stub := fake.UpdateSubscriberSettingsStub
-	fake.recordInvocation("UpdateSubscriberSettings", []interface{}{arg1})
+	fake.recordInvocation("UpdateSubscriberSettings", []interface{}{arg1, arg2})
 	fake.updateSubscriberSettingsMutex.Unlock()
 	if stub != nil {
-		fake.UpdateSubscriberSettingsStub(arg1)
+		fake.UpdateSubscriberSettingsStub(arg1, arg2)
 	}
 }
 
@@ -1010,17 +1012,17 @@ func (fake *FakeSubscribedTrack) UpdateSubscriberSettingsCallCount() int {
 	return len(fake.updateSubscriberSettingsArgsForCall)
 }
 
-func (fake *FakeSubscribedTrack) UpdateSubscriberSettingsCalls(stub func(*livekit.UpdateTrackSettings)) {
+func (fake *FakeSubscribedTrack) UpdateSubscriberSettingsCalls(stub func(*livekit.UpdateTrackSettings, bool)) {
 	fake.updateSubscriberSettingsMutex.Lock()
 	defer fake.updateSubscriberSettingsMutex.Unlock()
 	fake.UpdateSubscriberSettingsStub = stub
 }
 
-func (fake *FakeSubscribedTrack) UpdateSubscriberSettingsArgsForCall(i int) *livekit.UpdateTrackSettings {
+func (fake *FakeSubscribedTrack) UpdateSubscriberSettingsArgsForCall(i int) (*livekit.UpdateTrackSettings, bool) {
 	fake.updateSubscriberSettingsMutex.RLock()
 	defer fake.updateSubscriberSettingsMutex.RUnlock()
 	argsForCall := fake.updateSubscriberSettingsArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeSubscribedTrack) UpdateVideoLayer() {

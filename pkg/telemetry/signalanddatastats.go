@@ -20,11 +20,10 @@ import (
 
 	"go.uber.org/atomic"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 )
-
-const statsReportInterval = 10 * time.Second
 
 type BytesTrackType string
 
@@ -33,13 +32,28 @@ const (
 	BytesTrackTypeSignal BytesTrackType = "SG"
 )
 
+// -------------------------------
+
+type TrafficTotals struct {
+	At           time.Time
+	SendBytes    uint64
+	SendMessages uint32
+	RecvBytes    uint64
+	RecvMessages uint32
+}
+
+// --------------------------------
+
 // stats for signal and data channel
 type BytesTrackStats struct {
-	trackID         livekit.TrackID
-	pID             livekit.ParticipantID
-	send, recv      atomic.Uint64
-	lastStatsReport atomic.Value // *time.Time
-	telemetry       TelemetryService
+	trackID                              livekit.TrackID
+	pID                                  livekit.ParticipantID
+	send, recv                           atomic.Uint64
+	sendMessages, recvMessages           atomic.Uint32
+	totalSendBytes, totalRecvBytes       atomic.Uint64
+	totalSendMessages, totalRecvMessages atomic.Uint32
+	telemetry                            TelemetryService
+	isStopped                            atomic.Bool
 }
 
 func NewBytesTrackStats(trackID livekit.TrackID, pID livekit.ParticipantID, telemetry TelemetryService) *BytesTrackStats {
@@ -48,44 +62,46 @@ func NewBytesTrackStats(trackID livekit.TrackID, pID livekit.ParticipantID, tele
 		pID:       pID,
 		telemetry: telemetry,
 	}
-	now := time.Now()
-	s.lastStatsReport.Store(&now)
+	go s.reporter()
 	return s
 }
 
 func (s *BytesTrackStats) AddBytes(bytes uint64, isSend bool) {
 	if isSend {
 		s.send.Add(bytes)
+		s.sendMessages.Inc()
+		s.totalSendBytes.Add(bytes)
+		s.totalSendMessages.Inc()
 	} else {
 		s.recv.Add(bytes)
+		s.recvMessages.Inc()
+		s.totalRecvBytes.Add(bytes)
+		s.totalRecvMessages.Inc()
 	}
-
-	s.report(false)
 }
 
-func (s *BytesTrackStats) Report() {
-	s.report(true)
+func (s *BytesTrackStats) GetTrafficTotals() *TrafficTotals {
+	return &TrafficTotals{
+		At:           time.Now(),
+		SendBytes:    s.totalSendBytes.Load(),
+		SendMessages: s.totalSendMessages.Load(),
+		RecvBytes:    s.totalRecvBytes.Load(),
+		RecvMessages: s.totalRecvMessages.Load(),
+	}
 }
 
-func (s *BytesTrackStats) report(force bool) {
-	now := time.Now()
-	if !force {
-		lr := s.lastStatsReport.Load().(*time.Time)
-		if time.Since(*lr) < statsReportInterval {
-			return
-		}
+func (s *BytesTrackStats) Stop() {
+	s.isStopped.Store(true)
+}
 
-		if !s.lastStatsReport.CompareAndSwap(lr, &now) {
-			return
-		}
-	} else {
-		s.lastStatsReport.Store(&now)
-	}
-
+func (s *BytesTrackStats) report() {
 	if recv := s.recv.Swap(0); recv > 0 {
 		s.telemetry.TrackStats(StatsKeyForData(livekit.StreamType_UPSTREAM, s.pID, s.trackID), &livekit.AnalyticsStat{
 			Streams: []*livekit.AnalyticsStream{
-				{PrimaryBytes: recv},
+				{
+					PrimaryBytes:   recv,
+					PrimaryPackets: s.recvMessages.Swap(0),
+				},
 			},
 		})
 	}
@@ -93,11 +109,28 @@ func (s *BytesTrackStats) report(force bool) {
 	if send := s.send.Swap(0); send > 0 {
 		s.telemetry.TrackStats(StatsKeyForData(livekit.StreamType_DOWNSTREAM, s.pID, s.trackID), &livekit.AnalyticsStat{
 			Streams: []*livekit.AnalyticsStream{
-				{PrimaryBytes: send},
+				{
+					PrimaryBytes:   send,
+					PrimaryPackets: s.sendMessages.Swap(0),
+				},
 			},
 		})
 	}
 }
+
+func (s *BytesTrackStats) reporter() {
+	ticker := time.NewTicker(config.TelemetryStatsUpdateInterval)
+	defer ticker.Stop()
+
+	for !s.isStopped.Load() {
+		<-ticker.C
+		s.report()
+	}
+
+	s.report()
+}
+
+// -----------------------------------------------------------------------
 
 func BytesTrackIDForParticipantID(typ BytesTrackType, participantID livekit.ParticipantID) livekit.TrackID {
 	return livekit.TrackID(fmt.Sprintf("%s_%s%s", utils.TrackPrefix, string(typ), participantID))

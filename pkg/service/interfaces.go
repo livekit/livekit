@@ -35,7 +35,6 @@ type ObjectStore interface {
 	UnlockRoom(ctx context.Context, roomName livekit.RoomName, uid string) error
 
 	StoreRoom(ctx context.Context, room *livekit.Room, internal *livekit.RoomInternal) error
-	DeleteRoom(ctx context.Context, roomName livekit.RoomName) error
 
 	StoreParticipant(ctx context.Context, roomName livekit.RoomName, participant *livekit.ParticipantInfo) error
 	DeleteParticipant(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) error
@@ -44,6 +43,7 @@ type ObjectStore interface {
 //counterfeiter:generate . ServiceStore
 type ServiceStore interface {
 	LoadRoom(ctx context.Context, roomName livekit.RoomName, includeInternal bool) (*livekit.Room, *livekit.RoomInternal, error)
+	DeleteRoom(ctx context.Context, roomName livekit.RoomName) error
 
 	// ListRooms returns currently active rooms. if names is not nil, it'll filter and return
 	// only rooms that match
@@ -75,4 +75,17 @@ type IngressStore interface {
 type RoomAllocator interface {
 	CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (*livekit.Room, bool, error)
 	ValidateCreateRoom(ctx context.Context, roomName livekit.RoomName) error
+}
+
+//counterfeiter:generate . SIPStore
+type SIPStore interface {
+	StoreSIPTrunk(ctx context.Context, info *livekit.SIPTrunkInfo) error
+	LoadSIPTrunk(ctx context.Context, sipTrunkID string) (*livekit.SIPTrunkInfo, error)
+	ListSIPTrunk(ctx context.Context) ([]*livekit.SIPTrunkInfo, error)
+	DeleteSIPTrunk(ctx context.Context, info *livekit.SIPTrunkInfo) error
+
+	StoreSIPDispatchRule(ctx context.Context, info *livekit.SIPDispatchRuleInfo) error
+	LoadSIPDispatchRule(ctx context.Context, sipDispatchRuleID string) (*livekit.SIPDispatchRuleInfo, error)
+	ListSIPDispatchRule(ctx context.Context) ([]*livekit.SIPDispatchRuleInfo, error)
+	DeleteSIPDispatchRule(ctx context.Context, info *livekit.SIPDispatchRuleInfo) error
 }

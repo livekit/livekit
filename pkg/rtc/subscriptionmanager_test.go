@@ -344,7 +344,7 @@ func TestUpdateSettingsBeforeSubscription(t *testing.T) {
 		return st.UpdateSubscriberSettingsCallCount() == 1
 	}, subSettleTimeout, subCheckInterval, "UpdateSubscriberSettings should be called once")
 
-	applied := st.UpdateSubscriberSettingsArgsForCall(0)
+	applied, _ := st.UpdateSubscriberSettingsArgsForCall(0)
 	require.Equal(t, settings.Disabled, applied.Disabled)
 	require.Equal(t, settings.Width, applied.Width)
 	require.Equal(t, settings.Height, applied.Height)

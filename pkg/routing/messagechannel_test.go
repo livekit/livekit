@@ -39,12 +39,12 @@ func TestMessageChannel_WriteMessageClosed(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < 100; i++ {
-			_ = m.WriteMessage(&livekit.RTCNodeMessage{})
+			_ = m.WriteMessage(&livekit.SignalRequest{})
 		}
 	}()
-	_ = m.WriteMessage(&livekit.RTCNodeMessage{})
+	_ = m.WriteMessage(&livekit.SignalRequest{})
 	m.Close()
-	_ = m.WriteMessage(&livekit.RTCNodeMessage{})
+	_ = m.WriteMessage(&livekit.SignalRequest{})
 
 	wg.Wait()
 }
