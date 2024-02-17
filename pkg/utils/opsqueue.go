@@ -41,7 +41,7 @@ func NewOpsQueue(name string, minSize uint, flushOnStop bool) *OpsQueue {
 		wake:        make(chan struct{}, 1),
 		doneChan:    make(chan struct{}),
 	}
-	oq.ops.SetMinCapacity(uint(utils.Min(bits.Len64(uint64(minSize-1)), 16)))
+	oq.ops.SetMinCapacity(uint(utils.Min(bits.Len64(uint64(minSize-1)), 7)))
 	return oq
 }
 
