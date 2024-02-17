@@ -2063,7 +2063,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 			p.ID(),
 			p.Identity(),
 			mt.ToProto(),
-			!p.IsClosed(),
+			true,
 		)
 
 		// re-use Track sid

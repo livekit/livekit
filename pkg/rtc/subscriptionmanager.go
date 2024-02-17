@@ -662,7 +662,7 @@ func (m *SubscriptionManager) handleSubscribedTrackClose(s *trackSubscription, w
 			context.Background(),
 			m.params.Participant.ID(),
 			&livekit.TrackInfo{Sid: string(s.trackID), Type: subTrack.MediaTrack().Kind()},
-			!willBeResumed && !m.params.Participant.IsClosed(),
+			!willBeResumed,
 		)
 
 		dt := subTrack.DownTrack()
