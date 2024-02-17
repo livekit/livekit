@@ -181,7 +181,7 @@ func (t *telemetryService) cleanupWorkers() {
 	t.lock.RUnlock()
 
 	toReap := make([]livekit.ParticipantID, 0, len(workersShadow))
-	for _, worker := range t.workers {
+	for _, worker := range workersShadow {
 		closedAt := worker.ClosedAt()
 		if !closedAt.IsZero() && time.Since(closedAt) > workerCleanupWait {
 			worker.Flush()
