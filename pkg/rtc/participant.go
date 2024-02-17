@@ -137,6 +137,10 @@ type ParticipantParams struct {
 }
 
 type ParticipantImpl struct {
+	// utils.TimedVersion is a atomic. To be correctly aligned also on 32bit archs
+	// 64it atomics need to be at the front of a struct
+	timedVersion utils.TimedVersion
+
 	params ParticipantParams
 
 	isClosed    atomic.Bool
@@ -200,7 +204,6 @@ type ParticipantImpl struct {
 
 	dirty        atomic.Bool
 	version      atomic.Uint32
-	timedVersion utils.TimedVersion
 
 	// callbacks & handlers
 	onTrackPublished     func(types.LocalParticipant, types.MediaTrack)

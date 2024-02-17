@@ -37,6 +37,10 @@ type UpTrackManagerParams struct {
 
 // UpTrackManager manages all uptracks from a participant
 type UpTrackManager struct {
+	// utils.TimedVersion is a atomic. To be correctly aligned also on 32bit archs
+	// 64it atomics need to be at the front of a struct
+	subscriptionPermissionVersion utils.TimedVersion
+
 	params UpTrackManagerParams
 
 	closed bool
@@ -44,7 +48,6 @@ type UpTrackManager struct {
 	// publishedTracks that participant is publishing
 	publishedTracks               map[livekit.TrackID]types.MediaTrack
 	subscriptionPermission        *livekit.SubscriptionPermission
-	subscriptionPermissionVersion utils.TimedVersion
 	// subscriber permission for published tracks
 	subscriberPermissions map[livekit.ParticipantIdentity]*livekit.TrackPermission // subscriberIdentity => *livekit.TrackPermission
 
