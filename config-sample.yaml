@@ -20,8 +20,6 @@ port: 7880
 # clients could connect to any node and be routed to the same room
 redis:
   address: redis.host:6379
-  # To require TLS transport
-  # use_tls: true
   # db: 0
   # username: myuser
   # password: mypassword
@@ -33,6 +31,17 @@ redis:
   # If you use a different set of credentials for sentinel add
   # sentinel_username: user
   # sentinel_password: pass
+  #
+  # To use TLS with redis
+  # tls:
+  #   enabled: true
+  #   # when set to true, LiveKit will not verify the server's certificate, defaults to true
+  #   insecure: false
+  #   server_name: myserver.com
+  #   # file containing trusted root certificates for verification
+  #   ca_cert_file: /path/to/ca.crt
+  #   client_cert_file: /path/to/client.crt
+  #   client_key_file: /path/to/client.key
   #
   # To use cluster remove the address key above and add the following
   # cluster_addresses:
