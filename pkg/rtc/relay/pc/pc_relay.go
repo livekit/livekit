@@ -407,6 +407,16 @@ func (r *PcRelay) AddTrack(ctx context.Context, track webrtc.TrackLocal, trackRi
 	}
 }
 
+func (r *PcRelay) RemoveTrack(sender *webrtc.RTPSender) error {
+	if err := r.pc.RemoveTrack(sender); err != nil {
+		return err
+	}
+
+	go r.resignal()
+
+	return nil
+}
+
 func (r *PcRelay) OnReady(f func()) {
 	r.onReady.Store(f)
 }

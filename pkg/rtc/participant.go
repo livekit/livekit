@@ -1195,11 +1195,18 @@ func (p *ParticipantImpl) forwardTrackToRelays(publishedTrack *MediaTrack, track
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		_, err = rel.AddTrack(ctx, dt, track.RID(), addTrackSignalPayload)
+		sender, err := rel.AddTrack(ctx, dt, track.RID(), addTrackSignalPayload)
 		if err != nil {
 			p.params.Logger.Errorw("add track to relay", err)
 			return
 		}
+
+		publishedTrack.AddOnClose(func() {
+			err := rel.RemoveTrack(sender)
+			if err != nil {
+				p.params.Logger.Errorw("remove track from relay", err)
+			}
+		})
 
 		if err := tr.AddDownTrack(dt); err != nil {
 			p.params.Logger.Errorw("add relayed down track", err)
