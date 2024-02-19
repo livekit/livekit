@@ -100,7 +100,13 @@ func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.
 			// this is a message delivered out of order, a more recent version of the message had already been
 			// sent.
 			if pi.Version < lastVersion.version {
-				p.params.Logger.Debugw("skipping outdated participant update", "otherParticipant", pi.Identity, "otherPID", pi.Sid, "version", pi.Version, "lastVersion", lastVersion)
+				p.params.Logger.Debugw(
+					"skipping outdated participant update",
+					"otherParticipant", pi.Identity,
+					"otherPID", pi.Sid,
+					"version", pi.Version,
+					"lastVersion", lastVersion,
+				)
 				isValid = false
 			}
 		}
