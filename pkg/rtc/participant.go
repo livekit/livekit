@@ -202,8 +202,8 @@ type ParticipantImpl struct {
 
 	lock utils.RWMutex
 
-	dirty        atomic.Bool
-	version      atomic.Uint32
+	dirty   atomic.Bool
+	version atomic.Uint32
 
 	// callbacks & handlers
 	onTrackPublished     func(types.LocalParticipant, types.MediaTrack)
@@ -654,18 +654,11 @@ func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) er
 
 	p.pubLogger.Debugw("sending answer", "transport", livekit.SignalTarget_PUBLISHER)
 	answer = p.configurePublisherAnswer(answer)
-	if err := p.writeMessage(&livekit.SignalResponse{
+	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Answer{
 			Answer: ToProtoSessionDescription(answer),
 		},
-	}); err != nil {
-		return err
-	}
-
-	if p.MigrateState() == types.MigrateStateSync {
-		go p.handleMigrateTracks()
-	}
-	return nil
+	})
 }
 
 func (p *ParticipantImpl) handleMigrateTracks() {
@@ -910,6 +903,7 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 		p.TransportManager.ProcessPendingPublisherOffer()
 
 	case types.MigrateStateComplete:
+		p.handleMigrateTracks()
 		p.TransportManager.ProcessPendingPublisherDataChannels()
 	}
 
@@ -1482,9 +1476,7 @@ func (p *ParticipantImpl) onICECandidate(c *webrtc.ICECandidate, target livekit.
 }
 
 func (p *ParticipantImpl) onPublisherInitialConnected() {
-	if !p.hasPendingMigratedTrack() {
-		p.SetMigrateState(types.MigrateStateComplete)
-	}
+	p.SetMigrateState(types.MigrateStateComplete)
 
 	if p.supervisor != nil {
 		p.supervisor.SetPublisherPeerConnectionConnected(true)
@@ -1533,8 +1525,7 @@ func (p *ParticipantImpl) setupDisconnectTimer() {
 		if p.IsClosed() || p.IsDisconnected() {
 			return
 		}
-		reason := types.ParticipantCloseReasonPeerConnectionDisconnected
-		_ = p.Close(true, reason, false)
+		_ = p.Close(true, types.ParticipantCloseReasonPeerConnectionDisconnected, false)
 	})
 	p.lock.Unlock()
 }
@@ -2106,10 +2097,6 @@ func (p *ParticipantImpl) handleTrackPublished(track types.MediaTrack) {
 	p.pendingTracksLock.Lock()
 	delete(p.pendingPublishingTracks, track.ID())
 	p.pendingTracksLock.Unlock()
-
-	if !p.hasPendingMigratedTrack() && p.TransportManager.HasPublisherEverConnected() {
-		p.SetMigrateState(types.MigrateStateComplete)
-	}
 }
 
 func (p *ParticipantImpl) hasPendingMigratedTrack() bool {
