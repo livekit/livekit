@@ -1864,7 +1864,7 @@ func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) *li
 	}
 
 	if !isPending && track == nil {
-		p.pubLogger.Warnw("could not locate track", nil, "trackID", trackID)
+		p.pubLogger.Debugw("could not locate track", "trackID", trackID)
 	}
 
 	return trackInfo
@@ -2379,7 +2379,7 @@ func (p *ParticipantImpl) onAnyTransportNegotiationFailed() {
 func (p *ParticipantImpl) UpdateSubscribedQuality(nodeID livekit.NodeID, trackID livekit.TrackID, maxQualities []types.SubscribedCodecQuality) error {
 	track := p.GetPublishedTrack(trackID)
 	if track == nil {
-		p.pubLogger.Warnw("could not find track", nil, "trackID", trackID)
+		p.pubLogger.Debugw("could not find track", "trackID", trackID)
 		return errors.New("could not find published track")
 	}
 
@@ -2390,7 +2390,7 @@ func (p *ParticipantImpl) UpdateSubscribedQuality(nodeID livekit.NodeID, trackID
 func (p *ParticipantImpl) UpdateMediaLoss(nodeID livekit.NodeID, trackID livekit.TrackID, fractionalLoss uint32) error {
 	track := p.GetPublishedTrack(trackID)
 	if track == nil {
-		p.pubLogger.Warnw("could not find track", nil, "trackID", trackID)
+		p.pubLogger.Debugw("could not find track", "trackID", trackID)
 		return errors.New("could not find published track")
 	}
 
