@@ -514,7 +514,36 @@ func (p *ParticipantImpl) ToProtoWithVersion() (*livekit.ParticipantInfo, utils.
 		IsPublisher: p.IsPublisher(),
 	}
 	p.lock.RUnlock()
+
+	p.pendingTracksLock.RLock()
 	pi.Tracks = p.UpTrackManager.ToProto()
+
+	// add any pending migrating tracks, else an update could delete/unsubscribe from yet to be published, migrating tracks
+	maybeAdd := func(pti *pendingTrackInfo) {
+		if !pti.migrated {
+			return
+		}
+
+		found := false
+		for _, ti := range pi.Tracks {
+			if ti.Sid == pti.trackInfos[0].Sid {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			pi.Tracks = append(pi.Tracks, pti.trackInfos[0])
+		}
+	}
+
+	for _, pt := range p.pendingTracks {
+		maybeAdd(pt)
+	}
+	for _, ppt := range p.pendingPublishingTracks {
+		maybeAdd(ppt)
+	}
+	p.pendingTracksLock.RUnlock()
 
 	return pi, piv
 }
@@ -747,6 +776,10 @@ func (p *ParticipantImpl) SetMigrateInfo(
 		p.pubLogger.Infow("pending track added (migration)", "trackID", ti.Sid, "track", logger.Proto(ti))
 	}
 	p.pendingTracksLock.Unlock()
+
+	if len(mediaTracks) != 0 {
+		p.setIsPublisher(true)
+	}
 
 	p.TransportManager.SetMigrateInfo(previousOffer, previousAnswer, dataChannels)
 }
