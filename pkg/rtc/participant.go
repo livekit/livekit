@@ -137,6 +137,10 @@ type ParticipantParams struct {
 }
 
 type ParticipantImpl struct {
+	// utils.TimedVersion is a atomic. To be correctly aligned also on 32bit archs
+	// 64it atomics need to be at the front of a struct
+	timedVersion utils.TimedVersion
+
 	params ParticipantParams
 
 	isClosed    atomic.Bool
@@ -158,7 +162,7 @@ type ParticipantImpl struct {
 	disconnectTimer *time.Timer
 	migrationTimer  *time.Timer
 
-	rtcpCh chan []rtcp.Packet
+	pubRTCPQueue *sutils.OpsQueue
 
 	// hold reference for MediaTrack
 	twcc *twcc.Responder
@@ -198,9 +202,8 @@ type ParticipantImpl struct {
 
 	lock utils.RWMutex
 
-	dirty        atomic.Bool
-	version      atomic.Uint32
-	timedVersion utils.TimedVersion
+	dirty   atomic.Bool
+	version atomic.Uint32
 
 	// callbacks & handlers
 	onTrackPublished     func(types.LocalParticipant, types.MediaTrack)
@@ -240,7 +243,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	}
 	p := &ParticipantImpl{
 		params:                  params,
-		rtcpCh:                  make(chan []rtcp.Packet, 100),
+		pubRTCPQueue:            sutils.NewOpsQueue("pub-rtcp", 64, false),
 		pendingTracks:           make(map[string]*pendingTrackInfo),
 		pendingPublishingTracks: make(map[livekit.TrackID]*pendingTrackInfo),
 		connectedAt:             time.Now(),
@@ -511,7 +514,36 @@ func (p *ParticipantImpl) ToProtoWithVersion() (*livekit.ParticipantInfo, utils.
 		IsPublisher: p.IsPublisher(),
 	}
 	p.lock.RUnlock()
+
+	p.pendingTracksLock.RLock()
 	pi.Tracks = p.UpTrackManager.ToProto()
+
+	// add any pending migrating tracks, else an update could delete/unsubscribe from yet to be published, migrating tracks
+	maybeAdd := func(pti *pendingTrackInfo) {
+		if !pti.migrated {
+			return
+		}
+
+		found := false
+		for _, ti := range pi.Tracks {
+			if ti.Sid == pti.trackInfos[0].Sid {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			pi.Tracks = append(pi.Tracks, pti.trackInfos[0])
+		}
+	}
+
+	for _, pt := range p.pendingTracks {
+		maybeAdd(pt)
+	}
+	for _, ppt := range p.pendingPublishingTracks {
+		maybeAdd(ppt)
+	}
+	p.pendingTracksLock.RUnlock()
 
 	return pi, piv
 }
@@ -651,18 +683,11 @@ func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) er
 
 	p.pubLogger.Debugw("sending answer", "transport", livekit.SignalTarget_PUBLISHER)
 	answer = p.configurePublisherAnswer(answer)
-	if err := p.writeMessage(&livekit.SignalResponse{
+	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Answer{
 			Answer: ToProtoSessionDescription(answer),
 		},
-	}); err != nil {
-		return err
-	}
-
-	if p.MigrateState() == types.MigrateStateSync {
-		go p.handleMigrateTracks()
-	}
-	return nil
+	})
 }
 
 func (p *ParticipantImpl) handleMigrateTracks() {
@@ -751,6 +776,10 @@ func (p *ParticipantImpl) SetMigrateInfo(
 		p.pubLogger.Infow("pending track added (migration)", "trackID", ti.Sid, "track", logger.Proto(ti))
 	}
 	p.pendingTracksLock.Unlock()
+
+	if len(mediaTracks) != 0 {
+		p.setIsPublisher(true)
+	}
 
 	p.TransportManager.SetMigrateInfo(previousOffer, previousAnswer, dataChannels)
 }
@@ -902,17 +931,13 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 	p.migrateState.Store(s)
 	p.dirty.Store(true)
 
-	processPendingOffer := false
-	if s == types.MigrateStateSync {
-		processPendingOffer = true
-	}
-
-	if s == types.MigrateStateComplete {
-		p.TransportManager.ProcessPendingPublisherDataChannels()
-	}
-
-	if processPendingOffer {
+	switch s {
+	case types.MigrateStateSync:
 		p.TransportManager.ProcessPendingPublisherOffer()
+
+	case types.MigrateStateComplete:
+		p.handleMigrateTracks()
+		p.TransportManager.ProcessPendingPublisherDataChannels()
 	}
 
 	if onMigrateStateChange := p.getOnMigrateStateChange(); onMigrateStateChange != nil {
@@ -1137,6 +1162,8 @@ func (p *ParticipantImpl) UpdateMediaRTT(rtt uint32) {
 	}
 }
 
+// ----------------------------------------------------------
+
 type AnyTransportHandler struct {
 	transport.UnimplementedHandler
 	p *ParticipantImpl
@@ -1153,6 +1180,8 @@ func (h AnyTransportHandler) OnNegotiationFailed() {
 func (h AnyTransportHandler) OnICECandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) error {
 	return h.p.onICECandidate(c, target)
 }
+
+// ----------------------------------------------------------
 
 type PublisherTransportHandler struct {
 	AnyTransportHandler
@@ -1174,6 +1203,8 @@ func (h PublisherTransportHandler) OnDataPacket(kind livekit.DataPacket_Kind, da
 	h.p.onDataMessage(kind, data)
 }
 
+// ----------------------------------------------------------
+
 type SubscriberTransportHandler struct {
 	AnyTransportHandler
 }
@@ -1190,6 +1221,8 @@ func (h SubscriberTransportHandler) OnInitialConnected() {
 	h.p.onSubscriberInitialConnected()
 }
 
+// ----------------------------------------------------------
+
 type PrimaryTransportHandler struct {
 	transport.Handler
 	p *ParticipantImpl
@@ -1204,7 +1237,13 @@ func (h PrimaryTransportHandler) OnFullyEstablished() {
 	h.p.onPrimaryTransportFullyEstablished()
 }
 
+// ----------------------------------------------------------
+
 func (p *ParticipantImpl) setupTransportManager() error {
+	p.twcc = twcc.NewTransportWideCCResponder()
+	p.twcc.OnFeedback(func(pkts []rtcp.Packet) {
+		p.postRtcp(pkts)
+	})
 	ath := AnyTransportHandler{p: p}
 	var pth transport.Handler = PublisherTransportHandler{ath}
 	var sth transport.Handler = SubscriberTransportHandler{ath}
@@ -1223,6 +1262,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		// after the participant has joined
 		SubscriberAsPrimary:          subscriberAsPrimary,
 		Config:                       p.params.Config,
+		Twcc:                         p.twcc,
 		ProtocolVersion:              p.params.ProtocolVersion,
 		CongestionControlConfig:      p.params.CongestionControlConfig,
 		EnabledPublishCodecs:         p.enabledPublishCodecs,
@@ -1440,8 +1480,13 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		onDataPacket := p.onDataPacket
 		p.lock.RUnlock()
 		if onDataPacket != nil {
-			payload.User.ParticipantSid = string(p.params.SID)
-			payload.User.ParticipantIdentity = string(p.params.Identity)
+			if p.Hidden() {
+				payload.User.ParticipantSid = ""
+				payload.User.ParticipantIdentity = ""
+			} else {
+				payload.User.ParticipantSid = string(p.params.SID)
+				payload.User.ParticipantIdentity = string(p.params.Identity)
+			}
 			onDataPacket(p, &dp)
 		}
 	default:
@@ -1464,10 +1509,13 @@ func (p *ParticipantImpl) onICECandidate(c *webrtc.ICECandidate, target livekit.
 }
 
 func (p *ParticipantImpl) onPublisherInitialConnected() {
+	p.SetMigrateState(types.MigrateStateComplete)
+
 	if p.supervisor != nil {
 		p.supervisor.SetPublisherPeerConnectionConnected(true)
 	}
-	go p.publisherRTCPWorker()
+
+	p.pubRTCPQueue.Start()
 }
 
 func (p *ParticipantImpl) onSubscriberInitialConnected() {
@@ -1477,7 +1525,9 @@ func (p *ParticipantImpl) onSubscriberInitialConnected() {
 }
 
 func (p *ParticipantImpl) onPrimaryTransportInitialConnected() {
-	if !p.hasPendingMigratedTrack() && p.MigrateState() == types.MigrateStateSync {
+	if !p.hasPendingMigratedTrack() && len(p.GetPublishedTracks()) == 0 {
+		// if there are no published tracks, declare migration complete on primary transport initial connect,
+		// else, wait for all tracks to be published and publisher peer connection established
 		p.SetMigrateState(types.MigrateStateComplete)
 	}
 }
@@ -1508,8 +1558,7 @@ func (p *ParticipantImpl) setupDisconnectTimer() {
 		if p.IsClosed() || p.IsDisconnected() {
 			return
 		}
-		reason := types.ParticipantCloseReasonPeerConnectionDisconnected
-		_ = p.Close(true, reason, false)
+		_ = p.Close(true, types.ParticipantCloseReasonPeerConnectionDisconnected, false)
 	})
 	p.lock.Unlock()
 }
@@ -1848,7 +1897,7 @@ func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) *li
 	}
 
 	if !isPending && track == nil {
-		p.pubLogger.Warnw("could not locate track", nil, "trackID", trackID)
+		p.pubLogger.Debugw("could not locate track", "trackID", trackID)
 	}
 
 	return trackInfo
@@ -1913,16 +1962,9 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 		p.dirty.Store(true)
 	}
 
-	ssrc := uint32(track.SSRC())
-	if p.twcc == nil {
-		p.twcc = twcc.NewTransportWideCCResponder(ssrc)
-		p.twcc.OnFeedback(func(pkts []rtcp.Packet) {
-			p.postRtcp(pkts)
-		})
-	}
 	p.pendingTracksLock.Unlock()
 
-	if mt.AddReceiver(rtpReceiver, track, p.twcc, mid) {
+	if mt.AddReceiver(rtpReceiver, track, mid) {
 		p.removePendingMigratedTrack(mt)
 	}
 
@@ -2000,7 +2042,6 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 		ParticipantID:       p.params.SID,
 		ParticipantIdentity: p.params.Identity,
 		ParticipantVersion:  p.version.Load(),
-		RTCPChan:            p.rtcpCh,
 		BufferFactory:       p.params.Config.BufferFactory,
 		ReceiverConfig:      p.params.Config.Receiver,
 		AudioConfig:         p.params.AudioConfig,
@@ -2010,6 +2051,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 		SubscriberConfig:    p.params.Config.Subscriber,
 		PLIThrottleConfig:   p.params.PLIThrottleConfig,
 		SimTracks:           p.params.SimTracks,
+		OnRTCP:              p.postRtcp,
 	}, ti)
 
 	mt.OnSubscribedMaxQualityChange(p.onSubscribedMaxQualityChange)
@@ -2048,7 +2090,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 			p.ID(),
 			p.Identity(),
 			mt.ToProto(),
-			!p.IsClosed(),
+			true,
 		)
 
 		// re-use Track sid
@@ -2062,12 +2104,9 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 
 		p.dirty.Store(true)
 
-		if !p.IsClosed() {
-			// unpublished events aren't necessary when participant is closed
-			p.pubLogger.Debugw("track unpublished", "trackID", ti.Sid, "track", logger.Proto(ti))
-			if onTrackUnpublished := p.getOnTrackUnpublished(); onTrackUnpublished != nil {
-				onTrackUnpublished(p, mt)
-			}
+		p.pubLogger.Infow("track unpublished", "trackID", ti.Sid, "track", logger.Proto(ti))
+		if onTrackUnpublished := p.getOnTrackUnpublished(); onTrackUnpublished != nil {
+			onTrackUnpublished(p, mt)
 		}
 	})
 
@@ -2091,10 +2130,6 @@ func (p *ParticipantImpl) handleTrackPublished(track types.MediaTrack) {
 	p.pendingTracksLock.Lock()
 	delete(p.pendingPublishingTracks, track.ID())
 	p.pendingTracksLock.Unlock()
-
-	if !p.hasPendingMigratedTrack() {
-		p.SetMigrateState(types.MigrateStateComplete)
-	}
 }
 
 func (p *ParticipantImpl) hasPendingMigratedTrack() bool {
@@ -2117,7 +2152,7 @@ func (p *ParticipantImpl) hasPendingMigratedTrack() bool {
 }
 
 func (p *ParticipantImpl) onUpTrackManagerClose() {
-	p.postRtcp(nil)
+	p.pubRTCPQueue.Stop()
 }
 
 func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackType) (string, *livekit.TrackInfo, bool) {
@@ -2241,28 +2276,6 @@ func (p *ParticipantImpl) getPublishedTrackBySdpCid(clientId string) types.Media
 	return nil
 }
 
-func (p *ParticipantImpl) publisherRTCPWorker() {
-	defer func() {
-		if r := Recover(p.GetLogger()); r != nil {
-			os.Exit(1)
-		}
-	}()
-
-	// read from rtcpChan
-	for pkts := range p.rtcpCh {
-		if pkts == nil {
-			p.pubLogger.Debugw("exiting publisher RTCP worker")
-			return
-		}
-
-		if err := p.TransportManager.WritePublisherRTCP(pkts); err != nil {
-			if !IsEOF(err) {
-				p.pubLogger.Errorw("could not write RTCP to participant", err)
-			}
-		}
-	}
-}
-
 func (p *ParticipantImpl) DebugInfo() map[string]interface{} {
 	info := map[string]interface{}{
 		"ID":    p.params.SID,
@@ -2291,11 +2304,11 @@ func (p *ParticipantImpl) DebugInfo() map[string]interface{} {
 }
 
 func (p *ParticipantImpl) postRtcp(pkts []rtcp.Packet) {
-	select {
-	case p.rtcpCh <- pkts:
-	default:
-		p.params.Logger.Warnw("rtcp channel full", nil)
-	}
+	p.pubRTCPQueue.Enqueue(func() {
+		if err := p.TransportManager.WritePublisherRTCP(pkts); err != nil && !IsEOF(err) {
+			p.pubLogger.Errorw("could not write RTCP to participant", err)
+		}
+	})
 }
 
 func (p *ParticipantImpl) setDowntracksConnected() {
@@ -2399,7 +2412,7 @@ func (p *ParticipantImpl) onAnyTransportNegotiationFailed() {
 func (p *ParticipantImpl) UpdateSubscribedQuality(nodeID livekit.NodeID, trackID livekit.TrackID, maxQualities []types.SubscribedCodecQuality) error {
 	track := p.GetPublishedTrack(trackID)
 	if track == nil {
-		p.pubLogger.Warnw("could not find track", nil, "trackID", trackID)
+		p.pubLogger.Debugw("could not find track", "trackID", trackID)
 		return errors.New("could not find published track")
 	}
 
@@ -2410,7 +2423,7 @@ func (p *ParticipantImpl) UpdateSubscribedQuality(nodeID livekit.NodeID, trackID
 func (p *ParticipantImpl) UpdateMediaLoss(nodeID livekit.NodeID, trackID livekit.TrackID, fractionalLoss uint32) error {
 	track := p.GetPublishedTrack(trackID)
 	if track == nil {
-		p.pubLogger.Warnw("could not find track", nil, "trackID", trackID)
+		p.pubLogger.Debugw("could not find track", "trackID", trackID)
 		return errors.New("could not find published track")
 	}
 

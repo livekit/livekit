@@ -16,7 +16,8 @@ package dependencydescriptor
 
 import (
 	"fmt"
-	"reflect"
+
+	"golang.org/x/exp/slices"
 )
 
 type TemplateMatch struct {
@@ -126,26 +127,11 @@ func (w *DependencyDescriptorWriter) findBestTemplate() error {
 	return nil
 }
 
-// TODO: uncomment this when go 1.18 enabled
-// func sliceEqual[T comparable](a, b []T) bool {
-// 	if len(a) != len(b) {
-// 		return false
-// 	}
-
-// 	for i, v := range a {
-// 		if v != b[i] {
-// 			return false
-// 		}
-// 	}
-
-// 	return true
-// }
-
 func (w *DependencyDescriptorWriter) calculateMatch(idx int, template *FrameDependencyTemplate) TemplateMatch {
 	var result TemplateMatch
 	result.TemplateIdx = idx
-	result.NeedCustomFdiffs = w.descriptor.FrameDependencies.FrameDiffs != nil && !reflect.DeepEqual(w.descriptor.FrameDependencies.FrameDiffs, template.FrameDiffs)
-	result.NeedCustomDtis = w.descriptor.FrameDependencies.DecodeTargetIndications != nil && !reflect.DeepEqual(w.descriptor.FrameDependencies.DecodeTargetIndications, template.DecodeTargetIndications)
+	result.NeedCustomFdiffs = w.descriptor.FrameDependencies.FrameDiffs != nil && !slices.Equal(w.descriptor.FrameDependencies.FrameDiffs, template.FrameDiffs)
+	result.NeedCustomDtis = w.descriptor.FrameDependencies.DecodeTargetIndications != nil && !slices.Equal(w.descriptor.FrameDependencies.DecodeTargetIndications, template.DecodeTargetIndications)
 
 	for i := 0; i < w.structure.NumChains; i++ {
 		if w.activeChains&(1<<i) != 0 && (len(w.descriptor.FrameDependencies.ChainDiffs) <= i || len(template.ChainDiffs) <= i || w.descriptor.FrameDependencies.ChainDiffs[i] != template.ChainDiffs[i]) {

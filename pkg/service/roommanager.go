@@ -469,7 +469,7 @@ func (r *RoomManager) StartSession(
 	}
 
 	persistRoomForParticipantCount := func(proto *livekit.Room) {
-		if !participant.Hidden() {
+		if !participant.Hidden() && !room.IsClosed() {
 			err = r.roomStore.StoreRoom(ctx, proto, room.Internal())
 			if err != nil {
 				logger.Errorw("could not store room", err)
