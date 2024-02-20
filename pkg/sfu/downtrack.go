@@ -1660,9 +1660,22 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 
 		poolEntity := PacketFactory.Get().(*[]byte)
 		payload := *poolEntity
-		copy(payload, epm.codecBytes[:epm.numCodecBytesOut])
-		copy(payload[epm.numCodecBytesOut:], pkt.Payload[epm.numCodecBytesIn:])
-		payload = payload[:int(epm.numCodecBytesOut)+len(pkt.Payload)-int(epm.numCodecBytesIn)]
+		if len(epm.codecBytesSlice) != 0 {
+			n := copy(payload, epm.codecBytesSlice)
+			m := copy(payload[n:], pkt.Payload[epm.numCodecBytesIn:])
+			payload = payload[:n+m]
+		} else {
+			copy(payload, epm.codecBytes[:epm.numCodecBytesOut])
+			copy(payload[epm.numCodecBytesOut:], pkt.Payload[epm.numCodecBytesIn:])
+			payload = payload[:int(epm.numCodecBytesOut)+len(pkt.Payload)-int(epm.numCodecBytesIn)]
+		}
+
+		var ddBytes []byte
+		if len(epm.ddBytesSlice) != 0 {
+			ddBytes = epm.ddBytesSlice
+		} else {
+			ddBytes = epm.ddBytes[:epm.ddBytesSize]
+		}
 
 		d.sendingPacket(
 			&pkt.Header,
@@ -1677,7 +1690,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		)
 		d.pacer.Enqueue(pacer.Packet{
 			Header:             &pkt.Header,
-			Extensions:         []pacer.ExtensionData{{ID: uint8(d.dependencyDescriptorExtID), Payload: epm.ddBytes}},
+			Extensions:         []pacer.ExtensionData{{ID: uint8(d.dependencyDescriptorExtID), Payload: ddBytes}},
 			Payload:            payload,
 			AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 			TransportWideExtID: uint8(d.transportWideExtID),
