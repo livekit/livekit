@@ -15,6 +15,8 @@
 package service
 
 import (
+	"context"
+	"errors"
 	"net"
 	"net/http"
 	"regexp"
@@ -27,7 +29,9 @@ func handleError(w http.ResponseWriter, r *http.Request, status int, err error, 
 	if r != nil && r.URL != nil {
 		keysAndValues = append(keysAndValues, "method", r.Method, "path", r.URL.Path)
 	}
-	logger.GetLogger().WithCallDepth(1).Warnw("error handling request", err, keysAndValues...)
+	if !errors.Is(err, context.Canceled) {
+		logger.GetLogger().WithCallDepth(1).Warnw("error handling request", err, keysAndValues...)
+	}
 	w.WriteHeader(status)
 	_, _ = w.Write([]byte(err.Error()))
 }
