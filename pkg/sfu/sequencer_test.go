@@ -29,11 +29,11 @@ func Test_sequencer(t *testing.T) {
 	off := uint16(15)
 
 	for i := uint64(1); i < 518; i++ {
-		seq.push(time.Now(), i, i+uint64(off), 123, true, 2, nil, nil)
+		seq.push(time.Now(), i, i+uint64(off), 123, true, 2, nil, 0, nil)
 	}
 	// send the last two out-of-order
-	seq.push(time.Now(), 519, 519+uint64(off), 123, false, 2, nil, nil)
-	seq.push(time.Now(), 518, 518+uint64(off), 123, true, 2, nil, nil)
+	seq.push(time.Now(), 519, 519+uint64(off), 123, false, 2, nil, 0, nil)
+	seq.push(time.Now(), 518, 518+uint64(off), 123, true, 2, nil, 0, nil)
 
 	req := []uint16{57, 58, 62, 63, 513, 514, 515, 516, 517}
 	res := seq.getExtPacketMetas(req)
@@ -63,14 +63,14 @@ func Test_sequencer(t *testing.T) {
 		require.Equal(t, val.extTimestamp, uint64(123))
 	}
 
-	seq.push(time.Now(), 521, 521+uint64(off), 123, true, 1, nil, nil)
+	seq.push(time.Now(), 521, 521+uint64(off), 123, true, 1, nil, 0, nil)
 	m := seq.getExtPacketMetas([]uint16{521 + off})
 	require.Equal(t, 0, len(m))
 	time.Sleep((ignoreRetransmission + 10) * time.Millisecond)
 	m = seq.getExtPacketMetas([]uint16{521 + off})
 	require.Equal(t, 1, len(m))
 
-	seq.push(time.Now(), 505, 505+uint64(off), 123, false, 1, nil, nil)
+	seq.push(time.Now(), 505, 505+uint64(off), 123, false, 1, nil, 0, nil)
 	m = seq.getExtPacketMetas([]uint16{505 + off})
 	require.Equal(t, 0, len(m))
 	time.Sleep((ignoreRetransmission + 10) * time.Millisecond)
@@ -87,14 +87,16 @@ func Test_sequencer_getNACKSeqNo_exclusion(t *testing.T) {
 		isPadding bool
 	}
 	type fields struct {
-		inputs         []input
-		offset         uint64
-		markerOdd      bool
-		markerEven     bool
-		codecBytesOdd  []byte
-		codecBytesEven []byte
-		ddBytesOdd     []byte
-		ddBytesEven    []byte
+		inputs              []input
+		offset              uint64
+		markerOdd           bool
+		markerEven          bool
+		codecBytesOdd       []byte
+		numCodecBytesInOdd  int
+		codecBytesEven      []byte
+		numCodecBytesInEven int
+		ddBytesOdd          []byte
+		ddBytesEven         []byte
 	}
 
 	tests := []struct {
@@ -117,13 +119,15 @@ func Test_sequencer_getNACKSeqNo_exclusion(t *testing.T) {
 					{65532, true},
 					{65534, false},
 				},
-				offset:         5,
-				markerOdd:      true,
-				markerEven:     false,
-				codecBytesOdd:  []byte{1, 2, 3, 4},
-				codecBytesEven: []byte{5, 6, 7},
-				ddBytesOdd:     []byte{8, 9, 10},
-				ddBytesEven:    []byte{11, 12},
+				offset:              5,
+				markerOdd:           true,
+				markerEven:          false,
+				codecBytesOdd:       []byte{1, 2, 3, 4},
+				numCodecBytesInOdd:  3,
+				codecBytesEven:      []byte{5, 6, 7},
+				numCodecBytesInEven: 4,
+				ddBytesOdd:          []byte{8, 9, 10},
+				ddBytesEven:         []byte{11, 12},
 			},
 			args: args{
 				seqNo: []uint16{65526 + 5, 65527 + 5, 65530 + 5, 0 /* 65531 input */, 1 /* 65532 input */, 2 /* 65533 input */, 3 /* 65534 input */},
@@ -144,9 +148,9 @@ func Test_sequencer_getNACKSeqNo_exclusion(t *testing.T) {
 					n.pushPadding(i.seqNo+tt.fields.offset, i.seqNo+tt.fields.offset)
 				} else {
 					if i.seqNo%2 == 0 {
-						n.push(time.Now(), i.seqNo, i.seqNo+tt.fields.offset, 123, tt.fields.markerEven, 3, tt.fields.codecBytesEven, tt.fields.ddBytesEven)
+						n.push(time.Now(), i.seqNo, i.seqNo+tt.fields.offset, 123, tt.fields.markerEven, 3, tt.fields.codecBytesEven, tt.fields.numCodecBytesInEven, tt.fields.ddBytesEven)
 					} else {
-						n.push(time.Now(), i.seqNo, i.seqNo+tt.fields.offset, 123, tt.fields.markerOdd, 3, tt.fields.codecBytesOdd, tt.fields.ddBytesOdd)
+						n.push(time.Now(), i.seqNo, i.seqNo+tt.fields.offset, 123, tt.fields.markerOdd, 3, tt.fields.codecBytesOdd, tt.fields.numCodecBytesInOdd, tt.fields.ddBytesOdd)
 					}
 				}
 			}
@@ -158,11 +162,13 @@ func Test_sequencer_getNACKSeqNo_exclusion(t *testing.T) {
 				got = append(got, sn.sourceSeqNo)
 				if sn.sourceSeqNo%2 == 0 {
 					require.Equal(t, tt.fields.markerEven, sn.marker)
-					require.Equal(t, tt.fields.codecBytesEven, sn.codecBytes)
+					require.Equal(t, tt.fields.codecBytesEven, sn.codecBytes[:sn.numCodecBytesOut])
+					require.Equal(t, uint8(tt.fields.numCodecBytesInEven), sn.numCodecBytesIn)
 					require.Equal(t, tt.fields.ddBytesEven, sn.ddBytes)
 				} else {
 					require.Equal(t, tt.fields.markerOdd, sn.marker)
-					require.Equal(t, tt.fields.codecBytesOdd, sn.codecBytes)
+					require.Equal(t, tt.fields.codecBytesOdd, sn.codecBytes[:sn.numCodecBytesOut])
+					require.Equal(t, uint8(tt.fields.numCodecBytesInOdd), sn.numCodecBytesIn)
 					require.Equal(t, tt.fields.ddBytesOdd, sn.ddBytes)
 				}
 			}
@@ -182,14 +188,16 @@ func Test_sequencer_getNACKSeqNo_no_exclusion(t *testing.T) {
 		isPadding bool
 	}
 	type fields struct {
-		inputs         []input
-		offset         uint64
-		markerOdd      bool
-		markerEven     bool
-		codecBytesOdd  []byte
-		codecBytesEven []byte
-		ddBytesOdd     []byte
-		ddBytesEven    []byte
+		inputs              []input
+		offset              uint64
+		markerOdd           bool
+		markerEven          bool
+		codecBytesOdd       []byte
+		numCodecBytesInOdd  int
+		codecBytesEven      []byte
+		numCodecBytesInEven int
+		ddBytesOdd          []byte
+		ddBytesEven         []byte
 	}
 
 	tests := []struct {
@@ -213,13 +221,15 @@ func Test_sequencer_getNACKSeqNo_no_exclusion(t *testing.T) {
 					{12, false},
 					{13, false},
 				},
-				offset:         5,
-				markerOdd:      true,
-				markerEven:     false,
-				codecBytesOdd:  []byte{1, 2, 3, 4},
-				codecBytesEven: []byte{5, 6, 7},
-				ddBytesOdd:     []byte{8, 9, 10},
-				ddBytesEven:    []byte{11, 12},
+				offset:              5,
+				markerOdd:           true,
+				markerEven:          false,
+				codecBytesOdd:       []byte{1, 2, 3, 4},
+				numCodecBytesInOdd:  3,
+				codecBytesEven:      []byte{5, 6, 7},
+				numCodecBytesInEven: 4,
+				ddBytesOdd:          []byte{8, 9, 10},
+				ddBytesEven:         []byte{11, 12},
 			},
 			args: args{
 				seqNo: []uint16{4 + 5, 5 + 5, 8 + 5, 9 + 5, 10 + 5, 11 + 5, 12 + 5},
@@ -238,9 +248,9 @@ func Test_sequencer_getNACKSeqNo_no_exclusion(t *testing.T) {
 					n.pushPadding(i.seqNo+tt.fields.offset, i.seqNo+tt.fields.offset)
 				} else {
 					if i.seqNo%2 == 0 {
-						n.push(time.Now(), i.seqNo, i.seqNo+tt.fields.offset, 123, tt.fields.markerEven, 3, tt.fields.codecBytesEven, tt.fields.ddBytesEven)
+						n.push(time.Now(), i.seqNo, i.seqNo+tt.fields.offset, 123, tt.fields.markerEven, 3, tt.fields.codecBytesEven, tt.fields.numCodecBytesInEven, tt.fields.ddBytesEven)
 					} else {
-						n.push(time.Now(), i.seqNo, i.seqNo+tt.fields.offset, 123, tt.fields.markerOdd, 3, tt.fields.codecBytesOdd, tt.fields.ddBytesOdd)
+						n.push(time.Now(), i.seqNo, i.seqNo+tt.fields.offset, 123, tt.fields.markerOdd, 3, tt.fields.codecBytesOdd, tt.fields.numCodecBytesInOdd, tt.fields.ddBytesOdd)
 					}
 				}
 			}
@@ -252,11 +262,13 @@ func Test_sequencer_getNACKSeqNo_no_exclusion(t *testing.T) {
 				got = append(got, sn.sourceSeqNo)
 				if sn.sourceSeqNo%2 == 0 {
 					require.Equal(t, tt.fields.markerEven, sn.marker)
-					require.Equal(t, tt.fields.codecBytesEven, sn.codecBytes)
+					require.Equal(t, tt.fields.codecBytesEven, sn.codecBytes[:sn.numCodecBytesOut])
+					require.Equal(t, uint8(tt.fields.numCodecBytesInEven), sn.numCodecBytesIn)
 					require.Equal(t, tt.fields.ddBytesEven, sn.ddBytes)
 				} else {
 					require.Equal(t, tt.fields.markerOdd, sn.marker)
-					require.Equal(t, tt.fields.codecBytesOdd, sn.codecBytes)
+					require.Equal(t, tt.fields.codecBytesOdd, sn.codecBytes[:sn.numCodecBytesOut])
+					require.Equal(t, uint8(tt.fields.numCodecBytesInOdd), sn.numCodecBytesIn)
 					require.Equal(t, tt.fields.ddBytesOdd, sn.ddBytes)
 				}
 			}

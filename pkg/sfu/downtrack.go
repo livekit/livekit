@@ -687,25 +687,20 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		return err
 	}
 
-	var payload []byte
 	poolEntity := PacketFactory.Get().(*[]byte)
-	if len(tp.codecBytes) != 0 {
-		incomingVP8, ok := extPkt.Payload.(buffer.VP8)
-		if ok {
-			payload = d.translateVP8PacketTo(extPkt.Packet, &incomingVP8, tp.codecBytes, poolEntity)
-		}
+	payload := *poolEntity
+	shouldForward, incomingHeaderSize, outgoingHeaderSize, err := d.forwarder.TranslateCodecHeader(extPkt, &tp.rtp, payload)
+	if !shouldForward {
+		PacketFactory.Put(poolEntity)
+		return err
 	}
-	if payload == nil {
-		payload = (*poolEntity)[:len(extPkt.Packet.Payload)]
-		copy(payload, extPkt.Packet.Payload)
-	}
+	copy(payload[outgoingHeaderSize:], extPkt.Packet.Payload[incomingHeaderSize:])
+	payload = payload[:outgoingHeaderSize+len(extPkt.Packet.Payload)-incomingHeaderSize]
 
-	hdr, err := d.getTranslatedRTPHeader(extPkt, tp)
+	hdr, err := d.getTranslatedRTPHeader(extPkt, &tp)
 	if err != nil {
 		d.params.Logger.Errorw("could not get translated RTP header", err)
-		if poolEntity != nil {
-			PacketFactory.Put(poolEntity)
-		}
+		PacketFactory.Put(poolEntity)
 		return err
 	}
 
@@ -726,7 +721,8 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			tp.rtp.extTimestamp,
 			hdr.Marker,
 			int8(layer),
-			tp.codecBytes,
+			payload[:outgoingHeaderSize],
+			incomingHeaderSize,
 			tp.ddBytes,
 		)
 	}
@@ -740,7 +736,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			extSequenceNumber: tp.rtp.extSequenceNumber,
 			extTimestamp:      tp.rtp.extTimestamp,
 			isKeyFrame:        extPkt.KeyFrame,
-			tp:                tp,
+			tp:                &tp,
 		},
 	)
 	d.pacer.Enqueue(pacer.Packet{
@@ -1434,20 +1430,19 @@ func (d *DownTrack) getOpusRedBlankFrame(_frameEndNeeded bool) ([]byte, error) {
 }
 
 func (d *DownTrack) getVP8BlankFrame(frameEndNeeded bool) ([]byte, error) {
-	blankVP8, err := d.forwarder.GetPadding(frameEndNeeded)
-	if err != nil {
-		return nil, err
-	}
-
 	// 8x8 key frame
 	// Used even when closing out a previous frame. Looks like receivers
 	// do not care about content (it will probably end up being an undecodable
 	// frame, but that should be okay as there are key frames following)
 	payload := make([]byte, 1000)
-	copy(payload[:len(blankVP8)], blankVP8)
-	copy(payload[len(blankVP8):], VP8KeyFrame8x8)
-	trailerLen := d.maybeAddTrailer(payload[len(blankVP8)+len(VP8KeyFrame8x8):])
-	return payload[:len(blankVP8)+len(VP8KeyFrame8x8)+trailerLen], nil
+	n, err := d.forwarder.GetPadding(frameEndNeeded, payload)
+	if err != nil {
+		return nil, err
+	}
+
+	copy(payload[n:], VP8KeyFrame8x8)
+	trailerLen := d.maybeAddTrailer(payload[n+len(VP8KeyFrame8x8):])
+	return payload[:n+len(VP8KeyFrame8x8)+trailerLen], nil
 }
 
 func (d *DownTrack) getH264BlankFrame(_frameEndNeeded bool) ([]byte, error) {
@@ -1663,22 +1658,11 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		pkt.Header.SSRC = d.ssrc
 		pkt.Header.PayloadType = d.payloadType
 
-		var payload []byte
 		poolEntity := PacketFactory.Get().(*[]byte)
-		if d.mime == "video/vp8" && len(pkt.Payload) > 0 && len(epm.codecBytes) != 0 {
-			var incomingVP8 buffer.VP8
-			if err = incomingVP8.Unmarshal(pkt.Payload); err != nil {
-				d.params.Logger.Errorw("could not unmarshal VP8 packet", err)
-				PacketFactory.Put(poolEntity)
-				continue
-			}
-
-			payload = d.translateVP8PacketTo(&pkt, &incomingVP8, epm.codecBytes, poolEntity)
-		}
-		if payload == nil {
-			payload = (*poolEntity)[:len(pkt.Payload)]
-			copy(payload, pkt.Payload)
-		}
+		payload := *poolEntity
+		copy(payload, epm.codecBytes[:epm.numCodecBytesOut])
+		copy(payload[epm.numCodecBytesOut:], pkt.Payload[epm.numCodecBytesIn:])
+		payload = payload[:int(epm.numCodecBytesOut)+len(pkt.Payload)-int(epm.numCodecBytesIn)]
 
 		d.sendingPacket(
 			&pkt.Header,
@@ -1724,27 +1708,16 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 }
 
 func (d *DownTrack) getTranslatedRTPHeader(extPkt *buffer.ExtPacket, tp *TranslationParams) (*rtp.Header, error) {
-	tpRTP := tp.rtp
 	hdr := extPkt.Packet.Header
 	hdr.PayloadType = d.payloadType
-	hdr.Timestamp = uint32(tpRTP.extTimestamp)
-	hdr.SequenceNumber = uint16(tpRTP.extSequenceNumber)
+	hdr.Timestamp = uint32(tp.rtp.extTimestamp)
+	hdr.SequenceNumber = uint16(tp.rtp.extSequenceNumber)
 	hdr.SSRC = d.ssrc
 	if tp.marker {
 		hdr.Marker = tp.marker
 	}
 
 	return &hdr, nil
-}
-
-func (d *DownTrack) translateVP8PacketTo(pkt *rtp.Packet, incomingVP8 *buffer.VP8, translatedVP8 []byte, outbuf *[]byte) []byte {
-	buf := (*outbuf)[:len(pkt.Payload)+len(translatedVP8)-incomingVP8.HeaderSize]
-	srcPayload := pkt.Payload[incomingVP8.HeaderSize:]
-	dstPayload := buf[len(translatedVP8):]
-	copy(dstPayload, srcPayload)
-
-	copy(buf[:len(translatedVP8)], translatedVP8)
-	return buf
 }
 
 func (d *DownTrack) DebugInfo() map[string]interface{} {

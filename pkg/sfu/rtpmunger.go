@@ -180,7 +180,7 @@ func (r *RTPMunger) PacketDropped(extPkt *buffer.ExtPacket) {
 	r.lastMarker = r.secondLastMarker
 }
 
-func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket, marker bool) (*TranslationParamsRTP, error) {
+func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket, marker bool) (TranslationParamsRTP, error) {
 	diff := int64(extPkt.ExtSequenceNumber - r.extHighestIncomingSN)
 	if (diff == 1 && len(extPkt.Packet.Payload) != 0) || diff > 1 {
 		// in-order - either contiguous packet with payload OR packet following a gap, may or may not have payload
@@ -210,7 +210,7 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket, marker bool) (*Tr
 			r.isInRtxGateRegion = false
 		}
 
-		return &TranslationParamsRTP{
+		return TranslationParamsRTP{
 			snOrdering:        ordering,
 			extSequenceNumber: extMungedSN,
 			extTimestamp:      extMungedTS,
@@ -221,7 +221,7 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket, marker bool) (*Tr
 		// out-of-order, look up sequence number offset cache
 		snOffset, err := r.snRangeMap.GetValue(extPkt.ExtSequenceNumber)
 		if err != nil {
-			return &TranslationParamsRTP{
+			return TranslationParamsRTP{
 				snOrdering: SequenceNumberOrderingOutOfOrder,
 			}, ErrOutOfOrderSequenceNumberCacheMiss
 		}
@@ -237,12 +237,12 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket, marker bool) (*Tr
 				"snOffsetIncoming", snOffset,
 				"snOffsetHighest", r.snOffset,
 			)
-			return &TranslationParamsRTP{
+			return TranslationParamsRTP{
 				snOrdering: SequenceNumberOrderingOutOfOrder,
 			}, ErrOutOfOrderSequenceNumberCacheMiss
 		}
 
-		return &TranslationParamsRTP{
+		return TranslationParamsRTP{
 			snOrdering:        SequenceNumberOrderingOutOfOrder,
 			extSequenceNumber: extSequenceNumber,
 			extTimestamp:      extPkt.ExtTimestamp - r.tsOffset,
@@ -259,13 +259,13 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket, marker bool) (*Tr
 
 		r.updateSnOffset()
 
-		return &TranslationParamsRTP{
+		return TranslationParamsRTP{
 			snOrdering: SequenceNumberOrderingContiguous,
 		}, ErrPaddingOnlyPacket
 	}
 
 	// can get duplicate packet due to FEC
-	return &TranslationParamsRTP{
+	return TranslationParamsRTP{
 		snOrdering: SequenceNumberOrderingDuplicate,
 	}, ErrDuplicatePacket
 }
