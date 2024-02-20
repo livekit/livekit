@@ -26,6 +26,20 @@ type FakeIOClient struct {
 		result1 *emptypb.Empty
 		result2 error
 	}
+	CreateIngressStub        func(context.Context, *livekit.IngressInfo) (*emptypb.Empty, error)
+	createIngressMutex       sync.RWMutex
+	createIngressArgsForCall []struct {
+		arg1 context.Context
+		arg2 *livekit.IngressInfo
+	}
+	createIngressReturns struct {
+		result1 *emptypb.Empty
+		result2 error
+	}
+	createIngressReturnsOnCall map[int]struct {
+		result1 *emptypb.Empty
+		result2 error
+	}
 	GetEgressStub        func(context.Context, *rpc.GetEgressRequest) (*livekit.EgressInfo, error)
 	getEgressMutex       sync.RWMutex
 	getEgressArgsForCall []struct {
@@ -52,6 +66,20 @@ type FakeIOClient struct {
 	}
 	listEgressReturnsOnCall map[int]struct {
 		result1 *livekit.ListEgressResponse
+		result2 error
+	}
+	UpdateIngressStateStub        func(context.Context, *rpc.UpdateIngressStateRequest) (*emptypb.Empty, error)
+	updateIngressStateMutex       sync.RWMutex
+	updateIngressStateArgsForCall []struct {
+		arg1 context.Context
+		arg2 *rpc.UpdateIngressStateRequest
+	}
+	updateIngressStateReturns struct {
+		result1 *emptypb.Empty
+		result2 error
+	}
+	updateIngressStateReturnsOnCall map[int]struct {
+		result1 *emptypb.Empty
 		result2 error
 	}
 	invocations      map[string][][]interface{}
@@ -118,6 +146,71 @@ func (fake *FakeIOClient) CreateEgressReturnsOnCall(i int, result1 *emptypb.Empt
 		})
 	}
 	fake.createEgressReturnsOnCall[i] = struct {
+		result1 *emptypb.Empty
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeIOClient) CreateIngress(arg1 context.Context, arg2 *livekit.IngressInfo) (*emptypb.Empty, error) {
+	fake.createIngressMutex.Lock()
+	ret, specificReturn := fake.createIngressReturnsOnCall[len(fake.createIngressArgsForCall)]
+	fake.createIngressArgsForCall = append(fake.createIngressArgsForCall, struct {
+		arg1 context.Context
+		arg2 *livekit.IngressInfo
+	}{arg1, arg2})
+	stub := fake.CreateIngressStub
+	fakeReturns := fake.createIngressReturns
+	fake.recordInvocation("CreateIngress", []interface{}{arg1, arg2})
+	fake.createIngressMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeIOClient) CreateIngressCallCount() int {
+	fake.createIngressMutex.RLock()
+	defer fake.createIngressMutex.RUnlock()
+	return len(fake.createIngressArgsForCall)
+}
+
+func (fake *FakeIOClient) CreateIngressCalls(stub func(context.Context, *livekit.IngressInfo) (*emptypb.Empty, error)) {
+	fake.createIngressMutex.Lock()
+	defer fake.createIngressMutex.Unlock()
+	fake.CreateIngressStub = stub
+}
+
+func (fake *FakeIOClient) CreateIngressArgsForCall(i int) (context.Context, *livekit.IngressInfo) {
+	fake.createIngressMutex.RLock()
+	defer fake.createIngressMutex.RUnlock()
+	argsForCall := fake.createIngressArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeIOClient) CreateIngressReturns(result1 *emptypb.Empty, result2 error) {
+	fake.createIngressMutex.Lock()
+	defer fake.createIngressMutex.Unlock()
+	fake.CreateIngressStub = nil
+	fake.createIngressReturns = struct {
+		result1 *emptypb.Empty
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeIOClient) CreateIngressReturnsOnCall(i int, result1 *emptypb.Empty, result2 error) {
+	fake.createIngressMutex.Lock()
+	defer fake.createIngressMutex.Unlock()
+	fake.CreateIngressStub = nil
+	if fake.createIngressReturnsOnCall == nil {
+		fake.createIngressReturnsOnCall = make(map[int]struct {
+			result1 *emptypb.Empty
+			result2 error
+		})
+	}
+	fake.createIngressReturnsOnCall[i] = struct {
 		result1 *emptypb.Empty
 		result2 error
 	}{result1, result2}
@@ -253,15 +346,84 @@ func (fake *FakeIOClient) ListEgressReturnsOnCall(i int, result1 *livekit.ListEg
 	}{result1, result2}
 }
 
+func (fake *FakeIOClient) UpdateIngressState(arg1 context.Context, arg2 *rpc.UpdateIngressStateRequest) (*emptypb.Empty, error) {
+	fake.updateIngressStateMutex.Lock()
+	ret, specificReturn := fake.updateIngressStateReturnsOnCall[len(fake.updateIngressStateArgsForCall)]
+	fake.updateIngressStateArgsForCall = append(fake.updateIngressStateArgsForCall, struct {
+		arg1 context.Context
+		arg2 *rpc.UpdateIngressStateRequest
+	}{arg1, arg2})
+	stub := fake.UpdateIngressStateStub
+	fakeReturns := fake.updateIngressStateReturns
+	fake.recordInvocation("UpdateIngressState", []interface{}{arg1, arg2})
+	fake.updateIngressStateMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeIOClient) UpdateIngressStateCallCount() int {
+	fake.updateIngressStateMutex.RLock()
+	defer fake.updateIngressStateMutex.RUnlock()
+	return len(fake.updateIngressStateArgsForCall)
+}
+
+func (fake *FakeIOClient) UpdateIngressStateCalls(stub func(context.Context, *rpc.UpdateIngressStateRequest) (*emptypb.Empty, error)) {
+	fake.updateIngressStateMutex.Lock()
+	defer fake.updateIngressStateMutex.Unlock()
+	fake.UpdateIngressStateStub = stub
+}
+
+func (fake *FakeIOClient) UpdateIngressStateArgsForCall(i int) (context.Context, *rpc.UpdateIngressStateRequest) {
+	fake.updateIngressStateMutex.RLock()
+	defer fake.updateIngressStateMutex.RUnlock()
+	argsForCall := fake.updateIngressStateArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeIOClient) UpdateIngressStateReturns(result1 *emptypb.Empty, result2 error) {
+	fake.updateIngressStateMutex.Lock()
+	defer fake.updateIngressStateMutex.Unlock()
+	fake.UpdateIngressStateStub = nil
+	fake.updateIngressStateReturns = struct {
+		result1 *emptypb.Empty
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeIOClient) UpdateIngressStateReturnsOnCall(i int, result1 *emptypb.Empty, result2 error) {
+	fake.updateIngressStateMutex.Lock()
+	defer fake.updateIngressStateMutex.Unlock()
+	fake.UpdateIngressStateStub = nil
+	if fake.updateIngressStateReturnsOnCall == nil {
+		fake.updateIngressStateReturnsOnCall = make(map[int]struct {
+			result1 *emptypb.Empty
+			result2 error
+		})
+	}
+	fake.updateIngressStateReturnsOnCall[i] = struct {
+		result1 *emptypb.Empty
+		result2 error
+	}{result1, result2}
+}
+
 func (fake *FakeIOClient) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
 	fake.createEgressMutex.RLock()
 	defer fake.createEgressMutex.RUnlock()
+	fake.createIngressMutex.RLock()
+	defer fake.createIngressMutex.RUnlock()
 	fake.getEgressMutex.RLock()
 	defer fake.getEgressMutex.RUnlock()
 	fake.listEgressMutex.RLock()
 	defer fake.listEgressMutex.RUnlock()
+	fake.updateIngressStateMutex.RLock()
+	defer fake.updateIngressStateMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

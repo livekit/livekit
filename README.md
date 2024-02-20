@@ -191,8 +191,11 @@ enabling you to build automations that behave like end-users.
 
 ## Install
 
-We recommend installing [livekit-cli](https://github.com/livekit/livekit-cli) along with the server. It lets you access
-server APIs, create tokens, and generate test traffic.
+> [!TIP]
+> We recommend installing [LiveKit CLI](https://github.com/livekit/livekit-cli) along with the server. It lets you access
+> server APIs, create tokens, and generate test traffic.
+
+The following will install LiveKit's media server:
 
 ### MacOS
 

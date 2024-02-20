@@ -17,8 +17,8 @@ package service
 import (
 	"context"
 	"strconv"
-	"time"
 
+	"github.com/avast/retry-go/v4"
 	"github.com/pkg/errors"
 	"github.com/twitchtv/twirp"
 
@@ -99,19 +99,6 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 	}
 	defer res.RequestSink.Close()
 	defer res.ResponseSource.Close()
-
-	// ensure it's created correctly
-	err = s.confirmExecution(func() error {
-		_, _, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Name), false)
-		if err != nil {
-			return ErrOperationFailed
-		} else {
-			return nil
-		}
-	})
-	if err != nil {
-		return nil, err
-	}
 
 	if created {
 		go func() {
@@ -299,7 +286,7 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 		return nil, err
 	}
 
-	err = s.confirmExecution(func() error {
+	err = s.confirmExecution(ctx, func() error {
 		room, _, err = s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false)
 		if err != nil {
 			return err
@@ -326,19 +313,14 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 	return room, nil
 }
 
-func (s *RoomService) confirmExecution(f func() error) error {
-	expired := time.After(s.apiConf.ExecutionTimeout)
-	var err error
-	for {
-		select {
-		case <-expired:
-			return err
-		default:
-			err = f()
-			if err == nil {
-				return nil
-			}
-			time.Sleep(s.apiConf.CheckInterval)
-		}
-	}
+func (s *RoomService) confirmExecution(ctx context.Context, f func() error) error {
+	ctx, cancel := context.WithTimeout(ctx, s.apiConf.ExecutionTimeout)
+	defer cancel()
+	return retry.Do(
+		f,
+		retry.Context(ctx),
+		retry.Delay(s.apiConf.CheckInterval),
+		retry.MaxDelay(s.apiConf.MaxCheckInterval),
+		retry.DelayType(retry.BackOffDelay),
+	)
 }

@@ -80,6 +80,15 @@ type disconnectSignalOnResumeNoMessages struct {
 }
 
 type Room struct {
+	// atomics always need to be 64bit/8byte aligned
+	// on 32bit arch only the beginning of the struct
+	// starts at such a boundary.
+	// time the first participant joined the room
+	joinedAt atomic.Int64
+	// time that the last participant left the room
+	leftAt atomic.Int64
+	holds    atomic.Int32
+
 	lock sync.RWMutex
 
 	protoRoom  *livekit.Room
@@ -109,11 +118,6 @@ type Room struct {
 	batchedUpdates   map[livekit.ParticipantIdentity]*participantUpdate
 	batchedUpdatesMu sync.Mutex
 
-	// time the first participant joined the room
-	joinedAt atomic.Int64
-	holds    atomic.Int32
-	// time that the last participant left the room
-	leftAt atomic.Int64
 	closed chan struct{}
 
 	trailer []byte
@@ -649,7 +653,7 @@ func (r *Room) UpdateSubscriptions(
 
 func (r *Room) SyncState(participant types.LocalParticipant, state *livekit.SyncState) error {
 	pLogger := participant.GetLogger()
-	pLogger.Infow("setting sync state", "state", state)
+	pLogger.Infow("setting sync state", "state", logger.Proto(state))
 
 	shouldReconnect := false
 	pubTracks := state.GetPublishTracks()
@@ -684,6 +688,13 @@ func (r *Room) SyncState(participant types.LocalParticipant, state *livekit.Sync
 		pLogger.Warnw("unable to resume due to missing published tracks, starting full reconnect", nil)
 		participant.IssueFullReconnect(types.ParticipantCloseReasonPublicationError)
 		return nil
+	}
+
+	// synthesize a track setting for each disabled track,
+	// can be set before addding subscriptions,
+	// in fact it is done before so that setting can be updated immediately upon subscription.
+	for _, trackSid := range state.TrackSidsDisabled {
+		participant.UpdateSubscribedTrackSettings(livekit.TrackID(trackSid), &livekit.UpdateTrackSettings{Disabled: true})
 	}
 
 	r.UpdateSubscriptions(

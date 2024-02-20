@@ -23,7 +23,6 @@ import (
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
 
-	"github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -56,17 +55,16 @@ type MediaTrackParams struct {
 	ParticipantID       livekit.ParticipantID
 	ParticipantIdentity livekit.ParticipantIdentity
 	ParticipantVersion  uint32
-	// channel to send RTCP packets to the source
-	RTCPChan          chan []rtcp.Packet
-	BufferFactory     *buffer.Factory
-	ReceiverConfig    ReceiverConfig
-	SubscriberConfig  DirectionConfig
-	PLIThrottleConfig config.PLIThrottleConfig
-	AudioConfig       config.AudioConfig
-	VideoConfig       config.VideoConfig
-	Telemetry         telemetry.TelemetryService
-	Logger            logger.Logger
-	SimTracks         map[uint32]SimulcastTrackInfo
+	BufferFactory       *buffer.Factory
+	ReceiverConfig      ReceiverConfig
+	SubscriberConfig    DirectionConfig
+	PLIThrottleConfig   config.PLIThrottleConfig
+	AudioConfig         config.AudioConfig
+	VideoConfig         config.VideoConfig
+	Telemetry           telemetry.TelemetryService
+	Logger              logger.Logger
+	SimTracks           map[uint32]SimulcastTrackInfo
+	OnRTCP              func([]rtcp.Packet)
 }
 
 func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
@@ -183,7 +181,7 @@ func (t *MediaTrack) UpdateCodecCid(codecs []*livekit.SimulcastCodec) {
 }
 
 // AddReceiver adds a new RTP receiver to the track, returns true when receiver represents a new codec
-func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, twcc *twcc.Responder, mid string) bool {
+func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, mid string) bool {
 	var newCodec bool
 	buff, rtcpReader := t.params.BufferFactory.GetBufferPair(uint32(track.SSRC()))
 	if buff == nil || rtcpReader == nil {
@@ -251,18 +249,19 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			track,
 			ti,
 			LoggerWithCodecMime(t.params.Logger, mime),
-			twcc,
+			t.params.OnRTCP,
 			t.params.VideoConfig.StreamTracker,
 			sfu.WithPliThrottleConfig(t.params.PLIThrottleConfig),
 			sfu.WithAudioConfig(t.params.AudioConfig),
 			sfu.WithLoadBalanceThreshold(20),
 			sfu.WithStreamTrackers(),
 		)
-		newWR.SetRTCPCh(t.params.RTCPChan)
 		newWR.OnCloseHandler(func() {
+			t.params.Logger.Infow("webrtc receiver closed")
 			t.MediaTrackReceiver.SetClosing()
 			t.MediaTrackReceiver.ClearReceiver(mime, false)
 			if t.MediaTrackReceiver.TryClose() {
+				t.params.Logger.Infow("mediaTrack closed")
 				if t.dynacastManager != nil {
 					t.dynacastManager.Close()
 				}
@@ -310,7 +309,17 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	}
 	t.lock.Unlock()
 
-	wr.(*sfu.WebRTCReceiver).AddUpTrack(track, buff)
+	if err := wr.(*sfu.WebRTCReceiver).AddUpTrack(track, buff); err != nil {
+		t.params.Logger.Warnw(
+			"adding up track failed", err,
+			"rid", track.RID(),
+			"layer", layer,
+			"ssrc", track.SSRC(),
+			"newCodec", newCodec,
+		)
+		buff.Close()
+		return false
+	}
 
 	// LK-TODO: can remove this completely when VideoLayers protocol becomes the default as it has info from client or if we decide to use TrackInfo.Simulcast
 	if t.numUpTracks.Inc() > 1 || track.RID() != "" {

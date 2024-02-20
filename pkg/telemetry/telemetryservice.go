@@ -24,6 +24,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/webhook"
+	"golang.org/x/exp/maps"
 )
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 . TelemetryService
@@ -93,8 +94,9 @@ type telemetryService struct {
 	notifier  webhook.QueuedNotifier
 	jobsQueue *utils.OpsQueue
 
-	lock    sync.RWMutex
-	workers map[livekit.ParticipantID]*StatsWorker
+	lock          sync.RWMutex
+	workers       map[livekit.ParticipantID]*StatsWorker
+	workersShadow []*StatsWorker
 }
 
 func NewTelemetryService(notifier webhook.QueuedNotifier, analytics AnalyticsService) TelemetryService {
@@ -113,10 +115,11 @@ func NewTelemetryService(notifier webhook.QueuedNotifier, analytics AnalyticsSer
 }
 
 func (t *telemetryService) FlushStats() {
-	t.lock.Lock()
-	defer t.lock.Unlock()
+	t.lock.RLock()
+	workersShadow := t.workersShadow
+	t.lock.RUnlock()
 
-	for _, worker := range t.workers {
+	for _, worker := range workersShadow {
 		worker.Flush()
 	}
 }
@@ -167,21 +170,37 @@ func (t *telemetryService) createWorker(ctx context.Context,
 
 	t.lock.Lock()
 	t.workers[participantID] = worker
+	t.workersShadow = maps.Values(t.workers)
 	t.lock.Unlock()
 	return worker
 }
 
 func (t *telemetryService) cleanupWorkers() {
-	t.lock.Lock()
-	defer t.lock.Unlock()
+	t.lock.RLock()
+	workersShadow := t.workersShadow
+	t.lock.RUnlock()
 
-	for participantID, worker := range t.workers {
+	toReap := make([]livekit.ParticipantID, 0, len(workersShadow))
+	for _, worker := range workersShadow {
 		closedAt := worker.ClosedAt()
 		if !closedAt.IsZero() && time.Since(closedAt) > workerCleanupWait {
-			logger.Debugw("reaping analytics worker for participant", "pID", participantID)
-			delete(t.workers, participantID)
+			worker.Flush()
+
+			toReap = append(toReap, worker.ParticipantID())
 		}
 	}
+
+	if len(toReap) == 0 {
+		return
+	}
+
+	t.lock.Lock()
+	logger.Debugw("reaping analytics worker for participants", "pID", toReap)
+	for _, pID := range toReap {
+		delete(t.workers, pID)
+	}
+	t.workersShadow = maps.Values(t.workers)
+	t.lock.Unlock()
 }
 
 func (t *telemetryService) LocalRoomState(ctx context.Context, info *livekit.AnalyticsNodeRooms) {
