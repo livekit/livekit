@@ -70,8 +70,11 @@ type packetMeta struct {
 	codecBytes       [8]byte
 	numCodecBytesIn  uint8
 	numCodecBytesOut uint8
+	codecBytesSlice  []byte
 	// Dependency Descriptor of packet
-	ddBytes []byte
+	ddBytes      [8]byte
+	ddBytesSize  uint8
+	ddBytesSlice []byte
 }
 
 type extPacketMeta struct {
@@ -199,17 +202,23 @@ func (s *sequencer) push(
 		marker:          marker,
 		layer:           layer,
 		numCodecBytesIn: uint8(numCodecBytesIn),
-		ddBytes:         append([]byte{}, ddBytes...),
 		lastNack:        s.getRefTime(packetTime), // delay retransmissions after the original transmission
 	}
 	pm := &s.meta[slot]
+
 	pm.numCodecBytesOut = uint8(len(codecBytes))
-	if pm.numCodecBytesOut > uint8(len(pm.codecBytes)) {
-		s.logger.Errorw("codec bytes too large", nil, "need", pm.numCodecBytesOut, "bufSize", len(pm.codecBytes))
-		s.invalidateSlot(int(slot))
-		return
+	if len(codecBytes) > len(pm.codecBytes) {
+		pm.codecBytesSlice = append([]byte{}, codecBytes...)
+	} else {
+		copy(pm.codecBytes[:pm.numCodecBytesOut], codecBytes)
 	}
-	copy(pm.codecBytes[:pm.numCodecBytesOut], codecBytes)
+
+	pm.ddBytesSize = uint8(len(ddBytes))
+	if len(ddBytes) > len(pm.ddBytes) {
+		pm.ddBytesSlice = append([]byte{}, ddBytes...)
+	} else {
+		copy(pm.ddBytes[:pm.ddBytesSize], ddBytes)
+	}
 
 	if extModifiedSN > s.extHighestSN {
 		s.extHighestSN = extModifiedSN
@@ -333,8 +342,8 @@ func (s *sequencer) getExtPacketMetas(seqNo []uint16) []extPacketMeta {
 				extSequenceNumber: extSN,
 				extTimestamp:      extTS,
 			}
-			copy(epm.codecBytes[:epm.numCodecBytesOut], meta.codecBytes[:epm.numCodecBytesOut])
-			epm.ddBytes = append([]byte{}, meta.ddBytes...)
+			epm.codecBytesSlice = append([]byte{}, meta.codecBytesSlice...)
+			epm.ddBytesSlice = append([]byte{}, meta.ddBytesSlice...)
 			extPacketMetas = append(extPacketMetas, epm)
 		}
 	}
