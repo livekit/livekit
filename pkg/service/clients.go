@@ -26,10 +26,15 @@ import (
 	"github.com/livekit/protocol/utils"
 )
 
+//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
+
+//counterfeiter:generate . IOClient
 type IOClient interface {
 	CreateEgress(ctx context.Context, info *livekit.EgressInfo) (*emptypb.Empty, error)
 	GetEgress(ctx context.Context, req *rpc.GetEgressRequest) (*livekit.EgressInfo, error)
 	ListEgress(ctx context.Context, req *livekit.ListEgressRequest) (*livekit.ListEgressResponse, error)
+	CreateIngress(ctx context.Context, req *livekit.IngressInfo) (*emptypb.Empty, error)
+	UpdateIngressState(ctx context.Context, req *rpc.UpdateIngressStateRequest) (*emptypb.Empty, error)
 }
 
 type egressLauncher struct {

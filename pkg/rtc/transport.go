@@ -17,6 +17,7 @@ package rtc
 import (
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -37,12 +38,15 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/transport"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	lkinterceptor "github.com/livekit/livekit-server/pkg/sfu/interceptor"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpextension"
 	"github.com/livekit/livekit-server/pkg/sfu/sendsidebwe"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
+	sfuutils "github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	sutils "github.com/livekit/livekit-server/pkg/utils"
+	lktwcc "github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/logger/pionlogger"
@@ -201,6 +205,7 @@ type TransportParams struct {
 	ParticipantIdentity          livekit.ParticipantIdentity
 	ProtocolVersion              types.ProtocolVersion
 	Config                       *WebRTCConfig
+	Twcc                         *lktwcc.Responder
 	DirectionConfig              DirectionConfig
 	CongestionControlConfig      config.CongestionControlConfig
 	EnabledCodecs                []*livekit.Codec
@@ -323,11 +328,45 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	if len(params.SimTracks) > 0 {
 		f, err := NewUnhandleSimulcastInterceptorFactory(UnhandleSimulcastTracks(params.SimTracks))
 		if err != nil {
-			params.Logger.Errorw("NewUnhandleSimulcastInterceptorFactory failed", err)
+			params.Logger.Warnw("NewUnhandleSimulcastInterceptorFactory failed", err)
 		} else {
 			ir.Add(f)
 		}
 	}
+
+	setTWCCForVideo := func(info *interceptor.StreamInfo) {
+		if !strings.HasPrefix(info.MimeType, "video") {
+			return
+		}
+		// rtx stream don't have rtcp feedback, always set twcc for rtx stream
+		twccFb := strings.HasSuffix(info.MimeType, "rtx")
+		if !twccFb {
+			for _, fb := range info.RTCPFeedback {
+				if fb.Type == webrtc.TypeRTCPFBTransportCC {
+					twccFb = true
+					break
+				}
+			}
+		}
+		if !twccFb {
+			return
+		}
+
+		twccExtID := sfuutils.GetHeaderExtensionID(info.RTPHeaderExtensions, webrtc.RTPHeaderExtensionCapability{URI: sdp.TransportCCURI})
+		if twccExtID != 0 {
+			if buffer := params.Config.BufferFactory.GetBuffer(info.SSRC); buffer != nil {
+				params.Logger.Debugw("set rtx twcc and ext id", "ssrc", info.SSRC, "twccExtID", twccExtID)
+				buffer.SetTWCCAndExtID(params.Twcc, uint8(twccExtID))
+			} else {
+				params.Logger.Warnw("failed to get buffer for rtx stream", nil, "ssrc", info.SSRC)
+			}
+		}
+	}
+	// put rtx interceptor behind unhandle simulcast interceptor so it can get the correct mid & rid
+	ir.Add(lkinterceptor.NewRTXInfoExtractorFactory(setTWCCForVideo, func(repair, base uint32) {
+		params.Logger.Debugw("rtx pair found from extension", "repair", repair, "base", base)
+		params.Config.BufferFactory.SetRTXPair(repair, base)
+	}, params.Logger))
 	api := webrtc.NewAPI(
 		webrtc.WithMediaEngine(me),
 		webrtc.WithSettingEngine(se),
@@ -575,7 +614,7 @@ func (t *PCTransport) handleConnectionFailed(forceShortConn bool) {
 		if isShort {
 			pair, err := t.getSelectedPair()
 			if err != nil {
-				t.params.Logger.Errorw("short ICE connection", err, "duration", duration)
+				t.params.Logger.Warnw("short ICE connection", err, "duration", duration)
 			} else {
 				t.params.Logger.Infow("short ICE connection", "pair", pair, "duration", duration)
 			}
@@ -603,11 +642,6 @@ func (t *PCTransport) onICEConnectionStateChange(state webrtc.ICEConnectionState
 
 	case webrtc.ICEConnectionStateChecking:
 		t.setICEStartedAt(time.Now())
-
-	case webrtc.ICEConnectionStateDisconnected:
-		t.params.Logger.Infow("ice connection state change unexpected", "state", state.String())
-	case webrtc.ICEConnectionStateFailed:
-		t.params.Logger.Debugw("ice connection state change unexpected", "state", state.String())
 	}
 }
 
@@ -623,7 +657,6 @@ func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionSta
 			t.maybeNotifyFullyEstablished()
 		}
 	case webrtc.PeerConnectionStateFailed:
-		t.params.Logger.Infow("peer connection failed")
 		t.clearConnTimer()
 		t.handleConnectionFailed(false)
 	}
@@ -794,7 +827,7 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 
 	dcErrorHandler := func(err error) {
 		if !errors.Is(err, sctp.ErrResetPacketInStateNotExist) && !errors.Is(err, sctp.ErrChunk) {
-			t.params.Logger.Errorw(dc.Label()+" data channel error", err)
+			t.params.Logger.Warnw(dc.Label()+" data channel error", err)
 		}
 	}
 
@@ -819,7 +852,7 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 		t.lossyDC.OnClose(dcCloseHandler)
 		t.lossyDC.OnError(dcErrorHandler)
 	default:
-		t.params.Logger.Errorw("unknown data channel label", nil, "label", dc.Label())
+		t.params.Logger.Warnw("unknown data channel label", nil, "label", dc.Label())
 	}
 	t.lock.Unlock()
 
@@ -835,7 +868,7 @@ func (t *PCTransport) CreateDataChannelIfEmpty(dcLabel string, dci *webrtc.DataC
 	case LossyDataChannel:
 		dc = t.lossyDC
 	default:
-		t.params.Logger.Errorw("unknown data channel label", nil, "label", label)
+		t.params.Logger.Warnw("unknown data channel label", nil, "label", label)
 		err = errors.New("unknown data channel label")
 	}
 	t.lock.RUnlock()
@@ -1138,7 +1171,7 @@ func (t *PCTransport) initPCWithPreviousAnswer(previousAnswer webrtc.SessionDesc
 			// because sdp can negotiate multi times before migration.(it will sticky to the last m-line atfirst negotiate)
 			// so use a dummy pc to negotiate sdp to fixed the datachannel's mid at same position with previous answer
 			if err := t.preparePC(previousAnswer); err != nil {
-				t.params.Logger.Errorw("prepare pc for migration failed", err)
+				t.params.Logger.Warnw("prepare pc for migration failed", err)
 				return senders, err
 			}
 			continue
@@ -1176,7 +1209,7 @@ func (t *PCTransport) SetPreviousSdp(offer, answer *webrtc.SessionDescription) {
 	if t.pc.RemoteDescription() == nil && t.previousAnswer == nil {
 		t.previousAnswer = answer
 		if senders, err := t.initPCWithPreviousAnswer(*t.previousAnswer); err != nil {
-			t.params.Logger.Errorw("initPCWithPreviousAnswer failed", err)
+			t.params.Logger.Warnw("initPCWithPreviousAnswer failed", err)
 			t.lock.Unlock()
 
 			t.params.Handler.OnNegotiationFailed()
@@ -1185,7 +1218,7 @@ func (t *PCTransport) SetPreviousSdp(offer, answer *webrtc.SessionDescription) {
 			// in migration case, can't reuse transceiver before negotiated except track subscribed at previous node
 			t.canReuseTransceiver = false
 			if err := t.parseTrackMid(*offer, senders); err != nil {
-				t.params.Logger.Errorw("parse previous offer failed", err, "offer", offer.SDP)
+				t.params.Logger.Warnw("parse previous offer failed", err, "offer", offer.SDP)
 			}
 		}
 	}
@@ -1225,7 +1258,7 @@ func (t *PCTransport) postEvent(event event) {
 		err := t.handleEvent(&event)
 		if err != nil {
 			if !t.isClosed.Load() {
-				t.params.Logger.Errorw("error handling event", err, "event", event.String())
+				t.params.Logger.Warnw("error handling event", err, "event", event.String())
 				t.params.Handler.OnNegotiationFailed()
 			}
 		}
@@ -1372,7 +1405,7 @@ func (t *PCTransport) setNegotiationState(state transport.NegotiationState) {
 func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription, preferTCP bool) webrtc.SessionDescription {
 	parsed, err := sd.Unmarshal()
 	if err != nil {
-		t.params.Logger.Errorw("could not unmarshal SDP to filter candidates", err)
+		t.params.Logger.Warnw("could not unmarshal SDP to filter candidates", err)
 		return sd
 	}
 
@@ -1402,7 +1435,7 @@ func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription, preferTCP b
 
 	bytes, err := parsed.Marshal()
 	if err != nil {
-		t.params.Logger.Errorw("could not marshal SDP to filter candidates", err)
+		t.params.Logger.Warnw("could not marshal SDP to filter candidates", err)
 		return sd
 	}
 	sd.SDP = string(bytes)
@@ -1545,11 +1578,7 @@ func (t *PCTransport) handleRemoteDescriptionReceived(e *event) error {
 	}
 }
 
-func (t *PCTransport) isRemoteOfferRestartICE(sd *webrtc.SessionDescription) (string, bool, error) {
-	parsed, err := sd.Unmarshal()
-	if err != nil {
-		return "", false, err
-	}
+func (t *PCTransport) isRemoteOfferRestartICE(parsed *sdp.SessionDescription) (string, bool, error) {
 	user, pwd, err := lksdp.ExtractICECredential(parsed)
 	if err != nil {
 		return "", false, err
@@ -1646,7 +1675,11 @@ func (t *PCTransport) createAndSendAnswer() error {
 }
 
 func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription) error {
-	iceCredential, offerRestartICE, err := t.isRemoteOfferRestartICE(sd)
+	parsed, err := sd.Unmarshal()
+	if err != nil {
+		return nil
+	}
+	iceCredential, offerRestartICE, err := t.isRemoteOfferRestartICE(parsed)
 	if err != nil {
 		return errors.Wrap(err, "check remote offer restart ice failed")
 	}
@@ -1667,6 +1700,13 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription) e
 
 	if err := t.setRemoteDescription(*sd); err != nil {
 		return err
+	}
+	rtxRepairs := rtxRepairsFromSDP(parsed, t.params.Logger)
+	if len(rtxRepairs) > 0 {
+		t.params.Logger.Debugw("rtx pairs found from sdp", "ssrcs", rtxRepairs)
+		for repair, base := range rtxRepairs {
+			t.params.Config.BufferFactory.SetRTXPair(repair, base)
+		}
 	}
 
 	if t.currentOfferIceCredential == "" || offerRestartICE {
@@ -1790,4 +1830,36 @@ func configureAudioTransceiver(tr *webrtc.RTPTransceiver, stereo bool, nack bool
 	}
 
 	tr.SetCodecPreferences(configCodecs)
+}
+
+func rtxRepairsFromSDP(s *sdp.SessionDescription, logger logger.Logger) map[uint32]uint32 {
+	rtxRepairFlows := map[uint32]uint32{}
+	for _, media := range s.MediaDescriptions {
+		for _, attr := range media.Attributes {
+			switch attr.Key {
+			case sdp.AttrKeySSRCGroup:
+				split := strings.Split(attr.Value, " ")
+				if split[0] == sdp.SemanticTokenFlowIdentification {
+					// Essentially lines like `a=ssrc-group:FID 2231627014 632943048` are processed by this section
+					// as this declares that the second SSRC (632943048) is a rtx repair flow (RFC4588) for the first
+					// (2231627014) as specified in RFC5576
+					if len(split) == 3 {
+						baseSsrc, err := strconv.ParseUint(split[1], 10, 32)
+						if err != nil {
+							logger.Warnw("Failed to parse SSRC", err, "ssrc", split[1])
+							continue
+						}
+						rtxRepairFlow, err := strconv.ParseUint(split[2], 10, 32)
+						if err != nil {
+							logger.Warnw("Failed to parse SSRC", err, "ssrc", split[2])
+							continue
+						}
+						rtxRepairFlows[uint32(rtxRepairFlow)] = uint32(baseSsrc)
+					}
+				}
+			}
+		}
+	}
+
+	return rtxRepairFlows
 }

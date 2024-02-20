@@ -2,6 +2,44 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.3] - 2024-02-17
+
+### Added
+- Added dynamic playout delay if PlayoutDelay enabled in the room (#2403)
+- Allow creating SRT URL pull ingress (requires Ingress service release) (#2416)
+- Use default max playout delay as chrome (#2411)
+- RTX support on publisher transport (#2452)
+- Add exponential backoff to room service check retries (#2462)
+- Add support for ingress ParticipantMetadata (#2461)
+
+### Fixed
+- Prevent race of new track and new receiver. (#2345)
+- Fixed race condition when applying metadata update. (#2363 #2478)
+- Fixed race condition in DownTrack.Bind. (#2388)
+- Improved PSRPC over redis reliability with keepalive (#2398)
+- Fix race condition on Participant.updateState (#2401)
+- Replace /bin/bash with env call for FreeBSD compatibility (#2409)
+- Fix startup with -dev and -config (#2442)
+- Fix published track leaks: close published tracks on participant close (#2446)
+- Enforce empty SID for UserPacket from hidden participants (#2469)
+- Ignore duplicate RID. (Fix for spec breakage by Firefox on Windows 10) (#2471)
+
+### Changed
+- Logging improvements (various PRs)
+- Server shuts down after a second SIGINT to simplify development lifecycle (#2364)
+- A/V sync improvements (#2369 #2437 #2472)
+- Prometheus: larger max session start time bin size (#2380)
+- Updated SIP protocol for creating participants. (requires latest SIP release) (#2404 #2474)
+- Improved reliability of signal stream starts with retries (#2414)
+- Use Deque instead of channels in internal communications to reduce memory usage. (#2418 #2419)
+- Do not synthesise DISCONNECT on session change. (#2412)
+- Prometheus: larger buckets for jitter histogram (#2468)
+- Support for improved Ingress internal RPC (#2485)
+- Let track events go through after participant close. (#2487)
+
+### Removed
+- Removed code related to legacy (pre 1.5.x) RPC protocol (#2384 #2385)
+
 ## [1.5.2] - 2023-12-21
 
 Support for LiveKit SIP Bridge

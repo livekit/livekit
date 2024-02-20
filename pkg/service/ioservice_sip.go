@@ -16,6 +16,7 @@ package service
 
 import (
 	"context"
+	"errors"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -57,6 +58,9 @@ func (s *IOInfoService) EvaluateSIPDispatchRules(ctx context.Context, req *rpc.E
 	}
 	best, err := s.matchSIPDispatchRule(ctx, trunk, req)
 	if err != nil {
+		if e := (*sip.ErrNoDispatchMatched)(nil); errors.As(err, &e) {
+			return &rpc.EvaluateSIPDispatchRulesResponse{Result: rpc.SIPDispatchResult_DROP}, nil
+		}
 		return nil, err
 	}
 	logger.Debugw("SIP dispatch rule matched", "dispatchRule", best.SipDispatchRuleId, "called", req.CalledNumber, "calling", req.CallingNumber)

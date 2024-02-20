@@ -33,8 +33,10 @@ import (
 	"github.com/livekit/protocol/rpc"
 )
 
-type CongestionControlProbeMode string
-type StreamTrackerType string
+type (
+	CongestionControlProbeMode string
+	StreamTrackerType          string
+)
 
 const (
 	generatedCLIFlagUsage = "generated"
@@ -295,22 +297,24 @@ type IngressConfig struct {
 	WHIPBaseURL string `yaml:"whip_base_url,omitempty"`
 }
 
-type SIPConfig struct {
-}
+type SIPConfig struct{}
 
-// not exposed to YAML
 type APIConfig struct {
 	// amount of time to wait for API to execute, default 2s
-	ExecutionTimeout time.Duration
+	ExecutionTimeout time.Duration `yaml:"execution_timeout,omitempty"`
 
-	// amount of time to wait before checking for operation complete
-	CheckInterval time.Duration
+	// min amount of time to wait before checking for operation complete
+	CheckInterval time.Duration `yaml:"check_interval,omitempty"`
+
+	// max amount of time to wait before checking for operation complete
+	MaxCheckInterval time.Duration `yaml:"max_check_interval,omitempty"`
 }
 
 func DefaultAPIConfig() APIConfig {
 	return APIConfig{
 		ExecutionTimeout: 2 * time.Second,
 		CheckInterval:    100 * time.Millisecond,
+		MaxCheckInterval: 300 * time.Second,
 	}
 }
 
@@ -518,14 +522,14 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 		}
 	}
 
-	if err := conf.RTC.Validate(conf.Development); err != nil {
-		return nil, fmt.Errorf("could not validate RTC config: %v", err)
-	}
-
 	if c != nil {
 		if err := conf.updateFromCLI(c, baseFlags); err != nil {
 			return nil, err
 		}
+	}
+
+	if err := conf.RTC.Validate(conf.Development); err != nil {
+		return nil, fmt.Errorf("could not validate RTC config: %v", err)
 	}
 
 	// expand env vars in filenames
@@ -638,10 +642,10 @@ func (conf *Config) ToCLIFlagNames(existingFlags []cli.Flag) map[string]reflect.
 func (conf *Config) ValidateKeys() error {
 	// prefer keyfile if set
 	if conf.KeyFile != "" {
-		var otherFilter os.FileMode = 0007
+		var otherFilter os.FileMode = 0o007
 		if st, err := os.Stat(conf.KeyFile); err != nil {
 			return err
-		} else if st.Mode().Perm()&otherFilter != 0000 {
+		} else if st.Mode().Perm()&otherFilter != 0o000 {
 			return ErrKeyFileIncorrectPermission
 		}
 		f, err := os.Open(conf.KeyFile)
@@ -744,6 +748,9 @@ func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error)
 			// TODO
 			continue
 		case reflect.Map:
+			// TODO
+			continue
+		case reflect.Struct:
 			// TODO
 			continue
 		default:
