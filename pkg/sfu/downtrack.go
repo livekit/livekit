@@ -38,6 +38,7 @@ import (
 	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpextension"
+	"github.com/livekit/livekit-server/pkg/sfu/utils"
 )
 
 // TrackSender defines an interface send media to remote peer
@@ -54,7 +55,13 @@ type TrackSender interface {
 	ID() string
 	SubscriberID() livekit.ParticipantID
 	TrackInfoAvailable()
-	HandleRTCPSenderReportData(payloadType webrtc.PayloadType, isSVC bool, layer int32, srData *buffer.RTCPSenderReportData) error
+	HandleRTCPSenderReportData(
+		payloadType webrtc.PayloadType,
+		isSVC bool,
+		layer int32,
+		srFirst *buffer.RTCPSenderReportData,
+		srNewest *buffer.RTCPSenderReportData,
+	) error
 	HandleTrackFrameRateReport(payloadType webrtc.PayloadType, fps [][]float32) error
 }
 
@@ -358,7 +365,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	}
 	var codec webrtc.RTPCodecParameters
 	for _, c := range d.upstreamCodecs {
-		matchCodec, err := codecParametersFuzzySearch(c, t.CodecParameters())
+		matchCodec, err := utils.CodecParametersFuzzySearch(c, t.CodecParameters())
 		if err == nil {
 			codec = matchCodec
 			break
@@ -1635,6 +1642,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 				"eosn", epm.extSequenceNumber,
 				"eots", epm.extTimestamp,
 				"sid", epm.layer,
+				"error", err,
 			)
 			// TODO-VP9-DEBUG-REMOVE-END
 			nackMisses++
@@ -1913,9 +1921,19 @@ func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
 	}
 }
 
-func (d *DownTrack) HandleRTCPSenderReportData(_payloadType webrtc.PayloadType, isSVC bool, layer int32, srData *buffer.RTCPSenderReportData) error {
-	if (layer == d.forwarder.GetReferenceLayerSpatial() || (layer == 0 && isSVC)) && srData != nil {
-		d.rtpStats.MaybeAdjustFirstPacketTime(srData.RTPTimestamp + uint32(d.forwarder.GetReferenceTimestampOffset()))
+func (d *DownTrack) HandleRTCPSenderReportData(
+	_payloadType webrtc.PayloadType,
+	isSVC bool,
+	layer int32,
+	srFirst *buffer.RTCPSenderReportData,
+	srNewest *buffer.RTCPSenderReportData,
+) error {
+	if (layer == d.forwarder.GetReferenceLayerSpatial() || (layer == 0 && isSVC)) && srNewest != nil {
+		d.rtpStats.MaybeAdjustFirstPacketTime(
+			srFirst,
+			srNewest,
+			srNewest.RTPTimestamp+uint32(d.forwarder.GetReferenceTimestampOffset()),
+		)
 	}
 	return nil
 }

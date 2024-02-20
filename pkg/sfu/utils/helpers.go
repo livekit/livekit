@@ -12,17 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package sfu
+package utils
 
 import (
 	"strings"
 
+	"github.com/pion/interceptor"
 	"github.com/pion/webrtc/v3"
 )
 
 // Do a fuzzy find for a codec in the list of codecs
 // Used for lookup up a codec in an existing list to find a match
-func codecParametersFuzzySearch(needle webrtc.RTPCodecParameters, haystack []webrtc.RTPCodecParameters) (webrtc.RTPCodecParameters, error) {
+func CodecParametersFuzzySearch(needle webrtc.RTPCodecParameters, haystack []webrtc.RTPCodecParameters) (webrtc.RTPCodecParameters, error) {
 	// First attempt to match on MimeType + SDPFmtpLine
 	for _, c := range haystack {
 		if strings.EqualFold(c.RTPCodecCapability.MimeType, needle.RTPCodecCapability.MimeType) &&
@@ -41,4 +42,12 @@ func codecParametersFuzzySearch(needle webrtc.RTPCodecParameters, haystack []web
 	return webrtc.RTPCodecParameters{}, webrtc.ErrCodecNotFound
 }
 
-// -----------------------------------------------
+// GetHeaderExtensionID returns the ID of a header extension, or 0 if not found
+func GetHeaderExtensionID(extensions []interceptor.RTPHeaderExtension, extension webrtc.RTPHeaderExtensionCapability) int {
+	for _, h := range extensions {
+		if extension.URI == h.URI {
+			return h.ID
+		}
+	}
+	return 0
+}

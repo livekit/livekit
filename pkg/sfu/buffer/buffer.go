@@ -71,6 +71,7 @@ type Buffer struct {
 	videoPool     *sync.Pool
 	audioPool     *sync.Pool
 	codecType     webrtc.RTPCodecType
+	payloadType   uint8
 	extPackets    deque.Deque[*ExtPacket]
 	pPackets      []pendingPacket
 	closeOnce     sync.Once
@@ -120,8 +121,11 @@ type Buffer struct {
 	frameRateCalculator [DefaultMaxLayerSpatial + 1]FrameRateCalculator
 	// RAJA-REMOVE frameRateCalculated bool
 
-	packetNotFoundCount atomic.Uint32
-	packetTooOldCount   atomic.Uint32
+	packetNotFoundCount   atomic.Uint32
+	packetTooOldCount     atomic.Uint32
+	extPacketTooMuchCount atomic.Uint32
+
+	primaryBufferForRTX *Buffer
 }
 
 // NewBuffer constructs a new Buffer
@@ -143,7 +147,7 @@ func (b *Buffer) SetLogger(logger logger.Logger) {
 	b.Lock()
 	defer b.Unlock()
 
-	b.logger = logger.WithComponent(sutils.ComponentSFU)
+	b.logger = logger.WithComponent(sutils.ComponentSFU).WithValues("ssrc", b.mediaSSRC)
 	if b.rtpStats != nil {
 		b.rtpStats.SetLogger(b.logger)
 	}
@@ -156,11 +160,12 @@ func (b *Buffer) SetPaused(paused bool) {
 	b.paused = paused
 }
 
-func (b *Buffer) SetTWCC(twcc *twcc.Responder) {
+func (b *Buffer) SetTWCCAndExtID(twcc *twcc.Responder, extID uint8) {
 	b.Lock()
 	defer b.Unlock()
 
 	b.twcc = twcc
+	b.twccExt = extID
 }
 
 func (b *Buffer) SetAudioLevelParams(audioLevelParams audio.AudioLevelParams) {
@@ -187,6 +192,17 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	b.clockRate = codec.ClockRate
 	b.lastReport = time.Now()
 	b.mime = strings.ToLower(codec.MimeType)
+	for _, codecParameter := range params.Codecs {
+		if strings.EqualFold(codecParameter.MimeType, codec.MimeType) {
+			b.payloadType = uint8(codecParameter.PayloadType)
+			break
+		}
+	}
+
+	if b.payloadType == 0 {
+		b.logger.Warnw("could not find payload type for codec", nil, "codec", codec.MimeType, "parameters", params)
+		b.payloadType = uint8(params.Codecs[0].PayloadType)
+	}
 
 	for _, ext := range params.HeaderExtensions {
 		switch ext.URI {
@@ -235,16 +251,6 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 		case webrtc.TypeRTCPFBGoogREMB:
 			b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBGoogREMB)
 			b.logger.Debugw("REMB not supported, RTCP feedback will not be generated")
-		case webrtc.TypeRTCPFBTransportCC:
-			if b.codecType == webrtc.RTPCodecTypeVideo {
-				b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBTransportCC)
-				for _, ext := range params.HeaderExtensions {
-					if ext.URI == sdp.TransportCCURI {
-						b.twccExt = uint8(ext.ID)
-						break
-					}
-				}
-			}
 		case webrtc.TypeRTCPFBNACK:
 			// pion use a single mediaengine to manage negotiated codecs of peerconnection, that means we can't have different
 			// codec settings at track level for same codec type, so enable nack for all audio receivers but don't create nack queue
@@ -258,19 +264,43 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	}
 
 	for _, pp := range b.pPackets {
-		b.calc(pp.packet, pp.arrivalTime)
+		b.calc(pp.packet, nil, pp.arrivalTime, false)
 	}
 	b.pPackets = nil
 	b.bound = true
 }
 
-// Write adds an RTP Packet, out of order, new packet may be arrived later
+// Write adds an RTP Packet, ordering is not guaranteed, newer packets may arrive later
 func (b *Buffer) Write(pkt []byte) (n int, err error) {
-	b.Lock()
-	defer b.Unlock()
+	var rtpPacket rtp.Packet
+	err = rtpPacket.Unmarshal(pkt)
+	if err != nil {
+		return
+	}
 
+	b.Lock()
 	if b.closed.Load() {
+		b.Unlock()
 		err = io.EOF
+		return
+	}
+
+	if b.twcc != nil && b.twccExt != 0 && !b.closed.Load() {
+		if ext := rtpPacket.GetExtension(b.twccExt); ext != nil {
+			b.twcc.Push(rtpPacket.SSRC, binary.BigEndian.Uint16(ext[0:2]), time.Now().UnixNano(), rtpPacket.Marker)
+		}
+	}
+
+	// handle RTX packet
+	if pb := b.primaryBufferForRTX; pb != nil {
+		b.Unlock()
+
+		// skip padding only packets
+		if rtpPacket.Padding && len(rtpPacket.Payload) == 0 {
+			return
+		}
+
+		pb.writeRTX(&rtpPacket)
 		return
 	}
 
@@ -281,10 +311,58 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 			packet:      packet,
 			arrivalTime: time.Now(),
 		})
+		b.Unlock()
 		return
 	}
 
-	b.calc(pkt, time.Now())
+	b.payloadType = rtpPacket.PayloadType
+	b.calc(pkt, &rtpPacket, time.Now(), false)
+	b.Unlock()
+	return
+}
+
+func (b *Buffer) SetPrimaryBufferForRTX(primaryBuffer *Buffer) {
+	b.Lock()
+	b.primaryBufferForRTX = primaryBuffer
+	pkts := b.pPackets
+	b.pPackets = nil
+	b.Unlock()
+	for _, pp := range pkts {
+		var rtpPacket rtp.Packet
+		err := rtpPacket.Unmarshal(pp.packet)
+		if err != nil {
+			continue
+		}
+		if rtpPacket.Padding && len(rtpPacket.Payload) == 0 {
+			continue
+		}
+		primaryBuffer.writeRTX(&rtpPacket)
+	}
+}
+
+func (b *Buffer) writeRTX(rtxPkt *rtp.Packet) (n int, err error) {
+	b.Lock()
+	defer b.Unlock()
+	if !b.bound {
+		return
+	}
+
+	videoPktPtr := b.videoPool.Get().(*[]byte)
+	defer b.videoPool.Put(videoPktPtr)
+
+	videoPkt := *rtxPkt
+	videoPkt.PayloadType = b.payloadType
+	videoPkt.SequenceNumber = binary.BigEndian.Uint16(rtxPkt.Payload[:2])
+	videoPkt.SSRC = b.mediaSSRC
+	videoPkt.Payload = rtxPkt.Payload[2:]
+	n, err = videoPkt.MarshalTo((*videoPktPtr))
+
+	if err != nil {
+		b.logger.Errorw("could not marshal repaired packet", err, "ssrc", b.mediaSSRC, "sn", videoPkt.SequenceNumber)
+		return
+	}
+
+	b.calc((*videoPktPtr)[:n], &videoPkt, time.Now(), true)
 	return
 }
 
@@ -414,23 +492,25 @@ func (b *Buffer) SetRTT(rtt uint32) {
 	}
 }
 
-func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
+func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime time.Time, isRTX bool) {
 	defer func() {
 		b.doNACKs()
 
 		b.doReports(arrivalTime)
 	}()
 
-	var rtpPacket rtp.Packet
-	if err := rtpPacket.Unmarshal(pkt); err != nil {
-		b.logger.Errorw("could not unmarshal RTP packet", err)
-		return
+	if rtpPacket == nil {
+		rtpPacket = &rtp.Packet{}
+		if err := rtpPacket.Unmarshal(rawPkt); err != nil {
+			b.logger.Errorw("could not unmarshal RTP packet", err)
+			return
+		}
 	}
 
 	// process header extensions always as padding packets could be used for probing
-	b.processHeaderExtensions(&rtpPacket, arrivalTime)
+	b.processHeaderExtensions(rtpPacket, arrivalTime, isRTX)
 
-	flowState := b.updateStreamState(&rtpPacket, arrivalTime)
+	flowState := b.updateStreamState(rtpPacket, arrivalTime)
 	if flowState.IsNotHandled {
 		return
 	}
@@ -457,10 +537,6 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 				b.logger.Errorw("could not exclude range", err, "sn", rtpPacket.SequenceNumber, "esn", flowState.ExtSequenceNumber)
 			}
 		}
-		// TODO-VP9-DEBUG-REMOVE-START
-		snAdjustment, err := b.snRangeMap.GetValue(flowState.ExtSequenceNumber)
-		b.logger.Debugw("dropping padding packet", "sn", rtpPacket.SequenceNumber, "osn", flowState.ExtSequenceNumber, "msn", flowState.ExtSequenceNumber-snAdjustment, "error", err)
-		// TODO-VP9-DEBUG-REMOVE-END
 		return
 	}
 
@@ -472,7 +548,7 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 	}
 	flowState.ExtSequenceNumber -= snAdjustment
 	rtpPacket.Header.SequenceNumber = uint16(flowState.ExtSequenceNumber)
-	_, err = b.bucket.AddPacketWithSequenceNumber(pkt, rtpPacket.Header.SequenceNumber)
+	_, err = b.bucket.AddPacketWithSequenceNumber(rawPkt, rtpPacket.Header.SequenceNumber)
 	if err != nil {
 		if errors.Is(err, bucket.ErrPacketTooOld) {
 			packetTooOldCount := b.packetTooOldCount.Inc()
@@ -485,11 +561,17 @@ func (b *Buffer) calc(pkt []byte, arrivalTime time.Time) {
 		return
 	}
 
-	ep := b.getExtPacket(&rtpPacket, arrivalTime, flowState)
+	ep := b.getExtPacket(rtpPacket, arrivalTime, flowState)
 	if ep == nil {
 		return
 	}
 	b.extPackets.PushBack(ep)
+
+	if b.extPackets.Len() > b.bucket.Capacity() {
+		if (b.extPacketTooMuchCount.Inc()-1)%100 == 0 {
+			b.logger.Warnw("too much ext packets", nil, "count", b.extPackets.Len())
+		}
+	}
 
 	b.doFpsCalc(ep)
 }
@@ -498,7 +580,7 @@ func (b *Buffer) patchExtPacket(ep *ExtPacket, buf []byte) *ExtPacket {
 	n, err := b.getPacket(buf, ep.Packet.SequenceNumber)
 	if err != nil {
 		packetNotFoundCount := b.packetNotFoundCount.Inc()
-		if packetNotFoundCount%20 == 0 {
+		if (packetNotFoundCount-1)%20 == 0 {
 			b.logger.Warnw("could not get packet from bucket", err, "sn", ep.Packet.SequenceNumber, "headSN", b.bucket.HeadSequenceNumber(), "count", packetNotFoundCount)
 		}
 		return nil
@@ -579,16 +661,9 @@ func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime time.Time) RTPFlow
 	return flowState
 }
 
-func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime time.Time) {
-	// submit to TWCC even if it is a padding only packet. Clients use padding only packets as probes
-	// for bandwidth estimation
-	if b.twcc != nil && b.twccExt != 0 {
-		if ext := p.GetExtension(b.twccExt); ext != nil {
-			b.twcc.Push(binary.BigEndian.Uint16(ext[0:2]), arrivalTime.UnixNano(), p.Marker)
-		}
-	}
+func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime time.Time, isRTX bool) {
 
-	if b.audioLevelExt != 0 {
+	if b.audioLevelExt != 0 && !isRTX {
 		if !b.latestTSForAudioLevelInitialized {
 			b.latestTSForAudioLevelInitialized = true
 			b.latestTSForAudioLevel = p.Timestamp

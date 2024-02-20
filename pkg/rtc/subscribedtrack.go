@@ -21,10 +21,12 @@ import (
 	"github.com/bep/debounce"
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
+	"google.golang.org/protobuf/proto"
 
 	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
@@ -47,17 +49,20 @@ type SubscribedTrackParams struct {
 
 type SubscribedTrack struct {
 	params           SubscribedTrackParams
-	subMuted         atomic.Bool
-	pubMuted         atomic.Bool
-	settings         atomic.Pointer[livekit.UpdateTrackSettings]
 	logger           logger.Logger
 	sender           atomic.Pointer[webrtc.RTPSender]
 	needsNegotiation atomic.Bool
 
+	versionGenerator utils.TimedVersionGenerator
+	settingsLock     sync.Mutex
+	settings         *livekit.UpdateTrackSettings
+	settingsVersion  *utils.TimedVersion
+
 	bindLock        sync.Mutex
+	bound           bool
 	onBindCallbacks []func(error)
-	onClose         atomic.Value // func(bool)
-	bound           atomic.Bool
+
+	onClose atomic.Value // func(bool)
 
 	debouncer func(func())
 }
@@ -70,7 +75,8 @@ func NewSubscribedTrack(params SubscribedTrackParams) *SubscribedTrack {
 			"publisherID", params.PublisherID,
 			"publisher", params.PublisherIdentity,
 		),
-		debouncer: debounce.New(subscriptionDebounceInterval),
+		versionGenerator: utils.NewDefaultTimedVersionGenerator(),
+		debouncer:        debounce.New(subscriptionDebounceInterval),
 	}
 
 	return s
@@ -78,7 +84,7 @@ func NewSubscribedTrack(params SubscribedTrackParams) *SubscribedTrack {
 
 func (t *SubscribedTrack) AddOnBind(f func(error)) {
 	t.bindLock.Lock()
-	bound := t.bound.Load()
+	bound := t.bound
 	if !bound {
 		t.onBindCallbacks = append(t.onBindCallbacks, f)
 	}
@@ -94,7 +100,7 @@ func (t *SubscribedTrack) AddOnBind(f func(error)) {
 func (t *SubscribedTrack) Bound(err error) {
 	t.bindLock.Lock()
 	if err == nil {
-		t.bound.Store(true)
+		t.bound = true
 	}
 	callbacks := t.onBindCallbacks
 	t.onBindCallbacks = nil
@@ -110,17 +116,21 @@ func (t *SubscribedTrack) Bound(err error) {
 		//    time of subscription, we might not be able to trigger adaptive stream updates on the client side
 		//    (since there isn't any video frames coming through). this will leave the stream "stuck" on off, without
 		//    a trigger to re-enable it
-		var desiredLayer int32
-		if t.params.AdaptiveStream {
-			desiredLayer = buffer.VideoQualityToSpatialLayer(livekit.VideoQuality_LOW, t.params.MediaTrack.ToProto())
+		t.settingsLock.Lock()
+		if t.settings != nil {
+			if t.params.AdaptiveStream {
+				// remove `disabled` flag to force a visibility update
+				t.settings.Disabled = false
+			}
 		} else {
-			desiredLayer = buffer.VideoQualityToSpatialLayer(livekit.VideoQuality_HIGH, t.params.MediaTrack.ToProto())
+			if t.params.AdaptiveStream {
+				t.settings = &livekit.UpdateTrackSettings{Quality: livekit.VideoQuality_LOW}
+			} else {
+				t.settings = &livekit.UpdateTrackSettings{Quality: livekit.VideoQuality_HIGH}
+			}
 		}
-		settings := t.settings.Load()
-		if settings != nil {
-			desiredLayer = t.spatialLayerFromSettings(settings)
-		}
-		t.DownTrack().SetMaxSpatialLayer(desiredLayer)
+		t.settingsLock.Unlock()
+		t.applySettings()
 	}
 
 	for _, cb := range callbacks {
@@ -140,7 +150,10 @@ func (t *SubscribedTrack) OnClose(f func(bool)) {
 }
 
 func (t *SubscribedTrack) IsBound() bool {
-	return t.bound.Load()
+	t.bindLock.Lock()
+	defer t.bindLock.Unlock()
+
+	return t.bound
 }
 
 func (t *SubscribedTrack) ID() livekit.TrackID {
@@ -181,47 +194,97 @@ func (t *SubscribedTrack) MediaTrack() types.MediaTrack {
 
 // has subscriber indicated it wants to mute this track
 func (t *SubscribedTrack) IsMuted() bool {
-	return t.subMuted.Load()
+	t.settingsLock.Lock()
+	defer t.settingsLock.Unlock()
+
+	return t.isMutedLocked()
+}
+
+func (t *SubscribedTrack) isMutedLocked() bool {
+	if t.settings == nil {
+		return false
+	}
+
+	return t.settings.Disabled
 }
 
 func (t *SubscribedTrack) SetPublisherMuted(muted bool) {
-	t.pubMuted.Store(muted)
-	t.updateDownTrackMute()
+	t.DownTrack().PubMute(muted)
 }
 
-func (t *SubscribedTrack) UpdateSubscriberSettings(settings *livekit.UpdateTrackSettings) {
-	prevDisabled := t.subMuted.Swap(settings.Disabled)
-	t.settings.Store(settings)
-
-	if prevDisabled != settings.Disabled {
-		t.logger.Debugw("updated subscribed track enabled", "enabled", !settings.Disabled)
+func (t *SubscribedTrack) UpdateSubscriberSettings(settings *livekit.UpdateTrackSettings, isImmediate bool) {
+	t.settingsLock.Lock()
+	if proto.Equal(t.settings, settings) {
+		t.settingsLock.Unlock()
+		return
 	}
 
-	// avoid frequent changes to mute & video layers, unless it became visible
-	if prevDisabled != settings.Disabled && !settings.Disabled {
-		t.UpdateVideoLayer()
+	isImmediate = isImmediate || (!settings.Disabled && settings.Disabled != t.isMutedLocked())
+	t.settings = proto.Clone(settings).(*livekit.UpdateTrackSettings)
+	t.settingsLock.Unlock()
+
+	if isImmediate {
+		t.applySettings()
 	} else {
-		t.debouncer(t.UpdateVideoLayer)
+		// avoid frequent changes to mute & video layers, unless it became visible
+		t.debouncer(t.applySettings)
 	}
 }
 
 func (t *SubscribedTrack) UpdateVideoLayer() {
-	t.updateDownTrackMute()
-	if t.DownTrack().Kind() != webrtc.RTPCodecTypeVideo {
+	t.applySettings()
+}
+
+func (t *SubscribedTrack) applySettings() {
+	t.settingsLock.Lock()
+	if t.settings == nil {
+		t.settingsLock.Unlock()
 		return
 	}
 
-	settings := t.settings.Load()
-	if settings == nil || settings.Disabled {
+	t.logger.Debugw("updating subscriber track settings", "settings", logger.Proto(t.settings))
+	t.settingsVersion = t.versionGenerator.New()
+	settingsVersion := t.settingsVersion
+	t.settingsLock.Unlock()
+
+	dt := t.DownTrack()
+	spatial := buffer.InvalidLayerSpatial
+	temporal := buffer.InvalidLayerTemporal
+	if dt.Kind() == webrtc.RTPCodecTypeVideo {
+		mt := t.MediaTrack()
+		quality := t.settings.Quality
+		if t.settings.Width > 0 {
+			quality = mt.GetQualityForDimension(t.settings.Width, t.settings.Height)
+		}
+
+		spatial = buffer.VideoQualityToSpatialLayer(quality, mt.ToProto())
+		if t.settings.Fps > 0 {
+			temporal = mt.GetTemporalLayerForSpatialFps(spatial, t.settings.Fps, dt.Codec().MimeType)
+		}
+	}
+
+	t.settingsLock.Lock()
+	if settingsVersion.Compare(t.settingsVersion) != 0 {
+		// a newer settings has superceded this one
+		t.settingsLock.Unlock()
 		return
 	}
 
-	t.logger.Debugw("updating video layer", "settings", settings)
-	spatial := t.spatialLayerFromSettings(settings)
-	t.DownTrack().SetMaxSpatialLayer(spatial)
-	if settings.Fps > 0 {
-		t.DownTrack().SetMaxTemporalLayer(t.MediaTrack().GetTemporalLayerForSpatialFps(spatial, settings.Fps, t.DownTrack().Codec().MimeType))
+	if t.settings.Disabled {
+		dt.Mute(true)
+		t.settingsLock.Unlock()
+		return
+	} else {
+		dt.Mute(false)
 	}
+
+	if dt.Kind() == webrtc.RTPCodecTypeVideo {
+		dt.SetMaxSpatialLayer(spatial)
+		if temporal != buffer.InvalidLayerTemporal {
+			dt.SetMaxTemporalLayer(temporal)
+		}
+	}
+	t.settingsLock.Unlock()
 }
 
 func (t *SubscribedTrack) NeedsNegotiation() bool {
@@ -238,18 +301,4 @@ func (t *SubscribedTrack) RTPSender() *webrtc.RTPSender {
 
 func (t *SubscribedTrack) SetRTPSender(sender *webrtc.RTPSender) {
 	t.sender.Store(sender)
-}
-
-func (t *SubscribedTrack) updateDownTrackMute() {
-	t.DownTrack().Mute(t.subMuted.Load())
-	t.DownTrack().PubMute(t.pubMuted.Load())
-}
-
-func (t *SubscribedTrack) spatialLayerFromSettings(settings *livekit.UpdateTrackSettings) int32 {
-	quality := settings.Quality
-	if settings.Width > 0 {
-		quality = t.MediaTrack().GetQualityForDimension(settings.Width, settings.Height)
-	}
-
-	return buffer.VideoQualityToSpatialLayer(quality, t.params.MediaTrack.ToProto())
 }
