@@ -76,7 +76,7 @@ type Config struct {
 	Region         string                   `yaml:"region,omitempty"`
 	SignalRelay    SignalRelayConfig        `yaml:"signal_relay,omitempty"`
 	PSRPC          rpc.PSRPCConfig          `yaml:"psrpc,omitempty"`
-	// LogLevel is deprecated
+	// Deprecated: LogLevel is deprecated
 	LogLevel string        `yaml:"log_level,omitempty"`
 	Logging  LoggingConfig `yaml:"logging,omitempty"`
 	Limit    LimitConfig   `yaml:"limit,omitempty"`
@@ -91,9 +91,11 @@ type RTCConfig struct {
 
 	StrictACKs bool `yaml:"strict_acks,omitempty"`
 
-	// Number of packets to buffer for NACK
-	PacketBufferSize      int `yaml:"packet_buffer_size,omitempty"`
+	// Deprecated: use PacketBufferSizeVideo and PacketBufferSizeAudio
+	PacketBufferSize int `yaml:"packet_buffer_size,omitempty"`
+	// Number of packets to buffer for NACK - video
 	PacketBufferSizeVideo int `yaml:"packet_buffer_size_video,omitempty"`
+	// Number of packets to buffer for NACK - audio
 	PacketBufferSizeAudio int `yaml:"packet_buffer_size_audio,omitempty"`
 
 	// Throttle periods for pli/fir rtcp packets

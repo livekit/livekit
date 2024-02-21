@@ -94,11 +94,9 @@ rtc:
   #   allow_pause: true
   # # allows automatic connection fallback to TCP and TURN/TLS (if configured) when UDP has been unstable, default true
   # allow_tcp_fallback: true
-  # # number of packets to buffer in the SFU, defaults to 500
-  # packet_buffer_size: 500
-  # # number of packets to buffer in the SFU for video, defaults to 500, uses packet_buffer_size if not set
+  # # number of packets to buffer in the SFU for video, defaults to 500
   # packet_buffer_size_video: 500
-  # # number of packets to buffer in the SFU for audio, defaults to 200, uses packet_buffer_size if not set
+  # # number of packets to buffer in the SFU for audio, defaults to 200
   # packet_buffer_size_audio: 200
   # # minimum amount of time between pli/fir rtcp packets being sent to an individual
   # # producer. Increasing these times can lead to longer black screens when new participants join,
