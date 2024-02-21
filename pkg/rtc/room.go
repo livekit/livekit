@@ -87,7 +87,7 @@ type Room struct {
 	joinedAt atomic.Int64
 	// time that the last participant left the room
 	leftAt atomic.Int64
-	holds    atomic.Int32
+	holds  atomic.Int32
 
 	lock sync.RWMutex
 
@@ -164,7 +164,7 @@ func NewRoom(
 		participantOpts:                      make(map[livekit.ParticipantIdentity]*ParticipantOptions),
 		participantRequestSources:            make(map[livekit.ParticipantIdentity]routing.MessageSource),
 		hasPublished:                         make(map[livekit.ParticipantIdentity]bool),
-		bufferFactory:                        buffer.NewFactoryOfBufferFactory(config.Receiver.PacketBufferSize),
+		bufferFactory:                        buffer.NewFactoryOfBufferFactory(config.Receiver.PacketBufferSizeVideo, config.Receiver.PacketBufferSizeAudio),
 		batchedUpdates:                       make(map[livekit.ParticipantIdentity]*participantUpdate),
 		closed:                               make(chan struct{}),
 		trailer:                              []byte(utils.RandomSecret()),

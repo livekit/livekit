@@ -96,6 +96,10 @@ rtc:
   # allow_tcp_fallback: true
   # # number of packets to buffer in the SFU, defaults to 500
   # packet_buffer_size: 500
+  # # number of packets to buffer in the SFU for video, defaults to 500, uses packet_buffer_size if not set
+  # packet_buffer_size_video: 500
+  # # number of packets to buffer in the SFU for audio, defaults to 200, uses packet_buffer_size if not set
+  # packet_buffer_size_audio: 200
   # # minimum amount of time between pli/fir rtcp packets being sent to an individual
   # # producer. Increasing these times can lead to longer black screens when new participants join,
   # # while reducing them can lead to higher stream bitrate.
@@ -309,4 +313,3 @@ keys:
 #   # value less or equal than 0 means no limit.
 #   subscription_limit_video: 0
 #   subscription_limit_audio: 0
-

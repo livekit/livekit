@@ -92,7 +92,9 @@ type RTCConfig struct {
 	StrictACKs bool `yaml:"strict_acks,omitempty"`
 
 	// Number of packets to buffer for NACK
-	PacketBufferSize int `yaml:"packet_buffer_size,omitempty"`
+	PacketBufferSize      int `yaml:"packet_buffer_size,omitempty"`
+	PacketBufferSizeVideo int `yaml:"packet_buffer_size_video,omitempty"`
+	PacketBufferSizeAudio int `yaml:"packet_buffer_size_audio,omitempty"`
 
 	// Throttle periods for pli/fir rtcp packets
 	PLIThrottle PLIThrottleConfig `yaml:"pli_throttle,omitempty"`
@@ -327,8 +329,10 @@ var DefaultConfig = Config{
 			ICEPortRangeEnd:   0,
 			STUNServers:       []string{},
 		},
-		PacketBufferSize: 500,
-		StrictACKs:       true,
+		PacketBufferSize:      500,
+		PacketBufferSizeVideo: 500,
+		PacketBufferSizeAudio: 200,
+		StrictACKs:            true,
 		PLIThrottle: PLIThrottleConfig{
 			LowQuality:  500 * time.Millisecond,
 			MidQuality:  time.Second,
