@@ -731,7 +731,7 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 	if err != nil {
 		panic(err)
 	}
-	ff := buffer.NewFactoryOfBufferFactory(500)
+	ff := buffer.NewFactoryOfBufferFactory(500, 200)
 	rtcConf.SetBufferFactory(ff.CreateBufferFactory())
 	grants := &auth.ClaimGrants{
 		Video: &auth.VideoGrant{},

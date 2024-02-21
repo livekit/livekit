@@ -28,17 +28,17 @@ type FactoryOfBufferFactory struct {
 	audioPool *sync.Pool
 }
 
-func NewFactoryOfBufferFactory(trackingPackets int) *FactoryOfBufferFactory {
+func NewFactoryOfBufferFactory(trackingPacketsVideo int, trackingPacketsAudio int) *FactoryOfBufferFactory {
 	return &FactoryOfBufferFactory{
 		videoPool: &sync.Pool{
 			New: func() interface{} {
-				b := make([]byte, trackingPackets*bucket.MaxPktSize)
+				b := make([]byte, trackingPacketsVideo*bucket.MaxPktSize)
 				return &b
 			},
 		},
 		audioPool: &sync.Pool{
 			New: func() interface{} {
-				b := make([]byte, bucket.MaxPktSize*200)
+				b := make([]byte, trackingPacketsAudio*bucket.MaxPktSize)
 				return &b
 			},
 		},
