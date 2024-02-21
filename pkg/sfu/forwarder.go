@@ -1704,20 +1704,6 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 			if tpRTP, err := f.rtpMunger.UpdateAndGetSnTs(extPkt, result.RTPMarker); err == nil {
 				if tpRTP.snOrdering == SequenceNumberOrderingContiguous {
 					f.rtpMunger.PacketDropped(extPkt)
-				} else {
-					// TODO-VP9-DEBUG-REMOVE-START
-					f.logger.Debugw(
-						"dropping packet skipped as not contiguous",
-						"isn", extPkt.ExtSequenceNumber,
-						"its", extPkt.ExtTimestamp,
-						"osn", tpRTP.extSequenceNumber,
-						"ots", tpRTP.extTimestamp,
-						"payloadLen", len(extPkt.Packet.Payload),
-						"sid", extPkt.Spatial,
-						"tid", extPkt.Temporal,
-						"snOrdering", tpRTP.snOrdering,
-					)
-					// TODO-VP9-DEBUG-REMOVE-END
 				}
 			}
 		}
