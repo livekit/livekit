@@ -40,7 +40,8 @@ type DynacastManager struct {
 	maxSubscribedQuality          map[string]livekit.VideoQuality
 	committedMaxSubscribedQuality map[string]livekit.VideoQuality
 
-	maxSubscribedQualityDebounce func(func())
+	maxSubscribedQualityDebounce        func(func())
+	maxSubscribedQualityDebouncePending bool
 
 	qualityNotifyOpQueue *utils.OpsQueue
 
@@ -223,13 +224,21 @@ func (d *DynacastManager) update(force bool) {
 		}
 
 		if downgradesOnly {
-			d.params.Logger.Debugw("debouncing quality downgrade",
-				"committedMaxSubscribedQuality", d.committedMaxSubscribedQuality,
-				"maxSubscribedQuality", d.maxSubscribedQuality,
-			)
-			d.maxSubscribedQualityDebounce(func() {
-				d.update(true)
-			})
+			if !d.maxSubscribedQualityDebouncePending {
+				d.params.Logger.Debugw("debouncing quality downgrade",
+					"committedMaxSubscribedQuality", d.committedMaxSubscribedQuality,
+					"maxSubscribedQuality", d.maxSubscribedQuality,
+				)
+				d.maxSubscribedQualityDebounce(func() {
+					d.update(true)
+				})
+				d.maxSubscribedQualityDebouncePending = true
+			} else {
+				d.params.Logger.Debugw("quality downgrade waiting for debounce",
+					"committedMaxSubscribedQuality", d.committedMaxSubscribedQuality,
+					"maxSubscribedQuality", d.maxSubscribedQuality,
+				)
+			}
 			d.lock.Unlock()
 			return
 		}
@@ -237,6 +246,7 @@ func (d *DynacastManager) update(force bool) {
 
 	// clear debounce on send
 	d.maxSubscribedQualityDebounce(func() {})
+	d.maxSubscribedQualityDebouncePending = false
 
 	d.params.Logger.Debugw("committing quality change",
 		"force", force,
