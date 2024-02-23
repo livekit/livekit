@@ -733,6 +733,7 @@ func (p *ParticipantImpl) removePendingMigratedTrack(mt *MediaTrack) {
 	for i, t := range p.pendingMigratedTracks {
 		if t == mt {
 			p.pendingMigratedTracks[i] = p.pendingMigratedTracks[len(p.pendingMigratedTracks)-1]
+			p.pendingMigratedTracks[len(p.pendingMigratedTracks)-1] = nil
 			p.pendingMigratedTracks = p.pendingMigratedTracks[:len(p.pendingMigratedTracks)-1]
 			break
 		}
