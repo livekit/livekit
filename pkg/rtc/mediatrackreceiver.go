@@ -259,6 +259,7 @@ func (t *MediaTrackReceiver) ClearReceiver(mime string, willBeResumed bool) {
 	for idx, receiver := range receivers {
 		if strings.EqualFold(receiver.Codec().MimeType, mime) {
 			receivers[idx] = receivers[len(receivers)-1]
+			receivers[len(receivers)-1] = nil
 			receivers = receivers[:len(receivers)-1]
 			break
 		}
