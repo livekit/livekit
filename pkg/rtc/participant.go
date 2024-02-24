@@ -172,8 +172,6 @@ type ParticipantImpl struct {
 	pendingTracksLock       utils.RWMutex
 	pendingTracks           map[string]*pendingTrackInfo
 	pendingPublishingTracks map[livekit.TrackID]*pendingTrackInfo
-	// migrated in tracks that have not fired need close at participant close
-	pendingMigratedTracks []*MediaTrack
 
 	// supported codecs
 	enabledPublishCodecs   []*livekit.Codec
@@ -714,7 +712,6 @@ func (p *ParticipantImpl) handleMigrateTracks() {
 			p.pubLogger.Warnw("could not find migrated track", nil, "cid", cid)
 		}
 	}
-	p.pendingMigratedTracks = append(p.pendingMigratedTracks, addedTracks...)
 
 	if len(addedTracks) != 0 {
 		p.dirty.Store(true)
@@ -728,19 +725,6 @@ func (p *ParticipantImpl) handleMigrateTracks() {
 			p.handleTrackPublished(t)
 		}
 	}()
-}
-
-func (p *ParticipantImpl) removePendingMigratedTrack(mt *MediaTrack) {
-	p.pendingTracksLock.Lock()
-	for i, t := range p.pendingMigratedTracks {
-		if t == mt {
-			p.pendingMigratedTracks[i] = p.pendingMigratedTracks[len(p.pendingMigratedTracks)-1]
-			p.pendingMigratedTracks[len(p.pendingMigratedTracks)-1] = nil
-			p.pendingMigratedTracks = p.pendingMigratedTracks[:len(p.pendingMigratedTracks)-1]
-			break
-		}
-	}
-	p.pendingTracksLock.Unlock()
 }
 
 // AddTrack is called when client intends to publish track.
@@ -813,13 +797,8 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 
 	p.pendingTracksLock.Lock()
 	p.pendingTracks = make(map[string]*pendingTrackInfo)
-	pendingMigratedTracksToClose := p.pendingMigratedTracks
-	p.pendingMigratedTracks = p.pendingMigratedTracks[:0]
+	p.pendingPublishingTracks = make(map[livekit.TrackID]*pendingTrackInfo)
 	p.pendingTracksLock.Unlock()
-
-	for _, t := range pendingMigratedTracksToClose {
-		t.Close(isExpectedToResume)
-	}
 
 	p.UpTrackManager.Close(isExpectedToResume)
 
@@ -1967,9 +1946,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 
 	p.pendingTracksLock.Unlock()
 
-	if mt.AddReceiver(rtpReceiver, track, mid) {
-		p.removePendingMigratedTrack(mt)
-	}
+	mt.AddReceiver(rtpReceiver, track, mid)
 
 	if newTrack {
 		go func() {
