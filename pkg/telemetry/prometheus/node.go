@@ -23,6 +23,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/rpc"
 )
 
 const (
@@ -108,7 +109,7 @@ func Init(nodeID string, nodeType livekit.NodeType, env string) {
 
 	initPacketStats(nodeID, nodeType, env)
 	initRoomStats(nodeID, nodeType, env)
-	initPSRPCStats(nodeID, nodeType, env)
+	rpc.InitPSRPCStats(prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String(), "env": env})
 	initQualityStats(nodeID, nodeType, env)
 }
 

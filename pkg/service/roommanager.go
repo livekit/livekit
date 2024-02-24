@@ -32,6 +32,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/must"
 	"github.com/livekit/psrpc"
 
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
@@ -455,7 +456,7 @@ func (r *RoomManager) StartSession(
 	}
 
 	participantTopic := rpc.FormatParticipantTopic(roomName, participant.Identity())
-	participantServer := utils.Must(rpc.NewTypedParticipantServer(r, r.bus))
+	participantServer := must.Get(rpc.NewTypedParticipantServer(r, r.bus))
 	killParticipantServer := r.participantServers.Replace(participantTopic, participantServer)
 	if err := participantServer.RegisterAllParticipantTopics(participantTopic); err != nil {
 		killParticipantServer()
@@ -547,7 +548,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 	newRoom := rtc.NewRoom(ri, internal, *r.rtcConfig, &r.config.Audio, r.serverInfo, r.telemetry, r.agentClient, r.egressLauncher)
 
 	roomTopic := rpc.FormatRoomTopic(roomName)
-	roomServer := utils.Must(rpc.NewTypedRoomServer(r, r.bus))
+	roomServer := must.Get(rpc.NewTypedRoomServer(r, r.bus))
 	killRoomServer := r.roomServers.Replace(roomTopic, roomServer)
 	if err := roomServer.RegisterAllRoomTopics(roomTopic); err != nil {
 		killRoomServer()
