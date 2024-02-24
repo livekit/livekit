@@ -168,16 +168,12 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 		// owner for the data, we'd prefer to use their TimedVersion
 		// ignore older version
 		if !timedVersion.After(&u.subscriptionPermissionVersion) {
-			perms := ""
-			if u.subscriptionPermission != nil {
-				perms = u.subscriptionPermission.String()
-			}
 			u.params.Logger.Debugw(
 				"skipping older subscription permission version",
-				"existingValue", perms,
-				"existingVersion", u.subscriptionPermissionVersion.String(),
+				"existingValue", logger.Proto(u.subscriptionPermission),
+				"existingVersion", &u.subscriptionPermissionVersion,
 				"requestingValue", logger.Proto(subscriptionPermission),
-				"requestingVersion", timedVersion.String(),
+				"requestingVersion", &timedVersion,
 			)
 			u.lock.Unlock()
 			return nil
@@ -193,7 +189,7 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 	if subscriptionPermission == nil {
 		u.params.Logger.Debugw(
 			"updating subscription permission, setting to nil",
-			"version", u.subscriptionPermissionVersion.String(),
+			"version", &u.subscriptionPermissionVersion,
 		)
 		// possible to get a nil when migrating
 		u.lock.Unlock()
@@ -203,7 +199,7 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 	u.params.Logger.Debugw(
 		"updating subscription permission",
 		"permissions", logger.Proto(u.subscriptionPermission),
-		"version", u.subscriptionPermissionVersion.String(),
+		"version", &u.subscriptionPermissionVersion,
 	)
 	if err := u.parseSubscriptionPermissionsLocked(subscriptionPermission, func(pID livekit.ParticipantID) types.LocalParticipant {
 		u.lock.Unlock()
