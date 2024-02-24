@@ -35,7 +35,6 @@ import (
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	protopsrpc "github.com/livekit/protocol/psrpc"
 	redisLiveKit "github.com/livekit/protocol/redis"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
@@ -233,7 +232,7 @@ func getPSRPCConfig(config *config.Config) rpc.PSRPCConfig {
 }
 
 func getPSRPCClientParams(config rpc.PSRPCConfig, bus psrpc.MessageBus) rpc.ClientParams {
-	return rpc.NewClientParams(config, bus, logger.GetLogger(), protopsrpc.PSRPCMetricsObserver{})
+	return rpc.NewClientParams(config, bus, logger.GetLogger(), rpc.PSRPCMetricsObserver{})
 }
 
 func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Server, error) {
