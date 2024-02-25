@@ -247,7 +247,7 @@ func (f *Forwarder) SetMaxPublishedLayer(maxPublishedLayer int32) bool {
 	}
 
 	f.vls.SetMaxSeenSpatial(maxPublishedLayer)
-	f.logger.Debugw("setting max published layer", "maxPublishedLayer", maxPublishedLayer)
+	f.logger.Debugw("setting max published layer", "layer", maxPublishedLayer)
 	return true
 }
 
