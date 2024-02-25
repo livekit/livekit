@@ -52,9 +52,9 @@ https://docs.livekit.io
 - [AI voice assistant using ChatGPT](https://livekit.io/kitt) ([source](https://github.com/livekit-examples/kitt))
 
 ## Ecosystem
-- [Agents](https://github.com/livekit/agents) - build real-time multimodal AI applications with programmable backend participants
+- [Agents](https://github.com/livekit/agents): build real-time multimodal AI applications with programmable backend participants
 - [Egress](https://github.com/livekit/egress): record or multi-stream rooms and export individual tracks
-- [Ingress](https://github.com/livekit/ingress) - ingest streams from external sources like RTMP, WHIP, HLS, or OBS Studio
+- [Ingress](https://github.com/livekit/ingress): ingest streams from external sources like RTMP, WHIP, HLS, or OBS Studio
 
 ## SDKs & Tools
 
