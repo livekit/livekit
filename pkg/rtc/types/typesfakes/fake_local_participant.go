@@ -627,12 +627,11 @@ type FakeLocalParticipant struct {
 	protocolVersionReturnsOnCall map[int]struct {
 		result1 types.ProtocolVersion
 	}
-	RemovePublishedTrackStub        func(types.MediaTrack, bool, bool)
+	RemovePublishedTrackStub        func(types.MediaTrack, bool)
 	removePublishedTrackMutex       sync.RWMutex
 	removePublishedTrackArgsForCall []struct {
 		arg1 types.MediaTrack
 		arg2 bool
-		arg3 bool
 	}
 	RemoveTrackFromSubscriberStub        func(*webrtc.RTPSender) error
 	removeTrackFromSubscriberMutex       sync.RWMutex
@@ -4267,18 +4266,17 @@ func (fake *FakeLocalParticipant) ProtocolVersionReturnsOnCall(i int, result1 ty
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) RemovePublishedTrack(arg1 types.MediaTrack, arg2 bool, arg3 bool) {
+func (fake *FakeLocalParticipant) RemovePublishedTrack(arg1 types.MediaTrack, arg2 bool) {
 	fake.removePublishedTrackMutex.Lock()
 	fake.removePublishedTrackArgsForCall = append(fake.removePublishedTrackArgsForCall, struct {
 		arg1 types.MediaTrack
 		arg2 bool
-		arg3 bool
-	}{arg1, arg2, arg3})
+	}{arg1, arg2})
 	stub := fake.RemovePublishedTrackStub
-	fake.recordInvocation("RemovePublishedTrack", []interface{}{arg1, arg2, arg3})
+	fake.recordInvocation("RemovePublishedTrack", []interface{}{arg1, arg2})
 	fake.removePublishedTrackMutex.Unlock()
 	if stub != nil {
-		fake.RemovePublishedTrackStub(arg1, arg2, arg3)
+		fake.RemovePublishedTrackStub(arg1, arg2)
 	}
 }
 
@@ -4288,17 +4286,17 @@ func (fake *FakeLocalParticipant) RemovePublishedTrackCallCount() int {
 	return len(fake.removePublishedTrackArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) RemovePublishedTrackCalls(stub func(types.MediaTrack, bool, bool)) {
+func (fake *FakeLocalParticipant) RemovePublishedTrackCalls(stub func(types.MediaTrack, bool)) {
 	fake.removePublishedTrackMutex.Lock()
 	defer fake.removePublishedTrackMutex.Unlock()
 	fake.RemovePublishedTrackStub = stub
 }
 
-func (fake *FakeLocalParticipant) RemovePublishedTrackArgsForCall(i int) (types.MediaTrack, bool, bool) {
+func (fake *FakeLocalParticipant) RemovePublishedTrackArgsForCall(i int) (types.MediaTrack, bool) {
 	fake.removePublishedTrackMutex.RLock()
 	defer fake.removePublishedTrackMutex.RUnlock()
 	argsForCall := fake.removePublishedTrackArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeLocalParticipant) RemoveTrackFromSubscriber(arg1 *webrtc.RTPSender) error {

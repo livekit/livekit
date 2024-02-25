@@ -46,8 +46,8 @@ type UpTrackManager struct {
 	closed bool
 
 	// publishedTracks that participant is publishing
-	publishedTracks               map[livekit.TrackID]types.MediaTrack
-	subscriptionPermission        *livekit.SubscriptionPermission
+	publishedTracks        map[livekit.TrackID]types.MediaTrack
+	subscriptionPermission *livekit.SubscriptionPermission
 	// subscriber permission for published tracks
 	subscriberPermissions map[livekit.ParticipantIdentity]*livekit.TrackPermission // subscriberIdentity => *livekit.TrackPermission
 
@@ -268,12 +268,8 @@ func (u *UpTrackManager) AddPublishedTrack(track types.MediaTrack) {
 	})
 }
 
-func (u *UpTrackManager) RemovePublishedTrack(track types.MediaTrack, willBeResumed bool, shouldClose bool) {
-	if shouldClose {
-		track.Close(willBeResumed)
-	} else {
-		track.ClearAllReceivers(willBeResumed)
-	}
+func (u *UpTrackManager) RemovePublishedTrack(track types.MediaTrack, willBeResumed bool) {
+	track.Close(willBeResumed)
 	u.lock.Lock()
 	delete(u.publishedTracks, track.ID())
 	u.lock.Unlock()

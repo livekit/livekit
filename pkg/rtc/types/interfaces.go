@@ -255,7 +255,7 @@ type Participant interface {
 	IsPublisher() bool
 	GetPublishedTrack(trackID livekit.TrackID) MediaTrack
 	GetPublishedTracks() []MediaTrack
-	RemovePublishedTrack(track MediaTrack, willBeResumed bool, shouldClose bool)
+	RemovePublishedTrack(track MediaTrack, willBeResumed bool)
 
 	GetAudioLevel() (smoothedLevel float64, active bool)
 
