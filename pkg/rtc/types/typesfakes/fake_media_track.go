@@ -28,11 +28,6 @@ type FakeMediaTrack struct {
 		result1 types.SubscribedTrack
 		result2 error
 	}
-	ClearAllReceiversStub        func(bool)
-	clearAllReceiversMutex       sync.RWMutex
-	clearAllReceiversArgsForCall []struct {
-		arg1 bool
-	}
 	CloseStub        func(bool)
 	closeMutex       sync.RWMutex
 	closeArgsForCall []struct {
@@ -376,38 +371,6 @@ func (fake *FakeMediaTrack) AddSubscriberReturnsOnCall(i int, result1 types.Subs
 		result1 types.SubscribedTrack
 		result2 error
 	}{result1, result2}
-}
-
-func (fake *FakeMediaTrack) ClearAllReceivers(arg1 bool) {
-	fake.clearAllReceiversMutex.Lock()
-	fake.clearAllReceiversArgsForCall = append(fake.clearAllReceiversArgsForCall, struct {
-		arg1 bool
-	}{arg1})
-	stub := fake.ClearAllReceiversStub
-	fake.recordInvocation("ClearAllReceivers", []interface{}{arg1})
-	fake.clearAllReceiversMutex.Unlock()
-	if stub != nil {
-		fake.ClearAllReceiversStub(arg1)
-	}
-}
-
-func (fake *FakeMediaTrack) ClearAllReceiversCallCount() int {
-	fake.clearAllReceiversMutex.RLock()
-	defer fake.clearAllReceiversMutex.RUnlock()
-	return len(fake.clearAllReceiversArgsForCall)
-}
-
-func (fake *FakeMediaTrack) ClearAllReceiversCalls(stub func(bool)) {
-	fake.clearAllReceiversMutex.Lock()
-	defer fake.clearAllReceiversMutex.Unlock()
-	fake.ClearAllReceiversStub = stub
-}
-
-func (fake *FakeMediaTrack) ClearAllReceiversArgsForCall(i int) bool {
-	fake.clearAllReceiversMutex.RLock()
-	defer fake.clearAllReceiversMutex.RUnlock()
-	argsForCall := fake.clearAllReceiversArgsForCall[i]
-	return argsForCall.arg1
 }
 
 func (fake *FakeMediaTrack) Close(arg1 bool) {
@@ -1739,8 +1702,6 @@ func (fake *FakeMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.addOnCloseMutex.RUnlock()
 	fake.addSubscriberMutex.RLock()
 	defer fake.addSubscriberMutex.RUnlock()
-	fake.clearAllReceiversMutex.RLock()
-	defer fake.clearAllReceiversMutex.RUnlock()
 	fake.closeMutex.RLock()
 	defer fake.closeMutex.RUnlock()
 	fake.getAllSubscribersMutex.RLock()
