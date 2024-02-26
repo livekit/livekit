@@ -59,8 +59,10 @@ func NewDynacastManager(params DynacastManagerParams) *DynacastManager {
 		dynacastQuality:               make(map[string]*DynacastQuality),
 		maxSubscribedQuality:          make(map[string]livekit.VideoQuality),
 		committedMaxSubscribedQuality: make(map[string]livekit.VideoQuality),
-		maxSubscribedQualityDebounce:  debounce.New(params.DynacastPauseDelay),
 		qualityNotifyOpQueue:          utils.NewOpsQueue("quality-notify", 64, true),
+	}
+	if params.DynacastPauseDelay > 0 {
+		d.maxSubscribedQualityDebounce = debounce.New(params.DynacastPauseDelay)
 	}
 	d.qualityNotifyOpQueue.Start()
 	return d
@@ -223,7 +225,7 @@ func (d *DynacastManager) update(force bool) {
 			return
 		}
 
-		if downgradesOnly {
+		if downgradesOnly && d.maxSubscribedQualityDebounce != nil {
 			if !d.maxSubscribedQualityDebouncePending {
 				d.params.Logger.Debugw("debouncing quality downgrade",
 					"committedMaxSubscribedQuality", d.committedMaxSubscribedQuality,
@@ -245,8 +247,10 @@ func (d *DynacastManager) update(force bool) {
 	}
 
 	// clear debounce on send
-	d.maxSubscribedQualityDebounce(func() {})
-	d.maxSubscribedQualityDebouncePending = false
+	if d.maxSubscribedQualityDebounce != nil {
+		d.maxSubscribedQualityDebounce(func() {})
+		d.maxSubscribedQualityDebouncePending = false
+	}
 
 	d.params.Logger.Debugw("committing quality change",
 		"force", force,
