@@ -464,7 +464,7 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 
 	if canSubscribe {
 		// reconcile everything
-		p.SubscriptionManager.queueReconcile("")
+		p.SubscriptionManager.ReconcileAll()
 	} else {
 		// revoke all subscriptions
 		for _, st := range p.SubscriptionManager.GetSubscribedTracks() {

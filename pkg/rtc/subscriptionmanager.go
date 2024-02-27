@@ -255,6 +255,10 @@ func (m *SubscriptionManager) WaitUntilSubscribed(timeout time.Duration) error {
 	return context.DeadlineExceeded
 }
 
+func (m *SubscriptionManager) ReconcileAll() {
+	m.queueReconcile(trackIDForReconcileSubscriptions)
+}
+
 func (m *SubscriptionManager) setDesired(trackID livekit.TrackID, desired bool) (*trackSubscription, bool) {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
@@ -628,9 +632,11 @@ func (m *SubscriptionManager) handleSubscribedTrackClose(s *trackSubscription, w
 	var relieveFromLimits bool
 	switch subTrack.MediaTrack().Kind() {
 	case livekit.TrackType_VIDEO:
-		relieveFromLimits = m.params.SubscriptionLimitVideo > 0 && m.subscribedVideoCount.Dec() == m.params.SubscriptionLimitVideo-1
+		videoCount := m.subscribedVideoCount.Dec()
+		relieveFromLimits = m.params.SubscriptionLimitVideo > 0 && videoCount == m.params.SubscriptionLimitVideo-1
 	case livekit.TrackType_AUDIO:
-		relieveFromLimits = m.params.SubscriptionLimitAudio > 0 && m.subscribedAudioCount.Dec() == m.params.SubscriptionLimitAudio-1
+		audioCount := m.subscribedAudioCount.Dec()
+		relieveFromLimits = m.params.SubscriptionLimitAudio > 0 && audioCount == m.params.SubscriptionLimitAudio-1
 	}
 
 	// remove from subscribedTo
