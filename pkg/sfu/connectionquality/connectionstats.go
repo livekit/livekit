@@ -23,9 +23,10 @@ import (
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
 
-	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
 const (
@@ -80,7 +81,6 @@ func NewConnectionStats(params ConnectionStatsParams) *ConnectionStats {
 			IncludeJitter:    params.IncludeJitter,
 			Logger:           params.Logger,
 		}),
-		done: core.NewFuse(),
 	}
 }
 

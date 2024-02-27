@@ -1,6 +1,6 @@
 module github.com/livekit/livekit-server
 
-go 1.20
+go 1.21
 
 require (
 	github.com/avast/retry-go/v4 v4.5.1
@@ -9,7 +9,7 @@ require (
 	github.com/dustin/go-humanize v1.0.1
 	github.com/elliotchance/orderedmap/v2 v2.2.0
 	github.com/florianl/go-tc v0.4.3
-	github.com/frostbyte73/core v0.0.9
+	github.com/frostbyte73/core v0.0.10
 	github.com/gammazero/deque v0.2.1
 	github.com/gammazero/workerpool v1.1.3
 	github.com/google/wire v0.6.0
@@ -19,8 +19,8 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20240206082112-9bf41dcbce76
-	github.com/livekit/protocol v1.9.10-0.20240224082149-454dff3b8175
-	github.com/livekit/psrpc v0.5.3-0.20240209001357-380f59f00c58
+	github.com/livekit/protocol v1.10.0
+	github.com/livekit/psrpc v0.5.3-0.20240227154351-b7f99eaaf7b3
 	github.com/mackerelio/go-osstat v0.2.4
 	github.com/magefile/mage v1.15.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.8.1
@@ -91,6 +91,7 @@ require (
 	github.com/prometheus/client_model v0.5.0 // indirect
 	github.com/prometheus/common v0.45.0 // indirect
 	github.com/prometheus/procfs v0.12.0 // indirect
+	github.com/puzpuzpuz/xsync v1.5.2 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
