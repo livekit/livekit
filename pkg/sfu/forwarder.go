@@ -1748,6 +1748,9 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 }
 
 func (f *Forwarder) TranslateCodecHeader(extPkt *buffer.ExtPacket, tpr *TranslationParamsRTP, outputBuffer []byte) (bool, int, int, error) {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
 	maybeRollback := func(isSwitching bool) {
 		if isSwitching {
 			f.vls.Rollback()
