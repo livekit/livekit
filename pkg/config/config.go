@@ -47,8 +47,9 @@ const (
 	StreamTrackerTypePacket StreamTrackerType = "packet"
 	StreamTrackerTypeFrame  StreamTrackerType = "frame"
 
-	StatsUpdateInterval          = time.Second * 10
-	TelemetryStatsUpdateInterval = time.Second * 30
+	StatsUpdateInterval                  = time.Second * 10
+	TelemetryStatsUpdateInterval         = time.Second * 30
+	TelemetryNonMediaStatsUpdateInterval = time.Minute * 5
 )
 
 var (
