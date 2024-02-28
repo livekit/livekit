@@ -348,6 +348,18 @@ func (r *rtpStatsBase) CheckAndUpdatePli(throttle int64, force bool) bool {
 	return true
 }
 
+func (r *rtpStatsBase) UpdatePliAndTime(pliCount uint32) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	if !r.endTime.IsZero() {
+		return
+	}
+
+	r.updatePliLocked(pliCount)
+	r.updatePliTimeLocked()
+}
+
 func (r *rtpStatsBase) UpdatePli(pliCount uint32) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
