@@ -19,10 +19,11 @@ import (
 	"time"
 
 	"github.com/frostbyte73/core"
-	"github.com/livekit/livekit-server/pkg/rtc/types"
-	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+
+	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
 const (
@@ -51,7 +52,6 @@ func NewParticipantTrafficLoad(params ParticipantTrafficLoadParams) *Participant
 	p := &ParticipantTrafficLoad{
 		params:           params,
 		tracksStatsMedia: make(map[livekit.TrackID]*livekit.RTPStats),
-		closed:           core.NewFuse(),
 	}
 	go p.reporter()
 	return p

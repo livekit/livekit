@@ -21,9 +21,10 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/frostbyte73/core"
-	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
+
+	"github.com/livekit/livekit-server/pkg/config"
 )
 
 type BytesTrackType string
@@ -62,7 +63,6 @@ func NewBytesTrackStats(trackID livekit.TrackID, pID livekit.ParticipantID, tele
 		trackID:   trackID,
 		pID:       pID,
 		telemetry: telemetry,
-		done:      core.NewFuse(),
 	}
 	go s.reporter()
 	return s
