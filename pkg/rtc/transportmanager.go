@@ -523,8 +523,11 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 	if !t.hasRecentSignalLocked() || !signalValid {
 		// the failed might cause by network interrupt because signal closed or we have not seen any signal in the time window,
 		// so don't switch to next candidate type
-		t.params.Logger.Infow("ignoring prefer candidate check by ICE failure because signal connection interrupted",
-			"lastSignalSince", lastSignalSince, "signalValid", signalValid)
+		t.params.Logger.Debugw(
+			"ignoring prefer candidate check by ICE failure because signal connection interrupted",
+			"lastSignalSince", lastSignalSince,
+			"signalValid", signalValid,
+		)
 		t.failureCount = 0
 		t.lastFailure = time.Time{}
 		t.lock.Unlock()
@@ -572,13 +575,13 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 
 	switch preferNext {
 	case livekit.ICECandidateType_ICT_TCP:
-		t.params.Logger.Infow("prefer TCP transport on both peer connections")
+		t.params.Logger.Debugw("prefer TCP transport on both peer connections")
 
 	case livekit.ICECandidateType_ICT_TLS:
-		t.params.Logger.Infow("prefer TLS transport both peer connections")
+		t.params.Logger.Debugw("prefer TLS transport both peer connections")
 
 	case livekit.ICECandidateType_ICT_NONE:
-		t.params.Logger.Infow("allowing all transports on both peer connections")
+		t.params.Logger.Debugw("allowing all transports on both peer connections")
 	}
 
 	// irrespective of which one fails, force prefer candidate on both as the other one might

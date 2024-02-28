@@ -603,14 +603,8 @@ func (t *PCTransport) handleConnectionFailed(forceShortConn bool) {
 		isShort, duration = t.IsShortConnection(time.Now())
 		if isShort {
 			pair, err := t.getSelectedPair()
-			if err != nil {
-				t.params.Logger.Warnw("short ICE connection", err, "duration", duration)
-			} else {
-				t.params.Logger.Infow("short ICE connection", "pair", pair, "duration", duration)
-			}
+			t.params.Logger.Debugw("short ICE connection", "error", err, "pair", pair, "duration", duration)
 		}
-	} else {
-		t.params.Logger.Infow("force short ICE connection")
 	}
 
 	t.params.Handler.OnFailed(isShort)
