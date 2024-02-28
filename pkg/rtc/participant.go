@@ -709,7 +709,10 @@ func (p *ParticipantImpl) handleMigrateTracks() {
 		if mt != nil {
 			addedTracks = append(addedTracks, mt)
 		} else {
-			p.pubLogger.Warnw("could not find migrated track", nil, "cid", cid)
+			p.pubLogger.Warnw("could not find migrated track, migration failed", nil, "cid", cid)
+			p.pendingTracksLock.Unlock()
+			p.IssueFullReconnect(types.ParticipantCloseReasonMigrateCodecMismatch)
+			return
 		}
 	}
 
@@ -910,6 +913,9 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 	}
 
 	p.params.Logger.Debugw("SetMigrateState", "state", s)
+	if s == types.MigrateStateComplete {
+		p.handleMigrateTracks()
+	}
 	p.migrateState.Store(s)
 	p.dirty.Store(true)
 
@@ -918,7 +924,7 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 		p.TransportManager.ProcessPendingPublisherOffer()
 
 	case types.MigrateStateComplete:
-		p.handleMigrateTracks()
+
 		p.TransportManager.ProcessPendingPublisherDataChannels()
 	}
 
@@ -1966,7 +1972,7 @@ func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo) *M
 	p.pubLogger.Infow("add migrated track", "cid", cid, "trackID", ti.Sid, "track", logger.Proto(ti))
 	rtpReceiver := p.TransportManager.GetPublisherRTPReceiver(ti.Mid)
 	if rtpReceiver == nil {
-		p.pubLogger.Errorw("could not find receiver for migrated track", nil, "trackID", ti.Sid)
+		p.pubLogger.Errorw("could not find receiver for migrated track", nil, "trackID", ti.Sid, "mid", ti.Mid)
 		return nil
 	}
 
