@@ -336,6 +336,18 @@ func (r *rtpStatsBase) UpdateNackProcessed(nackAckCount uint32, nackMissCount ui
 	r.nackRepeated += nackRepeatedCount
 }
 
+func (r *rtpStatsBase) CheckAndUpdatePli(throttle int64, force bool) bool {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	if !r.endTime.IsZero() || (!force && time.Now().UnixNano()-r.lastPli.UnixNano() < throttle) {
+		return false
+	}
+	r.updatePliLocked(1)
+	r.updatePliTimeLocked()
+	return true
+}
+
 func (r *rtpStatsBase) UpdatePliAndTime(pliCount uint32) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
@@ -383,13 +395,6 @@ func (r *rtpStatsBase) LastPli() time.Time {
 	defer r.lock.RUnlock()
 
 	return r.lastPli
-}
-
-func (r *rtpStatsBase) TimeSinceLastPli() int64 {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
-
-	return time.Now().UnixNano() - r.lastPli.UnixNano()
 }
 
 func (r *rtpStatsBase) UpdateLayerLockPliAndTime(pliCount uint32) {
