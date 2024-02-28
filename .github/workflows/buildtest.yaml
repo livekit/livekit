@@ -17,9 +17,9 @@ name: Test
 on:
   workflow_dispatch:
   push:
-    branches: [master]
+    branches: [ master ]
   pull_request:
-    branches: [master]
+    branches: [ master ]
 
 jobs:
   test:
@@ -56,13 +56,11 @@ jobs:
           version: latest
           args: build
 
-      # - name: Static Check
-      #   uses: dominikh/staticcheck-action@v1.3.0
-      #   with:
-      #     checks: '["all", "-ST1000", "-ST1003", "-ST1020", "-ST1021", "-ST1022", "-SA1019"]'
-      #     min-go-version: 1.18
-      #     version: 2022.1.3
-      #     install-go: false
+      - name: Static Check
+        uses: amarpal/staticcheck-action@master
+        with:
+          checks: '["all", "-ST1000", "-ST1003", "-ST1020", "-ST1021", "-ST1022", "-SA1019"]'
+          install-go: false
 
       - name: Test
         run: |
