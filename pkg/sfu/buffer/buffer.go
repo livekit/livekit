@@ -457,13 +457,13 @@ func (b *Buffer) SetPLIThrottle(duration int64) {
 
 func (b *Buffer) SendPLI(force bool) {
 	b.RLock()
-	if (b.rtpStats == nil || b.rtpStats.TimeSinceLastPli() < b.pliThrottle) && !force {
-		b.RUnlock()
+	rtpStats := b.rtpStats
+	pliThrottle := b.pliThrottle
+	b.RUnlock()
+
+	if (rtpStats == nil && !force) || !rtpStats.CheckAndUpdatePli(pliThrottle, force) {
 		return
 	}
-
-	b.rtpStats.UpdatePliAndTime(1)
-	b.RUnlock()
 
 	b.logger.Debugw("send pli", "ssrc", b.mediaSSRC, "force", force)
 	pli := []rtcp.Packet{
