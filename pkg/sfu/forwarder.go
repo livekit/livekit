@@ -25,6 +25,7 @@ import (
 
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/livekit/protocol/logger"
 
@@ -92,7 +93,7 @@ type VideoAllocation struct {
 	DistanceToDesired   float64
 }
 
-func (v VideoAllocation) String() string {
+func (v *VideoAllocation) String() string {
 	return fmt.Sprintf("VideoAllocation{pause: %s, def: %+v, bwr: %d, del: %d, bwn: %d, rates: %+v, target: %s, req: %d, max: %s, dist: %0.2f}",
 		v.PauseReason,
 		v.IsDeficient,
@@ -105,6 +106,24 @@ func (v VideoAllocation) String() string {
 		v.MaxLayer,
 		v.DistanceToDesired,
 	)
+}
+
+func (v *VideoAllocation) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if v == nil {
+		return nil
+	}
+
+	e.AddString("PauseReason", v.PauseReason.String())
+	e.AddBool("IsDeficient", v.IsDeficient)
+	e.AddInt64("BandwidthRquested", v.BandwidthRequested)
+	e.AddInt64("BandwidthDelta", v.BandwidthDelta)
+	e.AddInt64("BandwidthNeeded", v.BandwidthNeeded)
+	e.AddReflected("Bitrates", v.Bitrates)
+	e.AddReflected("TargetLayer", v.TargetLayer)
+	e.AddInt32("RequestLayerSpatial", v.RequestLayerSpatial)
+	e.AddReflected("MaxLayer", v.MaxLayer)
+	e.AddFloat64("DistanceToDesired", v.DistanceToDesired)
+	return nil
 }
 
 var (
@@ -137,8 +156,19 @@ type VideoTransition struct {
 	BandwidthDelta int64
 }
 
-func (v VideoTransition) String() string {
+func (v *VideoTransition) String() string {
 	return fmt.Sprintf("VideoTransition{from: %s, to: %s, del: %d}", v.From, v.To, v.BandwidthDelta)
+}
+
+func (v *VideoTransition) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if v == nil {
+		return nil
+	}
+
+	e.AddReflected("From", v.From)
+	e.AddReflected("To", v.To)
+	e.AddInt64("BandwidthDelta", v.BandwidthDelta)
+	return nil
 }
 
 // -------------------------------------------------------------------
@@ -1359,7 +1389,7 @@ func (f *Forwarder) updateAllocation(alloc VideoAllocation, reason string) Video
 		alloc.PauseReason != f.lastAllocation.PauseReason ||
 		alloc.TargetLayer != f.lastAllocation.TargetLayer ||
 		alloc.RequestLayerSpatial != f.lastAllocation.RequestLayerSpatial {
-		f.logger.Debugw(fmt.Sprintf("stream allocation: %s", reason), "allocation", alloc)
+		f.logger.Debugw(fmt.Sprintf("stream allocation: %s", reason), "allocation", &alloc)
 	}
 	f.lastAllocation = alloc
 
