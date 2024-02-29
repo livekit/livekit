@@ -927,7 +927,6 @@ func (b *Buffer) GetDeltaStats() *StreamStatsWithLayers {
 		return nil
 	}
 
-	b.logger.Infow("RAJA getting delta stats") // REMOVE
 	deltaStats := b.rtpStats.DeltaInfo(b.deltaStatsSnapshotId)
 	if deltaStats == nil {
 		return nil
