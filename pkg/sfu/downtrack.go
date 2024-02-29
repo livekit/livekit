@@ -1211,7 +1211,7 @@ func (d *DownTrack) ProvisionalAllocateGetCooperativeTransition(allowOvershoot b
 	transition, availableLayers, brs := d.forwarder.ProvisionalAllocateGetCooperativeTransition(allowOvershoot)
 	d.params.Logger.Debugw(
 		"stream: cooperative transition",
-		"transition", transition,
+		"transition", &transition,
 		"availableLayers", availableLayers,
 		"bitrates", brs,
 	)
@@ -1222,7 +1222,7 @@ func (d *DownTrack) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 	transition, availableLayers, brs := d.forwarder.ProvisionalAllocateGetBestWeightedTransition()
 	d.params.Logger.Debugw(
 		"stream: best weighted transition",
-		"transition", transition,
+		"transition", &transition,
 		"availableLayers", availableLayers,
 		"bitrates", brs,
 	)
