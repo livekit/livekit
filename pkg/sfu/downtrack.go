@@ -659,16 +659,17 @@ func (d *DownTrack) postMaxLayerNotifierEvent(event string) {
 }
 
 func (d *DownTrack) maxLayerNotifierWorker() {
-	var event string
-	more := true
-	for more {
-		event, more = <-d.maxLayerNotifierCh
-
-		maxLayerSpatial := buffer.InvalidLayerSpatial
-		if more {
-			maxLayerSpatial = d.forwarder.GetMaxSubscribedSpatial()
-			d.params.Logger.Debugw("max subscribed layer processed", "layer", maxLayerSpatial, "event", event)
+	defer func() {
+		if onMaxSubscribedLayerChanged := d.getOnMaxLayerChanged(); onMaxSubscribedLayerChanged != nil {
+			d.params.Logger.Debugw("notifying max subscribed layer", "layer", buffer.InvalidLayerSpatial, "event", "close")
+			onMaxSubscribedLayerChanged(d, buffer.InvalidLayerSpatial)
 		}
+	}()
+
+	for event := range d.maxLayerNotifierCh {
+		maxLayerSpatial := d.forwarder.GetMaxSubscribedSpatial()
+		d.params.Logger.Debugw("max subscribed layer processed", "layer", maxLayerSpatial, "event", event)
+
 		if onMaxSubscribedLayerChanged := d.getOnMaxLayerChanged(); onMaxSubscribedLayerChanged != nil {
 			d.params.Logger.Debugw("notifying max subscribed layer", "layer", maxLayerSpatial, "event", event)
 			onMaxSubscribedLayerChanged(d, maxLayerSpatial)
