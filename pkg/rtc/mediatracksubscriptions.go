@@ -190,7 +190,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 
 	downTrack.OnMaxLayerChanged(func(dt *sfu.DownTrack, layer int32) {
 		if t.onSubscriberMaxQualityChange != nil {
-			t.onSubscriberMaxQualityChange(subscriberID, dt.Codec(), layer)
+			t.onSubscriberMaxQualityChange(dt.SubscriberID(), dt.Codec(), layer)
 		}
 	})
 
