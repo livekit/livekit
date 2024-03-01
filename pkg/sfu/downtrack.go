@@ -286,6 +286,8 @@ type DownTrack struct {
 	onMaxSubscribedLayerChanged func(dt *DownTrack, layer int32)
 	onRttUpdate                 func(dt *DownTrack, rtt uint32)
 	onCloseHandler              func(willBeResumed bool)
+
+	createdAt int64
 }
 
 // NewDownTrack returns a DownTrack.
@@ -310,6 +312,7 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		pacer:               params.Pacer,
 		maxLayerNotifierCh:  make(chan string, 1),
 		keyFrameRequesterCh: make(chan struct{}, 1),
+		createdAt:           time.Now().UnixNano(),
 	}
 	d.forwarder = NewForwarder(
 		d.kind,
@@ -524,7 +527,10 @@ func (d *DownTrack) Codec() webrtc.RTPCodecCapability { return d.codec }
 // StreamID is the group this track belongs too. This must be unique
 func (d *DownTrack) StreamID() string { return d.params.StreamID }
 
-func (d *DownTrack) SubscriberID() livekit.ParticipantID { return d.params.SubID }
+func (d *DownTrack) SubscriberID() livekit.ParticipantID {
+	// add `createdAt` to ensure repeated subscriptions from same subscrober to same publisher does not collide
+	return livekit.ParticipantID(fmt.Sprintf("%s:%d", d.params.SubID, d.createdAt))
+}
 
 // Sets RTP header extensions for this track
 func (d *DownTrack) SetRTPHeaderExtensions(rtpHeaderExtensions []webrtc.RTPHeaderExtensionParameter) {
@@ -659,13 +665,6 @@ func (d *DownTrack) postMaxLayerNotifierEvent(event string) {
 }
 
 func (d *DownTrack) maxLayerNotifierWorker() {
-	defer func() {
-		if onMaxSubscribedLayerChanged := d.getOnMaxLayerChanged(); onMaxSubscribedLayerChanged != nil {
-			d.params.Logger.Debugw("notifying max subscribed layer", "layer", buffer.InvalidLayerSpatial, "event", "close")
-			onMaxSubscribedLayerChanged(d, buffer.InvalidLayerSpatial)
-		}
-	}()
-
 	for event := range d.maxLayerNotifierCh {
 		maxLayerSpatial := d.forwarder.GetMaxSubscribedSpatial()
 		d.params.Logger.Debugw("max subscribed layer processed", "layer", maxLayerSpatial, "event", event)
@@ -674,6 +673,11 @@ func (d *DownTrack) maxLayerNotifierWorker() {
 			d.params.Logger.Debugw("notifying max subscribed layer", "layer", maxLayerSpatial, "event", event)
 			onMaxSubscribedLayerChanged(d, maxLayerSpatial)
 		}
+	}
+
+	if onMaxSubscribedLayerChanged := d.getOnMaxLayerChanged(); onMaxSubscribedLayerChanged != nil {
+		d.params.Logger.Debugw("notifying max subscribed layer", "layer", buffer.InvalidLayerSpatial, "event", "close")
+		onMaxSubscribedLayerChanged(d, buffer.InvalidLayerSpatial)
 	}
 }
 
