@@ -456,7 +456,7 @@ func (f *Forwarder) PubMute(pubMuted bool) bool {
 		return false
 	}
 
-	f.logger.Debugw("setting forwarder pub mute", "pubMuted", pubMuted)
+	f.logger.Debugw("setting forwarder pub mute", "muted", pubMuted)
 	f.pubMuted = pubMuted
 
 	// resync when pub muted so that sequence numbers do not jump on unmute
