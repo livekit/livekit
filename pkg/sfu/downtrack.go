@@ -274,7 +274,7 @@ type DownTrack struct {
 	pacer pacer.Pacer
 
 	maxLayerNotifierChMu     sync.RWMutex
-	maxLayerNotifierCh       chan struct{}
+	maxLayerNotifierCh       chan string
 	maxLayerNotifierChClosed bool
 
 	keyFrameRequesterChMu     sync.RWMutex
@@ -308,7 +308,7 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		kind:                kind,
 		codec:               codecs[0].RTPCodecCapability,
 		pacer:               params.Pacer,
-		maxLayerNotifierCh:  make(chan struct{}, 1),
+		maxLayerNotifierCh:  make(chan string, 1),
 		keyFrameRequesterCh: make(chan struct{}, 1),
 	}
 	d.forwarder = NewForwarder(
@@ -642,7 +642,7 @@ func (d *DownTrack) keyFrameRequester() {
 	}
 }
 
-func (d *DownTrack) postMaxLayerNotifierEvent() {
+func (d *DownTrack) postMaxLayerNotifierEvent(event string) {
 	if d.kind != webrtc.RTPCodecTypeVideo {
 		return
 	}
@@ -650,24 +650,27 @@ func (d *DownTrack) postMaxLayerNotifierEvent() {
 	d.maxLayerNotifierChMu.RLock()
 	if !d.maxLayerNotifierChClosed {
 		select {
-		case d.maxLayerNotifierCh <- struct{}{}:
+		case d.maxLayerNotifierCh <- event:
 		default:
+			d.params.Logger.Debugw("max layer notifier channel busy", "event", event)
 		}
 	}
 	d.maxLayerNotifierChMu.RUnlock()
 }
 
 func (d *DownTrack) maxLayerNotifierWorker() {
+	var event string
 	more := true
 	for more {
-		_, more = <-d.maxLayerNotifierCh
+		event, more = <-d.maxLayerNotifierCh
 
 		maxLayerSpatial := buffer.InvalidLayerSpatial
 		if more {
 			maxLayerSpatial = d.forwarder.GetMaxSubscribedSpatial()
+			d.params.Logger.Debugw("max subscribed layer processed", "layer", maxLayerSpatial, "event", event)
 		}
 		if onMaxSubscribedLayerChanged := d.getOnMaxLayerChanged(); onMaxSubscribedLayerChanged != nil {
-			d.params.Logger.Debugw("max subscribed layer changed", "maxLayerSpatial", maxLayerSpatial)
+			d.params.Logger.Debugw("notifying max subscribed layer", "layer", maxLayerSpatial, "event", event)
 			onMaxSubscribedLayerChanged(d, maxLayerSpatial)
 		}
 	}
@@ -903,7 +906,7 @@ func (d *DownTrack) handleMute(muted bool, changed bool) {
 	// Note that while publisher mute is active, subscriber changes can also happen
 	// and that could turn on/off layers on publisher side.
 	//
-	d.postMaxLayerNotifierEvent()
+	d.postMaxLayerNotifierEvent("mute")
 
 	if sal := d.getStreamAllocatorListener(); sal != nil {
 		sal.OnSubscriptionChanged(d)
@@ -1015,7 +1018,7 @@ func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
 		return
 	}
 
-	d.postMaxLayerNotifierEvent()
+	d.postMaxLayerNotifierEvent("max-subscribed")
 
 	if sal := d.getStreamAllocatorListener(); sal != nil {
 		sal.OnSubscribedLayerChanged(d, maxLayer)
@@ -1961,7 +1964,7 @@ func (d *DownTrack) sendingPacket(hdr *rtp.Header, payloadSize int, spmd *sendPa
 
 	if spmd.tp != nil {
 		if spmd.tp.isSwitching {
-			d.postMaxLayerNotifierEvent()
+			d.postMaxLayerNotifierEvent("switching")
 		}
 
 		if spmd.tp.isResuming {
