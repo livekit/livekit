@@ -5,7 +5,7 @@ go 1.21
 require (
 	github.com/avast/retry-go/v4 v4.5.1
 	github.com/bep/debounce v1.2.1
-	github.com/d5/tengo/v2 v2.16.1
+	github.com/d5/tengo/v2 v2.17.0
 	github.com/dustin/go-humanize v1.0.1
 	github.com/elliotchance/orderedmap/v2 v2.2.0
 	github.com/florianl/go-tc v0.4.3
@@ -40,7 +40,7 @@ require (
 	github.com/prometheus/client_golang v1.19.0
 	github.com/redis/go-redis/v9 v9.5.1
 	github.com/rs/cors v1.10.1
-	github.com/stretchr/testify v1.8.4
+	github.com/stretchr/testify v1.9.0
 	github.com/thoas/go-funk v0.9.3
 	github.com/twitchtv/twirp v8.1.3+incompatible
 	github.com/ua-parser/uap-go v0.0.0-20240113215029-33f8e6d47f38
