@@ -263,13 +263,13 @@ func (d *DummyReceiver) AddDownTrack(track sfu.TrackSender) error {
 	return nil
 }
 
-func (d *DummyReceiver) DeleteDownTrack(participantID livekit.ParticipantID) {
+func (d *DummyReceiver) DeleteDownTrack(subscriberID livekit.ParticipantID) {
 	d.downtrackLock.Lock()
 	defer d.downtrackLock.Unlock()
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
-		r.DeleteDownTrack(participantID)
+		r.DeleteDownTrack(subscriberID)
 	} else {
-		delete(d.downtracks, participantID)
+		delete(d.downtracks, subscriberID)
 	}
 }
 

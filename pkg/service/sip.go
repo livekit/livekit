@@ -16,11 +16,13 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
+	"github.com/livekit/protocol/sip"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/psrpc"
 
@@ -60,19 +62,34 @@ func (s *SIPService) CreateSIPTrunk(ctx context.Context, req *livekit.CreateSIPT
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
 	}
-
-	info := &livekit.SIPTrunkInfo{
-		SipTrunkId:          utils.NewGuid(utils.SIPTrunkPrefix),
-		InboundAddresses:    req.InboundAddresses,
-		OutboundAddress:     req.OutboundAddress,
-		OutboundNumber:      req.OutboundNumber,
-		InboundNumbersRegex: req.InboundNumbersRegex,
-		InboundUsername:     req.InboundUsername,
-		InboundPassword:     req.InboundPassword,
-		OutboundUsername:    req.OutboundUsername,
-		OutboundPassword:    req.OutboundPassword,
+	if len(req.InboundNumbersRegex) != 0 {
+		return nil, fmt.Errorf("Trunks with InboundNumbersRegex are deprecated. Use InboundNumbers instead.")
 	}
 
+	// Keep ID empty, so that validation can print "<new>" instead of a non-existent ID in the error.
+	info := &livekit.SIPTrunkInfo{
+		InboundAddresses: req.InboundAddresses,
+		OutboundAddress:  req.OutboundAddress,
+		OutboundNumber:   req.OutboundNumber,
+		InboundNumbers:   req.InboundNumbers,
+		InboundUsername:  req.InboundUsername,
+		InboundPassword:  req.InboundPassword,
+		OutboundUsername: req.OutboundUsername,
+		OutboundPassword: req.OutboundPassword,
+	}
+
+	// Validate all trunks including the new one first.
+	list, err := s.store.ListSIPTrunk(ctx)
+	if err != nil {
+		return nil, err
+	}
+	list = append(list, info)
+	if err = sip.ValidateTrunks(list); err != nil {
+		return nil, err
+	}
+
+	// Now we can generate ID and store.
+	info.SipTrunkId = utils.NewGuid(utils.SIPTrunkPrefix)
 	if err := s.store.StoreSIPTrunk(ctx, info); err != nil {
 		return nil, err
 	}
@@ -114,13 +131,25 @@ func (s *SIPService) CreateSIPDispatchRule(ctx context.Context, req *livekit.Cre
 		return nil, ErrSIPNotConnected
 	}
 
+	// Keep ID empty, so that validation can print "<new>" instead of a non-existent ID in the error.
 	info := &livekit.SIPDispatchRuleInfo{
-		SipDispatchRuleId: utils.NewGuid(utils.SIPDispatchRulePrefix),
-		Rule:              req.Rule,
-		TrunkIds:          req.TrunkIds,
-		HidePhoneNumber:   req.HidePhoneNumber,
+		Rule:            req.Rule,
+		TrunkIds:        req.TrunkIds,
+		HidePhoneNumber: req.HidePhoneNumber,
 	}
 
+	// Validate all rules including the new one first.
+	list, err := s.store.ListSIPDispatchRule(ctx)
+	if err != nil {
+		return nil, err
+	}
+	list = append(list, info)
+	if err = sip.ValidateDispatchRules(list); err != nil {
+		return nil, err
+	}
+
+	// Now we can generate ID and store.
+	info.SipDispatchRuleId = utils.NewGuid(utils.SIPDispatchRulePrefix)
 	if err := s.store.StoreSIPDispatchRule(ctx, info); err != nil {
 		return nil, err
 	}

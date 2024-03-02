@@ -18,8 +18,8 @@ require (
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
-	github.com/livekit/mediatransportutil v0.0.0-20240228075855-6fbf3be6f6ef
-	github.com/livekit/protocol v1.10.0
+	github.com/livekit/mediatransportutil v0.0.0-20240302142739-1c3dd691a1b8
+	github.com/livekit/protocol v1.10.1
 	github.com/livekit/psrpc v0.5.3-0.20240227154351-b7f99eaaf7b3
 	github.com/mackerelio/go-osstat v0.2.4
 	github.com/magefile/mage v1.15.0
@@ -47,6 +47,7 @@ require (
 	github.com/urfave/cli/v2 v2.27.1
 	github.com/urfave/negroni/v3 v3.1.0
 	go.uber.org/atomic v1.11.0
+	go.uber.org/zap v1.27.0
 	golang.org/x/exp v0.0.0-20240222234643-814bf88cf225
 	golang.org/x/sync v0.6.0
 	google.golang.org/protobuf v1.32.0
@@ -61,7 +62,7 @@ require (
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/eapache/channels v1.1.0 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
-	github.com/go-jose/go-jose/v3 v3.0.1 // indirect
+	github.com/go-jose/go-jose/v3 v3.0.2 // indirect
 	github.com/go-logr/logr v1.4.1 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
@@ -95,7 +96,6 @@ require (
 	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/crypto v0.19.0 // indirect
 	golang.org/x/mod v0.15.0 // indirect
 	golang.org/x/net v0.21.0 // indirect
@@ -106,5 +106,3 @@ require (
 	google.golang.org/grpc v1.62.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
-
-replace github.com/livekit/mediatransportutil => ../mediatransportutil

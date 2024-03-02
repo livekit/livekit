@@ -103,7 +103,7 @@ type Buffer struct {
 	rtpStats             *RTPStatsReceiver
 	rrSnapshotId         uint32
 	deltaStatsSnapshotId uint32
-	ppsSnapshortId       uint32
+	ppsSnapshotId        uint32
 
 	lastFractionLostToReport uint8 // Last fraction lost from subscribers, should report to publisher; Audio only
 
@@ -193,7 +193,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	})
 	b.rrSnapshotId = b.rtpStats.NewSnapshotId()
 	b.deltaStatsSnapshotId = b.rtpStats.NewSnapshotId()
-	b.ppsSnapshortId = b.rtpStats.NewSnapshotId()
+	b.ppsSnapshotId = b.rtpStats.NewSnapshotId()
 
 	b.clockRate = codec.ClockRate
 	b.lastReport = time.Now()
@@ -790,7 +790,7 @@ func (b *Buffer) mayGrowBucket() {
 		return
 	}
 	oldCap := cap
-	deltaInfo := b.rtpStats.DeltaInfo(b.deltaStatsSnapshotId)
+	deltaInfo := b.rtpStats.DeltaInfo(b.ppsSnapshotId)
 	if deltaInfo != nil && deltaInfo.Duration > 500*time.Millisecond {
 		pps := int(time.Duration(deltaInfo.Packets) * time.Second / deltaInfo.Duration)
 		for pps > cap && cap < maxPkts {

@@ -89,9 +89,9 @@ var (
 	ErrOutOfOrderSequenceNumberCacheMiss = errors.New("out-of-order sequence number not found in cache")
 	ErrPaddingOnlyPacket                 = errors.New("padding only packet that need not be forwarded")
 	ErrDuplicatePacket                   = errors.New("duplicate packet")
-	ErrSequenceNumberOffsetNotFound      = errors.New("sequence number offset not found")
 	ErrPaddingNotOnFrameBoundary         = errors.New("padding cannot send on non-frame boundary")
 	ErrDownTrackAlreadyBound             = errors.New("already bound")
+	ErrPayloadOverflow                   = errors.New("payload overflow")
 )
 
 var (
@@ -275,7 +275,7 @@ type DownTrack struct {
 	pacer pacer.Pacer
 
 	maxLayerNotifierChMu     sync.RWMutex
-	maxLayerNotifierCh       chan struct{}
+	maxLayerNotifierCh       chan string
 	maxLayerNotifierChClosed bool
 
 	keyFrameRequesterChMu     sync.RWMutex
@@ -287,6 +287,8 @@ type DownTrack struct {
 	onMaxSubscribedLayerChanged func(dt *DownTrack, layer int32)
 	onRttUpdate                 func(dt *DownTrack, rtt uint32)
 	onCloseHandler              func(willBeResumed bool)
+
+	createdAt int64
 }
 
 // NewDownTrack returns a DownTrack.
@@ -309,8 +311,9 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		kind:                kind,
 		codec:               codecs[0].RTPCodecCapability,
 		pacer:               params.Pacer,
-		maxLayerNotifierCh:  make(chan struct{}, 1),
+		maxLayerNotifierCh:  make(chan string, 1),
 		keyFrameRequesterCh: make(chan struct{}, 1),
+		createdAt:           time.Now().UnixNano(),
 	}
 	d.forwarder = NewForwarder(
 		d.kind,
@@ -525,7 +528,10 @@ func (d *DownTrack) Codec() webrtc.RTPCodecCapability { return d.codec }
 // StreamID is the group this track belongs too. This must be unique
 func (d *DownTrack) StreamID() string { return d.params.StreamID }
 
-func (d *DownTrack) SubscriberID() livekit.ParticipantID { return d.params.SubID }
+func (d *DownTrack) SubscriberID() livekit.ParticipantID {
+	// add `createdAt` to ensure repeated subscriptions from same subscrober to same publisher does not collide
+	return livekit.ParticipantID(fmt.Sprintf("%s:%d", d.params.SubID, d.createdAt))
+}
 
 // Sets RTP header extensions for this track
 func (d *DownTrack) SetRTPHeaderExtensions(rtpHeaderExtensions []webrtc.RTPHeaderExtensionParameter) {
@@ -643,7 +649,7 @@ func (d *DownTrack) keyFrameRequester() {
 	}
 }
 
-func (d *DownTrack) postMaxLayerNotifierEvent() {
+func (d *DownTrack) postMaxLayerNotifierEvent(event string) {
 	if d.kind != webrtc.RTPCodecTypeVideo {
 		return
 	}
@@ -651,26 +657,28 @@ func (d *DownTrack) postMaxLayerNotifierEvent() {
 	d.maxLayerNotifierChMu.RLock()
 	if !d.maxLayerNotifierChClosed {
 		select {
-		case d.maxLayerNotifierCh <- struct{}{}:
+		case d.maxLayerNotifierCh <- event:
 		default:
+			d.params.Logger.Debugw("max layer notifier channel busy", "event", event)
 		}
 	}
 	d.maxLayerNotifierChMu.RUnlock()
 }
 
 func (d *DownTrack) maxLayerNotifierWorker() {
-	more := true
-	for more {
-		_, more = <-d.maxLayerNotifierCh
+	for event := range d.maxLayerNotifierCh {
+		maxLayerSpatial := d.forwarder.GetMaxSubscribedSpatial()
+		d.params.Logger.Debugw("max subscribed layer processed", "layer", maxLayerSpatial, "event", event)
 
-		maxLayerSpatial := buffer.InvalidLayerSpatial
-		if more {
-			maxLayerSpatial = d.forwarder.GetMaxSubscribedSpatial()
-		}
 		if onMaxSubscribedLayerChanged := d.getOnMaxLayerChanged(); onMaxSubscribedLayerChanged != nil {
-			d.params.Logger.Debugw("max subscribed layer changed", "maxLayerSpatial", maxLayerSpatial)
+			d.params.Logger.Debugw("notifying max subscribed layer", "layer", maxLayerSpatial, "event", event)
 			onMaxSubscribedLayerChanged(d, maxLayerSpatial)
 		}
+	}
+
+	if onMaxSubscribedLayerChanged := d.getOnMaxLayerChanged(); onMaxSubscribedLayerChanged != nil {
+		d.params.Logger.Debugw("notifying max subscribed layer", "layer", buffer.InvalidLayerSpatial, "event", "close")
+		onMaxSubscribedLayerChanged(d, buffer.InvalidLayerSpatial)
 	}
 }
 
@@ -695,8 +703,13 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		PacketFactory.Put(poolEntity)
 		return err
 	}
-	copy(payload[outgoingHeaderSize:], extPkt.Packet.Payload[incomingHeaderSize:])
-	payload = payload[:outgoingHeaderSize+len(extPkt.Packet.Payload)-incomingHeaderSize]
+	n := copy(payload[outgoingHeaderSize:], extPkt.Packet.Payload[incomingHeaderSize:])
+	if n != len(extPkt.Packet.Payload[incomingHeaderSize:]) {
+		d.params.Logger.Errorw("payload overflow", nil, "want", len(extPkt.Packet.Payload[incomingHeaderSize:]), "have", n)
+		PacketFactory.Put(poolEntity)
+		return ErrPayloadOverflow
+	}
+	payload = payload[:outgoingHeaderSize+n]
 
 	hdr, err := d.getTranslatedRTPHeader(extPkt, &tp)
 	if err != nil {
@@ -899,7 +912,7 @@ func (d *DownTrack) handleMute(muted bool, changed bool) {
 	// Note that while publisher mute is active, subscriber changes can also happen
 	// and that could turn on/off layers on publisher side.
 	//
-	d.postMaxLayerNotifierEvent()
+	d.postMaxLayerNotifierEvent("mute")
 
 	if sal := d.getStreamAllocatorListener(); sal != nil {
 		sal.OnSubscriptionChanged(d)
@@ -969,7 +982,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		d.onBindAndConnectedChange()
 		d.params.Logger.Debugw("closing sender", "kind", d.kind)
 	}
-	d.params.Receiver.DeleteDownTrack(d.params.SubID)
+	d.params.Receiver.DeleteDownTrack(d.SubscriberID())
 
 	if d.rtcpReader != nil && flush {
 		d.params.Logger.Debugw("downtrack close rtcp reader")
@@ -1011,7 +1024,7 @@ func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
 		return
 	}
 
-	d.postMaxLayerNotifierEvent()
+	d.postMaxLayerNotifierEvent("max-subscribed")
 
 	if sal := d.getStreamAllocatorListener(); sal != nil {
 		sal.OnSubscribedLayerChanged(d, maxLayer)
@@ -1207,7 +1220,7 @@ func (d *DownTrack) ProvisionalAllocateGetCooperativeTransition(allowOvershoot b
 	transition, availableLayers, brs := d.forwarder.ProvisionalAllocateGetCooperativeTransition(allowOvershoot)
 	d.params.Logger.Debugw(
 		"stream: cooperative transition",
-		"transition", transition,
+		"transition", &transition,
 		"availableLayers", availableLayers,
 		"bitrates", brs,
 	)
@@ -1218,7 +1231,7 @@ func (d *DownTrack) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 	transition, availableLayers, brs := d.forwarder.ProvisionalAllocateGetBestWeightedTransition()
 	d.params.Logger.Debugw(
 		"stream: best weighted transition",
-		"transition", transition,
+		"transition", &transition,
 		"availableLayers", availableLayers,
 		"bitrates", brs,
 	)
@@ -1985,7 +1998,7 @@ func (d *DownTrack) sendingPacket(hdr *rtp.Header, payloadSize int, spmd *sendPa
 
 	if spmd.tp != nil {
 		if spmd.tp.isSwitching {
-			d.postMaxLayerNotifierEvent()
+			d.postMaxLayerNotifierEvent("switching")
 		}
 
 		if spmd.tp.isResuming {
