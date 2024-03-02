@@ -29,7 +29,7 @@ require (
 	github.com/pion/dtls/v2 v2.2.10
 	github.com/pion/ice/v2 v2.3.14
 	github.com/pion/interceptor v0.1.25
-	github.com/pion/rtcp v1.2.13
+	github.com/pion/rtcp v1.2.14
 	github.com/pion/rtp v1.8.3
 	github.com/pion/sctp v1.8.12
 	github.com/pion/sdp/v3 v3.0.6
@@ -106,3 +106,5 @@ require (
 	google.golang.org/grpc v1.62.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
+
+replace github.com/livekit/mediatransportutil => ../mediatransportutil

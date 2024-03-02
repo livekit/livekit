@@ -138,6 +138,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		Pacer:             sub.GetPacer(),
 		Trailer:           trailer,
 		Logger:            LoggerWithTrack(sub.GetLogger().WithComponent(sutils.ComponentSub), trackID, t.params.IsRelayed),
+		RTCPWriter:        sub.WriteSubscriberRTCP,
 	})
 	if err != nil {
 		return nil, err

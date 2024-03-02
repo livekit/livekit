@@ -344,6 +344,8 @@ type LocalParticipant interface {
 	AddTransceiverFromTrackToSubscriber(trackLocal webrtc.TrackLocal, params AddTrackParams) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
 	RemoveTrackFromSubscriber(sender *webrtc.RTPSender) error
 
+	WriteSubscriberRTCP(pkts []rtcp.Packet) error
+
 	// subscriptions
 	SubscribeToTrack(trackID livekit.TrackID)
 	UnsubscribeFromTrack(trackID livekit.TrackID)
