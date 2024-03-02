@@ -493,9 +493,9 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) (types.Su
 	t.lock.RLock()
 	if t.state != mediaTrackReceiverStateOpen {
 		willBeResumed = t.willBeResumed
-		t.lock.RUnlock()
 		remove = true
 	}
+	t.lock.RUnlock()
 
 	if remove {
 		_ = t.MediaTrackSubscriptions.RemoveSubscriber(sub.ID(), willBeResumed)
