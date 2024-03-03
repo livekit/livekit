@@ -979,6 +979,17 @@ type FakeLocalParticipant struct {
 	waitUntilSubscribedReturnsOnCall map[int]struct {
 		result1 error
 	}
+	WriteSubscriberRTCPStub        func([]rtcp.Packet) error
+	writeSubscriberRTCPMutex       sync.RWMutex
+	writeSubscriberRTCPArgsForCall []struct {
+		arg1 []rtcp.Packet
+	}
+	writeSubscriberRTCPReturns struct {
+		result1 error
+	}
+	writeSubscriberRTCPReturnsOnCall map[int]struct {
+		result1 error
+	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
 }
@@ -6207,6 +6218,72 @@ func (fake *FakeLocalParticipant) WaitUntilSubscribedReturnsOnCall(i int, result
 	}{result1}
 }
 
+func (fake *FakeLocalParticipant) WriteSubscriberRTCP(arg1 []rtcp.Packet) error {
+	var arg1Copy []rtcp.Packet
+	if arg1 != nil {
+		arg1Copy = make([]rtcp.Packet, len(arg1))
+		copy(arg1Copy, arg1)
+	}
+	fake.writeSubscriberRTCPMutex.Lock()
+	ret, specificReturn := fake.writeSubscriberRTCPReturnsOnCall[len(fake.writeSubscriberRTCPArgsForCall)]
+	fake.writeSubscriberRTCPArgsForCall = append(fake.writeSubscriberRTCPArgsForCall, struct {
+		arg1 []rtcp.Packet
+	}{arg1Copy})
+	stub := fake.WriteSubscriberRTCPStub
+	fakeReturns := fake.writeSubscriberRTCPReturns
+	fake.recordInvocation("WriteSubscriberRTCP", []interface{}{arg1Copy})
+	fake.writeSubscriberRTCPMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) WriteSubscriberRTCPCallCount() int {
+	fake.writeSubscriberRTCPMutex.RLock()
+	defer fake.writeSubscriberRTCPMutex.RUnlock()
+	return len(fake.writeSubscriberRTCPArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) WriteSubscriberRTCPCalls(stub func([]rtcp.Packet) error) {
+	fake.writeSubscriberRTCPMutex.Lock()
+	defer fake.writeSubscriberRTCPMutex.Unlock()
+	fake.WriteSubscriberRTCPStub = stub
+}
+
+func (fake *FakeLocalParticipant) WriteSubscriberRTCPArgsForCall(i int) []rtcp.Packet {
+	fake.writeSubscriberRTCPMutex.RLock()
+	defer fake.writeSubscriberRTCPMutex.RUnlock()
+	argsForCall := fake.writeSubscriberRTCPArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) WriteSubscriberRTCPReturns(result1 error) {
+	fake.writeSubscriberRTCPMutex.Lock()
+	defer fake.writeSubscriberRTCPMutex.Unlock()
+	fake.WriteSubscriberRTCPStub = nil
+	fake.writeSubscriberRTCPReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) WriteSubscriberRTCPReturnsOnCall(i int, result1 error) {
+	fake.writeSubscriberRTCPMutex.Lock()
+	defer fake.writeSubscriberRTCPMutex.Unlock()
+	fake.WriteSubscriberRTCPStub = nil
+	if fake.writeSubscriberRTCPReturnsOnCall == nil {
+		fake.writeSubscriberRTCPReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.writeSubscriberRTCPReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
 func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
@@ -6430,6 +6507,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.verifySubscribeParticipantInfoMutex.RUnlock()
 	fake.waitUntilSubscribedMutex.RLock()
 	defer fake.waitUntilSubscribedMutex.RUnlock()
+	fake.writeSubscriberRTCPMutex.RLock()
+	defer fake.writeSubscriberRTCPMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

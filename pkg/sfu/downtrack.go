@@ -206,6 +206,7 @@ type DowntrackParams struct {
 	Pacer             pacer.Pacer
 	Logger            logger.Logger
 	Trailer           []byte
+	RTCPWriter        func([]rtcp.Packet) error
 }
 
 // DownTrack implements TrackLocal, is the track used to write packets
@@ -1566,6 +1567,34 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				if sal := d.getStreamAllocatorListener(); sal != nil {
 					sal.OnTransportCCFeedback(d, p)
 				}
+			}
+
+		case *rtcp.ExtendedReport:
+			// SFU only responds with the DLRRReport for the track has the sender SSRC, the behavior is different with
+			// browser's implementation, which includes all sent tracks. It is ok since all the tracks
+			// use the same connection, and server-sdk-go can get the rtt from the first DLRRReport
+			// (libwebrtc/browsers don't send XR to calculate rtt, it only responds)
+			var lastRR uint32
+			for _, report := range p.Reports {
+				if rr, ok := report.(*rtcp.ReceiverReferenceTimeReportBlock); ok {
+					lastRR = uint32(rr.NTPTimestamp >> 16)
+					break
+				}
+			}
+
+			if lastRR > 0 {
+				d.params.RTCPWriter([]rtcp.Packet{&rtcp.ExtendedReport{
+					SenderSSRC: d.ssrc,
+					Reports: []rtcp.ReportBlock{
+						&rtcp.DLRRReportBlock{
+							Reports: []rtcp.DLRRReport{{
+								SSRC:   p.SenderSSRC,
+								LastRR: lastRR,
+								DLRR:   0, // no delay
+							}},
+						},
+					},
+				}})
 			}
 		}
 	}
