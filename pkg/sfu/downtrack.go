@@ -1570,8 +1570,8 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			}
 
 		case *rtcp.ExtendedReport:
-			// SFU only reponse with the DLRRReport for the track has the sender SSRC, the behavior is different with
-			// browser's implementation that includes all the sent tracks. It is ok since all the tracks
+			// SFU only responds with the DLRRReport for the track has the sender SSRC, the behavior is different with
+			// browser's implementation, which includes all sent tracks. It is ok since all the tracks
 			// use the same connection, and server-sdk-go can get the rtt from the first DLRRReport
 			// (libwebrtc/browsers don't send XR to calculate rtt, it only responds)
 			var lastRR uint32
