@@ -141,7 +141,7 @@ func (s *BytesTrackStats) reporter() {
 // -----------------------------------------------------------------------
 
 type BytesSignalStats struct {
-	*BytesTrackStats
+	BytesTrackStats
 	ctx context.Context
 
 	mu sync.Mutex
@@ -151,7 +151,7 @@ type BytesSignalStats struct {
 
 func NewBytesSignalStats(ctx context.Context, telemetry TelemetryService) *BytesSignalStats {
 	return &BytesSignalStats{
-		BytesTrackStats: &BytesTrackStats{
+		BytesTrackStats: BytesTrackStats{
 			telemetry: telemetry,
 		},
 		ctx: ctx,
