@@ -1858,6 +1858,9 @@ func (d *DownTrack) onBindAndConnectedChange() {
 		if d.activePaddingOnMuteUpTrack.Load() {
 			go d.sendPaddingOnMute()
 		}
+
+		// kick off PLI request if allocation is pending
+		d.postKeyFrameRequestEvent()
 	}
 }
 
