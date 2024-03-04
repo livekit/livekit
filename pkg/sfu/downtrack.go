@@ -1506,12 +1506,16 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 	for _, pkt := range pkts {
 		switch p := pkt.(type) {
 		case *rtcp.PictureLossIndication:
-			numPLIs++
-			sendPliOnce()
+			if p.MediaSSRC == d.ssrc {
+				numPLIs++
+				sendPliOnce()
+			}
 
 		case *rtcp.FullIntraRequest:
-			numFIRs++
-			sendPliOnce()
+			if p.MediaSSRC == d.ssrc {
+				numFIRs++
+				sendPliOnce()
+			}
 
 		case *rtcp.ReceiverEstimatedMaximumBitrate:
 			if sal := d.getStreamAllocatorListener(); sal != nil {
@@ -1554,13 +1558,15 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			}
 
 		case *rtcp.TransportLayerNack:
-			var nacks []uint16
-			for _, pair := range p.Nacks {
-				packetList := pair.PacketList()
-				numNACKs += uint32(len(packetList))
-				nacks = append(nacks, packetList...)
+			if p.MediaSSRC == d.ssrc {
+				var nacks []uint16
+				for _, pair := range p.Nacks {
+					packetList := pair.PacketList()
+					numNACKs += uint32(len(packetList))
+					nacks = append(nacks, packetList...)
+				}
+				go d.retransmitPackets(nacks)
 			}
-			go d.retransmitPackets(nacks)
 
 		case *rtcp.TransportLayerCC:
 			if p.MediaSSRC == d.ssrc {
