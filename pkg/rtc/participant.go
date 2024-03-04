@@ -853,22 +853,7 @@ func (p *ParticipantImpl) clearMigrationTimer() {
 	p.lock.Unlock()
 }
 
-func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
-	allTransportConnected := p.TransportManager.HasSubscriberEverConnected()
-	if p.IsPublisher() {
-		allTransportConnected = allTransportConnected && p.TransportManager.HasPublisherEverConnected()
-	}
-	if !force && !allTransportConnected {
-		return false
-	}
-
-	if onStart != nil {
-		onStart()
-	}
-
-	p.sendLeaveRequest(types.ParticipantCloseReasonMigrationRequested, true, false, true)
-	p.CloseSignalConnection(types.SignallingCloseReasonMigration)
-
+func (p *ParticipantImpl) setupMigrationTimerLocked() {
 	//
 	// On subscriber peer connection, remote side will try ICE on both
 	// pre- and post-migration ICE candidates as the migrating out
@@ -880,9 +865,6 @@ func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
 	// to try and succeed. If not, close the subscriber peer connection
 	// and help the remote side to narrow down its ICE candidate pool.
 	//
-	p.clearMigrationTimer()
-
-	p.lock.Lock()
 	p.migrationTimer = time.AfterFunc(migrationWaitDuration, func() {
 		p.clearMigrationTimer()
 
@@ -901,9 +883,43 @@ func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
 
 		p.TransportManager.SubscriberClose()
 	})
+}
+
+func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
+	allTransportConnected := p.TransportManager.HasSubscriberEverConnected()
+	if p.IsPublisher() {
+		allTransportConnected = allTransportConnected && p.TransportManager.HasPublisherEverConnected()
+	}
+	if !force && !allTransportConnected {
+		return false
+	}
+
+	if onStart != nil {
+		onStart()
+	}
+
+	p.sendLeaveRequest(types.ParticipantCloseReasonMigrationRequested, true, false, true)
+	p.CloseSignalConnection(types.SignallingCloseReasonMigration)
+
+	p.clearMigrationTimer()
+
+	p.lock.Lock()
+	p.setupMigrationTimerLocked()
 	p.lock.Unlock()
 
 	return true
+}
+
+func (p *ParticipantImpl) NotifyMigration() {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	if p.migrationTimer != nil {
+		// already set up
+		return
+	}
+
+	p.setupMigrationTimerLocked()
 }
 
 func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
