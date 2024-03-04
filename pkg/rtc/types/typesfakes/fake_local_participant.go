@@ -557,6 +557,10 @@ type FakeLocalParticipant struct {
 	negotiateArgsForCall []struct {
 		arg1 bool
 	}
+	NotifyMigrationStub        func()
+	notifyMigrationMutex       sync.RWMutex
+	notifyMigrationArgsForCall []struct {
+	}
 	OnClaimsChangedStub        func(func(types.LocalParticipant))
 	onClaimsChangedMutex       sync.RWMutex
 	onClaimsChangedArgsForCall []struct {
@@ -3840,6 +3844,30 @@ func (fake *FakeLocalParticipant) NegotiateArgsForCall(i int) bool {
 	return argsForCall.arg1
 }
 
+func (fake *FakeLocalParticipant) NotifyMigration() {
+	fake.notifyMigrationMutex.Lock()
+	fake.notifyMigrationArgsForCall = append(fake.notifyMigrationArgsForCall, struct {
+	}{})
+	stub := fake.NotifyMigrationStub
+	fake.recordInvocation("NotifyMigration", []interface{}{})
+	fake.notifyMigrationMutex.Unlock()
+	if stub != nil {
+		fake.NotifyMigrationStub()
+	}
+}
+
+func (fake *FakeLocalParticipant) NotifyMigrationCallCount() int {
+	fake.notifyMigrationMutex.RLock()
+	defer fake.notifyMigrationMutex.RUnlock()
+	return len(fake.notifyMigrationArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) NotifyMigrationCalls(stub func()) {
+	fake.notifyMigrationMutex.Lock()
+	defer fake.notifyMigrationMutex.Unlock()
+	fake.NotifyMigrationStub = stub
+}
+
 func (fake *FakeLocalParticipant) OnClaimsChanged(arg1 func(types.LocalParticipant)) {
 	fake.onClaimsChangedMutex.Lock()
 	fake.onClaimsChangedArgsForCall = append(fake.onClaimsChangedArgsForCall, struct {
@@ -6399,6 +6427,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.migrateStateMutex.RUnlock()
 	fake.negotiateMutex.RLock()
 	defer fake.negotiateMutex.RUnlock()
+	fake.notifyMigrationMutex.RLock()
+	defer fake.notifyMigrationMutex.RUnlock()
 	fake.onClaimsChangedMutex.RLock()
 	defer fake.onClaimsChangedMutex.RUnlock()
 	fake.onCloseMutex.RLock()
