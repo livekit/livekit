@@ -32,6 +32,7 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/exp/maps"
 
+	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/routing/selector"
@@ -40,7 +41,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
-	putil "github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
 )
 
@@ -54,7 +55,7 @@ type RTCService struct {
 	isDev         bool
 	limits        config.LimitConfig
 	parser        *uaparser.Parser
-	agentClient   rtc.AgentClient
+	agentClient   agent.AgentClient
 	telemetry     telemetry.TelemetryService
 
 	mu          sync.Mutex
@@ -67,7 +68,7 @@ func NewRTCService(
 	store ServiceStore,
 	router routing.MessageRouter,
 	currentNode routing.LocalNode,
-	agentClient rtc.AgentClient,
+	agentClient agent.AgentClient,
 	telemetry telemetry.TelemetryService,
 ) *RTCService {
 	s := &RTCService{
@@ -557,10 +558,11 @@ func (s *RTCService) startConnection(
 
 	if created && s.agentClient != nil {
 		go func() {
-			s.agentClient.JobRequest(ctx, &livekit.Job{
-				Id:   putil.NewGuid("JR_"),
-				Type: livekit.JobType_JT_ROOM,
-				Room: cr.Room,
+			res := s.agentClient.CheckEnabled(ctx, &rpc.CheckEnabledRequest{})
+			s.agentClient.JobRequest(ctx, &agent.JobDescription{
+				JobType:    livekit.JobType_JT_ROOM,
+				Room:       cr.Room,
+				Namespaces: res.Namespaces,
 			})
 		}()
 	}

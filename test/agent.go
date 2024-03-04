@@ -25,7 +25,6 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/utils"
 )
 
 type agentClient struct {
@@ -65,15 +64,12 @@ func newAgentClient(token string) (*agentClient, error) {
 func (c *agentClient) Run(jobType livekit.JobType) (err error) {
 	go c.read()
 
-	workerID := utils.NewGuid("W_")
-
 	switch jobType {
 	case livekit.JobType_JT_ROOM:
 		err = c.write(&livekit.WorkerMessage{
 			Message: &livekit.WorkerMessage_Register{
 				Register: &livekit.RegisterWorkerRequest{
 					Type:     livekit.JobType_JT_ROOM,
-					WorkerId: workerID,
 					Version:  "version",
 					Name:     "name",
 				},
@@ -85,7 +81,6 @@ func (c *agentClient) Run(jobType livekit.JobType) (err error) {
 			Message: &livekit.WorkerMessage_Register{
 				Register: &livekit.RegisterWorkerRequest{
 					Type:     livekit.JobType_JT_PUBLISHER,
-					WorkerId: workerID,
 					Version:  "version",
 					Name:     "name",
 				},

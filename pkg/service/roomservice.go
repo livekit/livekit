@@ -22,12 +22,12 @@ import (
 	"github.com/pkg/errors"
 	"github.com/twitchtv/twirp"
 
+	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
-	"github.com/livekit/protocol/utils"
 	"github.com/livekit/psrpc"
 )
 
@@ -39,7 +39,7 @@ type RoomService struct {
 	router            routing.MessageRouter
 	roomAllocator     RoomAllocator
 	roomStore         ServiceStore
-	agentClient       rtc.AgentClient
+	agentClient       agent.AgentClient
 	egressLauncher    rtc.EgressLauncher
 	topicFormatter    rpc.TopicFormatter
 	roomClient        rpc.TypedRoomClient
@@ -53,7 +53,7 @@ func NewRoomService(
 	router routing.MessageRouter,
 	roomAllocator RoomAllocator,
 	serviceStore ServiceStore,
-	agentClient rtc.AgentClient,
+	agentClient agent.AgentClient,
 	egressLauncher rtc.EgressLauncher,
 	topicFormatter rpc.TopicFormatter,
 	roomClient rpc.TypedRoomClient,
@@ -102,10 +102,11 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 
 	if created {
 		go func() {
-			s.agentClient.JobRequest(ctx, &livekit.Job{
-				Id:   utils.NewGuid("JR_"),
-				Type: livekit.JobType_JT_ROOM,
-				Room: rm,
+			res := s.agentClient.CheckEnabled(ctx, &rpc.CheckEnabledRequest{})
+			s.agentClient.JobRequest(ctx, &agent.JobDescription{
+				JobType:    livekit.JobType_JT_ROOM,
+				Room:       rm,
+				Namespaces: res.Namespaces,
 			})
 		}()
 
@@ -302,10 +303,11 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 
 	if created {
 		go func() {
-			s.agentClient.JobRequest(ctx, &livekit.Job{
-				Id:   utils.NewGuid("JR_"),
-				Type: livekit.JobType_JT_ROOM,
-				Room: room,
+			res := s.agentClient.CheckEnabled(ctx, &rpc.CheckEnabledRequest{})
+			s.agentClient.JobRequest(ctx, &agent.JobDescription{
+				JobType:    livekit.JobType_JT_ROOM,
+				Room:       room,
+				Namespaces: res.Namespaces,
 			})
 		}()
 	}

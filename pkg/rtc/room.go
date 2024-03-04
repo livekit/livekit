@@ -36,6 +36,7 @@ import (
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 
+	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
@@ -104,8 +105,7 @@ type Room struct {
 	trackManager   *RoomTrackManager
 
 	// agents
-	agentClient            AgentClient
-	publisherAgentsEnabled bool
+	agentClient agent.AgentClient
 
 	// map of identity -> Participant
 	participants              map[livekit.ParticipantIdentity]types.LocalParticipant
@@ -142,7 +142,7 @@ func NewRoom(
 	audioConfig *config.AudioConfig,
 	serverInfo *livekit.ServerInfo,
 	telemetry telemetry.TelemetryService,
-	agentClient AgentClient,
+	agentClient agent.AgentClient,
 	egressLauncher EgressLauncher,
 ) *Room {
 	r := &Room{
@@ -185,10 +185,9 @@ func NewRoom(
 			res := r.agentClient.CheckEnabled(context.Background(), &rpc.CheckEnabledRequest{})
 			if res.PublisherEnabled {
 				r.lock.Lock()
-				r.publisherAgentsEnabled = true
 				// if there are already published tracks, start the agents
 				for identity := range r.hasPublished {
-					r.launchPublisherAgent(r.participants[identity])
+					r.launchPublisherAgent(r.participants[identity], res.Namespaces)
 				}
 				r.lock.Unlock()
 			}
@@ -1016,12 +1015,12 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 	r.lock.Lock()
 	hasPublished := r.hasPublished[participant.Identity()]
 	r.hasPublished[participant.Identity()] = true
-	publisherAgentsEnabled := r.publisherAgentsEnabled
 	r.lock.Unlock()
 
 	if !hasPublished {
-		if publisherAgentsEnabled {
-			r.launchPublisherAgent(participant)
+		res := r.agentClient.CheckEnabled(context.Background(), &rpc.CheckEnabledRequest{})
+		if res.PublisherEnabled {
+			r.launchPublisherAgent(participant, res.Namespaces)
 		}
 		if r.internal != nil && r.internal.ParticipantEgress != nil {
 			go func() {
@@ -1459,18 +1458,19 @@ func (r *Room) simulationCleanupWorker() {
 	}
 }
 
-func (r *Room) launchPublisherAgent(p types.Participant) {
+func (r *Room) launchPublisherAgent(p types.Participant, namespaces []string) {
 	if p == nil || p.IsRecorder() || p.IsAgent() {
 		return
 	}
 
 	go func() {
-		r.agentClient.JobRequest(context.Background(), &livekit.Job{
-			Id:          utils.NewGuid("JP_"),
-			Type:        livekit.JobType_JT_PUBLISHER,
+		r.agentClient.JobRequest(context.Background(), &agent.JobDescription{
+			JobType:     livekit.JobType_JT_PUBLISHER,
 			Room:        r.ToProto(),
 			Participant: p.ToProto(),
+			Namespaces:  namespaces,
 		})
+
 	}()
 }
 
