@@ -533,6 +533,33 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 			s.maxJitter = r.jitterFromRR
 		}
 
+		if int64(extReceivedRRSN-s.extLastRRSN) < 0 || (extReceivedRRSN-s.extLastRRSN) > (1<<15) {
+			timeSinceLastRR := time.Since(r.lastRRTime)
+			if r.lastRRTime.IsZero() {
+				timeSinceLastRR = time.Since(r.startTime)
+			}
+			r.logger.Infow(
+				"rr interval too big, skipping",
+				"lastRRTime", r.lastRRTime.String(),
+				"lastRR", r.lastRR,
+				"timeSinceLastRR", timeSinceLastRR.String(),
+				"receivedRR", rr,
+				"extStartSN", r.extStartSN,
+				"extHighestSN", r.extHighestSN,
+				"extStartTS", r.extStartTS,
+				"extHighestTS", r.extHighestTS,
+				"extLastRRSN", s.extLastRRSN,
+				"firstTime", r.firstTime.String(),
+				"startTime", r.startTime.String(),
+				"highestTime", r.highestTime.String(),
+				"extReceivedRRSN", extReceivedRRSN,
+				"packetsInInterval", extReceivedRRSN-s.extLastRRSN,
+				"extHighestSNFromRR", r.extHighestSNFromRR,
+				"packetsLostFromRR", r.packetsLostFromRR,
+			)
+			continue
+		}
+
 		// on every RR, calculate delta since last RR using packet metadata cache
 		is := r.getIntervalStats(s.extLastRRSN+1, extReceivedRRSN+1, r.extHighestSN)
 		eis := &s.intervalStats
