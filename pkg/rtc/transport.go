@@ -326,8 +326,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	} else {
 		// sfu only use interceptor to send XR but don't read response from it (use buffer instead),
 		// so use a empty callback here
-		ir.Add(lkinterceptor.NewRTTFromXRFactory(func(rtt uint32) {
-		}))
+		ir.Add(lkinterceptor.NewRTTFromXRFactory(func(rtt uint32) {}))
 	}
 	if len(params.SimTracks) > 0 {
 		f, err := NewUnhandleSimulcastInterceptorFactory(UnhandleSimulcastTracks(params.SimTracks))
