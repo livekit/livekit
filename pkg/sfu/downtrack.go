@@ -1089,7 +1089,7 @@ func (d *DownTrack) UpTrackMaxTemporalLayerSeenChange(maxTemporalLayerSeen int32
 	}
 }
 
-func (d *DownTrack) maybeAddTransition(_bitrate int64, distance float64, pauseReason VideoPauseReason) {
+func (d *DownTrack) maybeAddTransition(_ int64, distance float64, pauseReason VideoPauseReason) {
 	if d.kind == webrtc.RTPCodecTypeAudio {
 		return
 	}
@@ -1509,12 +1509,16 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			if p.MediaSSRC == d.ssrc {
 				numPLIs++
 				sendPliOnce()
+			} else {
+				d.params.Logger.Warnw("received PLI for unknown SSRC", nil, "expected", d.ssrc, "media_ssrc", p.MediaSSRC, "sender_ssrc", p.SenderSSRC)
 			}
 
 		case *rtcp.FullIntraRequest:
 			if p.MediaSSRC == d.ssrc {
 				numFIRs++
 				sendPliOnce()
+			} else {
+				d.params.Logger.Warnw("received FIR for unknown SSRC", nil, "expected", d.ssrc, "media_ssrc", p.MediaSSRC, "sender_ssrc", p.SenderSSRC)
 			}
 
 		case *rtcp.ReceiverEstimatedMaximumBitrate:
@@ -1566,6 +1570,8 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 					nacks = append(nacks, packetList...)
 				}
 				go d.retransmitPackets(nacks)
+			} else {
+				d.params.Logger.Warnw("received NACK for unknown SSRC", nil, "expected", d.ssrc, "media_ssrc", p.MediaSSRC, "sender_ssrc", p.SenderSSRC)
 			}
 
 		case *rtcp.TransportLayerCC:
