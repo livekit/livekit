@@ -1089,7 +1089,7 @@ func (d *DownTrack) UpTrackMaxTemporalLayerSeenChange(maxTemporalLayerSeen int32
 	}
 }
 
-func (d *DownTrack) maybeAddTransition(_bitrate int64, distance float64, pauseReason VideoPauseReason) {
+func (d *DownTrack) maybeAddTransition(_ int64, distance float64, pauseReason VideoPauseReason) {
 	if d.kind == webrtc.RTPCodecTypeAudio {
 		return
 	}
@@ -1506,12 +1506,20 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 	for _, pkt := range pkts {
 		switch p := pkt.(type) {
 		case *rtcp.PictureLossIndication:
-			numPLIs++
-			sendPliOnce()
+			if p.MediaSSRC == d.ssrc {
+				numPLIs++
+				sendPliOnce()
+			} else {
+				d.params.Logger.Warnw("received PLI for unknown SSRC", nil, "expected", d.ssrc, "media_ssrc", p.MediaSSRC, "sender_ssrc", p.SenderSSRC)
+			}
 
 		case *rtcp.FullIntraRequest:
-			numFIRs++
-			sendPliOnce()
+			if p.MediaSSRC == d.ssrc {
+				numFIRs++
+				sendPliOnce()
+			} else {
+				d.params.Logger.Warnw("received FIR for unknown SSRC", nil, "expected", d.ssrc, "media_ssrc", p.MediaSSRC, "sender_ssrc", p.SenderSSRC)
+			}
 
 		case *rtcp.ReceiverEstimatedMaximumBitrate:
 			if sal := d.getStreamAllocatorListener(); sal != nil {
@@ -1554,13 +1562,17 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			}
 
 		case *rtcp.TransportLayerNack:
-			var nacks []uint16
-			for _, pair := range p.Nacks {
-				packetList := pair.PacketList()
-				numNACKs += uint32(len(packetList))
-				nacks = append(nacks, packetList...)
+			if p.MediaSSRC == d.ssrc {
+				var nacks []uint16
+				for _, pair := range p.Nacks {
+					packetList := pair.PacketList()
+					numNACKs += uint32(len(packetList))
+					nacks = append(nacks, packetList...)
+				}
+				go d.retransmitPackets(nacks)
+			} else {
+				d.params.Logger.Warnw("received NACK for unknown SSRC", nil, "expected", d.ssrc, "media_ssrc", p.MediaSSRC, "sender_ssrc", p.SenderSSRC)
 			}
-			go d.retransmitPackets(nacks)
 
 		case *rtcp.TransportLayerCC:
 			if p.MediaSSRC == d.ssrc {
