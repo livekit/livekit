@@ -206,9 +206,10 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		for _, pkt := range pkts {
 			switch pkt := pkt.(type) {
 			case *rtcp.SourceDescription:
-			// do nothing for now
 			case *rtcp.SenderReport:
-				buff.SetSenderReportData(pkt.RTPTime, pkt.NTPTime)
+				if pkt.SSRC == uint32(track.SSRC()) {
+					buff.SetSenderReportData(pkt.RTPTime, pkt.NTPTime)
+				}
 			case *rtcp.ExtendedReport:
 			rttFromXR:
 				for _, report := range pkt.Reports {
