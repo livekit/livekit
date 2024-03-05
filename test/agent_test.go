@@ -40,10 +40,10 @@ func TestAgents(t *testing.T) {
 	defer ac2.close()
 	defer ac3.close()
 	defer ac4.close()
-	ac1.Run(livekit.JobType_JT_ROOM)
-	ac2.Run(livekit.JobType_JT_ROOM)
-	ac3.Run(livekit.JobType_JT_PUBLISHER)
-	ac4.Run(livekit.JobType_JT_PUBLISHER)
+	ac1.Run(livekit.JobType_JT_ROOM, "namespace")
+	ac2.Run(livekit.JobType_JT_ROOM, "namespace")
+	ac3.Run(livekit.JobType_JT_PUBLISHER, "namespace")
+	ac4.Run(livekit.JobType_JT_PUBLISHER, "namespace")
 
 	time.Sleep(time.Second * 3)
 
@@ -82,6 +82,41 @@ func TestAgents(t *testing.T) {
 	require.Equal(t, int32(1), ac1.roomJobs.Load()+ac2.roomJobs.Load())
 	require.Equal(t, int32(2), ac3.participantJobs.Load()+ac4.participantJobs.Load())
 }
+
+func TestAgentNamespaces(t *testing.T) {
+	_, finish := setupSingleNodeTest("TestAgentNamespaces")
+	defer finish()
+
+	ac1, err := newAgentClient(agentToken())
+	require.NoError(t, err)
+	ac2, err := newAgentClient(agentToken())
+	require.NoError(t, err)
+	defer ac1.close()
+	defer ac2.close()
+	ac1.Run(livekit.JobType_JT_ROOM, "namespace")
+	ac2.Run(livekit.JobType_JT_ROOM, "namespace2")
+
+	time.Sleep(time.Second * 3)
+
+	require.Equal(t, int32(1), ac1.registered.Load())
+	require.Equal(t, int32(1), ac2.registered.Load())
+
+	c1 := createRTCClient("c1", defaultServerPort, nil)
+	waitUntilConnected(t, c1)
+
+	time.Sleep(time.Second * 6)
+
+	require.Equal(t, int32(1), ac1.roomJobs.Load())
+	require.Equal(t, int32(1), ac2.roomJobs.Load())
+
+	job1 := <-ac1.requestedJobs
+	job2 := <-ac2.requestedJobs
+
+	require.Equal(t, "namespace", job1.Namespace)
+	require.Equal(t, "namespace2", job2.Namespace)
+	require.NotEqual(t, job1.Id, job2.Id)
+}
+
 
 func agentToken() string {
 	at := auth.NewAccessToken(testApiKey, testApiSecret).

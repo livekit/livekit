@@ -37,6 +37,8 @@ type agentClient struct {
 	participantAvailability atomic.Int32
 	participantJobs         atomic.Int32
 
+	requestedJobs chan *livekit.Job
+
 	done chan struct{}
 }
 
@@ -57,13 +59,13 @@ func newAgentClient(token string) (*agentClient, error) {
 
 	return &agentClient{
 		conn: conn,
+		requestedJobs: make(chan *livekit.Job, 100),
 		done: make(chan struct{}),
 	}, nil
 }
 
-func (c *agentClient) Run(jobType livekit.JobType) (err error) {
+func (c *agentClient) Run(jobType livekit.JobType, namespace string) (err error) {
 	go c.read()
-	namespace := "namespace"
 
 	switch jobType {
 	case livekit.JobType_JT_ROOM:
@@ -136,6 +138,8 @@ func (c *agentClient) handleAvailability(req *livekit.AvailabilityRequest) {
 	} else {
 		c.participantAvailability.Inc()
 	}
+
+	c.requestedJobs <- req.Job
 
 	c.write(&livekit.WorkerMessage{
 		Message: &livekit.WorkerMessage_Availability{
