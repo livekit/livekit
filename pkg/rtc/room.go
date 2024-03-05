@@ -774,7 +774,7 @@ func (r *Room) CloseIfEmpty() {
 	if r.FirstJoinedAt() > 0 && r.LastLeftAt() > 0 {
 		elapsed = time.Now().Unix() - r.LastLeftAt()
 		// need to give time in case participant is reconnecting
-		timeout = RoomDepartureGrace
+		timeout = r.protoRoom.DepartureTimeout
 	} else {
 		elapsed = time.Now().Unix() - r.protoRoom.CreationTime
 		timeout = r.protoRoom.EmptyTimeout
