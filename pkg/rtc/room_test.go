@@ -49,7 +49,7 @@ const (
 func init() {
 	config.InitLoggerFromConfig(&config.DefaultConfig.Logging)
 	// allow immediate closure in testing
-	RoomDepartureGrace = 1
+	DefaultDepartureTimeout = 1
 	roomUpdateInterval = defaultDelay
 }
 
@@ -377,7 +377,7 @@ func TestRoomClosure(t *testing.T) {
 		rm.lock.Unlock()
 		rm.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonClientRequestLeave)
 
-		time.Sleep(time.Duration(RoomDepartureGrace)*time.Second + defaultDelay)
+		time.Sleep(time.Duration(DefaultDepartureTimeout)*time.Second + defaultDelay)
 
 		rm.CloseIfEmpty()
 		require.Len(t, rm.GetParticipants(), 0)

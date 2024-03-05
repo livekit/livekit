@@ -59,8 +59,8 @@ const (
 
 var (
 	// var to allow unit test override
-	RoomDepartureGrace uint32 = 20
-	roomUpdateInterval        = 5 * time.Second // frequency to update room participant counts
+	DefaultDepartureTimeout uint32 = 20
+	roomUpdateInterval             = 5 * time.Second // frequency to update room participant counts
 )
 
 type broadcastOptions struct {
@@ -175,6 +175,9 @@ func NewRoom(
 	r.protoProxy = utils.NewProtoProxy[*livekit.Room](roomUpdateInterval, r.updateProto)
 	if r.protoRoom.EmptyTimeout == 0 {
 		r.protoRoom.EmptyTimeout = DefaultEmptyTimeout
+	}
+	if r.protoRoom.DepartureTimeout == 0 {
+		r.protoRoom.DepartureTimeout = DefaultDepartureTimeout
 	}
 	if r.protoRoom.CreationTime == 0 {
 		r.protoRoom.CreationTime = time.Now().Unix()
