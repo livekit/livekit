@@ -328,14 +328,6 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 	})
 	d.deltaStatsSenderSnapshotId = d.rtpStats.NewSenderSnapshotId()
 
-	if delay := params.PlayoutDelayLimit; delay.GetEnabled() {
-		var err error
-		d.playoutDelay, err = NewPlayoutDelayController(delay.GetMin(), delay.GetMax(), params.Logger, d.rtpStats)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
 		MimeType:       codecs[0].MimeType, // LK-TODO have to notify on codec change
 		IsFECEnabled:   strings.EqualFold(codecs[0].MimeType, webrtc.MimeTypeOpus) && strings.Contains(strings.ToLower(codecs[0].SDPFmtpLine), "fec"),
@@ -349,6 +341,13 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 	})
 
 	if d.kind == webrtc.RTPCodecTypeVideo {
+		if delay := params.PlayoutDelayLimit; delay.GetEnabled() {
+			var err error
+			d.playoutDelay, err = NewPlayoutDelayController(delay.GetMin(), delay.GetMax(), params.Logger, d.rtpStats)
+			if err != nil {
+				return nil, err
+			}
+		}
 		go d.maxLayerNotifierWorker()
 		go d.keyFrameRequester()
 	}
@@ -1509,16 +1508,12 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			if p.MediaSSRC == d.ssrc {
 				numPLIs++
 				sendPliOnce()
-			} else {
-				d.params.Logger.Warnw("received PLI for unknown SSRC", nil, "expected", d.ssrc, "media_ssrc", p.MediaSSRC, "sender_ssrc", p.SenderSSRC)
 			}
 
 		case *rtcp.FullIntraRequest:
 			if p.MediaSSRC == d.ssrc {
 				numFIRs++
 				sendPliOnce()
-			} else {
-				d.params.Logger.Warnw("received FIR for unknown SSRC", nil, "expected", d.ssrc, "media_ssrc", p.MediaSSRC, "sender_ssrc", p.SenderSSRC)
 			}
 
 		case *rtcp.ReceiverEstimatedMaximumBitrate:
@@ -1570,8 +1565,6 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 					nacks = append(nacks, packetList...)
 				}
 				go d.retransmitPackets(nacks)
-			} else {
-				d.params.Logger.Warnw("received NACK for unknown SSRC", nil, "expected", d.ssrc, "media_ssrc", p.MediaSSRC, "sender_ssrc", p.SenderSSRC)
 			}
 
 		case *rtcp.TransportLayerCC:
