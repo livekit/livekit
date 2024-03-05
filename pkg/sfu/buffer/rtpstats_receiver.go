@@ -307,7 +307,11 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 					"first", r.srFirst.ToString(),
 					"last", r.srNewest.ToString(),
 					"current", srDataCopy.ToString(),
+					"timeSinceFirst", timeSinceFirst,
+					"rtpDiffSinceFirst", rtpDiffSinceFirst,
 					"calculatedFirst", calculatedClockRateFromFirst,
+					"timeSinceLast", timeSinceLast,
+					"rtpDiffSinceLast", rtpDiffSinceLast,
 					"calculatedLast", calculatedClockRateFromLast,
 					"count", r.clockSkewCount,
 				)
