@@ -232,6 +232,7 @@ type RoomConfig struct {
 	EnabledCodecs      []CodecSpec        `yaml:"enabled_codecs,omitempty"`
 	MaxParticipants    uint32             `yaml:"max_participants,omitempty"`
 	EmptyTimeout       uint32             `yaml:"empty_timeout,omitempty"`
+	DepartureTimeout   uint32             `yaml:"departure_timeout,omitempty"`
 	EnableRemoteUnmute bool               `yaml:"enable_remote_unmute,omitempty"`
 	MaxMetadataSize    uint32             `yaml:"max_metadata_size,omitempty"`
 	PlayoutDelay       PlayoutDelayConfig `yaml:"playout_delay,omitempty"`
@@ -482,7 +483,8 @@ var DefaultConfig = Config{
 			{Mime: webrtc.MimeTypeVP9},
 			{Mime: webrtc.MimeTypeAV1},
 		},
-		EmptyTimeout: 5 * 60,
+		EmptyTimeout:     5 * 60,
+		DepartureTimeout: 20,
 	},
 	Logging: LoggingConfig{
 		PionLevel: "error",

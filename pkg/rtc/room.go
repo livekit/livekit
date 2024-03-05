@@ -47,8 +47,7 @@ import (
 )
 
 const (
-	DefaultEmptyTimeout       = 5 * 60 // 5m
-	AudioLevelQuantization    = 8      // ideally power of 2 to minimize float decimal
+	AudioLevelQuantization    = 8 // ideally power of 2 to minimize float decimal
 	invAudioLevelQuantization = 1.0 / AudioLevelQuantization
 	subscriberUpdateInterval  = 3 * time.Second
 
@@ -59,8 +58,7 @@ const (
 
 var (
 	// var to allow unit test override
-	DefaultDepartureTimeout uint32 = 20
-	roomUpdateInterval             = 5 * time.Second // frequency to update room participant counts
+	roomUpdateInterval = 5 * time.Second // frequency to update room participant counts
 )
 
 type broadcastOptions struct {
@@ -139,6 +137,7 @@ func NewRoom(
 	room *livekit.Room,
 	internal *livekit.RoomInternal,
 	config WebRTCConfig,
+	roomConfig config.RoomConfig,
 	audioConfig *config.AudioConfig,
 	serverInfo *livekit.ServerInfo,
 	telemetry telemetry.TelemetryService,
@@ -174,10 +173,10 @@ func NewRoom(
 
 	r.protoProxy = utils.NewProtoProxy[*livekit.Room](roomUpdateInterval, r.updateProto)
 	if r.protoRoom.EmptyTimeout == 0 {
-		r.protoRoom.EmptyTimeout = DefaultEmptyTimeout
+		r.protoRoom.EmptyTimeout = roomConfig.EmptyTimeout
 	}
 	if r.protoRoom.DepartureTimeout == 0 {
-		r.protoRoom.DepartureTimeout = DefaultDepartureTimeout
+		r.protoRoom.DepartureTimeout = roomConfig.DepartureTimeout
 	}
 	if r.protoRoom.CreationTime == 0 {
 		r.protoRoom.CreationTime = time.Now().Unix()
