@@ -228,7 +228,10 @@ func (h *AgentHandler) registerWorkerTopic(w *agent.Worker) {
 	h.publisherEnabled = h.publisherAvailableLocked()
 	h.mu.Unlock()
 
-	_ = h.agentServer.PublishWorkerRegistered(context.Background(), "", &emptypb.Empty{})
+	err = h.agentServer.PublishWorkerRegistered(context.Background(), "", &emptypb.Empty{})
+	if err != nil {
+		w.Logger.Errorw("failed to publish worker registered", err)
+	}
 }
 
 func (h *AgentHandler) unregisterWorkerTopic(worker *agent.Worker) {
