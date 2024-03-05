@@ -21,6 +21,7 @@ import (
 	"github.com/livekit/livekit-server/version"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -149,6 +150,7 @@ func (s *AgentService) HandleConnection(r *http.Request, conn *websocket.Conn) {
 				return
 			}
 		}
+
 	}()
 
 	for {
@@ -165,7 +167,7 @@ func (s *AgentService) HandleConnection(r *http.Request, conn *websocket.Conn) {
 					websocket.CloseNormalClosure,
 					websocket.CloseNoStatusReceived,
 				) {
-				worker.Logger.Infow("Agent worker closed WS connection", "wsError", err)
+				worker.Logger.Infow("worker closed WS connection", "wsError", err)
 			} else {
 				worker.Logger.Errorw("error reading from websocket", err)
 			}
@@ -188,7 +190,6 @@ func NewAgentHandler(agentServer rpc.AgentInternalServer, keyProvider auth.KeyPr
 
 func (h *AgentHandler) registerWorkerTopic(w *agent.Worker) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 
 	info, ok := h.namespaces[w.Namespace()]
 	numPublishers := int32(0)
@@ -214,6 +215,7 @@ func (h *AgentHandler) registerWorkerTopic(w *agent.Worker) {
 
 	if err != nil {
 		w.Logger.Errorw("failed to register job request topic", err)
+		h.mu.Unlock()
 		w.Close() // Close the worker
 		return
 	}
@@ -225,6 +227,9 @@ func (h *AgentHandler) registerWorkerTopic(w *agent.Worker) {
 
 	h.roomEnabled = h.roomAvailableLocked()
 	h.publisherEnabled = h.publisherAvailableLocked()
+	h.mu.Unlock()
+
+	_ = h.agentServer.PublishWorkerRegistered(context.Background(), "", &emptypb.Empty{})
 }
 
 func (h *AgentHandler) unregisterWorkerTopic(worker *agent.Worker) {
@@ -277,46 +282,39 @@ func (s *AgentHandler) publisherAvailableLocked() bool {
 }
 
 func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*emptypb.Empty, error) {
-	attempted := make(map[string]bool)
-	for {
-		h.mu.Lock()
-		var selected *agent.Worker
-		for _, w := range h.workers {
-			if job.Type != w.JobType() {
-				continue
-			}
-
-			if job.Namespace != w.Namespace() {
-				continue
-			}
-
-			if _, ok := attempted[w.ID()]; ok {
-				continue
-			}
-
-			if w.Status() == livekit.WorkerStatus_WS_AVAILABLE {
-				if len(w.RunningJobs()) > 0 {
-					selected = w
-					break
-				} else if selected == nil {
-					selected = w
-				}
-			}
-
-		}
-		h.mu.Unlock()
-
-		if selected == nil {
-			return nil, psrpc.NewErrorf(psrpc.DeadlineExceeded, "no workers available")
+	h.mu.Lock()
+	var selected *agent.Worker
+	for _, w := range h.workers {
+		if job.Type != w.JobType() {
+			continue
 		}
 
-		attempted[selected.ID()] = true
-
-		err := selected.AssignJob(ctx, job)
-		if err != nil && !errors.Is(err, agent.ErrWorkerNotAvailable) {
-			return nil, err
+		if job.Namespace != w.Namespace() {
+			continue
 		}
+
+		if w.Status() == livekit.WorkerStatus_WS_AVAILABLE {
+			if len(w.RunningJobs()) > 0 {
+				selected = w
+				break
+			} else if selected == nil {
+				selected = w
+			}
+		}
+
 	}
+	h.mu.Unlock()
+
+	if selected == nil {
+		return nil, psrpc.NewErrorf(psrpc.DeadlineExceeded, "no workers available")
+	}
+
+	err := selected.AssignJob(ctx, job)
+	if err != nil && !errors.Is(err, agent.ErrWorkerNotAvailable) {
+		return nil, err
+	}
+
+	return &emptypb.Empty{}, nil
 }
 
 func (h *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job) float32 {
@@ -343,7 +341,7 @@ func (h *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job)
 }
 
 func (h *AgentHandler) CheckEnabled(ctx context.Context, req *rpc.CheckEnabledRequest) (*rpc.CheckEnabledResponse, error) {
-	namespaces := make([]string, len(h.namespaces))
+	namespaces := make([]string, 0, len(h.namespaces))
 	for ns := range h.namespaces {
 		namespaces = append(namespaces, ns)
 	}

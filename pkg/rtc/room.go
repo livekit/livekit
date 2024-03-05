@@ -180,20 +180,6 @@ func NewRoom(
 		r.protoRoom.CreationTime = time.Now().Unix()
 	}
 
-	if agentClient != nil {
-		go func() {
-			res := r.agentClient.CheckEnabled(context.Background(), &rpc.CheckEnabledRequest{})
-			if res.PublisherEnabled {
-				r.lock.Lock()
-				// if there are already published tracks, start the agents
-				for identity := range r.hasPublished {
-					r.launchPublisherAgent(r.participants[identity], res.Namespaces)
-				}
-				r.lock.Unlock()
-			}
-		}()
-	}
-
 	go r.audioUpdateWorker()
 	go r.connectionQualityWorker()
 	go r.changeUpdateWorker()
@@ -1462,6 +1448,7 @@ func (r *Room) launchPublisherAgent(p types.Participant, namespaces []string) {
 	if p == nil || p.IsRecorder() || p.IsAgent() {
 		return
 	}
+
 
 	go func() {
 		r.agentClient.JobRequest(context.Background(), &agent.JobDescription{

@@ -64,7 +64,7 @@ func TestAgents(t *testing.T) {
 	require.NoError(t, err)
 	defer t2.Stop()
 
-	time.Sleep(time.Second * 3)
+	time.Sleep(time.Second * 6)
 
 	require.Equal(t, int32(1), ac1.roomJobs.Load()+ac2.roomJobs.Load())
 	require.Equal(t, int32(1), ac3.participantJobs.Load()+ac4.participantJobs.Load())

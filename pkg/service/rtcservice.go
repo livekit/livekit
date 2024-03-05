@@ -529,6 +529,19 @@ func (s *RTCService) startConnection(
 		return cr, nil, err
 	}
 
+	if created && s.agentClient != nil {
+		go func() {
+			res := s.agentClient.CheckEnabled(ctx, &rpc.CheckEnabledRequest{})
+			if res.RoomEnabled {
+				s.agentClient.JobRequest(ctx, &agent.JobDescription{
+					JobType:    livekit.JobType_JT_ROOM,
+					Room:       cr.Room,
+					Namespaces: res.Namespaces,
+				})
+			}
+		}()
+	}
+
 	// this needs to be started first *before* using router functions on this node
 	cr.StartParticipantSignalResults, err = s.router.StartParticipantSignal(ctx, roomName, pi)
 	if err != nil {
@@ -546,16 +559,6 @@ func (s *RTCService) startConnection(
 		return cr, nil, err
 	}
 
-	if created && s.agentClient != nil {
-		go func() {
-			res := s.agentClient.CheckEnabled(ctx, &rpc.CheckEnabledRequest{})
-			s.agentClient.JobRequest(ctx, &agent.JobDescription{
-				JobType:    livekit.JobType_JT_ROOM,
-				Room:       cr.Room,
-				Namespaces: res.Namespaces,
-			})
-		}()
-	}
 
 	return cr, initialResponse, nil
 }

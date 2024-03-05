@@ -78,6 +78,7 @@ func NewWorker(
 		serverInfo:      serverInfo,
 		closed:          make(chan struct{}),
 		runningJobs:     make(map[string]*Job),
+		availibility:    make(map[string]chan *livekit.AvailabilityResponse),
 		msgChan:         make(chan *livekit.ServerMessage),
 		ctx:             ctx,
 		cancel:          cancel,
@@ -108,10 +109,14 @@ func (w *Worker) ID() string {
 }
 
 func (w *Worker) JobType() livekit.JobType {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	return w.jobType
 }
 
 func (w *Worker) Namespace() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	return w.namespace
 }
 
@@ -258,7 +263,21 @@ func (w *Worker) handleRegister(req *livekit.RegisterWorkerRequest) {
 	w.jobType = req.Type
 	w.version = req.Version
 	w.name = req.Name
-	w.permissions = req.AllowedPermissions
+	w.namespace = req.GetNamespace()
+
+	if req.AllowedPermissions != nil {
+		w.permissions = req.AllowedPermissions
+	} else {
+		// Use defautl agent permissions
+		w.permissions = &livekit.ParticipantPermission{
+			CanSubscribe: true,
+			CanPublish:   true,
+			CanPublishData: true,
+			CanUpdateMetadata: true,
+		}
+	}
+
+	w.status = livekit.WorkerStatus_WS_AVAILABLE
 	w.registered.Store(true)
 	w.mu.Unlock()
 

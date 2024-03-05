@@ -63,15 +63,17 @@ func newAgentClient(token string) (*agentClient, error) {
 
 func (c *agentClient) Run(jobType livekit.JobType) (err error) {
 	go c.read()
+	namespace := "namespace"
 
 	switch jobType {
 	case livekit.JobType_JT_ROOM:
 		err = c.write(&livekit.WorkerMessage{
 			Message: &livekit.WorkerMessage_Register{
 				Register: &livekit.RegisterWorkerRequest{
-					Type:     livekit.JobType_JT_ROOM,
-					Version:  "version",
-					Name:     "name",
+					Type:      livekit.JobType_JT_ROOM,
+					Version:   "version",
+					Namespace: &namespace,
+					Name:      "name",
 				},
 			},
 		})
@@ -80,9 +82,10 @@ func (c *agentClient) Run(jobType livekit.JobType) (err error) {
 		err = c.write(&livekit.WorkerMessage{
 			Message: &livekit.WorkerMessage_Register{
 				Register: &livekit.RegisterWorkerRequest{
-					Type:     livekit.JobType_JT_PUBLISHER,
-					Version:  "version",
-					Name:     "name",
+					Type:      livekit.JobType_JT_PUBLISHER,
+					Version:   "version",
+					Namespace: &namespace,
+					Name:      "name",
 				},
 			},
 		})

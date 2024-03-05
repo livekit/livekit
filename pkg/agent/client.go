@@ -92,7 +92,6 @@ func NewAgentClient(bus psrpc.MessageBus) (AgentClient, error) {
 	go func() {
 		// invalidate cache
 		for range sub.Channel() {
-			logger.Debugw("invalidating enabled agent cache")
 			c.mu.Lock()
 			c.enabledCache = nil
 			c.mu.Unlock()
@@ -214,7 +213,7 @@ func (c *agentClient) JobRequest(ctx context.Context, desc *JobDescription) {
 				Namespace:   ns,
 			})
 			if err != nil {
-				logger.Errorw("failed to send job request", err, "namespace", ns, "jobType", desc.JobType)
+				logger.Errorw("failed to send job request", err, "namespace", ns, "jobType", jobTypeTopic)
 			}
 		}(ns, jobTypeTopic)
 
