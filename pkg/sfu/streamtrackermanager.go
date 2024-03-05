@@ -25,11 +25,12 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
+
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/streamtracker"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 )
 
 const (
@@ -98,7 +99,6 @@ func NewStreamTrackerManager(
 		maxPublishedLayer:    buffer.InvalidLayerSpatial,
 		maxTemporalLayerSeen: buffer.InvalidLayerTemporal,
 		clockRate:            clockRate,
-		closed:               core.NewFuse(),
 	}
 	s.trackInfo.Store(proto.Clone(trackInfo).(*livekit.TrackInfo))
 

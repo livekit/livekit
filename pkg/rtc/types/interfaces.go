@@ -344,6 +344,8 @@ type LocalParticipant interface {
 	AddTransceiverFromTrackToSubscriber(trackLocal webrtc.TrackLocal, params AddTrackParams) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
 	RemoveTrackFromSubscriber(sender *webrtc.RTPSender) error
 
+	WriteSubscriberRTCP(pkts []rtcp.Packet) error
+
 	// subscriptions
 	SubscribeToTrack(trackID livekit.TrackID)
 	UnsubscribeFromTrack(trackID livekit.TrackID)
@@ -393,6 +395,7 @@ type LocalParticipant interface {
 
 	// session migration
 	MaybeStartMigration(force bool, onStart func()) bool
+	NotifyMigration()
 	SetMigrateState(s MigrateState)
 	MigrateState() MigrateState
 	SetMigrateInfo(previousOffer, previousAnswer *webrtc.SessionDescription, mediaTracks []*livekit.TrackPublishedResponse, dataChannels []*livekit.DataChannelInfo)

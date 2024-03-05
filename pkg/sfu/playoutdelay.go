@@ -33,6 +33,8 @@ const (
 	jitterLowMultiToDelay  = 10
 	jitterHighMultiToDelay = 15
 	jitterHighThreshold    = 15
+
+	targetDelayLogThreshold = 500
 )
 
 func (s PlayoutDelayState) String() string {
@@ -109,6 +111,9 @@ func (c *PlayoutDelayController) SetJitter(jitter uint32) {
 	if c.currentDelay == targetDelay {
 		c.lock.Unlock()
 		return
+	}
+	if targetDelay > targetDelayLogThreshold {
+		c.logger.Debugw("high playout delay", "target", targetDelay, "jitter", jitter, "nackPercent", nackPercent, "current", c.currentDelay)
 	}
 	c.currentDelay = targetDelay
 	c.lock.Unlock()

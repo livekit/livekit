@@ -138,6 +138,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		Pacer:             sub.GetPacer(),
 		Trailer:           trailer,
 		Logger:            LoggerWithTrack(sub.GetLogger().WithComponent(sutils.ComponentSub), trackID, t.params.IsRelayed),
+		RTCPWriter:        sub.WriteSubscriberRTCP,
 	})
 	if err != nil {
 		return nil, err
@@ -190,7 +191,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 
 	downTrack.OnMaxLayerChanged(func(dt *sfu.DownTrack, layer int32) {
 		if t.onSubscriberMaxQualityChange != nil {
-			t.onSubscriberMaxQualityChange(subscriberID, dt.Codec(), layer)
+			t.onSubscriberMaxQualityChange(dt.SubscriberID(), dt.Codec(), layer)
 		}
 	})
 

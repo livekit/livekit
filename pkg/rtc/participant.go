@@ -709,7 +709,10 @@ func (p *ParticipantImpl) handleMigrateTracks() {
 		if mt != nil {
 			addedTracks = append(addedTracks, mt)
 		} else {
-			p.pubLogger.Warnw("could not find migrated track", nil, "cid", cid)
+			p.pubLogger.Warnw("could not find migrated track, migration failed", nil, "cid", cid)
+			p.pendingTracksLock.Unlock()
+			p.IssueFullReconnect(types.ParticipantCloseReasonMigrateCodecMismatch)
+			return
 		}
 	}
 
@@ -850,22 +853,7 @@ func (p *ParticipantImpl) clearMigrationTimer() {
 	p.lock.Unlock()
 }
 
-func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
-	allTransportConnected := p.TransportManager.HasSubscriberEverConnected()
-	if p.IsPublisher() {
-		allTransportConnected = allTransportConnected && p.TransportManager.HasPublisherEverConnected()
-	}
-	if !force && !allTransportConnected {
-		return false
-	}
-
-	if onStart != nil {
-		onStart()
-	}
-
-	p.sendLeaveRequest(types.ParticipantCloseReasonMigrationRequested, true, false, true)
-	p.CloseSignalConnection(types.SignallingCloseReasonMigration)
-
+func (p *ParticipantImpl) setupMigrationTimerLocked() {
 	//
 	// On subscriber peer connection, remote side will try ICE on both
 	// pre- and post-migration ICE candidates as the migrating out
@@ -877,9 +865,6 @@ func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
 	// to try and succeed. If not, close the subscriber peer connection
 	// and help the remote side to narrow down its ICE candidate pool.
 	//
-	p.clearMigrationTimer()
-
-	p.lock.Lock()
 	p.migrationTimer = time.AfterFunc(migrationWaitDuration, func() {
 		p.clearMigrationTimer()
 
@@ -898,9 +883,43 @@ func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
 
 		p.TransportManager.SubscriberClose()
 	})
+}
+
+func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
+	allTransportConnected := p.TransportManager.HasSubscriberEverConnected()
+	if p.IsPublisher() {
+		allTransportConnected = allTransportConnected && p.TransportManager.HasPublisherEverConnected()
+	}
+	if !force && !allTransportConnected {
+		return false
+	}
+
+	if onStart != nil {
+		onStart()
+	}
+
+	p.sendLeaveRequest(types.ParticipantCloseReasonMigrationRequested, true, false, true)
+	p.CloseSignalConnection(types.SignallingCloseReasonMigration)
+
+	p.clearMigrationTimer()
+
+	p.lock.Lock()
+	p.setupMigrationTimerLocked()
 	p.lock.Unlock()
 
 	return true
+}
+
+func (p *ParticipantImpl) NotifyMigration() {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	if p.migrationTimer != nil {
+		// already set up
+		return
+	}
+
+	p.setupMigrationTimerLocked()
 }
 
 func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
@@ -910,6 +929,9 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 	}
 
 	p.params.Logger.Debugw("SetMigrateState", "state", s)
+	if s == types.MigrateStateComplete {
+		p.handleMigrateTracks()
+	}
 	p.migrateState.Store(s)
 	p.dirty.Store(true)
 
@@ -918,7 +940,7 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 		p.TransportManager.ProcessPendingPublisherOffer()
 
 	case types.MigrateStateComplete:
-		p.handleMigrateTracks()
+
 		p.TransportManager.ProcessPendingPublisherDataChannels()
 	}
 
@@ -1966,7 +1988,7 @@ func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo) *M
 	p.pubLogger.Infow("add migrated track", "cid", cid, "trackID", ti.Sid, "track", logger.Proto(ti))
 	rtpReceiver := p.TransportManager.GetPublisherRTPReceiver(ti.Mid)
 	if rtpReceiver == nil {
-		p.pubLogger.Errorw("could not find receiver for migrated track", nil, "trackID", ti.Sid)
+		p.pubLogger.Errorw("could not find receiver for migrated track", nil, "trackID", ti.Sid, "mid", ti.Mid)
 		return nil
 	}
 

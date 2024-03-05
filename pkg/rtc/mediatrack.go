@@ -16,8 +16,10 @@ package rtc
 
 import (
 	"context"
+	"math"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
@@ -32,6 +34,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/livekit-server/pkg/telemetry"
+	util "github.com/livekit/mediatransportutil"
 )
 
 // MediaTrack represents a WebRTC track that needs to be forwarded
@@ -47,6 +50,8 @@ type MediaTrack struct {
 	dynacastManager *DynacastManager
 
 	lock sync.RWMutex
+
+	rttFromXR atomic.Bool
 }
 
 type MediaTrackParams struct {
@@ -183,12 +188,14 @@ func (t *MediaTrack) UpdateCodecCid(codecs []*livekit.SimulcastCodec) {
 // AddReceiver adds a new RTP receiver to the track, returns true when receiver represents a new codec
 func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, mid string) bool {
 	var newCodec bool
-	buff, rtcpReader := t.params.BufferFactory.GetBufferPair(uint32(track.SSRC()))
+	ssrc := uint32(track.SSRC())
+	buff, rtcpReader := t.params.BufferFactory.GetBufferPair(ssrc)
 	if buff == nil || rtcpReader == nil {
 		t.params.Logger.Errorw("could not retrieve buffer pair", nil)
 		return newCodec
 	}
 
+	var lastRR uint32
 	rtcpReader.OnPacket(func(bytes []byte) {
 		pkts, err := rtcp.Unmarshal(bytes)
 		if err != nil {
@@ -199,9 +206,29 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		for _, pkt := range pkts {
 			switch pkt := pkt.(type) {
 			case *rtcp.SourceDescription:
-			// do nothing for now
 			case *rtcp.SenderReport:
-				buff.SetSenderReportData(pkt.RTPTime, pkt.NTPTime)
+				if pkt.SSRC == uint32(track.SSRC()) {
+					buff.SetSenderReportData(pkt.RTPTime, pkt.NTPTime)
+				}
+			case *rtcp.ExtendedReport:
+			rttFromXR:
+				for _, report := range pkt.Reports {
+					if rr, ok := report.(*rtcp.DLRRReportBlock); ok {
+						for _, dlrrReport := range rr.Reports {
+							if dlrrReport.LastRR <= lastRR {
+								continue
+							}
+							nowNTP := util.ToNtpTime(time.Now())
+							nowNTP32 := uint32(nowNTP >> 16)
+							ntpDiff := nowNTP32 - dlrrReport.LastRR - dlrrReport.DLRR
+							rtt := uint32(math.Ceil(float64(ntpDiff) * 1000.0 / 65536.0))
+							buff.SetRTT(rtt)
+							t.rttFromXR.Store(true)
+							lastRR = dlrrReport.LastRR
+							break rttFromXR
+						}
+					}
+				}
 			}
 		}
 	})
@@ -359,7 +386,9 @@ func (t *MediaTrack) GetConnectionScoreAndQuality() (float32, livekit.Connection
 }
 
 func (t *MediaTrack) SetRTT(rtt uint32) {
-	t.MediaTrackReceiver.SetRTT(rtt)
+	if !t.rttFromXR.Load() {
+		t.MediaTrackReceiver.SetRTT(rtt)
+	}
 }
 
 func (t *MediaTrack) HasPendingCodec() bool {

@@ -15,12 +15,14 @@
 package telemetry
 
 import (
+	"context"
 	"fmt"
+	"sync"
 	"time"
 
+	"github.com/frostbyte73/core"
 	"go.uber.org/atomic"
 
-	"github.com/frostbyte73/core"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
@@ -62,7 +64,6 @@ func NewBytesTrackStats(trackID livekit.TrackID, pID livekit.ParticipantID, tele
 		trackID:   trackID,
 		pID:       pID,
 		telemetry: telemetry,
-		done:      core.NewFuse(),
 	}
 	go s.reporter()
 	return s
@@ -135,6 +136,61 @@ func (s *BytesTrackStats) reporter() {
 			s.report()
 		}
 	}
+}
+
+// -----------------------------------------------------------------------
+
+type BytesSignalStats struct {
+	BytesTrackStats
+	ctx context.Context
+
+	mu sync.Mutex
+	ri *livekit.Room
+	pi *livekit.ParticipantInfo
+}
+
+func NewBytesSignalStats(ctx context.Context, telemetry TelemetryService) *BytesSignalStats {
+	return &BytesSignalStats{
+		BytesTrackStats: BytesTrackStats{
+			telemetry: telemetry,
+		},
+		ctx: ctx,
+	}
+}
+
+func (s *BytesSignalStats) ResolveRoom(ri *livekit.Room) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.ri == nil && ri.GetSid() != "" {
+		s.ri = ri
+		s.maybeStart()
+	}
+}
+
+func (s *BytesSignalStats) ResolveParticipant(pi *livekit.ParticipantInfo) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.pi == nil {
+		s.pi = pi
+		s.maybeStart()
+	}
+}
+
+func (s *BytesSignalStats) maybeStart() {
+	if s.ri == nil || s.pi == nil {
+		return
+	}
+
+	s.pID = livekit.ParticipantID(s.pi.Sid)
+	s.trackID = BytesTrackIDForParticipantID(BytesTrackTypeSignal, s.pID)
+
+	s.telemetry.ParticipantJoined(s.ctx, s.ri, s.pi, nil, nil, false)
+	go s.reporter()
+}
+
+func (s *BytesSignalStats) reporter() {
+	s.BytesTrackStats.reporter()
+	s.telemetry.ParticipantLeft(s.ctx, s.ri, s.pi, false)
 }
 
 // -----------------------------------------------------------------------
