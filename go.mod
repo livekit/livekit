@@ -19,8 +19,8 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20240302142739-1c3dd691a1b8
-	github.com/livekit/protocol v1.10.1
-	github.com/livekit/psrpc v0.5.3-0.20240227154351-b7f99eaaf7b3
+	github.com/livekit/protocol v1.10.2-0.20240305164205-dde5199e5268
+	github.com/livekit/psrpc v0.5.3-0.20240228172457-3724cb4adbc4
 	github.com/mackerelio/go-osstat v0.2.4
 	github.com/magefile/mage v1.15.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.8.1
@@ -97,7 +97,7 @@ require (
 	github.com/zeebo/xxh3 v1.0.2 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/crypto v0.19.0 // indirect
-	golang.org/x/mod v0.15.0 // indirect
+	golang.org/x/mod v0.16.0 // indirect
 	golang.org/x/net v0.21.0 // indirect
 	golang.org/x/sys v0.17.0 // indirect
 	golang.org/x/text v0.14.0 // indirect

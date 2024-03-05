@@ -48,8 +48,6 @@ const (
 
 func init() {
 	config.InitLoggerFromConfig(&config.DefaultConfig.Logging)
-	// allow immediate closure in testing
-	RoomDepartureGrace = 1
 	roomUpdateInterval = defaultDelay
 }
 
@@ -377,7 +375,7 @@ func TestRoomClosure(t *testing.T) {
 		rm.lock.Unlock()
 		rm.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonClientRequestLeave)
 
-		time.Sleep(time.Duration(RoomDepartureGrace)*time.Second + defaultDelay)
+		time.Sleep(time.Duration(rm.ToProto().DepartureTimeout)*time.Second + defaultDelay)
 
 		rm.CloseIfEmpty()
 		require.Len(t, rm.GetParticipants(), 0)
@@ -737,6 +735,10 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *Room {
 		&livekit.Room{Name: "room"},
 		nil,
 		WebRTCConfig{},
+		config.RoomConfig{
+			EmptyTimeout:     5 * 60,
+			DepartureTimeout: 1,
+		},
 		&config.AudioConfig{
 			UpdateInterval:  audioUpdateInterval,
 			SmoothIntervals: opts.audioSmoothIntervals,
