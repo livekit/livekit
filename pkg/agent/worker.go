@@ -176,7 +176,7 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) error {
 			return err
 		}
 
-		// In OSS, Url is nil, and the used token is the same as the one used to connect the worker
+		// In OSS, Url is nil, and the used API Key is the same as the one used to connect the worker
 		w.sendRequest(&livekit.ServerMessage{Message: &livekit.ServerMessage_Assignment{
 			Assignment: &livekit.JobAssignment{Job: job, Url: nil, Token: token},
 		}})
