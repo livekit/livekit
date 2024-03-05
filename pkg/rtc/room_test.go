@@ -737,7 +737,7 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *Room {
 		WebRTCConfig{},
 		config.RoomConfig{
 			EmptyTimeout:     5 * 60,
-			DepartureTimeout: 20,
+			DepartureTimeout: 1,
 		},
 		&config.AudioConfig{
 			UpdateInterval:  audioUpdateInterval,

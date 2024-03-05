@@ -171,7 +171,6 @@ func NewRoom(
 		disconnectSignalOnResumeNoMessagesParticipants: make(map[livekit.ParticipantIdentity]*disconnectSignalOnResumeNoMessages),
 	}
 
-	r.protoProxy = utils.NewProtoProxy[*livekit.Room](roomUpdateInterval, r.updateProto)
 	if r.protoRoom.EmptyTimeout == 0 {
 		r.protoRoom.EmptyTimeout = roomConfig.EmptyTimeout
 	}
@@ -181,6 +180,7 @@ func NewRoom(
 	if r.protoRoom.CreationTime == 0 {
 		r.protoRoom.CreationTime = time.Now().Unix()
 	}
+	r.protoProxy = utils.NewProtoProxy[*livekit.Room](roomUpdateInterval, r.updateProto)
 
 	if agentClient != nil {
 		go func() {
