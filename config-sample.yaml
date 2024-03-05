@@ -170,8 +170,10 @@ keys:
 # room:
 #   # allow rooms to be automatically created when participants join, defaults to true
 #   # auto_create: false
-#   # number of seconds to leave a room open when it's empty
+#   # number of seconds to keep the room open if no one joins
 #   empty_timeout: 300
+#   # number of seconds to keep the room open after everyone leaves
+#   departure_timeout: 20
 #   # limit number of participants that can be in a room, 0 for no limit
 #   max_participants: 0
 #   # only accept specific codecs for clients publishing to this room
