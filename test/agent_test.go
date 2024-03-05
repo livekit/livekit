@@ -28,13 +28,13 @@ func TestAgents(t *testing.T) {
 	_, finish := setupSingleNodeTest("TestAgents")
 	defer finish()
 
-	ac1, err := newAgentClient(agentToken())
+	ac1, err := newAgentClient(agentToken(), defaultServerPort)
 	require.NoError(t, err)
-	ac2, err := newAgentClient(agentToken())
+	ac2, err := newAgentClient(agentToken(), defaultServerPort)
 	require.NoError(t, err)
-	ac3, err := newAgentClient(agentToken())
+	ac3, err := newAgentClient(agentToken(), defaultServerPort)
 	require.NoError(t, err)
-	ac4, err := newAgentClient(agentToken())
+	ac4, err := newAgentClient(agentToken(), defaultServerPort)
 	require.NoError(t, err)
 	defer ac1.close()
 	defer ac2.close()
@@ -57,7 +57,7 @@ func TestAgents(t *testing.T) {
 	waitUntilConnected(t, c1, c2)
 
 	// publish 2 tracks
-	t1, err := c1.AddStaticTrack("audio/opus", "audio", "webcam")
+	t1, err := c1.AddStaticTrack("audio/opus", "audio", "micro")
 	require.NoError(t, err)
 	defer t1.Stop()
 	t2, err := c1.AddStaticTrack("video/vp8", "video", "webcam")
@@ -70,7 +70,7 @@ func TestAgents(t *testing.T) {
 	require.Equal(t, int32(1), ac3.participantJobs.Load()+ac4.participantJobs.Load())
 
 	// publish 2 tracks
-	t3, err := c2.AddStaticTrack("audio/opus", "audio", "webcam")
+	t3, err := c2.AddStaticTrack("audio/opus", "audio", "micro")
 	require.NoError(t, err)
 	defer t3.Stop()
 	t4, err := c2.AddStaticTrack("video/vp8", "video", "webcam")
@@ -87,9 +87,9 @@ func TestAgentNamespaces(t *testing.T) {
 	_, finish := setupSingleNodeTest("TestAgentNamespaces")
 	defer finish()
 
-	ac1, err := newAgentClient(agentToken())
+	ac1, err := newAgentClient(agentToken(), defaultServerPort)
 	require.NoError(t, err)
-	ac2, err := newAgentClient(agentToken())
+	ac2, err := newAgentClient(agentToken(), defaultServerPort)
 	require.NoError(t, err)
 	defer ac1.close()
 	defer ac2.close()
@@ -117,6 +117,36 @@ func TestAgentNamespaces(t *testing.T) {
 	require.NotEqual(t, job1.Id, job2.Id)
 }
 
+func TestAgentMultiNode(t *testing.T) {
+	_, _, finish := setupMultiNodeTest("TestAgentMultiNode")
+	defer finish()
+
+	ac1, err := newAgentClient(agentToken(), defaultServerPort)
+	require.NoError(t, err)
+	ac2, err := newAgentClient(agentToken(), defaultServerPort) 
+	defer ac1.close()
+	defer ac2.close()
+	ac1.Run(livekit.JobType_JT_ROOM, "namespace")
+	ac2.Run(livekit.JobType_JT_PUBLISHER, "namespace")
+
+	time.Sleep(time.Second * 3)
+
+	require.Equal(t, int32(1), ac1.registered.Load())
+	require.Equal(t, int32(1), ac2.registered.Load())
+
+	c1 := createRTCClient("c1", secondServerPort, nil) // Create a room on the second node
+	waitUntilConnected(t, c1)
+
+	t1, err := c1.AddStaticTrack("audio/opus", "audio", "micro")
+	require.NoError(t, err)
+	defer t1.Stop()
+
+	time.Sleep(time.Second * 10)
+
+	require.Equal(t, int32(1), ac1.roomJobs.Load())
+	require.Equal(t, int32(1), ac2.participantJobs.Load())
+
+}
 
 func agentToken() string {
 	at := auth.NewAccessToken(testApiKey, testApiSecret).
