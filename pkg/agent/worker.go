@@ -268,7 +268,7 @@ func (w *Worker) handleRegister(req *livekit.RegisterWorkerRequest) {
 	if req.AllowedPermissions != nil {
 		w.permissions = req.AllowedPermissions
 	} else {
-		// Use defautl agent permissions
+		// Use default agent permissions
 		w.permissions = &livekit.ParticipantPermission{
 			CanSubscribe: true,
 			CanPublish:   true,
