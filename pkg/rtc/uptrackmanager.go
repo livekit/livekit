@@ -268,8 +268,12 @@ func (u *UpTrackManager) AddPublishedTrack(track types.MediaTrack) {
 	})
 }
 
-func (u *UpTrackManager) RemovePublishedTrack(track types.MediaTrack, willBeResumed bool) {
-	track.Close(willBeResumed)
+func (u *UpTrackManager) RemovePublishedTrack(track types.MediaTrack, willBeResumed bool, shouldClose bool) {
+	if shouldClose {
+		track.Close(willBeResumed)
+	} else {
+		track.ClearAllReceivers(willBeResumed)
+	}
 	u.lock.Lock()
 	delete(u.publishedTracks, track.ID())
 	u.lock.Unlock()

@@ -158,11 +158,12 @@ type FakeParticipant struct {
 	isRecorderReturnsOnCall map[int]struct {
 		result1 bool
 	}
-	RemovePublishedTrackStub        func(types.MediaTrack, bool)
+	RemovePublishedTrackStub        func(types.MediaTrack, bool, bool)
 	removePublishedTrackMutex       sync.RWMutex
 	removePublishedTrackArgsForCall []struct {
 		arg1 types.MediaTrack
 		arg2 bool
+		arg3 bool
 	}
 	SetMetadataStub        func(string)
 	setMetadataMutex       sync.RWMutex
@@ -1007,17 +1008,18 @@ func (fake *FakeParticipant) IsRecorderReturnsOnCall(i int, result1 bool) {
 	}{result1}
 }
 
-func (fake *FakeParticipant) RemovePublishedTrack(arg1 types.MediaTrack, arg2 bool) {
+func (fake *FakeParticipant) RemovePublishedTrack(arg1 types.MediaTrack, arg2 bool, arg3 bool) {
 	fake.removePublishedTrackMutex.Lock()
 	fake.removePublishedTrackArgsForCall = append(fake.removePublishedTrackArgsForCall, struct {
 		arg1 types.MediaTrack
 		arg2 bool
-	}{arg1, arg2})
+		arg3 bool
+	}{arg1, arg2, arg3})
 	stub := fake.RemovePublishedTrackStub
-	fake.recordInvocation("RemovePublishedTrack", []interface{}{arg1, arg2})
+	fake.recordInvocation("RemovePublishedTrack", []interface{}{arg1, arg2, arg3})
 	fake.removePublishedTrackMutex.Unlock()
 	if stub != nil {
-		fake.RemovePublishedTrackStub(arg1, arg2)
+		fake.RemovePublishedTrackStub(arg1, arg2, arg3)
 	}
 }
 
@@ -1027,17 +1029,17 @@ func (fake *FakeParticipant) RemovePublishedTrackCallCount() int {
 	return len(fake.removePublishedTrackArgsForCall)
 }
 
-func (fake *FakeParticipant) RemovePublishedTrackCalls(stub func(types.MediaTrack, bool)) {
+func (fake *FakeParticipant) RemovePublishedTrackCalls(stub func(types.MediaTrack, bool, bool)) {
 	fake.removePublishedTrackMutex.Lock()
 	defer fake.removePublishedTrackMutex.Unlock()
 	fake.RemovePublishedTrackStub = stub
 }
 
-func (fake *FakeParticipant) RemovePublishedTrackArgsForCall(i int) (types.MediaTrack, bool) {
+func (fake *FakeParticipant) RemovePublishedTrackArgsForCall(i int) (types.MediaTrack, bool, bool) {
 	fake.removePublishedTrackMutex.RLock()
 	defer fake.removePublishedTrackMutex.RUnlock()
 	argsForCall := fake.removePublishedTrackArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
 func (fake *FakeParticipant) SetMetadata(arg1 string) {
