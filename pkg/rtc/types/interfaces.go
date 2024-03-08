@@ -276,7 +276,6 @@ type Participant interface {
 	UpdateSubscriptionPermission(
 		subscriptionPermission *livekit.SubscriptionPermission,
 		timedVersion utils.TimedVersion,
-		resolverByIdentity func(participantIdentity livekit.ParticipantIdentity) LocalParticipant,
 		resolverBySid func(participantID livekit.ParticipantID) LocalParticipant,
 	) error
 	UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error
