@@ -211,7 +211,7 @@ type ParticipantImpl struct {
 	onStateChange        func(p types.LocalParticipant, state livekit.ParticipantInfo_State)
 	onMigrateStateChange func(p types.LocalParticipant, migrateState types.MigrateState)
 	onParticipantUpdate  func(types.LocalParticipant)
-	onDataPacket         func(types.LocalParticipant, *livekit.DataPacket)
+	onDataPacket         func(types.LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket)
 
 	migrateState atomic.Value // types.MigrateState
 
@@ -625,7 +625,7 @@ func (p *ParticipantImpl) OnParticipantUpdate(callback func(types.LocalParticipa
 	p.lock.Unlock()
 }
 
-func (p *ParticipantImpl) OnDataPacket(callback func(types.LocalParticipant, *livekit.DataPacket)) {
+func (p *ParticipantImpl) OnDataPacket(callback func(types.LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket)) {
 	p.lock.Lock()
 	p.onDataPacket = callback
 	p.lock.Unlock()
@@ -1472,14 +1472,20 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 
 	p.dataChannelStats.AddBytes(uint64(len(data)), false)
 
-	dp := livekit.DataPacket{}
-	if err := proto.Unmarshal(data, &dp); err != nil {
+	dp := &livekit.DataPacket{}
+	if err := proto.Unmarshal(data, dp); err != nil {
 		p.pubLogger.Warnw("could not parse data packet", err)
 		return
 	}
 
 	// trust the channel that it came in as the source of truth
 	dp.Kind = kind
+
+	if p.Hidden() {
+		dp.ParticipantIdentity = ""
+	} else {
+		dp.ParticipantIdentity = string(p.params.Identity)
+	}
 
 	// only forward on user payloads
 	switch payload := dp.Value.(type) {
@@ -1488,14 +1494,34 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		onDataPacket := p.onDataPacket
 		p.lock.RUnlock()
 		if onDataPacket != nil {
+			u := payload.User
 			if p.Hidden() {
-				payload.User.ParticipantSid = ""
-				payload.User.ParticipantIdentity = ""
+				u.ParticipantSid = ""
+				u.ParticipantIdentity = ""
 			} else {
-				payload.User.ParticipantSid = string(p.params.SID)
-				payload.User.ParticipantIdentity = string(p.params.Identity)
+				u.ParticipantSid = string(p.params.SID)
+				u.ParticipantIdentity = string(p.params.Identity)
 			}
-			onDataPacket(p, &dp)
+			if dp.ParticipantIdentity != "" {
+				u.ParticipantIdentity = dp.ParticipantIdentity
+			} else {
+				dp.ParticipantIdentity = u.ParticipantIdentity
+			}
+			if len(dp.DestinationIdentities) != 0 {
+				u.DestinationIdentities = dp.DestinationIdentities
+			} else {
+				dp.DestinationIdentities = u.DestinationIdentities
+			}
+			onDataPacket(p, kind, dp)
+		}
+	case *livekit.DataPacket_SipDtmf:
+		if p.grants.GetParticipantKind() == livekit.ParticipantInfo_SIP {
+			p.lock.RLock()
+			onDataPacket := p.onDataPacket
+			p.lock.RUnlock()
+			if onDataPacket != nil {
+				onDataPacket(p, kind, dp)
+			}
 		}
 	default:
 		p.pubLogger.Warnw("received unsupported data packet", nil, "payload", payload)
@@ -2474,19 +2500,19 @@ func codecsFromMediaDescription(m *sdp.MediaDescription) (out []sdp.Codec, err e
 	return out, nil
 }
 
-func (p *ParticipantImpl) SendDataPacket(dp *livekit.DataPacket, data []byte) error {
+func (p *ParticipantImpl) SendDataPacket(kind livekit.DataPacket_Kind, encoded []byte) error {
 	if p.State() != livekit.ParticipantInfo_ACTIVE {
 		return ErrDataChannelUnavailable
 	}
 
-	err := p.TransportManager.SendDataPacket(dp, data)
+	err := p.TransportManager.SendDataPacket(kind, encoded)
 	if err != nil {
 		if (errors.Is(err, sctp.ErrStreamClosed) || errors.Is(err, io.ErrClosedPipe)) && p.params.ReconnectOnDataChannelError {
 			p.params.Logger.Infow("issuing full reconnect on data channel error", "error", err)
 			p.IssueFullReconnect(types.ParticipantCloseReasonDataChannelError)
 		}
 	} else {
-		p.dataChannelStats.AddBytes(uint64(len(data)), true)
+		p.dataChannelStats.AddBytes(uint64(len(encoded)), true)
 	}
 	return err
 }

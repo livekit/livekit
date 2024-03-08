@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -820,14 +821,8 @@ func (r *Room) OnParticipantChanged(f func(participant types.LocalParticipant)) 
 	r.onParticipantChanged = f
 }
 
-func (r *Room) SendDataPacket(up *livekit.UserPacket, kind livekit.DataPacket_Kind) {
-	dp := &livekit.DataPacket{
-		Kind: kind,
-		Value: &livekit.DataPacket_User{
-			User: up,
-		},
-	}
-	r.onDataPacket(nil, dp)
+func (r *Room) SendDataPacket(dp *livekit.DataPacket, kind livekit.DataPacket_Kind) {
+	r.onDataPacket(nil, kind, dp)
 }
 
 func (r *Room) SetMetadata(metadata string) <-chan struct{} {
@@ -1085,8 +1080,8 @@ func (r *Room) onParticipantUpdate(p types.LocalParticipant) {
 	}
 }
 
-func (r *Room) onDataPacket(source types.LocalParticipant, dp *livekit.DataPacket) {
-	BroadcastDataPacketForRoom(r, source, dp, r.Logger)
+func (r *Room) onDataPacket(source types.LocalParticipant, kind livekit.DataPacket_Kind, dp *livekit.DataPacket) {
+	BroadcastDataPacketForRoom(r, source, kind, dp, r.Logger)
 }
 
 func (r *Room) subscribeToExistingTracks(p types.LocalParticipant) {
@@ -1167,33 +1162,6 @@ func (r *Room) sendParticipantUpdates(updates []*participantUpdate) {
 		}
 		if err != nil {
 			op.GetLogger().Errorw("could not send update to participant", err)
-		}
-	}
-}
-
-// for protocol 2, send all active speakers
-func (r *Room) sendActiveSpeakers(speakers []*livekit.SpeakerInfo) {
-	dp := &livekit.DataPacket{
-		Kind: livekit.DataPacket_LOSSY,
-		Value: &livekit.DataPacket_Speaker{
-			Speaker: &livekit.ActiveSpeakerUpdate{
-				Speakers: speakers,
-			},
-		},
-	}
-
-	var dpData []byte
-	for _, p := range r.GetParticipants() {
-		if p.ProtocolVersion().HandlesDataPackets() && !p.ProtocolVersion().SupportsSpeakerChanged() {
-			if dpData == nil {
-				var err error
-				dpData, err = proto.Marshal(dp)
-				if err != nil {
-					r.Logger.Errorw("failed to marshal ActiveSpeaker data packet", err)
-					return
-				}
-			}
-			_ = p.SendDataPacket(dp, dpData)
 		}
 	}
 }
@@ -1346,7 +1314,6 @@ func (r *Room) audioUpdateWorker() {
 
 		// see if an update is needed
 		if len(changedSpeakers) > 0 {
-			r.sendActiveSpeakers(activeSpeakers)
 			r.sendSpeakerChanges(changedSpeakers)
 		}
 
@@ -1495,18 +1462,34 @@ func (r *Room) DebugInfo() map[string]interface{} {
 
 // ------------------------------------------------------------
 
-func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, dp *livekit.DataPacket, logger logger.Logger) {
+func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, kind livekit.DataPacket_Kind, dp *livekit.DataPacket, logger logger.Logger) {
+	dp.Kind = kind // backward compatibility
 	dest := dp.GetUser().GetDestinationSids()
-	var dpData []byte
-	destIdentities := dp.GetUser().GetDestinationIdentities()
+	if u := dp.GetUser(); u != nil {
+		if len(dp.DestinationIdentities) == 0 {
+			dp.DestinationIdentities = u.DestinationIdentities
+		} else {
+			u.DestinationIdentities = dp.DestinationIdentities
+		}
+		if dp.ParticipantIdentity != "" {
+			u.ParticipantIdentity = dp.ParticipantIdentity
+		} else {
+			dp.ParticipantIdentity = u.ParticipantIdentity
+		}
+	}
+	destIdentities := dp.DestinationIdentities
 
 	participants := r.GetLocalParticipants()
-	capacity := len(dest)
+	capacity := len(destIdentities)
+	if capacity == 0 {
+		capacity = len(dest)
+	}
 	if capacity == 0 {
 		capacity = len(participants)
 	}
 	destParticipants := make([]types.LocalParticipant, 0, capacity)
 
+	var dpData []byte
 	for _, op := range participants {
 		if op.State() != livekit.ParticipantInfo_ACTIVE {
 			continue
@@ -1515,20 +1498,7 @@ func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, dp 
 			continue
 		}
 		if len(dest) > 0 || len(destIdentities) > 0 {
-			found := false
-			for _, dID := range dest {
-				if op.ID() == livekit.ParticipantID(dID) {
-					found = true
-					break
-				}
-			}
-			for _, dIdentity := range destIdentities {
-				if op.Identity() == livekit.ParticipantIdentity(dIdentity) {
-					found = true
-					break
-				}
-			}
-			if !found {
+			if !slices.Contains(dest, string(op.ID())) && !slices.Contains(destIdentities, string(op.Identity())) {
 				continue
 			}
 		}
@@ -1544,7 +1514,7 @@ func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, dp 
 	}
 
 	utils.ParallelExec(destParticipants, dataForwardLoadBalanceThreshold, 1, func(op types.LocalParticipant) {
-		err := op.SendDataPacket(dp, dpData)
+		err := op.SendDataPacket(kind, dpData)
 		if err != nil && !errors.Is(err, io.ErrClosedPipe) && !errors.Is(err, sctp.ErrStreamClosed) &&
 			!errors.Is(err, ErrTransportFailure) && !errors.Is(err, ErrDataChannelBufferFull) {
 			op.GetLogger().Infow("send data packet error", "error", err)

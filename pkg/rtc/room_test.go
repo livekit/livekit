@@ -22,9 +22,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/livekit-server/version"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/webhook"
+
+	"github.com/livekit/livekit-server/version"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
@@ -569,65 +570,126 @@ func TestActiveSpeakers(t *testing.T) {
 func TestDataChannel(t *testing.T) {
 	t.Parallel()
 
-	t.Run("participants should receive data", func(t *testing.T) {
-		rm := newRoomWithParticipants(t, testRoomOpts{num: 3})
-		defer rm.Close(types.ParticipantCloseReasonNone)
-		participants := rm.GetParticipants()
-		p := participants[0].(*typesfakes.FakeLocalParticipant)
+	const (
+		curAPI = iota
+		legacySID
+		legacyIdentity
+	)
+	modes := []int{
+		curAPI, legacySID, legacyIdentity,
+	}
+	modeNames := []string{
+		"cur", "legacy sid", "legacy identity",
+	}
 
-		packet := livekit.DataPacket{
-			Kind: livekit.DataPacket_RELIABLE,
-			Value: &livekit.DataPacket_User{
-				User: &livekit.UserPacket{
-					ParticipantSid: string(p.ID()),
-					Payload:        []byte("message.."),
-				},
-			},
+	setSource := func(mode int, dp *livekit.DataPacket, p types.LocalParticipant) {
+		switch mode {
+		case curAPI:
+			dp.ParticipantIdentity = string(p.Identity())
+		case legacySID:
+			dp.GetUser().ParticipantSid = string(p.ID())
+		case legacyIdentity:
+			dp.GetUser().ParticipantIdentity = string(p.Identity())
 		}
-		p.OnDataPacketArgsForCall(0)(p, &packet)
+	}
+	setDest := func(mode int, dp *livekit.DataPacket, p types.LocalParticipant) {
+		switch mode {
+		case curAPI:
+			dp.DestinationIdentities = []string{string(p.Identity())}
+		case legacySID:
+			dp.GetUser().DestinationSids = []string{string(p.ID())}
+		case legacyIdentity:
+			dp.GetUser().DestinationIdentities = []string{string(p.Identity())}
+		}
+	}
 
-		// ensure everyone has received the packet
-		for _, op := range participants {
-			fp := op.(*typesfakes.FakeLocalParticipant)
-			if fp == p {
-				require.Zero(t, fp.SendDataPacketCallCount())
-				continue
-			}
-			require.Equal(t, 1, fp.SendDataPacketCallCount())
-			dp, _ := fp.SendDataPacketArgsForCall(0)
-			require.Equal(t, packet.Value, dp.Value)
+	t.Run("participants should receive data", func(t *testing.T) {
+		for _, mode := range modes {
+			mode := mode
+			t.Run(modeNames[mode], func(t *testing.T) {
+				rm := newRoomWithParticipants(t, testRoomOpts{num: 3})
+				defer rm.Close(types.ParticipantCloseReasonNone)
+				participants := rm.GetParticipants()
+				p := participants[0].(*typesfakes.FakeLocalParticipant)
+
+				packet := &livekit.DataPacket{
+					Kind: livekit.DataPacket_RELIABLE,
+					Value: &livekit.DataPacket_User{
+						User: &livekit.UserPacket{
+							Payload: []byte("message.."),
+						},
+					},
+				}
+				setSource(mode, packet, p)
+
+				packetExp := proto.Clone(packet).(*livekit.DataPacket)
+				if mode != legacySID {
+					packetExp.ParticipantIdentity = string(p.Identity())
+					packetExp.GetUser().ParticipantIdentity = string(p.Identity())
+				}
+
+				encoded, _ := proto.Marshal(packetExp)
+				p.OnDataPacketArgsForCall(0)(p, packet.Kind, packet)
+
+				// ensure everyone has received the packet
+				for _, op := range participants {
+					fp := op.(*typesfakes.FakeLocalParticipant)
+					if fp == p {
+						require.Zero(t, fp.SendDataPacketCallCount())
+						continue
+					}
+					require.Equal(t, 1, fp.SendDataPacketCallCount())
+					_, got := fp.SendDataPacketArgsForCall(0)
+					require.Equal(t, encoded, got)
+				}
+			})
 		}
 	})
 
 	t.Run("only one participant should receive the data", func(t *testing.T) {
-		rm := newRoomWithParticipants(t, testRoomOpts{num: 4})
-		defer rm.Close(types.ParticipantCloseReasonNone)
-		participants := rm.GetParticipants()
-		p := participants[0].(*typesfakes.FakeLocalParticipant)
-		p1 := participants[1].(*typesfakes.FakeLocalParticipant)
+		for _, mode := range modes {
+			mode := mode
+			t.Run(modeNames[mode], func(t *testing.T) {
+				rm := newRoomWithParticipants(t, testRoomOpts{num: 4})
+				defer rm.Close(types.ParticipantCloseReasonNone)
+				participants := rm.GetParticipants()
+				p := participants[0].(*typesfakes.FakeLocalParticipant)
+				p1 := participants[1].(*typesfakes.FakeLocalParticipant)
 
-		packet := livekit.DataPacket{
-			Kind: livekit.DataPacket_RELIABLE,
-			Value: &livekit.DataPacket_User{
-				User: &livekit.UserPacket{
-					ParticipantSid:  string(p.ID()),
-					Payload:         []byte("message to p1.."),
-					DestinationSids: []string{string(p1.ID())},
-				},
-			},
-		}
-		p.OnDataPacketArgsForCall(0)(p, &packet)
+				packet := &livekit.DataPacket{
+					Kind: livekit.DataPacket_RELIABLE,
+					Value: &livekit.DataPacket_User{
+						User: &livekit.UserPacket{
+							Payload: []byte("message to p1.."),
+						},
+					},
+				}
+				setSource(mode, packet, p)
+				setDest(mode, packet, p1)
 
-		// only p1 should receive the data
-		for _, op := range participants {
-			fp := op.(*typesfakes.FakeLocalParticipant)
-			if fp != p1 {
-				require.Zero(t, fp.SendDataPacketCallCount())
-			}
+				packetExp := proto.Clone(packet).(*livekit.DataPacket)
+				if mode != legacySID {
+					packetExp.ParticipantIdentity = string(p.Identity())
+					packetExp.GetUser().ParticipantIdentity = string(p.Identity())
+					packetExp.DestinationIdentities = []string{string(p1.Identity())}
+					packetExp.GetUser().DestinationIdentities = []string{string(p1.Identity())}
+				}
+
+				encoded, _ := proto.Marshal(packetExp)
+				p.OnDataPacketArgsForCall(0)(p, packet.Kind, packet)
+
+				// only p1 should receive the data
+				for _, op := range participants {
+					fp := op.(*typesfakes.FakeLocalParticipant)
+					if fp != p1 {
+						require.Zero(t, fp.SendDataPacketCallCount())
+					}
+				}
+				require.Equal(t, 1, p1.SendDataPacketCallCount())
+				_, got := p1.SendDataPacketArgsForCall(0)
+				require.Equal(t, encoded, got)
+			})
 		}
-		require.Equal(t, 1, p1.SendDataPacketCallCount())
-		dp, _ := p1.SendDataPacketArgsForCall(0)
-		require.Equal(t, packet.Value, dp.Value)
 	})
 
 	t.Run("publishing disallowed", func(t *testing.T) {
@@ -646,7 +708,7 @@ func TestDataChannel(t *testing.T) {
 			},
 		}
 		if p.CanPublishData() {
-			p.OnDataPacketArgsForCall(0)(p, &packet)
+			p.OnDataPacketArgsForCall(0)(p, packet.Kind, &packet)
 		}
 
 		// no one should've been sent packet
