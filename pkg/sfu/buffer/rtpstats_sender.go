@@ -682,11 +682,11 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, calculatedClockRate ui
 			if r.clockSkewCount%10 == 0 {
 				r.logger.Infow(
 					"sending sender report, clock skew",
-					"first", r.srFirst.ToString(),
-					"last", r.srNewest.ToString(),
-					"curr", srData.ToString(),
-					"firstFeed", r.srFeedFirst.ToString(),
-					"lastFeed", r.srFeedNewest.ToString(),
+					"first", r.srFirst,
+					"last", r.srNewest,
+					"curr", srData,
+					"firstFeed", r.srFeedFirst,
+					"lastFeed", r.srFeedNewest,
 					"timeNow", time.Now().String(),
 					"extStartTS", r.extStartTS,
 					"extHighestTS", r.extHighestTS,
@@ -722,11 +722,11 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, calculatedClockRate ui
 		if r.outOfOrderSenderReportCount%10 == 0 {
 			r.logger.Infow(
 				"sending sender report, out-of-order, repairing",
-				"first", r.srFirst.ToString(),
-				"last", r.srNewest.ToString(),
-				"curr", srData.ToString(),
-				"firstFeed", r.srFeedFirst.ToString(),
-				"lastFeed", r.srFeedNewest.ToString(),
+				"first", r.srFirst,
+				"last", r.srNewest,
+				"curr", srData,
+				"firstFeed", r.srFeedFirst,
+				"lastFeed", r.srFeedNewest,
 				"timeNow", time.Now().String(),
 				"extStartTS", r.extStartTS,
 				"extHighestTS", r.extHighestTS,

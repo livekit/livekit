@@ -252,8 +252,9 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 	if r.srNewest != nil && r.srNewest.NTPTimestamp > srData.NTPTimestamp {
 		r.logger.Infow(
 			"received anachronous sender report",
-			"last", r.srNewest.ToString(),
-			"current", srData.ToString(),
+			"first", r.srFirst,
+			"last", r.srNewest,
+			"current", srData,
 		)
 		return
 	}
@@ -263,6 +264,12 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 		tsCycles = r.srNewest.RTPTimestampExt & 0xFFFF_FFFF_0000_0000
 		if (srData.RTPTimestamp-r.srNewest.RTPTimestamp) < (1<<31) && srData.RTPTimestamp < r.srNewest.RTPTimestamp {
 			tsCycles += (1 << 32)
+		}
+
+		if tsCycles >= (1 << 32) {
+			if (srData.RTPTimestamp-r.srNewest.RTPTimestamp) >= (1<<31) && srData.RTPTimestamp > r.srNewest.RTPTimestamp {
+				tsCycles -= (1 << 32)
+			}
 		}
 	}
 
@@ -279,8 +286,9 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 		if r.outOfOrderSsenderReportCount%10 == 0 {
 			r.logger.Infow(
 				"received sender report, out-of-order, resetting",
-				"last", r.srNewest.ToString(),
-				"current", srDataCopy.ToString(),
+				"first", r.srFirst,
+				"last", r.srNewest,
+				"current", &srDataCopy,
 				"count", r.outOfOrderSsenderReportCount,
 			)
 		}
@@ -304,9 +312,9 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 			if r.clockSkewCount%100 == 0 {
 				r.logger.Infow(
 					"clock rate skew",
-					"first", r.srFirst.ToString(),
-					"last", r.srNewest.ToString(),
-					"current", srDataCopy.ToString(),
+					"first", r.srFirst,
+					"last", r.srNewest,
+					"current", &srDataCopy,
 					"timeSinceFirst", timeSinceFirst,
 					"rtpDiffSinceFirst", rtpDiffSinceFirst,
 					"calculatedFirst", calculatedClockRateFromFirst,
