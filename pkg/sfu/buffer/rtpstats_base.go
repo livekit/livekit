@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/zap/zapcore"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/livekit/mediatransportutil"
@@ -121,6 +122,18 @@ func (r *RTCPSenderReportData) ToString() string {
 	}
 
 	return fmt.Sprintf("ntp: %s, rtp: %d, extRtp: %d, at: %s", r.NTPTimestamp.Time().String(), r.RTPTimestamp, r.RTPTimestampExt, r.At.String())
+}
+
+func (r *RTCPSenderReportData) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if r == nil {
+		return nil
+	}
+
+	e.AddTime("NTPTimestamp", r.NTPTimestamp.Time())
+	e.AddUint32("RTPTimestamp", r.RTPTimestamp)
+	e.AddUint64("RTPTimestampExt", r.RTPTimestampExt)
+	e.AddTime("At", r.At)
+	return nil
 }
 
 // ------------------------------------------------------------------
