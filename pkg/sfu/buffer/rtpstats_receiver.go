@@ -251,7 +251,7 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 	// prevent against extreme case of anachronous sender reports
 	if r.srNewest != nil && r.srNewest.NTPTimestamp > srData.NTPTimestamp {
 		r.logger.Infow(
-			"received anachronous sender report",
+			"received sender report, anachronous, dropping",
 			"first", r.srFirst,
 			"last", r.srNewest,
 			"current", srData,
@@ -311,7 +311,7 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 			(timeSinceFirst > 0.2 && math.Abs(float64(r.params.ClockRate)-calculatedClockRateFromFirst) > 0.2*float64(r.params.ClockRate)) {
 			if r.clockSkewCount%100 == 0 {
 				r.logger.Infow(
-					"clock rate skew",
+					"received sender report, clock skew",
 					"first", r.srFirst,
 					"last", r.srNewest,
 					"current", &srDataCopy,
