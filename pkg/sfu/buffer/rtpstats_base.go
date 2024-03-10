@@ -506,18 +506,8 @@ func (r *rtpStatsBase) maybeAdjustFirstPacketTime(ts uint32, startTS uint32) {
 	now := r.firstTime.Add(timeSinceFirst)
 	firstTime := now.Add(-samplesDuration)
 	if firstTime.Before(r.firstTime) {
-		r.logger.Debugw(
-			"adjusting first packet time",
-			"startTime", r.startTime.String(),
-			"nowTime", now.String(),
-			"before", r.firstTime.String(),
-			"after", firstTime.String(),
-			"adjustment", r.firstTime.Sub(firstTime).String(),
-			"nowTS", ts,
-			"startTS", startTS,
-		)
 		if r.firstTime.Sub(firstTime) > cFirstPacketTimeAdjustThreshold {
-			r.logger.Infow("first packet time adjustment too big, ignoring",
+			r.logger.Infow("adjusting first packet time, too big, ignoring",
 				"startTime", r.startTime.String(),
 				"nowTime", now.String(),
 				"before", r.firstTime.String(),
@@ -527,6 +517,16 @@ func (r *rtpStatsBase) maybeAdjustFirstPacketTime(ts uint32, startTS uint32) {
 				"startTS", startTS,
 			)
 		} else {
+			r.logger.Debugw(
+				"adjusting first packet time",
+				"startTime", r.startTime.String(),
+				"nowTime", now.String(),
+				"before", r.firstTime.String(),
+				"after", firstTime.String(),
+				"adjustment", r.firstTime.Sub(firstTime).String(),
+				"nowTS", ts,
+				"startTS", startTS,
+			)
 			r.firstTime = firstTime
 		}
 	}
