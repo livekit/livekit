@@ -34,7 +34,7 @@ const (
 	cFirstSnapshotID     = 1
 
 	cFirstPacketTimeAdjustWindow    = 2 * time.Minute
-	cFirstPacketTimeAdjustThreshold = 5 * time.Minute
+	cFirstPacketTimeAdjustThreshold = 1 * time.Minute
 )
 
 // -------------------------------------------------------
