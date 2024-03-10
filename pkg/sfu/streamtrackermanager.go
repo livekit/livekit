@@ -626,6 +626,23 @@ func (s *StreamTrackerManager) SetRTCPSenderReportData(layer int32, srFirst *buf
 	}
 }
 
+func (s *StreamTrackerManager) GetRTCPSenderReportData(layer int32) (*buffer.RTCPSenderReportData, *buffer.RTCPSenderReportData) {
+	s.senderReportMu.Lock()
+	defer s.senderReportMu.Unlock()
+
+	if layer < 0 || int(layer) >= len(s.senderReports) {
+		return nil, nil
+	}
+
+	// SVC-TODO: better SVC detection
+	if s.isSVC {
+		// there is only one stream in SVC
+		layer = 0
+	}
+
+	return s.senderReports[layer].first, s.senderReports[layer].newest
+}
+
 func (s *StreamTrackerManager) GetCalculatedClockRate(layer int32) uint32 {
 	s.senderReportMu.RLock()
 	defer s.senderReportMu.RUnlock()

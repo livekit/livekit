@@ -1951,14 +1951,22 @@ func (d *DownTrack) HandleRTCPSenderReportData(
 	srFirst *buffer.RTCPSenderReportData,
 	srNewest *buffer.RTCPSenderReportData,
 ) error {
-	if (layer == d.forwarder.GetReferenceLayerSpatial() || (layer == 0 && isSVC)) && srNewest != nil {
-		d.rtpStats.MaybeAdjustFirstPacketTime(
-			srFirst,
-			srNewest,
-			srNewest.RTPTimestamp+uint32(d.forwarder.GetReferenceTimestampOffset()),
-		)
+	if layer == d.forwarder.GetReferenceLayerSpatial() || (layer == 0 && isSVC) {
+		d.handleRTCPSenderReportData(srFirst, srNewest)
 	}
 	return nil
+}
+
+func (d *DownTrack) handleRTCPSenderReportData(srFirst *buffer.RTCPSenderReportData, srNewest *buffer.RTCPSenderReportData) {
+	if srNewest == nil {
+		return
+	}
+
+	d.rtpStats.MaybeAdjustFirstPacketTime(
+		srFirst,
+		srNewest,
+		srNewest.RTPTimestamp+uint32(d.forwarder.GetReferenceTimestampOffset()),
+	)
 }
 
 type sendPacketMetadata struct {
@@ -2010,6 +2018,9 @@ func (d *DownTrack) sendingPacket(hdr *rtp.Header, payloadSize int, spmd *sendPa
 		}
 
 		if spmd.tp.isResuming {
+			// adjust first packet time on a resumption so that sender reports can lock in quicker
+			d.handleRTCPSenderReportData(d.params.Receiver.GetRTCPSenderReportData(d.forwarder.GetReferenceLayerSpatial()))
+
 			if sal := d.getStreamAllocatorListener(); sal != nil {
 				sal.OnResume(d)
 			}

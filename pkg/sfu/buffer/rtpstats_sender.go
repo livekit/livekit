@@ -615,11 +615,19 @@ func (r *RTPStatsSender) MaybeAdjustFirstPacketTime(srFirst *RTCPSenderReportDat
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	srFirstCopy := *srFirst
-	r.srFeedFirst = &srFirstCopy
+	if !r.initialized {
+		return
+	}
 
-	srNewestCopy := *srNewest
-	r.srFeedNewest = &srNewestCopy
+	if srFirst != nil {
+		srFirstCopy := *srFirst
+		r.srFeedFirst = &srFirstCopy
+	}
+
+	if srNewest != nil {
+		srNewestCopy := *srNewest
+		r.srFeedNewest = &srNewestCopy
+	}
 
 	r.maybeAdjustFirstPacketTime(ts, uint32(r.extStartTS))
 }

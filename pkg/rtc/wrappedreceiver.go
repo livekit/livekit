@@ -26,6 +26,7 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
 // wrapper around WebRTC receiver, overriding its ID
@@ -328,6 +329,13 @@ func (d *DummyReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, re
 		return r.GetReferenceLayerRTPTimestamp(ts, layer, referenceLayer)
 	}
 	return 0, errors.New("receiver not available")
+}
+
+func (d *DummyReceiver) GetRTCPSenderReportData(layer int32) (*buffer.RTCPSenderReportData, *buffer.RTCPSenderReportData) {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+		return r.GetRTCPSenderReportData(layer)
+	}
+	return nil, nil
 }
 
 func (d *DummyReceiver) GetTrackStats() *livekit.RTPStats {
