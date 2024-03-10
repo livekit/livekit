@@ -29,6 +29,8 @@ import (
 const (
 	cSnInfoSize = 4096
 	cSnInfoMask = cSnInfoSize - 1
+
+	cSenderReportInitialWait = time.Second
 )
 
 type snInfoFlag byte
@@ -647,6 +649,9 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, calculatedClockRate ui
 
 	// construct current time based on monotonic clock
 	timeSinceFirst := time.Since(r.firstTime)
+	if timeSinceFirst < cSenderReportInitialWait {
+		return nil
+	}
 	now := r.firstTime.Add(timeSinceFirst)
 	nowNTP := mediatransportutil.ToNtpTime(now)
 	nowRTPExtUsingTime := r.extStartTS + uint64(timeSinceFirst.Nanoseconds()*int64(r.params.ClockRate)/1e9)
