@@ -317,13 +317,6 @@ func (d *DummyReceiver) GetRedReceiver() sfu.TrackReceiver {
 	return d
 }
 
-func (d *DummyReceiver) GetCalculatedClockRate(layer int32) uint32 {
-	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
-		return r.GetCalculatedClockRate(layer)
-	}
-	return 0
-}
-
 func (d *DummyReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error) {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		return r.GetReferenceLayerRTPTimestamp(ts, layer, referenceLayer)

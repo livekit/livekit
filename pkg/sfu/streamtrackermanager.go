@@ -35,8 +35,6 @@ import (
 
 const (
 	senderReportThresholdSeconds = float64(60.0)
-
-	minDurationForClockRateCalculation = 15 * time.Second
 )
 
 // ---------------------------------------------------
@@ -641,37 +639,6 @@ func (s *StreamTrackerManager) GetRTCPSenderReportData(layer int32) (*buffer.RTC
 	}
 
 	return s.senderReports[layer].first, s.senderReports[layer].newest
-}
-
-func (s *StreamTrackerManager) GetCalculatedClockRate(layer int32) uint32 {
-	s.senderReportMu.RLock()
-	defer s.senderReportMu.RUnlock()
-
-	if layer < 0 || int(layer) >= len(s.senderReports) {
-		// invalid layer
-		return 0
-	}
-
-	srFirst := s.senderReports[layer].first
-	srNewest := s.senderReports[layer].newest
-	if srFirst == nil || srFirst.NTPTimestamp == 0 || srNewest == nil || srNewest.NTPTimestamp == 0 || srFirst.RTPTimestamp == srNewest.RTPTimestamp {
-		// sender reports invalid or same
-		return 0
-	}
-
-	if s.senderReports[layer].lastUpdated.IsZero() || time.Since(s.senderReports[layer].lastUpdated).Seconds() > senderReportThresholdSeconds {
-		// sender report updated too far back
-		return 0
-	}
-
-	tsf := srNewest.NTPTimestamp.Time().Sub(srFirst.NTPTimestamp.Time())
-	if tsf < minDurationForClockRateCalculation {
-		// not enough time has elapsed to get a stable clock rate calculation
-		return 0
-	}
-
-	rdsf := srNewest.RTPTimestampExt - srFirst.RTPTimestampExt
-	return uint32(float64(rdsf) / tsf.Seconds())
 }
 
 func (s *StreamTrackerManager) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error) {
