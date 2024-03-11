@@ -647,7 +647,7 @@ func (r *RTPStatsSender) GetExpectedRTPTimestamp(at time.Time) (expectedTSExt ui
 	return
 }
 
-func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, calculatedClockRate uint32) *rtcp.SenderReport {
+func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32) *rtcp.SenderReport {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
@@ -662,24 +662,7 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, calculatedClockRate ui
 	}
 	now := r.firstTime.Add(timeSinceFirst)
 	nowNTP := mediatransportutil.ToNtpTime(now)
-	nowRTPExtUsingTime := r.extStartTS + uint64(timeSinceFirst.Nanoseconds()*int64(r.params.ClockRate)/1e9)
-	nowRTPExt := nowRTPExtUsingTime
-
-	/*
-		// TODO: Bad reports or unpaced publishing contorts the calculated clock rate a lot resulting in
-		// subsscriber sender reports jumping around. Needs more thinking.
-		//
-		// It is possible that publisher is pacing at a slower rate.
-		// That would make `highestTS` to be lagging the RTP time stamp in the RTCP Sender Report from publisher.
-		// Check for that using calculated clock rate and use the later time stamp if applicable.
-		var nowRTPExtUsingRate uint64
-		if calculatedClockRate != 0 {
-			nowRTPExtUsingRate = r.extStartTS + uint64(float64(calculatedClockRate)*timeSinceFirst.Seconds())
-			if nowRTPExtUsingRate > nowRTPExt {
-				nowRTPExt = nowRTPExtUsingRate
-			}
-		}
-	*/
+	nowRTPExt := r.extStartTS + uint64(timeSinceFirst.Nanoseconds()*int64(r.params.ClockRate)/1e9)
 
 	srData := &RTCPSenderReportData{
 		NTPTimestamp:    nowNTP,
@@ -707,9 +690,7 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, calculatedClockRate ui
 					"timeSinceHighest", now.Sub(r.highestTime).String(),
 					"firstTime", r.firstTime.String(),
 					"timeSinceFirst", timeSinceFirst.String(),
-					"nowRTPExtUsingTime", nowRTPExtUsingTime,
-					"calculatedClockRate", calculatedClockRate,
-					// TODO "nowRTPExtUsingRate", nowRTPExtUsingRate,
+					"nowRTPExt", nowRTPExt,
 					"timeSinceLastReport", timeSinceLastReport.String(),
 					"rtpDiffSinceLastReport", rtpDiffSinceLastReport,
 					"windowClockRate", windowClockRate,
@@ -737,9 +718,7 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, calculatedClockRate ui
 			"timeSinceHighest", now.Sub(r.highestTime).String(),
 			"firstTime", r.firstTime.String(),
 			"timeSinceFirst", timeSinceFirst.String(),
-			"nowRTPExtUsingTime", nowRTPExtUsingTime,
-			"calculatedClockRate", calculatedClockRate,
-			// TODO "nowRTPExtUsingRate", nowRTPExtUsingRate,
+			"nowRTPExt", nowRTPExt,
 		)
 		return nil
 	}
