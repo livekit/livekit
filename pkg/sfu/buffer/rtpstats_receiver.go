@@ -276,16 +276,14 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 	srDataCopy := *srData
 	srDataCopy.RTPTimestampExt = uint64(srDataCopy.RTPTimestamp) + tsCycles
 
-	r.maybeAdjustFirstPacketTime(srDataCopy.RTPTimestamp, r.timestamp.GetStart())
-
 	if r.srNewest != nil && srDataCopy.RTPTimestampExt < r.srNewest.RTPTimestampExt {
 		// This can happen when a track is replaced with a null and then restored -
 		// i. e. muting replacing with null and unmute restoring the original track.
-		// Under such a condition reset the sender reports to start from this point.
-		// Resetting will ensure sample rate calculations do not go haywire due to negative time.
+		// Or it could be due bad report generation.
+		// In any case, ignore out-of-order reports.
 		if r.outOfOrderSsenderReportCount%10 == 0 {
 			r.logger.Infow(
-				"received sender report, out-of-order, resetting",
+				"received sender report, out-of-order, skipping",
 				"first", r.srFirst,
 				"last", r.srNewest,
 				"current", &srDataCopy,
@@ -293,10 +291,10 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 			)
 		}
 		r.outOfOrderSsenderReportCount++
-
-		r.srFirst = nil
-		r.srNewest = nil
+		return
 	}
+
+	r.maybeAdjustFirstPacketTime(srDataCopy.RTPTimestamp, r.timestamp.GetStart())
 
 	if r.srNewest != nil {
 		timeSinceLast := srData.NTPTimestamp.Time().Sub(r.srNewest.NTPTimestamp.Time()).Seconds()
