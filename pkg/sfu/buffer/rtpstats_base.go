@@ -484,7 +484,7 @@ func (r *rtpStatsBase) GetRtt() uint32 {
 	return r.rtt
 }
 
-func (r *rtpStatsBase) maybeAdjustFirstPacketTime(ts uint32, startTS uint32) {
+func (r *rtpStatsBase) maybeAdjustFirstPacketTime(extNowTS uint64, extStartTS uint64) {
 	if time.Since(r.startTime) > cFirstPacketTimeAdjustWindow {
 		return
 	}
@@ -495,7 +495,7 @@ func (r *rtpStatsBase) maybeAdjustFirstPacketTime(ts uint32, startTS uint32) {
 	// abnormal delay (maybe due to pacing or maybe due to queuing
 	// in some network element along the way), push back first time
 	// to an earlier instance.
-	samplesDiff := int32(ts - startTS)
+	samplesDiff := int64(extNowTS - extStartTS)
 	if samplesDiff < 0 {
 		// out-of-order, skip
 		return
@@ -505,28 +505,24 @@ func (r *rtpStatsBase) maybeAdjustFirstPacketTime(ts uint32, startTS uint32) {
 	timeSinceFirst := time.Since(r.firstTime)
 	now := r.firstTime.Add(timeSinceFirst)
 	firstTime := now.Add(-samplesDuration)
+
+	getFields := func() []interface{} {
+		return []interface{}{
+			"startTime", r.startTime.String(),
+			"nowTime", now.String(),
+			"before", r.firstTime.String(),
+			"after", firstTime.String(),
+			"adjustment", r.firstTime.Sub(firstTime).String(),
+			"extNowTS", extNowTS,
+			"extStartTS", extStartTS,
+		}
+	}
+
 	if firstTime.Before(r.firstTime) {
 		if r.firstTime.Sub(firstTime) > cFirstPacketTimeAdjustThreshold {
-			r.logger.Infow("adjusting first packet time, too big, ignoring",
-				"startTime", r.startTime.String(),
-				"nowTime", now.String(),
-				"before", r.firstTime.String(),
-				"after", firstTime.String(),
-				"adjustment", r.firstTime.Sub(firstTime).String(),
-				"nowTS", ts,
-				"startTS", startTS,
-			)
+			r.logger.Infow("adjusting first packet time, too big, ignoring", getFields()...)
 		} else {
-			r.logger.Debugw(
-				"adjusting first packet time",
-				"startTime", r.startTime.String(),
-				"nowTime", now.String(),
-				"before", r.firstTime.String(),
-				"after", firstTime.String(),
-				"adjustment", r.firstTime.Sub(firstTime).String(),
-				"nowTS", ts,
-				"startTS", startTS,
-			)
+			r.logger.Debugw("adjusting first packet time", getFields()...)
 			r.firstTime = firstTime
 		}
 	}

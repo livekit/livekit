@@ -324,11 +324,11 @@ func (d *DummyReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, re
 	return 0, errors.New("receiver not available")
 }
 
-func (d *DummyReceiver) GetRTCPSenderReportData(layer int32) (*buffer.RTCPSenderReportData, *buffer.RTCPSenderReportData) {
+func (d *DummyReceiver) GetRTCPSenderReportData(layer int32) *buffer.RTCPSenderReportData {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		return r.GetRTCPSenderReportData(layer)
 	}
-	return nil, nil
+	return nil
 }
 
 func (d *DummyReceiver) GetTrackStats() *livekit.RTPStats {

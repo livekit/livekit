@@ -123,6 +123,10 @@ func (r *RTPMunger) GetLast() RTPMungerState {
 	}
 }
 
+func (r *RTPMunger) GetTSOffset() uint64 {
+	return r.tsOffset
+}
+
 func (r *RTPMunger) SeedLast(state RTPMungerState) {
 	r.extLastSN = state.ExtLastSN
 	r.extSecondLastSN = state.ExtSecondLastSN

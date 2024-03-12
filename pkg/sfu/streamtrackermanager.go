@@ -50,12 +50,6 @@ type StreamTrackerManagerListener interface {
 
 // ---------------------------------------------------
 
-type endsSenderReport struct {
-	first       *buffer.RTCPSenderReportData
-	newest      *buffer.RTCPSenderReportData
-	lastUpdated time.Time
-}
-
 type StreamTrackerManager struct {
 	logger    logger.Logger
 	trackInfo atomic.Pointer[livekit.TrackInfo]
@@ -76,7 +70,7 @@ type StreamTrackerManager struct {
 	paused           bool
 
 	senderReportMu sync.RWMutex
-	senderReports  [buffer.DefaultMaxLayerSpatial + 1]endsSenderReport
+	senderReports  [buffer.DefaultMaxLayerSpatial + 1]*buffer.RTCPSenderReportData
 	layerOffsets   [buffer.DefaultMaxLayerSpatial + 1][buffer.DefaultMaxLayerSpatial + 1]uint32
 
 	closed core.Fuse
@@ -557,8 +551,8 @@ func (s *StreamTrackerManager) maxExpectedLayerFromTrackInfo() {
 }
 
 func (s *StreamTrackerManager) updateLayerOffsetLocked(ref, other int32) {
-	srRef := s.senderReports[ref].newest
-	srOther := s.senderReports[other].newest
+	srRef := s.senderReports[ref]
+	srOther := s.senderReports[other]
 	if srRef == nil || srRef.NTPTimestamp == 0 || srOther == nil || srOther.NTPTimestamp == 0 {
 		return
 	}
@@ -598,7 +592,7 @@ func (s *StreamTrackerManager) updateLayerOffsetLocked(ref, other int32) {
 	s.layerOffsets[ref][other] = offset
 }
 
-func (s *StreamTrackerManager) SetRTCPSenderReportData(layer int32, srFirst *buffer.RTCPSenderReportData, srNewest *buffer.RTCPSenderReportData) {
+func (s *StreamTrackerManager) SetRTCPSenderReportData(layer int32, srData *buffer.RTCPSenderReportData) {
 	s.senderReportMu.Lock()
 	defer s.senderReportMu.Unlock()
 
@@ -606,9 +600,7 @@ func (s *StreamTrackerManager) SetRTCPSenderReportData(layer int32, srFirst *buf
 		return
 	}
 
-	s.senderReports[layer].first = srFirst
-	s.senderReports[layer].newest = srNewest
-	s.senderReports[layer].lastUpdated = time.Now()
+	s.senderReports[layer] = srData
 
 	// (re)fill offsets as necessary for received layer.
 	for i := int32(0); i < buffer.DefaultMaxLayerSpatial+1; i++ {
@@ -624,12 +616,12 @@ func (s *StreamTrackerManager) SetRTCPSenderReportData(layer int32, srFirst *buf
 	}
 }
 
-func (s *StreamTrackerManager) GetRTCPSenderReportData(layer int32) (*buffer.RTCPSenderReportData, *buffer.RTCPSenderReportData) {
+func (s *StreamTrackerManager) GetRTCPSenderReportData(layer int32) *buffer.RTCPSenderReportData {
 	s.senderReportMu.Lock()
 	defer s.senderReportMu.Unlock()
 
 	if layer < 0 || int(layer) >= len(s.senderReports) {
-		return nil, nil
+		return nil
 	}
 
 	// SVC-TODO: better SVC detection
@@ -638,7 +630,7 @@ func (s *StreamTrackerManager) GetRTCPSenderReportData(layer int32) (*buffer.RTC
 		layer = 0
 	}
 
-	return s.senderReports[layer].first, s.senderReports[layer].newest
+	return s.senderReports[layer]
 }
 
 func (s *StreamTrackerManager) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error) {

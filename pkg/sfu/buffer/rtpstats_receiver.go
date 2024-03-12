@@ -28,6 +28,27 @@ import (
 
 const (
 	cHistorySize = 4096
+
+	// RTCP Sender Reports are re-based to SFU time base so that all subscriber side
+	// can have the same time base (i. e. SFU time base). To convert publisher side
+	// RTCP Sender Reports to SFU timebase, a propagation delay is maintained.
+	//    propagation_delay = time_of_report_reception - ntp_timestamp_in_report
+	//
+	// Propagation delay is adapted continuously. If it falls, adapt quickly to the
+	// lower value as that could be the real propagation delay. If it rises, adapt slowly
+	// as it might be a temporary change or slow drift. See below for handling of high deltas
+	// which could be a result of a path change.
+	cPropagationDelayFallFactor = float64(0.95)
+	cPropagationDelayRiseFactor = float64(0.05)
+
+	// do not adapt to small OR large (outlier) changes
+	cPropagationDelayChangeThresholdMin       = 5 * time.Millisecond
+	cPropagationDelayChangeThresholdMaxFactor = 2
+
+	// To account for path changes mid-stream, if the propagation delay is consistently higher, reset.
+	// Reset at whichever of the below happens later.
+	cPropagationDelayChangeHighResetNumReports = 3
+	cPropagationDelayChangeHighResetWait       = 10 * time.Second
 )
 
 type RTPFlowState struct {
@@ -52,6 +73,10 @@ type RTPStatsReceiver struct {
 	timestamp *utils.WrapAround[uint32, uint64]
 
 	history *protoutils.Bitmap[uint64]
+
+	propagationDelay                    time.Duration
+	propagationDelayChangeHighCount     int
+	propagationDelayChangeHighStartTime time.Time
 
 	clockSkewCount               int
 	outOfOrderSsenderReportCount int
@@ -294,7 +319,7 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 		return
 	}
 
-	r.maybeAdjustFirstPacketTime(srDataCopy.RTPTimestamp, r.timestamp.GetStart())
+	r.maybeAdjustFirstPacketTime(srDataCopy.RTPTimestampExt, r.timestamp.GetExtendedStart())
 
 	if r.srNewest != nil {
 		timeSinceLast := srData.NTPTimestamp.Time().Sub(r.srNewest.NTPTimestamp.Time()).Seconds()
@@ -326,26 +351,83 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 		}
 	}
 
-	r.srNewest = &srDataCopy
+	ntpTime := srDataCopy.NTPTimestamp.Time()
+	propagationDelay := srDataCopy.At.Sub(ntpTime)
 	if r.srFirst == nil {
 		r.srFirst = &srDataCopy
+		r.propagationDelay = propagationDelay
+		r.logger.Debugw(
+			"intializing propagation delay",
+			"propagationDelay", r.propagationDelay,
+			"first", r.srFirst,
+			"last", r.srNewest,
+			"current", &srDataCopy,
+		)
+	} else {
+		delta := propagationDelay - r.propagationDelay
+		if delta.Abs() > r.propagationDelay.Abs()*time.Duration(cPropagationDelayChangeThresholdMaxFactor) {
+			r.logger.Infow(
+				"sharp increase in propagation delay, skipping",
+				"propagationDelay", r.propagationDelay,
+				"receivedPropagationDelay", propagationDelay,
+				"first", r.srFirst,
+				"last", r.srNewest,
+				"current", &srDataCopy,
+			)
+			r.propagationDelayChangeHighCount++
+			if r.propagationDelayChangeHighStartTime.IsZero() {
+				r.propagationDelayChangeHighStartTime = time.Now()
+			}
+
+			if r.propagationDelayChangeHighCount >= cPropagationDelayChangeHighResetNumReports && time.Since(r.propagationDelayChangeHighStartTime) >= cPropagationDelayChangeHighResetWait {
+				r.logger.Infow(
+					"re-intializing propagation delay",
+					"propagationDelay", r.propagationDelay,
+					"newPropagationDelay", propagationDelay,
+					"first", r.srFirst,
+					"last", r.srNewest,
+					"current", &srDataCopy,
+				)
+				r.propagationDelay = propagationDelay
+				r.propagationDelayChangeHighCount = 0
+				r.propagationDelayChangeHighStartTime = time.Time{}
+			}
+		} else {
+			r.propagationDelayChangeHighCount = 0
+			r.propagationDelayChangeHighStartTime = time.Time{}
+			if delta.Abs() > cPropagationDelayChangeThresholdMin {
+				factor := cPropagationDelayFallFactor
+				if propagationDelay > r.propagationDelay {
+					factor = cPropagationDelayRiseFactor
+				}
+				r.logger.Debugw(
+					"adapting propagation delay",
+					"propagationDelay", r.propagationDelay,
+					"receivedPropagationDelay", propagationDelay,
+					"newPropagationDelay", r.propagationDelay+time.Duration(factor*float64(propagationDelay-r.propagationDelay)),
+					"first", r.srFirst,
+					"last", r.srNewest,
+					"current", &srDataCopy,
+				) // TODO-REMOVE
+				r.propagationDelay += time.Duration(factor * float64(propagationDelay-r.propagationDelay))
+			}
+		}
 	}
+	// adjust receive time to estimated propagation delay
+	srDataCopy.At = ntpTime.Add(r.propagationDelay)
+	r.srNewest = &srDataCopy
 }
 
-func (r *RTPStatsReceiver) GetRtcpSenderReportData() (srFirst *RTCPSenderReportData, srNewest *RTCPSenderReportData) {
+func (r *RTPStatsReceiver) GetRtcpSenderReportData() *RTCPSenderReportData {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
-	if r.srFirst != nil {
-		srFirstCopy := *r.srFirst
-		srFirst = &srFirstCopy
+	if r.srNewest == nil {
+		return nil
 	}
 
-	if r.srNewest != nil {
-		srNewestCopy := *r.srNewest
-		srNewest = &srNewestCopy
-	}
-	return
+	srNewestCopy := *r.srNewest
+	return &srNewestCopy
 }
 
 func (r *RTPStatsReceiver) GetRtcpReceptionReport(ssrc uint32, proxyFracLost uint8, snapshotID uint32) *rtcp.ReceptionReport {
