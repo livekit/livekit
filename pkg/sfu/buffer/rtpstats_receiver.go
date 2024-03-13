@@ -393,7 +393,7 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 			}
 
 			if r.propagationDelayDeltaHighCount >= cPropagationDelayDeltaHighResetNumReports && time.Since(r.propagationDelayDeltaHighStartTime) >= cPropagationDelayDeltaHighResetWait {
-				r.logger.Infow("re-initializing propagation delay", append(getPropagationFields(), "newPropagationDelay", propagationDelay.String())...)
+				r.logger.Debugw("re-initializing propagation delay", append(getPropagationFields(), "newPropagationDelay", propagationDelay.String())...)
 				initPropagationDelay(propagationDelay)
 			}
 		} else {
