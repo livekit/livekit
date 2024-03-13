@@ -607,9 +607,7 @@ func (r *RTPStatsSender) MaybeAdjustFirstPacketTime(publisherSRData *RTCPSenderR
 		return
 	}
 
-	timeSincePublisherSR := time.Since(publisherSRData.At)
-	nowRTPExt := publisherSRData.RTPTimestampExt - tsOffset + uint64(timeSincePublisherSR.Nanoseconds()*int64(r.params.ClockRate)/1e9)
-	r.maybeAdjustFirstPacketTime(nowRTPExt, r.extStartTS)
+	r.maybeAdjustFirstPacketTime(publisherSRData, tsOffset, r.extStartTS)
 }
 
 func (r *RTPStatsSender) GetExpectedRTPTimestamp(at time.Time) (expectedTSExt uint64, err error) {
