@@ -385,7 +385,6 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 		r.logger.Debugw("initializing propagation delay", getPropagationFields()...)
 	} else {
 		deltaPropagationDelay = propagationDelay - r.propagationDelay
-		r.logger.Debugw("RAJA pd", getPropagationFields()...) // REMOVE
 		if r.smoothedDeltaPropagationDelay != 0 && deltaPropagationDelay > 0 && deltaPropagationDelay > r.smoothedDeltaPropagationDelay*time.Duration(cPropagationDelayDeltaThresholdMaxFactor) {
 			r.logger.Debugw("sharp increase in propagation delay, skipping", getPropagationFields()...) // TODO-REMOVE
 			r.propagationDelayDeltaHighCount++
@@ -394,7 +393,7 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 			}
 
 			if r.propagationDelayDeltaHighCount >= cPropagationDelayDeltaHighResetNumReports && time.Since(r.propagationDelayDeltaHighStartTime) >= cPropagationDelayDeltaHighResetWait {
-				r.logger.Infow("re-initializing propagation delay", append(getPropagationFields(), "newPropagationDelay", propagationDelay)...)
+				r.logger.Debugw("re-initializing propagation delay", append(getPropagationFields(), "newPropagationDelay", propagationDelay.String())...)
 				initPropagationDelay(propagationDelay)
 			}
 		} else {
