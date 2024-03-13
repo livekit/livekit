@@ -91,7 +91,7 @@ func (d *DynacastManager) Restart() {
 }
 
 func (d *DynacastManager) Close() {
-	d.qualityNotifyOpQueue.Stop()
+	<-d.qualityNotifyOpQueue.Stop()
 
 	d.lock.Lock()
 	dqs := d.getDynacastQualitiesLocked()
@@ -305,9 +305,11 @@ func (d *DynacastManager) enqueueSubscribedQualityChange() {
 		}
 	}
 
-	d.params.Logger.Debugw("subscribedMaxQualityChange",
+	d.params.Logger.Debugw(
+		"subscribedMaxQualityChange",
 		"subscribedCodecs", subscribedCodecs,
-		"maxSubscribedQualities", maxSubscribedQualities)
+		"maxSubscribedQualities", maxSubscribedQualities,
+	)
 	d.qualityNotifyOpQueue.Enqueue(func() {
 		d.onSubscribedMaxQualityChange(subscribedCodecs, maxSubscribedQualities)
 	})
