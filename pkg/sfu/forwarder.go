@@ -556,18 +556,15 @@ func (f *Forwarder) GetMaxSubscribedSpatial() int32 {
 	return layer
 }
 
-func (f *Forwarder) GetReferenceLayerSpatial() int32 {
+func (f *Forwarder) GetCurrentSpatialAndTSOffset() (int32, uint64) {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
-	return f.referenceLayerSpatial
-}
+	if f.kind == webrtc.RTPCodecTypeAudio {
+		return 0, f.rtpMunger.GetTSOffset()
+	}
 
-func (f *Forwarder) GetReferenceTimestampOffset() uint64 {
-	f.lock.RLock()
-	defer f.lock.RUnlock()
-
-	return f.refTSOffset
+	return f.vls.GetCurrent().Spatial, f.rtpMunger.GetTSOffset()
 }
 
 func (f *Forwarder) isDeficientLocked() bool {
