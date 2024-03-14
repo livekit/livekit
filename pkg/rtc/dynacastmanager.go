@@ -59,7 +59,12 @@ func NewDynacastManager(params DynacastManagerParams) *DynacastManager {
 		dynacastQuality:               make(map[string]*DynacastQuality),
 		maxSubscribedQuality:          make(map[string]livekit.VideoQuality),
 		committedMaxSubscribedQuality: make(map[string]livekit.VideoQuality),
-		qualityNotifyOpQueue:          utils.NewOpsQueue("quality-notify", 64, true),
+		qualityNotifyOpQueue: utils.NewOpsQueue(utils.OpsQueueParams{
+			Name:        "quality-notify",
+			MinSize:     64,
+			FlushOnStop: true,
+			Logger:      params.Logger,
+		}),
 	}
 	if params.DynacastPauseDelay > 0 {
 		d.maxSubscribedQualityDebounce = debounce.New(params.DynacastPauseDelay)
