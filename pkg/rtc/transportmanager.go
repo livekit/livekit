@@ -28,14 +28,15 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/mediatransportutil/pkg/twcc"
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
+
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/transport"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
-	"github.com/livekit/mediatransportutil/pkg/twcc"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 )
 
 const (
@@ -240,9 +241,9 @@ func (t *TransportManager) RemoveSubscribedTrack(subTrack types.SubscribedTrack)
 	t.subscriber.RemoveTrackFromStreamAllocator(subTrack)
 }
 
-func (t *TransportManager) SendDataPacket(dp *livekit.DataPacket, data []byte) error {
+func (t *TransportManager) SendDataPacket(kind livekit.DataPacket_Kind, encoded []byte) error {
 	// downstream data is sent via primary peer connection
-	return t.getTransport(true).SendDataPacket(dp, data)
+	return t.getTransport(true).SendDataPacket(kind, encoded)
 }
 
 func (t *TransportManager) createDataChannelsForSubscriber(pendingDataChannels []*livekit.DataChannelInfo) error {
