@@ -180,7 +180,11 @@ func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 		}),
 		rateMonitor: NewRateMonitor(),
 		videoTracks: make(map[livekit.TrackID]*Track),
-		eventsQueue: utils.NewOpsQueue("stream-allocator", 64, false),
+		eventsQueue: utils.NewOpsQueue(utils.OpsQueueParams{
+			Name:    "stream-allocator",
+			MinSize: 64,
+			Logger:  params.Logger,
+		}),
 	}
 
 	s.probeController = NewProbeController(ProbeControllerParams{

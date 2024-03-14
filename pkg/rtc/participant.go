@@ -241,8 +241,12 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		return nil, ErrMissingGrants
 	}
 	p := &ParticipantImpl{
-		params:                  params,
-		pubRTCPQueue:            sutils.NewOpsQueue("pub-rtcp", 64, false),
+		params: params,
+		pubRTCPQueue: sutils.NewOpsQueue(sutils.OpsQueueParams{
+			Name:    "pub-rtcp",
+			MinSize: 64,
+			Logger:  params.Logger,
+		}),
 		pendingTracks:           make(map[string]*pendingTrackInfo),
 		pendingPublishingTracks: make(map[livekit.TrackID]*pendingTrackInfo),
 		connectedAt:             time.Now(),

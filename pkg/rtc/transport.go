@@ -44,6 +44,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	sfuutils "github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
+	"github.com/livekit/livekit-server/pkg/utils"
 	sutils "github.com/livekit/livekit-server/pkg/utils"
 	lkinterceptor "github.com/livekit/mediatransportutil/pkg/interceptor"
 	lktwcc "github.com/livekit/mediatransportutil/pkg/twcc"
@@ -384,10 +385,14 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		params.Logger = logger.GetLogger()
 	}
 	t := &PCTransport{
-		params:                   params,
-		debouncedNegotiate:       debounce.New(negotiationFrequency),
-		negotiationState:         transport.NegotiationStateNone,
-		eventsQueue:              sutils.NewOpsQueue("transport", 64, false),
+		params:             params,
+		debouncedNegotiate: debounce.New(negotiationFrequency),
+		negotiationState:   transport.NegotiationStateNone,
+		eventsQueue: sutils.NewOpsQueue(utils.OpsQueueParams{
+			Name:    "transport",
+			MinSize: 64,
+			Logger:  params.Logger,
+		}),
 		previousTrackDescription: make(map[string]*trackDescription),
 		canReuseTransceiver:      true,
 		connectionDetails:        types.NewICEConnectionDetails(params.Transport, params.Logger),
