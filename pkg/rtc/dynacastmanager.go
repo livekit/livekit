@@ -96,7 +96,7 @@ func (d *DynacastManager) Restart() {
 }
 
 func (d *DynacastManager) Close() {
-	<-d.qualityNotifyOpQueue.Stop()
+	d.qualityNotifyOpQueue.Stop()
 
 	d.lock.Lock()
 	dqs := d.getDynacastQualitiesLocked()
