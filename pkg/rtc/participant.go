@@ -503,19 +503,20 @@ func (p *ParticipantImpl) ToProtoWithVersion() (*livekit.ParticipantInfo, utils.
 		p.timedVersion.Update(&piv)
 	}
 
+	grants := p.ClaimGrants()
 	p.lock.RLock()
 	pi := &livekit.ParticipantInfo{
 		Sid:         string(p.params.SID),
 		Identity:    string(p.params.Identity),
-		Name:        p.grants.Name,
+		Name:        grants.Name,
 		State:       p.State(),
 		JoinedAt:    p.ConnectedAt().Unix(),
 		Version:     v,
-		Permission:  p.grants.Video.ToPermission(),
-		Metadata:    p.grants.Metadata,
+		Permission:  grants.Video.ToPermission(),
+		Metadata:    grants.Metadata,
 		Region:      p.params.Region,
 		IsPublisher: p.IsPublisher(),
-		Kind:        p.grants.GetParticipantKind(),
+		Kind:        grants.GetParticipantKind(),
 	}
 	p.lock.RUnlock()
 
