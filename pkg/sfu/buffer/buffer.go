@@ -840,7 +840,7 @@ func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64) {
 	}
 }
 
-func (b *Buffer) GetSenderReportData() (*RTCPSenderReportData, *RTCPSenderReportData) {
+func (b *Buffer) GetSenderReportData() *RTCPSenderReportData {
 	b.RLock()
 	defer b.RUnlock()
 
@@ -848,7 +848,7 @@ func (b *Buffer) GetSenderReportData() (*RTCPSenderReportData, *RTCPSenderReport
 		return b.rtpStats.GetRtcpSenderReportData()
 	}
 
-	return nil, nil
+	return nil
 }
 
 func (b *Buffer) SetLastFractionLostReport(lost uint8) {

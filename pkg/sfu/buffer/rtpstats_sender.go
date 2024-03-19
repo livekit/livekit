@@ -29,6 +29,8 @@ import (
 const (
 	cSnInfoSize = 4096
 	cSnInfoMask = cSnInfoSize - 1
+
+	cSenderReportInitialWait = time.Second
 )
 
 type snInfoFlag byte
@@ -157,12 +159,8 @@ type RTPStatsSender struct {
 	nextSenderSnapshotID uint32
 	senderSnapshots      []senderSnapshot
 
-	clockSkewCount              int
-	outOfOrderSenderReportCount int
-	metadataCacheOverflowCount  int
-
-	srFeedFirst  *RTCPSenderReportData
-	srFeedNewest *RTCPSenderReportData
+	clockSkewCount             int
+	metadataCacheOverflowCount int
 }
 
 func NewRTPStatsSender(params RTPStatsParams) *RTPStatsSender {
@@ -201,15 +199,6 @@ func (r *RTPStatsSender) Seed(from *RTPStatsSender) {
 	r.nextSenderSnapshotID = from.nextSenderSnapshotID
 	r.senderSnapshots = make([]senderSnapshot, cap(from.senderSnapshots))
 	copy(r.senderSnapshots, from.senderSnapshots)
-
-	if from.srFeedFirst != nil {
-		srFeedFirst := *from.srFeedFirst
-		r.srFeedFirst = &srFeedFirst
-	}
-	if from.srFeedNewest != nil {
-		srFeedNewest := *from.srFeedNewest
-		r.srFeedNewest = &srFeedNewest
-	}
 }
 
 func (r *RTPStatsSender) NewSnapshotId() uint32 {
@@ -610,17 +599,15 @@ func (r *RTPStatsSender) LastReceiverReportTime() time.Time {
 	return r.lastRRTime
 }
 
-func (r *RTPStatsSender) MaybeAdjustFirstPacketTime(srFirst *RTCPSenderReportData, srNewest *RTCPSenderReportData, ts uint32) {
+func (r *RTPStatsSender) MaybeAdjustFirstPacketTime(publisherSRData *RTCPSenderReportData, tsOffset uint64) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	srFirstCopy := *srFirst
-	r.srFeedFirst = &srFirstCopy
+	if !r.initialized || publisherSRData == nil {
+		return
+	}
 
-	srNewestCopy := *srNewest
-	r.srFeedNewest = &srNewestCopy
-
-	r.maybeAdjustFirstPacketTime(ts, uint32(r.extStartTS))
+	r.maybeAdjustFirstPacketTime(publisherSRData, tsOffset, r.extStartTS)
 }
 
 func (r *RTPStatsSender) GetExpectedRTPTimestamp(at time.Time) (expectedTSExt uint64, err error) {
@@ -638,41 +625,43 @@ func (r *RTPStatsSender) GetExpectedRTPTimestamp(at time.Time) (expectedTSExt ui
 	return
 }
 
-func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, calculatedClockRate uint32) *rtcp.SenderReport {
+func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *RTCPSenderReportData, tsOffset uint64) *rtcp.SenderReport {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	if !r.initialized {
+	if !r.initialized || publisherSRData == nil {
 		return nil
 	}
 
-	// construct current time based on monotonic clock
-	timeSinceFirst := time.Since(r.firstTime)
-	now := r.firstTime.Add(timeSinceFirst)
+	timeSincePublisherSR := time.Since(publisherSRData.At)
+	now := publisherSRData.At.Add(timeSincePublisherSR)
 	nowNTP := mediatransportutil.ToNtpTime(now)
-
-	timeSinceHighest := now.Sub(r.highestTime)
-	nowRTPExt := r.extHighestTS + uint64(timeSinceHighest.Nanoseconds()*int64(r.params.ClockRate)/1e9)
-	nowRTPExtUsingTime := nowRTPExt
-	nowRTP := uint32(nowRTPExt)
-
-	// It is possible that publisher is pacing at a slower rate.
-	// That would make `highestTS` to be lagging the RTP time stamp in the RTCP Sender Report from publisher.
-	// Check for that using calculated clock rate and use the later time stamp if applicable.
-	var nowRTPExtUsingRate uint64
-	if calculatedClockRate != 0 {
-		nowRTPExtUsingRate = r.extStartTS + uint64(float64(calculatedClockRate)*timeSinceFirst.Seconds())
-		if nowRTPExtUsingRate > nowRTPExt {
-			nowRTPExt = nowRTPExtUsingRate
-			nowRTP = uint32(nowRTPExt)
-		}
-	}
+	nowRTPExt := publisherSRData.RTPTimestampExt - tsOffset + uint64(timeSincePublisherSR.Nanoseconds()*int64(r.params.ClockRate)/1e9)
 
 	srData := &RTCPSenderReportData{
 		NTPTimestamp:    nowNTP,
-		RTPTimestamp:    nowRTP,
+		RTPTimestamp:    uint32(nowRTPExt),
 		RTPTimestampExt: nowRTPExt,
 		At:              now,
+	}
+
+	getFields := func() []interface{} {
+		return []interface{}{
+			"first", r.srFirst,
+			"last", r.srNewest,
+			"curr", srData,
+			"feed", publisherSRData,
+			"tsOffset", tsOffset,
+			"timeNow", time.Now().String(),
+			"extStartTS", r.extStartTS,
+			"extHighestTS", r.extHighestTS,
+			"highestTime", r.highestTime.String(),
+			"timeSinceHighest", now.Sub(r.highestTime).String(),
+			"firstTime", r.firstTime.String(),
+			"timeSinceFirst", now.Sub(r.firstTime).String(),
+			"timeSincePublisherSR", timeSincePublisherSR.String(),
+			"nowRTPExt", nowRTPExt,
+		}
 	}
 	if r.srNewest != nil && nowRTPExt >= r.srNewest.RTPTimestampExt {
 		timeSinceLastReport := nowNTP.Time().Sub(r.srNewest.NTPTimestamp.Time())
@@ -680,74 +669,24 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, calculatedClockRate ui
 		windowClockRate := float64(rtpDiffSinceLastReport) / timeSinceLastReport.Seconds()
 		if timeSinceLastReport.Seconds() > 0.2 && math.Abs(float64(r.params.ClockRate)-windowClockRate) > 0.2*float64(r.params.ClockRate) {
 			if r.clockSkewCount%10 == 0 {
-				r.logger.Infow(
-					"sending sender report, clock skew",
-					"first", r.srFirst.ToString(),
-					"last", r.srNewest.ToString(),
-					"curr", srData.ToString(),
-					"firstFeed", r.srFeedFirst.ToString(),
-					"lastFeed", r.srFeedNewest.ToString(),
-					"timeNow", time.Now().String(),
-					"extStartTS", r.extStartTS,
-					"extHighestTS", r.extHighestTS,
-					"highestTime", r.highestTime.String(),
-					"timeSinceHighest", timeSinceHighest.String(),
-					"firstTime", r.firstTime.String(),
-					"timeSinceFirst", timeSinceFirst.String(),
-					"nowRTPExtUsingTime", nowRTPExtUsingTime,
-					"calculatedClockRate", calculatedClockRate,
-					"nowRTPExtUsingRate", nowRTPExtUsingRate,
+				fields := append(
+					getFields(),
 					"timeSinceLastReport", timeSinceLastReport.String(),
 					"rtpDiffSinceLastReport", rtpDiffSinceLastReport,
 					"windowClockRate", windowClockRate,
 					"count", r.clockSkewCount,
 				)
+				r.logger.Infow("sending sender report, clock skew", fields...)
 			}
 			r.clockSkewCount++
 		}
 	}
 
 	if r.srNewest != nil && nowRTPExt < r.srNewest.RTPTimestampExt {
-		// If report being generated is behind, use the time difference and
-		// clock rate of codec to produce next report.
-		//
-		// Current report could be behind due to the following
-		//  - Publisher pacing
-		//  - Due to above, report from publisher side is ahead of packet timestamps.
-		//    Note that report will map wall clock to timestamp at capture time and happens before the pacer.
-		//  - Pause/Mute followed by resume, some combination of events that could
-		//    result in this module not having calculated clock rate of publisher side.
-		//  - When the above happens, current will be generated using highestTS which could be behind.
-		//    That could end up behind the last report's timestamp in extreme cases
-		if r.outOfOrderSenderReportCount%10 == 0 {
-			r.logger.Infow(
-				"sending sender report, out-of-order, repairing",
-				"first", r.srFirst.ToString(),
-				"last", r.srNewest.ToString(),
-				"curr", srData.ToString(),
-				"firstFeed", r.srFeedFirst.ToString(),
-				"lastFeed", r.srFeedNewest.ToString(),
-				"timeNow", time.Now().String(),
-				"extStartTS", r.extStartTS,
-				"extHighestTS", r.extHighestTS,
-				"highestTime", r.highestTime.String(),
-				"timeSinceHighest", timeSinceHighest.String(),
-				"firstTime", r.firstTime.String(),
-				"timeSinceFirst", timeSinceFirst.String(),
-				"nowRTPExtUsingTime", nowRTPExtUsingTime,
-				"calculatedClockRate", calculatedClockRate,
-				"nowRTPExtUsingRate", nowRTPExtUsingRate,
-				"count", r.outOfOrderSenderReportCount,
-			)
-		}
-		r.outOfOrderSenderReportCount++
-
-		ntpDiffSinceLast := nowNTP.Time().Sub(r.srNewest.NTPTimestamp.Time())
-		nowRTPExt = r.srNewest.RTPTimestampExt + uint64(ntpDiffSinceLast.Seconds()*float64(r.params.ClockRate))
-		nowRTP = uint32(nowRTPExt)
-
-		srData.RTPTimestamp = nowRTP
-		srData.RTPTimestampExt = nowRTPExt
+		// If report being generated is behind the last report, skip it.
+		// Should not happen.
+		r.logger.Infow("sending sender report, out-of-order, skipping", getFields()...)
+		return nil
 	}
 
 	r.srNewest = srData
@@ -758,7 +697,7 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, calculatedClockRate ui
 	return &rtcp.SenderReport{
 		SSRC:        ssrc,
 		NTPTime:     uint64(nowNTP),
-		RTPTime:     nowRTP,
+		RTPTime:     uint32(nowRTPExt),
 		PacketCount: uint32(r.getTotalPacketsPrimary(r.extStartSN, r.extHighestSN) + r.packetsDuplicate + r.packetsPadding),
 		OctetCount:  uint32(r.bytes + r.bytesDuplicate + r.bytesPadding),
 	}

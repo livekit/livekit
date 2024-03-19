@@ -42,6 +42,8 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/telemetry"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
+	"github.com/livekit/livekit-server/version"
 )
 
 const (
@@ -547,7 +549,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 	}
 
 	// construct ice servers
-	newRoom := rtc.NewRoom(ri, internal, *r.rtcConfig, &r.config.Audio, r.serverInfo, r.telemetry, r.agentClient, r.egressLauncher)
+	newRoom := rtc.NewRoom(ri, internal, *r.rtcConfig, r.config.Room, &r.config.Audio, r.serverInfo, r.telemetry, r.agentClient, r.egressLauncher)
 
 	roomTopic := rpc.FormatRoomTopic(roomName)
 	roomServer := must.Get(rpc.NewTypedRoomServer(r, r.bus))
@@ -755,13 +757,18 @@ func (r *RoomManager) SendData(ctx context.Context, req *livekit.SendDataRequest
 	}
 
 	room.Logger.Debugw("api send data", "size", len(req.Data))
-	up := &livekit.UserPacket{
-		Payload:               req.Data,
-		DestinationSids:       req.DestinationSids,
+	room.SendDataPacket(&livekit.DataPacket{
+		Kind:                  req.Kind,
 		DestinationIdentities: req.DestinationIdentities,
-		Topic:                 req.Topic,
-	}
-	room.SendDataPacket(up, req.Kind)
+		Value: &livekit.DataPacket_User{
+			User: &livekit.UserPacket{
+				Payload:               req.Data,
+				DestinationSids:       req.DestinationSids,
+				DestinationIdentities: req.DestinationIdentities,
+				Topic:                 req.Topic,
+			},
+		},
+	}, req.Kind)
 	return &livekit.SendDataResponse{}, nil
 }
 

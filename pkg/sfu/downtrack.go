@@ -59,8 +59,7 @@ type TrackSender interface {
 		payloadType webrtc.PayloadType,
 		isSVC bool,
 		layer int32,
-		srFirst *buffer.RTCPSenderReportData,
-		srNewest *buffer.RTCPSenderReportData,
+		publisherSRData *buffer.RTCPSenderReportData,
 	) error
 }
 
@@ -1303,11 +1302,8 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 		return nil
 	}
 
-	clockLayer := d.forwarder.CurrentLayer().Spatial
-	if clockLayer == buffer.InvalidLayerSpatial {
-		clockLayer = d.forwarder.GetReferenceLayerSpatial()
-	}
-	return d.rtpStats.GetRtcpSenderReport(d.ssrc, d.params.Receiver.GetCalculatedClockRate(clockLayer))
+	layer, tsOffset := d.forwarder.GetCurrentSpatialAndTSOffset()
+	return d.rtpStats.GetRtcpSenderReport(d.ssrc, d.params.Receiver.GetRTCPSenderReportData(layer), tsOffset)
 }
 
 func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan struct{} {
@@ -1948,17 +1944,17 @@ func (d *DownTrack) HandleRTCPSenderReportData(
 	_payloadType webrtc.PayloadType,
 	isSVC bool,
 	layer int32,
-	srFirst *buffer.RTCPSenderReportData,
-	srNewest *buffer.RTCPSenderReportData,
+	publisherSRData *buffer.RTCPSenderReportData,
 ) error {
-	if (layer == d.forwarder.GetReferenceLayerSpatial() || (layer == 0 && isSVC)) && srNewest != nil {
-		d.rtpStats.MaybeAdjustFirstPacketTime(
-			srFirst,
-			srNewest,
-			srNewest.RTPTimestamp+uint32(d.forwarder.GetReferenceTimestampOffset()),
-		)
+	currentLayer, tsOffset := d.forwarder.GetCurrentSpatialAndTSOffset()
+	if layer == currentLayer || (layer == 0 && isSVC) {
+		d.handleRTCPSenderReportData(publisherSRData, tsOffset)
 	}
 	return nil
+}
+
+func (d *DownTrack) handleRTCPSenderReportData(publisherSRData *buffer.RTCPSenderReportData, tsOffset uint64) {
+	d.rtpStats.MaybeAdjustFirstPacketTime(publisherSRData, tsOffset)
 }
 
 type sendPacketMetadata struct {
@@ -2010,6 +2006,10 @@ func (d *DownTrack) sendingPacket(hdr *rtp.Header, payloadSize int, spmd *sendPa
 		}
 
 		if spmd.tp.isResuming {
+			// adjust first packet time on a resumption so that subsequent switches get a more accurate expected time stamp
+			currentLayer, tsOffset := d.forwarder.GetCurrentSpatialAndTSOffset()
+			d.handleRTCPSenderReportData(d.params.Receiver.GetRTCPSenderReportData(currentLayer), tsOffset)
+
 			if sal := d.getStreamAllocatorListener(); sal != nil {
 				sal.OnResume(d)
 			}

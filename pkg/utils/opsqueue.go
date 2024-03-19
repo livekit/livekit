@@ -19,12 +19,19 @@ import (
 	"sync"
 
 	"github.com/gammazero/deque"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 )
 
+type OpsQueueParams struct {
+	Name        string
+	MinSize     uint
+	FlushOnStop bool
+	Logger      logger.Logger
+}
+
 type OpsQueue struct {
-	name        string
-	flushOnStop bool
+	params OpsQueueParams
 
 	lock      sync.Mutex
 	ops       deque.Deque[func()]
@@ -34,14 +41,13 @@ type OpsQueue struct {
 	isStopped bool
 }
 
-func NewOpsQueue(name string, minSize uint, flushOnStop bool) *OpsQueue {
+func NewOpsQueue(params OpsQueueParams) *OpsQueue {
 	oq := &OpsQueue{
-		name:        name,
-		flushOnStop: flushOnStop,
-		wake:        make(chan struct{}, 1),
-		doneChan:    make(chan struct{}),
+		params:   params,
+		wake:     make(chan struct{}, 1),
+		doneChan: make(chan struct{}),
 	}
-	oq.ops.SetMinCapacity(uint(utils.Min(bits.Len64(uint64(minSize-1)), 7)))
+	oq.ops.SetMinCapacity(uint(utils.Min(bits.Len64(uint64(oq.params.MinSize-1)), 7)))
 	return oq
 }
 
@@ -95,7 +101,7 @@ func (oq *OpsQueue) process() {
 		<-oq.wake
 		for {
 			oq.lock.Lock()
-			if oq.isStopped && (!oq.flushOnStop || oq.ops.Len() == 0) {
+			if oq.isStopped && (!oq.params.FlushOnStop || oq.ops.Len() == 0) {
 				oq.lock.Unlock()
 				return
 			}

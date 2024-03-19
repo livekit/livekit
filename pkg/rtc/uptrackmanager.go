@@ -157,7 +157,6 @@ func (u *UpTrackManager) GetPublishedTracks() []types.MediaTrack {
 func (u *UpTrackManager) UpdateSubscriptionPermission(
 	subscriptionPermission *livekit.SubscriptionPermission,
 	timedVersion utils.TimedVersion,
-	_ func(participantIdentity livekit.ParticipantIdentity) types.LocalParticipant, // TODO: separate PR to remove this argument
 	resolverBySid func(participantID livekit.ParticipantID) types.LocalParticipant,
 ) error {
 	u.lock.Lock()
@@ -203,7 +202,10 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 	)
 	if err := u.parseSubscriptionPermissionsLocked(subscriptionPermission, func(pID livekit.ParticipantID) types.LocalParticipant {
 		u.lock.Unlock()
-		p := resolverBySid(pID)
+		var p types.LocalParticipant
+		if resolverBySid != nil {
+			p = resolverBySid(pID)
+		}
 		u.lock.Lock()
 		return p
 	}); err != nil {
@@ -268,8 +270,12 @@ func (u *UpTrackManager) AddPublishedTrack(track types.MediaTrack) {
 	})
 }
 
-func (u *UpTrackManager) RemovePublishedTrack(track types.MediaTrack, willBeResumed bool) {
-	track.Close(willBeResumed)
+func (u *UpTrackManager) RemovePublishedTrack(track types.MediaTrack, willBeResumed bool, shouldClose bool) {
+	if shouldClose {
+		track.Close(willBeResumed)
+	} else {
+		track.ClearAllReceivers(willBeResumed)
+	}
 	u.lock.Lock()
 	delete(u.publishedTracks, track.ID())
 	u.lock.Unlock()
