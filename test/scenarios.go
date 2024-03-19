@@ -52,7 +52,7 @@ func scenarioPublishingUponJoining(t *testing.T) {
 			return "did not receive tracks from c2"
 		}
 		return ""
-	})
+	}, testutils.ConnectTimeout)
 
 	// after a delay, c2 reconnects, then publishing
 	time.Sleep(syncDelay)
@@ -72,7 +72,7 @@ func scenarioPublishingUponJoining(t *testing.T) {
 			return fmt.Sprintf("c3 should be subscribed to 0 tracks from c2, actual: %d", len(c1.SubscribedTracks()[c2.ID()]))
 		}
 		return ""
-	})
+	}, testutils.ConnectTimeout)
 
 	logger.Infow("c2 reconnecting")
 	// connect to a diff port
@@ -92,7 +92,7 @@ func scenarioPublishingUponJoining(t *testing.T) {
 			return fmt.Sprintf("c1 should be subscribed to 2 tracks from c2, actual: %d", len(c1.SubscribedTracks()[c2.ID()]))
 		}
 		return ""
-	})
+	}, testutils.ConnectTimeout)
 }
 
 func scenarioReceiveBeforePublish(t *testing.T) {
@@ -113,7 +113,7 @@ func scenarioReceiveBeforePublish(t *testing.T) {
 		} else {
 			return fmt.Sprintf("c2 only received %d bytes", c2.BytesReceived())
 		}
-	})
+	}, testutils.ConnectTimeout)
 
 	// now publish on C2
 	writers = publishTracksForClients(t, c2)
@@ -125,7 +125,7 @@ func scenarioReceiveBeforePublish(t *testing.T) {
 		} else {
 			return fmt.Sprintf("expected c1 to receive 2 tracks from c2, actual: %d", len(c1.SubscribedTracks()[c2.ID()]))
 		}
-	})
+	}, testutils.ConnectTimeout)
 
 	// now leave, and ensure that it's immediate
 	c2.Stop()
@@ -135,7 +135,7 @@ func scenarioReceiveBeforePublish(t *testing.T) {
 			return fmt.Sprintf("expected no remote participants, actual: %v", c1.RemoteParticipants())
 		}
 		return ""
-	})
+	}, testutils.ConnectTimeout)
 }
 
 func scenarioDataPublish(t *testing.T) {
@@ -161,7 +161,7 @@ func scenarioDataPublish(t *testing.T) {
 		} else {
 			return "c2 did not receive published data"
 		}
-	})
+	}, testutils.ConnectTimeout)
 }
 
 func scenarioJoinClosedRoom(t *testing.T) {

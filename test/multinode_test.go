@@ -66,7 +66,7 @@ func TestMultiNodeRouting(t *testing.T) {
 		streamID, _ := rtc.UnpackStreamID(tr1.StreamID())
 		require.Equal(t, c1.ID(), streamID)
 		return ""
-	})
+	}, testutils.ConnectTimeout)
 
 	remoteC1 := c2.GetRemoteParticipant(c1.ID())
 	require.Equal(t, "c1", remoteC1.Name)
@@ -226,7 +226,7 @@ func TestMultiNodeRefreshToken(t *testing.T) {
 			return "canSubscribe should be true"
 		}
 		return ""
-	})
+	}, testutils.ConnectTimeout)
 }
 
 func TestMultiNodeRevokePublishPermission(t *testing.T) {
@@ -246,7 +246,7 @@ func TestMultiNodeRevokePublishPermission(t *testing.T) {
 			return "c2 did not receive c1's tracks"
 		}
 		return ""
-	})
+	}, testutils.ConnectTimeout)
 
 	// revoke permission
 	ctx := contextWithToken(adminRoomToken(testRoom))
@@ -274,7 +274,7 @@ func TestMultiNodeRevokePublishPermission(t *testing.T) {
 			return "c2 still has c1's tracks"
 		}
 		return ""
-	})
+	}, testutils.ConnectTimeout)
 }
 
 func TestCloseDisconnectedParticipantOnSignalClose(t *testing.T) {
@@ -308,7 +308,7 @@ func TestCloseDisconnectedParticipantOnSignalClose(t *testing.T) {
 			return "c1 did not see c2 join"
 		}
 		return ""
-	})
+	}, testutils.ConnectTimeout)
 
 	c2.Stop()
 
@@ -317,5 +317,5 @@ func TestCloseDisconnectedParticipantOnSignalClose(t *testing.T) {
 			return "c1 did not see c2 removed"
 		}
 		return ""
-	})
+	}, testutils.ConnectTimeout)
 }
