@@ -561,10 +561,10 @@ func (f *Forwarder) GetCurrentSpatialAndTSOffset() (int32, uint64) {
 	defer f.lock.RUnlock()
 
 	if f.kind == webrtc.RTPCodecTypeAudio {
-		return 0, f.rtpMunger.GetTSOffset()
+		return 0, f.rtpMunger.GetPinnedTSOffset()
 	}
 
-	return f.vls.GetCurrent().Spatial, f.rtpMunger.GetTSOffset()
+	return f.vls.GetCurrent().Spatial, f.rtpMunger.GetPinnedTSOffset()
 }
 
 func (f *Forwarder) isDeficientLocked() bool {

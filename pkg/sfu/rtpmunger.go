@@ -83,6 +83,7 @@ type RTPMunger struct {
 	extLastTS       uint64
 	extSecondLastTS uint64
 	tsOffset        uint64
+	pinnedTSOffset  uint64
 
 	lastMarker       bool
 	secondLastMarker bool
@@ -107,6 +108,7 @@ func (r *RTPMunger) DebugInfo() map[string]interface{} {
 		"ExtLastTS":            r.extLastTS,
 		"ExtSecondLastTS":      r.extSecondLastTS,
 		"TSOffset":             r.tsOffset,
+		"PinnedTSOffset":       r.pinnedTSOffset,
 		"LastMarker":           r.lastMarker,
 		"SecondLastMarker":     r.secondLastMarker,
 	}
@@ -123,8 +125,8 @@ func (r *RTPMunger) GetLast() RTPMungerState {
 	}
 }
 
-func (r *RTPMunger) GetTSOffset() uint64 {
-	return r.tsOffset
+func (r *RTPMunger) GetPinnedTSOffset() uint64 {
+	return r.pinnedTSOffset
 }
 
 func (r *RTPMunger) SeedLast(state RTPMungerState) {
@@ -146,6 +148,8 @@ func (r *RTPMunger) SetLastSnTs(extPkt *buffer.ExtPacket) {
 
 	r.extLastTS = extPkt.ExtTimestamp
 	r.extSecondLastTS = extPkt.ExtTimestamp
+	r.tsOffset = 0
+	r.pinnedTSOffset = r.tsOffset
 }
 
 func (r *RTPMunger) UpdateSnTsOffsets(extPkt *buffer.ExtPacket, snAdjust uint64, tsAdjust uint64) {
@@ -155,6 +159,7 @@ func (r *RTPMunger) UpdateSnTsOffsets(extPkt *buffer.ExtPacket, snAdjust uint64,
 	r.updateSnOffset()
 
 	r.tsOffset = extPkt.ExtTimestamp - r.extLastTS - tsAdjust
+	r.pinnedTSOffset = r.tsOffset
 }
 
 func (r *RTPMunger) PacketDropped(extPkt *buffer.ExtPacket) {

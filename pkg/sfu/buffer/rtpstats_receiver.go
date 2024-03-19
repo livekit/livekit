@@ -48,10 +48,10 @@ const (
 	// To account for path changes mid-stream, if the delta of the propagation delay is consistently higher, reset.
 	// Reset at whichever of the below happens later.
 	//
-	// A smoothed version of delta of propagation delay is maintained and delta propagation delay exceeding
-	// a factor of the smoothed version is considered a sharp increase. That will trigger the start of the
+	// A long term version of delta of propagation delay is maintained and delta propagation delay exceeding
+	// a factor of the long term version is considered a sharp increase. That will trigger the start of the
 	// path change condition and if it persists, propagation delay will be reset.
-	cPropagationDelayDeltaAdaptationFactor    = float64(0.1)
+	cPropagationDelayDeltaAdaptationFactor    = float64(0.05)
 	cPropagationDelayDeltaHighResetNumReports = 3
 	cPropagationDelayDeltaHighResetWait       = 10 * time.Second
 )
@@ -80,7 +80,7 @@ type RTPStatsReceiver struct {
 	history *protoutils.Bitmap[uint64]
 
 	propagationDelay                   time.Duration
-	smoothedDeltaPropagationDelay      time.Duration
+	longTermDeltaPropagationDelay      time.Duration
 	propagationDelayDeltaHighCount     int
 	propagationDelayDeltaHighStartTime time.Time
 
@@ -361,7 +361,7 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 		return []interface{}{
 			"propagationDelay", r.propagationDelay.String(),
 			"receivedPropagationDelay", propagationDelay.String(),
-			"smoothedDeltaPropagationDelay", r.smoothedDeltaPropagationDelay.String(),
+			"longTermDeltaPropagationDelay", r.longTermDeltaPropagationDelay.String(),
 			"receivedDeltaPropagationDelay", deltaPropagationDelay.String(),
 			"deltaHighCount", r.propagationDelayDeltaHighCount,
 			"sinceDeltaHighStart", time.Since(r.propagationDelayDeltaHighStartTime).String(),
@@ -372,7 +372,7 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 	}
 	initPropagationDelay := func(pd time.Duration) {
 		r.propagationDelay = pd
-		r.smoothedDeltaPropagationDelay = 0
+		r.longTermDeltaPropagationDelay = 0
 		r.propagationDelayDeltaHighCount = 0
 		r.propagationDelayDeltaHighStartTime = time.Time{}
 	}
@@ -385,38 +385,40 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 		r.logger.Debugw("initializing propagation delay", getPropagationFields()...)
 	} else {
 		deltaPropagationDelay = propagationDelay - r.propagationDelay
-		if r.smoothedDeltaPropagationDelay != 0 && deltaPropagationDelay > 0 && deltaPropagationDelay > r.smoothedDeltaPropagationDelay*time.Duration(cPropagationDelayDeltaThresholdMaxFactor) {
-			r.logger.Debugw("sharp increase in propagation delay, skipping", getPropagationFields()...) // TODO-REMOVE
-			r.propagationDelayDeltaHighCount++
-			if r.propagationDelayDeltaHighStartTime.IsZero() {
-				r.propagationDelayDeltaHighStartTime = time.Now()
-			}
-
-			if r.propagationDelayDeltaHighCount >= cPropagationDelayDeltaHighResetNumReports && time.Since(r.propagationDelayDeltaHighStartTime) >= cPropagationDelayDeltaHighResetWait {
-				r.logger.Debugw("re-initializing propagation delay", append(getPropagationFields(), "newPropagationDelay", propagationDelay.String())...)
-				initPropagationDelay(propagationDelay)
-			}
-		} else {
-			if r.smoothedDeltaPropagationDelay == 0 {
-				r.smoothedDeltaPropagationDelay = deltaPropagationDelay
-			} else {
-				r.smoothedDeltaPropagationDelay += time.Duration(cPropagationDelayDeltaAdaptationFactor * float64(deltaPropagationDelay-r.smoothedDeltaPropagationDelay))
-			}
-			r.propagationDelayDeltaHighCount = 0
-			r.propagationDelayDeltaHighStartTime = time.Time{}
-
-			if deltaPropagationDelay.Abs() > cPropagationDelayDeltaThresholdMin {
-				factor := cPropagationDelayFallFactor
-				if propagationDelay > r.propagationDelay {
-					factor = cPropagationDelayRiseFactor
+		if deltaPropagationDelay.Abs() > cPropagationDelayDeltaThresholdMin { // ignore small changes
+			if r.longTermDeltaPropagationDelay != 0 && deltaPropagationDelay > 0 && deltaPropagationDelay > r.longTermDeltaPropagationDelay*time.Duration(cPropagationDelayDeltaThresholdMaxFactor) {
+				r.logger.Debugw("sharp increase in propagation delay, skipping", getPropagationFields()...) // TODO-REMOVE
+				r.propagationDelayDeltaHighCount++
+				if r.propagationDelayDeltaHighStartTime.IsZero() {
+					r.propagationDelayDeltaHighStartTime = time.Now()
 				}
-				fields := append(
-					getPropagationFields(),
-					"adjustedPropagationDelay", r.propagationDelay+time.Duration(factor*float64(propagationDelay-r.propagationDelay)),
-				) // TODO-REMOVE
-				r.logger.Debugw("adapting propagation delay", fields...) // TODO-REMOVE
-				r.propagationDelay += time.Duration(factor * float64(propagationDelay-r.propagationDelay))
+
+				if r.propagationDelayDeltaHighCount >= cPropagationDelayDeltaHighResetNumReports && time.Since(r.propagationDelayDeltaHighStartTime) >= cPropagationDelayDeltaHighResetWait {
+					r.logger.Debugw("re-initializing propagation delay", append(getPropagationFields(), "newPropagationDelay", propagationDelay.String())...)
+					initPropagationDelay(propagationDelay)
+				}
+			} else {
+				r.propagationDelayDeltaHighCount = 0
+				r.propagationDelayDeltaHighStartTime = time.Time{}
+
+				if deltaPropagationDelay.Abs() > cPropagationDelayDeltaThresholdMin {
+					factor := cPropagationDelayFallFactor
+					if propagationDelay > r.propagationDelay {
+						factor = cPropagationDelayRiseFactor
+					}
+					fields := append(
+						getPropagationFields(),
+						"adjustedPropagationDelay", r.propagationDelay+time.Duration(factor*float64(propagationDelay-r.propagationDelay)),
+					) // TODO-REMOVE
+					r.logger.Debugw("adapting propagation delay", fields...) // TODO-REMOVE
+					r.propagationDelay += time.Duration(factor * float64(propagationDelay-r.propagationDelay))
+				}
 			}
+		}
+		if r.longTermDeltaPropagationDelay == 0 {
+			r.longTermDeltaPropagationDelay = deltaPropagationDelay
+		} else {
+			r.longTermDeltaPropagationDelay += time.Duration(cPropagationDelayDeltaAdaptationFactor * float64(deltaPropagationDelay-r.longTermDeltaPropagationDelay))
 		}
 	}
 	// adjust receive time to estimated propagation delay
