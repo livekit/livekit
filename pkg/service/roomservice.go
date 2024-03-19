@@ -103,11 +103,14 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 	if created {
 		go func() {
 			res := s.agentClient.CheckEnabled(ctx, &rpc.CheckEnabledRequest{})
-			s.agentClient.JobRequest(ctx, &agent.JobDescription{
-				JobType:    livekit.JobType_JT_ROOM,
-				Room:       rm,
-				Namespaces: res.Namespaces,
-			})
+			if res.RoomEnabled {
+				s.agentClient.JobRequest(ctx, &agent.JobDescription{
+					JobType:    livekit.JobType_JT_ROOM,
+					Room:       rm,
+					Namespaces: res.Namespaces,
+				})
+
+			}
 		}()
 
 		if req.Egress != nil && req.Egress.Room != nil {

@@ -108,7 +108,7 @@ func (s *AgentService) ServeHTTP(writer http.ResponseWriter, r *http.Request) {
 
 func (s *AgentService) HandleConnection(r *http.Request, conn *websocket.Conn) {
 	var protocol agent.WorkerProtocolVersion
-	if pv, err := strconv.Atoi(r.Form.Get("protocol")); err == nil {
+	if pv, err := strconv.Atoi(r.FormValue("protocol")); err == nil {
 		protocol = agent.WorkerProtocolVersion(pv)
 	}
 
@@ -284,39 +284,52 @@ func (s *AgentHandler) publisherAvailableLocked() bool {
 }
 
 func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*emptypb.Empty, error) {
-	h.mu.Lock()
-	var selected *agent.Worker
-	for _, w := range h.workers {
-		if job.Type != w.JobType() {
-			continue
-		}
 
-		if job.Namespace != w.Namespace() {
-			continue
-		}
-
-		if w.Status() == livekit.WorkerStatus_WS_AVAILABLE {
-			if len(w.RunningJobs()) > 0 {
-				selected = w
-				break
-			} else if selected == nil {
-				selected = w
+	attempted := make(map[string]bool)
+	for {
+		h.mu.Lock()
+		var selected *agent.Worker
+		var maxLoad float32
+		for _, w := range h.workers {
+			if w.Namespace() != job.Namespace || w.JobType() != job.Type {
+				continue
 			}
+
+			_, ok := attempted[w.ID()]
+			if ok {
+				continue
+			}
+
+			if w.Status() == livekit.WorkerStatus_WS_AVAILABLE {
+				load := w.Load()
+				if len(w.RunningJobs()) > 0 && load > maxLoad {
+					maxLoad = load
+					selected = w
+				} else if selected == nil {
+					selected = w
+				}
+			}
+
+		}
+		h.mu.Unlock()
+
+		if selected == nil {
+			return nil, psrpc.NewErrorf(psrpc.DeadlineExceeded, "no workers available")
 		}
 
-	}
-	h.mu.Unlock()
+		attempted[selected.ID()] = true
 
-	if selected == nil {
-		return nil, psrpc.NewErrorf(psrpc.DeadlineExceeded, "no workers available")
+		err := selected.AssignJob(ctx, job)
+		if err != nil {
+			if errors.Is(err, agent.ErrWorkerNotAvailable) {
+				continue // Try another worker
+			}
+			return nil, err
+		}
+
+		return &emptypb.Empty{}, nil
 	}
 
-	err := selected.AssignJob(ctx, job)
-	if err != nil && !errors.Is(err, agent.ErrWorkerNotAvailable) {
-		return nil, err
-	}
-
-	return &emptypb.Empty{}, nil
 }
 
 func (h *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job) float32 {
@@ -324,14 +337,17 @@ func (h *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job)
 	defer h.mu.Unlock()
 
 	var affinity float32
+	var maxLoad float32
 	for _, w := range h.workers {
-		if w.Namespace() != job.Namespace {
+		if w.Namespace() != job.Namespace || w.JobType() != job.Type {
 			continue
 		}
 
 		if w.Status() == livekit.WorkerStatus_WS_AVAILABLE {
-			if len(w.RunningJobs()) > 0 {
-				return 1
+			load := w.Load()
+			if len(w.RunningJobs()) > 0 && load > maxLoad {
+				maxLoad = load
+				affinity = 0.5 + load/2
 			} else {
 				affinity = 0.5
 			}

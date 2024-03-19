@@ -53,7 +53,7 @@ type Worker struct {
 	msgChan chan *livekit.ServerMessage
 	closed  chan struct{}
 
-	availibility map[string]chan *livekit.AvailabilityResponse
+	availability map[string]chan *livekit.AvailabilityResponse
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -78,7 +78,7 @@ func NewWorker(
 		serverInfo:      serverInfo,
 		closed:          make(chan struct{}),
 		runningJobs:     make(map[string]*Job),
-		availibility:    make(map[string]chan *livekit.AvailabilityResponse),
+		availability:    make(map[string]chan *livekit.AvailabilityResponse),
 		msgChan:         make(chan *livekit.ServerMessage),
 		ctx:             ctx,
 		cancel:          cancel,
@@ -156,7 +156,7 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) error {
 	availCh := make(chan *livekit.AvailabilityResponse, 1)
 
 	w.mu.Lock()
-	w.availibility[job.Id] = availCh
+	w.availability[job.Id] = availCh
 	w.mu.Unlock()
 
 	w.sendRequest(&livekit.ServerMessage{Message: &livekit.ServerMessage_Availability{
@@ -299,14 +299,14 @@ func (w *Worker) handleAvailability(res *livekit.AvailabilityResponse) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	availCh, ok := w.availibility[res.JobId]
+	availCh, ok := w.availability[res.JobId]
 	if !ok {
 		w.Logger.Warnw("received availability response for unknown job", nil, "jobId", res.JobId)
 		return
 	}
 
 	availCh <- res
-	delete(w.availibility, res.JobId)
+	delete(w.availability, res.JobId)
 }
 
 func (w *Worker) handleJobUpdate(update *livekit.UpdateJobStatus) {

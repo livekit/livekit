@@ -1449,7 +1449,6 @@ func (r *Room) launchPublisherAgent(p types.Participant, namespaces []string) {
 		return
 	}
 
-
 	go func() {
 		r.agentClient.JobRequest(context.Background(), &agent.JobDescription{
 			JobType:     livekit.JobType_JT_PUBLISHER,
