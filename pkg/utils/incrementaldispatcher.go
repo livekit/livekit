@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 LiveKit, Inc
+ * Copyright 2024 LiveKit, Inc
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import (
 	"github.com/frostbyte73/core"
 )
 
-// IncrementalDispatcher is a dispatcher that allows multiple consumers to consume items as then become
+// IncrementalDispatcher is a dispatcher that allows multiple consumers to consume items as they become
 // available, while producers can add items at anytime.
 type IncrementalDispatcher[T any] struct {
 	done  core.Fuse
