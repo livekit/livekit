@@ -374,6 +374,8 @@ func (h *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job)
 }
 
 func (h *AgentHandler) CheckEnabled(ctx context.Context, req *rpc.CheckEnabledRequest) (*rpc.CheckEnabledResponse, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	namespaces := make([]string, 0, len(h.namespaces))
 	for ns := range h.namespaces {
 		namespaces = append(namespaces, ns)
