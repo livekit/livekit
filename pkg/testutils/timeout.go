@@ -24,15 +24,19 @@ var (
 	ConnectTimeout = 30 * time.Second
 )
 
-func WithTimeout(t *testing.T, f func() string) {
-	ctx, cancel := context.WithTimeout(context.Background(), ConnectTimeout)
+func WithTimeout(t *testing.T, f func() string, timeouts ...time.Duration) {
+	timeout := ConnectTimeout
+	if len(timeouts) > 0 {
+		timeout = timeouts[0]
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	lastErr := ""
 	for {
 		select {
 		case <-ctx.Done():
 			if lastErr != "" {
-				t.Fatalf("did not reach expected state after %v: %s", ConnectTimeout, lastErr)
+				t.Fatalf("did not reach expected state after %v: %s", timeout, lastErr)
 			}
 		case <-time.After(10 * time.Millisecond):
 			lastErr = f()

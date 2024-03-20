@@ -15,72 +15,184 @@
 package test
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/livekit-server/pkg/testutils"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
+)
+
+var (
+	RegisterTimeout  = 2 * time.Second
+	AssignJobTimeout = 3 * time.Second
 )
 
 func TestAgents(t *testing.T) {
 	_, finish := setupSingleNodeTest("TestAgents")
 	defer finish()
 
-	ac1, err := newAgentClient(agentToken())
+
+	ac1, err := newAgentClient(agentToken(), defaultServerPort)
 	require.NoError(t, err)
-	ac2, err := newAgentClient(agentToken())
+	ac2, err := newAgentClient(agentToken(), defaultServerPort)
 	require.NoError(t, err)
-	ac3, err := newAgentClient(agentToken())
+	ac3, err := newAgentClient(agentToken(), defaultServerPort)
 	require.NoError(t, err)
-	ac4, err := newAgentClient(agentToken())
+	ac4, err := newAgentClient(agentToken(), defaultServerPort)
 	require.NoError(t, err)
 	defer ac1.close()
 	defer ac2.close()
 	defer ac3.close()
 	defer ac4.close()
-	ac1.Run(livekit.JobType_JT_ROOM)
-	ac2.Run(livekit.JobType_JT_ROOM)
-	ac3.Run(livekit.JobType_JT_PUBLISHER)
-	ac4.Run(livekit.JobType_JT_PUBLISHER)
+	ac1.Run(livekit.JobType_JT_ROOM, "namespace")
+	ac2.Run(livekit.JobType_JT_ROOM, "namespace")
+	ac3.Run(livekit.JobType_JT_PUBLISHER, "namespace")
+	ac4.Run(livekit.JobType_JT_PUBLISHER, "namespace")
 
-	time.Sleep(time.Second * 3)
+	testutils.WithTimeout(t, func() string {
+		if ac1.registered.Load() != 1 || ac2.registered.Load() != 1 || ac3.registered.Load() != 1 || ac4.registered.Load() != 1 {
+			return "worker not registered"
+		}
 
-	require.Equal(t, int32(1), ac1.registered.Load())
-	require.Equal(t, int32(1), ac2.registered.Load())
-	require.Equal(t, int32(1), ac3.registered.Load())
-	require.Equal(t, int32(1), ac4.registered.Load())
+		return ""
+	}, RegisterTimeout)
 
 	c1 := createRTCClient("c1", defaultServerPort, nil)
 	c2 := createRTCClient("c2", defaultServerPort, nil)
 	waitUntilConnected(t, c1, c2)
 
 	// publish 2 tracks
-	t1, err := c1.AddStaticTrack("audio/opus", "audio", "webcam")
+	t1, err := c1.AddStaticTrack("audio/opus", "audio", "micro")
 	require.NoError(t, err)
 	defer t1.Stop()
 	t2, err := c1.AddStaticTrack("video/vp8", "video", "webcam")
 	require.NoError(t, err)
 	defer t2.Stop()
 
-	time.Sleep(time.Second * 3)
+	testutils.WithTimeout(t, func() string {
+		if ac1.roomJobs.Load()+ac2.roomJobs.Load() != 1 {
+			return "room job not assigned"
+		}
 
-	require.Equal(t, int32(1), ac1.roomJobs.Load()+ac2.roomJobs.Load())
-	require.Equal(t, int32(1), ac3.participantJobs.Load()+ac4.participantJobs.Load())
+		if ac3.participantJobs.Load()+ac4.participantJobs.Load() != 1 {
+			return fmt.Sprintf("participant jobs not assigned, ac3: %d, ac4: %d", ac3.participantJobs.Load(), ac4.participantJobs.Load())
+		}
+
+		return ""
+	}, 6 * time.Second)
 
 	// publish 2 tracks
-	t3, err := c2.AddStaticTrack("audio/opus", "audio", "webcam")
+	t3, err := c2.AddStaticTrack("audio/opus", "audio", "micro")
 	require.NoError(t, err)
 	defer t3.Stop()
 	t4, err := c2.AddStaticTrack("video/vp8", "video", "webcam")
 	require.NoError(t, err)
 	defer t4.Stop()
 
-	time.Sleep(time.Second * 3)
+	testutils.WithTimeout(t, func() string {
+		if ac1.roomJobs.Load()+ac2.roomJobs.Load() != 1 {
+			return "room job must be assigned 1 time"
+		}
 
-	require.Equal(t, int32(1), ac1.roomJobs.Load()+ac2.roomJobs.Load())
-	require.Equal(t, int32(2), ac3.participantJobs.Load()+ac4.participantJobs.Load())
+		if ac3.participantJobs.Load()+ac4.participantJobs.Load() != 2 {
+			return "2 publisher jobs must assigned"
+		}
+
+		return ""
+	}, AssignJobTimeout)
+}
+
+func TestAgentNamespaces(t *testing.T) {
+	_, finish := setupSingleNodeTest("TestAgentNamespaces")
+	defer finish()
+
+	ac1, err := newAgentClient(agentToken(), defaultServerPort)
+	require.NoError(t, err)
+	ac2, err := newAgentClient(agentToken(), defaultServerPort)
+	require.NoError(t, err)
+	defer ac1.close()
+	defer ac2.close()
+	ac1.Run(livekit.JobType_JT_ROOM, "namespace")
+	ac2.Run(livekit.JobType_JT_ROOM, "namespace2")
+
+	testutils.WithTimeout(t, func() string {
+		if ac1.registered.Load() != 1 || ac2.registered.Load() != 1 {
+			return "worker not registered"
+		}
+		return ""
+	}, RegisterTimeout)
+
+	c1 := createRTCClient("c1", defaultServerPort, nil)
+	waitUntilConnected(t, c1)
+
+	testutils.WithTimeout(t, func() string {
+		if ac1.roomJobs.Load() != 1 || ac2.roomJobs.Load() != 1 {
+			return "room job not assigned"
+		}
+
+		job1 := <-ac1.requestedJobs
+		job2 := <-ac2.requestedJobs
+
+		if job1.Namespace != "namespace" {
+			return "namespace is not 'namespace'"
+		}
+
+		if job2.Namespace != "namespace2" {
+			return "namespace is not 'namespace2'"
+		}
+
+		if job1.Id == job2.Id {
+			return "job ids are the same"
+		}
+
+		return ""
+	}, AssignJobTimeout)
+
+}
+
+func TestAgentMultiNode(t *testing.T) {
+	_, _, finish := setupMultiNodeTest("TestAgentMultiNode")
+	defer finish()
+
+	ac1, err := newAgentClient(agentToken(), defaultServerPort)
+	require.NoError(t, err)
+	ac2, err := newAgentClient(agentToken(), defaultServerPort)
+	defer ac1.close()
+	defer ac2.close()
+	ac1.Run(livekit.JobType_JT_ROOM, "namespace")
+	ac2.Run(livekit.JobType_JT_PUBLISHER, "namespace")
+
+	testutils.WithTimeout(t, func() string {
+		if ac1.registered.Load() != 1 || ac2.registered.Load() != 1 {
+			return "worker not registered"
+		}
+		return ""
+	}, RegisterTimeout)
+
+	c1 := createRTCClient("c1", secondServerPort, nil) // Create a room on the second node
+	waitUntilConnected(t, c1)
+
+	t1, err := c1.AddStaticTrack("audio/opus", "audio", "micro")
+	require.NoError(t, err)
+	defer t1.Stop()
+
+	time.Sleep(time.Second * 10)
+
+	testutils.WithTimeout(t, func() string {
+		if ac1.roomJobs.Load() != 1 {
+			return "room job not assigned"
+		}
+
+		if ac2.participantJobs.Load() != 1 {
+			return "participant job not assigned"
+		}
+
+		return ""
+	}, AssignJobTimeout)
 }
 
 func agentToken() string {

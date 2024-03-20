@@ -25,7 +25,6 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/utils"
 )
 
 type agentClient struct {
@@ -38,11 +37,13 @@ type agentClient struct {
 	participantAvailability atomic.Int32
 	participantJobs         atomic.Int32
 
+	requestedJobs chan *livekit.Job
+
 	done chan struct{}
 }
 
-func newAgentClient(token string) (*agentClient, error) {
-	host := fmt.Sprintf("ws://localhost:%d", defaultServerPort)
+func newAgentClient(token string, port uint32) (*agentClient, error) {
+	host := fmt.Sprintf("ws://localhost:%d", port)
 	u, err := url.Parse(host + "/agent")
 	if err != nil {
 		return nil, err
@@ -58,24 +59,23 @@ func newAgentClient(token string) (*agentClient, error) {
 
 	return &agentClient{
 		conn: conn,
+		requestedJobs: make(chan *livekit.Job, 100),
 		done: make(chan struct{}),
 	}, nil
 }
 
-func (c *agentClient) Run(jobType livekit.JobType) (err error) {
+func (c *agentClient) Run(jobType livekit.JobType, namespace string) (err error) {
 	go c.read()
-
-	workerID := utils.NewGuid("W_")
 
 	switch jobType {
 	case livekit.JobType_JT_ROOM:
 		err = c.write(&livekit.WorkerMessage{
 			Message: &livekit.WorkerMessage_Register{
 				Register: &livekit.RegisterWorkerRequest{
-					Type:     livekit.JobType_JT_ROOM,
-					WorkerId: workerID,
-					Version:  "version",
-					Name:     "name",
+					Type:      livekit.JobType_JT_ROOM,
+					Version:   "version",
+					Namespace: &namespace,
+					Name:      "name",
 				},
 			},
 		})
@@ -84,10 +84,10 @@ func (c *agentClient) Run(jobType livekit.JobType) (err error) {
 		err = c.write(&livekit.WorkerMessage{
 			Message: &livekit.WorkerMessage_Register{
 				Register: &livekit.RegisterWorkerRequest{
-					Type:     livekit.JobType_JT_PUBLISHER,
-					WorkerId: workerID,
-					Version:  "version",
-					Name:     "name",
+					Type:      livekit.JobType_JT_PUBLISHER,
+					Version:   "version",
+					Namespace: &namespace,
+					Name:      "name",
 				},
 			},
 		})
@@ -138,6 +138,8 @@ func (c *agentClient) handleAvailability(req *livekit.AvailabilityRequest) {
 	} else {
 		c.participantAvailability.Inc()
 	}
+
+	c.requestedJobs <- req.Job
 
 	c.write(&livekit.WorkerMessage{
 		Message: &livekit.WorkerMessage_Availability{

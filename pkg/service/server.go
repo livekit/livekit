@@ -125,6 +125,7 @@ func NewLivekitServer(conf *config.Config,
 		mux.HandleFunc("/debug/goroutine", s.debugGoroutines)
 		mux.HandleFunc("/debug/rooms", s.debugInfo)
 	}
+
 	mux.Handle(roomServer.PathPrefix(), roomServer)
 	mux.Handle(egressServer.PathPrefix(), egressServer)
 	mux.Handle(ingressServer.PathPrefix(), ingressServer)
