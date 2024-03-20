@@ -34,7 +34,6 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/agent"
@@ -104,7 +103,7 @@ type Room struct {
 	trackManager   *RoomTrackManager
 
 	// agents
-	agentClient agent.AgentClient
+	agentClient agent.Client
 
 	// map of identity -> Participant
 	participants              map[livekit.ParticipantIdentity]types.LocalParticipant
@@ -142,7 +141,7 @@ func NewRoom(
 	audioConfig *config.AudioConfig,
 	serverInfo *livekit.ServerInfo,
 	telemetry telemetry.TelemetryService,
-	agentClient agent.AgentClient,
+	agentClient agent.Client,
 	egressLauncher EgressLauncher,
 ) *Room {
 	r := &Room{
@@ -1001,10 +1000,7 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 	r.lock.Unlock()
 
 	if !hasPublished {
-		res := r.agentClient.CheckEnabled(context.Background(), &rpc.CheckEnabledRequest{})
-		if res.PublisherEnabled {
-			r.launchPublisherAgent(participant, res.Namespaces)
-		}
+		r.launchPublisherAgent(participant)
 		if r.internal != nil && r.internal.ParticipantEgress != nil {
 			go func() {
 				if err := StartParticipantEgress(
@@ -1413,20 +1409,16 @@ func (r *Room) simulationCleanupWorker() {
 	}
 }
 
-func (r *Room) launchPublisherAgent(p types.Participant, namespaces []string) {
+func (r *Room) launchPublisherAgent(p types.Participant) {
 	if p == nil || p.IsRecorder() || p.IsAgent() {
 		return
 	}
 
-	go func() {
-		r.agentClient.JobRequest(context.Background(), &agent.JobDescription{
-			JobType:     livekit.JobType_JT_PUBLISHER,
-			Room:        r.ToProto(),
-			Participant: p.ToProto(),
-			Namespaces:  namespaces,
-		})
-
-	}()
+	go r.agentClient.LaunchJob(context.Background(), &agent.JobDescription{
+		JobType:     livekit.JobType_JT_PUBLISHER,
+		Room:        r.ToProto(),
+		Participant: p.ToProto(),
+	})
 }
 
 func (r *Room) DebugInfo() map[string]interface{} {

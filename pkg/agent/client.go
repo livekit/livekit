@@ -19,29 +19,32 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gammazero/workerpool"
+	"google.golang.org/protobuf/types/known/emptypb"
+
+	serverutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/psrpc"
-	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 var resolvedFalsePromise = utils.NewResolvedPromise[bool](false, nil)
 var resolvedEmptyPromise = utils.NewResolvedPromise[[]string](make([]string, 0), nil)
 
 const (
-	EnabledCacheTTL     = 3 * time.Minute
+	EnabledCacheTTL     = 1 * time.Minute
 	RoomAgentTopic      = "room"
 	PublisherAgentTopic = "publisher"
 
 	CheckEnabledTimeout = 5 * time.Second
 )
 
-type AgentClient interface {
-	CheckEnabledPromise(ctx context.Context, req *rpc.CheckEnabledRequest) CheckEnabledResponse
-	CheckEnabled(ctx context.Context, req *rpc.CheckEnabledRequest) *rpc.CheckEnabledResponse
-	JobRequest(ctx context.Context, desc *JobDescription)
+type Client interface {
+	// LaunchJob starts a room or participant job on an agent.
+	// it will launch a job once for each worker in each namespace
+	LaunchJob(ctx context.Context, desc *JobDescription)
 	Stop() error
 }
 
@@ -52,10 +55,10 @@ type CheckEnabledResponse struct {
 }
 
 type JobDescription struct {
-	JobType     livekit.JobType
-	Room        *livekit.Room
+	JobType livekit.JobType
+	Room    *livekit.Room
+	// only set for participant jobs
 	Participant *livekit.ParticipantInfo
-	Namespaces  []string
 }
 
 func (r CheckEnabledResponse) Error() error {
@@ -78,14 +81,17 @@ type agentClient struct {
 
 	// cache response to avoid constantly checking with controllers
 	// cache is invalidated with AgentRegistered updates
-	enabledCache     *CheckEnabledResponse
-	enabledExpiresAt time.Time
+	roomNamespaces      *serverutils.IncrementalDispatcher[string]
+	publisherNamespaces *serverutils.IncrementalDispatcher[string]
+	enabledExpiresAt    time.Time
+
+	workers *workerpool.WorkerPool
 
 	invalidateSub psrpc.Subscription[*emptypb.Empty]
 	subDone       chan struct{}
 }
 
-func NewAgentClient(bus psrpc.MessageBus) (AgentClient, error) {
+func NewAgentClient(bus psrpc.MessageBus) (Client, error) {
 	client, err := rpc.NewAgentInternalClient(bus)
 	if err != nil {
 		return nil, err
@@ -93,10 +99,11 @@ func NewAgentClient(bus psrpc.MessageBus) (AgentClient, error) {
 
 	c := &agentClient{
 		client:  client,
+		workers: workerpool.New(50),
 		subDone: make(chan struct{}),
 	}
 
-	sub, err := c.client.SubscribeWorkerRegistered(context.Background(), "") // No project ID in OSS
+	sub, err := c.client.SubscribeWorkerRegistered(context.Background(), "") // single tenant
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +114,8 @@ func NewAgentClient(bus psrpc.MessageBus) (AgentClient, error) {
 		// invalidate cache
 		for range sub.Channel() {
 			c.mu.Lock()
-			c.enabledCache = nil
+			c.roomNamespaces = nil
+			c.publisherNamespaces = nil
 			c.mu.Unlock()
 		}
 
@@ -117,108 +125,22 @@ func NewAgentClient(bus psrpc.MessageBus) (AgentClient, error) {
 	return c, nil
 }
 
-func (c *agentClient) CheckEnabled(ctx context.Context, req *rpc.CheckEnabledRequest) *rpc.CheckEnabledResponse {
-	res := c.CheckEnabledPromise(ctx, req)
-	<-res.RoomEnabled.Done()
-	<-res.PublisherEnabled.Done()
-	<-res.Namespaces.Done()
-	return &rpc.CheckEnabledResponse{
-		RoomEnabled:      res.RoomEnabled.Result,
-		PublisherEnabled: res.PublisherEnabled.Result,
-		Namespaces:       res.Namespaces.Result,
-	}
-}
+func (c *agentClient) LaunchJob(ctx context.Context, desc *JobDescription) {
+	roomNamespaces, publisherNamespaces, needsRefresh := c.getOrCreateDispatchers()
 
-func (c *agentClient) CheckEnabledPromise(ctx context.Context, req *rpc.CheckEnabledRequest) CheckEnabledResponse {
-	c.mu.RLock()
-	if c.enabledCache != nil && time.Now().Before(c.enabledExpiresAt) {
-		defer c.mu.RUnlock()
-		return *c.enabledCache
-	}
-	c.mu.RUnlock()
-
-	res := c.checkEnabled(ctx, req)
-	go func() {
-		<-res.RoomEnabled.Done()
-		<-res.PublisherEnabled.Done()
-		<-res.Namespaces.Done()
-		if res.Error() == nil {
-			c.mu.Lock()
-			c.enabledCache = &res
-			c.enabledExpiresAt = time.Now().Add(EnabledCacheTTL)
-			c.mu.Unlock()
-		}
-	}()
-	return res
-}
-
-func (c *agentClient) checkEnabled(ctx context.Context, req *rpc.CheckEnabledRequest) CheckEnabledResponse {
-	resChan, err := c.client.CheckEnabled(ctx, req, psrpc.WithRequestTimeout(CheckEnabledTimeout))
-	if err != nil {
-		return CheckEnabledResponse{
-			RoomEnabled:      resolvedFalsePromise,
-			PublisherEnabled: resolvedFalsePromise,
-			Namespaces:       resolvedEmptyPromise,
-		}
+	if needsRefresh {
+		go c.checkEnabled(ctx, roomNamespaces, publisherNamespaces)
 	}
 
-	roomEnabled := utils.NewPromise[bool]()
-	publisherEnabled := utils.NewPromise[bool]()
-	namespacesPromise := utils.NewPromise[[]string]() // Ignore empty namespaces
-
-	go func() {
-		nsMap := make(map[string]bool)
-
-		for r := range resChan {
-			if r.Result.GetRoomEnabled() && !roomEnabled.Resolved() {
-				roomEnabled.Resolve(true, nil)
-			}
-			if r.Result.GetPublisherEnabled() && !publisherEnabled.Resolved() {
-				publisherEnabled.Resolve(true, nil)
-			}
-			if r.Result.GetNamespaces() != nil {
-				for _, ns := range r.Result.GetNamespaces() {
-					nsMap[ns] = true
-				}
-			}
-		}
-		if !roomEnabled.Resolved() {
-			roomEnabled.Resolve(false, nil)
-		}
-		if !publisherEnabled.Resolved() {
-			publisherEnabled.Resolve(false, nil)
-		}
-
-		// Need to wait all answers before resolving namespaces
-		namespaces := make([]string, 0, len(nsMap))
-		for ns := range nsMap {
-			namespaces = append(namespaces, ns)
-		}
-		namespacesPromise.Resolve(namespaces, nil)
-	}()
-
-	return CheckEnabledResponse{
-		RoomEnabled:      roomEnabled,
-		PublisherEnabled: publisherEnabled,
-		Namespaces:       namespacesPromise,
+	target := roomNamespaces
+	jobTypeTopic := RoomAgentTopic
+	if desc.JobType == livekit.JobType_JT_PUBLISHER {
+		target = publisherNamespaces
+		jobTypeTopic = PublisherAgentTopic
 	}
-}
 
-func (c *agentClient) JobRequest(ctx context.Context, desc *JobDescription) {
-	// Send a job request for every namespace (inside the description)
-	wg := sync.WaitGroup{}
-	wg.Add(len(desc.Namespaces))
-	for _, ns := range desc.Namespaces {
-		var jobTypeTopic string
-		switch desc.JobType {
-		case livekit.JobType_JT_ROOM:
-			jobTypeTopic = RoomAgentTopic
-		case livekit.JobType_JT_PUBLISHER:
-			jobTypeTopic = PublisherAgentTopic
-		}
-
-		go func(ns string, topic string) {
-			defer wg.Done()
+	target.ForEach(func(ns string) {
+		c.workers.Submit(func() {
 			_, err := c.client.JobRequest(ctx, ns, jobTypeTopic, &livekit.Job{
 				Id:          utils.NewGuid(utils.AgentJobPrefix),
 				Type:        desc.JobType,
@@ -229,10 +151,52 @@ func (c *agentClient) JobRequest(ctx context.Context, desc *JobDescription) {
 			if err != nil {
 				logger.Errorw("failed to send job request", err, "namespace", ns, "jobType", jobTypeTopic)
 			}
-		}(ns, jobTypeTopic)
+		})
+	})
+}
 
+func (c *agentClient) getOrCreateDispatchers() (*serverutils.IncrementalDispatcher[string], *serverutils.IncrementalDispatcher[string], bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if time.Since(c.enabledExpiresAt) > EnabledCacheTTL || c.roomNamespaces == nil || c.publisherNamespaces == nil {
+		c.roomNamespaces = serverutils.NewIncrementalDispatcher[string]()
+		c.publisherNamespaces = serverutils.NewIncrementalDispatcher[string]()
+		return c.roomNamespaces, c.publisherNamespaces, true
 	}
-	wg.Wait()
+	return c.roomNamespaces, c.publisherNamespaces, false
+}
+
+func (c *agentClient) checkEnabled(ctx context.Context, roomNamespaces, publisherNamespaces *serverutils.IncrementalDispatcher[string]) {
+	defer roomNamespaces.Done()
+	defer publisherNamespaces.Done()
+	resChan, err := c.client.CheckEnabled(ctx, &rpc.CheckEnabledRequest{}, psrpc.WithRequestTimeout(CheckEnabledTimeout))
+	if err != nil {
+		logger.Errorw("failed to check enabled", err)
+		return
+	}
+
+	roomNSMap := make(map[string]bool)
+	publisherNSMap := make(map[string]bool)
+
+	for r := range resChan {
+		if r.Result.GetRoomEnabled() {
+			for _, ns := range r.Result.GetNamespaces() {
+				if _, ok := roomNSMap[ns]; !ok {
+					roomNamespaces.Add(ns)
+					roomNSMap[ns] = true
+				}
+			}
+		}
+		if r.Result.GetPublisherEnabled() {
+			for _, ns := range r.Result.GetNamespaces() {
+				if _, ok := publisherNSMap[ns]; !ok {
+					publisherNamespaces.Add(ns)
+					publisherNSMap[ns] = true
+				}
+			}
+		}
+	}
 }
 
 func (c *agentClient) Stop() error {

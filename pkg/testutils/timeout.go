@@ -24,7 +24,11 @@ var (
 	ConnectTimeout = 30 * time.Second
 )
 
-func WithTimeout(t *testing.T, f func() string, timeout time.Duration) {
+func WithTimeout(t *testing.T, f func() string, timeouts ...time.Duration) {
+	timeout := ConnectTimeout
+	if len(timeouts) > 0 {
+		timeout = timeouts[0]
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	lastErr := ""

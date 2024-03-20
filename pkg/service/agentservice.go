@@ -26,6 +26,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"google.golang.org/protobuf/types/known/emptypb"
+
 	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -37,7 +39,6 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
-	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 type AgentService struct {
@@ -277,8 +278,8 @@ func (h *AgentHandler) unregisterWorkerTopic(worker *agent.Worker) {
 	h.publisherEnabled = h.publisherAvailableLocked()
 }
 
-func (s *AgentHandler) roomAvailableLocked() bool {
-	for _, w := range s.workers {
+func (h *AgentHandler) roomAvailableLocked() bool {
+	for _, w := range h.workers {
 		if w.JobType() == livekit.JobType_JT_ROOM {
 			return true
 		}
@@ -287,8 +288,8 @@ func (s *AgentHandler) roomAvailableLocked() bool {
 
 }
 
-func (s *AgentHandler) publisherAvailableLocked() bool {
-	for _, w := range s.workers {
+func (h *AgentHandler) publisherAvailableLocked() bool {
+	for _, w := range h.workers {
 		if w.JobType() == livekit.JobType_JT_PUBLISHER {
 			return true
 		}

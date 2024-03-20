@@ -41,7 +41,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
 )
 
@@ -55,7 +54,7 @@ type RTCService struct {
 	isDev         bool
 	limits        config.LimitConfig
 	parser        *uaparser.Parser
-	agentClient   agent.AgentClient
+	agentClient   agent.Client
 	telemetry     telemetry.TelemetryService
 
 	mu          sync.Mutex
@@ -68,7 +67,7 @@ func NewRTCService(
 	store ServiceStore,
 	router routing.MessageRouter,
 	currentNode routing.LocalNode,
-	agentClient agent.AgentClient,
+	agentClient agent.Client,
 	telemetry telemetry.TelemetryService,
 ) *RTCService {
 	s := &RTCService{
@@ -530,16 +529,10 @@ func (s *RTCService) startConnection(
 	}
 
 	if created && s.agentClient != nil {
-		go func() {
-			res := s.agentClient.CheckEnabled(ctx, &rpc.CheckEnabledRequest{})
-			if res.RoomEnabled {
-				s.agentClient.JobRequest(ctx, &agent.JobDescription{
-					JobType:    livekit.JobType_JT_ROOM,
-					Room:       cr.Room,
-					Namespaces: res.Namespaces,
-				})
-			}
-		}()
+		go s.agentClient.LaunchJob(ctx, &agent.JobDescription{
+			JobType: livekit.JobType_JT_ROOM,
+			Room:    cr.Room,
+		})
 	}
 
 	// this needs to be started first *before* using router functions on this node
@@ -558,7 +551,6 @@ func (s *RTCService) startConnection(
 		cr.ResponseSource.Close()
 		return cr, nil, err
 	}
-
 
 	return cr, initialResponse, nil
 }

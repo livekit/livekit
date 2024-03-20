@@ -39,7 +39,7 @@ type RoomService struct {
 	router            routing.MessageRouter
 	roomAllocator     RoomAllocator
 	roomStore         ServiceStore
-	agentClient       agent.AgentClient
+	agentClient       agent.Client
 	egressLauncher    rtc.EgressLauncher
 	topicFormatter    rpc.TopicFormatter
 	roomClient        rpc.TypedRoomClient
@@ -53,7 +53,7 @@ func NewRoomService(
 	router routing.MessageRouter,
 	roomAllocator RoomAllocator,
 	serviceStore ServiceStore,
-	agentClient agent.AgentClient,
+	agentClient agent.Client,
 	egressLauncher rtc.EgressLauncher,
 	topicFormatter rpc.TopicFormatter,
 	roomClient rpc.TypedRoomClient,
@@ -101,17 +101,10 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 	defer res.ResponseSource.Close()
 
 	if created {
-		go func() {
-			res := s.agentClient.CheckEnabled(ctx, &rpc.CheckEnabledRequest{})
-			if res.RoomEnabled {
-				s.agentClient.JobRequest(ctx, &agent.JobDescription{
-					JobType:    livekit.JobType_JT_ROOM,
-					Room:       rm,
-					Namespaces: res.Namespaces,
-				})
-
-			}
-		}()
+		go s.agentClient.LaunchJob(ctx, &agent.JobDescription{
+			JobType: livekit.JobType_JT_ROOM,
+			Room:    rm,
+		})
 
 		if req.Egress != nil && req.Egress.Room != nil {
 			_, err = s.egressLauncher.StartEgress(ctx, &rpc.StartEgressRequest{
@@ -305,14 +298,10 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 	}
 
 	if created {
-		go func() {
-			res := s.agentClient.CheckEnabled(ctx, &rpc.CheckEnabledRequest{})
-			s.agentClient.JobRequest(ctx, &agent.JobDescription{
-				JobType:    livekit.JobType_JT_ROOM,
-				Room:       room,
-				Namespaces: res.Namespaces,
-			})
-		}()
+		go s.agentClient.LaunchJob(ctx, &agent.JobDescription{
+			JobType: livekit.JobType_JT_ROOM,
+			Room:    room,
+		})
 	}
 
 	return room, nil
