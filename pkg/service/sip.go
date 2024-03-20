@@ -196,6 +196,7 @@ func (s *SIPService) CreateSIPParticipantWithToken(ctx context.Context, req *liv
 		CallTo:              req.SipCallTo,
 		RoomName:            req.RoomName,
 		ParticipantIdentity: req.ParticipantIdentity,
+		Dtmf:                req.Dtmf,
 		WsUrl:               wsUrl,
 		Token:               token,
 	}
