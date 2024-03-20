@@ -55,7 +55,7 @@ func TestWebhooks(t *testing.T) {
 			return "did not receive ParticipantJoined"
 		}
 		return ""
-	}, testutils.ConnectTimeout)
+	})
 
 	// first participant join should have started the room
 	started := ts.GetEvent(webhook.EventRoomStarted)
@@ -76,7 +76,7 @@ func TestWebhooks(t *testing.T) {
 			return "did not receive ParticipantJoined"
 		}
 		return ""
-	}, testutils.ConnectTimeout)
+	})
 	joined = ts.GetEvent(webhook.EventParticipantJoined)
 	require.Equal(t, "c2", joined.Participant.Identity)
 	ts.ClearEvents()
@@ -92,7 +92,7 @@ func TestWebhooks(t *testing.T) {
 		require.NotNil(t, ev.Track, "TrackPublished did not include trackInfo")
 		require.Equal(t, string(c1.ID()), ev.Participant.Sid)
 		return ""
-	}, testutils.ConnectTimeout)
+	})
 	ts.ClearEvents()
 
 	// first participant leaves
@@ -102,7 +102,7 @@ func TestWebhooks(t *testing.T) {
 			return "did not receive ParticipantLeft"
 		}
 		return ""
-	}, testutils.ConnectTimeout)
+	})
 	left := ts.GetEvent(webhook.EventParticipantLeft)
 	require.Equal(t, "c1", left.Participant.Identity)
 	ts.ClearEvents()
@@ -115,7 +115,7 @@ func TestWebhooks(t *testing.T) {
 			return "did not receive RoomFinished"
 		}
 		return ""
-	}, testutils.ConnectTimeout)
+	})
 	require.Equal(t, testRoom, ts.GetEvent(webhook.EventRoomFinished).Room.Name)
 }
 

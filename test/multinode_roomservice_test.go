@@ -159,7 +159,7 @@ func TestMultiNodeMutePublishedTrack(t *testing.T) {
 		} else {
 			return fmt.Sprintf("expected 2 tracks to be published, actual: %d", len(res.Tracks))
 		}
-	}, testutils.ConnectTimeout)
+	})
 
 	res, err := roomClient.MutePublishedTrack(ctx, &livekit.MuteRoomTrackRequest{
 		Room:     testRoom,
