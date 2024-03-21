@@ -188,7 +188,7 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 	if subscriptionPermission == nil {
 		u.params.Logger.Debugw(
 			"updating subscription permission, setting to nil",
-			"version", &u.subscriptionPermissionVersion,
+			"version", u.subscriptionPermissionVersion,
 		)
 		// possible to get a nil when migrating
 		u.lock.Unlock()
@@ -198,7 +198,7 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 	u.params.Logger.Debugw(
 		"updating subscription permission",
 		"permissions", logger.Proto(u.subscriptionPermission),
-		"version", &u.subscriptionPermissionVersion,
+		"version", u.subscriptionPermissionVersion,
 	)
 	if err := u.parseSubscriptionPermissionsLocked(subscriptionPermission, func(pID livekit.ParticipantID) types.LocalParticipant {
 		u.lock.Unlock()
