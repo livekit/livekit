@@ -166,7 +166,7 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 		// we do not want to initialize subscriptionPermissionVersion too early since if another machine is the
 		// owner for the data, we'd prefer to use their TimedVersion
 		// ignore older version
-		if !timedVersion.After(&u.subscriptionPermissionVersion) {
+		if !timedVersion.After(u.subscriptionPermissionVersion) {
 			u.params.Logger.Debugw(
 				"skipping older subscription permission version",
 				"existingValue", logger.Proto(u.subscriptionPermission),
@@ -177,10 +177,10 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 			u.lock.Unlock()
 			return nil
 		}
-		u.subscriptionPermissionVersion.Update(&timedVersion)
+		u.subscriptionPermissionVersion.Update(timedVersion)
 	} else {
 		// for requests coming from the current node, use local versions
-		u.subscriptionPermissionVersion.Update(u.params.VersionGenerator.New())
+		u.subscriptionPermissionVersion.Update(u.params.VersionGenerator.Next())
 	}
 
 	// store as is for use when migrating

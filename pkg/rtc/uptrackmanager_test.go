@@ -211,8 +211,8 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 		um.UpdateSubscriptionPermission(&livekit.SubscriptionPermission{}, v0, nil)
 		require.Equal(t, v2.Load(), um.subscriptionPermissionVersion.Load(), "out of order updates should be ignored")
 
-		um.UpdateSubscriptionPermission(&livekit.SubscriptionPermission{}, utils.TimedVersion{}, nil)
-		require.True(t, um.subscriptionPermissionVersion.After(&v2), "zero version in updates should use next local version")
+		um.UpdateSubscriptionPermission(&livekit.SubscriptionPermission{}, utils.TimedVersion(0), nil)
+		require.True(t, um.subscriptionPermissionVersion.After(v2), "zero version in updates should use next local version")
 	})
 }
 

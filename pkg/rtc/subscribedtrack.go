@@ -56,7 +56,7 @@ type SubscribedTrack struct {
 	versionGenerator utils.TimedVersionGenerator
 	settingsLock     sync.Mutex
 	settings         *livekit.UpdateTrackSettings
-	settingsVersion  *utils.TimedVersion
+	settingsVersion  utils.TimedVersion
 
 	bindLock        sync.Mutex
 	bound           bool
@@ -243,7 +243,7 @@ func (t *SubscribedTrack) applySettings() {
 	}
 
 	t.logger.Debugw("updating subscriber track settings", "settings", logger.Proto(t.settings))
-	t.settingsVersion = t.versionGenerator.New()
+	t.settingsVersion = t.versionGenerator.Next()
 	settingsVersion := t.settingsVersion
 	t.settingsLock.Unlock()
 
@@ -264,7 +264,7 @@ func (t *SubscribedTrack) applySettings() {
 	}
 
 	t.settingsLock.Lock()
-	if settingsVersion.Compare(t.settingsVersion) != 0 {
+	if settingsVersion != t.settingsVersion {
 		// a newer settings has superceded this one
 		t.settingsLock.Unlock()
 		return

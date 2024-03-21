@@ -45,7 +45,7 @@ func NewMockParticipant(identity livekit.ParticipantIdentity, protocol types.Pro
 		Identity:    string(identity),
 		State:       livekit.ParticipantInfo_JOINED,
 		IsPublisher: publisher,
-	}, utils.TimedVersion{})
+	}, utils.TimedVersion(0))
 
 	p.SetMetadataCalls(func(m string) {
 		var f func(participant types.LocalParticipant)
