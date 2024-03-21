@@ -25,6 +25,7 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/telemetry/telemetryfakes"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
@@ -730,6 +731,8 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 	if err != nil {
 		panic(err)
 	}
+	ff := buffer.NewFactoryOfBufferFactory(500, 200)
+	rtcConf.SetBufferFactory(ff.CreateBufferFactory())
 	grants := &auth.ClaimGrants{
 		Video: &auth.VideoGrant{},
 	}

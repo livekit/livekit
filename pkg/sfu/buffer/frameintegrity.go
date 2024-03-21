@@ -23,7 +23,7 @@ type FrameEntity struct {
 	endSeq    *uint64
 	integrity bool
 
-	packetsConsective func(uint64, uint64) bool
+	pktHistory *PacketHistory
 }
 
 func (fe *FrameEntity) AddPacket(extSeq uint64, ddVal *dd.DependencyDescriptor) {
@@ -40,7 +40,7 @@ func (fe *FrameEntity) AddPacket(extSeq uint64, ddVal *dd.DependencyDescriptor) 
 	}
 
 	if fe.startSeq != nil && fe.endSeq != nil {
-		if fe.packetsConsective(*fe.startSeq, *fe.endSeq) {
+		if fe.pktHistory.PacketsConsecutive(*fe.startSeq, *fe.endSeq) {
 			fe.integrity = true
 		}
 	}
@@ -179,7 +179,7 @@ func NewFrameIntegrityChecker(frameCount, packetCount int) *FrameIntegrityChecke
 	}
 
 	for i := range fc.frames {
-		fc.frames[i].packetsConsective = fc.pktHistory.PacketsConsecutive
+		fc.frames[i].pktHistory = fc.pktHistory
 		fc.frames[i].Reset()
 	}
 	return fc

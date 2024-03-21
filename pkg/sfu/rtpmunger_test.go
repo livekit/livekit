@@ -213,7 +213,7 @@ func TestOutOfOrderSequenceNumber(t *testing.T) {
 
 	tp, err = r.UpdateAndGetSnTs(extPkt, extPkt.Packet.Marker)
 	require.NoError(t, err)
-	require.Equal(t, tpExpected, *tp)
+	require.Equal(t, tpExpected, tp)
 
 	params = &testutils.TestExtPacketParams{
 		SequenceNumber: 23332,
@@ -229,7 +229,7 @@ func TestOutOfOrderSequenceNumber(t *testing.T) {
 
 	tp, err = r.UpdateAndGetSnTs(extPkt, extPkt.Packet.Marker)
 	require.Error(t, err, ErrOutOfOrderSequenceNumberCacheMiss)
-	require.Equal(t, tpExpected, *tp)
+	require.Equal(t, tpExpected, tp)
 }
 
 func TestDuplicateSequenceNumber(t *testing.T) {
@@ -253,7 +253,7 @@ func TestDuplicateSequenceNumber(t *testing.T) {
 
 	tp, err := r.UpdateAndGetSnTs(extPkt, extPkt.Packet.Marker)
 	require.ErrorIs(t, err, ErrDuplicatePacket)
-	require.Equal(t, tpExpected, *tp)
+	require.Equal(t, tpExpected, tp)
 }
 
 func TestPaddingOnlyPacket(t *testing.T) {
@@ -275,7 +275,7 @@ func TestPaddingOnlyPacket(t *testing.T) {
 	tp, err := r.UpdateAndGetSnTs(extPkt, extPkt.Packet.Marker)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrPaddingOnlyPacket)
-	require.Equal(t, tpExpected, *tp)
+	require.Equal(t, tpExpected, tp)
 	require.Equal(t, uint64(23333), r.extHighestIncomingSN)
 	require.Equal(t, uint64(23333), r.extLastSN)
 	snOffset, err := r.snRangeMap.GetValue(r.extHighestIncomingSN)
@@ -297,7 +297,7 @@ func TestPaddingOnlyPacket(t *testing.T) {
 
 	tp, err = r.UpdateAndGetSnTs(extPkt, extPkt.Packet.Marker)
 	require.NoError(t, err)
-	require.Equal(t, tpExpected, *tp)
+	require.Equal(t, tpExpected, tp)
 	require.Equal(t, uint64(23335), r.extHighestIncomingSN)
 	require.Equal(t, uint64(23334), r.extLastSN)
 	snOffset, err = r.snRangeMap.GetValue(r.extHighestIncomingSN)
@@ -338,7 +338,7 @@ func TestGapInSequenceNumber(t *testing.T) {
 
 	tp, err := r.UpdateAndGetSnTs(extPkt, extPkt.Packet.Marker)
 	require.NoError(t, err)
-	require.Equal(t, tpExpected, *tp)
+	require.Equal(t, tpExpected, tp)
 	require.Equal(t, uint64(65536+1), r.extHighestIncomingSN)
 	require.Equal(t, uint64(65536+1), r.extLastSN)
 	snOffset, err := r.snRangeMap.GetValue(r.extHighestIncomingSN)
@@ -367,7 +367,7 @@ func TestGapInSequenceNumber(t *testing.T) {
 
 	tp, err = r.UpdateAndGetSnTs(extPkt, extPkt.Packet.Marker)
 	require.ErrorIs(t, err, ErrPaddingOnlyPacket)
-	require.Equal(t, tpExpected, *tp)
+	require.Equal(t, tpExpected, tp)
 	require.Equal(t, uint64(65536+2), r.extHighestIncomingSN)
 	require.Equal(t, uint64(65536+1), r.extLastSN)
 	snOffset, err = r.snRangeMap.GetValue(r.extHighestIncomingSN)
@@ -391,7 +391,7 @@ func TestGapInSequenceNumber(t *testing.T) {
 
 	tp, err = r.UpdateAndGetSnTs(extPkt, extPkt.Packet.Marker)
 	require.NoError(t, err)
-	require.Equal(t, tpExpected, *tp)
+	require.Equal(t, tpExpected, tp)
 	require.Equal(t, uint64(65536+4), r.extHighestIncomingSN)
 	require.Equal(t, uint64(65536+3), r.extLastSN)
 	snOffset, err = r.snRangeMap.GetValue(r.extHighestIncomingSN)
@@ -418,7 +418,7 @@ func TestGapInSequenceNumber(t *testing.T) {
 
 	tp, err = r.UpdateAndGetSnTs(extPkt, extPkt.Packet.Marker)
 	require.ErrorIs(t, err, ErrPaddingOnlyPacket)
-	require.Equal(t, tpExpected, *tp)
+	require.Equal(t, tpExpected, tp)
 	require.Equal(t, uint64(65536+5), r.extHighestIncomingSN)
 	require.Equal(t, uint64(65536+3), r.extLastSN)
 	snOffset, err = r.snRangeMap.GetValue(r.extHighestIncomingSN)
@@ -442,7 +442,7 @@ func TestGapInSequenceNumber(t *testing.T) {
 
 	tp, err = r.UpdateAndGetSnTs(extPkt, extPkt.Packet.Marker)
 	require.NoError(t, err)
-	require.Equal(t, tpExpected, *tp)
+	require.Equal(t, tpExpected, tp)
 	require.Equal(t, uint64(65536+7), r.extHighestIncomingSN)
 	require.Equal(t, uint64(65536+5), r.extLastSN)
 	snOffset, err = r.snRangeMap.GetValue(r.extHighestIncomingSN)
@@ -475,7 +475,7 @@ func TestGapInSequenceNumber(t *testing.T) {
 
 	tp, err = r.UpdateAndGetSnTs(extPkt, extPkt.Packet.Marker)
 	require.NoError(t, err)
-	require.Equal(t, tpExpected, *tp)
+	require.Equal(t, tpExpected, tp)
 	require.Equal(t, uint64(65536+7), r.extHighestIncomingSN)
 	require.Equal(t, uint64(65536+5), r.extLastSN)
 	snOffset, err = r.snRangeMap.GetValue(r.extHighestIncomingSN)
@@ -498,7 +498,7 @@ func TestGapInSequenceNumber(t *testing.T) {
 
 	tp, err = r.UpdateAndGetSnTs(extPkt, extPkt.Packet.Marker)
 	require.NoError(t, err)
-	require.Equal(t, tpExpected, *tp)
+	require.Equal(t, tpExpected, tp)
 	require.Equal(t, uint64(65536+7), r.extHighestIncomingSN)
 	require.Equal(t, uint64(65536+5), r.extLastSN)
 	snOffset, err = r.snRangeMap.GetValue(r.extHighestIncomingSN)

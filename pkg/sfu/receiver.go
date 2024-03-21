@@ -84,8 +84,8 @@ type TrackReceiver interface {
 	GetFrameRates() [][]float32
 	GetTemporalLayerFpsForSpatial(layer int32) (bool, []float32)
 
-	GetCalculatedClockRate(layer int32) uint32
 	GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error)
+	GetRTCPSenderReportData(layer int32) *buffer.RTCPSenderReportData
 
 	GetTrackStats() *livekit.RTPStats
 }
@@ -350,11 +350,11 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 	})
 	buff.OnRtcpFeedback(w.sendRTCP)
 	buff.OnRtcpSenderReport(func() {
-		srFirst, srNewest := buff.GetSenderReportData()
-		w.streamTrackerManager.SetRTCPSenderReportData(layer, srFirst, srNewest)
+		srData := buff.GetSenderReportData()
+		w.streamTrackerManager.SetRTCPSenderReportData(layer, srData)
 
 		w.downTrackSpreader.Broadcast(func(dt TrackSender) {
-			_ = dt.HandleRTCPSenderReportData(w.codec.PayloadType, w.isSVC, layer, srFirst, srNewest)
+			_ = dt.HandleRTCPSenderReportData(w.codec.PayloadType, w.isSVC, layer, srData)
 		})
 	})
 
@@ -829,12 +829,12 @@ func (w *WebRTCReceiver) GetTemporalLayerFpsForSpatial(layer int32) (bool, []flo
 	return b.GetTemporalLayerFpsForSpatial(layer)
 }
 
-func (w *WebRTCReceiver) GetCalculatedClockRate(layer int32) uint32 {
-	return w.streamTrackerManager.GetCalculatedClockRate(layer)
-}
-
 func (w *WebRTCReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error) {
 	return w.streamTrackerManager.GetReferenceLayerRTPTimestamp(ts, layer, referenceLayer)
+}
+
+func (w *WebRTCReceiver) GetRTCPSenderReportData(layer int32) *buffer.RTCPSenderReportData {
+	return w.streamTrackerManager.GetRTCPSenderReportData(layer)
 }
 
 // closes all track senders in parallel, returns when all are closed

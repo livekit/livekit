@@ -94,8 +94,10 @@ rtc:
   #   allow_pause: true
   # # allows automatic connection fallback to TCP and TURN/TLS (if configured) when UDP has been unstable, default true
   # allow_tcp_fallback: true
-  # # number of packets to buffer in the SFU, defaults to 500
-  # packet_buffer_size: 500
+  # # number of packets to buffer in the SFU for video, defaults to 500
+  # packet_buffer_size_video: 500
+  # # number of packets to buffer in the SFU for audio, defaults to 200
+  # packet_buffer_size_audio: 200
   # # minimum amount of time between pli/fir rtcp packets being sent to an individual
   # # producer. Increasing these times can lead to longer black screens when new participants join,
   # # while reducing them can lead to higher stream bitrate.
@@ -168,8 +170,10 @@ keys:
 # room:
 #   # allow rooms to be automatically created when participants join, defaults to true
 #   # auto_create: false
-#   # number of seconds to leave a room open when it's empty
+#   # number of seconds to keep the room open if no one joins
 #   empty_timeout: 300
+#   # number of seconds to keep the room open after everyone leaves
+#   departure_timeout: 20
 #   # limit number of participants that can be in a room, 0 for no limit
 #   max_participants: 0
 #   # only accept specific codecs for clients publishing to this room
@@ -309,4 +313,3 @@ keys:
 #   # value less or equal than 0 means no limit.
 #   subscription_limit_video: 0
 #   subscription_limit_audio: 0
-

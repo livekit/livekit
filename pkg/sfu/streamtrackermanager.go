@@ -25,17 +25,16 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
+
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/streamtracker"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 )
 
 const (
 	senderReportThresholdSeconds = float64(60.0)
-
-	minDurationForClockRateCalculation = 15 * time.Second
 )
 
 // ---------------------------------------------------
@@ -50,12 +49,6 @@ type StreamTrackerManagerListener interface {
 }
 
 // ---------------------------------------------------
-
-type endsSenderReport struct {
-	first       *buffer.RTCPSenderReportData
-	newest      *buffer.RTCPSenderReportData
-	lastUpdated time.Time
-}
 
 type StreamTrackerManager struct {
 	logger    logger.Logger
@@ -77,7 +70,7 @@ type StreamTrackerManager struct {
 	paused           bool
 
 	senderReportMu sync.RWMutex
-	senderReports  [buffer.DefaultMaxLayerSpatial + 1]endsSenderReport
+	senderReports  [buffer.DefaultMaxLayerSpatial + 1]*buffer.RTCPSenderReportData
 	layerOffsets   [buffer.DefaultMaxLayerSpatial + 1][buffer.DefaultMaxLayerSpatial + 1]uint32
 
 	closed core.Fuse
@@ -98,7 +91,6 @@ func NewStreamTrackerManager(
 		maxPublishedLayer:    buffer.InvalidLayerSpatial,
 		maxTemporalLayerSeen: buffer.InvalidLayerTemporal,
 		clockRate:            clockRate,
-		closed:               core.NewFuse(),
 	}
 	s.trackInfo.Store(proto.Clone(trackInfo).(*livekit.TrackInfo))
 
@@ -559,8 +551,8 @@ func (s *StreamTrackerManager) maxExpectedLayerFromTrackInfo() {
 }
 
 func (s *StreamTrackerManager) updateLayerOffsetLocked(ref, other int32) {
-	srRef := s.senderReports[ref].newest
-	srOther := s.senderReports[other].newest
+	srRef := s.senderReports[ref]
+	srOther := s.senderReports[other]
 	if srRef == nil || srRef.NTPTimestamp == 0 || srOther == nil || srOther.NTPTimestamp == 0 {
 		return
 	}
@@ -600,7 +592,7 @@ func (s *StreamTrackerManager) updateLayerOffsetLocked(ref, other int32) {
 	s.layerOffsets[ref][other] = offset
 }
 
-func (s *StreamTrackerManager) SetRTCPSenderReportData(layer int32, srFirst *buffer.RTCPSenderReportData, srNewest *buffer.RTCPSenderReportData) {
+func (s *StreamTrackerManager) SetRTCPSenderReportData(layer int32, srData *buffer.RTCPSenderReportData) {
 	s.senderReportMu.Lock()
 	defer s.senderReportMu.Unlock()
 
@@ -608,9 +600,7 @@ func (s *StreamTrackerManager) SetRTCPSenderReportData(layer int32, srFirst *buf
 		return
 	}
 
-	s.senderReports[layer].first = srFirst
-	s.senderReports[layer].newest = srNewest
-	s.senderReports[layer].lastUpdated = time.Now()
+	s.senderReports[layer] = srData
 
 	// (re)fill offsets as necessary for received layer.
 	for i := int32(0); i < buffer.DefaultMaxLayerSpatial+1; i++ {
@@ -626,35 +616,21 @@ func (s *StreamTrackerManager) SetRTCPSenderReportData(layer int32, srFirst *buf
 	}
 }
 
-func (s *StreamTrackerManager) GetCalculatedClockRate(layer int32) uint32 {
-	s.senderReportMu.RLock()
-	defer s.senderReportMu.RUnlock()
+func (s *StreamTrackerManager) GetRTCPSenderReportData(layer int32) *buffer.RTCPSenderReportData {
+	s.senderReportMu.Lock()
+	defer s.senderReportMu.Unlock()
 
 	if layer < 0 || int(layer) >= len(s.senderReports) {
-		// invalid layer
-		return 0
+		return nil
 	}
 
-	srFirst := s.senderReports[layer].first
-	srNewest := s.senderReports[layer].newest
-	if srFirst == nil || srFirst.NTPTimestamp == 0 || srNewest == nil || srNewest.NTPTimestamp == 0 || srFirst.RTPTimestamp == srNewest.RTPTimestamp {
-		// sender reports invalid or same
-		return 0
+	// SVC-TODO: better SVC detection
+	if s.isSVC {
+		// there is only one stream in SVC
+		layer = 0
 	}
 
-	if s.senderReports[layer].lastUpdated.IsZero() || time.Since(s.senderReports[layer].lastUpdated).Seconds() > senderReportThresholdSeconds {
-		// sender report updated too far back
-		return 0
-	}
-
-	tsf := srNewest.NTPTimestamp.Time().Sub(srFirst.NTPTimestamp.Time())
-	if tsf < minDurationForClockRateCalculation {
-		// not enough time has elapsed to get a stable clock rate calculation
-		return 0
-	}
-
-	rdsf := srNewest.RTPTimestampExt - srFirst.RTPTimestampExt
-	return uint32(float64(rdsf) / tsf.Seconds())
+	return s.senderReports[layer]
 }
 
 func (s *StreamTrackerManager) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error) {
