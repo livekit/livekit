@@ -265,7 +265,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	}
 	p.closeReason.Store(types.ParticipantCloseReasonNone)
 	p.version.Store(params.InitialVersion)
-	p.timedVersion.Update(params.VersionGenerator.New())
+	p.timedVersion.Update(params.VersionGenerator.Next())
 	p.migrateState.Store(types.MigrateStateInit)
 	p.state.Store(livekit.ParticipantInfo_JOINING)
 	p.grants = params.Grants
@@ -495,16 +495,20 @@ func (p *ParticipantImpl) CanSkipBroadcast() bool {
 }
 
 func (p *ParticipantImpl) ToProtoWithVersion() (*livekit.ParticipantInfo, utils.TimedVersion) {
-	v := p.version.Load()
-	piv := p.timedVersion.Load()
-	if p.dirty.Swap(false) {
-		v = p.version.Inc()
-		piv = p.params.VersionGenerator.Next()
-		p.timedVersion.Update(&piv)
+	if p.dirty.Load() {
+		p.lock.Lock()
+		if p.dirty.Swap(false) {
+			p.version.Inc()
+			p.timedVersion.Update(p.params.VersionGenerator.Next())
+		}
+		p.lock.Unlock()
 	}
 
 	grants := p.ClaimGrants()
 	p.lock.RLock()
+	v := p.version.Load()
+	piv := p.timedVersion
+
 	pi := &livekit.ParticipantInfo{
 		Sid:         string(p.params.SID),
 		Identity:    string(p.params.Identity),
@@ -1988,9 +1992,9 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 		}
 
 		ti.MimeType = track.Codec().MimeType
-		if utils.NewTimedVersionFromProto(ti.Version).IsZero() {
+		if utils.TimedVersionFromProto(ti.Version).IsZero() {
 			// only assign version on a fresh publish, i. e. avoid updating version in scenarios like migration
-			ti.Version = p.params.VersionGenerator.New().ToProto()
+			ti.Version = p.params.VersionGenerator.Next().ToProto()
 		}
 		mt = p.addMediaTrack(signalCid, track.ID(), ti)
 		newTrack = true
