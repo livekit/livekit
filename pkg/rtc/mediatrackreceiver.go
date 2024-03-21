@@ -102,6 +102,7 @@ type MediaTrackReceiver struct {
 	trackInfo       *livekit.TrackInfo
 	potentialCodecs []webrtc.RTPCodecParameters
 	state           mediaTrackReceiverState
+	willBeResumed   bool
 
 	onSetupReceiver     func(mime string)
 	onMediaLossFeedback func(dt *sfu.DownTrack, report *rtcp.ReceiverReport)
@@ -259,6 +260,7 @@ func (t *MediaTrackReceiver) ClearReceiver(mime string, willBeResumed bool) {
 	for idx, receiver := range receivers {
 		if strings.EqualFold(receiver.Codec().MimeType, mime) {
 			receivers[idx] = receivers[len(receivers)-1]
+			receivers[len(receivers)-1] = nil
 			receivers = receivers[:len(receivers)-1]
 			break
 		}
@@ -274,6 +276,8 @@ func (t *MediaTrackReceiver) ClearAllReceivers(willBeResumed bool) {
 	t.lock.Lock()
 	receivers := t.receivers
 	t.receivers = nil
+
+	t.willBeResumed = willBeResumed
 	t.lock.Unlock()
 
 	for _, r := range receivers {
@@ -481,7 +485,24 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) (types.Su
 		Logger:         tLogger,
 		DisableRed:     t.trackInfo.GetDisableRed() || !t.params.AudioConfig.ActiveREDEncoding,
 	})
-	return t.MediaTrackSubscriptions.AddSubscriber(sub, wr)
+	subTrack, err := t.MediaTrackSubscriptions.AddSubscriber(sub, wr)
+
+	// media track could have been closed while adding subscription
+	remove := false
+	willBeResumed := false
+	t.lock.RLock()
+	if t.state != mediaTrackReceiverStateOpen {
+		willBeResumed = t.willBeResumed
+		remove = true
+	}
+	t.lock.RUnlock()
+
+	if remove {
+		_ = t.MediaTrackSubscriptions.RemoveSubscriber(sub.ID(), willBeResumed)
+		return nil, ErrNotOpen
+	}
+
+	return subTrack, err
 }
 
 // RemoveSubscriber removes participant from subscription

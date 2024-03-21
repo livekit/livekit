@@ -80,16 +80,17 @@ func (t *telemetryService) ParticipantJoined(
 	shouldSendEvent bool,
 ) {
 	t.enqueue(func() {
-		prometheus.IncrementParticipantRtcConnected(1)
-		prometheus.AddParticipant()
-
-		t.createWorker(
+		_, found := t.getOrCreateWorker(
 			ctx,
 			livekit.RoomID(room.Sid),
 			livekit.RoomName(room.Name),
 			livekit.ParticipantID(participant.Sid),
 			livekit.ParticipantIdentity(participant.Identity),
 		)
+		if !found {
+			prometheus.IncrementParticipantRtcConnected(1)
+			prometheus.AddParticipant()
+		}
 
 		if shouldSendEvent {
 			ev := newParticipantEvent(livekit.AnalyticsEventType_PARTICIPANT_JOINED, room, participant)
@@ -117,18 +118,14 @@ func (t *telemetryService) ParticipantActive(
 			})
 		}
 
-		worker, ok := t.getWorker(livekit.ParticipantID(participant.Sid))
-		if !ok {
-			// in case of session migration, we may not have seen a Join event take place.
-			// we'd need to create the worker here before being able to process events
-			worker = t.createWorker(
-				ctx,
-				livekit.RoomID(room.Sid),
-				livekit.RoomName(room.Name),
-				livekit.ParticipantID(participant.Sid),
-				livekit.ParticipantIdentity(participant.Identity),
-			)
-
+		worker, found := t.getOrCreateWorker(
+			ctx,
+			livekit.RoomID(room.Sid),
+			livekit.RoomName(room.Name),
+			livekit.ParticipantID(participant.Sid),
+			livekit.ParticipantIdentity(participant.Identity),
+		)
+		if !found {
 			// need to also account for participant count
 			prometheus.AddParticipant()
 		}

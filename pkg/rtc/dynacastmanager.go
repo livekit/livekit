@@ -40,7 +40,8 @@ type DynacastManager struct {
 	maxSubscribedQuality          map[string]livekit.VideoQuality
 	committedMaxSubscribedQuality map[string]livekit.VideoQuality
 
-	maxSubscribedQualityDebounce func(func())
+	maxSubscribedQualityDebounce        func(func())
+	maxSubscribedQualityDebouncePending bool
 
 	qualityNotifyOpQueue *utils.OpsQueue
 
@@ -58,8 +59,15 @@ func NewDynacastManager(params DynacastManagerParams) *DynacastManager {
 		dynacastQuality:               make(map[string]*DynacastQuality),
 		maxSubscribedQuality:          make(map[string]livekit.VideoQuality),
 		committedMaxSubscribedQuality: make(map[string]livekit.VideoQuality),
-		maxSubscribedQualityDebounce:  debounce.New(params.DynacastPauseDelay),
-		qualityNotifyOpQueue:          utils.NewOpsQueue("quality-notify", 64, true),
+		qualityNotifyOpQueue: utils.NewOpsQueue(utils.OpsQueueParams{
+			Name:        "quality-notify",
+			MinSize:     64,
+			FlushOnStop: true,
+			Logger:      params.Logger,
+		}),
+	}
+	if params.DynacastPauseDelay > 0 {
+		d.maxSubscribedQualityDebounce = debounce.New(params.DynacastPauseDelay)
 	}
 	d.qualityNotifyOpQueue.Start()
 	return d
@@ -222,21 +230,32 @@ func (d *DynacastManager) update(force bool) {
 			return
 		}
 
-		if downgradesOnly {
-			d.params.Logger.Debugw("debouncing quality downgrade",
-				"committedMaxSubscribedQuality", d.committedMaxSubscribedQuality,
-				"maxSubscribedQuality", d.maxSubscribedQuality,
-			)
-			d.maxSubscribedQualityDebounce(func() {
-				d.update(true)
-			})
+		if downgradesOnly && d.maxSubscribedQualityDebounce != nil {
+			if !d.maxSubscribedQualityDebouncePending {
+				d.params.Logger.Debugw("debouncing quality downgrade",
+					"committedMaxSubscribedQuality", d.committedMaxSubscribedQuality,
+					"maxSubscribedQuality", d.maxSubscribedQuality,
+				)
+				d.maxSubscribedQualityDebounce(func() {
+					d.update(true)
+				})
+				d.maxSubscribedQualityDebouncePending = true
+			} else {
+				d.params.Logger.Debugw("quality downgrade waiting for debounce",
+					"committedMaxSubscribedQuality", d.committedMaxSubscribedQuality,
+					"maxSubscribedQuality", d.maxSubscribedQuality,
+				)
+			}
 			d.lock.Unlock()
 			return
 		}
 	}
 
 	// clear debounce on send
-	d.maxSubscribedQualityDebounce(func() {})
+	if d.maxSubscribedQualityDebounce != nil {
+		d.maxSubscribedQualityDebounce(func() {})
+		d.maxSubscribedQualityDebouncePending = false
+	}
 
 	d.params.Logger.Debugw("committing quality change",
 		"force", force,
@@ -291,9 +310,11 @@ func (d *DynacastManager) enqueueSubscribedQualityChange() {
 		}
 	}
 
-	d.params.Logger.Debugw("subscribedMaxQualityChange",
+	d.params.Logger.Debugw(
+		"subscribedMaxQualityChange",
 		"subscribedCodecs", subscribedCodecs,
-		"maxSubscribedQualities", maxSubscribedQualities)
+		"maxSubscribedQualities", maxSubscribedQualities,
+	)
 	d.qualityNotifyOpQueue.Enqueue(func() {
 		d.onSubscribedMaxQualityChange(subscribedCodecs, maxSubscribedQualities)
 	})

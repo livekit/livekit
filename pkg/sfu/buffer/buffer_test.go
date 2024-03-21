@@ -48,15 +48,8 @@ var opusCodec = webrtc.RTPCodecParameters{
 }
 
 func TestNack(t *testing.T) {
-	pool := &sync.Pool{
-		New: func() interface{} {
-			b := make([]byte, 1500)
-			return &b
-		},
-	}
-
 	t.Run("nack normal", func(t *testing.T) {
-		buff := NewBuffer(123, pool, pool)
+		buff := NewBuffer(123, 1, 1)
 		buff.codecType = webrtc.RTPCodecTypeVideo
 		require.NotNil(t, buff)
 		var wg sync.WaitGroup
@@ -101,7 +94,7 @@ func TestNack(t *testing.T) {
 	})
 
 	t.Run("nack with seq wrap", func(t *testing.T) {
-		buff := NewBuffer(123, pool, pool)
+		buff := NewBuffer(123, 1, 1)
 		buff.codecType = webrtc.RTPCodecTypeVideo
 		require.NotNil(t, buff)
 		var wg sync.WaitGroup
@@ -193,13 +186,7 @@ func TestNewBuffer(t *testing.T) {
 					},
 				},
 			}
-			pool := &sync.Pool{
-				New: func() interface{} {
-					b := make([]byte, 1500)
-					return &b
-				},
-			}
-			buff := NewBuffer(123, pool, pool)
+			buff := NewBuffer(123, 1, 1)
 			buff.codecType = webrtc.RTPCodecTypeVideo
 			require.NotNil(t, buff)
 			buff.OnRtcpFeedback(func(_ []rtcp.Packet) {})
@@ -219,13 +206,7 @@ func TestNewBuffer(t *testing.T) {
 }
 
 func TestFractionLostReport(t *testing.T) {
-	pool := &sync.Pool{
-		New: func() interface{} {
-			b := make([]byte, 1500)
-			return &b
-		},
-	}
-	buff := NewBuffer(123, pool, pool)
+	buff := NewBuffer(123, 1, 1)
 	require.NotNil(t, buff)
 	buff.codecType = webrtc.RTPCodecTypeVideo
 	var wg sync.WaitGroup
@@ -260,4 +241,15 @@ func TestFractionLostReport(t *testing.T) {
 		require.NoError(t, err)
 	}
 	wg.Wait()
+}
+
+func BenchmarkMemcpu(b *testing.B) {
+	buf := make([]byte, 1500*1500*10)
+	buf2 := make([]byte, 1500*1500*20)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		copy(buf2, buf)
+	}
+
 }
