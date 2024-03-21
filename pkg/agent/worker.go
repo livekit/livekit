@@ -284,9 +284,9 @@ func (w *Worker) handleRegister(req *livekit.RegisterWorkerRequest) {
 	} else {
 		// Use default agent permissions
 		w.permissions = &livekit.ParticipantPermission{
-			CanSubscribe: true,
-			CanPublish:   true,
-			CanPublishData: true,
+			CanSubscribe:      true,
+			CanPublish:        true,
+			CanPublishData:    true,
 			CanUpdateMetadata: true,
 		}
 	}
@@ -373,5 +373,5 @@ func (w *Worker) handleWorkerStatus(update *livekit.UpdateWorkerStatus) {
 
 func (w *Worker) handleMigrateJob(migrate *livekit.MigrateJobRequest) {
 	// TODO(theomonnom): On OSS this is not implemented
-	// We could maybe just move a specfic job to another worker
+	// We could maybe just move a specific job to another worker
 }

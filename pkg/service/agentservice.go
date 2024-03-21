@@ -58,6 +58,8 @@ type AgentHandler struct {
 	namespaces       map[string]*namespaceInfo
 	publisherEnabled bool
 	roomEnabled      bool
+	roomTopic        string
+	publisherTopic   string
 }
 
 type namespaceInfo struct {
@@ -93,7 +95,13 @@ func NewAgentService(conf *config.Config,
 	if err != nil {
 		return nil, err
 	}
-	s.AgentHandler = NewAgentHandler(agentServer, keyProvider, serverInfo)
+	s.AgentHandler = NewAgentHandler(
+		agentServer,
+		keyProvider,
+		serverInfo,
+		agent.RoomAgentTopic,
+		agent.PublisherAgentTopic,
+	)
 	return s, nil
 }
 
@@ -192,13 +200,21 @@ func (s *AgentService) HandleConnection(r *http.Request, conn *websocket.Conn) {
 	}
 }
 
-func NewAgentHandler(agentServer rpc.AgentInternalServer, keyProvider auth.KeyProvider, serverInfo *livekit.ServerInfo) *AgentHandler {
+func NewAgentHandler(
+	agentServer rpc.AgentInternalServer,
+	keyProvider auth.KeyProvider,
+	serverInfo *livekit.ServerInfo,
+	roomTopic string,
+	publisherTopic string,
+) *AgentHandler {
 	return &AgentHandler{
-		agentServer: agentServer,
-		workers:     make(map[string]*agent.Worker),
-		namespaces:  make(map[string]*namespaceInfo),
-		serverInfo:  serverInfo,
-		keyProvider: keyProvider,
+		agentServer:    agentServer,
+		workers:        make(map[string]*agent.Worker),
+		namespaces:     make(map[string]*namespaceInfo),
+		serverInfo:     serverInfo,
+		keyProvider:    keyProvider,
+		roomTopic:      roomTopic,
+		publisherTopic: publisherTopic,
 	}
 }
 
@@ -217,13 +233,13 @@ func (h *AgentHandler) registerWorkerTopic(w *agent.Worker) {
 	if w.JobType() == livekit.JobType_JT_PUBLISHER {
 		numPublishers++
 		if numPublishers == 1 {
-			err = h.agentServer.RegisterJobRequestTopic(w.Namespace(), agent.PublisherAgentTopic)
+			err = h.agentServer.RegisterJobRequestTopic(w.Namespace(), h.publisherTopic)
 		}
 
 	} else if w.JobType() == livekit.JobType_JT_ROOM {
 		numRooms++
 		if numRooms == 1 {
-			err = h.agentServer.RegisterJobRequestTopic(w.Namespace(), agent.RoomAgentTopic)
+			err = h.agentServer.RegisterJobRequestTopic(w.Namespace(), h.roomTopic)
 		}
 	}
 
@@ -261,12 +277,12 @@ func (h *AgentHandler) unregisterWorkerTopic(worker *agent.Worker) {
 	if worker.JobType() == livekit.JobType_JT_PUBLISHER {
 		info.numPublishers--
 		if info.numPublishers == 0 {
-			h.agentServer.DeregisterJobRequestTopic(worker.Namespace(), agent.PublisherAgentTopic)
+			h.agentServer.DeregisterJobRequestTopic(worker.Namespace(), h.publisherTopic)
 		}
 	} else if worker.JobType() == livekit.JobType_JT_ROOM {
 		info.numRooms--
 		if info.numRooms == 0 {
-			h.agentServer.DeregisterJobRequestTopic(worker.Namespace(), agent.RoomAgentTopic)
+			h.agentServer.DeregisterJobRequestTopic(worker.Namespace(), h.roomTopic)
 		}
 	}
 

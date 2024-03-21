@@ -30,9 +30,6 @@ import (
 	"github.com/livekit/psrpc"
 )
 
-var resolvedFalsePromise = utils.NewResolvedPromise[bool](false, nil)
-var resolvedEmptyPromise = utils.NewResolvedPromise[[]string](make([]string, 0), nil)
-
 const (
 	EnabledCacheTTL     = 1 * time.Minute
 	RoomAgentTopic      = "room"
@@ -48,30 +45,11 @@ type Client interface {
 	Stop() error
 }
 
-type CheckEnabledResponse struct {
-	RoomEnabled      *utils.Promise[bool]
-	PublisherEnabled *utils.Promise[bool]
-	Namespaces       *utils.Promise[[]string]
-}
-
 type JobDescription struct {
 	JobType livekit.JobType
 	Room    *livekit.Room
 	// only set for participant jobs
 	Participant *livekit.ParticipantInfo
-}
-
-func (r CheckEnabledResponse) Error() error {
-	if r.RoomEnabled.Err != nil {
-		return r.RoomEnabled.Err
-	}
-	if r.PublisherEnabled.Err != nil {
-		return r.PublisherEnabled.Err
-	}
-	if r.Namespaces.Err != nil {
-		return r.Namespaces.Err
-	}
-	return nil
 }
 
 type agentClient struct {
