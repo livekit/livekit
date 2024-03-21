@@ -414,6 +414,9 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 					r.propagationDelay += time.Duration(factor * float64(propagationDelay-r.propagationDelay))
 				}
 			}
+		} else {
+			r.propagationDelayDeltaHighCount = 0
+			r.propagationDelayDeltaHighStartTime = time.Time{}
 		}
 		if r.longTermDeltaPropagationDelay == 0 {
 			r.longTermDeltaPropagationDelay = deltaPropagationDelay
