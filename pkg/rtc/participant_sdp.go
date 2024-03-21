@@ -157,6 +157,7 @@ func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(offer webrtc.Sess
 			for i, attr := range unmatchVideo.Attributes {
 				if strings.Contains(attr.Value, dd.ExtensionURI) {
 					unmatchVideo.Attributes[i] = unmatchVideo.Attributes[len(unmatchVideo.Attributes)-1]
+					unmatchVideo.Attributes[len(unmatchVideo.Attributes)-1] = sdp.Attribute{}
 					unmatchVideo.Attributes = unmatchVideo.Attributes[:len(unmatchVideo.Attributes)-1]
 					break
 				}

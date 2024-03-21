@@ -19,49 +19,37 @@ import (
 	"sync"
 
 	"github.com/pion/transport/v2/packetio"
-
-	"github.com/livekit/mediatransportutil/pkg/bucket"
 )
 
 type FactoryOfBufferFactory struct {
-	videoPool *sync.Pool
-	audioPool *sync.Pool
+	trackingPacketsVideo int
+	trackingPacketsAudio int
 }
 
-func NewFactoryOfBufferFactory(trackingPackets int) *FactoryOfBufferFactory {
+func NewFactoryOfBufferFactory(trackingPacketsVideo int, trackingPacketsAudio int) *FactoryOfBufferFactory {
 	return &FactoryOfBufferFactory{
-		videoPool: &sync.Pool{
-			New: func() interface{} {
-				b := make([]byte, trackingPackets*bucket.MaxPktSize)
-				return &b
-			},
-		},
-		audioPool: &sync.Pool{
-			New: func() interface{} {
-				b := make([]byte, bucket.MaxPktSize*200)
-				return &b
-			},
-		},
+		trackingPacketsVideo: trackingPacketsVideo,
+		trackingPacketsAudio: trackingPacketsAudio,
 	}
 }
 
 func (f *FactoryOfBufferFactory) CreateBufferFactory() *Factory {
 	return &Factory{
-		videoPool:   f.videoPool,
-		audioPool:   f.audioPool,
-		rtpBuffers:  make(map[uint32]*Buffer),
-		rtcpReaders: make(map[uint32]*RTCPReader),
-		rtxPair:     make(map[uint32]uint32),
+		trackingPacketsVideo: f.trackingPacketsVideo,
+		trackingPacketsAudio: f.trackingPacketsAudio,
+		rtpBuffers:           make(map[uint32]*Buffer),
+		rtcpReaders:          make(map[uint32]*RTCPReader),
+		rtxPair:              make(map[uint32]uint32),
 	}
 }
 
 type Factory struct {
 	sync.RWMutex
-	videoPool   *sync.Pool
-	audioPool   *sync.Pool
-	rtpBuffers  map[uint32]*Buffer
-	rtcpReaders map[uint32]*RTCPReader
-	rtxPair     map[uint32]uint32 // repair -> base
+	trackingPacketsVideo int
+	trackingPacketsAudio int
+	rtpBuffers           map[uint32]*Buffer
+	rtcpReaders          map[uint32]*RTCPReader
+	rtxPair              map[uint32]uint32 // repair -> base
 }
 
 func (f *Factory) GetOrNew(packetType packetio.BufferPacketType, ssrc uint32) io.ReadWriteCloser {
@@ -84,7 +72,7 @@ func (f *Factory) GetOrNew(packetType packetio.BufferPacketType, ssrc uint32) io
 		if reader, ok := f.rtpBuffers[ssrc]; ok {
 			return reader
 		}
-		buffer := NewBuffer(ssrc, f.videoPool, f.audioPool)
+		buffer := NewBuffer(ssrc, f.trackingPacketsVideo, f.trackingPacketsAudio)
 		f.rtpBuffers[ssrc] = buffer
 		for repair, base := range f.rtxPair {
 			if repair == ssrc {

@@ -103,11 +103,14 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	t.subscribedTracksMu.Unlock()
 
 	var rtcpFeedback []webrtc.RTCPFeedback
+	var maxTrack int
 	switch t.params.MediaTrack.Kind() {
 	case livekit.TrackType_AUDIO:
 		rtcpFeedback = t.params.SubscriberConfig.RTCPFeedback.Audio
+		maxTrack = t.params.ReceiverConfig.PacketBufferSizeAudio
 	case livekit.TrackType_VIDEO:
 		rtcpFeedback = t.params.SubscriberConfig.RTCPFeedback.Video
+		maxTrack = t.params.ReceiverConfig.PacketBufferSizeVideo
 	}
 	codecs := wr.Codecs()
 	for _, c := range codecs {
@@ -130,11 +133,12 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		BufferFactory:     sub.GetBufferFactory(),
 		SubID:             subscriberID,
 		StreamID:          streamID,
-		MaxTrack:          t.params.ReceiverConfig.PacketBufferSize,
+		MaxTrack:          maxTrack,
 		PlayoutDelayLimit: sub.GetPlayoutDelayConfig(),
 		Pacer:             sub.GetPacer(),
 		Trailer:           trailer,
 		Logger:            LoggerWithTrack(sub.GetLogger().WithComponent(sutils.ComponentSub), trackID, t.params.IsRelayed),
+		RTCPWriter:        sub.WriteSubscriberRTCP,
 	})
 	if err != nil {
 		return nil, err
@@ -187,7 +191,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 
 	downTrack.OnMaxLayerChanged(func(dt *sfu.DownTrack, layer int32) {
 		if t.onSubscriberMaxQualityChange != nil {
-			t.onSubscriberMaxQualityChange(subscriberID, dt.Codec(), layer)
+			t.onSubscriberMaxQualityChange(dt.SubscriberID(), dt.Codec(), layer)
 		}
 	})
 

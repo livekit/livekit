@@ -19,12 +19,13 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/exp/maps"
+
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/webhook"
-	"golang.org/x/exp/maps"
 )
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 . TelemetryService
@@ -103,9 +104,14 @@ func NewTelemetryService(notifier webhook.QueuedNotifier, analytics AnalyticsSer
 	t := &telemetryService{
 		AnalyticsService: analytics,
 
-		notifier:  notifier,
-		jobsQueue: utils.NewOpsQueue("telemetry", jobsQueueMinSize, true),
-		workers:   make(map[livekit.ParticipantID]*StatsWorker),
+		notifier: notifier,
+		jobsQueue: utils.NewOpsQueue(utils.OpsQueueParams{
+			Name:        "telemetry",
+			MinSize:     jobsQueueMinSize,
+			FlushOnStop: true,
+			Logger:      logger.GetLogger(),
+		}),
+		workers: make(map[livekit.ParticipantID]*StatsWorker),
 	}
 
 	t.jobsQueue.Start()
@@ -153,12 +159,19 @@ func (t *telemetryService) getWorker(participantID livekit.ParticipantID) (worke
 	return
 }
 
-func (t *telemetryService) createWorker(ctx context.Context,
+func (t *telemetryService) getOrCreateWorker(ctx context.Context,
 	roomID livekit.RoomID,
 	roomName livekit.RoomName,
 	participantID livekit.ParticipantID,
 	participantIdentity livekit.ParticipantIdentity,
-) *StatsWorker {
+) (*StatsWorker, bool) {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	if worker, ok := t.workers[participantID]; ok {
+		return worker, true
+	}
+
 	worker := newStatsWorker(
 		ctx,
 		t,
@@ -168,11 +181,10 @@ func (t *telemetryService) createWorker(ctx context.Context,
 		participantIdentity,
 	)
 
-	t.lock.Lock()
 	t.workers[participantID] = worker
 	t.workersShadow = maps.Values(t.workers)
-	t.lock.Unlock()
-	return worker
+
+	return worker, false
 }
 
 func (t *telemetryService) cleanupWorkers() {

@@ -247,12 +247,10 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		pi.ID = livekit.ParticipantID(initialResponse.GetJoin().GetParticipant().GetSid())
 	}
 
-	var signalStats *telemetry.BytesTrackStats
-	if pi.ID != "" {
-		signalStats = telemetry.NewBytesTrackStats(
-			telemetry.BytesTrackIDForParticipantID(telemetry.BytesTrackTypeSignal, pi.ID),
-			pi.ID,
-			s.telemetry)
+	signalStats := telemetry.NewBytesSignalStats(r.Context(), s.telemetry)
+	if join := initialResponse.GetJoin(); join != nil {
+		signalStats.ResolveRoom(join.GetRoom())
+		signalStats.ResolveParticipant(join.GetParticipant())
 	}
 
 	pLogger := rtc.LoggerWithParticipant(
@@ -274,9 +272,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		cr.RequestSink.Close()
 		close(done)
 
-		if signalStats != nil {
-			signalStats.Stop()
-		}
+		signalStats.Stop()
 	}()
 
 	// upgrade only once the basics are good to go
@@ -303,9 +299,8 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		pLogger.Warnw("could not write initial response", err)
 		return
 	}
-	if signalStats != nil {
-		signalStats.AddBytes(uint64(count), true)
-	}
+	signalStats.AddBytes(uint64(count), true)
+
 	pLogger.Debugw("new client WS connected",
 		"connID", cr.ConnectionID,
 		"reconnect", pi.Reconnect,
@@ -349,20 +344,17 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					pLogger.Debugw("sending offer", "offer", m)
 				case *livekit.SignalResponse_Answer:
 					pLogger.Debugw("sending answer", "answer", m)
-				}
-
-				if pi.ID == "" && res.GetJoin() != nil {
-					pi.ID = livekit.ParticipantID(res.GetJoin().GetParticipant().GetSid())
-					signalStats = telemetry.NewBytesTrackStats(
-						telemetry.BytesTrackIDForParticipantID(telemetry.BytesTrackTypeSignal, pi.ID),
-						pi.ID,
-						s.telemetry)
+				case *livekit.SignalResponse_Join:
+					signalStats.ResolveRoom(m.Join.GetRoom())
+					signalStats.ResolveParticipant(m.Join.GetParticipant())
+				case *livekit.SignalResponse_RoomUpdate:
+					signalStats.ResolveRoom(m.RoomUpdate.GetRoom())
 				}
 
 				if count, err := sigConn.WriteResponse(res); err != nil {
 					pLogger.Warnw("error writing to websocket", err)
 					return
-				} else if signalStats != nil {
+				} else {
 					signalStats.AddBytes(uint64(count), true)
 				}
 			}
@@ -390,9 +382,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
-		if signalStats != nil {
-			signalStats.AddBytes(uint64(count), false)
-		}
+		signalStats.AddBytes(uint64(count), false)
 
 		switch m := req.Message.(type) {
 		case *livekit.SignalRequest_Ping:
@@ -405,7 +395,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					Pong: time.Now().UnixMilli(),
 				},
 			})
-			if perr == nil && signalStats != nil {
+			if perr == nil {
 				signalStats.AddBytes(uint64(count), true)
 			}
 		case *livekit.SignalRequest_PingReq:
@@ -417,7 +407,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					},
 				},
 			})
-			if perr == nil && signalStats != nil {
+			if perr == nil {
 				signalStats.AddBytes(uint64(count), true)
 			}
 		}

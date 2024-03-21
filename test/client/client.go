@@ -679,19 +679,17 @@ func (c *RTCClient) PublishData(data []byte, kind livekit.DataPacket_Kind) error
 		return err
 	}
 
-	dp := &livekit.DataPacket{
+	dpData, err := proto.Marshal(&livekit.DataPacket{
 		Kind: kind,
 		Value: &livekit.DataPacket_User{
 			User: &livekit.UserPacket{Payload: data},
 		},
-	}
-
-	dpData, err := proto.Marshal(dp)
+	})
 	if err != nil {
 		return err
 	}
 
-	return c.publisher.SendDataPacket(dp, dpData)
+	return c.publisher.SendDataPacket(kind, dpData)
 }
 
 func (c *RTCClient) GetPublishedTrackIDs() []string {
@@ -732,12 +730,13 @@ func (c *RTCClient) ensurePublisherConnected() error {
 	}
 }
 
-func (c *RTCClient) handleDataMessage(_ livekit.DataPacket_Kind, data []byte) {
+func (c *RTCClient) handleDataMessage(kind livekit.DataPacket_Kind, data []byte) {
 	dp := &livekit.DataPacket{}
 	err := proto.Unmarshal(data, dp)
 	if err != nil {
 		return
 	}
+	dp.Kind = kind
 	if val, ok := dp.Value.(*livekit.DataPacket_User); ok {
 		if c.OnDataReceived != nil {
 			c.OnDataReceived(val.User.Payload, val.User.ParticipantSid)
