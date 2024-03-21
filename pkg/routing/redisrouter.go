@@ -246,7 +246,7 @@ func (r *RedisRouter) keepaliveWorker(startedChan chan error) {
 	for ping := range pings.Channel() {
 		if time.Since(time.Unix(ping.Timestamp, 0)) > statsUpdateInterval {
 			logger.Infow("keep alive too old, skipping", "timestamp", ping.Timestamp)
-			break
+			continue
 		}
 
 		r.nodeMu.Lock()

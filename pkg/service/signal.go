@@ -63,7 +63,7 @@ func NewSignalServer(
 		nodeID,
 		&signalService{region, sessionHandler, config},
 		bus,
-		middleware.WithServerMetrics(prometheus.PSRPCMetricsObserver{}),
+		middleware.WithServerMetrics(rpc.PSRPCMetricsObserver{}),
 		psrpc.WithServerChannelSize(config.StreamBufferSize),
 	)
 	if err != nil {

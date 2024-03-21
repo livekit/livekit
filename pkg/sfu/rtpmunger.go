@@ -83,6 +83,7 @@ type RTPMunger struct {
 	extLastTS       uint64
 	extSecondLastTS uint64
 	tsOffset        uint64
+	pinnedTSOffset  uint64
 
 	lastMarker       bool
 	secondLastMarker bool
@@ -107,6 +108,7 @@ func (r *RTPMunger) DebugInfo() map[string]interface{} {
 		"ExtLastTS":            r.extLastTS,
 		"ExtSecondLastTS":      r.extSecondLastTS,
 		"TSOffset":             r.tsOffset,
+		"PinnedTSOffset":       r.pinnedTSOffset,
 		"LastMarker":           r.lastMarker,
 		"SecondLastMarker":     r.secondLastMarker,
 	}
@@ -121,6 +123,10 @@ func (r *RTPMunger) GetLast() RTPMungerState {
 		LastMarker:       r.lastMarker,
 		SecondLastMarker: r.secondLastMarker,
 	}
+}
+
+func (r *RTPMunger) GetPinnedTSOffset() uint64 {
+	return r.pinnedTSOffset
 }
 
 func (r *RTPMunger) SeedLast(state RTPMungerState) {
@@ -142,6 +148,8 @@ func (r *RTPMunger) SetLastSnTs(extPkt *buffer.ExtPacket) {
 
 	r.extLastTS = extPkt.ExtTimestamp
 	r.extSecondLastTS = extPkt.ExtTimestamp
+	r.tsOffset = 0
+	r.pinnedTSOffset = r.tsOffset
 }
 
 func (r *RTPMunger) UpdateSnTsOffsets(extPkt *buffer.ExtPacket, snAdjust uint64, tsAdjust uint64) {
@@ -151,6 +159,7 @@ func (r *RTPMunger) UpdateSnTsOffsets(extPkt *buffer.ExtPacket, snAdjust uint64,
 	r.updateSnOffset()
 
 	r.tsOffset = extPkt.ExtTimestamp - r.extLastTS - tsAdjust
+	r.pinnedTSOffset = r.tsOffset
 }
 
 func (r *RTPMunger) PacketDropped(extPkt *buffer.ExtPacket) {
@@ -180,7 +189,7 @@ func (r *RTPMunger) PacketDropped(extPkt *buffer.ExtPacket) {
 	r.lastMarker = r.secondLastMarker
 }
 
-func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket, marker bool) (*TranslationParamsRTP, error) {
+func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket, marker bool) (TranslationParamsRTP, error) {
 	diff := int64(extPkt.ExtSequenceNumber - r.extHighestIncomingSN)
 	if (diff == 1 && len(extPkt.Packet.Payload) != 0) || diff > 1 {
 		// in-order - either contiguous packet with payload OR packet following a gap, may or may not have payload
@@ -210,7 +219,7 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket, marker bool) (*Tr
 			r.isInRtxGateRegion = false
 		}
 
-		return &TranslationParamsRTP{
+		return TranslationParamsRTP{
 			snOrdering:        ordering,
 			extSequenceNumber: extMungedSN,
 			extTimestamp:      extMungedTS,
@@ -221,7 +230,7 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket, marker bool) (*Tr
 		// out-of-order, look up sequence number offset cache
 		snOffset, err := r.snRangeMap.GetValue(extPkt.ExtSequenceNumber)
 		if err != nil {
-			return &TranslationParamsRTP{
+			return TranslationParamsRTP{
 				snOrdering: SequenceNumberOrderingOutOfOrder,
 			}, ErrOutOfOrderSequenceNumberCacheMiss
 		}
@@ -237,12 +246,12 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket, marker bool) (*Tr
 				"snOffsetIncoming", snOffset,
 				"snOffsetHighest", r.snOffset,
 			)
-			return &TranslationParamsRTP{
+			return TranslationParamsRTP{
 				snOrdering: SequenceNumberOrderingOutOfOrder,
 			}, ErrOutOfOrderSequenceNumberCacheMiss
 		}
 
-		return &TranslationParamsRTP{
+		return TranslationParamsRTP{
 			snOrdering:        SequenceNumberOrderingOutOfOrder,
 			extSequenceNumber: extSequenceNumber,
 			extTimestamp:      extPkt.ExtTimestamp - r.tsOffset,
@@ -259,13 +268,13 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket, marker bool) (*Tr
 
 		r.updateSnOffset()
 
-		return &TranslationParamsRTP{
+		return TranslationParamsRTP{
 			snOrdering: SequenceNumberOrderingContiguous,
 		}, ErrPaddingOnlyPacket
 	}
 
 	// can get duplicate packet due to FEC
-	return &TranslationParamsRTP{
+	return TranslationParamsRTP{
 		snOrdering: SequenceNumberOrderingDuplicate,
 	}, ErrDuplicatePacket
 }

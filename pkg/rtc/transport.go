@@ -38,14 +38,16 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/transport"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	lkinterceptor "github.com/livekit/livekit-server/pkg/sfu/interceptor"
+	sfuinterceptor "github.com/livekit/livekit-server/pkg/sfu/interceptor"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpextension"
 	"github.com/livekit/livekit-server/pkg/sfu/sendsidebwe"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	sfuutils "github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
+	"github.com/livekit/livekit-server/pkg/utils"
 	sutils "github.com/livekit/livekit-server/pkg/utils"
+	lkinterceptor "github.com/livekit/mediatransportutil/pkg/interceptor"
 	lktwcc "github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -324,6 +326,10 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 				}
 			}
 		}
+	} else {
+		// sfu only use interceptor to send XR but don't read response from it (use buffer instead),
+		// so use a empty callback here
+		ir.Add(lkinterceptor.NewRTTFromXRFactory(func(rtt uint32) {}))
 	}
 	if len(params.SimTracks) > 0 {
 		f, err := NewUnhandleSimulcastInterceptorFactory(UnhandleSimulcastTracks(params.SimTracks))
@@ -363,7 +369,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 		}
 	}
 	// put rtx interceptor behind unhandle simulcast interceptor so it can get the correct mid & rid
-	ir.Add(lkinterceptor.NewRTXInfoExtractorFactory(setTWCCForVideo, func(repair, base uint32) {
+	ir.Add(sfuinterceptor.NewRTXInfoExtractorFactory(setTWCCForVideo, func(repair, base uint32) {
 		params.Logger.Debugw("rtx pair found from extension", "repair", repair, "base", base)
 		params.Config.BufferFactory.SetRTXPair(repair, base)
 	}, params.Logger))
@@ -381,10 +387,14 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		params.Logger = logger.GetLogger()
 	}
 	t := &PCTransport{
-		params:                   params,
-		debouncedNegotiate:       debounce.New(negotiationFrequency),
-		negotiationState:         transport.NegotiationStateNone,
-		eventsQueue:              sutils.NewOpsQueue("transport", 64, false),
+		params:             params,
+		debouncedNegotiate: debounce.New(negotiationFrequency),
+		negotiationState:   transport.NegotiationStateNone,
+		eventsQueue: sutils.NewOpsQueue(utils.OpsQueueParams{
+			Name:    "transport",
+			MinSize: 64,
+			Logger:  params.Logger,
+		}),
 		previousTrackDescription: make(map[string]*trackDescription),
 		canReuseTransceiver:      true,
 		connectionDetails:        types.NewICEConnectionDetails(params.Transport, params.Logger),
@@ -613,14 +623,8 @@ func (t *PCTransport) handleConnectionFailed(forceShortConn bool) {
 		isShort, duration = t.IsShortConnection(time.Now())
 		if isShort {
 			pair, err := t.getSelectedPair()
-			if err != nil {
-				t.params.Logger.Warnw("short ICE connection", err, "duration", duration)
-			} else {
-				t.params.Logger.Infow("short ICE connection", "pair", pair, "duration", duration)
-			}
+			t.params.Logger.Debugw("short ICE connection", "error", err, "pair", pair, "duration", duration)
 		}
-	} else {
-		t.params.Logger.Infow("force short ICE connection")
 	}
 
 	t.params.Handler.OnFailed(isShort)
@@ -805,16 +809,27 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 	if err != nil {
 		return err
 	}
+	var (
+		dcPtr   **webrtc.DataChannel
+		dcReady *bool
+	)
+	switch dc.Label() {
+	default:
+		// TODO: Appears that it's never called, so not sure what needs to be done here. We just keep the DC open?
+		//       Maybe just add "reliable" parameter instead of checking the label.
+		t.params.Logger.Warnw("unknown data channel label", nil, "label", dc.Label())
+		return nil
+	case ReliableDataChannel:
+		dcPtr = &t.reliableDC
+		dcReady = &t.reliableDCOpened
+	case LossyDataChannel:
+		dcPtr = &t.lossyDC
+		dcReady = &t.lossyDCOpened
+	}
 
 	dcReadyHandler := func() {
 		t.lock.Lock()
-		switch dc.Label() {
-		case ReliableDataChannel:
-			t.reliableDCOpened = true
-
-		case LossyDataChannel:
-			t.lossyDCOpened = true
-		}
+		*dcReady = true
 		t.lock.Unlock()
 		t.params.Logger.Debugw(dc.Label() + " data channel open")
 
@@ -832,30 +847,15 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 	}
 
 	t.lock.Lock()
-	switch dc.Label() {
-	case ReliableDataChannel:
-		t.reliableDC = dc
-		if t.params.DirectionConfig.StrictACKs {
-			t.reliableDC.OnOpen(dcReadyHandler)
-		} else {
-			t.reliableDC.OnDial(dcReadyHandler)
-		}
-		t.reliableDC.OnClose(dcCloseHandler)
-		t.reliableDC.OnError(dcErrorHandler)
-	case LossyDataChannel:
-		t.lossyDC = dc
-		if t.params.DirectionConfig.StrictACKs {
-			t.lossyDC.OnOpen(dcReadyHandler)
-		} else {
-			t.lossyDC.OnDial(dcReadyHandler)
-		}
-		t.lossyDC.OnClose(dcCloseHandler)
-		t.lossyDC.OnError(dcErrorHandler)
-	default:
-		t.params.Logger.Warnw("unknown data channel label", nil, "label", dc.Label())
+	defer t.lock.Unlock()
+	*dcPtr = dc
+	if t.params.DirectionConfig.StrictACKs {
+		dc.OnOpen(dcReadyHandler)
+	} else {
+		dc.OnDial(dcReadyHandler)
 	}
-	t.lock.Unlock()
-
+	dc.OnClose(dcCloseHandler)
+	dc.OnError(dcErrorHandler)
 	return nil
 }
 
@@ -909,10 +909,10 @@ func (t *PCTransport) WriteRTCP(pkts []rtcp.Packet) error {
 	return t.pc.WriteRTCP(pkts)
 }
 
-func (t *PCTransport) SendDataPacket(dp *livekit.DataPacket, data []byte) error {
+func (t *PCTransport) SendDataPacket(kind livekit.DataPacket_Kind, encoded []byte) error {
 	var dc *webrtc.DataChannel
 	t.lock.RLock()
-	if dp.Kind == livekit.DataPacket_RELIABLE {
+	if kind == livekit.DataPacket_RELIABLE {
 		dc = t.reliableDC
 	} else {
 		dc = t.lossyDC
@@ -931,7 +931,7 @@ func (t *PCTransport) SendDataPacket(dp *livekit.DataPacket, data []byte) error 
 		return ErrDataChannelBufferFull
 	}
 
-	return dc.Send(data)
+	return dc.Send(encoded)
 }
 
 func (t *PCTransport) Close() {

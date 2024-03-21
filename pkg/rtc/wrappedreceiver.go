@@ -26,6 +26,7 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
 // wrapper around WebRTC receiver, overriding its ID
@@ -263,13 +264,13 @@ func (d *DummyReceiver) AddDownTrack(track sfu.TrackSender) error {
 	return nil
 }
 
-func (d *DummyReceiver) DeleteDownTrack(participantID livekit.ParticipantID) {
+func (d *DummyReceiver) DeleteDownTrack(subscriberID livekit.ParticipantID) {
 	d.downtrackLock.Lock()
 	defer d.downtrackLock.Unlock()
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
-		r.DeleteDownTrack(participantID)
+		r.DeleteDownTrack(subscriberID)
 	} else {
-		delete(d.downtracks, participantID)
+		delete(d.downtracks, subscriberID)
 	}
 }
 
@@ -316,18 +317,18 @@ func (d *DummyReceiver) GetRedReceiver() sfu.TrackReceiver {
 	return d
 }
 
-func (d *DummyReceiver) GetCalculatedClockRate(layer int32) uint32 {
-	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
-		return r.GetCalculatedClockRate(layer)
-	}
-	return 0
-}
-
 func (d *DummyReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error) {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		return r.GetReferenceLayerRTPTimestamp(ts, layer, referenceLayer)
 	}
 	return 0, errors.New("receiver not available")
+}
+
+func (d *DummyReceiver) GetRTCPSenderReportData(layer int32) *buffer.RTCPSenderReportData {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+		return r.GetRTCPSenderReportData(layer)
+	}
+	return nil
 }
 
 func (d *DummyReceiver) GetTrackStats() *livekit.RTPStats {

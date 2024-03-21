@@ -23,6 +23,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
+	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -157,6 +158,23 @@ func (w *windowStat) String() string {
 		w.rttMax,
 		w.jitterMax,
 	)
+}
+
+func (w *windowStat) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if w == nil {
+		return nil
+	}
+
+	e.AddTime("startedAt", w.startedAt)
+	e.AddString("duration", w.duration.String())
+	e.AddUint32("packetsExpected", w.packetsExpected)
+	e.AddUint32("packetsLost", w.packetsLost)
+	e.AddUint32("packetsMissing", w.packetsMissing)
+	e.AddUint32("packetsOutOfOrder", w.packetsOutOfOrder)
+	e.AddUint64("bytes", w.bytes)
+	e.AddUint32("rttMax", w.rttMax)
+	e.AddFloat64("jitterMax", w.jitterMax)
+	return nil
 }
 
 // ------------------------------------------

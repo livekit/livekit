@@ -51,6 +51,11 @@ https://docs.livekit.io
 - Livestreaming from OBS Studio ([source](https://github.com/livekit-examples/livestream))
 - [AI voice assistant using ChatGPT](https://livekit.io/kitt) ([source](https://github.com/livekit-examples/kitt))
 
+## Ecosystem
+- [Agents](https://github.com/livekit/agents): build real-time multimodal AI applications with programmable backend participants
+- [Egress](https://github.com/livekit/egress): record or multi-stream rooms and export individual tracks
+- [Ingress](https://github.com/livekit/ingress): ingest streams from external sources like RTMP, WHIP, HLS, or OBS Studio
+
 ## SDKs & Tools
 
 ### Client SDKs
@@ -178,14 +183,12 @@ enabling you to build automations that behave like end-users.
 | JavaScript (TypeScript) | [server-sdk-js](https://github.com/livekit/server-sdk-js)                                           | [docs](https://docs.livekit.io/server-sdk-js/)              |
 | Ruby                    | [server-sdk-ruby](https://github.com/livekit/server-sdk-ruby)                                       |                                                             |
 | Java (Kotlin)           | [server-sdk-kotlin](https://github.com/livekit/server-sdk-kotlin)                                   |                                                             |
-| Python (community)      | [tradablebits/livekit-server-sdk-python](https://github.com/tradablebits/livekit-server-sdk-python) |                                                             |
+| Python (community)      | [python-sdks](https://github.com/livekit/python-sdks)                                               |                                                             |
 | PHP (community)         | [agence104/livekit-server-sdk-php](https://github.com/agence104/livekit-server-sdk-php)             |                                                             |
 
-### Ecosystem & Tools
+### Tools
 
 - [CLI](https://github.com/livekit/livekit-cli) - command line interface & load tester
-- [Egress](https://github.com/livekit/egress) - export and record your rooms
-- [Ingress](https://github.com/livekit/ingress) - ingest streams from RTMP / OBS Studio
 - [Docker image](https://hub.docker.com/r/livekit/livekit-server)
 - [Helm charts](https://github.com/livekit/livekit-helm)
 

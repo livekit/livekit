@@ -55,11 +55,10 @@ func NewPacketTracker(logger logger.Logger) *PacketTracker {
 		logger:       logger,
 		peakDetector: peakdetect.NewPeakDetector(),
 		wake:         make(chan struct{}, 1),
-		stop:         core.NewFuse(),
 		rateCalculator: NewRateCalculator(RateCalculatorParams{
 			MeasurementWindow: 500 * time.Millisecond, // RAJA-TODO: make this config
 			Overlap:           0.5,                    // RAJA-TODO: make this config
-			Logger: logger,
+			Logger:            logger,
 		}),
 		estimatedChannelCapacity: 100_000_000,
 	}

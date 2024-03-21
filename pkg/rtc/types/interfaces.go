@@ -276,7 +276,6 @@ type Participant interface {
 	UpdateSubscriptionPermission(
 		subscriptionPermission *livekit.SubscriptionPermission,
 		timedVersion utils.TimedVersion,
-		resolverByIdentity func(participantIdentity livekit.ParticipantIdentity) LocalParticipant,
 		resolverBySid func(participantID livekit.ParticipantID) LocalParticipant,
 	) error
 	UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error
@@ -344,6 +343,8 @@ type LocalParticipant interface {
 	AddTransceiverFromTrackToSubscriber(trackLocal webrtc.TrackLocal, params AddTrackParams) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
 	RemoveTrackFromSubscriber(sender *webrtc.RTPSender) error
 
+	WriteSubscriberRTCP(pkts []rtcp.Packet) error
+
 	// subscriptions
 	SubscribeToTrack(trackID livekit.TrackID)
 	UnsubscribeFromTrack(trackID livekit.TrackID)
@@ -364,7 +365,7 @@ type LocalParticipant interface {
 	SendJoinResponse(joinResponse *livekit.JoinResponse) error
 	SendParticipantUpdate(participants []*livekit.ParticipantInfo) error
 	SendSpeakerUpdate(speakers []*livekit.SpeakerInfo, force bool) error
-	SendDataPacket(packet *livekit.DataPacket, data []byte) error
+	SendDataPacket(kind livekit.DataPacket_Kind, encoded []byte) error
 	SendRoomUpdate(room *livekit.Room) error
 	SendConnectionQualityUpdate(update *livekit.ConnectionQualityUpdate) error
 	SubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool)
@@ -383,7 +384,7 @@ type LocalParticipant interface {
 	OnTrackUnpublished(callback func(LocalParticipant, MediaTrack))
 	// OnParticipantUpdate - metadata or permission is updated
 	OnParticipantUpdate(callback func(LocalParticipant))
-	OnDataPacket(callback func(LocalParticipant, *livekit.DataPacket))
+	OnDataPacket(callback func(LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket))
 	OnSubscribeStatusChanged(fn func(publisherID livekit.ParticipantID, subscribed bool))
 	OnClose(callback func(LocalParticipant))
 	OnClaimsChanged(callback func(LocalParticipant))
@@ -393,6 +394,7 @@ type LocalParticipant interface {
 
 	// session migration
 	MaybeStartMigration(force bool, onStart func()) bool
+	NotifyMigration()
 	SetMigrateState(s MigrateState)
 	MigrateState() MigrateState
 	SetMigrateInfo(previousOffer, previousAnswer *webrtc.SessionDescription, mediaTracks []*livekit.TrackPublishedResponse, dataChannels []*livekit.DataChannelInfo)
