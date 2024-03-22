@@ -497,8 +497,6 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 
 	s.setPublisher(res.PublisherIdentity, res.PublisherID)
 
-	// since hasPermission defaults to true, we will want to send a message to the client the first time
-	// that we discover permissions were denied
 	permChanged := s.setHasPermission(res.HasPermission)
 	if permChanged {
 		m.params.Participant.SubscriptionPermissionUpdate(s.getPublisherID(), trackID, res.HasPermission)
