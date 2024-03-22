@@ -745,8 +745,6 @@ func newTrackSubscription(subscriberID livekit.ParticipantID, trackID livekit.Tr
 		subscriberID: subscriberID,
 		trackID:      trackID,
 		logger:       l,
-		// default allow
-		hasPermission: true,
 	}
 }
 
