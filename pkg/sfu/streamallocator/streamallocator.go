@@ -241,9 +241,15 @@ func (s *StreamAllocator) AddTrack(downTrack *sfu.DownTrack, params AddTrackPara
 	track := NewTrack(downTrack, params.Source, params.IsSimulcast, params.PublisherID, s.params.Logger)
 	track.SetPriority(params.Priority)
 
+	trackID := livekit.TrackID(downTrack.ID())
 	s.videoTracksMu.Lock()
-	s.videoTracks[livekit.TrackID(downTrack.ID())] = track
+	oldTrack := s.videoTracks[trackID]
+	s.videoTracks[trackID] = track
 	s.videoTracksMu.Unlock()
+
+	if oldTrack != nil {
+		oldTrack.DownTrack().SetStreamAllocatorListener(nil)
+	}
 
 	downTrack.SetStreamAllocatorListener(s)
 	if s.prober.IsRunning() {

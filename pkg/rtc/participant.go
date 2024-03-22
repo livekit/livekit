@@ -2362,6 +2362,7 @@ func (p *ParticipantImpl) CacheDownTrack(trackID livekit.TrackID, rtpTransceiver
 		p.subLogger.Infow("cached transceiver changed", "trackID", trackID)
 	}
 	p.cachedDownTracks[trackID] = &downTrackState{transceiver: rtpTransceiver, downTrack: downTrack}
+	p.subLogger.Debugw("caching downtrack", "trackID", trackID)
 	p.lock.Unlock()
 }
 
@@ -2369,6 +2370,9 @@ func (p *ParticipantImpl) UncacheDownTrack(rtpTransceiver *webrtc.RTPTransceiver
 	p.lock.Lock()
 	for trackID, dts := range p.cachedDownTracks {
 		if dts.transceiver == rtpTransceiver {
+			if dts := p.cachedDownTracks[trackID]; dts != nil {
+				p.subLogger.Debugw("uncaching downtrack", "trackID", trackID)
+			}
 			delete(p.cachedDownTracks, trackID)
 			break
 		}
@@ -2380,8 +2384,7 @@ func (p *ParticipantImpl) GetCachedDownTrack(trackID livekit.TrackID) (*webrtc.R
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
-	dts := p.cachedDownTracks[trackID]
-	if dts != nil {
+	if dts := p.cachedDownTracks[trackID]; dts != nil {
 		return dts.transceiver, dts.downTrack
 	}
 
