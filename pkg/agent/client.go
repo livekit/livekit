@@ -31,9 +31,10 @@ import (
 )
 
 const (
-	EnabledCacheTTL     = 1 * time.Minute
-	RoomAgentTopic      = "room"
-	PublisherAgentTopic = "publisher"
+	EnabledCacheTTL         = 1 * time.Minute
+	RoomAgentTopic          = "room"
+	PublisherAgentTopic     = "publisher"
+	DefaultHandlerNamespace = ""
 
 	CheckEnabledTimeout = 5 * time.Second
 )
@@ -81,7 +82,7 @@ func NewAgentClient(bus psrpc.MessageBus) (Client, error) {
 		subDone: make(chan struct{}),
 	}
 
-	sub, err := c.client.SubscribeWorkerRegistered(context.Background(), "") // single tenant
+	sub, err := c.client.SubscribeWorkerRegistered(context.Background(), DefaultHandlerNamespace)
 	if err != nil {
 		return nil, err
 	}

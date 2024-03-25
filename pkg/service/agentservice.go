@@ -126,7 +126,7 @@ func (s *AgentService) ServeHTTP(writer http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.HandleConnection(r, conn)
+	s.HandleConnection(r, conn, nil)
 }
 
 func NewAgentHandler(
@@ -147,7 +147,7 @@ func NewAgentHandler(
 	}
 }
 
-func (h *AgentHandler) HandleConnection(r *http.Request, conn *websocket.Conn) {
+func (h *AgentHandler) HandleConnection(r *http.Request, conn *websocket.Conn, onIdle func()) {
 	var protocol agent.WorkerProtocolVersion
 	if pv, err := strconv.Atoi(r.FormValue("protocol")); err == nil {
 		protocol = agent.WorkerProtocolVersion(pv)
@@ -172,10 +172,15 @@ func (h *AgentHandler) HandleConnection(r *http.Request, conn *websocket.Conn) {
 
 		h.mu.Lock()
 		delete(h.workers, worker.ID())
+		numWorkers := len(h.workers)
 		h.mu.Unlock()
 
 		if worker.Registered() {
 			h.deregisterWorkerTopic(worker)
+		}
+
+		if numWorkers == 0 && onIdle != nil {
+			onIdle()
 		}
 	}()
 
@@ -259,7 +264,7 @@ func (h *AgentHandler) registerWorkerTopic(w *agent.Worker) {
 	h.publisherEnabled = h.publisherAvailableLocked()
 	h.mu.Unlock()
 
-	err = h.agentServer.PublishWorkerRegistered(context.Background(), "", &emptypb.Empty{})
+	err = h.agentServer.PublishWorkerRegistered(context.Background(), agent.DefaultHandlerNamespace, &emptypb.Empty{})
 	if err != nil {
 		w.Logger.Errorw("failed to publish worker registered", err)
 	}
@@ -401,6 +406,12 @@ func (h *AgentHandler) CheckEnabled(ctx context.Context, req *rpc.CheckEnabledRe
 		RoomEnabled:      h.roomEnabled,
 		PublisherEnabled: h.publisherEnabled,
 	}, nil
+}
+
+func (h *AgentHandler) NumConnections() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.workers)
 }
 
 func (h *AgentHandler) DrainConnections(interval time.Duration) {
