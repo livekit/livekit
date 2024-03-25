@@ -192,8 +192,9 @@ github.com/pion/dtls/v2 v2.2.10/go.mod h1:d9SYc9fch0CqK90mRk1dC7AkzzpwJj6u2GU3u+
 github.com/pion/ice/v2 v2.3.13/go.mod h1:KXJJcZK7E8WzrBEYnV4UtqEZsGeWfHxsNqhVcVvgjxw=
 github.com/pion/ice/v2 v2.3.14 h1:A7UaEmalw12Fko8YO0qguUbWyE69BnN4mDEqT7cLWQI=
 github.com/pion/ice/v2 v2.3.14/go.mod h1:KXJJcZK7E8WzrBEYnV4UtqEZsGeWfHxsNqhVcVvgjxw=
-github.com/pion/interceptor v0.1.25 h1:pwY9r7P6ToQ3+IF0bajN0xmk/fNw/suTgaTdlwTDmhc=
 github.com/pion/interceptor v0.1.25/go.mod h1:wkbPYAak5zKsfpVDYMtEfWEy8D4zL+rpxCxPImLOg3Y=
+github.com/pion/interceptor v0.1.27 h1:mZ01OiGiukwRxezmDGzYjjokCVlDOk4T6BfaL5qrtGo=
+github.com/pion/interceptor v0.1.27/go.mod h1:/vVaqLwDjGv4GRbgmChIKZIT5EXFDijwmj4WmIYy9bI=
 github.com/pion/logging v0.2.2 h1:M9+AIj/+pxNsDfAT64+MAVgJO0rsyLnoJKCqf//DoeY=
 github.com/pion/logging v0.2.2/go.mod h1:k0/tDVsRCX2Mb2ZEmTqNa7CWsQPc+YYCB7Q+5pahoms=
 github.com/pion/mdns v0.0.12 h1:CiMYlY+O0azojWDmxdNr7ADGrnZ+V6Ilfner+6mSVK8=
@@ -205,11 +206,13 @@ github.com/pion/rtcp v1.2.12/go.mod h1:sn6qjxvnwyAkkPzPULIbVqSKI5Dv54Rv7VG0kNxh9
 github.com/pion/rtcp v1.2.14 h1:KCkGV3vJ+4DAJmvP0vaQShsb0xkRfWkO540Gy102KyE=
 github.com/pion/rtcp v1.2.14/go.mod h1:sn6qjxvnwyAkkPzPULIbVqSKI5Dv54Rv7VG0kNxh9L4=
 github.com/pion/rtp v1.8.2/go.mod h1:pBGHaFt/yW7bf1jjWAoUjpSNoDnw98KTMg+jWWvziqU=
-github.com/pion/rtp v1.8.3 h1:VEHxqzSVQxCkKDSHro5/4IUUG1ea+MFdqR2R3xSpNU8=
 github.com/pion/rtp v1.8.3/go.mod h1:pBGHaFt/yW7bf1jjWAoUjpSNoDnw98KTMg+jWWvziqU=
+github.com/pion/rtp v1.8.4 h1:VqNGMNjMDMy9y0d+h+0dfjiWVKUEDQvA963jhJwu200=
+github.com/pion/rtp v1.8.4/go.mod h1:pBGHaFt/yW7bf1jjWAoUjpSNoDnw98KTMg+jWWvziqU=
 github.com/pion/sctp v1.8.5/go.mod h1:SUFFfDpViyKejTAdwD1d/HQsCu+V/40cCs2nZIvC3s0=
-github.com/pion/sctp v1.8.12 h1:2VX50pedElH+is6FI+OKyRTeN5oy4mrk2HjnGa3UCmY=
 github.com/pion/sctp v1.8.12/go.mod h1:cMLT45jqw3+jiJCrtHVwfQLnfR0MGZ4rgOJwUOIqLkI=
+github.com/pion/sctp v1.8.13 h1:YUJR44pWM2FPUhkl8l+vDyF2EDE3aTWtr3c+LDhCRcQ=
+github.com/pion/sctp v1.8.13/go.mod h1:YKSgO/bO/6aOMP9LCie1DuD7m+GamiK2yIiPM6vH+GA=
 github.com/pion/sdp/v3 v3.0.8 h1:yd/wkrS0nzXEAb+uwv1TL3SG/gzsTiXHVOtXtD7EKl0=
 github.com/pion/sdp/v3 v3.0.8/go.mod h1:B5xmvENq5IXJimIO4zfp6LAe1fD9N+kFv+V/1lOdz8M=
 github.com/pion/srtp/v2 v2.0.18 h1:vKpAXfawO9RtTRKZJbG4y0v1b11NZxQnxRl85kGuUlo=
