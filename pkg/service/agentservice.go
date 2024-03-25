@@ -129,7 +129,25 @@ func (s *AgentService) ServeHTTP(writer http.ResponseWriter, r *http.Request) {
 	s.HandleConnection(r, conn)
 }
 
-func (s *AgentService) HandleConnection(r *http.Request, conn *websocket.Conn) {
+func NewAgentHandler(
+	agentServer rpc.AgentInternalServer,
+	keyProvider auth.KeyProvider,
+	serverInfo *livekit.ServerInfo,
+	roomTopic string,
+	publisherTopic string,
+) *AgentHandler {
+	return &AgentHandler{
+		agentServer:    agentServer,
+		workers:        make(map[string]*agent.Worker),
+		namespaces:     make(map[string]*namespaceInfo),
+		serverInfo:     serverInfo,
+		keyProvider:    keyProvider,
+		roomTopic:      roomTopic,
+		publisherTopic: publisherTopic,
+	}
+}
+
+func (h *AgentHandler) HandleConnection(r *http.Request, conn *websocket.Conn) {
 	var protocol agent.WorkerProtocolVersion
 	if pv, err := strconv.Atoi(r.FormValue("protocol")); err == nil {
 		protocol = agent.WorkerProtocolVersion(pv)
@@ -140,24 +158,24 @@ func (s *AgentService) HandleConnection(r *http.Request, conn *websocket.Conn) {
 	logger := utils.GetLogger(r.Context())
 
 	apiKey := GetAPIKey(r.Context())
-	apiSecret := s.keyProvider.GetSecret(apiKey)
+	apiSecret := h.keyProvider.GetSecret(apiKey)
 
-	worker := agent.NewWorker(protocol, apiKey, apiSecret, s.serverInfo, logger)
-	worker.OnWorkerRegistered(s.registerWorkerTopic)
+	worker := agent.NewWorker(protocol, apiKey, apiSecret, h.serverInfo, logger)
+	worker.OnWorkerRegistered(h.registerWorkerTopic)
 
-	s.mu.Lock()
-	s.workers[worker.ID()] = worker
-	s.mu.Unlock()
+	h.mu.Lock()
+	h.workers[worker.ID()] = worker
+	h.mu.Unlock()
 
 	defer func() {
 		worker.Close()
 
-		s.mu.Lock()
-		delete(s.workers, worker.ID())
-		s.mu.Unlock()
+		h.mu.Lock()
+		delete(h.workers, worker.ID())
+		h.mu.Unlock()
 
 		if worker.Registered() {
-			s.unregisterWorkerTopic(worker)
+			h.deregisterWorkerTopic(worker)
 		}
 	}()
 
@@ -197,24 +215,6 @@ func (s *AgentService) HandleConnection(r *http.Request, conn *websocket.Conn) {
 		}
 
 		worker.HandleMessage(req)
-	}
-}
-
-func NewAgentHandler(
-	agentServer rpc.AgentInternalServer,
-	keyProvider auth.KeyProvider,
-	serverInfo *livekit.ServerInfo,
-	roomTopic string,
-	publisherTopic string,
-) *AgentHandler {
-	return &AgentHandler{
-		agentServer:    agentServer,
-		workers:        make(map[string]*agent.Worker),
-		namespaces:     make(map[string]*namespaceInfo),
-		serverInfo:     serverInfo,
-		keyProvider:    keyProvider,
-		roomTopic:      roomTopic,
-		publisherTopic: publisherTopic,
 	}
 }
 
@@ -265,7 +265,7 @@ func (h *AgentHandler) registerWorkerTopic(w *agent.Worker) {
 	}
 }
 
-func (h *AgentHandler) unregisterWorkerTopic(worker *agent.Worker) {
+func (h *AgentHandler) deregisterWorkerTopic(worker *agent.Worker) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -315,7 +315,6 @@ func (h *AgentHandler) publisherAvailableLocked() bool {
 }
 
 func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*emptypb.Empty, error) {
-
 	attempted := make(map[string]bool)
 	for {
 		h.mu.Lock()
