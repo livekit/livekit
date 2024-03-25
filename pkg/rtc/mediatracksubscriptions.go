@@ -413,13 +413,14 @@ func (t *MediaTrackSubscriptions) downTrackClosed(
 	willBeResumed bool,
 ) {
 	subscriberID := sub.ID()
-	t.subscribedTracksMu.Lock()
+	t.subscribedTracksMu.RLock()
 	subTrack := t.subscribedTracks[subscriberID]
-	delete(t.subscribedTracks, subscriberID)
-	t.subscribedTracksMu.Unlock()
+	t.subscribedTracksMu.RUnlock()
 
 	if subTrack != nil {
-		// cache transceiver for potential re-use on resume
+		// Cache transceiver for potential re-use on resume.
+		// To ensure subscription manager does not re-subscribe before caching,
+		// delete the subscribed track only after caching.
 		if willBeResumed {
 			dt := subTrack.DownTrack()
 			tr := dt.GetTransceiver()
@@ -428,6 +429,10 @@ func (t *MediaTrackSubscriptions) downTrackClosed(
 				sub.CacheDownTrack(subTrack.ID(), tr, dt.GetState())
 			}
 		}
+
+		t.subscribedTracksMu.Lock()
+		delete(t.subscribedTracks, subscriberID)
+		t.subscribedTracksMu.Unlock()
 
 		subTrack.Close(willBeResumed)
 	}
