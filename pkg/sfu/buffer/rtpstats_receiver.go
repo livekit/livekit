@@ -41,6 +41,8 @@ const (
 	cPropagationDelayFallFactor = float64(0.95)
 	cPropagationDelayRiseFactor = float64(0.05)
 
+	cPropagationDelaySpikeAdaptationFactor = float64(0.5)
+
 	// do not adapt to small OR large (outlier) changes
 	cPropagationDelayDeltaThresholdMin       = 5 * time.Millisecond
 	cPropagationDelayDeltaThresholdMaxFactor = 2
@@ -51,7 +53,7 @@ const (
 	// A long term version of delta of propagation delay is maintained and delta propagation delay exceeding
 	// a factor of the long term version is considered a sharp increase. That will trigger the start of the
 	// path change condition and if it persists, propagation delay will be reset.
-	cPropagationDelayDeltaAdaptationFactor    = float64(0.05)
+	cPropagationDelayDeltaMaxInterval         = 10 * time.Second
 	cPropagationDelayDeltaHighResetNumReports = 3
 	cPropagationDelayDeltaHighResetWait       = 10 * time.Second
 )
@@ -83,6 +85,7 @@ type RTPStatsReceiver struct {
 	longTermDeltaPropagationDelay      time.Duration
 	propagationDelayDeltaHighCount     int
 	propagationDelayDeltaHighStartTime time.Time
+	propagationDelaySpike              time.Duration
 
 	clockSkewCount               int
 	outOfOrderSsenderReportCount int
@@ -370,11 +373,17 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 			"current", &srDataCopy,
 		}
 	}
-	initPropagationDelay := func(pd time.Duration) {
-		r.propagationDelay = pd
-		r.longTermDeltaPropagationDelay = 0
+	resetDelta := func() {
 		r.propagationDelayDeltaHighCount = 0
 		r.propagationDelayDeltaHighStartTime = time.Time{}
+		r.propagationDelaySpike = 0
+	}
+	initPropagationDelay := func(pd time.Duration) {
+		r.propagationDelay = pd
+
+		r.longTermDeltaPropagationDelay = 0
+
+		resetDelta()
 	}
 
 	ntpTime := srDataCopy.NTPTimestamp.Time()
@@ -392,14 +401,18 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 				if r.propagationDelayDeltaHighStartTime.IsZero() {
 					r.propagationDelayDeltaHighStartTime = time.Now()
 				}
+				if r.propagationDelaySpike == 0 {
+					r.propagationDelaySpike = propagationDelay
+				} else {
+					r.propagationDelaySpike += time.Duration(cPropagationDelaySpikeAdaptationFactor * float64(propagationDelay-r.propagationDelaySpike))
+				}
 
 				if r.propagationDelayDeltaHighCount >= cPropagationDelayDeltaHighResetNumReports && time.Since(r.propagationDelayDeltaHighStartTime) >= cPropagationDelayDeltaHighResetWait {
 					r.logger.Debugw("re-initializing propagation delay", append(getPropagationFields(), "newPropagationDelay", propagationDelay.String())...)
-					initPropagationDelay(propagationDelay)
+					initPropagationDelay(r.propagationDelaySpike)
 				}
 			} else {
-				r.propagationDelayDeltaHighCount = 0
-				r.propagationDelayDeltaHighStartTime = time.Time{}
+				resetDelta()
 
 				if deltaPropagationDelay.Abs() > cPropagationDelayDeltaThresholdMin {
 					factor := cPropagationDelayFallFactor
@@ -421,7 +434,9 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 		if r.longTermDeltaPropagationDelay == 0 {
 			r.longTermDeltaPropagationDelay = deltaPropagationDelay
 		} else {
-			r.longTermDeltaPropagationDelay += time.Duration(cPropagationDelayDeltaAdaptationFactor * float64(deltaPropagationDelay-r.longTermDeltaPropagationDelay))
+			sinceLastReport := srDataCopy.NTPTimestamp.Time().Sub(r.srNewest.NTPTimestamp.Time())
+			adaptationFactor := min(1.0, float64(sinceLastReport)/float64(cPropagationDelayDeltaMaxInterval))
+			r.longTermDeltaPropagationDelay += time.Duration(adaptationFactor * float64(deltaPropagationDelay-r.longTermDeltaPropagationDelay))
 		}
 	}
 	// adjust receive time to estimated propagation delay
