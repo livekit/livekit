@@ -373,13 +373,17 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 			"current", &srDataCopy,
 		}
 	}
+	resetDelta := func() {
+		r.propagationDelayDeltaHighCount = 0
+		r.propagationDelayDeltaHighStartTime = time.Time{}
+		r.propagationDelaySpike = 0
+	}
 	initPropagationDelay := func(pd time.Duration) {
 		r.propagationDelay = pd
 
 		r.longTermDeltaPropagationDelay = 0
-		r.propagationDelayDeltaHighCount = 0
-		r.propagationDelayDeltaHighStartTime = time.Time{}
-		r.propagationDelaySpike = 0
+
+		resetDelta()
 	}
 
 	ntpTime := srDataCopy.NTPTimestamp.Time()
@@ -408,8 +412,7 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 					initPropagationDelay(r.propagationDelaySpike)
 				}
 			} else {
-				r.propagationDelayDeltaHighCount = 0
-				r.propagationDelayDeltaHighStartTime = time.Time{}
+				resetDelta()
 
 				if deltaPropagationDelay.Abs() > cPropagationDelayDeltaThresholdMin {
 					factor := cPropagationDelayFallFactor
