@@ -1689,13 +1689,6 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription) e
 	if err := t.setRemoteDescription(*sd); err != nil {
 		return err
 	}
-	rtxRepairs := rtxRepairsFromSDP(parsed, t.params.Logger)
-	if len(rtxRepairs) > 0 {
-		t.params.Logger.Debugw("rtx pairs found from sdp", "ssrcs", rtxRepairs)
-		for repair, base := range rtxRepairs {
-			t.params.Config.BufferFactory.SetRTXPair(repair, base)
-		}
-	}
 
 	if t.currentOfferIceCredential == "" || offerRestartICE {
 		t.currentOfferIceCredential = iceCredential
