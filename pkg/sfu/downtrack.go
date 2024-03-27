@@ -1090,7 +1090,7 @@ func (d *DownTrack) UpTrackMaxTemporalLayerSeenChange(maxTemporalLayerSeen int32
 	}
 }
 
-func (d *DownTrack) maybeAddTransition(_ int64, distance float64, pauseReason VideoPauseReason) {
+func (d *DownTrack) maybeAddTransition(bitrate int64, distance float64, pauseReason VideoPauseReason) {
 	if d.kind == webrtc.RTPCodecTypeAudio {
 		return
 	}
@@ -1100,6 +1100,7 @@ func (d *DownTrack) maybeAddTransition(_ int64, distance float64, pauseReason Vi
 	} else {
 		d.connectionStats.UpdatePause(false)
 		d.connectionStats.AddLayerTransition(distance)
+		d.connectionStats.AddBitrateTransition(bitrate)
 	}
 }
 

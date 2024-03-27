@@ -26,23 +26,6 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-func newConnectionStats(
-	mimeType string,
-	isFECEnabled bool,
-	includeRTT bool,
-	includeJitter bool,
-	receiverProvider ConnectionStatsReceiverProvider,
-) *ConnectionStats {
-	return NewConnectionStats(ConnectionStatsParams{
-		MimeType:         mimeType,
-		IsFECEnabled:     isFECEnabled,
-		IncludeRTT:       includeRTT,
-		IncludeJitter:    includeJitter,
-		ReceiverProvider: receiverProvider,
-		Logger:           logger.GetLogger(),
-	})
-}
-
 // -----------------------------------------------
 
 type testReceiverProvider struct {
@@ -66,7 +49,15 @@ func (trp *testReceiverProvider) GetDeltaStats() map[uint32]*buffer.StreamStatsW
 func TestConnectionQuality(t *testing.T) {
 	trp := newTestReceiverProvider()
 	t.Run("quality scorer operation", func(t *testing.T) {
-		cs := newConnectionStats("audio/opus", false, true, true, trp)
+		cs := NewConnectionStats(ConnectionStatsParams{
+			MimeType:           "audio/opus",
+			IsFECEnabled:       false,
+			IncludeRTT:         true,
+			IncludeJitter:      true,
+			EnableBitrateScore: true,
+			ReceiverProvider:   trp,
+			Logger:             logger.GetLogger(),
+		})
 
 		duration := 5 * time.Second
 		now := time.Now()
@@ -441,7 +432,14 @@ func TestConnectionQuality(t *testing.T) {
 	})
 
 	t.Run("quality scorer dependent rtt", func(t *testing.T) {
-		cs := newConnectionStats("audio/opus", false, false, true, trp)
+		cs := NewConnectionStats(ConnectionStatsParams{
+			MimeType:         "audio/opus",
+			IsFECEnabled:     false,
+			IncludeRTT:       false,
+			IncludeJitter:    true,
+			ReceiverProvider: trp,
+			Logger:           logger.GetLogger(),
+		})
 
 		duration := 5 * time.Second
 		now := time.Now()
@@ -469,7 +467,14 @@ func TestConnectionQuality(t *testing.T) {
 	})
 
 	t.Run("quality scorer dependent jitter", func(t *testing.T) {
-		cs := newConnectionStats("audio/opus", false, true, false, trp)
+		cs := NewConnectionStats(ConnectionStatsParams{
+			MimeType:         "audio/opus",
+			IsFECEnabled:     false,
+			IncludeRTT:       true,
+			IncludeJitter:    false,
+			ReceiverProvider: trp,
+			Logger:           logger.GetLogger(),
+		})
 
 		duration := 5 * time.Second
 		now := time.Now()
@@ -634,7 +639,14 @@ func TestConnectionQuality(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				cs := newConnectionStats(tc.mimeType, tc.isFECEnabled, true, true, trp)
+				cs := NewConnectionStats(ConnectionStatsParams{
+					MimeType:         tc.mimeType,
+					IsFECEnabled:     tc.isFECEnabled,
+					IncludeRTT:       true,
+					IncludeJitter:    true,
+					ReceiverProvider: trp,
+					Logger:           logger.GetLogger(),
+				})
 
 				duration := 5 * time.Second
 				now := time.Now()
@@ -727,7 +739,15 @@ func TestConnectionQuality(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				cs := newConnectionStats("video/vp8", false, true, true, trp)
+				cs := NewConnectionStats(ConnectionStatsParams{
+					MimeType:           "video/vp8",
+					IsFECEnabled:       false,
+					IncludeRTT:         true,
+					IncludeJitter:      true,
+					EnableBitrateScore: true,
+					ReceiverProvider:   trp,
+					Logger:             logger.GetLogger(),
+				})
 
 				duration := 5 * time.Second
 				now := time.Now()
@@ -814,7 +834,14 @@ func TestConnectionQuality(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				cs := newConnectionStats("video/vp8", false, true, true, trp)
+				cs := NewConnectionStats(ConnectionStatsParams{
+					MimeType:         "video/vp8",
+					IsFECEnabled:     false,
+					IncludeRTT:       true,
+					IncludeJitter:    true,
+					ReceiverProvider: trp,
+					Logger:           logger.GetLogger(),
+				})
 
 				duration := 5 * time.Second
 				now := time.Now()
