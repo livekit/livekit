@@ -26,20 +26,24 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-func newConnectionStats(
-	mimeType string,
-	isFECEnabled bool,
-	includeRTT bool,
-	includeJitter bool,
-	receiverProvider ConnectionStatsReceiverProvider,
-) *ConnectionStats {
+type testConnectionStatsParams struct {
+	mimeType           string
+	isFECEnabled       bool
+	includeRTT         bool
+	includeJitter      bool
+	enableBitrateScore bool
+	receiverProvider   ConnectionStatsReceiverProvider
+}
+
+func newConnectionStats(params testConnectionStatsParams) *ConnectionStats {
 	return NewConnectionStats(ConnectionStatsParams{
-		MimeType:         mimeType,
-		IsFECEnabled:     isFECEnabled,
-		IncludeRTT:       includeRTT,
-		IncludeJitter:    includeJitter,
-		ReceiverProvider: receiverProvider,
-		Logger:           logger.GetLogger(),
+		MimeType:           params.mimeType,
+		IsFECEnabled:       params.isFECEnabled,
+		IncludeRTT:         params.includeRTT,
+		IncludeJitter:      params.includeJitter,
+		EnableBitrateScore: params.enableBitrateScore,
+		ReceiverProvider:   params.receiverProvider,
+		Logger:             logger.GetLogger(),
 	})
 }
 
@@ -66,7 +70,14 @@ func (trp *testReceiverProvider) GetDeltaStats() map[uint32]*buffer.StreamStatsW
 func TestConnectionQuality(t *testing.T) {
 	trp := newTestReceiverProvider()
 	t.Run("quality scorer operation", func(t *testing.T) {
-		cs := newConnectionStats("audio/opus", false, true, true, trp)
+		cs := newConnectionStats(testConnectionStatsParams{
+			mimeType:           "audio/opus",
+			isFECEnabled:       false,
+			includeRTT:         true,
+			includeJitter:      true,
+			enableBitrateScore: true,
+			receiverProvider:   trp,
+		})
 
 		duration := 5 * time.Second
 		now := time.Now()
@@ -441,7 +452,13 @@ func TestConnectionQuality(t *testing.T) {
 	})
 
 	t.Run("quality scorer dependent rtt", func(t *testing.T) {
-		cs := newConnectionStats("audio/opus", false, false, true, trp)
+		cs := newConnectionStats(testConnectionStatsParams{
+			mimeType:         "audio/opus",
+			isFECEnabled:     false,
+			includeRTT:       false,
+			includeJitter:    true,
+			receiverProvider: trp,
+		})
 
 		duration := 5 * time.Second
 		now := time.Now()
@@ -469,7 +486,13 @@ func TestConnectionQuality(t *testing.T) {
 	})
 
 	t.Run("quality scorer dependent jitter", func(t *testing.T) {
-		cs := newConnectionStats("audio/opus", false, true, false, trp)
+		cs := newConnectionStats(testConnectionStatsParams{
+			mimeType:         "audio/opus",
+			isFECEnabled:     false,
+			includeRTT:       true,
+			includeJitter:    false,
+			receiverProvider: trp,
+		})
 
 		duration := 5 * time.Second
 		now := time.Now()
@@ -634,7 +657,13 @@ func TestConnectionQuality(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				cs := newConnectionStats(tc.mimeType, tc.isFECEnabled, true, true, trp)
+				cs := newConnectionStats(testConnectionStatsParams{
+					mimeType:         tc.mimeType,
+					isFECEnabled:     tc.isFECEnabled,
+					includeRTT:       true,
+					includeJitter:    true,
+					receiverProvider: trp,
+				})
 
 				duration := 5 * time.Second
 				now := time.Now()
@@ -727,7 +756,14 @@ func TestConnectionQuality(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				cs := newConnectionStats("video/vp8", false, true, true, trp)
+				cs := newConnectionStats(testConnectionStatsParams{
+					mimeType:           "video/vp8",
+					isFECEnabled:       false,
+					includeRTT:         true,
+					includeJitter:      true,
+					enableBitrateScore: true,
+					receiverProvider:   trp,
+				})
 
 				duration := 5 * time.Second
 				now := time.Now()
@@ -814,7 +850,13 @@ func TestConnectionQuality(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				cs := newConnectionStats("video/vp8", false, true, true, trp)
+				cs := newConnectionStats(testConnectionStatsParams{
+					mimeType:         "video/vp8",
+					isFECEnabled:     false,
+					includeRTT:       true,
+					includeJitter:    true,
+					receiverProvider: trp,
+				})
 
 				duration := 5 * time.Second
 				now := time.Now()

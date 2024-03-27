@@ -45,14 +45,15 @@ type ConnectionStatsSenderProvider interface {
 }
 
 type ConnectionStatsParams struct {
-	UpdateInterval   time.Duration
-	MimeType         string
-	IsFECEnabled     bool
-	IncludeRTT       bool
-	IncludeJitter    bool
-	ReceiverProvider ConnectionStatsReceiverProvider
-	SenderProvider   ConnectionStatsSenderProvider
-	Logger           logger.Logger
+	UpdateInterval     time.Duration
+	MimeType           string
+	IsFECEnabled       bool
+	IncludeRTT         bool
+	IncludeJitter      bool
+	EnableBitrateScore bool
+	ReceiverProvider   ConnectionStatsReceiverProvider
+	SenderProvider     ConnectionStatsSenderProvider
+	Logger             logger.Logger
 }
 
 type ConnectionStats struct {
@@ -76,10 +77,11 @@ func NewConnectionStats(params ConnectionStatsParams) *ConnectionStats {
 	return &ConnectionStats{
 		params: params,
 		scorer: newQualityScorer(qualityScorerParams{
-			PacketLossWeight: getPacketLossWeight(params.MimeType, params.IsFECEnabled), // LK-TODO: have to notify codec change?
-			IncludeRTT:       params.IncludeRTT,
-			IncludeJitter:    params.IncludeJitter,
-			Logger:           params.Logger,
+			PacketLossWeight:   getPacketLossWeight(params.MimeType, params.IsFECEnabled), // LK-TODO: have to notify codec change?
+			IncludeRTT:         params.IncludeRTT,
+			IncludeJitter:      params.IncludeJitter,
+			EnableBitrateScore: params.EnableBitrateScore,
+			Logger:             params.Logger,
 		}),
 	}
 }
