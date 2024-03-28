@@ -695,7 +695,8 @@ func (t *PCTransport) isFullyEstablished() bool {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 
-	return t.reliableDCOpened && t.lossyDCOpened && !t.connectedAt.IsZero()
+	// return t.reliableDCOpened && t.lossyDCOpened && !t.connectedAt.IsZero()
+	return !t.connectedAt.IsZero()
 }
 
 func (t *PCTransport) SetPreferTCP(preferTCP bool) {
