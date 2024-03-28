@@ -59,6 +59,8 @@ type PlayoutDelayController struct {
 	logger             logger.Logger
 	rtpStats           *buffer.RTPStatsSender
 	snapshotID         uint32
+
+	highDelayCount atomic.Uint32
 }
 
 func NewPlayoutDelayController(minDelay, maxDelay uint32, logger logger.Logger, rtpStats *buffer.RTPStatsSender) (*PlayoutDelayController, error) {
@@ -113,7 +115,9 @@ func (c *PlayoutDelayController) SetJitter(jitter uint32) {
 		return
 	}
 	if targetDelay > targetDelayLogThreshold {
-		c.logger.Debugw("high playout delay", "target", targetDelay, "jitter", jitter, "nackPercent", nackPercent, "current", c.currentDelay)
+		if c.highDelayCount.Add(1)%100 == 1 {
+			c.logger.Infow("high playout delay", "target", targetDelay, "jitter", jitter, "nackPercent", nackPercent, "current", c.currentDelay)
+		}
 	}
 	c.currentDelay = targetDelay
 	c.lock.Unlock()
