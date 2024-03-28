@@ -1689,7 +1689,7 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription) e
 	if err := t.setRemoteDescription(*sd); err != nil {
 		return err
 	}
-	rtxRepairs := rtxRepairsFromSDP(parsed, t.params.Logger)
+	rtxRepairs := nonSimulcastRTXRepairsFromSDP(parsed, t.params.Logger)
 	if len(rtxRepairs) > 0 {
 		t.params.Logger.Debugw("rtx pairs found from sdp", "ssrcs", rtxRepairs)
 		for repair, base := range rtxRepairs {
@@ -1820,11 +1820,19 @@ func configureAudioTransceiver(tr *webrtc.RTPTransceiver, stereo bool, nack bool
 	tr.SetCodecPreferences(configCodecs)
 }
 
-func rtxRepairsFromSDP(s *sdp.SessionDescription, logger logger.Logger) map[uint32]uint32 {
+func nonSimulcastRTXRepairsFromSDP(s *sdp.SessionDescription, logger logger.Logger) map[uint32]uint32 {
 	rtxRepairFlows := map[uint32]uint32{}
 	for _, media := range s.MediaDescriptions {
+		// extract rtx repair flows from the media section for non-simulcast stream,
+		// pion will handle simulcast streams by rid probe, don't need handle it here.
+		var ridFound bool
+		rtxPairs := make(map[uint32]uint32)
+	findRTX:
 		for _, attr := range media.Attributes {
 			switch attr.Key {
+			case "rid":
+				ridFound = true
+				break findRTX
 			case sdp.AttrKeySSRCGroup:
 				split := strings.Split(attr.Value, " ")
 				if split[0] == sdp.SemanticTokenFlowIdentification {
@@ -1842,9 +1850,14 @@ func rtxRepairsFromSDP(s *sdp.SessionDescription, logger logger.Logger) map[uint
 							logger.Warnw("Failed to parse SSRC", err, "ssrc", split[2])
 							continue
 						}
-						rtxRepairFlows[uint32(rtxRepairFlow)] = uint32(baseSsrc)
+						rtxPairs[uint32(rtxRepairFlow)] = uint32(baseSsrc)
 					}
 				}
+			}
+		}
+		if !ridFound {
+			for rtx, base := range rtxPairs {
+				rtxRepairFlows[rtx] = base
 			}
 		}
 	}
