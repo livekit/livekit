@@ -31,6 +31,7 @@ type Packet struct {
 	Header             *rtp.Header
 	Extensions         []ExtensionData
 	Payload            []byte
+	IsRTX              bool
 	AbsSendTimeExtID   uint8
 	TransportWideExtID uint8
 	WriteStream        webrtc.TrackLocalWriter

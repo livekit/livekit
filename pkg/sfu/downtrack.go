@@ -1727,6 +1727,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			Header:             &pkt.Header,
 			Extensions:         []pacer.ExtensionData{{ID: uint8(d.dependencyDescriptorExtID), Payload: ddBytes}},
 			Payload:            payload,
+			IsRTX:              true,
 			AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 			TransportWideExtID: uint8(d.transportWideExtID),
 			WriteStream:        d.writeStream,

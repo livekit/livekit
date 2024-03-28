@@ -1,3 +1,5 @@
+github.com/MicahParks/peakdetect v0.0.6 h1:OzupTN1rWcjSCsDZrg+4w8D4FbDrR5WO4ItQOwCTwvk=
+github.com/MicahParks/peakdetect v0.0.6/go.mod h1:NcgqFDGbT9/nVTFdZKY8iLS8n1BSd9eKp+rbQ73A118=
 github.com/avast/retry-go/v4 v4.5.1 h1:AxIx0HGi4VZ3I02jr78j5lZ3M6x1E0Ivxa6b0pUUh7o=
 github.com/avast/retry-go/v4 v4.5.1/go.mod h1:/sipNsvNB3RRuT5iNcb6h73nw3IBmXJ/H3XrCQYSOpc=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
