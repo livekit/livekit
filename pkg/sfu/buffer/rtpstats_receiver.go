@@ -418,9 +418,10 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 				if propagationDelay > r.propagationDelay {
 					factor = cPropagationDelayRiseFactor
 				}
+				adjustedPropagationDelay := r.propagationDelay + time.Duration(factor*float64(propagationDelay-r.propagationDelay)) // TODO-REMOVE
 				fields := append(
 					getPropagationFields(),
-					"adjustedPropagationDelay", r.propagationDelay+time.Duration(factor*float64(propagationDelay-r.propagationDelay)),
+					"adjustedPropagationDelay", adjustedPropagationDelay.String(),
 				) // TODO-REMOVE
 				r.logger.Debugw("adapting propagation delay", fields...) // TODO-REMOVE
 				r.propagationDelay += time.Duration(factor * float64(propagationDelay-r.propagationDelay))
