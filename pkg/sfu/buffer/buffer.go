@@ -69,6 +69,7 @@ type ExtPacket struct {
 // Buffer contains all packets
 type Buffer struct {
 	sync.RWMutex
+	readCond      *sync.Cond
 	bucket        *bucket.Bucket
 	nacker        *nack.NackQueue
 	maxVideoPkts  int
@@ -144,6 +145,7 @@ func NewBuffer(ssrc uint32, maxVideoPkts, maxAudioPkts int) *Buffer {
 		pliThrottle:  int64(500 * time.Millisecond),
 		logger:       l.WithComponent(sutils.ComponentPub).WithComponent(sutils.ComponentSFU),
 	}
+	b.readCond = sync.NewCond(&b.RWMutex)
 	b.extPackets.SetMinCapacity(7)
 	return b
 }
@@ -324,6 +326,7 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 	b.payloadType = rtpPacket.PayloadType
 	b.calc(pkt, &rtpPacket, time.Now(), false)
 	b.Unlock()
+	b.readCond.Signal()
 	return
 }
 
@@ -398,24 +401,23 @@ func (b *Buffer) Read(buff []byte) (n int, err error) {
 }
 
 func (b *Buffer) ReadExtended(buf []byte) (*ExtPacket, error) {
+	b.Lock()
 	for {
 		if b.closed.Load() {
+			b.Unlock()
 			return nil, io.EOF
 		}
-		b.Lock()
 		if b.extPackets.Len() > 0 {
 			ep := b.extPackets.PopFront()
 			ep = b.patchExtPacket(ep, buf)
 			if ep == nil {
-				b.Unlock()
 				continue
 			}
 
 			b.Unlock()
 			return ep, nil
 		}
-		b.Unlock()
-		time.Sleep(10 * time.Millisecond)
+		b.readCond.Wait()
 	}
 }
 
@@ -437,6 +439,7 @@ func (b *Buffer) Close() error {
 			}
 		}
 
+		b.readCond.Broadcast()
 		if b.onClose != nil {
 			b.onClose()
 		}
