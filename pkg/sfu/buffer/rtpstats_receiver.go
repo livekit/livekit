@@ -414,18 +414,16 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 			} else {
 				resetDelta()
 
-				if deltaPropagationDelay.Abs() > cPropagationDelayDeltaThresholdMin {
-					factor := cPropagationDelayFallFactor
-					if propagationDelay > r.propagationDelay {
-						factor = cPropagationDelayRiseFactor
-					}
-					fields := append(
-						getPropagationFields(),
-						"adjustedPropagationDelay", r.propagationDelay+time.Duration(factor*float64(propagationDelay-r.propagationDelay)),
-					) // TODO-REMOVE
-					r.logger.Debugw("adapting propagation delay", fields...) // TODO-REMOVE
-					r.propagationDelay += time.Duration(factor * float64(propagationDelay-r.propagationDelay))
+				factor := cPropagationDelayFallFactor
+				if propagationDelay > r.propagationDelay {
+					factor = cPropagationDelayRiseFactor
 				}
+				fields := append(
+					getPropagationFields(),
+					"adjustedPropagationDelay", r.propagationDelay+time.Duration(factor*float64(propagationDelay-r.propagationDelay)),
+				) // TODO-REMOVE
+				r.logger.Debugw("adapting propagation delay", fields...) // TODO-REMOVE
+				r.propagationDelay += time.Duration(factor * float64(propagationDelay-r.propagationDelay))
 			}
 		} else {
 			r.propagationDelayDeltaHighCount = 0
