@@ -263,8 +263,8 @@ func TestDisconnectTiming(t *testing.T) {
 func TestCorrectJoinedAt(t *testing.T) {
 	p := newParticipantForTest("test")
 	info := p.ToProto()
-	require.NotZero(t, info.JoinedAt)
-	require.True(t, time.Now().Unix()-info.JoinedAt <= 1)
+	// have not joined the room, only set when fully connected
+	require.Zero(t, info.JoinedAt)
 }
 
 func TestMuteSetting(t *testing.T) {

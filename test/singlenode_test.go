@@ -65,6 +65,8 @@ func TestClientCouldConnect(t *testing.T) {
 		}
 		return ""
 	})
+
+	require.Less(t, time.Now().Unix()-c1.RemoteParticipants()[0].JoinedAt, int64(5))
 }
 
 func TestClientConnectDuplicate(t *testing.T) {

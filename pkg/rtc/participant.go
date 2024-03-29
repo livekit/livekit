@@ -366,10 +366,10 @@ func (p *ParticipantImpl) ConnectedAt() time.Time {
 
 // ConnectionDuration returns the duration between fully connected and when the participant was created
 func (p *ParticipantImpl) ConnectionDuration() time.Duration {
-	if p.connectedAt.Load().IsZero() {
-		return 0
+	if connectedAt := p.ConnectedAt(); !connectedAt.IsZero() {
+		return connectedAt.Sub(p.createdAt)
 	}
-	return p.ConnectedAt().Sub(p.createdAt)
+	return 0
 }
 
 func (p *ParticipantImpl) GetClientInfo() *livekit.ClientInfo {
@@ -525,13 +525,16 @@ func (p *ParticipantImpl) ToProtoWithVersion() (*livekit.ParticipantInfo, utils.
 		Identity:    string(p.params.Identity),
 		Name:        grants.Name,
 		State:       p.State(),
-		JoinedAt:    p.ConnectedAt().Unix(),
 		Version:     v,
 		Permission:  grants.Video.ToPermission(),
 		Metadata:    grants.Metadata,
 		Region:      p.params.Region,
 		IsPublisher: p.IsPublisher(),
 		Kind:        grants.GetParticipantKind(),
+	}
+	connectedAt := p.ConnectedAt()
+	if !connectedAt.IsZero() {
+		pi.JoinedAt = connectedAt.Unix()
 	}
 	p.lock.RUnlock()
 
