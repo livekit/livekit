@@ -158,6 +158,16 @@ type FakeLocalParticipant struct {
 	connectedAtReturnsOnCall map[int]struct {
 		result1 time.Time
 	}
+	ConnectionDurationStub        func() time.Duration
+	connectionDurationMutex       sync.RWMutex
+	connectionDurationArgsForCall []struct {
+	}
+	connectionDurationReturns struct {
+		result1 time.Duration
+	}
+	connectionDurationReturnsOnCall map[int]struct {
+		result1 time.Duration
+	}
 	DebugInfoStub        func() map[string]interface{}
 	debugInfoMutex       sync.RWMutex
 	debugInfoArgsForCall []struct {
@@ -1704,6 +1714,59 @@ func (fake *FakeLocalParticipant) ConnectedAtReturnsOnCall(i int, result1 time.T
 	}
 	fake.connectedAtReturnsOnCall[i] = struct {
 		result1 time.Time
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) ConnectionDuration() time.Duration {
+	fake.connectionDurationMutex.Lock()
+	ret, specificReturn := fake.connectionDurationReturnsOnCall[len(fake.connectionDurationArgsForCall)]
+	fake.connectionDurationArgsForCall = append(fake.connectionDurationArgsForCall, struct {
+	}{})
+	stub := fake.ConnectionDurationStub
+	fakeReturns := fake.connectionDurationReturns
+	fake.recordInvocation("ConnectionDuration", []interface{}{})
+	fake.connectionDurationMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) ConnectionDurationCallCount() int {
+	fake.connectionDurationMutex.RLock()
+	defer fake.connectionDurationMutex.RUnlock()
+	return len(fake.connectionDurationArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) ConnectionDurationCalls(stub func() time.Duration) {
+	fake.connectionDurationMutex.Lock()
+	defer fake.connectionDurationMutex.Unlock()
+	fake.ConnectionDurationStub = stub
+}
+
+func (fake *FakeLocalParticipant) ConnectionDurationReturns(result1 time.Duration) {
+	fake.connectionDurationMutex.Lock()
+	defer fake.connectionDurationMutex.Unlock()
+	fake.ConnectionDurationStub = nil
+	fake.connectionDurationReturns = struct {
+		result1 time.Duration
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) ConnectionDurationReturnsOnCall(i int, result1 time.Duration) {
+	fake.connectionDurationMutex.Lock()
+	defer fake.connectionDurationMutex.Unlock()
+	fake.ConnectionDurationStub = nil
+	if fake.connectionDurationReturnsOnCall == nil {
+		fake.connectionDurationReturnsOnCall = make(map[int]struct {
+			result1 time.Duration
+		})
+	}
+	fake.connectionDurationReturnsOnCall[i] = struct {
+		result1 time.Duration
 	}{result1}
 }
 
@@ -6343,6 +6406,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.closeSignalConnectionMutex.RUnlock()
 	fake.connectedAtMutex.RLock()
 	defer fake.connectedAtMutex.RUnlock()
+	fake.connectionDurationMutex.RLock()
+	defer fake.connectionDurationMutex.RUnlock()
 	fake.debugInfoMutex.RLock()
 	defer fake.debugInfoMutex.RUnlock()
 	fake.getAdaptiveStreamMutex.RLock()
