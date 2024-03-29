@@ -430,6 +430,7 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 			r.propagationDelayDeltaHighCount = 0
 			r.propagationDelayDeltaHighStartTime = time.Time{}
 		}
+
 		if r.longTermDeltaPropagationDelay == 0 {
 			r.longTermDeltaPropagationDelay = deltaPropagationDelay
 		} else {
