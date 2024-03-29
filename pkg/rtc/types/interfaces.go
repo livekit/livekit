@@ -304,6 +304,7 @@ type LocalParticipant interface {
 	SupportsSyncStreamID() bool
 	SupportsTransceiverReuse() bool
 	ConnectedAt() time.Time
+	ConnectionDuration() time.Duration
 	IsClosed() bool
 	IsReady() bool
 	IsDisconnected() bool

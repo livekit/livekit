@@ -361,7 +361,7 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 			r.subscribeToExistingTracks(p)
 
 			meta := &livekit.AnalyticsClientMeta{
-				ClientConnectTime: uint32(time.Since(p.ConnectedAt()).Milliseconds()),
+				ClientConnectTime: uint32(p.ConnectionDuration().Milliseconds()),
 			}
 			cds := p.GetICEConnectionDetails()
 			for _, cd := range cds {

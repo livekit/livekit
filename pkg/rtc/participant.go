@@ -157,8 +157,10 @@ type ParticipantImpl struct {
 	isPublisher atomic.Bool
 
 	sessionStartRecorded atomic.Bool
-	// when first connected
-	connectedAt time.Time
+	// when participant is initially created, used to measure connection durations
+	createdAt time.Time
+	// when first fully connected
+	connectedAt atomic.Time
 	// timer that's set when disconnect is detected on primary PC
 	disconnectTimer *time.Timer
 	migrationTimer  *time.Timer
@@ -249,7 +251,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		}),
 		pendingTracks:           make(map[string]*pendingTrackInfo),
 		pendingPublishingTracks: make(map[livekit.TrackID]*pendingTrackInfo),
-		connectedAt:             time.Now(),
+		createdAt:               time.Now(),
 		rttUpdatedAt:            time.Now(),
 		cachedDownTracks:        make(map[livekit.TrackID]*downTrackState),
 		dataChannelStats: telemetry.NewBytesTrackStats(
@@ -357,8 +359,17 @@ func (p *ParticipantImpl) IsIdle() bool {
 	return !p.SubscriptionManager.HasSubscriptions()
 }
 
+// ConnectedAt returns the time when the participant was fully connected
 func (p *ParticipantImpl) ConnectedAt() time.Time {
-	return p.connectedAt
+	return p.connectedAt.Load()
+}
+
+// ConnectionDuration returns the duration between fully connected and when the participant was created
+func (p *ParticipantImpl) ConnectionDuration() time.Duration {
+	if p.connectedAt.Load().IsZero() {
+		return 0
+	}
+	return p.ConnectedAt().Sub(p.createdAt)
 }
 
 func (p *ParticipantImpl) GetClientInfo() *livekit.ClientInfo {
@@ -679,7 +690,7 @@ func (p *ParticipantImpl) HandleAnswer(answer webrtc.SessionDescription) {
 	 * ... swap candidates
 	 * 2. client send answer
 	 */
-	signalConnCost := time.Since(p.ConnectedAt()).Milliseconds()
+	signalConnCost := time.Since(p.createdAt).Milliseconds()
 	p.TransportManager.UpdateSignalingRTT(uint32(signalConnCost))
 
 	p.TransportManager.HandleAnswer(answer)
@@ -1572,6 +1583,9 @@ func (p *ParticipantImpl) onPrimaryTransportInitialConnected() {
 }
 
 func (p *ParticipantImpl) onPrimaryTransportFullyEstablished() {
+	if p.connectedAt.Load().IsZero() {
+		p.connectedAt.Store(time.Now())
+	}
 	if !p.sessionStartRecorded.Swap(true) {
 		prometheus.RecordSessionStartTime(int(p.ProtocolVersion()), time.Since(p.params.SessionStartTime))
 	}
