@@ -38,23 +38,24 @@ const (
 	// lower value as that could be the real propagation delay. If it rises, adapt slowly
 	// as it might be a temporary change or slow drift. See below for handling of high deltas
 	// which could be a result of a path change.
-	cPropagationDelayFallFactor = float64(0.95)
-	cPropagationDelayRiseFactor = float64(0.05)
+	cPropagationDelayFallFactor = float64(0.9)
+	cPropagationDelayRiseFactor = float64(0.1)
 
 	cPropagationDelaySpikeAdaptationFactor = float64(0.5)
 
-	// do not adapt to small OR large (outlier) changes
-	cPropagationDelayDeltaThresholdMin       = 5 * time.Millisecond
-	cPropagationDelayDeltaThresholdMaxFactor = 2
+	cPropagationDelayDeltaMaxInterval = 10 * time.Second
 
 	// To account for path changes mid-stream, if the delta of the propagation delay is consistently higher, reset.
 	// Reset at whichever of the below happens later.
+	//   1. 10 seconds of persistent high delta.
+	//   2. at least 2 reports with high delta.
 	//
 	// A long term version of delta of propagation delay is maintained and delta propagation delay exceeding
 	// a factor of the long term version is considered a sharp increase. That will trigger the start of the
 	// path change condition and if it persists, propagation delay will be reset.
-	cPropagationDelayDeltaMaxInterval         = 10 * time.Second
-	cPropagationDelayDeltaHighResetNumReports = 3
+	cPropagationDelayDeltaThresholdMin        = 10 * time.Millisecond
+	cPropagationDelayDeltaThresholdMaxFactor  = 2
+	cPropagationDelayDeltaHighResetNumReports = 2
 	cPropagationDelayDeltaHighResetWait       = 10 * time.Second
 )
 
@@ -394,7 +395,7 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 		r.logger.Debugw("initializing propagation delay", getPropagationFields()...)
 	} else {
 		deltaPropagationDelay = propagationDelay - r.propagationDelay
-		if deltaPropagationDelay.Abs() > cPropagationDelayDeltaThresholdMin { // ignore small changes
+		if deltaPropagationDelay.Abs() > cPropagationDelayDeltaThresholdMin { // ignore small changes for path change consideration
 			if r.longTermDeltaPropagationDelay != 0 && deltaPropagationDelay > 0 && deltaPropagationDelay > r.longTermDeltaPropagationDelay*time.Duration(cPropagationDelayDeltaThresholdMaxFactor) {
 				r.logger.Debugw("sharp increase in propagation delay, skipping", getPropagationFields()...) // TODO-REMOVE
 				r.propagationDelayDeltaHighCount++
@@ -411,24 +412,21 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 					r.logger.Debugw("re-initializing propagation delay", append(getPropagationFields(), "newPropagationDelay", propagationDelay.String())...)
 					initPropagationDelay(r.propagationDelaySpike)
 				}
-			} else {
-				resetDelta()
-
-				factor := cPropagationDelayFallFactor
-				if propagationDelay > r.propagationDelay {
-					factor = cPropagationDelayRiseFactor
-				}
-				adjustedPropagationDelay := r.propagationDelay + time.Duration(factor*float64(propagationDelay-r.propagationDelay)) // TODO-REMOVE
-				fields := append(
-					getPropagationFields(),
-					"adjustedPropagationDelay", adjustedPropagationDelay.String(),
-				) // TODO-REMOVE
-				r.logger.Debugw("adapting propagation delay", fields...) // TODO-REMOVE
-				r.propagationDelay += time.Duration(factor * float64(propagationDelay-r.propagationDelay))
 			}
 		} else {
-			r.propagationDelayDeltaHighCount = 0
-			r.propagationDelayDeltaHighStartTime = time.Time{}
+			resetDelta()
+
+			factor := cPropagationDelayFallFactor
+			if propagationDelay > r.propagationDelay {
+				factor = cPropagationDelayRiseFactor
+			}
+			adjustedPropagationDelay := r.propagationDelay + time.Duration(factor*float64(propagationDelay-r.propagationDelay)) // TODO-REMOVE
+			fields := append(
+				getPropagationFields(),
+				"adjustedPropagationDelay", adjustedPropagationDelay.String(),
+			) // TODO-REMOVE
+			r.logger.Debugw("adapting propagation delay", fields...) // TODO-REMOVE
+			r.propagationDelay += time.Duration(factor * float64(propagationDelay-r.propagationDelay))
 		}
 
 		if r.longTermDeltaPropagationDelay == 0 {
