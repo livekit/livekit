@@ -161,19 +161,21 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority 
 	receivers := slices.Clone(t.receivers)
 
 	// codec position maybe taken by DummyReceiver, check and upgrade to WebRTCReceiver
-	var existingReceiver bool
-	for _, r := range receivers {
+	idx := -1
+	for i, r := range receivers {
 		if strings.EqualFold(r.Codec().MimeType, receiver.Codec().MimeType) {
-			existingReceiver = true
-			if d, ok := r.TrackReceiver.(*DummyReceiver); ok {
-				d.Upgrade(receiver)
-			}
+			idx = i
 			break
 		}
 	}
-	if !existingReceiver {
-		receivers = append(receivers, &simulcastReceiver{TrackReceiver: receiver, priority: priority})
+	if idx != -1 {
+		if d, ok := receivers[idx].TrackReceiver.(*DummyReceiver); ok {
+			d.Upgrade(receiver)
+		}
+		// replace receiver
+		receivers = slices.Delete(receivers, idx, idx+1)
 	}
+	receivers = append(receivers, &simulcastReceiver{TrackReceiver: receiver, priority: priority})
 
 	sort.Slice(receivers, func(i, j int) bool {
 		return receivers[i].Priority() < receivers[j].Priority()
