@@ -2341,6 +2341,25 @@ func (p *ParticipantImpl) DebugInfo() map[string]interface{} {
 }
 
 func (p *ParticipantImpl) postRtcp(pkts []rtcp.Packet) {
+	p.lock.RLock()
+	migrationTimer := p.migrationTimer
+	p.lock.RUnlock()
+
+	// Once migration out is active, layers getting added would not be communicated to
+	// where the publisher is migrating to. Without SSRC, `UnhandleSimulcastInterceptor`
+	// cannot be set up on the migrating in node. Without that interceptor, simulcast
+	// probing will fail.
+	//
+	// Clients usually send `rid` RTP header extension till they get an RTCP Receiver Report
+	// from the remote side. So, by curbing RTCP when migration is active, even if a new layer
+	// get published to this node, client should continue to send `rid` to the new node
+	// post migration and the new node can do regular simulcast probing (without the
+	// `UnhandleSimulcastInterceptor`) to fire `OnTrack` on that layer. And when the new node
+	// sends RTCP Receiver Report back to the client, client will stop `rid`.
+	if migrationTimer != nil {
+		return
+	}
+
 	p.pubRTCPQueue.Enqueue(func() {
 		if err := p.TransportManager.WritePublisherRTCP(pkts); err != nil && !IsEOF(err) {
 			p.pubLogger.Errorw("could not write RTCP to participant", err)
