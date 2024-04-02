@@ -633,8 +633,8 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *RTCPS
 		return nil
 	}
 
-	timeSincePublisherSR := time.Since(publisherSRData.At)
-	now := publisherSRData.At.Add(timeSincePublisherSR)
+	timeSincePublisherSR := time.Since(publisherSRData.AtAdjusted)
+	now := publisherSRData.AtAdjusted.Add(timeSincePublisherSR)
 	nowNTP := mediatransportutil.ToNtpTime(now)
 	nowRTPExt := publisherSRData.RTPTimestampExt - tsOffset + uint64(timeSincePublisherSR.Nanoseconds()*int64(r.params.ClockRate)/1e9)
 
@@ -643,6 +643,7 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *RTCPS
 		RTPTimestamp:    uint32(nowRTPExt),
 		RTPTimestampExt: nowRTPExt,
 		At:              now,
+		AtAdjusted:      now,
 	}
 
 	getFields := func() []interface{} {

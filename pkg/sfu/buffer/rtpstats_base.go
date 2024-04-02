@@ -114,6 +114,7 @@ type RTCPSenderReportData struct {
 	RTPTimestampExt uint64
 	NTPTimestamp    mediatransportutil.NtpTime
 	At              time.Time
+	AtAdjusted      time.Time
 }
 
 func (r *RTCPSenderReportData) ToString() string {
@@ -121,7 +122,7 @@ func (r *RTCPSenderReportData) ToString() string {
 		return ""
 	}
 
-	return fmt.Sprintf("ntp: %s, rtp: %d, extRtp: %d, at: %s", r.NTPTimestamp.Time().String(), r.RTPTimestamp, r.RTPTimestampExt, r.At.String())
+	return fmt.Sprintf("ntp: %s, rtp: %d, extRtp: %d, at: %s, atAdj: %s", r.NTPTimestamp.Time().String(), r.RTPTimestamp, r.RTPTimestampExt, r.At.String(), r.AtAdjusted.String())
 }
 
 func (r *RTCPSenderReportData) MarshalLogObject(e zapcore.ObjectEncoder) error {
@@ -133,6 +134,7 @@ func (r *RTCPSenderReportData) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddUint32("RTPTimestamp", r.RTPTimestamp)
 	e.AddUint64("RTPTimestampExt", r.RTPTimestampExt)
 	e.AddTime("At", r.At)
+	e.AddTime("AtAdjusted", r.AtAdjusted)
 	return nil
 }
 
@@ -495,7 +497,7 @@ func (r *rtpStatsBase) maybeAdjustFirstPacketTime(srData *RTCPSenderReportData, 
 	// abnormal delay (maybe due to pacing or maybe due to queuing
 	// in some network element along the way), push back first time
 	// to an earlier instance.
-	timeSinceReceive := time.Since(srData.At)
+	timeSinceReceive := time.Since(srData.AtAdjusted)
 	extNowTS := srData.RTPTimestampExt - tsOffset + uint64(timeSinceReceive.Nanoseconds()*int64(r.params.ClockRate)/1e9)
 	samplesDiff := int64(extNowTS - extStartTS)
 	if samplesDiff < 0 {
