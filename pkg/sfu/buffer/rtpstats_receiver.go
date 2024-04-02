@@ -395,24 +395,27 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 		r.logger.Debugw("initializing propagation delay", getPropagationFields()...)
 	} else {
 		deltaPropagationDelay = propagationDelay - r.propagationDelay
-		if deltaPropagationDelay > cPropagationDelayDeltaThresholdMin && // ignore small changes for path change consideration
-			r.longTermDeltaPropagationDelay != 0 &&
-			deltaPropagationDelay > 0 &&
-			deltaPropagationDelay > r.longTermDeltaPropagationDelay*time.Duration(cPropagationDelayDeltaThresholdMaxFactor) {
-			r.logger.Debugw("sharp increase in propagation delay", getPropagationFields()...) // TODO-REMOVE
-			r.propagationDelayDeltaHighCount++
-			if r.propagationDelayDeltaHighStartTime.IsZero() {
-				r.propagationDelayDeltaHighStartTime = time.Now()
-			}
-			if r.propagationDelaySpike == 0 {
-				r.propagationDelaySpike = propagationDelay
-			} else {
-				r.propagationDelaySpike += time.Duration(cPropagationDelaySpikeAdaptationFactor * float64(propagationDelay-r.propagationDelaySpike))
-			}
+		if deltaPropagationDelay > cPropagationDelayDeltaThresholdMin { // ignore small changes for path change consideration
+			if r.longTermDeltaPropagationDelay != 0 &&
+				deltaPropagationDelay > 0 &&
+				deltaPropagationDelay > r.longTermDeltaPropagationDelay*time.Duration(cPropagationDelayDeltaThresholdMaxFactor) {
+				r.logger.Debugw("sharp increase in propagation delay", getPropagationFields()...) // TODO-REMOVE
+				r.propagationDelayDeltaHighCount++
+				if r.propagationDelayDeltaHighStartTime.IsZero() {
+					r.propagationDelayDeltaHighStartTime = time.Now()
+				}
+				if r.propagationDelaySpike == 0 {
+					r.propagationDelaySpike = propagationDelay
+				} else {
+					r.propagationDelaySpike += time.Duration(cPropagationDelaySpikeAdaptationFactor * float64(propagationDelay-r.propagationDelaySpike))
+				}
 
-			if r.propagationDelayDeltaHighCount >= cPropagationDelayDeltaHighResetNumReports && time.Since(r.propagationDelayDeltaHighStartTime) >= cPropagationDelayDeltaHighResetWait {
-				r.logger.Debugw("re-initializing propagation delay", append(getPropagationFields(), "newPropagationDelay", propagationDelay.String())...)
-				initPropagationDelay(r.propagationDelaySpike)
+				if r.propagationDelayDeltaHighCount >= cPropagationDelayDeltaHighResetNumReports && time.Since(r.propagationDelayDeltaHighStartTime) >= cPropagationDelayDeltaHighResetWait {
+					r.logger.Debugw("re-initializing propagation delay", append(getPropagationFields(), "newPropagationDelay", propagationDelay.String())...)
+					initPropagationDelay(r.propagationDelaySpike)
+				}
+			} else {
+				resetDelta()
 			}
 		} else {
 			resetDelta()
