@@ -75,7 +75,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
-					Duration:  duration,
+					EndTime:   now.Add(duration),
 					Packets:   250,
 				},
 			},
@@ -91,7 +91,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime:   now,
-					Duration:    duration,
+					EndTime:     now.Add(duration),
 					Packets:     120,
 					PacketsLost: 30,
 				},
@@ -99,7 +99,7 @@ func TestConnectionQuality(t *testing.T) {
 			2: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime:   now,
-					Duration:    duration,
+					EndTime:     now.Add(duration),
 					Packets:     130,
 					PacketsLost: 0,
 				},
@@ -118,7 +118,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
-					Duration:  duration,
+					EndTime:   now.Add(duration),
 					Packets:   250,
 				},
 			},
@@ -134,7 +134,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
-					Duration:  duration,
+					EndTime:   now.Add(duration),
 					Packets:   250,
 				},
 			},
@@ -150,7 +150,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
-					Duration:  duration,
+					EndTime:   now.Add(duration),
 					Packets:   250,
 				},
 			},
@@ -166,7 +166,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime:   now,
-					Duration:    duration,
+					EndTime:     now.Add(duration),
 					Packets:     250,
 					PacketsLost: 13,
 				},
@@ -183,7 +183,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
-					Duration:  duration,
+					EndTime:   now.Add(duration),
 					Packets:   250,
 				},
 			},
@@ -199,7 +199,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
-					Duration:  duration,
+					EndTime:   now.Add(duration),
 					Packets:   250,
 				},
 			},
@@ -215,7 +215,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime:   now,
-					Duration:    duration,
+					EndTime:     now.Add(duration),
 					Packets:     250,
 					PacketsLost: 30,
 				},
@@ -240,7 +240,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
-					Duration:  duration,
+					EndTime:   now.Add(duration),
 					Packets:   0,
 				},
 			},
@@ -256,7 +256,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
-					Duration:  duration,
+					EndTime:   now.Add(duration),
 					Packets:   0,
 				},
 			},
@@ -281,7 +281,7 @@ func TestConnectionQuality(t *testing.T) {
 				1: {
 					RTPStats: &buffer.RTPDeltaInfo{
 						StartTime:   now,
-						Duration:    duration,
+						EndTime:     now.Add(duration),
 						Packets:     250,
 						PacketsLost: 0,
 					},
@@ -301,7 +301,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime:   now,
-					Duration:    duration,
+					EndTime:     now.Add(duration),
 					Packets:     50,
 					PacketsLost: 5,
 				},
@@ -323,7 +323,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime:   now,
-					Duration:    duration,
+					EndTime:     now.Add(duration),
 					Packets:     250,
 					PacketsLost: 5,
 					RttMax:      400,
@@ -349,7 +349,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
-					Duration:  duration,
+					EndTime:   now.Add(duration),
 					Packets:   250,
 					Bytes:     8_000_000 / 8 / 5,
 				},
@@ -368,7 +368,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
-					Duration:  duration,
+					EndTime:   now.Add(duration),
 					Packets:   250,
 					Bytes:     8_000_000 / 8 / 5,
 				},
@@ -392,7 +392,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
-					Duration:  duration,
+					EndTime:   now.Add(duration),
 					Packets:   250,
 					Bytes:     8_000_000 / 8 / 5,
 				},
@@ -419,7 +419,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
-					Duration:  duration,
+					EndTime:   now.Add(duration),
 					Packets:   250,
 					Bytes:     8_000_000 / 8 / 5,
 				},
@@ -453,7 +453,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime:   now,
-					Duration:    duration,
+					EndTime:     now.Add(duration),
 					Packets:     250,
 					PacketsLost: 5,
 					RttMax:      700,
@@ -488,7 +488,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime:   now,
-					Duration:    duration,
+					EndTime:     now.Add(duration),
 					Packets:     250,
 					PacketsLost: 5,
 					JitterMax:   200,
@@ -657,7 +657,7 @@ func TestConnectionQuality(t *testing.T) {
 						123: {
 							RTPStats: &buffer.RTPDeltaInfo{
 								StartTime:   now,
-								Duration:    duration,
+								EndTime:     now.Add(duration),
 								Packets:     tc.packetsExpected,
 								PacketsLost: uint32(math.Ceil(eq.packetLossPercentage * float64(tc.packetsExpected) / 100.0)),
 							},
@@ -761,7 +761,7 @@ func TestConnectionQuality(t *testing.T) {
 					123: {
 						RTPStats: &buffer.RTPDeltaInfo{
 							StartTime: now,
-							Duration:  duration,
+							EndTime:   now.Add(duration),
 							Packets:   100,
 							Bytes:     tc.bytes,
 						},
@@ -855,7 +855,7 @@ func TestConnectionQuality(t *testing.T) {
 					123: {
 						RTPStats: &buffer.RTPDeltaInfo{
 							StartTime: now,
-							Duration:  duration,
+							EndTime:   now.Add(duration),
 							Packets:   200,
 						},
 					},
