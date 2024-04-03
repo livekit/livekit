@@ -125,8 +125,11 @@ func GetAPIKey(ctx context.Context) string {
 	return v.apiKey
 }
 
-func WithGrants(ctx context.Context, grants *auth.ClaimGrants) context.Context {
-	return context.WithValue(ctx, grantsKey{}, grants)
+func WithGrants(ctx context.Context, grants *auth.ClaimGrants, apiKey string) context.Context {
+	return context.WithValue(ctx, grantsKey{}, &grantsValue{
+		claims: grants,
+		apiKey: apiKey,
+	})
 }
 
 func SetAuthorizationToken(r *http.Request, token string) {
