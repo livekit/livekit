@@ -24,6 +24,7 @@ import (
 	"github.com/pkg/errors"
 	"golang.org/x/exp/maps"
 
+	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
@@ -70,7 +71,7 @@ type RoomManager struct {
 	roomStore         ObjectStore
 	telemetry         telemetry.TelemetryService
 	clientConfManager clientconfiguration.ClientConfigurationManager
-	agentClient       rtc.AgentClient
+	agentClient       agent.Client
 	egressLauncher    rtc.EgressLauncher
 	versionGenerator  utils.TimedVersionGenerator
 	turnAuthHandler   *TURNAuthHandler
@@ -91,7 +92,7 @@ func NewLocalRoomManager(
 	router routing.Router,
 	telemetry telemetry.TelemetryService,
 	clientConfManager clientconfiguration.ClientConfigurationManager,
-	agentClient rtc.AgentClient,
+	agentClient agent.Client,
 	egressLauncher rtc.EgressLauncher,
 	versionGenerator utils.TimedVersionGenerator,
 	turnAuthHandler *TURNAuthHandler,
@@ -121,11 +122,12 @@ func NewLocalRoomManager(
 		iceConfigCache: make(map[livekit.ParticipantIdentity]*iceConfigCacheEntry),
 
 		serverInfo: &livekit.ServerInfo{
-			Edition:  livekit.ServerInfo_Standard,
-			Version:  version.Version,
-			Protocol: types.CurrentProtocol,
-			Region:   conf.Region,
-			NodeId:   currentNode.Id,
+			Edition:       livekit.ServerInfo_Standard,
+			Version:       version.Version,
+			Protocol:      types.CurrentProtocol,
+			AgentProtocol: agent.CurrentProtocol,
+			Region:        conf.Region,
+			NodeId:        currentNode.Id,
 		},
 	}, nil
 }

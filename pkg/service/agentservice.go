@@ -1,4 +1,4 @@
-// Copyright 2023 LiveKit, Inc.
+// Copyright 2024 LiveKit, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -27,15 +28,18 @@ import (
 	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	"github.com/livekit/livekit-server/pkg/agent"
+	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/utils"
+	"github.com/livekit/livekit-server/version"
+	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
 )
-
-const AgentServiceVersion = "0.1.0"
 
 type AgentService struct {
 	upgrader websocket.Upgrader
@@ -44,38 +48,30 @@ type AgentService struct {
 }
 
 type AgentHandler struct {
-	agentServer    rpc.AgentInternalServer
-	roomTopic      string
-	publisherTopic string
+	agentServer rpc.AgentInternalServer
+	mu          sync.Mutex
 
-	mu                  sync.Mutex
-	availability        map[string]chan *availability
-	unregistered        map[*websocket.Conn]*worker
-	roomRegistered      bool
-	roomWorkers         map[string]*worker
-	publisherRegistered bool
-	publisherWorkers    map[string]*worker
-	onWorkerRegistered  func(handler *AgentHandler)
+	serverInfo  *livekit.ServerInfo
+	workers     map[string]*agent.Worker
+	keyProvider auth.KeyProvider
+
+	namespaces       map[string]*namespaceInfo
+	publisherEnabled bool
+	roomEnabled      bool
+	roomTopic        string
+	publisherTopic   string
 }
 
-type worker struct {
-	mu      sync.Mutex
-	conn    *websocket.Conn
-	sigConn *WSSignalConnection
-
-	id         string
-	jobType    livekit.JobType
-	status     livekit.WorkerStatus
-	activeJobs int
-	logger     logger.Logger
+type namespaceInfo struct {
+	numPublishers int32
+	numRooms      int32
 }
 
-type availability struct {
-	workerID  string
-	available bool
-}
-
-func NewAgentService(bus psrpc.MessageBus) (*AgentService, error) {
+func NewAgentService(conf *config.Config,
+	currentNode routing.LocalNode,
+	bus psrpc.MessageBus,
+	keyProvider auth.KeyProvider,
+) (*AgentService, error) {
 	s := &AgentService{
 		upgrader: websocket.Upgrader{},
 	}
@@ -86,12 +82,26 @@ func NewAgentService(bus psrpc.MessageBus) (*AgentService, error) {
 		return true
 	}
 
+	serverInfo := &livekit.ServerInfo{
+		Edition:       livekit.ServerInfo_Standard,
+		Version:       version.Version,
+		Protocol:      types.CurrentProtocol,
+		AgentProtocol: agent.CurrentProtocol,
+		Region:        conf.Region,
+		NodeId:        currentNode.Id,
+	}
+
 	agentServer, err := rpc.NewAgentInternalServer(s, bus)
 	if err != nil {
 		return nil, err
 	}
-	s.AgentHandler = NewAgentHandler(agentServer, rtc.RoomAgentTopic, rtc.PublisherAgentTopic)
-
+	s.AgentHandler = NewAgentHandler(
+		agentServer,
+		keyProvider,
+		serverInfo,
+		agent.RoomAgentTopic,
+		agent.PublisherAgentTopic,
+	)
 	return s, nil
 }
 
@@ -116,64 +126,64 @@ func (s *AgentService) ServeHTTP(writer http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.HandleConnection(r.Context(), conn)
+	s.HandleConnection(r, conn, nil)
 }
 
-func NewAgentHandler(agentServer rpc.AgentInternalServer, roomTopic, publisherTopic string) *AgentHandler {
+func NewAgentHandler(
+	agentServer rpc.AgentInternalServer,
+	keyProvider auth.KeyProvider,
+	serverInfo *livekit.ServerInfo,
+	roomTopic string,
+	publisherTopic string,
+) *AgentHandler {
 	return &AgentHandler{
-		agentServer:      agentServer,
-		roomTopic:        roomTopic,
-		publisherTopic:   publisherTopic,
-		availability:     make(map[string]chan *availability),
-		unregistered:     make(map[*websocket.Conn]*worker),
-		roomWorkers:      make(map[string]*worker),
-		publisherWorkers: make(map[string]*worker),
+		agentServer:    agentServer,
+		workers:        make(map[string]*agent.Worker),
+		namespaces:     make(map[string]*namespaceInfo),
+		serverInfo:     serverInfo,
+		keyProvider:    keyProvider,
+		roomTopic:      roomTopic,
+		publisherTopic: publisherTopic,
 	}
 }
 
-// OnWorkerRegistered registers a callback to be called when the first worker of each type is registered
-func (s *AgentHandler) OnWorkerRegistered(handler func(handler *AgentHandler)) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.onWorkerRegistered = handler
-}
+func (h *AgentHandler) HandleConnection(r *http.Request, conn *websocket.Conn, onIdle func()) {
+	var protocol agent.WorkerProtocolVersion
+	if pv, err := strconv.Atoi(r.FormValue("protocol")); err == nil {
+		protocol = agent.WorkerProtocolVersion(pv)
+	}
 
-func (s *AgentHandler) HandleConnection(ctx context.Context, conn *websocket.Conn) {
 	sigConn := NewWSSignalConnection(conn)
-	w := &worker{
-		conn:    conn,
-		sigConn: sigConn,
-		logger:  utils.GetLogger(ctx),
-	}
 
-	s.mu.Lock()
-	s.unregistered[conn] = w
-	s.mu.Unlock()
+	logger := utils.GetLogger(r.Context())
+
+	apiKey := GetAPIKey(r.Context())
+	apiSecret := h.keyProvider.GetSecret(apiKey)
+
+	worker := agent.NewWorker(protocol, apiKey, apiSecret, h.serverInfo, conn, sigConn, logger)
+	worker.OnWorkerRegistered(h.registerWorkerTopic)
+
+	h.mu.Lock()
+	h.workers[worker.ID()] = worker
+	h.mu.Unlock()
 
 	defer func() {
-		s.mu.Lock()
-		if w.id == "" {
-			delete(s.unregistered, conn)
-		} else {
-			switch w.jobType {
-			case livekit.JobType_JT_ROOM:
-				delete(s.roomWorkers, w.id)
-				if s.roomRegistered && !s.roomAvailableLocked() {
-					s.roomRegistered = false
-					s.agentServer.DeregisterJobRequestTopic(s.roomTopic)
-				}
-			case livekit.JobType_JT_PUBLISHER:
-				delete(s.publisherWorkers, w.id)
-				if s.publisherRegistered && !s.publisherAvailableLocked() {
-					s.publisherRegistered = false
-					s.agentServer.DeregisterJobRequestTopic(s.publisherTopic)
-				}
-			}
+		worker.Close()
+
+		h.mu.Lock()
+		delete(h.workers, worker.ID())
+		numWorkers := len(h.workers)
+		h.mu.Unlock()
+
+		if worker.Registered() {
+			h.deregisterWorkerTopic(worker)
 		}
-		s.mu.Unlock()
+
+		if numWorkers == 0 && onIdle != nil {
+			onIdle()
+		}
 	}()
 
-	// handle incoming requests from websocket
 	for {
 		req, _, err := sigConn.ReadWorkerMessage()
 		if err != nil {
@@ -188,321 +198,220 @@ func (s *AgentHandler) HandleConnection(ctx context.Context, conn *websocket.Con
 					websocket.CloseNormalClosure,
 					websocket.CloseNoStatusReceived,
 				) {
-				w.logger.Infow("Agent worker closed WS connection", "wsError", err)
+				worker.Logger.Infow("worker closed WS connection", "wsError", err)
 			} else {
-				w.logger.Errorw("error reading from websocket", err)
+				worker.Logger.Errorw("error reading from websocket", err)
 			}
 			return
 		}
 
-		switch m := req.Message.(type) {
-		case *livekit.WorkerMessage_Register:
-			go s.handleRegister(w, m.Register)
-		case *livekit.WorkerMessage_Availability:
-			go s.handleAvailability(w, m.Availability)
-		case *livekit.WorkerMessage_JobUpdate:
-			go s.handleJobUpdate(w, m.JobUpdate)
-		case *livekit.WorkerMessage_Status:
-			go s.handleStatus(w, m.Status)
-		}
+		worker.HandleMessage(req)
 	}
 }
 
-func (s *AgentHandler) handleRegister(worker *worker, msg *livekit.RegisterWorkerRequest) {
-	if err := s.doHandleRegister(worker, msg); err != nil {
-		worker.logger.Errorw("failed to register worker", err, "workerID", msg.WorkerId, "jobType", msg.Type)
-		worker.conn.Close()
-	}
-}
+func (h *AgentHandler) registerWorkerTopic(w *agent.Worker) {
+	h.mu.Lock()
 
-func (s *AgentHandler) doHandleRegister(worker *worker, msg *livekit.RegisterWorkerRequest) error {
-	if msg.WorkerId == "" {
-		return errors.New("invalid worker id")
-	}
-
-	s.mu.Lock()
-	if worker.id != "" {
-		s.mu.Unlock()
-		return errors.New("worker already registered")
-	}
-
-	onRegistered := s.onWorkerRegistered
-	firstWorker := false
-
-	switch msg.Type {
-	case livekit.JobType_JT_ROOM:
-		worker.id = msg.WorkerId
-		worker.jobType = msg.Type
-		delete(s.unregistered, worker.conn)
-		s.roomWorkers[worker.id] = worker
-
-		if !s.roomRegistered {
-			err := s.agentServer.RegisterJobRequestTopic(s.roomTopic)
-			if err != nil {
-				worker.logger.Errorw("failed to register room agents", err)
-			} else {
-				s.roomRegistered = true
-				firstWorker = true
-			}
-		}
-
-	case livekit.JobType_JT_PUBLISHER:
-		worker.id = msg.WorkerId
-		worker.jobType = msg.Type
-		delete(s.unregistered, worker.conn)
-		s.publisherWorkers[worker.id] = worker
-
-		if !s.publisherRegistered {
-			err := s.agentServer.RegisterJobRequestTopic(s.publisherTopic)
-			if err != nil {
-				worker.logger.Errorw("failed to register publisher agents", err)
-			} else {
-				s.publisherRegistered = true
-				firstWorker = true
-			}
-		}
-	default:
-		s.mu.Unlock()
-		return errors.New("invalid job type")
-	}
-	s.mu.Unlock()
-
-	_, err := worker.sigConn.WriteServerMessage(&livekit.ServerMessage{
-		Message: &livekit.ServerMessage_Register{
-			Register: &livekit.RegisterWorkerResponse{
-				WorkerId:      worker.id,
-				ServerVersion: AgentServiceVersion,
-			},
-		},
-	})
-	if err != nil {
-		worker.logger.Errorw("failed to write server message", err)
-	}
-
-	if firstWorker && onRegistered != nil {
-		onRegistered(s)
-	}
-	return nil
-}
-
-func (s *AgentHandler) handleAvailability(w *worker, msg *livekit.AvailabilityResponse) {
-	s.mu.Lock()
-	availabilityChan, ok := s.availability[msg.JobId]
-	s.mu.Unlock()
-
+	info, ok := h.namespaces[w.Namespace()]
+	numPublishers := int32(0)
+	numRooms := int32(0)
 	if ok {
-		availabilityChan <- &availability{
-			workerID:  w.id,
-			available: msg.Available,
+		numPublishers = info.numPublishers
+		numRooms = info.numRooms
+	}
+
+	var err error
+	if w.JobType() == livekit.JobType_JT_PUBLISHER {
+		numPublishers++
+		if numPublishers == 1 {
+			err = h.agentServer.RegisterJobRequestTopic(w.Namespace(), h.publisherTopic)
+		}
+
+	} else if w.JobType() == livekit.JobType_JT_ROOM {
+		numRooms++
+		if numRooms == 1 {
+			err = h.agentServer.RegisterJobRequestTopic(w.Namespace(), h.roomTopic)
 		}
 	}
-}
 
-func (s *AgentHandler) handleJobUpdate(w *worker, msg *livekit.JobStatusUpdate) {
-	switch msg.Status {
-	case livekit.JobStatus_JS_SUCCESS:
-		w.logger.Debugw("job complete", "jobID", msg.JobId)
-	case livekit.JobStatus_JS_FAILED:
-		w.logger.Warnw("job failed", errors.New(msg.Error), "jobID", msg.JobId)
+	if err != nil {
+		w.Logger.Errorw("failed to register job request topic", err)
+		h.mu.Unlock()
+		w.Close() // Close the worker
+		return
 	}
 
-	w.mu.Lock()
-	w.activeJobs--
-	w.mu.Unlock()
+	h.namespaces[w.Namespace()] = &namespaceInfo{
+		numPublishers: numPublishers,
+		numRooms:      numRooms,
+	}
+
+	h.roomEnabled = h.roomAvailableLocked()
+	h.publisherEnabled = h.publisherAvailableLocked()
+	h.mu.Unlock()
+
+	err = h.agentServer.PublishWorkerRegistered(context.Background(), agent.DefaultHandlerNamespace, &emptypb.Empty{})
+	if err != nil {
+		w.Logger.Errorw("failed to publish worker registered", err)
+	}
 }
 
-func (s *AgentHandler) handleStatus(w *worker, msg *livekit.UpdateWorkerStatus) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (h *AgentHandler) deregisterWorkerTopic(worker *agent.Worker) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 
-	w.mu.Lock()
-	w.status = msg.Status
-	w.mu.Unlock()
+	info, ok := h.namespaces[worker.Namespace()]
+	if !ok {
+		return
+	}
 
-	switch w.jobType {
-	case livekit.JobType_JT_ROOM:
-		if s.roomRegistered && !s.roomAvailableLocked() {
-			s.roomRegistered = false
-			s.agentServer.DeregisterJobRequestTopic(s.roomTopic)
-		} else if !s.roomRegistered && s.roomAvailableLocked() {
-			if err := s.agentServer.RegisterJobRequestTopic(s.roomTopic); err != nil {
-				w.logger.Errorw("failed to register room agents", err)
-			} else {
-				s.roomRegistered = true
-			}
+	if worker.JobType() == livekit.JobType_JT_PUBLISHER {
+		info.numPublishers--
+		if info.numPublishers == 0 {
+			h.agentServer.DeregisterJobRequestTopic(worker.Namespace(), h.publisherTopic)
 		}
-	case livekit.JobType_JT_PUBLISHER:
-		if s.publisherRegistered && !s.publisherAvailableLocked() {
-			s.publisherRegistered = false
-			s.agentServer.DeregisterJobRequestTopic(s.publisherTopic)
-		} else if !s.publisherRegistered && s.publisherAvailableLocked() {
-			if err := s.agentServer.RegisterJobRequestTopic(s.publisherTopic); err != nil {
-				w.logger.Errorw("failed to register publisher agents", err)
-			} else {
-				s.publisherRegistered = true
-			}
+	} else if worker.JobType() == livekit.JobType_JT_ROOM {
+		info.numRooms--
+		if info.numRooms == 0 {
+			h.agentServer.DeregisterJobRequestTopic(worker.Namespace(), h.roomTopic)
 		}
 	}
-}
 
-func (s *AgentHandler) CheckEnabled(_ context.Context, _ *rpc.CheckEnabledRequest) (*rpc.CheckEnabledResponse, error) {
-	s.mu.Lock()
-	res := &rpc.CheckEnabledResponse{
-		RoomEnabled:      len(s.roomWorkers) > 0,
-		PublisherEnabled: len(s.publisherWorkers) > 0,
-	}
-	s.mu.Unlock()
-	return res, nil
-}
-
-func (s *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*emptypb.Empty, error) {
-	s.mu.Lock()
-	ac := make(chan *availability, 100)
-	s.availability[job.Id] = ac
-	s.mu.Unlock()
-
-	defer func() {
-		s.mu.Lock()
-		delete(s.availability, job.Id)
-		s.mu.Unlock()
-	}()
-
-	var pool map[string]*worker
-	switch job.Type {
-	case livekit.JobType_JT_ROOM:
-		pool = s.roomWorkers
-	case livekit.JobType_JT_PUBLISHER:
-		pool = s.publisherWorkers
+	if info.numPublishers == 0 && info.numRooms == 0 {
+		delete(h.namespaces, worker.Namespace())
 	}
 
+	h.roomEnabled = h.roomAvailableLocked()
+	h.publisherEnabled = h.publisherAvailableLocked()
+}
+
+func (h *AgentHandler) roomAvailableLocked() bool {
+	for _, w := range h.workers {
+		if w.JobType() == livekit.JobType_JT_ROOM {
+			return true
+		}
+	}
+	return false
+
+}
+
+func (h *AgentHandler) publisherAvailableLocked() bool {
+	for _, w := range h.workers {
+		if w.JobType() == livekit.JobType_JT_PUBLISHER {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*emptypb.Empty, error) {
 	attempted := make(map[string]bool)
 	for {
-		select {
-		case <-ctx.Done():
-			return nil, psrpc.NewErrorf(psrpc.DeadlineExceeded, "request timed out")
-		default:
-			s.mu.Lock()
-			var selected *worker
-			for _, w := range pool {
-				if attempted[w.id] {
-					continue
-				}
-				if w.status == livekit.WorkerStatus_WS_AVAILABLE {
-					if w.activeJobs > 0 {
-						selected = w
-						break
-					} else if selected == nil {
-						selected = w
-					}
-				}
-			}
-			s.mu.Unlock()
-
-			if selected == nil {
-				return nil, psrpc.NewErrorf(psrpc.Unavailable, "no workers available")
+		h.mu.Lock()
+		var selected *agent.Worker
+		var maxLoad float32
+		for _, w := range h.workers {
+			if w.Namespace() != job.Namespace || w.JobType() != job.Type {
+				continue
 			}
 
-			attempted[selected.id] = true
-			_, err := selected.sigConn.WriteServerMessage(&livekit.ServerMessage{Message: &livekit.ServerMessage_Availability{
-				Availability: &livekit.AvailabilityRequest{Job: job},
-			}})
-			if err != nil {
-				selected.logger.Errorw("failed to send availability request", err, "workerID", selected.id)
+			_, ok := attempted[w.ID()]
+			if ok {
+				continue
 			}
 
-			select {
-			case <-ctx.Done():
-				return nil, psrpc.NewErrorf(psrpc.DeadlineExceeded, "request timed out")
-			case res := <-ac:
-				if res.available {
-					_, err = selected.sigConn.WriteServerMessage(&livekit.ServerMessage{Message: &livekit.ServerMessage_Assignment{
-						Assignment: &livekit.JobAssignment{Job: job},
-					}})
-					if err != nil {
-						selected.logger.Errorw("failed to assign job", err, "workerID", selected.id)
-					} else {
-						selected.mu.Lock()
-						selected.activeJobs++
-						selected.mu.Unlock()
-						return &emptypb.Empty{}, nil
-					}
+			if w.Status() == livekit.WorkerStatus_WS_AVAILABLE {
+				load := w.Load()
+				if len(w.RunningJobs()) > 0 && load > maxLoad {
+					maxLoad = load
+					selected = w
+				} else if selected == nil {
+					selected = w
 				}
 			}
+
 		}
+		h.mu.Unlock()
+
+		if selected == nil {
+			return nil, psrpc.NewErrorf(psrpc.DeadlineExceeded, "no workers available")
+		}
+
+		attempted[selected.ID()] = true
+
+		err := selected.AssignJob(ctx, job)
+		if err != nil {
+			if errors.Is(err, agent.ErrWorkerNotAvailable) {
+				continue // Try another worker
+			}
+			return nil, err
+		}
+
+		return &emptypb.Empty{}, nil
 	}
+
 }
 
-func (s *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job) float32 {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	var pool map[string]*worker
-	switch job.Type {
-	case livekit.JobType_JT_ROOM:
-		pool = s.roomWorkers
-	case livekit.JobType_JT_PUBLISHER:
-		pool = s.publisherWorkers
-	}
+func (h *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job) float32 {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 
 	var affinity float32
-	for _, w := range pool {
-		if w.status == livekit.WorkerStatus_WS_AVAILABLE {
-			if w.activeJobs > 0 {
-				return 1
+	var maxLoad float32
+	for _, w := range h.workers {
+		if w.Namespace() != job.Namespace || w.JobType() != job.Type {
+			continue
+		}
+
+		if w.Status() == livekit.WorkerStatus_WS_AVAILABLE {
+			load := w.Load()
+			if len(w.RunningJobs()) > 0 && load > maxLoad {
+				maxLoad = load
+				affinity = 0.5 + load/2
 			} else {
 				affinity = 0.5
 			}
 		}
+
 	}
 
 	return affinity
 }
 
-func (s *AgentHandler) NumConnections() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (h *AgentHandler) CheckEnabled(ctx context.Context, req *rpc.CheckEnabledRequest) (*rpc.CheckEnabledResponse, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	namespaces := make([]string, 0, len(h.namespaces))
+	for ns := range h.namespaces {
+		namespaces = append(namespaces, ns)
+	}
 
-	return len(s.unregistered) + len(s.roomWorkers) + len(s.publisherWorkers)
+	return &rpc.CheckEnabledResponse{
+		Namespaces:       namespaces,
+		RoomEnabled:      h.roomEnabled,
+		PublisherEnabled: h.publisherEnabled,
+	}, nil
 }
 
-func (s *AgentHandler) DrainConnections(interval time.Duration) {
+func (h *AgentHandler) NumConnections() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.workers)
+}
+
+func (h *AgentHandler) DrainConnections(interval time.Duration) {
 	// jitter drain start
 	time.Sleep(time.Duration(rand.Int63n(int64(interval))))
 
 	t := time.NewTicker(interval)
 	defer t.Stop()
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	h.mu.Lock()
+	defer h.mu.Unlock()
 
-	for conn := range s.unregistered {
-		_ = conn.Close()
+	for _, w := range h.workers {
+		w.Close()
 		<-t.C
 	}
-	for _, w := range s.roomWorkers {
-		_ = w.conn.Close()
-		<-t.C
-	}
-	for _, w := range s.publisherWorkers {
-		_ = w.conn.Close()
-		<-t.C
-	}
-}
-
-func (s *AgentHandler) roomAvailableLocked() bool {
-	for _, w := range s.roomWorkers {
-		if w.status == livekit.WorkerStatus_WS_AVAILABLE {
-			return true
-		}
-	}
-	return false
-}
-
-func (s *AgentHandler) publisherAvailableLocked() bool {
-	for _, w := range s.publisherWorkers {
-		if w.status == livekit.WorkerStatus_WS_AVAILABLE {
-			return true
-		}
-	}
-	return false
 }

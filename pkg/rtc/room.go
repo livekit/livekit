@@ -34,9 +34,9 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 
+	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
@@ -103,8 +103,7 @@ type Room struct {
 	trackManager   *RoomTrackManager
 
 	// agents
-	agentClient            AgentClient
-	publisherAgentsEnabled bool
+	agentClient agent.Client
 
 	// map of identity -> Participant
 	participants              map[livekit.ParticipantIdentity]types.LocalParticipant
@@ -142,7 +141,7 @@ func NewRoom(
 	audioConfig *config.AudioConfig,
 	serverInfo *livekit.ServerInfo,
 	telemetry telemetry.TelemetryService,
-	agentClient AgentClient,
+	agentClient agent.Client,
 	egressLauncher EgressLauncher,
 ) *Room {
 	r := &Room{
@@ -182,21 +181,6 @@ func NewRoom(
 		r.protoRoom.CreationTime = time.Now().Unix()
 	}
 	r.protoProxy = utils.NewProtoProxy[*livekit.Room](roomUpdateInterval, r.updateProto)
-
-	if agentClient != nil {
-		go func() {
-			res := r.agentClient.CheckEnabled(context.Background(), &rpc.CheckEnabledRequest{})
-			if res.PublisherEnabled {
-				r.lock.Lock()
-				r.publisherAgentsEnabled = true
-				// if there are already published tracks, start the agents
-				for identity := range r.hasPublished {
-					r.launchPublisherAgent(r.participants[identity])
-				}
-				r.lock.Unlock()
-			}
-		}()
-	}
 
 	go r.audioUpdateWorker()
 	go r.connectionQualityWorker()
@@ -1013,13 +997,10 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 	r.lock.Lock()
 	hasPublished := r.hasPublished[participant.Identity()]
 	r.hasPublished[participant.Identity()] = true
-	publisherAgentsEnabled := r.publisherAgentsEnabled
 	r.lock.Unlock()
 
 	if !hasPublished {
-		if publisherAgentsEnabled {
-			r.launchPublisherAgent(participant)
-		}
+		r.launchPublisherAgent(participant)
 		if r.internal != nil && r.internal.ParticipantEgress != nil {
 			go func() {
 				if err := StartParticipantEgress(
@@ -1429,18 +1410,15 @@ func (r *Room) simulationCleanupWorker() {
 }
 
 func (r *Room) launchPublisherAgent(p types.Participant) {
-	if p == nil || p.IsRecorder() || p.IsAgent() {
+	if p == nil || p.IsRecorder() || p.IsAgent() || r.agentClient == nil {
 		return
 	}
 
-	go func() {
-		r.agentClient.JobRequest(context.Background(), &livekit.Job{
-			Id:          utils.NewGuid("JP_"),
-			Type:        livekit.JobType_JT_PUBLISHER,
-			Room:        r.ToProto(),
-			Participant: p.ToProto(),
-		})
-	}()
+	go r.agentClient.LaunchJob(context.Background(), &agent.JobDescription{
+		JobType:     livekit.JobType_JT_PUBLISHER,
+		Room:        r.ToProto(),
+		Participant: p.ToProto(),
+	})
 }
 
 func (r *Room) DebugInfo() map[string]interface{} {
