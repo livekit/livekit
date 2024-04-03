@@ -58,9 +58,9 @@ func newAgentClient(token string, port uint32) (*agentClient, error) {
 	}
 
 	return &agentClient{
-		conn: conn,
+		conn:          conn,
 		requestedJobs: make(chan *livekit.Job, 100),
-		done: make(chan struct{}),
+		done:          make(chan struct{}),
 	}, nil
 }
 
@@ -159,16 +159,23 @@ func (c *agentClient) write(msg *livekit.WorkerMessage) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	b, err := proto.Marshal(msg)
-	if err != nil {
-		return err
-	}
+	select {
+	case <-c.done:
+		return nil
+	default:
+		b, err := proto.Marshal(msg)
+		if err != nil {
+			return err
+		}
 
-	return c.conn.WriteMessage(websocket.BinaryMessage, b)
+		return c.conn.WriteMessage(websocket.BinaryMessage, b)
+	}
 }
 
 func (c *agentClient) close() {
+	c.mu.Lock()
 	close(c.done)
 	_ = c.conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 	_ = c.conn.Close()
+	c.mu.Unlock()
 }
