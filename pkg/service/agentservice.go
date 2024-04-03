@@ -160,7 +160,7 @@ func (h *AgentHandler) HandleConnection(r *http.Request, conn *websocket.Conn, o
 	apiKey := GetAPIKey(r.Context())
 	apiSecret := h.keyProvider.GetSecret(apiKey)
 
-	worker := agent.NewWorker(protocol, apiKey, apiSecret, h.serverInfo, logger)
+	worker := agent.NewWorker(protocol, apiKey, apiSecret, h.serverInfo, conn, sigConn, logger)
 	worker.OnWorkerRegistered(h.registerWorkerTopic)
 
 	h.mu.Lock()
@@ -182,20 +182,6 @@ func (h *AgentHandler) HandleConnection(r *http.Request, conn *websocket.Conn, o
 		if numWorkers == 0 && onIdle != nil {
 			onIdle()
 		}
-	}()
-
-	go func() {
-		defer func() {
-			_ = conn.Close()
-		}()
-
-		for msg := range worker.ReadChan() {
-			if _, err := sigConn.WriteServerMessage(msg); err != nil {
-				worker.Logger.Errorw("error writing to websocket", err)
-				return
-			}
-		}
-
 	}()
 
 	for {

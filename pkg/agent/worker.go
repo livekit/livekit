@@ -21,6 +21,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/gorilla/websocket"
+
 	pagent "github.com/livekit/protocol/agent"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -44,6 +46,10 @@ var (
 	ErrAvailabilityTimeout = errors.New("agent worker availability timeout")
 )
 
+type sigConn interface {
+	WriteServerMessage(msg *livekit.ServerMessage) (int, error)
+}
+
 type Worker struct {
 	id          string
 	jobType     livekit.JobType
@@ -64,7 +70,8 @@ type Worker struct {
 
 	onWorkerRegistered func(w *Worker)
 
-	msgChan chan *livekit.ServerMessage
+	conn    *websocket.Conn
+	sigConn sigConn
 	closed  chan struct{}
 
 	availability map[string]chan *livekit.AvailabilityResponse
@@ -80,6 +87,8 @@ func NewWorker(
 	apiKey string,
 	apiSecret string,
 	serverInfo *livekit.ServerInfo,
+	conn *websocket.Conn,
+	sigConn sigConn,
 	logger logger.Logger,
 ) *Worker {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -93,7 +102,8 @@ func NewWorker(
 		closed:          make(chan struct{}),
 		runningJobs:     make(map[string]*Job),
 		availability:    make(map[string]chan *livekit.AvailabilityResponse),
-		msgChan:         make(chan *livekit.ServerMessage),
+		conn:            conn,
+		sigConn:         sigConn,
 		ctx:             ctx,
 		cancel:          cancel,
 		Logger:          logger,
@@ -111,11 +121,9 @@ func NewWorker(
 }
 
 func (w *Worker) sendRequest(req *livekit.ServerMessage) {
-	w.msgChan <- req
-}
-
-func (w *Worker) ReadChan() <-chan *livekit.ServerMessage {
-	return w.msgChan
+	if _, err := w.sigConn.WriteServerMessage(req); err != nil {
+		w.Logger.Errorw("error writing to websocket", err)
+	}
 }
 
 func (w *Worker) ID() string {
@@ -243,7 +251,7 @@ func (w *Worker) Close() {
 
 	close(w.closed)
 	w.cancel()
-	close(w.msgChan)
+	_ = w.conn.Close()
 	w.mu.Unlock()
 }
 
