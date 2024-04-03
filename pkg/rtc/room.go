@@ -1410,7 +1410,7 @@ func (r *Room) simulationCleanupWorker() {
 }
 
 func (r *Room) launchPublisherAgent(p types.Participant) {
-	if p == nil || p.IsRecorder() || p.IsAgent() {
+	if p == nil || p.IsRecorder() || p.IsAgent() || r.agentClient == nil {
 		return
 	}
 
