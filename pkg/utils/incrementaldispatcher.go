@@ -72,6 +72,7 @@ func (d *IncrementalDispatcher[T]) ForEach(fn func(T)) {
 			d.cond.Wait()
 		}
 		d.lock.Unlock()
+		d.cond.Broadcast()
 	}
 
 	dispatchFromIdx()
