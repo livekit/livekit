@@ -776,7 +776,7 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) *RTPDeltaInfo 
 
 	return &RTPDeltaInfo{
 		StartTime:            startTime,
-		Duration:             endTime.Sub(startTime),
+		EndTime:              endTime,
 		Packets:              packetsExpected - uint32(now.packetsPadding-then.packetsPadding),
 		Bytes:                now.bytes - then.bytes,
 		HeaderBytes:          now.headerBytes - then.headerBytes,

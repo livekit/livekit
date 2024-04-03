@@ -158,6 +158,8 @@ func coalesce(stats []*livekit.AnalyticsStat) *livekit.AnalyticsStat {
 	}
 
 	// find aggregates across streams
+	startTime := time.Time{}
+	endTime := time.Time{}
 	scoreSum := float32(0.0) // used for average
 	minScore := float32(0.0) // min score in batched stats
 	var scores []float32     // used for median
@@ -183,6 +185,16 @@ func coalesce(stats []*livekit.AnalyticsStat) *livekit.AnalyticsStat {
 		}
 
 		for _, analyticsStream := range stat.Streams {
+			start := analyticsStream.StartTime.AsTime()
+			if startTime.IsZero() || startTime.After(start) {
+				startTime = start
+			}
+
+			end := analyticsStream.EndTime.AsTime()
+			if endTime.IsZero() || endTime.Before(end) {
+				endTime = end
+			}
+
 			if analyticsStream.Rtt > maxRtt {
 				maxRtt = analyticsStream.Rtt
 			}
@@ -216,6 +228,8 @@ func coalesce(stats []*livekit.AnalyticsStat) *livekit.AnalyticsStat {
 			}
 		}
 	}
+	coalescedStream.StartTime = timestamppb.New(startTime)
+	coalescedStream.EndTime = timestamppb.New(endTime)
 	coalescedStream.Rtt = maxRtt
 	coalescedStream.Jitter = maxJitter
 

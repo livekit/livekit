@@ -55,7 +55,7 @@ func RTPDriftToString(r *livekit.RTPDrift) string {
 
 type RTPDeltaInfo struct {
 	StartTime            time.Time
-	Duration             time.Duration
+	EndTime              time.Time
 	Packets              uint32
 	Bytes                uint64
 	HeaderBytes          uint64
@@ -572,7 +572,7 @@ func (r *rtpStatsBase) deltaInfo(snapshotID uint32, extStartSN uint64, extHighes
 	if packetsExpected == 0 {
 		return &RTPDeltaInfo{
 			StartTime: startTime,
-			Duration:  endTime.Sub(startTime),
+			EndTime:   endTime,
 		}
 	}
 
@@ -592,7 +592,7 @@ func (r *rtpStatsBase) deltaInfo(snapshotID uint32, extStartSN uint64, extHighes
 
 	return &RTPDeltaInfo{
 		StartTime:            startTime,
-		Duration:             endTime.Sub(startTime),
+		EndTime:              endTime,
 		Packets:              uint32(packetsExpected),
 		Bytes:                now.bytes - then.bytes,
 		HeaderBytes:          now.headerBytes - then.headerBytes,
@@ -997,9 +997,8 @@ func AggregateRTPDeltaInfo(deltaInfoList []*RTPDeltaInfo) *RTPDeltaInfo {
 			startTime = deltaInfo.StartTime
 		}
 
-		endedAt := deltaInfo.StartTime.Add(deltaInfo.Duration)
-		if endTime.IsZero() || endTime.Before(endedAt) {
-			endTime = endedAt
+		if endTime.IsZero() || endTime.Before(deltaInfo.EndTime) {
+			endTime = deltaInfo.EndTime
 		}
 
 		packets += deltaInfo.Packets
@@ -1038,7 +1037,7 @@ func AggregateRTPDeltaInfo(deltaInfoList []*RTPDeltaInfo) *RTPDeltaInfo {
 
 	return &RTPDeltaInfo{
 		StartTime:            startTime,
-		Duration:             endTime.Sub(startTime),
+		EndTime:              endTime,
 		Packets:              packets,
 		Bytes:                bytes,
 		HeaderBytes:          headerBytes,

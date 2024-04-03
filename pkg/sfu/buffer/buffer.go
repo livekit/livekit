@@ -793,14 +793,16 @@ func (b *Buffer) mayGrowBucket() {
 		return
 	}
 	oldCap := cap
-	deltaInfo := b.rtpStats.DeltaInfo(b.ppsSnapshotId)
-	if deltaInfo != nil && deltaInfo.Duration > 500*time.Millisecond {
-		pps := int(time.Duration(deltaInfo.Packets) * time.Second / deltaInfo.Duration)
-		for pps > cap && cap < maxPkts {
-			cap = b.bucket.Grow()
-		}
-		if cap > oldCap {
-			b.logger.Debugw("grow bucket", "from", oldCap, "to", cap, "pps", pps)
+	if deltaInfo := b.rtpStats.DeltaInfo(b.ppsSnapshotId); deltaInfo != nil {
+		duration := deltaInfo.EndTime.Sub(deltaInfo.StartTime)
+		if duration > 500*time.Millisecond {
+			pps := int(time.Duration(deltaInfo.Packets) * time.Second / duration)
+			for pps > cap && cap < maxPkts {
+				cap = b.bucket.Grow()
+			}
+			if cap > oldCap {
+				b.logger.Debugw("grow bucket", "from", oldCap, "to", cap, "pps", pps)
+			}
 		}
 	}
 }
