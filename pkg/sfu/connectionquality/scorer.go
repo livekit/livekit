@@ -505,7 +505,7 @@ func (q *qualityScorer) isPaused() bool {
 }
 
 func (q *qualityScorer) getPacketLossWeight(stat *windowStat) float64 {
-	if stat == nil || stat.duration == 0 {
+	if stat == nil || stat.duration <= 0 {
 		return q.params.PacketLossWeight
 	}
 
