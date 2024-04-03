@@ -161,19 +161,23 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority 
 	receivers := slices.Clone(t.receivers)
 
 	// codec position maybe taken by DummyReceiver, check and upgrade to WebRTCReceiver
-	var upgradeReceiver bool
-	for _, r := range receivers {
+	receiverToAdd := receiver
+	idx := -1
+	for i, r := range receivers {
 		if strings.EqualFold(r.Codec().MimeType, receiver.Codec().MimeType) {
-			if d, ok := r.TrackReceiver.(*DummyReceiver); ok {
-				d.Upgrade(receiver)
-				upgradeReceiver = true
-				break
-			}
+			idx = i
+			break
 		}
 	}
-	if !upgradeReceiver {
-		receivers = append(receivers, &simulcastReceiver{TrackReceiver: receiver, priority: priority})
+	if idx != -1 {
+		if d, ok := receivers[idx].TrackReceiver.(*DummyReceiver); ok {
+			d.Upgrade(receiver)
+			receiverToAdd = d
+		}
+		// replace receiver
+		receivers = slices.Delete(receivers, idx, idx+1)
 	}
+	receivers = append(receivers, &simulcastReceiver{TrackReceiver: receiverToAdd, priority: priority})
 
 	sort.Slice(receivers, func(i, j int) bool {
 		return receivers[i].Priority() < receivers[j].Priority()
@@ -319,15 +323,21 @@ func (t *MediaTrackReceiver) TryClose() bool {
 		return true
 	}
 
+	numActiveReceivers := 0
 	for _, receiver := range t.receivers {
-		if dr, _ := receiver.TrackReceiver.(*DummyReceiver); dr != nil && dr.Receiver() != nil {
-			t.lock.RUnlock()
-			return false
+		dr, ok := receiver.TrackReceiver.(*DummyReceiver)
+		if !ok || dr.Receiver() != nil {
+			// !ok means real receiver OR
+			// dummy receiver with a regular receiver attached
+			numActiveReceivers++
 		}
 	}
 	t.lock.RUnlock()
-	t.Close()
+	if numActiveReceivers != 0 {
+		return false
+	}
 
+	t.Close()
 	return true
 }
 

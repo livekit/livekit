@@ -26,23 +26,6 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-func newConnectionStats(
-	mimeType string,
-	isFECEnabled bool,
-	includeRTT bool,
-	includeJitter bool,
-	receiverProvider ConnectionStatsReceiverProvider,
-) *ConnectionStats {
-	return NewConnectionStats(ConnectionStatsParams{
-		MimeType:         mimeType,
-		IsFECEnabled:     isFECEnabled,
-		IncludeRTT:       includeRTT,
-		IncludeJitter:    includeJitter,
-		ReceiverProvider: receiverProvider,
-		Logger:           logger.GetLogger(),
-	})
-}
-
 // -----------------------------------------------
 
 type testReceiverProvider struct {
@@ -66,7 +49,15 @@ func (trp *testReceiverProvider) GetDeltaStats() map[uint32]*buffer.StreamStatsW
 func TestConnectionQuality(t *testing.T) {
 	trp := newTestReceiverProvider()
 	t.Run("quality scorer operation", func(t *testing.T) {
-		cs := newConnectionStats("audio/opus", false, true, true, trp)
+		cs := NewConnectionStats(ConnectionStatsParams{
+			MimeType:           "audio/opus",
+			IsFECEnabled:       false,
+			IncludeRTT:         true,
+			IncludeJitter:      true,
+			EnableBitrateScore: true,
+			ReceiverProvider:   trp,
+			Logger:             logger.GetLogger(),
+		})
 
 		duration := 5 * time.Second
 		now := time.Now()
@@ -84,7 +75,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
-					Duration:  duration,
+					EndTime:   now.Add(duration),
 					Packets:   250,
 				},
 			},
@@ -100,7 +91,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime:   now,
-					Duration:    duration,
+					EndTime:     now.Add(duration),
 					Packets:     120,
 					PacketsLost: 30,
 				},
@@ -108,7 +99,7 @@ func TestConnectionQuality(t *testing.T) {
 			2: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime:   now,
-					Duration:    duration,
+					EndTime:     now.Add(duration),
 					Packets:     130,
 					PacketsLost: 0,
 				},
@@ -127,7 +118,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
-					Duration:  duration,
+					EndTime:   now.Add(duration),
 					Packets:   250,
 				},
 			},
@@ -143,7 +134,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
-					Duration:  duration,
+					EndTime:   now.Add(duration),
 					Packets:   250,
 				},
 			},
@@ -159,7 +150,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
-					Duration:  duration,
+					EndTime:   now.Add(duration),
 					Packets:   250,
 				},
 			},
@@ -175,7 +166,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime:   now,
-					Duration:    duration,
+					EndTime:     now.Add(duration),
 					Packets:     250,
 					PacketsLost: 13,
 				},
@@ -192,7 +183,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
-					Duration:  duration,
+					EndTime:   now.Add(duration),
 					Packets:   250,
 				},
 			},
@@ -208,7 +199,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
-					Duration:  duration,
+					EndTime:   now.Add(duration),
 					Packets:   250,
 				},
 			},
@@ -224,7 +215,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime:   now,
-					Duration:    duration,
+					EndTime:     now.Add(duration),
 					Packets:     250,
 					PacketsLost: 30,
 				},
@@ -249,7 +240,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
-					Duration:  duration,
+					EndTime:   now.Add(duration),
 					Packets:   0,
 				},
 			},
@@ -265,7 +256,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
-					Duration:  duration,
+					EndTime:   now.Add(duration),
 					Packets:   0,
 				},
 			},
@@ -290,7 +281,7 @@ func TestConnectionQuality(t *testing.T) {
 				1: {
 					RTPStats: &buffer.RTPDeltaInfo{
 						StartTime:   now,
-						Duration:    duration,
+						EndTime:     now.Add(duration),
 						Packets:     250,
 						PacketsLost: 0,
 					},
@@ -310,7 +301,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime:   now,
-					Duration:    duration,
+					EndTime:     now.Add(duration),
 					Packets:     50,
 					PacketsLost: 5,
 				},
@@ -332,7 +323,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime:   now,
-					Duration:    duration,
+					EndTime:     now.Add(duration),
 					Packets:     250,
 					PacketsLost: 5,
 					RttMax:      400,
@@ -358,7 +349,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
-					Duration:  duration,
+					EndTime:   now.Add(duration),
 					Packets:   250,
 					Bytes:     8_000_000 / 8 / 5,
 				},
@@ -377,7 +368,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
-					Duration:  duration,
+					EndTime:   now.Add(duration),
 					Packets:   250,
 					Bytes:     8_000_000 / 8 / 5,
 				},
@@ -401,7 +392,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
-					Duration:  duration,
+					EndTime:   now.Add(duration),
 					Packets:   250,
 					Bytes:     8_000_000 / 8 / 5,
 				},
@@ -428,7 +419,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime: now,
-					Duration:  duration,
+					EndTime:   now.Add(duration),
 					Packets:   250,
 					Bytes:     8_000_000 / 8 / 5,
 				},
@@ -441,7 +432,14 @@ func TestConnectionQuality(t *testing.T) {
 	})
 
 	t.Run("quality scorer dependent rtt", func(t *testing.T) {
-		cs := newConnectionStats("audio/opus", false, false, true, trp)
+		cs := NewConnectionStats(ConnectionStatsParams{
+			MimeType:         "audio/opus",
+			IsFECEnabled:     false,
+			IncludeRTT:       false,
+			IncludeJitter:    true,
+			ReceiverProvider: trp,
+			Logger:           logger.GetLogger(),
+		})
 
 		duration := 5 * time.Second
 		now := time.Now()
@@ -455,7 +453,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime:   now,
-					Duration:    duration,
+					EndTime:     now.Add(duration),
 					Packets:     250,
 					PacketsLost: 5,
 					RttMax:      700,
@@ -469,7 +467,14 @@ func TestConnectionQuality(t *testing.T) {
 	})
 
 	t.Run("quality scorer dependent jitter", func(t *testing.T) {
-		cs := newConnectionStats("audio/opus", false, true, false, trp)
+		cs := NewConnectionStats(ConnectionStatsParams{
+			MimeType:         "audio/opus",
+			IsFECEnabled:     false,
+			IncludeRTT:       true,
+			IncludeJitter:    false,
+			ReceiverProvider: trp,
+			Logger:           logger.GetLogger(),
+		})
 
 		duration := 5 * time.Second
 		now := time.Now()
@@ -483,7 +488,7 @@ func TestConnectionQuality(t *testing.T) {
 			1: {
 				RTPStats: &buffer.RTPDeltaInfo{
 					StartTime:   now,
-					Duration:    duration,
+					EndTime:     now.Add(duration),
 					Packets:     250,
 					PacketsLost: 5,
 					JitterMax:   200,
@@ -634,7 +639,14 @@ func TestConnectionQuality(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				cs := newConnectionStats(tc.mimeType, tc.isFECEnabled, true, true, trp)
+				cs := NewConnectionStats(ConnectionStatsParams{
+					MimeType:         tc.mimeType,
+					IsFECEnabled:     tc.isFECEnabled,
+					IncludeRTT:       true,
+					IncludeJitter:    true,
+					ReceiverProvider: trp,
+					Logger:           logger.GetLogger(),
+				})
 
 				duration := 5 * time.Second
 				now := time.Now()
@@ -645,7 +657,7 @@ func TestConnectionQuality(t *testing.T) {
 						123: {
 							RTPStats: &buffer.RTPDeltaInfo{
 								StartTime:   now,
-								Duration:    duration,
+								EndTime:     now.Add(duration),
 								Packets:     tc.packetsExpected,
 								PacketsLost: uint32(math.Ceil(eq.packetLossPercentage * float64(tc.packetsExpected) / 100.0)),
 							},
@@ -727,7 +739,15 @@ func TestConnectionQuality(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				cs := newConnectionStats("video/vp8", false, true, true, trp)
+				cs := NewConnectionStats(ConnectionStatsParams{
+					MimeType:           "video/vp8",
+					IsFECEnabled:       false,
+					IncludeRTT:         true,
+					IncludeJitter:      true,
+					EnableBitrateScore: true,
+					ReceiverProvider:   trp,
+					Logger:             logger.GetLogger(),
+				})
 
 				duration := 5 * time.Second
 				now := time.Now()
@@ -741,7 +761,7 @@ func TestConnectionQuality(t *testing.T) {
 					123: {
 						RTPStats: &buffer.RTPDeltaInfo{
 							StartTime: now,
-							Duration:  duration,
+							EndTime:   now.Add(duration),
 							Packets:   100,
 							Bytes:     tc.bytes,
 						},
@@ -814,7 +834,14 @@ func TestConnectionQuality(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				cs := newConnectionStats("video/vp8", false, true, true, trp)
+				cs := NewConnectionStats(ConnectionStatsParams{
+					MimeType:         "video/vp8",
+					IsFECEnabled:     false,
+					IncludeRTT:       true,
+					IncludeJitter:    true,
+					ReceiverProvider: trp,
+					Logger:           logger.GetLogger(),
+				})
 
 				duration := 5 * time.Second
 				now := time.Now()
@@ -828,7 +855,7 @@ func TestConnectionQuality(t *testing.T) {
 					123: {
 						RTPStats: &buffer.RTPDeltaInfo{
 							StartTime: now,
-							Duration:  duration,
+							EndTime:   now.Add(duration),
 							Packets:   200,
 						},
 					},

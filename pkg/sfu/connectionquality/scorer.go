@@ -123,8 +123,8 @@ func (w *windowStat) calculatePacketScore(plw float64, includeRTT bool, includeJ
 	return score
 }
 
-func (w *windowStat) calculateBitrateScore(expectedBitrate int64) float64 {
-	if expectedBitrate == 0 {
+func (w *windowStat) calculateBitrateScore(expectedBitrate int64, isEnabled bool) float64 {
+	if expectedBitrate == 0 || !isEnabled {
 		// unsupported mode OR all layers stopped
 		return cMaxScore
 	}
@@ -180,10 +180,11 @@ func (w *windowStat) MarshalLogObject(e zapcore.ObjectEncoder) error {
 // ------------------------------------------
 
 type qualityScorerParams struct {
-	PacketLossWeight float64
-	IncludeRTT       bool
-	IncludeJitter    bool
-	Logger           logger.Logger
+	PacketLossWeight   float64
+	IncludeRTT         bool
+	IncludeJitter      bool
+	EnableBitrateScore bool
+	Logger             logger.Logger
 }
 
 type qualityScorer struct {
@@ -396,7 +397,7 @@ func (q *qualityScorer) updateAtLocked(stat *windowStat, at time.Time) {
 		score = qualityTransitionScore[livekit.ConnectionQuality_LOST]
 	} else {
 		packetScore := stat.calculatePacketScore(plw, q.params.IncludeRTT, q.params.IncludeJitter)
-		bitrateScore := stat.calculateBitrateScore(expectedBitrate)
+		bitrateScore := stat.calculateBitrateScore(expectedBitrate, q.params.EnableBitrateScore)
 		layerScore := math.Max(math.Min(cMaxScore, cMaxScore-(expectedDistance*distanceWeight)), 0.0)
 
 		minScore := math.Min(packetScore, bitrateScore)
@@ -504,7 +505,7 @@ func (q *qualityScorer) isPaused() bool {
 }
 
 func (q *qualityScorer) getPacketLossWeight(stat *windowStat) float64 {
-	if stat == nil || stat.duration == 0 {
+	if stat == nil || stat.duration <= 0 {
 		return q.params.PacketLossWeight
 	}
 

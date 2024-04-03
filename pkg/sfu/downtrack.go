@@ -533,13 +533,9 @@ func (d *DownTrack) SubscriberID() livekit.ParticipantID {
 
 // Sets RTP header extensions for this track
 func (d *DownTrack) SetRTPHeaderExtensions(rtpHeaderExtensions []webrtc.RTPHeaderExtensionParameter) {
-	d.streamAllocatorLock.RLock()
-	listener := d.streamAllocatorListener
-	d.streamAllocatorLock.RUnlock()
-
 	isBWEEnabled := true
-	if listener != nil {
-		isBWEEnabled = listener.IsBWEEnabled(d)
+	if sal := d.getStreamAllocatorListener(); sal != nil {
+		isBWEEnabled = sal.IsBWEEnabled(d)
 	}
 	for _, ext := range rtpHeaderExtensions {
 		switch ext.URI {
@@ -669,13 +665,23 @@ func (d *DownTrack) maxLayerNotifierWorker() {
 		d.params.Logger.Debugw("max subscribed layer processed", "layer", maxLayerSpatial, "event", event)
 
 		if onMaxSubscribedLayerChanged := d.getOnMaxLayerChanged(); onMaxSubscribedLayerChanged != nil {
-			d.params.Logger.Debugw("notifying max subscribed layer", "layer", maxLayerSpatial, "event", event)
+			d.params.Logger.Debugw(
+				"notifying max subscribed layer",
+				"layer", maxLayerSpatial,
+				"event", event,
+				"subscriberID", d.SubscriberID(),
+			)
 			onMaxSubscribedLayerChanged(d, maxLayerSpatial)
 		}
 	}
 
 	if onMaxSubscribedLayerChanged := d.getOnMaxLayerChanged(); onMaxSubscribedLayerChanged != nil {
-		d.params.Logger.Debugw("notifying max subscribed layer", "layer", buffer.InvalidLayerSpatial, "event", "close")
+		d.params.Logger.Debugw(
+			"notifying max subscribed layer",
+			"layer", buffer.InvalidLayerSpatial,
+			"event", "close",
+			"subscriberID", d.SubscriberID(),
+		)
 		onMaxSubscribedLayerChanged(d, buffer.InvalidLayerSpatial)
 	}
 }
@@ -865,13 +871,9 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 
 // Mute enables or disables media forwarding - subscriber triggered
 func (d *DownTrack) Mute(muted bool) {
-	d.streamAllocatorLock.RLock()
-	listener := d.streamAllocatorListener
-	d.streamAllocatorLock.RUnlock()
-
 	isSubscribeMutable := true
-	if listener != nil {
-		isSubscribeMutable = listener.IsSubscribeMutable(d)
+	if sal := d.getStreamAllocatorListener(); sal != nil {
+		isSubscribeMutable = sal.IsSubscribeMutable(d)
 	}
 	changed := d.forwarder.Mute(muted, isSubscribeMutable)
 	d.handleMute(muted, changed)
@@ -987,9 +989,10 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		d.rtcpReader.Close()
 		d.rtcpReader.OnPacket(nil)
 	}
-
 	d.bindLock.Unlock()
+
 	d.connectionStats.Close()
+
 	d.rtpStats.Stop()
 	d.params.Logger.Debugw("rtp stats",
 		"direction", "downstream",
@@ -1087,7 +1090,7 @@ func (d *DownTrack) UpTrackMaxTemporalLayerSeenChange(maxTemporalLayerSeen int32
 	}
 }
 
-func (d *DownTrack) maybeAddTransition(_ int64, distance float64, pauseReason VideoPauseReason) {
+func (d *DownTrack) maybeAddTransition(bitrate int64, distance float64, pauseReason VideoPauseReason) {
 	if d.kind == webrtc.RTPCodecTypeAudio {
 		return
 	}
@@ -1097,6 +1100,7 @@ func (d *DownTrack) maybeAddTransition(_ int64, distance float64, pauseReason Vi
 	} else {
 		d.connectionStats.UpdatePause(false)
 		d.connectionStats.AddLayerTransition(distance)
+		d.connectionStats.AddBitrateTransition(bitrate)
 	}
 }
 

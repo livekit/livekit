@@ -633,8 +633,8 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *RTCPS
 		return nil
 	}
 
-	timeSincePublisherSR := time.Since(publisherSRData.At)
-	now := publisherSRData.At.Add(timeSincePublisherSR)
+	timeSincePublisherSR := time.Since(publisherSRData.AtAdjusted)
+	now := publisherSRData.AtAdjusted.Add(timeSincePublisherSR)
 	nowNTP := mediatransportutil.ToNtpTime(now)
 	nowRTPExt := publisherSRData.RTPTimestampExt - tsOffset + uint64(timeSincePublisherSR.Nanoseconds()*int64(r.params.ClockRate)/1e9)
 
@@ -643,6 +643,7 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *RTCPS
 		RTPTimestamp:    uint32(nowRTPExt),
 		RTPTimestampExt: nowRTPExt,
 		At:              now,
+		AtAdjusted:      now,
 	}
 
 	getFields := func() []interface{} {
@@ -775,7 +776,7 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) *RTPDeltaInfo 
 
 	return &RTPDeltaInfo{
 		StartTime:            startTime,
-		Duration:             endTime.Sub(startTime),
+		EndTime:              endTime,
 		Packets:              packetsExpected - uint32(now.packetsPadding-then.packetsPadding),
 		Bytes:                now.bytes - then.bytes,
 		HeaderBytes:          now.headerBytes - then.headerBytes,

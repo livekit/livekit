@@ -265,7 +265,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	}
 	p.closeReason.Store(types.ParticipantCloseReasonNone)
 	p.version.Store(params.InitialVersion)
-	p.timedVersion.Update(params.VersionGenerator.New())
+	p.timedVersion.Update(params.VersionGenerator.Next())
 	p.migrateState.Store(types.MigrateStateInit)
 	p.state.Store(livekit.ParticipantInfo_JOINING)
 	p.grants = params.Grants
@@ -495,16 +495,20 @@ func (p *ParticipantImpl) CanSkipBroadcast() bool {
 }
 
 func (p *ParticipantImpl) ToProtoWithVersion() (*livekit.ParticipantInfo, utils.TimedVersion) {
-	v := p.version.Load()
-	piv := p.timedVersion.Load()
-	if p.dirty.Swap(false) {
-		v = p.version.Inc()
-		piv = p.params.VersionGenerator.Next()
-		p.timedVersion.Update(&piv)
+	if p.dirty.Load() {
+		p.lock.Lock()
+		if p.dirty.Swap(false) {
+			p.version.Inc()
+			p.timedVersion.Update(p.params.VersionGenerator.Next())
+		}
+		p.lock.Unlock()
 	}
 
 	grants := p.ClaimGrants()
 	p.lock.RLock()
+	v := p.version.Load()
+	piv := p.timedVersion
+
 	pi := &livekit.ParticipantInfo{
 		Sid:         string(p.params.SID),
 		Identity:    string(p.params.Identity),
@@ -1988,9 +1992,9 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 		}
 
 		ti.MimeType = track.Codec().MimeType
-		if utils.NewTimedVersionFromProto(ti.Version).IsZero() {
+		if utils.TimedVersionFromProto(ti.Version).IsZero() {
 			// only assign version on a fresh publish, i. e. avoid updating version in scenarios like migration
-			ti.Version = p.params.VersionGenerator.New().ToProto()
+			ti.Version = p.params.VersionGenerator.Next().ToProto()
 		}
 		mt = p.addMediaTrack(signalCid, track.ID(), ti)
 		newTrack = true
@@ -2337,6 +2341,25 @@ func (p *ParticipantImpl) DebugInfo() map[string]interface{} {
 }
 
 func (p *ParticipantImpl) postRtcp(pkts []rtcp.Packet) {
+	p.lock.RLock()
+	migrationTimer := p.migrationTimer
+	p.lock.RUnlock()
+
+	// Once migration out is active, layers getting added would not be communicated to
+	// where the publisher is migrating to. Without SSRC, `UnhandleSimulcastInterceptor`
+	// cannot be set up on the migrating in node. Without that interceptor, simulcast
+	// probing will fail.
+	//
+	// Clients usually send `rid` RTP header extension till they get an RTCP Receiver Report
+	// from the remote side. So, by curbing RTCP when migration is active, even if a new layer
+	// get published to this node, client should continue to send `rid` to the new node
+	// post migration and the new node can do regular simulcast probing (without the
+	// `UnhandleSimulcastInterceptor`) to fire `OnTrack` on that layer. And when the new node
+	// sends RTCP Receiver Report back to the client, client will stop `rid`.
+	if migrationTimer != nil {
+		return
+	}
+
 	p.pubRTCPQueue.Enqueue(func() {
 		if err := p.TransportManager.WritePublisherRTCP(pkts); err != nil && !IsEOF(err) {
 			p.pubLogger.Errorw("could not write RTCP to participant", err)
@@ -2358,6 +2381,7 @@ func (p *ParticipantImpl) CacheDownTrack(trackID livekit.TrackID, rtpTransceiver
 		p.subLogger.Infow("cached transceiver changed", "trackID", trackID)
 	}
 	p.cachedDownTracks[trackID] = &downTrackState{transceiver: rtpTransceiver, downTrack: downTrack}
+	p.subLogger.Debugw("caching downtrack", "trackID", trackID)
 	p.lock.Unlock()
 }
 
@@ -2365,6 +2389,9 @@ func (p *ParticipantImpl) UncacheDownTrack(rtpTransceiver *webrtc.RTPTransceiver
 	p.lock.Lock()
 	for trackID, dts := range p.cachedDownTracks {
 		if dts.transceiver == rtpTransceiver {
+			if dts := p.cachedDownTracks[trackID]; dts != nil {
+				p.subLogger.Debugw("uncaching downtrack", "trackID", trackID)
+			}
 			delete(p.cachedDownTracks, trackID)
 			break
 		}
@@ -2376,8 +2403,7 @@ func (p *ParticipantImpl) GetCachedDownTrack(trackID livekit.TrackID) (*webrtc.R
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
-	dts := p.cachedDownTracks[trackID]
-	if dts != nil {
+	if dts := p.cachedDownTracks[trackID]; dts != nil {
 		return dts.transceiver, dts.downTrack
 	}
 
