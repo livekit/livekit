@@ -185,12 +185,13 @@ type TranslationParams struct {
 // -------------------------------------------------------------------
 
 type ForwarderState struct {
-	Started      bool
-	PreStartTime time.Time
-	ExtFirstTS   uint64
-	RefTSOffset  uint64
-	RTP          RTPMungerState
-	Codec        interface{}
+	Started               bool
+	ReferenceLayerSpatial int32
+	PreStartTime          time.Time
+	ExtFirstTS            uint64
+	RefTSOffset           uint64
+	RTP                   RTPMungerState
+	Codec                 interface{}
 }
 
 func (f ForwarderState) String() string {
@@ -199,8 +200,9 @@ func (f ForwarderState) String() string {
 	case codecmunger.VP8State:
 		codecString = codecState.String()
 	}
-	return fmt.Sprintf("ForwarderState{started: %v, preStartTime: %s, extFirstTS: %d, refTSOffset: %d, rtp: %s, codec: %s}",
+	return fmt.Sprintf("ForwarderState{started: %v, referenceLayerSpatial: %d, preStartTime: %s, extFirstTS: %d, refTSOffset: %d, rtp: %s, codec: %s}",
 		f.Started,
+		f.ReferenceLayerSpatial,
 		f.PreStartTime.String(),
 		f.ExtFirstTS,
 		f.RefTSOffset,
@@ -375,12 +377,13 @@ func (f *Forwarder) GetState() ForwarderState {
 	}
 
 	return ForwarderState{
-		Started:      f.started,
-		PreStartTime: f.preStartTime,
-		ExtFirstTS:   f.extFirstTS,
-		RefTSOffset:  f.refTSOffset,
-		RTP:          f.rtpMunger.GetLast(),
-		Codec:        f.codecMunger.GetState(),
+		Started:               f.started,
+		ReferenceLayerSpatial: f.referenceLayerSpatial,
+		PreStartTime:          f.preStartTime,
+		ExtFirstTS:            f.extFirstTS,
+		RefTSOffset:           f.refTSOffset,
+		RTP:                   f.rtpMunger.GetLast(),
+		Codec:                 f.codecMunger.GetState(),
 	}
 }
 
@@ -396,6 +399,7 @@ func (f *Forwarder) SeedState(state ForwarderState) {
 	f.codecMunger.SeedState(state.Codec)
 
 	f.started = true
+	f.referenceLayerSpatial = state.ReferenceLayerSpatial
 	f.preStartTime = state.PreStartTime
 	f.extFirstTS = state.ExtFirstTS
 	f.refTSOffset = state.RefTSOffset
@@ -1475,7 +1479,6 @@ func (f *Forwarder) resyncLocked() {
 	if f.pubMuted {
 		f.resumeBehindThreshold = ResumeBehindThresholdSeconds
 	}
-	f.referenceLayerSpatial = buffer.InvalidLayerSpatial
 }
 
 func (f *Forwarder) CheckSync() (bool, int32) {
@@ -1538,10 +1541,18 @@ func (f *Forwarder) GetTranslationParams(extPkt *buffer.ExtPacket, layer int32) 
 }
 
 func (f *Forwarder) getReferenceLayerRTPTimestamp(ts uint32, refLayer, targetLayer int32) (uint32, error) {
+	if refLayer < 0 || int(refLayer) > len(f.refSenderReports) || targetLayer < 0 || int(targetLayer) > len(f.refSenderReports) {
+		return 0, fmt.Errorf("invalid layer(s), refLayer: %d, targetLayer: %d", refLayer, targetLayer)
+	}
+
+	if refLayer == targetLayer || f.refIsSVC {
+		return ts, nil
+	}
+
 	srRef := f.refSenderReports[refLayer]
 	srTarget := f.refSenderReports[targetLayer]
 	if srRef == nil || srRef.NTPTimestamp == 0 || srTarget == nil || srTarget.NTPTimestamp == 0 {
-		return 0, fmt.Errorf("invalid layer(s), refLayer: %d, targetLayer: %d", refLayer, targetLayer)
+		return 0, fmt.Errorf("unavailable layer(s), refLayer: %d, targetLayer: %d", refLayer, targetLayer)
 	}
 
 	ntpDiff := srRef.NTPTimestamp.Time().Sub(srTarget.NTPTimestamp.Time())
@@ -1615,7 +1626,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 	switchingAt := time.Now()
 	if !f.skipReferenceTS {
 		var err error
-		refTS, err = f.getReferenceLayerRTPTimestamp(extPkt.Packet.Timestamp, layer, f.referenceLayerSpatial)
+		refTS, err = f.getReferenceLayerRTPTimestamp(extPkt.Packet.Timestamp, f.referenceLayerSpatial, layer)
 		if err != nil {
 			// error out if refTS is not available. It can happen when there is no sender report
 			// for the layer being switched to. Can especially happen at the start of the track when layer switches are
@@ -1703,6 +1714,12 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			extNextTS = extRefTS
 		}
 		f.resumeBehindThreshold = 0.0
+
+		// sender reports are cleared after calculating switch time stamp
+		// as relative differences between layers should remain the same.
+		// TODO: If the relative difference changes a lot, probably have to
+		// abandon the checks above and just use the expected timestamp
+		// as the next time stamp.
 		f.clearRefSenderReportsLocked()
 	} else {
 		// switching between layers, check if extRefTS is too far behind the last sent
