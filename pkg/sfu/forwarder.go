@@ -1538,7 +1538,7 @@ func (f *Forwarder) getReferenceLayerRTPTimestamp(ts uint32, refLayer, targetLay
 	srRef := f.refSenderReports[refLayer]
 	srTarget := f.refSenderReports[targetLayer]
 	if srRef == nil || srRef.NTPTimestamp == 0 || srTarget == nil || srTarget.NTPTimestamp == 0 {
-		return 0, fmt.Errorf("invalid layer(s), refLayer: %d, targetLayer", refLayer, targetLayer)
+		return 0, fmt.Errorf("invalid layer(s), refLayer: %d, targetLayer: %d", refLayer, targetLayer)
 	}
 
 	ntpDiff := srRef.NTPTimestamp.Time().Sub(srTarget.NTPTimestamp.Time())
