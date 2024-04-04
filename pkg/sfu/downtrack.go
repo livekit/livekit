@@ -317,6 +317,7 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 	d.forwarder = NewForwarder(
 		d.kind,
 		params.Logger,
+		false,
 		d.getExpectedRTPTimestamp,
 	)
 

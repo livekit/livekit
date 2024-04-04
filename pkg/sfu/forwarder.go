@@ -216,6 +216,7 @@ type Forwarder struct {
 	codec                   webrtc.RTPCodecCapability
 	kind                    webrtc.RTPCodecType
 	logger                  logger.Logger
+	skipReferenceTS         bool
 	getExpectedRTPTimestamp func(at time.Time) (uint64, error)
 
 	muted                 bool
@@ -245,11 +246,13 @@ type Forwarder struct {
 func NewForwarder(
 	kind webrtc.RTPCodecType,
 	logger logger.Logger,
+	skipReferenceTS bool,
 	getExpectedRTPTimestamp func(at time.Time) (uint64, error),
 ) *Forwarder {
 	f := &Forwarder{
 		kind:                    kind,
 		logger:                  logger,
+		skipReferenceTS:         skipReferenceTS,
 		getExpectedRTPTimestamp: getExpectedRTPTimestamp,
 		referenceLayerSpatial:   buffer.InvalidLayerSpatial,
 		lastAllocation:          VideoAllocationDefault,
@@ -1608,15 +1611,19 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 	extLastTS := rtpMungerState.ExtLastTS
 	extExpectedTS := extLastTS
 	extRefTS := extExpectedTS
+	refTS := uint32(extRefTS)
 	switchingAt := time.Now()
-	refTS, err := f.getReferenceLayerRTPTimestamp(extPkt.Packet.Timestamp, layer, f.referenceLayerSpatial)
-	if err != nil {
-		// error out if refTS is not available. It can happen when there is no sender report
-		// for the layer being switched to. Can especially happen at the start of the track when layer switches are
-		// potentially happening very quickly. Erroring out and waiting for a layer for which a sender report has been
-		// received will calculate a better offset, but may result in initial adaptation to take a bit longer depending
-		// on how often publisher/remote side sends RTCP sender report.
-		return err
+	if !f.skipReferenceTS {
+		var err error
+		refTS, err = f.getReferenceLayerRTPTimestamp(extPkt.Packet.Timestamp, layer, f.referenceLayerSpatial)
+		if err != nil {
+			// error out if refTS is not available. It can happen when there is no sender report
+			// for the layer being switched to. Can especially happen at the start of the track when layer switches are
+			// potentially happening very quickly. Erroring out and waiting for a layer for which a sender report has been
+			// received will calculate a better offset, but may result in initial adaptation to take a bit longer depending
+			// on how often publisher/remote side sends RTCP sender report.
+			return err
+		}
 	}
 
 	extRefTS = (extRefTS & 0xFFFF_FFFF_0000_0000) + uint64(refTS)
