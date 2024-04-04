@@ -317,7 +317,7 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 	d.forwarder = NewForwarder(
 		d.kind,
 		params.Logger,
-		d.params.Receiver.GetReferenceLayerRTPTimestamp,
+		false,
 		d.getExpectedRTPTimestamp,
 	)
 
@@ -1306,8 +1306,8 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 		return nil
 	}
 
-	layer, tsOffset := d.forwarder.GetCurrentSpatialAndTSOffset()
-	return d.rtpStats.GetRtcpSenderReport(d.ssrc, d.params.Receiver.GetRTCPSenderReportData(layer), tsOffset)
+	_, tsOffset, refSenderReport := d.forwarder.GetSenderReportParams()
+	return d.rtpStats.GetRtcpSenderReport(d.ssrc, refSenderReport, tsOffset)
 }
 
 func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan struct{} {
@@ -1950,9 +1950,11 @@ func (d *DownTrack) HandleRTCPSenderReportData(
 	layer int32,
 	publisherSRData *buffer.RTCPSenderReportData,
 ) error {
-	currentLayer, tsOffset := d.forwarder.GetCurrentSpatialAndTSOffset()
+	d.forwarder.SetRefSenderReport(isSVC, layer, publisherSRData)
+
+	currentLayer, tsOffset, refSenderReport := d.forwarder.GetSenderReportParams()
 	if layer == currentLayer || (layer == 0 && isSVC) {
-		d.handleRTCPSenderReportData(publisherSRData, tsOffset)
+		d.handleRTCPSenderReportData(refSenderReport, tsOffset)
 	}
 	return nil
 }
@@ -2010,10 +2012,6 @@ func (d *DownTrack) sendingPacket(hdr *rtp.Header, payloadSize int, spmd *sendPa
 		}
 
 		if spmd.tp.isResuming {
-			// adjust first packet time on a resumption so that subsequent switches get a more accurate expected time stamp
-			currentLayer, tsOffset := d.forwarder.GetCurrentSpatialAndTSOffset()
-			d.handleRTCPSenderReportData(d.params.Receiver.GetRTCPSenderReportData(currentLayer), tsOffset)
-
 			if sal := d.getStreamAllocatorListener(); sal != nil {
 				sal.OnResume(d)
 			}
