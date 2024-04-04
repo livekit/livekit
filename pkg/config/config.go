@@ -67,6 +67,7 @@ type Config struct {
 	Audio          AudioConfig              `yaml:"audio,omitempty"`
 	Video          VideoConfig              `yaml:"video,omitempty"`
 	Room           RoomConfig               `yaml:"room,omitempty"`
+	STUN           STUNConfig               `yaml:"stun,omitempty"`
 	TURN           TURNConfig               `yaml:"turn,omitempty"`
 	Ingress        IngressConfig            `yaml:"ingress,omitempty"`
 	SIP            SIPConfig                `yaml:"sip,omitempty"`
@@ -247,6 +248,10 @@ type CodecSpec struct {
 type LoggingConfig struct {
 	logger.Config `yaml:",inline"`
 	PionLevel     string `yaml:"pion_level,omitempty"`
+}
+
+type STUNConfig struct {
+	UDPPort int `yaml:"udp_port,omitempty"`
 }
 
 type TURNConfig struct {
@@ -488,6 +493,9 @@ var DefaultConfig = Config{
 	},
 	Logging: LoggingConfig{
 		PionLevel: "error",
+	},
+	STUN: STUNConfig{
+		UDPPort: 3478,
 	},
 	TURN: TURNConfig{
 		Enabled: false,
