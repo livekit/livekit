@@ -325,6 +325,25 @@ func (p *ParticipantImpl) State() livekit.ParticipantInfo_State {
 	return p.state.Load().(livekit.ParticipantInfo_State)
 }
 
+func (p *ParticipantImpl) Kind() livekit.ParticipantInfo_Kind {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	return p.grants.GetParticipantKind()
+}
+
+func (p *ParticipantImpl) IsDependent() bool {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	switch p.grants.GetParticipantKind() {
+	case livekit.ParticipantInfo_AGENT, livekit.ParticipantInfo_EGRESS:
+		return true
+	default:
+		return false
+	}
+}
+
 func (p *ParticipantImpl) ProtocolVersion() types.ProtocolVersion {
 	return p.params.ProtocolVersion
 }
@@ -1088,20 +1107,6 @@ func (p *ParticipantImpl) CanPublishData() bool {
 
 func (p *ParticipantImpl) Hidden() bool {
 	return p.hidden.Load()
-}
-
-func (p *ParticipantImpl) IsRecorder() bool {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-
-	return p.grants.Video.Recorder
-}
-
-func (p *ParticipantImpl) IsAgent() bool {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-
-	return p.grants.Video.Agent
 }
 
 func (p *ParticipantImpl) VerifySubscribeParticipantInfo(pID livekit.ParticipantID, version uint32) {

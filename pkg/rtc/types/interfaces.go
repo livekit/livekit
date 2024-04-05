@@ -245,6 +245,8 @@ type Participant interface {
 	Identity() livekit.ParticipantIdentity
 	State() livekit.ParticipantInfo_State
 	CloseReason() ParticipantCloseReason
+	Kind() livekit.ParticipantInfo_Kind
+	IsDependent() bool
 
 	CanSkipBroadcast() bool
 	ToProto() *livekit.ParticipantInfo
@@ -265,8 +267,6 @@ type Participant interface {
 
 	// permissions
 	Hidden() bool
-	IsRecorder() bool
-	IsAgent() bool
 
 	Close(sendLeave bool, reason ParticipantCloseReason, isExpectedToResume bool) error
 
@@ -586,4 +586,3 @@ type OperationMonitor interface {
 	Check() error
 	IsIdle() bool
 }
-
