@@ -303,6 +303,8 @@ func (w *Worker) handleRegister(req *livekit.RegisterWorkerRequest) {
 	w.registered.Store(true)
 	w.mu.Unlock()
 
+	w.Logger.Debugw("worker registered", "request", req)
+
 	w.sendRequest(&livekit.ServerMessage{
 		Message: &livekit.ServerMessage_Register{
 			Register: &livekit.RegisterWorkerResponse{
@@ -376,6 +378,7 @@ func (w *Worker) handleWorkerPing(ping *livekit.WorkerPing) {
 }
 
 func (w *Worker) handleWorkerStatus(update *livekit.UpdateWorkerStatus) {
+	w.Logger.Debugw("worker status update", "status", update.Status, "load", update.Load)
 	w.UpdateStatus(update)
 }
 
