@@ -340,7 +340,7 @@ func (p *ParticipantImpl) IsDependent() bool {
 	case livekit.ParticipantInfo_AGENT, livekit.ParticipantInfo_EGRESS:
 		return true
 	default:
-		return false
+		return p.grants.Video.Agent || p.grants.Video.Recorder
 	}
 }
 
