@@ -306,6 +306,8 @@ func (r *RTPStatsSender) Update(
 				"hdrSize", hdrSize,
 				"payloadSize", payloadSize,
 				"paddingSize", paddingSize,
+				"firstSR", r.srFirst,
+				"lastSR", r.srNewest,
 			)
 		}
 
@@ -372,6 +374,8 @@ func (r *RTPStatsSender) Update(
 				"hdrSize", hdrSize,
 				"payloadSize", payloadSize,
 				"paddingSize", paddingSize,
+				"firstSR", r.srFirst,
+				"lastSR", r.srNewest,
 			)
 		}
 
@@ -466,6 +470,8 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 			"lastRR", r.lastRR,
 			"sinceLastRR", time.Since(r.lastRRTime).String(),
 			"receivedRR", rr,
+			"firstSR", r.srFirst,
+			"lastSR", r.srNewest,
 		)
 		return
 	}
@@ -545,6 +551,8 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 				"packetsInInterval", extReceivedRRSN-s.extLastRRSN,
 				"extHighestSNFromRR", r.extHighestSNFromRR,
 				"packetsLostFromRR", r.packetsLostFromRR,
+				"firstSR", r.srFirst,
+				"lastSR", r.srNewest,
 			)
 			continue
 		}
@@ -580,6 +588,8 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 					"extHighestSNFromRR", r.extHighestSNFromRR,
 					"packetsLostFromRR", r.packetsLostFromRR,
 					"count", r.metadataCacheOverflowCount,
+					"firstSR", r.srFirst,
+					"lastSR", r.srNewest,
 				)
 			}
 			r.metadataCacheOverflowCount++
@@ -736,6 +746,8 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) *RTPDeltaInfo 
 			"startTime", startTime.String(),
 			"endTime", endTime.String(),
 			"duration", endTime.Sub(startTime).String(),
+			"firstSR", r.srFirst,
+			"lastSR", r.srNewest,
 		)
 		return nil
 	}
