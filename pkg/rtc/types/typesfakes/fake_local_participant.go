@@ -444,16 +444,6 @@ type FakeLocalParticipant struct {
 	identityReturnsOnCall map[int]struct {
 		result1 livekit.ParticipantIdentity
 	}
-	IsAgentStub        func() bool
-	isAgentMutex       sync.RWMutex
-	isAgentArgsForCall []struct {
-	}
-	isAgentReturns struct {
-		result1 bool
-	}
-	isAgentReturnsOnCall map[int]struct {
-		result1 bool
-	}
 	IsClosedStub        func() bool
 	isClosedMutex       sync.RWMutex
 	isClosedArgsForCall []struct {
@@ -462,6 +452,16 @@ type FakeLocalParticipant struct {
 		result1 bool
 	}
 	isClosedReturnsOnCall map[int]struct {
+		result1 bool
+	}
+	IsDependentStub        func() bool
+	isDependentMutex       sync.RWMutex
+	isDependentArgsForCall []struct {
+	}
+	isDependentReturns struct {
+		result1 bool
+	}
+	isDependentReturnsOnCall map[int]struct {
 		result1 bool
 	}
 	IsDisconnectedStub        func() bool
@@ -504,16 +504,6 @@ type FakeLocalParticipant struct {
 	isReadyReturnsOnCall map[int]struct {
 		result1 bool
 	}
-	IsRecorderStub        func() bool
-	isRecorderMutex       sync.RWMutex
-	isRecorderArgsForCall []struct {
-	}
-	isRecorderReturns struct {
-		result1 bool
-	}
-	isRecorderReturnsOnCall map[int]struct {
-		result1 bool
-	}
 	IsSubscribedToStub        func(livekit.ParticipantID) bool
 	isSubscribedToMutex       sync.RWMutex
 	isSubscribedToArgsForCall []struct {
@@ -529,6 +519,16 @@ type FakeLocalParticipant struct {
 	issueFullReconnectMutex       sync.RWMutex
 	issueFullReconnectArgsForCall []struct {
 		arg1 types.ParticipantCloseReason
+	}
+	KindStub        func() livekit.ParticipantInfo_Kind
+	kindMutex       sync.RWMutex
+	kindArgsForCall []struct {
+	}
+	kindReturns struct {
+		result1 livekit.ParticipantInfo_Kind
+	}
+	kindReturnsOnCall map[int]struct {
+		result1 livekit.ParticipantInfo_Kind
 	}
 	MaybeStartMigrationStub        func(bool, func()) bool
 	maybeStartMigrationMutex       sync.RWMutex
@@ -3233,59 +3233,6 @@ func (fake *FakeLocalParticipant) IdentityReturnsOnCall(i int, result1 livekit.P
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) IsAgent() bool {
-	fake.isAgentMutex.Lock()
-	ret, specificReturn := fake.isAgentReturnsOnCall[len(fake.isAgentArgsForCall)]
-	fake.isAgentArgsForCall = append(fake.isAgentArgsForCall, struct {
-	}{})
-	stub := fake.IsAgentStub
-	fakeReturns := fake.isAgentReturns
-	fake.recordInvocation("IsAgent", []interface{}{})
-	fake.isAgentMutex.Unlock()
-	if stub != nil {
-		return stub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeLocalParticipant) IsAgentCallCount() int {
-	fake.isAgentMutex.RLock()
-	defer fake.isAgentMutex.RUnlock()
-	return len(fake.isAgentArgsForCall)
-}
-
-func (fake *FakeLocalParticipant) IsAgentCalls(stub func() bool) {
-	fake.isAgentMutex.Lock()
-	defer fake.isAgentMutex.Unlock()
-	fake.IsAgentStub = stub
-}
-
-func (fake *FakeLocalParticipant) IsAgentReturns(result1 bool) {
-	fake.isAgentMutex.Lock()
-	defer fake.isAgentMutex.Unlock()
-	fake.IsAgentStub = nil
-	fake.isAgentReturns = struct {
-		result1 bool
-	}{result1}
-}
-
-func (fake *FakeLocalParticipant) IsAgentReturnsOnCall(i int, result1 bool) {
-	fake.isAgentMutex.Lock()
-	defer fake.isAgentMutex.Unlock()
-	fake.IsAgentStub = nil
-	if fake.isAgentReturnsOnCall == nil {
-		fake.isAgentReturnsOnCall = make(map[int]struct {
-			result1 bool
-		})
-	}
-	fake.isAgentReturnsOnCall[i] = struct {
-		result1 bool
-	}{result1}
-}
-
 func (fake *FakeLocalParticipant) IsClosed() bool {
 	fake.isClosedMutex.Lock()
 	ret, specificReturn := fake.isClosedReturnsOnCall[len(fake.isClosedArgsForCall)]
@@ -3335,6 +3282,59 @@ func (fake *FakeLocalParticipant) IsClosedReturnsOnCall(i int, result1 bool) {
 		})
 	}
 	fake.isClosedReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) IsDependent() bool {
+	fake.isDependentMutex.Lock()
+	ret, specificReturn := fake.isDependentReturnsOnCall[len(fake.isDependentArgsForCall)]
+	fake.isDependentArgsForCall = append(fake.isDependentArgsForCall, struct {
+	}{})
+	stub := fake.IsDependentStub
+	fakeReturns := fake.isDependentReturns
+	fake.recordInvocation("IsDependent", []interface{}{})
+	fake.isDependentMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) IsDependentCallCount() int {
+	fake.isDependentMutex.RLock()
+	defer fake.isDependentMutex.RUnlock()
+	return len(fake.isDependentArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) IsDependentCalls(stub func() bool) {
+	fake.isDependentMutex.Lock()
+	defer fake.isDependentMutex.Unlock()
+	fake.IsDependentStub = stub
+}
+
+func (fake *FakeLocalParticipant) IsDependentReturns(result1 bool) {
+	fake.isDependentMutex.Lock()
+	defer fake.isDependentMutex.Unlock()
+	fake.IsDependentStub = nil
+	fake.isDependentReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) IsDependentReturnsOnCall(i int, result1 bool) {
+	fake.isDependentMutex.Lock()
+	defer fake.isDependentMutex.Unlock()
+	fake.IsDependentStub = nil
+	if fake.isDependentReturnsOnCall == nil {
+		fake.isDependentReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.isDependentReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
 }
@@ -3551,59 +3551,6 @@ func (fake *FakeLocalParticipant) IsReadyReturnsOnCall(i int, result1 bool) {
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) IsRecorder() bool {
-	fake.isRecorderMutex.Lock()
-	ret, specificReturn := fake.isRecorderReturnsOnCall[len(fake.isRecorderArgsForCall)]
-	fake.isRecorderArgsForCall = append(fake.isRecorderArgsForCall, struct {
-	}{})
-	stub := fake.IsRecorderStub
-	fakeReturns := fake.isRecorderReturns
-	fake.recordInvocation("IsRecorder", []interface{}{})
-	fake.isRecorderMutex.Unlock()
-	if stub != nil {
-		return stub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeLocalParticipant) IsRecorderCallCount() int {
-	fake.isRecorderMutex.RLock()
-	defer fake.isRecorderMutex.RUnlock()
-	return len(fake.isRecorderArgsForCall)
-}
-
-func (fake *FakeLocalParticipant) IsRecorderCalls(stub func() bool) {
-	fake.isRecorderMutex.Lock()
-	defer fake.isRecorderMutex.Unlock()
-	fake.IsRecorderStub = stub
-}
-
-func (fake *FakeLocalParticipant) IsRecorderReturns(result1 bool) {
-	fake.isRecorderMutex.Lock()
-	defer fake.isRecorderMutex.Unlock()
-	fake.IsRecorderStub = nil
-	fake.isRecorderReturns = struct {
-		result1 bool
-	}{result1}
-}
-
-func (fake *FakeLocalParticipant) IsRecorderReturnsOnCall(i int, result1 bool) {
-	fake.isRecorderMutex.Lock()
-	defer fake.isRecorderMutex.Unlock()
-	fake.IsRecorderStub = nil
-	if fake.isRecorderReturnsOnCall == nil {
-		fake.isRecorderReturnsOnCall = make(map[int]struct {
-			result1 bool
-		})
-	}
-	fake.isRecorderReturnsOnCall[i] = struct {
-		result1 bool
-	}{result1}
-}
-
 func (fake *FakeLocalParticipant) IsSubscribedTo(arg1 livekit.ParticipantID) bool {
 	fake.isSubscribedToMutex.Lock()
 	ret, specificReturn := fake.isSubscribedToReturnsOnCall[len(fake.isSubscribedToArgsForCall)]
@@ -3695,6 +3642,59 @@ func (fake *FakeLocalParticipant) IssueFullReconnectArgsForCall(i int) types.Par
 	defer fake.issueFullReconnectMutex.RUnlock()
 	argsForCall := fake.issueFullReconnectArgsForCall[i]
 	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) Kind() livekit.ParticipantInfo_Kind {
+	fake.kindMutex.Lock()
+	ret, specificReturn := fake.kindReturnsOnCall[len(fake.kindArgsForCall)]
+	fake.kindArgsForCall = append(fake.kindArgsForCall, struct {
+	}{})
+	stub := fake.KindStub
+	fakeReturns := fake.kindReturns
+	fake.recordInvocation("Kind", []interface{}{})
+	fake.kindMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) KindCallCount() int {
+	fake.kindMutex.RLock()
+	defer fake.kindMutex.RUnlock()
+	return len(fake.kindArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) KindCalls(stub func() livekit.ParticipantInfo_Kind) {
+	fake.kindMutex.Lock()
+	defer fake.kindMutex.Unlock()
+	fake.KindStub = stub
+}
+
+func (fake *FakeLocalParticipant) KindReturns(result1 livekit.ParticipantInfo_Kind) {
+	fake.kindMutex.Lock()
+	defer fake.kindMutex.Unlock()
+	fake.KindStub = nil
+	fake.kindReturns = struct {
+		result1 livekit.ParticipantInfo_Kind
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) KindReturnsOnCall(i int, result1 livekit.ParticipantInfo_Kind) {
+	fake.kindMutex.Lock()
+	defer fake.kindMutex.Unlock()
+	fake.KindStub = nil
+	if fake.kindReturnsOnCall == nil {
+		fake.kindReturnsOnCall = make(map[int]struct {
+			result1 livekit.ParticipantInfo_Kind
+		})
+	}
+	fake.kindReturnsOnCall[i] = struct {
+		result1 livekit.ParticipantInfo_Kind
+	}{result1}
 }
 
 func (fake *FakeLocalParticipant) MaybeStartMigration(arg1 bool, arg2 func()) bool {
@@ -6403,10 +6403,10 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.iDMutex.RUnlock()
 	fake.identityMutex.RLock()
 	defer fake.identityMutex.RUnlock()
-	fake.isAgentMutex.RLock()
-	defer fake.isAgentMutex.RUnlock()
 	fake.isClosedMutex.RLock()
 	defer fake.isClosedMutex.RUnlock()
+	fake.isDependentMutex.RLock()
+	defer fake.isDependentMutex.RUnlock()
 	fake.isDisconnectedMutex.RLock()
 	defer fake.isDisconnectedMutex.RUnlock()
 	fake.isIdleMutex.RLock()
@@ -6415,12 +6415,12 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.isPublisherMutex.RUnlock()
 	fake.isReadyMutex.RLock()
 	defer fake.isReadyMutex.RUnlock()
-	fake.isRecorderMutex.RLock()
-	defer fake.isRecorderMutex.RUnlock()
 	fake.isSubscribedToMutex.RLock()
 	defer fake.isSubscribedToMutex.RUnlock()
 	fake.issueFullReconnectMutex.RLock()
 	defer fake.issueFullReconnectMutex.RUnlock()
+	fake.kindMutex.RLock()
+	defer fake.kindMutex.RUnlock()
 	fake.maybeStartMigrationMutex.RLock()
 	defer fake.maybeStartMigrationMutex.RUnlock()
 	fake.migrateStateMutex.RLock()

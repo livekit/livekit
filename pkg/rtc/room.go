@@ -318,10 +318,10 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 	if r.participants[participant.Identity()] != nil {
 		return ErrAlreadyJoined
 	}
-	if r.protoRoom.MaxParticipants > 0 && !participant.IsRecorder() {
+	if r.protoRoom.MaxParticipants > 0 && !participant.IsDependent() {
 		numParticipants := uint32(0)
 		for _, p := range r.participants {
-			if !p.IsRecorder() {
+			if !p.IsDependent() {
 				numParticipants++
 			}
 		}
@@ -417,7 +417,7 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 		"numParticipants", len(r.participants),
 	)
 
-	if participant.IsRecorder() && !r.protoRoom.ActiveRecording {
+	if participant.Kind() == livekit.ParticipantInfo_EGRESS && !r.protoRoom.ActiveRecording {
 		r.protoRoom.ActiveRecording = true
 		r.protoProxy.MarkDirty(true)
 	} else {
@@ -559,10 +559,10 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 	}
 
 	immediateChange := false
-	if p.IsRecorder() {
+	if p.Kind() == livekit.ParticipantInfo_EGRESS {
 		activeRecording := false
 		for _, op := range r.participants {
-			if op.IsRecorder() {
+			if op.Kind() == livekit.ParticipantInfo_EGRESS {
 				activeRecording = true
 				break
 			}
@@ -750,7 +750,7 @@ func (r *Room) CloseIfEmpty() {
 	}
 
 	for _, p := range r.participants {
-		if !p.IsRecorder() {
+		if !p.IsDependent() {
 			r.lock.Unlock()
 			return
 		}
@@ -1226,7 +1226,7 @@ func (r *Room) updateProto() *livekit.Room {
 	room.NumPublishers = 0
 	room.NumParticipants = 0
 	for _, p := range r.GetParticipants() {
-		if !p.IsRecorder() {
+		if !p.IsDependent() {
 			room.NumParticipants++
 		}
 		if p.IsPublisher() {
@@ -1410,7 +1410,7 @@ func (r *Room) simulationCleanupWorker() {
 }
 
 func (r *Room) launchPublisherAgent(p types.Participant) {
-	if p == nil || p.IsRecorder() || p.IsAgent() || r.agentClient == nil {
+	if p == nil || p.IsDependent() || r.agentClient == nil {
 		return
 	}
 
