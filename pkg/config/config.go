@@ -191,6 +191,8 @@ type AudioConfig struct {
 	SmoothIntervals uint32 `yaml:"smooth_intervals,omitempty"`
 	// enable red encoding downtrack for opus only audio up track
 	ActiveREDEncoding bool `yaml:"active_red_encoding,omitempty"`
+	// enable proxying weakest subscriber loss to publisher in RTCP Receiver Report
+	EnableLossProxying bool `yaml:"enable_loss_proxying,omitempty"`
 }
 
 type StreamTrackerPacketConfig struct {

@@ -344,6 +344,7 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 		ObserveDuration: w.audioConfig.UpdateInterval,
 		SmoothIntervals: w.audioConfig.SmoothIntervals,
 	})
+	buff.SetAudioLossProxying(w.audioConfig.EnableLossProxying)
 	buff.OnRtcpFeedback(w.sendRTCP)
 	buff.OnRtcpSenderReport(func() {
 		srData := buff.GetSenderReportData()
