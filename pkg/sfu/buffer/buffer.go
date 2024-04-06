@@ -93,9 +93,10 @@ type Buffer struct {
 	latestTSForAudioLevelInitialized bool
 	latestTSForAudioLevel            uint32
 
-	twcc             *twcc.Responder
-	audioLevelParams audio.AudioLevelParams
-	audioLevel       *audio.AudioLevel
+	twcc                    *twcc.Responder
+	audioLevelParams        audio.AudioLevelParams
+	audioLevel              *audio.AudioLevel
+	enableAudioLossProxying bool
 
 	lastPacketRead int
 
@@ -180,6 +181,13 @@ func (b *Buffer) SetAudioLevelParams(audioLevelParams audio.AudioLevelParams) {
 	defer b.Unlock()
 
 	b.audioLevelParams = audioLevelParams
+}
+
+func (b *Buffer) SetAudioLossProxying(enable bool) {
+	b.Lock()
+	defer b.Unlock()
+
+	b.enableAudioLossProxying = enable
 }
 
 func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapability) {
@@ -824,7 +832,12 @@ func (b *Buffer) buildReceptionReport() *rtcp.ReceptionReport {
 		return nil
 	}
 
-	return b.rtpStats.GetRtcpReceptionReport(b.mediaSSRC, b.lastFractionLostToReport, b.rrSnapshotId)
+	proxyLoss := b.lastFractionLostToReport
+	if b.codecType == webrtc.RTPCodecTypeAudio && !b.enableAudioLossProxying {
+		proxyLoss = 0
+	}
+
+	return b.rtpStats.GetRtcpReceptionReport(b.mediaSSRC, proxyLoss, b.rrSnapshotId)
 }
 
 func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64) {
