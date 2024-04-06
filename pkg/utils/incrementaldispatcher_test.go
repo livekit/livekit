@@ -48,7 +48,7 @@ func TestForEach(t *testing.T) {
 
 func TestConcurrentConsumption(t *testing.T) {
 	producer := utils.NewIncrementalDispatcher[int]()
-	numConsumers := 5
+	numConsumers := 100
 	sums := make([]atomic.Int32, numConsumers)
 	var wg sync.WaitGroup
 

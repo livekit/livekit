@@ -48,8 +48,10 @@ func (d *IncrementalDispatcher[T]) Add(item T) {
 }
 
 func (d *IncrementalDispatcher[T]) Done() {
+	d.lock.Lock()
 	d.done.Break()
 	d.cond.Broadcast()
+	d.lock.Unlock()
 }
 
 func (d *IncrementalDispatcher[T]) ForEach(fn func(T)) {
@@ -69,6 +71,11 @@ func (d *IncrementalDispatcher[T]) ForEach(fn func(T)) {
 	for !d.done.IsBroken() {
 		dispatchFromIdx()
 		d.lock.Lock()
+		// need to check again because Done may have been called while dispatching
+		if d.done.IsBroken() {
+			d.lock.Unlock()
+			break
+		}
 		if idx == len(d.items) {
 			d.cond.Wait()
 		}
