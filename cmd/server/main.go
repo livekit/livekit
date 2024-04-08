@@ -16,12 +16,14 @@ package main
 
 import (
 	"fmt"
+	"math/rand"
 	"net"
 	"os"
 	"os/signal"
 	"runtime"
 	"runtime/pprof"
 	"syscall"
+	"time"
 
 	"github.com/urfave/cli/v2"
 
@@ -107,6 +109,10 @@ var baseFlags = []cli.Flag{
 		Usage:  "disables strict config parsing",
 		Hidden: true,
 	},
+}
+
+func init() {
+	rand.Seed(time.Now().Unix())
 }
 
 func main() {
