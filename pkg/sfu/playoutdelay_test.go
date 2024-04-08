@@ -16,6 +16,7 @@ package sfu
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -26,23 +27,23 @@ import (
 
 func TestPlayoutDelay(t *testing.T) {
 	stats := buffer.NewRTPStatsSender(buffer.RTPStatsParams{ClockRate: 900000, Logger: logger.GetLogger()})
-	c, err := NewPlayoutDelayController(100, 1000, logger.GetLogger(), stats)
+	c, err := NewPlayoutDelayController(100, 120, logger.GetLogger(), stats)
 	require.NoError(t, err)
 
 	ext := c.GetDelayExtension(100)
-	playoutDelayEqual(t, ext, 100, 1000)
+	playoutDelayEqual(t, ext, 100, 120)
 
 	ext = c.GetDelayExtension(105)
-	playoutDelayEqual(t, ext, 100, 1000)
+	playoutDelayEqual(t, ext, 100, 120)
 
 	// seq acked before delay changed
 	c.OnSeqAcked(65534)
 	ext = c.GetDelayExtension(105)
-	playoutDelayEqual(t, ext, 100, 1000)
+	playoutDelayEqual(t, ext, 100, 120)
 
 	c.OnSeqAcked(90)
 	ext = c.GetDelayExtension(105)
-	playoutDelayEqual(t, ext, 100, 1000)
+	playoutDelayEqual(t, ext, 100, 120)
 
 	// seq acked, no extension sent for new packet
 	c.OnSeqAcked(103)
@@ -55,16 +56,19 @@ func TestPlayoutDelay(t *testing.T) {
 	require.Nil(t, ext)
 
 	// delay changed, generate new extension to send
+	time.Sleep(200 * time.Millisecond)
 	c.SetJitter(50)
+	t.Log(c.currentDelay, c.state.Load())
 	ext = c.GetDelayExtension(108)
 	var delay rtpextension.PlayOutDelay
 	require.NoError(t, delay.Unmarshal(ext))
 	require.Greater(t, delay.Min, uint16(100))
 
 	// can't go above max
+	time.Sleep(200 * time.Millisecond)
 	c.SetJitter(10000)
 	ext = c.GetDelayExtension(109)
-	playoutDelayEqual(t, ext, 1000, 1000)
+	playoutDelayEqual(t, ext, 120, 120)
 }
 
 func playoutDelayEqual(t *testing.T, data []byte, min, max uint16) {
