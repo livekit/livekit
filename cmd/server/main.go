@@ -16,14 +16,12 @@ package main
 
 import (
 	"fmt"
-	"math/rand"
 	"net"
 	"os"
 	"os/signal"
 	"runtime"
 	"runtime/pprof"
 	"syscall"
-	"time"
 
 	"github.com/urfave/cli/v2"
 
@@ -109,10 +107,6 @@ var baseFlags = []cli.Flag{
 		Usage:  "disables strict config parsing",
 		Hidden: true,
 	},
-}
-
-func init() {
-	rand.Seed(time.Now().Unix())
 }
 
 func main() {
@@ -272,7 +266,9 @@ func startServer(c *cli.Context) error {
 		return err
 	}
 
-	prometheus.Init(currentNode.Id, currentNode.Type, conf.Environment)
+	if err := prometheus.Init(currentNode.Id, currentNode.Type); err != nil {
+		return err
+	}
 
 	server, err := service.InitializeServer(conf, currentNode)
 	if err != nil {
