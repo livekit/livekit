@@ -1336,10 +1336,7 @@ func (t *PCTransport) handleLocalICECandidate(e *event) error {
 	filtered := false
 	if c != nil {
 		if t.preferTCP.Load() && c.Protocol != webrtc.ICEProtocolTCP {
-			t.params.Logger.Debugw("filtering out local candidate",
-				"candidate", func() interface{} {
-					return c.String()
-				})
+			t.params.Logger.Debugw("filtering out local candidate", "candidate", c.String())
 			filtered = true
 		}
 		t.connectionDetails.AddLocalCandidate(c, filtered)
