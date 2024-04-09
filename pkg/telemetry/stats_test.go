@@ -29,7 +29,7 @@ import (
 )
 
 func init() {
-	prometheus.Init("test", livekit.NodeType_SERVER, "test")
+	prometheus.Init("test", livekit.NodeType_SERVER)
 }
 
 type telemetryServiceFixture struct {
