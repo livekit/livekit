@@ -19,7 +19,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20240406063423-a67d961689df
-	github.com/livekit/protocol v1.12.1-0.20240403204952-bc6c7ffd71f0
+	github.com/livekit/protocol v1.12.1-0.20240410060226-b6a979d8cfce
 	github.com/livekit/psrpc v0.5.3-0.20240327035954-cec3a0e614be
 	github.com/mackerelio/go-osstat v0.2.4
 	github.com/magefile/mage v1.15.0
@@ -55,6 +55,7 @@ require (
 )
 
 require (
+	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect

@@ -157,7 +157,7 @@ type StreamAllocator struct {
 	prober *Prober
 
 	channelObserver *ChannelObserver
-	rateMonitor     *RateMonitor
+	// rateMonitor     *RateMonitor
 
 	videoTracksMu        sync.RWMutex
 	videoTracks          map[livekit.TrackID]*Track
@@ -178,7 +178,7 @@ func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 		prober: NewProber(ProberParams{
 			Logger: params.Logger,
 		}),
-		rateMonitor: NewRateMonitor(),
+		// rateMonitor: NewRateMonitor(),
 		videoTracks: make(map[livekit.TrackID]*Track),
 		eventsQueue: utils.NewOpsQueue(utils.OpsQueueParams{
 			Name:    "stream-allocator",
@@ -825,8 +825,8 @@ func (s *StreamAllocator) handleNewEstimateInNonProbe() {
 	)
 	s.params.Logger.Debugw(
 		fmt.Sprintf("stream allocator: channel congestion detected, %s channel capacity: experimental", action),
-		"rateHistory", s.rateMonitor.GetHistory(),
-		"expectedQueuing", s.rateMonitor.GetQueuingGuess(),
+		// "rateHistory", s.rateMonitor.GetHistory(),
+		// "expectedQueuing", s.rateMonitor.GetQueuingGuess(),
 		"nackHistory", s.channelObserver.GetNackHistory(),
 		"trackHistory", s.getTracksHistory(),
 	)
@@ -1431,7 +1431,7 @@ func (s *StreamAllocator) monitorRate(estimate int64) {
 		}
 	}
 
-	s.rateMonitor.Update(estimate, managedBytesSent, managedBytesRetransmitted, unmanagedBytesSent, unmanagedBytesRetransmitted)
+	// s.rateMonitor.Update(estimate, managedBytesSent, managedBytesRetransmitted, unmanagedBytesSent, unmanagedBytesRetransmitted)
 }
 
 func (s *StreamAllocator) updateTracksHistory() {
