@@ -769,7 +769,7 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime time.Time, flow
 	if b.absCaptureTimeExtID != 0 {
 		ep.AbsCaptureTimeExt = rtpPacket.GetExtension(b.absCaptureTimeExtID)
 		if len(ep.AbsCaptureTimeExt) != 0 {
-			b.logger.Debugw("ACT DEBUG", "size", len(ep.AbsCaptureTimeExt)) // REMOVE
+			b.logger.Debugw("PUB ACT DEBUG", "size", len(ep.AbsCaptureTimeExt)) // REMOVE
 		}
 	}
 

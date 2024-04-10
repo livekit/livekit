@@ -771,6 +771,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	}
 	if len(extPkt.AbsCaptureTimeExt) > 0 && d.absCaptureTimeExtID != 0 {
 		// pass through extension from publisher without modification
+		d.params.Logger.Debugw("SUB ACT DEBUG", "size", len(extPkt.AbsCaptureTimeExt)) // REMOVE
 		extensions = append(
 			extensions,
 			pacer.ExtensionData{
