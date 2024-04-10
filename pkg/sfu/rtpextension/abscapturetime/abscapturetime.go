@@ -12,21 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package rtpextension
-
-import (
-	"encoding/binary"
-	"errors"
-)
+package abscapturetime
 
 const (
-	PlayoutDelayURI        = "http://www.webrtc.org/experiments/rtp-hdrext/playout-delay"
-	MaxPlayoutDelayDefault = 10000            // 10s, equal to chrome's default max playout delay
-	PlayoutDelayMaxValue   = 10 * (1<<12 - 1) // max value for playout delay can be represented
-
-	playoutDelayExtensionSize = 3
+	AbsCaptureTimeURI = "http://www.webrtc.org/experiments/rtp-hdrext/abs-capture-time"
 )
 
+/* RAJA-TODO
 var (
 	errPlayoutDelayOverflow = errors.New("playout delay overflow")
 	errTooSmall             = errors.New("buffer too small")
@@ -70,3 +62,4 @@ func (p *PlayOutDelay) Unmarshal(rawData []byte) error {
 	p.Max = (binary.BigEndian.Uint16(rawData[1:]) & 0x0FFF) * 10
 	return nil
 }
+*/

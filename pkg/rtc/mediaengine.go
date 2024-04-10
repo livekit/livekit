@@ -29,9 +29,22 @@ const (
 	videoRTXMimeType = "video/rtx"
 )
 
-var opusCodecCapability = webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus, ClockRate: 48000, Channels: 2, SDPFmtpLine: "minptime=10;useinbandfec=1"}
-var redCodecCapability = webrtc.RTPCodecCapability{MimeType: sfu.MimeTypeAudioRed, ClockRate: 48000, Channels: 2, SDPFmtpLine: "111/111"}
-var videoRTX = webrtc.RTPCodecCapability{MimeType: videoRTXMimeType, ClockRate: 90000}
+var opusCodecCapability = webrtc.RTPCodecCapability{
+	MimeType:    webrtc.MimeTypeOpus,
+	ClockRate:   48000,
+	Channels:    2,
+	SDPFmtpLine: "minptime=10;useinbandfec=1",
+}
+var redCodecCapability = webrtc.RTPCodecCapability{
+	MimeType:    sfu.MimeTypeAudioRed,
+	ClockRate:   48000,
+	Channels:    2,
+	SDPFmtpLine: "111/111",
+}
+var videoRTX = webrtc.RTPCodecCapability{
+	MimeType:  videoRTXMimeType,
+	ClockRate: 90000,
+}
 
 func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedback RTCPFeedbackConfig, filterOutH264HighProfile bool) error {
 	opusCodec := opusCodecCapability
@@ -61,32 +74,65 @@ func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedbac
 	h264HighProfileFmtp := "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=640032"
 	for _, codec := range []webrtc.RTPCodecParameters{
 		{
-			RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8, ClockRate: 90000, RTCPFeedback: rtcpFeedback.Video},
-			PayloadType:        96,
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType:     webrtc.MimeTypeVP8,
+				ClockRate:    90000,
+				RTCPFeedback: rtcpFeedback.Video,
+			},
+			PayloadType: 96,
 		},
 		{
-			RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP9, ClockRate: 90000, SDPFmtpLine: "profile-id=0", RTCPFeedback: rtcpFeedback.Video},
-			PayloadType:        98,
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType:     webrtc.MimeTypeVP9,
+				ClockRate:    90000,
+				SDPFmtpLine:  "profile-id=0",
+				RTCPFeedback: rtcpFeedback.Video,
+			},
+			PayloadType: 98,
 		},
 		{
-			RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP9, ClockRate: 90000, SDPFmtpLine: "profile-id=1", RTCPFeedback: rtcpFeedback.Video},
-			PayloadType:        100,
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType:     webrtc.MimeTypeVP9,
+				ClockRate:    90000,
+				SDPFmtpLine:  "profile-id=1",
+				RTCPFeedback: rtcpFeedback.Video,
+			},
+			PayloadType: 100,
 		},
 		{
-			RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264, ClockRate: 90000, SDPFmtpLine: "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f", RTCPFeedback: rtcpFeedback.Video},
-			PayloadType:        125,
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType:     webrtc.MimeTypeH264,
+				ClockRate:    90000,
+				SDPFmtpLine:  "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
+				RTCPFeedback: rtcpFeedback.Video,
+			},
+			PayloadType: 125,
 		},
 		{
-			RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264, ClockRate: 90000, SDPFmtpLine: "level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42e01f", RTCPFeedback: rtcpFeedback.Video},
-			PayloadType:        108,
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType:     webrtc.MimeTypeH264,
+				ClockRate:    90000,
+				SDPFmtpLine:  "level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42e01f",
+				RTCPFeedback: rtcpFeedback.Video,
+			},
+			PayloadType: 108,
 		},
 		{
-			RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264, ClockRate: 90000, SDPFmtpLine: h264HighProfileFmtp, RTCPFeedback: rtcpFeedback.Video},
-			PayloadType:        123,
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType:     webrtc.MimeTypeH264,
+				ClockRate:    90000,
+				SDPFmtpLine:  h264HighProfileFmtp,
+				RTCPFeedback: rtcpFeedback.Video,
+			},
+			PayloadType: 123,
 		},
 		{
-			RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeAV1, ClockRate: 90000, RTCPFeedback: rtcpFeedback.Video},
-			PayloadType:        35,
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType:     webrtc.MimeTypeAV1,
+				ClockRate:    90000,
+				RTCPFeedback: rtcpFeedback.Video,
+			},
+			PayloadType: 35,
 		},
 	} {
 		if filterOutH264HighProfile && codec.RTPCodecCapability.SDPFmtpLine == h264HighProfileFmtp {

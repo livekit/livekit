@@ -47,7 +47,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	sfuinterceptor "github.com/livekit/livekit-server/pkg/sfu/interceptor"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
-	"github.com/livekit/livekit-server/pkg/sfu/rtpextension"
+	pd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/playoutdelay"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	sfuutils "github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
@@ -222,9 +222,8 @@ type TransportParams struct {
 
 func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimator cc.BandwidthEstimator)) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
 	directionConfig := params.DirectionConfig
-
 	if params.AllowPlayoutDelay {
-		directionConfig.RTPHeaderExtension.Video = append(directionConfig.RTPHeaderExtension.Video, rtpextension.PlayoutDelayURI)
+		directionConfig.RTPHeaderExtension.Video = append(directionConfig.RTPHeaderExtension.Video, pd.PlayoutDelayURI)
 	}
 
 	// Some of the browser clients do not handle H.264 High Profile in signalling properly.

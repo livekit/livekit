@@ -35,9 +35,10 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
-	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
-	"github.com/livekit/livekit-server/pkg/sfu/rtpextension"
+	act "github.com/livekit/livekit-server/pkg/sfu/rtpextension/abscapturetime"
+	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
+	pd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/playoutdelay"
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
 )
 
@@ -233,6 +234,7 @@ type DownTrack struct {
 	transportWideExtID        int
 	dependencyDescriptorExtID int
 	playoutDelayExtID         int
+	absCaptureTimeExtID       int
 	transceiver               atomic.Pointer[webrtc.RTPTransceiver]
 	writeStream               webrtc.TrackLocalWriter
 	rtcpReader                *buffer.RTCPReader
@@ -547,7 +549,7 @@ func (d *DownTrack) SetRTPHeaderExtensions(rtpHeaderExtensions []webrtc.RTPHeade
 			}
 		case dd.ExtensionURI:
 			d.dependencyDescriptorExtID = ext.ID
-		case rtpextension.PlayoutDelayURI:
+		case pd.PlayoutDelayURI:
 			d.playoutDelayExtID = ext.ID
 		case sdp.TransportCCURI:
 			if isBWEEnabled {
@@ -555,6 +557,8 @@ func (d *DownTrack) SetRTPHeaderExtensions(rtpHeaderExtensions []webrtc.RTPHeade
 			} else {
 				d.transportWideExtID = 0
 			}
+		case act.AbsCaptureTimeURI:
+			d.absCaptureTimeExtID = ext.ID
 		}
 	}
 }
@@ -724,12 +728,24 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 
 	var extensions []pacer.ExtensionData
 	if tp.ddBytes != nil {
-		extensions = []pacer.ExtensionData{{ID: uint8(d.dependencyDescriptorExtID), Payload: tp.ddBytes}}
+		extensions = append(extensions, pacer.ExtensionData{ID: uint8(d.dependencyDescriptorExtID), Payload: tp.ddBytes})
 	}
 	if d.playoutDelayExtID != 0 && d.playoutDelay != nil {
 		if val := d.playoutDelay.GetDelayExtension(hdr.SequenceNumber); val != nil {
 			extensions = append(extensions, pacer.ExtensionData{ID: uint8(d.playoutDelayExtID), Payload: val})
+
+			// NOTE: play out delay extension is not cached in sequencer,
+			// i. e. they will not be added to retransmitted packet.
+			// But, it is okay as the extension is added till a RTCP Receiver Report for
+			// the corresponding sequence number is received.
+			// The extreme case is all packets containing the play out delay are lost and
+			// all of them retransmitted and an RTCP Receiver Report received for those
+			// retransmited sequence numbers. But, that is highly improbable, if not impossible.
 		}
+	}
+	if len(extPkt.AbsCaptureTimeExt) > 0 && d.absCaptureTimeExtID != 0 {
+		extensions = append(extensions, pacer.ExtensionData{ID: uint8(d.absCaptureTimeExtID), Payload: extPkt.AbsCaptureTimeExt})
+		// ABSOLUTE-CAPTURE-TIME-TODO: store in sequencer.
 	}
 	if d.sequencer != nil {
 		d.sequencer.push(
@@ -1705,6 +1721,8 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			payload = payload[:int(epm.numCodecBytesOut)+len(pkt.Payload)-int(epm.numCodecBytesIn)]
 		}
 
+		// ABSOLUTE-CAPTURE-TIME-TODO: add abs-capture-time if available
+		// ABSOLUTE-CAPTURE-TIME-TODO: check for ddExtID != 0 and make an array of extensions
 		var ddBytes []byte
 		if len(epm.ddBytesSlice) != 0 {
 			ddBytes = epm.ddBytesSlice
