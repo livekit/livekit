@@ -145,11 +145,13 @@ func (d DownTrackState) String() string {
 
 // -------------------------------------------------------------------
 
+/* STREAM-ALLOCATOR-DATA
 type NackInfo struct {
 	Timestamp      uint32
 	SequenceNumber uint16
 	Attempts       uint8
 }
+*/
 
 type DownTrackStreamAllocatorListener interface {
 	// RTCP received
@@ -180,11 +182,13 @@ type DownTrackStreamAllocatorListener interface {
 	// packet(s) sent
 	OnPacketsSent(dt *DownTrack, size int)
 
+	/* STREAM-ALLOCATOR-DATA
 	// NACKs received
 	OnNACK(dt *DownTrack, nackInfos []NackInfo)
 
 	// RTCP Receiver Report received
 	OnRTCPReceiverReport(dt *DownTrack, rr rtcp.ReceptionReport)
+	*/
 
 	// check if track should participate in BWE
 	IsBWEEnabled(dt *DownTrack) bool
@@ -268,8 +272,10 @@ type DownTrack struct {
 	streamAllocatorListener         DownTrackStreamAllocatorListener
 	streamAllocatorReportGeneration int
 	streamAllocatorBytesCounter     atomic.Uint32
+	/* STREAM-ALLOCATOR-DATA
 	bytesSent                       atomic.Uint32
 	bytesRetransmitted              atomic.Uint32
+	*/
 
 	playoutDelay *PlayoutDelayController
 
@@ -1554,9 +1560,11 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 					rttToReport = rtt
 				}
 
+				/* STREAM-ALLOCATOR-DATA
 				if sal := d.getStreamAllocatorListener(); sal != nil {
 					sal.OnRTCPReceiverReport(d, r)
 				}
+				*/
 
 				if d.playoutDelay != nil {
 					jitterMs := uint64(r.Jitter*1e3) / uint64(d.codec.ClockRate)
@@ -1671,18 +1679,20 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	nackAcks := uint32(0)
 	nackMisses := uint32(0)
 	numRepeatedNACKs := uint32(0)
-	nackInfos := make([]NackInfo, 0, len(filtered))
+	// STREAM-ALLOCATOR-DATA nackInfos := make([]NackInfo, 0, len(filtered))
 	for _, epm := range d.sequencer.getExtPacketMetas(filtered) {
 		if disallowedLayers[epm.layer] {
 			continue
 		}
 
 		nackAcks++
+		/* STREAM-ALLOCATOR-DATA
 		nackInfos = append(nackInfos, NackInfo{
 			SequenceNumber: epm.targetSeqNo,
 			Timestamp:      epm.timestamp,
 			Attempts:       epm.nacked,
 		})
+		*/
 
 		pktBuff := *src
 		n, err := d.params.Receiver.ReadRTP(pktBuff, uint8(epm.layer), epm.sourceSeqNo)
@@ -1756,6 +1766,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	d.totalRepeatedNACKs.Add(numRepeatedNACKs)
 
 	d.rtpStats.UpdateNackProcessed(nackAcks, nackMisses, numRepeatedNACKs)
+	/* STREAM-ALLOCATOR-DATA
 	// STREAM-ALLOCATOR-EXPERIMENTAL-TODO-START
 	// Need to check on the following
 	//   - get all NACKs from sequencer even if SFU is not acknowledging,
@@ -1771,6 +1782,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	if sal := d.getStreamAllocatorListener(); sal != nil && len(nackInfos) != 0 {
 		sal.OnNACK(d, nackInfos)
 	}
+	*/
 }
 
 func (d *DownTrack) getTranslatedRTPHeader(extPkt *buffer.ExtPacket, tp *TranslationParams) (*rtp.Header, error) {
@@ -1859,9 +1871,11 @@ func (d *DownTrack) GetNackStats() (totalPackets uint32, totalRepeatedNACKs uint
 	return
 }
 
+/* STREAM-ALLOCATOR-DATA
 func (d *DownTrack) GetAndResetBytesSent() (uint32, uint32) {
 	return d.bytesSent.Swap(0), d.bytesRetransmitted.Swap(0)
 }
+*/
 
 func (d *DownTrack) onBindAndConnectedChange() {
 	d.writable.Store(d.connected.Load() && d.bound.Load())
@@ -1999,11 +2013,13 @@ func (d *DownTrack) sendingPacket(hdr *rtp.Header, payloadSize int, spmd *sendPa
 		// STREAM-ALLOCATOR-TODO: remove this stream allocator bytes counter once stream allocator changes fully to pull bytes counter
 		size := uint32(hdrSize + payloadSize)
 		d.streamAllocatorBytesCounter.Add(size)
+		/* STREAM-ALLOCATOR-DATA
 		if spmd.isRTX {
 			d.bytesRetransmitted.Add(size)
 		} else {
 			d.bytesSent.Add(size)
 		}
+		*/
 	}
 
 	// update RTPStats
