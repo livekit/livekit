@@ -1760,8 +1760,6 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			payload = payload[:int(epm.numCodecBytesOut)+len(pkt.Payload)-int(epm.numCodecBytesIn)]
 		}
 
-		// ABSOLUTE-CAPTURE-TIME-TODO: add abs-capture-time if available
-		// ABSOLUTE-CAPTURE-TIME-TODO: check for ddExtID != 0 and make an array of extensions
 		var extensions []pacer.ExtensionData
 		if d.dependencyDescriptorExtID != 0 {
 			var ddBytes []byte
