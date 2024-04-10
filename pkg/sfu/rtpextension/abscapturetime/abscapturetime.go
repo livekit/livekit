@@ -14,6 +14,76 @@
 
 package abscapturetime
 
+import (
+	"encoding/binary"
+	"errors"
+)
+
 const (
 	AbsCaptureTimeURI = "http://www.webrtc.org/experiments/rtp-hdrext/abs-capture-time"
 )
+
+var (
+	errTooSmall = errors.New("buffer too small")
+)
+
+// Reference: https://webrtc.googlesource.com/src/+/refs/heads/main/docs/native-code/rtp-hdrext/abs-capture-time/
+//
+// Data layout of the shortened version of abs-capture-time with a 1-byte header + 8 bytes of data:
+//
+//  0                   1                   2                   3
+//  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+// |  ID   | len=7 |     absolute capture timestamp (bit 0-23)     |
+// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+// |             absolute capture timestamp (bit 24-55)            |
+// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+// |  ... (56-63)  |
+// +-+-+-+-+-+-+-+-+
+//
+//Data layout of the extended version of abs-capture-time with a 1-byte header + 16 bytes of data:
+//
+//  0                   1                   2                   3
+//  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+// |  ID   | len=15|     absolute capture timestamp (bit 0-23)     |
+// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+// |             absolute capture timestamp (bit 24-55)            |
+// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+// |  ... (56-63)  |   estimated capture clock offset (bit 0-23)   |
+// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+// |           estimated capture clock offset (bit 24-55)          |
+// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+// |  ... (56-63)  |
+// +-+-+-+-+-+-+-+-+
+
+type AbsCaptureTime struct {
+	absoluteCaptureTimestamp    uint64
+	estimatedCaptureClockOffset int64
+}
+
+func AbsCaptureTimeFromValue(absoluteCaptureTimestamp uint64, estimatedCaptureClockOffset int64) *AbsCaptureTime {
+	return &AbsCaptureTime{
+		absoluteCaptureTimestamp:    absoluteCaptureTimestamp,
+		estimatedCaptureClockOffset: estimatedCaptureClockOffset,
+	}
+}
+
+func (a *AbsCaptureTime) Marshal() ([]byte, error) {
+	marshalled := make([]byte, 16)
+	binary.BigEndian.PutUint64(marshalled, a.absoluteCaptureTimestamp)
+	binary.BigEndian.PutUint64(marshalled[8:], uint64(a.estimatedCaptureClockOffset))
+	return marshalled, nil
+}
+
+func (a *AbsCaptureTime) Unmarshal(marshalled []byte) error {
+	if len(marshalled) < 8 {
+		return errTooSmall
+	}
+
+	a.absoluteCaptureTimestamp = binary.BigEndian.Uint64(marshalled)
+	if len(marshalled) >= 16 {
+		a.estimatedCaptureClockOffset = int64(binary.BigEndian.Uint64(marshalled[8:]))
+	}
+	return nil
+}
