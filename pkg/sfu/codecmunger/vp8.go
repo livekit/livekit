@@ -240,7 +240,7 @@ func (v *VP8) UpdateAndGet(extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap
 
 		// if there is a gap, packet is forwarded irrespective of temporal layer as it cannot be determined
 		// which layer the missing packets belong to. A layer could have multiple packets. So, keep track
-		// of pictures that are forwarded even though they will be filterd out based on temporal layer
+		// of pictures that are forwarded even though they will be filtered out based on temporal layer
 		// requirements. That allows forwarding of the complete picture.
 		if vp8.T && vp8.TID > uint8(maxTemporalLayer) {
 			v.exemptedPictureIds.Set(extPictureId, true)
