@@ -298,13 +298,11 @@ func (t *Track) GetRTCPReceiverReportDelta() (uint32, uint32, uint32) {
 
 	return deltaLost, deltaPackets, maxRTT
 }
-*/
 
 func (t *Track) GetAndResetBytesSent() (uint32, uint32) {
 	return t.downTrack.GetAndResetBytesSent()
 }
 
-/* STREAM-ALLOCATOR-DATA
 func (t *Track) UpdateHistory() {
 	t.updateNackHistory()
 }

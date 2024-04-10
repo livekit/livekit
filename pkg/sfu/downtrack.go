@@ -270,8 +270,10 @@ type DownTrack struct {
 	streamAllocatorListener         DownTrackStreamAllocatorListener
 	streamAllocatorReportGeneration int
 	streamAllocatorBytesCounter     atomic.Uint32
+	/* STREAM-ALLOCATOR-DATA
 	bytesSent                       atomic.Uint32
 	bytesRetransmitted              atomic.Uint32
+	*/
 
 	playoutDelay *PlayoutDelayController
 
@@ -1851,9 +1853,11 @@ func (d *DownTrack) GetNackStats() (totalPackets uint32, totalRepeatedNACKs uint
 	return
 }
 
+/* STREAM-ALLOCATOR-DATA
 func (d *DownTrack) GetAndResetBytesSent() (uint32, uint32) {
 	return d.bytesSent.Swap(0), d.bytesRetransmitted.Swap(0)
 }
+*/
 
 func (d *DownTrack) onBindAndConnectedChange() {
 	d.writable.Store(d.connected.Load() && d.bound.Load())
@@ -1991,11 +1995,13 @@ func (d *DownTrack) sendingPacket(hdr *rtp.Header, payloadSize int, spmd *sendPa
 		// STREAM-ALLOCATOR-TODO: remove this stream allocator bytes counter once stream allocator changes fully to pull bytes counter
 		size := uint32(hdrSize + payloadSize)
 		d.streamAllocatorBytesCounter.Add(size)
+		/* STREAM-ALLOCATOR-DATA
 		if spmd.isRTX {
 			d.bytesRetransmitted.Add(size)
 		} else {
 			d.bytesSent.Add(size)
 		}
+		*/
 	}
 
 	// update RTPStats
