@@ -21,7 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/livekit-server/pkg/sfu/rtpextension"
+	pd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/playoutdelay"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -60,7 +60,7 @@ func TestPlayoutDelay(t *testing.T) {
 	c.SetJitter(50)
 	t.Log(c.currentDelay, c.state.Load())
 	ext = c.GetDelayExtension(108)
-	var delay rtpextension.PlayOutDelay
+	var delay pd.PlayOutDelay
 	require.NoError(t, delay.Unmarshal(ext))
 	require.Greater(t, delay.Min, uint16(100))
 
@@ -72,7 +72,7 @@ func TestPlayoutDelay(t *testing.T) {
 }
 
 func playoutDelayEqual(t *testing.T, data []byte, min, max uint16) {
-	var delay rtpextension.PlayOutDelay
+	var delay pd.PlayOutDelay
 	require.NoError(t, delay.Unmarshal(data))
 	require.Equal(t, min, delay.Min)
 	require.Equal(t, max, delay.Max)
