@@ -38,20 +38,22 @@ type NackTracker struct {
 	packets         uint32
 	repeatedNacks   uint32
 
+	/* STREAM-ALLOCATOR-DATA
 	// STREAM-ALLOCATOR-EXPERIMENTAL-TODO: remove when cleaning up experimental stuff
 	history []string
+	*/
 }
 
 func NewNackTracker(params NackTrackerParams) *NackTracker {
 	return &NackTracker{
-		params:  params,
-		history: make([]string, 0, 10),
+		params: params,
+		// STREAM-ALLOCATOR-DATA history: make([]string, 0, 10),
 	}
 }
 
 func (n *NackTracker) Add(packets uint32, repeatedNacks uint32) {
 	if n.params.WindowMaxDuration != 0 && !n.windowStartTime.IsZero() && time.Since(n.windowStartTime) > n.params.WindowMaxDuration {
-		n.updateHistory()
+		// STREAM-ALLOCATOR-DATA n.updateHistory()
 
 		n.windowStartTime = time.Time{}
 		n.packets = 0
@@ -104,6 +106,7 @@ func (n *NackTracker) ToString() string {
 	return fmt.Sprintf("n: %s, %s, p: %d, rn: %d, rn/p: %.2f", n.params.Name, window, n.packets, n.repeatedNacks, n.GetRatio())
 }
 
+/* STREAM-ALLOCATOR-DATA
 func (n *NackTracker) GetHistory() []string {
 	return n.history
 }
@@ -115,5 +118,6 @@ func (n *NackTracker) updateHistory() {
 
 	n.history = append(n.history, n.ToString())
 }
+*/
 
 // ------------------------------------------------
