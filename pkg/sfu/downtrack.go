@@ -232,16 +232,17 @@ type DownTrack struct {
 
 	forwarder *Forwarder
 
-	upstreamCodecs            []webrtc.RTPCodecParameters
-	codec                     webrtc.RTPCodecCapability
-	absSendTimeExtID          int
-	transportWideExtID        int
-	dependencyDescriptorExtID int
-	playoutDelayExtID         int
-	absCaptureTimeExtID       int
-	transceiver               atomic.Pointer[webrtc.RTPTransceiver]
-	writeStream               webrtc.TrackLocalWriter
-	rtcpReader                *buffer.RTCPReader
+	upstreamCodecs              []webrtc.RTPCodecParameters
+	codec                       webrtc.RTPCodecCapability
+	absSendTimeExtID            int
+	transportWideExtID          int
+	dependencyDescriptorExtID   int
+	playoutDelayExtID           int
+	absCaptureTimeExtID         int
+	receiverAbsCaptureTimeExtID int
+	transceiver                 atomic.Pointer[webrtc.RTPTransceiver]
+	writeStream                 webrtc.TrackLocalWriter
+	rtcpReader                  *buffer.RTCPReader
 
 	listenerLock            sync.RWMutex
 	receiverReportListeners []ReceiverReportListener
@@ -565,6 +566,13 @@ func (d *DownTrack) SetRTPHeaderExtensions(rtpHeaderExtensions []webrtc.RTPHeade
 			}
 		case act.AbsCaptureTimeURI:
 			d.absCaptureTimeExtID = ext.ID
+			for _, rext := range d.params.Receiver.HeaderExtensions() {
+				if rext.URI == act.AbsCaptureTimeURI {
+					// receiver side ext ID is used to read out extension to pass through in retranmissions
+					d.receiverAbsCaptureTimeExtID = rext.ID
+					break
+				}
+			}
 		}
 	}
 }
@@ -734,11 +742,23 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 
 	var extensions []pacer.ExtensionData
 	if tp.ddBytes != nil {
-		extensions = append(extensions, pacer.ExtensionData{ID: uint8(d.dependencyDescriptorExtID), Payload: tp.ddBytes})
+		extensions = append(
+			extensions,
+			pacer.ExtensionData{
+				ID:      uint8(d.dependencyDescriptorExtID),
+				Payload: tp.ddBytes,
+			},
+		)
 	}
 	if d.playoutDelayExtID != 0 && d.playoutDelay != nil {
 		if val := d.playoutDelay.GetDelayExtension(hdr.SequenceNumber); val != nil {
-			extensions = append(extensions, pacer.ExtensionData{ID: uint8(d.playoutDelayExtID), Payload: val})
+			extensions = append(
+				extensions,
+				pacer.ExtensionData{
+					ID:      uint8(d.playoutDelayExtID),
+					Payload: val,
+				},
+			)
 
 			// NOTE: play out delay extension is not cached in sequencer,
 			// i. e. they will not be added to retransmitted packet.
@@ -750,8 +770,17 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		}
 	}
 	if len(extPkt.AbsCaptureTimeExt) > 0 && d.absCaptureTimeExtID != 0 {
-		extensions = append(extensions, pacer.ExtensionData{ID: uint8(d.absCaptureTimeExtID), Payload: extPkt.AbsCaptureTimeExt})
-		// ABSOLUTE-CAPTURE-TIME-TODO: store in sequencer.
+		// pass through extension from publisher without modification
+		extensions = append(
+			extensions,
+			pacer.ExtensionData{
+				ID:      uint8(d.absCaptureTimeExtID),
+				Payload: extPkt.AbsCaptureTimeExt,
+			},
+		)
+
+		// NOTE: abs-capture-time extension is not cached in sequencer.
+		// But, it is recovered from packet to be retransmitted and pass through in the retransmitted packet.
 	}
 	if d.sequencer != nil {
 		d.sequencer.push(
@@ -1733,11 +1762,34 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 
 		// ABSOLUTE-CAPTURE-TIME-TODO: add abs-capture-time if available
 		// ABSOLUTE-CAPTURE-TIME-TODO: check for ddExtID != 0 and make an array of extensions
-		var ddBytes []byte
-		if len(epm.ddBytesSlice) != 0 {
-			ddBytes = epm.ddBytesSlice
-		} else {
-			ddBytes = epm.ddBytes[:epm.ddBytesSize]
+		var extensions []pacer.ExtensionData
+		if d.dependencyDescriptorExtID != 0 {
+			var ddBytes []byte
+			if len(epm.ddBytesSlice) != 0 {
+				ddBytes = epm.ddBytesSlice
+			} else {
+				ddBytes = epm.ddBytes[:epm.ddBytesSize]
+			}
+			extensions = append(
+				extensions,
+				pacer.ExtensionData{
+					ID:      uint8(d.dependencyDescriptorExtID),
+					Payload: ddBytes,
+				},
+			)
+		}
+		if d.absCaptureTimeExtID != 0 && d.receiverAbsCaptureTimeExtID != 0 {
+			// get extension bytes from publisher packet and pass through without modification
+			absCaptureTimeExt := pkt.GetExtension(uint8(d.receiverAbsCaptureTimeExtID))
+			if absCaptureTimeExt != nil {
+				extensions = append(
+					extensions,
+					pacer.ExtensionData{
+						ID:      uint8(d.absCaptureTimeExtID),
+						Payload: absCaptureTimeExt,
+					},
+				)
+			}
 		}
 
 		d.sendingPacket(
@@ -1753,7 +1805,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		)
 		d.pacer.Enqueue(pacer.Packet{
 			Header:             &pkt.Header,
-			Extensions:         []pacer.ExtensionData{{ID: uint8(d.dependencyDescriptorExtID), Payload: ddBytes}},
+			Extensions:         extensions,
 			Payload:            payload,
 			AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 			TransportWideExtID: uint8(d.transportWideExtID),
