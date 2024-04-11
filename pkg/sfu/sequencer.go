@@ -75,6 +75,8 @@ type packetMeta struct {
 	ddBytes      [8]byte
 	ddBytesSize  uint8
 	ddBytesSlice []byte
+	// abs-capture-time of packet
+	actBytes []byte
 }
 
 type extPacketMeta struct {
@@ -134,6 +136,7 @@ func (s *sequencer) push(
 	codecBytes []byte,
 	numCodecBytesIn int,
 	ddBytes []byte,
+	actBytes []byte,
 ) {
 	s.Lock()
 	defer s.Unlock()
@@ -219,6 +222,8 @@ func (s *sequencer) push(
 	} else {
 		copy(pm.ddBytes[:pm.ddBytesSize], ddBytes)
 	}
+
+	pm.actBytes = append([]byte{}, actBytes...)
 
 	if extModifiedSN > s.extHighestSN {
 		s.extHighestSN = extModifiedSN
@@ -344,6 +349,7 @@ func (s *sequencer) getExtPacketMetas(seqNo []uint16) []extPacketMeta {
 			}
 			epm.codecBytesSlice = append([]byte{}, meta.codecBytesSlice...)
 			epm.ddBytesSlice = append([]byte{}, meta.ddBytesSlice...)
+			epm.actBytes = append([]byte{}, meta.actBytes...)
 			extPacketMetas = append(extPacketMetas, epm)
 		}
 	}

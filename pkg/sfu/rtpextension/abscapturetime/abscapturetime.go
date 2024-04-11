@@ -17,6 +17,9 @@ package abscapturetime
 import (
 	"encoding/binary"
 	"errors"
+	"time"
+
+	"github.com/livekit/mediatransportutil"
 )
 
 const (
@@ -24,7 +27,8 @@ const (
 )
 
 var (
-	errTooSmall = errors.New("buffer too small")
+	errInvalidData = errors.New("invalid data")
+	errTooSmall    = errors.New("buffer too small")
 )
 
 // Reference: https://webrtc.googlesource.com/src/+/refs/heads/main/docs/native-code/rtp-hdrext/abs-capture-time/
@@ -58,21 +62,42 @@ var (
 // +-+-+-+-+-+-+-+-+
 
 type AbsCaptureTime struct {
-	absoluteCaptureTimestamp    uint64
+	absoluteCaptureTimestamp    mediatransportutil.NtpTime
 	estimatedCaptureClockOffset int64
 }
 
 func AbsCaptureTimeFromValue(absoluteCaptureTimestamp uint64, estimatedCaptureClockOffset int64) *AbsCaptureTime {
 	return &AbsCaptureTime{
-		absoluteCaptureTimestamp:    absoluteCaptureTimestamp,
+		absoluteCaptureTimestamp:    mediatransportutil.NtpTime(absoluteCaptureTimestamp),
 		estimatedCaptureClockOffset: estimatedCaptureClockOffset,
 	}
 }
 
+func (a *AbsCaptureTime) Rewrite(offset time.Duration) error {
+	if a.absoluteCaptureTimestamp == 0 {
+		return errInvalidData
+	}
+
+	capturedAt := a.absoluteCaptureTimestamp.Time().Add(offset)
+	a.absoluteCaptureTimestamp = mediatransportutil.ToNtpTime(capturedAt)
+	a.estimatedCaptureClockOffset = 0
+	return nil
+}
+
 func (a *AbsCaptureTime) Marshal() ([]byte, error) {
-	marshalled := make([]byte, 16)
-	binary.BigEndian.PutUint64(marshalled, a.absoluteCaptureTimestamp)
-	binary.BigEndian.PutUint64(marshalled[8:], uint64(a.estimatedCaptureClockOffset))
+	if a.absoluteCaptureTimestamp == 0 {
+		return nil, errInvalidData
+	}
+
+	size := 8
+	if a.estimatedCaptureClockOffset != 0 {
+		size += 8
+	}
+	marshalled := make([]byte, size)
+	binary.BigEndian.PutUint64(marshalled, uint64(a.absoluteCaptureTimestamp))
+	if a.estimatedCaptureClockOffset != 0 {
+		binary.BigEndian.PutUint64(marshalled[8:], uint64(a.estimatedCaptureClockOffset))
+	}
 	return marshalled, nil
 }
 
@@ -81,7 +106,7 @@ func (a *AbsCaptureTime) Unmarshal(marshalled []byte) error {
 		return errTooSmall
 	}
 
-	a.absoluteCaptureTimestamp = binary.BigEndian.Uint64(marshalled)
+	a.absoluteCaptureTimestamp = mediatransportutil.NtpTime(binary.BigEndian.Uint64(marshalled))
 	if len(marshalled) >= 16 {
 		a.estimatedCaptureClockOffset = int64(binary.BigEndian.Uint64(marshalled[8:]))
 	}

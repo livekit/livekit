@@ -65,7 +65,7 @@ type ExtPacket struct {
 	KeyFrame             bool
 	RawPacket            []byte
 	DependencyDescriptor *ExtDependencyDescriptor
-	AbsCaptureTimeExt    []byte
+	AbsCaptureTimeExt    *act.AbsCaptureTime
 }
 
 // Buffer contains all packets
@@ -767,9 +767,11 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime time.Time, flow
 	}
 
 	if b.absCaptureTimeExtID != 0 {
-		ep.AbsCaptureTimeExt = rtpPacket.GetExtension(b.absCaptureTimeExtID)
-		if len(ep.AbsCaptureTimeExt) != 0 {
-			b.logger.Debugw("PUB ACT DEBUG", "size", len(ep.AbsCaptureTimeExt)) // REMOVE
+		extData := rtpPacket.GetExtension(b.absCaptureTimeExtID)
+
+		var actExt act.AbsCaptureTime
+		if err := actExt.Unmarshal(extData); err == nil {
+			ep.AbsCaptureTimeExt = &actExt
 		}
 	}
 

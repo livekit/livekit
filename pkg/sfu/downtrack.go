@@ -232,17 +232,16 @@ type DownTrack struct {
 
 	forwarder *Forwarder
 
-	upstreamCodecs              []webrtc.RTPCodecParameters
-	codec                       webrtc.RTPCodecCapability
-	absSendTimeExtID            int
-	transportWideExtID          int
-	dependencyDescriptorExtID   int
-	playoutDelayExtID           int
-	absCaptureTimeExtID         int
-	receiverAbsCaptureTimeExtID int
-	transceiver                 atomic.Pointer[webrtc.RTPTransceiver]
-	writeStream                 webrtc.TrackLocalWriter
-	rtcpReader                  *buffer.RTCPReader
+	upstreamCodecs            []webrtc.RTPCodecParameters
+	codec                     webrtc.RTPCodecCapability
+	absSendTimeExtID          int
+	transportWideExtID        int
+	dependencyDescriptorExtID int
+	playoutDelayExtID         int
+	absCaptureTimeExtID       int
+	transceiver               atomic.Pointer[webrtc.RTPTransceiver]
+	writeStream               webrtc.TrackLocalWriter
+	rtcpReader                *buffer.RTCPReader
 
 	listenerLock            sync.RWMutex
 	receiverReportListeners []ReceiverReportListener
@@ -566,13 +565,6 @@ func (d *DownTrack) SetRTPHeaderExtensions(rtpHeaderExtensions []webrtc.RTPHeade
 			}
 		case act.AbsCaptureTimeURI:
 			d.absCaptureTimeExtID = ext.ID
-			for _, rext := range d.params.Receiver.HeaderExtensions() {
-				if rext.URI == act.AbsCaptureTimeURI {
-					// receiver side ext ID is used to read out extension to pass through in retranmissions
-					d.receiverAbsCaptureTimeExtID = rext.ID
-					break
-				}
-			}
 		}
 	}
 }
@@ -769,20 +761,32 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			// retransmited sequence numbers. But, that is highly improbable, if not impossible.
 		}
 	}
-	if len(extPkt.AbsCaptureTimeExt) > 0 && d.absCaptureTimeExtID != 0 {
-		// pass through extension from publisher without modification
-		d.params.Logger.Debugw("SUB ACT DEBUG", "size", len(extPkt.AbsCaptureTimeExt)) // REMOVE
-		extensions = append(
-			extensions,
-			pacer.ExtensionData{
-				ID:      uint8(d.absCaptureTimeExtID),
-				Payload: extPkt.AbsCaptureTimeExt,
-			},
-		)
-
-		// NOTE: abs-capture-time extension is not cached in sequencer.
-		// But, it is recovered from packet to be retransmitted and pass through in the retransmitted packet.
+	var actBytes []byte
+	if extPkt.AbsCaptureTimeExt != nil && d.absCaptureTimeExtID != 0 {
+		// normalize capture time to SFU clock.
+		// NOTE: even if there is estimated offset populated, just re-map the
+		// absolute capture time stamp as it should be the same RTCP sender report
+		// clock domain of publisher. SFU is normalising sender reports of publisher
+		// to SFU clock before sending to subscribers. So, capture time should be
+		// normalized to the same clock. Clear out any offset.
+		_, _, refSenderReport := d.forwarder.GetSenderReportParams()
+		if refSenderReport != nil {
+			actExtCopy := *extPkt.AbsCaptureTimeExt
+			if err = actExtCopy.Rewrite(refSenderReport.AtAdjusted.Sub(refSenderReport.NTPTimestamp.Time())); err == nil {
+				actBytes, err = actExtCopy.Marshal()
+				if err == nil {
+					extensions = append(
+						extensions,
+						pacer.ExtensionData{
+							ID:      uint8(d.absCaptureTimeExtID),
+							Payload: actBytes,
+						},
+					)
+				}
+			}
+		}
 	}
+
 	if d.sequencer != nil {
 		d.sequencer.push(
 			extPkt.Arrival,
@@ -794,6 +798,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			payload[:outgoingHeaderSize],
 			incomingHeaderSize,
 			tp.ddBytes,
+			actBytes,
 		)
 	}
 
@@ -1777,18 +1782,14 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 				},
 			)
 		}
-		if d.absCaptureTimeExtID != 0 && d.receiverAbsCaptureTimeExtID != 0 {
-			// get extension bytes from publisher packet and pass through without modification
-			absCaptureTimeExt := pkt.GetExtension(uint8(d.receiverAbsCaptureTimeExtID))
-			if absCaptureTimeExt != nil {
-				extensions = append(
-					extensions,
-					pacer.ExtensionData{
-						ID:      uint8(d.absCaptureTimeExtID),
-						Payload: absCaptureTimeExt,
-					},
-				)
-			}
+		if d.absCaptureTimeExtID != 0 && len(epm.actBytes) != 0 {
+			extensions = append(
+				extensions,
+				pacer.ExtensionData{
+					ID:      uint8(d.absCaptureTimeExtID),
+					Payload: epm.actBytes,
+				},
+			)
 		}
 
 		d.sendingPacket(
