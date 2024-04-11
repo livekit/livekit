@@ -417,7 +417,7 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 		"numParticipants", len(r.participants),
 	)
 
-	if participant.Kind() == livekit.ParticipantInfo_EGRESS && !r.protoRoom.ActiveRecording {
+	if participant.IsRecorder() && !r.protoRoom.ActiveRecording {
 		r.protoRoom.ActiveRecording = true
 		r.protoProxy.MarkDirty(true)
 	} else {
@@ -559,10 +559,10 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 	}
 
 	immediateChange := false
-	if p.Kind() == livekit.ParticipantInfo_EGRESS {
+	if p.IsRecorder() {
 		activeRecording := false
 		for _, op := range r.participants {
-			if op.Kind() == livekit.ParticipantInfo_EGRESS {
+			if op.IsRecorder() {
 				activeRecording = true
 				break
 			}
