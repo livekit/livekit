@@ -246,6 +246,7 @@ type Participant interface {
 	State() livekit.ParticipantInfo_State
 	CloseReason() ParticipantCloseReason
 	Kind() livekit.ParticipantInfo_Kind
+	IsRecorder() bool
 	IsDependent() bool
 
 	CanSkipBroadcast() bool

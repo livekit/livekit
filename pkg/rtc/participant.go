@@ -332,6 +332,13 @@ func (p *ParticipantImpl) Kind() livekit.ParticipantInfo_Kind {
 	return p.grants.GetParticipantKind()
 }
 
+func (p *ParticipantImpl) IsRecorder() bool {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	return p.grants.GetParticipantKind() == livekit.ParticipantInfo_EGRESS || p.grants.Video.Recorder
+}
+
 func (p *ParticipantImpl) IsDependent() bool {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
