@@ -504,6 +504,16 @@ type FakeLocalParticipant struct {
 	isReadyReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	IsRecorderStub        func() bool
+	isRecorderMutex       sync.RWMutex
+	isRecorderArgsForCall []struct {
+	}
+	isRecorderReturns struct {
+		result1 bool
+	}
+	isRecorderReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	IsSubscribedToStub        func(livekit.ParticipantID) bool
 	isSubscribedToMutex       sync.RWMutex
 	isSubscribedToArgsForCall []struct {
@@ -3551,6 +3561,59 @@ func (fake *FakeLocalParticipant) IsReadyReturnsOnCall(i int, result1 bool) {
 	}{result1}
 }
 
+func (fake *FakeLocalParticipant) IsRecorder() bool {
+	fake.isRecorderMutex.Lock()
+	ret, specificReturn := fake.isRecorderReturnsOnCall[len(fake.isRecorderArgsForCall)]
+	fake.isRecorderArgsForCall = append(fake.isRecorderArgsForCall, struct {
+	}{})
+	stub := fake.IsRecorderStub
+	fakeReturns := fake.isRecorderReturns
+	fake.recordInvocation("IsRecorder", []interface{}{})
+	fake.isRecorderMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) IsRecorderCallCount() int {
+	fake.isRecorderMutex.RLock()
+	defer fake.isRecorderMutex.RUnlock()
+	return len(fake.isRecorderArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) IsRecorderCalls(stub func() bool) {
+	fake.isRecorderMutex.Lock()
+	defer fake.isRecorderMutex.Unlock()
+	fake.IsRecorderStub = stub
+}
+
+func (fake *FakeLocalParticipant) IsRecorderReturns(result1 bool) {
+	fake.isRecorderMutex.Lock()
+	defer fake.isRecorderMutex.Unlock()
+	fake.IsRecorderStub = nil
+	fake.isRecorderReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) IsRecorderReturnsOnCall(i int, result1 bool) {
+	fake.isRecorderMutex.Lock()
+	defer fake.isRecorderMutex.Unlock()
+	fake.IsRecorderStub = nil
+	if fake.isRecorderReturnsOnCall == nil {
+		fake.isRecorderReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.isRecorderReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
 func (fake *FakeLocalParticipant) IsSubscribedTo(arg1 livekit.ParticipantID) bool {
 	fake.isSubscribedToMutex.Lock()
 	ret, specificReturn := fake.isSubscribedToReturnsOnCall[len(fake.isSubscribedToArgsForCall)]
@@ -6415,6 +6478,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.isPublisherMutex.RUnlock()
 	fake.isReadyMutex.RLock()
 	defer fake.isReadyMutex.RUnlock()
+	fake.isRecorderMutex.RLock()
+	defer fake.isRecorderMutex.RUnlock()
 	fake.isSubscribedToMutex.RLock()
 	defer fake.isSubscribedToMutex.RUnlock()
 	fake.issueFullReconnectMutex.RLock()
