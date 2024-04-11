@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/livekit-server/pkg/sfu/rtpextension"
+	pd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/playoutdelay"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -67,10 +67,10 @@ type PlayoutDelayController struct {
 
 func NewPlayoutDelayController(minDelay, maxDelay uint32, logger logger.Logger, rtpStats *buffer.RTPStatsSender) (*PlayoutDelayController, error) {
 	if maxDelay == 0 && minDelay > 0 {
-		maxDelay = rtpextension.MaxPlayoutDelayDefault
+		maxDelay = pd.MaxPlayoutDelayDefault
 	}
-	if maxDelay > rtpextension.PlayoutDelayMaxValue {
-		maxDelay = rtpextension.PlayoutDelayMaxValue
+	if maxDelay > pd.PlayoutDelayMaxValue {
+		maxDelay = pd.PlayoutDelayMaxValue
 	}
 	c := &PlayoutDelayController{
 		currentDelay: minDelay,
@@ -153,7 +153,7 @@ func (c *PlayoutDelayController) GetDelayExtension(seq uint16) []byte {
 }
 
 func (c *PlayoutDelayController) createExtData() error {
-	delay := rtpextension.PlayoutDelayFromValue(
+	delay := pd.PlayoutDelayFromValue(
 		uint16(c.currentDelay),
 		uint16(c.maxDelay),
 	)

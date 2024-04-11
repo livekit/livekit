@@ -18,7 +18,7 @@ import (
 	"fmt"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
+	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 )
 
 type DecodeTarget struct {
