@@ -117,12 +117,21 @@ type RTCPSenderReportData struct {
 	AtAdjusted      time.Time
 }
 
+func (r *RTCPSenderReportData) PropagationDelay() time.Duration {
+	return r.AtAdjusted.Sub(r.NTPTimestamp.Time())
+}
+
 func (r *RTCPSenderReportData) ToString() string {
 	if r == nil {
 		return ""
 	}
 
-	return fmt.Sprintf("ntp: %s, rtp: %d, extRtp: %d, at: %s, atAdj: %s", r.NTPTimestamp.Time().String(), r.RTPTimestamp, r.RTPTimestampExt, r.At.String(), r.AtAdjusted.String())
+	return fmt.Sprintf("ntp: %s, rtp: %d, extRtp: %d, at: %s, atAdj: %s",
+		r.NTPTimestamp.Time().String(),
+		r.RTPTimestamp,
+		r.RTPTimestampExt,
+		r.At.String(), r.AtAdjusted.String(),
+	)
 }
 
 func (r *RTCPSenderReportData) MarshalLogObject(e zapcore.ObjectEncoder) error {

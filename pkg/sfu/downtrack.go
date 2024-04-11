@@ -772,7 +772,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		_, _, refSenderReport := d.forwarder.GetSenderReportParams()
 		if refSenderReport != nil {
 			actExtCopy := *extPkt.AbsCaptureTimeExt
-			if err = actExtCopy.Rewrite(refSenderReport.AtAdjusted.Sub(refSenderReport.NTPTimestamp.Time())); err == nil {
+			if err = actExtCopy.Rewrite(refSenderReport.PropagationDelay()); err == nil {
 				actBytes, err = actExtCopy.Marshal()
 				if err == nil {
 					extensions = append(
