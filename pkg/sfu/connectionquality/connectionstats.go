@@ -379,7 +379,7 @@ func (cs *ConnectionStats) updateStatsWorker() {
 // For audio:
 //
 //	o Opus without FEC or RED suffers the most through packet loss, hence has the highest weight
-//	o RED with two packet redundancy can absorb two out of every three packets lost, so packet loss is not as detrimental and therefore lower weight
+//	o RED with two packet redundancy can absorb one out of every two packets lost, so packet loss is not as detrimental and therefore lower weight
 //
 // For video:
 //
@@ -396,10 +396,10 @@ func getPacketLossWeight(mimeType string, isFecEnabled bool) float64 {
 		}
 
 	case strings.EqualFold(mimeType, "audio/red"):
-		// 10%: fall to GOOD, 30.0%: fall to POOR
-		plw = 2.0
+		// 5%: fall to GOOD, 15.0%: fall to POOR
+		plw = 4.0
 		if isFecEnabled {
-			// 15%: fall to GOOD, 45.0%: fall to POOR
+			// 7.5%: fall to GOOD, 22.5%: fall to POOR
 			plw /= 1.5
 		}
 
