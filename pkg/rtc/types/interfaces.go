@@ -308,6 +308,7 @@ type LocalParticipant interface {
 	IsClosed() bool
 	IsReady() bool
 	IsDisconnected() bool
+	Disconnected() <-chan struct{}
 	IsIdle() bool
 	SubscriberAsPrimary() bool
 	GetClientInfo() *livekit.ClientInfo

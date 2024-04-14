@@ -168,6 +168,16 @@ type FakeLocalParticipant struct {
 	debugInfoReturnsOnCall map[int]struct {
 		result1 map[string]interface{}
 	}
+	DisconnectedStub        func() <-chan struct{}
+	disconnectedMutex       sync.RWMutex
+	disconnectedArgsForCall []struct {
+	}
+	disconnectedReturns struct {
+		result1 <-chan struct{}
+	}
+	disconnectedReturnsOnCall map[int]struct {
+		result1 <-chan struct{}
+	}
 	GetAdaptiveStreamStub        func() bool
 	getAdaptiveStreamMutex       sync.RWMutex
 	getAdaptiveStreamArgsForCall []struct {
@@ -1767,6 +1777,59 @@ func (fake *FakeLocalParticipant) DebugInfoReturnsOnCall(i int, result1 map[stri
 	}
 	fake.debugInfoReturnsOnCall[i] = struct {
 		result1 map[string]interface{}
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) Disconnected() <-chan struct{} {
+	fake.disconnectedMutex.Lock()
+	ret, specificReturn := fake.disconnectedReturnsOnCall[len(fake.disconnectedArgsForCall)]
+	fake.disconnectedArgsForCall = append(fake.disconnectedArgsForCall, struct {
+	}{})
+	stub := fake.DisconnectedStub
+	fakeReturns := fake.disconnectedReturns
+	fake.recordInvocation("Disconnected", []interface{}{})
+	fake.disconnectedMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) DisconnectedCallCount() int {
+	fake.disconnectedMutex.RLock()
+	defer fake.disconnectedMutex.RUnlock()
+	return len(fake.disconnectedArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) DisconnectedCalls(stub func() <-chan struct{}) {
+	fake.disconnectedMutex.Lock()
+	defer fake.disconnectedMutex.Unlock()
+	fake.DisconnectedStub = stub
+}
+
+func (fake *FakeLocalParticipant) DisconnectedReturns(result1 <-chan struct{}) {
+	fake.disconnectedMutex.Lock()
+	defer fake.disconnectedMutex.Unlock()
+	fake.DisconnectedStub = nil
+	fake.disconnectedReturns = struct {
+		result1 <-chan struct{}
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) DisconnectedReturnsOnCall(i int, result1 <-chan struct{}) {
+	fake.disconnectedMutex.Lock()
+	defer fake.disconnectedMutex.Unlock()
+	fake.DisconnectedStub = nil
+	if fake.disconnectedReturnsOnCall == nil {
+		fake.disconnectedReturnsOnCall = make(map[int]struct {
+			result1 <-chan struct{}
+		})
+	}
+	fake.disconnectedReturnsOnCall[i] = struct {
+		result1 <-chan struct{}
 	}{result1}
 }
 
@@ -6408,6 +6471,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.connectedAtMutex.RUnlock()
 	fake.debugInfoMutex.RLock()
 	defer fake.debugInfoMutex.RUnlock()
+	fake.disconnectedMutex.RLock()
+	defer fake.disconnectedMutex.RUnlock()
 	fake.getAdaptiveStreamMutex.RLock()
 	defer fake.getAdaptiveStreamMutex.RUnlock()
 	fake.getAudioLevelMutex.RLock()
