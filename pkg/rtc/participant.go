@@ -147,7 +147,8 @@ type ParticipantImpl struct {
 	isClosed    atomic.Bool
 	closeReason atomic.Value // types.ParticipantCloseReason
 
-	state atomic.Value // livekit.ParticipantInfo_State
+	state        atomic.Value // livekit.ParticipantInfo_State
+	disconnected chan struct{}
 
 	resSinkMu sync.Mutex
 	resSink   routing.MessageSink
@@ -241,7 +242,8 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		return nil, ErrMissingGrants
 	}
 	p := &ParticipantImpl{
-		params: params,
+		params:       params,
+		disconnected: make(chan struct{}),
 		pubRTCPQueue: sutils.NewOpsQueue(sutils.OpsQueueParams{
 			Name:    "pub-rtcp",
 			MinSize: 64,
@@ -363,6 +365,10 @@ func (p *ParticipantImpl) IsReady() bool {
 
 func (p *ParticipantImpl) IsDisconnected() bool {
 	return p.State() == livekit.ParticipantInfo_DISCONNECTED
+}
+
+func (p *ParticipantImpl) Disconnected() <-chan struct{} {
+	return p.disconnected
 }
 
 func (p *ParticipantImpl) IsIdle() bool {
@@ -834,6 +840,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	p.UpTrackManager.Close(isExpectedToResume)
 
 	p.updateState(livekit.ParticipantInfo_DISCONNECTED)
+	close(p.disconnected)
 
 	// ensure this is synchronized
 	p.CloseSignalConnection(types.SignallingCloseReasonParticipantClose)
