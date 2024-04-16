@@ -19,8 +19,8 @@ import (
 	"sync"
 
 	"github.com/gammazero/deque"
+
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
 )
 
 type OpsQueueParams struct {
@@ -30,28 +30,71 @@ type OpsQueueParams struct {
 	Logger      logger.Logger
 }
 
+type untypedOpsQueueItem func()
+
+func (it untypedOpsQueueItem) run() {
+	it()
+}
+
 type OpsQueue struct {
+	OpsQueueBase[untypedOpsQueueItem]
+}
+
+func NewOpsQueue(params OpsQueueParams) *OpsQueue {
+	return &OpsQueue{
+		OpsQueueBase: *newOpsQueueBase[untypedOpsQueueItem](params),
+	}
+}
+
+type typedOpsQueueItem[T any] struct {
+	op  func(T)
+	arg T
+}
+
+func (it typedOpsQueueItem[T]) run() {
+	it.op(it.arg)
+}
+
+type TypedOpsQueue[T any] struct {
+	OpsQueueBase[typedOpsQueueItem[T]]
+}
+
+func NewTypedOpsQueue[T any](params OpsQueueParams) *TypedOpsQueue[T] {
+	return &TypedOpsQueue[T]{
+		OpsQueueBase: *newOpsQueueBase[typedOpsQueueItem[T]](params),
+	}
+}
+
+func (oq *TypedOpsQueue[T]) Enqueue(fn func(T), arg T) {
+	oq.OpsQueueBase.Enqueue(typedOpsQueueItem[T]{fn, arg})
+}
+
+type opsQueueItem interface {
+	run()
+}
+
+type OpsQueueBase[T opsQueueItem] struct {
 	params OpsQueueParams
 
 	lock      sync.Mutex
-	ops       deque.Deque[func()]
+	ops       deque.Deque[T]
 	wake      chan struct{}
 	isStarted bool
 	doneChan  chan struct{}
 	isStopped bool
 }
 
-func NewOpsQueue(params OpsQueueParams) *OpsQueue {
-	oq := &OpsQueue{
+func newOpsQueueBase[T opsQueueItem](params OpsQueueParams) *OpsQueueBase[T] {
+	oq := &OpsQueueBase[T]{
 		params:   params,
 		wake:     make(chan struct{}, 1),
 		doneChan: make(chan struct{}),
 	}
-	oq.ops.SetMinCapacity(uint(utils.Min(bits.Len64(uint64(oq.params.MinSize-1)), 7)))
+	oq.ops.SetMinCapacity(uint(min(bits.Len64(uint64(oq.params.MinSize-1)), 7)))
 	return oq
 }
 
-func (oq *OpsQueue) Start() {
+func (oq *OpsQueueBase[T]) Start() {
 	oq.lock.Lock()
 	if oq.isStarted {
 		oq.lock.Unlock()
@@ -64,7 +107,7 @@ func (oq *OpsQueue) Start() {
 	go oq.process()
 }
 
-func (oq *OpsQueue) Stop() <-chan struct{} {
+func (oq *OpsQueueBase[T]) Stop() <-chan struct{} {
 	oq.lock.Lock()
 	if oq.isStopped {
 		oq.lock.Unlock()
@@ -77,7 +120,7 @@ func (oq *OpsQueue) Stop() <-chan struct{} {
 	return oq.doneChan
 }
 
-func (oq *OpsQueue) Enqueue(op func()) {
+func (oq *OpsQueueBase[T]) Enqueue(it T) {
 	oq.lock.Lock()
 	defer oq.lock.Unlock()
 
@@ -85,7 +128,7 @@ func (oq *OpsQueue) Enqueue(op func()) {
 		return
 	}
 
-	oq.ops.PushBack(op)
+	oq.ops.PushBack(it)
 	if oq.ops.Len() == 1 {
 		select {
 		case oq.wake <- struct{}{}:
@@ -94,7 +137,7 @@ func (oq *OpsQueue) Enqueue(op func()) {
 	}
 }
 
-func (oq *OpsQueue) process() {
+func (oq *OpsQueueBase[T]) process() {
 	defer close(oq.doneChan)
 
 	for {
@@ -110,10 +153,10 @@ func (oq *OpsQueue) process() {
 				oq.lock.Unlock()
 				break
 			}
-			op := oq.ops.PopFront()
+			it := oq.ops.PopFront()
 			oq.lock.Unlock()
 
-			op()
+			it.run()
 		}
 	}
 }
