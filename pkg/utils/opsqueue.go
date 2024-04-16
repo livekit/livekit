@@ -30,43 +30,43 @@ type OpsQueueParams struct {
 	Logger      logger.Logger
 }
 
-type untypedOpsQueueItem func()
+type untypedOpsQueueOp func()
 
-func (it untypedOpsQueueItem) run() {
+func (it untypedOpsQueueOp) run() {
 	it()
 }
 
 type OpsQueue struct {
-	OpsQueueBase[untypedOpsQueueItem]
+	OpsQueueBase[untypedOpsQueueOp]
 }
 
 func NewOpsQueue(params OpsQueueParams) *OpsQueue {
 	return &OpsQueue{
-		OpsQueueBase: *newOpsQueueBase[untypedOpsQueueItem](params),
+		OpsQueueBase: *newOpsQueueBase[untypedOpsQueueOp](params),
 	}
 }
 
-type typedOpsQueueItem[T any] struct {
-	op  func(T)
+type typedOpsQueueOp[T any] struct {
+	fn  func(T)
 	arg T
 }
 
-func (it typedOpsQueueItem[T]) run() {
-	it.op(it.arg)
+func (it typedOpsQueueOp[T]) run() {
+	it.fn(it.arg)
 }
 
 type TypedOpsQueue[T any] struct {
-	OpsQueueBase[typedOpsQueueItem[T]]
+	OpsQueueBase[typedOpsQueueOp[T]]
 }
 
 func NewTypedOpsQueue[T any](params OpsQueueParams) *TypedOpsQueue[T] {
 	return &TypedOpsQueue[T]{
-		OpsQueueBase: *newOpsQueueBase[typedOpsQueueItem[T]](params),
+		OpsQueueBase: *newOpsQueueBase[typedOpsQueueOp[T]](params),
 	}
 }
 
 func (oq *TypedOpsQueue[T]) Enqueue(fn func(T), arg T) {
-	oq.OpsQueueBase.Enqueue(typedOpsQueueItem[T]{fn, arg})
+	oq.OpsQueueBase.Enqueue(typedOpsQueueOp[T]{fn, arg})
 }
 
 type opsQueueItem interface {
@@ -120,7 +120,7 @@ func (oq *OpsQueueBase[T]) Stop() <-chan struct{} {
 	return oq.doneChan
 }
 
-func (oq *OpsQueueBase[T]) Enqueue(it T) {
+func (oq *OpsQueueBase[T]) Enqueue(op T) {
 	oq.lock.Lock()
 	defer oq.lock.Unlock()
 
@@ -128,7 +128,7 @@ func (oq *OpsQueueBase[T]) Enqueue(it T) {
 		return
 	}
 
-	oq.ops.PushBack(it)
+	oq.ops.PushBack(op)
 	if oq.ops.Len() == 1 {
 		select {
 		case oq.wake <- struct{}{}:
@@ -153,10 +153,10 @@ func (oq *OpsQueueBase[T]) process() {
 				oq.lock.Unlock()
 				break
 			}
-			it := oq.ops.PopFront()
+			op := oq.ops.PopFront()
 			oq.lock.Unlock()
 
-			it.run()
+			op.run()
 		}
 	}
 }
