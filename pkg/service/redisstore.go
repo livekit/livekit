@@ -630,6 +630,7 @@ func (s *RedisStore) storeIngressState(_ context.Context, ingressId string, stat
 			if state.StartedAt == oldStartedAt && state.UpdatedAt < oldUpdatedAt {
 				// Do not overwrite with an old state in case RPCs were delivered out of order.
 				// All RPCs come from the same ingress server and should thus be on the same clock.
+				return nil
 			}
 
 			p.Set(s.ctx, IngressStatePrefix+ingressId, data, 0)
