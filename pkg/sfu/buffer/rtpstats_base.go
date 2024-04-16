@@ -130,7 +130,8 @@ func (r *RTCPSenderReportData) ToString() string {
 		r.NTPTimestamp.Time().String(),
 		r.RTPTimestamp,
 		r.RTPTimestampExt,
-		r.At.String(), r.AtAdjusted.String(),
+		r.At.String(),
+		r.AtAdjusted.String(),
 	)
 }
 
@@ -879,8 +880,8 @@ func (r *rtpStatsBase) getDrift(extStartTS, extHighestTS uint64) (packetDrift *l
 		rtpClockTicks := r.srNewest.RTPTimestampExt - r.srFirst.RTPTimestampExt
 
 		elapsed := r.srNewest.NTPTimestamp.Time().Sub(r.srFirst.NTPTimestamp.Time())
-		driftSamples := int64(rtpClockTicks - uint64(elapsed.Nanoseconds()*int64(r.params.ClockRate)/1e9))
 		if elapsed.Seconds() > 0.0 {
+			driftSamples := int64(rtpClockTicks - uint64(elapsed.Nanoseconds()*int64(r.params.ClockRate)/1e9))
 			ntpReportDrift = &livekit.RTPDrift{
 				StartTime:      timestamppb.New(r.srFirst.NTPTimestamp.Time()),
 				EndTime:        timestamppb.New(r.srNewest.NTPTimestamp.Time()),
@@ -894,12 +895,12 @@ func (r *rtpStatsBase) getDrift(extStartTS, extHighestTS uint64) (packetDrift *l
 			}
 		}
 
-		elapsed = r.srNewest.At.Sub(r.srFirst.At)
-		driftSamples = int64(rtpClockTicks - uint64(elapsed.Nanoseconds()*int64(r.params.ClockRate)/1e9))
+		elapsed = r.srNewest.AtAdjusted.Sub(r.srFirst.AtAdjusted)
 		if elapsed.Seconds() > 0.0 {
+			driftSamples := int64(rtpClockTicks - uint64(elapsed.Nanoseconds()*int64(r.params.ClockRate)/1e9))
 			rebasedReportDrift = &livekit.RTPDrift{
-				StartTime:      timestamppb.New(r.srFirst.At),
-				EndTime:        timestamppb.New(r.srNewest.At),
+				StartTime:      timestamppb.New(r.srFirst.AtAdjusted),
+				EndTime:        timestamppb.New(r.srNewest.AtAdjusted),
 				Duration:       elapsed.Seconds(),
 				StartTimestamp: r.srFirst.RTPTimestampExt,
 				EndTimestamp:   r.srNewest.RTPTimestampExt,
