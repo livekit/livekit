@@ -131,7 +131,6 @@ func (pi *ParticipantInit) ToStartSession(roomName livekit.RoomName, connectionI
 		GrantsJson:      string(claims),
 		AdaptiveStream:  pi.AdaptiveStream,
 		ParticipantId:   string(pi.ID),
-		IceConfig:       pi.ICEConfig,
 	}
 	if pi.SubscriberAllowPause != nil {
 		subscriberAllowPause := *pi.SubscriberAllowPause
@@ -158,7 +157,6 @@ func ParticipantInitFromStartSession(ss *livekit.StartSession, region string) (*
 		Region:          region,
 		AdaptiveStream:  ss.AdaptiveStream,
 		ID:              livekit.ParticipantID(ss.ParticipantId),
-		ICEConfig:       ss.IceConfig,
 	}
 	if ss.SubscriberAllowPause != nil {
 		subscriberAllowPause := *ss.SubscriberAllowPause
