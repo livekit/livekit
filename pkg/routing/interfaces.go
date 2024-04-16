@@ -61,7 +61,6 @@ type ParticipantInit struct {
 	AdaptiveStream       bool
 	ID                   livekit.ParticipantID
 	SubscriberAllowPause *bool
-	ICEConfig            *livekit.ICEConfig
 }
 
 // Router allows multiple nodes to coordinate the participant session
