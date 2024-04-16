@@ -82,7 +82,7 @@ type RoomManager struct {
 	roomServers        utils.MultitonService[rpc.RoomTopic]
 	participantServers utils.MultitonService[rpc.ParticipantTopic]
 
-	iceConfigCache *sutils.IceConfigCache
+	iceConfigCache *sutils.IceConfigCache[iceConfigCacheKey]
 }
 
 func NewLocalRoomManager(
@@ -119,7 +119,7 @@ func NewLocalRoomManager(
 
 		rooms: make(map[livekit.RoomName]*rtc.Room),
 
-		iceConfigCache: sutils.NewIceConfigCache(),
+		iceConfigCache: sutils.NewIceConfigCache[iceConfigCacheKey](),
 
 		serverInfo: &livekit.ServerInfo{
 			Edition:       livekit.ServerInfo_Standard,

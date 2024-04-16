@@ -17,27 +17,27 @@ type iceConfigCacheEntry struct {
 	modifiedAt time.Time
 }
 
-type IceConfigCache struct {
+type IceConfigCache[T comparable] struct {
 	lock    sync.Mutex
-	entries map[interface{}]*iceConfigCacheEntry
+	entries map[T]*iceConfigCacheEntry
 
 	stopped atomic.Bool
 }
 
-func NewIceConfigCache() *IceConfigCache {
-	icc := &IceConfigCache{
-		entries: make(map[interface{}]*iceConfigCacheEntry),
+func NewIceConfigCache[T comparable]() *IceConfigCache[T] {
+	icc := &IceConfigCache[T]{
+		entries: make(map[T]*iceConfigCacheEntry),
 	}
 
 	go icc.pruneWorker()
 	return icc
 }
 
-func (icc *IceConfigCache) Stop() {
+func (icc *IceConfigCache[T]) Stop() {
 	icc.stopped.Store(true)
 }
 
-func (icc *IceConfigCache) Put(key interface{}, iceConfig *livekit.ICEConfig, at time.Time) {
+func (icc *IceConfigCache[T]) Put(key T, iceConfig *livekit.ICEConfig, at time.Time) {
 	icc.lock.Lock()
 	defer icc.lock.Unlock()
 
@@ -47,7 +47,7 @@ func (icc *IceConfigCache) Put(key interface{}, iceConfig *livekit.ICEConfig, at
 	}
 }
 
-func (icc *IceConfigCache) Get(key interface{}) *livekit.ICEConfig {
+func (icc *IceConfigCache[T]) Get(key T) *livekit.ICEConfig {
 	icc.lock.Lock()
 	defer icc.lock.Unlock()
 
@@ -60,7 +60,7 @@ func (icc *IceConfigCache) Get(key interface{}) *livekit.ICEConfig {
 	return entry.iceConfig
 }
 
-func (icc *IceConfigCache) pruneWorker() {
+func (icc *IceConfigCache[T]) pruneWorker() {
 	ticker := time.NewTicker(iceConfigTTL / 2)
 	defer ticker.Stop()
 
