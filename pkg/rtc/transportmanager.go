@@ -431,9 +431,7 @@ func (t *TransportManager) HandleClientReconnect(reason livekit.ReconnectReason)
 }
 
 func (t *TransportManager) ICERestart(iceConfig *livekit.ICEConfig) error {
-	if iceConfig != nil {
-		t.SetICEConfig(iceConfig)
-	}
+	t.SetICEConfig(iceConfig)
 
 	return t.subscriber.ICERestart()
 }
@@ -445,7 +443,9 @@ func (t *TransportManager) OnICEConfigChanged(f func(iceConfig *livekit.ICEConfi
 }
 
 func (t *TransportManager) SetICEConfig(iceConfig *livekit.ICEConfig) {
-	t.configureICE(iceConfig, true)
+	if iceConfig != nil {
+		t.configureICE(iceConfig, true)
+	}
 }
 
 func (t *TransportManager) resetTransportConfigureLocked(reconfigured bool) {

@@ -479,7 +479,14 @@ func (r *Room) GetParticipantRequestSource(identity livekit.ParticipantIdentity)
 	return r.participantRequestSources[identity]
 }
 
-func (r *Room) ResumeParticipant(p types.LocalParticipant, requestSource routing.MessageSource, responseSink routing.MessageSink, iceServers []*livekit.ICEServer, reason livekit.ReconnectReason) error {
+func (r *Room) ResumeParticipant(
+	p types.LocalParticipant,
+	requestSource routing.MessageSource,
+	responseSink routing.MessageSink,
+	iceConfig *livekit.ICEConfig,
+	iceServers []*livekit.ICEServer,
+	reason livekit.ReconnectReason,
+) error {
 	r.ReplaceParticipantRequestSource(p.Identity(), requestSource)
 	// close previous sink, and link to new one
 	p.CloseSignalConnection(types.SignallingCloseReasonResume)
@@ -521,7 +528,7 @@ func (r *Room) ResumeParticipant(p types.LocalParticipant, requestSource routing
 	}
 
 	_ = p.SendRoomUpdate(r.ToProto())
-	p.ICERestart(nil)
+	p.ICERestart(iceConfig)
 
 	// check for simulated signal disconnect on resume
 	r.simulationLock.Lock()
