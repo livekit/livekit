@@ -246,6 +246,7 @@ type Participant interface {
 	State() livekit.ParticipantInfo_State
 	CloseReason() ParticipantCloseReason
 	Kind() livekit.ParticipantInfo_Kind
+	IsRecorder() bool
 	IsDependent() bool
 
 	CanSkipBroadcast() bool
@@ -307,6 +308,7 @@ type LocalParticipant interface {
 	IsClosed() bool
 	IsReady() bool
 	IsDisconnected() bool
+	Disconnected() <-chan struct{}
 	IsIdle() bool
 	SubscriberAsPrimary() bool
 	GetClientInfo() *livekit.ClientInfo

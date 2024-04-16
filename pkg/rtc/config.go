@@ -20,7 +20,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
+	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
 )
 
@@ -88,6 +88,7 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 				sdp.SDESMidURI,
 				sdp.SDESRTPStreamIDURI,
 				sdp.AudioLevelURI,
+				//act.AbsCaptureTimeURI,
 			},
 			Video: []string{
 				sdp.SDESMidURI,
@@ -96,6 +97,7 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 				frameMarking,
 				dd.ExtensionURI,
 				repairedRTPStreamID,
+				//act.AbsCaptureTimeURI,
 			},
 		},
 		RTCPFeedback: RTCPFeedbackConfig{
@@ -115,7 +117,13 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 	subscriberConfig := DirectionConfig{
 		StrictACKs: conf.RTC.StrictACKs,
 		RTPHeaderExtension: RTPHeaderExtensionConfig{
-			Video: []string{dd.ExtensionURI},
+			Video: []string{
+				dd.ExtensionURI,
+				//act.AbsCaptureTimeURI,
+			},
+			Audio: []string{
+				//act.AbsCaptureTimeURI,
+			},
 		},
 		RTCPFeedback: RTCPFeedbackConfig{
 			Video: []webrtc.RTCPFeedback{

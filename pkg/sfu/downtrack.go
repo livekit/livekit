@@ -35,9 +35,10 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
-	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
-	"github.com/livekit/livekit-server/pkg/sfu/rtpextension"
+	act "github.com/livekit/livekit-server/pkg/sfu/rtpextension/abscapturetime"
+	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
+	pd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/playoutdelay"
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
 )
 
@@ -144,11 +145,13 @@ func (d DownTrackState) String() string {
 
 // -------------------------------------------------------------------
 
+/* STREAM-ALLOCATOR-DATA
 type NackInfo struct {
 	Timestamp      uint32
 	SequenceNumber uint16
 	Attempts       uint8
 }
+*/
 
 type DownTrackStreamAllocatorListener interface {
 	// RTCP received
@@ -179,11 +182,13 @@ type DownTrackStreamAllocatorListener interface {
 	// packet(s) sent
 	OnPacketsSent(dt *DownTrack, size int)
 
+	/* STREAM-ALLOCATOR-DATA
 	// NACKs received
 	OnNACK(dt *DownTrack, nackInfos []NackInfo)
 
 	// RTCP Receiver Report received
 	OnRTCPReceiverReport(dt *DownTrack, rr rtcp.ReceptionReport)
+	*/
 
 	// check if track should participate in BWE
 	IsBWEEnabled(dt *DownTrack) bool
@@ -233,6 +238,7 @@ type DownTrack struct {
 	transportWideExtID        int
 	dependencyDescriptorExtID int
 	playoutDelayExtID         int
+	absCaptureTimeExtID       int
 	transceiver               atomic.Pointer[webrtc.RTPTransceiver]
 	writeStream               webrtc.TrackLocalWriter
 	rtcpReader                *buffer.RTCPReader
@@ -266,8 +272,10 @@ type DownTrack struct {
 	streamAllocatorListener         DownTrackStreamAllocatorListener
 	streamAllocatorReportGeneration int
 	streamAllocatorBytesCounter     atomic.Uint32
+	/* STREAM-ALLOCATOR-DATA
 	bytesSent                       atomic.Uint32
 	bytesRetransmitted              atomic.Uint32
+	*/
 
 	playoutDelay *PlayoutDelayController
 
@@ -547,7 +555,7 @@ func (d *DownTrack) SetRTPHeaderExtensions(rtpHeaderExtensions []webrtc.RTPHeade
 			}
 		case dd.ExtensionURI:
 			d.dependencyDescriptorExtID = ext.ID
-		case rtpextension.PlayoutDelayURI:
+		case pd.PlayoutDelayURI:
 			d.playoutDelayExtID = ext.ID
 		case sdp.TransportCCURI:
 			if isBWEEnabled {
@@ -555,6 +563,8 @@ func (d *DownTrack) SetRTPHeaderExtensions(rtpHeaderExtensions []webrtc.RTPHeade
 			} else {
 				d.transportWideExtID = 0
 			}
+		case act.AbsCaptureTimeURI:
+			d.absCaptureTimeExtID = ext.ID
 		}
 	}
 }
@@ -724,13 +734,59 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 
 	var extensions []pacer.ExtensionData
 	if tp.ddBytes != nil {
-		extensions = []pacer.ExtensionData{{ID: uint8(d.dependencyDescriptorExtID), Payload: tp.ddBytes}}
+		extensions = append(
+			extensions,
+			pacer.ExtensionData{
+				ID:      uint8(d.dependencyDescriptorExtID),
+				Payload: tp.ddBytes,
+			},
+		)
 	}
 	if d.playoutDelayExtID != 0 && d.playoutDelay != nil {
 		if val := d.playoutDelay.GetDelayExtension(hdr.SequenceNumber); val != nil {
-			extensions = append(extensions, pacer.ExtensionData{ID: uint8(d.playoutDelayExtID), Payload: val})
+			extensions = append(
+				extensions,
+				pacer.ExtensionData{
+					ID:      uint8(d.playoutDelayExtID),
+					Payload: val,
+				},
+			)
+
+			// NOTE: play out delay extension is not cached in sequencer,
+			// i. e. they will not be added to retransmitted packet.
+			// But, it is okay as the extension is added till a RTCP Receiver Report for
+			// the corresponding sequence number is received.
+			// The extreme case is all packets containing the play out delay are lost and
+			// all of them retransmitted and an RTCP Receiver Report received for those
+			// retransmited sequence numbers. But, that is highly improbable, if not impossible.
 		}
 	}
+	var actBytes []byte
+	if extPkt.AbsCaptureTimeExt != nil && d.absCaptureTimeExtID != 0 {
+		// normalize capture time to SFU clock.
+		// NOTE: even if there is estimated offset populated, just re-map the
+		// absolute capture time stamp as it should be the same RTCP sender report
+		// clock domain of publisher. SFU is normalising sender reports of publisher
+		// to SFU clock before sending to subscribers. So, capture time should be
+		// normalized to the same clock. Clear out any offset.
+		_, _, refSenderReport := d.forwarder.GetSenderReportParams()
+		if refSenderReport != nil {
+			actExtCopy := *extPkt.AbsCaptureTimeExt
+			if err = actExtCopy.Rewrite(refSenderReport.PropagationDelay()); err == nil {
+				actBytes, err = actExtCopy.Marshal()
+				if err == nil {
+					extensions = append(
+						extensions,
+						pacer.ExtensionData{
+							ID:      uint8(d.absCaptureTimeExtID),
+							Payload: actBytes,
+						},
+					)
+				}
+			}
+		}
+	}
+
 	if d.sequencer != nil {
 		d.sequencer.push(
 			extPkt.Arrival,
@@ -742,6 +798,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			payload[:outgoingHeaderSize],
 			incomingHeaderSize,
 			tp.ddBytes,
+			actBytes,
 		)
 	}
 
@@ -1538,9 +1595,11 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 					rttToReport = rtt
 				}
 
+				/* STREAM-ALLOCATOR-DATA
 				if sal := d.getStreamAllocatorListener(); sal != nil {
 					sal.OnRTCPReceiverReport(d, r)
 				}
+				*/
 
 				if d.playoutDelay != nil {
 					jitterMs := uint64(r.Jitter*1e3) / uint64(d.codec.ClockRate)
@@ -1655,18 +1714,20 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	nackAcks := uint32(0)
 	nackMisses := uint32(0)
 	numRepeatedNACKs := uint32(0)
-	nackInfos := make([]NackInfo, 0, len(filtered))
+	// STREAM-ALLOCATOR-DATA nackInfos := make([]NackInfo, 0, len(filtered))
 	for _, epm := range d.sequencer.getExtPacketMetas(filtered) {
 		if disallowedLayers[epm.layer] {
 			continue
 		}
 
 		nackAcks++
+		/* STREAM-ALLOCATOR-DATA
 		nackInfos = append(nackInfos, NackInfo{
 			SequenceNumber: epm.targetSeqNo,
 			Timestamp:      epm.timestamp,
 			Attempts:       epm.nacked,
 		})
+		*/
 
 		pktBuff := *src
 		n, err := d.params.Receiver.ReadRTP(pktBuff, uint8(epm.layer), epm.sourceSeqNo)
@@ -1705,11 +1766,30 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			payload = payload[:int(epm.numCodecBytesOut)+len(pkt.Payload)-int(epm.numCodecBytesIn)]
 		}
 
-		var ddBytes []byte
-		if len(epm.ddBytesSlice) != 0 {
-			ddBytes = epm.ddBytesSlice
-		} else {
-			ddBytes = epm.ddBytes[:epm.ddBytesSize]
+		var extensions []pacer.ExtensionData
+		if d.dependencyDescriptorExtID != 0 {
+			var ddBytes []byte
+			if len(epm.ddBytesSlice) != 0 {
+				ddBytes = epm.ddBytesSlice
+			} else {
+				ddBytes = epm.ddBytes[:epm.ddBytesSize]
+			}
+			extensions = append(
+				extensions,
+				pacer.ExtensionData{
+					ID:      uint8(d.dependencyDescriptorExtID),
+					Payload: ddBytes,
+				},
+			)
+		}
+		if d.absCaptureTimeExtID != 0 && len(epm.actBytes) != 0 {
+			extensions = append(
+				extensions,
+				pacer.ExtensionData{
+					ID:      uint8(d.absCaptureTimeExtID),
+					Payload: epm.actBytes,
+				},
+			)
 		}
 
 		d.sendingPacket(
@@ -1725,7 +1805,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		)
 		d.pacer.Enqueue(pacer.Packet{
 			Header:             &pkt.Header,
-			Extensions:         []pacer.ExtensionData{{ID: uint8(d.dependencyDescriptorExtID), Payload: ddBytes}},
+			Extensions:         extensions,
 			Payload:            payload,
 			AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 			TransportWideExtID: uint8(d.transportWideExtID),
@@ -1738,6 +1818,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	d.totalRepeatedNACKs.Add(numRepeatedNACKs)
 
 	d.rtpStats.UpdateNackProcessed(nackAcks, nackMisses, numRepeatedNACKs)
+	/* STREAM-ALLOCATOR-DATA
 	// STREAM-ALLOCATOR-EXPERIMENTAL-TODO-START
 	// Need to check on the following
 	//   - get all NACKs from sequencer even if SFU is not acknowledging,
@@ -1753,6 +1834,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	if sal := d.getStreamAllocatorListener(); sal != nil && len(nackInfos) != 0 {
 		sal.OnNACK(d, nackInfos)
 	}
+	*/
 }
 
 func (d *DownTrack) getTranslatedRTPHeader(extPkt *buffer.ExtPacket, tp *TranslationParams) (*rtp.Header, error) {
@@ -1841,9 +1923,11 @@ func (d *DownTrack) GetNackStats() (totalPackets uint32, totalRepeatedNACKs uint
 	return
 }
 
+/* STREAM-ALLOCATOR-DATA
 func (d *DownTrack) GetAndResetBytesSent() (uint32, uint32) {
 	return d.bytesSent.Swap(0), d.bytesRetransmitted.Swap(0)
 }
+*/
 
 func (d *DownTrack) onBindAndConnectedChange() {
 	d.writable.Store(d.connected.Load() && d.bound.Load())
@@ -1981,11 +2065,13 @@ func (d *DownTrack) sendingPacket(hdr *rtp.Header, payloadSize int, spmd *sendPa
 		// STREAM-ALLOCATOR-TODO: remove this stream allocator bytes counter once stream allocator changes fully to pull bytes counter
 		size := uint32(hdrSize + payloadSize)
 		d.streamAllocatorBytesCounter.Add(size)
+		/* STREAM-ALLOCATOR-DATA
 		if spmd.isRTX {
 			d.bytesRetransmitted.Add(size)
 		} else {
 			d.bytesSent.Add(size)
 		}
+		*/
 	}
 
 	// update RTPStats

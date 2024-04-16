@@ -390,7 +390,7 @@ func (h *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job)
 			if len(w.RunningJobs()) > 0 && load > maxLoad {
 				maxLoad = load
 				affinity = 0.5 + load/2
-			} else {
+			} else if affinity == 0 {
 				affinity = 0.5
 			}
 		}

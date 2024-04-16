@@ -382,7 +382,7 @@ func (q *qualityScorer) updateAtLocked(stat *windowStat, at time.Time) {
 	//       considered (as long as enough time has passed since unmute).
 	//
 	//       Similarly, when paused (possibly due to congestion), score is immediately
-	//       set to cMinScore for responsiveness. The layer transision is reest.
+	//       set to cMinScore for responsiveness. The layer transition is reset.
 	//       On a resume, quality climbs back up using normal operation.
 	if q.isMuted() || !q.isUnmutedEnough(at) || q.isLayerMuted() || q.isPaused() {
 		q.lastUpdateAt = at

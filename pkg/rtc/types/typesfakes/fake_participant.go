@@ -148,6 +148,16 @@ type FakeParticipant struct {
 	isPublisherReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	IsRecorderStub        func() bool
+	isRecorderMutex       sync.RWMutex
+	isRecorderArgsForCall []struct {
+	}
+	isRecorderReturns struct {
+		result1 bool
+	}
+	isRecorderReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	KindStub        func() livekit.ParticipantInfo_Kind
 	kindMutex       sync.RWMutex
 	kindArgsForCall []struct {
@@ -954,6 +964,59 @@ func (fake *FakeParticipant) IsPublisherReturnsOnCall(i int, result1 bool) {
 	}{result1}
 }
 
+func (fake *FakeParticipant) IsRecorder() bool {
+	fake.isRecorderMutex.Lock()
+	ret, specificReturn := fake.isRecorderReturnsOnCall[len(fake.isRecorderArgsForCall)]
+	fake.isRecorderArgsForCall = append(fake.isRecorderArgsForCall, struct {
+	}{})
+	stub := fake.IsRecorderStub
+	fakeReturns := fake.isRecorderReturns
+	fake.recordInvocation("IsRecorder", []interface{}{})
+	fake.isRecorderMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) IsRecorderCallCount() int {
+	fake.isRecorderMutex.RLock()
+	defer fake.isRecorderMutex.RUnlock()
+	return len(fake.isRecorderArgsForCall)
+}
+
+func (fake *FakeParticipant) IsRecorderCalls(stub func() bool) {
+	fake.isRecorderMutex.Lock()
+	defer fake.isRecorderMutex.Unlock()
+	fake.IsRecorderStub = stub
+}
+
+func (fake *FakeParticipant) IsRecorderReturns(result1 bool) {
+	fake.isRecorderMutex.Lock()
+	defer fake.isRecorderMutex.Unlock()
+	fake.IsRecorderStub = nil
+	fake.isRecorderReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeParticipant) IsRecorderReturnsOnCall(i int, result1 bool) {
+	fake.isRecorderMutex.Lock()
+	defer fake.isRecorderMutex.Unlock()
+	fake.IsRecorderStub = nil
+	if fake.isRecorderReturnsOnCall == nil {
+		fake.isRecorderReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.isRecorderReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
 func (fake *FakeParticipant) Kind() livekit.ParticipantInfo_Kind {
 	fake.kindMutex.Lock()
 	ret, specificReturn := fake.kindReturnsOnCall[len(fake.kindArgsForCall)]
@@ -1420,6 +1483,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.isDependentMutex.RUnlock()
 	fake.isPublisherMutex.RLock()
 	defer fake.isPublisherMutex.RUnlock()
+	fake.isRecorderMutex.RLock()
+	defer fake.isRecorderMutex.RUnlock()
 	fake.kindMutex.RLock()
 	defer fake.kindMutex.RUnlock()
 	fake.removePublishedTrackMutex.RLock()

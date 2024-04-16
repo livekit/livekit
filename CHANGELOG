@@ -2,6 +2,46 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2024-04-10
+
+### Added
+- Support for Participant.Kind. (#2505 #2626)
+- Support XR request/response for rtt calculation (#2536)
+- Added support for departureTimeout to keep the room open after participant depart (#2549)
+- Added support for Egress Proxy (#2570)
+- Added support for SIP DTMF data messages. (#2559)
+- Add option to enable bitrate based scoring (#2600)
+- Agent service: support for orchestration v2 & namespaces (#2545 #2641)
+- Ability to disable audio loss proxying. (#2629)
+
+### Fixed
+- Prevent multiple debounce of quality downgrade. (#2499)
+- fix pli throttle locking (#2521)
+- Use the correct snapshot id for PPS. (#2528)
+- Validate SIP trunks and rules when creating new ones. (#2535)
+- Remove subscriber if track closed while adding subscriber. (#2537)
+- fix #2539, do not kill the keepaliveWorker task when the ping timeout occurs (#2555)
+- Improved A/V sync, proper RTCP report past mute. (#2588)
+- Protect duplicate subscription. (#2596)
+- Fix twcc has chance to miss for firefox simulcast rtx (#2601)
+- Limit playout delay change for high jitter (#2635)
+
+### Changed
+- Replace reflect.Equal with generic sliceEqual (#2494)
+- Some optimisations in the forwarding path. (#2035)
+- Reduce heap for dependency descriptor in forwarding path. (#2496)
+- Separate buffer size config for video and audio. (#2498)
+- update pion/ice for tcpmux memory improvement (#2500)
+- Close published track always. (#2508)
+- use dynamic bucket size (#2524)
+- Refactoring channel handling (#2532)
+- Forward publisher sender report instead of generating. (#2572)
+- Notify initial permissions (#2595)
+- Replace sleep with sync.Cond to reduce jitter (#2603)
+- Prevent large spikes in propagation delay (#2615)
+- reduce gc from stream allocator rate monitor (#2638)
+
+
 ## [1.5.3] - 2024-02-17
 
 ### Added

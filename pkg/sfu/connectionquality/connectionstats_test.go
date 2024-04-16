@@ -563,7 +563,7 @@ func TestConnectionQuality(t *testing.T) {
 					},
 				},
 			},
-			// "audio/red" - no fec - 0 <= loss < 10%: EXCELLENT, 10% <= loss < 30%: GOOD, >= 30%: POOR
+			// "audio/red" - no fec - 0 <= loss < 5%: EXCELLENT, 5% <= loss < 15%: GOOD, >= 15%: POOR
 			{
 				name:            "audio/red - no fec",
 				mimeType:        "audio/red",
@@ -571,23 +571,23 @@ func TestConnectionQuality(t *testing.T) {
 				packetsExpected: 200,
 				expectedQualities: []expectedQuality{
 					{
-						packetLossPercentage: 8.0,
+						packetLossPercentage: 4.0,
 						expectedMOS:          4.6,
 						expectedQuality:      livekit.ConnectionQuality_EXCELLENT,
 					},
 					{
-						packetLossPercentage: 12.0,
+						packetLossPercentage: 6.0,
 						expectedMOS:          4.1,
 						expectedQuality:      livekit.ConnectionQuality_GOOD,
 					},
 					{
-						packetLossPercentage: 39.0,
+						packetLossPercentage: 19.5,
 						expectedMOS:          2.1,
 						expectedQuality:      livekit.ConnectionQuality_POOR,
 					},
 				},
 			},
-			// "audio/red" - fec - 0 <= loss < 15%: EXCELLENT, 15% <= loss < 45%: GOOD, >= 45%: POOR
+			// "audio/red" - fec - 0 <= loss < 7.5%: EXCELLENT, 7.5% <= loss < 22.5%: GOOD, >= 22.5%: POOR
 			{
 				name:            "audio/red - fec",
 				mimeType:        "audio/red",
@@ -595,17 +595,17 @@ func TestConnectionQuality(t *testing.T) {
 				packetsExpected: 200,
 				expectedQualities: []expectedQuality{
 					{
-						packetLossPercentage: 12.0,
+						packetLossPercentage: 6.0,
 						expectedMOS:          4.6,
 						expectedQuality:      livekit.ConnectionQuality_EXCELLENT,
 					},
 					{
-						packetLossPercentage: 20.0,
+						packetLossPercentage: 10.0,
 						expectedMOS:          4.1,
 						expectedQuality:      livekit.ConnectionQuality_GOOD,
 					},
 					{
-						packetLossPercentage: 60.0,
+						packetLossPercentage: 30.0,
 						expectedMOS:          2.1,
 						expectedQuality:      livekit.ConnectionQuality_POOR,
 					},

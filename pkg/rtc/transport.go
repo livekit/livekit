@@ -47,7 +47,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	sfuinterceptor "github.com/livekit/livekit-server/pkg/sfu/interceptor"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
-	"github.com/livekit/livekit-server/pkg/sfu/rtpextension"
+	pd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/playoutdelay"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	sfuutils "github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
@@ -183,7 +183,7 @@ type PCTransport struct {
 	preferTCP atomic.Bool
 	isClosed  atomic.Bool
 
-	eventsQueue *sutils.OpsQueue
+	eventsQueue *sutils.TypedOpsQueue[event]
 
 	// the following should be accessed only in event processing go routine
 	cacheLocalCandidates      bool
@@ -222,9 +222,8 @@ type TransportParams struct {
 
 func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimator cc.BandwidthEstimator)) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
 	directionConfig := params.DirectionConfig
-
 	if params.AllowPlayoutDelay {
-		directionConfig.RTPHeaderExtension.Video = append(directionConfig.RTPHeaderExtension.Video, rtpextension.PlayoutDelayURI)
+		directionConfig.RTPHeaderExtension.Video = append(directionConfig.RTPHeaderExtension.Video, pd.PlayoutDelayURI)
 	}
 
 	// Some of the browser clients do not handle H.264 High Profile in signalling properly.
@@ -389,7 +388,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		params:             params,
 		debouncedNegotiate: debounce.New(negotiationFrequency),
 		negotiationState:   transport.NegotiationStateNone,
-		eventsQueue: sutils.NewOpsQueue(utils.OpsQueueParams{
+		eventsQueue: sutils.NewTypedOpsQueue[event](utils.OpsQueueParams{
 			Name:    "transport",
 			MinSize: 64,
 			Logger:  params.Logger,
@@ -1242,37 +1241,34 @@ func (t *PCTransport) parseTrackMid(offer webrtc.SessionDescription, senders map
 }
 
 func (t *PCTransport) postEvent(event event) {
-	t.eventsQueue.Enqueue(func() {
-		err := t.handleEvent(&event)
-		if err != nil {
-			if !t.isClosed.Load() {
-				t.params.Logger.Warnw("error handling event", err, "event", event.String())
-				t.params.Handler.OnNegotiationFailed()
-			}
-		}
-	})
+	t.eventsQueue.Enqueue(t.handleEvent, event)
 }
 
-func (t *PCTransport) handleEvent(e *event) error {
+func (t *PCTransport) handleEvent(e event) {
+	var err error
 	switch e.signal {
 	case signalICEGatheringComplete:
-		return t.handleICEGatheringComplete(e)
+		err = t.handleICEGatheringComplete(e)
 	case signalLocalICECandidate:
-		return t.handleLocalICECandidate(e)
+		err = t.handleLocalICECandidate(e)
 	case signalRemoteICECandidate:
-		return t.handleRemoteICECandidate(e)
+		err = t.handleRemoteICECandidate(e)
 	case signalSendOffer:
-		return t.handleSendOffer(e)
+		err = t.handleSendOffer(e)
 	case signalRemoteDescriptionReceived:
-		return t.handleRemoteDescriptionReceived(e)
+		err = t.handleRemoteDescriptionReceived(e)
 	case signalICERestart:
-		return t.handleICERestart(e)
+		err = t.handleICERestart(e)
 	}
-
-	return nil
+	if err != nil {
+		if !t.isClosed.Load() {
+			t.params.Logger.Warnw("error handling event", err, "event", e.String())
+			t.params.Handler.OnNegotiationFailed()
+		}
+	}
 }
 
-func (t *PCTransport) handleICEGatheringComplete(_ *event) error {
+func (t *PCTransport) handleICEGatheringComplete(_ event) error {
 	if t.params.IsOfferer {
 		return t.handleICEGatheringCompleteOfferer()
 	} else {
@@ -1330,7 +1326,7 @@ func (t *PCTransport) clearLocalDescriptionSent() {
 	t.connectionDetails.Clear()
 }
 
-func (t *PCTransport) handleLocalICECandidate(e *event) error {
+func (t *PCTransport) handleLocalICECandidate(e event) error {
 	c := e.data.(*webrtc.ICECandidate)
 
 	filtered := false
@@ -1354,7 +1350,7 @@ func (t *PCTransport) handleLocalICECandidate(e *event) error {
 	return t.params.Handler.OnICECandidate(c, t.params.Transport)
 }
 
-func (t *PCTransport) handleRemoteICECandidate(e *event) error {
+func (t *PCTransport) handleRemoteICECandidate(e event) error {
 	c := e.data.(*webrtc.ICECandidateInit)
 
 	filtered := false
@@ -1550,11 +1546,11 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	return t.localDescriptionSent()
 }
 
-func (t *PCTransport) handleSendOffer(_ *event) error {
+func (t *PCTransport) handleSendOffer(_ event) error {
 	return t.createAndSendOffer(nil)
 }
 
-func (t *PCTransport) handleRemoteDescriptionReceived(e *event) error {
+func (t *PCTransport) handleRemoteDescriptionReceived(e event) error {
 	sd := e.data.(*webrtc.SessionDescription)
 	if sd.Type == webrtc.SDPTypeOffer {
 		return t.handleRemoteOfferReceived(sd)
@@ -1779,7 +1775,7 @@ func (t *PCTransport) doICERestart() error {
 	}
 }
 
-func (t *PCTransport) handleICERestart(_ *event) error {
+func (t *PCTransport) handleICERestart(_ event) error {
 	return t.doICERestart()
 }
 

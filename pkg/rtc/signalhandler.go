@@ -57,13 +57,6 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 	case *livekit.SignalRequest_Leave:
 		pLogger.Debugw("client leaving room")
 		room.RemoveParticipant(participant.Identity(), participant.ID(), types.ParticipantCloseReasonClientRequestLeave)
-	case *livekit.SignalRequest_UpdateLayers:
-		err := room.UpdateVideoLayers(participant, msg.UpdateLayers)
-		if err != nil {
-			pLogger.Warnw("could not update video layers", err,
-				"update", msg.UpdateLayers)
-			return nil
-		}
 	case *livekit.SignalRequest_SubscriptionPermission:
 		err := room.UpdateSubscriptionPermission(participant, msg.SubscriptionPermission)
 		if err != nil {

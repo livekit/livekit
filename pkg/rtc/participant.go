@@ -147,7 +147,8 @@ type ParticipantImpl struct {
 	isClosed    atomic.Bool
 	closeReason atomic.Value // types.ParticipantCloseReason
 
-	state atomic.Value // livekit.ParticipantInfo_State
+	state        atomic.Value // livekit.ParticipantInfo_State
+	disconnected chan struct{}
 
 	resSinkMu sync.Mutex
 	resSink   routing.MessageSink
@@ -163,7 +164,7 @@ type ParticipantImpl struct {
 	disconnectTimer *time.Timer
 	migrationTimer  *time.Timer
 
-	pubRTCPQueue *sutils.OpsQueue
+	pubRTCPQueue *sutils.TypedOpsQueue[[]rtcp.Packet]
 
 	// hold reference for MediaTrack
 	twcc *twcc.Responder
@@ -241,8 +242,9 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		return nil, ErrMissingGrants
 	}
 	p := &ParticipantImpl{
-		params: params,
-		pubRTCPQueue: sutils.NewOpsQueue(sutils.OpsQueueParams{
+		params:       params,
+		disconnected: make(chan struct{}),
+		pubRTCPQueue: sutils.NewTypedOpsQueue[[]rtcp.Packet](sutils.OpsQueueParams{
 			Name:    "pub-rtcp",
 			MinSize: 64,
 			Logger:  params.Logger,
@@ -332,6 +334,13 @@ func (p *ParticipantImpl) Kind() livekit.ParticipantInfo_Kind {
 	return p.grants.GetParticipantKind()
 }
 
+func (p *ParticipantImpl) IsRecorder() bool {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	return p.grants.GetParticipantKind() == livekit.ParticipantInfo_EGRESS || p.grants.Video.Recorder
+}
+
 func (p *ParticipantImpl) IsDependent() bool {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
@@ -363,6 +372,10 @@ func (p *ParticipantImpl) IsReady() bool {
 
 func (p *ParticipantImpl) IsDisconnected() bool {
 	return p.State() == livekit.ParticipantInfo_DISCONNECTED
+}
+
+func (p *ParticipantImpl) Disconnected() <-chan struct{} {
+	return p.disconnected
 }
 
 func (p *ParticipantImpl) IsIdle() bool {
@@ -834,6 +847,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	p.UpTrackManager.Close(isExpectedToResume)
 
 	p.updateState(livekit.ParticipantInfo_DISCONNECTED)
+	close(p.disconnected)
 
 	// ensure this is synchronized
 	p.CloseSignalConnection(types.SignallingCloseReasonParticipantClose)
@@ -2365,11 +2379,13 @@ func (p *ParticipantImpl) postRtcp(pkts []rtcp.Packet) {
 		return
 	}
 
-	p.pubRTCPQueue.Enqueue(func() {
-		if err := p.TransportManager.WritePublisherRTCP(pkts); err != nil && !IsEOF(err) {
-			p.pubLogger.Errorw("could not write RTCP to participant", err)
-		}
-	})
+	p.pubRTCPQueue.Enqueue(p.writePublisherRTCP, pkts)
+}
+
+func (p *ParticipantImpl) writePublisherRTCP(pkts []rtcp.Packet) {
+	if err := p.TransportManager.WritePublisherRTCP(pkts); err != nil && !IsEOF(err) {
+		p.pubLogger.Errorw("could not write RTCP to participant", err)
+	}
 }
 
 func (p *ParticipantImpl) setDowntracksConnected() {
