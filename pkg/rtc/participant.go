@@ -164,7 +164,7 @@ type ParticipantImpl struct {
 	disconnectTimer *time.Timer
 	migrationTimer  *time.Timer
 
-	pubRTCPQueue *sutils.OpsQueue
+	pubRTCPQueue *sutils.TypedOpsQueue[[]rtcp.Packet]
 
 	// hold reference for MediaTrack
 	twcc *twcc.Responder
@@ -244,7 +244,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p := &ParticipantImpl{
 		params:       params,
 		disconnected: make(chan struct{}),
-		pubRTCPQueue: sutils.NewOpsQueue(sutils.OpsQueueParams{
+		pubRTCPQueue: sutils.NewTypedOpsQueue[[]rtcp.Packet](sutils.OpsQueueParams{
 			Name:    "pub-rtcp",
 			MinSize: 64,
 			Logger:  params.Logger,
@@ -2379,11 +2379,13 @@ func (p *ParticipantImpl) postRtcp(pkts []rtcp.Packet) {
 		return
 	}
 
-	p.pubRTCPQueue.Enqueue(func() {
-		if err := p.TransportManager.WritePublisherRTCP(pkts); err != nil && !IsEOF(err) {
-			p.pubLogger.Errorw("could not write RTCP to participant", err)
-		}
-	})
+	p.pubRTCPQueue.Enqueue(p.writePublisherRTCP, pkts)
+}
+
+func (p *ParticipantImpl) writePublisherRTCP(pkts []rtcp.Packet) {
+	if err := p.TransportManager.WritePublisherRTCP(pkts); err != nil && !IsEOF(err) {
+		p.pubLogger.Errorw("could not write RTCP to participant", err)
+	}
 }
 
 func (p *ParticipantImpl) setDowntracksConnected() {
