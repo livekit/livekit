@@ -22,6 +22,7 @@ import (
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/psrpc"
 
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -254,6 +255,9 @@ func (p *ParticipantImpl) sendDisconnectUpdatesForReconnect() error {
 func (p *ParticipantImpl) sendICECandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) error {
 	trickle := ToProtoTrickle(c.ToJSON())
 	trickle.Target = target
+
+	p.params.Logger.Debugw("sending ICE candidate", "transport", target, "trickle", logger.Proto(trickle))
+
 	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Trickle{
 			Trickle: trickle,

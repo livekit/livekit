@@ -16,11 +16,9 @@ package rtc
 
 import (
 	"math/bits"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/pion/ice/v2"
 	"github.com/pion/rtcp"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
@@ -372,19 +370,6 @@ func (t *TransportManager) HandleAnswer(answer webrtc.SessionDescription) {
 
 // AddICECandidate adds candidates for remote peer
 func (t *TransportManager) AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget) {
-	if !t.params.Config.UseMDNS {
-		candidateValue := strings.TrimPrefix(candidate.Candidate, "candidate:")
-		if candidateValue != "" {
-			candidate, err := ice.UnmarshalCandidate(candidateValue)
-			if err != nil {
-				t.params.Logger.Errorw("failed to parse ice candidate", err)
-			} else if strings.HasSuffix(candidate.Address(), ".local") {
-				t.params.Logger.Debugw("ignoring mDNS candidate", "candidate", candidateValue, "target", target)
-				return
-			}
-		}
-	}
-
 	switch target {
 	case livekit.SignalTarget_PUBLISHER:
 		t.publisher.AddICECandidate(candidate)

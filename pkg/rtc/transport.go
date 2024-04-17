@@ -24,6 +24,7 @@ import (
 
 	"github.com/bep/debounce"
 	"github.com/pion/dtls/v2/pkg/crypto/elliptic"
+	"github.com/pion/ice/v2"
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/cc"
 	"github.com/pion/interceptor/pkg/gcc"
@@ -702,6 +703,19 @@ func (t *PCTransport) SetPreferTCP(preferTCP bool) {
 }
 
 func (t *PCTransport) AddICECandidate(candidate webrtc.ICECandidateInit) {
+	if !t.params.Config.UseMDNS {
+		candidateValue := strings.TrimPrefix(candidate.Candidate, "candidate:")
+		if candidateValue != "" {
+			candidate, err := ice.UnmarshalCandidate(candidateValue)
+			if err != nil {
+				t.params.Logger.Errorw("failed to parse ice candidate", err)
+			} else if strings.HasSuffix(candidate.Address(), ".local") {
+				t.params.Logger.Debugw("ignoring mDNS candidate", "candidate", candidateValue)
+				return
+			}
+		}
+	}
+
 	t.postEvent(event{
 		signal: signalRemoteICECandidate,
 		data:   &candidate,
@@ -1314,6 +1328,7 @@ func (t *PCTransport) localDescriptionSent() error {
 
 	for _, c := range cachedLocalCandidates {
 		if err := t.params.Handler.OnICECandidate(c, t.params.Transport); err != nil {
+			t.params.Logger.Warnw("failed to send cached ICE candidate", err, "candidate", c)
 			return err
 		}
 	}
@@ -1347,7 +1362,12 @@ func (t *PCTransport) handleLocalICECandidate(e event) error {
 		return nil
 	}
 
-	return t.params.Handler.OnICECandidate(c, t.params.Transport)
+	if err := t.params.Handler.OnICECandidate(c, t.params.Transport); err != nil {
+		t.params.Logger.Warnw("failed to send ICE candidate", err, "candidate", c)
+		return err
+	}
+
+	return nil
 }
 
 func (t *PCTransport) handleRemoteICECandidate(e event) error {
@@ -1370,6 +1390,7 @@ func (t *PCTransport) handleRemoteICECandidate(e event) error {
 	}
 
 	if err := t.pc.AddICECandidate(*c); err != nil {
+		t.params.Logger.Warnw("failed to add cached ICE candidate", err, "candidate", c)
 		return errors.Wrap(err, "add ice candidate failed")
 	}
 
@@ -1605,6 +1626,7 @@ func (t *PCTransport) setRemoteDescription(sd webrtc.SessionDescription) error {
 
 	for _, c := range t.pendingRemoteCandidates {
 		if err := t.pc.AddICECandidate(*c); err != nil {
+			t.params.Logger.Warnw("failed to add cached ICE candidate", err, "candidate", c)
 			return errors.Wrap(err, "add ice candidate failed")
 		}
 	}
