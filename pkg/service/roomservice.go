@@ -107,6 +107,8 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 		})
 
 		if req.Egress != nil && req.Egress.Room != nil {
+			// ensure room name matches
+			req.Egress.Room.RoomName = req.Name
 			_, err = s.egressLauncher.StartEgress(ctx, &rpc.StartEgressRequest{
 				Request: &rpc.StartEgressRequest_RoomComposite{
 					RoomComposite: req.Egress.Room,
