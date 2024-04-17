@@ -16,6 +16,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/livekit/protocol/livekit"
@@ -62,7 +63,7 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 	// find existing room and update it
 	var created bool
 	rm, internal, err := r.roomStore.LoadRoom(ctx, livekit.RoomName(req.Name), true)
-	if err == ErrRoomNotFound {
+	if errors.Is(err, ErrRoomNotFound) {
 		created = true
 		rm = &livekit.Room{
 			Sid:          utils.NewGuid(utils.RoomPrefix),
@@ -88,8 +89,13 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 	if req.Metadata != "" {
 		rm.Metadata = req.Metadata
 	}
-	if req.Egress != nil && req.Egress.Tracks != nil {
-		internal.TrackEgress = req.Egress.Tracks
+	if req.Egress != nil {
+		if req.Egress.Participant != nil {
+			internal.ParticipantEgress = req.Egress.Participant
+		}
+		if req.Egress.Tracks != nil {
+			internal.TrackEgress = req.Egress.Tracks
+		}
 	}
 	if req.MinPlayoutDelay > 0 || req.MaxPlayoutDelay > 0 {
 		internal.PlayoutDelay = &livekit.PlayoutDelay{
@@ -108,7 +114,7 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 
 	// check if room already assigned
 	existing, err := r.router.GetNodeForRoom(ctx, livekit.RoomName(rm.Name))
-	if err != routing.ErrNotFound && err != nil {
+	if !errors.Is(err, routing.ErrNotFound) && err != nil {
 		return nil, false, err
 	}
 
