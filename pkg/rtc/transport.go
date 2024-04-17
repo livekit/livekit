@@ -1392,6 +1392,8 @@ func (t *PCTransport) handleRemoteICECandidate(e event) error {
 	if err := t.pc.AddICECandidate(*c); err != nil {
 		t.params.Logger.Warnw("failed to add cached ICE candidate", err, "candidate", c)
 		return errors.Wrap(err, "add ice candidate failed")
+	} else {
+		t.params.Logger.Debugw("added cached ICE candidate", "candidate", c)
 	}
 
 	return nil
@@ -1628,6 +1630,8 @@ func (t *PCTransport) setRemoteDescription(sd webrtc.SessionDescription) error {
 		if err := t.pc.AddICECandidate(*c); err != nil {
 			t.params.Logger.Warnw("failed to add cached ICE candidate", err, "candidate", c)
 			return errors.Wrap(err, "add ice candidate failed")
+		} else {
+			t.params.Logger.Debugw("added cached ICE candidate", "candidate", c)
 		}
 	}
 	t.pendingRemoteCandidates = nil
