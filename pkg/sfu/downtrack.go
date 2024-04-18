@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -625,21 +626,21 @@ func (d *DownTrack) keyFrameRequester() {
 		return time.Duration(interval) * time.Millisecond
 	}
 
-	interval := getInterval()
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	timer := time.NewTimer(math.MaxInt64)
+	defer timer.Stop()
 
-	for {
-		if d.IsClosed() {
-			return
+	for !d.IsClosed() {
+		if !timer.Stop() {
+			<-timer.C
 		}
+		timer.Reset(getInterval())
 
 		select {
 		case _, more := <-d.keyFrameRequesterCh:
 			if !more {
 				return
 			}
-		case <-ticker.C:
+		case <-timer.C:
 		}
 
 		locked, layer := d.forwarder.CheckSync()
@@ -648,8 +649,6 @@ func (d *DownTrack) keyFrameRequester() {
 			d.params.Receiver.SendPLI(layer, false)
 			d.rtpStats.UpdateLayerLockPliAndTime(1)
 		}
-
-		ticker.Reset(getInterval())
 	}
 }
 
