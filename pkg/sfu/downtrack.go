@@ -627,18 +627,20 @@ func (d *DownTrack) keyFrameRequester() {
 	}
 
 	timer := time.NewTimer(math.MaxInt64)
+	timer.Stop()
+
 	defer timer.Stop()
 
 	for !d.IsClosed() {
-		if !timer.Stop() {
-			<-timer.C
-		}
 		timer.Reset(getInterval())
 
 		select {
 		case _, more := <-d.keyFrameRequesterCh:
 			if !more {
 				return
+			}
+			if !timer.Stop() {
+				<-timer.C
 			}
 		case <-timer.C:
 		}
