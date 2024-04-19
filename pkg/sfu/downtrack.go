@@ -714,18 +714,14 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 
 	poolEntity := PacketFactory.Get().(*[]byte)
 	payload := *poolEntity
-	shouldForward, incomingHeaderSize, outgoingHeaderSize, err := d.forwarder.TranslateCodecHeader(extPkt, &tp.rtp, payload)
-	if !shouldForward {
-		PacketFactory.Put(poolEntity)
-		return err
-	}
-	n := copy(payload[outgoingHeaderSize:], extPkt.Packet.Payload[incomingHeaderSize:])
-	if n != len(extPkt.Packet.Payload[incomingHeaderSize:]) {
-		d.params.Logger.Errorw("payload overflow", nil, "want", len(extPkt.Packet.Payload[incomingHeaderSize:]), "have", n)
+	copy(payload, tp.codecBytes)
+	n := copy(payload[len(tp.codecBytes):], extPkt.Packet.Payload[tp.incomingHeaderSize:])
+	if n != len(extPkt.Packet.Payload[tp.incomingHeaderSize:]) {
+		d.params.Logger.Errorw("payload overflow", nil, "want", len(extPkt.Packet.Payload[tp.incomingHeaderSize:]), "have", n)
 		PacketFactory.Put(poolEntity)
 		return ErrPayloadOverflow
 	}
-	payload = payload[:outgoingHeaderSize+n]
+	payload = payload[:len(tp.codecBytes)+n]
 
 	hdr, err := d.getTranslatedRTPHeader(extPkt, &tp)
 	if err != nil {
@@ -797,8 +793,8 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			tp.rtp.extTimestamp,
 			hdr.Marker,
 			int8(layer),
-			payload[:outgoingHeaderSize],
-			incomingHeaderSize,
+			payload[:len(tp.codecBytes)],
+			tp.incomingHeaderSize,
 			tp.ddBytes,
 			actBytes,
 		)
@@ -1506,15 +1502,16 @@ func (d *DownTrack) getVP8BlankFrame(frameEndNeeded bool) ([]byte, error) {
 	// Used even when closing out a previous frame. Looks like receivers
 	// do not care about content (it will probably end up being an undecodable
 	// frame, but that should be okay as there are key frames following)
-	payload := make([]byte, 1000)
-	n, err := d.forwarder.GetPadding(frameEndNeeded, payload)
+	header, err := d.forwarder.GetPadding(frameEndNeeded)
 	if err != nil {
 		return nil, err
 	}
 
-	copy(payload[n:], VP8KeyFrame8x8)
-	trailerLen := d.maybeAddTrailer(payload[n+len(VP8KeyFrame8x8):])
-	return payload[:n+len(VP8KeyFrame8x8)+trailerLen], nil
+	payload := make([]byte, 1000)
+	copy(payload, header)
+	copy(payload[len(header):], VP8KeyFrame8x8)
+	trailerLen := d.maybeAddTrailer(payload[len(header)+len(VP8KeyFrame8x8):])
+	return payload[:len(header)+len(VP8KeyFrame8x8)+trailerLen], nil
 }
 
 func (d *DownTrack) getH264BlankFrame(_frameEndNeeded bool) ([]byte, error) {
