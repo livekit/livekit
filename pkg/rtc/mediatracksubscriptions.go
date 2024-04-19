@@ -129,6 +129,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 
 	downTrack, err := sfu.NewDownTrack(sfu.DowntrackParams{
 		Codecs:            codecs,
+		Source:            t.params.MediaTrack.Source(),
 		Receiver:          wr,
 		BufferFactory:     sub.GetBufferFactory(),
 		SubID:             subscriberID,

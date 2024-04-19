@@ -202,6 +202,7 @@ type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
 
 type DowntrackParams struct {
 	Codecs            []webrtc.RTPCodecParameters
+	Source            livekit.TrackSource
 	Receiver          TrackReceiver
 	BufferFactory     *buffer.Factory
 	SubID             livekit.ParticipantID
@@ -1603,9 +1604,12 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				*/
 
 				if d.playoutDelay != nil {
-					jitterMs := uint64(r.Jitter*1e3) / uint64(d.codec.ClockRate)
 					d.playoutDelay.OnSeqAcked(uint16(r.LastSequenceNumber))
-					d.playoutDelay.SetJitter(uint32(jitterMs))
+					// screen share track has inaccuracy jitter due to its low frame rate and bursty traffic
+					if d.params.Source != livekit.TrackSource_SCREEN_SHARE {
+						jitterMs := uint64(r.Jitter*1e3) / uint64(d.codec.ClockRate)
+						d.playoutDelay.SetJitter(uint32(jitterMs))
+					}
 				}
 			}
 			if len(rr.Reports) > 0 {
