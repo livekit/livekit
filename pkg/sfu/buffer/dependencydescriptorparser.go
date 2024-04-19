@@ -90,7 +90,7 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 	}
 	_, err := ext.Unmarshal(ddBuf)
 	if err != nil {
-		if err != dd.ErrDDReaderNoStructure {
+		if err != dd.ErrDDReaderNoStructure && err != dd.ErrDDReaderInvalidTemplateIndex {
 			r.logger.Infow("failed to parse generic dependency descriptor", err, "payload", pkt.PayloadType, "ddbufLen", len(ddBuf))
 		}
 		return nil, videoLayer, err
