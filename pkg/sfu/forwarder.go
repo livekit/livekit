@@ -1870,20 +1870,19 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 	}
 
 	if len(extPkt.Packet.Payload) > 0 {
-		tp.codecBytes = make([]byte, 32)
-		shouldForward, incomingHeaderSize, outgoingHeaderSize, err := f.translateCodecHeader(extPkt, &tp.rtp, tp.codecBytes)
+		shouldForward, incomingHeaderSize, codecBytes, err := f.translateCodecHeader(extPkt, &tp.rtp)
 		if !shouldForward {
 			tp.shouldDrop = true
 		}
-		tp.codecBytes = tp.codecBytes[:outgoingHeaderSize]
 		tp.incomingHeaderSize = incomingHeaderSize
+		tp.codecBytes = codecBytes
 		return tp, err
 	}
 
 	return tp, err
 }
 
-func (f *Forwarder) translateCodecHeader(extPkt *buffer.ExtPacket, tpr *TranslationParamsRTP, outputBuffer []byte) (bool, int, int, error) {
+func (f *Forwarder) translateCodecHeader(extPkt *buffer.ExtPacket, tpr *TranslationParamsRTP) (bool, int, []byte, error) {
 	maybeRollback := func(isSwitching bool) {
 		if isSwitching {
 			f.vls.Rollback()
@@ -1892,12 +1891,11 @@ func (f *Forwarder) translateCodecHeader(extPkt *buffer.ExtPacket, tpr *Translat
 
 	// codec specific forwarding check and any needed packet munging
 	tl, isSwitching := f.vls.SelectTemporal(extPkt)
-	inputSize, outputSize, err := f.codecMunger.UpdateAndGet(
+	inputSize, codecBytes, err := f.codecMunger.UpdateAndGet(
 		extPkt,
 		tpr.snOrdering == SequenceNumberOrderingOutOfOrder,
 		tpr.snOrdering == SequenceNumberOrderingGap,
 		tl,
-		outputBuffer,
 	)
 	if err != nil {
 		if err == codecmunger.ErrFilteredVP8TemporalLayer || err == codecmunger.ErrOutOfOrderVP8PictureIdCacheMiss {
@@ -1906,14 +1904,14 @@ func (f *Forwarder) translateCodecHeader(extPkt *buffer.ExtPacket, tpr *Translat
 				f.rtpMunger.PacketDropped(extPkt)
 			}
 			maybeRollback(isSwitching)
-			return false, 0, 0, nil
+			return false, 0, nil, nil
 		}
 
 		maybeRollback(isSwitching)
-		return false, 0, 0, err
+		return false, 0, nil, err
 	}
 
-	return true, inputSize, outputSize, nil
+	return true, inputSize, codecBytes, nil
 }
 
 func (f *Forwarder) maybeStart() {
@@ -1990,11 +1988,11 @@ func (f *Forwarder) GetSnTsForBlankFrames(frameRate uint32, numPackets int) ([]S
 	return snts, frameEndNeeded, err
 }
 
-func (f *Forwarder) GetPadding(frameEndNeeded bool, outputBuffer []byte) (int, error) {
+func (f *Forwarder) GetPadding(frameEndNeeded bool) ([]byte, error) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	return f.codecMunger.UpdateAndGetPadding(!frameEndNeeded, outputBuffer)
+	return f.codecMunger.UpdateAndGetPadding(!frameEndNeeded)
 }
 
 func (f *Forwarder) RTPMungerDebugInfo() map[string]interface{} {

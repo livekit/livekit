@@ -1502,15 +1502,16 @@ func (d *DownTrack) getVP8BlankFrame(frameEndNeeded bool) ([]byte, error) {
 	// Used even when closing out a previous frame. Looks like receivers
 	// do not care about content (it will probably end up being an undecodable
 	// frame, but that should be okay as there are key frames following)
-	payload := make([]byte, 1000)
-	n, err := d.forwarder.GetPadding(frameEndNeeded, payload)
+	header, err := d.forwarder.GetPadding(frameEndNeeded)
 	if err != nil {
 		return nil, err
 	}
 
-	copy(payload[n:], VP8KeyFrame8x8)
-	trailerLen := d.maybeAddTrailer(payload[n+len(VP8KeyFrame8x8):])
-	return payload[:n+len(VP8KeyFrame8x8)+trailerLen], nil
+	payload := make([]byte, 1000)
+	copy(payload, header)
+	copy(payload[len(header):], VP8KeyFrame8x8)
+	trailerLen := d.maybeAddTrailer(payload[len(header)+len(VP8KeyFrame8x8):])
+	return payload[:len(header)+len(VP8KeyFrame8x8)+trailerLen], nil
 }
 
 func (d *DownTrack) getH264BlankFrame(_frameEndNeeded bool) ([]byte, error) {

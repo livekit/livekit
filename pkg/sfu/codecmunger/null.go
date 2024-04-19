@@ -45,10 +45,10 @@ func (n *Null) SetLast(_extPkt *buffer.ExtPacket) {
 func (n *Null) UpdateOffsets(_extPkt *buffer.ExtPacket) {
 }
 
-func (n *Null) UpdateAndGet(_extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap bool, maxTemporal int32, outputHeader []byte) (int, int, error) {
-	return 0, 0, nil
+func (n *Null) UpdateAndGet(_extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap bool, maxTemporal int32) (int, []byte, error) {
+	return 0, nil, nil
 }
 
-func (n *Null) UpdateAndGetPadding(newPicture bool, outputHeader []byte) (int, error) {
-	return 0, nil
+func (n *Null) UpdateAndGetPadding(newPicture bool) ([]byte, error) {
+	return nil, nil
 }

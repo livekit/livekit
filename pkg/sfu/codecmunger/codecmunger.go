@@ -33,7 +33,7 @@ type CodecMunger interface {
 	SetLast(extPkt *buffer.ExtPacket)
 	UpdateOffsets(extPkt *buffer.ExtPacket)
 
-	UpdateAndGet(extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap bool, maxTemporal int32, outputHeader []byte) (int, int, error)
+	UpdateAndGet(extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap bool, maxTemporal int32) (int, []byte, error)
 
-	UpdateAndGetPadding(newPicture bool, outputHeader []byte) (int, error)
+	UpdateAndGetPadding(newPicture bool) ([]byte, error)
 }

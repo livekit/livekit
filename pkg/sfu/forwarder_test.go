@@ -1625,7 +1625,6 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 			extSequenceNumber: 23336,
 			extTimestamp:      0xabcdef,
 		},
-		codecBytes: []byte{},
 	}
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
 	require.NoError(t, err)
@@ -1930,7 +1929,6 @@ func TestForwarderGetSnTsForBlankFrames(t *testing.T) {
 }
 
 func TestForwarderGetPaddingVP8(t *testing.T) {
-	buf := make([]byte, 100)
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
 	params := &testutils.TestExtPacketParams{
@@ -1981,11 +1979,11 @@ func TestForwarderGetPaddingVP8(t *testing.T) {
 		HeaderSize: 6,
 		IsKeyFrame: true,
 	}
-	n, err := f.GetPadding(true, buf)
+	buf, err := f.GetPadding(true)
 	require.NoError(t, err)
 	marshalledVP8, err := expectedVP8.Marshal()
 	require.NoError(t, err)
-	require.Equal(t, marshalledVP8, buf[:n])
+	require.Equal(t, marshalledVP8, buf)
 
 	// getting padding with no frame end needed, should get next picture id
 	expectedVP8 = buffer.VP8{
@@ -2003,9 +2001,9 @@ func TestForwarderGetPaddingVP8(t *testing.T) {
 		HeaderSize: 6,
 		IsKeyFrame: true,
 	}
-	n, err = f.GetPadding(false, buf)
+	buf, err = f.GetPadding(false)
 	require.NoError(t, err)
 	marshalledVP8, err = expectedVP8.Marshal()
 	require.NoError(t, err)
-	require.Equal(t, marshalledVP8, buf[:n])
+	require.Equal(t, marshalledVP8, buf)
 }
