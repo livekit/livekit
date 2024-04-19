@@ -1773,11 +1773,11 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 }
 
 // should be called with lock held
-func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer int32, tp *TranslationParams) error {
+func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer int32, tp *TranslationParams) (bool, error) {
 	if f.lastSSRC != extPkt.Packet.SSRC {
 		if err := f.processSourceSwitch(extPkt, layer); err != nil {
 			tp.shouldDrop = true
-			return nil
+			return false, nil
 		}
 		f.logger.Debugw("switching feed", "from", f.lastSSRC, "to", extPkt.Packet.SSRC)
 		f.lastSSRC = extPkt.Packet.SSRC
@@ -1787,19 +1787,30 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 	if err != nil {
 		tp.shouldDrop = true
 		if err == ErrPaddingOnlyPacket || err == ErrDuplicatePacket || err == ErrOutOfOrderSequenceNumberCacheMiss {
-			return nil
+			return false, nil
 		}
-		return err
+		return false, err
 	}
 
 	tp.rtp = tpRTP
-	return nil
+
+	if len(extPkt.Packet.Payload) > 0 {
+		shouldForward, isSwitching, incomingHeaderSize, codecBytes, err := f.translateCodecHeader(extPkt, &tp.rtp)
+		if !shouldForward {
+			tp.shouldDrop = true
+		}
+		tp.incomingHeaderSize = incomingHeaderSize
+		tp.codecBytes = codecBytes
+		return isSwitching, err
+	}
+
+	return false, nil
 }
 
 // should be called with lock held
 func (f *Forwarder) getTranslationParamsAudio(extPkt *buffer.ExtPacket, layer int32) (TranslationParams, error) {
 	tp := TranslationParams{}
-	if err := f.getTranslationParamsCommon(extPkt, layer, &tp); err != nil {
+	if _, err := f.getTranslationParamsCommon(extPkt, layer, &tp); err != nil {
 		tp.shouldDrop = true
 		return tp, err
 	}
@@ -1863,32 +1874,16 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		return tp, nil
 	}
 
-	err := f.getTranslationParamsCommon(extPkt, layer, &tp)
+	isTemporalSwitching, err := f.getTranslationParamsCommon(extPkt, layer, &tp)
 	if tp.shouldDrop {
-		maybeRollback(result.IsSwitching)
-		return tp, err
-	}
-
-	if len(extPkt.Packet.Payload) > 0 {
-		shouldForward, incomingHeaderSize, codecBytes, err := f.translateCodecHeader(extPkt, &tp.rtp)
-		if !shouldForward {
-			tp.shouldDrop = true
-		}
-		tp.incomingHeaderSize = incomingHeaderSize
-		tp.codecBytes = codecBytes
+		maybeRollback(result.IsSwitching || isTemporalSwitching)
 		return tp, err
 	}
 
 	return tp, err
 }
 
-func (f *Forwarder) translateCodecHeader(extPkt *buffer.ExtPacket, tpr *TranslationParamsRTP) (bool, int, []byte, error) {
-	maybeRollback := func(isSwitching bool) {
-		if isSwitching {
-			f.vls.Rollback()
-		}
-	}
-
+func (f *Forwarder) translateCodecHeader(extPkt *buffer.ExtPacket, tpr *TranslationParamsRTP) (bool, bool, int, []byte, error) {
 	// codec specific forwarding check and any needed packet munging
 	tl, isSwitching := f.vls.SelectTemporal(extPkt)
 	inputSize, codecBytes, err := f.codecMunger.UpdateAndGet(
@@ -1903,15 +1898,13 @@ func (f *Forwarder) translateCodecHeader(extPkt *buffer.ExtPacket, tpr *Translat
 				// filtered temporal layer, update sequence number offset to prevent holes
 				f.rtpMunger.PacketDropped(extPkt)
 			}
-			maybeRollback(isSwitching)
-			return false, 0, nil, nil
+			return false, isSwitching, 0, nil, nil
 		}
 
-		maybeRollback(isSwitching)
-		return false, 0, nil, err
+		return false, isSwitching, 0, nil, err
 	}
 
-	return true, inputSize, codecBytes, nil
+	return true, isSwitching, inputSize, codecBytes, nil
 }
 
 func (f *Forwarder) maybeStart() {
