@@ -1795,13 +1795,7 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 	tp.rtp = tpRTP
 
 	if len(extPkt.Packet.Payload) > 0 {
-		shouldForward, isSwitching, incomingHeaderSize, codecBytes, err := f.translateCodecHeader(extPkt, &tp.rtp)
-		if !shouldForward {
-			tp.shouldDrop = true
-		}
-		tp.incomingHeaderSize = incomingHeaderSize
-		tp.codecBytes = codecBytes
-		return isSwitching, err
+		return f.translateCodecHeader(extPkt, tp)
 	}
 
 	return false, nil
@@ -1883,28 +1877,31 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 	return tp, err
 }
 
-func (f *Forwarder) translateCodecHeader(extPkt *buffer.ExtPacket, tpr *TranslationParamsRTP) (bool, bool, int, []byte, error) {
+func (f *Forwarder) translateCodecHeader(extPkt *buffer.ExtPacket, tp *TranslationParams) (bool, error) {
 	// codec specific forwarding check and any needed packet munging
 	tl, isSwitching := f.vls.SelectTemporal(extPkt)
 	inputSize, codecBytes, err := f.codecMunger.UpdateAndGet(
 		extPkt,
-		tpr.snOrdering == SequenceNumberOrderingOutOfOrder,
-		tpr.snOrdering == SequenceNumberOrderingGap,
+		tp.rtp.snOrdering == SequenceNumberOrderingOutOfOrder,
+		tp.rtp.snOrdering == SequenceNumberOrderingGap,
 		tl,
 	)
 	if err != nil {
+		tp.shouldDrop = true
 		if err == codecmunger.ErrFilteredVP8TemporalLayer || err == codecmunger.ErrOutOfOrderVP8PictureIdCacheMiss {
 			if err == codecmunger.ErrFilteredVP8TemporalLayer {
 				// filtered temporal layer, update sequence number offset to prevent holes
 				f.rtpMunger.PacketDropped(extPkt)
 			}
-			return false, isSwitching, 0, nil, nil
+			return isSwitching, nil
 		}
 
-		return false, isSwitching, 0, nil, err
+		return isSwitching, err
 	}
+	tp.incomingHeaderSize = inputSize
+	tp.codecBytes = codecBytes
 
-	return true, isSwitching, inputSize, codecBytes, nil
+	return isSwitching, nil
 }
 
 func (f *Forwarder) maybeStart() {
