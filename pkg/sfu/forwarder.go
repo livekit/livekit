@@ -179,8 +179,8 @@ type TranslationParams struct {
 	isSwitching        bool
 	rtp                TranslationParamsRTP
 	ddBytes            []byte
-	codecBytes         []byte
 	incomingHeaderSize int
+	codecBytes         []byte
 	marker             bool
 }
 
