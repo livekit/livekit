@@ -174,12 +174,14 @@ func (v *VideoTransition) MarshalLogObject(e zapcore.ObjectEncoder) error {
 // -------------------------------------------------------------------
 
 type TranslationParams struct {
-	shouldDrop  bool
-	isResuming  bool
-	isSwitching bool
-	rtp         TranslationParamsRTP
-	ddBytes     []byte
-	marker      bool
+	shouldDrop         bool
+	isResuming         bool
+	isSwitching        bool
+	rtp                TranslationParamsRTP
+	ddBytes            []byte
+	codecBytes         []byte
+	incomingHeaderSize int
+	marker             bool
 }
 
 // -------------------------------------------------------------------
@@ -1867,13 +1869,21 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		return tp, err
 	}
 
-	return tp, nil
+	if len(extPkt.Packet.Payload) > 0 {
+		tp.codecBytes = make([]byte, 32)
+		shouldForward, incomingHeaderSize, outgoingHeaderSize, err := f.translateCodecHeader(extPkt, &tp.rtp, tp.codecBytes)
+		if !shouldForward {
+			tp.shouldDrop = true
+		}
+		tp.codecBytes = tp.codecBytes[:outgoingHeaderSize]
+		tp.incomingHeaderSize = incomingHeaderSize
+		return tp, err
+	}
+
+	return tp, err
 }
 
-func (f *Forwarder) TranslateCodecHeader(extPkt *buffer.ExtPacket, tpr *TranslationParamsRTP, outputBuffer []byte) (bool, int, int, error) {
-	f.lock.Lock()
-	defer f.lock.Unlock()
-
+func (f *Forwarder) translateCodecHeader(extPkt *buffer.ExtPacket, tpr *TranslationParamsRTP, outputBuffer []byte) (bool, int, int, error) {
 	maybeRollback := func(isSwitching bool) {
 		if isSwitching {
 			f.vls.Rollback()

@@ -714,18 +714,14 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 
 	poolEntity := PacketFactory.Get().(*[]byte)
 	payload := *poolEntity
-	shouldForward, incomingHeaderSize, outgoingHeaderSize, err := d.forwarder.TranslateCodecHeader(extPkt, &tp.rtp, payload)
-	if !shouldForward {
-		PacketFactory.Put(poolEntity)
-		return err
-	}
-	n := copy(payload[outgoingHeaderSize:], extPkt.Packet.Payload[incomingHeaderSize:])
-	if n != len(extPkt.Packet.Payload[incomingHeaderSize:]) {
-		d.params.Logger.Errorw("payload overflow", nil, "want", len(extPkt.Packet.Payload[incomingHeaderSize:]), "have", n)
+	copy(payload, tp.codecBytes)
+	n := copy(payload[len(tp.codecBytes):], extPkt.Packet.Payload[tp.incomingHeaderSize:])
+	if n != len(extPkt.Packet.Payload[tp.incomingHeaderSize:]) {
+		d.params.Logger.Errorw("payload overflow", nil, "want", len(extPkt.Packet.Payload[tp.incomingHeaderSize:]), "have", n)
 		PacketFactory.Put(poolEntity)
 		return ErrPayloadOverflow
 	}
-	payload = payload[:outgoingHeaderSize+n]
+	payload = payload[:len(tp.codecBytes)+n]
 
 	hdr, err := d.getTranslatedRTPHeader(extPkt, &tp)
 	if err != nil {
@@ -797,8 +793,8 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			tp.rtp.extTimestamp,
 			hdr.Marker,
 			int8(layer),
-			payload[:outgoingHeaderSize],
-			incomingHeaderSize,
+			payload[:len(tp.codecBytes)],
+			tp.incomingHeaderSize,
 			tp.ddBytes,
 			actBytes,
 		)
