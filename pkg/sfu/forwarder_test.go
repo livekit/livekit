@@ -1455,8 +1455,8 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 			extSequenceNumber: 23333,
 			extTimestamp:      0xabcdef,
 		},
-		codecBytes:         marshalledVP8,
 		incomingHeaderSize: 6,
+		codecBytes:         marshalledVP8,
 		marker:             true,
 	}
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
@@ -1534,8 +1534,8 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 			extSequenceNumber: 23334,
 			extTimestamp:      0xabcdef,
 		},
-		codecBytes:         marshalledVP8,
 		incomingHeaderSize: 6,
+		codecBytes:         marshalledVP8,
 	}
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
 	require.NoError(t, err)
@@ -1588,8 +1588,8 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 			extSequenceNumber: 23335,
 			extTimestamp:      0xabcdef,
 		},
-		codecBytes:         marshalledVP8,
 		incomingHeaderSize: 6,
+		codecBytes:         marshalledVP8,
 	}
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
 	require.NoError(t, err)
@@ -1676,8 +1676,8 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 			extSequenceNumber: 23336,
 			extTimestamp:      0xabcdef,
 		},
-		codecBytes:         marshalledVP8,
 		incomingHeaderSize: 6,
+		codecBytes:         marshalledVP8,
 	}
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
 	require.NoError(t, err)
@@ -1775,8 +1775,8 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 			extSequenceNumber: 23339,
 			extTimestamp:      0xabcdf0,
 		},
-		codecBytes:         marshalledVP8,
 		incomingHeaderSize: 5,
+		codecBytes:         marshalledVP8,
 	}
 	actualTP, err = f.GetTranslationParams(extPkt, 1)
 	require.NoError(t, err)
