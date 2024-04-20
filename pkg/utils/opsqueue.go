@@ -32,8 +32,8 @@ type OpsQueueParams struct {
 
 type UntypedQueueOp func()
 
-func (it UntypedQueueOp) run() {
-	it()
+func (op UntypedQueueOp) run() {
+	op()
 }
 
 type OpsQueue struct {
@@ -49,8 +49,8 @@ type typedQueueOp[T any] struct {
 	arg T
 }
 
-func (it typedQueueOp[T]) run() {
-	it.fn(it.arg)
+func (op typedQueueOp[T]) run() {
+	op.fn(op.arg)
 }
 
 type TypedOpsQueue[T any] struct {
