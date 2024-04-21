@@ -458,6 +458,17 @@ func (r *RTPStatsReceiver) GetRtcpSenderReportData() *RTCPSenderReportData {
 	return &srNewestCopy
 }
 
+func (r *RTPStatsReceiver) LastSenderReportTime() time.Time {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	if r.srNewest != nil {
+		return r.srNewest.At
+	}
+
+	return time.Time{}
+}
+
 func (r *RTPStatsReceiver) GetRtcpReceptionReport(ssrc uint32, proxyFracLost uint8, snapshotID uint32) *rtcp.ReceptionReport {
 	r.lock.Lock()
 	defer r.lock.Unlock()

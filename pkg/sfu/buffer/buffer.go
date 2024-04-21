@@ -976,6 +976,17 @@ func (b *Buffer) GetDeltaStats() *StreamStatsWithLayers {
 	}
 }
 
+func (b *Buffer) GetLastSenderReportTime() time.Time {
+	b.RLock()
+	defer b.RUnlock()
+
+	if b.rtpStats == nil {
+		return time.Time{}
+	}
+
+	return b.rtpStats.LastSenderReportTime()
+}
+
 func (b *Buffer) GetAudioLevel() (float64, bool) {
 	b.RLock()
 	defer b.RUnlock()

@@ -37,6 +37,7 @@ const (
 
 type ConnectionStatsReceiverProvider interface {
 	GetDeltaStats() map[uint32]*buffer.StreamStatsWithLayers
+	GetLastSenderReportTime() time.Time
 }
 
 type ConnectionStatsSenderProvider interface {
@@ -202,7 +203,7 @@ func (cs *ConnectionStats) GetScoreAndQuality() (float32, livekit.ConnectionQual
 	return cs.scorer.GetMOSAndQuality()
 }
 
-func (cs *ConnectionStats) updateScoreWithAggregate(agg *buffer.RTPDeltaInfo, at time.Time) float32 {
+func (cs *ConnectionStats) updateScoreWithAggregate(agg *buffer.RTPDeltaInfo, lastRTCPAt time.Time, at time.Time) float32 {
 	var stat windowStat
 	if agg != nil {
 		stat.startedAt = agg.StartTime
@@ -214,6 +215,8 @@ func (cs *ConnectionStats) updateScoreWithAggregate(agg *buffer.RTPDeltaInfo, at
 		stat.bytes = agg.Bytes - agg.HeaderBytes // only use media payload size
 		stat.rttMax = agg.RttMax
 		stat.jitterMax = agg.JitterMax
+
+		stat.lastRTCPAt = lastRTCPAt
 	}
 	if at.IsZero() {
 		cs.scorer.Update(&stat)
@@ -246,7 +249,7 @@ func (cs *ConnectionStats) updateScoreFromReceiverReport(at time.Time) (float32,
 		}
 		if time.Since(marker) > noReceiverReportTooLongThreshold {
 			// have not received receiver report for a long time when streaming, run with nil stat
-			return cs.updateScoreWithAggregate(nil, at), nil
+			return cs.updateScoreWithAggregate(nil, time.Time{}, at), nil
 		}
 
 		// wait for receiver report, return current score
@@ -266,7 +269,7 @@ func (cs *ConnectionStats) updateScoreFromReceiverReport(at time.Time) (float32,
 	if streamingStartedAt.After(agg.StartTime) {
 		agg.StartTime = streamingStartedAt
 	}
-	return cs.updateScoreWithAggregate(agg, at), streams
+	return cs.updateScoreWithAggregate(agg, time.Time{}, at), streams
 }
 
 func (cs *ConnectionStats) updateScoreAt(at time.Time) (float32, map[uint32]*buffer.StreamStatsWithLayers) {
@@ -290,7 +293,7 @@ func (cs *ConnectionStats) updateScoreAt(at time.Time) (float32, map[uint32]*buf
 		deltaInfoList = append(deltaInfoList, s.RTPStats)
 	}
 	agg := buffer.AggregateRTPDeltaInfo(deltaInfoList)
-	return cs.updateScoreWithAggregate(agg, at), streams
+	return cs.updateScoreWithAggregate(agg, cs.params.ReceiverProvider.GetLastSenderReportTime(), at), streams
 }
 
 func (cs *ConnectionStats) updateStreamingStart(at time.Time) time.Time {
