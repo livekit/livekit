@@ -123,6 +123,7 @@ func (s signal) String() string {
 // -------------------------------------------------------
 
 type event struct {
+	*PCTransport
 	signal signal
 	data   interface{}
 }
@@ -1254,32 +1255,31 @@ func (t *PCTransport) parseTrackMid(offer webrtc.SessionDescription, senders map
 	return nil
 }
 
-func (t *PCTransport) postEvent(event event) {
-	t.eventsQueue.Enqueue(t.handleEvent, event)
-}
-
-func (t *PCTransport) handleEvent(e event) {
-	var err error
-	switch e.signal {
-	case signalICEGatheringComplete:
-		err = t.handleICEGatheringComplete(e)
-	case signalLocalICECandidate:
-		err = t.handleLocalICECandidate(e)
-	case signalRemoteICECandidate:
-		err = t.handleRemoteICECandidate(e)
-	case signalSendOffer:
-		err = t.handleSendOffer(e)
-	case signalRemoteDescriptionReceived:
-		err = t.handleRemoteDescriptionReceived(e)
-	case signalICERestart:
-		err = t.handleICERestart(e)
-	}
-	if err != nil {
-		if !t.isClosed.Load() {
-			t.params.Logger.Warnw("error handling event", err, "event", e.String())
-			t.params.Handler.OnNegotiationFailed()
+func (t *PCTransport) postEvent(e event) {
+	e.PCTransport = t
+	t.eventsQueue.Enqueue(func(e event) {
+		var err error
+		switch e.signal {
+		case signalICEGatheringComplete:
+			err = e.handleICEGatheringComplete(e)
+		case signalLocalICECandidate:
+			err = e.handleLocalICECandidate(e)
+		case signalRemoteICECandidate:
+			err = e.handleRemoteICECandidate(e)
+		case signalSendOffer:
+			err = e.handleSendOffer(e)
+		case signalRemoteDescriptionReceived:
+			err = e.handleRemoteDescriptionReceived(e)
+		case signalICERestart:
+			err = e.handleICERestart(e)
 		}
-	}
+		if err != nil {
+			if !e.isClosed.Load() {
+				e.params.Logger.Warnw("error handling event", err, "event", e.String())
+				e.params.Handler.OnNegotiationFailed()
+			}
+		}
+	}, e)
 }
 
 func (t *PCTransport) handleICEGatheringComplete(_ event) error {
