@@ -119,7 +119,7 @@ func NewLocalRoomManager(
 
 		rooms: make(map[livekit.RoomName]*rtc.Room),
 
-		iceConfigCache: sutils.NewIceConfigCache[iceConfigCacheKey](),
+		iceConfigCache: sutils.NewIceConfigCache[iceConfigCacheKey](0),
 
 		serverInfo: &livekit.ServerInfo{
 			Edition:       livekit.ServerInfo_Standard,
