@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	iceConfigTTL = 5 * time.Minute
+	iceConfigTTLMin = 5 * time.Minute
 )
 
 type iceConfigCacheEntry struct {
@@ -30,8 +30,8 @@ func NewIceConfigCache[T comparable](ttl time.Duration) *IceConfigCache[T] {
 		entries: make(map[T]*iceConfigCacheEntry),
 	}
 
-	if ttl < iceConfigTTL {
-		icc.ttl = iceConfigTTL
+	if ttl < iceConfigTTLMin {
+		icc.ttl = iceConfigTTLMin
 	} else {
 		icc.ttl = ttl
 	}
