@@ -13,7 +13,7 @@ const (
 )
 
 type IceConfigCache[T comparable] struct {
-	*ttlcache.Cache[T, *livekit.ICEConfig]
+	c *ttlcache.Cache[T, *livekit.ICEConfig]
 }
 
 func NewIceConfigCache[T comparable](ttl time.Duration) *IceConfigCache[T] {
@@ -21,17 +21,21 @@ func NewIceConfigCache[T comparable](ttl time.Duration) *IceConfigCache[T] {
 		ttlcache.WithTTL[T, *livekit.ICEConfig](max(ttl, iceConfigTTLMin)),
 		ttlcache.WithDisableTouchOnHit[T, *livekit.ICEConfig](),
 	)
-	cache.Start()
+	go cache.Start()
 
 	return &IceConfigCache[T]{cache}
 }
 
+func (icc *IceConfigCache[T]) Stop() {
+	icc.c.Stop()
+}
+
 func (icc *IceConfigCache[T]) Put(key T, iceConfig *livekit.ICEConfig) {
-	icc.Cache.Set(key, iceConfig, ttlcache.DefaultTTL)
+	icc.c.Set(key, iceConfig, ttlcache.DefaultTTL)
 }
 
 func (icc *IceConfigCache[T]) Get(key T) *livekit.ICEConfig {
-	if it := icc.Cache.Get(key); it != nil {
+	if it := icc.c.Get(key); it != nil {
 		return it.Value()
 	}
 	return nil
