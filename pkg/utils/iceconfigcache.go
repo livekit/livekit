@@ -38,5 +38,5 @@ func (icc *IceConfigCache[T]) Get(key T) *livekit.ICEConfig {
 	if it := icc.c.Get(key); it != nil {
 		return it.Value()
 	}
-	return nil
+	return &livekit.ICEConfig{}
 }
