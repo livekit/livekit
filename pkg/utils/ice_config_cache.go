@@ -19,14 +19,21 @@ type iceConfigCacheEntry struct {
 
 type IceConfigCache[T comparable] struct {
 	lock    sync.Mutex
+	ttl     time.Duration
 	entries map[T]*iceConfigCacheEntry
 
 	stopped atomic.Bool
 }
 
-func NewIceConfigCache[T comparable]() *IceConfigCache[T] {
+func NewIceConfigCache[T comparable](ttl time.Duration) *IceConfigCache[T] {
 	icc := &IceConfigCache[T]{
 		entries: make(map[T]*iceConfigCacheEntry),
+	}
+
+	if ttl < iceConfigTTL {
+		icc.ttl = iceConfigTTL
+	} else {
+		icc.ttl = ttl
 	}
 
 	go icc.pruneWorker()
@@ -52,7 +59,7 @@ func (icc *IceConfigCache[T]) Get(key T) *livekit.ICEConfig {
 	defer icc.lock.Unlock()
 
 	entry, ok := icc.entries[key]
-	if !ok || time.Since(entry.modifiedAt) > iceConfigTTL {
+	if !ok || time.Since(entry.modifiedAt) > icc.ttl {
 		delete(icc.entries, key)
 		return &livekit.ICEConfig{}
 	}
@@ -61,7 +68,7 @@ func (icc *IceConfigCache[T]) Get(key T) *livekit.ICEConfig {
 }
 
 func (icc *IceConfigCache[T]) pruneWorker() {
-	ticker := time.NewTicker(iceConfigTTL / 2)
+	ticker := time.NewTicker(icc.ttl / 2)
 	defer ticker.Stop()
 
 	for !icc.stopped.Load() {
@@ -69,7 +76,7 @@ func (icc *IceConfigCache[T]) pruneWorker() {
 
 		icc.lock.Lock()
 		for key, entry := range icc.entries {
-			if time.Since(entry.modifiedAt) > iceConfigTTL {
+			if time.Since(entry.modifiedAt) > icc.ttl {
 				delete(icc.entries, key)
 			}
 		}
