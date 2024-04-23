@@ -504,7 +504,7 @@ func (r *RoomManager) StartSession(
 		}
 	})
 	participant.OnICEConfigChanged(func(participant types.LocalParticipant, iceConfig *livekit.ICEConfig) {
-		r.iceConfigCache.Put(iceConfigCacheKey{roomName, participant.Identity()}, iceConfig, time.Now())
+		r.iceConfigCache.Put(iceConfigCacheKey{roomName, participant.Identity()}, iceConfig)
 	})
 
 	go r.rtcSessionWorker(room, participant, requestSource)
