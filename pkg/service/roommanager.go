@@ -119,7 +119,7 @@ func NewLocalRoomManager(
 
 		rooms: make(map[livekit.RoomName]*rtc.Room),
 
-		iceConfigCache: sutils.NewIceConfigCache[iceConfigCacheKey](),
+		iceConfigCache: sutils.NewIceConfigCache[iceConfigCacheKey](0),
 
 		serverInfo: &livekit.ServerInfo{
 			Edition:       livekit.ServerInfo_Standard,
@@ -504,7 +504,7 @@ func (r *RoomManager) StartSession(
 		}
 	})
 	participant.OnICEConfigChanged(func(participant types.LocalParticipant, iceConfig *livekit.ICEConfig) {
-		r.iceConfigCache.Put(iceConfigCacheKey{roomName, participant.Identity()}, iceConfig, time.Now())
+		r.iceConfigCache.Put(iceConfigCacheKey{roomName, participant.Identity()}, iceConfig)
 	})
 
 	go r.rtcSessionWorker(room, participant, requestSource)

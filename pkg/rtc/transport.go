@@ -53,7 +53,6 @@ import (
 	sfuutils "github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/livekit-server/pkg/utils"
-	sutils "github.com/livekit/livekit-server/pkg/utils"
 )
 
 const (
@@ -74,8 +73,6 @@ const (
 
 	minConnectTimeoutAfterICE = 10 * time.Second
 	maxConnectTimeoutAfterICE = 20 * time.Second // max duration for waiting pc to connect after ICE is connected
-
-	maxICECandidates = 20
 
 	shortConnectionThreshold = 90 * time.Second
 )
@@ -123,6 +120,7 @@ func (s signal) String() string {
 // -------------------------------------------------------
 
 type event struct {
+	*PCTransport
 	signal signal
 	data   interface{}
 }
@@ -184,7 +182,7 @@ type PCTransport struct {
 	preferTCP atomic.Bool
 	isClosed  atomic.Bool
 
-	eventsQueue *sutils.TypedOpsQueue[event]
+	eventsQueue *utils.TypedOpsQueue[event]
 
 	// the following should be accessed only in event processing go routine
 	cacheLocalCandidates      bool
@@ -304,6 +302,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 
 	ir := &interceptor.Registry{}
 	if params.IsSendSide {
+		se.DetachDataChannels()
 		if params.CongestionControlConfig.UseSendSideBWE {
 			gf, err := cc.NewInterceptor(func() (cc.BandwidthEstimator, error) {
 				return gcc.NewSendSideBWE(
@@ -389,7 +388,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		params:             params,
 		debouncedNegotiate: debounce.New(negotiationFrequency),
 		negotiationState:   transport.NegotiationStateNone,
-		eventsQueue: sutils.NewTypedOpsQueue[event](utils.OpsQueueParams{
+		eventsQueue: utils.NewTypedOpsQueue[event](utils.OpsQueueParams{
 			Name:    "transport",
 			MinSize: 64,
 			Logger:  params.Logger,
@@ -401,7 +400,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 	if params.IsSendSide {
 		t.streamAllocator = streamallocator.NewStreamAllocator(streamallocator.StreamAllocatorParams{
 			Config: params.CongestionControlConfig,
-			Logger: params.Logger.WithComponent(sutils.ComponentCongestionControl),
+			Logger: params.Logger.WithComponent(utils.ComponentCongestionControl),
 		})
 		t.streamAllocator.OnStreamStateChange(params.Handler.OnStreamStateChange)
 		t.streamAllocator.Start()
@@ -854,8 +853,22 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 	defer t.lock.Unlock()
 	*dcPtr = dc
 	if t.params.DirectionConfig.StrictACKs {
-		dc.OnOpen(dcReadyHandler)
+		dc.OnOpen(func() {
+			if t.params.IsSendSide {
+				if _, err := dc.Detach(); err != nil {
+					t.params.Logger.Warnw("failed to detach data channel", err)
+				}
+			}
+			dcReadyHandler()
+		})
 	} else {
+		dc.OnOpen(func() {
+			if t.params.IsSendSide {
+				if _, err := dc.Detach(); err != nil {
+					t.params.Logger.Warnw("failed to detach data channel", err)
+				}
+			}
+		})
 		dc.OnDial(dcReadyHandler)
 	}
 	dc.OnClose(dcCloseHandler)
@@ -1254,32 +1267,31 @@ func (t *PCTransport) parseTrackMid(offer webrtc.SessionDescription, senders map
 	return nil
 }
 
-func (t *PCTransport) postEvent(event event) {
-	t.eventsQueue.Enqueue(t.handleEvent, event)
-}
-
-func (t *PCTransport) handleEvent(e event) {
-	var err error
-	switch e.signal {
-	case signalICEGatheringComplete:
-		err = t.handleICEGatheringComplete(e)
-	case signalLocalICECandidate:
-		err = t.handleLocalICECandidate(e)
-	case signalRemoteICECandidate:
-		err = t.handleRemoteICECandidate(e)
-	case signalSendOffer:
-		err = t.handleSendOffer(e)
-	case signalRemoteDescriptionReceived:
-		err = t.handleRemoteDescriptionReceived(e)
-	case signalICERestart:
-		err = t.handleICERestart(e)
-	}
-	if err != nil {
-		if !t.isClosed.Load() {
-			t.params.Logger.Warnw("error handling event", err, "event", e.String())
-			t.params.Handler.OnNegotiationFailed()
+func (t *PCTransport) postEvent(e event) {
+	e.PCTransport = t
+	t.eventsQueue.Enqueue(func(e event) {
+		var err error
+		switch e.signal {
+		case signalICEGatheringComplete:
+			err = e.handleICEGatheringComplete(e)
+		case signalLocalICECandidate:
+			err = e.handleLocalICECandidate(e)
+		case signalRemoteICECandidate:
+			err = e.handleRemoteICECandidate(e)
+		case signalSendOffer:
+			err = e.handleSendOffer(e)
+		case signalRemoteDescriptionReceived:
+			err = e.handleRemoteDescriptionReceived(e)
+		case signalICERestart:
+			err = e.handleICERestart(e)
 		}
-	}
+		if err != nil {
+			if !e.isClosed.Load() {
+				e.params.Logger.Warnw("error handling event", err, "event", e.String())
+				e.params.Handler.OnNegotiationFailed()
+			}
+		}
+	}, e)
 }
 
 func (t *PCTransport) handleICEGatheringComplete(_ event) error {

@@ -125,6 +125,7 @@ func (s streamAllocatorSignal) String() string {
 // ---------------------------------------------------------------------------
 
 type Event struct {
+	*StreamAllocator
 	Signal  streamAllocatorSignal
 	TrackID livekit.TrackID
 	Data    interface{}
@@ -558,10 +559,6 @@ func (s *StreamAllocator) maybePostEventAllocateTrack(downTrack *sfu.DownTrack) 
 	}
 }
 
-func (s *StreamAllocator) postEvent(event Event) {
-	s.eventsQueue.Enqueue(s.handleEvent, event)
-}
-
 func (s *StreamAllocator) ping() {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
@@ -578,35 +575,38 @@ func (s *StreamAllocator) ping() {
 	}
 }
 
-func (s *StreamAllocator) handleEvent(event Event) {
-	switch event.Signal {
-	case streamAllocatorSignalAllocateTrack:
-		s.handleSignalAllocateTrack(event)
-	case streamAllocatorSignalAllocateAllTracks:
-		s.handleSignalAllocateAllTracks(event)
-	case streamAllocatorSignalAdjustState:
-		s.handleSignalAdjustState(event)
-	case streamAllocatorSignalEstimate:
-		s.handleSignalEstimate(event)
-	case streamAllocatorSignalPeriodicPing:
-		s.handleSignalPeriodicPing(event)
-	case streamAllocatorSignalSendProbe:
-		s.handleSignalSendProbe(event)
-	case streamAllocatorSignalProbeClusterDone:
-		s.handleSignalProbeClusterDone(event)
-	case streamAllocatorSignalResume:
-		s.handleSignalResume(event)
-	case streamAllocatorSignalSetAllowPause:
-		s.handleSignalSetAllowPause(event)
-	case streamAllocatorSignalSetChannelCapacity:
-		s.handleSignalSetChannelCapacity(event)
-		/* STREAM-ALLOCATOR-DATA
-		case streamAllocatorSignalNACK:
-			s.handleSignalNACK(event)
-		case streamAllocatorSignalRTCPReceiverReport:
-			s.handleSignalRTCPReceiverReport(event)
-		*/
-	}
+func (s *StreamAllocator) postEvent(event Event) {
+	event.StreamAllocator = s
+	s.eventsQueue.Enqueue(func(event Event) {
+		switch event.Signal {
+		case streamAllocatorSignalAllocateTrack:
+			event.handleSignalAllocateTrack(event)
+		case streamAllocatorSignalAllocateAllTracks:
+			event.handleSignalAllocateAllTracks(event)
+		case streamAllocatorSignalAdjustState:
+			event.handleSignalAdjustState(event)
+		case streamAllocatorSignalEstimate:
+			event.handleSignalEstimate(event)
+		case streamAllocatorSignalPeriodicPing:
+			event.handleSignalPeriodicPing(event)
+		case streamAllocatorSignalSendProbe:
+			event.handleSignalSendProbe(event)
+		case streamAllocatorSignalProbeClusterDone:
+			event.handleSignalProbeClusterDone(event)
+		case streamAllocatorSignalResume:
+			event.handleSignalResume(event)
+		case streamAllocatorSignalSetAllowPause:
+			event.handleSignalSetAllowPause(event)
+		case streamAllocatorSignalSetChannelCapacity:
+			event.handleSignalSetChannelCapacity(event)
+			/* STREAM-ALLOCATOR-DATA
+			case streamAllocatorSignalNACK:
+				event.s.handleSignalNACK(event)
+			case streamAllocatorSignalRTCPReceiverReport:
+				event.s.handleSignalRTCPReceiverReport(event)
+			*/
+		}
+	}, event)
 }
 
 func (s *StreamAllocator) handleSignalAllocateTrack(event Event) {
