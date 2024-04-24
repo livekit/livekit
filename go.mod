@@ -28,10 +28,10 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/pion/dtls/v2 v2.2.10
-	github.com/pion/ice/v2 v2.3.18
-	github.com/pion/interceptor v0.1.25
+	github.com/pion/ice/v2 v2.3.19
+	github.com/pion/interceptor v0.1.29
 	github.com/pion/rtcp v1.2.14
-	github.com/pion/rtp v1.8.5
+	github.com/pion/rtp v1.8.6
 	github.com/pion/sctp v1.8.16
 	github.com/pion/sdp/v3 v3.0.9
 	github.com/pion/transport/v2 v2.2.4
