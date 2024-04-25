@@ -76,6 +76,8 @@ func (s *SIPService) CreateSIPTrunk(ctx context.Context, req *livekit.CreateSIPT
 		InboundPassword:  req.InboundPassword,
 		OutboundUsername: req.OutboundUsername,
 		OutboundPassword: req.OutboundPassword,
+		Name:             req.Name,
+		Metadata:         req.Metadata,
 	}
 
 	// Validate all trunks including the new one first.
@@ -136,6 +138,8 @@ func (s *SIPService) CreateSIPDispatchRule(ctx context.Context, req *livekit.Cre
 		Rule:            req.Rule,
 		TrunkIds:        req.TrunkIds,
 		HidePhoneNumber: req.HidePhoneNumber,
+		Name:            req.Name,
+		Metadata:        req.Metadata,
 	}
 
 	// Validate all rules including the new one first.
@@ -190,28 +194,32 @@ func (s *SIPService) CreateSIPParticipantWithToken(ctx context.Context, req *liv
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
 	}
+	callID := sip.NewCallID()
+	log := logger.GetLogger()
+	log = log.WithValues("call-id", callID, "roomName", req.RoomName, "sip-trunk", req.SipTrunkId, "to-user", req.SipCallTo)
 
-	AppendLogFields(ctx, "room", req.RoomName, "trunk", req.SipTrunkId, "to", req.SipCallTo)
 	ireq := &rpc.InternalCreateSIPParticipantRequest{
+		SipCallId:           callID,
 		CallTo:              req.SipCallTo,
 		RoomName:            req.RoomName,
 		ParticipantIdentity: req.ParticipantIdentity,
+		ParticipantName:     req.ParticipantName,
+		ParticipantMetadata: req.ParticipantMetadata,
 		Dtmf:                req.Dtmf,
 		PlayRingtone:        req.PlayRingtone,
 		WsUrl:               wsUrl,
 		Token:               token,
 	}
-	if req.SipTrunkId != "" {
-		trunk, err := s.store.LoadSIPTrunk(ctx, req.SipTrunkId)
-		if err != nil {
-			logger.Errorw("cannot get trunk to update sip participant", err)
-			return nil, err
-		}
-		ireq.Address = trunk.OutboundAddress
-		ireq.Number = trunk.OutboundNumber
-		ireq.Username = trunk.OutboundUsername
-		ireq.Password = trunk.OutboundPassword
+	trunk, err := s.store.LoadSIPTrunk(ctx, req.SipTrunkId)
+	if err != nil {
+		log.Errorw("cannot get trunk to update sip participant", err)
+		return nil, err
 	}
+	log = log.WithValues("from-user", trunk.OutboundNumber, "to-host", trunk.OutboundAddress)
+	ireq.Address = trunk.OutboundAddress
+	ireq.Number = trunk.OutboundNumber
+	ireq.Username = trunk.OutboundUsername
+	ireq.Password = trunk.OutboundPassword
 
 	// CreateSIPParticipant will wait for LiveKit Participant to be created and that can take some time.
 	// Thus, we must set a higher deadline for it, if it's not set already.
@@ -226,13 +234,14 @@ func (s *SIPService) CreateSIPParticipantWithToken(ctx context.Context, req *liv
 	}
 	resp, err := s.psrpcClient.CreateSIPParticipant(ctx, "", ireq, psrpc.WithRequestTimeout(timeout))
 	if err != nil {
-		logger.Errorw("cannot update sip participant", err)
+		log.Errorw("cannot update sip participant", err)
 		return nil, err
 	}
 	return &livekit.SIPParticipantInfo{
 		ParticipantId:       resp.ParticipantId,
 		ParticipantIdentity: resp.ParticipantIdentity,
 		RoomName:            req.RoomName,
+		SipCallId:           callID,
 	}, nil
 }
 func (s *SIPService) CreateSIPParticipant(ctx context.Context, req *livekit.CreateSIPParticipantRequest) (*livekit.SIPParticipantInfo, error) {
