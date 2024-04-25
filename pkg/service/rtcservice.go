@@ -87,6 +87,7 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomKey, routing.Partici
 
 	// require a claim
 	if claims == nil || claims.Video == nil || apiKey == "" {
+		logger.Warnw("rtc.ErrPermissionDenied claims", nil, "claims", claims, "apiKey", apiKey)
 		return "", pi, http.StatusUnauthorized, rtc.ErrPermissionDenied
 	}
 
@@ -112,6 +113,7 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomKey, routing.Partici
 	if publishParam != "" {
 		// Make sure grant has CanPublish set,
 		if !claims.Video.GetCanPublish() {
+			logger.Warnw("rtc.ErrPermissionDenied GetCanPublish", nil, "claims", claims)
 			return "", routing.ParticipantInit{}, http.StatusUnauthorized, rtc.ErrPermissionDenied
 		}
 		// Make sure by default subscribe is off
