@@ -78,7 +78,7 @@ func (c *ClientProvider) getFromDatabase(ctx context.Context, address string) (C
 		return Client{}, errors.Wrap(err, "unmarshal record")
 	}
 
-	if result.TTL.Before(time.Now()) {
+	if result.TTL.Before(time.Now().UTC()) {
 		err = c.mainDatabase.Remove(ctx, key)
 		if err != nil {
 			return Client{}, errors.Wrap(err, "remove expired record")
@@ -92,7 +92,7 @@ func (c *ClientProvider) getFromDatabase(ctx context.Context, address string) (C
 func (c *ClientProvider) saveInDatabase(ctx context.Context, address string, client Client) error {
 	record := rowDatabaseRecord{
 		Client: client,
-		TTL:    time.Now().Add(defaultTtl),
+		TTL:    time.Now().UTC().Add(defaultTtl),
 	}
 
 	marshaled, err := json.Marshal(record)
@@ -154,7 +154,7 @@ func (c *ClientProvider) startRemovingExpiredRecord() {
 					continue
 				}
 
-				if result.TTL.Before(time.Now()) {
+				if result.TTL.Before(time.Now().UTC()) {
 					err = c.mainDatabase.Remove(ctx, key)
 					if err != nil {
 						log.Printf("[startRemovingExpiredRecord] remove expired record with key %s error %s\r\n", key, err)
