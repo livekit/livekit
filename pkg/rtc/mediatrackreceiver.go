@@ -649,7 +649,7 @@ func (t *MediaTrackReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
 			break
 		}
 
-		// for client don't use simulcast codecs (old client version or single codec)
+		// for clients that don't use simulcast codecs (old client version or single codec)
 		if i == 0 {
 			clonedInfo.Layers = ci.Layers
 		}
@@ -663,6 +663,41 @@ func (t *MediaTrackReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
 	if updateMute {
 		t.SetMuted(clonedInfo.Muted)
 	}
+
+	t.updateTrackInfoOfReceivers()
+}
+
+func (t *MediaTrackReceiver) UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack) {
+	if t.Kind() != livekit.TrackType_AUDIO {
+		return
+	}
+
+	t.lock.Lock()
+	t.trackInfo.AudioFeatures = update.Features
+	t.trackInfo.Stereo = false
+	t.trackInfo.DisableDtx = false
+	for _, feature := range update.Features {
+		switch feature {
+		case livekit.AudioTrackFeature_TF_STEREO:
+			t.trackInfo.Stereo = true
+		case livekit.AudioTrackFeature_TF_NO_DTX:
+			t.trackInfo.DisableDtx = true
+		}
+	}
+	t.lock.Unlock()
+
+	t.updateTrackInfoOfReceivers()
+}
+
+func (t *MediaTrackReceiver) UpdateVideoTrack(update *livekit.UpdateLocalVideoTrack) {
+	if t.Kind() != livekit.TrackType_VIDEO {
+		return
+	}
+
+	t.lock.Lock()
+	t.trackInfo.Width = update.Width
+	t.trackInfo.Height = update.Height
+	t.lock.Unlock()
 
 	t.updateTrackInfoOfReceivers()
 }

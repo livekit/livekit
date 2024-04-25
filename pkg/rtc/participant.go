@@ -1816,6 +1816,12 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		Encryption: req.Encryption,
 		Stream:     req.Stream,
 	}
+	if req.Stereo {
+		ti.AudioFeatures = append(ti.AudioFeatures, livekit.AudioTrackFeature_TF_STEREO)
+	}
+	if req.DisableDtx {
+		ti.AudioFeatures = append(ti.AudioFeatures, livekit.AudioTrackFeature_TF_NO_DTX)
+	}
 	if ti.Stream == "" {
 		ti.Stream = StreamFromTrackSource(ti.Source)
 	}

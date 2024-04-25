@@ -254,6 +254,36 @@ func (u *UpTrackManager) UpdateVideoLayers(updateVideoLayers *livekit.UpdateVide
 	return nil
 }
 
+func (u *UpTrackManager) UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack) error {
+	track := u.GetPublishedTrack(livekit.TrackID(update.TrackSid))
+	if track == nil {
+		u.params.Logger.Warnw("could not find track", nil, "trackID", livekit.TrackID(update.TrackSid))
+		return errors.New("could not find published track")
+	}
+
+	track.UpdateAudioTrack(update)
+	if u.onTrackUpdated != nil {
+		u.onTrackUpdated(track)
+	}
+
+	return nil
+}
+
+func (u *UpTrackManager) UpdateVideoTrack(update *livekit.UpdateLocalVideoTrack) error {
+	track := u.GetPublishedTrack(livekit.TrackID(update.TrackSid))
+	if track == nil {
+		u.params.Logger.Warnw("could not find track", nil, "trackID", livekit.TrackID(update.TrackSid))
+		return errors.New("could not find published track")
+	}
+
+	track.UpdateVideoTrack(update)
+	if u.onTrackUpdated != nil {
+		u.onTrackUpdated(track)
+	}
+
+	return nil
+}
+
 func (u *UpTrackManager) AddPublishedTrack(track types.MediaTrack) {
 	u.lock.Lock()
 	if _, ok := u.publishedTracks[track.ID()]; !ok {
