@@ -24,6 +24,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
+	"github.com/livekit/protocol/utils/hwstats"
 )
 
 const (
@@ -41,11 +42,13 @@ var (
 	sysDroppedPacketsStart       uint32
 	promSysPacketGauge           *prometheus.GaugeVec
 	promSysDroppedPacketPctGauge prometheus.Gauge
+
+	cpuStats *hwstats.CPUStats
 )
 
-func Init(nodeID string, nodeType livekit.NodeType, env string) {
+func Init(nodeID string, nodeType livekit.NodeType) error {
 	if initialized.Swap(true) {
-		return
+		return nil
 	}
 
 	MessageCounter = prometheus.NewCounterVec(
@@ -53,7 +56,7 @@ func Init(nodeID string, nodeType livekit.NodeType, env string) {
 			Namespace:   livekitNamespace,
 			Subsystem:   "node",
 			Name:        "messages",
-			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String(), "env": env},
+			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		},
 		[]string{"type", "status"},
 	)
@@ -63,7 +66,7 @@ func Init(nodeID string, nodeType livekit.NodeType, env string) {
 			Namespace:   livekitNamespace,
 			Subsystem:   "node",
 			Name:        "service_operation",
-			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String(), "env": env},
+			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		},
 		[]string{"type", "status", "error_type"},
 	)
@@ -73,7 +76,7 @@ func Init(nodeID string, nodeType livekit.NodeType, env string) {
 			Namespace:   livekitNamespace,
 			Subsystem:   "node",
 			Name:        "twirp_request_status",
-			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String(), "env": env},
+			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		},
 		[]string{"service", "method", "status", "code"},
 	)
@@ -83,7 +86,7 @@ func Init(nodeID string, nodeType livekit.NodeType, env string) {
 			Namespace:   livekitNamespace,
 			Subsystem:   "node",
 			Name:        "packet_total",
-			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String(), "env": env},
+			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 			Help:        "System level packet count. Count starts at 0 when service is first started.",
 		},
 		[]string{"type"},
@@ -94,7 +97,7 @@ func Init(nodeID string, nodeType livekit.NodeType, env string) {
 			Namespace:   livekitNamespace,
 			Subsystem:   "node",
 			Name:        "dropped_packets",
-			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String(), "env": env},
+			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 			Help:        "System level dropped outgoing packet percentage.",
 		},
 	)
@@ -107,10 +110,18 @@ func Init(nodeID string, nodeType livekit.NodeType, env string) {
 
 	sysPacketsStart, sysDroppedPacketsStart, _ = getTCStats()
 
-	initPacketStats(nodeID, nodeType, env)
-	initRoomStats(nodeID, nodeType, env)
-	rpc.InitPSRPCStats(prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String(), "env": env})
-	initQualityStats(nodeID, nodeType, env)
+	initPacketStats(nodeID, nodeType)
+	initRoomStats(nodeID, nodeType)
+	rpc.InitPSRPCStats(prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()})
+	initQualityStats(nodeID, nodeType)
+
+	var err error
+	cpuStats, err = hwstats.NewCPUStats(nil)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats) (*livekit.NodeStats, bool, error) {
@@ -119,9 +130,10 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		return nil, false, err
 	}
 
-	cpuLoad, numCPUs, err := getCPUStats()
-	if err != nil {
-		return nil, false, err
+	var cpuLoad float64
+	cpuIdle := cpuStats.GetCPUIdle()
+	if cpuIdle > 0 {
+		cpuLoad = 1 - (cpuIdle / cpuStats.NumCPU())
 	}
 
 	// On MacOS, get "\"vm_stat\": executable file not found in $PATH" although it is in /usr/bin
@@ -198,8 +210,8 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		ParticipantSignalConnectedPerSec: prevAverage.ParticipantSignalConnectedPerSec,
 		ParticipantRtcInitPerSec:         prevAverage.ParticipantRtcInitPerSec,
 		ParticipantRtcConnectedPerSec:    prevAverage.ParticipantRtcConnectedPerSec,
-		NumCpus:                          numCPUs,
-		CpuLoad:                          cpuLoad,
+		NumCpus:                          uint32(cpuStats.NumCPU()), // this will round down to the nearest integer
+		CpuLoad:                          float32(cpuLoad),
 		MemoryTotal:                      memTotal,
 		MemoryUsed:                       memUsed,
 		LoadAvgLast1Min:                  float32(loadAvg.Loadavg1),

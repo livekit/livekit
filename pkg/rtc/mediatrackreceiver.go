@@ -34,7 +34,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
+	"github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
@@ -161,19 +161,23 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority 
 	receivers := slices.Clone(t.receivers)
 
 	// codec position maybe taken by DummyReceiver, check and upgrade to WebRTCReceiver
-	var upgradeReceiver bool
-	for _, r := range receivers {
+	receiverToAdd := receiver
+	idx := -1
+	for i, r := range receivers {
 		if strings.EqualFold(r.Codec().MimeType, receiver.Codec().MimeType) {
-			if d, ok := r.TrackReceiver.(*DummyReceiver); ok {
-				d.Upgrade(receiver)
-				upgradeReceiver = true
-				break
-			}
+			idx = i
+			break
 		}
 	}
-	if !upgradeReceiver {
-		receivers = append(receivers, &simulcastReceiver{TrackReceiver: receiver, priority: priority})
+	if idx != -1 {
+		if d, ok := receivers[idx].TrackReceiver.(*DummyReceiver); ok {
+			d.Upgrade(receiver)
+			receiverToAdd = d
+		}
+		// replace receiver
+		receivers = slices.Delete(receivers, idx, idx+1)
 	}
+	receivers = append(receivers, &simulcastReceiver{TrackReceiver: receiverToAdd, priority: priority})
 
 	sort.Slice(receivers, func(i, j int) bool {
 		return receivers[i].Priority() < receivers[j].Priority()
@@ -319,15 +323,21 @@ func (t *MediaTrackReceiver) TryClose() bool {
 		return true
 	}
 
+	numActiveReceivers := 0
 	for _, receiver := range t.receivers {
-		if dr, _ := receiver.TrackReceiver.(*DummyReceiver); dr != nil && dr.Receiver() != nil {
-			t.lock.RUnlock()
-			return false
+		dr, ok := receiver.TrackReceiver.(*DummyReceiver)
+		if !ok || dr.Receiver() != nil {
+			// !ok means real receiver OR
+			// dummy receiver with a regular receiver attached
+			numActiveReceivers++
 		}
 	}
 	t.lock.RUnlock()
-	t.Close()
+	if numActiveReceivers != 0 {
+		return false
+	}
 
+	t.Close()
 	return true
 }
 
@@ -639,7 +649,7 @@ func (t *MediaTrackReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
 			break
 		}
 
-		// for client don't use simulcast codecs (old client version or single codec)
+		// for clients that don't use simulcast codecs (old client version or single codec)
 		if i == 0 {
 			clonedInfo.Layers = ci.Layers
 		}
@@ -657,33 +667,39 @@ func (t *MediaTrackReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
 	t.updateTrackInfoOfReceivers()
 }
 
-func (t *MediaTrackReceiver) UpdateVideoLayers(layers []*livekit.VideoLayer) {
-	t.lock.Lock()
-	// set video layer ssrc info
-	for i, ci := range t.trackInfo.Codecs {
-		originLayers := ci.Layers
-		ci.Layers = []*livekit.VideoLayer{}
-		for layerIdx, layer := range layers {
-			ci.Layers = append(ci.Layers, proto.Clone(layer).(*livekit.VideoLayer))
-			for _, l := range originLayers {
-				if l.Quality == ci.Layers[layerIdx].Quality {
-					if l.Ssrc != 0 {
-						ci.Layers[layerIdx].Ssrc = l.Ssrc
-					}
-					break
-				}
-			}
-		}
+func (t *MediaTrackReceiver) UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack) {
+	if t.Kind() != livekit.TrackType_AUDIO {
+		return
+	}
 
-		// for client don't use simulcast codecs (old client version or single codec)
-		if i == 0 {
-			t.trackInfo.Layers = ci.Layers
+	t.lock.Lock()
+	t.trackInfo.AudioFeatures = update.Features
+	t.trackInfo.Stereo = false
+	t.trackInfo.DisableDtx = false
+	for _, feature := range update.Features {
+		switch feature {
+		case livekit.AudioTrackFeature_TF_STEREO:
+			t.trackInfo.Stereo = true
+		case livekit.AudioTrackFeature_TF_NO_DTX:
+			t.trackInfo.DisableDtx = true
 		}
 	}
 	t.lock.Unlock()
 
 	t.updateTrackInfoOfReceivers()
-	t.MediaTrackSubscriptions.UpdateVideoLayers()
+}
+
+func (t *MediaTrackReceiver) UpdateVideoTrack(update *livekit.UpdateLocalVideoTrack) {
+	if t.Kind() != livekit.TrackType_VIDEO {
+		return
+	}
+
+	t.lock.Lock()
+	t.trackInfo.Width = update.Width
+	t.trackInfo.Height = update.Height
+	t.lock.Unlock()
+
+	t.updateTrackInfoOfReceivers()
 }
 
 func (t *MediaTrackReceiver) TrackInfo() *livekit.TrackInfo {

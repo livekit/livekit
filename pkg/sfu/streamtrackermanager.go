@@ -15,8 +15,6 @@
 package sfu
 
 import (
-	"fmt"
-	"math"
 	"sort"
 	"sync"
 	"time"
@@ -31,10 +29,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/streamtracker"
-)
-
-const (
-	senderReportThresholdSeconds = float64(60.0)
 )
 
 // ---------------------------------------------------
@@ -68,10 +62,6 @@ type StreamTrackerManager struct {
 	availableLayers  []int32
 	maxExpectedLayer int32
 	paused           bool
-
-	senderReportMu sync.RWMutex
-	senderReports  [buffer.DefaultMaxLayerSpatial + 1]*buffer.RTCPSenderReportData
-	layerOffsets   [buffer.DefaultMaxLayerSpatial + 1][buffer.DefaultMaxLayerSpatial + 1]uint32
 
 	closed core.Fuse
 
@@ -548,110 +538,6 @@ func (s *StreamTrackerManager) maxExpectedLayerFromTrackInfo() {
 			}
 		}
 	}
-}
-
-func (s *StreamTrackerManager) updateLayerOffsetLocked(ref, other int32) {
-	srRef := s.senderReports[ref]
-	srOther := s.senderReports[other]
-	if srRef == nil || srRef.NTPTimestamp == 0 || srOther == nil || srOther.NTPTimestamp == 0 {
-		return
-	}
-
-	ntpDiff := srRef.NTPTimestamp.Time().Sub(srOther.NTPTimestamp.Time())
-	if math.Abs(ntpDiff.Seconds()) > senderReportThresholdSeconds {
-		// offset is updated only if the layers' sender reports are close enough.
-		//
-		// Rationale: higher layers could be paused for extended periods of time
-		// due to adaptive stream/dynacast or publisher constraints like CPU/bandwidth.
-		// The check is to avoid using very old reports.
-		return
-	}
-	rtpDiff := ntpDiff.Nanoseconds() * int64(s.clockRate) / 1e9
-
-	// calculate other layer's time stamp at the same time as ref layer's NTP time
-	normalizedOtherTS := srOther.RTPTimestamp + uint32(rtpDiff)
-
-	// now both layers' time stamp refer to the same NTP time and the diff is the offset between the layers
-	offset := srRef.RTPTimestamp - normalizedOtherTS
-
-	// use minimal offset to indicate value availability in the extremely unlikely case of
-	// both layers using the same timestamp
-	if offset == 0 {
-		s.logger.Debugw(
-			"using default offset",
-			"ref", ref,
-			"refNTP", srRef.NTPTimestamp.Time().String(),
-			"refRTP", srRef.RTPTimestamp,
-			"other", other,
-			"otherNTP", srOther.NTPTimestamp.Time().String(),
-			"otherRTP", srOther.RTPTimestamp,
-		)
-		offset = 1
-	}
-
-	s.layerOffsets[ref][other] = offset
-}
-
-func (s *StreamTrackerManager) SetRTCPSenderReportData(layer int32, srData *buffer.RTCPSenderReportData) {
-	s.senderReportMu.Lock()
-	defer s.senderReportMu.Unlock()
-
-	if layer < 0 || int(layer) >= len(s.senderReports) {
-		return
-	}
-
-	s.senderReports[layer] = srData
-
-	// (re)fill offsets as necessary for received layer.
-	for i := int32(0); i < buffer.DefaultMaxLayerSpatial+1; i++ {
-		if i == layer {
-			continue
-		}
-
-		// treating layer for which report was received as reference layer
-		s.updateLayerOffsetLocked(layer, i)
-
-		// and the other way
-		s.updateLayerOffsetLocked(i, layer)
-	}
-}
-
-func (s *StreamTrackerManager) GetRTCPSenderReportData(layer int32) *buffer.RTCPSenderReportData {
-	s.senderReportMu.Lock()
-	defer s.senderReportMu.Unlock()
-
-	if layer < 0 || int(layer) >= len(s.senderReports) {
-		return nil
-	}
-
-	// SVC-TODO: better SVC detection
-	if s.isSVC {
-		// there is only one stream in SVC
-		layer = 0
-	}
-
-	return s.senderReports[layer]
-}
-
-func (s *StreamTrackerManager) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error) {
-	s.senderReportMu.RLock()
-	defer s.senderReportMu.RUnlock()
-
-	if layer < 0 || int(layer) >= len(s.layerOffsets[0]) || referenceLayer < 0 || int(referenceLayer) >= len(s.layerOffsets) {
-		return 0, fmt.Errorf("invalid layer, target: %d, reference: %d", layer, referenceLayer)
-	}
-
-	// SVC-TODO: better SVC detection
-	if s.isSVC {
-		// there is only one stream in SVC
-		return ts, nil
-	}
-
-	if layer != referenceLayer && s.layerOffsets[referenceLayer][layer] == 0 {
-		return 0, fmt.Errorf("offset unavailable, target: %d, reference: %d", layer, referenceLayer)
-	}
-
-	return ts + s.layerOffsets[referenceLayer][layer], nil
 }
 
 func (s *StreamTrackerManager) GetMaxTemporalLayerSeen() int32 {

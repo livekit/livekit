@@ -497,8 +497,6 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 
 	s.setPublisher(res.PublisherIdentity, res.PublisherID)
 
-	// since hasPermission defaults to true, we will want to send a message to the client the first time
-	// that we discover permissions were denied
 	permChanged := s.setHasPermission(res.HasPermission)
 	if permChanged {
 		m.params.Participant.SubscriptionPermissionUpdate(s.getPublisherID(), trackID, res.HasPermission)
@@ -722,19 +720,20 @@ type trackSubscription struct {
 	trackID      livekit.TrackID
 	logger       logger.Logger
 
-	lock              sync.RWMutex
-	desired           bool
-	publisherID       livekit.ParticipantID
-	publisherIdentity livekit.ParticipantIdentity
-	settings          *livekit.UpdateTrackSettings
-	changedNotifier   types.ChangeNotifier
-	removedNotifier   types.ChangeNotifier
-	hasPermission     bool
-	subscribedTrack   types.SubscribedTrack
-	eventSent         atomic.Bool
-	numAttempts       atomic.Int32
-	bound             bool
-	kind              atomic.Pointer[livekit.TrackType]
+	lock                     sync.RWMutex
+	desired                  bool
+	publisherID              livekit.ParticipantID
+	publisherIdentity        livekit.ParticipantIdentity
+	settings                 *livekit.UpdateTrackSettings
+	changedNotifier          types.ChangeNotifier
+	removedNotifier          types.ChangeNotifier
+	hasPermissionInitialized bool
+	hasPermission            bool
+	subscribedTrack          types.SubscribedTrack
+	eventSent                atomic.Bool
+	numAttempts              atomic.Int32
+	bound                    bool
+	kind                     atomic.Pointer[livekit.TrackType]
 
 	// the later of when subscription was requested OR when the first failure was encountered OR when permission is granted
 	// this timestamp determines when failures are reported
@@ -746,8 +745,6 @@ func newTrackSubscription(subscriberID livekit.ParticipantID, trackID livekit.Tr
 		subscriberID: subscriberID,
 		trackID:      trackID,
 		logger:       l,
-		// default allow
-		hasPermission: true,
 	}
 }
 
@@ -796,9 +793,11 @@ func (s *trackSubscription) setDesired(desired bool) bool {
 func (s *trackSubscription) setHasPermission(perm bool) bool {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	if s.hasPermission == perm {
+	if s.hasPermissionInitialized && s.hasPermission == perm {
 		return false
 	}
+
+	s.hasPermissionInitialized = true
 	s.hasPermission = perm
 	if s.hasPermission {
 		// when permission is granted, reset the timer so it has sufficient time to reconcile
