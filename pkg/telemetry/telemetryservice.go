@@ -162,12 +162,12 @@ func (t *telemetryService) FlushStats() {
 	}
 
 	t.workersMu.Lock()
-	for w := reapHead; w != nil; {
-		delete(t.workers, w.participantID)
-		if w == reapTail {
+	for reapHead != nil {
+		delete(t.workers, reapHead.participantID)
+		if reapHead == reapTail {
 			break
 		}
-		w = w.next
+		reapHead = reapHead.next
 	}
 	t.workersMu.Unlock()
 }
