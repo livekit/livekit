@@ -47,38 +47,56 @@ func (s *IOInfoService) matchSIPDispatchRule(ctx context.Context, trunk *livekit
 }
 
 func (s *IOInfoService) EvaluateSIPDispatchRules(ctx context.Context, req *rpc.EvaluateSIPDispatchRulesRequest) (*rpc.EvaluateSIPDispatchRulesResponse, error) {
+	log := logger.GetLogger()
+	log = log.WithValues("to-user", req.CalledNumber, "from-user", req.CallingNumber)
 	trunk, err := s.matchSIPTrunk(ctx, req.CallingNumber, req.CalledNumber)
 	if err != nil {
 		return nil, err
 	}
+	trunkID := ""
 	if trunk != nil {
-		logger.Debugw("SIP trunk matched", "trunkID", trunk.SipTrunkId, "called", req.CalledNumber, "calling", req.CallingNumber)
+		trunkID = trunk.SipTrunkId
+	}
+	log = log.WithValues("sip-trunk", trunkID)
+	if trunk != nil {
+		log.Debugw("SIP trunk matched")
 	} else {
-		logger.Debugw("No SIP trunk matched", "trunkID", "", "called", req.CalledNumber, "calling", req.CallingNumber)
+		log.Debugw("No SIP trunk matched")
 	}
 	best, err := s.matchSIPDispatchRule(ctx, trunk, req)
 	if err != nil {
 		if e := (*sip.ErrNoDispatchMatched)(nil); errors.As(err, &e) {
-			return &rpc.EvaluateSIPDispatchRulesResponse{Result: rpc.SIPDispatchResult_DROP}, nil
+			return &rpc.EvaluateSIPDispatchRulesResponse{
+				SipTrunkId: trunkID,
+				Result:     rpc.SIPDispatchResult_DROP,
+			}, nil
 		}
 		return nil, err
 	}
-	logger.Debugw("SIP dispatch rule matched", "dispatchRule", best.SipDispatchRuleId, "called", req.CalledNumber, "calling", req.CallingNumber)
-	return sip.EvaluateDispatchRule(best, req)
+	log.Debugw("SIP dispatch rule matched", "sip-rule", best.SipDispatchRuleId)
+	resp, err := sip.EvaluateDispatchRule(best, req)
+	if err != nil {
+		return nil, err
+	}
+	resp.SipTrunkId = trunkID
+	return resp, err
 }
 
 func (s *IOInfoService) GetSIPTrunkAuthentication(ctx context.Context, req *rpc.GetSIPTrunkAuthenticationRequest) (*rpc.GetSIPTrunkAuthenticationResponse, error) {
+	log := logger.GetLogger()
+	log = log.WithValues("to-user", req.To, "from-user", req.From)
 	trunk, err := s.matchSIPTrunk(ctx, req.From, req.To)
 	if err != nil {
 		return nil, err
 	}
 	if trunk == nil {
-		logger.Debugw("No SIP trunk matched for auth", "trunkID", "", "called", req.To, "calling", req.From)
+		log.Debugw("No SIP trunk matched for auth", "sip-trunk", "")
 		return &rpc.GetSIPTrunkAuthenticationResponse{}, nil
 	}
-	logger.Debugw("SIP trunk matched for auth", "trunkID", trunk.SipTrunkId, "called", req.To, "calling", req.From)
+	log.Debugw("SIP trunk matched for auth", "sip-trunk", trunk.SipTrunkId)
 	return &rpc.GetSIPTrunkAuthenticationResponse{
-		Username: trunk.InboundUsername,
-		Password: trunk.InboundPassword,
+		SipTrunkId: trunk.SipTrunkId,
+		Username:   trunk.InboundUsername,
+		Password:   trunk.InboundPassword,
 	}, nil
 }

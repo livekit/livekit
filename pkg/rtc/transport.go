@@ -149,10 +149,12 @@ type PCTransport struct {
 
 	lock sync.RWMutex
 
-	reliableDC       *webrtc.DataChannel
-	reliableDCOpened bool
-	lossyDC          *webrtc.DataChannel
-	lossyDCOpened    bool
+	firstOfferReceived      bool
+	firstOfferNoDataChannel bool
+	reliableDC              *webrtc.DataChannel
+	reliableDCOpened        bool
+	lossyDC                 *webrtc.DataChannel
+	lossyDCOpened           bool
 
 	iceStartedAt               time.Time
 	iceConnectedAt             time.Time
@@ -694,7 +696,9 @@ func (t *PCTransport) isFullyEstablished() bool {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 
-	return t.reliableDCOpened && t.lossyDCOpened && !t.connectedAt.IsZero()
+	dataChannelReady := t.firstOfferNoDataChannel || (t.reliableDCOpened && t.lossyDCOpened)
+
+	return dataChannelReady && !t.connectedAt.IsZero()
 }
 
 func (t *PCTransport) SetPreferTCP(preferTCP bool) {
@@ -1698,6 +1702,21 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription) e
 	if err != nil {
 		return nil
 	}
+
+	t.lock.Lock()
+	if !t.firstOfferReceived {
+		t.firstOfferReceived = true
+		var dataChannelFound bool
+		for _, media := range parsed.MediaDescriptions {
+			if strings.EqualFold(media.MediaName.Media, "application") {
+				dataChannelFound = true
+				break
+			}
+		}
+		t.firstOfferNoDataChannel = !dataChannelFound
+	}
+	t.lock.Unlock()
+
 	iceCredential, offerRestartICE, err := t.isRemoteOfferRestartICE(parsed)
 	if err != nil {
 		return errors.Wrap(err, "check remote offer restart ice failed")

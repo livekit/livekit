@@ -987,7 +987,6 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 		p.TransportManager.ProcessPendingPublisherOffer()
 
 	case types.MigrateStateComplete:
-
 		p.TransportManager.ProcessPendingPublisherDataChannels()
 	}
 
@@ -1516,44 +1515,47 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		dp.ParticipantIdentity = string(p.params.Identity)
 	}
 
+	shouldForward := false
 	// only forward on user payloads
 	switch payload := dp.Value.(type) {
 	case *livekit.DataPacket_User:
+		u := payload.User
+		if p.Hidden() {
+			u.ParticipantSid = ""
+			u.ParticipantIdentity = ""
+		} else {
+			u.ParticipantSid = string(p.params.SID)
+			u.ParticipantIdentity = string(p.params.Identity)
+		}
+		if dp.ParticipantIdentity != "" {
+			u.ParticipantIdentity = dp.ParticipantIdentity
+		} else {
+			dp.ParticipantIdentity = u.ParticipantIdentity
+		}
+		if len(dp.DestinationIdentities) != 0 {
+			u.DestinationIdentities = dp.DestinationIdentities
+		} else {
+			dp.DestinationIdentities = u.DestinationIdentities
+		}
+		shouldForward = true
+	case *livekit.DataPacket_SipDtmf:
+		if p.Kind() == livekit.ParticipantInfo_SIP {
+			shouldForward = true
+		}
+	case *livekit.DataPacket_Transcription:
+		if p.Kind() == livekit.ParticipantInfo_AGENT {
+			shouldForward = true
+		}
+	default:
+		p.pubLogger.Warnw("received unsupported data packet", nil, "payload", payload)
+	}
+	if shouldForward {
 		p.lock.RLock()
 		onDataPacket := p.onDataPacket
 		p.lock.RUnlock()
 		if onDataPacket != nil {
-			u := payload.User
-			if p.Hidden() {
-				u.ParticipantSid = ""
-				u.ParticipantIdentity = ""
-			} else {
-				u.ParticipantSid = string(p.params.SID)
-				u.ParticipantIdentity = string(p.params.Identity)
-			}
-			if dp.ParticipantIdentity != "" {
-				u.ParticipantIdentity = dp.ParticipantIdentity
-			} else {
-				dp.ParticipantIdentity = u.ParticipantIdentity
-			}
-			if len(dp.DestinationIdentities) != 0 {
-				u.DestinationIdentities = dp.DestinationIdentities
-			} else {
-				dp.DestinationIdentities = u.DestinationIdentities
-			}
 			onDataPacket(p, kind, dp)
 		}
-	case *livekit.DataPacket_SipDtmf:
-		if p.grants.GetParticipantKind() == livekit.ParticipantInfo_SIP {
-			p.lock.RLock()
-			onDataPacket := p.onDataPacket
-			p.lock.RUnlock()
-			if onDataPacket != nil {
-				onDataPacket(p, kind, dp)
-			}
-		}
-	default:
-		p.pubLogger.Warnw("received unsupported data packet", nil, "payload", payload)
 	}
 
 	p.setIsPublisher(true)
@@ -1815,6 +1817,12 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		Stereo:     req.Stereo,
 		Encryption: req.Encryption,
 		Stream:     req.Stream,
+	}
+	if req.Stereo {
+		ti.AudioFeatures = append(ti.AudioFeatures, livekit.AudioTrackFeature_TF_STEREO)
+	}
+	if req.DisableDtx {
+		ti.AudioFeatures = append(ti.AudioFeatures, livekit.AudioTrackFeature_TF_NO_DTX)
 	}
 	if ti.Stream == "" {
 		ti.Stream = StreamFromTrackSource(ti.Source)
