@@ -129,7 +129,7 @@ func (t *telemetryService) FlushStats() {
 	t.workersMu.RUnlock()
 
 	now := time.Now()
-	var prev *StatsWorker
+	var prev, reapHead, reapTail *StatsWorker
 	for worker != nil {
 		if closed := worker.Flush(now); closed {
 			if prev == nil {
@@ -147,11 +147,29 @@ func (t *telemetryService) FlushStats() {
 			} else {
 				prev.next = worker.next
 			}
+
+			if reapHead == nil {
+				reapHead = worker
+				reapTail = worker
+			} else {
+				reapTail.next = worker
+				reapTail = worker
+			}
 		} else {
 			prev = worker
 		}
 		worker = worker.next
 	}
+
+	t.workersMu.Lock()
+	for w := reapHead; w != nil; {
+		delete(t.workers, w.participantID)
+		if w == reapTail {
+			break
+		}
+		w = w.next
+	}
+	t.workersMu.Unlock()
 }
 
 func (t *telemetryService) run() {
@@ -201,18 +219,6 @@ func (t *telemetryService) getOrCreateWorker(
 	t.workerList = worker
 
 	return worker, false
-}
-
-func (t *telemetryService) getAndDeleteWorker(participantID livekit.ParticipantID) (*StatsWorker, bool) {
-	t.workersMu.Lock()
-	worker, ok := t.workers[participantID]
-	delete(t.workers, participantID)
-	t.workersMu.Unlock()
-
-	if ok {
-		worker.Close()
-	}
-	return worker, ok
 }
 
 func (t *telemetryService) LocalRoomState(ctx context.Context, info *livekit.AnalyticsNodeRooms) {

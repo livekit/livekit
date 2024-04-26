@@ -117,12 +117,15 @@ func (s *StatsWorker) Flush(now time.Time) bool {
 	return closed
 }
 
-func (s *StatsWorker) Close() {
-	s.Flush(time.Now())
-
+func (s *StatsWorker) Close() bool {
 	s.lock.Lock()
-	s.closedAt = time.Now()
-	s.lock.Unlock()
+	defer s.lock.Unlock()
+
+	ok := s.closedAt.IsZero()
+	if ok {
+		s.closedAt = time.Now()
+	}
+	return ok
 }
 
 func (s *StatsWorker) collectStats(
