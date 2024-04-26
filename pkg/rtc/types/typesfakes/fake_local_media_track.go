@@ -337,11 +337,6 @@ type FakeLocalMediaTrack struct {
 	updateTrackInfoArgsForCall []struct {
 		arg1 *livekit.TrackInfo
 	}
-	UpdateVideoLayersStub        func([]*livekit.VideoLayer)
-	updateVideoLayersMutex       sync.RWMutex
-	updateVideoLayersArgsForCall []struct {
-		arg1 []*livekit.VideoLayer
-	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
 }
@@ -2109,43 +2104,6 @@ func (fake *FakeLocalMediaTrack) UpdateTrackInfoArgsForCall(i int) *livekit.Trac
 	return argsForCall.arg1
 }
 
-func (fake *FakeLocalMediaTrack) UpdateVideoLayers(arg1 []*livekit.VideoLayer) {
-	var arg1Copy []*livekit.VideoLayer
-	if arg1 != nil {
-		arg1Copy = make([]*livekit.VideoLayer, len(arg1))
-		copy(arg1Copy, arg1)
-	}
-	fake.updateVideoLayersMutex.Lock()
-	fake.updateVideoLayersArgsForCall = append(fake.updateVideoLayersArgsForCall, struct {
-		arg1 []*livekit.VideoLayer
-	}{arg1Copy})
-	stub := fake.UpdateVideoLayersStub
-	fake.recordInvocation("UpdateVideoLayers", []interface{}{arg1Copy})
-	fake.updateVideoLayersMutex.Unlock()
-	if stub != nil {
-		fake.UpdateVideoLayersStub(arg1)
-	}
-}
-
-func (fake *FakeLocalMediaTrack) UpdateVideoLayersCallCount() int {
-	fake.updateVideoLayersMutex.RLock()
-	defer fake.updateVideoLayersMutex.RUnlock()
-	return len(fake.updateVideoLayersArgsForCall)
-}
-
-func (fake *FakeLocalMediaTrack) UpdateVideoLayersCalls(stub func([]*livekit.VideoLayer)) {
-	fake.updateVideoLayersMutex.Lock()
-	defer fake.updateVideoLayersMutex.Unlock()
-	fake.UpdateVideoLayersStub = stub
-}
-
-func (fake *FakeLocalMediaTrack) UpdateVideoLayersArgsForCall(i int) []*livekit.VideoLayer {
-	fake.updateVideoLayersMutex.RLock()
-	defer fake.updateVideoLayersMutex.RUnlock()
-	argsForCall := fake.updateVideoLayersArgsForCall[i]
-	return argsForCall.arg1
-}
-
 func (fake *FakeLocalMediaTrack) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
@@ -2221,8 +2179,6 @@ func (fake *FakeLocalMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.toProtoMutex.RUnlock()
 	fake.updateTrackInfoMutex.RLock()
 	defer fake.updateTrackInfoMutex.RUnlock()
-	fake.updateVideoLayersMutex.RLock()
-	defer fake.updateVideoLayersMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value
