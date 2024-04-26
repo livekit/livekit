@@ -20,7 +20,7 @@ import (
 	"github.com/pion/rtp"
 	"github.com/stretchr/testify/require"
 
-	"github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
+	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -46,9 +46,9 @@ func (f *testFrameInfo) toDD() *ExtPacket {
 	return &ExtPacket{
 		Packet: &rtp.Packet{Header: f.header},
 		DependencyDescriptor: &ExtDependencyDescriptor{
-			Descriptor: &dependencydescriptor.DependencyDescriptor{
+			Descriptor: &dd.DependencyDescriptor{
 				FrameNumber: f.framenumber,
-				FrameDependencies: &dependencydescriptor.FrameDependencyTemplate{
+				FrameDependencies: &dd.FrameDependencyTemplate{
 					FrameDiffs: f.frameDiff,
 				},
 			},

@@ -61,6 +61,7 @@ type windowStat struct {
 	bytes             uint64
 	rttMax            uint32
 	jitterMax         float64
+	lastRTCPAt        time.Time
 }
 
 func (w *windowStat) calculatePacketScore(plw float64, includeRTT bool, includeJitter bool) float64 {
@@ -123,8 +124,8 @@ func (w *windowStat) calculatePacketScore(plw float64, includeRTT bool, includeJ
 	return score
 }
 
-func (w *windowStat) calculateBitrateScore(expectedBitrate int64) float64 {
-	if expectedBitrate == 0 {
+func (w *windowStat) calculateBitrateScore(expectedBitrate int64, isEnabled bool) float64 {
+	if expectedBitrate == 0 || !isEnabled {
 		// unsupported mode OR all layers stopped
 		return cMaxScore
 	}
@@ -147,7 +148,7 @@ func (w *windowStat) calculateBitrateScore(expectedBitrate int64) float64 {
 }
 
 func (w *windowStat) String() string {
-	return fmt.Sprintf("start: %+v, dur: %+v, pe: %d, pl: %d, pm: %d, pooo: %d, b: %d, rtt: %d, jitter: %0.2f",
+	return fmt.Sprintf("start: %+v, dur: %+v, pe: %d, pl: %d, pm: %d, pooo: %d, b: %d, rtt: %d, jitter: %0.2f, lastRTCP: %+v",
 		w.startedAt,
 		w.duration,
 		w.packetsExpected,
@@ -157,6 +158,7 @@ func (w *windowStat) String() string {
 		w.bytes,
 		w.rttMax,
 		w.jitterMax,
+		w.lastRTCPAt,
 	)
 }
 
@@ -174,16 +176,18 @@ func (w *windowStat) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddUint64("bytes", w.bytes)
 	e.AddUint32("rttMax", w.rttMax)
 	e.AddFloat64("jitterMax", w.jitterMax)
+	e.AddTime("lastRTCPAt", w.lastRTCPAt)
 	return nil
 }
 
 // ------------------------------------------
 
 type qualityScorerParams struct {
-	PacketLossWeight float64
-	IncludeRTT       bool
-	IncludeJitter    bool
-	Logger           logger.Logger
+	PacketLossWeight   float64
+	IncludeRTT         bool
+	IncludeJitter      bool
+	EnableBitrateScore bool
+	Logger             logger.Logger
 }
 
 type qualityScorer struct {
@@ -381,7 +385,7 @@ func (q *qualityScorer) updateAtLocked(stat *windowStat, at time.Time) {
 	//       considered (as long as enough time has passed since unmute).
 	//
 	//       Similarly, when paused (possibly due to congestion), score is immediately
-	//       set to cMinScore for responsiveness. The layer transision is reest.
+	//       set to cMinScore for responsiveness. The layer transition is reset.
 	//       On a resume, quality climbs back up using normal operation.
 	if q.isMuted() || !q.isUnmutedEnough(at) || q.isLayerMuted() || q.isPaused() {
 		q.lastUpdateAt = at
@@ -392,11 +396,16 @@ func (q *qualityScorer) updateAtLocked(stat *windowStat, at time.Time) {
 	reason := "none"
 	var score float64
 	if stat.packetsExpected == 0 {
-		reason = "dry"
-		score = qualityTransitionScore[livekit.ConnectionQuality_LOST]
+		if !stat.lastRTCPAt.IsZero() && at.Sub(stat.lastRTCPAt) > stat.duration {
+			reason = "dry"
+			score = qualityTransitionScore[livekit.ConnectionQuality_LOST]
+		} else {
+			reason = "rtcp"
+			score = qualityTransitionScore[livekit.ConnectionQuality_POOR]
+		}
 	} else {
 		packetScore := stat.calculatePacketScore(plw, q.params.IncludeRTT, q.params.IncludeJitter)
-		bitrateScore := stat.calculateBitrateScore(expectedBitrate)
+		bitrateScore := stat.calculateBitrateScore(expectedBitrate, q.params.EnableBitrateScore)
 		layerScore := math.Max(math.Min(cMaxScore, cMaxScore-(expectedDistance*distanceWeight)), 0.0)
 
 		minScore := math.Min(packetScore, bitrateScore)
@@ -504,7 +513,7 @@ func (q *qualityScorer) isPaused() bool {
 }
 
 func (q *qualityScorer) getPacketLossWeight(stat *windowStat) float64 {
-	if stat == nil || stat.duration == 0 {
+	if stat == nil || stat.duration <= 0 {
 		return q.params.PacketLossWeight
 	}
 

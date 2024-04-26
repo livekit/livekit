@@ -161,16 +161,12 @@ func (t *telemetryService) ParticipantLeft(ctx context.Context,
 ) {
 	t.enqueue(func() {
 		isConnected := false
-		hasWorker := false
 		if worker, ok := t.getWorker(livekit.ParticipantID(participant.Sid)); ok {
-			hasWorker = true
 			isConnected = worker.IsConnected()
+			if worker.ClosedAt().IsZero() {
+				prometheus.SubParticipant()
+			}
 			worker.Close()
-		}
-
-		if hasWorker {
-			// signifies we had incremented participant count
-			prometheus.SubParticipant()
 		}
 
 		if isConnected && shouldSendEvent {

@@ -15,7 +15,7 @@
 package videolayerselector
 
 import (
-	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
+	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/protocol/logger"
 )
 

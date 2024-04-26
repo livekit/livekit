@@ -96,9 +96,7 @@ func (d *DownTrackSpreader) Broadcast(writer func(TrackSender)) {
 	// 100µs is enough to amortize the overhead and provide sufficient load balancing.
 	// WriteRTP takes about 50µs on average, so we write to 2 down tracks per loop.
 	step := uint64(2)
-	utils.ParallelExec(downTracks, threshold, step, func(dt TrackSender) {
-		writer(dt)
-	})
+	utils.ParallelExec(downTracks, threshold, step, writer)
 }
 
 func (d *DownTrackSpreader) DownTrackCount() int {

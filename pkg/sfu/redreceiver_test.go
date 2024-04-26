@@ -204,7 +204,7 @@ func TestRedReceiver(t *testing.T) {
 			verifyRedEncodings(t, dt.lastReceivedPkt, expectPkt)
 		}
 
-		// and then a few packets with a large timestmap jump, should contain only primary
+		// and then a few packets with a large timestamp jump, should contain only primary
 		for _, pkt := range generatePkts(header, 4, 40*tsStep) {
 			red.ForwardRTP(&buffer.ExtPacket{
 				Packet: pkt,

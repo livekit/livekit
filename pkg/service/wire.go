@@ -30,7 +30,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/livekit-server/pkg/rtc"
+	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
@@ -77,7 +77,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		NewRoomService,
 		NewRTCService,
 		NewAgentService,
-		rtc.NewAgentClient,
+		agent.NewAgentClient,
 		getSignalRelayConfig,
 		NewDefaultSignalServer,
 		routing.NewSignalClient,

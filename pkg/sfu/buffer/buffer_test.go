@@ -208,9 +208,12 @@ func TestNewBuffer(t *testing.T) {
 func TestFractionLostReport(t *testing.T) {
 	buff := NewBuffer(123, 1, 1)
 	require.NotNil(t, buff)
-	buff.codecType = webrtc.RTPCodecTypeVideo
+
 	var wg sync.WaitGroup
+
+	// with loss proxying
 	wg.Add(1)
+	buff.SetAudioLossProxying(true)
 	buff.SetLastFractionLostReport(55)
 	buff.OnRtcpFeedback(func(fb []rtcp.Packet) {
 		for _, pkt := range fb {
@@ -218,6 +221,38 @@ func TestFractionLostReport(t *testing.T) {
 			case *rtcp.ReceiverReport:
 				for _, v := range p.Reports {
 					require.EqualValues(t, 55, v.FractionLost)
+				}
+				wg.Done()
+			}
+		}
+	})
+	buff.Bind(webrtc.RTPParameters{
+		HeaderExtensions: nil,
+		Codecs:           []webrtc.RTPCodecParameters{opusCodec},
+	}, opusCodec.RTPCodecCapability)
+	for i := 0; i < 15; i++ {
+		pkt := rtp.Packet{
+			Header:  rtp.Header{SequenceNumber: uint16(i), Timestamp: uint32(i)},
+			Payload: []byte{0xff, 0xff, 0xff, 0xfd, 0xb4, 0x9f, 0x94, 0x1},
+		}
+		b, err := pkt.Marshal()
+		require.NoError(t, err)
+		if i == 1 {
+			time.Sleep(1 * time.Second)
+		}
+		_, err = buff.Write(b)
+		require.NoError(t, err)
+	}
+	wg.Wait()
+
+	wg.Add(1)
+	buff.SetAudioLossProxying(false)
+	buff.OnRtcpFeedback(func(fb []rtcp.Packet) {
+		for _, pkt := range fb {
+			switch p := pkt.(type) {
+			case *rtcp.ReceiverReport:
+				for _, v := range p.Reports {
+					require.EqualValues(t, 0, v.FractionLost)
 				}
 				wg.Done()
 			}

@@ -61,7 +61,6 @@ type Config struct {
 	Port           uint32                   `yaml:"port,omitempty"`
 	BindAddresses  []string                 `yaml:"bind_addresses,omitempty"`
 	PrometheusPort uint32                   `yaml:"prometheus_port,omitempty"`
-	Environment    string                   `yaml:"environment,omitempty"`
 	RTC            RTCConfig                `yaml:"rtc,omitempty"`
 	Redis          redisLiveKit.RedisConfig `yaml:"redis,omitempty"`
 	Audio          AudioConfig              `yaml:"audio,omitempty"`
@@ -192,6 +191,8 @@ type AudioConfig struct {
 	SmoothIntervals uint32 `yaml:"smooth_intervals,omitempty"`
 	// enable red encoding downtrack for opus only audio up track
 	ActiveREDEncoding bool `yaml:"active_red_encoding,omitempty"`
+	// enable proxying weakest subscriber loss to publisher in RTCP Receiver Report
+	EnableLossProxying bool `yaml:"enable_loss_proxying,omitempty"`
 }
 
 type StreamTrackerPacketConfig struct {
@@ -572,10 +573,6 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 		}
 		conf.Logging.ComponentLevels["transport.pion"] = conf.Logging.PionLevel
 		conf.Logging.ComponentLevels["pion"] = conf.Logging.PionLevel
-	}
-
-	if conf.Development {
-		conf.Environment = "dev"
 	}
 
 	return &conf, nil
