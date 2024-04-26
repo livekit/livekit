@@ -118,6 +118,8 @@ func (s *StatsWorker) Flush(now time.Time) bool {
 }
 
 func (s *StatsWorker) Close() {
+	s.Flush(time.Now())
+
 	s.lock.Lock()
 	s.closedAt = time.Now()
 	s.lock.Unlock()
