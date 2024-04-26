@@ -156,7 +156,7 @@ func (s *IngressService) CreateIngressWithUrl(ctx context.Context, urlStr string
 		InputType:           req.InputType,
 		Audio:               req.Audio,
 		Video:               req.Video,
-		BypassTranscoding:   req.BypassTranscoding,
+		EnableTranscoding:   req.EnableTranscoding,
 		RoomName:            req.RoomName,
 		ParticipantIdentity: req.ParticipantIdentity,
 		ParticipantName:     req.ParticipantName,
@@ -179,9 +179,7 @@ func (s *IngressService) CreateIngressWithUrl(ctx context.Context, urlStr string
 		return nil, ingress.ErrInvalidIngressType
 	}
 
-	if err := ingress.ValidateForSerialization(info); err != nil {
-		return nil, err
-	}
+	updateEnableTranscoding(info)
 
 	if req.InputType == livekit.IngressInput_URL_INPUT {
 		retInfo, err := s.launcher.LaunchPullIngress(ctx, info)
@@ -221,6 +219,24 @@ func (s *IngressService) LaunchPullIngress(ctx context.Context, info *livekit.In
 	return s.psrpcClient.StartIngress(ctx, req)
 }
 
+func updateEnableTranscoding(info *livekit.IngressInfo) {
+	// Set BypassTranscoding as well for backward compatiblity
+	if info.EnableTranscoding != nil {
+		info.BypassTranscoding = !*info.EnableTranscoding
+		return
+	}
+
+	switch info.InputType {
+	case livekit.IngressInput_WHIP_INPUT:
+		f := false
+		info.EnableTranscoding = &f
+		info.BypassTranscoding = true
+	default:
+		t := true
+		info.EnableTranscoding = &t
+	}
+}
+
 func updateInfoUsingRequest(req *livekit.UpdateIngressRequest, info *livekit.IngressInfo) error {
 	if req.Name != "" {
 		info.Name = req.Name
@@ -234,9 +250,10 @@ func updateInfoUsingRequest(req *livekit.UpdateIngressRequest, info *livekit.Ing
 	if req.ParticipantName != "" {
 		info.ParticipantName = req.ParticipantName
 	}
-	if req.BypassTranscoding != nil {
-		info.BypassTranscoding = *req.BypassTranscoding
+	if req.EnableTranscoding != nil {
+		info.EnableTranscoding = req.EnableTranscoding
 	}
+
 	if req.ParticipantMetadata != "" {
 		info.ParticipantMetadata = req.ParticipantMetadata
 	}
@@ -250,6 +267,8 @@ func updateInfoUsingRequest(req *livekit.UpdateIngressRequest, info *livekit.Ing
 	if err := ingress.ValidateForSerialization(info); err != nil {
 		return err
 	}
+
+	updateEnableTranscoding(info)
 
 	return nil
 }
