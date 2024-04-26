@@ -279,7 +279,6 @@ type Participant interface {
 		timedVersion utils.TimedVersion,
 		resolverBySid func(participantID livekit.ParticipantID) LocalParticipant,
 	) error
-	UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error
 	UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack) error
 	UpdateVideoTrack(update *livekit.UpdateLocalVideoTrack) error
 
@@ -436,7 +435,6 @@ type Room interface {
 	UpdateSubscriptionPermission(participant LocalParticipant, permissions *livekit.SubscriptionPermission) error
 	SyncState(participant LocalParticipant, state *livekit.SyncState) error
 	SimulateScenario(participant LocalParticipant, scenario *livekit.SimulateScenario) error
-	UpdateVideoLayers(participant Participant, updateVideoLayers *livekit.UpdateVideoLayers) error
 	ResolveMediaTrackForSubscriber(subIdentity livekit.ParticipantIdentity, trackID livekit.TrackID) MediaResolverResult
 	GetLocalParticipants() []LocalParticipant
 	UpdateParticipantMetadata(participant LocalParticipant, name string, metadata string)
@@ -464,7 +462,6 @@ type MediaTrack interface {
 	IsMuted() bool
 	SetMuted(muted bool)
 
-	UpdateVideoLayers(layers []*livekit.VideoLayer)
 	IsSimulcast() bool
 
 	GetAudioLevel() (level float64, active bool)

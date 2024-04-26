@@ -239,21 +239,6 @@ func (u *UpTrackManager) HasPermission(trackID livekit.TrackID, subIdentity live
 	return u.hasPermissionLocked(trackID, subIdentity)
 }
 
-func (u *UpTrackManager) UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error {
-	track := u.GetPublishedTrack(livekit.TrackID(updateVideoLayers.TrackSid))
-	if track == nil {
-		u.params.Logger.Warnw("could not find track", nil, "trackID", livekit.TrackID(updateVideoLayers.TrackSid))
-		return errors.New("could not find published track")
-	}
-
-	track.UpdateVideoLayers(updateVideoLayers.Layers)
-	if u.onTrackUpdated != nil {
-		u.onTrackUpdated(track)
-	}
-
-	return nil
-}
-
 func (u *UpTrackManager) UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack) error {
 	track := u.GetPublishedTrack(livekit.TrackID(update.TrackSid))
 	if track == nil {

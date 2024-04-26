@@ -702,35 +702,6 @@ func (t *MediaTrackReceiver) UpdateVideoTrack(update *livekit.UpdateLocalVideoTr
 	t.updateTrackInfoOfReceivers()
 }
 
-func (t *MediaTrackReceiver) UpdateVideoLayers(layers []*livekit.VideoLayer) {
-	t.lock.Lock()
-	// set video layer ssrc info
-	for i, ci := range t.trackInfo.Codecs {
-		originLayers := ci.Layers
-		ci.Layers = []*livekit.VideoLayer{}
-		for layerIdx, layer := range layers {
-			ci.Layers = append(ci.Layers, proto.Clone(layer).(*livekit.VideoLayer))
-			for _, l := range originLayers {
-				if l.Quality == ci.Layers[layerIdx].Quality {
-					if l.Ssrc != 0 {
-						ci.Layers[layerIdx].Ssrc = l.Ssrc
-					}
-					break
-				}
-			}
-		}
-
-		// for client don't use simulcast codecs (old client version or single codec)
-		if i == 0 {
-			t.trackInfo.Layers = ci.Layers
-		}
-	}
-	t.lock.Unlock()
-
-	t.updateTrackInfoOfReceivers()
-	t.MediaTrackSubscriptions.UpdateVideoLayers()
-}
-
 func (t *MediaTrackReceiver) TrackInfo() *livekit.TrackInfo {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
