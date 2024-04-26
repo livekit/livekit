@@ -33,6 +33,8 @@ const (
 	cSenderReportInitialWait = time.Second
 )
 
+// -------------------------------------------------------------------
+
 type snInfoFlag byte
 
 const (
@@ -625,7 +627,7 @@ func (r *RTPStatsSender) GetExpectedRTPTimestamp(at time.Time) (expectedTSExt ui
 	defer r.lock.RUnlock()
 
 	if !r.initialized {
-		err = errors.New("uninitilaized")
+		err = errors.New("uninitialized")
 		return
 	}
 
