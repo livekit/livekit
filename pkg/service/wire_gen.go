@@ -8,10 +8,10 @@ package service
 
 import (
 	"fmt"
+	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
@@ -60,7 +60,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	agentClient, err := rtc.NewAgentClient(messageBus)
+	client, err := agent.NewAgentClient(messageBus)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +95,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	roomService, err := NewRoomService(roomConfig, apiConfig, psrpcConfig, router, roomAllocator, objectStore, agentClient, rtcEgressLauncher, topicFormatter, roomClient, participantClient)
+	roomService, err := NewRoomService(roomConfig, apiConfig, psrpcConfig, router, roomAllocator, objectStore, client, rtcEgressLauncher, topicFormatter, roomClient, participantClient)
 	if err != nil {
 		return nil, err
 	}
@@ -112,15 +112,15 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	sipService := NewSIPService(sipConfig, nodeID, messageBus, sipClient, sipStore, roomService, telemetryService)
-	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode, agentClient, telemetryService)
-	agentService, err := NewAgentService(messageBus)
+	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode, client, telemetryService)
+	agentService, err := NewAgentService(conf, currentNode, messageBus, keyProvider)
 	if err != nil {
 		return nil, err
 	}
 	clientConfigurationManager := createClientConfiguration()
 	timedVersionGenerator := utils.NewDefaultTimedVersionGenerator()
 	turnAuthHandler := NewTURNAuthHandler(keyProvider)
-	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager, agentClient, rtcEgressLauncher, timedVersionGenerator, turnAuthHandler, messageBus)
+	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager, client, rtcEgressLauncher, timedVersionGenerator, turnAuthHandler, messageBus)
 	if err != nil {
 		return nil, err
 	}

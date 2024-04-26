@@ -56,6 +56,9 @@ const (
 	cPropagationDelayDeltaHighResetNumReports         = 2
 	cPropagationDelayDeltaHighResetWait               = 10 * time.Second
 	cPropagationDelayDeltaLongTermAdaptationThreshold = 50 * time.Millisecond
+
+	// number of seconds the current report RTP timestamp can be off from expected RTP timestamp
+	cReportSlack = float64(60.0)
 )
 
 type RTPFlowState struct {
@@ -295,14 +298,38 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 
 	tsCycles := uint64(0)
 	if r.srNewest != nil {
-		tsCycles = r.srNewest.RTPTimestampExt & 0xFFFF_FFFF_0000_0000
-		if (srData.RTPTimestamp-r.srNewest.RTPTimestamp) < (1<<31) && srData.RTPTimestamp < r.srNewest.RTPTimestamp {
-			tsCycles += (1 << 32)
-		}
+		// use time since last sender report to ensure long gaps where the time stamp might
+		// jump more than half the range
+		timeSinceLastReport := srData.NTPTimestamp.Time().Sub(r.srNewest.NTPTimestamp.Time())
+		expectedRTPTimestampExt := r.srNewest.RTPTimestampExt + uint64(timeSinceLastReport.Nanoseconds()*int64(r.params.ClockRate)/1e9)
+		lbound := expectedRTPTimestampExt - uint64(cReportSlack*float64(r.params.ClockRate))
+		ubound := expectedRTPTimestampExt + uint64(cReportSlack*float64(r.params.ClockRate))
+		isInRange := (srData.RTPTimestamp-uint32(lbound) < (1 << 31)) && (uint32(ubound)-srData.RTPTimestamp < (1 << 31))
+		if isInRange {
+			lbTSCycles := lbound & 0xFFFF_FFFF_0000_0000
+			ubTSCycles := ubound & 0xFFFF_FFFF_0000_0000
+			if lbTSCycles == ubTSCycles {
+				tsCycles = lbTSCycles
+			} else {
+				if srData.RTPTimestamp < (1 << 31) {
+					// rolled over
+					tsCycles = ubTSCycles
+				} else {
+					tsCycles = lbTSCycles
+				}
+			}
+		} else {
+			// ideally this method should not be required, but there are clients
+			// negotiating one clock rate, but actually send media at a different rate.
+			tsCycles = r.srNewest.RTPTimestampExt & 0xFFFF_FFFF_0000_0000
+			if (srData.RTPTimestamp-r.srNewest.RTPTimestamp) < (1<<31) && srData.RTPTimestamp < r.srNewest.RTPTimestamp {
+				tsCycles += (1 << 32)
+			}
 
-		if tsCycles >= (1 << 32) {
-			if (srData.RTPTimestamp-r.srNewest.RTPTimestamp) >= (1<<31) && srData.RTPTimestamp > r.srNewest.RTPTimestamp {
-				tsCycles -= (1 << 32)
+			if tsCycles >= (1 << 32) {
+				if (srData.RTPTimestamp-r.srNewest.RTPTimestamp) >= (1<<31) && srData.RTPTimestamp > r.srNewest.RTPTimestamp {
+					tsCycles -= (1 << 32)
+				}
 			}
 		}
 	}
@@ -399,7 +426,7 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 			if r.longTermDeltaPropagationDelay != 0 &&
 				deltaPropagationDelay > 0 &&
 				deltaPropagationDelay > r.longTermDeltaPropagationDelay*time.Duration(cPropagationDelayDeltaThresholdMaxFactor) {
-				r.logger.Debugw("sharp increase in propagation delay", getPropagationFields()...) // TODO-REMOVE
+				r.logger.Debugw("sharp increase in propagation delay", getPropagationFields()...)
 				r.propagationDelayDeltaHighCount++
 				if r.propagationDelayDeltaHighStartTime.IsZero() {
 					r.propagationDelayDeltaHighStartTime = time.Now()
@@ -424,12 +451,6 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 			if propagationDelay > r.propagationDelay {
 				factor = cPropagationDelayRiseFactor
 			}
-			adjustedPropagationDelay := r.propagationDelay + time.Duration(factor*float64(propagationDelay-r.propagationDelay)) // TODO-REMOVE
-			fields := append(
-				getPropagationFields(),
-				"adjustedPropagationDelay", adjustedPropagationDelay.String(),
-			) // TODO-REMOVE
-			r.logger.Debugw("adapting propagation delay", fields...) // TODO-REMOVE
 			r.propagationDelay += time.Duration(factor * float64(propagationDelay-r.propagationDelay))
 		}
 
@@ -462,6 +483,17 @@ func (r *RTPStatsReceiver) GetRtcpSenderReportData() *RTCPSenderReportData {
 
 	srNewestCopy := *r.srNewest
 	return &srNewestCopy
+}
+
+func (r *RTPStatsReceiver) LastSenderReportTime() time.Time {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	if r.srNewest != nil {
+		return r.srNewest.At
+	}
+
+	return time.Time{}
 }
 
 func (r *RTPStatsReceiver) GetRtcpReceptionReport(ssrc uint32, proxyFracLost uint8, snapshotID uint32) *rtcp.ReceptionReport {

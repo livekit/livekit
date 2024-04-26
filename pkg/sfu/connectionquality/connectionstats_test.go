@@ -29,7 +29,8 @@ import (
 // -----------------------------------------------
 
 type testReceiverProvider struct {
-	streams map[uint32]*buffer.StreamStatsWithLayers
+	streams              map[uint32]*buffer.StreamStatsWithLayers
+	lastSenderReportTime time.Time
 }
 
 func newTestReceiverProvider() *testReceiverProvider {
@@ -42,6 +43,14 @@ func (trp *testReceiverProvider) setStreams(streams map[uint32]*buffer.StreamSta
 
 func (trp *testReceiverProvider) GetDeltaStats() map[uint32]*buffer.StreamStatsWithLayers {
 	return trp.streams
+}
+
+func (trp *testReceiverProvider) setLastSenderReportTime(at time.Time) {
+	trp.lastSenderReportTime = at
+}
+
+func (trp *testReceiverProvider) GetLastSenderReportTime() time.Time {
+	return trp.lastSenderReportTime
 }
 
 // -----------------------------------------------
@@ -232,7 +241,7 @@ func TestConnectionQuality(t *testing.T) {
 		require.Greater(t, float32(4.6), mos)
 		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, quality)
 
-		// unmute at time so that next window does not satisfy the unmute time threshold.
+		// unmute at specific time to ensure next window does not satisfy the unmute time threshold.
 		// that means even if the next update has 0 packets, it should hold state and stay at EXCELLENT quality
 		cs.UpdateMuteAt(false, now.Add(3*time.Second))
 
@@ -250,7 +259,8 @@ func TestConnectionQuality(t *testing.T) {
 		require.Greater(t, float32(4.6), mos)
 		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, quality)
 
-		// next update with no packets should knock quality down to LOST
+		// next update with no packets,
+		// but last RTCP is not set, should knock quality down to POOR
 		now = now.Add(duration)
 		trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
 			1: {
@@ -264,13 +274,46 @@ func TestConnectionQuality(t *testing.T) {
 		cs.updateScoreAt(now.Add(duration))
 		mos, quality = cs.GetScoreAndQuality()
 		require.Greater(t, float32(2.1), mos)
+		require.Equal(t, livekit.ConnectionQuality_POOR, quality)
+
+		// another dry spell, but last RTCP is not stale, should keep quality at POOR
+		now = now.Add(duration)
+		trp.setLastSenderReportTime(now.Add(time.Second))
+		trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
+			1: {
+				RTPStats: &buffer.RTPDeltaInfo{
+					StartTime: now,
+					EndTime:   now.Add(duration),
+					Packets:   0,
+				},
+			},
+		})
+		cs.updateScoreAt(now.Add(duration))
+		mos, quality = cs.GetScoreAndQuality()
+		require.Greater(t, float32(2.1), mos)
+		require.Equal(t, livekit.ConnectionQuality_POOR, quality)
+
+		// yet another dry spell, but last RTCP is stale, should knock down quality at LOST
+		now = now.Add(duration)
+		trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
+			1: {
+				RTPStats: &buffer.RTPDeltaInfo{
+					StartTime: now,
+					EndTime:   now.Add(duration),
+					Packets:   0,
+				},
+			},
+		})
+		cs.updateScoreAt(now.Add(duration))
+		mos, quality = cs.GetScoreAndQuality()
+		require.Greater(t, float32(1.3), mos)
 		require.Equal(t, livekit.ConnectionQuality_LOST, quality)
 
 		// mute when LOST should not bump up score/quality
 		now = now.Add(duration)
 		cs.UpdateMuteAt(true, now.Add(1*time.Second))
 		mos, quality = cs.GetScoreAndQuality()
-		require.Greater(t, float32(2.1), mos)
+		require.Greater(t, float32(1.3), mos)
 		require.Equal(t, livekit.ConnectionQuality_LOST, quality)
 
 		// unmute and send packets to bring quality back up
@@ -563,7 +606,7 @@ func TestConnectionQuality(t *testing.T) {
 					},
 				},
 			},
-			// "audio/red" - no fec - 0 <= loss < 10%: EXCELLENT, 10% <= loss < 30%: GOOD, >= 30%: POOR
+			// "audio/red" - no fec - 0 <= loss < 5%: EXCELLENT, 5% <= loss < 15%: GOOD, >= 15%: POOR
 			{
 				name:            "audio/red - no fec",
 				mimeType:        "audio/red",
@@ -571,23 +614,23 @@ func TestConnectionQuality(t *testing.T) {
 				packetsExpected: 200,
 				expectedQualities: []expectedQuality{
 					{
-						packetLossPercentage: 8.0,
+						packetLossPercentage: 4.0,
 						expectedMOS:          4.6,
 						expectedQuality:      livekit.ConnectionQuality_EXCELLENT,
 					},
 					{
-						packetLossPercentage: 12.0,
+						packetLossPercentage: 6.0,
 						expectedMOS:          4.1,
 						expectedQuality:      livekit.ConnectionQuality_GOOD,
 					},
 					{
-						packetLossPercentage: 39.0,
+						packetLossPercentage: 19.5,
 						expectedMOS:          2.1,
 						expectedQuality:      livekit.ConnectionQuality_POOR,
 					},
 				},
 			},
-			// "audio/red" - fec - 0 <= loss < 15%: EXCELLENT, 15% <= loss < 45%: GOOD, >= 45%: POOR
+			// "audio/red" - fec - 0 <= loss < 7.5%: EXCELLENT, 7.5% <= loss < 22.5%: GOOD, >= 22.5%: POOR
 			{
 				name:            "audio/red - fec",
 				mimeType:        "audio/red",
@@ -595,17 +638,17 @@ func TestConnectionQuality(t *testing.T) {
 				packetsExpected: 200,
 				expectedQualities: []expectedQuality{
 					{
-						packetLossPercentage: 12.0,
+						packetLossPercentage: 6.0,
 						expectedMOS:          4.6,
 						expectedQuality:      livekit.ConnectionQuality_EXCELLENT,
 					},
 					{
-						packetLossPercentage: 20.0,
+						packetLossPercentage: 10.0,
 						expectedMOS:          4.1,
 						expectedQuality:      livekit.ConnectionQuality_GOOD,
 					},
 					{
-						packetLossPercentage: 60.0,
+						packetLossPercentage: 30.0,
 						expectedMOS:          2.1,
 						expectedQuality:      livekit.ConnectionQuality_POOR,
 					},

@@ -75,6 +75,11 @@ type downTrackState struct {
 	downTrack   sfu.DownTrackState
 }
 
+type postRtcpOp struct {
+	*ParticipantImpl
+	pkts []rtcp.Packet
+}
+
 // ---------------------------------------------------------------
 
 type participantUpdateInfo struct {
@@ -147,7 +152,8 @@ type ParticipantImpl struct {
 	isClosed    atomic.Bool
 	closeReason atomic.Value // types.ParticipantCloseReason
 
-	state atomic.Value // livekit.ParticipantInfo_State
+	state        atomic.Value // livekit.ParticipantInfo_State
+	disconnected chan struct{}
 
 	resSinkMu sync.Mutex
 	resSink   routing.MessageSink
@@ -163,7 +169,7 @@ type ParticipantImpl struct {
 	disconnectTimer *time.Timer
 	migrationTimer  *time.Timer
 
-	pubRTCPQueue *sutils.OpsQueue
+	pubRTCPQueue *sutils.TypedOpsQueue[postRtcpOp]
 
 	// hold reference for MediaTrack
 	twcc *twcc.Responder
@@ -241,8 +247,9 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		return nil, ErrMissingGrants
 	}
 	p := &ParticipantImpl{
-		params: params,
-		pubRTCPQueue: sutils.NewOpsQueue(sutils.OpsQueueParams{
+		params:       params,
+		disconnected: make(chan struct{}),
+		pubRTCPQueue: sutils.NewTypedOpsQueue[postRtcpOp](sutils.OpsQueueParams{
 			Name:    "pub-rtcp",
 			MinSize: 64,
 			Logger:  params.Logger,
@@ -325,6 +332,32 @@ func (p *ParticipantImpl) State() livekit.ParticipantInfo_State {
 	return p.state.Load().(livekit.ParticipantInfo_State)
 }
 
+func (p *ParticipantImpl) Kind() livekit.ParticipantInfo_Kind {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	return p.grants.GetParticipantKind()
+}
+
+func (p *ParticipantImpl) IsRecorder() bool {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	return p.grants.GetParticipantKind() == livekit.ParticipantInfo_EGRESS || p.grants.Video.Recorder
+}
+
+func (p *ParticipantImpl) IsDependent() bool {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	switch p.grants.GetParticipantKind() {
+	case livekit.ParticipantInfo_AGENT, livekit.ParticipantInfo_EGRESS:
+		return true
+	default:
+		return p.grants.Video.Agent || p.grants.Video.Recorder
+	}
+}
+
 func (p *ParticipantImpl) ProtocolVersion() types.ProtocolVersion {
 	return p.params.ProtocolVersion
 }
@@ -344,6 +377,10 @@ func (p *ParticipantImpl) IsReady() bool {
 
 func (p *ParticipantImpl) IsDisconnected() bool {
 	return p.State() == livekit.ParticipantInfo_DISCONNECTED
+}
+
+func (p *ParticipantImpl) Disconnected() <-chan struct{} {
+	return p.disconnected
 }
 
 func (p *ParticipantImpl) IsIdle() bool {
@@ -815,6 +852,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	p.UpTrackManager.Close(isExpectedToResume)
 
 	p.updateState(livekit.ParticipantInfo_DISCONNECTED)
+	close(p.disconnected)
 
 	// ensure this is synchronized
 	p.CloseSignalConnection(types.SignallingCloseReasonParticipantClose)
@@ -949,7 +987,6 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 		p.TransportManager.ProcessPendingPublisherOffer()
 
 	case types.MigrateStateComplete:
-
 		p.TransportManager.ProcessPendingPublisherDataChannels()
 	}
 
@@ -1088,20 +1125,6 @@ func (p *ParticipantImpl) CanPublishData() bool {
 
 func (p *ParticipantImpl) Hidden() bool {
 	return p.hidden.Load()
-}
-
-func (p *ParticipantImpl) IsRecorder() bool {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-
-	return p.grants.Video.Recorder
-}
-
-func (p *ParticipantImpl) IsAgent() bool {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-
-	return p.grants.Video.Agent
 }
 
 func (p *ParticipantImpl) VerifySubscribeParticipantInfo(pID livekit.ParticipantID, version uint32) {
@@ -1492,44 +1515,47 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		dp.ParticipantIdentity = string(p.params.Identity)
 	}
 
+	shouldForward := false
 	// only forward on user payloads
 	switch payload := dp.Value.(type) {
 	case *livekit.DataPacket_User:
+		u := payload.User
+		if p.Hidden() {
+			u.ParticipantSid = ""
+			u.ParticipantIdentity = ""
+		} else {
+			u.ParticipantSid = string(p.params.SID)
+			u.ParticipantIdentity = string(p.params.Identity)
+		}
+		if dp.ParticipantIdentity != "" {
+			u.ParticipantIdentity = dp.ParticipantIdentity
+		} else {
+			dp.ParticipantIdentity = u.ParticipantIdentity
+		}
+		if len(dp.DestinationIdentities) != 0 {
+			u.DestinationIdentities = dp.DestinationIdentities
+		} else {
+			dp.DestinationIdentities = u.DestinationIdentities
+		}
+		shouldForward = true
+	case *livekit.DataPacket_SipDtmf:
+		if p.Kind() == livekit.ParticipantInfo_SIP {
+			shouldForward = true
+		}
+	case *livekit.DataPacket_Transcription:
+		if p.Kind() == livekit.ParticipantInfo_AGENT {
+			shouldForward = true
+		}
+	default:
+		p.pubLogger.Warnw("received unsupported data packet", nil, "payload", payload)
+	}
+	if shouldForward {
 		p.lock.RLock()
 		onDataPacket := p.onDataPacket
 		p.lock.RUnlock()
 		if onDataPacket != nil {
-			u := payload.User
-			if p.Hidden() {
-				u.ParticipantSid = ""
-				u.ParticipantIdentity = ""
-			} else {
-				u.ParticipantSid = string(p.params.SID)
-				u.ParticipantIdentity = string(p.params.Identity)
-			}
-			if dp.ParticipantIdentity != "" {
-				u.ParticipantIdentity = dp.ParticipantIdentity
-			} else {
-				dp.ParticipantIdentity = u.ParticipantIdentity
-			}
-			if len(dp.DestinationIdentities) != 0 {
-				u.DestinationIdentities = dp.DestinationIdentities
-			} else {
-				dp.DestinationIdentities = u.DestinationIdentities
-			}
 			onDataPacket(p, kind, dp)
 		}
-	case *livekit.DataPacket_SipDtmf:
-		if p.grants.GetParticipantKind() == livekit.ParticipantInfo_SIP {
-			p.lock.RLock()
-			onDataPacket := p.onDataPacket
-			p.lock.RUnlock()
-			if onDataPacket != nil {
-				onDataPacket(p, kind, dp)
-			}
-		}
-	default:
-		p.pubLogger.Warnw("received unsupported data packet", nil, "payload", payload)
 	}
 
 	p.setIsPublisher(true)
@@ -1791,6 +1817,12 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		Stereo:     req.Stereo,
 		Encryption: req.Encryption,
 		Stream:     req.Stream,
+	}
+	if req.Stereo {
+		ti.AudioFeatures = append(ti.AudioFeatures, livekit.AudioTrackFeature_TF_STEREO)
+	}
+	if req.DisableDtx {
+		ti.AudioFeatures = append(ti.AudioFeatures, livekit.AudioTrackFeature_TF_NO_DTX)
 	}
 	if ti.Stream == "" {
 		ti.Stream = StreamFromTrackSource(ti.Source)
@@ -2360,11 +2392,11 @@ func (p *ParticipantImpl) postRtcp(pkts []rtcp.Packet) {
 		return
 	}
 
-	p.pubRTCPQueue.Enqueue(func() {
-		if err := p.TransportManager.WritePublisherRTCP(pkts); err != nil && !IsEOF(err) {
-			p.pubLogger.Errorw("could not write RTCP to participant", err)
+	p.pubRTCPQueue.Enqueue(func(op postRtcpOp) {
+		if err := op.TransportManager.WritePublisherRTCP(op.pkts); err != nil && !IsEOF(err) {
+			op.pubLogger.Errorw("could not write RTCP to participant", err)
 		}
-	})
+	}, postRtcpOp{p, pkts})
 }
 
 func (p *ParticipantImpl) setDowntracksConnected() {

@@ -20,7 +20,7 @@ import (
 	"sync"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	dede "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
+	dede "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/protocol/logger"
 )
 
