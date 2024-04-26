@@ -25,7 +25,6 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/utils"
 )
 
 type agentClient struct {
@@ -38,11 +37,13 @@ type agentClient struct {
 	participantAvailability atomic.Int32
 	participantJobs         atomic.Int32
 
+	requestedJobs chan *livekit.Job
+
 	done chan struct{}
 }
 
-func newAgentClient(token string) (*agentClient, error) {
-	host := fmt.Sprintf("ws://localhost:%d", defaultServerPort)
+func newAgentClient(token string, port uint32) (*agentClient, error) {
+	host := fmt.Sprintf("ws://localhost:%d", port)
 	u, err := url.Parse(host + "/agent")
 	if err != nil {
 		return nil, err
@@ -57,25 +58,24 @@ func newAgentClient(token string) (*agentClient, error) {
 	}
 
 	return &agentClient{
-		conn: conn,
-		done: make(chan struct{}),
+		conn:          conn,
+		requestedJobs: make(chan *livekit.Job, 100),
+		done:          make(chan struct{}),
 	}, nil
 }
 
-func (c *agentClient) Run(jobType livekit.JobType) (err error) {
+func (c *agentClient) Run(jobType livekit.JobType, namespace string) (err error) {
 	go c.read()
-
-	workerID := utils.NewGuid("W_")
 
 	switch jobType {
 	case livekit.JobType_JT_ROOM:
 		err = c.write(&livekit.WorkerMessage{
 			Message: &livekit.WorkerMessage_Register{
 				Register: &livekit.RegisterWorkerRequest{
-					Type:     livekit.JobType_JT_ROOM,
-					WorkerId: workerID,
-					Version:  "version",
-					Name:     "name",
+					Type:      livekit.JobType_JT_ROOM,
+					Version:   "version",
+					Namespace: &namespace,
+					Name:      "name",
 				},
 			},
 		})
@@ -84,10 +84,10 @@ func (c *agentClient) Run(jobType livekit.JobType) (err error) {
 		err = c.write(&livekit.WorkerMessage{
 			Message: &livekit.WorkerMessage_Register{
 				Register: &livekit.RegisterWorkerRequest{
-					Type:     livekit.JobType_JT_PUBLISHER,
-					WorkerId: workerID,
-					Version:  "version",
-					Name:     "name",
+					Type:      livekit.JobType_JT_PUBLISHER,
+					Version:   "version",
+					Namespace: &namespace,
+					Name:      "name",
 				},
 			},
 		})
@@ -139,6 +139,8 @@ func (c *agentClient) handleAvailability(req *livekit.AvailabilityRequest) {
 		c.participantAvailability.Inc()
 	}
 
+	c.requestedJobs <- req.Job
+
 	c.write(&livekit.WorkerMessage{
 		Message: &livekit.WorkerMessage_Availability{
 			Availability: &livekit.AvailabilityResponse{
@@ -157,16 +159,23 @@ func (c *agentClient) write(msg *livekit.WorkerMessage) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	b, err := proto.Marshal(msg)
-	if err != nil {
-		return err
-	}
+	select {
+	case <-c.done:
+		return nil
+	default:
+		b, err := proto.Marshal(msg)
+		if err != nil {
+			return err
+		}
 
-	return c.conn.WriteMessage(websocket.BinaryMessage, b)
+		return c.conn.WriteMessage(websocket.BinaryMessage, b)
+	}
 }
 
 func (c *agentClient) close() {
+	c.mu.Lock()
 	close(c.done)
 	_ = c.conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 	_ = c.conn.Close()
+	c.mu.Unlock()
 }

@@ -15,14 +15,8 @@
 package streamallocator
 
 import (
-	"fmt"
-	"sort"
-	"time"
-
-	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/pion/rtcp"
 
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -41,6 +35,7 @@ type Track struct {
 	totalPackets       uint32
 	totalRepeatedNacks uint32
 
+	/* STREAM-ALLOCATOR-DATA
 	nackInfos map[uint16]sfu.NackInfo
 	// STREAM-ALLOCATOR-EXPERIMENTAL-TODO: remove after experimental
 	nackHistory []string
@@ -53,6 +48,7 @@ type Track struct {
 	maxRTT                          uint32
 	// STREAM-ALLOCATOR-EXPERIMENTAL-TODO: remove after experimental
 	receiverReportHistory []string
+	*/
 
 	isDirty bool
 
@@ -67,15 +63,17 @@ func NewTrack(
 	logger logger.Logger,
 ) *Track {
 	t := &Track{
-		downTrack:             downTrack,
-		source:                source,
-		isSimulcast:           isSimulcast,
-		publisherID:           publisherID,
-		logger:                logger,
+		downTrack:   downTrack,
+		source:      source,
+		isSimulcast: isSimulcast,
+		publisherID: publisherID,
+		logger:      logger,
+		/* STREAM-ALLOCATOR-DATA
 		nackInfos:             make(map[uint16]sfu.NackInfo),
 		nackHistory:           make([]string, 0, 10),
 		receiverReportHistory: make([]string, 0, 10),
-		streamState:           StreamStateInactive,
+		*/
+		streamState: StreamStateInactive,
 	}
 	t.SetPriority(0)
 	t.SetMaxLayer(downTrack.MaxLayer())
@@ -220,6 +218,7 @@ func (t *Track) GetNackDelta() (uint32, uint32) {
 	return packetDelta, nackDelta
 }
 
+/* STREAM-ALLOCATOR-DATA
 func (t *Track) UpdateNack(nackInfos []sfu.NackInfo) {
 	for _, ni := range nackInfos {
 		t.nackInfos[ni.SequenceNumber] = ni
@@ -363,6 +362,7 @@ func (t *Track) updateReceiverReportHistory() {
 		fmt.Sprintf("t: %+v, l: %d, p: %d, rtt: %d", time.Now().Format(time.UnixDate), dl, dp, maxRTT),
 	)
 }
+*/
 
 // ------------------------------------------------
 

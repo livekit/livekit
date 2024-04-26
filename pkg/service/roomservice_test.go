@@ -38,7 +38,7 @@ func TestDeleteRoom(t *testing.T) {
 		grant := &auth.ClaimGrants{
 			Video: &auth.VideoGrant{},
 		}
-		ctx := service.WithGrants(context.Background(), grant)
+		ctx := service.WithGrants(context.Background(), grant, "")
 		_, err := svc.DeleteRoom(ctx, &livekit.DeleteRoomRequest{
 			Room: "testroom",
 		})
@@ -52,7 +52,7 @@ func TestMetaDataLimits(t *testing.T) {
 		grant := &auth.ClaimGrants{
 			Video: &auth.VideoGrant{},
 		}
-		ctx := service.WithGrants(context.Background(), grant)
+		ctx := service.WithGrants(context.Background(), grant, "")
 		_, err := svc.UpdateParticipant(ctx, &livekit.UpdateParticipantRequest{
 			Room:     "testroom",
 			Identity: "123",
@@ -82,7 +82,7 @@ func TestMetaDataLimits(t *testing.T) {
 			grant := &auth.ClaimGrants{
 				Video: &auth.VideoGrant{},
 			}
-			ctx := service.WithGrants(context.Background(), grant)
+			ctx := service.WithGrants(context.Background(), grant, "")
 			_, err := svc.UpdateParticipant(ctx, &livekit.UpdateParticipantRequest{
 				Room:     "testroom",
 				Identity: "123",

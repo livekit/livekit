@@ -35,7 +35,7 @@ import (
 )
 
 func init() {
-	prometheus.Init("node", livekit.NodeType_CONTROLLER, "test")
+	prometheus.Init("node", livekit.NodeType_CONTROLLER)
 }
 
 func TestSignal(t *testing.T) {

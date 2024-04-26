@@ -96,7 +96,6 @@ func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
 		})
 		t.MediaLossProxy.OnMediaLossUpdate(func(fractionalLoss uint8) {
 			if t.buffer != nil {
-				// ok to access buffer since receivers are added before subscribers
 				t.buffer.SetLastFractionLostReport(fractionalLoss)
 			}
 		})

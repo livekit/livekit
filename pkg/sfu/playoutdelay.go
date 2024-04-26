@@ -17,9 +17,10 @@ package sfu
 import (
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/livekit-server/pkg/sfu/rtpextension"
+	pd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/playoutdelay"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -30,11 +31,11 @@ const (
 	PlayoutDelaySending
 	PlayoutDelayAcked
 
-	jitterLowMultiToDelay  = 10
-	jitterHighMultiToDelay = 15
-	jitterHighThreshold    = 15
-
+	jitterMultiToDelay      = 10
 	targetDelayLogThreshold = 500
+
+	// limit max delay change to make it smoother for a/v sync
+	maxDelayChangePerSec = 80
 )
 
 func (s PlayoutDelayState) String() string {
@@ -56,17 +57,20 @@ type PlayoutDelayController struct {
 	currentDelay       uint32
 	extBytes           atomic.Value //[]byte
 	sendingAtSeq       uint16
+	sendingAtTime      time.Time
 	logger             logger.Logger
 	rtpStats           *buffer.RTPStatsSender
 	snapshotID         uint32
+
+	highDelayCount atomic.Uint32
 }
 
 func NewPlayoutDelayController(minDelay, maxDelay uint32, logger logger.Logger, rtpStats *buffer.RTPStatsSender) (*PlayoutDelayController, error) {
 	if maxDelay == 0 && minDelay > 0 {
-		maxDelay = rtpextension.MaxPlayoutDelayDefault
+		maxDelay = pd.MaxPlayoutDelayDefault
 	}
-	if maxDelay > rtpextension.PlayoutDelayMaxValue {
-		maxDelay = rtpextension.PlayoutDelayMaxValue
+	if maxDelay > pd.PlayoutDelayMaxValue {
+		maxDelay = pd.PlayoutDelayMaxValue
 	}
 	c := &PlayoutDelayController{
 		currentDelay: minDelay,
@@ -87,20 +91,21 @@ func (c *PlayoutDelayController) SetJitter(jitter uint32) {
 	}
 
 	c.lock.Lock()
-	multi := jitterLowMultiToDelay
-	if jitter >= jitterHighThreshold {
-		multi = jitterHighMultiToDelay
-	}
-	targetDelay := jitter * uint32(multi)
+	targetDelay := jitter * jitterMultiToDelay
 	if nackPercent > 60 {
 		targetDelay += (nackPercent - 60) * 2
 	}
 
-	// increase delay quickly, decrease slowly to make fps more stable
-	if targetDelay > c.currentDelay {
-		targetDelay = (targetDelay-c.currentDelay)*3/4 + c.currentDelay
-	} else {
-		targetDelay = c.currentDelay - (c.currentDelay-targetDelay)/5
+	elapsed := time.Since(c.sendingAtTime)
+	delayChangeLimit := uint32(maxDelayChangePerSec * elapsed.Seconds())
+	if delayChangeLimit > maxDelayChangePerSec {
+		delayChangeLimit = maxDelayChangePerSec
+	}
+
+	if targetDelay > c.currentDelay+delayChangeLimit {
+		targetDelay = c.currentDelay + delayChangeLimit
+	} else if c.currentDelay > targetDelay+delayChangeLimit {
+		targetDelay = c.currentDelay - delayChangeLimit
 	}
 	if targetDelay < c.minDelay {
 		targetDelay = c.minDelay
@@ -113,7 +118,9 @@ func (c *PlayoutDelayController) SetJitter(jitter uint32) {
 		return
 	}
 	if targetDelay > targetDelayLogThreshold {
-		c.logger.Debugw("high playout delay", "target", targetDelay, "jitter", jitter, "nackPercent", nackPercent, "current", c.currentDelay)
+		if c.highDelayCount.Add(1)%100 == 1 {
+			c.logger.Infow("high playout delay", "target", targetDelay, "jitter", jitter, "nackPercent", nackPercent, "current", c.currentDelay)
+		}
 	}
 	c.currentDelay = targetDelay
 	c.lock.Unlock()
@@ -134,6 +141,7 @@ func (c *PlayoutDelayController) GetDelayExtension(seq uint16) []byte {
 		c.lock.Lock()
 		c.state.Store(int32(PlayoutDelaySending))
 		c.sendingAtSeq = seq
+		c.sendingAtTime = time.Now()
 		c.lock.Unlock()
 		return c.extBytes.Load().([]byte)
 	case PlayoutDelaySending:
@@ -145,7 +153,7 @@ func (c *PlayoutDelayController) GetDelayExtension(seq uint16) []byte {
 }
 
 func (c *PlayoutDelayController) createExtData() error {
-	delay := rtpextension.PlayoutDelayFromValue(
+	delay := pd.PlayoutDelayFromValue(
 		uint16(c.currentDelay),
 		uint16(c.maxDelay),
 	)

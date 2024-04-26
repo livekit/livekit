@@ -245,6 +245,9 @@ type Participant interface {
 	Identity() livekit.ParticipantIdentity
 	State() livekit.ParticipantInfo_State
 	CloseReason() ParticipantCloseReason
+	Kind() livekit.ParticipantInfo_Kind
+	IsRecorder() bool
+	IsDependent() bool
 
 	CanSkipBroadcast() bool
 	ToProto() *livekit.ParticipantInfo
@@ -265,8 +268,6 @@ type Participant interface {
 
 	// permissions
 	Hidden() bool
-	IsRecorder() bool
-	IsAgent() bool
 
 	Close(sendLeave bool, reason ParticipantCloseReason, isExpectedToResume bool) error
 
@@ -278,7 +279,8 @@ type Participant interface {
 		timedVersion utils.TimedVersion,
 		resolverBySid func(participantID livekit.ParticipantID) LocalParticipant,
 	) error
-	UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error
+	UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack) error
+	UpdateVideoTrack(update *livekit.UpdateLocalVideoTrack) error
 
 	DebugInfo() map[string]interface{}
 }
@@ -307,6 +309,7 @@ type LocalParticipant interface {
 	IsClosed() bool
 	IsReady() bool
 	IsDisconnected() bool
+	Disconnected() <-chan struct{}
 	IsIdle() bool
 	SubscriberAsPrimary() bool
 	GetClientInfo() *livekit.ClientInfo
@@ -432,7 +435,6 @@ type Room interface {
 	UpdateSubscriptionPermission(participant LocalParticipant, permissions *livekit.SubscriptionPermission) error
 	SyncState(participant LocalParticipant, state *livekit.SyncState) error
 	SimulateScenario(participant LocalParticipant, scenario *livekit.SimulateScenario) error
-	UpdateVideoLayers(participant Participant, updateVideoLayers *livekit.UpdateVideoLayers) error
 	ResolveMediaTrackForSubscriber(subIdentity livekit.ParticipantIdentity, trackID livekit.TrackID) MediaResolverResult
 	GetLocalParticipants() []LocalParticipant
 	UpdateParticipantMetadata(participant LocalParticipant, name string, metadata string)
@@ -449,6 +451,8 @@ type MediaTrack interface {
 	Stream() string
 
 	UpdateTrackInfo(ti *livekit.TrackInfo)
+	UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack)
+	UpdateVideoTrack(update *livekit.UpdateLocalVideoTrack)
 	ToProto() *livekit.TrackInfo
 
 	PublisherID() livekit.ParticipantID
@@ -458,7 +462,6 @@ type MediaTrack interface {
 	IsMuted() bool
 	SetMuted(muted bool)
 
-	UpdateVideoLayers(layers []*livekit.VideoLayer)
 	IsSimulcast() bool
 
 	GetAudioLevel() (level float64, active bool)
