@@ -279,6 +279,8 @@ type Participant interface {
 		timedVersion utils.TimedVersion,
 		resolverBySid func(participantID livekit.ParticipantID) LocalParticipant,
 	) error
+	UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack) error
+	UpdateVideoTrack(update *livekit.UpdateLocalVideoTrack) error
 
 	DebugInfo() map[string]interface{}
 }
@@ -449,6 +451,8 @@ type MediaTrack interface {
 	Stream() string
 
 	UpdateTrackInfo(ti *livekit.TrackInfo)
+	UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack)
+	UpdateVideoTrack(update *livekit.UpdateLocalVideoTrack)
 	ToProto() *livekit.TrackInfo
 
 	PublisherID() livekit.ParticipantID

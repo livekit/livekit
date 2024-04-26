@@ -332,10 +332,20 @@ type FakeLocalMediaTrack struct {
 	toProtoReturnsOnCall map[int]struct {
 		result1 *livekit.TrackInfo
 	}
+	UpdateAudioTrackStub        func(*livekit.UpdateLocalAudioTrack)
+	updateAudioTrackMutex       sync.RWMutex
+	updateAudioTrackArgsForCall []struct {
+		arg1 *livekit.UpdateLocalAudioTrack
+	}
 	UpdateTrackInfoStub        func(*livekit.TrackInfo)
 	updateTrackInfoMutex       sync.RWMutex
 	updateTrackInfoArgsForCall []struct {
 		arg1 *livekit.TrackInfo
+	}
+	UpdateVideoTrackStub        func(*livekit.UpdateLocalVideoTrack)
+	updateVideoTrackMutex       sync.RWMutex
+	updateVideoTrackArgsForCall []struct {
+		arg1 *livekit.UpdateLocalVideoTrack
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
@@ -2072,6 +2082,38 @@ func (fake *FakeLocalMediaTrack) ToProtoReturnsOnCall(i int, result1 *livekit.Tr
 	}{result1}
 }
 
+func (fake *FakeLocalMediaTrack) UpdateAudioTrack(arg1 *livekit.UpdateLocalAudioTrack) {
+	fake.updateAudioTrackMutex.Lock()
+	fake.updateAudioTrackArgsForCall = append(fake.updateAudioTrackArgsForCall, struct {
+		arg1 *livekit.UpdateLocalAudioTrack
+	}{arg1})
+	stub := fake.UpdateAudioTrackStub
+	fake.recordInvocation("UpdateAudioTrack", []interface{}{arg1})
+	fake.updateAudioTrackMutex.Unlock()
+	if stub != nil {
+		fake.UpdateAudioTrackStub(arg1)
+	}
+}
+
+func (fake *FakeLocalMediaTrack) UpdateAudioTrackCallCount() int {
+	fake.updateAudioTrackMutex.RLock()
+	defer fake.updateAudioTrackMutex.RUnlock()
+	return len(fake.updateAudioTrackArgsForCall)
+}
+
+func (fake *FakeLocalMediaTrack) UpdateAudioTrackCalls(stub func(*livekit.UpdateLocalAudioTrack)) {
+	fake.updateAudioTrackMutex.Lock()
+	defer fake.updateAudioTrackMutex.Unlock()
+	fake.UpdateAudioTrackStub = stub
+}
+
+func (fake *FakeLocalMediaTrack) UpdateAudioTrackArgsForCall(i int) *livekit.UpdateLocalAudioTrack {
+	fake.updateAudioTrackMutex.RLock()
+	defer fake.updateAudioTrackMutex.RUnlock()
+	argsForCall := fake.updateAudioTrackArgsForCall[i]
+	return argsForCall.arg1
+}
+
 func (fake *FakeLocalMediaTrack) UpdateTrackInfo(arg1 *livekit.TrackInfo) {
 	fake.updateTrackInfoMutex.Lock()
 	fake.updateTrackInfoArgsForCall = append(fake.updateTrackInfoArgsForCall, struct {
@@ -2101,6 +2143,38 @@ func (fake *FakeLocalMediaTrack) UpdateTrackInfoArgsForCall(i int) *livekit.Trac
 	fake.updateTrackInfoMutex.RLock()
 	defer fake.updateTrackInfoMutex.RUnlock()
 	argsForCall := fake.updateTrackInfoArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeLocalMediaTrack) UpdateVideoTrack(arg1 *livekit.UpdateLocalVideoTrack) {
+	fake.updateVideoTrackMutex.Lock()
+	fake.updateVideoTrackArgsForCall = append(fake.updateVideoTrackArgsForCall, struct {
+		arg1 *livekit.UpdateLocalVideoTrack
+	}{arg1})
+	stub := fake.UpdateVideoTrackStub
+	fake.recordInvocation("UpdateVideoTrack", []interface{}{arg1})
+	fake.updateVideoTrackMutex.Unlock()
+	if stub != nil {
+		fake.UpdateVideoTrackStub(arg1)
+	}
+}
+
+func (fake *FakeLocalMediaTrack) UpdateVideoTrackCallCount() int {
+	fake.updateVideoTrackMutex.RLock()
+	defer fake.updateVideoTrackMutex.RUnlock()
+	return len(fake.updateVideoTrackArgsForCall)
+}
+
+func (fake *FakeLocalMediaTrack) UpdateVideoTrackCalls(stub func(*livekit.UpdateLocalVideoTrack)) {
+	fake.updateVideoTrackMutex.Lock()
+	defer fake.updateVideoTrackMutex.Unlock()
+	fake.UpdateVideoTrackStub = stub
+}
+
+func (fake *FakeLocalMediaTrack) UpdateVideoTrackArgsForCall(i int) *livekit.UpdateLocalVideoTrack {
+	fake.updateVideoTrackMutex.RLock()
+	defer fake.updateVideoTrackMutex.RUnlock()
+	argsForCall := fake.updateVideoTrackArgsForCall[i]
 	return argsForCall.arg1
 }
 
@@ -2177,8 +2251,12 @@ func (fake *FakeLocalMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.streamMutex.RUnlock()
 	fake.toProtoMutex.RLock()
 	defer fake.toProtoMutex.RUnlock()
+	fake.updateAudioTrackMutex.RLock()
+	defer fake.updateAudioTrackMutex.RUnlock()
 	fake.updateTrackInfoMutex.RLock()
 	defer fake.updateTrackInfoMutex.RUnlock()
+	fake.updateVideoTrackMutex.RLock()
+	defer fake.updateVideoTrackMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value
