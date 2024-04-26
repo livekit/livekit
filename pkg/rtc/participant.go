@@ -987,7 +987,6 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 		p.TransportManager.ProcessPendingPublisherOffer()
 
 	case types.MigrateStateComplete:
-
 		p.TransportManager.ProcessPendingPublisherDataChannels()
 	}
 
