@@ -160,16 +160,14 @@ func (t *telemetryService) ParticipantLeft(ctx context.Context,
 	shouldSendEvent bool,
 ) {
 	t.enqueue(func() {
-		isConnected := false
-		if worker, ok := t.getWorker(livekit.ParticipantID(participant.Sid)); ok {
-			isConnected = worker.IsConnected()
-			if worker.ClosedAt().IsZero() {
-				prometheus.SubParticipant()
-			}
-			worker.Close()
+		worker, ok := t.getAndDeleteWorker(livekit.ParticipantID(participant.Sid))
+		if !ok {
+			return
 		}
 
-		if isConnected && shouldSendEvent {
+		prometheus.SubParticipant()
+
+		if worker.IsConnected() && shouldSendEvent {
 			t.NotifyEvent(ctx, &livekit.WebhookEvent{
 				Event:       webhook.EventParticipantLeft,
 				Room:        room,
