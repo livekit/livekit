@@ -161,15 +161,17 @@ func (t *telemetryService) FlushStats() {
 		worker = worker.next
 	}
 
-	t.workersMu.Lock()
-	for reapHead != nil {
-		delete(t.workers, reapHead.participantID)
-		if reapHead == reapTail {
-			break
+	if reapHead != nil {
+		t.workersMu.Lock()
+		for {
+			delete(t.workers, reapHead.participantID)
+			if reapHead == reapTail {
+				break
+			}
+			reapHead = reapHead.next
 		}
-		reapHead = reapHead.next
+		t.workersMu.Unlock()
 	}
-	t.workersMu.Unlock()
 }
 
 func (t *telemetryService) run() {
