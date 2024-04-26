@@ -159,7 +159,6 @@ func (t *telemetryService) ParticipantLeft(ctx context.Context,
 	participant *livekit.ParticipantInfo,
 	shouldSendEvent bool,
 ) {
-	logger.Errorw(">>>", nil, "sid", participant.Sid, "shouldSend", shouldSendEvent)
 	t.enqueue(func() {
 		isConnected := false
 		if worker, ok := t.getWorker(livekit.ParticipantID(participant.Sid)); ok {
