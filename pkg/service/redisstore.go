@@ -608,6 +608,7 @@ func (s *RedisStore) storeIngressState(_ context.Context, ingressId string, stat
 	// Use a "transaction" to remove the old room association if it changed
 	txf := func(tx *redis.Tx) error {
 		var oldStartedAt int64
+		var oldUpdatedAt int64
 
 		oldState, err := s.loadIngressState(tx, ingressId)
 		switch err {
@@ -615,6 +616,7 @@ func (s *RedisStore) storeIngressState(_ context.Context, ingressId string, stat
 			// Ingress state doesn't exist yet
 		case nil:
 			oldStartedAt = oldState.StartedAt
+			oldUpdatedAt = oldState.UpdatedAt
 		default:
 			return err
 		}
@@ -623,6 +625,12 @@ func (s *RedisStore) storeIngressState(_ context.Context, ingressId string, stat
 			if state.StartedAt < oldStartedAt {
 				// Do not overwrite the info and state of a more recent session
 				return ingress.ErrIngressOutOfDate
+			}
+
+			if state.StartedAt == oldStartedAt && state.UpdatedAt < oldUpdatedAt {
+				// Do not overwrite with an old state in case RPCs were delivered out of order.
+				// All RPCs come from the same ingress server and should thus be on the same clock.
+				return nil
 			}
 
 			p.Set(s.ctx, IngressStatePrefix+ingressId, data, 0)

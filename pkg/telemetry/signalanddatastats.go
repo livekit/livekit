@@ -162,7 +162,10 @@ func (s *BytesSignalStats) ResolveRoom(ri *livekit.Room) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.ri == nil && ri.GetSid() != "" {
-		s.ri = ri
+		s.ri = &livekit.Room{
+			Sid:  ri.Sid,
+			Name: ri.Name,
+		}
 		s.maybeStart()
 	}
 }
@@ -170,8 +173,11 @@ func (s *BytesSignalStats) ResolveRoom(ri *livekit.Room) {
 func (s *BytesSignalStats) ResolveParticipant(pi *livekit.ParticipantInfo) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.pi == nil {
-		s.pi = pi
+	if s.pi == nil && pi != nil {
+		s.pi = &livekit.ParticipantInfo{
+			Sid:      pi.Sid,
+			Identity: pi.Identity,
+		}
 		s.maybeStart()
 	}
 }

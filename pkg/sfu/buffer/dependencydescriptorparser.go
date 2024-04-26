@@ -21,7 +21,7 @@ import (
 	"github.com/pion/rtp"
 	"go.uber.org/atomic"
 
-	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
+	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
 
 	"github.com/livekit/protocol/logger"
@@ -90,7 +90,7 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 	}
 	_, err := ext.Unmarshal(ddBuf)
 	if err != nil {
-		if err != dd.ErrDDReaderNoStructure {
+		if err != dd.ErrDDReaderNoStructure && err != dd.ErrDDReaderInvalidTemplateIndex {
 			r.logger.Infow("failed to parse generic dependency descriptor", err, "payload", pkt.PayloadType, "ddbufLen", len(ddBuf))
 		}
 		return nil, videoLayer, err

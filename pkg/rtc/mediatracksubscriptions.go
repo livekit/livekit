@@ -129,6 +129,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 
 	downTrack, err := sfu.NewDownTrack(sfu.DowntrackParams{
 		Codecs:            codecs,
+		Source:            t.params.MediaTrack.Source(),
 		Receiver:          wr,
 		BufferFactory:     sub.GetBufferFactory(),
 		SubID:             subscriberID,
@@ -322,13 +323,6 @@ func (t *MediaTrackSubscriptions) closeSubscribedTrack(subTrack types.Subscribed
 
 	if willBeResumed {
 		dt.CloseWithFlush(false)
-
-		// cache transceiver for potential re-use on resume
-		tr := dt.GetTransceiver()
-		if tr != nil {
-			sub := subTrack.Subscriber()
-			sub.CacheDownTrack(subTrack.ID(), tr, dt.GetState())
-		}
 	} else {
 		// flushing blocks, avoid blocking when publisher removes all its subscribers
 		go dt.CloseWithFlush(true)
@@ -420,12 +414,27 @@ func (t *MediaTrackSubscriptions) downTrackClosed(
 	willBeResumed bool,
 ) {
 	subscriberID := sub.ID()
-	t.subscribedTracksMu.Lock()
+	t.subscribedTracksMu.RLock()
 	subTrack := t.subscribedTracks[subscriberID]
-	delete(t.subscribedTracks, subscriberID)
-	t.subscribedTracksMu.Unlock()
+	t.subscribedTracksMu.RUnlock()
 
 	if subTrack != nil {
+		// Cache transceiver for potential re-use on resume.
+		// To ensure subscription manager does not re-subscribe before caching,
+		// delete the subscribed track only after caching.
+		if willBeResumed {
+			dt := subTrack.DownTrack()
+			tr := dt.GetTransceiver()
+			if tr != nil {
+				sub := subTrack.Subscriber()
+				sub.CacheDownTrack(subTrack.ID(), tr, dt.GetState())
+			}
+		}
+
+		t.subscribedTracksMu.Lock()
+		delete(t.subscribedTracks, subscriberID)
+		t.subscribedTracksMu.Unlock()
+
 		subTrack.Close(willBeResumed)
 	}
 }

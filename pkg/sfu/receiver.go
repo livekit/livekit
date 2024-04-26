@@ -35,7 +35,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/audio"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
-	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
+	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 )
 
 var (
@@ -82,9 +82,6 @@ type TrackReceiver interface {
 	GetRedReceiver() TrackReceiver
 
 	GetTemporalLayerFpsForSpatial(layer int32) []float32
-
-	GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error)
-	GetRTCPSenderReportData(layer int32) *buffer.RTCPSenderReportData
 
 	GetTrackStats() *livekit.RTPStats
 }
@@ -347,11 +344,10 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 		ObserveDuration: w.audioConfig.UpdateInterval,
 		SmoothIntervals: w.audioConfig.SmoothIntervals,
 	})
+	buff.SetAudioLossProxying(w.audioConfig.EnableLossProxying)
 	buff.OnRtcpFeedback(w.sendRTCP)
 	buff.OnRtcpSenderReport(func() {
 		srData := buff.GetSenderReportData()
-		w.streamTrackerManager.SetRTCPSenderReportData(layer, srData)
-
 		w.downTrackSpreader.Broadcast(func(dt TrackSender) {
 			_ = dt.HandleRTCPSenderReportData(w.codec.PayloadType, w.isSVC, layer, srData)
 		})
@@ -430,8 +426,31 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) error {
 	return nil
 }
 
+func (w *WebRTCReceiver) notifyMaxExpectedLayer(layer int32) {
+	ti := w.TrackInfo()
+	if ti == nil {
+		return
+	}
+
+	if w.Kind() == webrtc.RTPCodecTypeAudio || ti.Source == livekit.TrackSource_SCREEN_SHARE {
+		// screen share tracks have highly variable bitrate, do not use bit rate based quality for those
+		return
+	}
+
+	expectedBitrate := int64(0)
+	for _, vl := range ti.Layers {
+		l := buffer.VideoQualityToSpatialLayer(vl.Quality, ti)
+		if l <= layer {
+			expectedBitrate += int64(vl.Bitrate)
+		}
+	}
+
+	w.connectionStats.AddBitrateTransition(expectedBitrate)
+}
+
 func (w *WebRTCReceiver) SetMaxExpectedSpatialLayer(layer int32) {
 	w.streamTrackerManager.SetMaxExpectedSpatialLayer(layer)
+	w.notifyMaxExpectedLayer(layer)
 
 	if layer == buffer.InvalidLayerSpatial {
 		w.connectionStats.UpdateLayerMute(true)
@@ -463,6 +482,7 @@ func (w *WebRTCReceiver) OnMaxPublishedLayerChanged(maxPublishedLayer int32) {
 		dt.UpTrackMaxPublishedLayerChange(maxPublishedLayer)
 	})
 
+	w.notifyMaxExpectedLayer(maxPublishedLayer)
 	w.connectionStats.AddLayerTransition(w.streamTrackerManager.DistanceToDesired())
 }
 
@@ -627,6 +647,25 @@ func (w *WebRTCReceiver) GetDeltaStats() map[uint32]*buffer.StreamStatsWithLayer
 	return deltaStats
 }
 
+func (w *WebRTCReceiver) GetLastSenderReportTime() time.Time {
+	w.bufferMu.RLock()
+	defer w.bufferMu.RUnlock()
+
+	latestSRTime := time.Time{}
+	for _, buff := range w.buffers {
+		if buff == nil {
+			continue
+		}
+
+		srAt := buff.GetLastSenderReportTime()
+		if srAt.After(latestSRTime) {
+			latestSRTime = srAt
+		}
+	}
+
+	return latestSRTime
+}
+
 func (w *WebRTCReceiver) forwardRTP(layer int32) {
 	pktBuf := make([]byte, bucket.MaxPktSize)
 	tracker := w.streamTrackerManager.GetTracker(layer)
@@ -780,14 +819,6 @@ func (w *WebRTCReceiver) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
 	}
 
 	return b.GetTemporalLayerFpsForSpatial(layer)
-}
-
-func (w *WebRTCReceiver) GetReferenceLayerRTPTimestamp(ts uint32, layer int32, referenceLayer int32) (uint32, error) {
-	return w.streamTrackerManager.GetReferenceLayerRTPTimestamp(ts, layer, referenceLayer)
-}
-
-func (w *WebRTCReceiver) GetRTCPSenderReportData(layer int32) *buffer.RTCPSenderReportData {
-	return w.streamTrackerManager.GetRTCPSenderReportData(layer)
 }
 
 // closes all track senders in parallel, returns when all are closed
