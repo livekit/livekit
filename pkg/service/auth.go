@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
+	// "math/big"
 	"net/http"
 	"strings"
 
-	"github.com/ethereum/go-ethereum/log"
+	// "github.com/ethereum/go-ethereum/log"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	eth_crypto "github.com/ethereum/go-ethereum/crypto"
@@ -106,28 +106,28 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 			return
 		}
 
-		currentValue, err := m.participantCounter.GetCurrentValue(r.Context(), apiKey)
-		if err != nil {
-			handleError(w, http.StatusUnauthorized, fmt.Errorf("invalid checking node %s for max count participants: %s", apiKey, err))
-			return
-		}
+		// currentValue, err := m.participantCounter.GetCurrentValue(r.Context(), apiKey)
+		// if err != nil {
+		// 	handleError(w, http.StatusUnauthorized, fmt.Errorf("invalid checking node %s for max count participants: %s", apiKey, err))
+		// 	return
+		// }
 
-		currentValueBigInt := big.NewInt(int64(currentValue))
+		// currentValueBigInt := big.NewInt(int64(currentValue))
 		clientLimitInt := client.Limit.Int64()
 
-		// audio only up to 10x more
-		currentLimit := new(big.Int).Set(client.Limit)
-		currentLimit.Mul(currentLimit, big.NewInt(10))
+		// // audio only up to 10x more
+		// currentLimit := new(big.Int).Set(client.Limit)
+		// currentLimit.Mul(currentLimit, big.NewInt(10))
 
-		if currentValueBigInt.Cmp(currentLimit) > 0 {
-			log.Error("Max participant reached. Limit " + currentLimit.String() + ", current " + currentValueBigInt.String())
-			handleError(
-				w,
-				http.StatusForbidden,
-				fmt.Errorf("max participant reached. Limit %s. Current %s", currentLimit.String(), currentValueBigInt.String()),
-			)
-			return
-		}
+		// if currentValueBigInt.Cmp(currentLimit) > 0 {
+		// 	log.Error("Max participant reached. Limit " + currentLimit.String() + ", current " + currentValueBigInt.String())
+		// 	handleError(
+		// 		w,
+		// 		http.StatusForbidden,
+		// 		fmt.Errorf("max participant reached. Limit %s. Current %s", currentLimit.String(), currentValueBigInt.String()),
+		// 	)
+		// 	return
+		// }
 
 		// set grants in context
 		ctx := context.WithValue(r.Context(), grantsKey{}, grants)
