@@ -230,7 +230,6 @@ type Forwarder struct {
 	lastSSRC              uint32
 	referenceLayerSpatial int32
 	dummyStartTSOffset    uint64
-	refTSOffset           uint64
 	refSenderReports      [buffer.DefaultMaxLayerSpatial + 1]*buffer.RTCPSenderReportData
 	refIsSVC              bool
 
@@ -1538,13 +1537,13 @@ func (f *Forwarder) GetTranslationParams(extPkt *buffer.ExtPacket, layer int32) 
 	}, ErrUnknownKind
 }
 
-func (f *Forwarder) getReferenceLayerRTPTimestamp(ets uint64, refLayer, targetLayer int32) (uint64, error) {
+func (f *Forwarder) getReferenceLayerRTPTimestamp(ts uint32, refLayer, targetLayer int32) (uint32, error) {
 	if refLayer < 0 || int(refLayer) > len(f.refSenderReports) || targetLayer < 0 || int(targetLayer) > len(f.refSenderReports) {
 		return 0, fmt.Errorf("invalid layer(s), refLayer: %d, targetLayer: %d", refLayer, targetLayer)
 	}
 
 	if refLayer == targetLayer || f.refIsSVC {
-		return ets, nil
+		return ts, nil
 	}
 
 	srRef := f.refSenderReports[refLayer]
@@ -1557,12 +1556,12 @@ func (f *Forwarder) getReferenceLayerRTPTimestamp(ets uint64, refLayer, targetLa
 	rtpDiff := ntpDiff.Nanoseconds() * int64(f.codec.ClockRate) / 1e9
 
 	// calculate other layer's time stamp at the same time as ref layer's NTP time
-	normalizedOtherTSExt := srTarget.RTPTimestampExt + uint64(rtpDiff)
+	normalizedOtherTS := srTarget.RTPTimestamp + uint32(rtpDiff)
 
 	// now both layers' time stamp refer to the same NTP time and the diff is the offset between the layers
-	offset := srRef.RTPTimestampExt - normalizedOtherTSExt
+	offset := srRef.RTPTimestamp - normalizedOtherTS
 
-	return ets + offset, nil
+	return ts + offset, nil
 }
 
 func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) error {
@@ -1619,11 +1618,12 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 	rtpMungerState := f.rtpMunger.GetLast()
 	extLastTS := rtpMungerState.ExtLastTS
 	extExpectedTS := extLastTS
-	extRefTS := extExpectedTS
+	extRefTS := extLastTS
+	refTS := uint32(extRefTS)
 	switchingAt := time.Now()
 	if !f.skipReferenceTS {
 		var err error
-		extRefTS, err = f.getReferenceLayerRTPTimestamp(extPkt.ExtTimestamp, f.referenceLayerSpatial, layer)
+		refTS, err = f.getReferenceLayerRTPTimestamp(extPkt.Packet.Timestamp, f.referenceLayerSpatial, layer)
 		if err != nil {
 			// error out if refTS is not available. It can happen when there is no sender report
 			// for the layer being switched to. Can especially happen at the start of the track when layer switches are
@@ -1632,6 +1632,16 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			// on how often publisher/remote side sends RTCP sender report.
 			return err
 		}
+	}
+
+	// adjust extReTS to current packet's timestamp mapped to that of reference layer's
+	extRefTS = (extRefTS & 0xFFFF_FFFF_0000_0000) + uint64(refTS)
+	lastTS := uint32(extLastTS)
+	if (refTS-lastTS) < 1<<31 && refTS < lastTS {
+		extRefTS += (1 << 32)
+	}
+	if (lastTS-refTS) < 1<<31 && lastTS < refTS && extRefTS >= 1<<32 {
+		extRefTS -= (1 << 32)
 	}
 
 	if f.getExpectedRTPTimestamp != nil {
@@ -1658,15 +1668,17 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			}
 		}
 	}
-	extRefTS += f.dummyStartTSOffset + f.refTSOffset
+	extRefTS += f.dummyStartTSOffset
 
 	var extNextTS uint64
 	if f.lastSSRC == 0 {
 		// If resuming (e. g. on unmute), next timestamp is expected timestamp.
 		//
 		// NOTE: extExpectedTS uses the first packet's wall clock time.
-		// So, if the first packet experienced abmormal latency, it is possible extExpectedTS is higher than true expected,
-		// but first packet wall clock time is adjusted based on publisher RTCP reports. So, it should be reasonably well adjusted.
+		// So, if the first packet experienced abmormal latency,
+		// it is possible extExpectedTS is higher than true expected,
+		// but first packet wall clock time is adjusted based on publisher RTCP reports.
+		// So, it should be reasonably well adjusted.
 		extNextTS = extExpectedTS
 
 		// clear out reference RTCP sender reports just in case they are stale
@@ -1687,8 +1699,8 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			logTransition("layer switch, reference is slightly behind", extExpectedTS, extRefTS, extLastTS, diffSeconds)
 			extNextTS = extLastTS + 1
 		} else {
-			diffSeconds = float64(int64(extExpectedTS-extRefTS)) / float64(f.codec.ClockRate)
-			if diffSeconds < 0.0 && math.Abs(diffSeconds) > SwitchAheadThresholdSeconds {
+			diffSeconds = float64(int64(extRefTS-extExpectedTS)) / float64(f.codec.ClockRate)
+			if diffSeconds > SwitchAheadThresholdSeconds {
 				logTransition("layer switch, reference too far ahead", extExpectedTS, extRefTS, extLastTS, diffSeconds)
 			}
 
@@ -1703,9 +1715,6 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 	}
 	f.rtpMunger.UpdateSnTsOffsets(extPkt, 1, extNextTS-extLastTS)
 	f.codecMunger.UpdateOffsets(extPkt)
-	if f.refTSOffset == 0 && layer == f.referenceLayerSpatial {
-		f.refTSOffset = f.rtpMunger.GetPinnedTSOffset()
-	}
 	f.logger.Debugw(
 		"next timestamp on switch",
 		"switchingAt", switchingAt.String(),
@@ -1713,7 +1722,6 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		"extLastTS", extLastTS,
 		"extRefTS", extRefTS,
 		"dummyStartTSOffset", f.dummyStartTSOffset,
-		"refTSOffset", f.refTSOffset,
 		"referenceLayerSpatial", f.referenceLayerSpatial,
 		"extExpectedTS", extExpectedTS,
 		"extNextTS", extNextTS,
@@ -1729,6 +1737,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer int32, tp *TranslationParams) (bool, error) {
 	if f.lastSSRC != extPkt.Packet.SSRC {
 		if err := f.processSourceSwitch(extPkt, layer); err != nil {
+			f.logger.Warnw("source switch failed", err) // RAJA-REMOVE
 			tp.shouldDrop = true
 			return false, nil
 		}
