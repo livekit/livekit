@@ -174,7 +174,12 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	logger.Infow("new websocket connection", nil)
+
 	roomKey, pi, code, err := s.validate(r)
+
+	logger.Infow("new websocket connection validated", err, "roomKey", roomKey)
+
 	if err != nil {
 		handleError(w, code, err)
 		return

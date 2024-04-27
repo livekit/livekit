@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livekit/protocol/logger"
+	// "github.com/livekit/protocol/logger"
 	"github.com/pkg/errors"
 
 	// "github.com/livekit/livekit-server/pkg/utils"
@@ -169,10 +169,10 @@ func (s *LocalStore) StoreParticipant(ctx context.Context, roomKey livekit.RoomK
 	if participant.Relayed == false {
 		_, participantExists := roomParticipants[livekit.ParticipantIdentity(participant.Identity)]
 		if !participantExists {
-			err := s.nodeProvider.IncrementParticipants(ctx, s.mainDatabase.GetHost().ID().String())
-			if err != nil {
-				logger.Errorw("increment participants count", err)
-			}
+			// err := s.nodeProvider.IncrementParticipants(ctx, s.mainDatabase.GetHost().ID().String())
+			// if err != nil {
+			// 	logger.Errorw("increment participants count", err)
+			// }
 
 			// err = s.clientParticipantCounter.Increment(ctx, string(apiKey), string(roomKey), participant.Identity)
 			// if err != nil {
@@ -239,10 +239,10 @@ func (s *LocalStore) DeleteParticipant(ctx context.Context, roomKey livekit.Room
 				// if err != nil {
 				// 	logger.Errorw("cannot decrement participant count", err)
 				// }
-				err := s.nodeProvider.DecrementParticipants(ctx, s.mainDatabase.GetHost().ID().String())
-				if err != nil {
-					logger.Errorw("decrement participants count: %s", err)
-				}
+				// err := s.nodeProvider.DecrementParticipants(ctx, s.mainDatabase.GetHost().ID().String())
+				// if err != nil {
+				// 	logger.Errorw("decrement participants count: %s", err)
+				// }
 			}
 		}
 	}
