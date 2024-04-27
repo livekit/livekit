@@ -336,6 +336,7 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 			arrivalTime: now,
 		})
 		b.Unlock()
+		b.readCond.Signal()
 		return
 	}
 
@@ -392,26 +393,24 @@ func (b *Buffer) writeRTX(rtxPkt *rtp.Packet, arrivalTime time.Time) (n int, err
 }
 
 func (b *Buffer) Read(buff []byte) (n int, err error) {
+	b.Lock()
 	for {
 		if b.closed.Load() {
-			err = io.EOF
-			return
+			b.Unlock()
+			return 0, io.EOF
 		}
-		b.Lock()
 		if b.pPackets != nil && len(b.pPackets) > b.lastPacketRead {
 			if len(buff) < len(b.pPackets[b.lastPacketRead].packet) {
-				err = bucket.ErrBufferTooSmall
 				b.Unlock()
-				return
+				return 0, bucket.ErrBufferTooSmall
 			}
-			n = len(b.pPackets[b.lastPacketRead].packet)
-			copy(buff, b.pPackets[b.lastPacketRead].packet)
+
+			n = copy(buff, b.pPackets[b.lastPacketRead].packet)
 			b.lastPacketRead++
 			b.Unlock()
 			return
 		}
-		b.Unlock()
-		time.Sleep(25 * time.Millisecond)
+		b.readCond.Wait()
 	}
 }
 
