@@ -174,11 +174,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logger.Infow("new websocket connection", nil)
-
 	roomKey, pi, code, err := s.validate(r)
-
-	logger.Infow("new websocket connection validated", err, "roomKey", roomKey)
 
 	if err != nil {
 		handleError(w, code, err)
@@ -460,16 +456,22 @@ func (s *RTCService) startConnection(ctx context.Context, roomKey livekit.RoomKe
 		return cr, err
 	}
 
+	logger.Warnw("startConnection before create", nil)
+
 	cr.Room, err = s.roomAllocator.CreateRoom(ctx, &livekit.CreateRoomRequest{Name: string(roomName)}, apiKey)
 	if err != nil {
 		return cr, err
 	}
+
+	logger.Warnw("startConnection after create", nil)
 
 	// this needs to be started first *before* using router functions on this node
 	cr.ConnectionID, cr.RequestSink, cr.ResponseSource, err = s.router.StartParticipantSignal(ctx, roomKey, pi)
 	if err != nil {
 		return cr, err
 	}
+
+	logger.Warnw("startConnection after start signal", nil)
 
 	// wait for the first message before upgrading to websocket. If no one is
 	// responding to our connection attempt, we should terminate the connection
