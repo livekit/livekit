@@ -43,6 +43,8 @@ const (
 	FlagFilterRTXLayers   = true
 	TransitionCostSpatial = 10
 
+	ResumeBehindThresholdSeconds      = float64(0.2)   // 200ms
+	ResumeBehindHighThresholdSeconds  = float64(2.0)   // 2 seconds
 	LayerSwitchBehindThresholdSeconds = float64(0.05)  // 50ms
 	SwitchAheadThresholdSeconds       = float64(0.025) // 25ms
 )
@@ -221,8 +223,9 @@ type Forwarder struct {
 	skipReferenceTS         bool
 	getExpectedRTPTimestamp func(at time.Time) (uint64, error)
 
-	muted    bool
-	pubMuted bool
+	muted                 bool
+	pubMuted              bool
+	resumeBehindThreshold float64
 
 	started               bool
 	preStartTime          time.Time
@@ -1476,6 +1479,9 @@ func (f *Forwarder) Resync() {
 func (f *Forwarder) resyncLocked() {
 	f.vls.SetCurrent(buffer.InvalidLayer)
 	f.lastSSRC = 0
+	if f.pubMuted {
+		f.resumeBehindThreshold = ResumeBehindThresholdSeconds
+	}
 }
 
 func (f *Forwarder) CheckSync() (bool, int32) {
@@ -1672,16 +1678,51 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 
 	var extNextTS uint64
 	if f.lastSSRC == 0 {
-		// If resuming (e. g. on unmute), next timestamp is expected timestamp.
+		// If resuming (e. g. on unmute), keep next timestamp close to expected timestamp.
 		//
-		// NOTE: extExpectedTS uses the first packet's wall clock time.
-		// So, if the first packet experienced abmormal latency,
-		// it is possible extExpectedTS is higher than true expected,
-		// but first packet wall clock time is adjusted based on publisher RTCP reports.
-		// So, it should be reasonably well adjusted.
-		extNextTS = extExpectedTS
+		// Rationale:
+		// Case 1: If mute is implemented via something like stopping a track and resuming it on unmute,
+		// the RTP timestamp may not have jumped across mute valley. In this case, old timestamp
+		// should not be used.
+		//
+		// Case 2: OTOH, something like pacing may be adding latency in the publisher path (even if
+		// the timestamps incremented correctly across the mute valley). In this case, reference
+		// timestamp should be used as things will catch up to real time when channel capacity
+		// increases and pacer starts sending at faster rate.
+		//
+		// But, the challenege is distinguishing between the two cases. As a compromise, the difference
+		// between extExpectedTS and extRefTS is thresholded. Difference below the threshold is treated as Case 2
+		// and above as Case 1.
+		//
+		// In the event of extRefTS > extExpectedTS, use extRefTS.
+		// Ideally, extRefTS should not be ahead of extExpectedTS, but extExpectedTS uses the first packet's
+		// wall clock time. So, if the first packet experienced abmormal latency, it is possible
+		// for extRefTS > extExpectedTS
+		diffSeconds := float64(int64(extExpectedTS-extRefTS)) / float64(f.codec.ClockRate)
+		if diffSeconds >= 0.0 {
+			if f.resumeBehindThreshold > 0 && diffSeconds > f.resumeBehindThreshold {
+				logTransition("resume, reference too far behind", extExpectedTS, extRefTS, extLastTS, diffSeconds)
+				extNextTS = extExpectedTS
+			} else if diffSeconds > ResumeBehindHighThresholdSeconds {
+				// could be due to incorrect reference calculation
+				logTransition("resume, reference very far behind", extExpectedTS, extRefTS, extLastTS, diffSeconds)
+				extNextTS = extExpectedTS
+			} else {
+				extNextTS = extRefTS
+			}
+		} else {
+			if math.Abs(diffSeconds) > SwitchAheadThresholdSeconds {
+				logTransition("resume, reference too far ahead", extExpectedTS, extRefTS, extLastTS, diffSeconds)
+			}
+			extNextTS = extRefTS
+		}
+		f.resumeBehindThreshold = 0.0
 
-		// clear out reference RTCP sender reports just in case they are stale
+		// sender reports are cleared after calculating switch time stamp
+		// as relative differences between layers should remain the same.
+		// TODO: If the relative difference changes a lot, probably have to
+		// abandon the checks above and just use the expected timestamp
+		// as the next time stamp.
 		f.clearRefSenderReportsLocked()
 	} else {
 		// switching between layers, check if extRefTS is too far behind the last sent
