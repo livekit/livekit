@@ -1779,7 +1779,6 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer int32, tp *TranslationParams) (bool, error) {
 	if f.lastSSRC != extPkt.Packet.SSRC {
 		if err := f.processSourceSwitch(extPkt, layer); err != nil {
-			f.logger.Warnw("source switch failed", err) // RAJA-REMOVE
 			tp.shouldDrop = true
 			return false, nil
 		}
