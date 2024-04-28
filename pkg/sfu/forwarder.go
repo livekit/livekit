@@ -1640,7 +1640,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		}
 	}
 
-	// adjust extReTS to current packet's timestamp mapped to that of reference layer's
+	// adjust extRefTS to current packet's timestamp mapped to that of reference layer's
 	extRefTS = (extRefTS & 0xFFFF_FFFF_0000_0000) + uint64(refTS)
 	lastTS := uint32(extLastTS)
 	if (refTS-lastTS) < 1<<31 && refTS < lastTS {
@@ -1690,7 +1690,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		// timestamp should be used as things will catch up to real time when channel capacity
 		// increases and pacer starts sending at faster rate.
 		//
-		// But, the challenege is distinguishing between the two cases. As a compromise, the difference
+		// But, the challenge is distinguishing between the two cases. As a compromise, the difference
 		// between extExpectedTS and extRefTS is thresholded. Difference below the threshold is treated as Case 2
 		// and above as Case 1.
 		//
@@ -1754,8 +1754,6 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		// nominal increase
 		extNextTS = extLastTS + 1
 	}
-	f.rtpMunger.UpdateSnTsOffsets(extPkt, 1, extNextTS-extLastTS)
-	f.codecMunger.UpdateOffsets(extPkt)
 	f.logger.Debugw(
 		"next timestamp on switch",
 		"switchingAt", switchingAt.String(),
@@ -1771,6 +1769,9 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		"extIncomingSN", extPkt.ExtSequenceNumber,
 		"extIncomingTS", extPkt.ExtTimestamp,
 	)
+
+	f.rtpMunger.UpdateSnTsOffsets(extPkt, 1, extNextTS-extLastTS)
+	f.codecMunger.UpdateOffsets(extPkt)
 	return nil
 }
 
