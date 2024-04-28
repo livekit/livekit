@@ -212,18 +212,21 @@ func (r *RTPStatsReceiver) Update(
 		flowState.ExtSequenceNumber = resSN.ExtendedVal
 		flowState.ExtTimestamp = resTS.ExtendedVal
 	} else { // in-order
-		if gapSN >= cNumSequenceNumbers/2 {
+		if gapSN >= cNumSequenceNumbers/2 || resTS.ExtendedVal < resTS.PreExtendedHighest {
 			r.logger.Warnw(
-				"large sequence number gap", nil,
+				"large sequence number gap OR time reversed", nil,
 				"extStartSN", r.sequenceNumber.GetExtendedStart(),
 				"extHighestSN", r.sequenceNumber.GetExtendedHighest(),
 				"extStartTS", r.timestamp.GetExtendedStart(),
 				"extHighestTS", r.timestamp.GetExtendedHighest(),
 				"firstTime", r.firstTime.String(),
 				"highestTime", r.highestTime.String(),
-				"prev", resSN.PreExtendedHighest,
-				"curr", resSN.ExtendedVal,
-				"gap", gapSN,
+				"prevSN", resSN.PreExtendedHighest,
+				"currSN", resSN.ExtendedVal,
+				"gapSN", gapSN,
+				"prevTS", resTS.PreExtendedHighest,
+				"currTS", resTS.ExtendedVal,
+				"gapTS", resTS.ExtendedVal-resTS.PreExtendedHighest,
 				"packetTime", packetTime.String(),
 				"sequenceNumber", sequenceNumber,
 				"timestamp", timestamp,

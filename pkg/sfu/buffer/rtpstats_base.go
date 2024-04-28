@@ -529,6 +529,11 @@ func (r *rtpStatsBase) maybeAdjustFirstPacketTime(srData *RTCPSenderReportData, 
 			"adjustment", r.firstTime.Sub(firstTime).String(),
 			"extNowTS", extNowTS,
 			"extStartTS", extStartTS,
+			"srData", srData,
+			"timeSinceReceive", timeSinceReceive.String(),
+			"timeSinceFirst", timeSinceFirst.String(),
+			"samplesDiff", samplesDiff,
+			"samplesDuration", samplesDuration,
 		}
 	}
 
