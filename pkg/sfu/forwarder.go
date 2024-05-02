@@ -215,6 +215,11 @@ func (f ForwarderState) String() string {
 
 // -------------------------------------------------------------------
 
+type refInfo struct {
+	senderReport *buffer.RTCPSenderReportData
+	tsOffset     uint64
+}
+
 type Forwarder struct {
 	lock                    sync.RWMutex
 	codec                   webrtc.RTPCodecCapability
@@ -233,7 +238,7 @@ type Forwarder struct {
 	lastSSRC              uint32
 	referenceLayerSpatial int32
 	dummyStartTSOffset    uint64
-	refSenderReports      [buffer.DefaultMaxLayerSpatial + 1]*buffer.RTCPSenderReportData
+	refInfos              [buffer.DefaultMaxLayerSpatial + 1]refInfo
 	refIsSVC              bool
 
 	provisional *VideoAllocationProvisional
@@ -568,8 +573,8 @@ func (f *Forwarder) SetRefSenderReport(isSVC bool, layer int32, srData *buffer.R
 	if isSVC {
 		layer = 0
 	}
-	if layer >= 0 && int(layer) < len(f.refSenderReports) {
-		f.refSenderReports[layer] = srData
+	if layer >= 0 && int(layer) < len(f.refInfos) {
+		f.refInfos[layer].senderReport = srData
 	}
 }
 
@@ -604,7 +609,7 @@ func (f *Forwarder) clearRefSenderReportsLocked() {
 	// By clearing sender report on (re)start of a stream, subscribers will wait for a fresh report
 	// after unmute to send sender report.
 	for layer := int32(0); layer < buffer.DefaultMaxLayerSpatial+1; layer++ {
-		f.refSenderReports[layer] = nil
+		f.refInfos[layer] = refInfo{nil, 0}
 	}
 }
 
@@ -613,20 +618,22 @@ func (f *Forwarder) GetSenderReportParams() (int32, uint64, *buffer.RTCPSenderRe
 	defer f.lock.RUnlock()
 
 	if f.kind == webrtc.RTPCodecTypeAudio {
-		return 0, f.rtpMunger.GetPinnedTSOffset(), f.refSenderReports[0]
+		return 0, f.refInfos[0].tsOffset, f.refInfos[0].senderReport
 	}
 
 	currentLayerSpatial := f.vls.GetCurrent().Spatial
 	if currentLayerSpatial < 0 || currentLayerSpatial > buffer.DefaultMaxLayerSpatial {
-		return currentLayerSpatial, f.rtpMunger.GetPinnedTSOffset(), nil
+		return currentLayerSpatial, 0, nil
 	}
 
-	refSenderReport := f.refSenderReports[currentLayerSpatial]
+	refSenderReport := f.refInfos[currentLayerSpatial].senderReport
+	tsOffset := f.refInfos[currentLayerSpatial].tsOffset
 	if f.refIsSVC {
-		refSenderReport = f.refSenderReports[0]
+		refSenderReport = f.refInfos[0].senderReport
+		tsOffset = f.refInfos[0].tsOffset
 	}
 
-	return currentLayerSpatial, f.rtpMunger.GetPinnedTSOffset(), refSenderReport
+	return currentLayerSpatial, tsOffset, refSenderReport
 }
 
 func (f *Forwarder) isDeficientLocked() bool {
@@ -1544,7 +1551,7 @@ func (f *Forwarder) GetTranslationParams(extPkt *buffer.ExtPacket, layer int32) 
 }
 
 func (f *Forwarder) getReferenceLayerRTPTimestamp(ts uint32, refLayer, targetLayer int32) (uint32, error) {
-	if refLayer < 0 || int(refLayer) > len(f.refSenderReports) || targetLayer < 0 || int(targetLayer) > len(f.refSenderReports) {
+	if refLayer < 0 || int(refLayer) > len(f.refInfos) || targetLayer < 0 || int(targetLayer) > len(f.refInfos) {
 		return 0, fmt.Errorf("invalid layer(s), refLayer: %d, targetLayer: %d", refLayer, targetLayer)
 	}
 
@@ -1552,8 +1559,8 @@ func (f *Forwarder) getReferenceLayerRTPTimestamp(ts uint32, refLayer, targetLay
 		return ts, nil
 	}
 
-	srRef := f.refSenderReports[refLayer]
-	srTarget := f.refSenderReports[targetLayer]
+	srRef := f.refInfos[refLayer].senderReport
+	srTarget := f.refInfos[targetLayer].senderReport
 	if srRef == nil || srRef.NTPTimestamp == 0 || srTarget == nil || srTarget.NTPTimestamp == 0 {
 		return 0, fmt.Errorf("unavailable layer(s), refLayer: %d, targetLayer: %d", refLayer, targetLayer)
 	}
@@ -1575,6 +1582,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		f.started = true
 		f.referenceLayerSpatial = layer
 		f.rtpMunger.SetLastSnTs(extPkt)
+		f.refInfos[layer].tsOffset = f.rtpMunger.GetTSOffset()
 		f.codecMunger.SetLast(extPkt)
 		f.clearRefSenderReportsLocked()
 		f.logger.Debugw(
@@ -1771,6 +1779,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 	)
 
 	f.rtpMunger.UpdateSnTsOffsets(extPkt, 1, extNextTS-extLastTS)
+	f.refInfos[layer].tsOffset = f.rtpMunger.GetTSOffset()
 	f.codecMunger.UpdateOffsets(extPkt)
 	return nil
 }
