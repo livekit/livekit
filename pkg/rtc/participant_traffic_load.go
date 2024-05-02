@@ -62,6 +62,10 @@ func (p *ParticipantTrafficLoad) Close() {
 }
 
 func (p *ParticipantTrafficLoad) OnTrafficLoad(f func(trafficLoad *types.TrafficLoad)) {
+	if p == nil {
+		return
+	}
+
 	p.lock.Lock()
 	p.onTrafficLoad = f
 	p.lock.Unlock()
@@ -75,6 +79,10 @@ func (p *ParticipantTrafficLoad) getOnTrafficLoad() func(trafficLoad *types.Traf
 }
 
 func (p *ParticipantTrafficLoad) GetTrafficLoad() *types.TrafficLoad {
+	if p == nil {
+		return nil
+	}
+
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
