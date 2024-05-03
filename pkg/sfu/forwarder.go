@@ -1589,6 +1589,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		return nil
 	} else if f.referenceLayerSpatial == buffer.InvalidLayerSpatial {
 		f.referenceLayerSpatial = layer
+		f.codecMunger.SetLast(extPkt)
 		f.logger.Debugw(
 			"catch up forwarding",
 			"sequenceNumber", extPkt.Packet.SequenceNumber,
