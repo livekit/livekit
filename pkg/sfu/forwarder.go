@@ -1641,7 +1641,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 	}
 
 	// adjust extRefTS to current packet's timestamp mapped to that of reference layer's
-	extRefTS = (extRefTS & 0xFFFF_FFFF_0000_0000) + uint64(refTS)
+	extRefTS = (extRefTS & 0xFFFF_FFFF_0000_0000) + uint64(refTS) + f.dummyStartTSOffset
 	lastTS := uint32(extLastTS)
 	if (refTS-lastTS) < 1<<31 && refTS < lastTS {
 		extRefTS += (1 << 32)
@@ -1662,6 +1662,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 				if f.dummyStartTSOffset == 0 {
 					extRefTS = uint64(refTS)
 					f.dummyStartTSOffset = extExpectedTS - extRefTS
+					extRefTS += f.dummyStartTSOffset
 					f.logger.Infow(
 						"calculating dummyStartTSOffset",
 						"preStartTime", f.preStartTime.String(),
@@ -1677,7 +1678,6 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			}
 		}
 	}
-	extRefTS += f.dummyStartTSOffset
 
 	var extNextTS uint64
 	if f.lastSSRC == 0 {
