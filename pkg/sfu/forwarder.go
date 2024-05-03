@@ -1660,14 +1660,17 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 				rtpDiff := uint64(timeSinceFirst.Nanoseconds() * int64(f.codec.ClockRate) / 1e9)
 				extExpectedTS = f.extFirstTS + rtpDiff
 				if f.dummyStartTSOffset == 0 {
+					extRefTS = uint64(refTS)
 					f.dummyStartTSOffset = extExpectedTS - extRefTS
 					f.logger.Infow(
 						"calculating dummyStartTSOffset",
 						"preStartTime", f.preStartTime.String(),
 						"extFirstTS", f.extFirstTS,
-						"timeSinceFirst", timeSinceFirst,
+						"timeSinceFirst", timeSinceFirst.String(),
 						"rtpDiff", rtpDiff,
 						"extRefTS", extRefTS,
+						"incomingTS", extPkt.Packet.Timestamp,
+						"referenceLayerSpatial", f.referenceLayerSpatial,
 						"dummyStartTSOffset", f.dummyStartTSOffset,
 					)
 				}
