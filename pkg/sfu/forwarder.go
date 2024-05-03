@@ -1589,6 +1589,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		return nil
 	} else if f.referenceLayerSpatial == buffer.InvalidLayerSpatial {
 		f.referenceLayerSpatial = layer
+		f.codecMunger.SetLast(extPkt)
 		f.logger.Debugw(
 			"catch up forwarding",
 			"sequenceNumber", extPkt.Packet.SequenceNumber,
@@ -1641,8 +1642,9 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 	}
 
 	// adjust extRefTS to current packet's timestamp mapped to that of reference layer's
-	extRefTS = (extRefTS & 0xFFFF_FFFF_0000_0000) + uint64(refTS)
+	extRefTS = (extRefTS & 0xFFFF_FFFF_0000_0000) + uint64(refTS) + f.dummyStartTSOffset
 	lastTS := uint32(extLastTS)
+	refTS = uint32(extRefTS)
 	if (refTS-lastTS) < 1<<31 && refTS < lastTS {
 		extRefTS += (1 << 32)
 	}
@@ -1660,21 +1662,23 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 				rtpDiff := uint64(timeSinceFirst.Nanoseconds() * int64(f.codec.ClockRate) / 1e9)
 				extExpectedTS = f.extFirstTS + rtpDiff
 				if f.dummyStartTSOffset == 0 {
-					f.dummyStartTSOffset = extExpectedTS - extRefTS
+					f.dummyStartTSOffset = extExpectedTS - uint64(refTS)
+					extRefTS = extExpectedTS
 					f.logger.Infow(
 						"calculating dummyStartTSOffset",
 						"preStartTime", f.preStartTime.String(),
 						"extFirstTS", f.extFirstTS,
-						"timeSinceFirst", timeSinceFirst,
+						"timeSinceFirst", timeSinceFirst.String(),
 						"rtpDiff", rtpDiff,
 						"extRefTS", extRefTS,
+						"incomingTS", extPkt.Packet.Timestamp,
+						"referenceLayerSpatial", f.referenceLayerSpatial,
 						"dummyStartTSOffset", f.dummyStartTSOffset,
 					)
 				}
 			}
 		}
 	}
-	extRefTS += f.dummyStartTSOffset
 
 	var extNextTS uint64
 	if f.lastSSRC == 0 {
@@ -1759,6 +1763,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		"switchingAt", switchingAt.String(),
 		"layer", layer,
 		"extLastTS", extLastTS,
+		"lastMarker", rtpMungerState.LastMarker,
 		"extRefTS", extRefTS,
 		"dummyStartTSOffset", f.dummyStartTSOffset,
 		"referenceLayerSpatial", f.referenceLayerSpatial,
