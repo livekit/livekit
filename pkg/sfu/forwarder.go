@@ -331,15 +331,17 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 			f.vls = videolayerselector.NewSimulcast(f.logger)
 		}
 		f.vls.SetTemporalLayerSelector(temporallayerselector.NewVP8(f.logger))
+
 	case "video/h264":
 		if f.vls != nil {
 			f.vls = videolayerselector.NewSimulcastFromNull(f.vls)
 		} else {
 			f.vls = videolayerselector.NewSimulcast(f.logger)
 		}
-	case "video/vp9":
-		isDDAvailable := ddAvailable(extensions)
 
+	case "video/vp9":
+		// DD-TODO : we only enable dd layer selector for av1/vp9 now, in the future we can enable it for vp8 too
+		isDDAvailable := ddAvailable(extensions)
 		if isDDAvailable {
 			if f.vls != nil {
 				f.vls = videolayerselector.NewDependencyDescriptorFromNull(f.vls)
@@ -354,9 +356,9 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 			}
 		}
 		// SVC-TODO: Support for VP9 simulcast. When DD is not available, have to pick selector based on VP9 SVC or Simulcast
+
 	case "video/av1":
 		// DD-TODO : we only enable dd layer selector for av1/vp9 now, in the future we can enable it for vp8 too
-
 		isDDAvailable := ddAvailable(extensions)
 		if isDDAvailable {
 			if f.vls != nil {
@@ -1541,6 +1543,7 @@ func (f *Forwarder) GetTranslationParams(extPkt *buffer.ExtPacket, layer int32) 
 	switch f.kind {
 	case webrtc.RTPCodecTypeAudio:
 		return f.getTranslationParamsAudio(extPkt, layer)
+
 	case webrtc.RTPCodecTypeVideo:
 		return f.getTranslationParamsVideo(extPkt, layer)
 	}
@@ -1792,11 +1795,12 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 }
 
 // should be called with lock held
-func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer int32, tp *TranslationParams) (bool, error) {
+func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer int32, tp *TranslationParams) error {
 	if f.lastSSRC != extPkt.Packet.SSRC {
 		if err := f.processSourceSwitch(extPkt, layer); err != nil {
 			tp.shouldDrop = true
-			return false, nil
+			f.vls.Rollback()
+			return nil
 		}
 		f.logger.Debugw("switching feed", "from", f.lastSSRC, "to", extPkt.Packet.SSRC)
 		f.lastSSRC = extPkt.Packet.SSRC
@@ -1806,9 +1810,9 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 	if err != nil {
 		tp.shouldDrop = true
 		if err == ErrPaddingOnlyPacket || err == ErrDuplicatePacket || err == ErrOutOfOrderSequenceNumberCacheMiss {
-			return false, nil
+			return nil
 		}
-		return false, err
+		return err
 	}
 
 	tp.rtp = tpRTP
@@ -1817,13 +1821,13 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 		return f.translateCodecHeader(extPkt, tp)
 	}
 
-	return false, nil
+	return nil
 }
 
 // should be called with lock held
 func (f *Forwarder) getTranslationParamsAudio(extPkt *buffer.ExtPacket, layer int32) (TranslationParams, error) {
 	tp := TranslationParams{}
-	if _, err := f.getTranslationParamsCommon(extPkt, layer, &tp); err != nil {
+	if err := f.getTranslationParamsCommon(extPkt, layer, &tp); err != nil {
 		tp.shouldDrop = true
 		return tp, err
 	}
@@ -1832,12 +1836,6 @@ func (f *Forwarder) getTranslationParamsAudio(extPkt *buffer.ExtPacket, layer in
 
 // should be called with lock held
 func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer int32) (TranslationParams, error) {
-	maybeRollback := func(isSwitching bool) {
-		if isSwitching {
-			f.vls.Rollback()
-		}
-	}
-
 	tp := TranslationParams{}
 	if !f.vls.GetTarget().IsValid() {
 		// stream is paused by streamallocator
@@ -1863,6 +1861,11 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 	tp.ddBytes = result.DependencyDescriptorExtension
 	tp.marker = result.RTPMarker
 
+	err := f.getTranslationParamsCommon(extPkt, layer, &tp)
+	if tp.shouldDrop {
+		return tp, err
+	}
+
 	if FlagPauseOnDowngrade && f.isDeficientLocked() && f.vls.GetTarget().Spatial < f.vls.GetCurrent().Spatial {
 		//
 		// If target layer is lower than both the current and
@@ -1883,22 +1886,15 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		// To differentiate between the two cases, drop only when in DEFICIENT state.
 		//
 		tp.shouldDrop = true
-		maybeRollback(result.IsSwitching)
 		return tp, nil
 	}
 
-	isTemporalSwitching, err := f.getTranslationParamsCommon(extPkt, layer, &tp)
-	if tp.shouldDrop {
-		maybeRollback(result.IsSwitching || isTemporalSwitching)
-		return tp, err
-	}
-
-	return tp, err
+	return tp, nil
 }
 
-func (f *Forwarder) translateCodecHeader(extPkt *buffer.ExtPacket, tp *TranslationParams) (bool, error) {
+func (f *Forwarder) translateCodecHeader(extPkt *buffer.ExtPacket, tp *TranslationParams) error {
 	// codec specific forwarding check and any needed packet munging
-	tl, isSwitching := f.vls.SelectTemporal(extPkt)
+	tl := f.vls.SelectTemporal(extPkt)
 	inputSize, codecBytes, err := f.codecMunger.UpdateAndGet(
 		extPkt,
 		tp.rtp.snOrdering == SequenceNumberOrderingOutOfOrder,
@@ -1912,15 +1908,14 @@ func (f *Forwarder) translateCodecHeader(extPkt *buffer.ExtPacket, tp *Translati
 				// filtered temporal layer, update sequence number offset to prevent holes
 				f.rtpMunger.PacketDropped(extPkt)
 			}
-			return isSwitching, nil
+			return nil
 		}
 
-		return isSwitching, err
+		return err
 	}
 	tp.incomingHeaderSize = inputSize
 	tp.codecBytes = codecBytes
-
-	return isSwitching, nil
+	return nil
 }
 
 func (f *Forwarder) maybeStart() {
