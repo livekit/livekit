@@ -1582,9 +1582,11 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		f.started = true
 		f.referenceLayerSpatial = layer
 		f.rtpMunger.SetLastSnTs(extPkt)
-		f.refInfos[layer].tsOffset = f.rtpMunger.GetTSOffset()
 		f.codecMunger.SetLast(extPkt)
+
 		f.clearRefSenderReportsLocked()
+		f.refInfos[layer].tsOffset = f.rtpMunger.GetTSOffset()
+
 		f.logger.Debugw(
 			"starting forwarding",
 			"sequenceNumber", extPkt.Packet.SequenceNumber,
