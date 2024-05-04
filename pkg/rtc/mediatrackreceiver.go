@@ -469,7 +469,7 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) (types.Su
 		codec := receiver.Codec()
 		var found bool
 		for _, pc := range potentialCodecs {
-			if codec.MimeType == pc.MimeType {
+			if strings.EqualFold(codec.MimeType, pc.MimeType) {
 				found = true
 				break
 			}
