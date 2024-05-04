@@ -140,6 +140,7 @@ type ParticipantParams struct {
 	SubscriptionLimitVideo       int32
 	PlayoutDelay                 *livekit.PlayoutDelay
 	SyncStreams                  bool
+	EnableTrafficLoadTracking    bool
 }
 
 type ParticipantImpl struct {
@@ -868,7 +869,9 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	go func() {
 		p.SubscriptionManager.Close(isExpectedToResume)
 		p.TransportManager.Close()
-		p.ParticipantTrafficLoad.Close()
+		if p.ParticipantTrafficLoad != nil {
+			p.ParticipantTrafficLoad.Close()
+		}
 	}()
 
 	p.dataChannelStats.Stop()
@@ -1383,11 +1386,13 @@ func (p *ParticipantImpl) setupSubscriptionManager() {
 }
 
 func (p *ParticipantImpl) setupParticipantTrafficLoad() {
-	p.ParticipantTrafficLoad = NewParticipantTrafficLoad(ParticipantTrafficLoadParams{
-		Participant:      p,
-		DataChannelStats: p.dataChannelStats,
-		Logger:           p.params.Logger,
-	})
+	if p.params.EnableTrafficLoadTracking {
+		p.ParticipantTrafficLoad = NewParticipantTrafficLoad(ParticipantTrafficLoadParams{
+			Participant:      p,
+			DataChannelStats: p.dataChannelStats,
+			Logger:           p.params.Logger,
+		})
+	}
 }
 
 func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
