@@ -486,8 +486,10 @@ var DefaultConfig = Config{
 			{Mime: webrtc.MimeTypeVP9},
 			{Mime: webrtc.MimeTypeAV1},
 		},
-		EmptyTimeout:     5 * 60,
-		DepartureTimeout: 20,
+		EmptyTimeout:                 5 * 60,
+		DepartureTimeout:             20,
+		MaxRoomNameLength:            256,
+		MaxParticipantIdentityLength: 256,
 	},
 	Logging: LoggingConfig{
 		PionLevel: "error",
