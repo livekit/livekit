@@ -17,6 +17,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/livekit/protocol/livekit"
@@ -52,6 +53,10 @@ func NewRoomAllocator(conf *config.Config, router routing.Router, rs ObjectStore
 // CreateRoom creates a new room from a request and allocates it to a node to handle
 // it'll also monitor its state, and cleans it up when appropriate
 func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (*livekit.Room, bool, error) {
+	if len(req.Name) > r.config.Room.MaxRoomNameLength {
+		return nil, false, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, r.config.Room.MaxRoomNameLength)
+	}
+
 	token, err := r.roomStore.LockRoom(ctx, livekit.RoomName(req.Name), 5*time.Second)
 	if err != nil {
 		return nil, false, err
@@ -154,6 +159,10 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 }
 
 func (r *StandardRoomAllocator) ValidateCreateRoom(ctx context.Context, roomName livekit.RoomName) error {
+	if len(roomName) > r.config.Room.MaxRoomNameLength {
+		return fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, r.config.Room.MaxRoomNameLength)
+	}
+
 	// when auto create is disabled, we'll check to ensure it's already created
 	if !r.config.Room.AutoCreate {
 		_, _, err := r.roomStore.LoadRoom(ctx, roomName, false)

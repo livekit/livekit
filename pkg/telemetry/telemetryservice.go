@@ -129,8 +129,9 @@ func (t *telemetryService) FlushStats() {
 	t.workersMu.RUnlock()
 
 	now := time.Now()
-	var prev, reapHead, reapTail *StatsWorker
+	var prev, reap *StatsWorker
 	for worker != nil {
+		next := worker.next
 		if closed := worker.Flush(now); closed {
 			if prev == nil {
 				// this worker was at the head of the list
@@ -148,27 +149,19 @@ func (t *telemetryService) FlushStats() {
 				prev.next = worker.next
 			}
 
-			if reapHead == nil {
-				reapHead = worker
-				reapTail = worker
-			} else {
-				reapTail.next = worker
-				reapTail = worker
-			}
+			worker.next = reap
+			reap = worker
 		} else {
 			prev = worker
 		}
-		worker = worker.next
+		worker = next
 	}
 
-	if reapHead != nil {
+	if reap != nil {
 		t.workersMu.Lock()
-		for {
-			delete(t.workers, reapHead.participantID)
-			if reapHead == reapTail {
-				break
-			}
-			reapHead = reapHead.next
+		for reap != nil {
+			delete(t.workers, reap.participantID)
+			reap = reap.next
 		}
 		t.workersMu.Unlock()
 	}
