@@ -84,8 +84,8 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 		return nil, ErrEgressNotConnected
 	}
 
-	if len(req.Name) > s.roomConf.MaxRoomNameLength {
-		return nil, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, s.roomConf.MaxRoomNameLength)
+	if limit := s.roomConf.MaxRoomNameLength; limit > 0 && len(req.Name) > limit {
+		return nil, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, limit)
 	}
 
 	rm, created, err := s.roomAllocator.CreateRoom(ctx, req)
