@@ -698,7 +698,6 @@ func (s *StreamAllocator) handleSignalProbeClusterDone(event Event) {
 func (s *StreamAllocator) handleSignalResume(event Event) {
 	s.videoTracksMu.Lock()
 	track := s.videoTracks[event.TrackID]
-	s.videoTracksMu.Unlock()
 
 	update := NewStreamStateUpdate()
 	updated := track != nil && track.SetStreamState(StreamStateActive)
