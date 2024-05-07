@@ -700,11 +700,12 @@ func (s *StreamAllocator) handleSignalResume(event Event) {
 	track := s.videoTracks[event.TrackID]
 	s.videoTracksMu.Unlock()
 
-	if track != nil {
-		update := NewStreamStateUpdate()
-		if track.SetStreamState(StreamStateActive) {
-			update.HandleStreamingChange(track, StreamStateActive)
-		}
+	update := NewStreamStateUpdate()
+	updated := track != nil && track.SetStreamState(StreamStateActive)
+	s.videoTracksMu.Unlock()
+
+	if updated {
+		update.HandleStreamingChange(track, StreamStateActive)
 		s.maybeSendUpdate(update)
 	}
 }
