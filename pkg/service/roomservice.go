@@ -152,7 +152,7 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 		return nil, twirpAuthError(err)
 	}
 
-	err := s.roomStore.DeleteRoom(ctx, livekit.RoomName(req.Room))
+	_, _, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false)
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +168,8 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 		return nil, err
 	}
 
-	return &livekit.DeleteRoomResponse{}, nil
+	err = s.roomStore.DeleteRoom(ctx, livekit.RoomName(req.Room))
+	return &livekit.DeleteRoomResponse{}, err
 }
 
 func (s *RoomService) ListParticipants(ctx context.Context, req *livekit.ListParticipantsRequest) (*livekit.ListParticipantsResponse, error) {
