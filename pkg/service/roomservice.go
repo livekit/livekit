@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"sync"
 
 	"github.com/avast/retry-go/v4"
 	"github.com/pkg/errors"
@@ -29,7 +30,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
-	"github.com/livekit/psrpc"
 )
 
 // A rooms service that supports a single node
@@ -158,12 +158,22 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 		return nil, twirpAuthError(err)
 	}
 
-	_, err := s.roomClient.DeleteRoom(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
-	if !errors.Is(err, psrpc.ErrNoResponse) {
-		return &livekit.DeleteRoomResponse{}, err
-	}
+	var wg sync.WaitGroup
+	wg.Add(2)
 
-	err = s.roomStore.DeleteRoom(ctx, livekit.RoomName(req.Room))
+	go func() {
+		s.roomClient.DeleteRoom(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
+		wg.Done()
+	}()
+
+	var err error
+	go func() {
+		err = s.roomStore.DeleteRoom(ctx, livekit.RoomName(req.Room))
+		wg.Done()
+	}()
+
+	wg.Wait()
+
 	return &livekit.DeleteRoomResponse{}, err
 }
 
