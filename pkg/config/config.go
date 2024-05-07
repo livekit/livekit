@@ -229,15 +229,17 @@ type VideoConfig struct {
 
 type RoomConfig struct {
 	// enable rooms to be automatically created
-	AutoCreate         bool               `yaml:"auto_create,omitempty"`
-	EnabledCodecs      []CodecSpec        `yaml:"enabled_codecs,omitempty"`
-	MaxParticipants    uint32             `yaml:"max_participants,omitempty"`
-	EmptyTimeout       uint32             `yaml:"empty_timeout,omitempty"`
-	DepartureTimeout   uint32             `yaml:"departure_timeout,omitempty"`
-	EnableRemoteUnmute bool               `yaml:"enable_remote_unmute,omitempty"`
-	MaxMetadataSize    uint32             `yaml:"max_metadata_size,omitempty"`
-	PlayoutDelay       PlayoutDelayConfig `yaml:"playout_delay,omitempty"`
-	SyncStreams        bool               `yaml:"sync_streams,omitempty"`
+	AutoCreate                   bool               `yaml:"auto_create,omitempty"`
+	EnabledCodecs                []CodecSpec        `yaml:"enabled_codecs,omitempty"`
+	MaxParticipants              uint32             `yaml:"max_participants,omitempty"`
+	EmptyTimeout                 uint32             `yaml:"empty_timeout,omitempty"`
+	DepartureTimeout             uint32             `yaml:"departure_timeout,omitempty"`
+	EnableRemoteUnmute           bool               `yaml:"enable_remote_unmute,omitempty"`
+	MaxMetadataSize              uint32             `yaml:"max_metadata_size,omitempty"`
+	PlayoutDelay                 PlayoutDelayConfig `yaml:"playout_delay,omitempty"`
+	SyncStreams                  bool               `yaml:"sync_streams,omitempty"`
+	MaxRoomNameLength            int                `yaml:"max_room_name_length,omitempty"`
+	MaxParticipantIdentityLength int                `yaml:"max_participant_identity_length,omitempty"`
 }
 
 type CodecSpec struct {
@@ -484,8 +486,10 @@ var DefaultConfig = Config{
 			{Mime: webrtc.MimeTypeVP9},
 			{Mime: webrtc.MimeTypeAV1},
 		},
-		EmptyTimeout:     5 * 60,
-		DepartureTimeout: 20,
+		EmptyTimeout:                 5 * 60,
+		DepartureTimeout:             20,
+		MaxRoomNameLength:            256,
+		MaxParticipantIdentityLength: 256,
 	},
 	Logging: LoggingConfig{
 		PionLevel: "error",

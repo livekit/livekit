@@ -120,6 +120,9 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 	if claims.Identity == "" {
 		return "", pi, http.StatusBadRequest, ErrIdentityEmpty
 	}
+	if limit := s.config.Room.MaxParticipantIdentityLength; limit > 0 && len(claims.Identity) > limit {
+		return "", pi, http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrParticipantIdentityExceedsLimits, limit)
+	}
 
 	roomName := livekit.RoomName(r.FormValue("room"))
 	reconnectParam := r.FormValue("reconnect")
@@ -132,6 +135,9 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 
 	if onlyName != "" {
 		roomName = onlyName
+	}
+	if limit := s.config.Room.MaxRoomNameLength; limit > 0 && len(roomName) > limit {
+		return "", pi, http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, limit)
 	}
 
 	// this is new connection for existing participant -  with publish only permissions
