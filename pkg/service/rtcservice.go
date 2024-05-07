@@ -136,6 +136,9 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 	if onlyName != "" {
 		roomName = onlyName
 	}
+	if len(roomName) > s.config.Room.MaxRoomNameLength {
+		return "", pi, http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, s.config.Room.MaxRoomNameLength)
+	}
 
 	// this is new connection for existing participant -  with publish only permissions
 	if publishParam != "" {

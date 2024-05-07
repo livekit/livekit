@@ -16,6 +16,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 
 	"github.com/avast/retry-go/v4"
@@ -81,6 +82,10 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 		return nil, twirpAuthError(err)
 	} else if req.Egress != nil && s.egressLauncher == nil {
 		return nil, ErrEgressNotConnected
+	}
+
+	if len(req.Name) > s.roomConf.MaxRoomNameLength {
+		return nil, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, s.roomConf.MaxRoomNameLength)
 	}
 
 	rm, created, err := s.roomAllocator.CreateRoom(ctx, req)
