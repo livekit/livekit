@@ -22,11 +22,13 @@ import (
 	"github.com/avast/retry-go/v4"
 	"github.com/pkg/errors"
 	"github.com/twitchtv/twirp"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
+	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
 )
@@ -76,7 +78,9 @@ func NewRoomService(
 }
 
 func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (*livekit.Room, error) {
-	AppendLogFields(ctx, "room", req.Name, "request", req)
+	clone := redactCreateRoomRequest(req)
+
+	AppendLogFields(ctx, "room", clone.Name, "request", clone)
 	if err := EnsureCreatePermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	} else if req.Egress != nil && s.egressLauncher == nil {
@@ -341,4 +345,25 @@ func (s *RoomService) startRoom(ctx context.Context, roomName livekit.RoomName) 
 		res.RequestSink.Close()
 		res.ResponseSource.Close()
 	}, nil
+}
+
+func redactCreateRoomRequest(req *livekit.CreateRoomRequest) *livekit.CreateRoomRequest {
+	if req.Egress == nil {
+		// nothing to redact
+		return req
+	}
+
+	clone := proto.Clone(req).(*livekit.CreateRoomRequest)
+
+	if clone.Egress.Room != nil {
+		egress.RedactEncodedOutputs(clone.Egress.Room)
+	}
+	if clone.Egress.Participant != nil {
+		egress.RedactAutoEncodedOutput(clone.Egress.Participant)
+	}
+	if clone.Egress.Tracks != nil {
+		egress.RedactUpload(clone.Egress.Tracks)
+	}
+
+	return clone
 }
