@@ -348,12 +348,12 @@ func (s *RoomService) startRoom(ctx context.Context, roomName livekit.RoomName) 
 }
 
 func redactCreateRoomRequest(req *livekit.CreateRoomRequest) *livekit.CreateRoomRequest {
-	clone := proto.Clone(req).(*livekit.CreateRoomRequest)
-
-	if clone.Egress == nil {
+	if req.Egress == nil {
 		// nothing to redact
-		return clone
+		return req
 	}
+
+	clone := proto.Clone(req).(*livekit.CreateRoomRequest)
 
 	if clone.Egress.Room != nil {
 		egress.RedactEncodedOutputs(clone.Egress.Room)
