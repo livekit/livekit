@@ -97,6 +97,7 @@ const (
 	ParticipantCloseReasonSimulateMigration
 	ParticipantCloseReasonSimulateNodeFailure
 	ParticipantCloseReasonSimulateServerLeave
+	ParticipantCloseReasonSimulateLeaveRequest
 	ParticipantCloseReasonNegotiateFailed
 	ParticipantCloseReasonMigrationRequested
 	ParticipantCloseReasonPublicationError
@@ -140,6 +141,8 @@ func (p ParticipantCloseReason) String() string {
 		return "SIMULATE_NODE_FAILURE"
 	case ParticipantCloseReasonSimulateServerLeave:
 		return "SIMULATE_SERVER_LEAVE"
+	case ParticipantCloseReasonSimulateLeaveRequest:
+		return "SIMULATE_LEAVE_REQUEST"
 	case ParticipantCloseReasonNegotiateFailed:
 		return "NEGOTIATE_FAILED"
 	case ParticipantCloseReasonMigrationRequested:
@@ -161,7 +164,7 @@ func (p ParticipantCloseReason) String() string {
 
 func (p ParticipantCloseReason) ToDisconnectReason() livekit.DisconnectReason {
 	switch p {
-	case ParticipantCloseReasonClientRequestLeave:
+	case ParticipantCloseReasonClientRequestLeave, ParticipantCloseReasonSimulateLeaveRequest:
 		return livekit.DisconnectReason_CLIENT_INITIATED
 	case ParticipantCloseReasonRoomManagerStop:
 		return livekit.DisconnectReason_SERVER_SHUTDOWN
