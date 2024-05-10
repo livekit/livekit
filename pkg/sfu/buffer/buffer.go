@@ -336,14 +336,14 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 			arrivalTime: now,
 		})
 		b.Unlock()
-		b.readCond.Signal()
+		b.readCond.Broadcast()
 		return
 	}
 
 	b.payloadType = rtpPacket.PayloadType
 	b.calc(pkt, &rtpPacket, time.Now(), false)
 	b.Unlock()
-	b.readCond.Signal()
+	b.readCond.Broadcast()
 	return
 }
 
