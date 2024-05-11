@@ -317,6 +317,8 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			// when the source is terminated, this means Participant.Close had been called and RTC connection is done
 			// we would terminate the signal connection as well
+			closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "")
+			_ = conn.WriteControl(websocket.CloseMessage, closeMsg, time.Now().Add(time.Second))
 			_ = conn.Close()
 		}()
 		defer func() {
