@@ -647,8 +647,8 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *RTCPS
 		return nil
 	}
 
-	timeSincePublisherSR := time.Since(publisherSRData.AtAdjusted)
-	now := publisherSRData.AtAdjusted.Add(timeSincePublisherSR)
+	timeSincePublisherSRAdjusted := time.Since(publisherSRData.AtAdjusted)
+	now := publisherSRData.AtAdjusted.Add(timeSincePublisherSRAdjusted)
 	var (
 		nowNTP    mediatransportutil.NtpTime
 		nowRTPExt uint64
@@ -658,7 +658,7 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *RTCPS
 		nowRTPExt = publisherSRData.RTPTimestampExt - tsOffset
 	} else {
 		nowNTP = mediatransportutil.ToNtpTime(now)
-		nowRTPExt = publisherSRData.RTPTimestampExt - tsOffset + uint64(timeSincePublisherSR.Nanoseconds()*int64(r.params.ClockRate)/1e9)
+		nowRTPExt = publisherSRData.RTPTimestampExt - tsOffset + uint64(timeSincePublisherSRAdjusted.Nanoseconds()*int64(r.params.ClockRate)/1e9)
 	}
 
 	srData := &RTCPSenderReportData{
@@ -684,7 +684,8 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *RTCPS
 			"timeSinceHighest", now.Sub(r.highestTime).String(),
 			"firstTime", r.firstTime.String(),
 			"timeSinceFirst", now.Sub(r.firstTime).String(),
-			"timeSincePublisherSR", timeSincePublisherSR.String(),
+			"timeSincePublisherSRAdjusted", timeSincePublisherSRAdjusted.String(),
+			"timeSincePublisherSR", time.Since(publisherSRData.At).String(),
 			"nowRTPExt", nowRTPExt,
 		}
 	}
