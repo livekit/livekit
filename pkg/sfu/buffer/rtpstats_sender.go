@@ -31,6 +31,8 @@ const (
 	cSnInfoMask = cSnInfoSize - 1
 
 	cSenderReportInitialWait = time.Second
+
+	cPassthroughNTPTimestamp = true
 )
 
 // -------------------------------------------------------------------
@@ -647,8 +649,17 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *RTCPS
 
 	timeSincePublisherSR := time.Since(publisherSRData.AtAdjusted)
 	now := publisherSRData.AtAdjusted.Add(timeSincePublisherSR)
-	nowNTP := mediatransportutil.ToNtpTime(now)
-	nowRTPExt := publisherSRData.RTPTimestampExt - tsOffset + uint64(timeSincePublisherSR.Nanoseconds()*int64(r.params.ClockRate)/1e9)
+	var (
+		nowNTP    mediatransportutil.NtpTime
+		nowRTPExt uint64
+	)
+	if cPassthroughNTPTimestamp {
+		nowNTP = publisherSRData.NTPTimestamp
+		nowRTPExt = publisherSRData.RTPTimestampExt - tsOffset
+	} else {
+		nowNTP = mediatransportutil.ToNtpTime(now)
+		nowRTPExt = publisherSRData.RTPTimestampExt - tsOffset + uint64(timeSincePublisherSR.Nanoseconds()*int64(r.params.ClockRate)/1e9)
+	}
 
 	srData := &RTCPSenderReportData{
 		NTPTimestamp:    nowNTP,
@@ -666,6 +677,7 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *RTCPS
 			"feed", publisherSRData,
 			"tsOffset", tsOffset,
 			"timeNow", time.Now().String(),
+			"now", now.String(),
 			"extStartTS", r.extStartTS,
 			"extHighestTS", r.extHighestTS,
 			"highestTime", r.highestTime.String(),
