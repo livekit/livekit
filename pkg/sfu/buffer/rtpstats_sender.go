@@ -31,8 +31,6 @@ const (
 	cSnInfoMask = cSnInfoSize - 1
 
 	cSenderReportInitialWait = time.Second
-
-	cPassthroughNTPTimestamp = true
 )
 
 // -------------------------------------------------------------------

@@ -35,6 +35,8 @@ const (
 
 	cFirstPacketTimeAdjustWindow    = 2 * time.Minute
 	cFirstPacketTimeAdjustThreshold = 15 * time.Second
+
+	cPassthroughNTPTimestamp = true
 )
 
 // -------------------------------------------------------
@@ -118,6 +120,10 @@ type RTCPSenderReportData struct {
 }
 
 func (r *RTCPSenderReportData) PropagationDelay() time.Duration {
+	if cPassthroughNTPTimestamp {
+		return 0
+	}
+
 	return r.AtAdjusted.Sub(r.NTPTimestamp.Time())
 }
 
