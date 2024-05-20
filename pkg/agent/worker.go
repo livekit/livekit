@@ -221,10 +221,6 @@ func (w *Worker) UpdateStatus(status *livekit.UpdateWorkerStatus) {
 	}
 	w.load = status.GetLoad()
 	w.mu.Unlock()
-
-	if status.Metadata != nil {
-		w.UpdateMetadata(status.GetMetadata())
-	}
 }
 
 func (w *Worker) UpdateMetadata(metadata string) {

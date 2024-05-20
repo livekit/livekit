@@ -75,12 +75,4 @@ func (j *Job) UpdateStatus(req *livekit.UpdateJobStatus) {
 
 	j.load = req.Load
 	j.mu.Unlock()
-
-	if req.Metadata != nil {
-		j.UpdateMetadata(req.GetMetadata())
-	}
-}
-
-func (j *Job) UpdateMetadata(metadata string) {
-	j.Logger.Debugw("job metadata", nil, "id", j.id, "metadata", metadata)
 }
