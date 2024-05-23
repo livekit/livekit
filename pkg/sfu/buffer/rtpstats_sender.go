@@ -284,33 +284,38 @@ func (r *RTPStatsSender) Update(
 	pktSize := uint64(hdrSize + payloadSize + paddingSize)
 	isDuplicate := false
 	gapSN := int64(extSequenceNumber - r.extHighestSN)
+	getLoggingFields := func() []interface{} {
+		return []interface{}{
+			"extStartSN", r.extStartSN,
+			"extHighestSN", r.extHighestSN,
+			"extStartTS", r.extStartTS,
+			"extHighestTS", r.extHighestTS,
+			"firstTime", r.firstTime.String(),
+			"highestTime", r.highestTime.String(),
+			"prevSN", r.extHighestSN,
+			"currSN", extSequenceNumber,
+			"gapSN", gapSN,
+			"prevTS", r.extHighestTS,
+			"currTS", extTimestamp,
+			"gapTS", extTimestamp - r.extHighestTS,
+			"packetTime", packetTime.String(),
+			"sequenceNumber", extSequenceNumber,
+			"timestamp", extTimestamp,
+			"marker", marker,
+			"hdrSize", hdrSize,
+			"payloadSize", payloadSize,
+			"paddingSize", paddingSize,
+			"firstSR", r.srFirst,
+			"lastSR", r.srNewest,
+		}
+	}
 	if gapSN <= 0 { // duplicate OR out-of-order
 		if payloadSize == 0 && extSequenceNumber < r.extStartSN {
 			// do not start on a padding only packet
 			return
 		}
 		if -gapSN >= cNumSequenceNumbers/2 {
-			r.logger.Warnw(
-				"large sequence number gap negative", nil,
-				"extStartSN", r.extStartSN,
-				"extHighestSN", r.extHighestSN,
-				"extStartTS", r.extStartTS,
-				"extHighestTS", r.extHighestTS,
-				"firstTime", r.firstTime.String(),
-				"highestTime", r.highestTime.String(),
-				"prev", r.extHighestSN,
-				"curr", extSequenceNumber,
-				"gap", gapSN,
-				"packetTime", packetTime.String(),
-				"sequenceNumber", extSequenceNumber,
-				"timestamp", extTimestamp,
-				"marker", marker,
-				"hdrSize", hdrSize,
-				"payloadSize", payloadSize,
-				"paddingSize", paddingSize,
-				"firstSR", r.srFirst,
-				"lastSR", r.srNewest,
-			)
+			r.logger.Warnw("large sequence number gap negative", nil, getLoggingFields()...)
 		}
 
 		if extSequenceNumber < r.extStartSN {
@@ -335,10 +340,12 @@ func (r *RTPStatsSender) Update(
 
 			r.logger.Infow(
 				"adjusting start sequence number",
-				"snBefore", r.extStartSN,
-				"snAfter", extSequenceNumber,
-				"tsBefore", r.extStartTS,
-				"tsAfter", extTimestamp,
+				append(getLoggingFields(),
+					"snBefore", r.extStartSN,
+					"snAfter", extSequenceNumber,
+					"tsBefore", r.extStartTS,
+					"tsAfter", extTimestamp,
+				)...,
 			)
 			r.extStartSN = extSequenceNumber
 		}
@@ -357,28 +364,8 @@ func (r *RTPStatsSender) Update(
 			r.setSnInfo(extSequenceNumber, r.extHighestSN, uint16(pktSize), uint8(hdrSize), uint16(payloadSize), marker, true)
 		}
 	} else { // in-order
-		if gapSN >= cNumSequenceNumbers/2 {
-			r.logger.Warnw(
-				"large sequence number gap", nil,
-				"extStartSN", r.extStartSN,
-				"extHighestSN", r.extHighestSN,
-				"extStartTS", r.extStartTS,
-				"extHighestTS", r.extHighestTS,
-				"firstTime", r.firstTime.String(),
-				"highestTime", r.highestTime.String(),
-				"prev", r.extHighestSN,
-				"curr", extSequenceNumber,
-				"gap", gapSN,
-				"packetTime", packetTime.String(),
-				"sequenceNumber", extSequenceNumber,
-				"timestamp", extTimestamp,
-				"marker", marker,
-				"hdrSize", hdrSize,
-				"payloadSize", payloadSize,
-				"paddingSize", paddingSize,
-				"firstSR", r.srFirst,
-				"lastSR", r.srNewest,
-			)
+		if gapSN >= cNumSequenceNumbers/2 || extTimestamp < r.extHighestTS {
+			r.logger.Warnw("large sequence number gap OR time reversed", nil, getLoggingFields()...)
 		}
 
 		// update gap histogram
@@ -396,10 +383,12 @@ func (r *RTPStatsSender) Update(
 	if extTimestamp < r.extStartTS {
 		r.logger.Infow(
 			"adjusting start timestamp",
-			"snBefore", r.extStartSN,
-			"snAfter", extSequenceNumber,
-			"tsBefore", r.extStartTS,
-			"tsAfter", extTimestamp,
+			append(getLoggingFields(),
+				"snBefore", r.extStartSN,
+				"snAfter", extSequenceNumber,
+				"tsBefore", r.extStartTS,
+				"tsAfter", extTimestamp,
+			)...,
 		)
 		r.extStartTS = extTimestamp
 	}

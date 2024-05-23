@@ -169,27 +169,32 @@ func (r *RTPStatsReceiver) Update(
 
 	pktSize := uint64(hdrSize + payloadSize + paddingSize)
 	gapSN := int64(resSN.ExtendedVal - resSN.PreExtendedHighest)
+	getLoggingFields := func() []interface{} {
+		return []interface{}{
+			"extStartSN", r.sequenceNumber.GetExtendedStart(),
+			"extHighestSN", r.sequenceNumber.GetExtendedHighest(),
+			"extStartTS", r.timestamp.GetExtendedStart(),
+			"extHighestTS", r.timestamp.GetExtendedHighest(),
+			"firstTime", r.firstTime.String(),
+			"highestTime", r.highestTime.String(),
+			"prevSN", resSN.PreExtendedHighest,
+			"currSN", resSN.ExtendedVal,
+			"gapSN", gapSN,
+			"prevTS", resTS.PreExtendedHighest,
+			"currTS", resTS.ExtendedVal,
+			"gapTS", resTS.ExtendedVal - resTS.PreExtendedHighest,
+			"packetTime", packetTime.String(),
+			"sequenceNumber", sequenceNumber,
+			"timestamp", timestamp,
+			"marker", marker,
+			"hdrSize", hdrSize,
+			"payloadSize", payloadSize,
+			"paddingSize", paddingSize,
+		}
+	}
 	if gapSN <= 0 { // duplicate OR out-of-order
 		if -gapSN >= cNumSequenceNumbers/2 {
-			r.logger.Warnw(
-				"large sequence number gap negative", nil,
-				"extStartSN", r.sequenceNumber.GetExtendedStart(),
-				"extHighestSN", r.sequenceNumber.GetExtendedHighest(),
-				"extStartTS", r.timestamp.GetExtendedStart(),
-				"extHighestTS", r.timestamp.GetExtendedHighest(),
-				"firstTime", r.firstTime.String(),
-				"highestTime", r.highestTime.String(),
-				"prev", resSN.PreExtendedHighest,
-				"curr", resSN.ExtendedVal,
-				"gap", gapSN,
-				"packetTime", packetTime.String(),
-				"sequenceNumber", sequenceNumber,
-				"timestamp", timestamp,
-				"marker", marker,
-				"hdrSize", hdrSize,
-				"payloadSize", payloadSize,
-				"paddingSize", paddingSize,
-			)
+			r.logger.Warnw("large sequence number gap negative", nil, getLoggingFields()...)
 		}
 
 		if gapSN != 0 {
@@ -213,28 +218,7 @@ func (r *RTPStatsReceiver) Update(
 		flowState.ExtTimestamp = resTS.ExtendedVal
 	} else { // in-order
 		if gapSN >= cNumSequenceNumbers/2 || resTS.ExtendedVal < resTS.PreExtendedHighest {
-			r.logger.Warnw(
-				"large sequence number gap OR time reversed", nil,
-				"extStartSN", r.sequenceNumber.GetExtendedStart(),
-				"extHighestSN", r.sequenceNumber.GetExtendedHighest(),
-				"extStartTS", r.timestamp.GetExtendedStart(),
-				"extHighestTS", r.timestamp.GetExtendedHighest(),
-				"firstTime", r.firstTime.String(),
-				"highestTime", r.highestTime.String(),
-				"prevSN", resSN.PreExtendedHighest,
-				"currSN", resSN.ExtendedVal,
-				"gapSN", gapSN,
-				"prevTS", resTS.PreExtendedHighest,
-				"currTS", resTS.ExtendedVal,
-				"gapTS", resTS.ExtendedVal-resTS.PreExtendedHighest,
-				"packetTime", packetTime.String(),
-				"sequenceNumber", sequenceNumber,
-				"timestamp", timestamp,
-				"marker", marker,
-				"hdrSize", hdrSize,
-				"payloadSize", payloadSize,
-				"paddingSize", paddingSize,
-			)
+			r.logger.Warnw("large sequence number gap OR time reversed", nil, getLoggingFields()...)
 		}
 
 		// update gap histogram
