@@ -684,9 +684,12 @@ func (t *MediaTrackReceiver) UpdateAudioTrack(update *livekit.UpdateLocalAudioTr
 			t.trackInfo.DisableDtx = true
 		}
 	}
+	ti := t.trackInfoCloneLocked()
 	t.lock.Unlock()
 
 	t.updateTrackInfoOfReceivers()
+
+	t.params.Telemetry.TrackPublishedUpdate(context.Background(), t.PublisherID(), ti)
 }
 
 func (t *MediaTrackReceiver) UpdateVideoTrack(update *livekit.UpdateLocalVideoTrack) {
@@ -697,9 +700,12 @@ func (t *MediaTrackReceiver) UpdateVideoTrack(update *livekit.UpdateLocalVideoTr
 	t.lock.Lock()
 	t.trackInfo.Width = update.Width
 	t.trackInfo.Height = update.Height
+	ti := t.trackInfoCloneLocked()
 	t.lock.Unlock()
 
 	t.updateTrackInfoOfReceivers()
+
+	t.params.Telemetry.TrackPublishedUpdate(context.Background(), t.PublisherID(), ti)
 }
 
 func (t *MediaTrackReceiver) TrackInfo() *livekit.TrackInfo {
@@ -709,11 +715,15 @@ func (t *MediaTrackReceiver) TrackInfo() *livekit.TrackInfo {
 	return t.trackInfo
 }
 
+func (t *MediaTrackReceiver) trackInfoCloneLocked() *livekit.TrackInfo {
+	return proto.Clone(t.trackInfo).(*livekit.TrackInfo)
+}
+
 func (t *MediaTrackReceiver) TrackInfoClone() *livekit.TrackInfo {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 
-	return proto.Clone(t.trackInfo).(*livekit.TrackInfo)
+	return t.trackInfoCloneLocked()
 }
 
 func (t *MediaTrackReceiver) NotifyMaxLayerChange(maxLayer int32) {
