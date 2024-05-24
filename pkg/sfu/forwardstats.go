@@ -22,21 +22,7 @@ func NewForwardStats(latencyUpdateInterval, reportInterval, latencyWindowLength 
 		closeCh: make(chan struct{}),
 	}
 
-	go func() {
-		ticker := time.NewTicker(reportInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-s.closeCh:
-				return
-			case <-ticker.C:
-				latency, jitter := s.GetLastStats(reportInterval)
-				latencySlow, jitterSlow := s.GetStats()
-				prometheus.RecordForwardJitter(uint32(jitter/time.Millisecond), uint32(jitterSlow/time.Millisecond))
-				prometheus.RecordForwardLatency(uint32(latency/time.Millisecond), uint32(latencySlow/time.Millisecond))
-			}
-		}
-	}()
+	go s.report(reportInterval)
 	return s
 }
 
@@ -69,4 +55,20 @@ func (s *ForwardStats) GetLastStats(duration time.Duration) (latency, jitter tim
 
 func (s *ForwardStats) Stop() {
 	close(s.closeCh)
+}
+
+func (s *ForwardStats) report(reportInterval time.Duration) {
+	ticker := time.NewTicker(reportInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-s.closeCh:
+			return
+		case <-ticker.C:
+			latency, jitter := s.GetLastStats(reportInterval)
+			latencySlow, jitterSlow := s.GetStats()
+			prometheus.RecordForwardJitter(uint32(jitter/time.Millisecond), uint32(jitterSlow/time.Millisecond))
+			prometheus.RecordForwardLatency(uint32(latency/time.Millisecond), uint32(latencySlow/time.Millisecond))
+		}
+	}
 }
