@@ -27,10 +27,11 @@ import (
 	"github.com/redis/go-redis/v9"
 	"gopkg.in/yaml.v3"
 
+	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/livekit-server/pkg/agent"
+	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
@@ -51,6 +52,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		createKeyProvider,
 		createWebhookNotifier,
 		createClientConfiguration,
+		createForwardStats,
 		routing.CreateRouter,
 		getRoomConf,
 		config.DefaultAPIConfig,
@@ -233,6 +235,13 @@ func getPSRPCConfig(config *config.Config) rpc.PSRPCConfig {
 
 func getPSRPCClientParams(config rpc.PSRPCConfig, bus psrpc.MessageBus) rpc.ClientParams {
 	return rpc.NewClientParams(config, bus, logger.GetLogger(), rpc.PSRPCMetricsObserver{})
+}
+
+func createForwardStats(conf *config.Config) *sfu.ForwardStats {
+	if conf.RTC.ForwardStats.SummaryInterval == 0 || conf.RTC.ForwardStats.ReportInterval == 0 || conf.RTC.ForwardStats.ReportWindow == 0 {
+		return nil
+	}
+	return sfu.NewForwardStats(conf.RTC.ForwardStats.SummaryInterval, conf.RTC.ForwardStats.ReportInterval, conf.RTC.ForwardStats.ReportWindow)
 }
 
 func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Server, error) {

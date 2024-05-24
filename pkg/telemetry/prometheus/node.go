@@ -165,6 +165,8 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 	trackPublishSuccessNow := trackPublishSuccess.Load()
 	trackSubscribeAttemptsNow := trackSubscribeAttempts.Load()
 	trackSubscribeSuccessNow := trackSubscribeSuccess.Load()
+	forwardLatencyNow := forwardLatency.Load()
+	forwardJitterNow := forwardJitter.Load()
 
 	updatedAt := time.Now().Unix()
 	elapsed := updatedAt - prevAverage.UpdatedAt
@@ -207,6 +209,8 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		RetransmitBytesOutPerSec:         prevAverage.RetransmitBytesOutPerSec,
 		RetransmitPacketsOutPerSec:       prevAverage.RetransmitPacketsOutPerSec,
 		NackPerSec:                       prevAverage.NackPerSec,
+		ForwardLatency:                   forwardLatencyNow,
+		ForwardJitter:                    forwardJitterNow,
 		ParticipantSignalConnectedPerSec: prevAverage.ParticipantSignalConnectedPerSec,
 		ParticipantRtcInitPerSec:         prevAverage.ParticipantRtcInitPerSec,
 		ParticipantRtcConnectedPerSec:    prevAverage.ParticipantRtcConnectedPerSec,

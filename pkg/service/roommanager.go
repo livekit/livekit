@@ -25,6 +25,7 @@ import (
 	"golang.org/x/exp/maps"
 
 	"github.com/livekit/livekit-server/pkg/agent"
+	"github.com/livekit/livekit-server/pkg/sfu"
 	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
 	"github.com/livekit/protocol/auth"
@@ -83,6 +84,8 @@ type RoomManager struct {
 	participantServers utils.MultitonService[rpc.ParticipantTopic]
 
 	iceConfigCache *sutils.IceConfigCache[iceConfigCacheKey]
+
+	forwardStats *sfu.ForwardStats
 }
 
 func NewLocalRoomManager(
@@ -97,6 +100,7 @@ func NewLocalRoomManager(
 	versionGenerator utils.TimedVersionGenerator,
 	turnAuthHandler *TURNAuthHandler,
 	bus psrpc.MessageBus,
+	forwardStats *sfu.ForwardStats,
 ) (*RoomManager, error) {
 	rtcConf, err := rtc.NewWebRTCConfig(conf)
 	if err != nil {
@@ -116,6 +120,7 @@ func NewLocalRoomManager(
 		versionGenerator:  versionGenerator,
 		turnAuthHandler:   turnAuthHandler,
 		bus:               bus,
+		forwardStats:      forwardStats,
 
 		rooms: make(map[livekit.RoomName]*rtc.Room),
 
@@ -232,6 +237,10 @@ func (r *RoomManager) Stop() {
 	}
 
 	r.iceConfigCache.Stop()
+
+	if r.forwardStats != nil {
+		r.forwardStats.Stop()
+	}
 }
 
 // StartSession starts WebRTC session when a new participant is connected, takes place on RTC node
@@ -440,6 +449,7 @@ func (r *RoomManager) StartSession(
 		SubscriptionLimitVideo:       r.config.Limit.SubscriptionLimitVideo,
 		PlayoutDelay:                 roomInternal.GetPlayoutDelay(),
 		SyncStreams:                  roomInternal.GetSyncStreams(),
+		ForwardStats:                 r.forwardStats,
 	})
 	if err != nil {
 		return err

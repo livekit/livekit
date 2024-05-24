@@ -117,6 +117,8 @@ type RTCConfig struct {
 
 	// max number of bytes to buffer for data channel. 0 means unlimited
 	DataChannelMaxBufferedAmount uint64 `yaml:"data_channel_max_buffered_amount,omitempty"`
+
+	ForwardStats ForwardStatsConfig `yaml:"forward_stats,omitempty"`
 }
 
 type TURNServer struct {
@@ -316,6 +318,12 @@ type APIConfig struct {
 
 	// max amount of time to wait before checking for operation complete
 	MaxCheckInterval time.Duration `yaml:"max_check_interval,omitempty"`
+}
+
+type ForwardStatsConfig struct {
+	SummaryInterval time.Duration `yaml:"summary_interval,omitempty"`
+	ReportInterval  time.Duration `yaml:"report_interval,omitempty"`
+	ReportWindow    time.Duration `yaml:"report_window,omitempty"`
 }
 
 func DefaultAPIConfig() APIConfig {

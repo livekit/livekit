@@ -141,6 +141,7 @@ type ParticipantParams struct {
 	PlayoutDelay                 *livekit.PlayoutDelay
 	SyncStreams                  bool
 	EnableTrafficLoadTracking    bool
+	ForwardStats                 *sfu.ForwardStats
 }
 
 type ParticipantImpl struct {
@@ -2126,6 +2127,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 		PLIThrottleConfig:   p.params.PLIThrottleConfig,
 		SimTracks:           p.params.SimTracks,
 		OnRTCP:              p.postRtcp,
+		ForwardStats:        p.params.ForwardStats,
 	}, ti)
 
 	mt.OnSubscribedMaxQualityChange(p.onSubscribedMaxQualityChange)
