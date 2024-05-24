@@ -66,7 +66,7 @@ type Worker struct {
 	protocolVersion WorkerProtocolVersion
 	registered      atomic.Bool
 	status          livekit.WorkerStatus
-	runningJobs     map[string]*Job
+	runningJobs     map[string]*livekit.Job
 
 	onWorkerRegistered func(w *Worker)
 
@@ -100,7 +100,7 @@ func NewWorker(
 		apiSecret:       apiSecret,
 		serverInfo:      serverInfo,
 		closed:          make(chan struct{}),
-		runningJobs:     make(map[string]*Job),
+		runningJobs:     make(map[string]*livekit.Job),
 		availability:    make(map[string]chan *livekit.AvailabilityResponse),
 		conn:            conn,
 		sigConn:         sigConn,
@@ -164,8 +164,8 @@ func (w *Worker) Registered() bool {
 	return w.registered.Load()
 }
 
-func (w *Worker) RunningJobs() map[string]*Job {
-	jobs := make(map[string]*Job, len(w.runningJobs))
+func (w *Worker) RunningJobs() map[string]*livekit.Job {
+	jobs := make(map[string]*livekit.Job, len(w.runningJobs))
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	for k, v := range w.runningJobs {
@@ -180,6 +180,10 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) error {
 	w.mu.Lock()
 	w.availability[job.Id] = availCh
 	w.mu.Unlock()
+
+	if job.State == nil {
+		job.State = &livekit.JobState{}
+	}
 
 	w.sendRequest(&livekit.ServerMessage{Message: &livekit.ServerMessage_Availability{
 		Availability: &livekit.AvailabilityRequest{Job: job},
@@ -203,7 +207,12 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) error {
 			Assignment: &livekit.JobAssignment{Job: job, Url: nil, Token: token},
 		}})
 
-		// TODO(theomonnom): Check if an agent was successfully connected to the room before returning
+		w.mu.Lock()
+		w.runningJobs[job.Id] = job
+		w.mu.Unlock()
+
+		// TODO sweep jobs that are never started. We can't do this until all SDKs actually update the the JOB state
+
 		return nil
 	case <-time.After(assignJobTimeout):
 		return ErrAvailabilityTimeout
@@ -331,15 +340,32 @@ func (w *Worker) handleAvailability(res *livekit.AvailabilityResponse) {
 
 func (w *Worker) handleJobUpdate(update *livekit.UpdateJobStatus) {
 	w.mu.Lock()
-	job, ok := w.runningJobs[update.JobId]
-	w.mu.Unlock()
+	defer w.mu.Unlock()
 
+	job, ok := w.runningJobs[update.JobId]
 	if !ok {
-		w.Logger.Warnw("received job update for unknown job", nil, "jobId", update.JobId)
+		w.Logger.Infow("received job update for unknown job", "jobId", update.JobId)
 		return
 	}
 
-	job.UpdateStatus(update)
+	now := time.Now()
+	job.State.UpdatedAt = now.UnixNano()
+
+	if job.State.Status == livekit.JobStatus_JS_PENDING && update.Status >= livekit.JobStatus_JS_RUNNING {
+		job.State.StartedAt = now.UnixNano()
+	}
+
+	if job.State.Status < livekit.JobStatus_JS_SUCCESS && update.Status >= livekit.JobStatus_JS_SUCCESS {
+		job.State.EndedAt = now.UnixNano()
+	}
+
+	job.State.Status = update.Status
+	job.State.Error = update.Error
+
+	// TODO do not delete, leafve inside the JobDefinition
+	if job.State.Status >= livekit.JobStatus_JS_SUCCESS {
+		delete(w.runningJobs, job.Id)
+	}
 }
 
 func (w *Worker) handleSimulateJob(simulate *livekit.SimulateJobRequest) {

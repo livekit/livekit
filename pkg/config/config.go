@@ -28,6 +28,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	redisLiveKit "github.com/livekit/protocol/redis"
 	"github.com/livekit/protocol/rpc"
@@ -229,17 +230,38 @@ type VideoConfig struct {
 
 type RoomConfig struct {
 	// enable rooms to be automatically created
-	AutoCreate                   bool               `yaml:"auto_create,omitempty"`
-	EnabledCodecs                []CodecSpec        `yaml:"enabled_codecs,omitempty"`
-	MaxParticipants              uint32             `yaml:"max_participants,omitempty"`
-	EmptyTimeout                 uint32             `yaml:"empty_timeout,omitempty"`
-	DepartureTimeout             uint32             `yaml:"departure_timeout,omitempty"`
-	EnableRemoteUnmute           bool               `yaml:"enable_remote_unmute,omitempty"`
-	MaxMetadataSize              uint32             `yaml:"max_metadata_size,omitempty"`
-	PlayoutDelay                 PlayoutDelayConfig `yaml:"playout_delay,omitempty"`
-	SyncStreams                  bool               `yaml:"sync_streams,omitempty"`
-	MaxRoomNameLength            int                `yaml:"max_room_name_length,omitempty"`
-	MaxParticipantIdentityLength int                `yaml:"max_participant_identity_length,omitempty"`
+	AutoCreate                   bool                         `yaml:"auto_create,omitempty"`
+	EnabledCodecs                []CodecSpec                  `yaml:"enabled_codecs,omitempty"`
+	MaxParticipants              uint32                       `yaml:"max_participants,omitempty"`
+	EmptyTimeout                 uint32                       `yaml:"empty_timeout,omitempty"`
+	DepartureTimeout             uint32                       `yaml:"departure_timeout,omitempty"`
+	EnableRemoteUnmute           bool                         `yaml:"enable_remote_unmute,omitempty"`
+	MaxMetadataSize              uint32                       `yaml:"max_metadata_size,omitempty"`
+	PlayoutDelay                 PlayoutDelayConfig           `yaml:"playout_delay,omitempty"`
+	SyncStreams                  bool                         `yaml:"sync_streams,omitempty"`
+	MaxRoomNameLength            int                          `yaml:"max_room_name_length,omitempty"`
+	MaxParticipantIdentityLength int                          `yaml:"max_participant_identity_length,omitempty"`
+	RoomConfigurations           map[string]RoomConfiguration `yaml:"room_configurations,omitempty"`
+}
+
+type RoomConfiguration struct {
+	Name string `yaml:"name,omitempty"` // Used as ID, must be unique
+	// number of seconds to keep the room open if no one joins
+	EmptyTimeout uint32 `yaml:"empty_timeout,omitempty"`
+	// number of seconds to keep the room open after everyone leaves
+	DepartureTimeout uint32 `yaml:"departure_timeout,omitempty"`
+	// limit number of participants that can be in a room
+	MaxParticipants uint32 `yaml:"max_participants,omitempty"`
+	// egress
+	Egress *livekit.RoomEgress `yaml:"egress,omitempty"`
+	// agent
+	Agent *livekit.RoomAgent `yaml:"agent,omitempty"`
+	// playout delay of subscriber
+	MinPlayoutDelay uint32 `yaml:"min_playout_delay,omitempty"`
+	MaxPlayoutDelay uint32 `yaml:"max_playout_delay,omitempty"`
+	// improves A/V sync when playout_delay set to a value larger than 200ms. It will disables transceiver re-use
+	// so not recommended for rooms with frequent subscription changes
+	SyncStreams bool `yaml:"sync_streams"`
 }
 
 type CodecSpec struct {
