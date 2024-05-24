@@ -125,7 +125,7 @@ type WebRTCReceiver struct {
 
 	primaryReceiver atomic.Pointer[RedPrimaryReceiver]
 	redReceiver     atomic.Pointer[RedReceiver]
-	redPktWriter    func(pkt *buffer.ExtPacket, spatialLayer int32)
+	redPktWriter    func(pkt *buffer.ExtPacket, spatialLayer int32) int
 
 	forwardStats *ForwardStats
 }
@@ -715,15 +715,15 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 			}
 		}
 
-		w.downTrackSpreader.Broadcast(func(dt TrackSender) {
+		writeCount := w.downTrackSpreader.Broadcast(func(dt TrackSender) {
 			_ = dt.WriteRTP(pkt, spatialLayer)
 		})
 
 		if redPktWriter != nil {
-			redPktWriter(pkt, spatialLayer)
+			writeCount += redPktWriter(pkt, spatialLayer)
 		}
 
-		if w.forwardStats != nil {
+		if writeCount > 0 && w.forwardStats != nil {
 			w.forwardStats.Update(pkt.Arrival, time.Now())
 		}
 
