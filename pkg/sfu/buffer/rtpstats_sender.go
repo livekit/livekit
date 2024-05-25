@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/pion/rtcp"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/protocol/livekit"
@@ -163,6 +164,8 @@ type RTPStatsSender struct {
 
 	clockSkewCount             int
 	metadataCacheOverflowCount int
+	largeJumpNegativeCount     int
+	largeJumpCount             int
 }
 
 func NewRTPStatsSender(params RTPStatsParams) *RTPStatsSender {
@@ -290,6 +293,7 @@ func (r *RTPStatsSender) Update(
 			"extHighestSN", r.extHighestSN,
 			"extStartTS", r.extStartTS,
 			"extHighestTS", r.extHighestTS,
+			"startTime", r.startTime.String(),
 			"firstTime", r.firstTime.String(),
 			"highestTime", r.highestTime.String(),
 			"prevSN", r.extHighestSN,
@@ -315,7 +319,13 @@ func (r *RTPStatsSender) Update(
 			return
 		}
 		if -gapSN >= cNumSequenceNumbers/2 {
-			r.logger.Warnw("large sequence number gap negative", nil, getLoggingFields()...)
+			if r.largeJumpNegativeCount%100 == 0 {
+				r.logger.Warnw(
+					"large sequence number gap negative", nil,
+					append(getLoggingFields(), "count", r.largeJumpNegativeCount)...,
+				)
+			}
+			r.largeJumpNegativeCount++
 		}
 
 		if extSequenceNumber < r.extStartSN {
@@ -365,7 +375,13 @@ func (r *RTPStatsSender) Update(
 		}
 	} else { // in-order
 		if gapSN >= cNumSequenceNumbers/2 || extTimestamp < r.extHighestTS {
-			r.logger.Warnw("large sequence number gap OR time reversed", nil, getLoggingFields()...)
+			if r.largeJumpCount%100 == 0 {
+				r.logger.Warnw(
+					"large sequence number gap OR time reversed", nil,
+					append(getLoggingFields(), "count", r.largeJumpCount)...,
+				)
+			}
+			r.largeJumpCount++
 		}
 
 		// update gap histogram
@@ -810,6 +826,28 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) *RTPDeltaInfo 
 		Plis:                 now.plis - then.plis,
 		Firs:                 now.firs - then.firs,
 	}
+}
+
+func (r *RTPStatsSender) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if r == nil {
+		return nil
+	}
+
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	e.AddObject("base", r.rtpStatsBase)
+	e.AddUint64("extStartSN", r.extStartSN)
+	e.AddUint64("extHighestSN", r.extHighestSN)
+	e.AddUint64("extStartTS", r.extStartTS)
+	e.AddUint64("extHighestTS", r.extHighestTS)
+	e.AddTime("lastRRTime", r.lastRRTime)
+	e.AddReflected("lastRR", r.lastRR)
+	e.AddUint64("extHighestSNFromRR", r.extHighestSNFromRR)
+	e.AddUint64("packetsLostFromRR", r.packetsLostFromRR)
+	e.AddFloat64("jitterFromRR", r.jitterFromRR)
+	e.AddFloat64("maxJitterFromRR", r.maxJitterFromRR)
+	return nil
 }
 
 func (r *RTPStatsSender) String() string {

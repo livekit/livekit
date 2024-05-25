@@ -570,7 +570,14 @@ func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime time.Tim
 		if errors.Is(err, bucket.ErrPacketTooOld) {
 			packetTooOldCount := b.packetTooOldCount.Inc()
 			if (packetTooOldCount-1)%100 == 0 {
-				b.logger.Warnw("could not add packet to bucket", err, "count", packetTooOldCount)
+				b.logger.Warnw(
+					"could not add packet to bucket", err,
+					"count", packetTooOldCount,
+					"flowState", &flowState,
+					"snAdjustment", snAdjustment,
+					"incomingSequenceNumber", flowState.ExtSequenceNumber+snAdjustment,
+					"rtpStats", b.rtpStats,
+				)
 			}
 		} else if err != bucket.ErrRTXPacket {
 			b.logger.Warnw("could not add packet to bucket", err)

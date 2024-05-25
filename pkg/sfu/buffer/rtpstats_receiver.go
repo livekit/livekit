@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/pion/rtcp"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/protocol/livekit"
@@ -61,6 +62,8 @@ const (
 	cReportSlack = float64(60.0)
 )
 
+// ---------------------------------------------------------------------
+
 type RTPFlowState struct {
 	IsNotHandled bool
 
@@ -74,6 +77,24 @@ type RTPFlowState struct {
 	ExtSequenceNumber uint64
 	ExtTimestamp      uint64
 }
+
+func (r *RTPFlowState) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if r == nil {
+		return nil
+	}
+
+	e.AddBool("IsNotHandled", r.IsNotHandled)
+	e.AddBool("HasLoss", r.HasLoss)
+	e.AddUint64("LossStartInclusive", r.LossStartInclusive)
+	e.AddUint64("LossEndExclusive", r.LossEndExclusive)
+	e.AddBool("IsDuplicate", r.IsDuplicate)
+	e.AddBool("IsOutOfOrder", r.IsOutOfOrder)
+	e.AddUint64("ExtSequenceNumber", r.ExtSequenceNumber)
+	e.AddUint64("ExtTimestamp", r.ExtTimestamp)
+	return nil
+}
+
+// ---------------------------------------------------------------------
 
 type RTPStatsReceiver struct {
 	*rtpStatsBase
@@ -92,6 +113,8 @@ type RTPStatsReceiver struct {
 
 	clockSkewCount               int
 	outOfOrderSsenderReportCount int
+	largeJumpCount               int
+	largeJumpNegativeCount       int
 }
 
 func NewRTPStatsReceiver(params RTPStatsParams) *RTPStatsReceiver {
@@ -175,6 +198,7 @@ func (r *RTPStatsReceiver) Update(
 			"extHighestSN", r.sequenceNumber.GetExtendedHighest(),
 			"extStartTS", r.timestamp.GetExtendedStart(),
 			"extHighestTS", r.timestamp.GetExtendedHighest(),
+			"startTime", r.startTime.String(),
 			"firstTime", r.firstTime.String(),
 			"highestTime", r.highestTime.String(),
 			"prevSN", resSN.PreExtendedHighest,
@@ -194,7 +218,13 @@ func (r *RTPStatsReceiver) Update(
 	}
 	if gapSN <= 0 { // duplicate OR out-of-order
 		if -gapSN >= cNumSequenceNumbers/2 {
-			r.logger.Warnw("large sequence number gap negative", nil, getLoggingFields()...)
+			if r.largeJumpNegativeCount%100 == 0 {
+				r.logger.Warnw(
+					"large sequence number gap negative", nil,
+					append(getLoggingFields(), "count", r.largeJumpNegativeCount)...,
+				)
+			}
+			r.largeJumpNegativeCount++
 		}
 
 		if gapSN != 0 {
@@ -218,7 +248,13 @@ func (r *RTPStatsReceiver) Update(
 		flowState.ExtTimestamp = resTS.ExtendedVal
 	} else { // in-order
 		if gapSN >= cNumSequenceNumbers/2 || resTS.ExtendedVal < resTS.PreExtendedHighest {
-			r.logger.Warnw("large sequence number gap OR time reversed", nil, getLoggingFields()...)
+			if r.largeJumpCount%100 == 0 {
+				r.logger.Warnw(
+					"large sequence number gap OR time reversed", nil,
+					append(getLoggingFields(), "count", r.largeJumpCount)...,
+				)
+			}
+			r.largeJumpCount++
 		}
 
 		// update gap histogram
@@ -546,6 +582,22 @@ func (r *RTPStatsReceiver) DeltaInfo(snapshotID uint32) *RTPDeltaInfo {
 	defer r.lock.Unlock()
 
 	return r.deltaInfo(snapshotID, r.sequenceNumber.GetExtendedStart(), r.sequenceNumber.GetExtendedHighest())
+}
+
+func (r *RTPStatsReceiver) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if r == nil {
+		return nil
+	}
+
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	e.AddObject("base", r.rtpStatsBase)
+	e.AddUint64("extendedStartSN", r.sequenceNumber.GetExtendedStart())
+	e.AddUint64("extHighestSN", r.sequenceNumber.GetExtendedHighest())
+	e.AddUint64("extStartTS", r.timestamp.GetExtendedStart())
+	e.AddUint64("extHighestTS", r.timestamp.GetExtendedHighest())
+	return nil
 }
 
 func (r *RTPStatsReceiver) String() string {
