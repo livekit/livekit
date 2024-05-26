@@ -35,6 +35,7 @@ var (
 	initialized atomic.Bool
 
 	MessageCounter            *prometheus.CounterVec
+	MessageBytes              *prometheus.CounterVec
 	ServiceOperationCounter   *prometheus.CounterVec
 	TwirpRequestStatusCounter *prometheus.CounterVec
 
@@ -59,6 +60,16 @@ func Init(nodeID string, nodeType livekit.NodeType) error {
 			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		},
 		[]string{"type", "status"},
+	)
+
+	MessageBytes = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace:   livekitNamespace,
+			Subsystem:   "node",
+			Name:        "message_bytes",
+			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+		},
+		[]string{"type", "message_type"},
 	)
 
 	ServiceOperationCounter = prometheus.NewCounterVec(
@@ -103,6 +114,7 @@ func Init(nodeID string, nodeType livekit.NodeType) error {
 	)
 
 	prometheus.MustRegister(MessageCounter)
+	prometheus.MustRegister(MessageBytes)
 	prometheus.MustRegister(ServiceOperationCounter)
 	prometheus.MustRegister(TwirpRequestStatusCounter)
 	prometheus.MustRegister(promSysPacketGauge)
