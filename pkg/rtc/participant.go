@@ -160,8 +160,7 @@ type ParticipantImpl struct {
 	resSinkMu sync.Mutex
 	resSink   routing.MessageSink
 
-	grants      *auth.ClaimGrants
-	hidden      atomic.Bool
+	grants      atomic.Pointer[auth.ClaimGrants]
 	isPublisher atomic.Bool
 
 	sessionStartRecorded atomic.Bool
@@ -277,8 +276,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p.timedVersion.Update(params.VersionGenerator.Next())
 	p.migrateState.Store(types.MigrateStateInit)
 	p.state.Store(livekit.ParticipantInfo_JOINING)
-	p.grants = params.Grants
-	p.hidden.Store(p.grants.Video.Hidden)
+	p.grants.Store(params.Grants)
 	p.SetResponseSink(params.Sink)
 	p.setupEnabledCodecs(params.PublishEnabledCodecs, params.SubscribeEnabledCodecs, params.ClientConf.GetDisabledCodecs())
 
@@ -335,28 +333,21 @@ func (p *ParticipantImpl) State() livekit.ParticipantInfo_State {
 }
 
 func (p *ParticipantImpl) Kind() livekit.ParticipantInfo_Kind {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-
-	return p.grants.GetParticipantKind()
+	return p.grants.Load().GetParticipantKind()
 }
 
 func (p *ParticipantImpl) IsRecorder() bool {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-
-	return p.grants.GetParticipantKind() == livekit.ParticipantInfo_EGRESS || p.grants.Video.Recorder
+	grants := p.grants.Load()
+	return grants.GetParticipantKind() == livekit.ParticipantInfo_EGRESS || grants.Video.Recorder
 }
 
 func (p *ParticipantImpl) IsDependent() bool {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-
-	switch p.grants.GetParticipantKind() {
+	grants := p.grants.Load()
+	switch grants.GetParticipantKind() {
 	case livekit.ParticipantInfo_AGENT, livekit.ParticipantInfo_EGRESS:
 		return true
 	default:
-		return p.grants.Video.Agent || p.grants.Video.Recorder
+		return grants.Video.Agent || grants.Video.Recorder
 	}
 }
 
@@ -419,12 +410,15 @@ func (p *ParticipantImpl) GetBufferFactory() *buffer.Factory {
 // SetName attaches name to the participant
 func (p *ParticipantImpl) SetName(name string) {
 	p.lock.Lock()
-	if p.grants.Name == name {
+	grants := p.grants.Load()
+	if grants.Name == name {
 		p.lock.Unlock()
 		return
 	}
 
-	p.grants.Name = name
+	grants = grants.Clone()
+	grants.Name = name
+	p.grants.Store(grants)
 	p.dirty.Store(true)
 
 	onParticipantUpdate := p.onParticipantUpdate
@@ -442,12 +436,15 @@ func (p *ParticipantImpl) SetName(name string) {
 // SetMetadata attaches metadata to the participant
 func (p *ParticipantImpl) SetMetadata(metadata string) {
 	p.lock.Lock()
-	if p.grants.Metadata == metadata {
+	grants := p.grants.Load()
+	if grants.Metadata == metadata {
 		p.lock.Unlock()
 		return
 	}
 
-	p.grants.Metadata = metadata
+	grants = grants.Clone()
+	grants.Metadata = metadata
+	p.grants.Store(grants)
 	p.requireBroadcast = p.requireBroadcast || metadata != ""
 	p.dirty.Store(true)
 
@@ -464,10 +461,7 @@ func (p *ParticipantImpl) SetMetadata(metadata string) {
 }
 
 func (p *ParticipantImpl) ClaimGrants() *auth.ClaimGrants {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-
-	return p.grants.Clone()
+	return p.grants.Load()
 }
 
 func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermission) bool {
@@ -475,21 +469,22 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 		return false
 	}
 	p.lock.Lock()
-	video := p.grants.Video
+	grants := p.grants.Load()
 
-	if video.MatchesPermission(permission) {
+	if grants.Video.MatchesPermission(permission) {
 		p.lock.Unlock()
 		return false
 	}
 
 	p.params.Logger.Infow("updating participant permission", "permission", permission)
 
-	video.UpdateFromPermission(permission)
-	p.hidden.Store(permission.Hidden)
+	grants = grants.Clone()
+	grants.Video.UpdateFromPermission(permission)
+	p.grants.Store(grants)
 	p.dirty.Store(true)
 
-	canPublish := video.GetCanPublish()
-	canSubscribe := video.GetCanSubscribe()
+	canPublish := grants.Video.GetCanPublish()
+	canSubscribe := grants.Video.GetCanSubscribe()
 
 	onParticipantUpdate := p.onParticipantUpdate
 	onClaimsChanged := p.onClaimsChanged
@@ -500,7 +495,7 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 
 	// publish permission has been revoked then remove offending tracks
 	for _, track := range p.GetPublishedTracks() {
-		if !video.GetCanPublishSource(track.Source()) {
+		if !grants.Video.GetCanPublishSource(track.Source()) {
 			p.removePublishedTrack(track)
 		}
 	}
@@ -543,8 +538,8 @@ func (p *ParticipantImpl) ToProtoWithVersion() (*livekit.ParticipantInfo, utils.
 		p.lock.Unlock()
 	}
 
-	grants := p.ClaimGrants()
 	p.lock.RLock()
+	grants := p.grants.Load()
 	v := p.version.Load()
 	piv := p.timedVersion
 
@@ -1108,27 +1103,19 @@ func (p *ParticipantImpl) IsPublisher() bool {
 }
 
 func (p *ParticipantImpl) CanPublishSource(source livekit.TrackSource) bool {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-	return p.grants.Video.GetCanPublishSource(source)
+	return p.grants.Load().Video.GetCanPublishSource(source)
 }
 
 func (p *ParticipantImpl) CanSubscribe() bool {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-
-	return p.grants.Video.GetCanSubscribe()
+	return p.grants.Load().Video.GetCanSubscribe()
 }
 
 func (p *ParticipantImpl) CanPublishData() bool {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-
-	return p.grants.Video.GetCanPublishData()
+	return p.grants.Load().Video.GetCanPublishData()
 }
 
 func (p *ParticipantImpl) Hidden() bool {
-	return p.hidden.Load()
+	return p.grants.Load().Video.Hidden
 }
 
 func (p *ParticipantImpl) VerifySubscribeParticipantInfo(pID livekit.ParticipantID, version uint32) {
