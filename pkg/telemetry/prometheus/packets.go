@@ -167,6 +167,8 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 	prometheus.MustRegister(promRTT)
 	prometheus.MustRegister(promParticipantJoin)
 	prometheus.MustRegister(promConnections)
+	prometheus.MustRegister(promForwardLatency)
+	prometheus.MustRegister(promForwardJitter)
 
 	promPacketTotalIncomingInitial = promPacketTotal.WithLabelValues(string(Incoming), transmissionInitial)
 	promPacketTotalIncomingRetransmit = promPacketTotal.WithLabelValues(string(Incoming), transmissionRetransmit)
