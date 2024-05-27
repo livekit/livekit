@@ -394,7 +394,6 @@ type LocalParticipant interface {
 	OnSubscribeStatusChanged(fn func(publisherID livekit.ParticipantID, subscribed bool))
 	OnClose(callback func(LocalParticipant))
 	OnClaimsChanged(callback func(LocalParticipant))
-	OnTrafficLoad(callback func(trafficLoad *TrafficLoad))
 
 	HandleReceiverReport(dt *sfu.DownTrack, report *rtcp.ReceiverReport)
 
@@ -423,8 +422,6 @@ type LocalParticipant interface {
 	SetSubscriberChannelCapacity(channelCapacity int64)
 
 	GetPacer() pacer.Pacer
-
-	GetTrafficLoad() *TrafficLoad
 }
 
 // Room is a container of participants, and can provide room-level actions

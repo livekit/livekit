@@ -140,7 +140,6 @@ type ParticipantParams struct {
 	SubscriptionLimitVideo       int32
 	PlayoutDelay                 *livekit.PlayoutDelay
 	SyncStreams                  bool
-	EnableTrafficLoadTracking    bool
 	ForwardStats                 *sfu.ForwardStats
 }
 
@@ -187,7 +186,6 @@ type ParticipantImpl struct {
 	*TransportManager
 	*UpTrackManager
 	*SubscriptionManager
-	*ParticipantTrafficLoad
 
 	// keeps track of unpublished tracks in order to reuse trackID
 	unpublishedTracks []*livekit.TrackInfo
@@ -297,7 +295,6 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 
 	p.setupUpTrackManager()
 	p.setupSubscriptionManager()
-	p.setupParticipantTrafficLoad()
 
 	return p, nil
 }
@@ -865,9 +862,6 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	go func() {
 		p.SubscriptionManager.Close(isExpectedToResume)
 		p.TransportManager.Close()
-		if p.ParticipantTrafficLoad != nil {
-			p.ParticipantTrafficLoad.Close()
-		}
 	}()
 
 	p.dataChannelStats.Stop()
@@ -1371,16 +1365,6 @@ func (p *ParticipantImpl) setupSubscriptionManager() {
 		SubscriptionLimitVideo: p.params.SubscriptionLimitVideo,
 		SubscriptionLimitAudio: p.params.SubscriptionLimitAudio,
 	})
-}
-
-func (p *ParticipantImpl) setupParticipantTrafficLoad() {
-	if p.params.EnableTrafficLoadTracking {
-		p.ParticipantTrafficLoad = NewParticipantTrafficLoad(ParticipantTrafficLoadParams{
-			Participant:      p,
-			DataChannelStats: p.dataChannelStats,
-			Logger:           p.params.Logger,
-		})
-	}
 }
 
 func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {

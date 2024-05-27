@@ -345,16 +345,6 @@ type FakeLocalParticipant struct {
 	getSubscribedTracksReturnsOnCall map[int]struct {
 		result1 []types.SubscribedTrack
 	}
-	GetTrafficLoadStub        func() *types.TrafficLoad
-	getTrafficLoadMutex       sync.RWMutex
-	getTrafficLoadArgsForCall []struct {
-	}
-	getTrafficLoadReturns struct {
-		result1 *types.TrafficLoad
-	}
-	getTrafficLoadReturnsOnCall map[int]struct {
-		result1 *types.TrafficLoad
-	}
 	GetTrailerStub        func() []byte
 	getTrailerMutex       sync.RWMutex
 	getTrailerArgsForCall []struct {
@@ -635,11 +625,6 @@ type FakeLocalParticipant struct {
 	onTrackUpdatedMutex       sync.RWMutex
 	onTrackUpdatedArgsForCall []struct {
 		arg1 func(types.LocalParticipant, types.MediaTrack)
-	}
-	OnTrafficLoadStub        func(func(trafficLoad *types.TrafficLoad))
-	onTrafficLoadMutex       sync.RWMutex
-	onTrafficLoadArgsForCall []struct {
-		arg1 func(trafficLoad *types.TrafficLoad)
 	}
 	ProtocolVersionStub        func() types.ProtocolVersion
 	protocolVersionMutex       sync.RWMutex
@@ -2722,59 +2707,6 @@ func (fake *FakeLocalParticipant) GetSubscribedTracksReturnsOnCall(i int, result
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) GetTrafficLoad() *types.TrafficLoad {
-	fake.getTrafficLoadMutex.Lock()
-	ret, specificReturn := fake.getTrafficLoadReturnsOnCall[len(fake.getTrafficLoadArgsForCall)]
-	fake.getTrafficLoadArgsForCall = append(fake.getTrafficLoadArgsForCall, struct {
-	}{})
-	stub := fake.GetTrafficLoadStub
-	fakeReturns := fake.getTrafficLoadReturns
-	fake.recordInvocation("GetTrafficLoad", []interface{}{})
-	fake.getTrafficLoadMutex.Unlock()
-	if stub != nil {
-		return stub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeLocalParticipant) GetTrafficLoadCallCount() int {
-	fake.getTrafficLoadMutex.RLock()
-	defer fake.getTrafficLoadMutex.RUnlock()
-	return len(fake.getTrafficLoadArgsForCall)
-}
-
-func (fake *FakeLocalParticipant) GetTrafficLoadCalls(stub func() *types.TrafficLoad) {
-	fake.getTrafficLoadMutex.Lock()
-	defer fake.getTrafficLoadMutex.Unlock()
-	fake.GetTrafficLoadStub = stub
-}
-
-func (fake *FakeLocalParticipant) GetTrafficLoadReturns(result1 *types.TrafficLoad) {
-	fake.getTrafficLoadMutex.Lock()
-	defer fake.getTrafficLoadMutex.Unlock()
-	fake.GetTrafficLoadStub = nil
-	fake.getTrafficLoadReturns = struct {
-		result1 *types.TrafficLoad
-	}{result1}
-}
-
-func (fake *FakeLocalParticipant) GetTrafficLoadReturnsOnCall(i int, result1 *types.TrafficLoad) {
-	fake.getTrafficLoadMutex.Lock()
-	defer fake.getTrafficLoadMutex.Unlock()
-	fake.GetTrafficLoadStub = nil
-	if fake.getTrafficLoadReturnsOnCall == nil {
-		fake.getTrafficLoadReturnsOnCall = make(map[int]struct {
-			result1 *types.TrafficLoad
-		})
-	}
-	fake.getTrafficLoadReturnsOnCall[i] = struct {
-		result1 *types.TrafficLoad
-	}{result1}
-}
-
 func (fake *FakeLocalParticipant) GetTrailer() []byte {
 	fake.getTrailerMutex.Lock()
 	ret, specificReturn := fake.getTrailerReturnsOnCall[len(fake.getTrailerArgsForCall)]
@@ -4354,38 +4286,6 @@ func (fake *FakeLocalParticipant) OnTrackUpdatedArgsForCall(i int) func(types.Lo
 	fake.onTrackUpdatedMutex.RLock()
 	defer fake.onTrackUpdatedMutex.RUnlock()
 	argsForCall := fake.onTrackUpdatedArgsForCall[i]
-	return argsForCall.arg1
-}
-
-func (fake *FakeLocalParticipant) OnTrafficLoad(arg1 func(trafficLoad *types.TrafficLoad)) {
-	fake.onTrafficLoadMutex.Lock()
-	fake.onTrafficLoadArgsForCall = append(fake.onTrafficLoadArgsForCall, struct {
-		arg1 func(trafficLoad *types.TrafficLoad)
-	}{arg1})
-	stub := fake.OnTrafficLoadStub
-	fake.recordInvocation("OnTrafficLoad", []interface{}{arg1})
-	fake.onTrafficLoadMutex.Unlock()
-	if stub != nil {
-		fake.OnTrafficLoadStub(arg1)
-	}
-}
-
-func (fake *FakeLocalParticipant) OnTrafficLoadCallCount() int {
-	fake.onTrafficLoadMutex.RLock()
-	defer fake.onTrafficLoadMutex.RUnlock()
-	return len(fake.onTrafficLoadArgsForCall)
-}
-
-func (fake *FakeLocalParticipant) OnTrafficLoadCalls(stub func(func(trafficLoad *types.TrafficLoad))) {
-	fake.onTrafficLoadMutex.Lock()
-	defer fake.onTrafficLoadMutex.Unlock()
-	fake.OnTrafficLoadStub = stub
-}
-
-func (fake *FakeLocalParticipant) OnTrafficLoadArgsForCall(i int) func(trafficLoad *types.TrafficLoad) {
-	fake.onTrafficLoadMutex.RLock()
-	defer fake.onTrafficLoadMutex.RUnlock()
-	argsForCall := fake.onTrafficLoadArgsForCall[i]
 	return argsForCall.arg1
 }
 
@@ -6577,8 +6477,6 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.getSubscribedParticipantsMutex.RUnlock()
 	fake.getSubscribedTracksMutex.RLock()
 	defer fake.getSubscribedTracksMutex.RUnlock()
-	fake.getTrafficLoadMutex.RLock()
-	defer fake.getTrafficLoadMutex.RUnlock()
 	fake.getTrailerMutex.RLock()
 	defer fake.getTrailerMutex.RUnlock()
 	fake.handleAnswerMutex.RLock()
@@ -6653,8 +6551,6 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.onTrackUnpublishedMutex.RUnlock()
 	fake.onTrackUpdatedMutex.RLock()
 	defer fake.onTrackUpdatedMutex.RUnlock()
-	fake.onTrafficLoadMutex.RLock()
-	defer fake.onTrafficLoadMutex.RUnlock()
 	fake.protocolVersionMutex.RLock()
 	defer fake.protocolVersionMutex.RUnlock()
 	fake.removePublishedTrackMutex.RLock()
