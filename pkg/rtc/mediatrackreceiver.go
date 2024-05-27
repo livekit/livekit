@@ -673,20 +673,29 @@ func (t *MediaTrackReceiver) UpdateAudioTrack(update *livekit.UpdateLocalAudioTr
 	}
 
 	t.lock.Lock()
-	t.trackInfo.AudioFeatures = update.Features
-	t.trackInfo.Stereo = false
-	t.trackInfo.DisableDtx = false
+	clonedInfo := proto.Clone(t.trackInfo).(*livekit.TrackInfo)
+	clonedInfo.AudioFeatures = update.Features
+	clonedInfo.Stereo = false
+	clonedInfo.DisableDtx = false
 	for _, feature := range update.Features {
 		switch feature {
 		case livekit.AudioTrackFeature_TF_STEREO:
-			t.trackInfo.Stereo = true
+			clonedInfo.Stereo = true
 		case livekit.AudioTrackFeature_TF_NO_DTX:
-			t.trackInfo.DisableDtx = true
+			clonedInfo.DisableDtx = true
 		}
 	}
+	if proto.Equal(t.trackInfo, clonedInfo) {
+		t.lock.Unlock()
+		return
+	}
+
+	t.trackInfo = clonedInfo
 	t.lock.Unlock()
 
 	t.updateTrackInfoOfReceivers()
+
+	t.params.Telemetry.TrackPublishedUpdate(context.Background(), t.PublisherID(), clonedInfo)
 }
 
 func (t *MediaTrackReceiver) UpdateVideoTrack(update *livekit.UpdateLocalVideoTrack) {
@@ -695,11 +704,20 @@ func (t *MediaTrackReceiver) UpdateVideoTrack(update *livekit.UpdateLocalVideoTr
 	}
 
 	t.lock.Lock()
-	t.trackInfo.Width = update.Width
-	t.trackInfo.Height = update.Height
+	clonedInfo := proto.Clone(t.trackInfo).(*livekit.TrackInfo)
+	clonedInfo.Width = update.Width
+	clonedInfo.Height = update.Height
+	if proto.Equal(t.trackInfo, clonedInfo) {
+		t.lock.Unlock()
+		return
+	}
+
+	t.trackInfo = clonedInfo
 	t.lock.Unlock()
 
 	t.updateTrackInfoOfReceivers()
+
+	t.params.Telemetry.TrackPublishedUpdate(context.Background(), t.PublisherID(), clonedInfo)
 }
 
 func (t *MediaTrackReceiver) TrackInfo() *livekit.TrackInfo {
@@ -709,11 +727,15 @@ func (t *MediaTrackReceiver) TrackInfo() *livekit.TrackInfo {
 	return t.trackInfo
 }
 
+func (t *MediaTrackReceiver) trackInfoCloneLocked() *livekit.TrackInfo {
+	return proto.Clone(t.trackInfo).(*livekit.TrackInfo)
+}
+
 func (t *MediaTrackReceiver) TrackInfoClone() *livekit.TrackInfo {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 
-	return proto.Clone(t.trackInfo).(*livekit.TrackInfo)
+	return t.trackInfoCloneLocked()
 }
 
 func (t *MediaTrackReceiver) NotifyMaxLayerChange(maxLayer int32) {
