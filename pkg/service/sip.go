@@ -196,14 +196,14 @@ func (s *SIPService) CreateSIPParticipantWithToken(ctx context.Context, req *liv
 	}
 	callID := sip.NewCallID()
 	log := logger.GetLogger()
-	log = log.WithValues("call-id", callID, "roomName", req.RoomName, "sip-trunk", req.SipTrunkId, "to-user", req.SipCallTo)
+	log = log.WithValues("callId", callID, "roomName", req.RoomName, "sipTrunk", req.SipTrunkId, "toUser", req.SipCallTo)
 
 	trunk, err := s.store.LoadSIPTrunk(ctx, req.SipTrunkId)
 	if err != nil {
 		log.Errorw("cannot get trunk to update sip participant", err)
 		return nil, err
 	}
-	log = log.WithValues("from-user", trunk.OutboundNumber, "to-host", trunk.OutboundAddress)
+	log = log.WithValues("fromUser", trunk.OutboundNumber, "toHost", trunk.OutboundAddress)
 	ireq := rpc.NewCreateSIPParticipantRequest(callID, wsUrl, token, req, trunk)
 
 	// CreateSIPParticipant will wait for LiveKit Participant to be created and that can take some time.
