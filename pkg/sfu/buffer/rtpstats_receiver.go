@@ -111,10 +111,10 @@ type RTPStatsReceiver struct {
 	propagationDelayDeltaHighStartTime time.Time
 	propagationDelaySpike              time.Duration
 
-	clockSkewCount               int
-	outOfOrderSsenderReportCount int
-	largeJumpCount               int
-	largeJumpNegativeCount       int
+	clockSkewCount              int
+	outOfOrderSenderReportCount int
+	largeJumpCount              int
+	largeJumpNegativeCount      int
 }
 
 func NewRTPStatsReceiver(params RTPStatsParams) *RTPStatsReceiver {
@@ -300,12 +300,12 @@ func (r *RTPStatsReceiver) Update(
 	return
 }
 
-func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData) {
+func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData) bool {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
 	if srData == nil || !r.initialized {
-		return
+		return false
 	}
 
 	// prevent against extreme case of anachronous sender reports
@@ -316,7 +316,7 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 			"last", r.srNewest,
 			"current", srData,
 		)
-		return
+		return false
 	}
 
 	tsCycles := uint64(0)
@@ -365,17 +365,17 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 		// i. e. muting replacing with null and unmute restoring the original track.
 		// Or it could be due bad report generation.
 		// In any case, ignore out-of-order reports.
-		if r.outOfOrderSsenderReportCount%10 == 0 {
+		if r.outOfOrderSenderReportCount%10 == 0 {
 			r.logger.Infow(
 				"received sender report, out-of-order, skipping",
 				"first", r.srFirst,
 				"last", r.srNewest,
 				"current", &srDataCopy,
-				"count", r.outOfOrderSsenderReportCount,
+				"count", r.outOfOrderSenderReportCount,
 			)
 		}
-		r.outOfOrderSsenderReportCount++
-		return
+		r.outOfOrderSenderReportCount++
+		return false
 	}
 
 	if r.srNewest != nil {
@@ -494,6 +494,7 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 	r.srNewest = &srDataCopy
 
 	r.maybeAdjustFirstPacketTime(r.srNewest, 0, r.timestamp.GetExtendedStart())
+	return true
 }
 
 func (r *RTPStatsReceiver) GetRtcpSenderReportData() *RTCPSenderReportData {

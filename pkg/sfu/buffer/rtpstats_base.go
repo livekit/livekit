@@ -641,6 +641,7 @@ func (r *rtpStatsBase) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	}
 
 	e.AddTime("startTime", r.startTime)
+	e.AddTime("endTime", r.endTime)
 	e.AddTime("firstTime", r.firstTime)
 	e.AddTime("highestTime", r.highestTime)
 

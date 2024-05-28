@@ -872,12 +872,13 @@ func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64) {
 		At:           time.Now(),
 	}
 
+	didSet := false
 	if b.rtpStats != nil {
-		b.rtpStats.SetRtcpSenderReportData(srData)
+		didSet = b.rtpStats.SetRtcpSenderReportData(srData)
 	}
 	b.RUnlock()
 
-	if b.onRtcpSenderReport != nil {
+	if didSet && b.onRtcpSenderReport != nil {
 		b.onRtcpSenderReport()
 	}
 }
