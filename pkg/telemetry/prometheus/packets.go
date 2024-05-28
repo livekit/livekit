@@ -299,12 +299,12 @@ func SubConnection(direction Direction) {
 	promConnections.WithLabelValues(string(direction)).Sub(1)
 }
 
-func RecordForwardLatency(latencyInstant, latencyAvg uint32) {
+func RecordForwardLatency(_, latencyAvg uint32) {
 	forwardLatency.Store(latencyAvg)
 	promForwardLatency.Set(float64(latencyAvg))
 }
 
-func RecordForwardJitter(jitterInstant, jitterAvg uint32) {
+func RecordForwardJitter(_, jitterAvg uint32) {
 	forwardJitter.Store(jitterAvg)
 	promForwardJitter.Set(float64(jitterAvg))
 }
