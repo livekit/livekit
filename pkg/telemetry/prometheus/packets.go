@@ -301,10 +301,10 @@ func SubConnection(direction Direction) {
 
 func RecordForwardLatency(latencyInstant, latencyAvg uint32) {
 	forwardLatency.Store(latencyAvg)
-	promForwardLatency.Set(float64(latencyInstant))
+	promForwardLatency.Set(float64(latencyAvg))
 }
 
 func RecordForwardJitter(jitterInstant, jitterAvg uint32) {
 	forwardJitter.Store(jitterAvg)
-	promForwardJitter.Set(float64(jitterInstant))
+	promForwardJitter.Set(float64(jitterAvg))
 }
