@@ -1619,6 +1619,21 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			message,
 			"layer", layer,
 			"extExpectedTS", extExpectedTS,
+			"incomingTS", extPkt.Packet.Timestamp,
+			"extIncomingTS", extPkt.ExtTimestamp,
+			"extRefTS", extRefTS,
+			"extLastTS", extLastTS,
+			"diffSeconds", math.Abs(diffSeconds),
+		)
+	}
+	// TODO-REMOVE-AFTER-DATA-COLLECTION
+	logTransitionInfo := func(message string, extExpectedTS, extRefTS, extLastTS uint64, diffSeconds float64) {
+		f.logger.Infow(
+			message,
+			"layer", layer,
+			"extExpectedTS", extExpectedTS,
+			"incomingTS", extPkt.Packet.Timestamp,
+			"extIncomingTS", extPkt.ExtTimestamp,
 			"extRefTS", extRefTS,
 			"extLastTS", extLastTS,
 			"diffSeconds", math.Abs(diffSeconds),
@@ -1693,6 +1708,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		}
 	}
 
+	bigJump := false
 	var extNextTS uint64
 	if f.lastSSRC == 0 {
 		// If resuming (e. g. on unmute), keep next timestamp close to expected timestamp.
@@ -1718,12 +1734,14 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		diffSeconds := float64(int64(extExpectedTS-extRefTS)) / float64(f.codec.ClockRate)
 		if diffSeconds >= 0.0 {
 			if f.resumeBehindThreshold > 0 && diffSeconds > f.resumeBehindThreshold {
-				logTransition("resume, reference too far behind", extExpectedTS, extRefTS, extLastTS, diffSeconds)
+				logTransitionInfo("resume, reference too far behind", extExpectedTS, extRefTS, extLastTS, diffSeconds)
 				extNextTS = extExpectedTS
+				bigJump = true
 			} else if diffSeconds > ResumeBehindHighThresholdSeconds {
-				// could be due to incorrect reference calculation
-				logTransition("resume, reference very far behind", extExpectedTS, extRefTS, extLastTS, diffSeconds)
+				// could be due to incoming time stamp lagging a lot, like an unpause of the track
+				logTransitionInfo("resume, reference very far behind", extExpectedTS, extRefTS, extLastTS, diffSeconds)
 				extNextTS = extExpectedTS
+				bigJump = true
 			} else {
 				extNextTS = extRefTS
 			}
@@ -1771,22 +1789,42 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		// nominal increase
 		extNextTS = extLastTS + 1
 	}
-	f.logger.Debugw(
-		"next timestamp on switch",
-		"switchingAt", switchingAt.String(),
-		"layer", layer,
-		"extLastTS", extLastTS,
-		"lastMarker", rtpMungerState.LastMarker,
-		"extRefTS", extRefTS,
-		"dummyStartTSOffset", f.dummyStartTSOffset,
-		"referenceLayerSpatial", f.referenceLayerSpatial,
-		"extExpectedTS", extExpectedTS,
-		"extNextTS", extNextTS,
-		"tsJump", extNextTS-extLastTS,
-		"nextSN", rtpMungerState.ExtLastSN+1,
-		"extIncomingSN", extPkt.ExtSequenceNumber,
-		"extIncomingTS", extPkt.ExtTimestamp,
-	)
+	if bigJump { // TODO-REMOVE-AFTER-DATA-COLLECTION
+		f.logger.Infow(
+			"next timestamp on switch",
+			"switchingAt", switchingAt.String(),
+			"layer", layer,
+			"extLastTS", extLastTS,
+			"lastMarker", rtpMungerState.LastMarker,
+			"extRefTS", extRefTS,
+			"dummyStartTSOffset", f.dummyStartTSOffset,
+			"referenceLayerSpatial", f.referenceLayerSpatial,
+			"extExpectedTS", extExpectedTS,
+			"extNextTS", extNextTS,
+			"tsJump", extNextTS-extLastTS,
+			"nextSN", rtpMungerState.ExtLastSN+1,
+			"extIncomingSN", extPkt.ExtSequenceNumber,
+			"incomingTS", extPkt.Packet.Timestamp,
+			"extIncomingTS", extPkt.ExtTimestamp,
+		)
+	} else {
+		f.logger.Debugw(
+			"next timestamp on switch",
+			"switchingAt", switchingAt.String(),
+			"layer", layer,
+			"extLastTS", extLastTS,
+			"lastMarker", rtpMungerState.LastMarker,
+			"extRefTS", extRefTS,
+			"dummyStartTSOffset", f.dummyStartTSOffset,
+			"referenceLayerSpatial", f.referenceLayerSpatial,
+			"extExpectedTS", extExpectedTS,
+			"extNextTS", extNextTS,
+			"tsJump", extNextTS-extLastTS,
+			"nextSN", rtpMungerState.ExtLastSN+1,
+			"extIncomingSN", extPkt.ExtSequenceNumber,
+			"extIncomingTS", extPkt.ExtTimestamp,
+		)
+	}
 
 	f.rtpMunger.UpdateSnTsOffsets(extPkt, 1, extNextTS-extLastTS)
 	f.refInfos[layer].tsOffset = f.rtpMunger.GetTSOffset()
