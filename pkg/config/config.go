@@ -59,6 +59,7 @@ var (
 
 type Config struct {
 	Port           uint32                   `yaml:"port,omitempty"`
+	NodeId         *string                  `yaml:"node_id,omitempty"`
 	BindAddresses  []string                 `yaml:"bind_addresses,omitempty"`
 	PrometheusPort uint32                   `yaml:"prometheus_port,omitempty"`
 	RTC            RTCConfig                `yaml:"rtc,omitempty"`

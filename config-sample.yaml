@@ -16,6 +16,10 @@
 # for production setups, this port should be placed behind a load balancer with TLS
 port: 7880
 
+# setting up node_id is optional & debugging purpose. node_id should be unique
+# left it empty so that unique nodeId will be auto generated
+# node_id: ND_unique_id
+
 # when redis is set, LiveKit will automatically operate in a fully distributed fashion
 # clients could connect to any node and be routed to the same room
 redis:
