@@ -189,7 +189,7 @@ func (p *Prober) Reset() {
 
 	p.clustersMu.Lock()
 	if p.activeCluster != nil {
-		p.logger.Infow("prober: resetting active cluster", "cluster", p.activeCluster.String())
+		p.logger.Debugw("prober: resetting active cluster", "cluster", p.activeCluster.String())
 		reset = true
 		info = p.activeCluster.GetInfo()
 	}
