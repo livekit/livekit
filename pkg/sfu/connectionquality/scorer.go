@@ -440,7 +440,7 @@ func (q *qualityScorer) updateAtLocked(stat *windowStat, at time.Time) {
 	prevCQ := scoreToConnectionQuality(q.score)
 	currCQ := scoreToConnectionQuality(score)
 	if utils.IsConnectionQualityLower(prevCQ, currCQ) {
-		q.params.Logger.Infow(
+		q.params.Logger.Debugw(
 			"quality drop",
 			"reason", reason,
 			"prevScore", q.score,

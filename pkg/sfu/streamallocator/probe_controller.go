@@ -99,12 +99,12 @@ func (p *ProbeController) CheckProbe(trend ChannelTrend, highestEstimate int64) 
 		// In rare cases, the estimate gets stuck. Prevent from probe running amok
 		// STREAM-ALLOCATOR-TODO: Need more testing here to ensure that probe does not cause a lot of damage
 		//
-		p.params.Logger.Infow("stream allocator: probe: aborting, no trend", "cluster", p.probeClusterId)
+		p.params.Logger.Debugw("stream allocator: probe: aborting, no trend", "cluster", p.probeClusterId)
 		p.abortProbeLocked()
 
 	case trend == ChannelTrendCongesting:
 		// stop immediately if the probe is congesting channel more
-		p.params.Logger.Infow("stream allocator: probe: aborting, channel is congesting", "cluster", p.probeClusterId)
+		p.params.Logger.Debugw("stream allocator: probe: aborting, channel is congesting", "cluster", p.probeClusterId)
 		p.abortProbeLocked()
 
 	case highestEstimate > p.probeGoalBps:
