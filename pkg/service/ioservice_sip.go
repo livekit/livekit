@@ -31,7 +31,7 @@ func (s *IOInfoService) matchSIPTrunk(ctx context.Context, calling, called strin
 	if err != nil {
 		return nil, err
 	}
-	return sip.MatchTrunk(trunks, calling, called)
+	return sip.MatchTrunk(trunks, "", calling, called)
 }
 
 // matchSIPDispatchRule finds the best dispatch rule matching the request parameters. Returns an error if no rule matched.
