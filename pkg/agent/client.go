@@ -42,15 +42,17 @@ const (
 type Client interface {
 	// LaunchJob starts a room or participant job on an agent.
 	// it will launch a job once for each worker in each namespace
-	LaunchJob(ctx context.Context, desc *JobDescription)
+	LaunchJob(ctx context.Context, desc *JobRequest)
 	Stop() error
 }
 
-type JobDescription struct {
+type JobRequest struct {
 	JobType livekit.JobType
 	Room    *livekit.Room
 	// only set for participant jobs
 	Participant *livekit.ParticipantInfo
+	Metadata    string
+	Namespace   string
 }
 
 type agentClient struct {
@@ -104,7 +106,7 @@ func NewAgentClient(bus psrpc.MessageBus) (Client, error) {
 	return c, nil
 }
 
-func (c *agentClient) LaunchJob(ctx context.Context, desc *JobDescription) {
+func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) {
 	roomNamespaces, publisherNamespaces, needsRefresh := c.getOrCreateDispatchers()
 
 	if needsRefresh {

@@ -80,7 +80,7 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 		return nil, false, err
 	}
 
-	req, err := r.applyNamedRoomConfiguration(req)
+	req, err = r.applyNamedRoomConfiguration(req)
 	if err != nil {
 		return nil, false, err
 	}
@@ -105,6 +105,22 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 			internal.TrackEgress = req.Egress.Tracks
 		}
 	}
+	if req.Agent == nil {
+		// Backward compatibility: by default, start any agent in the empty namespace
+		req.Agent = &livekit.RoomAgent{
+			Agents: []*livekit.CreateAgentJobDefinitionRequest{
+				&livekit.CreateAgentJobDefinitionRequest{
+					Type: livekit.JobType_JT_ROOM,
+					Room: req.Name,
+				},
+				&livekit.CreateAgentJobDefinitionRequest{
+					Type: livekit.JobType_JT_PUBLISHER,
+					Room: req.Name,
+				},
+			},
+		}
+	}
+	internal.Agents = req.Agent.Agents
 	if req.MinPlayoutDelay > 0 || req.MaxPlayoutDelay > 0 {
 		internal.PlayoutDelay = &livekit.PlayoutDelay{
 			Enabled: true,
