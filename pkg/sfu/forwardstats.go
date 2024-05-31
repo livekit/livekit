@@ -27,13 +27,18 @@ func NewForwardStats(latencyUpdateInterval, reportInterval, latencyWindowLength 
 }
 
 func (s *ForwardStats) Update(arrival, left time.Time) {
+	transit := left.Sub(arrival)
+
+	// ignore if transit is too large or negative, this could happen if system time is adjusted
+	if transit < 0 || transit > 5*time.Second {
+		return
+	}
 	leftMs := left.UnixMilli()
 	lastMs := s.lastLeftMs.Load()
 	if leftMs < lastMs || !s.lastLeftMs.CompareAndSwap(lastMs, leftMs) {
 		return
 	}
 
-	transit := left.Sub(arrival)
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	s.latency.Update(time.Duration(arrival.UnixNano()), float64(transit))
