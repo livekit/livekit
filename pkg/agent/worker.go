@@ -134,7 +134,7 @@ func (w *Worker) JobTypes() []livekit.JobType {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	res := make([]livekit.JobTypes, len(w.jobTypes))
+	res := make([]livekit.JobType, len(w.jobTypes))
 	copy(res, w.jobTypes)
 
 	return res

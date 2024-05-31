@@ -39,7 +39,6 @@ type Client interface {
 	// LaunchJob starts a room or participant job on an agent.
 	// it will launch a job once for each worker in each namespace
 	LaunchJob(ctx context.Context, desc *JobRequest)
-	Stop() error
 }
 
 type JobRequest struct {
@@ -64,15 +63,19 @@ func NewAgentClient(bus psrpc.MessageBus) (Client, error) {
 	}
 
 	c := &agentClient{
-		client:  client,
-		subDone: make(chan struct{}),
+		client: client,
 	}
 
 	return c, nil
 }
 
-func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) error {
-	_, err := c.client.JobRequest(ctx, ns, jobTypeTopic, &livekit.Job{
+func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) {
+	jobTypeTopic := RoomAgentTopic
+	if desc.JobType == livekit.JobType_JT_PUBLISHER {
+		jobTypeTopic = PublisherAgentTopic
+	}
+
+	_, err := c.client.JobRequest(ctx, desc.Namespace, jobTypeTopic, &livekit.Job{
 		Id:          utils.NewGuid(utils.AgentJobPrefix),
 		Type:        desc.JobType,
 		Room:        desc.Room,
@@ -80,9 +83,6 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) error {
 		Namespace:   desc.Namespace,
 	})
 	if err != nil {
-		logger.Infow("failed to send job request", "error", err, "namespace", ns, "jobType", desc.JobType)
-		return err
+		logger.Infow("failed to send job request", "error", err, "namespace", desc.Namespace, "jobType", desc.JobType)
 	}
-
-	return nil
 }
