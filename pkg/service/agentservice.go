@@ -20,6 +20,7 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -56,11 +57,11 @@ type AgentHandler struct {
 	workers     map[string]*agent.Worker
 	keyProvider auth.KeyProvider
 
-	namespaces map[string]*namespaceInfo
-	// TODO remove publisherEnabled and roomTopic once after all controllers have been upgraded
+	// TODO remove once deprecated CheckEnabled is removed
+	namespaces       map[string]*namespaceInfo
 	publisherEnabled bool
 	roomEnabled      bool
-	// TODO only use 1 topic after all controllers have been upgraded
+
 	roomTopic      string
 	publisherTopic string
 }
@@ -226,16 +227,15 @@ func (h *AgentHandler) handleWorkerRegister(w *agent.Worker) {
 
 	shouldNotify := false
 	var err error
-	if w.JobType() == livekit.JobType_JT_PUBLISHER {
-		// TODO keeping for backward compatibility for now
+	if slices.Contains(w.JobTypes, livekit.JobType_JT_PUBLISHER) {
 		numPublishers++
 		if numPublishers == 1 {
 			shouldNotify = true
 			err = h.agentServer.RegisterJobRequestTopic(w.Namespace(), h.publisherTopic)
 		}
 
-	} else if w.JobType() == livekit.JobType_JT_ROOM {
-		// Default. Since the JobType field is deprecated, asssume these can handle publisher requests as well
+	}
+	if slices.Contains(w.JobTypes, livekit.livekit.JobType_JT_ROOM) {
 		numRooms++
 		if numRooms == 1 {
 			shouldNotify = true
@@ -318,33 +318,15 @@ func (h *AgentHandler) publisherAvailableLocked() bool {
 	return false
 }
 
-func (h *AgentHandler) getTargetJobTypeLocked(job *livekit.Job) livekit.JobType {
-	if job.Type == livekit.JobType_JT_ROOM {
-		// room is the default type for the deprecated field in RegisterWorker
-		return livekit.JobType_JT_ROOM
-	}
-
-	// If there is any registered worker with the Publisher type for the namespace, assume that the workers
-	// use the deprecated API. Otherwise, send the Publisher job to a worker from the room (default) pool
-	for _, w := range h.workers {
-		if w.Namespace() == job.Namespace && w.JobType() == livekit.JobType_JT_PUBLISHER {
-			return livekit.JobType_JT_PUBLISHER
-		}
-	}
-
-	return livekit.JobType_JT_ROOM
-}
-
 func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*emptypb.Empty, error) {
 	attempted := make(map[string]bool)
 
 	for {
 		h.mu.Lock()
-		targetJobType := h.getTargetJobTypeLocked(job)
 		var selected *agent.Worker
 		var maxLoad float32
 		for _, w := range h.workers {
-			if w.Namespace() != job.Namespace || w.JobType() != targetJobType {
+			if w.Namespace() != job.Namespace || w.JobType() != job.Type {
 				continue
 			}
 
@@ -401,12 +383,10 @@ func (h *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job)
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	jobType := h.getTargetJobTypeLocked(job)
-
 	var affinity float32
 	var maxLoad float32
 	for _, w := range h.workers {
-		if w.Namespace() != job.Namespace || w.JobType() != jobType {
+		if w.Namespace() != job.Namespace || w.JobType() != job.Type {
 			continue
 		}
 
@@ -425,6 +405,7 @@ func (h *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job)
 	return affinity
 }
 
+// Deprecated
 func (h *AgentHandler) CheckEnabled(ctx context.Context, req *rpc.CheckEnabledRequest) (*rpc.CheckEnabledResponse, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
