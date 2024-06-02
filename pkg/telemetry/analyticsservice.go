@@ -70,6 +70,7 @@ func (a *analyticsService) SendEvent(_ context.Context, event *livekit.Analytics
 		return
 	}
 
+	event.NodeId = a.nodeID
 	event.AnalyticsKey = a.analyticsKey
 	if err := a.events.Send(&livekit.AnalyticsEvents{
 		Events: []*livekit.AnalyticsEvent{event},
