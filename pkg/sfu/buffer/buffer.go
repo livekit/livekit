@@ -594,7 +594,14 @@ func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime time.Tim
 				)
 			}
 		} else if err != bucket.ErrRTXPacket {
-			b.logger.Warnw("could not add packet to bucket", err)
+			b.logger.Warnw(
+				"could not add packet to bucket", err,
+				"flowState", &flowState,
+				"snAdjustment", snAdjustment,
+				"incomingSequenceNumber", flowState.ExtSequenceNumber+snAdjustment,
+				"rtpStats", b.rtpStats,
+				"snRangeMap", b.snRangeMap,
+			)
 		}
 		return
 	}
