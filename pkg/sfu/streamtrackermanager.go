@@ -168,35 +168,39 @@ func (s *StreamTrackerManager) AddDependencyDescriptorTrackers() {
 }
 
 func (s *StreamTrackerManager) AddTracker(layer int32) streamtracker.StreamTrackerWorker {
+	var tracker streamtracker.StreamTrackerWorker
+	s.lock.Lock()
+	if s.ddTracker != nil {
+		tracker = s.ddTracker.LayeredTracker(layer)
+	} else {
+		tracker = s.trackers[layer]
+	}
+	s.lock.Unlock()
+	if tracker != nil {
+		return tracker
+	}
+
 	bitrateInterval, ok := s.trackerConfig.BitrateReportInterval[layer]
 	if !ok {
 		return nil
 	}
 
-	var tracker streamtracker.StreamTrackerWorker
-	s.lock.Lock()
-	if s.ddTracker != nil {
-		tracker = s.ddTracker.LayeredTracker(layer)
+	var trackerImpl streamtracker.StreamTrackerImpl
+	switch s.trackerConfig.StreamTrackerType {
+	case config.StreamTrackerTypePacket:
+		trackerImpl = s.createStreamTrackerPacket(layer)
+	case config.StreamTrackerTypeFrame:
+		trackerImpl = s.createStreamTrackerFrame(layer)
 	}
-	s.lock.Unlock()
-	if tracker == nil {
-		var trackerImpl streamtracker.StreamTrackerImpl
-		switch s.trackerConfig.StreamTrackerType {
-		case config.StreamTrackerTypePacket:
-			trackerImpl = s.createStreamTrackerPacket(layer)
-		case config.StreamTrackerTypeFrame:
-			trackerImpl = s.createStreamTrackerFrame(layer)
-		}
-		if trackerImpl == nil {
-			return nil
-		}
+	if trackerImpl == nil {
+		return nil
+	}
 
-		tracker = streamtracker.NewStreamTracker(streamtracker.StreamTrackerParams{
-			StreamTrackerImpl:     trackerImpl,
-			BitrateReportInterval: bitrateInterval,
-			Logger:                s.logger.WithValues("layer", layer),
-		})
-	}
+	tracker = streamtracker.NewStreamTracker(streamtracker.StreamTrackerParams{
+		StreamTrackerImpl:     trackerImpl,
+		BitrateReportInterval: bitrateInterval,
+		Logger:                s.logger.WithValues("layer", layer),
+	})
 
 	s.logger.Debugw("stream tracker add track", "layer", layer)
 	tracker.OnStatusChanged(func(status streamtracker.StreamStatus) {
