@@ -551,7 +551,13 @@ func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime time.Tim
 			//   44 - padding only - out-of-order + duplicate - dropped as duplicate
 			//
 			if err := b.snRangeMap.ExcludeRange(flowState.ExtSequenceNumber, flowState.ExtSequenceNumber+1); err != nil {
-				b.logger.Errorw("could not exclude range", err, "sn", rtpPacket.SequenceNumber, "esn", flowState.ExtSequenceNumber)
+				b.logger.Errorw(
+					"could not exclude range", err,
+					"sn", rtpPacket.SequenceNumber,
+					"esn", flowState.ExtSequenceNumber,
+					"rtpStats", b.rtpStats,
+					"snRangeMap", b.snRangeMap,
+				)
 			}
 		}
 		return
@@ -560,7 +566,14 @@ func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime time.Tim
 	// add to RTX buffer using sequence number after accounting for dropped padding only packets
 	snAdjustment, err := b.snRangeMap.GetValue(flowState.ExtSequenceNumber)
 	if err != nil {
-		b.logger.Errorw("could not get sequence number adjustment", err, "sn", flowState.ExtSequenceNumber, "payloadSize", len(rtpPacket.Payload))
+		b.logger.Errorw(
+			"could not get sequence number adjustment", err,
+			"sn", rtpPacket.SequenceNumber,
+			"esn", flowState.ExtSequenceNumber,
+			"payloadSize", len(rtpPacket.Payload),
+			"rtpStats", b.rtpStats,
+			"snRangeMap", b.snRangeMap,
+		)
 		return
 	}
 	flowState.ExtSequenceNumber -= snAdjustment
@@ -577,6 +590,7 @@ func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime time.Tim
 					"snAdjustment", snAdjustment,
 					"incomingSequenceNumber", flowState.ExtSequenceNumber+snAdjustment,
 					"rtpStats", b.rtpStats,
+					"snRangeMap", b.snRangeMap,
 				)
 			}
 		} else if err != bucket.ErrRTXPacket {
@@ -605,7 +619,14 @@ func (b *Buffer) patchExtPacket(ep *ExtPacket, buf []byte) *ExtPacket {
 	if err != nil {
 		packetNotFoundCount := b.packetNotFoundCount.Inc()
 		if (packetNotFoundCount-1)%20 == 0 {
-			b.logger.Warnw("could not get packet from bucket", err, "sn", ep.Packet.SequenceNumber, "headSN", b.bucket.HeadSequenceNumber(), "count", packetNotFoundCount)
+			b.logger.Warnw(
+				"could not get packet from bucket", err,
+				"sn", ep.Packet.SequenceNumber,
+				"headSN", b.bucket.HeadSequenceNumber(),
+				"count", packetNotFoundCount,
+				"rtpStats", b.rtpStats,
+				"snRangeMap", b.snRangeMap,
+			)
 		}
 		return nil
 	}
