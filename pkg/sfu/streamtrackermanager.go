@@ -325,20 +325,11 @@ func (s *StreamTrackerManager) SetMaxExpectedSpatialLayer(layer int32) int32 {
 	//
 	// Some higher layer is expected to start.
 	// If the layer was not detected as stopped (i.e. it is still in available layers),
-	// don't need to do anything. If not, reset the stream tracker so that
-	// the layer is declared available on the first packet.
-	//
-	// NOTE: There may be a race between checking if a layer is available and
-	// resetting the tracker, i.e. the track may stop just after checking.
-	// But, those conditions should be rare. In those cases, the restart will
-	// take longer.
+	// resetting tracker will declare layer available afresh. That's fine as it will be
+	// a no-op in available layers handling.
 	//
 	var trackersToReset []streamtracker.StreamTrackerWorker
 	for l := s.maxExpectedLayer + 1; l <= layer; l++ {
-		if s.hasSpatialLayerLocked(l) {
-			continue
-		}
-
 		if s.trackers[l] != nil {
 			trackersToReset = append(trackersToReset, s.trackers[l])
 		}
