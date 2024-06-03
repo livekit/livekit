@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"math"
 	"unsafe"
+
+	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -40,11 +42,22 @@ type valueType interface {
 	uint32 | uint64
 }
 
+// ---------------------------------------------------
+
 type rangeVal[RT rangeType, VT valueType] struct {
 	start RT
 	end   RT
 	value VT
 }
+
+func (r rangeVal[RT, VT]) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	e.AddUint64("start", uint64(r.start))
+	e.AddUint64("end", uint64(r.end))
+	e.AddUint64("value", uint64(r.value))
+	return nil
+}
+
+// ---------------------------------------------------
 
 type RangeMap[RT rangeType, VT valueType] struct {
 	halfRange RT
@@ -61,6 +74,21 @@ func NewRangeMap[RT rangeType, VT valueType](size int) *RangeMap[RT, VT] {
 	}
 	r.initRanges(0, 0)
 	return r
+}
+
+func (r *RangeMap[RT, VT]) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	e.AddInt("numRanges", len(r.ranges))
+
+	// just the last 10 ranges max
+	startIdx := len(r.ranges) - 10
+	if startIdx < 0 {
+		startIdx = 0
+	}
+	for i := startIdx; i < len(r.ranges); i++ {
+		e.AddObject(fmt.Sprintf("range[%d]", i), r.ranges[i])
+	}
+
+	return nil
 }
 
 func (r *RangeMap[RT, VT]) ClearAndResetValue(start RT, val VT) {
