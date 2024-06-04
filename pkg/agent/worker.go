@@ -52,7 +52,7 @@ type sigConn interface {
 
 type Worker struct {
 	id          string
-	jobTypes    []livekit.JobType
+	jobType     livekit.JobType
 	version     string
 	name        string
 	namespace   string
@@ -130,14 +130,11 @@ func (w *Worker) ID() string {
 	return w.id
 }
 
-func (w *Worker) JobTypes() []livekit.JobType {
+func (w *Worker) JobType() livekit.JobType {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	res := make([]livekit.JobType, len(w.jobTypes))
-	copy(res, w.jobTypes)
-
-	return res
+	return w.jobType
 }
 
 func (w *Worker) Namespace() string {
@@ -294,14 +291,7 @@ func (w *Worker) handleRegister(req *livekit.RegisterWorkerRequest) {
 	w.version = req.Version
 	w.name = req.Name
 	w.namespace = req.GetNamespace()
-
-	if len(req.Types) > 0 {
-		w.jobTypes = req.Types
-	} else {
-		w.jobTypes = []livekit.JobType{
-			req.Type,
-		}
-	}
+	w.jobType = req.GetType()
 
 	if req.AllowedPermissions != nil {
 		w.permissions = req.AllowedPermissions

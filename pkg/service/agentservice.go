@@ -20,7 +20,6 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -227,15 +226,14 @@ func (h *AgentHandler) handleWorkerRegister(w *agent.Worker) {
 
 	shouldNotify := false
 	var err error
-	if slices.Contains(w.JobTypes(), livekit.JobType_JT_PUBLISHER) {
+	if w.JobType() == livekit.JobType_JT_PUBLISHER {
 		numPublishers++
 		if numPublishers == 1 {
 			shouldNotify = true
 			err = h.agentServer.RegisterJobRequestTopic(w.Namespace(), h.publisherTopic)
 		}
 
-	}
-	if slices.Contains(w.JobTypes(), livekit.JobType_JT_ROOM) {
+	} else if w.JobType() == livekit.JobType_JT_ROOM {
 		numRooms++
 		if numRooms == 1 {
 			shouldNotify = true
@@ -260,7 +258,7 @@ func (h *AgentHandler) handleWorkerRegister(w *agent.Worker) {
 	h.mu.Unlock()
 
 	if shouldNotify {
-		h.logger.Infow("initial worker registered", "namespace", w.Namespace(), "jobTypes", w.JobTypes())
+		h.logger.Infow("initial worker registered", "namespace", w.Namespace(), "jobType", w.JobType())
 		err = h.agentServer.PublishWorkerRegistered(context.Background(), agent.DefaultHandlerNamespace, &emptypb.Empty{})
 		if err != nil {
 			w.Logger.Errorw("failed to publish worker registered", err)
@@ -277,13 +275,12 @@ func (h *AgentHandler) handleWorkerDeregister(worker *agent.Worker) {
 		return
 	}
 
-	if slices.Contains(worker.JobTypes(), livekit.JobType_JT_PUBLISHER) {
+	if worker.JobType() == livekit.JobType_JT_PUBLISHER {
 		info.numPublishers--
 		if info.numPublishers == 0 {
 			h.agentServer.DeregisterJobRequestTopic(worker.Namespace(), h.publisherTopic)
 		}
-	}
-	if slices.Contains(worker.JobTypes(), livekit.JobType_JT_ROOM) {
+	} else if worker.JobType() == livekit.JobType_JT_ROOM {
 		info.numRooms--
 		if info.numRooms == 0 {
 			h.agentServer.DeregisterJobRequestTopic(worker.Namespace(), h.roomTopic)
@@ -301,7 +298,7 @@ func (h *AgentHandler) handleWorkerDeregister(worker *agent.Worker) {
 
 func (h *AgentHandler) roomAvailableLocked() bool {
 	for _, w := range h.workers {
-		if slices.Contains(w.JobTypes(), livekit.JobType_JT_ROOM) {
+		if w.JobType() == livekit.JobType_JT_ROOM {
 			return true
 		}
 	}
@@ -311,7 +308,7 @@ func (h *AgentHandler) roomAvailableLocked() bool {
 
 func (h *AgentHandler) publisherAvailableLocked() bool {
 	for _, w := range h.workers {
-		if slices.Contains(w.JobTypes(), livekit.JobType_JT_PUBLISHER) {
+		if w.JobType() == livekit.JobType_JT_PUBLISHER {
 			return true
 		}
 	}
@@ -327,7 +324,7 @@ func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*empty
 		var selected *agent.Worker
 		var maxLoad float32
 		for _, w := range h.workers {
-			if w.Namespace() != job.Namespace || !slices.Contains(w.JobTypes(), job.Type) {
+			if w.Namespace() != job.Namespace || w.JobType() != job.Type {
 				continue
 			}
 
@@ -387,7 +384,7 @@ func (h *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job)
 	var affinity float32
 	var maxLoad float32
 	for _, w := range h.workers {
-		if w.Namespace() != job.Namespace || !slices.Contains(w.JobTypes(), job.Type) {
+		if w.Namespace() != job.Namespace || w.JobType() != job.Type {
 			continue
 		}
 
