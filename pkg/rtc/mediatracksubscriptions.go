@@ -330,14 +330,6 @@ func (t *MediaTrackSubscriptions) closeSubscribedTrack(subTrack types.Subscribed
 	}
 }
 
-func (t *MediaTrackSubscriptions) ResyncAllSubscribers() {
-	t.params.Logger.Debugw("resyncing all subscribers")
-
-	for _, subTrack := range t.getAllSubscribedTracks() {
-		subTrack.DownTrack().Resync()
-	}
-}
-
 func (t *MediaTrackSubscriptions) GetAllSubscribers() []livekit.ParticipantID {
 	t.subscribedTracksMu.RLock()
 	defer t.subscribedTracksMu.RUnlock()
