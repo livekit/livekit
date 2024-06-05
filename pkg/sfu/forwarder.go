@@ -216,8 +216,9 @@ func (f ForwarderState) String() string {
 // -------------------------------------------------------------------
 
 type refInfo struct {
-	senderReport *buffer.RTCPSenderReportData
-	tsOffset     uint64
+	senderReport    *buffer.RTCPSenderReportData
+	tsOffset        uint64
+	isTSOffsetValid bool
 }
 
 type Forwarder struct {
@@ -567,16 +568,39 @@ func (f *Forwarder) GetMaxSubscribedSpatial() int32 {
 	return layer
 }
 
+func (f *Forwarder) getReferenceLayer() (int32, int32) {
+	if f.lastSSRC == 0 {
+		return buffer.InvalidLayerSpatial, buffer.InvalidLayerSpatial
+	}
+
+	if f.kind == webrtc.RTPCodecTypeAudio {
+		return 0, 0
+	}
+
+	currentLayerSpatial := f.vls.GetCurrent().Spatial
+	if currentLayerSpatial < 0 || currentLayerSpatial > buffer.DefaultMaxLayerSpatial {
+		return buffer.InvalidLayerSpatial, buffer.InvalidLayerSpatial
+	}
+
+	if f.refIsSVC {
+		return 0, currentLayerSpatial
+	}
+
+	return currentLayerSpatial, currentLayerSpatial
+}
+
 func (f *Forwarder) SetRefSenderReport(isSVC bool, layer int32, srData *buffer.RTCPSenderReportData) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
 	f.refIsSVC = isSVC
-	if isSVC {
-		layer = 0
-	}
+	refLayer, _ := f.getReferenceLayer()
 	if layer >= 0 && int(layer) < len(f.refInfos) {
-		f.refInfos[layer].senderReport = srData
+		f.refInfos[layer] = refInfo{srData, 0, false}
+		if layer == refLayer {
+			f.refInfos[layer].tsOffset = f.rtpMunger.GetTSOffset()
+			f.refInfos[layer].isTSOffsetValid = true
+		}
 	}
 }
 
@@ -611,7 +635,7 @@ func (f *Forwarder) clearRefSenderReportsLocked() {
 	// By clearing sender report on (re)start of a stream, subscribers will wait for a fresh report
 	// after unmute to send sender report.
 	for layer := int32(0); layer < buffer.DefaultMaxLayerSpatial+1; layer++ {
-		f.refInfos[layer] = refInfo{nil, 0}
+		f.refInfos[layer] = refInfo{nil, 0, false}
 	}
 }
 
@@ -619,23 +643,12 @@ func (f *Forwarder) GetSenderReportParams() (int32, uint64, *buffer.RTCPSenderRe
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
-	if f.kind == webrtc.RTPCodecTypeAudio {
-		return 0, f.refInfos[0].tsOffset, f.refInfos[0].senderReport
+	refLayer, currentLayerSpatial := f.getReferenceLayer()
+	if refLayer == buffer.InvalidLayerSpatial || !f.refInfos[refLayer].isTSOffsetValid {
+		return buffer.InvalidLayerSpatial, 0, nil
 	}
 
-	currentLayerSpatial := f.vls.GetCurrent().Spatial
-	if currentLayerSpatial < 0 || currentLayerSpatial > buffer.DefaultMaxLayerSpatial {
-		return currentLayerSpatial, 0, nil
-	}
-
-	refSenderReport := f.refInfos[currentLayerSpatial].senderReport
-	tsOffset := f.refInfos[currentLayerSpatial].tsOffset
-	if f.refIsSVC {
-		refSenderReport = f.refInfos[0].senderReport
-		tsOffset = f.refInfos[0].tsOffset
-	}
-
-	return currentLayerSpatial, tsOffset, refSenderReport
+	return currentLayerSpatial, f.refInfos[refLayer].tsOffset, f.refInfos[refLayer].senderReport
 }
 
 func (f *Forwarder) isDeficientLocked() bool {
@@ -1588,7 +1601,6 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		f.codecMunger.SetLast(extPkt)
 
 		f.clearRefSenderReportsLocked()
-		f.refInfos[layer].tsOffset = f.rtpMunger.GetTSOffset()
 
 		f.logger.Debugw(
 			"starting forwarding",
@@ -1827,7 +1839,6 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 	}
 
 	f.rtpMunger.UpdateSnTsOffsets(extPkt, 1, extNextTS-extLastTS)
-	f.refInfos[layer].tsOffset = f.rtpMunger.GetTSOffset()
 	f.codecMunger.UpdateOffsets(extPkt)
 	return nil
 }
