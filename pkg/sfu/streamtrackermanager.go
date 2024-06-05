@@ -168,6 +168,10 @@ func (s *StreamTrackerManager) AddDependencyDescriptorTrackers() {
 }
 
 func (s *StreamTrackerManager) AddTracker(layer int32) streamtracker.StreamTrackerWorker {
+	if layer < 0 || int(layer) >= len(s.trackers) {
+		return nil
+	}
+
 	var tracker streamtracker.StreamTrackerWorker
 	s.lock.Lock()
 	tracker = s.trackers[layer]
