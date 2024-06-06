@@ -27,6 +27,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/psrpc"
 )
 
@@ -121,7 +122,7 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobDescription) {
 	target.ForEach(func(ns string) {
 		c.workers.Submit(func() {
 			_, err := c.client.JobRequest(ctx, ns, jobTypeTopic, &livekit.Job{
-				Id:          utils.NewGuid(utils.AgentJobPrefix),
+				Id:          guid.New(utils.AgentJobPrefix),
 				Type:        desc.JobType,
 				Room:        desc.Room,
 				Participant: desc.Participant,

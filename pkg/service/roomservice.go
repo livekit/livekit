@@ -16,19 +16,21 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 
 	"github.com/avast/retry-go/v4"
 	"github.com/pkg/errors"
 	"github.com/twitchtv/twirp"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
+	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
-	"github.com/livekit/psrpc"
 )
 
 // A rooms service that supports a single node
@@ -76,11 +78,17 @@ func NewRoomService(
 }
 
 func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (*livekit.Room, error) {
-	AppendLogFields(ctx, "room", req.Name, "request", req)
+	clone := redactCreateRoomRequest(req)
+
+	AppendLogFields(ctx, "room", clone.Name, "request", clone)
 	if err := EnsureCreatePermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	} else if req.Egress != nil && s.egressLauncher == nil {
 		return nil, ErrEgressNotConnected
+	}
+
+	if limit := s.roomConf.MaxRoomNameLength; limit > 0 && len(req.Name) > limit {
+		return nil, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, limit)
 	}
 
 	rm, created, err := s.roomAllocator.CreateRoom(ctx, req)
@@ -89,16 +97,11 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 		return nil, err
 	}
 
-	// actually start the room on an RTC node, to ensure metadata & empty timeout functionality
-	res, err := s.router.StartParticipantSignal(ctx,
-		livekit.RoomName(req.Name),
-		routing.ParticipantInit{},
-	)
+	done, err := s.startRoom(ctx, livekit.RoomName(req.Name))
 	if err != nil {
 		return nil, err
 	}
-	defer res.RequestSink.Close()
-	defer res.ResponseSource.Close()
+	defer done()
 
 	if created {
 		go s.agentClient.LaunchJob(ctx, &agent.JobDescription{
@@ -153,9 +156,20 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 		return nil, twirpAuthError(err)
 	}
 
-	_, err := s.roomClient.DeleteRoom(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
-	if !errors.Is(err, psrpc.ErrNoResponse) {
-		return &livekit.DeleteRoomResponse{}, err
+	_, _, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false)
+	if err != nil {
+		return nil, err
+	}
+
+	done, err := s.startRoom(ctx, livekit.RoomName(req.Room))
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+
+	_, err = s.roomClient.DeleteRoom(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
+	if err != nil {
+		return nil, err
 	}
 
 	err = s.roomStore.DeleteRoom(ctx, livekit.RoomName(req.Room))
@@ -319,4 +333,37 @@ func (s *RoomService) confirmExecution(ctx context.Context, f func() error) erro
 		retry.MaxDelay(s.apiConf.MaxCheckInterval),
 		retry.DelayType(retry.BackOffDelay),
 	)
+}
+
+// startRoom starts the room on an RTC node, to ensure metadata & empty timeout functionality
+func (s *RoomService) startRoom(ctx context.Context, roomName livekit.RoomName) (func(), error) {
+	res, err := s.router.StartParticipantSignal(ctx, roomName, routing.ParticipantInit{})
+	if err != nil {
+		return nil, err
+	}
+	return func() {
+		res.RequestSink.Close()
+		res.ResponseSource.Close()
+	}, nil
+}
+
+func redactCreateRoomRequest(req *livekit.CreateRoomRequest) *livekit.CreateRoomRequest {
+	if req.Egress == nil {
+		// nothing to redact
+		return req
+	}
+
+	clone := proto.Clone(req).(*livekit.CreateRoomRequest)
+
+	if clone.Egress.Room != nil {
+		egress.RedactEncodedOutputs(clone.Egress.Room)
+	}
+	if clone.Egress.Participant != nil {
+		egress.RedactAutoEncodedOutput(clone.Egress.Participant)
+	}
+	if clone.Egress.Tracks != nil {
+		egress.RedactUpload(clone.Egress.Tracks)
+	}
+
+	return clone
 }

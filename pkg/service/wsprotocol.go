@@ -162,8 +162,10 @@ func (c *WSSignalConnection) WriteServerMessage(msg *livekit.ServerMessage) (int
 }
 
 func (c *WSSignalConnection) pingWorker() {
-	for {
-		<-time.After(pingFrequency)
+	ticker := time.NewTicker(pingFrequency)
+	defer ticker.Stop()
+
+	for range ticker.C {
 		err := c.conn.WriteControl(websocket.PingMessage, []byte(""), time.Now().Add(pingTimeout))
 		if err != nil {
 			return
