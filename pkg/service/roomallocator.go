@@ -22,6 +22,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/guid"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -66,7 +67,7 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 	if errors.Is(err, ErrRoomNotFound) {
 		created = true
 		rm = &livekit.Room{
-			Sid:          utils.NewGuid(utils.RoomPrefix),
+			Sid:          guid.New(utils.RoomPrefix),
 			Name:         req.Name,
 			CreationTime: time.Now().Unix(),
 			TurnPassword: utils.RandomSecret(),

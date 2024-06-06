@@ -28,6 +28,7 @@ import (
 
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/guid"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -35,7 +36,7 @@ import (
 )
 
 func generateKeys(_ *cli.Context) error {
-	apiKey := utils.NewGuid(utils.APIKeyPrefix)
+	apiKey := guid.New(utils.APIKeyPrefix)
 	secret := utils.RandomSecret()
 	fmt.Println("API Key: ", apiKey)
 	fmt.Println("API Secret: ", secret)

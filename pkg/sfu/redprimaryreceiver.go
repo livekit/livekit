@@ -57,18 +57,19 @@ func NewRedPrimaryReceiver(receiver TrackReceiver, dsp DownTrackSpreaderParams) 
 	}
 }
 
-func (r *RedPrimaryReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int32) {
+func (r *RedPrimaryReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int32) int {
 	// extract primary payload from RED and forward to downtracks
 	if r.downTrackSpreader.DownTrackCount() == 0 {
-		return
+		return 0
 	}
 
 	pkts, err := r.getSendPktsFromRed(pkt.Packet)
 	if err != nil {
 		r.logger.Errorw("get encoding for red failed", err, "payloadtype", pkt.Packet.PayloadType)
-		return
+		return 0
 	}
 
+	var count int
 	for i, sendPkt := range pkts {
 		pPkt := *pkt
 		if i != len(pkts)-1 {
@@ -81,10 +82,11 @@ func (r *RedPrimaryReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int3
 
 		// not modify the ExtPacket.RawPacket here for performance since it is not used by the DownTrack,
 		// otherwise it should be set to the correct value (marshal the primary rtp packet)
-		r.downTrackSpreader.Broadcast(func(dt TrackSender) {
+		count += r.downTrackSpreader.Broadcast(func(dt TrackSender) {
 			_ = dt.WriteRTP(&pPkt, spatialLayer)
 		})
 	}
+	return count
 }
 
 func (r *RedPrimaryReceiver) AddDownTrack(track TrackSender) error {

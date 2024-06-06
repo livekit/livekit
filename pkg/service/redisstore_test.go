@@ -26,6 +26,7 @@ import (
 	"github.com/livekit/protocol/ingress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/guid"
 
 	"github.com/livekit/livekit-server/pkg/service"
 )
@@ -164,8 +165,8 @@ func TestEgressStore(t *testing.T) {
 
 	// store egress info
 	info := &livekit.EgressInfo{
-		EgressId: utils.NewGuid(utils.EgressPrefix),
-		RoomId:   utils.NewGuid(utils.RoomPrefix),
+		EgressId: guid.New(utils.EgressPrefix),
+		RoomId:   guid.New(utils.RoomPrefix),
 		RoomName: roomName,
 		Status:   livekit.EgressStatus_EGRESS_STARTING,
 		Request: &livekit.EgressInfo_RoomComposite{
@@ -184,8 +185,8 @@ func TestEgressStore(t *testing.T) {
 
 	// store another
 	info2 := &livekit.EgressInfo{
-		EgressId: utils.NewGuid(utils.EgressPrefix),
-		RoomId:   utils.NewGuid(utils.RoomPrefix),
+		EgressId: guid.New(utils.EgressPrefix),
+		RoomId:   guid.New(utils.RoomPrefix),
 		RoomName: "another-egress-test",
 		Status:   livekit.EgressStatus_EGRESS_STARTING,
 		Request: &livekit.EgressInfo_RoomComposite{

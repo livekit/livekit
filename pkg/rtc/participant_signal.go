@@ -314,9 +314,7 @@ func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
 func (p *ParticipantImpl) CloseSignalConnection(reason types.SignallingCloseReason) {
 	sink := p.getResponseSink()
 	if sink != nil {
-		if reason != types.SignallingCloseReasonParticipantClose {
-			p.params.Logger.Infow("closing signal connection", "reason", reason, "connID", sink.ConnectionID())
-		}
+		p.params.Logger.Debugw("closing signal connection", "reason", reason, "connID", sink.ConnectionID())
 		sink.Close()
 		p.SetResponseSink(nil)
 	}

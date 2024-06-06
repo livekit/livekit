@@ -237,7 +237,7 @@ func (s *sequencer) pushPadding(extStartSNInclusive uint64, extEndSNInclusive ui
 	s.Lock()
 	defer s.Unlock()
 
-	if s.snRangeMap == nil {
+	if s.snRangeMap == nil || !s.initialized {
 		return
 	}
 

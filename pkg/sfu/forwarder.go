@@ -192,7 +192,7 @@ type ForwarderState struct {
 	ReferenceLayerSpatial int32
 	PreStartTime          time.Time
 	ExtFirstTS            uint64
-	RefTSOffset           uint64
+	DummyStartTSOffset    uint64
 	RTP                   RTPMungerState
 	Codec                 interface{}
 }
@@ -203,18 +203,24 @@ func (f ForwarderState) String() string {
 	case codecmunger.VP8State:
 		codecString = codecState.String()
 	}
-	return fmt.Sprintf("ForwarderState{started: %v, referenceLayerSpatial: %d, preStartTime: %s, extFirstTS: %d, refTSOffset: %d, rtp: %s, codec: %s}",
+	return fmt.Sprintf("ForwarderState{started: %v, referenceLayerSpatial: %d, preStartTime: %s, extFirstTS: %d, dummyStartTSOffset: %d, rtp: %s, codec: %s}",
 		f.Started,
 		f.ReferenceLayerSpatial,
 		f.PreStartTime.String(),
 		f.ExtFirstTS,
-		f.RefTSOffset,
+		f.DummyStartTSOffset,
 		f.RTP.String(),
 		codecString,
 	)
 }
 
 // -------------------------------------------------------------------
+
+type refInfo struct {
+	senderReport    *buffer.RTCPSenderReportData
+	tsOffset        uint64
+	isTSOffsetValid bool
+}
 
 type Forwarder struct {
 	lock                    sync.RWMutex
@@ -233,8 +239,8 @@ type Forwarder struct {
 	extFirstTS            uint64
 	lastSSRC              uint32
 	referenceLayerSpatial int32
-	refTSOffset           uint64
-	refSenderReports      [buffer.DefaultMaxLayerSpatial + 1]*buffer.RTCPSenderReportData
+	dummyStartTSOffset    uint64
+	refInfos              [buffer.DefaultMaxLayerSpatial + 1]refInfo
 	refIsSVC              bool
 
 	provisional *VideoAllocationProvisional
@@ -327,15 +333,17 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 			f.vls = videolayerselector.NewSimulcast(f.logger)
 		}
 		f.vls.SetTemporalLayerSelector(temporallayerselector.NewVP8(f.logger))
+
 	case "video/h264":
 		if f.vls != nil {
 			f.vls = videolayerselector.NewSimulcastFromNull(f.vls)
 		} else {
 			f.vls = videolayerselector.NewSimulcast(f.logger)
 		}
-	case "video/vp9":
-		isDDAvailable := ddAvailable(extensions)
 
+	case "video/vp9":
+		// DD-TODO : we only enable dd layer selector for av1/vp9 now, in the future we can enable it for vp8 too
+		isDDAvailable := ddAvailable(extensions)
 		if isDDAvailable {
 			if f.vls != nil {
 				f.vls = videolayerselector.NewDependencyDescriptorFromNull(f.vls)
@@ -350,9 +358,9 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 			}
 		}
 		// SVC-TODO: Support for VP9 simulcast. When DD is not available, have to pick selector based on VP9 SVC or Simulcast
+
 	case "video/av1":
 		// DD-TODO : we only enable dd layer selector for av1/vp9 now, in the future we can enable it for vp8 too
-
 		isDDAvailable := ddAvailable(extensions)
 		if isDDAvailable {
 			if f.vls != nil {
@@ -384,7 +392,7 @@ func (f *Forwarder) GetState() ForwarderState {
 		ReferenceLayerSpatial: f.referenceLayerSpatial,
 		PreStartTime:          f.preStartTime,
 		ExtFirstTS:            f.extFirstTS,
-		RefTSOffset:           f.refTSOffset,
+		DummyStartTSOffset:    f.dummyStartTSOffset,
 		RTP:                   f.rtpMunger.GetLast(),
 		Codec:                 f.codecMunger.GetState(),
 	}
@@ -405,7 +413,7 @@ func (f *Forwarder) SeedState(state ForwarderState) {
 	f.referenceLayerSpatial = state.ReferenceLayerSpatial
 	f.preStartTime = state.PreStartTime
 	f.extFirstTS = state.ExtFirstTS
-	f.refTSOffset = state.RefTSOffset
+	f.dummyStartTSOffset = state.DummyStartTSOffset
 }
 
 func (f *Forwarder) Mute(muted bool, isSubscribeMutable bool) bool {
@@ -561,16 +569,39 @@ func (f *Forwarder) GetMaxSubscribedSpatial() int32 {
 	return layer
 }
 
+func (f *Forwarder) getReferenceLayer() (int32, int32) {
+	if f.lastSSRC == 0 {
+		return buffer.InvalidLayerSpatial, buffer.InvalidLayerSpatial
+	}
+
+	if f.kind == webrtc.RTPCodecTypeAudio {
+		return 0, 0
+	}
+
+	currentLayerSpatial := f.vls.GetCurrent().Spatial
+	if currentLayerSpatial < 0 || currentLayerSpatial > buffer.DefaultMaxLayerSpatial {
+		return buffer.InvalidLayerSpatial, buffer.InvalidLayerSpatial
+	}
+
+	if f.refIsSVC {
+		return 0, currentLayerSpatial
+	}
+
+	return currentLayerSpatial, currentLayerSpatial
+}
+
 func (f *Forwarder) SetRefSenderReport(isSVC bool, layer int32, srData *buffer.RTCPSenderReportData) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
 	f.refIsSVC = isSVC
-	if isSVC {
-		layer = 0
-	}
-	if layer >= 0 && int(layer) < len(f.refSenderReports) {
-		f.refSenderReports[layer] = srData
+	refLayer, _ := f.getReferenceLayer()
+	if layer >= 0 && int(layer) < len(f.refInfos) {
+		f.refInfos[layer] = refInfo{srData, 0, false}
+		if layer == refLayer {
+			f.refInfos[layer].tsOffset = f.rtpMunger.GetTSOffset()
+			f.refInfos[layer].isTSOffsetValid = true
+		}
 	}
 }
 
@@ -579,7 +610,7 @@ func (f *Forwarder) clearRefSenderReportsLocked() {
 	// This is done to prevent use of potentially stale publisher sender reports.
 	//
 	// It is possible to implement mute using pause/unpause
-	// which can implemented using a replaceTrack(null)/replaceTrack(track).
+	// which can be implemented using replaceTrack(null)/replaceTrack(track).
 	// In those cases, the RTP time stamp may not jump across
 	// the mute/pause valley (for the time it is replaced with null track).
 	// So, relying on a report that happened before unmute/unpause
@@ -592,7 +623,8 @@ func (f *Forwarder) clearRefSenderReportsLocked() {
 	//   2. Publisher pauses: there are no more reports.
 	//   3. When paused, subscriber can still use the publisher side sender
 	//      report to send reports. Although the time since last publisher
-	//      sender report is increasing, the reports are correct though.
+	//      sender report is increasing, the reports would still be correct
+	//      as they referencing a previous (albeit older) correct report.
 	//   4. Publisher unpauses after 20 seconds. But, it may not have advanced
 	//      RTP Timestamp by that much. Let us say, it advances only by 5 seconds.
 	//   5. When subscriber starts forwarding packets, it will calculate
@@ -604,7 +636,7 @@ func (f *Forwarder) clearRefSenderReportsLocked() {
 	// By clearing sender report on (re)start of a stream, subscribers will wait for a fresh report
 	// after unmute to send sender report.
 	for layer := int32(0); layer < buffer.DefaultMaxLayerSpatial+1; layer++ {
-		f.refSenderReports[layer] = nil
+		f.refInfos[layer] = refInfo{nil, 0, false}
 	}
 }
 
@@ -612,21 +644,12 @@ func (f *Forwarder) GetSenderReportParams() (int32, uint64, *buffer.RTCPSenderRe
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
-	if f.kind == webrtc.RTPCodecTypeAudio {
-		return 0, f.rtpMunger.GetPinnedTSOffset(), f.refSenderReports[0]
+	refLayer, currentLayerSpatial := f.getReferenceLayer()
+	if refLayer == buffer.InvalidLayerSpatial || !f.refInfos[refLayer].isTSOffsetValid {
+		return buffer.InvalidLayerSpatial, 0, nil
 	}
 
-	currentLayerSpatial := f.vls.GetCurrent().Spatial
-	if currentLayerSpatial < 0 || currentLayerSpatial > buffer.DefaultMaxLayerSpatial {
-		return currentLayerSpatial, f.rtpMunger.GetPinnedTSOffset(), nil
-	}
-
-	refSenderReport := f.refSenderReports[currentLayerSpatial]
-	if f.refIsSVC {
-		refSenderReport = f.refSenderReports[0]
-	}
-
-	return currentLayerSpatial, f.rtpMunger.GetPinnedTSOffset(), refSenderReport
+	return currentLayerSpatial, f.refInfos[refLayer].tsOffset, f.refInfos[refLayer].senderReport
 }
 
 func (f *Forwarder) isDeficientLocked() bool {
@@ -1534,6 +1557,7 @@ func (f *Forwarder) GetTranslationParams(extPkt *buffer.ExtPacket, layer int32) 
 	switch f.kind {
 	case webrtc.RTPCodecTypeAudio:
 		return f.getTranslationParamsAudio(extPkt, layer)
+
 	case webrtc.RTPCodecTypeVideo:
 		return f.getTranslationParamsVideo(extPkt, layer)
 	}
@@ -1544,7 +1568,7 @@ func (f *Forwarder) GetTranslationParams(extPkt *buffer.ExtPacket, layer int32) 
 }
 
 func (f *Forwarder) getReferenceLayerRTPTimestamp(ts uint32, refLayer, targetLayer int32) (uint32, error) {
-	if refLayer < 0 || int(refLayer) > len(f.refSenderReports) || targetLayer < 0 || int(targetLayer) > len(f.refSenderReports) {
+	if refLayer < 0 || int(refLayer) > len(f.refInfos) || targetLayer < 0 || int(targetLayer) > len(f.refInfos) {
 		return 0, fmt.Errorf("invalid layer(s), refLayer: %d, targetLayer: %d", refLayer, targetLayer)
 	}
 
@@ -1552,8 +1576,8 @@ func (f *Forwarder) getReferenceLayerRTPTimestamp(ts uint32, refLayer, targetLay
 		return ts, nil
 	}
 
-	srRef := f.refSenderReports[refLayer]
-	srTarget := f.refSenderReports[targetLayer]
+	srRef := f.refInfos[refLayer].senderReport
+	srTarget := f.refInfos[targetLayer].senderReport
 	if srRef == nil || srRef.NTPTimestamp == 0 || srTarget == nil || srTarget.NTPTimestamp == 0 {
 		return 0, fmt.Errorf("unavailable layer(s), refLayer: %d, targetLayer: %d", refLayer, targetLayer)
 	}
@@ -1576,7 +1600,9 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 		f.referenceLayerSpatial = layer
 		f.rtpMunger.SetLastSnTs(extPkt)
 		f.codecMunger.SetLast(extPkt)
+
 		f.clearRefSenderReportsLocked()
+
 		f.logger.Debugw(
 			"starting forwarding",
 			"sequenceNumber", extPkt.Packet.SequenceNumber,
@@ -1589,6 +1615,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 		return nil, nil
 	} else if f.referenceLayerSpatial == buffer.InvalidLayerSpatial {
 		f.referenceLayerSpatial = layer
+		f.codecMunger.SetLast(extPkt)
 		f.logger.Debugw(
 			"catch up forwarding",
 			"sequenceNumber", extPkt.Packet.SequenceNumber,
@@ -1605,6 +1632,21 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 			message,
 			"layer", layer,
 			"extExpectedTS", extExpectedTS,
+			"incomingTS", extPkt.Packet.Timestamp,
+			"extIncomingTS", extPkt.ExtTimestamp,
+			"extRefTS", extRefTS,
+			"extLastTS", extLastTS,
+			"diffSeconds", math.Abs(diffSeconds),
+		)
+	}
+	// TODO-REMOVE-AFTER-DATA-COLLECTION
+	logTransitionInfo := func(message string, extExpectedTS, extRefTS, extLastTS uint64, diffSeconds float64) {
+		f.logger.Infow(
+			message,
+			"layer", layer,
+			"extExpectedTS", extExpectedTS,
+			"incomingTS", extPkt.Packet.Timestamp,
+			"extIncomingTS", extPkt.ExtTimestamp,
 			"extRefTS", extRefTS,
 			"extLastTS", extLastTS,
 			"diffSeconds", math.Abs(diffSeconds),
@@ -1624,7 +1666,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 	rtpMungerState := f.rtpMunger.GetLast()
 	extLastTS := rtpMungerState.ExtLastTS
 	extExpectedTS := extLastTS
-	extRefTS := extExpectedTS
+	extRefTS := extLastTS
 	refTS := uint32(extRefTS)
 	switchingAt := time.Now()
 	if !f.skipReferenceTS {
@@ -1640,13 +1682,14 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 		}
 	}
 
-	extRefTS = (extRefTS & 0xFFFF_FFFF_0000_0000) + uint64(refTS)
-
-	expectedTS := uint32(extExpectedTS)
-	if (refTS-expectedTS) < 1<<31 && refTS < expectedTS {
+	// adjust extRefTS to current packet's timestamp mapped to that of reference layer's
+	extRefTS = (extRefTS & 0xFFFF_FFFF_0000_0000) + uint64(refTS) + f.dummyStartTSOffset
+	lastTS := uint32(extLastTS)
+	refTS = uint32(extRefTS)
+	if (refTS-lastTS) < 1<<31 && refTS < lastTS {
 		extRefTS += (1 << 32)
 	}
-	if (expectedTS-refTS) < 1<<31 && expectedTS < refTS && extRefTS >= 1<<32 {
+	if (lastTS-refTS) < 1<<31 && lastTS < refTS && extRefTS >= 1<<32 {
 		extRefTS -= (1 << 32)
 	}
 
@@ -1659,23 +1702,26 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 				timeSinceFirst := time.Since(f.preStartTime)
 				rtpDiff := uint64(timeSinceFirst.Nanoseconds() * int64(f.codec.ClockRate) / 1e9)
 				extExpectedTS = f.extFirstTS + rtpDiff
-				if f.refTSOffset == 0 {
-					f.refTSOffset = extExpectedTS - extRefTS
+				if f.dummyStartTSOffset == 0 {
+					f.dummyStartTSOffset = extExpectedTS - uint64(refTS)
+					extRefTS = extExpectedTS
 					f.logger.Infow(
-						"calculating refTSOffset",
+						"calculating dummyStartTSOffset",
 						"preStartTime", f.preStartTime.String(),
 						"extFirstTS", f.extFirstTS,
-						"timeSinceFirst", timeSinceFirst,
+						"timeSinceFirst", timeSinceFirst.String(),
 						"rtpDiff", rtpDiff,
 						"extRefTS", extRefTS,
-						"refTSOffset", f.refTSOffset,
+						"incomingTS", extPkt.Packet.Timestamp,
+						"referenceLayerSpatial", f.referenceLayerSpatial,
+						"dummyStartTSOffset", f.dummyStartTSOffset,
 					)
 				}
 			}
 		}
 	}
-	extRefTS += f.refTSOffset
 
+	bigJump := false
 	var extNextTS uint64
 	if f.lastSSRC == 0 {
 		// If resuming (e. g. on unmute), keep next timestamp close to expected timestamp.
@@ -1690,7 +1736,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 		// timestamp should be used as things will catch up to real time when channel capacity
 		// increases and pacer starts sending at faster rate.
 		//
-		// But, the challenege is distinguishing between the two cases. As a compromise, the difference
+		// But, the challenge is distinguishing between the two cases. As a compromise, the difference
 		// between extExpectedTS and extRefTS is thresholded. Difference below the threshold is treated as Case 2
 		// and above as Case 1.
 		//
@@ -1701,12 +1747,14 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 		diffSeconds := float64(int64(extExpectedTS-extRefTS)) / float64(f.codec.ClockRate)
 		if diffSeconds >= 0.0 {
 			if f.resumeBehindThreshold > 0 && diffSeconds > f.resumeBehindThreshold {
-				logTransition("resume, reference too far behind", extExpectedTS, extRefTS, extLastTS, diffSeconds)
+				logTransitionInfo("resume, reference too far behind", extExpectedTS, extRefTS, extLastTS, diffSeconds)
 				extNextTS = extExpectedTS
+				bigJump = true
 			} else if diffSeconds > ResumeBehindHighThresholdSeconds {
-				// could be due to incorrect reference calculation
-				logTransition("resume, reference very far behind", extExpectedTS, extRefTS, extLastTS, diffSeconds)
+				// could be due to incoming time stamp lagging a lot, like an unpause of the track
+				logTransitionInfo("resume, reference very far behind", extExpectedTS, extRefTS, extLastTS, diffSeconds)
 				extNextTS = extExpectedTS
+				bigJump = true
 			} else {
 				extNextTS = extRefTS
 			}
@@ -1735,14 +1783,16 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 				logTransition("layer switch, reference too far behind", extExpectedTS, extRefTS, extLastTS, diffSeconds)
 				return nil, errors.New("switch point too far behind")
 			}
+
 			// use a nominal increase to ensure that timestamp is always moving forward
 			logTransition("layer switch, reference is slightly behind", extExpectedTS, extRefTS, extLastTS, diffSeconds)
 			extNextTS = extLastTS + 1
 		} else {
-			diffSeconds = float64(int64(extExpectedTS-extRefTS)) / float64(f.codec.ClockRate)
-			if diffSeconds < 0.0 && math.Abs(diffSeconds) > SwitchAheadThresholdSeconds {
+			diffSeconds = float64(int64(extRefTS-extExpectedTS)) / float64(f.codec.ClockRate)
+			if diffSeconds > SwitchAheadThresholdSeconds {
 				logTransition("layer switch, reference too far ahead", extExpectedTS, extRefTS, extLastTS, diffSeconds)
 			}
+
 			extNextTS = extRefTS
 		}
 	}
@@ -1764,25 +1814,48 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 			tsOffset = uint64(f.codec.ClockRate * 33 / 1000)
 		}
 	}
+
+	if bigJump { // TODO-REMOVE-AFTER-DATA-COLLECTION
+		f.logger.Infow(
+			"next timestamp on switch",
+			"switchingAt", switchingAt.String(),
+			"layer", layer,
+			"extLastTS", extLastTS,
+			"lastMarker", rtpMungerState.LastMarker,
+			"extRefTS", extRefTS,
+			"dummyStartTSOffset", f.dummyStartTSOffset,
+			"referenceLayerSpatial", f.referenceLayerSpatial,
+			"extExpectedTS", extExpectedTS,
+			"extNextTS", extNextTS,
+			"tsJump", extNextTS-extLastTS,
+			"nextSN", rtpMungerState.ExtLastSN+1,
+			"snOffset", snOffset,
+			"extIncomingSN", extPkt.ExtSequenceNumber,
+			"incomingTS", extPkt.Packet.Timestamp,
+			"extIncomingTS", extPkt.ExtTimestamp,
+		)
+	} else {
+		f.logger.Debugw(
+			"next timestamp on switch",
+			"switchingAt", switchingAt.String(),
+			"layer", layer,
+			"extLastTS", extLastTS,
+			"lastMarker", rtpMungerState.LastMarker,
+			"extRefTS", extRefTS,
+			"dummyStartTSOffset", f.dummyStartTSOffset,
+			"referenceLayerSpatial", f.referenceLayerSpatial,
+			"extExpectedTS", extExpectedTS,
+			"extNextTS", extNextTS,
+			"tsJump", extNextTS-extLastTS,
+			"nextSN", rtpMungerState.ExtLastSN+1,
+			"snOffset", snOffset,
+			"extIncomingSN", extPkt.ExtSequenceNumber,
+			"extIncomingTS", extPkt.ExtTimestamp,
+		)
+	}
+
 	f.rtpMunger.UpdateSnTsOffsets(extPkt, snOffset, tsOffset)
 	f.codecMunger.UpdateOffsets(extPkt)
-
-	f.logger.Debugw(
-		"source switch",
-		"switchingAt", switchingAt.String(),
-		"layer", layer,
-		"extLastTS", extLastTS,
-		"extRefTS", extRefTS,
-		"refTSOffset", f.refTSOffset,
-		"referenceLayerSpatial", f.referenceLayerSpatial,
-		"extExpectedTS", extExpectedTS,
-		"extNextTS", extNextTS,
-		"tsJump", extNextTS-extLastTS,
-		"nextSN", rtpMungerState.ExtLastSN+1,
-		"snOffset", snOffset,
-		"extIncomingSN", extPkt.ExtSequenceNumber,
-		"extIncomingTS", extPkt.ExtTimestamp,
-	)
 
 	var eof *SnTs
 	if snOffset != 1 {
@@ -1795,12 +1868,13 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 }
 
 // should be called with lock held
-func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer int32, tp *TranslationParams) (bool, error) {
+func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer int32, tp *TranslationParams) error {
 	if f.lastSSRC != extPkt.Packet.SSRC {
 		eof, err := f.processSourceSwitch(extPkt, layer)
 		if err != nil {
 			tp.shouldDrop = true
-			return false, nil
+			f.vls.Rollback()
+			return nil
 		}
 		tp.eof = eof
 
@@ -1812,9 +1886,9 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 	if err != nil {
 		tp.shouldDrop = true
 		if err == ErrPaddingOnlyPacket || err == ErrDuplicatePacket || err == ErrOutOfOrderSequenceNumberCacheMiss {
-			return false, nil
+			return nil
 		}
-		return false, err
+		return err
 	}
 
 	tp.rtp = tpRTP
@@ -1823,13 +1897,13 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 		return f.translateCodecHeader(extPkt, tp)
 	}
 
-	return false, nil
+	return nil
 }
 
 // should be called with lock held
 func (f *Forwarder) getTranslationParamsAudio(extPkt *buffer.ExtPacket, layer int32) (TranslationParams, error) {
 	tp := TranslationParams{}
-	if _, err := f.getTranslationParamsCommon(extPkt, layer, &tp); err != nil {
+	if err := f.getTranslationParamsCommon(extPkt, layer, &tp); err != nil {
 		tp.shouldDrop = true
 		return tp, err
 	}
@@ -1838,12 +1912,6 @@ func (f *Forwarder) getTranslationParamsAudio(extPkt *buffer.ExtPacket, layer in
 
 // should be called with lock held
 func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer int32) (TranslationParams, error) {
-	maybeRollback := func(isSwitching bool) {
-		if isSwitching {
-			f.vls.Rollback()
-		}
-	}
-
 	tp := TranslationParams{}
 	if !f.vls.GetTarget().IsValid() {
 		// stream is paused by streamallocator
@@ -1869,6 +1937,11 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 	tp.ddBytes = result.DependencyDescriptorExtension
 	tp.marker = result.RTPMarker
 
+	err := f.getTranslationParamsCommon(extPkt, layer, &tp)
+	if tp.shouldDrop {
+		return tp, err
+	}
+
 	if FlagPauseOnDowngrade && f.isDeficientLocked() && f.vls.GetTarget().Spatial < f.vls.GetCurrent().Spatial {
 		//
 		// If target layer is lower than both the current and
@@ -1889,22 +1962,15 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		// To differentiate between the two cases, drop only when in DEFICIENT state.
 		//
 		tp.shouldDrop = true
-		maybeRollback(result.IsSwitching)
 		return tp, nil
 	}
 
-	isTemporalSwitching, err := f.getTranslationParamsCommon(extPkt, layer, &tp)
-	if tp.shouldDrop {
-		maybeRollback(result.IsSwitching || isTemporalSwitching)
-		return tp, err
-	}
-
-	return tp, err
+	return tp, nil
 }
 
-func (f *Forwarder) translateCodecHeader(extPkt *buffer.ExtPacket, tp *TranslationParams) (bool, error) {
+func (f *Forwarder) translateCodecHeader(extPkt *buffer.ExtPacket, tp *TranslationParams) error {
 	// codec specific forwarding check and any needed packet munging
-	tl, isSwitching := f.vls.SelectTemporal(extPkt)
+	tl := f.vls.SelectTemporal(extPkt)
 	inputSize, codecBytes, err := f.codecMunger.UpdateAndGet(
 		extPkt,
 		tp.rtp.snOrdering == SequenceNumberOrderingOutOfOrder,
@@ -1918,15 +1984,14 @@ func (f *Forwarder) translateCodecHeader(extPkt *buffer.ExtPacket, tp *Translati
 				// filtered temporal layer, update sequence number offset to prevent holes
 				f.rtpMunger.PacketDropped(extPkt)
 			}
-			return isSwitching, nil
+			return nil
 		}
 
-		return isSwitching, err
+		return err
 	}
 	tp.incomingHeaderSize = inputSize
 	tp.codecBytes = codecBytes
-
-	return isSwitching, nil
+	return nil
 }
 
 func (f *Forwarder) maybeStart() {
