@@ -31,6 +31,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/guid"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -749,7 +750,7 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 			FmtpLine: c.FmtpLine,
 		})
 	}
-	sid := livekit.ParticipantID(utils.NewGuid(utils.ParticipantPrefix))
+	sid := livekit.ParticipantID(guid.New(utils.ParticipantPrefix))
 	p, _ := NewParticipant(ParticipantParams{
 		SID:                    sid,
 		Identity:               identity,

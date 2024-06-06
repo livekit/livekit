@@ -21,6 +21,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/livekit/rpc"
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -39,9 +40,9 @@ type analyticsService struct {
 	nodeID         string
 	sequenceNumber atomic.Uint64
 
-	events    livekit.AnalyticsRecorderService_IngestEventsClient
-	stats     livekit.AnalyticsRecorderService_IngestStatsClient
-	nodeRooms livekit.AnalyticsRecorderService_IngestNodeRoomStatesClient
+	events    rpc.AnalyticsRecorderService_IngestEventsClient
+	stats     rpc.AnalyticsRecorderService_IngestStatsClient
+	nodeRooms rpc.AnalyticsRecorderService_IngestNodeRoomStatesClient
 }
 
 func NewAnalyticsService(_ *config.Config, currentNode routing.LocalNode) AnalyticsService {
@@ -70,6 +71,7 @@ func (a *analyticsService) SendEvent(_ context.Context, event *livekit.Analytics
 		return
 	}
 
+	event.NodeId = a.nodeID
 	event.AnalyticsKey = a.analyticsKey
 	if err := a.events.Send(&livekit.AnalyticsEvents{
 		Events: []*livekit.AnalyticsEvent{event},

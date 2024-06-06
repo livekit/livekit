@@ -63,6 +63,7 @@ type TrackSender interface {
 		layer int32,
 		publisherSRData *buffer.RTCPSenderReportData,
 	) error
+	Resync()
 	HandleTrackFrameRateReport(payloadType webrtc.PayloadType, fps [][]float32) error
 }
 

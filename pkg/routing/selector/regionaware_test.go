@@ -22,6 +22,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/guid"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing/selector"
@@ -152,7 +153,7 @@ func newTestNodeInRegion(region string, available bool) *livekit.Node {
 		load = 1.0
 	}
 	return &livekit.Node{
-		Id:     utils.NewGuid(utils.NodePrefix),
+		Id:     guid.New(utils.NodePrefix),
 		Region: region,
 		State:  livekit.NodeState_SERVING,
 		Stats: &livekit.NodeStats{

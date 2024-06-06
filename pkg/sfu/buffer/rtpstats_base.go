@@ -35,6 +35,8 @@ const (
 
 	cFirstPacketTimeAdjustWindow    = 2 * time.Minute
 	cFirstPacketTimeAdjustThreshold = 15 * time.Second
+
+	cPassthroughNTPTimestamp = true
 )
 
 // -------------------------------------------------------
@@ -118,6 +120,10 @@ type RTCPSenderReportData struct {
 }
 
 func (r *RTCPSenderReportData) PropagationDelay() time.Duration {
+	if cPassthroughNTPTimestamp {
+		return 0
+	}
+
 	return r.AtAdjusted.Sub(r.NTPTimestamp.Time())
 }
 
@@ -529,6 +535,12 @@ func (r *rtpStatsBase) maybeAdjustFirstPacketTime(srData *RTCPSenderReportData, 
 			"adjustment", r.firstTime.Sub(firstTime).String(),
 			"extNowTS", extNowTS,
 			"extStartTS", extStartTS,
+			"srData", srData,
+			"tsOffset", tsOffset,
+			"timeSinceReceive", timeSinceReceive.String(),
+			"timeSinceFirst", timeSinceFirst.String(),
+			"samplesDiff", samplesDiff,
+			"samplesDuration", samplesDuration,
 		}
 	}
 
@@ -621,6 +633,82 @@ func (r *rtpStatsBase) deltaInfo(snapshotID uint32, extStartSN uint64, extHighes
 		Plis:                 now.plis - then.plis,
 		Firs:                 now.firs - then.firs,
 	}
+}
+
+func (r *rtpStatsBase) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if r == nil {
+		return nil
+	}
+
+	e.AddTime("startTime", r.startTime)
+	e.AddTime("endTime", r.endTime)
+	e.AddTime("firstTime", r.firstTime)
+	e.AddTime("highestTime", r.highestTime)
+
+	e.AddUint64("bytes", r.bytes)
+	e.AddUint64("headerBytes", r.headerBytes)
+
+	e.AddUint64("packetsDuplicate", r.packetsDuplicate)
+	e.AddUint64("bytesDuplicate", r.bytesDuplicate)
+	e.AddUint64("headerBytesDuplicate", r.headerBytesDuplicate)
+
+	e.AddUint64("packetsPadding", r.packetsPadding)
+	e.AddUint64("bytesPadding", r.bytesPadding)
+	e.AddUint64("headerBytesPadding", r.headerBytesPadding)
+
+	e.AddUint64("packetsOutOfOrder", r.packetsOutOfOrder)
+
+	e.AddUint64("packetsLost", r.packetsLost)
+
+	e.AddUint32("frames", r.frames)
+
+	e.AddFloat64("jitter", r.jitter)
+	e.AddFloat64("maxJitter", r.maxJitter)
+
+	hasLoss := false
+	first := true
+	str := "["
+	for burst, count := range r.gapHistogram {
+		if count == 0 {
+			continue
+		}
+
+		hasLoss = true
+
+		if !first {
+			str += ", "
+		}
+		first = false
+		str += fmt.Sprintf("%d:%d", burst+1, count)
+	}
+	str += "]"
+	if hasLoss {
+		e.AddString("gapHistogram", str)
+	}
+
+	e.AddUint32("nacks", r.nacks)
+	e.AddUint32("nackAcks", r.nackAcks)
+	e.AddUint32("nackMisses", r.nackMisses)
+	e.AddUint32("nackRepeated", r.nackRepeated)
+
+	e.AddUint32("plis", r.plis)
+	e.AddTime("lastPli", r.lastPli)
+
+	e.AddUint32("layerLockPlis", r.layerLockPlis)
+	e.AddTime("lastLayerLockPli", r.lastLayerLockPli)
+
+	e.AddUint32("firs", r.firs)
+	e.AddTime("lastFir", r.lastFir)
+
+	e.AddUint32("keyFrames", r.keyFrames)
+	e.AddTime("lastKeyFrame", r.lastKeyFrame)
+
+	e.AddUint32("rtt", r.rtt)
+	e.AddUint32("maxRtt", r.maxRtt)
+
+	e.AddObject("srFirst", r.srFirst)
+	e.AddObject("srNewest", r.srNewest)
+	return nil
 }
 
 func (r *rtpStatsBase) toString(

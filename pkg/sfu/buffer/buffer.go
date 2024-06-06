@@ -336,13 +336,14 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 			arrivalTime: now,
 		})
 		b.Unlock()
+		b.readCond.Broadcast()
 		return
 	}
 
 	b.payloadType = rtpPacket.PayloadType
 	b.calc(pkt, &rtpPacket, time.Now(), false)
 	b.Unlock()
-	b.readCond.Signal()
+	b.readCond.Broadcast()
 	return
 }
 
@@ -392,26 +393,24 @@ func (b *Buffer) writeRTX(rtxPkt *rtp.Packet, arrivalTime time.Time) (n int, err
 }
 
 func (b *Buffer) Read(buff []byte) (n int, err error) {
+	b.Lock()
 	for {
 		if b.closed.Load() {
-			err = io.EOF
-			return
+			b.Unlock()
+			return 0, io.EOF
 		}
-		b.Lock()
 		if b.pPackets != nil && len(b.pPackets) > b.lastPacketRead {
 			if len(buff) < len(b.pPackets[b.lastPacketRead].packet) {
-				err = bucket.ErrBufferTooSmall
 				b.Unlock()
-				return
+				return 0, bucket.ErrBufferTooSmall
 			}
-			n = len(b.pPackets[b.lastPacketRead].packet)
-			copy(buff, b.pPackets[b.lastPacketRead].packet)
+
+			n = copy(buff, b.pPackets[b.lastPacketRead].packet)
 			b.lastPacketRead++
 			b.Unlock()
 			return
 		}
-		b.Unlock()
-		time.Sleep(25 * time.Millisecond)
+		b.readCond.Wait()
 	}
 }
 
@@ -552,7 +551,13 @@ func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime time.Tim
 			//   44 - padding only - out-of-order + duplicate - dropped as duplicate
 			//
 			if err := b.snRangeMap.ExcludeRange(flowState.ExtSequenceNumber, flowState.ExtSequenceNumber+1); err != nil {
-				b.logger.Errorw("could not exclude range", err, "sn", rtpPacket.SequenceNumber, "esn", flowState.ExtSequenceNumber)
+				b.logger.Errorw(
+					"could not exclude range", err,
+					"sn", rtpPacket.SequenceNumber,
+					"esn", flowState.ExtSequenceNumber,
+					"rtpStats", b.rtpStats,
+					"snRangeMap", b.snRangeMap,
+				)
 			}
 		}
 		return
@@ -561,7 +566,14 @@ func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime time.Tim
 	// add to RTX buffer using sequence number after accounting for dropped padding only packets
 	snAdjustment, err := b.snRangeMap.GetValue(flowState.ExtSequenceNumber)
 	if err != nil {
-		b.logger.Errorw("could not get sequence number adjustment", err, "sn", flowState.ExtSequenceNumber, "payloadSize", len(rtpPacket.Payload))
+		b.logger.Errorw(
+			"could not get sequence number adjustment", err,
+			"sn", rtpPacket.SequenceNumber,
+			"esn", flowState.ExtSequenceNumber,
+			"payloadSize", len(rtpPacket.Payload),
+			"rtpStats", b.rtpStats,
+			"snRangeMap", b.snRangeMap,
+		)
 		return
 	}
 	flowState.ExtSequenceNumber -= snAdjustment
@@ -571,10 +583,25 @@ func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime time.Tim
 		if errors.Is(err, bucket.ErrPacketTooOld) {
 			packetTooOldCount := b.packetTooOldCount.Inc()
 			if (packetTooOldCount-1)%100 == 0 {
-				b.logger.Warnw("could not add packet to bucket", err, "count", packetTooOldCount)
+				b.logger.Warnw(
+					"could not add packet to bucket", err,
+					"count", packetTooOldCount,
+					"flowState", &flowState,
+					"snAdjustment", snAdjustment,
+					"incomingSequenceNumber", flowState.ExtSequenceNumber+snAdjustment,
+					"rtpStats", b.rtpStats,
+					"snRangeMap", b.snRangeMap,
+				)
 			}
 		} else if err != bucket.ErrRTXPacket {
-			b.logger.Warnw("could not add packet to bucket", err)
+			b.logger.Warnw(
+				"could not add packet to bucket", err,
+				"flowState", &flowState,
+				"snAdjustment", snAdjustment,
+				"incomingSequenceNumber", flowState.ExtSequenceNumber+snAdjustment,
+				"rtpStats", b.rtpStats,
+				"snRangeMap", b.snRangeMap,
+			)
 		}
 		return
 	}
@@ -599,7 +626,14 @@ func (b *Buffer) patchExtPacket(ep *ExtPacket, buf []byte) *ExtPacket {
 	if err != nil {
 		packetNotFoundCount := b.packetNotFoundCount.Inc()
 		if (packetNotFoundCount-1)%20 == 0 {
-			b.logger.Warnw("could not get packet from bucket", err, "sn", ep.Packet.SequenceNumber, "headSN", b.bucket.HeadSequenceNumber(), "count", packetNotFoundCount)
+			b.logger.Warnw(
+				"could not get packet from bucket", err,
+				"sn", ep.Packet.SequenceNumber,
+				"headSN", b.bucket.HeadSequenceNumber(),
+				"count", packetNotFoundCount,
+				"rtpStats", b.rtpStats,
+				"snRangeMap", b.snRangeMap,
+			)
 		}
 		return nil
 	}
@@ -875,12 +909,13 @@ func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64) {
 		At:           time.Now(),
 	}
 
+	didSet := false
 	if b.rtpStats != nil {
-		b.rtpStats.SetRtcpSenderReportData(srData)
+		didSet = b.rtpStats.SetRtcpSenderReportData(srData)
 	}
 	b.RUnlock()
 
-	if b.onRtcpSenderReport != nil {
+	if didSet && b.onRtcpSenderReport != nil {
 		b.onRtcpSenderReport()
 	}
 }

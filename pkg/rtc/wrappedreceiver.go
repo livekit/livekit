@@ -90,7 +90,7 @@ func (r *WrappedReceiver) StreamID() string {
 func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) {
 	r.determinedCodec = codec
 	for _, receiver := range r.receivers {
-		if c := receiver.Codec(); c.MimeType == codec.MimeType {
+		if c := receiver.Codec(); strings.EqualFold(c.MimeType, codec.MimeType) {
 			r.TrackReceiver = receiver
 			break
 		} else if strings.EqualFold(c.MimeType, sfu.MimeTypeAudioRed) && strings.EqualFold(codec.MimeType, webrtc.MimeTypeOpus) {

@@ -24,6 +24,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/guid"
 )
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
@@ -73,7 +74,7 @@ func (s *egressLauncher) StartEgressWithClusterId(ctx context.Context, clusterId
 
 	// Ensure we have an Egress ID
 	if req.EgressId == "" {
-		req.EgressId = utils.NewGuid(utils.EgressPrefix)
+		req.EgressId = guid.New(utils.EgressPrefix)
 	}
 
 	return s.client.StartEgress(ctx, clusterId, req)

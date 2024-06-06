@@ -16,6 +16,7 @@ package rtc
 
 import (
 	"errors"
+	"strings"
 	"sync"
 
 	"github.com/pion/rtcp"
@@ -258,7 +259,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 			Stereo: info.Stereo,
 			Red:    !info.DisableRed,
 		}
-		if addTrackParams.Red && (len(codecs) == 1 && codecs[0].MimeType == webrtc.MimeTypeOpus) {
+		if addTrackParams.Red && (len(codecs) == 1 && strings.EqualFold(codecs[0].MimeType, webrtc.MimeTypeOpus)) {
 			addTrackParams.Red = false
 		}
 
@@ -288,6 +289,20 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	// negotiation isn't required if we've replaced track
 	subTrack.SetNeedsNegotiation(!replacedTrack)
 	subTrack.SetRTPSender(sender)
+	// it is possible that subscribed track is closed before subscription manager sets
+	// the `OnClose` callback. That handler in subscription manager removes the track
+	// from the peer connection.
+	//
+	// But, the subscription could be removed early if the published track is closed
+	// while adding subscription. In those cases, subscription manager would not have set
+	// the `OnClose` callback. So, set it here to handle cases of early close.
+	subTrack.OnClose(func(willBeResumed bool) {
+		if !willBeResumed {
+			if err := sub.RemoveTrackFromSubscriber(sender); err != nil {
+				t.params.Logger.Warnw("could not remove track from peer connection", err)
+			}
+		}
+	})
 
 	downTrack.SetTransceiver(transceiver)
 
@@ -329,14 +344,6 @@ func (t *MediaTrackSubscriptions) closeSubscribedTrack(subTrack types.Subscribed
 	}
 }
 
-func (t *MediaTrackSubscriptions) ResyncAllSubscribers() {
-	t.params.Logger.Debugw("resyncing all subscribers")
-
-	for _, subTrack := range t.getAllSubscribedTracks() {
-		subTrack.DownTrack().Resync()
-	}
-}
-
 func (t *MediaTrackSubscriptions) GetAllSubscribers() []livekit.ParticipantID {
 	t.subscribedTracksMu.RLock()
 	defer t.subscribedTracksMu.RUnlock()
@@ -354,7 +361,7 @@ func (t *MediaTrackSubscriptions) GetAllSubscribersForMime(mime string) []liveki
 
 	subs := make([]livekit.ParticipantID, 0, len(t.subscribedTracks))
 	for id, subTrack := range t.subscribedTracks {
-		if subTrack.DownTrack().Codec().MimeType != mime {
+		if !strings.EqualFold(subTrack.DownTrack().Codec().MimeType, mime) {
 			continue
 		}
 
