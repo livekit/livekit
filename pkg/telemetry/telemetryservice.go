@@ -19,8 +19,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/exp/maps"
-
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
@@ -95,9 +93,11 @@ type telemetryService struct {
 	notifier  webhook.QueuedNotifier
 	jobsQueue *utils.OpsQueue
 
-	lock          sync.RWMutex
-	workers       map[livekit.ParticipantID]*StatsWorker
-	workersShadow []*StatsWorker
+	workersMu  sync.RWMutex
+	workers    map[livekit.ParticipantID]*StatsWorker
+	workerList *StatsWorker
+
+	flushMu sync.Mutex
 }
 
 func NewTelemetryService(notifier webhook.QueuedNotifier, analytics AnalyticsService) TelemetryService {
@@ -121,29 +121,55 @@ func NewTelemetryService(notifier webhook.QueuedNotifier, analytics AnalyticsSer
 }
 
 func (t *telemetryService) FlushStats() {
-	t.lock.RLock()
-	workersShadow := t.workersShadow
-	t.lock.RUnlock()
+	t.flushMu.Lock()
+	defer t.flushMu.Unlock()
 
-	for _, worker := range workersShadow {
-		worker.Flush()
+	t.workersMu.RLock()
+	worker := t.workerList
+	t.workersMu.RUnlock()
+
+	now := time.Now()
+	var prev, reap *StatsWorker
+	for worker != nil {
+		next := worker.next
+		if closed := worker.Flush(now); closed {
+			if prev == nil {
+				// this worker was at the head of the list
+				t.workersMu.Lock()
+				p := &t.workerList
+				for *p != worker {
+					// new workers have been added. scan until we find the one
+					// immediately before this
+					prev = *p
+					p = &prev.next
+				}
+				*p = worker.next
+				t.workersMu.Unlock()
+			} else {
+				prev.next = worker.next
+			}
+
+			worker.next = reap
+			reap = worker
+		} else {
+			prev = worker
+		}
+		worker = next
+	}
+
+	if reap != nil {
+		t.workersMu.Lock()
+		for reap != nil {
+			delete(t.workers, reap.participantID)
+			reap = reap.next
+		}
+		t.workersMu.Unlock()
 	}
 }
 
 func (t *telemetryService) run() {
-	ticker := time.NewTicker(config.TelemetryStatsUpdateInterval)
-	defer ticker.Stop()
-
-	cleanupTicker := time.NewTicker(time.Minute)
-	defer cleanupTicker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			t.FlushStats()
-		case <-cleanupTicker.C:
-			t.cleanupWorkers()
-		}
+	for range time.Tick(config.TelemetryStatsUpdateInterval) {
+		t.FlushStats()
 	}
 }
 
@@ -152,21 +178,22 @@ func (t *telemetryService) enqueue(op func()) {
 }
 
 func (t *telemetryService) getWorker(participantID livekit.ParticipantID) (worker *StatsWorker, ok bool) {
-	t.lock.RLock()
-	defer t.lock.RUnlock()
+	t.workersMu.RLock()
+	defer t.workersMu.RUnlock()
 
 	worker, ok = t.workers[participantID]
 	return
 }
 
-func (t *telemetryService) getOrCreateWorker(ctx context.Context,
+func (t *telemetryService) getOrCreateWorker(
+	ctx context.Context,
 	roomID livekit.RoomID,
 	roomName livekit.RoomName,
 	participantID livekit.ParticipantID,
 	participantIdentity livekit.ParticipantIdentity,
 ) (*StatsWorker, bool) {
-	t.lock.Lock()
-	defer t.lock.Unlock()
+	t.workersMu.Lock()
+	defer t.workersMu.Unlock()
 
 	if worker, ok := t.workers[participantID]; ok {
 		return worker, true
@@ -182,37 +209,11 @@ func (t *telemetryService) getOrCreateWorker(ctx context.Context,
 	)
 
 	t.workers[participantID] = worker
-	t.workersShadow = maps.Values(t.workers)
+
+	worker.next = t.workerList
+	t.workerList = worker
 
 	return worker, false
-}
-
-func (t *telemetryService) cleanupWorkers() {
-	t.lock.RLock()
-	workersShadow := t.workersShadow
-	t.lock.RUnlock()
-
-	toReap := make([]livekit.ParticipantID, 0, len(workersShadow))
-	for _, worker := range workersShadow {
-		closedAt := worker.ClosedAt()
-		if !closedAt.IsZero() && time.Since(closedAt) > workerCleanupWait {
-			worker.Flush()
-
-			toReap = append(toReap, worker.ParticipantID())
-		}
-	}
-
-	if len(toReap) == 0 {
-		return
-	}
-
-	t.lock.Lock()
-	logger.Debugw("reaping analytics worker for participants", "pID", toReap)
-	for _, pID := range toReap {
-		delete(t.workers, pID)
-	}
-	t.workersShadow = maps.Values(t.workers)
-	t.lock.Unlock()
 }
 
 func (t *telemetryService) LocalRoomState(ctx context.Context, info *livekit.AnalyticsNodeRooms) {

@@ -35,7 +35,7 @@ import (
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/guid"
 )
 
 const (
@@ -80,8 +80,8 @@ func setupSingleNodeTest(name string) (*service.LivekitServer, func()) {
 
 func setupMultiNodeTest(name string) (*service.LivekitServer, *service.LivekitServer, func()) {
 	logger.Infow("----------------STARTING TEST----------------", "test", name)
-	s1 := createMultiNodeServer(utils.NewGuid(nodeID1), defaultServerPort)
-	s2 := createMultiNodeServer(utils.NewGuid(nodeID2), secondServerPort)
+	s1 := createMultiNodeServer(guid.New(nodeID1), defaultServerPort)
+	s2 := createMultiNodeServer(guid.New(nodeID2), secondServerPort)
 	go s1.Start()
 	go s2.Start()
 
@@ -161,7 +161,7 @@ func createSingleNodeServer(configUpdater func(*config.Config)) *service.Livekit
 	if err != nil {
 		panic(fmt.Sprintf("could not create local node: %v", err))
 	}
-	currentNode.Id = utils.NewGuid(nodeID1)
+	currentNode.Id = guid.New(nodeID1)
 
 	s, err := service.InitializeServer(conf, currentNode)
 	if err != nil {

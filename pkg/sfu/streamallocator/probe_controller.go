@@ -74,6 +74,7 @@ func (p *ProbeController) Reset() {
 	p.resetProbeIntervalLocked()
 	p.resetProbeDurationLocked()
 
+	p.StopProbe()
 	p.clearProbeLocked()
 }
 
@@ -82,7 +83,7 @@ func (p *ProbeController) ProbeClusterDone(info ProbeClusterInfo) {
 	defer p.lock.Unlock()
 
 	if p.probeClusterId != info.Id {
-		p.params.Logger.Infow("not expected probe cluster", "probeClusterId", p.probeClusterId, "resetProbeClusterId", info.Id)
+		p.params.Logger.Debugw("not expected probe cluster", "probeClusterId", p.probeClusterId, "resetProbeClusterId", info.Id)
 		return
 	}
 
@@ -108,12 +109,12 @@ func (p *ProbeController) CheckProbe(trend ChannelTrend, highestEstimate int64) 
 		// In rare cases, the estimate gets stuck. Prevent from probe running amok
 		// STREAM-ALLOCATOR-TODO: Need more testing here to ensure that probe does not cause a lot of damage
 		//
-		p.params.Logger.Infow("stream allocator: probe: aborting, no trend", "cluster", p.probeClusterId)
+		p.params.Logger.Debugw("stream allocator: probe: aborting, no trend", "cluster", p.probeClusterId)
 		p.abortProbeLocked()
 
 	case trend == ChannelTrendCongesting:
 		// stop immediately if the probe is congesting channel more
-		p.params.Logger.Infow("stream allocator: probe: aborting, channel is congesting", "cluster", p.probeClusterId)
+		p.params.Logger.Debugw("stream allocator: probe: aborting, channel is congesting", "cluster", p.probeClusterId)
 		p.abortProbeLocked()
 
 	case highestEstimate > p.probeGoalBps:
@@ -147,7 +148,9 @@ func (p *ProbeController) MaybeFinalizeProbe(
 		return true, true, true
 	}
 
-	if (isComplete || p.abortedProbeClusterId != ProbeClusterIdInvalid) && p.probeEndTime.IsZero() && p.doneProbeClusterInfo.Id != ProbeClusterIdInvalid && p.doneProbeClusterInfo.Id == p.probeClusterId {
+	if (isComplete || p.abortedProbeClusterId != ProbeClusterIdInvalid) &&
+		p.probeEndTime.IsZero() &&
+		p.doneProbeClusterInfo.Id != ProbeClusterIdInvalid && p.doneProbeClusterInfo.Id == p.probeClusterId {
 		// ensure any queueing due to probing is flushed
 		// STREAM-ALLOCATOR-TODO: CongestionControlProbeConfig.SettleWait should actually be a certain number of RTTs.
 		expectedDuration := float64(9.0)
@@ -174,7 +177,7 @@ func (p *ProbeController) MaybeFinalizeProbe(
 	}
 
 	if !p.probeEndTime.IsZero() && time.Now().After(p.probeEndTime) {
-		// finalisze aborted or non-failing but non-goal-reached probe cluster
+		// finalize aborted or non-failing but non-goal-reached probe cluster
 		return true, p.finalizeProbeLocked(trend), false
 	}
 

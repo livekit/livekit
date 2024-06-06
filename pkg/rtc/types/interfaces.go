@@ -97,6 +97,7 @@ const (
 	ParticipantCloseReasonSimulateMigration
 	ParticipantCloseReasonSimulateNodeFailure
 	ParticipantCloseReasonSimulateServerLeave
+	ParticipantCloseReasonSimulateLeaveRequest
 	ParticipantCloseReasonNegotiateFailed
 	ParticipantCloseReasonMigrationRequested
 	ParticipantCloseReasonPublicationError
@@ -140,6 +141,8 @@ func (p ParticipantCloseReason) String() string {
 		return "SIMULATE_NODE_FAILURE"
 	case ParticipantCloseReasonSimulateServerLeave:
 		return "SIMULATE_SERVER_LEAVE"
+	case ParticipantCloseReasonSimulateLeaveRequest:
+		return "SIMULATE_LEAVE_REQUEST"
 	case ParticipantCloseReasonNegotiateFailed:
 		return "NEGOTIATE_FAILED"
 	case ParticipantCloseReasonMigrationRequested:
@@ -161,7 +164,7 @@ func (p ParticipantCloseReason) String() string {
 
 func (p ParticipantCloseReason) ToDisconnectReason() livekit.DisconnectReason {
 	switch p {
-	case ParticipantCloseReasonClientRequestLeave:
+	case ParticipantCloseReasonClientRequestLeave, ParticipantCloseReasonSimulateLeaveRequest:
 		return livekit.DisconnectReason_CLIENT_INITIATED
 	case ParticipantCloseReasonRoomManagerStop:
 		return livekit.DisconnectReason_SERVER_SHUTDOWN
@@ -391,7 +394,6 @@ type LocalParticipant interface {
 	OnSubscribeStatusChanged(fn func(publisherID livekit.ParticipantID, subscribed bool))
 	OnClose(callback func(LocalParticipant))
 	OnClaimsChanged(callback func(LocalParticipant))
-	OnTrafficLoad(callback func(trafficLoad *TrafficLoad))
 
 	HandleReceiverReport(dt *sfu.DownTrack, report *rtcp.ReceiverReport)
 
@@ -420,8 +422,6 @@ type LocalParticipant interface {
 	SetSubscriberChannelCapacity(channelCapacity int64)
 
 	GetPacer() pacer.Pacer
-
-	GetTrafficLoad() *TrafficLoad
 }
 
 // Room is a container of participants, and can provide room-level actions

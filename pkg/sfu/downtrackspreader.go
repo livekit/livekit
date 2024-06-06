@@ -86,8 +86,12 @@ func (d *DownTrackSpreader) HasDownTrack(subscriberID livekit.ParticipantID) boo
 	return ok
 }
 
-func (d *DownTrackSpreader) Broadcast(writer func(TrackSender)) {
+func (d *DownTrackSpreader) Broadcast(writer func(TrackSender)) int {
 	downTracks := d.GetDownTracks()
+	if len(downTracks) == 0 {
+		return 0
+	}
+
 	threshold := uint64(d.params.Threshold)
 	if threshold == 0 {
 		threshold = 1000000
@@ -97,6 +101,7 @@ func (d *DownTrackSpreader) Broadcast(writer func(TrackSender)) {
 	// WriteRTP takes about 50µs on average, so we write to 2 down tracks per loop.
 	step := uint64(2)
 	utils.ParallelExec(downTracks, threshold, step, writer)
+	return len(downTracks)
 }
 
 func (d *DownTrackSpreader) DownTrackCount() int {

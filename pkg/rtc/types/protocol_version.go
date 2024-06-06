@@ -16,7 +16,7 @@ package types
 
 type ProtocolVersion int
 
-const CurrentProtocol = 13
+const CurrentProtocol = 14
 
 func (v ProtocolVersion) SupportsPackedStreamId() bool {
 	return v > 0

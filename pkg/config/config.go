@@ -117,6 +117,8 @@ type RTCConfig struct {
 
 	// max number of bytes to buffer for data channel. 0 means unlimited
 	DataChannelMaxBufferedAmount uint64 `yaml:"data_channel_max_buffered_amount,omitempty"`
+
+	ForwardStats ForwardStatsConfig `yaml:"forward_stats,omitempty"`
 }
 
 type TURNServer struct {
@@ -230,15 +232,17 @@ type VideoConfig struct {
 
 type RoomConfig struct {
 	// enable rooms to be automatically created
-	AutoCreate         bool               `yaml:"auto_create,omitempty"`
-	EnabledCodecs      []CodecSpec        `yaml:"enabled_codecs,omitempty"`
-	MaxParticipants    uint32             `yaml:"max_participants,omitempty"`
-	EmptyTimeout       uint32             `yaml:"empty_timeout,omitempty"`
-	DepartureTimeout   uint32             `yaml:"departure_timeout,omitempty"`
-	EnableRemoteUnmute bool               `yaml:"enable_remote_unmute,omitempty"`
-	MaxMetadataSize    uint32             `yaml:"max_metadata_size,omitempty"`
-	PlayoutDelay       PlayoutDelayConfig `yaml:"playout_delay,omitempty"`
-	SyncStreams        bool               `yaml:"sync_streams,omitempty"`
+	AutoCreate                   bool               `yaml:"auto_create,omitempty"`
+	EnabledCodecs                []CodecSpec        `yaml:"enabled_codecs,omitempty"`
+	MaxParticipants              uint32             `yaml:"max_participants,omitempty"`
+	EmptyTimeout                 uint32             `yaml:"empty_timeout,omitempty"`
+	DepartureTimeout             uint32             `yaml:"departure_timeout,omitempty"`
+	EnableRemoteUnmute           bool               `yaml:"enable_remote_unmute,omitempty"`
+	MaxMetadataSize              uint32             `yaml:"max_metadata_size,omitempty"`
+	PlayoutDelay                 PlayoutDelayConfig `yaml:"playout_delay,omitempty"`
+	SyncStreams                  bool               `yaml:"sync_streams,omitempty"`
+	MaxRoomNameLength            int                `yaml:"max_room_name_length,omitempty"`
+	MaxParticipantIdentityLength int                `yaml:"max_participant_identity_length,omitempty"`
 }
 
 type CodecSpec struct {
@@ -315,6 +319,12 @@ type APIConfig struct {
 
 	// max amount of time to wait before checking for operation complete
 	MaxCheckInterval time.Duration `yaml:"max_check_interval,omitempty"`
+}
+
+type ForwardStatsConfig struct {
+	SummaryInterval time.Duration `yaml:"summary_interval,omitempty"`
+	ReportInterval  time.Duration `yaml:"report_interval,omitempty"`
+	ReportWindow    time.Duration `yaml:"report_window,omitempty"`
 }
 
 func DefaultAPIConfig() APIConfig {
@@ -486,8 +496,10 @@ var DefaultConfig = Config{
 			{Mime: webrtc.MimeTypeVP9},
 			{Mime: webrtc.MimeTypeAV1},
 		},
-		EmptyTimeout:     5 * 60,
-		DepartureTimeout: 20,
+		EmptyTimeout:                 5 * 60,
+		DepartureTimeout:             20,
+		MaxRoomNameLength:            256,
+		MaxParticipantIdentityLength: 256,
 	},
 	Logging: LoggingConfig{
 		PionLevel: "error",

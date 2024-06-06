@@ -75,6 +75,7 @@ type RTPMunger struct {
 
 	extHighestIncomingSN uint64
 	snRangeMap           *utils.RangeMap[uint64, uint64]
+	extHighestIncomingTS uint64 // TODO-REMOVE-AFTER-DATA-COLLECTION
 
 	extLastSN       uint64
 	extSecondLastSN uint64
@@ -83,7 +84,6 @@ type RTPMunger struct {
 	extLastTS       uint64
 	extSecondLastTS uint64
 	tsOffset        uint64
-	pinnedTSOffset  uint64
 
 	lastMarker       bool
 	secondLastMarker bool
@@ -108,7 +108,6 @@ func (r *RTPMunger) DebugInfo() map[string]interface{} {
 		"ExtLastTS":            r.extLastTS,
 		"ExtSecondLastTS":      r.extSecondLastTS,
 		"TSOffset":             r.tsOffset,
-		"PinnedTSOffset":       r.pinnedTSOffset,
 		"LastMarker":           r.lastMarker,
 		"SecondLastMarker":     r.secondLastMarker,
 	}
@@ -125,8 +124,8 @@ func (r *RTPMunger) GetLast() RTPMungerState {
 	}
 }
 
-func (r *RTPMunger) GetPinnedTSOffset() uint64 {
-	return r.pinnedTSOffset
+func (r *RTPMunger) GetTSOffset() uint64 {
+	return r.tsOffset
 }
 
 func (r *RTPMunger) SeedLast(state RTPMungerState) {
@@ -140,6 +139,7 @@ func (r *RTPMunger) SeedLast(state RTPMungerState) {
 
 func (r *RTPMunger) SetLastSnTs(extPkt *buffer.ExtPacket) {
 	r.extHighestIncomingSN = extPkt.ExtSequenceNumber - 1
+	r.extHighestIncomingTS = extPkt.ExtTimestamp - 1
 
 	r.extLastSN = extPkt.ExtSequenceNumber
 	r.extSecondLastSN = r.extLastSN - 1
@@ -149,17 +149,16 @@ func (r *RTPMunger) SetLastSnTs(extPkt *buffer.ExtPacket) {
 	r.extLastTS = extPkt.ExtTimestamp
 	r.extSecondLastTS = extPkt.ExtTimestamp
 	r.tsOffset = 0
-	r.pinnedTSOffset = r.tsOffset
 }
 
 func (r *RTPMunger) UpdateSnTsOffsets(extPkt *buffer.ExtPacket, snAdjust uint64, tsAdjust uint64) {
 	r.extHighestIncomingSN = extPkt.ExtSequenceNumber - 1
+	r.extHighestIncomingTS = extPkt.ExtTimestamp - 1
 
 	r.snRangeMap.ClearAndResetValue(extPkt.ExtSequenceNumber, extPkt.ExtSequenceNumber-r.extLastSN-snAdjust)
 	r.updateSnOffset()
 
 	r.tsOffset = extPkt.ExtTimestamp - r.extLastTS - tsAdjust
-	r.pinnedTSOffset = r.tsOffset
 }
 
 func (r *RTPMunger) PacketDropped(extPkt *buffer.ExtPacket) {
@@ -194,6 +193,18 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket, marker bool) (Tra
 	if (diff == 1 && len(extPkt.Packet.Payload) != 0) || diff > 1 {
 		// in-order - either contiguous packet with payload OR packet following a gap, may or may not have payload
 		r.extHighestIncomingSN = extPkt.ExtSequenceNumber
+
+		// TODO-REMOVE-AFTER-DATA-COLLECTION
+		tsDiff := int64(extPkt.ExtTimestamp - r.extHighestIncomingTS)
+		if tsDiff > 24000 { // 1/2 second at audio clock rate
+			r.logger.Infow(
+				"big jump in incoming timestamp",
+				"last", r.extHighestIncomingTS,
+				"current", extPkt.ExtTimestamp,
+				"diff", tsDiff,
+			)
+		}
+		r.extHighestIncomingTS = extPkt.ExtTimestamp
 
 		ordering := SequenceNumberOrderingContiguous
 		if diff > 1 {

@@ -23,7 +23,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/protocol/webhook"
 )
 
@@ -33,7 +33,7 @@ func (t *telemetryService) NotifyEvent(ctx context.Context, event *livekit.Webho
 	}
 
 	event.CreatedAt = time.Now().Unix()
-	event.Id = utils.NewGuid("EV_")
+	event.Id = guid.New("EV_")
 
 	if err := t.notifier.QueueNotify(ctx, event); err != nil {
 		logger.Warnw("failed to notify webhook", err, "event", event.Event)
@@ -163,10 +163,9 @@ func (t *telemetryService) ParticipantLeft(ctx context.Context,
 		isConnected := false
 		if worker, ok := t.getWorker(livekit.ParticipantID(participant.Sid)); ok {
 			isConnected = worker.IsConnected()
-			if worker.ClosedAt().IsZero() {
+			if worker.Close() {
 				prometheus.SubParticipant()
 			}
-			worker.Close()
 		}
 
 		if isConnected && shouldSendEvent {
