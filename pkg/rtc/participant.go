@@ -38,6 +38,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/guid"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -2297,7 +2298,7 @@ func (p *ParticipantImpl) setStableTrackID(cid string, info *livekit.TrackInfo) 
 		case livekit.TrackSource_SCREEN_SHARE_AUDIO:
 			trackPrefix += "s"
 		}
-		trackID = utils.NewGuid(trackPrefix)
+		trackID = guid.New(trackPrefix)
 	}
 	info.Sid = trackID
 }

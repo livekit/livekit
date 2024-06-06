@@ -33,6 +33,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/protocol/utils/must"
 	"github.com/livekit/psrpc"
 
@@ -378,7 +379,7 @@ func (r *RoomManager) StartSession(
 	pv := types.ProtocolVersion(pi.Client.Protocol)
 	rtcConf := *r.rtcConfig
 	rtcConf.SetBufferFactory(room.GetBufferFactory())
-	sid := livekit.ParticipantID(utils.NewGuid(utils.ParticipantPrefix))
+	sid := livekit.ParticipantID(guid.New(utils.ParticipantPrefix))
 	pLogger := rtc.LoggerWithParticipant(
 		rtc.LoggerWithRoom(logger.GetLogger(), room.Name(), room.ID()),
 		pi.Identity,
