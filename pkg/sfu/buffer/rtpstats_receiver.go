@@ -214,6 +214,8 @@ func (r *RTPStatsReceiver) Update(
 			"hdrSize", hdrSize,
 			"payloadSize", payloadSize,
 			"paddingSize", paddingSize,
+			"first", r.srFirst,
+			"last", r.srNewest,
 		}
 	}
 	if gapSN <= 0 { // duplicate OR out-of-order
