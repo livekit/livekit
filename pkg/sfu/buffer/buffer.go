@@ -194,7 +194,7 @@ func (b *Buffer) SetAudioLossProxying(enable bool) {
 	b.enableAudioLossProxying = enable
 }
 
-func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapability) {
+func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapability, bitrates int) {
 	b.Lock()
 	defer b.Unlock()
 	if b.bound {
@@ -261,6 +261,14 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 				frc := NewFrameRateCalculatorVP9(b.clockRate, b.logger)
 				for i := range b.frameRateCalculator {
 					b.frameRateCalculator[i] = frc.GetFrameRateCalculatorForSpatial(int32(i))
+				}
+			}
+		}
+		if bitrates > 0 {
+			pps := bitrates / 8 / 1200
+			for pps > b.bucket.Capacity() {
+				if b.bucket.Grow() >= b.maxVideoPkts {
+					break
 				}
 			}
 		}

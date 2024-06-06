@@ -353,11 +353,16 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		t.SetSimulcast(true)
 	}
 
+	var bitrates int
+	if len(ti.Layers) > int(layer) {
+		bitrates = int(ti.Layers[layer].GetBitrate())
+	}
+
 	if t.IsSimulcast() {
 		t.MediaTrackReceiver.SetLayerSsrc(mime, track.RID(), uint32(track.SSRC()))
 	}
 
-	buff.Bind(receiver.GetParameters(), track.Codec().RTPCodecCapability)
+	buff.Bind(receiver.GetParameters(), track.Codec().RTPCodecCapability, bitrates)
 
 	// if subscriber request fps before fps calculated, update them after fps updated.
 	buff.OnFpsChanged(func() {

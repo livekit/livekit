@@ -68,7 +68,7 @@ func TestNack(t *testing.T) {
 		buff.Bind(webrtc.RTPParameters{
 			HeaderExtensions: nil,
 			Codecs:           []webrtc.RTPCodecParameters{vp8Codec},
-		}, vp8Codec.RTPCodecCapability)
+		}, vp8Codec.RTPCodecCapability, 0)
 		rtt := uint32(20)
 		buff.nacker.SetRTT(rtt)
 		for i := 0; i < 15; i++ {
@@ -127,7 +127,7 @@ func TestNack(t *testing.T) {
 		buff.Bind(webrtc.RTPParameters{
 			HeaderExtensions: nil,
 			Codecs:           []webrtc.RTPCodecParameters{vp8Codec},
-		}, vp8Codec.RTPCodecCapability)
+		}, vp8Codec.RTPCodecCapability, 0)
 		rtt := uint32(30)
 		buff.nacker.SetRTT(rtt)
 		for i := 0; i < 15; i++ {
@@ -193,7 +193,7 @@ func TestNewBuffer(t *testing.T) {
 			buff.Bind(webrtc.RTPParameters{
 				HeaderExtensions: nil,
 				Codecs:           []webrtc.RTPCodecParameters{vp8Codec},
-			}, vp8Codec.RTPCodecCapability)
+			}, vp8Codec.RTPCodecCapability, 0)
 
 			for _, p := range TestPackets {
 				buf, _ := p.Marshal()
@@ -229,7 +229,7 @@ func TestFractionLostReport(t *testing.T) {
 	buff.Bind(webrtc.RTPParameters{
 		HeaderExtensions: nil,
 		Codecs:           []webrtc.RTPCodecParameters{opusCodec},
-	}, opusCodec.RTPCodecCapability)
+	}, opusCodec.RTPCodecCapability, 0)
 	for i := 0; i < 15; i++ {
 		pkt := rtp.Packet{
 			Header:  rtp.Header{SequenceNumber: uint16(i), Timestamp: uint32(i)},
@@ -261,7 +261,7 @@ func TestFractionLostReport(t *testing.T) {
 	buff.Bind(webrtc.RTPParameters{
 		HeaderExtensions: nil,
 		Codecs:           []webrtc.RTPCodecParameters{opusCodec},
-	}, opusCodec.RTPCodecCapability)
+	}, opusCodec.RTPCodecCapability, 0)
 	for i := 0; i < 15; i++ {
 		pkt := rtp.Packet{
 			Header:  rtp.Header{SequenceNumber: uint16(i), Timestamp: uint32(i)},
