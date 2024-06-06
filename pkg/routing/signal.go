@@ -28,7 +28,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
-	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/psrpc"
 	"github.com/livekit/psrpc/pkg/middleware"
 )
@@ -84,7 +84,7 @@ func (r *signalClient) StartParticipantSignal(
 	resSource MessageSource,
 	err error,
 ) {
-	connectionID = livekit.ConnectionID(utils.NewGuid("CO_"))
+	connectionID = livekit.ConnectionID(guid.New("CO_"))
 	ss, err := pi.ToStartSession(roomName, connectionID)
 	if err != nil {
 		return

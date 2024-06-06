@@ -24,6 +24,7 @@ import (
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/sip"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/psrpc"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -91,7 +92,7 @@ func (s *SIPService) CreateSIPTrunk(ctx context.Context, req *livekit.CreateSIPT
 	}
 
 	// Now we can generate ID and store.
-	info.SipTrunkId = utils.NewGuid(utils.SIPTrunkPrefix)
+	info.SipTrunkId = guid.New(utils.SIPTrunkPrefix)
 	if err := s.store.StoreSIPTrunk(ctx, info); err != nil {
 		return nil, err
 	}
@@ -153,7 +154,7 @@ func (s *SIPService) CreateSIPDispatchRule(ctx context.Context, req *livekit.Cre
 	}
 
 	// Now we can generate ID and store.
-	info.SipDispatchRuleId = utils.NewGuid(utils.SIPDispatchRulePrefix)
+	info.SipDispatchRuleId = guid.New(utils.SIPDispatchRulePrefix)
 	if err := s.store.StoreSIPDispatchRule(ctx, info); err != nil {
 		return nil, err
 	}

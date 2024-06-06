@@ -29,7 +29,7 @@ import (
 	"github.com/livekit/protocol/ingress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/guid"
 
 	"github.com/livekit/livekit-server/version"
 )
@@ -240,7 +240,7 @@ func (s *RedisStore) DeleteRoom(ctx context.Context, roomName livekit.RoomName) 
 }
 
 func (s *RedisStore) LockRoom(_ context.Context, roomName livekit.RoomName, duration time.Duration) (string, error) {
-	token := utils.NewGuid("LOCK")
+	token := guid.New("LOCK")
 	key := RoomLockPrefix + string(roomName)
 
 	startTime := time.Now()
