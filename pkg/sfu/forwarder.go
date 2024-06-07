@@ -599,7 +599,6 @@ func (f *Forwarder) SetRefSenderReport(isSVC bool, layer int32, srData *buffer.R
 	if layer >= 0 && int(layer) < len(f.refInfos) {
 		f.refInfos[layer] = refInfo{srData, 0, false}
 		if layer == refLayer && srData.RTPTimestampExt >= f.lastSwitchExtIncomingTS {
-			f.logger.Infow("setting SR data") // REMOVE
 			f.refInfos[layer].tsOffset = f.rtpMunger.GetTSOffset()
 			f.refInfos[layer].isTSOffsetValid = true
 		}
