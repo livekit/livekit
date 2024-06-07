@@ -20,6 +20,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"golang.org/x/exp/maps"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/protocol/utils"
@@ -147,11 +148,7 @@ func (u *UpTrackManager) GetPublishedTracks() []types.MediaTrack {
 	u.lock.RLock()
 	defer u.lock.RUnlock()
 
-	tracks := make([]types.MediaTrack, 0, len(u.publishedTracks))
-	for _, t := range u.publishedTracks {
-		tracks = append(tracks, t)
-	}
-	return tracks
+	return maps.Values(u.publishedTracks)
 }
 
 func (u *UpTrackManager) UpdateSubscriptionPermission(

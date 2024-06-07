@@ -316,7 +316,7 @@ func (r *RTPStatsSender) Update(
 			// do not start on a padding only packet
 			return
 		}
-		if -gapSN >= cNumSequenceNumbers/2 {
+		if -gapSN >= cSequenceNumberLargeJumpThreshold {
 			if r.largeJumpNegativeCount%100 == 0 {
 				r.logger.Warnw(
 					"large sequence number gap negative", nil,
@@ -372,7 +372,7 @@ func (r *RTPStatsSender) Update(
 			r.setSnInfo(extSequenceNumber, r.extHighestSN, uint16(pktSize), uint8(hdrSize), uint16(payloadSize), marker, true)
 		}
 	} else { // in-order
-		if gapSN >= cNumSequenceNumbers/2 || extTimestamp < r.extHighestTS {
+		if gapSN >= cSequenceNumberLargeJumpThreshold || extTimestamp < r.extHighestTS {
 			if r.largeJumpCount%100 == 0 {
 				r.logger.Warnw(
 					"large sequence number gap OR time reversed", nil,

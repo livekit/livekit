@@ -37,6 +37,8 @@ const (
 	cFirstPacketTimeAdjustThreshold = 15 * time.Second
 
 	cPassthroughNTPTimestamp = true
+
+	cSequenceNumberLargeJumpThreshold = 1000
 )
 
 // -------------------------------------------------------

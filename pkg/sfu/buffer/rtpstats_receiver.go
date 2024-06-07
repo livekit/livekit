@@ -219,7 +219,7 @@ func (r *RTPStatsReceiver) Update(
 		}
 	}
 	if gapSN <= 0 { // duplicate OR out-of-order
-		if -gapSN >= cNumSequenceNumbers/2 {
+		if -gapSN >= cSequenceNumberLargeJumpThreshold {
 			if r.largeJumpNegativeCount%100 == 0 {
 				r.logger.Warnw(
 					"large sequence number gap negative", nil,
@@ -249,7 +249,7 @@ func (r *RTPStatsReceiver) Update(
 		flowState.ExtSequenceNumber = resSN.ExtendedVal
 		flowState.ExtTimestamp = resTS.ExtendedVal
 	} else { // in-order
-		if gapSN >= cNumSequenceNumbers/2 || resTS.ExtendedVal < resTS.PreExtendedHighest {
+		if gapSN >= cSequenceNumberLargeJumpThreshold || resTS.ExtendedVal < resTS.PreExtendedHighest {
 			if r.largeJumpCount%100 == 0 {
 				r.logger.Warnw(
 					"large sequence number gap OR time reversed", nil,
@@ -596,7 +596,7 @@ func (r *RTPStatsReceiver) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	defer r.lock.RUnlock()
 
 	e.AddObject("base", r.rtpStatsBase)
-	e.AddUint64("extendedStartSN", r.sequenceNumber.GetExtendedStart())
+	e.AddUint64("extStartSN", r.sequenceNumber.GetExtendedStart())
 	e.AddUint64("extHighestSN", r.sequenceNumber.GetExtendedHighest())
 	e.AddUint64("extStartTS", r.timestamp.GetExtendedStart())
 	e.AddUint64("extHighestTS", r.timestamp.GetExtendedHighest())
