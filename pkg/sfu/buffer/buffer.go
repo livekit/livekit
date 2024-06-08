@@ -316,7 +316,7 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 		return
 	}
 
-	if rtpPacket.Version != 2 || rtpPacket.PayloadType != b.payloadType {
+	if rtpPacket.Version != 2 || (b.payloadType != 0 && rtpPacket.PayloadType != b.payloadType) {
 		b.logger.Warnw(
 			"invalid RTP packet", nil,
 			"version", rtpPacket.Version,
