@@ -316,6 +316,21 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 		return
 	}
 
+	if rtpPacket.Version != 2 || rtpPacket.PayloadType != b.payloadType {
+		b.logger.Warnw(
+			"invalid RTP packet", nil,
+			"version", rtpPacket.Version,
+			"sn", rtpPacket.SequenceNumber,
+			"timestamp", rtpPacket.Timestamp,
+			"payloadSize", len(rtpPacket.Payload),
+			"payloadType", rtpPacket.PayloadType,
+			"ssrc", rtpPacket.SSRC,
+			"rtpStats", b.rtpStats,
+			"snRangeMap", b.snRangeMap,
+		)
+		// TODO-REMOVE-AFTER-DEBUG
+	}
+
 	now := time.Now()
 	if b.twcc != nil && b.twccExtID != 0 && !b.closed.Load() {
 		if ext := rtpPacket.GetExtension(b.twccExtID); ext != nil {
