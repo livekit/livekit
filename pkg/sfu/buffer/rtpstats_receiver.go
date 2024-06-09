@@ -596,10 +596,14 @@ func (r *RTPStatsReceiver) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	defer r.lock.RUnlock()
 
 	e.AddObject("base", r.rtpStatsBase)
+
 	e.AddUint64("extStartSN", r.sequenceNumber.GetExtendedStart())
 	e.AddUint64("extHighestSN", r.sequenceNumber.GetExtendedHighest())
 	e.AddUint64("extStartTS", r.timestamp.GetExtendedStart())
 	e.AddUint64("extHighestTS", r.timestamp.GetExtendedHighest())
+
+	e.AddDuration("propagationDelay", r.propagationDelay)
+	e.AddDuration("longTermDeltaPropagationDelay", r.longTermDeltaPropagationDelay)
 	return nil
 }
 
