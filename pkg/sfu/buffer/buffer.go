@@ -333,6 +333,7 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 			"rtpStats", b.rtpStats,
 			"snRangeMap", b.snRangeMap,
 		)
+		b.Unlock()
 		return
 	}
 
