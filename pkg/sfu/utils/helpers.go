@@ -15,9 +15,11 @@
 package utils
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/pion/interceptor"
+	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
 )
 
@@ -50,4 +52,21 @@ func GetHeaderExtensionID(extensions []interceptor.RTPHeaderExtension, extension
 		}
 	}
 	return 0
+}
+
+// ValidateRTPPacket checks for a valid RTP packet and returns an error if fields are incorrect
+func ValidateRTPPacket(pkt *rtp.Packet, expectedPayloadType uint8, expectedSSRC uint32) error {
+	if pkt.Version != 2 {
+		return errors.New("invalid RTP version")
+	}
+
+	if expectedPayloadType != 0 && pkt.PayloadType != expectedPayloadType {
+		return errors.New("invalid RTP payload type")
+	}
+
+	if expectedSSRC != 0 && pkt.SSRC != expectedSSRC {
+		return errors.New("invalid RTP SSRC")
+	}
+
+	return nil
 }

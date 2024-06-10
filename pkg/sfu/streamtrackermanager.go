@@ -264,7 +264,7 @@ func (s *StreamTrackerManager) RemoveAllTrackers() {
 		s.trackers[layer] = nil
 	}
 	s.availableLayers = make([]int32, 0)
-	s.maxExpectedLayerFromTrackInfo()
+	s.maxExpectedLayerFromTrackInfoLocked()
 	s.paused = false
 	ddTracker := s.ddTracker
 	s.ddTracker = nil
@@ -530,6 +530,13 @@ func (s *StreamTrackerManager) removeAvailableLayer(layer int32) {
 }
 
 func (s *StreamTrackerManager) maxExpectedLayerFromTrackInfo() {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	s.maxExpectedLayerFromTrackInfoLocked()
+}
+
+func (s *StreamTrackerManager) maxExpectedLayerFromTrackInfoLocked() {
 	s.maxExpectedLayer = buffer.InvalidLayerSpatial
 	ti := s.trackInfo.Load()
 	if ti != nil {

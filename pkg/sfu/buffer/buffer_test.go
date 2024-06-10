@@ -44,7 +44,7 @@ var opusCodec = webrtc.RTPCodecParameters{
 		MimeType:  "audio/opus",
 		ClockRate: 48000,
 	},
-	PayloadType: 96,
+	PayloadType: 111,
 }
 
 func TestNack(t *testing.T) {
@@ -81,7 +81,13 @@ func TestNack(t *testing.T) {
 				time.Sleep(500 * time.Millisecond) // even a long wait should not exceed max retries
 			}
 			pkt := rtp.Packet{
-				Header:  rtp.Header{SequenceNumber: uint16(i), Timestamp: uint32(i)},
+				Header: rtp.Header{
+					Version:        2,
+					PayloadType:    96,
+					SequenceNumber: uint16(i),
+					Timestamp:      uint32(i),
+					SSRC:           123,
+				},
 				Payload: []byte{0xff, 0xff, 0xff, 0xfd, 0xb4, 0x9f, 0x94, 0x1},
 			}
 			b, err := pkt.Marshal()
@@ -140,7 +146,13 @@ func TestNack(t *testing.T) {
 				time.Sleep(500 * time.Millisecond) // even a long wait should not exceed max retries
 			}
 			pkt := rtp.Packet{
-				Header:  rtp.Header{SequenceNumber: uint16(i + 65533), Timestamp: uint32(i)},
+				Header: rtp.Header{
+					Version:        2,
+					PayloadType:    96,
+					SequenceNumber: uint16(i + 65533),
+					Timestamp:      uint32(i),
+					SSRC:           123,
+				},
 				Payload: []byte{0xff, 0xff, 0xff, 0xfd, 0xb4, 0x9f, 0x94, 0x1},
 			}
 			b, err := pkt.Marshal()
@@ -166,23 +178,35 @@ func TestNewBuffer(t *testing.T) {
 			var TestPackets = []*rtp.Packet{
 				{
 					Header: rtp.Header{
+						Version:        2,
+						PayloadType:    96,
 						SequenceNumber: 65533,
+						SSRC:           123,
 					},
 				},
 				{
 					Header: rtp.Header{
+						Version:        2,
+						PayloadType:    96,
 						SequenceNumber: 65534,
+						SSRC:           123,
 					},
 					Payload: []byte{1},
 				},
 				{
 					Header: rtp.Header{
+						Version:        2,
+						PayloadType:    96,
 						SequenceNumber: 2,
+						SSRC:           123,
 					},
 				},
 				{
 					Header: rtp.Header{
+						Version:        2,
+						PayloadType:    96,
 						SequenceNumber: 65535,
+						SSRC:           123,
 					},
 				},
 			}
@@ -232,7 +256,13 @@ func TestFractionLostReport(t *testing.T) {
 	}, opusCodec.RTPCodecCapability, 0)
 	for i := 0; i < 15; i++ {
 		pkt := rtp.Packet{
-			Header:  rtp.Header{SequenceNumber: uint16(i), Timestamp: uint32(i)},
+			Header: rtp.Header{
+				Version:        2,
+				PayloadType:    111,
+				SequenceNumber: uint16(i),
+				Timestamp:      uint32(i),
+				SSRC:           123,
+			},
 			Payload: []byte{0xff, 0xff, 0xff, 0xfd, 0xb4, 0x9f, 0x94, 0x1},
 		}
 		b, err := pkt.Marshal()
@@ -264,7 +294,13 @@ func TestFractionLostReport(t *testing.T) {
 	}, opusCodec.RTPCodecCapability, 0)
 	for i := 0; i < 15; i++ {
 		pkt := rtp.Packet{
-			Header:  rtp.Header{SequenceNumber: uint16(i), Timestamp: uint32(i)},
+			Header: rtp.Header{
+				Version:        2,
+				PayloadType:    111,
+				SequenceNumber: uint16(i),
+				Timestamp:      uint32(i),
+				SSRC:           123,
+			},
 			Payload: []byte{0xff, 0xff, 0xff, 0xfd, 0xb4, 0x9f, 0x94, 0x1},
 		}
 		b, err := pkt.Marshal()

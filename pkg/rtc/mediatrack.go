@@ -358,9 +358,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		bitrates = int(ti.Layers[layer].GetBitrate())
 	}
 
-	if t.IsSimulcast() {
-		t.MediaTrackReceiver.SetLayerSsrc(mime, track.RID(), uint32(track.SSRC()))
-	}
+	t.MediaTrackReceiver.SetLayerSsrc(mime, track.RID(), uint32(track.SSRC()))
 
 	buff.Bind(receiver.GetParameters(), track.Codec().RTPCodecCapability, bitrates)
 
