@@ -316,19 +316,24 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 		return
 	}
 
-	if rtpPacket.Version != 2 || (b.payloadType != 0 && rtpPacket.PayloadType != b.payloadType) {
+	if err = utils.ValidateRTPPacket(&rtpPacket, b.payloadType, b.mediaSSRC); err != nil {
 		b.logger.Warnw(
-			"invalid RTP packet", nil,
+			"validating RTP packet failed", err,
 			"version", rtpPacket.Version,
-			"sn", rtpPacket.SequenceNumber,
-			"timestamp", rtpPacket.Timestamp,
-			"payloadSize", len(rtpPacket.Payload),
+			"padding", rtpPacket.Padding,
+			"marker", rtpPacket.Marker,
+			"expectedPayloadType", b.payloadType,
 			"payloadType", rtpPacket.PayloadType,
+			"sequenceNumber", rtpPacket.SequenceNumber,
+			"timestamp", rtpPacket.Timestamp,
+			"expectedSSRC", b.mediaSSRC,
 			"ssrc", rtpPacket.SSRC,
+			"numExtensions", len(rtpPacket.Extensions),
+			"payloadSize", len(rtpPacket.Payload),
 			"rtpStats", b.rtpStats,
 			"snRangeMap", b.snRangeMap,
 		)
-		// TODO-REMOVE-AFTER-DEBUG
+		return
 	}
 
 	now := time.Now()
