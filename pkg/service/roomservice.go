@@ -104,7 +104,7 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 	defer done()
 
 	if created {
-		go s.agentClient.LaunchJob(ctx, &agent.JobDescription{
+		go s.agentClient.LaunchJob(context.Background(), &agent.JobDescription{
 			JobType: livekit.JobType_JT_ROOM,
 			Room:    rm,
 		})
