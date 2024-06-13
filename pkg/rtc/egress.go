@@ -29,7 +29,6 @@ import (
 
 type EgressLauncher interface {
 	StartEgress(context.Context, *rpc.StartEgressRequest) (*livekit.EgressInfo, error)
-	StartEgressWithClusterId(ctx context.Context, clusterId string, req *rpc.StartEgressRequest) (*livekit.EgressInfo, error)
 }
 
 func StartParticipantEgress(

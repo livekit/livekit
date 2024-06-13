@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/pion/rtcp"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/protocol/livekit"
@@ -163,6 +164,8 @@ type RTPStatsSender struct {
 
 	clockSkewCount             int
 	metadataCacheOverflowCount int
+	largeJumpNegativeCount     int
+	largeJumpCount             int
 }
 
 func NewRTPStatsSender(params RTPStatsParams) *RTPStatsSender {
@@ -284,33 +287,43 @@ func (r *RTPStatsSender) Update(
 	pktSize := uint64(hdrSize + payloadSize + paddingSize)
 	isDuplicate := false
 	gapSN := int64(extSequenceNumber - r.extHighestSN)
+	getLoggingFields := func() []interface{} {
+		return []interface{}{
+			"extStartSN", r.extStartSN,
+			"extHighestSN", r.extHighestSN,
+			"extStartTS", r.extStartTS,
+			"extHighestTS", r.extHighestTS,
+			"startTime", r.startTime.String(),
+			"firstTime", r.firstTime.String(),
+			"highestTime", r.highestTime.String(),
+			"highestSN", r.extHighestSN,
+			"currSN", extSequenceNumber,
+			"gapSN", gapSN,
+			"highestTS", r.extHighestTS,
+			"currTS", extTimestamp,
+			"gapTS", int64(extTimestamp - r.extHighestTS),
+			"packetTime", packetTime.String(),
+			"marker", marker,
+			"hdrSize", hdrSize,
+			"payloadSize", payloadSize,
+			"paddingSize", paddingSize,
+			"firstSR", r.srFirst,
+			"lastSR", r.srNewest,
+		}
+	}
 	if gapSN <= 0 { // duplicate OR out-of-order
 		if payloadSize == 0 && extSequenceNumber < r.extStartSN {
 			// do not start on a padding only packet
 			return
 		}
-		if -gapSN >= cNumSequenceNumbers/2 {
-			r.logger.Warnw(
-				"large sequence number gap negative", nil,
-				"extStartSN", r.extStartSN,
-				"extHighestSN", r.extHighestSN,
-				"extStartTS", r.extStartTS,
-				"extHighestTS", r.extHighestTS,
-				"firstTime", r.firstTime.String(),
-				"highestTime", r.highestTime.String(),
-				"prev", r.extHighestSN,
-				"curr", extSequenceNumber,
-				"gap", gapSN,
-				"packetTime", packetTime.String(),
-				"sequenceNumber", extSequenceNumber,
-				"timestamp", extTimestamp,
-				"marker", marker,
-				"hdrSize", hdrSize,
-				"payloadSize", payloadSize,
-				"paddingSize", paddingSize,
-				"firstSR", r.srFirst,
-				"lastSR", r.srNewest,
-			)
+		if -gapSN >= cSequenceNumberLargeJumpThreshold {
+			if r.largeJumpNegativeCount%100 == 0 {
+				r.logger.Warnw(
+					"large sequence number gap negative", nil,
+					append(getLoggingFields(), "count", r.largeJumpNegativeCount)...,
+				)
+			}
+			r.largeJumpNegativeCount++
 		}
 
 		if extSequenceNumber < r.extStartSN {
@@ -335,10 +348,12 @@ func (r *RTPStatsSender) Update(
 
 			r.logger.Infow(
 				"adjusting start sequence number",
-				"snBefore", r.extStartSN,
-				"snAfter", extSequenceNumber,
-				"tsBefore", r.extStartTS,
-				"tsAfter", extTimestamp,
+				append(getLoggingFields(),
+					"snBefore", r.extStartSN,
+					"snAfter", extSequenceNumber,
+					"tsBefore", r.extStartTS,
+					"tsAfter", extTimestamp,
+				)...,
 			)
 			r.extStartSN = extSequenceNumber
 		}
@@ -357,28 +372,14 @@ func (r *RTPStatsSender) Update(
 			r.setSnInfo(extSequenceNumber, r.extHighestSN, uint16(pktSize), uint8(hdrSize), uint16(payloadSize), marker, true)
 		}
 	} else { // in-order
-		if gapSN >= cNumSequenceNumbers/2 {
-			r.logger.Warnw(
-				"large sequence number gap", nil,
-				"extStartSN", r.extStartSN,
-				"extHighestSN", r.extHighestSN,
-				"extStartTS", r.extStartTS,
-				"extHighestTS", r.extHighestTS,
-				"firstTime", r.firstTime.String(),
-				"highestTime", r.highestTime.String(),
-				"prev", r.extHighestSN,
-				"curr", extSequenceNumber,
-				"gap", gapSN,
-				"packetTime", packetTime.String(),
-				"sequenceNumber", extSequenceNumber,
-				"timestamp", extTimestamp,
-				"marker", marker,
-				"hdrSize", hdrSize,
-				"payloadSize", payloadSize,
-				"paddingSize", paddingSize,
-				"firstSR", r.srFirst,
-				"lastSR", r.srNewest,
-			)
+		if gapSN >= cSequenceNumberLargeJumpThreshold || extTimestamp < r.extHighestTS {
+			if r.largeJumpCount%100 == 0 {
+				r.logger.Warnw(
+					"large sequence number gap OR time reversed", nil,
+					append(getLoggingFields(), "count", r.largeJumpCount)...,
+				)
+			}
+			r.largeJumpCount++
 		}
 
 		// update gap histogram
@@ -396,10 +397,12 @@ func (r *RTPStatsSender) Update(
 	if extTimestamp < r.extStartTS {
 		r.logger.Infow(
 			"adjusting start timestamp",
-			"snBefore", r.extStartSN,
-			"snAfter", extSequenceNumber,
-			"tsBefore", r.extStartTS,
-			"tsAfter", extTimestamp,
+			append(getLoggingFields(),
+				"snBefore", r.extStartSN,
+				"snAfter", extSequenceNumber,
+				"tsBefore", r.extStartTS,
+				"tsAfter", extTimestamp,
+			)...,
 		)
 		r.extStartTS = extTimestamp
 	}
@@ -486,9 +489,7 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 		if err == nil {
 			isRttChanged = rtt != r.rtt
 		} else {
-			if !errors.Is(err, mediatransportutil.ErrRttNotLastSenderReport) && !errors.Is(err, mediatransportutil.ErrRttNoLastSenderReport) {
-				r.logger.Warnw("error getting rtt", err)
-			}
+			r.logger.Debugw("error getting rtt", "error", err)
 		}
 	}
 
@@ -821,6 +822,28 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) *RTPDeltaInfo 
 		Plis:                 now.plis - then.plis,
 		Firs:                 now.firs - then.firs,
 	}
+}
+
+func (r *RTPStatsSender) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if r == nil {
+		return nil
+	}
+
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	e.AddObject("base", r.rtpStatsBase)
+	e.AddUint64("extStartSN", r.extStartSN)
+	e.AddUint64("extHighestSN", r.extHighestSN)
+	e.AddUint64("extStartTS", r.extStartTS)
+	e.AddUint64("extHighestTS", r.extHighestTS)
+	e.AddTime("lastRRTime", r.lastRRTime)
+	e.AddReflected("lastRR", r.lastRR)
+	e.AddUint64("extHighestSNFromRR", r.extHighestSNFromRR)
+	e.AddUint64("packetsLostFromRR", r.packetsLostFromRR)
+	e.AddFloat64("jitterFromRR", r.jitterFromRR)
+	e.AddFloat64("maxJitterFromRR", r.maxJitterFromRR)
+	return nil
 }
 
 func (r *RTPStatsSender) String() string {

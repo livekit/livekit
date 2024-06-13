@@ -28,6 +28,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	putil "github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/guid"
 )
 
 type WorkerProtocolVersion int
@@ -376,7 +377,7 @@ func (w *Worker) handleSimulateJob(simulate *livekit.SimulateJobRequest) {
 	}
 
 	job := &livekit.Job{
-		Id:          utils.NewGuid(utils.AgentJobPrefix),
+		Id:          guid.New(utils.AgentJobPrefix),
 		Type:        jobType,
 		Room:        simulate.Room,
 		Participant: simulate.Participant,

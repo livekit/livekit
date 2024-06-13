@@ -20,6 +20,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/guid"
 
 	"github.com/livekit/livekit-server/pkg/config"
 )
@@ -27,7 +28,7 @@ import (
 type LocalNode *livekit.Node
 
 func NewLocalNode(conf *config.Config) (LocalNode, error) {
-	nodeID := utils.NewGuid(utils.NodePrefix)
+	nodeID := guid.New(utils.NodePrefix)
 	if conf.RTC.NodeIP == "" {
 		return nil, ErrIPNotSet
 	}

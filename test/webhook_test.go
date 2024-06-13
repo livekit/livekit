@@ -30,7 +30,7 @@ import (
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/protocol/webhook"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -137,7 +137,7 @@ func setupServerWithWebhook() (server *service.LivekitServer, testServer *webhoo
 	if err != nil {
 		return
 	}
-	currentNode.Id = utils.NewGuid(nodeID1)
+	currentNode.Id = guid.New(nodeID1)
 
 	server, err = service.InitializeServer(conf, currentNode)
 	if err != nil {

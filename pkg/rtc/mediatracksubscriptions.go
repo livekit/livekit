@@ -289,6 +289,20 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	// negotiation isn't required if we've replaced track
 	subTrack.SetNeedsNegotiation(!replacedTrack)
 	subTrack.SetRTPSender(sender)
+	// it is possible that subscribed track is closed before subscription manager sets
+	// the `OnClose` callback. That handler in subscription manager removes the track
+	// from the peer connection.
+	//
+	// But, the subscription could be removed early if the published track is closed
+	// while adding subscription. In those cases, subscription manager would not have set
+	// the `OnClose` callback. So, set it here to handle cases of early close.
+	subTrack.OnClose(func(willBeResumed bool) {
+		if !willBeResumed {
+			if err := sub.RemoveTrackFromSubscriber(sender); err != nil {
+				t.params.Logger.Warnw("could not remove track from peer connection", err)
+			}
+		}
+	})
 
 	downTrack.SetTransceiver(transceiver)
 
@@ -327,14 +341,6 @@ func (t *MediaTrackSubscriptions) closeSubscribedTrack(subTrack types.Subscribed
 	} else {
 		// flushing blocks, avoid blocking when publisher removes all its subscribers
 		go dt.CloseWithFlush(true)
-	}
-}
-
-func (t *MediaTrackSubscriptions) ResyncAllSubscribers() {
-	t.params.Logger.Debugw("resyncing all subscribers")
-
-	for _, subTrack := range t.getAllSubscribedTracks() {
-		subTrack.DownTrack().Resync()
 	}
 }
 

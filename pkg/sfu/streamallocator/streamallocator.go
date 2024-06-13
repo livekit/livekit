@@ -818,16 +818,29 @@ func (s *StreamAllocator) handleNewEstimateInNonProbe() {
 		action = "skipping"
 	}
 
-	s.params.Logger.Infow(
-		fmt.Sprintf("stream allocator: channel congestion detected, %s channel capacity update", action),
-		"reason", reason,
-		"old(bps)", s.committedChannelCapacity,
-		"new(bps)", estimateToCommit,
-		"lastReceived(bps)", s.lastReceivedEstimate,
-		"expectedUsage(bps)", expectedBandwidthUsage,
-		"commitThreshold(bps)", commitThreshold,
-		"channel", s.channelObserver.ToString(),
-	)
+	if action == "applying" {
+		s.params.Logger.Infow(
+			fmt.Sprintf("stream allocator: channel congestion detected, %s channel capacity update", action),
+			"reason", reason,
+			"old(bps)", s.committedChannelCapacity,
+			"new(bps)", estimateToCommit,
+			"lastReceived(bps)", s.lastReceivedEstimate,
+			"expectedUsage(bps)", expectedBandwidthUsage,
+			"commitThreshold(bps)", commitThreshold,
+			"channel", s.channelObserver.ToString(),
+		)
+	} else {
+		s.params.Logger.Debugw(
+			fmt.Sprintf("stream allocator: channel congestion detected, %s channel capacity update", action),
+			"reason", reason,
+			"old(bps)", s.committedChannelCapacity,
+			"new(bps)", estimateToCommit,
+			"lastReceived(bps)", s.lastReceivedEstimate,
+			"expectedUsage(bps)", expectedBandwidthUsage,
+			"commitThreshold(bps)", commitThreshold,
+			"channel", s.channelObserver.ToString(),
+		)
+	}
 	/* STREAM-ALLOCATOR-DATA
 	s.params.Logger.Debugw(
 		fmt.Sprintf("stream allocator: channel congestion detected, %s channel capacity: experimental", action),

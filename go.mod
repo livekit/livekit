@@ -5,7 +5,7 @@ replace github.com/livekit/protocol => ../protocol
 go 1.22
 
 require (
-	github.com/avast/retry-go/v4 v4.5.1
+	github.com/avast/retry-go/v4 v4.6.0
 	github.com/bep/debounce v1.2.1
 	github.com/d5/tengo/v2 v2.17.0
 	github.com/dustin/go-humanize v1.0.1
@@ -15,16 +15,16 @@ require (
 	github.com/gammazero/deque v0.2.1
 	github.com/gammazero/workerpool v1.1.3
 	github.com/google/wire v0.6.0
-	github.com/gorilla/websocket v1.5.1
-	github.com/hashicorp/go-version v1.6.0
+	github.com/gorilla/websocket v1.5.2
+	github.com/hashicorp/go-version v1.7.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/jellydator/ttlcache/v3 v3.2.0
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
-	github.com/livekit/mediatransportutil v0.0.0-20240416023643-881d3dc5423e
-	github.com/livekit/protocol v1.15.1-0.20240510165606-93a26f478d00
+	github.com/livekit/mediatransportutil v0.0.0-20240501132628-6105557bbb9a
+	github.com/livekit/protocol v1.17.1-0.20240606064424-fcde125058b2
 	github.com/livekit/psrpc v0.5.3-0.20240526192918-fbdaf10e6aa5
-	github.com/mackerelio/go-osstat v0.2.4
+	github.com/mackerelio/go-osstat v0.2.5
 	github.com/magefile/mage v1.15.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.8.1
 	github.com/mitchellh/go-homedir v1.1.0
@@ -40,20 +40,20 @@ require (
 	github.com/pion/turn/v2 v2.1.6
 	github.com/pion/webrtc/v3 v3.2.40
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/client_golang v1.19.0
-	github.com/redis/go-redis/v9 v9.5.1
-	github.com/rs/cors v1.10.1
+	github.com/prometheus/client_golang v1.19.1
+	github.com/redis/go-redis/v9 v9.5.3
+	github.com/rs/cors v1.11.0
 	github.com/stretchr/testify v1.9.0
 	github.com/thoas/go-funk v0.9.3
 	github.com/twitchtv/twirp v8.1.3+incompatible
-	github.com/ua-parser/uap-go v0.0.0-20240113215029-33f8e6d47f38
-	github.com/urfave/cli/v2 v2.27.1
-	github.com/urfave/negroni/v3 v3.1.0
+	github.com/ua-parser/uap-go v0.0.0-20240611065828-3a4781585db6
+	github.com/urfave/cli/v2 v2.27.2
+	github.com/urfave/negroni/v3 v3.1.1
 	go.uber.org/atomic v1.11.0
 	go.uber.org/zap v1.27.0
-	golang.org/x/exp v0.0.0-20240416160154-fe59bbe5cc7f
+	golang.org/x/exp v0.0.0-20240604190554-fc45aab8b7f8
 	golang.org/x/sync v0.7.0
-	google.golang.org/protobuf v1.33.0
+	google.golang.org/protobuf v1.34.2
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -65,14 +65,14 @@ require (
 	github.com/bufbuild/protovalidate-go v0.6.1 // indirect
 	github.com/bufbuild/protoyaml-go v0.1.9 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
+	github.com/cpuguy83/go-md2man/v2 v2.0.4 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/eapache/channels v1.1.0 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/go-jose/go-jose/v3 v3.0.3 // indirect
-	github.com/go-logr/logr v1.4.1 // indirect
+	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/google/cel-go v0.20.1 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/subcommands v1.2.0 // indirect
@@ -87,7 +87,7 @@ require (
 	github.com/mattn/go-runewidth v0.0.9 // indirect
 	github.com/mdlayher/netlink v1.7.1 // indirect
 	github.com/mdlayher/socket v0.4.0 // indirect
-	github.com/nats-io/nats.go v1.34.1 // indirect
+	github.com/nats-io/nats.go v1.35.0 // indirect
 	github.com/nats-io/nkeys v0.4.7 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/pion/datachannel v1.5.5 // indirect
@@ -103,18 +103,18 @@ require (
 	github.com/puzpuzpuz/xsync/v3 v3.1.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/stoewer/go-strcase v1.3.0 // indirect
-	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect
+	github.com/xrash/smetrics v0.0.0-20240312152122-5f08fbb34913 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap/exp v0.2.0 // indirect
-	golang.org/x/crypto v0.22.0 // indirect
-	golang.org/x/mod v0.17.0 // indirect
-	golang.org/x/net v0.24.0 // indirect
-	golang.org/x/sys v0.19.0 // indirect
-	golang.org/x/text v0.14.0 // indirect
-	golang.org/x/tools v0.20.0 // indirect
+	golang.org/x/crypto v0.24.0 // indirect
+	golang.org/x/mod v0.18.0 // indirect
+	golang.org/x/net v0.26.0 // indirect
+	golang.org/x/sys v0.21.0 // indirect
+	golang.org/x/text v0.16.0 // indirect
+	golang.org/x/tools v0.22.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20240401170217-c3f982113cda // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20240415180920-8c6c420018be // indirect
-	google.golang.org/grpc v1.63.2 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20240521202816-d264139d666e // indirect
+	google.golang.org/grpc v1.64.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )

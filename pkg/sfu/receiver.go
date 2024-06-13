@@ -27,7 +27,6 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/mediatransportutil/pkg/bucket"
-	"github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -108,8 +107,6 @@ type WebRTCReceiver struct {
 
 	onRTCP func([]rtcp.Packet)
 
-	twcc *twcc.Responder
-
 	bufferMu sync.RWMutex
 	buffers  [buffer.DefaultMaxLayerSpatial + 1]*buffer.Buffer
 	upTracks [buffer.DefaultMaxLayerSpatial + 1]*webrtc.TrackRemote
@@ -128,7 +125,9 @@ type WebRTCReceiver struct {
 
 	primaryReceiver atomic.Pointer[RedPrimaryReceiver]
 	redReceiver     atomic.Pointer[RedReceiver]
-	redPktWriter    func(pkt *buffer.ExtPacket, spatialLayer int32)
+	redPktWriter    func(pkt *buffer.ExtPacket, spatialLayer int32) int
+
+	forwardStats *ForwardStats
 }
 
 // SVC-TODO: Have to use more conditions to differentiate between
@@ -183,6 +182,13 @@ func WithStreamTrackers() ReceiverOpts {
 func WithLoadBalanceThreshold(downTracks int) ReceiverOpts {
 	return func(w *WebRTCReceiver) *WebRTCReceiver {
 		w.lbThreshold = downTracks
+		return w
+	}
+}
+
+func WithForwardStats(forwardStats *ForwardStats) ReceiverOpts {
+	return func(w *WebRTCReceiver) *WebRTCReceiver {
+		w.forwardStats = forwardStats
 		return w
 	}
 }
@@ -708,13 +714,33 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 				spatialTracker = w.streamTrackerManager.AddTracker(pkt.Spatial)
 			}
 		}
+		if spatialLayer > buffer.DefaultMaxLayerSpatial { // TODO-REMOVE-AFTER-DEBUG
+			w.logger.Warnw(
+				"invalid spatial layer", nil,
+				"mime", w.codec.MimeType,
+				"layer", layer,
+				"spatialLayer", spatialLayer,
+				"sn", pkt.Packet.SequenceNumber,
+				"esn", pkt.ExtSequenceNumber,
+				"timestamp", pkt.Packet.Timestamp,
+				"ets", pkt.ExtTimestamp,
+				"payloadSize", len(pkt.Packet.Payload),
+				"rtpVersion", pkt.Packet.Version,
+				"payloadType", pkt.Packet.PayloadType,
+				"ssrc", pkt.Packet.SSRC,
+			)
+		}
 
-		w.downTrackSpreader.Broadcast(func(dt TrackSender) {
+		writeCount := w.downTrackSpreader.Broadcast(func(dt TrackSender) {
 			_ = dt.WriteRTP(pkt, spatialLayer)
 		})
 
 		if redPktWriter != nil {
-			redPktWriter(pkt, spatialLayer)
+			writeCount += redPktWriter(pkt, spatialLayer)
+		}
+
+		if writeCount > 0 && w.forwardStats != nil {
+			w.forwardStats.Update(pkt.Arrival, time.Now())
 		}
 
 		if spatialTracker != nil {

@@ -26,6 +26,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/psrpc"
 )
 
@@ -145,11 +146,11 @@ func (s *IngressService) CreateIngressWithUrl(ctx context.Context, urlStr string
 
 	var sk string
 	if req.InputType != livekit.IngressInput_URL_INPUT {
-		sk = utils.NewGuid("")
+		sk = guid.New("")
 	}
 
 	info := &livekit.IngressInfo{
-		IngressId:           utils.NewGuid(utils.IngressPrefix),
+		IngressId:           guid.New(utils.IngressPrefix),
 		Name:                req.Name,
 		StreamKey:           sk,
 		Url:                 urlStr,

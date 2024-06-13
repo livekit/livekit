@@ -31,7 +31,7 @@ func (s *IOInfoService) matchSIPTrunk(ctx context.Context, calling, called strin
 	if err != nil {
 		return nil, err
 	}
-	return sip.MatchTrunk(trunks, calling, called)
+	return sip.MatchTrunk(trunks, "", calling, called)
 }
 
 // matchSIPDispatchRule finds the best dispatch rule matching the request parameters. Returns an error if no rule matched.
@@ -48,7 +48,7 @@ func (s *IOInfoService) matchSIPDispatchRule(ctx context.Context, trunk *livekit
 
 func (s *IOInfoService) EvaluateSIPDispatchRules(ctx context.Context, req *rpc.EvaluateSIPDispatchRulesRequest) (*rpc.EvaluateSIPDispatchRulesResponse, error) {
 	log := logger.GetLogger()
-	log = log.WithValues("to-user", req.CalledNumber, "from-user", req.CallingNumber)
+	log = log.WithValues("toUser", req.CalledNumber, "fromUser", req.CallingNumber)
 	trunk, err := s.matchSIPTrunk(ctx, req.CallingNumber, req.CalledNumber)
 	if err != nil {
 		return nil, err
@@ -57,7 +57,7 @@ func (s *IOInfoService) EvaluateSIPDispatchRules(ctx context.Context, req *rpc.E
 	if trunk != nil {
 		trunkID = trunk.SipTrunkId
 	}
-	log = log.WithValues("sip-trunk", trunkID)
+	log = log.WithValues("sipTrunk", trunkID)
 	if trunk != nil {
 		log.Debugw("SIP trunk matched")
 	} else {
@@ -73,7 +73,7 @@ func (s *IOInfoService) EvaluateSIPDispatchRules(ctx context.Context, req *rpc.E
 		}
 		return nil, err
 	}
-	log.Debugw("SIP dispatch rule matched", "sip-rule", best.SipDispatchRuleId)
+	log.Debugw("SIP dispatch rule matched", "sipRule", best.SipDispatchRuleId)
 	resp, err := sip.EvaluateDispatchRule(best, req)
 	if err != nil {
 		return nil, err
@@ -84,16 +84,16 @@ func (s *IOInfoService) EvaluateSIPDispatchRules(ctx context.Context, req *rpc.E
 
 func (s *IOInfoService) GetSIPTrunkAuthentication(ctx context.Context, req *rpc.GetSIPTrunkAuthenticationRequest) (*rpc.GetSIPTrunkAuthenticationResponse, error) {
 	log := logger.GetLogger()
-	log = log.WithValues("to-user", req.To, "from-user", req.From)
+	log = log.WithValues("toUser", req.To, "fromUser", req.From)
 	trunk, err := s.matchSIPTrunk(ctx, req.From, req.To)
 	if err != nil {
 		return nil, err
 	}
 	if trunk == nil {
-		log.Debugw("No SIP trunk matched for auth", "sip-trunk", "")
+		log.Debugw("No SIP trunk matched for auth", "sipTrunk", "")
 		return &rpc.GetSIPTrunkAuthenticationResponse{}, nil
 	}
-	log.Debugw("SIP trunk matched for auth", "sip-trunk", trunk.SipTrunkId)
+	log.Debugw("SIP trunk matched for auth", "sipTrunk", trunk.SipTrunkId)
 	return &rpc.GetSIPTrunkAuthenticationResponse{
 		SipTrunkId: trunk.SipTrunkId,
 		Username:   trunk.InboundUsername,

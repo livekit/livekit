@@ -41,6 +41,8 @@ var (
 	participantSignalConnected atomic.Uint64
 	participantRTCConnected    atomic.Uint64
 	participantRTCInit         atomic.Uint64
+	forwardLatency             atomic.Uint32
+	forwardJitter              atomic.Uint32
 
 	promPacketLabels    = []string{"direction", "transmission"}
 	promPacketTotal     *prometheus.CounterVec
@@ -56,6 +58,8 @@ var (
 	promRTT             *prometheus.HistogramVec
 	promParticipantJoin *prometheus.CounterVec
 	promConnections     *prometheus.GaugeVec
+	promForwardLatency  prometheus.Gauge
+	promForwardJitter   prometheus.Gauge
 
 	promPacketTotalIncomingInitial    prometheus.Counter
 	promPacketTotalIncomingRetransmit prometheus.Counter
@@ -139,6 +143,18 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 		Name:        "total",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	}, []string{"kind"})
+	promForwardLatency = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "forward",
+		Name:        "latency",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+	})
+	promForwardJitter = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "forward",
+		Name:        "jitter",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+	})
 
 	prometheus.MustRegister(promPacketTotal)
 	prometheus.MustRegister(promPacketBytes)
@@ -151,6 +167,8 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 	prometheus.MustRegister(promRTT)
 	prometheus.MustRegister(promParticipantJoin)
 	prometheus.MustRegister(promConnections)
+	prometheus.MustRegister(promForwardLatency)
+	prometheus.MustRegister(promForwardJitter)
 
 	promPacketTotalIncomingInitial = promPacketTotal.WithLabelValues(string(Incoming), transmissionInitial)
 	promPacketTotalIncomingRetransmit = promPacketTotal.WithLabelValues(string(Incoming), transmissionRetransmit)
@@ -279,4 +297,14 @@ func AddConnection(direction Direction) {
 
 func SubConnection(direction Direction) {
 	promConnections.WithLabelValues(string(direction)).Sub(1)
+}
+
+func RecordForwardLatency(_, latencyAvg uint32) {
+	forwardLatency.Store(latencyAvg)
+	promForwardLatency.Set(float64(latencyAvg))
+}
+
+func RecordForwardJitter(_, jitterAvg uint32) {
+	forwardJitter.Store(jitterAvg)
+	promForwardJitter.Set(float64(jitterAvg))
 }

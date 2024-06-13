@@ -24,6 +24,7 @@ import (
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/sip"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/psrpc"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -91,7 +92,7 @@ func (s *SIPService) CreateSIPTrunk(ctx context.Context, req *livekit.CreateSIPT
 	}
 
 	// Now we can generate ID and store.
-	info.SipTrunkId = utils.NewGuid(utils.SIPTrunkPrefix)
+	info.SipTrunkId = guid.New(utils.SIPTrunkPrefix)
 	if err := s.store.StoreSIPTrunk(ctx, info); err != nil {
 		return nil, err
 	}
@@ -153,7 +154,7 @@ func (s *SIPService) CreateSIPDispatchRule(ctx context.Context, req *livekit.Cre
 	}
 
 	// Now we can generate ID and store.
-	info.SipDispatchRuleId = utils.NewGuid(utils.SIPDispatchRulePrefix)
+	info.SipDispatchRuleId = guid.New(utils.SIPDispatchRulePrefix)
 	if err := s.store.StoreSIPDispatchRule(ctx, info); err != nil {
 		return nil, err
 	}
@@ -196,30 +197,15 @@ func (s *SIPService) CreateSIPParticipantWithToken(ctx context.Context, req *liv
 	}
 	callID := sip.NewCallID()
 	log := logger.GetLogger()
-	log = log.WithValues("call-id", callID, "roomName", req.RoomName, "sip-trunk", req.SipTrunkId, "to-user", req.SipCallTo)
+	log = log.WithValues("callId", callID, "roomName", req.RoomName, "sipTrunk", req.SipTrunkId, "toUser", req.SipCallTo)
 
-	ireq := &rpc.InternalCreateSIPParticipantRequest{
-		SipCallId:           callID,
-		CallTo:              req.SipCallTo,
-		RoomName:            req.RoomName,
-		ParticipantIdentity: req.ParticipantIdentity,
-		ParticipantName:     req.ParticipantName,
-		ParticipantMetadata: req.ParticipantMetadata,
-		Dtmf:                req.Dtmf,
-		PlayRingtone:        req.PlayRingtone,
-		WsUrl:               wsUrl,
-		Token:               token,
-	}
 	trunk, err := s.store.LoadSIPTrunk(ctx, req.SipTrunkId)
 	if err != nil {
 		log.Errorw("cannot get trunk to update sip participant", err)
 		return nil, err
 	}
-	log = log.WithValues("from-user", trunk.OutboundNumber, "to-host", trunk.OutboundAddress)
-	ireq.Address = trunk.OutboundAddress
-	ireq.Number = trunk.OutboundNumber
-	ireq.Username = trunk.OutboundUsername
-	ireq.Password = trunk.OutboundPassword
+	log = log.WithValues("fromUser", trunk.OutboundNumber, "toHost", trunk.OutboundAddress)
+	ireq := rpc.NewCreateSIPParticipantRequest(callID, wsUrl, token, req, trunk)
 
 	// CreateSIPParticipant will wait for LiveKit Participant to be created and that can take some time.
 	// Thus, we must set a higher deadline for it, if it's not set already.
