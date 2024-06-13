@@ -111,12 +111,14 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 		req.Agent = &livekit.RoomAgent{
 			Agents: []*livekit.CreateAgentJobDefinitionRequest{
 				&livekit.CreateAgentJobDefinitionRequest{
-					Type: livekit.JobType_JT_ROOM,
-					Room: req.Name,
+					Type:      livekit.JobType_JT_ROOM,
+					Room:      req.Name,
+					Namespace: "default",
 				},
 				&livekit.CreateAgentJobDefinitionRequest{
-					Type: livekit.JobType_JT_PUBLISHER,
-					Room: req.Name,
+					Type:      livekit.JobType_JT_PUBLISHER,
+					Room:      req.Name,
+					Namespace: "default",
 				},
 			},
 		}
