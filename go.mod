@@ -19,7 +19,7 @@ require (
 	github.com/jellydator/ttlcache/v3 v3.2.0
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
-	github.com/livekit/mediatransportutil v0.0.0-20240501132628-6105557bbb9a
+	github.com/livekit/mediatransportutil v0.0.0-20240613015318-84b69facfb75
 	github.com/livekit/protocol v1.17.1-0.20240606064424-fcde125058b2
 	github.com/livekit/psrpc v0.5.3-0.20240526192918-fbdaf10e6aa5
 	github.com/mackerelio/go-osstat v0.2.5
