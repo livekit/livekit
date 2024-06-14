@@ -36,11 +36,6 @@ func checkYAMLTags(t reflect.Type, seen map[reflect.Type]struct{}) error {
 				continue
 			}
 
-			if !field.IsExported() {
-				// ignore private fields
-				continue
-			}
-
 			if field.Tag.Get("config") == "allowempty" {
 				// ignore configured exceptions
 				continue
