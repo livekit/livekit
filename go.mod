@@ -55,6 +55,8 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
+replace github.com/livekit/protocol => ../protocol
+
 require (
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
