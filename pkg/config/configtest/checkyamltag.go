@@ -5,7 +5,6 @@ import (
 	"reflect"
 	"slices"
 	"strings"
-	"unicode"
 
 	"go.uber.org/multierr"
 	"google.golang.org/protobuf/proto"
@@ -13,31 +12,31 @@ import (
 
 var protoMessageType = reflect.TypeOf((*proto.Message)(nil)).Elem()
 
-func checkYAMLTags(v reflect.Type, seen map[reflect.Type]struct{}) error {
-	if _, ok := seen[v]; ok {
+func checkYAMLTags(t reflect.Type, seen map[reflect.Type]struct{}) error {
+	if _, ok := seen[t]; ok {
 		return nil
 	}
-	seen[v] = struct{}{}
+	seen[t] = struct{}{}
 
-	switch v.Kind() {
+	switch t.Kind() {
 	case reflect.Array, reflect.Map, reflect.Slice, reflect.Pointer:
-		return checkYAMLTags(v.Elem(), seen)
+		return checkYAMLTags(t.Elem(), seen)
 	case reflect.Struct:
-		if reflect.PointerTo(v).Implements(protoMessageType) {
+		if reflect.PointerTo(t).Implements(protoMessageType) {
 			// ignore protobuf messages
 			return nil
 		}
 
 		var errs error
-		for i := 0; i < v.NumField(); i++ {
-			field := v.Field(i)
+		for i := 0; i < t.NumField(); i++ {
+			field := t.Field(i)
 
 			if field.Type.Kind() == reflect.Bool {
 				// ignore boolean fields
 				continue
 			}
 
-			if unicode.IsLower([]rune(field.Name)[0]) {
+			if !field.IsExported() {
 				// ignore private fields
 				continue
 			}
@@ -48,13 +47,13 @@ func checkYAMLTags(v reflect.Type, seen map[reflect.Type]struct{}) error {
 			}
 
 			parts := strings.Split(field.Tag.Get("yaml"), ",")
-			if len(parts) == 0 || parts[0] == "-" {
+			if parts[0] == "-" {
 				// ignore unparsed fields
 				continue
 			}
 
 			if !slices.Contains(parts, "omitempty") && !slices.Contains(parts, "inline") {
-				errs = multierr.Append(errs, fmt.Errorf("%s/%s.%s missing omitempty tag", v.PkgPath(), v.Name(), field.Name))
+				errs = multierr.Append(errs, fmt.Errorf("%s/%s.%s missing omitempty tag", t.PkgPath(), t.Name(), field.Name))
 			}
 
 			errs = multierr.Append(errs, checkYAMLTags(field.Type, seen))
