@@ -104,8 +104,10 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 	defer done()
 
 	if created {
-		if req.Agent != nil {
-			err = s.launchAgents(ctx, rm, req.Agent.Agents)
+		_, internal, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Name), true)
+
+		if internal.Agents != nil {
+			err = s.launchAgents(ctx, rm, internal.Agents)
 			if err != nil {
 				return nil, err
 			}
@@ -131,6 +133,7 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 
 func (s *RoomService) launchAgents(ctx context.Context, rm *livekit.Room, agents []*livekit.CreateAgentJobDefinitionRequest) error {
 	for _, ag := range agents {
+		fmt.Println("LAUNCH", ag)
 		if ag.Type != livekit.JobType_JT_ROOM {
 			continue
 		}
