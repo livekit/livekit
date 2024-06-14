@@ -13,7 +13,7 @@ import (
 
 var protoMessageType = reflect.TypeOf((*proto.Message)(nil)).Elem()
 
-func checkYAMLTag(v reflect.Type, seen map[reflect.Type]struct{}) error {
+func checkYAMLTags(v reflect.Type, seen map[reflect.Type]struct{}) error {
 	if _, ok := seen[v]; ok {
 		return nil
 	}
@@ -21,7 +21,7 @@ func checkYAMLTag(v reflect.Type, seen map[reflect.Type]struct{}) error {
 
 	switch v.Kind() {
 	case reflect.Array, reflect.Map, reflect.Slice, reflect.Pointer:
-		return checkYAMLTag(v.Elem(), seen)
+		return checkYAMLTags(v.Elem(), seen)
 	case reflect.Struct:
 		if reflect.PointerTo(v).Implements(protoMessageType) {
 			// ignore protobuf messages
@@ -57,9 +57,7 @@ func checkYAMLTag(v reflect.Type, seen map[reflect.Type]struct{}) error {
 				errs = multierr.Append(errs, fmt.Errorf("%s/%s.%s missing omitempty tag", v.PkgPath(), v.Name(), field.Name))
 			}
 
-			if err := checkYAMLTag(field.Type, seen); err != nil {
-				errs = multierr.Append(errs, err)
-			}
+			errs = multierr.Append(errs, checkYAMLTags(field.Type, seen))
 		}
 		return errs
 	default:
@@ -67,6 +65,6 @@ func checkYAMLTag(v reflect.Type, seen map[reflect.Type]struct{}) error {
 	}
 }
 
-func CheckYAMLTag(config any) error {
-	return checkYAMLTag(reflect.TypeOf(config), map[reflect.Type]struct{}{})
+func CheckYAMLTags(config any) error {
+	return checkYAMLTags(reflect.TypeOf(config), map[reflect.Type]struct{}{})
 }

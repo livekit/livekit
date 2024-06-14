@@ -84,5 +84,5 @@ func TestGeneratedFlags(t *testing.T) {
 }
 
 func TestYAMLTag(t *testing.T) {
-	require.NoError(t, configtest.CheckYAMLTag(Config{}))
+	require.NoError(t, configtest.CheckYAMLTags(Config{}))
 }
