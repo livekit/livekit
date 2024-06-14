@@ -132,6 +132,7 @@ type Buffer struct {
 	packetNotFoundCount   atomic.Uint32
 	packetTooOldCount     atomic.Uint32
 	extPacketTooMuchCount atomic.Uint32
+	invalidPacketCount    atomic.Uint32
 
 	primaryBufferForRTX *Buffer
 	rtxPktBuf           []byte
@@ -317,24 +318,25 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 	}
 
 	if err = utils.ValidateRTPPacket(&rtpPacket, b.payloadType, b.mediaSSRC); err != nil {
-		b.logger.Warnw(
-			"validating RTP packet failed", err,
-			"version", rtpPacket.Version,
-			"padding", rtpPacket.Padding,
-			"marker", rtpPacket.Marker,
-			"expectedPayloadType", b.payloadType,
-			"payloadType", rtpPacket.PayloadType,
-			"sequenceNumber", rtpPacket.SequenceNumber,
-			"timestamp", rtpPacket.Timestamp,
-			"expectedSSRC", b.mediaSSRC,
-			"ssrc", rtpPacket.SSRC,
-			"numExtensions", len(rtpPacket.Extensions),
-			"payloadSize", len(rtpPacket.Payload),
-			"rtpStats", b.rtpStats,
-			"snRangeMap", b.snRangeMap,
-		)
-		b.Unlock()
-		return
+		invalidPacketCount := b.invalidPacketCount.Inc()
+		if (invalidPacketCount-1)%100 == 0 {
+			b.logger.Warnw(
+				"validating RTP packet failed", err,
+				"version", rtpPacket.Version,
+				"padding", rtpPacket.Padding,
+				"marker", rtpPacket.Marker,
+				"expectedPayloadType", b.payloadType,
+				"payloadType", rtpPacket.PayloadType,
+				"sequenceNumber", rtpPacket.SequenceNumber,
+				"timestamp", rtpPacket.Timestamp,
+				"expectedSSRC", b.mediaSSRC,
+				"ssrc", rtpPacket.SSRC,
+				"numExtensions", len(rtpPacket.Extensions),
+				"payloadSize", len(rtpPacket.Payload),
+				"rtpStats", b.rtpStats,
+				"snRangeMap", b.snRangeMap,
+			)
+		}
 	}
 
 	now := time.Now()
