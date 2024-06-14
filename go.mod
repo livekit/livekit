@@ -20,7 +20,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20240613015318-84b69facfb75
-	github.com/livekit/protocol v1.17.1-0.20240614054716-725bc923f98b
+	github.com/livekit/protocol v1.17.1-0.20240614060801-425cb974f7a4
 	github.com/livekit/psrpc v0.5.3-0.20240526192918-fbdaf10e6aa5
 	github.com/mackerelio/go-osstat v0.2.5
 	github.com/magefile/mage v1.15.0
@@ -48,6 +48,7 @@ require (
 	github.com/urfave/cli/v2 v2.27.2
 	github.com/urfave/negroni/v3 v3.1.1
 	go.uber.org/atomic v1.11.0
+	go.uber.org/multierr v1.11.0
 	go.uber.org/zap v1.27.0
 	golang.org/x/exp v0.0.0-20240604190554-fc45aab8b7f8
 	golang.org/x/sync v0.7.0
@@ -97,7 +98,6 @@ require (
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/xrash/smetrics v0.0.0-20240312152122-5f08fbb34913 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
-	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap/exp v0.2.0 // indirect
 	golang.org/x/crypto v0.24.0 // indirect
 	golang.org/x/mod v0.18.0 // indirect
