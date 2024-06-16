@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+version: 2
+
 before:
   hooks:
     - go mod tidy
@@ -31,6 +33,7 @@ builds:
     goos:
       - linux
       - windows
+
 archives:
   - format_overrides:
       - goos: windows
@@ -56,4 +59,3 @@ checksum:
   name_template: 'checksums.txt'
 snapshot:
   name_template: "{{ incpatch .Version }}-next"
-
