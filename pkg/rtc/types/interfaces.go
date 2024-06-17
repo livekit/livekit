@@ -261,7 +261,7 @@ type Participant interface {
 	IsPublisher() bool
 	GetPublishedTrack(trackID livekit.TrackID) MediaTrack
 	GetPublishedTracks() []MediaTrack
-	RemovePublishedTrack(track MediaTrack, willBeResumed bool, shouldClose bool)
+	RemovePublishedTrack(track MediaTrack, isExpectedToResume bool, shouldClose bool)
 
 	GetAudioLevel() (smoothedLevel float64, active bool)
 
@@ -466,15 +466,15 @@ type MediaTrack interface {
 
 	GetAudioLevel() (level float64, active bool)
 
-	Close(willBeResumed bool)
+	Close(isExpectedToResume bool)
 	IsOpen() bool
 
 	// callbacks
-	AddOnClose(func())
+	AddOnClose(func(isExpectedToResume bool))
 
 	// subscribers
 	AddSubscriber(participant LocalParticipant) (SubscribedTrack, error)
-	RemoveSubscriber(participantID livekit.ParticipantID, willBeResumed bool)
+	RemoveSubscriber(participantID livekit.ParticipantID, isExpectedToResume bool)
 	IsSubscriber(subID livekit.ParticipantID) bool
 	RevokeDisallowedSubscribers(allowedSubscriberIdentities []livekit.ParticipantIdentity) []livekit.ParticipantIdentity
 	GetAllSubscribers() []livekit.ParticipantID
@@ -487,7 +487,7 @@ type MediaTrack interface {
 	GetTemporalLayerForSpatialFps(spatial int32, fps uint32, mime string) int32
 
 	Receivers() []sfu.TrackReceiver
-	ClearAllReceivers(willBeResumed bool)
+	ClearAllReceivers(isExpectedToResume bool)
 
 	IsEncrypted() bool
 }
@@ -514,8 +514,8 @@ type LocalMediaTrack interface {
 type SubscribedTrack interface {
 	AddOnBind(f func(error))
 	IsBound() bool
-	Close(willBeResumed bool)
-	OnClose(f func(willBeResumed bool))
+	Close(isExpectedToResume bool)
+	OnClose(f func(isExpectedToResume bool))
 	ID() livekit.TrackID
 	PublisherID() livekit.ParticipantID
 	PublisherIdentity() livekit.ParticipantIdentity

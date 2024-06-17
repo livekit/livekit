@@ -411,13 +411,13 @@ func (t *MediaTrack) Restart() {
 	}
 }
 
-func (t *MediaTrack) Close(willBeResumed bool) {
+func (t *MediaTrack) Close(isExpectedToResume bool) {
 	t.MediaTrackReceiver.SetClosing()
 	if t.dynacastManager != nil {
 		t.dynacastManager.Close()
 	}
-	t.MediaTrackReceiver.ClearAllReceivers(willBeResumed)
-	t.MediaTrackReceiver.Close()
+	t.MediaTrackReceiver.ClearAllReceivers(isExpectedToResume)
+	t.MediaTrackReceiver.Close(isExpectedToResume)
 }
 
 func (t *MediaTrack) SetMuted(muted bool) {
