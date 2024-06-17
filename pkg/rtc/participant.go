@@ -164,6 +164,7 @@ type ParticipantImpl struct {
 	isPublisher atomic.Bool
 
 	sessionStartRecorded atomic.Bool
+	lastActiveAt         time.Time
 	// when first connected
 	connectedAt time.Time
 	// timer that's set when disconnect is detected on primary PC
@@ -1375,6 +1376,11 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 		return
 	}
 
+	if state == livekit.ParticipantInfo_DISCONNECTED && oldState == livekit.ParticipantInfo_ACTIVE {
+		prometheus.RecordSessionDuration(int(p.ProtocolVersion()), time.Since(p.lastActiveAt))
+	} else if state == livekit.ParticipantInfo_ACTIVE {
+		p.lastActiveAt = time.Now()
+	}
 	p.params.Logger.Debugw("updating participant state", "state", state.String())
 	p.dirty.Store(true)
 
