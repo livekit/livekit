@@ -26,8 +26,8 @@ import (
 
 // matchSIPTrunk finds a SIP Trunk definition matching the request.
 // Returns nil if no rules matched or an error if there are conflicting definitions.
-func (s *IOInfoService) matchSIPTrunk(ctx context.Context, calling, called string) (*livekit.SIPTrunkInfo, error) {
-	trunks, err := s.ss.ListSIPTrunk(ctx)
+func (s *IOInfoService) matchSIPTrunk(ctx context.Context, calling, called string) (*livekit.SIPInboundTrunkInfo, error) {
+	trunks, err := s.ss.ListSIPInboundTrunk(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -36,7 +36,7 @@ func (s *IOInfoService) matchSIPTrunk(ctx context.Context, calling, called strin
 
 // matchSIPDispatchRule finds the best dispatch rule matching the request parameters. Returns an error if no rule matched.
 // Trunk parameter can be nil, in which case only wildcard dispatch rules will be effective (ones without Trunk IDs).
-func (s *IOInfoService) matchSIPDispatchRule(ctx context.Context, trunk *livekit.SIPTrunkInfo, req *rpc.EvaluateSIPDispatchRulesRequest) (*livekit.SIPDispatchRuleInfo, error) {
+func (s *IOInfoService) matchSIPDispatchRule(ctx context.Context, trunk *livekit.SIPInboundTrunkInfo, req *rpc.EvaluateSIPDispatchRulesRequest) (*livekit.SIPDispatchRuleInfo, error) {
 	// Trunk can still be nil here in case none matched or were defined.
 	// This is still fine, but only in case we'll match exactly one wildcard dispatch rule.
 	rules, err := s.ss.ListSIPDispatchRule(ctx)
@@ -96,7 +96,7 @@ func (s *IOInfoService) GetSIPTrunkAuthentication(ctx context.Context, req *rpc.
 	log.Debugw("SIP trunk matched for auth", "sipTrunk", trunk.SipTrunkId)
 	return &rpc.GetSIPTrunkAuthenticationResponse{
 		SipTrunkId: trunk.SipTrunkId,
-		Username:   trunk.InboundUsername,
-		Password:   trunk.InboundPassword,
+		Username:   trunk.AuthUsername,
+		Password:   trunk.AuthPassword,
 	}, nil
 }
