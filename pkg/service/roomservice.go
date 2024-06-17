@@ -314,7 +314,7 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 	}
 
 	if created {
-		go s.agentClient.LaunchJob(ctx, &agent.JobDescription{
+		go s.agentClient.LaunchJob(context.WithoutCancel(ctx), &agent.JobDescription{
 			JobType: livekit.JobType_JT_ROOM,
 			Room:    room,
 		})
