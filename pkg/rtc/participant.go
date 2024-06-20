@@ -466,8 +466,16 @@ func (p *ParticipantImpl) SetAttributes(attrs map[string]string) error {
 	if grants.Attributes == nil {
 		grants.Attributes = make(map[string]string)
 	}
+	var keysToDelete []string
 	for k, v := range attrs {
-		grants.Attributes[k] = v
+		if v == "" {
+			keysToDelete = append(keysToDelete, k)
+		} else {
+			grants.Attributes[k] = v
+		}
+	}
+	for _, k := range keysToDelete {
+		delete(grants.Attributes, k)
 	}
 
 	maxAttributesSize := p.params.MaxAttributesSize

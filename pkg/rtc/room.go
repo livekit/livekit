@@ -824,7 +824,7 @@ func (r *Room) UpdateParticipantMetadata(
 	name string,
 	metadata string,
 	attributes map[string]string,
-) {
+) error {
 	if metadata != "" {
 		participant.SetMetadata(metadata)
 	}
@@ -833,10 +833,10 @@ func (r *Room) UpdateParticipantMetadata(
 	}
 	if attributes != nil && len(attributes) > 0 {
 		if err := participant.SetAttributes(attributes); err != nil {
-			// TODO: notify participant of error
-			participant.GetLogger().Warnw("failed to set participant attributes", err)
+			return err
 		}
 	}
+	return nil
 }
 
 func (r *Room) sendRoomUpdate() {

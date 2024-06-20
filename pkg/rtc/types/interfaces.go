@@ -439,7 +439,7 @@ type Room interface {
 	SimulateScenario(participant LocalParticipant, scenario *livekit.SimulateScenario) error
 	ResolveMediaTrackForSubscriber(subIdentity livekit.ParticipantIdentity, trackID livekit.TrackID) MediaResolverResult
 	GetLocalParticipants() []LocalParticipant
-	UpdateParticipantMetadata(participant LocalParticipant, name string, metadata string, attributes map[string]string)
+	UpdateParticipantMetadata(participant LocalParticipant, name string, metadata string, attributes map[string]string) error
 }
 
 // MediaTrack represents a media track

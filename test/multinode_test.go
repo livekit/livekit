@@ -262,10 +262,10 @@ func TestMultiNodeUpdateAttributes(t *testing.T) {
 		if rc2 == nil || rc1 == nil {
 			return "participants could not see each other"
 		}
-		if rc1.Attributes != nil && rc1.Attributes["mykey"] != "au1" {
+		if rc1.Attributes == nil || rc1.Attributes["mykey"] != "au1" {
 			return "rc1's initial attributes are incorrect"
 		}
-		if rc2.Attributes != nil && rc2.Attributes["mykey"] != "au2" {
+		if rc2.Attributes == nil || rc2.Attributes["mykey"] != "au2" {
 			return "rc2's initial attributes are incorrect"
 		}
 		return ""

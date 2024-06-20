@@ -506,8 +506,8 @@ var DefaultConfig = Config{
 		DepartureTimeout: 20,
 	},
 	Limit: LimitConfig{
-		MaxMetadataSize:              128000,
-		MaxAttributesSize:            128000,
+		MaxMetadataSize:              64000,
+		MaxAttributesSize:            64000,
 		MaxRoomNameLength:            256,
 		MaxParticipantIdentityLength: 256,
 	},
