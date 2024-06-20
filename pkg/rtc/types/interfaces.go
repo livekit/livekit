@@ -255,10 +255,6 @@ type Participant interface {
 	CanSkipBroadcast() bool
 	ToProto() *livekit.ParticipantInfo
 
-	SetName(name string)
-	SetMetadata(metadata string)
-	SetAttributes(attributes map[string]string) error
-
 	IsPublisher() bool
 	GetPublishedTrack(trackID livekit.TrackID) MediaTrack
 	GetPublishedTracks() []MediaTrack
@@ -329,6 +325,11 @@ type LocalParticipant interface {
 	UpdateLastSeenSignal()
 	SetSignalSourceValid(valid bool)
 	HandleSignalSourceClose()
+
+	// updates
+	SetName(name string)
+	SetMetadata(metadata string)
+	SetAttributes(attributes map[string]string) error
 
 	// permissions
 	ClaimGrants() *auth.ClaimGrants
