@@ -93,12 +93,15 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 
 	case *livekit.SignalRequest_UpdateMetadata:
 		if participant.ClaimGrants().Video.GetCanUpdateOwnMetadata() {
-			room.UpdateParticipantMetadata(
+			err := room.UpdateParticipantMetadata(
 				participant,
 				msg.UpdateMetadata.Name,
 				msg.UpdateMetadata.Metadata,
 				msg.UpdateMetadata.Attributes,
 			)
+			if err != nil {
+				pLogger.Warnw("could not update metadata", err)
+			}
 		}
 
 	case *livekit.SignalRequest_UpdateAudioTrack:

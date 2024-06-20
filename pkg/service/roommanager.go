@@ -713,7 +713,10 @@ func (r *RoomManager) UpdateParticipant(ctx context.Context, req *livekit.Update
 		"permission", req.Permission,
 		"attributes", req.Attributes,
 	)
-	room.UpdateParticipantMetadata(participant, req.Name, req.Metadata, req.Attributes)
+	err = room.UpdateParticipantMetadata(participant, req.Name, req.Metadata, req.Attributes)
+	if err != nil {
+		return nil, err
+	}
 	if req.Permission != nil {
 		participant.SetPermission(req.Permission)
 	}
