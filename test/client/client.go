@@ -35,6 +35,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
+	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -110,6 +111,7 @@ type Options struct {
 	Publish                   string
 	ClientInfo                *livekit.ClientInfo
 	DisabledCodecs            []webrtc.RTPCodecCapability
+	TokenCustomizer           func(token *auth.AccessToken, grants *auth.VideoGrant)
 	SignalRequestInterceptor  SignalRequestInterceptor
 	SignalResponseInterceptor SignalResponseInterceptor
 }
@@ -559,6 +561,16 @@ func (c *RTCClient) SendIceCandidate(ic *webrtc.ICECandidate, target livekit.Sig
 	return c.SendRequest(&livekit.SignalRequest{
 		Message: &livekit.SignalRequest_Trickle{
 			Trickle: trickle,
+		},
+	})
+}
+
+func (c *RTCClient) SetAttributes(attrs map[string]string) error {
+	return c.SendRequest(&livekit.SignalRequest{
+		Message: &livekit.SignalRequest_UpdateMetadata{
+			UpdateMetadata: &livekit.UpdateParticipantMetadata{
+				Attributes: attrs,
+			},
 		},
 	})
 }

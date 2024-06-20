@@ -33,9 +33,8 @@ import (
 	"github.com/livekit/protocol/rpc"
 )
 
-// A rooms service that supports a single node
 type RoomService struct {
-	roomConf          config.RoomConfig
+	limitConf         config.LimitConfig
 	apiConf           config.APIConfig
 	psrpcConf         rpc.PSRPCConfig
 	router            routing.MessageRouter
@@ -49,7 +48,7 @@ type RoomService struct {
 }
 
 func NewRoomService(
-	roomConf config.RoomConfig,
+	limitConf config.LimitConfig,
 	apiConf config.APIConfig,
 	psrpcConf rpc.PSRPCConfig,
 	router routing.MessageRouter,
@@ -62,7 +61,7 @@ func NewRoomService(
 	participantClient rpc.TypedParticipantClient,
 ) (svc *RoomService, err error) {
 	svc = &RoomService{
-		roomConf:          roomConf,
+		limitConf:         limitConf,
 		apiConf:           apiConf,
 		psrpcConf:         psrpcConf,
 		router:            router,
@@ -87,7 +86,7 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 		return nil, ErrEgressNotConnected
 	}
 
-	if limit := s.roomConf.MaxRoomNameLength; limit > 0 && len(req.Name) > limit {
+	if limit := s.limitConf.MaxRoomNameLength; limit > 0 && len(req.Name) > limit {
 		return nil, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, limit)
 	}
 
@@ -104,7 +103,7 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 	defer done()
 
 	if created {
-		go s.agentClient.LaunchJob(ctx, &agent.JobDescription{
+		go s.agentClient.LaunchJob(context.WithoutCancel(ctx), &agent.JobDescription{
 			JobType: livekit.JobType_JT_ROOM,
 			Room:    rm,
 		})
@@ -232,9 +231,19 @@ func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 
 func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.UpdateParticipantRequest) (*livekit.ParticipantInfo, error) {
 	AppendLogFields(ctx, "room", req.Room, "participant", req.Identity)
-	maxMetadataSize := int(s.roomConf.MaxMetadataSize)
+	maxMetadataSize := int(s.limitConf.MaxMetadataSize)
 	if maxMetadataSize > 0 && len(req.Metadata) > maxMetadataSize {
 		return nil, twirp.InvalidArgumentError(ErrMetadataExceedsLimits.Error(), strconv.Itoa(maxMetadataSize))
+	}
+	maxAttributeSize := int(s.limitConf.MaxAttributesSize)
+	if maxAttributeSize > 0 {
+		total := 0
+		for key, val := range req.Attributes {
+			total += len(key) + len(val)
+		}
+		if total > maxAttributeSize {
+			return nil, twirp.InvalidArgumentError(ErrAttributeExceedsLimits.Error(), strconv.Itoa(maxAttributeSize))
+		}
 	}
 
 	if err := EnsureAdminPermission(ctx, livekit.RoomName(req.Room)); err != nil {
@@ -270,7 +279,7 @@ func (s *RoomService) SendData(ctx context.Context, req *livekit.SendDataRequest
 
 func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.UpdateRoomMetadataRequest) (*livekit.Room, error) {
 	AppendLogFields(ctx, "room", req.Room, "size", len(req.Metadata))
-	maxMetadataSize := int(s.roomConf.MaxMetadataSize)
+	maxMetadataSize := int(s.limitConf.MaxMetadataSize)
 	if maxMetadataSize > 0 && len(req.Metadata) > maxMetadataSize {
 		return nil, twirp.InvalidArgumentError(ErrMetadataExceedsLimits.Error(), strconv.Itoa(maxMetadataSize))
 	}
@@ -314,7 +323,7 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 	}
 
 	if created {
-		go s.agentClient.LaunchJob(ctx, &agent.JobDescription{
+		go s.agentClient.LaunchJob(context.WithoutCancel(ctx), &agent.JobDescription{
 			JobType: livekit.JobType_JT_ROOM,
 			Room:    room,
 		})

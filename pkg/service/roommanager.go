@@ -433,6 +433,7 @@ func (r *RoomManager) StartSession(
 		AdaptiveStream:          pi.AdaptiveStream,
 		AllowTCPFallback:        allowFallback,
 		TURNSEnabled:            r.config.IsTURNSEnabled(),
+		MaxAttributesSize:       r.config.Limit.MaxAttributesSize,
 		GetParticipantInfo: func(pID livekit.ParticipantID) *livekit.ParticipantInfo {
 			if p := room.GetParticipantByID(pID); p != nil {
 				return p.ToProto()
@@ -708,8 +709,14 @@ func (r *RoomManager) UpdateParticipant(ctx context.Context, req *livekit.Update
 	}
 
 	participant.GetLogger().Debugw("updating participant",
-		"metadata", req.Metadata, "permission", req.Permission)
-	room.UpdateParticipantMetadata(participant, req.Name, req.Metadata)
+		"metadata", req.Metadata,
+		"permission", req.Permission,
+		"attributes", req.Attributes,
+	)
+	err = room.UpdateParticipantMetadata(participant, req.Name, req.Metadata, req.Attributes)
+	if err != nil {
+		return nil, err
+	}
 	if req.Permission != nil {
 		participant.SetPermission(req.Permission)
 	}
