@@ -231,17 +231,20 @@ type VideoConfig struct {
 
 type RoomConfig struct {
 	// enable rooms to be automatically created
-	AutoCreate                   bool               `yaml:"auto_create,omitempty"`
-	EnabledCodecs                []CodecSpec        `yaml:"enabled_codecs,omitempty"`
-	MaxParticipants              uint32             `yaml:"max_participants,omitempty"`
-	EmptyTimeout                 uint32             `yaml:"empty_timeout,omitempty"`
-	DepartureTimeout             uint32             `yaml:"departure_timeout,omitempty"`
-	EnableRemoteUnmute           bool               `yaml:"enable_remote_unmute,omitempty"`
-	MaxMetadataSize              uint32             `yaml:"max_metadata_size,omitempty"`
-	PlayoutDelay                 PlayoutDelayConfig `yaml:"playout_delay,omitempty"`
-	SyncStreams                  bool               `yaml:"sync_streams,omitempty"`
-	MaxRoomNameLength            int                `yaml:"max_room_name_length,omitempty"`
-	MaxParticipantIdentityLength int                `yaml:"max_participant_identity_length,omitempty"`
+	AutoCreate         bool               `yaml:"auto_create,omitempty"`
+	EnabledCodecs      []CodecSpec        `yaml:"enabled_codecs,omitempty"`
+	MaxParticipants    uint32             `yaml:"max_participants,omitempty"`
+	EmptyTimeout       uint32             `yaml:"empty_timeout,omitempty"`
+	DepartureTimeout   uint32             `yaml:"departure_timeout,omitempty"`
+	EnableRemoteUnmute bool               `yaml:"enable_remote_unmute,omitempty"`
+	PlayoutDelay       PlayoutDelayConfig `yaml:"playout_delay,omitempty"`
+	SyncStreams        bool               `yaml:"sync_streams,omitempty"`
+	// deprecated, moved to limits
+	MaxMetadataSize uint32 `yaml:"max_metadata_size,omitempty"`
+	// deprecated, moved to limits
+	MaxRoomNameLength int `yaml:"max_room_name_length,omitempty"`
+	// deprecated, moved to limits
+	MaxParticipantIdentityLength int `yaml:"max_participant_identity_length,omitempty"`
 }
 
 type CodecSpec struct {
@@ -300,6 +303,11 @@ type LimitConfig struct {
 	BytesPerSec            float32 `yaml:"bytes_per_sec,omitempty"`
 	SubscriptionLimitVideo int32   `yaml:"subscription_limit_video,omitempty"`
 	SubscriptionLimitAudio int32   `yaml:"subscription_limit_audio,omitempty"`
+	MaxMetadataSize        uint32  `yaml:"max_metadata_size,omitempty"`
+	// total size of all attributes on a participant
+	MaxAttributesSize            uint32 `yaml:"max_attributes_size,omitempty"`
+	MaxRoomNameLength            int    `yaml:"max_room_name_length,omitempty"`
+	MaxParticipantIdentityLength int    `yaml:"max_participant_identity_length,omitempty"`
 }
 
 type IngressConfig struct {
@@ -494,8 +502,12 @@ var DefaultConfig = Config{
 			{Mime: webrtc.MimeTypeVP9},
 			{Mime: webrtc.MimeTypeAV1},
 		},
-		EmptyTimeout:                 5 * 60,
-		DepartureTimeout:             20,
+		EmptyTimeout:     5 * 60,
+		DepartureTimeout: 20,
+	},
+	Limit: LimitConfig{
+		MaxMetadataSize:              128000,
+		MaxAttributesSize:            128000,
 		MaxRoomNameLength:            256,
 		MaxParticipantIdentityLength: 256,
 	},
@@ -583,6 +595,17 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 		}
 		conf.Logging.ComponentLevels["transport.pion"] = conf.Logging.PionLevel
 		conf.Logging.ComponentLevels["pion"] = conf.Logging.PionLevel
+	}
+
+	// copy over legacy limits
+	if conf.Room.MaxMetadataSize != 0 {
+		conf.Limit.MaxMetadataSize = conf.Room.MaxMetadataSize
+	}
+	if conf.Room.MaxParticipantIdentityLength != 0 {
+		conf.Limit.MaxParticipantIdentityLength = conf.Room.MaxParticipantIdentityLength
+	}
+	if conf.Room.MaxRoomNameLength != 0 {
+		conf.Limit.MaxRoomNameLength = conf.Room.MaxRoomNameLength
 	}
 
 	return &conf, nil

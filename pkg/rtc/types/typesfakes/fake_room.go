@@ -82,12 +82,13 @@ type FakeRoom struct {
 	syncStateReturnsOnCall map[int]struct {
 		result1 error
 	}
-	UpdateParticipantMetadataStub        func(types.LocalParticipant, string, string)
+	UpdateParticipantMetadataStub        func(types.LocalParticipant, string, string, map[string]string)
 	updateParticipantMetadataMutex       sync.RWMutex
 	updateParticipantMetadataArgsForCall []struct {
 		arg1 types.LocalParticipant
 		arg2 string
 		arg3 string
+		arg4 map[string]string
 	}
 	UpdateSubscriptionPermissionStub        func(types.LocalParticipant, *livekit.SubscriptionPermission) error
 	updateSubscriptionPermissionMutex       sync.RWMutex
@@ -492,18 +493,19 @@ func (fake *FakeRoom) SyncStateReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
-func (fake *FakeRoom) UpdateParticipantMetadata(arg1 types.LocalParticipant, arg2 string, arg3 string) {
+func (fake *FakeRoom) UpdateParticipantMetadata(arg1 types.LocalParticipant, arg2 string, arg3 string, arg4 map[string]string) {
 	fake.updateParticipantMetadataMutex.Lock()
 	fake.updateParticipantMetadataArgsForCall = append(fake.updateParticipantMetadataArgsForCall, struct {
 		arg1 types.LocalParticipant
 		arg2 string
 		arg3 string
-	}{arg1, arg2, arg3})
+		arg4 map[string]string
+	}{arg1, arg2, arg3, arg4})
 	stub := fake.UpdateParticipantMetadataStub
-	fake.recordInvocation("UpdateParticipantMetadata", []interface{}{arg1, arg2, arg3})
+	fake.recordInvocation("UpdateParticipantMetadata", []interface{}{arg1, arg2, arg3, arg4})
 	fake.updateParticipantMetadataMutex.Unlock()
 	if stub != nil {
-		fake.UpdateParticipantMetadataStub(arg1, arg2, arg3)
+		fake.UpdateParticipantMetadataStub(arg1, arg2, arg3, arg4)
 	}
 }
 
@@ -513,17 +515,17 @@ func (fake *FakeRoom) UpdateParticipantMetadataCallCount() int {
 	return len(fake.updateParticipantMetadataArgsForCall)
 }
 
-func (fake *FakeRoom) UpdateParticipantMetadataCalls(stub func(types.LocalParticipant, string, string)) {
+func (fake *FakeRoom) UpdateParticipantMetadataCalls(stub func(types.LocalParticipant, string, string, map[string]string)) {
 	fake.updateParticipantMetadataMutex.Lock()
 	defer fake.updateParticipantMetadataMutex.Unlock()
 	fake.UpdateParticipantMetadataStub = stub
 }
 
-func (fake *FakeRoom) UpdateParticipantMetadataArgsForCall(i int) (types.LocalParticipant, string, string) {
+func (fake *FakeRoom) UpdateParticipantMetadataArgsForCall(i int) (types.LocalParticipant, string, string, map[string]string) {
 	fake.updateParticipantMetadataMutex.RLock()
 	defer fake.updateParticipantMetadataMutex.RUnlock()
 	argsForCall := fake.updateParticipantMetadataArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
 }
 
 func (fake *FakeRoom) UpdateSubscriptionPermission(arg1 types.LocalParticipant, arg2 *livekit.SubscriptionPermission) error {

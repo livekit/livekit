@@ -229,6 +229,81 @@ func TestMultiNodeRefreshToken(t *testing.T) {
 	})
 }
 
+// ensure that token accurately reflects out of band updates
+func TestMultiNodeUpdateAttributes(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	_, _, finish := setupMultiNodeTest("TestMultiNodeUpdateAttributes")
+	defer finish()
+
+	c1 := createRTCClient("au1", defaultServerPort, &client.Options{
+		TokenCustomizer: func(token *auth.AccessToken, grants *auth.VideoGrant) {
+			token.SetAttributes(map[string]string{
+				"mykey": "au1",
+			})
+		},
+	})
+	c2 := createRTCClient("au2", secondServerPort, &client.Options{
+		TokenCustomizer: func(token *auth.AccessToken, grants *auth.VideoGrant) {
+			token.SetAttributes(map[string]string{
+				"mykey": "au2",
+			})
+			grants.SetCanUpdateOwnMetadata(true)
+		},
+	})
+	waitUntilConnected(t, c1, c2)
+
+	testutils.WithTimeout(t, func() string {
+		rc2 := c1.GetRemoteParticipant(c2.ID())
+		rc1 := c2.GetRemoteParticipant(c1.ID())
+		if rc2 == nil || rc1 == nil {
+			return "participants could not see each other"
+		}
+		if rc1.Attributes != nil && rc1.Attributes["mykey"] != "au1" {
+			return "rc1's initial attributes are incorrect"
+		}
+		if rc2.Attributes != nil && rc2.Attributes["mykey"] != "au2" {
+			return "rc2's initial attributes are incorrect"
+		}
+		return ""
+	})
+
+	// this one should not go through
+	_ = c1.SetAttributes(map[string]string{"mykey": "shouldnotchange"})
+	_ = c2.SetAttributes(map[string]string{"secondkey": "au2"})
+
+	// updates using room API should succeed
+	_, err := roomClient.UpdateParticipant(contextWithToken(adminRoomToken(testRoom)), &livekit.UpdateParticipantRequest{
+		Room:     testRoom,
+		Identity: "au1",
+		Attributes: map[string]string{
+			"secondkey": "au1",
+		},
+	})
+	require.NoError(t, err)
+
+	testutils.WithTimeout(t, func() string {
+		rc1 := c2.GetRemoteParticipant(c1.ID())
+		rc2 := c1.GetRemoteParticipant(c2.ID())
+		if rc1.Attributes["secondkey"] != "au1" {
+			return "au1's attribute update failed"
+		}
+		if rc2.Attributes["secondkey"] != "au2" {
+			return "au2's attribute update failed"
+		}
+		if rc1.Attributes["mykey"] != "au1" {
+			return "au1's mykey should not change"
+		}
+		if rc2.Attributes["mykey"] != "au2" {
+			return "au2's mykey should not change"
+		}
+		return ""
+	})
+}
+
 func TestMultiNodeRevokePublishPermission(t *testing.T) {
 	_, _, finish := setupMultiNodeTest("TestMultiNodeRevokePublishPermission")
 	defer finish()

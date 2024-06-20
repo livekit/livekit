@@ -175,6 +175,17 @@ type FakeParticipant struct {
 		arg2 bool
 		arg3 bool
 	}
+	SetAttributesStub        func(map[string]string) error
+	setAttributesMutex       sync.RWMutex
+	setAttributesArgsForCall []struct {
+		arg1 map[string]string
+	}
+	setAttributesReturns struct {
+		result1 error
+	}
+	setAttributesReturnsOnCall map[int]struct {
+		result1 error
+	}
 	SetMetadataStub        func(string)
 	setMetadataMutex       sync.RWMutex
 	setMetadataArgsForCall []struct {
@@ -1115,6 +1126,67 @@ func (fake *FakeParticipant) RemovePublishedTrackArgsForCall(i int) (types.Media
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
+func (fake *FakeParticipant) SetAttributes(arg1 map[string]string) error {
+	fake.setAttributesMutex.Lock()
+	ret, specificReturn := fake.setAttributesReturnsOnCall[len(fake.setAttributesArgsForCall)]
+	fake.setAttributesArgsForCall = append(fake.setAttributesArgsForCall, struct {
+		arg1 map[string]string
+	}{arg1})
+	stub := fake.SetAttributesStub
+	fakeReturns := fake.setAttributesReturns
+	fake.recordInvocation("SetAttributes", []interface{}{arg1})
+	fake.setAttributesMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) SetAttributesCallCount() int {
+	fake.setAttributesMutex.RLock()
+	defer fake.setAttributesMutex.RUnlock()
+	return len(fake.setAttributesArgsForCall)
+}
+
+func (fake *FakeParticipant) SetAttributesCalls(stub func(map[string]string) error) {
+	fake.setAttributesMutex.Lock()
+	defer fake.setAttributesMutex.Unlock()
+	fake.SetAttributesStub = stub
+}
+
+func (fake *FakeParticipant) SetAttributesArgsForCall(i int) map[string]string {
+	fake.setAttributesMutex.RLock()
+	defer fake.setAttributesMutex.RUnlock()
+	argsForCall := fake.setAttributesArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeParticipant) SetAttributesReturns(result1 error) {
+	fake.setAttributesMutex.Lock()
+	defer fake.setAttributesMutex.Unlock()
+	fake.SetAttributesStub = nil
+	fake.setAttributesReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeParticipant) SetAttributesReturnsOnCall(i int, result1 error) {
+	fake.setAttributesMutex.Lock()
+	defer fake.setAttributesMutex.Unlock()
+	fake.SetAttributesStub = nil
+	if fake.setAttributesReturnsOnCall == nil {
+		fake.setAttributesReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.setAttributesReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
 func (fake *FakeParticipant) SetMetadata(arg1 string) {
 	fake.setMetadataMutex.Lock()
 	fake.setMetadataArgsForCall = append(fake.setMetadataArgsForCall, struct {
@@ -1561,6 +1633,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.kindMutex.RUnlock()
 	fake.removePublishedTrackMutex.RLock()
 	defer fake.removePublishedTrackMutex.RUnlock()
+	fake.setAttributesMutex.RLock()
+	defer fake.setAttributesMutex.RUnlock()
 	fake.setMetadataMutex.RLock()
 	defer fake.setMetadataMutex.RUnlock()
 	fake.setNameMutex.RLock()

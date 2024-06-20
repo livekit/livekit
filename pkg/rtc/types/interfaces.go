@@ -257,6 +257,7 @@ type Participant interface {
 
 	SetName(name string)
 	SetMetadata(metadata string)
+	SetAttributes(attributes map[string]string) error
 
 	IsPublisher() bool
 	GetPublishedTrack(trackID livekit.TrackID) MediaTrack
@@ -437,7 +438,7 @@ type Room interface {
 	SimulateScenario(participant LocalParticipant, scenario *livekit.SimulateScenario) error
 	ResolveMediaTrackForSubscriber(subIdentity livekit.ParticipantIdentity, trackID livekit.TrackID) MediaResolverResult
 	GetLocalParticipants() []LocalParticipant
-	UpdateParticipantMetadata(participant LocalParticipant, name string, metadata string)
+	UpdateParticipantMetadata(participant LocalParticipant, name string, metadata string, attributes map[string]string)
 }
 
 // MediaTrack represents a media track

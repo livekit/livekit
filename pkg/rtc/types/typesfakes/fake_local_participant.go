@@ -733,6 +733,17 @@ type FakeLocalParticipant struct {
 	sendSpeakerUpdateReturnsOnCall map[int]struct {
 		result1 error
 	}
+	SetAttributesStub        func(map[string]string) error
+	setAttributesMutex       sync.RWMutex
+	setAttributesArgsForCall []struct {
+		arg1 map[string]string
+	}
+	setAttributesReturns struct {
+		result1 error
+	}
+	setAttributesReturnsOnCall map[int]struct {
+		result1 error
+	}
 	SetICEConfigStub        func(*livekit.ICEConfig)
 	setICEConfigMutex       sync.RWMutex
 	setICEConfigArgsForCall []struct {
@@ -4881,6 +4892,67 @@ func (fake *FakeLocalParticipant) SendSpeakerUpdateReturnsOnCall(i int, result1 
 	}{result1}
 }
 
+func (fake *FakeLocalParticipant) SetAttributes(arg1 map[string]string) error {
+	fake.setAttributesMutex.Lock()
+	ret, specificReturn := fake.setAttributesReturnsOnCall[len(fake.setAttributesArgsForCall)]
+	fake.setAttributesArgsForCall = append(fake.setAttributesArgsForCall, struct {
+		arg1 map[string]string
+	}{arg1})
+	stub := fake.SetAttributesStub
+	fakeReturns := fake.setAttributesReturns
+	fake.recordInvocation("SetAttributes", []interface{}{arg1})
+	fake.setAttributesMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) SetAttributesCallCount() int {
+	fake.setAttributesMutex.RLock()
+	defer fake.setAttributesMutex.RUnlock()
+	return len(fake.setAttributesArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) SetAttributesCalls(stub func(map[string]string) error) {
+	fake.setAttributesMutex.Lock()
+	defer fake.setAttributesMutex.Unlock()
+	fake.SetAttributesStub = stub
+}
+
+func (fake *FakeLocalParticipant) SetAttributesArgsForCall(i int) map[string]string {
+	fake.setAttributesMutex.RLock()
+	defer fake.setAttributesMutex.RUnlock()
+	argsForCall := fake.setAttributesArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) SetAttributesReturns(result1 error) {
+	fake.setAttributesMutex.Lock()
+	defer fake.setAttributesMutex.Unlock()
+	fake.SetAttributesStub = nil
+	fake.setAttributesReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) SetAttributesReturnsOnCall(i int, result1 error) {
+	fake.setAttributesMutex.Lock()
+	defer fake.setAttributesMutex.Unlock()
+	fake.SetAttributesStub = nil
+	if fake.setAttributesReturnsOnCall == nil {
+		fake.setAttributesReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.setAttributesReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
 func (fake *FakeLocalParticipant) SetICEConfig(arg1 *livekit.ICEConfig) {
 	fake.setICEConfigMutex.Lock()
 	fake.setICEConfigArgsForCall = append(fake.setICEConfigArgsForCall, struct {
@@ -6571,6 +6643,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.sendRoomUpdateMutex.RUnlock()
 	fake.sendSpeakerUpdateMutex.RLock()
 	defer fake.sendSpeakerUpdateMutex.RUnlock()
+	fake.setAttributesMutex.RLock()
+	defer fake.setAttributesMutex.RUnlock()
 	fake.setICEConfigMutex.RLock()
 	defer fake.setICEConfigMutex.RUnlock()
 	fake.setMetadataMutex.RLock()

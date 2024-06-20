@@ -57,6 +57,8 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
+replace github.com/livekit/protocol => ../protocol
+
 require (
 	dario.cat/mergo v1.0.0 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 // indirect

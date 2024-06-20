@@ -136,6 +136,7 @@ type ParticipantParams struct {
 	VersionGenerator             utils.TimedVersionGenerator
 	TrackResolver                types.MediaTrackResolver
 	DisableDynacast              bool
+	MaxAttributesSize            uint32
 	SubscriberAllowPause         bool
 	SubscriptionLimitAudio       int32
 	SubscriptionLimitVideo       int32
@@ -459,6 +460,44 @@ func (p *ParticipantImpl) SetMetadata(metadata string) {
 	}
 }
 
+func (p *ParticipantImpl) SetAttributes(attrs map[string]string) error {
+	p.lock.Lock()
+	grants := p.grants.Load().Clone()
+	if grants.Attributes == nil {
+		grants.Attributes = make(map[string]string)
+	}
+	for k, v := range attrs {
+		grants.Attributes[k] = v
+	}
+
+	maxAttributesSize := p.params.MaxAttributesSize
+	if maxAttributesSize > 0 {
+		total := 0
+		for k, v := range grants.Attributes {
+			total += len(k) + len(v)
+		}
+		if uint32(total) > maxAttributesSize {
+			p.lock.Unlock()
+			return ErrAttributeExceedsLimits
+		}
+	}
+
+	p.grants.Store(grants)
+	p.dirty.Store(true)
+
+	onParticipantUpdate := p.onParticipantUpdate
+	onClaimsChanged := p.onClaimsChanged
+	p.lock.Unlock()
+
+	if onParticipantUpdate != nil {
+		onParticipantUpdate(p)
+	}
+	if onClaimsChanged != nil {
+		onClaimsChanged(p)
+	}
+	return nil
+}
+
 func (p *ParticipantImpl) ClaimGrants() *auth.ClaimGrants {
 	return p.grants.Load()
 }
@@ -551,6 +590,7 @@ func (p *ParticipantImpl) ToProtoWithVersion() (*livekit.ParticipantInfo, utils.
 		Version:     v,
 		Permission:  grants.Video.ToPermission(),
 		Metadata:    grants.Metadata,
+		Attributes:  grants.Attributes,
 		Region:      p.params.Region,
 		IsPublisher: p.IsPublisher(),
 		Kind:        grants.GetParticipantKind(),

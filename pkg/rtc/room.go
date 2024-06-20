@@ -819,12 +819,23 @@ func (r *Room) SetMetadata(metadata string) <-chan struct{} {
 	return r.protoProxy.MarkDirty(true)
 }
 
-func (r *Room) UpdateParticipantMetadata(participant types.LocalParticipant, name string, metadata string) {
+func (r *Room) UpdateParticipantMetadata(
+	participant types.LocalParticipant,
+	name string,
+	metadata string,
+	attributes map[string]string,
+) {
 	if metadata != "" {
 		participant.SetMetadata(metadata)
 	}
 	if name != "" {
 		participant.SetName(name)
+	}
+	if attributes != nil && len(attributes) > 0 {
+		if err := participant.SetAttributes(attributes); err != nil {
+			// TODO: notify participant of error
+			participant.GetLogger().Warnw("failed to set participant attributes", err)
+		}
 	}
 }
 

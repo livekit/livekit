@@ -36,7 +36,7 @@ import (
 // Injectors from wire.go:
 
 func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*LivekitServer, error) {
-	roomConfig := getRoomConf(conf)
+	limitConfig := getLimitConf(conf)
 	apiConfig := config.DefaultAPIConfig()
 	psrpcConfig := getPSRPCConfig(conf)
 	universalClient, err := createRedisClient(conf)
@@ -96,7 +96,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	roomService, err := NewRoomService(roomConfig, apiConfig, psrpcConfig, router, roomAllocator, objectStore, client, rtcEgressLauncher, topicFormatter, roomClient, participantClient)
+	roomService, err := NewRoomService(limitConfig, apiConfig, psrpcConfig, router, roomAllocator, objectStore, client, rtcEgressLauncher, topicFormatter, roomClient, participantClient)
 	if err != nil {
 		return nil, err
 	}
@@ -272,8 +272,8 @@ func createClientConfiguration() clientconfiguration.ClientConfigurationManager 
 	return clientconfiguration.NewStaticClientConfigurationManager(clientconfiguration.StaticConfigurations)
 }
 
-func getRoomConf(config2 *config.Config) config.RoomConfig {
-	return config2.Room
+func getLimitConf(config2 *config.Config) config.LimitConfig {
+	return config2.Limit
 }
 
 func getSignalRelayConfig(config2 *config.Config) config.SignalRelayConfig {
