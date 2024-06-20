@@ -20,6 +20,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"golang.org/x/exp/maps"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/protocol/utils"
@@ -65,7 +66,7 @@ func NewUpTrackManager(params UpTrackManagerParams) *UpTrackManager {
 	}
 }
 
-func (u *UpTrackManager) Close(willBeResumed bool) {
+func (u *UpTrackManager) Close(isExpectedToResume bool) {
 	u.lock.Lock()
 	if u.closed {
 		u.lock.Unlock()
@@ -79,7 +80,7 @@ func (u *UpTrackManager) Close(willBeResumed bool) {
 	u.lock.Unlock()
 
 	for _, t := range publishedTracks {
-		t.Close(willBeResumed)
+		t.Close(isExpectedToResume)
 	}
 
 	if onClose := u.getOnUpTrackManagerClose(); onClose != nil {
@@ -147,11 +148,7 @@ func (u *UpTrackManager) GetPublishedTracks() []types.MediaTrack {
 	u.lock.RLock()
 	defer u.lock.RUnlock()
 
-	tracks := make([]types.MediaTrack, 0, len(u.publishedTracks))
-	for _, t := range u.publishedTracks {
-		tracks = append(tracks, t)
-	}
-	return tracks
+	return maps.Values(u.publishedTracks)
 }
 
 func (u *UpTrackManager) UpdateSubscriptionPermission(
@@ -277,7 +274,7 @@ func (u *UpTrackManager) AddPublishedTrack(track types.MediaTrack) {
 	u.lock.Unlock()
 	u.params.Logger.Debugw("added published track", "trackID", track.ID(), "trackInfo", logger.Proto(track.ToProto()))
 
-	track.AddOnClose(func() {
+	track.AddOnClose(func(_isExpectedToResume bool) {
 		u.lock.Lock()
 		delete(u.publishedTracks, track.ID())
 		// not modifying subscription permissions, will get reset on next update from participant
@@ -285,11 +282,11 @@ func (u *UpTrackManager) AddPublishedTrack(track types.MediaTrack) {
 	})
 }
 
-func (u *UpTrackManager) RemovePublishedTrack(track types.MediaTrack, willBeResumed bool, shouldClose bool) {
+func (u *UpTrackManager) RemovePublishedTrack(track types.MediaTrack, isExpectedToResume bool, shouldClose bool) {
 	if shouldClose {
-		track.Close(willBeResumed)
+		track.Close(isExpectedToResume)
 	} else {
-		track.ClearAllReceivers(willBeResumed)
+		track.ClearAllReceivers(isExpectedToResume)
 	}
 	u.lock.Lock()
 	delete(u.publishedTracks, track.ID())

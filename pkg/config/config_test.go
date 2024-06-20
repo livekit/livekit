@@ -20,6 +20,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v2"
+
+	"github.com/livekit/livekit-server/pkg/config/configtest"
 )
 
 func TestConfig_UnmarshalKeys(t *testing.T) {
@@ -79,4 +81,8 @@ func TestGeneratedFlags(t *testing.T) {
 
 	require.NotNil(t, conf.RTC.ReconnectOnSubscriptionError)
 	require.False(t, *conf.RTC.ReconnectOnSubscriptionError)
+}
+
+func TestYAMLTag(t *testing.T) {
+	require.NoError(t, configtest.CheckYAMLTags(Config{}))
 }

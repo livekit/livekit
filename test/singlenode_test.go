@@ -408,12 +408,12 @@ func TestAutoCreate(t *testing.T) {
 
 		waitForServerToStart(s)
 
-		token := joinToken(testRoom, "start-before-create")
+		token := joinToken(testRoom, "start-before-create", nil)
 		_, err := testclient.NewWebSocketConn(fmt.Sprintf("ws://localhost:%d", defaultServerPort), token, nil)
 		require.Error(t, err)
 
 		// second join should also fail
-		token = joinToken(testRoom, "start-before-create-2")
+		token = joinToken(testRoom, "start-before-create-2", nil)
 		_, err = testclient.NewWebSocketConn(fmt.Sprintf("ws://localhost:%d", defaultServerPort), token, nil)
 		require.Error(t, err)
 	})

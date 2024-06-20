@@ -81,10 +81,10 @@ type FakeSubscribedTrack struct {
 	needsNegotiationReturnsOnCall map[int]struct {
 		result1 bool
 	}
-	OnCloseStub        func(func(willBeResumed bool))
+	OnCloseStub        func(func(isExpectedToResume bool))
 	onCloseMutex       sync.RWMutex
 	onCloseArgsForCall []struct {
-		arg1 func(willBeResumed bool)
+		arg1 func(isExpectedToResume bool)
 	}
 	PublisherIDStub        func() livekit.ParticipantID
 	publisherIDMutex       sync.RWMutex
@@ -557,10 +557,10 @@ func (fake *FakeSubscribedTrack) NeedsNegotiationReturnsOnCall(i int, result1 bo
 	}{result1}
 }
 
-func (fake *FakeSubscribedTrack) OnClose(arg1 func(willBeResumed bool)) {
+func (fake *FakeSubscribedTrack) OnClose(arg1 func(isExpectedToResume bool)) {
 	fake.onCloseMutex.Lock()
 	fake.onCloseArgsForCall = append(fake.onCloseArgsForCall, struct {
-		arg1 func(willBeResumed bool)
+		arg1 func(isExpectedToResume bool)
 	}{arg1})
 	stub := fake.OnCloseStub
 	fake.recordInvocation("OnClose", []interface{}{arg1})
@@ -576,13 +576,13 @@ func (fake *FakeSubscribedTrack) OnCloseCallCount() int {
 	return len(fake.onCloseArgsForCall)
 }
 
-func (fake *FakeSubscribedTrack) OnCloseCalls(stub func(func(willBeResumed bool))) {
+func (fake *FakeSubscribedTrack) OnCloseCalls(stub func(func(isExpectedToResume bool))) {
 	fake.onCloseMutex.Lock()
 	defer fake.onCloseMutex.Unlock()
 	fake.OnCloseStub = stub
 }
 
-func (fake *FakeSubscribedTrack) OnCloseArgsForCall(i int) func(willBeResumed bool) {
+func (fake *FakeSubscribedTrack) OnCloseArgsForCall(i int) func(isExpectedToResume bool) {
 	fake.onCloseMutex.RLock()
 	defer fake.onCloseMutex.RUnlock()
 	argsForCall := fake.onCloseArgsForCall[i]

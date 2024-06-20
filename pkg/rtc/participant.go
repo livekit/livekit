@@ -136,6 +136,7 @@ type ParticipantParams struct {
 	VersionGenerator             utils.TimedVersionGenerator
 	TrackResolver                types.MediaTrackResolver
 	DisableDynacast              bool
+	MaxAttributesSize            uint32
 	SubscriberAllowPause         bool
 	SubscriptionLimitAudio       int32
 	SubscriptionLimitVideo       int32
@@ -164,6 +165,7 @@ type ParticipantImpl struct {
 	isPublisher atomic.Bool
 
 	sessionStartRecorded atomic.Bool
+	lastActiveAt         time.Time
 	// when first connected
 	connectedAt time.Time
 	// timer that's set when disconnect is detected on primary PC
@@ -458,6 +460,52 @@ func (p *ParticipantImpl) SetMetadata(metadata string) {
 	}
 }
 
+func (p *ParticipantImpl) SetAttributes(attrs map[string]string) error {
+	p.lock.Lock()
+	grants := p.grants.Load().Clone()
+	if grants.Attributes == nil {
+		grants.Attributes = make(map[string]string)
+	}
+	var keysToDelete []string
+	for k, v := range attrs {
+		if v == "" {
+			keysToDelete = append(keysToDelete, k)
+		} else {
+			grants.Attributes[k] = v
+		}
+	}
+	for _, k := range keysToDelete {
+		delete(grants.Attributes, k)
+	}
+
+	maxAttributesSize := p.params.MaxAttributesSize
+	if maxAttributesSize > 0 {
+		total := 0
+		for k, v := range grants.Attributes {
+			total += len(k) + len(v)
+		}
+		if uint32(total) > maxAttributesSize {
+			p.lock.Unlock()
+			return ErrAttributeExceedsLimits
+		}
+	}
+
+	p.grants.Store(grants)
+	p.dirty.Store(true)
+
+	onParticipantUpdate := p.onParticipantUpdate
+	onClaimsChanged := p.onClaimsChanged
+	p.lock.Unlock()
+
+	if onParticipantUpdate != nil {
+		onParticipantUpdate(p)
+	}
+	if onClaimsChanged != nil {
+		onClaimsChanged(p)
+	}
+	return nil
+}
+
 func (p *ParticipantImpl) ClaimGrants() *auth.ClaimGrants {
 	return p.grants.Load()
 }
@@ -550,6 +598,7 @@ func (p *ParticipantImpl) ToProtoWithVersion() (*livekit.ParticipantInfo, utils.
 		Version:     v,
 		Permission:  grants.Video.ToPermission(),
 		Metadata:    grants.Metadata,
+		Attributes:  grants.Attributes,
 		Region:      p.params.Region,
 		IsPublisher: p.IsPublisher(),
 		Kind:        grants.GetParticipantKind(),
@@ -779,8 +828,9 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 		return
 	}
 
-	p.lock.Lock()
-	defer p.lock.Unlock()
+	p.pendingTracksLock.Lock()
+	defer p.pendingTracksLock.Unlock()
+
 	ti := p.addPendingTrackLocked(req)
 	if ti == nil {
 		return
@@ -1374,6 +1424,11 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 		return
 	}
 
+	if state == livekit.ParticipantInfo_DISCONNECTED && oldState == livekit.ParticipantInfo_ACTIVE {
+		prometheus.RecordSessionDuration(int(p.ProtocolVersion()), time.Since(p.lastActiveAt))
+	} else if state == livekit.ParticipantInfo_ACTIVE {
+		p.lastActiveAt = time.Now()
+	}
 	p.params.Logger.Debugw("updating participant state", "state", state.String())
 	p.dirty.Store(true)
 
@@ -1767,9 +1822,6 @@ func (p *ParticipantImpl) onSubscribedMaxQualityChange(
 }
 
 func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *livekit.TrackInfo {
-	p.pendingTracksLock.Lock()
-	defer p.pendingTracksLock.Unlock()
-
 	if req.Sid != "" {
 		track := p.GetPublishedTrack(livekit.TrackID(req.Sid))
 		if track == nil {
@@ -2127,7 +2179,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 	}
 
 	trackID := livekit.TrackID(ti.Sid)
-	mt.AddOnClose(func() {
+	mt.AddOnClose(func(_isExpectedToRsume bool) {
 		if p.supervisor != nil {
 			p.supervisor.ClearPublishedTrack(trackID, mt)
 		}

@@ -45,6 +45,7 @@ var (
 	promTrackPublishCounter    *prometheus.CounterVec
 	promTrackSubscribeCounter  *prometheus.CounterVec
 	promSessionStartTime       *prometheus.HistogramVec
+	promSessionDuration        *prometheus.HistogramVec
 )
 
 func initRoomStats(nodeID string, nodeType livekit.NodeType) {
@@ -100,6 +101,13 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		Buckets:     prometheus.ExponentialBucketsRange(100, 10000, 15),
 	}, []string{"protocol_version"})
+	promSessionDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "session",
+		Name:        "duration_ms",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+		Buckets:     prometheus.ExponentialBucketsRange(100, 4*60*60*1000, 15),
+	}, []string{"protocol_version"})
 
 	prometheus.MustRegister(promRoomCurrent)
 	prometheus.MustRegister(promRoomDuration)
@@ -109,6 +117,7 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 	prometheus.MustRegister(promTrackPublishCounter)
 	prometheus.MustRegister(promTrackSubscribeCounter)
 	prometheus.MustRegister(promSessionStartTime)
+	prometheus.MustRegister(promSessionDuration)
 }
 
 func RoomStarted() {
@@ -185,4 +194,8 @@ func RecordTrackSubscribeFailure(err error, isUserError bool) {
 
 func RecordSessionStartTime(protocolVersion int, d time.Duration) {
 	promSessionStartTime.WithLabelValues(strconv.Itoa(protocolVersion)).Observe(float64(d.Milliseconds()))
+}
+
+func RecordSessionDuration(protocolVersion int, d time.Duration) {
+	promSessionDuration.WithLabelValues(strconv.Itoa(protocolVersion)).Observe(float64(d.Milliseconds()))
 }

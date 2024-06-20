@@ -54,7 +54,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		createClientConfiguration,
 		createForwardStats,
 		routing.CreateRouter,
-		getRoomConf,
+		getLimitConf,
 		config.DefaultAPIConfig,
 		wire.Bind(new(routing.MessageRouter), new(routing.Router)),
 		wire.Bind(new(livekit.RoomService), new(*RoomService)),
@@ -221,8 +221,8 @@ func createClientConfiguration() clientconfiguration.ClientConfigurationManager 
 	return clientconfiguration.NewStaticClientConfigurationManager(clientconfiguration.StaticConfigurations)
 }
 
-func getRoomConf(config *config.Config) config.RoomConfig {
-	return config.Room
+func getLimitConf(config *config.Config) config.LimitConfig {
+	return config.Limit
 }
 
 func getSignalRelayConfig(config *config.Config) config.SignalRelayConfig {
