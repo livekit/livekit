@@ -255,9 +255,6 @@ type Participant interface {
 	CanSkipBroadcast() bool
 	ToProto() *livekit.ParticipantInfo
 
-	SetName(name string)
-	SetMetadata(metadata string)
-
 	IsPublisher() bool
 	GetPublishedTrack(trackID livekit.TrackID) MediaTrack
 	GetPublishedTracks() []MediaTrack
@@ -328,6 +325,11 @@ type LocalParticipant interface {
 	UpdateLastSeenSignal()
 	SetSignalSourceValid(valid bool)
 	HandleSignalSourceClose()
+
+	// updates
+	SetName(name string)
+	SetMetadata(metadata string)
+	SetAttributes(attributes map[string]string) error
 
 	// permissions
 	ClaimGrants() *auth.ClaimGrants
@@ -437,7 +439,7 @@ type Room interface {
 	SimulateScenario(participant LocalParticipant, scenario *livekit.SimulateScenario) error
 	ResolveMediaTrackForSubscriber(subIdentity livekit.ParticipantIdentity, trackID livekit.TrackID) MediaResolverResult
 	GetLocalParticipants() []LocalParticipant
-	UpdateParticipantMetadata(participant LocalParticipant, name string, metadata string)
+	UpdateParticipantMetadata(participant LocalParticipant, name string, metadata string, attributes map[string]string) error
 }
 
 // MediaTrack represents a media track

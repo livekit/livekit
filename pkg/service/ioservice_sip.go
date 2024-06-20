@@ -74,7 +74,7 @@ func (s *IOInfoService) EvaluateSIPDispatchRules(ctx context.Context, req *rpc.E
 		return nil, err
 	}
 	log.Debugw("SIP dispatch rule matched", "sipRule", best.SipDispatchRuleId)
-	resp, err := sip.EvaluateDispatchRule(best, req)
+	resp, err := sip.EvaluateDispatchRule(trunkID, best, req)
 	if err != nil {
 		return nil, err
 	}
