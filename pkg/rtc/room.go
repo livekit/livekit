@@ -825,16 +825,16 @@ func (r *Room) UpdateParticipantMetadata(
 	metadata string,
 	attributes map[string]string,
 ) error {
+	if attributes != nil && len(attributes) > 0 {
+		if err := participant.SetAttributes(attributes); err != nil {
+			return err
+		}
+	}
 	if metadata != "" {
 		participant.SetMetadata(metadata)
 	}
 	if name != "" {
 		participant.SetName(name)
-	}
-	if attributes != nil && len(attributes) > 0 {
-		if err := participant.SetAttributes(attributes); err != nil {
-			return err
-		}
 	}
 	return nil
 }
