@@ -353,11 +353,14 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		t.SetSimulcast(true)
 	}
 
-	if t.IsSimulcast() {
-		t.MediaTrackReceiver.SetLayerSsrc(mime, track.RID(), uint32(track.SSRC()))
+	var bitrates int
+	if len(ti.Layers) > int(layer) {
+		bitrates = int(ti.Layers[layer].GetBitrate())
 	}
 
-	buff.Bind(receiver.GetParameters(), track.Codec().RTPCodecCapability)
+	t.MediaTrackReceiver.SetLayerSsrc(mime, track.RID(), uint32(track.SSRC()))
+
+	buff.Bind(receiver.GetParameters(), track.Codec().RTPCodecCapability, bitrates)
 
 	// if subscriber request fps before fps calculated, update them after fps updated.
 	buff.OnFpsChanged(func() {
@@ -408,13 +411,13 @@ func (t *MediaTrack) Restart() {
 	}
 }
 
-func (t *MediaTrack) Close(willBeResumed bool) {
+func (t *MediaTrack) Close(isExpectedToResume bool) {
 	t.MediaTrackReceiver.SetClosing()
 	if t.dynacastManager != nil {
 		t.dynacastManager.Close()
 	}
-	t.MediaTrackReceiver.ClearAllReceivers(willBeResumed)
-	t.MediaTrackReceiver.Close()
+	t.MediaTrackReceiver.ClearAllReceivers(isExpectedToResume)
+	t.MediaTrackReceiver.Close(isExpectedToResume)
 }
 
 func (t *MediaTrack) SetMuted(muted bool) {

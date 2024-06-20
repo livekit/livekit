@@ -54,7 +54,16 @@ func NewEgressLauncher(client rpc.EgressClient, io IOClient) rtc.EgressLauncher 
 }
 
 func (s *egressLauncher) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) (*livekit.EgressInfo, error) {
-	info, err := s.StartEgressWithClusterId(ctx, "", req)
+	if s.client == nil {
+		return nil, ErrEgressNotConnected
+	}
+
+	// Ensure we have an Egress ID
+	if req.EgressId == "" {
+		req.EgressId = guid.New(utils.EgressPrefix)
+	}
+
+	info, err := s.client.StartEgress(ctx, "", req)
 	if err != nil {
 		return nil, err
 	}
@@ -65,17 +74,4 @@ func (s *egressLauncher) StartEgress(ctx context.Context, req *rpc.StartEgressRe
 	}
 
 	return info, nil
-}
-
-func (s *egressLauncher) StartEgressWithClusterId(ctx context.Context, clusterId string, req *rpc.StartEgressRequest) (*livekit.EgressInfo, error) {
-	if s.client == nil {
-		return nil, ErrEgressNotConnected
-	}
-
-	// Ensure we have an Egress ID
-	if req.EgressId == "" {
-		req.EgressId = guid.New(utils.EgressPrefix)
-	}
-
-	return s.client.StartEgress(ctx, clusterId, req)
 }

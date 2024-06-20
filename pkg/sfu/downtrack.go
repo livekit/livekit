@@ -297,7 +297,7 @@ type DownTrack struct {
 	onStatsUpdate               func(dt *DownTrack, stat *livekit.AnalyticsStat)
 	onMaxSubscribedLayerChanged func(dt *DownTrack, layer int32)
 	onRttUpdate                 func(dt *DownTrack, rtt uint32)
-	onCloseHandler              func(willBeResumed bool)
+	onCloseHandler              func(isExpectedToResume bool)
 
 	createdAt int64
 }
@@ -1170,14 +1170,14 @@ func (d *DownTrack) UpTrackBitrateReport(availableLayers []int32, bitrates Bitra
 }
 
 // OnCloseHandler method to be called on remote tracked removed
-func (d *DownTrack) OnCloseHandler(fn func(willBeResumed bool)) {
+func (d *DownTrack) OnCloseHandler(fn func(isExpectedToResume bool)) {
 	d.cbMu.Lock()
 	defer d.cbMu.Unlock()
 
 	d.onCloseHandler = fn
 }
 
-func (d *DownTrack) getOnCloseHandler() func(willBeResumed bool) {
+func (d *DownTrack) getOnCloseHandler() func(isExpectedToResume bool) {
 	d.cbMu.RLock()
 	defer d.cbMu.RUnlock()
 

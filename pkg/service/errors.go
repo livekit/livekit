@@ -26,6 +26,7 @@ var (
 	ErrIngressNotFound                  = psrpc.NewErrorf(psrpc.NotFound, "ingress does not exist")
 	ErrIngressNonReusable               = psrpc.NewErrorf(psrpc.InvalidArgument, "ingress is not reusable and cannot be modified")
 	ErrMetadataExceedsLimits            = psrpc.NewErrorf(psrpc.InvalidArgument, "metadata size exceeds limits")
+	ErrAttributeExceedsLimits           = psrpc.NewErrorf(psrpc.InvalidArgument, "attribute size exceeds limits")
 	ErrRoomNameExceedsLimits            = psrpc.NewErrorf(psrpc.InvalidArgument, "room name length exceeds limits")
 	ErrParticipantIdentityExceedsLimits = psrpc.NewErrorf(psrpc.InvalidArgument, "participant identity length exceeds limits")
 	ErrOperationFailed                  = psrpc.NewErrorf(psrpc.Internal, "operation cannot be completed")

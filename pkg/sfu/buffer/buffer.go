@@ -132,6 +132,7 @@ type Buffer struct {
 	packetNotFoundCount   atomic.Uint32
 	packetTooOldCount     atomic.Uint32
 	extPacketTooMuchCount atomic.Uint32
+	invalidPacketCount    atomic.Uint32
 
 	primaryBufferForRTX *Buffer
 	rtxPktBuf           []byte
@@ -194,7 +195,7 @@ func (b *Buffer) SetAudioLossProxying(enable bool) {
 	b.enableAudioLossProxying = enable
 }
 
-func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapability) {
+func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapability, bitrates int) {
 	b.Lock()
 	defer b.Unlock()
 	if b.bound {
@@ -264,6 +265,14 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 				}
 			}
 		}
+		if bitrates > 0 {
+			pps := bitrates / 8 / 1200
+			for pps > b.bucket.Capacity() {
+				if b.bucket.Grow() >= b.maxVideoPkts {
+					break
+				}
+			}
+		}
 
 	default:
 		b.codecType = webrtc.RTPCodecType(0)
@@ -306,6 +315,28 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 		b.Unlock()
 		err = io.EOF
 		return
+	}
+
+	if err = utils.ValidateRTPPacket(&rtpPacket, b.payloadType, b.mediaSSRC); err != nil {
+		invalidPacketCount := b.invalidPacketCount.Inc()
+		if (invalidPacketCount-1)%100 == 0 {
+			b.logger.Warnw(
+				"validating RTP packet failed", err,
+				"version", rtpPacket.Version,
+				"padding", rtpPacket.Padding,
+				"marker", rtpPacket.Marker,
+				"expectedPayloadType", b.payloadType,
+				"payloadType", rtpPacket.PayloadType,
+				"sequenceNumber", rtpPacket.SequenceNumber,
+				"timestamp", rtpPacket.Timestamp,
+				"expectedSSRC", b.mediaSSRC,
+				"ssrc", rtpPacket.SSRC,
+				"numExtensions", len(rtpPacket.Extensions),
+				"payloadSize", len(rtpPacket.Payload),
+				"rtpStats", b.rtpStats,
+				"snRangeMap", b.snRangeMap,
+			)
+		}
 	}
 
 	now := time.Now()
@@ -580,12 +611,23 @@ func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime time.Tim
 	rtpPacket.Header.SequenceNumber = uint16(flowState.ExtSequenceNumber)
 	_, err = b.bucket.AddPacketWithSequenceNumber(rawPkt, rtpPacket.Header.SequenceNumber)
 	if err != nil {
-		if errors.Is(err, bucket.ErrPacketTooOld) {
-			packetTooOldCount := b.packetTooOldCount.Inc()
-			if (packetTooOldCount-1)%100 == 0 {
+		if !flowState.IsDuplicate {
+			if errors.Is(err, bucket.ErrPacketTooOld) {
+				packetTooOldCount := b.packetTooOldCount.Inc()
+				if (packetTooOldCount-1)%100 == 0 {
+					b.logger.Warnw(
+						"could not add packet to bucket", err,
+						"count", packetTooOldCount,
+						"flowState", &flowState,
+						"snAdjustment", snAdjustment,
+						"incomingSequenceNumber", flowState.ExtSequenceNumber+snAdjustment,
+						"rtpStats", b.rtpStats,
+						"snRangeMap", b.snRangeMap,
+					)
+				}
+			} else if err != bucket.ErrRTXPacket {
 				b.logger.Warnw(
 					"could not add packet to bucket", err,
-					"count", packetTooOldCount,
 					"flowState", &flowState,
 					"snAdjustment", snAdjustment,
 					"incomingSequenceNumber", flowState.ExtSequenceNumber+snAdjustment,
@@ -593,15 +635,6 @@ func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime time.Tim
 					"snRangeMap", b.snRangeMap,
 				)
 			}
-		} else if err != bucket.ErrRTXPacket {
-			b.logger.Warnw(
-				"could not add packet to bucket", err,
-				"flowState", &flowState,
-				"snAdjustment", snAdjustment,
-				"incomingSequenceNumber", flowState.ExtSequenceNumber+snAdjustment,
-				"rtpStats", b.rtpStats,
-				"snRangeMap", b.snRangeMap,
-			)
 		}
 		return
 	}

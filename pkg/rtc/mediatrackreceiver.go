@@ -97,16 +97,16 @@ type MediaTrackReceiverParams struct {
 type MediaTrackReceiver struct {
 	params MediaTrackReceiverParams
 
-	lock            sync.RWMutex
-	receivers       []*simulcastReceiver
-	trackInfo       *livekit.TrackInfo
-	potentialCodecs []webrtc.RTPCodecParameters
-	state           mediaTrackReceiverState
-	willBeResumed   bool
+	lock               sync.RWMutex
+	receivers          []*simulcastReceiver
+	trackInfo          *livekit.TrackInfo
+	potentialCodecs    []webrtc.RTPCodecParameters
+	state              mediaTrackReceiverState
+	isExpectedToResume bool
 
 	onSetupReceiver     func(mime string)
 	onMediaLossFeedback func(dt *sfu.DownTrack, report *rtcp.ReceiverReport)
-	onClose             []func()
+	onClose             []func(isExpectedToResume bool)
 
 	*MediaTrackSubscriptions
 }
@@ -258,7 +258,7 @@ func (t *MediaTrackReceiver) SetPotentialCodecs(codecs []webrtc.RTPCodecParamete
 	t.lock.Unlock()
 }
 
-func (t *MediaTrackReceiver) ClearReceiver(mime string, willBeResumed bool) {
+func (t *MediaTrackReceiver) ClearReceiver(mime string, isExpectedToResume bool) {
 	t.lock.Lock()
 	receivers := slices.Clone(t.receivers)
 	for idx, receiver := range receivers {
@@ -272,20 +272,20 @@ func (t *MediaTrackReceiver) ClearReceiver(mime string, willBeResumed bool) {
 	t.receivers = receivers
 	t.lock.Unlock()
 
-	t.removeAllSubscribersForMime(mime, willBeResumed)
+	t.removeAllSubscribersForMime(mime, isExpectedToResume)
 }
 
-func (t *MediaTrackReceiver) ClearAllReceivers(willBeResumed bool) {
+func (t *MediaTrackReceiver) ClearAllReceivers(isExpectedToResume bool) {
 	t.params.Logger.Debugw("clearing all receivers")
 	t.lock.Lock()
 	receivers := t.receivers
 	t.receivers = nil
 
-	t.willBeResumed = willBeResumed
+	t.isExpectedToResume = isExpectedToResume
 	t.lock.Unlock()
 
 	for _, r := range receivers {
-		t.removeAllSubscribersForMime(r.Codec().MimeType, willBeResumed)
+		t.removeAllSubscribersForMime(r.Codec().MimeType, isExpectedToResume)
 	}
 }
 
@@ -332,16 +332,18 @@ func (t *MediaTrackReceiver) TryClose() bool {
 			numActiveReceivers++
 		}
 	}
+
+	isExpectedToResume := t.isExpectedToResume
 	t.lock.RUnlock()
 	if numActiveReceivers != 0 {
 		return false
 	}
 
-	t.Close()
+	t.Close(isExpectedToResume)
 	return true
 }
 
-func (t *MediaTrackReceiver) Close() {
+func (t *MediaTrackReceiver) Close(isExpectedToResume bool) {
 	t.lock.Lock()
 	if t.state == mediaTrackReceiverStateClosed {
 		t.lock.Unlock()
@@ -353,7 +355,7 @@ func (t *MediaTrackReceiver) Close() {
 	t.lock.Unlock()
 
 	for _, f := range onclose {
-		f()
+		f(isExpectedToResume)
 	}
 }
 
@@ -437,7 +439,7 @@ func (t *MediaTrackReceiver) SetMuted(muted bool) {
 	t.MediaTrackSubscriptions.SetMuted(muted)
 }
 
-func (t *MediaTrackReceiver) AddOnClose(f func()) {
+func (t *MediaTrackReceiver) AddOnClose(f func(isExpectedToResume bool)) {
 	if f == nil {
 		return
 	}
@@ -499,16 +501,16 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) (types.Su
 
 	// media track could have been closed while adding subscription
 	remove := false
-	willBeResumed := false
+	isExpectedToResume := false
 	t.lock.RLock()
 	if t.state != mediaTrackReceiverStateOpen {
-		willBeResumed = t.willBeResumed
+		isExpectedToResume = t.isExpectedToResume
 		remove = true
 	}
 	t.lock.RUnlock()
 
 	if remove {
-		_ = t.MediaTrackSubscriptions.RemoveSubscriber(sub.ID(), willBeResumed)
+		_ = t.MediaTrackSubscriptions.RemoveSubscriber(sub.ID(), isExpectedToResume)
 		return nil, ErrNotOpen
 	}
 
@@ -517,14 +519,14 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) (types.Su
 
 // RemoveSubscriber removes participant from subscription
 // stop all forwarders to the client
-func (t *MediaTrackReceiver) RemoveSubscriber(subscriberID livekit.ParticipantID, willBeResumed bool) {
-	_ = t.MediaTrackSubscriptions.RemoveSubscriber(subscriberID, willBeResumed)
+func (t *MediaTrackReceiver) RemoveSubscriber(subscriberID livekit.ParticipantID, isExpectedToResume bool) {
+	_ = t.MediaTrackSubscriptions.RemoveSubscriber(subscriberID, isExpectedToResume)
 }
 
-func (t *MediaTrackReceiver) removeAllSubscribersForMime(mime string, willBeResumed bool) {
+func (t *MediaTrackReceiver) removeAllSubscribersForMime(mime string, isExpectedToResume bool) {
 	t.params.Logger.Debugw("removing all subscribers for mime", "mime", mime)
 	for _, subscriberID := range t.MediaTrackSubscriptions.GetAllSubscribersForMime(mime) {
-		t.RemoveSubscriber(subscriberID, willBeResumed)
+		t.RemoveSubscriber(subscriberID, isExpectedToResume)
 	}
 }
 

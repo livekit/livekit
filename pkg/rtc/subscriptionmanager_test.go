@@ -214,11 +214,11 @@ func TestUnsubscribe(t *testing.T) {
 	st, err := res.Track.AddSubscriber(sm.params.Participant)
 	require.NoError(t, err)
 	s.subscribedTrack = st
-	st.OnClose(func(willBeResumed bool) {
-		sm.handleSubscribedTrackClose(s, willBeResumed)
+	st.OnClose(func(isExpectedToResume bool) {
+		sm.handleSubscribedTrackClose(s, isExpectedToResume)
 	})
-	res.Track.(*typesfakes.FakeMediaTrack).RemoveSubscriberCalls(func(pID livekit.ParticipantID, willBeResumed bool) {
-		setTestSubscribedTrackClosed(t, st, willBeResumed)
+	res.Track.(*typesfakes.FakeMediaTrack).RemoveSubscriberCalls(func(pID livekit.ParticipantID, isExpectedToResume bool) {
+		setTestSubscribedTrackClosed(t, st, isExpectedToResume)
 	})
 
 	sm.lock.Lock()
@@ -279,18 +279,18 @@ func TestSubscribeStatusChanged(t *testing.T) {
 		return !s1.needsSubscribe() && !s2.needsSubscribe()
 	}, subSettleTimeout, subCheckInterval, "track1 and track2 should be subscribed")
 	st1 := s1.getSubscribedTrack()
-	st1.OnClose(func(willBeResumed bool) {
-		sm.handleSubscribedTrackClose(s1, willBeResumed)
+	st1.OnClose(func(isExpectedToResume bool) {
+		sm.handleSubscribedTrackClose(s1, isExpectedToResume)
 	})
 	st2 := s2.getSubscribedTrack()
-	st2.OnClose(func(willBeResumed bool) {
-		sm.handleSubscribedTrackClose(s2, willBeResumed)
+	st2.OnClose(func(isExpectedToResume bool) {
+		sm.handleSubscribedTrackClose(s2, isExpectedToResume)
 	})
-	st1.MediaTrack().(*typesfakes.FakeMediaTrack).RemoveSubscriberCalls(func(pID livekit.ParticipantID, willBeResumed bool) {
-		setTestSubscribedTrackClosed(t, st1, willBeResumed)
+	st1.MediaTrack().(*typesfakes.FakeMediaTrack).RemoveSubscriberCalls(func(pID livekit.ParticipantID, isExpectedToResume bool) {
+		setTestSubscribedTrackClosed(t, st1, isExpectedToResume)
 	})
-	st2.MediaTrack().(*typesfakes.FakeMediaTrack).RemoveSubscriberCalls(func(pID livekit.ParticipantID, willBeResumed bool) {
-		setTestSubscribedTrackClosed(t, st2, willBeResumed)
+	st2.MediaTrack().(*typesfakes.FakeMediaTrack).RemoveSubscriberCalls(func(pID livekit.ParticipantID, isExpectedToResume bool) {
+		setTestSubscribedTrackClosed(t, st2, isExpectedToResume)
 	})
 
 	require.Eventually(t, func() bool {
@@ -533,9 +533,9 @@ func setTestSubscribedTrackBound(t *testing.T, st types.SubscribedTrack) {
 	}
 }
 
-func setTestSubscribedTrackClosed(t *testing.T, st types.SubscribedTrack, willBeResumed bool) {
+func setTestSubscribedTrackClosed(t *testing.T, st types.SubscribedTrack, isExpectedToResume bool) {
 	fst, ok := st.(*typesfakes.FakeSubscribedTrack)
 	require.True(t, ok)
 
-	fst.OnCloseArgsForCall(0)(willBeResumed)
+	fst.OnCloseArgsForCall(0)(isExpectedToResume)
 }

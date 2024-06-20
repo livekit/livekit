@@ -715,6 +715,22 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 				spatialTracker = w.streamTrackerManager.AddTracker(pkt.Spatial)
 			}
 		}
+		if spatialLayer > buffer.DefaultMaxLayerSpatial { // TODO-REMOVE-AFTER-DEBUG
+			w.logger.Warnw(
+				"invalid spatial layer", nil,
+				"mime", w.codec.MimeType,
+				"layer", layer,
+				"spatialLayer", spatialLayer,
+				"sn", pkt.Packet.SequenceNumber,
+				"esn", pkt.ExtSequenceNumber,
+				"timestamp", pkt.Packet.Timestamp,
+				"ets", pkt.ExtTimestamp,
+				"payloadSize", len(pkt.Packet.Payload),
+				"rtpVersion", pkt.Packet.Version,
+				"payloadType", pkt.Packet.PayloadType,
+				"ssrc", pkt.Packet.SSRC,
+			)
+		}
 
 		writeCount := w.downTrackSpreader.Broadcast(func(dt TrackSender) {
 			_ = dt.WriteRTP(pkt, spatialLayer)
