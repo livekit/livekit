@@ -82,12 +82,19 @@ type FakeRoom struct {
 	syncStateReturnsOnCall map[int]struct {
 		result1 error
 	}
-	UpdateParticipantMetadataStub        func(types.LocalParticipant, string, string)
+	UpdateParticipantMetadataStub        func(types.LocalParticipant, string, string, map[string]string) error
 	updateParticipantMetadataMutex       sync.RWMutex
 	updateParticipantMetadataArgsForCall []struct {
 		arg1 types.LocalParticipant
 		arg2 string
 		arg3 string
+		arg4 map[string]string
+	}
+	updateParticipantMetadataReturns struct {
+		result1 error
+	}
+	updateParticipantMetadataReturnsOnCall map[int]struct {
+		result1 error
 	}
 	UpdateSubscriptionPermissionStub        func(types.LocalParticipant, *livekit.SubscriptionPermission) error
 	updateSubscriptionPermissionMutex       sync.RWMutex
@@ -492,19 +499,26 @@ func (fake *FakeRoom) SyncStateReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
-func (fake *FakeRoom) UpdateParticipantMetadata(arg1 types.LocalParticipant, arg2 string, arg3 string) {
+func (fake *FakeRoom) UpdateParticipantMetadata(arg1 types.LocalParticipant, arg2 string, arg3 string, arg4 map[string]string) error {
 	fake.updateParticipantMetadataMutex.Lock()
+	ret, specificReturn := fake.updateParticipantMetadataReturnsOnCall[len(fake.updateParticipantMetadataArgsForCall)]
 	fake.updateParticipantMetadataArgsForCall = append(fake.updateParticipantMetadataArgsForCall, struct {
 		arg1 types.LocalParticipant
 		arg2 string
 		arg3 string
-	}{arg1, arg2, arg3})
+		arg4 map[string]string
+	}{arg1, arg2, arg3, arg4})
 	stub := fake.UpdateParticipantMetadataStub
-	fake.recordInvocation("UpdateParticipantMetadata", []interface{}{arg1, arg2, arg3})
+	fakeReturns := fake.updateParticipantMetadataReturns
+	fake.recordInvocation("UpdateParticipantMetadata", []interface{}{arg1, arg2, arg3, arg4})
 	fake.updateParticipantMetadataMutex.Unlock()
 	if stub != nil {
-		fake.UpdateParticipantMetadataStub(arg1, arg2, arg3)
+		return stub(arg1, arg2, arg3, arg4)
 	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
 }
 
 func (fake *FakeRoom) UpdateParticipantMetadataCallCount() int {
@@ -513,17 +527,40 @@ func (fake *FakeRoom) UpdateParticipantMetadataCallCount() int {
 	return len(fake.updateParticipantMetadataArgsForCall)
 }
 
-func (fake *FakeRoom) UpdateParticipantMetadataCalls(stub func(types.LocalParticipant, string, string)) {
+func (fake *FakeRoom) UpdateParticipantMetadataCalls(stub func(types.LocalParticipant, string, string, map[string]string) error) {
 	fake.updateParticipantMetadataMutex.Lock()
 	defer fake.updateParticipantMetadataMutex.Unlock()
 	fake.UpdateParticipantMetadataStub = stub
 }
 
-func (fake *FakeRoom) UpdateParticipantMetadataArgsForCall(i int) (types.LocalParticipant, string, string) {
+func (fake *FakeRoom) UpdateParticipantMetadataArgsForCall(i int) (types.LocalParticipant, string, string, map[string]string) {
 	fake.updateParticipantMetadataMutex.RLock()
 	defer fake.updateParticipantMetadataMutex.RUnlock()
 	argsForCall := fake.updateParticipantMetadataArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
+}
+
+func (fake *FakeRoom) UpdateParticipantMetadataReturns(result1 error) {
+	fake.updateParticipantMetadataMutex.Lock()
+	defer fake.updateParticipantMetadataMutex.Unlock()
+	fake.UpdateParticipantMetadataStub = nil
+	fake.updateParticipantMetadataReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeRoom) UpdateParticipantMetadataReturnsOnCall(i int, result1 error) {
+	fake.updateParticipantMetadataMutex.Lock()
+	defer fake.updateParticipantMetadataMutex.Unlock()
+	fake.UpdateParticipantMetadataStub = nil
+	if fake.updateParticipantMetadataReturnsOnCall == nil {
+		fake.updateParticipantMetadataReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.updateParticipantMetadataReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
 }
 
 func (fake *FakeRoom) UpdateSubscriptionPermission(arg1 types.LocalParticipant, arg2 *livekit.SubscriptionPermission) error {

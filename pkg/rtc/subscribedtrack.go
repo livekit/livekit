@@ -139,9 +139,9 @@ func (t *SubscribedTrack) Bound(err error) {
 }
 
 // for DownTrack callback to notify us that it's closed
-func (t *SubscribedTrack) Close(willBeResumed bool) {
+func (t *SubscribedTrack) Close(isExpectedToResume bool) {
 	if onClose := t.onClose.Load(); onClose != nil {
-		go onClose.(func(bool))(willBeResumed)
+		go onClose.(func(bool))(isExpectedToResume)
 	}
 }
 
