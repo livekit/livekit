@@ -611,12 +611,23 @@ func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime time.Tim
 	rtpPacket.Header.SequenceNumber = uint16(flowState.ExtSequenceNumber)
 	_, err = b.bucket.AddPacketWithSequenceNumber(rawPkt, rtpPacket.Header.SequenceNumber)
 	if err != nil {
-		if errors.Is(err, bucket.ErrPacketTooOld) {
-			packetTooOldCount := b.packetTooOldCount.Inc()
-			if (packetTooOldCount-1)%100 == 0 {
+		if !flowState.IsDuplicate {
+			if errors.Is(err, bucket.ErrPacketTooOld) {
+				packetTooOldCount := b.packetTooOldCount.Inc()
+				if (packetTooOldCount-1)%100 == 0 {
+					b.logger.Warnw(
+						"could not add packet to bucket", err,
+						"count", packetTooOldCount,
+						"flowState", &flowState,
+						"snAdjustment", snAdjustment,
+						"incomingSequenceNumber", flowState.ExtSequenceNumber+snAdjustment,
+						"rtpStats", b.rtpStats,
+						"snRangeMap", b.snRangeMap,
+					)
+				}
+			} else if err != bucket.ErrRTXPacket {
 				b.logger.Warnw(
 					"could not add packet to bucket", err,
-					"count", packetTooOldCount,
 					"flowState", &flowState,
 					"snAdjustment", snAdjustment,
 					"incomingSequenceNumber", flowState.ExtSequenceNumber+snAdjustment,
@@ -624,15 +635,6 @@ func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime time.Tim
 					"snRangeMap", b.snRangeMap,
 				)
 			}
-		} else if err != bucket.ErrRTXPacket {
-			b.logger.Warnw(
-				"could not add packet to bucket", err,
-				"flowState", &flowState,
-				"snAdjustment", snAdjustment,
-				"incomingSequenceNumber", flowState.ExtSequenceNumber+snAdjustment,
-				"rtpStats", b.rtpStats,
-				"snRangeMap", b.snRangeMap,
-			)
 		}
 		return
 	}
