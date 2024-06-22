@@ -206,7 +206,7 @@ func (r *RTPStatsReceiver) Update(
 			"gapSN", gapSN,
 			"prevTS", resTS.PreExtendedHighest,
 			"currTS", resTS.ExtendedVal,
-			"gapTS", resTS.ExtendedVal - resTS.PreExtendedHighest,
+			"gapTS", int64(resTS.ExtendedVal - resTS.PreExtendedHighest),
 			"packetTime", packetTime.String(),
 			"sequenceNumber", sequenceNumber,
 			"timestamp", timestamp,
