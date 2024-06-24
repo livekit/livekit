@@ -316,15 +316,6 @@ func (r *RTPStatsSender) Update(
 			// do not start on a padding only packet
 			return
 		}
-		if -gapSN >= cSequenceNumberLargeJumpThreshold {
-			if r.largeJumpNegativeCount%100 == 0 {
-				r.logger.Warnw(
-					"large sequence number gap negative", nil,
-					append(getLoggingFields(), "count", r.largeJumpNegativeCount)...,
-				)
-			}
-			r.largeJumpNegativeCount++
-		}
 
 		if extSequenceNumber < r.extStartSN {
 			r.packetsLost += r.extStartSN - extSequenceNumber
@@ -371,15 +362,25 @@ func (r *RTPStatsSender) Update(
 			r.packetsLost--
 			r.setSnInfo(extSequenceNumber, r.extHighestSN, uint16(pktSize), uint8(hdrSize), uint16(payloadSize), marker, true)
 		}
+
+		if !isDuplicate && -gapSN >= cSequenceNumberLargeJumpThreshold {
+			r.largeJumpNegativeCount++
+			if (r.largeJumpNegativeCount-1)%100 == 0 {
+				r.logger.Warnw(
+					"large sequence number gap negative", nil,
+					append(getLoggingFields(), "count", r.largeJumpNegativeCount)...,
+				)
+			}
+		}
 	} else { // in-order
 		if gapSN >= cSequenceNumberLargeJumpThreshold || extTimestamp < r.extHighestTS {
-			if r.largeJumpCount%100 == 0 {
+			r.largeJumpCount++
+			if (r.largeJumpCount-1)%100 == 0 {
 				r.logger.Warnw(
 					"large sequence number gap OR time reversed", nil,
 					append(getLoggingFields(), "count", r.largeJumpCount)...,
 				)
 			}
-			r.largeJumpCount++
 		}
 
 		// update gap histogram

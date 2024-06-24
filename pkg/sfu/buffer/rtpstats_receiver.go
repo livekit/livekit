@@ -240,23 +240,23 @@ func (r *RTPStatsReceiver) Update(
 		flowState.ExtTimestamp = resTS.ExtendedVal
 
 		if !flowState.IsDuplicate && -gapSN >= cSequenceNumberLargeJumpThreshold {
-			if r.largeJumpNegativeCount%100 == 0 {
+			r.largeJumpNegativeCount++
+			if (r.largeJumpNegativeCount-1)%100 == 0 {
 				r.logger.Warnw(
 					"large sequence number gap negative", nil,
 					append(getLoggingFields(), "count", r.largeJumpNegativeCount)...,
 				)
 			}
-			r.largeJumpNegativeCount++
 		}
 	} else { // in-order
 		if gapSN >= cSequenceNumberLargeJumpThreshold || resTS.ExtendedVal < resTS.PreExtendedHighest {
-			if r.largeJumpCount%100 == 0 {
+			r.largeJumpCount++
+			if (r.largeJumpCount-1)%100 == 0 {
 				r.logger.Warnw(
 					"large sequence number gap OR time reversed", nil,
 					append(getLoggingFields(), "count", r.largeJumpCount)...,
 				)
 			}
-			r.largeJumpCount++
 		}
 
 		// update gap histogram
