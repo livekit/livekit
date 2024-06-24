@@ -10,10 +10,10 @@ import (
 )
 
 type FakeMediaTrack struct {
-	AddOnCloseStub        func(func())
+	AddOnCloseStub        func(func(isExpectedToResume bool))
 	addOnCloseMutex       sync.RWMutex
 	addOnCloseArgsForCall []struct {
-		arg1 func()
+		arg1 func(isExpectedToResume bool)
 	}
 	AddSubscriberStub        func(types.LocalParticipant) (types.SubscribedTrack, error)
 	addSubscriberMutex       sync.RWMutex
@@ -287,10 +287,10 @@ type FakeMediaTrack struct {
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeMediaTrack) AddOnClose(arg1 func()) {
+func (fake *FakeMediaTrack) AddOnClose(arg1 func(isExpectedToResume bool)) {
 	fake.addOnCloseMutex.Lock()
 	fake.addOnCloseArgsForCall = append(fake.addOnCloseArgsForCall, struct {
-		arg1 func()
+		arg1 func(isExpectedToResume bool)
 	}{arg1})
 	stub := fake.AddOnCloseStub
 	fake.recordInvocation("AddOnClose", []interface{}{arg1})
@@ -306,13 +306,13 @@ func (fake *FakeMediaTrack) AddOnCloseCallCount() int {
 	return len(fake.addOnCloseArgsForCall)
 }
 
-func (fake *FakeMediaTrack) AddOnCloseCalls(stub func(func())) {
+func (fake *FakeMediaTrack) AddOnCloseCalls(stub func(func(isExpectedToResume bool))) {
 	fake.addOnCloseMutex.Lock()
 	defer fake.addOnCloseMutex.Unlock()
 	fake.AddOnCloseStub = stub
 }
 
-func (fake *FakeMediaTrack) AddOnCloseArgsForCall(i int) func() {
+func (fake *FakeMediaTrack) AddOnCloseArgsForCall(i int) func(isExpectedToResume bool) {
 	fake.addOnCloseMutex.RLock()
 	defer fake.addOnCloseMutex.RUnlock()
 	argsForCall := fake.addOnCloseArgsForCall[i]

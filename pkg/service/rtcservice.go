@@ -120,7 +120,7 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 	if claims.Identity == "" {
 		return "", pi, http.StatusBadRequest, ErrIdentityEmpty
 	}
-	if limit := s.config.Room.MaxParticipantIdentityLength; limit > 0 && len(claims.Identity) > limit {
+	if limit := s.config.Limit.MaxParticipantIdentityLength; limit > 0 && len(claims.Identity) > limit {
 		return "", pi, http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrParticipantIdentityExceedsLimits, limit)
 	}
 
@@ -136,7 +136,7 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 	if onlyName != "" {
 		roomName = onlyName
 	}
-	if limit := s.config.Room.MaxRoomNameLength; limit > 0 && len(roomName) > limit {
+	if limit := s.config.Limit.MaxRoomNameLength; limit > 0 && len(roomName) > limit {
 		return "", pi, http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, limit)
 	}
 
@@ -508,7 +508,7 @@ func (s *RTCService) DrainConnections(interval time.Duration) {
 	defer t.Stop()
 
 	for c := range conns {
-		c.Close()
+		_ = c.Close()
 		<-t.C
 	}
 }

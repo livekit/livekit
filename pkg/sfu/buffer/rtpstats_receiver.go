@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	cHistorySize = 4096
+	cHistorySize = 8192
 
 	// RTCP Sender Reports are re-based to SFU time base so that all subscriber side
 	// can have the same time base (i. e. SFU time base). To convert publisher side
@@ -206,7 +206,7 @@ func (r *RTPStatsReceiver) Update(
 			"gapSN", gapSN,
 			"prevTS", resTS.PreExtendedHighest,
 			"currTS", resTS.ExtendedVal,
-			"gapTS", resTS.ExtendedVal - resTS.PreExtendedHighest,
+			"gapTS", int64(resTS.ExtendedVal - resTS.PreExtendedHighest),
 			"packetTime", packetTime.String(),
 			"sequenceNumber", sequenceNumber,
 			"timestamp", timestamp,
@@ -219,16 +219,6 @@ func (r *RTPStatsReceiver) Update(
 		}
 	}
 	if gapSN <= 0 { // duplicate OR out-of-order
-		if -gapSN >= cSequenceNumberLargeJumpThreshold {
-			if r.largeJumpNegativeCount%100 == 0 {
-				r.logger.Warnw(
-					"large sequence number gap negative", nil,
-					append(getLoggingFields(), "count", r.largeJumpNegativeCount)...,
-				)
-			}
-			r.largeJumpNegativeCount++
-		}
-
 		if gapSN != 0 {
 			r.packetsOutOfOrder++
 		}
@@ -248,15 +238,25 @@ func (r *RTPStatsReceiver) Update(
 		flowState.IsOutOfOrder = true
 		flowState.ExtSequenceNumber = resSN.ExtendedVal
 		flowState.ExtTimestamp = resTS.ExtendedVal
+
+		if !flowState.IsDuplicate && -gapSN >= cSequenceNumberLargeJumpThreshold {
+			r.largeJumpNegativeCount++
+			if (r.largeJumpNegativeCount-1)%100 == 0 {
+				r.logger.Warnw(
+					"large sequence number gap negative", nil,
+					append(getLoggingFields(), "count", r.largeJumpNegativeCount)...,
+				)
+			}
+		}
 	} else { // in-order
 		if gapSN >= cSequenceNumberLargeJumpThreshold || resTS.ExtendedVal < resTS.PreExtendedHighest {
-			if r.largeJumpCount%100 == 0 {
+			r.largeJumpCount++
+			if (r.largeJumpCount-1)%100 == 0 {
 				r.logger.Warnw(
 					"large sequence number gap OR time reversed", nil,
 					append(getLoggingFields(), "count", r.largeJumpCount)...,
 				)
 			}
-			r.largeJumpCount++
 		}
 
 		// update gap histogram

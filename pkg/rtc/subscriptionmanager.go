@@ -91,7 +91,7 @@ func NewSubscriptionManager(params SubscriptionManagerParams) *SubscriptionManag
 	return m
 }
 
-func (m *SubscriptionManager) Close(willBeResumed bool) {
+func (m *SubscriptionManager) Close(isExpectedToResume bool) {
 	m.lock.Lock()
 	if m.isClosed() {
 		m.lock.Unlock()
@@ -113,7 +113,7 @@ func (m *SubscriptionManager) Close(willBeResumed bool) {
 		}
 	}
 
-	if willBeResumed {
+	if isExpectedToResume {
 		for _, dt := range downTracksToClose {
 			dt.CloseWithFlush(false)
 		}
@@ -523,8 +523,8 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 		)
 	}
 	if err == nil && subTrack != nil { // subTrack could be nil if already subscribed
-		subTrack.OnClose(func(willBeResumed bool) {
-			m.handleSubscribedTrackClose(s, willBeResumed)
+		subTrack.OnClose(func(isExpectedToResume bool) {
+			m.handleSubscribedTrackClose(s, isExpectedToResume)
 		})
 		subTrack.AddOnBind(func(err error) {
 			if err != nil {
@@ -615,10 +615,10 @@ func (m *SubscriptionManager) handleSourceTrackRemoved(trackID livekit.TrackID) 
 // - subscriber-initiated unsubscribe
 // - UpTrack was closed
 // - publisher revoked permissions for the participant
-func (m *SubscriptionManager) handleSubscribedTrackClose(s *trackSubscription, willBeResumed bool) {
+func (m *SubscriptionManager) handleSubscribedTrackClose(s *trackSubscription, isExpectedToResume bool) {
 	s.logger.Debugw(
 		"subscribed track closed",
-		"willBeResumed", willBeResumed,
+		"isExpectedToResume", isExpectedToResume,
 	)
 	wasBound := s.isBound()
 	subTrack := s.getSubscribedTrack()
@@ -666,7 +666,7 @@ func (m *SubscriptionManager) handleSubscribedTrackClose(s *trackSubscription, w
 			context.Background(),
 			m.params.Participant.ID(),
 			&livekit.TrackInfo{Sid: string(s.trackID), Type: subTrack.MediaTrack().Kind()},
-			!willBeResumed,
+			!isExpectedToResume,
 		)
 
 		dt := subTrack.DownTrack()
@@ -684,7 +684,7 @@ func (m *SubscriptionManager) handleSubscribedTrackClose(s *trackSubscription, w
 		}
 	}
 
-	if !willBeResumed {
+	if !isExpectedToResume {
 		sender := subTrack.RTPSender()
 		if sender != nil {
 			s.logger.Debugw("removing PeerConnection track",

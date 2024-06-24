@@ -80,8 +80,14 @@ type RoomAllocator interface {
 //counterfeiter:generate . SIPStore
 type SIPStore interface {
 	StoreSIPTrunk(ctx context.Context, info *livekit.SIPTrunkInfo) error
+	StoreSIPInboundTrunk(ctx context.Context, info *livekit.SIPInboundTrunkInfo) error
+	StoreSIPOutboundTrunk(ctx context.Context, info *livekit.SIPOutboundTrunkInfo) error
 	LoadSIPTrunk(ctx context.Context, sipTrunkID string) (*livekit.SIPTrunkInfo, error)
+	LoadSIPInboundTrunk(ctx context.Context, sipTrunkID string) (*livekit.SIPInboundTrunkInfo, error)
+	LoadSIPOutboundTrunk(ctx context.Context, sipTrunkID string) (*livekit.SIPOutboundTrunkInfo, error)
 	ListSIPTrunk(ctx context.Context) ([]*livekit.SIPTrunkInfo, error)
+	ListSIPInboundTrunk(ctx context.Context) ([]*livekit.SIPInboundTrunkInfo, error)
+	ListSIPOutboundTrunk(ctx context.Context) ([]*livekit.SIPOutboundTrunkInfo, error)
 	DeleteSIPTrunk(ctx context.Context, info *livekit.SIPTrunkInfo) error
 
 	StoreSIPDispatchRule(ctx context.Context, info *livekit.SIPDispatchRuleInfo) error

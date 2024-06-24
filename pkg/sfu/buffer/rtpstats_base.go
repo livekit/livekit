@@ -38,7 +38,7 @@ const (
 
 	cPassthroughNTPTimestamp = true
 
-	cSequenceNumberLargeJumpThreshold = 1000
+	cSequenceNumberLargeJumpThreshold = 100
 )
 
 // -------------------------------------------------------
@@ -583,6 +583,9 @@ func (r *rtpStatsBase) deltaInfo(snapshotID uint32, extStartSN uint64, extHighes
 	endTime := now.startTime
 
 	packetsExpected := now.extStartSN - then.extStartSN
+	if then.extStartSN > extHighestSN {
+		packetsExpected = 0
+	}
 	if packetsExpected > cNumSequenceNumbers {
 		r.logger.Infow(
 			"too many packets expected in delta",
@@ -610,7 +613,15 @@ func (r *rtpStatsBase) deltaInfo(snapshotID uint32, extStartSN uint64, extHighes
 	// padding packets delta could be higher than expected due to out-of-order padding packets
 	packetsPadding := now.packetsPadding - then.packetsPadding
 	if packetsExpected < packetsPadding {
-		r.logger.Infow("padding packets more than expected", "packetsExpected", packetsExpected, "packetsPadding", packetsPadding)
+		r.logger.Infow(
+			"padding packets more than expected",
+			"packetsExpected", packetsExpected,
+			"packetsPadding", packetsPadding,
+			"packetsLost", packetsLost,
+			"startSequenceNumber", then.extStartSN,
+			"endSequenceNumber", now.extStartSN-1,
+			"rtpStats", r,
+		)
 		packetsExpected = 0
 	} else {
 		packetsExpected -= packetsPadding
