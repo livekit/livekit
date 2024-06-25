@@ -621,7 +621,6 @@ func (r *rtpStatsBase) deltaInfo(snapshotID uint32, extStartSN uint64, extHighes
 			"packetsLost", packetsLost,
 			"startSequenceNumber", then.extStartSN,
 			"endSequenceNumber", now.extStartSN - 1,
-			"rtpStats", r,
 		}
 		err = errors.New("padding packets more than expected")
 		packetsExpected = 0
