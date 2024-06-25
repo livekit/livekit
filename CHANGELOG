@@ -2,6 +2,27 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2024-06-23
+
+This version includes a breaking change for SIP service. SIP service now requires `sip.admin` in the token's permission grant
+to interact with trunks and dispatch rules; and `sip.call` to dial out to phone numbers.
+The latest versions of server SDKs will include the permission grants automatically.
+
+### Added
+
+- Support new SIP Trunk API. (#2799)
+- Add participant session duration metric (#2801)
+- Support for key/value attributes on Participants (#2806)
+- Breaking: SIP service requires sip.admin or sip.call grants. (#2808)
+
+### Fixed
+
+- Fixed agent jobs not launching when using the CreateRoom API (#2796)
+
+### Changed
+
+- Indicate if track is expected to be resumed in `onClose` callback. (#2800)
+
 ## [1.6.2] - 2024-06-15
 
 ### Added
