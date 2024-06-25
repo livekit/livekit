@@ -784,6 +784,10 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) *RTPDeltaInfo 
 }
 
 func (r *RTPStatsSender) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if r == nil {
+		return nil
+	}
+
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
