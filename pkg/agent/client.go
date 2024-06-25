@@ -27,10 +27,9 @@ import (
 )
 
 const (
-	EnabledCacheTTL         = 1 * time.Minute
-	RoomAgentTopic          = "room"
-	PublisherAgentTopic     = "publisher"
-	DefaultHandlerNamespace = ""
+	EnabledCacheTTL     = 1 * time.Minute
+	RoomAgentTopic      = "room"
+	PublisherAgentTopic = "publisher"
 
 	CheckEnabledTimeout = 5 * time.Second
 )
@@ -75,7 +74,7 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) {
 		jobTypeTopic = PublisherAgentTopic
 	}
 
-	_, err := c.client.JobRequest(ctx, desc.Namespace, jobTypeTopic, &livekit.Job{
+	_, err := c.client.JobRequest(context.Background(), desc.Namespace, jobTypeTopic, &livekit.Job{
 		Id:          utils.NewGuid(utils.AgentJobPrefix),
 		Type:        desc.JobType,
 		Room:        desc.Room,

@@ -132,7 +132,6 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 
 func (s *RoomService) launchAgents(ctx context.Context, rm *livekit.Room, agents []*livekit.CreateAgentJobDefinitionRequest) error {
 	for _, ag := range agents {
-		fmt.Println("LAUNCH", ag)
 		if ag.Type != livekit.JobType_JT_ROOM {
 			continue
 		}
