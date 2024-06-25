@@ -277,10 +277,7 @@ func (r *RTPStatsSender) Update(
 
 		r.logger.Debugw(
 			"rtp sender stream start",
-			"startTime", r.startTime.String(),
-			"firstTime", r.firstTime.String(),
-			"startSN", r.extStartSN,
-			"startTS", r.extStartTS,
+			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
 		)
 	}
 
@@ -289,26 +286,16 @@ func (r *RTPStatsSender) Update(
 	gapSN := int64(extSequenceNumber - r.extHighestSN)
 	getLoggingFields := func() []interface{} {
 		return []interface{}{
-			"extStartSN", r.extStartSN,
-			"extHighestSN", r.extHighestSN,
-			"extStartTS", r.extStartTS,
-			"extHighestTS", r.extHighestTS,
-			"startTime", r.startTime.String(),
-			"firstTime", r.firstTime.String(),
-			"highestTime", r.highestTime.String(),
-			"highestSN", r.extHighestSN,
 			"currSN", extSequenceNumber,
 			"gapSN", gapSN,
-			"highestTS", r.extHighestTS,
 			"currTS", extTimestamp,
 			"gapTS", int64(extTimestamp - r.extHighestTS),
-			"packetTime", packetTime.String(),
+			"packetTime", packetTime,
 			"marker", marker,
 			"hdrSize", hdrSize,
 			"payloadSize", payloadSize,
 			"paddingSize", paddingSize,
-			"firstSR", r.srFirst,
-			"lastSR", r.srNewest,
+			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
 		}
 	}
 	if gapSN <= 0 { // duplicate OR out-of-order
@@ -340,9 +327,7 @@ func (r *RTPStatsSender) Update(
 			r.logger.Infow(
 				"adjusting start sequence number",
 				append(getLoggingFields(),
-					"snBefore", r.extStartSN,
 					"snAfter", extSequenceNumber,
-					"tsBefore", r.extStartTS,
 					"tsAfter", extTimestamp,
 				)...,
 			)
@@ -399,9 +384,7 @@ func (r *RTPStatsSender) Update(
 		r.logger.Infow(
 			"adjusting start timestamp",
 			append(getLoggingFields(),
-				"snBefore", r.extStartSN,
 				"snAfter", extSequenceNumber,
-				"tsBefore", r.extStartTS,
 				"tsAfter", extTimestamp,
 			)...,
 		)
@@ -472,12 +455,9 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 	if !r.lastRRTime.IsZero() && r.extHighestSNFromRR > extHighestSNFromRR {
 		r.logger.Debugw(
 			fmt.Sprintf("receiver report potentially out of order, highestSN: existing: %d, received: %d", r.extHighestSNFromRR, extHighestSNFromRR),
-			"lastRRTime", r.lastRRTime.String(),
-			"lastRR", r.lastRR,
 			"sinceLastRR", time.Since(r.lastRRTime).String(),
 			"receivedRR", rr,
-			"firstSR", r.srFirst,
-			"lastSR", r.srNewest,
+			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
 		)
 		return
 	}
@@ -539,24 +519,11 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 			}
 			r.logger.Infow(
 				"rr interval too big, skipping",
-				"lastRRTime", r.lastRRTime.String(),
-				"lastRR", r.lastRR,
 				"timeSinceLastRR", timeSinceLastRR.String(),
 				"receivedRR", rr,
-				"extStartSN", r.extStartSN,
-				"extHighestSN", r.extHighestSN,
-				"extStartTS", r.extStartTS,
-				"extHighestTS", r.extHighestTS,
-				"extLastRRSN", s.extLastRRSN,
-				"firstTime", r.firstTime.String(),
-				"startTime", r.startTime.String(),
-				"highestTime", r.highestTime.String(),
 				"extReceivedRRSN", extReceivedRRSN,
 				"packetsInInterval", extReceivedRRSN-s.extLastRRSN,
-				"extHighestSNFromRR", r.extHighestSNFromRR,
-				"packetsLostFromRR", r.packetsLostFromRR,
-				"firstSR", r.srFirst,
-				"lastSR", r.srNewest,
+				"rtpStats", lockedRTPStatsSenderLogEncoder{r},
 			)
 			continue
 		}
@@ -573,27 +540,14 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 			if r.metadataCacheOverflowCount%10 == 0 {
 				r.logger.Infow(
 					"metadata cache overflow",
-					"lastRRTime", r.lastRRTime.String(),
-					"lastRR", r.lastRR,
 					"timeSinceLastRR", timeSinceLastRR.String(),
 					"receivedRR", rr,
-					"extStartSN", r.extStartSN,
-					"extHighestSN", r.extHighestSN,
-					"extStartTS", r.extStartTS,
-					"extHighestTS", r.extHighestTS,
-					"extLastRRSN", s.extLastRRSN,
-					"firstTime", r.firstTime.String(),
-					"startTime", r.startTime.String(),
-					"highestTime", r.highestTime.String(),
 					"extReceivedRRSN", extReceivedRRSN,
 					"packetsInInterval", extReceivedRRSN-s.extLastRRSN,
 					"intervalStats", is.ToString(),
 					"aggregateIntervalStats", eis.ToString(),
-					"extHighestSNFromRR", r.extHighestSNFromRR,
-					"packetsLostFromRR", r.packetsLostFromRR,
 					"count", r.metadataCacheOverflowCount,
-					"firstSR", r.srFirst,
-					"lastSR", r.srNewest,
+					"rtpStats", lockedRTPStatsSenderLogEncoder{r},
 				)
 			}
 			r.metadataCacheOverflowCount++
@@ -671,22 +625,17 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *RTCPS
 
 	getFields := func() []interface{} {
 		return []interface{}{
-			"first", r.srFirst,
-			"last", r.srNewest,
 			"curr", srData,
 			"feed", publisherSRData,
 			"tsOffset", tsOffset,
 			"timeNow", time.Now().String(),
 			"now", now.String(),
-			"extStartTS", r.extStartTS,
-			"extHighestTS", r.extHighestTS,
-			"highestTime", r.highestTime.String(),
 			"timeSinceHighest", now.Sub(r.highestTime).String(),
-			"firstTime", r.firstTime.String(),
 			"timeSinceFirst", now.Sub(r.firstTime).String(),
 			"timeSincePublisherSRAdjusted", timeSincePublisherSRAdjusted.String(),
 			"timeSincePublisherSR", time.Since(publisherSRData.At).String(),
 			"nowRTPExt", nowRTPExt,
+			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
 		}
 	}
 	if r.srNewest != nil && nowRTPExt >= r.srNewest.RTPTimestampExt {
@@ -733,7 +682,16 @@ func (r *RTPStatsSender) DeltaInfo(snapshotID uint32) *RTPDeltaInfo {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	return r.deltaInfo(snapshotID, r.extStartSN, r.extHighestSN)
+	deltaInfo, err, loggingFields := r.deltaInfo(
+		snapshotID,
+		r.extStartSN,
+		r.extHighestSN,
+	)
+	if err != nil {
+		r.logger.Infow(err.Error(), append(loggingFields, "rtpStats", lockedRTPStatsSenderLogEncoder{r}))
+	}
+
+	return deltaInfo
 }
 
 func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) *RTPDeltaInfo {
@@ -761,8 +719,7 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) *RTPDeltaInfo 
 			"startTime", startTime.String(),
 			"endTime", endTime.String(),
 			"duration", endTime.Sub(startTime).String(),
-			"firstSR", r.srFirst,
-			"lastSR", r.srNewest,
+			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
 		)
 		return nil
 	}
@@ -790,6 +747,7 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) *RTPDeltaInfo 
 				packetsLost,
 				packetsLostFeed,
 			),
+			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
 		)
 		packetsLost = packetsExpected
 	}
@@ -833,18 +791,7 @@ func (r *RTPStatsSender) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
-	e.AddObject("base", r.rtpStatsBase)
-	e.AddUint64("extStartSN", r.extStartSN)
-	e.AddUint64("extHighestSN", r.extHighestSN)
-	e.AddUint64("extStartTS", r.extStartTS)
-	e.AddUint64("extHighestTS", r.extHighestTS)
-	e.AddTime("lastRRTime", r.lastRRTime)
-	e.AddReflected("lastRR", r.lastRR)
-	e.AddUint64("extHighestSNFromRR", r.extHighestSNFromRR)
-	e.AddUint64("packetsLostFromRR", r.packetsLostFromRR)
-	e.AddFloat64("jitterFromRR", r.jitterFromRR)
-	e.AddFloat64("maxJitterFromRR", r.maxJitterFromRR)
-	return nil
+	return lockedRTPStatsSenderLogEncoder{r}.MarshalLogObject(e)
 }
 
 func (r *RTPStatsSender) String() string {
@@ -1027,3 +974,26 @@ func (r *RTPStatsSender) getIntervalStats(
 }
 
 // -------------------------------------------------------------------
+
+type lockedRTPStatsSenderLogEncoder struct {
+	*RTPStatsSender
+}
+
+func (r lockedRTPStatsSenderLogEncoder) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if r.RTPStatsSender == nil {
+		return nil
+	}
+
+	e.AddObject("base", r.rtpStatsBase)
+	e.AddUint64("extStartSN", r.extStartSN)
+	e.AddUint64("extHighestSN", r.extHighestSN)
+	e.AddUint64("extStartTS", r.extStartTS)
+	e.AddUint64("extHighestTS", r.extHighestTS)
+	e.AddTime("lastRRTime", r.lastRRTime)
+	e.AddReflected("lastRR", r.lastRR)
+	e.AddUint64("extHighestSNFromRR", r.extHighestSNFromRR)
+	e.AddUint64("packetsLostFromRR", r.packetsLostFromRR)
+	e.AddFloat64("jitterFromRR", r.jitterFromRR)
+	e.AddFloat64("maxJitterFromRR", r.maxJitterFromRR)
+	return nil
+}

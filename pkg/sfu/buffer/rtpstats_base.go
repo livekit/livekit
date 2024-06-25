@@ -15,6 +15,7 @@
 package buffer
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -573,10 +574,10 @@ func (r *rtpStatsBase) getTotalPacketsPrimary(extStartSN, extHighestSN uint64) u
 	return packetsSeen - r.packetsPadding
 }
 
-func (r *rtpStatsBase) deltaInfo(snapshotID uint32, extStartSN uint64, extHighestSN uint64) *RTPDeltaInfo {
+func (r *rtpStatsBase) deltaInfo(snapshotID uint32, extStartSN uint64, extHighestSN uint64) (deltaInfo *RTPDeltaInfo, err error, loggingFields []interface{}) {
 	then, now := r.getAndResetSnapshot(snapshotID, extStartSN, extHighestSN)
 	if now == nil || then == nil {
-		return nil
+		return
 	}
 
 	startTime := then.startTime
@@ -587,22 +588,23 @@ func (r *rtpStatsBase) deltaInfo(snapshotID uint32, extStartSN uint64, extHighes
 		packetsExpected = 0
 	}
 	if packetsExpected > cNumSequenceNumbers {
-		r.logger.Infow(
-			"too many packets expected in delta",
+		loggingFields = []interface{}{
 			"startSN", then.extStartSN,
 			"endSN", now.extStartSN,
 			"packetsExpected", packetsExpected,
 			"startTime", startTime,
 			"endTime", endTime,
 			"duration", endTime.Sub(startTime).String(),
-		)
-		return nil
+		}
+		err = errors.New("too many packets expected in delta")
+		return
 	}
 	if packetsExpected == 0 {
-		return &RTPDeltaInfo{
+		deltaInfo = &RTPDeltaInfo{
 			StartTime: startTime,
 			EndTime:   endTime,
 		}
+		return
 	}
 
 	packetsLost := uint32(now.packetsLost - then.packetsLost)
@@ -613,21 +615,20 @@ func (r *rtpStatsBase) deltaInfo(snapshotID uint32, extStartSN uint64, extHighes
 	// padding packets delta could be higher than expected due to out-of-order padding packets
 	packetsPadding := now.packetsPadding - then.packetsPadding
 	if packetsExpected < packetsPadding {
-		r.logger.Infow(
-			"padding packets more than expected",
+		loggingFields = []interface{}{
 			"packetsExpected", packetsExpected,
 			"packetsPadding", packetsPadding,
 			"packetsLost", packetsLost,
 			"startSequenceNumber", then.extStartSN,
-			"endSequenceNumber", now.extStartSN-1,
-			"rtpStats", r,
-		)
+			"endSequenceNumber", now.extStartSN - 1,
+		}
+		err = errors.New("padding packets more than expected")
 		packetsExpected = 0
 	} else {
 		packetsExpected -= packetsPadding
 	}
 
-	return &RTPDeltaInfo{
+	deltaInfo = &RTPDeltaInfo{
 		StartTime:            startTime,
 		EndTime:              endTime,
 		Packets:              uint32(packetsExpected),
@@ -648,6 +649,7 @@ func (r *rtpStatsBase) deltaInfo(snapshotID uint32, extStartSN uint64, extHighes
 		Plis:                 now.plis - then.plis,
 		Firs:                 now.firs - then.firs,
 	}
+	return
 }
 
 func (r *rtpStatsBase) MarshalLogObject(e zapcore.ObjectEncoder) error {
