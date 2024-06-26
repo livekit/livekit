@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/gammazero/workerpool"
-
 	serverutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -117,16 +116,18 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) {
 		return
 	}
 
-	_, err := c.client.JobRequest(context.Background(), desc.Namespace, jobTypeTopic, &livekit.Job{
-		Id:          utils.NewGuid(utils.AgentJobPrefix),
-		Type:        desc.JobType,
-		Room:        desc.Room,
-		Participant: desc.Participant,
-		Namespace:   desc.Namespace,
+	c.workers.Submit(func() {
+		_, err := c.client.JobRequest(context.Background(), desc.Namespace, jobTypeTopic, &livekit.Job{
+			Id:          utils.NewGuid(utils.AgentJobPrefix),
+			Type:        desc.JobType,
+			Room:        desc.Room,
+			Participant: desc.Participant,
+			Namespace:   desc.Namespace,
+		})
+		if err != nil {
+			logger.Infow("failed to send job request", "error", err, "namespace", desc.Namespace, "jobType", desc.JobType)
+		}
 	})
-	if err != nil {
-		logger.Infow("failed to send job request", "error", err, "namespace", desc.Namespace, "jobType", desc.JobType)
-	}
 }
 
 func (c *agentClient) isNamespaceActive(ns string, jobType livekit.JobType) bool {
