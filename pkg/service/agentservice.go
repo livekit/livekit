@@ -259,7 +259,7 @@ func (h *AgentHandler) handleWorkerRegister(w *agent.Worker) {
 
 	if shouldNotify {
 		h.logger.Infow("initial worker registered", "namespace", w.Namespace(), "jobType", w.JobType())
-		err = h.agentServer.PublishWorkerRegistered(context.Background(), w.Namespace(), &emptypb.Empty{})
+		err = h.agentServer.PublishWorkerRegistered(context.Background(), agent.DefaultHandlerNamespace, &emptypb.Empty{})
 		if err != nil {
 			w.Logger.Errorw("failed to publish worker registered", err)
 		}
