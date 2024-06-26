@@ -123,6 +123,7 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) {
 			Room:        desc.Room,
 			Participant: desc.Participant,
 			Namespace:   desc.Namespace,
+			Metadata:    desc.Metadata,
 		})
 		if err != nil {
 			logger.Infow("failed to send job request", "error", err, "namespace", desc.Namespace, "jobType", desc.JobType)
