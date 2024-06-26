@@ -828,8 +828,9 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 		return
 	}
 
-	p.lock.Lock()
-	defer p.lock.Unlock()
+	p.pendingTracksLock.Lock()
+	defer p.pendingTracksLock.Unlock()
+
 	ti := p.addPendingTrackLocked(req)
 	if ti == nil {
 		return
@@ -1821,9 +1822,6 @@ func (p *ParticipantImpl) onSubscribedMaxQualityChange(
 }
 
 func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *livekit.TrackInfo {
-	p.pendingTracksLock.Lock()
-	defer p.pendingTracksLock.Unlock()
-
 	if req.Sid != "" {
 		track := p.GetPublishedTrack(livekit.TrackID(req.Sid))
 		if track == nil {
