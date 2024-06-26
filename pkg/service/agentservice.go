@@ -318,7 +318,6 @@ func (h *AgentHandler) publisherAvailableLocked() bool {
 
 func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*emptypb.Empty, error) {
 	attempted := make(map[string]bool)
-
 	for {
 		h.mu.Lock()
 		var selected *agent.Worker
@@ -403,7 +402,6 @@ func (h *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job)
 	return affinity
 }
 
-// Deprecated
 func (h *AgentHandler) CheckEnabled(ctx context.Context, req *rpc.CheckEnabledRequest) (*rpc.CheckEnabledResponse, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
