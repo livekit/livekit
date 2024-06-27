@@ -1,7 +1,5 @@
 module github.com/livekit/livekit-server
 
-replace github.com/livekit/protocol => ../protocol
-
 go 1.22
 
 require (
@@ -22,7 +20,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20240625074155-301bb4a816b7
-	github.com/livekit/protocol v1.19.1-0.20240625064703-b2dc8deac6c9
+	github.com/livekit/protocol v1.19.1-0.20240627173058-82786f41fdb6
 	github.com/livekit/psrpc v0.5.3-0.20240616012458-ac39c8549a0a
 	github.com/mackerelio/go-osstat v0.2.5
 	github.com/magefile/mage v1.15.0
