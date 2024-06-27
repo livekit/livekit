@@ -148,15 +148,26 @@ func (c *agentClient) isNamespaceActive(ns string, jobType livekit.JobType) bool
 
 	c.mu.Unlock()
 
-	ret := false
-	target.ForEach(func(curNs string) {
-		if curNs == ns {
-			ret = true
-			return
-		}
-	})
+	done := make(chan bool, 1)
 
-	return ret
+	go func() {
+		target.ForEach(func(curNs string) {
+			if curNs == ns {
+				select {
+				case done <- true:
+				default:
+				}
+
+				return
+			}
+		})
+		select {
+		case done <- false:
+		default:
+		}
+	}()
+
+	return <-done
 }
 
 func (c *agentClient) checkEnabled(roomNamespaces, publisherNamespaces *serverutils.IncrementalDispatcher[string]) {
