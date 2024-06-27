@@ -1810,6 +1810,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			Header:             &pkt.Header,
 			Extensions:         extensions,
 			Payload:            payload,
+			IsRTX:              true,
 			AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 			TransportWideExtID: uint8(d.transportWideExtID),
 			WriteStream:        d.writeStream,

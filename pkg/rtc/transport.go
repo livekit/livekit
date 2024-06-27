@@ -36,23 +36,23 @@ import (
 	"github.com/pkg/errors"
 	"go.uber.org/atomic"
 
-	lkinterceptor "github.com/livekit/mediatransportutil/pkg/interceptor"
-	lktwcc "github.com/livekit/mediatransportutil/pkg/twcc"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/logger/pionlogger"
-	lksdp "github.com/livekit/protocol/sdp"
-
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/transport"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	sfuinterceptor "github.com/livekit/livekit-server/pkg/sfu/interceptor"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	pd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/playoutdelay"
+	"github.com/livekit/livekit-server/pkg/sfu/sendsidebwe"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	sfuutils "github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/livekit-server/pkg/utils"
+	lkinterceptor "github.com/livekit/mediatransportutil/pkg/interceptor"
+	lktwcc "github.com/livekit/mediatransportutil/pkg/twcc"
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/logger/pionlogger"
+	lksdp "github.com/livekit/protocol/sdp"
 )
 
 const (
@@ -174,7 +174,8 @@ type PCTransport struct {
 	streamAllocator *streamallocator.StreamAllocator
 
 	// only for subscriber PC
-	pacer pacer.Pacer
+	sendSideBWE *sendsidebwe.SendSideBWE
+	pacer       pacer.Pacer
 
 	previousAnswer *webrtc.SessionDescription
 	// track id -> description map in previous offer sdp
@@ -305,7 +306,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	ir := &interceptor.Registry{}
 	if params.IsSendSide {
 		se.DetachDataChannels()
-		if params.CongestionControlConfig.UseSendSideBWE {
+		if params.CongestionControlConfig.UseSendSideBWE && !params.CongestionControlConfig.UseTWCC {
 			gf, err := cc.NewInterceptor(func() (cc.BandwidthEstimator, error) {
 				return gcc.NewSendSideBWE(
 					gcc.SendSideBWEInitialBitrate(1*1000*1000),
@@ -406,7 +407,15 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		})
 		t.streamAllocator.OnStreamStateChange(params.Handler.OnStreamStateChange)
 		t.streamAllocator.Start()
-		t.pacer = pacer.NewPassThrough(params.Logger)
+
+		if params.CongestionControlConfig.UseTWCC {
+			t.sendSideBWE = sendsidebwe.NewSendSideBWE(params.Logger)
+			t.pacer = pacer.NewNoQueue(params.Logger, t.sendSideBWE)
+
+			t.streamAllocator.SetSendSideBWE(t.sendSideBWE)
+		} else {
+			t.pacer = pacer.NewPassThrough(params.Logger, nil)
+		}
 	}
 
 	if err := t.createPeerConnection(); err != nil {
@@ -968,6 +977,9 @@ func (t *PCTransport) Close() {
 	}
 	if t.pacer != nil {
 		t.pacer.Stop()
+	}
+	if t.sendSideBWE != nil {
+		t.sendSideBWE.Stop()
 	}
 
 	_ = t.pc.Close()
