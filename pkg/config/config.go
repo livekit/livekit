@@ -58,9 +58,11 @@ var (
 )
 
 type Config struct {
-	Port           uint32                   `yaml:"port,omitempty"`
-	BindAddresses  []string                 `yaml:"bind_addresses,omitempty"`
+	Port          uint32   `yaml:"port,omitempty"`
+	BindAddresses []string `yaml:"bind_addresses,omitempty"`
+	// PrometheusPort is deprecated
 	PrometheusPort uint32                   `yaml:"prometheus_port,omitempty"`
+	Prometheus     PrometheusConfig         `yaml:"prometheus,omitempty"`
 	RTC            RTCConfig                `yaml:"rtc,omitempty"`
 	Redis          redisLiveKit.RedisConfig `yaml:"redis,omitempty"`
 	Audio          AudioConfig              `yaml:"audio,omitempty"`
@@ -326,6 +328,12 @@ type APIConfig struct {
 
 	// max amount of time to wait before checking for operation complete
 	MaxCheckInterval time.Duration `yaml:"max_check_interval,omitempty"`
+}
+
+type PrometheusConfig struct {
+	Port     uint32 `yaml:"port,omitempty"`
+	Username string `yaml:"username,omitempty"`
+	Password string `yaml:"password,omitempty"`
 }
 
 type ForwardStatsConfig struct {

@@ -140,8 +140,20 @@ func NewLivekitServer(conf *config.Config,
 	}
 
 	if conf.PrometheusPort > 0 {
+		logger.Warnw("prometheus_port is deprecated, please switch prometheus.port instead", nil)
+		conf.Prometheus.Port = conf.PrometheusPort
+	}
+
+	if conf.Prometheus.Port > 0 {
+		promHandler := promhttp.Handler()
+		if conf.Prometheus.Username != "" && conf.Prometheus.Password != "" {
+			protectedHandler := negroni.New()
+			protectedHandler.Use(negroni.HandlerFunc(GenBasicAuthMiddleware(conf.Prometheus.Username, conf.Prometheus.Password)))
+			protectedHandler.UseHandler(promHandler)
+			promHandler = protectedHandler
+		}
 		s.promServer = &http.Server{
-			Handler: promhttp.Handler(),
+			Handler: promHandler,
 		}
 	}
 
@@ -207,7 +219,7 @@ func (s *LivekitServer) Start() error {
 		listeners = append(listeners, ln)
 
 		if s.promServer != nil {
-			ln, err = net.Listen("tcp", net.JoinHostPort(addr, strconv.Itoa(int(s.config.PrometheusPort))))
+			ln, err = net.Listen("tcp", net.JoinHostPort(addr, strconv.Itoa(int(s.config.Prometheus.Port))))
 			if err != nil {
 				return err
 			}
@@ -234,8 +246,8 @@ func (s *LivekitServer) Start() error {
 			"rtc.portICERange", []uint32{s.config.RTC.ICEPortRangeStart, s.config.RTC.ICEPortRangeEnd},
 		)
 	}
-	if s.config.PrometheusPort != 0 {
-		values = append(values, "portPrometheus", s.config.PrometheusPort)
+	if s.config.Prometheus.Port != 0 {
+		values = append(values, "portPrometheus", s.config.Prometheus.Port)
 	}
 	if s.config.Region != "" {
 		values = append(values, "region", s.config.Region)
