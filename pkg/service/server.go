@@ -139,9 +139,13 @@ func NewLivekitServer(conf *config.Config,
 		Handler: configureMiddlewares(mux, middlewares...),
 	}
 
+	if conf.PrometheusPort > 0 {
+		logger.Warnw("prometheus_port is deprecated, please switch prometheus.port instead", nil)
+		conf.Prometheus.Port = conf.PrometheusPort
+	}
+
 	if conf.Prometheus.Port > 0 {
 		promHandler := promhttp.Handler()
-		logger.Infow("conf env", "env", conf.Environment)
 		if conf.Prometheus.Username != "" && conf.Prometheus.Password != "" {
 			protectedHandler := negroni.New()
 			protectedHandler.Use(negroni.HandlerFunc(GenBasicAuthMiddleware(conf.Prometheus.Username, conf.Prometheus.Password)))
