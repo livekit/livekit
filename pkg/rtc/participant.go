@@ -461,6 +461,9 @@ func (p *ParticipantImpl) SetMetadata(metadata string) {
 }
 
 func (p *ParticipantImpl) SetAttributes(attrs map[string]string) error {
+	if len(attrs) == 0 {
+		return nil
+	}
 	p.lock.Lock()
 	grants := p.grants.Load().Clone()
 	if grants.Attributes == nil {
@@ -491,6 +494,7 @@ func (p *ParticipantImpl) SetAttributes(attrs map[string]string) error {
 	}
 
 	p.grants.Store(grants)
+	p.requireBroadcast = true // already checked above
 	p.dirty.Store(true)
 
 	onParticipantUpdate := p.onParticipantUpdate
