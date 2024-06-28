@@ -20,15 +20,13 @@ import (
 	"time"
 
 	"github.com/gammazero/workerpool"
-	"google.golang.org/protobuf/types/known/emptypb"
-
 	serverutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
-	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/psrpc"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 const (
@@ -43,15 +41,17 @@ const (
 type Client interface {
 	// LaunchJob starts a room or participant job on an agent.
 	// it will launch a job once for each worker in each namespace
-	LaunchJob(ctx context.Context, desc *JobDescription)
+	LaunchJob(ctx context.Context, desc *JobRequest)
 	Stop() error
 }
 
-type JobDescription struct {
+type JobRequest struct {
 	JobType livekit.JobType
 	Room    *livekit.Room
 	// only set for participant jobs
 	Participant *livekit.ParticipantInfo
+	Metadata    string
+	Namespace   string
 }
 
 type agentClient struct {
@@ -105,52 +105,75 @@ func NewAgentClient(bus psrpc.MessageBus) (Client, error) {
 	return c, nil
 }
 
-func (c *agentClient) LaunchJob(ctx context.Context, desc *JobDescription) {
-	roomNamespaces, publisherNamespaces, needsRefresh := c.getOrCreateDispatchers()
-
-	if needsRefresh {
-		go c.checkEnabled(ctx, roomNamespaces, publisherNamespaces)
-	}
-
-	target := roomNamespaces
+func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) {
 	jobTypeTopic := RoomAgentTopic
 	if desc.JobType == livekit.JobType_JT_PUBLISHER {
-		target = publisherNamespaces
 		jobTypeTopic = PublisherAgentTopic
 	}
 
-	target.ForEach(func(ns string) {
-		c.workers.Submit(func() {
-			_, err := c.client.JobRequest(ctx, ns, jobTypeTopic, &livekit.Job{
-				Id:          guid.New(utils.AgentJobPrefix),
-				Type:        desc.JobType,
-				Room:        desc.Room,
-				Participant: desc.Participant,
-				Namespace:   ns,
-			})
-			if err != nil {
-				logger.Errorw("failed to send job request", err, "namespace", ns, "jobType", jobTypeTopic)
-			}
+	if !c.isNamespaceActive(desc.Namespace, desc.JobType) {
+		logger.Infow("not dispatching agent job since no worker is available", "namespace", desc.Namespace, "jobType", desc.JobType)
+		return
+	}
+
+	c.workers.Submit(func() {
+		_, err := c.client.JobRequest(context.Background(), desc.Namespace, jobTypeTopic, &livekit.Job{
+			Id:          utils.NewGuid(utils.AgentJobPrefix),
+			Type:        desc.JobType,
+			Room:        desc.Room,
+			Participant: desc.Participant,
+			Namespace:   desc.Namespace,
+			Metadata:    desc.Metadata,
 		})
+		if err != nil {
+			logger.Infow("failed to send job request", "error", err, "namespace", desc.Namespace, "jobType", desc.JobType)
+		}
 	})
 }
 
-func (c *agentClient) getOrCreateDispatchers() (*serverutils.IncrementalDispatcher[string], *serverutils.IncrementalDispatcher[string], bool) {
+func (c *agentClient) isNamespaceActive(ns string, jobType livekit.JobType) bool {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 
 	if time.Since(c.enabledExpiresAt) > EnabledCacheTTL || c.roomNamespaces == nil || c.publisherNamespaces == nil {
+		c.enabledExpiresAt = time.Now()
 		c.roomNamespaces = serverutils.NewIncrementalDispatcher[string]()
 		c.publisherNamespaces = serverutils.NewIncrementalDispatcher[string]()
-		return c.roomNamespaces, c.publisherNamespaces, true
+		go c.checkEnabled(c.roomNamespaces, c.publisherNamespaces)
 	}
-	return c.roomNamespaces, c.publisherNamespaces, false
+
+	target := c.roomNamespaces
+	if jobType == livekit.JobType_JT_PUBLISHER {
+		target = c.publisherNamespaces
+	}
+
+	c.mu.Unlock()
+
+	done := make(chan bool, 1)
+
+	go func() {
+		target.ForEach(func(curNs string) {
+			if curNs == ns {
+				select {
+				case done <- true:
+				default:
+				}
+
+				return
+			}
+		})
+		select {
+		case done <- false:
+		default:
+		}
+	}()
+
+	return <-done
 }
 
-func (c *agentClient) checkEnabled(ctx context.Context, roomNamespaces, publisherNamespaces *serverutils.IncrementalDispatcher[string]) {
+func (c *agentClient) checkEnabled(roomNamespaces, publisherNamespaces *serverutils.IncrementalDispatcher[string]) {
 	defer roomNamespaces.Done()
 	defer publisherNamespaces.Done()
-	resChan, err := c.client.CheckEnabled(ctx, &rpc.CheckEnabledRequest{}, psrpc.WithRequestTimeout(CheckEnabledTimeout))
+	resChan, err := c.client.CheckEnabled(context.Background(), &rpc.CheckEnabledRequest{}, psrpc.WithRequestTimeout(CheckEnabledTimeout))
 	if err != nil {
 		logger.Errorw("failed to check enabled", err)
 		return

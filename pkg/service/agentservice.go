@@ -56,11 +56,13 @@ type AgentHandler struct {
 	workers     map[string]*agent.Worker
 	keyProvider auth.KeyProvider
 
+	// TODO remove once deprecated CheckEnabled is removed
 	namespaces       map[string]*namespaceInfo
 	publisherEnabled bool
 	roomEnabled      bool
-	roomTopic        string
-	publisherTopic   string
+
+	roomTopic      string
+	publisherTopic string
 }
 
 type namespaceInfo struct {

@@ -35,7 +35,6 @@ func TestAgents(t *testing.T) {
 	_, finish := setupSingleNodeTest("TestAgents")
 	defer finish()
 
-
 	ac1, err := newAgentClient(agentToken(), defaultServerPort)
 	require.NoError(t, err)
 	ac2, err := newAgentClient(agentToken(), defaultServerPort)
@@ -48,10 +47,10 @@ func TestAgents(t *testing.T) {
 	defer ac2.close()
 	defer ac3.close()
 	defer ac4.close()
-	ac1.Run(livekit.JobType_JT_ROOM, "namespace")
-	ac2.Run(livekit.JobType_JT_ROOM, "namespace")
-	ac3.Run(livekit.JobType_JT_PUBLISHER, "namespace")
-	ac4.Run(livekit.JobType_JT_PUBLISHER, "namespace")
+	ac1.Run(livekit.JobType_JT_ROOM, "default")
+	ac2.Run(livekit.JobType_JT_ROOM, "default")
+	ac3.Run(livekit.JobType_JT_PUBLISHER, "default")
+	ac4.Run(livekit.JobType_JT_PUBLISHER, "default")
 
 	testutils.WithTimeout(t, func() string {
 		if ac1.registered.Load() != 1 || ac2.registered.Load() != 1 || ac3.registered.Load() != 1 || ac4.registered.Load() != 1 {
@@ -83,7 +82,7 @@ func TestAgents(t *testing.T) {
 		}
 
 		return ""
-	}, 6 * time.Second)
+	}, 6*time.Second)
 
 	// publish 2 tracks
 	t3, err := c2.AddStaticTrack("audio/opus", "audio", "micro")
@@ -116,8 +115,23 @@ func TestAgentNamespaces(t *testing.T) {
 	require.NoError(t, err)
 	defer ac1.close()
 	defer ac2.close()
-	ac1.Run(livekit.JobType_JT_ROOM, "namespace")
+	ac1.Run(livekit.JobType_JT_ROOM, "namespace1")
 	ac2.Run(livekit.JobType_JT_ROOM, "namespace2")
+
+	_, err = roomClient.CreateRoom(contextWithToken(createRoomToken()), &livekit.CreateRoomRequest{
+		Name: testRoom,
+		Agent: &livekit.RoomAgent{
+			Agents: []*livekit.CreateAgentJobDefinitionRequest{
+				&livekit.CreateAgentJobDefinitionRequest{
+					Namespace: "namespace1",
+				},
+				&livekit.CreateAgentJobDefinitionRequest{
+					Namespace: "namespace2",
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
 
 	testutils.WithTimeout(t, func() string {
 		if ac1.registered.Load() != 1 || ac2.registered.Load() != 1 {
@@ -137,7 +151,7 @@ func TestAgentNamespaces(t *testing.T) {
 		job1 := <-ac1.requestedJobs
 		job2 := <-ac2.requestedJobs
 
-		if job1.Namespace != "namespace" {
+		if job1.Namespace != "namespace1" {
 			return "namespace is not 'namespace'"
 		}
 
@@ -163,8 +177,8 @@ func TestAgentMultiNode(t *testing.T) {
 	ac2, err := newAgentClient(agentToken(), defaultServerPort)
 	defer ac1.close()
 	defer ac2.close()
-	ac1.Run(livekit.JobType_JT_ROOM, "namespace")
-	ac2.Run(livekit.JobType_JT_PUBLISHER, "namespace")
+	ac1.Run(livekit.JobType_JT_ROOM, "default")
+	ac2.Run(livekit.JobType_JT_PUBLISHER, "default")
 
 	testutils.WithTimeout(t, func() string {
 		if ac1.registered.Load() != 1 || ac2.registered.Load() != 1 {
