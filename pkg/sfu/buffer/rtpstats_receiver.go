@@ -204,6 +204,7 @@ func (r *RTPStatsReceiver) Update(
 			"hdrSize", hdrSize,
 			"payloadSize", payloadSize,
 			"paddingSize", paddingSize,
+			"rtpStats", lockedRTPStatsReceiverLogEncoder{r},
 		}
 	}
 	if gapSN <= 0 { // duplicate OR out-of-order
