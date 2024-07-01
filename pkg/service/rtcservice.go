@@ -527,7 +527,8 @@ func (s *RTCService) startConnection(
 	var cr connectionResult
 	var created bool
 	var err error
-	cr.Room, created, err = s.roomAllocator.CreateRoom(ctx, &livekit.CreateRoomRequest{Name: string(roomName)})
+
+	cr.Room, created, err = s.roomAllocator.CreateRoom(ctx, &livekit.CreateRoomRequest{Name: string(roomName), ConfigName: GetRoomConfiguration(ctx)})
 	if err != nil {
 		return cr, nil, err
 	}
