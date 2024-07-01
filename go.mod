@@ -1,5 +1,9 @@
 module github.com/livekit/livekit-server
 
+replace github.com/livekit/mediatransportutil => ../mediatransportutil
+
+replace github.com/livekit/protocol => ../protocol
+
 go 1.22
 
 require (
