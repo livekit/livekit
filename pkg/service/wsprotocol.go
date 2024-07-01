@@ -15,6 +15,9 @@
 package service
 
 import (
+	"errors"
+	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -47,6 +50,10 @@ func NewWSSignalConnection(conn types.WebsocketClient) *WSSignalConnection {
 	}
 	go wsc.pingWorker()
 	return wsc
+}
+
+func (c *WSSignalConnection) Close() error {
+	return c.conn.Close()
 }
 
 func (c *WSSignalConnection) ReadRequest() (*livekit.SignalRequest, int, error) {
@@ -171,4 +178,18 @@ func (c *WSSignalConnection) pingWorker() {
 			return
 		}
 	}
+}
+
+// IsErrorWebSocketClose checks that error is normal/expected closure
+func IsErrorWebSocketClose(err error) bool {
+	return errors.Is(err, io.EOF) ||
+		strings.HasSuffix(err.Error(), "use of closed network connection") ||
+		strings.HasSuffix(err.Error(), "connection reset by peer") ||
+		websocket.IsCloseError(
+			err,
+			websocket.CloseAbnormalClosure,
+			websocket.CloseGoingAway,
+			websocket.CloseNormalClosure,
+			websocket.CloseNoStatusReceived,
+		)
 }
