@@ -367,7 +367,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for {
 		req, count, err := sigConn.ReadRequest()
 		if err != nil {
-			if IsErrorWebSocketClose(err) {
+			if IsWebSocketCloseError(err) {
 				closedByClient.Store(true)
 			} else {
 				pLogger.Errorw("error reading from websocket", err, "connID", cr.ConnectionID)

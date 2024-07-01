@@ -180,8 +180,8 @@ func (c *WSSignalConnection) pingWorker() {
 	}
 }
 
-// IsErrorWebSocketClose checks that error is normal/expected closure
-func IsErrorWebSocketClose(err error) bool {
+// IsWebSocketCloseError checks that error is normal/expected closure
+func IsWebSocketCloseError(err error) bool {
 	return errors.Is(err, io.EOF) ||
 		strings.HasSuffix(err.Error(), "use of closed network connection") ||
 		strings.HasSuffix(err.Error(), "connection reset by peer") ||

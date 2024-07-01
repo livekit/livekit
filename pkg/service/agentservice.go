@@ -182,7 +182,7 @@ func (h *AgentHandler) HandleConnection(ctx context.Context, conn agent.SignalCo
 	for {
 		req, _, err := conn.ReadWorkerMessage()
 		if err != nil {
-			if IsErrorWebSocketClose(err) {
+			if IsWebSocketCloseError(err) {
 				worker.Logger().Infow("worker closed WS connection", "wsError", err)
 			} else {
 				worker.Logger().Errorw("error reading from websocket", err)
