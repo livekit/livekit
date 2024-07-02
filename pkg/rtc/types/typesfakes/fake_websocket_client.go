@@ -9,6 +9,16 @@ import (
 )
 
 type FakeWebsocketClient struct {
+	CloseStub        func() error
+	closeMutex       sync.RWMutex
+	closeArgsForCall []struct {
+	}
+	closeReturns struct {
+		result1 error
+	}
+	closeReturnsOnCall map[int]struct {
+		result1 error
+	}
 	ReadMessageStub        func() (int, []byte, error)
 	readMessageMutex       sync.RWMutex
 	readMessageArgsForCall []struct {
@@ -50,6 +60,59 @@ type FakeWebsocketClient struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
+}
+
+func (fake *FakeWebsocketClient) Close() error {
+	fake.closeMutex.Lock()
+	ret, specificReturn := fake.closeReturnsOnCall[len(fake.closeArgsForCall)]
+	fake.closeArgsForCall = append(fake.closeArgsForCall, struct {
+	}{})
+	stub := fake.CloseStub
+	fakeReturns := fake.closeReturns
+	fake.recordInvocation("Close", []interface{}{})
+	fake.closeMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeWebsocketClient) CloseCallCount() int {
+	fake.closeMutex.RLock()
+	defer fake.closeMutex.RUnlock()
+	return len(fake.closeArgsForCall)
+}
+
+func (fake *FakeWebsocketClient) CloseCalls(stub func() error) {
+	fake.closeMutex.Lock()
+	defer fake.closeMutex.Unlock()
+	fake.CloseStub = stub
+}
+
+func (fake *FakeWebsocketClient) CloseReturns(result1 error) {
+	fake.closeMutex.Lock()
+	defer fake.closeMutex.Unlock()
+	fake.CloseStub = nil
+	fake.closeReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeWebsocketClient) CloseReturnsOnCall(i int, result1 error) {
+	fake.closeMutex.Lock()
+	defer fake.closeMutex.Unlock()
+	fake.CloseStub = nil
+	if fake.closeReturnsOnCall == nil {
+		fake.closeReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.closeReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
 }
 
 func (fake *FakeWebsocketClient) ReadMessage() (int, []byte, error) {
@@ -249,6 +312,8 @@ func (fake *FakeWebsocketClient) WriteMessageReturnsOnCall(i int, result1 error)
 func (fake *FakeWebsocketClient) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
+	fake.closeMutex.RLock()
+	defer fake.closeMutex.RUnlock()
 	fake.readMessageMutex.RLock()
 	defer fake.readMessageMutex.RUnlock()
 	fake.writeControlMutex.RLock()
