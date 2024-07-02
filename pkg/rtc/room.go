@@ -1433,10 +1433,6 @@ func (r *Room) launchPublisherAgents(p types.Participant) {
 	}
 
 	for _, ag := range r.internal.Agents {
-		if ag.Type != livekit.JobType_JT_PUBLISHER {
-			continue
-		}
-
 		var startAgent bool
 
 		if len(ag.ParticipantIdentity) == 0 {

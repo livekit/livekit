@@ -130,14 +130,10 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 	return rm, nil
 }
 
-func (s *RoomService) launchAgents(ctx context.Context, rm *livekit.Room, agents []*livekit.CreateAgentJobDefinitionRequest) error {
+func (s *RoomService) launchAgents(ctx context.Context, rm *livekit.Room, agents []*livekit.RoomAgentJobDefinition) error {
 	for _, ag := range agents {
-		if ag.Type != livekit.JobType_JT_ROOM {
-			continue
-		}
-
 		go s.agentClient.LaunchJob(ctx, &agent.JobRequest{
-			JobType:   ag.Type,
+			JobType:   livekit.JobType_JT_ROOM,
 			Room:      rm,
 			Metadata:  ag.Metadata,
 			Namespace: ag.Namespace,

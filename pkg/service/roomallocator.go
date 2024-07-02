@@ -107,17 +107,10 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 		}
 	}
 	if req.Agent == nil {
-		// Backward compatibility: by default, start any agent in the empty namespace
+		// Backward compatibility: by default, start any agent in the default namespace
 		req.Agent = &livekit.RoomAgent{
-			Agents: []*livekit.CreateAgentJobDefinitionRequest{
-				&livekit.CreateAgentJobDefinitionRequest{
-					Type:      livekit.JobType_JT_ROOM,
-					Room:      req.Name,
-					Namespace: "default",
-				},
-				&livekit.CreateAgentJobDefinitionRequest{
-					Type:      livekit.JobType_JT_PUBLISHER,
-					Room:      req.Name,
+			Agents: []*livekit.RoomAgentJobDefinition{
+				&livekit.RoomAgentJobDefinition{
 					Namespace: "default",
 				},
 			},
