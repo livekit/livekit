@@ -17,6 +17,7 @@
 package types
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 
@@ -43,6 +44,7 @@ type ICECandidateExtended struct {
 	Remote   ice.Candidate
 	Selected bool
 	Filtered bool
+	Trickle  bool
 }
 
 type ICEConnectionDetails struct {
@@ -85,6 +87,7 @@ func (d *ICEConnectionDetails) Clone() *ICEConnectionDetails {
 			Local:    c.Local,
 			Filtered: c.Filtered,
 			Selected: c.Selected,
+			Trickle:  c.Trickle,
 		})
 	}
 	for _, c := range d.Remote {
@@ -92,32 +95,48 @@ func (d *ICEConnectionDetails) Clone() *ICEConnectionDetails {
 			Remote:   c.Remote,
 			Filtered: c.Filtered,
 			Selected: c.Selected,
+			Trickle:  c.Trickle,
 		})
 	}
 	return clone
 }
 
-func (d *ICEConnectionDetails) AddLocalCandidate(c *webrtc.ICECandidate, filtered bool) {
+func (d *ICEConnectionDetails) AddLocalCandidate(c *webrtc.ICECandidate, filtered, trickle bool) {
 	d.lock.Lock()
 	defer d.lock.Unlock()
 	compFn := func(e *ICECandidateExtended) bool {
 		return isCandidateEqualTo(e.Local, c)
 	}
-	if slices.ContainsFunc[[]*ICECandidateExtended, *ICECandidateExtended](d.Local, compFn) {
+	if slices.ContainsFunc(d.Local, compFn) {
 		return
 	}
 	d.Local = append(d.Local, &ICECandidateExtended{
 		Local:    c,
 		Filtered: filtered,
+		Trickle:  trickle,
 	})
 }
 
-func (d *ICEConnectionDetails) AddRemoteCandidate(c webrtc.ICECandidateInit, filtered bool) {
+func (d *ICEConnectionDetails) AddLocalICECandidate(c ice.Candidate, filtered, trickle bool) {
+	candidate, err := unmarshalCandidate(c)
+	if err != nil {
+		d.logger.Errorw("could not unmarshal ice candidate", err, "candidate", c)
+		return
+	}
+
+	d.AddLocalCandidate(candidate, filtered, trickle)
+}
+
+func (d *ICEConnectionDetails) AddRemoteCandidate(c webrtc.ICECandidateInit, filtered, trickle bool) {
 	candidate, err := unmarshalICECandidate(c)
 	if err != nil {
 		d.logger.Errorw("could not unmarshal candidate", err, "candidate", c)
 		return
 	}
+	d.AddRemoteICECandidate(candidate, filtered, trickle)
+}
+
+func (d *ICEConnectionDetails) AddRemoteICECandidate(candidate ice.Candidate, filtered, trickle bool) {
 	if candidate == nil {
 		// end-of-candidates candidate
 		return
@@ -126,14 +145,15 @@ func (d *ICEConnectionDetails) AddRemoteCandidate(c webrtc.ICECandidateInit, fil
 	d.lock.Lock()
 	defer d.lock.Unlock()
 	compFn := func(e *ICECandidateExtended) bool {
-		return isICECandidateEqualTo(e.Remote, *candidate)
+		return isICECandidateEqualTo(e.Remote, candidate)
 	}
-	if slices.ContainsFunc[[]*ICECandidateExtended, *ICECandidateExtended](d.Remote, compFn) {
+	if slices.ContainsFunc(d.Remote, compFn) {
 		return
 	}
 	d.Remote = append(d.Remote, &ICECandidateExtended{
-		Remote:   *candidate,
+		Remote:   candidate,
 		Filtered: filtered,
+		Trickle:  trickle,
 	})
 }
 
@@ -148,7 +168,7 @@ func (d *ICEConnectionDetails) Clear() {
 func (d *ICEConnectionDetails) SetSelectedPair(pair *webrtc.ICECandidatePair) {
 	d.lock.Lock()
 	defer d.lock.Unlock()
-	remoteIdx := slices.IndexFunc[[]*ICECandidateExtended, *ICECandidateExtended](d.Remote, func(e *ICECandidateExtended) bool {
+	remoteIdx := slices.IndexFunc(d.Remote, func(e *ICECandidateExtended) bool {
 		return isICECandidateEqualToCandidate(e.Remote, pair.Remote)
 	})
 	if remoteIdx < 0 {
@@ -162,15 +182,16 @@ func (d *ICEConnectionDetails) SetSelectedPair(pair *webrtc.ICECandidatePair) {
 			return
 		}
 		d.Remote = append(d.Remote, &ICECandidateExtended{
-			Remote:   *candidate,
+			Remote:   candidate,
 			Filtered: false,
+			Trickle:  true,
 		})
 		remoteIdx = len(d.Remote) - 1
 	}
 	remote := d.Remote[remoteIdx]
 	remote.Selected = true
 
-	localIdx := slices.IndexFunc[[]*ICECandidateExtended, *ICECandidateExtended](d.Local, func(e *ICECandidateExtended) bool {
+	localIdx := slices.IndexFunc(d.Local, func(e *ICECandidateExtended) bool {
 		return isCandidateEqualTo(e.Local, pair.Local)
 	})
 	if localIdx < 0 {
@@ -214,7 +235,6 @@ func isCandidateEqualTo(c1, c2 *webrtc.ICECandidate) bool {
 		c1.Protocol == c2.Protocol &&
 		c1.Address == c2.Address &&
 		c1.Port == c2.Port &&
-		c1.Component == c2.Component &&
 		c1.Foundation == c2.Foundation &&
 		c1.Priority == c2.Priority &&
 		c1.RelatedAddress == c2.RelatedAddress &&
@@ -233,7 +253,6 @@ func isICECandidateEqualTo(c1, c2 ice.Candidate) bool {
 		c1.NetworkType() == c2.NetworkType() &&
 		c1.Address() == c2.Address() &&
 		c1.Port() == c2.Port() &&
-		c1.Component() == c2.Component() &&
 		c1.Foundation() == c2.Foundation() &&
 		c1.Priority() == c2.Priority() &&
 		c1.RelatedAddress().Equal(c2.RelatedAddress()) &&
@@ -251,13 +270,12 @@ func isICECandidateEqualToCandidate(c1 ice.Candidate, c2 *webrtc.ICECandidate) b
 		c1.NetworkType().NetworkShort() == c2.Protocol.String() &&
 		c1.Address() == c2.Address &&
 		c1.Port() == int(c2.Port) &&
-		c1.Component() == c2.Component &&
 		c1.Foundation() == c2.Foundation &&
 		c1.Priority() == c2.Priority &&
 		c1.TCPType().String() == c2.TCPType
 }
 
-func unmarshalICECandidate(c webrtc.ICECandidateInit) (*ice.Candidate, error) {
+func unmarshalICECandidate(c webrtc.ICECandidateInit) (ice.Candidate, error) {
 	candidateValue := strings.TrimPrefix(c.Candidate, "candidate:")
 	if candidateValue == "" {
 		return nil, nil
@@ -268,5 +286,49 @@ func unmarshalICECandidate(c webrtc.ICECandidateInit) (*ice.Candidate, error) {
 		return nil, err
 	}
 
-	return &candidate, nil
+	return candidate, nil
+}
+
+func unmarshalCandidate(i ice.Candidate) (*webrtc.ICECandidate, error) {
+	var typ webrtc.ICECandidateType
+	switch i.Type() {
+	case ice.CandidateTypeHost:
+		typ = webrtc.ICECandidateTypeHost
+	case ice.CandidateTypeServerReflexive:
+		typ = webrtc.ICECandidateTypeSrflx
+	case ice.CandidateTypePeerReflexive:
+		typ = webrtc.ICECandidateTypePrflx
+	case ice.CandidateTypeRelay:
+		typ = webrtc.ICECandidateTypeRelay
+	default:
+		return nil, fmt.Errorf("unknown candidate type: %s", i.Type())
+	}
+
+	var protocol webrtc.ICEProtocol
+	switch strings.ToLower(i.NetworkType().NetworkShort()) {
+	case "udp":
+		protocol = webrtc.ICEProtocolUDP
+	case "tcp":
+		protocol = webrtc.ICEProtocolTCP
+	default:
+		return nil, fmt.Errorf("unknown network type: %s", i.NetworkType())
+	}
+
+	c := webrtc.ICECandidate{
+		Foundation: i.Foundation(),
+		Priority:   i.Priority(),
+		Address:    i.Address(),
+		Protocol:   protocol,
+		Port:       uint16(i.Port()),
+		Component:  i.Component(),
+		Typ:        typ,
+		TCPType:    i.TCPType().String(),
+	}
+
+	if i.RelatedAddress() != nil {
+		c.RelatedAddress = i.RelatedAddress().Address
+		c.RelatedPort = uint16(i.RelatedAddress().Port)
+	}
+
+	return &c, nil
 }

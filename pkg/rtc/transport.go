@@ -1366,7 +1366,7 @@ func (t *PCTransport) handleLocalICECandidate(e event) error {
 			t.params.Logger.Debugw("filtering out local candidate", "candidate", c.String())
 			filtered = true
 		}
-		t.connectionDetails.AddLocalCandidate(c, filtered)
+		t.connectionDetails.AddLocalCandidate(c, filtered, true)
 	}
 
 	if filtered {
@@ -1395,7 +1395,7 @@ func (t *PCTransport) handleRemoteICECandidate(e event) error {
 		filtered = true
 	}
 
-	t.connectionDetails.AddRemoteCandidate(*c, filtered)
+	t.connectionDetails.AddRemoteCandidate(*c, filtered, true)
 	if filtered {
 		return nil
 	}
@@ -1422,7 +1422,7 @@ func (t *PCTransport) setNegotiationState(state transport.NegotiationState) {
 	}
 }
 
-func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription, preferTCP bool) webrtc.SessionDescription {
+func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription, preferTCP, isLocal bool) webrtc.SessionDescription {
 	parsed, err := sd.Unmarshal()
 	if err != nil {
 		t.params.Logger.Warnw("could not unmarshal SDP to filter candidates", err)
@@ -1432,13 +1432,22 @@ func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription, preferTCP b
 	filterAttributes := func(attrs []sdp.Attribute) []sdp.Attribute {
 		filteredAttrs := make([]sdp.Attribute, 0, len(attrs))
 		for _, a := range attrs {
-			if a.Key == sdp.AttrKeyCandidate {
-				if preferTCP {
-					if strings.Contains(a.Value, "tcp") {
-						filteredAttrs = append(filteredAttrs, a)
-					}
-				} else {
+			if a.IsICECandidate() {
+				c, err := ice.UnmarshalCandidate(a.Value)
+				if err != nil {
+					t.params.Logger.Errorw("failed to unmarshal candidate in sdp", err, "isLocal", isLocal, "sdp", sd.SDP)
 					filteredAttrs = append(filteredAttrs, a)
+					continue
+				}
+				excluded := preferTCP && !c.NetworkType().IsTCP()
+				if !excluded {
+					filteredAttrs = append(filteredAttrs, a)
+				}
+
+				if isLocal {
+					t.connectionDetails.AddLocalICECandidate(c, excluded, false)
+				} else {
+					t.connectionDetails.AddRemoteICECandidate(c, excluded, false)
 				}
 			} else {
 				filteredAttrs = append(filteredAttrs, a)
@@ -1566,7 +1575,7 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	// Filtered offer is sent to remote so that remote does not
 	// see filtered candidates.
 	//
-	offer = t.filterCandidates(offer, preferTCP)
+	offer = t.filterCandidates(offer, preferTCP, true)
 	if preferTCP {
 		t.params.Logger.Debugw("local offer (filtered)", "sdp", offer.SDP)
 	}
@@ -1616,7 +1625,7 @@ func (t *PCTransport) setRemoteDescription(sd webrtc.SessionDescription) error {
 	if preferTCP {
 		t.params.Logger.Debugw("remote description (unfiltered)", "type", sd.Type, "sdp", sd.SDP)
 	}
-	sd = t.filterCandidates(sd, preferTCP)
+	sd = t.filterCandidates(sd, preferTCP, false)
 	if preferTCP {
 		t.params.Logger.Debugw("remote description (filtered)", "type", sd.Type, "sdp", sd.SDP)
 	}
@@ -1683,7 +1692,7 @@ func (t *PCTransport) createAndSendAnswer() error {
 	// Filtered answer is sent to remote so that remote does not
 	// see filtered candidates.
 	//
-	answer = t.filterCandidates(answer, preferTCP)
+	answer = t.filterCandidates(answer, preferTCP, true)
 	if preferTCP {
 		t.params.Logger.Debugw("local answer (filtered)", "sdp", answer.SDP)
 	}
