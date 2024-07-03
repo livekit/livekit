@@ -539,12 +539,12 @@ func (s *RTCService) startConnection(
 			return connectionResult{}, nil, err
 		}
 
-		for _, ag := range internal.Agents {
+		for _, ag := range internal.Dispatches {
 			go s.agentClient.LaunchJob(ctx, &agent.JobRequest{
 				JobType:   livekit.JobType_JT_ROOM,
 				Room:      cr.Room,
 				Metadata:  ag.Metadata,
-				Namespace: ag.Namespace,
+				AgentName: ag.AgentName,
 			})
 		}
 	}
