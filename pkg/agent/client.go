@@ -51,7 +51,12 @@ type JobRequest struct {
 	// only set for participant jobs
 	Participant *livekit.ParticipantInfo
 	Metadata    string
-	Namespace   string
+	AgentName   string
+}
+
+type workerParams struct {
+	agentName string
+	namespace string // deprecated
 }
 
 type agentClient struct {
@@ -61,8 +66,8 @@ type agentClient struct {
 
 	// cache response to avoid constantly checking with controllers
 	// cache is invalidated with AgentRegistered updates
-	roomNamespaces      *serverutils.IncrementalDispatcher[string]
-	publisherNamespaces *serverutils.IncrementalDispatcher[string]
+	roomNamespaces      *serverutils.IncrementalDispatcher[workerParams]
+	publisherNamespaces *serverutils.IncrementalDispatcher[workerParams]
 	enabledExpiresAt    time.Time
 
 	workers *workerpool.WorkerPool
@@ -111,8 +116,9 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) {
 		jobTypeTopic = PublisherAgentTopic
 	}
 
-	if !c.isNamespaceActive(desc.Namespace, desc.JobType) {
-		logger.Infow("not dispatching agent job since no worker is available", "namespace", desc.Namespace, "jobType", desc.JobType)
+	namespaces := c.getActiceNamespaces(desc.Namespace, desc.JobType)
+	if len(namespaces) == 0 {
+		logger.Infow("not dispatching agent job since no worker is available", "agentName", desc.AgentName, "jobType", desc.JobType)
 		return
 	}
 
@@ -122,7 +128,8 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) {
 			Type:        desc.JobType,
 			Room:        desc.Room,
 			Participant: desc.Participant,
-			Namespace:   desc.Namespace,
+			Namespace:   ns,
+			AgentName:   desc.AgentName,
 			Metadata:    desc.Metadata,
 		})
 		if err != nil {
