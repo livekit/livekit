@@ -105,8 +105,8 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 	if created {
 		_, internal, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Name), true)
 
-		if internal.Dispatches != nil {
-			err = s.launchAgents(ctx, rm, internal.Dispatches)
+		if internal.AgentDispatches != nil {
+			err = s.launchAgents(ctx, rm, internal.AgentDispatches)
 			if err != nil {
 				return nil, err
 			}
@@ -340,7 +340,7 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 	}
 
 	if created {
-		err = s.launchAgents(ctx, room, internal.Dispatches)
+		err = s.launchAgents(ctx, room, internal.AgentDispatches)
 		if err != nil {
 			return nil, err
 		}

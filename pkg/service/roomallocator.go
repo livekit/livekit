@@ -114,7 +114,7 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 			},
 		}
 	}
-	internal.Dispatches = req.Agent.Dispatches
+	internal.AgentDispatches = req.Agent.Dispatches
 	if req.MinPlayoutDelay > 0 || req.MaxPlayoutDelay > 0 {
 		internal.PlayoutDelay = &livekit.PlayoutDelay{
 			Enabled: true,

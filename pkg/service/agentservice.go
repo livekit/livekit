@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"golang.org/x/exp/maps"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/livekit/livekit-server/pkg/agent"
@@ -57,12 +58,17 @@ type AgentHandler struct {
 	keyProvider auth.KeyProvider
 
 	// TODO remove once deprecated CheckEnabled is removed
-	namespaces       map[string]*namespaceInfo
+	namespaces       map[agentParams]*namespaceInfo
 	publisherEnabled bool
 	roomEnabled      bool
 
 	roomTopic      string
 	publisherTopic string
+}
+
+type agentParams struct {
+	agentName string
+	namespace string
 }
 
 type namespaceInfo struct {
@@ -145,7 +151,7 @@ func NewAgentHandler(
 		agentServer:    agentServer,
 		logger:         logger,
 		workers:        make(map[string]*agent.Worker),
-		namespaces:     make(map[string]*namespaceInfo),
+		namespaces:     make(map[agentParams]*namespaceInfo),
 		serverInfo:     serverInfo,
 		keyProvider:    keyProvider,
 		roomTopic:      roomTopic,
@@ -216,7 +222,12 @@ func (h *AgentHandler) HandleConnection(r *http.Request, conn *websocket.Conn, o
 func (h *AgentHandler) handleWorkerRegister(w *agent.Worker) {
 	h.mu.Lock()
 
-	info, ok := h.namespaces[w.Namespace()]
+	ap := agentParams{
+		agentName: w.AgentName(),
+		namespace: w.Namespace(),
+	}
+
+	info, ok := h.namespaces[ap]
 	numPublishers := int32(0)
 	numRooms := int32(0)
 	if ok {
@@ -225,19 +236,20 @@ func (h *AgentHandler) handleWorkerRegister(w *agent.Worker) {
 	}
 
 	shouldNotify := false
+	topic := agent.GetAgentTopic(w.AgentName(), w.Namespace())
 	var err error
 	if w.JobType() == livekit.JobType_JT_PUBLISHER {
 		numPublishers++
 		if numPublishers == 1 {
 			shouldNotify = true
-			err = h.agentServer.RegisterJobRequestTopic(w.Namespace(), h.publisherTopic)
+			err = h.agentServer.RegisterJobRequestTopic(topic, h.publisherTopic)
 		}
 
 	} else if w.JobType() == livekit.JobType_JT_ROOM {
 		numRooms++
 		if numRooms == 1 {
 			shouldNotify = true
-			err = h.agentServer.RegisterJobRequestTopic(w.Namespace(), h.roomTopic)
+			err = h.agentServer.RegisterJobRequestTopic(topic, h.roomTopic)
 		}
 	}
 
@@ -248,7 +260,7 @@ func (h *AgentHandler) handleWorkerRegister(w *agent.Worker) {
 		return
 	}
 
-	h.namespaces[w.Namespace()] = &namespaceInfo{
+	h.namespaces[ap] = &namespaceInfo{
 		numPublishers: numPublishers,
 		numRooms:      numRooms,
 	}
@@ -258,7 +270,7 @@ func (h *AgentHandler) handleWorkerRegister(w *agent.Worker) {
 	h.mu.Unlock()
 
 	if shouldNotify {
-		h.logger.Infow("initial worker registered", "namespace", w.Namespace(), "jobType", w.JobType())
+		h.logger.Infow("initial worker registered", "namespace", w.Namespace(), "jobType", w.JobType(), "agentName", w.AgentName())
 		err = h.agentServer.PublishWorkerRegistered(context.Background(), agent.DefaultHandlerNamespace, &emptypb.Empty{})
 		if err != nil {
 			w.Logger.Errorw("failed to publish worker registered", err)
@@ -270,26 +282,32 @@ func (h *AgentHandler) handleWorkerDeregister(worker *agent.Worker) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	info, ok := h.namespaces[worker.Namespace()]
+	ap := agentParams{
+		agentName: worker.AgentName(),
+		namespace: worker.Namespace(),
+	}
+
+	info, ok := h.namespaces[ap]
 	if !ok {
 		return
 	}
 
+	topic := agent.GetAgentTopic(worker.AgentName(), worker.Namespace())
 	if worker.JobType() == livekit.JobType_JT_PUBLISHER {
 		info.numPublishers--
 		if info.numPublishers == 0 {
-			h.agentServer.DeregisterJobRequestTopic(worker.Namespace(), h.publisherTopic)
+			h.agentServer.DeregisterJobRequestTopic(topic, h.publisherTopic)
 		}
 	} else if worker.JobType() == livekit.JobType_JT_ROOM {
 		info.numRooms--
 		if info.numRooms == 0 {
-			h.agentServer.DeregisterJobRequestTopic(worker.Namespace(), h.roomTopic)
+			h.agentServer.DeregisterJobRequestTopic(topic, h.roomTopic)
 		}
 	}
 
 	if info.numPublishers == 0 && info.numRooms == 0 {
 		h.logger.Debugw("last worker deregistered")
-		delete(h.namespaces, worker.Namespace())
+		delete(h.namespaces, ap)
 	}
 
 	h.roomEnabled = h.roomAvailableLocked()
@@ -323,7 +341,7 @@ func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*empty
 		var selected *agent.Worker
 		var maxLoad float32
 		for _, w := range h.workers {
-			if w.Namespace() != job.Namespace || w.JobType() != job.Type {
+			if w.AgentName() != job.AgentName || w.Namespace() != job.Namespace || w.JobType() != job.Type {
 				continue
 			}
 
@@ -354,6 +372,7 @@ func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*empty
 		values := []interface{}{
 			"jobID", job.Id,
 			"namespace", job.Namespace,
+			"agentName", job.AgentName,
 			"workerID", selected.ID(),
 		}
 		if job.Room != nil {
@@ -383,7 +402,7 @@ func (h *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job)
 	var affinity float32
 	var maxLoad float32
 	for _, w := range h.workers {
-		if w.Namespace() != job.Namespace || w.JobType() != job.Type {
+		if w.AgentName() != job.AgentName || w.Namespace() != job.Namespace || w.JobType() != job.Type {
 			continue
 		}
 
@@ -405,13 +424,18 @@ func (h *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job)
 func (h *AgentHandler) CheckEnabled(ctx context.Context, req *rpc.CheckEnabledRequest) (*rpc.CheckEnabledResponse, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	namespaces := make([]string, 0, len(h.namespaces))
-	for ns := range h.namespaces {
-		namespaces = append(namespaces, ns)
+	namespaces := make(map[string]struct{})
+	agentNames := make(map[string]struct{})
+	for p := range h.namespaces {
+		namespaces[p.namespace] = struct{}{}
+		agentNames[p.agentName] = struct{}{}
 	}
 
+	// This doesn't return the full agentName -> namespace mapping, which can cause some unnecessary RPC.
+	// namespaces are however deprecated.
 	return &rpc.CheckEnabledResponse{
-		Namespaces:       namespaces,
+		Namespaces:       maps.Keys(namespaces),
+		AgentNames:       maps.Keys(agentNames),
 		RoomEnabled:      h.roomEnabled,
 		PublisherEnabled: h.publisherEnabled,
 	}, nil
