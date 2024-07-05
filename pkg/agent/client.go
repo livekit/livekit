@@ -128,6 +128,7 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) {
 
 		topic := GetAgentTopic(desc.AgentName, curAg.namespace)
 		c.workers.Submit(func() {
+			// The cached agent parameters do not provide the exact combination of available job type/agent name/namespace, so some of the JobRequest RPC may not trigger any worker
 			_, err := c.client.JobRequest(context.Background(), topic, jobTypeTopic, &livekit.Job{
 				Id:          utils.NewGuid(utils.AgentJobPrefix),
 				Type:        desc.JobType,
