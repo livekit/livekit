@@ -325,16 +325,20 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		keyFrameRequesterCh: make(chan struct{}, 1),
 		createdAt:           time.Now().UnixNano(),
 	}
+	d.params.Logger = params.Logger.WithValues(
+		"mime", codecs[0].MimeType,
+		"subscriberID", d.SubscriberID(),
+	)
 	d.forwarder = NewForwarder(
 		d.kind,
-		params.Logger,
+		d.params.Logger,
 		false,
 		d.getExpectedRTPTimestamp,
 	)
 
 	d.rtpStats = buffer.NewRTPStatsSender(buffer.RTPStatsParams{
 		ClockRate: d.codec.ClockRate,
-		Logger:    params.Logger,
+		Logger:    d.params.Logger,
 	})
 	d.deltaStatsSenderSnapshotId = d.rtpStats.NewSenderSnapshotId()
 
@@ -342,7 +346,7 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		MimeType:       codecs[0].MimeType, // LK-TODO have to notify on codec change
 		IsFECEnabled:   strings.EqualFold(codecs[0].MimeType, webrtc.MimeTypeOpus) && strings.Contains(strings.ToLower(codecs[0].SDPFmtpLine), "fec"),
 		SenderProvider: d,
-		Logger:         params.Logger.WithValues("direction", "down"),
+		Logger:         d.params.Logger.WithValues("direction", "down"),
 	})
 	d.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
 		if onStatsUpdate := d.getOnStatsUpdate(); onStatsUpdate != nil {
@@ -682,7 +686,6 @@ func (d *DownTrack) maxLayerNotifierWorker() {
 				"notifying max subscribed layer",
 				"layer", maxLayerSpatial,
 				"event", event,
-				"subscriberID", d.SubscriberID(),
 			)
 			onMaxSubscribedLayerChanged(d, maxLayerSpatial)
 		}
@@ -693,7 +696,6 @@ func (d *DownTrack) maxLayerNotifierWorker() {
 			"notifying max subscribed layer",
 			"layer", buffer.InvalidLayerSpatial,
 			"event", "close",
-			"subscriberID", d.SubscriberID(),
 		)
 		onMaxSubscribedLayerChanged(d, buffer.InvalidLayerSpatial)
 	}
@@ -1054,7 +1056,6 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		"direction", "downstream",
 		"mime", d.mime,
 		"ssrc", d.ssrc,
-		// evaluate only if log level matches
 		"stats", d.rtpStats,
 	)
 
