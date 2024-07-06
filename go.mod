@@ -22,7 +22,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20240625074155-301bb4a816b7
-	github.com/livekit/protocol v1.19.1-0.20240627173058-82786f41fdb6
+	github.com/livekit/protocol v1.19.2-0.20240705134535-94a2cfe2f1ee
 	github.com/livekit/psrpc v0.5.3-0.20240616012458-ac39c8549a0a
 	github.com/mackerelio/go-osstat v0.2.5
 	github.com/magefile/mage v1.15.0
@@ -35,7 +35,7 @@ require (
 	github.com/pion/interceptor v0.1.29
 	github.com/pion/rtcp v1.2.14
 	github.com/pion/rtp v1.8.6
-	github.com/pion/sctp v1.8.16
+	github.com/pion/sctp v1.8.17
 	github.com/pion/sdp/v3 v3.0.9
 	github.com/pion/transport/v2 v2.2.5
 	github.com/pion/turn/v2 v2.1.6

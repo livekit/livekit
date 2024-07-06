@@ -1538,6 +1538,9 @@ func connectionDetailsFields(cds []*types.ICEConnectionDetails) []interface{} {
 			} else if c.Filtered {
 				cStr += "[filtered]"
 			}
+			if c.Trickle {
+				cStr += "[trickle]"
+			}
 			cStr += " " + c.Local.String()
 			candidates = append(candidates, cStr)
 		}
@@ -1547,6 +1550,9 @@ func connectionDetailsFields(cds []*types.ICEConnectionDetails) []interface{} {
 				cStr += "[selected]"
 			} else if c.Filtered {
 				cStr += "[filtered]"
+			}
+			if c.Trickle {
+				cStr += "[trickle]"
 			}
 			cStr += " " + c.Remote.String()
 			candidates = append(candidates, cStr)
