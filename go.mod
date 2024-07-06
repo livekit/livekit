@@ -29,15 +29,15 @@ require (
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/ory/dockertest/v3 v3.10.0
 	github.com/pion/dtls/v2 v2.2.11
-	github.com/pion/ice/v2 v2.3.24
+	github.com/pion/ice/v2 v2.3.28
 	github.com/pion/interceptor v0.1.29
 	github.com/pion/rtcp v1.2.14
 	github.com/pion/rtp v1.8.6
-	github.com/pion/sctp v1.8.17
+	github.com/pion/sctp v1.8.18
 	github.com/pion/sdp/v3 v3.0.9
 	github.com/pion/transport/v2 v2.2.5
 	github.com/pion/turn/v2 v2.1.6
-	github.com/pion/webrtc/v3 v3.2.40
+	github.com/pion/webrtc/v3 v3.2.44
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.19.1
 	github.com/redis/go-redis/v9 v9.5.3
