@@ -244,7 +244,7 @@ func (h *AgentHandler) HandleWorkerRegister(w *agent.Worker) {
 		h.logger.Infow("initial worker registered", "namespace", w.Namespace(), "jobType", w.JobType(), "agentName", w.AgentName())
 		err := h.agentServer.PublishWorkerRegistered(context.Background(), agent.DefaultHandlerNamespace, &emptypb.Empty{})
 		if err != nil {
-			w.Logger().Errorw("failed to publish worker registered", err)
+			w.Logger().Errorw("failed to publish worker registered", err, "namespace", w.Namespace(), "jobType", w.JobType(), "agentName", w.AgentName())
 		}
 	}
 }
@@ -267,7 +267,7 @@ func (h *AgentHandler) HandleWorkerDeregister(w *agent.Worker) {
 	if len(workers) > 1 {
 		h.namespaceWorkers[key] = slices.Delete(workers, index, index+1)
 	} else {
-		h.logger.Debugw("last worker deregistered")
+		h.logger.Debugw("last worker deregistered", "namespace", w.Namespace(), "jobType", w.JobType(), "agentName", w.AgentName())
 		delete(h.namespaceWorkers, key)
 
 		topic := agent.GetAgentTopic(w.AgentName(), w.Namespace())
@@ -331,7 +331,7 @@ func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*empty
 		if job.Participant != nil {
 			values = append(values, "participant", job.Participant.Identity)
 		}
-		logger.Debugw("assigning job", values...)
+		h.logger.Debugw("assigning job", values...)
 		err := selected.AssignJob(ctx, job)
 		if err != nil {
 			if errors.Is(err, agent.ErrWorkerNotAvailable) {
