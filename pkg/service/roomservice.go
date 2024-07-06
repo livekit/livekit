@@ -103,10 +103,14 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 	defer done()
 
 	if created {
-		go s.agentClient.LaunchJob(context.WithoutCancel(ctx), &agent.JobDescription{
-			JobType: livekit.JobType_JT_ROOM,
-			Room:    rm,
-		})
+		_, internal, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Name), true)
+
+		if internal.Agents != nil {
+			err = s.launchAgents(ctx, rm, internal.Agents)
+			if err != nil {
+				return nil, err
+			}
+		}
 
 		if req.Egress != nil && req.Egress.Room != nil {
 			// ensure room name matches
@@ -124,6 +128,23 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 	}
 
 	return rm, nil
+}
+
+func (s *RoomService) launchAgents(ctx context.Context, rm *livekit.Room, agents []*livekit.CreateAgentJobDefinitionRequest) error {
+	for _, ag := range agents {
+		if ag.Type != livekit.JobType_JT_ROOM {
+			continue
+		}
+
+		go s.agentClient.LaunchJob(ctx, &agent.JobRequest{
+			JobType:   ag.Type,
+			Room:      rm,
+			Metadata:  ag.Metadata,
+			Namespace: ag.Namespace,
+		})
+	}
+
+	return nil
 }
 
 func (s *RoomService) ListRooms(ctx context.Context, req *livekit.ListRoomsRequest) (*livekit.ListRoomsResponse, error) {
@@ -288,7 +309,7 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 		return nil, twirpAuthError(err)
 	}
 
-	room, _, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false)
+	room, internal, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false)
 	if err != nil {
 		return nil, err
 	}
@@ -323,10 +344,10 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 	}
 
 	if created {
-		go s.agentClient.LaunchJob(context.WithoutCancel(ctx), &agent.JobDescription{
-			JobType: livekit.JobType_JT_ROOM,
-			Room:    room,
-		})
+		err = s.launchAgents(ctx, room, internal.Agents)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return room, nil

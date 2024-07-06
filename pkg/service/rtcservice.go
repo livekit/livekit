@@ -18,12 +18,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"math/rand"
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -369,17 +367,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for {
 		req, count, err := sigConn.ReadRequest()
 		if err != nil {
-			// normal/expected closure
-			if errors.Is(err, io.EOF) ||
-				strings.HasSuffix(err.Error(), "use of closed network connection") ||
-				strings.HasSuffix(err.Error(), "connection reset by peer") ||
-				websocket.IsCloseError(
-					err,
-					websocket.CloseAbnormalClosure,
-					websocket.CloseGoingAway,
-					websocket.CloseNormalClosure,
-					websocket.CloseNoStatusReceived,
-				) {
+			if IsWebSocketCloseError(err) {
 				closedByClient.Store(true)
 			} else {
 				pLogger.Errorw("error reading from websocket", err, "connID", cr.ConnectionID)
@@ -533,10 +521,24 @@ func (s *RTCService) startConnection(
 	}
 
 	if created && s.agentClient != nil {
-		go s.agentClient.LaunchJob(ctx, &agent.JobDescription{
-			JobType: livekit.JobType_JT_ROOM,
-			Room:    cr.Room,
-		})
+		// TODO Have CreateRoom return the RoomInternal object?
+		_, internal, err := s.store.LoadRoom(ctx, livekit.RoomName(roomName), true)
+		if err != nil {
+			return connectionResult{}, nil, err
+		}
+
+		for _, ag := range internal.Agents {
+			if ag.Type != livekit.JobType_JT_ROOM {
+				continue
+			}
+
+			go s.agentClient.LaunchJob(ctx, &agent.JobRequest{
+				JobType:   ag.Type,
+				Room:      cr.Room,
+				Metadata:  ag.Metadata,
+				Namespace: ag.Namespace,
+			})
+		}
 	}
 
 	// this needs to be started first *before* using router functions on this node

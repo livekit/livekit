@@ -19,10 +19,13 @@ import (
 	"errors"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
+	"github.com/livekit/psrpc"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -78,6 +81,11 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 		return nil, false, err
 	}
 
+	req, err = r.applyNamedRoomConfiguration(req)
+	if err != nil {
+		return nil, false, err
+	}
+
 	if req.EmptyTimeout > 0 {
 		rm.EmptyTimeout = req.EmptyTimeout
 	}
@@ -98,6 +106,24 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 			internal.TrackEgress = req.Egress.Tracks
 		}
 	}
+	if req.Agent == nil {
+		// Backward compatibility: by default, start any agent in the empty namespace
+		req.Agent = &livekit.RoomAgent{
+			Agents: []*livekit.CreateAgentJobDefinitionRequest{
+				&livekit.CreateAgentJobDefinitionRequest{
+					Type:      livekit.JobType_JT_ROOM,
+					Room:      req.Name,
+					Namespace: "default",
+				},
+				&livekit.CreateAgentJobDefinitionRequest{
+					Type:      livekit.JobType_JT_PUBLISHER,
+					Room:      req.Name,
+					Namespace: "default",
+				},
+			},
+		}
+	}
+	internal.Agents = req.Agent.Agents
 	if req.MinPlayoutDelay > 0 || req.MaxPlayoutDelay > 0 {
 		internal.PlayoutDelay = &livekit.PlayoutDelay{
 			Enabled: true,
@@ -181,4 +207,45 @@ func applyDefaultRoomConfig(room *livekit.Room, internal *livekit.RoomInternal, 
 		Max:     uint32(conf.PlayoutDelay.Max),
 	}
 	internal.SyncStreams = conf.SyncStreams
+}
+
+func (r *StandardRoomAllocator) applyNamedRoomConfiguration(req *livekit.CreateRoomRequest) (*livekit.CreateRoomRequest, error) {
+	if req.ConfigName == "" {
+		return req, nil
+	}
+
+	conf, ok := r.config.Room.RoomConfigurations[req.ConfigName]
+	if !ok {
+		return nil, psrpc.NewErrorf(psrpc.InvalidArgument, "unknown roomc confguration in create room request")
+	}
+
+	clone := proto.Clone(req).(*livekit.CreateRoomRequest)
+
+	// Request overwrites conf
+	if clone.EmptyTimeout == 0 {
+		clone.EmptyTimeout = conf.EmptyTimeout
+	}
+	if clone.DepartureTimeout == 0 {
+		clone.DepartureTimeout = req.DepartureTimeout
+	}
+	if clone.MaxParticipants == 0 {
+		clone.MaxParticipants = conf.MaxParticipants
+	}
+	if clone.Egress == nil {
+		clone.Egress = proto.Clone(conf.Egress).(*livekit.RoomEgress)
+	}
+	if clone.Agent == nil {
+		clone.Agent = proto.Clone(conf.Agent).(*livekit.RoomAgent)
+	}
+	if clone.MinPlayoutDelay == 0 {
+		clone.MinPlayoutDelay = conf.MinPlayoutDelay
+	}
+	if clone.MaxPlayoutDelay == 0 {
+		clone.MaxPlayoutDelay = conf.MaxPlayoutDelay
+	}
+	if !clone.SyncStreams {
+		clone.SyncStreams = conf.SyncStreams
+	}
+
+	return clone, nil
 }

@@ -20,9 +20,9 @@ require (
 	github.com/jellydator/ttlcache/v3 v3.2.0
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
-	github.com/livekit/mediatransportutil v0.0.0-20240613015318-84b69facfb75
-	github.com/livekit/protocol v1.18.0
-	github.com/livekit/psrpc v0.5.3-0.20240526192918-fbdaf10e6aa5
+	github.com/livekit/mediatransportutil v0.0.0-20240625074155-301bb4a816b7
+	github.com/livekit/protocol v1.19.2-0.20240705134535-94a2cfe2f1ee
+	github.com/livekit/psrpc v0.5.3-0.20240616012458-ac39c8549a0a
 	github.com/mackerelio/go-osstat v0.2.5
 	github.com/magefile/mage v1.15.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.8.1
@@ -34,7 +34,7 @@ require (
 	github.com/pion/interceptor v0.1.29
 	github.com/pion/rtcp v1.2.14
 	github.com/pion/rtp v1.8.6
-	github.com/pion/sctp v1.8.16
+	github.com/pion/sctp v1.8.17
 	github.com/pion/sdp/v3 v3.0.9
 	github.com/pion/transport/v2 v2.2.5
 	github.com/pion/turn/v2 v2.1.6
@@ -59,12 +59,16 @@ require (
 )
 
 require (
+	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.33.0-20240401165935-b983156c5e99.1 // indirect
 	dario.cat/mergo v1.0.0 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5 // indirect
+	github.com/antlr4-go/antlr/v4 v4.13.0 // indirect
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/bufbuild/protovalidate-go v0.6.1 // indirect
+	github.com/bufbuild/protoyaml-go v0.1.9 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/containerd/continuity v0.4.3 // indirect
@@ -81,15 +85,16 @@ require (
 	github.com/go-jose/go-jose/v3 v3.0.3 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
+	github.com/google/cel-go v0.20.1 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/google/subcommands v1.2.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
-	github.com/hashicorp/go-retryablehttp v0.7.5 // indirect
+	github.com/hashicorp/go-retryablehttp v0.7.7 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/josharian/native v1.1.0 // indirect
-	github.com/klauspost/compress v1.17.8 // indirect
+	github.com/klauspost/compress v1.17.9 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.6 // indirect
 	github.com/lithammer/shortuuid/v4 v4.0.0 // indirect
 	github.com/mattn/go-runewidth v0.0.9 // indirect
@@ -98,7 +103,7 @@ require (
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/term v0.5.0 // indirect
-	github.com/nats-io/nats.go v1.35.0 // indirect
+	github.com/nats-io/nats.go v1.36.0 // indirect
 	github.com/nats-io/nkeys v0.4.7 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
@@ -117,6 +122,7 @@ require (
 	github.com/puzpuzpuz/xsync/v3 v3.1.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
+	github.com/stoewer/go-strcase v1.3.0 // indirect
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
 	github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 // indirect
 	github.com/xeipuuv/gojsonschema v1.2.0 // indirect
@@ -129,7 +135,8 @@ require (
 	golang.org/x/sys v0.21.0 // indirect
 	golang.org/x/text v0.16.0 // indirect
 	golang.org/x/tools v0.22.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20240521202816-d264139d666e // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20240401170217-c3f982113cda // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20240401170217-c3f982113cda // indirect
 	google.golang.org/grpc v1.64.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
