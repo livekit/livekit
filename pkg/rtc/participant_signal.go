@@ -286,6 +286,17 @@ func (p *ParticipantImpl) sendTrackUnpublished(trackID livekit.TrackID) {
 	})
 }
 
+func (p *ParticipantImpl) sendTrackHasBeenSubscribed(trackID livekit.TrackID) {
+	_ = p.writeMessage(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_TrackSubscribed{
+			TrackSubscribed: &livekit.TrackSubscribed{
+				TrackSid: string(trackID),
+			},
+		},
+	})
+	p.params.Logger.Debugw("track has been subscribed", "trackID", trackID)
+}
+
 func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
 	if p.IsDisconnected() || (!p.IsReady() && msg.GetJoin() == nil) {
 		return nil

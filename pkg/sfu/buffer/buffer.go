@@ -17,6 +17,7 @@ package buffer
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -680,6 +681,29 @@ func (b *Buffer) patchExtPacket(ep *ExtPacket, buf []byte) *ExtPacket {
 		b.logger.Warnw("unexpected marshal size", nil, "max", n, "need", payloadEnd)
 		return nil
 	}
+	// TODO-REMOVE-AFTER-DEBUG START
+	if payloadEnd != n {
+		b.logger.Warnw("unexpected marshal size", nil, "max", n, "need", payloadEnd)
+	}
+	// check a few fields for validity
+	checkVersion := (buf[0] & 0xc0) >> 6
+	checkPayloadType := buf[1] & 0x7f
+	checkSequenceNumber := binary.BigEndian.Uint16(buf[2:])
+	checkSSRC := binary.BigEndian.Uint32(buf[8:])
+	if checkVersion != pkt.Version || checkPayloadType != pkt.PayloadType || checkSequenceNumber != pkt.SequenceNumber || checkSSRC != pkt.SSRC {
+		b.logger.Warnw(
+			"rtp packet mismatch", nil,
+			"version", fmt.Sprintf("%d != %d", checkVersion, pkt.Version),
+			"payloadType", fmt.Sprintf("%d != %d", checkPayloadType, pkt.PayloadType),
+			"sequenceNumber", fmt.Sprintf("%d != %d", checkSequenceNumber, pkt.SequenceNumber),
+			"SSRC", fmt.Sprintf("%d != %d", checkSSRC, pkt.SSRC),
+			"bytes", buf[0:16],
+			"len", n,
+			"headerSize", payloadStart,
+			"payloadSize", payloadEnd-payloadStart,
+		)
+	}
+	// TODO-REMOVE-AFTER-DEBUG END
 	pkt.Payload = buf[payloadStart:payloadEnd]
 	ep.Packet = &pkt
 

@@ -121,8 +121,10 @@ type WebRTCReceiver struct {
 
 	connectionStats *connectionquality.ConnectionStats
 
-	onStatsUpdate    func(w *WebRTCReceiver, stat *livekit.AnalyticsStat)
-	onMaxLayerChange func(maxLayer int32)
+	onStatsUpdate        func(w *WebRTCReceiver, stat *livekit.AnalyticsStat)
+	onMaxLayerChange     func(maxLayer int32)
+	downtrackEverAdded   atomic.Bool
+	onDowntrackEverAdded func()
 
 	primaryReceiver atomic.Pointer[RedPrimaryReceiver]
 	redReceiver     atomic.Pointer[RedReceiver]
@@ -190,6 +192,13 @@ func WithLoadBalanceThreshold(downTracks int) ReceiverOpts {
 func WithForwardStats(forwardStats *ForwardStats) ReceiverOpts {
 	return func(w *WebRTCReceiver) *WebRTCReceiver {
 		w.forwardStats = forwardStats
+		return w
+	}
+}
+
+func WithEverHasDowntrackAdded(f func()) ReceiverOpts {
+	return func(w *WebRTCReceiver) *WebRTCReceiver {
+		w.onDowntrackEverAdded = f
 		return w
 	}
 }
@@ -430,7 +439,14 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) error {
 
 	w.downTrackSpreader.Store(track)
 	w.logger.Debugw("downtrack added", "subscriberID", track.SubscriberID())
+	w.handleDowntrackAdded()
 	return nil
+}
+
+func (w *WebRTCReceiver) handleDowntrackAdded() {
+	if !w.downtrackEverAdded.Swap(true) && w.onDowntrackEverAdded != nil {
+		w.onDowntrackEverAdded()
+	}
 }
 
 func (w *WebRTCReceiver) notifyMaxExpectedLayer(layer int32) {
@@ -811,6 +827,7 @@ func (w *WebRTCReceiver) GetPrimaryReceiverForRed() TrackReceiver {
 			w.bufferMu.Lock()
 			w.redPktWriter = pr.ForwardRTP
 			w.bufferMu.Unlock()
+			w.handleDowntrackAdded()
 		}
 	}
 	return w.primaryReceiver.Load()
@@ -830,6 +847,7 @@ func (w *WebRTCReceiver) GetRedReceiver() TrackReceiver {
 			w.bufferMu.Lock()
 			w.redPktWriter = pr.ForwardRTP
 			w.bufferMu.Unlock()
+			w.handleDowntrackAdded()
 		}
 	}
 	return w.redReceiver.Load()
