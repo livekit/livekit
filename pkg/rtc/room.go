@@ -1014,7 +1014,7 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 	r.lock.Unlock()
 
 	if !hasPublished {
-		r.launchPublisherAgent(participant)
+		r.launchPublisherAgents(participant)
 		if r.internal != nil && r.internal.ParticipantEgress != nil {
 			go func() {
 				if err := StartParticipantEgress(
@@ -1423,16 +1423,44 @@ func (r *Room) simulationCleanupWorker() {
 	}
 }
 
-func (r *Room) launchPublisherAgent(p types.Participant) {
+func (r *Room) launchPublisherAgents(p types.Participant) {
 	if p == nil || p.IsDependent() || r.agentClient == nil {
 		return
 	}
 
-	go r.agentClient.LaunchJob(context.Background(), &agent.JobDescription{
-		JobType:     livekit.JobType_JT_PUBLISHER,
-		Room:        r.ToProto(),
-		Participant: p.ToProto(),
-	})
+	if r.internal == nil {
+		return
+	}
+
+	for _, ag := range r.internal.Agents {
+		if ag.Type != livekit.JobType_JT_PUBLISHER {
+			continue
+		}
+
+		var startAgent bool
+
+		if len(ag.ParticipantIdentity) == 0 {
+			// If no participant given, start for all participants
+			startAgent = true
+		} else {
+			for _, pi := range ag.ParticipantIdentity {
+				if pi == string(p.Identity()) {
+					startAgent = true
+					break
+				}
+			}
+		}
+
+		if startAgent {
+			go r.agentClient.LaunchJob(context.Background(), &agent.JobRequest{
+				JobType:     livekit.JobType_JT_PUBLISHER,
+				Room:        r.ToProto(),
+				Participant: p.ToProto(),
+				Metadata:    ag.Metadata,
+				Namespace:   ag.Namespace,
+			})
+		}
+	}
 }
 
 func (r *Room) DebugInfo() map[string]interface{} {
@@ -1530,6 +1558,9 @@ func connectionDetailsFields(cds []*types.ICEConnectionDetails) []interface{} {
 			} else if c.Filtered {
 				cStr += "[filtered]"
 			}
+			if c.Trickle {
+				cStr += "[trickle]"
+			}
 			cStr += " " + c.Local.String()
 			candidates = append(candidates, cStr)
 		}
@@ -1539,6 +1570,9 @@ func connectionDetailsFields(cds []*types.ICEConnectionDetails) []interface{} {
 				cStr += "[selected]"
 			} else if c.Filtered {
 				cStr += "[filtered]"
+			}
+			if c.Trickle {
+				cStr += "[trickle]"
 			}
 			cStr += " " + c.Remote.String()
 			candidates = append(candidates, cStr)

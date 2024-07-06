@@ -60,7 +60,7 @@ func TestGeneratedFlags(t *testing.T) {
 	set := flag.NewFlagSet("test", 0)
 	set.Bool("rtc.use_ice_lite", true, "")                     // bool
 	set.String("redis.address", "localhost:6379", "")          // string
-	set.Uint("prometheus_port", 9999, "")                      // uint32
+	set.Uint("prometheus.port", 9999, "")                      // uint32
 	set.Bool("rtc.allow_tcp_fallback", true, "")               // pointer
 	set.Bool("rtc.reconnect_on_publication_error", true, "")   // pointer
 	set.Bool("rtc.reconnect_on_subscription_error", false, "") // pointer
@@ -71,7 +71,7 @@ func TestGeneratedFlags(t *testing.T) {
 
 	require.True(t, conf.RTC.UseICELite)
 	require.Equal(t, "localhost:6379", conf.Redis.Address)
-	require.Equal(t, uint32(9999), conf.PrometheusPort)
+	require.Equal(t, uint32(9999), conf.Prometheus.Port)
 
 	require.NotNil(t, conf.RTC.AllowTCPFallback)
 	require.True(t, *conf.RTC.AllowTCPFallback)

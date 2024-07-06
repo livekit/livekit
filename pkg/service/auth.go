@@ -196,6 +196,22 @@ func EnsureIngressAdminPermission(ctx context.Context) error {
 	return nil
 }
 
+func EnsureSIPAdminPermission(ctx context.Context) error {
+	claims := GetGrants(ctx)
+	if claims == nil || claims.SIP == nil || !claims.SIP.Admin {
+		return ErrPermissionDenied
+	}
+	return nil
+}
+
+func EnsureSIPCallPermission(ctx context.Context) error {
+	claims := GetGrants(ctx)
+	if claims == nil || claims.SIP == nil || !claims.SIP.Call {
+		return ErrPermissionDenied
+	}
+	return nil
+}
+
 // wraps authentication errors around Twirp
 func twirpAuthError(err error) error {
 	return twirp.NewError(twirp.Unauthenticated, err.Error())

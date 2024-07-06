@@ -28,6 +28,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	redisLiveKit "github.com/livekit/protocol/redis"
 	"github.com/livekit/protocol/rpc"
@@ -58,9 +59,11 @@ var (
 )
 
 type Config struct {
-	Port           uint32                   `yaml:"port,omitempty"`
-	BindAddresses  []string                 `yaml:"bind_addresses,omitempty"`
+	Port          uint32   `yaml:"port,omitempty"`
+	BindAddresses []string `yaml:"bind_addresses,omitempty"`
+	// PrometheusPort is deprecated
 	PrometheusPort uint32                   `yaml:"prometheus_port,omitempty"`
+	Prometheus     PrometheusConfig         `yaml:"prometheus,omitempty"`
 	RTC            RTCConfig                `yaml:"rtc,omitempty"`
 	Redis          redisLiveKit.RedisConfig `yaml:"redis,omitempty"`
 	Audio          AudioConfig              `yaml:"audio,omitempty"`
@@ -244,7 +247,28 @@ type RoomConfig struct {
 	// deprecated, moved to limits
 	MaxRoomNameLength int `yaml:"max_room_name_length,omitempty"`
 	// deprecated, moved to limits
-	MaxParticipantIdentityLength int `yaml:"max_participant_identity_length,omitempty"`
+	MaxParticipantIdentityLength int                          `yaml:"max_participant_identity_length,omitempty"`
+	RoomConfigurations           map[string]RoomConfiguration `yaml:"room_configurations,omitempty"`
+}
+
+type RoomConfiguration struct {
+	Name string `yaml:"name,omitempty"` // Used as ID, must be unique
+	// number of seconds to keep the room open if no one joins
+	EmptyTimeout uint32 `yaml:"empty_timeout,omitempty"`
+	// number of seconds to keep the room open after everyone leaves
+	DepartureTimeout uint32 `yaml:"departure_timeout,omitempty"`
+	// limit number of participants that can be in a room
+	MaxParticipants uint32 `yaml:"max_participants,omitempty"`
+	// egress
+	Egress *livekit.RoomEgress `yaml:"egress,omitempty"`
+	// agent
+	Agent *livekit.RoomAgent `yaml:"agent,omitempty"`
+	// playout delay of subscriber
+	MinPlayoutDelay uint32 `yaml:"min_playout_delay,omitempty"`
+	MaxPlayoutDelay uint32 `yaml:"max_playout_delay,omitempty"`
+	// improves A/V sync when playout_delay set to a value larger than 200ms. It will disables transceiver re-use
+	// so not recommended for rooms with frequent subscription changes
+	SyncStreams bool `yaml:"sync_streams"`
 }
 
 type CodecSpec struct {
@@ -326,6 +350,12 @@ type APIConfig struct {
 
 	// max amount of time to wait before checking for operation complete
 	MaxCheckInterval time.Duration `yaml:"max_check_interval,omitempty"`
+}
+
+type PrometheusConfig struct {
+	Port     uint32 `yaml:"port,omitempty"`
+	Username string `yaml:"username,omitempty"`
+	Password string `yaml:"password,omitempty"`
 }
 
 type ForwardStatsConfig struct {
