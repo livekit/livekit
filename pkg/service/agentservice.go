@@ -278,14 +278,14 @@ func (h *AgentHandler) HandleWorkerDeregister(w *agent.Worker) {
 			h.publisherKeyCount--
 			h.agentServer.DeregisterJobRequestTopic(topic, h.publisherTopic)
 		}
-	}
 
-	// namespaces contains repeated entries for each worker
-	if i := slices.Index(h.namespaces, w.Namespace()); i != -1 {
-		h.namespaces = slices.Delete(h.namespaces, i, i+1)
-	}
-	if i := slices.Index(h.agentNames, w.AgentName()); i != -1 {
-		h.agentNames = slices.Delete(h.agentNames, i, i+1)
+		// agentNames and namespaces contains repeated entries for each agentNames/namespaces combinations
+		if i := slices.Index(h.namespaces, w.Namespace()); i != -1 {
+			h.namespaces = slices.Delete(h.namespaces, i, i+1)
+		}
+		if i := slices.Index(h.agentNames, w.AgentName()); i != -1 {
+			h.agentNames = slices.Delete(h.agentNames, i, i+1)
+		}
 	}
 }
 
