@@ -683,7 +683,10 @@ func (b *Buffer) patchExtPacket(ep *ExtPacket, buf []byte) *ExtPacket {
 	}
 	// TODO-REMOVE-AFTER-DEBUG START
 	if payloadEnd != n {
-		b.logger.Warnw("unexpected marshal size", nil, "max", n, "need", payloadEnd)
+		paddingEnd := payloadStart + int(ep.Packet.PaddingSize)
+		if paddingEnd != n {
+			b.logger.Warnw("unexpected marshal size", nil, "max", n, "payloadEnd", payloadEnd, "paddingEnd", paddingEnd)
+		}
 	}
 	// check a few fields for validity
 	checkVersion := (buf[0] & 0xc0) >> 6
