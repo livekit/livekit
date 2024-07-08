@@ -756,7 +756,7 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 		}
 
 		if writeCount > 0 && w.forwardStats != nil {
-			w.forwardStats.Update(pkt.Arrival, time.Now())
+			w.forwardStats.Update(pkt.Arrival, time.Now().UnixNano())
 		}
 
 		if spatialTracker != nil {

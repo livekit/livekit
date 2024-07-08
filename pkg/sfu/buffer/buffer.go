@@ -45,20 +45,20 @@ import (
 )
 
 const (
-	ReportDelta = time.Second
+	ReportDelta = 1e9
 
 	InitPacketBufferSizeVideo = 300
 	InitPacketBufferSizeAudio = 70
 )
 
 type pendingPacket struct {
-	arrivalTime time.Time
+	arrivalTime int64
 	packet      []byte
 }
 
 type ExtPacket struct {
 	VideoLayer
-	Arrival              time.Time
+	Arrival              int64
 	ExtSequenceNumber    uint64
 	ExtTimestamp         uint64
 	Packet               *rtp.Packet
@@ -84,7 +84,7 @@ type Buffer struct {
 	closeOnce       sync.Once
 	mediaSSRC       uint32
 	clockRate       uint32
-	lastReport      time.Time
+	lastReport      int64
 	twccExtID       uint8
 	audioLevelExtID uint8
 	bound           bool
@@ -212,7 +212,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	b.ppsSnapshotId = b.rtpStats.NewSnapshotId()
 
 	b.clockRate = codec.ClockRate
-	b.lastReport = time.Now()
+	b.lastReport = time.Now().UnixNano()
 	b.mime = strings.ToLower(codec.MimeType)
 	for _, codecParameter := range params.Codecs {
 		if strings.EqualFold(codecParameter.MimeType, codec.MimeType) {
@@ -340,10 +340,10 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 		}
 	}
 
-	now := time.Now()
+	now := time.Now().UnixNano()
 	if b.twcc != nil && b.twccExtID != 0 && !b.closed.Load() {
 		if ext := rtpPacket.GetExtension(b.twccExtID); ext != nil {
-			b.twcc.Push(rtpPacket.SSRC, binary.BigEndian.Uint16(ext[0:2]), now.UnixNano(), rtpPacket.Marker)
+			b.twcc.Push(rtpPacket.SSRC, binary.BigEndian.Uint16(ext[0:2]), now, rtpPacket.Marker)
 		}
 	}
 
@@ -373,7 +373,7 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 	}
 
 	b.payloadType = rtpPacket.PayloadType
-	b.calc(pkt, &rtpPacket, time.Now(), false)
+	b.calc(pkt, &rtpPacket, now, false)
 	b.Unlock()
 	b.readCond.Broadcast()
 	return
@@ -398,7 +398,7 @@ func (b *Buffer) SetPrimaryBufferForRTX(primaryBuffer *Buffer) {
 	}
 }
 
-func (b *Buffer) writeRTX(rtxPkt *rtp.Packet, arrivalTime time.Time) (n int, err error) {
+func (b *Buffer) writeRTX(rtxPkt *rtp.Packet, arrivalTime int64) (n int, err error) {
 	b.Lock()
 	defer b.Unlock()
 	if !b.bound {
@@ -541,7 +541,7 @@ func (b *Buffer) SetRTT(rtt uint32) {
 	}
 }
 
-func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime time.Time, isRTX bool) {
+func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime int64, isRTX bool) {
 	defer func() {
 		b.doNACKs()
 
@@ -740,7 +740,7 @@ func (b *Buffer) doFpsCalc(ep *ExtPacket) {
 	}
 }
 
-func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime time.Time) RTPFlowState {
+func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime int64) RTPFlowState {
 	flowState := b.rtpStats.Update(
 		arrivalTime,
 		p.Header.SequenceNumber,
@@ -764,7 +764,7 @@ func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime time.Time) RTPFlow
 	return flowState
 }
 
-func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime time.Time, isRTX bool) {
+func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime int64, isRTX bool) {
 	if b.audioLevelExtID != 0 && !isRTX {
 		if !b.latestTSForAudioLevelInitialized {
 			b.latestTSForAudioLevelInitialized = true
@@ -786,7 +786,7 @@ func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime time.Time, i
 	}
 }
 
-func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime time.Time, flowState RTPFlowState) *ExtPacket {
+func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, flowState RTPFlowState) *ExtPacket {
 	ep := &ExtPacket{
 		Arrival:           arrivalTime,
 		ExtSequenceNumber: flowState.ExtSequenceNumber,
@@ -887,8 +887,8 @@ func (b *Buffer) doNACKs() {
 	}
 }
 
-func (b *Buffer) doReports(arrivalTime time.Time) {
-	if time.Since(b.lastReport) < ReportDelta {
+func (b *Buffer) doReports(arrivalTime int64) {
+	if arrivalTime-b.lastReport < ReportDelta {
 		return
 	}
 
@@ -1090,7 +1090,7 @@ func (b *Buffer) GetAudioLevel() (float64, bool) {
 		return 0, false
 	}
 
-	return b.audioLevel.GetLevel(time.Now())
+	return b.audioLevel.GetLevel(time.Now().UnixNano())
 }
 
 func (b *Buffer) OnFpsChanged(f func()) {

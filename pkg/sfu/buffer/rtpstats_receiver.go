@@ -101,7 +101,8 @@ type RTPStatsReceiver struct {
 
 	sequenceNumber *utils.WrapAround[uint16, uint64]
 
-	timestamp *utils.WrapAround[uint32, uint64]
+	tsRolloverThreshold int64
+	timestamp           *utils.WrapAround[uint32, uint64]
 
 	history *protoutils.Bitmap[uint64]
 
@@ -115,14 +116,16 @@ type RTPStatsReceiver struct {
 	outOfOrderSenderReportCount int
 	largeJumpCount              int
 	largeJumpNegativeCount      int
+	timeReversedCount           int
 }
 
 func NewRTPStatsReceiver(params RTPStatsParams) *RTPStatsReceiver {
 	return &RTPStatsReceiver{
-		rtpStatsBase:   newRTPStatsBase(params),
-		sequenceNumber: utils.NewWrapAround[uint16, uint64](utils.WrapAroundParams{IsRestartAllowed: false}),
-		timestamp:      utils.NewWrapAround[uint32, uint64](utils.WrapAroundParams{IsRestartAllowed: false}),
-		history:        protoutils.NewBitmap[uint64](cHistorySize),
+		rtpStatsBase:        newRTPStatsBase(params),
+		sequenceNumber:      utils.NewWrapAround[uint16, uint64](utils.WrapAroundParams{IsRestartAllowed: false}),
+		tsRolloverThreshold: (1 << 31) * 1e9 / int64(params.ClockRate),
+		timestamp:           utils.NewWrapAround[uint32, uint64](utils.WrapAroundParams{IsRestartAllowed: false}),
+		history:             protoutils.NewBitmap[uint64](cHistorySize),
 	}
 }
 
@@ -133,8 +136,18 @@ func (r *RTPStatsReceiver) NewSnapshotId() uint32 {
 	return r.newSnapshotID(r.sequenceNumber.GetExtendedHighest())
 }
 
+func (r *RTPStatsReceiver) getTSRolloverCount(diffNano int64) int {
+	if diffNano < r.tsRolloverThreshold {
+		// time not more than rollover threshold
+		return 0
+	}
+
+	excess := int((diffNano - r.tsRolloverThreshold) * int64(r.params.ClockRate) / 1e9)
+	return excess/(1<<32) + 1
+}
+
 func (r *RTPStatsReceiver) Update(
-	packetTime time.Time,
+	packetTime int64,
 	sequenceNumber uint16,
 	timestamp uint32,
 	marker bool,
@@ -151,6 +164,7 @@ func (r *RTPStatsReceiver) Update(
 	}
 
 	var resSN utils.WrapAroundUpdateResult[uint64]
+	var gapSN int64
 	var resTS utils.WrapAroundUpdateResult[uint64]
 	if !r.initialized {
 		if payloadSize == 0 {
@@ -184,20 +198,23 @@ func (r *RTPStatsReceiver) Update(
 			flowState.IsNotHandled = true
 			return
 		}
-		resTS = r.timestamp.Update(timestamp)
+
+		gapSN = int64(resSN.ExtendedVal - resSN.PreExtendedHighest)
+		if gapSN <= 0 {
+			resTS = r.timestamp.Update(timestamp)
+		} else {
+			resTS = r.timestamp.Rollover(timestamp, r.getTSRolloverCount(packetTime-r.highestTime))
+		}
 	}
 
 	pktSize := uint64(hdrSize + payloadSize + paddingSize)
-	gapSN := int64(resSN.ExtendedVal - resSN.PreExtendedHighest)
 	getLoggingFields := func() []interface{} {
 		return []interface{}{
-			"prevSN", resSN.PreExtendedHighest,
-			"currSN", resSN.ExtendedVal,
+			"resSN", resSN,
 			"gapSN", gapSN,
-			"prevTS", resTS.PreExtendedHighest,
-			"currTS", resTS.ExtendedVal,
+			"resTS", resTS,
 			"gapTS", int64(resTS.ExtendedVal - resTS.PreExtendedHighest),
-			"packetTime", packetTime.String(),
+			"packetTime", time.Unix(0, packetTime).String(),
 			"sequenceNumber", sequenceNumber,
 			"timestamp", timestamp,
 			"marker", marker,
@@ -238,12 +255,22 @@ func (r *RTPStatsReceiver) Update(
 			}
 		}
 	} else { // in-order
-		if gapSN >= cSequenceNumberLargeJumpThreshold || resTS.ExtendedVal < resTS.PreExtendedHighest {
+		if gapSN >= cSequenceNumberLargeJumpThreshold {
 			r.largeJumpCount++
 			if (r.largeJumpCount-1)%100 == 0 {
 				r.logger.Warnw(
 					"large sequence number gap OR time reversed", nil,
 					append(getLoggingFields(), "count", r.largeJumpCount)...,
+				)
+			}
+		}
+
+		if resTS.ExtendedVal < resTS.PreExtendedHighest {
+			r.timeReversedCount++
+			if (r.timeReversedCount-1)%100 == 0 {
+				r.logger.Warnw(
+					"time reversed", nil,
+					append(getLoggingFields(), "count", r.timeReversedCount)...,
 				)
 			}
 		}
@@ -478,7 +505,9 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 	srDataCopy.AtAdjusted = ntpTime.Add(r.propagationDelay)
 	r.srNewest = &srDataCopy
 
-	r.maybeAdjustFirstPacketTime(r.srNewest, 0, r.timestamp.GetExtendedStart())
+	if err, loggingFields := r.maybeAdjustFirstPacketTime(r.srNewest, 0, r.timestamp.GetExtendedStart()); err != nil {
+		r.logger.Infow(err.Error(), append(loggingFields, "rtpStats", lockedRTPStatsReceiverLogEncoder{r})...)
+	}
 	return true
 }
 
