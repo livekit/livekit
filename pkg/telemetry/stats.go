@@ -26,6 +26,7 @@ type StatsKey struct {
 	trackSource   livekit.TrackSource
 	trackType     livekit.TrackType
 	track         bool
+	addr          string
 }
 
 func StatsKeyForTrack(streamType livekit.StreamType, participantID livekit.ParticipantID, trackID livekit.TrackID, trackSource livekit.TrackSource, trackType livekit.TrackType) StatsKey {
@@ -80,6 +81,7 @@ func (t *telemetryService) TrackStats(key StatsKey, stat *livekit.AnalyticsStat)
 				prometheus.RecordRTT(direction, key.trackSource, key.trackType, stream.Rtt)
 				prometheus.RecordJitter(direction, key.trackSource, key.trackType, stream.Jitter)
 			}
+			prometheus.IncrementByteWithAsn(direction, stream.PrimaryBytes, key.addr)
 		}
 		prometheus.IncrementRTCP(direction, nacks, plis, firs)
 		prometheus.IncrementPackets(direction, uint64(packets), false)

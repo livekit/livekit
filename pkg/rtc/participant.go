@@ -143,6 +143,9 @@ type ParticipantParams struct {
 	PlayoutDelay                 *livekit.PlayoutDelay
 	SyncStreams                  bool
 	ForwardStats                 *sfu.ForwardStats
+
+	// Custom
+	ParticipantAddress string
 }
 
 type ParticipantImpl struct {
@@ -264,6 +267,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		dataChannelStats: telemetry.NewBytesTrackStats(
 			telemetry.BytesTrackIDForParticipantID(telemetry.BytesTrackTypeData, params.SID),
 			params.SID,
+			params.ParticipantAddress,
 			params.Telemetry),
 		tracksQuality: make(map[livekit.TrackID]livekit.ConnectionQuality),
 		pubLogger:     params.Logger.WithComponent(sutils.ComponentPub),

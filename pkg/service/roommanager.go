@@ -452,6 +452,7 @@ func (r *RoomManager) StartSession(
 		PlayoutDelay:                 roomInternal.GetPlayoutDelay(),
 		SyncStreams:                  roomInternal.GetSyncStreams(),
 		ForwardStats:                 r.forwardStats,
+		ParticipantAddress:           pi.Client.Address,
 	})
 	if err != nil {
 		return err

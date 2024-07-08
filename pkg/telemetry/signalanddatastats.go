@@ -57,13 +57,17 @@ type BytesTrackStats struct {
 	totalSendMessages, totalRecvMessages atomic.Uint32
 	telemetry                            TelemetryService
 	done                                 core.Fuse
+
+	// Custom address
+	address string
 }
 
-func NewBytesTrackStats(trackID livekit.TrackID, pID livekit.ParticipantID, telemetry TelemetryService) *BytesTrackStats {
+func NewBytesTrackStats(trackID livekit.TrackID, pID livekit.ParticipantID, address string, telemetry TelemetryService) *BytesTrackStats {
 	s := &BytesTrackStats{
 		trackID:   trackID,
 		pID:       pID,
 		telemetry: telemetry,
+		address:   address,
 	}
 	go s.reporter()
 	return s
@@ -99,7 +103,9 @@ func (s *BytesTrackStats) Stop() {
 
 func (s *BytesTrackStats) report() {
 	if recv := s.recv.Swap(0); recv > 0 {
-		s.telemetry.TrackStats(StatsKeyForData(livekit.StreamType_UPSTREAM, s.pID, s.trackID), &livekit.AnalyticsStat{
+		key := StatsKeyForData(livekit.StreamType_UPSTREAM, s.pID, s.trackID)
+		key.addr = s.address
+		s.telemetry.TrackStats(key, &livekit.AnalyticsStat{
 			Streams: []*livekit.AnalyticsStream{
 				{
 					PrimaryBytes:   recv,
@@ -110,7 +116,9 @@ func (s *BytesTrackStats) report() {
 	}
 
 	if send := s.send.Swap(0); send > 0 {
-		s.telemetry.TrackStats(StatsKeyForData(livekit.StreamType_DOWNSTREAM, s.pID, s.trackID), &livekit.AnalyticsStat{
+		key := StatsKeyForData(livekit.StreamType_DOWNSTREAM, s.pID, s.trackID)
+		key.addr = s.address
+		s.telemetry.TrackStats(key, &livekit.AnalyticsStat{
 			Streams: []*livekit.AnalyticsStream{
 				{
 					PrimaryBytes:   send,
