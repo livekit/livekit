@@ -166,6 +166,7 @@ type RTPStatsSender struct {
 	metadataCacheOverflowCount int
 	largeJumpNegativeCount     int
 	largeJumpCount             int
+	timeReversedCount          int
 }
 
 func NewRTPStatsSender(params RTPStatsParams) *RTPStatsSender {
@@ -233,7 +234,7 @@ func (r *RTPStatsSender) NewSenderSnapshotId() uint32 {
 }
 
 func (r *RTPStatsSender) Update(
-	packetTime time.Time,
+	packetTime int64,
 	extSequenceNumber uint64,
 	extTimestamp uint64,
 	marker bool,
@@ -358,12 +359,22 @@ func (r *RTPStatsSender) Update(
 			}
 		}
 	} else { // in-order
-		if gapSN >= cSequenceNumberLargeJumpThreshold || extTimestamp < r.extHighestTS {
+		if gapSN >= cSequenceNumberLargeJumpThreshold {
 			r.largeJumpCount++
 			if (r.largeJumpCount-1)%100 == 0 {
 				r.logger.Warnw(
-					"large sequence number gap OR time reversed", nil,
+					"large sequence number gap", nil,
 					append(getLoggingFields(), "count", r.largeJumpCount)...,
+				)
+			}
+		}
+
+		if extTimestamp < r.extHighestTS {
+			r.timeReversedCount++
+			if (r.timeReversedCount-1)%100 == 0 {
+				r.logger.Warnw(
+					"time reversed", nil,
+					append(getLoggingFields(), "count", r.timeReversedCount)...,
 				)
 			}
 		}
@@ -575,7 +586,9 @@ func (r *RTPStatsSender) MaybeAdjustFirstPacketTime(publisherSRData *RTCPSenderR
 		return
 	}
 
-	r.maybeAdjustFirstPacketTime(publisherSRData, tsOffset, r.extStartTS)
+	if err, loggingFields := r.maybeAdjustFirstPacketTime(publisherSRData, tsOffset, r.extStartTS); err != nil {
+		r.logger.Infow(err.Error(), append(loggingFields, "rtpStats", lockedRTPStatsSenderLogEncoder{r})...)
+	}
 }
 
 func (r *RTPStatsSender) GetExpectedRTPTimestamp(at time.Time) (expectedTSExt uint64, err error) {
@@ -587,7 +600,7 @@ func (r *RTPStatsSender) GetExpectedRTPTimestamp(at time.Time) (expectedTSExt ui
 		return
 	}
 
-	timeDiff := at.Sub(r.firstTime)
+	timeDiff := at.Sub(time.Unix(0, r.firstTime))
 	expectedRTPDiff := timeDiff.Nanoseconds() * int64(r.params.ClockRate) / 1e9
 	expectedTSExt = r.extStartTS + uint64(expectedRTPDiff)
 	return
@@ -630,8 +643,8 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *RTCPS
 			"tsOffset", tsOffset,
 			"timeNow", time.Now().String(),
 			"now", now.String(),
-			"timeSinceHighest", now.Sub(r.highestTime).String(),
-			"timeSinceFirst", now.Sub(r.firstTime).String(),
+			"timeSinceHighest", now.Sub(time.Unix(0, r.highestTime)).String(),
+			"timeSinceFirst", now.Sub(time.Unix(0, r.firstTime)).String(),
 			"timeSincePublisherSRAdjusted", timeSincePublisherSRAdjusted.String(),
 			"timeSincePublisherSR", time.Since(publisherSRData.At).String(),
 			"nowRTPExt", nowRTPExt,
