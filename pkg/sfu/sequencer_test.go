@@ -29,11 +29,11 @@ func Test_sequencer(t *testing.T) {
 	off := uint16(15)
 
 	for i := uint64(1); i < 518; i++ {
-		seq.push(time.Now(), i, i+uint64(off), 123, true, 2, nil, 0, nil, nil)
+		seq.push(time.Now().UnixNano(), i, i+uint64(off), 123, true, 2, nil, 0, nil, nil)
 	}
 	// send the last two out-of-order
-	seq.push(time.Now(), 519, 519+uint64(off), 123, false, 2, nil, 0, nil, nil)
-	seq.push(time.Now(), 518, 518+uint64(off), 123, true, 2, nil, 0, nil, nil)
+	seq.push(time.Now().UnixNano(), 519, 519+uint64(off), 123, false, 2, nil, 0, nil, nil)
+	seq.push(time.Now().UnixNano(), 518, 518+uint64(off), 123, true, 2, nil, 0, nil, nil)
 
 	req := []uint16{57, 58, 62, 63, 513, 514, 515, 516, 517}
 	res := seq.getExtPacketMetas(req)
@@ -63,14 +63,14 @@ func Test_sequencer(t *testing.T) {
 		require.Equal(t, val.extTimestamp, uint64(123))
 	}
 
-	seq.push(time.Now(), 521, 521+uint64(off), 123, true, 1, nil, 0, nil, nil)
+	seq.push(time.Now().UnixNano(), 521, 521+uint64(off), 123, true, 1, nil, 0, nil, nil)
 	m := seq.getExtPacketMetas([]uint16{521 + off})
 	require.Equal(t, 0, len(m))
 	time.Sleep((ignoreRetransmission + 10) * time.Millisecond)
 	m = seq.getExtPacketMetas([]uint16{521 + off})
 	require.Equal(t, 1, len(m))
 
-	seq.push(time.Now(), 505, 505+uint64(off), 123, false, 1, nil, 0, nil, nil)
+	seq.push(time.Now().UnixNano(), 505, 505+uint64(off), 123, false, 1, nil, 0, nil, nil)
 	m = seq.getExtPacketMetas([]uint16{505 + off})
 	require.Equal(t, 0, len(m))
 	time.Sleep((ignoreRetransmission + 10) * time.Millisecond)
@@ -157,7 +157,7 @@ func Test_sequencer_getNACKSeqNo_exclusion(t *testing.T) {
 				} else {
 					if i.seqNo%5 == 0 {
 						n.push(
-							time.Now(),
+							time.Now().UnixNano(),
 							i.seqNo,
 							i.seqNo+tt.fields.offset,
 							123,
@@ -171,7 +171,7 @@ func Test_sequencer_getNACKSeqNo_exclusion(t *testing.T) {
 					} else {
 						if i.seqNo%2 == 0 {
 							n.push(
-								time.Now(),
+								time.Now().UnixNano(),
 								i.seqNo,
 								i.seqNo+tt.fields.offset,
 								123,
@@ -184,7 +184,7 @@ func Test_sequencer_getNACKSeqNo_exclusion(t *testing.T) {
 							)
 						} else {
 							n.push(
-								time.Now(),
+								time.Now().UnixNano(),
 								i.seqNo,
 								i.seqNo+tt.fields.offset,
 								123,
@@ -311,7 +311,7 @@ func Test_sequencer_getNACKSeqNo_no_exclusion(t *testing.T) {
 				} else {
 					if i.seqNo%2 == 0 {
 						n.push(
-							time.Now(),
+							time.Now().UnixNano(),
 							i.seqNo,
 							i.seqNo+tt.fields.offset,
 							123,
@@ -324,7 +324,7 @@ func Test_sequencer_getNACKSeqNo_no_exclusion(t *testing.T) {
 						)
 					} else {
 						n.push(
-							time.Now(),
+							time.Now().UnixNano(),
 							i.seqNo,
 							i.seqNo+tt.fields.offset,
 							123,
