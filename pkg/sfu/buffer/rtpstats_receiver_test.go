@@ -61,7 +61,7 @@ func Test_RTPStatsReceiver(t *testing.T) {
 		for i := 0; i < packetsPerFrame; i++ {
 			packet := getPacket(sequenceNumber, timestamp, packetSize)
 			r.Update(
-				time.Now(),
+				time.Now().UnixNano(),
 				packet.Header.SequenceNumber,
 				packet.Header.Timestamp,
 				packet.Header.Marker,
@@ -97,7 +97,7 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 	timestamp := uint32(rand.Float64() * float64(1<<32))
 	packet := getPacket(sequenceNumber, timestamp, 1000)
 	flowState := r.Update(
-		time.Now(),
+		time.Now().UnixNano(),
 		packet.Header.SequenceNumber,
 		packet.Header.Timestamp,
 		packet.Header.Marker,
@@ -117,7 +117,7 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 	timestamp += 3000
 	packet = getPacket(sequenceNumber, timestamp, 1000)
 	flowState = r.Update(
-		time.Now(),
+		time.Now().UnixNano(),
 		packet.Header.SequenceNumber,
 		packet.Header.Timestamp,
 		packet.Header.Marker,
@@ -134,7 +134,7 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 	// out-of-order, would cause a restart which is disallowed
 	packet = getPacket(sequenceNumber-10, timestamp-30000, 1000)
 	flowState = r.Update(
-		time.Now(),
+		time.Now().UnixNano(),
 		packet.Header.SequenceNumber,
 		packet.Header.Timestamp,
 		packet.Header.Marker,
@@ -154,7 +154,7 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 	// duplicate of the above out-of-order packet, but would not be handled as it causes a restart
 	packet = getPacket(sequenceNumber-10, timestamp-30000, 1000)
 	flowState = r.Update(
-		time.Now(),
+		time.Now().UnixNano(),
 		packet.Header.SequenceNumber,
 		packet.Header.Timestamp,
 		packet.Header.Marker,
@@ -176,7 +176,7 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 	timestamp += 30000
 	packet = getPacket(sequenceNumber, timestamp, 1000)
 	flowState = r.Update(
-		time.Now(),
+		time.Now().UnixNano(),
 		packet.Header.SequenceNumber,
 		packet.Header.Timestamp,
 		packet.Header.Marker,
@@ -192,7 +192,7 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 	// out-of-order should decrement number of lost packets
 	packet = getPacket(sequenceNumber-6, timestamp-45000, 1000)
 	flowState = r.Update(
-		time.Now(),
+		time.Now().UnixNano(),
 		packet.Header.SequenceNumber,
 		packet.Header.Timestamp,
 		packet.Header.Marker,
@@ -215,7 +215,7 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 	timestamp += 6000
 	packet = getPacket(sequenceNumber, timestamp, 1000)
 	flowState = r.Update(
-		time.Now(),
+		time.Now().UnixNano(),
 		packet.Header.SequenceNumber,
 		packet.Header.Timestamp,
 		packet.Header.Marker,
@@ -234,7 +234,7 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 	timestamp -= 3000
 	packet = getPacket(sequenceNumber, timestamp, 999)
 	flowState = r.Update(
-		time.Now(),
+		time.Now().UnixNano(),
 		packet.Header.SequenceNumber,
 		packet.Header.Timestamp,
 		packet.Header.Marker,
@@ -251,7 +251,7 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 	sequenceNumber += 2
 	packet = getPacket(sequenceNumber, timestamp, 0)
 	flowState = r.Update(
-		time.Now(),
+		time.Now().UnixNano(),
 		packet.Header.SequenceNumber,
 		packet.Header.Timestamp,
 		packet.Header.Marker,
