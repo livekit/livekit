@@ -548,7 +548,8 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 			if r.lastRRTime.IsZero() {
 				timeSinceLastRR = time.Since(r.startTime)
 			}
-			if r.metadataCacheOverflowCount%10 == 0 {
+			r.metadataCacheOverflowCount++
+			if (r.metadataCacheOverflowCount-1)%10 == 0 {
 				r.logger.Infow(
 					"metadata cache overflow",
 					"timeSinceLastRR", timeSinceLastRR.String(),
@@ -561,7 +562,6 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 					"rtpStats", lockedRTPStatsSenderLogEncoder{r},
 				)
 			}
-			r.metadataCacheOverflowCount++
 		}
 		s.extLastRRSN = extReceivedRRSN
 	}
@@ -656,7 +656,8 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *RTCPS
 		rtpDiffSinceLastReport := nowRTPExt - r.srNewest.RTPTimestampExt
 		windowClockRate := float64(rtpDiffSinceLastReport) / timeSinceLastReport.Seconds()
 		if timeSinceLastReport.Seconds() > 0.2 && math.Abs(float64(r.params.ClockRate)-windowClockRate) > 0.2*float64(r.params.ClockRate) {
-			if r.clockSkewCount%100 == 0 {
+			r.clockSkewCount++
+			if (r.clockSkewCount-1)%100 == 0 {
 				fields := append(
 					getFields(),
 					"timeSinceLastReport", timeSinceLastReport.String(),
@@ -666,7 +667,6 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *RTCPS
 				)
 				r.logger.Infow("sending sender report, clock skew", fields...)
 			}
-			r.clockSkewCount++
 		}
 	}
 
