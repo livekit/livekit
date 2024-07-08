@@ -100,7 +100,7 @@ func (l *AudioLevel) Observe(level uint8, durationMs uint32, arrivalTime int64) 
 	}
 }
 
-// returns current soothed audio level
+// returns current smoothed audio level
 func (l *AudioLevel) GetLevel(now int64) (float64, bool) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
