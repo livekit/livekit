@@ -41,6 +41,7 @@ type RedPrimaryReceiver struct {
 	downTrackSpreader *DownTrackSpreader
 	logger            logger.Logger
 	closed            atomic.Bool
+	redPT             uint8
 
 	firstPktReceived bool
 	lastSeq          uint16
@@ -54,6 +55,7 @@ func NewRedPrimaryReceiver(receiver TrackReceiver, dsp DownTrackSpreaderParams) 
 		TrackReceiver:     receiver,
 		downTrackSpreader: NewDownTrackSpreader(dsp),
 		logger:            dsp.Logger,
+		redPT:             uint8(receiver.Codec().PayloadType),
 	}
 }
 
@@ -61,6 +63,13 @@ func (r *RedPrimaryReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int3
 	// extract primary payload from RED and forward to downtracks
 	if r.downTrackSpreader.DownTrackCount() == 0 {
 		return 0
+	}
+
+	if pkt.Packet.PayloadType != r.redPT {
+		// forward non-red packet directly
+		return r.downTrackSpreader.Broadcast(func(dt TrackSender) {
+			_ = dt.WriteRTP(pkt, spatialLayer)
+		})
 	}
 
 	pkts, err := r.getSendPktsFromRed(pkt.Packet)

@@ -25,7 +25,10 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-const tsStep = uint32(48000 / 1000 * 10)
+const (
+	tsStep    = uint32(48000 / 1000 * 10)
+	opusREDPT = 63
+)
 
 type dummyDowntrack struct {
 	TrackSender
@@ -268,6 +271,7 @@ func generateRedPkts(t *testing.T, pkts []*rtp.Packet, redCount int) []*rtp.Pack
 		}
 		buf := make([]byte, mtuSize)
 		redPkt := *pkt
+		redPkt.PayloadType = opusREDPT
 		encoded, err := encodeRedForPrimary(encodingPkts, pkt, buf)
 		require.NoError(t, err)
 		redPkt.Payload = buf[:encoded]
@@ -281,6 +285,7 @@ func testRedRedPrimaryReceiver(t *testing.T, maxPktCount, redCount int, sendPktI
 	w := &WebRTCReceiver{
 		kind:   webrtc.RTPCodecTypeAudio,
 		logger: logger.GetLogger(),
+		codec:  webrtc.RTPCodecParameters{PayloadType: opusREDPT, RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: "audio/red"}},
 	}
 	require.Equal(t, w.GetPrimaryReceiverForRed(), w)
 	w.isRED = true
@@ -374,6 +379,30 @@ func TestRedPrimaryReceiver(t *testing.T) {
 		recvPktIndex := []int{20, 10, 23, 24, 25, 21, 22, 23, 32, 33, 34}
 		testRedRedPrimaryReceiver(t, maxPktCount, maxRedCount, sendPktIndex, recvPktIndex)
 	})
+
+	t.Run("mixed primary codec", func(t *testing.T) {
+		dt := &dummyDowntrack{TrackSender: &DownTrack{}}
+		w := &WebRTCReceiver{
+			kind:   webrtc.RTPCodecTypeAudio,
+			logger: logger.GetLogger(),
+			codec:  webrtc.RTPCodecParameters{PayloadType: opusREDPT, RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: "audio/red"}},
+		}
+		require.Equal(t, w.GetPrimaryReceiverForRed(), w)
+		w.isRED = true
+		red := w.GetPrimaryReceiverForRed().(*RedPrimaryReceiver)
+		require.NotNil(t, red)
+		require.NoError(t, red.AddDownTrack(dt))
+
+		primaryPkt := &rtp.Packet{
+			Header:  rtp.Header{SequenceNumber: 65530, Timestamp: (uint32(1) << 31) - 2*tsStep, PayloadType: 111},
+			Payload: []byte{1, 3, 5, 7, 9},
+		}
+		red.ForwardRTP(&buffer.ExtPacket{
+			Packet: primaryPkt,
+		}, 0)
+
+		verifyPktsEqual(t, []*rtp.Packet{primaryPkt}, dt.receivedPkts)
+	})
 }
 
 func TestExtractPrimaryEncodingForRED(t *testing.T) {
@@ -386,8 +415,10 @@ func TestExtractPrimaryEncodingForRED(t *testing.T) {
 	for _, redPkt := range redPkts {
 		payload, err := extractPrimaryEncodingForRED(redPkt.Payload)
 		require.NoError(t, err)
+		primaryHeader := redPkt.Header
+		primaryHeader.PayloadType = 111
 		primaryPkts = append(primaryPkts, &rtp.Packet{
-			Header:  redPkt.Header,
+			Header:  primaryHeader,
 			Payload: payload,
 		})
 	}

@@ -235,8 +235,14 @@ type DownTrack struct {
 
 	forwarder *Forwarder
 
-	upstreamCodecs            []webrtc.RTPCodecParameters
-	codec                     webrtc.RTPCodecCapability
+	upstreamCodecs []webrtc.RTPCodecParameters
+	codec          webrtc.RTPCodecCapability
+
+	// payload types for red codec only
+	isRED             bool
+	upstreamPrimaryPT uint8
+	primaryPT         uint8
+
 	absSendTimeExtID          int
 	transportWideExtID        int
 	dependencyDescriptorExtID int
@@ -365,7 +371,7 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		go d.maxLayerNotifierWorker()
 		go d.keyFrameRequester()
 	}
-	d.params.Logger.Debugw("downtrack created")
+	d.params.Logger.Debugw("downtrack created", "upstreamCodecs", d.upstreamCodecs)
 
 	return d, nil
 }
@@ -379,11 +385,12 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.bindLock.Unlock()
 		return webrtc.RTPCodecParameters{}, ErrDownTrackAlreadyBound
 	}
-	var codec webrtc.RTPCodecParameters
+	var codec, matchedUpstreamCodec webrtc.RTPCodecParameters
 	for _, c := range d.upstreamCodecs {
 		matchCodec, err := utils.CodecParametersFuzzySearch(c, t.CodecParameters())
 		if err == nil {
 			codec = matchCodec
+			matchedUpstreamCodec = c
 			break
 		}
 	}
@@ -397,6 +404,18 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 			onBinding(err)
 		}
 		return webrtc.RTPCodecParameters{}, err
+	} else if strings.EqualFold(matchedUpstreamCodec.MimeType, "audio/red") {
+		d.isRED = true
+		var primaryPT, secondaryPT int
+		if n, err := fmt.Sscanf(matchedUpstreamCodec.SDPFmtpLine, "%d/%d", &primaryPT, &secondaryPT); err != nil || n != 2 {
+			d.params.Logger.Errorw("failed to parse upstream primary and secondary payload type for RED", err, "matchedCodec", codec)
+		}
+		d.upstreamPrimaryPT = uint8(primaryPT)
+
+		if n, err := fmt.Sscanf(codec.SDPFmtpLine, "%d/%d", &primaryPT, &secondaryPT); err != nil || n != 2 {
+			d.params.Logger.Errorw("failed to parse primary and secondary payload type for RED", err, "matchedCodec", codec)
+		}
+		d.primaryPT = uint8(primaryPT)
 	}
 
 	// if a downtrack is closed before bind, it already unsubscribed from client, don't do subsequent operation and return here.
@@ -406,7 +425,22 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		return codec, nil
 	}
 
-	d.params.Logger.Debugw("DownTrack.Bind", "codecs", d.upstreamCodecs, "matchCodec", codec, "ssrc", t.SSRC())
+	logFields := []interface{}{
+		"codecs", d.upstreamCodecs,
+		"matchCodec", codec,
+		"ssrc", t.SSRC(),
+	}
+	if d.isRED {
+		logFields = append(logFields,
+			"isRED", d.isRED,
+			"upstreamPrimaryPT", d.upstreamPrimaryPT,
+			"primaryPT", d.primaryPT,
+		)
+	}
+	d.params.Logger.Debugw("DownTrack.Bind",
+		logFields...,
+	)
+
 	d.ssrc = uint32(t.SSRC())
 	d.payloadType = uint8(codec.PayloadType)
 	d.writeStream = t.WriteStream()
@@ -1756,7 +1790,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		pkt.Header.SequenceNumber = epm.targetSeqNo
 		pkt.Header.Timestamp = epm.timestamp
 		pkt.Header.SSRC = d.ssrc
-		pkt.Header.PayloadType = d.payloadType
+		pkt.Header.PayloadType = d.getTranslatedPayloadType(pkt.Header.PayloadType)
 
 		poolEntity := PacketFactory.Get().(*[]byte)
 		payload := *poolEntity
@@ -1843,7 +1877,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 
 func (d *DownTrack) getTranslatedRTPHeader(extPkt *buffer.ExtPacket, tp *TranslationParams) (*rtp.Header, error) {
 	hdr := extPkt.Packet.Header
-	hdr.PayloadType = d.payloadType
+	hdr.PayloadType = d.getTranslatedPayloadType(hdr.PayloadType)
 	hdr.Timestamp = uint32(tp.rtp.extTimestamp)
 	hdr.SequenceNumber = uint16(tp.rtp.extSequenceNumber)
 	hdr.SSRC = d.ssrc
@@ -1852,6 +1886,15 @@ func (d *DownTrack) getTranslatedRTPHeader(extPkt *buffer.ExtPacket, tp *Transla
 	}
 
 	return &hdr, nil
+}
+
+func (d *DownTrack) getTranslatedPayloadType(src uint8) uint8 {
+	// send primary codec to subscriber if the publisher send primary codec to us when red is negotiated,
+	// this will happen when the payload is too large to encode into red payload (exceeds mtu).
+	if d.isRED && src == d.upstreamPrimaryPT && d.primaryPT != 0 {
+		return d.primaryPT
+	}
+	return d.payloadType
 }
 
 func (d *DownTrack) DebugInfo() map[string]interface{} {
