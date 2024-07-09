@@ -246,7 +246,7 @@ func extractPktsFromRed(redPkt *rtp.Packet, recoverBits byte) ([]*rtp.Packet, er
 		if b.primary {
 			header := redPkt.Header
 			header.PayloadType = b.pt
-			pkts = append(pkts, &rtp.Packet{Header: redPkt.Header, Payload: payload})
+			pkts = append(pkts, &rtp.Packet{Header: header, Payload: payload})
 			break
 		}
 
