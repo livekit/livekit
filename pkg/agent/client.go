@@ -16,6 +16,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -51,7 +52,7 @@ type JobRequest struct {
 	// only set for participant jobs
 	Participant *livekit.ParticipantInfo
 	Metadata    string
-	Namespace   string
+	AgentName   string
 }
 
 type agentClient struct {
@@ -61,9 +62,12 @@ type agentClient struct {
 
 	// cache response to avoid constantly checking with controllers
 	// cache is invalidated with AgentRegistered updates
-	roomNamespaces      *serverutils.IncrementalDispatcher[string]
-	publisherNamespaces *serverutils.IncrementalDispatcher[string]
-	enabledExpiresAt    time.Time
+	roomNamespaces      *serverutils.IncrementalDispatcher[string] // deprecated
+	publisherNamespaces *serverutils.IncrementalDispatcher[string] // deprecated
+	roomAgentNames      *serverutils.IncrementalDispatcher[string]
+	publisherAgentNames *serverutils.IncrementalDispatcher[string]
+
+	enabledExpiresAt time.Time
 
 	workers *workerpool.WorkerPool
 
@@ -96,6 +100,8 @@ func NewAgentClient(bus psrpc.MessageBus) (Client, error) {
 			c.mu.Lock()
 			c.roomNamespaces = nil
 			c.publisherNamespaces = nil
+			c.roomAgentNames = nil
+			c.publisherAgentNames = nil
 			c.mu.Unlock()
 		}
 
@@ -111,68 +117,80 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) {
 		jobTypeTopic = PublisherAgentTopic
 	}
 
-	if !c.isNamespaceActive(desc.Namespace, desc.JobType) {
-		logger.Infow("not dispatching agent job since no worker is available", "namespace", desc.Namespace, "jobType", desc.JobType)
+	dispatcher := c.getDispatcher(desc.AgentName, desc.JobType)
+
+	if dispatcher == nil {
+		logger.Infow("not dispatching agent job since no worker is available", "agentName", desc.AgentName, "jobType", desc.JobType)
 		return
 	}
 
-	c.workers.Submit(func() {
-		_, err := c.client.JobRequest(context.Background(), desc.Namespace, jobTypeTopic, &livekit.Job{
-			Id:          utils.NewGuid(utils.AgentJobPrefix),
-			Type:        desc.JobType,
-			Room:        desc.Room,
-			Participant: desc.Participant,
-			Namespace:   desc.Namespace,
-			Metadata:    desc.Metadata,
+	dispatcher.ForEach(func(curNs string) {
+		topic := GetAgentTopic(desc.AgentName, curNs)
+		c.workers.Submit(func() {
+			// The cached agent parameters do not provide the exact combination of available job type/agent name/namespace, so some of the JobRequest RPC may not trigger any worker
+			_, err := c.client.JobRequest(context.Background(), topic, jobTypeTopic, &livekit.Job{
+				Id:          utils.NewGuid(utils.AgentJobPrefix),
+				Type:        desc.JobType,
+				Room:        desc.Room,
+				Participant: desc.Participant,
+				Namespace:   curNs,
+				AgentName:   desc.AgentName,
+				Metadata:    desc.Metadata,
+			})
+			if err != nil {
+				logger.Infow("failed to send job request", "error", err, "namespace", curNs, "jobType", desc.JobType)
+			}
 		})
-		if err != nil {
-			logger.Infow("failed to send job request", "error", err, "namespace", desc.Namespace, "jobType", desc.JobType)
-		}
 	})
 }
 
-func (c *agentClient) isNamespaceActive(ns string, jobType livekit.JobType) bool {
+func (c *agentClient) getDispatcher(agName string, jobType livekit.JobType) *serverutils.IncrementalDispatcher[string] {
 	c.mu.Lock()
 
-	if time.Since(c.enabledExpiresAt) > EnabledCacheTTL || c.roomNamespaces == nil || c.publisherNamespaces == nil {
+	if time.Since(c.enabledExpiresAt) > EnabledCacheTTL || c.roomNamespaces == nil ||
+		c.publisherNamespaces == nil || c.roomAgentNames == nil || c.publisherAgentNames == nil {
 		c.enabledExpiresAt = time.Now()
 		c.roomNamespaces = serverutils.NewIncrementalDispatcher[string]()
 		c.publisherNamespaces = serverutils.NewIncrementalDispatcher[string]()
-		go c.checkEnabled(c.roomNamespaces, c.publisherNamespaces)
+		c.roomAgentNames = serverutils.NewIncrementalDispatcher[string]()
+		c.publisherAgentNames = serverutils.NewIncrementalDispatcher[string]()
+
+		go c.checkEnabled(c.roomNamespaces, c.publisherNamespaces, c.roomAgentNames, c.publisherAgentNames)
 	}
 
 	target := c.roomNamespaces
+	agentNames := c.roomAgentNames
 	if jobType == livekit.JobType_JT_PUBLISHER {
 		target = c.publisherNamespaces
+		agentNames = c.publisherAgentNames
 	}
-
 	c.mu.Unlock()
 
-	done := make(chan bool, 1)
-
-	go func() {
-		target.ForEach(func(curNs string) {
-			if curNs == ns {
+	done := make(chan *serverutils.IncrementalDispatcher[string], 1)
+	c.workers.Submit(func() {
+		agentNames.ForEach(func(ag string) {
+			if ag == agName {
 				select {
-				case done <- true:
+				case done <- target:
 				default:
 				}
-
-				return
 			}
 		})
 		select {
-		case done <- false:
+		case done <- nil:
 		default:
 		}
-	}()
+	})
 
 	return <-done
 }
 
-func (c *agentClient) checkEnabled(roomNamespaces, publisherNamespaces *serverutils.IncrementalDispatcher[string]) {
+func (c *agentClient) checkEnabled(roomNamespaces, publisherNamespaces, roomAgentNames, publisherAgentNames *serverutils.IncrementalDispatcher[string]) {
 	defer roomNamespaces.Done()
 	defer publisherNamespaces.Done()
+	defer roomAgentNames.Done()
+	defer publisherAgentNames.Done()
+
 	resChan, err := c.client.CheckEnabled(context.Background(), &rpc.CheckEnabledRequest{}, psrpc.WithRequestTimeout(CheckEnabledTimeout))
 	if err != nil {
 		logger.Errorw("failed to check enabled", err)
@@ -181,6 +199,8 @@ func (c *agentClient) checkEnabled(roomNamespaces, publisherNamespaces *serverut
 
 	roomNSMap := make(map[string]bool)
 	publisherNSMap := make(map[string]bool)
+	roomAgMap := make(map[string]bool)
+	publisherAgMap := make(map[string]bool)
 
 	for r := range resChan {
 		if r.Result.GetRoomEnabled() {
@@ -188,6 +208,12 @@ func (c *agentClient) checkEnabled(roomNamespaces, publisherNamespaces *serverut
 				if _, ok := roomNSMap[ns]; !ok {
 					roomNamespaces.Add(ns)
 					roomNSMap[ns] = true
+				}
+			}
+			for _, ag := range r.Result.GetAgentNames() {
+				if _, ok := roomAgMap[ag]; !ok {
+					roomAgentNames.Add(ag)
+					roomAgMap[ag] = true
 				}
 			}
 		}
@@ -198,6 +224,12 @@ func (c *agentClient) checkEnabled(roomNamespaces, publisherNamespaces *serverut
 					publisherNSMap[ns] = true
 				}
 			}
+			for _, ag := range r.Result.GetAgentNames() {
+				if _, ok := publisherAgMap[ag]; !ok {
+					publisherAgentNames.Add(ag)
+					publisherAgMap[ag] = true
+				}
+			}
 		}
 	}
 }
@@ -206,4 +238,16 @@ func (c *agentClient) Stop() error {
 	_ = c.invalidateSub.Close()
 	<-c.subDone
 	return nil
+}
+
+func GetAgentTopic(agentName, namespace string) string {
+	if agentName == "" {
+		// Backward compatibility
+		return namespace
+	} else if namespace == "" {
+		// Forward compatibility once the namespace field is removed from the worker SDK
+		return agentName
+	} else {
+		return fmt.Sprintf("%s_%s", agentName, namespace)
+	}
 }

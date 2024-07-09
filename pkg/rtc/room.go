@@ -1432,34 +1432,14 @@ func (r *Room) launchPublisherAgents(p types.Participant) {
 		return
 	}
 
-	for _, ag := range r.internal.Agents {
-		if ag.Type != livekit.JobType_JT_PUBLISHER {
-			continue
-		}
-
-		var startAgent bool
-
-		if len(ag.ParticipantIdentity) == 0 {
-			// If no participant given, start for all participants
-			startAgent = true
-		} else {
-			for _, pi := range ag.ParticipantIdentity {
-				if pi == string(p.Identity()) {
-					startAgent = true
-					break
-				}
-			}
-		}
-
-		if startAgent {
-			go r.agentClient.LaunchJob(context.Background(), &agent.JobRequest{
-				JobType:     livekit.JobType_JT_PUBLISHER,
-				Room:        r.ToProto(),
-				Participant: p.ToProto(),
-				Metadata:    ag.Metadata,
-				Namespace:   ag.Namespace,
-			})
-		}
+	for _, ag := range r.internal.AgentDispatches {
+		go r.agentClient.LaunchJob(context.Background(), &agent.JobRequest{
+			JobType:     livekit.JobType_JT_PUBLISHER,
+			Room:        r.ToProto(),
+			Participant: p.ToProto(),
+			Metadata:    ag.Metadata,
+			AgentName:   ag.AgentName,
+		})
 	}
 }
 
