@@ -1877,7 +1877,6 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 
 func (d *DownTrack) getTranslatedRTPHeader(extPkt *buffer.ExtPacket, tp *TranslationParams) (*rtp.Header, error) {
 	hdr := extPkt.Packet.Header
-
 	hdr.PayloadType = d.getTranslatedPayloadType(hdr.PayloadType)
 	hdr.Timestamp = uint32(tp.rtp.extTimestamp)
 	hdr.SequenceNumber = uint16(tp.rtp.extSequenceNumber)
