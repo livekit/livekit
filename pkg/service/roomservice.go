@@ -248,10 +248,17 @@ func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 
 func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.UpdateParticipantRequest) (*livekit.ParticipantInfo, error) {
 	AppendLogFields(ctx, "room", req.Room, "participant", req.Identity)
+
+	maxParticipantNameLength := s.limitConf.MaxParticipantNameLength
+	if maxParticipantNameLength > 0 && len(req.Name) > maxParticipantNameLength {
+		return nil, twirp.InvalidArgumentError(ErrNameExceedsLimits.Error(), strconv.Itoa(maxParticipantNameLength))
+	}
+
 	maxMetadataSize := int(s.limitConf.MaxMetadataSize)
 	if maxMetadataSize > 0 && len(req.Metadata) > maxMetadataSize {
 		return nil, twirp.InvalidArgumentError(ErrMetadataExceedsLimits.Error(), strconv.Itoa(maxMetadataSize))
 	}
+
 	maxAttributeSize := int(s.limitConf.MaxAttributesSize)
 	if maxAttributeSize > 0 {
 		total := 0

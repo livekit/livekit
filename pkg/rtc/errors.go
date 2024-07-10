@@ -31,7 +31,7 @@ var (
 	ErrEmptyParticipantID      = errors.New("participant ID cannot be empty")
 	ErrMissingGrants           = errors.New("VideoGrant is missing")
 	ErrInternalError           = errors.New("internal error")
-	ErrNameExceedsLimits       = errors.New("name size exceeds limits")
+	ErrNameExceedsLimits       = errors.New("name length exceeds limits")
 	ErrMetadataExceedsLimits   = errors.New("metadata size exceeds limits")
 	ErrAttributeExceedsLimits  = errors.New("attribute size exceeds limits")
 

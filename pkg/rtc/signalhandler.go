@@ -107,7 +107,7 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 				case ErrNameExceedsLimits:
 					errorResponse = &livekit.ErrorResponse{
 						Reason:  livekit.ErrorResponse_INVALID_ARGUMENT,
-						Message: "exceeds name size limit",
+						Message: "exceeds name length limit",
 					}
 				case ErrMetadataExceedsLimits:
 					errorResponse = &livekit.ErrorResponse{
