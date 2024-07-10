@@ -1481,8 +1481,6 @@ func (r *Room) DebugInfo() map[string]interface{} {
 	return info
 }
 
-// ------------------------------------------------------------
-
 func (r *Room) createAgentDispatchesFromRoomAgent() {
 	now := time.Now()
 	for _, ag := range r.internal.AgentDispatches {
@@ -1498,6 +1496,8 @@ func (r *Room) createAgentDispatchesFromRoomAgent() {
 		r.agentDispatches = append(r.agentDispatches, ad)
 	}
 }
+
+// ------------------------------------------------------------
 
 func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, kind livekit.DataPacket_Kind, dp *livekit.DataPacket, logger logger.Logger) {
 	dp.Kind = kind // backward compatibility
