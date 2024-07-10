@@ -35,6 +35,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/guid"
 
 	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/config"
@@ -95,12 +96,13 @@ type Room struct {
 	protoProxy *utils.ProtoProxy[*livekit.Room]
 	Logger     logger.Logger
 
-	config         WebRTCConfig
-	audioConfig    *config.AudioConfig
-	serverInfo     *livekit.ServerInfo
-	telemetry      telemetry.TelemetryService
-	egressLauncher EgressLauncher
-	trackManager   *RoomTrackManager
+	config          WebRTCConfig
+	audioConfig     *config.AudioConfig
+	serverInfo      *livekit.ServerInfo
+	telemetry       telemetry.TelemetryService
+	egressLauncher  EgressLauncher
+	trackManager    *RoomTrackManager
+	agentDispatches []*livekit.AgentDispatch
 
 	// agents
 	agentClient agent.Client
@@ -181,6 +183,10 @@ func NewRoom(
 		r.protoRoom.CreationTime = time.Now().Unix()
 	}
 	r.protoProxy = utils.NewProtoProxy[*livekit.Room](roomUpdateInterval, r.updateProto)
+
+	r.createAgentDispatchesFromRoomAgent()
+
+	r.launchRoomAgents()
 
 	go r.audioUpdateWorker()
 	go r.connectionQualityWorker()
@@ -1423,6 +1429,21 @@ func (r *Room) simulationCleanupWorker() {
 	}
 }
 
+func (r *Room) launchRoomAgents() {
+	if r.agentClient == nil {
+		return
+	}
+
+	for _, ag := range r.agentDispatches {
+		go r.agentClient.LaunchJob(context.Background(), &agent.JobRequest{
+			JobType:   livekit.JobType_JT_ROOM,
+			Room:      r.ToProto(),
+			Metadata:  ag.Metadata,
+			AgentName: ag.AgentName,
+		})
+	}
+}
+
 func (r *Room) launchPublisherAgents(p types.Participant) {
 	if p == nil || p.IsDependent() || r.agentClient == nil {
 		return
@@ -1432,7 +1453,7 @@ func (r *Room) launchPublisherAgents(p types.Participant) {
 		return
 	}
 
-	for _, ag := range r.internal.AgentDispatches {
+	for _, ag := range r.agentDispatches {
 		go r.agentClient.LaunchJob(context.Background(), &agent.JobRequest{
 			JobType:     livekit.JobType_JT_PUBLISHER,
 			Room:        r.ToProto(),
@@ -1461,6 +1482,22 @@ func (r *Room) DebugInfo() map[string]interface{} {
 }
 
 // ------------------------------------------------------------
+
+func (r *Room) createAgentDispatchesFromRoomAgent() {
+	now := time.Now()
+	for _, ag := range r.internal.AgentDispatches {
+		ad := &livekit.AgentDispatch{
+			Id:        guid.New(guid.AgentDispatchPrefix),
+			AgentName: ag.AgentName,
+			Metadata:  ag.Metadata,
+			Room:      r.protoRoom.Name,
+			State: &livekit.AgentDispatchState{
+				CreatedAt: now.UnixNano(),
+			},
+		}
+		r.agentDispatches = append(r.agentDispatches, ad)
+	}
+}
 
 func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, kind livekit.DataPacket_Kind, dp *livekit.DataPacket, logger logger.Logger) {
 	dp.Kind = kind // backward compatibility

@@ -513,28 +513,10 @@ func (s *RTCService) startConnection(
 	timeout time.Duration,
 ) (connectionResult, *livekit.SignalResponse, error) {
 	var cr connectionResult
-	var created bool
 	var err error
-	cr.Room, created, err = s.roomAllocator.CreateRoom(ctx, &livekit.CreateRoomRequest{Name: string(roomName)})
+	cr.Room, _, err = s.roomAllocator.CreateRoom(ctx, &livekit.CreateRoomRequest{Name: string(roomName)})
 	if err != nil {
 		return cr, nil, err
-	}
-
-	if created && s.agentClient != nil {
-		// TODO Have CreateRoom return the RoomInternal object?
-		_, internal, err := s.store.LoadRoom(ctx, livekit.RoomName(roomName), true)
-		if err != nil {
-			return connectionResult{}, nil, err
-		}
-
-		for _, ag := range internal.AgentDispatches {
-			go s.agentClient.LaunchJob(ctx, &agent.JobRequest{
-				JobType:   livekit.JobType_JT_ROOM,
-				Room:      cr.Room,
-				Metadata:  ag.Metadata,
-				AgentName: ag.AgentName,
-			})
-		}
 	}
 
 	// this needs to be started first *before* using router functions on this node

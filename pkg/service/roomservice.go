@@ -103,15 +103,6 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 	defer done()
 
 	if created {
-		_, internal, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Name), true)
-
-		if internal.AgentDispatches != nil {
-			err = s.launchAgents(ctx, rm, internal.AgentDispatches)
-			if err != nil {
-				return nil, err
-			}
-		}
-
 		if req.Egress != nil && req.Egress.Room != nil {
 			// ensure room name matches
 			req.Egress.Room.RoomName = req.Name
@@ -128,19 +119,6 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 	}
 
 	return rm, nil
-}
-
-func (s *RoomService) launchAgents(ctx context.Context, rm *livekit.Room, agents []*livekit.RoomAgentDispatch) error {
-	for _, ag := range agents {
-		go s.agentClient.LaunchJob(ctx, &agent.JobRequest{
-			JobType:   livekit.JobType_JT_ROOM,
-			Room:      rm,
-			Metadata:  ag.Metadata,
-			AgentName: ag.AgentName,
-		})
-	}
-
-	return nil
 }
 
 func (s *RoomService) ListRooms(ctx context.Context, req *livekit.ListRoomsRequest) (*livekit.ListRoomsResponse, error) {
@@ -305,14 +283,9 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 		return nil, twirpAuthError(err)
 	}
 
-	room, internal, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false)
-	if err != nil {
-		return nil, err
-	}
-
 	// no one has joined the room, would not have been created on an RTC node.
 	// in this case, we'd want to run create again
-	room, created, err := s.roomAllocator.CreateRoom(ctx, &livekit.CreateRoomRequest{
+	room, _, err := s.roomAllocator.CreateRoom(ctx, &livekit.CreateRoomRequest{
 		Name:     req.Room,
 		Metadata: req.Metadata,
 	})
@@ -337,13 +310,6 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 	})
 	if err != nil {
 		return nil, err
-	}
-
-	if created {
-		err = s.launchAgents(ctx, room, internal.AgentDispatches)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	return room, nil
