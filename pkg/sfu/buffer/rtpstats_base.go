@@ -35,7 +35,7 @@ const (
 	cFirstSnapshotID     = 1
 
 	cFirstPacketTimeAdjustWindow    = 2 * time.Minute
-	cFirstPacketTimeAdjustThreshold = 15 * time.Second
+	cFirstPacketTimeAdjustThreshold = 15 * 1e9
 
 	cPassthroughNTPTimestamp = true
 
@@ -175,9 +175,9 @@ type rtpStatsBase struct {
 	startTime time.Time
 	endTime   time.Time
 
-	firstTime           time.Time
+	firstTime           int64
 	firstTimeAdjustment time.Duration
-	highestTime         time.Time
+	highestTime         int64
 
 	lastTransit            uint64
 	lastJitterExtTimestamp uint64
@@ -506,7 +506,7 @@ func (r *rtpStatsBase) GetRtt() uint32 {
 	return r.rtt
 }
 
-func (r *rtpStatsBase) maybeAdjustFirstPacketTime(srData *RTCPSenderReportData, tsOffset uint64, extStartTS uint64) {
+func (r *rtpStatsBase) maybeAdjustFirstPacketTime(srData *RTCPSenderReportData, tsOffset uint64, extStartTS uint64) (err error, loggingFields []interface{}) {
 	if time.Since(r.startTime) > cFirstPacketTimeAdjustWindow {
 		return
 	}
@@ -526,17 +526,17 @@ func (r *rtpStatsBase) maybeAdjustFirstPacketTime(srData *RTCPSenderReportData, 
 	}
 
 	samplesDuration := time.Duration(float64(samplesDiff) / float64(r.params.ClockRate) * float64(time.Second))
-	timeSinceFirst := time.Since(r.firstTime)
-	now := r.firstTime.Add(timeSinceFirst)
-	firstTime := now.Add(-samplesDuration)
+	timeSinceFirst := time.Since(time.Unix(0, r.firstTime))
+	now := r.firstTime + timeSinceFirst.Nanoseconds()
+	firstTime := now - samplesDuration.Nanoseconds()
 
 	getFields := func() []interface{} {
 		return []interface{}{
 			"startTime", r.startTime.String(),
-			"nowTime", now.String(),
-			"before", r.firstTime.String(),
-			"after", firstTime.String(),
-			"adjustment", r.firstTime.Sub(firstTime).String(),
+			"nowTime", time.Unix(0, now).String(),
+			"before", time.Unix(0, r.firstTime).String(),
+			"after", time.Unix(0, firstTime).String(),
+			"adjustment", time.Duration(r.firstTime - firstTime).String(),
 			"extNowTS", extNowTS,
 			"extStartTS", extStartTS,
 			"srData", srData,
@@ -548,15 +548,17 @@ func (r *rtpStatsBase) maybeAdjustFirstPacketTime(srData *RTCPSenderReportData, 
 		}
 	}
 
-	if firstTime.Before(r.firstTime) {
-		if r.firstTime.Sub(firstTime) > cFirstPacketTimeAdjustThreshold {
-			r.logger.Infow("adjusting first packet time, too big, ignoring", getFields()...)
+	if firstTime < r.firstTime {
+		if r.firstTime-firstTime > cFirstPacketTimeAdjustThreshold {
+			err = errors.New("adjusting first packet time, too big, ignoring")
+			loggingFields = getFields()
 		} else {
 			r.logger.Debugw("adjusting first packet time", getFields()...)
-			r.firstTimeAdjustment += r.firstTime.Sub(firstTime)
+			r.firstTimeAdjustment += time.Duration(r.firstTime - firstTime)
 			r.firstTime = firstTime
 		}
 	}
+	return
 }
 
 func (r *rtpStatsBase) getTotalPacketsPrimary(extStartSN, extHighestSN uint64) uint64 {
@@ -659,9 +661,9 @@ func (r *rtpStatsBase) MarshalLogObject(e zapcore.ObjectEncoder) error {
 
 	e.AddTime("startTime", r.startTime)
 	e.AddTime("endTime", r.endTime)
-	e.AddTime("firstTime", r.firstTime)
+	e.AddTime("firstTime", time.Unix(0, r.firstTime))
 	e.AddDuration("firstTimeAdjustment", r.firstTimeAdjustment)
-	e.AddTime("highestTime", r.highestTime)
+	e.AddTime("highestTime", time.Unix(0, r.highestTime))
 
 	e.AddUint64("bytes", r.bytes)
 	e.AddUint64("headerBytes", r.headerBytes)
@@ -907,7 +909,7 @@ func (r *rtpStatsBase) toProto(
 	return p
 }
 
-func (r *rtpStatsBase) updateJitter(ets uint64, packetTime time.Time) float64 {
+func (r *rtpStatsBase) updateJitter(ets uint64, packetTime int64) float64 {
 	// Do not update jitter on multiple packets of same frame.
 	// All packets of a frame have the same time stamp.
 	// NOTE: This does not protect against using more than one packet of the same frame
@@ -916,8 +918,8 @@ func (r *rtpStatsBase) updateJitter(ets uint64, packetTime time.Time) float64 {
 	//       In this case, p2f1 (packet 2, frame 1) will still be used in jitter calculation
 	//       although it is the second packet of a frame because of out-of-order receival.
 	if r.lastJitterExtTimestamp != ets {
-		timeSinceFirst := packetTime.Sub(r.firstTime)
-		packetTimeRTP := uint64(timeSinceFirst.Nanoseconds() * int64(r.params.ClockRate) / 1e9)
+		timeSinceFirst := packetTime - r.firstTime
+		packetTimeRTP := uint64(timeSinceFirst * int64(r.params.ClockRate) / 1e9)
 		transit := packetTimeRTP - ets
 
 		if r.lastTransit != 0 {
@@ -963,21 +965,22 @@ func (r *rtpStatsBase) getAndResetSnapshot(snapshotID uint32, extStartSN uint64,
 }
 
 func (r *rtpStatsBase) getDrift(extStartTS, extHighestTS uint64) (packetDrift *livekit.RTPDrift, ntpReportDrift *livekit.RTPDrift, rebasedReportDrift *livekit.RTPDrift) {
-	if !r.firstTime.IsZero() {
-		elapsed := r.highestTime.Sub(r.firstTime)
+	if r.firstTime != 0 {
+		elapsed := r.highestTime - r.firstTime
 		rtpClockTicks := extHighestTS - extStartTS
-		driftSamples := int64(rtpClockTicks - uint64(elapsed.Nanoseconds()*int64(r.params.ClockRate)/1e9))
-		if elapsed.Seconds() > 0.0 {
+		driftSamples := int64(rtpClockTicks - uint64(elapsed*int64(r.params.ClockRate)/1e9))
+		if elapsed > 0 {
+			elapsedSeconds := time.Duration(elapsed).Seconds()
 			packetDrift = &livekit.RTPDrift{
-				StartTime:      timestamppb.New(r.firstTime),
-				EndTime:        timestamppb.New(r.highestTime),
-				Duration:       elapsed.Seconds(),
+				StartTime:      timestamppb.New(time.Unix(0, r.firstTime)),
+				EndTime:        timestamppb.New(time.Unix(0, r.highestTime)),
+				Duration:       elapsedSeconds,
 				StartTimestamp: extStartTS,
 				EndTimestamp:   extHighestTS,
 				RtpClockTicks:  rtpClockTicks,
 				DriftSamples:   driftSamples,
 				DriftMs:        (float64(driftSamples) * 1000) / float64(r.params.ClockRate),
-				ClockRate:      float64(rtpClockTicks) / elapsed.Seconds(),
+				ClockRate:      float64(rtpClockTicks) / elapsedSeconds,
 			}
 		}
 	}

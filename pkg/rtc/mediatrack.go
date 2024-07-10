@@ -40,9 +40,10 @@ import (
 // MediaTrack represents a WebRTC track that needs to be forwarded
 // Implements MediaTrack and PublishedTrack interface
 type MediaTrack struct {
-	params      MediaTrackParams
-	numUpTracks atomic.Uint32
-	buffer      *buffer.Buffer
+	params         MediaTrackParams
+	numUpTracks    atomic.Uint32
+	buffer         *buffer.Buffer
+	everSubscribed atomic.Bool
 
 	*MediaTrackReceiver
 	*MediaLossProxy
@@ -55,22 +56,23 @@ type MediaTrack struct {
 }
 
 type MediaTrackParams struct {
-	SignalCid           string
-	SdpCid              string
-	ParticipantID       livekit.ParticipantID
-	ParticipantIdentity livekit.ParticipantIdentity
-	ParticipantVersion  uint32
-	BufferFactory       *buffer.Factory
-	ReceiverConfig      ReceiverConfig
-	SubscriberConfig    DirectionConfig
-	PLIThrottleConfig   config.PLIThrottleConfig
-	AudioConfig         config.AudioConfig
-	VideoConfig         config.VideoConfig
-	Telemetry           telemetry.TelemetryService
-	Logger              logger.Logger
-	SimTracks           map[uint32]SimulcastTrackInfo
-	OnRTCP              func([]rtcp.Packet)
-	ForwardStats        *sfu.ForwardStats
+	SignalCid             string
+	SdpCid                string
+	ParticipantID         livekit.ParticipantID
+	ParticipantIdentity   livekit.ParticipantIdentity
+	ParticipantVersion    uint32
+	BufferFactory         *buffer.Factory
+	ReceiverConfig        ReceiverConfig
+	SubscriberConfig      DirectionConfig
+	PLIThrottleConfig     config.PLIThrottleConfig
+	AudioConfig           config.AudioConfig
+	VideoConfig           config.VideoConfig
+	Telemetry             telemetry.TelemetryService
+	Logger                logger.Logger
+	SimTracks             map[uint32]SimulcastTrackInfo
+	OnRTCP                func([]rtcp.Packet)
+	ForwardStats          *sfu.ForwardStats
+	OnTrackEverSubscribed func(livekit.TrackID)
 }
 
 func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
@@ -239,10 +241,10 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	layer := buffer.RidToSpatialLayer(track.RID(), ti)
 	t.params.Logger.Debugw(
 		"AddReceiver",
-		"mime", track.Codec().MimeType,
 		"rid", track.RID(),
 		"layer", layer,
 		"ssrc", track.SSRC(),
+		"codec", track.Codec(),
 	)
 	wr := t.MediaTrackReceiver.Receiver(mime)
 	if wr == nil {
@@ -283,6 +285,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			sfu.WithLoadBalanceThreshold(20),
 			sfu.WithStreamTrackers(),
 			sfu.WithForwardStats(t.params.ForwardStats),
+			sfu.WithEverHasDowntrackAdded(t.handleReceiverEverAddDowntrack),
 		)
 		newWR.OnCloseHandler(func() {
 			t.MediaTrackReceiver.SetClosing()
@@ -429,4 +432,10 @@ func (t *MediaTrack) SetMuted(muted bool) {
 	}
 
 	t.MediaTrackReceiver.SetMuted(muted)
+}
+
+func (t *MediaTrack) handleReceiverEverAddDowntrack() {
+	if !t.everSubscribed.Swap(true) && t.params.OnTrackEverSubscribed != nil {
+		go t.params.OnTrackEverSubscribed(t.ID())
+	}
 }

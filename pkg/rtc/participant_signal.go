@@ -197,6 +197,18 @@ func (p *ParticipantImpl) SendRefreshToken(token string) error {
 	})
 }
 
+func (p *ParticipantImpl) SendErrorResponse(errorResponse *livekit.ErrorResponse) error {
+	if errorResponse.RequestId == 0 {
+		return nil
+	}
+
+	return p.writeMessage(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_ErrorResponse{
+			ErrorResponse: errorResponse,
+		},
+	})
+}
+
 func (p *ParticipantImpl) HandleReconnectAndSendResponse(reconnectReason livekit.ReconnectReason, reconnectResponse *livekit.ReconnectResponse) error {
 	p.TransportManager.HandleClientReconnect(reconnectReason)
 
@@ -284,6 +296,17 @@ func (p *ParticipantImpl) sendTrackUnpublished(trackID livekit.TrackID) {
 			},
 		},
 	})
+}
+
+func (p *ParticipantImpl) sendTrackHasBeenSubscribed(trackID livekit.TrackID) {
+	_ = p.writeMessage(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_TrackSubscribed{
+			TrackSubscribed: &livekit.TrackSubscribed{
+				TrackSid: string(trackID),
+			},
+		},
+	})
+	p.params.Logger.Debugw("track has been subscribed", "trackID", trackID)
 }
 
 func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {

@@ -56,7 +56,7 @@ func NewRedReceiver(receiver TrackReceiver, dsp DownTrackSpreaderParams) *RedRec
 }
 
 func (r *RedReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int32) int {
-	// extract primary payload from RED and forward to downtracks
+	// encode RED payload from primary payload and forward to downtracks
 	if r.downTrackSpreader.DownTrackCount() == 0 {
 		return 0
 	}

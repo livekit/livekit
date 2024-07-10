@@ -92,6 +92,7 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 		}
 
 	case *livekit.SignalRequest_UpdateMetadata:
+		var errorResponse *livekit.ErrorResponse
 		if participant.ClaimGrants().Video.GetCanUpdateOwnMetadata() {
 			err := room.UpdateParticipantMetadata(
 				participant,
@@ -101,7 +102,25 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 			)
 			if err != nil {
 				pLogger.Warnw("could not update metadata", err)
+
+				switch err {
+				case ErrAttributeExceedsLimits:
+					errorResponse = &livekit.ErrorResponse{
+						Reason:  livekit.ErrorResponse_INVALID_ARGUMENT,
+						Message: "exceeds attributes size limit",
+					}
+				}
+
 			}
+		} else {
+			errorResponse = &livekit.ErrorResponse{
+				Reason:  livekit.ErrorResponse_NOT_ALLOWED,
+				Message: "does not have permission to update own metadata",
+			}
+		}
+		if errorResponse != nil {
+			errorResponse.RequestId = msg.UpdateMetadata.RequestId
+			participant.SendErrorResponse(errorResponse)
 		}
 
 	case *livekit.SignalRequest_UpdateAudioTrack:

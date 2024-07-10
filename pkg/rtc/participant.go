@@ -1576,9 +1576,7 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		}
 		shouldForward = true
 	case *livekit.DataPacket_SipDtmf:
-		if p.Kind() == livekit.ParticipantInfo_SIP {
-			shouldForward = true
-		}
+		shouldForward = true
 	case *livekit.DataPacket_Transcription:
 		if p.Kind() == livekit.ParticipantInfo_AGENT {
 			shouldForward = true
@@ -2140,22 +2138,23 @@ func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo) *M
 
 func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *livekit.TrackInfo) *MediaTrack {
 	mt := NewMediaTrack(MediaTrackParams{
-		SignalCid:           signalCid,
-		SdpCid:              sdpCid,
-		ParticipantID:       p.params.SID,
-		ParticipantIdentity: p.params.Identity,
-		ParticipantVersion:  p.version.Load(),
-		BufferFactory:       p.params.Config.BufferFactory,
-		ReceiverConfig:      p.params.Config.Receiver,
-		AudioConfig:         p.params.AudioConfig,
-		VideoConfig:         p.params.VideoConfig,
-		Telemetry:           p.params.Telemetry,
-		Logger:              LoggerWithTrack(p.pubLogger, livekit.TrackID(ti.Sid), false),
-		SubscriberConfig:    p.params.Config.Subscriber,
-		PLIThrottleConfig:   p.params.PLIThrottleConfig,
-		SimTracks:           p.params.SimTracks,
-		OnRTCP:              p.postRtcp,
-		ForwardStats:        p.params.ForwardStats,
+		SignalCid:             signalCid,
+		SdpCid:                sdpCid,
+		ParticipantID:         p.params.SID,
+		ParticipantIdentity:   p.params.Identity,
+		ParticipantVersion:    p.version.Load(),
+		BufferFactory:         p.params.Config.BufferFactory,
+		ReceiverConfig:        p.params.Config.Receiver,
+		AudioConfig:           p.params.AudioConfig,
+		VideoConfig:           p.params.VideoConfig,
+		Telemetry:             p.params.Telemetry,
+		Logger:                LoggerWithTrack(p.pubLogger, livekit.TrackID(ti.Sid), false),
+		SubscriberConfig:      p.params.Config.Subscriber,
+		PLIThrottleConfig:     p.params.PLIThrottleConfig,
+		SimTracks:             p.params.SimTracks,
+		OnRTCP:                p.postRtcp,
+		ForwardStats:          p.params.ForwardStats,
+		OnTrackEverSubscribed: p.sendTrackHasBeenSubscribed,
 	}, ti)
 
 	mt.OnSubscribedMaxQualityChange(p.onSubscribedMaxQualityChange)
