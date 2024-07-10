@@ -831,10 +831,14 @@ func (r *Room) UpdateParticipantMetadata(
 		}
 	}
 	if metadata != "" {
-		participant.SetMetadata(metadata)
+		if err := participant.SetMetadata(metadata); err != nil {
+			return err
+		}
 	}
 	if name != "" {
-		participant.SetName(name)
+		if err := participant.SetName(name); err != nil {
+			return err
+		}
 	}
 	return nil
 }

@@ -48,7 +48,7 @@ func NewMockParticipant(identity livekit.ParticipantIdentity, protocol types.Pro
 		IsPublisher: publisher,
 	}, utils.TimedVersion(0))
 
-	p.SetMetadataCalls(func(m string) {
+	p.SetMetadataCalls(func(m string) error {
 		var f func(participant types.LocalParticipant)
 		if p.OnParticipantUpdateCallCount() > 0 {
 			f = p.OnParticipantUpdateArgsForCall(p.OnParticipantUpdateCallCount() - 1)
@@ -56,6 +56,7 @@ func NewMockParticipant(identity livekit.ParticipantIdentity, protocol types.Pro
 		if f != nil {
 			f(p)
 		}
+		return nil
 	})
 	updateTrack := func() {
 		var f func(participant types.LocalParticipant, track types.MediaTrack)

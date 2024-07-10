@@ -433,6 +433,8 @@ func (r *RoomManager) StartSession(
 		AdaptiveStream:          pi.AdaptiveStream,
 		AllowTCPFallback:        allowFallback,
 		TURNSEnabled:            r.config.IsTURNSEnabled(),
+		MaxNameLength:           r.config.Limit.MaxParticipantNameLength,
+		MaxMetadataSize:         r.config.Limit.MaxMetadataSize,
 		MaxAttributesSize:       r.config.Limit.MaxAttributesSize,
 		GetParticipantInfo: func(pID livekit.ParticipantID) *livekit.ParticipantInfo {
 			if p := room.GetParticipantByID(pID); p != nil {

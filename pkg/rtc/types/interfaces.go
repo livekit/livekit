@@ -328,8 +328,8 @@ type LocalParticipant interface {
 	HandleSignalSourceClose()
 
 	// updates
-	SetName(name string)
-	SetMetadata(metadata string)
+	SetName(name string) error
+	SetMetadata(metadata string) error
 	SetAttributes(attributes map[string]string) error
 
 	// permissions

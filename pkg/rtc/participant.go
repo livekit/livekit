@@ -136,6 +136,8 @@ type ParticipantParams struct {
 	VersionGenerator             utils.TimedVersionGenerator
 	TrackResolver                types.MediaTrackResolver
 	DisableDynacast              bool
+	MaxNameLength                int
+	MaxMetadataSize              uint32
 	MaxAttributesSize            uint32
 	SubscriberAllowPause         bool
 	SubscriptionLimitAudio       int32
@@ -408,12 +410,17 @@ func (p *ParticipantImpl) GetBufferFactory() *buffer.Factory {
 }
 
 // SetName attaches name to the participant
-func (p *ParticipantImpl) SetName(name string) {
+func (p *ParticipantImpl) SetName(name string) error {
 	p.lock.Lock()
 	grants := p.grants.Load()
 	if grants.Name == name {
 		p.lock.Unlock()
-		return
+		return nil
+	}
+
+	if p.params.MaxNameLength > 0 && len(name) > p.params.MaxNameLength {
+		p.lock.Unlock()
+		return ErrNameExceedsLimits
 	}
 
 	grants = grants.Clone()
@@ -431,15 +438,21 @@ func (p *ParticipantImpl) SetName(name string) {
 	if onClaimsChanged != nil {
 		onClaimsChanged(p)
 	}
+	return nil
 }
 
 // SetMetadata attaches metadata to the participant
-func (p *ParticipantImpl) SetMetadata(metadata string) {
+func (p *ParticipantImpl) SetMetadata(metadata string) error {
 	p.lock.Lock()
 	grants := p.grants.Load()
 	if grants.Metadata == metadata {
 		p.lock.Unlock()
-		return
+		return nil
+	}
+
+	if p.params.MaxMetadataSize > 0 && uint32(len(metadata)) > p.params.MaxMetadataSize {
+		p.lock.Unlock()
+		return ErrMetadataExceedsLimits
 	}
 
 	grants = grants.Clone()
@@ -458,6 +471,7 @@ func (p *ParticipantImpl) SetMetadata(metadata string) {
 	if onClaimsChanged != nil {
 		onClaimsChanged(p)
 	}
+	return nil
 }
 
 func (p *ParticipantImpl) SetAttributes(attrs map[string]string) error {

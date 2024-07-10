@@ -332,6 +332,7 @@ type LimitConfig struct {
 	MaxAttributesSize            uint32 `yaml:"max_attributes_size,omitempty"`
 	MaxRoomNameLength            int    `yaml:"max_room_name_length,omitempty"`
 	MaxParticipantIdentityLength int    `yaml:"max_participant_identity_length,omitempty"`
+	MaxParticipantNameLength     int    `yaml:"max_participant_name_length,omitempty"`
 }
 
 type IngressConfig struct {
@@ -540,6 +541,7 @@ var DefaultConfig = Config{
 		MaxAttributesSize:            64000,
 		MaxRoomNameLength:            256,
 		MaxParticipantIdentityLength: 256,
+		MaxParticipantNameLength:     256,
 	},
 	Logging: LoggingConfig{
 		PionLevel: "error",
