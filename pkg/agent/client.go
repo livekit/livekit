@@ -42,7 +42,7 @@ const (
 type Client interface {
 	// LaunchJob starts a room or participant job on an agent.
 	// it will launch a job once for each worker in each namespace
-	LaunchJob(ctx context.Context, desc *JobRequest)
+	LaunchJob(ctx context.Context, desc *JobRequest) *serverutils.IncrementalDispatcher[*livekit.Job]
 	Stop() error
 }
 
@@ -111,7 +111,7 @@ func NewAgentClient(bus psrpc.MessageBus) (Client, error) {
 	return c, nil
 }
 
-func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) {
+func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) *serverutils.IncrementalDispatcher[*livekit.Job] {
 	jobTypeTopic := RoomAgentTopic
 	if desc.JobType == livekit.JobType_JT_PUBLISHER {
 		jobTypeTopic = PublisherAgentTopic
@@ -124,11 +124,15 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) {
 		return
 	}
 
+	ret := serverutils.NewIncrementalDispatcher[*livekit.Job]()
+	var wg sync.WaitGroup
 	dispatcher.ForEach(func(curNs string) {
 		topic := GetAgentTopic(desc.AgentName, curNs)
+
+		wg.Add(1)
 		c.workers.Submit(func() {
 			// The cached agent parameters do not provide the exact combination of available job type/agent name/namespace, so some of the JobRequest RPC may not trigger any worker
-			_, err := c.client.JobRequest(context.Background(), topic, jobTypeTopic, &livekit.Job{
+			job := &livekit.Job{
 				Id:          utils.NewGuid(utils.AgentJobPrefix),
 				Type:        desc.JobType,
 				Room:        desc.Room,
@@ -136,11 +140,19 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) {
 				Namespace:   curNs,
 				AgentName:   desc.AgentName,
 				Metadata:    desc.Metadata,
-			})
-			if err != nil {
-				logger.Infow("failed to send job request", "error", err, "namespace", curNs, "jobType", desc.JobType)
 			}
+			resp, err := c.client.JobRequest(context.Background(), topic, jobTypeTopic, job)
+			if err != nil {
+				logger.Infow("failed to send job request", "error", err, "namespace", curNs, "jobType", desc.JobType, "agentName", desc.AgentName)
+			}
+			job.State = resp.State
+			ret.Add(job)
+			wg.Done()
 		})
+	})
+	c.workers.Submit(func() {
+		wg.Wait()
+		ret.Done()
 	})
 }
 

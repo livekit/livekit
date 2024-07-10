@@ -289,7 +289,7 @@ func (h *AgentHandler) HandleWorkerDeregister(w *agent.Worker) {
 	}
 }
 
-func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*emptypb.Empty, error) {
+func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*rpc.JobRequestResponse, error) {
 	key := workerKey{job.AgentName, job.Namespace, job.Type}
 	attempted := make(map[*agent.Worker]struct{})
 	for {
@@ -340,7 +340,9 @@ func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*empty
 			return nil, err
 		}
 
-		return &emptypb.Empty{}, nil
+		return &rpc.JobRequestResponse{
+			State: job.State,
+		}, nil
 	}
 }
 
