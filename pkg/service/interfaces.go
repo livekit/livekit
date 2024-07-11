@@ -95,3 +95,12 @@ type SIPStore interface {
 	ListSIPDispatchRule(ctx context.Context) ([]*livekit.SIPDispatchRuleInfo, error)
 	DeleteSIPDispatchRule(ctx context.Context, info *livekit.SIPDispatchRuleInfo) error
 }
+
+//counterfeiter:generate . AgentStore
+type AgentStore interface {
+	StoreDispatch(ctx context.Context, dispatch *livekit.AgentDispatch) error
+	ListDispatches(ctx context.Context, roomName livekit.RoomName) ([]*livekit.AgentDispatch, error)
+
+	StoreJob(ctx context.Context, job *livekit.Job) error
+	ListJobs(ctx context.Context, roomName livekit.RoomName) ([]*livekit.Job, error)
+}
