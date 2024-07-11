@@ -63,6 +63,15 @@ var (
 	roomUpdateInterval = 5 * time.Second // frequency to update room participant counts
 )
 
+// Duplicate the service.AgentStore interface to avoid a rtc -> service -> rtc import cycle
+type AgentStore interface {
+	StoreDispatch(ctx context.Context, dispatch *livekit.AgentDispatch) error
+	ListDispatches(ctx context.Context, roomName livekit.RoomName) ([]*livekit.AgentDispatch, error)
+
+	StoreJob(ctx context.Context, job *livekit.Job) error
+	ListJobs(ctx context.Context, roomName livekit.RoomName) ([]*livekit.Job, error)
+}
+
 type broadcastOptions struct {
 	skipSource bool
 	immediate  bool
@@ -106,6 +115,7 @@ type Room struct {
 
 	// agents
 	agentClient agent.Client
+	agentStore  AgentStore
 
 	// map of identity -> Participant
 	participants              map[livekit.ParticipantIdentity]types.LocalParticipant
@@ -144,6 +154,7 @@ func NewRoom(
 	serverInfo *livekit.ServerInfo,
 	telemetry telemetry.TelemetryService,
 	agentClient agent.Client,
+	agentStore AgentStore,
 	egressLauncher EgressLauncher,
 ) *Room {
 	r := &Room{
@@ -159,6 +170,7 @@ func NewRoom(
 		telemetry:                            telemetry,
 		egressLauncher:                       egressLauncher,
 		agentClient:                          agentClient,
+		agentStore:                           agentStore,
 		trackManager:                         NewRoomTrackManager(),
 		serverInfo:                           serverInfo,
 		participants:                         make(map[livekit.ParticipantIdentity]types.LocalParticipant),
@@ -1494,6 +1506,9 @@ func (r *Room) createAgentDispatchesFromRoomAgent() {
 			},
 		}
 		r.agentDispatches = append(r.agentDispatches, ad)
+		if r.agentStore != nil {
+			err := r.agentStore.StoreDispatch(context.Background(), ad)
+		}
 	}
 }
 
