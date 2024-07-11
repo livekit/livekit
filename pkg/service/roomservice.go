@@ -305,45 +305,14 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 		return nil, twirpAuthError(err)
 	}
 
-	// no one has joined the room, would not have been created on an RTC node.
-	// in this case, we'd want to run create again
-	room, created, err := s.roomAllocator.CreateRoom(ctx, &livekit.CreateRoomRequest{
-		Name:     req.Room,
-		Metadata: req.Metadata,
-	})
+	room, _, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false)
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = s.roomClient.UpdateRoomMetadata(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
+	room, err = s.roomClient.UpdateRoomMetadata(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
 	if err != nil {
 		return nil, err
-	}
-
-	err = s.confirmExecution(ctx, func() error {
-		room, _, err = s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false)
-		if err != nil {
-			return err
-		}
-		if room.Metadata != req.Metadata {
-			return ErrOperationFailed
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	if created {
-		room, internal, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), true)
-		if err != nil {
-			return nil, err
-		}
-
-		err = s.launchAgents(ctx, room, internal.AgentDispatches)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	return room, nil
