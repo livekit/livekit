@@ -1447,12 +1447,17 @@ func (r *Room) launchRoomAgents() {
 	}
 
 	for _, ag := range r.agentDispatches {
-		go r.agentClient.LaunchJob(context.Background(), &agent.JobRequest{
-			JobType:   livekit.JobType_JT_ROOM,
-			Room:      r.ToProto(),
-			Metadata:  ag.Metadata,
-			AgentName: ag.AgentName,
-		})
+		go func() {
+			inc := r.agentClient.LaunchJob(context.Background(), &agent.JobRequest{
+				JobType:   livekit.JobType_JT_ROOM,
+				Room:      r.ToProto(),
+				Metadata:  ag.Metadata,
+				AgentName: ag.AgentName,
+			})
+			inc.ForEach(func(job *livekit.Job) {
+				r.agentStore.StoreJob(context.Background(), job)
+			})
+		}()
 	}
 }
 
@@ -1466,13 +1471,18 @@ func (r *Room) launchPublisherAgents(p types.Participant) {
 	}
 
 	for _, ag := range r.agentDispatches {
-		go r.agentClient.LaunchJob(context.Background(), &agent.JobRequest{
-			JobType:     livekit.JobType_JT_PUBLISHER,
-			Room:        r.ToProto(),
-			Participant: p.ToProto(),
-			Metadata:    ag.Metadata,
-			AgentName:   ag.AgentName,
-		})
+		go func() {
+			inc := r.agentClient.LaunchJob(context.Background(), &agent.JobRequest{
+				JobType:     livekit.JobType_JT_PUBLISHER,
+				Room:        r.ToProto(),
+				Participant: p.ToProto(),
+				Metadata:    ag.Metadata,
+				AgentName:   ag.AgentName,
+			})
+			inc.ForEach(func(job *livekit.Job) {
+				r.agentStore.StoreJob(context.Background(), job)
+			})
+		}()
 	}
 }
 
@@ -1508,6 +1518,7 @@ func (r *Room) createAgentDispatchesFromRoomAgent() {
 		r.agentDispatches = append(r.agentDispatches, ad)
 		if r.agentStore != nil {
 			err := r.agentStore.StoreDispatch(context.Background(), ad)
+			r.logger.Warnw("failed storing room dispatch", err)
 		}
 	}
 }

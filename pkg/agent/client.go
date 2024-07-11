@@ -117,14 +117,14 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) *serverut
 		jobTypeTopic = PublisherAgentTopic
 	}
 
+	ret := serverutils.NewIncrementalDispatcher[*livekit.Job]()
 	dispatcher := c.getDispatcher(desc.AgentName, desc.JobType)
 
 	if dispatcher == nil {
 		logger.Infow("not dispatching agent job since no worker is available", "agentName", desc.AgentName, "jobType", desc.JobType)
-		return
+		return ret
 	}
 
-	ret := serverutils.NewIncrementalDispatcher[*livekit.Job]()
 	var wg sync.WaitGroup
 	dispatcher.ForEach(func(curNs string) {
 		topic := GetAgentTopic(desc.AgentName, curNs)
@@ -154,6 +154,8 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) *serverut
 		wg.Wait()
 		ret.Done()
 	})
+
+	return ret
 }
 
 func (c *agentClient) getDispatcher(agName string, jobType livekit.JobType) *serverutils.IncrementalDispatcher[string] {
