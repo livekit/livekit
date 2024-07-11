@@ -328,9 +328,10 @@ type LocalParticipant interface {
 	HandleSignalSourceClose()
 
 	// updates
-	SetName(name string) error
-	SetMetadata(metadata string) error
-	SetAttributes(attributes map[string]string) error
+	CheckMetadataLimits(name string, metadata string, attributes map[string]string) error
+	SetName(name string)
+	SetMetadata(metadata string)
+	SetAttributes(attributes map[string]string)
 
 	// permissions
 	ClaimGrants() *auth.ClaimGrants
@@ -441,7 +442,6 @@ type Room interface {
 	SimulateScenario(participant LocalParticipant, scenario *livekit.SimulateScenario) error
 	ResolveMediaTrackForSubscriber(subIdentity livekit.ParticipantIdentity, trackID livekit.TrackID) MediaResolverResult
 	GetLocalParticipants() []LocalParticipant
-	UpdateParticipantMetadata(participant LocalParticipant, name string, metadata string, attributes map[string]string) error
 }
 
 // MediaTrack represents a media track

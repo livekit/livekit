@@ -86,8 +86,8 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 		return nil, ErrEgressNotConnected
 	}
 
-	if limit := s.limitConf.MaxRoomNameLength; limit > 0 && len(req.Name) > limit {
-		return nil, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, limit)
+	if !s.limitConf.CheckRoomNameLength(req.Name) {
+		return nil, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, s.limitConf.MaxRoomNameLength)
 	}
 
 	rm, created, err := s.roomAllocator.CreateRoom(ctx, req)
@@ -249,25 +249,16 @@ func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.UpdateParticipantRequest) (*livekit.ParticipantInfo, error) {
 	AppendLogFields(ctx, "room", req.Room, "participant", req.Identity)
 
-	maxParticipantNameLength := s.limitConf.MaxParticipantNameLength
-	if maxParticipantNameLength > 0 && len(req.Name) > maxParticipantNameLength {
-		return nil, twirp.InvalidArgumentError(ErrNameExceedsLimits.Error(), strconv.Itoa(maxParticipantNameLength))
+	if !s.limitConf.CheckParticipantNameLength(req.Name) {
+		return nil, twirp.InvalidArgumentError(ErrNameExceedsLimits.Error(), strconv.Itoa(s.limitConf.MaxParticipantNameLength))
 	}
 
-	maxMetadataSize := int(s.limitConf.MaxMetadataSize)
-	if maxMetadataSize > 0 && len(req.Metadata) > maxMetadataSize {
-		return nil, twirp.InvalidArgumentError(ErrMetadataExceedsLimits.Error(), strconv.Itoa(maxMetadataSize))
+	if !s.limitConf.CheckMetadataSize(req.Metadata) {
+		return nil, twirp.InvalidArgumentError(ErrMetadataExceedsLimits.Error(), strconv.Itoa(int(s.limitConf.MaxMetadataSize)))
 	}
 
-	maxAttributeSize := int(s.limitConf.MaxAttributesSize)
-	if maxAttributeSize > 0 {
-		total := 0
-		for key, val := range req.Attributes {
-			total += len(key) + len(val)
-		}
-		if total > maxAttributeSize {
-			return nil, twirp.InvalidArgumentError(ErrAttributeExceedsLimits.Error(), strconv.Itoa(maxAttributeSize))
-		}
+	if !s.limitConf.CheckAttributesSize(req.Attributes) {
+		return nil, twirp.InvalidArgumentError(ErrAttributeExceedsLimits.Error(), strconv.Itoa(int(s.limitConf.MaxAttributesSize)))
 	}
 
 	if err := EnsureAdminPermission(ctx, livekit.RoomName(req.Room)); err != nil {

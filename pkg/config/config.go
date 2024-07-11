@@ -335,6 +335,30 @@ type LimitConfig struct {
 	MaxParticipantNameLength     int    `yaml:"max_participant_name_length,omitempty"`
 }
 
+func (l LimitConfig) CheckRoomNameLength(name string) bool {
+	return l.MaxRoomNameLength == 0 || len(name) <= l.MaxRoomNameLength
+}
+
+func (l LimitConfig) CheckParticipantNameLength(name string) bool {
+	return l.MaxParticipantNameLength == 0 || len(name) <= l.MaxParticipantNameLength
+}
+
+func (l LimitConfig) CheckMetadataSize(metadata string) bool {
+	return l.MaxMetadataSize == 0 || uint32(len(metadata)) <= l.MaxMetadataSize
+}
+
+func (l LimitConfig) CheckAttributesSize(attributes map[string]string) bool {
+	if l.MaxAttributesSize == 0 {
+		return true
+	}
+
+	total := 0
+	for k, v := range attributes {
+		total += len(k) + len(v)
+	}
+	return uint32(total) <= l.MaxAttributesSize
+}
+
 type IngressConfig struct {
 	RTMPBaseURL string `yaml:"rtmp_base_url,omitempty"`
 	WHIPBaseURL string `yaml:"whip_base_url,omitempty"`
