@@ -98,9 +98,10 @@ type SIPStore interface {
 
 //counterfeiter:generate . AgentStore
 type AgentStore interface {
-	StoreDispatch(ctx context.Context, dispatch *livekit.AgentDispatch) error
-	ListDispatches(ctx context.Context, roomName livekit.RoomName) ([]*livekit.AgentDispatch, error)
+	StoreAgentDispatch(ctx context.Context, dispatch *livekit.AgentDispatch) error
+	DeleteAgentDispatch(ctx context.Context, dispatch *livekit.AgentDispatch) error
+	ListAgentDispatches(ctx context.Context, roomName livekit.RoomName) ([]*livekit.AgentDispatch, error)
 
-	StoreJob(ctx context.Context, job *livekit.Job) error
-	ListJobs(ctx context.Context, roomName livekit.RoomName) ([]*livekit.Job, error)
+	StoreAgentJob(ctx context.Context, job *livekit.Job) error
+	DeleteAgentJob(ctx context.Context, job *livekit.Job) error
 }

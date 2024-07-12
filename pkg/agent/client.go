@@ -47,8 +47,9 @@ type Client interface {
 }
 
 type JobRequest struct {
-	JobType livekit.JobType
-	Room    *livekit.Room
+	DispatchId string
+	JobType    livekit.JobType
+	Room       *livekit.Room
 	// only set for participant jobs
 	Participant *livekit.ParticipantInfo
 	Metadata    string
@@ -134,6 +135,7 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) *serverut
 			// The cached agent parameters do not provide the exact combination of available job type/agent name/namespace, so some of the JobRequest RPC may not trigger any worker
 			job := &livekit.Job{
 				Id:          utils.NewGuid(utils.AgentJobPrefix),
+				DispatchId:  desc.DispatchId,
 				Type:        desc.JobType,
 				Room:        desc.Room,
 				Participant: desc.Participant,

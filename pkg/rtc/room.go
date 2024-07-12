@@ -65,11 +65,12 @@ var (
 
 // Duplicate the service.AgentStore interface to avoid a rtc -> service -> rtc import cycle
 type AgentStore interface {
-	StoreDispatch(ctx context.Context, dispatch *livekit.AgentDispatch) error
-	ListDispatches(ctx context.Context, roomName livekit.RoomName) ([]*livekit.AgentDispatch, error)
+	StoreAgentDispatch(ctx context.Context, dispatch *livekit.AgentDispatch) error
+	DeleteAgentDispatch(ctx context.Context, dispatch *livekit.AgentDispatch) error
+	ListAgentDispatches(ctx context.Context, roomName livekit.RoomName) ([]*livekit.AgentDispatch, error)
 
-	StoreJob(ctx context.Context, job *livekit.Job) error
-	ListJobs(ctx context.Context, roomName livekit.RoomName) ([]*livekit.Job, error)
+	StoreAgentJob(ctx context.Context, job *livekit.Job) error
+	DeleteAgentJob(ctx context.Context, job *livekit.Job) error
 }
 
 type broadcastOptions struct {
@@ -1449,13 +1450,14 @@ func (r *Room) launchRoomAgents() {
 	for _, ag := range r.agentDispatches {
 		go func() {
 			inc := r.agentClient.LaunchJob(context.Background(), &agent.JobRequest{
-				JobType:   livekit.JobType_JT_ROOM,
-				Room:      r.ToProto(),
-				Metadata:  ag.Metadata,
-				AgentName: ag.AgentName,
+				JobType:    livekit.JobType_JT_ROOM,
+				Room:       r.ToProto(),
+				Metadata:   ag.Metadata,
+				AgentName:  ag.AgentName,
+				DispatchId: ag.Id,
 			})
 			inc.ForEach(func(job *livekit.Job) {
-				r.agentStore.StoreJob(context.Background(), job)
+				r.agentStore.StoreAgentJob(context.Background(), job)
 			})
 		}()
 	}
@@ -1478,9 +1480,10 @@ func (r *Room) launchPublisherAgents(p types.Participant) {
 				Participant: p.ToProto(),
 				Metadata:    ag.Metadata,
 				AgentName:   ag.AgentName,
+				DispatchId:  ag.Id,
 			})
 			inc.ForEach(func(job *livekit.Job) {
-				r.agentStore.StoreJob(context.Background(), job)
+				r.agentStore.StoreAgentJob(context.Background(), job)
 			})
 		}()
 	}
@@ -1517,8 +1520,8 @@ func (r *Room) createAgentDispatchesFromRoomAgent() {
 		}
 		r.agentDispatches = append(r.agentDispatches, ad)
 		if r.agentStore != nil {
-			err := r.agentStore.StoreDispatch(context.Background(), ad)
-			r.logger.Warnw("failed storing room dispatch", err)
+			err := r.agentStore.StoreAgentDispatch(context.Background(), ad)
+			r.Logger.Warnw("failed storing room dispatch", err)
 		}
 	}
 }
