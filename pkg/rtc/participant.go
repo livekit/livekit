@@ -104,6 +104,7 @@ type ParticipantParams struct {
 	Sink                    routing.MessageSink
 	AudioConfig             config.AudioConfig
 	VideoConfig             config.VideoConfig
+	LimitConfig             config.LimitConfig
 	ProtocolVersion         types.ProtocolVersion
 	SessionStartTime        time.Time
 	Telemetry               telemetry.TelemetryService
@@ -136,7 +137,6 @@ type ParticipantParams struct {
 	VersionGenerator             utils.TimedVersionGenerator
 	TrackResolver                types.MediaTrackResolver
 	DisableDynacast              bool
-	MaxAttributesSize            uint32
 	SubscriberAllowPause         bool
 	SubscriptionLimitAudio       int32
 	SubscriptionLimitVideo       int32
@@ -407,6 +407,27 @@ func (p *ParticipantImpl) GetBufferFactory() *buffer.Factory {
 	return p.params.Config.BufferFactory
 }
 
+// CheckMetadataLimits check if name/metadata/attributes of a participant is within configured limits
+func (p *ParticipantImpl) CheckMetadataLimits(
+	name string,
+	metadata string,
+	attributes map[string]string,
+) error {
+	if !p.params.LimitConfig.CheckParticipantNameLength(name) {
+		return ErrNameExceedsLimits
+	}
+
+	if !p.params.LimitConfig.CheckMetadataSize(metadata) {
+		return ErrMetadataExceedsLimits
+	}
+
+	if !p.params.LimitConfig.CheckAttributesSize(attributes) {
+		return ErrAttributesExceedsLimits
+	}
+
+	return nil
+}
+
 // SetName attaches name to the participant
 func (p *ParticipantImpl) SetName(name string) {
 	p.lock.Lock()
@@ -460,9 +481,9 @@ func (p *ParticipantImpl) SetMetadata(metadata string) {
 	}
 }
 
-func (p *ParticipantImpl) SetAttributes(attrs map[string]string) error {
+func (p *ParticipantImpl) SetAttributes(attrs map[string]string) {
 	if len(attrs) == 0 {
-		return nil
+		return
 	}
 	p.lock.Lock()
 	grants := p.grants.Load().Clone()
@@ -481,18 +502,6 @@ func (p *ParticipantImpl) SetAttributes(attrs map[string]string) error {
 		delete(grants.Attributes, k)
 	}
 
-	maxAttributesSize := p.params.MaxAttributesSize
-	if maxAttributesSize > 0 {
-		total := 0
-		for k, v := range grants.Attributes {
-			total += len(k) + len(v)
-		}
-		if uint32(total) > maxAttributesSize {
-			p.lock.Unlock()
-			return ErrAttributeExceedsLimits
-		}
-	}
-
 	p.grants.Store(grants)
 	p.requireBroadcast = true // already checked above
 	p.dirty.Store(true)
@@ -507,7 +516,6 @@ func (p *ParticipantImpl) SetAttributes(attrs map[string]string) error {
 	if onClaimsChanged != nil {
 		onClaimsChanged(p)
 	}
-	return nil
 }
 
 func (p *ParticipantImpl) ClaimGrants() *auth.ClaimGrants {
