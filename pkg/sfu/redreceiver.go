@@ -30,7 +30,7 @@ import (
 
 const (
 	maxRedCount   = 2
-	mtuSize       = 1200
+	mtuSize       = 1500
 	maxRedPayload = 1 << 10 // fit into 10 bits length field
 
 	// the RedReceiver is only for chrome / native webrtc now, we always negotiate opus payload to 111 with those clients,
