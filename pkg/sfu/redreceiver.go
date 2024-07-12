@@ -29,13 +29,15 @@ import (
 )
 
 const (
-	maxRedCount = 2
-	mtuSize     = 1500
+	maxRedCount   = 2
+	mtuSize       = 1200
+	maxRedPayload = 1 << 10 // fit into 10 bits length field
 
 	// the RedReceiver is only for chrome / native webrtc now, we always negotiate opus payload to 111 with those clients,
 	// so it is safe to use a fixed payload 111 here for performance(avoid encoding red blocks for each downtrack that
 	// have a different opus payload type).
-	opusPT = 111
+	opusPT    = 111
+	opusRedPT = 63
 )
 
 type RedReceiver struct {
@@ -60,6 +62,14 @@ func (r *RedReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int32) int 
 	if r.downTrackSpreader.DownTrackCount() == 0 {
 		return 0
 	}
+
+	// fallback to primary codec if payload size exceeds redundant block length
+	if len(pkt.Packet.Payload) >= maxRedPayload {
+		return r.downTrackSpreader.Broadcast(func(dt TrackSender) {
+			_ = dt.WriteRTP(pkt, spatialLayer)
+		})
+	}
+
 	redLen, err := r.encodeRedForPrimary(pkt.Packet, r.redPayloadBuf[:])
 	if err != nil {
 		r.logger.Errorw("red encoding failed", err)
@@ -68,6 +78,7 @@ func (r *RedReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int32) int 
 
 	pPkt := *pkt
 	redRtpPacket := *pkt.Packet
+	redRtpPacket.PayloadType = 63
 	redRtpPacket.Payload = r.redPayloadBuf[:redLen]
 	pPkt.Packet = &redRtpPacket
 
@@ -117,7 +128,7 @@ func (r *RedReceiver) Close() {
 }
 
 func (r *RedReceiver) ReadRTP(buf []byte, layer uint8, sn uint16) (int, error) {
-	// red encoding don't support nack
+	// red encoding doesn't support nack
 	return 0, bucket.ErrPacketMismatch
 }
 

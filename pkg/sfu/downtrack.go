@@ -406,12 +406,18 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		return webrtc.RTPCodecParameters{}, err
 	} else if strings.EqualFold(matchedUpstreamCodec.MimeType, "audio/red") {
 		d.isRED = true
-		var primaryPT, secondaryPT int
-		if n, err := fmt.Sscanf(matchedUpstreamCodec.SDPFmtpLine, "%d/%d", &primaryPT, &secondaryPT); err != nil || n != 2 {
-			d.params.Logger.Errorw("failed to parse upstream primary and secondary payload type for RED", err, "matchedCodec", codec)
+		for _, c := range d.upstreamCodecs {
+			// assume upstream primary codec is opus since we only support it for audio now
+			if strings.EqualFold(c.MimeType, "audio/opus") {
+				d.upstreamPrimaryPT = uint8(c.PayloadType)
+				break
+			}
 		}
-		d.upstreamPrimaryPT = uint8(primaryPT)
+		if d.upstreamPrimaryPT == 0 {
+			d.params.Logger.Errorw("failed to find upstream primary opus payload type for RED", nil, "matchedCodec", codec, "upstreamCodec", d.upstreamCodecs)
+		}
 
+		var primaryPT, secondaryPT int
 		if n, err := fmt.Sscanf(codec.SDPFmtpLine, "%d/%d", &primaryPT, &secondaryPT); err != nil || n != 2 {
 			d.params.Logger.Errorw("failed to parse primary and secondary payload type for RED", err, "matchedCodec", codec)
 		}
