@@ -293,6 +293,41 @@ func TestIngressStore(t *testing.T) {
 	require.Equal(t, "", infos[0].RoomName)
 }
 
+func TestAgentStore(t *testing.T) {
+	ctx := context.Background()
+	rs := redisStore(t)
+
+	ad := &livekit.AgentDispatch{
+		Id:        "dispatch_id",
+		AgentName: "agent_name",
+		Metadata:  "metadata",
+		Room:      "room_name",
+		State: &livekit.AgentDispatchState{
+			CreatedAt: 1,
+			DeletedAt: 2,
+			Jobs: []*livekit.Job{
+				&livekit.Job{
+					Id:         "job_id",
+					DispatchId: "dispatch_id",
+					Type:       livekit.JobType_JT_PUBLISHER,
+					Room: &livekit.Room{
+						Name: "room_name",
+					},
+					Namespace: "ns",
+					Metadata:  "metadata",
+					AgentName: "agent_name",
+					State: &livekit.JobState{
+						Status:    livekit.JobStatus_JS_RUNNING,
+						StartedAt: 3,
+						EndedAt:   4,
+						Error:     "error",
+					},
+				},
+			},
+		},
+	}
+}
+
 func compareIngressInfo(t *testing.T, expected, v *livekit.IngressInfo) {
 	require.Equal(t, expected.IngressId, v.IngressId)
 	require.Equal(t, expected.StreamKey, v.StreamKey)
