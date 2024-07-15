@@ -37,8 +37,6 @@ const (
 	cFirstPacketTimeAdjustWindow    = 2 * time.Minute
 	cFirstPacketTimeAdjustThreshold = 15 * 1e9
 
-	cPassthroughNTPTimestamp = true
-
 	cSequenceNumberLargeJumpThreshold = 100
 )
 
@@ -122,8 +120,8 @@ type RTCPSenderReportData struct {
 	AtAdjusted      time.Time
 }
 
-func (r *RTCPSenderReportData) PropagationDelay() time.Duration {
-	if cPassthroughNTPTimestamp {
+func (r *RTCPSenderReportData) PropagationDelay(passThrough bool) time.Duration {
+	if passThrough {
 		return 0
 	}
 

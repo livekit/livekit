@@ -606,7 +606,7 @@ func (r *RTPStatsSender) GetExpectedRTPTimestamp(at time.Time) (expectedTSExt ui
 	return
 }
 
-func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *RTCPSenderReportData, tsOffset uint64) *rtcp.SenderReport {
+func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *RTCPSenderReportData, tsOffset uint64, passThrough bool) *rtcp.SenderReport {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
@@ -620,7 +620,7 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *RTCPS
 		nowNTP    mediatransportutil.NtpTime
 		nowRTPExt uint64
 	)
-	if cPassthroughNTPTimestamp {
+	if passThrough {
 		nowNTP = publisherSRData.NTPTimestamp
 		nowRTPExt = publisherSRData.RTPTimestampExt - tsOffset
 	} else {

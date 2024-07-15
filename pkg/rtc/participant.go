@@ -112,37 +112,38 @@ type ParticipantParams struct {
 	PLIThrottleConfig       config.PLIThrottleConfig
 	CongestionControlConfig config.CongestionControlConfig
 	// codecs that are enabled for this room
-	PublishEnabledCodecs         []*livekit.Codec
-	SubscribeEnabledCodecs       []*livekit.Codec
-	Logger                       logger.Logger
-	SimTracks                    map[uint32]SimulcastTrackInfo
-	Grants                       *auth.ClaimGrants
-	InitialVersion               uint32
-	ClientConf                   *livekit.ClientConfiguration
-	ClientInfo                   ClientInfo
-	Region                       string
-	Migration                    bool
-	AdaptiveStream               bool
-	AllowTCPFallback             bool
-	TCPFallbackRTTThreshold      int
-	AllowUDPUnstableFallback     bool
-	TURNSEnabled                 bool
-	GetParticipantInfo           func(pID livekit.ParticipantID) *livekit.ParticipantInfo
-	GetRegionSettings            func(ip string) *livekit.RegionSettings
-	DisableSupervisor            bool
-	ReconnectOnPublicationError  bool
-	ReconnectOnSubscriptionError bool
-	ReconnectOnDataChannelError  bool
-	DataChannelMaxBufferedAmount uint64
-	VersionGenerator             utils.TimedVersionGenerator
-	TrackResolver                types.MediaTrackResolver
-	DisableDynacast              bool
-	SubscriberAllowPause         bool
-	SubscriptionLimitAudio       int32
-	SubscriptionLimitVideo       int32
-	PlayoutDelay                 *livekit.PlayoutDelay
-	SyncStreams                  bool
-	ForwardStats                 *sfu.ForwardStats
+	PublishEnabledCodecs           []*livekit.Codec
+	SubscribeEnabledCodecs         []*livekit.Codec
+	Logger                         logger.Logger
+	SimTracks                      map[uint32]SimulcastTrackInfo
+	Grants                         *auth.ClaimGrants
+	InitialVersion                 uint32
+	ClientConf                     *livekit.ClientConfiguration
+	ClientInfo                     ClientInfo
+	Region                         string
+	Migration                      bool
+	AdaptiveStream                 bool
+	AllowTCPFallback               bool
+	TCPFallbackRTTThreshold        int
+	AllowUDPUnstableFallback       bool
+	TURNSEnabled                   bool
+	GetParticipantInfo             func(pID livekit.ParticipantID) *livekit.ParticipantInfo
+	GetRegionSettings              func(ip string) *livekit.RegionSettings
+	DisableSupervisor              bool
+	ReconnectOnPublicationError    bool
+	ReconnectOnSubscriptionError   bool
+	ReconnectOnDataChannelError    bool
+	DataChannelMaxBufferedAmount   uint64
+	VersionGenerator               utils.TimedVersionGenerator
+	TrackResolver                  types.MediaTrackResolver
+	DisableDynacast                bool
+	SubscriberAllowPause           bool
+	SubscriptionLimitAudio         int32
+	SubscriptionLimitVideo         int32
+	PlayoutDelay                   *livekit.PlayoutDelay
+	SyncStreams                    bool
+	ForwardStats                   *sfu.ForwardStats
+	DisableSenderReportPassThrough bool
 }
 
 type ParticipantImpl struct {
@@ -318,6 +319,10 @@ func (p *ParticipantImpl) GetAdaptiveStream() bool {
 
 func (p *ParticipantImpl) GetPacer() pacer.Pacer {
 	return p.TransportManager.GetSubscriberPacer()
+}
+
+func (p *ParticipantImpl) GetDisableSenderReportPassThrough() bool {
+	return p.params.DisableSenderReportPassThrough
 }
 
 func (p *ParticipantImpl) ID() livekit.ParticipantID {
