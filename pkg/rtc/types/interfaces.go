@@ -427,6 +427,8 @@ type LocalParticipant interface {
 	SetSubscriberChannelCapacity(channelCapacity int64)
 
 	GetPacer() pacer.Pacer
+
+	GetDisableSenderReportPassThrough() bool
 }
 
 // Room is a container of participants, and can provide room-level actions

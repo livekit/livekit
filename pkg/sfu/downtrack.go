@@ -202,18 +202,19 @@ type DownTrackStreamAllocatorListener interface {
 type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
 
 type DowntrackParams struct {
-	Codecs            []webrtc.RTPCodecParameters
-	Source            livekit.TrackSource
-	Receiver          TrackReceiver
-	BufferFactory     *buffer.Factory
-	SubID             livekit.ParticipantID
-	StreamID          string
-	MaxTrack          int
-	PlayoutDelayLimit *livekit.PlayoutDelay
-	Pacer             pacer.Pacer
-	Logger            logger.Logger
-	Trailer           []byte
-	RTCPWriter        func([]rtcp.Packet) error
+	Codecs                         []webrtc.RTPCodecParameters
+	Source                         livekit.TrackSource
+	Receiver                       TrackReceiver
+	BufferFactory                  *buffer.Factory
+	SubID                          livekit.ParticipantID
+	StreamID                       string
+	MaxTrack                       int
+	PlayoutDelayLimit              *livekit.PlayoutDelay
+	Pacer                          pacer.Pacer
+	Logger                         logger.Logger
+	Trailer                        []byte
+	RTCPWriter                     func([]rtcp.Packet) error
+	DisableSenderReportPassThrough bool
 }
 
 // DownTrack implements TrackLocal, is the track used to write packets
@@ -807,7 +808,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		_, _, refSenderReport := d.forwarder.GetSenderReportParams()
 		if refSenderReport != nil {
 			actExtCopy := *extPkt.AbsCaptureTimeExt
-			if err = actExtCopy.Rewrite(refSenderReport.PropagationDelay()); err == nil {
+			if err = actExtCopy.Rewrite(refSenderReport.PropagationDelay(!d.params.DisableSenderReportPassThrough)); err == nil {
 				actBytes, err = actExtCopy.Marshal()
 				if err == nil {
 					extensions = append(
@@ -1398,7 +1399,7 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 	}
 
 	_, tsOffset, refSenderReport := d.forwarder.GetSenderReportParams()
-	return d.rtpStats.GetRtcpSenderReport(d.ssrc, refSenderReport, tsOffset)
+	return d.rtpStats.GetRtcpSenderReport(d.ssrc, refSenderReport, tsOffset, !d.params.DisableSenderReportPassThrough)
 }
 
 func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan struct{} {
