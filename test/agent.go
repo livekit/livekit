@@ -75,7 +75,6 @@ func (c *agentClient) Run(jobType livekit.JobType, namespace string) (err error)
 					Type:      livekit.JobType_JT_ROOM,
 					Version:   "version",
 					Namespace: &namespace,
-					Name:      "name",
 				},
 			},
 		})
@@ -87,7 +86,6 @@ func (c *agentClient) Run(jobType livekit.JobType, namespace string) (err error)
 					Type:      livekit.JobType_JT_PUBLISHER,
 					Version:   "version",
 					Namespace: &namespace,
-					Name:      "name",
 				},
 			},
 		})
