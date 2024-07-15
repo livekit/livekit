@@ -2652,3 +2652,64 @@ func (p *ParticipantImpl) setupEnabledCodecs(publishEnabledCodecs []*livekit.Cod
 	}
 	p.enabledSubscribeCodecs = subscribeCodecs
 }
+
+func (p *ParticipantImpl) UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack) error {
+	if track := p.UpTrackManager.UpdatePublishedAudioTrack(update); track != nil {
+		return nil
+	}
+
+	isPending := false
+	p.pendingTracksLock.RLock()
+	for _, pti := range p.pendingTracks {
+		for _, ti := range pti.trackInfos {
+			if ti.Sid == update.TrackSid {
+				isPending = true
+
+				ti.AudioFeatures = update.Features
+				ti.Stereo = false
+				ti.DisableDtx = false
+				for _, feature := range update.Features {
+					switch feature {
+					case livekit.AudioTrackFeature_TF_STEREO:
+						ti.Stereo = true
+					case livekit.AudioTrackFeature_TF_NO_DTX:
+						ti.DisableDtx = true
+					}
+				}
+			}
+		}
+	}
+	p.pendingTracksLock.RUnlock()
+	if isPending {
+		return nil
+	}
+
+	p.pubLogger.Debugw("could not locate track", "trackID", update.TrackSid)
+	return errors.New("could not find track")
+}
+
+func (p *ParticipantImpl) UpdateVideoTrack(update *livekit.UpdateLocalVideoTrack) error {
+	if track := p.UpTrackManager.UpdatePublishedVideoTrack(update); track != nil {
+		return nil
+	}
+
+	isPending := false
+	p.pendingTracksLock.RLock()
+	for _, pti := range p.pendingTracks {
+		for _, ti := range pti.trackInfos {
+			if ti.Sid == update.TrackSid {
+				isPending = true
+
+				ti.Width = update.Width
+				ti.Height = update.Height
+			}
+		}
+	}
+	p.pendingTracksLock.RUnlock()
+	if isPending {
+		return nil
+	}
+
+	p.pubLogger.Debugw("could not locate track", "trackID", update.TrackSid)
+	return errors.New("could not find track")
+}
