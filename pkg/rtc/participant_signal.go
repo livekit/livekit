@@ -198,7 +198,7 @@ func (p *ParticipantImpl) SendRefreshToken(token string) error {
 }
 
 func (p *ParticipantImpl) SendErrorResponse(errorResponse *livekit.ErrorResponse) error {
-	if errorResponse.RequestId == 0 {
+	if errorResponse.RequestId == 0 || !p.params.ClientInfo.SupportErrorResponse() {
 		return nil
 	}
 
@@ -299,6 +299,9 @@ func (p *ParticipantImpl) sendTrackUnpublished(trackID livekit.TrackID) {
 }
 
 func (p *ParticipantImpl) sendTrackHasBeenSubscribed(trackID livekit.TrackID) {
+	if !p.params.ClientInfo.SupportTrackSubscribedEvent() {
+		return
+	}
 	_ = p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_TrackSubscribed{
 			TrackSubscribed: &livekit.TrackSubscribed{
