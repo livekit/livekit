@@ -628,12 +628,16 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *RTCPS
 		nowRTPExt = publisherSRData.RTPTimestampExt - tsOffset + uint64(timeSincePublisherSRAdjusted.Nanoseconds()*int64(r.params.ClockRate)/1e9)
 	}
 
+	packetCount := uint32(r.getTotalPacketsPrimary(r.extStartSN, r.extHighestSN) + r.packetsDuplicate + r.packetsPadding)
+	octetCount := uint32(r.bytes + r.bytesDuplicate + r.bytesPadding)
 	srData := &RTCPSenderReportData{
 		NTPTimestamp:    nowNTP,
 		RTPTimestamp:    uint32(nowRTPExt),
 		RTPTimestampExt: nowRTPExt,
 		At:              now,
 		AtAdjusted:      now,
+		Packets:         packetCount,
+		Octets:          octetCount,
 	}
 
 	getFields := func() []interface{} {
@@ -686,8 +690,8 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *RTCPS
 		SSRC:        ssrc,
 		NTPTime:     uint64(nowNTP),
 		RTPTime:     uint32(nowRTPExt),
-		PacketCount: uint32(r.getTotalPacketsPrimary(r.extStartSN, r.extHighestSN) + r.packetsDuplicate + r.packetsPadding),
-		OctetCount:  uint32(r.bytes + r.bytesDuplicate + r.bytesPadding),
+		PacketCount: packetCount,
+		OctetCount:  octetCount,
 	}
 }
 
