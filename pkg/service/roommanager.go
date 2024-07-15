@@ -379,6 +379,9 @@ func (r *RoomManager) StartSession(
 	pv := types.ProtocolVersion(pi.Client.Protocol)
 	rtcConf := *r.rtcConfig
 	rtcConf.SetBufferFactory(room.GetBufferFactory())
+	if pi.DisableICELite {
+		rtcConf.SettingEngine.SetLite(false)
+	}
 	sid := livekit.ParticipantID(guid.New(utils.ParticipantPrefix))
 	pLogger := rtc.LoggerWithParticipant(
 		rtc.LoggerWithRoom(logger.GetLogger(), room.Name(), room.ID()),
