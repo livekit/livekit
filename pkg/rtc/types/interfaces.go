@@ -280,8 +280,6 @@ type Participant interface {
 		timedVersion utils.TimedVersion,
 		resolverBySid func(participantID livekit.ParticipantID) LocalParticipant,
 	) error
-	UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack) error
-	UpdateVideoTrack(update *livekit.UpdateLocalVideoTrack) error
 
 	DebugInfo() map[string]interface{}
 }
@@ -332,6 +330,8 @@ type LocalParticipant interface {
 	SetName(name string)
 	SetMetadata(metadata string)
 	SetAttributes(attributes map[string]string)
+	UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack) error
+	UpdateVideoTrack(update *livekit.UpdateLocalVideoTrack) error
 
 	// permissions
 	ClaimGrants() *auth.ClaimGrants
