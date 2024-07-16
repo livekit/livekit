@@ -436,8 +436,6 @@ func (t *MediaTrack) SetMuted(muted bool) {
 
 func (t *MediaTrack) handleReceiverEverAddDowntrack() {
 	if !t.everSubscribed.Swap(true) && t.params.OnTrackEverSubscribed != nil {
-		go func() {
-			t.params.OnTrackEverSubscribed(t.ID())
-		}()
+		go t.params.OnTrackEverSubscribed(t.ID())
 	}
 }
