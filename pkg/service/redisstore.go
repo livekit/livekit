@@ -847,6 +847,7 @@ func (s *RedisStore) StoreAgentDispatch(_ context.Context, dispatch *livekit.Age
 	return s.rc.HSet(s.ctx, key, di.Id, data).Err()
 }
 
+// This will not delete the jobs created by the dispatch
 func (s *RedisStore) DeleteAgentDispatch(_ context.Context, dispatch *livekit.AgentDispatch) error {
 	key := AgentDispatchPrefix + string(dispatch.Room)
 	return s.rc.HDel(s.ctx, key, dispatch.Id).Err()
@@ -896,6 +897,13 @@ func (s *RedisStore) StoreAgentJob(_ context.Context, job *livekit.Job) error {
 
 	// Do not store room with the job
 	jb.Room = nil
+
+	// Only store the participant identity
+	if jb.Participant != nil {
+		jb.Participant = &livekit.ParticipantInfo{
+			Identity: jb.Participant.Identity,
+		}
+	}
 
 	data, err := proto.Marshal(jb)
 	if err != nil {
