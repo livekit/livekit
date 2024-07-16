@@ -160,12 +160,11 @@ func (d *DummyReceiver) Upgrade(receiver sfu.TrackReceiver) {
 	d.receiver.CompareAndSwap(nil, receiver)
 
 	d.downTrackLock.Lock()
-	downTracks := d.downTracks
-	d.downTracks = make(map[livekit.ParticipantID]sfu.TrackSender)
-	d.downTrackLock.Unlock()
-	for _, t := range downTracks {
+	for _, t := range d.downTracks {
 		receiver.AddDownTrack(t)
 	}
+	d.downTracks = make(map[livekit.ParticipantID]sfu.TrackSender)
+	d.downTrackLock.Unlock()
 
 	d.settingsLock.Lock()
 	if d.maxExpectedLayerValid {
@@ -254,23 +253,25 @@ func (d *DummyReceiver) SetMaxExpectedSpatialLayer(layer int32) {
 }
 
 func (d *DummyReceiver) AddDownTrack(track sfu.TrackSender) error {
+	d.downTrackLock.Lock()
+	defer d.downTrackLock.Unlock()
+
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		r.AddDownTrack(track)
 	} else {
-		d.downTrackLock.Lock()
 		d.downTracks[track.SubscriberID()] = track
-		d.downTrackLock.Unlock()
 	}
 	return nil
 }
 
 func (d *DummyReceiver) DeleteDownTrack(subscriberID livekit.ParticipantID) {
+	d.downTrackLock.Lock()
+	defer d.downTrackLock.Unlock()
+
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		r.DeleteDownTrack(subscriberID)
 	} else {
-		d.downTrackLock.Lock()
 		delete(d.downTracks, subscriberID)
-		d.downTrackLock.Unlock()
 	}
 }
 
