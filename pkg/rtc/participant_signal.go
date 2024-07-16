@@ -264,10 +264,13 @@ func (p *ParticipantImpl) sendDisconnectUpdatesForReconnect() error {
 	})
 }
 
-func (p *ParticipantImpl) sendICECandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) error {
-	trickle := ToProtoTrickle(c.ToJSON())
-	trickle.Target = target
+func (p *ParticipantImpl) sendICECandidate(ic *webrtc.ICECandidate, target livekit.SignalTarget) error {
+	prevIC := p.icQueue.Swap(ic)
+	if prevIC == nil {
+		return nil
+	}
 
+	trickle := ToProtoTrickle(prevIC.ToJSON(), target, ic == nil)
 	p.params.Logger.Debugw("sending ICE candidate", "transport", target, "trickle", logger.Proto(trickle))
 
 	return p.writeMessage(&livekit.SignalResponse{
