@@ -285,7 +285,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			sfu.WithLoadBalanceThreshold(20),
 			sfu.WithStreamTrackers(),
 			sfu.WithForwardStats(t.params.ForwardStats),
-			sfu.WithEverHasDowntrackAdded(t.handleReceiverEverAddDowntrack),
+			sfu.WithEverHasDownTrackAdded(t.handleReceiverEverAddDowntrack),
 		)
 		newWR.OnCloseHandler(func() {
 			t.MediaTrackReceiver.SetClosing()
@@ -436,6 +436,8 @@ func (t *MediaTrack) SetMuted(muted bool) {
 
 func (t *MediaTrack) handleReceiverEverAddDowntrack() {
 	if !t.everSubscribed.Swap(true) && t.params.OnTrackEverSubscribed != nil {
-		go t.params.OnTrackEverSubscribed(t.ID())
+		go func() {
+			t.params.OnTrackEverSubscribed(t.ID())
+		}()
 	}
 }
