@@ -122,8 +122,8 @@ type WebRTCReceiver struct {
 
 	onStatsUpdate        func(w *WebRTCReceiver, stat *livekit.AnalyticsStat)
 	onMaxLayerChange     func(maxLayer int32)
-	downtrackEverAdded   atomic.Bool
-	onDowntrackEverAdded func()
+	downTrackEverAdded   atomic.Bool
+	onDownTrackEverAdded func()
 
 	primaryReceiver atomic.Pointer[RedPrimaryReceiver]
 	redReceiver     atomic.Pointer[RedReceiver]
@@ -195,9 +195,9 @@ func WithForwardStats(forwardStats *ForwardStats) ReceiverOpts {
 	}
 }
 
-func WithEverHasDowntrackAdded(f func()) ReceiverOpts {
+func WithEverHasDownTrackAdded(f func()) ReceiverOpts {
 	return func(w *WebRTCReceiver) *WebRTCReceiver {
-		w.onDowntrackEverAdded = f
+		w.onDownTrackEverAdded = f
 		return w
 	}
 }
@@ -443,8 +443,8 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) error {
 }
 
 func (w *WebRTCReceiver) handleDowntrackAdded() {
-	if !w.downtrackEverAdded.Swap(true) && w.onDowntrackEverAdded != nil {
-		w.onDowntrackEverAdded()
+	if !w.downTrackEverAdded.Swap(true) && w.onDownTrackEverAdded != nil {
+		w.onDownTrackEverAdded()
 	}
 }
 
