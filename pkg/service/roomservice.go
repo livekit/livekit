@@ -86,8 +86,8 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 		return nil, ErrEgressNotConnected
 	}
 
-	if limit := s.limitConf.MaxRoomNameLength; limit > 0 && len(req.Name) > limit {
-		return nil, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, limit)
+	if !s.limitConf.CheckRoomNameLength(req.Name) {
+		return nil, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, s.limitConf.MaxRoomNameLength)
 	}
 
 	rm, created, err := s.roomAllocator.CreateRoom(ctx, req)
@@ -226,19 +226,17 @@ func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 
 func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.UpdateParticipantRequest) (*livekit.ParticipantInfo, error) {
 	AppendLogFields(ctx, "room", req.Room, "participant", req.Identity)
-	maxMetadataSize := int(s.limitConf.MaxMetadataSize)
-	if maxMetadataSize > 0 && len(req.Metadata) > maxMetadataSize {
-		return nil, twirp.InvalidArgumentError(ErrMetadataExceedsLimits.Error(), strconv.Itoa(maxMetadataSize))
+
+	if !s.limitConf.CheckParticipantNameLength(req.Name) {
+		return nil, twirp.InvalidArgumentError(ErrNameExceedsLimits.Error(), strconv.Itoa(s.limitConf.MaxParticipantNameLength))
 	}
-	maxAttributeSize := int(s.limitConf.MaxAttributesSize)
-	if maxAttributeSize > 0 {
-		total := 0
-		for key, val := range req.Attributes {
-			total += len(key) + len(val)
-		}
-		if total > maxAttributeSize {
-			return nil, twirp.InvalidArgumentError(ErrAttributeExceedsLimits.Error(), strconv.Itoa(maxAttributeSize))
-		}
+
+	if !s.limitConf.CheckMetadataSize(req.Metadata) {
+		return nil, twirp.InvalidArgumentError(ErrMetadataExceedsLimits.Error(), strconv.Itoa(int(s.limitConf.MaxMetadataSize)))
+	}
+
+	if !s.limitConf.CheckAttributesSize(req.Attributes) {
+		return nil, twirp.InvalidArgumentError(ErrAttributeExceedsLimits.Error(), strconv.Itoa(int(s.limitConf.MaxAttributesSize)))
 	}
 
 	if err := EnsureAdminPermission(ctx, livekit.RoomName(req.Room)); err != nil {
@@ -283,31 +281,12 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 		return nil, twirpAuthError(err)
 	}
 
-	// no one has joined the room, would not have been created on an RTC node.
-	// in this case, we'd want to run create again
-	room, _, err := s.roomAllocator.CreateRoom(ctx, &livekit.CreateRoomRequest{
-		Name:     req.Room,
-		Metadata: req.Metadata,
-	})
+	room, _, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false)
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = s.roomClient.UpdateRoomMetadata(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
-	if err != nil {
-		return nil, err
-	}
-
-	err = s.confirmExecution(ctx, func() error {
-		room, _, err = s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false)
-		if err != nil {
-			return err
-		}
-		if room.Metadata != req.Metadata {
-			return ErrOperationFailed
-		}
-		return nil
-	})
+	room, err = s.roomClient.UpdateRoomMetadata(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
 	if err != nil {
 		return nil, err
 	}

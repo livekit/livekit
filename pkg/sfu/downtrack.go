@@ -202,18 +202,19 @@ type DownTrackStreamAllocatorListener interface {
 type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
 
 type DowntrackParams struct {
-	Codecs            []webrtc.RTPCodecParameters
-	Source            livekit.TrackSource
-	Receiver          TrackReceiver
-	BufferFactory     *buffer.Factory
-	SubID             livekit.ParticipantID
-	StreamID          string
-	MaxTrack          int
-	PlayoutDelayLimit *livekit.PlayoutDelay
-	Pacer             pacer.Pacer
-	Logger            logger.Logger
-	Trailer           []byte
-	RTCPWriter        func([]rtcp.Packet) error
+	Codecs                         []webrtc.RTPCodecParameters
+	Source                         livekit.TrackSource
+	Receiver                       TrackReceiver
+	BufferFactory                  *buffer.Factory
+	SubID                          livekit.ParticipantID
+	StreamID                       string
+	MaxTrack                       int
+	PlayoutDelayLimit              *livekit.PlayoutDelay
+	Pacer                          pacer.Pacer
+	Logger                         logger.Logger
+	Trailer                        []byte
+	RTCPWriter                     func([]rtcp.Packet) error
+	DisableSenderReportPassThrough bool
 }
 
 // DownTrack implements TrackLocal, is the track used to write packets
@@ -406,12 +407,18 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		return webrtc.RTPCodecParameters{}, err
 	} else if strings.EqualFold(matchedUpstreamCodec.MimeType, "audio/red") {
 		d.isRED = true
-		var primaryPT, secondaryPT int
-		if n, err := fmt.Sscanf(matchedUpstreamCodec.SDPFmtpLine, "%d/%d", &primaryPT, &secondaryPT); err != nil || n != 2 {
-			d.params.Logger.Errorw("failed to parse upstream primary and secondary payload type for RED", err, "matchedCodec", codec)
+		for _, c := range d.upstreamCodecs {
+			// assume upstream primary codec is opus since we only support it for audio now
+			if strings.EqualFold(c.MimeType, "audio/opus") {
+				d.upstreamPrimaryPT = uint8(c.PayloadType)
+				break
+			}
 		}
-		d.upstreamPrimaryPT = uint8(primaryPT)
+		if d.upstreamPrimaryPT == 0 {
+			d.params.Logger.Errorw("failed to find upstream primary opus payload type for RED", nil, "matchedCodec", codec, "upstreamCodec", d.upstreamCodecs)
+		}
 
+		var primaryPT, secondaryPT int
 		if n, err := fmt.Sscanf(codec.SDPFmtpLine, "%d/%d", &primaryPT, &secondaryPT); err != nil || n != 2 {
 			d.params.Logger.Errorw("failed to parse primary and secondary payload type for RED", err, "matchedCodec", codec)
 		}
@@ -807,7 +814,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		_, _, refSenderReport := d.forwarder.GetSenderReportParams()
 		if refSenderReport != nil {
 			actExtCopy := *extPkt.AbsCaptureTimeExt
-			if err = actExtCopy.Rewrite(refSenderReport.PropagationDelay()); err == nil {
+			if err = actExtCopy.Rewrite(refSenderReport.PropagationDelay(!d.params.DisableSenderReportPassThrough)); err == nil {
 				actBytes, err = actExtCopy.Marshal()
 				if err == nil {
 					extensions = append(
@@ -1398,7 +1405,7 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 	}
 
 	_, tsOffset, refSenderReport := d.forwarder.GetSenderReportParams()
-	return d.rtpStats.GetRtcpSenderReport(d.ssrc, refSenderReport, tsOffset)
+	return d.rtpStats.GetRtcpSenderReport(d.ssrc, refSenderReport, tsOffset, !d.params.DisableSenderReportPassThrough)
 }
 
 func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan struct{} {

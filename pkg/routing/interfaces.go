@@ -61,6 +61,7 @@ type ParticipantInit struct {
 	AdaptiveStream       bool
 	ID                   livekit.ParticipantID
 	SubscriberAllowPause *bool
+	DisableICELite       bool
 }
 
 // Router allows multiple nodes to coordinate the participant session
@@ -130,6 +131,7 @@ func (pi *ParticipantInit) ToStartSession(roomName livekit.RoomName, connectionI
 		GrantsJson:      string(claims),
 		AdaptiveStream:  pi.AdaptiveStream,
 		ParticipantId:   string(pi.ID),
+		DisableIceLite:  pi.DisableICELite,
 	}
 	if pi.SubscriberAllowPause != nil {
 		subscriberAllowPause := *pi.SubscriberAllowPause
@@ -156,6 +158,7 @@ func ParticipantInitFromStartSession(ss *livekit.StartSession, region string) (*
 		Region:          region,
 		AdaptiveStream:  ss.AdaptiveStream,
 		ID:              livekit.ParticipantID(ss.ParticipantId),
+		DisableICELite:  ss.DisableIceLite,
 	}
 	if ss.SubscriberAllowPause != nil {
 		subscriberAllowPause := *ss.SubscriberAllowPause

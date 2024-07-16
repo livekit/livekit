@@ -37,8 +37,6 @@ const (
 	cFirstPacketTimeAdjustWindow    = 2 * time.Minute
 	cFirstPacketTimeAdjustThreshold = 15 * 1e9
 
-	cPassthroughNTPTimestamp = true
-
 	cSequenceNumberLargeJumpThreshold = 100
 )
 
@@ -120,10 +118,12 @@ type RTCPSenderReportData struct {
 	NTPTimestamp    mediatransportutil.NtpTime
 	At              time.Time
 	AtAdjusted      time.Time
+	Packets         uint32
+	Octets          uint32
 }
 
-func (r *RTCPSenderReportData) PropagationDelay() time.Duration {
-	if cPassthroughNTPTimestamp {
+func (r *RTCPSenderReportData) PropagationDelay(passThrough bool) time.Duration {
+	if passThrough {
 		return 0
 	}
 
@@ -135,12 +135,14 @@ func (r *RTCPSenderReportData) ToString() string {
 		return ""
 	}
 
-	return fmt.Sprintf("ntp: %s, rtp: %d, extRtp: %d, at: %s, atAdj: %s",
+	return fmt.Sprintf("ntp: %s, rtp: %d, extRtp: %d, at: %s, atAdj: %s, p: %d, o: %d",
 		r.NTPTimestamp.Time().String(),
 		r.RTPTimestamp,
 		r.RTPTimestampExt,
 		r.At.String(),
 		r.AtAdjusted.String(),
+		r.Packets,
+		r.Octets,
 	)
 }
 
@@ -154,6 +156,8 @@ func (r *RTCPSenderReportData) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddUint64("RTPTimestampExt", r.RTPTimestampExt)
 	e.AddTime("At", r.At)
 	e.AddTime("AtAdjusted", r.AtAdjusted)
+	e.AddUint32("Packets", r.Packets)
+	e.AddUint32("Octets", r.Octets)
 	return nil
 }
 

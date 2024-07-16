@@ -130,6 +130,7 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 	adaptiveStreamParam := r.FormValue("adaptive_stream")
 	participantID := r.FormValue("sid")
 	subscriberAllowPauseParam := r.FormValue("subscriber_allow_pause")
+	disableICELite := r.FormValue("disable_ice_lite")
 
 	if onlyName != "" {
 		roomName = onlyName
@@ -192,6 +193,9 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 	if subscriberAllowPauseParam != "" {
 		subscriberAllowPause := boolValue(subscriberAllowPauseParam)
 		pi.SubscriberAllowPause = &subscriberAllowPause
+	}
+	if disableICELite != "" {
+		pi.DisableICELite = boolValue(disableICELite)
 	}
 
 	return roomName, pi, http.StatusOK, nil
@@ -514,7 +518,8 @@ func (s *RTCService) startConnection(
 ) (connectionResult, *livekit.SignalResponse, error) {
 	var cr connectionResult
 	var err error
-	cr.Room, _, err = s.roomAllocator.CreateRoom(ctx, &livekit.CreateRoomRequest{Name: string(roomName)})
+
+	cr.Room, _, err = s.roomAllocator.CreateRoom(ctx, &livekit.CreateRoomRequest{Name: string(roomName), ConfigName: GetRoomConfiguration(ctx)})
 	if err != nil {
 		return cr, nil, err
 	}

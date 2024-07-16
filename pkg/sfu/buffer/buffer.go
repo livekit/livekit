@@ -952,12 +952,14 @@ func (b *Buffer) buildReceptionReport() *rtcp.ReceptionReport {
 	return b.rtpStats.GetRtcpReceptionReport(b.mediaSSRC, proxyLoss, b.rrSnapshotId)
 }
 
-func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64) {
+func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64, packets uint32, octets uint32) {
 	b.RLock()
 	srData := &RTCPSenderReportData{
 		RTPTimestamp: rtpTime,
 		NTPTimestamp: mediatransportutil.NtpTime(ntpTime),
 		At:           time.Now(),
+		Packets:      packets,
+		Octets:       octets,
 	}
 
 	didSet := false

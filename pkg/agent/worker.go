@@ -79,7 +79,6 @@ type Worker struct {
 	jobType     livekit.JobType
 	version     string
 	agentName   string
-	name        string
 	namespace   string
 	load        float32
 	permissions *livekit.ParticipantPermission
@@ -327,7 +326,6 @@ func (w *Worker) handleRegister(req *livekit.RegisterWorkerRequest) {
 	}
 
 	w.version = req.Version
-	w.name = req.Name
 	w.agentName = req.GetAgentName()
 	w.namespace = req.GetNamespace()
 	w.jobType = req.GetType()

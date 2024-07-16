@@ -197,6 +197,18 @@ func (p *ParticipantImpl) SendRefreshToken(token string) error {
 	})
 }
 
+func (p *ParticipantImpl) SendErrorResponse(errorResponse *livekit.ErrorResponse) error {
+	if errorResponse.RequestId == 0 || !p.params.ClientInfo.SupportErrorResponse() {
+		return nil
+	}
+
+	return p.writeMessage(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_ErrorResponse{
+			ErrorResponse: errorResponse,
+		},
+	})
+}
+
 func (p *ParticipantImpl) HandleReconnectAndSendResponse(reconnectReason livekit.ReconnectReason, reconnectResponse *livekit.ReconnectResponse) error {
 	p.TransportManager.HandleClientReconnect(reconnectReason)
 
@@ -252,10 +264,13 @@ func (p *ParticipantImpl) sendDisconnectUpdatesForReconnect() error {
 	})
 }
 
-func (p *ParticipantImpl) sendICECandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) error {
-	trickle := ToProtoTrickle(c.ToJSON())
-	trickle.Target = target
+func (p *ParticipantImpl) sendICECandidate(ic *webrtc.ICECandidate, target livekit.SignalTarget) error {
+	prevIC := p.icQueue.Swap(ic)
+	if prevIC == nil {
+		return nil
+	}
 
+	trickle := ToProtoTrickle(prevIC.ToJSON(), target, ic == nil)
 	p.params.Logger.Debugw("sending ICE candidate", "transport", target, "trickle", logger.Proto(trickle))
 
 	return p.writeMessage(&livekit.SignalResponse{
@@ -287,6 +302,9 @@ func (p *ParticipantImpl) sendTrackUnpublished(trackID livekit.TrackID) {
 }
 
 func (p *ParticipantImpl) sendTrackHasBeenSubscribed(trackID livekit.TrackID) {
+	if !p.params.ClientInfo.SupportTrackSubscribedEvent() {
+		return
+	}
 	_ = p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_TrackSubscribed{
 			TrackSubscribed: &livekit.TrackSubscribed{

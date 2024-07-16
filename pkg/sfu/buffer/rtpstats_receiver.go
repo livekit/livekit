@@ -260,7 +260,7 @@ func (r *RTPStatsReceiver) Update(
 			r.largeJumpCount++
 			if (r.largeJumpCount-1)%100 == 0 {
 				r.logger.Warnw(
-					"large sequence number gap OR time reversed", nil,
+					"large sequence number gap", nil,
 					append(getLoggingFields(), "count", r.largeJumpCount)...,
 				)
 			}
@@ -492,7 +492,6 @@ func (r *RTPStatsReceiver) updatePropagationDelayAndRecordSenderReport(srData *R
 		deltaPropagationDelay = propagationDelay - r.propagationDelay
 		if deltaPropagationDelay > cPropagationDelayDeltaThresholdMin { // ignore small changes for path change consideration
 			if r.longTermDeltaPropagationDelay != 0 &&
-				deltaPropagationDelay > 0 &&
 				deltaPropagationDelay > r.longTermDeltaPropagationDelay*time.Duration(cPropagationDelayDeltaThresholdMaxFactor) {
 				r.logger.Debugw("sharp increase in propagation delay", getPropagationFields()...)
 				r.propagationDelayDeltaHighCount++
@@ -522,16 +521,19 @@ func (r *RTPStatsReceiver) updatePropagationDelayAndRecordSenderReport(srData *R
 			r.propagationDelay += time.Duration(factor * float64(propagationDelay-r.propagationDelay))
 		}
 
-		if r.longTermDeltaPropagationDelay == 0 {
-			r.longTermDeltaPropagationDelay = deltaPropagationDelay
-		} else {
-			if deltaPropagationDelay < cPropagationDelayDeltaLongTermAdaptationThreshold {
+		if deltaPropagationDelay < cPropagationDelayDeltaLongTermAdaptationThreshold {
+			if r.longTermDeltaPropagationDelay == 0 {
+				r.longTermDeltaPropagationDelay = deltaPropagationDelay
+			} else {
 				// do not adapt to large +ve spikes, can happen when channel is congested and reports are delivered very late
 				// if the spike is in fact a path change, it will persist and handled by path change detection above
 				sinceLastReport := srData.NTPTimestamp.Time().Sub(r.srNewest.NTPTimestamp.Time())
 				adaptationFactor := min(1.0, float64(sinceLastReport)/float64(cPropagationDelayDeltaHighResetWait))
 				r.longTermDeltaPropagationDelay += time.Duration(adaptationFactor * float64(deltaPropagationDelay-r.longTermDeltaPropagationDelay))
 			}
+		}
+		if r.longTermDeltaPropagationDelay < 0 {
+			r.longTermDeltaPropagationDelay = 0
 		}
 	}
 	// adjust receive time to estimated propagation delay
@@ -563,8 +565,8 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 		return false
 	}
 
-	r.checkRTPClockSkewForSenderReport(srDataExt)
 	r.updatePropagationDelayAndRecordSenderReport(srDataExt)
+	r.checkRTPClockSkewForSenderReport(srDataExt)
 	r.checkRTPClockSkewAgainstMediaPathForSenderReport(srDataExt)
 
 	if err, loggingFields := r.maybeAdjustFirstPacketTime(r.srNewest, 0, r.timestamp.GetExtendedStart()); err != nil {

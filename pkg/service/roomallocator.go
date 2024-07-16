@@ -207,7 +207,7 @@ func (r *StandardRoomAllocator) applyNamedRoomConfiguration(req *livekit.CreateR
 
 	conf, ok := r.config.Room.RoomConfigurations[req.ConfigName]
 	if !ok {
-		return nil, psrpc.NewErrorf(psrpc.InvalidArgument, "unknown roomc confguration in create room request")
+		return req, psrpc.NewErrorf(psrpc.InvalidArgument, "unknown room confguration in create room request")
 	}
 
 	clone := proto.Clone(req).(*livekit.CreateRoomRequest)
