@@ -191,6 +191,8 @@ type ParticipantImpl struct {
 	*UpTrackManager
 	*SubscriptionManager
 
+	icQueue atomic.Pointer[webrtc.ICECandidate]
+
 	// keeps track of unpublished tracks in order to reuse trackID
 	unpublishedTracks []*livekit.TrackInfo
 
@@ -1610,7 +1612,7 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 }
 
 func (p *ParticipantImpl) onICECandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) error {
-	if c == nil || p.IsDisconnected() || p.IsClosed() {
+	if p.IsDisconnected() || p.IsClosed() {
 		return nil
 	}
 
