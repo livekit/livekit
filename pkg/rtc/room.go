@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"runtime/debug"
 	"slices"
 	"sort"
 	"strings"
@@ -1448,7 +1449,7 @@ func (r *Room) launchPublisherAgents(p types.Participant) {
 		return
 	}
 
-	r.Logger.Infow("launchPublisherAgents", r.agentStore)
+	r.Logger.Infow("launchPublisherAgents", "agentStore", r.agentStore, "stack", string(debug.Stack()))
 	for _, ag := range r.agentDispatches {
 		go func() {
 			inc := r.agentClient.LaunchJob(context.Background(), &agent.JobRequest{
@@ -1459,9 +1460,9 @@ func (r *Room) launchPublisherAgents(p types.Participant) {
 				AgentName:   ag.AgentName,
 				DispatchId:  ag.Id,
 			})
-			r.Logger.Infow("launchPublisherAgents goroutine", r.agentStore)
+			r.Logger.Infow("launchPublisherAgents goroutine", "agentStore", r.agentStore)
 			inc.ForEach(func(job *livekit.Job) {
-				r.Logger.Infow("launchPublisherAgents foreach", r.agentStore)
+				r.Logger.Infow("launchPublisherAgents foreach", "agentStore", r.agentStore)
 				r.agentStore.StoreAgentJob(context.Background(), job)
 			})
 		}()
