@@ -1505,7 +1505,9 @@ func (r *Room) createAgentDispatchesFromRoomAgent() {
 		r.agentDispatches = append(r.agentDispatches, ad)
 		if r.agentStore != nil {
 			err := r.agentStore.StoreAgentDispatch(context.Background(), ad)
-			r.Logger.Warnw("failed storing room dispatch", err)
+			if err != nil {
+				r.Logger.Warnw("failed storing room dispatch", err)
+			}
 		}
 	}
 }
