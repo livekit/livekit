@@ -1451,7 +1451,7 @@ func (r *Room) launchPublisherAgents(p types.Participant) {
 
 	r.Logger.Infow("launchPublisherAgents", "agentStore", r.agentStore, "nil", r.agentStore == nil, "stack", string(debug.Stack()))
 	for _, ag := range r.agentDispatches {
-		go func() {
+		go func(r *Room) {
 			inc := r.agentClient.LaunchJob(context.Background(), &agent.JobRequest{
 				JobType:     livekit.JobType_JT_PUBLISHER,
 				Room:        r.ToProto(),
@@ -1465,7 +1465,7 @@ func (r *Room) launchPublisherAgents(p types.Participant) {
 				r.Logger.Infow("launchPublisherAgents foreach", "agentStore", r.agentStore)
 				r.agentStore.StoreAgentJob(context.Background(), job)
 			})
-		}()
+		}(r)
 	}
 }
 
