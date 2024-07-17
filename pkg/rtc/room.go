@@ -187,6 +187,8 @@ func NewRoom(
 		disconnectSignalOnResumeNoMessagesParticipants: make(map[livekit.ParticipantIdentity]*disconnectSignalOnResumeNoMessages),
 	}
 
+	r.Logger.Infow("NEW ROOM", "room", r)
+
 	if r.protoRoom.EmptyTimeout == 0 {
 		r.protoRoom.EmptyTimeout = roomConfig.EmptyTimeout
 	}
