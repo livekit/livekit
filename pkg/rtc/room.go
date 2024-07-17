@@ -1449,7 +1449,7 @@ func (r *Room) launchPublisherAgents(p types.Participant) {
 		return
 	}
 
-	r.Logger.Infow("launchPublisherAgents", "agentStore", r.agentStore, "stack", string(debug.Stack()))
+	r.Logger.Infow("launchPublisherAgents", "agentStore", r.agentStore, "nil", r.agentStore == nil, "stack", string(debug.Stack()))
 	for _, ag := range r.agentDispatches {
 		go func() {
 			inc := r.agentClient.LaunchJob(context.Background(), &agent.JobRequest{
