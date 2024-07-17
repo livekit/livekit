@@ -1488,6 +1488,10 @@ func (r *Room) DebugInfo() map[string]interface{} {
 
 func (r *Room) createAgentDispatchesFromRoomAgent() {
 	now := time.Now()
+	if r.internal == nil {
+		return
+	}
+
 	for _, ag := range r.internal.AgentDispatches {
 		ad := &livekit.AgentDispatch{
 			Id:        guid.New(guid.AgentDispatchPrefix),
