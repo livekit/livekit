@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"runtime/debug"
 	"slices"
 	"sort"
 	"strings"
@@ -186,8 +185,6 @@ func NewRoom(
 		disconnectSignalOnResumeParticipants: make(map[livekit.ParticipantIdentity]time.Time),
 		disconnectSignalOnResumeNoMessagesParticipants: make(map[livekit.ParticipantIdentity]*disconnectSignalOnResumeNoMessages),
 	}
-
-	r.Logger.Infow("NEW ROOM", "room", r)
 
 	if r.protoRoom.EmptyTimeout == 0 {
 		r.protoRoom.EmptyTimeout = roomConfig.EmptyTimeout
@@ -1451,9 +1448,8 @@ func (r *Room) launchPublisherAgents(p types.Participant) {
 		return
 	}
 
-	r.Logger.Infow("launchPublisherAgents", "agentStore", r.agentStore, "nil", r.agentStore == nil, "stack", string(debug.Stack()))
 	for _, ag := range r.agentDispatches {
-		go func(r *Room) {
+		go func() {
 			inc := r.agentClient.LaunchJob(context.Background(), &agent.JobRequest{
 				JobType:     livekit.JobType_JT_PUBLISHER,
 				Room:        r.ToProto(),
@@ -1462,12 +1458,10 @@ func (r *Room) launchPublisherAgents(p types.Participant) {
 				AgentName:   ag.AgentName,
 				DispatchId:  ag.Id,
 			})
-			r.Logger.Infow("launchPublisherAgents goroutine", "agentStore", r.agentStore)
 			inc.ForEach(func(job *livekit.Job) {
-				r.Logger.Infow("launchPublisherAgents foreach", "agentStore", r.agentStore)
 				r.agentStore.StoreAgentJob(context.Background(), job)
 			})
-		}(r)
+		}()
 	}
 }
 

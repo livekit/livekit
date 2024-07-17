@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/thoas/go-funk"
+	"golang.org/x/exp/maps"
 
 	"github.com/livekit/protocol/livekit"
 )
@@ -32,16 +33,21 @@ type LocalStore struct {
 	// map of roomName => { identity: participant }
 	participants map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo
 
+	agentDispatches map[livekit.RoomName]*livekit.AgentDispatch
+	agentJobs       map[livekit.RoomName]*livekit.Job
+
 	lock       sync.RWMutex
 	globalLock sync.Mutex
 }
 
 func NewLocalStore() *LocalStore {
 	return &LocalStore{
-		rooms:        make(map[livekit.RoomName]*livekit.Room),
-		roomInternal: make(map[livekit.RoomName]*livekit.RoomInternal),
-		participants: make(map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
-		lock:         sync.RWMutex{},
+		rooms:           make(map[livekit.RoomName]*livekit.Room),
+		roomInternal:    make(map[livekit.RoomName]*livekit.RoomInternal),
+		participants:    make(map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
+		agentDispatches: make(map[livekit.RoomName]*livekit.AgentDispatch),
+		agentJobs:       make(map[livekit.RoomName]*livekit.Job),
+		lock:            sync.RWMutex{},
 	}
 }
 
@@ -102,6 +108,8 @@ func (s *LocalStore) DeleteRoom(ctx context.Context, roomName livekit.RoomName) 
 	delete(s.participants, livekit.RoomName(room.Name))
 	delete(s.rooms, livekit.RoomName(room.Name))
 	delete(s.roomInternal, livekit.RoomName(room.Name))
+	delete(s.agentDispatches, livekit.RoomName(room.Name))
+	delete(s.agentJobs, livekit.RoomName(room.Name))
 	return nil
 }
 
@@ -169,5 +177,62 @@ func (s *LocalStore) DeleteParticipant(_ context.Context, roomName livekit.RoomN
 	if roomParticipants != nil {
 		delete(roomParticipants, identity)
 	}
+	return nil
+}
+
+func (s *LocalStore) StoreAgentDispatch(ctx context.Context, dispatch *livekit.AgentDispatch) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	s.agentDispatches[livekit.RoomName(dispatch.Room)] = dispatch
+	return nil
+}
+
+func (s *LocalStore) DeleteAgentDispatch(ctx context.Context, dispatch *livekit.AgentDispatch) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	delete(s.agentDispatches, livekit.RoomName(dispatch.Room))
+
+	return nil
+}
+
+func (s *LocalStore) ListAgentDispatches(ctx context.Context, roomName livekit.RoomName) ([]*livekit.AgentDispatch, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	ds := maps.Values(s.agentDispatches)
+	js := maps.Values(s.agentJobs)
+
+	m := make(map[string]*livekit.AgentDispatch)
+	for _, d := range s.agentDispatches {
+		m[d.Id] = d
+	}
+
+	for _, j := range js {
+		d := m[j.DispatchId]
+		if d != nil {
+			d.State.Jobs = append(d.State.Jobs, j)
+		}
+	}
+
+	return ds, nil
+}
+
+func (s *LocalStore) StoreAgentJob(ctx context.Context, job *livekit.Job) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	s.agentJobs[livekit.RoomName(job.Room.Name)] = job
+
+	return nil
+}
+
+func (s *LocalStore) DeleteAgentJob(ctx context.Context, job *livekit.Job) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	delete(s.agentJobs, livekit.RoomName(job.Room.Name))
+
 	return nil
 }

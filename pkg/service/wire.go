@@ -205,6 +205,8 @@ func getAgentStore(s ObjectStore) AgentStore {
 	switch store := s.(type) {
 	case *RedisStore:
 		return store
+	case *LocalStore:
+		return store
 	default:
 		return nil
 	}
