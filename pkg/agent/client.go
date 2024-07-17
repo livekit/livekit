@@ -132,6 +132,7 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) *serverut
 
 		wg.Add(1)
 		c.workers.Submit(func() {
+			defer wg.Done()
 			// The cached agent parameters do not provide the exact combination of available job type/agent name/namespace, so some of the JobRequest RPC may not trigger any worker
 			job := &livekit.Job{
 				Id:          utils.NewGuid(utils.AgentJobPrefix),
@@ -146,10 +147,10 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) *serverut
 			resp, err := c.client.JobRequest(context.Background(), topic, jobTypeTopic, job)
 			if err != nil {
 				logger.Infow("failed to send job request", "error", err, "namespace", curNs, "jobType", desc.JobType, "agentName", desc.AgentName)
+				return
 			}
 			job.State = resp.State
 			ret.Add(job)
-			wg.Done()
 		})
 	})
 	c.workers.Submit(func() {

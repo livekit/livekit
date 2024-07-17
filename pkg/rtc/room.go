@@ -1448,10 +1448,7 @@ func (r *Room) launchPublisherAgents(p types.Participant) {
 		return
 	}
 
-	if r.internal == nil {
-		return
-	}
-
+	r.Logger.Infow("launchPublisherAgents", r.agentStore)
 	for _, ag := range r.agentDispatches {
 		go func() {
 			inc := r.agentClient.LaunchJob(context.Background(), &agent.JobRequest{
@@ -1462,7 +1459,9 @@ func (r *Room) launchPublisherAgents(p types.Participant) {
 				AgentName:   ag.AgentName,
 				DispatchId:  ag.Id,
 			})
+			r.Logger.Infow("launchPublisherAgents goroutine", r.agentStore)
 			inc.ForEach(func(job *livekit.Job) {
+				r.Logger.Infow("launchPublisherAgents foreach", r.agentStore)
 				r.agentStore.StoreAgentJob(context.Background(), job)
 			})
 		}()
