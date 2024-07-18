@@ -741,7 +741,7 @@ func (b *Buffer) doFpsCalc(ep *ExtPacket) {
 			}
 			if complete {
 				b.frameRateCalculated = true
-				if f := b.getOnFpsChanged(); f != nil {
+				if f := b.onFpsChanged; f != nil {
 					go f()
 				}
 			}
@@ -1140,13 +1140,6 @@ func (b *Buffer) OnFpsChanged(f func()) {
 	b.Lock()
 	b.onFpsChanged = f
 	b.Unlock()
-}
-
-func (b *Buffer) getOnFpsChanged() func() {
-	b.RLock()
-	defer b.RUnlock()
-
-	return b.onFpsChanged
 }
 
 func (b *Buffer) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
