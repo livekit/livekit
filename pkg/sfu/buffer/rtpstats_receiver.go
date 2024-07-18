@@ -227,7 +227,7 @@ func (r *RTPStatsReceiver) Update(
 		gapTS := int64(resTS.ExtendedVal - resTS.PreExtendedHighest)
 
 		// it is possible that sequence number has rolled over too
-		if gapSN < 0 && gapTS > 0 {
+		if gapSN < 0 && gapTS > 0 && payloadSize > 0 {
 			// not possible to know how many cycles of sequence number roll over could have happened,
 			// use 1 to ensure that it at least does not go backwards
 			resSN = r.sequenceNumber.Rollover(sequenceNumber, 1)
