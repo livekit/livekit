@@ -480,13 +480,13 @@ func (b *Buffer) Close() error {
 				"direction", "upstream",
 				"stats", b.rtpStats,
 			)
-			if cb := b.getOnFinalRtpStats(); cb != nil {
+			if cb := b.onFinalRtpStats; cb != nil {
 				cb(b.rtpStats.ToProto())
 			}
 		}
 
 		b.readCond.Broadcast()
-		if cb := b.getOnClose(); cb != nil {
+		if cb := b.onClose; cb != nil {
 			cb()
 		}
 	})
@@ -497,13 +497,6 @@ func (b *Buffer) OnClose(fn func()) {
 	b.Lock()
 	b.onClose = fn
 	b.Unlock()
-}
-
-func (b *Buffer) getOnClose() func() {
-	b.RLock()
-	defer b.RUnlock()
-
-	return b.onClose
 }
 
 func (b *Buffer) SetPLIThrottle(duration int64) {
@@ -888,7 +881,7 @@ func (b *Buffer) doNACKs() {
 	}
 
 	if r, numSeqNumsNacked := b.buildNACKPacket(); r != nil {
-		if cb := b.getOnRtcpFeedback(); cb != nil {
+		if cb := b.onRtcpFeedback; cb != nil {
 			cb(r)
 		}
 		if b.rtpStats != nil {
@@ -907,7 +900,7 @@ func (b *Buffer) doReports(arrivalTime int64) {
 	// RTCP reports
 	pkts := b.getRTCP()
 	if pkts != nil {
-		if cb := b.getOnRtcpFeedback(); cb != nil {
+		if cb := b.onRtcpFeedback; cb != nil {
 			cb(pkts)
 		}
 	}
@@ -1063,13 +1056,6 @@ func (b *Buffer) OnFinalRtpStats(fn func(*livekit.RTPStats)) {
 	b.Lock()
 	b.onFinalRtpStats = fn
 	b.Unlock()
-}
-
-func (b *Buffer) getOnFinalRtpStats() func(*livekit.RTPStats) {
-	b.RLock()
-	defer b.RUnlock()
-
-	return b.onFinalRtpStats
 }
 
 // GetMediaSSRC returns the associated SSRC of the RTP stream
