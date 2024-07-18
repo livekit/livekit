@@ -80,6 +80,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		NewRTCService,
 		NewAgentService,
 		agent.NewAgentClient,
+		getAgentStore,
 		getSignalRelayConfig,
 		NewDefaultSignalServer,
 		routing.NewSignalClient,
@@ -194,6 +195,17 @@ func getEgressStore(s ObjectStore) EgressStore {
 func getIngressStore(s ObjectStore) IngressStore {
 	switch store := s.(type) {
 	case *RedisStore:
+		return store
+	default:
+		return nil
+	}
+}
+
+func getAgentStore(s ObjectStore) AgentStore {
+	switch store := s.(type) {
+	case *RedisStore:
+		return store
+	case *LocalStore:
 		return store
 	default:
 		return nil

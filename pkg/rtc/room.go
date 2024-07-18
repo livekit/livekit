@@ -35,6 +35,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/guid"
 
 	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/config"
@@ -61,6 +62,16 @@ var (
 	// var to allow unit test override
 	roomUpdateInterval = 5 * time.Second // frequency to update room participant counts
 )
+
+// Duplicate the service.AgentStore interface to avoid a rtc -> service -> rtc import cycle
+type AgentStore interface {
+	StoreAgentDispatch(ctx context.Context, dispatch *livekit.AgentDispatch) error
+	DeleteAgentDispatch(ctx context.Context, dispatch *livekit.AgentDispatch) error
+	ListAgentDispatches(ctx context.Context, roomName livekit.RoomName) ([]*livekit.AgentDispatch, error)
+
+	StoreAgentJob(ctx context.Context, job *livekit.Job) error
+	DeleteAgentJob(ctx context.Context, job *livekit.Job) error
+}
 
 type broadcastOptions struct {
 	skipSource bool
@@ -95,15 +106,17 @@ type Room struct {
 	protoProxy *utils.ProtoProxy[*livekit.Room]
 	Logger     logger.Logger
 
-	config         WebRTCConfig
-	audioConfig    *config.AudioConfig
-	serverInfo     *livekit.ServerInfo
-	telemetry      telemetry.TelemetryService
-	egressLauncher EgressLauncher
-	trackManager   *RoomTrackManager
+	config          WebRTCConfig
+	audioConfig     *config.AudioConfig
+	serverInfo      *livekit.ServerInfo
+	telemetry       telemetry.TelemetryService
+	egressLauncher  EgressLauncher
+	trackManager    *RoomTrackManager
+	agentDispatches []*livekit.AgentDispatch
 
 	// agents
 	agentClient agent.Client
+	agentStore  AgentStore
 
 	// map of identity -> Participant
 	participants              map[livekit.ParticipantIdentity]types.LocalParticipant
@@ -142,6 +155,7 @@ func NewRoom(
 	serverInfo *livekit.ServerInfo,
 	telemetry telemetry.TelemetryService,
 	agentClient agent.Client,
+	agentStore AgentStore,
 	egressLauncher EgressLauncher,
 ) *Room {
 	r := &Room{
@@ -157,6 +171,7 @@ func NewRoom(
 		telemetry:                            telemetry,
 		egressLauncher:                       egressLauncher,
 		agentClient:                          agentClient,
+		agentStore:                           agentStore,
 		trackManager:                         NewRoomTrackManager(),
 		serverInfo:                           serverInfo,
 		participants:                         make(map[livekit.ParticipantIdentity]types.LocalParticipant),
@@ -181,6 +196,10 @@ func NewRoom(
 		r.protoRoom.CreationTime = time.Now().Unix()
 	}
 	r.protoProxy = utils.NewProtoProxy[*livekit.Room](roomUpdateInterval, r.updateProto)
+
+	r.createAgentDispatchesFromRoomAgent()
+
+	r.launchRoomAgents()
 
 	go r.audioUpdateWorker()
 	go r.connectionQualityWorker()
@@ -1403,23 +1422,46 @@ func (r *Room) simulationCleanupWorker() {
 	}
 }
 
+func (r *Room) launchRoomAgents() {
+	if r.agentClient == nil {
+		return
+	}
+
+	for _, ag := range r.agentDispatches {
+		go func() {
+			inc := r.agentClient.LaunchJob(context.Background(), &agent.JobRequest{
+				JobType:    livekit.JobType_JT_ROOM,
+				Room:       r.ToProto(),
+				Metadata:   ag.Metadata,
+				AgentName:  ag.AgentName,
+				DispatchId: ag.Id,
+			})
+			inc.ForEach(func(job *livekit.Job) {
+				r.agentStore.StoreAgentJob(context.Background(), job)
+			})
+		}()
+	}
+}
+
 func (r *Room) launchPublisherAgents(p types.Participant) {
 	if p == nil || p.IsDependent() || r.agentClient == nil {
 		return
 	}
 
-	if r.internal == nil {
-		return
-	}
-
-	for _, ag := range r.internal.AgentDispatches {
-		go r.agentClient.LaunchJob(context.Background(), &agent.JobRequest{
-			JobType:     livekit.JobType_JT_PUBLISHER,
-			Room:        r.ToProto(),
-			Participant: p.ToProto(),
-			Metadata:    ag.Metadata,
-			AgentName:   ag.AgentName,
-		})
+	for _, ag := range r.agentDispatches {
+		go func() {
+			inc := r.agentClient.LaunchJob(context.Background(), &agent.JobRequest{
+				JobType:     livekit.JobType_JT_PUBLISHER,
+				Room:        r.ToProto(),
+				Participant: p.ToProto(),
+				Metadata:    ag.Metadata,
+				AgentName:   ag.AgentName,
+				DispatchId:  ag.Id,
+			})
+			inc.ForEach(func(job *livekit.Job) {
+				r.agentStore.StoreAgentJob(context.Background(), job)
+			})
+		}()
 	}
 }
 
@@ -1438,6 +1480,32 @@ func (r *Room) DebugInfo() map[string]interface{} {
 	info["Participants"] = participantInfo
 
 	return info
+}
+
+func (r *Room) createAgentDispatchesFromRoomAgent() {
+	now := time.Now()
+	if r.internal == nil {
+		return
+	}
+
+	for _, ag := range r.internal.AgentDispatches {
+		ad := &livekit.AgentDispatch{
+			Id:        guid.New(guid.AgentDispatchPrefix),
+			AgentName: ag.AgentName,
+			Metadata:  ag.Metadata,
+			Room:      r.protoRoom.Name,
+			State: &livekit.AgentDispatchState{
+				CreatedAt: now.UnixNano(),
+			},
+		}
+		r.agentDispatches = append(r.agentDispatches, ad)
+		if r.agentStore != nil {
+			err := r.agentStore.StoreAgentDispatch(context.Background(), ad)
+			if err != nil {
+				r.Logger.Warnw("failed storing room dispatch", err)
+			}
+		}
+	}
 }
 
 // ------------------------------------------------------------

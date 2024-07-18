@@ -211,8 +211,11 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) error {
 		w.mu.Unlock()
 	}()
 
+	now := time.Now()
 	if job.State == nil {
-		job.State = &livekit.JobState{}
+		job.State = &livekit.JobState{
+			UpdatedAt: now.UnixNano(),
+		}
 	}
 
 	w.sendRequest(&livekit.ServerMessage{Message: &livekit.ServerMessage_Availability{

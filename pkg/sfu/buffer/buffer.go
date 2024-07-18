@@ -468,9 +468,6 @@ func (b *Buffer) ReadExtended(buf []byte) (*ExtPacket, error) {
 }
 
 func (b *Buffer) Close() error {
-	b.Lock()
-	defer b.Unlock()
-
 	b.closeOnce.Do(func() {
 		b.closed.Store(true)
 
@@ -480,21 +477,30 @@ func (b *Buffer) Close() error {
 				"direction", "upstream",
 				"stats", b.rtpStats,
 			)
-			if b.onFinalRtpStats != nil {
-				b.onFinalRtpStats(b.rtpStats.ToProto())
+			if cb := b.getOnFinalRtpStats(); cb != nil {
+				cb(b.rtpStats.ToProto())
 			}
 		}
 
 		b.readCond.Broadcast()
-		if b.onClose != nil {
-			b.onClose()
+		if cb := b.getOnClose(); cb != nil {
+			cb()
 		}
 	})
 	return nil
 }
 
 func (b *Buffer) OnClose(fn func()) {
+	b.Lock()
 	b.onClose = fn
+	b.Unlock()
+}
+
+func (b *Buffer) getOnClose() func() {
+	b.RLock()
+	defer b.RUnlock()
+
+	return b.onClose
 }
 
 func (b *Buffer) SetPLIThrottle(duration int64) {
@@ -519,8 +525,8 @@ func (b *Buffer) SendPLI(force bool) {
 		&rtcp.PictureLossIndication{SenderSSRC: b.mediaSSRC, MediaSSRC: b.mediaSSRC},
 	}
 
-	if b.onRtcpFeedback != nil {
-		b.onRtcpFeedback(pli)
+	if cb := b.getOnRtcpFeedback(); cb != nil {
+		cb(pli)
 	}
 }
 
@@ -827,9 +833,9 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, flowStat
 		} else {
 			// vp8 with DependencyDescriptor enabled, use the TID from the descriptor
 			vp8Packet.TID = uint8(ep.Temporal)
-			ep.Spatial = InvalidLayerSpatial // vp8 don't have spatial scalability, reset to invalid
 		}
 		ep.Payload = vp8Packet
+		ep.Spatial = InvalidLayerSpatial // vp8 don't have spatial scalability, reset to invalid
 
 	case "video/vp9":
 		if ep.DependencyDescriptor == nil {
@@ -849,6 +855,7 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, flowStat
 
 	case "video/h264":
 		ep.KeyFrame = IsH264KeyFrame(rtpPacket.Payload)
+		ep.Spatial = InvalidLayerSpatial // h.264 don't have spatial scalability, reset to invalid
 
 	case "video/av1":
 		ep.KeyFrame = IsAV1KeyFrame(rtpPacket.Payload)
@@ -878,8 +885,8 @@ func (b *Buffer) doNACKs() {
 	}
 
 	if r, numSeqNumsNacked := b.buildNACKPacket(); r != nil {
-		if b.onRtcpFeedback != nil {
-			b.onRtcpFeedback(r)
+		if cb := b.onRtcpFeedback; cb != nil {
+			cb(r)
 		}
 		if b.rtpStats != nil {
 			b.rtpStats.UpdateNack(uint32(numSeqNumsNacked))
@@ -896,8 +903,10 @@ func (b *Buffer) doReports(arrivalTime int64) {
 
 	// RTCP reports
 	pkts := b.getRTCP()
-	if pkts != nil && b.onRtcpFeedback != nil {
-		b.onRtcpFeedback(pkts)
+	if pkts != nil {
+		if cb := b.onRtcpFeedback; cb != nil {
+			cb(pkts)
+		}
 	}
 
 	b.mayGrowBucket()
@@ -968,8 +977,10 @@ func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64, packets uin
 	}
 	b.RUnlock()
 
-	if didSet && b.onRtcpSenderReport != nil {
-		b.onRtcpSenderReport()
+	if didSet {
+		if cb := b.getOnRtcpSenderReport(); cb != nil {
+			cb()
+		}
 	}
 }
 
@@ -1020,15 +1031,42 @@ func (b *Buffer) getPacket(buff []byte, sn uint16) (int, error) {
 }
 
 func (b *Buffer) OnRtcpFeedback(fn func(fb []rtcp.Packet)) {
+	b.Lock()
 	b.onRtcpFeedback = fn
+	b.Unlock()
+}
+
+func (b *Buffer) getOnRtcpFeedback() func(fb []rtcp.Packet) {
+	b.RLock()
+	defer b.RUnlock()
+
+	return b.onRtcpFeedback
 }
 
 func (b *Buffer) OnRtcpSenderReport(fn func()) {
+	b.Lock()
 	b.onRtcpSenderReport = fn
+	b.Unlock()
+}
+
+func (b *Buffer) getOnRtcpSenderReport() func() {
+	b.RLock()
+	defer b.RUnlock()
+
+	return b.onRtcpSenderReport
 }
 
 func (b *Buffer) OnFinalRtpStats(fn func(*livekit.RTPStats)) {
+	b.Lock()
 	b.onFinalRtpStats = fn
+	b.Unlock()
+}
+
+func (b *Buffer) getOnFinalRtpStats() func(*livekit.RTPStats) {
+	b.RLock()
+	defer b.RUnlock()
+
+	return b.onFinalRtpStats
 }
 
 // GetMediaSSRC returns the associated SSRC of the RTP stream

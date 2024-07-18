@@ -167,8 +167,8 @@ github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1 h1:jm09419p0lqTkD
 github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1/go.mod h1:Rs3MhFwutWhGwmY1VQsygw28z5bWcnEYmS1OG9OxjOQ=
 github.com/livekit/mediatransportutil v0.0.0-20240625074155-301bb4a816b7 h1:F1L8inJoynwIAYpZENNYS+1xHJMF5RFRorsnAlcxfSY=
 github.com/livekit/mediatransportutil v0.0.0-20240625074155-301bb4a816b7/go.mod h1:jwKUCmObuiEDH0iiuJHaGMXwRs3RjrB4G6qqgkr/5oE=
-github.com/livekit/protocol v1.19.2-0.20240716163657-b5404e5c9aae h1:Pj1/pdRCCZZYuKRTxbjYtw1eClmkoYxG3nhQNcVA5no=
-github.com/livekit/protocol v1.19.2-0.20240716163657-b5404e5c9aae/go.mod h1:bNjJi+8frdvC84xG0CJ/7VfVvqerLg2MzjOks0ucyC4=
+github.com/livekit/protocol v1.19.2-0.20240716225317-497688ff49e4 h1:8inXM3a1qo6Y17dbfFIy/SafcFcz3Ynva2Y5+0UfwK4=
+github.com/livekit/protocol v1.19.2-0.20240716225317-497688ff49e4/go.mod h1:bNjJi+8frdvC84xG0CJ/7VfVvqerLg2MzjOks0ucyC4=
 github.com/livekit/psrpc v0.5.3-0.20240616012458-ac39c8549a0a h1:EQAHmcYEGlc6V517cQ3Iy0+jHgP6+tM/B4l2vGuLpQo=
 github.com/livekit/psrpc v0.5.3-0.20240616012458-ac39c8549a0a/go.mod h1:CQUBSPfYYAaevg1TNCc6/aYsa8DJH4jSRFdCeSZk5u0=
 github.com/mackerelio/go-osstat v0.2.5 h1:+MqTbZUhoIt4m8qzkVoXUJg1EuifwlAJSk4Yl2GXh+o=
@@ -272,8 +272,8 @@ github.com/pion/transport/v3 v3.0.2/go.mod h1:nIToODoOlb5If2jF9y2Igfx3PFYWfuXi37
 github.com/pion/turn/v2 v2.1.3/go.mod h1:huEpByKKHix2/b9kmTAM3YoX6MKP+/D//0ClgUYR2fY=
 github.com/pion/turn/v2 v2.1.6 h1:Xr2niVsiPTB0FPtt+yAWKFUkU1eotQbGgpTIld4x1Gc=
 github.com/pion/turn/v2 v2.1.6/go.mod h1:huEpByKKHix2/b9kmTAM3YoX6MKP+/D//0ClgUYR2fY=
-github.com/pion/webrtc/v3 v3.2.46 h1:0KmTC2GaeHe9ork3fGy0MFoStAqbGs8mwGufRCIT9a4=
-github.com/pion/webrtc/v3 v3.2.46/go.mod h1:g7pwdiN9Gj2zZZlSTW5XC7OzrgHS9QzRM0y+O2jtjVg=
+github.com/pion/webrtc/v3 v3.2.47 h1:2DrJ7YnxiZVcmVA+HRyyACCSYvVW8E1YpOvF/EXeRYI=
+github.com/pion/webrtc/v3 v3.2.47/go.mod h1:g7pwdiN9Gj2zZZlSTW5XC7OzrgHS9QzRM0y+O2jtjVg=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
