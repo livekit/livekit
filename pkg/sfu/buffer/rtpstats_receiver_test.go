@@ -190,7 +190,7 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 	require.Equal(t, uint64(9), r.packetsLost)
 
 	// out-of-order should decrement number of lost packets
-	packet = getPacket(sequenceNumber-6, timestamp-45000, 1000)
+	packet = getPacket(sequenceNumber-6, timestamp-18000, 1000)
 	flowState = r.Update(
 		time.Now().UnixNano(),
 		packet.Header.SequenceNumber,
