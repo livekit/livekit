@@ -240,6 +240,7 @@ func (r *RTPStatsReceiver) Update(
 				"forcing sequence number rollover", nil,
 				getLoggingFields()...,
 			)
+			gapSN = int64(resSN.ExtendedVal - resSN.PreExtendedHighest)
 		}
 	}
 
