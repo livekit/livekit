@@ -849,6 +849,9 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, flowStat
 
 	case "video/h264":
 		ep.KeyFrame = IsH264KeyFrame(rtpPacket.Payload)
+		if ep.DependencyDescriptor != nil {
+			ep.Spatial = InvalidLayerSpatial // h.264 don't have spatial scalability, reset to invalid
+		}
 
 	case "video/av1":
 		ep.KeyFrame = IsAV1KeyFrame(rtpPacket.Payload)
