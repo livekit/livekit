@@ -480,21 +480,30 @@ func (b *Buffer) Close() error {
 				"direction", "upstream",
 				"stats", b.rtpStats,
 			)
-			if b.onFinalRtpStats != nil {
-				b.onFinalRtpStats(b.rtpStats.ToProto())
+			if cb := b.getOnFinalRtpStats(); cb != nil {
+				cb(b.rtpStats.ToProto())
 			}
 		}
 
 		b.readCond.Broadcast()
-		if b.onClose != nil {
-			b.onClose()
+		if cb := b.getOnClose(); cb != nil {
+			cb()
 		}
 	})
 	return nil
 }
 
 func (b *Buffer) OnClose(fn func()) {
+	b.Lock()
 	b.onClose = fn
+	b.Unlock()
+}
+
+func (b *Buffer) getOnClose() func() {
+	b.RLock()
+	defer b.RUnlock()
+
+	return b.onClose
 }
 
 func (b *Buffer) SetPLIThrottle(duration int64) {
@@ -519,8 +528,8 @@ func (b *Buffer) SendPLI(force bool) {
 		&rtcp.PictureLossIndication{SenderSSRC: b.mediaSSRC, MediaSSRC: b.mediaSSRC},
 	}
 
-	if b.onRtcpFeedback != nil {
-		b.onRtcpFeedback(pli)
+	if cb := b.getOnRtcpFeedback(); cb != nil {
+		cb(pli)
 	}
 }
 
@@ -732,7 +741,7 @@ func (b *Buffer) doFpsCalc(ep *ExtPacket) {
 			}
 			if complete {
 				b.frameRateCalculated = true
-				if f := b.onFpsChanged; f != nil {
+				if f := b.getOnFpsChanged(); f != nil {
 					go f()
 				}
 			}
@@ -879,8 +888,8 @@ func (b *Buffer) doNACKs() {
 	}
 
 	if r, numSeqNumsNacked := b.buildNACKPacket(); r != nil {
-		if b.onRtcpFeedback != nil {
-			b.onRtcpFeedback(r)
+		if cb := b.getOnRtcpFeedback(); cb != nil {
+			cb(r)
 		}
 		if b.rtpStats != nil {
 			b.rtpStats.UpdateNack(uint32(numSeqNumsNacked))
@@ -897,8 +906,10 @@ func (b *Buffer) doReports(arrivalTime int64) {
 
 	// RTCP reports
 	pkts := b.getRTCP()
-	if pkts != nil && b.onRtcpFeedback != nil {
-		b.onRtcpFeedback(pkts)
+	if pkts != nil {
+		if cb := b.getOnRtcpFeedback(); cb != nil {
+			cb(pkts)
+		}
 	}
 
 	b.mayGrowBucket()
@@ -969,8 +980,10 @@ func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64, packets uin
 	}
 	b.RUnlock()
 
-	if didSet && b.onRtcpSenderReport != nil {
-		b.onRtcpSenderReport()
+	if didSet {
+		if cb := b.getOnRtcpSenderReport(); cb != nil {
+			cb()
+		}
 	}
 }
 
@@ -1021,15 +1034,42 @@ func (b *Buffer) getPacket(buff []byte, sn uint16) (int, error) {
 }
 
 func (b *Buffer) OnRtcpFeedback(fn func(fb []rtcp.Packet)) {
+	b.Lock()
 	b.onRtcpFeedback = fn
+	b.Unlock()
+}
+
+func (b *Buffer) getOnRtcpFeedback() func(fb []rtcp.Packet) {
+	b.RLock()
+	defer b.RUnlock()
+
+	return b.onRtcpFeedback
 }
 
 func (b *Buffer) OnRtcpSenderReport(fn func()) {
+	b.Lock()
 	b.onRtcpSenderReport = fn
+	b.Unlock()
+}
+
+func (b *Buffer) getOnRtcpSenderReport() func() {
+	b.RLock()
+	defer b.RUnlock()
+
+	return b.onRtcpSenderReport
 }
 
 func (b *Buffer) OnFinalRtpStats(fn func(*livekit.RTPStats)) {
+	b.Lock()
 	b.onFinalRtpStats = fn
+	b.Unlock()
+}
+
+func (b *Buffer) getOnFinalRtpStats() func(*livekit.RTPStats) {
+	b.RLock()
+	defer b.RUnlock()
+
+	return b.onFinalRtpStats
 }
 
 // GetMediaSSRC returns the associated SSRC of the RTP stream
@@ -1100,6 +1140,13 @@ func (b *Buffer) OnFpsChanged(f func()) {
 	b.Lock()
 	b.onFpsChanged = f
 	b.Unlock()
+}
+
+func (b *Buffer) getOnFpsChanged() func() {
+	b.RLock()
+	defer b.RUnlock()
+
+	return b.onFpsChanged
 }
 
 func (b *Buffer) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
