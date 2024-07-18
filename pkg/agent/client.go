@@ -42,13 +42,14 @@ const (
 type Client interface {
 	// LaunchJob starts a room or participant job on an agent.
 	// it will launch a job once for each worker in each namespace
-	LaunchJob(ctx context.Context, desc *JobRequest)
+	LaunchJob(ctx context.Context, desc *JobRequest) *serverutils.IncrementalDispatcher[*livekit.Job]
 	Stop() error
 }
 
 type JobRequest struct {
-	JobType livekit.JobType
-	Room    *livekit.Room
+	DispatchId string
+	JobType    livekit.JobType
+	Room       *livekit.Room
 	// only set for participant jobs
 	Participant *livekit.ParticipantInfo
 	Metadata    string
@@ -111,37 +112,53 @@ func NewAgentClient(bus psrpc.MessageBus) (Client, error) {
 	return c, nil
 }
 
-func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) {
+func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) *serverutils.IncrementalDispatcher[*livekit.Job] {
 	jobTypeTopic := RoomAgentTopic
 	if desc.JobType == livekit.JobType_JT_PUBLISHER {
 		jobTypeTopic = PublisherAgentTopic
 	}
 
+	ret := serverutils.NewIncrementalDispatcher[*livekit.Job]()
 	dispatcher := c.getDispatcher(desc.AgentName, desc.JobType)
 
 	if dispatcher == nil {
 		logger.Infow("not dispatching agent job since no worker is available", "agentName", desc.AgentName, "jobType", desc.JobType)
-		return
+		return ret
 	}
 
+	var wg sync.WaitGroup
 	dispatcher.ForEach(func(curNs string) {
 		topic := GetAgentTopic(desc.AgentName, curNs)
+
+		wg.Add(1)
 		c.workers.Submit(func() {
+			defer wg.Done()
 			// The cached agent parameters do not provide the exact combination of available job type/agent name/namespace, so some of the JobRequest RPC may not trigger any worker
-			_, err := c.client.JobRequest(context.Background(), topic, jobTypeTopic, &livekit.Job{
+			job := &livekit.Job{
 				Id:          utils.NewGuid(utils.AgentJobPrefix),
+				DispatchId:  desc.DispatchId,
 				Type:        desc.JobType,
 				Room:        desc.Room,
 				Participant: desc.Participant,
 				Namespace:   curNs,
 				AgentName:   desc.AgentName,
 				Metadata:    desc.Metadata,
-			})
-			if err != nil {
-				logger.Infow("failed to send job request", "error", err, "namespace", curNs, "jobType", desc.JobType)
 			}
+			resp, err := c.client.JobRequest(context.Background(), topic, jobTypeTopic, job)
+			if err != nil {
+				logger.Infow("failed to send job request", "error", err, "namespace", curNs, "jobType", desc.JobType, "agentName", desc.AgentName)
+				return
+			}
+			job.State = resp.State
+			ret.Add(job)
 		})
 	})
+	c.workers.Submit(func() {
+		wg.Wait()
+		ret.Done()
+	})
+
+	return ret
 }
 
 func (c *agentClient) getDispatcher(agName string, jobType livekit.JobType) *serverutils.IncrementalDispatcher[string] {

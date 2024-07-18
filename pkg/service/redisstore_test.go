@@ -22,6 +22,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/ingress"
 	"github.com/livekit/protocol/livekit"
@@ -291,6 +292,92 @@ func TestIngressStore(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, len(infos))
 	require.Equal(t, "", infos[0].RoomName)
+}
+
+func TestAgentStore(t *testing.T) {
+	ctx := context.Background()
+	rs := redisStore(t)
+
+	ad := &livekit.AgentDispatch{
+		Id:        "dispatch_id",
+		AgentName: "agent_name",
+		Metadata:  "metadata",
+		Room:      "room_name",
+		State: &livekit.AgentDispatchState{
+			CreatedAt: 1,
+			DeletedAt: 2,
+			Jobs: []*livekit.Job{
+				&livekit.Job{
+					Id:         "job_id",
+					DispatchId: "dispatch_id",
+					Type:       livekit.JobType_JT_PUBLISHER,
+					Room: &livekit.Room{
+						Name: "room_name",
+					},
+					Participant: &livekit.ParticipantInfo{
+						Identity: "identity",
+						Name:     "name",
+					},
+					Namespace: "ns",
+					Metadata:  "metadata",
+					AgentName: "agent_name",
+					State: &livekit.JobState{
+						Status:    livekit.JobStatus_JS_RUNNING,
+						StartedAt: 3,
+						EndedAt:   4,
+						Error:     "error",
+					},
+				},
+			},
+		},
+	}
+
+	err := rs.StoreAgentDispatch(ctx, ad)
+	require.NoError(t, err)
+
+	rd, err := rs.ListAgentDispatches(ctx, "not_a_room")
+	require.NoError(t, err)
+	require.Equal(t, 0, len(rd))
+
+	rd, err = rs.ListAgentDispatches(ctx, "room_name")
+	require.NoError(t, err)
+	require.Equal(t, 1, len(rd))
+
+	expected := proto.Clone(ad).(*livekit.AgentDispatch)
+	expected.State.Jobs = nil
+	require.True(t, proto.Equal(expected, rd[0]))
+
+	err = rs.StoreAgentJob(ctx, ad.State.Jobs[0])
+	require.NoError(t, err)
+
+	rd, err = rs.ListAgentDispatches(ctx, "room_name")
+	require.NoError(t, err)
+	require.Equal(t, 1, len(rd))
+
+	expected = proto.Clone(ad).(*livekit.AgentDispatch)
+	expected.State.Jobs[0].Room = nil
+	expected.State.Jobs[0].Participant = &livekit.ParticipantInfo{
+		Identity: "identity",
+	}
+	require.True(t, proto.Equal(expected, rd[0]))
+
+	err = rs.DeleteAgentJob(ctx, ad.State.Jobs[0])
+	require.NoError(t, err)
+
+	rd, err = rs.ListAgentDispatches(ctx, "room_name")
+	require.NoError(t, err)
+	require.Equal(t, 1, len(rd))
+
+	expected = proto.Clone(ad).(*livekit.AgentDispatch)
+	expected.State.Jobs = nil
+	require.True(t, proto.Equal(expected, rd[0]))
+
+	err = rs.DeleteAgentDispatch(ctx, ad)
+	require.NoError(t, err)
+
+	rd, err = rs.ListAgentDispatches(ctx, "room_name")
+	require.NoError(t, err)
+	require.Equal(t, 0, len(rd))
 }
 
 func compareIngressInfo(t *testing.T, expected, v *livekit.IngressInfo) {
