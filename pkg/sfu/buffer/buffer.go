@@ -468,9 +468,6 @@ func (b *Buffer) ReadExtended(buf []byte) (*ExtPacket, error) {
 }
 
 func (b *Buffer) Close() error {
-	b.Lock()
-	defer b.Unlock()
-
 	b.closeOnce.Do(func() {
 		b.closed.Store(true)
 
@@ -480,13 +477,13 @@ func (b *Buffer) Close() error {
 				"direction", "upstream",
 				"stats", b.rtpStats,
 			)
-			if cb := b.onFinalRtpStats; cb != nil {
+			if cb := b.getOnFinalRtpStats(); cb != nil {
 				cb(b.rtpStats.ToProto())
 			}
 		}
 
 		b.readCond.Broadcast()
-		if cb := b.onClose; cb != nil {
+		if cb := b.getOnClose(); cb != nil {
 			cb()
 		}
 	})
@@ -497,6 +494,13 @@ func (b *Buffer) OnClose(fn func()) {
 	b.Lock()
 	b.onClose = fn
 	b.Unlock()
+}
+
+func (b *Buffer) getOnClose() func() {
+	b.RLock()
+	defer b.RUnlock()
+
+	return b.onClose
 }
 
 func (b *Buffer) SetPLIThrottle(duration int64) {
@@ -1056,6 +1060,13 @@ func (b *Buffer) OnFinalRtpStats(fn func(*livekit.RTPStats)) {
 	b.Lock()
 	b.onFinalRtpStats = fn
 	b.Unlock()
+}
+
+func (b *Buffer) getOnFinalRtpStats() func(*livekit.RTPStats) {
+	b.RLock()
+	defer b.RUnlock()
+
+	return b.onFinalRtpStats
 }
 
 // GetMediaSSRC returns the associated SSRC of the RTP stream
