@@ -167,6 +167,24 @@ func (r *RTPStatsReceiver) Update(
 	var resSN utils.WrapAroundUpdateResult[uint64]
 	var gapSN int64
 	var resTS utils.WrapAroundUpdateResult[uint64]
+
+	getLoggingFields := func() []interface{} {
+		return []interface{}{
+			"resSN", resSN,
+			"gapSN", gapSN,
+			"resTS", resTS,
+			"gapTS", int64(resTS.ExtendedVal - resTS.PreExtendedHighest),
+			"packetTime", time.Unix(0, packetTime).String(),
+			"sequenceNumber", sequenceNumber,
+			"timestamp", timestamp,
+			"marker", marker,
+			"hdrSize", hdrSize,
+			"payloadSize", payloadSize,
+			"paddingSize", paddingSize,
+			"rtpStats", lockedRTPStatsReceiverLogEncoder{r},
+		}
+	}
+
 	if !r.initialized {
 		if payloadSize == 0 {
 			// do not start on a padding only packet
@@ -199,32 +217,33 @@ func (r *RTPStatsReceiver) Update(
 			flowState.IsNotHandled = true
 			return
 		}
-
 		gapSN = int64(resSN.ExtendedVal - resSN.PreExtendedHighest)
-		if gapSN <= 0 {
-			resTS = r.timestamp.Update(timestamp)
-		} else {
-			resTS = r.timestamp.Rollover(timestamp, r.getTSRolloverCount(packetTime-r.highestTime))
+
+		resTS = r.timestamp.Rollover(timestamp, r.getTSRolloverCount(packetTime-r.highestTime))
+		if resTS.IsUnhandled {
+			flowState.IsNotHandled = true
+			return
+		}
+		gapTS := int64(resTS.ExtendedVal - resTS.PreExtendedHighest)
+
+		// it is possible that sequence number has rolled over too
+		if gapSN < 0 && gapTS > 0 {
+			// not possible to know how many cycles of sequence number roll over could have happened,
+			// use 1 to ensure that it at least does not go backwards
+			resSN = r.sequenceNumber.Rollover(sequenceNumber, 1)
+			if resSN.IsUnhandled {
+				flowState.IsNotHandled = true
+				return
+			}
+
+			r.logger.Warnw(
+				"forcing sequence number rollover", nil,
+				getLoggingFields()...,
+			)
 		}
 	}
 
 	pktSize := uint64(hdrSize + payloadSize + paddingSize)
-	getLoggingFields := func() []interface{} {
-		return []interface{}{
-			"resSN", resSN,
-			"gapSN", gapSN,
-			"resTS", resTS,
-			"gapTS", int64(resTS.ExtendedVal - resTS.PreExtendedHighest),
-			"packetTime", time.Unix(0, packetTime).String(),
-			"sequenceNumber", sequenceNumber,
-			"timestamp", timestamp,
-			"marker", marker,
-			"hdrSize", hdrSize,
-			"payloadSize", payloadSize,
-			"paddingSize", paddingSize,
-			"rtpStats", lockedRTPStatsReceiverLogEncoder{r},
-		}
-	}
 	if gapSN <= 0 { // duplicate OR out-of-order
 		if gapSN != 0 {
 			r.packetsOutOfOrder++
