@@ -245,7 +245,7 @@ func (t *MediaTrackReceiver) SetPotentialCodecs(codecs []webrtc.RTPCodecParamete
 		}
 		if !exist {
 			extHeaders := headers
-			if !sfu.IsSvcCodec(c.MimeType) {
+			if !buffer.IsSvcCodec(c.MimeType) {
 				extHeaders = headersWithoutDD
 			}
 			receivers = append(receivers, &simulcastReceiver{
