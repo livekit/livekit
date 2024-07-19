@@ -229,14 +229,16 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	for _, ext := range params.HeaderExtensions {
 		switch ext.URI {
 		case dd.ExtensionURI:
-			b.ddExtID = uint8(ext.ID)
-			frc := NewFrameRateCalculatorDD(b.clockRate, b.logger)
-			for i := range b.frameRateCalculator {
-				b.frameRateCalculator[i] = frc.GetFrameRateCalculatorForSpatial(int32(i))
+			if IsSvcCodec(codec.MimeType) {
+				b.ddExtID = uint8(ext.ID)
+				frc := NewFrameRateCalculatorDD(b.clockRate, b.logger)
+				for i := range b.frameRateCalculator {
+					b.frameRateCalculator[i] = frc.GetFrameRateCalculatorForSpatial(int32(i))
+				}
+				b.ddParser = NewDependencyDescriptorParser(b.ddExtID, b.logger, func(spatial, temporal int32) {
+					frc.SetMaxLayer(spatial, temporal)
+				})
 			}
-			b.ddParser = NewDependencyDescriptorParser(b.ddExtID, b.logger, func(spatial, temporal int32) {
-				frc.SetMaxLayer(spatial, temporal)
-			})
 
 		case sdp.AudioLevelURI:
 			b.audioLevelExtID = uint8(ext.ID)
@@ -1148,4 +1150,22 @@ func (b *Buffer) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
 		return fc.GetFrameRate()
 	}
 	return nil
+}
+
+// SVC-TODO: Have to use more conditions to differentiate between
+// SVC-TODO: SVC and non-SVC (could be single layer or simulcast).
+// SVC-TODO: May only need to differentiate between simulcast and non-simulcast
+// SVC-TODO: i. e. may be possible to treat single layer as SVC to get proper/intended functionality.
+func IsSvcCodec(mime string) bool {
+	switch strings.ToLower(mime) {
+	case "video/av1":
+		fallthrough
+	case "video/vp9":
+		return true
+	}
+	return false
+}
+
+func IsRedCodec(mime string) bool {
+	return strings.HasSuffix(strings.ToLower(mime), "red")
 }
