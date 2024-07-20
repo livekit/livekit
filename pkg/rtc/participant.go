@@ -191,7 +191,7 @@ type ParticipantImpl struct {
 	*UpTrackManager
 	*SubscriptionManager
 
-	icQueue atomic.Pointer[webrtc.ICECandidate]
+	icQueue [2]atomic.Pointer[webrtc.ICECandidate]
 
 	// keeps track of unpublished tracks in order to reuse trackID
 	unpublishedTracks []*livekit.TrackInfo
