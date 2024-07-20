@@ -157,7 +157,7 @@ func (w *WrapAround[T, ET]) GetExtendedHighest() ET {
 }
 
 func (w *WrapAround[T, ET]) updateExtendedHighest() {
-	w.extendedHighest = getExtendedHighest(w.cycles, w.highest)
+	w.extendedHighest = getExtended(w.cycles, w.highest)
 }
 
 func (w *WrapAround[T, ET]) maybeAdjustStart(val T) (result WrapAroundUpdateResult[ET]) {
@@ -172,7 +172,7 @@ func (w *WrapAround[T, ET]) maybeAdjustStart(val T) (result WrapAroundUpdateResu
 			cycles -= w.fullRange
 		}
 		result.PreExtendedHighest = w.extendedHighest
-		result.ExtendedVal = getExtendedHighest(cycles, val)
+		result.ExtendedVal = getExtended(cycles, val)
 		return
 	}
 
@@ -201,7 +201,7 @@ func (w *WrapAround[T, ET]) maybeAdjustStart(val T) (result WrapAroundUpdateResu
 		}
 	}
 	result.PreExtendedHighest = w.extendedHighest
-	result.ExtendedVal = getExtendedHighest(cycles, val)
+	result.ExtendedVal = getExtended(cycles, val)
 	return
 }
 
@@ -211,6 +211,6 @@ func (w *WrapAround[T, ET]) isWrapBack(earlier T, later T) bool {
 
 // ------------------------------------
 
-func getExtendedHighest[T number, ET extendedNumber](cycles ET, val T) ET {
+func getExtended[T number, ET extendedNumber](cycles ET, val T) ET {
 	return cycles + ET(val)
 }
