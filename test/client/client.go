@@ -69,7 +69,7 @@ type RTCClient struct {
 	signalRequestInterceptor  SignalRequestInterceptor
 	signalResponseInterceptor SignalResponseInterceptor
 
-	icQueue atomic.Pointer[webrtc.ICECandidate]
+	icQueue [2]atomic.Pointer[webrtc.ICECandidate]
 
 	subscriberAsPrimary        atomic.Bool
 	publisherFullyEstablished  atomic.Bool
@@ -555,7 +555,13 @@ func (c *RTCClient) sendRequest(msg *livekit.SignalRequest) error {
 }
 
 func (c *RTCClient) SendIceCandidate(ic *webrtc.ICECandidate, target livekit.SignalTarget) error {
-	prevIC := c.icQueue.Swap(ic)
+	var icQueue *atomic.Pointer[webrtc.ICECandidate]
+	if target == livekit.SignalTarget_PUBLISHER {
+		icQueue = &c.icQueue[0]
+	} else {
+		icQueue = &c.icQueue[1]
+	}
+	prevIC := icQueue.Swap(ic)
 	if prevIC == nil {
 		return nil
 	}
