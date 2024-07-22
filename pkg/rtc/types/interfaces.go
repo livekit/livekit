@@ -280,8 +280,6 @@ type Participant interface {
 		timedVersion utils.TimedVersion,
 		resolverBySid func(participantID livekit.ParticipantID) LocalParticipant,
 	) error
-	UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack) error
-	UpdateVideoTrack(update *livekit.UpdateLocalVideoTrack) error
 
 	DebugInfo() map[string]interface{}
 }
@@ -328,9 +326,12 @@ type LocalParticipant interface {
 	HandleSignalSourceClose()
 
 	// updates
+	CheckMetadataLimits(name string, metadata string, attributes map[string]string) error
 	SetName(name string)
 	SetMetadata(metadata string)
-	SetAttributes(attributes map[string]string) error
+	SetAttributes(attributes map[string]string)
+	UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack) error
+	UpdateVideoTrack(update *livekit.UpdateLocalVideoTrack) error
 
 	// permissions
 	ClaimGrants() *auth.ClaimGrants
@@ -379,6 +380,7 @@ type LocalParticipant interface {
 	SendConnectionQualityUpdate(update *livekit.ConnectionQualityUpdate) error
 	SubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool)
 	SendRefreshToken(token string) error
+	SendErrorResponse(errorResponse *livekit.ErrorResponse) error
 	HandleReconnectAndSendResponse(reconnectReason livekit.ReconnectReason, reconnectResponse *livekit.ReconnectResponse) error
 	IssueFullReconnect(reason ParticipantCloseReason)
 
@@ -425,6 +427,8 @@ type LocalParticipant interface {
 	SetSubscriberChannelCapacity(channelCapacity int64)
 
 	GetPacer() pacer.Pacer
+
+	GetDisableSenderReportPassThrough() bool
 }
 
 // Room is a container of participants, and can provide room-level actions
@@ -440,7 +444,6 @@ type Room interface {
 	SimulateScenario(participant LocalParticipant, scenario *livekit.SimulateScenario) error
 	ResolveMediaTrackForSubscriber(subIdentity livekit.ParticipantIdentity, trackID livekit.TrackID) MediaResolverResult
 	GetLocalParticipants() []LocalParticipant
-	UpdateParticipantMetadata(participant LocalParticipant, name string, metadata string, attributes map[string]string) error
 }
 
 // MediaTrack represents a media track

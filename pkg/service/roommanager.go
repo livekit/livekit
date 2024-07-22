@@ -74,6 +74,7 @@ type RoomManager struct {
 	telemetry         telemetry.TelemetryService
 	clientConfManager clientconfiguration.ClientConfigurationManager
 	agentClient       agent.Client
+	agentStore        AgentStore
 	egressLauncher    rtc.EgressLauncher
 	versionGenerator  utils.TimedVersionGenerator
 	turnAuthHandler   *TURNAuthHandler
@@ -97,6 +98,7 @@ func NewLocalRoomManager(
 	telemetry telemetry.TelemetryService,
 	clientConfManager clientconfiguration.ClientConfigurationManager,
 	agentClient agent.Client,
+	agentStore AgentStore,
 	egressLauncher rtc.EgressLauncher,
 	versionGenerator utils.TimedVersionGenerator,
 	turnAuthHandler *TURNAuthHandler,
@@ -118,6 +120,7 @@ func NewLocalRoomManager(
 		clientConfManager: clientConfManager,
 		egressLauncher:    egressLauncher,
 		agentClient:       agentClient,
+		agentStore:        agentStore,
 		versionGenerator:  versionGenerator,
 		turnAuthHandler:   turnAuthHandler,
 		bus:               bus,
@@ -379,6 +382,9 @@ func (r *RoomManager) StartSession(
 	pv := types.ProtocolVersion(pi.Client.Protocol)
 	rtcConf := *r.rtcConfig
 	rtcConf.SetBufferFactory(room.GetBufferFactory())
+	if pi.DisableICELite {
+		rtcConf.SettingEngine.SetLite(false)
+	}
 	sid := livekit.ParticipantID(guid.New(utils.ParticipantPrefix))
 	pLogger := rtc.LoggerWithParticipant(
 		rtc.LoggerWithRoom(logger.GetLogger(), room.Name(), room.ID()),
@@ -417,6 +423,7 @@ func (r *RoomManager) StartSession(
 		Sink:                    responseSink,
 		AudioConfig:             r.config.Audio,
 		VideoConfig:             r.config.Video,
+		LimitConfig:             r.config.Limit,
 		ProtocolVersion:         pv,
 		SessionStartTime:        sessionStartTime,
 		Telemetry:               r.telemetry,
@@ -433,7 +440,6 @@ func (r *RoomManager) StartSession(
 		AdaptiveStream:          pi.AdaptiveStream,
 		AllowTCPFallback:        allowFallback,
 		TURNSEnabled:            r.config.IsTURNSEnabled(),
-		MaxAttributesSize:       r.config.Limit.MaxAttributesSize,
 		GetParticipantInfo: func(pID livekit.ParticipantID) *livekit.ParticipantInfo {
 			if p := room.GetParticipantByID(pID); p != nil {
 				return p.ToProto()
@@ -554,7 +560,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 	}
 
 	// construct ice servers
-	newRoom := rtc.NewRoom(ri, internal, *r.rtcConfig, r.config.Room, &r.config.Audio, r.serverInfo, r.telemetry, r.agentClient, r.egressLauncher)
+	newRoom := rtc.NewRoom(ri, internal, *r.rtcConfig, r.config.Room, &r.config.Audio, r.serverInfo, r.telemetry, r.agentClient, r.agentStore, r.egressLauncher)
 
 	roomTopic := rpc.FormatRoomTopic(roomName)
 	roomServer := must.Get(rpc.NewTypedRoomServer(r, r.bus))
@@ -703,7 +709,7 @@ func (r *RoomManager) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 }
 
 func (r *RoomManager) UpdateParticipant(ctx context.Context, req *livekit.UpdateParticipantRequest) (*livekit.ParticipantInfo, error) {
-	room, participant, err := r.roomAndParticipantForReq(ctx, req)
+	_, participant, err := r.roomAndParticipantForReq(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -713,10 +719,20 @@ func (r *RoomManager) UpdateParticipant(ctx context.Context, req *livekit.Update
 		"permission", req.Permission,
 		"attributes", req.Attributes,
 	)
-	err = room.UpdateParticipantMetadata(participant, req.Name, req.Metadata, req.Attributes)
-	if err != nil {
+	if err = participant.CheckMetadataLimits(req.Name, req.Metadata, req.Attributes); err != nil {
 		return nil, err
 	}
+
+	if req.Name != "" {
+		participant.SetName(req.Name)
+	}
+	if req.Metadata != "" {
+		participant.SetMetadata(req.Metadata)
+	}
+	if req.Attributes != nil {
+		participant.SetAttributes(req.Attributes)
+	}
+
 	if req.Permission != nil {
 		participant.SetPermission(req.Permission)
 	}

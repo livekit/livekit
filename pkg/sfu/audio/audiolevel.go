@@ -17,7 +17,6 @@ package audio
 import (
 	"math"
 	"sync"
-	"time"
 )
 
 const (
@@ -46,7 +45,7 @@ type AudioLevel struct {
 	loudestObservedLevel uint8
 	activeDuration       uint32 // ms
 	observedDuration     uint32 // ms
-	lastObservedAt       time.Time
+	lastObservedAt       int64
 }
 
 func NewAudioLevel(params AudioLevelParams) *AudioLevel {
@@ -67,7 +66,7 @@ func NewAudioLevel(params AudioLevelParams) *AudioLevel {
 }
 
 // Observes a new frame
-func (l *AudioLevel) Observe(level uint8, durationMs uint32, arrivalTime time.Time) {
+func (l *AudioLevel) Observe(level uint8, durationMs uint32, arrivalTime int64) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
@@ -101,8 +100,8 @@ func (l *AudioLevel) Observe(level uint8, durationMs uint32, arrivalTime time.Ti
 	}
 }
 
-// returns current soothed audio level
-func (l *AudioLevel) GetLevel(now time.Time) (float64, bool) {
+// returns current smoothed audio level
+func (l *AudioLevel) GetLevel(now int64) (float64, bool) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
@@ -111,8 +110,8 @@ func (l *AudioLevel) GetLevel(now time.Time) (float64, bool) {
 	return l.smoothedLevel, l.smoothedLevel >= l.activeThreshold
 }
 
-func (l *AudioLevel) resetIfStaleLocked(arrivalTime time.Time) {
-	if arrivalTime.Sub(l.lastObservedAt).Milliseconds() < int64(2*l.params.ObserveDuration) {
+func (l *AudioLevel) resetIfStaleLocked(arrivalTime int64) {
+	if (arrivalTime-l.lastObservedAt)/1e6 < int64(2*l.params.ObserveDuration) {
 		return
 	}
 
