@@ -29,7 +29,7 @@ import (
 
 func TestAuthMiddleware(t *testing.T) {
 	api := "APIabcdefg"
-	secret := "somesecretencodedinbase62"
+	secret := "somesecretencodedinbase62extendto32bytes"
 	provider := &authfakes.FakeKeyProvider{}
 	provider.GetSecretReturns(secret)
 

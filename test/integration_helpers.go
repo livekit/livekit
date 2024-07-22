@@ -40,7 +40,7 @@ import (
 
 const (
 	testApiKey        = "apikey"
-	testApiSecret     = "apiSecret"
+	testApiSecret     = "apiSecretExtendTo32BytesAsThatIsMinimum"
 	testRoom          = "mytestroom"
 	defaultServerPort = 7880
 	secondServerPort  = 8880

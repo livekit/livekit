@@ -94,14 +94,15 @@ type AgentHandler struct {
 	namespaceWorkers  map[workerKey][]*agent.Worker
 	roomKeyCount      int
 	publisherKeyCount int
-	// TODO remove once deprecated CheckEnabled is removed
-	namespaces []string
+	namespaces        []string // namespaces deprecated
+	agentNames        []string
 
 	roomTopic      string
 	publisherTopic string
 }
 
 type workerKey struct {
+	agentName string
 	namespace string
 	jobType   livekit.JobType
 }
@@ -203,17 +204,18 @@ func (h *AgentHandler) HandleConnection(ctx context.Context, conn agent.SignalCo
 func (h *AgentHandler) HandleWorkerRegister(w *agent.Worker) {
 	h.mu.Lock()
 
-	key := workerKey{w.Namespace(), w.JobType()}
+	key := workerKey{w.AgentName(), w.Namespace(), w.JobType()}
 
 	workers := h.namespaceWorkers[key]
 	created := len(workers) == 0
 
 	if created {
-		topic := h.roomTopic
+		nameTopic := agent.GetAgentTopic(w.AgentName(), w.Namespace())
+		typeTopic := h.roomTopic
 		if w.JobType() == livekit.JobType_JT_PUBLISHER {
-			topic = h.publisherTopic
+			typeTopic = h.publisherTopic
 		}
-		err := h.agentServer.RegisterJobRequestTopic(w.Namespace(), topic)
+		err := h.agentServer.RegisterJobRequestTopic(nameTopic, typeTopic)
 		if err != nil {
 			h.mu.Unlock()
 
@@ -230,16 +232,19 @@ func (h *AgentHandler) HandleWorkerRegister(w *agent.Worker) {
 
 		h.namespaces = append(h.namespaces, w.Namespace())
 		sort.Strings(h.namespaces)
+		h.agentNames = append(h.agentNames, w.AgentName())
+		sort.Strings(h.agentNames)
+
 	}
 
 	h.namespaceWorkers[key] = append(workers, w)
 	h.mu.Unlock()
 
 	if created {
-		h.logger.Infow("initial worker registered", "namespace", w.Namespace(), "jobType", w.JobType())
+		h.logger.Infow("initial worker registered", "namespace", w.Namespace(), "jobType", w.JobType(), "agentName", w.AgentName())
 		err := h.agentServer.PublishWorkerRegistered(context.Background(), agent.DefaultHandlerNamespace, &emptypb.Empty{})
 		if err != nil {
-			w.Logger().Errorw("failed to publish worker registered", err)
+			w.Logger().Errorw("failed to publish worker registered", err, "namespace", w.Namespace(), "jobType", w.JobType(), "agentName", w.AgentName())
 		}
 	}
 }
@@ -248,7 +253,7 @@ func (h *AgentHandler) HandleWorkerDeregister(w *agent.Worker) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	key := workerKey{w.Namespace(), w.JobType()}
+	key := workerKey{w.AgentName(), w.Namespace(), w.JobType()}
 
 	workers, ok := h.namespaceWorkers[key]
 	if !ok {
@@ -262,25 +267,30 @@ func (h *AgentHandler) HandleWorkerDeregister(w *agent.Worker) {
 	if len(workers) > 1 {
 		h.namespaceWorkers[key] = slices.Delete(workers, index, index+1)
 	} else {
-		h.logger.Debugw("last worker deregistered")
+		h.logger.Debugw("last worker deregistered", "namespace", w.Namespace(), "jobType", w.JobType(), "agentName", w.AgentName())
 		delete(h.namespaceWorkers, key)
 
+		topic := agent.GetAgentTopic(w.AgentName(), w.Namespace())
 		if w.JobType() == livekit.JobType_JT_ROOM {
 			h.roomKeyCount--
-			h.agentServer.DeregisterJobRequestTopic(w.Namespace(), h.roomTopic)
+			h.agentServer.DeregisterJobRequestTopic(topic, h.roomTopic)
 		} else {
 			h.publisherKeyCount--
-			h.agentServer.DeregisterJobRequestTopic(w.Namespace(), h.publisherTopic)
+			h.agentServer.DeregisterJobRequestTopic(topic, h.publisherTopic)
 		}
 
+		// agentNames and namespaces contains repeated entries for each agentNames/namespaces combinations
 		if i := slices.Index(h.namespaces, w.Namespace()); i != -1 {
 			h.namespaces = slices.Delete(h.namespaces, i, i+1)
+		}
+		if i := slices.Index(h.agentNames, w.AgentName()); i != -1 {
+			h.agentNames = slices.Delete(h.agentNames, i, i+1)
 		}
 	}
 }
 
-func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*emptypb.Empty, error) {
-	key := workerKey{job.Namespace, job.Type}
+func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*rpc.JobRequestResponse, error) {
+	key := workerKey{job.AgentName, job.Namespace, job.Type}
 	attempted := make(map[*agent.Worker]struct{})
 	for {
 		h.mu.Lock()
@@ -312,6 +322,7 @@ func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*empty
 		values := []interface{}{
 			"jobID", job.Id,
 			"namespace", job.Namespace,
+			"agentName", job.AgentName,
 			"workerID", selected.ID(),
 		}
 		if job.Room != nil {
@@ -320,7 +331,7 @@ func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*empty
 		if job.Participant != nil {
 			values = append(values, "participant", job.Participant.Identity)
 		}
-		logger.Debugw("assigning job", values...)
+		h.logger.Debugw("assigning job", values...)
 		err := selected.AssignJob(ctx, job)
 		if err != nil {
 			if errors.Is(err, agent.ErrWorkerNotAvailable) {
@@ -329,7 +340,9 @@ func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*empty
 			return nil, err
 		}
 
-		return &emptypb.Empty{}, nil
+		return &rpc.JobRequestResponse{
+			State: job.State,
+		}, nil
 	}
 }
 
@@ -340,7 +353,7 @@ func (h *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job)
 	var affinity float32
 	var maxLoad float32
 	for _, w := range h.workers {
-		if w.Namespace() != job.Namespace || w.JobType() != job.Type {
+		if w.AgentName() != job.AgentName || w.Namespace() != job.Namespace || w.JobType() != job.Type {
 			continue
 		}
 
@@ -362,8 +375,11 @@ func (h *AgentHandler) CheckEnabled(ctx context.Context, req *rpc.CheckEnabledRe
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
+	// This doesn't return the full agentName -> namespace mapping, which can cause some unnecessary RPC.
+	// namespaces are however deprecated.
 	return &rpc.CheckEnabledResponse{
 		Namespaces:       slices.Compact(slices.Clone(h.namespaces)),
+		AgentNames:       slices.Compact(slices.Clone(h.agentNames)),
 		RoomEnabled:      h.roomKeyCount != 0,
 		PublisherEnabled: h.publisherKeyCount != 0,
 	}, nil

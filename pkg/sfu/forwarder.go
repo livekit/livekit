@@ -222,6 +222,29 @@ type refInfo struct {
 	isTSOffsetValid bool
 }
 
+func (r refInfo) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	e.AddObject("senderReport", r.senderReport)
+	e.AddUint64("tsOffset", r.tsOffset)
+	e.AddBool("isTSOffsetValid", r.isTSOffsetValid)
+	return nil
+}
+
+// -------------------------------------------------------------------
+
+type wrappedRefInfoLogger struct {
+	*Forwarder
+}
+
+func (w wrappedRefInfoLogger) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	for i, refInfo := range w.Forwarder.refInfos {
+		e.AddObject(fmt.Sprintf("%d", i), refInfo)
+	}
+
+	return nil
+}
+
+// -------------------------------------------------------------------
+
 type Forwarder struct {
 	lock                    sync.RWMutex
 	codec                   webrtc.RTPCodecCapability
@@ -1873,13 +1896,13 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 	if f.lastSSRC != extPkt.Packet.SSRC {
 		eof, err := f.processSourceSwitch(extPkt, layer)
 		if err != nil {
+			f.logger.Debugw("could not switch feed", "error", err, "refInfos", wrappedRefInfoLogger{f})
 			tp.shouldDrop = true
 			f.vls.Rollback()
 			return nil
 		}
 		tp.eof = eof
-
-		f.logger.Debugw("switching feed", "from", f.lastSSRC, "to", extPkt.Packet.SSRC)
+		f.logger.Debugw("switching feed", "from", f.lastSSRC, "to", extPkt.Packet.SSRC, "refInfos", wrappedRefInfoLogger{f})
 		f.lastSSRC = extPkt.Packet.SSRC
 		f.lastSwitchExtIncomingTS = extPkt.ExtTimestamp
 	}

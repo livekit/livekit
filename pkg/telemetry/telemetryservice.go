@@ -160,7 +160,9 @@ func (t *telemetryService) FlushStats() {
 	if reap != nil {
 		t.workersMu.Lock()
 		for reap != nil {
-			delete(t.workers, reap.participantID)
+			if reap == t.workers[reap.participantID] {
+				delete(t.workers, reap.participantID)
+			}
 			reap = reap.next
 		}
 		t.workersMu.Unlock()
@@ -195,7 +197,7 @@ func (t *telemetryService) getOrCreateWorker(
 	t.workersMu.Lock()
 	defer t.workersMu.Unlock()
 
-	if worker, ok := t.workers[participantID]; ok {
+	if worker, ok := t.workers[participantID]; ok && !worker.Closed() {
 		return worker, true
 	}
 

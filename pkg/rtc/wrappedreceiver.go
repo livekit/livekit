@@ -131,8 +131,8 @@ type DummyReceiver struct {
 	codec            webrtc.RTPCodecParameters
 	headerExtensions []webrtc.RTPHeaderExtensionParameter
 
-	downtrackLock sync.Mutex
-	downtracks    map[livekit.ParticipantID]sfu.TrackSender
+	downTrackLock sync.Mutex
+	downTracks    map[livekit.ParticipantID]sfu.TrackSender
 
 	settingsLock          sync.Mutex
 	maxExpectedLayerValid bool
@@ -147,7 +147,7 @@ func NewDummyReceiver(trackID livekit.TrackID, streamId string, codec webrtc.RTP
 		streamId:         streamId,
 		codec:            codec,
 		headerExtensions: headerExtensions,
-		downtracks:       make(map[livekit.ParticipantID]sfu.TrackSender),
+		downTracks:       make(map[livekit.ParticipantID]sfu.TrackSender),
 	}
 }
 
@@ -159,12 +159,12 @@ func (d *DummyReceiver) Receiver() sfu.TrackReceiver {
 func (d *DummyReceiver) Upgrade(receiver sfu.TrackReceiver) {
 	d.receiver.CompareAndSwap(nil, receiver)
 
-	d.downtrackLock.Lock()
-	for _, t := range d.downtracks {
+	d.downTrackLock.Lock()
+	for _, t := range d.downTracks {
 		receiver.AddDownTrack(t)
 	}
-	d.downtracks = make(map[livekit.ParticipantID]sfu.TrackSender)
-	d.downtrackLock.Unlock()
+	d.downTracks = make(map[livekit.ParticipantID]sfu.TrackSender)
+	d.downTrackLock.Unlock()
 
 	d.settingsLock.Lock()
 	if d.maxExpectedLayerValid {
@@ -253,23 +253,25 @@ func (d *DummyReceiver) SetMaxExpectedSpatialLayer(layer int32) {
 }
 
 func (d *DummyReceiver) AddDownTrack(track sfu.TrackSender) error {
-	d.downtrackLock.Lock()
-	defer d.downtrackLock.Unlock()
+	d.downTrackLock.Lock()
+	defer d.downTrackLock.Unlock()
+
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		r.AddDownTrack(track)
 	} else {
-		d.downtracks[track.SubscriberID()] = track
+		d.downTracks[track.SubscriberID()] = track
 	}
 	return nil
 }
 
 func (d *DummyReceiver) DeleteDownTrack(subscriberID livekit.ParticipantID) {
-	d.downtrackLock.Lock()
-	defer d.downtrackLock.Unlock()
+	d.downTrackLock.Lock()
+	defer d.downTrackLock.Unlock()
+
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		r.DeleteDownTrack(subscriberID)
 	} else {
-		delete(d.downtracks, subscriberID)
+		delete(d.downTracks, subscriberID)
 	}
 }
 

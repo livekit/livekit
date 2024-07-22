@@ -22,7 +22,6 @@ import (
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
 
-	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/protocol/livekit"
 	lksdp "github.com/livekit/protocol/sdp"
 )
@@ -152,18 +151,6 @@ func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(offer webrtc.Sess
 		p.pendingTracksLock.RUnlock()
 
 		mime = strings.ToUpper(mime)
-		// remove dd extension if av1/vp9 not preferred
-		if !strings.Contains(strings.ToLower(mime), "av1") && !strings.Contains(strings.ToLower(mime), "vp9") {
-			for i, attr := range unmatchVideo.Attributes {
-				if strings.Contains(attr.Value, dd.ExtensionURI) {
-					unmatchVideo.Attributes[i] = unmatchVideo.Attributes[len(unmatchVideo.Attributes)-1]
-					unmatchVideo.Attributes[len(unmatchVideo.Attributes)-1] = sdp.Attribute{}
-					unmatchVideo.Attributes = unmatchVideo.Attributes[:len(unmatchVideo.Attributes)-1]
-					break
-				}
-			}
-		}
-
 		if mime != "" {
 			codecs, err := codecsFromMediaDescription(unmatchVideo)
 			if err != nil {
