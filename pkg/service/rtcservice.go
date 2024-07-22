@@ -532,7 +532,15 @@ func (s *RTCService) startConnection(
 			return connectionResult{}, nil, err
 		}
 
-		for _, ag := range internal.AgentDispatches {
+		roomDisp := r.internal.AgentDispatches
+		if len(roomDisp) == 0 {
+			// Backward compatibility: by default, start any agent in the empty JobName
+			roomDisp = []*livekit.RoomAgentDispatch{
+				&livekit.RoomAgentDispatch{},
+			}
+		}
+
+		for _, ag := range roomDisp {
 			go s.agentClient.LaunchJob(ctx, &agent.JobRequest{
 				JobType:   livekit.JobType_JT_ROOM,
 				Room:      cr.Room,

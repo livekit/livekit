@@ -105,11 +105,17 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 	if created {
 		_, internal, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Name), true)
 
-		if internal.AgentDispatches != nil {
-			err = s.launchAgents(ctx, rm, internal.AgentDispatches)
-			if err != nil {
-				return nil, err
+		roomDisp := r.internal.AgentDispatches
+		if len(roomDisp) == 0 {
+			// Backward compatibility: by default, start any agent in the empty JobName
+			roomDisp = []*livekit.RoomAgentDispatch{
+				&livekit.RoomAgentDispatch{},
 			}
+		}
+
+		err = s.launchAgents(ctx, rm, roomDisp)
+		if err != nil {
+			return nil, err
 		}
 
 		if req.Egress != nil && req.Egress.Room != nil {
