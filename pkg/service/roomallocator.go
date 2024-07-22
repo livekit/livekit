@@ -106,14 +106,6 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 			internal.TrackEgress = req.Egress.Tracks
 		}
 	}
-	if req.Agent == nil {
-		// Backward compatibility: by default, start any agent in the empty JobName
-		req.Agent = &livekit.RoomAgent{
-			Dispatches: []*livekit.RoomAgentDispatch{
-				&livekit.RoomAgentDispatch{},
-			},
-		}
-	}
 	internal.AgentDispatches = req.Agent.Dispatches
 	if req.MinPlayoutDelay > 0 || req.MaxPlayoutDelay > 0 {
 		internal.PlayoutDelay = &livekit.PlayoutDelay{
