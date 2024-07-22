@@ -106,7 +106,9 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 			internal.TrackEgress = req.Egress.Tracks
 		}
 	}
-	internal.AgentDispatches = req.Agent.Dispatches
+	if req.Agent != nil {
+		internal.AgentDispatches = req.Agent.Dispatches
+	}
 	if req.MinPlayoutDelay > 0 || req.MaxPlayoutDelay > 0 {
 		internal.PlayoutDelay = &livekit.PlayoutDelay{
 			Enabled: true,
