@@ -1412,7 +1412,15 @@ func (r *Room) launchPublisherAgents(p types.Participant) {
 		return
 	}
 
-	for _, ag := range r.internal.AgentDispatches {
+	roomDisp := r.internal.AgentDispatches
+	if len(roomDisp) == 0 {
+		// Backward compatibility: by default, start any agent in the empty JobName
+		roomDisp = []*livekit.RoomAgentDispatch{
+			&livekit.RoomAgentDispatch{},
+		}
+	}
+
+	for _, ag := range roomDisp {
 		go r.agentClient.LaunchJob(context.Background(), &agent.JobRequest{
 			JobType:     livekit.JobType_JT_PUBLISHER,
 			Room:        r.ToProto(),
