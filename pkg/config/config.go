@@ -248,28 +248,8 @@ type RoomConfig struct {
 	// deprecated, moved to limits
 	MaxRoomNameLength int `yaml:"max_room_name_length,omitempty"`
 	// deprecated, moved to limits
-	MaxParticipantIdentityLength int                          `yaml:"max_participant_identity_length,omitempty"`
-	RoomConfigurations           map[string]RoomConfiguration `yaml:"room_configurations,omitempty"`
-}
-
-type RoomConfiguration struct {
-	Name string `yaml:"name,omitempty"` // Used as ID, must be unique
-	// number of seconds to keep the room open if no one joins
-	EmptyTimeout uint32 `yaml:"empty_timeout,omitempty"`
-	// number of seconds to keep the room open after everyone leaves
-	DepartureTimeout uint32 `yaml:"departure_timeout,omitempty"`
-	// limit number of participants that can be in a room
-	MaxParticipants uint32 `yaml:"max_participants,omitempty"`
-	// egress
-	Egress *livekit.RoomEgress `yaml:"egress,omitempty"`
-	// agent
-	Agent *livekit.RoomAgent `yaml:"agent,omitempty"`
-	// playout delay of subscriber
-	MinPlayoutDelay uint32 `yaml:"min_playout_delay,omitempty"`
-	MaxPlayoutDelay uint32 `yaml:"max_playout_delay,omitempty"`
-	// improves A/V sync when playout_delay set to a value larger than 200ms. It will disables transceiver re-use
-	// so not recommended for rooms with frequent subscription changes
-	SyncStreams bool `yaml:"sync_streams"`
+	MaxParticipantIdentityLength int                                  `yaml:"max_participant_identity_length,omitempty"`
+	RoomConfigurations           map[string]livekit.RoomConfiguration `yaml:"room_configurations,omitempty"`
 }
 
 type CodecSpec struct {
@@ -333,6 +313,31 @@ type LimitConfig struct {
 	MaxAttributesSize            uint32 `yaml:"max_attributes_size,omitempty"`
 	MaxRoomNameLength            int    `yaml:"max_room_name_length,omitempty"`
 	MaxParticipantIdentityLength int    `yaml:"max_participant_identity_length,omitempty"`
+	MaxParticipantNameLength     int    `yaml:"max_participant_name_length,omitempty"`
+}
+
+func (l LimitConfig) CheckRoomNameLength(name string) bool {
+	return l.MaxRoomNameLength == 0 || len(name) <= l.MaxRoomNameLength
+}
+
+func (l LimitConfig) CheckParticipantNameLength(name string) bool {
+	return l.MaxParticipantNameLength == 0 || len(name) <= l.MaxParticipantNameLength
+}
+
+func (l LimitConfig) CheckMetadataSize(metadata string) bool {
+	return l.MaxMetadataSize == 0 || uint32(len(metadata)) <= l.MaxMetadataSize
+}
+
+func (l LimitConfig) CheckAttributesSize(attributes map[string]string) bool {
+	if l.MaxAttributesSize == 0 {
+		return true
+	}
+
+	total := 0
+	for k, v := range attributes {
+		total += len(k) + len(v)
+	}
+	return uint32(total) <= l.MaxAttributesSize
 }
 
 type IngressConfig struct {
@@ -542,6 +547,7 @@ var DefaultConfig = Config{
 		MaxAttributesSize:            64000,
 		MaxRoomNameLength:            256,
 		MaxParticipantIdentityLength: 256,
+		MaxParticipantNameLength:     256,
 	},
 	Logging: LoggingConfig{
 		PionLevel: "error",

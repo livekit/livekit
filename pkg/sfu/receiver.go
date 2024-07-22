@@ -122,32 +122,14 @@ type WebRTCReceiver struct {
 
 	onStatsUpdate        func(w *WebRTCReceiver, stat *livekit.AnalyticsStat)
 	onMaxLayerChange     func(maxLayer int32)
-	downtrackEverAdded   atomic.Bool
-	onDowntrackEverAdded func()
+	downTrackEverAdded   atomic.Bool
+	onDownTrackEverAdded func()
 
 	primaryReceiver atomic.Pointer[RedPrimaryReceiver]
 	redReceiver     atomic.Pointer[RedReceiver]
 	redPktWriter    func(pkt *buffer.ExtPacket, spatialLayer int32) int
 
 	forwardStats *ForwardStats
-}
-
-// SVC-TODO: Have to use more conditions to differentiate between
-// SVC-TODO: SVC and non-SVC (could be single layer or simulcast).
-// SVC-TODO: May only need to differentiate between simulcast and non-simulcast
-// SVC-TODO: i. e. may be possible to treat single layer as SVC to get proper/intended functionality.
-func IsSvcCodec(mime string) bool {
-	switch strings.ToLower(mime) {
-	case "video/av1":
-		fallthrough
-	case "video/vp9":
-		return true
-	}
-	return false
-}
-
-func IsRedCodec(mime string) bool {
-	return strings.HasSuffix(strings.ToLower(mime), "red")
 }
 
 type ReceiverOpts func(w *WebRTCReceiver) *WebRTCReceiver
@@ -195,9 +177,9 @@ func WithForwardStats(forwardStats *ForwardStats) ReceiverOpts {
 	}
 }
 
-func WithEverHasDowntrackAdded(f func()) ReceiverOpts {
+func WithEverHasDownTrackAdded(f func()) ReceiverOpts {
 	return func(w *WebRTCReceiver) *WebRTCReceiver {
-		w.onDowntrackEverAdded = f
+		w.onDownTrackEverAdded = f
 		return w
 	}
 }
@@ -220,8 +202,8 @@ func NewWebRTCReceiver(
 		codec:    track.Codec(),
 		kind:     track.Kind(),
 		onRTCP:   onRTCP,
-		isSVC:    IsSvcCodec(track.Codec().MimeType),
-		isRED:    IsRedCodec(track.Codec().MimeType),
+		isSVC:    buffer.IsSvcCodec(track.Codec().MimeType),
+		isRED:    buffer.IsRedCodec(track.Codec().MimeType),
 	}
 
 	for _, opt := range opts {
@@ -443,8 +425,8 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) error {
 }
 
 func (w *WebRTCReceiver) handleDowntrackAdded() {
-	if !w.downtrackEverAdded.Swap(true) && w.onDowntrackEverAdded != nil {
-		w.onDowntrackEverAdded()
+	if !w.downTrackEverAdded.Swap(true) && w.onDownTrackEverAdded != nil {
+		w.onDownTrackEverAdded()
 	}
 }
 
@@ -756,7 +738,7 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 		}
 
 		if writeCount > 0 && w.forwardStats != nil {
-			w.forwardStats.Update(pkt.Arrival, time.Now())
+			w.forwardStats.Update(pkt.Arrival, time.Now().UnixNano())
 		}
 
 		if spatialTracker != nil {

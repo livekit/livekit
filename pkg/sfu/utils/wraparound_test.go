@@ -448,6 +448,91 @@ func TestWrapAroundUint16WrapAroundRestartDuplicate(t *testing.T) {
 	require.Equal(t, uint64(65568), w.GetExtendedHighest())
 }
 
+func TestWrapAroundUint16Rollover(t *testing.T) {
+	w := NewWrapAround[uint16, uint32](WrapAroundParams{IsRestartAllowed: false})
+	testCases := []struct {
+		name            string
+		input           uint16
+		numCycles       int
+		updated         WrapAroundUpdateResult[uint32]
+		start           uint16
+		extendedStart   uint32
+		highest         uint16
+		extendedHighest uint32
+	}{
+		// initialize - should initialize irrespective of numCycles
+		{
+			name:      "initialize",
+			input:     10,
+			numCycles: 10,
+			updated: WrapAroundUpdateResult[uint32]{
+				IsRestart:          false,
+				PreExtendedStart:   0,
+				PreExtendedHighest: 9,
+				ExtendedVal:        10,
+			},
+			start:           10,
+			extendedStart:   10,
+			highest:         10,
+			extendedHighest: 10,
+		},
+		// zero cycles - should just do an update
+		{
+			name:  "zero",
+			input: 8,
+			updated: WrapAroundUpdateResult[uint32]{
+				IsUnhandled: true,
+				// the following fields are not valid when `IsUnhandled = true`, but code fills it in
+				// and they are filled in here for testing purposes
+				PreExtendedHighest: 10,
+				ExtendedVal:        8,
+			},
+			start:           10,
+			extendedStart:   10,
+			highest:         10,
+			extendedHighest: 10,
+		},
+		// one cycle
+		{
+			name:      "one cycle",
+			input:     (1 << 16) - 6,
+			numCycles: 1,
+			updated: WrapAroundUpdateResult[uint32]{
+				PreExtendedHighest: 10,
+				ExtendedVal:        (1 << 16) - 6 + (1 << 16),
+			},
+			start:           10,
+			extendedStart:   10,
+			highest:         (1 << 16) - 6,
+			extendedHighest: (1 << 16) - 6 + (1 << 16),
+		},
+		// two cycles
+		{
+			name:      "two cycles",
+			input:     (1 << 16) - 7,
+			numCycles: 2,
+			updated: WrapAroundUpdateResult[uint32]{
+				PreExtendedHighest: (1 << 16) - 6 + (1 << 16),
+				ExtendedVal:        (1 << 16) - 7 + 3*(1<<16),
+			},
+			start:           10,
+			extendedStart:   10,
+			highest:         (1 << 16) - 7,
+			extendedHighest: (1 << 16) - 7 + 3*(1<<16),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.updated, w.Rollover(tc.input, tc.numCycles))
+			require.Equal(t, tc.start, w.GetStart())
+			require.Equal(t, tc.extendedStart, w.GetExtendedStart())
+			require.Equal(t, tc.highest, w.GetHighest())
+			require.Equal(t, tc.extendedHighest, w.GetExtendedHighest())
+		})
+	}
+}
+
 func TestWrapAroundUint32(t *testing.T) {
 	w := NewWrapAround[uint32, uint64](WrapAroundParams{IsRestartAllowed: true})
 	testCases := []struct {

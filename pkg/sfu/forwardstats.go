@@ -12,10 +12,10 @@ import (
 )
 
 type ForwardStats struct {
-	lock       sync.Mutex
-	lastLeftMs atomic.Int64
-	latency    *utils.LatencyAggregate
-	closeCh    chan struct{}
+	lock         sync.Mutex
+	lastLeftNano atomic.Int64
+	latency      *utils.LatencyAggregate
+	closeCh      chan struct{}
 }
 
 func NewForwardStats(latencyUpdateInterval, reportInterval, latencyWindowLength time.Duration) *ForwardStats {
@@ -28,22 +28,21 @@ func NewForwardStats(latencyUpdateInterval, reportInterval, latencyWindowLength 
 	return s
 }
 
-func (s *ForwardStats) Update(arrival, left time.Time) {
-	transit := left.Sub(arrival)
+func (s *ForwardStats) Update(arrival, left int64) {
+	transit := left - arrival
 
 	// ignore if transit is too large or negative, this could happen if system time is adjusted
-	if transit < 0 || transit > 5*time.Second {
+	if transit < 0 || time.Duration(transit) > 5*time.Second {
 		return
 	}
-	leftMs := left.UnixMilli()
-	lastMs := s.lastLeftMs.Load()
-	if leftMs < lastMs || !s.lastLeftMs.CompareAndSwap(lastMs, leftMs) {
+	lastLeftNano := s.lastLeftNano.Load()
+	if left < lastLeftNano || !s.lastLeftNano.CompareAndSwap(lastLeftNano, left) {
 		return
 	}
 
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	s.latency.Update(time.Duration(arrival.UnixNano()), float64(transit))
+	s.latency.Update(time.Duration(arrival), float64(transit))
 }
 
 func (s *ForwardStats) GetStats() (latency, jitter time.Duration) {

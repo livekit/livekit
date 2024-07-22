@@ -41,6 +41,7 @@ type RedPrimaryReceiver struct {
 	downTrackSpreader *DownTrackSpreader
 	logger            logger.Logger
 	closed            atomic.Bool
+	redPT             uint8
 
 	firstPktReceived bool
 	lastSeq          uint16
@@ -54,6 +55,7 @@ func NewRedPrimaryReceiver(receiver TrackReceiver, dsp DownTrackSpreaderParams) 
 		TrackReceiver:     receiver,
 		downTrackSpreader: NewDownTrackSpreader(dsp),
 		logger:            dsp.Logger,
+		redPT:             uint8(receiver.Codec().PayloadType),
 	}
 }
 
@@ -61,6 +63,13 @@ func (r *RedPrimaryReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int3
 	// extract primary payload from RED and forward to downtracks
 	if r.downTrackSpreader.DownTrackCount() == 0 {
 		return 0
+	}
+
+	if pkt.Packet.PayloadType != r.redPT {
+		// forward non-red packet directly
+		return r.downTrackSpreader.Broadcast(func(dt TrackSender) {
+			_ = dt.WriteRTP(pkt, spatialLayer)
+		})
 	}
 
 	pkts, err := r.getSendPktsFromRed(pkt.Packet)
@@ -73,7 +82,7 @@ func (r *RedPrimaryReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int3
 	for i, sendPkt := range pkts {
 		pPkt := *pkt
 		if i != len(pkts)-1 {
-			// patch extended sequence number and time stmap for all but the last packet,
+			// patch extended sequence number and time stamp for all but the last packet,
 			// last packet is the primary payload
 			pPkt.ExtSequenceNumber -= uint64(pkts[len(pkts)-1].SequenceNumber - pkts[i].SequenceNumber)
 			pPkt.ExtTimestamp -= uint64(pkts[len(pkts)-1].Timestamp - pkts[i].Timestamp)
@@ -246,7 +255,7 @@ func extractPktsFromRed(redPkt *rtp.Packet, recoverBits byte) ([]*rtp.Packet, er
 		if b.primary {
 			header := redPkt.Header
 			header.PayloadType = b.pt
-			pkts = append(pkts, &rtp.Packet{Header: redPkt.Header, Payload: payload})
+			pkts = append(pkts, &rtp.Packet{Header: header, Payload: payload})
 			break
 		}
 

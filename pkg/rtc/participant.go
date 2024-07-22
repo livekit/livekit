@@ -104,6 +104,7 @@ type ParticipantParams struct {
 	Sink                    routing.MessageSink
 	AudioConfig             config.AudioConfig
 	VideoConfig             config.VideoConfig
+	LimitConfig             config.LimitConfig
 	ProtocolVersion         types.ProtocolVersion
 	SessionStartTime        time.Time
 	Telemetry               telemetry.TelemetryService
@@ -111,38 +112,38 @@ type ParticipantParams struct {
 	PLIThrottleConfig       config.PLIThrottleConfig
 	CongestionControlConfig config.CongestionControlConfig
 	// codecs that are enabled for this room
-	PublishEnabledCodecs         []*livekit.Codec
-	SubscribeEnabledCodecs       []*livekit.Codec
-	Logger                       logger.Logger
-	SimTracks                    map[uint32]SimulcastTrackInfo
-	Grants                       *auth.ClaimGrants
-	InitialVersion               uint32
-	ClientConf                   *livekit.ClientConfiguration
-	ClientInfo                   ClientInfo
-	Region                       string
-	Migration                    bool
-	AdaptiveStream               bool
-	AllowTCPFallback             bool
-	TCPFallbackRTTThreshold      int
-	AllowUDPUnstableFallback     bool
-	TURNSEnabled                 bool
-	GetParticipantInfo           func(pID livekit.ParticipantID) *livekit.ParticipantInfo
-	GetRegionSettings            func(ip string) *livekit.RegionSettings
-	DisableSupervisor            bool
-	ReconnectOnPublicationError  bool
-	ReconnectOnSubscriptionError bool
-	ReconnectOnDataChannelError  bool
-	DataChannelMaxBufferedAmount uint64
-	VersionGenerator             utils.TimedVersionGenerator
-	TrackResolver                types.MediaTrackResolver
-	DisableDynacast              bool
-	MaxAttributesSize            uint32
-	SubscriberAllowPause         bool
-	SubscriptionLimitAudio       int32
-	SubscriptionLimitVideo       int32
-	PlayoutDelay                 *livekit.PlayoutDelay
-	SyncStreams                  bool
-	ForwardStats                 *sfu.ForwardStats
+	PublishEnabledCodecs           []*livekit.Codec
+	SubscribeEnabledCodecs         []*livekit.Codec
+	Logger                         logger.Logger
+	SimTracks                      map[uint32]SimulcastTrackInfo
+	Grants                         *auth.ClaimGrants
+	InitialVersion                 uint32
+	ClientConf                     *livekit.ClientConfiguration
+	ClientInfo                     ClientInfo
+	Region                         string
+	Migration                      bool
+	AdaptiveStream                 bool
+	AllowTCPFallback               bool
+	TCPFallbackRTTThreshold        int
+	AllowUDPUnstableFallback       bool
+	TURNSEnabled                   bool
+	GetParticipantInfo             func(pID livekit.ParticipantID) *livekit.ParticipantInfo
+	GetRegionSettings              func(ip string) *livekit.RegionSettings
+	DisableSupervisor              bool
+	ReconnectOnPublicationError    bool
+	ReconnectOnSubscriptionError   bool
+	ReconnectOnDataChannelError    bool
+	DataChannelMaxBufferedAmount   uint64
+	VersionGenerator               utils.TimedVersionGenerator
+	TrackResolver                  types.MediaTrackResolver
+	DisableDynacast                bool
+	SubscriberAllowPause           bool
+	SubscriptionLimitAudio         int32
+	SubscriptionLimitVideo         int32
+	PlayoutDelay                   *livekit.PlayoutDelay
+	SyncStreams                    bool
+	ForwardStats                   *sfu.ForwardStats
+	DisableSenderReportPassThrough bool
 }
 
 type ParticipantImpl struct {
@@ -189,6 +190,8 @@ type ParticipantImpl struct {
 	*TransportManager
 	*UpTrackManager
 	*SubscriptionManager
+
+	icQueue [2]atomic.Pointer[webrtc.ICECandidate]
 
 	// keeps track of unpublished tracks in order to reuse trackID
 	unpublishedTracks []*livekit.TrackInfo
@@ -320,6 +323,10 @@ func (p *ParticipantImpl) GetPacer() pacer.Pacer {
 	return p.TransportManager.GetSubscriberPacer()
 }
 
+func (p *ParticipantImpl) GetDisableSenderReportPassThrough() bool {
+	return p.params.DisableSenderReportPassThrough
+}
+
 func (p *ParticipantImpl) ID() livekit.ParticipantID {
 	return p.params.SID
 }
@@ -407,6 +414,27 @@ func (p *ParticipantImpl) GetBufferFactory() *buffer.Factory {
 	return p.params.Config.BufferFactory
 }
 
+// CheckMetadataLimits check if name/metadata/attributes of a participant is within configured limits
+func (p *ParticipantImpl) CheckMetadataLimits(
+	name string,
+	metadata string,
+	attributes map[string]string,
+) error {
+	if !p.params.LimitConfig.CheckParticipantNameLength(name) {
+		return ErrNameExceedsLimits
+	}
+
+	if !p.params.LimitConfig.CheckMetadataSize(metadata) {
+		return ErrMetadataExceedsLimits
+	}
+
+	if !p.params.LimitConfig.CheckAttributesSize(attributes) {
+		return ErrAttributesExceedsLimits
+	}
+
+	return nil
+}
+
 // SetName attaches name to the participant
 func (p *ParticipantImpl) SetName(name string) {
 	p.lock.Lock()
@@ -460,9 +488,9 @@ func (p *ParticipantImpl) SetMetadata(metadata string) {
 	}
 }
 
-func (p *ParticipantImpl) SetAttributes(attrs map[string]string) error {
+func (p *ParticipantImpl) SetAttributes(attrs map[string]string) {
 	if len(attrs) == 0 {
-		return nil
+		return
 	}
 	p.lock.Lock()
 	grants := p.grants.Load().Clone()
@@ -481,18 +509,6 @@ func (p *ParticipantImpl) SetAttributes(attrs map[string]string) error {
 		delete(grants.Attributes, k)
 	}
 
-	maxAttributesSize := p.params.MaxAttributesSize
-	if maxAttributesSize > 0 {
-		total := 0
-		for k, v := range grants.Attributes {
-			total += len(k) + len(v)
-		}
-		if uint32(total) > maxAttributesSize {
-			p.lock.Unlock()
-			return ErrAttributeExceedsLimits
-		}
-	}
-
 	p.grants.Store(grants)
 	p.requireBroadcast = true // already checked above
 	p.dirty.Store(true)
@@ -507,7 +523,6 @@ func (p *ParticipantImpl) SetAttributes(attrs map[string]string) error {
 	if onClaimsChanged != nil {
 		onClaimsChanged(p)
 	}
-	return nil
 }
 
 func (p *ParticipantImpl) ClaimGrants() *auth.ClaimGrants {
@@ -1576,9 +1591,7 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		}
 		shouldForward = true
 	case *livekit.DataPacket_SipDtmf:
-		if p.Kind() == livekit.ParticipantInfo_SIP {
-			shouldForward = true
-		}
+		shouldForward = true
 	case *livekit.DataPacket_Transcription:
 		if p.Kind() == livekit.ParticipantInfo_AGENT {
 			shouldForward = true
@@ -1599,7 +1612,7 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 }
 
 func (p *ParticipantImpl) onICECandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) error {
-	if c == nil || p.IsDisconnected() || p.IsClosed() {
+	if p.IsDisconnected() || p.IsClosed() {
 		return nil
 	}
 
@@ -2640,4 +2653,65 @@ func (p *ParticipantImpl) setupEnabledCodecs(publishEnabledCodecs []*livekit.Cod
 		subscribeCodecs = append(subscribeCodecs, c)
 	}
 	p.enabledSubscribeCodecs = subscribeCodecs
+}
+
+func (p *ParticipantImpl) UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack) error {
+	if track := p.UpTrackManager.UpdatePublishedAudioTrack(update); track != nil {
+		return nil
+	}
+
+	isPending := false
+	p.pendingTracksLock.RLock()
+	for _, pti := range p.pendingTracks {
+		for _, ti := range pti.trackInfos {
+			if ti.Sid == update.TrackSid {
+				isPending = true
+
+				ti.AudioFeatures = update.Features
+				ti.Stereo = false
+				ti.DisableDtx = false
+				for _, feature := range update.Features {
+					switch feature {
+					case livekit.AudioTrackFeature_TF_STEREO:
+						ti.Stereo = true
+					case livekit.AudioTrackFeature_TF_NO_DTX:
+						ti.DisableDtx = true
+					}
+				}
+			}
+		}
+	}
+	p.pendingTracksLock.RUnlock()
+	if isPending {
+		return nil
+	}
+
+	p.pubLogger.Debugw("could not locate track", "trackID", update.TrackSid)
+	return errors.New("could not find track")
+}
+
+func (p *ParticipantImpl) UpdateVideoTrack(update *livekit.UpdateLocalVideoTrack) error {
+	if track := p.UpTrackManager.UpdatePublishedVideoTrack(update); track != nil {
+		return nil
+	}
+
+	isPending := false
+	p.pendingTracksLock.RLock()
+	for _, pti := range p.pendingTracks {
+		for _, ti := range pti.trackInfos {
+			if ti.Sid == update.TrackSid {
+				isPending = true
+
+				ti.Width = update.Width
+				ti.Height = update.Height
+			}
+		}
+	}
+	p.pendingTracksLock.RUnlock()
+	if isPending {
+		return nil
+	}
+
+	p.pubLogger.Debugw("could not locate track", "trackID", update.TrackSid)
+	return errors.New("could not find track")
 }
