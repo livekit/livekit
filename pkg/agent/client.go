@@ -120,7 +120,11 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) {
 	dispatcher := c.getDispatcher(desc.AgentName, desc.JobType)
 
 	if dispatcher == nil {
-		logger.Infow("not dispatching agent job since no worker is available", "agentName", desc.AgentName, "jobType", desc.JobType)
+		logger.Infow("not dispatching agent job since no worker is available",
+			"agentName", desc.AgentName,
+			"jobType", desc.JobType,
+			"room", desc.Room.Name,
+			"roomID", desc.Room.Sid)
 		return
 	}
 
@@ -165,6 +169,12 @@ func (c *agentClient) getDispatcher(agName string, jobType livekit.JobType) *ser
 		agentNames = c.publisherAgentNames
 	}
 	c.mu.Unlock()
+
+	if agName == "" {
+		// if no agent name is given, we would need to dispatch backwards compatible mode
+		// which means dispatching to each of the namespaces
+		return target
+	}
 
 	done := make(chan *serverutils.IncrementalDispatcher[string], 1)
 	c.workers.Submit(func() {
