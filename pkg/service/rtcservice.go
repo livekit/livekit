@@ -532,7 +532,7 @@ func (s *RTCService) startConnection(
 			return connectionResult{}, nil, err
 		}
 
-		roomDisp := r.internal.AgentDispatches
+		roomDisp := internal.AgentDispatches
 		if len(roomDisp) == 0 {
 			// Backward compatibility: by default, start any agent in the empty JobName
 			roomDisp = []*livekit.RoomAgentDispatch{
