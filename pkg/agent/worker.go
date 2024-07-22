@@ -78,7 +78,7 @@ type Worker struct {
 	id          string
 	jobType     livekit.JobType
 	version     string
-	name        string
+	agentName   string
 	namespace   string
 	load        float32
 	permissions *livekit.ParticipantPermission
@@ -161,6 +161,12 @@ func (w *Worker) Namespace() string {
 	return w.namespace
 }
 
+func (w *Worker) AgentName() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.agentName
+}
+
 func (w *Worker) Status() livekit.WorkerStatus {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -205,8 +211,11 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) error {
 		w.mu.Unlock()
 	}()
 
+	now := time.Now()
 	if job.State == nil {
-		job.State = &livekit.JobState{}
+		job.State = &livekit.JobState{
+			UpdatedAt: now.UnixNano(),
+		}
 	}
 
 	w.sendRequest(&livekit.ServerMessage{Message: &livekit.ServerMessage_Availability{
@@ -317,7 +326,7 @@ func (w *Worker) handleRegister(req *livekit.RegisterWorkerRequest) {
 	}
 
 	w.version = req.Version
-	w.name = req.Name
+	w.agentName = req.GetAgentName()
 	w.namespace = req.GetNamespace()
 	w.jobType = req.GetType()
 
@@ -408,6 +417,7 @@ func (w *Worker) handleSimulateJob(simulate *livekit.SimulateJobRequest) {
 		Room:        simulate.Room,
 		Participant: simulate.Participant,
 		Namespace:   w.Namespace(),
+		AgentName:   w.AgentName(),
 	}
 
 	go func() {

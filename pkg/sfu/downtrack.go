@@ -202,18 +202,19 @@ type DownTrackStreamAllocatorListener interface {
 type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
 
 type DowntrackParams struct {
-	Codecs            []webrtc.RTPCodecParameters
-	Source            livekit.TrackSource
-	Receiver          TrackReceiver
-	BufferFactory     *buffer.Factory
-	SubID             livekit.ParticipantID
-	StreamID          string
-	MaxTrack          int
-	PlayoutDelayLimit *livekit.PlayoutDelay
-	Pacer             pacer.Pacer
-	Logger            logger.Logger
-	Trailer           []byte
-	RTCPWriter        func([]rtcp.Packet) error
+	Codecs                         []webrtc.RTPCodecParameters
+	Source                         livekit.TrackSource
+	Receiver                       TrackReceiver
+	BufferFactory                  *buffer.Factory
+	SubID                          livekit.ParticipantID
+	StreamID                       string
+	MaxTrack                       int
+	PlayoutDelayLimit              *livekit.PlayoutDelay
+	Pacer                          pacer.Pacer
+	Logger                         logger.Logger
+	Trailer                        []byte
+	RTCPWriter                     func([]rtcp.Packet) error
+	DisableSenderReportPassThrough bool
 }
 
 // DownTrack implements TrackLocal, is the track used to write packets
@@ -235,8 +236,14 @@ type DownTrack struct {
 
 	forwarder *Forwarder
 
-	upstreamCodecs            []webrtc.RTPCodecParameters
-	codec                     webrtc.RTPCodecCapability
+	upstreamCodecs []webrtc.RTPCodecParameters
+	codec          webrtc.RTPCodecCapability
+
+	// payload types for red codec only
+	isRED             bool
+	upstreamPrimaryPT uint8
+	primaryPT         uint8
+
 	absSendTimeExtID          int
 	transportWideExtID        int
 	dependencyDescriptorExtID int
@@ -325,16 +332,20 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		keyFrameRequesterCh: make(chan struct{}, 1),
 		createdAt:           time.Now().UnixNano(),
 	}
+	d.params.Logger = params.Logger.WithValues(
+		"mime", codecs[0].MimeType,
+		"subscriberID", d.SubscriberID(),
+	)
 	d.forwarder = NewForwarder(
 		d.kind,
-		params.Logger,
+		d.params.Logger,
 		false,
 		d.getExpectedRTPTimestamp,
 	)
 
 	d.rtpStats = buffer.NewRTPStatsSender(buffer.RTPStatsParams{
 		ClockRate: d.codec.ClockRate,
-		Logger:    params.Logger,
+		Logger:    d.params.Logger,
 	})
 	d.deltaStatsSenderSnapshotId = d.rtpStats.NewSenderSnapshotId()
 
@@ -342,7 +353,7 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		MimeType:       codecs[0].MimeType, // LK-TODO have to notify on codec change
 		IsFECEnabled:   strings.EqualFold(codecs[0].MimeType, webrtc.MimeTypeOpus) && strings.Contains(strings.ToLower(codecs[0].SDPFmtpLine), "fec"),
 		SenderProvider: d,
-		Logger:         params.Logger.WithValues("direction", "down"),
+		Logger:         d.params.Logger.WithValues("direction", "down"),
 	})
 	d.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
 		if onStatsUpdate := d.getOnStatsUpdate(); onStatsUpdate != nil {
@@ -361,7 +372,7 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		go d.maxLayerNotifierWorker()
 		go d.keyFrameRequester()
 	}
-	d.params.Logger.Debugw("downtrack created")
+	d.params.Logger.Debugw("downtrack created", "upstreamCodecs", d.upstreamCodecs)
 
 	return d, nil
 }
@@ -375,11 +386,12 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.bindLock.Unlock()
 		return webrtc.RTPCodecParameters{}, ErrDownTrackAlreadyBound
 	}
-	var codec webrtc.RTPCodecParameters
+	var codec, matchedUpstreamCodec webrtc.RTPCodecParameters
 	for _, c := range d.upstreamCodecs {
 		matchCodec, err := utils.CodecParametersFuzzySearch(c, t.CodecParameters())
 		if err == nil {
 			codec = matchCodec
+			matchedUpstreamCodec = c
 			break
 		}
 	}
@@ -393,6 +405,24 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 			onBinding(err)
 		}
 		return webrtc.RTPCodecParameters{}, err
+	} else if strings.EqualFold(matchedUpstreamCodec.MimeType, "audio/red") {
+		d.isRED = true
+		for _, c := range d.upstreamCodecs {
+			// assume upstream primary codec is opus since we only support it for audio now
+			if strings.EqualFold(c.MimeType, "audio/opus") {
+				d.upstreamPrimaryPT = uint8(c.PayloadType)
+				break
+			}
+		}
+		if d.upstreamPrimaryPT == 0 {
+			d.params.Logger.Errorw("failed to find upstream primary opus payload type for RED", nil, "matchedCodec", codec, "upstreamCodec", d.upstreamCodecs)
+		}
+
+		var primaryPT, secondaryPT int
+		if n, err := fmt.Sscanf(codec.SDPFmtpLine, "%d/%d", &primaryPT, &secondaryPT); err != nil || n != 2 {
+			d.params.Logger.Errorw("failed to parse primary and secondary payload type for RED", err, "matchedCodec", codec)
+		}
+		d.primaryPT = uint8(primaryPT)
 	}
 
 	// if a downtrack is closed before bind, it already unsubscribed from client, don't do subsequent operation and return here.
@@ -402,7 +432,22 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		return codec, nil
 	}
 
-	d.params.Logger.Debugw("DownTrack.Bind", "codecs", d.upstreamCodecs, "matchCodec", codec, "ssrc", t.SSRC())
+	logFields := []interface{}{
+		"codecs", d.upstreamCodecs,
+		"matchCodec", codec,
+		"ssrc", t.SSRC(),
+	}
+	if d.isRED {
+		logFields = append(logFields,
+			"isRED", d.isRED,
+			"upstreamPrimaryPT", d.upstreamPrimaryPT,
+			"primaryPT", d.primaryPT,
+		)
+	}
+	d.params.Logger.Debugw("DownTrack.Bind",
+		logFields...,
+	)
+
 	d.ssrc = uint32(t.SSRC())
 	d.payloadType = uint8(codec.PayloadType)
 	d.writeStream = t.WriteStream()
@@ -682,7 +727,6 @@ func (d *DownTrack) maxLayerNotifierWorker() {
 				"notifying max subscribed layer",
 				"layer", maxLayerSpatial,
 				"event", event,
-				"subscriberID", d.SubscriberID(),
 			)
 			onMaxSubscribedLayerChanged(d, maxLayerSpatial)
 		}
@@ -693,7 +737,6 @@ func (d *DownTrack) maxLayerNotifierWorker() {
 			"notifying max subscribed layer",
 			"layer", buffer.InvalidLayerSpatial,
 			"event", "close",
-			"subscriberID", d.SubscriberID(),
 		)
 		onMaxSubscribedLayerChanged(d, buffer.InvalidLayerSpatial)
 	}
@@ -771,7 +814,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		_, _, refSenderReport := d.forwarder.GetSenderReportParams()
 		if refSenderReport != nil {
 			actExtCopy := *extPkt.AbsCaptureTimeExt
-			if err = actExtCopy.Rewrite(refSenderReport.PropagationDelay()); err == nil {
+			if err = actExtCopy.Rewrite(refSenderReport.PropagationDelay(!d.params.DisableSenderReportPassThrough)); err == nil {
 				actBytes, err = actExtCopy.Marshal()
 				if err == nil {
 					extensions = append(
@@ -903,7 +946,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 			&hdr,
 			len(payload),
 			&sendPacketMetadata{
-				packetTime:           time.Now(),
+				packetTime:           time.Now().UnixNano(),
 				extSequenceNumber:    snts[i].extSequenceNumber,
 				extTimestamp:         snts[i].extTimestamp,
 				isPadding:            true,
@@ -1054,7 +1097,6 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		"direction", "downstream",
 		"mime", d.mime,
 		"ssrc", d.ssrc,
-		// evaluate only if log level matches
 		"stats", d.rtpStats,
 	)
 
@@ -1363,7 +1405,7 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 	}
 
 	_, tsOffset, refSenderReport := d.forwarder.GetSenderReportParams()
-	return d.rtpStats.GetRtcpSenderReport(d.ssrc, refSenderReport, tsOffset)
+	return d.rtpStats.GetRtcpSenderReport(d.ssrc, refSenderReport, tsOffset, !d.params.DisableSenderReportPassThrough)
 }
 
 func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan struct{} {
@@ -1437,7 +1479,7 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 				}
 
 				d.sendingPacket(&hdr, len(payload), &sendPacketMetadata{
-					packetTime:        time.Now(),
+					packetTime:        time.Now().UnixNano(),
 					extSequenceNumber: snts[i].extSequenceNumber,
 					extTimestamp:      snts[i].extTimestamp,
 				})
@@ -1755,7 +1797,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		pkt.Header.SequenceNumber = epm.targetSeqNo
 		pkt.Header.Timestamp = epm.timestamp
 		pkt.Header.SSRC = d.ssrc
-		pkt.Header.PayloadType = d.payloadType
+		pkt.Header.PayloadType = d.getTranslatedPayloadType(pkt.Header.PayloadType)
 
 		poolEntity := PacketFactory.Get().(*[]byte)
 		payload := *poolEntity
@@ -1800,7 +1842,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			len(payload),
 			&sendPacketMetadata{
 				layer:             int32(epm.layer),
-				packetTime:        time.Now(),
+				packetTime:        time.Now().UnixNano(),
 				extSequenceNumber: epm.extSequenceNumber,
 				extTimestamp:      epm.extTimestamp,
 				isRTX:             true,
@@ -1842,7 +1884,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 
 func (d *DownTrack) getTranslatedRTPHeader(extPkt *buffer.ExtPacket, tp *TranslationParams) (*rtp.Header, error) {
 	hdr := extPkt.Packet.Header
-	hdr.PayloadType = d.payloadType
+	hdr.PayloadType = d.getTranslatedPayloadType(hdr.PayloadType)
 	hdr.Timestamp = uint32(tp.rtp.extTimestamp)
 	hdr.SequenceNumber = uint16(tp.rtp.extSequenceNumber)
 	hdr.SSRC = d.ssrc
@@ -1851,6 +1893,15 @@ func (d *DownTrack) getTranslatedRTPHeader(extPkt *buffer.ExtPacket, tp *Transla
 	}
 
 	return &hdr, nil
+}
+
+func (d *DownTrack) getTranslatedPayloadType(src uint8) uint8 {
+	// send primary codec to subscriber if the publisher send primary codec to us when red is negotiated,
+	// this will happen when the payload is too large to encode into red payload (exceeds mtu).
+	if d.isRED && src == d.upstreamPrimaryPT && d.primaryPT != 0 {
+		return d.primaryPT
+	}
+	return d.payloadType
 }
 
 func (d *DownTrack) DebugInfo() map[string]interface{} {
@@ -2010,7 +2061,7 @@ func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
 				&hdr,
 				len(payload),
 				&sendPacketMetadata{
-					packetTime:        time.Now(),
+					packetTime:        time.Now().UnixNano(),
 					extSequenceNumber: snts[i].extSequenceNumber,
 					extTimestamp:      snts[i].extTimestamp,
 					// although this is using empty frames, mark as padding as these are used to trigger Pion OnTrack only
@@ -2052,7 +2103,7 @@ func (d *DownTrack) handleRTCPSenderReportData(publisherSRData *buffer.RTCPSende
 
 type sendPacketMetadata struct {
 	layer                int32
-	packetTime           time.Time
+	packetTime           int64
 	extSequenceNumber    uint64
 	extTimestamp         uint64
 	isKeyFrame           bool

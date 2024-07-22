@@ -128,6 +128,12 @@ func (s *StatsWorker) Close() bool {
 	return ok
 }
 
+func (s *StatsWorker) Closed() bool {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	return !s.closedAt.IsZero()
+}
+
 func (s *StatsWorker) collectStats(
 	ts *timestamppb.Timestamp,
 	streamType livekit.StreamType,

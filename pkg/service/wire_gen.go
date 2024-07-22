@@ -119,10 +119,11 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	clientConfigurationManager := createClientConfiguration()
+	agentStore := getAgentStore(objectStore)
 	timedVersionGenerator := utils.NewDefaultTimedVersionGenerator()
 	turnAuthHandler := NewTURNAuthHandler(keyProvider)
 	forwardStats := createForwardStats(conf)
-	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager, client, rtcEgressLauncher, timedVersionGenerator, turnAuthHandler, messageBus, forwardStats)
+	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager, client, agentStore, rtcEgressLauncher, timedVersionGenerator, turnAuthHandler, messageBus, forwardStats)
 	if err != nil {
 		return nil, err
 	}
@@ -245,6 +246,17 @@ func getEgressStore(s ObjectStore) EgressStore {
 func getIngressStore(s ObjectStore) IngressStore {
 	switch store := s.(type) {
 	case *RedisStore:
+		return store
+	default:
+		return nil
+	}
+}
+
+func getAgentStore(s ObjectStore) AgentStore {
+	switch store := s.(type) {
+	case *RedisStore:
+		return store
+	case *LocalStore:
 		return store
 	default:
 		return nil
