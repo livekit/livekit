@@ -1488,7 +1488,15 @@ func (r *Room) createAgentDispatchesFromRoomAgent() {
 		return
 	}
 
-	for _, ag := range r.internal.AgentDispatches {
+	roomDisp := r.internal.AgentDispatches
+	if len(roomDisp) == 0 {
+		// Backward compatibility: by default, start any agent in the empty JobName
+		roomDisp = []*livekit.RoomAgentDispatch{
+			&livekit.RoomAgentDispatch{},
+		}
+	}
+
+	for _, ag := range roomDisp {
 		ad := &livekit.AgentDispatch{
 			Id:        guid.New(guid.AgentDispatchPrefix),
 			AgentName: ag.AgentName,
