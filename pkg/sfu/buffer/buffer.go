@@ -349,6 +349,13 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 		}
 	}
 
+	// libwebrtc will use 0 ssrc for probing, don't push the packet to pending queue to avoid memory increasing since
+	// the Bind will not be called to consume the pending packets. More details in https://github.com/pion/webrtc/pull/2816
+	if rtpPacket.SSRC == 0 {
+		b.Unlock()
+		return
+	}
+
 	// handle RTX packet
 	if pb := b.primaryBufferForRTX; pb != nil {
 		b.Unlock()
