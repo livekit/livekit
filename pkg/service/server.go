@@ -132,6 +132,7 @@ func NewLivekitServer(conf *config.Config,
 	mux.Handle(sipServer.PathPrefix(), sipServer)
 	mux.Handle("/rtc", rtcService)
 	mux.Handle("/agent", agentService)
+	mux.Handle("/whep/", http.StripPrefix("/whep", whepServer))
 	mux.HandleFunc("/rtc/validate", rtcService.Validate)
 	mux.HandleFunc("/", s.defaultHandler)
 
