@@ -104,6 +104,9 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 
 	if created {
 		_, internal, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Name), true)
+		if err != nil {
+			return nil, err
+		}
 
 		roomDisp := internal.AgentDispatches
 		if len(roomDisp) == 0 {
