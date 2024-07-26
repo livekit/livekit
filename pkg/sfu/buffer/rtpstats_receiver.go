@@ -585,8 +585,8 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 		return false
 	}
 
-	r.updatePropagationDelayAndRecordSenderReport(srDataExt)
 	r.checkRTPClockSkewForSenderReport(srDataExt)
+	r.updatePropagationDelayAndRecordSenderReport(srDataExt)
 	r.checkRTPClockSkewAgainstMediaPathForSenderReport(srDataExt)
 
 	if err, loggingFields := r.maybeAdjustFirstPacketTime(r.srNewest, 0, r.timestamp.GetExtendedStart()); err != nil {
