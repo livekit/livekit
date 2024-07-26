@@ -1453,6 +1453,9 @@ func (r *Room) launchRoomAgents() {
 			})
 			inc.ForEach(func(job *livekit.Job) {
 				r.agentStore.StoreAgentJob(context.Background(), job)
+				r.lock.Lock()
+				ag.State.Jobs = append(ag.State.Jobs, job)
+				r.lock.Unlock()
 			})
 		}()
 	}
@@ -1475,6 +1478,9 @@ func (r *Room) launchPublisherAgents(p types.Participant) {
 			})
 			inc.ForEach(func(job *livekit.Job) {
 				r.agentStore.StoreAgentJob(context.Background(), job)
+				r.lock.Lock()
+				ag.State.Jobs = append(ag.State.Jobs, job)
+				r.lock.Unlock()
 			})
 		}()
 	}
