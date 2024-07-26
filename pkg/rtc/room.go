@@ -853,6 +853,21 @@ func (r *Room) sendRoomUpdate() {
 	}
 }
 
+func (r *Room) GetAgentDispatches(dispatchID string) ([]*livekit.AgentDispatch, error) {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	var ret []*livekit.AgentDispatch
+
+	for _, ad := range r.agentDispatches {
+		if dispatchID == "" || ad.Id == dispatchID {
+			ret = append(ret, proto.Clone(ad).(*livekit.AgentDispatch))
+		}
+	}
+
+	return ret, nil
+}
+
 func (r *Room) OnRoomUpdated(f func()) {
 	r.onRoomUpdated = f
 }

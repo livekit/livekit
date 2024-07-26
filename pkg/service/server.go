@@ -62,6 +62,7 @@ type LivekitServer struct {
 
 func NewLivekitServer(conf *config.Config,
 	roomService livekit.RoomService,
+	agentDispatchService *AgentDispatchService,
 	egressService *EgressService,
 	ingressService *IngressService,
 	sipService *SIPService,
@@ -109,6 +110,7 @@ func NewLivekitServer(conf *config.Config,
 	twirpLoggingHook := TwirpLogger()
 	twirpRequestStatusHook := TwirpRequestStatusReporter()
 	roomServer := livekit.NewRoomServiceServer(roomService, twirpLoggingHook)
+	agentDispatchServer := livekit.NewAgentDispatchServiceServer(agentDispatchService, twirpLoggingHook)
 	egressServer := livekit.NewEgressServer(egressService, twirp.WithServerHooks(
 		twirp.ChainHooks(
 			twirpLoggingHook,
@@ -127,6 +129,7 @@ func NewLivekitServer(conf *config.Config,
 	}
 
 	mux.Handle(roomServer.PathPrefix(), roomServer)
+	mux.Handle(agentDispatchServer.PathPrefix(), agentDispatchServer)
 	mux.Handle(egressServer.PathPrefix(), egressServer)
 	mux.Handle(ingressServer.PathPrefix(), ingressServer)
 	mux.Handle(sipServer.PathPrefix(), sipServer)
