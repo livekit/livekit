@@ -167,6 +167,7 @@ func (r *RTPStatsReceiver) Update(
 	var resSN utils.WrapAroundUpdateResult[uint64]
 	var gapSN int64
 	var resTS utils.WrapAroundUpdateResult[uint64]
+	var tsRolloverCount int
 
 	getLoggingFields := func() []interface{} {
 		return []interface{}{
@@ -174,6 +175,7 @@ func (r *RTPStatsReceiver) Update(
 			"gapSN", gapSN,
 			"resTS", resTS,
 			"gapTS", int64(resTS.ExtendedVal - resTS.PreExtendedHighest),
+			"tsRolloverCount", tsRolloverCount,
 			"packetTime", time.Unix(0, packetTime).String(),
 			"sequenceNumber", sequenceNumber,
 			"timestamp", timestamp,
@@ -219,12 +221,25 @@ func (r *RTPStatsReceiver) Update(
 		}
 		gapSN = int64(resSN.ExtendedVal - resSN.PreExtendedHighest)
 
-		resTS = r.timestamp.Rollover(timestamp, r.getTSRolloverCount(packetTime-r.highestTime))
+		tsRolloverCount = r.getTSRolloverCount(packetTime - r.highestTime)
+		resTS = r.timestamp.Rollover(timestamp, tsRolloverCount)
 		if resTS.IsUnhandled {
 			flowState.IsNotHandled = true
 			return
 		}
 		gapTS := int64(resTS.ExtendedVal - resTS.PreExtendedHighest)
+
+		// it is possible to reecive old packets,
+		// as it is not possible to detect how far to roll back sequence number, ignore old packets
+		if gapTS < 0 && gapSN > 0 {
+			r.sequenceNumber.UndoUpdate(resSN)
+			r.logger.Warnw(
+				"dropping old packet", nil,
+				getLoggingFields()...,
+			)
+			flowState.IsNotHandled = true
+			return
+		}
 
 		// it is possible that sequence number has rolled over too
 		if gapSN < 0 && gapTS > 0 && payloadSize > 0 {

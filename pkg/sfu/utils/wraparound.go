@@ -111,6 +111,14 @@ func (w *WrapAround[T, ET]) Update(val T) (result WrapAroundUpdateResult[ET]) {
 	return
 }
 
+func (w *WrapAround[T, ET]) UndoUpdate(result WrapAroundUpdateResult[ET]) {
+	if !w.initialized || result.PreExtendedHighest <= result.ExtendedVal {
+		return
+	}
+
+	w.ResetHighest(result.PreExtendedHighest)
+}
+
 func (w *WrapAround[T, ET]) Rollover(val T, numCycles int) (result WrapAroundUpdateResult[ET]) {
 	if !w.initialized || numCycles == 0 {
 		return w.Update(val)
