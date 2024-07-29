@@ -202,8 +202,6 @@ func (r *RTPStatsReceiver) Update(
 		r.highestTime = packetTime
 
 		resSN = r.sequenceNumber.Update(sequenceNumber)
-		gapSN = int64(resSN.ExtendedVal - resSN.PreExtendedHighest)
-
 		resTS = r.timestamp.Update(timestamp)
 
 		// initialize snapshots if any
@@ -257,9 +255,9 @@ func (r *RTPStatsReceiver) Update(
 				"forcing sequence number rollover", nil,
 				getLoggingFields()...,
 			)
-			gapSN = int64(resSN.ExtendedVal - resSN.PreExtendedHighest)
 		}
 	}
+	gapSN = int64(resSN.ExtendedVal - resSN.PreExtendedHighest)
 
 	pktSize := uint64(hdrSize + payloadSize + paddingSize)
 	if gapSN <= 0 { // duplicate OR out-of-order
