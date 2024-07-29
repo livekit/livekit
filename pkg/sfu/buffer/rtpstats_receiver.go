@@ -202,6 +202,8 @@ func (r *RTPStatsReceiver) Update(
 		r.highestTime = packetTime
 
 		resSN = r.sequenceNumber.Update(sequenceNumber)
+		gapSN = int64(resSN.ExtendedVal - resSN.PreExtendedHighest)
+
 		resTS = r.timestamp.Update(timestamp)
 
 		// initialize snapshots if any
@@ -278,8 +280,6 @@ func (r *RTPStatsReceiver) Update(
 		}
 
 		flowState.IsOutOfOrder = true
-		flowState.ExtSequenceNumber = resSN.ExtendedVal
-		flowState.ExtTimestamp = resTS.ExtendedVal
 
 		if !flowState.IsDuplicate && -gapSN >= cSequenceNumberLargeJumpThreshold {
 			r.largeJumpNegativeCount++
@@ -331,9 +331,9 @@ func (r *RTPStatsReceiver) Update(
 			flowState.LossStartInclusive = resSN.PreExtendedHighest + 1
 			flowState.LossEndExclusive = resSN.ExtendedVal
 		}
-		flowState.ExtSequenceNumber = resSN.ExtendedVal
-		flowState.ExtTimestamp = resTS.ExtendedVal
 	}
+	flowState.ExtSequenceNumber = resSN.ExtendedVal
+	flowState.ExtTimestamp = resTS.ExtendedVal
 
 	if !flowState.IsDuplicate {
 		if payloadSize == 0 {
