@@ -112,7 +112,7 @@ func (w *WrapAround[T, ET]) Update(val T) (result WrapAroundUpdateResult[ET]) {
 }
 
 func (w *WrapAround[T, ET]) UndoUpdate(result WrapAroundUpdateResult[ET]) {
-	if !w.initialized || result.PreExtendedHighest <= result.ExtendedVal {
+	if !w.initialized || result.PreExtendedHighest >= result.ExtendedVal {
 		return
 	}
 
