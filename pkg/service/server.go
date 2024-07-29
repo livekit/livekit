@@ -37,6 +37,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/whep"
 	"github.com/livekit/livekit-server/version"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
@@ -66,6 +67,7 @@ func NewLivekitServer(conf *config.Config,
 	ingressService *IngressService,
 	sipService *SIPService,
 	ioService *IOInfoService,
+	whepService *whep.Server,
 	rtcService *RTCService,
 	agentService *AgentService,
 	keyProvider auth.KeyProvider,
@@ -132,7 +134,7 @@ func NewLivekitServer(conf *config.Config,
 	mux.Handle(sipServer.PathPrefix(), sipServer)
 	mux.Handle("/rtc", rtcService)
 	mux.Handle("/agent", agentService)
-	mux.Handle("/whep/", http.StripPrefix("/whep", whepServer))
+	mux.Handle("/whep/", http.StripPrefix("/whep", whepService))
 	mux.HandleFunc("/rtc/validate", rtcService.Validate)
 	mux.HandleFunc("/", s.defaultHandler)
 

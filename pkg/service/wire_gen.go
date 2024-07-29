@@ -14,6 +14,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/telemetry"
+	"github.com/livekit/livekit-server/pkg/whep"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -113,6 +114,11 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	sipService := NewSIPService(sipConfig, nodeID, messageBus, sipClient, sipStore, roomService, telemetryService)
+	whepClient, err := rpc.NewWHEPClient(clientParams)
+	if err != nil {
+		return nil, err
+	}
+	server := whep.NewServer(whepClient)
 	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode, client, telemetryService)
 	agentService, err := NewAgentService(conf, currentNode, messageBus, keyProvider)
 	if err != nil {
@@ -132,11 +138,11 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	authHandler := getTURNAuthHandlerFunc(turnAuthHandler)
-	server, err := newInProcessTurnServer(conf, authHandler)
+	turnServer, err := newInProcessTurnServer(conf, authHandler)
 	if err != nil {
 		return nil, err
 	}
-	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, sipService, ioInfoService, rtcService, agentService, keyProvider, router, roomManager, signalServer, server, currentNode)
+	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, sipService, ioInfoService, server, rtcService, agentService, keyProvider, router, roomManager, signalServer, turnServer, currentNode)
 	if err != nil {
 		return nil, err
 	}
