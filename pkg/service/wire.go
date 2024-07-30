@@ -33,6 +33,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/telemetry"
+	"github.com/livekit/livekit-server/pkg/whep"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -65,6 +66,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		wire.Bind(new(IOClient), new(*IOInfoService)),
 		rpc.NewEgressClient,
 		rpc.NewIngressClient,
+		rpc.NewWHEPClient,
+		whep.NewServer,
 		getEgressStore,
 		NewEgressLauncher,
 		NewEgressService,

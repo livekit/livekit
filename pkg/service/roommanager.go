@@ -27,6 +27,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	sutils "github.com/livekit/livekit-server/pkg/utils"
+	"github.com/livekit/livekit-server/pkg/whep"
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
@@ -65,20 +66,21 @@ type iceConfigCacheKey struct {
 type RoomManager struct {
 	lock sync.RWMutex
 
-	config            *config.Config
-	rtcConfig         *rtc.WebRTCConfig
-	serverInfo        *livekit.ServerInfo
-	currentNode       routing.LocalNode
-	router            routing.Router
-	roomStore         ObjectStore
-	telemetry         telemetry.TelemetryService
-	clientConfManager clientconfiguration.ClientConfigurationManager
-	agentClient       agent.Client
-	agentStore        AgentStore
-	egressLauncher    rtc.EgressLauncher
-	versionGenerator  utils.TimedVersionGenerator
-	turnAuthHandler   *TURNAuthHandler
-	bus               psrpc.MessageBus
+	config              *config.Config
+	rtcConfig           *rtc.WebRTCConfig
+	serverInfo          *livekit.ServerInfo
+	currentNode         routing.LocalNode
+	router              routing.Router
+	roomStore           ObjectStore
+	telemetry           telemetry.TelemetryService
+	clientConfManager   clientconfiguration.ClientConfigurationManager
+	agentClient         agent.Client
+	agentStore          AgentStore
+	egressLauncher      rtc.EgressLauncher
+	versionGenerator    utils.TimedVersionGenerator
+	turnAuthHandler     *TURNAuthHandler
+	bus                 psrpc.MessageBus
+	whepSessionManagers *whep.SessionManager
 
 	rooms map[livekit.RoomName]*rtc.Room
 
@@ -110,21 +112,27 @@ func NewLocalRoomManager(
 		return nil, err
 	}
 
+	whepSessionManager, err := whep.NewSessionManager(bus, rtcConf.WebRTCConfig)
+	if err != nil {
+		return nil, err
+	}
+
 	return &RoomManager{
-		config:            conf,
-		rtcConfig:         rtcConf,
-		currentNode:       currentNode,
-		router:            router,
-		roomStore:         roomStore,
-		telemetry:         telemetry,
-		clientConfManager: clientConfManager,
-		egressLauncher:    egressLauncher,
-		agentClient:       agentClient,
-		agentStore:        agentStore,
-		versionGenerator:  versionGenerator,
-		turnAuthHandler:   turnAuthHandler,
-		bus:               bus,
-		forwardStats:      forwardStats,
+		config:              conf,
+		rtcConfig:           rtcConf,
+		currentNode:         currentNode,
+		router:              router,
+		roomStore:           roomStore,
+		telemetry:           telemetry,
+		clientConfManager:   clientConfManager,
+		egressLauncher:      egressLauncher,
+		agentClient:         agentClient,
+		agentStore:          agentStore,
+		versionGenerator:    versionGenerator,
+		turnAuthHandler:     turnAuthHandler,
+		bus:                 bus,
+		whepSessionManagers: whepSessionManager,
+		forwardStats:        forwardStats,
 
 		rooms: make(map[livekit.RoomName]*rtc.Room),
 
@@ -244,6 +252,9 @@ func (r *RoomManager) Stop() {
 
 	if r.forwardStats != nil {
 		r.forwardStats.Stop()
+	}
+	if r.whepSessionManagers != nil {
+		r.whepSessionManagers.Stop()
 	}
 }
 
