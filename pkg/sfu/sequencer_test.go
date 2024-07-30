@@ -45,7 +45,7 @@ func Test_sequencer(t *testing.T) {
 	require.Equal(t, len(req), len(res))
 	for i, val := range res {
 		require.Equal(t, val.targetSeqNo, req[i])
-		require.Equal(t, val.sourceSeqNo, req[i]-off)
+		require.Equal(t, val.sourceSeqNo, uint64(req[i]-off))
 		require.Equal(t, val.layer, int8(2))
 		require.Equal(t, val.extSequenceNumber, uint64(req[i]))
 		require.Equal(t, val.extTimestamp, uint64(123))
@@ -57,7 +57,7 @@ func Test_sequencer(t *testing.T) {
 	require.Equal(t, len(req), len(res))
 	for i, val := range res {
 		require.Equal(t, val.targetSeqNo, req[i])
-		require.Equal(t, val.sourceSeqNo, req[i]-off)
+		require.Equal(t, val.sourceSeqNo, uint64(req[i]-off))
 		require.Equal(t, val.layer, int8(2))
 		require.Equal(t, val.extSequenceNumber, uint64(req[i]))
 		require.Equal(t, val.extTimestamp, uint64(123))
@@ -204,7 +204,7 @@ func Test_sequencer_getNACKSeqNo_exclusion(t *testing.T) {
 			g := n.getExtPacketMetas(tt.args.seqNo)
 			var got []uint16
 			for _, sn := range g {
-				got = append(got, sn.sourceSeqNo)
+				got = append(got, uint16(sn.sourceSeqNo))
 				if sn.sourceSeqNo%5 == 0 {
 					require.Equal(t, tt.fields.markerOdd, sn.marker)
 					require.Equal(t, tt.fields.codecBytesOversized, sn.codecBytesSlice)
@@ -343,7 +343,7 @@ func Test_sequencer_getNACKSeqNo_no_exclusion(t *testing.T) {
 			g := n.getExtPacketMetas(tt.args.seqNo)
 			var got []uint16
 			for _, sn := range g {
-				got = append(got, sn.sourceSeqNo)
+				got = append(got, uint16(sn.sourceSeqNo))
 				if sn.sourceSeqNo%2 == 0 {
 					require.Equal(t, tt.fields.markerEven, sn.marker)
 					require.Equal(t, tt.fields.codecBytesEven, sn.codecBytes[:sn.numCodecBytesOut])
