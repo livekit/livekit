@@ -71,6 +71,9 @@ func (s *Server) handleNewSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	wsUrl := r.FormValue("livekit_url")
+	if wsUrl == "" {
+		wsUrl = r.Host
+	}
 	resp, err := s.psrpcClient.StartWHEP(context.Background(), &rpc.StartWHEPRequest{
 		Token:       authToken,
 		WsUrl:       wsUrl,
@@ -111,10 +114,9 @@ func (s *Server) handleError(w http.ResponseWriter, r *http.Request, err error) 
 	var psrpcErr psrpc.Error
 	switch {
 	case errors.As(err, &psrpcErr):
-		w.WriteHeader(psrpcErr.ToHttp())
-		_, _ = w.Write([]byte(psrpcErr.Error()))
+		http.Error(w, psrpcErr.Error(), psrpcErr.ToHttp())
 	default:
-		s.logger.Infow("whip request failed", "error", err, "method", r.Method, "path", r.URL.Path)
+		s.logger.Infow("whep request failed", "error", err, "method", r.Method, "path", r.URL.Path)
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/livekit/protocol/tracer"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/psrpc"
+	"github.com/livekit/psrpc/pkg/middleware"
 )
 
 type SessionManager struct {
@@ -46,7 +47,12 @@ func NewSessionManager(bus psrpc.MessageBus, rtccfg rtcconfig.WebRTCConfig) (*Se
 			webrtc.WithInterceptorRegistry(&ir),
 		),
 	}
-	psrpcServer, err := rpc.NewWHEPInternalServer(s, bus)
+	psrpcServer, err := rpc.NewWHEPInternalServer(
+		s,
+		bus,
+		middleware.WithServerMetrics(rpc.PSRPCMetricsObserver{}),
+		rpc.WithServerLogger(s.logger),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +65,7 @@ func (sm *SessionManager) StartWHEP(ctx context.Context, req *rpc.StartWHEPReque
 	defer span.End()
 
 	sm.logger.Debugw("handle StartWhEP", "participant", req.Participant, "offer", req.Offer)
-	resourceID := utils.NewGuid(utils.WHIPResourcePrefix)
+	resourceID := utils.NewGuid(utils.WHEPResourcePrefix)
 	session := NewSession(SessionParams{
 		Participant: req.Participant,
 		Token:       req.Token,
@@ -81,7 +87,7 @@ func (sm *SessionManager) StartWHEP(ctx context.Context, req *rpc.StartWHEPReque
 		session.Close()
 		return nil, err
 	}
-	if err = rpcServer.RegisterAllResuourceTopics(resourceID); err != nil {
+	if err = rpcServer.RegisterAllResourceTopics(resourceID); err != nil {
 		rpcServer.Shutdown()
 		session.Close()
 		return nil, err
@@ -91,7 +97,7 @@ func (sm *SessionManager) StartWHEP(ctx context.Context, req *rpc.StartWHEPReque
 	sm.sessionLock.Unlock()
 
 	session.OnClose(func() {
-		rpcServer.DeregisterAllResuourceTopics(resourceID)
+		rpcServer.DeregisterAllResourceTopics(resourceID)
 		sm.sessionLock.Lock()
 		delete(sm.sessions, resourceID)
 		sm.sessionLock.Unlock()
