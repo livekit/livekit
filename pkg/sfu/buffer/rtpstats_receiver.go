@@ -255,9 +255,9 @@ func (r *RTPStatsReceiver) Update(
 				"forcing sequence number rollover", nil,
 				getLoggingFields()...,
 			)
-			gapSN = int64(resSN.ExtendedVal - resSN.PreExtendedHighest)
 		}
 	}
+	gapSN = int64(resSN.ExtendedVal - resSN.PreExtendedHighest)
 
 	pktSize := uint64(hdrSize + payloadSize + paddingSize)
 	if gapSN <= 0 { // duplicate OR out-of-order
@@ -278,8 +278,6 @@ func (r *RTPStatsReceiver) Update(
 		}
 
 		flowState.IsOutOfOrder = true
-		flowState.ExtSequenceNumber = resSN.ExtendedVal
-		flowState.ExtTimestamp = resTS.ExtendedVal
 
 		if !flowState.IsDuplicate && -gapSN >= cSequenceNumberLargeJumpThreshold {
 			r.largeJumpNegativeCount++
@@ -331,9 +329,9 @@ func (r *RTPStatsReceiver) Update(
 			flowState.LossStartInclusive = resSN.PreExtendedHighest + 1
 			flowState.LossEndExclusive = resSN.ExtendedVal
 		}
-		flowState.ExtSequenceNumber = resSN.ExtendedVal
-		flowState.ExtTimestamp = resTS.ExtendedVal
 	}
+	flowState.ExtSequenceNumber = resSN.ExtendedVal
+	flowState.ExtTimestamp = resTS.ExtendedVal
 
 	if !flowState.IsDuplicate {
 		if payloadSize == 0 {
