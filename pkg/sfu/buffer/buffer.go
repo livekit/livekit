@@ -73,7 +73,7 @@ type ExtPacket struct {
 type Buffer struct {
 	sync.RWMutex
 	readCond        *sync.Cond
-	bucket          *bucket.Bucket
+	bucket          *bucket.Bucket[uint64]
 	nacker          *nack.NackQueue
 	maxVideoPkts    int
 	maxAudioPkts    int
@@ -252,10 +252,11 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	switch {
 	case strings.HasPrefix(b.mime, "audio/"):
 		b.codecType = webrtc.RTPCodecTypeAudio
-		b.bucket = bucket.NewBucket(InitPacketBufferSizeAudio)
+		b.bucket = bucket.NewBucket[uint64](InitPacketBufferSizeAudio)
+
 	case strings.HasPrefix(b.mime, "video/"):
 		b.codecType = webrtc.RTPCodecTypeVideo
-		b.bucket = bucket.NewBucket(InitPacketBufferSizeVideo)
+		b.bucket = bucket.NewBucket[uint64](InitPacketBufferSizeVideo)
 		if b.frameRateCalculator[0] == nil {
 			if strings.EqualFold(codec.MimeType, webrtc.MimeTypeVP8) {
 				b.frameRateCalculator[0] = NewFrameRateCalculatorVP8(b.clockRate, b.logger)
@@ -618,7 +619,7 @@ func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime int64, i
 	}
 	flowState.ExtSequenceNumber -= snAdjustment
 	rtpPacket.Header.SequenceNumber = uint16(flowState.ExtSequenceNumber)
-	_, err = b.bucket.AddPacketWithSequenceNumber(rawPkt, rtpPacket.Header.SequenceNumber)
+	_, err = b.bucket.AddPacketWithSequenceNumber(rawPkt, flowState.ExtSequenceNumber)
 	if err != nil {
 		if !flowState.IsDuplicate {
 			if errors.Is(err, bucket.ErrPacketTooOld) {
@@ -664,7 +665,7 @@ func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime int64, i
 }
 
 func (b *Buffer) patchExtPacket(ep *ExtPacket, buf []byte) *ExtPacket {
-	n, err := b.getPacket(buf, ep.Packet.SequenceNumber)
+	n, err := b.getPacket(buf, ep.ExtSequenceNumber)
 	if err != nil {
 		packetNotFoundCount := b.packetNotFoundCount.Inc()
 		if (packetNotFoundCount-1)%20 == 0 {
@@ -1018,18 +1019,18 @@ func (b *Buffer) getRTCP() []rtcp.Packet {
 	return pkts
 }
 
-func (b *Buffer) GetPacket(buff []byte, sn uint16) (int, error) {
+func (b *Buffer) GetPacket(buff []byte, esn uint64) (int, error) {
 	b.Lock()
 	defer b.Unlock()
 
-	return b.getPacket(buff, sn)
+	return b.getPacket(buff, esn)
 }
 
-func (b *Buffer) getPacket(buff []byte, sn uint16) (int, error) {
+func (b *Buffer) getPacket(buff []byte, esn uint64) (int, error) {
 	if b.closed.Load() {
 		return 0, io.EOF
 	}
-	return b.bucket.GetPacket(buff, sn)
+	return b.bucket.GetPacket(buff, esn)
 }
 
 func (b *Buffer) OnRtcpFeedback(fn func(fb []rtcp.Packet)) {

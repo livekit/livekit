@@ -42,10 +42,10 @@ func itob(i int) bool {
 }
 
 type packetMeta struct {
-	// Original sequence number from stream.
-	// The original sequence number is used to find the original
+	// Original extended sequence number from stream.
+	// The original extended sequence number is used to find the original
 	// packet from publisher
-	sourceSeqNo uint16
+	sourceSeqNo uint64
 	// Modified sequence number after offset.
 	// This sequence number is used for the associated
 	// down track, is modified according the offsets, and
@@ -199,7 +199,7 @@ func (s *sequencer) push(
 
 	slot := extModifiedSNAdjusted % uint64(s.size)
 	s.meta[slot] = packetMeta{
-		sourceSeqNo:     uint16(extIncomingSN),
+		sourceSeqNo:     extIncomingSN,
 		targetSeqNo:     uint16(extModifiedSN),
 		timestamp:       uint32(extModifiedTS),
 		marker:          marker,
