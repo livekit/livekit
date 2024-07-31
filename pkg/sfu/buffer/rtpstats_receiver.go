@@ -171,6 +171,7 @@ func (r *RTPStatsReceiver) Update(
 	var resSN utils.WrapAroundUpdateResult[uint64]
 	var gapSN int64
 	var resTS utils.WrapAroundUpdateResult[uint64]
+	var timeSinceHighest int64
 	var tsRolloverCount int
 
 	getLoggingFields := func() []interface{} {
@@ -179,6 +180,7 @@ func (r *RTPStatsReceiver) Update(
 			"gapSN", gapSN,
 			"resTS", resTS,
 			"gapTS", int64(resTS.ExtendedVal - resTS.PreExtendedHighest),
+			"timeSinceHighest", time.Duration(timeSinceHighest),
 			"tsRolloverCount", tsRolloverCount,
 			"packetTime", time.Unix(0, packetTime).String(),
 			"sequenceNumber", sequenceNumber,
@@ -225,7 +227,14 @@ func (r *RTPStatsReceiver) Update(
 		}
 		gapSN = int64(resSN.ExtendedVal - resSN.PreExtendedHighest)
 
-		tsRolloverCount = r.getTSRolloverCount(packetTime-r.highestTime, timestamp)
+		timeSinceHighest = packetTime - r.highestTime
+		tsRolloverCount = r.getTSRolloverCount(timeSinceHighest, timestamp)
+		if tsRolloverCount >= 0 {
+			r.logger.Warnw(
+				"potential time stamp roll over", nil,
+				getLoggingFields()...,
+			)
+		}
 		resTS = r.timestamp.Rollover(timestamp, tsRolloverCount)
 		if resTS.IsUnhandled {
 			flowState.IsNotHandled = true
