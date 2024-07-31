@@ -476,10 +476,11 @@ func TestWrapAroundUint16Rollover(t *testing.T) {
 			highest:         10,
 			extendedHighest: 10,
 		},
-		// zero cycles - should just do an update
+		// negative cycles - should just do an update
 		{
-			name:  "zero",
-			input: 8,
+			name:      "zero",
+			input:     8,
+			numCycles: -1,
 			updated: WrapAroundUpdateResult[uint32]{
 				IsUnhandled: true,
 				// the following fields are not valid when `IsUnhandled = true`, but code fills it in
