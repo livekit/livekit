@@ -137,14 +137,18 @@ func (r *RTPStatsReceiver) NewSnapshotId() uint32 {
 	return r.newSnapshotID(r.sequenceNumber.GetExtendedHighest())
 }
 
-func (r *RTPStatsReceiver) getTSRolloverCount(diffNano int64) int {
+func (r *RTPStatsReceiver) getTSRolloverCount(diffNano int64, ts uint32) int {
 	if diffNano < r.tsRolloverThreshold {
 		// time not more than rollover threshold
-		return 0
+		return -1
 	}
 
-	excess := int((diffNano - r.tsRolloverThreshold) * int64(r.params.ClockRate) / 1e9)
-	return excess/(1<<32) + 1
+	excess := int((diffNano - r.tsRolloverThreshold*2) * int64(r.params.ClockRate) / 1e9)
+	roc := excess / (1 << 32)
+	if r.timestamp.GetHighest() > ts {
+		roc++
+	}
+	return roc
 }
 
 func (r *RTPStatsReceiver) Update(
@@ -221,7 +225,7 @@ func (r *RTPStatsReceiver) Update(
 		}
 		gapSN = int64(resSN.ExtendedVal - resSN.PreExtendedHighest)
 
-		tsRolloverCount = r.getTSRolloverCount(packetTime - r.highestTime)
+		tsRolloverCount = r.getTSRolloverCount(packetTime-r.highestTime, timestamp)
 		resTS = r.timestamp.Rollover(timestamp, tsRolloverCount)
 		if resTS.IsUnhandled {
 			flowState.IsNotHandled = true
