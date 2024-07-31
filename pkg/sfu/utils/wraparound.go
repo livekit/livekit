@@ -120,7 +120,7 @@ func (w *WrapAround[T, ET]) UndoUpdate(result WrapAroundUpdateResult[ET]) {
 }
 
 func (w *WrapAround[T, ET]) Rollover(val T, numCycles int) (result WrapAroundUpdateResult[ET]) {
-	if !w.initialized || numCycles == 0 {
+	if !w.initialized || numCycles < 0 {
 		return w.Update(val)
 	}
 
