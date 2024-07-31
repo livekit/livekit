@@ -31,7 +31,16 @@ func NewAgentDispatchService(agentDispatchClient rpc.TypedAgentDispatchInternalC
 	}
 }
 
-func (ag *AgentDispatchService) ListDispatch(ctx context.Context, req *livekit.ListAgentDispatchRequesst) (*livekit.ListAgentDispatchResponse, error) {
+func (ag *AgentDispatchService) CreateDispatch(ctx context.Context, req *livekit.CreateAgentDispatchRequest) (*livekit.AgentDispatch, error) {
+	err := EnsureAdminPermission(ctx, livekit.RoomName(req.Room))
+	if err != nil {
+		return nil, twirpAuthError(err)
+	}
+
+	return ag.agentDispatchClient.CreateDispatch(ctx, rpc.RoomTopic(req.Room), req)
+}
+
+func (ag *AgentDispatchService) ListDispatch(ctx context.Context, req *livekit.ListAgentDispatchRequest) (*livekit.ListAgentDispatchResponse, error) {
 	err := EnsureAdminPermission(ctx, livekit.RoomName(req.Room))
 	if err != nil {
 		return nil, twirpAuthError(err)
@@ -41,9 +50,5 @@ func (ag *AgentDispatchService) ListDispatch(ctx context.Context, req *livekit.L
 }
 
 func (ag *AgentDispatchService) DeleteDispatch(ctx context.Context, req *livekit.DeleteAgentDispatchRequest) (*livekit.AgentDispatch, error) {
-	return nil, nil
-}
-
-func (ag *AgentDispatchService) CreateDispatch(ctx context.Context, req *livekit.CreateAgentDispatchRequest) (*livekit.AgentDispatch, error) {
 	return nil, nil
 }

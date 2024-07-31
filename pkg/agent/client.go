@@ -118,7 +118,15 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) *serverut
 		jobTypeTopic = PublisherAgentTopic
 	}
 
+	var wg sync.WaitGroup
 	ret := serverutils.NewIncrementalDispatcher[*livekit.Job]()
+	defer func() {
+		c.workers.Submit(func() {
+			wg.Wait()
+			ret.Done()
+		})
+	}()
+
 	dispatcher := c.getDispatcher(desc.AgentName, desc.JobType)
 
 	if dispatcher == nil {
@@ -130,7 +138,6 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) *serverut
 		return ret
 	}
 
-	var wg sync.WaitGroup
 	dispatcher.ForEach(func(curNs string) {
 		topic := GetAgentTopic(desc.AgentName, curNs)
 
@@ -156,10 +163,6 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) *serverut
 			job.State = resp.State
 			ret.Add(job)
 		})
-	})
-	c.workers.Submit(func() {
-		wg.Wait()
-		ret.Done()
 	})
 
 	return ret

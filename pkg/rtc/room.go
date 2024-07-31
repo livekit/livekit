@@ -868,6 +868,10 @@ func (r *Room) GetAgentDispatches(dispatchID string) ([]*livekit.AgentDispatch, 
 	return ret, nil
 }
 
+func (r *Room) AddAgentDispatch(agentName string, metadata string) (*livekit.AgentDispatch, error) {
+	return r.createAgentDispatchFromParams(agentName, metadata)
+}
+
 func (r *Room) OnRoomUpdated(f func()) {
 	r.onRoomUpdated = f
 }
@@ -1503,8 +1507,30 @@ func (r *Room) DebugInfo() map[string]interface{} {
 	return info
 }
 
-func (r *Room) createAgentDispatchesFromRoomAgent() {
+func (r *Room) createAgentDispatchFromParams(agentName string, metadata string) (*livekit.AgentDispatch, error) {
 	now := time.Now()
+
+	ad := &livekit.AgentDispatch{
+		Id:        guid.New(guid.AgentDispatchPrefix),
+		AgentName: agentName,
+		Metadata:  metadata,
+		Room:      r.protoRoom.Name,
+		State: &livekit.AgentDispatchState{
+			CreatedAt: now.UnixNano(),
+		},
+	}
+	r.agentDispatches = append(r.agentDispatches, ad)
+	if r.agentStore != nil {
+		err := r.agentStore.StoreAgentDispatch(context.Background(), ad)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return ad, nil
+}
+
+func (r *Room) createAgentDispatchesFromRoomAgent() {
 	if r.internal == nil {
 		return
 	}
@@ -1518,21 +1544,9 @@ func (r *Room) createAgentDispatchesFromRoomAgent() {
 	}
 
 	for _, ag := range roomDisp {
-		ad := &livekit.AgentDispatch{
-			Id:        guid.New(guid.AgentDispatchPrefix),
-			AgentName: ag.AgentName,
-			Metadata:  ag.Metadata,
-			Room:      r.protoRoom.Name,
-			State: &livekit.AgentDispatchState{
-				CreatedAt: now.UnixNano(),
-			},
-		}
-		r.agentDispatches = append(r.agentDispatches, ad)
-		if r.agentStore != nil {
-			err := r.agentStore.StoreAgentDispatch(context.Background(), ad)
-			if err != nil {
-				r.Logger.Warnw("failed storing room dispatch", err)
-			}
+		_, err := r.createAgentDispatchFromParams(ag.AgentName, ag.Metadata)
+		if err != nil {
+			r.Logger.Warnw("failed storing room dispatch", err)
 		}
 	}
 }
