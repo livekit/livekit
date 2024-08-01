@@ -103,6 +103,24 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 	defer done()
 
 	if created {
+		_, internal, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Name), true)
+		if err != nil {
+			return nil, err
+		}
+
+		roomDisp := internal.AgentDispatches
+		if len(roomDisp) == 0 {
+			// Backward compatibility: by default, start any agent in the empty JobName
+			roomDisp = []*livekit.RoomAgentDispatch{
+				&livekit.RoomAgentDispatch{},
+			}
+		}
+
+		err = s.launchAgents(ctx, rm, roomDisp)
+		if err != nil {
+			return nil, err
+		}
+
 		if req.Egress != nil && req.Egress.Room != nil {
 			// ensure room name matches
 			req.Egress.Room.RoomName = req.Name
@@ -119,6 +137,19 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 	}
 
 	return rm, nil
+}
+
+func (s *RoomService) launchAgents(ctx context.Context, rm *livekit.Room, agents []*livekit.RoomAgentDispatch) error {
+	for _, ag := range agents {
+		go s.agentClient.LaunchJob(ctx, &agent.JobRequest{
+			JobType:   livekit.JobType_JT_ROOM,
+			Room:      rm,
+			Metadata:  ag.Metadata,
+			AgentName: ag.AgentName,
+		})
+	}
+
+	return nil
 }
 
 func (s *RoomService) ListRooms(ctx context.Context, req *livekit.ListRoomsRequest) (*livekit.ListRoomsResponse, error) {
