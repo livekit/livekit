@@ -760,6 +760,13 @@ func (r *RTPStatsReceiver) isInRange(esn uint64, ehsn uint64) bool {
 	return diff >= 0 && diff < cHistorySize
 }
 
+func (r *RTPStatsReceiver) HighestTimestamp() uint32 {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	return r.timestamp.GetHighest()
+}
+
 // ----------------------------------
 
 type lockedRTPStatsReceiverLogEncoder struct {
