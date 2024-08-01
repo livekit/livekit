@@ -310,7 +310,7 @@ func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*rpc.J
 	for {
 		h.mu.Lock()
 		var selected *agent.Worker
-		var maxLoad float32
+		var selectedLoad float32
 		for _, w := range h.namespaceWorkers[key] {
 			if _, ok := attempted[w]; ok {
 				continue
@@ -318,11 +318,12 @@ func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*rpc.J
 
 			if w.Status() == livekit.WorkerStatus_WS_AVAILABLE {
 				load := w.Load()
-				if len(w.RunningJobs()) > 0 && load > maxLoad {
-					maxLoad = load
+				if selected == nil {
 					selected = w
-				} else if selected == nil {
+					selectedLoad = load
+				} else if len(w.RunningJobs()) > 0 && load < selectedLoad {
 					selected = w
+					selectedLoad = load
 				}
 			}
 		}
