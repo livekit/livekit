@@ -199,7 +199,7 @@ func NewRoom(
 
 	r.createAgentDispatchesFromRoomAgent()
 
-	r.launchRoomAgents()
+	r.launchRoomAgents(r.agentDispatches)
 
 	go r.audioUpdateWorker()
 	go r.connectionQualityWorker()
@@ -869,7 +869,21 @@ func (r *Room) GetAgentDispatches(dispatchID string) ([]*livekit.AgentDispatch, 
 }
 
 func (r *Room) AddAgentDispatch(agentName string, metadata string) (*livekit.AgentDispatch, error) {
-	return r.createAgentDispatchFromParams(agentName, metadata)
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	ad, err := r.createAgentDispatchFromParams(agentName, metadata)
+	if err != nil {
+		return nil, err
+	}
+
+	r.launchRoomAgents([]*livekit.AgentDispatch{ad})
+
+	for _, p := range r.participants {
+		r.launchPublisherAgents([]*livekit.AgentDispatch{ad}, p)
+	}
+
+	return ad, nil
 }
 
 func (r *Room) OnRoomUpdated(f func()) {
@@ -1032,7 +1046,7 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 	r.lock.Unlock()
 
 	if !hasPublished {
-		r.launchPublisherAgents(participant)
+		r.launchPublisherAgents(r.agentDispatches, participant)
 		if r.internal != nil && r.internal.ParticipantEgress != nil {
 			go func() {
 				if err := StartParticipantEgress(
@@ -1441,49 +1455,49 @@ func (r *Room) simulationCleanupWorker() {
 	}
 }
 
-func (r *Room) launchRoomAgents() {
+func (r *Room) launchRoomAgents(ads []*livekit.AgentDispatch) {
 	if r.agentClient == nil {
 		return
 	}
 
-	for _, ag := range r.agentDispatches {
+	for _, ad := range ads {
 		go func() {
 			inc := r.agentClient.LaunchJob(context.Background(), &agent.JobRequest{
 				JobType:    livekit.JobType_JT_ROOM,
 				Room:       r.ToProto(),
-				Metadata:   ag.Metadata,
-				AgentName:  ag.AgentName,
-				DispatchId: ag.Id,
+				Metadata:   ad.Metadata,
+				AgentName:  ad.AgentName,
+				DispatchId: ad.Id,
 			})
 			inc.ForEach(func(job *livekit.Job) {
 				r.agentStore.StoreAgentJob(context.Background(), job)
 				r.lock.Lock()
-				ag.State.Jobs = append(ag.State.Jobs, job)
+				ad.State.Jobs = append(ad.State.Jobs, job)
 				r.lock.Unlock()
 			})
 		}()
 	}
 }
 
-func (r *Room) launchPublisherAgents(p types.Participant) {
+func (r *Room) launchPublisherAgents(ads []*livekit.AgentDispatch, p types.Participant) {
 	if p == nil || p.IsDependent() || r.agentClient == nil {
 		return
 	}
 
-	for _, ag := range r.agentDispatches {
+	for _, ad := range ads {
 		go func() {
 			inc := r.agentClient.LaunchJob(context.Background(), &agent.JobRequest{
 				JobType:     livekit.JobType_JT_PUBLISHER,
 				Room:        r.ToProto(),
 				Participant: p.ToProto(),
-				Metadata:    ag.Metadata,
-				AgentName:   ag.AgentName,
-				DispatchId:  ag.Id,
+				Metadata:    ad.Metadata,
+				AgentName:   ad.AgentName,
+				DispatchId:  ad.Id,
 			})
 			inc.ForEach(func(job *livekit.Job) {
 				r.agentStore.StoreAgentJob(context.Background(), job)
 				r.lock.Lock()
-				ag.State.Jobs = append(ag.State.Jobs, job)
+				ad.State.Jobs = append(ad.State.Jobs, job)
 				r.lock.Unlock()
 			})
 		}()
