@@ -289,6 +289,10 @@ func (h *AgentHandler) HandleWorkerDeregister(w *agent.Worker) {
 	}
 }
 
+func (h *AgentHandler) JobTerminate(ctx context.Context, req *rpc.JobTerminateRequest) (*rpc.JobTerminateResponse, error) {
+	return nil, nil
+}
+
 func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*rpc.JobRequestResponse, error) {
 	key := workerKey{job.AgentName, job.Namespace, job.Type}
 	attempted := make(map[*agent.Worker]struct{})

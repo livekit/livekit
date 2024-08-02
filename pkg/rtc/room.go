@@ -869,9 +869,6 @@ func (r *Room) GetAgentDispatches(dispatchID string) ([]*livekit.AgentDispatch, 
 }
 
 func (r *Room) AddAgentDispatch(agentName string, metadata string) (*livekit.AgentDispatch, error) {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
-
 	ad, err := r.createAgentDispatchFromParams(agentName, metadata)
 	if err != nil {
 		return nil, err
@@ -1533,7 +1530,9 @@ func (r *Room) createAgentDispatchFromParams(agentName string, metadata string) 
 			CreatedAt: now.UnixNano(),
 		},
 	}
+	r.lock.RLock()
 	r.agentDispatches = append(r.agentDispatches, ad)
+	r.lock.RUnlock()
 	if r.agentStore != nil {
 		err := r.agentStore.StoreAgentDispatch(context.Background(), ad)
 		if err != nil {
