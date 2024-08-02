@@ -106,6 +106,7 @@ const (
 	ParticipantCloseReasonDataChannelError
 	ParticipantCloseReasonMigrateCodecMismatch
 	ParticipantCloseReasonSignalSourceClose
+	ParticipantCloseReasonRoomClosed
 )
 
 func (p ParticipantCloseReason) String() string {
@@ -158,6 +159,8 @@ func (p ParticipantCloseReason) String() string {
 		return "MIGRATE_CODEC_MISMATCH"
 	case ParticipantCloseReasonSignalSourceClose:
 		return "SIGNAL_SOURCE_CLOSE"
+	case ParticipantCloseReasonRoomClosed:
+		return "ROOM_CLOSED"
 	default:
 		return fmt.Sprintf("%d", int(p))
 	}
@@ -188,6 +191,8 @@ func (p ParticipantCloseReason) ToDisconnectReason() livekit.DisconnectReason {
 		return livekit.DisconnectReason_STATE_MISMATCH
 	case ParticipantCloseReasonSignalSourceClose:
 		return livekit.DisconnectReason_SIGNAL_CLOSE
+	case ParticipantCloseReasonRoomClosed:
+		return livekit.DisconnectReason_ROOM_CLOSED
 	default:
 		// the other types will map to unknown reason
 		return livekit.DisconnectReason_UNKNOWN_REASON
