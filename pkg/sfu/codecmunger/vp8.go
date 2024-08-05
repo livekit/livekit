@@ -95,10 +95,8 @@ func (v *VP8) SeedState(seed interface{}) {
 func (v *VP8) SetLast(extPkt *buffer.ExtPacket) {
 	vp8, ok := extPkt.Payload.(buffer.VP8)
 	if !ok {
-		v.logger.Infow("RAJA set last not ok") // REMOVE
 		return
 	}
-	v.logger.Infow("RAJA got set last", "ptr", v, "vp8", vp8) // REMOVE
 
 	v.pictureIdUsed = vp8.I
 	if v.pictureIdUsed {
@@ -122,10 +120,8 @@ func (v *VP8) SetLast(extPkt *buffer.ExtPacket) {
 func (v *VP8) UpdateOffsets(extPkt *buffer.ExtPacket) {
 	vp8, ok := extPkt.Payload.(buffer.VP8)
 	if !ok {
-		v.logger.Infow("RAJA update offset not ok") // REMOVE
 		return
 	}
-	v.logger.Infow("RAJA got update offset", "ptr", v, "vp8", vp8) // REMOVE
 
 	if v.pictureIdUsed {
 		v.pictureIdWrapHandler.Init(int32(vp8.PictureID)-1, vp8.M)
