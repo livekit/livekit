@@ -187,37 +187,6 @@ type TranslationParams struct {
 
 // -------------------------------------------------------------------
 
-/* RAJA-REMOVE
-type ForwarderState struct {
-	Started               bool
-	ReferenceLayerSpatial int32
-	PreStartTime          time.Time
-	ExtFirstTS            uint64
-	DummyStartTSOffset    uint64
-	RTP                   RTPMungerState
-	Codec                 interface{}
-}
-
-func (f ForwarderState) String() string {
-	codecString := ""
-	switch codecState := f.Codec.(type) {
-	case codecmunger.VP8State:
-		codecString = codecState.String()
-	}
-	return fmt.Sprintf("ForwarderState{started: %v, referenceLayerSpatial: %d, preStartTime: %s, extFirstTS: %d, dummyStartTSOffset: %d, rtp: %s, codec: %s}",
-		f.Started,
-		f.ReferenceLayerSpatial,
-		f.PreStartTime.String(),
-		f.ExtFirstTS,
-		f.DummyStartTSOffset,
-		f.RTP.String(),
-		codecString,
-	)
-}
-
-// -------------------------------------------------------------------
-*/
-
 type refInfo struct {
 	senderReport    *buffer.RTCPSenderReportData
 	tsOffset        uint64

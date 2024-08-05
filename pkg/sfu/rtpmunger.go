@@ -49,28 +49,6 @@ type SnTs struct {
 
 // ----------------------------------------------------------------------
 
-/* RAJA-REMOVE
-type RTPMungerState struct {
-	ExtLastSN        uint64
-	ExtSecondLastSN  uint64
-	ExtLastTS        uint64
-	ExtSecondLastTS  uint64
-	LastMarker       bool
-	SecondLastMarker bool
-}
-
-func (r RTPMungerState) String() string {
-	return fmt.Sprintf(
-		"RTPMungerState{extLastSN: %d, extSecondLastSN: %d, extLastTS: %d, extSecondLastTS: %d, lastMarker: %v, secondLastMarker: %v)",
-		r.ExtLastSN, r.ExtSecondLastSN,
-		r.ExtLastTS, r.ExtSecondLastTS,
-		r.LastMarker, r.SecondLastMarker,
-	)
-}
-
-// ----------------------------------------------------------------------
-*/
-
 type RTPMunger struct {
 	logger logger.Logger
 

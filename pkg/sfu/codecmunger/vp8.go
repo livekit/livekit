@@ -31,25 +31,6 @@ const (
 
 // -----------------------------------------------------------
 
-/* RAJA-REMOVE
-type VP8State struct {
-	ExtLastPictureId int32
-	PictureIdUsed    bool
-	LastTl0PicIdx    uint8
-	Tl0PicIdxUsed    bool
-	TidUsed          bool
-	LastKeyIdx       uint8
-	KeyIdxUsed       bool
-}
-
-func (v VP8State) String() string {
-	return fmt.Sprintf("VP8State{extLastPictureId: %d, pictureIdUsed: %+v, lastTl0PicIdx: %d, tl0PicIdxUsed: %+v, tidUsed: %+v, lastKeyIdx: %d, keyIdxUsed: %+v)",
-		v.ExtLastPictureId, v.PictureIdUsed, v.LastTl0PicIdx, v.Tl0PicIdxUsed, v.TidUsed, v.LastKeyIdx, v.KeyIdxUsed)
-}
-
-// -----------------------------------------------------------
-*/
-
 type VP8 struct {
 	logger logger.Logger
 
