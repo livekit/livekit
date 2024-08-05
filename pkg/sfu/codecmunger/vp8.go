@@ -15,10 +15,9 @@
 package codecmunger
 
 import (
-	"fmt"
-
 	"github.com/elliotchance/orderedmap/v2"
 
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -32,6 +31,7 @@ const (
 
 // -----------------------------------------------------------
 
+/* RAJA-REMOVE
 type VP8State struct {
 	ExtLastPictureId int32
 	PictureIdUsed    bool
@@ -48,6 +48,7 @@ func (v VP8State) String() string {
 }
 
 // -----------------------------------------------------------
+*/
 
 type VP8 struct {
 	logger logger.Logger
@@ -85,25 +86,27 @@ func NewVP8FromNull(cm CodecMunger, logger logger.Logger) *VP8 {
 }
 
 func (v *VP8) GetState() interface{} {
-	return VP8State{
+	return &livekit.VP8MungerState{
 		ExtLastPictureId: v.extLastPictureId,
 		PictureIdUsed:    v.pictureIdUsed,
-		LastTl0PicIdx:    v.lastTl0PicIdx,
+		LastTl0PicIdx:    uint32(v.lastTl0PicIdx),
 		Tl0PicIdxUsed:    v.tl0PicIdxUsed,
 		TidUsed:          v.tidUsed,
-		LastKeyIdx:       v.lastKeyIdx,
+		LastKeyIdx:       uint32(v.lastKeyIdx),
 		KeyIdxUsed:       v.keyIdxUsed,
 	}
 }
 
 func (v *VP8) SeedState(seed interface{}) {
-	if state, ok := seed.(VP8State); ok {
+	switch cm := seed.(type) {
+	case *livekit.RTPForwarderState_Vp8Munger:
+		state := cm.Vp8Munger
 		v.extLastPictureId = state.ExtLastPictureId
 		v.pictureIdUsed = state.PictureIdUsed
-		v.lastTl0PicIdx = state.LastTl0PicIdx
+		v.lastTl0PicIdx = uint8(state.LastTl0PicIdx)
 		v.tl0PicIdxUsed = state.Tl0PicIdxUsed
 		v.tidUsed = state.TidUsed
-		v.lastKeyIdx = state.LastKeyIdx
+		v.lastKeyIdx = uint8(state.LastKeyIdx)
 		v.keyIdxUsed = state.KeyIdxUsed
 	}
 }
@@ -111,8 +114,10 @@ func (v *VP8) SeedState(seed interface{}) {
 func (v *VP8) SetLast(extPkt *buffer.ExtPacket) {
 	vp8, ok := extPkt.Payload.(buffer.VP8)
 	if !ok {
+		v.logger.Infow("RAJA set last not ok") // REMOVE
 		return
 	}
+	v.logger.Infow("RAJA got set last", "ptr", v, "vp8", vp8) // REMOVE
 
 	v.pictureIdUsed = vp8.I
 	if v.pictureIdUsed {
@@ -136,8 +141,10 @@ func (v *VP8) SetLast(extPkt *buffer.ExtPacket) {
 func (v *VP8) UpdateOffsets(extPkt *buffer.ExtPacket) {
 	vp8, ok := extPkt.Payload.(buffer.VP8)
 	if !ok {
+		v.logger.Infow("RAJA update offset not ok") // REMOVE
 		return
 	}
+	v.logger.Infow("RAJA got update offset", "ptr", v, "vp8", vp8) // REMOVE
 
 	if v.pictureIdUsed {
 		v.pictureIdWrapHandler.Init(int32(vp8.PictureID)-1, vp8.M)

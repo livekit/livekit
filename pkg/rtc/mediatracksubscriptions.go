@@ -21,7 +21,6 @@ import (
 
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
-	"go.uber.org/atomic"
 
 	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
@@ -162,7 +161,6 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	})
 
 	// Bind callback can happen from replaceTrack, so set it up early
-	var reusingTransceiver atomic.Bool
 	var dtState sfu.DownTrackState
 	downTrack.OnBinding(func(err error) {
 		if err != nil {
@@ -170,9 +168,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 			return
 		}
 		wr.DetermineReceiver(downTrack.Codec())
-		if reusingTransceiver.Load() {
-			downTrack.SeedState(dtState)
-		}
+		downTrack.SeedState(dtState)
 		if err = wr.AddDownTrack(downTrack); err != nil && err != sfu.ErrReceiverClosed {
 			sub.GetLogger().Errorw(
 				"could not add down track", err,
@@ -220,7 +216,6 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 			"publisherID", subTrack.PublisherID(),
 			"trackID", trackID,
 		)
-		reusingTransceiver.Store(true)
 		rtpSender := existingTransceiver.Sender()
 		if rtpSender != nil {
 			// replaced track will bind immediately without negotiation, SetTransceiver first before bind
@@ -251,7 +246,6 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 			existingTransceiver.Stop()
 		}
 	}
-	reusingTransceiver.Store(false)
 
 	// if cannot replace, find an unused transceiver or add new one
 	if transceiver == nil {

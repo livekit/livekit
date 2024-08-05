@@ -862,6 +862,7 @@ func (p *ParticipantImpl) SetMigrateInfo(
 	previousOffer, previousAnswer *webrtc.SessionDescription,
 	mediaTracks []*livekit.TrackPublishedResponse,
 	dataChannels []*livekit.DataChannelInfo,
+	forwarderStates map[livekit.TrackID]*livekit.RTPForwarderState,
 ) {
 	p.pendingTracksLock.Lock()
 	for _, t := range mediaTracks {
@@ -882,6 +883,10 @@ func (p *ParticipantImpl) SetMigrateInfo(
 	}
 
 	p.TransportManager.SetMigrateInfo(previousOffer, previousAnswer, dataChannels)
+
+	for trackID, fs := range forwarderStates {
+		p.CacheDownTrack(trackID, nil, sfu.DownTrackState{ForwarderState: fs})
+	}
 }
 
 func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseReason, isExpectedToResume bool) error {
@@ -2459,7 +2464,7 @@ func (p *ParticipantImpl) setDowntracksConnected() {
 func (p *ParticipantImpl) CacheDownTrack(trackID livekit.TrackID, rtpTransceiver *webrtc.RTPTransceiver, downTrack sfu.DownTrackState) {
 	p.lock.Lock()
 	if existing := p.cachedDownTracks[trackID]; existing != nil && existing.transceiver != rtpTransceiver {
-		p.subLogger.Infow("cached transceiver changed", "trackID", trackID)
+		p.subLogger.Warnw("cached transceiver changed", nil, "trackID", trackID)
 	}
 	p.cachedDownTracks[trackID] = &downTrackState{transceiver: rtpTransceiver, downTrack: downTrack}
 	p.subLogger.Debugw("caching downtrack", "trackID", trackID)

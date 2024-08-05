@@ -27,6 +27,7 @@ import (
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/zap/zapcore"
 
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -186,6 +187,7 @@ type TranslationParams struct {
 
 // -------------------------------------------------------------------
 
+/* RAJA-REMOVE
 type ForwarderState struct {
 	Started               bool
 	ReferenceLayerSpatial int32
@@ -214,6 +216,7 @@ func (f ForwarderState) String() string {
 }
 
 // -------------------------------------------------------------------
+*/
 
 type refInfo struct {
 	senderReport    *buffer.RTCPSenderReportData
@@ -402,41 +405,48 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 	}
 }
 
-func (f *Forwarder) GetState() ForwarderState {
+func (f *Forwarder) GetState() *livekit.RTPForwarderState {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
 	if !f.started {
-		return ForwarderState{}
+		return nil
 	}
 
-	return ForwarderState{
-		Started:               f.started,
-		ReferenceLayerSpatial: f.referenceLayerSpatial,
-		PreStartTime:          f.preStartTime,
-		ExtFirstTS:            f.extFirstTS,
-		DummyStartTSOffset:    f.dummyStartTSOffset,
-		RTP:                   f.rtpMunger.GetLast(),
-		Codec:                 f.codecMunger.GetState(),
+	state := &livekit.RTPForwarderState{
+		Started:                   f.started,
+		ReferenceLayerSpatial:     f.referenceLayerSpatial,
+		PreStartTime:              f.preStartTime.UnixNano(),
+		ExtFirstTimestamp:         f.extFirstTS,
+		DummyStartTimestampOffset: f.dummyStartTSOffset,
+		RtpMunger:                 f.rtpMunger.GetState(),
 	}
+
+	codecMungerState := f.codecMunger.GetState()
+	if vp8MungerState, ok := codecMungerState.(*livekit.VP8MungerState); ok {
+		state.CodecMunger = &livekit.RTPForwarderState_Vp8Munger{
+			Vp8Munger: vp8MungerState,
+		}
+	}
+	return state
 }
 
-func (f *Forwarder) SeedState(state ForwarderState) {
-	if !state.Started {
+func (f *Forwarder) SeedState(state *livekit.RTPForwarderState) {
+	if state == nil || !state.Started {
 		return
 	}
 
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	f.rtpMunger.SeedLast(state.RTP)
-	f.codecMunger.SeedState(state.Codec)
+	f.rtpMunger.SeedState(state.RtpMunger)
+	f.codecMunger.SeedState(state.CodecMunger)
 
 	f.started = true
 	f.referenceLayerSpatial = state.ReferenceLayerSpatial
-	f.preStartTime = state.PreStartTime
-	f.extFirstTS = state.ExtFirstTS
-	f.dummyStartTSOffset = state.DummyStartTSOffset
+	f.preStartTime = time.Unix(0, state.PreStartTime)
+	f.extFirstTS = state.ExtFirstTimestamp
+	f.dummyStartTSOffset = state.DummyStartTimestampOffset
 }
 
 func (f *Forwarder) Mute(muted bool, isSubscribeMutable bool) bool {
@@ -1686,8 +1696,8 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 	//   3. extExpectedTS -> expected timestamp of this packet calculated based on elapsed time since first packet
 	// Ideally, extRefTS and extExpectedTS should be very close and extLastTS should be before both of those.
 	// But, cases like muting/unmuting, clock vagaries, pacing, etc. make them not satisfy those conditions always.
-	rtpMungerState := f.rtpMunger.GetLast()
-	extLastTS := rtpMungerState.ExtLastTS
+	rtpMungerState := f.rtpMunger.GetState()
+	extLastTS := rtpMungerState.ExtLastTimestamp
 	extExpectedTS := extLastTS
 	extRefTS := extLastTS
 	refTS := uint32(extRefTS)
@@ -1838,7 +1848,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			"extExpectedTS", extExpectedTS,
 			"extNextTS", extNextTS,
 			"tsJump", extNextTS-extLastTS,
-			"nextSN", rtpMungerState.ExtLastSN+1,
+			"nextSN", rtpMungerState.ExtLastSequenceNumber+1,
 			"extIncomingSN", extPkt.ExtSequenceNumber,
 			"incomingTS", extPkt.Packet.Timestamp,
 			"extIncomingTS", extPkt.ExtTimestamp,
@@ -1856,7 +1866,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			"extExpectedTS", extExpectedTS,
 			"extNextTS", extNextTS,
 			"tsJump", extNextTS-extLastTS,
-			"nextSN", rtpMungerState.ExtLastSN+1,
+			"nextSN", rtpMungerState.ExtLastSequenceNumber+1,
 			"extIncomingSN", extPkt.ExtSequenceNumber,
 			"extIncomingTS", extPkt.ExtTimestamp,
 		)
@@ -2052,7 +2062,7 @@ func (f *Forwarder) GetSnTsForBlankFrames(frameRate uint32, numPackets int) ([]S
 		numPackets++
 	}
 
-	extLastTS := f.rtpMunger.GetLast().ExtLastTS
+	extLastTS := f.rtpMunger.GetState().ExtLastTimestamp
 	extExpectedTS := extLastTS
 	if f.getExpectedRTPTimestamp != nil {
 		tsExt, err := f.getExpectedRTPTimestamp(time.Now())

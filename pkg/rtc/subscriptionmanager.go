@@ -180,6 +180,26 @@ func (m *SubscriptionManager) GetSubscribedTracks() []types.SubscribedTrack {
 	return tracks
 }
 
+func (m *SubscriptionManager) StopAndGetSubscribedTracksForwarderState() map[livekit.TrackID]*livekit.RTPForwarderState {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+
+	states := make(map[livekit.TrackID]*livekit.RTPForwarderState, len(m.subscriptions))
+	for trackID, t := range m.subscriptions {
+		st := t.getSubscribedTrack()
+		if st != nil {
+			dt := st.DownTrack()
+			if dt != nil {
+				state := dt.StopWriteAndGetState()
+				if state.ForwarderState != nil {
+					states[trackID] = state.ForwarderState
+				}
+			}
+		}
+	}
+	return states
+}
+
 func (m *SubscriptionManager) HasSubscriptions() bool {
 	m.lock.RLock()
 	defer m.lock.RUnlock()

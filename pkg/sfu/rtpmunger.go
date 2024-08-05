@@ -15,8 +15,7 @@
 package sfu
 
 import (
-	"fmt"
-
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -50,6 +49,7 @@ type SnTs struct {
 
 // ----------------------------------------------------------------------
 
+/* RAJA-REMOVE
 type RTPMungerState struct {
 	ExtLastSN        uint64
 	ExtSecondLastSN  uint64
@@ -69,6 +69,7 @@ func (r RTPMungerState) String() string {
 }
 
 // ----------------------------------------------------------------------
+*/
 
 type RTPMunger struct {
 	logger logger.Logger
@@ -112,14 +113,14 @@ func (r *RTPMunger) DebugInfo() map[string]interface{} {
 	}
 }
 
-func (r *RTPMunger) GetLast() RTPMungerState {
-	return RTPMungerState{
-		ExtLastSN:        r.extLastSN,
-		ExtSecondLastSN:  r.extSecondLastSN,
-		ExtLastTS:        r.extLastTS,
-		ExtSecondLastTS:  r.extSecondLastTS,
-		LastMarker:       r.lastMarker,
-		SecondLastMarker: r.secondLastMarker,
+func (r *RTPMunger) GetState() *livekit.RTPMungerState {
+	return &livekit.RTPMungerState{
+		ExtLastSequenceNumber:       r.extLastSN,
+		ExtSecondLastSequenceNumber: r.extSecondLastSN,
+		ExtLastTimestamp:            r.extLastTS,
+		ExtSecondLastTimestamp:      r.extSecondLastTS,
+		LastMarker:                  r.lastMarker,
+		SecondLastMarker:            r.secondLastMarker,
 	}
 }
 
@@ -127,11 +128,11 @@ func (r *RTPMunger) GetTSOffset() uint64 {
 	return r.tsOffset
 }
 
-func (r *RTPMunger) SeedLast(state RTPMungerState) {
-	r.extLastSN = state.ExtLastSN
-	r.extSecondLastSN = state.ExtSecondLastSN
-	r.extLastTS = state.ExtLastTS
-	r.extSecondLastTS = state.ExtSecondLastTS
+func (r *RTPMunger) SeedState(state *livekit.RTPMungerState) {
+	r.extLastSN = state.ExtLastSequenceNumber
+	r.extSecondLastSN = state.ExtSecondLastSequenceNumber
+	r.extLastTS = state.ExtLastTimestamp
+	r.extSecondLastTS = state.ExtSecondLastTimestamp
 	r.lastMarker = state.LastMarker
 	r.secondLastMarker = state.SecondLastMarker
 }
