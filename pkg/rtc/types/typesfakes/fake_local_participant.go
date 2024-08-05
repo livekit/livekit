@@ -782,13 +782,14 @@ type FakeLocalParticipant struct {
 	setMetadataArgsForCall []struct {
 		arg1 string
 	}
-	SetMigrateInfoStub        func(*webrtc.SessionDescription, *webrtc.SessionDescription, []*livekit.TrackPublishedResponse, []*livekit.DataChannelInfo)
+	SetMigrateInfoStub        func(*webrtc.SessionDescription, *webrtc.SessionDescription, []*livekit.TrackPublishedResponse, []*livekit.DataChannelInfo, map[livekit.TrackID]*livekit.RTPForwarderState)
 	setMigrateInfoMutex       sync.RWMutex
 	setMigrateInfoArgsForCall []struct {
 		arg1 *webrtc.SessionDescription
 		arg2 *webrtc.SessionDescription
 		arg3 []*livekit.TrackPublishedResponse
 		arg4 []*livekit.DataChannelInfo
+		arg5 map[livekit.TrackID]*livekit.RTPForwarderState
 	}
 	SetMigrateStateStub        func(types.MigrateState)
 	setMigrateStateMutex       sync.RWMutex
@@ -853,6 +854,16 @@ type FakeLocalParticipant struct {
 	}
 	stateReturnsOnCall map[int]struct {
 		result1 livekit.ParticipantInfo_State
+	}
+	StopAndGetSubscribedTracksForwarderStateStub        func() map[livekit.TrackID]*livekit.RTPForwarderState
+	stopAndGetSubscribedTracksForwarderStateMutex       sync.RWMutex
+	stopAndGetSubscribedTracksForwarderStateArgsForCall []struct {
+	}
+	stopAndGetSubscribedTracksForwarderStateReturns struct {
+		result1 map[livekit.TrackID]*livekit.RTPForwarderState
+	}
+	stopAndGetSubscribedTracksForwarderStateReturnsOnCall map[int]struct {
+		result1 map[livekit.TrackID]*livekit.RTPForwarderState
 	}
 	SubscribeToTrackStub        func(livekit.TrackID)
 	subscribeToTrackMutex       sync.RWMutex
@@ -5193,7 +5204,7 @@ func (fake *FakeLocalParticipant) SetMetadataArgsForCall(i int) string {
 	return argsForCall.arg1
 }
 
-func (fake *FakeLocalParticipant) SetMigrateInfo(arg1 *webrtc.SessionDescription, arg2 *webrtc.SessionDescription, arg3 []*livekit.TrackPublishedResponse, arg4 []*livekit.DataChannelInfo) {
+func (fake *FakeLocalParticipant) SetMigrateInfo(arg1 *webrtc.SessionDescription, arg2 *webrtc.SessionDescription, arg3 []*livekit.TrackPublishedResponse, arg4 []*livekit.DataChannelInfo, arg5 map[livekit.TrackID]*livekit.RTPForwarderState) {
 	var arg3Copy []*livekit.TrackPublishedResponse
 	if arg3 != nil {
 		arg3Copy = make([]*livekit.TrackPublishedResponse, len(arg3))
@@ -5210,12 +5221,13 @@ func (fake *FakeLocalParticipant) SetMigrateInfo(arg1 *webrtc.SessionDescription
 		arg2 *webrtc.SessionDescription
 		arg3 []*livekit.TrackPublishedResponse
 		arg4 []*livekit.DataChannelInfo
-	}{arg1, arg2, arg3Copy, arg4Copy})
+		arg5 map[livekit.TrackID]*livekit.RTPForwarderState
+	}{arg1, arg2, arg3Copy, arg4Copy, arg5})
 	stub := fake.SetMigrateInfoStub
-	fake.recordInvocation("SetMigrateInfo", []interface{}{arg1, arg2, arg3Copy, arg4Copy})
+	fake.recordInvocation("SetMigrateInfo", []interface{}{arg1, arg2, arg3Copy, arg4Copy, arg5})
 	fake.setMigrateInfoMutex.Unlock()
 	if stub != nil {
-		fake.SetMigrateInfoStub(arg1, arg2, arg3, arg4)
+		fake.SetMigrateInfoStub(arg1, arg2, arg3, arg4, arg5)
 	}
 }
 
@@ -5225,17 +5237,17 @@ func (fake *FakeLocalParticipant) SetMigrateInfoCallCount() int {
 	return len(fake.setMigrateInfoArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) SetMigrateInfoCalls(stub func(*webrtc.SessionDescription, *webrtc.SessionDescription, []*livekit.TrackPublishedResponse, []*livekit.DataChannelInfo)) {
+func (fake *FakeLocalParticipant) SetMigrateInfoCalls(stub func(*webrtc.SessionDescription, *webrtc.SessionDescription, []*livekit.TrackPublishedResponse, []*livekit.DataChannelInfo, map[livekit.TrackID]*livekit.RTPForwarderState)) {
 	fake.setMigrateInfoMutex.Lock()
 	defer fake.setMigrateInfoMutex.Unlock()
 	fake.SetMigrateInfoStub = stub
 }
 
-func (fake *FakeLocalParticipant) SetMigrateInfoArgsForCall(i int) (*webrtc.SessionDescription, *webrtc.SessionDescription, []*livekit.TrackPublishedResponse, []*livekit.DataChannelInfo) {
+func (fake *FakeLocalParticipant) SetMigrateInfoArgsForCall(i int) (*webrtc.SessionDescription, *webrtc.SessionDescription, []*livekit.TrackPublishedResponse, []*livekit.DataChannelInfo, map[livekit.TrackID]*livekit.RTPForwarderState) {
 	fake.setMigrateInfoMutex.RLock()
 	defer fake.setMigrateInfoMutex.RUnlock()
 	argsForCall := fake.setMigrateInfoArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4, argsForCall.arg5
 }
 
 func (fake *FakeLocalParticipant) SetMigrateState(arg1 types.MigrateState) {
@@ -5604,6 +5616,59 @@ func (fake *FakeLocalParticipant) StateReturnsOnCall(i int, result1 livekit.Part
 	}
 	fake.stateReturnsOnCall[i] = struct {
 		result1 livekit.ParticipantInfo_State
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) StopAndGetSubscribedTracksForwarderState() map[livekit.TrackID]*livekit.RTPForwarderState {
+	fake.stopAndGetSubscribedTracksForwarderStateMutex.Lock()
+	ret, specificReturn := fake.stopAndGetSubscribedTracksForwarderStateReturnsOnCall[len(fake.stopAndGetSubscribedTracksForwarderStateArgsForCall)]
+	fake.stopAndGetSubscribedTracksForwarderStateArgsForCall = append(fake.stopAndGetSubscribedTracksForwarderStateArgsForCall, struct {
+	}{})
+	stub := fake.StopAndGetSubscribedTracksForwarderStateStub
+	fakeReturns := fake.stopAndGetSubscribedTracksForwarderStateReturns
+	fake.recordInvocation("StopAndGetSubscribedTracksForwarderState", []interface{}{})
+	fake.stopAndGetSubscribedTracksForwarderStateMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) StopAndGetSubscribedTracksForwarderStateCallCount() int {
+	fake.stopAndGetSubscribedTracksForwarderStateMutex.RLock()
+	defer fake.stopAndGetSubscribedTracksForwarderStateMutex.RUnlock()
+	return len(fake.stopAndGetSubscribedTracksForwarderStateArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) StopAndGetSubscribedTracksForwarderStateCalls(stub func() map[livekit.TrackID]*livekit.RTPForwarderState) {
+	fake.stopAndGetSubscribedTracksForwarderStateMutex.Lock()
+	defer fake.stopAndGetSubscribedTracksForwarderStateMutex.Unlock()
+	fake.StopAndGetSubscribedTracksForwarderStateStub = stub
+}
+
+func (fake *FakeLocalParticipant) StopAndGetSubscribedTracksForwarderStateReturns(result1 map[livekit.TrackID]*livekit.RTPForwarderState) {
+	fake.stopAndGetSubscribedTracksForwarderStateMutex.Lock()
+	defer fake.stopAndGetSubscribedTracksForwarderStateMutex.Unlock()
+	fake.StopAndGetSubscribedTracksForwarderStateStub = nil
+	fake.stopAndGetSubscribedTracksForwarderStateReturns = struct {
+		result1 map[livekit.TrackID]*livekit.RTPForwarderState
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) StopAndGetSubscribedTracksForwarderStateReturnsOnCall(i int, result1 map[livekit.TrackID]*livekit.RTPForwarderState) {
+	fake.stopAndGetSubscribedTracksForwarderStateMutex.Lock()
+	defer fake.stopAndGetSubscribedTracksForwarderStateMutex.Unlock()
+	fake.StopAndGetSubscribedTracksForwarderStateStub = nil
+	if fake.stopAndGetSubscribedTracksForwarderStateReturnsOnCall == nil {
+		fake.stopAndGetSubscribedTracksForwarderStateReturnsOnCall = make(map[int]struct {
+			result1 map[livekit.TrackID]*livekit.RTPForwarderState
+		})
+	}
+	fake.stopAndGetSubscribedTracksForwarderStateReturnsOnCall[i] = struct {
+		result1 map[livekit.TrackID]*livekit.RTPForwarderState
 	}{result1}
 }
 
@@ -6851,6 +6916,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.setTrackMutedMutex.RUnlock()
 	fake.stateMutex.RLock()
 	defer fake.stateMutex.RUnlock()
+	fake.stopAndGetSubscribedTracksForwarderStateMutex.RLock()
+	defer fake.stopAndGetSubscribedTracksForwarderStateMutex.RUnlock()
 	fake.subscribeToTrackMutex.RLock()
 	defer fake.subscribeToTrackMutex.RUnlock()
 	fake.subscriberAsPrimaryMutex.RLock()

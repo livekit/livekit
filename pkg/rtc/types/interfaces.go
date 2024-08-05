@@ -369,6 +369,7 @@ type LocalParticipant interface {
 	// WaitUntilSubscribed waits until all subscriptions have been settled, or if the timeout
 	// has been reached. If the timeout expires, it will return an error.
 	WaitUntilSubscribed(timeout time.Duration) error
+	StopAndGetSubscribedTracksForwarderState() map[livekit.TrackID]*livekit.RTPForwarderState
 
 	// returns list of participant identities that the current participant is subscribed to
 	GetSubscribedParticipants() []livekit.ParticipantID
@@ -412,7 +413,12 @@ type LocalParticipant interface {
 	NotifyMigration()
 	SetMigrateState(s MigrateState)
 	MigrateState() MigrateState
-	SetMigrateInfo(previousOffer, previousAnswer *webrtc.SessionDescription, mediaTracks []*livekit.TrackPublishedResponse, dataChannels []*livekit.DataChannelInfo)
+	SetMigrateInfo(
+		previousOffer, previousAnswer *webrtc.SessionDescription,
+		mediaTracks []*livekit.TrackPublishedResponse,
+		dataChannels []*livekit.DataChannelInfo,
+		forwarderStates map[livekit.TrackID]*livekit.RTPForwarderState,
+	)
 
 	UpdateMediaRTT(rtt uint32)
 	UpdateSignalingRTT(rtt uint32)
