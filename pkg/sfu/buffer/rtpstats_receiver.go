@@ -137,14 +137,21 @@ func (r *RTPStatsReceiver) NewSnapshotId() uint32 {
 	return r.newSnapshotID(r.sequenceNumber.GetExtendedHighest())
 }
 
-func (r *RTPStatsReceiver) getTSRolloverCount(diffNano int64) int {
+func (r *RTPStatsReceiver) getTSRolloverCount(diffNano int64, ts uint32) int {
 	if diffNano < r.tsRolloverThreshold {
 		// time not more than rollover threshold
-		return 0
+		return -1
 	}
 
-	excess := int((diffNano - r.tsRolloverThreshold) * int64(r.params.ClockRate) / 1e9)
-	return excess/(1<<32) + 1
+	excess := int((diffNano - r.tsRolloverThreshold*2) * int64(r.params.ClockRate) / 1e9)
+	roc := excess / (1 << 32)
+	if roc < 0 {
+		roc = 0
+	}
+	if r.timestamp.GetHighest() > ts {
+		roc++
+	}
+	return roc
 }
 
 func (r *RTPStatsReceiver) Update(
@@ -167,6 +174,8 @@ func (r *RTPStatsReceiver) Update(
 	var resSN utils.WrapAroundUpdateResult[uint64]
 	var gapSN int64
 	var resTS utils.WrapAroundUpdateResult[uint64]
+	var timeSinceHighest int64
+	var tsRolloverCount int
 
 	getLoggingFields := func() []interface{} {
 		return []interface{}{
@@ -174,6 +183,8 @@ func (r *RTPStatsReceiver) Update(
 			"gapSN", gapSN,
 			"resTS", resTS,
 			"gapTS", int64(resTS.ExtendedVal - resTS.PreExtendedHighest),
+			"timeSinceHighest", time.Duration(timeSinceHighest),
+			"tsRolloverCount", tsRolloverCount,
 			"packetTime", time.Unix(0, packetTime).String(),
 			"sequenceNumber", sequenceNumber,
 			"timestamp", timestamp,
@@ -219,30 +230,57 @@ func (r *RTPStatsReceiver) Update(
 		}
 		gapSN = int64(resSN.ExtendedVal - resSN.PreExtendedHighest)
 
-		resTS = r.timestamp.Rollover(timestamp, r.getTSRolloverCount(packetTime-r.highestTime))
+		timeSinceHighest = packetTime - r.highestTime
+		tsRolloverCount = r.getTSRolloverCount(timeSinceHighest, timestamp)
+		if tsRolloverCount >= 0 {
+			r.logger.Warnw(
+				"potential time stamp roll over", nil,
+				getLoggingFields()...,
+			)
+		}
+		resTS = r.timestamp.Rollover(timestamp, tsRolloverCount)
 		if resTS.IsUnhandled {
 			flowState.IsNotHandled = true
 			return
 		}
 		gapTS := int64(resTS.ExtendedVal - resTS.PreExtendedHighest)
 
-		// it is possible that sequence number has rolled over too
-		if gapSN < 0 && gapTS > 0 && payloadSize > 0 {
-			// not possible to know how many cycles of sequence number roll over could have happened,
-			// use 1 to ensure that it at least does not go backwards
-			resSN = r.sequenceNumber.Rollover(sequenceNumber, 1)
-			if resSN.IsUnhandled {
-				flowState.IsNotHandled = true
-				return
-			}
-
+		// it is possible to reecive old packets,
+		// as it is not possible to detect how far to roll back sequence number, ignore old packets
+		if gapTS < 0 && gapSN > 0 {
+			r.sequenceNumber.UndoUpdate(resSN)
 			r.logger.Warnw(
-				"forcing sequence number rollover", nil,
+				"dropping old packet", nil,
 				getLoggingFields()...,
 			)
-			gapSN = int64(resSN.ExtendedVal - resSN.PreExtendedHighest)
+			flowState.IsNotHandled = true
+			return
+		}
+
+		// it is possible that sequence number has rolled over too
+		if gapSN < 0 && gapTS > 0 && payloadSize > 0 {
+			if tsRolloverCount >= 0 {
+				// not possible to know how many cycles of sequence number roll over could have happened,
+				// use 1 to ensure that it at least does not go backwards
+				resSN = r.sequenceNumber.Rollover(sequenceNumber, 1)
+				if resSN.IsUnhandled {
+					flowState.IsNotHandled = true
+					return
+				}
+
+				r.logger.Warnw(
+					"forcing sequence number rollover", nil,
+					getLoggingFields()...,
+				)
+			} else {
+				r.logger.Warnw(
+					"forcing sequence number rollover skipped", nil,
+					getLoggingFields()...,
+				)
+			}
 		}
 	}
+	gapSN = int64(resSN.ExtendedVal - resSN.PreExtendedHighest)
 
 	pktSize := uint64(hdrSize + payloadSize + paddingSize)
 	if gapSN <= 0 { // duplicate OR out-of-order
@@ -263,8 +301,6 @@ func (r *RTPStatsReceiver) Update(
 		}
 
 		flowState.IsOutOfOrder = true
-		flowState.ExtSequenceNumber = resSN.ExtendedVal
-		flowState.ExtTimestamp = resTS.ExtendedVal
 
 		if !flowState.IsDuplicate && -gapSN >= cSequenceNumberLargeJumpThreshold {
 			r.largeJumpNegativeCount++
@@ -316,9 +352,9 @@ func (r *RTPStatsReceiver) Update(
 			flowState.LossStartInclusive = resSN.PreExtendedHighest + 1
 			flowState.LossEndExclusive = resSN.ExtendedVal
 		}
-		flowState.ExtSequenceNumber = resSN.ExtendedVal
-		flowState.ExtTimestamp = resTS.ExtendedVal
 	}
+	flowState.ExtSequenceNumber = resSN.ExtendedVal
+	flowState.ExtTimestamp = resTS.ExtendedVal
 
 	if !flowState.IsDuplicate {
 		if payloadSize == 0 {
@@ -585,8 +621,8 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *RTCPSenderReportData)
 		return false
 	}
 
-	r.updatePropagationDelayAndRecordSenderReport(srDataExt)
 	r.checkRTPClockSkewForSenderReport(srDataExt)
+	r.updatePropagationDelayAndRecordSenderReport(srDataExt)
 	r.checkRTPClockSkewAgainstMediaPathForSenderReport(srDataExt)
 
 	if err, loggingFields := r.maybeAdjustFirstPacketTime(r.srNewest, 0, r.timestamp.GetExtendedStart()); err != nil {
@@ -729,6 +765,13 @@ func (r *RTPStatsReceiver) ToProto() *livekit.RTPStats {
 func (r *RTPStatsReceiver) isInRange(esn uint64, ehsn uint64) bool {
 	diff := int64(ehsn - esn)
 	return diff >= 0 && diff < cHistorySize
+}
+
+func (r *RTPStatsReceiver) HighestTimestamp() uint32 {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	return r.timestamp.GetHighest()
 }
 
 // ----------------------------------
