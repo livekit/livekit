@@ -417,7 +417,6 @@ type LocalParticipant interface {
 		previousOffer, previousAnswer *webrtc.SessionDescription,
 		mediaTracks []*livekit.TrackPublishedResponse,
 		dataChannels []*livekit.DataChannelInfo,
-		forwarderStates map[livekit.TrackID]*livekit.RTPForwarderState,
 	)
 
 	UpdateMediaRTT(rtt uint32)

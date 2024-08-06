@@ -385,10 +385,12 @@ func (f *Forwarder) GetState() *livekit.RTPForwarderState {
 	state := &livekit.RTPForwarderState{
 		Started:                   f.started,
 		ReferenceLayerSpatial:     f.referenceLayerSpatial,
-		PreStartTime:              f.preStartTime.UnixNano(),
 		ExtFirstTimestamp:         f.extFirstTS,
 		DummyStartTimestampOffset: f.dummyStartTSOffset,
 		RtpMunger:                 f.rtpMunger.GetState(),
+	}
+	if !f.preStartTime.IsZero() {
+		state.PreStartTime = f.preStartTime.UnixNano()
 	}
 
 	codecMungerState := f.codecMunger.GetState()
@@ -413,7 +415,9 @@ func (f *Forwarder) SeedState(state *livekit.RTPForwarderState) {
 
 	f.started = true
 	f.referenceLayerSpatial = state.ReferenceLayerSpatial
-	f.preStartTime = time.Unix(0, state.PreStartTime)
+	if state.PreStartTime != 0 {
+		f.preStartTime = time.Unix(0, state.PreStartTime)
+	}
 	f.extFirstTS = state.ExtFirstTimestamp
 	f.dummyStartTSOffset = state.DummyStartTimestampOffset
 }
@@ -1633,12 +1637,14 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		f.logger.Debugw(
 			message,
 			"layer", layer,
+			"referenceLayerSpatial", f.referenceLayerSpatial,
 			"extExpectedTS", extExpectedTS,
 			"incomingTS", extPkt.Packet.Timestamp,
 			"extIncomingTS", extPkt.ExtTimestamp,
 			"extRefTS", extRefTS,
 			"extLastTS", extLastTS,
 			"diffSeconds", math.Abs(diffSeconds),
+			"refInfos", wrappedRefInfoLogger{f},
 		)
 	}
 	// TODO-REMOVE-AFTER-DATA-COLLECTION
@@ -1646,12 +1652,14 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		f.logger.Infow(
 			message,
 			"layer", layer,
+			"referenceLayerSpatial", f.referenceLayerSpatial,
 			"extExpectedTS", extExpectedTS,
 			"incomingTS", extPkt.Packet.Timestamp,
 			"extIncomingTS", extPkt.ExtTimestamp,
 			"extRefTS", extRefTS,
 			"extLastTS", extLastTS,
 			"diffSeconds", math.Abs(diffSeconds),
+			"refInfos", wrappedRefInfoLogger{f},
 		)
 	}
 

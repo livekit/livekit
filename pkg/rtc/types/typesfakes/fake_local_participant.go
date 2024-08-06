@@ -782,14 +782,13 @@ type FakeLocalParticipant struct {
 	setMetadataArgsForCall []struct {
 		arg1 string
 	}
-	SetMigrateInfoStub        func(*webrtc.SessionDescription, *webrtc.SessionDescription, []*livekit.TrackPublishedResponse, []*livekit.DataChannelInfo, map[livekit.TrackID]*livekit.RTPForwarderState)
+	SetMigrateInfoStub        func(*webrtc.SessionDescription, *webrtc.SessionDescription, []*livekit.TrackPublishedResponse, []*livekit.DataChannelInfo)
 	setMigrateInfoMutex       sync.RWMutex
 	setMigrateInfoArgsForCall []struct {
 		arg1 *webrtc.SessionDescription
 		arg2 *webrtc.SessionDescription
 		arg3 []*livekit.TrackPublishedResponse
 		arg4 []*livekit.DataChannelInfo
-		arg5 map[livekit.TrackID]*livekit.RTPForwarderState
 	}
 	SetMigrateStateStub        func(types.MigrateState)
 	setMigrateStateMutex       sync.RWMutex
@@ -5204,7 +5203,7 @@ func (fake *FakeLocalParticipant) SetMetadataArgsForCall(i int) string {
 	return argsForCall.arg1
 }
 
-func (fake *FakeLocalParticipant) SetMigrateInfo(arg1 *webrtc.SessionDescription, arg2 *webrtc.SessionDescription, arg3 []*livekit.TrackPublishedResponse, arg4 []*livekit.DataChannelInfo, arg5 map[livekit.TrackID]*livekit.RTPForwarderState) {
+func (fake *FakeLocalParticipant) SetMigrateInfo(arg1 *webrtc.SessionDescription, arg2 *webrtc.SessionDescription, arg3 []*livekit.TrackPublishedResponse, arg4 []*livekit.DataChannelInfo) {
 	var arg3Copy []*livekit.TrackPublishedResponse
 	if arg3 != nil {
 		arg3Copy = make([]*livekit.TrackPublishedResponse, len(arg3))
@@ -5221,13 +5220,12 @@ func (fake *FakeLocalParticipant) SetMigrateInfo(arg1 *webrtc.SessionDescription
 		arg2 *webrtc.SessionDescription
 		arg3 []*livekit.TrackPublishedResponse
 		arg4 []*livekit.DataChannelInfo
-		arg5 map[livekit.TrackID]*livekit.RTPForwarderState
-	}{arg1, arg2, arg3Copy, arg4Copy, arg5})
+	}{arg1, arg2, arg3Copy, arg4Copy})
 	stub := fake.SetMigrateInfoStub
-	fake.recordInvocation("SetMigrateInfo", []interface{}{arg1, arg2, arg3Copy, arg4Copy, arg5})
+	fake.recordInvocation("SetMigrateInfo", []interface{}{arg1, arg2, arg3Copy, arg4Copy})
 	fake.setMigrateInfoMutex.Unlock()
 	if stub != nil {
-		fake.SetMigrateInfoStub(arg1, arg2, arg3, arg4, arg5)
+		fake.SetMigrateInfoStub(arg1, arg2, arg3, arg4)
 	}
 }
 
@@ -5237,17 +5235,17 @@ func (fake *FakeLocalParticipant) SetMigrateInfoCallCount() int {
 	return len(fake.setMigrateInfoArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) SetMigrateInfoCalls(stub func(*webrtc.SessionDescription, *webrtc.SessionDescription, []*livekit.TrackPublishedResponse, []*livekit.DataChannelInfo, map[livekit.TrackID]*livekit.RTPForwarderState)) {
+func (fake *FakeLocalParticipant) SetMigrateInfoCalls(stub func(*webrtc.SessionDescription, *webrtc.SessionDescription, []*livekit.TrackPublishedResponse, []*livekit.DataChannelInfo)) {
 	fake.setMigrateInfoMutex.Lock()
 	defer fake.setMigrateInfoMutex.Unlock()
 	fake.SetMigrateInfoStub = stub
 }
 
-func (fake *FakeLocalParticipant) SetMigrateInfoArgsForCall(i int) (*webrtc.SessionDescription, *webrtc.SessionDescription, []*livekit.TrackPublishedResponse, []*livekit.DataChannelInfo, map[livekit.TrackID]*livekit.RTPForwarderState) {
+func (fake *FakeLocalParticipant) SetMigrateInfoArgsForCall(i int) (*webrtc.SessionDescription, *webrtc.SessionDescription, []*livekit.TrackPublishedResponse, []*livekit.DataChannelInfo) {
 	fake.setMigrateInfoMutex.RLock()
 	defer fake.setMigrateInfoMutex.RUnlock()
 	argsForCall := fake.setMigrateInfoArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4, argsForCall.arg5
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
 }
 
 func (fake *FakeLocalParticipant) SetMigrateState(arg1 types.MigrateState) {

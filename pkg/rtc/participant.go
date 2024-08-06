@@ -129,6 +129,7 @@ type ParticipantParams struct {
 	TURNSEnabled                   bool
 	GetParticipantInfo             func(pID livekit.ParticipantID) *livekit.ParticipantInfo
 	GetRegionSettings              func(ip string) *livekit.RegionSettings
+	GetSubscriberForwarderState    func(p types.LocalParticipant) (map[livekit.TrackID]*livekit.RTPForwarderState, error)
 	DisableSupervisor              bool
 	ReconnectOnPublicationError    bool
 	ReconnectOnSubscriptionError   bool
@@ -231,6 +232,7 @@ type ParticipantImpl struct {
 	onICEConfigChanged func(participant types.LocalParticipant, iceConfig *livekit.ICEConfig)
 
 	cachedDownTracks map[livekit.TrackID]*downTrackState
+	forwarderState   map[livekit.TrackID]*livekit.RTPForwarderState
 
 	supervisor *supervisor.ParticipantSupervisor
 
@@ -862,7 +864,6 @@ func (p *ParticipantImpl) SetMigrateInfo(
 	previousOffer, previousAnswer *webrtc.SessionDescription,
 	mediaTracks []*livekit.TrackPublishedResponse,
 	dataChannels []*livekit.DataChannelInfo,
-	forwarderStates map[livekit.TrackID]*livekit.RTPForwarderState,
 ) {
 	p.pendingTracksLock.Lock()
 	for _, t := range mediaTracks {
@@ -883,10 +884,6 @@ func (p *ParticipantImpl) SetMigrateInfo(
 	}
 
 	p.TransportManager.SetMigrateInfo(previousOffer, previousAnswer, dataChannels)
-
-	for trackID, fs := range forwarderStates {
-		p.CacheDownTrack(trackID, nil, sfu.DownTrackState{ForwarderState: fs})
-	}
 }
 
 func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseReason, isExpectedToResume bool) error {
@@ -1056,6 +1053,7 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 
 	case types.MigrateStateComplete:
 		p.TransportManager.ProcessPendingPublisherDataChannels()
+		p.cacheForwarderState()
 	}
 
 	if onMigrateStateChange := p.getOnMigrateStateChange(); onMigrateStateChange != nil {
@@ -1214,7 +1212,9 @@ func (p *ParticipantImpl) onTrackSubscribed(subTrack types.SubscribedTrack) {
 			return
 		}
 		if p.TransportManager.HasSubscriberEverConnected() {
-			subTrack.DownTrack().SetConnected()
+			dt := subTrack.DownTrack()
+			dt.SeedState(sfu.DownTrackState{ForwarderState: p.getAndDeleteForwarderState(subTrack.ID())})
+			dt.SetConnected()
 		}
 		p.TransportManager.AddSubscribedTrack(subTrack)
 	})
@@ -1641,7 +1641,7 @@ func (p *ParticipantImpl) onPublisherInitialConnected() {
 func (p *ParticipantImpl) onSubscriberInitialConnected() {
 	go p.subscriberRTCPWorker()
 
-	p.setDowntracksConnected()
+	p.setDownTracksConnected()
 }
 
 func (p *ParticipantImpl) onPrimaryTransportInitialConnected() {
@@ -2453,12 +2453,33 @@ func (p *ParticipantImpl) postRtcp(pkts []rtcp.Packet) {
 	}, postRtcpOp{p, pkts})
 }
 
-func (p *ParticipantImpl) setDowntracksConnected() {
+func (p *ParticipantImpl) setDownTracksConnected() {
 	for _, t := range p.SubscriptionManager.GetSubscribedTracks() {
 		if dt := t.DownTrack(); dt != nil {
+			dt.SeedState(sfu.DownTrackState{ForwarderState: p.getAndDeleteForwarderState(t.ID())})
 			dt.SetConnected()
 		}
 	}
+}
+
+func (p *ParticipantImpl) cacheForwarderState() {
+	// if migrating in, get forwarder state from migrating out node to facilitate resume
+	if f := p.params.GetSubscriberForwarderState; f != nil {
+		if fs, err := f(p); err == nil {
+			p.lock.Lock()
+			p.forwarderState = fs
+			p.lock.Unlock()
+		}
+	}
+}
+
+func (p *ParticipantImpl) getAndDeleteForwarderState(trackID livekit.TrackID) *livekit.RTPForwarderState {
+	p.lock.Lock()
+	fs := p.forwarderState[trackID]
+	delete(p.forwarderState, trackID)
+	p.lock.Unlock()
+
+	return fs
 }
 
 func (p *ParticipantImpl) CacheDownTrack(trackID livekit.TrackID, rtpTransceiver *webrtc.RTPTransceiver, downTrack sfu.DownTrackState) {
