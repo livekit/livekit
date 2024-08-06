@@ -89,6 +89,7 @@ type AgentHandler struct {
 
 	serverInfo  *livekit.ServerInfo
 	workers     map[string]*agent.Worker
+	jobToWorker map[string]*agent.Worker
 	keyProvider auth.KeyProvider
 
 	namespaceWorkers  map[workerKey][]*agent.Worker
@@ -162,6 +163,7 @@ func NewAgentHandler(
 		agentServer:      agentServer,
 		logger:           logger,
 		workers:          make(map[string]*agent.Worker),
+		jobToWorker:      make(map[string]*agent.Worker),
 		namespaceWorkers: make(map[workerKey][]*agent.Worker),
 		serverInfo:       serverInfo,
 		keyProvider:      keyProvider,
@@ -287,10 +289,27 @@ func (h *AgentHandler) HandleWorkerDeregister(w *agent.Worker) {
 			h.agentNames = slices.Delete(h.agentNames, i, i+1)
 		}
 	}
+
+	jobs := w.RunningJobs()
+	for _, j := range jobs {
+		h.deregisterJob(j.Id)
+	}
 }
 
-func (h *AgentHandler) JobTerminate(ctx context.Context, req *rpc.JobTerminateRequest) (*rpc.JobTerminateResponse, error) {
-	return nil, nil
+func (h *AgentHandler) HandleWorkerJobStatus(w *agent.Worker, status *livekit.UpdateJobStatus) {
+	if agent.JobStatusIsEnded(status.Status) {
+		h.deregisterJob(status.JobId)
+	}
+}
+
+func (h *AgentHandler) deregisterJob(jobID string) {
+	h.agentServer.DeregisterJobTerminateTopic(jobID)
+
+	h.mu.Lock()
+	delete(h.jobToWorker, jobID)
+	h.mu.Unlock()
+
+	// TODO update dispatch state
 }
 
 func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*rpc.JobRequestResponse, error) {
@@ -343,6 +362,14 @@ func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*rpc.J
 			}
 			return nil, err
 		}
+		h.mu.Lock()
+		h.jobToWorker[job.Id] = selected
+		h.mu.Unlock()
+
+		err = h.agentServer.RegisterJobTerminateTopic(job.Id)
+		if err != nil {
+			h.logger.Errorw("failes registering JobTerminate handler", err, values...)
+		}
 
 		return &rpc.JobRequestResponse{
 			State: job.State,
@@ -373,6 +400,25 @@ func (h *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job)
 	}
 
 	return affinity
+}
+
+func (h *AgentHandler) JobTerminate(ctx context.Context, req *rpc.JobTerminateRequest) (*rpc.JobTerminateResponse, error) {
+	h.mu.Lock()
+	w := h.jobToWorker[req.JobId]
+	h.mu.Unlock()
+
+	if w == nil {
+		return nil, psrpc.NewErrorf(psrpc.NotFound, "no worker for jobID")
+	}
+
+	state, err := w.TerminateJob(req.JobId)
+	if err != nil {
+		return nil, err
+	}
+
+	return &rpc.JobTerminateResponse{
+		State: state,
+	}, nil
 }
 
 func (h *AgentHandler) CheckEnabled(ctx context.Context, req *rpc.CheckEnabledRequest) (*rpc.CheckEnabledResponse, error) {
