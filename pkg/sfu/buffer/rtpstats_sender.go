@@ -990,6 +990,13 @@ func (r *RTPStatsSender) getIntervalStats(
 	return
 }
 
+func (r *RTPStatsSender) ExtHighestSequenceNumber() uint64 {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	return r.extHighestSN
+}
+
 // -------------------------------------------------------------------
 
 type lockedRTPStatsSenderLogEncoder struct {

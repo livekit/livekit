@@ -17,7 +17,6 @@ package buffer
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -73,7 +72,7 @@ type ExtPacket struct {
 type Buffer struct {
 	sync.RWMutex
 	readCond        *sync.Cond
-	bucket          *bucket.Bucket
+	bucket          *bucket.Bucket[uint64]
 	nacker          *nack.NackQueue
 	maxVideoPkts    int
 	maxAudioPkts    int
@@ -252,10 +251,11 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	switch {
 	case strings.HasPrefix(b.mime, "audio/"):
 		b.codecType = webrtc.RTPCodecTypeAudio
-		b.bucket = bucket.NewBucket(InitPacketBufferSizeAudio)
+		b.bucket = bucket.NewBucket[uint64](InitPacketBufferSizeAudio)
+
 	case strings.HasPrefix(b.mime, "video/"):
 		b.codecType = webrtc.RTPCodecTypeVideo
-		b.bucket = bucket.NewBucket(InitPacketBufferSizeVideo)
+		b.bucket = bucket.NewBucket[uint64](InitPacketBufferSizeVideo)
 		if b.frameRateCalculator[0] == nil {
 			if strings.EqualFold(codec.MimeType, webrtc.MimeTypeVP8) {
 				b.frameRateCalculator[0] = NewFrameRateCalculatorVP8(b.clockRate, b.logger)
@@ -320,33 +320,18 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 		return
 	}
 
-	if err = utils.ValidateRTPPacket(&rtpPacket, b.payloadType, b.mediaSSRC); err != nil {
-		invalidPacketCount := b.invalidPacketCount.Inc()
-		if (invalidPacketCount-1)%100 == 0 {
-			b.logger.Warnw(
-				"validating RTP packet failed", err,
-				"version", rtpPacket.Version,
-				"padding", rtpPacket.Padding,
-				"marker", rtpPacket.Marker,
-				"expectedPayloadType", b.payloadType,
-				"payloadType", rtpPacket.PayloadType,
-				"sequenceNumber", rtpPacket.SequenceNumber,
-				"timestamp", rtpPacket.Timestamp,
-				"expectedSSRC", b.mediaSSRC,
-				"ssrc", rtpPacket.SSRC,
-				"numExtensions", len(rtpPacket.Extensions),
-				"payloadSize", len(rtpPacket.Payload),
-				"rtpStats", b.rtpStats,
-				"snRangeMap", b.snRangeMap,
-			)
-		}
-	}
-
 	now := time.Now().UnixNano()
 	if b.twcc != nil && b.twccExtID != 0 && !b.closed.Load() {
 		if ext := rtpPacket.GetExtension(b.twccExtID); ext != nil {
 			b.twcc.Push(rtpPacket.SSRC, binary.BigEndian.Uint16(ext[0:2]), now, rtpPacket.Marker)
 		}
+	}
+
+	// libwebrtc will use 0 ssrc for probing, don't push the packet to pending queue to avoid memory increasing since
+	// the Bind will not be called to consume the pending packets. More details in https://github.com/pion/webrtc/pull/2816
+	if rtpPacket.SSRC == 0 {
+		b.Unlock()
+		return
 	}
 
 	// handle RTX packet
@@ -618,7 +603,7 @@ func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime int64, i
 	}
 	flowState.ExtSequenceNumber -= snAdjustment
 	rtpPacket.Header.SequenceNumber = uint16(flowState.ExtSequenceNumber)
-	_, err = b.bucket.AddPacketWithSequenceNumber(rawPkt, rtpPacket.Header.SequenceNumber)
+	_, err = b.bucket.AddPacketWithSequenceNumber(rawPkt, flowState.ExtSequenceNumber)
 	if err != nil {
 		if !flowState.IsDuplicate {
 			if errors.Is(err, bucket.ErrPacketTooOld) {
@@ -664,7 +649,7 @@ func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime int64, i
 }
 
 func (b *Buffer) patchExtPacket(ep *ExtPacket, buf []byte) *ExtPacket {
-	n, err := b.getPacket(buf, ep.Packet.SequenceNumber)
+	n, err := b.getPacket(buf, ep.ExtSequenceNumber)
 	if err != nil {
 		packetNotFoundCount := b.packetNotFoundCount.Inc()
 		if (packetNotFoundCount-1)%20 == 0 {
@@ -689,32 +674,6 @@ func (b *Buffer) patchExtPacket(ep *ExtPacket, buf []byte) *ExtPacket {
 		b.logger.Warnw("unexpected marshal size", nil, "max", n, "need", payloadEnd)
 		return nil
 	}
-	// TODO-REMOVE-AFTER-DEBUG START
-	if payloadEnd != n {
-		paddingEnd := payloadStart + int(ep.Packet.PaddingSize)
-		if paddingEnd != n {
-			b.logger.Warnw("unexpected marshal size", nil, "max", n, "payloadEnd", payloadEnd, "paddingEnd", paddingEnd)
-		}
-	}
-	// check a few fields for validity
-	checkVersion := (buf[0] & 0xc0) >> 6
-	checkPayloadType := buf[1] & 0x7f
-	checkSequenceNumber := binary.BigEndian.Uint16(buf[2:])
-	checkSSRC := binary.BigEndian.Uint32(buf[8:])
-	if checkVersion != pkt.Version || checkPayloadType != pkt.PayloadType || checkSequenceNumber != pkt.SequenceNumber || checkSSRC != pkt.SSRC {
-		b.logger.Warnw(
-			"rtp packet mismatch", nil,
-			"version", fmt.Sprintf("%d != %d", checkVersion, pkt.Version),
-			"payloadType", fmt.Sprintf("%d != %d", checkPayloadType, pkt.PayloadType),
-			"sequenceNumber", fmt.Sprintf("%d != %d", checkSequenceNumber, pkt.SequenceNumber),
-			"SSRC", fmt.Sprintf("%d != %d", checkSSRC, pkt.SSRC),
-			"bytes", buf[0:16],
-			"len", n,
-			"headerSize", payloadStart,
-			"payloadSize", payloadEnd-payloadStart,
-		)
-	}
-	// TODO-REMOVE-AFTER-DEBUG END
 	pkt.Payload = buf[payloadStart:payloadEnd]
 	ep.Packet = &pkt
 
@@ -1018,18 +977,18 @@ func (b *Buffer) getRTCP() []rtcp.Packet {
 	return pkts
 }
 
-func (b *Buffer) GetPacket(buff []byte, sn uint16) (int, error) {
+func (b *Buffer) GetPacket(buff []byte, esn uint64) (int, error) {
 	b.Lock()
 	defer b.Unlock()
 
-	return b.getPacket(buff, sn)
+	return b.getPacket(buff, esn)
 }
 
-func (b *Buffer) getPacket(buff []byte, sn uint16) (int, error) {
+func (b *Buffer) getPacket(buff []byte, esn uint64) (int, error) {
 	if b.closed.Load() {
 		return 0, io.EOF
 	}
-	return b.bucket.GetPacket(buff, sn)
+	return b.bucket.GetPacket(buff, esn)
 }
 
 func (b *Buffer) OnRtcpFeedback(fn func(fb []rtcp.Packet)) {

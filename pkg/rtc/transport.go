@@ -1421,7 +1421,7 @@ func (t *PCTransport) handleRemoteICECandidate(e event) error {
 		t.params.Logger.Warnw("failed to add cached ICE candidate", err, "candidate", c)
 		return errors.Wrap(err, "add ice candidate failed")
 	} else {
-		t.params.Logger.Debugw("added cached ICE candidate", "candidate", c)
+		t.params.Logger.Debugw("added ICE candidate", "candidate", c)
 	}
 
 	return nil

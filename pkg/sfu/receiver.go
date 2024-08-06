@@ -56,7 +56,7 @@ type TrackReceiver interface {
 	HeaderExtensions() []webrtc.RTPHeaderExtensionParameter
 	IsClosed() bool
 
-	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
+	ReadRTP(buf []byte, layer uint8, esn uint64) (int, error)
 	GetLayeredBitrate() ([]int32, Bitrates)
 
 	GetAudioLevel() (float64, bool)
@@ -575,13 +575,13 @@ func (w *WebRTCReceiver) getBufferLocked(layer int32) *buffer.Buffer {
 	return w.buffers[layer]
 }
 
-func (w *WebRTCReceiver) ReadRTP(buf []byte, layer uint8, sn uint16) (int, error) {
+func (w *WebRTCReceiver) ReadRTP(buf []byte, layer uint8, esn uint64) (int, error) {
 	b := w.getBuffer(int32(layer))
 	if b == nil {
 		return 0, ErrBufferNotFound
 	}
 
-	return b.GetPacket(buf, sn)
+	return b.GetPacket(buf, esn)
 }
 
 func (w *WebRTCReceiver) GetTrackStats() *livekit.RTPStats {
@@ -711,22 +711,6 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 			if spatialTracker == nil {
 				spatialTracker = w.streamTrackerManager.AddTracker(pkt.Spatial)
 			}
-		}
-		if spatialLayer > buffer.DefaultMaxLayerSpatial { // TODO-REMOVE-AFTER-DEBUG
-			w.logger.Warnw(
-				"invalid spatial layer", nil,
-				"mime", w.codec.MimeType,
-				"layer", layer,
-				"spatialLayer", spatialLayer,
-				"sn", pkt.Packet.SequenceNumber,
-				"esn", pkt.ExtSequenceNumber,
-				"timestamp", pkt.Packet.Timestamp,
-				"ets", pkt.ExtTimestamp,
-				"payloadSize", len(pkt.Packet.Payload),
-				"rtpVersion", pkt.Packet.Version,
-				"payloadType", pkt.Packet.PayloadType,
-				"ssrc", pkt.Packet.SSRC,
-			)
 		}
 
 		writeCount := w.downTrackSpreader.Broadcast(func(dt TrackSender) {

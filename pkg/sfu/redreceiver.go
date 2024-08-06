@@ -127,7 +127,7 @@ func (r *RedReceiver) Close() {
 	closeTrackSenders(r.downTrackSpreader.ResetAndGetDownTracks())
 }
 
-func (r *RedReceiver) ReadRTP(buf []byte, layer uint8, sn uint16) (int, error) {
+func (r *RedReceiver) ReadRTP(buf []byte, layer uint8, esn uint64) (int, error) {
 	// red encoding doesn't support nack
 	return 0, bucket.ErrPacketMismatch
 }
