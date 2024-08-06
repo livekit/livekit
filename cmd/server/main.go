@@ -280,7 +280,7 @@ func startServer(c *cli.Context) error {
 	go func() {
 		sig := <-sigChan
 		logger.Infow("exit requested, shutting down", "signal", sig)
-		server.Stop(false)
+		server.Stop(true)
 	}()
 
 	return server.Start()
