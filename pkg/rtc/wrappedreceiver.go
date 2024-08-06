@@ -201,9 +201,9 @@ func (d *DummyReceiver) HeaderExtensions() []webrtc.RTPHeaderExtensionParameter 
 	return d.headerExtensions
 }
 
-func (d *DummyReceiver) ReadRTP(buf []byte, layer uint8, sn uint16) (int, error) {
+func (d *DummyReceiver) ReadRTP(buf []byte, layer uint8, esn uint64) (int, error) {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
-		return r.ReadRTP(buf, layer, sn)
+		return r.ReadRTP(buf, layer, esn)
 	}
 	return 0, errors.New("no receiver")
 }

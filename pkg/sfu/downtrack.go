@@ -138,7 +138,7 @@ var (
 type DownTrackState struct {
 	RTPStats                   *buffer.RTPStatsSender
 	DeltaStatsSenderSnapshotId uint32
-	ForwarderState             ForwarderState
+	ForwarderState             *livekit.RTPForwarderState
 }
 
 func (d DownTrackState) String() string {
@@ -265,6 +265,7 @@ type DownTrack struct {
 	connected            atomic.Bool
 	bindAndConnectedOnce atomic.Bool
 	writable             atomic.Bool
+	writeStopped         atomic.Bool
 
 	rtpStats *buffer.RTPStatsSender
 
@@ -1147,18 +1148,28 @@ func (d *DownTrack) MaxLayer() buffer.VideoLayer {
 }
 
 func (d *DownTrack) GetState() DownTrackState {
-	dts := DownTrackState{
+	return DownTrackState{
 		RTPStats:                   d.rtpStats,
 		DeltaStatsSenderSnapshotId: d.deltaStatsSenderSnapshotId,
 		ForwarderState:             d.forwarder.GetState(),
 	}
-	return dts
 }
 
 func (d *DownTrack) SeedState(state DownTrackState) {
-	d.rtpStats.Seed(state.RTPStats)
-	d.deltaStatsSenderSnapshotId = state.DeltaStatsSenderSnapshotId
+	if state.RTPStats != nil {
+		d.rtpStats.Seed(state.RTPStats)
+		d.deltaStatsSenderSnapshotId = state.DeltaStatsSenderSnapshotId
+	}
 	d.forwarder.SeedState(state.ForwarderState)
+}
+
+func (d *DownTrack) StopWriteAndGetState() DownTrackState {
+	d.bindLock.Lock()
+	d.writable.Store(false)
+	d.writeStopped.Store(true)
+	d.bindLock.Unlock()
+
+	return d.GetState()
 }
 
 func (d *DownTrack) UpTrackLayersChange() {
@@ -1985,6 +1996,9 @@ func (d *DownTrack) GetAndResetBytesSent() (uint32, uint32) {
 */
 
 func (d *DownTrack) onBindAndConnectedChange() {
+	if d.writeStopped.Load() {
+		return
+	}
 	d.writable.Store(d.connected.Load() && d.bound.Load())
 	if d.connected.Load() && d.bound.Load() && !d.bindAndConnectedOnce.Swap(true) {
 		if d.activePaddingOnMuteUpTrack.Load() {
