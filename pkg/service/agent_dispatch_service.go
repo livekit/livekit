@@ -40,6 +40,15 @@ func (ag *AgentDispatchService) CreateDispatch(ctx context.Context, req *livekit
 	return ag.agentDispatchClient.CreateDispatch(ctx, rpc.RoomTopic(req.Room), req)
 }
 
+func (ag *AgentDispatchService) DeleteDispatch(ctx context.Context, req *livekit.DeleteAgentDispatchRequest) (*livekit.AgentDispatch, error) {
+	err := EnsureAdminPermission(ctx, livekit.RoomName(req.Room))
+	if err != nil {
+		return nil, twirpAuthError(err)
+	}
+
+	return ag.agentDispatchClient.DeleteDispatch(ctx, rpc.RoomTopic(req.Room), req)
+}
+
 func (ag *AgentDispatchService) ListDispatch(ctx context.Context, req *livekit.ListAgentDispatchRequest) (*livekit.ListAgentDispatchResponse, error) {
 	err := EnsureAdminPermission(ctx, livekit.RoomName(req.Room))
 	if err != nil {
@@ -47,8 +56,4 @@ func (ag *AgentDispatchService) ListDispatch(ctx context.Context, req *livekit.L
 	}
 
 	return ag.agentDispatchClient.ListDispatch(ctx, rpc.RoomTopic(req.Room), req)
-}
-
-func (ag *AgentDispatchService) DeleteDispatch(ctx context.Context, req *livekit.DeleteAgentDispatchRequest) (*livekit.AgentDispatch, error) {
-	return nil, nil
 }

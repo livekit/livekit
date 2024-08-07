@@ -853,6 +853,22 @@ func (r *RoomManager) CreateDispatch(ctx context.Context, req *livekit.CreateAge
 	return disp, nil
 }
 
+func (r *RoomManager) DeleteDispatch(ctx context.Context, req *livekit.DeleteAgentDispatchRequest) (*livekit.AgentDispatch, error) {
+	room := r.GetRoom(ctx, livekit.RoomName(req.Room))
+	if room == nil {
+		return nil, ErrRoomNotFound
+	}
+
+	room.Logger.Debugw("room DeleteDispatch", "dispatchID", req.DispatchId)
+
+	disp, err := room.DeleteAgentDispatch(req.DispatchId)
+	if err != nil {
+		return nil, err
+	}
+
+	return disp, nil
+}
+
 func (r *RoomManager) iceServersForParticipant(apiKey string, participant types.LocalParticipant, tlsOnly bool) []*livekit.ICEServer {
 	var iceServers []*livekit.ICEServer
 	rtcConf := r.config.RTC

@@ -43,6 +43,7 @@ type Client interface {
 	// LaunchJob starts a room or participant job on an agent.
 	// it will launch a job once for each worker in each namespace
 	LaunchJob(ctx context.Context, desc *JobRequest) *serverutils.IncrementalDispatcher[*livekit.Job]
+	TerminateJob(ctx context.Context, jobID string) (*livekit.JobState, error)
 	Stop() error
 }
 
@@ -166,6 +167,18 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) *serverut
 	})
 
 	return ret
+}
+
+func (c *agentClient) TerminateJob(ctx context.Context, jobID string) (*livekit.JobState, error) {
+	resp, err := c.client.JobTerminate(context.Background(), jobID, &rpc.JobTerminateRequest{
+		JobId: jobID,
+	})
+	if err != nil {
+		logger.Infow("failed to send job request", "error", err, "jobID", jobID)
+		return nil, err
+	}
+
+	return resp.State, nil
 }
 
 func (c *agentClient) getDispatcher(agName string, jobType livekit.JobType) *serverutils.IncrementalDispatcher[string] {

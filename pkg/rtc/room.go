@@ -36,6 +36,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
+	"github.com/livekit/psrpc"
 
 	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/config"
@@ -112,7 +113,7 @@ type Room struct {
 	telemetry       telemetry.TelemetryService
 	egressLauncher  EgressLauncher
 	trackManager    *RoomTrackManager
-	agentDispatches []*livekit.AgentDispatch
+	agentDispatches map[string]*agentDispatch
 
 	// agents
 	agentClient agent.Client
@@ -146,6 +147,42 @@ type ParticipantOptions struct {
 	AutoSubscribe bool
 }
 
+type agentDispatch struct {
+	*livekit.AgentDispatch
+	pending map[chan struct{}]struct{} // FIXME: replace with a chan of Future[[]*livekit.Job]?
+}
+
+func newAgentDispatch(ad *livekit.AgentDispatch) *agentDispatch {
+	return &agentDispatch{
+		AgentDispatch: ad,
+		pending:       make(map[chan struct{}]struct{}),
+	}
+}
+
+func (ad *agentDispatch) jobsLaunching(mu *sync.RWMutex) (jobsLaunched func()) {
+	mu.Lock()
+	c := make(chan struct{})
+	ad.pending[c] = struct{}{}
+	mu.Unlock()
+
+	return func() {
+		close(c)
+		mu.Lock()
+		delete(ad.pending, c)
+		mu.Unlock()
+	}
+}
+
+func (ad *agentDispatch) waitForPendingJobs(mu *sync.RWMutex) {
+	mu.RLock()
+	cs := maps.Keys(ad.pending)
+	mu.RUnlock()
+
+	for _, c := range cs {
+		<-c
+	}
+}
+
 func NewRoom(
 	room *livekit.Room,
 	internal *livekit.RoomInternal,
@@ -172,6 +209,7 @@ func NewRoom(
 		egressLauncher:                       egressLauncher,
 		agentClient:                          agentClient,
 		agentStore:                           agentStore,
+		agentDispatches:                      make(map[string]*agentDispatch),
 		trackManager:                         NewRoomTrackManager(),
 		serverInfo:                           serverInfo,
 		participants:                         make(map[livekit.ParticipantIdentity]types.LocalParticipant),
@@ -199,7 +237,7 @@ func NewRoom(
 
 	r.createAgentDispatchesFromRoomAgent()
 
-	r.launchRoomAgents(r.agentDispatches)
+	r.launchRoomAgents(maps.Values(r.agentDispatches))
 
 	go r.audioUpdateWorker()
 	go r.connectionQualityWorker()
@@ -861,7 +899,7 @@ func (r *Room) GetAgentDispatches(dispatchID string) ([]*livekit.AgentDispatch, 
 
 	for _, ad := range r.agentDispatches {
 		if dispatchID == "" || ad.Id == dispatchID {
-			ret = append(ret, proto.Clone(ad).(*livekit.AgentDispatch))
+			ret = append(ret, proto.Clone(ad.AgentDispatch).(*livekit.AgentDispatch))
 		}
 	}
 
@@ -874,13 +912,47 @@ func (r *Room) AddAgentDispatch(agentName string, metadata string) (*livekit.Age
 		return nil, err
 	}
 
-	r.launchRoomAgents([]*livekit.AgentDispatch{ad})
+	r.launchRoomAgents([]*agentDispatch{ad})
 
 	for _, p := range r.participants {
-		r.launchPublisherAgents([]*livekit.AgentDispatch{ad}, p)
+		r.launchPublisherAgents([]*agentDispatch{ad}, p)
 	}
 
-	return ad, nil
+	return ad.AgentDispatch, nil
+}
+
+func (r *Room) DeleteAgentDispatch(dispatchID string) (*livekit.AgentDispatch, error) {
+	r.lock.Lock()
+	ad := r.agentDispatches[dispatchID]
+	if ad == nil {
+		r.lock.Unlock()
+		return nil, psrpc.NewErrorf(psrpc.NotFound, "dispatch ID not found")
+	}
+
+	delete(r.agentDispatches, dispatchID)
+	r.lock.Unlock()
+
+	// Should Delete be synchronous instead?
+	go func() {
+		ad.waitForPendingJobs(&r.lock)
+
+		var jobs []*livekit.Job
+		r.lock.Lock()
+		if ad.State != nil {
+			jobs = ad.State.Jobs
+		}
+		r.lock.Unlock()
+
+		for _, j := range jobs {
+			state, err := r.agentClient.TerminateJob(context.Background(), j.Id)
+			if err != nil {
+				continue
+			}
+			j.State = state
+		}
+	}()
+
+	return ad.AgentDispatch, nil
 }
 
 func (r *Room) OnRoomUpdated(f func()) {
@@ -1043,7 +1115,7 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 	r.lock.Unlock()
 
 	if !hasPublished {
-		r.launchPublisherAgents(r.agentDispatches, participant)
+		r.launchPublisherAgents(maps.Values(r.agentDispatches), participant)
 		if r.internal != nil && r.internal.ParticipantEgress != nil {
 			go func() {
 				if err := StartParticipantEgress(
@@ -1452,12 +1524,14 @@ func (r *Room) simulationCleanupWorker() {
 	}
 }
 
-func (r *Room) launchRoomAgents(ads []*livekit.AgentDispatch) {
+func (r *Room) launchRoomAgents(ads []*agentDispatch) {
 	if r.agentClient == nil {
 		return
 	}
 
 	for _, ad := range ads {
+		done := ad.jobsLaunching(&r.lock)
+
 		go func() {
 			inc := r.agentClient.LaunchJob(context.Background(), &agent.JobRequest{
 				JobType:    livekit.JobType_JT_ROOM,
@@ -1472,16 +1546,19 @@ func (r *Room) launchRoomAgents(ads []*livekit.AgentDispatch) {
 				ad.State.Jobs = append(ad.State.Jobs, job)
 				r.lock.Unlock()
 			})
+			done()
 		}()
 	}
 }
 
-func (r *Room) launchPublisherAgents(ads []*livekit.AgentDispatch, p types.Participant) {
+func (r *Room) launchPublisherAgents(ads []*agentDispatch, p types.Participant) {
 	if p == nil || p.IsDependent() || r.agentClient == nil {
 		return
 	}
 
 	for _, ad := range ads {
+		done := ad.jobsLaunching(&r.lock)
+
 		go func() {
 			inc := r.agentClient.LaunchJob(context.Background(), &agent.JobRequest{
 				JobType:     livekit.JobType_JT_PUBLISHER,
@@ -1497,6 +1574,7 @@ func (r *Room) launchPublisherAgents(ads []*livekit.AgentDispatch, p types.Parti
 				ad.State.Jobs = append(ad.State.Jobs, job)
 				r.lock.Unlock()
 			})
+			done()
 		}()
 	}
 }
@@ -1518,23 +1596,25 @@ func (r *Room) DebugInfo() map[string]interface{} {
 	return info
 }
 
-func (r *Room) createAgentDispatchFromParams(agentName string, metadata string) (*livekit.AgentDispatch, error) {
+func (r *Room) createAgentDispatchFromParams(agentName string, metadata string) (*agentDispatch, error) {
 	now := time.Now()
 
-	ad := &livekit.AgentDispatch{
-		Id:        guid.New(guid.AgentDispatchPrefix),
-		AgentName: agentName,
-		Metadata:  metadata,
-		Room:      r.protoRoom.Name,
-		State: &livekit.AgentDispatchState{
-			CreatedAt: now.UnixNano(),
+	ad := newAgentDispatch(
+		&livekit.AgentDispatch{
+			Id:        guid.New(guid.AgentDispatchPrefix),
+			AgentName: agentName,
+			Metadata:  metadata,
+			Room:      r.protoRoom.Name,
+			State: &livekit.AgentDispatchState{
+				CreatedAt: now.UnixNano(),
+			},
 		},
-	}
+	)
 	r.lock.RLock()
-	r.agentDispatches = append(r.agentDispatches, ad)
+	r.agentDispatches[ad.Id] = ad
 	r.lock.RUnlock()
 	if r.agentStore != nil {
-		err := r.agentStore.StoreAgentDispatch(context.Background(), ad)
+		err := r.agentStore.StoreAgentDispatch(context.Background(), ad.AgentDispatch)
 		if err != nil {
 			return nil, err
 		}
