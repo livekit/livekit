@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"golang.org/x/exp/maps"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/livekit/livekit-server/pkg/agent"
@@ -170,15 +171,31 @@ func NewAgentHandler(
 	}
 }
 
+func (h *AgentHandler) InsertWorker(w *agent.Worker) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.workers[w.ID()] = w
+}
+
+func (h *AgentHandler) DeleteWorker(w *agent.Worker) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.workers, w.ID())
+}
+
+func (h *AgentHandler) Workers() []*agent.Worker {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return maps.Values(h.workers)
+}
+
 func (h *AgentHandler) HandleConnection(ctx context.Context, conn agent.SignalConn, protocol agent.WorkerProtocolVersion) {
 	apiKey := GetAPIKey(ctx)
 	apiSecret := h.keyProvider.GetSecret(apiKey)
 
 	worker := agent.NewWorker(protocol, apiKey, apiSecret, h.serverInfo, conn, h.logger, h)
 
-	h.mu.Lock()
-	h.workers[worker.ID()] = worker
-	h.mu.Unlock()
+	h.InsertWorker(worker)
 
 	for {
 		req, _, err := conn.ReadWorkerMessage()
@@ -194,9 +211,7 @@ func (h *AgentHandler) HandleConnection(ctx context.Context, conn agent.SignalCo
 		worker.HandleMessage(req)
 	}
 
-	h.mu.Lock()
-	delete(h.workers, worker.ID())
-	h.mu.Unlock()
+	h.DeleteWorker(worker)
 
 	worker.Close()
 }
