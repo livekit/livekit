@@ -49,6 +49,7 @@ type SimulatedWorkerOptions struct {
 	SupportResume      bool
 	DefaultJobLoad     float32
 	JobLoadThreshold   float32
+	DefaultWorkerLoad  float32
 	HandleAvailability func(AgentJobRequest)
 	HandleAssignment   func(*livekit.Job) JobLoad
 }
@@ -71,10 +72,17 @@ func WithJobLoad(l JobLoad) SimulatedWorkerOption {
 	return WithJobAssignmentHandler(func(j *livekit.Job) JobLoad { return l })
 }
 
+func WithDefaultWorkerLoad(load float32) SimulatedWorkerOption {
+	return func(o *SimulatedWorkerOptions) {
+		o.DefaultWorkerLoad = load
+	}
+}
+
 func (h *TestServer) SimulateAgentWorker(opts ...SimulatedWorkerOption) *AgentWorker {
 	o := &SimulatedWorkerOptions{
 		DefaultJobLoad:     0.1,
 		JobLoadThreshold:   0.8,
+		DefaultWorkerLoad:  0.0,
 		HandleAvailability: func(r AgentJobRequest) { r.Accept() },
 		HandleAssignment:   func(j *livekit.Job) JobLoad { return nil },
 	}
@@ -94,6 +102,10 @@ func (h *TestServer) SimulateAgentWorker(opts ...SimulatedWorkerOption) *AgentWo
 		WorkerPongs:             utils.NewDefaultEventObserverList[*livekit.WorkerPong](),
 	}
 	w.ctx, w.cancel = context.WithCancel(context.Background())
+
+	if o.DefaultWorkerLoad > 0.0 {
+		w.sendStatus()
+	}
 
 	go w.worker()
 	go h.handleConnection(w)
@@ -173,6 +185,7 @@ func (r AgentJobRequest) Reject() {
 }
 
 type AgentWorker struct {
+	Name string
 	*SimulatedWorkerOptions
 
 	fuse           core.Fuse
@@ -290,12 +303,14 @@ func (w *AgentWorker) handleAvailability(m *livekit.AvailabilityRequest) {
 }
 
 func (w *AgentWorker) handleAssignment(m *livekit.JobAssignment) {
+	m.Job.AgentName = w.Name
 	w.JobAssignments.Emit(m)
 
 	var load JobLoad
 	if w.HandleAssignment != nil {
 		load = w.HandleAssignment(m.Job)
 	}
+
 	if load == nil {
 		load = NewStableJobLoad(w.DefaultJobLoad)
 	}
@@ -370,8 +385,13 @@ func (w *AgentWorker) sendStatus() {
 	w.mu.Lock()
 	var load float32
 	jobCount := len(w.jobs)
-	for _, j := range w.jobs {
-		load += j.Load()
+
+	if len(w.jobs) == 0 {
+		load = w.DefaultWorkerLoad
+	} else {
+		for _, j := range w.jobs {
+			load += j.Load()
+		}
 	}
 	w.mu.Unlock()
 
@@ -387,10 +407,11 @@ func (w *AgentWorker) sendStatus() {
 	})
 }
 
-func (w *AgentWorker) Register(agentName string, jobType livekit.JobType) {
+func (w *AgentWorker) Register(name string, namespace string, jobType livekit.JobType) {
+	w.Name = name
 	w.SendRegister(&livekit.RegisterWorkerRequest{
 		Type:      jobType,
-		AgentName: agentName,
+		Namespace: &namespace,
 	})
 	w.sendStatus()
 }

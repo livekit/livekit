@@ -308,28 +308,9 @@ func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*rpc.J
 	key := workerKey{job.AgentName, job.Namespace, job.Type}
 	attempted := make(map[*agent.Worker]struct{})
 	for {
-		h.mu.Lock()
-		var selected *agent.Worker
-		var maxLoad float32
-		for _, w := range h.namespaceWorkers[key] {
-			if _, ok := attempted[w]; ok {
-				continue
-			}
-
-			if w.Status() == livekit.WorkerStatus_WS_AVAILABLE {
-				load := w.Load()
-				if len(w.RunningJobs()) > 0 && load > maxLoad {
-					maxLoad = load
-					selected = w
-				} else if selected == nil {
-					selected = w
-				}
-			}
-		}
-		h.mu.Unlock()
-
-		if selected == nil {
-			return nil, psrpc.NewErrorf(psrpc.DeadlineExceeded, "no workers available")
+		selected, err := h.selectWorkerWeightedByLoad(key, attempted)
+		if err != nil {
+			return nil, psrpc.NewError(psrpc.DeadlineExceeded, err)
 		}
 
 		attempted[selected] = struct{}{}
@@ -347,7 +328,7 @@ func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*rpc.J
 			values = append(values, "participant", job.Participant.Identity)
 		}
 		h.logger.Debugw("assigning job", values...)
-		err := selected.AssignJob(ctx, job)
+		err = selected.AssignJob(ctx, job)
 		if err != nil {
 			if errors.Is(err, agent.ErrWorkerNotAvailable) {
 				continue // Try another worker
@@ -414,4 +395,45 @@ func (h *AgentHandler) DrainConnections(interval time.Duration) {
 		w.Close()
 		<-t.C
 	}
+}
+
+func (h *AgentHandler) selectWorkerWeightedByLoad(key workerKey, ignore map[*agent.Worker]struct{}) (*agent.Worker, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	workers, ok := h.namespaceWorkers[key]
+	if !ok {
+		return nil, errors.New("no workers available")
+	}
+
+	normalizeLoad := func(load float32) int {
+		if load >= 1 {
+			return 0
+		}
+		return int((1 - load) * 100)
+	}
+
+	normalizedLoads := make(map[*agent.Worker]int)
+	var availableSum int
+	for _, w := range workers {
+		if _, ok := ignore[w]; !ok && w.Status() == livekit.WorkerStatus_WS_AVAILABLE {
+			normalizedLoads[w] = normalizeLoad(w.Load())
+			availableSum += normalizedLoads[w]
+		}
+	}
+
+	if availableSum == 0 {
+		return nil, errors.New("no workers with sufficient capacity")
+	}
+
+	threshold := rand.Intn(availableSum)
+	var currentSum int
+	for w, load := range normalizedLoads {
+		currentSum += load
+		if currentSum >= threshold {
+			return w, nil
+		}
+	}
+
+	return nil, errors.New("no workers available")
 }
