@@ -153,14 +153,19 @@ type ParticipantOptions struct {
 
 type agentDispatch struct {
 	*livekit.AgentDispatch
+	lock    sync.Mutex
 	pending map[chan struct{}]struct{}
 }
 
 type agentJob struct {
 	*livekit.Job
+	lock sync.Mutex
 	done chan struct{}
 }
 
+// This provides utilities attached the agent dispatch to ensure that all pending jobs are created
+// before terminating jobs attached to an agent dispatch. This avoids a race that could cause some pending jobs
+// to not be terninated when a dispatch is deleted.
 func newAgentDispatch(ad *livekit.AgentDispatch) *agentDispatch {
 	return &agentDispatch{
 		AgentDispatch: ad,
@@ -168,30 +173,31 @@ func newAgentDispatch(ad *livekit.AgentDispatch) *agentDispatch {
 	}
 }
 
-func (ad *agentDispatch) jobsLaunching(mu *sync.RWMutex) (jobsLaunched func()) {
-	mu.Lock()
+func (ad *agentDispatch) jobsLaunching() (jobsLaunched func()) {
+	ad.lock.Lock()
 	c := make(chan struct{})
 	ad.pending[c] = struct{}{}
-	mu.Unlock()
+	ad.lock.Unlock()
 
 	return func() {
 		close(c)
-		mu.Lock()
+		ad.lock.Lock()
 		delete(ad.pending, c)
-		mu.Unlock()
+		ad.lock.Unlock()
 	}
 }
 
-func (ad *agentDispatch) waitForPendingJobs(mu *sync.RWMutex) {
-	mu.RLock()
+func (ad *agentDispatch) waitForPendingJobs() {
+	ad.lock.Lock()
 	cs := maps.Keys(ad.pending)
-	mu.RUnlock()
+	ad.lock.Unlock()
 
 	for _, c := range cs {
 		<-c
 	}
 }
 
+// This provides utilities to ensure that an agent left the room when killing a job
 func newAgentJob(j *livekit.Job) *agentJob {
 	return &agentJob{
 		Job:  j,
@@ -199,21 +205,21 @@ func newAgentJob(j *livekit.Job) *agentJob {
 	}
 }
 
-func (j *agentJob) participantLeft(mu *sync.RWMutex) {
-	mu.Lock()
+func (j *agentJob) participantLeft() {
+	j.lock.Lock()
 	if j.done != nil {
 		close(j.done)
 		j.done = nil
 	}
-	mu.Unlock()
+	j.lock.Unlock()
 }
 
 func (j *agentJob) waitForParticipantLeaving(mu *sync.RWMutex) error {
 	var done chan struct{}
 
-	mu.RLock()
+	j.lock.Lock()
 	done = j.done
-	mu.RUnlock()
+	j.lock.Unlock()
 
 	if done != nil {
 		select {
@@ -704,7 +710,7 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 	}
 
 	if agentJob != nil {
-		agentJob.participantLeft(&r.lock)
+		agentJob.participantLeft()
 
 		go func() {
 			_, err := r.agentClient.TerminateJob(context.Background(), agentJob.Id, rpc.JobTerminateReason_AGENT_LEFT_ROOM)
@@ -973,9 +979,12 @@ func (r *Room) AddAgentDispatch(agentName string, metadata string) (*livekit.Age
 
 	r.launchRoomAgents([]*agentDispatch{ad})
 
+	r.lock.RLock()
+	// launchPublisherAgents starts a goroutine to send requests, so is safe to call locked
 	for _, p := range r.participants {
 		r.launchPublisherAgents([]*agentDispatch{ad}, p)
 	}
+	r.lock.RUnlock()
 
 	return ad.AgentDispatch, nil
 }
@@ -993,14 +1002,14 @@ func (r *Room) DeleteAgentDispatch(dispatchID string) (*livekit.AgentDispatch, e
 
 	// Should Delete be synchronous instead?
 	go func() {
-		ad.waitForPendingJobs(&r.lock)
+		ad.waitForPendingJobs()
 
 		var jobs []*livekit.Job
-		r.lock.Lock()
+		r.lock.RLock()
 		if ad.State != nil {
 			jobs = ad.State.Jobs
 		}
-		r.lock.Unlock()
+		r.lock.RUnlock()
 
 		for _, j := range jobs {
 			state, err := r.agentClient.TerminateJob(context.Background(), j.Id, rpc.JobTerminateReason_TERINATION_REQUESTED)
@@ -1008,10 +1017,10 @@ func (r *Room) DeleteAgentDispatch(dispatchID string) (*livekit.AgentDispatch, e
 				continue
 			}
 			if state.ParticipantIdentity != "" {
-				r.lock.Lock()
+				r.lock.RLock()
 				agentJob := r.agentParticpants[livekit.ParticipantIdentity(state.ParticipantIdentity)]
 				p := r.participants[livekit.ParticipantIdentity(state.ParticipantIdentity)]
-				r.lock.Unlock()
+				r.lock.RUnlock()
 
 				if p != nil {
 					if agentJob != nil {
@@ -1023,7 +1032,9 @@ func (r *Room) DeleteAgentDispatch(dispatchID string) (*livekit.AgentDispatch, e
 					r.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonServiceRequestRemoveParticipant)
 				}
 			}
+			r.lock.Lock()
 			j.State = state
+			r.lock.Unlock()
 		}
 	}()
 
@@ -1190,7 +1201,9 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 	r.lock.Unlock()
 
 	if !hasPublished {
+		r.lock.RLock()
 		r.launchPublisherAgents(maps.Values(r.agentDispatches), participant)
+		r.lock.RUnlock()
 		if r.internal != nil && r.internal.ParticipantEgress != nil {
 			go func() {
 				if err := StartParticipantEgress(
@@ -1605,7 +1618,7 @@ func (r *Room) launchRoomAgents(ads []*agentDispatch) {
 	}
 
 	for _, ad := range ads {
-		done := ad.jobsLaunching(&r.lock)
+		done := ad.jobsLaunching()
 
 		go func() {
 			inc := r.agentClient.LaunchJob(context.Background(), &agent.JobRequest{
@@ -1627,7 +1640,7 @@ func (r *Room) launchPublisherAgents(ads []*agentDispatch, p types.Participant) 
 	}
 
 	for _, ad := range ads {
-		done := ad.jobsLaunching(&r.lock)
+		done := ad.jobsLaunching()
 
 		go func() {
 			inc := r.agentClient.LaunchJob(context.Background(), &agent.JobRequest{

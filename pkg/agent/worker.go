@@ -446,7 +446,6 @@ func (w *Worker) updateJobStatus(update *livekit.UpdateJobStatus) error {
 	}
 	w.mu.Unlock()
 
-	// TODO
 	w.handler.HandleWorkerJobStatus(w, update)
 
 	return nil
