@@ -313,16 +313,16 @@ func (h *AgentHandler) HandleWorkerDeregister(w *agent.Worker) {
 
 func (h *AgentHandler) HandleWorkerJobStatus(w *agent.Worker, status *livekit.UpdateJobStatus) {
 	if agent.JobStatusIsEnded(status.Status) {
+		h.mu.Lock()
 		h.deregisterJob(status.JobId)
+		h.mu.Unlock()
 	}
 }
 
 func (h *AgentHandler) deregisterJob(jobID string) {
 	h.agentServer.DeregisterJobTerminateTopic(jobID)
 
-	h.mu.Lock()
 	delete(h.jobToWorker, jobID)
-	h.mu.Unlock()
 
 	// TODO update dispatch state
 }
