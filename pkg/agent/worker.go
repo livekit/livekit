@@ -412,7 +412,7 @@ func (w *Worker) handleJobUpdate(update *livekit.UpdateJobStatus) {
 	err := w.updateJobStatus(update)
 
 	if err != nil {
-		w.logger.Infow("received job update for unknown job", "jobId", update.JobId)
+		w.logger.Infow("received job update for unknown job", "jobID", update.JobId)
 	}
 }
 

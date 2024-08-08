@@ -823,8 +823,6 @@ func (r *RoomManager) ListDispatch(ctx context.Context, req *livekit.ListAgentDi
 		return nil, ErrRoomNotFound
 	}
 
-	room.Logger.Debugw("room ListDispatch", "dispatchID", req.DispatchId)
-
 	disp, err := room.GetAgentDispatches(req.DispatchId)
 	if err != nil {
 		return nil, err
@@ -843,8 +841,6 @@ func (r *RoomManager) CreateDispatch(ctx context.Context, req *livekit.CreateAge
 		return nil, ErrRoomNotFound
 	}
 
-	room.Logger.Debugw("room CreateDispatch", "agentName", req.AgentName)
-
 	disp, err := room.AddAgentDispatch(req.AgentName, req.Metadata)
 	if err != nil {
 		return nil, err
@@ -858,8 +854,6 @@ func (r *RoomManager) DeleteDispatch(ctx context.Context, req *livekit.DeleteAge
 	if room == nil {
 		return nil, ErrRoomNotFound
 	}
-
-	room.Logger.Debugw("room DeleteDispatch", "dispatchID", req.DispatchId)
 
 	disp, err := room.DeleteAgentDispatch(req.DispatchId)
 	if err != nil {

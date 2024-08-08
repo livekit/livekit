@@ -165,7 +165,7 @@ type agentJob struct {
 
 // This provides utilities attached the agent dispatch to ensure that all pending jobs are created
 // before terminating jobs attached to an agent dispatch. This avoids a race that could cause some pending jobs
-// to not be terninated when a dispatch is deleted.
+// to not be terminated when a dispatch is deleted.
 func newAgentDispatch(ad *livekit.AgentDispatch) *agentDispatch {
 	return &agentDispatch{
 		AgentDispatch: ad,
@@ -214,7 +214,7 @@ func (j *agentJob) participantLeft() {
 	j.lock.Unlock()
 }
 
-func (j *agentJob) waitForParticipantLeaving(mu *sync.RWMutex) error {
+func (j *agentJob) waitForParticipantLeaving() error {
 	var done chan struct{}
 
 	j.lock.Lock()
@@ -1024,7 +1024,7 @@ func (r *Room) DeleteAgentDispatch(dispatchID string) (*livekit.AgentDispatch, e
 
 				if p != nil {
 					if agentJob != nil {
-						err := agentJob.waitForParticipantLeaving(&r.lock)
+						err := agentJob.waitForParticipantLeaving()
 						if err == ErrJobShutdownTimeout {
 							r.Logger.Infow("Agent Worker did not disconnect after 3s")
 						}

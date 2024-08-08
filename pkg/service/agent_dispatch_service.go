@@ -23,11 +23,13 @@ import (
 
 type AgentDispatchService struct {
 	agentDispatchClient rpc.TypedAgentDispatchInternalClient
+	topicFormatter      rpc.TopicFormatter
 }
 
-func NewAgentDispatchService(agentDispatchClient rpc.TypedAgentDispatchInternalClient) *AgentDispatchService {
+func NewAgentDispatchService(agentDispatchClient rpc.TypedAgentDispatchInternalClient, topicFormatter rpc.TopicFormatter) *AgentDispatchService {
 	return &AgentDispatchService{
 		agentDispatchClient: agentDispatchClient,
+		topicFormatter:      topicFormatter,
 	}
 }
 
@@ -37,7 +39,7 @@ func (ag *AgentDispatchService) CreateDispatch(ctx context.Context, req *livekit
 		return nil, twirpAuthError(err)
 	}
 
-	return ag.agentDispatchClient.CreateDispatch(ctx, rpc.RoomTopic(req.Room), req)
+	return ag.agentDispatchClient.CreateDispatch(ctx, ag.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
 }
 
 func (ag *AgentDispatchService) DeleteDispatch(ctx context.Context, req *livekit.DeleteAgentDispatchRequest) (*livekit.AgentDispatch, error) {
@@ -46,7 +48,7 @@ func (ag *AgentDispatchService) DeleteDispatch(ctx context.Context, req *livekit
 		return nil, twirpAuthError(err)
 	}
 
-	return ag.agentDispatchClient.DeleteDispatch(ctx, rpc.RoomTopic(req.Room), req)
+	return ag.agentDispatchClient.DeleteDispatch(ctx, ag.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
 }
 
 func (ag *AgentDispatchService) ListDispatch(ctx context.Context, req *livekit.ListAgentDispatchRequest) (*livekit.ListAgentDispatchResponse, error) {
@@ -55,5 +57,5 @@ func (ag *AgentDispatchService) ListDispatch(ctx context.Context, req *livekit.L
 		return nil, twirpAuthError(err)
 	}
 
-	return ag.agentDispatchClient.ListDispatch(ctx, rpc.RoomTopic(req.Room), req)
+	return ag.agentDispatchClient.ListDispatch(ctx, ag.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
 }
