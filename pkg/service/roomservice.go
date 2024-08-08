@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/avast/retry-go/v4"
 	"github.com/pkg/errors"
 	"github.com/twitchtv/twirp"
 	"google.golang.org/protobuf/proto"
@@ -30,6 +29,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 )
 
@@ -77,9 +77,7 @@ func NewRoomService(
 }
 
 func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (*livekit.Room, error) {
-	clone := redactCreateRoomRequest(req)
-
-	AppendLogFields(ctx, "room", clone.Name, "request", clone)
+	AppendLogFields(ctx, "room", req.Name, "request", logger.Proto(redactCreateRoomRequest(req)))
 	if err := EnsureCreatePermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	} else if req.Egress != nil && s.egressLauncher == nil {
@@ -281,29 +279,17 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 		return nil, twirpAuthError(err)
 	}
 
-	room, _, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false)
+	_, _, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false)
 	if err != nil {
 		return nil, err
 	}
 
-	room, err = s.roomClient.UpdateRoomMetadata(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
+	room, err := s.roomClient.UpdateRoomMetadata(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
 	if err != nil {
 		return nil, err
 	}
 
 	return room, nil
-}
-
-func (s *RoomService) confirmExecution(ctx context.Context, f func() error) error {
-	ctx, cancel := context.WithTimeout(ctx, s.apiConf.ExecutionTimeout)
-	defer cancel()
-	return retry.Do(
-		f,
-		retry.Context(ctx),
-		retry.Delay(s.apiConf.CheckInterval),
-		retry.MaxDelay(s.apiConf.MaxCheckInterval),
-		retry.DelayType(retry.BackOffDelay),
-	)
 }
 
 // startRoom starts the room on an RTC node, to ensure metadata & empty timeout functionality

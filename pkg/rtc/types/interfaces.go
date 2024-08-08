@@ -106,6 +106,7 @@ const (
 	ParticipantCloseReasonDataChannelError
 	ParticipantCloseReasonMigrateCodecMismatch
 	ParticipantCloseReasonSignalSourceClose
+	ParticipantCloseReasonRoomClosed
 )
 
 func (p ParticipantCloseReason) String() string {
@@ -158,6 +159,8 @@ func (p ParticipantCloseReason) String() string {
 		return "MIGRATE_CODEC_MISMATCH"
 	case ParticipantCloseReasonSignalSourceClose:
 		return "SIGNAL_SOURCE_CLOSE"
+	case ParticipantCloseReasonRoomClosed:
+		return "ROOM_CLOSED"
 	default:
 		return fmt.Sprintf("%d", int(p))
 	}
@@ -188,6 +191,8 @@ func (p ParticipantCloseReason) ToDisconnectReason() livekit.DisconnectReason {
 		return livekit.DisconnectReason_STATE_MISMATCH
 	case ParticipantCloseReasonSignalSourceClose:
 		return livekit.DisconnectReason_SIGNAL_CLOSE
+	case ParticipantCloseReasonRoomClosed:
+		return livekit.DisconnectReason_ROOM_CLOSED
 	default:
 		// the other types will map to unknown reason
 		return livekit.DisconnectReason_UNKNOWN_REASON
@@ -364,6 +369,7 @@ type LocalParticipant interface {
 	// WaitUntilSubscribed waits until all subscriptions have been settled, or if the timeout
 	// has been reached. If the timeout expires, it will return an error.
 	WaitUntilSubscribed(timeout time.Duration) error
+	StopAndGetSubscribedTracksForwarderState() map[livekit.TrackID]*livekit.RTPForwarderState
 
 	// returns list of participant identities that the current participant is subscribed to
 	GetSubscribedParticipants() []livekit.ParticipantID
@@ -407,7 +413,11 @@ type LocalParticipant interface {
 	NotifyMigration()
 	SetMigrateState(s MigrateState)
 	MigrateState() MigrateState
-	SetMigrateInfo(previousOffer, previousAnswer *webrtc.SessionDescription, mediaTracks []*livekit.TrackPublishedResponse, dataChannels []*livekit.DataChannelInfo)
+	SetMigrateInfo(
+		previousOffer, previousAnswer *webrtc.SessionDescription,
+		mediaTracks []*livekit.TrackPublishedResponse,
+		dataChannels []*livekit.DataChannelInfo,
+	)
 
 	UpdateMediaRTT(rtt uint32)
 	UpdateSignalingRTT(rtt uint32)
@@ -485,6 +495,7 @@ type MediaTrack interface {
 	RevokeDisallowedSubscribers(allowedSubscriberIdentities []livekit.ParticipantIdentity) []livekit.ParticipantIdentity
 	GetAllSubscribers() []livekit.ParticipantID
 	GetNumSubscribers() int
+	OnTrackSubscribed()
 
 	// returns quality information that's appropriate for width & height
 	GetQualityForDimension(width, height uint32) livekit.VideoQuality

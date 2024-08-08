@@ -249,6 +249,7 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 
 	// padding only
 	sequenceNumber += 2
+	timestamp += 3000
 	packet = getPacket(sequenceNumber, timestamp, 0)
 	flowState = r.Update(
 		time.Now().UnixNano(),
@@ -265,6 +266,23 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 	require.True(t, r.history.IsSet(uint64(sequenceNumber)))
 	require.True(t, r.history.IsSet(uint64(sequenceNumber)-1))
 	require.True(t, r.history.IsSet(uint64(sequenceNumber)-2))
+
+	// old packet, but simulating increasing sequence number after roll over
+	packet = getPacket(sequenceNumber+400, timestamp-6000, 300)
+	flowState = r.Update(
+		time.Now().UnixNano(),
+		packet.Header.SequenceNumber,
+		packet.Header.Timestamp,
+		packet.Header.Marker,
+		packet.Header.MarshalSize(),
+		len(packet.Payload),
+		0,
+	)
+	require.True(t, flowState.IsNotHandled)
+	require.Equal(t, sequenceNumber, r.sequenceNumber.GetHighest())
+	require.Equal(t, sequenceNumber, uint16(r.sequenceNumber.GetExtendedHighest()))
+	require.Equal(t, timestamp, r.timestamp.GetHighest())
+	require.Equal(t, timestamp, uint32(r.timestamp.GetExtendedHighest()))
 
 	r.Stop()
 }

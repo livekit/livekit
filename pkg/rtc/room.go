@@ -888,7 +888,7 @@ func (r *Room) CloseIfEmpty() {
 	r.lock.Unlock()
 
 	if elapsed >= int64(timeout) {
-		r.Close(types.ParticipantCloseReasonNone)
+		r.Close(types.ParticipantCloseReasonRoomClosed)
 	}
 }
 
