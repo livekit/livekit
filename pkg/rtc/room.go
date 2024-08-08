@@ -34,6 +34,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/psrpc"
@@ -62,6 +63,8 @@ const (
 var (
 	// var to allow unit test override
 	roomUpdateInterval = 5 * time.Second // frequency to update room participant counts
+
+	ErrJobShutdownTimeout = psrpc.NewErrorf(psrpc.DeadlineExceeded, "timed out waiting for agent job to shutdown")
 )
 
 // Duplicate the service.AgentStore interface to avoid a rtc -> service -> rtc import cycle
@@ -124,6 +127,7 @@ type Room struct {
 	participantOpts           map[livekit.ParticipantIdentity]*ParticipantOptions
 	participantRequestSources map[livekit.ParticipantIdentity]routing.MessageSource
 	hasPublished              map[livekit.ParticipantIdentity]bool
+	agentParticpants          map[livekit.ParticipantIdentity]*agentJob
 	bufferFactory             *buffer.FactoryOfBufferFactory
 
 	// batch update participant info for non-publishers
@@ -149,7 +153,12 @@ type ParticipantOptions struct {
 
 type agentDispatch struct {
 	*livekit.AgentDispatch
-	pending map[chan struct{}]struct{} // FIXME: replace with a chan of Future[[]*livekit.Job]?
+	pending map[chan struct{}]struct{}
+}
+
+type agentJob struct {
+	*livekit.Job
+	done chan struct{}
 }
 
 func newAgentDispatch(ad *livekit.AgentDispatch) *agentDispatch {
@@ -181,6 +190,41 @@ func (ad *agentDispatch) waitForPendingJobs(mu *sync.RWMutex) {
 	for _, c := range cs {
 		<-c
 	}
+}
+
+func newAgentJob(j *livekit.Job) *agentJob {
+	return &agentJob{
+		Job:  j,
+		done: make(chan struct{}),
+	}
+}
+
+func (j *agentJob) participantLeft(mu *sync.RWMutex) {
+	mu.Lock()
+	if j.done != nil {
+		close(j.done)
+		j.done = nil
+	}
+	mu.Unlock()
+}
+
+func (j *agentJob) waitForParticipantLeaving(mu *sync.RWMutex) error {
+	var done chan struct{}
+
+	mu.RLock()
+	done = j.done
+	mu.RUnlock()
+
+	if done != nil {
+		select {
+		case <-done:
+			return nil
+		case <-time.After(3 * time.Second):
+			return ErrJobShutdownTimeout
+		}
+	}
+
+	return nil
 }
 
 func NewRoom(
@@ -216,6 +260,7 @@ func NewRoom(
 		participantOpts:                      make(map[livekit.ParticipantIdentity]*ParticipantOptions),
 		participantRequestSources:            make(map[livekit.ParticipantIdentity]routing.MessageSource),
 		hasPublished:                         make(map[livekit.ParticipantIdentity]bool),
+		agentParticpants:                     make(map[livekit.ParticipantIdentity]*agentJob),
 		bufferFactory:                        buffer.NewFactoryOfBufferFactory(config.Receiver.PacketBufferSizeVideo, config.Receiver.PacketBufferSizeAudio),
 		batchedUpdates:                       make(map[livekit.ParticipantIdentity]*participantUpdate),
 		closed:                               make(chan struct{}),
@@ -614,10 +659,13 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 		return
 	}
 
+	agentJob := r.agentParticpants[identity]
+
 	delete(r.participants, identity)
 	delete(r.participantOpts, identity)
 	delete(r.participantRequestSources, identity)
 	delete(r.hasPublished, identity)
+	delete(r.agentParticpants, identity)
 	if !p.Hidden() {
 		r.protoRoom.NumParticipants--
 	}
@@ -653,6 +701,17 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 	// remove all published tracks
 	for _, t := range p.GetPublishedTracks() {
 		r.trackManager.RemoveTrack(t)
+	}
+
+	if agentJob != nil {
+		agentJob.participantLeft(&r.lock)
+
+		go func() {
+			_, err := r.agentClient.TerminateJob(context.Background(), agentJob.Id, rpc.JobTerminateReason_AGENT_LEFT_ROOM)
+			if err != nil {
+				r.Logger.Infow("failed sending TerminateJob RPC", "error", err, "jobID", agentJob.Id, "participant", identity)
+			}
+		}()
 	}
 
 	p.OnTrackUpdated(nil)
@@ -944,9 +1003,25 @@ func (r *Room) DeleteAgentDispatch(dispatchID string) (*livekit.AgentDispatch, e
 		r.lock.Unlock()
 
 		for _, j := range jobs {
-			state, err := r.agentClient.TerminateJob(context.Background(), j.Id)
+			state, err := r.agentClient.TerminateJob(context.Background(), j.Id, rpc.JobTerminateReason_TERINATION_REQUESTED)
 			if err != nil {
 				continue
+			}
+			if state.ParticipantIdentity != "" {
+				r.lock.Lock()
+				agentJob := r.agentParticpants[livekit.ParticipantIdentity(state.ParticipantIdentity)]
+				p := r.participants[livekit.ParticipantIdentity(state.ParticipantIdentity)]
+				r.lock.Unlock()
+
+				if p != nil {
+					if agentJob != nil {
+						err := agentJob.waitForParticipantLeaving(&r.lock)
+						if err == ErrJobShutdownTimeout {
+							r.Logger.Infow("Agent Worker did not disconnect after 3s")
+						}
+					}
+					r.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonServiceRequestRemoveParticipant)
+				}
 			}
 			j.State = state
 		}
@@ -1540,12 +1615,7 @@ func (r *Room) launchRoomAgents(ads []*agentDispatch) {
 				AgentName:  ad.AgentName,
 				DispatchId: ad.Id,
 			})
-			inc.ForEach(func(job *livekit.Job) {
-				r.agentStore.StoreAgentJob(context.Background(), job)
-				r.lock.Lock()
-				ad.State.Jobs = append(ad.State.Jobs, job)
-				r.lock.Unlock()
-			})
+			r.handleNewJobs(ad.AgentDispatch, inc)
 			done()
 		}()
 	}
@@ -1568,15 +1638,22 @@ func (r *Room) launchPublisherAgents(ads []*agentDispatch, p types.Participant) 
 				AgentName:   ad.AgentName,
 				DispatchId:  ad.Id,
 			})
-			inc.ForEach(func(job *livekit.Job) {
-				r.agentStore.StoreAgentJob(context.Background(), job)
-				r.lock.Lock()
-				ad.State.Jobs = append(ad.State.Jobs, job)
-				r.lock.Unlock()
-			})
+			r.handleNewJobs(ad.AgentDispatch, inc)
 			done()
 		}()
 	}
+}
+
+func (r *Room) handleNewJobs(ad *livekit.AgentDispatch, inc *sutils.IncrementalDispatcher[*livekit.Job]) {
+	inc.ForEach(func(job *livekit.Job) {
+		r.agentStore.StoreAgentJob(context.Background(), job)
+		r.lock.Lock()
+		ad.State.Jobs = append(ad.State.Jobs, job)
+		if job.State != nil && job.State.ParticipantIdentity != "" {
+			r.agentParticpants[livekit.ParticipantIdentity(job.State.ParticipantIdentity)] = newAgentJob(job)
+		}
+		r.lock.Unlock()
+	})
 }
 
 func (r *Room) DebugInfo() map[string]interface{} {

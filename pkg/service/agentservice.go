@@ -411,7 +411,7 @@ func (h *AgentHandler) JobTerminate(ctx context.Context, req *rpc.JobTerminateRe
 		return nil, psrpc.NewErrorf(psrpc.NotFound, "no worker for jobID")
 	}
 
-	state, err := w.TerminateJob(req.JobId)
+	state, err := w.TerminateJob(req.JobId, req.Reason)
 	if err != nil {
 		return nil, err
 	}

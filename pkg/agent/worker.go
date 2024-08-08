@@ -24,6 +24,7 @@ import (
 	pagent "github.com/livekit/protocol/agent"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/psrpc"
 )
@@ -262,9 +263,7 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) error {
 	}
 }
 
-func (w *Worker) TerminateJob(jobID string) (*livekit.JobState, error) {
-	// TODO check stopped and kick out, remove from runningJobs
-
+func (w *Worker) TerminateJob(jobID string, reason rpc.JobTerminateReason) (*livekit.JobState, error) {
 	w.mu.Lock()
 	job := w.runningJobs[jobID]
 	w.mu.Unlock()
@@ -279,15 +278,20 @@ func (w *Worker) TerminateJob(jobID string) (*livekit.JobState, error) {
 		},
 	}})
 
-	return job.State, nil
-}
+	status := livekit.JobStatus_JS_SUCCESS
+	errorStr := ""
+	if reason == rpc.JobTerminateReason_AGENT_LEFT_ROOM {
+		status = livekit.JobStatus_JS_FAILED
+		errorStr = "agent worker left the room"
+	}
 
-func (w *Worker) AgentLeftRoom(jobID string) error {
-	return w.updateJobStatus(&livekit.UpdateJobStatus{
+	w.updateJobStatus(&livekit.UpdateJobStatus{
 		JobId:  jobID,
-		Status: livekit.JobStatus_JS_FAILED,
-		Error:  "agent worker left the room",
+		Status: status,
+		Error:  errorStr,
 	})
+
+	return job.State, nil
 }
 
 func (w *Worker) UpdateMetadata(metadata string) {
