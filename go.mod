@@ -3,6 +3,7 @@ module github.com/livekit/livekit-server
 go 1.22
 
 require (
+	github.com/MicahParks/peakdetect v0.0.6
 	github.com/avast/retry-go/v4 v4.6.0
 	github.com/bep/debounce v1.2.1
 	github.com/d5/tengo/v2 v2.17.0

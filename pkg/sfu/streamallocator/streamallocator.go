@@ -31,6 +31,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/sendsidebwe"
 	"github.com/livekit/livekit-server/pkg/utils"
 )
 
@@ -87,6 +88,7 @@ const (
 	streamAllocatorSignalSetChannelCapacity
 	// STREAM-ALLOCATOR-DATA streamAllocatorSignalNACK
 	// STREAM-ALLOCATOR-DATA streamAllocatorSignalRTCPReceiverReport
+	streamAllocatorSignalCongestionStateChange
 )
 
 func (s streamAllocatorSignal) String() string {
@@ -117,6 +119,8 @@ func (s streamAllocatorSignal) String() string {
 		case streamAllocatorSignalRTCPReceiverReport:
 			return "RTCP_RECEIVER_REPORT"
 		*/
+	case streamAllocatorSignalCongestionStateChange:
+		return "CONGESTION_STATE_CHANGE"
 	default:
 		return fmt.Sprintf("%d", int(s))
 	}
@@ -147,7 +151,8 @@ type StreamAllocator struct {
 
 	onStreamStateChange func(update *StreamStateUpdate) error
 
-	bwe cc.BandwidthEstimator
+	bwe         cc.BandwidthEstimator
+	sendSideBWE *sendsidebwe.SendSideBWE
 
 	allowPause bool
 
@@ -227,6 +232,14 @@ func (s *StreamAllocator) SetBandwidthEstimator(bwe cc.BandwidthEstimator) {
 		bwe.OnTargetBitrateChange(s.onTargetBitrateChange)
 	}
 	s.bwe = bwe
+}
+
+func (s *StreamAllocator) SetSendSideBWE(sendSideBWE *sendsidebwe.SendSideBWE) {
+	if sendSideBWE != nil {
+		sendSideBWE.OnCongestionStateChange(s.onCongestionStateChange)
+	}
+	s.sendSideBWE = sendSideBWE
+	s.probeController.SetSendSideBWE(sendSideBWE)
 }
 
 type AddTrackParams struct {
@@ -397,6 +410,10 @@ func (s *StreamAllocator) OnTransportCCFeedback(downTrack *sfu.DownTrack, fb *rt
 	if s.bwe != nil {
 		s.bwe.WriteRTCP([]rtcp.Packet{fb}, nil)
 	}
+
+	if s.sendSideBWE != nil {
+		s.sendSideBWE.HandleRTCP(fb)
+	}
 }
 
 // called when target bitrate changes (send side bandwidth estimation)
@@ -404,6 +421,22 @@ func (s *StreamAllocator) onTargetBitrateChange(bitrate int) {
 	s.postEvent(Event{
 		Signal: streamAllocatorSignalEstimate,
 		Data:   int64(bitrate),
+	})
+}
+
+// called when congestion state changes (send side bandwidth estimation)
+type congestionStateChangeData struct {
+	congestionState          sendsidebwe.CongestionState
+	estimatedChannelCapacity int64
+}
+
+func (s *StreamAllocator) onCongestionStateChange(congestionState sendsidebwe.CongestionState, estimatedChannelCapacity int64) {
+	s.postEvent(Event{
+		Signal: streamAllocatorSignalCongestionStateChange,
+		Data: congestionStateChangeData{
+			congestionState:          congestionState,
+			estimatedChannelCapacity: estimatedChannelCapacity,
+		},
 	})
 }
 
@@ -605,6 +638,8 @@ func (s *StreamAllocator) postEvent(event Event) {
 			case streamAllocatorSignalRTCPReceiverReport:
 				event.s.handleSignalRTCPReceiverReport(event)
 			*/
+		case streamAllocatorSignalCongestionStateChange:
+			s.handleSignalCongestionStateChange(event)
 		}
 	}, event)
 }
@@ -747,6 +782,28 @@ func (s *StreamAllocator) handleSignalRTCPReceiverReport(event Event) {
 	}
 }
 */
+
+func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
+	cscd := event.Data.(congestionStateChangeData)
+	if cscd.congestionState == sendsidebwe.CongestionStateCongested {
+		// SSBWE-TODO-START
+		// Can potentially do
+		//   1. On early warning, stop any up lyaering
+		//   2. On congestion relief, can start probe?
+		// SSBWE-TODO-END
+		s.probeController.AbortProbe()
+
+		s.params.Logger.Infow(
+			"stream allocator: channel congestion detected, updating channel capacity",
+			"old(bps)", s.committedChannelCapacity,
+			"new(bps)", cscd.estimatedChannelCapacity,
+			"expectedUsage(bps)", s.getExpectedBandwidthUsage(),
+		)
+		s.committedChannelCapacity = cscd.estimatedChannelCapacity
+
+		s.allocateAllTracks()
+	}
+}
 
 func (s *StreamAllocator) setState(state streamAllocatorState) {
 	if s.state == state {
@@ -1323,6 +1380,10 @@ func (s *StreamAllocator) maybeProbe() {
 		return
 	}
 	if !s.probeController.CanProbe() {
+		return
+	}
+	if s.sendSideBWE != nil && s.sendSideBWE.GetCongestionState() != sendsidebwe.CongestionStateNone {
+		// SSBWE-TODO: check if probe can be started without wait in send side bwe case
 		return
 	}
 

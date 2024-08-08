@@ -180,6 +180,7 @@ type CongestionControlConfig struct {
 	ChannelObserverProbeConfig       CongestionControlChannelObserverConfig `yaml:"channel_observer_probe_config,omitempty"`
 	ChannelObserverNonProbeConfig    CongestionControlChannelObserverConfig `yaml:"channel_observer_non_probe_config,omitempty"`
 	DisableEstimationUnmanagedTracks bool                                   `yaml:"disable_etimation_unmanaged_tracks,omitempty"`
+	UseTWCC                          bool                                   `yaml:"use_twcc,omitempty"`
 }
 
 type AudioConfig struct {
@@ -441,6 +442,7 @@ var DefaultConfig = Config{
 				NackWindowMaxDuration:          3 * time.Second,
 				NackRatioThreshold:             0.08,
 			},
+			UseTWCC: true,
 		},
 	},
 	Audio: AudioConfig{
