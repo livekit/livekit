@@ -82,8 +82,9 @@ type RoomManager struct {
 
 	rooms map[livekit.RoomName]*rtc.Room
 
-	roomServers        utils.MultitonService[rpc.RoomTopic]
-	participantServers utils.MultitonService[rpc.ParticipantTopic]
+	roomServers          utils.MultitonService[rpc.RoomTopic]
+	agentDispatchServers utils.MultitonService[rpc.RoomTopic]
+	participantServers   utils.MultitonService[rpc.ParticipantTopic]
 
 	iceConfigCache *sutils.IceConfigCache[iceConfigCacheKey]
 
@@ -229,6 +230,7 @@ func (r *RoomManager) Stop() {
 	}
 
 	r.roomServers.Kill()
+	r.agentDispatchServers.Kill()
 	r.participantServers.Kill()
 
 	if r.rtcConfig != nil {
@@ -570,9 +572,17 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 		r.lock.Unlock()
 		return nil, err
 	}
+	agentDispatchServer := must.Get(rpc.NewTypedAgentDispatchInternalServer(r, r.bus))
+	killDispServer := r.agentDispatchServers.Replace(roomTopic, agentDispatchServer)
+	if err := agentDispatchServer.RegisterAllRoomTopics(roomTopic); err != nil {
+		killDispServer()
+		r.lock.Unlock()
+		return nil, err
+	}
 
 	newRoom.OnClose(func() {
 		killRoomServer()
+		killDispServer()
 
 		roomInfo := newRoom.ToProto()
 		r.telemetry.RoomEnded(ctx, roomInfo)
@@ -805,6 +815,52 @@ func (r *RoomManager) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 	// wait till the update is applied
 	<-done
 	return room.ToProto(), nil
+}
+
+func (r *RoomManager) ListDispatch(ctx context.Context, req *livekit.ListAgentDispatchRequest) (*livekit.ListAgentDispatchResponse, error) {
+	room := r.GetRoom(ctx, livekit.RoomName(req.Room))
+	if room == nil {
+		return nil, ErrRoomNotFound
+	}
+
+	disp, err := room.GetAgentDispatches(req.DispatchId)
+	if err != nil {
+		return nil, err
+	}
+
+	ret := &livekit.ListAgentDispatchResponse{
+		AgentDispatches: disp,
+	}
+
+	return ret, nil
+}
+
+func (r *RoomManager) CreateDispatch(ctx context.Context, req *livekit.CreateAgentDispatchRequest) (*livekit.AgentDispatch, error) {
+	room := r.GetRoom(ctx, livekit.RoomName(req.Room))
+	if room == nil {
+		return nil, ErrRoomNotFound
+	}
+
+	disp, err := room.AddAgentDispatch(req.AgentName, req.Metadata)
+	if err != nil {
+		return nil, err
+	}
+
+	return disp, nil
+}
+
+func (r *RoomManager) DeleteDispatch(ctx context.Context, req *livekit.DeleteAgentDispatchRequest) (*livekit.AgentDispatch, error) {
+	room := r.GetRoom(ctx, livekit.RoomName(req.Room))
+	if room == nil {
+		return nil, ErrRoomNotFound
+	}
+
+	disp, err := room.DeleteAgentDispatch(req.DispatchId)
+	if err != nil {
+		return nil, err
+	}
+
+	return disp, nil
 }
 
 func (r *RoomManager) iceServersForParticipant(apiKey string, participant types.LocalParticipant, tlsOnly bool) []*livekit.ICEServer {

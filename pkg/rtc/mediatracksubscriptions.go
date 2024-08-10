@@ -161,6 +161,12 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		AdaptiveStream:    sub.GetAdaptiveStream(),
 	})
 
+	subTrack.AddOnBind(func(err error) {
+		if err == nil {
+			t.params.MediaTrack.OnTrackSubscribed()
+		}
+	})
+
 	// Bind callback can happen from replaceTrack, so set it up early
 	var reusingTransceiver atomic.Bool
 	var dtState sfu.DownTrackState

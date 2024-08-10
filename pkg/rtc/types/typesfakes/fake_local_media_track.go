@@ -221,6 +221,10 @@ type FakeLocalMediaTrack struct {
 		arg1 livekit.NodeID
 		arg2 uint8
 	}
+	OnTrackSubscribedStub        func()
+	onTrackSubscribedMutex       sync.RWMutex
+	onTrackSubscribedArgsForCall []struct {
+	}
 	PublisherIDStub        func() livekit.ParticipantID
 	publisherIDMutex       sync.RWMutex
 	publisherIDArgsForCall []struct {
@@ -1471,6 +1475,30 @@ func (fake *FakeLocalMediaTrack) NotifySubscriberNodeMediaLossArgsForCall(i int)
 	return argsForCall.arg1, argsForCall.arg2
 }
 
+func (fake *FakeLocalMediaTrack) OnTrackSubscribed() {
+	fake.onTrackSubscribedMutex.Lock()
+	fake.onTrackSubscribedArgsForCall = append(fake.onTrackSubscribedArgsForCall, struct {
+	}{})
+	stub := fake.OnTrackSubscribedStub
+	fake.recordInvocation("OnTrackSubscribed", []interface{}{})
+	fake.onTrackSubscribedMutex.Unlock()
+	if stub != nil {
+		fake.OnTrackSubscribedStub()
+	}
+}
+
+func (fake *FakeLocalMediaTrack) OnTrackSubscribedCallCount() int {
+	fake.onTrackSubscribedMutex.RLock()
+	defer fake.onTrackSubscribedMutex.RUnlock()
+	return len(fake.onTrackSubscribedArgsForCall)
+}
+
+func (fake *FakeLocalMediaTrack) OnTrackSubscribedCalls(stub func()) {
+	fake.onTrackSubscribedMutex.Lock()
+	defer fake.onTrackSubscribedMutex.Unlock()
+	fake.OnTrackSubscribedStub = stub
+}
+
 func (fake *FakeLocalMediaTrack) PublisherID() livekit.ParticipantID {
 	fake.publisherIDMutex.Lock()
 	ret, specificReturn := fake.publisherIDReturnsOnCall[len(fake.publisherIDArgsForCall)]
@@ -2225,6 +2253,8 @@ func (fake *FakeLocalMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.notifySubscriberNodeMaxQualityMutex.RUnlock()
 	fake.notifySubscriberNodeMediaLossMutex.RLock()
 	defer fake.notifySubscriberNodeMediaLossMutex.RUnlock()
+	fake.onTrackSubscribedMutex.RLock()
+	defer fake.onTrackSubscribedMutex.RUnlock()
 	fake.publisherIDMutex.RLock()
 	defer fake.publisherIDMutex.RUnlock()
 	fake.publisherIdentityMutex.RLock()
