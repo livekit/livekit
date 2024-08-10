@@ -117,6 +117,9 @@ func (s *StreamTrackerDependencyDescriptor) resetLocked() {
 			s.bitrate[i][j] = 0
 		}
 	}
+
+	s.maxSpatialLayer = buffer.InvalidLayerSpatial
+	s.maxTemporalLayer = buffer.InvalidLayerTemporal
 }
 
 func (s *StreamTrackerDependencyDescriptor) SetPaused(paused bool) {
@@ -126,8 +129,14 @@ func (s *StreamTrackerDependencyDescriptor) SetPaused(paused bool) {
 		return
 	}
 	s.paused = paused
+
+	var notifyFns []func(status StreamStatus)
+	var notifyStatus StreamStatus
 	if !paused {
 		s.resetLocked()
+
+		notifyStatus = StreamStatusStopped
+		notifyFns = append(notifyFns, s.onStatusChanged[:]...)
 	} else {
 		s.lastBitrateReport = time.Now()
 		go s.worker(s.generation.Inc())
@@ -135,6 +144,11 @@ func (s *StreamTrackerDependencyDescriptor) SetPaused(paused bool) {
 	}
 	s.lock.Unlock()
 
+	for _, fn := range notifyFns {
+		if fn != nil {
+			fn(notifyStatus)
+		}
+	}
 }
 
 func (s *StreamTrackerDependencyDescriptor) Observe(temporalLayer int32, pktSize int, payloadSize int, hasMarker bool, ts uint32, ddVal *buffer.ExtDependencyDescriptor) {

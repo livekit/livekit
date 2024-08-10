@@ -545,9 +545,7 @@ func (s *StreamAllocator) maybePostEventAllocateTrack(downTrack *sfu.DownTrack) 
 	shouldPost := false
 	s.videoTracksMu.Lock()
 	if track := s.videoTracks[livekit.TrackID(downTrack.ID())]; track != nil {
-		if track.SetDirty(true) {
-			shouldPost = true
-		}
+		shouldPost = track.SetDirty(true)
 	}
 	s.videoTracksMu.Unlock()
 

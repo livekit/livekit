@@ -41,7 +41,6 @@ type IngressService struct {
 	psrpcClient rpc.IngressClient
 	store       IngressStore
 	io          IOClient
-	roomService livekit.RoomService
 	telemetry   telemetry.TelemetryService
 	launcher    IngressLauncher
 }
@@ -53,7 +52,6 @@ func NewIngressServiceWithIngressLauncher(
 	psrpcClient rpc.IngressClient,
 	store IngressStore,
 	io IOClient,
-	rs livekit.RoomService,
 	ts telemetry.TelemetryService,
 	launcher IngressLauncher,
 ) *IngressService {
@@ -65,7 +63,6 @@ func NewIngressServiceWithIngressLauncher(
 		psrpcClient: psrpcClient,
 		store:       store,
 		io:          io,
-		roomService: rs,
 		telemetry:   ts,
 		launcher:    launcher,
 	}
@@ -78,10 +75,9 @@ func NewIngressService(
 	psrpcClient rpc.IngressClient,
 	store IngressStore,
 	io IOClient,
-	rs livekit.RoomService,
 	ts telemetry.TelemetryService,
 ) *IngressService {
-	s := NewIngressServiceWithIngressLauncher(conf, nodeID, bus, psrpcClient, store, io, rs, ts, nil)
+	s := NewIngressServiceWithIngressLauncher(conf, nodeID, bus, psrpcClient, store, io, ts, nil)
 
 	s.launcher = s
 
