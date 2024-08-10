@@ -136,9 +136,7 @@ func (s *StreamTrackerDependencyDescriptor) SetPaused(paused bool) {
 		s.resetLocked()
 
 		notifyStatus = StreamStatusStopped
-		for _, f := range s.onStatusChanged {
-			notifyFns = append(notifyFns, f)
-		}
+		notifyFns = append(notifyFns, s.onStatusChanged[:]...)
 	} else {
 		s.lastBitrateReport = time.Now()
 		go s.worker(s.generation.Inc())
