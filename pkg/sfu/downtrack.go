@@ -745,7 +745,8 @@ func (d *DownTrack) maxLayerNotifierWorker() {
 
 // WriteRTP writes an RTP Packet to the DownTrack
 func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
-	if !d.writable.Load() {
+	if !d.writable.Load() || (extPkt.IsOutOfOrder && !d.rtpStats.IsActive()) {
+		// do not start on an out-of-order packet
 		return nil
 	}
 
@@ -801,7 +802,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			// the corresponding sequence number is received.
 			// The extreme case is all packets containing the play out delay are lost and
 			// all of them retransmitted and an RTCP Receiver Report received for those
-			// retransmited sequence numbers. But, that is highly improbable, if not impossible.
+			// retransmitted sequence numbers. But, that is highly improbable, if not impossible.
 		}
 	}
 	var actBytes []byte

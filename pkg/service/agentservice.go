@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"golang.org/x/exp/maps"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/livekit/livekit-server/pkg/agent"
@@ -89,6 +90,7 @@ type AgentHandler struct {
 
 	serverInfo  *livekit.ServerInfo
 	workers     map[string]*agent.Worker
+	jobToWorker map[string]*agent.Worker
 	keyProvider auth.KeyProvider
 
 	namespaceWorkers  map[workerKey][]*agent.Worker
@@ -162,6 +164,7 @@ func NewAgentHandler(
 		agentServer:      agentServer,
 		logger:           logger,
 		workers:          make(map[string]*agent.Worker),
+		jobToWorker:      make(map[string]*agent.Worker),
 		namespaceWorkers: make(map[workerKey][]*agent.Worker),
 		serverInfo:       serverInfo,
 		keyProvider:      keyProvider,
@@ -170,15 +173,31 @@ func NewAgentHandler(
 	}
 }
 
+func (h *AgentHandler) InsertWorker(w *agent.Worker) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.workers[w.ID()] = w
+}
+
+func (h *AgentHandler) DeleteWorker(w *agent.Worker) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.workers, w.ID())
+}
+
+func (h *AgentHandler) Workers() []*agent.Worker {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return maps.Values(h.workers)
+}
+
 func (h *AgentHandler) HandleConnection(ctx context.Context, conn agent.SignalConn, protocol agent.WorkerProtocolVersion) {
 	apiKey := GetAPIKey(ctx)
 	apiSecret := h.keyProvider.GetSecret(apiKey)
 
 	worker := agent.NewWorker(protocol, apiKey, apiSecret, h.serverInfo, conn, h.logger, h)
 
-	h.mu.Lock()
-	h.workers[worker.ID()] = worker
-	h.mu.Unlock()
+	h.InsertWorker(worker)
 
 	for {
 		req, _, err := conn.ReadWorkerMessage()
@@ -194,9 +213,7 @@ func (h *AgentHandler) HandleConnection(ctx context.Context, conn agent.SignalCo
 		worker.HandleMessage(req)
 	}
 
-	h.mu.Lock()
-	delete(h.workers, worker.ID())
-	h.mu.Unlock()
+	h.DeleteWorker(worker)
 
 	worker.Close()
 }
@@ -287,34 +304,36 @@ func (h *AgentHandler) HandleWorkerDeregister(w *agent.Worker) {
 			h.agentNames = slices.Delete(h.agentNames, i, i+1)
 		}
 	}
+
+	jobs := w.RunningJobs()
+	for _, j := range jobs {
+		h.deregisterJob(j.Id)
+	}
+}
+
+func (h *AgentHandler) HandleWorkerJobStatus(w *agent.Worker, status *livekit.UpdateJobStatus) {
+	if agent.JobStatusIsEnded(status.Status) {
+		h.mu.Lock()
+		h.deregisterJob(status.JobId)
+		h.mu.Unlock()
+	}
+}
+
+func (h *AgentHandler) deregisterJob(jobID string) {
+	h.agentServer.DeregisterJobTerminateTopic(jobID)
+
+	delete(h.jobToWorker, jobID)
+
+	// TODO update dispatch state
 }
 
 func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*rpc.JobRequestResponse, error) {
 	key := workerKey{job.AgentName, job.Namespace, job.Type}
 	attempted := make(map[*agent.Worker]struct{})
 	for {
-		h.mu.Lock()
-		var selected *agent.Worker
-		var maxLoad float32
-		for _, w := range h.namespaceWorkers[key] {
-			if _, ok := attempted[w]; ok {
-				continue
-			}
-
-			if w.Status() == livekit.WorkerStatus_WS_AVAILABLE {
-				load := w.Load()
-				if len(w.RunningJobs()) > 0 && load > maxLoad {
-					maxLoad = load
-					selected = w
-				} else if selected == nil {
-					selected = w
-				}
-			}
-		}
-		h.mu.Unlock()
-
-		if selected == nil {
-			return nil, psrpc.NewErrorf(psrpc.DeadlineExceeded, "no workers available")
+		selected, err := h.selectWorkerWeightedByLoad(key, attempted)
+		if err != nil {
+			return nil, psrpc.NewError(psrpc.DeadlineExceeded, err)
 		}
 
 		attempted[selected] = struct{}{}
@@ -332,12 +351,20 @@ func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*rpc.J
 			values = append(values, "participant", job.Participant.Identity)
 		}
 		h.logger.Debugw("assigning job", values...)
-		err := selected.AssignJob(ctx, job)
+		err = selected.AssignJob(ctx, job)
 		if err != nil {
 			if errors.Is(err, agent.ErrWorkerNotAvailable) {
 				continue // Try another worker
 			}
 			return nil, err
+		}
+		h.mu.Lock()
+		h.jobToWorker[job.Id] = selected
+		h.mu.Unlock()
+
+		err = h.agentServer.RegisterJobTerminateTopic(job.Id)
+		if err != nil {
+			h.logger.Errorw("failes registering JobTerminate handler", err, values...)
 		}
 
 		return &rpc.JobRequestResponse{
@@ -371,6 +398,25 @@ func (h *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job)
 	return affinity
 }
 
+func (h *AgentHandler) JobTerminate(ctx context.Context, req *rpc.JobTerminateRequest) (*rpc.JobTerminateResponse, error) {
+	h.mu.Lock()
+	w := h.jobToWorker[req.JobId]
+	h.mu.Unlock()
+
+	if w == nil {
+		return nil, psrpc.NewErrorf(psrpc.NotFound, "no worker for jobID")
+	}
+
+	state, err := w.TerminateJob(req.JobId, req.Reason)
+	if err != nil {
+		return nil, err
+	}
+
+	return &rpc.JobTerminateResponse{
+		State: state,
+	}, nil
+}
+
 func (h *AgentHandler) CheckEnabled(ctx context.Context, req *rpc.CheckEnabledRequest) (*rpc.CheckEnabledResponse, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -399,4 +445,45 @@ func (h *AgentHandler) DrainConnections(interval time.Duration) {
 		w.Close()
 		<-t.C
 	}
+}
+
+func (h *AgentHandler) selectWorkerWeightedByLoad(key workerKey, ignore map[*agent.Worker]struct{}) (*agent.Worker, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	workers, ok := h.namespaceWorkers[key]
+	if !ok {
+		return nil, errors.New("no workers available")
+	}
+
+	normalizeLoad := func(load float32) int {
+		if load >= 1 {
+			return 0
+		}
+		return int((1 - load) * 100)
+	}
+
+	normalizedLoads := make(map[*agent.Worker]int)
+	var availableSum int
+	for _, w := range workers {
+		if _, ok := ignore[w]; !ok && w.Status() == livekit.WorkerStatus_WS_AVAILABLE {
+			normalizedLoads[w] = normalizeLoad(w.Load())
+			availableSum += normalizedLoads[w]
+		}
+	}
+
+	if availableSum == 0 {
+		return nil, errors.New("no workers with sufficient capacity")
+	}
+
+	threshold := rand.Intn(availableSum)
+	var currentSum int
+	for w, load := range normalizedLoads {
+		currentSum += load
+		if currentSum >= threshold {
+			return w, nil
+		}
+	}
+
+	return nil, errors.New("no workers available")
 }

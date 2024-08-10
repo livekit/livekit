@@ -4,7 +4,6 @@ go 1.22
 
 require (
 	github.com/MicahParks/peakdetect v0.0.6
-	github.com/avast/retry-go/v4 v4.6.0
 	github.com/bep/debounce v1.2.1
 	github.com/d5/tengo/v2 v2.17.0
 	github.com/dustin/go-humanize v1.0.1
@@ -21,7 +20,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20240730083616-559fa5ece598
-	github.com/livekit/protocol v1.19.4-0.20240805121416-5be7cb358ec1
+	github.com/livekit/protocol v1.19.4-0.20240808180722-581b59b65309
 	github.com/livekit/psrpc v0.5.3-0.20240616012458-ac39c8549a0a
 	github.com/mackerelio/go-osstat v0.2.5
 	github.com/magefile/mage v1.15.0
@@ -29,16 +28,16 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/ory/dockertest/v3 v3.10.0
-	github.com/pion/dtls/v2 v2.2.11
-	github.com/pion/ice/v2 v2.3.29
-	github.com/pion/interceptor v0.1.29
+	github.com/pion/dtls/v2 v2.2.12
+	github.com/pion/ice/v2 v2.3.34
+	github.com/pion/interceptor v0.1.30
 	github.com/pion/rtcp v1.2.14
-	github.com/pion/rtp v1.8.7
-	github.com/pion/sctp v1.8.19
+	github.com/pion/rtp v1.8.9
+	github.com/pion/sctp v1.8.20
 	github.com/pion/sdp/v3 v3.0.9
-	github.com/pion/transport/v2 v2.2.5
+	github.com/pion/transport/v2 v2.2.10
 	github.com/pion/turn/v2 v2.1.6
-	github.com/pion/webrtc/v3 v3.2.47
+	github.com/pion/webrtc/v3 v3.2.51
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.19.1
 	github.com/redis/go-redis/v9 v9.6.1
@@ -76,7 +75,7 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/docker/cli v26.1.4+incompatible // indirect
-	github.com/docker/docker v27.0.0+incompatible // indirect
+	github.com/docker/docker v27.1.0+incompatible // indirect
 	github.com/docker/go-connections v0.5.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/eapache/channels v1.1.0 // indirect
@@ -109,11 +108,11 @@ require (
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.0 // indirect
 	github.com/opencontainers/runc v1.1.13 // indirect
-	github.com/pion/datachannel v1.5.5 // indirect
+	github.com/pion/datachannel v1.5.8 // indirect
 	github.com/pion/logging v0.2.2 // indirect
 	github.com/pion/mdns v0.0.12 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
-	github.com/pion/srtp/v2 v2.0.18 // indirect
+	github.com/pion/srtp/v2 v2.0.20 // indirect
 	github.com/pion/stun v0.6.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_model v0.5.0 // indirect
@@ -123,6 +122,7 @@ require (
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/stoewer/go-strcase v1.3.0 // indirect
+	github.com/wlynxg/anet v0.0.3 // indirect
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
 	github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 // indirect
 	github.com/xeipuuv/gojsonschema v1.2.0 // indirect
