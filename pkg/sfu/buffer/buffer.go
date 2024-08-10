@@ -66,6 +66,7 @@ type ExtPacket struct {
 	RawPacket            []byte
 	DependencyDescriptor *ExtDependencyDescriptor
 	AbsCaptureTimeExt    *act.AbsCaptureTime
+	IsOutOfOrder         bool
 }
 
 // Buffer contains all packets
@@ -772,6 +773,7 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, flowStat
 			Spatial:  InvalidLayerSpatial,
 			Temporal: InvalidLayerTemporal,
 		},
+		IsOutOfOrder: flowState.IsOutOfOrder,
 	}
 
 	if len(rtpPacket.Payload) == 0 {

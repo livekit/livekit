@@ -24,7 +24,9 @@ import (
 	pagent "github.com/livekit/protocol/agent"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils/guid"
+	"github.com/livekit/psrpc"
 )
 
 type WorkerProtocolVersion int
@@ -90,7 +92,7 @@ type Worker struct {
 	protocolVersion WorkerProtocolVersion
 	registered      atomic.Bool
 	status          livekit.WorkerStatus
-	runningJobs     map[string]*livekit.Job
+	runningJobs     map[string]*livekit.Job // JobID -> Job
 
 	handler WorkerHandler
 
@@ -145,7 +147,7 @@ func NewWorker(
 
 func (w *Worker) sendRequest(req *livekit.ServerMessage) {
 	if _, err := w.conn.WriteServerMessage(req); err != nil {
-		w.logger.Errorw("error writing to websocket", err)
+		w.logger.Warnw("error writing to websocket", err)
 	}
 }
 
@@ -232,6 +234,8 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) error {
 			return ErrWorkerNotAvailable
 		}
 
+		job.State.ParticipantIdentity = res.ParticipantIdentity
+
 		token, err := pagent.BuildAgentToken(w.apiKey, w.apiSecret, job.Room.Name, res.ParticipantIdentity, res.ParticipantName, res.ParticipantMetadata, w.permissions)
 		if err != nil {
 			w.logger.Errorw("failed to build agent token", err)
@@ -257,6 +261,37 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+func (w *Worker) TerminateJob(jobID string, reason rpc.JobTerminateReason) (*livekit.JobState, error) {
+	w.mu.Lock()
+	job := w.runningJobs[jobID]
+	w.mu.Unlock()
+
+	if job == nil {
+		return nil, psrpc.NewErrorf(psrpc.NotFound, "no running job for given jobID")
+	}
+
+	w.sendRequest(&livekit.ServerMessage{Message: &livekit.ServerMessage_Termination{
+		Termination: &livekit.JobTermination{
+			JobId: jobID,
+		},
+	}})
+
+	status := livekit.JobStatus_JS_SUCCESS
+	errorStr := ""
+	if reason == rpc.JobTerminateReason_AGENT_LEFT_ROOM {
+		status = livekit.JobStatus_JS_FAILED
+		errorStr = "agent worker left the room"
+	}
+
+	w.updateJobStatus(&livekit.UpdateJobStatus{
+		JobId:  jobID,
+		Status: status,
+		Error:  errorStr,
+	})
+
+	return job.State, nil
 }
 
 func (w *Worker) UpdateMetadata(metadata string) {
@@ -374,12 +409,21 @@ func (w *Worker) handleAvailability(res *livekit.AvailabilityResponse) {
 }
 
 func (w *Worker) handleJobUpdate(update *livekit.UpdateJobStatus) {
+	err := w.updateJobStatus(update)
+
+	if err != nil {
+		w.logger.Infow("received job update for unknown job", "jobID", update.JobId)
+	}
+}
+
+func (w *Worker) updateJobStatus(update *livekit.UpdateJobStatus) error {
 	w.mu.Lock()
 
 	job, ok := w.runningJobs[update.JobId]
 	if !ok {
-		w.logger.Infow("received job update for unknown job", "jobId", update.JobId)
-		return
+		w.mu.Unlock()
+
+		return psrpc.NewErrorf(psrpc.NotFound, "received job update for unknown job")
 	}
 
 	now := time.Now()
@@ -403,6 +447,8 @@ func (w *Worker) handleJobUpdate(update *livekit.UpdateJobStatus) {
 	w.mu.Unlock()
 
 	w.handler.HandleWorkerJobStatus(w, update)
+
+	return nil
 }
 
 func (w *Worker) handleSimulateJob(simulate *livekit.SimulateJobRequest) {
