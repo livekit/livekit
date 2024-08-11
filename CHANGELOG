@@ -2,6 +2,48 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.1] - 2024-08-10
+
+### Added
+
+- Feat add prometheus auth (#2252)
+- Support for Agent protocol v2 (#2786 #2837 #2872 #2886, #2919)
+- Add track subscribed notification to publisher (#2834)
+- Always forward DTMF data messages. (#2848)
+- Send error response when update metadata fails. (#2849)
+- Allow specifying room configuration in token (#2853)
+- Make sender report pass through an option. (#2861)
+- Add option to disable ice lite (#2862)
+- mark final ice candidate (#2871)
+- Send the correct room closed reason to clients (#2901)
+- distribute load to agents probabilistically, inversely proportionate to load (#2902)
+
+### Fixed
+
+- Fixed participant attributes not broadcasted correctly (#2825)
+- Handle cases of long mute/rollover of time stamp. (#2842)
+- use correct payload type for red primary encoding (#2845)
+- Forward correct payload type for mixed up red/primary payload (#2847)
+- Check size limits on metadata and name set from client. (#2850)
+- Fallback to primary encoding if redundant block overflow (#2858)
+- Support updating local track features when pending. (#2863)
+- don't send unknown signal message to rust sdk with protocol 9 (#2860)
+- Fixed handling of different extensions across multiple media sections (#2878)
+- Fix forced rollover of RTP time stamp. (#2896)
+- Do not start forwarding on an out-of-order packet. (#2917)
+- Reset DD tracker layers when muted. (#2920)
+
+### Changed
+
+- add handler interface to receive agent worker updates (#2830)
+- log non-trickle candidate in details (#2832)
+- RTP packet validity check. (#2833)
+- Do not warn on padding (#2839)
+- Check sender report against media path. (#2843)
+- Do not create room in UpdateRoomMetadata (#2854)
+- use atomic pointer for MediaTrackReceiver TrackInfo (#2870)
+- Don't create DDParser for non-svc codec (#2883)
+
 ## [1.7.0] - 2024-06-23
 
 This version includes a breaking change for SIP service. SIP service now requires `sip.admin` in the token's permission grant
