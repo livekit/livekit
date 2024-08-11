@@ -143,7 +143,7 @@ func (r *RTPStatsReceiver) getTSRolloverCount(diffNano int64, ts uint32) int {
 		return -1
 	}
 
-	excess := int((diffNano - r.tsRolloverThreshold*2) * int64(r.params.ClockRate) / 1e9)
+	excess := (diffNano - r.tsRolloverThreshold*2) * int64(r.params.ClockRate) / 1e9
 	roc := excess / (1 << 32)
 	if roc < 0 {
 		roc = 0
@@ -151,7 +151,7 @@ func (r *RTPStatsReceiver) getTSRolloverCount(diffNano int64, ts uint32) int {
 	if r.timestamp.GetHighest() > ts {
 		roc++
 	}
-	return roc
+	return int(roc)
 }
 
 func (r *RTPStatsReceiver) Update(
