@@ -700,17 +700,6 @@ type FakeLocalParticipant struct {
 	sendDataPacketReturnsOnCall map[int]struct {
 		result1 error
 	}
-	SendErrorResponseStub        func(*livekit.ErrorResponse) error
-	sendErrorResponseMutex       sync.RWMutex
-	sendErrorResponseArgsForCall []struct {
-		arg1 *livekit.ErrorResponse
-	}
-	sendErrorResponseReturns struct {
-		result1 error
-	}
-	sendErrorResponseReturnsOnCall map[int]struct {
-		result1 error
-	}
 	SendJoinResponseStub        func(*livekit.JoinResponse) error
 	sendJoinResponseMutex       sync.RWMutex
 	sendJoinResponseArgsForCall []struct {
@@ -742,6 +731,17 @@ type FakeLocalParticipant struct {
 		result1 error
 	}
 	sendRefreshTokenReturnsOnCall map[int]struct {
+		result1 error
+	}
+	SendRequestResponseStub        func(*livekit.RequestResponse) error
+	sendRequestResponseMutex       sync.RWMutex
+	sendRequestResponseArgsForCall []struct {
+		arg1 *livekit.RequestResponse
+	}
+	sendRequestResponseReturns struct {
+		result1 error
+	}
+	sendRequestResponseReturnsOnCall map[int]struct {
 		result1 error
 	}
 	SendRoomUpdateStub        func(*livekit.Room) error
@@ -4730,67 +4730,6 @@ func (fake *FakeLocalParticipant) SendDataPacketReturnsOnCall(i int, result1 err
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) SendErrorResponse(arg1 *livekit.ErrorResponse) error {
-	fake.sendErrorResponseMutex.Lock()
-	ret, specificReturn := fake.sendErrorResponseReturnsOnCall[len(fake.sendErrorResponseArgsForCall)]
-	fake.sendErrorResponseArgsForCall = append(fake.sendErrorResponseArgsForCall, struct {
-		arg1 *livekit.ErrorResponse
-	}{arg1})
-	stub := fake.SendErrorResponseStub
-	fakeReturns := fake.sendErrorResponseReturns
-	fake.recordInvocation("SendErrorResponse", []interface{}{arg1})
-	fake.sendErrorResponseMutex.Unlock()
-	if stub != nil {
-		return stub(arg1)
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeLocalParticipant) SendErrorResponseCallCount() int {
-	fake.sendErrorResponseMutex.RLock()
-	defer fake.sendErrorResponseMutex.RUnlock()
-	return len(fake.sendErrorResponseArgsForCall)
-}
-
-func (fake *FakeLocalParticipant) SendErrorResponseCalls(stub func(*livekit.ErrorResponse) error) {
-	fake.sendErrorResponseMutex.Lock()
-	defer fake.sendErrorResponseMutex.Unlock()
-	fake.SendErrorResponseStub = stub
-}
-
-func (fake *FakeLocalParticipant) SendErrorResponseArgsForCall(i int) *livekit.ErrorResponse {
-	fake.sendErrorResponseMutex.RLock()
-	defer fake.sendErrorResponseMutex.RUnlock()
-	argsForCall := fake.sendErrorResponseArgsForCall[i]
-	return argsForCall.arg1
-}
-
-func (fake *FakeLocalParticipant) SendErrorResponseReturns(result1 error) {
-	fake.sendErrorResponseMutex.Lock()
-	defer fake.sendErrorResponseMutex.Unlock()
-	fake.SendErrorResponseStub = nil
-	fake.sendErrorResponseReturns = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeLocalParticipant) SendErrorResponseReturnsOnCall(i int, result1 error) {
-	fake.sendErrorResponseMutex.Lock()
-	defer fake.sendErrorResponseMutex.Unlock()
-	fake.SendErrorResponseStub = nil
-	if fake.sendErrorResponseReturnsOnCall == nil {
-		fake.sendErrorResponseReturnsOnCall = make(map[int]struct {
-			result1 error
-		})
-	}
-	fake.sendErrorResponseReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
-}
-
 func (fake *FakeLocalParticipant) SendJoinResponse(arg1 *livekit.JoinResponse) error {
 	fake.sendJoinResponseMutex.Lock()
 	ret, specificReturn := fake.sendJoinResponseReturnsOnCall[len(fake.sendJoinResponseArgsForCall)]
@@ -4975,6 +4914,67 @@ func (fake *FakeLocalParticipant) SendRefreshTokenReturnsOnCall(i int, result1 e
 		})
 	}
 	fake.sendRefreshTokenReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) SendRequestResponse(arg1 *livekit.RequestResponse) error {
+	fake.sendRequestResponseMutex.Lock()
+	ret, specificReturn := fake.sendRequestResponseReturnsOnCall[len(fake.sendRequestResponseArgsForCall)]
+	fake.sendRequestResponseArgsForCall = append(fake.sendRequestResponseArgsForCall, struct {
+		arg1 *livekit.RequestResponse
+	}{arg1})
+	stub := fake.SendRequestResponseStub
+	fakeReturns := fake.sendRequestResponseReturns
+	fake.recordInvocation("SendRequestResponse", []interface{}{arg1})
+	fake.sendRequestResponseMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) SendRequestResponseCallCount() int {
+	fake.sendRequestResponseMutex.RLock()
+	defer fake.sendRequestResponseMutex.RUnlock()
+	return len(fake.sendRequestResponseArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) SendRequestResponseCalls(stub func(*livekit.RequestResponse) error) {
+	fake.sendRequestResponseMutex.Lock()
+	defer fake.sendRequestResponseMutex.Unlock()
+	fake.SendRequestResponseStub = stub
+}
+
+func (fake *FakeLocalParticipant) SendRequestResponseArgsForCall(i int) *livekit.RequestResponse {
+	fake.sendRequestResponseMutex.RLock()
+	defer fake.sendRequestResponseMutex.RUnlock()
+	argsForCall := fake.sendRequestResponseArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) SendRequestResponseReturns(result1 error) {
+	fake.sendRequestResponseMutex.Lock()
+	defer fake.sendRequestResponseMutex.Unlock()
+	fake.SendRequestResponseStub = nil
+	fake.sendRequestResponseReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) SendRequestResponseReturnsOnCall(i int, result1 error) {
+	fake.sendRequestResponseMutex.Lock()
+	defer fake.sendRequestResponseMutex.Unlock()
+	fake.SendRequestResponseStub = nil
+	if fake.sendRequestResponseReturnsOnCall == nil {
+		fake.sendRequestResponseReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.sendRequestResponseReturnsOnCall[i] = struct {
 		result1 error
 	}{result1}
 }
@@ -6876,14 +6876,14 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.sendConnectionQualityUpdateMutex.RUnlock()
 	fake.sendDataPacketMutex.RLock()
 	defer fake.sendDataPacketMutex.RUnlock()
-	fake.sendErrorResponseMutex.RLock()
-	defer fake.sendErrorResponseMutex.RUnlock()
 	fake.sendJoinResponseMutex.RLock()
 	defer fake.sendJoinResponseMutex.RUnlock()
 	fake.sendParticipantUpdateMutex.RLock()
 	defer fake.sendParticipantUpdateMutex.RUnlock()
 	fake.sendRefreshTokenMutex.RLock()
 	defer fake.sendRefreshTokenMutex.RUnlock()
+	fake.sendRequestResponseMutex.RLock()
+	defer fake.sendRequestResponseMutex.RUnlock()
 	fake.sendRoomUpdateMutex.RLock()
 	defer fake.sendRoomUpdateMutex.RUnlock()
 	fake.sendSpeakerUpdateMutex.RLock()
