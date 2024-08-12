@@ -94,6 +94,7 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 	case *livekit.SignalRequest_UpdateMetadata:
 		requestResponse := &livekit.RequestResponse{
 			RequestId: msg.UpdateMetadata.RequestId,
+			Reason:    livekit.RequestResponse_OK,
 		}
 		if participant.ClaimGrants().Video.GetCanUpdateOwnMetadata() {
 			if err := participant.CheckMetadataLimits(
