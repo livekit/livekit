@@ -26,7 +26,7 @@ require (
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.8.1
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/olekukonko/tablewriter v0.0.5
-	github.com/ory/dockertest/v3 v3.10.0
+	github.com/ory/dockertest/v3 v3.11.0
 	github.com/pion/dtls/v2 v2.2.12
 	github.com/pion/ice/v2 v2.3.34
 	github.com/pion/interceptor v0.1.30
