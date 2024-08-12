@@ -198,14 +198,18 @@ func (p *ParticipantImpl) SendRefreshToken(token string) error {
 	})
 }
 
-func (p *ParticipantImpl) SendErrorResponse(errorResponse *livekit.ErrorResponse) error {
-	if errorResponse.RequestId == 0 || !p.params.ClientInfo.SupportErrorResponse() {
+func (p *ParticipantImpl) SendRequestResponse(requestResponse *livekit.RequestResponse) error {
+	if requestResponse.RequestId == 0 || !p.params.ClientInfo.SupportErrorResponse() {
+		return nil
+	}
+
+	if requestResponse.Reason == livekit.RequestResponse_OK && !p.ProtocolVersion().SupportsNonErrorSignalResponse() {
 		return nil
 	}
 
 	return p.writeMessage(&livekit.SignalResponse{
-		Message: &livekit.SignalResponse_ErrorResponse{
-			ErrorResponse: errorResponse,
+		Message: &livekit.SignalResponse_RequestResponse{
+			RequestResponse: requestResponse,
 		},
 	})
 }
