@@ -521,6 +521,10 @@ func (s *RTCService) startConnection(
 		}
 	}
 
+	if err := s.roomAllocator.SelectRoomNode(ctx, roomName, ""); err != nil {
+		return cr, nil, err
+	}
+
 	// this needs to be started first *before* using router functions on this node
 	cr.StartParticipantSignalResults, err = s.router.StartParticipantSignal(ctx, roomName, pi)
 	if err != nil {
