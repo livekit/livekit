@@ -611,18 +611,19 @@ func (p *ParticipantImpl) ToProtoWithVersion() (*livekit.ParticipantInfo, utils.
 	piv := p.timedVersion
 
 	pi := &livekit.ParticipantInfo{
-		Sid:         string(p.params.SID),
-		Identity:    string(p.params.Identity),
-		Name:        grants.Name,
-		State:       p.State(),
-		JoinedAt:    p.ConnectedAt().Unix(),
-		Version:     v,
-		Permission:  grants.Video.ToPermission(),
-		Metadata:    grants.Metadata,
-		Attributes:  grants.Attributes,
-		Region:      p.params.Region,
-		IsPublisher: p.IsPublisher(),
-		Kind:        grants.GetParticipantKind(),
+		Sid:              string(p.params.SID),
+		Identity:         string(p.params.Identity),
+		Name:             grants.Name,
+		State:            p.State(),
+		JoinedAt:         p.ConnectedAt().Unix(),
+		Version:          v,
+		Permission:       grants.Video.ToPermission(),
+		Metadata:         grants.Metadata,
+		Attributes:       grants.Attributes,
+		Region:           p.params.Region,
+		IsPublisher:      p.IsPublisher(),
+		Kind:             grants.GetParticipantKind(),
+		DisconnectReason: p.CloseReason().ToDisconnectReason(),
 	}
 	p.lock.RUnlock()
 
