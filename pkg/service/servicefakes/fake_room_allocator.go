@@ -201,7 +201,7 @@ func (fake *FakeRoomAllocator) SelectRoomNodeReturnsOnCall(i int, result1 error)
 	}{result1}
 }
 
-func (fake *FakeRoomAllocator) StartRoomEnabled() bool {
+func (fake *FakeRoomAllocator) CreateRoomEnabled() bool {
 	fake.startRoomEnabledMutex.Lock()
 	ret, specificReturn := fake.startRoomEnabledReturnsOnCall[len(fake.startRoomEnabledArgsForCall)]
 	fake.startRoomEnabledArgsForCall = append(fake.startRoomEnabledArgsForCall, struct {

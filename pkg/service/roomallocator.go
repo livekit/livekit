@@ -53,7 +53,7 @@ func NewRoomAllocator(conf *config.Config, router routing.Router, rs ObjectStore
 	}, nil
 }
 
-func (r *StandardRoomAllocator) StartRoomEnabled() bool {
+func (r *StandardRoomAllocator) CreateRoomEnabled() bool {
 	return r.config.Room.CreateRoomEnabled
 }
 

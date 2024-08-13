@@ -73,7 +73,7 @@ type IngressStore interface {
 
 //counterfeiter:generate . RoomAllocator
 type RoomAllocator interface {
-	StartRoomEnabled() bool
+	CreateRoomEnabled() bool
 	SelectRoomNode(ctx context.Context, roomName livekit.RoomName, nodeID livekit.NodeID) error
 	CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (*livekit.Room, *livekit.RoomInternal, bool, error)
 	ValidateCreateRoom(ctx context.Context, roomName livekit.RoomName) error

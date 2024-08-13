@@ -85,7 +85,7 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 		return nil, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, s.limitConf.MaxRoomNameLength)
 	}
 
-	if s.roomAllocator.StartRoomEnabled() {
+	if s.roomAllocator.CreateRoomEnabled() {
 		err := s.roomAllocator.SelectRoomNode(ctx, livekit.RoomName(req.Name), livekit.NodeID(req.NodeId))
 		if err != nil {
 			return nil, err
@@ -159,7 +159,7 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 		return nil, err
 	}
 
-	if s.roomAllocator.StartRoomEnabled() {
+	if s.roomAllocator.CreateRoomEnabled() {
 		_, err := s.router.CreateRoom(ctx, &livekit.CreateRoomRequest{Name: req.Room})
 		if err != nil {
 			return nil, err
