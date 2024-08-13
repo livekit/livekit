@@ -36,7 +36,6 @@ import (
 type RoomService struct {
 	limitConf         config.LimitConfig
 	apiConf           config.APIConfig
-	psrpcConf         rpc.PSRPCConfig
 	router            routing.MessageRouter
 	roomAllocator     RoomAllocator
 	roomStore         ServiceStore
@@ -50,7 +49,6 @@ type RoomService struct {
 func NewRoomService(
 	limitConf config.LimitConfig,
 	apiConf config.APIConfig,
-	psrpcConf rpc.PSRPCConfig,
 	router routing.MessageRouter,
 	roomAllocator RoomAllocator,
 	serviceStore ServiceStore,
@@ -63,7 +61,6 @@ func NewRoomService(
 	svc = &RoomService{
 		limitConf:         limitConf,
 		apiConf:           apiConf,
-		psrpcConf:         psrpcConf,
 		router:            router,
 		roomAllocator:     roomAllocator,
 		roomStore:         serviceStore,
@@ -88,9 +85,22 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 		return nil, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, s.limitConf.MaxRoomNameLength)
 	}
 
-	rm, created, err := s.roomAllocator.CreateRoom(ctx, req)
+	if s.roomAllocator.CreateRoomEnabled() {
+		err := s.roomAllocator.SelectRoomNode(ctx, livekit.RoomName(req.Name), livekit.NodeID(req.NodeId))
+		if err != nil {
+			return nil, err
+		}
+
+		return s.router.CreateRoom(ctx, req)
+	}
+
+	rm, _, created, err := s.roomAllocator.CreateRoom(ctx, req)
 	if err != nil {
 		err = errors.Wrap(err, "could not create room")
+		return nil, err
+	}
+	err = s.roomAllocator.SelectRoomNode(ctx, livekit.RoomName(req.Name), livekit.NodeID(req.NodeId))
+	if err != nil {
 		return nil, err
 	}
 
@@ -153,11 +163,18 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 		return nil, err
 	}
 
-	done, err := s.startRoom(ctx, livekit.RoomName(req.Room))
-	if err != nil {
-		return nil, err
+	if s.roomAllocator.CreateRoomEnabled() {
+		_, err := s.router.CreateRoom(ctx, &livekit.CreateRoomRequest{Name: req.Room})
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		done, err := s.startRoom(ctx, livekit.RoomName(req.Room))
+		if err != nil {
+			return nil, err
+		}
+		defer done()
 	}
-	defer done()
 
 	_, err = s.roomClient.DeleteRoom(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
 	if err != nil {

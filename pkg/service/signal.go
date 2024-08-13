@@ -39,7 +39,7 @@ type SessionHandler interface {
 
 	HandleSession(
 		ctx context.Context,
-		roomName livekit.RoomName,
+		createRoom *livekit.CreateRoomRequest,
 		pi routing.ParticipantInit,
 		connectionID livekit.ConnectionID,
 		requestSource routing.MessageSource,
@@ -94,7 +94,7 @@ func (s *defaultSessionHandler) Logger(ctx context.Context) logger.Logger {
 
 func (s *defaultSessionHandler) HandleSession(
 	ctx context.Context,
-	roomName livekit.RoomName,
+	createRoom *livekit.CreateRoomRequest,
 	pi routing.ParticipantInit,
 	connectionID livekit.ConnectionID,
 	requestSource routing.MessageSource,
@@ -102,7 +102,7 @@ func (s *defaultSessionHandler) HandleSession(
 ) error {
 	prometheus.IncrementParticipantRtcInit(1)
 
-	rtcNode, err := s.router.GetNodeForRoom(ctx, roomName)
+	rtcNode, err := s.router.GetNodeForRoom(ctx, livekit.RoomName(createRoom.Name))
 	if err != nil {
 		return err
 	}
@@ -115,12 +115,12 @@ func (s *defaultSessionHandler) HandleSession(
 		return err
 	}
 
-	return s.roomManager.StartSession(ctx, roomName, pi, requestSource, responseSink)
+	return s.roomManager.StartSession(ctx, createRoom, pi, requestSource, responseSink)
 }
 
 func (s *SignalServer) Start() error {
 	logger.Debugw("starting relay signal server", "topic", s.nodeID)
-	return s.server.RegisterRelaySignalTopic(s.nodeID)
+	return s.server.RegisterAllNodeTopics(s.nodeID)
 }
 
 func (r *SignalServer) Stop() {
@@ -182,7 +182,18 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 	// copy the incoming rpc headers to avoid dropping any session vars.
 	ctx := metadata.NewContextWithIncomingHeader(context.Background(), metadata.IncomingHeader(stream.Context()))
 
-	err = r.sessionHandler.HandleSession(ctx, livekit.RoomName(ss.RoomName), *pi, livekit.ConnectionID(ss.ConnectionId), reqChan, sink)
+	createRoom := ss.CreateRoom
+	if createRoom == nil {
+		createRoom = &livekit.CreateRoomRequest{
+			Name: ss.RoomName,
+		}
+
+		if pi.Grants != nil && pi.Grants.Video != nil {
+			createRoom.ConfigName = pi.Grants.Video.RoomConfiguration
+		}
+	}
+
+	err = r.sessionHandler.HandleSession(ctx, createRoom, *pi, livekit.ConnectionID(ss.ConnectionId), reqChan, sink)
 	if err != nil {
 		sink.Close()
 		l.Errorw("could not handle new participant", err)

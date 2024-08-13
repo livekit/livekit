@@ -38,7 +38,6 @@ import (
 func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*LivekitServer, error) {
 	limitConfig := getLimitConf(conf)
 	apiConfig := config.DefaultAPIConfig()
-	psrpcConfig := getPSRPCConfig(conf)
 	universalClient, err := createRedisClient(conf)
 	if err != nil {
 		return nil, err
@@ -50,12 +49,18 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
+	psrpcConfig := getPSRPCConfig(conf)
 	clientParams := getPSRPCClientParams(psrpcConfig, messageBus)
+	roomConfig := getRoomConfig(conf)
+	roomManagerClient, err := routing.NewRoomManagerClient(clientParams, roomConfig)
+	if err != nil {
+		return nil, err
+	}
 	keepalivePubSub, err := rpc.NewKeepalivePubSub(clientParams)
 	if err != nil {
 		return nil, err
 	}
-	router := routing.CreateRouter(universalClient, currentNode, signalClient, keepalivePubSub)
+	router := routing.CreateRouter(universalClient, currentNode, signalClient, roomManagerClient, keepalivePubSub)
 	objectStore := createStore(universalClient)
 	roomAllocator, err := NewRoomAllocator(conf, router, objectStore)
 	if err != nil {
@@ -96,7 +101,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	roomService, err := NewRoomService(limitConfig, apiConfig, psrpcConfig, router, roomAllocator, objectStore, client, rtcEgressLauncher, topicFormatter, roomClient, participantClient)
+	roomService, err := NewRoomService(limitConfig, apiConfig, router, roomAllocator, objectStore, client, rtcEgressLauncher, topicFormatter, roomClient, participantClient)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +133,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	timedVersionGenerator := utils.NewDefaultTimedVersionGenerator()
 	turnAuthHandler := NewTURNAuthHandler(keyProvider)
 	forwardStats := createForwardStats(conf)
-	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager, client, agentStore, rtcEgressLauncher, timedVersionGenerator, turnAuthHandler, messageBus, forwardStats)
+	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, roomAllocator, telemetryService, clientConfigurationManager, client, agentStore, rtcEgressLauncher, timedVersionGenerator, turnAuthHandler, messageBus, forwardStats)
 	if err != nil {
 		return nil, err
 	}
@@ -162,11 +167,16 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 	}
 	psrpcConfig := getPSRPCConfig(conf)
 	clientParams := getPSRPCClientParams(psrpcConfig, messageBus)
+	roomConfig := getRoomConfig(conf)
+	roomManagerClient, err := routing.NewRoomManagerClient(clientParams, roomConfig)
+	if err != nil {
+		return nil, err
+	}
 	keepalivePubSub, err := rpc.NewKeepalivePubSub(clientParams)
 	if err != nil {
 		return nil, err
 	}
-	router := routing.CreateRouter(universalClient, currentNode, signalClient, keepalivePubSub)
+	router := routing.CreateRouter(universalClient, currentNode, signalClient, roomManagerClient, keepalivePubSub)
 	return router, nil
 }
 
@@ -291,6 +301,10 @@ func createClientConfiguration() clientconfiguration.ClientConfigurationManager 
 
 func getLimitConf(config2 *config.Config) config.LimitConfig {
 	return config2.Limit
+}
+
+func getRoomConfig(config2 *config.Config) config.RoomConfig {
+	return config2.Room
 }
 
 func getSignalRelayConfig(config2 *config.Config) config.SignalRelayConfig {

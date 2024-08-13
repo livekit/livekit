@@ -30,8 +30,9 @@ var _ Router = (*LocalRouter)(nil)
 
 // a router of messages on the same node, basic implementation for local testing
 type LocalRouter struct {
-	currentNode  LocalNode
-	signalClient SignalClient
+	currentNode       LocalNode
+	signalClient      SignalClient
+	roomManagerClient RoomManagerClient
 
 	lock sync.RWMutex
 	// channels for each participant
@@ -40,12 +41,17 @@ type LocalRouter struct {
 	isStarted        atomic.Bool
 }
 
-func NewLocalRouter(currentNode LocalNode, signalClient SignalClient) *LocalRouter {
+func NewLocalRouter(
+	currentNode LocalNode,
+	signalClient SignalClient,
+	roomManagerClient RoomManagerClient,
+) *LocalRouter {
 	return &LocalRouter{
-		currentNode:      currentNode,
-		signalClient:     signalClient,
-		requestChannels:  make(map[string]*MessageChannel),
-		responseChannels: make(map[string]*MessageChannel),
+		currentNode:       currentNode,
+		signalClient:      signalClient,
+		roomManagerClient: roomManagerClient,
+		requestChannels:   make(map[string]*MessageChannel),
+		responseChannels:  make(map[string]*MessageChannel),
 	}
 }
 
@@ -87,6 +93,14 @@ func (r *LocalRouter) ListNodes() ([]*livekit.Node, error) {
 	return []*livekit.Node{
 		r.currentNode,
 	}, nil
+}
+
+func (r *LocalRouter) CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (res *livekit.Room, err error) {
+	return r.CreateRoomWithNodeID(ctx, req, livekit.NodeID(r.currentNode.Id))
+}
+
+func (r *LocalRouter) CreateRoomWithNodeID(ctx context.Context, req *livekit.CreateRoomRequest, nodeID livekit.NodeID) (res *livekit.Room, err error) {
+	return r.roomManagerClient.CreateRoom(ctx, nodeID, req)
 }
 
 func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit) (res StartParticipantSignalResults, err error) {

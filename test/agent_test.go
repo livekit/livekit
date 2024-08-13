@@ -173,6 +173,7 @@ func TestAgentMultiNode(t *testing.T) {
 	ac1, err := newAgentClient(agentToken(), defaultServerPort)
 	require.NoError(t, err)
 	ac2, err := newAgentClient(agentToken(), defaultServerPort)
+	require.NoError(t, err)
 	defer ac1.close()
 	defer ac2.close()
 	ac1.Run(livekit.JobType_JT_ROOM, "default")

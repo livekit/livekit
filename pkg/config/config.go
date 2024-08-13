@@ -242,6 +242,9 @@ type RoomConfig struct {
 	EnableRemoteUnmute bool               `yaml:"enable_remote_unmute,omitempty"`
 	PlayoutDelay       PlayoutDelayConfig `yaml:"playout_delay,omitempty"`
 	SyncStreams        bool               `yaml:"sync_streams,omitempty"`
+	CreateRoomEnabled  bool               `yaml:"create_room_enabled,omitempty"`
+	CreateRoomTimeout  time.Duration      `yaml:"create_room_timeout,omitempty"`
+	CreateRoomAttempts int                `yaml:"create_room_attempts,omitempty"`
 	// deprecated, moved to limits
 	MaxMetadataSize uint32 `yaml:"max_metadata_size,omitempty"`
 	// deprecated, moved to limits
@@ -537,8 +540,10 @@ var DefaultConfig = Config{
 			{Mime: webrtc.MimeTypeVP9},
 			{Mime: webrtc.MimeTypeAV1},
 		},
-		EmptyTimeout:     5 * 60,
-		DepartureTimeout: 20,
+		EmptyTimeout:       5 * 60,
+		DepartureTimeout:   20,
+		CreateRoomTimeout:  10 * time.Second,
+		CreateRoomAttempts: 3,
 	},
 	Limit: LimitConfig{
 		MaxMetadataSize:              64000,

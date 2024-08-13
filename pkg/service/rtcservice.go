@@ -179,6 +179,10 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 		Client:          s.ParseClientInfo(r),
 		Grants:          claims,
 		Region:          region,
+		CreateRoom: &livekit.CreateRoomRequest{
+			Name:       string(roomName),
+			ConfigName: GetRoomConfiguration(r.Context()),
+		},
 	}
 	if pi.Reconnect {
 		pi.ID = livekit.ParticipantID(participantID)
@@ -214,14 +218,13 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// for logger
-	loggerFields := []interface{}{
+	loggerFields := []any{
 		"participant", pi.Identity,
+		"pID", pi.ID,
 		"room", roomName,
 		"remote", false,
 	}
-
-	l := utils.GetLogger(r.Context())
+	pLogger := utils.GetLogger(r.Context()).WithValues(loggerFields...)
 
 	// give it a few attempts to start session
 	var cr connectionResult
@@ -234,8 +237,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		if i < 2 {
-			fieldsWithAttempt := append(loggerFields, "attempt", i)
-			l.Warnw("failed to start connection, retrying", err, fieldsWithAttempt...)
+			pLogger.Warnw("failed to start connection, retrying", err, "attempt", i)
 		}
 	}
 
@@ -256,13 +258,6 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		signalStats.ResolveRoom(join.GetRoom())
 		signalStats.ResolveParticipant(join.GetParticipant())
 	}
-
-	pLogger := rtc.LoggerWithParticipant(
-		rtc.LoggerWithRoom(l, roomName, livekit.RoomID(cr.Room.Sid)),
-		pi.Identity,
-		pi.ID,
-		false,
-	)
 
 	closedByClient := atomic.NewBool(false)
 	done := make(chan struct{})
@@ -519,8 +514,14 @@ func (s *RTCService) startConnection(
 	var cr connectionResult
 	var err error
 
-	cr.Room, _, err = s.roomAllocator.CreateRoom(ctx, &livekit.CreateRoomRequest{Name: string(roomName), ConfigName: GetRoomConfiguration(ctx)})
-	if err != nil {
+	if !s.roomAllocator.CreateRoomEnabled() {
+		cr.Room, _, _, err = s.roomAllocator.CreateRoom(ctx, pi.CreateRoom)
+		if err != nil {
+			return cr, nil, err
+		}
+	}
+
+	if err := s.roomAllocator.SelectRoomNode(ctx, roomName, ""); err != nil {
 		return cr, nil, err
 	}
 
