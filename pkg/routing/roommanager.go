@@ -16,7 +16,6 @@ package routing
 
 import (
 	"context"
-	"errors"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/livekit"
@@ -24,9 +23,6 @@ import (
 	"github.com/livekit/psrpc"
 	"github.com/livekit/psrpc/pkg/middleware"
 )
-
-var ErrRoomManagerWriteFailed = errors.New("signal write failed")
-var ErrRoomManagerMessageDropped = errors.New("signal message dropped")
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
 
