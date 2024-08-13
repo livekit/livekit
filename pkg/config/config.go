@@ -542,7 +542,6 @@ var DefaultConfig = Config{
 		},
 		EmptyTimeout:       5 * 60,
 		DepartureTimeout:   20,
-		CreateRoomEnabled:  true,
 		CreateRoomTimeout:  10 * time.Second,
 		CreateRoomAttempts: 3,
 	},
