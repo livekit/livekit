@@ -39,7 +39,7 @@ func TestCreateRoom(t *testing.T) {
 
 		ra, conf := newTestRoomAllocator(t, conf, node)
 
-		room, _, err := ra.CreateRoom(context.Background(), &livekit.CreateRoomRequest{Name: "myroom"})
+		room, _, _, err := ra.CreateRoom(context.Background(), &livekit.CreateRoomRequest{Name: "myroom"})
 		require.NoError(t, err)
 		require.Equal(t, conf.Room.EmptyTimeout, room.EmptyTimeout)
 		require.Equal(t, conf.Room.DepartureTimeout, room.DepartureTimeout)
@@ -58,7 +58,7 @@ func TestCreateRoom(t *testing.T) {
 
 		ra, _ := newTestRoomAllocator(t, conf, node)
 
-		_, _, err = ra.CreateRoom(context.Background(), &livekit.CreateRoomRequest{Name: "low-limit-room"})
+		_, _, _, err = ra.CreateRoom(context.Background(), &livekit.CreateRoomRequest{Name: "low-limit-room"})
 		require.ErrorIs(t, err, routing.ErrNodeLimitReached)
 	})
 
@@ -74,7 +74,7 @@ func TestCreateRoom(t *testing.T) {
 
 		ra, _ := newTestRoomAllocator(t, conf, node)
 
-		_, _, err = ra.CreateRoom(context.Background(), &livekit.CreateRoomRequest{Name: "low-limit-room"})
+		_, _, _, err = ra.CreateRoom(context.Background(), &livekit.CreateRoomRequest{Name: "low-limit-room"})
 		require.ErrorIs(t, err, routing.ErrNodeLimitReached)
 	})
 }

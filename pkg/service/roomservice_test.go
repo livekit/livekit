@@ -111,7 +111,6 @@ func newTestRoomService(limitConf config.LimitConfig) *TestRoomService {
 	svc, err := service.NewRoomService(
 		limitConf,
 		config.APIConfig{ExecutionTimeout: 2},
-		rpc.PSRPCConfig{},
 		router,
 		allocator,
 		store,
