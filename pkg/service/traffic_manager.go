@@ -102,22 +102,22 @@ func (m *TrafficManager) SetValue(ctx context.Context, valueByApiKey map[livekit
 
 func (m *TrafficManager) init(ctx context.Context) error {
 	go func() {
-		ticker := time.NewTicker(1 * time.Second)
+		ticker := time.NewTicker(10 * time.Second)
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+				m.lock.Lock()
 				for clientApiKey, trafficsPerPeers := range m.trafficValuesByApiKey {
 					for peerId, trafficMessage := range trafficsPerPeers {
 						if !trafficMessage.isExpired() {
 							continue
 						}
-						m.lock.Lock()
 						delete(m.trafficValuesByApiKey[clientApiKey], peerId)
-						m.lock.Unlock()
 					}
 				}
+				m.lock.Unlock()
 			}
 		}
 	}()
