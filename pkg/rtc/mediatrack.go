@@ -285,6 +285,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			sfu.WithLoadBalanceThreshold(20),
 			sfu.WithStreamTrackers(),
 			sfu.WithForwardStats(t.params.ForwardStats),
+			sfu.WithEverHasDownTrackAdded(t.OnTrackSubscribed),
 		)
 		newWR.OnCloseHandler(func() {
 			t.MediaTrackReceiver.SetClosing()
