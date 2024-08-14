@@ -94,7 +94,7 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 		return s.router.CreateRoom(ctx, req)
 	}
 
-	rm, _, created, err := s.roomAllocator.CreateRoom(ctx, req)
+	rm, _, created, err := s.roomAllocator.CreateRoom(ctx, req, true)
 	if err != nil {
 		err = errors.Wrap(err, "could not create room")
 		return nil, err

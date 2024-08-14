@@ -39,7 +39,7 @@ func TestCreateRoom(t *testing.T) {
 
 		ra, conf := newTestRoomAllocator(t, conf, node)
 
-		room, _, _, err := ra.CreateRoom(context.Background(), &livekit.CreateRoomRequest{Name: "myroom"})
+		room, _, _, err := ra.CreateRoom(context.Background(), &livekit.CreateRoomRequest{Name: "myroom"}, true)
 		require.NoError(t, err)
 		require.Equal(t, conf.Room.EmptyTimeout, room.EmptyTimeout)
 		require.Equal(t, conf.Room.DepartureTimeout, room.DepartureTimeout)
