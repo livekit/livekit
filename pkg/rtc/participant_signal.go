@@ -313,9 +313,6 @@ func (p *ParticipantImpl) sendTrackUnpublished(trackID livekit.TrackID) {
 }
 
 func (p *ParticipantImpl) sendTrackHasBeenSubscribed(trackID livekit.TrackID) {
-	if !p.params.ClientInfo.SupportTrackSubscribedEvent() {
-		return
-	}
 	_ = p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_TrackSubscribed{
 			TrackSubscribed: &livekit.TrackSubscribed{

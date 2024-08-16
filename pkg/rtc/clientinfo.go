@@ -92,13 +92,9 @@ func (c ClientInfo) ComplyWithCodecOrderInSDPAnswer() bool {
 	return !((c.isLinux() || c.isAndroid()) && c.isFirefox())
 }
 
-// Rust SDK can't decode unknown signal message (TrackSubscribed and ErrorResponse)
-func (c ClientInfo) SupportTrackSubscribedEvent() bool {
-	return !(c.ClientInfo.GetSdk() == livekit.ClientInfo_RUST && c.ClientInfo.GetProtocol() < 10)
-}
-
+// Rust SDK can't decode unknown signal message (ErrorResponse)
 func (c ClientInfo) SupportErrorResponse() bool {
-	return c.SupportTrackSubscribedEvent()
+	return !(c.ClientInfo.GetSdk() == livekit.ClientInfo_RUST && c.ClientInfo.GetProtocol() < 10)
 }
 
 // compareVersion compares a semver against the current client SDK version
