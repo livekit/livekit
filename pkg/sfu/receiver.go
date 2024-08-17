@@ -83,6 +83,8 @@ type TrackReceiver interface {
 	GetTemporalLayerFpsForSpatial(layer int32) []float32
 
 	GetTrackStats() *livekit.RTPStats
+
+	GetMonotonicNowUnixNano() int64
 }
 
 // WebRTCReceiver receives a media track
@@ -130,6 +132,8 @@ type WebRTCReceiver struct {
 	redPktWriter    func(pkt *buffer.ExtPacket, spatialLayer int32) int
 
 	forwardStats *ForwardStats
+
+	baseTime time.Time
 }
 
 type ReceiverOpts func(w *WebRTCReceiver) *WebRTCReceiver
@@ -204,6 +208,7 @@ func NewWebRTCReceiver(
 		onRTCP:   onRTCP,
 		isSVC:    buffer.IsSvcCodec(track.Codec().MimeType),
 		isRED:    buffer.IsRedCodec(track.Codec().MimeType),
+		baseTime: time.Now(),
 	}
 
 	for _, opt := range opts {
@@ -335,6 +340,7 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 		layer = buffer.RidToSpatialLayer(track.RID(), w.trackInfo.Load())
 	}
 	buff.SetLogger(w.logger.WithValues("layer", layer))
+	buff.SetBaseTime(w.baseTime)
 	buff.SetAudioLevelParams(audio.AudioLevelParams{
 		ActiveLevel:     w.audioConfig.ActiveLevel,
 		MinPercentile:   w.audioConfig.MinPercentile,
@@ -830,6 +836,12 @@ func (w *WebRTCReceiver) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
 
 	return b.GetTemporalLayerFpsForSpatial(layer)
 }
+
+func (w *WebRTCReceiver) GetMonotonicNowUnixNano() int64 {
+	return w.baseTime.Add(time.Since(w.baseTime)).UnixNano()
+}
+
+// -----------------------------------------------------------
 
 // closes all track senders in parallel, returns when all are closed
 func closeTrackSenders(senders []TrackSender) {
