@@ -91,6 +91,7 @@ type Buffer struct {
 	closed          atomic.Bool
 	mime            string
 
+	baseTime   time.Time
 	snRangeMap *utils.RangeMap[uint64, uint64]
 
 	latestTSForAudioLevelInitialized bool
@@ -148,6 +149,7 @@ func NewBuffer(ssrc uint32, maxVideoPkts, maxAudioPkts int) *Buffer {
 		mediaSSRC:    ssrc,
 		maxVideoPkts: maxVideoPkts,
 		maxAudioPkts: maxAudioPkts,
+		baseTime:     time.Now(),
 		snRangeMap:   utils.NewRangeMap[uint64, uint64](100),
 		pliThrottle:  int64(500 * time.Millisecond),
 		logger:       l.WithComponent(sutils.ComponentPub).WithComponent(sutils.ComponentSFU),
@@ -165,6 +167,13 @@ func (b *Buffer) SetLogger(logger logger.Logger) {
 	if b.rtpStats != nil {
 		b.rtpStats.SetLogger(b.logger)
 	}
+}
+
+func (b *Buffer) SetBaseTime(baseTime time.Time) {
+	b.Lock()
+	defer b.Unlock()
+
+	b.baseTime = baseTime
 }
 
 func (b *Buffer) SetPaused(paused bool) {
@@ -212,7 +221,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	b.ppsSnapshotId = b.rtpStats.NewSnapshotId()
 
 	b.clockRate = codec.ClockRate
-	b.lastReport = time.Now().UnixNano()
+	b.lastReport = b.getMonotonicNowUnixNano()
 	b.mime = strings.ToLower(codec.MimeType)
 	for _, codecParameter := range params.Codecs {
 		if strings.EqualFold(codecParameter.MimeType, codec.MimeType) {
@@ -321,7 +330,7 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 		return
 	}
 
-	now := time.Now().UnixNano()
+	now := b.getMonotonicNowUnixNano()
 	if b.twcc != nil && b.twccExtID != 0 && !b.closed.Load() {
 		if ext := rtpPacket.GetExtension(b.twccExtID); ext != nil {
 			b.twcc.Push(rtpPacket.SSRC, binary.BigEndian.Uint16(ext[0:2]), now, rtpPacket.Marker)
@@ -929,7 +938,7 @@ func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64, packets uin
 	srData := &RTCPSenderReportData{
 		RTPTimestamp: rtpTime,
 		NTPTimestamp: mediatransportutil.NtpTime(ntpTime),
-		At:           time.Now(),
+		At:           b.getMonotonicNow(),
 		Packets:      packets,
 		Octets:       octets,
 	}
@@ -1093,7 +1102,7 @@ func (b *Buffer) GetAudioLevel() (float64, bool) {
 		return 0, false
 	}
 
-	return b.audioLevel.GetLevel(time.Now().UnixNano())
+	return b.audioLevel.GetLevel(b.getMonotonicNowUnixNano())
 }
 
 func (b *Buffer) OnFpsChanged(f func()) {
@@ -1112,6 +1121,16 @@ func (b *Buffer) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
 	}
 	return nil
 }
+
+func (b *Buffer) getMonotonicNowUnixNano() int64 {
+	return b.baseTime.Add(time.Since(b.baseTime)).UnixNano()
+}
+
+func (b *Buffer) getMonotonicNow() time.Time {
+	return b.baseTime.Add(time.Since(b.baseTime))
+}
+
+// ---------------------------------------------------------------
 
 // SVC-TODO: Have to use more conditions to differentiate between
 // SVC-TODO: SVC and non-SVC (could be single layer or simulcast).
