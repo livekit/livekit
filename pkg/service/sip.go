@@ -239,9 +239,11 @@ func (s *SIPService) CreateSIPDispatchRule(ctx context.Context, req *livekit.Cre
 	info := &livekit.SIPDispatchRuleInfo{
 		Rule:            req.Rule,
 		TrunkIds:        req.TrunkIds,
+		InboundNumbers:  req.InboundNumbers,
 		HidePhoneNumber: req.HidePhoneNumber,
 		Name:            req.Name,
 		Metadata:        req.Metadata,
+		Attributes:      req.Attributes,
 	}
 
 	// Validate all rules including the new one first.
