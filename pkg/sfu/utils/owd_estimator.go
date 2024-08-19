@@ -37,7 +37,7 @@ var OWDEstimatorParamsDefault = OWDEstimatorParams{
 	// OWD (One-Way-Delay) Estimator is used to estimate propagation delay between sender and receicer.
 	// As they operate on different clock domains, it is not possible to get exact propagation delay easily.
 	// So, this module is an estimator using a simple approach explained below. It should not be used for
-	// things that require high precision.
+	// things that require high accuracy.
 	//
 	// One example is RTCP Sender Reports getting re-based to SFU time base so that all subscriber side
 	// can have the same time base (i. e. SFU time base). To convert publisher side
