@@ -41,7 +41,7 @@ func (f *FrameNumberWrapper) UpdateAndGet(new uint64, updateOffset bool) uint64 
 		new16 := uint16(new + f.offset)
 		last16 := uint16(f.last + f.offset)
 		// if new frame number wraps around and is considered as earlier by client, increase offset to make it later
-		if diff := new16 - last16; diff > 0x8000 || (diff == 0x8000 && new16 <= last16) {
+		if diff := new16 - last16; diff > 0x8000 || (diff == 0x8000 && new16 < last16) {
 			// increase offset by 6000, nearly 10 seconds for 30fps video with 3 spatial layers
 			prevOffset := f.offset
 			f.offset += uint64(65535 - diff + 6000)
