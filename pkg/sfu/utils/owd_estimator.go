@@ -94,9 +94,9 @@ func (o *OWDEstimator) MarshalLogObject(e zapcore.ObjectEncoder) error {
 		e.AddDuration("lastPropagationDelay", o.lastPropagationDelay)
 		e.AddDuration("lastDeltaPropagationDelay", o.lastDeltaPropagationDelay)
 		e.AddDuration("estimatedPropagationDelay", o.estimatedPropagationDelay)
-		e.AddDuration("longTermPropagationDelay", o.longTermDeltaPropagationDelay)
-		e.AddInt("propagationDelayHighCount", o.propagationDelayDeltaHighCount)
-		e.AddTime("propagationDelayHighStartTime", o.propagationDelayDeltaHighStartTime)
+		e.AddDuration("longTermDeltaPropagationDelay", o.longTermDeltaPropagationDelay)
+		e.AddInt("propagationDelayDeltaHighCount", o.propagationDelayDeltaHighCount)
+		e.AddTime("propagationDelayDeltaHighStartTime", o.propagationDelayDeltaHighStartTime)
 		e.AddDuration("propagationDelaySpike", o.propagationDelaySpike)
 	}
 	return nil
