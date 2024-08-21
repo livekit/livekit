@@ -231,7 +231,7 @@ func (r *RTPStatsReceiver) Update(
 		if gapSN < 0 && gapTS > 0 {
 			expectedTSJump = timeSinceHighest * int64(r.params.ClockRate) / 1e9
 			if gapTS > expectedTSJump*cTSJumpTooHighFactor {
-				r.timestamp.UndoUpdate(resSN)
+				r.sequenceNumber.UndoUpdate(resSN)
 				r.timestamp.UndoUpdate(resTS)
 				r.logger.Warnw(
 					"dropping old packet, timestamp", nil,
