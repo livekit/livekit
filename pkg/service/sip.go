@@ -300,28 +300,18 @@ func (s *SIPService) DeleteSIPDispatchRule(ctx context.Context, req *livekit.Del
 	return info, nil
 }
 
-func (s *SIPService) CreateSIPParticipantWithToken(ctx context.Context, req *livekit.CreateSIPParticipantRequest, wsUrl, token string) (*livekit.SIPParticipantInfo, error) {
-	if err := EnsureSIPCallPermission(ctx); err != nil {
-		return nil, twirpAuthError(err)
-	}
-	if s.store == nil {
-		return nil, ErrSIPNotConnected
-	}
-	callID := sip.NewCallID()
-	log := logger.GetLogger()
-	log = log.WithValues("callId", callID, "roomName", req.RoomName, "sipTrunk", req.SipTrunkId, "toUser", req.SipCallTo)
-
-	trunk, err := s.store.LoadSIPOutboundTrunk(ctx, req.SipTrunkId)
-	if err != nil {
-		log.Errorw("cannot get trunk to update sip participant", err)
-		return nil, err
-	}
-	ireq, err := rpc.NewCreateSIPParticipantRequest(callID, wsUrl, token, req, trunk)
+func (s *SIPService) CreateSIPParticipant(ctx context.Context, req *livekit.CreateSIPParticipantRequest) (*livekit.SIPParticipantInfo, error) {
+	log := logger.GetLogger().WithValues("roomName", req.RoomName, "sipTrunk", req.SipTrunkId, "toUser", req.SipCallTo)
+	ireq, err := s.CreateSIPParticipantRequest(ctx, req, "", "")
 	if err != nil {
 		log.Errorw("cannot create sip participant request", err)
 		return nil, err
 	}
-	log = log.WithValues("fromUser", ireq.Number, "toHost", trunk.Address)
+	log = log.WithValues(
+		"callId", ireq.SipCallId,
+		"fromUser", ireq.Number,
+		"toHost", ireq.Address,
+	)
 
 	// CreateSIPParticipant will wait for LiveKit Participant to be created and that can take some time.
 	// Thus, we must set a higher deadline for it, if it's not set already.
@@ -343,9 +333,28 @@ func (s *SIPService) CreateSIPParticipantWithToken(ctx context.Context, req *liv
 		ParticipantId:       resp.ParticipantId,
 		ParticipantIdentity: resp.ParticipantIdentity,
 		RoomName:            req.RoomName,
-		SipCallId:           callID,
+		SipCallId:           ireq.SipCallId,
 	}, nil
 }
-func (s *SIPService) CreateSIPParticipant(ctx context.Context, req *livekit.CreateSIPParticipantRequest) (*livekit.SIPParticipantInfo, error) {
-	return s.CreateSIPParticipantWithToken(ctx, req, "", "")
+
+func (s *SIPService) CreateSIPParticipantRequest(ctx context.Context, req *livekit.CreateSIPParticipantRequest, wsUrl, token string) (*rpc.InternalCreateSIPParticipantRequest, error) {
+	if err := EnsureSIPCallPermission(ctx); err != nil {
+		return nil, twirpAuthError(err)
+	}
+	if s.store == nil {
+		return nil, ErrSIPNotConnected
+	}
+	callID := sip.NewCallID()
+
+	trunk, err := s.store.LoadSIPOutboundTrunk(ctx, req.SipTrunkId)
+	if err != nil {
+		logger.Errorw("cannot get trunk to update sip participant", err,
+			"callId", callID,
+			"roomName", req.RoomName,
+			"sipTrunk", req.SipTrunkId,
+			"toUser", req.SipCallTo,
+		)
+		return nil, err
+	}
+	return rpc.NewCreateSIPParticipantRequest(callID, wsUrl, token, req, trunk)
 }
