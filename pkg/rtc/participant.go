@@ -17,7 +17,6 @@ package rtc
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -26,7 +25,6 @@ import (
 
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/pion/rtcp"
-	"github.com/pion/sctp"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
 	"github.com/pkg/errors"
@@ -191,6 +189,7 @@ type ParticipantImpl struct {
 	*TransportManager
 	*UpTrackManager
 	*SubscriptionManager
+	*ParticipantMetrics
 
 	icQueue [2]atomic.Pointer[webrtc.ICECandidate]
 
@@ -224,6 +223,7 @@ type ParticipantImpl struct {
 	onMigrateStateChange func(p types.LocalParticipant, migrateState types.MigrateState)
 	onParticipantUpdate  func(types.LocalParticipant)
 	onDataPacket         func(types.LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket)
+	onMetrics            func(types.LocalParticipant, *livekit.DataPacket)
 
 	migrateState atomic.Value // types.MigrateState
 
@@ -269,7 +269,8 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		dataChannelStats: telemetry.NewBytesTrackStats(
 			telemetry.BytesTrackIDForParticipantID(telemetry.BytesTrackTypeData, params.SID),
 			params.SID,
-			params.Telemetry),
+			params.Telemetry,
+		),
 		tracksQuality: make(map[livekit.TrackID]livekit.ConnectionQuality),
 		pubLogger:     params.Logger.WithComponent(sutils.ComponentPub),
 		subLogger:     params.Logger.WithComponent(sutils.ComponentSub),
@@ -300,6 +301,10 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	if err != nil {
 		return nil, err
 	}
+	p.ParticipantMetrics = NewParticipantMetrics(ParticipantMetricsParams{
+		TransportManager: p.TransportManager,
+		Logger:           params.Logger,
+	})
 
 	p.setupUpTrackManager()
 	p.setupSubscriptionManager()
@@ -739,6 +744,24 @@ func (p *ParticipantImpl) OnDataPacket(callback func(types.LocalParticipant, liv
 	p.lock.Unlock()
 }
 
+func (p *ParticipantImpl) getOnDataPacket() func(types.LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return p.onDataPacket
+}
+
+func (p *ParticipantImpl) OnMetrics(callback func(types.LocalParticipant, *livekit.DataPacket)) {
+	p.lock.Lock()
+	p.onMetrics = callback
+	p.lock.Unlock()
+}
+
+func (p *ParticipantImpl) getOnMetrics() func(types.LocalParticipant, *livekit.DataPacket) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return p.onMetrics
+}
+
 func (p *ParticipantImpl) OnClose(callback func(types.LocalParticipant)) {
 	p.lock.Lock()
 	p.onClose = callback
@@ -934,6 +957,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	// Close will block.
 	go func() {
 		p.SubscriptionManager.Close(isExpectedToResume)
+		p.ParticipantMetrics.Close()
 		p.TransportManager.Close()
 	}()
 
@@ -1318,6 +1342,10 @@ func (h SubscriberTransportHandler) OnInitialConnected() {
 	h.p.onSubscriberInitialConnected()
 }
 
+func (h SubscriberTransportHandler) OnDataSendError(err error) {
+	h.p.onDataSendError(err)
+}
+
 // ----------------------------------------------------------
 
 type PrimaryTransportHandler struct {
@@ -1376,6 +1404,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		Logger:                       p.params.Logger.WithComponent(sutils.ComponentTransport),
 		PublisherHandler:             pth,
 		SubscriberHandler:            sth,
+		DataChannelStats:             p.dataChannelStats,
 	}
 	if p.params.SyncStreams && p.params.PlayoutDelay.GetEnabled() && p.params.ClientInfo.isFirefox() {
 		// we will disable playout delay for Firefox if the user is expecting
@@ -1573,7 +1602,9 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		dp.ParticipantIdentity = string(p.params.Identity)
 	}
 
-	shouldForward := false
+	shouldForwardData := true
+	shouldForwardMetrics := false
+	isPublisher := true
 	// only forward on user payloads
 	switch payload := dp.Value.(type) {
 	case *livekit.DataPacket_User:
@@ -1595,26 +1626,40 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		} else {
 			dp.DestinationIdentities = u.DestinationIdentities
 		}
-		shouldForward = true
 	case *livekit.DataPacket_SipDtmf:
-		shouldForward = true
 	case *livekit.DataPacket_Transcription:
 		if p.Kind() == livekit.ParticipantInfo_AGENT {
-			shouldForward = true
+			shouldForwardData = false
 		}
+	case *livekit.DataPacket_Metrics:
+		// METRICS-TODO: add grants check for metrics publish and drop if not allowed
+		shouldForwardData = false
+		shouldForwardMetrics = true
+		isPublisher = false
+		// METRICS-TODO-QUESTIONS:
+		// 1. Should this record (and do processing/batching) metrics (i. e. publisher side) rather
+		//    than forwarding and recording/processing/batching at every subscriber (in this case
+		//    subscriber is defined as the other participants pushing this to edge client).
+		// 2. If the above is done, there could be two cadences, publisher side recording/processing/batching
+		//    and pushing it to all subscribers on some cadence and subscribers have their own cadence of
+		//    processing/batching and sending to edge clients.
 	default:
 		p.pubLogger.Warnw("received unsupported data packet", nil, "payload", payload)
 	}
-	if shouldForward {
-		p.lock.RLock()
-		onDataPacket := p.onDataPacket
-		p.lock.RUnlock()
-		if onDataPacket != nil {
+	if shouldForwardData {
+		if onDataPacket := p.getOnDataPacket(); onDataPacket != nil {
 			onDataPacket(p, kind, dp)
 		}
 	}
+	if shouldForwardMetrics {
+		if onMetrics := p.getOnMetrics(); onMetrics != nil {
+			onMetrics(p, dp)
+		}
+	}
 
-	p.setIsPublisher(true)
+	if isPublisher {
+		p.setIsPublisher(true)
+	}
 }
 
 func (p *ParticipantImpl) onICECandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) error {
@@ -2640,16 +2685,14 @@ func (p *ParticipantImpl) SendDataPacket(kind livekit.DataPacket_Kind, encoded [
 		return ErrDataChannelUnavailable
 	}
 
-	err := p.TransportManager.SendDataPacket(kind, encoded)
-	if err != nil {
-		if (errors.Is(err, sctp.ErrStreamClosed) || errors.Is(err, io.ErrClosedPipe)) && p.params.ReconnectOnDataChannelError {
-			p.params.Logger.Infow("issuing full reconnect on data channel error", "error", err)
-			p.IssueFullReconnect(types.ParticipantCloseReasonDataChannelError)
-		}
-	} else {
-		p.dataChannelStats.AddBytes(uint64(len(encoded)), true)
+	return p.TransportManager.SendDataPacket(kind, encoded)
+}
+
+func (p *ParticipantImpl) onDataSendError(err error) {
+	if p.params.ReconnectOnDataChannelError {
+		p.params.Logger.Infow("issuing full reconnect on data channel error", "error", err)
+		p.IssueFullReconnect(types.ParticipantCloseReasonDataChannelError)
 	}
-	return err
 }
 
 func (p *ParticipantImpl) setupEnabledCodecs(publishEnabledCodecs []*livekit.Codec, subscribeEnabledCodecs []*livekit.Codec, disabledCodecs *livekit.DisabledCodecs) {

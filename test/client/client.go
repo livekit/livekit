@@ -700,7 +700,6 @@ func (c *RTCClient) PublishData(data []byte, kind livekit.DataPacket_Kind) error
 	}
 
 	dpData, err := proto.Marshal(&livekit.DataPacket{
-		Kind: kind,
 		Value: &livekit.DataPacket_User{
 			User: &livekit.UserPacket{Payload: data},
 		},

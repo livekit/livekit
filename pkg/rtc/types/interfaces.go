@@ -402,6 +402,7 @@ type LocalParticipant interface {
 	// OnParticipantUpdate - metadata or permission is updated
 	OnParticipantUpdate(callback func(LocalParticipant))
 	OnDataPacket(callback func(LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket))
+	OnMetrics(callback func(LocalParticipant, *livekit.DataPacket))
 	OnSubscribeStatusChanged(fn func(publisherID livekit.ParticipantID, subscribed bool))
 	OnClose(callback func(LocalParticipant))
 	OnClaimsChanged(callback func(LocalParticipant))
@@ -439,6 +440,8 @@ type LocalParticipant interface {
 	GetPacer() pacer.Pacer
 
 	GetDisableSenderReportPassThrough() bool
+
+	HandleMetrics(batch *livekit.MetricsBatch) error
 }
 
 // Room is a container of participants, and can provide room-level actions
