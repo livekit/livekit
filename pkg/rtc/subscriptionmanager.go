@@ -997,7 +997,7 @@ func (s *trackSubscription) maybeRecordSuccess(ts telemetry.TelemetryService, pI
 		return
 	}
 
-	d := s.SinceCreated()
+	d := time.Since(s.createAt)
 	s.logger.Debugw("track subscribed", "cost", d.Milliseconds())
 	prometheus.RecordSubscribeTime(mediaTrack.Source(), mediaTrack.Kind(), d)
 
@@ -1040,8 +1040,4 @@ func (s *trackSubscription) needsCleanup() bool {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 	return !s.desired && s.subscribedTrack == nil
-}
-
-func (s *trackSubscription) SinceCreated() time.Duration {
-	return time.Since(s.createAt)
 }
