@@ -28,6 +28,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/telemetry"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -758,6 +759,8 @@ type trackSubscription struct {
 	// the later of when subscription was requested OR when the first failure was encountered OR when permission is granted
 	// this timestamp determines when failures are reported
 	subStartedAt atomic.Pointer[time.Time]
+
+	createAt time.Time
 }
 
 func newTrackSubscription(subscriberID livekit.ParticipantID, trackID livekit.TrackID, l logger.Logger) *trackSubscription {
@@ -765,6 +768,7 @@ func newTrackSubscription(subscriberID livekit.ParticipantID, trackID livekit.Tr
 		subscriberID: subscriberID,
 		trackID:      trackID,
 		logger:       l,
+		createAt:     time.Now(),
 	}
 }
 
@@ -993,6 +997,10 @@ func (s *trackSubscription) maybeRecordSuccess(ts telemetry.TelemetryService, pI
 		return
 	}
 
+	d := s.SinceCreated()
+	s.logger.Debugw("track subscribed", "cost", d.Milliseconds())
+	prometheus.RecordSubscribeTime(mediaTrack.Source(), mediaTrack.Kind(), d)
+
 	eventSent := s.eventSent.Swap(true)
 
 	pi := &livekit.ParticipantInfo{
@@ -1032,4 +1040,8 @@ func (s *trackSubscription) needsCleanup() bool {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 	return !s.desired && s.subscribedTrack == nil
+}
+
+func (s *trackSubscription) SinceCreated() time.Duration {
+	return time.Since(s.createAt)
 }
