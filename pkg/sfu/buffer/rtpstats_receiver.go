@@ -33,7 +33,7 @@ const (
 	// number of seconds the current report RTP timestamp can be off from expected RTP timestamp
 	cReportSlack = float64(60.0)
 
-	cTSJumpTooHighFactor = 100
+	cTSJumpTooHighFactor = float64(1.5)
 )
 
 // ---------------------------------------------------------------------
@@ -230,7 +230,7 @@ func (r *RTPStatsReceiver) Update(
 		//  Use a threshold against expected to ignore these.
 		if gapSN < 0 && gapTS > 0 {
 			expectedTSJump = timeSinceHighest * int64(r.params.ClockRate) / 1e9
-			if gapTS > expectedTSJump*cTSJumpTooHighFactor {
+			if gapTS > int64(float64(expectedTSJump)*cTSJumpTooHighFactor) {
 				r.sequenceNumber.UndoUpdate(resSN)
 				r.timestamp.UndoUpdate(resTS)
 				r.logger.Warnw(

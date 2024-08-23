@@ -45,7 +45,7 @@ func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(offer webrtc.Se
 		}
 
 		p.pendingTracksLock.RLock()
-		_, info, _ := p.getPendingTrack(streamID, livekit.TrackType_AUDIO)
+		_, info, _, _ := p.getPendingTrack(streamID, livekit.TrackType_AUDIO)
 		// if RED is disabled for this track, don't prefer RED codec in offer
 		disableRed := info != nil && info.DisableRed
 		p.pendingTracksLock.RUnlock()
@@ -131,7 +131,7 @@ func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(offer webrtc.Sess
 		if mt != nil {
 			info = mt.ToProto()
 		} else {
-			_, info, _ = p.getPendingTrack(streamID, livekit.TrackType_VIDEO)
+			_, info, _, _ = p.getPendingTrack(streamID, livekit.TrackType_VIDEO)
 		}
 
 		if info == nil {
@@ -227,7 +227,7 @@ func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescript
 					track, _ := p.getPublishedTrackBySdpCid(streamID).(*MediaTrack)
 					if track == nil {
 						p.pendingTracksLock.RLock()
-						_, ti, _ = p.getPendingTrack(streamID, livekit.TrackType_AUDIO)
+						_, ti, _, _ = p.getPendingTrack(streamID, livekit.TrackType_AUDIO)
 						p.pendingTracksLock.RUnlock()
 					} else {
 						ti = track.ToProto()

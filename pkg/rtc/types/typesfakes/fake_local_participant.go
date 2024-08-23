@@ -276,6 +276,16 @@ type FakeLocalParticipant struct {
 	getDisableSenderReportPassThroughReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	GetEnabledPublishCodecsStub        func() []*livekit.Codec
+	getEnabledPublishCodecsMutex       sync.RWMutex
+	getEnabledPublishCodecsArgsForCall []struct {
+	}
+	getEnabledPublishCodecsReturns struct {
+		result1 []*livekit.Codec
+	}
+	getEnabledPublishCodecsReturnsOnCall map[int]struct {
+		result1 []*livekit.Codec
+	}
 	GetICEConnectionDetailsStub        func() []*types.ICEConnectionDetails
 	getICEConnectionDetailsMutex       sync.RWMutex
 	getICEConnectionDetailsArgsForCall []struct {
@@ -2392,6 +2402,59 @@ func (fake *FakeLocalParticipant) GetDisableSenderReportPassThroughReturnsOnCall
 	}
 	fake.getDisableSenderReportPassThroughReturnsOnCall[i] = struct {
 		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetEnabledPublishCodecs() []*livekit.Codec {
+	fake.getEnabledPublishCodecsMutex.Lock()
+	ret, specificReturn := fake.getEnabledPublishCodecsReturnsOnCall[len(fake.getEnabledPublishCodecsArgsForCall)]
+	fake.getEnabledPublishCodecsArgsForCall = append(fake.getEnabledPublishCodecsArgsForCall, struct {
+	}{})
+	stub := fake.GetEnabledPublishCodecsStub
+	fakeReturns := fake.getEnabledPublishCodecsReturns
+	fake.recordInvocation("GetEnabledPublishCodecs", []interface{}{})
+	fake.getEnabledPublishCodecsMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) GetEnabledPublishCodecsCallCount() int {
+	fake.getEnabledPublishCodecsMutex.RLock()
+	defer fake.getEnabledPublishCodecsMutex.RUnlock()
+	return len(fake.getEnabledPublishCodecsArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) GetEnabledPublishCodecsCalls(stub func() []*livekit.Codec) {
+	fake.getEnabledPublishCodecsMutex.Lock()
+	defer fake.getEnabledPublishCodecsMutex.Unlock()
+	fake.GetEnabledPublishCodecsStub = stub
+}
+
+func (fake *FakeLocalParticipant) GetEnabledPublishCodecsReturns(result1 []*livekit.Codec) {
+	fake.getEnabledPublishCodecsMutex.Lock()
+	defer fake.getEnabledPublishCodecsMutex.Unlock()
+	fake.GetEnabledPublishCodecsStub = nil
+	fake.getEnabledPublishCodecsReturns = struct {
+		result1 []*livekit.Codec
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetEnabledPublishCodecsReturnsOnCall(i int, result1 []*livekit.Codec) {
+	fake.getEnabledPublishCodecsMutex.Lock()
+	defer fake.getEnabledPublishCodecsMutex.Unlock()
+	fake.GetEnabledPublishCodecsStub = nil
+	if fake.getEnabledPublishCodecsReturnsOnCall == nil {
+		fake.getEnabledPublishCodecsReturnsOnCall = make(map[int]struct {
+			result1 []*livekit.Codec
+		})
+	}
+	fake.getEnabledPublishCodecsReturnsOnCall[i] = struct {
+		result1 []*livekit.Codec
 	}{result1}
 }
 
@@ -6883,6 +6946,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.getConnectionQualityMutex.RUnlock()
 	fake.getDisableSenderReportPassThroughMutex.RLock()
 	defer fake.getDisableSenderReportPassThroughMutex.RUnlock()
+	fake.getEnabledPublishCodecsMutex.RLock()
+	defer fake.getEnabledPublishCodecsMutex.RUnlock()
 	fake.getICEConnectionDetailsMutex.RLock()
 	defer fake.getICEConnectionDetailsMutex.RUnlock()
 	fake.getLoggerMutex.RLock()

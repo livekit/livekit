@@ -323,6 +323,7 @@ type LocalParticipant interface {
 	GetPendingTrack(trackID livekit.TrackID) *livekit.TrackInfo
 	GetICEConnectionDetails() []*ICEConnectionDetails
 	HasConnected() bool
+	GetEnabledPublishCodecs() []*livekit.Codec
 
 	SetResponseSink(sink routing.MessageSink)
 	CloseSignalConnection(reason SignallingCloseReason)
