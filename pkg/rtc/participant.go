@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -69,6 +70,12 @@ const (
 type pendingTrackInfo struct {
 	trackInfos []*livekit.TrackInfo
 	migrated   bool
+	createdAt  time.Time
+}
+
+type pendingRemoteTrack struct {
+	track    *webrtc.TrackRemote
+	receiver *webrtc.RTPReceiver
 }
 
 type downTrackState struct {
@@ -183,6 +190,7 @@ type ParticipantImpl struct {
 	pendingTracksLock       utils.RWMutex
 	pendingTracks           map[string]*pendingTrackInfo
 	pendingPublishingTracks map[livekit.TrackID]*pendingTrackInfo
+	pendingRemoteTracks     []*pendingRemoteTrack
 
 	// supported codecs
 	enabledPublishCodecs   []*livekit.Codec
@@ -851,14 +859,15 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 	}
 
 	p.pendingTracksLock.Lock()
-	defer p.pendingTracksLock.Unlock()
-
 	ti := p.addPendingTrackLocked(req)
+	p.pendingTracksLock.Unlock()
 	if ti == nil {
 		return
 	}
 
 	p.sendTrackPublished(req.Cid, ti)
+
+	p.handlePendingRemoteTracks()
 }
 
 func (p *ParticipantImpl) SetMigrateInfo(
@@ -875,7 +884,7 @@ func (p *ParticipantImpl) SetMigrateInfo(
 			p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
 		}
 
-		p.pendingTracks[t.GetCid()] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}, migrated: true}
+		p.pendingTracks[t.GetCid()] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}, migrated: true, createdAt: time.Now()}
 		p.pubLogger.Infow("pending track added (migration)", "trackID", ti.Sid, "track", logger.Proto(ti))
 	}
 	p.pendingTracksLock.Unlock()
@@ -1513,7 +1522,10 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 
 	publishedTrack, isNewTrack := p.mediaTrackReceived(track, rtpReceiver)
 	if publishedTrack == nil {
-		p.pubLogger.Warnw("webrtc Track published but can't find MediaTrack", nil,
+		p.pendingTracksLock.Lock()
+		p.pendingRemoteTracks = append(p.pendingRemoteTracks, &pendingRemoteTrack{track: track, receiver: rtpReceiver})
+		p.pendingTracksLock.Unlock()
+		p.pubLogger.Debugw("webrtc Track published but can't find MediaTrack, add to pendingTracks",
 			"kind", track.Kind().String(),
 			"webrtcTrackID", track.ID(),
 			"rid", track.RID(),
@@ -1548,6 +1560,16 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 		if onTrackUpdated := p.getOnTrackUpdated(); onTrackUpdated != nil {
 			onTrackUpdated(p, publishedTrack)
 		}
+	}
+}
+
+func (p *ParticipantImpl) handlePendingRemoteTracks() {
+	p.pendingTracksLock.Lock()
+	pendingTracks := p.pendingRemoteTracks
+	p.pendingRemoteTracks = nil
+	p.pendingTracksLock.Unlock()
+	for _, rt := range pendingTracks {
+		p.onMediaTrack(rt.track, rt.receiver)
 	}
 }
 
@@ -1936,7 +1958,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	}
 	if p.getPublishedTrackBySignalCid(req.Cid) != nil || p.getPublishedTrackBySdpCid(req.Cid) != nil || p.pendingTracks[req.Cid] != nil {
 		if p.pendingTracks[req.Cid] == nil {
-			p.pendingTracks[req.Cid] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}}
+			p.pendingTracks[req.Cid] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}, createdAt: time.Now()}
 		} else {
 			p.pendingTracks[req.Cid].trackInfos = append(p.pendingTracks[req.Cid].trackInfos, ti)
 		}
@@ -1944,7 +1966,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		return nil
 	}
 
-	p.pendingTracks[req.Cid] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}}
+	p.pendingTracks[req.Cid] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}, createdAt: time.Now()}
 	p.pubLogger.Debugw("pending track added", "trackID", ti.Sid, "track", logger.Proto(ti), "request", logger.Proto(req))
 	return ti
 }
@@ -2048,9 +2070,10 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	}
 
 	// use existing media track to handle simulcast
+	var pubTime time.Duration
 	mt, ok := p.getPublishedTrackBySdpCid(track.ID()).(*MediaTrack)
 	if !ok {
-		signalCid, ti, migrated := p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()))
+		signalCid, ti, migrated, createdAt := p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()))
 		if ti == nil {
 			p.pendingTracksLock.Unlock()
 			return nil, false
@@ -2083,6 +2106,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 		}
 		mt = p.addMediaTrack(signalCid, track.ID(), ti)
 		newTrack = true
+		pubTime = time.Since(createdAt)
 		p.dirty.Store(true)
 	}
 
@@ -2096,7 +2120,9 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 				"track published",
 				"trackID", mt.ID(),
 				"track", logger.Proto(mt.ToProto()),
+				"cost", pubTime.Milliseconds(),
 			)
+			prometheus.RecordPublishTime(mt.Source(), mt.Kind(), pubTime)
 			p.handleTrackPublished(mt)
 		}()
 	}
@@ -2279,7 +2305,7 @@ func (p *ParticipantImpl) onUpTrackManagerClose() {
 	p.pubRTCPQueue.Stop()
 }
 
-func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackType) (string, *livekit.TrackInfo, bool) {
+func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackType) (string, *livekit.TrackInfo, bool, time.Time) {
 	signalCid := clientId
 	pendingInfo := p.pendingTracks[clientId]
 	if pendingInfo == nil {
@@ -2314,11 +2340,10 @@ func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackTyp
 
 	// if still not found, we are done
 	if pendingInfo == nil {
-		p.pubLogger.Errorw("track info not published prior to track", nil, "clientId", clientId)
-		return signalCid, nil, false
+		return signalCid, nil, false, time.Time{}
 	}
 
-	return signalCid, pendingInfo.trackInfos[0], pendingInfo.migrated
+	return signalCid, pendingInfo.trackInfos[0], pendingInfo.migrated, pendingInfo.createdAt
 }
 
 // setStableTrackID either generates a new TrackID or reuses a previously used one
@@ -2668,9 +2693,21 @@ func (p *ParticipantImpl) setupEnabledCodecs(publishEnabledCodecs []*livekit.Cod
 		if shouldDisable(c, disabledCodecs.GetCodecs()) || shouldDisable(c, disabledCodecs.GetPublish()) {
 			continue
 		}
-		publishCodecs = append(publishCodecs, c)
+
+		// sort by compatibility, since we will look for backups in these.
+		if strings.EqualFold(c.Mime, webrtc.MimeTypeVP8) {
+			if len(p.enabledPublishCodecs) > 0 {
+				p.enabledPublishCodecs = slices.Insert(p.enabledPublishCodecs, 0, c)
+			} else {
+				p.enabledPublishCodecs = append(p.enabledPublishCodecs, c)
+			}
+		} else if strings.EqualFold(c.Mime, webrtc.MimeTypeH264) {
+			p.enabledPublishCodecs = append(p.enabledPublishCodecs, c)
+		} else {
+			publishCodecs = append(publishCodecs, c)
+		}
 	}
-	p.enabledPublishCodecs = publishCodecs
+	p.enabledPublishCodecs = append(p.enabledPublishCodecs, publishCodecs...)
 
 	subscribeCodecs := make([]*livekit.Codec, 0, len(subscribeEnabledCodecs))
 	for _, c := range subscribeEnabledCodecs {
@@ -2680,6 +2717,10 @@ func (p *ParticipantImpl) setupEnabledCodecs(publishEnabledCodecs []*livekit.Cod
 		subscribeCodecs = append(subscribeCodecs, c)
 	}
 	p.enabledSubscribeCodecs = subscribeCodecs
+}
+
+func (p *ParticipantImpl) GetEnabledPublishCodecs() []*livekit.Codec {
+	return p.enabledPublishCodecs
 }
 
 func (p *ParticipantImpl) UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack) error {

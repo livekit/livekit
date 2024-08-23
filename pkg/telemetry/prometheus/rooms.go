@@ -46,6 +46,7 @@ var (
 	promTrackSubscribeCounter  *prometheus.CounterVec
 	promSessionStartTime       *prometheus.HistogramVec
 	promSessionDuration        *prometheus.HistogramVec
+	promPubSubTime             *prometheus.HistogramVec
 )
 
 func initRoomStats(nodeID string, nodeType livekit.NodeType) {
@@ -108,6 +109,13 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		Buckets:     prometheus.ExponentialBucketsRange(100, 4*60*60*1000, 15),
 	}, []string{"protocol_version"})
+	promPubSubTime = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "pubsubtime",
+		Name:        "ms",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+		Buckets:     []float64{100, 200, 500, 700, 1000, 5000, 10000},
+	}, promStreamLabels)
 
 	prometheus.MustRegister(promRoomCurrent)
 	prometheus.MustRegister(promRoomDuration)
@@ -118,6 +126,7 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 	prometheus.MustRegister(promTrackSubscribeCounter)
 	prometheus.MustRegister(promSessionStartTime)
 	prometheus.MustRegister(promSessionDuration)
+	prometheus.MustRegister(promPubSubTime)
 }
 
 func RoomStarted() {
@@ -161,6 +170,14 @@ func AddPublishAttempt(kind string) {
 func AddPublishSuccess(kind string) {
 	trackPublishSuccess.Inc()
 	promTrackPublishCounter.WithLabelValues(kind, "success").Inc()
+}
+
+func RecordPublishTime(source livekit.TrackSource, trackType livekit.TrackType, d time.Duration) {
+	promPubSubTime.WithLabelValues("publish", source.String(), trackType.String()).Observe(float64(d.Milliseconds()))
+}
+
+func RecordSubscribeTime(source livekit.TrackSource, trackType livekit.TrackType, d time.Duration) {
+	promPubSubTime.WithLabelValues("subscribe", source.String(), trackType.String()).Observe(float64(d.Milliseconds()))
 }
 
 func RecordTrackSubscribeSuccess(kind string) {
