@@ -224,6 +224,8 @@ func (d *ICEConnectionDetails) SetSelectedPair(pair *webrtc.ICECandidatePair) {
 	}
 }
 
+// -------------------------------------------------------------
+
 func isCandidateEqualTo(c1, c2 *webrtc.ICECandidate) bool {
 	if c1 == nil && c2 == nil {
 		return true
@@ -331,4 +333,17 @@ func unmarshalCandidate(i ice.Candidate) (*webrtc.ICECandidate, error) {
 	}
 
 	return &c, nil
+}
+
+func IsCandidateMDNS(candidate webrtc.ICECandidateInit) bool {
+	c, err := unmarshalICECandidate(candidate)
+	if err != nil {
+		return false
+	}
+
+	return IsICECandidateMDNS(c)
+}
+
+func IsICECandidateMDNS(candidate ice.Candidate) bool {
+	return strings.HasSuffix(candidate.Address(), ".local")
 }

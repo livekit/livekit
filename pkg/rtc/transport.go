@@ -706,19 +706,6 @@ func (t *PCTransport) SetPreferTCP(preferTCP bool) {
 }
 
 func (t *PCTransport) AddICECandidate(candidate webrtc.ICECandidateInit) {
-	if !t.params.Config.UseMDNS {
-		candidateValue := strings.TrimPrefix(candidate.Candidate, "candidate:")
-		if candidateValue != "" {
-			candidate, err := ice.UnmarshalCandidate(candidateValue)
-			if err != nil {
-				t.params.Logger.Errorw("failed to parse ice candidate", err)
-			} else if strings.HasSuffix(candidate.Address(), ".local") {
-				t.params.Logger.Debugw("ignoring mDNS candidate", "candidate", candidateValue)
-				return
-			}
-		}
-	}
-
 	t.postEvent(event{
 		signal: signalRemoteICECandidate,
 		data:   &candidate,
@@ -1395,6 +1382,11 @@ func (t *PCTransport) handleRemoteICECandidate(e event) error {
 		filtered = true
 	}
 
+	if !t.params.Config.UseMDNS && types.IsCandidateMDNS(*c) {
+		t.params.Logger.Debugw("ignoring mDNS candidate", "candidate", c.Candidate)
+		filtered = true
+	}
+
 	t.connectionDetails.AddRemoteCandidate(*c, filtered, true)
 	if filtered {
 		return nil
@@ -1440,6 +1432,11 @@ func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription, preferTCP, 
 					continue
 				}
 				excluded := preferTCP && !c.NetworkType().IsTCP()
+				if !excluded {
+					if !t.params.Config.UseMDNS && types.IsICECandidateMDNS(c) {
+						excluded = true
+					}
+				}
 				if !excluded {
 					filteredAttrs = append(filteredAttrs, a)
 				}
