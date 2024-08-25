@@ -2229,12 +2229,11 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 	}
 
 	trackID := livekit.TrackID(ti.Sid)
-	mt.AddOnClose(func(_isExpectedToRsume bool) {
+	mt.AddOnClose(func(_isExpectedToResume bool) {
 		if p.supervisor != nil {
 			p.supervisor.ClearPublishedTrack(trackID, mt)
 		}
 
-		// not logged when closing
 		p.params.Telemetry.TrackUnpublished(
 			context.Background(),
 			p.ID(),

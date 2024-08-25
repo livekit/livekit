@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
@@ -117,7 +118,9 @@ func NewMediaTrackReceiver(params MediaTrackReceiverParams, ti *livekit.TrackInf
 		params: params,
 		state:  mediaTrackReceiverStateOpen,
 	}
-	t.trackInfo.Store(proto.Clone(ti).(*livekit.TrackInfo))
+	tic := proto.Clone(ti).(*livekit.TrackInfo)
+	tic.PublishedAt = time.Now().UnixMilli()
+	t.trackInfo.Store(tic)
 
 	t.MediaTrackSubscriptions = NewMediaTrackSubscriptions(MediaTrackSubscriptionsParams{
 		MediaTrack:       params.MediaTrack,
