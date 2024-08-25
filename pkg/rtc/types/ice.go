@@ -345,5 +345,10 @@ func IsCandidateMDNS(candidate webrtc.ICECandidateInit) bool {
 }
 
 func IsICECandidateMDNS(candidate ice.Candidate) bool {
+	if candidate == nil {
+		// end-of-candidates candidate
+		return false
+	}
+
 	return strings.HasSuffix(candidate.Address(), ".local")
 }
