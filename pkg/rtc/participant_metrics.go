@@ -22,8 +22,9 @@ import (
 )
 
 type ParticipantMetricsParams struct {
-	TransportManager *TransportManager
-	Logger           logger.Logger
+	CanSubscribeMetrics bool
+	TransportManager    *TransportManager
+	Logger              logger.Logger
 }
 
 type ParticipantMetrics struct {
@@ -43,12 +44,11 @@ func (p *ParticipantMetrics) Close() {
 }
 
 func (p *ParticipantMetrics) HandleMetrics(metrics *livekit.MetricsBatch) error {
-	if p.closed.IsBroken() {
+	if p.closed.IsBroken() || !p.params.CanSubscribeMetrics {
 		return nil
 	}
-	// METRICS-TODO: add grants check for metrics subscribe and drop if not allowed
 
-	// METRICS-TODO:  This is just forwarding. But, this should record/process/batch and send.
+	// METRICS-TODO:  This is just forwarding. May need some time stamp munging.
 	dpData, err := proto.Marshal(&livekit.DataPacket{
 		Value: &livekit.DataPacket_Metrics{
 			Metrics: metrics,

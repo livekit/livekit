@@ -310,8 +310,9 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		return nil, err
 	}
 	p.ParticipantMetrics = NewParticipantMetrics(ParticipantMetricsParams{
-		TransportManager: p.TransportManager,
-		Logger:           params.Logger,
+		CanSubscribeMetrics: params.Grants.Video.GetCanSubscribeMetrics(),
+		TransportManager:    p.TransportManager,
+		Logger:              params.Logger,
 	})
 
 	p.setupUpTrackManager()
@@ -1654,7 +1655,6 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 			shouldForwardData = false
 		}
 	case *livekit.DataPacket_Metrics:
-		// METRICS-TODO: add grants check for metrics publish and drop if not allowed
 		shouldForwardData = false
 		shouldForwardMetrics = true
 		isPublisher = false

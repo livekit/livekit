@@ -1795,7 +1795,7 @@ func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, kin
 	})
 }
 
-func BroadcastMetricsForRoom(r types.Room, source types.LocalParticipant, dp *livekit.DataPacket, logger logger.Logger) {
+func BroadcastMetricsForRoom(r types.Room, _source types.LocalParticipant, dp *livekit.DataPacket, logger logger.Logger) {
 	switch payload := dp.Value.(type) {
 	case *livekit.DataPacket_Metrics:
 		// METRICS-TODO-QUESTION: should metrics do destination identities filtering? Comes as part of data packet semantics,
@@ -1825,12 +1825,9 @@ func BroadcastMetricsForRoom(r types.Room, source types.LocalParticipant, dp *li
 		}
 		destParticipants := make([]types.LocalParticipant, 0, capacity)
 
+		// echoing back to sender also
 		for _, op := range participants {
 			if op.State() != livekit.ParticipantInfo_ACTIVE {
-				continue
-			}
-			// METRICS-TODO-QUESTION: should we send back to sender also?
-			if source != nil && op.ID() == source.ID() {
 				continue
 			}
 			if len(dest) > 0 || len(destIdentities) > 0 {
