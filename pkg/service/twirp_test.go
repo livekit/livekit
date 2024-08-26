@@ -25,21 +25,10 @@ import (
 )
 
 func TestConvertErrToTwirp(t *testing.T) {
-	t.Run("nils are handled", func(t *testing.T) {
-		require.NoError(t, convertErrToTwirp(nil))
-	})
-	t.Run("standard errors are passed through", func(t *testing.T) {
-		err := errors.New("test")
-		cErr := convertErrToTwirp(err)
-		require.Error(t, err)
-		require.Equal(t, err, cErr)
-	})
 	t.Run("handles not found", func(t *testing.T) {
 		err := ErrRoomNotFound
-		cErr := convertErrToTwirp(err)
-		require.Error(t, cErr)
-		tErr, ok := cErr.(twirp.Error)
-		require.True(t, ok)
+		var tErr twirp.Error
+		require.True(t, errors.As(err, &tErr))
 		require.Equal(t, twirp.NotFound, tErr.Code())
 	})
 }
