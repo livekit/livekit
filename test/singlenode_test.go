@@ -16,6 +16,7 @@ package test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -26,6 +27,7 @@ import (
 	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
 	"github.com/thoas/go-funk"
+	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
@@ -328,6 +330,30 @@ func TestSingleNodeRoomList(t *testing.T) {
 	defer finish()
 
 	roomServiceListRoom(t)
+}
+
+func TestSingleNodeUpdateParticipant(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+	_, finish := setupSingleNodeTest("TestSingleNodeRoomList")
+	defer finish()
+
+	adminCtx := contextWithToken(adminRoomToken(testRoom))
+	t.Run("update nonexistent participant", func(t *testing.T) {
+		_, err := roomClient.UpdateParticipant(adminCtx, &livekit.UpdateParticipantRequest{
+			Room:     testRoom,
+			Identity: "nonexistent",
+			Permission: &livekit.ParticipantPermission{
+				CanPublish: true,
+			},
+		})
+		require.Error(t, err)
+		var twErr twirp.Error
+		require.True(t, errors.As(err, &twErr))
+		require.Equal(t, twirp.NotFound, twErr.Code())
+	})
 }
 
 // Ensure that CORS headers are returned
