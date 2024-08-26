@@ -35,7 +35,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
@@ -224,14 +223,7 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority 
 
 func (t *MediaTrackReceiver) SetPotentialCodecs(codecs []webrtc.RTPCodecParameters, headers []webrtc.RTPHeaderExtensionParameter) {
 	// The potential codecs have not published yet, so we can't get the actual Extensions, the client/browser uses same extensions
-	// for all video codecs so we assume they will have same extensions as the primary codec except for the dependency descriptor
-	// that is munged in svc codec.
-	headersWithoutDD := make([]webrtc.RTPHeaderExtensionParameter, 0, len(headers))
-	for _, h := range headers {
-		if h.URI != dependencydescriptor.ExtensionURI {
-			headersWithoutDD = append(headersWithoutDD, h)
-		}
-	}
+	// for all video codecs so we assume they will have same extensions as the primary codec.
 	t.lock.Lock()
 	receivers := slices.Clone(t.receivers)
 	t.potentialCodecs = codecs
@@ -244,12 +236,8 @@ func (t *MediaTrackReceiver) SetPotentialCodecs(codecs []webrtc.RTPCodecParamete
 			}
 		}
 		if !exist {
-			extHeaders := headers
-			if !buffer.IsSvcCodec(c.MimeType) {
-				extHeaders = headersWithoutDD
-			}
 			receivers = append(receivers, &simulcastReceiver{
-				TrackReceiver: NewDummyReceiver(t.ID(), string(t.PublisherID()), c, extHeaders),
+				TrackReceiver: NewDummyReceiver(t.ID(), string(t.PublisherID()), c, headers),
 				priority:      i,
 			})
 		}
