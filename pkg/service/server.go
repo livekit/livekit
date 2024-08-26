@@ -112,7 +112,6 @@ func NewLivekitServer(conf *config.Config,
 			TwirpLogger(),
 			TwirpRequestStatusReporter(),
 		)),
-		twirp.WithServerInterceptors(TwirpErrorInterceptor()),
 	}
 	roomServer := livekit.NewRoomServiceServer(roomService, serverOptions...)
 	agentDispatchServer := livekit.NewAgentDispatchServiceServer(agentDispatchService, serverOptions...)

@@ -18,7 +18,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"strconv"
 	"sync"
 	"time"
@@ -27,7 +26,6 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/livekit-server/pkg/utils"
-	"github.com/livekit/psrpc"
 )
 
 type twirpLoggerContext struct{}
@@ -211,66 +209,4 @@ func statusReporterErrorReceived(ctx context.Context, e twirp.Error) context.Con
 	r.error = e
 
 	return ctx
-}
-
-func TwirpErrorInterceptor() twirp.Interceptor {
-	return func(next twirp.Method) twirp.Method {
-		return func(ctx context.Context, req interface{}) (interface{}, error) {
-			resp, err := next(ctx, req)
-			if err != nil {
-				err = convertErrToTwirp(err)
-			}
-			return resp, err
-		}
-	}
-}
-
-func convertErrToTwirp(err error) error {
-	var psrpcErr psrpc.Error
-	if errors.As(err, &psrpcErr) {
-		var twCode twirp.ErrorCode
-		switch psrpcErr.Code() {
-		case psrpc.Canceled:
-			twCode = twirp.Canceled
-		case psrpc.DeadlineExceeded:
-			twCode = twirp.DeadlineExceeded
-		case psrpc.Unknown:
-			twCode = twirp.Unknown
-		case psrpc.MalformedResponse, psrpc.MalformedRequest:
-			twCode = twirp.Malformed
-		case psrpc.Internal:
-			twCode = twirp.Internal
-		case psrpc.DataLoss:
-			twCode = twirp.DataLoss
-		case psrpc.InvalidArgument:
-			twCode = twirp.InvalidArgument
-		case psrpc.NotFound:
-			twCode = twirp.NotFound
-		case psrpc.NotAcceptable:
-			twCode = twirp.InvalidArgument
-		case psrpc.AlreadyExists:
-			twCode = twirp.AlreadyExists
-		case psrpc.Aborted:
-			twCode = twirp.Aborted
-		case psrpc.PermissionDenied:
-			twCode = twirp.PermissionDenied
-		case psrpc.ResourceExhausted:
-			twCode = twirp.ResourceExhausted
-		case psrpc.FailedPrecondition:
-			twCode = twirp.FailedPrecondition
-		case psrpc.OutOfRange:
-			twCode = twirp.OutOfRange
-		case psrpc.Unimplemented:
-			twCode = twirp.Unimplemented
-		case psrpc.Unavailable:
-			twCode = twirp.Unavailable
-		case psrpc.Unauthenticated:
-			twCode = twirp.Unauthenticated
-		default:
-			twCode = twirp.Internal
-		}
-		return twirp.WrapError(twirp.NewError(twCode, psrpcErr.Error()), err)
-	}
-
-	return err
 }
