@@ -115,6 +115,7 @@ func createParticipantCounter(mainDatabase *p2p_database.DB, conf *config.Config
 
 func GetDatabaseConfiguration(conf *config.Config) p2p_database.Config {
 	return p2p_database.Config{
+		DisableGater: true,
 		PeerListenPort:          conf.Ethereum.P2pNodePort,
 		EthereumNetworkHost:     conf.Ethereum.NetworkHost,
 		EthereumNetworkKey:      conf.Ethereum.NetworkKey,
