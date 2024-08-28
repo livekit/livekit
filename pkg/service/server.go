@@ -107,18 +107,17 @@ func NewLivekitServer(conf *config.Config,
 		middlewares = append(middlewares, NewAPIKeyAuthMiddleware(keyProvider))
 	}
 
-	twirpLoggingHook := TwirpLogger()
-	twirpRequestStatusHook := TwirpRequestStatusReporter()
-	roomServer := livekit.NewRoomServiceServer(roomService, twirpLoggingHook)
-	agentDispatchServer := livekit.NewAgentDispatchServiceServer(agentDispatchService, twirpLoggingHook)
-	egressServer := livekit.NewEgressServer(egressService, twirp.WithServerHooks(
-		twirp.ChainHooks(
-			twirpLoggingHook,
-			twirpRequestStatusHook,
-		),
-	))
-	ingressServer := livekit.NewIngressServer(ingressService, twirpLoggingHook)
-	sipServer := livekit.NewSIPServer(sipService, twirpLoggingHook)
+	serverOptions := []interface{}{
+		twirp.WithServerHooks(twirp.ChainHooks(
+			TwirpLogger(),
+			TwirpRequestStatusReporter(),
+		)),
+	}
+	roomServer := livekit.NewRoomServiceServer(roomService, serverOptions...)
+	agentDispatchServer := livekit.NewAgentDispatchServiceServer(agentDispatchService, serverOptions...)
+	egressServer := livekit.NewEgressServer(egressService, serverOptions...)
+	ingressServer := livekit.NewIngressServer(ingressService, serverOptions...)
+	sipServer := livekit.NewSIPServer(sipService, serverOptions...)
 
 	mux := http.NewServeMux()
 	if conf.Development {

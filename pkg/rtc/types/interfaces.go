@@ -342,6 +342,7 @@ type LocalParticipant interface {
 	// permissions
 	ClaimGrants() *auth.ClaimGrants
 	SetPermission(permission *livekit.ParticipantPermission) bool
+	CanPublish() bool
 	CanPublishSource(source livekit.TrackSource) bool
 	CanSubscribe() bool
 	CanPublishData() bool
@@ -429,6 +430,7 @@ type LocalParticipant interface {
 	GetCachedDownTrack(trackID livekit.TrackID) (*webrtc.RTPTransceiver, sfu.DownTrackState)
 
 	SetICEConfig(iceConfig *livekit.ICEConfig)
+	GetICEConfig() *livekit.ICEConfig
 	OnICEConfigChanged(callback func(participant LocalParticipant, iceConfig *livekit.ICEConfig))
 
 	UpdateSubscribedQuality(nodeID livekit.NodeID, trackID livekit.TrackID, maxQualities []SubscribedCodecQuality) error

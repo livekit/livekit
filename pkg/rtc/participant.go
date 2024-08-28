@@ -1204,6 +1204,10 @@ func (p *ParticipantImpl) IsPublisher() bool {
 	return p.isPublisher.Load()
 }
 
+func (p *ParticipantImpl) CanPublish() bool {
+	return p.grants.Load().Video.GetCanPublish()
+}
+
 func (p *ParticipantImpl) CanPublishSource(source livekit.TrackSource) bool {
 	return p.grants.Load().Video.GetCanPublishSource(source)
 }
