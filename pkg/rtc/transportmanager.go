@@ -433,6 +433,15 @@ func (t *TransportManager) SetICEConfig(iceConfig *livekit.ICEConfig) {
 	}
 }
 
+func (t *TransportManager) GetICEConfig() *livekit.ICEConfig {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+	if t.iceConfig == nil {
+		return nil
+	}
+	return proto.Clone(t.iceConfig).(*livekit.ICEConfig)
+}
+
 func (t *TransportManager) resetTransportConfigureLocked(reconfigured bool) {
 	t.failureCount = 0
 	t.isTransportReconfigured = reconfigured

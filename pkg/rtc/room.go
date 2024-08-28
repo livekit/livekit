@@ -1139,6 +1139,8 @@ func (r *Room) createJoinResponseLocked(participant types.LocalParticipant, iceS
 		}
 	}
 
+	iceConfig := participant.GetICEConfig()
+	hasICEFallback := iceConfig.GetPreferencePublisher() != livekit.ICECandidateType_ICT_NONE || iceConfig.GetPreferenceSubscriber() != livekit.ICECandidateType_ICT_NONE
 	return &livekit.JoinResponse{
 		Room:              r.ToProto(),
 		Participant:       participant.ToProto(),
@@ -1155,6 +1157,7 @@ func (r *Room) createJoinResponseLocked(participant types.LocalParticipant, iceS
 		ServerRegion:         r.serverInfo.Region,
 		SifTrailer:           r.trailer,
 		EnabledPublishCodecs: participant.GetEnabledPublishCodecs(),
+		FastPublish:          participant.CanPublish() && !hasICEFallback,
 	}
 }
 
