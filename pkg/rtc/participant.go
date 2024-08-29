@@ -71,7 +71,11 @@ type pendingTrackInfo struct {
 	trackInfos []*livekit.TrackInfo
 	migrated   bool
 	createdAt  time.Time
-	queued     bool
+
+	// indicates if this track is queued for publishing to avoid a track has been published
+	// before the previous track is unpublished(closed) because client is allowed to neogtiate
+	// webrtc track before AddTrackRequest return to speed up the publishing process
+	queued bool
 }
 
 type pendingRemoteTrack struct {
