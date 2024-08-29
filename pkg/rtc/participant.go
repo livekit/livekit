@@ -69,6 +69,11 @@ type pendingTrackInfo struct {
 	trackInfos []*livekit.TrackInfo
 	migrated   bool
 	createdAt  time.Time
+
+	// indicates if this track is queued for publishing to avoid a track has been published
+	// before the previous track is unpublished(closed) because client is allowed to neogtiate
+	// webrtc track before AddTrackRequest return to speed up the publishing process
+	queued bool
 }
 
 type pendingRemoteTrack struct {
@@ -2007,7 +2012,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	}
 	if p.getPublishedTrackBySignalCid(req.Cid) != nil || p.getPublishedTrackBySdpCid(req.Cid) != nil || p.pendingTracks[req.Cid] != nil {
 		if p.pendingTracks[req.Cid] == nil {
-			p.pendingTracks[req.Cid] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}, createdAt: time.Now()}
+			p.pendingTracks[req.Cid] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}, createdAt: time.Now(), queued: true}
 		} else {
 			p.pendingTracks[req.Cid].trackInfos = append(p.pendingTracks[req.Cid].trackInfos, ti)
 		}
@@ -2122,7 +2127,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	var pubTime time.Duration
 	mt, ok := p.getPublishedTrackBySdpCid(track.ID()).(*MediaTrack)
 	if !ok {
-		signalCid, ti, migrated, createdAt := p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()))
+		signalCid, ti, migrated, createdAt := p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()), true)
 		if ti == nil {
 			p.pendingTracksLock.Unlock()
 			return nil, false
@@ -2275,6 +2280,9 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 	p.pendingTracks[signalCid].trackInfos = p.pendingTracks[signalCid].trackInfos[1:]
 	if len(p.pendingTracks[signalCid].trackInfos) == 0 {
 		delete(p.pendingTracks, signalCid)
+	} else {
+		p.pendingTracks[signalCid].queued = true
+		p.pendingTracks[signalCid].createdAt = time.Now()
 	}
 
 	trackID := livekit.TrackID(ti.Sid)
@@ -2296,10 +2304,12 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 		p.pendingTracksLock.Lock()
 		if pti := p.pendingTracks[signalCid]; pti != nil {
 			p.sendTrackPublished(signalCid, pti.trackInfos[0])
+			pti.queued = false
 		} else {
 			p.unpublishedTracks = append(p.unpublishedTracks, ti)
 		}
 		p.pendingTracksLock.Unlock()
+		p.handlePendingRemoteTracks()
 
 		p.dirty.Store(true)
 
@@ -2354,7 +2364,7 @@ func (p *ParticipantImpl) onUpTrackManagerClose() {
 	p.pubRTCPQueue.Stop()
 }
 
-func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackType) (string, *livekit.TrackInfo, bool, time.Time) {
+func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackType, skipQueued bool) (string, *livekit.TrackInfo, bool, time.Time) {
 	signalCid := clientId
 	pendingInfo := p.pendingTracks[clientId]
 	if pendingInfo == nil {
@@ -2388,7 +2398,7 @@ func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackTyp
 	}
 
 	// if still not found, we are done
-	if pendingInfo == nil {
+	if pendingInfo == nil || (skipQueued && pendingInfo.queued) {
 		return signalCid, nil, false, time.Time{}
 	}
 
