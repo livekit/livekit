@@ -1785,19 +1785,19 @@ func (t *PCTransport) handleRemoteAnswerReceived(sd *webrtc.SessionDescription) 
 }
 
 func (t *PCTransport) doICERestart() error {
+	// if restart is requested, but negotiation never started
+	if !t.IsEstablished() {
+		t.params.Logger.Debugw("skipping ICE restart on unestablished peer connection")
+		return nil
+	}
+
 	if t.pc.ConnectionState() == webrtc.PeerConnectionStateClosed {
 		t.params.Logger.Warnw("trying to restart ICE on closed peer connection", nil)
 		return nil
 	}
 
-	iceGatheringState := t.pc.ICEGatheringState()
-	// if restart is requested, but ICE was never started
-	if iceGatheringState == webrtc.ICEGatheringStateNew && t.pc.ICEConnectionState() == webrtc.ICEConnectionStateNew {
-		return nil
-	}
-
 	// if restart is requested, and we are not ready, then continue afterwards
-	if iceGatheringState == webrtc.ICEGatheringStateGathering {
+	if t.pc.ICEGatheringState() == webrtc.ICEGatheringStateGathering {
 		t.params.Logger.Debugw("deferring ICE restart to after gathering")
 		t.restartAfterGathering = true
 		return nil
