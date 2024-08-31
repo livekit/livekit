@@ -148,6 +148,7 @@ func (r *RTPStatsReceiver) Update(
 	var timeSinceHighest int64
 	var expectedTSJump int64
 	var tsRolloverCount int
+	var snRolloverCount int
 
 	getLoggingFields := func() []interface{} {
 		return []interface{}{
@@ -156,6 +157,7 @@ func (r *RTPStatsReceiver) Update(
 			"resTS", resTS,
 			"gapTS", int64(resTS.ExtendedVal - resTS.PreExtendedHighest),
 			"timeSinceHighest", time.Duration(timeSinceHighest),
+			"snRolloverCount", snRolloverCount,
 			"expectedTSJump", expectedTSJump,
 			"tsRolloverCount", tsRolloverCount,
 			"packetTime", time.Unix(0, packetTime).String(),
@@ -258,8 +260,12 @@ func (r *RTPStatsReceiver) Update(
 		// it is possible that sequence number has rolled over too
 		if gapSN < 0 && gapTS > 0 && payloadSize > 0 {
 			// not possible to know how many cycles of sequence number roll over could have happened,
-			// use 1 to ensure that it at least does not go backwards
-			resSN = r.sequenceNumber.Rollover(sequenceNumber, 1)
+			// ensure that it at least does not go backwards
+			snRolloverCount = 0
+			if sequenceNumber < r.sequenceNumber.GetHighest() {
+				snRolloverCount = 1
+			}
+			resSN = r.sequenceNumber.Rollover(sequenceNumber, snRolloverCount)
 			if resSN.IsUnhandled {
 				flowState.IsNotHandled = true
 				return
