@@ -322,6 +322,18 @@ const (
 	bindStateBound
 )
 
+func (bs bindState) String() string {
+	switch bs {
+	case bindStateUnbound:
+		return "unbound"
+	case bindStateWaitForReceiverReady:
+		return "waitForReceiverReady"
+	case bindStateBound:
+		return "bound"
+	}
+	return "unknown"
+}
+
 // NewDownTrack returns a DownTrack.
 func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 	codecs := params.Codecs
@@ -570,7 +582,7 @@ func (d *DownTrack) handleReceiverReady() {
 // because a track has been stopped.
 func (d *DownTrack) Unbind(_ webrtc.TrackLocalContext) error {
 	d.bindLock.Lock()
-	d.bindState.Store(bindStateUnbound)
+	d.setBindStateLocked(bindStateUnbound)
 	d.bindLock.Unlock()
 	return nil
 }
@@ -2012,7 +2024,7 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 		"StreamID":            d.params.StreamID,
 		"SSRC":                d.ssrc,
 		"MimeType":            d.codec.MimeType,
-		"Bound":               d.bindState.Load(),
+		"BindState":           d.bindState.Load().(bindState),
 		"Muted":               d.forwarder.IsMuted(),
 		"PubMuted":            d.forwarder.IsPubMuted(),
 		"CurrentSpatialLayer": d.forwarder.CurrentLayer().Spatial,

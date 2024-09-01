@@ -86,7 +86,8 @@ type TrackReceiver interface {
 
 	GetMonotonicNowUnixNano() int64
 
-	// AddOnReady adds a function to be called when the receiver is ready
+	// AddOnReady adds a function to be called when the receiver is ready, the callback
+	// could be called immediately if the receiver is ready when the callback is added
 	AddOnReady(func())
 }
 
