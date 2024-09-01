@@ -85,6 +85,9 @@ type TrackReceiver interface {
 	GetTrackStats() *livekit.RTPStats
 
 	GetMonotonicNowUnixNano() int64
+
+	// AddOnReady adds a function to be called when the receiver is ready
+	AddOnReady(func())
 }
 
 // WebRTCReceiver receives a media track
@@ -839,6 +842,11 @@ func (w *WebRTCReceiver) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
 
 func (w *WebRTCReceiver) GetMonotonicNowUnixNano() int64 {
 	return w.baseTime.Add(time.Since(w.baseTime)).UnixNano()
+}
+
+func (w *WebRTCReceiver) AddOnReady(fn func()) {
+	// webRTCReceiver is always ready after created
+	fn()
 }
 
 // -----------------------------------------------------------

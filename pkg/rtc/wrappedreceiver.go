@@ -42,10 +42,11 @@ type WrappedReceiverParams struct {
 
 type WrappedReceiver struct {
 	sfu.TrackReceiver
-	params          WrappedReceiverParams
-	receivers       []sfu.TrackReceiver
-	codecs          []webrtc.RTPCodecParameters
-	determinedCodec webrtc.RTPCodecCapability
+	params           WrappedReceiverParams
+	receivers        []sfu.TrackReceiver
+	codecs           []webrtc.RTPCodecParameters
+	determinedCodec  webrtc.RTPCodecCapability
+	onReadyCallbacks []func()
 }
 
 func NewWrappedReceiver(params WrappedReceiverParams) *WrappedReceiver {
@@ -59,13 +60,13 @@ func NewWrappedReceiver(params WrappedReceiverParams) *WrappedReceiver {
 		if strings.EqualFold(codecs[0].MimeType, sfu.MimeTypeAudioRed) {
 			// if upstream is opus/red, then add opus to match clients that don't support red
 			codecs = append(codecs, webrtc.RTPCodecParameters{
-				RTPCodecCapability: opusCodecCapability,
+				RTPCodecCapability: OpusCodecCapability,
 				PayloadType:        111,
 			})
 		} else if !params.DisableRed && strings.EqualFold(codecs[0].MimeType, webrtc.MimeTypeOpus) {
 			// if upstream is opus only and red enabled, add red to match clients that support red
 			codecs = append(codecs, webrtc.RTPCodecParameters{
-				RTPCodecCapability: redCodecCapability,
+				RTPCodecCapability: RedCodecCapability,
 				PayloadType:        63,
 			})
 			// prefer red codec
@@ -109,6 +110,12 @@ func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) {
 			r.TrackReceiver = r.receivers[0]
 		}
 	}
+	if r.TrackReceiver != nil {
+		for _, f := range r.onReadyCallbacks {
+			r.TrackReceiver.AddOnReady(f)
+		}
+		r.onReadyCallbacks = nil
+	}
 }
 
 func (r *WrappedReceiver) Codecs() []webrtc.RTPCodecParameters {
@@ -123,6 +130,14 @@ func (r *WrappedReceiver) DeleteDownTrack(participantID livekit.ParticipantID) {
 	}
 }
 
+func (r *WrappedReceiver) AddOnReady(f func()) {
+	if r.TrackReceiver != nil {
+		r.TrackReceiver.AddOnReady(f)
+	} else {
+		r.onReadyCallbacks = append(r.onReadyCallbacks, f)
+	}
+}
+
 // --------------------------------------------
 
 type DummyReceiver struct {
@@ -132,8 +147,9 @@ type DummyReceiver struct {
 	codec            webrtc.RTPCodecParameters
 	headerExtensions []webrtc.RTPHeaderExtensionParameter
 
-	downTrackLock sync.Mutex
-	downTracks    map[livekit.ParticipantID]sfu.TrackSender
+	downTrackLock    sync.Mutex
+	downTracks       map[livekit.ParticipantID]sfu.TrackSender
+	onReadyCallbacks []func()
 
 	settingsLock          sync.Mutex
 	maxExpectedLayerValid bool
@@ -142,6 +158,8 @@ type DummyReceiver struct {
 	paused                bool
 
 	baseTime time.Time
+
+	redReceiver, primaryReceiver *DummyRedReceiver
 }
 
 func NewDummyReceiver(trackID livekit.TrackID, streamId string, codec webrtc.RTPCodecParameters, headerExtensions []webrtc.RTPHeaderExtensionParameter) *DummyReceiver {
@@ -161,14 +179,22 @@ func (d *DummyReceiver) Receiver() sfu.TrackReceiver {
 }
 
 func (d *DummyReceiver) Upgrade(receiver sfu.TrackReceiver) {
-	d.receiver.CompareAndSwap(nil, receiver)
+	if !d.receiver.CompareAndSwap(nil, receiver) {
+		return
+	}
 
 	d.downTrackLock.Lock()
 	for _, t := range d.downTracks {
 		receiver.AddDownTrack(t)
 	}
 	d.downTracks = make(map[livekit.ParticipantID]sfu.TrackSender)
+	onReadyCallbacks := d.onReadyCallbacks
+	d.onReadyCallbacks = nil
 	d.downTrackLock.Unlock()
+
+	for _, f := range onReadyCallbacks {
+		receiver.AddOnReady(f)
+	}
 
 	d.settingsLock.Lock()
 	if d.maxExpectedLayerValid {
@@ -180,6 +206,13 @@ func (d *DummyReceiver) Upgrade(receiver sfu.TrackReceiver) {
 		receiver.SetUpTrackPaused(d.paused)
 	}
 	d.pausedValid = false
+
+	if d.primaryReceiver != nil {
+		d.primaryReceiver.upgrade(receiver)
+	}
+	if d.redReceiver != nil {
+		d.redReceiver.upgrade(receiver)
+	}
 	d.settingsLock.Unlock()
 }
 
@@ -314,12 +347,28 @@ func (d *DummyReceiver) IsClosed() bool {
 }
 
 func (d *DummyReceiver) GetPrimaryReceiverForRed() sfu.TrackReceiver {
-	// DummyReceiver used for video, it should not have RED codec
-	return d
+	d.settingsLock.Lock()
+	defer d.settingsLock.Unlock()
+
+	if d.primaryReceiver == nil {
+		d.primaryReceiver = NewDummyRedReceiver(d, false)
+		if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+			d.primaryReceiver.upgrade(r)
+		}
+	}
+	return d.primaryReceiver
 }
 
 func (d *DummyReceiver) GetRedReceiver() sfu.TrackReceiver {
-	return d
+	d.settingsLock.Lock()
+	defer d.settingsLock.Unlock()
+	if d.redReceiver == nil {
+		d.redReceiver = NewDummyRedReceiver(d, true)
+		if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+			d.redReceiver.upgrade(r)
+		}
+	}
+	return d.redReceiver
 }
 
 func (d *DummyReceiver) GetTrackStats() *livekit.RTPStats {
@@ -334,4 +383,86 @@ func (d *DummyReceiver) GetMonotonicNowUnixNano() int64 {
 		return r.GetMonotonicNowUnixNano()
 	}
 	return d.baseTime.Add(time.Since(d.baseTime)).UnixNano()
+}
+
+func (d *DummyReceiver) AddOnReady(f func()) {
+	var receiver sfu.TrackReceiver
+	d.downTrackLock.Lock()
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+		receiver = r
+	} else {
+		d.onReadyCallbacks = append(d.onReadyCallbacks, f)
+	}
+	d.downTrackLock.Unlock()
+	if receiver != nil {
+		receiver.AddOnReady(f)
+	}
+}
+
+// --------------------------------------------
+
+type DummyRedReceiver struct {
+	*DummyReceiver
+	redReceiver atomic.Value // sfu.TrackReceiver
+	// indicates this receiver is for RED encoding receiver of primary codec OR
+	// primary decoding receiver of RED codec
+	isRedEncoding bool
+
+	downTrackLock sync.Mutex
+	downTracks    map[livekit.ParticipantID]sfu.TrackSender
+}
+
+func NewDummyRedReceiver(d *DummyReceiver, isRedEncoding bool) *DummyRedReceiver {
+	return &DummyRedReceiver{
+		DummyReceiver: d,
+		isRedEncoding: isRedEncoding,
+		downTracks:    make(map[livekit.ParticipantID]sfu.TrackSender),
+	}
+}
+
+func (d *DummyRedReceiver) AddDownTrack(track sfu.TrackSender) error {
+	d.downTrackLock.Lock()
+	defer d.downTrackLock.Unlock()
+
+	if r, ok := d.redReceiver.Load().(sfu.TrackReceiver); ok {
+		r.AddDownTrack(track)
+	} else {
+		d.downTracks[track.SubscriberID()] = track
+	}
+	return nil
+}
+
+func (d *DummyRedReceiver) DeleteDownTrack(subscriberID livekit.ParticipantID) {
+	d.downTrackLock.Lock()
+	defer d.downTrackLock.Unlock()
+
+	if r, ok := d.redReceiver.Load().(sfu.TrackReceiver); ok {
+		r.DeleteDownTrack(subscriberID)
+	} else {
+		delete(d.downTracks, subscriberID)
+	}
+}
+
+func (d *DummyRedReceiver) ReadRTP(buf []byte, layer uint8, esn uint64) (int, error) {
+	if r, ok := d.redReceiver.Load().(sfu.TrackReceiver); ok {
+		return r.ReadRTP(buf, layer, esn)
+	}
+	return 0, errors.New("no receiver")
+}
+
+func (d *DummyRedReceiver) upgrade(receiver sfu.TrackReceiver) {
+	var redReceiver sfu.TrackReceiver
+	if d.isRedEncoding {
+		redReceiver = receiver.GetRedReceiver()
+	} else {
+		redReceiver = receiver.GetPrimaryReceiverForRed()
+	}
+	d.redReceiver.Store(redReceiver)
+
+	d.downTrackLock.Lock()
+	for _, t := range d.downTracks {
+		redReceiver.AddDownTrack(t)
+	}
+	d.downTracks = make(map[livekit.ParticipantID]sfu.TrackSender)
+	d.downTrackLock.Unlock()
 }
