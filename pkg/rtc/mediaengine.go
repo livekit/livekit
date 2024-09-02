@@ -28,13 +28,13 @@ const (
 	videoRTXMimeType = "video/rtx"
 )
 
-var opusCodecCapability = webrtc.RTPCodecCapability{
+var OpusCodecCapability = webrtc.RTPCodecCapability{
 	MimeType:    webrtc.MimeTypeOpus,
 	ClockRate:   48000,
 	Channels:    2,
 	SDPFmtpLine: "minptime=10;useinbandfec=1",
 }
-var redCodecCapability = webrtc.RTPCodecCapability{
+var RedCodecCapability = webrtc.RTPCodecCapability{
 	MimeType:    sfu.MimeTypeAudioRed,
 	ClockRate:   48000,
 	Channels:    2,
@@ -46,7 +46,7 @@ var videoRTX = webrtc.RTPCodecCapability{
 }
 
 func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedback RTCPFeedbackConfig, filterOutH264HighProfile bool) error {
-	opusCodec := opusCodecCapability
+	opusCodec := OpusCodecCapability
 	opusCodec.RTCPFeedback = rtcpFeedback.Audio
 	var opusPayload webrtc.PayloadType
 	if IsCodecEnabled(codecs, opusCodec) {
@@ -58,9 +58,9 @@ func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedbac
 			return err
 		}
 
-		if IsCodecEnabled(codecs, redCodecCapability) {
+		if IsCodecEnabled(codecs, RedCodecCapability) {
 			if err := me.RegisterCodec(webrtc.RTPCodecParameters{
-				RTPCodecCapability: redCodecCapability,
+				RTPCodecCapability: RedCodecCapability,
 				PayloadType:        63,
 			}, webrtc.RTPCodecTypeAudio); err != nil {
 				return err
