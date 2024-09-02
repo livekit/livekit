@@ -241,6 +241,7 @@ func (r *RTPStatsSender) Update(
 	hdrSize int,
 	payloadSize int,
 	paddingSize int,
+	isOutOfOrder bool,
 ) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
@@ -259,7 +260,6 @@ func (r *RTPStatsSender) Update(
 
 		r.startTime = time.Now()
 
-		r.firstTime = packetTime
 		r.highestTime = packetTime
 
 		r.extStartSN = extSequenceNumber
@@ -280,6 +280,12 @@ func (r *RTPStatsSender) Update(
 			"rtp sender stream start",
 			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
 		)
+	}
+	if !isOutOfOrder && r.firstTime == 0 {
+		// do not set first packet time if packet is out-of-order,
+		// as first packet time is used to calculate expected time stamp,
+		// using an out-of-order packet would skew that.
+		r.firstTime = packetTime
 	}
 
 	pktSize := uint64(hdrSize + payloadSize + paddingSize)
@@ -595,7 +601,7 @@ func (r *RTPStatsSender) GetExpectedRTPTimestamp(at time.Time) (expectedTSExt ui
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
-	if !r.initialized {
+	if r.firstTime == 0 {
 		err = errors.New("uninitialized")
 		return
 	}
