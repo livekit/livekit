@@ -89,7 +89,8 @@ func (r *WrappedReceiver) StreamID() string {
 	return r.params.StreamId
 }
 
-func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) {
+// DetermineReceiver determines the receiver of negotiated codec and return ready state of the receiver
+func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) bool {
 	r.determinedCodec = codec
 	for _, receiver := range r.receivers {
 		if c := receiver.Codec(); strings.EqualFold(c.MimeType, codec.MimeType) {
@@ -115,7 +116,13 @@ func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) {
 			r.TrackReceiver.AddOnReady(f)
 		}
 		r.onReadyCallbacks = nil
+
+		if d, ok := r.TrackReceiver.(*DummyReceiver); ok {
+			return d.IsReady()
+		}
+		return true
 	}
+	return false
 }
 
 func (r *WrappedReceiver) Codecs() []webrtc.RTPCodecParameters {
@@ -397,6 +404,10 @@ func (d *DummyReceiver) AddOnReady(f func()) {
 	if receiver != nil {
 		receiver.AddOnReady(f)
 	}
+}
+
+func (d *DummyReceiver) IsReady() bool {
+	return d.receiver.Load() != nil
 }
 
 // --------------------------------------------

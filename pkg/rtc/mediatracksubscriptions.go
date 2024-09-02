@@ -23,6 +23,7 @@ import (
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
 
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -170,7 +171,16 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	// Bind callback can happen from replaceTrack, so set it up early
 	var reusingTransceiver atomic.Bool
 	var dtState sfu.DownTrackState
-	downTrack.OnCodecNegotiated(wr.DetermineReceiver)
+	downTrack.OnCodecNegotiated(func(codec webrtc.RTPCodecCapability) {
+		if !wr.DetermineReceiver(codec) {
+			if t.onSubscriberMaxQualityChange != nil {
+				go func() {
+					spatial := buffer.VideoQualityToSpatialLayer(livekit.VideoQuality_HIGH, t.params.MediaTrack.ToProto())
+					t.onSubscriberMaxQualityChange(subscriberID, codec, spatial)
+				}()
+			}
+		}
+	})
 	downTrack.OnBinding(func(err error) {
 		if err != nil {
 			go subTrack.Bound(err)
