@@ -229,7 +229,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// give it a few attempts to start session
 	var cr connectionResult
 	var initialResponse *livekit.SignalResponse
-	for i := 0; ; i++ {
+	for i := 0; r.Context().Err() == nil; i++ {
 		connectionTimeout := 3 * time.Second * time.Duration(i+1)
 		ctx := utils.ContextWithAttempt(r.Context(), i)
 		cr, initialResponse, err = s.startConnection(ctx, roomName, pi, connectionTimeout)
@@ -245,7 +245,6 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				"backoffDelay", backoffDelay,
 			)
 		case <-ctx.Done():
-			break
 		}
 	}
 
