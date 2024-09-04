@@ -226,8 +226,13 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		if i < 2 {
-			fieldsWithAttempt := append(loggerFields, "attempt", i)
+			d := time.Duration(1<<min(i, 5)) * time.Second // exponential backoff delay. powers of 2, max 32 seconds
+			fieldsWithAttempt := append(loggerFields,
+				"attempt", i,
+				"wait", d,
+			)
 			l.Warnw("failed to start connection, retrying", err, fieldsWithAttempt...)
+			time.Sleep(d)
 		}
 	}
 
