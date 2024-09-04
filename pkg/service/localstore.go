@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/thoas/go-funk"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/livekit"
 )
@@ -32,16 +33,21 @@ type LocalStore struct {
 	// map of roomName => { identity: participant }
 	participants map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo
 
+	agentDispatches map[livekit.RoomName]map[string]*livekit.AgentDispatch
+	agentJobs       map[livekit.RoomName]map[string]*livekit.Job
+
 	lock       sync.RWMutex
 	globalLock sync.Mutex
 }
 
 func NewLocalStore() *LocalStore {
 	return &LocalStore{
-		rooms:        make(map[livekit.RoomName]*livekit.Room),
-		roomInternal: make(map[livekit.RoomName]*livekit.RoomInternal),
-		participants: make(map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
-		lock:         sync.RWMutex{},
+		rooms:           make(map[livekit.RoomName]*livekit.Room),
+		roomInternal:    make(map[livekit.RoomName]*livekit.RoomInternal),
+		participants:    make(map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
+		agentDispatches: make(map[livekit.RoomName]map[string]*livekit.AgentDispatch),
+		agentJobs:       make(map[livekit.RoomName]map[string]*livekit.Job),
+		lock:            sync.RWMutex{},
 	}
 }
 
@@ -102,6 +108,8 @@ func (s *LocalStore) DeleteRoom(ctx context.Context, roomName livekit.RoomName) 
 	delete(s.participants, livekit.RoomName(room.Name))
 	delete(s.rooms, livekit.RoomName(room.Name))
 	delete(s.roomInternal, livekit.RoomName(room.Name))
+	delete(s.agentDispatches, livekit.RoomName(room.Name))
+	delete(s.agentJobs, livekit.RoomName(room.Name))
 	return nil
 }
 
@@ -169,5 +177,105 @@ func (s *LocalStore) DeleteParticipant(_ context.Context, roomName livekit.RoomN
 	if roomParticipants != nil {
 		delete(roomParticipants, identity)
 	}
+	return nil
+}
+
+func (s *LocalStore) StoreAgentDispatch(ctx context.Context, dispatch *livekit.AgentDispatch) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	clone := proto.Clone(dispatch).(*livekit.AgentDispatch)
+	if clone.State != nil {
+		clone.State.Jobs = nil
+	}
+
+	roomDispatches := s.agentDispatches[livekit.RoomName(dispatch.Room)]
+	if roomDispatches == nil {
+		roomDispatches = make(map[string]*livekit.AgentDispatch)
+		s.agentDispatches[livekit.RoomName(dispatch.Room)] = roomDispatches
+	}
+
+	roomDispatches[clone.Id] = clone
+	return nil
+}
+
+func (s *LocalStore) DeleteAgentDispatch(ctx context.Context, dispatch *livekit.AgentDispatch) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	roomDispatches := s.agentDispatches[livekit.RoomName(dispatch.Room)]
+	if roomDispatches != nil {
+		delete(roomDispatches, dispatch.Id)
+	}
+
+	return nil
+}
+
+func (s *LocalStore) ListAgentDispatches(ctx context.Context, roomName livekit.RoomName) ([]*livekit.AgentDispatch, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	agentDispatches := s.agentDispatches[roomName]
+	if agentDispatches == nil {
+		return nil, nil
+	}
+	agentJobs := s.agentJobs[roomName]
+
+	var js []*livekit.Job
+	if agentJobs != nil {
+		for _, j := range agentJobs {
+			js = append(js, proto.Clone(j).(*livekit.Job))
+		}
+	}
+	var ds []*livekit.AgentDispatch
+
+	m := make(map[string]*livekit.AgentDispatch)
+	for _, d := range agentDispatches {
+		clone := proto.Clone(d).(*livekit.AgentDispatch)
+		m[d.Id] = clone
+		ds = append(ds, clone)
+	}
+
+	for _, j := range js {
+		d := m[j.DispatchId]
+		if d != nil {
+			d.State.Jobs = append(d.State.Jobs, proto.Clone(j).(*livekit.Job))
+		}
+	}
+
+	return ds, nil
+}
+
+func (s *LocalStore) StoreAgentJob(ctx context.Context, job *livekit.Job) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	clone := proto.Clone(job).(*livekit.Job)
+	clone.Room = nil
+	if clone.Participant != nil {
+		clone.Participant = &livekit.ParticipantInfo{
+			Identity: clone.Participant.Identity,
+		}
+	}
+
+	roomJobs := s.agentJobs[livekit.RoomName(job.Room.Name)]
+	if roomJobs == nil {
+		roomJobs = make(map[string]*livekit.Job)
+		s.agentJobs[livekit.RoomName(job.Room.Name)] = roomJobs
+	}
+	roomJobs[clone.Id] = clone
+
+	return nil
+}
+
+func (s *LocalStore) DeleteAgentJob(ctx context.Context, job *livekit.Job) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	roomJobs := s.agentJobs[livekit.RoomName(job.Room.Name)]
+	if roomJobs != nil {
+		delete(roomJobs, job.Id)
+	}
+
 	return nil
 }

@@ -27,10 +27,11 @@ import (
 	"github.com/redis/go-redis/v9"
 	"gopkg.in/yaml.v3"
 
+	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/livekit-server/pkg/agent"
+	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
@@ -51,8 +52,9 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		createKeyProvider,
 		createWebhookNotifier,
 		createClientConfiguration,
+		createForwardStats,
 		routing.CreateRouter,
-		getRoomConf,
+		getLimitConf,
 		config.DefaultAPIConfig,
 		wire.Bind(new(routing.MessageRouter), new(routing.Router)),
 		wire.Bind(new(livekit.RoomService), new(*RoomService)),
@@ -77,16 +79,21 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		NewRoomService,
 		NewRTCService,
 		NewAgentService,
+		NewAgentDispatchService,
 		agent.NewAgentClient,
+		getAgentStore,
 		getSignalRelayConfig,
 		NewDefaultSignalServer,
 		routing.NewSignalClient,
+		getRoomConfig,
+		routing.NewRoomManagerClient,
 		rpc.NewKeepalivePubSub,
 		getPSRPCConfig,
 		getPSRPCClientParams,
 		rpc.NewTopicFormatter,
 		rpc.NewTypedRoomClient,
 		rpc.NewTypedParticipantClient,
+		rpc.NewTypedAgentDispatchInternalClient,
 		NewLocalRoomManager,
 		NewTURNAuthHandler,
 		getTURNAuthHandlerFunc,
@@ -106,6 +113,8 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 		getPSRPCConfig,
 		getPSRPCClientParams,
 		routing.NewSignalClient,
+		getRoomConfig,
+		routing.NewRoomManagerClient,
 		rpc.NewKeepalivePubSub,
 		routing.CreateRouter,
 	)
@@ -198,6 +207,17 @@ func getIngressStore(s ObjectStore) IngressStore {
 	}
 }
 
+func getAgentStore(s ObjectStore) AgentStore {
+	switch store := s.(type) {
+	case *RedisStore:
+		return store
+	case *LocalStore:
+		return store
+	default:
+		return nil
+	}
+}
+
 func getIngressConfig(conf *config.Config) *config.IngressConfig {
 	return &conf.Ingress
 }
@@ -219,7 +239,11 @@ func createClientConfiguration() clientconfiguration.ClientConfigurationManager 
 	return clientconfiguration.NewStaticClientConfigurationManager(clientconfiguration.StaticConfigurations)
 }
 
-func getRoomConf(config *config.Config) config.RoomConfig {
+func getLimitConf(config *config.Config) config.LimitConfig {
+	return config.Limit
+}
+
+func getRoomConfig(config *config.Config) config.RoomConfig {
 	return config.Room
 }
 
@@ -233,6 +257,13 @@ func getPSRPCConfig(config *config.Config) rpc.PSRPCConfig {
 
 func getPSRPCClientParams(config rpc.PSRPCConfig, bus psrpc.MessageBus) rpc.ClientParams {
 	return rpc.NewClientParams(config, bus, logger.GetLogger(), rpc.PSRPCMetricsObserver{})
+}
+
+func createForwardStats(conf *config.Config) *sfu.ForwardStats {
+	if conf.RTC.ForwardStats.SummaryInterval == 0 || conf.RTC.ForwardStats.ReportInterval == 0 || conf.RTC.ForwardStats.ReportWindow == 0 {
+		return nil
+	}
+	return sfu.NewForwardStats(conf.RTC.ForwardStats.SummaryInterval, conf.RTC.ForwardStats.ReportInterval, conf.RTC.ForwardStats.ReportWindow)
 }
 
 func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Server, error) {

@@ -21,13 +21,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gorilla/websocket"
-
 	pagent "github.com/livekit/protocol/agent"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
-	putil "github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/rpc"
+	"github.com/livekit/protocol/utils/guid"
+	"github.com/livekit/psrpc"
 )
 
 type WorkerProtocolVersion int
@@ -41,20 +40,47 @@ const (
 )
 
 var (
-	ErrWorkerClosed        = errors.New("worker closed")
-	ErrWorkerNotAvailable  = errors.New("worker not available")
-	ErrAvailabilityTimeout = errors.New("agent worker availability timeout")
+	ErrWorkerClosed           = errors.New("worker closed")
+	ErrWorkerNotAvailable     = errors.New("worker not available")
+	ErrAvailabilityTimeout    = errors.New("agent worker availability timeout")
+	ErrDuplicateJobAssignment = errors.New("duplicate job assignment")
 )
 
-type sigConn interface {
+type SignalConn interface {
 	WriteServerMessage(msg *livekit.ServerMessage) (int, error)
+	ReadWorkerMessage() (*livekit.WorkerMessage, int, error)
+	Close() error
+}
+
+type WorkerHandler interface {
+	HandleWorkerRegister(w *Worker)
+	HandleWorkerDeregister(w *Worker)
+	HandleWorkerStatus(w *Worker, status *livekit.UpdateWorkerStatus)
+	HandleWorkerJobStatus(w *Worker, status *livekit.UpdateJobStatus)
+	HandleWorkerSimulateJob(w *Worker, job *livekit.Job)
+	HandleWorkerMigrateJob(w *Worker, request *livekit.MigrateJobRequest)
+}
+
+var _ WorkerHandler = UnimplementedWorkerHandler{}
+
+type UnimplementedWorkerHandler struct{}
+
+func (UnimplementedWorkerHandler) HandleWorkerRegister(*Worker)                               {}
+func (UnimplementedWorkerHandler) HandleWorkerDeregister(*Worker)                             {}
+func (UnimplementedWorkerHandler) HandleWorkerStatus(*Worker, *livekit.UpdateWorkerStatus)    {}
+func (UnimplementedWorkerHandler) HandleWorkerJobStatus(*Worker, *livekit.UpdateJobStatus)    {}
+func (UnimplementedWorkerHandler) HandleWorkerSimulateJob(*Worker, *livekit.Job)              {}
+func (UnimplementedWorkerHandler) HandleWorkerMigrateJob(*Worker, *livekit.MigrateJobRequest) {}
+
+func JobStatusIsEnded(s livekit.JobStatus) bool {
+	return s == livekit.JobStatus_JS_SUCCESS || s == livekit.JobStatus_JS_FAILED
 }
 
 type Worker struct {
 	id          string
 	jobType     livekit.JobType
 	version     string
-	name        string
+	agentName   string
 	namespace   string
 	load        float32
 	permissions *livekit.ParticipantPermission
@@ -66,20 +92,19 @@ type Worker struct {
 	protocolVersion WorkerProtocolVersion
 	registered      atomic.Bool
 	status          livekit.WorkerStatus
-	runningJobs     map[string]*Job
+	runningJobs     map[string]*livekit.Job // JobID -> Job
 
-	onWorkerRegistered func(w *Worker)
+	handler WorkerHandler
 
-	conn    *websocket.Conn
-	sigConn sigConn
-	closed  chan struct{}
+	conn   SignalConn
+	closed chan struct{}
 
 	availability map[string]chan *livekit.AvailabilityResponse
 
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	Logger logger.Logger
+	logger logger.Logger
 }
 
 func NewWorker(
@@ -87,42 +112,42 @@ func NewWorker(
 	apiKey string,
 	apiSecret string,
 	serverInfo *livekit.ServerInfo,
-	conn *websocket.Conn,
-	sigConn sigConn,
+	conn SignalConn,
 	logger logger.Logger,
+	handler WorkerHandler,
 ) *Worker {
 	ctx, cancel := context.WithCancel(context.Background())
+	id := guid.New(guid.AgentWorkerPrefix)
 
 	w := &Worker{
-		id:              putil.NewGuid(utils.AgentWorkerPrefix),
+		id:              id,
 		protocolVersion: protocolVersion,
 		apiKey:          apiKey,
 		apiSecret:       apiSecret,
 		serverInfo:      serverInfo,
 		closed:          make(chan struct{}),
-		runningJobs:     make(map[string]*Job),
+		runningJobs:     make(map[string]*livekit.Job),
 		availability:    make(map[string]chan *livekit.AvailabilityResponse),
 		conn:            conn,
-		sigConn:         sigConn,
 		ctx:             ctx,
 		cancel:          cancel,
-		Logger:          logger,
+		logger:          logger.WithValues("workerID", id),
+		handler:         handler,
 	}
 
-	go func() {
-		<-time.After(registerTimeout)
+	time.AfterFunc(registerTimeout, func() {
 		if !w.registered.Load() && !w.IsClosed() {
-			w.Logger.Warnw("worker did not register in time", nil, "id", w.id)
+			w.logger.Warnw("worker did not register in time", nil, "id", w.id)
 			w.Close()
 		}
-	}()
+	})
 
 	return w
 }
 
 func (w *Worker) sendRequest(req *livekit.ServerMessage) {
-	if _, err := w.sigConn.WriteServerMessage(req); err != nil {
-		w.Logger.Errorw("error writing to websocket", err)
+	if _, err := w.conn.WriteServerMessage(req); err != nil {
+		w.logger.Warnw("error writing to websocket", err)
 	}
 }
 
@@ -131,15 +156,17 @@ func (w *Worker) ID() string {
 }
 
 func (w *Worker) JobType() livekit.JobType {
-	w.mu.Lock()
-	defer w.mu.Unlock()
 	return w.jobType
 }
 
 func (w *Worker) Namespace() string {
+	return w.namespace
+}
+
+func (w *Worker) AgentName() string {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return w.namespace
+	return w.agentName
 }
 
 func (w *Worker) Status() livekit.WorkerStatus {
@@ -154,20 +181,14 @@ func (w *Worker) Load() float32 {
 	return w.load
 }
 
-func (w *Worker) OnWorkerRegistered(f func(w *Worker)) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.onWorkerRegistered = f
+func (w *Worker) Logger() logger.Logger {
+	return w.logger
 }
 
-func (w *Worker) Registered() bool {
-	return w.registered.Load()
-}
-
-func (w *Worker) RunningJobs() map[string]*Job {
-	jobs := make(map[string]*Job, len(w.runningJobs))
+func (w *Worker) RunningJobs() map[string]*livekit.Job {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	jobs := make(map[string]*livekit.Job, len(w.runningJobs))
 	for k, v := range w.runningJobs {
 		jobs[k] = v
 	}
@@ -178,12 +199,33 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) error {
 	availCh := make(chan *livekit.AvailabilityResponse, 1)
 
 	w.mu.Lock()
+	if _, ok := w.availability[job.Id]; ok {
+		w.mu.Unlock()
+		return ErrDuplicateJobAssignment
+	}
+
 	w.availability[job.Id] = availCh
 	w.mu.Unlock()
+
+	defer func() {
+		w.mu.Lock()
+		delete(w.availability, job.Id)
+		w.mu.Unlock()
+	}()
+
+	now := time.Now()
+	if job.State == nil {
+		job.State = &livekit.JobState{
+			UpdatedAt: now.UnixNano(),
+		}
+	}
 
 	w.sendRequest(&livekit.ServerMessage{Message: &livekit.ServerMessage_Availability{
 		Availability: &livekit.AvailabilityRequest{Job: job},
 	}})
+
+	timeout := time.NewTimer(assignJobTimeout)
+	defer timeout.Stop()
 
 	// See handleAvailability for the response
 	select {
@@ -192,9 +234,11 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) error {
 			return ErrWorkerNotAvailable
 		}
 
+		job.State.ParticipantIdentity = res.ParticipantIdentity
+
 		token, err := pagent.BuildAgentToken(w.apiKey, w.apiSecret, job.Room.Name, res.ParticipantIdentity, res.ParticipantName, res.ParticipantMetadata, w.permissions)
 		if err != nil {
-			w.Logger.Errorw("failed to build agent token", err)
+			w.logger.Errorw("failed to build agent token", err)
 			return err
 		}
 
@@ -203,9 +247,14 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) error {
 			Assignment: &livekit.JobAssignment{Job: job, Url: nil, Token: token},
 		}})
 
-		// TODO(theomonnom): Check if an agent was successfully connected to the room before returning
+		w.mu.Lock()
+		w.runningJobs[job.Id] = job
+		w.mu.Unlock()
+
+		// TODO sweep jobs that are never started. We can't do this until all SDKs actually update the the JOB state
+
 		return nil
-	case <-time.After(assignJobTimeout):
+	case <-timeout.C:
 		return ErrAvailabilityTimeout
 	case <-w.ctx.Done():
 		return ErrWorkerClosed
@@ -214,21 +263,39 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) error {
 	}
 }
 
-func (w *Worker) UpdateStatus(status *livekit.UpdateWorkerStatus) {
+func (w *Worker) TerminateJob(jobID string, reason rpc.JobTerminateReason) (*livekit.JobState, error) {
 	w.mu.Lock()
-	if status.Status != nil {
-		w.status = status.GetStatus()
-	}
-	w.load = status.GetLoad()
+	job := w.runningJobs[jobID]
 	w.mu.Unlock()
 
-	if status.Metadata != nil {
-		w.UpdateMetadata(status.GetMetadata())
+	if job == nil {
+		return nil, psrpc.NewErrorf(psrpc.NotFound, "no running job for given jobID")
 	}
+
+	w.sendRequest(&livekit.ServerMessage{Message: &livekit.ServerMessage_Termination{
+		Termination: &livekit.JobTermination{
+			JobId: jobID,
+		},
+	}})
+
+	status := livekit.JobStatus_JS_SUCCESS
+	errorStr := ""
+	if reason == rpc.JobTerminateReason_AGENT_LEFT_ROOM {
+		status = livekit.JobStatus_JS_FAILED
+		errorStr = "agent worker left the room"
+	}
+
+	w.updateJobStatus(&livekit.UpdateJobStatus{
+		JobId:  jobID,
+		Status: status,
+		Error:  errorStr,
+	})
+
+	return job.State, nil
 }
 
 func (w *Worker) UpdateMetadata(metadata string) {
-	w.Logger.Debugw("worker metadata updated", nil, "metadata", metadata)
+	w.logger.Debugw("worker metadata updated", nil, "metadata", metadata)
 }
 
 func (w *Worker) IsClosed() bool {
@@ -247,45 +314,56 @@ func (w *Worker) Close() {
 		return
 	}
 
-	w.Logger.Infow("closing worker")
+	w.logger.Infow("closing worker")
 
 	close(w.closed)
 	w.cancel()
 	_ = w.conn.Close()
 	w.mu.Unlock()
+
+	if w.registered.Load() {
+		w.handler.HandleWorkerDeregister(w)
+	}
 }
 
 func (w *Worker) HandleMessage(req *livekit.WorkerMessage) {
 	switch m := req.Message.(type) {
 	case *livekit.WorkerMessage_Register:
-		go w.handleRegister(m.Register)
+		w.handleRegister(m.Register)
 	case *livekit.WorkerMessage_Availability:
-		go w.handleAvailability(m.Availability)
+		w.handleAvailability(m.Availability)
 	case *livekit.WorkerMessage_UpdateJob:
-		go w.handleJobUpdate(m.UpdateJob)
+		w.handleJobUpdate(m.UpdateJob)
 	case *livekit.WorkerMessage_SimulateJob:
-		go w.handleSimulateJob(m.SimulateJob)
+		w.handleSimulateJob(m.SimulateJob)
 	case *livekit.WorkerMessage_Ping:
-		go w.handleWorkerPing(m.Ping)
+		w.handleWorkerPing(m.Ping)
 	case *livekit.WorkerMessage_UpdateWorker:
-		go w.handleWorkerStatus(m.UpdateWorker)
+		w.handleWorkerStatus(m.UpdateWorker)
 	case *livekit.WorkerMessage_MigrateJob:
-		go w.handleMigrateJob(m.MigrateJob)
+		w.handleMigrateJob(m.MigrateJob)
 	}
 }
 
 func (w *Worker) handleRegister(req *livekit.RegisterWorkerRequest) {
-	if w.registered.Load() {
-		w.Logger.Warnw("worker already registered", nil, "id", w.id)
+	w.mu.Lock()
+	var err error
+	if w.IsClosed() {
+		err = errors.New("worker closed")
+	}
+	if w.registered.Swap(true) {
+		err = errors.New("worker already registered")
+	}
+	if err != nil {
+		w.mu.Unlock()
+		w.logger.Warnw("unable to register worker", err, "id", w.id)
 		return
 	}
 
-	w.mu.Lock()
-	onWorkerRegistered := w.onWorkerRegistered
-	w.jobType = req.Type
 	w.version = req.Version
-	w.name = req.Name
+	w.agentName = req.GetAgentName()
 	w.namespace = req.GetNamespace()
+	w.jobType = req.GetType()
 
 	if req.AllowedPermissions != nil {
 		w.permissions = req.AllowedPermissions
@@ -300,10 +378,9 @@ func (w *Worker) handleRegister(req *livekit.RegisterWorkerRequest) {
 	}
 
 	w.status = livekit.WorkerStatus_WS_AVAILABLE
-	w.registered.Store(true)
 	w.mu.Unlock()
 
-	w.Logger.Debugw("worker registered", "request", req)
+	w.logger.Debugw("worker registered", "request", logger.Proto(req))
 
 	w.sendRequest(&livekit.ServerMessage{
 		Message: &livekit.ServerMessage_Register{
@@ -314,9 +391,7 @@ func (w *Worker) handleRegister(req *livekit.RegisterWorkerRequest) {
 		},
 	})
 
-	if onWorkerRegistered != nil {
-		onWorkerRegistered(w)
-	}
+	w.handler.HandleWorkerRegister(w)
 }
 
 func (w *Worker) handleAvailability(res *livekit.AvailabilityResponse) {
@@ -325,7 +400,7 @@ func (w *Worker) handleAvailability(res *livekit.AvailabilityResponse) {
 
 	availCh, ok := w.availability[res.JobId]
 	if !ok {
-		w.Logger.Warnw("received availability response for unknown job", nil, "jobId", res.JobId)
+		w.logger.Warnw("received availability response for unknown job", nil, "jobId", res.JobId)
 		return
 	}
 
@@ -334,16 +409,46 @@ func (w *Worker) handleAvailability(res *livekit.AvailabilityResponse) {
 }
 
 func (w *Worker) handleJobUpdate(update *livekit.UpdateJobStatus) {
-	w.mu.Lock()
-	job, ok := w.runningJobs[update.JobId]
-	w.mu.Unlock()
+	err := w.updateJobStatus(update)
 
+	if err != nil {
+		w.logger.Infow("received job update for unknown job", "jobID", update.JobId)
+	}
+}
+
+func (w *Worker) updateJobStatus(update *livekit.UpdateJobStatus) error {
+	w.mu.Lock()
+
+	job, ok := w.runningJobs[update.JobId]
 	if !ok {
-		w.Logger.Warnw("received job update for unknown job", nil, "jobId", update.JobId)
-		return
+		w.mu.Unlock()
+
+		return psrpc.NewErrorf(psrpc.NotFound, "received job update for unknown job")
 	}
 
-	job.UpdateStatus(update)
+	now := time.Now()
+	job.State.UpdatedAt = now.UnixNano()
+
+	if job.State.Status == livekit.JobStatus_JS_PENDING && JobStatusIsEnded(update.Status) {
+		job.State.StartedAt = now.UnixNano()
+	}
+
+	if job.State.Status < livekit.JobStatus_JS_SUCCESS && JobStatusIsEnded(update.Status) {
+		job.State.EndedAt = now.UnixNano()
+	}
+
+	job.State.Status = update.Status
+	job.State.Error = update.Error
+
+	// TODO do not delete, leave inside the JobDefinition
+	if JobStatusIsEnded(job.State.Status) {
+		delete(w.runningJobs, job.Id)
+	}
+	w.mu.Unlock()
+
+	w.handler.HandleWorkerJobStatus(w, update)
+
+	return nil
 }
 
 func (w *Worker) handleSimulateJob(simulate *livekit.SimulateJobRequest) {
@@ -353,19 +458,22 @@ func (w *Worker) handleSimulateJob(simulate *livekit.SimulateJobRequest) {
 	}
 
 	job := &livekit.Job{
-		Id:          utils.NewGuid(utils.AgentJobPrefix),
+		Id:          guid.New(guid.AgentJobPrefix),
 		Type:        jobType,
 		Room:        simulate.Room,
 		Participant: simulate.Participant,
 		Namespace:   w.Namespace(),
+		AgentName:   w.AgentName(),
 	}
 
-	ctx := context.Background()
-	err := w.AssignJob(ctx, job)
-	if err != nil {
-		w.Logger.Errorw("failed to simulate job, assignment failed", err, "jobId", job.Id)
-	}
-
+	go func() {
+		err := w.AssignJob(w.ctx, job)
+		if err != nil {
+			w.logger.Errorw("failed to simulate job, assignment failed", err, "jobId", job.Id)
+		} else {
+			w.handler.HandleWorkerSimulateJob(w, job)
+		}
+	}()
 }
 
 func (w *Worker) handleWorkerPing(ping *livekit.WorkerPing) {
@@ -378,11 +486,20 @@ func (w *Worker) handleWorkerPing(ping *livekit.WorkerPing) {
 }
 
 func (w *Worker) handleWorkerStatus(update *livekit.UpdateWorkerStatus) {
-	w.Logger.Debugw("worker status update", "status", update.Status, "load", update.Load)
-	w.UpdateStatus(update)
+	w.logger.Debugw("worker status update", "update", logger.Proto(update))
+
+	w.mu.Lock()
+	if update.Status != nil {
+		w.status = update.GetStatus()
+	}
+	w.load = update.GetLoad()
+	w.mu.Unlock()
+
+	w.handler.HandleWorkerStatus(w, update)
 }
 
 func (w *Worker) handleMigrateJob(migrate *livekit.MigrateJobRequest) {
 	// TODO(theomonnom): On OSS this is not implemented
 	// We could maybe just move a specific job to another worker
+	w.handler.HandleWorkerMigrateJob(w, migrate)
 }

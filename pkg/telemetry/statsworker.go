@@ -29,6 +29,8 @@ import (
 
 // StatsWorker handles participant stats
 type StatsWorker struct {
+	next *StatsWorker
+
 	ctx                 context.Context
 	t                   TelemetryService
 	roomID              livekit.RoomID
@@ -91,8 +93,8 @@ func (s *StatsWorker) IsConnected() bool {
 	return s.isConnected
 }
 
-func (s *StatsWorker) Flush() {
-	ts := timestamppb.Now()
+func (s *StatsWorker) Flush(now time.Time) bool {
+	ts := timestamppb.New(now)
 
 	s.lock.Lock()
 	stats := make([]*livekit.AnalyticsStat, 0, len(s.incomingPerTrack)+len(s.outgoingPerTrack))
@@ -102,6 +104,8 @@ func (s *StatsWorker) Flush() {
 
 	outgoingPerTrack := s.outgoingPerTrack
 	s.outgoingPerTrack = make(map[livekit.TrackID][]*livekit.AnalyticsStat)
+
+	closed := !s.closedAt.IsZero() && now.Sub(s.closedAt) > workerCleanupWait
 	s.lock.Unlock()
 
 	stats = s.collectStats(ts, livekit.StreamType_UPSTREAM, incomingPerTrack, stats)
@@ -109,21 +113,25 @@ func (s *StatsWorker) Flush() {
 	if len(stats) > 0 {
 		s.t.SendStats(s.ctx, stats)
 	}
+
+	return closed
 }
 
-func (s *StatsWorker) Close() {
-	s.Flush()
-
+func (s *StatsWorker) Close() bool {
 	s.lock.Lock()
-	s.closedAt = time.Now()
-	s.lock.Unlock()
+	defer s.lock.Unlock()
+
+	ok := s.closedAt.IsZero()
+	if ok {
+		s.closedAt = time.Now()
+	}
+	return ok
 }
 
-func (s *StatsWorker) ClosedAt() time.Time {
-	s.lock.RLock()
-	defer s.lock.RUnlock()
-
-	return s.closedAt
+func (s *StatsWorker) Closed() bool {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	return !s.closedAt.IsZero()
 }
 
 func (s *StatsWorker) collectStats(

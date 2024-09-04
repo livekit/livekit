@@ -109,6 +109,7 @@ func (r *RedisRouter) RemoveDeadNodes() error {
 	return nil
 }
 
+// GetNodeForRoom finds the node where the room is hosted at
 func (r *RedisRouter) GetNodeForRoom(_ context.Context, roomName livekit.RoomName) (*livekit.Node, error) {
 	nodeID, err := r.rc.HGet(r.ctx, NodeRoomKey, string(roomName)).Result()
 	if err == redis.Nil {
@@ -161,9 +162,17 @@ func (r *RedisRouter) ListNodes() ([]*livekit.Node, error) {
 	return nodes, nil
 }
 
+func (r *RedisRouter) CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (res *livekit.Room, err error) {
+	rtcNode, err := r.GetNodeForRoom(ctx, livekit.RoomName(req.Name))
+	if err != nil {
+		return
+	}
+
+	return r.CreateRoomWithNodeID(ctx, req, livekit.NodeID(rtcNode.Id))
+}
+
 // StartParticipantSignal signal connection sets up paths to the RTC node, and starts to route messages to that message queue
 func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit) (res StartParticipantSignalResults, err error) {
-	// find the node where the room is hosted at
 	rtcNode, err := r.GetNodeForRoom(ctx, roomName)
 	if err != nil {
 		return

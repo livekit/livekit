@@ -143,8 +143,6 @@ rtc:
 
 # when enabled, LiveKit will expose prometheus metrics on :6789/metrics
 # prometheus_port: 6789
-# set a custom environment variable. prometheus metrics will be labeled with this value. defaults to an empty string
-# environment: custom-value
 
 # API key / secret pairs.
 # Keys are used for JWT authentication, server APIs would require a keypair in order to generate access tokens
@@ -185,8 +183,6 @@ keys:
 #   # allow tracks to be unmuted remotely, defaults to false
 #   # tracks can always be muted from the Room Service APIs
 #   enable_remote_unmute: true
-#   # limit size of room and participant's metadata, 0 for no limit
-#   max_metadata_size: 0
 #   # control playout delay in ms of video track (and associated audio track)
 #   playout_delay:
 #     enabled: true
@@ -313,3 +309,11 @@ keys:
 #   # value less or equal than 0 means no limit.
 #   subscription_limit_video: 0
 #   subscription_limit_audio: 0
+#   # limit size of room and participant's metadata, 0 for no limit
+#   max_metadata_size: 0
+#   # limit size of participant attributes, 0 for no limit
+#   max_attributes_size: 0
+#   # limit length of room names
+#   max_room_name_length: 0
+#   # limit length of participant identity
+#   max_participant_identity_length: 0

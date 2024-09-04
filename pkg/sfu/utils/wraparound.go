@@ -16,6 +16,8 @@ package utils
 
 import (
 	"unsafe"
+
+	"go.uber.org/zap/zapcore"
 )
 
 type number interface {
@@ -65,6 +67,19 @@ type WrapAroundUpdateResult[ET extendedNumber] struct {
 	ExtendedVal        ET
 }
 
+func (w *WrapAroundUpdateResult[ET]) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if w == nil {
+		return nil
+	}
+
+	e.AddBool("IsUnhandled", w.IsUnhandled)
+	e.AddBool("IsRestart", w.IsRestart)
+	e.AddUint64("PreExtendedStart", uint64(w.PreExtendedStart))
+	e.AddUint64("PreExtendedHighest", uint64(w.PreExtendedHighest))
+	e.AddUint64("ExtendedVal", uint64(w.ExtendedVal))
+	return nil
+}
+
 func (w *WrapAround[T, ET]) Update(val T) (result WrapAroundUpdateResult[ET]) {
 	if !w.initialized {
 		result.PreExtendedHighest = ET(val) - 1
@@ -89,6 +104,29 @@ func (w *WrapAround[T, ET]) Update(val T) (result WrapAroundUpdateResult[ET]) {
 	if val < w.highest {
 		w.cycles += w.fullRange
 	}
+	w.highest = val
+
+	w.updateExtendedHighest()
+	result.ExtendedVal = w.extendedHighest
+	return
+}
+
+func (w *WrapAround[T, ET]) UndoUpdate(result WrapAroundUpdateResult[ET]) {
+	if !w.initialized || result.PreExtendedHighest >= result.ExtendedVal {
+		return
+	}
+
+	w.ResetHighest(result.PreExtendedHighest)
+}
+
+func (w *WrapAround[T, ET]) Rollover(val T, numCycles int) (result WrapAroundUpdateResult[ET]) {
+	if !w.initialized || numCycles < 0 {
+		return w.Update(val)
+	}
+
+	result.PreExtendedHighest = w.extendedHighest
+
+	w.cycles += ET(numCycles) * w.fullRange
 	w.highest = val
 
 	w.updateExtendedHighest()
@@ -127,7 +165,7 @@ func (w *WrapAround[T, ET]) GetExtendedHighest() ET {
 }
 
 func (w *WrapAround[T, ET]) updateExtendedHighest() {
-	w.extendedHighest = getExtendedHighest(w.cycles, w.highest)
+	w.extendedHighest = getExtended(w.cycles, w.highest)
 }
 
 func (w *WrapAround[T, ET]) maybeAdjustStart(val T) (result WrapAroundUpdateResult[ET]) {
@@ -142,7 +180,7 @@ func (w *WrapAround[T, ET]) maybeAdjustStart(val T) (result WrapAroundUpdateResu
 			cycles -= w.fullRange
 		}
 		result.PreExtendedHighest = w.extendedHighest
-		result.ExtendedVal = getExtendedHighest(cycles, val)
+		result.ExtendedVal = getExtended(cycles, val)
 		return
 	}
 
@@ -171,7 +209,7 @@ func (w *WrapAround[T, ET]) maybeAdjustStart(val T) (result WrapAroundUpdateResu
 		}
 	}
 	result.PreExtendedHighest = w.extendedHighest
-	result.ExtendedVal = getExtendedHighest(cycles, val)
+	result.ExtendedVal = getExtended(cycles, val)
 	return
 }
 
@@ -181,6 +219,6 @@ func (w *WrapAround[T, ET]) isWrapBack(earlier T, later T) bool {
 
 // ------------------------------------
 
-func getExtendedHighest[T number, ET extendedNumber](cycles ET, val T) ET {
+func getExtended[T number, ET extendedNumber](cycles ET, val T) ET {
 	return cycles + ET(val)
 }

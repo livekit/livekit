@@ -28,6 +28,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/telemetry"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -91,7 +92,7 @@ func NewSubscriptionManager(params SubscriptionManagerParams) *SubscriptionManag
 	return m
 }
 
-func (m *SubscriptionManager) Close(willBeResumed bool) {
+func (m *SubscriptionManager) Close(isExpectedToResume bool) {
 	m.lock.Lock()
 	if m.isClosed() {
 		m.lock.Unlock()
@@ -113,7 +114,7 @@ func (m *SubscriptionManager) Close(willBeResumed bool) {
 		}
 	}
 
-	if willBeResumed {
+	if isExpectedToResume {
 		for _, dt := range downTracksToClose {
 			dt.CloseWithFlush(false)
 		}
@@ -178,6 +179,26 @@ func (m *SubscriptionManager) GetSubscribedTracks() []types.SubscribedTrack {
 		}
 	}
 	return tracks
+}
+
+func (m *SubscriptionManager) StopAndGetSubscribedTracksForwarderState() map[livekit.TrackID]*livekit.RTPForwarderState {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+
+	states := make(map[livekit.TrackID]*livekit.RTPForwarderState, len(m.subscriptions))
+	for trackID, t := range m.subscriptions {
+		st := t.getSubscribedTrack()
+		if st != nil {
+			dt := st.DownTrack()
+			if dt != nil {
+				state := dt.StopWriteAndGetState()
+				if state.ForwarderState != nil {
+					states[trackID] = state.ForwarderState
+				}
+			}
+		}
+	}
+	return states
 }
 
 func (m *SubscriptionManager) HasSubscriptions() bool {
@@ -523,8 +544,8 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 		)
 	}
 	if err == nil && subTrack != nil { // subTrack could be nil if already subscribed
-		subTrack.OnClose(func(willBeResumed bool) {
-			m.handleSubscribedTrackClose(s, willBeResumed)
+		subTrack.OnClose(func(isExpectedToResume bool) {
+			m.handleSubscribedTrackClose(s, isExpectedToResume)
 		})
 		subTrack.AddOnBind(func(err error) {
 			if err != nil {
@@ -615,10 +636,10 @@ func (m *SubscriptionManager) handleSourceTrackRemoved(trackID livekit.TrackID) 
 // - subscriber-initiated unsubscribe
 // - UpTrack was closed
 // - publisher revoked permissions for the participant
-func (m *SubscriptionManager) handleSubscribedTrackClose(s *trackSubscription, willBeResumed bool) {
+func (m *SubscriptionManager) handleSubscribedTrackClose(s *trackSubscription, isExpectedToResume bool) {
 	s.logger.Debugw(
 		"subscribed track closed",
-		"willBeResumed", willBeResumed,
+		"isExpectedToResume", isExpectedToResume,
 	)
 	wasBound := s.isBound()
 	subTrack := s.getSubscribedTrack()
@@ -666,7 +687,7 @@ func (m *SubscriptionManager) handleSubscribedTrackClose(s *trackSubscription, w
 			context.Background(),
 			m.params.Participant.ID(),
 			&livekit.TrackInfo{Sid: string(s.trackID), Type: subTrack.MediaTrack().Kind()},
-			!willBeResumed,
+			!isExpectedToResume,
 		)
 
 		dt := subTrack.DownTrack()
@@ -684,7 +705,7 @@ func (m *SubscriptionManager) handleSubscribedTrackClose(s *trackSubscription, w
 		}
 	}
 
-	if !willBeResumed {
+	if !isExpectedToResume {
 		sender := subTrack.RTPSender()
 		if sender != nil {
 			s.logger.Debugw("removing PeerConnection track",
@@ -738,6 +759,8 @@ type trackSubscription struct {
 	// the later of when subscription was requested OR when the first failure was encountered OR when permission is granted
 	// this timestamp determines when failures are reported
 	subStartedAt atomic.Pointer[time.Time]
+
+	createAt time.Time
 }
 
 func newTrackSubscription(subscriberID livekit.ParticipantID, trackID livekit.TrackID, l logger.Logger) *trackSubscription {
@@ -745,6 +768,7 @@ func newTrackSubscription(subscriberID livekit.ParticipantID, trackID livekit.Tr
 		subscriberID: subscriberID,
 		trackID:      trackID,
 		logger:       l,
+		createAt:     time.Now(),
 	}
 }
 
@@ -972,6 +996,10 @@ func (s *trackSubscription) maybeRecordSuccess(ts telemetry.TelemetryService, pI
 	if mediaTrack == nil {
 		return
 	}
+
+	d := time.Since(s.createAt)
+	s.logger.Debugw("track subscribed", "cost", d.Milliseconds())
+	prometheus.RecordSubscribeTime(mediaTrack.Source(), mediaTrack.Kind(), d)
 
 	eventSent := s.eventSent.Swap(true)
 

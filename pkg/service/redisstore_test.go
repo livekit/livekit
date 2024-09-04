@@ -22,17 +22,23 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/ingress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/guid"
 
 	"github.com/livekit/livekit-server/pkg/service"
 )
 
+func redisStore(t testing.TB) *service.RedisStore {
+	return service.NewRedisStore(redisClient(t))
+}
+
 func TestRoomInternal(t *testing.T) {
 	ctx := context.Background()
-	rs := service.NewRedisStore(redisClient())
+	rs := redisStore(t)
 
 	room := &livekit.Room{
 		Sid:  "123",
@@ -60,7 +66,7 @@ func TestRoomInternal(t *testing.T) {
 
 func TestParticipantPersistence(t *testing.T) {
 	ctx := context.Background()
-	rs := service.NewRedisStore(redisClient())
+	rs := redisStore(t)
 
 	roomName := livekit.RoomName("room1")
 	_ = rs.DeleteRoom(ctx, roomName)
@@ -107,7 +113,7 @@ func TestParticipantPersistence(t *testing.T) {
 
 func TestRoomLock(t *testing.T) {
 	ctx := context.Background()
-	rs := service.NewRedisStore(redisClient())
+	rs := redisStore(t)
 	lockInterval := 5 * time.Millisecond
 	roomName := livekit.RoomName("myroom")
 
@@ -157,15 +163,14 @@ func TestRoomLock(t *testing.T) {
 
 func TestEgressStore(t *testing.T) {
 	ctx := context.Background()
-	rc := redisClient()
-	rs := service.NewRedisStore(rc)
+	rs := redisStore(t)
 
 	roomName := "egress-test"
 
 	// store egress info
 	info := &livekit.EgressInfo{
-		EgressId: utils.NewGuid(utils.EgressPrefix),
-		RoomId:   utils.NewGuid(utils.RoomPrefix),
+		EgressId: guid.New(utils.EgressPrefix),
+		RoomId:   guid.New(utils.RoomPrefix),
 		RoomName: roomName,
 		Status:   livekit.EgressStatus_EGRESS_STARTING,
 		Request: &livekit.EgressInfo_RoomComposite{
@@ -184,8 +189,8 @@ func TestEgressStore(t *testing.T) {
 
 	// store another
 	info2 := &livekit.EgressInfo{
-		EgressId: utils.NewGuid(utils.EgressPrefix),
-		RoomId:   utils.NewGuid(utils.RoomPrefix),
+		EgressId: guid.New(utils.EgressPrefix),
+		RoomId:   guid.New(utils.RoomPrefix),
 		RoomName: "another-egress-test",
 		Status:   livekit.EgressStatus_EGRESS_STARTING,
 		Request: &livekit.EgressInfo_RoomComposite{
@@ -228,7 +233,7 @@ func TestEgressStore(t *testing.T) {
 
 func TestIngressStore(t *testing.T) {
 	ctx := context.Background()
-	rs := service.NewRedisStore(redisClient())
+	rs := redisStore(t)
 
 	info := &livekit.IngressInfo{
 		IngressId: "ingressId",
@@ -287,6 +292,92 @@ func TestIngressStore(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, len(infos))
 	require.Equal(t, "", infos[0].RoomName)
+}
+
+func TestAgentStore(t *testing.T) {
+	ctx := context.Background()
+	rs := redisStore(t)
+
+	ad := &livekit.AgentDispatch{
+		Id:        "dispatch_id",
+		AgentName: "agent_name",
+		Metadata:  "metadata",
+		Room:      "room_name",
+		State: &livekit.AgentDispatchState{
+			CreatedAt: 1,
+			DeletedAt: 2,
+			Jobs: []*livekit.Job{
+				&livekit.Job{
+					Id:         "job_id",
+					DispatchId: "dispatch_id",
+					Type:       livekit.JobType_JT_PUBLISHER,
+					Room: &livekit.Room{
+						Name: "room_name",
+					},
+					Participant: &livekit.ParticipantInfo{
+						Identity: "identity",
+						Name:     "name",
+					},
+					Namespace: "ns",
+					Metadata:  "metadata",
+					AgentName: "agent_name",
+					State: &livekit.JobState{
+						Status:    livekit.JobStatus_JS_RUNNING,
+						StartedAt: 3,
+						EndedAt:   4,
+						Error:     "error",
+					},
+				},
+			},
+		},
+	}
+
+	err := rs.StoreAgentDispatch(ctx, ad)
+	require.NoError(t, err)
+
+	rd, err := rs.ListAgentDispatches(ctx, "not_a_room")
+	require.NoError(t, err)
+	require.Equal(t, 0, len(rd))
+
+	rd, err = rs.ListAgentDispatches(ctx, "room_name")
+	require.NoError(t, err)
+	require.Equal(t, 1, len(rd))
+
+	expected := proto.Clone(ad).(*livekit.AgentDispatch)
+	expected.State.Jobs = nil
+	require.True(t, proto.Equal(expected, rd[0]))
+
+	err = rs.StoreAgentJob(ctx, ad.State.Jobs[0])
+	require.NoError(t, err)
+
+	rd, err = rs.ListAgentDispatches(ctx, "room_name")
+	require.NoError(t, err)
+	require.Equal(t, 1, len(rd))
+
+	expected = proto.Clone(ad).(*livekit.AgentDispatch)
+	expected.State.Jobs[0].Room = nil
+	expected.State.Jobs[0].Participant = &livekit.ParticipantInfo{
+		Identity: "identity",
+	}
+	require.True(t, proto.Equal(expected, rd[0]))
+
+	err = rs.DeleteAgentJob(ctx, ad.State.Jobs[0])
+	require.NoError(t, err)
+
+	rd, err = rs.ListAgentDispatches(ctx, "room_name")
+	require.NoError(t, err)
+	require.Equal(t, 1, len(rd))
+
+	expected = proto.Clone(ad).(*livekit.AgentDispatch)
+	expected.State.Jobs = nil
+	require.True(t, proto.Equal(expected, rd[0]))
+
+	err = rs.DeleteAgentDispatch(ctx, ad)
+	require.NoError(t, err)
+
+	rd, err = rs.ListAgentDispatches(ctx, "room_name")
+	require.NoError(t, err)
+	require.Equal(t, 0, len(rd))
 }
 
 func compareIngressInfo(t *testing.T, expected, v *livekit.IngressInfo) {

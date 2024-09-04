@@ -73,19 +73,37 @@ type IngressStore interface {
 
 //counterfeiter:generate . RoomAllocator
 type RoomAllocator interface {
-	CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (*livekit.Room, bool, error)
+	CreateRoomEnabled() bool
+	SelectRoomNode(ctx context.Context, roomName livekit.RoomName, nodeID livekit.NodeID) error
+	CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest, isExplicit bool) (*livekit.Room, *livekit.RoomInternal, bool, error)
 	ValidateCreateRoom(ctx context.Context, roomName livekit.RoomName) error
 }
 
 //counterfeiter:generate . SIPStore
 type SIPStore interface {
 	StoreSIPTrunk(ctx context.Context, info *livekit.SIPTrunkInfo) error
+	StoreSIPInboundTrunk(ctx context.Context, info *livekit.SIPInboundTrunkInfo) error
+	StoreSIPOutboundTrunk(ctx context.Context, info *livekit.SIPOutboundTrunkInfo) error
 	LoadSIPTrunk(ctx context.Context, sipTrunkID string) (*livekit.SIPTrunkInfo, error)
+	LoadSIPInboundTrunk(ctx context.Context, sipTrunkID string) (*livekit.SIPInboundTrunkInfo, error)
+	LoadSIPOutboundTrunk(ctx context.Context, sipTrunkID string) (*livekit.SIPOutboundTrunkInfo, error)
 	ListSIPTrunk(ctx context.Context) ([]*livekit.SIPTrunkInfo, error)
+	ListSIPInboundTrunk(ctx context.Context) ([]*livekit.SIPInboundTrunkInfo, error)
+	ListSIPOutboundTrunk(ctx context.Context) ([]*livekit.SIPOutboundTrunkInfo, error)
 	DeleteSIPTrunk(ctx context.Context, info *livekit.SIPTrunkInfo) error
 
 	StoreSIPDispatchRule(ctx context.Context, info *livekit.SIPDispatchRuleInfo) error
 	LoadSIPDispatchRule(ctx context.Context, sipDispatchRuleID string) (*livekit.SIPDispatchRuleInfo, error)
 	ListSIPDispatchRule(ctx context.Context) ([]*livekit.SIPDispatchRuleInfo, error)
 	DeleteSIPDispatchRule(ctx context.Context, info *livekit.SIPDispatchRuleInfo) error
+}
+
+//counterfeiter:generate . AgentStore
+type AgentStore interface {
+	StoreAgentDispatch(ctx context.Context, dispatch *livekit.AgentDispatch) error
+	DeleteAgentDispatch(ctx context.Context, dispatch *livekit.AgentDispatch) error
+	ListAgentDispatches(ctx context.Context, roomName livekit.RoomName) ([]*livekit.AgentDispatch, error)
+
+	StoreAgentJob(ctx context.Context, job *livekit.Job) error
+	DeleteAgentJob(ctx context.Context, job *livekit.Job) error
 }

@@ -40,9 +40,10 @@ import (
 // MediaTrack represents a WebRTC track that needs to be forwarded
 // Implements MediaTrack and PublishedTrack interface
 type MediaTrack struct {
-	params      MediaTrackParams
-	numUpTracks atomic.Uint32
-	buffer      *buffer.Buffer
+	params         MediaTrackParams
+	numUpTracks    atomic.Uint32
+	buffer         *buffer.Buffer
+	everSubscribed atomic.Bool
 
 	*MediaTrackReceiver
 	*MediaLossProxy
@@ -55,21 +56,23 @@ type MediaTrack struct {
 }
 
 type MediaTrackParams struct {
-	SignalCid           string
-	SdpCid              string
-	ParticipantID       livekit.ParticipantID
-	ParticipantIdentity livekit.ParticipantIdentity
-	ParticipantVersion  uint32
-	BufferFactory       *buffer.Factory
-	ReceiverConfig      ReceiverConfig
-	SubscriberConfig    DirectionConfig
-	PLIThrottleConfig   config.PLIThrottleConfig
-	AudioConfig         config.AudioConfig
-	VideoConfig         config.VideoConfig
-	Telemetry           telemetry.TelemetryService
-	Logger              logger.Logger
-	SimTracks           map[uint32]SimulcastTrackInfo
-	OnRTCP              func([]rtcp.Packet)
+	SignalCid             string
+	SdpCid                string
+	ParticipantID         livekit.ParticipantID
+	ParticipantIdentity   livekit.ParticipantIdentity
+	ParticipantVersion    uint32
+	BufferFactory         *buffer.Factory
+	ReceiverConfig        ReceiverConfig
+	SubscriberConfig      DirectionConfig
+	PLIThrottleConfig     config.PLIThrottleConfig
+	AudioConfig           config.AudioConfig
+	VideoConfig           config.VideoConfig
+	Telemetry             telemetry.TelemetryService
+	Logger                logger.Logger
+	SimTracks             map[uint32]SimulcastTrackInfo
+	OnRTCP                func([]rtcp.Packet)
+	ForwardStats          *sfu.ForwardStats
+	OnTrackEverSubscribed func(livekit.TrackID)
 }
 
 func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
@@ -207,7 +210,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			case *rtcp.SourceDescription:
 			case *rtcp.SenderReport:
 				if pkt.SSRC == uint32(track.SSRC()) {
-					buff.SetSenderReportData(pkt.RTPTime, pkt.NTPTime)
+					buff.SetSenderReportData(pkt.RTPTime, pkt.NTPTime, pkt.PacketCount, pkt.OctetCount)
 				}
 			case *rtcp.ExtendedReport:
 			rttFromXR:
@@ -238,10 +241,10 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	layer := buffer.RidToSpatialLayer(track.RID(), ti)
 	t.params.Logger.Debugw(
 		"AddReceiver",
-		"mime", track.Codec().MimeType,
 		"rid", track.RID(),
 		"layer", layer,
 		"ssrc", track.SSRC(),
+		"codec", track.Codec(),
 	)
 	wr := t.MediaTrackReceiver.Receiver(mime)
 	if wr == nil {
@@ -281,6 +284,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			sfu.WithAudioConfig(t.params.AudioConfig),
 			sfu.WithLoadBalanceThreshold(20),
 			sfu.WithStreamTrackers(),
+			sfu.WithForwardStats(t.params.ForwardStats),
 		)
 		newWR.OnCloseHandler(func() {
 			t.MediaTrackReceiver.SetClosing()
@@ -351,11 +355,14 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		t.SetSimulcast(true)
 	}
 
-	if t.IsSimulcast() {
-		t.MediaTrackReceiver.SetLayerSsrc(mime, track.RID(), uint32(track.SSRC()))
+	var bitrates int
+	if len(ti.Layers) > int(layer) {
+		bitrates = int(ti.Layers[layer].GetBitrate())
 	}
 
-	buff.Bind(receiver.GetParameters(), track.Codec().RTPCodecCapability)
+	t.MediaTrackReceiver.SetLayerSsrc(mime, track.RID(), uint32(track.SSRC()))
+
+	buff.Bind(receiver.GetParameters(), track.Codec().RTPCodecCapability, bitrates)
 
 	// if subscriber request fps before fps calculated, update them after fps updated.
 	buff.OnFpsChanged(func() {
@@ -406,13 +413,13 @@ func (t *MediaTrack) Restart() {
 	}
 }
 
-func (t *MediaTrack) Close(willBeResumed bool) {
+func (t *MediaTrack) Close(isExpectedToResume bool) {
 	t.MediaTrackReceiver.SetClosing()
 	if t.dynacastManager != nil {
 		t.dynacastManager.Close()
 	}
-	t.MediaTrackReceiver.ClearAllReceivers(willBeResumed)
-	t.MediaTrackReceiver.Close()
+	t.MediaTrackReceiver.ClearAllReceivers(isExpectedToResume)
+	t.MediaTrackReceiver.Close(isExpectedToResume)
 }
 
 func (t *MediaTrack) SetMuted(muted bool) {
@@ -424,4 +431,10 @@ func (t *MediaTrack) SetMuted(muted bool) {
 	}
 
 	t.MediaTrackReceiver.SetMuted(muted)
+}
+
+func (t *MediaTrack) OnTrackSubscribed() {
+	if !t.everSubscribed.Swap(true) && t.params.OnTrackEverSubscribed != nil {
+		go t.params.OnTrackEverSubscribed(t.ID())
+	}
 }

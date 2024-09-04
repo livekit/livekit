@@ -15,8 +15,7 @@
 package sfu
 
 import (
-	"fmt"
-
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -50,26 +49,6 @@ type SnTs struct {
 
 // ----------------------------------------------------------------------
 
-type RTPMungerState struct {
-	ExtLastSN        uint64
-	ExtSecondLastSN  uint64
-	ExtLastTS        uint64
-	ExtSecondLastTS  uint64
-	LastMarker       bool
-	SecondLastMarker bool
-}
-
-func (r RTPMungerState) String() string {
-	return fmt.Sprintf(
-		"RTPMungerState{extLastSN: %d, extSecondLastSN: %d, extLastTS: %d, extSecondLastTS: %d, lastMarker: %v, secondLastMarker: %v)",
-		r.ExtLastSN, r.ExtSecondLastSN,
-		r.ExtLastTS, r.ExtSecondLastTS,
-		r.LastMarker, r.SecondLastMarker,
-	)
-}
-
-// ----------------------------------------------------------------------
-
 type RTPMunger struct {
 	logger logger.Logger
 
@@ -83,7 +62,6 @@ type RTPMunger struct {
 	extLastTS       uint64
 	extSecondLastTS uint64
 	tsOffset        uint64
-	pinnedTSOffset  uint64
 
 	lastMarker       bool
 	secondLastMarker bool
@@ -108,32 +86,31 @@ func (r *RTPMunger) DebugInfo() map[string]interface{} {
 		"ExtLastTS":            r.extLastTS,
 		"ExtSecondLastTS":      r.extSecondLastTS,
 		"TSOffset":             r.tsOffset,
-		"PinnedTSOffset":       r.pinnedTSOffset,
 		"LastMarker":           r.lastMarker,
 		"SecondLastMarker":     r.secondLastMarker,
 	}
 }
 
-func (r *RTPMunger) GetLast() RTPMungerState {
-	return RTPMungerState{
-		ExtLastSN:        r.extLastSN,
-		ExtSecondLastSN:  r.extSecondLastSN,
-		ExtLastTS:        r.extLastTS,
-		ExtSecondLastTS:  r.extSecondLastTS,
-		LastMarker:       r.lastMarker,
-		SecondLastMarker: r.secondLastMarker,
+func (r *RTPMunger) GetState() *livekit.RTPMungerState {
+	return &livekit.RTPMungerState{
+		ExtLastSequenceNumber:       r.extLastSN,
+		ExtSecondLastSequenceNumber: r.extSecondLastSN,
+		ExtLastTimestamp:            r.extLastTS,
+		ExtSecondLastTimestamp:      r.extSecondLastTS,
+		LastMarker:                  r.lastMarker,
+		SecondLastMarker:            r.secondLastMarker,
 	}
 }
 
-func (r *RTPMunger) GetPinnedTSOffset() uint64 {
-	return r.pinnedTSOffset
+func (r *RTPMunger) GetTSOffset() uint64 {
+	return r.tsOffset
 }
 
-func (r *RTPMunger) SeedLast(state RTPMungerState) {
-	r.extLastSN = state.ExtLastSN
-	r.extSecondLastSN = state.ExtSecondLastSN
-	r.extLastTS = state.ExtLastTS
-	r.extSecondLastTS = state.ExtSecondLastTS
+func (r *RTPMunger) SeedState(state *livekit.RTPMungerState) {
+	r.extLastSN = state.ExtLastSequenceNumber
+	r.extSecondLastSN = state.ExtSecondLastSequenceNumber
+	r.extLastTS = state.ExtLastTimestamp
+	r.extSecondLastTS = state.ExtSecondLastTimestamp
 	r.lastMarker = state.LastMarker
 	r.secondLastMarker = state.SecondLastMarker
 }
@@ -149,7 +126,6 @@ func (r *RTPMunger) SetLastSnTs(extPkt *buffer.ExtPacket) {
 	r.extLastTS = extPkt.ExtTimestamp
 	r.extSecondLastTS = extPkt.ExtTimestamp
 	r.tsOffset = 0
-	r.pinnedTSOffset = r.tsOffset
 }
 
 func (r *RTPMunger) UpdateSnTsOffsets(extPkt *buffer.ExtPacket, snAdjust uint64, tsAdjust uint64) {
@@ -159,7 +135,6 @@ func (r *RTPMunger) UpdateSnTsOffsets(extPkt *buffer.ExtPacket, snAdjust uint64,
 	r.updateSnOffset()
 
 	r.tsOffset = extPkt.ExtTimestamp - r.extLastTS - tsAdjust
-	r.pinnedTSOffset = r.tsOffset
 }
 
 func (r *RTPMunger) PacketDropped(extPkt *buffer.ExtPacket) {

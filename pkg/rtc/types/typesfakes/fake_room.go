@@ -82,13 +82,6 @@ type FakeRoom struct {
 	syncStateReturnsOnCall map[int]struct {
 		result1 error
 	}
-	UpdateParticipantMetadataStub        func(types.LocalParticipant, string, string)
-	updateParticipantMetadataMutex       sync.RWMutex
-	updateParticipantMetadataArgsForCall []struct {
-		arg1 types.LocalParticipant
-		arg2 string
-		arg3 string
-	}
 	UpdateSubscriptionPermissionStub        func(types.LocalParticipant, *livekit.SubscriptionPermission) error
 	updateSubscriptionPermissionMutex       sync.RWMutex
 	updateSubscriptionPermissionArgsForCall []struct {
@@ -108,18 +101,6 @@ type FakeRoom struct {
 		arg2 []livekit.TrackID
 		arg3 []*livekit.ParticipantTracks
 		arg4 bool
-	}
-	UpdateVideoLayersStub        func(types.Participant, *livekit.UpdateVideoLayers) error
-	updateVideoLayersMutex       sync.RWMutex
-	updateVideoLayersArgsForCall []struct {
-		arg1 types.Participant
-		arg2 *livekit.UpdateVideoLayers
-	}
-	updateVideoLayersReturns struct {
-		result1 error
-	}
-	updateVideoLayersReturnsOnCall map[int]struct {
-		result1 error
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
@@ -504,40 +485,6 @@ func (fake *FakeRoom) SyncStateReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
-func (fake *FakeRoom) UpdateParticipantMetadata(arg1 types.LocalParticipant, arg2 string, arg3 string) {
-	fake.updateParticipantMetadataMutex.Lock()
-	fake.updateParticipantMetadataArgsForCall = append(fake.updateParticipantMetadataArgsForCall, struct {
-		arg1 types.LocalParticipant
-		arg2 string
-		arg3 string
-	}{arg1, arg2, arg3})
-	stub := fake.UpdateParticipantMetadataStub
-	fake.recordInvocation("UpdateParticipantMetadata", []interface{}{arg1, arg2, arg3})
-	fake.updateParticipantMetadataMutex.Unlock()
-	if stub != nil {
-		fake.UpdateParticipantMetadataStub(arg1, arg2, arg3)
-	}
-}
-
-func (fake *FakeRoom) UpdateParticipantMetadataCallCount() int {
-	fake.updateParticipantMetadataMutex.RLock()
-	defer fake.updateParticipantMetadataMutex.RUnlock()
-	return len(fake.updateParticipantMetadataArgsForCall)
-}
-
-func (fake *FakeRoom) UpdateParticipantMetadataCalls(stub func(types.LocalParticipant, string, string)) {
-	fake.updateParticipantMetadataMutex.Lock()
-	defer fake.updateParticipantMetadataMutex.Unlock()
-	fake.UpdateParticipantMetadataStub = stub
-}
-
-func (fake *FakeRoom) UpdateParticipantMetadataArgsForCall(i int) (types.LocalParticipant, string, string) {
-	fake.updateParticipantMetadataMutex.RLock()
-	defer fake.updateParticipantMetadataMutex.RUnlock()
-	argsForCall := fake.updateParticipantMetadataArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
-}
-
 func (fake *FakeRoom) UpdateSubscriptionPermission(arg1 types.LocalParticipant, arg2 *livekit.SubscriptionPermission) error {
 	fake.updateSubscriptionPermissionMutex.Lock()
 	ret, specificReturn := fake.updateSubscriptionPermissionReturnsOnCall[len(fake.updateSubscriptionPermissionArgsForCall)]
@@ -645,68 +592,6 @@ func (fake *FakeRoom) UpdateSubscriptionsArgsForCall(i int) (types.LocalParticip
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
 }
 
-func (fake *FakeRoom) UpdateVideoLayers(arg1 types.Participant, arg2 *livekit.UpdateVideoLayers) error {
-	fake.updateVideoLayersMutex.Lock()
-	ret, specificReturn := fake.updateVideoLayersReturnsOnCall[len(fake.updateVideoLayersArgsForCall)]
-	fake.updateVideoLayersArgsForCall = append(fake.updateVideoLayersArgsForCall, struct {
-		arg1 types.Participant
-		arg2 *livekit.UpdateVideoLayers
-	}{arg1, arg2})
-	stub := fake.UpdateVideoLayersStub
-	fakeReturns := fake.updateVideoLayersReturns
-	fake.recordInvocation("UpdateVideoLayers", []interface{}{arg1, arg2})
-	fake.updateVideoLayersMutex.Unlock()
-	if stub != nil {
-		return stub(arg1, arg2)
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeRoom) UpdateVideoLayersCallCount() int {
-	fake.updateVideoLayersMutex.RLock()
-	defer fake.updateVideoLayersMutex.RUnlock()
-	return len(fake.updateVideoLayersArgsForCall)
-}
-
-func (fake *FakeRoom) UpdateVideoLayersCalls(stub func(types.Participant, *livekit.UpdateVideoLayers) error) {
-	fake.updateVideoLayersMutex.Lock()
-	defer fake.updateVideoLayersMutex.Unlock()
-	fake.UpdateVideoLayersStub = stub
-}
-
-func (fake *FakeRoom) UpdateVideoLayersArgsForCall(i int) (types.Participant, *livekit.UpdateVideoLayers) {
-	fake.updateVideoLayersMutex.RLock()
-	defer fake.updateVideoLayersMutex.RUnlock()
-	argsForCall := fake.updateVideoLayersArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
-}
-
-func (fake *FakeRoom) UpdateVideoLayersReturns(result1 error) {
-	fake.updateVideoLayersMutex.Lock()
-	defer fake.updateVideoLayersMutex.Unlock()
-	fake.UpdateVideoLayersStub = nil
-	fake.updateVideoLayersReturns = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeRoom) UpdateVideoLayersReturnsOnCall(i int, result1 error) {
-	fake.updateVideoLayersMutex.Lock()
-	defer fake.updateVideoLayersMutex.Unlock()
-	fake.UpdateVideoLayersStub = nil
-	if fake.updateVideoLayersReturnsOnCall == nil {
-		fake.updateVideoLayersReturnsOnCall = make(map[int]struct {
-			result1 error
-		})
-	}
-	fake.updateVideoLayersReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
-}
-
 func (fake *FakeRoom) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
@@ -724,14 +609,10 @@ func (fake *FakeRoom) Invocations() map[string][][]interface{} {
 	defer fake.simulateScenarioMutex.RUnlock()
 	fake.syncStateMutex.RLock()
 	defer fake.syncStateMutex.RUnlock()
-	fake.updateParticipantMetadataMutex.RLock()
-	defer fake.updateParticipantMetadataMutex.RUnlock()
 	fake.updateSubscriptionPermissionMutex.RLock()
 	defer fake.updateSubscriptionPermissionMutex.RUnlock()
 	fake.updateSubscriptionsMutex.RLock()
 	defer fake.updateSubscriptionsMutex.RUnlock()
-	fake.updateVideoLayersMutex.RLock()
-	defer fake.updateVideoLayersMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

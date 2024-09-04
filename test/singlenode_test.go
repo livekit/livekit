@@ -16,6 +16,7 @@ package test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -26,6 +27,7 @@ import (
 	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
 	"github.com/thoas/go-funk"
+	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
@@ -330,6 +332,32 @@ func TestSingleNodeRoomList(t *testing.T) {
 	roomServiceListRoom(t)
 }
 
+func TestSingleNodeUpdateParticipant(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+	_, finish := setupSingleNodeTest("TestSingleNodeRoomList")
+	defer finish()
+
+	adminCtx := contextWithToken(adminRoomToken(testRoom))
+	t.Run("update nonexistent participant", func(t *testing.T) {
+		_, err := roomClient.UpdateParticipant(adminCtx, &livekit.UpdateParticipantRequest{
+			Room:     testRoom,
+			Identity: "nonexistent",
+			Permission: &livekit.ParticipantPermission{
+				CanPublish: true,
+			},
+		})
+		require.Error(t, err)
+		var twErr twirp.Error
+		require.True(t, errors.As(err, &twErr))
+		// Note: for Cloud this would return 404, currently we are not able to differentiate between
+		// non-existent participant vs server being unavailable in OSS
+		require.Equal(t, twirp.Unavailable, twErr.Code())
+	})
+}
+
 // Ensure that CORS headers are returned
 func TestSingleNodeCORS(t *testing.T) {
 	if testing.Short() {
@@ -408,12 +436,12 @@ func TestAutoCreate(t *testing.T) {
 
 		waitForServerToStart(s)
 
-		token := joinToken(testRoom, "start-before-create")
+		token := joinToken(testRoom, "start-before-create", nil)
 		_, err := testclient.NewWebSocketConn(fmt.Sprintf("ws://localhost:%d", defaultServerPort), token, nil)
 		require.Error(t, err)
 
 		// second join should also fail
-		token = joinToken(testRoom, "start-before-create-2")
+		token = joinToken(testRoom, "start-before-create-2", nil)
 		_, err = testclient.NewWebSocketConn(fmt.Sprintf("ws://localhost:%d", defaultServerPort), token, nil)
 		require.Error(t, err)
 	})

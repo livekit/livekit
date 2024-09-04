@@ -15,7 +15,9 @@
 package service_test
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
@@ -23,10 +25,38 @@ import (
 	"github.com/livekit/livekit-server/pkg/service"
 )
 
-func redisClient() *redis.Client {
-	return redis.NewClient(&redis.Options{
+func redisClient(t testing.TB) *redis.Client {
+	cli := redis.NewClient(&redis.Options{
 		Addr: "localhost:6379",
 	})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err := cli.Ping(ctx).Err()
+	if err == nil {
+		t.Cleanup(func() {
+			_ = cli.Close()
+		})
+		return cli
+	}
+	_ = cli.Close()
+	t.Logf("local redis not available: %v", err)
+
+	t.Logf("starting redis in docker")
+	addr := runRedis(t)
+	cli = redis.NewClient(&redis.Options{
+		Addr: addr,
+	})
+	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err = cli.Ping(ctx).Err(); err != nil {
+		_ = cli.Close()
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = cli.Close()
+	})
+	return cli
 }
 
 func TestIsValidDomain(t *testing.T) {

@@ -2,6 +2,145 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.2] - 2024-08-10
+
+### Added
+
+- Feat add prometheus auth (#2252)
+- Support for Agent protocol v2 (#2786 #2837 #2872 #2886, #2919)
+- Add track subscribed notification to publisher (#2834)
+- Always forward DTMF data messages. (#2848)
+- Send error response when update metadata fails. (#2849)
+- Allow specifying room configuration in token (#2853)
+- Make sender report pass through an option. (#2861)
+- Add option to disable ice lite (#2862)
+- mark final ice candidate (#2871)
+- Send the correct room closed reason to clients (#2901)
+- distribute load to agents probabilistically, inversely proportionate to load (#2902)
+
+### Fixed
+
+- Fixed participant attributes not broadcasted correctly (#2825)
+- Handle cases of long mute/rollover of time stamp. (#2842)
+- use correct payload type for red primary encoding (#2845)
+- Forward correct payload type for mixed up red/primary payload (#2847)
+- Check size limits on metadata and name set from client. (#2850)
+- Fallback to primary encoding if redundant block overflow (#2858)
+- Support updating local track features when pending. (#2863)
+- don't send unknown signal message to rust sdk with protocol 9 (#2860)
+- Fixed handling of different extensions across multiple media sections (#2878)
+- Fix forced rollover of RTP time stamp. (#2896)
+- Do not start forwarding on an out-of-order packet. (#2917)
+- Reset DD tracker layers when muted. (#2920)
+
+### Changed
+
+- add handler interface to receive agent worker updates (#2830)
+- log non-trickle candidate in details (#2832)
+- RTP packet validity check. (#2833)
+- Do not warn on padding (#2839)
+- Check sender report against media path. (#2843)
+- Do not create room in UpdateRoomMetadata (#2854)
+- use atomic pointer for MediaTrackReceiver TrackInfo (#2870)
+- Don't create DDParser for non-svc codec (#2883)
+
+## [1.7.0] - 2024-06-23
+
+This version includes a breaking change for SIP service. SIP service now requires `sip.admin` in the token's permission grant
+to interact with trunks and dispatch rules; and `sip.call` to dial out to phone numbers.
+The latest versions of server SDKs will include the permission grants automatically.
+
+### Added
+
+- Support new SIP Trunk API. (#2799)
+- Add participant session duration metric (#2801)
+- Support for key/value attributes on Participants (#2806)
+- Breaking: SIP service requires sip.admin or sip.call grants. (#2808)
+
+### Fixed
+
+- Fixed agent jobs not launching when using the CreateRoom API (#2796)
+
+### Changed
+
+- Indicate if track is expected to be resumed in `onClose` callback. (#2800)
+
+## [1.6.2] - 2024-06-15
+
+### Added
+
+- Support for optional publisher datachannel (#2693)
+- add room/participant name limit (#2704)
+- Pass through timestamp in abs capture time (#2715)
+- Support SIP transports. (#2724)
+
+### Fixed
+
+- add missing strings.EqualFold for some mimeType comparisons (#2701)
+- connection reset without any closing handshake on clientside (#2709)
+- Do not propagate RTCP if report is not processed. (#2739)
+- Fix DD tracker addition. (#2751)
+- Reset tracker on expected layer increase. (#2753)
+- Do not add tracker for invalid layers. (#2759)
+- Do not compare payload type before bind (#2775)
+- fix agent jobs not launching when using the CreateRoom API (#2784)
+
+### Changed
+
+- Performance improvements to forwarding by using condition var. (#2691 #2699)
+- Simplify time stamp calculation on switches. (#2688)
+- Simplify layer roll back. (#2702)
+- ensure room is running before attempting to delete (#2705)
+- Redact egress object in CreateRoom request (#2710)
+- reduce participant lock scope (#2732)
+- Demote some less useful/noisy logs. (#2743)
+- Stop probe on probe controller reset (#2744)
+- initialize bucket size by publish bitrates (#2763)
+- Validate RTP packets. (#2778)
+
+## [1.6.1] - 2024-04-26
+
+This release changes the default behavior when creating or updating WHIP
+ingress. WHIP ingress will now default to disabling transcoding and
+forwarding media unchanged to the LiveKit subscribers. This behavior can
+be changed by using the new `enable_transcoding` available in updated
+SDKs. The behavior of existing ingresses is unchanged.
+
+### Added
+
+- Add support for "abs-capture-time" extension.  (#2640)
+- Add PropagationDelay API to sender report data (#2646)
+- Add support for EnableTranscoding ingress option (#2681)
+- Pass new SIP metadata. Update protocol. (#2683)
+- Handle UpdateLocalAudioTrack and UpdateLocalVideoTrack. (#2684)
+- Forward transcription data packets to the room (#2687)
+
+### Fixed
+
+- backwards compatability for IsRecorder (#2647)
+- Reduce RED weight in half. (#2648)
+- add disconnected chan to participant (#2650)
+- add typed ops queue (#2655)
+- ICE config cache module. (#2654)
+- use typed ops queue in pctransport (#2656)
+- Use the ingress state updated_at field to ensure that out of order RPC do not overwrite state (#2657)
+- Log ICE candidates to debug TCP connection issues. (#2658)
+- Debug logging addition of ICE candidate (#2659)
+- fix participant, ensure room name matches (#2660)
+- replace keyframe ticker with timer (#2661)
+- fix key frame timer (#2662)
+- Disable dynamic playout delay for screenshare track (#2663)
+- Don't log dd invalid template index (#2664)
+- Do codec munging when munging RTP header. (#2665)
+- Connection quality LOST only if RTCP is also not available. (#2670)
+- Handle large jumps in RTCP sender report timestamp. (#2674)
+- Bump golang.org/x/net from 0.22.0 to 0.23.0 (#2673)
+- do not capture pointers in ops queue closures (#2675)
+- Fix SubParticipant twice when paticipant left (#2672)
+- use ttlcache (#2677)
+- Detach subscriber datachannel to save memory (#2680)
+- Clean up UpdateVideoLayers (#2685)
+
 ## [1.6.0] - 2024-04-10
 
 ### Added

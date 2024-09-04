@@ -101,10 +101,12 @@ func FromProtoSessionDescription(sd *livekit.SessionDescription) webrtc.SessionD
 	}
 }
 
-func ToProtoTrickle(candidateInit webrtc.ICECandidateInit) *livekit.TrickleRequest {
+func ToProtoTrickle(candidateInit webrtc.ICECandidateInit, target livekit.SignalTarget, final bool) *livekit.TrickleRequest {
 	data, _ := json.Marshal(candidateInit)
 	return &livekit.TrickleRequest{
 		CandidateInit: string(data),
+		Target:        target,
+		Final:         final,
 	}
 }
 

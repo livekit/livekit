@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/pion/webrtc/v3"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -197,6 +198,22 @@ func (p *ParticipantImpl) SendRefreshToken(token string) error {
 	})
 }
 
+func (p *ParticipantImpl) SendRequestResponse(requestResponse *livekit.RequestResponse) error {
+	if requestResponse.RequestId == 0 || !p.params.ClientInfo.SupportErrorResponse() {
+		return nil
+	}
+
+	if requestResponse.Reason == livekit.RequestResponse_OK && !p.ProtocolVersion().SupportsNonErrorSignalResponse() {
+		return nil
+	}
+
+	return p.writeMessage(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_RequestResponse{
+			RequestResponse: requestResponse,
+		},
+	})
+}
+
 func (p *ParticipantImpl) HandleReconnectAndSendResponse(reconnectReason livekit.ReconnectReason, reconnectResponse *livekit.ReconnectResponse) error {
 	p.TransportManager.HandleClientReconnect(reconnectReason)
 
@@ -252,10 +269,19 @@ func (p *ParticipantImpl) sendDisconnectUpdatesForReconnect() error {
 	})
 }
 
-func (p *ParticipantImpl) sendICECandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) error {
-	trickle := ToProtoTrickle(c.ToJSON())
-	trickle.Target = target
+func (p *ParticipantImpl) sendICECandidate(ic *webrtc.ICECandidate, target livekit.SignalTarget) error {
+	var icQueue *atomic.Pointer[webrtc.ICECandidate]
+	if target == livekit.SignalTarget_PUBLISHER {
+		icQueue = &p.icQueue[0]
+	} else {
+		icQueue = &p.icQueue[1]
+	}
+	prevIC := icQueue.Swap(ic)
+	if prevIC == nil {
+		return nil
+	}
 
+	trickle := ToProtoTrickle(prevIC.ToJSON(), target, ic == nil)
 	p.params.Logger.Debugw("sending ICE candidate", "transport", target, "trickle", logger.Proto(trickle))
 
 	return p.writeMessage(&livekit.SignalResponse{
@@ -286,6 +312,20 @@ func (p *ParticipantImpl) sendTrackUnpublished(trackID livekit.TrackID) {
 	})
 }
 
+func (p *ParticipantImpl) sendTrackHasBeenSubscribed(trackID livekit.TrackID) {
+	if !p.params.ClientInfo.SupportTrackSubscribedEvent() {
+		return
+	}
+	_ = p.writeMessage(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_TrackSubscribed{
+			TrackSubscribed: &livekit.TrackSubscribed{
+				TrackSid: string(trackID),
+			},
+		},
+	})
+	p.params.Logger.Debugw("track has been subscribed", "trackID", trackID)
+}
+
 func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
 	if p.IsDisconnected() || (!p.IsReady() && msg.GetJoin() == nil) {
 		return nil
@@ -314,9 +354,7 @@ func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
 func (p *ParticipantImpl) CloseSignalConnection(reason types.SignallingCloseReason) {
 	sink := p.getResponseSink()
 	if sink != nil {
-		if reason != types.SignallingCloseReasonParticipantClose {
-			p.params.Logger.Infow("closing signal connection", "reason", reason, "connID", sink.ConnectionID())
-		}
+		p.params.Logger.Debugw("closing signal connection", "reason", reason, "connID", sink.ConnectionID())
 		sink.Close()
 		p.SetResponseSink(nil)
 	}

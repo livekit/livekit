@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/pion/rtcp"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/protocol/livekit"
@@ -32,6 +33,8 @@ const (
 
 	cSenderReportInitialWait = time.Second
 )
+
+// -------------------------------------------------------------------
 
 type snInfoFlag byte
 
@@ -161,6 +164,9 @@ type RTPStatsSender struct {
 
 	clockSkewCount             int
 	metadataCacheOverflowCount int
+	largeJumpNegativeCount     int
+	largeJumpCount             int
+	timeReversedCount          int
 }
 
 func NewRTPStatsSender(params RTPStatsParams) *RTPStatsSender {
@@ -228,13 +234,14 @@ func (r *RTPStatsSender) NewSenderSnapshotId() uint32 {
 }
 
 func (r *RTPStatsSender) Update(
-	packetTime time.Time,
+	packetTime int64,
 	extSequenceNumber uint64,
 	extTimestamp uint64,
 	marker bool,
 	hdrSize int,
 	payloadSize int,
 	paddingSize int,
+	isOutOfOrder bool,
 ) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
@@ -253,7 +260,6 @@ func (r *RTPStatsSender) Update(
 
 		r.startTime = time.Now()
 
-		r.firstTime = packetTime
 		r.highestTime = packetTime
 
 		r.extStartSN = extSequenceNumber
@@ -272,43 +278,37 @@ func (r *RTPStatsSender) Update(
 
 		r.logger.Debugw(
 			"rtp sender stream start",
-			"startTime", r.startTime.String(),
-			"firstTime", r.firstTime.String(),
-			"startSN", r.extStartSN,
-			"startTS", r.extStartTS,
+			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
 		)
+	}
+	if !isOutOfOrder && r.firstTime == 0 {
+		// do not set first packet time if packet is out-of-order,
+		// as first packet time is used to calculate expected time stamp,
+		// using an out-of-order packet would skew that.
+		r.firstTime = packetTime
 	}
 
 	pktSize := uint64(hdrSize + payloadSize + paddingSize)
 	isDuplicate := false
 	gapSN := int64(extSequenceNumber - r.extHighestSN)
+	getLoggingFields := func() []interface{} {
+		return []interface{}{
+			"currSN", extSequenceNumber,
+			"gapSN", gapSN,
+			"currTS", extTimestamp,
+			"gapTS", int64(extTimestamp - r.extHighestTS),
+			"packetTime", packetTime,
+			"marker", marker,
+			"hdrSize", hdrSize,
+			"payloadSize", payloadSize,
+			"paddingSize", paddingSize,
+			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
+		}
+	}
 	if gapSN <= 0 { // duplicate OR out-of-order
 		if payloadSize == 0 && extSequenceNumber < r.extStartSN {
 			// do not start on a padding only packet
 			return
-		}
-		if -gapSN >= cNumSequenceNumbers/2 {
-			r.logger.Warnw(
-				"large sequence number gap negative", nil,
-				"extStartSN", r.extStartSN,
-				"extHighestSN", r.extHighestSN,
-				"extStartTS", r.extStartTS,
-				"extHighestTS", r.extHighestTS,
-				"firstTime", r.firstTime.String(),
-				"highestTime", r.highestTime.String(),
-				"prev", r.extHighestSN,
-				"curr", extSequenceNumber,
-				"gap", gapSN,
-				"packetTime", packetTime.String(),
-				"sequenceNumber", extSequenceNumber,
-				"timestamp", extTimestamp,
-				"marker", marker,
-				"hdrSize", hdrSize,
-				"payloadSize", payloadSize,
-				"paddingSize", paddingSize,
-				"firstSR", r.srFirst,
-				"lastSR", r.srNewest,
-			)
 		}
 
 		if extSequenceNumber < r.extStartSN {
@@ -333,10 +333,10 @@ func (r *RTPStatsSender) Update(
 
 			r.logger.Infow(
 				"adjusting start sequence number",
-				"snBefore", r.extStartSN,
-				"snAfter", extSequenceNumber,
-				"tsBefore", r.extStartTS,
-				"tsAfter", extTimestamp,
+				append(getLoggingFields(),
+					"snAfter", extSequenceNumber,
+					"tsAfter", extTimestamp,
+				)...,
 			)
 			r.extStartSN = extSequenceNumber
 		}
@@ -354,29 +354,35 @@ func (r *RTPStatsSender) Update(
 			r.packetsLost--
 			r.setSnInfo(extSequenceNumber, r.extHighestSN, uint16(pktSize), uint8(hdrSize), uint16(payloadSize), marker, true)
 		}
+
+		if !isDuplicate && -gapSN >= cSequenceNumberLargeJumpThreshold {
+			r.largeJumpNegativeCount++
+			if (r.largeJumpNegativeCount-1)%100 == 0 {
+				r.logger.Warnw(
+					"large sequence number gap negative", nil,
+					append(getLoggingFields(), "count", r.largeJumpNegativeCount)...,
+				)
+			}
+		}
 	} else { // in-order
-		if gapSN >= cNumSequenceNumbers/2 {
-			r.logger.Warnw(
-				"large sequence number gap", nil,
-				"extStartSN", r.extStartSN,
-				"extHighestSN", r.extHighestSN,
-				"extStartTS", r.extStartTS,
-				"extHighestTS", r.extHighestTS,
-				"firstTime", r.firstTime.String(),
-				"highestTime", r.highestTime.String(),
-				"prev", r.extHighestSN,
-				"curr", extSequenceNumber,
-				"gap", gapSN,
-				"packetTime", packetTime.String(),
-				"sequenceNumber", extSequenceNumber,
-				"timestamp", extTimestamp,
-				"marker", marker,
-				"hdrSize", hdrSize,
-				"payloadSize", payloadSize,
-				"paddingSize", paddingSize,
-				"firstSR", r.srFirst,
-				"lastSR", r.srNewest,
-			)
+		if gapSN >= cSequenceNumberLargeJumpThreshold {
+			r.largeJumpCount++
+			if (r.largeJumpCount-1)%100 == 0 {
+				r.logger.Warnw(
+					"large sequence number gap", nil,
+					append(getLoggingFields(), "count", r.largeJumpCount)...,
+				)
+			}
+		}
+
+		if extTimestamp < r.extHighestTS {
+			r.timeReversedCount++
+			if (r.timeReversedCount-1)%100 == 0 {
+				r.logger.Warnw(
+					"time reversed", nil,
+					append(getLoggingFields(), "count", r.timeReversedCount)...,
+				)
+			}
 		}
 
 		// update gap histogram
@@ -394,10 +400,10 @@ func (r *RTPStatsSender) Update(
 	if extTimestamp < r.extStartTS {
 		r.logger.Infow(
 			"adjusting start timestamp",
-			"snBefore", r.extStartSN,
-			"snAfter", extSequenceNumber,
-			"tsBefore", r.extStartTS,
-			"tsAfter", extTimestamp,
+			append(getLoggingFields(),
+				"snAfter", extSequenceNumber,
+				"tsAfter", extTimestamp,
+			)...,
 		)
 		r.extStartTS = extTimestamp
 	}
@@ -466,12 +472,9 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 	if !r.lastRRTime.IsZero() && r.extHighestSNFromRR > extHighestSNFromRR {
 		r.logger.Debugw(
 			fmt.Sprintf("receiver report potentially out of order, highestSN: existing: %d, received: %d", r.extHighestSNFromRR, extHighestSNFromRR),
-			"lastRRTime", r.lastRRTime.String(),
-			"lastRR", r.lastRR,
 			"sinceLastRR", time.Since(r.lastRRTime).String(),
 			"receivedRR", rr,
-			"firstSR", r.srFirst,
-			"lastSR", r.srNewest,
+			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
 		)
 		return
 	}
@@ -484,9 +487,7 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 		if err == nil {
 			isRttChanged = rtt != r.rtt
 		} else {
-			if !errors.Is(err, mediatransportutil.ErrRttNotLastSenderReport) && !errors.Is(err, mediatransportutil.ErrRttNoLastSenderReport) {
-				r.logger.Warnw("error getting rtt", err)
-			}
+			r.logger.Debugw("error getting rtt", "error", err)
 		}
 	}
 
@@ -535,24 +536,11 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 			}
 			r.logger.Infow(
 				"rr interval too big, skipping",
-				"lastRRTime", r.lastRRTime.String(),
-				"lastRR", r.lastRR,
 				"timeSinceLastRR", timeSinceLastRR.String(),
 				"receivedRR", rr,
-				"extStartSN", r.extStartSN,
-				"extHighestSN", r.extHighestSN,
-				"extStartTS", r.extStartTS,
-				"extHighestTS", r.extHighestTS,
-				"extLastRRSN", s.extLastRRSN,
-				"firstTime", r.firstTime.String(),
-				"startTime", r.startTime.String(),
-				"highestTime", r.highestTime.String(),
 				"extReceivedRRSN", extReceivedRRSN,
 				"packetsInInterval", extReceivedRRSN-s.extLastRRSN,
-				"extHighestSNFromRR", r.extHighestSNFromRR,
-				"packetsLostFromRR", r.packetsLostFromRR,
-				"firstSR", r.srFirst,
-				"lastSR", r.srNewest,
+				"rtpStats", lockedRTPStatsSenderLogEncoder{r},
 			)
 			continue
 		}
@@ -566,33 +554,20 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 			if r.lastRRTime.IsZero() {
 				timeSinceLastRR = time.Since(r.startTime)
 			}
-			if r.metadataCacheOverflowCount%10 == 0 {
+			r.metadataCacheOverflowCount++
+			if (r.metadataCacheOverflowCount-1)%10 == 0 {
 				r.logger.Infow(
 					"metadata cache overflow",
-					"lastRRTime", r.lastRRTime.String(),
-					"lastRR", r.lastRR,
 					"timeSinceLastRR", timeSinceLastRR.String(),
 					"receivedRR", rr,
-					"extStartSN", r.extStartSN,
-					"extHighestSN", r.extHighestSN,
-					"extStartTS", r.extStartTS,
-					"extHighestTS", r.extHighestTS,
-					"extLastRRSN", s.extLastRRSN,
-					"firstTime", r.firstTime.String(),
-					"startTime", r.startTime.String(),
-					"highestTime", r.highestTime.String(),
 					"extReceivedRRSN", extReceivedRRSN,
 					"packetsInInterval", extReceivedRRSN-s.extLastRRSN,
 					"intervalStats", is.ToString(),
 					"aggregateIntervalStats", eis.ToString(),
-					"extHighestSNFromRR", r.extHighestSNFromRR,
-					"packetsLostFromRR", r.packetsLostFromRR,
 					"count", r.metadataCacheOverflowCount,
-					"firstSR", r.srFirst,
-					"lastSR", r.srNewest,
+					"rtpStats", lockedRTPStatsSenderLogEncoder{r},
 				)
 			}
-			r.metadataCacheOverflowCount++
 		}
 		s.extLastRRSN = extReceivedRRSN
 	}
@@ -617,25 +592,27 @@ func (r *RTPStatsSender) MaybeAdjustFirstPacketTime(publisherSRData *RTCPSenderR
 		return
 	}
 
-	r.maybeAdjustFirstPacketTime(publisherSRData, tsOffset, r.extStartTS)
+	if err, loggingFields := r.maybeAdjustFirstPacketTime(publisherSRData, tsOffset, r.extStartTS); err != nil {
+		r.logger.Infow(err.Error(), append(loggingFields, "rtpStats", lockedRTPStatsSenderLogEncoder{r})...)
+	}
 }
 
 func (r *RTPStatsSender) GetExpectedRTPTimestamp(at time.Time) (expectedTSExt uint64, err error) {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
-	if !r.initialized {
-		err = errors.New("uninitilaized")
+	if r.firstTime == 0 {
+		err = errors.New("uninitialized")
 		return
 	}
 
-	timeDiff := at.Sub(r.firstTime)
+	timeDiff := at.Sub(time.Unix(0, r.firstTime))
 	expectedRTPDiff := timeDiff.Nanoseconds() * int64(r.params.ClockRate) / 1e9
 	expectedTSExt = r.extStartTS + uint64(expectedRTPDiff)
 	return
 }
 
-func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *RTCPSenderReportData, tsOffset uint64) *rtcp.SenderReport {
+func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *RTCPSenderReportData, tsOffset uint64, passThrough bool) *rtcp.SenderReport {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
@@ -643,35 +620,45 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *RTCPS
 		return nil
 	}
 
-	timeSincePublisherSR := time.Since(publisherSRData.AtAdjusted)
-	now := publisherSRData.AtAdjusted.Add(timeSincePublisherSR)
-	nowNTP := mediatransportutil.ToNtpTime(now)
-	nowRTPExt := publisherSRData.RTPTimestampExt - tsOffset + uint64(timeSincePublisherSR.Nanoseconds()*int64(r.params.ClockRate)/1e9)
+	timeSincePublisherSRAdjusted := time.Since(publisherSRData.AtAdjusted)
+	now := publisherSRData.AtAdjusted.Add(timeSincePublisherSRAdjusted)
+	var (
+		nowNTP    mediatransportutil.NtpTime
+		nowRTPExt uint64
+	)
+	if passThrough {
+		nowNTP = publisherSRData.NTPTimestamp
+		nowRTPExt = publisherSRData.RTPTimestampExt - tsOffset
+	} else {
+		nowNTP = mediatransportutil.ToNtpTime(now)
+		nowRTPExt = publisherSRData.RTPTimestampExt - tsOffset + uint64(timeSincePublisherSRAdjusted.Nanoseconds()*int64(r.params.ClockRate)/1e9)
+	}
 
+	packetCount := uint32(r.getTotalPacketsPrimary(r.extStartSN, r.extHighestSN) + r.packetsDuplicate + r.packetsPadding)
+	octetCount := uint32(r.bytes + r.bytesDuplicate + r.bytesPadding)
 	srData := &RTCPSenderReportData{
 		NTPTimestamp:    nowNTP,
 		RTPTimestamp:    uint32(nowRTPExt),
 		RTPTimestampExt: nowRTPExt,
 		At:              now,
 		AtAdjusted:      now,
+		Packets:         packetCount,
+		Octets:          octetCount,
 	}
 
 	getFields := func() []interface{} {
 		return []interface{}{
-			"first", r.srFirst,
-			"last", r.srNewest,
 			"curr", srData,
 			"feed", publisherSRData,
 			"tsOffset", tsOffset,
 			"timeNow", time.Now().String(),
-			"extStartTS", r.extStartTS,
-			"extHighestTS", r.extHighestTS,
-			"highestTime", r.highestTime.String(),
-			"timeSinceHighest", now.Sub(r.highestTime).String(),
-			"firstTime", r.firstTime.String(),
-			"timeSinceFirst", now.Sub(r.firstTime).String(),
-			"timeSincePublisherSR", timeSincePublisherSR.String(),
+			"now", now.String(),
+			"timeSinceHighest", now.Sub(time.Unix(0, r.highestTime)).String(),
+			"timeSinceFirst", now.Sub(time.Unix(0, r.firstTime)).String(),
+			"timeSincePublisherSRAdjusted", timeSincePublisherSRAdjusted.String(),
+			"timeSincePublisherSR", time.Since(publisherSRData.At).String(),
 			"nowRTPExt", nowRTPExt,
+			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
 		}
 	}
 	if r.srNewest != nil && nowRTPExt >= r.srNewest.RTPTimestampExt {
@@ -679,7 +666,8 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *RTCPS
 		rtpDiffSinceLastReport := nowRTPExt - r.srNewest.RTPTimestampExt
 		windowClockRate := float64(rtpDiffSinceLastReport) / timeSinceLastReport.Seconds()
 		if timeSinceLastReport.Seconds() > 0.2 && math.Abs(float64(r.params.ClockRate)-windowClockRate) > 0.2*float64(r.params.ClockRate) {
-			if r.clockSkewCount%100 == 0 {
+			r.clockSkewCount++
+			if (r.clockSkewCount-1)%100 == 0 {
 				fields := append(
 					getFields(),
 					"timeSinceLastReport", timeSinceLastReport.String(),
@@ -689,7 +677,6 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *RTCPS
 				)
 				r.logger.Infow("sending sender report, clock skew", fields...)
 			}
-			r.clockSkewCount++
 		}
 	}
 
@@ -709,8 +696,8 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *RTCPS
 		SSRC:        ssrc,
 		NTPTime:     uint64(nowNTP),
 		RTPTime:     uint32(nowRTPExt),
-		PacketCount: uint32(r.getTotalPacketsPrimary(r.extStartSN, r.extHighestSN) + r.packetsDuplicate + r.packetsPadding),
-		OctetCount:  uint32(r.bytes + r.bytesDuplicate + r.bytesPadding),
+		PacketCount: packetCount,
+		OctetCount:  octetCount,
 	}
 }
 
@@ -718,7 +705,16 @@ func (r *RTPStatsSender) DeltaInfo(snapshotID uint32) *RTPDeltaInfo {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	return r.deltaInfo(snapshotID, r.extStartSN, r.extHighestSN)
+	deltaInfo, err, loggingFields := r.deltaInfo(
+		snapshotID,
+		r.extStartSN,
+		r.extHighestSN,
+	)
+	if err != nil {
+		r.logger.Infow(err.Error(), append(loggingFields, "rtpStats", lockedRTPStatsSenderLogEncoder{r})...)
+	}
+
+	return deltaInfo
 }
 
 func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) *RTPDeltaInfo {
@@ -746,8 +742,7 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) *RTPDeltaInfo 
 			"startTime", startTime.String(),
 			"endTime", endTime.String(),
 			"duration", endTime.Sub(startTime).String(),
-			"firstSR", r.srFirst,
-			"lastSR", r.srNewest,
+			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
 		)
 		return nil
 	}
@@ -775,6 +770,7 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) *RTPDeltaInfo 
 				packetsLost,
 				packetsLostFeed,
 			),
+			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
 		)
 		packetsLost = packetsExpected
 	}
@@ -808,6 +804,17 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) *RTPDeltaInfo 
 		Plis:                 now.plis - then.plis,
 		Firs:                 now.firs - then.firs,
 	}
+}
+
+func (r *RTPStatsSender) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if r == nil {
+		return nil
+	}
+
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	return lockedRTPStatsSenderLogEncoder{r}.MarshalLogObject(e)
 }
 
 func (r *RTPStatsSender) String() string {
@@ -989,4 +996,34 @@ func (r *RTPStatsSender) getIntervalStats(
 	return
 }
 
+func (r *RTPStatsSender) ExtHighestSequenceNumber() uint64 {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	return r.extHighestSN
+}
+
 // -------------------------------------------------------------------
+
+type lockedRTPStatsSenderLogEncoder struct {
+	*RTPStatsSender
+}
+
+func (r lockedRTPStatsSenderLogEncoder) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if r.RTPStatsSender == nil {
+		return nil
+	}
+
+	e.AddObject("base", r.rtpStatsBase)
+	e.AddUint64("extStartSN", r.extStartSN)
+	e.AddUint64("extHighestSN", r.extHighestSN)
+	e.AddUint64("extStartTS", r.extStartTS)
+	e.AddUint64("extHighestTS", r.extHighestTS)
+	e.AddTime("lastRRTime", r.lastRRTime)
+	e.AddReflected("lastRR", r.lastRR)
+	e.AddUint64("extHighestSNFromRR", r.extHighestSNFromRR)
+	e.AddUint64("packetsLostFromRR", r.packetsLostFromRR)
+	e.AddFloat64("jitterFromRR", r.jitterFromRR)
+	e.AddFloat64("maxJitterFromRR", r.maxJitterFromRR)
+	return nil
+}

@@ -35,6 +35,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
+	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -67,6 +68,8 @@ type RTCClient struct {
 
 	signalRequestInterceptor  SignalRequestInterceptor
 	signalResponseInterceptor SignalResponseInterceptor
+
+	icQueue [2]atomic.Pointer[webrtc.ICECandidate]
 
 	subscriberAsPrimary        atomic.Bool
 	publisherFullyEstablished  atomic.Bool
@@ -110,6 +113,7 @@ type Options struct {
 	Publish                   string
 	ClientInfo                *livekit.ClientInfo
 	DisabledCodecs            []webrtc.RTPCodecCapability
+	TokenCustomizer           func(token *auth.AccessToken, grants *auth.VideoGrant)
 	SignalRequestInterceptor  SignalRequestInterceptor
 	SignalResponseInterceptor SignalResponseInterceptor
 }
@@ -224,9 +228,6 @@ func NewRTCClient(conn *websocket.Conn, opts *Options) (*RTCClient, error) {
 	}
 
 	publisherHandler.OnICECandidateCalls(func(ic *webrtc.ICECandidate, t livekit.SignalTarget) error {
-		if ic == nil {
-			return nil
-		}
 		return c.SendIceCandidate(ic, livekit.SignalTarget_PUBLISHER)
 	})
 	publisherHandler.OnOfferCalls(c.onOffer)
@@ -554,11 +555,30 @@ func (c *RTCClient) sendRequest(msg *livekit.SignalRequest) error {
 }
 
 func (c *RTCClient) SendIceCandidate(ic *webrtc.ICECandidate, target livekit.SignalTarget) error {
-	trickle := rtc.ToProtoTrickle(ic.ToJSON())
-	trickle.Target = target
+	var icQueue *atomic.Pointer[webrtc.ICECandidate]
+	if target == livekit.SignalTarget_PUBLISHER {
+		icQueue = &c.icQueue[0]
+	} else {
+		icQueue = &c.icQueue[1]
+	}
+	prevIC := icQueue.Swap(ic)
+	if prevIC == nil {
+		return nil
+	}
+
 	return c.SendRequest(&livekit.SignalRequest{
 		Message: &livekit.SignalRequest_Trickle{
-			Trickle: trickle,
+			Trickle: rtc.ToProtoTrickle(prevIC.ToJSON(), target, ic == nil),
+		},
+	})
+}
+
+func (c *RTCClient) SetAttributes(attrs map[string]string) error {
+	return c.SendRequest(&livekit.SignalRequest{
+		Message: &livekit.SignalRequest_UpdateMetadata{
+			UpdateMetadata: &livekit.UpdateParticipantMetadata{
+				Attributes: attrs,
+			},
 		},
 	})
 }

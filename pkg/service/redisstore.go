@@ -29,7 +29,8 @@ import (
 	"github.com/livekit/protocol/ingress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/guid"
+	"github.com/livekit/psrpc"
 
 	"github.com/livekit/livekit-server/version"
 )
@@ -52,14 +53,15 @@ const (
 	IngressStatePrefix = "{ingress}_state:"
 	RoomIngressPrefix  = "room_{ingress}:"
 
-	SIPTrunkKey        = "sip_trunk"
-	SIPDispatchRuleKey = "sip_dispatch_rule"
-
 	// RoomParticipantsPrefix is hash of participant_name => ParticipantInfo
 	RoomParticipantsPrefix = "room_participants:"
 
 	// RoomLockPrefix is a simple key containing a provided lock uid
 	RoomLockPrefix = "room_lock:"
+
+	// Agents
+	AgentDispatchPrefix = "agent_dispatch:"
+	AgentJobPrefix      = "agent_job:"
 
 	maxRetries = 5
 )
@@ -234,13 +236,15 @@ func (s *RedisStore) DeleteRoom(ctx context.Context, roomName livekit.RoomName) 
 	pp.HDel(s.ctx, RoomsKey, string(roomName))
 	pp.HDel(s.ctx, RoomInternalKey, string(roomName))
 	pp.Del(s.ctx, RoomParticipantsPrefix+string(roomName))
+	pp.Del(s.ctx, AgentDispatchPrefix+string(roomName))
+	pp.Del(s.ctx, AgentJobPrefix+string(roomName))
 
 	_, err = pp.Exec(s.ctx)
 	return err
 }
 
 func (s *RedisStore) LockRoom(_ context.Context, roomName livekit.RoomName, duration time.Duration) (string, error) {
-	token := utils.NewGuid("LOCK")
+	token := guid.New("LOCK")
 	key := RoomLockPrefix + string(roomName)
 
 	startTime := time.Now()
@@ -825,94 +829,147 @@ func (s *RedisStore) DeleteIngress(_ context.Context, info *livekit.IngressInfo)
 	return nil
 }
 
-func (s *RedisStore) loadOne(ctx context.Context, key, id string, info proto.Message, notFoundErr error) error {
+func (s *RedisStore) StoreAgentDispatch(_ context.Context, dispatch *livekit.AgentDispatch) error {
+	di := proto.Clone(dispatch).(*livekit.AgentDispatch)
+
+	// Do not store jobs with the dispatch
+	if di.State != nil {
+		di.State.Jobs = nil
+	}
+
+	key := AgentDispatchPrefix + string(dispatch.Room)
+
+	data, err := proto.Marshal(di)
+	if err != nil {
+		return err
+	}
+
+	return s.rc.HSet(s.ctx, key, di.Id, data).Err()
+}
+
+// This will not delete the jobs created by the dispatch
+func (s *RedisStore) DeleteAgentDispatch(_ context.Context, dispatch *livekit.AgentDispatch) error {
+	key := AgentDispatchPrefix + string(dispatch.Room)
+	return s.rc.HDel(s.ctx, key, dispatch.Id).Err()
+}
+
+func (s *RedisStore) ListAgentDispatches(_ context.Context, roomName livekit.RoomName) ([]*livekit.AgentDispatch, error) {
+	key := AgentDispatchPrefix + string(roomName)
+	dispatches, err := redisLoadMany[livekit.AgentDispatch](s.ctx, s, key)
+	if err != nil {
+		return nil, err
+	}
+
+	dMap := make(map[string]*livekit.AgentDispatch)
+	for _, di := range dispatches {
+		dMap[di.Id] = di
+	}
+
+	key = AgentJobPrefix + string(roomName)
+	jobs, err := redisLoadMany[livekit.Job](s.ctx, s, key)
+	if err != nil {
+		return nil, err
+	}
+
+	// Associate job to dispatch
+	for _, jb := range jobs {
+		di := dMap[jb.DispatchId]
+		if di == nil {
+			continue
+		}
+		if di.State == nil {
+			di.State = &livekit.AgentDispatchState{}
+		}
+		di.State.Jobs = append(di.State.Jobs, jb)
+	}
+
+	return dispatches, nil
+}
+
+func (s *RedisStore) StoreAgentJob(_ context.Context, job *livekit.Job) error {
+	if job.Room == nil {
+		return psrpc.NewErrorf(psrpc.InvalidArgument, "job doesn't have a valid Room field")
+	}
+
+	key := AgentJobPrefix + string(job.Room.Name)
+
+	jb := proto.Clone(job).(*livekit.Job)
+
+	// Do not store room with the job
+	jb.Room = nil
+
+	// Only store the participant identity
+	if jb.Participant != nil {
+		jb.Participant = &livekit.ParticipantInfo{
+			Identity: jb.Participant.Identity,
+		}
+	}
+
+	data, err := proto.Marshal(jb)
+	if err != nil {
+		return err
+	}
+
+	return s.rc.HSet(s.ctx, key, job.Id, data).Err()
+}
+
+func (s *RedisStore) DeleteAgentJob(_ context.Context, job *livekit.Job) error {
+	if job.Room == nil {
+		return psrpc.NewErrorf(psrpc.InvalidArgument, "job doesn't have a valid Room field")
+	}
+
+	key := AgentJobPrefix + string(job.Room.Name)
+	return s.rc.HDel(s.ctx, key, job.Id).Err()
+}
+
+func redisStoreOne(ctx context.Context, s *RedisStore, key, id string, p proto.Message) error {
+	if id == "" {
+		return errors.New("id is not set")
+	}
+	data, err := proto.Marshal(p)
+	if err != nil {
+		return err
+	}
+	return s.rc.HSet(s.ctx, key, id, data).Err()
+}
+
+func redisLoadOne[T any, P interface {
+	*T
+	proto.Message
+}](ctx context.Context, s *RedisStore, key, id string, notFoundErr error) (P, error) {
 	data, err := s.rc.HGet(s.ctx, key, id).Result()
-	switch err {
-	case nil:
-		return proto.Unmarshal([]byte(data), info)
-	case redis.Nil:
-		return notFoundErr
-	default:
-		return err
+	if err == redis.Nil {
+		return nil, notFoundErr
+	} else if err != nil {
+		return nil, err
 	}
+	var p P = new(T)
+	err = proto.Unmarshal([]byte(data), p)
+	if err != nil {
+		return nil, err
+	}
+	return p, err
 }
 
-func (s *RedisStore) loadMany(ctx context.Context, key string, onResult func() proto.Message) error {
+func redisLoadMany[T any, P interface {
+	*T
+	proto.Message
+}](ctx context.Context, s *RedisStore, key string) ([]P, error) {
 	data, err := s.rc.HGetAll(s.ctx, key).Result()
-	if err != nil {
-		if err == redis.Nil {
-			return nil
-		}
-		return err
+	if err == redis.Nil {
+		return nil, nil
+	} else if err != nil {
+		return nil, err
 	}
 
+	list := make([]P, 0, len(data))
 	for _, d := range data {
-		if err = proto.Unmarshal([]byte(d), onResult()); err != nil {
-			return err
+		var p P = new(T)
+		if err = proto.Unmarshal([]byte(d), p); err != nil {
+			return list, err
 		}
+		list = append(list, p)
 	}
 
-	return nil
-}
-
-func (s *RedisStore) StoreSIPTrunk(ctx context.Context, info *livekit.SIPTrunkInfo) error {
-	data, err := proto.Marshal(info)
-	if err != nil {
-		return err
-	}
-
-	return s.rc.HSet(s.ctx, SIPTrunkKey, info.SipTrunkId, data).Err()
-}
-
-func (s *RedisStore) LoadSIPTrunk(ctx context.Context, sipTrunkId string) (*livekit.SIPTrunkInfo, error) {
-	info := &livekit.SIPTrunkInfo{}
-	if err := s.loadOne(ctx, SIPTrunkKey, sipTrunkId, info, ErrSIPTrunkNotFound); err != nil {
-		return nil, err
-	}
-
-	return info, nil
-}
-
-func (s *RedisStore) DeleteSIPTrunk(ctx context.Context, info *livekit.SIPTrunkInfo) error {
-	return s.rc.HDel(s.ctx, SIPTrunkKey, info.SipTrunkId).Err()
-}
-
-func (s *RedisStore) ListSIPTrunk(ctx context.Context) (infos []*livekit.SIPTrunkInfo, err error) {
-	err = s.loadMany(ctx, SIPTrunkKey, func() proto.Message {
-		infos = append(infos, &livekit.SIPTrunkInfo{})
-		return infos[len(infos)-1]
-	})
-
-	return infos, err
-}
-
-func (s *RedisStore) StoreSIPDispatchRule(ctx context.Context, info *livekit.SIPDispatchRuleInfo) error {
-	data, err := proto.Marshal(info)
-	if err != nil {
-		return err
-	}
-
-	return s.rc.HSet(s.ctx, SIPDispatchRuleKey, info.SipDispatchRuleId, data).Err()
-}
-
-func (s *RedisStore) LoadSIPDispatchRule(ctx context.Context, sipDispatchRuleId string) (*livekit.SIPDispatchRuleInfo, error) {
-	info := &livekit.SIPDispatchRuleInfo{}
-	if err := s.loadOne(ctx, SIPDispatchRuleKey, sipDispatchRuleId, info, ErrSIPDispatchRuleNotFound); err != nil {
-		return nil, err
-	}
-
-	return info, nil
-}
-
-func (s *RedisStore) DeleteSIPDispatchRule(ctx context.Context, info *livekit.SIPDispatchRuleInfo) error {
-	return s.rc.HDel(s.ctx, SIPDispatchRuleKey, info.SipDispatchRuleId).Err()
-}
-
-func (s *RedisStore) ListSIPDispatchRule(ctx context.Context) (infos []*livekit.SIPDispatchRuleInfo, err error) {
-	err = s.loadMany(ctx, SIPDispatchRuleKey, func() proto.Message {
-		infos = append(infos, &livekit.SIPDispatchRuleInfo{})
-		return infos[len(infos)-1]
-	})
-
-	return infos, err
+	return list, nil
 }

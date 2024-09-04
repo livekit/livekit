@@ -19,9 +19,13 @@ import (
 	"errors"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/guid"
+	"github.com/livekit/psrpc"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -49,12 +53,16 @@ func NewRoomAllocator(conf *config.Config, router routing.Router, rs ObjectStore
 	}, nil
 }
 
+func (r *StandardRoomAllocator) CreateRoomEnabled() bool {
+	return r.config.Room.CreateRoomEnabled
+}
+
 // CreateRoom creates a new room from a request and allocates it to a node to handle
 // it'll also monitor its state, and cleans it up when appropriate
-func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (*livekit.Room, bool, error) {
+func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest, isExplicit bool) (*livekit.Room, *livekit.RoomInternal, bool, error) {
 	token, err := r.roomStore.LockRoom(ctx, livekit.RoomName(req.Name), 5*time.Second)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	defer func() {
 		_ = r.roomStore.UnlockRoom(ctx, livekit.RoomName(req.Name), token)
@@ -66,7 +74,7 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 	if errors.Is(err, ErrRoomNotFound) {
 		created = true
 		rm = &livekit.Room{
-			Sid:          utils.NewGuid(utils.RoomPrefix),
+			Sid:          guid.New(utils.RoomPrefix),
 			Name:         req.Name,
 			CreationTime: time.Now().Unix(),
 			TurnPassword: utils.RandomSecret(),
@@ -74,7 +82,12 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 		internal = &livekit.RoomInternal{}
 		applyDefaultRoomConfig(rm, internal, &r.config.Room)
 	} else if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
+	}
+
+	req, err = r.applyNamedRoomConfiguration(req)
+	if err != nil {
+		return nil, nil, false, err
 	}
 
 	if req.EmptyTimeout > 0 {
@@ -97,6 +110,9 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 			internal.TrackEgress = req.Egress.Tracks
 		}
 	}
+	if req.Agent != nil {
+		internal.AgentDispatches = req.Agent.Dispatches
+	}
 	if req.MinPlayoutDelay > 0 || req.MaxPlayoutDelay > 0 {
 		internal.PlayoutDelay = &livekit.PlayoutDelay{
 			Enabled: true,
@@ -109,48 +125,51 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 	}
 
 	if err = r.roomStore.StoreRoom(ctx, rm, internal); err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
+	return rm, internal, created, nil
+}
+
+func (r *StandardRoomAllocator) SelectRoomNode(ctx context.Context, roomName livekit.RoomName, nodeID livekit.NodeID) error {
 	// check if room already assigned
-	existing, err := r.router.GetNodeForRoom(ctx, livekit.RoomName(rm.Name))
+	existing, err := r.router.GetNodeForRoom(ctx, roomName)
 	if !errors.Is(err, routing.ErrNotFound) && err != nil {
-		return nil, false, err
+		return err
 	}
 
 	// if already assigned and still available, keep it on that node
 	if err == nil && selector.IsAvailable(existing) {
 		// if node hosting the room is full, deny entry
 		if selector.LimitsReached(r.config.Limit, existing.Stats) {
-			return nil, false, routing.ErrNodeLimitReached
+			return routing.ErrNodeLimitReached
 		}
 
-		return rm, created, nil
+		return nil
 	}
 
 	// select a new node
-	nodeID := livekit.NodeID(req.NodeId)
 	if nodeID == "" {
 		nodes, err := r.router.ListNodes()
 		if err != nil {
-			return nil, false, err
+			return err
 		}
 
 		node, err := r.selector.SelectNode(nodes)
 		if err != nil {
-			return nil, false, err
+			return err
 		}
 
 		nodeID = livekit.NodeID(node.Id)
 	}
 
-	logger.Infow("selected node for room", "room", rm.Name, "roomID", rm.Sid, "selectedNodeID", nodeID)
-	err = r.router.SetNodeForRoom(ctx, livekit.RoomName(rm.Name), nodeID)
+	logger.Infow("selected node for room", "room", roomName, "selectedNodeID", nodeID)
+	err = r.router.SetNodeForRoom(ctx, roomName, nodeID)
 	if err != nil {
-		return nil, false, err
+		return err
 	}
 
-	return rm, true, nil
+	return nil
 }
 
 func (r *StandardRoomAllocator) ValidateCreateRoom(ctx context.Context, roomName livekit.RoomName) error {
@@ -180,4 +199,45 @@ func applyDefaultRoomConfig(room *livekit.Room, internal *livekit.RoomInternal, 
 		Max:     uint32(conf.PlayoutDelay.Max),
 	}
 	internal.SyncStreams = conf.SyncStreams
+}
+
+func (r *StandardRoomAllocator) applyNamedRoomConfiguration(req *livekit.CreateRoomRequest) (*livekit.CreateRoomRequest, error) {
+	if req.ConfigName == "" {
+		return req, nil
+	}
+
+	conf, ok := r.config.Room.RoomConfigurations[req.ConfigName]
+	if !ok {
+		return req, psrpc.NewErrorf(psrpc.InvalidArgument, "unknown room confguration in create room request")
+	}
+
+	clone := proto.Clone(req).(*livekit.CreateRoomRequest)
+
+	// Request overwrites conf
+	if clone.EmptyTimeout == 0 {
+		clone.EmptyTimeout = conf.EmptyTimeout
+	}
+	if clone.DepartureTimeout == 0 {
+		clone.DepartureTimeout = req.DepartureTimeout
+	}
+	if clone.MaxParticipants == 0 {
+		clone.MaxParticipants = conf.MaxParticipants
+	}
+	if clone.Egress == nil {
+		clone.Egress = proto.Clone(conf.Egress).(*livekit.RoomEgress)
+	}
+	if clone.Agent == nil {
+		clone.Agent = proto.Clone(conf.Agent).(*livekit.RoomAgent)
+	}
+	if clone.MinPlayoutDelay == 0 {
+		clone.MinPlayoutDelay = conf.MinPlayoutDelay
+	}
+	if clone.MaxPlayoutDelay == 0 {
+		clone.MaxPlayoutDelay = conf.MaxPlayoutDelay
+	}
+	if !clone.SyncStreams {
+		clone.SyncStreams = conf.SyncStreams
+	}
+
+	return clone, nil
 }

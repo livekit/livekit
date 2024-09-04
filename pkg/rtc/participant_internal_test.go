@@ -31,6 +31,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/guid"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -285,7 +286,7 @@ func TestMuteSetting(t *testing.T) {
 			Muted: true,
 		})
 
-		_, ti, _ := p.getPendingTrack("cid", livekit.TrackType_AUDIO)
+		_, ti, _, _ := p.getPendingTrack("cid", livekit.TrackType_AUDIO, false)
 		require.NotNil(t, ti)
 		require.True(t, ti.Muted)
 	})
@@ -620,7 +621,7 @@ func TestPreferAudioCodecForRed(t *testing.T) {
 	me := webrtc.MediaEngine{}
 	me.RegisterDefaultCodecs()
 	require.NoError(t, me.RegisterCodec(webrtc.RTPCodecParameters{
-		RTPCodecCapability: redCodecCapability,
+		RTPCodecCapability: RedCodecCapability,
 		PayloadType:        63,
 	}, webrtc.RTPCodecTypeAudio))
 
@@ -749,7 +750,7 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 			FmtpLine: c.FmtpLine,
 		})
 	}
-	sid := livekit.ParticipantID(utils.NewGuid(utils.ParticipantPrefix))
+	sid := livekit.ParticipantID(guid.New(utils.ParticipantPrefix))
 	p, _ := NewParticipant(ParticipantParams{
 		SID:                    sid,
 		Identity:               identity,

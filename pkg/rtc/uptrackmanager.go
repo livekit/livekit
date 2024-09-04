@@ -20,6 +20,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"golang.org/x/exp/maps"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/protocol/utils"
@@ -65,7 +66,7 @@ func NewUpTrackManager(params UpTrackManagerParams) *UpTrackManager {
 	}
 }
 
-func (u *UpTrackManager) Close(willBeResumed bool) {
+func (u *UpTrackManager) Close(isExpectedToResume bool) {
 	u.lock.Lock()
 	if u.closed {
 		u.lock.Unlock()
@@ -79,7 +80,7 @@ func (u *UpTrackManager) Close(willBeResumed bool) {
 	u.lock.Unlock()
 
 	for _, t := range publishedTracks {
-		t.Close(willBeResumed)
+		t.Close(isExpectedToResume)
 	}
 
 	if onClose := u.getOnUpTrackManagerClose(); onClose != nil {
@@ -117,10 +118,7 @@ func (u *UpTrackManager) OnPublishedTrackUpdated(f func(track types.MediaTrack))
 }
 
 func (u *UpTrackManager) SetPublishedTrackMuted(trackID livekit.TrackID, muted bool) types.MediaTrack {
-	u.lock.RLock()
-	track := u.publishedTracks[trackID]
-	u.lock.RUnlock()
-
+	track := u.GetPublishedTrack(trackID)
 	if track != nil {
 		currentMuted := track.IsMuted()
 		track.SetMuted(muted)
@@ -147,11 +145,7 @@ func (u *UpTrackManager) GetPublishedTracks() []types.MediaTrack {
 	u.lock.RLock()
 	defer u.lock.RUnlock()
 
-	tracks := make([]types.MediaTrack, 0, len(u.publishedTracks))
-	for _, t := range u.publishedTracks {
-		tracks = append(tracks, t)
-	}
-	return tracks
+	return maps.Values(u.publishedTracks)
 }
 
 func (u *UpTrackManager) UpdateSubscriptionPermission(
@@ -239,19 +233,28 @@ func (u *UpTrackManager) HasPermission(trackID livekit.TrackID, subIdentity live
 	return u.hasPermissionLocked(trackID, subIdentity)
 }
 
-func (u *UpTrackManager) UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error {
-	track := u.GetPublishedTrack(livekit.TrackID(updateVideoLayers.TrackSid))
-	if track == nil {
-		u.params.Logger.Warnw("could not find track", nil, "trackID", livekit.TrackID(updateVideoLayers.TrackSid))
-		return errors.New("could not find published track")
+func (u *UpTrackManager) UpdatePublishedAudioTrack(update *livekit.UpdateLocalAudioTrack) types.MediaTrack {
+	track := u.GetPublishedTrack(livekit.TrackID(update.TrackSid))
+	if track != nil {
+		track.UpdateAudioTrack(update)
+		if u.onTrackUpdated != nil {
+			u.onTrackUpdated(track)
+		}
 	}
 
-	track.UpdateVideoLayers(updateVideoLayers.Layers)
-	if u.onTrackUpdated != nil {
-		u.onTrackUpdated(track)
+	return track
+}
+
+func (u *UpTrackManager) UpdatePublishedVideoTrack(update *livekit.UpdateLocalVideoTrack) types.MediaTrack {
+	track := u.GetPublishedTrack(livekit.TrackID(update.TrackSid))
+	if track != nil {
+		track.UpdateVideoTrack(update)
+		if u.onTrackUpdated != nil {
+			u.onTrackUpdated(track)
+		}
 	}
 
-	return nil
+	return track
 }
 
 func (u *UpTrackManager) AddPublishedTrack(track types.MediaTrack) {
@@ -262,7 +265,7 @@ func (u *UpTrackManager) AddPublishedTrack(track types.MediaTrack) {
 	u.lock.Unlock()
 	u.params.Logger.Debugw("added published track", "trackID", track.ID(), "trackInfo", logger.Proto(track.ToProto()))
 
-	track.AddOnClose(func() {
+	track.AddOnClose(func(_isExpectedToResume bool) {
 		u.lock.Lock()
 		delete(u.publishedTracks, track.ID())
 		// not modifying subscription permissions, will get reset on next update from participant
@@ -270,11 +273,11 @@ func (u *UpTrackManager) AddPublishedTrack(track types.MediaTrack) {
 	})
 }
 
-func (u *UpTrackManager) RemovePublishedTrack(track types.MediaTrack, willBeResumed bool, shouldClose bool) {
+func (u *UpTrackManager) RemovePublishedTrack(track types.MediaTrack, isExpectedToResume bool, shouldClose bool) {
 	if shouldClose {
-		track.Close(willBeResumed)
+		track.Close(isExpectedToResume)
 	} else {
-		track.ClearAllReceivers(willBeResumed)
+		track.ClearAllReceivers(isExpectedToResume)
 	}
 	u.lock.Lock()
 	delete(u.publishedTracks, track.ID())

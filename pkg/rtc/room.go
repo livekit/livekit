@@ -34,7 +34,10 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/guid"
+	"github.com/livekit/psrpc"
 
 	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/config"
@@ -60,7 +63,19 @@ const (
 var (
 	// var to allow unit test override
 	roomUpdateInterval = 5 * time.Second // frequency to update room participant counts
+
+	ErrJobShutdownTimeout = psrpc.NewErrorf(psrpc.DeadlineExceeded, "timed out waiting for agent job to shutdown")
 )
+
+// Duplicate the service.AgentStore interface to avoid a rtc -> service -> rtc import cycle
+type AgentStore interface {
+	StoreAgentDispatch(ctx context.Context, dispatch *livekit.AgentDispatch) error
+	DeleteAgentDispatch(ctx context.Context, dispatch *livekit.AgentDispatch) error
+	ListAgentDispatches(ctx context.Context, roomName livekit.RoomName) ([]*livekit.AgentDispatch, error)
+
+	StoreAgentJob(ctx context.Context, job *livekit.Job) error
+	DeleteAgentJob(ctx context.Context, job *livekit.Job) error
+}
 
 type broadcastOptions struct {
 	skipSource bool
@@ -95,21 +110,24 @@ type Room struct {
 	protoProxy *utils.ProtoProxy[*livekit.Room]
 	Logger     logger.Logger
 
-	config         WebRTCConfig
-	audioConfig    *config.AudioConfig
-	serverInfo     *livekit.ServerInfo
-	telemetry      telemetry.TelemetryService
-	egressLauncher EgressLauncher
-	trackManager   *RoomTrackManager
+	config          WebRTCConfig
+	audioConfig     *config.AudioConfig
+	serverInfo      *livekit.ServerInfo
+	telemetry       telemetry.TelemetryService
+	egressLauncher  EgressLauncher
+	trackManager    *RoomTrackManager
+	agentDispatches map[string]*agentDispatch
 
 	// agents
 	agentClient agent.Client
+	agentStore  AgentStore
 
 	// map of identity -> Participant
 	participants              map[livekit.ParticipantIdentity]types.LocalParticipant
 	participantOpts           map[livekit.ParticipantIdentity]*ParticipantOptions
 	participantRequestSources map[livekit.ParticipantIdentity]routing.MessageSource
 	hasPublished              map[livekit.ParticipantIdentity]bool
+	agentParticpants          map[livekit.ParticipantIdentity]*agentJob
 	bufferFactory             *buffer.FactoryOfBufferFactory
 
 	// batch update participant info for non-publishers
@@ -133,6 +151,88 @@ type ParticipantOptions struct {
 	AutoSubscribe bool
 }
 
+type agentDispatch struct {
+	*livekit.AgentDispatch
+	lock    sync.Mutex
+	pending map[chan struct{}]struct{}
+}
+
+type agentJob struct {
+	*livekit.Job
+	lock sync.Mutex
+	done chan struct{}
+}
+
+// This provides utilities attached the agent dispatch to ensure that all pending jobs are created
+// before terminating jobs attached to an agent dispatch. This avoids a race that could cause some pending jobs
+// to not be terminated when a dispatch is deleted.
+func newAgentDispatch(ad *livekit.AgentDispatch) *agentDispatch {
+	return &agentDispatch{
+		AgentDispatch: ad,
+		pending:       make(map[chan struct{}]struct{}),
+	}
+}
+
+func (ad *agentDispatch) jobsLaunching() (jobsLaunched func()) {
+	ad.lock.Lock()
+	c := make(chan struct{})
+	ad.pending[c] = struct{}{}
+	ad.lock.Unlock()
+
+	return func() {
+		close(c)
+		ad.lock.Lock()
+		delete(ad.pending, c)
+		ad.lock.Unlock()
+	}
+}
+
+func (ad *agentDispatch) waitForPendingJobs() {
+	ad.lock.Lock()
+	cs := maps.Keys(ad.pending)
+	ad.lock.Unlock()
+
+	for _, c := range cs {
+		<-c
+	}
+}
+
+// This provides utilities to ensure that an agent left the room when killing a job
+func newAgentJob(j *livekit.Job) *agentJob {
+	return &agentJob{
+		Job:  j,
+		done: make(chan struct{}),
+	}
+}
+
+func (j *agentJob) participantLeft() {
+	j.lock.Lock()
+	if j.done != nil {
+		close(j.done)
+		j.done = nil
+	}
+	j.lock.Unlock()
+}
+
+func (j *agentJob) waitForParticipantLeaving() error {
+	var done chan struct{}
+
+	j.lock.Lock()
+	done = j.done
+	j.lock.Unlock()
+
+	if done != nil {
+		select {
+		case <-done:
+			return nil
+		case <-time.After(3 * time.Second):
+			return ErrJobShutdownTimeout
+		}
+	}
+
+	return nil
+}
+
 func NewRoom(
 	room *livekit.Room,
 	internal *livekit.RoomInternal,
@@ -142,6 +242,7 @@ func NewRoom(
 	serverInfo *livekit.ServerInfo,
 	telemetry telemetry.TelemetryService,
 	agentClient agent.Client,
+	agentStore AgentStore,
 	egressLauncher EgressLauncher,
 ) *Room {
 	r := &Room{
@@ -157,12 +258,15 @@ func NewRoom(
 		telemetry:                            telemetry,
 		egressLauncher:                       egressLauncher,
 		agentClient:                          agentClient,
+		agentStore:                           agentStore,
+		agentDispatches:                      make(map[string]*agentDispatch),
 		trackManager:                         NewRoomTrackManager(),
 		serverInfo:                           serverInfo,
 		participants:                         make(map[livekit.ParticipantIdentity]types.LocalParticipant),
 		participantOpts:                      make(map[livekit.ParticipantIdentity]*ParticipantOptions),
 		participantRequestSources:            make(map[livekit.ParticipantIdentity]routing.MessageSource),
 		hasPublished:                         make(map[livekit.ParticipantIdentity]bool),
+		agentParticpants:                     make(map[livekit.ParticipantIdentity]*agentJob),
 		bufferFactory:                        buffer.NewFactoryOfBufferFactory(config.Receiver.PacketBufferSizeVideo, config.Receiver.PacketBufferSizeAudio),
 		batchedUpdates:                       make(map[livekit.ParticipantIdentity]*participantUpdate),
 		closed:                               make(chan struct{}),
@@ -181,6 +285,10 @@ func NewRoom(
 		r.protoRoom.CreationTime = time.Now().Unix()
 	}
 	r.protoProxy = utils.NewProtoProxy[*livekit.Room](roomUpdateInterval, r.updateProto)
+
+	r.createAgentDispatchesFromRoomAgent()
+
+	r.launchRoomAgents(maps.Values(r.agentDispatches))
 
 	go r.audioUpdateWorker()
 	go r.connectionQualityWorker()
@@ -557,10 +665,13 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 		return
 	}
 
+	agentJob := r.agentParticpants[identity]
+
 	delete(r.participants, identity)
 	delete(r.participantOpts, identity)
 	delete(r.participantRequestSources, identity)
 	delete(r.hasPublished, identity)
+	delete(r.agentParticpants, identity)
 	if !p.Hidden() {
 		r.protoRoom.NumParticipants--
 	}
@@ -596,6 +707,17 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 	// remove all published tracks
 	for _, t := range p.GetPublishedTracks() {
 		r.trackManager.RemoveTrack(t)
+	}
+
+	if agentJob != nil {
+		agentJob.participantLeft()
+
+		go func() {
+			_, err := r.agentClient.TerminateJob(context.Background(), agentJob.Id, rpc.JobTerminateReason_AGENT_LEFT_ROOM)
+			if err != nil {
+				r.Logger.Infow("failed sending TerminateJob RPC", "error", err, "jobID", agentJob.Id, "participant", identity)
+			}
+		}()
 	}
 
 	p.OnTrackUpdated(nil)
@@ -710,10 +832,6 @@ func (r *Room) UpdateSubscriptionPermission(participant types.LocalParticipant, 
 	return nil
 }
 
-func (r *Room) UpdateVideoLayers(participant types.Participant, updateVideoLayers *livekit.UpdateVideoLayers) error {
-	return participant.UpdateVideoLayers(updateVideoLayers)
-}
-
 func (r *Room) ResolveMediaTrackForSubscriber(subIdentity livekit.ParticipantIdentity, trackID livekit.TrackID) types.MediaResolverResult {
 	res := types.MediaResolverResult{}
 
@@ -776,7 +894,7 @@ func (r *Room) CloseIfEmpty() {
 	r.lock.Unlock()
 
 	if elapsed >= int64(timeout) {
-		r.Close(types.ParticipantCloseReasonNone)
+		r.Close(types.ParticipantCloseReasonRoomClosed)
 	}
 }
 
@@ -823,15 +941,6 @@ func (r *Room) SetMetadata(metadata string) <-chan struct{} {
 	return r.protoProxy.MarkDirty(true)
 }
 
-func (r *Room) UpdateParticipantMetadata(participant types.LocalParticipant, name string, metadata string) {
-	if metadata != "" {
-		participant.SetMetadata(metadata)
-	}
-	if name != "" {
-		participant.SetName(name)
-	}
-}
-
 func (r *Room) sendRoomUpdate() {
 	roomInfo := r.ToProto()
 	// Send update to participants
@@ -845,6 +954,91 @@ func (r *Room) sendRoomUpdate() {
 			r.Logger.Warnw("failed to send room update", err, "participant", p.Identity())
 		}
 	}
+}
+
+func (r *Room) GetAgentDispatches(dispatchID string) ([]*livekit.AgentDispatch, error) {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	var ret []*livekit.AgentDispatch
+
+	for _, ad := range r.agentDispatches {
+		if dispatchID == "" || ad.Id == dispatchID {
+			ret = append(ret, proto.Clone(ad.AgentDispatch).(*livekit.AgentDispatch))
+		}
+	}
+
+	return ret, nil
+}
+
+func (r *Room) AddAgentDispatch(agentName string, metadata string) (*livekit.AgentDispatch, error) {
+	ad, err := r.createAgentDispatchFromParams(agentName, metadata)
+	if err != nil {
+		return nil, err
+	}
+
+	r.launchRoomAgents([]*agentDispatch{ad})
+
+	r.lock.RLock()
+	// launchPublisherAgents starts a goroutine to send requests, so is safe to call locked
+	for _, p := range r.participants {
+		r.launchPublisherAgents([]*agentDispatch{ad}, p)
+	}
+	r.lock.RUnlock()
+
+	return ad.AgentDispatch, nil
+}
+
+func (r *Room) DeleteAgentDispatch(dispatchID string) (*livekit.AgentDispatch, error) {
+	r.lock.Lock()
+	ad := r.agentDispatches[dispatchID]
+	if ad == nil {
+		r.lock.Unlock()
+		return nil, psrpc.NewErrorf(psrpc.NotFound, "dispatch ID not found")
+	}
+
+	delete(r.agentDispatches, dispatchID)
+	r.lock.Unlock()
+
+	// Should Delete be synchronous instead?
+	go func() {
+		ad.waitForPendingJobs()
+
+		var jobs []*livekit.Job
+		r.lock.RLock()
+		if ad.State != nil {
+			jobs = ad.State.Jobs
+		}
+		r.lock.RUnlock()
+
+		for _, j := range jobs {
+			state, err := r.agentClient.TerminateJob(context.Background(), j.Id, rpc.JobTerminateReason_TERINATION_REQUESTED)
+			if err != nil {
+				continue
+			}
+			if state.ParticipantIdentity != "" {
+				r.lock.RLock()
+				agentJob := r.agentParticpants[livekit.ParticipantIdentity(state.ParticipantIdentity)]
+				p := r.participants[livekit.ParticipantIdentity(state.ParticipantIdentity)]
+				r.lock.RUnlock()
+
+				if p != nil {
+					if agentJob != nil {
+						err := agentJob.waitForParticipantLeaving()
+						if err == ErrJobShutdownTimeout {
+							r.Logger.Infow("Agent Worker did not disconnect after 3s")
+						}
+					}
+					r.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonServiceRequestRemoveParticipant)
+				}
+			}
+			r.lock.Lock()
+			j.State = state
+			r.lock.Unlock()
+		}
+	}()
+
+	return ad.AgentDispatch, nil
 }
 
 func (r *Room) OnRoomUpdated(f func()) {
@@ -945,6 +1139,8 @@ func (r *Room) createJoinResponseLocked(participant types.LocalParticipant, iceS
 		}
 	}
 
+	iceConfig := participant.GetICEConfig()
+	hasICEFallback := iceConfig.GetPreferencePublisher() != livekit.ICECandidateType_ICT_NONE || iceConfig.GetPreferenceSubscriber() != livekit.ICECandidateType_ICT_NONE
 	return &livekit.JoinResponse{
 		Room:              r.ToProto(),
 		Participant:       participant.ToProto(),
@@ -954,12 +1150,14 @@ func (r *Room) createJoinResponseLocked(participant types.LocalParticipant, iceS
 		SubscriberPrimary:   participant.SubscriberAsPrimary(),
 		ClientConfiguration: participant.GetClientConfiguration(),
 		// sane defaults for ping interval & timeout
-		PingInterval:  PingIntervalSeconds,
-		PingTimeout:   PingTimeoutSeconds,
-		ServerInfo:    r.serverInfo,
-		ServerVersion: r.serverInfo.Version,
-		ServerRegion:  r.serverInfo.Region,
-		SifTrailer:    r.trailer,
+		PingInterval:         PingIntervalSeconds,
+		PingTimeout:          PingTimeoutSeconds,
+		ServerInfo:           r.serverInfo,
+		ServerVersion:        r.serverInfo.Version,
+		ServerRegion:         r.serverInfo.Region,
+		SifTrailer:           r.trailer,
+		EnabledPublishCodecs: participant.GetEnabledPublishCodecs(),
+		FastPublish:          participant.CanPublish() && !hasICEFallback,
 	}
 }
 
@@ -1007,7 +1205,9 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 	r.lock.Unlock()
 
 	if !hasPublished {
-		r.launchPublisherAgent(participant)
+		r.lock.RLock()
+		r.launchPublisherAgents(maps.Values(r.agentDispatches), participant)
+		r.lock.RUnlock()
 		if r.internal != nil && r.internal.ParticipantEgress != nil {
 			go func() {
 				if err := StartParticipantEgress(
@@ -1416,15 +1616,60 @@ func (r *Room) simulationCleanupWorker() {
 	}
 }
 
-func (r *Room) launchPublisherAgent(p types.Participant) {
+func (r *Room) launchRoomAgents(ads []*agentDispatch) {
+	if r.agentClient == nil {
+		return
+	}
+
+	for _, ad := range ads {
+		done := ad.jobsLaunching()
+
+		go func() {
+			inc := r.agentClient.LaunchJob(context.Background(), &agent.JobRequest{
+				JobType:    livekit.JobType_JT_ROOM,
+				Room:       r.ToProto(),
+				Metadata:   ad.Metadata,
+				AgentName:  ad.AgentName,
+				DispatchId: ad.Id,
+			})
+			r.handleNewJobs(ad.AgentDispatch, inc)
+			done()
+		}()
+	}
+}
+
+func (r *Room) launchPublisherAgents(ads []*agentDispatch, p types.Participant) {
 	if p == nil || p.IsDependent() || r.agentClient == nil {
 		return
 	}
 
-	go r.agentClient.LaunchJob(context.Background(), &agent.JobDescription{
-		JobType:     livekit.JobType_JT_PUBLISHER,
-		Room:        r.ToProto(),
-		Participant: p.ToProto(),
+	for _, ad := range ads {
+		done := ad.jobsLaunching()
+
+		go func() {
+			inc := r.agentClient.LaunchJob(context.Background(), &agent.JobRequest{
+				JobType:     livekit.JobType_JT_PUBLISHER,
+				Room:        r.ToProto(),
+				Participant: p.ToProto(),
+				Metadata:    ad.Metadata,
+				AgentName:   ad.AgentName,
+				DispatchId:  ad.Id,
+			})
+			r.handleNewJobs(ad.AgentDispatch, inc)
+			done()
+		}()
+	}
+}
+
+func (r *Room) handleNewJobs(ad *livekit.AgentDispatch, inc *sutils.IncrementalDispatcher[*livekit.Job]) {
+	inc.ForEach(func(job *livekit.Job) {
+		r.agentStore.StoreAgentJob(context.Background(), job)
+		r.lock.Lock()
+		ad.State.Jobs = append(ad.State.Jobs, job)
+		if job.State != nil && job.State.ParticipantIdentity != "" {
+			r.agentParticpants[livekit.ParticipantIdentity(job.State.ParticipantIdentity)] = newAgentJob(job)
+		}
+		r.lock.Unlock()
 	})
 }
 
@@ -1443,6 +1688,54 @@ func (r *Room) DebugInfo() map[string]interface{} {
 	info["Participants"] = participantInfo
 
 	return info
+}
+
+func (r *Room) createAgentDispatchFromParams(agentName string, metadata string) (*agentDispatch, error) {
+	now := time.Now()
+
+	ad := newAgentDispatch(
+		&livekit.AgentDispatch{
+			Id:        guid.New(guid.AgentDispatchPrefix),
+			AgentName: agentName,
+			Metadata:  metadata,
+			Room:      r.protoRoom.Name,
+			State: &livekit.AgentDispatchState{
+				CreatedAt: now.UnixNano(),
+			},
+		},
+	)
+	r.lock.RLock()
+	r.agentDispatches[ad.Id] = ad
+	r.lock.RUnlock()
+	if r.agentStore != nil {
+		err := r.agentStore.StoreAgentDispatch(context.Background(), ad.AgentDispatch)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return ad, nil
+}
+
+func (r *Room) createAgentDispatchesFromRoomAgent() {
+	if r.internal == nil {
+		return
+	}
+
+	roomDisp := r.internal.AgentDispatches
+	if len(roomDisp) == 0 {
+		// Backward compatibility: by default, start any agent in the empty JobName
+		roomDisp = []*livekit.RoomAgentDispatch{
+			&livekit.RoomAgentDispatch{},
+		}
+	}
+
+	for _, ag := range roomDisp {
+		_, err := r.createAgentDispatchFromParams(ag.AgentName, ag.Metadata)
+		if err != nil {
+			r.Logger.Warnw("failed storing room dispatch", err)
+		}
+	}
 }
 
 // ------------------------------------------------------------
@@ -1523,6 +1816,9 @@ func connectionDetailsFields(cds []*types.ICEConnectionDetails) []interface{} {
 			} else if c.Filtered {
 				cStr += "[filtered]"
 			}
+			if c.Trickle {
+				cStr += "[trickle]"
+			}
 			cStr += " " + c.Local.String()
 			candidates = append(candidates, cStr)
 		}
@@ -1532,6 +1828,9 @@ func connectionDetailsFields(cds []*types.ICEConnectionDetails) []interface{} {
 				cStr += "[selected]"
 			} else if c.Filtered {
 				cStr += "[filtered]"
+			}
+			if c.Trickle {
+				cStr += "[trickle]"
 			}
 			cStr += " " + c.Remote.String()
 			candidates = append(candidates, cStr)

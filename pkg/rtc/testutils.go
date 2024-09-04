@@ -18,6 +18,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/guid"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
@@ -25,7 +26,7 @@ import (
 
 func NewMockParticipant(identity livekit.ParticipantIdentity, protocol types.ProtocolVersion, hidden bool, publisher bool) *typesfakes.FakeLocalParticipant {
 	p := &typesfakes.FakeLocalParticipant{}
-	sid := utils.NewGuid(utils.ParticipantPrefix)
+	sid := guid.New(utils.ParticipantPrefix)
 	p.IDReturns(livekit.ParticipantID(sid))
 	p.IdentityReturns(identity)
 	p.StateReturns(livekit.ParticipantInfo_JOINED)
@@ -80,7 +81,7 @@ func NewMockParticipant(identity livekit.ParticipantIdentity, protocol types.Pro
 
 func NewMockTrack(kind livekit.TrackType, name string) *typesfakes.FakeMediaTrack {
 	t := &typesfakes.FakeMediaTrack{}
-	t.IDReturns(livekit.TrackID(utils.NewGuid(utils.TrackPrefix)))
+	t.IDReturns(livekit.TrackID(guid.New(utils.TrackPrefix)))
 	t.KindReturns(kind)
 	t.NameReturns(name)
 	t.ToProtoReturns(&livekit.TrackInfo{

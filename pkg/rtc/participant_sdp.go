@@ -22,7 +22,6 @@ import (
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
 
-	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/protocol/livekit"
 	lksdp "github.com/livekit/protocol/sdp"
 )
@@ -46,7 +45,7 @@ func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(offer webrtc.Se
 		}
 
 		p.pendingTracksLock.RLock()
-		_, info, _ := p.getPendingTrack(streamID, livekit.TrackType_AUDIO)
+		_, info, _, _ := p.getPendingTrack(streamID, livekit.TrackType_AUDIO, false)
 		// if RED is disabled for this track, don't prefer RED codec in offer
 		disableRed := info != nil && info.DisableRed
 		p.pendingTracksLock.RUnlock()
@@ -132,7 +131,7 @@ func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(offer webrtc.Sess
 		if mt != nil {
 			info = mt.ToProto()
 		} else {
-			_, info, _ = p.getPendingTrack(streamID, livekit.TrackType_VIDEO)
+			_, info, _, _ = p.getPendingTrack(streamID, livekit.TrackType_VIDEO, false)
 		}
 
 		if info == nil {
@@ -152,18 +151,6 @@ func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(offer webrtc.Sess
 		p.pendingTracksLock.RUnlock()
 
 		mime = strings.ToUpper(mime)
-		// remove dd extension if av1/vp9 not preferred
-		if !strings.Contains(strings.ToLower(mime), "av1") && !strings.Contains(strings.ToLower(mime), "vp9") {
-			for i, attr := range unmatchVideo.Attributes {
-				if strings.Contains(attr.Value, dd.ExtensionURI) {
-					unmatchVideo.Attributes[i] = unmatchVideo.Attributes[len(unmatchVideo.Attributes)-1]
-					unmatchVideo.Attributes[len(unmatchVideo.Attributes)-1] = sdp.Attribute{}
-					unmatchVideo.Attributes = unmatchVideo.Attributes[:len(unmatchVideo.Attributes)-1]
-					break
-				}
-			}
-		}
-
 		if mime != "" {
 			codecs, err := codecsFromMediaDescription(unmatchVideo)
 			if err != nil {
@@ -240,7 +227,7 @@ func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescript
 					track, _ := p.getPublishedTrackBySdpCid(streamID).(*MediaTrack)
 					if track == nil {
 						p.pendingTracksLock.RLock()
-						_, ti, _ = p.getPendingTrack(streamID, livekit.TrackType_AUDIO)
+						_, ti, _, _ = p.getPendingTrack(streamID, livekit.TrackType_AUDIO, false)
 						p.pendingTracksLock.RUnlock()
 					} else {
 						ti = track.ToProto()

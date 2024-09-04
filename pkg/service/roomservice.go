@@ -16,26 +16,26 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 
-	"github.com/avast/retry-go/v4"
 	"github.com/pkg/errors"
 	"github.com/twitchtv/twirp"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
+	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
-	"github.com/livekit/psrpc"
 )
 
-// A rooms service that supports a single node
 type RoomService struct {
-	roomConf          config.RoomConfig
+	limitConf         config.LimitConfig
 	apiConf           config.APIConfig
-	psrpcConf         rpc.PSRPCConfig
 	router            routing.MessageRouter
 	roomAllocator     RoomAllocator
 	roomStore         ServiceStore
@@ -47,9 +47,8 @@ type RoomService struct {
 }
 
 func NewRoomService(
-	roomConf config.RoomConfig,
+	limitConf config.LimitConfig,
 	apiConf config.APIConfig,
-	psrpcConf rpc.PSRPCConfig,
 	router routing.MessageRouter,
 	roomAllocator RoomAllocator,
 	serviceStore ServiceStore,
@@ -60,9 +59,8 @@ func NewRoomService(
 	participantClient rpc.TypedParticipantClient,
 ) (svc *RoomService, err error) {
 	svc = &RoomService{
-		roomConf:          roomConf,
+		limitConf:         limitConf,
 		apiConf:           apiConf,
-		psrpcConf:         psrpcConf,
 		router:            router,
 		roomAllocator:     roomAllocator,
 		roomStore:         serviceStore,
@@ -76,36 +74,43 @@ func NewRoomService(
 }
 
 func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (*livekit.Room, error) {
-	AppendLogFields(ctx, "room", req.Name, "request", req)
+	AppendLogFields(ctx, "room", req.Name, "request", logger.Proto(redactCreateRoomRequest(req)))
 	if err := EnsureCreatePermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	} else if req.Egress != nil && s.egressLauncher == nil {
 		return nil, ErrEgressNotConnected
 	}
 
-	rm, created, err := s.roomAllocator.CreateRoom(ctx, req)
+	if !s.limitConf.CheckRoomNameLength(req.Name) {
+		return nil, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, s.limitConf.MaxRoomNameLength)
+	}
+
+	if s.roomAllocator.CreateRoomEnabled() {
+		err := s.roomAllocator.SelectRoomNode(ctx, livekit.RoomName(req.Name), livekit.NodeID(req.NodeId))
+		if err != nil {
+			return nil, err
+		}
+
+		return s.router.CreateRoom(ctx, req)
+	}
+
+	rm, _, created, err := s.roomAllocator.CreateRoom(ctx, req, true)
 	if err != nil {
 		err = errors.Wrap(err, "could not create room")
 		return nil, err
 	}
-
-	// actually start the room on an RTC node, to ensure metadata & empty timeout functionality
-	res, err := s.router.StartParticipantSignal(ctx,
-		livekit.RoomName(req.Name),
-		routing.ParticipantInit{},
-	)
+	err = s.roomAllocator.SelectRoomNode(ctx, livekit.RoomName(req.Name), livekit.NodeID(req.NodeId))
 	if err != nil {
 		return nil, err
 	}
-	defer res.RequestSink.Close()
-	defer res.ResponseSource.Close()
+
+	done, err := s.startRoom(ctx, livekit.RoomName(req.Name))
+	if err != nil {
+		return nil, err
+	}
+	defer done()
 
 	if created {
-		go s.agentClient.LaunchJob(ctx, &agent.JobDescription{
-			JobType: livekit.JobType_JT_ROOM,
-			Room:    rm,
-		})
-
 		if req.Egress != nil && req.Egress.Room != nil {
 			// ensure room name matches
 			req.Egress.Room.RoomName = req.Name
@@ -153,9 +158,27 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 		return nil, twirpAuthError(err)
 	}
 
-	_, err := s.roomClient.DeleteRoom(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
-	if !errors.Is(err, psrpc.ErrNoResponse) {
-		return &livekit.DeleteRoomResponse{}, err
+	_, _, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.roomAllocator.CreateRoomEnabled() {
+		_, err := s.router.CreateRoom(ctx, &livekit.CreateRoomRequest{Name: req.Room})
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		done, err := s.startRoom(ctx, livekit.RoomName(req.Room))
+		if err != nil {
+			return nil, err
+		}
+		defer done()
+	}
+
+	_, err = s.roomClient.DeleteRoom(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
+	if err != nil {
+		return nil, err
 	}
 
 	err = s.roomStore.DeleteRoom(ctx, livekit.RoomName(req.Room))
@@ -218,9 +241,17 @@ func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 
 func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.UpdateParticipantRequest) (*livekit.ParticipantInfo, error) {
 	AppendLogFields(ctx, "room", req.Room, "participant", req.Identity)
-	maxMetadataSize := int(s.roomConf.MaxMetadataSize)
-	if maxMetadataSize > 0 && len(req.Metadata) > maxMetadataSize {
-		return nil, twirp.InvalidArgumentError(ErrMetadataExceedsLimits.Error(), strconv.Itoa(maxMetadataSize))
+
+	if !s.limitConf.CheckParticipantNameLength(req.Name) {
+		return nil, twirp.InvalidArgumentError(ErrNameExceedsLimits.Error(), strconv.Itoa(s.limitConf.MaxParticipantNameLength))
+	}
+
+	if !s.limitConf.CheckMetadataSize(req.Metadata) {
+		return nil, twirp.InvalidArgumentError(ErrMetadataExceedsLimits.Error(), strconv.Itoa(int(s.limitConf.MaxMetadataSize)))
+	}
+
+	if !s.limitConf.CheckAttributesSize(req.Attributes) {
+		return nil, twirp.InvalidArgumentError(ErrAttributeExceedsLimits.Error(), strconv.Itoa(int(s.limitConf.MaxAttributesSize)))
 	}
 
 	if err := EnsureAdminPermission(ctx, livekit.RoomName(req.Room)); err != nil {
@@ -256,7 +287,7 @@ func (s *RoomService) SendData(ctx context.Context, req *livekit.SendDataRequest
 
 func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.UpdateRoomMetadataRequest) (*livekit.Room, error) {
 	AppendLogFields(ctx, "room", req.Room, "size", len(req.Metadata))
-	maxMetadataSize := int(s.roomConf.MaxMetadataSize)
+	maxMetadataSize := int(s.limitConf.MaxMetadataSize)
 	if maxMetadataSize > 0 && len(req.Metadata) > maxMetadataSize {
 		return nil, twirp.InvalidArgumentError(ErrMetadataExceedsLimits.Error(), strconv.Itoa(maxMetadataSize))
 	}
@@ -265,58 +296,48 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 		return nil, twirpAuthError(err)
 	}
 
-	room, _, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false)
+	_, _, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false)
 	if err != nil {
 		return nil, err
 	}
 
-	// no one has joined the room, would not have been created on an RTC node.
-	// in this case, we'd want to run create again
-	room, created, err := s.roomAllocator.CreateRoom(ctx, &livekit.CreateRoomRequest{
-		Name:     req.Room,
-		Metadata: req.Metadata,
-	})
+	room, err := s.roomClient.UpdateRoomMetadata(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
 	if err != nil {
 		return nil, err
-	}
-
-	_, err = s.roomClient.UpdateRoomMetadata(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
-	if err != nil {
-		return nil, err
-	}
-
-	err = s.confirmExecution(ctx, func() error {
-		room, _, err = s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false)
-		if err != nil {
-			return err
-		}
-		if room.Metadata != req.Metadata {
-			return ErrOperationFailed
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	if created {
-		go s.agentClient.LaunchJob(ctx, &agent.JobDescription{
-			JobType: livekit.JobType_JT_ROOM,
-			Room:    room,
-		})
 	}
 
 	return room, nil
 }
 
-func (s *RoomService) confirmExecution(ctx context.Context, f func() error) error {
-	ctx, cancel := context.WithTimeout(ctx, s.apiConf.ExecutionTimeout)
-	defer cancel()
-	return retry.Do(
-		f,
-		retry.Context(ctx),
-		retry.Delay(s.apiConf.CheckInterval),
-		retry.MaxDelay(s.apiConf.MaxCheckInterval),
-		retry.DelayType(retry.BackOffDelay),
-	)
+// startRoom starts the room on an RTC node, to ensure metadata & empty timeout functionality
+func (s *RoomService) startRoom(ctx context.Context, roomName livekit.RoomName) (func(), error) {
+	res, err := s.router.StartParticipantSignal(ctx, roomName, routing.ParticipantInit{})
+	if err != nil {
+		return nil, err
+	}
+	return func() {
+		res.RequestSink.Close()
+		res.ResponseSource.Close()
+	}, nil
+}
+
+func redactCreateRoomRequest(req *livekit.CreateRoomRequest) *livekit.CreateRoomRequest {
+	if req.Egress == nil {
+		// nothing to redact
+		return req
+	}
+
+	clone := proto.Clone(req).(*livekit.CreateRoomRequest)
+
+	if clone.Egress.Room != nil {
+		egress.RedactEncodedOutputs(clone.Egress.Room)
+	}
+	if clone.Egress.Participant != nil {
+		egress.RedactAutoEncodedOutput(clone.Egress.Participant)
+	}
+	if clone.Egress.Tracks != nil {
+		egress.RedactUpload(clone.Egress.Tracks)
+	}
+
+	return clone
 }

@@ -172,6 +172,16 @@ func EnsureCreatePermission(ctx context.Context) error {
 	return nil
 }
 
+func GetRoomConfiguration(ctx context.Context) string {
+
+	claims := GetGrants(ctx)
+
+	if claims == nil || claims.Video == nil {
+		return ""
+	}
+	return claims.Video.RoomConfiguration
+}
+
 func EnsureListPermission(ctx context.Context) error {
 	claims := GetGrants(ctx)
 	if claims == nil || claims.Video == nil || !claims.Video.RoomList {
@@ -191,6 +201,22 @@ func EnsureRecordPermission(ctx context.Context) error {
 func EnsureIngressAdminPermission(ctx context.Context) error {
 	claims := GetGrants(ctx)
 	if claims == nil || claims.Video == nil || !claims.Video.IngressAdmin {
+		return ErrPermissionDenied
+	}
+	return nil
+}
+
+func EnsureSIPAdminPermission(ctx context.Context) error {
+	claims := GetGrants(ctx)
+	if claims == nil || claims.SIP == nil || !claims.SIP.Admin {
+		return ErrPermissionDenied
+	}
+	return nil
+}
+
+func EnsureSIPCallPermission(ctx context.Context) error {
+	claims := GetGrants(ctx)
+	if claims == nil || claims.SIP == nil || !claims.SIP.Call {
 		return ErrPermissionDenied
 	}
 	return nil

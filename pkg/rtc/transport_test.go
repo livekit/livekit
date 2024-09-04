@@ -315,7 +315,7 @@ func TestFirstAnswerMissedDuringICERestart(t *testing.T) {
 	handlerA.OnOfferCalls(func(sd webrtc.SessionDescription) error {
 		offerCount.Inc()
 
-		// the second offer is a ice restart offer, so we wait transportB complete the ice gathering
+		// the second offer is a ice restart offer, so we wait for transportB to complete ICE gathering
 		if transportB.pc.ICEGatheringState() == webrtc.ICEGatheringStateGathering {
 			require.Eventually(t, func() bool {
 				return transportB.pc.ICEGatheringState() == webrtc.ICEGatheringStateComplete
@@ -416,7 +416,7 @@ func TestFilteringCandidates(t *testing.T) {
 
 	// should not filter out UDP candidates if TCP is not preferred
 	offer = *transport.pc.LocalDescription()
-	filteredOffer := transport.filterCandidates(offer, false)
+	filteredOffer := transport.filterCandidates(offer, false, true)
 	require.EqualValues(t, offer.SDP, filteredOffer.SDP)
 
 	parsed, err := offer.Unmarshal()
@@ -494,7 +494,7 @@ func TestFilteringCandidates(t *testing.T) {
 	require.Equal(t, 2, tcp)
 
 	transport.SetPreferTCP(true)
-	filteredOffer = transport.filterCandidates(offer, true)
+	filteredOffer = transport.filterCandidates(offer, true, true)
 	parsed, err = filteredOffer.Unmarshal()
 	require.NoError(t, err)
 	udp, tcp = getNumTransportTypeCandidates(parsed)

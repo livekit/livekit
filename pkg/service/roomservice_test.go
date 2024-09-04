@@ -34,7 +34,7 @@ import (
 
 func TestDeleteRoom(t *testing.T) {
 	t.Run("missing permissions", func(t *testing.T) {
-		svc := newTestRoomService(config.RoomConfig{})
+		svc := newTestRoomService(config.LimitConfig{})
 		grant := &auth.ClaimGrants{
 			Video: &auth.VideoGrant{},
 		}
@@ -48,7 +48,7 @@ func TestDeleteRoom(t *testing.T) {
 
 func TestMetaDataLimits(t *testing.T) {
 	t.Run("metadata exceed limits", func(t *testing.T) {
-		svc := newTestRoomService(config.RoomConfig{MaxMetadataSize: 5})
+		svc := newTestRoomService(config.LimitConfig{MaxMetadataSize: 5})
 		grant := &auth.ClaimGrants{
 			Video: &auth.VideoGrant{},
 		}
@@ -72,8 +72,8 @@ func TestMetaDataLimits(t *testing.T) {
 	})
 
 	notExceedsLimitsSvc := map[string]*TestRoomService{
-		"metadata noe exceeds limits": newTestRoomService(config.RoomConfig{MaxMetadataSize: 5}),
-		"metadata no limits":          newTestRoomService(config.RoomConfig{}), // no limits
+		"metadata noe exceeds limits": newTestRoomService(config.LimitConfig{MaxMetadataSize: 5}),
+		"metadata no limits":          newTestRoomService(config.LimitConfig{}), // no limits
 	}
 
 	for n, s := range notExceedsLimitsSvc {
@@ -104,14 +104,13 @@ func TestMetaDataLimits(t *testing.T) {
 	}
 }
 
-func newTestRoomService(conf config.RoomConfig) *TestRoomService {
+func newTestRoomService(limitConf config.LimitConfig) *TestRoomService {
 	router := &routingfakes.FakeRouter{}
 	allocator := &servicefakes.FakeRoomAllocator{}
 	store := &servicefakes.FakeServiceStore{}
 	svc, err := service.NewRoomService(
-		conf,
+		limitConf,
 		config.APIConfig{ExecutionTimeout: 2},
-		rpc.PSRPCConfig{},
 		router,
 		allocator,
 		store,
