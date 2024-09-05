@@ -167,6 +167,7 @@ type PCTransport struct {
 
 	debouncedNegotiate func(func())
 	debouncePending    bool
+	lastNegotiate      time.Time
 
 	onNegotiationStateChanged func(state transport.NegotiationState)
 
@@ -398,6 +399,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		previousTrackDescription: make(map[string]*trackDescription),
 		canReuseTransceiver:      true,
 		connectionDetails:        types.NewICEConnectionDetails(params.Transport, params.Logger),
+		lastNegotiate:            time.Now(),
 	}
 	if params.IsSendSide {
 		t.streamAllocator = streamallocator.NewStreamAllocator(streamallocator.StreamAllocatorParams{
@@ -1000,23 +1002,22 @@ func (t *PCTransport) Negotiate(force bool) {
 		return
 	}
 
-	if force {
-		t.lock.Lock()
+	var postEvent bool
+	t.lock.Lock()
+	if force || (!t.debouncePending && time.Since(t.lastNegotiate) > negotiationFrequency) {
 		t.debouncedNegotiate(func() {
 			// no op to cancel pending negotiation
 		})
 		t.debouncePending = false
-		t.lock.Unlock()
+		t.lastNegotiate = time.Now()
 
-		t.postEvent(event{
-			signal: signalSendOffer,
-		})
+		postEvent = true
 	} else {
-		t.lock.Lock()
 		if !t.debouncePending {
 			t.debouncedNegotiate(func() {
 				t.lock.Lock()
 				t.debouncePending = false
+				t.lastNegotiate = time.Now()
 				t.lock.Unlock()
 
 				t.postEvent(event{
@@ -1025,7 +1026,13 @@ func (t *PCTransport) Negotiate(force bool) {
 			})
 			t.debouncePending = true
 		}
-		t.lock.Unlock()
+	}
+	t.lock.Unlock()
+
+	if postEvent {
+		t.postEvent(event{
+			signal: signalSendOffer,
+		})
 	}
 }
 
