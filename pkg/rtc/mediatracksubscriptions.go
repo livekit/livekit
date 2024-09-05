@@ -324,7 +324,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	downTrack.SetTransceiver(transceiver)
 
 	downTrack.OnCloseHandler(func(isExpectedToResume bool) {
-		go t.downTrackClosed(sub, isExpectedToResume)
+		t.downTrackClosed(sub, subTrack, isExpectedToResume)
 	})
 
 	t.subscribedTracksMu.Lock()
@@ -435,30 +435,24 @@ func (t *MediaTrackSubscriptions) DebugInfo() []map[string]interface{} {
 
 func (t *MediaTrackSubscriptions) downTrackClosed(
 	sub types.LocalParticipant,
+	subTrack types.SubscribedTrack,
 	isExpectedToResume bool,
 ) {
-	subscriberID := sub.ID()
-	t.subscribedTracksMu.RLock()
-	subTrack := t.subscribedTracks[subscriberID]
-	t.subscribedTracksMu.RUnlock()
-
-	if subTrack != nil {
-		// Cache transceiver for potential re-use on resume.
-		// To ensure subscription manager does not re-subscribe before caching,
-		// delete the subscribed track only after caching.
-		if isExpectedToResume {
-			dt := subTrack.DownTrack()
-			tr := dt.GetTransceiver()
-			if tr != nil {
-				sub := subTrack.Subscriber()
-				sub.CacheDownTrack(subTrack.ID(), tr, dt.GetState())
-			}
+	// Cache transceiver for potential re-use on resume.
+	// To ensure subscription manager does not re-subscribe before caching,
+	// delete the subscribed track only after caching.
+	if isExpectedToResume {
+		dt := subTrack.DownTrack()
+		tr := dt.GetTransceiver()
+		if tr != nil {
+			sub.CacheDownTrack(subTrack.ID(), tr, dt.GetState())
 		}
-
-		t.subscribedTracksMu.Lock()
-		delete(t.subscribedTracks, subscriberID)
-		t.subscribedTracksMu.Unlock()
-
-		subTrack.Close(isExpectedToResume)
 	}
+
+	go func() {
+		t.subscribedTracksMu.Lock()
+		delete(t.subscribedTracks, sub.ID())
+		t.subscribedTracksMu.Unlock()
+		subTrack.Close(isExpectedToResume)
+	}()
 }
