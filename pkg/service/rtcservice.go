@@ -42,6 +42,13 @@ import (
 	"github.com/livekit/psrpc"
 )
 
+const (
+	// TODO: make these configurable
+	initialBackoffSeconds   = 1
+	maxBackoffSecondsPow    = 6 // 64 seconds
+	startConnectionMaxTries = 3
+)
+
 type RTCService struct {
 	router        routing.MessageRouter
 	roomAllocator RoomAllocator
@@ -229,22 +236,26 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// give it a few attempts to start session
 	var cr connectionResult
 	var initialResponse *livekit.SignalResponse
-	for i := 0; r.Context().Err() == nil; i++ {
-		connectionTimeout := 3 * time.Second * time.Duration(i+1)
-		ctx := utils.ContextWithAttempt(r.Context(), i)
+	for attempt := 0; attempt < startConnectionMaxTries && r.Context().Err() == nil; attempt++ {
+		connectionTimeout := 3 * time.Second * time.Duration(attempt+1)
+		ctx := utils.ContextWithAttempt(r.Context(), attempt)
 		cr, initialResponse, err = s.startConnection(ctx, roomName, pi, connectionTimeout)
 		if err == nil || errors.Is(err, context.Canceled) {
 			break
 		}
 
-		backoffDelay := time.Duration(1<<min(i, 6)) * time.Second // exponential backoff delay. powers of 2, max 64 seconds
-		select {
-		case <-time.After(backoffDelay): // wait for backoff
+		if attempt < startConnectionMaxTries-1 {
+			// exponential backoff delay. powers of 2.
+			backoffDelay := time.NewTimer(time.Duration(initialBackoffSeconds<<min(attempt, maxBackoffSecondsPow)) * time.Second)
 			pLogger.Warnw("failed to start connection, retrying", err,
-				"attempt", i,
+				"attempt", attempt,
 				"backoffDelay", backoffDelay,
 			)
-		case <-ctx.Done():
+			select {
+			case <-backoffDelay.C: // wait for backoff
+			case <-ctx.Done():
+				backoffDelay.Stop()
+			}
 		}
 	}
 
