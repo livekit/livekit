@@ -218,6 +218,17 @@ func (t *telemetryService) getOrCreateWorker(
 	return worker, false
 }
 
+func (t *telemetryService) getClosedWorker(participantID livekit.ParticipantID) *StatsWorker {
+	t.workersMu.Lock()
+	defer t.workersMu.Unlock()
+
+	if worker, ok := t.workers[participantID]; ok && worker.Closed() {
+		return worker
+	}
+
+	return nil
+}
+
 func (t *telemetryService) LocalRoomState(ctx context.Context, info *livekit.AnalyticsNodeRooms) {
 	t.enqueue(func() {
 		t.SendNodeRoomStates(ctx, info)
