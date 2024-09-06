@@ -359,7 +359,7 @@ func (r *RoomManager) StartSession(
 				),
 				pi.ReconnectReason,
 			); err != nil {
-				logger.Warnw("could not resume participant", err, "participant", pi.Identity)
+				participant.GetLogger().Warnw("could not resume participant", err)
 				return err
 			}
 			r.telemetry.ParticipantResumed(ctx, room.ToProto(), participant.ToProto(), livekit.NodeID(r.currentNode.Id), pi.ReconnectReason)
@@ -394,10 +394,16 @@ func (r *RoomManager) StartSession(
 		return errors.New("could not restart participant")
 	}
 
-	logger.Debugw("starting RTC session",
+	sid := livekit.ParticipantID(guid.New(utils.ParticipantPrefix))
+	pLogger := rtc.LoggerWithParticipant(
+		rtc.LoggerWithRoom(logger.GetLogger(), room.Name(), room.ID()),
+		pi.Identity,
+		sid,
+		false,
+	)
+	pLogger.Infow("starting RTC session",
 		"room", room.Name(),
 		"nodeID", r.currentNode.Id,
-		"participant", pi.Identity,
 		"clientInfo", logger.Proto(pi.Client),
 		"reconnect", pi.Reconnect,
 		"reconnectReason", pi.ReconnectReason,
@@ -413,12 +419,6 @@ func (r *RoomManager) StartSession(
 	if pi.DisableICELite {
 		rtcConf.SettingEngine.SetLite(false)
 	}
-	sid := livekit.ParticipantID(guid.New(utils.ParticipantPrefix))
-	pLogger := rtc.LoggerWithParticipant(
-		rtc.LoggerWithRoom(logger.GetLogger(), room.Name(), room.ID()),
-		pi.Identity,
-		sid,
-		false)
 	// default allow forceTCP
 	allowFallback := true
 	if r.config.RTC.AllowTCPFallback != nil {
@@ -546,7 +546,7 @@ func (r *RoomManager) StartSession(
 	participant.OnClaimsChanged(func(participant types.LocalParticipant) {
 		pLogger.Debugw("refreshing client token after claims change")
 		if err := r.refreshToken(participant); err != nil {
-			logger.Errorw("could not refresh token", err)
+			pLogger.Errorw("could not refresh token", err)
 		}
 	})
 	participant.OnICEConfigChanged(func(participant types.LocalParticipant, iceConfig *livekit.ICEConfig) {

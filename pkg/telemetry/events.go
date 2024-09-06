@@ -80,13 +80,14 @@ func (t *telemetryService) ParticipantJoined(
 	shouldSendEvent bool,
 ) {
 	t.enqueue(func() {
-		_, found := t.getOrCreateWorker(
+		worker, found := t.getOrCreateWorker(
 			ctx,
 			livekit.RoomID(room.Sid),
 			livekit.RoomName(room.Name),
 			livekit.ParticipantID(participant.Sid),
 			livekit.ParticipantIdentity(participant.Identity),
 		)
+		worker.AddRef()
 		if !found {
 			prometheus.IncrementParticipantRtcConnected(1)
 			prometheus.AddParticipant()
