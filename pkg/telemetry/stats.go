@@ -77,6 +77,7 @@ func (t *telemetryService) TrackStats(key StatsKey, stat *livekit.AnalyticsStat)
 			}
 			if key.track {
 				prometheus.RecordPacketLoss(direction, key.trackSource, key.trackType, stream.PacketsLost, stream.PrimaryPackets+stream.PaddingPackets)
+				prometheus.RecordPacketOutOfOrder(direction, key.trackSource, key.trackType, stream.PacketsOutOfOrder, stream.PrimaryPackets+stream.PaddingPackets)
 				prometheus.RecordRTT(direction, key.trackSource, key.trackType, stream.Rtt)
 				prometheus.RecordJitter(direction, key.trackSource, key.trackType, stream.Jitter)
 			}

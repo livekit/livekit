@@ -218,6 +218,7 @@ func coalesce(stats []*livekit.AnalyticsStat) *livekit.AnalyticsStat {
 			coalescedStream.PaddingPackets += analyticsStream.PaddingPackets
 			coalescedStream.PaddingBytes += analyticsStream.PaddingBytes
 			coalescedStream.PacketsLost += analyticsStream.PacketsLost
+			coalescedStream.PacketsOutOfOrder += analyticsStream.PacketsOutOfOrder
 			coalescedStream.Frames += analyticsStream.Frames
 			coalescedStream.Nacks += analyticsStream.Nacks
 			coalescedStream.Plis += analyticsStream.Plis
@@ -271,6 +272,7 @@ func isValid(stat *livekit.AnalyticsStat) bool {
 			int32(analyticsStream.PaddingPackets) < 0 ||
 			int64(analyticsStream.PaddingBytes) < 0 ||
 			int32(analyticsStream.PacketsLost) < 0 ||
+			int32(analyticsStream.PacketsOutOfOrder) < 0 ||
 			int32(analyticsStream.Frames) < 0 ||
 			int32(analyticsStream.Nacks) < 0 ||
 			int32(analyticsStream.Plis) < 0 ||
