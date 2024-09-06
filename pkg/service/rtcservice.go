@@ -276,6 +276,12 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		signalStats.ResolveRoom(join.GetRoom())
 		signalStats.ResolveParticipant(join.GetParticipant())
 	}
+	if pi.Reconnect && pi.ID != "" {
+		signalStats.ResolveParticipant(&livekit.ParticipantInfo{
+			Sid:      string(pi.ID),
+			Identity: string(pi.Identity),
+		})
+	}
 
 	closedByClient := atomic.NewBool(false)
 	done := make(chan struct{})
