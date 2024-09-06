@@ -86,6 +86,7 @@ func (t *telemetryService) ParticipantJoined(
 			livekit.RoomName(room.Name),
 			livekit.ParticipantID(participant.Sid),
 			livekit.ParticipantIdentity(participant.Identity),
+			false,
 		)
 		if !found {
 			prometheus.IncrementParticipantRtcConnected(1)
@@ -124,6 +125,7 @@ func (t *telemetryService) ParticipantActive(
 			livekit.RoomName(room.Name),
 			livekit.ParticipantID(participant.Sid),
 			livekit.ParticipantIdentity(participant.Identity),
+			false,
 		)
 		if !found {
 			// need to also account for participant count
@@ -154,21 +156,15 @@ func (t *telemetryService) ParticipantResumed(
 		// the corresponding participant's stats worker.
 		//
 		// So, on a successful resume, create the worker if needed.
-		worker, found := t.getOrCreateWorker(
+		_, found := t.getOrCreateWorker(
 			ctx,
 			livekit.RoomID(room.Sid),
 			livekit.RoomName(room.Name),
 			livekit.ParticipantID(participant.Sid),
 			livekit.ParticipantIdentity(participant.Identity),
+			true,
 		)
 		if !found {
-			// a worker was created, check if there is a closed worker and transfer connected state to new worker
-			if closedWorker := t.getClosedWorker(livekit.ParticipantID(participant.Sid)); closedWorker != nil {
-				if closedWorker.IsConnected() {
-					worker.SetConnected()
-				}
-			}
-
 			prometheus.AddParticipant()
 		}
 
