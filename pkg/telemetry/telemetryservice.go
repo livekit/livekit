@@ -143,9 +143,12 @@ func (t *telemetryService) FlushStats() {
 					prev = *p
 					p = &prev.next
 				}
+				*p = worker.next
 				t.workersMu.Unlock()
+			} else {
+				prev.next = worker.next
 			}
-			prev.next = worker.next
+
 			worker.next = reap
 			reap = worker
 		} else {
