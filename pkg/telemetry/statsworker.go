@@ -43,8 +43,6 @@ type StatsWorker struct {
 	outgoingPerTrack map[livekit.TrackID][]*livekit.AnalyticsStat
 	incomingPerTrack map[livekit.TrackID][]*livekit.AnalyticsStat
 	closedAt         time.Time
-
-	refCount int
 }
 
 func newStatsWorker(
@@ -119,31 +117,9 @@ func (s *StatsWorker) Flush(now time.Time) bool {
 	return closed
 }
 
-func (s *StatsWorker) AddRef() {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
-	s.refCount++
-}
-
 func (s *StatsWorker) Close() bool {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-
-	if s.refCount > 0 {
-		s.refCount--
-		if s.refCount != 0 {
-			return false
-		}
-	} else {
-		logger.Warnw(
-			"stats worker ref count is already 0", nil,
-			"room", s.roomName,
-			"roomID", s.roomID,
-			"participant", s.participantIdentity,
-			"pID", s.participantID,
-		)
-	}
 
 	ok := s.closedAt.IsZero()
 	if ok {
