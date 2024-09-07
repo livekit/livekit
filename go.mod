@@ -38,7 +38,7 @@ require (
 	github.com/pion/turn/v2 v2.1.6
 	github.com/pion/webrtc/v3 v3.3.1
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/client_golang v1.20.2
+	github.com/prometheus/client_golang v1.20.3
 	github.com/redis/go-redis/v9 v9.6.1
 	github.com/rs/cors v1.11.1
 	github.com/stretchr/testify v1.9.0
