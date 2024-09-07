@@ -187,6 +187,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 			return
 		}
 		if reusingTransceiver.Load() {
+			sub.GetLogger().Debugw("seeding downtrack state", "trackID", trackID)
 			downTrack.SeedState(dtState)
 		}
 		if err = wr.AddDownTrack(downTrack); err != nil && err != sfu.ErrReceiverClosed {
@@ -265,9 +266,9 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 			// will happen and that will notify remote of this stopped
 			// transceiver
 			existingTransceiver.Stop()
+			reusingTransceiver.Store(false)
 		}
 	}
-	reusingTransceiver.Store(false)
 
 	// if cannot replace, find an unused transceiver or add new one
 	if transceiver == nil {

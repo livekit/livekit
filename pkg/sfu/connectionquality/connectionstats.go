@@ -441,6 +441,7 @@ func toAnalyticsStream(ssrc uint32, deltaStats *buffer.RTPDeltaInfo) *livekit.An
 		PaddingPackets:    deltaStats.PacketsPadding,
 		PaddingBytes:      deltaStats.BytesPadding,
 		PacketsLost:       packetsLost,
+		PacketsOutOfOrder: deltaStats.PacketsOutOfOrder,
 		Frames:            deltaStats.Frames,
 		Rtt:               deltaStats.RttMax,
 		Jitter:            uint32(deltaStats.JitterMax),

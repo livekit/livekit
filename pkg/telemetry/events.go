@@ -86,6 +86,7 @@ func (t *telemetryService) ParticipantJoined(
 			livekit.RoomName(room.Name),
 			livekit.ParticipantID(participant.Sid),
 			livekit.ParticipantIdentity(participant.Identity),
+			false,
 		)
 		if !found {
 			prometheus.IncrementParticipantRtcConnected(1)
@@ -124,6 +125,7 @@ func (t *telemetryService) ParticipantActive(
 			livekit.RoomName(room.Name),
 			livekit.ParticipantID(participant.Sid),
 			livekit.ParticipantIdentity(participant.Identity),
+			false,
 		)
 		if !found {
 			// need to also account for participant count
@@ -145,6 +147,27 @@ func (t *telemetryService) ParticipantResumed(
 	reason livekit.ReconnectReason,
 ) {
 	t.enqueue(func() {
+		// create a worker if needed.
+		//
+		// Signalling channel stats collector and media channel stats collector could both call
+		// ParticipantJoined and ParticipantLeft.
+		//
+		// On a resume, the signalling channel collector would call `ParticipantLeft` which would close
+		// the corresponding participant's stats worker.
+		//
+		// So, on a successful resume, create the worker if needed.
+		_, found := t.getOrCreateWorker(
+			ctx,
+			livekit.RoomID(room.Sid),
+			livekit.RoomName(room.Name),
+			livekit.ParticipantID(participant.Sid),
+			livekit.ParticipantIdentity(participant.Identity),
+			true,
+		)
+		if !found {
+			prometheus.AddParticipant()
+		}
+
 		ev := newParticipantEvent(livekit.AnalyticsEventType_PARTICIPANT_RESUMED, room, participant)
 		ev.ClientMeta = &livekit.AnalyticsClientMeta{
 			Node:            string(nodeID),
