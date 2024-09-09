@@ -295,6 +295,7 @@ type SignalRelayConfig struct {
 	MinRetryInterval time.Duration `yaml:"min_retry_interval,omitempty"`
 	MaxRetryInterval time.Duration `yaml:"max_retry_interval,omitempty"`
 	StreamBufferSize int           `yaml:"stream_buffer_size,omitempty"`
+	ConnectAttempts  int           `yaml:"connect_attempts,omitempty"`
 }
 
 // RegionConfig lists available regions and their latitude/longitude, so the selector would prefer
@@ -569,6 +570,7 @@ var DefaultConfig = Config{
 		MinRetryInterval: 500 * time.Millisecond,
 		MaxRetryInterval: 4 * time.Second,
 		StreamBufferSize: 1000,
+		ConnectAttempts:  3,
 	},
 	PSRPC: rpc.DefaultPSRPCConfig,
 	Keys:  map[string]string{},
