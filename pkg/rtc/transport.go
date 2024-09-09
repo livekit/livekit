@@ -1009,7 +1009,7 @@ func (t *PCTransport) Negotiate(force bool) {
 			// no op to cancel pending negotiation
 		})
 		t.debouncePending = false
-		t.lastNegotiate = time.Now()
+		t.updateLastNeogitateLocked()
 
 		postEvent = true
 	} else {
@@ -1017,7 +1017,7 @@ func (t *PCTransport) Negotiate(force bool) {
 			t.debouncedNegotiate(func() {
 				t.lock.Lock()
 				t.debouncePending = false
-				t.lastNegotiate = time.Now()
+				t.updateLastNeogitateLocked()
 				t.lock.Unlock()
 
 				t.postEvent(event{
@@ -1033,6 +1033,12 @@ func (t *PCTransport) Negotiate(force bool) {
 		t.postEvent(event{
 			signal: signalSendOffer,
 		})
+	}
+}
+
+func (t *PCTransport) updateLastNeogitateLocked() {
+	if now := time.Now(); now.After(t.lastNegotiate) {
+		t.lastNegotiate = now
 	}
 }
 
@@ -1234,6 +1240,10 @@ func (t *PCTransport) SetPreviousSdp(offer, answer *webrtc.SessionDescription) {
 			}
 		}
 	}
+	// disable fast negotiation temporarily after migration to avoid sending offer
+	// contains part of subscribed tracks before migration (needs some time to resolve them).
+	// browser might have trouble to handle this kind of offer (To be confirmed).
+	t.lastNegotiate = time.Now().Add(iceFailedTimeoutTotal)
 	t.lock.Unlock()
 }
 
