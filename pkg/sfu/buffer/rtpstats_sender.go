@@ -483,7 +483,7 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 
 	if r.srNewest != nil {
 		var err error
-		rtt, err = mediatransportutil.GetRttMs(&rr, r.srNewest.NTPTimestamp, r.srNewest.At)
+		rtt, err = mediatransportutil.GetRttMs(&rr, mediatransportutil.NtpTime(r.srNewest.NtpTimestamp), time.Unix(0, r.srNewest.At))
 		if err == nil {
 			isRttChanged = rtt != r.rtt
 		} else {
@@ -584,7 +584,7 @@ func (r *RTPStatsSender) LastReceiverReportTime() time.Time {
 	return r.lastRRTime
 }
 
-func (r *RTPStatsSender) MaybeAdjustFirstPacketTime(publisherSRData *RTCPSenderReportData, tsOffset uint64) {
+func (r *RTPStatsSender) MaybeAdjustFirstPacketTime(publisherSRData *livekit.RTCPSenderReportState, tsOffset uint64) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
@@ -612,7 +612,7 @@ func (r *RTPStatsSender) GetExpectedRTPTimestamp(at time.Time) (expectedTSExt ui
 	return
 }
 
-func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *RTCPSenderReportData, tsOffset uint64, passThrough bool) *rtcp.SenderReport {
+func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *livekit.RTCPSenderReportState, tsOffset uint64, passThrough bool) *rtcp.SenderReport {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
@@ -620,26 +620,26 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *RTCPS
 		return nil
 	}
 
-	timeSincePublisherSRAdjusted := time.Since(publisherSRData.AtAdjusted)
-	now := publisherSRData.AtAdjusted.Add(timeSincePublisherSRAdjusted)
+	timeSincePublisherSRAdjusted := time.Since(time.Unix(0, publisherSRData.AtAdjusted))
+	now := publisherSRData.AtAdjusted + timeSincePublisherSRAdjusted.Nanoseconds()
 	var (
 		nowNTP    mediatransportutil.NtpTime
 		nowRTPExt uint64
 	)
 	if passThrough {
-		nowNTP = publisherSRData.NTPTimestamp
-		nowRTPExt = publisherSRData.RTPTimestampExt - tsOffset
+		nowNTP = mediatransportutil.NtpTime(publisherSRData.NtpTimestamp)
+		nowRTPExt = publisherSRData.RtpTimestampExt - tsOffset
 	} else {
-		nowNTP = mediatransportutil.ToNtpTime(now)
-		nowRTPExt = publisherSRData.RTPTimestampExt - tsOffset + uint64(timeSincePublisherSRAdjusted.Nanoseconds()*int64(r.params.ClockRate)/1e9)
+		nowNTP = mediatransportutil.ToNtpTime(time.Unix(0, now))
+		nowRTPExt = publisherSRData.RtpTimestampExt - tsOffset + uint64(timeSincePublisherSRAdjusted.Nanoseconds()*int64(r.params.ClockRate)/1e9)
 	}
 
 	packetCount := uint32(r.getTotalPacketsPrimary(r.extStartSN, r.extHighestSN) + r.packetsDuplicate + r.packetsPadding)
-	octetCount := uint32(r.bytes + r.bytesDuplicate + r.bytesPadding)
-	srData := &RTCPSenderReportData{
-		NTPTimestamp:    nowNTP,
-		RTPTimestamp:    uint32(nowRTPExt),
-		RTPTimestampExt: nowRTPExt,
+	octetCount := r.bytes + r.bytesDuplicate + r.bytesPadding
+	srData := &livekit.RTCPSenderReportState{
+		NtpTimestamp:    uint64(nowNTP),
+		RtpTimestamp:    uint32(nowRTPExt),
+		RtpTimestampExt: nowRTPExt,
 		At:              now,
 		AtAdjusted:      now,
 		Packets:         packetCount,
@@ -652,18 +652,18 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *RTCPS
 			"feed", publisherSRData,
 			"tsOffset", tsOffset,
 			"timeNow", time.Now().String(),
-			"now", now.String(),
-			"timeSinceHighest", now.Sub(time.Unix(0, r.highestTime)).String(),
-			"timeSinceFirst", now.Sub(time.Unix(0, r.firstTime)).String(),
+			"now", time.Unix(0, now).String(),
+			"timeSinceHighest", time.Unix(0, now).Sub(time.Unix(0, r.highestTime)).String(),
+			"timeSinceFirst", time.Unix(0, now).Sub(time.Unix(0, r.firstTime)).String(),
 			"timeSincePublisherSRAdjusted", timeSincePublisherSRAdjusted.String(),
-			"timeSincePublisherSR", time.Since(publisherSRData.At).String(),
+			"timeSincePublisherSR", time.Since(time.Unix(0, publisherSRData.At)).String(),
 			"nowRTPExt", nowRTPExt,
 			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
 		}
 	}
-	if r.srNewest != nil && nowRTPExt >= r.srNewest.RTPTimestampExt {
-		timeSinceLastReport := nowNTP.Time().Sub(r.srNewest.NTPTimestamp.Time())
-		rtpDiffSinceLastReport := nowRTPExt - r.srNewest.RTPTimestampExt
+	if r.srNewest != nil && nowRTPExt >= r.srNewest.RtpTimestampExt {
+		timeSinceLastReport := nowNTP.Time().Sub(mediatransportutil.NtpTime(r.srNewest.NtpTimestamp).Time())
+		rtpDiffSinceLastReport := nowRTPExt - r.srNewest.RtpTimestampExt
 		windowClockRate := float64(rtpDiffSinceLastReport) / timeSinceLastReport.Seconds()
 		if timeSinceLastReport.Seconds() > 0.2 && math.Abs(float64(r.params.ClockRate)-windowClockRate) > 0.2*float64(r.params.ClockRate) {
 			r.clockSkewCount++
@@ -680,7 +680,7 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *RTCPS
 		}
 	}
 
-	if r.srNewest != nil && nowRTPExt < r.srNewest.RTPTimestampExt {
+	if r.srNewest != nil && nowRTPExt < r.srNewest.RtpTimestampExt {
 		// If report being generated is behind the last report, skip it.
 		// Should not happen.
 		r.logger.Infow("sending sender report, out-of-order, skipping", getFields()...)
@@ -697,7 +697,7 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *RTCPS
 		NTPTime:     uint64(nowNTP),
 		RTPTime:     uint32(nowRTPExt),
 		PacketCount: packetCount,
-		OctetCount:  octetCount,
+		OctetCount:  uint32(octetCount),
 	}
 }
 
@@ -1025,5 +1025,11 @@ func (r lockedRTPStatsSenderLogEncoder) MarshalLogObject(e zapcore.ObjectEncoder
 	e.AddUint64("packetsLostFromRR", r.packetsLostFromRR)
 	e.AddFloat64("jitterFromRR", r.jitterFromRR)
 	e.AddFloat64("maxJitterFromRR", r.maxJitterFromRR)
+
+	packetDrift, ntpReportDrift, receivedReportDrift, rebasedReportDrift := r.getDrift(r.extStartTS, r.extHighestTS)
+	e.AddObject("packetDrift", wrappedRTPDriftLogger{packetDrift})
+	e.AddObject("ntpReportDrift", wrappedRTPDriftLogger{ntpReportDrift})
+	e.AddObject("receivedReportDrift", wrappedRTPDriftLogger{receivedReportDrift})
+	e.AddObject("rebasedReportDrift", wrappedRTPDriftLogger{rebasedReportDrift})
 	return nil
 }
