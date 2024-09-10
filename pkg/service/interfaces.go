@@ -90,7 +90,7 @@ type SIPStore interface {
 	ListSIPTrunk(ctx context.Context) ([]*livekit.SIPTrunkInfo, error)
 	ListSIPInboundTrunk(ctx context.Context) ([]*livekit.SIPInboundTrunkInfo, error)
 	ListSIPOutboundTrunk(ctx context.Context) ([]*livekit.SIPOutboundTrunkInfo, error)
-	DeleteSIPTrunk(ctx context.Context, info *livekit.SIPTrunkInfo) error
+	DeleteSIPTrunk(ctx context.Context, sipTrunkID string) error
 
 	StoreSIPDispatchRule(ctx context.Context, info *livekit.SIPDispatchRuleInfo) error
 	LoadSIPDispatchRule(ctx context.Context, sipDispatchRuleID string) (*livekit.SIPDispatchRuleInfo, error)

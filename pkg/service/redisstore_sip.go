@@ -105,17 +105,13 @@ func (s *RedisStore) LoadSIPOutboundTrunk(ctx context.Context, id string) (*live
 	return nil, ErrSIPTrunkNotFound
 }
 
-func (s *RedisStore) deleteSIPTrunk(ctx context.Context, id string) error {
+func (s *RedisStore) DeleteSIPTrunk(ctx context.Context, id string) error {
 	tx := s.rc.TxPipeline()
 	tx.HDel(s.ctx, SIPTrunkKey, id)
 	tx.HDel(s.ctx, SIPInboundTrunkKey, id)
 	tx.HDel(s.ctx, SIPOutboundTrunkKey, id)
 	_, err := tx.Exec(ctx)
 	return err
-}
-
-func (s *RedisStore) DeleteSIPTrunk(ctx context.Context, info *livekit.SIPTrunkInfo) error {
-	return s.deleteSIPTrunk(ctx, info.SipTrunkId)
 }
 
 func (s *RedisStore) listSIPLegacyTrunk(ctx context.Context) ([]*livekit.SIPTrunkInfo, error) {
