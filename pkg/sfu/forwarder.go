@@ -26,7 +26,9 @@ import (
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/zap/zapcore"
+	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -188,13 +190,13 @@ type TranslationParams struct {
 // -------------------------------------------------------------------
 
 type refInfo struct {
-	senderReport    *buffer.RTCPSenderReportData
+	senderReport    *livekit.RTCPSenderReportState
 	tsOffset        uint64
 	isTSOffsetValid bool
 }
 
 func (r refInfo) MarshalLogObject(e zapcore.ObjectEncoder) error {
-	e.AddObject("senderReport", r.senderReport)
+	e.AddObject("senderReport", buffer.WrappedRTCPSenderReportStateLogger{r.senderReport})
 	e.AddUint64("tsOffset", r.tsOffset)
 	e.AddBool("isTSOffsetValid", r.isTSOffsetValid)
 	return nil
@@ -202,11 +204,11 @@ func (r refInfo) MarshalLogObject(e zapcore.ObjectEncoder) error {
 
 // -------------------------------------------------------------------
 
-type wrappedRefInfoLogger struct {
+type wrappedRefInfosLogger struct {
 	*Forwarder
 }
 
-func (w wrappedRefInfoLogger) MarshalLogObject(e zapcore.ObjectEncoder) error {
+func (w wrappedRefInfosLogger) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	for i, refInfo := range w.Forwarder.refInfos {
 		e.AddObject(fmt.Sprintf("%d", i), refInfo)
 	}
@@ -399,6 +401,11 @@ func (f *Forwarder) GetState() *livekit.RTPForwarderState {
 			Vp8Munger: vp8MungerState,
 		}
 	}
+
+	state.SenderReportState = make([]*livekit.RTCPSenderReportState, len(f.refInfos))
+	for layer, refInfo := range f.refInfos {
+		state.SenderReportState[layer] = proto.Clone(refInfo.senderReport).(*livekit.RTCPSenderReportState)
+	}
 	return state
 }
 
@@ -409,6 +416,12 @@ func (f *Forwarder) SeedState(state *livekit.RTPForwarderState) {
 
 	f.lock.Lock()
 	defer f.lock.Unlock()
+
+	for layer, rtcpSenderReportState := range state.SenderReportState {
+		f.refInfos[layer] = refInfo{
+			senderReport: proto.Clone(rtcpSenderReportState).(*livekit.RTCPSenderReportState),
+		}
+	}
 
 	f.rtpMunger.SeedState(state.RtpMunger)
 	f.codecMunger.SeedState(state.CodecMunger)
@@ -570,6 +583,14 @@ func (f *Forwarder) GetMaxSubscribedSpatial() int32 {
 		if layer < f.vls.GetCurrent().Spatial {
 			layer = f.vls.GetCurrent().Spatial
 		}
+
+		// if reference layer is higher, hold there until an RTCP Sender Report from
+		// publisher is available as that is used for reference time stamp between layers.
+		if f.referenceLayerSpatial != buffer.InvalidLayerSpatial &&
+			layer < f.referenceLayerSpatial &&
+			f.refInfos[f.referenceLayerSpatial].senderReport == nil {
+			layer = f.referenceLayerSpatial
+		}
 	}
 
 	return layer
@@ -596,62 +617,57 @@ func (f *Forwarder) getRefLayer() (int32, int32) {
 	return currentLayerSpatial, currentLayerSpatial
 }
 
-func (f *Forwarder) SetRefSenderReport(isSVC bool, layer int32, srData *buffer.RTCPSenderReportData) {
+func (f *Forwarder) SetRefSenderReport(isSVC bool, layer int32, srData *livekit.RTCPSenderReportState) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
 	f.refIsSVC = isSVC
-	refLayer, _ := f.getRefLayer()
 	if layer >= 0 && int(layer) < len(f.refInfos) {
 		f.refInfos[layer] = refInfo{srData, 0, false}
-		if layer == refLayer && srData.RTPTimestampExt >= f.lastSwitchExtIncomingTS {
+
+		// Mark validity of time stamp offset.
+		//
+		// It is possible to implement mute using pause/unpause
+		// which can be implemented using replaceTrack(null)/replaceTrack(track).
+		// In those cases, the RTP time stamp may not jump across
+		// the mute/pause valley (for the time it is replaced with null track).
+		// So, relying on a report that happened before unmute/unpause
+		// could result in incorrect RTCP sender report on subscriber side.
+		//
+		// It could happen like this
+		//   1. Normal operation: publisher sending sender reports and
+		//      suscribers use reports from publisher to calculate and send
+		//      RTCP sender report.
+		//   2. Publisher pauses: there are no more reports.
+		//   3. When paused, subscriber can still use the publisher side sender
+		//      report to send reports. Although the time since last publisher
+		//      sender report is increasing, the reports would still be correct
+		//      as they referencing a previous (albeit older) correct report.
+		//   4. Publisher unpauses after 20 seconds. But, it may not have advanced
+		//      RTP Timestamp by that much. Let us say, it advances only by 5 seconds.
+		//   5. When subscriber starts forwarding packets, it will calculate
+		//      a new time stamp offset to adjust to the new time stamp of publisher.
+		//   6. But, when that same offset is used on an old publisher sender report
+		//      (i. e. a report from before the pause), the subscriber side sender
+		//      reports jumps ahead in time by 15 seconds.
+		//
+		// So, mark valid for reports after last switch.
+		refLayer, _ := f.getRefLayer()
+		if layer == refLayer && srData.RtpTimestampExt >= f.lastSwitchExtIncomingTS {
 			f.refInfos[layer].tsOffset = f.rtpMunger.GetTSOffset()
 			f.refInfos[layer].isTSOffsetValid = true
 		}
 	}
 }
 
-func (f *Forwarder) clearRefSenderReportsLocked() {
-	// On (re)start of fowarding, clear any old publisher sender reports.
-	// This is done to prevent use of potentially stale publisher sender reports.
-	//
-	// It is possible to implement mute using pause/unpause
-	// which can be implemented using replaceTrack(null)/replaceTrack(track).
-	// In those cases, the RTP time stamp may not jump across
-	// the mute/pause valley (for the time it is replaced with null track).
-	// So, relying on a report that happened before unmute/unpause
-	// could result in incorrect RTCP sender report on subscriber side.
-	//
-	// It could happen like this
-	//   1. Normal operation: publisher sending sender reports and
-	//      suscribers use reports from publisher to calculate and send
-	//      RTCP sender report.
-	//   2. Publisher pauses: there are no more reports.
-	//   3. When paused, subscriber can still use the publisher side sender
-	//      report to send reports. Although the time since last publisher
-	//      sender report is increasing, the reports would still be correct
-	//      as they referencing a previous (albeit older) correct report.
-	//   4. Publisher unpauses after 20 seconds. But, it may not have advanced
-	//      RTP Timestamp by that much. Let us say, it advances only by 5 seconds.
-	//   5. When subscriber starts forwarding packets, it will calculate
-	//      a new time stamp offset to adjust to the new time stamp of publisher.
-	//   6. But, when that same offset is used on an old publisher sender report
-	//      (i. e. a report from before the pause), the subscriber side sender
-	//      reports jumps ahead in time by 15 seconds.
-	//
-	// By clearing sender report on (re)start of a stream, subscribers will wait for a fresh report
-	// after unmute to send sender report.
-	for layer := int32(0); layer < buffer.DefaultMaxLayerSpatial+1; layer++ {
-		f.refInfos[layer] = refInfo{nil, 0, false}
-	}
-}
-
-func (f *Forwarder) GetSenderReportParams() (int32, uint64, *buffer.RTCPSenderReportData) {
+func (f *Forwarder) GetSenderReportParams() (int32, uint64, *livekit.RTCPSenderReportState) {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
 	refLayer, currentLayerSpatial := f.getRefLayer()
-	if refLayer == buffer.InvalidLayerSpatial || !f.refInfos[refLayer].isTSOffsetValid {
+	if refLayer == buffer.InvalidLayerSpatial ||
+		f.refInfos[refLayer].senderReport == nil ||
+		!f.refInfos[refLayer].isTSOffsetValid {
 		return buffer.InvalidLayerSpatial, 0, nil
 	}
 
@@ -1584,18 +1600,18 @@ func (f *Forwarder) getRefLayerRTPTimestamp(ts uint32, refLayer, targetLayer int
 
 	srRef := f.refInfos[refLayer].senderReport
 	srTarget := f.refInfos[targetLayer].senderReport
-	if srRef == nil || srRef.NTPTimestamp == 0 || srTarget == nil || srTarget.NTPTimestamp == 0 {
+	if srRef == nil || srRef.NtpTimestamp == 0 || srTarget == nil || srTarget.NtpTimestamp == 0 {
 		return 0, fmt.Errorf("unavailable layer(s), refLayer: %d, targetLayer: %d", refLayer, targetLayer)
 	}
 
-	ntpDiff := srRef.NTPTimestamp.Time().Sub(srTarget.NTPTimestamp.Time())
+	ntpDiff := mediatransportutil.NtpTime(srRef.NtpTimestamp).Time().Sub(mediatransportutil.NtpTime(srTarget.NtpTimestamp).Time())
 	rtpDiff := ntpDiff.Nanoseconds() * int64(f.codec.ClockRate) / 1e9
 
 	// calculate other layer's time stamp at the same time as ref layer's NTP time
-	normalizedOtherTS := srTarget.RTPTimestamp + uint32(rtpDiff)
+	normalizedOtherTS := srTarget.RtpTimestamp + uint32(rtpDiff)
 
 	// now both layers' time stamp refer to the same NTP time and the diff is the offset between the layers
-	offset := srRef.RTPTimestamp - normalizedOtherTS
+	offset := srRef.RtpTimestamp - normalizedOtherTS
 
 	return ts + offset, nil
 }
@@ -1606,8 +1622,6 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		f.referenceLayerSpatial = layer
 		f.rtpMunger.SetLastSnTs(extPkt)
 		f.codecMunger.SetLast(extPkt)
-
-		f.clearRefSenderReportsLocked()
 
 		f.logger.Debugw(
 			"starting forwarding",
@@ -1644,7 +1658,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			"extRefTS", extRefTS,
 			"extLastTS", extLastTS,
 			"diffSeconds", math.Abs(diffSeconds),
-			"refInfos", wrappedRefInfoLogger{f},
+			"refInfos", wrappedRefInfosLogger{f},
 		)
 	}
 	// TODO-REMOVE-AFTER-DATA-COLLECTION
@@ -1659,7 +1673,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			"extRefTS", extRefTS,
 			"extLastTS", extLastTS,
 			"diffSeconds", math.Abs(diffSeconds),
-			"refInfos", wrappedRefInfoLogger{f},
+			"refInfos", wrappedRefInfosLogger{f},
 		)
 	}
 
@@ -1775,13 +1789,6 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			extNextTS = extRefTS
 		}
 		f.resumeBehindThreshold = 0.0
-
-		// sender reports are cleared after calculating switch time stamp
-		// as relative differences between layers should remain the same.
-		// TODO: If the relative difference changes a lot, probably have to
-		// abandon the checks above and just use the expected timestamp
-		// as the next time stamp.
-		f.clearRefSenderReportsLocked()
 	} else {
 		// switching between layers, check if extRefTS is too far behind the last sent
 		diffSeconds := float64(int64(extRefTS-extLastTS)) / float64(f.codec.ClockRate)
@@ -1858,12 +1865,12 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer int32, tp *TranslationParams) error {
 	if f.lastSSRC != extPkt.Packet.SSRC {
 		if err := f.processSourceSwitch(extPkt, layer); err != nil {
-			f.logger.Debugw("could not switch feed", "error", err, "refInfos", wrappedRefInfoLogger{f})
+			f.logger.Debugw("could not switch feed", "error", err, "refInfos", wrappedRefInfosLogger{f})
 			tp.shouldDrop = true
 			f.vls.Rollback()
 			return nil
 		}
-		f.logger.Debugw("switching feed", "from", f.lastSSRC, "to", extPkt.Packet.SSRC, "refInfos", wrappedRefInfoLogger{f})
+		f.logger.Debugw("switching feed", "from", f.lastSSRC, "to", extPkt.Packet.SSRC, "refInfos", wrappedRefInfosLogger{f})
 		f.lastSSRC = extPkt.Packet.SSRC
 		f.lastSwitchExtIncomingTS = extPkt.ExtTimestamp
 	}

@@ -35,7 +35,6 @@ import (
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	sutils "github.com/livekit/livekit-server/pkg/utils"
-	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/mediatransportutil/pkg/bucket"
 	"github.com/livekit/mediatransportutil/pkg/nack"
 	"github.com/livekit/mediatransportutil/pkg/twcc"
@@ -935,12 +934,12 @@ func (b *Buffer) buildReceptionReport() *rtcp.ReceptionReport {
 
 func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64, packets uint32, octets uint32) {
 	b.RLock()
-	srData := &RTCPSenderReportData{
-		RTPTimestamp: rtpTime,
-		NTPTimestamp: mediatransportutil.NtpTime(ntpTime),
-		At:           b.getMonotonicNow(),
+	srData := &livekit.RTCPSenderReportState{
+		RtpTimestamp: rtpTime,
+		NtpTimestamp: ntpTime,
+		At:           b.getMonotonicNowUnixNano(),
 		Packets:      packets,
-		Octets:       octets,
+		Octets:       uint64(octets),
 	}
 
 	didSet := false
@@ -956,7 +955,7 @@ func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64, packets uin
 	}
 }
 
-func (b *Buffer) GetSenderReportData() *RTCPSenderReportData {
+func (b *Buffer) GetSenderReportData() *livekit.RTCPSenderReportState {
 	b.RLock()
 	defer b.RUnlock()
 
@@ -1124,10 +1123,6 @@ func (b *Buffer) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
 
 func (b *Buffer) getMonotonicNowUnixNano() int64 {
 	return b.baseTime.Add(time.Since(b.baseTime)).UnixNano()
-}
-
-func (b *Buffer) getMonotonicNow() time.Time {
-	return b.baseTime.Add(time.Since(b.baseTime))
 }
 
 // ---------------------------------------------------------------
