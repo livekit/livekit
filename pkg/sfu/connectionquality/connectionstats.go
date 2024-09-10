@@ -208,7 +208,8 @@ func (cs *ConnectionStats) updateScoreWithAggregate(agg *buffer.RTPDeltaInfo, la
 	if agg != nil {
 		stat.startedAt = agg.StartTime
 		stat.duration = agg.EndTime.Sub(agg.StartTime)
-		stat.packetsExpected = agg.Packets + agg.PacketsPadding
+		stat.packets = agg.Packets
+		stat.packetsPadding = agg.PacketsPadding
 		stat.packetsLost = agg.PacketsLost
 		stat.packetsMissing = agg.PacketsMissing
 		stat.packetsOutOfOrder = agg.PacketsOutOfOrder

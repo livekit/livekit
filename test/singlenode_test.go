@@ -376,6 +376,20 @@ func TestSingleNodeCORS(t *testing.T) {
 	require.Equal(t, "testhost.com", res.Header.Get("Access-Control-Allow-Origin"))
 }
 
+func TestSingleNodeDoubleSlash(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+	s, finish := setupSingleNodeTest("TestSingleNodeDoubleSlash")
+	defer finish()
+	// client contains trailing slash in URL, causing path to contain double //
+	// without our middleware, this would cause a 302 redirect
+	roomClient = livekit.NewRoomServiceJSONClient(fmt.Sprintf("http://localhost:%d/", s.HTTPPort()), &http.Client{})
+	_, err := roomClient.ListRooms(contextWithToken(listRoomToken()), &livekit.ListRoomsRequest{})
+	require.NoError(t, err)
+}
+
 func TestPingPong(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()

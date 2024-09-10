@@ -54,7 +54,8 @@ var (
 type windowStat struct {
 	startedAt         time.Time
 	duration          time.Duration
-	packetsExpected   uint32
+	packets           uint32
+	packetsPadding    uint32
 	packetsLost       uint32
 	packetsMissing    uint32
 	packetsOutOfOrder uint32
@@ -111,8 +112,8 @@ func (w *windowStat) calculatePacketScore(plw float64, includeRTT bool, includeJ
 	}
 
 	var lossEffect float64
-	if w.packetsExpected > 0 {
-		lossEffect = float64(actualLost) * 100.0 / float64(w.packetsExpected)
+	if w.packets+w.packetsPadding > 0 {
+		lossEffect = float64(actualLost) * 100.0 / float64(w.packets+w.packetsPadding)
 	}
 	lossEffect *= plw
 
@@ -148,10 +149,11 @@ func (w *windowStat) calculateBitrateScore(expectedBits int64, isEnabled bool) f
 }
 
 func (w *windowStat) String() string {
-	return fmt.Sprintf("start: %+v, dur: %+v, pe: %d, pl: %d, pm: %d, pooo: %d, b: %d, rtt: %d, jitter: %0.2f, lastRTCP: %+v",
+	return fmt.Sprintf("start: %+v, dur: %+v, p: %d, pp: %d, pl: %d, pm: %d, pooo: %d, b: %d, rtt: %d, jitter: %0.2f, lastRTCP: %+v",
 		w.startedAt,
 		w.duration,
-		w.packetsExpected,
+		w.packets,
+		w.packetsPadding,
 		w.packetsLost,
 		w.packetsMissing,
 		w.packetsOutOfOrder,
@@ -169,7 +171,8 @@ func (w *windowStat) MarshalLogObject(e zapcore.ObjectEncoder) error {
 
 	e.AddTime("startedAt", w.startedAt)
 	e.AddString("duration", w.duration.String())
-	e.AddUint32("packetsExpected", w.packetsExpected)
+	e.AddUint32("packets", w.packets)
+	e.AddUint32("packetsPadding", w.packetsPadding)
 	e.AddUint32("packetsLost", w.packetsLost)
 	e.AddUint32("packetsMissing", w.packetsMissing)
 	e.AddUint32("packetsOutOfOrder", w.packetsOutOfOrder)
@@ -395,7 +398,7 @@ func (q *qualityScorer) updateAtLocked(stat *windowStat, at time.Time) {
 	plw := q.getPacketLossWeight(stat)
 	reason := "none"
 	var score float64
-	if stat.packetsExpected == 0 {
+	if stat.packets+stat.packetsPadding == 0 {
 		if !stat.lastRTCPAt.IsZero() && at.Sub(stat.lastRTCPAt) > stat.duration {
 			reason = "dry"
 			score = qualityTransitionScore[livekit.ConnectionQuality_LOST]
@@ -522,10 +525,10 @@ func (q *qualityScorer) getPacketLossWeight(stat *windowStat) float64 {
 	// and the effect of loss is not pronounced in those scenarios (audio silence, statis screen share).
 	// for example, DTX typically uses only 5% of packets of full packet rate. at that rate,
 	// packet loss weight is reduced to ~22% of configured weight (i. e. sqrt(0.05) * configured weight)
-	pps := float64(stat.packetsExpected) / stat.duration.Seconds()
+	pps := float64(stat.packets) / stat.duration.Seconds()
 	if pps > q.maxPPS {
 		q.maxPPS = pps
-		q.params.Logger.Debugw("updating maxPPS", "expected", stat.packetsExpected, "duration", stat.duration.Seconds(), "pps", pps)
+		q.params.Logger.Debugw("updating maxPPS", "expected", stat.packets, "duration", stat.duration.Seconds(), "pps", pps)
 	}
 
 	if q.maxPPS == 0 {
