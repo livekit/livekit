@@ -147,9 +147,9 @@ func (w WrappedRTCPSenderReportStateLogger) MarshalLogObject(e zapcore.ObjectEnc
 		return nil
 	}
 
-	e.AddUint32("RTPTimestamp", rsrs.RtpTimestamp)
-	e.AddUint64("RTPTimestampExt", rsrs.RtpTimestampExt)
-	e.AddTime("NTPTimestamp", mediatransportutil.NtpTime(rsrs.NtpTimestamp).Time())
+	e.AddUint32("RtpTimestamp", rsrs.RtpTimestamp)
+	e.AddUint64("RtpTimestampExt", rsrs.RtpTimestampExt)
+	e.AddTime("NtpTimestamp", mediatransportutil.NtpTime(rsrs.NtpTimestamp).Time())
 	e.AddTime("At", time.Unix(0, rsrs.At))
 	e.AddTime("AtAdjusted", time.Unix(0, rsrs.AtAdjusted))
 	e.AddUint32("Packets", rsrs.Packets)
