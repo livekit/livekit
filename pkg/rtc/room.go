@@ -1801,48 +1801,12 @@ func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, kin
 func BroadcastMetricsForRoom(r types.Room, _source types.LocalParticipant, dp *livekit.DataPacket, logger logger.Logger) {
 	switch payload := dp.Value.(type) {
 	case *livekit.DataPacket_Metrics:
-		// METRICS-TODO-QUESTION: should metrics do destination identities filtering? Comes as part of data packet semantics,
-		// so doing it here, but something to think about.
-		dest := dp.GetUser().GetDestinationSids()
-		if u := dp.GetUser(); u != nil {
-			if len(dp.DestinationIdentities) == 0 {
-				dp.DestinationIdentities = u.DestinationIdentities
-			} else {
-				u.DestinationIdentities = dp.DestinationIdentities
+		utils.ParallelExec(r.GetLocalParticipants(), dataForwardLoadBalanceThreshold, 1, func(op types.LocalParticipant) {
+			// echoing back to sender too
+			if op.State() == livekit.ParticipantInfo_ACTIVE {
+				// METRICS-TODO: should add senderIdentity to HandleMetrics so that handler knows if it is coming from self.
+				op.HandleMetrics(payload.Metrics)
 			}
-			if dp.ParticipantIdentity != "" {
-				u.ParticipantIdentity = dp.ParticipantIdentity
-			} else {
-				dp.ParticipantIdentity = u.ParticipantIdentity
-			}
-		}
-		destIdentities := dp.DestinationIdentities
-
-		participants := r.GetLocalParticipants()
-		capacity := len(destIdentities)
-		if capacity == 0 {
-			capacity = len(dest)
-		}
-		if capacity == 0 {
-			capacity = len(participants)
-		}
-		destParticipants := make([]types.LocalParticipant, 0, capacity)
-
-		// echoing back to sender also
-		for _, op := range participants {
-			if op.State() != livekit.ParticipantInfo_ACTIVE {
-				continue
-			}
-			if len(dest) > 0 || len(destIdentities) > 0 {
-				if !slices.Contains(dest, string(op.ID())) && !slices.Contains(destIdentities, string(op.Identity())) {
-					continue
-				}
-			}
-			destParticipants = append(destParticipants, op)
-		}
-
-		utils.ParallelExec(destParticipants, dataForwardLoadBalanceThreshold, 1, func(op types.LocalParticipant) {
-			op.HandleMetrics(payload.Metrics)
 		})
 	default:
 	}
