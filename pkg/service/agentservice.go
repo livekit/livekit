@@ -42,6 +42,8 @@ import (
 	"github.com/livekit/psrpc"
 )
 
+const agentWorkerLoadTarget = 0.65
+
 type AgentSocketUpgrader struct {
 	websocket.Upgrader
 }
@@ -378,20 +380,13 @@ func (h *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job)
 	defer h.mu.Unlock()
 
 	var affinity float32
-	var maxLoad float32
 	for _, w := range h.workers {
 		if w.AgentName() != job.AgentName || w.Namespace() != job.Namespace || w.JobType() != job.Type {
 			continue
 		}
 
 		if w.Status() == livekit.WorkerStatus_WS_AVAILABLE {
-			load := w.Load()
-			if len(w.RunningJobs()) > 0 && load > maxLoad {
-				maxLoad = load
-				affinity = 0.5 + load/2
-			} else if affinity == 0 {
-				affinity = 0.5
-			}
+			affinity += max(0, agentWorkerLoadTarget-w.Load())
 		}
 	}
 
