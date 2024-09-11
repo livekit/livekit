@@ -1600,8 +1600,11 @@ func (f *Forwarder) getRefLayerRTPTimestamp(ts uint32, refLayer, targetLayer int
 
 	srRef := f.refInfos[refLayer].senderReport
 	srTarget := f.refInfos[targetLayer].senderReport
-	if srRef == nil || srRef.NtpTimestamp == 0 || srTarget == nil || srTarget.NtpTimestamp == 0 {
-		return 0, fmt.Errorf("unavailable layer(s), refLayer: %d, targetLayer: %d", refLayer, targetLayer)
+	if srRef == nil || srRef.NtpTimestamp == 0 {
+		return 0, fmt.Errorf("unavailable layer ref, refLayer: %d, targetLayer: %d", refLayer, targetLayer)
+	}
+	if srTarget == nil || srTarget.NtpTimestamp == 0 {
+		return 0, fmt.Errorf("unavailable layer target, refLayer: %d, targetLayer: %d", refLayer, targetLayer)
 	}
 
 	ntpDiff := mediatransportutil.NtpTime(srRef.NtpTimestamp).Time().Sub(mediatransportutil.NtpTime(srTarget.NtpTimestamp).Time())
@@ -1622,7 +1625,6 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		f.referenceLayerSpatial = layer
 		f.rtpMunger.SetLastSnTs(extPkt)
 		f.codecMunger.SetLast(extPkt)
-
 		f.logger.Debugw(
 			"starting forwarding",
 			"sequenceNumber", extPkt.Packet.SequenceNumber,
@@ -1865,12 +1867,28 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer int32, tp *TranslationParams) error {
 	if f.lastSSRC != extPkt.Packet.SSRC {
 		if err := f.processSourceSwitch(extPkt, layer); err != nil {
-			f.logger.Debugw("could not switch feed", "error", err, "refInfos", wrappedRefInfosLogger{f})
+			f.logger.Debugw(
+				"could not switch feed",
+				"error", err,
+				"layer", layer,
+				"refInfos", wrappedRefInfosLogger{f},
+				"currentLayer", f.vls.GetCurrent(),
+				"targetLayer", f.vls.GetCurrent(),
+				"maxLayer", f.vls.GetMax(),
+			)
 			tp.shouldDrop = true
 			f.vls.Rollback()
 			return nil
 		}
-		f.logger.Debugw("switching feed", "from", f.lastSSRC, "to", extPkt.Packet.SSRC, "refInfos", wrappedRefInfosLogger{f})
+		f.logger.Debugw("switching feed",
+			"from", f.lastSSRC,
+			"to", extPkt.Packet.SSRC,
+			"layer", layer,
+			"refInfos", wrappedRefInfosLogger{f},
+			"currentLayer", f.vls.GetCurrent(),
+			"targetLayer", f.vls.GetCurrent(),
+			"maxLayer", f.vls.GetMax(),
+		)
 		f.lastSSRC = extPkt.Packet.SSRC
 		f.lastSwitchExtIncomingTS = extPkt.ExtTimestamp
 	}
