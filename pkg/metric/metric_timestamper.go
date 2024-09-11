@@ -87,6 +87,8 @@ func (m *MetricTimestamper) Process(batch *livekit.MetricsBatch) {
 			ev.NormalizedEndTimestamp = timestamppb.New(time.Unix(0, endTimestampMs*1e6+estimatedOWDNanos))
 		}
 	}
+
+	m.params.Logger.Debugw("timestamped metrics batch", "batch", logger.Proto(batch))
 }
 
 func (m *MetricTimestamper) maybeRunOWDEstimator(batch *livekit.MetricsBatch) int64 {
