@@ -21,6 +21,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // ------------------------------------------------
@@ -63,48 +64,45 @@ func NewMetricTimestamper(params MetricTimestamperParams) *MetricTimestamper {
 
 func (m *MetricTimestamper) Process(batch *livekit.MetricsBatch) {
 	// run OWD estimation periodically
-	estimatedOWD := m.maybeRunOWDEstimator(batch)
+	estimatedOWDNanos := m.maybeRunOWDEstimator(batch)
 
 	// change all time stamps and add estimated OWD
 	// NOTE: all timestamps will be re-mapped. If the time series or event happened some time
 	// in the past and the OWD estimation has changed since, those samples will get the updated
 	// OWD estimation applied. So, they may have more uncertainty in addition to the uncertainty
 	// of OWD estimation process.
-	// RAJA-TODO START
-	batch.Timestamp = estimatedOWD.Nanoseconds()
+	batch.NormalizedTimestamp = timestamppb.New(time.Unix(0, batch.TimestampMs*1e6+estimatedOWDNanos))
 
 	for _, ts := range batch.TimeSeries {
 		for _, sample := range ts.Samples {
-			sample.Timestamp = estimatedOWD.Nanoseconds()
+			sample.NormalizedTimestamp = timestamppb.New(time.Unix(0, sample.TimestampMs*1e6+estimatedOWDNanos))
 		}
 	}
 
 	for _, ev := range batch.Events {
-		ev.StartTimestamp = estimatedOWD.Nanoseconds()
+		ev.NormalizedStartTimestamp = timestamppb.New(time.Unix(0, ev.StartTimestampMs*1e6+estimatedOWDNanos))
 
-		endTimestamp := ev.GetEndTimestamp()
-		if endTimestamp != 0 {
-			endTimestamp = estimatedOWD.Nanoseconds()
-			ev.EndTimestamp = &endTimestamp
+		endTimestampMs := ev.GetEndTimestampMs()
+		if endTimestampMs != 0 {
+			ev.NormalizedEndTimestamp = timestamppb.New(time.Unix(0, endTimestampMs*1e6+estimatedOWDNanos))
 		}
 	}
-	// RAJA-TODO STOP
 }
 
-func (m *MetricTimestamper) maybeRunOWDEstimator(batch *livekit.MetricsBatch) time.Duration {
+func (m *MetricTimestamper) maybeRunOWDEstimator(batch *livekit.MetricsBatch) int64 {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
 	if time.Since(m.lastOWDEstimatorRunAt) < m.params.Config.OneWayDelayEstimatorMinInterval &&
 		m.batchesSinceLastOWDEstimatorRun < m.params.Config.OneWayDelayEstimatorMaxBatch {
 		m.batchesSinceLastOWDEstimatorRun++
-		return m.owdEstimator.EstimatedPropagationDelay()
+		return m.owdEstimator.EstimatedPropagationDelay().Nanoseconds()
 	}
 
 	senderClockTime := batch.GetTimestamp()
 	if senderClockTime == 0 {
 		m.batchesSinceLastOWDEstimatorRun++
-		return m.owdEstimator.EstimatedPropagationDelay()
+		return m.owdEstimator.EstimatedPropagationDelay().Nanoseconds()
 	}
 
 	m.lastOWDEstimatorRunAt = time.Now()
@@ -112,5 +110,5 @@ func (m *MetricTimestamper) maybeRunOWDEstimator(batch *livekit.MetricsBatch) ti
 
 	at := m.params.BaseTime.Add(time.Since(m.params.BaseTime))
 	estimatedOWD, _ := m.owdEstimator.Update(time.UnixMilli(senderClockTime), at)
-	return estimatedOWD
+	return estimatedOWD.Nanoseconds()
 }
