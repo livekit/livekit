@@ -99,7 +99,7 @@ func (m *MetricTimestamper) maybeRunOWDEstimator(batch *livekit.MetricsBatch) in
 		return m.owdEstimator.EstimatedPropagationDelay().Nanoseconds()
 	}
 
-	senderClockTime := batch.GetTimestamp()
+	senderClockTime := batch.GetTimestampMs()
 	if senderClockTime == 0 {
 		m.batchesSinceLastOWDEstimatorRun++
 		return m.owdEstimator.EstimatedPropagationDelay().Nanoseconds()
