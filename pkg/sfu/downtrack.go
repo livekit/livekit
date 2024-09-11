@@ -61,7 +61,7 @@ type TrackSender interface {
 		payloadType webrtc.PayloadType,
 		isSVC bool,
 		layer int32,
-		publisherSRData *buffer.RTCPSenderReportData,
+		publisherSRData *livekit.RTCPSenderReportState,
 	) error
 	Resync()
 }
@@ -905,7 +905,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		_, _, refSenderReport := d.forwarder.GetSenderReportParams()
 		if refSenderReport != nil {
 			actExtCopy := *extPkt.AbsCaptureTimeExt
-			if err = actExtCopy.Rewrite(refSenderReport.PropagationDelay(!d.params.DisableSenderReportPassThrough)); err == nil {
+			if err = actExtCopy.Rewrite(buffer.RTCPSenderReportPropagationDelay(refSenderReport, !d.params.DisableSenderReportPassThrough)); err == nil {
 				actBytes, err = actExtCopy.Marshal()
 				if err == nil {
 					extensions = append(
@@ -2191,7 +2191,7 @@ func (d *DownTrack) HandleRTCPSenderReportData(
 	_payloadType webrtc.PayloadType,
 	isSVC bool,
 	layer int32,
-	publisherSRData *buffer.RTCPSenderReportData,
+	publisherSRData *livekit.RTCPSenderReportState,
 ) error {
 	d.forwarder.SetRefSenderReport(isSVC, layer, publisherSRData)
 
@@ -2202,7 +2202,7 @@ func (d *DownTrack) HandleRTCPSenderReportData(
 	return nil
 }
 
-func (d *DownTrack) handleRTCPSenderReportData(publisherSRData *buffer.RTCPSenderReportData, tsOffset uint64) {
+func (d *DownTrack) handleRTCPSenderReportData(publisherSRData *livekit.RTCPSenderReportState, tsOffset uint64) {
 	d.rtpStats.MaybeAdjustFirstPacketTime(publisherSRData, tsOffset)
 }
 
