@@ -1600,8 +1600,11 @@ func (f *Forwarder) getRefLayerRTPTimestamp(ts uint32, refLayer, targetLayer int
 
 	srRef := f.refInfos[refLayer].senderReport
 	srTarget := f.refInfos[targetLayer].senderReport
-	if srRef == nil || srRef.NtpTimestamp == 0 || srTarget == nil || srTarget.NtpTimestamp == 0 {
-		return 0, fmt.Errorf("unavailable layer(s), refLayer: %d, targetLayer: %d", refLayer, targetLayer)
+	if srRef == nil || srRef.NtpTimestamp == 0 {
+		return 0, fmt.Errorf("unavailable layer ref, refLayer: %d, targetLayer: %d", refLayer, targetLayer)
+	}
+	if srTarget == nil || srTarget.NtpTimestamp == 0 {
+		return 0, fmt.Errorf("unavailable layer target, refLayer: %d, targetLayer: %d", refLayer, targetLayer)
 	}
 
 	ntpDiff := mediatransportutil.NtpTime(srRef.NtpTimestamp).Time().Sub(mediatransportutil.NtpTime(srTarget.NtpTimestamp).Time())
