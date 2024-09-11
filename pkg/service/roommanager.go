@@ -66,6 +66,8 @@ type iceConfigCacheKey struct {
 type RoomManager struct {
 	lock sync.RWMutex
 
+	baseTime time.Time
+
 	config            *config.Config
 	rtcConfig         *rtc.WebRTCConfig
 	serverInfo        *livekit.ServerInfo
@@ -116,6 +118,7 @@ func NewLocalRoomManager(
 	}
 
 	r := &RoomManager{
+		baseTime:          time.Now(),
 		config:            conf,
 		rtcConfig:         rtcConf,
 		currentNode:       currentNode,
@@ -444,6 +447,7 @@ func (r *RoomManager) StartSession(
 		subscriberAllowPause = *pi.SubscriberAllowPause
 	}
 	participant, err = rtc.NewParticipant(rtc.ParticipantParams{
+		BaseTime:                r.baseTime,
 		Identity:                pi.Identity,
 		Name:                    pi.Name,
 		SID:                     sid,
@@ -486,6 +490,7 @@ func (r *RoomManager) StartSession(
 		PlayoutDelay:                 roomInternal.GetPlayoutDelay(),
 		SyncStreams:                  roomInternal.GetSyncStreams(),
 		ForwardStats:                 r.forwardStats,
+		MetricConfig:                 r.config.Metric,
 	})
 	if err != nil {
 		return err

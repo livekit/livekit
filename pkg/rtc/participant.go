@@ -40,6 +40,7 @@ import (
 	"github.com/livekit/protocol/utils/guid"
 
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/metric"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/supervisor"
 	"github.com/livekit/livekit-server/pkg/rtc/transport"
@@ -107,6 +108,7 @@ func (p participantUpdateInfo) String() string {
 // ---------------------------------------------------------------
 
 type ParticipantParams struct {
+	BaseTime                time.Time
 	Identity                livekit.ParticipantIdentity
 	Name                    livekit.ParticipantName
 	SID                     livekit.ParticipantID
@@ -155,6 +157,7 @@ type ParticipantParams struct {
 	SyncStreams                    bool
 	ForwardStats                   *sfu.ForwardStats
 	DisableSenderReportPassThrough bool
+	MetricConfig                   metric.MetricConfig
 }
 
 type ParticipantImpl struct {
@@ -251,6 +254,8 @@ type ParticipantImpl struct {
 
 	tracksQuality map[livekit.TrackID]livekit.ConnectionQuality
 
+	metricTimestamper *metric.MetricTimestamper
+
 	// loggers for publisher and subscriber
 	pubLogger logger.Logger
 	subLogger logger.Logger
@@ -285,8 +290,13 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 			params.Telemetry,
 		),
 		tracksQuality: make(map[livekit.TrackID]livekit.ConnectionQuality),
-		pubLogger:     params.Logger.WithComponent(sutils.ComponentPub),
-		subLogger:     params.Logger.WithComponent(sutils.ComponentSub),
+		metricTimestamper: metric.NewMetricTimestamper(metric.MetricTimestamperParams{
+			Config:   params.MetricConfig.Timestamper,
+			BaseTime: params.BaseTime,
+			Logger:   params.Logger,
+		}),
+		pubLogger: params.Logger.WithComponent(sutils.ComponentPub),
+		subLogger: params.Logger.WithComponent(sutils.ComponentSub),
 	}
 	if !params.DisableSupervisor {
 		p.supervisor = supervisor.NewParticipantSupervisor(supervisor.ParticipantSupervisorParams{Logger: params.Logger})
@@ -1674,6 +1684,7 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		// 2. If the above is done, there could be two cadences, publisher side recording/processing/batching
 		//    and pushing it to all subscribers on some cadence and subscribers have their own cadence of
 		//    processing/batching and sending to edge clients.
+		p.metricTimestamper.Process(payload.Metrics)
 	default:
 		p.pubLogger.Warnw("received unsupported data packet", nil, "payload", payload)
 	}
@@ -2239,6 +2250,7 @@ func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo) *M
 
 func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *livekit.TrackInfo) *MediaTrack {
 	mt := NewMediaTrack(MediaTrackParams{
+		BaseTime:              p.params.BaseTime,
 		SignalCid:             signalCid,
 		SdpCid:                sdpCid,
 		ParticipantID:         p.params.SID,

@@ -186,6 +186,7 @@ func WithForwardStats(forwardStats *ForwardStats) ReceiverOpts {
 // NewWebRTCReceiver creates a new webrtc track receiver
 func NewWebRTCReceiver(
 	receiver *webrtc.RTPReceiver,
+	baseTime time.Time,
 	track *webrtc.TrackRemote,
 	trackInfo *livekit.TrackInfo,
 	logger logger.Logger,
@@ -203,7 +204,6 @@ func NewWebRTCReceiver(
 		onRTCP:   onRTCP,
 		isSVC:    buffer.IsSvcCodec(track.Codec().MimeType),
 		isRED:    buffer.IsRedCodec(track.Codec().MimeType),
-		baseTime: time.Now(),
 	}
 
 	for _, opt := range opts {
