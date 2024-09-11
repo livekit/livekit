@@ -66,7 +66,7 @@ func (m *MetricTimestamper) Process(batch *livekit.MetricsBatch) {
 	// run OWD estimation periodically
 	estimatedOWDNanos := m.maybeRunOWDEstimator(batch)
 
-	// change all time stamps and add estimated OWD
+	// normalize all time stamps and add estimated OWD
 	// NOTE: all timestamps will be re-mapped. If the time series or event happened some time
 	// in the past and the OWD estimation has changed since, those samples will get the updated
 	// OWD estimation applied. So, they may have more uncertainty in addition to the uncertainty
