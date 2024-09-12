@@ -196,7 +196,9 @@ type refInfo struct {
 }
 
 func (r refInfo) MarshalLogObject(e zapcore.ObjectEncoder) error {
-	e.AddObject("senderReport", buffer.WrappedRTCPSenderReportStateLogger{r.senderReport})
+	e.AddObject("senderReport", buffer.WrappedRTCPSenderReportStateLogger{
+		RTCPSenderReportState: r.senderReport,
+	})
 	e.AddUint64("tsOffset", r.tsOffset)
 	e.AddBool("isTSOffsetValid", r.isTSOffsetValid)
 	return nil
