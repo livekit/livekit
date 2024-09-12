@@ -27,6 +27,7 @@ import (
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/psrpc"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/telemetry"
@@ -357,4 +358,65 @@ func (s *SIPService) CreateSIPParticipantRequest(ctx context.Context, req *livek
 		return nil, err
 	}
 	return rpc.NewCreateSIPParticipantRequest(callID, wsUrl, token, req, trunk)
+}
+
+func (s *SIPService) TransferSIPParticipant(ctx context.Context, req *livekit.TransferSIPParticipantRequest) (*emptypb.Empty, error) {
+	log := logger.GetLogger().WithValues("roomName", req.RoomName, "participantIdentity", req.ParticipantIdentity)
+	ireq, err := s.TransferSIPParticipantRequest(ctx, req)
+	if err != nil {
+		log.Errorw("cannot create transfer sip participant request", err)
+		return nil, err
+	}
+
+	timeout := 30 * time.Second
+	if deadline, ok := ctx.Deadline(); ok {
+		timeout = time.Until(deadline)
+	} else {
+		var cancel func()
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+	_, err = s.psrpcClient.TransferSIPParticipant(ctx, ireq.SipCallId, ireq, psrpc.WithRequestTimeout(timeout))
+	if err != nil {
+		log.Errorw("cannot transfer sip participant", err)
+		return nil, err
+	}
+
+	return &emptypb.Empty{}, nil
+}
+
+func (s *SIPService) TransferSIPParticipantRequest(ctx context.Context, req *livekit.TransferSIPParticipantRequest) (*rpc.InternalTransferSIPParticipantRequest, error) {
+	if req.RoomName == "" {
+		return nil, psrpc.NewErrorf(psrpc.InvalidArgument, "Missing room name")
+	}
+
+	if req.ParticipantIdentity == "" {
+		return nil, psrpc.NewErrorf(psrpc.InvalidArgument, "Missing participant identity")
+	}
+
+	if err := EnsureSIPCallPermission(ctx); err != nil {
+		return nil, twirpAuthError(err)
+	}
+	if err := EnsureAdminPermission(ctx, livekit.RoomName(req.RoomName)); err != nil {
+		return nil, twirpAuthError(err)
+	}
+
+	// FIXME
+	resp, err := s.roomService.GetParticipant(ctx, &livekit.RoomParticipantIdentity{
+		Room:     req.RoomName,
+		Identity: req.ParticipantIdentity,
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	callID, ok := resp.Attributes[livekit.AttrSIPCallID]
+	if !ok {
+		return nil, psrpc.NewErrorf(psrpc.InvalidArgument, "no SIP session associated with participant")
+	}
+
+	return &rpc.InternalTransferSIPParticipantRequest{
+		SipCallId: callID,
+	}, nil
 }
