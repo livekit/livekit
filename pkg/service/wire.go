@@ -20,6 +20,7 @@ package service
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/google/wire"
 	"github.com/pion/turn/v2"
@@ -45,6 +46,7 @@ import (
 
 func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*LivekitServer, error) {
 	wire.Build(
+		getTimeNow,
 		getNodeID,
 		createRedisClient,
 		createStore,
@@ -120,6 +122,10 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 	)
 
 	return nil, nil
+}
+
+func getTimeNow() time.Time {
+	return time.Now()
 }
 
 func getNodeID(currentNode routing.LocalNode) livekit.NodeID {

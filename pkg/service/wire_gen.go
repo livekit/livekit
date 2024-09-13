@@ -27,6 +27,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"gopkg.in/yaml.v3"
 	"os"
+	"time"
 )
 
 import (
@@ -128,12 +129,13 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
+	time := getTimeNow()
 	clientConfigurationManager := createClientConfiguration()
 	agentStore := getAgentStore(objectStore)
 	timedVersionGenerator := utils.NewDefaultTimedVersionGenerator()
 	turnAuthHandler := NewTURNAuthHandler(keyProvider)
 	forwardStats := createForwardStats(conf)
-	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, roomAllocator, telemetryService, clientConfigurationManager, client, agentStore, rtcEgressLauncher, timedVersionGenerator, turnAuthHandler, messageBus, forwardStats)
+	roomManager, err := NewLocalRoomManager(time, conf, objectStore, currentNode, router, roomAllocator, telemetryService, clientConfigurationManager, client, agentStore, rtcEgressLauncher, timedVersionGenerator, turnAuthHandler, messageBus, forwardStats)
 	if err != nil {
 		return nil, err
 	}
@@ -181,6 +183,10 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 }
 
 // wire.go:
+
+func getTimeNow() time.Time {
+	return time.Now()
+}
 
 func getNodeID(currentNode routing.LocalNode) livekit.NodeID {
 	return livekit.NodeID(currentNode.Id)

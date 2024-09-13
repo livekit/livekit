@@ -97,6 +97,7 @@ type RoomManager struct {
 }
 
 func NewLocalRoomManager(
+	baseTime time.Time,
 	conf *config.Config,
 	roomStore ObjectStore,
 	currentNode routing.LocalNode,
@@ -118,7 +119,7 @@ func NewLocalRoomManager(
 	}
 
 	r := &RoomManager{
-		baseTime:          time.Now(),
+		baseTime:          baseTime,
 		config:            conf,
 		rtcConfig:         rtcConf,
 		currentNode:       currentNode,
