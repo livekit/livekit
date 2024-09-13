@@ -444,7 +444,7 @@ type LocalParticipant interface {
 
 	GetDisableSenderReportPassThrough() bool
 
-	HandleMetrics(batch *livekit.MetricsBatch) error
+	HandleMetrics(senderParticipantID livekit.ParticipantID, batch *livekit.MetricsBatch) error
 }
 
 // Room is a container of participants, and can provide room-level actions

@@ -205,7 +205,6 @@ type ParticipantImpl struct {
 	*TransportManager
 	*UpTrackManager
 	*SubscriptionManager
-	*ParticipantMetrics
 
 	icQueue [2]atomic.Pointer[webrtc.ICECandidate]
 
@@ -324,11 +323,6 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	if err != nil {
 		return nil, err
 	}
-	p.ParticipantMetrics = NewParticipantMetrics(ParticipantMetricsParams{
-		CanSubscribeMetrics: params.Grants.Video.GetCanSubscribeMetrics(),
-		TransportManager:    p.TransportManager,
-		Logger:              params.Logger,
-	})
 
 	p.setupUpTrackManager()
 	p.setupSubscriptionManager()
@@ -982,7 +976,6 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	// Close will block.
 	go func() {
 		p.SubscriptionManager.Close(isExpectedToResume)
-		p.ParticipantMetrics.Close()
 		p.TransportManager.Close()
 	}()
 
@@ -1237,6 +1230,10 @@ func (p *ParticipantImpl) CanPublishData() bool {
 
 func (p *ParticipantImpl) Hidden() bool {
 	return p.grants.Load().Video.Hidden
+}
+
+func (p *ParticipantImpl) CanSubscribeMetrics() bool {
+	return p.grants.Load().Video.GetCanSubscribeMetrics()
 }
 
 func (p *ParticipantImpl) VerifySubscribeParticipantInfo(pID livekit.ParticipantID, version uint32) {
@@ -2851,4 +2848,31 @@ func (p *ParticipantImpl) UpdateVideoTrack(update *livekit.UpdateLocalVideoTrack
 
 	p.pubLogger.Debugw("could not locate track", "trackID", update.TrackSid)
 	return errors.New("could not find track")
+}
+
+func (p *ParticipantImpl) HandleMetrics(senderParticipantID livekit.ParticipantID, metrics *livekit.MetricsBatch) error {
+	if p.State() != livekit.ParticipantInfo_ACTIVE {
+		return ErrDataChannelUnavailable
+	}
+
+	if !p.CanSubscribeMetrics() {
+		return ErrNoSubscribeMetricsPermission
+	}
+
+	if !p.SubscriptionManager.IsSubscribedTo(senderParticipantID) {
+		return nil
+	}
+
+	// METRICS-TODO:  This is just forwarding. May need some time stamp munging.
+	dpData, err := proto.Marshal(&livekit.DataPacket{
+		Value: &livekit.DataPacket_Metrics{
+			Metrics: metrics,
+		},
+	})
+	if err != nil {
+		p.params.Logger.Errorw("failed to marshal data packet", err)
+		return err
+	}
+
+	return p.TransportManager.SendDataPacket(livekit.DataPacket_RELIABLE, dpData)
 }

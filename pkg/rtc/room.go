@@ -1771,9 +1771,6 @@ func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, kin
 
 	var dpData []byte
 	for _, op := range participants {
-		if op.State() != livekit.ParticipantInfo_ACTIVE {
-			continue
-		}
 		if source != nil && op.ID() == source.ID() {
 			continue
 		}
@@ -1798,15 +1795,12 @@ func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, kin
 	})
 }
 
-func BroadcastMetricsForRoom(r types.Room, _source types.LocalParticipant, dp *livekit.DataPacket, logger logger.Logger) {
+func BroadcastMetricsForRoom(r types.Room, source types.LocalParticipant, dp *livekit.DataPacket, logger logger.Logger) {
 	switch payload := dp.Value.(type) {
 	case *livekit.DataPacket_Metrics:
 		utils.ParallelExec(r.GetLocalParticipants(), dataForwardLoadBalanceThreshold, 1, func(op types.LocalParticipant) {
 			// echoing back to sender too
-			if op.State() == livekit.ParticipantInfo_ACTIVE {
-				// METRICS-TODO: should add senderIdentity to HandleMetrics so that handler knows if it is coming from self.
-				op.HandleMetrics(payload.Metrics)
-			}
+			op.HandleMetrics(source.ID(), payload.Metrics)
 		})
 	default:
 	}

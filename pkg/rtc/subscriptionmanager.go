@@ -24,6 +24,7 @@ import (
 
 	"github.com/pion/webrtc/v3/pkg/rtcerr"
 	"go.uber.org/atomic"
+	"golang.org/x/exp/maps"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
@@ -216,11 +217,7 @@ func (m *SubscriptionManager) GetSubscribedParticipants() []livekit.ParticipantI
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
-	var participantIDs []livekit.ParticipantID
-	for pID := range m.subscribedTo {
-		participantIDs = append(participantIDs, pID)
-	}
-	return participantIDs
+	return maps.Keys(m.subscribedTo)
 }
 
 func (m *SubscriptionManager) IsSubscribedTo(participantID livekit.ParticipantID) bool {

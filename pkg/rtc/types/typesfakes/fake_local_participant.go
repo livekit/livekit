@@ -413,10 +413,11 @@ type FakeLocalParticipant struct {
 	handleAnswerArgsForCall []struct {
 		arg1 webrtc.SessionDescription
 	}
-	HandleMetricsStub        func(*livekit.MetricsBatch) error
+	HandleMetricsStub        func(livekit.ParticipantID, *livekit.MetricsBatch) error
 	handleMetricsMutex       sync.RWMutex
 	handleMetricsArgsForCall []struct {
-		arg1 *livekit.MetricsBatch
+		arg1 livekit.ParticipantID
+		arg2 *livekit.MetricsBatch
 	}
 	handleMetricsReturns struct {
 		result1 error
@@ -3162,18 +3163,19 @@ func (fake *FakeLocalParticipant) HandleAnswerArgsForCall(i int) webrtc.SessionD
 	return argsForCall.arg1
 }
 
-func (fake *FakeLocalParticipant) HandleMetrics(arg1 *livekit.MetricsBatch) error {
+func (fake *FakeLocalParticipant) HandleMetrics(arg1 livekit.ParticipantID, arg2 *livekit.MetricsBatch) error {
 	fake.handleMetricsMutex.Lock()
 	ret, specificReturn := fake.handleMetricsReturnsOnCall[len(fake.handleMetricsArgsForCall)]
 	fake.handleMetricsArgsForCall = append(fake.handleMetricsArgsForCall, struct {
-		arg1 *livekit.MetricsBatch
-	}{arg1})
+		arg1 livekit.ParticipantID
+		arg2 *livekit.MetricsBatch
+	}{arg1, arg2})
 	stub := fake.HandleMetricsStub
 	fakeReturns := fake.handleMetricsReturns
-	fake.recordInvocation("HandleMetrics", []interface{}{arg1})
+	fake.recordInvocation("HandleMetrics", []interface{}{arg1, arg2})
 	fake.handleMetricsMutex.Unlock()
 	if stub != nil {
-		return stub(arg1)
+		return stub(arg1, arg2)
 	}
 	if specificReturn {
 		return ret.result1
@@ -3187,17 +3189,17 @@ func (fake *FakeLocalParticipant) HandleMetricsCallCount() int {
 	return len(fake.handleMetricsArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) HandleMetricsCalls(stub func(*livekit.MetricsBatch) error) {
+func (fake *FakeLocalParticipant) HandleMetricsCalls(stub func(livekit.ParticipantID, *livekit.MetricsBatch) error) {
 	fake.handleMetricsMutex.Lock()
 	defer fake.handleMetricsMutex.Unlock()
 	fake.HandleMetricsStub = stub
 }
 
-func (fake *FakeLocalParticipant) HandleMetricsArgsForCall(i int) *livekit.MetricsBatch {
+func (fake *FakeLocalParticipant) HandleMetricsArgsForCall(i int) (livekit.ParticipantID, *livekit.MetricsBatch) {
 	fake.handleMetricsMutex.RLock()
 	defer fake.handleMetricsMutex.RUnlock()
 	argsForCall := fake.handleMetricsArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeLocalParticipant) HandleMetricsReturns(result1 error) {
