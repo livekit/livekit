@@ -2863,7 +2863,10 @@ func (p *ParticipantImpl) HandleMetrics(senderParticipantID livekit.ParticipantI
 		return nil
 	}
 
-	// METRICS-TODO:  This is just forwarding. May need some time stamp munging.
+	// METRICS-TODO:  This is just forwarding. Will have to do more, including but not limited to
+	//   1. Filtering: subscriber metrics from self only should be sent to that participant.
+	//   2. Batching: could include re-mapping labels to consolidate multiple batches.
+	//   3. (Maybe) Time stamps: this is done on receive, TBD if required here also
 	dpData, err := proto.Marshal(&livekit.DataPacket{
 		Value: &livekit.DataPacket_Metrics{
 			Metrics: metrics,
