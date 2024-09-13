@@ -321,7 +321,7 @@ type LocalParticipant interface {
 	GetBufferFactory() *buffer.Factory
 	GetPlayoutDelayConfig() *livekit.PlayoutDelay
 	GetPendingTrack(trackID livekit.TrackID) *livekit.TrackInfo
-	GetICEConnectionDetails() []*ICEConnectionDetails
+	GetICEConnectionInfo() []*ICEConnectionInfo
 	HasConnected() bool
 	GetEnabledPublishCodecs() []*livekit.Codec
 

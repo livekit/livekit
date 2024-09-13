@@ -306,15 +306,15 @@ type FakeLocalParticipant struct {
 	getICEConfigReturnsOnCall map[int]struct {
 		result1 *livekit.ICEConfig
 	}
-	GetICEConnectionDetailsStub        func() []*types.ICEConnectionDetails
-	getICEConnectionDetailsMutex       sync.RWMutex
-	getICEConnectionDetailsArgsForCall []struct {
+	GetICEConnectionInfoStub        func() []*types.ICEConnectionInfo
+	getICEConnectionInfoMutex       sync.RWMutex
+	getICEConnectionInfoArgsForCall []struct {
 	}
-	getICEConnectionDetailsReturns struct {
-		result1 []*types.ICEConnectionDetails
+	getICEConnectionInfoReturns struct {
+		result1 []*types.ICEConnectionInfo
 	}
-	getICEConnectionDetailsReturnsOnCall map[int]struct {
-		result1 []*types.ICEConnectionDetails
+	getICEConnectionInfoReturnsOnCall map[int]struct {
+		result1 []*types.ICEConnectionInfo
 	}
 	GetLoggerStub        func() logger.Logger
 	getLoggerMutex       sync.RWMutex
@@ -2584,15 +2584,15 @@ func (fake *FakeLocalParticipant) GetICEConfigReturnsOnCall(i int, result1 *live
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) GetICEConnectionDetails() []*types.ICEConnectionDetails {
-	fake.getICEConnectionDetailsMutex.Lock()
-	ret, specificReturn := fake.getICEConnectionDetailsReturnsOnCall[len(fake.getICEConnectionDetailsArgsForCall)]
-	fake.getICEConnectionDetailsArgsForCall = append(fake.getICEConnectionDetailsArgsForCall, struct {
+func (fake *FakeLocalParticipant) GetICEConnectionInfo() []*types.ICEConnectionInfo {
+	fake.getICEConnectionInfoMutex.Lock()
+	ret, specificReturn := fake.getICEConnectionInfoReturnsOnCall[len(fake.getICEConnectionInfoArgsForCall)]
+	fake.getICEConnectionInfoArgsForCall = append(fake.getICEConnectionInfoArgsForCall, struct {
 	}{})
-	stub := fake.GetICEConnectionDetailsStub
-	fakeReturns := fake.getICEConnectionDetailsReturns
-	fake.recordInvocation("GetICEConnectionDetails", []interface{}{})
-	fake.getICEConnectionDetailsMutex.Unlock()
+	stub := fake.GetICEConnectionInfoStub
+	fakeReturns := fake.getICEConnectionInfoReturns
+	fake.recordInvocation("GetICEConnectionInfo", []interface{}{})
+	fake.getICEConnectionInfoMutex.Unlock()
 	if stub != nil {
 		return stub()
 	}
@@ -2602,38 +2602,38 @@ func (fake *FakeLocalParticipant) GetICEConnectionDetails() []*types.ICEConnecti
 	return fakeReturns.result1
 }
 
-func (fake *FakeLocalParticipant) GetICEConnectionDetailsCallCount() int {
-	fake.getICEConnectionDetailsMutex.RLock()
-	defer fake.getICEConnectionDetailsMutex.RUnlock()
-	return len(fake.getICEConnectionDetailsArgsForCall)
+func (fake *FakeLocalParticipant) GetICEConnectionInfoCallCount() int {
+	fake.getICEConnectionInfoMutex.RLock()
+	defer fake.getICEConnectionInfoMutex.RUnlock()
+	return len(fake.getICEConnectionInfoArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) GetICEConnectionDetailsCalls(stub func() []*types.ICEConnectionDetails) {
-	fake.getICEConnectionDetailsMutex.Lock()
-	defer fake.getICEConnectionDetailsMutex.Unlock()
-	fake.GetICEConnectionDetailsStub = stub
+func (fake *FakeLocalParticipant) GetICEConnectionInfoCalls(stub func() []*types.ICEConnectionInfo) {
+	fake.getICEConnectionInfoMutex.Lock()
+	defer fake.getICEConnectionInfoMutex.Unlock()
+	fake.GetICEConnectionInfoStub = stub
 }
 
-func (fake *FakeLocalParticipant) GetICEConnectionDetailsReturns(result1 []*types.ICEConnectionDetails) {
-	fake.getICEConnectionDetailsMutex.Lock()
-	defer fake.getICEConnectionDetailsMutex.Unlock()
-	fake.GetICEConnectionDetailsStub = nil
-	fake.getICEConnectionDetailsReturns = struct {
-		result1 []*types.ICEConnectionDetails
+func (fake *FakeLocalParticipant) GetICEConnectionInfoReturns(result1 []*types.ICEConnectionInfo) {
+	fake.getICEConnectionInfoMutex.Lock()
+	defer fake.getICEConnectionInfoMutex.Unlock()
+	fake.GetICEConnectionInfoStub = nil
+	fake.getICEConnectionInfoReturns = struct {
+		result1 []*types.ICEConnectionInfo
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) GetICEConnectionDetailsReturnsOnCall(i int, result1 []*types.ICEConnectionDetails) {
-	fake.getICEConnectionDetailsMutex.Lock()
-	defer fake.getICEConnectionDetailsMutex.Unlock()
-	fake.GetICEConnectionDetailsStub = nil
-	if fake.getICEConnectionDetailsReturnsOnCall == nil {
-		fake.getICEConnectionDetailsReturnsOnCall = make(map[int]struct {
-			result1 []*types.ICEConnectionDetails
+func (fake *FakeLocalParticipant) GetICEConnectionInfoReturnsOnCall(i int, result1 []*types.ICEConnectionInfo) {
+	fake.getICEConnectionInfoMutex.Lock()
+	defer fake.getICEConnectionInfoMutex.Unlock()
+	fake.GetICEConnectionInfoStub = nil
+	if fake.getICEConnectionInfoReturnsOnCall == nil {
+		fake.getICEConnectionInfoReturnsOnCall = make(map[int]struct {
+			result1 []*types.ICEConnectionInfo
 		})
 	}
-	fake.getICEConnectionDetailsReturnsOnCall[i] = struct {
-		result1 []*types.ICEConnectionDetails
+	fake.getICEConnectionInfoReturnsOnCall[i] = struct {
+		result1 []*types.ICEConnectionInfo
 	}{result1}
 }
 
@@ -7078,8 +7078,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.getEnabledPublishCodecsMutex.RUnlock()
 	fake.getICEConfigMutex.RLock()
 	defer fake.getICEConfigMutex.RUnlock()
-	fake.getICEConnectionDetailsMutex.RLock()
-	defer fake.getICEConnectionDetailsMutex.RUnlock()
+	fake.getICEConnectionInfoMutex.RLock()
+	defer fake.getICEConnectionInfoMutex.RUnlock()
 	fake.getLoggerMutex.RLock()
 	defer fake.getLoggerMutex.RUnlock()
 	fake.getPacerMutex.RLock()

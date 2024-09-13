@@ -498,15 +498,15 @@ func (t *TransportManager) SubscriberAsPrimary() bool {
 	return t.params.SubscriberAsPrimary
 }
 
-func (t *TransportManager) GetICEConnectionDetails() []*types.ICEConnectionDetails {
-	details := make([]*types.ICEConnectionDetails, 0, 2)
+func (t *TransportManager) GetICEConnectionInfo() []*types.ICEConnectionInfo {
+	infos := make([]*types.ICEConnectionInfo, 0, 2)
 	for _, pc := range []*PCTransport{t.publisher, t.subscriber} {
-		cd := pc.GetICEConnectionDetails()
-		if cd.HasCandidates() {
-			details = append(details, cd.Clone())
+		info := pc.GetICEConnectionInfo()
+		if info.HasCandidates() {
+			infos = append(infos, info)
 		}
 	}
-	return details
+	return infos
 }
 
 func (t *TransportManager) getTransport(isPrimary bool) *PCTransport {
