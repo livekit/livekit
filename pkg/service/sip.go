@@ -159,6 +159,38 @@ func (s *SIPService) CreateSIPOutboundTrunk(ctx context.Context, req *livekit.Cr
 	return info, nil
 }
 
+func (s *SIPService) GetSIPInboundTrunk(ctx context.Context, req *livekit.GetSIPInboundTrunkRequest) (*livekit.GetSIPInboundTrunkResponse, error) {
+	if err := EnsureSIPAdminPermission(ctx); err != nil {
+		return nil, twirpAuthError(err)
+	}
+	if s.store == nil {
+		return nil, ErrSIPNotConnected
+	}
+
+	trunk, err := s.store.LoadSIPInboundTrunk(ctx, req.SipTrunkId)
+	if err != nil {
+		return nil, err
+	}
+
+	return &livekit.GetSIPInboundTrunkResponse{Trunk: trunk}, nil
+}
+
+func (s *SIPService) GetSIPOutboundTrunk(ctx context.Context, req *livekit.GetSIPOutboundTrunkRequest) (*livekit.GetSIPOutboundTrunkResponse, error) {
+	if err := EnsureSIPAdminPermission(ctx); err != nil {
+		return nil, twirpAuthError(err)
+	}
+	if s.store == nil {
+		return nil, ErrSIPNotConnected
+	}
+
+	trunk, err := s.store.LoadSIPOutboundTrunk(ctx, req.SipTrunkId)
+	if err != nil {
+		return nil, err
+	}
+
+	return &livekit.GetSIPOutboundTrunkResponse{Trunk: trunk}, nil
+}
+
 func (s *SIPService) ListSIPTrunk(ctx context.Context, req *livekit.ListSIPTrunkRequest) (*livekit.ListSIPTrunkResponse, error) {
 	if err := EnsureSIPAdminPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
@@ -215,16 +247,11 @@ func (s *SIPService) DeleteSIPTrunk(ctx context.Context, req *livekit.DeleteSIPT
 		return nil, ErrSIPNotConnected
 	}
 
-	info, err := s.store.LoadSIPTrunk(ctx, req.SipTrunkId)
-	if err != nil {
+	if err := s.store.DeleteSIPTrunk(ctx, req.SipTrunkId); err != nil {
 		return nil, err
 	}
 
-	if err = s.store.DeleteSIPTrunk(ctx, info); err != nil {
-		return nil, err
-	}
-
-	return info, nil
+	return &livekit.SIPTrunkInfo{SipTrunkId: req.SipTrunkId}, nil
 }
 
 func (s *SIPService) CreateSIPDispatchRule(ctx context.Context, req *livekit.CreateSIPDispatchRuleRequest) (*livekit.SIPDispatchRuleInfo, error) {
@@ -356,5 +383,5 @@ func (s *SIPService) CreateSIPParticipantRequest(ctx context.Context, req *livek
 		)
 		return nil, err
 	}
-	return rpc.NewCreateSIPParticipantRequest(callID, wsUrl, token, req, trunk)
+	return rpc.NewCreateSIPParticipantRequest("", callID, "", wsUrl, token, req, trunk)
 }
