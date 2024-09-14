@@ -394,11 +394,11 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 		}
 		// do not remove subscription from map. Wait for subscribed track to close
 		// and the callback (handleSubscribedTrackClose) to set the subscribedTrack to nil
-		// and the cleanup path handle removing subscription. it is possible that the track
-		// is re-published before subscribed track is closed. That could create a new subscription
-		// and a duplicate entry in SDP. Waiting for susbcribed track close would ensure that
-		// the track is removed from the peer connection before re-published track is re-subscribed
-		// and added to the SDP.
+		// and the clean up path to handle removing subscription from the subscription map.
+		// It is possible that the track is re-published before subscribed track is closed.
+		// That could create a new subscription and a duplicate entry in SDP.
+		// Waiting for susbcribed track close would ensure that the track is removed from
+		// the peer connection before re-published track is re-subscribed and added back to the SDP.
 		return
 	}
 
