@@ -25,6 +25,7 @@ import (
 
 	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 )
 
 const (
@@ -1027,9 +1028,9 @@ func (r lockedRTPStatsSenderLogEncoder) MarshalLogObject(e zapcore.ObjectEncoder
 	e.AddFloat64("maxJitterFromRR", r.maxJitterFromRR)
 
 	packetDrift, ntpReportDrift, receivedReportDrift, rebasedReportDrift := r.getDrift(r.extStartTS, r.extHighestTS)
-	e.AddObject("packetDrift", wrappedRTPDriftLogger{packetDrift})
-	e.AddObject("ntpReportDrift", wrappedRTPDriftLogger{ntpReportDrift})
-	e.AddObject("receivedReportDrift", wrappedRTPDriftLogger{receivedReportDrift})
-	e.AddObject("rebasedReportDrift", wrappedRTPDriftLogger{rebasedReportDrift})
+	e.AddObject("packetDrift", logger.Proto(packetDrift))
+	e.AddObject("ntpReportDrift", logger.Proto(ntpReportDrift))
+	e.AddObject("receivedReportDrift", logger.Proto(receivedReportDrift))
+	e.AddObject("rebasedReportDrift", logger.Proto(rebasedReportDrift))
 	return nil
 }

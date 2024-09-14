@@ -196,9 +196,7 @@ type refInfo struct {
 }
 
 func (r refInfo) MarshalLogObject(e zapcore.ObjectEncoder) error {
-	e.AddObject("senderReport", buffer.WrappedRTCPSenderReportStateLogger{
-		RTCPSenderReportState: r.senderReport,
-	})
+	e.AddObject("senderReport", logger.Proto(r.senderReport))
 	e.AddUint64("tsOffset", r.tsOffset)
 	e.AddBool("isTSOffsetValid", r.isTSOffsetValid)
 	return nil
@@ -625,6 +623,9 @@ func (f *Forwarder) SetRefSenderReport(isSVC bool, layer int32, srData *livekit.
 
 	f.refIsSVC = isSVC
 	if layer >= 0 && int(layer) < len(f.refInfos) {
+		if layer == f.referenceLayerSpatial && f.refInfos[layer].senderReport == nil {
+			f.logger.Debugw("received RTCP sender report for reference layer spatial", "layer", layer)
+		}
 		f.refInfos[layer] = refInfo{srData, 0, false}
 
 		// Mark validity of time stamp offset.
