@@ -35,6 +35,7 @@ import (
 	"github.com/pion/webrtc/v3"
 	"github.com/pkg/errors"
 	"go.uber.org/atomic"
+	"go.uber.org/zap/zapcore"
 
 	lkinterceptor "github.com/livekit/mediatransportutil/pkg/interceptor"
 	lktwcc "github.com/livekit/mediatransportutil/pkg/twcc"
@@ -130,6 +131,30 @@ func (e event) String() string {
 }
 
 // -------------------------------------------------------
+
+type wrappedICECandidatePairLogger struct {
+	pair *webrtc.ICECandidatePair
+}
+
+func (w wrappedICECandidatePairLogger) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if w.pair == nil {
+		return nil
+	}
+
+	if w.pair.Local != nil {
+		e.AddString("localProtocol", w.pair.Local.Protocol.String())
+		e.AddString("localCandidateType", w.pair.Local.Typ.String())
+		e.AddString("localAdddress", w.pair.Local.Address)
+		e.AddUint16("localPort", w.pair.Local.Port)
+	}
+	if w.pair.Remote != nil {
+		e.AddString("remoteProtocol", w.pair.Remote.Protocol.String())
+		e.AddString("remoteCandidateType", w.pair.Remote.Typ.String())
+	}
+	return nil
+}
+
+// -------------------------------------------------------------------
 
 type SimulcastTrackInfo struct {
 	Mid string
@@ -617,7 +642,7 @@ func (t *PCTransport) handleConnectionFailed(forceShortConn bool) {
 		isShort, duration = t.IsShortConnection(time.Now())
 		if isShort {
 			pair, err := t.getSelectedPair()
-			t.params.Logger.Debugw("short ICE connection", "error", err, "pair", pair, "duration", duration)
+			t.params.Logger.Debugw("short ICE connection", "error", err, "pair", wrappedICECandidatePairLogger{pair}, "duration", duration)
 		}
 	}
 
@@ -653,6 +678,9 @@ func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionSta
 			t.params.Handler.OnInitialConnected()
 
 			t.maybeNotifyFullyEstablished()
+		} else {
+			pair, err := t.getSelectedPair()
+			t.params.Logger.Infow("ice reconnected", "error", err, "pair", wrappedICECandidatePairLogger{pair})
 		}
 	case webrtc.PeerConnectionStateFailed:
 		t.clearConnTimer()
@@ -911,8 +939,8 @@ func (t *PCTransport) HasEverConnected() bool {
 	return !t.firstConnectedAt.IsZero()
 }
 
-func (t *PCTransport) GetICEConnectionDetails() *types.ICEConnectionDetails {
-	return t.connectionDetails
+func (t *PCTransport) GetICEConnectionInfo() *types.ICEConnectionInfo {
+	return t.connectionDetails.GetInfo()
 }
 
 func (t *PCTransport) WriteRTCP(pkts []rtcp.Packet) error {
