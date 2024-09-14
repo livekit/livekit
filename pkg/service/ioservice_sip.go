@@ -26,7 +26,7 @@ import (
 
 // matchSIPTrunk finds a SIP Trunk definition matching the request.
 // Returns nil if no rules matched or an error if there are conflicting definitions.
-func (s *IOInfoService) matchSIPTrunk(ctx context.Context, calling, called string) (*livekit.SIPInboundTrunkInfo, error) {
+func (s *IOInfoService) matchSIPTrunk(ctx context.Context, trunkID, calling, called string) (*livekit.SIPInboundTrunkInfo, error) {
 	trunks, err := s.ss.ListSIPInboundTrunk(ctx)
 	if err != nil {
 		return nil, err
@@ -49,7 +49,7 @@ func (s *IOInfoService) matchSIPDispatchRule(ctx context.Context, trunk *livekit
 func (s *IOInfoService) EvaluateSIPDispatchRules(ctx context.Context, req *rpc.EvaluateSIPDispatchRulesRequest) (*rpc.EvaluateSIPDispatchRulesResponse, error) {
 	log := logger.GetLogger()
 	log = log.WithValues("toUser", req.CalledNumber, "fromUser", req.CallingNumber)
-	trunk, err := s.matchSIPTrunk(ctx, req.CallingNumber, req.CalledNumber)
+	trunk, err := s.matchSIPTrunk(ctx, req.SipTrunkId, req.CallingNumber, req.CalledNumber)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +74,7 @@ func (s *IOInfoService) EvaluateSIPDispatchRules(ctx context.Context, req *rpc.E
 		return nil, err
 	}
 	log.Debugw("SIP dispatch rule matched", "sipRule", best.SipDispatchRuleId)
-	resp, err := sip.EvaluateDispatchRule(trunkID, best, req)
+	resp, err := sip.EvaluateDispatchRule("", trunk, best, req)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +85,7 @@ func (s *IOInfoService) EvaluateSIPDispatchRules(ctx context.Context, req *rpc.E
 func (s *IOInfoService) GetSIPTrunkAuthentication(ctx context.Context, req *rpc.GetSIPTrunkAuthenticationRequest) (*rpc.GetSIPTrunkAuthenticationResponse, error) {
 	log := logger.GetLogger()
 	log = log.WithValues("toUser", req.To, "fromUser", req.From)
-	trunk, err := s.matchSIPTrunk(ctx, req.From, req.To)
+	trunk, err := s.matchSIPTrunk(ctx, "", req.From, req.To)
 	if err != nil {
 		return nil, err
 	}

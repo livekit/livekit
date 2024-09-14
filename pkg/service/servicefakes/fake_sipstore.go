@@ -22,11 +22,11 @@ type FakeSIPStore struct {
 	deleteSIPDispatchRuleReturnsOnCall map[int]struct {
 		result1 error
 	}
-	DeleteSIPTrunkStub        func(context.Context, *livekit.SIPTrunkInfo) error
+	DeleteSIPTrunkStub        func(context.Context, string) error
 	deleteSIPTrunkMutex       sync.RWMutex
 	deleteSIPTrunkArgsForCall []struct {
 		arg1 context.Context
-		arg2 *livekit.SIPTrunkInfo
+		arg2 string
 	}
 	deleteSIPTrunkReturns struct {
 		result1 error
@@ -256,12 +256,12 @@ func (fake *FakeSIPStore) DeleteSIPDispatchRuleReturnsOnCall(i int, result1 erro
 	}{result1}
 }
 
-func (fake *FakeSIPStore) DeleteSIPTrunk(arg1 context.Context, arg2 *livekit.SIPTrunkInfo) error {
+func (fake *FakeSIPStore) DeleteSIPTrunk(arg1 context.Context, arg2 string) error {
 	fake.deleteSIPTrunkMutex.Lock()
 	ret, specificReturn := fake.deleteSIPTrunkReturnsOnCall[len(fake.deleteSIPTrunkArgsForCall)]
 	fake.deleteSIPTrunkArgsForCall = append(fake.deleteSIPTrunkArgsForCall, struct {
 		arg1 context.Context
-		arg2 *livekit.SIPTrunkInfo
+		arg2 string
 	}{arg1, arg2})
 	stub := fake.DeleteSIPTrunkStub
 	fakeReturns := fake.deleteSIPTrunkReturns
@@ -282,13 +282,13 @@ func (fake *FakeSIPStore) DeleteSIPTrunkCallCount() int {
 	return len(fake.deleteSIPTrunkArgsForCall)
 }
 
-func (fake *FakeSIPStore) DeleteSIPTrunkCalls(stub func(context.Context, *livekit.SIPTrunkInfo) error) {
+func (fake *FakeSIPStore) DeleteSIPTrunkCalls(stub func(context.Context, string) error) {
 	fake.deleteSIPTrunkMutex.Lock()
 	defer fake.deleteSIPTrunkMutex.Unlock()
 	fake.DeleteSIPTrunkStub = stub
 }
 
-func (fake *FakeSIPStore) DeleteSIPTrunkArgsForCall(i int) (context.Context, *livekit.SIPTrunkInfo) {
+func (fake *FakeSIPStore) DeleteSIPTrunkArgsForCall(i int) (context.Context, string) {
 	fake.deleteSIPTrunkMutex.RLock()
 	defer fake.deleteSIPTrunkMutex.RUnlock()
 	argsForCall := fake.deleteSIPTrunkArgsForCall[i]
