@@ -413,14 +413,12 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 		}
 	}
 
+	m.lock.Lock()
 	if s.needsCleanup() {
-		m.lock.Lock()
-		if !s.isDesired() {
-			s.logger.Debugw("cleanup removing subscription")
-			delete(m.subscriptions, s.trackID)
-		}
-		m.lock.Unlock()
+		s.logger.Debugw("cleanup removing subscription")
+		delete(m.subscriptions, s.trackID)
 	}
+	m.lock.Unlock()
 }
 
 // trigger an immediate reconciliation, when trackID is empty, will reconcile all subscriptions
