@@ -196,7 +196,9 @@ type refInfo struct {
 }
 
 func (r refInfo) MarshalLogObject(e zapcore.ObjectEncoder) error {
-	e.AddObject("senderReport", logger.Proto(r.senderReport))
+	e.AddObject("senderReport", buffer.WrappedRTCPSenderReportStateLogger{
+		RTCPSenderReportState: r.senderReport,
+	})
 	e.AddUint64("tsOffset", r.tsOffset)
 	e.AddBool("isTSOffsetValid", r.isTSOffsetValid)
 	return nil
@@ -418,8 +420,9 @@ func (f *Forwarder) SeedState(state *livekit.RTPForwarderState) {
 	defer f.lock.Unlock()
 
 	for layer, rtcpSenderReportState := range state.SenderReportState {
-		f.refInfos[layer] = refInfo{
-			senderReport: proto.Clone(rtcpSenderReportState).(*livekit.RTCPSenderReportState),
+		f.refInfos[layer] = refInfo{}
+		if senderReport := proto.Clone(rtcpSenderReportState).(*livekit.RTCPSenderReportState); senderReport.NtpTimestamp != 0 {
+			f.refInfos[layer].senderReport = senderReport
 		}
 	}
 
