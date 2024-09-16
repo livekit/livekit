@@ -1670,6 +1670,8 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		if p.Kind() == livekit.ParticipantInfo_AGENT {
 			shouldForwardData = false
 		}
+	case *livekit.DataPacket_ChatMessage:
+		shouldForwardData = true
 	case *livekit.DataPacket_Metrics:
 		shouldForwardData = false
 		shouldForwardMetrics = true
