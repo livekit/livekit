@@ -1634,6 +1634,7 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 			shouldForward = true
 		}
 	case *livekit.DataPacket_ChatMessage:
+		dp.ParticipantIdentity = string(p.Identity())
 		shouldForward = true
 	default:
 		p.pubLogger.Warnw("received unsupported data packet", nil, "payload", payload)
