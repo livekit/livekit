@@ -26,6 +26,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	protoutils "github.com/livekit/protocol/utils"
 )
 
@@ -428,7 +429,7 @@ func (r *RTPStatsReceiver) checkOutOfOrderSenderReport(srData *livekit.RTCPSende
 		if (r.outOfOrderSenderReportCount-1)%10 == 0 {
 			r.logger.Infow(
 				"received sender report, out-of-order, skipping",
-				"current", WrappedRTCPSenderReportStateLogger{srData},
+				"current", logger.Proto(srData),
 				"count", r.outOfOrderSenderReportCount,
 				"rtpStats", lockedRTPStatsReceiverLogEncoder{r},
 			)
@@ -458,7 +459,7 @@ func (r *RTPStatsReceiver) checkRTPClockSkewForSenderReport(srData *livekit.RTCP
 		if (r.clockSkewCount-1)%100 == 0 {
 			r.logger.Infow(
 				"received sender report, clock skew",
-				"current", WrappedRTCPSenderReportStateLogger{srData},
+				"current", logger.Proto(srData),
 				"timeSinceFirst", timeSinceFirst,
 				"rtpDiffSinceFirst", rtpDiffSinceFirst,
 				"calculatedFirst", calculatedClockRateFromFirst,
@@ -494,7 +495,7 @@ func (r *RTPStatsReceiver) checkRTPClockSkewAgainstMediaPathForSenderReport(srDa
 		if (r.clockSkewMediaPathCount-1)%100 == 0 {
 			r.logger.Infow(
 				"received sender report, clock skew against media path",
-				"current", WrappedRTCPSenderReportStateLogger{srData},
+				"current", logger.Proto(srData),
 				"timeSinceSR", timeSinceSR,
 				"extNowTSSR", extNowTSSR,
 				"timeSinceHighest", timeSinceHighest,
@@ -723,10 +724,10 @@ func (r lockedRTPStatsReceiverLogEncoder) MarshalLogObject(e zapcore.ObjectEncod
 	e.AddObject("propagationDelayEstimator", r.propagationDelayEstimator)
 
 	packetDrift, ntpReportDrift, receivedReportDrift, rebasedReportDrift := r.getDrift(extStartTS, extHighestTS)
-	e.AddObject("packetDrift", wrappedRTPDriftLogger{packetDrift})
-	e.AddObject("ntpReportDrift", wrappedRTPDriftLogger{ntpReportDrift})
-	e.AddObject("receivedReportDrift", wrappedRTPDriftLogger{receivedReportDrift})
-	e.AddObject("rebasedReportDrift", wrappedRTPDriftLogger{rebasedReportDrift})
+	e.AddObject("packetDrift", logger.Proto(packetDrift))
+	e.AddObject("ntpReportDrift", logger.Proto(ntpReportDrift))
+	e.AddObject("receivedReportDrift", logger.Proto(receivedReportDrift))
+	e.AddObject("rebasedReportDrift", logger.Proto(rebasedReportDrift))
 	return nil
 }
 
