@@ -329,13 +329,13 @@ func (s *SIPService) DeleteSIPDispatchRule(ctx context.Context, req *livekit.Del
 
 func (s *SIPService) CreateSIPParticipant(ctx context.Context, req *livekit.CreateSIPParticipantRequest) (*livekit.SIPParticipantInfo, error) {
 	log := logger.GetLogger().WithValues("roomName", req.RoomName, "sipTrunk", req.SipTrunkId, "toUser", req.SipCallTo)
-	ireq, err := s.CreateSIPParticipantRequest(ctx, req, "", "")
+	ireq, err := s.CreateSIPParticipantRequest(ctx, req, "", "", "", "")
 	if err != nil {
 		log.Errorw("cannot create sip participant request", err)
 		return nil, err
 	}
 	log = log.WithValues(
-		"callId", ireq.SipCallId,
+		"callID", ireq.SipCallId,
 		"fromUser", ireq.Number,
 		"toHost", ireq.Address,
 	)
@@ -364,7 +364,7 @@ func (s *SIPService) CreateSIPParticipant(ctx context.Context, req *livekit.Crea
 	}, nil
 }
 
-func (s *SIPService) CreateSIPParticipantRequest(ctx context.Context, req *livekit.CreateSIPParticipantRequest, wsUrl, token string) (*rpc.InternalCreateSIPParticipantRequest, error) {
+func (s *SIPService) CreateSIPParticipantRequest(ctx context.Context, req *livekit.CreateSIPParticipantRequest, projectID, host, wsUrl, token string) (*rpc.InternalCreateSIPParticipantRequest, error) {
 	if err := EnsureSIPCallPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
@@ -372,16 +372,21 @@ func (s *SIPService) CreateSIPParticipantRequest(ctx context.Context, req *livek
 		return nil, ErrSIPNotConnected
 	}
 	callID := sip.NewCallID()
+	log := logger.GetLogger()
+	if projectID != "" {
+		log = log.WithValues("projectID", projectID)
+	}
+	log = log.WithValues(
+		"callID", callID,
+		"room", req.RoomName,
+		"sipTrunk", req.SipTrunkId,
+		"toUser", req.SipCallTo,
+	)
 
 	trunk, err := s.store.LoadSIPOutboundTrunk(ctx, req.SipTrunkId)
 	if err != nil {
-		logger.Errorw("cannot get trunk to update sip participant", err,
-			"callId", callID,
-			"roomName", req.RoomName,
-			"sipTrunk", req.SipTrunkId,
-			"toUser", req.SipCallTo,
-		)
+		log.Errorw("cannot get trunk to update sip participant", err)
 		return nil, err
 	}
-	return rpc.NewCreateSIPParticipantRequest("", callID, "", wsUrl, token, req, trunk)
+	return rpc.NewCreateSIPParticipantRequest(projectID, callID, host, wsUrl, token, req, trunk)
 }

@@ -113,6 +113,50 @@ type snapshot struct {
 
 // ------------------------------------------------------------------
 
+type wrappedRTPDriftLogger struct {
+	*livekit.RTPDrift
+}
+
+func (w wrappedRTPDriftLogger) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	rd := w.RTPDrift
+	if rd == nil {
+		return nil
+	}
+
+	e.AddTime("StartTime", rd.StartTime.AsTime())
+	e.AddTime("EndTime", rd.EndTime.AsTime())
+	e.AddFloat64("Duration", rd.Duration)
+	e.AddUint64("StartTimestamp", rd.StartTimestamp)
+	e.AddUint64("EndTimestamp", rd.EndTimestamp)
+	e.AddUint64("RtpClockTicks", rd.RtpClockTicks)
+	e.AddInt64("DriftSamples", rd.DriftSamples)
+	e.AddFloat64("DriftMs", rd.DriftMs)
+	e.AddFloat64("ClockRate", rd.ClockRate)
+	return nil
+}
+
+// ------------------------------------------------------------------
+
+type WrappedRTCPSenderReportStateLogger struct {
+	*livekit.RTCPSenderReportState
+}
+
+func (w WrappedRTCPSenderReportStateLogger) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	rsrs := w.RTCPSenderReportState
+	if rsrs == nil {
+		return nil
+	}
+
+	e.AddUint32("RtpTimestamp", rsrs.RtpTimestamp)
+	e.AddUint64("RtpTimestampExt", rsrs.RtpTimestampExt)
+	e.AddTime("NtpTimestamp", mediatransportutil.NtpTime(rsrs.NtpTimestamp).Time())
+	e.AddTime("At", time.Unix(0, rsrs.At))
+	e.AddTime("AtAdjusted", time.Unix(0, rsrs.AtAdjusted))
+	e.AddUint32("Packets", rsrs.Packets)
+	e.AddUint64("Octets", rsrs.Octets)
+	return nil
+}
+
 func RTCPSenderReportPropagationDelay(rsrs *livekit.RTCPSenderReportState, passThrough bool) time.Duration {
 	if passThrough {
 		return 0
@@ -493,7 +537,7 @@ func (r *rtpStatsBase) maybeAdjustFirstPacketTime(srData *livekit.RTCPSenderRepo
 			"adjustment", time.Duration(r.firstTime - firstTime).String(),
 			"extNowTS", extNowTS,
 			"extStartTS", extStartTS,
-			"srData", logger.Proto(srData),
+			"srData", WrappedRTCPSenderReportStateLogger{srData},
 			"tsOffset", tsOffset,
 			"timeSinceReceive", timeSinceReceive.String(),
 			"timeSinceFirst", timeSinceFirst.String(),
@@ -680,8 +724,8 @@ func (r *rtpStatsBase) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddUint32("rtt", r.rtt)
 	e.AddUint32("maxRtt", r.maxRtt)
 
-	e.AddObject("srFirst", logger.Proto(r.srFirst))
-	e.AddObject("srNewest", logger.Proto(r.srNewest))
+	e.AddObject("srFirst", WrappedRTCPSenderReportStateLogger{r.srFirst})
+	e.AddObject("srNewest", WrappedRTCPSenderReportStateLogger{r.srNewest})
 	return nil
 }
 
