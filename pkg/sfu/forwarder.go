@@ -421,7 +421,7 @@ func (f *Forwarder) SeedState(state *livekit.RTPForwarderState) {
 
 	for layer, rtcpSenderReportState := range state.SenderReportState {
 		f.refInfos[layer] = refInfo{}
-		if senderReport := proto.Clone(rtcpSenderReportState).(*livekit.RTCPSenderReportState); senderReport.NtpTimestamp != 0 {
+		if senderReport := proto.Clone(rtcpSenderReportState).(*livekit.RTCPSenderReportState); senderReport != nil && senderReport.NtpTimestamp != 0 {
 			f.refInfos[layer].senderReport = senderReport
 		}
 	}
