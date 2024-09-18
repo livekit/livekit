@@ -1253,7 +1253,9 @@ func (d *DownTrack) GetState() DownTrackState {
 }
 
 func (d *DownTrack) SeedState(state DownTrackState) {
-	d.params.Logger.Debugw("seeding down track state", "state", state)
+	if state.RTPStats != nil || state.ForwarderState != nil {
+		d.params.Logger.Debugw("seeding down track state", "state", state)
+	}
 	if state.RTPStats != nil {
 		d.rtpStats.Seed(state.RTPStats)
 		d.deltaStatsSenderSnapshotId = state.DeltaStatsSenderSnapshotId
