@@ -30,7 +30,6 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/exp/maps"
 
-	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/routing/selector"
@@ -52,7 +51,6 @@ type RTCService struct {
 	isDev         bool
 	limits        config.LimitConfig
 	parser        *uaparser.Parser
-	agentClient   agent.Client
 	telemetry     telemetry.TelemetryService
 
 	mu          sync.Mutex
@@ -65,7 +63,6 @@ func NewRTCService(
 	store ServiceStore,
 	router routing.MessageRouter,
 	currentNode routing.LocalNode,
-	agentClient agent.Client,
 	telemetry telemetry.TelemetryService,
 ) *RTCService {
 	s := &RTCService{
@@ -78,7 +75,6 @@ func NewRTCService(
 		isDev:         conf.Development,
 		limits:        conf.Limit,
 		parser:        uaparser.NewFromSaved(),
-		agentClient:   agentClient,
 		telemetry:     telemetry,
 		connections:   map[*websocket.Conn]struct{}{},
 	}
