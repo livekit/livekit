@@ -21,6 +21,7 @@ import (
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/protocol/utils/must"
+	"github.com/livekit/protocol/utils/options"
 	"github.com/livekit/psrpc"
 )
 
@@ -103,9 +104,7 @@ func (h *TestServer) SimulateAgentWorker(opts ...SimulatedWorkerOption) *AgentWo
 		HandleAvailability: func(r AgentJobRequest) { r.Accept() },
 		HandleAssignment:   func(j *livekit.Job) JobLoad { return nil },
 	}
-	for _, opt := range opts {
-		opt(o)
-	}
+	options.Apply(o, opts)
 
 	w := &AgentWorker{
 		workerMessages:         make(chan *livekit.WorkerMessage, 1),

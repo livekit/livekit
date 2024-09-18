@@ -106,7 +106,10 @@ func TestAgentLoadBalancing(t *testing.T) {
 
 		agents := make([]*testutils.AgentWorker, totalWorkers)
 		for i := 0; i < totalWorkers; i++ {
-			agents[i] = server.SimulateAgentWorker(testutils.WithLabel(fmt.Sprintf("agent-%d", i)))
+			agents[i] = server.SimulateAgentWorker(
+				testutils.WithLabel(fmt.Sprintf("agent-%d", i)),
+				testutils.WithJobLoad(testutils.NewStableJobLoad(0.01)),
+			)
 			agents[i].Register("test", livekit.JobType_JT_ROOM)
 		}
 
