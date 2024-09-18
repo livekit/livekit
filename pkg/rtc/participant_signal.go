@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/pion/webrtc/v3"
-	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -270,13 +269,7 @@ func (p *ParticipantImpl) sendDisconnectUpdatesForReconnect() error {
 }
 
 func (p *ParticipantImpl) sendICECandidate(ic *webrtc.ICECandidate, target livekit.SignalTarget) error {
-	var icQueue *atomic.Pointer[webrtc.ICECandidate]
-	if target == livekit.SignalTarget_PUBLISHER {
-		icQueue = &p.icQueue[0]
-	} else {
-		icQueue = &p.icQueue[1]
-	}
-	prevIC := icQueue.Swap(ic)
+	prevIC := p.icQueue[target].Swap(ic)
 	if prevIC == nil {
 		return nil
 	}

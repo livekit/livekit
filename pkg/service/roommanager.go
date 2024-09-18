@@ -603,6 +603,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 	agentDispatchServer := must.Get(rpc.NewTypedAgentDispatchInternalServer(r, r.bus))
 	killDispServer := r.agentDispatchServers.Replace(roomTopic, agentDispatchServer)
 	if err := agentDispatchServer.RegisterAllRoomTopics(roomTopic); err != nil {
+		killRoomServer()
 		killDispServer()
 		r.lock.Unlock()
 		return nil, err
