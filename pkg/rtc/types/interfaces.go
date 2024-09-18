@@ -39,7 +39,6 @@ type WebsocketClient interface {
 	ReadMessage() (messageType int, p []byte, err error)
 	WriteMessage(messageType int, data []byte) error
 	WriteControl(messageType int, data []byte, deadline time.Time) error
-	SetReadDeadline(deadline time.Time) error
 	Close() error
 }
 
