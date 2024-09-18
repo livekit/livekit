@@ -56,6 +56,10 @@ func (c *WSSignalConnection) Close() error {
 	return c.conn.Close()
 }
 
+func (c *WSSignalConnection) SetReadDeadline(deadline time.Time) error {
+	return c.conn.SetReadDeadline(deadline)
+}
+
 func (c *WSSignalConnection) ReadRequest() (*livekit.SignalRequest, int, error) {
 	for {
 		// handle special messages and pass on the rest

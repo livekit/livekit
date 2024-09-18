@@ -1,4 +1,4 @@
-package testutil
+package testutils
 
 import (
 	"context"
@@ -11,41 +11,45 @@ import (
 
 	"github.com/frostbyte73/core"
 	"github.com/gammazero/deque"
+	"golang.org/x/exp/maps"
 
 	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/protocol/utils/must"
+	"github.com/livekit/protocol/utils/options"
 	"github.com/livekit/psrpc"
 )
 
+type AgentService interface {
+	HandleConnection(context.Context, agent.SignalConn, agent.WorkerProtocolVersion)
+	DrainConnections(time.Duration)
+}
+
 type TestServer struct {
-	*service.AgentService
-	keyProvider auth.KeyProvider
+	AgentService
 }
 
 func NewTestServer(bus psrpc.MessageBus) *TestServer {
-	keyProvider := auth.NewSimpleKeyProvider("test", "verysecretsecret")
-
-	s := must.Get(service.NewAgentService(
+	return NewTestServerWithService(must.Get(service.NewAgentService(
 		&config.Config{Region: "test"},
 		&livekit.Node{Id: guid.New("N_")},
 		bus,
-		keyProvider,
-	))
+		auth.NewSimpleKeyProvider("test", "verysecretsecret"),
+	)))
+}
 
-	return &TestServer{
-		AgentService: s,
-		keyProvider:  keyProvider,
-	}
+func NewTestServerWithService(s AgentService) *TestServer {
+	return &TestServer{s}
 }
 
 type SimulatedWorkerOptions struct {
+	Context            context.Context
+	Label              string
 	SupportResume      bool
 	DefaultJobLoad     float32
 	JobLoadThreshold   float32
@@ -55,6 +59,18 @@ type SimulatedWorkerOptions struct {
 }
 
 type SimulatedWorkerOption func(*SimulatedWorkerOptions)
+
+func WithContext(ctx context.Context) SimulatedWorkerOption {
+	return func(o *SimulatedWorkerOptions) {
+		o.Context = ctx
+	}
+}
+
+func WithLabel(label string) SimulatedWorkerOption {
+	return func(o *SimulatedWorkerOptions) {
+		o.Label = label
+	}
+}
 
 func WithJobAvailabilityHandler(h func(AgentJobRequest)) SimulatedWorkerOption {
 	return func(o *SimulatedWorkerOptions) {
@@ -80,15 +96,15 @@ func WithDefaultWorkerLoad(load float32) SimulatedWorkerOption {
 
 func (h *TestServer) SimulateAgentWorker(opts ...SimulatedWorkerOption) *AgentWorker {
 	o := &SimulatedWorkerOptions{
+		Context:            context.Background(),
+		Label:              guid.New("TEST_AGENT_"),
 		DefaultJobLoad:     0.1,
 		JobLoadThreshold:   0.8,
 		DefaultWorkerLoad:  0.0,
 		HandleAvailability: func(r AgentJobRequest) { r.Accept() },
 		HandleAssignment:   func(j *livekit.Job) JobLoad { return nil },
 	}
-	for _, opt := range opts {
-		opt(o)
-	}
+	options.Apply(o, opts)
 
 	w := &AgentWorker{
 		workerMessages:         make(chan *livekit.WorkerMessage, 1),
@@ -107,47 +123,14 @@ func (h *TestServer) SimulateAgentWorker(opts ...SimulatedWorkerOption) *AgentWo
 		w.sendStatus()
 	}
 
-	go w.worker()
-	go h.handleConnection(w)
+	ctx := service.WithAPIKey(o.Context, &auth.ClaimGrants{}, "test")
+	go h.HandleConnection(ctx, w, agent.CurrentProtocol)
+
 	return w
 }
 
-func (h *TestServer) handleConnection(w *AgentWorker) {
-	worker := agent.NewWorker(
-		agent.CurrentProtocol,
-		"test",
-		h.keyProvider.GetSecret("test"),
-		&livekit.ServerInfo{},
-		w,
-		logger.GetLogger(),
-		h,
-	)
-
-	h.InsertWorker(worker)
-
-	for {
-		req, _, err := w.ReadWorkerMessage()
-		if err != nil {
-			if service.IsWebSocketCloseError(err) {
-				worker.Logger().Infow("worker closed WS connection", "wsError", err)
-			} else {
-				worker.Logger().Errorw("error reading from websocket", err)
-			}
-			break
-		}
-
-		worker.HandleMessage(req)
-	}
-
-	h.DeleteWorker(worker)
-
-	worker.Close()
-}
-
 func (h *TestServer) Close() {
-	for _, w := range h.Workers() {
-		w.Close()
-	}
+	h.DrainConnections(1)
 }
 
 var _ agent.SignalConn = (*AgentWorker)(nil)
@@ -185,7 +168,6 @@ func (r AgentJobRequest) Reject() {
 }
 
 type AgentWorker struct {
-	Name string
 	*SimulatedWorkerOptions
 
 	fuse           core.Fuse
@@ -203,13 +185,13 @@ type AgentWorker struct {
 	WorkerPongs             *utils.EventObserverList[*livekit.WorkerPong]
 }
 
-func (w *AgentWorker) worker() {
-	t := time.NewTicker(5 * time.Second)
+func (w *AgentWorker) statusWorker() {
+	t := time.NewTicker(2 * time.Second)
 	defer t.Stop()
 
 	for !w.fuse.IsBroken() {
-		<-t.C
 		w.sendStatus()
+		<-t.C
 	}
 }
 
@@ -303,7 +285,6 @@ func (w *AgentWorker) handleAvailability(m *livekit.AvailabilityRequest) {
 }
 
 func (w *AgentWorker) handleAssignment(m *livekit.JobAssignment) {
-	m.Job.AgentName = w.Name
 	w.JobAssignments.Emit(m)
 
 	var load JobLoad
@@ -407,13 +388,12 @@ func (w *AgentWorker) sendStatus() {
 	})
 }
 
-func (w *AgentWorker) Register(name string, namespace string, jobType livekit.JobType) {
-	w.Name = name
+func (w *AgentWorker) Register(agentName string, jobType livekit.JobType) {
 	w.SendRegister(&livekit.RegisterWorkerRequest{
 		Type:      jobType,
-		Namespace: &namespace,
+		AgentName: agentName,
 	})
-	w.sendStatus()
+	go w.statusWorker()
 }
 
 func (w *AgentWorker) SimulateRoomJob(roomName string) {
@@ -424,6 +404,12 @@ func (w *AgentWorker) SimulateRoomJob(roomName string) {
 			Name: roomName,
 		},
 	})
+}
+
+func (w *AgentWorker) Jobs() []*AgentJob {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return maps.Values(w.jobs)
 }
 
 type stableJobLoad struct {
@@ -490,6 +476,6 @@ func NewNormalRandomJobLoadWithRNG(mean, stddev float64, rng *rand.Rand) JobLoad
 func (s normalRandomJobLoad) Load() float32 {
 	u := 1 - s.rng()
 	v := s.rng()
-	z := math.Sqrt(-2.0*math.Log(u)) * math.Cos(2.0*math.Pi*v)
+	z := math.Sqrt(-2*math.Log(u)) * math.Cos(2*math.Pi*v)
 	return float32(max(0, z*s.stddev+s.mean))
 }
