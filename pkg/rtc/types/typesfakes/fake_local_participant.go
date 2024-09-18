@@ -497,6 +497,16 @@ type FakeLocalParticipant struct {
 	identityReturnsOnCall map[int]struct {
 		result1 livekit.ParticipantIdentity
 	}
+	IsAgentStub        func() bool
+	isAgentMutex       sync.RWMutex
+	isAgentArgsForCall []struct {
+	}
+	isAgentReturns struct {
+		result1 bool
+	}
+	isAgentReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	IsClosedStub        func() bool
 	isClosedMutex       sync.RWMutex
 	isClosedArgsForCall []struct {
@@ -1066,6 +1076,16 @@ type FakeLocalParticipant struct {
 	verifySubscribeParticipantInfoArgsForCall []struct {
 		arg1 livekit.ParticipantID
 		arg2 uint32
+	}
+	VersionNumberStub        func() uint32
+	versionNumberMutex       sync.RWMutex
+	versionNumberArgsForCall []struct {
+	}
+	versionNumberReturns struct {
+		result1 uint32
+	}
+	versionNumberReturnsOnCall map[int]struct {
+		result1 uint32
 	}
 	WaitUntilSubscribedStub        func(time.Duration) error
 	waitUntilSubscribedMutex       sync.RWMutex
@@ -3600,6 +3620,59 @@ func (fake *FakeLocalParticipant) IdentityReturnsOnCall(i int, result1 livekit.P
 	}
 	fake.identityReturnsOnCall[i] = struct {
 		result1 livekit.ParticipantIdentity
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) IsAgent() bool {
+	fake.isAgentMutex.Lock()
+	ret, specificReturn := fake.isAgentReturnsOnCall[len(fake.isAgentArgsForCall)]
+	fake.isAgentArgsForCall = append(fake.isAgentArgsForCall, struct {
+	}{})
+	stub := fake.IsAgentStub
+	fakeReturns := fake.isAgentReturns
+	fake.recordInvocation("IsAgent", []interface{}{})
+	fake.isAgentMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) IsAgentCallCount() int {
+	fake.isAgentMutex.RLock()
+	defer fake.isAgentMutex.RUnlock()
+	return len(fake.isAgentArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) IsAgentCalls(stub func() bool) {
+	fake.isAgentMutex.Lock()
+	defer fake.isAgentMutex.Unlock()
+	fake.IsAgentStub = stub
+}
+
+func (fake *FakeLocalParticipant) IsAgentReturns(result1 bool) {
+	fake.isAgentMutex.Lock()
+	defer fake.isAgentMutex.Unlock()
+	fake.IsAgentStub = nil
+	fake.isAgentReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) IsAgentReturnsOnCall(i int, result1 bool) {
+	fake.isAgentMutex.Lock()
+	defer fake.isAgentMutex.Unlock()
+	fake.IsAgentStub = nil
+	if fake.isAgentReturnsOnCall == nil {
+		fake.isAgentReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.isAgentReturnsOnCall[i] = struct {
+		result1 bool
 	}{result1}
 }
 
@@ -6783,6 +6856,59 @@ func (fake *FakeLocalParticipant) VerifySubscribeParticipantInfoArgsForCall(i in
 	return argsForCall.arg1, argsForCall.arg2
 }
 
+func (fake *FakeLocalParticipant) VersionNumber() uint32 {
+	fake.versionNumberMutex.Lock()
+	ret, specificReturn := fake.versionNumberReturnsOnCall[len(fake.versionNumberArgsForCall)]
+	fake.versionNumberArgsForCall = append(fake.versionNumberArgsForCall, struct {
+	}{})
+	stub := fake.VersionNumberStub
+	fakeReturns := fake.versionNumberReturns
+	fake.recordInvocation("VersionNumber", []interface{}{})
+	fake.versionNumberMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) VersionNumberCallCount() int {
+	fake.versionNumberMutex.RLock()
+	defer fake.versionNumberMutex.RUnlock()
+	return len(fake.versionNumberArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) VersionNumberCalls(stub func() uint32) {
+	fake.versionNumberMutex.Lock()
+	defer fake.versionNumberMutex.Unlock()
+	fake.VersionNumberStub = stub
+}
+
+func (fake *FakeLocalParticipant) VersionNumberReturns(result1 uint32) {
+	fake.versionNumberMutex.Lock()
+	defer fake.versionNumberMutex.Unlock()
+	fake.VersionNumberStub = nil
+	fake.versionNumberReturns = struct {
+		result1 uint32
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) VersionNumberReturnsOnCall(i int, result1 uint32) {
+	fake.versionNumberMutex.Lock()
+	defer fake.versionNumberMutex.Unlock()
+	fake.VersionNumberStub = nil
+	if fake.versionNumberReturnsOnCall == nil {
+		fake.versionNumberReturnsOnCall = make(map[int]struct {
+			result1 uint32
+		})
+	}
+	fake.versionNumberReturnsOnCall[i] = struct {
+		result1 uint32
+	}{result1}
+}
+
 func (fake *FakeLocalParticipant) WaitUntilSubscribed(arg1 time.Duration) error {
 	fake.waitUntilSubscribedMutex.Lock()
 	ret, specificReturn := fake.waitUntilSubscribedReturnsOnCall[len(fake.waitUntilSubscribedArgsForCall)]
@@ -7011,6 +7137,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.iDMutex.RUnlock()
 	fake.identityMutex.RLock()
 	defer fake.identityMutex.RUnlock()
+	fake.isAgentMutex.RLock()
+	defer fake.isAgentMutex.RUnlock()
 	fake.isClosedMutex.RLock()
 	defer fake.isClosedMutex.RUnlock()
 	fake.isDependentMutex.RLock()
@@ -7151,6 +7279,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.updateVideoTrackMutex.RUnlock()
 	fake.verifySubscribeParticipantInfoMutex.RLock()
 	defer fake.verifySubscribeParticipantInfoMutex.RUnlock()
+	fake.versionNumberMutex.RLock()
+	defer fake.versionNumberMutex.RUnlock()
 	fake.waitUntilSubscribedMutex.RLock()
 	defer fake.waitUntilSubscribedMutex.RUnlock()
 	fake.writeSubscriberRTCPMutex.RLock()
