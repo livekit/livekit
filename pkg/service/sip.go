@@ -433,7 +433,6 @@ func (s *SIPService) TransferSIPParticipantRequest(ctx context.Context, req *liv
 		return nil, twirpAuthError(err)
 	}
 
-	// FIXME
 	resp, err := s.roomService.GetParticipant(ctx, &livekit.RoomParticipantIdentity{
 		Room:     req.RoomName,
 		Identity: req.ParticipantIdentity,
