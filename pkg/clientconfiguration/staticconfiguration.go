@@ -58,7 +58,7 @@ func (s *StaticClientConfigurationManager) GetConfiguration(clientInfo *livekit.
 	var conf *livekit.ClientConfiguration
 	for k, v := range matchedConf {
 		if k == 0 {
-			conf = proto.Clone(matchedConf[0]).(*livekit.ClientConfiguration)
+			conf = utils.CloneProto(matchedConf[0])
 		} else {
 			// TODO : there is a problem use protobuf merge, we don't have flag to indicate 'no value',
 			// don't override default behavior or other configuration's field. So a bool value = false or

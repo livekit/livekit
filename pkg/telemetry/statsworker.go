@@ -19,7 +19,6 @@ import (
 	"sync"
 	"time"
 
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/livekit/livekit-server/pkg/utils"
@@ -227,7 +226,7 @@ func coalesce(stats []*livekit.AnalyticsStat) *livekit.AnalyticsStat {
 			for _, videoLayer := range analyticsStream.VideoLayers {
 				coalescedVideoLayer := coalescedVideoLayers[videoLayer.Layer]
 				if coalescedVideoLayer == nil {
-					coalescedVideoLayer = proto.Clone(videoLayer).(*livekit.AnalyticsVideoLayer)
+					coalescedVideoLayer = utils.CloneProto(videoLayer)
 					coalescedVideoLayers[videoLayer.Layer] = coalescedVideoLayer
 				} else {
 					coalescedVideoLayer.Packets += videoLayer.Packets

@@ -246,7 +246,7 @@ func NewRoom(
 	egressLauncher EgressLauncher,
 ) *Room {
 	r := &Room{
-		protoRoom: proto.Clone(room).(*livekit.Room),
+		protoRoom: utils.CloneProto(room),
 		internal:  internal,
 		Logger: LoggerWithRoom(
 			logger.GetLogger().WithComponent(sutils.ComponentRoom),
@@ -964,7 +964,7 @@ func (r *Room) GetAgentDispatches(dispatchID string) ([]*livekit.AgentDispatch, 
 
 	for _, ad := range r.agentDispatches {
 		if dispatchID == "" || ad.Id == dispatchID {
-			ret = append(ret, proto.Clone(ad.AgentDispatch).(*livekit.AgentDispatch))
+			ret = append(ret, utils.CloneProto(ad.AgentDispatch))
 		}
 	}
 
@@ -1427,7 +1427,7 @@ func (r *Room) pushAndDequeueUpdates(
 
 func (r *Room) updateProto() *livekit.Room {
 	r.lock.RLock()
-	room := proto.Clone(r.protoRoom).(*livekit.Room)
+	room := utils.CloneProto(r.protoRoom)
 	r.lock.RUnlock()
 
 	room.NumPublishers = 0
@@ -1493,7 +1493,7 @@ func (r *Room) audioUpdateWorker() {
 		// changedSpeakers need to include previous speakers that are no longer speaking
 		for sid, speaker := range lastActiveMap {
 			if nextActiveMap[sid] == nil {
-				inactiveSpeaker := proto.Clone(speaker).(*livekit.SpeakerInfo)
+				inactiveSpeaker := utils.CloneProto(speaker)
 				inactiveSpeaker.Level = 0
 				inactiveSpeaker.Active = false
 				changedSpeakers = append(changedSpeakers, inactiveSpeaker)

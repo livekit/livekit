@@ -24,11 +24,11 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/mediatransportutil/pkg/bucket"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/sfu/audio"
@@ -209,7 +209,7 @@ func NewWebRTCReceiver(
 	for _, opt := range opts {
 		w = opt(w)
 	}
-	w.trackInfo.Store(proto.Clone(trackInfo).(*livekit.TrackInfo))
+	w.trackInfo.Store(utils.CloneProto(trackInfo))
 
 	w.downTrackSpreader = NewDownTrackSpreader(DownTrackSpreaderParams{
 		Threshold: w.lbThreshold,
@@ -249,7 +249,7 @@ func (w *WebRTCReceiver) TrackInfo() *livekit.TrackInfo {
 }
 
 func (w *WebRTCReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
-	w.trackInfo.Store(proto.Clone(ti).(*livekit.TrackInfo))
+	w.trackInfo.Store(utils.CloneProto(ti))
 	w.streamTrackerManager.UpdateTrackInfo(ti)
 }
 
