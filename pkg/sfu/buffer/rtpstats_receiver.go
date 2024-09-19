@@ -412,7 +412,7 @@ func (r *RTPStatsReceiver) getExtendedSenderReport(srData *livekit.RTCPSenderRep
 		}
 	}
 
-	srDataExt := utils.CloneProto(srData)
+	srDataExt := protoutils.CloneProto(srData)
 	srDataExt.RtpTimestampExt = uint64(srDataExt.RtpTimestamp) + tsCycles
 	return srDataExt
 }
@@ -566,7 +566,7 @@ func (r *RTPStatsReceiver) GetRtcpSenderReportData() *livekit.RTCPSenderReportSt
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
-	return utils.CloneProto(r.srNewest)
+	return protoutils.CloneProto(r.srNewest)
 }
 
 func (r *RTPStatsReceiver) LastSenderReportTime() time.Time {
