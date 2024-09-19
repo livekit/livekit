@@ -29,6 +29,7 @@ import (
 	"github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/transport"
@@ -439,7 +440,7 @@ func (t *TransportManager) GetICEConfig() *livekit.ICEConfig {
 	if t.iceConfig == nil {
 		return nil
 	}
-	return proto.Clone(t.iceConfig).(*livekit.ICEConfig)
+	return utils.CloneProto(t.iceConfig)
 }
 
 func (t *TransportManager) resetTransportConfigureLocked(reconfigured bool) {

@@ -21,7 +21,6 @@ import (
 
 	"github.com/pion/rtcp"
 	"go.uber.org/zap/zapcore"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/mediatransportutil"
@@ -413,7 +412,7 @@ func (r *RTPStatsReceiver) getExtendedSenderReport(srData *livekit.RTCPSenderRep
 		}
 	}
 
-	srDataExt := proto.Clone(srData).(*livekit.RTCPSenderReportState)
+	srDataExt := protoutils.CloneProto(srData)
 	srDataExt.RtpTimestampExt = uint64(srDataExt.RtpTimestamp) + tsCycles
 	return srDataExt
 }
@@ -567,7 +566,7 @@ func (r *RTPStatsReceiver) GetRtcpSenderReportData() *livekit.RTCPSenderReportSt
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
-	return proto.Clone(r.srNewest).(*livekit.RTCPSenderReportState)
+	return protoutils.CloneProto(r.srNewest)
 }
 
 func (r *RTPStatsReceiver) LastSenderReportTime() time.Time {
