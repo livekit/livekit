@@ -2002,7 +2002,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 
 			clonedLayers := make([]*livekit.VideoLayer, 0, len(req.Layers))
 			for _, l := range req.Layers {
-				clonedLayers = append(clonedLayers, proto.Clone(l).(*livekit.VideoLayer))
+				clonedLayers = append(clonedLayers, utils.CloneProto(l))
 			}
 			ti.Codecs = append(ti.Codecs, &livekit.SimulcastCodecInfo{
 				MimeType: mime,
