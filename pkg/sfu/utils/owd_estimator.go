@@ -173,3 +173,7 @@ func (o *OWDEstimator) Update(senderClockTime time.Time, receiverClockTime time.
 	o.lastSenderClockTime = senderClockTime
 	return o.estimatedPropagationDelay, stepChange
 }
+
+func (o *OWDEstimator) EstimatedPropagationDelay() time.Duration {
+	return o.estimatedPropagationDelay
+}

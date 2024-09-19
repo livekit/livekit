@@ -27,6 +27,7 @@ import (
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
 
+	"github.com/livekit/livekit-server/pkg/metric"
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -85,6 +86,8 @@ type Config struct {
 	Limit    LimitConfig   `yaml:"limit,omitempty"`
 
 	Development bool `yaml:"development,omitempty"`
+
+	Metric metric.MetricConfig `yaml:"metric,omitempty"`
 }
 
 type RTCConfig struct {
@@ -572,8 +575,9 @@ var DefaultConfig = Config{
 		StreamBufferSize: 1000,
 		ConnectAttempts:  3,
 	},
-	PSRPC: rpc.DefaultPSRPCConfig,
-	Keys:  map[string]string{},
+	PSRPC:  rpc.DefaultPSRPCConfig,
+	Keys:   map[string]string{},
+	Metric: metric.DefaultMetricConfig,
 }
 
 func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []cli.Flag) (*Config, error) {

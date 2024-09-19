@@ -413,6 +413,18 @@ type FakeLocalParticipant struct {
 	handleAnswerArgsForCall []struct {
 		arg1 webrtc.SessionDescription
 	}
+	HandleMetricsStub        func(livekit.ParticipantID, *livekit.MetricsBatch) error
+	handleMetricsMutex       sync.RWMutex
+	handleMetricsArgsForCall []struct {
+		arg1 livekit.ParticipantID
+		arg2 *livekit.MetricsBatch
+	}
+	handleMetricsReturns struct {
+		result1 error
+	}
+	handleMetricsReturnsOnCall map[int]struct {
+		result1 error
+	}
 	HandleOfferStub        func(webrtc.SessionDescription)
 	handleOfferMutex       sync.RWMutex
 	handleOfferArgsForCall []struct {
@@ -643,6 +655,11 @@ type FakeLocalParticipant struct {
 	onICEConfigChangedMutex       sync.RWMutex
 	onICEConfigChangedArgsForCall []struct {
 		arg1 func(participant types.LocalParticipant, iceConfig *livekit.ICEConfig)
+	}
+	OnMetricsStub        func(func(types.LocalParticipant, *livekit.DataPacket))
+	onMetricsMutex       sync.RWMutex
+	onMetricsArgsForCall []struct {
+		arg1 func(types.LocalParticipant, *livekit.DataPacket)
 	}
 	OnMigrateStateChangeStub        func(func(p types.LocalParticipant, migrateState types.MigrateState))
 	onMigrateStateChangeMutex       sync.RWMutex
@@ -3146,6 +3163,68 @@ func (fake *FakeLocalParticipant) HandleAnswerArgsForCall(i int) webrtc.SessionD
 	return argsForCall.arg1
 }
 
+func (fake *FakeLocalParticipant) HandleMetrics(arg1 livekit.ParticipantID, arg2 *livekit.MetricsBatch) error {
+	fake.handleMetricsMutex.Lock()
+	ret, specificReturn := fake.handleMetricsReturnsOnCall[len(fake.handleMetricsArgsForCall)]
+	fake.handleMetricsArgsForCall = append(fake.handleMetricsArgsForCall, struct {
+		arg1 livekit.ParticipantID
+		arg2 *livekit.MetricsBatch
+	}{arg1, arg2})
+	stub := fake.HandleMetricsStub
+	fakeReturns := fake.handleMetricsReturns
+	fake.recordInvocation("HandleMetrics", []interface{}{arg1, arg2})
+	fake.handleMetricsMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) HandleMetricsCallCount() int {
+	fake.handleMetricsMutex.RLock()
+	defer fake.handleMetricsMutex.RUnlock()
+	return len(fake.handleMetricsArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) HandleMetricsCalls(stub func(livekit.ParticipantID, *livekit.MetricsBatch) error) {
+	fake.handleMetricsMutex.Lock()
+	defer fake.handleMetricsMutex.Unlock()
+	fake.HandleMetricsStub = stub
+}
+
+func (fake *FakeLocalParticipant) HandleMetricsArgsForCall(i int) (livekit.ParticipantID, *livekit.MetricsBatch) {
+	fake.handleMetricsMutex.RLock()
+	defer fake.handleMetricsMutex.RUnlock()
+	argsForCall := fake.handleMetricsArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeLocalParticipant) HandleMetricsReturns(result1 error) {
+	fake.handleMetricsMutex.Lock()
+	defer fake.handleMetricsMutex.Unlock()
+	fake.HandleMetricsStub = nil
+	fake.handleMetricsReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) HandleMetricsReturnsOnCall(i int, result1 error) {
+	fake.handleMetricsMutex.Lock()
+	defer fake.handleMetricsMutex.Unlock()
+	fake.HandleMetricsStub = nil
+	if fake.handleMetricsReturnsOnCall == nil {
+		fake.handleMetricsReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.handleMetricsReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
 func (fake *FakeLocalParticipant) HandleOffer(arg1 webrtc.SessionDescription) {
 	fake.handleOfferMutex.Lock()
 	fake.handleOfferArgsForCall = append(fake.handleOfferArgsForCall, struct {
@@ -4416,6 +4495,38 @@ func (fake *FakeLocalParticipant) OnICEConfigChangedArgsForCall(i int) func(part
 	fake.onICEConfigChangedMutex.RLock()
 	defer fake.onICEConfigChangedMutex.RUnlock()
 	argsForCall := fake.onICEConfigChangedArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) OnMetrics(arg1 func(types.LocalParticipant, *livekit.DataPacket)) {
+	fake.onMetricsMutex.Lock()
+	fake.onMetricsArgsForCall = append(fake.onMetricsArgsForCall, struct {
+		arg1 func(types.LocalParticipant, *livekit.DataPacket)
+	}{arg1})
+	stub := fake.OnMetricsStub
+	fake.recordInvocation("OnMetrics", []interface{}{arg1})
+	fake.onMetricsMutex.Unlock()
+	if stub != nil {
+		fake.OnMetricsStub(arg1)
+	}
+}
+
+func (fake *FakeLocalParticipant) OnMetricsCallCount() int {
+	fake.onMetricsMutex.RLock()
+	defer fake.onMetricsMutex.RUnlock()
+	return len(fake.onMetricsArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) OnMetricsCalls(stub func(func(types.LocalParticipant, *livekit.DataPacket))) {
+	fake.onMetricsMutex.Lock()
+	defer fake.onMetricsMutex.Unlock()
+	fake.OnMetricsStub = stub
+}
+
+func (fake *FakeLocalParticipant) OnMetricsArgsForCall(i int) func(types.LocalParticipant, *livekit.DataPacket) {
+	fake.onMetricsMutex.RLock()
+	defer fake.onMetricsMutex.RUnlock()
+	argsForCall := fake.onMetricsArgsForCall[i]
 	return argsForCall.arg1
 }
 
@@ -6991,6 +7102,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.getTrailerMutex.RUnlock()
 	fake.handleAnswerMutex.RLock()
 	defer fake.handleAnswerMutex.RUnlock()
+	fake.handleMetricsMutex.RLock()
+	defer fake.handleMetricsMutex.RUnlock()
 	fake.handleOfferMutex.RLock()
 	defer fake.handleOfferMutex.RUnlock()
 	fake.handleReceiverReportMutex.RLock()
@@ -7047,6 +7160,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.onDataPacketMutex.RUnlock()
 	fake.onICEConfigChangedMutex.RLock()
 	defer fake.onICEConfigChangedMutex.RUnlock()
+	fake.onMetricsMutex.RLock()
+	defer fake.onMetricsMutex.RUnlock()
 	fake.onMigrateStateChangeMutex.RLock()
 	defer fake.onMigrateStateChangeMutex.RUnlock()
 	fake.onParticipantUpdateMutex.RLock()

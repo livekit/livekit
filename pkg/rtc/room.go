@@ -16,9 +16,7 @@ package rtc
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"math"
 	"slices"
 	"sort"
@@ -29,8 +27,6 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/exp/maps"
 	"google.golang.org/protobuf/proto"
-
-	"github.com/pion/sctp"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -482,6 +478,7 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 	participant.OnTrackUnpublished(r.onTrackUnpublished)
 	participant.OnParticipantUpdate(r.onParticipantUpdate)
 	participant.OnDataPacket(r.onDataPacket)
+	participant.OnMetrics(r.onMetrics)
 	participant.OnSubscribeStatusChanged(func(publisherID livekit.ParticipantID, subscribed bool) {
 		if subscribed {
 			pub := r.GetParticipantByID(publisherID)
@@ -726,6 +723,7 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 	p.OnStateChange(nil)
 	p.OnParticipantUpdate(nil)
 	p.OnDataPacket(nil)
+	p.OnMetrics(nil)
 	p.OnSubscribeStatusChanged(nil)
 
 	// close participant as well
@@ -1272,6 +1270,10 @@ func (r *Room) onDataPacket(source types.LocalParticipant, kind livekit.DataPack
 	BroadcastDataPacketForRoom(r, source, kind, dp, r.Logger)
 }
 
+func (r *Room) onMetrics(source types.LocalParticipant, dp *livekit.DataPacket) {
+	BroadcastMetricsForRoom(r, source, dp, r.Logger)
+}
+
 func (r *Room) subscribeToExistingTracks(p types.LocalParticipant) {
 	r.lock.RLock()
 	shouldSubscribe := r.autoSubscribe(p)
@@ -1769,9 +1771,6 @@ func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, kin
 
 	var dpData []byte
 	for _, op := range participants {
-		if op.State() != livekit.ParticipantInfo_ACTIVE {
-			continue
-		}
 		if source != nil && op.ID() == source.ID() {
 			continue
 		}
@@ -1792,12 +1791,19 @@ func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, kin
 	}
 
 	utils.ParallelExec(destParticipants, dataForwardLoadBalanceThreshold, 1, func(op types.LocalParticipant) {
-		err := op.SendDataPacket(kind, dpData)
-		if err != nil && !errors.Is(err, io.ErrClosedPipe) && !errors.Is(err, sctp.ErrStreamClosed) &&
-			!errors.Is(err, ErrTransportFailure) && !errors.Is(err, ErrDataChannelBufferFull) {
-			op.GetLogger().Infow("send data packet error", "error", err)
-		}
+		op.SendDataPacket(kind, dpData)
 	})
+}
+
+func BroadcastMetricsForRoom(r types.Room, source types.LocalParticipant, dp *livekit.DataPacket, logger logger.Logger) {
+	switch payload := dp.Value.(type) {
+	case *livekit.DataPacket_Metrics:
+		utils.ParallelExec(r.GetLocalParticipants(), dataForwardLoadBalanceThreshold, 1, func(op types.LocalParticipant) {
+			// echoing back to sender too
+			op.HandleMetrics(source.ID(), payload.Metrics)
+		})
+	default:
+	}
 }
 
 func IsCloseNotifySkippable(closeReason types.ParticipantCloseReason) bool {
