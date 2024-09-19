@@ -461,6 +461,7 @@ func newTestSubscriptionManagerWithParams(t *testing.T, params testSubscriptionP
 	p.CanSubscribeReturns(true)
 	p.IDReturns("subID")
 	p.IdentityReturns("sub")
+	p.KindReturns(livekit.ParticipantInfo_STANDARD)
 	return NewSubscriptionManager(SubscriptionManagerParams{
 		Participant:         p,
 		Logger:              logger.GetLogger(),
@@ -517,7 +518,10 @@ func (t *testResolver) Resolve(identity livekit.ParticipantIdentity, trackID liv
 		st.IDReturns(trackID)
 		st.PublisherIDReturns(t.pubID)
 		st.PublisherIdentityReturns(t.pubIdentity)
-		mt.AddSubscriberReturns(st, nil)
+		mt.AddSubscriberCalls(func(sub types.LocalParticipant) (types.SubscribedTrack, error) {
+			st.SubscriberReturns(sub)
+			return st, nil
+		})
 		st.MediaTrackReturns(mt)
 		res.Track = mt
 	}

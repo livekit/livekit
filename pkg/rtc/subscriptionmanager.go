@@ -24,6 +24,7 @@ import (
 
 	"github.com/pion/webrtc/v3/pkg/rtcerr"
 	"go.uber.org/atomic"
+	"golang.org/x/exp/maps"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
@@ -31,6 +32,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 )
 
 // using var instead of const to override in tests
@@ -216,11 +218,7 @@ func (m *SubscriptionManager) GetSubscribedParticipants() []livekit.ParticipantI
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
-	var participantIDs []livekit.ParticipantID
-	for pID := range m.subscribedTo {
-		participantIDs = append(participantIDs, pID)
-	}
-	return participantIDs
+	return maps.Keys(m.subscribedTo)
 }
 
 func (m *SubscriptionManager) IsSubscribedTo(participantID livekit.ParticipantID) bool {
@@ -526,7 +524,7 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 	subTrack, err := track.AddSubscriber(m.params.Participant)
 	if err != nil && !errors.Is(err, errAlreadySubscribed) {
 		// ignore error(s): already subscribed
-		if !errors.Is(err, ErrTrackNotAttached) && !errors.Is(err, ErrNoReceiver) {
+		if !utils.ErrorIsOneOf(err, ErrTrackNotAttached, ErrNoReceiver) {
 			// as track resolution could take some time, not logging errors due to waiting for track resolution
 			m.params.Logger.Warnw("add subscriber failed", err, "trackID", trackID)
 		}
@@ -996,7 +994,8 @@ func (s *trackSubscription) maybeRecordSuccess(ts telemetry.TelemetryService, pI
 
 	d := time.Since(s.createAt)
 	s.logger.Debugw("track subscribed", "cost", d.Milliseconds())
-	prometheus.RecordSubscribeTime(mediaTrack.Source(), mediaTrack.Kind(), d)
+	subscriber := subTrack.Subscriber()
+	prometheus.RecordSubscribeTime(mediaTrack.Source(), mediaTrack.Kind(), d, subscriber.GetClientInfo().GetSdk(), subscriber.Kind())
 
 	eventSent := s.eventSent.Swap(true)
 

@@ -42,4 +42,6 @@ var (
 	ErrTrackNotAttached          = errors.New("track is not yet attached")
 	ErrTrackNotBound             = errors.New("track not bound")
 	ErrSubscriptionLimitExceeded = errors.New("participant has exceeded its subscription limit")
+
+	ErrNoSubscribeMetricsPermission = errors.New("participant is not given permission to subscribe to metrics")
 )
