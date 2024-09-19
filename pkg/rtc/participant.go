@@ -2131,12 +2131,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 				"cost", pubTime.Milliseconds(),
 			)
 
-			// SIP client relies on the remote peer's media packet to publish the track and
-			// sometimes it costs 10s to arrive after handshake.
-			// So we ignore the publish time for SIP client to avoid the high value in the metrics.
-			if p.Kind() != livekit.ParticipantInfo_SIP {
-				prometheus.RecordPublishTime(mt.Source(), mt.Kind(), pubTime)
-			}
+			prometheus.RecordPublishTime(mt.Source(), mt.Kind(), pubTime, p.GetClientInfo().GetSdk(), p.Kind())
 			p.handleTrackPublished(mt)
 		}()
 	}
