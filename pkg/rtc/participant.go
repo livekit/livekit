@@ -208,9 +208,6 @@ type ParticipantImpl struct {
 
 	icQueue [2]atomic.Pointer[webrtc.ICECandidate]
 
-	// keeps track of unpublished tracks in order to reuse trackID
-	unpublishedTracks []*livekit.TrackInfo
-
 	requireBroadcast bool
 	// queued participant updates before join response is sent
 	// guarded by updateLock
@@ -1966,7 +1963,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	if ti.Stream == "" {
 		ti.Stream = StreamFromTrackSource(ti.Source)
 	}
-	p.setStableTrackID(req.Cid, ti)
+	p.setTrackID(req.Cid, ti)
 
 	if len(req.SimulcastCodecs) == 0 {
 		if req.Type == livekit.TrackType_VIDEO {
@@ -2187,12 +2184,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 				"cost", pubTime.Milliseconds(),
 			)
 
-			// SIP client relies on the remote peer's media packet to publish the track and
-			// sometimes it costs 10s to arrive after handshake.
-			// So we ignore the publish time for SIP client to avoid the high value in the metrics.
-			if p.Kind() != livekit.ParticipantInfo_SIP {
-				prometheus.RecordPublishTime(mt.Source(), mt.Kind(), pubTime)
-			}
+			prometheus.RecordPublishTime(mt.Source(), mt.Kind(), pubTime, p.GetClientInfo().GetSdk(), p.Kind())
 			p.handleTrackPublished(mt)
 		}()
 	}
@@ -2322,8 +2314,6 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 		if pti := p.pendingTracks[signalCid]; pti != nil {
 			p.sendTrackPublished(signalCid, pti.trackInfos[0])
 			pti.queued = false
-		} else {
-			p.unpublishedTracks = append(p.unpublishedTracks, ti)
 		}
 		p.pendingTracksLock.Unlock()
 		p.handlePendingRemoteTracks()
@@ -2422,39 +2412,13 @@ func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackTyp
 	return signalCid, pendingInfo.trackInfos[0], pendingInfo.migrated, pendingInfo.createdAt
 }
 
-// setStableTrackID either generates a new TrackID or reuses a previously used one
-// for
-func (p *ParticipantImpl) setStableTrackID(cid string, info *livekit.TrackInfo) {
+// setTrackID either generates a new TrackID for an AddTrackRequest
+func (p *ParticipantImpl) setTrackID(cid string, info *livekit.TrackInfo) {
 	var trackID string
 	// if already pending, use the same SID
 	// should not happen as this means multiple `AddTrack` requests have been called, but check anyway
 	if pti := p.pendingTracks[cid]; pti != nil {
 		trackID = pti.trackInfos[0].Sid
-	}
-
-	// check against published tracks as re-publish could be happening
-	if trackID == "" {
-		if pt := p.getPublishedTrackBySignalCid(cid); pt != nil {
-			ti := pt.ToProto()
-			if ti.Type == info.Type && ti.Source == info.Source && ti.Name == info.Name {
-				trackID = ti.Sid
-			}
-		}
-	}
-
-	if trackID == "" {
-		// check a previously published matching track
-		for i, ti := range p.unpublishedTracks {
-			if ti.Type == info.Type && ti.Source == info.Source && ti.Name == info.Name {
-				trackID = ti.Sid
-				if i < len(p.unpublishedTracks)-1 {
-					p.unpublishedTracks = append(p.unpublishedTracks[:i], p.unpublishedTracks[i+1:]...)
-				} else {
-					p.unpublishedTracks = p.unpublishedTracks[:i]
-				}
-				break
-			}
-		}
 	}
 
 	// otherwise generate

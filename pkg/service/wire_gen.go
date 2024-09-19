@@ -67,10 +67,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	client, err := agent.NewAgentClient(messageBus)
-	if err != nil {
-		return nil, err
-	}
 	egressClient, err := rpc.NewEgressClient(clientParams)
 	if err != nil {
 		return nil, err
@@ -102,7 +98,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	roomService, err := NewRoomService(limitConfig, apiConfig, router, roomAllocator, objectStore, client, rtcEgressLauncher, topicFormatter, roomClient, participantClient)
+	roomService, err := NewRoomService(limitConfig, apiConfig, router, roomAllocator, objectStore, rtcEgressLauncher, topicFormatter, roomClient, participantClient)
 	if err != nil {
 		return nil, err
 	}
@@ -124,13 +120,17 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	sipService := NewSIPService(sipConfig, nodeID, messageBus, sipClient, sipStore, roomService, telemetryService)
-	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode, client, telemetryService)
+	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode, telemetryService)
 	agentService, err := NewAgentService(conf, currentNode, messageBus, keyProvider)
 	if err != nil {
 		return nil, err
 	}
 	time := getTimeNow()
 	clientConfigurationManager := createClientConfiguration()
+	client, err := agent.NewAgentClient(messageBus)
+	if err != nil {
+		return nil, err
+	}
 	agentStore := getAgentStore(objectStore)
 	timedVersionGenerator := utils.NewDefaultTimedVersionGenerator()
 	turnAuthHandler := NewTURNAuthHandler(keyProvider)
