@@ -444,6 +444,7 @@ func (s *SIPService) TransferSIPParticipantRequest(ctx context.Context, req *liv
 	}
 
 	return &rpc.InternalTransferSIPParticipantRequest{
-		SipCallId: callID,
+		SipCallId:  callID,
+		TransferTo: req.TransferTo,
 	}, nil
 }
