@@ -1667,7 +1667,7 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 			shouldForwardData = false
 		}
 	case *livekit.DataPacket_ChatMessage:
-		if p.isAgent() && dp.ParticipantIdentity != "" && string(p.params.Identity) != dp.ParticipantIdentity {
+		if p.IsAgent() && dp.ParticipantIdentity != "" && string(p.params.Identity) != dp.ParticipantIdentity {
 			overrideSenderIdentity = false
 			payload.ChatMessage.Generated = true
 
