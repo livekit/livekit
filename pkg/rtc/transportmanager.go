@@ -31,6 +31,7 @@ import (
 	"github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/transport"
@@ -247,10 +248,10 @@ func (t *TransportManager) SendDataPacket(kind livekit.DataPacket_Kind, encoded 
 	// downstream data is sent via primary peer connection
 	err := t.getTransport(true).SendDataPacket(kind, encoded)
 	if err != nil {
-		if !errors.Is(err, io.ErrClosedPipe) && !errors.Is(err, sctp.ErrStreamClosed) && !errors.Is(err, ErrTransportFailure) && !errors.Is(err, ErrDataChannelBufferFull) {
+		if !utils.ErrorIsOneOf(err, io.ErrClosedPipe, sctp.ErrStreamClosed, ErrTransportFailure, ErrDataChannelBufferFull) {
 			t.params.Logger.Warnw("send data packet error", err)
 		}
-		if errors.Is(err, sctp.ErrStreamClosed) || errors.Is(err, io.ErrClosedPipe) {
+		if utils.ErrorIsOneOf(err, sctp.ErrStreamClosed, io.ErrClosedPipe) {
 			t.params.SubscriberHandler.OnDataSendError(err)
 		}
 	} else {

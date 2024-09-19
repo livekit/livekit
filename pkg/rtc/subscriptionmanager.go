@@ -32,6 +32,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 )
 
 // using var instead of const to override in tests
@@ -523,7 +524,7 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 	subTrack, err := track.AddSubscriber(m.params.Participant)
 	if err != nil && !errors.Is(err, errAlreadySubscribed) {
 		// ignore error(s): already subscribed
-		if !errors.Is(err, ErrTrackNotAttached) && !errors.Is(err, ErrNoReceiver) {
+		if !utils.ErrorIsOneOf(err, ErrTrackNotAttached, ErrNoReceiver) {
 			// as track resolution could take some time, not logging errors due to waiting for track resolution
 			m.params.Logger.Warnw("add subscriber failed", err, "trackID", trackID)
 		}
