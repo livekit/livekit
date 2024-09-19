@@ -30,6 +30,7 @@ import (
 	"github.com/pion/transport/v2/packetio"
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -143,6 +144,13 @@ type DownTrackState struct {
 func (d DownTrackState) String() string {
 	return fmt.Sprintf("DownTrackState{rtpStats: %s, deltaSender: %d, forwarder: %s}",
 		d.RTPStats, d.DeltaStatsSenderSnapshotId, d.ForwarderState.String())
+}
+
+func (d DownTrackState) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	e.AddObject("RTPStats", d.RTPStats)
+	e.AddUint32("DeltaStatsSenderSnapshotId", d.DeltaStatsSenderSnapshotId)
+	e.AddObject("ForwarderState", logger.Proto(d.ForwarderState))
+	return nil
 }
 
 // -------------------------------------------------------------------
@@ -1245,6 +1253,9 @@ func (d *DownTrack) GetState() DownTrackState {
 }
 
 func (d *DownTrack) SeedState(state DownTrackState) {
+	if state.RTPStats != nil || state.ForwarderState != nil {
+		d.params.Logger.Debugw("seeding down track state", "state", state)
+	}
 	if state.RTPStats != nil {
 		d.rtpStats.Seed(state.RTPStats)
 		d.deltaStatsSenderSnapshotId = state.DeltaStatsSenderSnapshotId

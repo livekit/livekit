@@ -21,10 +21,10 @@ import (
 
 	"github.com/frostbyte73/core"
 	"go.uber.org/atomic"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -82,7 +82,7 @@ func NewStreamTrackerManager(
 		maxTemporalLayerSeen: buffer.InvalidLayerTemporal,
 		clockRate:            clockRate,
 	}
-	s.trackInfo.Store(proto.Clone(trackInfo).(*livekit.TrackInfo))
+	s.trackInfo.Store(utils.CloneProto(trackInfo))
 
 	switch trackInfo.Source {
 	case livekit.TrackSource_SCREEN_SHARE:
@@ -312,7 +312,7 @@ func (s *StreamTrackerManager) IsPaused() bool {
 }
 
 func (s *StreamTrackerManager) UpdateTrackInfo(ti *livekit.TrackInfo) {
-	s.trackInfo.Store(proto.Clone(ti).(*livekit.TrackInfo))
+	s.trackInfo.Store(utils.CloneProto(ti))
 	s.maxExpectedLayerFromTrackInfo()
 }
 

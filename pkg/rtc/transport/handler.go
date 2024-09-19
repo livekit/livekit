@@ -39,6 +39,7 @@ type Handler interface {
 	OnFailed(isShortLived bool)
 	OnTrack(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver)
 	OnDataPacket(kind livekit.DataPacket_Kind, data []byte)
+	OnDataSendError(err error)
 	OnOffer(sd webrtc.SessionDescription) error
 	OnAnswer(sd webrtc.SessionDescription) error
 	OnNegotiationStateChanged(state NegotiationState)
@@ -56,6 +57,7 @@ func (h UnimplementedHandler) OnFullyEstablished()                              
 func (h UnimplementedHandler) OnFailed(isShortLived bool)                                         {}
 func (h UnimplementedHandler) OnTrack(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {}
 func (h UnimplementedHandler) OnDataPacket(kind livekit.DataPacket_Kind, data []byte)             {}
+func (h UnimplementedHandler) OnDataSendError(err error)                                          {}
 func (h UnimplementedHandler) OnOffer(sd webrtc.SessionDescription) error {
 	return ErrNoOfferHandler
 }

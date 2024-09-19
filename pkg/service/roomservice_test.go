@@ -115,7 +115,6 @@ func newTestRoomService(limitConf config.LimitConfig) *TestRoomService {
 		allocator,
 		store,
 		nil,
-		nil,
 		rpc.NewTopicFormatter(),
 		&rpcfakes.FakeTypedRoomClient{},
 		&rpcfakes.FakeTypedParticipantClient{},

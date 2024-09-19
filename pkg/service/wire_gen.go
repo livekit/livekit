@@ -27,6 +27,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"gopkg.in/yaml.v3"
 	"os"
+	"time"
 )
 
 import (
@@ -66,10 +67,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	client, err := agent.NewAgentClient(messageBus)
-	if err != nil {
-		return nil, err
-	}
 	egressClient, err := rpc.NewEgressClient(clientParams)
 	if err != nil {
 		return nil, err
@@ -101,7 +98,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	roomService, err := NewRoomService(limitConfig, apiConfig, router, roomAllocator, objectStore, client, rtcEgressLauncher, topicFormatter, roomClient, participantClient)
+	roomService, err := NewRoomService(limitConfig, apiConfig, router, roomAllocator, objectStore, rtcEgressLauncher, topicFormatter, roomClient, participantClient)
 	if err != nil {
 		return nil, err
 	}
@@ -123,17 +120,22 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	sipService := NewSIPService(sipConfig, nodeID, messageBus, sipClient, sipStore, roomService, telemetryService)
-	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode, client, telemetryService)
+	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode, telemetryService)
 	agentService, err := NewAgentService(conf, currentNode, messageBus, keyProvider)
 	if err != nil {
 		return nil, err
 	}
+	time := getTimeNow()
 	clientConfigurationManager := createClientConfiguration()
+	client, err := agent.NewAgentClient(messageBus)
+	if err != nil {
+		return nil, err
+	}
 	agentStore := getAgentStore(objectStore)
 	timedVersionGenerator := utils.NewDefaultTimedVersionGenerator()
 	turnAuthHandler := NewTURNAuthHandler(keyProvider)
 	forwardStats := createForwardStats(conf)
-	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, roomAllocator, telemetryService, clientConfigurationManager, client, agentStore, rtcEgressLauncher, timedVersionGenerator, turnAuthHandler, messageBus, forwardStats)
+	roomManager, err := NewLocalRoomManager(time, conf, objectStore, currentNode, router, roomAllocator, telemetryService, clientConfigurationManager, client, agentStore, rtcEgressLauncher, timedVersionGenerator, turnAuthHandler, messageBus, forwardStats)
 	if err != nil {
 		return nil, err
 	}
@@ -181,6 +183,10 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 }
 
 // wire.go:
+
+func getTimeNow() time.Time {
+	return time.Now()
+}
 
 func getNodeID(currentNode routing.LocalNode) livekit.NodeID {
 	return livekit.NodeID(currentNode.Id)

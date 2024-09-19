@@ -225,6 +225,7 @@ type PCTransport struct {
 	pendingRestartIceOffer    *webrtc.SessionDescription
 
 	connectionDetails *types.ICEConnectionDetails
+	selectedPair      atomic.Pointer[webrtc.ICECandidatePair]
 }
 
 type TransportParams struct {
@@ -464,6 +465,12 @@ func (t *PCTransport) createPeerConnection() error {
 	t.pc.OnDataChannel(t.onDataChannel)
 	t.pc.OnTrack(t.params.Handler.OnTrack)
 
+	t.pc.SCTP().Transport().ICETransport().OnSelectedCandidatePairChange(func(pair *webrtc.ICECandidatePair) {
+		t.params.Logger.Debugw("selected ICE candidate pair changed", "pair", wrappedICECandidatePairLogger{pair})
+		t.connectionDetails.SetSelectedPair(pair)
+		t.selectedPair.Store(pair)
+	})
+
 	t.me = me
 
 	if bwe != nil && t.streamAllocator != nil {
@@ -575,34 +582,6 @@ func (t *PCTransport) IsShortConnection(at time.Time) (bool, time.Duration) {
 	return duration < shortConnectionThreshold, duration
 }
 
-func (t *PCTransport) getSelectedPair() (*webrtc.ICECandidatePair, error) {
-	s := t.pc.SCTP()
-	if s == nil {
-		return nil, errors.New("no SCTP")
-	}
-
-	dtlsTransport := s.Transport()
-	if dtlsTransport == nil {
-		return nil, errors.New("no DTLS transport")
-	}
-
-	iceTransport := dtlsTransport.ICETransport()
-	if iceTransport == nil {
-		return nil, errors.New("no ICE transport")
-	}
-
-	pair, err := iceTransport.GetSelectedCandidatePair()
-	if err != nil {
-		return nil, err
-	}
-
-	if pair == nil {
-		return nil, errors.New("no selected pair")
-	}
-
-	return pair, err
-}
-
 func (t *PCTransport) setConnectedAt(at time.Time) bool {
 	t.lock.Lock()
 	t.connectedAt = at
@@ -641,8 +620,7 @@ func (t *PCTransport) handleConnectionFailed(forceShortConn bool) {
 		var duration time.Duration
 		isShort, duration = t.IsShortConnection(time.Now())
 		if isShort {
-			pair, err := t.getSelectedPair()
-			t.params.Logger.Debugw("short ICE connection", "error", err, "pair", wrappedICECandidatePairLogger{pair}, "duration", duration)
+			t.params.Logger.Debugw("short ICE connection", "pair", wrappedICECandidatePairLogger{t.selectedPair.Load()}, "duration", duration)
 		}
 	}
 
@@ -654,14 +632,6 @@ func (t *PCTransport) onICEConnectionStateChange(state webrtc.ICEConnectionState
 	switch state {
 	case webrtc.ICEConnectionStateConnected:
 		t.setICEConnectedAt(time.Now())
-		go func() {
-			pair, err := t.getSelectedPair()
-			if err != nil {
-				t.params.Logger.Warnw("failed to get selected candidate pair", err)
-				return
-			}
-			t.connectionDetails.SetSelectedPair(pair)
-		}()
 
 	case webrtc.ICEConnectionStateChecking:
 		t.setICEStartedAt(time.Now())
@@ -679,8 +649,7 @@ func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionSta
 
 			t.maybeNotifyFullyEstablished()
 		} else {
-			pair, err := t.getSelectedPair()
-			t.params.Logger.Infow("ice reconnected", "error", err, "pair", wrappedICECandidatePairLogger{pair})
+			t.params.Logger.Infow("ice reconnected", "pair", wrappedICECandidatePairLogger{t.selectedPair.Load()})
 		}
 	case webrtc.PeerConnectionStateFailed:
 		t.clearConnTimer()

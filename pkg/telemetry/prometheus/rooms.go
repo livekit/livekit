@@ -115,7 +115,7 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 		Name:        "ms",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		Buckets:     []float64{100, 200, 500, 700, 1000, 5000, 10000},
-	}, promStreamLabels)
+	}, append(promStreamLabels, "sdk", "kind"))
 
 	prometheus.MustRegister(promRoomCurrent)
 	prometheus.MustRegister(promRoomDuration)
@@ -172,12 +172,20 @@ func AddPublishSuccess(kind string) {
 	promTrackPublishCounter.WithLabelValues(kind, "success").Inc()
 }
 
-func RecordPublishTime(source livekit.TrackSource, trackType livekit.TrackType, d time.Duration) {
-	promPubSubTime.WithLabelValues("publish", source.String(), trackType.String()).Observe(float64(d.Milliseconds()))
+func RecordPublishTime(source livekit.TrackSource, trackType livekit.TrackType, d time.Duration, sdk livekit.ClientInfo_SDK, kind livekit.ParticipantInfo_Kind) {
+	recordPubSubTime(true, source, trackType, d, sdk, kind)
 }
 
-func RecordSubscribeTime(source livekit.TrackSource, trackType livekit.TrackType, d time.Duration) {
-	promPubSubTime.WithLabelValues("subscribe", source.String(), trackType.String()).Observe(float64(d.Milliseconds()))
+func RecordSubscribeTime(source livekit.TrackSource, trackType livekit.TrackType, d time.Duration, sdk livekit.ClientInfo_SDK, kind livekit.ParticipantInfo_Kind) {
+	recordPubSubTime(false, source, trackType, d, sdk, kind)
+}
+
+func recordPubSubTime(isPublish bool, source livekit.TrackSource, trackType livekit.TrackType, d time.Duration, sdk livekit.ClientInfo_SDK, kind livekit.ParticipantInfo_Kind) {
+	direction := "subscribe"
+	if isPublish {
+		direction = "publish"
+	}
+	promPubSubTime.WithLabelValues(direction, source.String(), trackType.String(), sdk.String(), kind.String()).Observe(float64(d.Milliseconds()))
 }
 
 func RecordTrackSubscribeSuccess(kind string) {

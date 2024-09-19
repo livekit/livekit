@@ -21,9 +21,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/twitchtv/twirp"
-	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
@@ -31,6 +29,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
+	"github.com/livekit/protocol/utils"
 )
 
 type RoomService struct {
@@ -39,7 +38,6 @@ type RoomService struct {
 	router            routing.MessageRouter
 	roomAllocator     RoomAllocator
 	roomStore         ServiceStore
-	agentClient       agent.Client
 	egressLauncher    rtc.EgressLauncher
 	topicFormatter    rpc.TopicFormatter
 	roomClient        rpc.TypedRoomClient
@@ -52,7 +50,6 @@ func NewRoomService(
 	router routing.MessageRouter,
 	roomAllocator RoomAllocator,
 	serviceStore ServiceStore,
-	agentClient agent.Client,
 	egressLauncher rtc.EgressLauncher,
 	topicFormatter rpc.TopicFormatter,
 	roomClient rpc.TypedRoomClient,
@@ -64,7 +61,6 @@ func NewRoomService(
 		router:            router,
 		roomAllocator:     roomAllocator,
 		roomStore:         serviceStore,
-		agentClient:       agentClient,
 		egressLauncher:    egressLauncher,
 		topicFormatter:    topicFormatter,
 		roomClient:        roomClient,
@@ -327,7 +323,7 @@ func redactCreateRoomRequest(req *livekit.CreateRoomRequest) *livekit.CreateRoom
 		return req
 	}
 
-	clone := proto.Clone(req).(*livekit.CreateRoomRequest)
+	clone := utils.CloneProto(req)
 
 	if clone.Egress.Room != nil {
 		egress.RedactEncodedOutputs(clone.Egress.Room)

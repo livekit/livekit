@@ -39,6 +39,7 @@ type WebsocketClient interface {
 	ReadMessage() (messageType int, p []byte, err error)
 	WriteMessage(messageType int, data []byte) error
 	WriteControl(messageType int, data []byte, deadline time.Time) error
+	SetReadDeadline(deadline time.Time) error
 	Close() error
 }
 
@@ -257,8 +258,10 @@ type Participant interface {
 	Kind() livekit.ParticipantInfo_Kind
 	IsRecorder() bool
 	IsDependent() bool
+	IsAgent() bool
 
 	CanSkipBroadcast() bool
+	VersionNumber() uint32
 	ToProto() *livekit.ParticipantInfo
 
 	IsPublisher() bool
@@ -404,6 +407,7 @@ type LocalParticipant interface {
 	// OnParticipantUpdate - metadata or permission is updated
 	OnParticipantUpdate(callback func(LocalParticipant))
 	OnDataPacket(callback func(LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket))
+	OnMetrics(callback func(LocalParticipant, *livekit.DataPacket))
 	OnSubscribeStatusChanged(fn func(publisherID livekit.ParticipantID, subscribed bool))
 	OnClose(callback func(LocalParticipant))
 	OnClaimsChanged(callback func(LocalParticipant))
@@ -442,6 +446,8 @@ type LocalParticipant interface {
 	GetPacer() pacer.Pacer
 
 	GetDisableSenderReportPassThrough() bool
+
+	HandleMetrics(senderParticipantID livekit.ParticipantID, batch *livekit.MetricsBatch) error
 }
 
 // Room is a container of participants, and can provide room-level actions
