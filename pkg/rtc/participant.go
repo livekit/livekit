@@ -1641,14 +1641,9 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 	// trust the channel that it came in as the source of truth
 	dp.Kind = kind
 
-	if p.Hidden() {
-		dp.ParticipantIdentity = ""
-	} else {
-		dp.ParticipantIdentity = string(p.params.Identity)
-	}
-
 	shouldForwardData := true
 	shouldForwardMetrics := false
+	overrideSenderIdentity := true
 	isPublisher := true
 	// only forward on user payloads
 	switch payload := dp.Value.(type) {
@@ -1661,11 +1656,6 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 			u.ParticipantSid = string(p.params.SID)
 			u.ParticipantIdentity = string(p.params.Identity)
 		}
-		if dp.ParticipantIdentity != "" {
-			u.ParticipantIdentity = dp.ParticipantIdentity
-		} else {
-			dp.ParticipantIdentity = u.ParticipantIdentity
-		}
 		if len(dp.DestinationIdentities) != 0 {
 			u.DestinationIdentities = dp.DestinationIdentities
 		} else {
@@ -1677,6 +1667,10 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 			shouldForwardData = false
 		}
 	case *livekit.DataPacket_ChatMessage:
+		if p.IsAgent() && dp.ParticipantIdentity != "" && string(p.params.Identity) != dp.ParticipantIdentity {
+			overrideSenderIdentity = false
+			payload.ChatMessage.Generated = true
+		}
 		shouldForwardData = true
 	case *livekit.DataPacket_Metrics:
 		shouldForwardData = false
@@ -1693,6 +1687,13 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 	default:
 		p.pubLogger.Warnw("received unsupported data packet", nil, "payload", payload)
 	}
+
+	if p.Hidden() {
+		dp.ParticipantIdentity = ""
+	} else if overrideSenderIdentity {
+		dp.ParticipantIdentity = string(p.params.Identity)
+	}
+
 	if shouldForwardData {
 		if onDataPacket := p.getOnDataPacket(); onDataPacket != nil {
 			onDataPacket(p, kind, dp)
