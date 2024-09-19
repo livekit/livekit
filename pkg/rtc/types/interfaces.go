@@ -257,8 +257,10 @@ type Participant interface {
 	Kind() livekit.ParticipantInfo_Kind
 	IsRecorder() bool
 	IsDependent() bool
+	IsAgent() bool
 
 	CanSkipBroadcast() bool
+	VersionNumber() uint32
 	ToProto() *livekit.ParticipantInfo
 
 	IsPublisher() bool

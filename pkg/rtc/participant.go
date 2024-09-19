@@ -370,6 +370,11 @@ func (p *ParticipantImpl) IsRecorder() bool {
 	return grants.GetParticipantKind() == livekit.ParticipantInfo_EGRESS || grants.Video.Recorder
 }
 
+func (p *ParticipantImpl) IsAgent() bool {
+	grants := p.grants.Load()
+	return grants.GetParticipantKind() == livekit.ParticipantInfo_AGENT || grants.Video.Agent
+}
+
 func (p *ParticipantImpl) IsDependent() bool {
 	grants := p.grants.Load()
 	switch grants.GetParticipantKind() {
@@ -613,6 +618,10 @@ func (p *ParticipantImpl) CanSkipBroadcast() bool {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	return !p.requireBroadcast
+}
+
+func (p *ParticipantImpl) VersionNumber() uint32 {
+	return p.version.Load()
 }
 
 func (p *ParticipantImpl) ToProtoWithVersion() (*livekit.ParticipantInfo, utils.TimedVersion) {
