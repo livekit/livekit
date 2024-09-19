@@ -20,10 +20,10 @@ import (
 	"time"
 
 	"go.uber.org/atomic"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 )
 
 var _ Router = (*LocalRouter)(nil)
@@ -58,7 +58,7 @@ func NewLocalRouter(
 func (r *LocalRouter) GetNodeForRoom(_ context.Context, _ livekit.RoomName) (*livekit.Node, error) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
-	node := proto.Clone((*livekit.Node)(r.currentNode)).(*livekit.Node)
+	node := utils.CloneProto((*livekit.Node)(r.currentNode))
 	return node, nil
 }
 

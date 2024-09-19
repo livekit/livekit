@@ -712,7 +712,7 @@ func (t *MediaTrackReceiver) TrackInfo() *livekit.TrackInfo {
 }
 
 func (t *MediaTrackReceiver) TrackInfoClone() *livekit.TrackInfo {
-	return proto.Clone(t.TrackInfo()).(*livekit.TrackInfo)
+	return utils.CloneProto(t.TrackInfo())
 }
 
 func (t *MediaTrackReceiver) NotifyMaxLayerChange(maxLayer int32) {
