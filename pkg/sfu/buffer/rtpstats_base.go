@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"go.uber.org/zap/zapcore"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/livekit/mediatransportutil"
@@ -302,8 +301,8 @@ func (r *rtpStatsBase) seed(from *rtpStatsBase) bool {
 	r.rtt = from.rtt
 	r.maxRtt = from.maxRtt
 
-	r.srFirst = proto.Clone(from.srFirst).(*livekit.RTCPSenderReportState)
-	r.srNewest = proto.Clone(from.srNewest).(*livekit.RTCPSenderReportState)
+	r.srFirst = utils.CloneProto(from.srFirst)
+	r.srNewest = utils.CloneProto(from.srNewest)
 
 	r.nextSnapshotID = from.nextSnapshotID
 	r.snapshots = make([]snapshot, cap(from.snapshots))

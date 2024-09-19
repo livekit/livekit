@@ -19,7 +19,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20240730083616-559fa5ece598
-	github.com/livekit/protocol v1.21.1-0.20240918070421-da4a63076085
+	github.com/livekit/protocol v1.22.0
 	github.com/livekit/psrpc v0.5.3-0.20240616012458-ac39c8549a0a
 	github.com/mackerelio/go-osstat v0.2.5
 	github.com/magefile/mage v1.15.0
@@ -137,6 +137,6 @@ require (
 	golang.org/x/tools v0.25.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20240604185151-ef581f913117 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240903143218-8af14fe29dc1 // indirect
-	google.golang.org/grpc v1.66.1 // indirect
+	google.golang.org/grpc v1.66.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
