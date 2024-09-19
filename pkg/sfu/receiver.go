@@ -195,6 +195,7 @@ func NewWebRTCReceiver(
 	opts ...ReceiverOpts,
 ) *WebRTCReceiver {
 	w := &WebRTCReceiver{
+		baseTime: baseTime,
 		logger:   logger,
 		receiver: receiver,
 		trackID:  livekit.TrackID(track.ID()),
