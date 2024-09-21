@@ -50,50 +50,52 @@ func TestAgent(t *testing.T) {
 	})
 }
 
-func TestAgentLoadBalancing(t *testing.T) {
-
-	batchJobCreate := func(batchSize int, totalJobs int, client rpc.AgentInternalClient, workers []*testutils.AgentWorker) <-chan struct{} {
-		var assigned atomic.Uint32
-		done := make(chan struct{})
-		for _, w := range workers {
-			assignments := w.JobAssignments.Observe()
-			go func() {
-				defer assignments.Stop()
-				for {
-					select {
-					case <-done:
-					case <-assignments.Events():
-						if assigned.Inc() == uint32(totalJobs) {
-							close(done)
-						}
+func batchJobCreate(t require.TestingT, batchSize int, totalJobs int, client rpc.AgentInternalClient, workers []*testutils.AgentWorker) <-chan struct{} {
+	var assigned atomic.Uint32
+	done := make(chan struct{})
+	for _, w := range workers {
+		assignments := w.JobAssignments.Observe()
+		go func() {
+			defer assignments.Stop()
+			for {
+				select {
+				case <-done:
+				case <-assignments.Events():
+					if assigned.Inc() == uint32(totalJobs) {
+						close(done)
 					}
 				}
-			}()
-		}
-
-		var wg sync.WaitGroup
-		for i := 0; i < totalJobs; i += batchSize {
-			wg.Add(1)
-			go func(start int) {
-				defer wg.Done()
-				for j := start; j < start+batchSize && j < totalJobs; j++ {
-					job := &livekit.Job{
-						Id:         guid.New(guid.AgentJobPrefix),
-						DispatchId: guid.New(guid.AgentDispatchPrefix),
-						Type:       livekit.JobType_JT_ROOM,
-						Room:       &livekit.Room{},
-						AgentName:  "test",
-					}
-					_, err := client.JobRequest(context.Background(), "test", agent.RoomAgentTopic, job)
-					require.NoError(t, err)
-				}
-			}(i)
-		}
-		wg.Wait()
-
-		return done
+			}
+		}()
 	}
 
+	// wait for agent registration
+	time.Sleep(100 * time.Millisecond)
+
+	var wg sync.WaitGroup
+	for i := 0; i < totalJobs; i += batchSize {
+		wg.Add(1)
+		go func(start int) {
+			defer wg.Done()
+			for j := start; j < start+batchSize && j < totalJobs; j++ {
+				job := &livekit.Job{
+					Id:         guid.New(guid.AgentJobPrefix),
+					DispatchId: guid.New(guid.AgentDispatchPrefix),
+					Type:       livekit.JobType_JT_ROOM,
+					Room:       &livekit.Room{},
+					AgentName:  "test",
+				}
+				_, err := client.JobRequest(context.Background(), "test", agent.RoomAgentTopic, job)
+				require.NoError(t, err)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	return done
+}
+
+func TestAgentLoadBalancing(t *testing.T) {
 	t.Run("jobs are distributed normally with baseline worker load", func(t *testing.T) {
 		totalWorkers := 5
 		totalJobs := 100
@@ -101,6 +103,7 @@ func TestAgentLoadBalancing(t *testing.T) {
 		bus := psrpc.NewLocalMessageBus()
 
 		client := must.Get(rpc.NewAgentInternalClient(bus))
+		t.Cleanup(client.Close)
 		server := testutils.NewTestServer(bus)
 		t.Cleanup(server.Close)
 
@@ -114,7 +117,7 @@ func TestAgentLoadBalancing(t *testing.T) {
 		}
 
 		select {
-		case <-batchJobCreate(10, totalJobs, client, agents):
+		case <-batchJobCreate(t, 10, totalJobs, client, agents):
 		case <-time.After(time.Second):
 			require.Fail(t, "job assignment timeout")
 		}
@@ -139,6 +142,7 @@ func TestAgentLoadBalancing(t *testing.T) {
 		bus := psrpc.NewLocalMessageBus()
 
 		client := must.Get(rpc.NewAgentInternalClient(bus))
+		t.Cleanup(client.Close)
 		server := testutils.NewTestServer(bus)
 		t.Cleanup(server.Close)
 
@@ -155,7 +159,7 @@ func TestAgentLoadBalancing(t *testing.T) {
 		}
 
 		select {
-		case <-batchJobCreate(1, totalJobs, client, agents):
+		case <-batchJobCreate(t, 1, totalJobs, client, agents):
 		case <-time.After(time.Second):
 			require.Fail(t, "job assignment timeout")
 		}
