@@ -50,7 +50,7 @@ func TestAgent(t *testing.T) {
 	})
 }
 
-func batchJobCreate(t require.TestingT, batchSize int, totalJobs int, client rpc.AgentInternalClient, workers []*testutils.AgentWorker) <-chan struct{} {
+func testBatchJobRequest(t require.TestingT, batchSize int, totalJobs int, client rpc.AgentInternalClient, workers []*testutils.AgentWorker) <-chan struct{} {
 	var assigned atomic.Uint32
 	done := make(chan struct{})
 	for _, w := range workers {
@@ -117,7 +117,7 @@ func TestAgentLoadBalancing(t *testing.T) {
 		}
 
 		select {
-		case <-batchJobCreate(t, 10, totalJobs, client, agents):
+		case <-testBatchJobRequest(t, 10, totalJobs, client, agents):
 		case <-time.After(time.Second):
 			require.Fail(t, "job assignment timeout")
 		}
@@ -159,7 +159,7 @@ func TestAgentLoadBalancing(t *testing.T) {
 		}
 
 		select {
-		case <-batchJobCreate(t, 1, totalJobs, client, agents):
+		case <-testBatchJobRequest(t, 1, totalJobs, client, agents):
 		case <-time.After(time.Second):
 			require.Fail(t, "job assignment timeout")
 		}
