@@ -19,8 +19,8 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20240730083616-559fa5ece598
-	github.com/livekit/protocol v1.22.1-0.20240920184753-71b9c184e5c8
-	github.com/livekit/psrpc v0.5.3-0.20240616012458-ac39c8549a0a
+	github.com/livekit/protocol v1.22.1-0.20240921065117-bc519801ab1f
+	github.com/livekit/psrpc v0.6.0
 	github.com/mackerelio/go-osstat v0.2.5
 	github.com/magefile/mage v1.15.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.9.0
@@ -77,8 +77,6 @@ require (
 	github.com/docker/docker v27.1.1+incompatible // indirect
 	github.com/docker/go-connections v0.5.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
-	github.com/eapache/channels v1.1.0 // indirect
-	github.com/eapache/queue v1.1.0 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/go-jose/go-jose/v3 v3.0.3 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect

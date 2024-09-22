@@ -59,3 +59,7 @@ func (c *roomManagerClient) CreateRoom(ctx context.Context, nodeID livekit.NodeI
 		Timeout:     c.config.CreateRoomTimeout,
 	})))...)
 }
+
+func (c *roomManagerClient) Close() {
+	c.client.Close()
+}
