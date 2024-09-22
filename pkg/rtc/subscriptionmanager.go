@@ -693,7 +693,7 @@ func (m *SubscriptionManager) handleSubscribedTrackClose(s *trackSubscription, i
 					context.Background(),
 					m.params.Participant.ID(),
 					s.trackID,
-					subTrack.DownTrack().Codec().MimeType,
+					dt.Codec().MimeType,
 					stats,
 				)
 			}

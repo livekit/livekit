@@ -246,6 +246,7 @@ type DownTrack struct {
 
 	upstreamCodecs []webrtc.RTPCodecParameters
 	codec          webrtc.RTPCodecCapability
+	clockRate      uint32
 
 	// payload types for red codec only
 	isRED             bool
@@ -361,6 +362,7 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		upstreamCodecs:      codecs,
 		kind:                kind,
 		codec:               codecs[0].RTPCodecCapability,
+		clockRate:           codecs[0].ClockRate,
 		pacer:               params.Pacer,
 		maxLayerNotifierCh:  make(chan string, 1),
 		keyFrameRequesterCh: make(chan struct{}, 1),
@@ -368,7 +370,6 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 	}
 	d.bindState.Store(bindStateUnbound)
 	d.params.Logger = params.Logger.WithValues(
-		"mime", codecs[0].MimeType,
 		"subscriberID", d.SubscriberID(),
 	)
 	d.forwarder = NewForwarder(
@@ -514,7 +515,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 				"primaryPT", d.primaryPT,
 			)
 		}
-		d.params.Logger.Debugw("DownTrack.Bind",
+		d.params.Logger.Infow("DownTrack.Bind",
 			logFields...,
 		)
 
@@ -538,7 +539,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.setBindStateLocked(bindStateBound)
 		d.bindLock.Unlock()
 
-		d.forwarder.DetermineCodec(d.codec, d.params.Receiver.HeaderExtensions())
+		d.forwarder.DetermineCodec(codec.RTPCodecCapability, d.params.Receiver.HeaderExtensions())
 		d.params.Logger.Debugw("downtrack bound")
 	}
 
@@ -676,7 +677,11 @@ func (d *DownTrack) ClearStreamAllocatorReportInterval() {
 func (d *DownTrack) ID() string { return string(d.id) }
 
 // Codec returns current track codec capability
-func (d *DownTrack) Codec() webrtc.RTPCodecCapability { return d.codec }
+func (d *DownTrack) Codec() webrtc.RTPCodecCapability {
+	d.bindLock.Lock()
+	defer d.bindLock.Unlock()
+	return d.codec
+}
 
 // StreamID is the group this track belongs too. This must be unique
 func (d *DownTrack) StreamID() string { return d.params.StreamID }
@@ -1759,7 +1764,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 					d.playoutDelay.OnSeqAcked(uint16(r.LastSequenceNumber))
 					// screen share track has inaccuracy jitter due to its low frame rate and bursty traffic
 					if d.params.Source != livekit.TrackSource_SCREEN_SHARE {
-						jitterMs := uint64(r.Jitter*1e3) / uint64(d.codec.ClockRate)
+						jitterMs := uint64(r.Jitter*1e3) / uint64(d.clockRate)
 						d.playoutDelay.SetJitter(uint32(jitterMs))
 					}
 				}
