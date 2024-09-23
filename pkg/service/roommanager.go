@@ -466,6 +466,7 @@ func (r *RoomManager) StartSession(
 		PublishEnabledCodecs:    protoRoom.EnabledCodecs,
 		SubscribeEnabledCodecs:  protoRoom.EnabledCodecs,
 		Grants:                  pi.Grants,
+		Reconnect:               pi.Reconnect,
 		Logger:                  pLogger,
 		ClientConf:              clientConf,
 		ClientInfo:              rtc.ClientInfo{ClientInfo: pi.Client},

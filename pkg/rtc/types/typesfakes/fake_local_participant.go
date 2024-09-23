@@ -579,6 +579,16 @@ type FakeLocalParticipant struct {
 	isReadyReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	IsReconnectStub        func() bool
+	isReconnectMutex       sync.RWMutex
+	isReconnectArgsForCall []struct {
+	}
+	isReconnectReturns struct {
+		result1 bool
+	}
+	isReconnectReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	IsRecorderStub        func() bool
 	isRecorderMutex       sync.RWMutex
 	isRecorderArgsForCall []struct {
@@ -1094,15 +1104,15 @@ type FakeLocalParticipant struct {
 		arg1 livekit.ParticipantID
 		arg2 uint32
 	}
-	VersionNumberStub        func() uint32
-	versionNumberMutex       sync.RWMutex
-	versionNumberArgsForCall []struct {
+	VersionStub        func() utils.TimedVersion
+	versionMutex       sync.RWMutex
+	versionArgsForCall []struct {
 	}
-	versionNumberReturns struct {
-		result1 uint32
+	versionReturns struct {
+		result1 utils.TimedVersion
 	}
-	versionNumberReturnsOnCall map[int]struct {
-		result1 uint32
+	versionReturnsOnCall map[int]struct {
+		result1 utils.TimedVersion
 	}
 	WaitUntilSubscribedStub        func(time.Duration) error
 	waitUntilSubscribedMutex       sync.RWMutex
@@ -4073,6 +4083,59 @@ func (fake *FakeLocalParticipant) IsReadyReturnsOnCall(i int, result1 bool) {
 	}{result1}
 }
 
+func (fake *FakeLocalParticipant) IsReconnect() bool {
+	fake.isReconnectMutex.Lock()
+	ret, specificReturn := fake.isReconnectReturnsOnCall[len(fake.isReconnectArgsForCall)]
+	fake.isReconnectArgsForCall = append(fake.isReconnectArgsForCall, struct {
+	}{})
+	stub := fake.IsReconnectStub
+	fakeReturns := fake.isReconnectReturns
+	fake.recordInvocation("IsReconnect", []interface{}{})
+	fake.isReconnectMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) IsReconnectCallCount() int {
+	fake.isReconnectMutex.RLock()
+	defer fake.isReconnectMutex.RUnlock()
+	return len(fake.isReconnectArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) IsReconnectCalls(stub func() bool) {
+	fake.isReconnectMutex.Lock()
+	defer fake.isReconnectMutex.Unlock()
+	fake.IsReconnectStub = stub
+}
+
+func (fake *FakeLocalParticipant) IsReconnectReturns(result1 bool) {
+	fake.isReconnectMutex.Lock()
+	defer fake.isReconnectMutex.Unlock()
+	fake.IsReconnectStub = nil
+	fake.isReconnectReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) IsReconnectReturnsOnCall(i int, result1 bool) {
+	fake.isReconnectMutex.Lock()
+	defer fake.isReconnectMutex.Unlock()
+	fake.IsReconnectStub = nil
+	if fake.isReconnectReturnsOnCall == nil {
+		fake.isReconnectReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.isReconnectReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
 func (fake *FakeLocalParticipant) IsRecorder() bool {
 	fake.isRecorderMutex.Lock()
 	ret, specificReturn := fake.isRecorderReturnsOnCall[len(fake.isRecorderArgsForCall)]
@@ -6967,15 +7030,15 @@ func (fake *FakeLocalParticipant) VerifySubscribeParticipantInfoArgsForCall(i in
 	return argsForCall.arg1, argsForCall.arg2
 }
 
-func (fake *FakeLocalParticipant) VersionNumber() uint32 {
-	fake.versionNumberMutex.Lock()
-	ret, specificReturn := fake.versionNumberReturnsOnCall[len(fake.versionNumberArgsForCall)]
-	fake.versionNumberArgsForCall = append(fake.versionNumberArgsForCall, struct {
+func (fake *FakeLocalParticipant) Version() utils.TimedVersion {
+	fake.versionMutex.Lock()
+	ret, specificReturn := fake.versionReturnsOnCall[len(fake.versionArgsForCall)]
+	fake.versionArgsForCall = append(fake.versionArgsForCall, struct {
 	}{})
-	stub := fake.VersionNumberStub
-	fakeReturns := fake.versionNumberReturns
-	fake.recordInvocation("VersionNumber", []interface{}{})
-	fake.versionNumberMutex.Unlock()
+	stub := fake.VersionStub
+	fakeReturns := fake.versionReturns
+	fake.recordInvocation("Version", []interface{}{})
+	fake.versionMutex.Unlock()
 	if stub != nil {
 		return stub()
 	}
@@ -6985,38 +7048,38 @@ func (fake *FakeLocalParticipant) VersionNumber() uint32 {
 	return fakeReturns.result1
 }
 
-func (fake *FakeLocalParticipant) VersionNumberCallCount() int {
-	fake.versionNumberMutex.RLock()
-	defer fake.versionNumberMutex.RUnlock()
-	return len(fake.versionNumberArgsForCall)
+func (fake *FakeLocalParticipant) VersionCallCount() int {
+	fake.versionMutex.RLock()
+	defer fake.versionMutex.RUnlock()
+	return len(fake.versionArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) VersionNumberCalls(stub func() uint32) {
-	fake.versionNumberMutex.Lock()
-	defer fake.versionNumberMutex.Unlock()
-	fake.VersionNumberStub = stub
+func (fake *FakeLocalParticipant) VersionCalls(stub func() utils.TimedVersion) {
+	fake.versionMutex.Lock()
+	defer fake.versionMutex.Unlock()
+	fake.VersionStub = stub
 }
 
-func (fake *FakeLocalParticipant) VersionNumberReturns(result1 uint32) {
-	fake.versionNumberMutex.Lock()
-	defer fake.versionNumberMutex.Unlock()
-	fake.VersionNumberStub = nil
-	fake.versionNumberReturns = struct {
-		result1 uint32
+func (fake *FakeLocalParticipant) VersionReturns(result1 utils.TimedVersion) {
+	fake.versionMutex.Lock()
+	defer fake.versionMutex.Unlock()
+	fake.VersionStub = nil
+	fake.versionReturns = struct {
+		result1 utils.TimedVersion
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) VersionNumberReturnsOnCall(i int, result1 uint32) {
-	fake.versionNumberMutex.Lock()
-	defer fake.versionNumberMutex.Unlock()
-	fake.VersionNumberStub = nil
-	if fake.versionNumberReturnsOnCall == nil {
-		fake.versionNumberReturnsOnCall = make(map[int]struct {
-			result1 uint32
+func (fake *FakeLocalParticipant) VersionReturnsOnCall(i int, result1 utils.TimedVersion) {
+	fake.versionMutex.Lock()
+	defer fake.versionMutex.Unlock()
+	fake.VersionStub = nil
+	if fake.versionReturnsOnCall == nil {
+		fake.versionReturnsOnCall = make(map[int]struct {
+			result1 utils.TimedVersion
 		})
 	}
-	fake.versionNumberReturnsOnCall[i] = struct {
-		result1 uint32
+	fake.versionReturnsOnCall[i] = struct {
+		result1 utils.TimedVersion
 	}{result1}
 }
 
@@ -7264,6 +7327,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.isPublisherMutex.RUnlock()
 	fake.isReadyMutex.RLock()
 	defer fake.isReadyMutex.RUnlock()
+	fake.isReconnectMutex.RLock()
+	defer fake.isReconnectMutex.RUnlock()
 	fake.isRecorderMutex.RLock()
 	defer fake.isRecorderMutex.RUnlock()
 	fake.isSubscribedToMutex.RLock()
@@ -7394,8 +7459,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.updateVideoTrackMutex.RUnlock()
 	fake.verifySubscribeParticipantInfoMutex.RLock()
 	defer fake.verifySubscribeParticipantInfoMutex.RUnlock()
-	fake.versionNumberMutex.RLock()
-	defer fake.versionNumberMutex.RUnlock()
+	fake.versionMutex.RLock()
+	defer fake.versionMutex.RUnlock()
 	fake.waitUntilSubscribedMutex.RLock()
 	defer fake.waitUntilSubscribedMutex.RUnlock()
 	fake.writeSubscriberRTCPMutex.RLock()

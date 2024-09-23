@@ -134,6 +134,7 @@ type ParticipantParams struct {
 	ClientInfo                     ClientInfo
 	Region                         string
 	Migration                      bool
+	Reconnect                      bool
 	AdaptiveStream                 bool
 	AllowTCPFallback               bool
 	TCPFallbackRTTThreshold        int
@@ -620,11 +621,7 @@ func (p *ParticipantImpl) CanSkipBroadcast() bool {
 	return !p.requireBroadcast
 }
 
-func (p *ParticipantImpl) VersionNumber() uint32 {
-	return p.version.Load()
-}
-
-func (p *ParticipantImpl) ToProtoWithVersion() (*livekit.ParticipantInfo, utils.TimedVersion) {
+func (p *ParticipantImpl) maybeIncVersion() {
 	if p.dirty.Load() {
 		p.lock.Lock()
 		if p.dirty.Swap(false) {
@@ -633,6 +630,18 @@ func (p *ParticipantImpl) ToProtoWithVersion() (*livekit.ParticipantInfo, utils.
 		}
 		p.lock.Unlock()
 	}
+}
+
+func (p *ParticipantImpl) Version() utils.TimedVersion {
+	p.maybeIncVersion()
+
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return p.timedVersion
+}
+
+func (p *ParticipantImpl) ToProtoWithVersion() (*livekit.ParticipantInfo, utils.TimedVersion) {
+	p.maybeIncVersion()
 
 	p.lock.RLock()
 	grants := p.grants.Load()
@@ -933,6 +942,10 @@ func (p *ParticipantImpl) SetMigrateInfo(
 	}
 
 	p.TransportManager.SetMigrateInfo(previousOffer, previousAnswer, dataChannels)
+}
+
+func (p *ParticipantImpl) IsReconnect() bool {
+	return p.params.Reconnect
 }
 
 func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseReason, isExpectedToResume bool) error {

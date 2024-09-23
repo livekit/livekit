@@ -261,7 +261,7 @@ type Participant interface {
 	IsAgent() bool
 
 	CanSkipBroadcast() bool
-	VersionNumber() uint32
+	Version() utils.TimedVersion
 	ToProto() *livekit.ParticipantInfo
 
 	IsPublisher() bool
@@ -424,6 +424,7 @@ type LocalParticipant interface {
 		mediaTracks []*livekit.TrackPublishedResponse,
 		dataChannels []*livekit.DataChannelInfo,
 	)
+	IsReconnect() bool
 
 	UpdateMediaRTT(rtt uint32)
 	UpdateSignalingRTT(rtt uint32)

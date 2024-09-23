@@ -230,15 +230,15 @@ type FakeParticipant struct {
 	updateSubscriptionPermissionReturnsOnCall map[int]struct {
 		result1 error
 	}
-	VersionNumberStub        func() uint32
-	versionNumberMutex       sync.RWMutex
-	versionNumberArgsForCall []struct {
+	VersionStub        func() utils.TimedVersion
+	versionMutex       sync.RWMutex
+	versionArgsForCall []struct {
 	}
-	versionNumberReturns struct {
-		result1 uint32
+	versionReturns struct {
+		result1 utils.TimedVersion
 	}
-	versionNumberReturnsOnCall map[int]struct {
-		result1 uint32
+	versionReturnsOnCall map[int]struct {
+		result1 utils.TimedVersion
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
@@ -1381,15 +1381,15 @@ func (fake *FakeParticipant) UpdateSubscriptionPermissionReturnsOnCall(i int, re
 	}{result1}
 }
 
-func (fake *FakeParticipant) VersionNumber() uint32 {
-	fake.versionNumberMutex.Lock()
-	ret, specificReturn := fake.versionNumberReturnsOnCall[len(fake.versionNumberArgsForCall)]
-	fake.versionNumberArgsForCall = append(fake.versionNumberArgsForCall, struct {
+func (fake *FakeParticipant) Version() utils.TimedVersion {
+	fake.versionMutex.Lock()
+	ret, specificReturn := fake.versionReturnsOnCall[len(fake.versionArgsForCall)]
+	fake.versionArgsForCall = append(fake.versionArgsForCall, struct {
 	}{})
-	stub := fake.VersionNumberStub
-	fakeReturns := fake.versionNumberReturns
-	fake.recordInvocation("VersionNumber", []interface{}{})
-	fake.versionNumberMutex.Unlock()
+	stub := fake.VersionStub
+	fakeReturns := fake.versionReturns
+	fake.recordInvocation("Version", []interface{}{})
+	fake.versionMutex.Unlock()
 	if stub != nil {
 		return stub()
 	}
@@ -1399,38 +1399,38 @@ func (fake *FakeParticipant) VersionNumber() uint32 {
 	return fakeReturns.result1
 }
 
-func (fake *FakeParticipant) VersionNumberCallCount() int {
-	fake.versionNumberMutex.RLock()
-	defer fake.versionNumberMutex.RUnlock()
-	return len(fake.versionNumberArgsForCall)
+func (fake *FakeParticipant) VersionCallCount() int {
+	fake.versionMutex.RLock()
+	defer fake.versionMutex.RUnlock()
+	return len(fake.versionArgsForCall)
 }
 
-func (fake *FakeParticipant) VersionNumberCalls(stub func() uint32) {
-	fake.versionNumberMutex.Lock()
-	defer fake.versionNumberMutex.Unlock()
-	fake.VersionNumberStub = stub
+func (fake *FakeParticipant) VersionCalls(stub func() utils.TimedVersion) {
+	fake.versionMutex.Lock()
+	defer fake.versionMutex.Unlock()
+	fake.VersionStub = stub
 }
 
-func (fake *FakeParticipant) VersionNumberReturns(result1 uint32) {
-	fake.versionNumberMutex.Lock()
-	defer fake.versionNumberMutex.Unlock()
-	fake.VersionNumberStub = nil
-	fake.versionNumberReturns = struct {
-		result1 uint32
+func (fake *FakeParticipant) VersionReturns(result1 utils.TimedVersion) {
+	fake.versionMutex.Lock()
+	defer fake.versionMutex.Unlock()
+	fake.VersionStub = nil
+	fake.versionReturns = struct {
+		result1 utils.TimedVersion
 	}{result1}
 }
 
-func (fake *FakeParticipant) VersionNumberReturnsOnCall(i int, result1 uint32) {
-	fake.versionNumberMutex.Lock()
-	defer fake.versionNumberMutex.Unlock()
-	fake.VersionNumberStub = nil
-	if fake.versionNumberReturnsOnCall == nil {
-		fake.versionNumberReturnsOnCall = make(map[int]struct {
-			result1 uint32
+func (fake *FakeParticipant) VersionReturnsOnCall(i int, result1 utils.TimedVersion) {
+	fake.versionMutex.Lock()
+	defer fake.versionMutex.Unlock()
+	fake.VersionStub = nil
+	if fake.versionReturnsOnCall == nil {
+		fake.versionReturnsOnCall = make(map[int]struct {
+			result1 utils.TimedVersion
 		})
 	}
-	fake.versionNumberReturnsOnCall[i] = struct {
-		result1 uint32
+	fake.versionReturnsOnCall[i] = struct {
+		result1 utils.TimedVersion
 	}{result1}
 }
 
@@ -1479,8 +1479,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.toProtoMutex.RUnlock()
 	fake.updateSubscriptionPermissionMutex.RLock()
 	defer fake.updateSubscriptionPermissionMutex.RUnlock()
-	fake.versionNumberMutex.RLock()
-	defer fake.versionNumberMutex.RUnlock()
+	fake.versionMutex.RLock()
+	defer fake.versionMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value
