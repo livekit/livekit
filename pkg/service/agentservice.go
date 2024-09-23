@@ -366,7 +366,7 @@ func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*rpc.J
 			values = append(values, "participant", job.Participant.Identity)
 		}
 		h.logger.Debugw("assigning job", values...)
-		err = selected.AssignJob(ctx, job)
+		state, err := selected.AssignJob(ctx, job)
 		if err != nil {
 			if errors.Is(err, agent.ErrWorkerNotAvailable) {
 				continue // Try another worker
@@ -383,7 +383,7 @@ func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*rpc.J
 		}
 
 		return &rpc.JobRequestResponse{
-			State: job.State,
+			State: state,
 		}, nil
 	}
 }
