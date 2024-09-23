@@ -515,7 +515,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 				"primaryPT", d.primaryPT,
 			)
 		}
-		d.params.Logger.Infow("DownTrack.Bind",
+		d.params.Logger.Debugw("DownTrack.Bind",
 			logFields...,
 		)
 
