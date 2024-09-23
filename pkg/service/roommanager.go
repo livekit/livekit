@@ -993,6 +993,7 @@ func (r *RoomManager) refreshToken(participant types.LocalParticipant) error {
 		SetIdentity(string(participant.Identity())).
 		SetValidFor(tokenDefaultTTL).
 		SetMetadata(grants.Metadata).
+		SetAttributes(grants.Attributes).
 		AddGrant(grants.Video)
 	jwt, err := token.ToJWT()
 	if err == nil {
