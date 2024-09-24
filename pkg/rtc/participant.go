@@ -2184,6 +2184,10 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 		}
 
 		ti.MimeType = track.Codec().MimeType
+		// set mime_type for tracks that the AddTrackRequest do not have simulcast_codecs set
+		if len(ti.Codecs) == 1 && ti.Codecs[0].MimeType == "" {
+			ti.Codecs[0].MimeType = track.Codec().MimeType
+		}
 		if utils.TimedVersionFromProto(ti.Version).IsZero() {
 			// only assign version on a fresh publish, i. e. avoid updating version in scenarios like migration
 			ti.Version = p.params.VersionGenerator.Next().ToProto()
