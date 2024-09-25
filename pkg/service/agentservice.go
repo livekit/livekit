@@ -132,7 +132,7 @@ type AgentHandler struct {
 
 	serverInfo  *livekit.ServerInfo
 	workers     map[string]*agent.Worker
-	jobToWorker map[string]*agent.Worker
+	jobToWorker map[livekit.JobID]*agent.Worker
 	keyProvider auth.KeyProvider
 
 	namespaceWorkers  map[workerKey][]*agent.Worker
@@ -201,7 +201,7 @@ func NewAgentHandler(
 		agentServer:      agentServer,
 		logger:           logger,
 		workers:          make(map[string]*agent.Worker),
-		jobToWorker:      make(map[string]*agent.Worker),
+		jobToWorker:      make(map[livekit.JobID]*agent.Worker),
 		namespaceWorkers: make(map[workerKey][]*agent.Worker),
 		serverInfo:       serverInfo,
 		keyProvider:      keyProvider,
@@ -222,8 +222,9 @@ func (h *AgentHandler) HandleConnection(ctx context.Context, conn agent.SignalCo
 	worker := agent.NewWorker(registration, apiKey, apiSecret, conn, h.logger)
 	h.registerWorker(worker)
 
+	handlerWorker := &agentHandlerWorker{h, worker}
 	for ok := true; ok; {
-		ok = DispatchAgentWorkerSignal(conn, worker, worker.Logger())
+		ok = DispatchAgentWorkerSignal(conn, handlerWorker, worker.Logger())
 	}
 
 	h.deregisterWorker(worker)
@@ -321,21 +322,13 @@ func (h *AgentHandler) deregisterWorker(w *agent.Worker) {
 	}
 
 	jobs := w.RunningJobs()
-	for _, j := range jobs {
-		h.deregisterJob(j.Id)
+	for jobID := range jobs {
+		h.deregisterJob(jobID)
 	}
 }
 
-func (h *AgentHandler) HandleWorkerJobStatus(w *agent.Worker, status *livekit.UpdateJobStatus) {
-	if agent.JobStatusIsEnded(status.Status) {
-		h.mu.Lock()
-		h.deregisterJob(status.JobId)
-		h.mu.Unlock()
-	}
-}
-
-func (h *AgentHandler) deregisterJob(jobID string) {
-	h.agentServer.DeregisterJobTerminateTopic(jobID)
+func (h *AgentHandler) deregisterJob(jobID livekit.JobID) {
+	h.agentServer.DeregisterJobTerminateTopic(string(jobID))
 
 	delete(h.jobToWorker, jobID)
 
@@ -374,7 +367,7 @@ func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*rpc.J
 			return nil, err
 		}
 		h.mu.Lock()
-		h.jobToWorker[job.Id] = selected
+		h.jobToWorker[livekit.JobID(job.Id)] = selected
 		h.mu.Unlock()
 
 		err = h.agentServer.RegisterJobTerminateTopic(job.Id)
@@ -408,14 +401,14 @@ func (h *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job)
 
 func (h *AgentHandler) JobTerminate(ctx context.Context, req *rpc.JobTerminateRequest) (*rpc.JobTerminateResponse, error) {
 	h.mu.Lock()
-	w := h.jobToWorker[req.JobId]
+	w := h.jobToWorker[livekit.JobID(req.JobId)]
 	h.mu.Unlock()
 
 	if w == nil {
 		return nil, psrpc.NewErrorf(psrpc.NotFound, "no worker for jobID")
 	}
 
-	state, err := w.TerminateJob(req.JobId, req.Reason)
+	state, err := w.TerminateJob(livekit.JobID(req.JobId), req.Reason)
 	if err != nil {
 		return nil, err
 	}
@@ -484,4 +477,24 @@ func (h *AgentHandler) selectWorkerWeightedByLoad(key workerKey, ignore map[*age
 		}
 	}
 	return workers[0], nil
+}
+
+var _ agent.WorkerSignalHandler = (*agentHandlerWorker)(nil)
+
+type agentHandlerWorker struct {
+	h *AgentHandler
+	*agent.Worker
+}
+
+func (w *agentHandlerWorker) HandleUpdateJob(update *livekit.UpdateJobStatus) error {
+	if err := w.Worker.HandleUpdateJob(update); err != nil {
+		return err
+	}
+
+	if agent.JobStatusIsEnded(update.Status) {
+		w.h.mu.Lock()
+		w.h.deregisterJob(livekit.JobID(update.JobId))
+		w.h.mu.Unlock()
+	}
+	return nil
 }
