@@ -36,6 +36,7 @@ var (
 	ErrUnimplementedWrorkerSignal = errors.New("unimplemented worker signal")
 	ErrUnknownWorkerSignal        = errors.New("unknown worker signal")
 	ErrUnknownJobType             = errors.New("unknown job type")
+	ErrJobNotFound                = psrpc.NewErrorf(psrpc.NotFound, "no running job for given jobID")
 	ErrWorkerClosed               = errors.New("worker closed")
 	ErrWorkerNotAvailable         = errors.New("worker not available")
 	ErrAvailabilityTimeout        = errors.New("agent worker availability timeout")
@@ -236,8 +237,8 @@ type Worker struct {
 	load   float32
 	status livekit.WorkerStatus
 
-	runningJobs  map[string]*livekit.Job
-	availability map[string]chan *livekit.AvailabilityResponse
+	runningJobs  map[livekit.JobID]*livekit.Job
+	availability map[livekit.JobID]chan *livekit.AvailabilityResponse
 }
 
 func NewWorker(
@@ -264,8 +265,8 @@ func NewWorker(
 		cancel: cancel,
 		closed: make(chan struct{}),
 
-		runningJobs:  make(map[string]*livekit.Job),
-		availability: make(map[string]chan *livekit.AvailabilityResponse),
+		runningJobs:  make(map[livekit.JobID]*livekit.Job),
+		availability: make(map[livekit.JobID]chan *livekit.AvailabilityResponse),
 	}
 }
 
@@ -291,32 +292,43 @@ func (w *Worker) Logger() logger.Logger {
 	return w.logger
 }
 
-func (w *Worker) RunningJobs() map[string]*livekit.Job {
+func (w *Worker) RunningJobs() map[livekit.JobID]*livekit.Job {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	jobs := make(map[string]*livekit.Job, len(w.runningJobs))
+	jobs := make(map[livekit.JobID]*livekit.Job, len(w.runningJobs))
 	for k, v := range w.runningJobs {
 		jobs[k] = v
 	}
 	return jobs
 }
 
+func (w *Worker) GetJobState(jobID livekit.JobID) (*livekit.JobState, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	j, ok := w.runningJobs[jobID]
+	if !ok {
+		return nil, ErrJobNotFound
+	}
+	return utils.CloneProto(j.State), nil
+}
+
 func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) (*livekit.JobState, error) {
 	availCh := make(chan *livekit.AvailabilityResponse, 1)
 	job = utils.CloneProto(job)
+	jobID := livekit.JobID(job.Id)
 
 	w.mu.Lock()
-	if _, ok := w.availability[job.Id]; ok {
+	if _, ok := w.availability[jobID]; ok {
 		w.mu.Unlock()
 		return nil, ErrDuplicateJobAssignment
 	}
 
-	w.availability[job.Id] = availCh
+	w.availability[jobID] = availCh
 	w.mu.Unlock()
 
 	defer func() {
 		w.mu.Lock()
-		delete(w.availability, job.Id)
+		delete(w.availability, jobID)
 		w.mu.Unlock()
 	}()
 
@@ -357,7 +369,7 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) (*livekit.JobS
 		state := utils.CloneProto(job.State)
 
 		w.mu.Lock()
-		w.runningJobs[job.Id] = job
+		w.runningJobs[jobID] = job
 		w.mu.Unlock()
 
 		// TODO sweep jobs that are never started. We can't do this until all SDKs actually update the the JOB state
@@ -372,18 +384,18 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) (*livekit.JobS
 	}
 }
 
-func (w *Worker) TerminateJob(jobID string, reason rpc.JobTerminateReason) (*livekit.JobState, error) {
+func (w *Worker) TerminateJob(jobID livekit.JobID, reason rpc.JobTerminateReason) (*livekit.JobState, error) {
 	w.mu.Lock()
 	job := w.runningJobs[jobID]
 	w.mu.Unlock()
 
 	if job == nil {
-		return nil, psrpc.NewErrorf(psrpc.NotFound, "no running job for given jobID")
+		return nil, ErrJobNotFound
 	}
 
 	w.sendRequest(&livekit.ServerMessage{Message: &livekit.ServerMessage_Termination{
 		Termination: &livekit.JobTermination{
-			JobId: jobID,
+			JobId: string(jobID),
 		},
 	}})
 
@@ -395,7 +407,7 @@ func (w *Worker) TerminateJob(jobID string, reason rpc.JobTerminateReason) (*liv
 	}
 
 	return w.UpdateJobStatus(&livekit.UpdateJobStatus{
-		JobId:  jobID,
+		JobId:  string(jobID),
 		Status: status,
 		Error:  errorStr,
 	})
@@ -433,14 +445,15 @@ func (w *Worker) HandleAvailability(res *livekit.AvailabilityResponse) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	availCh, ok := w.availability[res.JobId]
+	jobID := livekit.JobID(res.JobId)
+	availCh, ok := w.availability[jobID]
 	if !ok {
-		w.logger.Warnw("received availability response for unknown job", nil, "jobId", res.JobId)
+		w.logger.Warnw("received availability response for unknown job", nil, "jobId", jobID)
 		return nil
 	}
 
 	availCh <- res
-	delete(w.availability, res.JobId)
+	delete(w.availability, jobID)
 
 	return nil
 }
@@ -458,7 +471,8 @@ func (w *Worker) UpdateJobStatus(update *livekit.UpdateJobStatus) (*livekit.JobS
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	job, ok := w.runningJobs[update.JobId]
+	jobID := livekit.JobID(update.JobId)
+	job, ok := w.runningJobs[jobID]
 	if !ok {
 		return nil, psrpc.NewErrorf(psrpc.NotFound, "received job update for unknown job")
 	}
@@ -479,7 +493,7 @@ func (w *Worker) UpdateJobStatus(update *livekit.UpdateJobStatus) (*livekit.JobS
 
 	// TODO do not delete, leave inside the JobDefinition
 	if JobStatusIsEnded(job.State.Status) {
-		delete(w.runningJobs, job.Id)
+		delete(w.runningJobs, jobID)
 	}
 
 	return proto.Clone(job.State).(*livekit.JobState), nil
