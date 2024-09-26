@@ -1676,7 +1676,7 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		}
 	case *livekit.DataPacket_SipDtmf:
 	case *livekit.DataPacket_Transcription:
-		if p.Kind() == livekit.ParticipantInfo_AGENT {
+		if p.Kind() != livekit.ParticipantInfo_AGENT {
 			shouldForwardData = false
 		}
 	case *livekit.DataPacket_ChatMessage:
