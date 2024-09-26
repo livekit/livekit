@@ -445,6 +445,9 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 		r.broadcastParticipantState(p, broadcastOptions{skipSource: true})
 
 		if state == livekit.ParticipantInfo_ACTIVE {
+			// send stored data packets received when the participant was in state JOINED waiting to be ACTIVE
+			p.DeliverStoredReliableDataPackets()
+
 			// subscribe participant to existing published tracks
 			r.subscribeToExistingTracks(p)
 
@@ -1778,6 +1781,12 @@ func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, kin
 			if !slices.Contains(dest, string(op.ID())) && !slices.Contains(destIdentities, string(op.Identity())) {
 				continue
 			}
+		}
+		if op.State() == livekit.ParticipantInfo_JOINED && kind == livekit.DataPacket_RELIABLE {
+			// If the destination participant is in state JOINED transitioning to ACTIVE and the data
+			// packet is of kind reliable store it for later delivery just after the participant becomes ACTIVE
+			op.StoreReliableDataPacketForLaterDelivery(dp)
+			continue
 		}
 		if dpData == nil {
 			var err error
