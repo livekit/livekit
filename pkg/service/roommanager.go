@@ -413,6 +413,7 @@ func (r *RoomManager) StartSession(
 		"reconnectReason", pi.ReconnectReason,
 		"adaptiveStream", pi.AdaptiveStream,
 		"numParticipants", room.GetParticipantCount(),
+		"kind", pi.Grants.GetParticipantKind(),
 	)
 
 	clientConf := r.clientConfManager.GetConfiguration(pi.Client)

@@ -303,7 +303,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p.timedVersion.Update(params.VersionGenerator.Next())
 	p.migrateState.Store(types.MigrateStateInit)
 	p.state.Store(livekit.ParticipantInfo_JOINING)
-	p.grants.Store(params.Grants)
+	p.grants.Store(params.Grants.Clone())
 	p.SetResponseSink(params.Sink)
 	p.setupEnabledCodecs(params.PublishEnabledCodecs, params.SubscribeEnabledCodecs, params.ClientConf.GetDisabledCodecs())
 
