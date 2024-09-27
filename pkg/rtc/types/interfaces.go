@@ -450,7 +450,7 @@ type LocalParticipant interface {
 
 	HandleMetrics(senderParticipantID livekit.ParticipantID, batch *livekit.MetricsBatch) error
 
-	// reliable data packets may be lost for participants in active transition from JOINED to ACTIVE state
+	// reliable data packets may be lost for participants currently in transition from JOINED to ACTIVE state
 	// these methods allow the participant to buffer these packets for later delivery just after reaching ACTIVE state
 	StoreReliableDataPacketForLaterDelivery(dpData *livekit.DataPacket)
 	DeliverStoredReliableDataPackets()

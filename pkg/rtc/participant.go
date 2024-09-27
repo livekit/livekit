@@ -2892,7 +2892,7 @@ func (p *ParticipantImpl) DeliverStoredReliableDataPackets() {
 		var dpData, err = proto.Marshal(dp)
 		if err != nil {
 			logger.Errorw("failed to marshal data packet", err)
-			return
+			continue
 		}
 		p.GetLogger().Debugw("resending stored reliable data packet", "source", dp.ParticipantIdentity, "destinationIdentities", dp.DestinationIdentities)
 		p.SendDataPacket(livekit.DataPacket_RELIABLE, dpData)
