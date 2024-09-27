@@ -1238,8 +1238,8 @@ func (t *PCTransport) SetPreviousSdp(offer, answer *webrtc.SessionDescription) {
 		}
 	}
 	// disable fast negotiation temporarily after migration to avoid sending offer
-	// contains part of subscribed tracks before migration (needs some time to resolve them).
-	// browser might have trouble to handle this kind of offer (To be confirmed).
+	// contains part of subscribed tracks before migration, let the subscribed track
+	// resume at the same time.
 	t.lastNegotiate = time.Now().Add(iceFailedTimeoutTotal)
 	t.lock.Unlock()
 }
