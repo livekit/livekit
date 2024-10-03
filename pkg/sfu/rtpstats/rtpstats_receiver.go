@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package buffer
+package rtpstats
 
 import (
 	"fmt"
@@ -216,7 +216,7 @@ func (r *RTPStatsReceiver) Update(
 		}
 		gapTS := int64(resTS.ExtendedVal - resTS.PreExtendedHighest)
 
-		// it is possible to reecive old packets in two different scenarios
+		// it is possible to receive old packets in two different scenarios
 		// as it is not possible to detect how far to roll back, ignore old packets
 		//
 		// Case 1:

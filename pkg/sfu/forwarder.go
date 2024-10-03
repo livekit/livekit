@@ -35,6 +35,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/codecmunger"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
+	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/livekit-server/pkg/sfu/videolayerselector"
 	"github.com/livekit/livekit-server/pkg/sfu/videolayerselector/temporallayerselector"
 )
@@ -196,7 +197,7 @@ type refInfo struct {
 }
 
 func (r refInfo) MarshalLogObject(e zapcore.ObjectEncoder) error {
-	e.AddObject("senderReport", buffer.WrappedRTCPSenderReportStateLogger{
+	e.AddObject("senderReport", rtpstats.WrappedRTCPSenderReportStateLogger{
 		RTCPSenderReportState: r.senderReport,
 	})
 	e.AddUint64("tsOffset", r.tsOffset)
