@@ -292,20 +292,18 @@ func (r *RTPStatsSender) Update(
 	pktSize := uint64(hdrSize + payloadSize + paddingSize)
 	isDuplicate := false
 	gapSN := int64(extSequenceNumber - r.extHighestSN)
-	getLoggingFields := func() []interface{} {
-		return []interface{}{
-			"currSN", extSequenceNumber,
-			"gapSN", gapSN,
-			"currTS", extTimestamp,
-			"gapTS", int64(extTimestamp - r.extHighestTS),
-			"packetTime", packetTime,
-			"marker", marker,
-			"hdrSize", hdrSize,
-			"payloadSize", payloadSize,
-			"paddingSize", paddingSize,
-			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
-		}
-	}
+	logger := r.logger.WithUnlikelyValues(
+		"currSN", extSequenceNumber,
+		"gapSN", gapSN,
+		"currTS", extTimestamp,
+		"gapTS", int64(extTimestamp-r.extHighestTS),
+		"packetTime", packetTime,
+		"marker", marker,
+		"hdrSize", hdrSize,
+		"payloadSize", payloadSize,
+		"paddingSize", paddingSize,
+		"rtpStats", lockedRTPStatsSenderLogEncoder{r},
+	)
 	if gapSN <= 0 { // duplicate OR out-of-order
 		if payloadSize == 0 && extSequenceNumber < r.extStartSN {
 			// do not start on a padding only packet
@@ -332,12 +330,10 @@ func (r *RTPStatsSender) Update(
 				}
 			}
 
-			r.logger.Infow(
+			logger.Infow(
 				"adjusting start sequence number",
-				append(getLoggingFields(),
-					"snAfter", extSequenceNumber,
-					"tsAfter", extTimestamp,
-				)...,
+				"snAfter", extSequenceNumber,
+				"tsAfter", extTimestamp,
 			)
 			r.extStartSN = extSequenceNumber
 		}
@@ -359,9 +355,9 @@ func (r *RTPStatsSender) Update(
 		if !isDuplicate && -gapSN >= cSequenceNumberLargeJumpThreshold {
 			r.largeJumpNegativeCount++
 			if (r.largeJumpNegativeCount-1)%100 == 0 {
-				r.logger.Warnw(
+				logger.Warnw(
 					"large sequence number gap negative", nil,
-					append(getLoggingFields(), "count", r.largeJumpNegativeCount)...,
+					"count", r.largeJumpNegativeCount,
 				)
 			}
 		}
@@ -369,9 +365,9 @@ func (r *RTPStatsSender) Update(
 		if gapSN >= cSequenceNumberLargeJumpThreshold {
 			r.largeJumpCount++
 			if (r.largeJumpCount-1)%100 == 0 {
-				r.logger.Warnw(
+				logger.Warnw(
 					"large sequence number gap", nil,
-					append(getLoggingFields(), "count", r.largeJumpCount)...,
+					"count", r.largeJumpCount,
 				)
 			}
 		}
@@ -379,9 +375,9 @@ func (r *RTPStatsSender) Update(
 		if extTimestamp < r.extHighestTS {
 			r.timeReversedCount++
 			if (r.timeReversedCount-1)%100 == 0 {
-				r.logger.Warnw(
+				logger.Warnw(
 					"time reversed", nil,
-					append(getLoggingFields(), "count", r.timeReversedCount)...,
+					"count", r.timeReversedCount,
 				)
 			}
 		}
@@ -399,12 +395,10 @@ func (r *RTPStatsSender) Update(
 	}
 
 	if extTimestamp < r.extStartTS {
-		r.logger.Infow(
+		logger.Infow(
 			"adjusting start timestamp",
-			append(getLoggingFields(),
-				"snAfter", extSequenceNumber,
-				"tsAfter", extTimestamp,
-			)...,
+			"snAfter", extSequenceNumber,
+			"tsAfter", extTimestamp,
 		)
 		r.extStartTS = extTimestamp
 	}
@@ -647,21 +641,20 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *livek
 		Octets:          octetCount,
 	}
 
-	getFields := func() []interface{} {
-		return []interface{}{
-			"curr", WrappedRTCPSenderReportStateLogger{srData},
-			"feed", WrappedRTCPSenderReportStateLogger{publisherSRData},
-			"tsOffset", tsOffset,
-			"timeNow", time.Now().String(),
-			"now", time.Unix(0, now).String(),
-			"timeSinceHighest", time.Unix(0, now).Sub(time.Unix(0, r.highestTime)).String(),
-			"timeSinceFirst", time.Unix(0, now).Sub(time.Unix(0, r.firstTime)).String(),
-			"timeSincePublisherSRAdjusted", timeSincePublisherSRAdjusted.String(),
-			"timeSincePublisherSR", time.Since(time.Unix(0, publisherSRData.At)).String(),
-			"nowRTPExt", nowRTPExt,
-			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
-		}
-	}
+	logger := r.logger.WithUnlikelyValues(
+		"curr", WrappedRTCPSenderReportStateLogger{srData},
+		"feed", WrappedRTCPSenderReportStateLogger{publisherSRData},
+		"tsOffset", tsOffset,
+		"timeNow", time.Now().String(),
+		"now", time.Unix(0, now).String(),
+		"timeSinceHighest", time.Unix(0, now).Sub(time.Unix(0, r.highestTime)).String(),
+		"timeSinceFirst", time.Unix(0, now).Sub(time.Unix(0, r.firstTime)).String(),
+		"timeSincePublisherSRAdjusted", timeSincePublisherSRAdjusted.String(),
+		"timeSincePublisherSR", time.Since(time.Unix(0, publisherSRData.At)).String(),
+		"nowRTPExt", nowRTPExt,
+		"rtpStats", lockedRTPStatsSenderLogEncoder{r},
+	)
+
 	if r.srNewest != nil && nowRTPExt >= r.srNewest.RtpTimestampExt {
 		timeSinceLastReport := nowNTP.Time().Sub(mediatransportutil.NtpTime(r.srNewest.NtpTimestamp).Time())
 		rtpDiffSinceLastReport := nowRTPExt - r.srNewest.RtpTimestampExt
@@ -669,14 +662,13 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *livek
 		if timeSinceLastReport.Seconds() > 0.2 && math.Abs(float64(r.params.ClockRate)-windowClockRate) > 0.2*float64(r.params.ClockRate) {
 			r.clockSkewCount++
 			if (r.clockSkewCount-1)%100 == 0 {
-				fields := append(
-					getFields(),
+				logger.Infow(
+					"sending sender report, clock skew",
 					"timeSinceLastReport", timeSinceLastReport.String(),
 					"rtpDiffSinceLastReport", rtpDiffSinceLastReport,
 					"windowClockRate", windowClockRate,
 					"count", r.clockSkewCount,
 				)
-				r.logger.Infow("sending sender report, clock skew", fields...)
 			}
 		}
 	}
@@ -684,7 +676,7 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *livek
 	if r.srNewest != nil && nowRTPExt < r.srNewest.RtpTimestampExt {
 		// If report being generated is behind the last report, skip it.
 		// Should not happen.
-		r.logger.Infow("sending sender report, out-of-order, skipping", getFields()...)
+		logger.Infow("sending sender report, out-of-order, skipping")
 		return nil
 	}
 
