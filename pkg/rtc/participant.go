@@ -1659,7 +1659,7 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 	overrideSenderIdentity := true
 	isPublisher := true
 	// only forward on user payloads
-	switch payload := dp.GetValue().(type) {
+	switch payload := dp.Value.(type) {
 	case *livekit.DataPacket_User:
 		if payload == nil || payload.User == nil {
 			return
