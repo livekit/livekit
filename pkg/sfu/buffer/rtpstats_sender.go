@@ -649,8 +649,8 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *livek
 
 	getFields := func() []interface{} {
 		return []interface{}{
-			"curr", srData,
-			"feed", publisherSRData,
+			"curr", WrappedRTCPSenderReportStateLogger{srData},
+			"feed", WrappedRTCPSenderReportStateLogger{publisherSRData},
 			"tsOffset", tsOffset,
 			"timeNow", time.Now().String(),
 			"now", time.Unix(0, now).String(),
