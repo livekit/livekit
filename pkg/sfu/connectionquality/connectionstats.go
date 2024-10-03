@@ -28,6 +28,7 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 )
 
 const (
@@ -203,7 +204,7 @@ func (cs *ConnectionStats) GetScoreAndQuality() (float32, livekit.ConnectionQual
 	return cs.scorer.GetMOSAndQuality()
 }
 
-func (cs *ConnectionStats) updateScoreWithAggregate(agg *buffer.RTPDeltaInfo, lastRTCPAt time.Time, at time.Time) float32 {
+func (cs *ConnectionStats) updateScoreWithAggregate(agg *rtpstats.RTPDeltaInfo, lastRTCPAt time.Time, at time.Time) float32 {
 	var stat windowStat
 	if agg != nil {
 		stat.startedAt = agg.StartTime
@@ -289,11 +290,11 @@ func (cs *ConnectionStats) updateScoreAt(at time.Time) (float32, map[uint32]*buf
 		return mos, nil
 	}
 
-	deltaInfoList := make([]*buffer.RTPDeltaInfo, 0, len(streams))
+	deltaInfoList := make([]*rtpstats.RTPDeltaInfo, 0, len(streams))
 	for _, s := range streams {
 		deltaInfoList = append(deltaInfoList, s.RTPStats)
 	}
-	agg := buffer.AggregateRTPDeltaInfo(deltaInfoList)
+	agg := rtpstats.AggregateRTPDeltaInfo(deltaInfoList)
 	return cs.updateScoreWithAggregate(agg, cs.params.ReceiverProvider.GetLastSenderReportTime(), at), streams
 }
 
@@ -415,15 +416,15 @@ func getPacketLossWeight(mimeType string, isFecEnabled bool) float64 {
 	return plw
 }
 
-func toAggregateDeltaInfo(streams map[uint32]*buffer.StreamStatsWithLayers) *buffer.RTPDeltaInfo {
-	deltaInfoList := make([]*buffer.RTPDeltaInfo, 0, len(streams))
+func toAggregateDeltaInfo(streams map[uint32]*buffer.StreamStatsWithLayers) *rtpstats.RTPDeltaInfo {
+	deltaInfoList := make([]*rtpstats.RTPDeltaInfo, 0, len(streams))
 	for _, s := range streams {
 		deltaInfoList = append(deltaInfoList, s.RTPStats)
 	}
-	return buffer.AggregateRTPDeltaInfo(deltaInfoList)
+	return rtpstats.AggregateRTPDeltaInfo(deltaInfoList)
 }
 
-func toAnalyticsStream(ssrc uint32, deltaStats *buffer.RTPDeltaInfo) *livekit.AnalyticsStream {
+func toAnalyticsStream(ssrc uint32, deltaStats *rtpstats.RTPDeltaInfo) *livekit.AnalyticsStream {
 	// discount the feed side loss when reporting forwarded track stats
 	packetsLost := deltaStats.PacketsLost
 	if deltaStats.PacketsMissing > packetsLost {
@@ -452,7 +453,7 @@ func toAnalyticsStream(ssrc uint32, deltaStats *buffer.RTPDeltaInfo) *livekit.An
 	}
 }
 
-func toAnalyticsVideoLayer(layer int32, layerStats *buffer.RTPDeltaInfo) *livekit.AnalyticsVideoLayer {
+func toAnalyticsVideoLayer(layer int32, layerStats *rtpstats.RTPDeltaInfo) *livekit.AnalyticsVideoLayer {
 	avl := &livekit.AnalyticsVideoLayer{
 		Layer:   layer,
 		Packets: layerStats.Packets + layerStats.PacketsDuplicate + layerStats.PacketsPadding,

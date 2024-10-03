@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package buffer
+package rtpstats
 
 import (
 	"fmt"
@@ -216,7 +216,7 @@ func (r *RTPStatsReceiver) Update(
 		}
 		gapTS := int64(resTS.ExtendedVal - resTS.PreExtendedHighest)
 
-		// it is possible to reecive old packets in two different scenarios
+		// it is possible to receive old packets in two different scenarios
 		// as it is not possible to detect how far to roll back, ignore old packets
 		//
 		// Case 1:
@@ -684,6 +684,22 @@ func (r *RTPStatsReceiver) HighestTimestamp() uint32 {
 	defer r.lock.RUnlock()
 
 	return r.timestamp.GetHighest()
+}
+
+// for testing only
+func (r *RTPStatsReceiver) HighestSequenceNumber() uint16 {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	return r.sequenceNumber.GetHighest()
+}
+
+// for testing only
+func (r *RTPStatsReceiver) ExtendedHighestSequenceNumber() uint64 {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	return r.sequenceNumber.GetExtendedHighest()
 }
 
 // ----------------------------------
