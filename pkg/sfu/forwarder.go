@@ -1740,9 +1740,9 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 					extRefTS = extExpectedTS
 					f.logger.Infow(
 						"calculating dummyStartTSOffset",
-						"preStartTime", f.preStartTime.String(),
+						"preStartTime", f.preStartTime,
 						"extFirstTS", f.extFirstTS,
-						"timeSinceFirst", timeSinceFirst.String(),
+						"timeSinceFirst", timeSinceFirst,
 						"rtpDiff", rtpDiff,
 						"extRefTS", extRefTS,
 						"incomingTS", extPkt.Packet.Timestamp,
@@ -1831,7 +1831,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 	if bigJump { // TODO-REMOVE-AFTER-DATA-COLLECTION
 		f.logger.Infow(
 			"next timestamp on switch",
-			"switchingAt", switchingAt.String(),
+			"switchingAt", switchingAt,
 			"layer", layer,
 			"extLastTS", extLastTS,
 			"lastMarker", rtpMungerState.LastMarker,
@@ -1849,7 +1849,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 	} else {
 		f.logger.Debugw(
 			"next timestamp on switch",
-			"switchingAt", switchingAt.String(),
+			"switchingAt", switchingAt,
 			"layer", layer,
 			"extLastTS", extLastTS,
 			"lastMarker", rtpMungerState.LastMarker,
