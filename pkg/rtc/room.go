@@ -1795,7 +1795,7 @@ func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, kin
 	})
 }
 
-func BroadcastMetricsForRoom(r types.Room, source types.LocalParticipant, dp *livekit.DataPacket, logger logger.Logger) {
+func BroadcastMetricsForRoom(r types.Room, source types.Participant, dp *livekit.DataPacket, logger logger.Logger) {
 	switch payload := dp.Value.(type) {
 	case *livekit.DataPacket_Metrics:
 		utils.ParallelExec(r.GetLocalParticipants(), dataForwardLoadBalanceThreshold, 1, func(op types.LocalParticipant) {
