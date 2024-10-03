@@ -1659,8 +1659,11 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 	overrideSenderIdentity := true
 	isPublisher := true
 	// only forward on user payloads
-	switch payload := dp.Value.(type) {
+	switch payload := dp.GetValue().(type) {
 	case *livekit.DataPacket_User:
+		if payload.User == nil {
+			return
+		}
 		u := payload.User
 		if p.Hidden() {
 			u.ParticipantSid = ""
@@ -1675,17 +1678,29 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 			dp.DestinationIdentities = u.DestinationIdentities
 		}
 	case *livekit.DataPacket_SipDtmf:
+		if payload.SipDtmf == nil {
+			return
+		}
 	case *livekit.DataPacket_Transcription:
+		if payload.Transcription == nil {
+			return
+		}
 		if !p.IsAgent() {
 			shouldForwardData = false
 		}
 	case *livekit.DataPacket_ChatMessage:
+		if payload.ChatMessage == nil {
+			return
+		}
 		if p.IsAgent() && dp.ParticipantIdentity != "" && string(p.params.Identity) != dp.ParticipantIdentity {
 			overrideSenderIdentity = false
 			payload.ChatMessage.Generated = true
 		}
 		shouldForwardData = true
 	case *livekit.DataPacket_Metrics:
+		if payload.Metrics == nil {
+			return
+		}
 		shouldForwardData = false
 		shouldForwardMetrics = true
 		isPublisher = false
