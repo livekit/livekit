@@ -251,6 +251,7 @@ func NewWorker(
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &Worker{
+		WorkerPingHandler:  WorkerPingHandler{conn: conn},
 		WorkerRegistration: registration,
 		apiKey:             apiKey,
 		apiSecret:          apiSecret,
