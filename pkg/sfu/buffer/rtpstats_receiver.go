@@ -151,26 +151,24 @@ func (r *RTPStatsReceiver) Update(
 	var tsRolloverCount int
 	var snRolloverCount int
 
-	getLoggingFields := func() []interface{} {
-		return []interface{}{
-			"resSN", resSN,
-			"gapSN", gapSN,
-			"resTS", resTS,
-			"gapTS", int64(resTS.ExtendedVal - resTS.PreExtendedHighest),
-			"timeSinceHighest", time.Duration(timeSinceHighest),
-			"snRolloverCount", snRolloverCount,
-			"expectedTSJump", expectedTSJump,
-			"tsRolloverCount", tsRolloverCount,
-			"packetTime", time.Unix(0, packetTime).String(),
-			"sequenceNumber", sequenceNumber,
-			"timestamp", timestamp,
-			"marker", marker,
-			"hdrSize", hdrSize,
-			"payloadSize", payloadSize,
-			"paddingSize", paddingSize,
-			"rtpStats", lockedRTPStatsReceiverLogEncoder{r},
-		}
-	}
+	logger := r.logger.WithUnlikelyValues(
+		"resSN", resSN,
+		"gapSN", gapSN,
+		"resTS", resTS,
+		"gapTS", int64(resTS.ExtendedVal-resTS.PreExtendedHighest),
+		"timeSinceHighest", time.Duration(timeSinceHighest),
+		"snRolloverCount", snRolloverCount,
+		"expectedTSJump", expectedTSJump,
+		"tsRolloverCount", tsRolloverCount,
+		"packetTime", time.Unix(0, packetTime).String(),
+		"sequenceNumber", sequenceNumber,
+		"timestamp", timestamp,
+		"marker", marker,
+		"hdrSize", hdrSize,
+		"payloadSize", payloadSize,
+		"paddingSize", paddingSize,
+		"rtpStats", lockedRTPStatsReceiverLogEncoder{r},
+	)
 
 	if !r.initialized {
 		if payloadSize == 0 {
@@ -209,10 +207,7 @@ func (r *RTPStatsReceiver) Update(
 		timeSinceHighest = packetTime - r.highestTime
 		tsRolloverCount = r.getTSRolloverCount(timeSinceHighest, timestamp)
 		if tsRolloverCount >= 0 {
-			r.logger.Warnw(
-				"potential time stamp roll over", nil,
-				getLoggingFields()...,
-			)
+			logger.Warnw("potential time stamp roll over", nil)
 		}
 		resTS = r.timestamp.Rollover(timestamp, tsRolloverCount)
 		if resTS.IsUnhandled {
@@ -236,10 +231,7 @@ func (r *RTPStatsReceiver) Update(
 			if gapTS > int64(float64(expectedTSJump)*cTSJumpTooHighFactor) {
 				r.sequenceNumber.UndoUpdate(resSN)
 				r.timestamp.UndoUpdate(resTS)
-				r.logger.Warnw(
-					"dropping old packet, timestamp", nil,
-					getLoggingFields()...,
-				)
+				logger.Warnw("dropping old packet, timestamp", nil)
 				flowState.IsNotHandled = true
 				return
 			}
@@ -250,10 +242,7 @@ func (r *RTPStatsReceiver) Update(
 		if gapTS < 0 && gapSN > 0 {
 			r.sequenceNumber.UndoUpdate(resSN)
 			r.timestamp.UndoUpdate(resTS)
-			r.logger.Warnw(
-				"dropping old packet, sequence number", nil,
-				getLoggingFields()...,
-			)
+			logger.Warnw("dropping old packet, sequence number", nil)
 			flowState.IsNotHandled = true
 			return
 		}
@@ -272,10 +261,7 @@ func (r *RTPStatsReceiver) Update(
 				return
 			}
 
-			r.logger.Warnw(
-				"forcing sequence number rollover", nil,
-				getLoggingFields()...,
-			)
+			logger.Warnw("forcing sequence number rollover", nil)
 		}
 	}
 	gapSN = int64(resSN.ExtendedVal - resSN.PreExtendedHighest)
@@ -303,9 +289,9 @@ func (r *RTPStatsReceiver) Update(
 		if !flowState.IsDuplicate && -gapSN >= cSequenceNumberLargeJumpThreshold {
 			r.largeJumpNegativeCount++
 			if (r.largeJumpNegativeCount-1)%100 == 0 {
-				r.logger.Warnw(
+				logger.Warnw(
 					"large sequence number gap negative", nil,
-					append(getLoggingFields(), "count", r.largeJumpNegativeCount)...,
+					"count", r.largeJumpNegativeCount,
 				)
 			}
 		}
@@ -313,9 +299,9 @@ func (r *RTPStatsReceiver) Update(
 		if gapSN >= cSequenceNumberLargeJumpThreshold {
 			r.largeJumpCount++
 			if (r.largeJumpCount-1)%100 == 0 {
-				r.logger.Warnw(
+				logger.Warnw(
 					"large sequence number gap", nil,
-					append(getLoggingFields(), "count", r.largeJumpCount)...,
+					"count", r.largeJumpCount,
 				)
 			}
 		}
@@ -323,9 +309,9 @@ func (r *RTPStatsReceiver) Update(
 		if resTS.ExtendedVal < resTS.PreExtendedHighest {
 			r.timeReversedCount++
 			if (r.timeReversedCount-1)%100 == 0 {
-				r.logger.Warnw(
+				logger.Warnw(
 					"time reversed", nil,
-					append(getLoggingFields(), "count", r.timeReversedCount)...,
+					"count", r.timeReversedCount,
 				)
 			}
 		}
