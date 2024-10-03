@@ -160,7 +160,7 @@ func (r *RTPStatsReceiver) Update(
 		"snRolloverCount", snRolloverCount,
 		"expectedTSJump", expectedTSJump,
 		"tsRolloverCount", tsRolloverCount,
-		"packetTime", time.Unix(0, packetTime).String(),
+		"packetTime", time.Unix(0, packetTime),
 		"sequenceNumber", sequenceNumber,
 		"timestamp", timestamp,
 		"marker", marker,

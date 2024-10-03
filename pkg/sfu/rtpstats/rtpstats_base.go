@@ -529,17 +529,17 @@ func (r *rtpStatsBase) maybeAdjustFirstPacketTime(srData *livekit.RTCPSenderRepo
 
 	getFields := func() []interface{} {
 		return []interface{}{
-			"startTime", r.startTime.String(),
-			"nowTime", time.Unix(0, now).String(),
-			"before", time.Unix(0, r.firstTime).String(),
-			"after", time.Unix(0, firstTime).String(),
-			"adjustment", time.Duration(r.firstTime - firstTime).String(),
+			"startTime", r.startTime,
+			"nowTime", time.Unix(0, now),
+			"before", time.Unix(0, r.firstTime),
+			"after", time.Unix(0, firstTime),
+			"adjustment", time.Duration(r.firstTime - firstTime),
 			"extNowTS", extNowTS,
 			"extStartTS", extStartTS,
 			"srData", WrappedRTCPSenderReportStateLogger{srData},
 			"tsOffset", tsOffset,
-			"timeSinceReceive", timeSinceReceive.String(),
-			"timeSinceFirst", timeSinceFirst.String(),
+			"timeSinceReceive", timeSinceReceive,
+			"timeSinceFirst", timeSinceFirst,
 			"samplesDiff", samplesDiff,
 			"samplesDuration", samplesDuration,
 		}
@@ -593,7 +593,7 @@ func (r *rtpStatsBase) deltaInfo(snapshotID uint32, extStartSN uint64, extHighes
 			"packetsExpected", packetsExpected,
 			"startTime", startTime,
 			"endTime", endTime,
-			"duration", endTime.Sub(startTime).String(),
+			"duration", endTime.Sub(startTime),
 		}
 		err = errors.New("too many packets expected in delta")
 		return
