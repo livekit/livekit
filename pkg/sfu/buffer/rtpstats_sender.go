@@ -642,8 +642,8 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *livek
 	}
 
 	logger := r.logger.WithUnlikelyValues(
-		"curr", srData,
-		"feed", publisherSRData,
+		"curr", WrappedRTCPSenderReportStateLogger{srData},
+		"feed", WrappedRTCPSenderReportStateLogger{publisherSRData},
 		"tsOffset", tsOffset,
 		"timeNow", time.Now().String(),
 		"now", time.Unix(0, now).String(),
@@ -654,6 +654,7 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *livek
 		"nowRTPExt", nowRTPExt,
 		"rtpStats", lockedRTPStatsSenderLogEncoder{r},
 	)
+
 	if r.srNewest != nil && nowRTPExt >= r.srNewest.RtpTimestampExt {
 		timeSinceLastReport := nowNTP.Time().Sub(mediatransportutil.NtpTime(r.srNewest.NtpTimestamp).Time())
 		rtpDiffSinceLastReport := nowRTPExt - r.srNewest.RtpTimestampExt
