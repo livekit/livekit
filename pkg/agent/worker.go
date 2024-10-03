@@ -226,7 +226,6 @@ type Worker struct {
 
 	apiKey    string
 	apiSecret string
-	conn      SignalConn
 	logger    logger.Logger
 
 	ctx    context.Context
@@ -251,10 +250,10 @@ func NewWorker(
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &Worker{
+		WorkerPingHandler:  WorkerPingHandler{conn: conn},
 		WorkerRegistration: registration,
 		apiKey:             apiKey,
 		apiSecret:          apiSecret,
-		conn:               conn,
 		logger: logger.WithValues(
 			"workerID", registration.ID,
 			"agentName", registration.AgentName,
