@@ -62,8 +62,17 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 		}
 
 	case *livekit.SignalRequest_Leave:
-		pLogger.Debugw("client leaving room")
-		room.RemoveParticipant(participant.Identity(), participant.ID(), types.ParticipantCloseReasonClientRequestLeave)
+		reason := types.ParticipantCloseReasonClientRequestLeave
+		switch msg.Leave.Reason {
+		case livekit.DisconnectReason_CLIENT_INITIATED:
+			reason = types.ParticipantCloseReasonClientRequestLeave
+		case livekit.DisconnectReason_USER_UNAVAILABLE:
+			reason = types.ParticipantCloseReasonUserUnavailable
+		case livekit.DisconnectReason_USER_REJECTED:
+			reason = types.ParticipantCloseReasonUserRejected
+		}
+		pLogger.Debugw("client leaving room", "reason", reason)
+		room.RemoveParticipant(participant.Identity(), participant.ID(), reason)
 
 	case *livekit.SignalRequest_SubscriptionPermission:
 		err := room.UpdateSubscriptionPermission(participant, msg.SubscriptionPermission)
