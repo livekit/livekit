@@ -686,6 +686,22 @@ func (r *RTPStatsReceiver) HighestTimestamp() uint32 {
 	return r.timestamp.GetHighest()
 }
 
+// for testing only
+func (r *RTPStatsReceiver) HighestSequenceNumber() uint16 {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	return r.sequenceNumber.GetHighest()
+}
+
+// for testing only
+func (r *RTPStatsReceiver) ExtendedHighestSequenceNumber() uint64 {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	return r.sequenceNumber.GetExtendedHighest()
+}
+
 // ----------------------------------
 
 type lockedRTPStatsReceiverLogEncoder struct {
