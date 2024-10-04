@@ -142,11 +142,6 @@ type DownTrackState struct {
 	ForwarderState             *livekit.RTPForwarderState
 }
 
-func (d DownTrackState) String() string {
-	return fmt.Sprintf("DownTrackState{rtpStats: %s, deltaSender: %d, forwarder: %s}",
-		d.RTPStats, d.DeltaStatsSenderSnapshotId, d.ForwarderState.String())
-}
-
 func (d DownTrackState) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddObject("RTPStats", d.RTPStats)
 	e.AddUint32("DeltaStatsSenderSnapshotId", d.DeltaStatsSenderSnapshotId)
