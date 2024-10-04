@@ -42,7 +42,6 @@ const (
 type RTPFlowState struct {
 	IsNotHandled bool
 
-	HasLoss            bool
 	LossStartInclusive uint64
 	LossEndExclusive   uint64
 
@@ -59,7 +58,6 @@ func (r *RTPFlowState) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	}
 
 	e.AddBool("IsNotHandled", r.IsNotHandled)
-	e.AddBool("HasLoss", r.HasLoss)
 	e.AddUint64("LossStartInclusive", r.LossStartInclusive)
 	e.AddUint64("LossEndExclusive", r.LossEndExclusive)
 	e.AddBool("IsDuplicate", r.IsDuplicate)
@@ -189,7 +187,7 @@ func (r *RTPStatsReceiver) Update(
 
 		// initialize snapshots if any
 		for i := uint32(0); i < r.nextSnapshotID-cFirstSnapshotID; i++ {
-			r.snapshots[i] = r.initSnapshot(r.startTime, r.sequenceNumber.GetExtendedStart())
+			r.snapshots[i] = initSnapshot(r.startTime, r.sequenceNumber.GetExtendedStart())
 		}
 
 		r.logger.Debugw(
@@ -331,11 +329,8 @@ func (r *RTPStatsReceiver) Update(
 			r.highestTime = packetTime
 		}
 
-		if gapSN > 1 {
-			flowState.HasLoss = true
-			flowState.LossStartInclusive = resSN.PreExtendedHighest + 1
-			flowState.LossEndExclusive = resSN.ExtendedVal
-		}
+		flowState.LossStartInclusive = resSN.PreExtendedHighest + 1
+		flowState.LossEndExclusive = resSN.ExtendedVal
 	}
 	flowState.ExtSequenceNumber = resSN.ExtendedVal
 	flowState.ExtTimestamp = resTS.ExtendedVal
@@ -652,25 +647,19 @@ func (r *RTPStatsReceiver) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	return lockedRTPStatsReceiverLogEncoder{r}.MarshalLogObject(e)
 }
 
-func (r *RTPStatsReceiver) String() string {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
-
-	return r.toString(
-		r.sequenceNumber.GetExtendedStart(), r.sequenceNumber.GetExtendedHighest(), r.timestamp.GetExtendedStart(), r.timestamp.GetExtendedHighest(),
-		r.packetsLost,
-		r.jitter, r.maxJitter,
-	)
-}
-
 func (r *RTPStatsReceiver) ToProto() *livekit.RTPStats {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
+	extStartSN, extHighestSN := r.sequenceNumber.GetExtendedStart(), r.sequenceNumber.GetExtendedHighest()
 	return r.toProto(
-		r.sequenceNumber.GetExtendedStart(), r.sequenceNumber.GetExtendedHighest(), r.timestamp.GetExtendedStart(), r.timestamp.GetExtendedHighest(),
+		getPacketsExpected(extStartSN, extHighestSN),
+		r.getPacketsSeenMinusPadding(extStartSN, extHighestSN),
 		r.packetsLost,
-		r.jitter, r.maxJitter,
+		r.timestamp.GetExtendedStart(),
+		r.timestamp.GetExtendedHighest(),
+		r.jitter,
+		r.maxJitter,
 	)
 }
 
@@ -713,21 +702,24 @@ func (r lockedRTPStatsReceiverLogEncoder) MarshalLogObject(e zapcore.ObjectEncod
 		return nil
 	}
 
-	e.AddObject("base", r.rtpStatsBase)
-
-	e.AddUint64("extStartSN", r.sequenceNumber.GetExtendedStart())
-	e.AddUint64("extHighestSN", r.sequenceNumber.GetExtendedHighest())
+	extStartSN, extHighestSN := r.sequenceNumber.GetExtendedStart(), r.sequenceNumber.GetExtendedHighest()
 	extStartTS, extHighestTS := r.timestamp.GetExtendedStart(), r.timestamp.GetExtendedHighest()
+	if err := r.rtpStatsBase.marshalLogObject(
+		e,
+		getPacketsExpected(extStartSN, extHighestSN),
+		r.getPacketsSeenMinusPadding(extStartSN, extHighestSN),
+		extStartTS,
+		extHighestTS,
+	); err != nil {
+		return err
+	}
+
+	e.AddUint64("extStartSN", extStartSN)
+	e.AddUint64("extHighestSN", extHighestSN)
 	e.AddUint64("extStartTS", extStartTS)
 	e.AddUint64("extHighestTS", extHighestTS)
 
 	e.AddObject("propagationDelayEstimator", r.propagationDelayEstimator)
-
-	packetDrift, ntpReportDrift, receivedReportDrift, rebasedReportDrift := r.getDrift(extStartTS, extHighestTS)
-	e.AddObject("packetDrift", wrappedRTPDriftLogger{packetDrift})
-	e.AddObject("ntpReportDrift", wrappedRTPDriftLogger{ntpReportDrift})
-	e.AddObject("receivedReportDrift", wrappedRTPDriftLogger{receivedReportDrift})
-	e.AddObject("rebasedReportDrift", wrappedRTPDriftLogger{rebasedReportDrift})
 	return nil
 }
 

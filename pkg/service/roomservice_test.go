@@ -72,8 +72,8 @@ func TestMetaDataLimits(t *testing.T) {
 	})
 
 	notExceedsLimitsSvc := map[string]*TestRoomService{
-		"metadata noe exceeds limits": newTestRoomService(config.LimitConfig{MaxMetadataSize: 5}),
-		"metadata no limits":          newTestRoomService(config.LimitConfig{}), // no limits
+		"metadata exceeds limits": newTestRoomService(config.LimitConfig{MaxMetadataSize: 5}),
+		"metadata no limits":      newTestRoomService(config.LimitConfig{}), // no limits
 	}
 
 	for n, s := range notExceedsLimitsSvc {

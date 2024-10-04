@@ -25,7 +25,6 @@ import (
 
 	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 )
 
 const (
@@ -229,7 +228,7 @@ func (r *RTPStatsSender) NewSenderSnapshotId() uint32 {
 	}
 
 	if r.initialized {
-		r.senderSnapshots[id-cFirstSnapshotID] = r.initSenderSnapshot(time.Now(), r.extHighestSN)
+		r.senderSnapshots[id-cFirstSnapshotID] = initSenderSnapshot(time.Now(), r.extHighestSN)
 	}
 	return id
 }
@@ -271,10 +270,10 @@ func (r *RTPStatsSender) Update(
 
 		// initialize snapshots if any
 		for i := uint32(0); i < r.nextSnapshotID-cFirstSnapshotID; i++ {
-			r.snapshots[i] = r.initSnapshot(r.startTime, r.extStartSN)
+			r.snapshots[i] = initSnapshot(r.startTime, r.extStartSN)
 		}
 		for i := uint32(0); i < r.nextSenderSnapshotID-cFirstSnapshotID; i++ {
-			r.senderSnapshots[i] = r.initSenderSnapshot(r.startTime, r.extStartSN)
+			r.senderSnapshots[i] = initSenderSnapshot(r.startTime, r.extStartSN)
 		}
 
 		r.logger.Debugw(
@@ -437,11 +436,11 @@ func (r *RTPStatsSender) Update(
 	}
 }
 
-func (r *RTPStatsSender) GetTotalPacketsPrimary() uint64 {
+func (r *RTPStatsSender) GetPacketsSeenMinusPadding() uint64 {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
-	return r.getTotalPacketsPrimary(r.extStartSN, r.extHighestSN)
+	return r.getPacketsSeenMinusPadding(r.extStartSN, r.extHighestSN)
 }
 
 func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt uint32, isRttChanged bool) {
@@ -629,7 +628,7 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *livek
 		nowRTPExt = publisherSRData.RtpTimestampExt - tsOffset + uint64(timeSincePublisherSRAdjusted.Nanoseconds()*int64(r.params.ClockRate)/1e9)
 	}
 
-	packetCount := uint32(r.getTotalPacketsPrimary(r.extStartSN, r.extHighestSN) + r.packetsDuplicate + r.packetsPadding)
+	packetCount := uint32(r.getPacketsSeenPlusDuplicates(r.extStartSN, r.extHighestSN))
 	octetCount := r.bytes + r.bytesDuplicate + r.bytesPadding
 	srData := &livekit.RTCPSenderReportState{
 		NtpTimestamp:    uint64(nowNTP),
@@ -810,25 +809,18 @@ func (r *RTPStatsSender) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	return lockedRTPStatsSenderLogEncoder{r}.MarshalLogObject(e)
 }
 
-func (r *RTPStatsSender) String() string {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
-
-	return r.toString(
-		r.extStartSN, r.extHighestSN, r.extStartTS, r.extHighestTS,
-		r.packetsLostFromRR,
-		r.jitterFromRR, r.maxJitterFromRR,
-	)
-}
-
 func (r *RTPStatsSender) ToProto() *livekit.RTPStats {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
 	return r.toProto(
-		r.extStartSN, r.extHighestSN, r.extStartTS, r.extHighestTS,
+		getPacketsExpected(r.extStartSN, r.extHighestSN),
+		r.getPacketsSeenMinusPadding(r.extStartSN, r.extHighestSN),
 		r.packetsLostFromRR,
-		r.jitterFromRR, r.maxJitterFromRR,
+		r.extStartTS,
+		r.extHighestTS,
+		r.jitterFromRR,
+		r.maxJitterFromRR,
 	)
 }
 
@@ -840,7 +832,7 @@ func (r *RTPStatsSender) getAndResetSenderSnapshot(senderSnapshotID uint32) (*se
 	idx := senderSnapshotID - cFirstSnapshotID
 	then := r.senderSnapshots[idx]
 	if !then.isValid {
-		then = r.initSenderSnapshot(r.startTime, r.extStartSN)
+		then = initSenderSnapshot(r.startTime, r.extStartSN)
 		r.senderSnapshots[idx] = then
 	}
 
@@ -848,15 +840,6 @@ func (r *RTPStatsSender) getAndResetSenderSnapshot(senderSnapshotID uint32) (*se
 	now := r.getSenderSnapshot(r.lastRRTime, &then)
 	r.senderSnapshots[idx] = now
 	return &then, &now
-}
-
-func (r *RTPStatsSender) initSenderSnapshot(startTime time.Time, extStartSN uint64) senderSnapshot {
-	return senderSnapshot{
-		isValid:     true,
-		startTime:   startTime,
-		extStartSN:  extStartSN,
-		extLastRRSN: extStartSN - 1,
-	}
 }
 
 func (r *RTPStatsSender) getSenderSnapshot(startTime time.Time, s *senderSnapshot) senderSnapshot {
@@ -1007,7 +990,16 @@ func (r lockedRTPStatsSenderLogEncoder) MarshalLogObject(e zapcore.ObjectEncoder
 		return nil
 	}
 
-	e.AddObject("base", r.rtpStatsBase)
+	if err := r.rtpStatsBase.marshalLogObject(
+		e,
+		getPacketsExpected(r.extStartSN, r.extHighestSN),
+		r.getPacketsSeenMinusPadding(r.extStartSN, r.extHighestSN),
+		r.extStartTS,
+		r.extHighestTS,
+	); err != nil {
+		return err
+	}
+
 	e.AddUint64("extStartSN", r.extStartSN)
 	e.AddUint64("extHighestSN", r.extHighestSN)
 	e.AddUint64("extStartTS", r.extStartTS)
@@ -1018,11 +1010,16 @@ func (r lockedRTPStatsSenderLogEncoder) MarshalLogObject(e zapcore.ObjectEncoder
 	e.AddUint64("packetsLostFromRR", r.packetsLostFromRR)
 	e.AddFloat64("jitterFromRR", r.jitterFromRR)
 	e.AddFloat64("maxJitterFromRR", r.maxJitterFromRR)
-
-	packetDrift, ntpReportDrift, receivedReportDrift, rebasedReportDrift := r.getDrift(r.extStartTS, r.extHighestTS)
-	e.AddObject("packetDrift", logger.Proto(packetDrift))
-	e.AddObject("ntpReportDrift", logger.Proto(ntpReportDrift))
-	e.AddObject("receivedReportDrift", logger.Proto(receivedReportDrift))
-	e.AddObject("rebasedReportDrift", logger.Proto(rebasedReportDrift))
 	return nil
+}
+
+// -------------------------------------------------------------------
+
+func initSenderSnapshot(startTime time.Time, extStartSN uint64) senderSnapshot {
+	return senderSnapshot{
+		isValid:     true,
+		startTime:   startTime,
+		extStartSN:  extStartSN,
+		extLastRRSN: extStartSN - 1,
+	}
 }
