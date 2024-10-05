@@ -30,7 +30,6 @@ import (
 	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/logger/zaputil"
 	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -1654,7 +1653,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			"extRefTS", extRefTS,
 			"extLastTS", extLastTS,
 			"diffSeconds", math.Abs(diffSeconds),
-			"refInfos", zaputil.ObjectSlice(f.refInfos[:]),
+			"refInfos", logger.ObjectSlice(f.refInfos[:]),
 		)
 	}
 	// TODO-REMOVE-AFTER-DATA-COLLECTION
@@ -1669,7 +1668,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			"extRefTS", extRefTS,
 			"extLastTS", extLastTS,
 			"diffSeconds", math.Abs(diffSeconds),
-			"refInfos", zaputil.ObjectSlice(f.refInfos[:]),
+			"refInfos", logger.ObjectSlice(f.refInfos[:]),
 		)
 	}
 
@@ -1865,7 +1864,7 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 				"could not switch feed",
 				"error", err,
 				"layer", layer,
-				"refInfos", zaputil.ObjectSlice(f.refInfos[:]),
+				"refInfos", logger.ObjectSlice(f.refInfos[:]),
 				"currentLayer", f.vls.GetCurrent(),
 				"targetLayer", f.vls.GetCurrent(),
 				"maxLayer", f.vls.GetMax(),
@@ -1878,7 +1877,7 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 			"from", f.lastSSRC,
 			"to", extPkt.Packet.SSRC,
 			"layer", layer,
-			"refInfos", zaputil.ObjectSlice(f.refInfos[:]),
+			"refInfos", logger.ObjectSlice(f.refInfos[:]),
 			"currentLayer", f.vls.GetCurrent(),
 			"targetLayer", f.vls.GetCurrent(),
 			"maxLayer", f.vls.GetMax(),

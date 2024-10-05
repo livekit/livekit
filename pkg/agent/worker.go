@@ -48,9 +48,8 @@ type WorkerProtocolVersion int
 const CurrentProtocol = 1
 
 const (
-	registerTimeout  = 10 * time.Second
-	assignJobTimeout = 10 * time.Second
-	pingFrequency    = 10 * time.Second
+	RegisterTimeout  = 10 * time.Second
+	AssignJobTimeout = 10 * time.Second
 )
 
 type SignalConn interface {
@@ -165,7 +164,7 @@ func NewWorkerRegisterer(conn SignalConn, serverInfo *livekit.ServerInfo, protoc
 		WorkerPingHandler: WorkerPingHandler{conn: conn},
 		serverInfo:        serverInfo,
 		protocol:          protocol,
-		deadline:          time.Now().Add(registerTimeout),
+		deadline:          time.Now().Add(RegisterTimeout),
 	}
 }
 
@@ -301,6 +300,12 @@ func (w *Worker) RunningJobs() map[livekit.JobID]*livekit.Job {
 	return jobs
 }
 
+func (w *Worker) RunningJobCount() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return len(w.runningJobs)
+}
+
 func (w *Worker) GetJobState(jobID livekit.JobID) (*livekit.JobState, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -342,7 +347,7 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) (*livekit.JobS
 		Availability: &livekit.AvailabilityRequest{Job: job},
 	}})
 
-	timeout := time.NewTimer(assignJobTimeout)
+	timeout := time.NewTimer(AssignJobTimeout)
 	defer timeout.Stop()
 
 	// See handleAvailability for the response
@@ -385,10 +390,10 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) (*livekit.JobS
 
 func (w *Worker) TerminateJob(jobID livekit.JobID, reason rpc.JobTerminateReason) (*livekit.JobState, error) {
 	w.mu.Lock()
-	job := w.runningJobs[jobID]
+	_, ok := w.runningJobs[jobID]
 	w.mu.Unlock()
 
-	if job == nil {
+	if !ok {
 		return nil, ErrJobNotFound
 	}
 
@@ -459,7 +464,6 @@ func (w *Worker) HandleAvailability(res *livekit.AvailabilityResponse) error {
 
 func (w *Worker) HandleUpdateJob(update *livekit.UpdateJobStatus) error {
 	_, err := w.UpdateJobStatus(update)
-
 	if err != nil {
 		w.logger.Infow("received job update for unknown job", "jobID", update.JobId)
 	}
@@ -483,16 +487,14 @@ func (w *Worker) UpdateJobStatus(update *livekit.UpdateJobStatus) (*livekit.JobS
 		job.State.StartedAt = now.UnixNano()
 	}
 
-	if job.State.Status < livekit.JobStatus_JS_SUCCESS && JobStatusIsEnded(update.Status) {
-		job.State.EndedAt = now.UnixNano()
-	}
-
 	job.State.Status = update.Status
 	job.State.Error = update.Error
 
-	// TODO do not delete, leave inside the JobDefinition
-	if JobStatusIsEnded(job.State.Status) {
+	if JobStatusIsEnded(update.Status) {
+		job.State.EndedAt = now.UnixNano()
 		delete(w.runningJobs, jobID)
+
+		w.logger.Infow("job ended", "jobID", update.JobId, "status", update.Status, "error", update.Error)
 	}
 
 	return proto.Clone(job.State).(*livekit.JobState), nil
@@ -516,7 +518,7 @@ func (w *Worker) HandleSimulateJob(simulate *livekit.SimulateJobRequest) error {
 	go func() {
 		_, err := w.AssignJob(w.ctx, job)
 		if err != nil {
-			w.logger.Errorw("failed to simulate job, assignment failed", err, "jobId", job.Id)
+			w.logger.Errorw("unable to simulate job", err, "jobId", job.Id)
 		}
 	}()
 
@@ -524,13 +526,12 @@ func (w *Worker) HandleSimulateJob(simulate *livekit.SimulateJobRequest) error {
 }
 
 func (w *Worker) HandleUpdateWorker(update *livekit.UpdateWorkerStatus) error {
-	w.logger.Debugw("worker status update", "update", logger.Proto(update))
-
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	if update.Status != nil {
-		w.status = update.GetStatus()
+	if status := update.Status; status != nil && w.status != *status {
+		w.status = *status
+		w.Logger().Debugw("worker status changed", "status", w.status)
 	}
 	w.load = update.GetLoad()
 
