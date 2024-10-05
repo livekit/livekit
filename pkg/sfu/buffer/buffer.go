@@ -731,10 +731,8 @@ func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime int64) rtpstats.RT
 	if b.nacker != nil {
 		b.nacker.Remove(p.SequenceNumber)
 
-		if flowState.HasLoss {
-			for lost := flowState.LossStartInclusive; lost != flowState.LossEndExclusive; lost++ {
-				b.nacker.Push(uint16(lost))
-			}
+		for lost := flowState.LossStartInclusive; lost != flowState.LossEndExclusive; lost++ {
+			b.nacker.Push(uint16(lost))
 		}
 	}
 

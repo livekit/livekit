@@ -30,6 +30,7 @@ import (
 	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/logger/zaputil"
 	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -202,20 +203,6 @@ func (r refInfo) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	})
 	e.AddUint64("tsOffset", r.tsOffset)
 	e.AddBool("isTSOffsetValid", r.isTSOffsetValid)
-	return nil
-}
-
-// -------------------------------------------------------------------
-
-type wrappedRefInfosLogger struct {
-	*Forwarder
-}
-
-func (w wrappedRefInfosLogger) MarshalLogObject(e zapcore.ObjectEncoder) error {
-	for i, refInfo := range w.Forwarder.refInfos {
-		e.AddObject(fmt.Sprintf("%d", i), refInfo)
-	}
-
 	return nil
 }
 
@@ -1667,7 +1654,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			"extRefTS", extRefTS,
 			"extLastTS", extLastTS,
 			"diffSeconds", math.Abs(diffSeconds),
-			"refInfos", wrappedRefInfosLogger{f},
+			"refInfos", zaputil.ObjectSlice(f.refInfos[:]),
 		)
 	}
 	// TODO-REMOVE-AFTER-DATA-COLLECTION
@@ -1682,7 +1669,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			"extRefTS", extRefTS,
 			"extLastTS", extLastTS,
 			"diffSeconds", math.Abs(diffSeconds),
-			"refInfos", wrappedRefInfosLogger{f},
+			"refInfos", zaputil.ObjectSlice(f.refInfos[:]),
 		)
 	}
 
@@ -1878,7 +1865,7 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 				"could not switch feed",
 				"error", err,
 				"layer", layer,
-				"refInfos", wrappedRefInfosLogger{f},
+				"refInfos", zaputil.ObjectSlice(f.refInfos[:]),
 				"currentLayer", f.vls.GetCurrent(),
 				"targetLayer", f.vls.GetCurrent(),
 				"maxLayer", f.vls.GetMax(),
@@ -1891,7 +1878,7 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 			"from", f.lastSSRC,
 			"to", extPkt.Packet.SSRC,
 			"layer", layer,
-			"refInfos", wrappedRefInfosLogger{f},
+			"refInfos", zaputil.ObjectSlice(f.refInfos[:]),
 			"currentLayer", f.vls.GetCurrent(),
 			"targetLayer", f.vls.GetCurrent(),
 			"maxLayer", f.vls.GetMax(),
