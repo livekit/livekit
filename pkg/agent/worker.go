@@ -487,15 +487,15 @@ func (w *Worker) UpdateJobStatus(update *livekit.UpdateJobStatus) (*livekit.JobS
 		job.State.StartedAt = now.UnixNano()
 	}
 
-	if JobStatusIsEnded(update.Status) {
-		w.logger.Infow("job ended", "jobID", update.JobId, "status", update.Status, "error", update.Error)
-
-		job.State.EndedAt = now.UnixNano()
-		delete(w.runningJobs, jobID)
-	}
-
 	job.State.Status = update.Status
 	job.State.Error = update.Error
+
+	if JobStatusIsEnded(update.Status) {
+		job.State.EndedAt = now.UnixNano()
+		delete(w.runningJobs, jobID)
+
+		w.logger.Infow("job ended", "jobID", update.JobId, "status", update.Status, "error", update.Error)
+	}
 
 	return proto.Clone(job.State).(*livekit.JobState), nil
 }
