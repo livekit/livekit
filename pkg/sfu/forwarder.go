@@ -207,15 +207,12 @@ func (r refInfo) MarshalLogObject(e zapcore.ObjectEncoder) error {
 
 // -------------------------------------------------------------------
 
-type wrappedRefInfosLogger struct {
-	*Forwarder
-}
+type refInfoArray [buffer.DefaultMaxLayerSpatial + 1]refInfo
 
-func (w wrappedRefInfosLogger) MarshalLogObject(e zapcore.ObjectEncoder) error {
-	for i, refInfo := range w.Forwarder.refInfos {
-		e.AddObject(fmt.Sprintf("%d", i), refInfo)
+func (ris refInfoArray) MarshalLogArray(e zapcore.ArrayEncoder) error {
+	for _, ri := range ris {
+		e.AppendObject(ri)
 	}
-
 	return nil
 }
 
@@ -240,7 +237,7 @@ type Forwarder struct {
 	lastSwitchExtIncomingTS uint64
 	referenceLayerSpatial   int32
 	dummyStartTSOffset      uint64
-	refInfos                [buffer.DefaultMaxLayerSpatial + 1]refInfo
+	refInfos                refInfoArray
 	refIsSVC                bool
 
 	provisional *VideoAllocationProvisional
@@ -1667,7 +1664,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			"extRefTS", extRefTS,
 			"extLastTS", extLastTS,
 			"diffSeconds", math.Abs(diffSeconds),
-			"refInfos", wrappedRefInfosLogger{f},
+			"refInfos", f.refInfos,
 		)
 	}
 	// TODO-REMOVE-AFTER-DATA-COLLECTION
@@ -1682,7 +1679,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			"extRefTS", extRefTS,
 			"extLastTS", extLastTS,
 			"diffSeconds", math.Abs(diffSeconds),
-			"refInfos", wrappedRefInfosLogger{f},
+			"refInfos", f.refInfos,
 		)
 	}
 
@@ -1878,7 +1875,7 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 				"could not switch feed",
 				"error", err,
 				"layer", layer,
-				"refInfos", wrappedRefInfosLogger{f},
+				"refInfos", f.refInfos,
 				"currentLayer", f.vls.GetCurrent(),
 				"targetLayer", f.vls.GetCurrent(),
 				"maxLayer", f.vls.GetMax(),
@@ -1891,7 +1888,7 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 			"from", f.lastSSRC,
 			"to", extPkt.Packet.SSRC,
 			"layer", layer,
-			"refInfos", wrappedRefInfosLogger{f},
+			"refInfos", f.refInfos,
 			"currentLayer", f.vls.GetCurrent(),
 			"targetLayer", f.vls.GetCurrent(),
 			"maxLayer", f.vls.GetMax(),
