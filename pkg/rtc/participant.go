@@ -1698,13 +1698,10 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		//    processing/batching and sending to edge clients.
 		p.metricTimestamper.Process(payload.Metrics)
 	case *livekit.DataPacket_RpcRequest:
-		p.pubLogger.Debugw("received RPC request", "request", payload.RpcRequest)
 		shouldForwardData = true
 	case *livekit.DataPacket_RpcResponse:
-		p.pubLogger.Debugw("received RPC response", "response", payload.RpcResponse)
 		shouldForwardData = true
 	case *livekit.DataPacket_RpcAck:
-		p.pubLogger.Debugw("received RPC ack", "ack", payload.RpcAck)
 		shouldForwardData = true
 	default:
 		p.pubLogger.Warnw("received unsupported data packet", nil, "payload", payload)
