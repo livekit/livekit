@@ -30,6 +30,7 @@ import (
 	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/logger/zaputil"
 	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -207,17 +208,6 @@ func (r refInfo) MarshalLogObject(e zapcore.ObjectEncoder) error {
 
 // -------------------------------------------------------------------
 
-type refInfoArray [buffer.DefaultMaxLayerSpatial + 1]refInfo
-
-func (ris refInfoArray) MarshalLogArray(e zapcore.ArrayEncoder) error {
-	for _, ri := range ris {
-		e.AppendObject(ri)
-	}
-	return nil
-}
-
-// -------------------------------------------------------------------
-
 type Forwarder struct {
 	lock                    sync.RWMutex
 	codec                   webrtc.RTPCodecCapability
@@ -237,7 +227,7 @@ type Forwarder struct {
 	lastSwitchExtIncomingTS uint64
 	referenceLayerSpatial   int32
 	dummyStartTSOffset      uint64
-	refInfos                refInfoArray
+	refInfos                [buffer.DefaultMaxLayerSpatial + 1]refInfo
 	refIsSVC                bool
 
 	provisional *VideoAllocationProvisional
@@ -1664,7 +1654,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			"extRefTS", extRefTS,
 			"extLastTS", extLastTS,
 			"diffSeconds", math.Abs(diffSeconds),
-			"refInfos", f.refInfos,
+			"refInfos", zaputil.ObjectSlice(f.refInfos[:]),
 		)
 	}
 	// TODO-REMOVE-AFTER-DATA-COLLECTION
@@ -1679,7 +1669,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			"extRefTS", extRefTS,
 			"extLastTS", extLastTS,
 			"diffSeconds", math.Abs(diffSeconds),
-			"refInfos", f.refInfos,
+			"refInfos", zaputil.ObjectSlice(f.refInfos[:]),
 		)
 	}
 
@@ -1875,7 +1865,7 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 				"could not switch feed",
 				"error", err,
 				"layer", layer,
-				"refInfos", f.refInfos,
+				"refInfos", zaputil.ObjectSlice(f.refInfos[:]),
 				"currentLayer", f.vls.GetCurrent(),
 				"targetLayer", f.vls.GetCurrent(),
 				"maxLayer", f.vls.GetMax(),
@@ -1888,7 +1878,7 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 			"from", f.lastSSRC,
 			"to", extPkt.Packet.SSRC,
 			"layer", layer,
-			"refInfos", f.refInfos,
+			"refInfos", zaputil.ObjectSlice(f.refInfos[:]),
 			"currentLayer", f.vls.GetCurrent(),
 			"targetLayer", f.vls.GetCurrent(),
 			"maxLayer", f.vls.GetMax(),
