@@ -161,16 +161,6 @@ type rtpStatsBase struct {
 	jitter    float64
 	maxJitter float64
 
-	nackAcks     uint32
-	nackMisses   uint32
-	nackRepeated uint32
-
-	plis    uint32
-	lastPli time.Time
-
-	layerLockPlis    uint32
-	lastLayerLockPli time.Time
-
 	firs    uint32
 	lastFir time.Time
 
@@ -230,9 +220,6 @@ func (r *rtpStatsBase) seed(from *rtpStatsBase) bool {
 	r.plis = from.plis
 	r.lastPli = from.lastPli
 
-	r.layerLockPlis = from.layerLockPlis
-	r.lastLayerLockPli = from.lastLayerLockPli
-
 	r.firs = from.firs
 	r.lastFir = from.lastFir
 
@@ -265,92 +252,6 @@ func (r *rtpStatsBase) newSnapshotID(extStartSN uint64) uint32 {
 		r.snapshots[id-cFirstSnapshotID] = initSnapshot(time.Now(), extStartSN)
 	}
 	return id
-}
-
-func (r *rtpStatsBase) UpdateNackProcessed(nackAckCount uint32, nackMissCount uint32, nackRepeatedCount uint32) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
-
-	if !r.endTime.IsZero() {
-		return
-	}
-
-	r.nackAcks += nackAckCount
-	r.nackMisses += nackMissCount
-	r.nackRepeated += nackRepeatedCount
-}
-
-func (r *rtpStatsBase) CheckAndUpdatePli(throttle int64, force bool) bool {
-	r.lock.Lock()
-	defer r.lock.Unlock()
-
-	if !r.endTime.IsZero() || (!force && time.Now().UnixNano()-r.lastPli.UnixNano() < throttle) {
-		return false
-	}
-	r.updatePliLocked(1)
-	r.updatePliTimeLocked()
-	return true
-}
-
-func (r *rtpStatsBase) UpdatePliAndTime(pliCount uint32) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
-
-	if !r.endTime.IsZero() {
-		return
-	}
-
-	r.updatePliLocked(pliCount)
-	r.updatePliTimeLocked()
-}
-
-func (r *rtpStatsBase) UpdatePli(pliCount uint32) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
-
-	if !r.endTime.IsZero() {
-		return
-	}
-
-	r.updatePliLocked(pliCount)
-}
-
-func (r *rtpStatsBase) updatePliLocked(pliCount uint32) {
-	r.plis += pliCount
-}
-
-func (r *rtpStatsBase) UpdatePliTime() {
-	r.lock.Lock()
-	defer r.lock.Unlock()
-
-	if !r.endTime.IsZero() {
-		return
-	}
-
-	r.updatePliTimeLocked()
-}
-
-func (r *rtpStatsBase) updatePliTimeLocked() {
-	r.lastPli = time.Now()
-}
-
-func (r *rtpStatsBase) LastPli() time.Time {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
-
-	return r.lastPli
-}
-
-func (r *rtpStatsBase) UpdateLayerLockPliAndTime(pliCount uint32) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
-
-	if !r.endTime.IsZero() {
-		return
-	}
-
-	r.layerLockPlis += pliCount
-	r.lastLayerLockPli = time.Now()
 }
 
 func (r *rtpStatsBase) UpdateFir(firCount uint32) {
@@ -603,16 +504,6 @@ func (r *rtpStatsBase) marshalLogObject(
 	e.AddFloat64("jitter", r.jitter)
 	e.AddFloat64("maxJitter", r.maxJitter)
 
-	e.AddUint32("nackAcks", r.nackAcks)
-	e.AddUint32("nackMisses", r.nackMisses)
-	e.AddUint32("nackRepeated", r.nackRepeated)
-
-	e.AddUint32("plis", r.plis)
-	e.AddTime("lastPli", r.lastPli)
-
-	e.AddUint32("layerLockPlis", r.layerLockPlis)
-	e.AddTime("lastLayerLockPli", r.lastLayerLockPli)
-
 	e.AddUint32("firs", r.firs)
 	e.AddTime("lastFir", r.lastFir)
 
@@ -665,16 +556,6 @@ func (r *rtpStatsBase) toProto(
 
 	p.JitterCurrent = jitter / float64(r.params.ClockRate) * 1e6
 	p.JitterMax = maxJitter / float64(r.params.ClockRate) * 1e6
-
-	p.NackAcks = r.nackAcks
-	p.NackMisses = r.nackMisses
-	p.NackRepeated = r.nackRepeated
-
-	p.Plis = r.plis
-	p.LastPli = timestamppb.New(r.lastPli)
-
-	p.LayerLockPlis = r.layerLockPlis
-	p.LastLayerLockPli = timestamppb.New(r.lastLayerLockPli)
 
 	p.Firs = r.firs
 	p.LastFir = timestamppb.New(r.lastFir)
