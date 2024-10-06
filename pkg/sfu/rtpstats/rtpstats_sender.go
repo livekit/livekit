@@ -22,6 +22,7 @@ import (
 
 	"github.com/pion/rtcp"
 	"go.uber.org/zap/zapcore"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/protocol/livekit"
@@ -30,8 +31,6 @@ import (
 const (
 	cSnInfoSize = 4096
 	cSnInfoMask = cSnInfoSize - 1
-
-	cSenderReportInitialWait = time.Second
 )
 
 // -------------------------------------------------------------------
@@ -158,6 +157,9 @@ type RTPStatsSender struct {
 
 	snInfos [cSnInfoSize]snInfo
 
+	layerLockPlis    uint32
+	lastLayerLockPli time.Time
+
 	nextSenderSnapshotID uint32
 	senderSnapshots      []senderSnapshot
 
@@ -204,6 +206,9 @@ func (r *RTPStatsSender) Seed(from *RTPStatsSender) {
 	r.nextSenderSnapshotID = from.nextSenderSnapshotID
 	r.senderSnapshots = make([]senderSnapshot, cap(from.senderSnapshots))
 	copy(r.senderSnapshots, from.senderSnapshots)
+
+	r.layerLockPlis = from.layerLockPlis
+	r.lastLayerLockPli = from.lastLayerLockPli
 }
 
 func (r *RTPStatsSender) NewSnapshotId() uint32 {
@@ -433,6 +438,18 @@ func (r *RTPStatsSender) Update(
 			}
 		}
 	}
+}
+
+func (r *RTPStatsSender) UpdateLayerLockPliAndTime(pliCount uint32) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	if !r.endTime.IsZero() {
+		return
+	}
+
+	r.layerLockPlis += pliCount
+	r.lastLayerLockPli = time.Now()
 }
 
 func (r *RTPStatsSender) GetPacketsSeenMinusPadding() uint64 {
@@ -812,7 +829,7 @@ func (r *RTPStatsSender) ToProto() *livekit.RTPStats {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
-	return r.toProto(
+	p := r.toProto(
 		getPacketsExpected(r.extStartSN, r.extHighestSN),
 		r.getPacketsSeenMinusPadding(r.extStartSN, r.extHighestSN),
 		r.packetsLostFromRR,
@@ -821,6 +838,12 @@ func (r *RTPStatsSender) ToProto() *livekit.RTPStats {
 		r.jitterFromRR,
 		r.maxJitterFromRR,
 	)
+
+	if p != nil {
+		p.LayerLockPlis = r.layerLockPlis
+		p.LastLayerLockPli = timestamppb.New(r.lastLayerLockPli)
+	}
+	return p
 }
 
 func (r *RTPStatsSender) getAndResetSenderSnapshot(senderSnapshotID uint32) (*senderSnapshot, *senderSnapshot) {
@@ -1001,14 +1024,19 @@ func (r lockedRTPStatsSenderLogEncoder) MarshalLogObject(e zapcore.ObjectEncoder
 
 	e.AddUint64("extStartSN", r.extStartSN)
 	e.AddUint64("extHighestSN", r.extHighestSN)
+
 	e.AddUint64("extStartTS", r.extStartTS)
 	e.AddUint64("extHighestTS", r.extHighestTS)
+
 	e.AddTime("lastRRTime", r.lastRRTime)
 	e.AddReflected("lastRR", r.lastRR)
 	e.AddUint64("extHighestSNFromRR", r.extHighestSNFromRR)
 	e.AddUint64("packetsLostFromRR", r.packetsLostFromRR)
 	e.AddFloat64("jitterFromRR", r.jitterFromRR)
 	e.AddFloat64("maxJitterFromRR", r.maxJitterFromRR)
+
+	e.AddUint32("layerLockPlis", r.layerLockPlis)
+	e.AddTime("lastLayerLockPli", r.lastLayerLockPli)
 	return nil
 }
 

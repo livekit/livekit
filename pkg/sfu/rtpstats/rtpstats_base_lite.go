@@ -85,7 +85,13 @@ type rtpStatsBaseLite struct {
 
 	gapHistogram [cGapHistogramNumBins]uint32
 
-	nacks uint32
+	nacks        uint32
+	nackAcks     uint32
+	nackMisses   uint32
+	nackRepeated uint32
+
+	plis    uint32
+	lastPli time.Time
 
 	nextSnapshotLiteID uint32
 	snapshotLites      []snapshotLite
@@ -171,6 +177,80 @@ func (r *rtpStatsBaseLite) UpdateNack(nackCount uint32) {
 	r.nacks += nackCount
 }
 
+func (r *rtpStatsBaseLite) UpdateNackProcessed(nackAckCount uint32, nackMissCount uint32, nackRepeatedCount uint32) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	if !r.endTime.IsZero() {
+		return
+	}
+
+	r.nackAcks += nackAckCount
+	r.nackMisses += nackMissCount
+	r.nackRepeated += nackRepeatedCount
+}
+
+func (r *rtpStatsBaseLite) CheckAndUpdatePli(throttle int64, force bool) bool {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	if !r.endTime.IsZero() || (!force && time.Now().UnixNano()-r.lastPli.UnixNano() < throttle) {
+		return false
+	}
+	r.updatePliLocked(1)
+	r.updatePliTimeLocked()
+	return true
+}
+
+func (r *rtpStatsBaseLite) UpdatePliAndTime(pliCount uint32) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	if !r.endTime.IsZero() {
+		return
+	}
+
+	r.updatePliLocked(pliCount)
+	r.updatePliTimeLocked()
+}
+
+func (r *rtpStatsBaseLite) UpdatePli(pliCount uint32) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	if !r.endTime.IsZero() {
+		return
+	}
+
+	r.updatePliLocked(pliCount)
+}
+
+func (r *rtpStatsBaseLite) updatePliLocked(pliCount uint32) {
+	r.plis += pliCount
+}
+
+func (r *rtpStatsBaseLite) UpdatePliTime() {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	if !r.endTime.IsZero() {
+		return
+	}
+
+	r.updatePliTimeLocked()
+}
+
+func (r *rtpStatsBaseLite) updatePliTimeLocked() {
+	r.lastPli = time.Now()
+}
+
+func (r *rtpStatsBaseLite) LastPli() time.Time {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	return r.lastPli
+}
+
 func (r *rtpStatsBaseLite) getPacketsSeen(extStartSN, extHighestSN uint64) uint64 {
 	packetsExpected := getPacketsExpected(extStartSN, extHighestSN)
 	if r.packetsLost > packetsExpected {
@@ -236,8 +316,8 @@ func (r *rtpStatsBaseLite) deltaInfoLite(
 }
 
 func (r *rtpStatsBaseLite) marshalLogObject(e zapcore.ObjectEncoder, packetsExpected, packetsSeenMinusPadding uint64) (float64, error) {
-	if r == nil {
-		return 0, errors.New("no object")
+	if r == nil || !r.initialized {
+		return 0, errors.New("not initialized")
 	}
 
 	endTime := r.endTime
@@ -289,6 +369,12 @@ func (r *rtpStatsBaseLite) marshalLogObject(e zapcore.ObjectEncoder, packetsExpe
 	}
 
 	e.AddUint32("nacks", r.nacks)
+	e.AddUint32("nackAcks", r.nackAcks)
+	e.AddUint32("nackMisses", r.nackMisses)
+	e.AddUint32("nackRepeated", r.nackRepeated)
+
+	e.AddUint32("plis", r.plis)
+	e.AddTime("lastPli", r.lastPli)
 	return elapsedSeconds, nil
 }
 
@@ -325,6 +411,11 @@ func (r *rtpStatsBaseLite) toProto(packetsExpected, packetsSeenMinusPadding, pac
 		PacketLossPercentage: packetLostPercentage,
 		PacketsOutOfOrder:    uint32(r.packetsOutOfOrder),
 		Nacks:                r.nacks,
+		NackAcks:             r.nackAcks,
+		NackMisses:           r.nackMisses,
+		NackRepeated:         r.nackRepeated,
+		Plis:                 r.plis,
+		LastPli:              timestamppb.New(r.lastPli),
 	}
 
 	gapsPresent := false
