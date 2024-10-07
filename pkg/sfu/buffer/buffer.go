@@ -33,6 +33,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/audio"
 	act "github.com/livekit/livekit-server/pkg/sfu/rtpextension/abscapturetime"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
+	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/mediatransportutil/pkg/bucket"
@@ -105,7 +106,7 @@ type Buffer struct {
 
 	pliThrottle int64
 
-	rtpStats             *RTPStatsReceiver
+	rtpStats             *rtpstats.RTPStatsReceiver
 	rrSnapshotId         uint32
 	deltaStatsSnapshotId uint32
 	ppsSnapshotId        uint32
@@ -211,7 +212,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 		return
 	}
 
-	b.rtpStats = NewRTPStatsReceiver(RTPStatsParams{
+	b.rtpStats = rtpstats.NewRTPStatsReceiver(rtpstats.RTPStatsParams{
 		ClockRate: codec.ClockRate,
 		Logger:    b.logger,
 	})
@@ -716,7 +717,7 @@ func (b *Buffer) doFpsCalc(ep *ExtPacket) {
 	}
 }
 
-func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime int64) RTPFlowState {
+func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime int64) rtpstats.RTPFlowState {
 	flowState := b.rtpStats.Update(
 		arrivalTime,
 		p.Header.SequenceNumber,
@@ -730,10 +731,8 @@ func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime int64) RTPFlowStat
 	if b.nacker != nil {
 		b.nacker.Remove(p.SequenceNumber)
 
-		if flowState.HasLoss {
-			for lost := flowState.LossStartInclusive; lost != flowState.LossEndExclusive; lost++ {
-				b.nacker.Push(uint16(lost))
-			}
+		for lost := flowState.LossStartInclusive; lost != flowState.LossEndExclusive; lost++ {
+			b.nacker.Push(uint16(lost))
 		}
 	}
 
@@ -762,7 +761,7 @@ func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime int64, isRTX
 	}
 }
 
-func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, flowState RTPFlowState) *ExtPacket {
+func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, flowState rtpstats.RTPFlowState) *ExtPacket {
 	ep := &ExtPacket{
 		Arrival:           arrivalTime,
 		ExtSequenceNumber: flowState.ExtSequenceNumber,
@@ -1076,7 +1075,7 @@ func (b *Buffer) GetDeltaStats() *StreamStatsWithLayers {
 
 	return &StreamStatsWithLayers{
 		RTPStats: deltaStats,
-		Layers: map[int32]*RTPDeltaInfo{
+		Layers: map[int32]*rtpstats.RTPDeltaInfo{
 			0: deltaStats,
 		},
 	}

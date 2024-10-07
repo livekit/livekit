@@ -38,6 +38,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
+	"github.com/livekit/protocol/utils"
 	"github.com/livekit/psrpc"
 )
 
@@ -341,7 +342,7 @@ func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*rpc.J
 	for {
 		selected, err := h.selectWorkerWeightedByLoad(key, attempted)
 		if err != nil {
-			return nil, psrpc.NewError(psrpc.DeadlineExceeded, err)
+			return nil, psrpc.NewError(psrpc.ResourceExhausted, err)
 		}
 
 		attempted[selected] = struct{}{}
@@ -361,7 +362,7 @@ func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*rpc.J
 		h.logger.Debugw("assigning job", values...)
 		state, err := selected.AssignJob(ctx, job)
 		if err != nil {
-			if errors.Is(err, agent.ErrWorkerNotAvailable) {
+			if utils.ErrorIsOneOf(err, agent.ErrWorkerNotAvailable, agent.ErrWorkerClosed) {
 				continue // Try another worker
 			}
 			return nil, err

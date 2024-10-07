@@ -1010,7 +1010,7 @@ func (r *Room) DeleteAgentDispatch(dispatchID string) (*livekit.AgentDispatch, e
 		r.lock.RUnlock()
 
 		for _, j := range jobs {
-			state, err := r.agentClient.TerminateJob(context.Background(), j.Id, rpc.JobTerminateReason_TERINATION_REQUESTED)
+			state, err := r.agentClient.TerminateJob(context.Background(), j.Id, rpc.JobTerminateReason_TERMINATION_REQUESTED)
 			if err != nil {
 				continue
 			}
@@ -1795,7 +1795,7 @@ func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, kin
 	})
 }
 
-func BroadcastMetricsForRoom(r types.Room, source types.LocalParticipant, dp *livekit.DataPacket, logger logger.Logger) {
+func BroadcastMetricsForRoom(r types.Room, source types.Participant, dp *livekit.DataPacket, logger logger.Logger) {
 	switch payload := dp.Value.(type) {
 	case *livekit.DataPacket_Metrics:
 		utils.ParallelExec(r.GetLocalParticipants(), dataForwardLoadBalanceThreshold, 1, func(op types.LocalParticipant) {

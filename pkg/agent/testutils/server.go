@@ -384,7 +384,7 @@ func (w *AgentWorker) sendStatus() {
 	w.SendUpdateWorker(&livekit.UpdateWorkerStatus{
 		Status:   &status,
 		Load:     load,
-		JobCount: int32(jobCount),
+		JobCount: uint32(jobCount),
 	})
 }
 

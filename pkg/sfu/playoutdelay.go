@@ -19,8 +19,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	pd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/playoutdelay"
+	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -59,13 +59,13 @@ type PlayoutDelayController struct {
 	sendingAtSeq       uint16
 	sendingAtTime      time.Time
 	logger             logger.Logger
-	rtpStats           *buffer.RTPStatsSender
+	rtpStats           *rtpstats.RTPStatsSender
 	snapshotID         uint32
 
 	highDelayCount atomic.Uint32
 }
 
-func NewPlayoutDelayController(minDelay, maxDelay uint32, logger logger.Logger, rtpStats *buffer.RTPStatsSender) (*PlayoutDelayController, error) {
+func NewPlayoutDelayController(minDelay, maxDelay uint32, logger logger.Logger, rtpStats *rtpstats.RTPStatsSender) (*PlayoutDelayController, error) {
 	if maxDelay == 0 && minDelay > 0 {
 		maxDelay = pd.MaxPlayoutDelayDefault
 	}

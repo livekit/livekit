@@ -35,6 +35,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/codecmunger"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
+	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/livekit-server/pkg/sfu/videolayerselector"
 	"github.com/livekit/livekit-server/pkg/sfu/videolayerselector/temporallayerselector"
 )
@@ -196,25 +197,11 @@ type refInfo struct {
 }
 
 func (r refInfo) MarshalLogObject(e zapcore.ObjectEncoder) error {
-	e.AddObject("senderReport", buffer.WrappedRTCPSenderReportStateLogger{
+	e.AddObject("senderReport", rtpstats.WrappedRTCPSenderReportStateLogger{
 		RTCPSenderReportState: r.senderReport,
 	})
 	e.AddUint64("tsOffset", r.tsOffset)
 	e.AddBool("isTSOffsetValid", r.isTSOffsetValid)
-	return nil
-}
-
-// -------------------------------------------------------------------
-
-type wrappedRefInfosLogger struct {
-	*Forwarder
-}
-
-func (w wrappedRefInfosLogger) MarshalLogObject(e zapcore.ObjectEncoder) error {
-	for i, refInfo := range w.Forwarder.refInfos {
-		e.AddObject(fmt.Sprintf("%d", i), refInfo)
-	}
-
 	return nil
 }
 
@@ -1666,7 +1653,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			"extRefTS", extRefTS,
 			"extLastTS", extLastTS,
 			"diffSeconds", math.Abs(diffSeconds),
-			"refInfos", wrappedRefInfosLogger{f},
+			"refInfos", logger.ObjectSlice(f.refInfos[:]),
 		)
 	}
 	// TODO-REMOVE-AFTER-DATA-COLLECTION
@@ -1681,7 +1668,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			"extRefTS", extRefTS,
 			"extLastTS", extLastTS,
 			"diffSeconds", math.Abs(diffSeconds),
-			"refInfos", wrappedRefInfosLogger{f},
+			"refInfos", logger.ObjectSlice(f.refInfos[:]),
 		)
 	}
 
@@ -1739,9 +1726,9 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 					extRefTS = extExpectedTS
 					f.logger.Infow(
 						"calculating dummyStartTSOffset",
-						"preStartTime", f.preStartTime.String(),
+						"preStartTime", f.preStartTime,
 						"extFirstTS", f.extFirstTS,
-						"timeSinceFirst", timeSinceFirst.String(),
+						"timeSinceFirst", timeSinceFirst,
 						"rtpDiff", rtpDiff,
 						"extRefTS", extRefTS,
 						"incomingTS", extPkt.Packet.Timestamp,
@@ -1830,7 +1817,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 	if bigJump { // TODO-REMOVE-AFTER-DATA-COLLECTION
 		f.logger.Infow(
 			"next timestamp on switch",
-			"switchingAt", switchingAt.String(),
+			"switchingAt", switchingAt,
 			"layer", layer,
 			"extLastTS", extLastTS,
 			"lastMarker", rtpMungerState.LastMarker,
@@ -1848,7 +1835,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 	} else {
 		f.logger.Debugw(
 			"next timestamp on switch",
-			"switchingAt", switchingAt.String(),
+			"switchingAt", switchingAt,
 			"layer", layer,
 			"extLastTS", extLastTS,
 			"lastMarker", rtpMungerState.LastMarker,
@@ -1877,7 +1864,7 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 				"could not switch feed",
 				"error", err,
 				"layer", layer,
-				"refInfos", wrappedRefInfosLogger{f},
+				"refInfos", logger.ObjectSlice(f.refInfos[:]),
 				"currentLayer", f.vls.GetCurrent(),
 				"targetLayer", f.vls.GetCurrent(),
 				"maxLayer", f.vls.GetMax(),
@@ -1890,7 +1877,7 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 			"from", f.lastSSRC,
 			"to", extPkt.Packet.SSRC,
 			"layer", layer,
-			"refInfos", wrappedRefInfosLogger{f},
+			"refInfos", logger.ObjectSlice(f.refInfos[:]),
 			"currentLayer", f.vls.GetCurrent(),
 			"targetLayer", f.vls.GetCurrent(),
 			"maxLayer", f.vls.GetMax(),
