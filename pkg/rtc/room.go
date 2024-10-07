@@ -1010,7 +1010,7 @@ func (r *Room) DeleteAgentDispatch(dispatchID string) (*livekit.AgentDispatch, e
 		r.lock.RUnlock()
 
 		for _, j := range jobs {
-			state, err := r.agentClient.TerminateJob(context.Background(), j.Id, rpc.JobTerminateReason_TERINATION_REQUESTED)
+			state, err := r.agentClient.TerminateJob(context.Background(), j.Id, rpc.JobTerminateReason_TERMINATION_REQUESTED)
 			if err != nil {
 				continue
 			}

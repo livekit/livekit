@@ -336,12 +336,13 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) (*livekit.JobS
 		w.mu.Unlock()
 	}()
 
-	now := time.Now()
 	if job.State == nil {
-		job.State = &livekit.JobState{
-			UpdatedAt: now.UnixNano(),
-		}
+		job.State = &livekit.JobState{}
 	}
+	now := time.Now()
+	job.State.UpdatedAt = now.UnixNano()
+	job.State.StartedAt = now.UnixNano()
+	job.State.Status = livekit.JobStatus_JS_RUNNING
 
 	w.sendRequest(&livekit.ServerMessage{Message: &livekit.ServerMessage_Availability{
 		Availability: &livekit.AvailabilityRequest{Job: job},
