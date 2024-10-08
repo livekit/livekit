@@ -1715,6 +1715,7 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		if payload.RpcRequest == nil {
 			return
 		}
+		p.pubLogger.Infow("received RPC request", "method", payload.RpcRequest.Method, "rpc_request_id", payload.RpcRequest.Id)
 	case *livekit.DataPacket_RpcResponse:
 		if payload.RpcResponse == nil {
 			return
