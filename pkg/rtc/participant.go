@@ -2839,7 +2839,7 @@ func (p *ParticipantImpl) UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack
 					}
 				}
 
-				p.pubLogger.Debugw("updated pending track", "trackInfo", logger.Proto(ti))
+				p.pubLogger.Debugw("updated pending track", "trackID", ti.Sid, "trackInfo", logger.Proto(ti))
 			}
 		}
 	}
