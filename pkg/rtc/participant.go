@@ -1696,7 +1696,6 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 			overrideSenderIdentity = false
 			payload.ChatMessage.Generated = true
 		}
-		shouldForwardData = true
 	case *livekit.DataPacket_Metrics:
 		if payload.Metrics == nil {
 			return
@@ -1712,6 +1711,19 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		//    and pushing it to all subscribers on some cadence and subscribers have their own cadence of
 		//    processing/batching and sending to edge clients.
 		p.metricTimestamper.Process(payload.Metrics)
+	case *livekit.DataPacket_RpcRequest:
+		if payload.RpcRequest == nil {
+			return
+		}
+		p.pubLogger.Infow("received RPC request data packet", "method", payload.RpcRequest.Method, "rpc_request_id", payload.RpcRequest.Id)
+	case *livekit.DataPacket_RpcResponse:
+		if payload.RpcResponse == nil {
+			return
+		}
+	case *livekit.DataPacket_RpcAck:
+		if payload.RpcAck == nil {
+			return
+		}
 	default:
 		p.pubLogger.Warnw("received unsupported data packet", nil, "payload", payload)
 	}
