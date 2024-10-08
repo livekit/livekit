@@ -969,8 +969,8 @@ func (r *Room) GetAgentDispatches(dispatchID string) ([]*livekit.AgentDispatch, 
 	return ret, nil
 }
 
-func (r *Room) AddAgentDispatch(agentName string, metadata string) (*livekit.AgentDispatch, error) {
-	ad, err := r.createAgentDispatchFromParams(agentName, metadata)
+func (r *Room) AddAgentDispatch(dispatch *livekit.AgentDispatch) (*livekit.AgentDispatch, error) {
+	ad, err := r.createAgentDispatch(dispatch)
 	if err != nil {
 		return nil, err
 	}
@@ -1692,20 +1692,13 @@ func (r *Room) DebugInfo() map[string]interface{} {
 	return info
 }
 
-func (r *Room) createAgentDispatchFromParams(agentName string, metadata string) (*agentDispatch, error) {
-	now := time.Now()
+func (r *Room) createAgentDispatch(dispatch *livekit.AgentDispatch) (*agentDispatch, error) {
+	dispatch = utils.CloneProto(dispatch)
+	dispatch.State = &livekit.AgentDispatchState{
+		CreatedAt: time.Now().UnixNano(),
+	}
+	ad := newAgentDispatch(dispatch)
 
-	ad := newAgentDispatch(
-		&livekit.AgentDispatch{
-			Id:        guid.New(guid.AgentDispatchPrefix),
-			AgentName: agentName,
-			Metadata:  metadata,
-			Room:      r.protoRoom.Name,
-			State: &livekit.AgentDispatchState{
-				CreatedAt: now.UnixNano(),
-			},
-		},
-	)
 	r.lock.RLock()
 	r.agentDispatches[ad.Id] = ad
 	r.lock.RUnlock()
@@ -1717,6 +1710,15 @@ func (r *Room) createAgentDispatchFromParams(agentName string, metadata string) 
 	}
 
 	return ad, nil
+}
+
+func (r *Room) createAgentDispatchFromParams(agentName string, metadata string) (*agentDispatch, error) {
+	return r.createAgentDispatch(&livekit.AgentDispatch{
+		Id:        guid.New(guid.AgentDispatchPrefix),
+		AgentName: agentName,
+		Metadata:  metadata,
+		Room:      r.protoRoom.Name,
+	})
 }
 
 func (r *Room) createAgentDispatchesFromRoomAgent() {
