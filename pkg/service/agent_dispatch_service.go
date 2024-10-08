@@ -19,6 +19,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
+	"github.com/livekit/protocol/utils/guid"
 )
 
 type AgentDispatchService struct {
@@ -39,7 +40,13 @@ func (ag *AgentDispatchService) CreateDispatch(ctx context.Context, req *livekit
 		return nil, twirpAuthError(err)
 	}
 
-	return ag.agentDispatchClient.CreateDispatch(ctx, ag.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
+	dispatch := &livekit.AgentDispatch{
+		Id:        guid.New(guid.AgentDispatchPrefix),
+		AgentName: req.AgentName,
+		Room:      req.Room,
+		Metadata:  req.Metadata,
+	}
+	return ag.agentDispatchClient.CreateDispatch(ctx, ag.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), dispatch)
 }
 
 func (ag *AgentDispatchService) DeleteDispatch(ctx context.Context, req *livekit.DeleteAgentDispatchRequest) (*livekit.AgentDispatch, error) {
