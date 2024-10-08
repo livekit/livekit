@@ -1693,7 +1693,6 @@ func (r *Room) DebugInfo() map[string]interface{} {
 }
 
 func (r *Room) createAgentDispatch(dispatch *livekit.AgentDispatch) (*agentDispatch, error) {
-	dispatch = utils.CloneProto(dispatch)
 	dispatch.State = &livekit.AgentDispatchState{
 		CreatedAt: time.Now().UnixNano(),
 	}
