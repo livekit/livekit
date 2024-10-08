@@ -2838,6 +2838,8 @@ func (p *ParticipantImpl) UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack
 						ti.DisableDtx = true
 					}
 				}
+
+				p.pubLogger.Debugw("updated pending track", "trackInfo", logger.Proto(ti))
 			}
 		}
 	}
