@@ -75,6 +75,16 @@ type TelemetryService interface {
 	IngressUpdated(ctx context.Context, info *livekit.IngressInfo)
 	IngressEnded(ctx context.Context, info *livekit.IngressInfo)
 	LocalRoomState(ctx context.Context, info *livekit.AnalyticsNodeRooms)
+	SIPInboundTrunkCreated(ctx context.Context, in *livekit.SIPInboundTrunkInfo)
+	SIPInboundTrunkDeleted(ctx context.Context, in *livekit.SIPInboundTrunkInfo)
+	SIPOutboundTrunkCreated(ctx context.Context, out *livekit.SIPOutboundTrunkInfo)
+	SIPOutboundTrunkDeleted(ctx context.Context, out *livekit.SIPOutboundTrunkInfo)
+	SIPDispatchRuleCreated(ctx context.Context, dispatchRule *livekit.SIPDispatchRuleInfo)
+	SIPDispatchRuleDeleted(ctx context.Context, dispatchRule *livekit.SIPDispatchRuleInfo)
+	SIPParticipantCreated(ctx context.Context, sipCall *livekit.SIPCallInfo)
+	SIPCallAccepted(ctx context.Context, sipCall *livekit.SIPCallInfo)
+	SIPCallStarted(ctx context.Context, sipCall *livekit.SIPCallInfo)
+	SIPCallEnded(ctx context.Context, sipCall *livekit.SIPCallInfo)
 
 	// helpers
 	AnalyticsService

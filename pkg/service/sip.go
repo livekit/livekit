@@ -17,7 +17,6 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -41,6 +40,7 @@ type SIPService struct {
 	psrpcClient rpc.SIPClient
 	store       SIPStore
 	roomService livekit.RoomService
+	ts          telemetry.TelemetryService
 }
 
 func NewSIPService(
@@ -59,50 +59,8 @@ func NewSIPService(
 		psrpcClient: psrpcClient,
 		store:       store,
 		roomService: rs,
+		ts:          ts,
 	}
-}
-
-func (s *SIPService) CreateSIPTrunk(ctx context.Context, req *livekit.CreateSIPTrunkRequest) (*livekit.SIPTrunkInfo, error) {
-	if err := EnsureSIPAdminPermission(ctx); err != nil {
-		return nil, twirpAuthError(err)
-	}
-	if s.store == nil {
-		return nil, ErrSIPNotConnected
-	}
-	if len(req.InboundNumbersRegex) != 0 {
-		return nil, fmt.Errorf("Trunks with InboundNumbersRegex are deprecated. Use InboundNumbers instead.")
-	}
-
-	// Keep ID empty, so that validation can print "<new>" instead of a non-existent ID in the error.
-	info := &livekit.SIPTrunkInfo{
-		InboundAddresses: req.InboundAddresses,
-		OutboundAddress:  req.OutboundAddress,
-		OutboundNumber:   req.OutboundNumber,
-		InboundNumbers:   req.InboundNumbers,
-		InboundUsername:  req.InboundUsername,
-		InboundPassword:  req.InboundPassword,
-		OutboundUsername: req.OutboundUsername,
-		OutboundPassword: req.OutboundPassword,
-		Name:             req.Name,
-		Metadata:         req.Metadata,
-	}
-
-	// Validate all trunks including the new one first.
-	list, err := s.store.ListSIPInboundTrunk(ctx)
-	if err != nil {
-		return nil, err
-	}
-	list = append(list, info.AsInbound())
-	if err = sip.ValidateTrunks(list); err != nil {
-		return nil, err
-	}
-
-	// Now we can generate ID and store.
-	info.SipTrunkId = guid.New(utils.SIPTrunkPrefix)
-	if err := s.store.StoreSIPTrunk(ctx, info); err != nil {
-		return nil, err
-	}
-	return info, nil
 }
 
 func (s *SIPService) CreateSIPInboundTrunk(ctx context.Context, req *livekit.CreateSIPInboundTrunkRequest) (*livekit.SIPInboundTrunkInfo, error) {
@@ -136,6 +94,9 @@ func (s *SIPService) CreateSIPInboundTrunk(ctx context.Context, req *livekit.Cre
 	if err := s.store.StoreSIPInboundTrunk(ctx, info); err != nil {
 		return nil, err
 	}
+
+	s.ts.SIPInboundTrunkCreated(ctx, info)
+
 	return info, nil
 }
 
@@ -158,6 +119,9 @@ func (s *SIPService) CreateSIPOutboundTrunk(ctx context.Context, req *livekit.Cr
 	if err := s.store.StoreSIPOutboundTrunk(ctx, info); err != nil {
 		return nil, err
 	}
+
+	s.ts.SIPOutboundTrunkCreated(ctx, info)
+
 	return info, nil
 }
 
@@ -249,11 +213,28 @@ func (s *SIPService) DeleteSIPTrunk(ctx context.Context, req *livekit.DeleteSIPT
 		return nil, ErrSIPNotConnected
 	}
 
+	info, err := s.store.LoadSIPTrunk(ctx, req.SipTrunkId)
+	if err == ErrSIPTrunkNotFound {
+		return nil, err
+	} else if err != nil {
+		// Create a stub trunk info and go forward with the deletion to be sure we delete trunks that are somehow invalid
+		info = &livekit.SIPTrunkInfo{SipTrunkId: req.SipTrunkId}
+		err = nil
+	}
+
 	if err := s.store.DeleteSIPTrunk(ctx, req.SipTrunkId); err != nil {
 		return nil, err
 	}
 
-	return &livekit.SIPTrunkInfo{SipTrunkId: req.SipTrunkId}, nil
+	switch info.Kind {
+	// Ignore legacy trunks
+	case livekit.SIPTrunkInfo_TRUNK_INBOUND:
+		s.ts.SIPInboundTrunkDeleted(ctx, info.AsInbound())
+	case livekit.SIPTrunkInfo_TRUNK_OUTBOUND:
+		s.ts.SIPOutboundTrunkDeleted(ctx, info.AsOutbound())
+	}
+
+	return info, nil
 }
 
 func (s *SIPService) CreateSIPDispatchRule(ctx context.Context, req *livekit.CreateSIPDispatchRuleRequest) (*livekit.SIPDispatchRuleInfo, error) {
@@ -290,6 +271,9 @@ func (s *SIPService) CreateSIPDispatchRule(ctx context.Context, req *livekit.Cre
 	if err := s.store.StoreSIPDispatchRule(ctx, info); err != nil {
 		return nil, err
 	}
+
+	s.ts.SIPDispatchRuleCreated(ctx, info)
+
 	return info, nil
 }
 
@@ -325,6 +309,8 @@ func (s *SIPService) DeleteSIPDispatchRule(ctx context.Context, req *livekit.Del
 	if err = s.store.DeleteSIPDispatchRule(ctx, info); err != nil {
 		return nil, err
 	}
+
+	s.ts.SIPDispatchRuleDeleted(ctx, info)
 
 	return info, nil
 }
