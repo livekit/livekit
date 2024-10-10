@@ -526,6 +526,42 @@ func (t *telemetryService) SIPOutboundTrunkDeleted(ctx context.Context, out *liv
 	})
 }
 
+func (t *telemetryService) SIPDispatchRuleCreated(ctx context.Context, dispatchRule *livekit.SIPDispatchRuleInfo) {
+	t.enqueue(func() {
+		t.SendEvent(ctx, newSIPDispatchRuleEvent(livekit.AnalyticsEventType_SIP_DISPATCH_RULE_CREATED, dispatchRule))
+	})
+}
+
+func (t *telemetryService) SIPDispatchRuleDeleted(ctx context.Context, dispatchRule *livekit.SIPDispatchRuleInfo) {
+	t.enqueue(func() {
+		t.SendEvent(ctx, newSIPDispatchRuleEvent(livekit.AnalyticsEventType_SIP_DISPATCH_RULE_DELETED, dispatchRule))
+	})
+}
+
+func (t *telemetryService) SIPParticipantCreated(ctx context.Context, sipCall *livekit.SIPCallInfo) {
+	t.enqueue(func() {
+		t.SendEvent(ctx, newSIPCallEvent(livekit.AnalyticsEventType_SIP_PARTICIPANT_CREATED, sipCall))
+	})
+}
+
+func (t *telemetryService) SIPCallAccepted(ctx context.Context, sipCall *livekit.SIPCallInfo) {
+	t.enqueue(func() {
+		t.SendEvent(ctx, newSIPCallEvent(livekit.AnalyticsEventType_SIP_CALL_ACCEPTED, sipCall))
+	})
+}
+
+func (t *telemetryService) SIPCallStarted(ctx context.Context, sipCall *livekit.SIPCallInfo) {
+	t.enqueue(func() {
+		t.SendEvent(ctx, newSIPCallEvent(livekit.AnalyticsEventType_SIP_CALL_STARTED, sipCall))
+	})
+}
+
+func (t *telemetryService) SIPCallEnded(ctx context.Context, sipCall *livekit.SIPCallInfo) {
+	t.enqueue(func() {
+		t.SendEvent(ctx, newSIPCallEvent(livekit.AnalyticsEventType_SIP_CALL_ENDED, sipCall))
+	})
+}
+
 // returns a livekit.Room with only name and sid filled out
 // returns nil if room is not found
 func (t *telemetryService) getRoomDetails(participantID livekit.ParticipantID) *livekit.Room {
@@ -603,7 +639,7 @@ func newSIPOutboundTrunkEvent(event livekit.AnalyticsEventType, out *livekit.SIP
 	return &livekit.AnalyticsEvent{
 		Type:             event,
 		Timestamp:        timestamppb.Now(),
-		SipTrunkId:       in.SipTrunkId,
+		SipTrunkId:       out.SipTrunkId,
 		SipOutboundTrunk: out,
 	}
 }
