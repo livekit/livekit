@@ -6,7 +6,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const DefaultMessageChannelSize = 200
+const DefaultMessageChannelSize = 2048
 
 type MessageChannel struct {
 	msgChan  chan proto.Message
