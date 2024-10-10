@@ -12,13 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package rtc
+package dynacast
 
 import (
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/bep/debounce"
+	"golang.org/x/exp/maps"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -157,6 +159,7 @@ func (d *DynacastManager) getOrCreateDynacastQuality(mime string) *DynacastQuali
 		return nil
 	}
 
+	mime = strings.ToLower(mime)
 	if dq := d.dynacastQuality[mime]; dq != nil {
 		return dq
 	}
@@ -165,8 +168,8 @@ func (d *DynacastManager) getOrCreateDynacastQuality(mime string) *DynacastQuali
 		MimeType: mime,
 		Logger:   d.params.Logger,
 	})
-	dq.OnSubscribedMaxQualityChange(func(maxQuality livekit.VideoQuality) {
-		d.updateMaxQualityForMime(mime, maxQuality)
+	dq.OnSubscribedMaxQualityChange(func(mimeType string, maxQuality livekit.VideoQuality) {
+		d.updateMaxQualityForMime(mimeType, maxQuality)
 	})
 	dq.Start()
 
@@ -176,12 +179,7 @@ func (d *DynacastManager) getOrCreateDynacastQuality(mime string) *DynacastQuali
 }
 
 func (d *DynacastManager) getDynacastQualitiesLocked() []*DynacastQuality {
-	dqs := make([]*DynacastQuality, 0, len(d.dynacastQuality))
-	for _, dq := range d.dynacastQuality {
-		dqs = append(dqs, dq)
-	}
-
-	return dqs
+	return maps.Values(d.dynacastQuality)
 }
 
 func (d *DynacastManager) updateMaxQualityForMime(mime string, maxQuality livekit.VideoQuality) {
