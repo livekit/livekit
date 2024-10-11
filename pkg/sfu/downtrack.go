@@ -444,7 +444,8 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		if onBinding != nil {
 			onBinding(err)
 		}
-		return webrtc.RTPCodecParameters{}, err
+		// don't return error here, as pion will not start transports if Bind fails at first answer
+		return webrtc.RTPCodecParameters{}, nil
 	}
 
 	// if a downtrack is closed before bind, it already unsubscribed from client, don't do subsequent operation and return here.
