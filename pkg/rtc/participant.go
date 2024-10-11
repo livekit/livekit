@@ -2231,12 +2231,24 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 
 	if newTrack {
 		go func() {
-			p.pubLogger.Debugw(
-				"track published",
-				"trackID", mt.ID(),
-				"track", logger.Proto(mt.ToProto()),
-				"cost", pubTime.Milliseconds(),
-			)
+			// TODO: remove this after we know where the high delay is coming from
+			if pubTime > 3*time.Second {
+				p.pubLogger.Infow(
+					"track published with high delay",
+					"trackID", mt.ID(),
+					"track", logger.Proto(mt.ToProto()),
+					"cost", pubTime.Milliseconds(),
+					"rid", track.RID(),
+					"mime", track.Codec().MimeType,
+				)
+			} else {
+				p.pubLogger.Debugw(
+					"track published",
+					"trackID", mt.ID(),
+					"track", logger.Proto(mt.ToProto()),
+					"cost", pubTime.Milliseconds(),
+				)
+			}
 
 			prometheus.RecordPublishTime(mt.Source(), mt.Kind(), pubTime, p.GetClientInfo().GetSdk(), p.Kind())
 			p.handleTrackPublished(mt)
