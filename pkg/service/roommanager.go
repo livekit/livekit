@@ -885,13 +885,13 @@ func (r *RoomManager) ListDispatch(ctx context.Context, req *livekit.ListAgentDi
 	return ret, nil
 }
 
-func (r *RoomManager) CreateDispatch(ctx context.Context, req *livekit.CreateAgentDispatchRequest) (*livekit.AgentDispatch, error) {
+func (r *RoomManager) CreateDispatch(ctx context.Context, req *livekit.AgentDispatch) (*livekit.AgentDispatch, error) {
 	room := r.GetRoom(ctx, livekit.RoomName(req.Room))
 	if room == nil {
 		return nil, ErrRoomNotFound
 	}
 
-	disp, err := room.AddAgentDispatch(req.AgentName, req.Metadata)
+	disp, err := room.AddAgentDispatch(req)
 	if err != nil {
 		return nil, err
 	}

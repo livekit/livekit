@@ -1696,7 +1696,6 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 			overrideSenderIdentity = false
 			payload.ChatMessage.Generated = true
 		}
-		shouldForwardData = true
 	case *livekit.DataPacket_Metrics:
 		if payload.Metrics == nil {
 			return
@@ -1712,6 +1711,19 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		//    and pushing it to all subscribers on some cadence and subscribers have their own cadence of
 		//    processing/batching and sending to edge clients.
 		p.metricTimestamper.Process(payload.Metrics)
+	case *livekit.DataPacket_RpcRequest:
+		if payload.RpcRequest == nil {
+			return
+		}
+		p.pubLogger.Infow("received RPC request data packet", "method", payload.RpcRequest.Method, "rpc_request_id", payload.RpcRequest.Id)
+	case *livekit.DataPacket_RpcResponse:
+		if payload.RpcResponse == nil {
+			return
+		}
+	case *livekit.DataPacket_RpcAck:
+		if payload.RpcAck == nil {
+			return
+		}
 	default:
 		p.pubLogger.Warnw("received unsupported data packet", nil, "payload", payload)
 	}
@@ -1943,7 +1955,7 @@ func (p *ParticipantImpl) onSubscribedMaxQualityChange(
 
 	// normalize the codec name
 	for _, subscribedQuality := range subscribedQualities {
-		subscribedQuality.Codec = strings.ToLower(strings.TrimLeft(subscribedQuality.Codec, "video/"))
+		subscribedQuality.Codec = strings.ToLower(strings.TrimPrefix(subscribedQuality.Codec, "video/"))
 	}
 
 	subscribedQualityUpdate := &livekit.SubscribedQualityUpdate{
@@ -2219,12 +2231,24 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 
 	if newTrack {
 		go func() {
-			p.pubLogger.Debugw(
-				"track published",
-				"trackID", mt.ID(),
-				"track", logger.Proto(mt.ToProto()),
-				"cost", pubTime.Milliseconds(),
-			)
+			// TODO: remove this after we know where the high delay is coming from
+			if pubTime > 3*time.Second {
+				p.pubLogger.Infow(
+					"track published with high delay",
+					"trackID", mt.ID(),
+					"track", logger.Proto(mt.ToProto()),
+					"cost", pubTime.Milliseconds(),
+					"rid", track.RID(),
+					"mime", track.Codec().MimeType,
+				)
+			} else {
+				p.pubLogger.Debugw(
+					"track published",
+					"trackID", mt.ID(),
+					"track", logger.Proto(mt.ToProto()),
+					"cost", pubTime.Milliseconds(),
+				)
+			}
 
 			prometheus.RecordPublishTime(mt.Source(), mt.Kind(), pubTime, p.GetClientInfo().GetSdk(), p.Kind())
 			p.handleTrackPublished(mt)
@@ -2826,6 +2850,8 @@ func (p *ParticipantImpl) UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack
 						ti.DisableDtx = true
 					}
 				}
+
+				p.pubLogger.Debugw("updated pending track", "trackID", ti.Sid, "trackInfo", logger.Proto(ti))
 			}
 		}
 	}

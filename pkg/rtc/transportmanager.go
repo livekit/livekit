@@ -478,7 +478,7 @@ func (t *TransportManager) configureICE(iceConfig *livekit.ICEConfig, reset bool
 		return
 	}
 
-	t.params.Logger.Infow("setting ICE config", "iceConfig", iceConfig)
+	t.params.Logger.Infow("setting ICE config", "iceConfig", logger.Proto(iceConfig))
 	onICEConfigChanged := t.onICEConfigChanged
 	t.iceConfig = iceConfig
 	t.lock.Unlock()

@@ -721,6 +721,9 @@ func (m *SubscriptionManager) handleSubscribedTrackClose(s *trackSubscription, i
 		}
 
 		m.params.Participant.Negotiate(false)
+	} else {
+		t := time.Now()
+		s.subscribeAt.Store(&t)
 	}
 	if relieveFromLimits {
 		m.queueReconcile(trackIDForReconcileSubscriptions)
@@ -755,16 +758,20 @@ type trackSubscription struct {
 	// this timestamp determines when failures are reported
 	subStartedAt atomic.Pointer[time.Time]
 
-	createAt time.Time
+	// the timestamp when the subscription was started, will be reset when downtrack is closed with expected resume
+	subscribeAt       atomic.Pointer[time.Time]
+	succRecordCounter atomic.Int32
 }
 
 func newTrackSubscription(subscriberID livekit.ParticipantID, trackID livekit.TrackID, l logger.Logger) *trackSubscription {
-	return &trackSubscription{
+	s := &trackSubscription{
 		subscriberID: subscriberID,
 		trackID:      trackID,
 		logger:       l,
-		createAt:     time.Now(),
 	}
+	t := time.Now()
+	s.subscribeAt.Store(&t)
+	return s
 }
 
 func (s *trackSubscription) setPublisher(publisherIdentity livekit.ParticipantIdentity, publisherID livekit.ParticipantID) {
@@ -790,6 +797,7 @@ func (s *trackSubscription) setDesired(desired bool) bool {
 		// we'll reset the timer so it has sufficient time to reconcile
 		t := time.Now()
 		s.subStartedAt.Store(&t)
+		s.subscribeAt.Store(&t)
 	}
 
 	if s.desired == desired {
@@ -822,6 +830,7 @@ func (s *trackSubscription) setHasPermission(perm bool) bool {
 		// when permission is granted, reset the timer so it has sufficient time to reconcile
 		t := time.Now()
 		s.subStartedAt.Store(&t)
+		s.subscribeAt.Store(&t)
 	}
 	return true
 }
@@ -992,10 +1001,10 @@ func (s *trackSubscription) maybeRecordSuccess(ts telemetry.TelemetryService, pI
 		return
 	}
 
-	d := time.Since(s.createAt)
+	d := time.Since(*s.subscribeAt.Load())
 	s.logger.Debugw("track subscribed", "cost", d.Milliseconds())
 	subscriber := subTrack.Subscriber()
-	prometheus.RecordSubscribeTime(mediaTrack.Source(), mediaTrack.Kind(), d, subscriber.GetClientInfo().GetSdk(), subscriber.Kind())
+	prometheus.RecordSubscribeTime(mediaTrack.Source(), mediaTrack.Kind(), d, subscriber.GetClientInfo().GetSdk(), subscriber.Kind(), int(s.succRecordCounter.Inc()))
 
 	eventSent := s.eventSent.Swap(true)
 
