@@ -82,7 +82,7 @@ type TelemetryService interface {
 	SIPDispatchRuleCreated(ctx context.Context, dispatchRule *livekit.SIPDispatchRuleInfo)
 	SIPDispatchRuleDeleted(ctx context.Context, dispatchRule *livekit.SIPDispatchRuleInfo)
 	SIPParticipantCreated(ctx context.Context, sipCall *livekit.SIPCallInfo)
-	SIPCallAccepted(ctx context.Context, sipCall *livekit.SIPCallInfo)
+	SIPCallIncoming(ctx context.Context, sipCall *livekit.SIPCallInfo)
 	SIPCallStarted(ctx context.Context, sipCall *livekit.SIPCallInfo)
 	SIPCallEnded(ctx context.Context, sipCall *livekit.SIPCallInfo)
 

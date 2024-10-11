@@ -544,9 +544,9 @@ func (t *telemetryService) SIPParticipantCreated(ctx context.Context, sipCall *l
 	})
 }
 
-func (t *telemetryService) SIPCallAccepted(ctx context.Context, sipCall *livekit.SIPCallInfo) {
+func (t *telemetryService) SIPCallIncoming(ctx context.Context, sipCall *livekit.SIPCallInfo) {
 	t.enqueue(func() {
-		t.SendEvent(ctx, newSIPCallEvent(livekit.AnalyticsEventType_SIP_CALL_ACCEPTED, sipCall))
+		t.SendEvent(ctx, newSIPCallEvent(livekit.AnalyticsEventType_SIP_CALL_INCOMING, sipCall))
 	})
 }
 
