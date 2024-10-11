@@ -759,7 +759,8 @@ type trackSubscription struct {
 	subStartedAt atomic.Pointer[time.Time]
 
 	// the timestamp when the subscription was started, will be reset when downtrack is closed with expected resume
-	subscribeAt atomic.Pointer[time.Time]
+	subscribeAt       atomic.Pointer[time.Time]
+	succRecordCounter atomic.Int32
 }
 
 func newTrackSubscription(subscriberID livekit.ParticipantID, trackID livekit.TrackID, l logger.Logger) *trackSubscription {
@@ -1003,7 +1004,7 @@ func (s *trackSubscription) maybeRecordSuccess(ts telemetry.TelemetryService, pI
 	d := time.Since(*s.subscribeAt.Load())
 	s.logger.Debugw("track subscribed", "cost", d.Milliseconds())
 	subscriber := subTrack.Subscriber()
-	prometheus.RecordSubscribeTime(mediaTrack.Source(), mediaTrack.Kind(), d, subscriber.GetClientInfo().GetSdk(), subscriber.Kind())
+	prometheus.RecordSubscribeTime(mediaTrack.Source(), mediaTrack.Kind(), d, subscriber.GetClientInfo().GetSdk(), subscriber.Kind(), int(s.succRecordCounter.Inc()))
 
 	eventSent := s.eventSent.Swap(true)
 
