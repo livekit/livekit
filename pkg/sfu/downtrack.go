@@ -1266,6 +1266,7 @@ func (d *DownTrack) SeedState(state DownTrackState) {
 }
 
 func (d *DownTrack) StopWriteAndGetState() DownTrackState {
+	d.params.Logger.Debugw("stopping write")
 	d.bindLock.Lock()
 	d.writable.Store(false)
 	d.writeStopped.Store(true)
