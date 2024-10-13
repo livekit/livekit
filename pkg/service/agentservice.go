@@ -38,6 +38,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
+	"github.com/livekit/protocol/utils"
 	"github.com/livekit/psrpc"
 )
 
@@ -88,7 +89,7 @@ func DispatchAgentWorkerSignal(c agent.SignalConn, h agent.WorkerSignalHandler, 
 	req, _, err := c.ReadWorkerMessage()
 	if err != nil {
 		if IsWebSocketCloseError(err) {
-			l.Infow("worker closed WS connection", "wsError", err)
+			l.Debugw("worker closed WS connection", "wsError", err)
 		} else {
 			l.Errorw("error reading from websocket", err)
 		}
@@ -199,7 +200,7 @@ func NewAgentHandler(
 ) *AgentHandler {
 	return &AgentHandler{
 		agentServer:      agentServer,
-		logger:           logger,
+		logger:           logger.WithComponent("agents"),
 		workers:          make(map[string]*agent.Worker),
 		jobToWorker:      make(map[livekit.JobID]*agent.Worker),
 		namespaceWorkers: make(map[workerKey][]*agent.Worker),
@@ -271,9 +272,15 @@ func (h *AgentHandler) registerWorker(w *agent.Worker) {
 	h.namespaceWorkers[key] = append(workers, w)
 	h.mu.Unlock()
 
+	h.logger.Infow("worker registered",
+		"namespace", w.Namespace,
+		"jobType", w.JobType,
+		"agentName", w.AgentName,
+		"workerID", w.ID,
+	)
 	if created {
-		h.logger.Infow("initial worker registered", "namespace", w.Namespace, "jobType", w.JobType, "agentName", w.AgentName)
 		err := h.agentServer.PublishWorkerRegistered(context.Background(), agent.DefaultHandlerNamespace, &emptypb.Empty{})
+		// TODO: when this happens, should we disconnect the worker so it'll retry?
 		if err != nil {
 			w.Logger().Errorw("failed to publish worker registered", err, "namespace", w.Namespace, "jobType", w.JobType, "agentName", w.AgentName)
 		}
@@ -300,7 +307,12 @@ func (h *AgentHandler) deregisterWorker(w *agent.Worker) {
 	if len(workers) > 1 {
 		h.namespaceWorkers[key] = slices.Delete(workers, index, index+1)
 	} else {
-		h.logger.Debugw("last worker deregistered", "namespace", w.Namespace, "jobType", w.JobType, "agentName", w.AgentName)
+		h.logger.Infow("last worker deregistered",
+			"namespace", w.Namespace,
+			"jobType", w.JobType,
+			"agentName", w.AgentName,
+			"workerID", w.ID,
+		)
 		delete(h.namespaceWorkers, key)
 
 		topic := agent.GetAgentTopic(w.AgentName, w.Namespace)
@@ -336,43 +348,47 @@ func (h *AgentHandler) deregisterJob(jobID livekit.JobID) {
 }
 
 func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*rpc.JobRequestResponse, error) {
+	logger := h.logger.WithUnlikelyValues(
+		"jobID", job.Id,
+		"namespace", job.Namespace,
+		"agentName", job.AgentName,
+	)
+	if job.Room != nil {
+		logger = logger.WithValues("room", job.Room.Name, "roomID", job.Room.Sid)
+	}
+	if job.Participant != nil {
+		logger = logger.WithValues("participant", job.Participant.Identity)
+	}
+
 	key := workerKey{job.AgentName, job.Namespace, job.Type}
 	attempted := make(map[*agent.Worker]struct{})
 	for {
 		selected, err := h.selectWorkerWeightedByLoad(key, attempted)
 		if err != nil {
-			return nil, psrpc.NewError(psrpc.DeadlineExceeded, err)
+			logger.Warnw("no worker available to handle job", err)
+			return nil, psrpc.NewError(psrpc.ResourceExhausted, err)
 		}
 
+		logger := logger.WithValues("workerID", selected.ID)
 		attempted[selected] = struct{}{}
 
-		values := []interface{}{
-			"jobID", job.Id,
-			"namespace", job.Namespace,
-			"agentName", job.AgentName,
-			"workerID", selected.ID,
-		}
-		if job.Room != nil {
-			values = append(values, "room", job.Room.Name, "roomID", job.Room.Sid)
-		}
-		if job.Participant != nil {
-			values = append(values, "participant", job.Participant.Identity)
-		}
-		h.logger.Debugw("assigning job", values...)
 		state, err := selected.AssignJob(ctx, job)
 		if err != nil {
-			if errors.Is(err, agent.ErrWorkerNotAvailable) {
+			retry := utils.ErrorIsOneOf(err, agent.ErrWorkerNotAvailable, agent.ErrWorkerClosed)
+			logger.Warnw("failed to assign job to worker", err, "retry", retry)
+			if retry {
 				continue // Try another worker
 			}
 			return nil, err
 		}
+		logger.Infow("assigned job to worker")
 		h.mu.Lock()
 		h.jobToWorker[livekit.JobID(job.Id)] = selected
 		h.mu.Unlock()
 
 		err = h.agentServer.RegisterJobTerminateTopic(job.Id)
 		if err != nil {
-			h.logger.Errorw("failes registering JobTerminate handler", err, values...)
+			logger.Errorw("failed to register JobTerminate handler", err)
 		}
 
 		return &rpc.JobRequestResponse{
