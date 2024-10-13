@@ -360,7 +360,15 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) (*livekit.JobS
 
 		job.State.ParticipantIdentity = res.ParticipantIdentity
 
-		token, err := pagent.BuildAgentToken(w.apiKey, w.apiSecret, job.Room.Name, res.ParticipantIdentity, res.ParticipantName, res.ParticipantMetadata, w.Permissions)
+		token, err := pagent.BuildAgentToken(
+			w.apiKey,
+			w.apiSecret,
+			job.Room.Name,
+			res.ParticipantIdentity,
+			res.ParticipantName,
+			res.ParticipantMetadata,
+			w.Permissions,
+		)
 		if err != nil {
 			w.logger.Errorw("failed to build agent token", err)
 			return nil, err
@@ -438,7 +446,7 @@ func (w *Worker) Close() {
 		return
 	}
 
-	w.logger.Infow("closing worker")
+	w.logger.Infow("closing worker", "workerID", w.ID, "jobType", w.JobType, "agentName", w.AgentName)
 
 	close(w.closed)
 	w.cancel()
@@ -453,7 +461,7 @@ func (w *Worker) HandleAvailability(res *livekit.AvailabilityResponse) error {
 	jobID := livekit.JobID(res.JobId)
 	availCh, ok := w.availability[jobID]
 	if !ok {
-		w.logger.Warnw("received availability response for unknown job", nil, "jobId", jobID)
+		w.logger.Warnw("received availability response for unknown job", nil, "jobID", jobID)
 		return nil
 	}
 
@@ -519,7 +527,7 @@ func (w *Worker) HandleSimulateJob(simulate *livekit.SimulateJobRequest) error {
 	go func() {
 		_, err := w.AssignJob(w.ctx, job)
 		if err != nil {
-			w.logger.Errorw("unable to simulate job", err, "jobId", job.Id)
+			w.logger.Errorw("unable to simulate job", err, "jobID", job.Id)
 		}
 	}()
 

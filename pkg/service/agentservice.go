@@ -89,7 +89,7 @@ func DispatchAgentWorkerSignal(c agent.SignalConn, h agent.WorkerSignalHandler, 
 	req, _, err := c.ReadWorkerMessage()
 	if err != nil {
 		if IsWebSocketCloseError(err) {
-			l.Infow("worker closed WS connection", "wsError", err)
+			l.Debugw("worker closed WS connection", "wsError", err)
 		} else {
 			l.Errorw("error reading from websocket", err)
 		}
@@ -272,9 +272,15 @@ func (h *AgentHandler) registerWorker(w *agent.Worker) {
 	h.namespaceWorkers[key] = append(workers, w)
 	h.mu.Unlock()
 
+	h.logger.Infow("worker registered",
+		"namespace", w.Namespace,
+		"jobType", w.JobType,
+		"agentName", w.AgentName,
+		"workerID", w.ID,
+	)
 	if created {
-		h.logger.Infow("initial worker registered", "namespace", w.Namespace, "jobType", w.JobType, "agentName", w.AgentName)
 		err := h.agentServer.PublishWorkerRegistered(context.Background(), agent.DefaultHandlerNamespace, &emptypb.Empty{})
+		// TODO: when this happens, should we disconnect the worker so it'll retry?
 		if err != nil {
 			w.Logger().Errorw("failed to publish worker registered", err, "namespace", w.Namespace, "jobType", w.JobType, "agentName", w.AgentName)
 		}
@@ -301,7 +307,12 @@ func (h *AgentHandler) deregisterWorker(w *agent.Worker) {
 	if len(workers) > 1 {
 		h.namespaceWorkers[key] = slices.Delete(workers, index, index+1)
 	} else {
-		h.logger.Debugw("last worker deregistered", "namespace", w.Namespace, "jobType", w.JobType, "agentName", w.AgentName)
+		h.logger.Infow("last worker deregistered",
+			"namespace", w.Namespace,
+			"jobType", w.JobType,
+			"agentName", w.AgentName,
+			"workerID", w.ID,
+		)
 		delete(h.namespaceWorkers, key)
 
 		topic := agent.GetAgentTopic(w.AgentName, w.Namespace)
@@ -359,9 +370,10 @@ func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*rpc.J
 		if job.Participant != nil {
 			values = append(values, "participant", job.Participant.Identity)
 		}
-		h.logger.Debugw("assigning job", values...)
+		h.logger.Infow("assigning agent job", values...)
 		state, err := selected.AssignJob(ctx, job)
 		if err != nil {
+			h.logger.Warnw("failed to assign agent job", err, values...)
 			if utils.ErrorIsOneOf(err, agent.ErrWorkerNotAvailable, agent.ErrWorkerClosed) {
 				continue // Try another worker
 			}
@@ -373,7 +385,7 @@ func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*rpc.J
 
 		err = h.agentServer.RegisterJobTerminateTopic(job.Id)
 		if err != nil {
-			h.logger.Errorw("failes registering JobTerminate handler", err, values...)
+			h.logger.Errorw("failed to register JobTerminate handler", err, values...)
 		}
 
 		return &rpc.JobRequestResponse{
