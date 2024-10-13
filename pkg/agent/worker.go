@@ -360,7 +360,15 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) (*livekit.JobS
 
 		job.State.ParticipantIdentity = res.ParticipantIdentity
 
-		token, err := pagent.BuildAgentToken(w.apiKey, w.apiSecret, job.Room.Name, res.ParticipantIdentity, res.ParticipantName, res.ParticipantMetadata, w.Permissions)
+		token, err := pagent.BuildAgentToken(
+			w.apiKey,
+			w.apiSecret,
+			job.Room.Name,
+			res.ParticipantIdentity,
+			res.ParticipantName,
+			res.ParticipantMetadata,
+			w.Permissions,
+		)
 		if err != nil {
 			w.logger.Errorw("failed to build agent token", err)
 			return nil, err
@@ -438,7 +446,7 @@ func (w *Worker) Close() {
 		return
 	}
 
-	w.logger.Infow("closing worker")
+	w.logger.Infow("closing worker", "workerID", w.ID, "jobType", w.JobType, "agentName", w.AgentName)
 
 	close(w.closed)
 	w.cancel()
