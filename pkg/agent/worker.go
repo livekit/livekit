@@ -453,7 +453,7 @@ func (w *Worker) HandleAvailability(res *livekit.AvailabilityResponse) error {
 	jobID := livekit.JobID(res.JobId)
 	availCh, ok := w.availability[jobID]
 	if !ok {
-		w.logger.Warnw("received availability response for unknown job", nil, "jobId", jobID)
+		w.logger.Warnw("received availability response for unknown job", nil, "jobID", jobID)
 		return nil
 	}
 
@@ -519,7 +519,7 @@ func (w *Worker) HandleSimulateJob(simulate *livekit.SimulateJobRequest) error {
 	go func() {
 		_, err := w.AssignJob(w.ctx, job)
 		if err != nil {
-			w.logger.Errorw("unable to simulate job", err, "jobId", job.Id)
+			w.logger.Errorw("unable to simulate job", err, "jobID", job.Id)
 		}
 	}()
 
