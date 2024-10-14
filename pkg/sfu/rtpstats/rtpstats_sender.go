@@ -1013,13 +1013,15 @@ func (r lockedRTPStatsSenderLogEncoder) MarshalLogObject(e zapcore.ObjectEncoder
 		return nil
 	}
 
-	if err := r.rtpStatsBase.marshalLogObject(
+	packetsExpected := getPacketsExpected(r.extStartSN, r.extHighestSN)
+	elapsedSeconds, err := r.rtpStatsBase.marshalLogObject(
 		e,
-		getPacketsExpected(r.extStartSN, r.extHighestSN),
+		packetsExpected,
 		r.getPacketsSeenMinusPadding(r.extStartSN, r.extHighestSN),
 		r.extStartTS,
 		r.extHighestTS,
-	); err != nil {
+	)
+	if err != nil {
 		return err
 	}
 
@@ -1033,6 +1035,8 @@ func (r lockedRTPStatsSenderLogEncoder) MarshalLogObject(e zapcore.ObjectEncoder
 	e.AddReflected("lastRR", r.lastRR)
 	e.AddUint64("extHighestSNFromRR", r.extHighestSNFromRR)
 	e.AddUint64("packetsLostFromRR", r.packetsLostFromRR)
+	e.AddFloat64("packetsLostFromRRRate", float64(r.packetsLostFromRR)/elapsedSeconds)
+	e.AddFloat32("packetLostFromRRPercentage", float32(r.packetsLostFromRR)/float32(packetsExpected)*100.0)
 	e.AddFloat64("jitterFromRR", r.jitterFromRR)
 	e.AddFloat64("maxJitterFromRR", r.maxJitterFromRR)
 
