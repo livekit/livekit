@@ -1769,10 +1769,11 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			}
 			if len(rr.Reports) > 0 {
 				d.listenerLock.RLock()
-				for _, l := range d.receiverReportListeners {
+				rrListeners := d.receiverReportListeners
+				d.listenerLock.RUnlock()
+				for _, l := range rrListeners {
 					l(d, rr)
 				}
-				d.listenerLock.RUnlock()
 			}
 
 		case *rtcp.TransportLayerNack:
