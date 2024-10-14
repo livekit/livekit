@@ -261,13 +261,13 @@ func (cs *ConnectionStats) updateScoreFromReceiverReport(at time.Time) (float32,
 
 	// delta stat duration could be large due to not receiving receiver report for a long time (for example, due to mute),
 	// adjust to streaming start if necessary
-	agg := toAggregateDeltaInfo(streams)
 	if streamingStartedAt.After(cs.params.SenderProvider.GetLastReceiverReportTime()) {
 		// last receiver report was before streaming started, wait for next one
 		mos, _ := cs.scorer.GetMOSAndQuality()
 		return mos, streams
 	}
 
+	agg := toAggregateDeltaInfo(streams)
 	if streamingStartedAt.After(agg.StartTime) {
 		agg.StartTime = streamingStartedAt
 	}
