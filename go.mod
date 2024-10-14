@@ -2,8 +2,6 @@ module github.com/livekit/livekit-server
 
 go 1.22.7
 
-replace github.com/livekit/protocol => ../protocol
-
 require (
 	github.com/bep/debounce v1.2.1
 	github.com/d5/tengo/v2 v2.17.0
@@ -21,7 +19,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20240730083616-559fa5ece598
-	github.com/livekit/protocol v1.24.1-0.20241014105216-a3ae28b3c5e1
+	github.com/livekit/protocol v1.24.1-0.20241014220402-b75479104c82
 	github.com/livekit/psrpc v0.6.1-0.20240924010758-9f0a4268a3b9
 	github.com/mackerelio/go-osstat v0.2.5
 	github.com/magefile/mage v1.15.0
