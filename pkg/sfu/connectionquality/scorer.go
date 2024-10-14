@@ -39,6 +39,10 @@ const (
 	cDistanceWeight = float64(35.0) // each spatial layer missed drops a quality level
 
 	cUnmuteTimeThreshold = float64(0.5)
+
+	cPPSQuantization         = float64(2)
+	cPPSMinReadings          = 10
+	cModeCalculationInterval = 2 * time.Minute
 )
 
 var (
@@ -211,7 +215,10 @@ type qualityScorer struct {
 	pausedAt  time.Time
 	resumedAt time.Time
 
-	maxPPS float64
+	ppsHistogram     [250]int
+	numPPSReadings   int
+	ppsMode          int
+	modeCalculatedAt time.Time
 
 	aggregateBitrate *utils.TimedAggregator[int64]
 	layerDistance    *utils.TimedAggregator[float64]
@@ -227,6 +234,7 @@ func newQualityScorer(params qualityScorerParams) *qualityScorer {
 		layerDistance: utils.NewTimedAggregator[float64](utils.TimedAggregatorParams{
 			CapNegativeValues: true,
 		}),
+		modeCalculatedAt: time.Now().Add(-cModeCalculationInterval),
 	}
 }
 
@@ -455,7 +463,7 @@ func (q *qualityScorer) updateAtLocked(stat *windowStat, at time.Time) {
 		"quality", currCQ,
 		"stat", stat,
 		"packetLossWeight", plw,
-		"maxPPS", q.maxPPS,
+		"modePPS", q.ppsMode*int(cPPSQuantization),
 		"expectedBits", expectedBits,
 		"expectedDistance", expectedDistance,
 	)
@@ -532,23 +540,43 @@ func (q *qualityScorer) getPacketLossWeight(stat *windowStat) float64 {
 		return q.params.PacketLossWeight
 	}
 
-	// packet loss is weighted by comparing against max packet rate seen.
+	// packet loss is weighted by comparing against mode of packet rate seen.
 	// this is to handle situations like DTX in audio and variable bit rate tracks like screen share.
-	// and the effect of loss is not pronounced in those scenarios (audio silence, statis screen share).
+	// and the effect of loss is not pronounced in those scenarios (audio silence, static screen share).
 	// for example, DTX typically uses only 5% of packets of full packet rate. at that rate,
 	// packet loss weight is reduced to ~22% of configured weight (i. e. sqrt(0.05) * configured weight)
 	pps := float64(stat.packets) / stat.duration.Seconds()
-	if pps > q.maxPPS {
-		q.maxPPS = pps
-		q.params.Logger.Debugw("updating maxPPS", "expected", stat.packets, "duration", stat.duration.Seconds(), "pps", pps)
+	ppsQuantized := int(pps/cPPSQuantization + 0.5)
+	if ppsQuantized < len(q.ppsHistogram)-1 {
+		q.ppsHistogram[ppsQuantized]++
+	} else {
+		q.ppsHistogram[len(q.ppsHistogram)-1]++
+	}
+	q.numPPSReadings++
+
+	// calculate mode sparingly, do it under the following conditions
+	//  1. minimum number of readings available (AND)
+	//  2. enough time has elapsed since last calculation
+	if q.numPPSReadings > cPPSMinReadings && time.Since(q.modeCalculatedAt) > cModeCalculationInterval {
+		q.ppsMode = 0
+		for i := 0; i < len(q.ppsHistogram); i++ {
+			if q.ppsHistogram[i] > q.ppsMode {
+				q.ppsMode = i
+			}
+		}
+		q.modeCalculatedAt = time.Now()
+		q.params.Logger.Debugw("updating pps mode", "expected", stat.packets, "duration", stat.duration.Seconds(), "pps", pps, "ppsMode", q.ppsMode)
 	}
 
-	if q.maxPPS == 0 {
+	if q.ppsMode == 0 || q.ppsMode == len(q.ppsHistogram)-1 {
 		return q.params.PacketLossWeight
 	}
 
-	packetRatio := pps / q.maxPPS
-	return packetRatio * packetRatio * q.params.PacketLossWeight
+	packetRatio := pps / (float64(q.ppsMode) * cPPSQuantization)
+	if packetRatio > 1.0 {
+		packetRatio = 1.0
+	}
+	return math.Sqrt(packetRatio) * q.params.PacketLossWeight
 }
 
 func (q *qualityScorer) GetScoreAndQuality() (float32, livekit.ConnectionQuality) {

@@ -704,7 +704,7 @@ func (r lockedRTPStatsReceiverLogEncoder) MarshalLogObject(e zapcore.ObjectEncod
 
 	extStartSN, extHighestSN := r.sequenceNumber.GetExtendedStart(), r.sequenceNumber.GetExtendedHighest()
 	extStartTS, extHighestTS := r.timestamp.GetExtendedStart(), r.timestamp.GetExtendedHighest()
-	if err := r.rtpStatsBase.marshalLogObject(
+	if _, err := r.rtpStatsBase.marshalLogObject(
 		e,
 		getPacketsExpected(extStartSN, extHighestSN),
 		r.getPacketsSeenMinusPadding(extStartSN, extHighestSN),

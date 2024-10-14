@@ -470,14 +470,14 @@ func (r *rtpStatsBase) marshalLogObject(
 	e zapcore.ObjectEncoder,
 	packetsExpected, packetsSeenMinusPadding uint64,
 	extStartTS, extHighestTS uint64,
-) error {
+) (float64, error) {
 	if r == nil {
-		return nil
+		return 0, nil
 	}
 
 	elapsedSeconds, err := r.rtpStatsBaseLite.marshalLogObject(e, packetsExpected, packetsSeenMinusPadding)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	e.AddTime("firstTime", time.Unix(0, r.firstTime))
@@ -521,7 +521,7 @@ func (r *rtpStatsBase) marshalLogObject(
 	e.AddObject("ntpReportDrift", wrappedRTPDriftLogger{ntpReportDrift})
 	e.AddObject("receivedReportDrift", wrappedRTPDriftLogger{receivedReportDrift})
 	e.AddObject("rebasedReportDrift", wrappedRTPDriftLogger{rebasedReportDrift})
-	return nil
+	return elapsedSeconds, nil
 }
 
 func (r *rtpStatsBase) toProto(
