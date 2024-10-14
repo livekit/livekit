@@ -22,6 +22,8 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/sip"
+	"github.com/livekit/psrpc"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 // matchSIPTrunk finds a SIP Trunk definition matching the request.
@@ -99,4 +101,28 @@ func (s *IOInfoService) GetSIPTrunkAuthentication(ctx context.Context, req *rpc.
 		Username:   trunk.AuthUsername,
 		Password:   trunk.AuthPassword,
 	}, nil
+}
+
+func (s *IOInfoService) UpdateSIPCallState(ctx context.Context, req *rpc.UpdateSIPCallStateRequest) (*emptypb.Empty, error) {
+	log := logger.GetLogger()
+	log = log.WithValues("callID", req.CallInfo.CallId, "callStatus", req.CallInfo.CallStatus.String())
+
+	log.Infow("SIP call state updated")
+
+	if req.CallInfo == nil {
+		return nil, psrpc.NewErrorf(psrpc.InvalidArgument, "no call info in UpdateSIPCallState request")
+	}
+
+	switch req.CallInfo.CallStatus {
+	case livekit.SIPCallStatus_SCS_PARTICIPANT_JOINED:
+		s.telemetry.SIPParticipantCreated(ctx, req.CallInfo)
+	case livekit.SIPCallStatus_SCS_CALL_INCOMING:
+		s.telemetry.SIPCallIncoming(ctx, req.CallInfo)
+	case livekit.SIPCallStatus_SCS_ACTIVE:
+		s.telemetry.SIPCallStarted(ctx, req.CallInfo)
+	case livekit.SIPCallStatus_SCS_DISCONNECTED:
+		s.telemetry.SIPCallEnded(ctx, req.CallInfo)
+	}
+
+	return &emptypb.Empty{}, nil
 }
