@@ -33,12 +33,12 @@ const (
 	cMaxScore = float64(100.0)
 	cMinScore = float64(30.0)
 
-	increaseFactor = float64(0.4) // slower increase, i. e. when score is recovering move up slower -> conservative
-	decreaseFactor = float64(0.7) // faster decrease, i. e. when score is dropping move down faster -> aggressive to be responsive to quality drops
+	cIncreaseFactor = float64(0.4) // slower increase, i. e. when score is recovering move up slower -> conservative
+	cDecreaseFactor = float64(0.8) // faster decrease, i. e. when score is dropping move down faster -> aggressive to be responsive to quality drops
 
-	distanceWeight = float64(35.0) // each spatial layer missed drops a quality level
+	cDistanceWeight = float64(35.0) // each spatial layer missed drops a quality level
 
-	unmuteTimeThreshold = float64(0.5)
+	cUnmuteTimeThreshold = float64(0.5)
 )
 
 var (
@@ -88,8 +88,8 @@ func (w *windowStat) calculatePacketScore(plw float64, includeRTT bool, includeJ
 	// discount out-of-order packets from loss to deal with a scenario like
 	// 1. up stream has loss
 	// 2. down stream forwards with loss/hole in sequence number
-	// 3. down stream client reports a certain number of loss
-	// 4. while processing that, up stream could have retransmitted missing packets
+	// 3. down stream client reports a certain number of loss via RTCP RR
+	// 4. while processing that RTCP RR, up stream could have retransmitted missing packets
 	// 5. those retransmitted packets are forwarded,
 	//    - server's view: it has forwarded those packets
 	//    - client's view: it had not seen those packets when sending RTCP RR
@@ -397,7 +397,7 @@ func (q *qualityScorer) updateAtLocked(stat *windowStat, at time.Time) {
 
 	plw := q.getPacketLossWeight(stat)
 	reason := "none"
-	var score float64
+	var score, packetScore, bitrateScore, layerScore float64
 	if stat.packets+stat.packetsPadding == 0 {
 		if !stat.lastRTCPAt.IsZero() && at.Sub(stat.lastRTCPAt) > stat.duration {
 			reason = "dry"
@@ -407,9 +407,9 @@ func (q *qualityScorer) updateAtLocked(stat *windowStat, at time.Time) {
 			score = qualityTransitionScore[livekit.ConnectionQuality_POOR]
 		}
 	} else {
-		packetScore := stat.calculatePacketScore(plw, q.params.IncludeRTT, q.params.IncludeJitter)
-		bitrateScore := stat.calculateBitrateScore(expectedBits, q.params.EnableBitrateScore)
-		layerScore := math.Max(math.Min(cMaxScore, cMaxScore-(expectedDistance*distanceWeight)), 0.0)
+		packetScore = stat.calculatePacketScore(plw, q.params.IncludeRTT, q.params.IncludeJitter)
+		bitrateScore = stat.calculateBitrateScore(expectedBits, q.params.EnableBitrateScore)
+		layerScore = math.Max(math.Min(cMaxScore, cMaxScore-(expectedDistance*cDistanceWeight)), 0.0)
 
 		minScore := math.Min(packetScore, bitrateScore)
 		minScore = math.Min(minScore, layerScore)
@@ -428,9 +428,9 @@ func (q *qualityScorer) updateAtLocked(stat *windowStat, at time.Time) {
 			score = layerScore
 		}
 
-		factor := increaseFactor
+		factor := cIncreaseFactor
 		if score < q.score {
-			factor = decreaseFactor
+			factor = cDecreaseFactor
 		}
 		score = factor*score + (1.0-factor)*q.score
 		if score < cMinScore {
@@ -440,23 +440,35 @@ func (q *qualityScorer) updateAtLocked(stat *windowStat, at time.Time) {
 			score = cMinScore
 		}
 	}
+
 	prevCQ := scoreToConnectionQuality(q.score)
 	currCQ := scoreToConnectionQuality(score)
-	if utils.IsConnectionQualityLower(prevCQ, currCQ) {
-		q.params.Logger.Debugw(
-			"quality drop",
-			"reason", reason,
-			"prevScore", q.score,
-			"prevQuality", prevCQ,
-			"prevStat", &q.stat,
-			"score", score,
-			"quality", currCQ,
-			"stat", stat,
-			"packetLossWeight", plw,
-			"maxPPS", q.maxPPS,
-			"expectedBits", expectedBits,
-			"expectedDistance", expectedDistance,
-		)
+	ulgr := q.params.Logger.WithUnlikelyValues(
+		"reason", reason,
+		"prevScore", q.score,
+		"prevQuality", prevCQ,
+		"prevStat", &q.stat,
+		"score", score,
+		"packetScore", packetScore,
+		"layerScore", layerScore,
+		"bitrateScore", bitrateScore,
+		"quality", currCQ,
+		"stat", stat,
+		"packetLossWeight", plw,
+		"maxPPS", q.maxPPS,
+		"expectedBits", expectedBits,
+		"expectedDistance", expectedDistance,
+	)
+	switch {
+	case utils.IsConnectionQualityLower(prevCQ, currCQ):
+		ulgr.Debugw("quality drop")
+	case utils.IsConnectionQualityHigher(prevCQ, currCQ):
+		ulgr.Debugw("quality rise")
+	default:
+		packets := stat.packets + stat.packetsPadding
+		if packets != 0 && (stat.packetsLost*100/packets) > 10 {
+			ulgr.Debugw("quality hold - high loss")
+		}
 	}
 
 	q.score = score
@@ -504,7 +516,7 @@ func (q *qualityScorer) isUnmutedEnough(at time.Time) bool {
 
 	sinceLastUpdate := at.Sub(q.lastUpdateAt)
 
-	return validDuration.Seconds()/sinceLastUpdate.Seconds() > unmuteTimeThreshold
+	return validDuration.Seconds()/sinceLastUpdate.Seconds() > cUnmuteTimeThreshold
 }
 
 func (q *qualityScorer) isLayerMuted() bool {
