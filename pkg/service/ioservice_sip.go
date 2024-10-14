@@ -114,13 +114,13 @@ func (s *IOInfoService) UpdateSIPCallState(ctx context.Context, req *rpc.UpdateS
 	}
 
 	switch req.CallInfo.CallStatus {
-	case livekit.SIPCallStatus_SIP_CALL_STATUS_PARTICIPANT_JOINED:
+	case livekit.SIPCallStatus_SCS_PARTICIPANT_JOINED:
 		s.telemetry.SIPParticipantCreated(ctx, req.CallInfo)
-	case livekit.SIPCallStatus_SIP_CALL_STATUS_CALL_INCOMING:
+	case livekit.SIPCallStatus_SCS_CALL_INCOMING:
 		s.telemetry.SIPCallIncoming(ctx, req.CallInfo)
-	case livekit.SIPCallStatus_SIP_CALL_STATUS_ACTIVE:
+	case livekit.SIPCallStatus_SCS_ACTIVE:
 		s.telemetry.SIPCallStarted(ctx, req.CallInfo)
-	case livekit.SIPCallStatus_SIP_CALL_STATUS_DISCONNECTED:
+	case livekit.SIPCallStatus_SCS_DISCONNECTED:
 		s.telemetry.SIPCallEnded(ctx, req.CallInfo)
 	}
 
