@@ -383,7 +383,7 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
 		MimeType:       codecs[0].MimeType, // LK-TODO have to notify on codec change
-		IsFECEnabled:   strings.EqualFold(codecs[0].MimeType, webrtc.MimeTypeOpus) && strings.Contains(strings.ToLower(codecs[0].SDPFmtpLine), "fec"),
+		IsFECEnabled:   strings.Contains(strings.ToLower(codecs[0].SDPFmtpLine), "fec"),
 		SenderProvider: d,
 		Logger:         d.params.Logger.WithValues("direction", "down"),
 	})
@@ -1769,10 +1769,11 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			}
 			if len(rr.Reports) > 0 {
 				d.listenerLock.RLock()
-				for _, l := range d.receiverReportListeners {
+				rrListeners := d.receiverReportListeners
+				d.listenerLock.RUnlock()
+				for _, l := range rrListeners {
 					l(d, rr)
 				}
-				d.listenerLock.RUnlock()
 			}
 
 		case *rtcp.TransportLayerNack:

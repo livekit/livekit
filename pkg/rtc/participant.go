@@ -181,7 +181,7 @@ type ParticipantImpl struct {
 	isPublisher atomic.Bool
 
 	sessionStartRecorded atomic.Bool
-	lastActiveAt         time.Time
+	lastActiveAt         atomic.Pointer[time.Time]
 	// when first connected
 	connectedAt time.Time
 	// timer that's set when disconnect is detected on primary PC
@@ -1518,15 +1518,17 @@ func (p *ParticipantImpl) setupSubscriptionManager() {
 }
 
 func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
+	if state == livekit.ParticipantInfo_ACTIVE {
+		t := time.Now()
+		p.lastActiveAt.CompareAndSwap(nil, &t)
+	}
 	oldState := p.state.Swap(state).(livekit.ParticipantInfo_State)
 	if oldState == state {
 		return
 	}
 
 	if state == livekit.ParticipantInfo_DISCONNECTED && oldState == livekit.ParticipantInfo_ACTIVE {
-		prometheus.RecordSessionDuration(int(p.ProtocolVersion()), time.Since(p.lastActiveAt))
-	} else if state == livekit.ParticipantInfo_ACTIVE {
-		p.lastActiveAt = time.Now()
+		prometheus.RecordSessionDuration(int(p.ProtocolVersion()), time.Since(*p.lastActiveAt.Load()))
 	}
 	p.params.Logger.Debugw("updating participant state", "state", state.String())
 	p.dirty.Store(true)
@@ -2221,6 +2223,13 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 		}
 		mt = p.addMediaTrack(signalCid, track.ID(), ti)
 		newTrack = true
+
+		// if the addTrackRequest is sent before participant active then it means the client tries to publish
+		// before fully connected, in this case we only record the time when the participant is active since
+		// we want this metric to represent the time cost by pubilshing.
+		if activeAt := p.lastActiveAt.Load(); activeAt != nil && createdAt.Before(*activeAt) {
+			createdAt = *activeAt
+		}
 		pubTime = time.Since(createdAt)
 		p.dirty.Store(true)
 	}
