@@ -40,10 +40,9 @@ const (
 
 	cUnmuteTimeThreshold = float64(0.5)
 
-	cPPSQuantization            = float64(2)
-	cPPSMinReadings             = 10
-	cModeCalculationInterval    = 2 * time.Minute
-	cModeCalculationForceFactor = 2
+	cPPSQuantization         = float64(2)
+	cPPSMinReadings          = 10
+	cModeCalculationInterval = 2 * time.Minute
 )
 
 var (
