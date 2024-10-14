@@ -883,7 +883,7 @@ func (r *RTPStatsSender) getSenderSnapshot(startTime time.Time, s *senderSnapsho
 		headerBytesDuplicate: r.headerBytesDuplicate,
 		packetsOutOfOrder:    s.packetsOutOfOrder + s.intervalStats.packetsOutOfOrder,
 		packetsLostFeed:      r.packetsLost,
-		packetsLost:      r.packetsLostFromRR,
+		packetsLost:          r.packetsLostFromRR,
 		frames:               s.frames + s.intervalStats.frames,
 		nacks:                r.nacks,
 		plis:                 r.plis,
