@@ -239,22 +239,26 @@ func newQualityScorer(params qualityScorerParams) *qualityScorer {
 	}
 }
 
-func (q *qualityScorer) StartAt(packetLossWeight float64, at time.Time) {
-	q.lock.Lock()
-	defer q.lock.Unlock()
-
+func (q *qualityScorer) startAtLocked(packetLossWeight float64, at time.Time) {
 	q.packetLossWeight = packetLossWeight
 	q.lastUpdateAt = at
 }
 
-func (q *qualityScorer) Start(packetLossWeight float64) {
-	q.StartAt(packetLossWeight, time.Now())
-}
-
-func (q *qualityScorer) UpdateMuteAt(isMuted bool, at time.Time) {
+func (q *qualityScorer) StartAt(packetLossWeight float64, at time.Time) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
 
+	q.startAtLocked(packetLossWeight, at)
+}
+
+func (q *qualityScorer) Start(packetLossWeight float64) {
+	q.lock.Lock()
+	defer q.lock.Unlock()
+
+	q.startAtLocked(packetLossWeight, time.Now())
+}
+
+func (q *qualityScorer) updateMuteAtLocked(isMuted bool, at time.Time) {
 	if isMuted {
 		q.mutedAt = at
 		// muting when LOST should not push quality to EXCELLENT
@@ -266,30 +270,43 @@ func (q *qualityScorer) UpdateMuteAt(isMuted bool, at time.Time) {
 	}
 }
 
+func (q *qualityScorer) UpdateMuteAt(isMuted bool, at time.Time) {
+	q.lock.Lock()
+	defer q.lock.Unlock()
+
+	q.updateMuteAtLocked(isMuted, at)
+}
+
 func (q *qualityScorer) UpdateMute(isMuted bool) {
-	q.UpdateMuteAt(isMuted, time.Now())
+	q.lock.Lock()
+	defer q.lock.Unlock()
+
+	q.updateMuteAtLocked(isMuted, time.Now())
+}
+
+func (q *qualityScorer) addBitrateTransitionAtLocked(bitrate int64, at time.Time) {
+	q.aggregateBitrate.AddSampleAt(bitrate, at)
 }
 
 func (q *qualityScorer) AddBitrateTransitionAt(bitrate int64, at time.Time) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
 
-	q.aggregateBitrate.AddSampleAt(bitrate, at)
+	q.addBitrateTransitionAtLocked(bitrate, at)
 }
 
 func (q *qualityScorer) AddBitrateTransition(bitrate int64) {
-	q.AddBitrateTransitionAt(bitrate, time.Now())
-}
-
-func (q *qualityScorer) UpdateLayerMuteAt(isMuted bool, at time.Time) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
 
+	q.addBitrateTransitionAtLocked(bitrate, time.Now())
+}
+
+func (q *qualityScorer) updateLayerMuteAtLocked(isMuted bool, at time.Time) {
 	if isMuted {
 		if !q.isLayerMuted() {
 			q.aggregateBitrate.Reset()
 			q.layerDistance.Reset()
-
 			q.layerMutedAt = at
 			q.score = cMaxScore
 		}
@@ -300,19 +317,25 @@ func (q *qualityScorer) UpdateLayerMuteAt(isMuted bool, at time.Time) {
 	}
 }
 
-func (q *qualityScorer) UpdateLayerMute(isMuted bool) {
-	q.UpdateLayerMuteAt(isMuted, time.Now())
-}
-
-func (q *qualityScorer) UpdatePauseAt(isPaused bool, at time.Time) {
+func (q *qualityScorer) UpdateLayerMuteAt(isMuted bool, at time.Time) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
 
+	q.updateLayerMuteAtLocked(isMuted, at)
+}
+
+func (q *qualityScorer) UpdateLayerMute(isMuted bool) {
+	q.lock.Lock()
+	defer q.lock.Unlock()
+
+	q.updateLayerMuteAtLocked(isMuted, time.Now())
+}
+
+func (q *qualityScorer) updatePauseAtLocked(isPaused bool, at time.Time) {
 	if isPaused {
 		if !q.isPaused() {
 			q.aggregateBitrate.Reset()
 			q.layerDistance.Reset()
-
 			q.pausedAt = at
 			q.score = cMinScore
 		}
@@ -323,25 +346,39 @@ func (q *qualityScorer) UpdatePauseAt(isPaused bool, at time.Time) {
 	}
 }
 
+func (q *qualityScorer) UpdatePauseAt(isPaused bool, at time.Time) {
+	q.lock.Lock()
+	defer q.lock.Unlock()
+
+	q.updatePauseAtLocked(isPaused, at)
+}
+
 func (q *qualityScorer) UpdatePause(isPaused bool) {
-	q.UpdatePauseAt(isPaused, time.Now())
+	q.lock.Lock()
+	defer q.lock.Unlock()
+
+	q.updatePauseAtLocked(isPaused, time.Now())
+}
+
+func (q *qualityScorer) addLayerTransitionAtLocked(distance float64, at time.Time) {
+	q.layerDistance.AddSampleAt(distance, at)
 }
 
 func (q *qualityScorer) AddLayerTransitionAt(distance float64, at time.Time) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
 
-	q.layerDistance.AddSampleAt(distance, at)
+	q.addLayerTransitionAtLocked(distance, at)
 }
 
 func (q *qualityScorer) AddLayerTransition(distance float64) {
-	q.AddLayerTransitionAt(distance, time.Now())
-}
-
-func (q *qualityScorer) UpdateAt(stat *windowStat, at time.Time) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
 
+	q.addLayerTransitionAtLocked(distance, time.Now())
+}
+
+func (q *qualityScorer) updateAtLocked(stat *windowStat, at time.Time) {
 	// always update transitions
 	expectedBits, _, err := q.aggregateBitrate.GetAggregateAndRestartAt(at)
 	if err != nil {
@@ -448,8 +485,18 @@ func (q *qualityScorer) UpdateAt(stat *windowStat, at time.Time) {
 	q.lastUpdateAt = at
 }
 
+func (q *qualityScorer) UpdateAt(stat *windowStat, at time.Time) {
+	q.lock.Lock()
+	defer q.lock.Unlock()
+
+	q.updateAtLocked(stat, at)
+}
+
 func (q *qualityScorer) Update(stat *windowStat) {
-	q.UpdateAt(stat, time.Now())
+	q.lock.Lock()
+	defer q.lock.Unlock()
+
+	q.updateAtLocked(stat, time.Now())
 }
 
 func (q *qualityScorer) isMuted() bool {
