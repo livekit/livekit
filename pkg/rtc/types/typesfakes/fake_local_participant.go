@@ -7210,6 +7210,14 @@ func (fake *FakeLocalParticipant) WriteSubscriberRTCPReturnsOnCall(i int, result
 	}{result1}
 }
 
+func (fake *FakeLocalParticipant) DeliverStoredReliableDataPackets() {
+	fake.recordInvocation("DeliverStoredReliableDataPackets", []interface{}{})
+}
+
+func (fake *FakeLocalParticipant) StoreReliableDataPacketForLaterDelivery(arg1 *livekit.DataPacket) {
+	fake.recordInvocation("StoreReliableDataPacketForLaterDelivery", []interface{}{arg1})
+}
+
 func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
