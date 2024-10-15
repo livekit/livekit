@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -60,8 +61,6 @@ func TestConnectionQuality(t *testing.T) {
 	trp := newTestReceiverProvider()
 	t.Run("quality scorer operation", func(t *testing.T) {
 		cs := NewConnectionStats(ConnectionStatsParams{
-			MimeType:           "audio/opus",
-			IsFECEnabled:       false,
 			IncludeRTT:         true,
 			IncludeJitter:      true,
 			EnableBitrateScore: true,
@@ -71,7 +70,7 @@ func TestConnectionQuality(t *testing.T) {
 
 		duration := 5 * time.Second
 		now := time.Now()
-		cs.StartAt(&livekit.TrackInfo{Type: livekit.TrackType_AUDIO}, now.Add(-duration))
+		cs.StartAt(webrtc.MimeTypeOpus, false, now.Add(-duration))
 		cs.UpdateMuteAt(false, now.Add(-1*time.Second))
 
 		// no data and not enough unmute time should return default state which is EXCELLENT quality
@@ -477,8 +476,6 @@ func TestConnectionQuality(t *testing.T) {
 
 	t.Run("quality scorer dependent rtt", func(t *testing.T) {
 		cs := NewConnectionStats(ConnectionStatsParams{
-			MimeType:         "audio/opus",
-			IsFECEnabled:     false,
 			IncludeRTT:       false,
 			IncludeJitter:    true,
 			ReceiverProvider: trp,
@@ -487,7 +484,7 @@ func TestConnectionQuality(t *testing.T) {
 
 		duration := 5 * time.Second
 		now := time.Now()
-		cs.StartAt(&livekit.TrackInfo{Type: livekit.TrackType_AUDIO}, now.Add(-duration))
+		cs.StartAt(webrtc.MimeTypeOpus, false, now.Add(-duration))
 		cs.UpdateMuteAt(false, now.Add(-1*time.Second))
 
 		// RTT does not knock quality down because it is dependent and hence not taken into account
@@ -512,8 +509,6 @@ func TestConnectionQuality(t *testing.T) {
 
 	t.Run("quality scorer dependent jitter", func(t *testing.T) {
 		cs := NewConnectionStats(ConnectionStatsParams{
-			MimeType:         "audio/opus",
-			IsFECEnabled:     false,
 			IncludeRTT:       true,
 			IncludeJitter:    false,
 			ReceiverProvider: trp,
@@ -522,7 +517,7 @@ func TestConnectionQuality(t *testing.T) {
 
 		duration := 5 * time.Second
 		now := time.Now()
-		cs.StartAt(&livekit.TrackInfo{Type: livekit.TrackType_AUDIO}, now.Add(-duration))
+		cs.StartAt(webrtc.MimeTypeOpus, false, now.Add(-duration))
 		cs.UpdateMuteAt(false, now.Add(-1*time.Second))
 
 		// Jitter does not knock quality down because it is dependent and hence not taken into account
@@ -684,8 +679,6 @@ func TestConnectionQuality(t *testing.T) {
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
 				cs := NewConnectionStats(ConnectionStatsParams{
-					MimeType:         tc.mimeType,
-					IsFECEnabled:     tc.isFECEnabled,
 					IncludeRTT:       true,
 					IncludeJitter:    true,
 					ReceiverProvider: trp,
@@ -694,7 +687,7 @@ func TestConnectionQuality(t *testing.T) {
 
 				duration := 5 * time.Second
 				now := time.Now()
-				cs.StartAt(&livekit.TrackInfo{Type: livekit.TrackType_AUDIO}, now.Add(-duration))
+				cs.StartAt(tc.mimeType, tc.isFECEnabled, now.Add(-duration))
 
 				for _, eq := range tc.expectedQualities {
 					trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
@@ -784,8 +777,6 @@ func TestConnectionQuality(t *testing.T) {
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
 				cs := NewConnectionStats(ConnectionStatsParams{
-					MimeType:           "video/vp8",
-					IsFECEnabled:       false,
 					IncludeRTT:         true,
 					IncludeJitter:      true,
 					EnableBitrateScore: true,
@@ -795,7 +786,7 @@ func TestConnectionQuality(t *testing.T) {
 
 				duration := 5 * time.Second
 				now := time.Now()
-				cs.StartAt(&livekit.TrackInfo{Type: livekit.TrackType_VIDEO}, now)
+				cs.StartAt(webrtc.MimeTypeVP8, false, now)
 
 				for _, tr := range tc.transitions {
 					cs.AddBitrateTransitionAt(tr.bitrate, now.Add(tr.offset))
@@ -879,8 +870,6 @@ func TestConnectionQuality(t *testing.T) {
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
 				cs := NewConnectionStats(ConnectionStatsParams{
-					MimeType:         "video/vp8",
-					IsFECEnabled:     false,
 					IncludeRTT:       true,
 					IncludeJitter:    true,
 					ReceiverProvider: trp,
@@ -889,7 +878,7 @@ func TestConnectionQuality(t *testing.T) {
 
 				duration := 5 * time.Second
 				now := time.Now()
-				cs.StartAt(&livekit.TrackInfo{Type: livekit.TrackType_VIDEO}, now)
+				cs.StartAt(webrtc.MimeTypeVP8, false, now)
 
 				for _, tr := range tc.transitions {
 					cs.AddLayerTransitionAt(tr.distance, now.Add(tr.offset))
