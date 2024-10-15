@@ -144,20 +144,19 @@ func (r *RTPStatsReceiver) Update(
 	var resSN utils.WrapAroundUpdateResult[uint64]
 	var gapSN int64
 	var resTS utils.WrapAroundUpdateResult[uint64]
-	var timeSinceHighest int64
+	var gapTS int64
 	var expectedTSJump int64
 	var tsRolloverCount int
 	var snRolloverCount int
 
 	logger := r.logger.WithUnlikelyValues(
-		"resSN", resSN,
-		"gapSN", gapSN,
-		"resTS", resTS,
-		"gapTS", int64(resTS.ExtendedVal-resTS.PreExtendedHighest),
-		"timeSinceHighest", time.Duration(timeSinceHighest),
-		"snRolloverCount", snRolloverCount,
-		"expectedTSJump", expectedTSJump,
-		"tsRolloverCount", tsRolloverCount,
+		"resSN", &resSN,
+		"gapSN", &gapSN,
+		"resTS", &resTS,
+		"gapTS", &gapTS,
+		"snRolloverCount", &snRolloverCount,
+		"expectedTSJump", &expectedTSJump,
+		"tsRolloverCount", &tsRolloverCount,
 		"packetTime", time.Unix(0, packetTime),
 		"sequenceNumber", sequenceNumber,
 		"timestamp", timestamp,
@@ -202,7 +201,8 @@ func (r *RTPStatsReceiver) Update(
 		}
 		gapSN = int64(resSN.ExtendedVal - resSN.PreExtendedHighest)
 
-		timeSinceHighest = packetTime - r.highestTime
+		timeSinceHighest := packetTime - r.highestTime
+		logger = logger.WithValues("timeSinceHighest", time.Duration(timeSinceHighest))
 		tsRolloverCount = r.getTSRolloverCount(timeSinceHighest, timestamp)
 		if tsRolloverCount >= 0 {
 			logger.Warnw("potential time stamp roll over", nil)
@@ -212,7 +212,7 @@ func (r *RTPStatsReceiver) Update(
 			flowState.IsNotHandled = true
 			return
 		}
-		gapTS := int64(resTS.ExtendedVal - resTS.PreExtendedHighest)
+		gapTS = int64(resTS.ExtendedVal - resTS.PreExtendedHighest)
 
 		// it is possible to receive old packets in two different scenarios
 		// as it is not possible to detect how far to roll back, ignore old packets
