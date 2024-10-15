@@ -367,6 +367,7 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) (*livekit.JobS
 			res.ParticipantIdentity,
 			res.ParticipantName,
 			res.ParticipantMetadata,
+			res.ParticipantAttributes,
 			w.Permissions,
 		)
 		if err != nil {

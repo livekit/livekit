@@ -163,3 +163,8 @@ func (s *IOInfoService) UpdateMetrics(ctx context.Context, req *rpc.UpdateMetric
 	)
 	return &emptypb.Empty{}, nil
 }
+
+func (s *IOInfoService) UpdateSIPCallState(ctx context.Context, req *rpc.UpdateSIPCallStateRequest) (*emptypb.Empty, error) {
+	// TODO: placeholder
+	return &emptypb.Empty{}, nil
+}
