@@ -25,6 +25,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	protoutils "github.com/livekit/protocol/utils"
 )
 
@@ -144,29 +145,32 @@ func (r *RTPStatsReceiver) Update(
 	var resSN utils.WrapAroundUpdateResult[uint64]
 	var gapSN int64
 	var resTS utils.WrapAroundUpdateResult[uint64]
-	var timeSinceHighest int64
+	var gapTS int64
 	var expectedTSJump int64
+	var timeSinceHighest int64
 	var tsRolloverCount int
 	var snRolloverCount int
 
-	logger := r.logger.WithUnlikelyValues(
-		"resSN", resSN,
-		"gapSN", gapSN,
-		"resTS", resTS,
-		"gapTS", int64(resTS.ExtendedVal-resTS.PreExtendedHighest),
-		"timeSinceHighest", time.Duration(timeSinceHighest),
-		"snRolloverCount", snRolloverCount,
-		"expectedTSJump", expectedTSJump,
-		"tsRolloverCount", tsRolloverCount,
-		"packetTime", time.Unix(0, packetTime),
-		"sequenceNumber", sequenceNumber,
-		"timestamp", timestamp,
-		"marker", marker,
-		"hdrSize", hdrSize,
-		"payloadSize", payloadSize,
-		"paddingSize", paddingSize,
-		"rtpStats", lockedRTPStatsReceiverLogEncoder{r},
-	)
+	logger := func() logger.UnlikelyLogger {
+		return r.logger.WithUnlikelyValues(
+			"resSN", resSN,
+			"gapSN", gapSN,
+			"resTS", resTS,
+			"gapTS", gapTS,
+			"snRolloverCount", snRolloverCount,
+			"expectedTSJump", expectedTSJump,
+			"tsRolloverCount", tsRolloverCount,
+			"packetTime", time.Unix(0, packetTime),
+			"timeSinceHighest", time.Duration(timeSinceHighest),
+			"sequenceNumber", sequenceNumber,
+			"timestamp", timestamp,
+			"marker", marker,
+			"hdrSize", hdrSize,
+			"payloadSize", payloadSize,
+			"paddingSize", paddingSize,
+			"rtpStats", lockedRTPStatsReceiverLogEncoder{r},
+		)
+	}
 
 	if !r.initialized {
 		if payloadSize == 0 {
@@ -205,14 +209,14 @@ func (r *RTPStatsReceiver) Update(
 		timeSinceHighest = packetTime - r.highestTime
 		tsRolloverCount = r.getTSRolloverCount(timeSinceHighest, timestamp)
 		if tsRolloverCount >= 0 {
-			logger.Warnw("potential time stamp roll over", nil)
+			logger().Warnw("potential time stamp roll over", nil)
 		}
 		resTS = r.timestamp.Rollover(timestamp, tsRolloverCount)
 		if resTS.IsUnhandled {
 			flowState.IsNotHandled = true
 			return
 		}
-		gapTS := int64(resTS.ExtendedVal - resTS.PreExtendedHighest)
+		gapTS = int64(resTS.ExtendedVal - resTS.PreExtendedHighest)
 
 		// it is possible to receive old packets in two different scenarios
 		// as it is not possible to detect how far to roll back, ignore old packets
@@ -229,7 +233,7 @@ func (r *RTPStatsReceiver) Update(
 			if gapTS > int64(float64(expectedTSJump)*cTSJumpTooHighFactor) {
 				r.sequenceNumber.UndoUpdate(resSN)
 				r.timestamp.UndoUpdate(resTS)
-				logger.Warnw("dropping old packet, timestamp", nil)
+				logger().Warnw("dropping old packet, timestamp", nil)
 				flowState.IsNotHandled = true
 				return
 			}
@@ -240,7 +244,7 @@ func (r *RTPStatsReceiver) Update(
 		if gapTS < 0 && gapSN > 0 {
 			r.sequenceNumber.UndoUpdate(resSN)
 			r.timestamp.UndoUpdate(resTS)
-			logger.Warnw("dropping old packet, sequence number", nil)
+			logger().Warnw("dropping old packet, sequence number", nil)
 			flowState.IsNotHandled = true
 			return
 		}
@@ -259,7 +263,7 @@ func (r *RTPStatsReceiver) Update(
 				return
 			}
 
-			logger.Warnw("forcing sequence number rollover", nil)
+			logger().Warnw("forcing sequence number rollover", nil)
 		}
 	}
 	gapSN = int64(resSN.ExtendedVal - resSN.PreExtendedHighest)
@@ -287,7 +291,7 @@ func (r *RTPStatsReceiver) Update(
 		if !flowState.IsDuplicate && -gapSN >= cSequenceNumberLargeJumpThreshold {
 			r.largeJumpNegativeCount++
 			if (r.largeJumpNegativeCount-1)%100 == 0 {
-				logger.Warnw(
+				logger().Warnw(
 					"large sequence number gap negative", nil,
 					"count", r.largeJumpNegativeCount,
 				)
@@ -297,7 +301,7 @@ func (r *RTPStatsReceiver) Update(
 		if gapSN >= cSequenceNumberLargeJumpThreshold {
 			r.largeJumpCount++
 			if (r.largeJumpCount-1)%100 == 0 {
-				logger.Warnw(
+				logger().Warnw(
 					"large sequence number gap", nil,
 					"count", r.largeJumpCount,
 				)
@@ -307,7 +311,7 @@ func (r *RTPStatsReceiver) Update(
 		if resTS.ExtendedVal < resTS.PreExtendedHighest {
 			r.timeReversedCount++
 			if (r.timeReversedCount-1)%100 == 0 {
-				logger.Warnw(
+				logger().Warnw(
 					"time reversed", nil,
 					"count", r.timeReversedCount,
 				)
