@@ -69,7 +69,7 @@ type windowStat struct {
 	lastRTCPAt        time.Time
 }
 
-func (w *windowStat) calculatePacketScore(plw float64, includeRTT bool, includeJitter bool) float64 {
+func (w *windowStat) calculatePacketScore(aplw float64, includeRTT bool, includeJitter bool) float64 {
 	// this is based on simplified E-model based on packet loss, rtt, jitter as
 	// outlined at https://www.pingman.com/kb/article/how-is-mos-calculated-in-pingplotter-pro-50.html.
 	effectiveDelay := 0.0
@@ -119,7 +119,7 @@ func (w *windowStat) calculatePacketScore(plw float64, includeRTT bool, includeJ
 	if w.packets+w.packetsPadding > 0 {
 		lossEffect = float64(actualLost) * 100.0 / float64(w.packets+w.packetsPadding)
 	}
-	lossEffect *= plw
+	lossEffect *= aplw
 
 	score := cMaxScore - delayEffect - lossEffect
 	if score < 0.0 {
@@ -190,7 +190,6 @@ func (w *windowStat) MarshalLogObject(e zapcore.ObjectEncoder) error {
 // ------------------------------------------
 
 type qualityScorerParams struct {
-	PacketLossWeight   float64
 	IncludeRTT         bool
 	IncludeJitter      bool
 	EnableBitrateScore bool
@@ -202,6 +201,8 @@ type qualityScorer struct {
 
 	lock         sync.RWMutex
 	lastUpdateAt time.Time
+
+	packetLossWeight float64
 
 	score float64
 	stat  windowStat
@@ -238,22 +239,23 @@ func newQualityScorer(params qualityScorerParams) *qualityScorer {
 	}
 }
 
-func (q *qualityScorer) startAtLocked(at time.Time) {
+func (q *qualityScorer) startAtLocked(packetLossWeight float64, at time.Time) {
+	q.packetLossWeight = packetLossWeight
 	q.lastUpdateAt = at
 }
 
-func (q *qualityScorer) StartAt(at time.Time) {
+func (q *qualityScorer) StartAt(packetLossWeight float64, at time.Time) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
 
-	q.startAtLocked(at)
+	q.startAtLocked(packetLossWeight, at)
 }
 
-func (q *qualityScorer) Start() {
+func (q *qualityScorer) Start(packetLossWeight float64) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
 
-	q.startAtLocked(time.Now())
+	q.startAtLocked(packetLossWeight, time.Now())
 }
 
 func (q *qualityScorer) updateMuteAtLocked(isMuted bool, at time.Time) {
@@ -403,7 +405,7 @@ func (q *qualityScorer) updateAtLocked(stat *windowStat, at time.Time) {
 		return
 	}
 
-	plw := q.getPacketLossWeight(stat)
+	aplw := q.getAdjustedPacketLossWeight(stat)
 	reason := "none"
 	var score, packetScore, bitrateScore, layerScore float64
 	if stat.packets+stat.packetsPadding == 0 {
@@ -415,7 +417,7 @@ func (q *qualityScorer) updateAtLocked(stat *windowStat, at time.Time) {
 			score = qualityTransitionScore[livekit.ConnectionQuality_POOR]
 		}
 	} else {
-		packetScore = stat.calculatePacketScore(plw, q.params.IncludeRTT, q.params.IncludeJitter)
+		packetScore = stat.calculatePacketScore(aplw, q.params.IncludeRTT, q.params.IncludeJitter)
 		bitrateScore = stat.calculateBitrateScore(expectedBits, q.params.EnableBitrateScore)
 		layerScore = math.Max(math.Min(cMaxScore, cMaxScore-(expectedDistance*cDistanceWeight)), 0.0)
 
@@ -462,7 +464,8 @@ func (q *qualityScorer) updateAtLocked(stat *windowStat, at time.Time) {
 		"bitrateScore", bitrateScore,
 		"quality", currCQ,
 		"stat", stat,
-		"packetLossWeight", plw,
+		"packetLossWeight", q.packetLossWeight,
+		"adjustedPacketLossWeight", aplw,
 		"modePPS", q.ppsMode*int(cPPSQuantization),
 		"expectedBits", expectedBits,
 		"expectedDistance", expectedDistance,
@@ -535,9 +538,9 @@ func (q *qualityScorer) isPaused() bool {
 	return !q.pausedAt.IsZero() && (q.resumedAt.IsZero() || q.pausedAt.After(q.resumedAt))
 }
 
-func (q *qualityScorer) getPacketLossWeight(stat *windowStat) float64 {
+func (q *qualityScorer) getAdjustedPacketLossWeight(stat *windowStat) float64 {
 	if stat == nil || stat.duration <= 0 {
-		return q.params.PacketLossWeight
+		return q.packetLossWeight
 	}
 
 	// packet loss is weighted by comparing against mode of packet rate seen.
@@ -569,14 +572,14 @@ func (q *qualityScorer) getPacketLossWeight(stat *windowStat) float64 {
 	}
 
 	if q.ppsMode == 0 || q.ppsMode == len(q.ppsHistogram)-1 {
-		return q.params.PacketLossWeight
+		return q.packetLossWeight
 	}
 
 	packetRatio := pps / (float64(q.ppsMode) * cPPSQuantization)
 	if packetRatio > 1.0 {
 		packetRatio = 1.0
 	}
-	return math.Sqrt(packetRatio) * q.params.PacketLossWeight
+	return math.Sqrt(packetRatio) * q.packetLossWeight
 }
 
 func (q *qualityScorer) GetScoreAndQuality() (float32, livekit.ConnectionQuality) {

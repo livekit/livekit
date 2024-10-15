@@ -49,8 +49,6 @@ type ConnectionStatsSenderProvider interface {
 
 type ConnectionStatsParams struct {
 	UpdateInterval     time.Duration
-	MimeType           string
-	IsFECEnabled       bool
 	IncludeRTT         bool
 	IncludeJitter      bool
 	EnableBitrateScore bool
@@ -61,6 +59,8 @@ type ConnectionStatsParams struct {
 
 type ConnectionStats struct {
 	params ConnectionStatsParams
+
+	codecMimeType atomic.String
 
 	isStarted atomic.Bool
 	isVideo   atomic.Bool
@@ -80,7 +80,6 @@ func NewConnectionStats(params ConnectionStatsParams) *ConnectionStats {
 	return &ConnectionStats{
 		params: params,
 		scorer: newQualityScorer(qualityScorerParams{
-			PacketLossWeight:   getPacketLossWeight(params.MimeType, params.IsFECEnabled), // LK-TODO: have to notify codec change?
 			IncludeRTT:         params.IncludeRTT,
 			IncludeJitter:      params.IncludeJitter,
 			EnableBitrateScore: params.EnableBitrateScore,
@@ -89,27 +88,20 @@ func NewConnectionStats(params ConnectionStatsParams) *ConnectionStats {
 	}
 }
 
-func (cs *ConnectionStats) start(trackInfo *livekit.TrackInfo) {
-	cs.isVideo.Store(trackInfo.Type == livekit.TrackType_VIDEO)
+func (cs *ConnectionStats) StartAt(codecMimeType string, isFECEnabled bool, at time.Time) {
+	if cs.isStarted.Swap(true) {
+		return
+	}
+
+	cs.isVideo.Store(strings.HasPrefix(strings.ToLower(codecMimeType), "video/"))
+	cs.codecMimeType.Store(codecMimeType)
+	cs.scorer.StartAt(getPacketLossWeight(codecMimeType, isFECEnabled), at)
+
 	go cs.updateStatsWorker()
 }
 
-func (cs *ConnectionStats) StartAt(trackInfo *livekit.TrackInfo, at time.Time) {
-	if cs.isStarted.Swap(true) {
-		return
-	}
-
-	cs.scorer.StartAt(at)
-	cs.start(trackInfo)
-}
-
-func (cs *ConnectionStats) Start(trackInfo *livekit.TrackInfo) {
-	if cs.isStarted.Swap(true) {
-		return
-	}
-
-	cs.scorer.Start()
-	cs.start(trackInfo)
+func (cs *ConnectionStats) Start(codecMimeType string, isFECEnabled bool) {
+	cs.StartAt(codecMimeType, isFECEnabled, time.Now())
 }
 
 func (cs *ConnectionStats) Close() {
@@ -348,7 +340,7 @@ func (cs *ConnectionStats) getStat() {
 		cs.onStatsUpdate(cs, &livekit.AnalyticsStat{
 			Score:   score,
 			Streams: analyticsStreams,
-			Mime:    cs.params.MimeType,
+			Mime:    cs.codecMimeType.Load(),
 		})
 	}
 }

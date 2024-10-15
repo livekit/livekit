@@ -2750,31 +2750,6 @@ func (p *ParticipantImpl) SupportsTransceiverReuse() bool {
 	return p.ProtocolVersion().SupportsTransceiverReuse() && !p.SupportsSyncStreamID()
 }
 
-func codecsFromMediaDescription(m *sdp.MediaDescription) (out []sdp.Codec, err error) {
-	s := &sdp.SessionDescription{
-		MediaDescriptions: []*sdp.MediaDescription{m},
-	}
-
-	for _, payloadStr := range m.MediaName.Formats {
-		payloadType, err := strconv.ParseUint(payloadStr, 10, 8)
-		if err != nil {
-			return nil, err
-		}
-
-		codec, err := s.GetCodecForPayloadType(uint8(payloadType))
-		if err != nil {
-			if payloadType == 0 {
-				continue
-			}
-			return nil, err
-		}
-
-		out = append(out, codec)
-	}
-
-	return out, nil
-}
-
 func (p *ParticipantImpl) SendDataPacket(kind livekit.DataPacket_Kind, encoded []byte) error {
 	if p.State() != livekit.ParticipantInfo_ACTIVE {
 		return ErrDataChannelUnavailable
@@ -2927,4 +2902,31 @@ func (p *ParticipantImpl) HandleMetrics(senderParticipantID livekit.ParticipantI
 	}
 
 	return p.TransportManager.SendDataPacket(livekit.DataPacket_RELIABLE, dpData)
+}
+
+// ----------------------------------------------
+
+func codecsFromMediaDescription(m *sdp.MediaDescription) (out []sdp.Codec, err error) {
+	s := &sdp.SessionDescription{
+		MediaDescriptions: []*sdp.MediaDescription{m},
+	}
+
+	for _, payloadStr := range m.MediaName.Formats {
+		payloadType, err := strconv.ParseUint(payloadStr, 10, 8)
+		if err != nil {
+			return nil, err
+		}
+
+		codec, err := s.GetCodecForPayloadType(uint8(payloadType))
+		if err != nil {
+			if payloadType == 0 {
+				continue
+			}
+			return nil, err
+		}
+
+		out = append(out, codec)
+	}
+
+	return out, nil
 }

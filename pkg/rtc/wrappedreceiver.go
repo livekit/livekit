@@ -22,6 +22,7 @@ import (
 
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
+	"golang.org/x/exp/slices"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -126,9 +127,7 @@ func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) boo
 }
 
 func (r *WrappedReceiver) Codecs() []webrtc.RTPCodecParameters {
-	codecs := make([]webrtc.RTPCodecParameters, len(r.codecs))
-	copy(codecs, r.codecs)
-	return codecs
+	return slices.Clone(r.codecs)
 }
 
 func (r *WrappedReceiver) DeleteDownTrack(participantID livekit.ParticipantID) {
