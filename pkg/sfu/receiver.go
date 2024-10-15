@@ -230,7 +230,7 @@ func NewWebRTCReceiver(
 	w.connectionStats.Start(
 		w.codec.MimeType,
 		// TODO: technically not correct to declare FEC on when RED. Need the primary codec's fmtp line to check.
-		strings.EqualFold(w.codec.MimeType, MimeTypeAudioRed) || strings.Contains(strings.ToLower(w.codec.SDPFmtpLine), "fec"),
+		strings.EqualFold(w.codec.MimeType, MimeTypeAudioRed) || strings.Contains(strings.ToLower(w.codec.SDPFmtpLine), "useinbandfec=1"),
 	)
 
 	w.streamTrackerManager = NewStreamTrackerManager(logger, trackInfo, w.isSVC, w.codec.ClockRate, trackersConfig)

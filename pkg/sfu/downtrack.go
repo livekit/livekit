@@ -481,7 +481,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		if strings.EqualFold(matchedUpstreamCodec.MimeType, MimeTypeAudioRed) {
 			d.isRED = true
 			for _, c := range d.upstreamCodecs {
-				isFECEnabled = strings.Contains(strings.ToLower(c.SDPFmtpLine), "fec")
+				isFECEnabled = strings.Contains(strings.ToLower(c.SDPFmtpLine), "useinbandfec=1")
 
 				// assume upstream primary codec is opus since we only support it for audio now
 				if strings.EqualFold(c.MimeType, webrtc.MimeTypeOpus) {
