@@ -38,6 +38,7 @@ type DynacastManager struct {
 	params DynacastManagerParams
 
 	lock                          sync.RWMutex
+	mimeCases                     map[string]string           // mime lower case => given case mapping // TODO-REMOVE-AFTER-NORMALIZED-DEPLOY
 	dynacastQuality               map[string]*DynacastQuality // mime type => DynacastQuality
 	maxSubscribedQuality          map[string]livekit.VideoQuality
 	committedMaxSubscribedQuality map[string]livekit.VideoQuality
@@ -58,6 +59,7 @@ func NewDynacastManager(params DynacastManagerParams) *DynacastManager {
 	}
 	d := &DynacastManager{
 		params:                        params,
+		mimeCases:                     make(map[string]string),
 		dynacastQuality:               make(map[string]*DynacastQuality),
 		maxSubscribedQuality:          make(map[string]livekit.VideoQuality),
 		committedMaxSubscribedQuality: make(map[string]livekit.VideoQuality),
@@ -159,13 +161,13 @@ func (d *DynacastManager) getOrCreateDynacastQuality(mime string) *DynacastQuali
 		return nil
 	}
 
-	mime = strings.ToLower(mime)
-	if dq := d.dynacastQuality[mime]; dq != nil {
+	normalizedMime := strings.ToLower(mime)
+	if dq := d.dynacastQuality[normalizedMime]; dq != nil {
 		return dq
 	}
 
 	dq := NewDynacastQuality(DynacastQualityParams{
-		MimeType: mime,
+		MimeType: normalizedMime,
 		Logger:   d.params.Logger,
 	})
 	dq.OnSubscribedMaxQualityChange(func(mimeType string, maxQuality livekit.VideoQuality) {
@@ -173,8 +175,10 @@ func (d *DynacastManager) getOrCreateDynacastQuality(mime string) *DynacastQuali
 	})
 	dq.Start()
 
-	d.dynacastQuality[mime] = dq
-
+	d.dynacastQuality[normalizedMime] = dq
+	if normalizedMime != mime {
+		d.mimeCases[normalizedMime] = mime
+	}
 	return dq
 }
 
@@ -283,6 +287,12 @@ func (d *DynacastManager) enqueueSubscribedQualityChange() {
 			CodecMime: mime,
 			Quality:   quality,
 		})
+		if rawMime, ok := d.mimeCases[mime]; ok {
+			maxSubscribedQualities = append(maxSubscribedQualities, types.SubscribedCodecQuality{
+				CodecMime: rawMime,
+				Quality:   quality,
+			})
+		}
 
 		if quality == livekit.VideoQuality_OFF {
 			subscribedCodecs = append(subscribedCodecs, &livekit.SubscribedCodec{
