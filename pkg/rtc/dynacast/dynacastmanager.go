@@ -295,6 +295,18 @@ func (d *DynacastManager) enqueueSubscribedQualityChange() {
 				CodecMime: rawMime,
 				Quality:   quality,
 			})
+		} else {
+			if strings.HasPrefix(mime, "video/") {
+				// TODO-REMOVE-AFTER-NORMALIZED-DEPLOY
+				// always add an upper case entry to address a bug with prefix trimming in older versions
+				parts := strings.Split(mime, "/")
+				if len(parts) == 2 {
+					maxSubscribedQualities = append(maxSubscribedQualities, types.SubscribedCodecQuality{
+						CodecMime: parts[0] + "/" + strings.ToUpper(parts[1]),
+						Quality:   quality,
+					})
+				}
+			}
 		}
 
 		if quality == livekit.VideoQuality_OFF {
