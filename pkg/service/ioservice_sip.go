@@ -17,6 +17,7 @@ package service
 import (
 	"context"
 	"errors"
+	"net/netip"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -31,7 +32,7 @@ func (s *IOInfoService) matchSIPTrunk(ctx context.Context, trunkID, calling, cal
 	if err != nil {
 		return nil, err
 	}
-	return sip.MatchTrunk(trunks, "", calling, called)
+	return sip.MatchTrunk(trunks, netip.Addr{}, calling, called)
 }
 
 // matchSIPDispatchRule finds the best dispatch rule matching the request parameters. Returns an error if no rule matched.
