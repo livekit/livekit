@@ -141,6 +141,17 @@ rtc:
   # # when this limit is breached, data messages will be dropped till the buffered amount drops below this limit.
   # data_channel_max_buffered_amount: 0
 
+  # # set custom RTP header extensions
+  # publisher_header_extensions:
+  #   audio:
+  #     - http://www.example.org/experiments/rtp-hdrext/header-1
+  #     - http://www.example.org/experiments/rtp-hdrext/header-2
+
+  # subscriber_header_extensions:
+  #   audio:
+  #     - http://www.example.org/experiments/rtp-hdrext/header-1
+  #     - http://www.example.org/experiments/rtp-hdrext/header-2
+
 # when enabled, LiveKit will expose prometheus metrics on :6789/metrics
 # prometheus_port: 6789
 

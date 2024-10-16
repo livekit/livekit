@@ -125,8 +125,15 @@ type RTCConfig struct {
 	DataChannelMaxBufferedAmount uint64 `yaml:"data_channel_max_buffered_amount,omitempty"`
 
 	ForwardStats ForwardStatsConfig `yaml:"forward_stats,omitempty"`
+
+	PublisherHeaderExtensions  HeaderExtensions `yaml:"publisher_header_extensions,omitempty"`
+	SubscriberHeaderExtensions HeaderExtensions `yaml:"subscriber_header_extensions,omitempty"`
 }
 
+type HeaderExtensions struct {
+	Audio []string `yaml:"audio,omitempty"`
+	Video []string `yaml:"video,omitempty"`
+}
 type TURNServer struct {
 	Host       string `yaml:"host,omitempty"`
 	Port       int    `yaml:"port,omitempty"`
