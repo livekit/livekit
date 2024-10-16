@@ -163,6 +163,9 @@ func (d *DynacastManager) getOrCreateDynacastQuality(mime string) *DynacastQuali
 
 	normalizedMime := strings.ToLower(mime)
 	if dq := d.dynacastQuality[normalizedMime]; dq != nil {
+		if normalizedMime != mime {
+			d.mimeCases[normalizedMime] = mime
+		}
 		return dq
 	}
 
