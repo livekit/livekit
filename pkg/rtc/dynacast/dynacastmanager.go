@@ -38,7 +38,6 @@ type DynacastManager struct {
 	params DynacastManagerParams
 
 	lock                          sync.RWMutex
-	mimeCases                     map[string]string           // mime lower case => given case mapping // TODO-REMOVE-AFTER-NORMALIZED-DEPLOY
 	dynacastQuality               map[string]*DynacastQuality // mime type => DynacastQuality
 	maxSubscribedQuality          map[string]livekit.VideoQuality
 	committedMaxSubscribedQuality map[string]livekit.VideoQuality
@@ -59,7 +58,6 @@ func NewDynacastManager(params DynacastManagerParams) *DynacastManager {
 	}
 	d := &DynacastManager{
 		params:                        params,
-		mimeCases:                     make(map[string]string),
 		dynacastQuality:               make(map[string]*DynacastQuality),
 		maxSubscribedQuality:          make(map[string]livekit.VideoQuality),
 		committedMaxSubscribedQuality: make(map[string]livekit.VideoQuality),
@@ -163,9 +161,6 @@ func (d *DynacastManager) getOrCreateDynacastQuality(mime string) *DynacastQuali
 
 	normalizedMime := strings.ToLower(mime)
 	if dq := d.dynacastQuality[normalizedMime]; dq != nil {
-		if normalizedMime != mime {
-			d.mimeCases[normalizedMime] = mime
-		}
 		return dq
 	}
 
@@ -179,9 +174,6 @@ func (d *DynacastManager) getOrCreateDynacastQuality(mime string) *DynacastQuali
 	dq.Start()
 
 	d.dynacastQuality[normalizedMime] = dq
-	if normalizedMime != mime {
-		d.mimeCases[normalizedMime] = mime
-	}
 	return dq
 }
 
@@ -290,24 +282,6 @@ func (d *DynacastManager) enqueueSubscribedQualityChange() {
 			CodecMime: mime,
 			Quality:   quality,
 		})
-		if rawMime, ok := d.mimeCases[mime]; ok {
-			maxSubscribedQualities = append(maxSubscribedQualities, types.SubscribedCodecQuality{
-				CodecMime: rawMime,
-				Quality:   quality,
-			})
-		} else {
-			if strings.HasPrefix(mime, "video/") {
-				// TODO-REMOVE-AFTER-NORMALIZED-DEPLOY
-				// always add an upper case entry to address a bug with prefix trimming in older versions
-				parts := strings.Split(mime, "/")
-				if len(parts) == 2 {
-					maxSubscribedQualities = append(maxSubscribedQualities, types.SubscribedCodecQuality{
-						CodecMime: parts[0] + "/" + strings.ToUpper(parts[1]),
-						Quality:   quality,
-					})
-				}
-			}
-		}
 
 		if quality == livekit.VideoQuality_OFF {
 			subscribedCodecs = append(subscribedCodecs, &livekit.SubscribedCodec{
