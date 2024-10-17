@@ -21,6 +21,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils/mono"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -41,9 +42,8 @@ var (
 // ------------------------------------------------
 
 type MetricTimestamperParams struct {
-	Config   MetricTimestamperConfig
-	BaseTime time.Time
-	Logger   logger.Logger
+	Config MetricTimestamperConfig
+	Logger logger.Logger
 }
 
 type MetricTimestamper struct {
@@ -110,7 +110,6 @@ func (m *MetricTimestamper) maybeRunOWDEstimator(batch *livekit.MetricsBatch) in
 	m.lastOWDEstimatorRunAt = time.Now()
 	m.batchesSinceLastOWDEstimatorRun = 1
 
-	at := m.params.BaseTime.Add(time.Since(m.params.BaseTime))
-	estimatedOWD, _ := m.owdEstimator.Update(time.UnixMilli(senderClockTime), at)
+	estimatedOWD, _ := m.owdEstimator.Update(time.UnixMilli(senderClockTime), mono.Now())
 	return estimatedOWD.Nanoseconds()
 }

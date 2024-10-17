@@ -108,7 +108,6 @@ func (p participantUpdateInfo) String() string {
 // ---------------------------------------------------------------
 
 type ParticipantParams struct {
-	BaseTime                time.Time
 	Identity                livekit.ParticipantIdentity
 	Name                    livekit.ParticipantName
 	SID                     livekit.ParticipantID
@@ -288,9 +287,8 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		),
 		tracksQuality: make(map[livekit.TrackID]livekit.ConnectionQuality),
 		metricTimestamper: metric.NewMetricTimestamper(metric.MetricTimestamperParams{
-			Config:   params.MetricConfig.Timestamper,
-			BaseTime: params.BaseTime,
-			Logger:   params.Logger,
+			Config: params.MetricConfig.Timestamper,
+			Logger: params.Logger,
 		}),
 		pubLogger: params.Logger.WithComponent(sutils.ComponentPub),
 		subLogger: params.Logger.WithComponent(sutils.ComponentSub),
@@ -2322,7 +2320,6 @@ func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo) *M
 
 func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *livekit.TrackInfo) *MediaTrack {
 	mt := NewMediaTrack(MediaTrackParams{
-		BaseTime:              p.params.BaseTime,
 		SignalCid:             signalCid,
 		SdpCid:                sdpCid,
 		ParticipantID:         p.params.SID,

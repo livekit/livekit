@@ -57,7 +57,6 @@ type MediaTrack struct {
 }
 
 type MediaTrackParams struct {
-	BaseTime              time.Time
 	SignalCid             string
 	SdpCid                string
 	ParticipantID         livekit.ParticipantID
@@ -277,7 +276,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 
 		newWR := sfu.NewWebRTCReceiver(
 			receiver,
-			t.params.BaseTime,
 			track,
 			ti,
 			LoggerWithCodecMime(t.params.Logger, mime),

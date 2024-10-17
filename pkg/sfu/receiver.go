@@ -85,8 +85,6 @@ type TrackReceiver interface {
 
 	GetTrackStats() *livekit.RTPStats
 
-	GetMonotonicNowUnixNano() int64
-
 	// AddOnReady adds a function to be called when the receiver is ready, the callback
 	// could be called immediately if the receiver is ready when the callback is added
 	AddOnReady(func())
@@ -135,8 +133,6 @@ type WebRTCReceiver struct {
 	redPktWriter    func(pkt *buffer.ExtPacket, spatialLayer int32) int
 
 	forwardStats *ForwardStats
-
-	baseTime time.Time
 }
 
 type ReceiverOpts func(w *WebRTCReceiver) *WebRTCReceiver
@@ -187,7 +183,6 @@ func WithForwardStats(forwardStats *ForwardStats) ReceiverOpts {
 // NewWebRTCReceiver creates a new webrtc track receiver
 func NewWebRTCReceiver(
 	receiver *webrtc.RTPReceiver,
-	baseTime time.Time,
 	track *webrtc.TrackRemote,
 	trackInfo *livekit.TrackInfo,
 	logger logger.Logger,
@@ -196,7 +191,6 @@ func NewWebRTCReceiver(
 	opts ...ReceiverOpts,
 ) *WebRTCReceiver {
 	w := &WebRTCReceiver{
-		baseTime: baseTime,
 		logger:   logger,
 		receiver: receiver,
 		trackID:  livekit.TrackID(track.ID()),
@@ -339,7 +333,6 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 		layer = buffer.RidToSpatialLayer(track.RID(), w.trackInfo.Load())
 	}
 	buff.SetLogger(w.logger.WithValues("layer", layer))
-	buff.SetBaseTime(w.baseTime)
 	buff.SetAudioLevelParams(audio.AudioLevelParams{
 		ActiveLevel:     w.audioConfig.ActiveLevel,
 		MinPercentile:   w.audioConfig.MinPercentile,
@@ -824,10 +817,6 @@ func (w *WebRTCReceiver) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
 	}
 
 	return b.GetTemporalLayerFpsForSpatial(layer)
-}
-
-func (w *WebRTCReceiver) GetMonotonicNowUnixNano() int64 {
-	return w.baseTime.Add(time.Since(w.baseTime)).UnixNano()
 }
 
 func (w *WebRTCReceiver) AddOnReady(fn func()) {
