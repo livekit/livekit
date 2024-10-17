@@ -18,7 +18,6 @@ import (
 	"errors"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
@@ -163,8 +162,6 @@ type DummyReceiver struct {
 	pausedValid           bool
 	paused                bool
 
-	baseTime time.Time
-
 	redReceiver, primaryReceiver *DummyRedReceiver
 }
 
@@ -175,7 +172,6 @@ func NewDummyReceiver(trackID livekit.TrackID, streamId string, codec webrtc.RTP
 		codec:            codec,
 		headerExtensions: headerExtensions,
 		downTracks:       make(map[livekit.ParticipantID]sfu.TrackSender),
-		baseTime:         time.Now(),
 	}
 }
 
@@ -382,13 +378,6 @@ func (d *DummyReceiver) GetTrackStats() *livekit.RTPStats {
 		return r.GetTrackStats()
 	}
 	return nil
-}
-
-func (d *DummyReceiver) GetMonotonicNowUnixNano() int64 {
-	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
-		return r.GetMonotonicNowUnixNano()
-	}
-	return d.baseTime.Add(time.Since(d.baseTime)).UnixNano()
 }
 
 func (d *DummyReceiver) AddOnReady(f func()) {
