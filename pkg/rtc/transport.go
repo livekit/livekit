@@ -150,6 +150,8 @@ func (w wrappedICECandidatePairLogger) MarshalLogObject(e zapcore.ObjectEncoder)
 	if w.pair.Remote != nil {
 		e.AddString("remoteProtocol", w.pair.Remote.Protocol.String())
 		e.AddString("remoteCandidateType", w.pair.Remote.Typ.String())
+		e.AddString("remoteAdddress", w.pair.Remote.Address[:len(w.pair.Remote.Address)-3]+"...")
+		e.AddUint16("remotePort", w.pair.Remote.Port)
 	}
 	return nil
 }
@@ -468,6 +470,9 @@ func (t *PCTransport) createPeerConnection() error {
 	t.pc.SCTP().Transport().ICETransport().OnSelectedCandidatePairChange(func(pair *webrtc.ICECandidatePair) {
 		t.params.Logger.Debugw("selected ICE candidate pair changed", "pair", wrappedICECandidatePairLogger{pair})
 		t.connectionDetails.SetSelectedPair(pair)
+		if t.selectedPair.Load() != nil {
+			t.params.Logger.Infow("ice reconnected or switched pair", "pair", wrappedICECandidatePairLogger{pair})
+		}
 		t.selectedPair.Store(pair)
 	})
 
@@ -648,8 +653,6 @@ func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionSta
 			t.params.Handler.OnInitialConnected()
 
 			t.maybeNotifyFullyEstablished()
-		} else {
-			t.params.Logger.Infow("ice reconnected", "pair", wrappedICECandidatePairLogger{t.selectedPair.Load()})
 		}
 	case webrtc.PeerConnectionStateFailed:
 		t.clearConnTimer()
