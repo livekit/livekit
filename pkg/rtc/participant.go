@@ -252,6 +252,9 @@ type ParticipantImpl struct {
 
 	metricTimestamper *metric.MetricTimestamper
 
+	// reliable data packets received while transitioning from JOINED to ACTIVE state. Stored for later delivery
+	reliableDataPacketsQueue []*livekit.DataPacket
+
 	// loggers for publisher and subscriber
 	pubLogger logger.Logger
 	subLogger logger.Logger
@@ -285,7 +288,8 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 			params.SID,
 			params.Telemetry,
 		),
-		tracksQuality: make(map[livekit.TrackID]livekit.ConnectionQuality),
+		tracksQuality:            make(map[livekit.TrackID]livekit.ConnectionQuality),
+		reliableDataPacketsQueue: make([]*livekit.DataPacket, 0),
 		metricTimestamper: metric.NewMetricTimestamper(metric.MetricTimestamperParams{
 			Config: params.MetricConfig.Timestamper,
 			Logger: params.Logger,
@@ -2901,6 +2905,23 @@ func (p *ParticipantImpl) HandleMetrics(senderParticipantID livekit.ParticipantI
 	return p.TransportManager.SendDataPacket(livekit.DataPacket_RELIABLE, dpData)
 }
 
+func (p *ParticipantImpl) StoreReliableDataPacketForLaterDelivery(dp *livekit.DataPacket) {
+	p.reliableDataPacketsQueue = append(p.reliableDataPacketsQueue, dp)
+}
+
+func (p *ParticipantImpl) DeliverStoredReliableDataPackets() {
+	for _, dp := range p.reliableDataPacketsQueue {
+		var dpData, err = proto.Marshal(dp)
+		if err != nil {
+			logger.Errorw("failed to marshal data packet", err)
+			continue
+		}
+		p.GetLogger().Debugw("resending stored reliable data packet", "source", dp.ParticipantIdentity, "destinationIdentities", dp.DestinationIdentities)
+		p.SendDataPacket(livekit.DataPacket_RELIABLE, dpData)
+	}
+	p.reliableDataPacketsQueue = p.reliableDataPacketsQueue[:0]
+}
+  
 // ----------------------------------------------
 
 func codecsFromMediaDescription(m *sdp.MediaDescription) (out []sdp.Codec, err error) {
