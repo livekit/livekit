@@ -33,6 +33,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/audio"
 	act "github.com/livekit/livekit-server/pkg/sfu/rtpextension/abscapturetime"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
+	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/mediatransportutil/pkg/bucket"
@@ -40,6 +41,7 @@ import (
 	"github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils/mono"
 )
 
 const (
@@ -90,7 +92,6 @@ type Buffer struct {
 	closed          atomic.Bool
 	mime            string
 
-	baseTime   time.Time
 	snRangeMap *utils.RangeMap[uint64, uint64]
 
 	latestTSForAudioLevelInitialized bool
@@ -105,7 +106,7 @@ type Buffer struct {
 
 	pliThrottle int64
 
-	rtpStats             *RTPStatsReceiver
+	rtpStats             *rtpstats.RTPStatsReceiver
 	rrSnapshotId         uint32
 	deltaStatsSnapshotId uint32
 	ppsSnapshotId        uint32
@@ -148,7 +149,6 @@ func NewBuffer(ssrc uint32, maxVideoPkts, maxAudioPkts int) *Buffer {
 		mediaSSRC:    ssrc,
 		maxVideoPkts: maxVideoPkts,
 		maxAudioPkts: maxAudioPkts,
-		baseTime:     time.Now(),
 		snRangeMap:   utils.NewRangeMap[uint64, uint64](100),
 		pliThrottle:  int64(500 * time.Millisecond),
 		logger:       l.WithComponent(sutils.ComponentPub).WithComponent(sutils.ComponentSFU),
@@ -166,13 +166,6 @@ func (b *Buffer) SetLogger(logger logger.Logger) {
 	if b.rtpStats != nil {
 		b.rtpStats.SetLogger(b.logger)
 	}
-}
-
-func (b *Buffer) SetBaseTime(baseTime time.Time) {
-	b.Lock()
-	defer b.Unlock()
-
-	b.baseTime = baseTime
 }
 
 func (b *Buffer) SetPaused(paused bool) {
@@ -211,7 +204,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 		return
 	}
 
-	b.rtpStats = NewRTPStatsReceiver(RTPStatsParams{
+	b.rtpStats = rtpstats.NewRTPStatsReceiver(rtpstats.RTPStatsParams{
 		ClockRate: codec.ClockRate,
 		Logger:    b.logger,
 	})
@@ -220,7 +213,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	b.ppsSnapshotId = b.rtpStats.NewSnapshotId()
 
 	b.clockRate = codec.ClockRate
-	b.lastReport = b.getMonotonicNowUnixNano()
+	b.lastReport = mono.UnixNano()
 	b.mime = strings.ToLower(codec.MimeType)
 	for _, codecParameter := range params.Codecs {
 		if strings.EqualFold(codecParameter.MimeType, codec.MimeType) {
@@ -329,7 +322,7 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 		return
 	}
 
-	now := b.getMonotonicNowUnixNano()
+	now := mono.UnixNano()
 	if b.twcc != nil && b.twccExtID != 0 && !b.closed.Load() {
 		if ext := rtpPacket.GetExtension(b.twccExtID); ext != nil {
 			b.twcc.Push(rtpPacket.SSRC, binary.BigEndian.Uint16(ext[0:2]), now, rtpPacket.Marker)
@@ -716,7 +709,7 @@ func (b *Buffer) doFpsCalc(ep *ExtPacket) {
 	}
 }
 
-func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime int64) RTPFlowState {
+func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime int64) rtpstats.RTPFlowState {
 	flowState := b.rtpStats.Update(
 		arrivalTime,
 		p.Header.SequenceNumber,
@@ -730,10 +723,8 @@ func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime int64) RTPFlowStat
 	if b.nacker != nil {
 		b.nacker.Remove(p.SequenceNumber)
 
-		if flowState.HasLoss {
-			for lost := flowState.LossStartInclusive; lost != flowState.LossEndExclusive; lost++ {
-				b.nacker.Push(uint16(lost))
-			}
+		for lost := flowState.LossStartInclusive; lost != flowState.LossEndExclusive; lost++ {
+			b.nacker.Push(uint16(lost))
 		}
 	}
 
@@ -762,7 +753,7 @@ func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime int64, isRTX
 	}
 }
 
-func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, flowState RTPFlowState) *ExtPacket {
+func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, flowState rtpstats.RTPFlowState) *ExtPacket {
 	ep := &ExtPacket{
 		Arrival:           arrivalTime,
 		ExtSequenceNumber: flowState.ExtSequenceNumber,
@@ -937,7 +928,7 @@ func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64, packets uin
 	srData := &livekit.RTCPSenderReportState{
 		RtpTimestamp: rtpTime,
 		NtpTimestamp: ntpTime,
-		At:           b.getMonotonicNowUnixNano(),
+		At:           mono.UnixNano(),
 		Packets:      packets,
 		Octets:       uint64(octets),
 	}
@@ -1076,7 +1067,7 @@ func (b *Buffer) GetDeltaStats() *StreamStatsWithLayers {
 
 	return &StreamStatsWithLayers{
 		RTPStats: deltaStats,
-		Layers: map[int32]*RTPDeltaInfo{
+		Layers: map[int32]*rtpstats.RTPDeltaInfo{
 			0: deltaStats,
 		},
 	}
@@ -1101,7 +1092,7 @@ func (b *Buffer) GetAudioLevel() (float64, bool) {
 		return 0, false
 	}
 
-	return b.audioLevel.GetLevel(b.getMonotonicNowUnixNano())
+	return b.audioLevel.GetLevel(mono.UnixNano())
 }
 
 func (b *Buffer) OnFpsChanged(f func()) {
@@ -1119,10 +1110,6 @@ func (b *Buffer) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
 		return fc.GetFrameRate()
 	}
 	return nil
-}
-
-func (b *Buffer) getMonotonicNowUnixNano() int64 {
-	return b.baseTime.Add(time.Since(b.baseTime)).UnixNano()
 }
 
 // ---------------------------------------------------------------

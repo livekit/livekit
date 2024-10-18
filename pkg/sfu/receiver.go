@@ -35,6 +35,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
+	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 )
 
 var (
@@ -84,8 +85,6 @@ type TrackReceiver interface {
 
 	GetTrackStats() *livekit.RTPStats
 
-	GetMonotonicNowUnixNano() int64
-
 	// AddOnReady adds a function to be called when the receiver is ready, the callback
 	// could be called immediately if the receiver is ready when the callback is added
 	AddOnReady(func())
@@ -134,8 +133,6 @@ type WebRTCReceiver struct {
 	redPktWriter    func(pkt *buffer.ExtPacket, spatialLayer int32) int
 
 	forwardStats *ForwardStats
-
-	baseTime time.Time
 }
 
 type ReceiverOpts func(w *WebRTCReceiver) *WebRTCReceiver
@@ -186,7 +183,6 @@ func WithForwardStats(forwardStats *ForwardStats) ReceiverOpts {
 // NewWebRTCReceiver creates a new webrtc track receiver
 func NewWebRTCReceiver(
 	receiver *webrtc.RTPReceiver,
-	baseTime time.Time,
 	track *webrtc.TrackRemote,
 	trackInfo *livekit.TrackInfo,
 	logger logger.Logger,
@@ -195,7 +191,6 @@ func NewWebRTCReceiver(
 	opts ...ReceiverOpts,
 ) *WebRTCReceiver {
 	w := &WebRTCReceiver{
-		baseTime: baseTime,
 		logger:   logger,
 		receiver: receiver,
 		trackID:  livekit.TrackID(track.ID()),
@@ -218,8 +213,6 @@ func NewWebRTCReceiver(
 	})
 
 	w.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
-		MimeType:         w.codec.MimeType,
-		IsFECEnabled:     strings.EqualFold(w.codec.MimeType, webrtc.MimeTypeOpus) && strings.Contains(strings.ToLower(w.codec.SDPFmtpLine), "fec"),
 		ReceiverProvider: w,
 		Logger:           w.logger.WithValues("direction", "up"),
 	})
@@ -228,7 +221,11 @@ func NewWebRTCReceiver(
 			w.onStatsUpdate(w, stat)
 		}
 	})
-	w.connectionStats.Start(trackInfo)
+	w.connectionStats.Start(
+		w.codec.MimeType,
+		// TODO: technically not correct to declare FEC on when RED. Need the primary codec's fmtp line to check.
+		strings.EqualFold(w.codec.MimeType, MimeTypeAudioRed) || strings.Contains(strings.ToLower(w.codec.SDPFmtpLine), "useinbandfec=1"),
+	)
 
 	w.streamTrackerManager = NewStreamTrackerManager(logger, trackInfo, w.isSVC, w.codec.ClockRate, trackersConfig)
 	w.streamTrackerManager.SetListener(w)
@@ -336,7 +333,6 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 		layer = buffer.RidToSpatialLayer(track.RID(), w.trackInfo.Load())
 	}
 	buff.SetLogger(w.logger.WithValues("layer", layer))
-	buff.SetBaseTime(w.baseTime)
 	buff.SetAudioLevelParams(audio.AudioLevelParams{
 		ActiveLevel:     w.audioConfig.ActiveLevel,
 		MinPercentile:   w.audioConfig.MinPercentile,
@@ -416,7 +412,6 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) error {
 		w.logger.Infow("subscriberID already exists, replacing downtrack", "subscriberID", track.SubscriberID())
 	}
 
-	track.TrackInfoAvailable()
 	track.UpTrackMaxPublishedLayerChange(w.streamTrackerManager.GetMaxPublishedLayer())
 	track.UpTrackMaxTemporalLayerSeenChange(w.streamTrackerManager.GetMaxTemporalLayerSeen())
 
@@ -597,7 +592,7 @@ func (w *WebRTCReceiver) GetTrackStats() *livekit.RTPStats {
 		stats = append(stats, sswl)
 	}
 
-	return buffer.AggregateRTPStats(stats)
+	return rtpstats.AggregateRTPStats(stats)
 }
 
 func (w *WebRTCReceiver) GetAudioLevel() (float64, bool) {
@@ -636,7 +631,7 @@ func (w *WebRTCReceiver) GetDeltaStats() map[uint32]*buffer.StreamStatsWithLayer
 		}
 
 		// patch buffer stats with correct layer
-		patched := make(map[int32]*buffer.RTPDeltaInfo, 1)
+		patched := make(map[int32]*rtpstats.RTPDeltaInfo, 1)
 		patched[int32(layer)] = sswl.Layers[0]
 		sswl.Layers = patched
 
@@ -822,10 +817,6 @@ func (w *WebRTCReceiver) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
 	}
 
 	return b.GetTemporalLayerFpsForSpatial(layer)
-}
-
-func (w *WebRTCReceiver) GetMonotonicNowUnixNano() int64 {
-	return w.baseTime.Add(time.Since(w.baseTime)).UnixNano()
 }
 
 func (w *WebRTCReceiver) AddOnReady(fn func()) {

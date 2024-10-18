@@ -108,7 +108,6 @@ func (p participantUpdateInfo) String() string {
 // ---------------------------------------------------------------
 
 type ParticipantParams struct {
-	BaseTime                time.Time
 	Identity                livekit.ParticipantIdentity
 	Name                    livekit.ParticipantName
 	SID                     livekit.ParticipantID
@@ -181,7 +180,7 @@ type ParticipantImpl struct {
 	isPublisher atomic.Bool
 
 	sessionStartRecorded atomic.Bool
-	lastActiveAt         time.Time
+	lastActiveAt         atomic.Pointer[time.Time]
 	// when first connected
 	connectedAt time.Time
 	// timer that's set when disconnect is detected on primary PC
@@ -292,9 +291,8 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		tracksQuality:            make(map[livekit.TrackID]livekit.ConnectionQuality),
 		reliableDataPacketsQueue: make([]*livekit.DataPacket, 0),
 		metricTimestamper: metric.NewMetricTimestamper(metric.MetricTimestamperParams{
-			Config:   params.MetricConfig.Timestamper,
-			BaseTime: params.BaseTime,
-			Logger:   params.Logger,
+			Config: params.MetricConfig.Timestamper,
+			Logger: params.Logger,
 		}),
 		pubLogger: params.Logger.WithComponent(sutils.ComponentPub),
 		subLogger: params.Logger.WithComponent(sutils.ComponentSub),
@@ -1522,15 +1520,17 @@ func (p *ParticipantImpl) setupSubscriptionManager() {
 }
 
 func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
+	if state == livekit.ParticipantInfo_ACTIVE {
+		t := time.Now()
+		p.lastActiveAt.CompareAndSwap(nil, &t)
+	}
 	oldState := p.state.Swap(state).(livekit.ParticipantInfo_State)
 	if oldState == state {
 		return
 	}
 
 	if state == livekit.ParticipantInfo_DISCONNECTED && oldState == livekit.ParticipantInfo_ACTIVE {
-		prometheus.RecordSessionDuration(int(p.ProtocolVersion()), time.Since(p.lastActiveAt))
-	} else if state == livekit.ParticipantInfo_ACTIVE {
-		p.lastActiveAt = time.Now()
+		prometheus.RecordSessionDuration(int(p.ProtocolVersion()), time.Since(*p.lastActiveAt.Load()))
 	}
 	p.params.Logger.Debugw("updating participant state", "state", state.String())
 	p.dirty.Store(true)
@@ -1665,6 +1665,9 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 	// only forward on user payloads
 	switch payload := dp.Value.(type) {
 	case *livekit.DataPacket_User:
+		if payload.User == nil {
+			return
+		}
 		u := payload.User
 		if p.Hidden() {
 			u.ParticipantSid = ""
@@ -1679,17 +1682,28 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 			dp.DestinationIdentities = u.DestinationIdentities
 		}
 	case *livekit.DataPacket_SipDtmf:
+		if payload.SipDtmf == nil {
+			return
+		}
 	case *livekit.DataPacket_Transcription:
+		if payload.Transcription == nil {
+			return
+		}
 		if !p.IsAgent() {
 			shouldForwardData = false
 		}
 	case *livekit.DataPacket_ChatMessage:
+		if payload.ChatMessage == nil {
+			return
+		}
 		if p.IsAgent() && dp.ParticipantIdentity != "" && string(p.params.Identity) != dp.ParticipantIdentity {
 			overrideSenderIdentity = false
 			payload.ChatMessage.Generated = true
 		}
-		shouldForwardData = true
 	case *livekit.DataPacket_Metrics:
+		if payload.Metrics == nil {
+			return
+		}
 		shouldForwardData = false
 		shouldForwardMetrics = true
 		isPublisher = false
@@ -1701,6 +1715,19 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		//    and pushing it to all subscribers on some cadence and subscribers have their own cadence of
 		//    processing/batching and sending to edge clients.
 		p.metricTimestamper.Process(payload.Metrics)
+	case *livekit.DataPacket_RpcRequest:
+		if payload.RpcRequest == nil {
+			return
+		}
+		p.pubLogger.Infow("received RPC request data packet", "method", payload.RpcRequest.Method, "rpc_request_id", payload.RpcRequest.Id)
+	case *livekit.DataPacket_RpcResponse:
+		if payload.RpcResponse == nil {
+			return
+		}
+	case *livekit.DataPacket_RpcAck:
+		if payload.RpcAck == nil {
+			return
+		}
 	default:
 		p.pubLogger.Warnw("received unsupported data packet", nil, "payload", payload)
 	}
@@ -1932,7 +1959,7 @@ func (p *ParticipantImpl) onSubscribedMaxQualityChange(
 
 	// normalize the codec name
 	for _, subscribedQuality := range subscribedQualities {
-		subscribedQuality.Codec = strings.ToLower(strings.TrimLeft(subscribedQuality.Codec, "video/"))
+		subscribedQuality.Codec = strings.ToLower(strings.TrimPrefix(subscribedQuality.Codec, "video/"))
 	}
 
 	subscribedQualityUpdate := &livekit.SubscribedQualityUpdate{
@@ -2198,6 +2225,13 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 		}
 		mt = p.addMediaTrack(signalCid, track.ID(), ti)
 		newTrack = true
+
+		// if the addTrackRequest is sent before participant active then it means the client tries to publish
+		// before fully connected, in this case we only record the time when the participant is active since
+		// we want this metric to represent the time cost by pubilshing.
+		if activeAt := p.lastActiveAt.Load(); activeAt != nil && createdAt.Before(*activeAt) {
+			createdAt = *activeAt
+		}
 		pubTime = time.Since(createdAt)
 		p.dirty.Store(true)
 	}
@@ -2208,12 +2242,24 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 
 	if newTrack {
 		go func() {
-			p.pubLogger.Debugw(
-				"track published",
-				"trackID", mt.ID(),
-				"track", logger.Proto(mt.ToProto()),
-				"cost", pubTime.Milliseconds(),
-			)
+			// TODO: remove this after we know where the high delay is coming from
+			if pubTime > 3*time.Second {
+				p.pubLogger.Infow(
+					"track published with high delay",
+					"trackID", mt.ID(),
+					"track", logger.Proto(mt.ToProto()),
+					"cost", pubTime.Milliseconds(),
+					"rid", track.RID(),
+					"mime", track.Codec().MimeType,
+				)
+			} else {
+				p.pubLogger.Debugw(
+					"track published",
+					"trackID", mt.ID(),
+					"track", logger.Proto(mt.ToProto()),
+					"cost", pubTime.Milliseconds(),
+				)
+			}
 
 			prometheus.RecordPublishTime(mt.Source(), mt.Kind(), pubTime, p.GetClientInfo().GetSdk(), p.Kind())
 			p.handleTrackPublished(mt)
@@ -2278,7 +2324,6 @@ func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo) *M
 
 func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *livekit.TrackInfo) *MediaTrack {
 	mt := NewMediaTrack(MediaTrackParams{
-		BaseTime:              p.params.BaseTime,
 		SignalCid:             signalCid,
 		SdpCid:                sdpCid,
 		ParticipantID:         p.params.SID,
@@ -2706,31 +2751,6 @@ func (p *ParticipantImpl) SupportsTransceiverReuse() bool {
 	return p.ProtocolVersion().SupportsTransceiverReuse() && !p.SupportsSyncStreamID()
 }
 
-func codecsFromMediaDescription(m *sdp.MediaDescription) (out []sdp.Codec, err error) {
-	s := &sdp.SessionDescription{
-		MediaDescriptions: []*sdp.MediaDescription{m},
-	}
-
-	for _, payloadStr := range m.MediaName.Formats {
-		payloadType, err := strconv.ParseUint(payloadStr, 10, 8)
-		if err != nil {
-			return nil, err
-		}
-
-		codec, err := s.GetCodecForPayloadType(uint8(payloadType))
-		if err != nil {
-			if payloadType == 0 {
-				continue
-			}
-			return nil, err
-		}
-
-		out = append(out, codec)
-	}
-
-	return out, nil
-}
-
 func (p *ParticipantImpl) SendDataPacket(kind livekit.DataPacket_Kind, encoded []byte) error {
 	if p.State() != livekit.ParticipantInfo_ACTIVE {
 		return ErrDataChannelUnavailable
@@ -2815,6 +2835,8 @@ func (p *ParticipantImpl) UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack
 						ti.DisableDtx = true
 					}
 				}
+
+				p.pubLogger.Debugw("updated pending track", "trackID", ti.Sid, "trackInfo", logger.Proto(ti))
 			}
 		}
 	}
@@ -2898,4 +2920,31 @@ func (p *ParticipantImpl) DeliverStoredReliableDataPackets() {
 		p.SendDataPacket(livekit.DataPacket_RELIABLE, dpData)
 	}
 	p.reliableDataPacketsQueue = p.reliableDataPacketsQueue[:0]
+}
+  
+// ----------------------------------------------
+
+func codecsFromMediaDescription(m *sdp.MediaDescription) (out []sdp.Codec, err error) {
+	s := &sdp.SessionDescription{
+		MediaDescriptions: []*sdp.MediaDescription{m},
+	}
+
+	for _, payloadStr := range m.MediaName.Formats {
+		payloadType, err := strconv.ParseUint(payloadStr, 10, 8)
+		if err != nil {
+			return nil, err
+		}
+
+		codec, err := s.GetCodecForPayloadType(uint8(payloadType))
+		if err != nil {
+			if payloadType == 0 {
+				continue
+			}
+			return nil, err
+		}
+
+		out = append(out, codec)
+	}
+
+	return out, nil
 }

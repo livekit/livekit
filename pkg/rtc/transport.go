@@ -22,7 +22,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bep/debounce"
 	"github.com/pion/dtls/v2/pkg/crypto/elliptic"
 	"github.com/pion/ice/v2"
 	"github.com/pion/interceptor"
@@ -60,6 +59,7 @@ const (
 	LossyDataChannel    = "_lossy"
 	ReliableDataChannel = "_reliable"
 
+	fastNegotiationFrequency   = 10 * time.Millisecond
 	negotiationFrequency       = 150 * time.Millisecond
 	negotiationFailedTimeout   = 15 * time.Second
 	dtlsRetransmissionInterval = 100 * time.Millisecond
@@ -190,7 +190,7 @@ type PCTransport struct {
 	resetShortConnOnICERestart atomic.Bool
 	signalingRTT               atomic.Uint32 // milliseconds
 
-	debouncedNegotiate func(func())
+	debouncedNegotiate *sfuutils.Debouncer
 	debouncePending    bool
 	lastNegotiate      time.Time
 
@@ -415,7 +415,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 	}
 	t := &PCTransport{
 		params:             params,
-		debouncedNegotiate: debounce.New(negotiationFrequency),
+		debouncedNegotiate: sfuutils.NewDebouncer(negotiationFrequency),
 		negotiationState:   transport.NegotiationStateNone,
 		eventsQueue: utils.NewTypedOpsQueue[event](utils.OpsQueueParams{
 			Name:    "transport",
@@ -1001,8 +1001,8 @@ func (t *PCTransport) Negotiate(force bool) {
 
 	var postEvent bool
 	t.lock.Lock()
-	if force || (!t.debouncePending && time.Since(t.lastNegotiate) > negotiationFrequency) {
-		t.debouncedNegotiate(func() {
+	if force {
+		t.debouncedNegotiate.Add(func() {
 			// no op to cancel pending negotiation
 		})
 		t.debouncePending = false
@@ -1011,7 +1011,13 @@ func (t *PCTransport) Negotiate(force bool) {
 		postEvent = true
 	} else {
 		if !t.debouncePending {
-			t.debouncedNegotiate(func() {
+			if time.Since(t.lastNegotiate) > negotiationFrequency {
+				t.debouncedNegotiate.SetDuration(fastNegotiationFrequency)
+			} else {
+				t.debouncedNegotiate.SetDuration(negotiationFrequency)
+			}
+
+			t.debouncedNegotiate.Add(func() {
 				t.lock.Lock()
 				t.debouncePending = false
 				t.updateLastNeogitateLocked()
@@ -1238,8 +1244,8 @@ func (t *PCTransport) SetPreviousSdp(offer, answer *webrtc.SessionDescription) {
 		}
 	}
 	// disable fast negotiation temporarily after migration to avoid sending offer
-	// contains part of subscribed tracks before migration (needs some time to resolve them).
-	// browser might have trouble to handle this kind of offer (To be confirmed).
+	// contains part of subscribed tracks before migration, let the subscribed track
+	// resume at the same time.
 	t.lastNegotiate = time.Now().Add(iceFailedTimeoutTotal)
 	t.lock.Unlock()
 }

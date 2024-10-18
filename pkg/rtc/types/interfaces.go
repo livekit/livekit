@@ -108,6 +108,8 @@ const (
 	ParticipantCloseReasonMigrateCodecMismatch
 	ParticipantCloseReasonSignalSourceClose
 	ParticipantCloseReasonRoomClosed
+	ParticipantCloseReasonUserUnavailable
+	ParticipantCloseReasonUserRejected
 )
 
 func (p ParticipantCloseReason) String() string {
@@ -162,6 +164,10 @@ func (p ParticipantCloseReason) String() string {
 		return "SIGNAL_SOURCE_CLOSE"
 	case ParticipantCloseReasonRoomClosed:
 		return "ROOM_CLOSED"
+	case ParticipantCloseReasonUserUnavailable:
+		return "USER_UNAVAILABLE"
+	case ParticipantCloseReasonUserRejected:
+		return "USER_REJECTED"
 	default:
 		return fmt.Sprintf("%d", int(p))
 	}
@@ -194,6 +200,10 @@ func (p ParticipantCloseReason) ToDisconnectReason() livekit.DisconnectReason {
 		return livekit.DisconnectReason_SIGNAL_CLOSE
 	case ParticipantCloseReasonRoomClosed:
 		return livekit.DisconnectReason_ROOM_CLOSED
+	case ParticipantCloseReasonUserUnavailable:
+		return livekit.DisconnectReason_USER_UNAVAILABLE
+	case ParticipantCloseReasonUserRejected:
+		return livekit.DisconnectReason_USER_REJECTED
 	default:
 		// the other types will map to unknown reason
 		return livekit.DisconnectReason_UNKNOWN_REASON

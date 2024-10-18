@@ -115,7 +115,7 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 		Name:        "ms",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		Buckets:     []float64{100, 200, 500, 700, 1000, 5000, 10000},
-	}, append(promStreamLabels, "sdk", "kind"))
+	}, append(promStreamLabels, "sdk", "kind", "count"))
 
 	prometheus.MustRegister(promRoomCurrent)
 	prometheus.MustRegister(promRoomDuration)
@@ -173,19 +173,19 @@ func AddPublishSuccess(kind string) {
 }
 
 func RecordPublishTime(source livekit.TrackSource, trackType livekit.TrackType, d time.Duration, sdk livekit.ClientInfo_SDK, kind livekit.ParticipantInfo_Kind) {
-	recordPubSubTime(true, source, trackType, d, sdk, kind)
+	recordPubSubTime(true, source, trackType, d, sdk, kind, 1)
 }
 
-func RecordSubscribeTime(source livekit.TrackSource, trackType livekit.TrackType, d time.Duration, sdk livekit.ClientInfo_SDK, kind livekit.ParticipantInfo_Kind) {
-	recordPubSubTime(false, source, trackType, d, sdk, kind)
+func RecordSubscribeTime(source livekit.TrackSource, trackType livekit.TrackType, d time.Duration, sdk livekit.ClientInfo_SDK, kind livekit.ParticipantInfo_Kind, count int) {
+	recordPubSubTime(false, source, trackType, d, sdk, kind, count)
 }
 
-func recordPubSubTime(isPublish bool, source livekit.TrackSource, trackType livekit.TrackType, d time.Duration, sdk livekit.ClientInfo_SDK, kind livekit.ParticipantInfo_Kind) {
+func recordPubSubTime(isPublish bool, source livekit.TrackSource, trackType livekit.TrackType, d time.Duration, sdk livekit.ClientInfo_SDK, kind livekit.ParticipantInfo_Kind, count int) {
 	direction := "subscribe"
 	if isPublish {
 		direction = "publish"
 	}
-	promPubSubTime.WithLabelValues(direction, source.String(), trackType.String(), sdk.String(), kind.String()).Observe(float64(d.Milliseconds()))
+	promPubSubTime.WithLabelValues(direction, source.String(), trackType.String(), sdk.String(), kind.String(), strconv.Itoa(count)).Observe(float64(d.Milliseconds()))
 }
 
 func RecordTrackSubscribeSuccess(kind string) {

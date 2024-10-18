@@ -66,8 +66,6 @@ type iceConfigCacheKey struct {
 type RoomManager struct {
 	lock sync.RWMutex
 
-	baseTime time.Time
-
 	config            *config.Config
 	rtcConfig         *rtc.WebRTCConfig
 	serverInfo        *livekit.ServerInfo
@@ -97,7 +95,6 @@ type RoomManager struct {
 }
 
 func NewLocalRoomManager(
-	baseTime time.Time,
 	conf *config.Config,
 	roomStore ObjectStore,
 	currentNode routing.LocalNode,
@@ -119,7 +116,6 @@ func NewLocalRoomManager(
 	}
 
 	r := &RoomManager{
-		baseTime:          baseTime,
 		config:            conf,
 		rtcConfig:         rtcConf,
 		currentNode:       currentNode,
@@ -449,7 +445,6 @@ func (r *RoomManager) StartSession(
 		subscriberAllowPause = *pi.SubscriberAllowPause
 	}
 	participant, err = rtc.NewParticipant(rtc.ParticipantParams{
-		BaseTime:                r.baseTime,
 		Identity:                pi.Identity,
 		Name:                    pi.Name,
 		SID:                     sid,
@@ -885,13 +880,13 @@ func (r *RoomManager) ListDispatch(ctx context.Context, req *livekit.ListAgentDi
 	return ret, nil
 }
 
-func (r *RoomManager) CreateDispatch(ctx context.Context, req *livekit.CreateAgentDispatchRequest) (*livekit.AgentDispatch, error) {
+func (r *RoomManager) CreateDispatch(ctx context.Context, req *livekit.AgentDispatch) (*livekit.AgentDispatch, error) {
 	room := r.GetRoom(ctx, livekit.RoomName(req.Room))
 	if room == nil {
 		return nil, ErrRoomNotFound
 	}
 
-	disp, err := room.AddAgentDispatch(req.AgentName, req.Metadata)
+	disp, err := room.AddAgentDispatch(req)
 	if err != nil {
 		return nil, err
 	}

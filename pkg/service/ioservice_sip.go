@@ -17,6 +17,7 @@ package service
 import (
 	"context"
 	"errors"
+	"net/netip"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -26,12 +27,12 @@ import (
 
 // matchSIPTrunk finds a SIP Trunk definition matching the request.
 // Returns nil if no rules matched or an error if there are conflicting definitions.
-func (s *IOInfoService) matchSIPTrunk(ctx context.Context, trunkID, calling, called string) (*livekit.SIPInboundTrunkInfo, error) {
+func (s *IOInfoService) matchSIPTrunk(ctx context.Context, trunkID, calling, called string, srcIP netip.Addr) (*livekit.SIPInboundTrunkInfo, error) {
 	trunks, err := s.ss.ListSIPInboundTrunk(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return sip.MatchTrunk(trunks, "", calling, called)
+	return sip.MatchTrunk(trunks, srcIP, calling, called)
 }
 
 // matchSIPDispatchRule finds the best dispatch rule matching the request parameters. Returns an error if no rule matched.
@@ -48,8 +49,17 @@ func (s *IOInfoService) matchSIPDispatchRule(ctx context.Context, trunk *livekit
 
 func (s *IOInfoService) EvaluateSIPDispatchRules(ctx context.Context, req *rpc.EvaluateSIPDispatchRulesRequest) (*rpc.EvaluateSIPDispatchRulesResponse, error) {
 	log := logger.GetLogger()
-	log = log.WithValues("toUser", req.CalledNumber, "fromUser", req.CallingNumber)
-	trunk, err := s.matchSIPTrunk(ctx, req.SipTrunkId, req.CallingNumber, req.CalledNumber)
+	log = log.WithValues("toUser", req.CalledNumber, "fromUser", req.CallingNumber, "src", req.SrcAddress)
+	if req.SrcAddress == "" {
+		log.Warnw("source address is not set", nil)
+		// TODO: return error in the next release
+	}
+	srcIP, err := netip.ParseAddr(req.SrcAddress)
+	if req.SrcAddress != "" && err != nil {
+		log.Errorw("cannot parse source IP", err)
+		return nil, err
+	}
+	trunk, err := s.matchSIPTrunk(ctx, req.SipTrunkId, req.CallingNumber, req.CalledNumber, srcIP)
 	if err != nil {
 		return nil, err
 	}
@@ -84,8 +94,17 @@ func (s *IOInfoService) EvaluateSIPDispatchRules(ctx context.Context, req *rpc.E
 
 func (s *IOInfoService) GetSIPTrunkAuthentication(ctx context.Context, req *rpc.GetSIPTrunkAuthenticationRequest) (*rpc.GetSIPTrunkAuthenticationResponse, error) {
 	log := logger.GetLogger()
-	log = log.WithValues("toUser", req.To, "fromUser", req.From)
-	trunk, err := s.matchSIPTrunk(ctx, "", req.From, req.To)
+	log = log.WithValues("toUser", req.To, "fromUser", req.From, "src", req.SrcAddress)
+	if req.SrcAddress == "" {
+		log.Warnw("source address is not set", nil)
+		// TODO: return error in the next release
+	}
+	srcIP, err := netip.ParseAddr(req.SrcAddress)
+	if req.SrcAddress != "" && err != nil {
+		log.Errorw("cannot parse source IP", err)
+		return nil, err
+	}
+	trunk, err := s.matchSIPTrunk(ctx, "", req.From, req.To, srcIP)
 	if err != nil {
 		return nil, err
 	}

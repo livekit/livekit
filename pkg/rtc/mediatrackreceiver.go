@@ -36,6 +36,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
@@ -682,6 +683,7 @@ func (t *MediaTrackReceiver) UpdateAudioTrack(update *livekit.UpdateLocalAudioTr
 	t.updateTrackInfoOfReceivers()
 
 	t.params.Telemetry.TrackPublishedUpdate(context.Background(), t.PublisherID(), clonedInfo)
+	t.params.Logger.Debugw("updated audio track", "before", logger.Proto(trackInfo), "after", logger.Proto(clonedInfo))
 }
 
 func (t *MediaTrackReceiver) UpdateVideoTrack(update *livekit.UpdateLocalVideoTrack) {
@@ -705,6 +707,7 @@ func (t *MediaTrackReceiver) UpdateVideoTrack(update *livekit.UpdateLocalVideoTr
 	t.updateTrackInfoOfReceivers()
 
 	t.params.Telemetry.TrackPublishedUpdate(context.Background(), t.PublisherID(), clonedInfo)
+	t.params.Logger.Debugw("updated video track", "before", logger.Proto(trackInfo), "after", logger.Proto(clonedInfo))
 }
 
 func (t *MediaTrackReceiver) TrackInfo() *livekit.TrackInfo {
@@ -893,5 +896,5 @@ func (t *MediaTrackReceiver) GetTrackStats() *livekit.RTPStats {
 		}
 	}
 
-	return buffer.AggregateRTPStats(stats)
+	return rtpstats.AggregateRTPStats(stats)
 }

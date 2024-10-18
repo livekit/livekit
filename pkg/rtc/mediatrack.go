@@ -29,6 +29,7 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/rtc/dynacast"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -48,7 +49,7 @@ type MediaTrack struct {
 	*MediaTrackReceiver
 	*MediaLossProxy
 
-	dynacastManager *DynacastManager
+	dynacastManager *dynacast.DynacastManager
 
 	lock sync.RWMutex
 
@@ -56,7 +57,6 @@ type MediaTrack struct {
 }
 
 type MediaTrackParams struct {
-	BaseTime              time.Time
 	SignalCid             string
 	SdpCid                string
 	ParticipantID         livekit.ParticipantID
@@ -107,7 +107,7 @@ func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
 	}
 
 	if ti.Type == livekit.TrackType_VIDEO {
-		t.dynacastManager = NewDynacastManager(DynacastManagerParams{
+		t.dynacastManager = dynacast.NewDynacastManager(dynacast.DynacastManagerParams{
 			DynacastPauseDelay: params.VideoConfig.DynacastPauseDelay,
 			Logger:             params.Logger,
 		})
@@ -276,7 +276,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 
 		newWR := sfu.NewWebRTCReceiver(
 			receiver,
-			t.params.BaseTime,
 			track,
 			ti,
 			LoggerWithCodecMime(t.params.Logger, mime),

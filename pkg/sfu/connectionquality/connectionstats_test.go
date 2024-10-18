@@ -19,9 +19,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -59,8 +61,6 @@ func TestConnectionQuality(t *testing.T) {
 	trp := newTestReceiverProvider()
 	t.Run("quality scorer operation", func(t *testing.T) {
 		cs := NewConnectionStats(ConnectionStatsParams{
-			MimeType:           "audio/opus",
-			IsFECEnabled:       false,
 			IncludeRTT:         true,
 			IncludeJitter:      true,
 			EnableBitrateScore: true,
@@ -70,7 +70,7 @@ func TestConnectionQuality(t *testing.T) {
 
 		duration := 5 * time.Second
 		now := time.Now()
-		cs.StartAt(&livekit.TrackInfo{Type: livekit.TrackType_AUDIO}, now.Add(-duration))
+		cs.StartAt(webrtc.MimeTypeOpus, false, now.Add(-duration))
 		cs.UpdateMuteAt(false, now.Add(-1*time.Second))
 
 		// no data and not enough unmute time should return default state which is EXCELLENT quality
@@ -82,7 +82,7 @@ func TestConnectionQuality(t *testing.T) {
 		// best conditions (no loss, jitter/rtt = 0) - quality should stay EXCELLENT
 		trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
 			1: {
-				RTPStats: &buffer.RTPDeltaInfo{
+				RTPStats: &rtpstats.RTPDeltaInfo{
 					StartTime: now,
 					EndTime:   now.Add(duration),
 					Packets:   250,
@@ -98,7 +98,7 @@ func TestConnectionQuality(t *testing.T) {
 		now = now.Add(duration)
 		trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
 			1: {
-				RTPStats: &buffer.RTPDeltaInfo{
+				RTPStats: &rtpstats.RTPDeltaInfo{
 					StartTime:   now,
 					EndTime:     now.Add(duration),
 					Packets:     120,
@@ -106,7 +106,7 @@ func TestConnectionQuality(t *testing.T) {
 				},
 			},
 			2: {
-				RTPStats: &buffer.RTPDeltaInfo{
+				RTPStats: &rtpstats.RTPDeltaInfo{
 					StartTime:   now,
 					EndTime:     now.Add(duration),
 					Packets:     130,
@@ -125,7 +125,7 @@ func TestConnectionQuality(t *testing.T) {
 		now = now.Add(duration)
 		trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
 			1: {
-				RTPStats: &buffer.RTPDeltaInfo{
+				RTPStats: &rtpstats.RTPDeltaInfo{
 					StartTime: now,
 					EndTime:   now.Add(duration),
 					Packets:   250,
@@ -141,7 +141,7 @@ func TestConnectionQuality(t *testing.T) {
 		now = now.Add(duration)
 		trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
 			1: {
-				RTPStats: &buffer.RTPDeltaInfo{
+				RTPStats: &rtpstats.RTPDeltaInfo{
 					StartTime: now,
 					EndTime:   now.Add(duration),
 					Packets:   250,
@@ -157,7 +157,7 @@ func TestConnectionQuality(t *testing.T) {
 		now = now.Add(duration)
 		trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
 			1: {
-				RTPStats: &buffer.RTPDeltaInfo{
+				RTPStats: &rtpstats.RTPDeltaInfo{
 					StartTime: now,
 					EndTime:   now.Add(duration),
 					Packets:   250,
@@ -173,7 +173,7 @@ func TestConnectionQuality(t *testing.T) {
 		now = now.Add(duration)
 		trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
 			1: {
-				RTPStats: &buffer.RTPDeltaInfo{
+				RTPStats: &rtpstats.RTPDeltaInfo{
 					StartTime:   now,
 					EndTime:     now.Add(duration),
 					Packets:     250,
@@ -190,7 +190,7 @@ func TestConnectionQuality(t *testing.T) {
 		now = now.Add(duration)
 		trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
 			1: {
-				RTPStats: &buffer.RTPDeltaInfo{
+				RTPStats: &rtpstats.RTPDeltaInfo{
 					StartTime: now,
 					EndTime:   now.Add(duration),
 					Packets:   250,
@@ -206,7 +206,7 @@ func TestConnectionQuality(t *testing.T) {
 		now = now.Add(duration)
 		trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
 			1: {
-				RTPStats: &buffer.RTPDeltaInfo{
+				RTPStats: &rtpstats.RTPDeltaInfo{
 					StartTime: now,
 					EndTime:   now.Add(duration),
 					Packets:   250,
@@ -222,7 +222,7 @@ func TestConnectionQuality(t *testing.T) {
 		now = now.Add(duration)
 		trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
 			1: {
-				RTPStats: &buffer.RTPDeltaInfo{
+				RTPStats: &rtpstats.RTPDeltaInfo{
 					StartTime:   now,
 					EndTime:     now.Add(duration),
 					Packets:     250,
@@ -247,7 +247,7 @@ func TestConnectionQuality(t *testing.T) {
 
 		trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
 			1: {
-				RTPStats: &buffer.RTPDeltaInfo{
+				RTPStats: &rtpstats.RTPDeltaInfo{
 					StartTime: now,
 					EndTime:   now.Add(duration),
 					Packets:   0,
@@ -264,7 +264,7 @@ func TestConnectionQuality(t *testing.T) {
 		now = now.Add(duration)
 		trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
 			1: {
-				RTPStats: &buffer.RTPDeltaInfo{
+				RTPStats: &rtpstats.RTPDeltaInfo{
 					StartTime: now,
 					EndTime:   now.Add(duration),
 					Packets:   0,
@@ -281,7 +281,7 @@ func TestConnectionQuality(t *testing.T) {
 		trp.setLastSenderReportTime(now.Add(time.Second))
 		trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
 			1: {
-				RTPStats: &buffer.RTPDeltaInfo{
+				RTPStats: &rtpstats.RTPDeltaInfo{
 					StartTime: now,
 					EndTime:   now.Add(duration),
 					Packets:   0,
@@ -297,7 +297,7 @@ func TestConnectionQuality(t *testing.T) {
 		now = now.Add(duration)
 		trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
 			1: {
-				RTPStats: &buffer.RTPDeltaInfo{
+				RTPStats: &rtpstats.RTPDeltaInfo{
 					StartTime: now,
 					EndTime:   now.Add(duration),
 					Packets:   0,
@@ -322,7 +322,7 @@ func TestConnectionQuality(t *testing.T) {
 		for i := 0; i < 3; i++ {
 			trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
 				1: {
-					RTPStats: &buffer.RTPDeltaInfo{
+					RTPStats: &rtpstats.RTPDeltaInfo{
 						StartTime:   now,
 						EndTime:     now.Add(duration),
 						Packets:     250,
@@ -342,7 +342,7 @@ func TestConnectionQuality(t *testing.T) {
 		// even higher loss (like 10%) should not knock down quality due to quadratic weighting of packet loss ratio
 		trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
 			1: {
-				RTPStats: &buffer.RTPDeltaInfo{
+				RTPStats: &rtpstats.RTPDeltaInfo{
 					StartTime:   now,
 					EndTime:     now.Add(duration),
 					Packets:     50,
@@ -364,7 +364,7 @@ func TestConnectionQuality(t *testing.T) {
 		// at 2% loss, quality should stay at EXCELLENT purely based on loss, but with added RTT/jitter, should drop to GOOD
 		trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
 			1: {
-				RTPStats: &buffer.RTPDeltaInfo{
+				RTPStats: &rtpstats.RTPDeltaInfo{
 					StartTime:   now,
 					EndTime:     now.Add(duration),
 					Packets:     250,
@@ -390,7 +390,7 @@ func TestConnectionQuality(t *testing.T) {
 
 		trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
 			1: {
-				RTPStats: &buffer.RTPDeltaInfo{
+				RTPStats: &rtpstats.RTPDeltaInfo{
 					StartTime: now,
 					EndTime:   now.Add(duration),
 					Packets:   250,
@@ -409,7 +409,7 @@ func TestConnectionQuality(t *testing.T) {
 
 		trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
 			1: {
-				RTPStats: &buffer.RTPDeltaInfo{
+				RTPStats: &rtpstats.RTPDeltaInfo{
 					StartTime: now,
 					EndTime:   now.Add(duration),
 					Packets:   250,
@@ -433,7 +433,7 @@ func TestConnectionQuality(t *testing.T) {
 
 		trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
 			1: {
-				RTPStats: &buffer.RTPDeltaInfo{
+				RTPStats: &rtpstats.RTPDeltaInfo{
 					StartTime: now,
 					EndTime:   now.Add(duration),
 					Packets:   250,
@@ -460,7 +460,7 @@ func TestConnectionQuality(t *testing.T) {
 		// will only climb to GOOD.
 		trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
 			1: {
-				RTPStats: &buffer.RTPDeltaInfo{
+				RTPStats: &rtpstats.RTPDeltaInfo{
 					StartTime: now,
 					EndTime:   now.Add(duration),
 					Packets:   250,
@@ -476,8 +476,6 @@ func TestConnectionQuality(t *testing.T) {
 
 	t.Run("quality scorer dependent rtt", func(t *testing.T) {
 		cs := NewConnectionStats(ConnectionStatsParams{
-			MimeType:         "audio/opus",
-			IsFECEnabled:     false,
 			IncludeRTT:       false,
 			IncludeJitter:    true,
 			ReceiverProvider: trp,
@@ -486,7 +484,7 @@ func TestConnectionQuality(t *testing.T) {
 
 		duration := 5 * time.Second
 		now := time.Now()
-		cs.StartAt(&livekit.TrackInfo{Type: livekit.TrackType_AUDIO}, now.Add(-duration))
+		cs.StartAt(webrtc.MimeTypeOpus, false, now.Add(-duration))
 		cs.UpdateMuteAt(false, now.Add(-1*time.Second))
 
 		// RTT does not knock quality down because it is dependent and hence not taken into account
@@ -494,7 +492,7 @@ func TestConnectionQuality(t *testing.T) {
 		// quality should drop to GOOD if RTT were taken into consideration
 		trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
 			1: {
-				RTPStats: &buffer.RTPDeltaInfo{
+				RTPStats: &rtpstats.RTPDeltaInfo{
 					StartTime:   now,
 					EndTime:     now.Add(duration),
 					Packets:     250,
@@ -511,8 +509,6 @@ func TestConnectionQuality(t *testing.T) {
 
 	t.Run("quality scorer dependent jitter", func(t *testing.T) {
 		cs := NewConnectionStats(ConnectionStatsParams{
-			MimeType:         "audio/opus",
-			IsFECEnabled:     false,
 			IncludeRTT:       true,
 			IncludeJitter:    false,
 			ReceiverProvider: trp,
@@ -521,7 +517,7 @@ func TestConnectionQuality(t *testing.T) {
 
 		duration := 5 * time.Second
 		now := time.Now()
-		cs.StartAt(&livekit.TrackInfo{Type: livekit.TrackType_AUDIO}, now.Add(-duration))
+		cs.StartAt(webrtc.MimeTypeOpus, false, now.Add(-duration))
 		cs.UpdateMuteAt(false, now.Add(-1*time.Second))
 
 		// Jitter does not knock quality down because it is dependent and hence not taken into account
@@ -529,7 +525,7 @@ func TestConnectionQuality(t *testing.T) {
 		// quality should drop to GOOD if jitter were taken into consideration
 		trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
 			1: {
-				RTPStats: &buffer.RTPDeltaInfo{
+				RTPStats: &rtpstats.RTPDeltaInfo{
 					StartTime:   now,
 					EndTime:     now.Add(duration),
 					Packets:     250,
@@ -683,8 +679,6 @@ func TestConnectionQuality(t *testing.T) {
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
 				cs := NewConnectionStats(ConnectionStatsParams{
-					MimeType:         tc.mimeType,
-					IsFECEnabled:     tc.isFECEnabled,
 					IncludeRTT:       true,
 					IncludeJitter:    true,
 					ReceiverProvider: trp,
@@ -693,12 +687,12 @@ func TestConnectionQuality(t *testing.T) {
 
 				duration := 5 * time.Second
 				now := time.Now()
-				cs.StartAt(&livekit.TrackInfo{Type: livekit.TrackType_AUDIO}, now.Add(-duration))
+				cs.StartAt(tc.mimeType, tc.isFECEnabled, now.Add(-duration))
 
 				for _, eq := range tc.expectedQualities {
 					trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
 						123: {
-							RTPStats: &buffer.RTPDeltaInfo{
+							RTPStats: &rtpstats.RTPDeltaInfo{
 								StartTime:   now,
 								EndTime:     now.Add(duration),
 								Packets:     tc.packetsExpected,
@@ -783,8 +777,6 @@ func TestConnectionQuality(t *testing.T) {
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
 				cs := NewConnectionStats(ConnectionStatsParams{
-					MimeType:           "video/vp8",
-					IsFECEnabled:       false,
 					IncludeRTT:         true,
 					IncludeJitter:      true,
 					EnableBitrateScore: true,
@@ -794,7 +786,7 @@ func TestConnectionQuality(t *testing.T) {
 
 				duration := 5 * time.Second
 				now := time.Now()
-				cs.StartAt(&livekit.TrackInfo{Type: livekit.TrackType_VIDEO}, now)
+				cs.StartAt(webrtc.MimeTypeVP8, false, now)
 
 				for _, tr := range tc.transitions {
 					cs.AddBitrateTransitionAt(tr.bitrate, now.Add(tr.offset))
@@ -802,7 +794,7 @@ func TestConnectionQuality(t *testing.T) {
 
 				trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
 					123: {
-						RTPStats: &buffer.RTPDeltaInfo{
+						RTPStats: &rtpstats.RTPDeltaInfo{
 							StartTime: now,
 							EndTime:   now.Add(duration),
 							Packets:   100,
@@ -878,8 +870,6 @@ func TestConnectionQuality(t *testing.T) {
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
 				cs := NewConnectionStats(ConnectionStatsParams{
-					MimeType:         "video/vp8",
-					IsFECEnabled:     false,
 					IncludeRTT:       true,
 					IncludeJitter:    true,
 					ReceiverProvider: trp,
@@ -888,7 +878,7 @@ func TestConnectionQuality(t *testing.T) {
 
 				duration := 5 * time.Second
 				now := time.Now()
-				cs.StartAt(&livekit.TrackInfo{Type: livekit.TrackType_VIDEO}, now)
+				cs.StartAt(webrtc.MimeTypeVP8, false, now)
 
 				for _, tr := range tc.transitions {
 					cs.AddLayerTransitionAt(tr.distance, now.Add(tr.offset))
@@ -896,7 +886,7 @@ func TestConnectionQuality(t *testing.T) {
 
 				trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
 					123: {
-						RTPStats: &buffer.RTPDeltaInfo{
+						RTPStats: &rtpstats.RTPDeltaInfo{
 							StartTime: now,
 							EndTime:   now.Add(duration),
 							Packets:   200,

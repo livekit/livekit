@@ -34,6 +34,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils/mono"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
@@ -41,6 +42,7 @@ import (
 	act "github.com/livekit/livekit-server/pkg/sfu/rtpextension/abscapturetime"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	pd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/playoutdelay"
+	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
 )
 
@@ -57,7 +59,6 @@ type TrackSender interface {
 	// ID is the globally unique identifier for this Track.
 	ID() string
 	SubscriberID() livekit.ParticipantID
-	TrackInfoAvailable()
 	HandleRTCPSenderReportData(
 		payloadType webrtc.PayloadType,
 		isSVC bool,
@@ -136,14 +137,9 @@ var (
 // -------------------------------------------------------------------
 
 type DownTrackState struct {
-	RTPStats                   *buffer.RTPStatsSender
+	RTPStats                   *rtpstats.RTPStatsSender
 	DeltaStatsSenderSnapshotId uint32
 	ForwarderState             *livekit.RTPForwarderState
-}
-
-func (d DownTrackState) String() string {
-	return fmt.Sprintf("DownTrackState{rtpStats: %s, deltaSender: %d, forwarder: %s}",
-		d.RTPStats, d.DeltaStatsSenderSnapshotId, d.ForwarderState.String())
 }
 
 func (d DownTrackState) MarshalLogObject(e zapcore.ObjectEncoder) error {
@@ -277,7 +273,7 @@ type DownTrack struct {
 	writeStopped         atomic.Bool
 	isReceiverReady      bool
 
-	rtpStats *buffer.RTPStatsSender
+	rtpStats *rtpstats.RTPStatsSender
 
 	totalRepeatedNACKs atomic.Uint32
 
@@ -379,15 +375,13 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		d.getExpectedRTPTimestamp,
 	)
 
-	d.rtpStats = buffer.NewRTPStatsSender(buffer.RTPStatsParams{
+	d.rtpStats = rtpstats.NewRTPStatsSender(rtpstats.RTPStatsParams{
 		ClockRate: d.codec.ClockRate,
 		Logger:    d.params.Logger,
 	})
 	d.deltaStatsSenderSnapshotId = d.rtpStats.NewSenderSnapshotId()
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
-		MimeType:       codecs[0].MimeType, // LK-TODO have to notify on codec change
-		IsFECEnabled:   strings.EqualFold(codecs[0].MimeType, webrtc.MimeTypeOpus) && strings.Contains(strings.ToLower(codecs[0].SDPFmtpLine), "fec"),
 		SenderProvider: d,
 		Logger:         d.params.Logger.WithValues("direction", "down"),
 	})
@@ -448,7 +442,8 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		if onBinding != nil {
 			onBinding(err)
 		}
-		return webrtc.RTPCodecParameters{}, err
+		// don't return error here, as pion will not start transports if Bind fails at first answer
+		return webrtc.RTPCodecParameters{}, nil
 	}
 
 	// if a downtrack is closed before bind, it already unsubscribed from client, don't do subsequent operation and return here.
@@ -483,11 +478,14 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 			return
 		}
 
-		if strings.EqualFold(matchedUpstreamCodec.MimeType, "audio/red") {
+		isFECEnabled := false
+		if strings.EqualFold(matchedUpstreamCodec.MimeType, MimeTypeAudioRed) {
 			d.isRED = true
 			for _, c := range d.upstreamCodecs {
+				isFECEnabled = strings.Contains(strings.ToLower(c.SDPFmtpLine), "useinbandfec=1")
+
 				// assume upstream primary codec is opus since we only support it for audio now
-				if strings.EqualFold(c.MimeType, "audio/opus") {
+				if strings.EqualFold(c.MimeType, webrtc.MimeTypeOpus) {
 					d.upstreamPrimaryPT = uint8(c.PayloadType)
 					break
 				}
@@ -501,12 +499,15 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 				d.params.Logger.Errorw("failed to parse primary and secondary payload type for RED", err, "matchedCodec", codec)
 			}
 			d.primaryPT = uint8(primaryPT)
+		} else if strings.HasPrefix(strings.ToLower(matchedUpstreamCodec.MimeType), "audio/") {
+			isFECEnabled = strings.Contains(strings.ToLower(matchedUpstreamCodec.SDPFmtpLine), "fec")
 		}
 
 		logFields := []interface{}{
 			"codecs", d.upstreamCodecs,
 			"matchCodec", codec,
 			"ssrc", t.SSRC(),
+			"isFECEnabled", isFECEnabled,
 		}
 		if d.isRED {
 			logFields = append(logFields,
@@ -540,6 +541,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.bindLock.Unlock()
 
 		d.forwarder.DetermineCodec(codec.RTPCodecCapability, d.params.Receiver.HeaderExtensions())
+		d.connectionStats.Start(codec.MimeType, isFECEnabled)
 		d.params.Logger.Debugw("downtrack bound")
 	}
 
@@ -594,14 +596,6 @@ func (d *DownTrack) Unbind(_ webrtc.TrackLocalContext) error {
 	d.setBindStateLocked(bindStateUnbound)
 	d.bindLock.Unlock()
 	return nil
-}
-
-func (d *DownTrack) TrackInfoAvailable() {
-	ti := d.params.Receiver.TrackInfo()
-	if ti == nil {
-		return
-	}
-	d.connectionStats.Start(ti)
 }
 
 func (d *DownTrack) SetStreamAllocatorListener(listener DownTrackStreamAllocatorListener) {
@@ -918,7 +912,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		_, _, refSenderReport := d.forwarder.GetSenderReportParams()
 		if refSenderReport != nil {
 			actExtCopy := *extPkt.AbsCaptureTimeExt
-			if err = actExtCopy.Rewrite(buffer.RTCPSenderReportPropagationDelay(refSenderReport, !d.params.DisableSenderReportPassThrough)); err == nil {
+			if err = actExtCopy.Rewrite(rtpstats.RTCPSenderReportPropagationDelay(refSenderReport, !d.params.DisableSenderReportPassThrough)); err == nil {
 				actBytes, err = actExtCopy.Marshal()
 				if err == nil {
 					extensions = append(
@@ -1051,7 +1045,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 			&hdr,
 			len(payload),
 			&sendPacketMetadata{
-				packetTime:           d.params.Receiver.GetMonotonicNowUnixNano(),
+				packetTime:           mono.UnixNano(),
 				extSequenceNumber:    snts[i].extSequenceNumber,
 				extTimestamp:         snts[i].extTimestamp,
 				isPadding:            true,
@@ -1269,6 +1263,7 @@ func (d *DownTrack) SeedState(state DownTrackState) {
 }
 
 func (d *DownTrack) StopWriteAndGetState() DownTrackState {
+	d.params.Logger.Debugw("stopping write")
 	d.bindLock.Lock()
 	d.writable.Store(false)
 	d.writeStopped.Store(true)
@@ -1536,13 +1531,13 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 
 		var getBlankFrame func(bool) ([]byte, error)
 		switch d.mime {
-		case "audio/opus":
+		case strings.ToLower(webrtc.MimeTypeOpus):
 			getBlankFrame = d.getOpusBlankFrame
-		case "audio/red":
+		case strings.ToLower(MimeTypeAudioRed):
 			getBlankFrame = d.getOpusRedBlankFrame
-		case "video/vp8":
+		case strings.ToLower(webrtc.MimeTypeVP8):
 			getBlankFrame = d.getVP8BlankFrame
-		case "video/h264":
+		case strings.ToLower(webrtc.MimeTypeH264):
 			getBlankFrame = d.getH264BlankFrame
 		default:
 			close(done)
@@ -1550,7 +1545,7 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 		}
 
 		frameRate := uint32(30)
-		if d.mime == "audio/opus" || d.mime == "audio/red" {
+		if d.mime == strings.ToLower(webrtc.MimeTypeOpus) || d.mime == strings.ToLower(MimeTypeAudioRed) {
 			frameRate = 50
 		}
 
@@ -1596,7 +1591,7 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 				}
 
 				d.sendingPacket(&hdr, len(payload), &sendPacketMetadata{
-					packetTime:        d.params.Receiver.GetMonotonicNowUnixNano(),
+					packetTime:        mono.UnixNano(),
 					extSequenceNumber: snts[i].extSequenceNumber,
 					extTimestamp:      snts[i].extTimestamp,
 				})
@@ -1771,10 +1766,11 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			}
 			if len(rr.Reports) > 0 {
 				d.listenerLock.RLock()
-				for _, l := range d.receiverReportListeners {
+				rrListeners := d.receiverReportListeners
+				d.listenerLock.RUnlock()
+				for _, l := range rrListeners {
 					l(d, rr)
 				}
-				d.listenerLock.RUnlock()
 			}
 
 		case *rtcp.TransportLayerNack:
@@ -1959,7 +1955,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			len(payload),
 			&sendPacketMetadata{
 				layer:             int32(epm.layer),
-				packetTime:        d.params.Receiver.GetMonotonicNowUnixNano(),
+				packetTime:        mono.UnixNano(),
 				extSequenceNumber: epm.extSequenceNumber,
 				extTimestamp:      epm.extTimestamp,
 				isRTX:             true,
@@ -2061,7 +2057,7 @@ func (d *DownTrack) GetTrackStats() *livekit.RTPStats {
 	return d.rtpStats.ToProto()
 }
 
-func (d *DownTrack) deltaStats(ds *buffer.RTPDeltaInfo) map[uint32]*buffer.StreamStatsWithLayers {
+func (d *DownTrack) deltaStats(ds *rtpstats.RTPDeltaInfo) map[uint32]*buffer.StreamStatsWithLayers {
 	if ds == nil {
 		return nil
 	}
@@ -2069,7 +2065,7 @@ func (d *DownTrack) deltaStats(ds *buffer.RTPDeltaInfo) map[uint32]*buffer.Strea
 	streamStats := make(map[uint32]*buffer.StreamStatsWithLayers, 1)
 	streamStats[d.ssrc] = &buffer.StreamStatsWithLayers{
 		RTPStats: ds,
-		Layers: map[int32]*buffer.RTPDeltaInfo{
+		Layers: map[int32]*rtpstats.RTPDeltaInfo{
 			0: ds,
 		},
 	}
@@ -2086,11 +2082,11 @@ func (d *DownTrack) GetLastReceiverReportTime() time.Time {
 }
 
 func (d *DownTrack) GetTotalPacketsSent() uint64 {
-	return d.rtpStats.GetTotalPacketsPrimary()
+	return d.rtpStats.GetPacketsSeenMinusPadding()
 }
 
 func (d *DownTrack) GetNackStats() (totalPackets uint32, totalRepeatedNACKs uint32) {
-	totalPackets = uint32(d.rtpStats.GetTotalPacketsPrimary())
+	totalPackets = uint32(d.rtpStats.GetPacketsSeenMinusPadding())
 	totalRepeatedNACKs = d.totalRepeatedNACKs.Load()
 	return
 }
@@ -2122,7 +2118,7 @@ func (d *DownTrack) sendPaddingOnMute() {
 
 	if d.kind == webrtc.RTPCodecTypeVideo {
 		d.sendPaddingOnMuteForVideo()
-	} else if d.mime == "audio/opus" {
+	} else if d.mime == strings.ToLower(webrtc.MimeTypeOpus) {
 		d.sendSilentFrameOnMuteForOpus()
 	}
 }
@@ -2182,7 +2178,7 @@ func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
 				&hdr,
 				len(payload),
 				&sendPacketMetadata{
-					packetTime:        d.params.Receiver.GetMonotonicNowUnixNano(),
+					packetTime:        mono.UnixNano(),
 					extSequenceNumber: snts[i].extSequenceNumber,
 					extTimestamp:      snts[i].extTimestamp,
 					// although this is using empty frames, mark as padding as these are used to trigger Pion OnTrack only
