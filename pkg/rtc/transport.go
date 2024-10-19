@@ -248,6 +248,7 @@ type TransportParams struct {
 	IsSendSide                   bool
 	AllowPlayoutDelay            bool
 	DataChannelMaxBufferedAmount uint64
+	DropRemoteICECandidates      bool
 }
 
 func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimator cc.BandwidthEstimator)) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
@@ -1400,7 +1401,7 @@ func (t *PCTransport) handleRemoteICECandidate(e event) error {
 	c := e.data.(*webrtc.ICECandidateInit)
 
 	filtered := false
-	if t.preferTCP.Load() && !strings.Contains(c.Candidate, "tcp") {
+	if t.params.DropRemoteICECandidates || (t.preferTCP.Load() && !strings.Contains(c.Candidate, "tcp")) {
 		t.params.Logger.Debugw("filtering out remote candidate", "candidate", c.Candidate)
 		filtered = true
 	}
@@ -1454,7 +1455,7 @@ func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription, preferTCP, 
 					filteredAttrs = append(filteredAttrs, a)
 					continue
 				}
-				excluded := preferTCP && !c.NetworkType().IsTCP()
+				excluded := (!isLocal && t.params.DropRemoteICECandidates) || (preferTCP && !c.NetworkType().IsTCP())
 				if !excluded {
 					if !t.params.Config.UseMDNS && types.IsICECandidateMDNS(c) {
 						excluded = true
