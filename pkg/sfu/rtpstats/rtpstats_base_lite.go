@@ -345,7 +345,9 @@ func (r *rtpStatsBaseLite) marshalLogObject(e zapcore.ObjectEncoder, packetsExpe
 
 	e.AddUint64("packetsLost", r.packetsLost)
 	e.AddFloat64("packetsLostRate", float64(r.packetsLost)/elapsedSeconds)
-	e.AddFloat32("packetLostPercentage", float32(r.packetsLost)/float32(packetsExpected)*100.0)
+	if packetsExpected != 0 {
+		e.AddFloat32("packetLostPercentage", float32(r.packetsLost)/float32(packetsExpected)*100.0)
+	}
 
 	hasLoss := false
 	first := true
@@ -396,7 +398,10 @@ func (r *rtpStatsBaseLite) toProto(packetsExpected, packetsSeenMinusPadding, pac
 	bitrate := float64(r.bytes) * 8.0 / elapsed
 
 	packetLostRate := float64(packetsLost) / elapsed
-	packetLostPercentage := float32(packetsLost) / float32(packetsExpected) * 100.0
+	packetLostPercentage := float32(0)
+	if packetsExpected != 0 {
+		packetLostPercentage = float32(packetsLost) / float32(packetsExpected) * 100.0
+	}
 
 	p := &livekit.RTPStats{
 		StartTime:            timestamppb.New(r.startTime),
