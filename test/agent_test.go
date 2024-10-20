@@ -120,12 +120,10 @@ func TestAgentNamespaces(t *testing.T) {
 
 	_, err = roomClient.CreateRoom(contextWithToken(createRoomToken()), &livekit.CreateRoomRequest{
 		Name: testRoom,
-		Agent: &livekit.RoomAgent{
-			Dispatches: []*livekit.RoomAgentDispatch{
-				&livekit.RoomAgentDispatch{},
-				&livekit.RoomAgentDispatch{
-					AgentName: "ag",
-				},
+		Agents: []*livekit.RoomAgentDispatch{
+			{},
+			{
+				AgentName: "ag",
 			},
 		},
 	})

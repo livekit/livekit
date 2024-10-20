@@ -278,13 +278,13 @@ func (r *RoomManager) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 // StartSession starts WebRTC session when a new participant is connected, takes place on RTC node
 func (r *RoomManager) StartSession(
 	ctx context.Context,
-	createRoom *livekit.CreateRoomRequest,
 	pi routing.ParticipantInit,
 	requestSource routing.MessageSource,
 	responseSink routing.MessageSink,
 ) error {
 	sessionStartTime := time.Now()
 
+	createRoom := pi.CreateRoom
 	room, err := r.getOrCreateRoom(ctx, createRoom)
 	if err != nil {
 		return err
