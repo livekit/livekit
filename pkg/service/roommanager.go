@@ -990,7 +990,9 @@ func (r *RoomManager) refreshToken(participant types.LocalParticipant) error {
 		SetValidFor(tokenDefaultTTL).
 		SetMetadata(grants.Metadata).
 		SetAttributes(grants.Attributes).
-		AddGrant(grants.Video)
+		SetVideoGrant(grants.Video).
+		SetRoomConfig(grants.GetRoomConfiguration()).
+		SetRoomPreset(grants.RoomPreset)
 	jwt, err := token.ToJWT()
 	if err == nil {
 		err = participant.SendRefreshToken(jwt)
