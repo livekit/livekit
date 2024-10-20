@@ -108,8 +108,8 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 			internal.TrackEgress = req.Egress.Tracks
 		}
 	}
-	if req.Agent != nil {
-		internal.AgentDispatches = req.Agent.Dispatches
+	if req.Agents != nil {
+		internal.AgentDispatches = req.Agents
 	}
 	if req.MinPlayoutDelay > 0 || req.MaxPlayoutDelay > 0 {
 		internal.PlayoutDelay = &livekit.PlayoutDelay{
@@ -200,11 +200,11 @@ func applyDefaultRoomConfig(room *livekit.Room, internal *livekit.RoomInternal, 
 }
 
 func (r *StandardRoomAllocator) applyNamedRoomConfiguration(req *livekit.CreateRoomRequest) (*livekit.CreateRoomRequest, error) {
-	if req.ConfigName == "" {
+	if req.RoomPreset == "" {
 		return req, nil
 	}
 
-	conf, ok := r.config.Room.RoomConfigurations[req.ConfigName]
+	conf, ok := r.config.Room.RoomConfigurations[req.RoomPreset]
 	if !ok {
 		return req, psrpc.NewErrorf(psrpc.InvalidArgument, "unknown room confguration in create room request")
 	}
@@ -224,8 +224,11 @@ func (r *StandardRoomAllocator) applyNamedRoomConfiguration(req *livekit.CreateR
 	if clone.Egress == nil {
 		clone.Egress = utils.CloneProto(conf.Egress)
 	}
-	if clone.Agent == nil {
-		clone.Agent = utils.CloneProto(conf.Agent)
+	if clone.Agents == nil {
+		clone.Agents = make([]*livekit.RoomAgentDispatch, 0, len(conf.Agents))
+		for _, agent := range conf.Agents {
+			clone.Agents = append(clone.Agents, utils.CloneProto(agent))
+		}
 	}
 	if clone.MinPlayoutDelay == 0 {
 		clone.MinPlayoutDelay = conf.MinPlayoutDelay

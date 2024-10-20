@@ -1728,9 +1728,7 @@ func (r *Room) createAgentDispatchesFromRoomAgent() {
 	roomDisp := r.internal.AgentDispatches
 	if len(roomDisp) == 0 {
 		// Backward compatibility: by default, start any agent in the empty JobName
-		roomDisp = []*livekit.RoomAgentDispatch{
-			&livekit.RoomAgentDispatch{},
-		}
+		roomDisp = []*livekit.RoomAgentDispatch{{}}
 	}
 
 	for _, ag := range roomDisp {

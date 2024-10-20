@@ -179,16 +179,6 @@ func EnsureCreatePermission(ctx context.Context) error {
 	return nil
 }
 
-func GetRoomConfiguration(ctx context.Context) string {
-
-	claims := GetGrants(ctx)
-
-	if claims == nil || claims.Video == nil {
-		return ""
-	}
-	return claims.Video.RoomConfiguration
-}
-
 func EnsureListPermission(ctx context.Context) error {
 	claims := GetGrants(ctx)
 	if claims == nil || claims.Video == nil || !claims.Video.RoomList {

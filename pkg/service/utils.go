@@ -22,6 +22,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -66,4 +67,18 @@ func GetClientIP(r *http.Request) string {
 	}
 	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
 	return ip
+}
+
+func SetRoomConfiguration(createRequest *livekit.CreateRoomRequest, conf *livekit.RoomConfiguration) {
+	if conf == nil {
+		return
+	}
+	createRequest.Agents = conf.Agents
+	createRequest.Egress = conf.Egress
+	createRequest.EmptyTimeout = conf.EmptyTimeout
+	createRequest.DepartureTimeout = conf.DepartureTimeout
+	createRequest.MaxParticipants = conf.MaxParticipants
+	createRequest.MinPlayoutDelay = conf.MinPlayoutDelay
+	createRequest.MaxPlayoutDelay = conf.MaxPlayoutDelay
+	createRequest.SyncStreams = conf.SyncStreams
 }

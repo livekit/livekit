@@ -166,6 +166,12 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 		}
 	}
 
+	createRequest := &livekit.CreateRoomRequest{
+		Name:       string(roomName),
+		RoomPreset: claims.RoomPreset,
+	}
+	SetRoomConfiguration(createRequest, claims.GetRoomConfiguration())
+
 	pi = routing.ParticipantInit{
 		Reconnect:       boolValue(reconnectParam),
 		ReconnectReason: livekit.ReconnectReason(reconnectReason),
@@ -175,10 +181,7 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 		Client:          s.ParseClientInfo(r),
 		Grants:          claims,
 		Region:          region,
-		CreateRoom: &livekit.CreateRoomRequest{
-			Name:       string(roomName),
-			ConfigName: GetRoomConfiguration(r.Context()),
-		},
+		CreateRoom:      createRequest,
 	}
 	if pi.Reconnect {
 		pi.ID = livekit.ParticipantID(participantID)

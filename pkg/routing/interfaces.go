@@ -169,6 +169,7 @@ func ParticipantInitFromStartSession(ss *livekit.StartSession, region string) (*
 		AdaptiveStream:  ss.AdaptiveStream,
 		ID:              livekit.ParticipantID(ss.ParticipantId),
 		DisableICELite:  ss.DisableIceLite,
+		CreateRoom:      ss.CreateRoom,
 	}
 	if ss.SubscriberAllowPause != nil {
 		subscriberAllowPause := *ss.SubscriberAllowPause

@@ -39,7 +39,6 @@ type SessionHandler interface {
 
 	HandleSession(
 		ctx context.Context,
-		createRoom *livekit.CreateRoomRequest,
 		pi routing.ParticipantInit,
 		connectionID livekit.ConnectionID,
 		requestSource routing.MessageSource,
@@ -94,7 +93,6 @@ func (s *defaultSessionHandler) Logger(ctx context.Context) logger.Logger {
 
 func (s *defaultSessionHandler) HandleSession(
 	ctx context.Context,
-	createRoom *livekit.CreateRoomRequest,
 	pi routing.ParticipantInit,
 	connectionID livekit.ConnectionID,
 	requestSource routing.MessageSource,
@@ -102,7 +100,7 @@ func (s *defaultSessionHandler) HandleSession(
 ) error {
 	prometheus.IncrementParticipantRtcInit(1)
 
-	rtcNode, err := s.router.GetNodeForRoom(ctx, livekit.RoomName(createRoom.Name))
+	rtcNode, err := s.router.GetNodeForRoom(ctx, livekit.RoomName(pi.CreateRoom.Name))
 	if err != nil {
 		return err
 	}
@@ -115,7 +113,7 @@ func (s *defaultSessionHandler) HandleSession(
 		return err
 	}
 
-	return s.roomManager.StartSession(ctx, createRoom, pi, requestSource, responseSink)
+	return s.roomManager.StartSession(ctx, pi, requestSource, responseSink)
 }
 
 func (s *SignalServer) Start() error {
@@ -181,19 +179,7 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 	// and the delivery of any parting messages from the client. take care to
 	// copy the incoming rpc headers to avoid dropping any session vars.
 	ctx := metadata.NewContextWithIncomingHeader(context.Background(), metadata.IncomingHeader(stream.Context()))
-
-	createRoom := ss.CreateRoom
-	if createRoom == nil {
-		createRoom = &livekit.CreateRoomRequest{
-			Name: ss.RoomName,
-		}
-
-		if pi.Grants != nil && pi.Grants.Video != nil {
-			createRoom.ConfigName = pi.Grants.Video.RoomConfiguration
-		}
-	}
-
-	err = r.sessionHandler.HandleSession(ctx, createRoom, *pi, livekit.ConnectionID(ss.ConnectionId), reqChan, sink)
+	err = r.sessionHandler.HandleSession(ctx, *pi, livekit.ConnectionID(ss.ConnectionId), reqChan, sink)
 	if err != nil {
 		sink.Close()
 		l.Errorw("could not handle new participant", err)

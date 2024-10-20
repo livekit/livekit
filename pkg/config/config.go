@@ -253,8 +253,8 @@ type RoomConfig struct {
 	// deprecated, moved to limits
 	MaxRoomNameLength int `yaml:"max_room_name_length,omitempty"`
 	// deprecated, moved to limits
-	MaxParticipantIdentityLength int                                  `yaml:"max_participant_identity_length,omitempty"`
-	RoomConfigurations           map[string]livekit.RoomConfiguration `yaml:"room_configurations,omitempty"`
+	MaxParticipantIdentityLength int                                   `yaml:"max_participant_identity_length,omitempty"`
+	RoomConfigurations           map[string]*livekit.RoomConfiguration `yaml:"room_configurations,omitempty"`
 }
 
 type CodecSpec struct {
