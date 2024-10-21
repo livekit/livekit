@@ -195,6 +195,7 @@ func (r *rtpStatsBase) seed(from *rtpStatsBase) bool {
 	}
 
 	r.firstTime = from.firstTime
+	r.firstTimeAdjustment = from.firstTimeAdjustment
 	r.highestTime = from.highestTime
 
 	r.lastTransit = from.lastTransit
@@ -202,6 +203,8 @@ func (r *rtpStatsBase) seed(from *rtpStatsBase) bool {
 
 	r.headerBytes = from.headerBytes
 
+	r.packetsDuplicate = from.packetsDuplicate
+	r.bytesDuplicate = from.bytesDuplicate
 	r.headerBytesDuplicate = from.headerBytesDuplicate
 
 	r.packetsPadding = from.packetsPadding
@@ -212,13 +215,6 @@ func (r *rtpStatsBase) seed(from *rtpStatsBase) bool {
 
 	r.jitter = from.jitter
 	r.maxJitter = from.maxJitter
-
-	r.nackAcks = from.nackAcks
-	r.nackMisses = from.nackMisses
-	r.nackRepeated = from.nackRepeated
-
-	r.plis = from.plis
-	r.lastPli = from.lastPli
 
 	r.firs = from.firs
 	r.lastFir = from.lastFir

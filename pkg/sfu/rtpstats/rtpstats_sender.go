@@ -203,12 +203,12 @@ func (r *RTPStatsSender) Seed(from *RTPStatsSender) {
 
 	r.snInfos = from.snInfos
 
+	r.layerLockPlis = from.layerLockPlis
+	r.lastLayerLockPli = from.lastLayerLockPli
+
 	r.nextSenderSnapshotID = from.nextSenderSnapshotID
 	r.senderSnapshots = make([]senderSnapshot, cap(from.senderSnapshots))
 	copy(r.senderSnapshots, from.senderSnapshots)
-
-	r.layerLockPlis = from.layerLockPlis
-	r.lastLayerLockPli = from.lastLayerLockPli
 }
 
 func (r *RTPStatsSender) NewSnapshotId() uint32 {
