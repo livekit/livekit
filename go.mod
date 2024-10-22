@@ -56,6 +56,8 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
+// replace github.com/livekit/protocol => ../protocol
+
 require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.33.0-20240401165935-b983156c5e99.1 // indirect
 	dario.cat/mergo v1.0.0 // indirect
