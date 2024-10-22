@@ -54,7 +54,7 @@ func (fc *FrameChain) OnFrame(extFrameNum uint64, fd *dd.FrameDependencyTemplate
 	if fd.ChainDiffs[fc.chainIdx] == 0 {
 		if fc.broken {
 			fc.broken = false
-			// fc.logger.Debugw("frame chain intact", "chanIdx", fc.chainIdx, "frame", extFrameNum)
+			fc.logger.Debugw("frame chain intact", "chanIdx", fc.chainIdx, "frame", extFrameNum)
 		}
 		fc.expectFrames = fc.expectFrames[:0]
 		return true
@@ -86,7 +86,7 @@ func (fc *FrameChain) OnFrame(extFrameNum uint64, fd *dd.FrameDependencyTemplate
 
 	if !intact {
 		fc.broken = true
-		// fc.logger.Debugw("frame chain broken", "chanIdx", fc.chainIdx, "sd", sd, "frame", extFrameNum, "prevFrame", prevFrameInChain)
+		fc.logger.Debugw("frame chain broken", "chanIdx", fc.chainIdx, "sd", sd, "frame", extFrameNum, "prevFrame", prevFrameInChain)
 	}
 	return intact
 }
@@ -100,7 +100,7 @@ func (fc *FrameChain) OnExpectFrameChanged(frameNum uint64, decision selectorDec
 		if f == frameNum {
 			if decision != selectorDecisionForwarded {
 				fc.broken = true
-				// fc.logger.Debugw("frame chain broken", "chanIdx", fc.chainIdx, "sd", decision, "frame", frameNum)
+				fc.logger.Debugw("frame chain broken", "chanIdx", fc.chainIdx, "sd", decision, "frame", frameNum)
 			}
 			fc.expectFrames[i] = fc.expectFrames[len(fc.expectFrames)-1]
 			fc.expectFrames = fc.expectFrames[:len(fc.expectFrames)-1]
@@ -132,6 +132,7 @@ func (fc *FrameChain) EndUpdateActive() {
 	// if the chain transit from inactive to active, reset broken to wait a decodable SWITCH frame
 	if !fc.active {
 		fc.broken = true
+		fc.logger.Debugw("frame chain broken by inactive", "chanIdx", fc.chainIdx)
 	}
 
 	fc.active = active

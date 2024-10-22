@@ -21,20 +21,19 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/sendsidebwe"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils/mono"
 	"github.com/pion/rtp"
 )
 
 type Base struct {
 	logger logger.Logger
 
-	packetTime  *PacketTime
 	sendSideBWE *sendsidebwe.SendSideBWE
 }
 
 func NewBase(logger logger.Logger, sendSideBWE *sendsidebwe.SendSideBWE) *Base {
 	return &Base{
 		logger:      logger,
-		packetTime:  NewPacketTime(),
 		sendSideBWE: sendSideBWE,
 	}
 }
@@ -89,7 +88,7 @@ func (b *Base) writeRTPHeaderExtensions(p *Packet) (time.Time, uint16, error) {
 		p.Header.SetExtension(ext.ID, ext.Payload)
 	}
 
-	sendingAt := b.packetTime.Get()
+	sendingAt := mono.Now()
 	if p.AbsSendTimeExtID != 0 {
 		sendTime := rtp.NewAbsSendTimeExtension(sendingAt)
 		b, err := sendTime.Marshal()

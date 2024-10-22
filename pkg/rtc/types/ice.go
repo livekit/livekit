@@ -47,43 +47,49 @@ type ICECandidateExtended struct {
 	Trickle  bool
 }
 
-type ICEConnectionDetails struct {
+// --------------------------------------------
+
+type ICEConnectionInfo struct {
 	Local     []*ICECandidateExtended
 	Remote    []*ICECandidateExtended
 	Transport livekit.SignalTarget
 	Type      ICEConnectionType
-	lock      sync.Mutex
-	logger    logger.Logger
+}
+
+func (i *ICEConnectionInfo) HasCandidates() bool {
+	return len(i.Local) > 0 || len(i.Remote) > 0
+}
+
+// --------------------------------------------
+
+type ICEConnectionDetails struct {
+	ICEConnectionInfo
+	lock   sync.Mutex
+	logger logger.Logger
 }
 
 func NewICEConnectionDetails(transport livekit.SignalTarget, l logger.Logger) *ICEConnectionDetails {
 	d := &ICEConnectionDetails{
-		Transport: transport,
-		Type:      ICEConnectionTypeUnknown,
-		logger:    l,
+		ICEConnectionInfo: ICEConnectionInfo{
+			Transport: transport,
+			Type:      ICEConnectionTypeUnknown,
+		},
+		logger: l,
 	}
 	return d
 }
 
-func (d *ICEConnectionDetails) HasCandidates() bool {
+func (d *ICEConnectionDetails) GetInfo() *ICEConnectionInfo {
 	d.lock.Lock()
 	defer d.lock.Unlock()
-	return len(d.Local) > 0 || len(d.Remote) > 0
-}
-
-// Clone returns a copy of the ICEConnectionDetails, where fields can be read without locking
-func (d *ICEConnectionDetails) Clone() *ICEConnectionDetails {
-	d.lock.Lock()
-	defer d.lock.Unlock()
-	clone := &ICEConnectionDetails{
+	info := &ICEConnectionInfo{
 		Transport: d.Transport,
 		Type:      d.Type,
-		logger:    d.logger,
 		Local:     make([]*ICECandidateExtended, 0, len(d.Local)),
 		Remote:    make([]*ICECandidateExtended, 0, len(d.Remote)),
 	}
 	for _, c := range d.Local {
-		clone.Local = append(clone.Local, &ICECandidateExtended{
+		info.Local = append(info.Local, &ICECandidateExtended{
 			Local:    c.Local,
 			Filtered: c.Filtered,
 			Selected: c.Selected,
@@ -91,14 +97,14 @@ func (d *ICEConnectionDetails) Clone() *ICEConnectionDetails {
 		})
 	}
 	for _, c := range d.Remote {
-		clone.Remote = append(clone.Remote, &ICECandidateExtended{
+		info.Remote = append(info.Remote, &ICECandidateExtended{
 			Remote:   c.Remote,
 			Filtered: c.Filtered,
 			Selected: c.Selected,
 			Trickle:  c.Trickle,
 		})
 	}
-	return clone
+	return info
 }
 
 func (d *ICEConnectionDetails) AddLocalCandidate(c *webrtc.ICECandidate, filtered, trickle bool) {
@@ -224,6 +230,8 @@ func (d *ICEConnectionDetails) SetSelectedPair(pair *webrtc.ICECandidatePair) {
 	}
 }
 
+// -------------------------------------------------------------
+
 func isCandidateEqualTo(c1, c2 *webrtc.ICECandidate) bool {
 	if c1 == nil && c2 == nil {
 		return true
@@ -331,4 +339,22 @@ func unmarshalCandidate(i ice.Candidate) (*webrtc.ICECandidate, error) {
 	}
 
 	return &c, nil
+}
+
+func IsCandidateMDNS(candidate webrtc.ICECandidateInit) bool {
+	c, err := unmarshalICECandidate(candidate)
+	if err != nil {
+		return false
+	}
+
+	return IsICECandidateMDNS(c)
+}
+
+func IsICECandidateMDNS(candidate ice.Candidate) bool {
+	if candidate == nil {
+		// end-of-candidates candidate
+		return false
+	}
+
+	return strings.HasSuffix(candidate.Address(), ".local")
 }

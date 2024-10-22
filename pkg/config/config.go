@@ -27,6 +27,7 @@ import (
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
 
+	"github.com/livekit/livekit-server/pkg/metric"
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -85,6 +86,8 @@ type Config struct {
 	Limit    LimitConfig   `yaml:"limit,omitempty"`
 
 	Development bool `yaml:"development,omitempty"`
+
+	Metric metric.MetricConfig `yaml:"metric,omitempty"`
 }
 
 type RTCConfig struct {
@@ -243,6 +246,9 @@ type RoomConfig struct {
 	EnableRemoteUnmute bool               `yaml:"enable_remote_unmute,omitempty"`
 	PlayoutDelay       PlayoutDelayConfig `yaml:"playout_delay,omitempty"`
 	SyncStreams        bool               `yaml:"sync_streams,omitempty"`
+	CreateRoomEnabled  bool               `yaml:"create_room_enabled,omitempty"`
+	CreateRoomTimeout  time.Duration      `yaml:"create_room_timeout,omitempty"`
+	CreateRoomAttempts int                `yaml:"create_room_attempts,omitempty"`
 	// deprecated, moved to limits
 	MaxMetadataSize uint32 `yaml:"max_metadata_size,omitempty"`
 	// deprecated, moved to limits
@@ -293,6 +299,7 @@ type SignalRelayConfig struct {
 	MinRetryInterval time.Duration `yaml:"min_retry_interval,omitempty"`
 	MaxRetryInterval time.Duration `yaml:"max_retry_interval,omitempty"`
 	StreamBufferSize int           `yaml:"stream_buffer_size,omitempty"`
+	ConnectAttempts  int           `yaml:"connect_attempts,omitempty"`
 }
 
 // RegionConfig lists available regions and their latitude/longitude, so the selector would prefer
@@ -539,8 +546,11 @@ var DefaultConfig = Config{
 			{Mime: webrtc.MimeTypeVP9},
 			{Mime: webrtc.MimeTypeAV1},
 		},
-		EmptyTimeout:     5 * 60,
-		DepartureTimeout: 20,
+		EmptyTimeout:       5 * 60,
+		DepartureTimeout:   20,
+		CreateRoomEnabled:  true,
+		CreateRoomTimeout:  10 * time.Second,
+		CreateRoomAttempts: 3,
 	},
 	Limit: LimitConfig{
 		MaxMetadataSize:              64000,
@@ -566,9 +576,11 @@ var DefaultConfig = Config{
 		MinRetryInterval: 500 * time.Millisecond,
 		MaxRetryInterval: 4 * time.Second,
 		StreamBufferSize: 1000,
+		ConnectAttempts:  3,
 	},
-	PSRPC: rpc.DefaultPSRPCConfig,
-	Keys:  map[string]string{},
+	PSRPC:  rpc.DefaultPSRPCConfig,
+	Keys:   map[string]string{},
+	Metric: metric.DefaultMetricConfig,
 }
 
 func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []cli.Flag) (*Config, error) {

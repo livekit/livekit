@@ -128,6 +128,16 @@ type FakeParticipant struct {
 	identityReturnsOnCall map[int]struct {
 		result1 livekit.ParticipantIdentity
 	}
+	IsAgentStub        func() bool
+	isAgentMutex       sync.RWMutex
+	isAgentArgsForCall []struct {
+	}
+	isAgentReturns struct {
+		result1 bool
+	}
+	isAgentReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	IsDependentStub        func() bool
 	isDependentMutex       sync.RWMutex
 	isDependentArgsForCall []struct {
@@ -219,6 +229,16 @@ type FakeParticipant struct {
 	}
 	updateSubscriptionPermissionReturnsOnCall map[int]struct {
 		result1 error
+	}
+	VersionStub        func() utils.TimedVersion
+	versionMutex       sync.RWMutex
+	versionArgsForCall []struct {
+	}
+	versionReturns struct {
+		result1 utils.TimedVersion
+	}
+	versionReturnsOnCall map[int]struct {
+		result1 utils.TimedVersion
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
@@ -837,6 +857,59 @@ func (fake *FakeParticipant) IdentityReturnsOnCall(i int, result1 livekit.Partic
 	}{result1}
 }
 
+func (fake *FakeParticipant) IsAgent() bool {
+	fake.isAgentMutex.Lock()
+	ret, specificReturn := fake.isAgentReturnsOnCall[len(fake.isAgentArgsForCall)]
+	fake.isAgentArgsForCall = append(fake.isAgentArgsForCall, struct {
+	}{})
+	stub := fake.IsAgentStub
+	fakeReturns := fake.isAgentReturns
+	fake.recordInvocation("IsAgent", []interface{}{})
+	fake.isAgentMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) IsAgentCallCount() int {
+	fake.isAgentMutex.RLock()
+	defer fake.isAgentMutex.RUnlock()
+	return len(fake.isAgentArgsForCall)
+}
+
+func (fake *FakeParticipant) IsAgentCalls(stub func() bool) {
+	fake.isAgentMutex.Lock()
+	defer fake.isAgentMutex.Unlock()
+	fake.IsAgentStub = stub
+}
+
+func (fake *FakeParticipant) IsAgentReturns(result1 bool) {
+	fake.isAgentMutex.Lock()
+	defer fake.isAgentMutex.Unlock()
+	fake.IsAgentStub = nil
+	fake.isAgentReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeParticipant) IsAgentReturnsOnCall(i int, result1 bool) {
+	fake.isAgentMutex.Lock()
+	defer fake.isAgentMutex.Unlock()
+	fake.IsAgentStub = nil
+	if fake.isAgentReturnsOnCall == nil {
+		fake.isAgentReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.isAgentReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
 func (fake *FakeParticipant) IsDependent() bool {
 	fake.isDependentMutex.Lock()
 	ret, specificReturn := fake.isDependentReturnsOnCall[len(fake.isDependentArgsForCall)]
@@ -1308,6 +1381,59 @@ func (fake *FakeParticipant) UpdateSubscriptionPermissionReturnsOnCall(i int, re
 	}{result1}
 }
 
+func (fake *FakeParticipant) Version() utils.TimedVersion {
+	fake.versionMutex.Lock()
+	ret, specificReturn := fake.versionReturnsOnCall[len(fake.versionArgsForCall)]
+	fake.versionArgsForCall = append(fake.versionArgsForCall, struct {
+	}{})
+	stub := fake.VersionStub
+	fakeReturns := fake.versionReturns
+	fake.recordInvocation("Version", []interface{}{})
+	fake.versionMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) VersionCallCount() int {
+	fake.versionMutex.RLock()
+	defer fake.versionMutex.RUnlock()
+	return len(fake.versionArgsForCall)
+}
+
+func (fake *FakeParticipant) VersionCalls(stub func() utils.TimedVersion) {
+	fake.versionMutex.Lock()
+	defer fake.versionMutex.Unlock()
+	fake.VersionStub = stub
+}
+
+func (fake *FakeParticipant) VersionReturns(result1 utils.TimedVersion) {
+	fake.versionMutex.Lock()
+	defer fake.versionMutex.Unlock()
+	fake.VersionStub = nil
+	fake.versionReturns = struct {
+		result1 utils.TimedVersion
+	}{result1}
+}
+
+func (fake *FakeParticipant) VersionReturnsOnCall(i int, result1 utils.TimedVersion) {
+	fake.versionMutex.Lock()
+	defer fake.versionMutex.Unlock()
+	fake.VersionStub = nil
+	if fake.versionReturnsOnCall == nil {
+		fake.versionReturnsOnCall = make(map[int]struct {
+			result1 utils.TimedVersion
+		})
+	}
+	fake.versionReturnsOnCall[i] = struct {
+		result1 utils.TimedVersion
+	}{result1}
+}
+
 func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
@@ -1333,6 +1459,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.iDMutex.RUnlock()
 	fake.identityMutex.RLock()
 	defer fake.identityMutex.RUnlock()
+	fake.isAgentMutex.RLock()
+	defer fake.isAgentMutex.RUnlock()
 	fake.isDependentMutex.RLock()
 	defer fake.isDependentMutex.RUnlock()
 	fake.isPublisherMutex.RLock()
@@ -1351,6 +1479,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.toProtoMutex.RUnlock()
 	fake.updateSubscriptionPermissionMutex.RLock()
 	defer fake.updateSubscriptionPermissionMutex.RUnlock()
+	fake.versionMutex.RLock()
+	defer fake.versionMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value
