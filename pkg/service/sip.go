@@ -422,7 +422,7 @@ func (s *SIPService) TransferSIPParticipant(ctx context.Context, req *livekit.Tr
 		"room", req.RoomName,
 		"participant", req.ParticipantIdentity,
 		"transferTo", req.TransferTo,
-		"playRingtone", req.PlayRingtone,
+		"playDialtone", req.PlayDialtone,
 	)
 
 	timeout := 30 * time.Second
@@ -475,6 +475,6 @@ func (s *SIPService) transferSIPParticipantRequest(ctx context.Context, req *liv
 	return &rpc.InternalTransferSIPParticipantRequest{
 		SipCallId:    callID,
 		TransferTo:   req.TransferTo,
-		PlayRingtone: req.PlayRingtone,
+		PlayDialtone: req.PlayDialtone,
 	}, nil
 }
