@@ -125,6 +125,12 @@ func (r *rtpStatsBaseLite) seed(from *rtpStatsBaseLite) bool {
 	r.gapHistogram = from.gapHistogram
 
 	r.nacks = from.nacks
+	r.nackAcks = from.nackAcks
+	r.nackMisses = from.nackMisses
+	r.nackRepeated = from.nackRepeated
+
+	r.plis = from.plis
+	r.lastPli = from.lastPli
 
 	r.nextSnapshotLiteID = from.nextSnapshotLiteID
 	r.snapshotLites = make([]snapshotLite, cap(from.snapshotLites))

@@ -1222,7 +1222,7 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 			}()
 		}
 	}
-	if r.internal != nil && r.internal.TrackEgress != nil {
+	if participant.Kind() != livekit.ParticipantInfo_EGRESS && r.internal != nil && r.internal.TrackEgress != nil {
 		go func() {
 			if err := StartTrackEgress(
 				context.Background(),
