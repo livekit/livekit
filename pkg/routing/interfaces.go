@@ -62,6 +62,7 @@ type ParticipantInit struct {
 	ID                   livekit.ParticipantID
 	SubscriberAllowPause *bool
 	DisableICELite       bool
+	CreateRoom           *livekit.CreateRoomRequest
 }
 
 // Router allows multiple nodes to coordinate the participant session
@@ -96,12 +97,20 @@ type StartParticipantSignalResults struct {
 }
 
 type MessageRouter interface {
+	// CreateRoom starts an rtc room
+	CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (res *livekit.Room, err error)
 	// StartParticipantSignal participant signal connection is ready to start
 	StartParticipantSignal(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit) (res StartParticipantSignalResults, err error)
 }
 
-func CreateRouter(rc redis.UniversalClient, node LocalNode, signalClient SignalClient, kps rpc.KeepalivePubSub) Router {
-	lr := NewLocalRouter(node, signalClient)
+func CreateRouter(
+	rc redis.UniversalClient,
+	node LocalNode,
+	signalClient SignalClient,
+	roomManagerClient RoomManagerClient,
+	kps rpc.KeepalivePubSub,
+) Router {
+	lr := NewLocalRouter(node, signalClient, roomManagerClient)
 
 	if rc != nil {
 		return NewRedisRouter(lr, rc, kps)
@@ -132,6 +141,7 @@ func (pi *ParticipantInit) ToStartSession(roomName livekit.RoomName, connectionI
 		AdaptiveStream:  pi.AdaptiveStream,
 		ParticipantId:   string(pi.ID),
 		DisableIceLite:  pi.DisableICELite,
+		CreateRoom:      pi.CreateRoom,
 	}
 	if pi.SubscriberAllowPause != nil {
 		subscriberAllowPause := *pi.SubscriberAllowPause

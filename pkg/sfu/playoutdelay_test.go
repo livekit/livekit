@@ -20,13 +20,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	pd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/playoutdelay"
+	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/protocol/logger"
 )
 
 func TestPlayoutDelay(t *testing.T) {
-	stats := buffer.NewRTPStatsSender(buffer.RTPStatsParams{ClockRate: 900000, Logger: logger.GetLogger()})
+	stats := rtpstats.NewRTPStatsSender(rtpstats.RTPStatsParams{ClockRate: 900000, Logger: logger.GetLogger()})
 	c, err := NewPlayoutDelayController(100, 120, logger.GetLogger(), stats)
 	require.NoError(t, err)
 

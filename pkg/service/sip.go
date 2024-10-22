@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"time"
 
+	"google.golang.org/protobuf/types/known/emptypb"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
@@ -110,12 +112,14 @@ func (s *SIPService) CreateSIPInboundTrunk(ctx context.Context, req *livekit.Cre
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
 	}
+
 	info := req.Trunk
 	if info == nil {
 		return nil, errors.New("trunk info is required")
 	} else if info.SipTrunkId != "" {
 		return nil, errors.New("trunk ID must be empty")
 	}
+	AppendLogFields(ctx, "trunk", logger.Proto(req.Trunk))
 
 	// Keep ID empty still, so that validation can print "<new>" instead of a non-existent ID in the error.
 
@@ -150,6 +154,7 @@ func (s *SIPService) CreateSIPOutboundTrunk(ctx context.Context, req *livekit.Cr
 	} else if info.SipTrunkId != "" {
 		return nil, errors.New("trunk ID must be empty")
 	}
+	AppendLogFields(ctx, "trunk", logger.Proto(req.Trunk))
 
 	// No additional validation needed for outbound.
 	info.SipTrunkId = guid.New(utils.SIPTrunkPrefix)
@@ -159,6 +164,40 @@ func (s *SIPService) CreateSIPOutboundTrunk(ctx context.Context, req *livekit.Cr
 	return info, nil
 }
 
+func (s *SIPService) GetSIPInboundTrunk(ctx context.Context, req *livekit.GetSIPInboundTrunkRequest) (*livekit.GetSIPInboundTrunkResponse, error) {
+	if err := EnsureSIPAdminPermission(ctx); err != nil {
+		return nil, twirpAuthError(err)
+	}
+	if s.store == nil {
+		return nil, ErrSIPNotConnected
+	}
+
+	trunk, err := s.store.LoadSIPInboundTrunk(ctx, req.SipTrunkId)
+	if err != nil {
+		return nil, err
+	}
+
+	return &livekit.GetSIPInboundTrunkResponse{Trunk: trunk}, nil
+}
+
+func (s *SIPService) GetSIPOutboundTrunk(ctx context.Context, req *livekit.GetSIPOutboundTrunkRequest) (*livekit.GetSIPOutboundTrunkResponse, error) {
+	if err := EnsureSIPAdminPermission(ctx); err != nil {
+		return nil, twirpAuthError(err)
+	}
+	if s.store == nil {
+		return nil, ErrSIPNotConnected
+	}
+	AppendLogFields(ctx, "trunkID", req.SipTrunkId)
+
+	trunk, err := s.store.LoadSIPOutboundTrunk(ctx, req.SipTrunkId)
+	if err != nil {
+		return nil, err
+	}
+
+	return &livekit.GetSIPOutboundTrunkResponse{Trunk: trunk}, nil
+}
+
+// deprecated: ListSIPTrunk will be removed in the future
 func (s *SIPService) ListSIPTrunk(ctx context.Context, req *livekit.ListSIPTrunkRequest) (*livekit.ListSIPTrunkResponse, error) {
 	if err := EnsureSIPAdminPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
@@ -215,16 +254,12 @@ func (s *SIPService) DeleteSIPTrunk(ctx context.Context, req *livekit.DeleteSIPT
 		return nil, ErrSIPNotConnected
 	}
 
-	info, err := s.store.LoadSIPTrunk(ctx, req.SipTrunkId)
-	if err != nil {
+	AppendLogFields(ctx, "trunkID", req.SipTrunkId)
+	if err := s.store.DeleteSIPTrunk(ctx, req.SipTrunkId); err != nil {
 		return nil, err
 	}
 
-	if err = s.store.DeleteSIPTrunk(ctx, info); err != nil {
-		return nil, err
-	}
-
-	return info, nil
+	return &livekit.SIPTrunkInfo{SipTrunkId: req.SipTrunkId}, nil
 }
 
 func (s *SIPService) CreateSIPDispatchRule(ctx context.Context, req *livekit.CreateSIPDispatchRuleRequest) (*livekit.SIPDispatchRuleInfo, error) {
@@ -235,13 +270,19 @@ func (s *SIPService) CreateSIPDispatchRule(ctx context.Context, req *livekit.Cre
 		return nil, ErrSIPNotConnected
 	}
 
+	AppendLogFields(ctx,
+		"request", logger.Proto(req),
+		"trunkID", req.TrunkIds,
+	)
 	// Keep ID empty, so that validation can print "<new>" instead of a non-existent ID in the error.
 	info := &livekit.SIPDispatchRuleInfo{
 		Rule:            req.Rule,
 		TrunkIds:        req.TrunkIds,
+		InboundNumbers:  req.InboundNumbers,
 		HidePhoneNumber: req.HidePhoneNumber,
 		Name:            req.Name,
 		Metadata:        req.Metadata,
+		Attributes:      req.Attributes,
 	}
 
 	// Validate all rules including the new one first.
@@ -298,28 +339,26 @@ func (s *SIPService) DeleteSIPDispatchRule(ctx context.Context, req *livekit.Del
 	return info, nil
 }
 
-func (s *SIPService) CreateSIPParticipantWithToken(ctx context.Context, req *livekit.CreateSIPParticipantRequest, wsUrl, token string) (*livekit.SIPParticipantInfo, error) {
-	if err := EnsureSIPCallPermission(ctx); err != nil {
-		return nil, twirpAuthError(err)
-	}
-	if s.store == nil {
-		return nil, ErrSIPNotConnected
-	}
-	callID := sip.NewCallID()
-	log := logger.GetLogger()
-	log = log.WithValues("callId", callID, "roomName", req.RoomName, "sipTrunk", req.SipTrunkId, "toUser", req.SipCallTo)
-
-	trunk, err := s.store.LoadSIPOutboundTrunk(ctx, req.SipTrunkId)
+func (s *SIPService) CreateSIPParticipant(ctx context.Context, req *livekit.CreateSIPParticipantRequest) (*livekit.SIPParticipantInfo, error) {
+	unlikelyLogger := logger.GetLogger().WithUnlikelyValues("room", req.RoomName, "sipTrunk", req.SipTrunkId, "toUser", req.SipCallTo)
+	ireq, err := s.CreateSIPParticipantRequest(ctx, req, "", "", "", "")
 	if err != nil {
-		log.Errorw("cannot get trunk to update sip participant", err)
+		unlikelyLogger.Errorw("cannot create sip participant request", err)
 		return nil, err
 	}
-	ireq, err := rpc.NewCreateSIPParticipantRequest(callID, wsUrl, token, req, trunk)
-	if err != nil {
-		log.Errorw("cannot create sip participant request", err)
-		return nil, err
-	}
-	log = log.WithValues("fromUser", ireq.Number, "toHost", trunk.Address)
+	unlikelyLogger = unlikelyLogger.WithValues(
+		"callID", ireq.SipCallId,
+		"fromUser", ireq.Number,
+		"toHost", ireq.Address,
+	)
+	AppendLogFields(ctx,
+		"room", req.RoomName,
+		"toUser", req.SipCallTo,
+		"trunkID", req.SipTrunkId,
+		"callID", ireq.SipCallId,
+		"fromUser", ireq.Number,
+		"toHost", ireq.Address,
+	)
 
 	// CreateSIPParticipant will wait for LiveKit Participant to be created and that can take some time.
 	// Thus, we must set a higher deadline for it, if it's not set already.
@@ -334,16 +373,108 @@ func (s *SIPService) CreateSIPParticipantWithToken(ctx context.Context, req *liv
 	}
 	resp, err := s.psrpcClient.CreateSIPParticipant(ctx, "", ireq, psrpc.WithRequestTimeout(timeout))
 	if err != nil {
-		log.Errorw("cannot update sip participant", err)
+		unlikelyLogger.Errorw("cannot update sip participant", err)
 		return nil, err
 	}
 	return &livekit.SIPParticipantInfo{
 		ParticipantId:       resp.ParticipantId,
 		ParticipantIdentity: resp.ParticipantIdentity,
 		RoomName:            req.RoomName,
-		SipCallId:           callID,
+		SipCallId:           ireq.SipCallId,
 	}, nil
 }
-func (s *SIPService) CreateSIPParticipant(ctx context.Context, req *livekit.CreateSIPParticipantRequest) (*livekit.SIPParticipantInfo, error) {
-	return s.CreateSIPParticipantWithToken(ctx, req, "", "")
+
+func (s *SIPService) CreateSIPParticipantRequest(ctx context.Context, req *livekit.CreateSIPParticipantRequest, projectID, host, wsUrl, token string) (*rpc.InternalCreateSIPParticipantRequest, error) {
+	if err := EnsureSIPCallPermission(ctx); err != nil {
+		return nil, twirpAuthError(err)
+	}
+	if s.store == nil {
+		return nil, ErrSIPNotConnected
+	}
+	callID := sip.NewCallID()
+	log := logger.GetLogger()
+	if projectID != "" {
+		log = log.WithValues("projectID", projectID)
+	}
+	unlikelyLogger := log.WithUnlikelyValues(
+		"callID", callID,
+		"room", req.RoomName,
+		"sipTrunk", req.SipTrunkId,
+		"toUser", req.SipCallTo,
+	)
+
+	trunk, err := s.store.LoadSIPOutboundTrunk(ctx, req.SipTrunkId)
+	if err != nil {
+		unlikelyLogger.Errorw("cannot get trunk to update sip participant", err)
+		return nil, err
+	}
+	return rpc.NewCreateSIPParticipantRequest(projectID, callID, host, wsUrl, token, req, trunk)
+}
+
+func (s *SIPService) TransferSIPParticipant(ctx context.Context, req *livekit.TransferSIPParticipantRequest) (*emptypb.Empty, error) {
+	log := logger.GetLogger().WithValues("room", req.RoomName, "participant", req.ParticipantIdentity)
+	ireq, err := s.transferSIPParticipantRequest(ctx, req)
+	if err != nil {
+		log.Errorw("cannot create transfer sip participant request", err)
+		return nil, err
+	}
+	AppendLogFields(ctx,
+		"room", req.RoomName,
+		"participant", req.ParticipantIdentity,
+		"transferTo", req.TransferTo,
+		"playDialtone", req.PlayDialtone,
+	)
+
+	timeout := 30 * time.Second
+	if deadline, ok := ctx.Deadline(); ok {
+		timeout = time.Until(deadline)
+	} else {
+		var cancel func()
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+	_, err = s.psrpcClient.TransferSIPParticipant(ctx, ireq.SipCallId, ireq, psrpc.WithRequestTimeout(timeout))
+	if err != nil {
+		log.Errorw("cannot transfer sip participant", err)
+		return nil, err
+	}
+
+	return &emptypb.Empty{}, nil
+}
+
+func (s *SIPService) transferSIPParticipantRequest(ctx context.Context, req *livekit.TransferSIPParticipantRequest) (*rpc.InternalTransferSIPParticipantRequest, error) {
+	if req.RoomName == "" {
+		return nil, psrpc.NewErrorf(psrpc.InvalidArgument, "Missing room name")
+	}
+
+	if req.ParticipantIdentity == "" {
+		return nil, psrpc.NewErrorf(psrpc.InvalidArgument, "Missing participant identity")
+	}
+
+	if err := EnsureSIPCallPermission(ctx); err != nil {
+		return nil, twirpAuthError(err)
+	}
+	if err := EnsureAdminPermission(ctx, livekit.RoomName(req.RoomName)); err != nil {
+		return nil, twirpAuthError(err)
+	}
+
+	resp, err := s.roomService.GetParticipant(ctx, &livekit.RoomParticipantIdentity{
+		Room:     req.RoomName,
+		Identity: req.ParticipantIdentity,
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	callID, ok := resp.Attributes[livekit.AttrSIPCallID]
+	if !ok {
+		return nil, psrpc.NewErrorf(psrpc.InvalidArgument, "no SIP session associated with participant")
+	}
+
+	return &rpc.InternalTransferSIPParticipantRequest{
+		SipCallId:    callID,
+		TransferTo:   req.TransferTo,
+		PlayDialtone: req.PlayDialtone,
+	}, nil
 }

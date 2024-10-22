@@ -21,9 +21,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/twitchtv/twirp"
-	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
@@ -31,16 +29,15 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
+	"github.com/livekit/protocol/utils"
 )
 
 type RoomService struct {
 	limitConf         config.LimitConfig
 	apiConf           config.APIConfig
-	psrpcConf         rpc.PSRPCConfig
 	router            routing.MessageRouter
 	roomAllocator     RoomAllocator
 	roomStore         ServiceStore
-	agentClient       agent.Client
 	egressLauncher    rtc.EgressLauncher
 	topicFormatter    rpc.TopicFormatter
 	roomClient        rpc.TypedRoomClient
@@ -50,11 +47,9 @@ type RoomService struct {
 func NewRoomService(
 	limitConf config.LimitConfig,
 	apiConf config.APIConfig,
-	psrpcConf rpc.PSRPCConfig,
 	router routing.MessageRouter,
 	roomAllocator RoomAllocator,
 	serviceStore ServiceStore,
-	agentClient agent.Client,
 	egressLauncher rtc.EgressLauncher,
 	topicFormatter rpc.TopicFormatter,
 	roomClient rpc.TypedRoomClient,
@@ -63,11 +58,9 @@ func NewRoomService(
 	svc = &RoomService{
 		limitConf:         limitConf,
 		apiConf:           apiConf,
-		psrpcConf:         psrpcConf,
 		router:            router,
 		roomAllocator:     roomAllocator,
 		roomStore:         serviceStore,
-		agentClient:       agentClient,
 		egressLauncher:    egressLauncher,
 		topicFormatter:    topicFormatter,
 		roomClient:        roomClient,
@@ -88,9 +81,22 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 		return nil, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, s.limitConf.MaxRoomNameLength)
 	}
 
-	rm, created, err := s.roomAllocator.CreateRoom(ctx, req)
+	if s.roomAllocator.CreateRoomEnabled() {
+		err := s.roomAllocator.SelectRoomNode(ctx, livekit.RoomName(req.Name), livekit.NodeID(req.NodeId))
+		if err != nil {
+			return nil, err
+		}
+
+		return s.router.CreateRoom(ctx, req)
+	}
+
+	rm, _, created, err := s.roomAllocator.CreateRoom(ctx, req, true)
 	if err != nil {
 		err = errors.Wrap(err, "could not create room")
+		return nil, err
+	}
+	err = s.roomAllocator.SelectRoomNode(ctx, livekit.RoomName(req.Name), livekit.NodeID(req.NodeId))
+	if err != nil {
 		return nil, err
 	}
 
@@ -153,11 +159,18 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 		return nil, err
 	}
 
-	done, err := s.startRoom(ctx, livekit.RoomName(req.Room))
-	if err != nil {
-		return nil, err
+	if s.roomAllocator.CreateRoomEnabled() {
+		_, err := s.router.CreateRoom(ctx, &livekit.CreateRoomRequest{Name: req.Room})
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		done, err := s.startRoom(ctx, livekit.RoomName(req.Room))
+		if err != nil {
+			return nil, err
+		}
+		defer done()
 	}
-	defer done()
 
 	_, err = s.roomClient.DeleteRoom(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
 	if err != nil {
@@ -310,7 +323,7 @@ func redactCreateRoomRequest(req *livekit.CreateRoomRequest) *livekit.CreateRoom
 		return req
 	}
 
-	clone := proto.Clone(req).(*livekit.CreateRoomRequest)
+	clone := utils.CloneProto(req)
 
 	if clone.Egress.Room != nil {
 		egress.RedactEncodedOutputs(clone.Egress.Room)

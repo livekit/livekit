@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package rtc
+package dynacast
 
 import (
 	"sync"
@@ -43,7 +43,7 @@ type DynacastQuality struct {
 	maxSubscribedQuality     livekit.VideoQuality
 	maxQualityTimer          *time.Timer
 
-	onSubscribedMaxQualityChange func(maxSubscribedQuality livekit.VideoQuality)
+	onSubscribedMaxQualityChange func(mimeType string, maxSubscribedQuality livekit.VideoQuality)
 }
 
 func NewDynacastQuality(params DynacastQualityParams) *DynacastQuality {
@@ -66,7 +66,7 @@ func (d *DynacastQuality) Stop() {
 	d.stopMaxQualityTimer()
 }
 
-func (d *DynacastQuality) OnSubscribedMaxQualityChange(f func(maxSubscribedQuality livekit.VideoQuality)) {
+func (d *DynacastQuality) OnSubscribedMaxQualityChange(f func(mimeType string, maxSubscribedQuality livekit.VideoQuality)) {
 	d.onSubscribedMaxQualityChange = f
 }
 
@@ -148,7 +148,7 @@ func (d *DynacastQuality) updateQualityChange(force bool) {
 	d.lock.Unlock()
 
 	if onSubscribedMaxQualityChange != nil {
-		onSubscribedMaxQualityChange(maxSubscribedQuality)
+		onSubscribedMaxQualityChange(d.params.MimeType, maxSubscribedQuality)
 	}
 }
 

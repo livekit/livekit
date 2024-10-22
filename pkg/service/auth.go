@@ -107,6 +107,13 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 	next.ServeHTTP(w, r)
 }
 
+func WithAPIKey(ctx context.Context, grants *auth.ClaimGrants, apiKey string) context.Context {
+	return context.WithValue(ctx, grantsKey{}, &grantsValue{
+		claims: grants,
+		apiKey: apiKey,
+	})
+}
+
 func GetGrants(ctx context.Context) *auth.ClaimGrants {
 	val := ctx.Value(grantsKey{})
 	v, ok := val.(*grantsValue)

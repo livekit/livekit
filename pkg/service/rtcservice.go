@@ -30,7 +30,6 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/exp/maps"
 
-	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/routing/selector"
@@ -52,7 +51,6 @@ type RTCService struct {
 	isDev         bool
 	limits        config.LimitConfig
 	parser        *uaparser.Parser
-	agentClient   agent.Client
 	telemetry     telemetry.TelemetryService
 
 	mu          sync.Mutex
@@ -65,7 +63,6 @@ func NewRTCService(
 	store ServiceStore,
 	router routing.MessageRouter,
 	currentNode routing.LocalNode,
-	agentClient agent.Client,
 	telemetry telemetry.TelemetryService,
 ) *RTCService {
 	s := &RTCService{
@@ -78,7 +75,6 @@ func NewRTCService(
 		isDev:         conf.Development,
 		limits:        conf.Limit,
 		parser:        uaparser.NewFromSaved(),
-		agentClient:   agentClient,
 		telemetry:     telemetry,
 		connections:   map[*websocket.Conn]struct{}{},
 	}
@@ -179,6 +175,10 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 		Client:          s.ParseClientInfo(r),
 		Grants:          claims,
 		Region:          region,
+		CreateRoom: &livekit.CreateRoomRequest{
+			Name:       string(roomName),
+			ConfigName: GetRoomConfiguration(r.Context()),
+		},
 	}
 	if pi.Reconnect {
 		pi.ID = livekit.ParticipantID(participantID)
@@ -214,28 +214,23 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// for logger
-	loggerFields := []interface{}{
+	loggerFields := []any{
 		"participant", pi.Identity,
+		"pID", pi.ID,
 		"room", roomName,
 		"remote", false,
 	}
-
-	l := utils.GetLogger(r.Context())
+	pLogger := utils.GetLogger(r.Context()).WithValues(loggerFields...)
 
 	// give it a few attempts to start session
 	var cr connectionResult
 	var initialResponse *livekit.SignalResponse
-	for i := 0; i < 3; i++ {
-		connectionTimeout := 3 * time.Second * time.Duration(i+1)
-		ctx := utils.ContextWithAttempt(r.Context(), i)
+	for attempt := 0; attempt < s.config.SignalRelay.ConnectAttempts; attempt++ {
+		connectionTimeout := 3 * time.Second * time.Duration(attempt+1)
+		ctx := utils.ContextWithAttempt(r.Context(), attempt)
 		cr, initialResponse, err = s.startConnection(ctx, roomName, pi, connectionTimeout)
 		if err == nil || errors.Is(err, context.Canceled) {
 			break
-		}
-		if i < 2 {
-			fieldsWithAttempt := append(loggerFields, "attempt", i)
-			l.Warnw("failed to start connection, retrying", err, fieldsWithAttempt...)
 		}
 	}
 
@@ -256,13 +251,12 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		signalStats.ResolveRoom(join.GetRoom())
 		signalStats.ResolveParticipant(join.GetParticipant())
 	}
-
-	pLogger := rtc.LoggerWithParticipant(
-		rtc.LoggerWithRoom(l, roomName, livekit.RoomID(cr.Room.Sid)),
-		pi.Identity,
-		pi.ID,
-		false,
-	)
+	if pi.Reconnect && pi.ID != "" {
+		signalStats.ResolveParticipant(&livekit.ParticipantInfo{
+			Sid:      string(pi.ID),
+			Identity: string(pi.Identity),
+		})
+	}
 
 	closedByClient := atomic.NewBool(false)
 	done := make(chan struct{})
@@ -449,6 +443,14 @@ func (s *RTCService) ParseClientInfo(r *http.Request) *livekit.ClientInfo {
 		ci.Sdk = livekit.ClientInfo_REACT_NATIVE
 	case "rust":
 		ci.Sdk = livekit.ClientInfo_RUST
+	case "python":
+		ci.Sdk = livekit.ClientInfo_PYTHON
+	case "cpp":
+		ci.Sdk = livekit.ClientInfo_CPP
+	case "unityweb":
+		ci.Sdk = livekit.ClientInfo_UNITY_WEB
+	case "node":
+		ci.Sdk = livekit.ClientInfo_NODE
 	}
 
 	ci.Version = values.Get("version")
@@ -519,8 +521,14 @@ func (s *RTCService) startConnection(
 	var cr connectionResult
 	var err error
 
-	cr.Room, _, err = s.roomAllocator.CreateRoom(ctx, &livekit.CreateRoomRequest{Name: string(roomName), ConfigName: GetRoomConfiguration(ctx)})
-	if err != nil {
+	if !s.roomAllocator.CreateRoomEnabled() {
+		cr.Room, _, _, err = s.roomAllocator.CreateRoom(ctx, pi.CreateRoom, false)
+		if err != nil {
+			return cr, nil, err
+		}
+	}
+
+	if err := s.roomAllocator.SelectRoomNode(ctx, roomName, ""); err != nil {
 		return cr, nil, err
 	}
 

@@ -216,9 +216,9 @@ func TestSIPStoreTrunk(t *testing.T) {
 	require.True(t, proto.Equal(outT, listOut[1]))
 
 	// Deletion. Should not return error if not exists.
-	err = rs.DeleteSIPTrunk(ctx, &livekit.SIPTrunkInfo{SipTrunkId: oldID})
+	err = rs.DeleteSIPTrunk(ctx, oldID)
 	require.NoError(t, err)
-	err = rs.DeleteSIPTrunk(ctx, &livekit.SIPTrunkInfo{SipTrunkId: oldID})
+	err = rs.DeleteSIPTrunk(ctx, oldID)
 	require.NoError(t, err)
 
 	// Other objects are still there.
@@ -231,9 +231,9 @@ func TestSIPStoreTrunk(t *testing.T) {
 	require.True(t, proto.Equal(outT, outT2))
 
 	// Delete the rest
-	err = rs.DeleteSIPTrunk(ctx, &livekit.SIPTrunkInfo{SipTrunkId: inID})
+	err = rs.DeleteSIPTrunk(ctx, inID)
 	require.NoError(t, err)
-	err = rs.DeleteSIPTrunk(ctx, &livekit.SIPTrunkInfo{SipTrunkId: outID})
+	err = rs.DeleteSIPTrunk(ctx, outID)
 	require.NoError(t, err)
 
 	// Check everything is deleted.

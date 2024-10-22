@@ -220,7 +220,7 @@ func (t *SubscribedTrack) UpdateSubscriberSettings(settings *livekit.UpdateTrack
 	}
 
 	isImmediate = isImmediate || (!settings.Disabled && settings.Disabled != t.isMutedLocked())
-	t.settings = proto.Clone(settings).(*livekit.UpdateTrackSettings)
+	t.settings = utils.CloneProto(settings)
 	t.settingsLock.Unlock()
 
 	if isImmediate {

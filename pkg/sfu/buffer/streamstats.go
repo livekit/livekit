@@ -14,7 +14,9 @@
 
 package buffer
 
+import "github.com/livekit/livekit-server/pkg/sfu/rtpstats"
+
 type StreamStatsWithLayers struct {
-	RTPStats *RTPDeltaInfo
-	Layers   map[int32]*RTPDeltaInfo
+	RTPStats *rtpstats.RTPDeltaInfo
+	Layers   map[int32]*rtpstats.RTPDeltaInfo
 }
