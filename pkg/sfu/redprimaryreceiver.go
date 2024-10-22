@@ -107,8 +107,6 @@ func (r *RedPrimaryReceiver) AddDownTrack(track TrackSender) error {
 		r.logger.Infow("subscriberID already exists, replacing downtrack", "subscriberID", track.SubscriberID())
 	}
 
-	track.TrackInfoAvailable()
-
 	r.downTrackSpreader.Store(track)
 	r.logger.Debugw("red primary receiver downtrack added", "subscriberID", track.SubscriberID())
 	return nil

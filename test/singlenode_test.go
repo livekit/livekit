@@ -16,6 +16,7 @@ package test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -26,6 +27,7 @@ import (
 	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
 	"github.com/thoas/go-funk"
+	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
@@ -330,6 +332,32 @@ func TestSingleNodeRoomList(t *testing.T) {
 	roomServiceListRoom(t)
 }
 
+func TestSingleNodeUpdateParticipant(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+	_, finish := setupSingleNodeTest("TestSingleNodeRoomList")
+	defer finish()
+
+	adminCtx := contextWithToken(adminRoomToken(testRoom))
+	t.Run("update nonexistent participant", func(t *testing.T) {
+		_, err := roomClient.UpdateParticipant(adminCtx, &livekit.UpdateParticipantRequest{
+			Room:     testRoom,
+			Identity: "nonexistent",
+			Permission: &livekit.ParticipantPermission{
+				CanPublish: true,
+			},
+		})
+		require.Error(t, err)
+		var twErr twirp.Error
+		require.True(t, errors.As(err, &twErr))
+		// Note: for Cloud this would return 404, currently we are not able to differentiate between
+		// non-existent participant vs server being unavailable in OSS
+		require.Equal(t, twirp.Unavailable, twErr.Code())
+	})
+}
+
 // Ensure that CORS headers are returned
 func TestSingleNodeCORS(t *testing.T) {
 	if testing.Short() {
@@ -346,6 +374,20 @@ func TestSingleNodeCORS(t *testing.T) {
 	res, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	require.Equal(t, "testhost.com", res.Header.Get("Access-Control-Allow-Origin"))
+}
+
+func TestSingleNodeDoubleSlash(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+	s, finish := setupSingleNodeTest("TestSingleNodeDoubleSlash")
+	defer finish()
+	// client contains trailing slash in URL, causing path to contain double //
+	// without our middleware, this would cause a 302 redirect
+	roomClient = livekit.NewRoomServiceJSONClient(fmt.Sprintf("http://localhost:%d/", s.HTTPPort()), &http.Client{})
+	_, err := roomClient.ListRooms(contextWithToken(listRoomToken()), &livekit.ListRoomsRequest{})
+	require.NoError(t, err)
 }
 
 func TestPingPong(t *testing.T) {

@@ -315,7 +315,7 @@ func TestFirstAnswerMissedDuringICERestart(t *testing.T) {
 	handlerA.OnOfferCalls(func(sd webrtc.SessionDescription) error {
 		offerCount.Inc()
 
-		// the second offer is a ice restart offer, so we wait transportB complete the ice gathering
+		// the second offer is a ice restart offer, so we wait for transportB to complete ICE gathering
 		if transportB.pc.ICEGatheringState() == webrtc.ICEGatheringStateGathering {
 			require.Eventually(t, func() bool {
 				return transportB.pc.ICEGatheringState() == webrtc.ICEGatheringStateComplete

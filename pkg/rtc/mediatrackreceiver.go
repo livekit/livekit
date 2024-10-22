@@ -30,12 +30,13 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
+	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
@@ -117,7 +118,7 @@ func NewMediaTrackReceiver(params MediaTrackReceiverParams, ti *livekit.TrackInf
 		params: params,
 		state:  mediaTrackReceiverStateOpen,
 	}
-	t.trackInfo.Store(proto.Clone(ti).(*livekit.TrackInfo))
+	t.trackInfo.Store(utils.CloneProto(ti))
 
 	t.MediaTrackSubscriptions = NewMediaTrackSubscriptions(MediaTrackSubscriptionsParams{
 		MediaTrack:       params.MediaTrack,
@@ -186,7 +187,7 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority 
 		trackInfo := t.TrackInfo()
 
 		if priority == 0 {
-			trackInfo = proto.Clone(trackInfo).(*livekit.TrackInfo)
+			trackInfo = utils.CloneProto(trackInfo)
 			trackInfo.MimeType = receiver.Codec().MimeType
 			trackInfo.Mid = mid
 			t.trackInfo.Store(trackInfo)
@@ -224,14 +225,7 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority 
 
 func (t *MediaTrackReceiver) SetPotentialCodecs(codecs []webrtc.RTPCodecParameters, headers []webrtc.RTPHeaderExtensionParameter) {
 	// The potential codecs have not published yet, so we can't get the actual Extensions, the client/browser uses same extensions
-	// for all video codecs so we assume they will have same extensions as the primary codec except for the dependency descriptor
-	// that is munged in svc codec.
-	headersWithoutDD := make([]webrtc.RTPHeaderExtensionParameter, 0, len(headers))
-	for _, h := range headers {
-		if h.URI != dependencydescriptor.ExtensionURI {
-			headersWithoutDD = append(headersWithoutDD, h)
-		}
-	}
+	// for all video codecs so we assume they will have same extensions as the primary codec.
 	t.lock.Lock()
 	receivers := slices.Clone(t.receivers)
 	t.potentialCodecs = codecs
@@ -244,12 +238,8 @@ func (t *MediaTrackReceiver) SetPotentialCodecs(codecs []webrtc.RTPCodecParamete
 			}
 		}
 		if !exist {
-			extHeaders := headers
-			if !buffer.IsSvcCodec(c.MimeType) {
-				extHeaders = headersWithoutDD
-			}
 			receivers = append(receivers, &simulcastReceiver{
-				TrackReceiver: NewDummyReceiver(t.ID(), string(t.PublisherID()), c, extHeaders),
+				TrackReceiver: NewDummyReceiver(t.ID(), string(t.PublisherID()), c, headers),
 				priority:      i,
 			})
 		}
@@ -617,7 +607,7 @@ func (t *MediaTrackReceiver) UpdateCodecCid(codecs []*livekit.SimulcastCodec) {
 
 func (t *MediaTrackReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
 	updateMute := false
-	clonedInfo := proto.Clone(ti).(*livekit.TrackInfo)
+	clonedInfo := utils.CloneProto(ti)
 
 	t.lock.Lock()
 	trackInfo := t.TrackInfo()
@@ -670,7 +660,7 @@ func (t *MediaTrackReceiver) UpdateAudioTrack(update *livekit.UpdateLocalAudioTr
 
 	t.lock.Lock()
 	trackInfo := t.TrackInfo()
-	clonedInfo := proto.Clone(trackInfo).(*livekit.TrackInfo)
+	clonedInfo := utils.CloneProto(trackInfo)
 	clonedInfo.AudioFeatures = update.Features
 	clonedInfo.Stereo = false
 	clonedInfo.DisableDtx = false
@@ -693,6 +683,7 @@ func (t *MediaTrackReceiver) UpdateAudioTrack(update *livekit.UpdateLocalAudioTr
 	t.updateTrackInfoOfReceivers()
 
 	t.params.Telemetry.TrackPublishedUpdate(context.Background(), t.PublisherID(), clonedInfo)
+	t.params.Logger.Debugw("updated audio track", "before", logger.Proto(trackInfo), "after", logger.Proto(clonedInfo))
 }
 
 func (t *MediaTrackReceiver) UpdateVideoTrack(update *livekit.UpdateLocalVideoTrack) {
@@ -702,7 +693,7 @@ func (t *MediaTrackReceiver) UpdateVideoTrack(update *livekit.UpdateLocalVideoTr
 
 	t.lock.Lock()
 	trackInfo := t.TrackInfo()
-	clonedInfo := proto.Clone(trackInfo).(*livekit.TrackInfo)
+	clonedInfo := utils.CloneProto(trackInfo)
 	clonedInfo.Width = update.Width
 	clonedInfo.Height = update.Height
 	if proto.Equal(trackInfo, clonedInfo) {
@@ -716,6 +707,7 @@ func (t *MediaTrackReceiver) UpdateVideoTrack(update *livekit.UpdateLocalVideoTr
 	t.updateTrackInfoOfReceivers()
 
 	t.params.Telemetry.TrackPublishedUpdate(context.Background(), t.PublisherID(), clonedInfo)
+	t.params.Logger.Debugw("updated video track", "before", logger.Proto(trackInfo), "after", logger.Proto(clonedInfo))
 }
 
 func (t *MediaTrackReceiver) TrackInfo() *livekit.TrackInfo {
@@ -723,7 +715,7 @@ func (t *MediaTrackReceiver) TrackInfo() *livekit.TrackInfo {
 }
 
 func (t *MediaTrackReceiver) TrackInfoClone() *livekit.TrackInfo {
-	return proto.Clone(t.TrackInfo()).(*livekit.TrackInfo)
+	return utils.CloneProto(t.TrackInfo())
 }
 
 func (t *MediaTrackReceiver) NotifyMaxLayerChange(maxLayer int32) {
@@ -908,5 +900,5 @@ func (t *MediaTrackReceiver) GetTrackStats() *livekit.RTPStats {
 		}
 	}
 
-	return buffer.AggregateRTPStats(stats)
+	return rtpstats.AggregateRTPStats(stats)
 }
