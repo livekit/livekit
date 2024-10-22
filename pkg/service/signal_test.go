@@ -67,7 +67,7 @@ func TestSignal(t *testing.T) {
 			LoggerStub: func(context.Context) logger.Logger { return logger.GetLogger() },
 			HandleSessionStub: func(
 				ctx context.Context,
-				roomName livekit.RoomName,
+				createRoom *livekit.CreateRoomRequest,
 				pi routing.ParticipantInit,
 				connectionID livekit.ConnectionID,
 				requestSource routing.MessageSource,
@@ -124,7 +124,7 @@ func TestSignal(t *testing.T) {
 			LoggerStub: func(context.Context) logger.Logger { return logger.GetLogger() },
 			HandleSessionStub: func(
 				ctx context.Context,
-				roomName livekit.RoomName,
+				createRoom *livekit.CreateRoomRequest,
 				pi routing.ParticipantInit,
 				connectionID livekit.ConnectionID,
 				requestSource routing.MessageSource,

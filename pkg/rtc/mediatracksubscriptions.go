@@ -23,6 +23,7 @@ import (
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
 
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -170,13 +171,23 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	// Bind callback can happen from replaceTrack, so set it up early
 	var reusingTransceiver atomic.Bool
 	var dtState sfu.DownTrackState
+	downTrack.OnCodecNegotiated(func(codec webrtc.RTPCodecCapability) {
+		if !wr.DetermineReceiver(codec) {
+			if t.onSubscriberMaxQualityChange != nil {
+				go func() {
+					spatial := buffer.VideoQualityToSpatialLayer(livekit.VideoQuality_HIGH, t.params.MediaTrack.ToProto())
+					t.onSubscriberMaxQualityChange(downTrack.SubscriberID(), codec, spatial)
+				}()
+			}
+		}
+	})
 	downTrack.OnBinding(func(err error) {
 		if err != nil {
 			go subTrack.Bound(err)
 			return
 		}
-		wr.DetermineReceiver(downTrack.Codec())
 		if reusingTransceiver.Load() {
+			sub.GetLogger().Debugw("seeding downtrack state", "trackID", trackID)
 			downTrack.SeedState(dtState)
 		}
 		if err = wr.AddDownTrack(downTrack); err != nil && err != sfu.ErrReceiverClosed {
@@ -255,9 +266,9 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 			// will happen and that will notify remote of this stopped
 			// transceiver
 			existingTransceiver.Stop()
+			reusingTransceiver.Store(false)
 		}
 	}
-	reusingTransceiver.Store(false)
 
 	// if cannot replace, find an unused transceiver or add new one
 	if transceiver == nil {
@@ -314,7 +325,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	downTrack.SetTransceiver(transceiver)
 
 	downTrack.OnCloseHandler(func(isExpectedToResume bool) {
-		go t.downTrackClosed(sub, isExpectedToResume)
+		t.downTrackClosed(sub, subTrack, isExpectedToResume)
 	})
 
 	t.subscribedTracksMu.Lock()
@@ -425,30 +436,24 @@ func (t *MediaTrackSubscriptions) DebugInfo() []map[string]interface{} {
 
 func (t *MediaTrackSubscriptions) downTrackClosed(
 	sub types.LocalParticipant,
+	subTrack types.SubscribedTrack,
 	isExpectedToResume bool,
 ) {
-	subscriberID := sub.ID()
-	t.subscribedTracksMu.RLock()
-	subTrack := t.subscribedTracks[subscriberID]
-	t.subscribedTracksMu.RUnlock()
-
-	if subTrack != nil {
-		// Cache transceiver for potential re-use on resume.
-		// To ensure subscription manager does not re-subscribe before caching,
-		// delete the subscribed track only after caching.
-		if isExpectedToResume {
-			dt := subTrack.DownTrack()
-			tr := dt.GetTransceiver()
-			if tr != nil {
-				sub := subTrack.Subscriber()
-				sub.CacheDownTrack(subTrack.ID(), tr, dt.GetState())
-			}
+	// Cache transceiver for potential re-use on resume.
+	// To ensure subscription manager does not re-subscribe before caching,
+	// delete the subscribed track only after caching.
+	if isExpectedToResume {
+		dt := subTrack.DownTrack()
+		tr := dt.GetTransceiver()
+		if tr != nil {
+			sub.CacheDownTrack(subTrack.ID(), tr, dt.GetState())
 		}
-
-		t.subscribedTracksMu.Lock()
-		delete(t.subscribedTracks, subscriberID)
-		t.subscribedTracksMu.Unlock()
-
-		subTrack.Close(isExpectedToResume)
 	}
+
+	go func() {
+		t.subscribedTracksMu.Lock()
+		delete(t.subscribedTracks, sub.ID())
+		t.subscribedTracksMu.Unlock()
+		subTrack.Close(isExpectedToResume)
+	}()
 }

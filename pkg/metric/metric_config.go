@@ -12,25 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package pacer
-
-import (
-	"time"
-)
-
-type PacketTime struct {
-	baseTime time.Time
-}
-
-func NewPacketTime() *PacketTime {
-	return &PacketTime{
-		baseTime: time.Now(),
-	}
-}
-
-func (p *PacketTime) Get() time.Time {
-	// construct current time based on monotonic clock
-	return p.baseTime.Add(time.Since(p.baseTime))
-}
+package metric
 
 // ------------------------------------------------
+
+type MetricConfig struct {
+	Timestamper MetricTimestamperConfig `yaml:"timestamper_config,omitempty"`
+}
+
+var (
+	DefaultMetricConfig = MetricConfig{
+		Timestamper: DefaultMetricTimestamperConfig,
+	}
+)

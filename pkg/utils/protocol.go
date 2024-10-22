@@ -17,16 +17,15 @@
 package utils
 
 import (
-	"google.golang.org/protobuf/proto"
-
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/utils"
 )
 
 func ClientInfoWithoutAddress(c *livekit.ClientInfo) *livekit.ClientInfo {
 	if c == nil {
 		return nil
 	}
-	clone := proto.Clone(c).(*livekit.ClientInfo)
+	clone := utils.CloneProto(c)
 	clone.Address = ""
 	return clone
 }

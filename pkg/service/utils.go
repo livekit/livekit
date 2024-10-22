@@ -20,6 +20,7 @@ import (
 	"net"
 	"net/http"
 	"regexp"
+	"strings"
 
 	"github.com/livekit/protocol/logger"
 )
@@ -38,6 +39,13 @@ func handleError(w http.ResponseWriter, r *http.Request, status int, err error, 
 
 func boolValue(s string) bool {
 	return s == "1" || s == "true"
+}
+
+func RemoveDoubleSlashes(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	if strings.HasPrefix(r.URL.Path, "//") {
+		r.URL.Path = r.URL.Path[1:]
+	}
+	next(w, r)
 }
 
 func IsValidDomain(domain string) bool {

@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package rtc
+package dynacast
 
 import (
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -54,7 +55,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 
 		expectedSubscribedQualities := []*livekit.SubscribedCodec{
 			{
-				Codec: webrtc.MimeTypeVP8,
+				Codec: strings.ToLower(webrtc.MimeTypeVP8),
 				Qualities: []*livekit.SubscribedQuality{
 					{Quality: livekit.VideoQuality_LOW, Enabled: false},
 					{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
@@ -62,7 +63,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 				},
 			},
 			{
-				Codec: webrtc.MimeTypeAV1,
+				Codec: strings.ToLower(webrtc.MimeTypeAV1),
 				Qualities: []*livekit.SubscribedQuality{
 					{Quality: livekit.VideoQuality_LOW, Enabled: true},
 					{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
@@ -94,8 +95,8 @@ func TestSubscribedMaxQuality(t *testing.T) {
 		})
 
 		dm.maxSubscribedQuality = map[string]livekit.VideoQuality{
-			webrtc.MimeTypeVP8: livekit.VideoQuality_LOW,
-			webrtc.MimeTypeAV1: livekit.VideoQuality_LOW,
+			strings.ToLower(webrtc.MimeTypeVP8): livekit.VideoQuality_LOW,
+			strings.ToLower(webrtc.MimeTypeAV1): livekit.VideoQuality_LOW,
 		}
 		dm.NotifySubscriberMaxQuality("s1", webrtc.MimeTypeVP8, livekit.VideoQuality_HIGH)
 		dm.NotifySubscriberMaxQuality("s2", webrtc.MimeTypeVP8, livekit.VideoQuality_MEDIUM)
@@ -103,7 +104,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 
 		expectedSubscribedQualities := []*livekit.SubscribedCodec{
 			{
-				Codec: webrtc.MimeTypeVP8,
+				Codec: strings.ToLower(webrtc.MimeTypeVP8),
 				Qualities: []*livekit.SubscribedQuality{
 					{Quality: livekit.VideoQuality_LOW, Enabled: true},
 					{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
@@ -111,7 +112,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 				},
 			},
 			{
-				Codec: webrtc.MimeTypeAV1,
+				Codec: strings.ToLower(webrtc.MimeTypeAV1),
 				Qualities: []*livekit.SubscribedQuality{
 					{Quality: livekit.VideoQuality_LOW, Enabled: true},
 					{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
@@ -131,7 +132,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 
 		expectedSubscribedQualities = []*livekit.SubscribedCodec{
 			{
-				Codec: webrtc.MimeTypeVP8,
+				Codec: strings.ToLower(webrtc.MimeTypeVP8),
 				Qualities: []*livekit.SubscribedQuality{
 					{Quality: livekit.VideoQuality_LOW, Enabled: true},
 					{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
@@ -139,7 +140,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 				},
 			},
 			{
-				Codec: webrtc.MimeTypeAV1,
+				Codec: strings.ToLower(webrtc.MimeTypeAV1),
 				Qualities: []*livekit.SubscribedQuality{
 					{Quality: livekit.VideoQuality_LOW, Enabled: true},
 					{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
@@ -161,7 +162,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 
 		expectedSubscribedQualities = []*livekit.SubscribedCodec{
 			{
-				Codec: webrtc.MimeTypeVP8,
+				Codec: strings.ToLower(webrtc.MimeTypeVP8),
 				Qualities: []*livekit.SubscribedQuality{
 					{Quality: livekit.VideoQuality_LOW, Enabled: true},
 					{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
@@ -169,7 +170,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 				},
 			},
 			{
-				Codec: webrtc.MimeTypeAV1,
+				Codec: strings.ToLower(webrtc.MimeTypeAV1),
 				Qualities: []*livekit.SubscribedQuality{
 					{Quality: livekit.VideoQuality_LOW, Enabled: true},
 					{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
@@ -201,7 +202,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 
 		expectedSubscribedQualities = []*livekit.SubscribedCodec{
 			{
-				Codec: webrtc.MimeTypeVP8,
+				Codec: strings.ToLower(webrtc.MimeTypeVP8),
 				Qualities: []*livekit.SubscribedQuality{
 					{Quality: livekit.VideoQuality_LOW, Enabled: false},
 					{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
@@ -209,7 +210,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 				},
 			},
 			{
-				Codec: webrtc.MimeTypeAV1,
+				Codec: strings.ToLower(webrtc.MimeTypeAV1),
 				Qualities: []*livekit.SubscribedQuality{
 					{Quality: livekit.VideoQuality_LOW, Enabled: false},
 					{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
@@ -229,7 +230,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 
 		expectedSubscribedQualities = []*livekit.SubscribedCodec{
 			{
-				Codec: webrtc.MimeTypeVP8,
+				Codec: strings.ToLower(webrtc.MimeTypeVP8),
 				Qualities: []*livekit.SubscribedQuality{
 					{Quality: livekit.VideoQuality_LOW, Enabled: true},
 					{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
@@ -237,7 +238,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 				},
 			},
 			{
-				Codec: webrtc.MimeTypeAV1,
+				Codec: strings.ToLower(webrtc.MimeTypeAV1),
 				Qualities: []*livekit.SubscribedQuality{
 					{Quality: livekit.VideoQuality_LOW, Enabled: false},
 					{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
@@ -260,7 +261,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 
 		expectedSubscribedQualities = []*livekit.SubscribedCodec{
 			{
-				Codec: webrtc.MimeTypeVP8,
+				Codec: strings.ToLower(webrtc.MimeTypeVP8),
 				Qualities: []*livekit.SubscribedQuality{
 					{Quality: livekit.VideoQuality_LOW, Enabled: true},
 					{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
@@ -268,7 +269,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 				},
 			},
 			{
-				Codec: webrtc.MimeTypeAV1,
+				Codec: strings.ToLower(webrtc.MimeTypeAV1),
 				Qualities: []*livekit.SubscribedQuality{
 					{Quality: livekit.VideoQuality_LOW, Enabled: true},
 					{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},

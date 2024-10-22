@@ -39,6 +39,7 @@ type WebsocketClient interface {
 	ReadMessage() (messageType int, p []byte, err error)
 	WriteMessage(messageType int, data []byte) error
 	WriteControl(messageType int, data []byte, deadline time.Time) error
+	SetReadDeadline(deadline time.Time) error
 	Close() error
 }
 
@@ -107,6 +108,8 @@ const (
 	ParticipantCloseReasonMigrateCodecMismatch
 	ParticipantCloseReasonSignalSourceClose
 	ParticipantCloseReasonRoomClosed
+	ParticipantCloseReasonUserUnavailable
+	ParticipantCloseReasonUserRejected
 )
 
 func (p ParticipantCloseReason) String() string {
@@ -161,6 +164,10 @@ func (p ParticipantCloseReason) String() string {
 		return "SIGNAL_SOURCE_CLOSE"
 	case ParticipantCloseReasonRoomClosed:
 		return "ROOM_CLOSED"
+	case ParticipantCloseReasonUserUnavailable:
+		return "USER_UNAVAILABLE"
+	case ParticipantCloseReasonUserRejected:
+		return "USER_REJECTED"
 	default:
 		return fmt.Sprintf("%d", int(p))
 	}
@@ -193,6 +200,10 @@ func (p ParticipantCloseReason) ToDisconnectReason() livekit.DisconnectReason {
 		return livekit.DisconnectReason_SIGNAL_CLOSE
 	case ParticipantCloseReasonRoomClosed:
 		return livekit.DisconnectReason_ROOM_CLOSED
+	case ParticipantCloseReasonUserUnavailable:
+		return livekit.DisconnectReason_USER_UNAVAILABLE
+	case ParticipantCloseReasonUserRejected:
+		return livekit.DisconnectReason_USER_REJECTED
 	default:
 		// the other types will map to unknown reason
 		return livekit.DisconnectReason_UNKNOWN_REASON
@@ -257,8 +268,10 @@ type Participant interface {
 	Kind() livekit.ParticipantInfo_Kind
 	IsRecorder() bool
 	IsDependent() bool
+	IsAgent() bool
 
 	CanSkipBroadcast() bool
+	Version() utils.TimedVersion
 	ToProto() *livekit.ParticipantInfo
 
 	IsPublisher() bool
@@ -321,8 +334,9 @@ type LocalParticipant interface {
 	GetBufferFactory() *buffer.Factory
 	GetPlayoutDelayConfig() *livekit.PlayoutDelay
 	GetPendingTrack(trackID livekit.TrackID) *livekit.TrackInfo
-	GetICEConnectionDetails() []*ICEConnectionDetails
+	GetICEConnectionInfo() []*ICEConnectionInfo
 	HasConnected() bool
+	GetEnabledPublishCodecs() []*livekit.Codec
 
 	SetResponseSink(sink routing.MessageSink)
 	CloseSignalConnection(reason SignallingCloseReason)
@@ -341,6 +355,7 @@ type LocalParticipant interface {
 	// permissions
 	ClaimGrants() *auth.ClaimGrants
 	SetPermission(permission *livekit.ParticipantPermission) bool
+	CanPublish() bool
 	CanPublishSource(source livekit.TrackSource) bool
 	CanSubscribe() bool
 	CanPublishData() bool
@@ -386,7 +401,7 @@ type LocalParticipant interface {
 	SendConnectionQualityUpdate(update *livekit.ConnectionQualityUpdate) error
 	SubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool)
 	SendRefreshToken(token string) error
-	SendErrorResponse(errorResponse *livekit.ErrorResponse) error
+	SendRequestResponse(requestResponse *livekit.RequestResponse) error
 	HandleReconnectAndSendResponse(reconnectReason livekit.ReconnectReason, reconnectResponse *livekit.ReconnectResponse) error
 	IssueFullReconnect(reason ParticipantCloseReason)
 
@@ -402,6 +417,7 @@ type LocalParticipant interface {
 	// OnParticipantUpdate - metadata or permission is updated
 	OnParticipantUpdate(callback func(LocalParticipant))
 	OnDataPacket(callback func(LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket))
+	OnMetrics(callback func(LocalParticipant, *livekit.DataPacket))
 	OnSubscribeStatusChanged(fn func(publisherID livekit.ParticipantID, subscribed bool))
 	OnClose(callback func(LocalParticipant))
 	OnClaimsChanged(callback func(LocalParticipant))
@@ -418,6 +434,7 @@ type LocalParticipant interface {
 		mediaTracks []*livekit.TrackPublishedResponse,
 		dataChannels []*livekit.DataChannelInfo,
 	)
+	IsReconnect() bool
 
 	UpdateMediaRTT(rtt uint32)
 	UpdateSignalingRTT(rtt uint32)
@@ -427,6 +444,7 @@ type LocalParticipant interface {
 	GetCachedDownTrack(trackID livekit.TrackID) (*webrtc.RTPTransceiver, sfu.DownTrackState)
 
 	SetICEConfig(iceConfig *livekit.ICEConfig)
+	GetICEConfig() *livekit.ICEConfig
 	OnICEConfigChanged(callback func(participant LocalParticipant, iceConfig *livekit.ICEConfig))
 
 	UpdateSubscribedQuality(nodeID livekit.NodeID, trackID livekit.TrackID, maxQualities []SubscribedCodecQuality) error
@@ -439,6 +457,8 @@ type LocalParticipant interface {
 	GetPacer() pacer.Pacer
 
 	GetDisableSenderReportPassThrough() bool
+
+	HandleMetrics(senderParticipantID livekit.ParticipantID, batch *livekit.MetricsBatch) error
 }
 
 // Room is a container of participants, and can provide room-level actions

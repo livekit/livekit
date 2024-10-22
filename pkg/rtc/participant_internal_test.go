@@ -286,7 +286,7 @@ func TestMuteSetting(t *testing.T) {
 			Muted: true,
 		})
 
-		_, ti, _ := p.getPendingTrack("cid", livekit.TrackType_AUDIO)
+		_, ti, _, _ := p.getPendingTrack("cid", livekit.TrackType_AUDIO, false)
 		require.NotNil(t, ti)
 		require.True(t, ti.Muted)
 	})
@@ -330,77 +330,6 @@ func TestSubscriberAsPrimary(t *testing.T) {
 		})
 		require.False(t, p.SubscriberAsPrimary())
 	})
-}
-
-func TestSetStableTrackID(t *testing.T) {
-	testCases := []struct {
-		name                 string
-		trackInfo            *livekit.TrackInfo
-		unpublished          []*livekit.TrackInfo
-		cid                  string
-		prefix               string
-		remainingUnpublished int
-	}{
-		{
-			name: "first track, generates new ID",
-			trackInfo: &livekit.TrackInfo{
-				Type:   livekit.TrackType_VIDEO,
-				Source: livekit.TrackSource_CAMERA,
-			},
-			prefix: "TR_VC",
-		},
-		{
-			name: "re-using existing ID",
-			trackInfo: &livekit.TrackInfo{
-				Type:   livekit.TrackType_VIDEO,
-				Source: livekit.TrackSource_CAMERA,
-			},
-			unpublished: []*livekit.TrackInfo{
-				{
-					Type:   livekit.TrackType_VIDEO,
-					Source: livekit.TrackSource_SCREEN_SHARE,
-					Sid:    "TR_VC1234",
-				},
-				{
-					Type:   livekit.TrackType_VIDEO,
-					Source: livekit.TrackSource_CAMERA,
-					Sid:    "TR_VC1235",
-				},
-			},
-			cid:                  "TR_VC1235",
-			prefix:               "TR_VC1235",
-			remainingUnpublished: 1,
-		},
-		{
-			name: "mismatch name for reuse",
-			trackInfo: &livekit.TrackInfo{
-				Type:   livekit.TrackType_VIDEO,
-				Source: livekit.TrackSource_CAMERA,
-				Name:   "new_name",
-			},
-			unpublished: []*livekit.TrackInfo{
-				{
-					Type:   livekit.TrackType_VIDEO,
-					Source: livekit.TrackSource_CAMERA,
-					Sid:    "TR_NotUsed",
-				},
-			},
-			prefix:               "TR_VC",
-			remainingUnpublished: 1,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			p := newParticipantForTest("test")
-			p.unpublishedTracks = tc.unpublished
-
-			ti := tc.trackInfo
-			p.setStableTrackID(tc.cid, ti)
-			require.Contains(t, ti.Sid, tc.prefix)
-			require.Len(t, p.unpublishedTracks, tc.remainingUnpublished)
-		})
-	}
 }
 
 func TestDisableCodecs(t *testing.T) {
@@ -621,7 +550,7 @@ func TestPreferAudioCodecForRed(t *testing.T) {
 	me := webrtc.MediaEngine{}
 	me.RegisterDefaultCodecs()
 	require.NoError(t, me.RegisterCodec(webrtc.RTPCodecParameters{
-		RTPCodecCapability: redCodecCapability,
+		RTPCodecCapability: RedCodecCapability,
 		PayloadType:        63,
 	}, webrtc.RTPCodecTypeAudio))
 

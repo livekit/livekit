@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/pion/webrtc/v3"
-	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -198,14 +197,18 @@ func (p *ParticipantImpl) SendRefreshToken(token string) error {
 	})
 }
 
-func (p *ParticipantImpl) SendErrorResponse(errorResponse *livekit.ErrorResponse) error {
-	if errorResponse.RequestId == 0 || !p.params.ClientInfo.SupportErrorResponse() {
+func (p *ParticipantImpl) SendRequestResponse(requestResponse *livekit.RequestResponse) error {
+	if requestResponse.RequestId == 0 || !p.params.ClientInfo.SupportErrorResponse() {
+		return nil
+	}
+
+	if requestResponse.Reason == livekit.RequestResponse_OK && !p.ProtocolVersion().SupportsNonErrorSignalResponse() {
 		return nil
 	}
 
 	return p.writeMessage(&livekit.SignalResponse{
-		Message: &livekit.SignalResponse_ErrorResponse{
-			ErrorResponse: errorResponse,
+		Message: &livekit.SignalResponse_RequestResponse{
+			RequestResponse: requestResponse,
 		},
 	})
 }
@@ -266,13 +269,7 @@ func (p *ParticipantImpl) sendDisconnectUpdatesForReconnect() error {
 }
 
 func (p *ParticipantImpl) sendICECandidate(ic *webrtc.ICECandidate, target livekit.SignalTarget) error {
-	var icQueue *atomic.Pointer[webrtc.ICECandidate]
-	if target == livekit.SignalTarget_PUBLISHER {
-		icQueue = &p.icQueue[0]
-	} else {
-		icQueue = &p.icQueue[1]
-	}
-	prevIC := icQueue.Swap(ic)
+	prevIC := p.icQueue[target].Swap(ic)
 	if prevIC == nil {
 		return nil
 	}

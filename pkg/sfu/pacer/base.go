@@ -20,19 +20,17 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils/mono"
 	"github.com/pion/rtp"
 )
 
 type Base struct {
 	logger logger.Logger
-
-	packetTime *PacketTime
 }
 
 func NewBase(logger logger.Logger) *Base {
 	return &Base{
-		logger:     logger,
-		packetTime: NewPacketTime(),
+		logger: logger,
 	}
 }
 
@@ -82,7 +80,7 @@ func (b *Base) writeRTPHeaderExtensions(p *Packet) (time.Time, error) {
 		p.Header.SetExtension(ext.ID, ext.Payload)
 	}
 
-	sendingAt := b.packetTime.Get()
+	sendingAt := mono.Now()
 	if p.AbsSendTimeExtID != 0 {
 		sendTime := rtp.NewAbsSendTimeExtension(sendingAt)
 		b, err := sendTime.Marshal()

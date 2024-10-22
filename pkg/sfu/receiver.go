@@ -24,17 +24,18 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/mediatransportutil/pkg/bucket"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/sfu/audio"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
+	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 )
 
 var (
@@ -83,6 +84,10 @@ type TrackReceiver interface {
 	GetTemporalLayerFpsForSpatial(layer int32) []float32
 
 	GetTrackStats() *livekit.RTPStats
+
+	// AddOnReady adds a function to be called when the receiver is ready, the callback
+	// could be called immediately if the receiver is ready when the callback is added
+	AddOnReady(func())
 }
 
 // WebRTCReceiver receives a media track
@@ -200,7 +205,7 @@ func NewWebRTCReceiver(
 	for _, opt := range opts {
 		w = opt(w)
 	}
-	w.trackInfo.Store(proto.Clone(trackInfo).(*livekit.TrackInfo))
+	w.trackInfo.Store(utils.CloneProto(trackInfo))
 
 	w.downTrackSpreader = NewDownTrackSpreader(DownTrackSpreaderParams{
 		Threshold: w.lbThreshold,
@@ -208,8 +213,6 @@ func NewWebRTCReceiver(
 	})
 
 	w.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
-		MimeType:         w.codec.MimeType,
-		IsFECEnabled:     strings.EqualFold(w.codec.MimeType, webrtc.MimeTypeOpus) && strings.Contains(strings.ToLower(w.codec.SDPFmtpLine), "fec"),
 		ReceiverProvider: w,
 		Logger:           w.logger.WithValues("direction", "up"),
 	})
@@ -218,7 +221,11 @@ func NewWebRTCReceiver(
 			w.onStatsUpdate(w, stat)
 		}
 	})
-	w.connectionStats.Start(trackInfo)
+	w.connectionStats.Start(
+		w.codec.MimeType,
+		// TODO: technically not correct to declare FEC on when RED. Need the primary codec's fmtp line to check.
+		strings.EqualFold(w.codec.MimeType, MimeTypeAudioRed) || strings.Contains(strings.ToLower(w.codec.SDPFmtpLine), "useinbandfec=1"),
+	)
 
 	w.streamTrackerManager = NewStreamTrackerManager(logger, trackInfo, w.isSVC, w.codec.ClockRate, trackersConfig)
 	w.streamTrackerManager.SetListener(w)
@@ -240,7 +247,7 @@ func (w *WebRTCReceiver) TrackInfo() *livekit.TrackInfo {
 }
 
 func (w *WebRTCReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
-	w.trackInfo.Store(proto.Clone(ti).(*livekit.TrackInfo))
+	w.trackInfo.Store(utils.CloneProto(ti))
 	w.streamTrackerManager.UpdateTrackInfo(ti)
 }
 
@@ -405,7 +412,6 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) error {
 		w.logger.Infow("subscriberID already exists, replacing downtrack", "subscriberID", track.SubscriberID())
 	}
 
-	track.TrackInfoAvailable()
 	track.UpTrackMaxPublishedLayerChange(w.streamTrackerManager.GetMaxPublishedLayer())
 	track.UpTrackMaxTemporalLayerSeenChange(w.streamTrackerManager.GetMaxTemporalLayerSeen())
 
@@ -586,7 +592,7 @@ func (w *WebRTCReceiver) GetTrackStats() *livekit.RTPStats {
 		stats = append(stats, sswl)
 	}
 
-	return buffer.AggregateRTPStats(stats)
+	return rtpstats.AggregateRTPStats(stats)
 }
 
 func (w *WebRTCReceiver) GetAudioLevel() (float64, bool) {
@@ -625,7 +631,7 @@ func (w *WebRTCReceiver) GetDeltaStats() map[uint32]*buffer.StreamStatsWithLayer
 		}
 
 		// patch buffer stats with correct layer
-		patched := make(map[int32]*buffer.RTPDeltaInfo, 1)
+		patched := make(map[int32]*rtpstats.RTPDeltaInfo, 1)
 		patched[int32(layer)] = sswl.Layers[0]
 		sswl.Layers = patched
 
@@ -812,6 +818,13 @@ func (w *WebRTCReceiver) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
 
 	return b.GetTemporalLayerFpsForSpatial(layer)
 }
+
+func (w *WebRTCReceiver) AddOnReady(fn func()) {
+	// webRTCReceiver is always ready after created
+	fn()
+}
+
+// -----------------------------------------------------------
 
 // closes all track senders in parallel, returns when all are closed
 func closeTrackSenders(senders []TrackSender) {

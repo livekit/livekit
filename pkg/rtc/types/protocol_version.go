@@ -16,7 +16,7 @@ package types
 
 type ProtocolVersion int
 
-const CurrentProtocol = 14
+const CurrentProtocol = 15
 
 func (v ProtocolVersion) SupportsPackedStreamId() bool {
 	return v > 0
@@ -90,4 +90,8 @@ func (v ProtocolVersion) SupportsIdentityBasedReconnection() bool {
 
 func (v ProtocolVersion) SupportsRegionsInLeaveRequest() bool {
 	return v > 12
+}
+
+func (v ProtocolVersion) SupportsNonErrorSignalResponse() bool {
+	return v > 14
 }

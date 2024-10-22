@@ -12,10 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package buffer
+package rtpstats
 
 import (
-	"fmt"
 	"math/rand"
 	"testing"
 	"time"
@@ -34,56 +33,6 @@ func getPacket(sn uint16, ts uint32, payloadSize int) *rtp.Packet {
 		},
 		Payload: make([]byte, payloadSize),
 	}
-}
-
-func Test_RTPStatsReceiver(t *testing.T) {
-	clockRate := uint32(90000)
-	r := NewRTPStatsReceiver(RTPStatsParams{
-		ClockRate: clockRate,
-		Logger:    logger.GetLogger(),
-	})
-
-	totalDuration := 5 * time.Second
-	bitrate := 1000000
-	packetSize := 1000
-	pps := (((bitrate + 7) / 8) + packetSize - 1) / packetSize
-	framerate := 30
-	sleep := 1000 / framerate
-	packetsPerFrame := (pps + framerate - 1) / framerate
-
-	sequenceNumber := uint16(rand.Float64() * float64(1<<16))
-	timestamp := uint32(rand.Float64() * float64(1<<32))
-	now := time.Now()
-	startTime := now
-	lastFrameTime := now
-	for now.Sub(startTime) < totalDuration {
-		timestamp += uint32(now.Sub(lastFrameTime).Seconds() * float64(clockRate))
-		for i := 0; i < packetsPerFrame; i++ {
-			packet := getPacket(sequenceNumber, timestamp, packetSize)
-			r.Update(
-				time.Now().UnixNano(),
-				packet.Header.SequenceNumber,
-				packet.Header.Timestamp,
-				packet.Header.Marker,
-				packet.Header.MarshalSize(),
-				len(packet.Payload),
-				0,
-			)
-			if (sequenceNumber % 100) == 0 {
-				jump := uint16(rand.Float64() * 120.0)
-				sequenceNumber += jump
-			} else {
-				sequenceNumber++
-			}
-		}
-
-		lastFrameTime = now
-		time.Sleep(time.Duration(sleep) * time.Millisecond)
-		now = time.Now()
-	}
-
-	r.Stop()
-	fmt.Printf("%s\n", r.String())
 }
 
 func Test_RTPStatsReceiver_Update(t *testing.T) {
@@ -105,7 +54,6 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 		len(packet.Payload),
 		0,
 	)
-	require.False(t, flowState.HasLoss)
 	require.True(t, r.initialized)
 	require.Equal(t, sequenceNumber, r.sequenceNumber.GetHighest())
 	require.Equal(t, sequenceNumber, uint16(r.sequenceNumber.GetExtendedHighest()))
@@ -125,7 +73,6 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 		len(packet.Payload),
 		0,
 	)
-	require.False(t, flowState.HasLoss)
 	require.Equal(t, sequenceNumber, r.sequenceNumber.GetHighest())
 	require.Equal(t, sequenceNumber, uint16(r.sequenceNumber.GetExtendedHighest()))
 	require.Equal(t, timestamp, r.timestamp.GetHighest())
@@ -142,7 +89,6 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 		len(packet.Payload),
 		0,
 	)
-	require.False(t, flowState.HasLoss)
 	require.True(t, flowState.IsNotHandled)
 	require.Equal(t, sequenceNumber, r.sequenceNumber.GetHighest())
 	require.Equal(t, sequenceNumber, uint16(r.sequenceNumber.GetExtendedHighest()))
@@ -162,7 +108,6 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 		len(packet.Payload),
 		0,
 	)
-	require.False(t, flowState.HasLoss)
 	require.True(t, flowState.IsNotHandled)
 	require.Equal(t, sequenceNumber, r.sequenceNumber.GetHighest())
 	require.Equal(t, sequenceNumber, uint16(r.sequenceNumber.GetExtendedHighest()))
@@ -184,7 +129,6 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 		len(packet.Payload),
 		0,
 	)
-	require.True(t, flowState.HasLoss)
 	require.Equal(t, uint64(sequenceNumber-9), flowState.LossStartInclusive)
 	require.Equal(t, uint64(sequenceNumber), flowState.LossEndExclusive)
 	require.Equal(t, uint64(9), r.packetsLost)
@@ -200,7 +144,6 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 		len(packet.Payload),
 		0,
 	)
-	require.False(t, flowState.HasLoss)
 	require.Equal(t, sequenceNumber, r.sequenceNumber.GetHighest())
 	require.Equal(t, sequenceNumber, uint16(r.sequenceNumber.GetExtendedHighest()))
 	require.Equal(t, timestamp, r.timestamp.GetHighest())
@@ -223,7 +166,6 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 		len(packet.Payload),
 		0,
 	)
-	require.True(t, flowState.HasLoss)
 	require.Equal(t, uint64(sequenceNumber-1), flowState.LossStartInclusive)
 	require.Equal(t, uint64(sequenceNumber), flowState.LossEndExclusive)
 	require.Equal(t, uint64(9), r.packetsLost)
@@ -242,7 +184,6 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 		len(packet.Payload),
 		0,
 	)
-	require.False(t, flowState.HasLoss)
 	require.Equal(t, uint64(8), r.packetsLost)
 	require.Equal(t, uint64(2), r.packetsOutOfOrder)
 	require.True(t, r.history.IsSet(uint64(sequenceNumber)))
@@ -260,7 +201,6 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 		len(packet.Payload),
 		25,
 	)
-	require.False(t, flowState.HasLoss)
 	require.Equal(t, uint64(8), r.packetsLost)
 	require.Equal(t, uint64(2), r.packetsOutOfOrder)
 	require.True(t, r.history.IsSet(uint64(sequenceNumber)))

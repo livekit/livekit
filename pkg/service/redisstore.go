@@ -29,6 +29,7 @@ import (
 	"github.com/livekit/protocol/ingress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/psrpc"
 
@@ -527,7 +528,7 @@ func (s *RedisStore) storeIngress(_ context.Context, info *livekit.IngressInfo) 
 	}
 
 	// ignore state
-	infoCopy := proto.Clone(info).(*livekit.IngressInfo)
+	infoCopy := utils.CloneProto(info)
 	infoCopy.State = nil
 
 	data, err := proto.Marshal(infoCopy)
@@ -830,7 +831,7 @@ func (s *RedisStore) DeleteIngress(_ context.Context, info *livekit.IngressInfo)
 }
 
 func (s *RedisStore) StoreAgentDispatch(_ context.Context, dispatch *livekit.AgentDispatch) error {
-	di := proto.Clone(dispatch).(*livekit.AgentDispatch)
+	di := utils.CloneProto(dispatch)
 
 	// Do not store jobs with the dispatch
 	if di.State != nil {
@@ -893,7 +894,7 @@ func (s *RedisStore) StoreAgentJob(_ context.Context, job *livekit.Job) error {
 
 	key := AgentJobPrefix + string(job.Room.Name)
 
-	jb := proto.Clone(job).(*livekit.Job)
+	jb := utils.CloneProto(job)
 
 	// Do not store room with the job
 	jb.Room = nil
