@@ -178,6 +178,8 @@ type PCTransport struct {
 
 	firstOfferReceived      bool
 	firstOfferNoDataChannel bool
+	remoteICEIsLite         *bool
+	localICEIsLite          *bool
 	reliableDC              *webrtc.DataChannel
 	reliableDCOpened        bool
 	lossyDC                 *webrtc.DataChannel
@@ -1401,7 +1403,7 @@ func (t *PCTransport) handleRemoteICECandidate(e event) error {
 	c := e.data.(*webrtc.ICECandidateInit)
 
 	filtered := false
-	if t.params.DropRemoteICECandidates || (t.preferTCP.Load() && !strings.Contains(c.Candidate, "tcp")) {
+	if t.preferTCP.Load() && !strings.Contains(c.Candidate, "tcp") {
 		t.params.Logger.Debugw("filtering out remote candidate", "candidate", c.Candidate)
 		filtered = true
 	}
@@ -1418,6 +1420,11 @@ func (t *PCTransport) handleRemoteICECandidate(e event) error {
 
 	if t.pc.RemoteDescription() == nil {
 		t.pendingRemoteCandidates = append(t.pendingRemoteCandidates, c)
+		return nil
+	}
+
+	if t.params.DropRemoteICECandidates {
+		t.params.Logger.Debugw("dropping remote ICE candidate", "candidate", c.Candidate)
 		return nil
 	}
 
@@ -1443,6 +1450,25 @@ func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription, preferTCP, 
 	if err != nil {
 		t.params.Logger.Warnw("could not unmarshal SDP to filter candidates", err)
 		return sd
+	}
+
+	_, iceLite := parsed.Attribute("ice-lite")
+	var liteSet bool
+	if isLocal {
+		if t.localICEIsLite == nil {
+			t.localICEIsLite = &iceLite
+			liteSet = true
+		}
+	} else {
+		if t.remoteICEIsLite == nil {
+			t.remoteICEIsLite = &iceLite
+			liteSet = true
+		}
+	}
+	if liteSet && t.localICEIsLite != nil && t.remoteICEIsLite != nil {
+		// only drop remote candidates if local is lite and remote is not
+		t.params.DropRemoteICECandidates = t.params.DropRemoteICECandidates && (*t.localICEIsLite && !*t.remoteICEIsLite)
+		t.params.Logger.Debugw("setting DropRemoteICECandidates", "dropRemoteCandidate", t.params.DropRemoteICECandidates, "localICELite", *t.localICEIsLite, "remoteICELite", *t.remoteICEIsLite)
 	}
 
 	filterAttributes := func(attrs []sdp.Attribute) []sdp.Attribute {
@@ -1673,6 +1699,9 @@ func (t *PCTransport) setRemoteDescription(sd webrtc.SessionDescription) error {
 	}
 
 	for _, c := range t.pendingRemoteCandidates {
+		if t.params.DropRemoteICECandidates {
+			continue
+		}
 		if err := t.pc.AddICECandidate(*c); err != nil {
 			t.params.Logger.Warnw("failed to add cached ICE candidate", err, "candidate", c)
 			return errors.Wrap(err, "add ice candidate failed")
