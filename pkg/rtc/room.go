@@ -1816,8 +1816,8 @@ func connectionDetailsFields(infos []*types.ICEConnectionInfo) []interface{} {
 		candidates := make([]string, 0, len(info.Remote)+len(info.Local))
 		for _, c := range info.Local {
 			cStr := "[local]"
-			if c.Selected {
-				cStr += "[selected]"
+			if c.SelectedOrder != 0 {
+				cStr += fmt.Sprintf("[selected:%d]", c.SelectedOrder)
 			} else if c.Filtered {
 				cStr += "[filtered]"
 			}
@@ -1829,8 +1829,8 @@ func connectionDetailsFields(infos []*types.ICEConnectionInfo) []interface{} {
 		}
 		for _, c := range info.Remote {
 			cStr := "[remote]"
-			if c.Selected {
-				cStr += "[selected]"
+			if c.SelectedOrder != 0 {
+				cStr += fmt.Sprintf("[selected:%d]", c.SelectedOrder)
 			} else if c.Filtered {
 				cStr += "[filtered]"
 			}

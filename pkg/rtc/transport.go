@@ -1413,7 +1413,7 @@ func (t *PCTransport) handleRemoteICECandidate(e event) error {
 		filtered = true
 	}
 
-	t.connectionDetails.AddRemoteCandidate(*c, filtered, true)
+	t.connectionDetails.AddRemoteCandidate(*c, filtered, true, false)
 	if filtered {
 		return nil
 	}
@@ -1425,6 +1425,7 @@ func (t *PCTransport) handleRemoteICECandidate(e event) error {
 
 	if t.params.DropRemoteICECandidates {
 		t.params.Logger.Debugw("dropping remote ICE candidate", "candidate", c.Candidate)
+		t.connectionDetails.AddRemoteCandidate(*c, true, true, true)
 		return nil
 	}
 
@@ -1494,7 +1495,7 @@ func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription, preferTCP, 
 				if isLocal {
 					t.connectionDetails.AddLocalICECandidate(c, excluded, false)
 				} else {
-					t.connectionDetails.AddRemoteICECandidate(c, excluded, false)
+					t.connectionDetails.AddRemoteICECandidate(c, excluded, false, false)
 				}
 			} else {
 				filteredAttrs = append(filteredAttrs, a)
@@ -1700,6 +1701,7 @@ func (t *PCTransport) setRemoteDescription(sd webrtc.SessionDescription) error {
 
 	for _, c := range t.pendingRemoteCandidates {
 		if t.params.DropRemoteICECandidates {
+			t.connectionDetails.AddRemoteCandidate(*c, true, true, true)
 			continue
 		}
 		if err := t.pc.AddICECandidate(*c); err != nil {
