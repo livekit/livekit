@@ -18,7 +18,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/events"
 	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/protocol/utils/must"
 	"github.com/livekit/protocol/utils/options"
@@ -111,11 +111,11 @@ func (h *TestServer) SimulateAgentWorker(opts ...SimulatedWorkerOption) *AgentWo
 		jobs:                   map[string]*AgentJob{},
 		SimulatedWorkerOptions: o,
 
-		RegisterWorkerResponses: utils.NewDefaultEventObserverList[*livekit.RegisterWorkerResponse](),
-		AvailabilityRequests:    utils.NewDefaultEventObserverList[*livekit.AvailabilityRequest](),
-		JobAssignments:          utils.NewDefaultEventObserverList[*livekit.JobAssignment](),
-		JobTerminations:         utils.NewDefaultEventObserverList[*livekit.JobTermination](),
-		WorkerPongs:             utils.NewDefaultEventObserverList[*livekit.WorkerPong](),
+		RegisterWorkerResponses: events.NewObserverList[*livekit.RegisterWorkerResponse](),
+		AvailabilityRequests:    events.NewObserverList[*livekit.AvailabilityRequest](),
+		JobAssignments:          events.NewObserverList[*livekit.JobAssignment](),
+		JobTerminations:         events.NewObserverList[*livekit.JobTermination](),
+		WorkerPongs:             events.NewObserverList[*livekit.WorkerPong](),
 	}
 	w.ctx, w.cancel = context.WithCancel(context.Background())
 
@@ -178,11 +178,11 @@ type AgentWorker struct {
 	serverMessages deque.Deque[*livekit.ServerMessage]
 	jobs           map[string]*AgentJob
 
-	RegisterWorkerResponses *utils.EventObserverList[*livekit.RegisterWorkerResponse]
-	AvailabilityRequests    *utils.EventObserverList[*livekit.AvailabilityRequest]
-	JobAssignments          *utils.EventObserverList[*livekit.JobAssignment]
-	JobTerminations         *utils.EventObserverList[*livekit.JobTermination]
-	WorkerPongs             *utils.EventObserverList[*livekit.WorkerPong]
+	RegisterWorkerResponses *events.ObserverList[*livekit.RegisterWorkerResponse]
+	AvailabilityRequests    *events.ObserverList[*livekit.AvailabilityRequest]
+	JobAssignments          *events.ObserverList[*livekit.JobAssignment]
+	JobTerminations         *events.ObserverList[*livekit.JobTermination]
+	WorkerPongs             *events.ObserverList[*livekit.WorkerPong]
 }
 
 func (w *AgentWorker) statusWorker() {
