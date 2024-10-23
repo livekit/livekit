@@ -293,7 +293,11 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	//
 	se.DisableSRTPReplayProtection(true)
 	se.DisableSRTCPReplayProtection(true)
-	if !params.ProtocolVersion.SupportsICELite() {
+	if !params.ProtocolVersion.SupportsICELite() || !params.ClientInfo.SupportPrflxOverRelay() {
+		// if client don't support prflx over relay which is only Firefox, disable ICE Lite to ensure that
+		// dropping remote ICE candidates does not get enabled. Firefox does aggressive nomination and
+		// dropping remote ICE candidates means server would accept all switches and it could end up with
+		// the lower priority candidate. As Firefox does not support migration, ICE Lite can be disabled.
 		se.SetLite(false)
 	}
 	se.SetDTLSRetransmissionInterval(dtlsRetransmissionInterval)
