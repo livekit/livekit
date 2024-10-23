@@ -473,8 +473,12 @@ func (t *PCTransport) createPeerConnection() error {
 	t.pc.SCTP().Transport().ICETransport().OnSelectedCandidatePairChange(func(pair *webrtc.ICECandidatePair) {
 		t.params.Logger.Debugw("selected ICE candidate pair changed", "pair", wrappedICECandidatePairLogger{pair})
 		t.connectionDetails.SetSelectedPair(pair)
-		if t.selectedPair.Load() != nil {
-			t.params.Logger.Infow("ice reconnected or switched pair", "pair", wrappedICECandidatePairLogger{pair})
+		existingPair := t.selectedPair.Load()
+		if existingPair != nil {
+			t.params.Logger.Infow(
+				"ice reconnected or switched pair",
+				"existingPair", wrappedICECandidatePairLogger{existingPair},
+				"newPair", wrappedICECandidatePairLogger{pair})
 		}
 		t.selectedPair.Store(pair)
 	})
