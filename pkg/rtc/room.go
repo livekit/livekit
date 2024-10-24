@@ -1854,13 +1854,12 @@ func connectionDetailsFields(infos []*types.ICEConnectionInfo) []interface{} {
 				ipAddr = net.ParseIP(relatedAddress.Address)
 				if ipAddr != nil {
 					isPrivate = ipAddr.IsPrivate()
+					relatedAddressAddress := relatedAddress.Address
+					if !isPrivate && len(relatedAddressAddress) > minIPTruncateLen {
+						relatedAddressAddress = relatedAddressAddress[:len(relatedAddressAddress)-3] + "..."
+					}
+					cStr += " " + fmt.Sprintf(" related %s:%d", relatedAddressAddress, relatedAddress.Port)
 				}
-
-				relatedAddressAddress := relatedAddress.Address
-				if !isPrivate && len(relatedAddressAddress) > minIPTruncateLen {
-					relatedAddressAddress = relatedAddressAddress[:len(relatedAddressAddress)-3] + "..."
-				}
-				cStr += " " + fmt.Sprintf(" related %s:%d", relatedAddressAddress, relatedAddress.Port)
 			}
 			candidates = append(candidates, cStr)
 		}
