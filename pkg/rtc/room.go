@@ -1849,7 +1849,7 @@ func connectionDetailsFields(infos []*types.ICEConnectionInfo) []interface{} {
 			if !isPrivate && len(remoteAddress) > minIPTruncateLen {
 				remoteAddress = remoteAddress[:len(remoteAddress)-3] + "..."
 			}
-			cStr += " " + fmt.Sprintf("%s %s %s:%d", c.Remote.NetworkType(), c.Remote.Type(), c.Remote.Address(), c.Remote.Port())
+			cStr += " " + fmt.Sprintf("%s %s %s:%d", c.Remote.NetworkType(), c.Remote.Type(), remoteAddress, c.Remote.Port())
 			if relatedAddress := c.Remote.RelatedAddress(); relatedAddress != nil {
 				ipAddr = net.ParseIP(relatedAddress.Address)
 				if ipAddr != nil {
