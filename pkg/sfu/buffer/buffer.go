@@ -134,7 +134,6 @@ type Buffer struct {
 	packetNotFoundCount   atomic.Uint32
 	packetTooOldCount     atomic.Uint32
 	extPacketTooMuchCount atomic.Uint32
-	invalidPacketCount    atomic.Uint32
 
 	primaryBufferForRTX *Buffer
 	rtxPktBuf           []byte
