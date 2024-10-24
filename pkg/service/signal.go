@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"log"
 
 	"github.com/pkg/errors"
 	"google.golang.org/protobuf/proto"
@@ -94,16 +95,20 @@ type signalService struct {
 }
 
 func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest]) (err error) {
+	log.Printf("RelaySignal progress 1")
+
 	// copy the context to prevent a race between the session handler closing
 	// and the delivery of any parting messages from the client. take care to
 	// copy the incoming rpc headers to avoid dropping any session vars.
 	ctx, cancel := context.WithCancel(psrpc.NewContextWithIncomingHeader(context.Background(), psrpc.IncomingHeader(stream.Context())))
 	defer cancel()
+	log.Printf("RelaySignal progress 2")
 
 	req, ok := <-stream.Channel()
 	if !ok {
 		return nil
 	}
+	log.Printf("RelaySignal progress 3")
 
 	ss := req.StartSession
 	if ss == nil {
@@ -114,6 +119,7 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 	if err != nil {
 		return errors.Wrap(err, "failed to read participant from session")
 	}
+	log.Printf("RelaySignal progress 4")
 
 	l := logger.GetLogger().WithValues(
 		"room", ss.RoomName,
@@ -123,6 +129,8 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 
 	reqChan := routing.NewDefaultMessageChannel()
 	defer reqChan.Close()
+
+	log.Printf("RelaySignal progress 5")
 
 	err = r.sessionHandler(
 		ctx,
@@ -135,6 +143,8 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 			logger:       l,
 		},
 	)
+	log.Printf("RelaySignal progress 6")
+
 	if err != nil {
 		l.Errorw("could not handle new participant", err)
 	}
@@ -144,6 +154,7 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 			break
 		}
 	}
+	log.Printf("RelaySignal progress 7")
 
 	l.Debugw("participant signal stream closed")
 	return
