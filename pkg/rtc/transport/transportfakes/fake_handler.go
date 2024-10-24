@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/livekit/livekit-server/pkg/rtc/transport"
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	"github.com/livekit/protocol/livekit"
 	webrtc "github.com/pion/webrtc/v3"
@@ -33,10 +34,11 @@ type FakeHandler struct {
 	onDataSendErrorArgsForCall []struct {
 		arg1 error
 	}
-	OnFailedStub        func(bool)
+	OnFailedStub        func(bool, *types.ICEConnectionInfo)
 	onFailedMutex       sync.RWMutex
 	onFailedArgsForCall []struct {
 		arg1 bool
+		arg2 *types.ICEConnectionInfo
 	}
 	OnFullyEstablishedStub        func()
 	onFullyEstablishedMutex       sync.RWMutex
@@ -230,16 +232,17 @@ func (fake *FakeHandler) OnDataSendErrorArgsForCall(i int) error {
 	return argsForCall.arg1
 }
 
-func (fake *FakeHandler) OnFailed(arg1 bool) {
+func (fake *FakeHandler) OnFailed(arg1 bool, arg2 *types.ICEConnectionInfo) {
 	fake.onFailedMutex.Lock()
 	fake.onFailedArgsForCall = append(fake.onFailedArgsForCall, struct {
 		arg1 bool
-	}{arg1})
+		arg2 *types.ICEConnectionInfo
+	}{arg1, arg2})
 	stub := fake.OnFailedStub
-	fake.recordInvocation("OnFailed", []interface{}{arg1})
+	fake.recordInvocation("OnFailed", []interface{}{arg1, arg2})
 	fake.onFailedMutex.Unlock()
 	if stub != nil {
-		fake.OnFailedStub(arg1)
+		fake.OnFailedStub(arg1, arg2)
 	}
 }
 
@@ -249,17 +252,17 @@ func (fake *FakeHandler) OnFailedCallCount() int {
 	return len(fake.onFailedArgsForCall)
 }
 
-func (fake *FakeHandler) OnFailedCalls(stub func(bool)) {
+func (fake *FakeHandler) OnFailedCalls(stub func(bool, *types.ICEConnectionInfo)) {
 	fake.onFailedMutex.Lock()
 	defer fake.onFailedMutex.Unlock()
 	fake.OnFailedStub = stub
 }
 
-func (fake *FakeHandler) OnFailedArgsForCall(i int) bool {
+func (fake *FakeHandler) OnFailedArgsForCall(i int) (bool, *types.ICEConnectionInfo) {
 	fake.onFailedMutex.RLock()
 	defer fake.onFailedMutex.RUnlock()
 	argsForCall := fake.onFailedArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeHandler) OnFullyEstablished() {

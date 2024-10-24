@@ -640,7 +640,7 @@ func (t *PCTransport) handleConnectionFailed(forceShortConn bool) {
 		}
 	}
 
-	t.params.Handler.OnFailed(isShort)
+	t.params.Handler.OnFailed(isShort, t.GetICEConnectionInfo())
 }
 
 func (t *PCTransport) onICEConnectionStateChange(state webrtc.ICEConnectionState) {
