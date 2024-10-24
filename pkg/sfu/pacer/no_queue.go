@@ -18,6 +18,7 @@ import (
 	"sync"
 
 	"github.com/gammazero/deque"
+	"github.com/livekit/livekit-server/pkg/sfu/sendsidebwe"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -32,9 +33,9 @@ type NoQueue struct {
 	isStopped bool
 }
 
-func NewNoQueue(logger logger.Logger) *NoQueue {
+func NewNoQueue(logger logger.Logger, sendSideBWE *sendsidebwe.SendSideBWE) *NoQueue {
 	n := &NoQueue{
-		Base:   NewBase(logger),
+		Base:   NewBase(logger, sendSideBWE),
 		logger: logger,
 		wake:   make(chan struct{}, 1),
 	}
