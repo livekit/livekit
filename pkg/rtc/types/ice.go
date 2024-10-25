@@ -40,11 +40,11 @@ const (
 
 type ICECandidateExtended struct {
 	// only one of local or remote is set. This is due to type foo in Pion
-	Local    *webrtc.ICECandidate
-	Remote   ice.Candidate
-	Selected bool
-	Filtered bool
-	Trickle  bool
+	Local         *webrtc.ICECandidate
+	Remote        ice.Candidate
+	SelectedOrder int
+	Filtered      bool
+	Trickle       bool
 }
 
 // --------------------------------------------
@@ -64,8 +64,9 @@ func (i *ICEConnectionInfo) HasCandidates() bool {
 
 type ICEConnectionDetails struct {
 	ICEConnectionInfo
-	lock   sync.Mutex
-	logger logger.Logger
+	lock          sync.Mutex
+	selectedCount int
+	logger        logger.Logger
 }
 
 func NewICEConnectionDetails(transport livekit.SignalTarget, l logger.Logger) *ICEConnectionDetails {
@@ -90,18 +91,18 @@ func (d *ICEConnectionDetails) GetInfo() *ICEConnectionInfo {
 	}
 	for _, c := range d.Local {
 		info.Local = append(info.Local, &ICECandidateExtended{
-			Local:    c.Local,
-			Filtered: c.Filtered,
-			Selected: c.Selected,
-			Trickle:  c.Trickle,
+			Local:         c.Local,
+			Filtered:      c.Filtered,
+			SelectedOrder: c.SelectedOrder,
+			Trickle:       c.Trickle,
 		})
 	}
 	for _, c := range d.Remote {
 		info.Remote = append(info.Remote, &ICECandidateExtended{
-			Remote:   c.Remote,
-			Filtered: c.Filtered,
-			Selected: c.Selected,
-			Trickle:  c.Trickle,
+			Remote:        c.Remote,
+			Filtered:      c.Filtered,
+			SelectedOrder: c.SelectedOrder,
+			Trickle:       c.Trickle,
 		})
 	}
 	return info
@@ -133,16 +134,16 @@ func (d *ICEConnectionDetails) AddLocalICECandidate(c ice.Candidate, filtered, t
 	d.AddLocalCandidate(candidate, filtered, trickle)
 }
 
-func (d *ICEConnectionDetails) AddRemoteCandidate(c webrtc.ICECandidateInit, filtered, trickle bool) {
+func (d *ICEConnectionDetails) AddRemoteCandidate(c webrtc.ICECandidateInit, filtered, trickle, canUpdate bool) {
 	candidate, err := unmarshalICECandidate(c)
 	if err != nil {
 		d.logger.Errorw("could not unmarshal candidate", err, "candidate", c)
 		return
 	}
-	d.AddRemoteICECandidate(candidate, filtered, trickle)
+	d.AddRemoteICECandidate(candidate, filtered, trickle, canUpdate)
 }
 
-func (d *ICEConnectionDetails) AddRemoteICECandidate(candidate ice.Candidate, filtered, trickle bool) {
+func (d *ICEConnectionDetails) AddRemoteICECandidate(candidate ice.Candidate, filtered, trickle, canUpdate bool) {
 	if candidate == nil {
 		// end-of-candidates candidate
 		return
@@ -150,10 +151,14 @@ func (d *ICEConnectionDetails) AddRemoteICECandidate(candidate ice.Candidate, fi
 
 	d.lock.Lock()
 	defer d.lock.Unlock()
-	compFn := func(e *ICECandidateExtended) bool {
+	indexFn := func(e *ICECandidateExtended) bool {
 		return isICECandidateEqualTo(e.Remote, candidate)
 	}
-	if slices.ContainsFunc(d.Remote, compFn) {
+	if idx := slices.IndexFunc(d.Remote, indexFn); idx != -1 {
+		if canUpdate {
+			d.Remote[idx].Filtered = filtered
+			d.Remote[idx].Trickle = trickle
+		}
 		return
 	}
 	d.Remote = append(d.Remote, &ICECandidateExtended{
@@ -174,6 +179,9 @@ func (d *ICEConnectionDetails) Clear() {
 func (d *ICEConnectionDetails) SetSelectedPair(pair *webrtc.ICECandidatePair) {
 	d.lock.Lock()
 	defer d.lock.Unlock()
+
+	d.selectedCount++
+
 	remoteIdx := slices.IndexFunc(d.Remote, func(e *ICECandidateExtended) bool {
 		return isICECandidateEqualToCandidate(e.Remote, pair.Remote)
 	})
@@ -195,7 +203,7 @@ func (d *ICEConnectionDetails) SetSelectedPair(pair *webrtc.ICECandidatePair) {
 		remoteIdx = len(d.Remote) - 1
 	}
 	remote := d.Remote[remoteIdx]
-	remote.Selected = true
+	remote.SelectedOrder = d.selectedCount
 
 	localIdx := slices.IndexFunc(d.Local, func(e *ICECandidateExtended) bool {
 		return isCandidateEqualTo(e.Local, pair.Local)
@@ -206,7 +214,7 @@ func (d *ICEConnectionDetails) SetSelectedPair(pair *webrtc.ICECandidatePair) {
 		return
 	}
 	local := d.Local[localIdx]
-	local.Selected = true
+	local.SelectedOrder = d.selectedCount
 
 	d.Type = ICEConnectionTypeUDP
 	if pair.Remote.Protocol == webrtc.ICEProtocolTCP {
