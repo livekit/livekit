@@ -630,24 +630,17 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *livek
 		return nil
 	}
 
+	timeSincePublisherSRAdjusted := time.Since(time.Unix(0, publisherSRData.AtAdjusted))
+	now := publisherSRData.AtAdjusted + timeSincePublisherSRAdjusted.Nanoseconds()
 	var (
-		reportTime         int64
-		reportTimeAdjusted int64
-		nowNTP             mediatransportutil.NtpTime
-		nowRTPExt          uint64
+		nowNTP    mediatransportutil.NtpTime
+		nowRTPExt uint64
 	)
 	if passThrough {
-		reportTime = publisherSRData.At
-		reportTimeAdjusted = publisherSRData.AtAdjusted
-
 		nowNTP = mediatransportutil.NtpTime(publisherSRData.NtpTimestamp)
 		nowRTPExt = publisherSRData.RtpTimestampExt - tsOffset
 	} else {
-		timeSincePublisherSRAdjusted := time.Since(time.Unix(0, publisherSRData.AtAdjusted))
-		reportTimeAdjusted = publisherSRData.AtAdjusted + timeSincePublisherSRAdjusted.Nanoseconds()
-		reportTime = reportTimeAdjusted
-
-		nowNTP = mediatransportutil.ToNtpTime(time.Unix(0, reportTime))
+		nowNTP = mediatransportutil.ToNtpTime(time.Unix(0, now))
 		nowRTPExt = publisherSRData.RtpTimestampExt - tsOffset + uint64(timeSincePublisherSRAdjusted.Nanoseconds()*int64(r.params.ClockRate)/1e9)
 	}
 
@@ -657,8 +650,8 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *livek
 		NtpTimestamp:    uint64(nowNTP),
 		RtpTimestamp:    uint32(nowRTPExt),
 		RtpTimestampExt: nowRTPExt,
-		At:              reportTime,
-		AtAdjusted:      reportTimeAdjusted,
+		At:              now,
+		AtAdjusted:      now,
 		Packets:         packetCount,
 		Octets:          octetCount,
 	}
@@ -668,11 +661,10 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *livek
 		"feed", WrappedRTCPSenderReportStateLogger{publisherSRData},
 		"tsOffset", tsOffset,
 		"timeNow", time.Now(),
-		"reportTime", time.Unix(0, reportTime),
-		"reportTimeAdjusted", time.Unix(0, reportTimeAdjusted),
-		"timeSinceHighest", time.Since(time.Unix(0, r.highestTime)),
-		"timeSinceFirst", time.Since(time.Unix(0, r.firstTime)),
-		"timeSincePublisherSRAdjusted", time.Since(time.Unix(0, publisherSRData.AtAdjusted)),
+		"now", time.Unix(0, now),
+		"timeSinceHighest", time.Duration(now-r.highestTime),
+		"timeSinceFirst", time.Duration(now-r.firstTime),
+		"timeSincePublisherSRAdjusted", timeSincePublisherSRAdjusted,
 		"timeSincePublisherSR", time.Since(time.Unix(0, publisherSRData.At)),
 		"nowRTPExt", nowRTPExt,
 		"rtpStats", lockedRTPStatsSenderLogEncoder{r},
