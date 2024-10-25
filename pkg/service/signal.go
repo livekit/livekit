@@ -72,7 +72,7 @@ func NewSignalServer(
 }
 
 func NewDefaultSignalServer(
-	currentNode *routing.LocalNode,
+	currentNode routing.LocalNode,
 	bus psrpc.MessageBus,
 	config config.SignalRelayConfig,
 	router routing.Router,
@@ -82,7 +82,7 @@ func NewDefaultSignalServer(
 }
 
 type defaultSessionHandler struct {
-	currentNode *routing.LocalNode
+	currentNode routing.LocalNode
 	router      routing.Router
 	roomManager *RoomManager
 }

@@ -105,7 +105,7 @@ type MessageRouter interface {
 
 func CreateRouter(
 	rc redis.UniversalClient,
-	node *LocalNode,
+	node LocalNode,
 	signalClient SignalClient,
 	roomManagerClient RoomManagerClient,
 	kps rpc.KeepalivePubSub,

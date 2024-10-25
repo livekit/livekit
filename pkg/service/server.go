@@ -54,7 +54,7 @@ type LivekitServer struct {
 	roomManager  *RoomManager
 	signalServer *SignalServer
 	turnServer   *turn.Server
-	currentNode  *routing.LocalNode
+	currentNode  routing.LocalNode
 	running      atomic.Bool
 	doneChan     chan struct{}
 	closedChan   chan struct{}
@@ -74,7 +74,7 @@ func NewLivekitServer(conf *config.Config,
 	roomManager *RoomManager,
 	signalServer *SignalServer,
 	turnServer *turn.Server,
-	currentNode *routing.LocalNode,
+	currentNode routing.LocalNode,
 ) (s *LivekitServer, err error) {
 	s = &LivekitServer{
 		config:       conf,

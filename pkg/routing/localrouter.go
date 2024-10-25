@@ -29,7 +29,7 @@ var _ Router = (*LocalRouter)(nil)
 
 // a router of messages on the same node, basic implementation for local testing
 type LocalRouter struct {
-	currentNode       *LocalNode
+	currentNode       LocalNode
 	signalClient      SignalClient
 	roomManagerClient RoomManagerClient
 
@@ -41,7 +41,7 @@ type LocalRouter struct {
 }
 
 func NewLocalRouter(
-	currentNode *LocalNode,
+	currentNode LocalNode,
 	signalClient SignalClient,
 	roomManagerClient RoomManagerClient,
 ) *LocalRouter {

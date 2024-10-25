@@ -46,7 +46,7 @@ type analyticsService struct {
 	nodeRooms rpc.AnalyticsRecorderService_IngestNodeRoomStatesClient
 }
 
-func NewAnalyticsService(_ *config.Config, currentNode *routing.LocalNode) AnalyticsService {
+func NewAnalyticsService(_ *config.Config, currentNode routing.LocalNode) AnalyticsService {
 	return &analyticsService{
 		analyticsKey: "", // TODO: conf.AnalyticsKey
 		nodeID:       string(currentNode.NodeID()),

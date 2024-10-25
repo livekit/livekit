@@ -153,7 +153,7 @@ type workerKey struct {
 }
 
 func NewAgentService(conf *config.Config,
-	currentNode *routing.LocalNode,
+	currentNode routing.LocalNode,
 	bus psrpc.MessageBus,
 	keyProvider auth.KeyProvider,
 ) (*AgentService, error) {

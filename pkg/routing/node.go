@@ -28,7 +28,20 @@ import (
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
-type LocalNode struct {
+type LocalNode interface {
+	Clone() *livekit.Node
+	SetNodeID(nodeID livekit.NodeID)
+	NodeID() livekit.NodeID
+	NodeType() livekit.NodeType
+	NodeIP() string
+	Region() string
+	SetState(state livekit.NodeState)
+	SetStats(stats *livekit.NodeStats)
+	UpdateNodeStats() bool
+	SecondsSinceNodeStatsUpdate() float64
+}
+
+type LocalNodeImpl struct {
 	lock sync.RWMutex
 	node *livekit.Node
 
@@ -36,12 +49,12 @@ type LocalNode struct {
 	prevStats *livekit.NodeStats
 }
 
-func NewLocalNode(conf *config.Config) (*LocalNode, error) {
+func NewLocalNode(conf *config.Config) (*LocalNodeImpl, error) {
 	nodeID := guid.New(utils.NodePrefix)
 	if conf != nil && conf.RTC.NodeIP == "" {
 		return nil, ErrIPNotSet
 	}
-	l := &LocalNode{
+	l := &LocalNodeImpl{
 		node: &livekit.Node{
 			Id:      nodeID,
 			NumCpus: uint32(runtime.NumCPU()),
@@ -59,7 +72,11 @@ func NewLocalNode(conf *config.Config) (*LocalNode, error) {
 	return l, nil
 }
 
-func (l *LocalNode) Clone() *livekit.Node {
+func NewLocalNodeFromNodeProto(node *livekit.Node) (*LocalNodeImpl, error) {
+	return &LocalNodeImpl{node: utils.CloneProto(node)}, nil
+}
+
+func (l *LocalNodeImpl) Clone() *livekit.Node {
 	l.lock.RLock()
 	defer l.lock.RUnlock()
 
@@ -67,42 +84,42 @@ func (l *LocalNode) Clone() *livekit.Node {
 }
 
 // for testing only
-func (l *LocalNode) SetNodeID(nodeID livekit.NodeID) {
+func (l *LocalNodeImpl) SetNodeID(nodeID livekit.NodeID) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
 	l.node.Id = string(nodeID)
 }
 
-func (l *LocalNode) NodeID() livekit.NodeID {
+func (l *LocalNodeImpl) NodeID() livekit.NodeID {
 	l.lock.RLock()
 	defer l.lock.RUnlock()
 
 	return livekit.NodeID(l.node.Id)
 }
 
-func (l *LocalNode) NodeType() livekit.NodeType {
+func (l *LocalNodeImpl) NodeType() livekit.NodeType {
 	l.lock.RLock()
 	defer l.lock.RUnlock()
 
 	return l.node.Type
 }
 
-func (l *LocalNode) NodeIP() string {
+func (l *LocalNodeImpl) NodeIP() string {
 	l.lock.RLock()
 	defer l.lock.RUnlock()
 
 	return l.node.Ip
 }
 
-func (l *LocalNode) Region() string {
+func (l *LocalNodeImpl) Region() string {
 	l.lock.RLock()
 	defer l.lock.RUnlock()
 
 	return l.node.Region
 }
 
-func (l *LocalNode) SetState(state livekit.NodeState) {
+func (l *LocalNodeImpl) SetState(state livekit.NodeState) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
@@ -110,14 +127,14 @@ func (l *LocalNode) SetState(state livekit.NodeState) {
 }
 
 // for testing only
-func (l *LocalNode) SetStats(stats *livekit.NodeStats) {
+func (l *LocalNodeImpl) SetStats(stats *livekit.NodeStats) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
 	l.node.Stats = utils.CloneProto(stats)
 }
 
-func (l *LocalNode) UpdateNodeStats() bool {
+func (l *LocalNodeImpl) UpdateNodeStats() bool {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
@@ -136,7 +153,7 @@ func (l *LocalNode) UpdateNodeStats() bool {
 	return true
 }
 
-func (l *LocalNode) SecondsSinceNodeStatsUpdate() float64 {
+func (l *LocalNodeImpl) SecondsSinceNodeStatsUpdate() float64 {
 	l.lock.RLock()
 	defer l.lock.RUnlock()
 

@@ -69,7 +69,7 @@ type RoomManager struct {
 	config            *config.Config
 	rtcConfig         *rtc.WebRTCConfig
 	serverInfo        *livekit.ServerInfo
-	currentNode       *routing.LocalNode
+	currentNode       routing.LocalNode
 	router            routing.Router
 	roomAllocator     RoomAllocator
 	roomManagerServer rpc.TypedRoomManagerServer
@@ -97,7 +97,7 @@ type RoomManager struct {
 func NewLocalRoomManager(
 	conf *config.Config,
 	roomStore ObjectStore,
-	currentNode *routing.LocalNode,
+	currentNode routing.LocalNode,
 	router routing.Router,
 	roomAllocator RoomAllocator,
 	telemetry telemetry.TelemetryService,
