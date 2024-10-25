@@ -19,6 +19,7 @@ import (
 
 	"github.com/pion/webrtc/v3"
 
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	"github.com/livekit/protocol/livekit"
 )
@@ -36,7 +37,7 @@ type Handler interface {
 	OnICECandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) error
 	OnInitialConnected()
 	OnFullyEstablished()
-	OnFailed(isShortLived bool)
+	OnFailed(isShortLived bool, iceConnectionInfo *types.ICEConnectionInfo)
 	OnTrack(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver)
 	OnDataPacket(kind livekit.DataPacket_Kind, data []byte)
 	OnDataSendError(err error)

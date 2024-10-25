@@ -51,15 +51,23 @@ const (
 	udpLossUnstableCountThreshold = 20
 )
 
+// -------------------------------
+
 type TransportManagerTransportHandler struct {
 	transport.Handler
-	t *TransportManager
+	t      *TransportManager
+	logger logger.Logger
 }
 
-func (h TransportManagerTransportHandler) OnFailed(isShortLived bool) {
+func (h TransportManagerTransportHandler) OnFailed(isShortLived bool, iceConnectionInfo *types.ICEConnectionInfo) {
+	if isShortLived {
+		h.logger.Infow("short ice connection", connectionDetailsFields([]*types.ICEConnectionInfo{iceConnectionInfo})...)
+	}
 	h.t.handleConnectionFailed(isShortLived)
-	h.Handler.OnFailed(isShortLived)
+	h.Handler.OnFailed(isShortLived, iceConnectionInfo)
 }
+
+// -------------------------------
 
 type TransportManagerPublisherTransportHandler struct {
 	TransportManagerTransportHandler
@@ -69,6 +77,8 @@ func (h TransportManagerPublisherTransportHandler) OnAnswer(sd webrtc.SessionDes
 	h.t.lastPublisherAnswer.Store(sd)
 	return h.Handler.OnAnswer(sd)
 }
+
+// -------------------------------
 
 type TransportManagerParams struct {
 	Identity                     livekit.ParticipantIdentity
@@ -133,6 +143,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 	}
 	t.mediaLossProxy.OnMediaLossUpdate(t.onMediaLossUpdate)
 
+	lgr := LoggerWithPCTarget(params.Logger, livekit.SignalTarget_PUBLISHER)
 	publisher, err := NewPCTransport(TransportParams{
 		ParticipantID:           params.SID,
 		ParticipantIdentity:     params.Identity,
@@ -142,11 +153,11 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		DirectionConfig:         params.Config.Publisher,
 		CongestionControlConfig: params.CongestionControlConfig,
 		EnabledCodecs:           params.EnabledPublishCodecs,
-		Logger:                  LoggerWithPCTarget(params.Logger, livekit.SignalTarget_PUBLISHER),
+		Logger:                  lgr,
 		SimTracks:               params.SimTracks,
 		ClientInfo:              params.ClientInfo,
 		Transport:               livekit.SignalTarget_PUBLISHER,
-		Handler:                 TransportManagerPublisherTransportHandler{TransportManagerTransportHandler{params.PublisherHandler, t}},
+		Handler:                 TransportManagerPublisherTransportHandler{TransportManagerTransportHandler{params.PublisherHandler, t, lgr}},
 		DropRemoteICECandidates: params.DropRemoteICECandidates,
 	})
 	if err != nil {
@@ -154,6 +165,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 	}
 	t.publisher = publisher
 
+	lgr = LoggerWithPCTarget(params.Logger, livekit.SignalTarget_SUBSCRIBER)
 	subscriber, err := NewPCTransport(TransportParams{
 		ParticipantID:                params.SID,
 		ParticipantIdentity:          params.Identity,
@@ -162,14 +174,14 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		DirectionConfig:              params.Config.Subscriber,
 		CongestionControlConfig:      params.CongestionControlConfig,
 		EnabledCodecs:                params.EnabledSubscribeCodecs,
-		Logger:                       LoggerWithPCTarget(params.Logger, livekit.SignalTarget_SUBSCRIBER),
+		Logger:                       lgr,
 		ClientInfo:                   params.ClientInfo,
 		IsOfferer:                    true,
 		IsSendSide:                   true,
 		AllowPlayoutDelay:            params.AllowPlayoutDelay,
 		DataChannelMaxBufferedAmount: params.DataChannelMaxBufferedAmount,
 		Transport:                    livekit.SignalTarget_SUBSCRIBER,
-		Handler:                      TransportManagerTransportHandler{params.SubscriberHandler, t},
+		Handler:                      TransportManagerTransportHandler{params.SubscriberHandler, t, lgr},
 		DropRemoteICECandidates:      params.DropRemoteICECandidates,
 	})
 	if err != nil {
@@ -690,7 +702,7 @@ func (t *TransportManager) onMediaLossUpdate(loss uint8) {
 				t.lock.Unlock()
 
 				t.params.Logger.Infow("udp connection unstable, switch to tcp", "signalingRTT", t.signalingRTT)
-				t.params.SubscriberHandler.OnFailed(true)
+				t.params.SubscriberHandler.OnFailed(true, t.subscriber.GetICEConnectionInfo())
 				return
 			}
 		}

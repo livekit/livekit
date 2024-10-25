@@ -1334,7 +1334,7 @@ type AnyTransportHandler struct {
 	p *ParticipantImpl
 }
 
-func (h AnyTransportHandler) OnFailed(isShortLived bool) {
+func (h AnyTransportHandler) OnFailed(_isShortLived bool, _ici *types.ICEConnectionInfo) {
 	h.p.onAnyTransportFailed()
 }
 
