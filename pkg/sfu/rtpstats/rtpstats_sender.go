@@ -26,6 +26,7 @@ import (
 
 	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/utils/mono"
 )
 
 const (
@@ -137,12 +138,23 @@ type senderSnapshot struct {
 	intervalStats intervalStats
 }
 
+// -------------------------------------------------------------------
+
+type rttMarker struct {
+	ntpTime mediatransportutil.NtpTime
+	sentAt  time.Time
+}
+
+// -------------------------------------------------------------------
+
 type RTPStatsSender struct {
 	*rtpStatsBase
 
 	extStartSN         uint64
 	extHighestSN       uint64
 	extHighestSNFromRR uint64
+
+	rttMarker rttMarker
 
 	lastRRTime time.Time
 	lastRR     rtcp.ReceptionReport
@@ -189,6 +201,8 @@ func (r *RTPStatsSender) Seed(from *RTPStatsSender) {
 	r.extStartSN = from.extStartSN
 	r.extHighestSN = from.extHighestSN
 	r.extHighestSNFromRR = from.extHighestSNFromRR
+
+	r.rttMarker = from.rttMarker
 
 	r.lastRRTime = from.lastRRTime
 	r.lastRR = from.lastRR
@@ -493,7 +507,7 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 
 	if r.srNewest != nil {
 		var err error
-		rtt, err = mediatransportutil.GetRttMs(&rr, mediatransportutil.NtpTime(r.srNewest.NtpTimestamp), time.Unix(0, r.srNewest.At))
+		rtt, err = mediatransportutil.GetRttMs(&rr, r.rttMarker.ntpTime, r.rttMarker.sentAt)
 		if err == nil {
 			isRttChanged = rtt != r.rtt
 		} else {
@@ -630,17 +644,24 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *livek
 		return nil
 	}
 
-	timeSincePublisherSRAdjusted := time.Since(time.Unix(0, publisherSRData.AtAdjusted))
-	now := publisherSRData.AtAdjusted + timeSincePublisherSRAdjusted.Nanoseconds()
 	var (
-		nowNTP    mediatransportutil.NtpTime
-		nowRTPExt uint64
+		reportTime         int64
+		reportTimeAdjusted int64
+		nowNTP             mediatransportutil.NtpTime
+		nowRTPExt          uint64
 	)
 	if passThrough {
+		reportTime = publisherSRData.At
+		reportTimeAdjusted = publisherSRData.AtAdjusted
+
 		nowNTP = mediatransportutil.NtpTime(publisherSRData.NtpTimestamp)
 		nowRTPExt = publisherSRData.RtpTimestampExt - tsOffset
 	} else {
-		nowNTP = mediatransportutil.ToNtpTime(time.Unix(0, now))
+		timeSincePublisherSRAdjusted := time.Since(time.Unix(0, publisherSRData.AtAdjusted))
+		reportTimeAdjusted = publisherSRData.AtAdjusted + timeSincePublisherSRAdjusted.Nanoseconds()
+		reportTime = reportTimeAdjusted
+
+		nowNTP = mediatransportutil.ToNtpTime(time.Unix(0, reportTime))
 		nowRTPExt = publisherSRData.RtpTimestampExt - tsOffset + uint64(timeSincePublisherSRAdjusted.Nanoseconds()*int64(r.params.ClockRate)/1e9)
 	}
 
@@ -650,8 +671,8 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *livek
 		NtpTimestamp:    uint64(nowNTP),
 		RtpTimestamp:    uint32(nowRTPExt),
 		RtpTimestampExt: nowRTPExt,
-		At:              now,
-		AtAdjusted:      now,
+		At:              reportTime,
+		AtAdjusted:      reportTimeAdjusted,
 		Packets:         packetCount,
 		Octets:          octetCount,
 	}
@@ -661,10 +682,11 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *livek
 		"feed", WrappedRTCPSenderReportStateLogger{publisherSRData},
 		"tsOffset", tsOffset,
 		"timeNow", time.Now(),
-		"now", time.Unix(0, now),
-		"timeSinceHighest", time.Duration(now-r.highestTime),
-		"timeSinceFirst", time.Duration(now-r.firstTime),
-		"timeSincePublisherSRAdjusted", timeSincePublisherSRAdjusted,
+		"reportTime", time.Unix(0, reportTime),
+		"reportTimeAdjusted", time.Unix(0, reportTimeAdjusted),
+		"timeSinceHighest", time.Since(time.Unix(0, r.highestTime)),
+		"timeSinceFirst", time.Since(time.Unix(0, r.firstTime)),
+		"timeSincePublisherSRAdjusted", time.Since(time.Unix(0, publisherSRData.AtAdjusted)),
 		"timeSincePublisherSR", time.Since(time.Unix(0, publisherSRData.At)),
 		"nowRTPExt", nowRTPExt,
 		"rtpStats", lockedRTPStatsSenderLogEncoder{r},
@@ -698,6 +720,11 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *livek
 	r.srNewest = srData
 	if r.srFirst == nil {
 		r.srFirst = r.srNewest
+	}
+
+	r.rttMarker = rttMarker{
+		ntpTime: mediatransportutil.NtpTime(nowNTP),
+		sentAt:  mono.Now(),
 	}
 
 	return &rtcp.SenderReport{
