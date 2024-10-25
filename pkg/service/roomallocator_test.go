@@ -37,7 +37,7 @@ func TestCreateRoom(t *testing.T) {
 		node, err := routing.NewLocalNode(conf)
 		require.NoError(t, err)
 
-		ra, conf := newTestRoomAllocator(t, conf, node)
+		ra, conf := newTestRoomAllocator(t, conf, node.Clone())
 
 		room, _, _, err := ra.CreateRoom(context.Background(), &livekit.CreateRoomRequest{Name: "myroom"}, true)
 		require.NoError(t, err)
@@ -55,10 +55,12 @@ func SelectRoomNode(t *testing.T) {
 
 		node, err := routing.NewLocalNode(conf)
 		require.NoError(t, err)
-		node.Stats.NumTracksIn = 100
-		node.Stats.NumTracksOut = 100
+		node.SetStats(&livekit.NodeStats{
+			NumTracksIn:  100,
+			NumTracksOut: 100,
+		})
 
-		ra, _ := newTestRoomAllocator(t, conf, node)
+		ra, _ := newTestRoomAllocator(t, conf, node.Clone())
 
 		err = ra.SelectRoomNode(context.Background(), "low-limit-room", "")
 		require.ErrorIs(t, err, routing.ErrNodeLimitReached)
@@ -71,10 +73,12 @@ func SelectRoomNode(t *testing.T) {
 
 		node, err := routing.NewLocalNode(conf)
 		require.NoError(t, err)
-		node.Stats.BytesInPerSec = 1000
-		node.Stats.BytesOutPerSec = 1000
+		node.SetStats(&livekit.NodeStats{
+			BytesInPerSec:  1000,
+			BytesOutPerSec: 1000,
+		})
 
-		ra, _ := newTestRoomAllocator(t, conf, node)
+		ra, _ := newTestRoomAllocator(t, conf, node.Clone())
 
 		err = ra.SelectRoomNode(context.Background(), "low-limit-room", "")
 		require.ErrorIs(t, err, routing.ErrNodeLimitReached)
