@@ -723,7 +723,7 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *livek
 	}
 
 	r.rttMarker = rttMarker{
-		ntpTime: mediatransportutil.NtpTime(nowNTP),
+		ntpTime: nowNTP,
 		sentAt:  mono.Now(),
 	}
 
