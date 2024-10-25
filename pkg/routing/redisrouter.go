@@ -36,7 +36,7 @@ const (
 	// expire participant mappings after a day
 	participantMappingTTL = 24 * time.Hour
 	statsUpdateInterval   = 2 * time.Second
-	statsMaxDelaySeconds  = 30
+	statsMaxDelaySeconds  = float64(30)
 
 	// hash of node_id => Node proto
 	NodesKey = "nodes"
