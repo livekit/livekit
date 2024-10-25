@@ -76,7 +76,7 @@ func (r *RedisRouter) RegisterNode() error {
 	if err != nil {
 		return err
 	}
-	if err := r.rc.HSet(r.ctx, NodesKey, r.currentNode.NodeID(), data).Err(); err != nil {
+	if err := r.rc.HSet(r.ctx, NodesKey, string(r.currentNode.NodeID()), data).Err(); err != nil {
 		return errors.Wrap(err, "could not register node")
 	}
 	return nil

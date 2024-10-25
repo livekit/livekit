@@ -137,7 +137,7 @@ func setupServerWithWebhook() (server *service.LivekitServer, testServer *webhoo
 	if err != nil {
 		return
 	}
-	currentNode.Id = guid.New(nodeID1)
+	currentNode.SetNodeID(livekit.NodeID(guid.New(nodeID1)))
 
 	server, err = service.InitializeServer(conf, currentNode)
 	if err != nil {

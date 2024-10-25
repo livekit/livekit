@@ -38,22 +38,25 @@ type LocalNode struct {
 
 func NewLocalNode(conf *config.Config) (*LocalNode, error) {
 	nodeID := guid.New(utils.NodePrefix)
-	if conf.RTC.NodeIP == "" {
+	if conf != nil && conf.RTC.NodeIP == "" {
 		return nil, ErrIPNotSet
 	}
-	return &LocalNode{
+	l := &LocalNode{
 		node: &livekit.Node{
 			Id:      nodeID,
-			Ip:      conf.RTC.NodeIP,
 			NumCpus: uint32(runtime.NumCPU()),
-			Region:  conf.Region,
 			State:   livekit.NodeState_SERVING,
 			Stats: &livekit.NodeStats{
 				StartedAt: time.Now().Unix(),
 				UpdatedAt: time.Now().Unix(),
 			},
 		},
-	}, nil
+	}
+	if conf != nil {
+		l.node.Ip = conf.RTC.NodeIP
+		l.node.Region = conf.Region
+	}
+	return l, nil
 }
 
 func (l *LocalNode) Clone() *livekit.Node {
@@ -61,6 +64,14 @@ func (l *LocalNode) Clone() *livekit.Node {
 	defer l.lock.RUnlock()
 
 	return utils.CloneProto(l.node)
+}
+
+// for testing only
+func (l *LocalNode) SetNodeID(nodeID livekit.NodeID) {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+
+	l.node.Id = string(nodeID)
 }
 
 func (l *LocalNode) NodeID() livekit.NodeID {
@@ -96,6 +107,14 @@ func (l *LocalNode) SetState(state livekit.NodeState) {
 	defer l.lock.Unlock()
 
 	l.node.State = state
+}
+
+// for testing only
+func (l *LocalNode) SetStats(stats *livekit.NodeStats) {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+
+	l.node.Stats = utils.CloneProto(stats)
 }
 
 func (l *LocalNode) UpdateNodeStats() bool {

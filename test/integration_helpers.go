@@ -161,7 +161,7 @@ func createSingleNodeServer(configUpdater func(*config.Config)) *service.Livekit
 	if err != nil {
 		panic(fmt.Sprintf("could not create local node: %v", err))
 	}
-	currentNode.Id = guid.New(nodeID1)
+	currentNode.SetNodeID(livekit.NodeID(guid.New(nodeID1)))
 
 	s, err := service.InitializeServer(conf, currentNode)
 	if err != nil {
@@ -188,7 +188,7 @@ func createMultiNodeServer(nodeID string, port uint32) *service.LivekitServer {
 	if err != nil {
 		panic(err)
 	}
-	currentNode.Id = nodeID
+	currentNode.SetNodeID(livekit.NodeID(nodeID))
 
 	// redis routing and store
 	s, err := service.InitializeServer(conf, currentNode)
