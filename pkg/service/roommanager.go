@@ -69,7 +69,7 @@ type RoomManager struct {
 	config            *config.Config
 	rtcConfig         *rtc.WebRTCConfig
 	serverInfo        *livekit.ServerInfo
-	currentNode       routing.LocalNode
+	currentNode       *routing.LocalNode
 	router            routing.Router
 	roomAllocator     RoomAllocator
 	roomManagerServer rpc.TypedRoomManagerServer
@@ -97,7 +97,7 @@ type RoomManager struct {
 func NewLocalRoomManager(
 	conf *config.Config,
 	roomStore ObjectStore,
-	currentNode routing.LocalNode,
+	currentNode *routing.LocalNode,
 	router routing.Router,
 	roomAllocator RoomAllocator,
 	telemetry telemetry.TelemetryService,
@@ -142,7 +142,7 @@ func NewLocalRoomManager(
 			Protocol:      types.CurrentProtocol,
 			AgentProtocol: agent.CurrentProtocol,
 			Region:        conf.Region,
-			NodeId:        currentNode.Id,
+			NodeId:        string(currentNode.NodeID()),
 		},
 	}
 
@@ -150,7 +150,7 @@ func NewLocalRoomManager(
 	if err != nil {
 		return nil, err
 	}
-	if err := r.roomManagerServer.RegisterAllNodeTopics(livekit.NodeID(currentNode.Id)); err != nil {
+	if err := r.roomManagerServer.RegisterAllNodeTopics(currentNode.NodeID()); err != nil {
 		return nil, err
 	}
 
@@ -315,7 +315,7 @@ func (r *RoomManager) StartSession(
 				// It is possible that the client did not get that send request. So, send it again.
 				logger.Infow("cannot restart a closed participant",
 					"room", room.Name(),
-					"nodeID", r.currentNode.Id,
+					"nodeID", r.currentNode.NodeID(),
 					"participant", pi.Identity,
 					"reason", pi.ReconnectReason,
 				)
@@ -342,7 +342,7 @@ func (r *RoomManager) StartSession(
 			}
 
 			participant.GetLogger().Infow("resuming RTC session",
-				"nodeID", r.currentNode.Id,
+				"nodeID", r.currentNode.NodeID(),
 				"reason", pi.ReconnectReason,
 				"numParticipants", room.GetParticipantCount(),
 			)
@@ -362,7 +362,7 @@ func (r *RoomManager) StartSession(
 				participant.GetLogger().Warnw("could not resume participant", err)
 				return err
 			}
-			r.telemetry.ParticipantResumed(ctx, room.ToProto(), participant.ToProto(), livekit.NodeID(r.currentNode.Id), pi.ReconnectReason)
+			r.telemetry.ParticipantResumed(ctx, room.ToProto(), participant.ToProto(), r.currentNode.NodeID(), pi.ReconnectReason)
 			go r.rtcSessionWorker(room, participant, requestSource)
 			return nil
 		}
@@ -403,7 +403,7 @@ func (r *RoomManager) StartSession(
 	)
 	pLogger.Infow("starting RTC session",
 		"room", room.Name(),
-		"nodeID", r.currentNode.Id,
+		"nodeID", r.currentNode.NodeID(),
 		"clientInfo", logger.Proto(pi.Client),
 		"reconnect", pi.Reconnect,
 		"reconnectReason", pi.ReconnectReason,
@@ -532,7 +532,7 @@ func (r *RoomManager) StartSession(
 	// update room store with new numParticipants
 	persistRoomForParticipantCount(room.ToProto())
 
-	clientMeta := &livekit.AnalyticsClientMeta{Region: r.currentNode.Region, Node: r.currentNode.Id}
+	clientMeta := &livekit.AnalyticsClientMeta{Region: r.currentNode.Region(), Node: string(r.currentNode.NodeID())}
 	r.telemetry.ParticipantJoined(ctx, protoRoom, participant.ToProto(), pi.Client, clientMeta, true)
 	participant.OnClose(func(p types.LocalParticipant) {
 		killParticipantServer()

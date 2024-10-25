@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"context"
 	"runtime/pprof"
-	"sync"
 	"time"
 
 	"github.com/pkg/errors"
@@ -31,7 +30,6 @@ import (
 	"github.com/livekit/protocol/rpc"
 
 	"github.com/livekit/livekit-server/pkg/routing/selector"
-	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
 const (
@@ -59,9 +57,6 @@ type RedisRouter struct {
 	kps       rpc.KeepalivePubSub
 	ctx       context.Context
 	isStarted atomic.Bool
-	nodeMu    sync.RWMutex
-	// previous stats for computing averages
-	prevStats *livekit.NodeStats
 
 	cancel func()
 }
@@ -77,13 +72,11 @@ func NewRedisRouter(lr *LocalRouter, rc redis.UniversalClient, kps rpc.Keepalive
 }
 
 func (r *RedisRouter) RegisterNode() error {
-	r.nodeMu.RLock()
-	data, err := proto.Marshal((*livekit.Node)(r.currentNode))
-	r.nodeMu.RUnlock()
+	data, err := proto.Marshal(r.currentNode.Clone())
 	if err != nil {
 		return err
 	}
-	if err := r.rc.HSet(r.ctx, NodesKey, r.currentNode.Id, data).Err(); err != nil {
+	if err := r.rc.HSet(r.ctx, NodesKey, r.currentNode.NodeID(), data).Err(); err != nil {
 		return errors.Wrap(err, "could not register node")
 	}
 	return nil
@@ -91,7 +84,7 @@ func (r *RedisRouter) RegisterNode() error {
 
 func (r *RedisRouter) UnregisterNode() error {
 	// could be called after Stop(), so we'd want to use an unrelated context
-	return r.rc.HDel(context.Background(), NodesKey, r.currentNode.Id).Err()
+	return r.rc.HDel(context.Background(), NodesKey, string(r.currentNode.NodeID())).Err()
 }
 
 func (r *RedisRouter) RemoveDeadNodes() error {
@@ -195,11 +188,9 @@ func (r *RedisRouter) Start() error {
 }
 
 func (r *RedisRouter) Drain() {
-	r.nodeMu.Lock()
-	r.currentNode.State = livekit.NodeState_SHUTTING_DOWN
-	r.nodeMu.Unlock()
+	r.currentNode.SetState(livekit.NodeState_SHUTTING_DOWN)
 	if err := r.RegisterNode(); err != nil {
-		logger.Errorw("failed to mark as draining", err, "nodeID", r.currentNode.Id)
+		logger.Errorw("failed to mark as draining", err, "nodeID", r.currentNode.NodeID())
 	}
 }
 
@@ -219,13 +210,9 @@ func (r *RedisRouter) statsWorker() {
 		// update periodically
 		select {
 		case <-time.After(statsUpdateInterval):
-			r.kps.PublishPing(r.ctx, livekit.NodeID(r.currentNode.Id), &rpc.KeepalivePing{Timestamp: time.Now().Unix()})
+			r.kps.PublishPing(r.ctx, r.currentNode.NodeID(), &rpc.KeepalivePing{Timestamp: time.Now().Unix()})
 
-			r.nodeMu.RLock()
-			stats := r.currentNode.Stats
-			r.nodeMu.RUnlock()
-
-			delaySeconds := time.Now().Unix() - stats.UpdatedAt
+			delaySeconds := r.currentNode.SecondsSinceNodeStatsUpdate()
 			if delaySeconds > statsMaxDelaySeconds {
 				if !goroutineDumped {
 					goroutineDumped = true
@@ -245,7 +232,7 @@ func (r *RedisRouter) statsWorker() {
 }
 
 func (r *RedisRouter) keepaliveWorker(startedChan chan error) {
-	pings, err := r.kps.SubscribePing(r.ctx, livekit.NodeID(r.currentNode.Id))
+	pings, err := r.kps.SubscribePing(r.ctx, r.currentNode.NodeID())
 	if err != nil {
 		startedChan <- err
 		return
@@ -258,21 +245,9 @@ func (r *RedisRouter) keepaliveWorker(startedChan chan error) {
 			continue
 		}
 
-		r.nodeMu.Lock()
-		if r.prevStats == nil {
-			r.prevStats = r.currentNode.Stats
-		}
-		updated, computedAvg, err := prometheus.GetUpdatedNodeStats(r.currentNode.Stats, r.prevStats)
-		if err != nil {
-			logger.Errorw("could not update node stats", err)
-			r.nodeMu.Unlock()
+		if !r.currentNode.UpdateNodeStats() {
 			continue
 		}
-		r.currentNode.Stats = updated
-		if computedAvg {
-			r.prevStats = updated
-		}
-		r.nodeMu.Unlock()
 
 		// TODO: check stats against config.Limit values
 		if err := r.RegisterNode(); err != nil {

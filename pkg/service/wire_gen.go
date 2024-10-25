@@ -35,7 +35,7 @@ import (
 
 // Injectors from wire.go:
 
-func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*LivekitServer, error) {
+func InitializeServer(conf *config.Config, currentNode *routing.LocalNode) (*LivekitServer, error) {
 	limitConfig := getLimitConf(conf)
 	apiConfig := config.DefaultAPIConfig()
 	universalClient, err := createRedisClient(conf)
@@ -153,7 +153,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	return livekitServer, nil
 }
 
-func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routing.Router, error) {
+func InitializeRouter(conf *config.Config, currentNode *routing.LocalNode) (routing.Router, error) {
 	universalClient, err := createRedisClient(conf)
 	if err != nil {
 		return nil, err
@@ -182,8 +182,8 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 
 // wire.go:
 
-func getNodeID(currentNode routing.LocalNode) livekit.NodeID {
-	return livekit.NodeID(currentNode.Id)
+func getNodeID(currentNode *routing.LocalNode) livekit.NodeID {
+	return currentNode.NodeID()
 }
 
 func createKeyProvider(conf *config.Config) (auth.KeyProvider, error) {

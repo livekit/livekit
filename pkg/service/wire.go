@@ -43,7 +43,7 @@ import (
 	"github.com/livekit/psrpc"
 )
 
-func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*LivekitServer, error) {
+func InitializeServer(conf *config.Config, currentNode *routing.LocalNode) (*LivekitServer, error) {
 	wire.Build(
 		getNodeID,
 		createRedisClient,
@@ -104,7 +104,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	return &LivekitServer{}, nil
 }
 
-func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routing.Router, error) {
+func InitializeRouter(conf *config.Config, currentNode *routing.LocalNode) (routing.Router, error) {
 	wire.Build(
 		createRedisClient,
 		getNodeID,
@@ -122,8 +122,8 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 	return nil, nil
 }
 
-func getNodeID(currentNode routing.LocalNode) livekit.NodeID {
-	return livekit.NodeID(currentNode.Id)
+func getNodeID(currentNode *routing.LocalNode) livekit.NodeID {
+	return currentNode.NodeID()
 }
 
 func createKeyProvider(conf *config.Config) (auth.KeyProvider, error) {

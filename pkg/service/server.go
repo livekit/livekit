@@ -54,7 +54,7 @@ type LivekitServer struct {
 	roomManager  *RoomManager
 	signalServer *SignalServer
 	turnServer   *turn.Server
-	currentNode  routing.LocalNode
+	currentNode  *routing.LocalNode
 	running      atomic.Bool
 	doneChan     chan struct{}
 	closedChan   chan struct{}
@@ -74,7 +74,7 @@ func NewLivekitServer(conf *config.Config,
 	roomManager *RoomManager,
 	signalServer *SignalServer,
 	turnServer *turn.Server,
-	currentNode routing.LocalNode,
+	currentNode *routing.LocalNode,
 ) (s *LivekitServer, err error) {
 	s = &LivekitServer{
 		config:       conf,
@@ -172,7 +172,7 @@ func NewLivekitServer(conf *config.Config,
 }
 
 func (s *LivekitServer) Node() *livekit.Node {
-	return s.currentNode
+	return s.currentNode.Clone()
 }
 
 func (s *LivekitServer) HTTPPort() int {
@@ -232,8 +232,8 @@ func (s *LivekitServer) Start() error {
 
 	values := []interface{}{
 		"portHttp", s.config.Port,
-		"nodeID", s.currentNode.Id,
-		"nodeIP", s.currentNode.Ip,
+		"nodeID", s.currentNode.NodeID(),
+		"nodeIP", s.currentNode.NodeIP(),
 		"version", version.Version,
 	}
 	if s.config.BindAddresses != nil {

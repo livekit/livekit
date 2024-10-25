@@ -153,7 +153,7 @@ type workerKey struct {
 }
 
 func NewAgentService(conf *config.Config,
-	currentNode routing.LocalNode,
+	currentNode *routing.LocalNode,
 	bus psrpc.MessageBus,
 	keyProvider auth.KeyProvider,
 ) (*AgentService, error) {
@@ -165,7 +165,7 @@ func NewAgentService(conf *config.Config,
 		Protocol:      types.CurrentProtocol,
 		AgentProtocol: agent.CurrentProtocol,
 		Region:        conf.Region,
-		NodeId:        currentNode.Id,
+		NodeId:        string(currentNode.NodeID()),
 	}
 
 	agentServer, err := rpc.NewAgentInternalServer(s, bus)
