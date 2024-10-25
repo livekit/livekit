@@ -392,27 +392,26 @@ func (s *SIPService) CreateSIPParticipantRequest(ctx context.Context, req *livek
 		return nil, ErrSIPNotConnected
 	}
 	callID := sip.NewCallID()
-	log := logger.GetLogger()
-	if projectID != "" {
-		log = log.WithValues("projectID", projectID)
-	}
-	unlikelyLogger := log.WithUnlikelyValues(
+	log := logger.GetLogger().WithUnlikelyValues(
 		"callID", callID,
 		"room", req.RoomName,
 		"sipTrunk", req.SipTrunkId,
 		"toUser", req.SipCallTo,
 	)
+	if projectID != "" {
+		log = log.WithValues("projectID", projectID)
+	}
 
 	trunk, err := s.store.LoadSIPOutboundTrunk(ctx, req.SipTrunkId)
 	if err != nil {
-		unlikelyLogger.Errorw("cannot get trunk to update sip participant", err)
+		log.Errorw("cannot get trunk to update sip participant", err)
 		return nil, err
 	}
 	return rpc.NewCreateSIPParticipantRequest(projectID, callID, host, wsUrl, token, req, trunk)
 }
 
 func (s *SIPService) TransferSIPParticipant(ctx context.Context, req *livekit.TransferSIPParticipantRequest) (*emptypb.Empty, error) {
-	log := logger.GetLogger().WithValues("room", req.RoomName, "participant", req.ParticipantIdentity)
+	log := logger.GetLogger().WithUnlikelyValues("room", req.RoomName, "participant", req.ParticipantIdentity)
 	ireq, err := s.transferSIPParticipantRequest(ctx, req)
 	if err != nil {
 		log.Errorw("cannot create transfer sip participant request", err)
