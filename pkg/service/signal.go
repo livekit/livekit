@@ -78,7 +78,7 @@ func NewDefaultSignalServer(
 	router routing.Router,
 	roomManager *RoomManager,
 ) (r *SignalServer, err error) {
-	return NewSignalServer(livekit.NodeID(currentNode.Id), currentNode.Region, bus, config, &defaultSessionHandler{currentNode, router, roomManager})
+	return NewSignalServer(currentNode.NodeID(), currentNode.Region(), bus, config, &defaultSessionHandler{currentNode, router, roomManager})
 }
 
 type defaultSessionHandler struct {
@@ -105,7 +105,7 @@ func (s *defaultSessionHandler) HandleSession(
 		return err
 	}
 
-	if rtcNode.Id != s.currentNode.Id {
+	if livekit.NodeID(rtcNode.Id) != s.currentNode.NodeID() {
 		err = routing.ErrIncorrectRTCNode
 		logger.Errorw("called participant on incorrect node", err,
 			"rtcNode", rtcNode,
