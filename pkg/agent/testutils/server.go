@@ -15,6 +15,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
@@ -35,9 +36,10 @@ type TestServer struct {
 }
 
 func NewTestServer(bus psrpc.MessageBus) *TestServer {
+	localNode, _ := routing.NewLocalNode(nil)
 	return NewTestServerWithService(must.Get(service.NewAgentService(
 		&config.Config{Region: "test"},
-		&livekit.Node{Id: guid.New("N_")},
+		localNode,
 		bus,
 		auth.NewSimpleKeyProvider("test", "verysecretsecret"),
 	)))
