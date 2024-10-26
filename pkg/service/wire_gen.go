@@ -183,7 +183,7 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 // wire.go:
 
 func getNodeID(currentNode routing.LocalNode) livekit.NodeID {
-	return livekit.NodeID(currentNode.Id)
+	return currentNode.NodeID()
 }
 
 func createKeyProvider(conf *config.Config) (auth.KeyProvider, error) {

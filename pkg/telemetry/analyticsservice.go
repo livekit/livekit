@@ -49,7 +49,7 @@ type analyticsService struct {
 func NewAnalyticsService(_ *config.Config, currentNode routing.LocalNode) AnalyticsService {
 	return &analyticsService{
 		analyticsKey: "", // TODO: conf.AnalyticsKey
-		nodeID:       currentNode.Id,
+		nodeID:       string(currentNode.NodeID()),
 	}
 }
 
