@@ -2807,7 +2807,14 @@ func (p *ParticipantImpl) setupEnabledCodecs(publishEnabledCodecs []*livekit.Cod
 }
 
 func (p *ParticipantImpl) GetEnabledPublishCodecs() []*livekit.Codec {
-	return p.enabledPublishCodecs
+	codecs := make([]*livekit.Codec, 0, len(p.enabledPublishCodecs))
+	for _, c := range p.enabledPublishCodecs {
+		if c.Mime == "video/rtx" {
+			continue
+		}
+		codecs = append(codecs, c)
+	}
+	return codecs
 }
 
 func (p *ParticipantImpl) UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack) error {
