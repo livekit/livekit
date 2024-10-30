@@ -150,10 +150,10 @@ func (w wrappedICECandidatePairLogger) MarshalLogObject(e zapcore.ObjectEncoder)
 	if w.pair.Remote != nil {
 		e.AddString("remoteProtocol", w.pair.Remote.Protocol.String())
 		e.AddString("remoteCandidateType", w.pair.Remote.Typ.String())
-		e.AddString("remoteAdddress", w.pair.Remote.Address[:len(w.pair.Remote.Address)-3]+"...")
+		e.AddString("remoteAdddress", MaybeTruncateIP(w.pair.Remote.Address))
 		e.AddUint16("remotePort", w.pair.Remote.Port)
 		if w.pair.Remote.RelatedAddress != "" {
-			e.AddString("relatedAdddress", w.pair.Remote.RelatedAddress[:len(w.pair.Remote.RelatedAddress)-3]+"...")
+			e.AddString("relatedAdddress", MaybeTruncateIP(w.pair.Remote.RelatedAddress))
 			e.AddUint16("relatedPort", w.pair.Remote.RelatedPort)
 		}
 	}
