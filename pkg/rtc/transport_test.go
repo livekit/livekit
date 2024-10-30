@@ -506,39 +506,39 @@ func TestFilteringCandidates(t *testing.T) {
 }
 func TestDropRemoteICECandidates(t *testing.T) {
 	cases := []struct {
-		name              string
-		remoteLite        bool
-		localLite         bool
-		expecteLocalDrop  bool
-		expecteRemoteDrop bool
+		name               string
+		remoteLite         bool
+		localLite          bool
+		expectedLocalDrop  bool
+		expectedRemoteDrop bool
 	}{
 		{
-			name:              "both not lite",
-			localLite:         false,
-			remoteLite:        false,
-			expecteLocalDrop:  false,
-			expecteRemoteDrop: false,
+			name:               "both not lite",
+			localLite:          false,
+			remoteLite:         false,
+			expectedLocalDrop:  false,
+			expectedRemoteDrop: false,
 		},
 		{
-			name:              "remote lite",
-			localLite:         false,
-			remoteLite:        true,
-			expecteLocalDrop:  false,
-			expecteRemoteDrop: true,
+			name:               "remote lite",
+			localLite:          false,
+			remoteLite:         true,
+			expectedLocalDrop:  false,
+			expectedRemoteDrop: true,
 		},
 		{
-			name:              "local lite",
-			localLite:         true,
-			remoteLite:        false,
-			expecteLocalDrop:  true,
-			expecteRemoteDrop: false,
+			name:               "local lite",
+			localLite:          true,
+			remoteLite:         false,
+			expectedLocalDrop:  true,
+			expectedRemoteDrop: false,
 		},
 		{
-			name:              "both lite",
-			localLite:         true,
-			remoteLite:        true,
-			expecteLocalDrop:  false,
-			expecteRemoteDrop: false,
+			name:               "both lite",
+			localLite:          true,
+			remoteLite:         true,
+			expectedLocalDrop:  false,
+			expectedRemoteDrop: false,
 		},
 	}
 
@@ -605,8 +605,8 @@ func TestDropRemoteICECandidates(t *testing.T) {
 				return transportRemote.IsEstablished()
 			}, 10*time.Second, time.Millisecond*10, "transportB is not established")
 
-			require.Equal(t, c.expecteLocalDrop, transportLocal.params.DropRemoteICECandidates)
-			require.Equal(t, c.expecteRemoteDrop, transportRemote.params.DropRemoteICECandidates)
+			require.Equal(t, c.expectedLocalDrop, transportLocal.dropRemoteICECandidates)
+			require.Equal(t, c.expectedRemoteDrop, transportRemote.dropRemoteICECandidates)
 
 			transportLocal.Close()
 			transportRemote.Close()
