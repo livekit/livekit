@@ -1837,9 +1837,9 @@ func connectionDetailsFields(infos []*types.ICEConnectionInfo) []interface{} {
 			if c.Trickle {
 				cStr += "[trickle]"
 			}
-			cStr += " " + fmt.Sprintf("%s %s %s:%d", c.Remote.NetworkType(), c.Remote.Type(), maybeTruncateIP(c.Remote.Address()), c.Remote.Port())
+			cStr += " " + fmt.Sprintf("%s %s %s:%d", c.Remote.NetworkType(), c.Remote.Type(), MaybeTruncateIP(c.Remote.Address()), c.Remote.Port())
 			if relatedAddress := c.Remote.RelatedAddress(); relatedAddress != nil {
-				relatedAddr := maybeTruncateIP(relatedAddress.Address)
+				relatedAddr := MaybeTruncateIP(relatedAddress.Address)
 				if relatedAddr != "" {
 					cStr += " " + fmt.Sprintf(" related %s:%d", relatedAddr, relatedAddress.Port)
 				}

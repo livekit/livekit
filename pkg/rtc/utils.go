@@ -202,7 +202,7 @@ func LoggerWithCodecMime(l logger.Logger, mime string) logger.Logger {
 	return l
 }
 
-func maybeTruncateIP(addr string) string {
+func MaybeTruncateIP(addr string) string {
 	ipAddr := net.ParseIP(addr)
 	if ipAddr == nil {
 		return ""
