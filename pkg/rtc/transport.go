@@ -234,6 +234,8 @@ type PCTransport struct {
 
 	connectionDetails *types.ICEConnectionDetails
 	selectedPair      atomic.Pointer[webrtc.ICECandidatePair]
+
+	dropRemoteICECandidates bool
 }
 
 type TransportParams struct {
@@ -1415,7 +1417,7 @@ func (t *PCTransport) handleRemoteICECandidate(e event) error {
 	c := e.data.(*webrtc.ICECandidateInit)
 
 	filtered := false
-	if t.preferTCP.Load() && !strings.Contains(c.Candidate, "tcp") {
+	if t.preferTCP.Load() && !strings.Contains(strings.ToLower(c.Candidate), "tcp") {
 		t.params.Logger.Debugw("filtering out remote candidate", "candidate", c.Candidate)
 		filtered = true
 	}
@@ -1435,7 +1437,7 @@ func (t *PCTransport) handleRemoteICECandidate(e event) error {
 		return nil
 	}
 
-	if t.params.DropRemoteICECandidates {
+	if t.dropRemoteICECandidates && strings.Contains(strings.ToLower(c.Candidate), "srflx") {
 		t.params.Logger.Debugw("dropping remote ICE candidate", "candidate", c.Candidate)
 		t.connectionDetails.AddRemoteCandidate(*c, true, true, true)
 		return nil
@@ -1480,8 +1482,14 @@ func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription, preferTCP, 
 	}
 	if liteSet && t.localICEIsLite != nil && t.remoteICEIsLite != nil {
 		// only drop remote candidates if local is lite and remote is not
-		t.params.DropRemoteICECandidates = t.params.DropRemoteICECandidates && (*t.localICEIsLite && !*t.remoteICEIsLite)
-		t.params.Logger.Debugw("setting DropRemoteICECandidates", "dropRemoteCandidate", t.params.DropRemoteICECandidates, "localICELite", *t.localICEIsLite, "remoteICELite", *t.remoteICEIsLite)
+		t.dropRemoteICECandidates = t.params.DropRemoteICECandidates && (*t.localICEIsLite && !*t.remoteICEIsLite)
+		t.params.Logger.Debugw(
+			"setting DropRemoteICECandidates",
+			"dropRemoteICECandidatesConfig", t.params.DropRemoteICECandidates,
+			"dropRemoteICECandidatesCalculated", t.dropRemoteICECandidates,
+			"localICELite", *t.localICEIsLite,
+			"remoteICELite", *t.remoteICEIsLite,
+		)
 	}
 
 	filterAttributes := func(attrs []sdp.Attribute) []sdp.Attribute {
@@ -1494,7 +1502,7 @@ func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription, preferTCP, 
 					filteredAttrs = append(filteredAttrs, a)
 					continue
 				}
-				excluded := (!isLocal && t.params.DropRemoteICECandidates) || (preferTCP && !c.NetworkType().IsTCP())
+				excluded := (!isLocal && t.dropRemoteICECandidates && c.Type() == ice.CandidateTypeServerReflexive) || (preferTCP && !c.NetworkType().IsTCP())
 				if !excluded {
 					if !t.params.Config.UseMDNS && types.IsICECandidateMDNS(c) {
 						excluded = true
@@ -1712,7 +1720,8 @@ func (t *PCTransport) setRemoteDescription(sd webrtc.SessionDescription) error {
 	}
 
 	for _, c := range t.pendingRemoteCandidates {
-		if t.params.DropRemoteICECandidates {
+		if t.dropRemoteICECandidates && strings.Contains(strings.ToLower(c.Candidate), "srflx") {
+			t.params.Logger.Debugw("dropping remote ICE candidate (pending)", "candidate", c.Candidate)
 			t.connectionDetails.AddRemoteCandidate(*c, true, true, true)
 			continue
 		}
