@@ -18,7 +18,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"net"
 	"slices"
 	"sort"
 	"strings"
@@ -55,8 +54,6 @@ const (
 	dataForwardLoadBalanceThreshold = 20
 
 	simulateDisconnectSignalTimeout = 5 * time.Second
-
-	minIPTruncateLen = 8
 )
 
 var (
@@ -1840,25 +1837,11 @@ func connectionDetailsFields(infos []*types.ICEConnectionInfo) []interface{} {
 			if c.Trickle {
 				cStr += "[trickle]"
 			}
-			remoteAddress := c.Remote.Address()
-			ipAddr := net.ParseIP(remoteAddress)
-			isPrivate := false
-			if ipAddr != nil {
-				isPrivate = ipAddr.IsPrivate()
-			}
-			if !isPrivate && len(remoteAddress) > minIPTruncateLen {
-				remoteAddress = remoteAddress[:len(remoteAddress)-3] + "..."
-			}
-			cStr += " " + fmt.Sprintf("%s %s %s:%d", c.Remote.NetworkType(), c.Remote.Type(), remoteAddress, c.Remote.Port())
+			cStr += " " + fmt.Sprintf("%s %s %s:%d", c.Remote.NetworkType(), c.Remote.Type(), maybeTruncateIP(c.Remote.Address()), c.Remote.Port())
 			if relatedAddress := c.Remote.RelatedAddress(); relatedAddress != nil {
-				ipAddr = net.ParseIP(relatedAddress.Address)
-				if ipAddr != nil {
-					isPrivate = ipAddr.IsPrivate()
-					relatedAddressAddress := relatedAddress.Address
-					if !isPrivate && len(relatedAddressAddress) > minIPTruncateLen {
-						relatedAddressAddress = relatedAddressAddress[:len(relatedAddressAddress)-3] + "..."
-					}
-					cStr += " " + fmt.Sprintf(" related %s:%d", relatedAddressAddress, relatedAddress.Port)
+				relatedAddr := maybeTruncateIP(relatedAddress.Address)
+				if relatedAddr != "" {
+					cStr += " " + fmt.Sprintf(" related %s:%d", relatedAddr, relatedAddress.Port)
 				}
 			}
 			candidates = append(candidates, cStr)
