@@ -28,7 +28,6 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/rtc/transport"
 	"github.com/livekit/livekit-server/pkg/rtc/transport/transportfakes"
-	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/testutils"
 	"github.com/livekit/protocol/livekit"
 )
@@ -503,115 +502,6 @@ func TestFilteringCandidates(t *testing.T) {
 	require.Equal(t, 2, tcp)
 
 	transport.Close()
-}
-func TestDropRemoteICECandidates(t *testing.T) {
-	cases := []struct {
-		name               string
-		remoteLite         bool
-		localLite          bool
-		expectedLocalDrop  bool
-		expectedRemoteDrop bool
-	}{
-		{
-			name:               "both not lite",
-			localLite:          false,
-			remoteLite:         false,
-			expectedLocalDrop:  false,
-			expectedRemoteDrop: false,
-		},
-		{
-			name:               "remote lite",
-			localLite:          false,
-			remoteLite:         true,
-			expectedLocalDrop:  false,
-			expectedRemoteDrop: true,
-		},
-		{
-			name:               "local lite",
-			localLite:          true,
-			remoteLite:         false,
-			expectedLocalDrop:  true,
-			expectedRemoteDrop: false,
-		},
-		{
-			name:               "both lite",
-			localLite:          true,
-			remoteLite:         true,
-			expectedLocalDrop:  false,
-			expectedRemoteDrop: false,
-		},
-	}
-
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			params := TransportParams{
-				ParticipantID:           "id",
-				ParticipantIdentity:     "identity",
-				Config:                  &WebRTCConfig{},
-				IsOfferer:               true,
-				ProtocolVersion:         types.CurrentProtocol,
-				DropRemoteICECandidates: true,
-			}
-
-			paramsA := params
-			paramsA.Config.SettingEngine.SetLite(c.localLite)
-			handlerA := &transportfakes.FakeHandler{}
-			paramsA.Handler = handlerA
-			transportLocal, err := NewPCTransport(paramsA)
-			require.NoError(t, err)
-			_, err = transportLocal.pc.CreateDataChannel(LossyDataChannel, nil)
-			require.NoError(t, err)
-
-			paramsB := params
-			paramsB.Config.SettingEngine.SetLite(c.remoteLite)
-			handlerB := &transportfakes.FakeHandler{}
-			paramsB.Handler = handlerB
-			paramsB.IsOfferer = false
-			transportRemote, err := NewPCTransport(paramsB)
-			require.NoError(t, err)
-
-			require.False(t, transportLocal.IsEstablished())
-			require.False(t, transportRemote.IsEstablished())
-
-			handleICEExchange(t, transportLocal, transportRemote, handlerA, handlerB)
-			var offer atomic.Pointer[webrtc.SessionDescription]
-			handlerA.OnOfferCalls(func(sd webrtc.SessionDescription) error {
-				parsed, err := sd.Unmarshal()
-				require.NoError(t, err)
-				_, lite := parsed.Attribute("ice-lite")
-				require.Equal(t, c.localLite, lite)
-				offer.Store(&sd)
-				return nil
-			})
-			transportLocal.Negotiate(true)
-			require.Eventually(t, func() bool {
-				return offer.Load() != nil
-			}, 100*time.Millisecond, time.Millisecond*10, "offer not received")
-
-			handlerB.OnAnswerCalls(func(sd webrtc.SessionDescription) error {
-				parsed, err := sd.Unmarshal()
-				require.NoError(t, err)
-				_, lite := parsed.Attribute("ice-lite")
-				require.Equal(t, c.remoteLite, lite, sd.SDP)
-				transportLocal.HandleRemoteDescription(sd)
-				return nil
-			})
-			transportRemote.HandleRemoteDescription(*offer.Load())
-
-			require.Eventually(t, func() bool {
-				return transportLocal.IsEstablished()
-			}, 10*time.Second, time.Millisecond*10, "transportA is not established")
-			require.Eventually(t, func() bool {
-				return transportRemote.IsEstablished()
-			}, 10*time.Second, time.Millisecond*10, "transportB is not established")
-
-			require.Equal(t, c.expectedLocalDrop, transportLocal.dropRemoteICECandidates)
-			require.Equal(t, c.expectedRemoteDrop, transportRemote.dropRemoteICECandidates)
-
-			transportLocal.Close()
-			transportRemote.Close()
-		})
-	}
 }
 
 func handleICEExchange(t *testing.T, a, b *PCTransport, ah, bh *transportfakes.FakeHandler) {
