@@ -234,8 +234,6 @@ type PCTransport struct {
 
 	connectionDetails *types.ICEConnectionDetails
 	selectedPair      atomic.Pointer[webrtc.ICECandidatePair]
-
-	dropRemoteICECandidates bool
 }
 
 type TransportParams struct {
@@ -256,7 +254,6 @@ type TransportParams struct {
 	IsSendSide                   bool
 	AllowPlayoutDelay            bool
 	DataChannelMaxBufferedAmount uint64
-	DropRemoteICECandidates      bool
 }
 
 func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimator cc.BandwidthEstimator)) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
@@ -301,9 +298,12 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	se.DisableSRTCPReplayProtection(true)
 	if !params.ProtocolVersion.SupportsICELite() || !params.ClientInfo.SupportPrflxOverRelay() {
 		// if client don't support prflx over relay which is only Firefox, disable ICE Lite to ensure that
-		// dropping remote ICE candidates does not get enabled. Firefox does aggressive nomination and
-		// dropping remote ICE candidates means server would accept all switches and it could end up with
-		// the lower priority candidate. As Firefox does not support migration, ICE Lite can be disabled.
+		// aggressive nomination is handled properly. Firefox does aggressive nomination even if peer is
+		// ICE Lite (see comment as to historical reasons: https://github.com/pion/ice/pull/739#issuecomment-2452245066).
+		// pion/ice (as of v2.3.37) will accept all use-candidate switches when in ICE Lite mode.
+		// That combined with aggressive nomination from Firefox could potentially lead to the two ends
+		// ending up with different candidates.
+		// As Firefox does not support migration, ICE Lite can be disabled.
 		se.SetLite(false)
 	}
 	se.SetDTLSRetransmissionInterval(dtlsRetransmissionInterval)
@@ -1437,12 +1437,6 @@ func (t *PCTransport) handleRemoteICECandidate(e event) error {
 		return nil
 	}
 
-	if t.dropRemoteICECandidates && strings.Contains(strings.ToLower(c.Candidate), "srflx") {
-		t.params.Logger.Debugw("dropping remote ICE candidate", "candidate", c.Candidate)
-		t.connectionDetails.AddRemoteCandidate(*c, true, true, true)
-		return nil
-	}
-
 	if err := t.pc.AddICECandidate(*c); err != nil {
 		t.params.Logger.Warnw("failed to add cached ICE candidate", err, "candidate", c)
 		return errors.Wrap(err, "add ice candidate failed")
@@ -1467,31 +1461,6 @@ func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription, preferTCP, 
 		return sd
 	}
 
-	_, iceLite := parsed.Attribute("ice-lite")
-	var liteSet bool
-	if isLocal {
-		if t.localICEIsLite == nil {
-			t.localICEIsLite = &iceLite
-			liteSet = true
-		}
-	} else {
-		if t.remoteICEIsLite == nil {
-			t.remoteICEIsLite = &iceLite
-			liteSet = true
-		}
-	}
-	if liteSet && t.localICEIsLite != nil && t.remoteICEIsLite != nil {
-		// only drop remote candidates if local is lite and remote is not
-		t.dropRemoteICECandidates = t.params.DropRemoteICECandidates && (*t.localICEIsLite && !*t.remoteICEIsLite)
-		t.params.Logger.Debugw(
-			"setting DropRemoteICECandidates",
-			"dropRemoteICECandidatesConfig", t.params.DropRemoteICECandidates,
-			"dropRemoteICECandidatesCalculated", t.dropRemoteICECandidates,
-			"localICELite", *t.localICEIsLite,
-			"remoteICELite", *t.remoteICEIsLite,
-		)
-	}
-
 	filterAttributes := func(attrs []sdp.Attribute) []sdp.Attribute {
 		filteredAttrs := make([]sdp.Attribute, 0, len(attrs))
 		for _, a := range attrs {
@@ -1502,7 +1471,7 @@ func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription, preferTCP, 
 					filteredAttrs = append(filteredAttrs, a)
 					continue
 				}
-				excluded := (!isLocal && t.dropRemoteICECandidates && c.Type() == ice.CandidateTypeServerReflexive) || (preferTCP && !c.NetworkType().IsTCP())
+				excluded := preferTCP && !c.NetworkType().IsTCP()
 				if !excluded {
 					if !t.params.Config.UseMDNS && types.IsICECandidateMDNS(c) {
 						excluded = true
@@ -1720,11 +1689,6 @@ func (t *PCTransport) setRemoteDescription(sd webrtc.SessionDescription) error {
 	}
 
 	for _, c := range t.pendingRemoteCandidates {
-		if t.dropRemoteICECandidates && strings.Contains(strings.ToLower(c.Candidate), "srflx") {
-			t.params.Logger.Debugw("dropping remote ICE candidate (pending)", "candidate", c.Candidate)
-			t.connectionDetails.AddRemoteCandidate(*c, true, true, true)
-			continue
-		}
 		if err := t.pc.AddICECandidate(*c); err != nil {
 			t.params.Logger.Warnw("failed to add cached ICE candidate", err, "candidate", c)
 			return errors.Wrap(err, "add ice candidate failed")
