@@ -24,6 +24,8 @@ import (
 	"github.com/livekit/psrpc/pkg/middleware"
 )
 
+//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
+
 //counterfeiter:generate . RoomManagerClient
 type RoomManagerClient interface {
 	rpc.TypedRoomManagerClient

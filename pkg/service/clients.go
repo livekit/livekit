@@ -27,6 +27,8 @@ import (
 	"github.com/livekit/protocol/utils/guid"
 )
 
+//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
+
 //counterfeiter:generate . IOClient
 type IOClient interface {
 	CreateEgress(ctx context.Context, info *livekit.EgressInfo) (*emptypb.Empty, error)

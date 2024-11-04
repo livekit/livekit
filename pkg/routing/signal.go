@@ -36,6 +36,8 @@ import (
 var ErrSignalWriteFailed = errors.New("signal write failed")
 var ErrSignalMessageDropped = errors.New("signal message dropped")
 
+//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
+
 //counterfeiter:generate . SignalClient
 type SignalClient interface {
 	ActiveCount() int
