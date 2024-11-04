@@ -68,6 +68,12 @@ type ExtPacket struct {
 	DependencyDescriptor *ExtDependencyDescriptor
 	AbsCaptureTimeExt    *act.AbsCaptureTime
 	IsOutOfOrder         bool
+	CustomExtensions     map[string]ExtensionData
+}
+
+type ExtensionData struct {
+	URI     string
+	Payload []byte
 }
 
 // Buffer contains all packets
@@ -139,6 +145,8 @@ type Buffer struct {
 	rtxPktBuf           []byte
 
 	absCaptureTimeExtID uint8
+
+	customHeaderExtensions []webrtc.RTPHeaderExtensionParameter
 }
 
 // NewBuffer constructs a new Buffer
@@ -250,6 +258,8 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 
 		case act.AbsCaptureTimeURI:
 			b.absCaptureTimeExtID = uint8(ext.ID)
+		default:
+			b.customHeaderExtensions = append(b.customHeaderExtensions, ext)
 		}
 	}
 
@@ -838,6 +848,20 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, flowStat
 		var actExt act.AbsCaptureTime
 		if err := actExt.Unmarshal(extData); err == nil {
 			ep.AbsCaptureTimeExt = &actExt
+		}
+	}
+
+	if len(b.customHeaderExtensions) > 0 && ep.CustomExtensions == nil {
+		ep.CustomExtensions = make(map[string]ExtensionData)
+	}
+	for _, ext := range b.customHeaderExtensions {
+		extData := rtpPacket.GetExtension(uint8(ext.ID))
+		if extData == nil {
+			continue
+		}
+		ep.CustomExtensions[ext.URI] = ExtensionData{
+			URI:     ext.URI,
+			Payload: extData,
 		}
 	}
 
