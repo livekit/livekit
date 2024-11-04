@@ -1095,10 +1095,12 @@ func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
 func (p *ParticipantImpl) NotifyMigration() {
 	p.lock.Lock()
 	defer p.lock.Unlock()
+
 	if p.migrationTimer != nil {
 		// already set up
 		return
 	}
+
 	p.setupMigrationTimerLocked()
 }
 
