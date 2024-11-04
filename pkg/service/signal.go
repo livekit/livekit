@@ -31,8 +31,6 @@ import (
 	"github.com/livekit/psrpc/pkg/middleware"
 )
 
-//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
-
 //counterfeiter:generate . SessionHandler
 type SessionHandler interface {
 	Logger(ctx context.Context) logger.Logger

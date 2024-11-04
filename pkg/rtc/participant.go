@@ -963,7 +963,12 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	p.clearMigrationTimer()
 
 	if sendLeave {
-		p.sendLeaveRequest(reason, isExpectedToResume, false, false)
+		p.sendLeaveRequest(
+			reason,
+			isExpectedToResume,
+			false, // isExpectedToReconnect
+			false, // sendOnlyIfSupportingLeaveRequestWithAction
+		)
 	}
 
 	if p.supervisor != nil {
@@ -1070,7 +1075,12 @@ func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
 		onStart()
 	}
 
-	p.sendLeaveRequest(types.ParticipantCloseReasonMigrationRequested, true, false, true)
+	p.sendLeaveRequest(
+		types.ParticipantCloseReasonMigrationRequested,
+		true,  // isExpectedToResume
+		false, // isExpectedToReconnect
+		true,  // sendOnlyIfSupportingLeaveRequestWithAction
+	)
 	p.CloseSignalConnection(types.SignallingCloseReasonMigration)
 
 	p.clearMigrationTimer()
@@ -1085,12 +1095,10 @@ func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
 func (p *ParticipantImpl) NotifyMigration() {
 	p.lock.Lock()
 	defer p.lock.Unlock()
-
 	if p.migrationTimer != nil {
 		// already set up
 		return
 	}
-
 	p.setupMigrationTimerLocked()
 }
 
@@ -1818,8 +1826,14 @@ func (p *ParticipantImpl) setupDisconnectTimer() {
 }
 
 func (p *ParticipantImpl) onAnyTransportFailed() {
-	// clients support resuming of connections when websocket becomes disconnected
-	p.sendLeaveRequest(types.ParticipantCloseReasonPeerConnectionDisconnected, true, false, true)
+	p.sendLeaveRequest(
+		types.ParticipantCloseReasonPeerConnectionDisconnected,
+		true,  // isExpectedToResume
+		false, // isExpectedToReconnect
+		true,  // sendOnlyIfSupportingLeaveRequestWithAction
+	)
+
+	// clients support resuming of connections when signalling becomes disconnected
 	p.CloseSignalConnection(types.SignallingCloseReasonTransportFailure)
 
 	// detect when participant has actually left.
@@ -2656,7 +2670,12 @@ func (p *ParticipantImpl) GetCachedDownTrack(trackID livekit.TrackID) (*webrtc.R
 }
 
 func (p *ParticipantImpl) IssueFullReconnect(reason types.ParticipantCloseReason) {
-	p.sendLeaveRequest(reason, false, true, false)
+	p.sendLeaveRequest(
+		reason,
+		false, // isExpectedToResume
+		true,  // isExpectedToReconnect
+		false, // sendOnlyIfSupportingLeaveRequestWithAction
+	)
 
 	scr := types.SignallingCloseReasonUnknown
 	switch reason {
