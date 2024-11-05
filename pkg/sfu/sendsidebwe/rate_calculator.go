@@ -75,15 +75,15 @@ func NewRateCalculator(params RateCalculatorParams) *RateCalculator {
 	}
 }
 
-func (r *RateCalculator) Update(packetInfos [1 << 16]packetInfo, startSNInclusive, endSNExclusive uint16) {
+func (r *RateCalculator) Update(packetInfos []packetInfo, startSNInclusive, endSNExclusive uint16) {
 	r.add(packetInfos, startSNInclusive, endSNExclusive)
 	r.prune()
 }
 
-func (r *RateCalculator) add(packetInfos [1 << 16]packetInfo, startSNInclusive, endSNExclusive uint16) {
+func (r *RateCalculator) add(packetInfos []packetInfo, startSNInclusive, endSNExclusive uint16) {
 	latestReceiveTimeInCluster := int64(0)
 	for sn := startSNInclusive; sn != endSNExclusive; sn++ {
-		pi := &packetInfos[sn]
+		pi := &packetInfos[int(sn)%len(packetInfos)]
 		if pi.receiveTime == 0 {
 			// potentially lost packet, may arrive later
 			continue
@@ -111,11 +111,11 @@ func (r *RateCalculator) add(packetInfos [1 << 16]packetInfo, startSNInclusive, 
 		}
 
 		if pi.isRTX {
-			r.rtx.header += pi.headerSize
-			r.rtx.payload += pi.payloadSize
+			r.rtx.header += int(pi.headerSize)
+			r.rtx.payload += int(pi.payloadSize)
 		} else {
-			r.primary.header += pi.headerSize
-			r.primary.payload += pi.payloadSize
+			r.primary.header += int(pi.headerSize)
+			r.primary.payload += int(pi.payloadSize)
 		}
 
 		if pi.receiveTime >= r.nextMeasurementTime {
@@ -143,11 +143,11 @@ func (r *RateCalculator) prune() {
 		}
 
 		if pi.isRTX {
-			r.rtx.header -= pi.headerSize
-			r.rtx.payload -= pi.payloadSize
+			r.rtx.header -= int(pi.headerSize)
+			r.rtx.payload -= int(pi.payloadSize)
 		} else {
-			r.primary.header -= pi.headerSize
-			r.primary.payload -= pi.payloadSize
+			r.primary.header -= int(pi.headerSize)
+			r.primary.payload -= int(pi.payloadSize)
 		}
 	}
 
@@ -171,13 +171,13 @@ func (r *RateCalculator) calculate() {
 	}
 	if first.isRTX {
 		m.rtx = byteCounter{
-			header:  r.rtx.header - first.headerSize,
-			payload: r.rtx.payload - first.payloadSize,
+			header:  r.rtx.header - int(first.headerSize),
+			payload: r.rtx.payload - int(first.payloadSize),
 		}
 	} else {
 		m.primary = byteCounter{
-			header:  r.primary.header - first.headerSize,
-			payload: r.primary.payload - first.payloadSize,
+			header:  r.primary.header - int(first.headerSize),
+			payload: r.primary.payload - int(first.payloadSize),
 		}
 	}
 	m.sendBitrate = float64((m.primary.header+m.primary.payload+m.rtx.header+m.rtx.payload)*8) / sendDuration

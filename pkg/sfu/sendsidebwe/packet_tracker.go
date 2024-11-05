@@ -38,7 +38,7 @@ type PacketTracker struct {
 	highestSentSN   uint16
 
 	// SSBWE-TODO: make this a ring buffer as a lot more fields are needed
-	packetInfos     [1 << 16]packetInfo
+	packetInfos     [2048]packetInfo
 	feedbackReports deque.Deque[feedbackReport] // SSBWE-TODO: prune old entries
 
 	packetGroups      []*PacketGroup // SSBWE-TODO - prune packet groups to some recent history
@@ -111,6 +111,7 @@ func (p *PacketTracker) GetEstimatedChannelCapacity() int64 {
 }
 
 // SSBWE-TODO: can this sn operate in extended range for easier comparison?
+// SSBWE-TODO: this potentially needs to take isProbe as argument?
 func (p *PacketTracker) PacketSent(sn uint16, at time.Time, headerSize int, payloadSize int, isRTX bool) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
@@ -130,11 +131,11 @@ func (p *PacketTracker) PacketSent(sn uint16, at time.Time, headerSize int, payl
 		}
 	}
 
-	pi := &p.packetInfos[sn]
+	pi := &p.packetInfos[int(sn)%len(p.packetInfos)]
 	pi.sn = sn
 	pi.sendTime = at.UnixMicro()
-	pi.headerSize = headerSize
-	pi.payloadSize = payloadSize
+	pi.headerSize = uint8(headerSize)
+	pi.payloadSize = uint16(payloadSize)
 	pi.isRTX = isRTX
 	pi.ResetReceiveAndDeltas()
 
@@ -184,7 +185,11 @@ func (p *PacketTracker) processFeedbackReport(fbr feedbackReport) (uint16, uint1
 	}
 
 	updatePacketInfo := func(sn uint16, recvTime int64) {
-		pi := &p.packetInfos[sn]
+		pi := p.getPacketInfoExisting(sn)
+		if pi == nil {
+			return
+		}
+
 		pi.receiveTime = recvTime
 		if err := p.activePacketGroup.Add(pi); err != nil {
 			p.packetGroups = append(p.packetGroups, p.activePacketGroup)
@@ -445,6 +450,15 @@ func (p *PacketTracker) calculateAcknowledgedBitrate(startSNInclusive, endSNExcl
 	) // REMOVE
 }
 
+func (p *PacketTracker) getPacketInfoExisting(sn uint16) *packetInfo {
+	pi := p.packetInfos[int(sn)%len(p.packetInfos)]
+	if pi.sn == sn {
+		return &pi
+	}
+
+	return nil
+}
+
 func (p *PacketTracker) getRange(startSNInclusive, endSNExclusive uint16) (startTime int64, endTime int64, err error) {
 	for sn := endSNExclusive - 1; sn != startSNInclusive-1; sn-- {
 		pi := &p.packetInfos[sn]
@@ -477,7 +491,7 @@ func (p *PacketTracker) worker() {
 					p.populateDeltas(startSNInclusive, endSNExclusive)
 
 					p.calculateAcknowledgedBitrate(startSNInclusive, endSNExclusive)
-					p.rateCalculator.Update(p.packetInfos, startSNInclusive, endSNExclusive)
+					p.rateCalculator.Update(p.packetInfos[:], startSNInclusive, endSNExclusive)
 
 					p.detectChangePoint(startSNInclusive, endSNExclusive)
 
