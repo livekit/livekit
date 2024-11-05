@@ -31,6 +31,7 @@ func NewPacketGroup(params PacketGroupParams) *PacketGroup {
 	}
 }
 
+// SSBWE-TODO - can get a really old packet that could spread things a bunch, how to deal with it?
 func (p *PacketGroup) Add(pi *packetInfo) error {
 	if p.minSendTime != 0 && (pi.sendTime-p.minSendTime) > p.params.Spread.Microseconds() {
 		// SSBWE-TODO: add this packet also here to create overlap and leave out bytes from packet when calculating rates????
