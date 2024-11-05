@@ -37,7 +37,8 @@ type PacketTracker struct {
 	baseSendTime   int64
 	highestSentESN uint64
 
-	baseRecvTime int64
+	baseRecvTime  int64
+	highestRecvSN uint16
 
 	// SSBWE-TODO: make this a ring buffer as a lot more fields are needed
 	packetInfos     [2048]packetInfo
@@ -124,15 +125,21 @@ func (p *PacketTracker) PacketSent(esn uint64, at time.Time, headerSize int, pay
 		p.highestSentESN = esn - 1
 	}
 
+	// old packet - should not happens packets should be sent in order
+	if esn < p.highestSentESN {
+		sn := uint16(esn)
+		pi := p.getPacketInfo(sn)
+		pi.Reset(sn)
+		return
+	}
+
 	// clear slots occupied by missing packets,
 	// ideally this should never run as seequence numbers should be generated in order
 	// and packets sent in order.
-	if esn < p.highestSentESN {
-		for i := p.highestSentESN + 1; i != esn; i++ {
-			sn := uint16(i)
-			pi := p.getPacketInfo(sn)
-			pi.Reset(sn)
-		}
+	for i := p.highestSentESN + 1; i != esn; i++ {
+		sn := uint16(i)
+		pi := p.getPacketInfo(sn)
+		pi.Reset(sn)
 	}
 
 	sn := uint16(esn)
@@ -197,17 +204,39 @@ func (p *PacketTracker) processFeedbackReport(fbr feedbackReport) (uint16, uint1
 
 		if p.baseRecvTime == 0 {
 			p.baseRecvTime = recvTime
+			p.highestRecvSN = sn
 		}
 
-		pi.receiveTime = recvTime - p.baseRecvTime
-		if err := p.activePacketGroup.Add(pi); err != nil {
-			p.packetGroups = append(p.packetGroups, p.activePacketGroup)
-			p.activePacketGroup = NewPacketGroup(PacketGroupParams{Spread: 50 * time.Millisecond})
-			p.activePacketGroup.Add(pi)
+		pi.recvTime = recvTime - p.baseRecvTime
+
+		// skip out-of-order deliveries
+		if (sn - p.highestRecvSN) < (1 << 15) {
+			piPrev := p.getPacketInfoExisting(p.highestRecvSN)
+			if piPrev != nil {
+				pi.sendDelta = pi.sendTime - piPrev.sendTime
+				pi.recvDelta = pi.recvTime - piPrev.recvTime
+				pi.deltaOfDelta = pi.recvDelta - pi.sendDelta
+				p.logger.Infow("packet received", "packetInfo", pi, "prev", piPrev) // REMOVE
+				/* SSBWE-TODO
+				if pi.deltaOfDelta < 0 && pi.deltaOfDelta > -rtcp.TypeTCCDeltaScaleFactor {
+					// TWCC feedback has a resolution of 250 us inter packet interval,
+					// squash small send intervals getting coalesced on the receiver side.
+					// SSBWE-TODO: figure out proper adjustment for measurement resolution, this squelching is not always correct
+					pi.deltaOfDelta = 0
+				}
+				*/
+			}
+			p.highestRecvSN = sn
+			if err := p.activePacketGroup.Add(pi); err != nil {
+				p.packetGroups = append(p.packetGroups, p.activePacketGroup)
+				p.logger.Infow("packet group done", "group", p.activePacketGroup) // REMOVE
+				p.activePacketGroup = NewPacketGroup(PacketGroupParams{Spread: 50 * time.Millisecond})
+				p.activePacketGroup.Add(pi)
+			}
 		}
 		if p.debugFile != nil {
 			toWrite := fmt.Sprintf(
-				"PACKET: sn: %d, headerSize: %d, payloadSize: %d, isRTX: %d, sendTime: %d, receiveTime: %d",
+				"PACKET: sn: %d, headerSize: %d, payloadSize: %d, isRTX: %d, sendTime: %d, recvTime: %d",
 				sn,
 				pi.headerSize,
 				pi.payloadSize,
@@ -258,9 +287,10 @@ func (p *PacketTracker) processFeedbackReport(fbr feedbackReport) (uint16, uint1
 	return report.BaseSequenceNumber, report.BaseSequenceNumber + report.PacketStatusCount
 }
 
+// SSBWE-TODO: roll this into processFeedbackReport()?
 func (p *PacketTracker) populateDeltas(startSNInclusive, endSNExclusive uint16) {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
+	p.lock.Lock()
+	defer p.lock.Unlock()
 
 	for sn := startSNInclusive; sn != endSNExclusive; sn++ {
 		pi := p.getPacketInfo(sn)
@@ -270,19 +300,19 @@ func (p *PacketTracker) populateDeltas(startSNInclusive, endSNExclusive uint16) 
 		}
 
 		// lost packet(s)
-		if pi.receiveTime == 0 || piPrev.receiveTime == 0 {
+		if pi.recvTime == 0 || piPrev.recvTime == 0 {
 			continue
 		}
 
 		// ignore out-of-order arrivals
-		if piPrev.receiveTime > pi.receiveTime {
+		if piPrev.recvTime > pi.recvTime {
 			// SSBWE-TODO: should this not be ignored?
 			continue
 		}
 
 		pi.sendDelta = pi.sendTime - piPrev.sendTime
-		pi.receiveDelta = pi.receiveTime - piPrev.receiveTime
-		pi.deltaOfDelta = pi.receiveDelta - pi.sendDelta
+		pi.recvDelta = pi.recvTime - piPrev.recvTime
+		pi.deltaOfDelta = pi.recvDelta - pi.sendDelta
 		if pi.deltaOfDelta < 0 && pi.deltaOfDelta > -rtcp.TypeTCCDeltaScaleFactor {
 			// TWCC feedback has a resolution of 250 us inter packet interval,
 			// squash small send intervals getting coalesced on the receiver side.
@@ -296,10 +326,10 @@ func (p *PacketTracker) populateDeltas(startSNInclusive, endSNExclusive uint16) 
 			"send", pi.sendTime,
 			"sendp", piPrev.sendTime,
 			"sd", pi.sendDelta,
-			"r", pi.receiveTime,
-			"rp", piPrev.receiveTime,
-			"rd", pi.receiveDelta,
-			"rawdelta", pi.receiveDelta-pi.sendDelta,
+			"r", pi.recvTime,
+			"rp", piPrev.recvTime,
+			"rd", pi.recvDelta,
+			"rawdelta", pi.recvDelta-pi.sendDelta,
 			"delta", pi.deltaOfDelta,
 		) // REMOVE
 	}
@@ -334,11 +364,11 @@ func (p *PacketTracker) calculateMPE(startSNInclusive, endSNExclusive uint16) {
 	numDeltas := 0
 	for {
 		pi := p.getPacketInfo(sn)
-		if (pi.receiveTime != 0 && pi.receiveTime < startTime) || pi.sendTime == 0 {
+		if (pi.recvTime != 0 && pi.recvTime < startTime) || pi.sendTime == 0 {
 			break
 		}
 
-		if pi.receiveTime > endTime {
+		if pi.recvTime > endTime {
 			// late arriving (out-of-order arriving) packet
 			sn--
 			continue
@@ -346,14 +376,14 @@ func (p *PacketTracker) calculateMPE(startSNInclusive, endSNExclusive uint16) {
 
 		// SSBWE-TODO: the error is volatile, need to find a more stable signal - maybe accumulated delay?
 		if pi.isDeltaValid {
-			totalError += float64(pi.deltaOfDelta) / float64(pi.receiveDelta)
+			totalError += float64(pi.deltaOfDelta) / float64(pi.recvDelta)
 			numDeltas++
 			p.logger.Infow(
 				"mpe delta",
 				"sn", sn,
-				"rawdelta", pi.receiveDelta-pi.sendDelta,
+				"rawdelta", pi.recvDelta-pi.sendDelta,
 				"delta", pi.deltaOfDelta,
-				"error", float64(pi.deltaOfDelta)/float64(pi.receiveDelta),
+				"error", float64(pi.deltaOfDelta)/float64(pi.recvDelta),
 			) // REMOVE
 		}
 		sn--
@@ -389,29 +419,29 @@ func (p *PacketTracker) calculateAcknowledgedBitrate(startSNInclusive, endSNExcl
 	numRTXPackets := 0
 	for {
 		pi := p.getPacketInfo(sn)
-		receiveTime := pi.receiveTime
-		if receiveTime == 0 && pi.sendTime != 0 {
+		recvTime := pi.recvTime
+		if recvTime == 0 && pi.sendTime != 0 {
 			// lost packet or not sent packet
 			sn--
 			continue
 			// SSBWE-TODO think about whether lost packet should be counted for bitrate calculation, probably yes
 		}
 
-		if receiveTime > endTime {
+		if recvTime > endTime {
 			// late arriving (out-of-order arriving) packet
 			sn--
 			continue
 		}
 
-		if receiveTime < startTime || pi.sendTime == 0 {
+		if recvTime < startTime || pi.sendTime == 0 {
 			break
 		}
 
-		if receiveTime > highestTime {
-			highestTime = receiveTime
+		if recvTime > highestTime {
+			highestTime = recvTime
 		}
-		if lowestTime == 0 || receiveTime < lowestTime {
-			lowestTime = receiveTime
+		if lowestTime == 0 || recvTime < lowestTime {
+			lowestTime = recvTime
 			lowestTimeBytes = int(pi.headerSize) + int(pi.payloadSize)
 			lowestTimeIsRTX = pi.isRTX
 		}
@@ -464,9 +494,9 @@ func (p *PacketTracker) getPacketInfo(sn uint16) *packetInfo {
 }
 
 func (p *PacketTracker) getPacketInfoExisting(sn uint16) *packetInfo {
-	pi := p.packetInfos[int(sn)%len(p.packetInfos)]
+	pi := &p.packetInfos[int(sn)%len(p.packetInfos)]
 	if pi.sn == sn {
-		return &pi
+		return pi
 	}
 
 	return nil
@@ -475,8 +505,8 @@ func (p *PacketTracker) getPacketInfoExisting(sn uint16) *packetInfo {
 func (p *PacketTracker) getRange(startSNInclusive, endSNExclusive uint16) (startTime int64, endTime int64, err error) {
 	for sn := endSNExclusive - 1; sn != startSNInclusive-1; sn-- {
 		pi := &p.packetInfos[sn]
-		if pi.receiveTime != 0 {
-			endTime = pi.receiveTime
+		if pi.recvTime != 0 {
+			endTime = pi.recvTime
 			startTime = endTime - 500000 // SSBWE-TODO - make this constant and tune for rate calculation/other error measurement windows
 			// SSBWE-TODO: should this window be dynamic?
 			return
@@ -503,12 +533,14 @@ func (p *PacketTracker) worker() {
 				if startSNInclusive, endSNExclusive := p.processFeedbackReport(fbReport); startSNInclusive != endSNExclusive {
 					p.populateDeltas(startSNInclusive, endSNExclusive)
 
+					/* RAJA-REMOVE
 					p.calculateAcknowledgedBitrate(startSNInclusive, endSNExclusive)
 					p.rateCalculator.Update(p.packetInfos[:], startSNInclusive, endSNExclusive)
 
 					p.detectChangePoint(startSNInclusive, endSNExclusive)
 
 					p.calculateMPE(startSNInclusive, endSNExclusive)
+					*/
 				}
 			}
 

@@ -30,18 +30,18 @@ type measurement struct {
 	sendEnd     int64
 	sendBitrate float64
 
-	receiveStart   int64
-	receiveEnd     int64
-	receiveBitrate float64
+	recvStart   int64
+	recvEnd     int64
+	recvBitrate float64
 }
 
 func (m measurement) String() string {
-	return fmt.Sprintf("at: %s, primary: (%s), rtx: (%s), send: (%d / %d / %.2f /  %.2f), receive: (%d / %d / %.2f / %.2f)",
+	return fmt.Sprintf("at: %s, primary: (%s), rtx: (%s), send: (%d / %d / %.2f /  %.2f), recv: (%d / %d / %.2f / %.2f)",
 		m.at.String(),
 		m.primary.String(),
 		m.rtx.String(),
 		m.sendStart, m.sendEnd, float64(m.sendEnd-m.sendStart)/1e6, m.sendBitrate,
-		m.receiveStart, m.receiveEnd, float64(m.receiveEnd-m.receiveStart)/1e6, m.receiveBitrate,
+		m.recvStart, m.recvEnd, float64(m.recvEnd-m.recvStart)/1e6, m.recvBitrate,
 	)
 }
 
@@ -61,7 +61,7 @@ type RateCalculator struct {
 	packetInfos               []*packetInfo
 	highestAckedSN            uint16
 	highestAckedSNInitialized bool
-	latestReceiveTime         int64
+	latestRecvTime            int64
 	primary                   byteCounter
 	rtx                       byteCounter
 
@@ -81,17 +81,17 @@ func (r *RateCalculator) Update(packetInfos []packetInfo, startSNInclusive, endS
 }
 
 func (r *RateCalculator) add(packetInfos []packetInfo, startSNInclusive, endSNExclusive uint16) {
-	latestReceiveTimeInCluster := int64(0)
+	latestRecvTimeInCluster := int64(0)
 	for sn := startSNInclusive; sn != endSNExclusive; sn++ {
 		pi := &packetInfos[int(sn)%len(packetInfos)]
-		if pi.receiveTime == 0 {
+		if pi.recvTime == 0 {
 			// potentially lost packet, may arrive later
 			continue
 		}
 
 		if r.nextMeasurementTime == 0 {
 			// first one maybe a short window if overlap is non-zero
-			r.nextMeasurementTime = pi.receiveTime + int64((1.0-r.params.Overlap)*float64(r.params.MeasurementWindow.Microseconds()))
+			r.nextMeasurementTime = pi.recvTime + int64((1.0-r.params.Overlap)*float64(r.params.MeasurementWindow.Microseconds()))
 		}
 		if !r.highestAckedSNInitialized {
 			r.highestAckedSNInitialized = true
@@ -100,14 +100,14 @@ func (r *RateCalculator) add(packetInfos []packetInfo, startSNInclusive, endSNEx
 
 		// add to history if received in-order OR received out-of-order, but received after last cluster
 		diff := pi.sn - r.highestAckedSN
-		if diff < (1<<15) || pi.receiveTime >= r.latestReceiveTime {
+		if diff < (1<<15) || pi.recvTime >= r.latestRecvTime {
 			r.packetInfos = append(r.packetInfos, pi)
 		}
 		if diff < (1 << 15) {
 			r.highestAckedSN = pi.sn
 		}
-		if latestReceiveTimeInCluster == 0 || pi.receiveTime > latestReceiveTimeInCluster {
-			latestReceiveTimeInCluster = pi.receiveTime
+		if latestRecvTimeInCluster == 0 || pi.recvTime > latestRecvTimeInCluster {
+			latestRecvTimeInCluster = pi.recvTime
 		}
 
 		if pi.isRTX {
@@ -118,14 +118,14 @@ func (r *RateCalculator) add(packetInfos []packetInfo, startSNInclusive, endSNEx
 			r.primary.payload += int(pi.payloadSize)
 		}
 
-		if pi.receiveTime >= r.nextMeasurementTime {
+		if pi.recvTime >= r.nextMeasurementTime {
 			r.prune()
 			r.calculate()
 			r.nextMeasurementTime += int64((1.0 - r.params.Overlap) * float64(r.params.MeasurementWindow.Microseconds()))
 		}
 	}
-	if latestReceiveTimeInCluster != 0 && latestReceiveTimeInCluster > r.latestReceiveTime {
-		r.latestReceiveTime = latestReceiveTimeInCluster
+	if latestRecvTimeInCluster != 0 && latestRecvTimeInCluster > r.latestRecvTime {
+		r.latestRecvTime = latestRecvTimeInCluster
 	}
 }
 
@@ -134,10 +134,10 @@ func (r *RateCalculator) prune() {
 		return
 	}
 
-	cutoffTime := r.packetInfos[len(r.packetInfos)-1].receiveTime - r.params.MeasurementWindow.Microseconds()
+	cutoffTime := r.packetInfos[len(r.packetInfos)-1].recvTime - r.params.MeasurementWindow.Microseconds()
 	cutoffIdx := 0
 	for idx, pi := range r.packetInfos {
-		if pi.receiveTime >= cutoffTime {
+		if pi.recvTime >= cutoffTime {
 			cutoffIdx = idx
 			break
 		}
@@ -159,15 +159,15 @@ func (r *RateCalculator) calculate() {
 	sendStart := first.sendTime
 	sendEnd := r.packetInfos[len(r.packetInfos)-1].sendTime
 	sendDuration := float64(sendEnd-sendStart) / 1e6
-	receiveStart := first.receiveTime
-	receiveEnd := r.packetInfos[len(r.packetInfos)-1].receiveTime
-	receiveDuration := float64(receiveEnd-receiveStart) / 1e6
+	recvStart := first.recvTime
+	recvEnd := r.packetInfos[len(r.packetInfos)-1].recvTime
+	recvDuration := float64(recvEnd-recvStart) / 1e6
 	m := measurement{
-		at:           time.Now(),
-		sendStart:    sendStart,
-		sendEnd:      sendEnd,
-		receiveStart: receiveStart,
-		receiveEnd:   receiveEnd,
+		at:        time.Now(),
+		sendStart: sendStart,
+		sendEnd:   sendEnd,
+		recvStart: recvStart,
+		recvEnd:   recvEnd,
 	}
 	if first.isRTX {
 		m.rtx = byteCounter{
@@ -181,7 +181,7 @@ func (r *RateCalculator) calculate() {
 		}
 	}
 	m.sendBitrate = float64((m.primary.header+m.primary.payload+m.rtx.header+m.rtx.payload)*8) / sendDuration
-	m.receiveBitrate = float64((m.primary.header+m.primary.payload+m.rtx.header+m.rtx.payload)*8) / receiveDuration
+	m.recvBitrate = float64((m.primary.header+m.primary.payload+m.rtx.header+m.rtx.payload)*8) / recvDuration
 	r.params.Logger.Debugw("rate calculator measurement", "measurement", m.String()) // REMOVE
 	r.measurements = append(r.measurements, m)
 }
