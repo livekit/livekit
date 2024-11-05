@@ -150,10 +150,10 @@ func (w wrappedICECandidatePairLogger) MarshalLogObject(e zapcore.ObjectEncoder)
 	if w.pair.Remote != nil {
 		e.AddString("remoteProtocol", w.pair.Remote.Protocol.String())
 		e.AddString("remoteCandidateType", w.pair.Remote.Typ.String())
-		e.AddString("remoteAdddress", w.pair.Remote.Address[:len(w.pair.Remote.Address)-3]+"...")
+		e.AddString("remoteAdddress", MaybeTruncateIP(w.pair.Remote.Address))
 		e.AddUint16("remotePort", w.pair.Remote.Port)
 		if w.pair.Remote.RelatedAddress != "" {
-			e.AddString("relatedAdddress", w.pair.Remote.RelatedAddress[:len(w.pair.Remote.RelatedAddress)-3]+"...")
+			e.AddString("relatedAdddress", MaybeTruncateIP(w.pair.Remote.RelatedAddress))
 			e.AddUint16("relatedPort", w.pair.Remote.RelatedPort)
 		}
 	}
@@ -254,7 +254,6 @@ type TransportParams struct {
 	IsSendSide                   bool
 	AllowPlayoutDelay            bool
 	DataChannelMaxBufferedAmount uint64
-	DropRemoteICECandidates      bool
 }
 
 func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimator cc.BandwidthEstimator)) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
@@ -299,9 +298,12 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	se.DisableSRTCPReplayProtection(true)
 	if !params.ProtocolVersion.SupportsICELite() || !params.ClientInfo.SupportPrflxOverRelay() {
 		// if client don't support prflx over relay which is only Firefox, disable ICE Lite to ensure that
-		// dropping remote ICE candidates does not get enabled. Firefox does aggressive nomination and
-		// dropping remote ICE candidates means server would accept all switches and it could end up with
-		// the lower priority candidate. As Firefox does not support migration, ICE Lite can be disabled.
+		// aggressive nomination is handled properly. Firefox does aggressive nomination even if peer is
+		// ICE Lite (see comment as to historical reasons: https://github.com/pion/ice/pull/739#issuecomment-2452245066).
+		// pion/ice (as of v2.3.37) will accept all use-candidate switches when in ICE Lite mode.
+		// That combined with aggressive nomination from Firefox could potentially lead to the two ends
+		// ending up with different candidates.
+		// As Firefox does not support migration, ICE Lite can be disabled.
 		se.SetLite(false)
 	}
 	se.SetDTLSRetransmissionInterval(dtlsRetransmissionInterval)
@@ -1415,7 +1417,7 @@ func (t *PCTransport) handleRemoteICECandidate(e event) error {
 	c := e.data.(*webrtc.ICECandidateInit)
 
 	filtered := false
-	if t.preferTCP.Load() && !strings.Contains(c.Candidate, "tcp") {
+	if t.preferTCP.Load() && !strings.Contains(strings.ToLower(c.Candidate), "tcp") {
 		t.params.Logger.Debugw("filtering out remote candidate", "candidate", c.Candidate)
 		filtered = true
 	}
@@ -1432,12 +1434,6 @@ func (t *PCTransport) handleRemoteICECandidate(e event) error {
 
 	if t.pc.RemoteDescription() == nil {
 		t.pendingRemoteCandidates = append(t.pendingRemoteCandidates, c)
-		return nil
-	}
-
-	if t.params.DropRemoteICECandidates {
-		t.params.Logger.Debugw("dropping remote ICE candidate", "candidate", c.Candidate)
-		t.connectionDetails.AddRemoteCandidate(*c, true, true, true)
 		return nil
 	}
 
@@ -1465,25 +1461,6 @@ func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription, preferTCP, 
 		return sd
 	}
 
-	_, iceLite := parsed.Attribute("ice-lite")
-	var liteSet bool
-	if isLocal {
-		if t.localICEIsLite == nil {
-			t.localICEIsLite = &iceLite
-			liteSet = true
-		}
-	} else {
-		if t.remoteICEIsLite == nil {
-			t.remoteICEIsLite = &iceLite
-			liteSet = true
-		}
-	}
-	if liteSet && t.localICEIsLite != nil && t.remoteICEIsLite != nil {
-		// only drop remote candidates if local is lite and remote is not
-		t.params.DropRemoteICECandidates = t.params.DropRemoteICECandidates && (*t.localICEIsLite && !*t.remoteICEIsLite)
-		t.params.Logger.Debugw("setting DropRemoteICECandidates", "dropRemoteCandidate", t.params.DropRemoteICECandidates, "localICELite", *t.localICEIsLite, "remoteICELite", *t.remoteICEIsLite)
-	}
-
 	filterAttributes := func(attrs []sdp.Attribute) []sdp.Attribute {
 		filteredAttrs := make([]sdp.Attribute, 0, len(attrs))
 		for _, a := range attrs {
@@ -1494,7 +1471,7 @@ func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription, preferTCP, 
 					filteredAttrs = append(filteredAttrs, a)
 					continue
 				}
-				excluded := (!isLocal && t.params.DropRemoteICECandidates) || (preferTCP && !c.NetworkType().IsTCP())
+				excluded := preferTCP && !c.NetworkType().IsTCP()
 				if !excluded {
 					if !t.params.Config.UseMDNS && types.IsICECandidateMDNS(c) {
 						excluded = true
@@ -1712,10 +1689,6 @@ func (t *PCTransport) setRemoteDescription(sd webrtc.SessionDescription) error {
 	}
 
 	for _, c := range t.pendingRemoteCandidates {
-		if t.params.DropRemoteICECandidates {
-			t.connectionDetails.AddRemoteCandidate(*c, true, true, true)
-			continue
-		}
 		if err := t.pc.AddICECandidate(*c); err != nil {
 			t.params.Logger.Warnw("failed to add cached ICE candidate", err, "candidate", c)
 			return errors.Wrap(err, "add ice candidate failed")
