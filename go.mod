@@ -28,7 +28,7 @@ require (
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/ory/dockertest/v3 v3.11.0
 	github.com/pion/dtls/v2 v2.2.12
-	github.com/pion/ice/v2 v2.3.36
+	github.com/pion/ice/v2 v2.3.37
 	github.com/pion/interceptor v0.1.37
 	github.com/pion/rtcp v1.2.14
 	github.com/pion/rtp v1.8.9

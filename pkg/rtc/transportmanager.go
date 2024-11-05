@@ -103,7 +103,6 @@ type TransportManagerParams struct {
 	PublisherHandler             transport.Handler
 	SubscriberHandler            transport.Handler
 	DataChannelStats             *telemetry.BytesTrackStats
-	DropRemoteICECandidates      bool
 }
 
 type TransportManager struct {
@@ -158,7 +157,6 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		ClientInfo:              params.ClientInfo,
 		Transport:               livekit.SignalTarget_PUBLISHER,
 		Handler:                 TransportManagerPublisherTransportHandler{TransportManagerTransportHandler{params.PublisherHandler, t, lgr}},
-		DropRemoteICECandidates: params.DropRemoteICECandidates,
 	})
 	if err != nil {
 		return nil, err
@@ -182,7 +180,6 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		DataChannelMaxBufferedAmount: params.DataChannelMaxBufferedAmount,
 		Transport:                    livekit.SignalTarget_SUBSCRIBER,
 		Handler:                      TransportManagerTransportHandler{params.SubscriberHandler, t, lgr},
-		DropRemoteICECandidates:      params.DropRemoteICECandidates,
 	})
 	if err != nil {
 		return nil, err

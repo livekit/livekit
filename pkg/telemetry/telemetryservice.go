@@ -26,7 +26,9 @@ import (
 	"github.com/livekit/protocol/webhook"
 )
 
-//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 . TelemetryService
+//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
+
+//counterfeiter:generate . TelemetryService
 type TelemetryService interface {
 	// TrackStats is called periodically for each track in both directions (published/subscribed)
 	TrackStats(key StatsKey, stat *livekit.AnalyticsStat)
