@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"strings"
 
 	"github.com/pion/webrtc/v3"
@@ -28,6 +29,8 @@ import (
 
 const (
 	trackIdSeparator = "|"
+
+	cMinIPTruncateLen = 8
 )
 
 func UnpackStreamID(packed string) (participantID livekit.ParticipantID, trackID livekit.TrackID) {
@@ -197,4 +200,17 @@ func LoggerWithCodecMime(l logger.Logger, mime string) logger.Logger {
 		return l.WithValues("mime", mime)
 	}
 	return l
+}
+
+func MaybeTruncateIP(addr string) string {
+	ipAddr := net.ParseIP(addr)
+	if ipAddr == nil {
+		return ""
+	}
+
+	if ipAddr.IsPrivate() || len(addr) <= cMinIPTruncateLen {
+		return addr
+	}
+
+	return addr[:len(addr)-3] + "..."
 }

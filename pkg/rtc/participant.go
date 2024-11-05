@@ -158,7 +158,6 @@ type ParticipantParams struct {
 	ForwardStats                   *sfu.ForwardStats
 	DisableSenderReportPassThrough bool
 	MetricConfig                   metric.MetricConfig
-	DropRemoteICECandidates        bool
 }
 
 type ParticipantImpl struct {
@@ -964,7 +963,12 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	p.clearMigrationTimer()
 
 	if sendLeave {
-		p.sendLeaveRequest(reason, isExpectedToResume, false, false)
+		p.sendLeaveRequest(
+			reason,
+			isExpectedToResume,
+			false, // isExpectedToReconnect
+			false, // sendOnlyIfSupportingLeaveRequestWithAction
+		)
 	}
 
 	if p.supervisor != nil {
@@ -1071,7 +1075,12 @@ func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
 		onStart()
 	}
 
-	p.sendLeaveRequest(types.ParticipantCloseReasonMigrationRequested, true, false, true)
+	p.sendLeaveRequest(
+		types.ParticipantCloseReasonMigrationRequested,
+		true,  // isExpectedToResume
+		false, // isExpectedToReconnect
+		true,  // sendOnlyIfSupportingLeaveRequestWithAction
+	)
 	p.CloseSignalConnection(types.SignallingCloseReasonMigration)
 
 	p.clearMigrationTimer()
@@ -1449,7 +1458,6 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		PublisherHandler:             pth,
 		SubscriberHandler:            sth,
 		DataChannelStats:             p.dataChannelStats,
-		DropRemoteICECandidates:      p.params.DropRemoteICECandidates,
 	}
 	if p.params.SyncStreams && p.params.PlayoutDelay.GetEnabled() && p.params.ClientInfo.isFirefox() {
 		// we will disable playout delay for Firefox if the user is expecting
@@ -1820,8 +1828,14 @@ func (p *ParticipantImpl) setupDisconnectTimer() {
 }
 
 func (p *ParticipantImpl) onAnyTransportFailed() {
-	// clients support resuming of connections when websocket becomes disconnected
-	p.sendLeaveRequest(types.ParticipantCloseReasonPeerConnectionDisconnected, true, false, true)
+	p.sendLeaveRequest(
+		types.ParticipantCloseReasonPeerConnectionDisconnected,
+		true,  // isExpectedToResume
+		false, // isExpectedToReconnect
+		true,  // sendOnlyIfSupportingLeaveRequestWithAction
+	)
+
+	// clients support resuming of connections when signalling becomes disconnected
 	p.CloseSignalConnection(types.SignallingCloseReasonTransportFailure)
 
 	// detect when participant has actually left.
@@ -2658,7 +2672,12 @@ func (p *ParticipantImpl) GetCachedDownTrack(trackID livekit.TrackID) (*webrtc.R
 }
 
 func (p *ParticipantImpl) IssueFullReconnect(reason types.ParticipantCloseReason) {
-	p.sendLeaveRequest(reason, false, true, false)
+	p.sendLeaveRequest(
+		reason,
+		false, // isExpectedToResume
+		true,  // isExpectedToReconnect
+		false, // sendOnlyIfSupportingLeaveRequestWithAction
+	)
 
 	scr := types.SignallingCloseReasonUnknown
 	switch reason {
@@ -2807,7 +2826,14 @@ func (p *ParticipantImpl) setupEnabledCodecs(publishEnabledCodecs []*livekit.Cod
 }
 
 func (p *ParticipantImpl) GetEnabledPublishCodecs() []*livekit.Codec {
-	return p.enabledPublishCodecs
+	codecs := make([]*livekit.Codec, 0, len(p.enabledPublishCodecs))
+	for _, c := range p.enabledPublishCodecs {
+		if c.Mime == "video/rtx" {
+			continue
+		}
+		codecs = append(codecs, c)
+	}
+	return codecs
 }
 
 func (p *ParticipantImpl) UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack) error {

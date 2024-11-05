@@ -29,7 +29,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing"
 )
 
-//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 . AnalyticsService
+//counterfeiter:generate . AnalyticsService
 type AnalyticsService interface {
 	SendStats(ctx context.Context, stats []*livekit.AnalyticsStat)
 	SendEvent(ctx context.Context, events *livekit.AnalyticsEvent)
