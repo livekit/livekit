@@ -21,18 +21,18 @@ func (b byteCounter) String() string {
 // ---------------------------------------------------------------------
 
 type measurement struct {
-	at           time.Time
+	at time.Time
 
-	primary      byteCounter
-	rtx          byteCounter
+	primary byteCounter
+	rtx     byteCounter
 
-	sendStart int64
-	sendEnd   int64
-	sendBitrate      float64
+	sendStart   int64
+	sendEnd     int64
+	sendBitrate float64
 
-	receiveStart int64
-	receiveEnd   int64
-	receiveBitrate      float64
+	receiveStart   int64
+	receiveEnd     int64
+	receiveBitrate float64
 }
 
 func (m measurement) String() string {
@@ -50,7 +50,7 @@ func (m measurement) String() string {
 type RateCalculatorParams struct {
 	MeasurementWindow time.Duration
 	Overlap           float64
-	// RAJA-TODO: maybe add a config for how much of window should be available to have a valid rate
+	// SSBWE-TODO: maybe add a config for how much of window should be available to have a valid rate
 
 	Logger logger.Logger
 }
@@ -66,7 +66,7 @@ type RateCalculator struct {
 	rtx                       byteCounter
 
 	nextMeasurementTime int64
-	measurements        []measurement // RAJA-TODO: need to trim these
+	measurements        []measurement // SSBWE-TODO: need to trim these
 }
 
 func NewRateCalculator(params RateCalculatorParams) *RateCalculator {
@@ -121,7 +121,7 @@ func (r *RateCalculator) add(packetInfos [1 << 16]packetInfo, startSNInclusive, 
 		if pi.receiveTime >= r.nextMeasurementTime {
 			r.prune()
 			r.calculate()
-			r.nextMeasurementTime += int64((1.0-r.params.Overlap)*float64(r.params.MeasurementWindow.Microseconds()))
+			r.nextMeasurementTime += int64((1.0 - r.params.Overlap) * float64(r.params.MeasurementWindow.Microseconds()))
 		}
 	}
 	if latestReceiveTimeInCluster != 0 && latestReceiveTimeInCluster > r.latestReceiveTime {
@@ -164,8 +164,8 @@ func (r *RateCalculator) calculate() {
 	receiveDuration := float64(receiveEnd-receiveStart) / 1e6
 	m := measurement{
 		at:           time.Now(),
-		sendStart: sendStart,
-		sendEnd:   sendEnd,
+		sendStart:    sendStart,
+		sendEnd:      sendEnd,
 		receiveStart: receiveStart,
 		receiveEnd:   receiveEnd,
 	}

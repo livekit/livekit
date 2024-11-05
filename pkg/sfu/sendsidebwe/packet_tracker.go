@@ -11,6 +11,7 @@ import (
 	"github.com/frostbyte73/core"
 	"github.com/gammazero/deque"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils/mono"
 	"github.com/pion/rtcp"
 )
 
@@ -22,16 +23,23 @@ var (
 
 // -------------------------------------------------------------------------------
 
+type feedbackReport struct {
+	at     time.Time
+	report *rtcp.TransportLayerCC
+}
+
 type PacketTracker struct {
 	logger logger.Logger
+
+	twccFeedback *TWCCFeedback
 
 	lock            sync.RWMutex
 	sentInitialized bool
 	highestSentSN   uint16
 
 	// SSBWE-TODO: make this a ring buffer as a lot more fields are needed
-	packetInfos   [1 << 16]packetInfo
-	feedbackInfos deque.Deque[*TWCCFeedbackInfo] // SSBWE-TODO: prune old entries
+	packetInfos     [1 << 16]packetInfo
+	feedbackReports deque.Deque[feedbackReport] // SSBWE-TODO: prune old entries
 
 	packetGroups      []*PacketGroup // SSBWE-TODO - prune packet groups to some recent history
 	activePacketGroup *PacketGroup
@@ -53,11 +61,12 @@ type PacketTracker struct {
 func NewPacketTracker(logger logger.Logger) *PacketTracker {
 	p := &PacketTracker{
 		logger:       logger,
+		twccFeedback: NewTWCCFeedback(logger),
 		peakDetector: peakdetect.NewPeakDetector(),
 		wake:         make(chan struct{}, 1),
 		rateCalculator: NewRateCalculator(RateCalculatorParams{
-			MeasurementWindow: 500 * time.Millisecond, // RAJA-TODO: make this config
-			Overlap:           0.5,                    // RAJA-TODO: make this config
+			MeasurementWindow: 500 * time.Millisecond, // SSBWE-TODO: make this config
+			Overlap:           0.5,                    // SSBWE-TODO: make this config
 			Logger:            logger,
 		}),
 		estimatedChannelCapacity: 100_000_000,
@@ -66,7 +75,7 @@ func NewPacketTracker(logger logger.Logger) *PacketTracker {
 	// SSBWE-TODO: make consts
 	p.peakDetector.Initialize(0.1, 3.5, make([]float64, 60))
 
-	p.feedbackInfos.SetMinCapacity(3)
+	p.feedbackReports.SetMinCapacity(3)
 
 	p.debugFile, _ = os.CreateTemp("/tmp", "twcc")
 
@@ -101,6 +110,7 @@ func (p *PacketTracker) GetEstimatedChannelCapacity() int64 {
 	return p.estimatedChannelCapacity
 }
 
+// SSBWE-TODO: can this sn operate in extended range for easier comparison?
 func (p *PacketTracker) PacketSent(sn uint16, at time.Time, headerSize int, payloadSize int, isRTX bool) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
@@ -131,11 +141,11 @@ func (p *PacketTracker) PacketSent(sn uint16, at time.Time, headerSize int, payl
 	p.highestSentSN = sn
 }
 
-func (p *PacketTracker) ProcessFeedback(fbi *TWCCFeedbackInfo) {
+func (p *PacketTracker) HandleRTCP(report *rtcp.TransportLayerCC) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	p.feedbackInfos.PushBack(fbi)
+	p.feedbackReports.PushBack(feedbackReport{mono.Now(), report})
 
 	// notify worker of a new feedback
 	select {
@@ -144,16 +154,27 @@ func (p *PacketTracker) ProcessFeedback(fbi *TWCCFeedbackInfo) {
 	}
 }
 
-func (p *PacketTracker) processFeedback(fbi *TWCCFeedbackInfo) {
+func (p *PacketTracker) processFeedbackReport(fbr feedbackReport) (uint16, uint16) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	now := time.Now()
+	report, err := p.twccFeedback.GetReport(fbr.report, fbr.at)
+	if err != nil {
+		return 0, 0
+	}
+
+	now := mono.UnixMicro()
 	if p.debugFile != nil {
-		toWrite := fmt.Sprintf("REPORT: start: %d", now.UnixMicro())
+		toWrite := fmt.Sprintf("REPORT: start: %d", now)
 		p.debugFile.WriteString(toWrite)
 		p.debugFile.WriteString("\n")
 	}
+
+	if p.activePacketGroup == nil {
+		// SSBWE-TODO - spread should be a config option
+		p.activePacketGroup = NewPacketGroup(PacketGroupParams{Spread: 50 * time.Millisecond})
+	}
+
 	toInt := func(a bool) int {
 		if a {
 			return 1
@@ -161,14 +182,10 @@ func (p *PacketTracker) processFeedback(fbi *TWCCFeedbackInfo) {
 
 		return 0
 	}
-	if p.activePacketGroup == nil {
-		// SSBWE-TODO - spread should be a config option
-		p.activePacketGroup = NewPacketGroup(PacketGroupParams{Spread: 50 * time.Millisecond})
-	}
-	for i, arrival := range fbi.Arrivals {
-		sn := fbi.BaseSN + uint16(i)
+
+	updatePacketInfo := func(sn uint16, recvTime int64) {
 		pi := &p.packetInfos[sn]
-		pi.receiveTime = arrival
+		pi.receiveTime = recvTime
 		if err := p.activePacketGroup.Add(pi); err != nil {
 			p.packetGroups = append(p.packetGroups, p.activePacketGroup)
 			p.activePacketGroup = NewPacketGroup(PacketGroupParams{Spread: 50 * time.Millisecond})
@@ -182,17 +199,49 @@ func (p *PacketTracker) processFeedback(fbi *TWCCFeedbackInfo) {
 				pi.payloadSize,
 				toInt(pi.isRTX),
 				pi.sendTime,
-				arrival,
+				recvTime,
 			)
 			p.debugFile.WriteString(toWrite)
 			p.debugFile.WriteString("\n")
 		}
 	}
+
+	sn := report.BaseSequenceNumber
+	deltaIdx := 0
+	recvRefTime := int64(report.ReferenceTime) * 64 * 1000 // in us
+	for _, chunk := range report.PacketChunks {
+		switch chunk := chunk.(type) {
+		case *rtcp.RunLengthChunk:
+			for i := uint16(0); i < chunk.RunLength; i++ {
+				if chunk.PacketStatusSymbol != rtcp.TypeTCCPacketNotReceived {
+					recvRefTime += report.RecvDeltas[deltaIdx].Delta
+					deltaIdx++
+
+					updatePacketInfo(sn, recvRefTime)
+				}
+				sn++
+			}
+
+		case *rtcp.StatusVectorChunk:
+			for _, symbol := range chunk.SymbolList {
+				if symbol != rtcp.TypeTCCPacketNotReceived {
+					recvRefTime += report.RecvDeltas[deltaIdx].Delta
+					deltaIdx++
+
+					updatePacketInfo(sn, recvRefTime)
+				}
+				sn++
+			}
+		}
+	}
+
 	if p.debugFile != nil {
-		toWrite := fmt.Sprintf("REPORT: end: %d", now.UnixMicro())
+		toWrite := fmt.Sprintf("REPORT: end: %d", now)
 		p.debugFile.WriteString(toWrite)
 		p.debugFile.WriteString("\n")
 	}
+
+	return report.BaseSequenceNumber, report.BaseSequenceNumber + report.PacketStatusCount
 }
 
 func (p *PacketTracker) populateDeltas(startSNInclusive, endSNExclusive uint16) {
@@ -213,7 +262,7 @@ func (p *PacketTracker) populateDeltas(startSNInclusive, endSNExclusive uint16) 
 
 		// ignore out-of-order arrivals
 		if piPrev.receiveTime > pi.receiveTime {
-			// RAJA-TODO: should this not be ignored?
+			// SSBWE-TODO: should this not be ignored?
 			continue
 		}
 
@@ -417,26 +466,23 @@ func (p *PacketTracker) worker() {
 		case <-p.wake:
 			for {
 				p.lock.Lock()
-				if p.feedbackInfos.Len() == 0 {
+				if p.feedbackReports.Len() == 0 {
 					p.lock.Unlock()
 					break
 				}
-				fbi := p.feedbackInfos.PopFront()
+				fbReport := p.feedbackReports.PopFront()
 				p.lock.Unlock()
 
-				p.processFeedback(fbi)
+				if startSNInclusive, endSNExclusive := p.processFeedbackReport(fbReport); startSNInclusive != endSNExclusive {
+					p.populateDeltas(startSNInclusive, endSNExclusive)
 
-				startSNInclusive := fbi.BaseSN
-				endSNExclusive := fbi.BaseSN + uint16(len(fbi.Arrivals))
+					p.calculateAcknowledgedBitrate(startSNInclusive, endSNExclusive)
+					p.rateCalculator.Update(p.packetInfos, startSNInclusive, endSNExclusive)
 
-				p.populateDeltas(startSNInclusive, endSNExclusive)
+					p.detectChangePoint(startSNInclusive, endSNExclusive)
 
-				p.calculateAcknowledgedBitrate(startSNInclusive, endSNExclusive)
-				p.rateCalculator.Update(p.packetInfos, startSNInclusive, endSNExclusive)
-
-				p.detectChangePoint(startSNInclusive, endSNExclusive)
-
-				p.calculateMPE(startSNInclusive, endSNExclusive)
+					p.calculateMPE(startSNInclusive, endSNExclusive)
+				}
 			}
 
 		case <-p.stop.Watch():

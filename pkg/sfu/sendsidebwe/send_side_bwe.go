@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/livekit/protocol/logger"
-	"github.com/pion/rtcp"
 )
 
 // ---------------------------------------------------------------------------
@@ -38,28 +37,17 @@ func (c CongestionState) String() string {
 type SendSideBWE struct {
 	*TransportWideSequenceNumber
 	*PacketTracker
-	*TWCCFeedback
 }
 
 func NewSendSideBWE(logger logger.Logger) *SendSideBWE {
 	return &SendSideBWE{
 		TransportWideSequenceNumber: NewTransportWideSequenceNumber(),
 		PacketTracker:               NewPacketTracker(logger),
-		TWCCFeedback:                NewTWCCFeedback(logger),
 	}
 }
 
 func (s *SendSideBWE) Stop() {
 	s.PacketTracker.Stop()
-}
-
-func (s *SendSideBWE) HandleRTCP(report *rtcp.TransportLayerCC) {
-	fb, err := s.TWCCFeedback.HandleRTCP(report)
-	if err != nil {
-		return
-	}
-
-	s.PacketTracker.ProcessFeedback(fb)
 }
 
 // ------------------------------------------------

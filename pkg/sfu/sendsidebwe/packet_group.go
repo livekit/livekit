@@ -33,7 +33,7 @@ func NewPacketGroup(params PacketGroupParams) *PacketGroup {
 
 func (p *PacketGroup) Add(pi *packetInfo) error {
 	if p.minSendTime != 0 && (pi.sendTime-p.minSendTime) > p.params.Spread.Microseconds() {
-		// RAJA-TODO: add this packet also here to create overlap and leave out bytes from packet when calculating rates????
+		// SSBWE-TODO: add this packet also here to create overlap and leave out bytes from packet when calculating rates????
 		return errOutOfRange
 	}
 
@@ -44,7 +44,7 @@ func (p *PacketGroup) Add(pi *packetInfo) error {
 	return nil
 }
 
-// RAJA-TODO: re-evaluate functions that are really needed from here and also make as many as possible private
+// SSBWE-TODO: re-evaluate functions that are really needed from here and also make as many as possible private
 func (p *PacketGroup) GetMinSendTime() int64 {
 	minSendTime := int64(0)
 	for _, pi := range p.packetInfos {
