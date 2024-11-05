@@ -33,9 +33,11 @@ type PacketTracker struct {
 
 	twccFeedback *TWCCFeedback
 
-	lock            sync.RWMutex
-	sentInitialized bool
-	highestSentSN   uint16
+	lock           sync.RWMutex
+	baseSendTime   int64
+	highestSentESN uint64
+
+	baseRecvTime int64
 
 	// SSBWE-TODO: make this a ring buffer as a lot more fields are needed
 	packetInfos     [2048]packetInfo
@@ -112,34 +114,37 @@ func (p *PacketTracker) GetEstimatedChannelCapacity() int64 {
 
 // SSBWE-TODO: can this sn operate in extended range for easier comparison?
 // SSBWE-TODO: this potentially needs to take isProbe as argument?
-func (p *PacketTracker) PacketSent(sn uint16, at time.Time, headerSize int, payloadSize int, isRTX bool) {
+func (p *PacketTracker) PacketSent(esn uint64, at time.Time, headerSize int, payloadSize int, isRTX bool) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	if !p.sentInitialized {
-		p.highestSentSN = sn - 1
-		p.sentInitialized = true
+	sendTime := at.UnixMicro()
+	if p.baseSendTime == 0 {
+		p.baseSendTime = sendTime
+		p.highestSentESN = esn - 1
 	}
 
 	// clear slots occupied by missing packets,
 	// ideally this should never run as seequence numbers should be generated in order
 	// and packets sent in order.
-	if (sn - p.highestSentSN) < (1 << 15) {
-		for i := p.highestSentSN + 1; i != sn; i++ {
-			pi := &p.packetInfos[i]
+	if esn < p.highestSentESN {
+		for i := p.highestSentESN + 1; i != esn; i++ {
+			sn := uint16(i)
+			pi := p.getPacketInfo(sn)
 			pi.Reset(sn)
 		}
 	}
 
-	pi := &p.packetInfos[int(sn)%len(p.packetInfos)]
+	sn := uint16(esn)
+	pi := p.getPacketInfo(sn)
 	pi.sn = sn
-	pi.sendTime = at.UnixMicro()
+	pi.sendTime = sendTime - p.baseSendTime
 	pi.headerSize = uint8(headerSize)
 	pi.payloadSize = uint16(payloadSize)
 	pi.isRTX = isRTX
 	pi.ResetReceiveAndDeltas()
 
-	p.highestSentSN = sn
+	p.highestSentESN = esn
 }
 
 func (p *PacketTracker) HandleRTCP(report *rtcp.TransportLayerCC) {
@@ -190,7 +195,11 @@ func (p *PacketTracker) processFeedbackReport(fbr feedbackReport) (uint16, uint1
 			return
 		}
 
-		pi.receiveTime = recvTime
+		if p.baseRecvTime == 0 {
+			p.baseRecvTime = recvTime
+		}
+
+		pi.receiveTime = recvTime - p.baseRecvTime
 		if err := p.activePacketGroup.Add(pi); err != nil {
 			p.packetGroups = append(p.packetGroups, p.activePacketGroup)
 			p.activePacketGroup = NewPacketGroup(PacketGroupParams{Spread: 50 * time.Millisecond})
@@ -254,8 +263,8 @@ func (p *PacketTracker) populateDeltas(startSNInclusive, endSNExclusive uint16) 
 	defer p.lock.RUnlock()
 
 	for sn := startSNInclusive; sn != endSNExclusive; sn++ {
-		pi := &p.packetInfos[sn]
-		piPrev := &p.packetInfos[sn-1]
+		pi := p.getPacketInfo(sn)
+		piPrev := p.getPacketInfo(sn - 1)
 		if pi.sendTime == 0 || piPrev.sendTime == 0 {
 			break
 		}
@@ -302,7 +311,7 @@ func (p *PacketTracker) detectChangePoint(startSNInclusive, endSNExclusive uint1
 
 	deltas := make([]float64, 0, endSNExclusive-startSNInclusive)
 	for sn := startSNInclusive; sn != endSNExclusive; sn++ {
-		pi := &p.packetInfos[sn]
+		pi := p.getPacketInfo(sn)
 		if pi.isDeltaValid {
 			deltas = append(deltas, float64(pi.deltaOfDelta))
 		}
@@ -324,7 +333,7 @@ func (p *PacketTracker) calculateMPE(startSNInclusive, endSNExclusive uint16) {
 	totalError := float64(0.0)
 	numDeltas := 0
 	for {
-		pi := &p.packetInfos[sn]
+		pi := p.getPacketInfo(sn)
 		if (pi.receiveTime != 0 && pi.receiveTime < startTime) || pi.sendTime == 0 {
 			break
 		}
@@ -379,7 +388,7 @@ func (p *PacketTracker) calculateAcknowledgedBitrate(startSNInclusive, endSNExcl
 	totalRTXBytes := 0
 	numRTXPackets := 0
 	for {
-		pi := &p.packetInfos[sn]
+		pi := p.getPacketInfo(sn)
 		receiveTime := pi.receiveTime
 		if receiveTime == 0 && pi.sendTime != 0 {
 			// lost packet or not sent packet
@@ -448,6 +457,10 @@ func (p *PacketTracker) calculateAcknowledgedBitrate(startSNInclusive, endSNExcl
 		"numRTXPackets", numRTXPackets,
 		"packetRateRTX", packetRateRTX,
 	) // REMOVE
+}
+
+func (p *PacketTracker) getPacketInfo(sn uint16) *packetInfo {
+	return &p.packetInfos[int(sn)%len(p.packetInfos)]
 }
 
 func (p *PacketTracker) getPacketInfoExisting(sn uint16) *packetInfo {

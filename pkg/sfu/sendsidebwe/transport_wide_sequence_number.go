@@ -16,8 +16,8 @@ func NewTransportWideSequenceNumber() *TransportWideSequenceNumber {
 	}
 }
 
-func (t *TransportWideSequenceNumber) GetNext() uint16 {
-	return uint16(t.seq.Inc())
+func (t *TransportWideSequenceNumber) GetNext() uint64 {
+	return t.seq.Inc()
 }
 
 // ------------------------------------------------
