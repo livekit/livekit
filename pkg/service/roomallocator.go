@@ -51,8 +51,8 @@ func NewRoomAllocator(conf *config.Config, router routing.Router, rs ObjectStore
 	}, nil
 }
 
-func (r *StandardRoomAllocator) CreateRoomEnabled() bool {
-	return r.config.Room.CreateRoomEnabled
+func (r *StandardRoomAllocator) AutoCreateEnabled(context.Context) bool {
+	return r.config.Room.AutoCreate
 }
 
 // CreateRoom creates a new room from a request and allocates it to a node to handle

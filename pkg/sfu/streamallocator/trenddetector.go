@@ -123,13 +123,13 @@ func (t *TrendDetector) AddValue(value int64) {
 	// Bandwidth estimate is received periodically. If the estimate does not change, it will be repeated.
 	// When there is congestion, there are several estimates received with decreasing values.
 	//
-	// Using a sliding window, collapsing repeated values and waiting for falling trend is to ensure that
+	// Using a sliding window, collapsing repeated values and waiting for falling trend to ensure that
 	// the reaction is not too fast, i. e. reacting to falling values too quick could mean a lot of re-allocation
 	// resulting in layer switches, key frames and more congestion.
 	//
 	// But, on the flip side, estimate could fall once or twice within a sliding window and stay there.
 	// In those cases, using a collapse window to record a value even if it is duplicate. By doing that,
-	// a trend could be detected eventually. If will be delayed, but that is fine with slow changing estimates.
+	// a trend could be detected eventually. It will be delayed, but that is fine with slow changing estimates.
 	var lastSample *trendDetectorSample
 	if len(t.samples) != 0 {
 		lastSample = &t.samples[len(t.samples)-1]
