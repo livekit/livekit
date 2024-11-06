@@ -45,10 +45,10 @@ type PacketGroup struct {
 	params PacketGroupParams
 
 	minInitialized bool
-	minSendTime int64
-	maxSendTime int64
-	minRecvTime int64	// SSBWE-TODO: REMOVE
-	maxRecvTime int64	// SSBWE-TODO: REMOVE
+	minSendTime    int64
+	maxSendTime    int64
+	minRecvTime    int64 // SSBWE-TODO: REMOVE
+	maxRecvTime    int64 // SSBWE-TODO: REMOVE
 
 	numPackets      int
 	numBytesPrimary int
@@ -56,14 +56,15 @@ type PacketGroup struct {
 
 	aggregateSendDelta int64
 	aggregateRecvDelta int64
-	groupDelay         int64
+	queuingDelay       int64
 	// SSBWE-TODO: check number of zero crossings of the delta jitter
 	// if the number of zero crossings is a high ratio of number of packets, it is not stable
 }
 
-func NewPacketGroup(params PacketGroupParams) *PacketGroup {
+func NewPacketGroup(params PacketGroupParams, queuingDelay int64) *PacketGroup {
 	return &PacketGroup{
-		params: params,
+		params:       params,
+		queuingDelay: queuingDelay,
 	}
 }
 
@@ -102,8 +103,15 @@ func (p *PacketGroup) Add(pi *packetInfo) error {
 
 	p.aggregateSendDelta += pi.sendDelta
 	p.aggregateRecvDelta += pi.recvDelta
-	p.groupDelay += pi.deltaOfDelta
 	return nil
+}
+
+func (p *PacketGroup) QueuingDelayNext() int64 {
+	if p.queuingDelay+p.aggregateRecvDelta-p.aggregateSendDelta > 0 {
+		return p.queuingDelay + p.aggregateRecvDelta - p.aggregateSendDelta
+	}
+
+	return max(0, p.aggregateRecvDelta-p.aggregateSendDelta)
 }
 
 func (p *PacketGroup) MarshalLogObject(e zapcore.ObjectEncoder) error {
@@ -142,7 +150,9 @@ func (p *PacketGroup) MarshalLogObject(e zapcore.ObjectEncoder) error {
 
 	e.AddInt64("aggregateSendDelta", p.aggregateSendDelta)
 	e.AddInt64("aggregateRecvDelta", p.aggregateRecvDelta)
-	e.AddInt64("groupDelay", p.groupDelay)
+	e.AddInt64("queuingDelay", p.queuingDelay)
+	e.AddInt64("groupDelay", p.aggregateRecvDelta-p.aggregateSendDelta)
+	// SSBWE-TODO: need to do this over a longer range
 	capturedTrafficRatio := float64(p.aggregateSendDelta) / float64(p.aggregateRecvDelta)
 	if capturedTrafficRatio != 0 && sendBitRate != 0 {
 		e.AddFloat64("capturedTrafficRatio", capturedTrafficRatio)

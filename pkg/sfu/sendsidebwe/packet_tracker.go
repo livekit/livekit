@@ -186,7 +186,7 @@ func (p *PacketTracker) processFeedbackReport(fbr feedbackReport) (uint16, uint1
 
 	if p.activePacketGroup == nil {
 		// SSBWE-TODO - spread should be a config option
-		p.activePacketGroup = NewPacketGroup(PacketGroupParams{Spread: 500 * time.Millisecond})
+		p.activePacketGroup = NewPacketGroup(PacketGroupParams{Spread: 50 * time.Millisecond}, 0)
 	}
 
 	toInt := func(a bool) int {
@@ -231,7 +231,7 @@ func (p *PacketTracker) processFeedbackReport(fbr feedbackReport) (uint16, uint1
 			if err := p.activePacketGroup.Add(pi); err != nil {
 				p.packetGroups = append(p.packetGroups, p.activePacketGroup)
 				p.logger.Infow("packet group done", "group", p.activePacketGroup) // REMOVE
-				p.activePacketGroup = NewPacketGroup(PacketGroupParams{Spread: 500 * time.Millisecond})
+				p.activePacketGroup = NewPacketGroup(PacketGroupParams{Spread: 50 * time.Millisecond}, p.activePacketGroup.QueuingDelayNext())
 				p.activePacketGroup.Add(pi)
 			}
 		}
