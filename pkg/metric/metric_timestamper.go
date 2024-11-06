@@ -98,18 +98,18 @@ func (m *MetricTimestamper) maybeRunOWDEstimator(batch *livekit.MetricsBatch) in
 	if time.Since(m.lastOWDEstimatorRunAt) < m.params.Config.OneWayDelayEstimatorMinInterval &&
 		m.batchesSinceLastOWDEstimatorRun < m.params.Config.OneWayDelayEstimatorMaxBatch {
 		m.batchesSinceLastOWDEstimatorRun++
-		return m.owdEstimator.EstimatedPropagationDelay().Nanoseconds()
+		return m.owdEstimator.EstimatedPropagationDelay()
 	}
 
 	senderClockTime := batch.GetTimestampMs()
 	if senderClockTime == 0 {
 		m.batchesSinceLastOWDEstimatorRun++
-		return m.owdEstimator.EstimatedPropagationDelay().Nanoseconds()
+		return m.owdEstimator.EstimatedPropagationDelay()
 	}
 
 	m.lastOWDEstimatorRunAt = time.Now()
 	m.batchesSinceLastOWDEstimatorRun = 1
 
-	estimatedOWD, _ := m.owdEstimator.Update(time.UnixMilli(senderClockTime), mono.Now())
-	return estimatedOWD.Nanoseconds()
+	estimatedOWDNs, _ := m.owdEstimator.Update(senderClockTime*1e6, mono.UnixNano())
+	return estimatedOWDNs
 }
