@@ -150,6 +150,7 @@ func (p *PacketTracker) PacketSent(esn uint64, at time.Time, headerSize int, pay
 	pi.payloadSize = uint16(payloadSize)
 	pi.isRTX = isRTX
 	pi.ResetReceiveAndDeltas()
+	p.logger.Infow("packet sent", "packetInfo", pi) // REMOVE
 
 	p.highestSentESN = esn
 }
@@ -185,7 +186,7 @@ func (p *PacketTracker) processFeedbackReport(fbr feedbackReport) (uint16, uint1
 
 	if p.activePacketGroup == nil {
 		// SSBWE-TODO - spread should be a config option
-		p.activePacketGroup = NewPacketGroup(PacketGroupParams{Spread: 50 * time.Millisecond})
+		p.activePacketGroup = NewPacketGroup(PacketGroupParams{Spread: 500 * time.Millisecond})
 	}
 
 	toInt := func(a bool) int {
@@ -230,7 +231,7 @@ func (p *PacketTracker) processFeedbackReport(fbr feedbackReport) (uint16, uint1
 			if err := p.activePacketGroup.Add(pi); err != nil {
 				p.packetGroups = append(p.packetGroups, p.activePacketGroup)
 				p.logger.Infow("packet group done", "group", p.activePacketGroup) // REMOVE
-				p.activePacketGroup = NewPacketGroup(PacketGroupParams{Spread: 50 * time.Millisecond})
+				p.activePacketGroup = NewPacketGroup(PacketGroupParams{Spread: 500 * time.Millisecond})
 				p.activePacketGroup.Add(pi)
 			}
 		}
