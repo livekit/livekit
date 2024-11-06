@@ -495,8 +495,8 @@ func (r *RTPStatsReceiver) checkRTPClockSkewAgainstMediaPathForSenderReport(srDa
 }
 
 func (r *RTPStatsReceiver) updatePropagationDelayAndRecordSenderReport(srData *livekit.RTCPSenderReportState) {
-	senderClockTime := mediatransportutil.NtpTime(srData.NtpTimestamp).Time()
-	estimatedPropagationDelay, stepChange := r.propagationDelayEstimator.Update(senderClockTime, time.Unix(0, srData.At))
+	senderClockTime := mediatransportutil.NtpTime(srData.NtpTimestamp).Time().UnixNano()
+	estimatedPropagationDelay, stepChange := r.propagationDelayEstimator.Update(senderClockTime, srData.At)
 	if stepChange {
 		r.logger.Debugw(
 			"propagation delay step change",
@@ -509,7 +509,7 @@ func (r *RTPStatsReceiver) updatePropagationDelayAndRecordSenderReport(srData *l
 		r.srFirst = srData
 	}
 	// adjust receive time to estimated propagation delay
-	srData.AtAdjusted = senderClockTime.Add(estimatedPropagationDelay).UnixNano()
+	srData.AtAdjusted = senderClockTime + estimatedPropagationDelay
 	r.srNewest = srData
 }
 

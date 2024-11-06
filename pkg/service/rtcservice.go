@@ -524,13 +524,6 @@ func (s *RTCService) startConnection(
 	var cr connectionResult
 	var err error
 
-	if !s.roomAllocator.CreateRoomEnabled() {
-		cr.Room, _, _, err = s.roomAllocator.CreateRoom(ctx, pi.CreateRoom, false)
-		if err != nil {
-			return cr, nil, err
-		}
-	}
-
 	if err := s.roomAllocator.SelectRoomNode(ctx, roomName, ""); err != nil {
 		return cr, nil, err
 	}

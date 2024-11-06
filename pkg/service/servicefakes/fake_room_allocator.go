@@ -29,14 +29,15 @@ type FakeRoomAllocator struct {
 		result3 bool
 		result4 error
 	}
-	CreateRoomEnabledStub        func() bool
-	createRoomEnabledMutex       sync.RWMutex
-	createRoomEnabledArgsForCall []struct {
+	AutoCreateEnabledStub        func(context.Context) bool
+	roomAutoCreateEnabledMutex       sync.RWMutex
+	roomAutoCreateEnabledArgsForCall []struct {
+		arg1 context.Context
 	}
-	createRoomEnabledReturns struct {
+	roomAutoCreateEnabledReturns struct {
 		result1 bool
 	}
-	createRoomEnabledReturnsOnCall map[int]struct {
+	roomAutoCreateEnabledReturnsOnCall map[int]struct {
 		result1 bool
 	}
 	SelectRoomNodeStub        func(context.Context, livekit.RoomName, livekit.NodeID) error
@@ -140,17 +141,18 @@ func (fake *FakeRoomAllocator) CreateRoomReturnsOnCall(i int, result1 *livekit.R
 	}{result1, result2, result3, result4}
 }
 
-func (fake *FakeRoomAllocator) CreateRoomEnabled() bool {
-	fake.createRoomEnabledMutex.Lock()
-	ret, specificReturn := fake.createRoomEnabledReturnsOnCall[len(fake.createRoomEnabledArgsForCall)]
-	fake.createRoomEnabledArgsForCall = append(fake.createRoomEnabledArgsForCall, struct {
-	}{})
-	stub := fake.CreateRoomEnabledStub
-	fakeReturns := fake.createRoomEnabledReturns
-	fake.recordInvocation("CreateRoomEnabled", []interface{}{})
-	fake.createRoomEnabledMutex.Unlock()
+func (fake *FakeRoomAllocator) AutoCreateEnabled(arg1 context.Context) bool {
+	fake.roomAutoCreateEnabledMutex.Lock()
+	ret, specificReturn := fake.roomAutoCreateEnabledReturnsOnCall[len(fake.roomAutoCreateEnabledArgsForCall)]
+	fake.roomAutoCreateEnabledArgsForCall = append(fake.roomAutoCreateEnabledArgsForCall, struct {
+		arg1 context.Context
+	}{arg1})
+	stub := fake.AutoCreateEnabledStub
+	fakeReturns := fake.roomAutoCreateEnabledReturns
+	fake.recordInvocation("AutoCreateEnabled", []interface{}{arg1})
+	fake.roomAutoCreateEnabledMutex.Unlock()
 	if stub != nil {
-		return stub()
+		return stub(arg1)
 	}
 	if specificReturn {
 		return ret.result1
@@ -158,37 +160,44 @@ func (fake *FakeRoomAllocator) CreateRoomEnabled() bool {
 	return fakeReturns.result1
 }
 
-func (fake *FakeRoomAllocator) CreateRoomEnabledCallCount() int {
-	fake.createRoomEnabledMutex.RLock()
-	defer fake.createRoomEnabledMutex.RUnlock()
-	return len(fake.createRoomEnabledArgsForCall)
+func (fake *FakeRoomAllocator) AutoCreateEnabledCallCount() int {
+	fake.roomAutoCreateEnabledMutex.RLock()
+	defer fake.roomAutoCreateEnabledMutex.RUnlock()
+	return len(fake.roomAutoCreateEnabledArgsForCall)
 }
 
-func (fake *FakeRoomAllocator) CreateRoomEnabledCalls(stub func() bool) {
-	fake.createRoomEnabledMutex.Lock()
-	defer fake.createRoomEnabledMutex.Unlock()
-	fake.CreateRoomEnabledStub = stub
+func (fake *FakeRoomAllocator) AutoCreateEnabledCalls(stub func(context.Context) bool) {
+	fake.roomAutoCreateEnabledMutex.Lock()
+	defer fake.roomAutoCreateEnabledMutex.Unlock()
+	fake.AutoCreateEnabledStub = stub
 }
 
-func (fake *FakeRoomAllocator) CreateRoomEnabledReturns(result1 bool) {
-	fake.createRoomEnabledMutex.Lock()
-	defer fake.createRoomEnabledMutex.Unlock()
-	fake.CreateRoomEnabledStub = nil
-	fake.createRoomEnabledReturns = struct {
+func (fake *FakeRoomAllocator) AutoCreateEnabledArgsForCall(i int) context.Context {
+	fake.roomAutoCreateEnabledMutex.RLock()
+	defer fake.roomAutoCreateEnabledMutex.RUnlock()
+	argsForCall := fake.roomAutoCreateEnabledArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeRoomAllocator) AutoCreateEnabledReturns(result1 bool) {
+	fake.roomAutoCreateEnabledMutex.Lock()
+	defer fake.roomAutoCreateEnabledMutex.Unlock()
+	fake.AutoCreateEnabledStub = nil
+	fake.roomAutoCreateEnabledReturns = struct {
 		result1 bool
 	}{result1}
 }
 
-func (fake *FakeRoomAllocator) CreateRoomEnabledReturnsOnCall(i int, result1 bool) {
-	fake.createRoomEnabledMutex.Lock()
-	defer fake.createRoomEnabledMutex.Unlock()
-	fake.CreateRoomEnabledStub = nil
-	if fake.createRoomEnabledReturnsOnCall == nil {
-		fake.createRoomEnabledReturnsOnCall = make(map[int]struct {
+func (fake *FakeRoomAllocator) AutoCreateEnabledReturnsOnCall(i int, result1 bool) {
+	fake.roomAutoCreateEnabledMutex.Lock()
+	defer fake.roomAutoCreateEnabledMutex.Unlock()
+	fake.AutoCreateEnabledStub = nil
+	if fake.roomAutoCreateEnabledReturnsOnCall == nil {
+		fake.roomAutoCreateEnabledReturnsOnCall = make(map[int]struct {
 			result1 bool
 		})
 	}
-	fake.createRoomEnabledReturnsOnCall[i] = struct {
+	fake.roomAutoCreateEnabledReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
 }
@@ -323,8 +332,8 @@ func (fake *FakeRoomAllocator) Invocations() map[string][][]interface{} {
 	defer fake.invocationsMutex.RUnlock()
 	fake.createRoomMutex.RLock()
 	defer fake.createRoomMutex.RUnlock()
-	fake.createRoomEnabledMutex.RLock()
-	defer fake.createRoomEnabledMutex.RUnlock()
+	fake.roomAutoCreateEnabledMutex.RLock()
+	defer fake.roomAutoCreateEnabledMutex.RUnlock()
 	fake.selectRoomNodeMutex.RLock()
 	defer fake.selectRoomNodeMutex.RUnlock()
 	fake.validateCreateRoomMutex.RLock()
