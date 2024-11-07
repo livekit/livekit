@@ -1078,6 +1078,10 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 
 func (s *StreamAllocator) onProbeDone(isNotFailing bool, isGoalReached bool) {
 	highestEstimateInProbe := s.channelObserver.GetHighestEstimate()
+	if s.sendSideBWE != nil {
+		highestEstimateInProbe = s.sendSideBWE.GetEstimatedAvailableChannelCapacity()
+	}
+
 
 	//
 	// Reset estimator at the end of a probe irrespective of probe result to get fresh readings.

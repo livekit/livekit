@@ -340,12 +340,12 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 		)
 	}
 
-	trackPacketGroup := func(pi *packetInfo, piPrev *packetInfo, isLost bool) {
+	trackPacketGroup := func(pi *packetInfo, piPrev *packetInfo) {
 		if pi == nil || piPrev == nil {
 			return
 		}
 
-		if err := c.activePacketGroup.Add(pi, piPrev, isLost); err != nil {
+		if err := c.activePacketGroup.Add(pi, piPrev); err != nil {
 			c.packetGroups = append(c.packetGroups, c.activePacketGroup)
 			c.params.Logger.Infow("packet group done", "group", c.activePacketGroup) // REMOVE
 
@@ -356,7 +356,7 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 				},
 				c.activePacketGroup.PropagatedQueuingDelay(),
 			)
-			c.activePacketGroup.Add(pi, piPrev, isLost)
+			c.activePacketGroup.Add(pi, piPrev)
 		}
 	}
 
@@ -374,10 +374,10 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 					deltaIdx++
 
 					pi, piPrev := c.PacketTracker.RecordPacketReceivedByRemote(sn, recvRefTime)
-					trackPacketGroup(pi, piPrev, false)
+					trackPacketGroup(pi, piPrev)
 				} else {
-					pi, piPrev := c.PacketTracker.RecordPacketReceivedByRemote(sn, 0)
-					trackPacketGroup(pi, piPrev, true)
+					pi := c.PacketTracker.getPacketInfo(sn)
+					piPrev := c.PacketTracker.getPacketInfo(sn - 1)
 					c.params.Logger.Infow("lost packet", "sn", sn, "pisn", pi.sn, "size", pi.payloadSize, "piPrevSn", piPrev.sn, "prevSize", piPrev.payloadSize)	// REMOVE
 				}
 				sn++
@@ -390,10 +390,11 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 					deltaIdx++
 
 					pi, piPrev := c.PacketTracker.RecordPacketReceivedByRemote(sn, recvRefTime)
-					trackPacketGroup(pi, piPrev, false)
+					trackPacketGroup(pi, piPrev)
 				} else {
-					pi, piPrev := c.PacketTracker.RecordPacketReceivedByRemote(sn, 0)
-					trackPacketGroup(pi, piPrev, true)
+					pi := c.PacketTracker.getPacketInfo(sn)
+					piPrev := c.PacketTracker.getPacketInfo(sn - 1)
+					c.params.Logger.Infow("lost packet", "sn", sn, "pisn", pi.sn, "size", pi.payloadSize, "piPrevSn", piPrev.sn, "prevSize", piPrev.payloadSize)	// REMOVE
 				}
 				sn++
 			}

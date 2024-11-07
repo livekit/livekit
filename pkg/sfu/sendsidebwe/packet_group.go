@@ -102,7 +102,6 @@ type PacketGroup struct {
 	maxRecvTime    int64 // for information only
 
 	acked classStat
-	lost  classStat
 
 	aggregateSendDelta int64
 	aggregateRecvDelta int64
@@ -118,7 +117,7 @@ func NewPacketGroup(params PacketGroupParams, queuingDelay int64) *PacketGroup {
 	}
 }
 
-func (p *PacketGroup) Add(pi *packetInfo, piPrev *packetInfo, isLost bool) error {
+func (p *PacketGroup) Add(pi *packetInfo, piPrev *packetInfo) error {
 	if p.isFinalized {
 		return errGroupFinalized
 	}
@@ -137,23 +136,17 @@ func (p *PacketGroup) Add(pi *packetInfo, piPrev *packetInfo, isLost bool) error
 		p.maxSendTime = pi.sendTime
 	}
 
-	if !isLost {
-		if !p.minRecvInitialized {
-			p.minRecvInitialized = true
-			p.minRecvTime = pi.recvTime - pi.recvDelta
-		}
-		if p.maxRecvTime == 0 || pi.recvTime > p.maxRecvTime {
-			p.maxRecvTime = pi.recvTime
-		}
+	if !p.minRecvInitialized {
+		p.minRecvInitialized = true
+		p.minRecvTime = pi.recvTime - pi.recvDelta
+	}
+	if p.maxRecvTime == 0 || pi.recvTime > p.maxRecvTime {
+		p.maxRecvTime = pi.recvTime
 	}
 
 	// in the gap from this packet to prev packet, the packet that was transmitted
 	// is the previous packet, so count size of previous packet here for this delta.
-	if isLost {
-		p.lost.add(int(piPrev.headerSize)+int(piPrev.payloadSize), piPrev.isRTX)
-	} else {
-		p.acked.add(int(piPrev.headerSize)+int(piPrev.payloadSize), piPrev.isRTX)
-	}
+	p.acked.add(int(piPrev.headerSize)+int(piPrev.payloadSize), piPrev.isRTX)
 
 	p.aggregateSendDelta += pi.sendDelta
 	p.aggregateRecvDelta += pi.recvDelta
@@ -215,11 +208,10 @@ func (p *PacketGroup) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddDuration("recvDuration", recvDuration)
 
 	e.AddObject("acked", p.acked)
-	e.AddObject("lost", p.lost)
 
 	sendBitRate := float64(0)
 	if sendDuration != 0 {
-		sendBitRate = float64((p.acked.numBytes()+p.lost.numBytes())*8) / sendDuration.Seconds()
+		sendBitRate = float64(p.acked.numBytes()*8) / sendDuration.Seconds()
 		e.AddFloat64("sendBitRate", sendBitRate)
 	}
 

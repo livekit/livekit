@@ -99,6 +99,9 @@ func (p *PacketTracker) RecordPacketReceivedByRemote(sn uint16, recvTime int64) 
 
 		// skip out-of-order deliveries
 		if (sn - p.highestRecvSN) < (1 << 15) {
+			// SSBWE-TODO: may need to different prev for send and recv,
+			// SSBWE-TODO: i. e. send should be contiguous and account for losses too
+			// SSBWE-TODO: whereas receive should be only acked packets
 			piPrev = p.getPacketInfoExisting(p.highestRecvSN)
 			if piPrev != nil {
 				pi.sendDelta = pi.sendTime - piPrev.sendTime

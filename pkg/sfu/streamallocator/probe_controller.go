@@ -295,6 +295,7 @@ func (p *ProbeController) pollProbe(probeClusterId ProbeClusterId) {
 					"goal", p.probeGoalBps,
 					"current", currentEstimate,
 				)
+				p.goalReachedProbeClusterId = p.probeClusterId
 				p.StopProbe()
 				done = true
 				break
