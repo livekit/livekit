@@ -308,7 +308,7 @@ func (c *CongestionDetector) estimateAvailableChannelCapacity() {
 	totalDuration += dur
 	// captured traffic ratio is a measure of what fraction of sent traffic was delivered
 	totalBytes += 1e6 * float64(nbytes) * ctr / float64(dur)
-	c.params.Logger.Infow("RAJA traffic active", "mst", mst, "dur", dur, "nbytes", nbytes, "ctr", ctr, "rate", 1e6 * float64(nbytes) * ctr / float64(dur), "totalDuration", totalDuration, "totalBytes", totalBytes)	// REMOVE)
+	// REMOVE c.params.Logger.Infow("traffic active", "mst", mst, "dur", dur, "nbytes", nbytes, "ctr", ctr, "rate", 1e6 * float64(nbytes) * ctr / float64(dur), "totalDuration", totalDuration, "totalBytes", totalBytes)	// REMOVE)
 	*/
 
 	threshold := activeMinSendTime - c.params.Config.RateMeasurementWindowDurationMax.Microseconds()
@@ -321,7 +321,7 @@ func (c *CongestionDetector) estimateAvailableChannelCapacity() {
 
 		totalDuration += dur
 		totalBytes += 1e6 * float64(nbytes) * ctr / float64(dur)
-		c.params.Logger.Infow("RAJA traffic not active", "mst", mst, "dur", dur, "nbytes", nbytes, "ctr", ctr, "rate", 1e6 * float64(nbytes) * ctr / float64(dur), "totalDuration", totalDuration, "totalBytes", totalBytes)	// REMOVE)
+		// REMOVE c.params.Logger.Infow("traffic not active", "mst", mst, "dur", dur, "nbytes", nbytes, "ctr", ctr, "rate", 1e6*float64(nbytes)*ctr/float64(dur), "totalDuration", totalDuration, "totalBytes", totalBytes) // REMOVE)
 	}
 
 	if totalDuration >= c.params.Config.RateMeasurementWindowDurationMin.Microseconds() {
@@ -356,9 +356,9 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 		)
 	}
 
-	trackPacketGroup := func(pi *packetInfo, piPrev *packetInfo) {
+	trackPacketGroup := func(pi *packetInfo, piPrev *packetInfo, isLost bool) {
 		if pi != nil && piPrev != nil {
-			if err := c.activePacketGroup.Add(pi, piPrev); err != nil {
+			if err := c.activePacketGroup.Add(pi, piPrev, isLost); err != nil {
 				c.packetGroups = append(c.packetGroups, c.activePacketGroup)
 				c.params.Logger.Infow("packet group done", "group", c.activePacketGroup) // REMOVE
 
@@ -369,7 +369,7 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 					},
 					c.activePacketGroup.PropagatedQueuingDelay(),
 				)
-				c.activePacketGroup.Add(pi, piPrev)
+				c.activePacketGroup.Add(pi, piPrev, isLost)
 			}
 		}
 
@@ -410,7 +410,10 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 					deltaIdx++
 
 					pi, piPrev := c.PacketTracker.RecordPacketReceivedByRemote(sn, recvRefTime)
-					trackPacketGroup(pi, piPrev)
+					trackPacketGroup(pi, piPrev, false)
+				} else {
+					pi, piPrev := c.PacketTracker.RecordPacketReceivedByRemote(sn, 0)
+					trackPacketGroup(pi, piPrev, true)
 				}
 				sn++
 			}
@@ -422,7 +425,10 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 					deltaIdx++
 
 					pi, piPrev := c.PacketTracker.RecordPacketReceivedByRemote(sn, recvRefTime)
-					trackPacketGroup(pi, piPrev)
+					trackPacketGroup(pi, piPrev, false)
+				} else {
+					pi, piPrev := c.PacketTracker.RecordPacketReceivedByRemote(sn, 0)
+					trackPacketGroup(pi, piPrev, true)
 				}
 				sn++
 			}

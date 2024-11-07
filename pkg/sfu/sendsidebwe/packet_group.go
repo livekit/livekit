@@ -28,6 +28,71 @@ var (
 	}
 )
 
+// -------------------------------------------------------------
+
+type stat struct {
+	numPackets int
+	numBytes   int
+}
+
+func (s stat) add(size int) {
+	s.numPackets++
+	s.numBytes += size
+}
+
+func (s stat) getNumPackets() int {
+	return s.numPackets
+}
+
+func (s stat) getNumBytes() int {
+	return s.numBytes
+}
+
+func (s stat) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	e.AddInt("numPackets", s.numPackets)
+	e.AddInt("numBytes", s.numBytes)
+	return nil
+}
+
+// -------------------------------------------------------------
+
+type classStat struct {
+	primary stat
+	rtx     stat
+}
+
+func (c classStat) add(size int, isRTX bool) {
+	if isRTX {
+		c.rtx.add(size)
+	} else {
+		c.primary.add(size)
+	}
+}
+
+func (c classStat) numPacketsPrimary() int {
+	return c.primary.getNumPackets()
+}
+
+func (c classStat) numPacketsRTX() int {
+	return c.rtx.getNumPackets()
+}
+
+func (c classStat) numPackets() int {
+	return c.primary.getNumPackets() + c.rtx.getNumPackets()
+}
+
+func (c classStat) numBytes() int {
+	return c.primary.getNumBytes() + c.rtx.getNumBytes()
+}
+
+func (c classStat) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	e.AddObject("primary", c.primary)
+	e.AddObject("rtx", c.rtx)
+	return nil
+}
+
+// -------------------------------------------------------------
+
 type PacketGroupParams struct {
 	Config PacketGroupConfig
 	Logger logger.Logger
@@ -39,14 +104,11 @@ type PacketGroup struct {
 	minInitialized bool
 	minSendTime    int64
 	maxSendTime    int64
-	minRecvTime    int64 // SSBWE-TODO: REMOVE
-	maxRecvTime    int64 // SSBWE-TODO: REMOVE
+	minRecvTime    int64 // for information only
+	maxRecvTime    int64 // for information only
 
-	numPacketsPrimary      int
-	numBytesPrimary int
-
-	numPacketsRTX      int
-	numBytesRTX     int
+	acked classStat
+	lost  classStat
 
 	aggregateSendDelta int64
 	aggregateRecvDelta int64
@@ -62,26 +124,17 @@ func NewPacketGroup(params PacketGroupParams, queuingDelay int64) *PacketGroup {
 	}
 }
 
-// SSBWE-TODO - can get a really old packet (out-of-order delivery to the remote)  that could spread things a bunch, how to deal with it?
-// SSBWE-TODO - should record lost packets also as that should be included in send side bitrate
-func (p *PacketGroup) Add(pi *packetInfo, piPrev *packetInfo) error {
+func (p *PacketGroup) Add(pi *packetInfo, piPrev *packetInfo, isLost bool) error {
 	if p.isFinalized {
 		return errGroupFinalized
 	}
 
-	// sendDelta is delta from this packet's sendTime to the previous acked packet's sendTime,
-	// so mark start of window as the sendTime of previous packet.
-	/* SSBWE-TODO: is there need to update min after setting initially?
-	prevSendTime := pi.sendTime - pi.sendDelta
-	if p.minSendTime == 0 || prevSendTime < p.minSendTime {
-		p.minSendTime = prevSendTime
-	}
-	*/
 	// start window including the gap from this packet to previous packet
 	// which would have been in previous group to ensure continuity.
 	// although, pi.sendTime - pi.sendDelta should be equal to piPrev.sendTime,
 	// it is written as an equation below to emphasize that inter-group gap is
 	// covered to maintain continuity.
+	// SSBWE-TODO: check if older packets can get in here, i. e. packets before min
 	if !p.minInitialized {
 		p.minInitialized = true
 		p.minSendTime = pi.sendTime - pi.sendDelta
@@ -94,20 +147,18 @@ func (p *PacketGroup) Add(pi *packetInfo, piPrev *packetInfo) error {
 		p.maxRecvTime = pi.recvTime
 	}
 
-	// in the gap from this packet to prev packet, the previous packet
-	// is the one that was transimitted, so count size of previous packet here.
-	if !piPrev.isRTX {
-		p.numPacketsPrimary++
-		p.numBytesPrimary += int(piPrev.headerSize) + int(piPrev.payloadSize)
+	// in the gap from this packet to prev packet, the packet that was transmitted
+	// is the previous packet, so count size of previous packet here.
+	if isLost {
+		p.acked.add(int(piPrev.headerSize)+int(piPrev.payloadSize), piPrev.isRTX)
 	} else {
-		p.numPacketsRTX++
-		p.numBytesRTX += int(piPrev.headerSize) + int(piPrev.payloadSize)
+		p.lost.add(int(piPrev.headerSize)+int(piPrev.payloadSize), piPrev.isRTX)
 	}
 
 	p.aggregateSendDelta += pi.sendDelta
 	p.aggregateRecvDelta += pi.recvDelta
 
-	if (p.numPacketsPrimary + p.numPacketsRTX) == p.params.Config.MinPackets || (pi.sendTime-p.minSendTime) > p.params.Config.MaxWindowDuration.Microseconds() {
+	if p.acked.numPackets() == p.params.Config.MinPackets || (pi.sendTime-p.minSendTime) > p.params.Config.MaxWindowDuration.Microseconds() {
 		p.isFinalized = true
 	}
 	return nil
@@ -143,7 +194,7 @@ func (p *PacketGroup) Traffic() (int64, int64, int, float64) {
 		capturedTrafficRatio = float64(p.aggregateSendDelta) / float64(p.aggregateRecvDelta)
 	}
 
-	return p.minSendTime, p.maxSendTime - p.minSendTime, p.numBytesPrimary + p.numBytesRTX, min(1.0, capturedTrafficRatio)
+	return p.minSendTime, p.maxSendTime - p.minSendTime, p.acked.numBytes() + p.lost.numBytes(), min(1.0, capturedTrafficRatio)
 }
 
 func (p *PacketGroup) MarshalLogObject(e zapcore.ObjectEncoder) error {
@@ -161,27 +212,18 @@ func (p *PacketGroup) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	recvDuration := time.Duration((p.maxRecvTime - p.minRecvTime) * 1000)
 	e.AddDuration("recvDuration", recvDuration)
 
-	e.AddInt("numPacketsPrimary", p.numPacketsPrimary)
-	if sendDuration != 0 {
-		e.AddFloat64("packetRatePrimary", float64(p.numPacketsPrimary)/sendDuration.Seconds())
-	}
-	e.AddInt("numBytesPrimary", p.numBytesPrimary)
-
-	e.AddInt("numPacketsRTX", p.numPacketsRTX)
-	if sendDuration != 0 {
-		e.AddFloat64("packetRateRTX", float64(p.numPacketsRTX)/sendDuration.Seconds())
-	}
-	e.AddInt("numBytesRTX", p.numBytesRTX)
+	e.AddObject("acked", p.acked)
+	e.AddObject("lost", p.lost)
 
 	sendBitRate := float64(0)
 	if sendDuration != 0 {
-		sendBitRate = float64((p.numBytesPrimary+p.numBytesRTX)*8) / sendDuration.Seconds()
+		sendBitRate = float64((p.acked.numBytes()+p.lost.numBytes())*8) / sendDuration.Seconds()
 		e.AddFloat64("sendBitRate", sendBitRate)
 	}
 
 	recvBitRate := float64(0)
 	if recvDuration != 0 {
-		recvBitRate = float64((p.numBytesPrimary+p.numBytesRTX)*8) / recvDuration.Seconds()
+		recvBitRate = float64(p.acked.numBytes()*8) / recvDuration.Seconds()
 		e.AddFloat64("recvBitRate", recvBitRate)
 	}
 

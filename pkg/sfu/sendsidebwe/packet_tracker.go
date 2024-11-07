@@ -89,32 +89,31 @@ func (p *PacketTracker) RecordPacketReceivedByRemote(sn uint16, recvTime int64) 
 		return
 	}
 
-	if p.baseRecvTime == 0 {
-		p.baseRecvTime = recvTime
-		p.highestRecvSN = sn
-	}
-
-	pi.recvTime = recvTime - p.baseRecvTime
-
-	// skip out-of-order deliveries
-	if (sn - p.highestRecvSN) < (1 << 15) {
-		piPrev = p.getPacketInfoExisting(p.highestRecvSN)
-		if piPrev != nil {
-			pi.sendDelta = pi.sendTime - piPrev.sendTime
-			pi.recvDelta = pi.recvTime - piPrev.recvTime
-			pi.deltaOfDelta = pi.recvDelta - pi.sendDelta
-			p.params.Logger.Infow("packet received", "packetInfo", pi, "prev", piPrev) // REMOVE
-			/* SSBWE-TODO - just make this comment and don't squash, such small differences should be accommodated
-			in congestion detection
-			if pi.deltaOfDelta < 0 && pi.deltaOfDelta > -rtcp.TypeTCCDeltaScaleFactor {
-				// TWCC feedback has a resolution of 250 us inter packet interval,
-				// squash small send intervals getting coalesced on the receiver side.
-				// SSBWE-TODO: figure out proper adjustment for measurement resolution, this squelching is not always correct
-				pi.deltaOfDelta = 0
-			}
-			*/
+	if recvTime != 0 {
+		if p.baseRecvTime == 0 {
+			p.baseRecvTime = recvTime
+			p.highestRecvSN = sn
 		}
-		p.highestRecvSN = sn
+
+		pi.recvTime = recvTime - p.baseRecvTime
+
+		// skip out-of-order deliveries
+		if (sn - p.highestRecvSN) < (1 << 15) {
+			piPrev = p.getPacketInfoExisting(p.highestRecvSN)
+			if piPrev != nil {
+				pi.sendDelta = pi.sendTime - piPrev.sendTime
+				pi.recvDelta = pi.recvTime - piPrev.recvTime
+				// REMOVE p.params.Logger.Infow("packet received", "packetInfo", pi, "prev", piPrev) // REMOVE
+				// NOTE:
+				// TWCC feedback has a resolution of 250 us inter packet interval,
+				// so small send intervals could get coalesced on receiver side
+				// and make it look like congestion relieving (i. e. receive gap < send gap),
+				// but using packet grouping and applying some thresholding, the effect is alleviated
+			}
+			p.highestRecvSN = sn
+		}
+	} else {
+		piPrev = p.getPacketInfoExisting(sn - 1)
 	}
 	return
 }
