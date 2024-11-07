@@ -16,10 +16,9 @@ package service
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"time"
 
+	"github.com/twitchtv/twirp"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/livekit/protocol/livekit"
@@ -70,7 +69,7 @@ func (s *SIPService) CreateSIPTrunk(ctx context.Context, req *livekit.CreateSIPT
 		return nil, ErrSIPNotConnected
 	}
 	if len(req.InboundNumbersRegex) != 0 {
-		return nil, fmt.Errorf("Trunks with InboundNumbersRegex are deprecated. Use InboundNumbers instead.")
+		return nil, twirp.NewError(twirp.InvalidArgument, "Trunks with InboundNumbersRegex are deprecated. Use InboundNumbers instead.")
 	}
 
 	// Keep ID empty, so that validation can print "<new>" instead of a non-existent ID in the error.
@@ -112,12 +111,13 @@ func (s *SIPService) CreateSIPInboundTrunk(ctx context.Context, req *livekit.Cre
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
 	}
+	if err := req.Validate(); err != nil {
+		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
+	}
 
 	info := req.Trunk
-	if info == nil {
-		return nil, errors.New("trunk info is required")
-	} else if info.SipTrunkId != "" {
-		return nil, errors.New("trunk ID must be empty")
+	if info.SipTrunkId != "" {
+		return nil, twirp.NewError(twirp.InvalidArgument, "trunk ID must be empty")
 	}
 	AppendLogFields(ctx, "trunk", logger.Proto(req.Trunk))
 
@@ -148,11 +148,13 @@ func (s *SIPService) CreateSIPOutboundTrunk(ctx context.Context, req *livekit.Cr
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
 	}
+	if err := req.Validate(); err != nil {
+		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
+	}
+
 	info := req.Trunk
-	if info == nil {
-		return nil, errors.New("trunk info is required")
-	} else if info.SipTrunkId != "" {
-		return nil, errors.New("trunk ID must be empty")
+	if info.SipTrunkId != "" {
+		return nil, twirp.NewError(twirp.InvalidArgument, "trunk ID must be empty")
 	}
 	AppendLogFields(ctx, "trunk", logger.Proto(req.Trunk))
 
@@ -171,6 +173,10 @@ func (s *SIPService) GetSIPInboundTrunk(ctx context.Context, req *livekit.GetSIP
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
 	}
+	if req.SipTrunkId == "" {
+		return nil, twirp.NewError(twirp.InvalidArgument, "trunk ID is required")
+	}
+	AppendLogFields(ctx, "trunkID", req.SipTrunkId)
 
 	trunk, err := s.store.LoadSIPInboundTrunk(ctx, req.SipTrunkId)
 	if err != nil {
@@ -186,6 +192,9 @@ func (s *SIPService) GetSIPOutboundTrunk(ctx context.Context, req *livekit.GetSI
 	}
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
+	}
+	if req.SipTrunkId == "" {
+		return nil, twirp.NewError(twirp.InvalidArgument, "trunk ID is required")
 	}
 	AppendLogFields(ctx, "trunkID", req.SipTrunkId)
 
@@ -253,6 +262,9 @@ func (s *SIPService) DeleteSIPTrunk(ctx context.Context, req *livekit.DeleteSIPT
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
 	}
+	if req.SipTrunkId == "" {
+		return nil, twirp.NewError(twirp.InvalidArgument, "trunk ID is required")
+	}
 
 	AppendLogFields(ctx, "trunkID", req.SipTrunkId)
 	if err := s.store.DeleteSIPTrunk(ctx, req.SipTrunkId); err != nil {
@@ -268,6 +280,9 @@ func (s *SIPService) CreateSIPDispatchRule(ctx context.Context, req *livekit.Cre
 	}
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
+	}
+	if err := req.Validate(); err != nil {
+		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
 	}
 
 	AppendLogFields(ctx,
@@ -325,6 +340,9 @@ func (s *SIPService) DeleteSIPDispatchRule(ctx context.Context, req *livekit.Del
 	}
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
+	}
+	if req.SipDispatchRuleId == "" {
+		return nil, twirp.NewError(twirp.InvalidArgument, "dispatch rule ID is required")
 	}
 
 	info, err := s.store.LoadSIPDispatchRule(ctx, req.SipDispatchRuleId)
