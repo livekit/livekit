@@ -94,12 +94,12 @@ type PacketGroup struct {
 	params PacketGroupParams
 
 	minSendInitialized bool
-	minSendTime    int64
-	maxSendTime    int64
+	minSendTime        int64
+	maxSendTime        int64
 
-	minRecvInitialized bool // for information only
-	minRecvTime    int64 // for information only
-	maxRecvTime    int64 // for information only
+	minRecvInitialized bool  // for information only
+	minRecvTime        int64 // for information only
+	maxRecvTime        int64 // for information only
 
 	acked classStat
 
