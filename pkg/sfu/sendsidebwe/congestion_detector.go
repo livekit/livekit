@@ -35,26 +35,30 @@ var (
 // -------------------------------------------------------------------------------
 
 type CongestionDetectorConfig struct {
-	PacketGroup          PacketGroupConfig      `yaml:"packet_group,omitempty"`
-	PacketGroupMaxAge    time.Duration          `yaml:"packet_group_max_age,omitempty"`
-	JQRMinDelay          time.Duration          `yaml:"jqr_min_delay,omitempty"`
-	DQRMaxDelay          time.Duration          `yaml:"dqr_max_delay,omitempty"`
-	EarlyWarning         CongestionSignalConfig `yaml:"early_warning,omitempty"`
-	EarlyWarningHangover time.Duration          `yaml:"early_warning_hangover,omitempty"`
-	Congested            CongestionSignalConfig `yaml:"congested,omitempty"`
-	CongestedHangover    time.Duration          `yaml:"congested_hangover,omitempty"`
+	PacketGroup                      PacketGroupConfig      `yaml:"packet_group,omitempty"`
+	PacketGroupMaxAge                time.Duration          `yaml:"packet_group_max_age,omitempty"`
+	JQRMinDelay                      time.Duration          `yaml:"jqr_min_delay,omitempty"`
+	DQRMaxDelay                      time.Duration          `yaml:"dqr_max_delay,omitempty"`
+	EarlyWarning                     CongestionSignalConfig `yaml:"early_warning,omitempty"`
+	EarlyWarningHangover             time.Duration          `yaml:"early_warning_hangover,omitempty"`
+	Congested                        CongestionSignalConfig `yaml:"congested,omitempty"`
+	CongestedHangover                time.Duration          `yaml:"congested_hangover,omitempty"`
+	RateMeasurementWindowDurationMin time.Duration          `yaml:"rate_measurement_window_duration_min,omitempty"`
+	RateMeasurementWindowDurationMax time.Duration          `yaml:"rate_measurement_window_duration_max,omitempty"`
 }
 
 var (
 	DefaultCongestionDetectorConfig = CongestionDetectorConfig{
-		PacketGroup:          DefaultPacketGroupConfig,
-		PacketGroupMaxAge:    30 * time.Second,
-		JQRMinDelay:          15 * time.Millisecond,
-		DQRMaxDelay:          5 * time.Millisecond,
-		EarlyWarning:         DefaultEarlyWarningCongestionSignalConfig,
-		EarlyWarningHangover: 500 * time.Millisecond,
-		Congested:            DefaultCongestedCongestionSignalConfig,
-		CongestedHangover:    3 * time.Second,
+		PacketGroup:                      DefaultPacketGroupConfig,
+		PacketGroupMaxAge:                30 * time.Second,
+		JQRMinDelay:                      15 * time.Millisecond,
+		DQRMaxDelay:                      5 * time.Millisecond,
+		EarlyWarning:                     DefaultEarlyWarningCongestionSignalConfig,
+		EarlyWarningHangover:             500 * time.Millisecond,
+		Congested:                        DefaultCongestedCongestionSignalConfig,
+		CongestedHangover:                3 * time.Second,
+		RateMeasurementWindowDurationMin: 800 * time.Millisecond,
+		RateMeasurementWindowDurationMax: 2 * time.Second,
 	}
 )
 
@@ -85,22 +89,21 @@ type CongestionDetector struct {
 	wake chan struct{}
 	stop core.Fuse
 
-	// SSBWE-TODO: these are not implemented yet
-	estimatedChannelCapacity  int64
-	congestionState           CongestionState
-	congestionStateSwitchedAt time.Time
-	onCongestionStateChange   func(congestionState CongestionState, channelCapacity int64)
+	estimatedAvailableChannelCapacity int64
+	congestionState                   CongestionState
+	congestionStateSwitchedAt         time.Time
+	onCongestionStateChange           func(congestionState CongestionState, estimatedAvailableChannelCapacity int64)
 
 	debugFile *os.File
 }
 
 func NewCongestionDetector(params CongestionDetectorParams) *CongestionDetector {
 	c := &CongestionDetector{
-		params:                   params,
-		PacketTracker:            NewPacketTracker(PacketTrackerParams{Logger: params.Logger}),
-		twccFeedback:             NewTWCCFeedback(TWCCFeedbackParams{Logger: params.Logger}),
-		wake:                     make(chan struct{}, 1),
-		estimatedChannelCapacity: 100_000_000,
+		params:                            params,
+		PacketTracker:                     NewPacketTracker(PacketTrackerParams{Logger: params.Logger}),
+		twccFeedback:                      NewTWCCFeedback(TWCCFeedbackParams{Logger: params.Logger}),
+		wake:                              make(chan struct{}, 1),
+		estimatedAvailableChannelCapacity: 100_000_000,
 	}
 
 	c.feedbackReports.SetMinCapacity(3)
@@ -120,7 +123,7 @@ func (c *CongestionDetector) Stop() {
 	})
 }
 
-func (c *CongestionDetector) OnCongestionStateChange(f func(congestionState CongestionState, channelCapacity int64)) {
+func (c *CongestionDetector) OnCongestionStateChange(f func(congestionState CongestionState, estimatedAvailableChannelCapacity int64)) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -136,17 +139,28 @@ func (c *CongestionDetector) GetCongestionState() CongestionState {
 
 func (c *CongestionDetector) updateCongestionState(state CongestionState) {
 	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	c.params.Logger.Infow("congestion state change", "from", c.congestionState, "to", state)
+	c.params.Logger.Infow(
+		"congestion state change",
+		"from", c.congestionState,
+		"to", state,
+		"estimatedAvailableChannelCapacity", c.estimatedAvailableChannelCapacity,
+	)
 	c.congestionState = state
+
+	onCongestionStateChange := c.onCongestionStateChange
+	estimatedAvailableChannelCapacity := c.estimatedAvailableChannelCapacity
+	c.lock.Unlock()
+
+	if onCongestionStateChange != nil {
+		onCongestionStateChange(state, estimatedAvailableChannelCapacity)
+	}
 }
 
-func (c *CongestionDetector) GetEstimatedChannelCapacity() int64 {
+func (c *CongestionDetector) GetEstimatedAvailableChannelCapacity() int64 {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 
-	return c.estimatedChannelCapacity
+	return c.estimatedAvailableChannelCapacity
 }
 
 func (c *CongestionDetector) HandleRTCP(report *rtcp.TransportLayerCC) {
@@ -268,9 +282,45 @@ func (c *CongestionDetector) congestionDetectionStateMachine() {
 		}
 	}
 
+	c.estimateAvailableChannelCapacity()
+
 	if newState != state {
 		c.congestionStateSwitchedAt = mono.Now()
 		c.updateCongestionState(newState)
+	}
+}
+
+func (c *CongestionDetector) estimateAvailableChannelCapacity() {
+	if c.activePacketGroup == nil {
+		return
+	}
+
+	activeMinSendTime, ok := c.activePacketGroup.MinSendTime()
+	if !ok {
+		return
+	}
+
+	totalDuration := int64(0)
+	totalBytes := float64(0.0)
+	threshold := activeMinSendTime - c.params.Config.RateMeasurementWindowDurationMax.Microseconds()
+	for _, pg := range c.packetGroups {
+		if mst, dur, nbytes, ctr, ok := pg.Traffic(); ok {
+			if mst < threshold {
+				break
+			}
+
+			totalDuration += dur
+			// captured traffic ratio is a measure of what fraction of sent traffic was delivered
+			totalBytes += float64(dur) * float64(nbytes) * ctr / 1e6
+		}
+	}
+
+	if totalDuration >= c.params.Config.RateMeasurementWindowDurationMin.Microseconds() {
+		c.lock.Lock()
+		c.estimatedAvailableChannelCapacity = int64(totalBytes * 1e6 / float64(totalDuration))
+		c.lock.Unlock()
+	} else {
+		c.params.Logger.Infow("not enough data to estimate available channel capacity", "totalDuration", totalDuration)
 	}
 }
 
@@ -377,11 +427,7 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 	}
 
 	c.prunePacketGroups()
-
-	// SSBWE-TODO:
-	//  - run congestion detection
-	//  - run bandwidth estimation
-	//  - do callbacks as necessary
+	c.congestionDetectionStateMachine()
 }
 
 func (c *CongestionDetector) worker() {

@@ -426,16 +426,16 @@ func (s *StreamAllocator) onTargetBitrateChange(bitrate int) {
 
 // called when congestion state changes (send side bandwidth estimation)
 type congestionStateChangeData struct {
-	congestionState          sendsidebwe.CongestionState
-	estimatedChannelCapacity int64
+	congestionState                   sendsidebwe.CongestionState
+	estimatedAvailableChannelCapacity int64
 }
 
-func (s *StreamAllocator) onCongestionStateChange(congestionState sendsidebwe.CongestionState, estimatedChannelCapacity int64) {
+func (s *StreamAllocator) onCongestionStateChange(congestionState sendsidebwe.CongestionState, estimatedAvailableChannelCapacity int64) {
 	s.postEvent(Event{
 		Signal: streamAllocatorSignalCongestionStateChange,
 		Data: congestionStateChangeData{
-			congestionState:          congestionState,
-			estimatedChannelCapacity: estimatedChannelCapacity,
+			congestionState:                   congestionState,
+			estimatedAvailableChannelCapacity: estimatedAvailableChannelCapacity,
 		},
 	})
 }
@@ -794,10 +794,10 @@ func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
 		s.params.Logger.Infow(
 			"stream allocator: channel congestion detected, updating channel capacity",
 			"old(bps)", s.committedChannelCapacity,
-			"new(bps)", cscd.estimatedChannelCapacity,
+			"new(bps)", cscd.estimatedAvailableChannelCapacity,
 			"expectedUsage(bps)", s.getExpectedBandwidthUsage(),
 		)
-		s.committedChannelCapacity = cscd.estimatedChannelCapacity
+		s.committedChannelCapacity = cscd.estimatedAvailableChannelCapacity
 
 		s.allocateAllTracks()
 	}

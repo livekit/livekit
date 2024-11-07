@@ -252,7 +252,7 @@ func (p *ProbeController) pollProbe(probeClusterId ProbeClusterId) {
 		return
 	}
 
-	startingEstimate := p.sendSideBWE.GetEstimatedChannelCapacity()
+	startingEstimate := p.sendSideBWE.GetEstimatedAvailableChannelCapacity()
 	p.lock.RUnlock()
 
 	go func() {
@@ -265,7 +265,7 @@ func (p *ProbeController) pollProbe(probeClusterId ProbeClusterId) {
 
 			done := false
 			congestionState := p.sendSideBWE.GetCongestionState()
-			currentEstimate := p.sendSideBWE.GetEstimatedChannelCapacity()
+			currentEstimate := p.sendSideBWE.GetEstimatedAvailableChannelCapacity()
 			switch {
 			case currentEstimate <= startingEstimate && time.Since(p.lastProbeStartTime) > p.params.Config.TrendWait:
 				//
@@ -280,7 +280,11 @@ func (p *ProbeController) pollProbe(probeClusterId ProbeClusterId) {
 
 			case congestionState == sendsidebwe.CongestionStateCongested || congestionState == sendsidebwe.CongestionStateEarlyWarning:
 				// stop immediately if the probe is congesting channel more
-				p.params.Logger.Infow("stream allocator: probe: aborting, channel is congesting", "cluster", probeClusterId)
+				p.params.Logger.Infow(
+					"stream allocator: probe: aborting, channel is congesting",
+					"cluster", probeClusterId,
+					"congestionState", congestionState,
+				)
 				p.abortProbeLocked()
 				done = true
 				break

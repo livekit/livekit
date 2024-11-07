@@ -160,6 +160,19 @@ func (p *PacketGroup) SendDuration() int64 {
 	return p.maxSendTime - p.minSendTime
 }
 
+func (p *PacketGroup) Traffic() (int64, int64, int, float64, bool) {
+	if !p.isFinalized {
+		return 0, 0, 0, 0.0, false
+	}
+
+	capturedTrafficRatio := float64(0.0)
+	if p.aggregateRecvDelta != 0 {
+		capturedTrafficRatio = float64(p.aggregateSendDelta) / float64(p.aggregateRecvDelta)
+	}
+
+	return p.minSendTime, p.maxSendTime - p.minSendTime, p.numBytesPrimary + p.numBytesRTX, min(1.0, capturedTrafficRatio), true
+}
+
 func (p *PacketGroup) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	if p == nil {
 		return nil
@@ -198,11 +211,12 @@ func (p *PacketGroup) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddInt64("aggregateRecvDelta", p.aggregateRecvDelta)
 	e.AddInt64("queuingDelay", p.queuingDelay)
 	e.AddInt64("groupDelay", p.aggregateRecvDelta-p.aggregateSendDelta)
-	// SSBWE-TODO: need to do this over a longer range
-	capturedTrafficRatio := float64(p.aggregateSendDelta) / float64(p.aggregateRecvDelta)
-	if capturedTrafficRatio != 0 && sendBitRate != 0 {
-		e.AddFloat64("capturedTrafficRatio", capturedTrafficRatio)
-		e.AddFloat64("availableBandwidth", min(1.0, capturedTrafficRatio)*sendBitRate)
+	if p.aggregateRecvDelta != 0 {
+		capturedTrafficRatio := float64(p.aggregateSendDelta) / float64(p.aggregateRecvDelta)
+		if capturedTrafficRatio != 0 && sendBitRate != 0 {
+			e.AddFloat64("capturedTrafficRatio", capturedTrafficRatio)
+			e.AddFloat64("receiveBitrate", min(1.0, capturedTrafficRatio)*sendBitRate)
+		}
 	}
 
 	e.AddBool("isFinalized", p.isFinalized)
