@@ -1,8 +1,6 @@
 package sendsidebwe
 
 import (
-	"fmt"
-	"os"
 	"sync"
 	"time"
 
@@ -93,8 +91,6 @@ type CongestionDetector struct {
 	congestionState                   CongestionState
 	congestionStateSwitchedAt         time.Time
 	onCongestionStateChange           func(congestionState CongestionState, estimatedAvailableChannelCapacity int64)
-
-	debugFile *os.File
 }
 
 func NewCongestionDetector(params CongestionDetectorParams) *CongestionDetector {
@@ -108,8 +104,6 @@ func NewCongestionDetector(params CongestionDetectorParams) *CongestionDetector 
 
 	c.feedbackReports.SetMinCapacity(3)
 
-	c.debugFile, _ = os.CreateTemp("/tmp", "twcc")
-
 	go c.worker()
 	return c
 }
@@ -117,9 +111,6 @@ func NewCongestionDetector(params CongestionDetectorParams) *CongestionDetector 
 func (c *CongestionDetector) Stop() {
 	c.stop.Once(func() {
 		close(c.wake)
-		if c.debugFile != nil {
-			c.debugFile.Close()
-		}
 	})
 }
 
@@ -284,6 +275,7 @@ func (c *CongestionDetector) congestionDetectionStateMachine() {
 
 	c.estimateAvailableChannelCapacity()
 
+	// update after running the above estimate as state change callback includes the estimated available channel capacity
 	if newState != state {
 		c.congestionStateSwitchedAt = mono.Now()
 		c.updateCongestionState(newState)
@@ -307,8 +299,7 @@ func (c *CongestionDetector) estimateAvailableChannelCapacity() {
 	mst, dur, nbytes, ctr := c.activePacketGroup.Traffic()
 	totalDuration += dur
 	// captured traffic ratio is a measure of what fraction of sent traffic was delivered
-	totalBytes += 1e6 * float64(nbytes) * ctr / float64(dur)
-	// REMOVE c.params.Logger.Infow("traffic active", "mst", mst, "dur", dur, "nbytes", nbytes, "ctr", ctr, "rate", 1e6 * float64(nbytes) * ctr / float64(dur), "totalDuration", totalDuration, "totalBytes", totalBytes)	// REMOVE)
+	totalBytes += float64(nbytes) * ctr
 	*/
 
 	threshold := activeMinSendTime - c.params.Config.RateMeasurementWindowDurationMax.Microseconds()
@@ -320,8 +311,8 @@ func (c *CongestionDetector) estimateAvailableChannelCapacity() {
 		}
 
 		totalDuration += dur
-		totalBytes += 1e6 * float64(nbytes) * ctr / float64(dur)
-		// REMOVE c.params.Logger.Infow("traffic not active", "mst", mst, "dur", dur, "nbytes", nbytes, "ctr", ctr, "rate", 1e6*float64(nbytes)*ctr/float64(dur), "totalDuration", totalDuration, "totalBytes", totalBytes) // REMOVE)
+		// captured traffic ratio is a measure of what fraction of sent traffic was delivered
+		totalBytes += float64(nbytes) * ctr
 	}
 
 	if totalDuration >= c.params.Config.RateMeasurementWindowDurationMin.Microseconds() {
@@ -339,13 +330,6 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 		return
 	}
 
-	now := mono.UnixMicro()
-	if c.debugFile != nil {
-		toWrite := fmt.Sprintf("REPORT: start: %d", now)
-		c.debugFile.WriteString(toWrite)
-		c.debugFile.WriteString("\n")
-	}
-
 	if c.activePacketGroup == nil {
 		c.activePacketGroup = NewPacketGroup(
 			PacketGroupParams{
@@ -357,42 +341,22 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 	}
 
 	trackPacketGroup := func(pi *packetInfo, piPrev *packetInfo, isLost bool) {
-		if pi != nil && piPrev != nil {
-			if err := c.activePacketGroup.Add(pi, piPrev, isLost); err != nil {
-				c.packetGroups = append(c.packetGroups, c.activePacketGroup)
-				c.params.Logger.Infow("packet group done", "group", c.activePacketGroup) // REMOVE
-
-				c.activePacketGroup = NewPacketGroup(
-					PacketGroupParams{
-						Config: c.params.Config.PacketGroup,
-						Logger: c.params.Logger,
-					},
-					c.activePacketGroup.PropagatedQueuingDelay(),
-				)
-				c.activePacketGroup.Add(pi, piPrev, isLost)
-			}
+		if pi == nil || piPrev == nil {
+			return
 		}
 
-		if c.debugFile != nil && pi != nil {
-			toInt := func(a bool) int {
-				if a {
-					return 1
-				}
+		if err := c.activePacketGroup.Add(pi, piPrev, isLost); err != nil {
+			c.packetGroups = append(c.packetGroups, c.activePacketGroup)
+			c.params.Logger.Infow("packet group done", "group", c.activePacketGroup) // REMOVE
 
-				return 0
-			}
-
-			toWrite := fmt.Sprintf(
-				"PACKET: sn: %d, headerSize: %d, payloadSize: %d, isRTX: %d, sendTime: %d, recvTime: %d",
-				pi.sn,
-				pi.headerSize,
-				pi.payloadSize,
-				toInt(pi.isRTX),
-				pi.sendTime,
-				pi.recvTime,
+			c.activePacketGroup = NewPacketGroup(
+				PacketGroupParams{
+					Config: c.params.Config.PacketGroup,
+					Logger: c.params.Logger,
+				},
+				c.activePacketGroup.PropagatedQueuingDelay(),
 			)
-			c.debugFile.WriteString(toWrite)
-			c.debugFile.WriteString("\n")
+			c.activePacketGroup.Add(pi, piPrev, isLost)
 		}
 	}
 
@@ -414,6 +378,7 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 				} else {
 					pi, piPrev := c.PacketTracker.RecordPacketReceivedByRemote(sn, 0)
 					trackPacketGroup(pi, piPrev, true)
+					c.params.Logger.Infow("lost packet", "sn", sn, "pisn", pi.sn, "size", pi.payloadSize, "piPrevSn", piPrev.sn, "prevSize", piPrev.payloadSize)	// REMOVE
 				}
 				sn++
 			}
@@ -433,12 +398,6 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 				sn++
 			}
 		}
-	}
-
-	if c.debugFile != nil {
-		toWrite := fmt.Sprintf("REPORT: end: %d", now)
-		c.debugFile.WriteString(toWrite)
-		c.debugFile.WriteString("\n")
 	}
 
 	c.prunePacketGroups()

@@ -75,7 +75,7 @@ func (p *PacketTracker) PacketSent(esn uint64, at time.Time, headerSize int, pay
 	pi.payloadSize = uint16(payloadSize)
 	pi.isRTX = isRTX
 	pi.ResetReceiveAndDeltas()
-	p.params.Logger.Infow("packet sent", "packetInfo", pi) // REMOVE
+	// REMOVE p.params.Logger.Infow("packet sent", "packetInfo", pi) // REMOVE
 
 	p.highestSentESN = esn
 }

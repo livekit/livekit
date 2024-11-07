@@ -49,7 +49,7 @@ func (t *TWCCFeedback) GetReport(report *rtcp.TransportLayerCC, at time.Time) (*
 		return nil, err
 	}
 
-	t.params.Logger.Infow("TWCC feedback", "report", report.String()) // REMOVE
+	// REMOVE t.params.Logger.Infow("TWCC feedback", "report", report.String()) // REMOVE
 	return report, nil
 }
 
@@ -57,7 +57,7 @@ func (t *TWCCFeedback) updateFeedbackState(report *rtcp.TransportLayerCC, at tim
 	if !t.lastFeedbackTime.IsZero() {
 		if (report.FbPktCount - t.highestFeedbackCount) < (1 << 7) { // in-order}
 			sinceLast := at.Sub(t.lastFeedbackTime)
-			t.params.Logger.Infow("report received", "at", at, "sinceLast", sinceLast, "pktCount", report.FbPktCount) // REMOVE
+			// REMOVE t.params.Logger.Infow("report received", "at", at, "sinceLast", sinceLast, "pktCount", report.FbPktCount) // REMOVE
 			if t.estimatedFeedbackInterval == 0 {
 				t.estimatedFeedbackInterval = sinceLast
 			} else {

@@ -35,16 +35,16 @@ type stat struct {
 	numBytes   int
 }
 
-func (s stat) add(size int) {
+func (s *stat) add(size int) {
 	s.numPackets++
 	s.numBytes += size
 }
 
-func (s stat) getNumPackets() int {
+func (s *stat) getNumPackets() int {
 	return s.numPackets
 }
 
-func (s stat) getNumBytes() int {
+func (s *stat) getNumBytes() int {
 	return s.numBytes
 }
 
@@ -61,7 +61,7 @@ type classStat struct {
 	rtx     stat
 }
 
-func (c classStat) add(size int, isRTX bool) {
+func (c *classStat) add(size int, isRTX bool) {
 	if isRTX {
 		c.rtx.add(size)
 	} else {
@@ -69,19 +69,11 @@ func (c classStat) add(size int, isRTX bool) {
 	}
 }
 
-func (c classStat) numPacketsPrimary() int {
-	return c.primary.getNumPackets()
-}
-
-func (c classStat) numPacketsRTX() int {
-	return c.rtx.getNumPackets()
-}
-
-func (c classStat) numPackets() int {
+func (c *classStat) numPackets() int {
 	return c.primary.getNumPackets() + c.rtx.getNumPackets()
 }
 
-func (c classStat) numBytes() int {
+func (c *classStat) numBytes() int {
 	return c.primary.getNumBytes() + c.rtx.getNumBytes()
 }
 
@@ -101,9 +93,11 @@ type PacketGroupParams struct {
 type PacketGroup struct {
 	params PacketGroupParams
 
-	minInitialized bool
+	minSendInitialized bool
 	minSendTime    int64
 	maxSendTime    int64
+
+	minRecvInitialized bool // for information only
 	minRecvTime    int64 // for information only
 	maxRecvTime    int64 // for information only
 
@@ -135,24 +129,30 @@ func (p *PacketGroup) Add(pi *packetInfo, piPrev *packetInfo, isLost bool) error
 	// it is written as an equation below to emphasize that inter-group gap is
 	// covered to maintain continuity.
 	// SSBWE-TODO: check if older packets can get in here, i. e. packets before min
-	if !p.minInitialized {
-		p.minInitialized = true
+	if !p.minSendInitialized {
+		p.minSendInitialized = true
 		p.minSendTime = pi.sendTime - pi.sendDelta
-		p.minRecvTime = pi.recvTime - pi.recvDelta
 	}
 	if p.maxSendTime == 0 || pi.sendTime > p.maxSendTime {
 		p.maxSendTime = pi.sendTime
 	}
-	if p.maxRecvTime == 0 || pi.recvTime > p.maxRecvTime {
-		p.maxRecvTime = pi.recvTime
+
+	if !isLost {
+		if !p.minRecvInitialized {
+			p.minRecvInitialized = true
+			p.minRecvTime = pi.recvTime - pi.recvDelta
+		}
+		if p.maxRecvTime == 0 || pi.recvTime > p.maxRecvTime {
+			p.maxRecvTime = pi.recvTime
+		}
 	}
 
 	// in the gap from this packet to prev packet, the packet that was transmitted
-	// is the previous packet, so count size of previous packet here.
+	// is the previous packet, so count size of previous packet here for this delta.
 	if isLost {
-		p.acked.add(int(piPrev.headerSize)+int(piPrev.payloadSize), piPrev.isRTX)
-	} else {
 		p.lost.add(int(piPrev.headerSize)+int(piPrev.payloadSize), piPrev.isRTX)
+	} else {
+		p.acked.add(int(piPrev.headerSize)+int(piPrev.payloadSize), piPrev.isRTX)
 	}
 
 	p.aggregateSendDelta += pi.sendDelta
@@ -165,7 +165,7 @@ func (p *PacketGroup) Add(pi *packetInfo, piPrev *packetInfo, isLost bool) error
 }
 
 func (p *PacketGroup) MinSendTime() (int64, bool) {
-	return p.minSendTime, p.minInitialized
+	return p.minSendTime, p.minSendInitialized
 }
 
 func (p *PacketGroup) PropagatedQueuingDelay() int64 {
@@ -194,7 +194,9 @@ func (p *PacketGroup) Traffic() (int64, int64, int, float64) {
 		capturedTrafficRatio = float64(p.aggregateSendDelta) / float64(p.aggregateRecvDelta)
 	}
 
-	return p.minSendTime, p.maxSendTime - p.minSendTime, p.acked.numBytes() + p.lost.numBytes(), min(1.0, capturedTrafficRatio)
+	// SSBWE-TODO: should traffic include lost bytes as well to calculate rate? CTR does not capture loss
+	// SSBWE-TODO: not including lost means send side rate could be under calculated if there are a bunch of losses
+	return p.minSendTime, p.maxSendTime - p.minSendTime, p.acked.numBytes(), min(1.0, capturedTrafficRatio)
 }
 
 func (p *PacketGroup) MarshalLogObject(e zapcore.ObjectEncoder) error {
@@ -235,7 +237,7 @@ func (p *PacketGroup) MarshalLogObject(e zapcore.ObjectEncoder) error {
 		capturedTrafficRatio := float64(p.aggregateSendDelta) / float64(p.aggregateRecvDelta)
 		if capturedTrafficRatio != 0 && sendBitRate != 0 {
 			e.AddFloat64("capturedTrafficRatio", capturedTrafficRatio)
-			e.AddFloat64("receiveBitrate", min(1.0, capturedTrafficRatio)*sendBitRate)
+			e.AddFloat64("estimatedAvailableChannelCapacity", min(1.0, capturedTrafficRatio)*sendBitRate)
 		}
 	}
 
