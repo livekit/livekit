@@ -28,6 +28,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/livekit-server/pkg/metric"
+	"github.com/livekit/livekit-server/pkg/sfu/sendsidebwe"
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -172,18 +173,22 @@ type CongestionControlChannelObserverConfig struct {
 }
 
 type CongestionControlConfig struct {
-	Enabled                          bool                                   `yaml:"enabled,omitempty"`
-	AllowPause                       bool                                   `yaml:"allow_pause,omitempty"`
-	NackRatioAttenuator              float64                                `yaml:"nack_ratio_attenuator,omitempty"`
-	ExpectedUsageThreshold           float64                                `yaml:"expected_usage_threshold,omitempty"`
-	UseSendSideBWE                   bool                                   `yaml:"send_side_bandwidth_estimation,omitempty"`
+	Enabled                bool    `yaml:"enabled,omitempty"`
+	AllowPause             bool    `yaml:"allow_pause,omitempty"`
+	NackRatioAttenuator    float64 `yaml:"nack_ratio_attenuator,omitempty"`
+	ExpectedUsageThreshold float64 `yaml:"expected_usage_threshold,omitempty"`
+
+	UseSendSideBWE bool `yaml:"use_send_side_bwe,omitempty"`
+
 	ProbeMode                        CongestionControlProbeMode             `yaml:"probe_mode,omitempty"`
 	MinChannelCapacity               int64                                  `yaml:"min_channel_capacity,omitempty"`
 	ProbeConfig                      CongestionControlProbeConfig           `yaml:"probe_config,omitempty"`
 	ChannelObserverProbeConfig       CongestionControlChannelObserverConfig `yaml:"channel_observer_probe_config,omitempty"`
 	ChannelObserverNonProbeConfig    CongestionControlChannelObserverConfig `yaml:"channel_observer_non_probe_config,omitempty"`
 	DisableEstimationUnmanagedTracks bool                                   `yaml:"disable_etimation_unmanaged_tracks,omitempty"`
-	UseTWCC                          bool                                   `yaml:"use_twcc,omitempty"`
+
+	UseTWCC     bool                          `yaml:"use_twcc,omitempty"`
+	SendSideBWE sendsidebwe.SendSideBWEConfig `yaml:"send_side_bwe,omitempty"`
 }
 
 type AudioConfig struct {
@@ -449,7 +454,8 @@ var DefaultConfig = Config{
 				NackWindowMaxDuration:          3 * time.Second,
 				NackRatioThreshold:             0.08,
 			},
-			UseTWCC: true,
+			UseTWCC:     true,
+			SendSideBWE: sendsidebwe.DefaultSendSideBWEConfig,
 		},
 	},
 	Audio: AudioConfig{

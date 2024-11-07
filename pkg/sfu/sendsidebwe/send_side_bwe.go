@@ -13,8 +13,9 @@ type CongestionState int
 const (
 	CongestionStateNone CongestionState = iota
 	CongestionStateEarlyWarning
+	CongestionStateEarlyWarningRelieving
 	CongestionStateCongested
-	CongestionStateCongestionRelieving
+	CongestionStateCongestedRelieving
 )
 
 func (c CongestionState) String() string {
@@ -23,10 +24,12 @@ func (c CongestionState) String() string {
 		return "NONE"
 	case CongestionStateEarlyWarning:
 		return "EARLY_WARNING"
+	case CongestionStateEarlyWarningRelieving:
+		return "EARLY_WARNING_RELIEVING"
 	case CongestionStateCongested:
 		return "CONGESTED"
-	case CongestionStateCongestionRelieving:
-		return "CONGESTiON_RELIEVING"
+	case CongestionStateCongestedRelieving:
+		return "CONGESTED_RELIEVING"
 	default:
 		return fmt.Sprintf("%d", int(c))
 	}
@@ -34,7 +37,20 @@ func (c CongestionState) String() string {
 
 // ---------------------------------------------------------------------------
 
+type SendSideBWEConfig struct {
+	CongestionDetector CongestionDetectorConfig `yaml:"congestion_detector,omitempty"`
+}
+
+var (
+	DefaultSendSideBWEConfig = SendSideBWEConfig{
+		CongestionDetector: DefaultCongestionDetectorConfig,
+	}
+)
+
+// ---------------------------------------------------------------------------
+
 type SendSideBWEParams struct {
+	Config SendSideBWEConfig
 	Logger logger.Logger
 }
 
@@ -50,8 +66,7 @@ func NewSendSideBWE(params SendSideBWEParams) *SendSideBWE {
 		params:                      params,
 		TransportWideSequenceNumber: NewTransportWideSequenceNumber(),
 		CongestionDetector: NewCongestionDetector(CongestionDetectorParams{
-			// SSBWE-TODO: need to pass in params from config
-			Config: DefaultCongestionDetectorConfig,
+			Config: params.Config.CongestionDetector,
 			Logger: params.Logger,
 		}),
 	}

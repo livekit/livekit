@@ -152,6 +152,14 @@ func (p *PacketGroup) PropagatedQueuingDelay() int64 {
 	return max(0, p.aggregateRecvDelta-p.aggregateSendDelta)
 }
 
+func (p *PacketGroup) SendDuration() int64 {
+	if !p.isFinalized {
+		return 0
+	}
+
+	return p.maxSendTime - p.minSendTime
+}
+
 func (p *PacketGroup) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	if p == nil {
 		return nil

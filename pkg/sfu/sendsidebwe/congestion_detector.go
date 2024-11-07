@@ -15,27 +15,46 @@ import (
 
 // -------------------------------------------------------------------------------
 
-// SSBWE-TODO: CongestionDetectorConfig
-//   - how much of packet group history to keep
-//   - settings to declare JQR
-//     o threshold of queuing delay + group delay
-//   - settings to declare DQR
-//     o threshold of queuing delay + group delay
-//   - settings to declare congestion onset
-//     o min number of groups
-//     o min time
-//   - settings to declare congestion
-//     o min number of groups
-//     o min time
-//   - settings to declare congestion relieved
-//     o min time of continuous DQR (and maybe INDETERMINATE)
+type CongestionSignalConfig struct {
+	MinNumberOfGroups int           `yaml:"min_number_of_groups,omitempty"`
+	MinDuration       time.Duration `yaml:"min_duration,omitempty"`
+}
+
+var (
+	DefaultEarlyWarningCongestionSignalConfig = CongestionSignalConfig{
+		MinNumberOfGroups: 2,
+		MinDuration:       100 * time.Millisecond,
+	}
+
+	DefaultCongestedCongestionSignalConfig = CongestionSignalConfig{
+		MinNumberOfGroups: 4,
+		MinDuration:       300 * time.Millisecond,
+	}
+)
+
+// -------------------------------------------------------------------------------
+
 type CongestionDetectorConfig struct {
-	PacketGroupMaxAge time.Duration `yaml:"packet_group_max_age,omitempty"`
+	PacketGroup          PacketGroupConfig      `yaml:"packet_group,omitempty"`
+	PacketGroupMaxAge    time.Duration          `yaml:"packet_group_max_age,omitempty"`
+	JQRMinDelay          time.Duration          `yaml:"jqr_min_delay,omitempty"`
+	DQRMaxDelay          time.Duration          `yaml:"dqr_max_delay,omitempty"`
+	EarlyWarning         CongestionSignalConfig `yaml:"early_warning,omitempty"`
+	EarlyWarningHangover time.Duration          `yaml:"early_warning_hangover,omitempty"`
+	Congested            CongestionSignalConfig `yaml:"congested,omitempty"`
+	CongestedHangover    time.Duration          `yaml:"congested_hangover,omitempty"`
 }
 
 var (
 	DefaultCongestionDetectorConfig = CongestionDetectorConfig{
-		PacketGroupMaxAge: 30 * time.Second,
+		PacketGroup:          DefaultPacketGroupConfig,
+		PacketGroupMaxAge:    30 * time.Second,
+		JQRMinDelay:          15 * time.Millisecond,
+		DQRMaxDelay:          5 * time.Millisecond,
+		EarlyWarning:         DefaultEarlyWarningCongestionSignalConfig,
+		EarlyWarningHangover: 500 * time.Millisecond,
+		Congested:            DefaultCongestedCongestionSignalConfig,
+		CongestedHangover:    3 * time.Second,
 	}
 )
 
@@ -60,16 +79,17 @@ type CongestionDetector struct {
 	*PacketTracker
 	twccFeedback *TWCCFeedback
 
-	packetGroups      []*PacketGroup // SSBWE-TODO - prune packet groups to some recent history
+	packetGroups      []*PacketGroup
 	activePacketGroup *PacketGroup
 
 	wake chan struct{}
 	stop core.Fuse
 
 	// SSBWE-TODO: these are not implemented yet
-	estimatedChannelCapacity int64
-	congestionState          CongestionState
-	onCongestionStateChange  func(congestionState CongestionState, channelCapacity int64)
+	estimatedChannelCapacity  int64
+	congestionState           CongestionState
+	congestionStateSwitchedAt time.Time
+	onCongestionStateChange   func(congestionState CongestionState, channelCapacity int64)
 
 	debugFile *os.File
 }
@@ -114,6 +134,14 @@ func (c *CongestionDetector) GetCongestionState() CongestionState {
 	return c.congestionState
 }
 
+func (c *CongestionDetector) updateCongestionState(state CongestionState) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	c.params.Logger.Infow("congestion state change", "from", c.congestionState, "to", state)
+	c.congestionState = state
+}
+
 func (c *CongestionDetector) GetEstimatedChannelCapacity() int64 {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
@@ -155,6 +183,97 @@ func (c *CongestionDetector) prunePacketGroups() {
 	}
 }
 
+func (c *CongestionDetector) isCongestionSignalTriggered() (bool, bool) {
+	earlyWarningTriggered := false
+	congestedTriggered := false
+
+	numGroups := 0
+	duration := int64(0)
+	for idx := len(c.packetGroups) - 1; idx >= 0; idx-- {
+		pg := c.packetGroups[idx]
+		pqd := pg.PropagatedQueuingDelay()
+		if pqd > c.params.Config.JQRMinDelay.Microseconds() {
+			numGroups++
+			duration += pg.SendDuration()
+		}
+
+		// INDETERMINATE group is treated as a no-op
+
+		if pqd < c.params.Config.DQRMaxDelay.Microseconds() {
+			// any DQR group breaks the continuity
+			return earlyWarningTriggered, congestedTriggered
+		}
+
+		if numGroups >= c.params.Config.EarlyWarning.MinNumberOfGroups && duration >= c.params.Config.EarlyWarning.MinDuration.Microseconds() {
+			earlyWarningTriggered = true
+		}
+		if numGroups >= c.params.Config.Congested.MinNumberOfGroups && duration >= c.params.Config.Congested.MinDuration.Microseconds() {
+			congestedTriggered = true
+		}
+		if earlyWarningTriggered && congestedTriggered {
+			break
+		}
+	}
+
+	return earlyWarningTriggered, congestedTriggered
+}
+
+func (c *CongestionDetector) congestionDetectionStateMachine() {
+	state := c.GetCongestionState()
+	newState := state
+
+	earlyWarningTriggered, congestedTriggered := c.isCongestionSignalTriggered()
+
+	switch state {
+	case CongestionStateNone:
+		if congestedTriggered {
+			c.params.Logger.Warnw("invalid congested state transition", nil, "from", state)
+		}
+		if earlyWarningTriggered {
+			newState = CongestionStateEarlyWarning
+		}
+
+	case CongestionStateEarlyWarning:
+		if congestedTriggered {
+			newState = CongestionStateCongested
+		} else if !earlyWarningTriggered {
+			newState = CongestionStateEarlyWarningRelieving
+		}
+
+	case CongestionStateEarlyWarningRelieving:
+		if congestedTriggered {
+			c.params.Logger.Warnw("invalid congested state transition", nil, "from", state)
+		}
+		if earlyWarningTriggered {
+			newState = CongestionStateEarlyWarning
+		} else if time.Since(c.congestionStateSwitchedAt) >= c.params.Config.EarlyWarningHangover {
+			newState = CongestionStateNone
+		}
+
+	case CongestionStateCongested:
+		if !congestedTriggered {
+			newState = CongestionStateCongestedRelieving
+		}
+
+	case CongestionStateCongestedRelieving:
+		if time.Since(c.congestionStateSwitchedAt) >= c.params.Config.CongestedHangover {
+			if congestedTriggered {
+				c.params.Logger.Warnw("invalid congested state transition", nil, "from", state)
+			}
+			if earlyWarningTriggered {
+				newState = CongestionStateEarlyWarning
+			} else {
+				newState = CongestionStateNone
+			}
+		}
+	}
+
+	if newState != state {
+		c.congestionStateSwitchedAt = mono.Now()
+		c.updateCongestionState(newState)
+	}
+}
+
 func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 	report, err := c.twccFeedback.GetReport(fbr.report, fbr.at)
 	if err != nil {
@@ -171,8 +290,7 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 	if c.activePacketGroup == nil {
 		c.activePacketGroup = NewPacketGroup(
 			PacketGroupParams{
-				// SSBWE-TODO: should take config from params
-				Config: DefaultPacketGroupConfig,
+				Config: c.params.Config.PacketGroup,
 				Logger: c.params.Logger,
 			},
 			0,
@@ -187,8 +305,7 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 
 				c.activePacketGroup = NewPacketGroup(
 					PacketGroupParams{
-						// SSBWE-TODO: should take config from params
-						Config: DefaultPacketGroupConfig,
+						Config: c.params.Config.PacketGroup,
 						Logger: c.params.Logger,
 					},
 					c.activePacketGroup.PropagatedQueuingDelay(),
@@ -220,6 +337,8 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 		}
 	}
 
+	// 1. go through the TWCC feedback report and record recive time as reported by remote
+	// 2. process acknowledged packet and group them
 	sn := report.BaseSequenceNumber
 	deltaIdx := 0
 	recvRefTime := int64(report.ReferenceTime) * 64 * 1000 // in us
