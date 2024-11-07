@@ -2,7 +2,6 @@ package sendsidebwe
 
 import (
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/livekit/protocol/logger"
@@ -14,30 +13,6 @@ import (
 var (
 	errGroupFinalized = errors.New("packet group is finalized")
 )
-
-// -------------------------------------------------------------
-
-// SSBWE-TODO is this needed?
-type queuingRegion int
-
-const (
-	queuingRegionJoint queuingRegion = iota
-	queuingRegionDisjoint
-	queuingRegionIndeterminate
-)
-
-func (q queuingRegion) String() string {
-	switch q {
-	case queuingRegionJoint:
-		return "JOINT"
-	case queuingRegionDisjoint:
-		return "DISJOINT"
-	case queuingRegionIndeterminate:
-		return "INDETERMINATE"
-	default:
-		return fmt.Sprintf("%d", int(q))
-	}
-}
 
 // -------------------------------------------------------------
 
@@ -67,8 +42,10 @@ type PacketGroup struct {
 	minRecvTime    int64 // SSBWE-TODO: REMOVE
 	maxRecvTime    int64 // SSBWE-TODO: REMOVE
 
-	numPackets      int
+	numPacketsPrimary      int
 	numBytesPrimary int
+
+	numPacketsRTX      int
 	numBytesRTX     int
 
 	aggregateSendDelta int64
@@ -76,8 +53,6 @@ type PacketGroup struct {
 	queuingDelay       int64
 
 	isFinalized bool
-	// SSBWE-TODO: check number of zero crossings of the delta jitter
-	// if the number of zero crossings is a high ratio of number of packets, it is not stable
 }
 
 func NewPacketGroup(params PacketGroupParams, queuingDelay int64) *PacketGroup {
@@ -88,6 +63,7 @@ func NewPacketGroup(params PacketGroupParams, queuingDelay int64) *PacketGroup {
 }
 
 // SSBWE-TODO - can get a really old packet (out-of-order delivery to the remote)  that could spread things a bunch, how to deal with it?
+// SSBWE-TODO - should record lost packets also as that should be included in send side bitrate
 func (p *PacketGroup) Add(pi *packetInfo, piPrev *packetInfo) error {
 	if p.isFinalized {
 		return errGroupFinalized
@@ -120,17 +96,18 @@ func (p *PacketGroup) Add(pi *packetInfo, piPrev *packetInfo) error {
 
 	// in the gap from this packet to prev packet, the previous packet
 	// is the one that was transimitted, so count size of previous packet here.
-	p.numPackets++
 	if !piPrev.isRTX {
+		p.numPacketsPrimary++
 		p.numBytesPrimary += int(piPrev.headerSize) + int(piPrev.payloadSize)
 	} else {
+		p.numPacketsRTX++
 		p.numBytesRTX += int(piPrev.headerSize) + int(piPrev.payloadSize)
 	}
 
 	p.aggregateSendDelta += pi.sendDelta
 	p.aggregateRecvDelta += pi.recvDelta
 
-	if p.numPackets == p.params.Config.MinPackets || (pi.sendTime-p.minSendTime) > p.params.Config.MaxWindowDuration.Microseconds() {
+	if (p.numPacketsPrimary + p.numPacketsRTX) == p.params.Config.MinPackets || (pi.sendTime-p.minSendTime) > p.params.Config.MaxWindowDuration.Microseconds() {
 		p.isFinalized = true
 	}
 	return nil
@@ -160,17 +137,13 @@ func (p *PacketGroup) SendDuration() int64 {
 	return p.maxSendTime - p.minSendTime
 }
 
-func (p *PacketGroup) Traffic() (int64, int64, int, float64, bool) {
-	if !p.isFinalized {
-		return 0, 0, 0, 0.0, false
-	}
-
+func (p *PacketGroup) Traffic() (int64, int64, int, float64) {
 	capturedTrafficRatio := float64(0.0)
 	if p.aggregateRecvDelta != 0 {
 		capturedTrafficRatio = float64(p.aggregateSendDelta) / float64(p.aggregateRecvDelta)
 	}
 
-	return p.minSendTime, p.maxSendTime - p.minSendTime, p.numBytesPrimary + p.numBytesRTX, min(1.0, capturedTrafficRatio), true
+	return p.minSendTime, p.maxSendTime - p.minSendTime, p.numBytesPrimary + p.numBytesRTX, min(1.0, capturedTrafficRatio)
 }
 
 func (p *PacketGroup) MarshalLogObject(e zapcore.ObjectEncoder) error {
@@ -188,22 +161,27 @@ func (p *PacketGroup) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	recvDuration := time.Duration((p.maxRecvTime - p.minRecvTime) * 1000)
 	e.AddDuration("recvDuration", recvDuration)
 
-	e.AddInt("numPackets", p.numPackets)
+	e.AddInt("numPacketsPrimary", p.numPacketsPrimary)
 	if sendDuration != 0 {
-		e.AddFloat64("packetRate", float64(p.numPackets)/sendDuration.Seconds())
+		e.AddFloat64("packetRatePrimary", float64(p.numPacketsPrimary)/sendDuration.Seconds())
 	}
 	e.AddInt("numBytesPrimary", p.numBytesPrimary)
+
+	e.AddInt("numPacketsRTX", p.numPacketsRTX)
+	if sendDuration != 0 {
+		e.AddFloat64("packetRateRTX", float64(p.numPacketsRTX)/sendDuration.Seconds())
+	}
 	e.AddInt("numBytesRTX", p.numBytesRTX)
 
 	sendBitRate := float64(0)
 	if sendDuration != 0 {
-		sendBitRate = float64(p.numBytesPrimary+p.numBytesRTX*8) / sendDuration.Seconds()
+		sendBitRate = float64((p.numBytesPrimary+p.numBytesRTX)*8) / sendDuration.Seconds()
 		e.AddFloat64("sendBitRate", sendBitRate)
 	}
 
 	recvBitRate := float64(0)
 	if recvDuration != 0 {
-		recvBitRate = float64(p.numBytesPrimary+p.numBytesRTX*8) / recvDuration.Seconds()
+		recvBitRate = float64((p.numBytesPrimary+p.numBytesRTX)*8) / recvDuration.Seconds()
 		e.AddFloat64("recvBitRate", recvBitRate)
 	}
 

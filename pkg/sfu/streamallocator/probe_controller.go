@@ -245,15 +245,13 @@ func (p *ProbeController) InitProbe(probeGoalDeltaBps int64, expectedBandwidthUs
 	return p.probeClusterId, p.probeGoalBps
 }
 
+// SSBWE-TODO: try to do same path for both SSBWE and regular, the congesting part might be different though
 func (p *ProbeController) pollProbe(probeClusterId ProbeClusterId) {
-	p.lock.RLock()
 	if p.sendSideBWE == nil {
-		p.lock.RUnlock()
 		return
 	}
 
 	startingEstimate := p.sendSideBWE.GetEstimatedAvailableChannelCapacity()
-	p.lock.RUnlock()
 
 	go func() {
 		for {

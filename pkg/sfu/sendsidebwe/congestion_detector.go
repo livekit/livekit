@@ -302,22 +302,31 @@ func (c *CongestionDetector) estimateAvailableChannelCapacity() {
 
 	totalDuration := int64(0)
 	totalBytes := float64(0.0)
-	threshold := activeMinSendTime - c.params.Config.RateMeasurementWindowDurationMax.Microseconds()
-	for _, pg := range c.packetGroups {
-		if mst, dur, nbytes, ctr, ok := pg.Traffic(); ok {
-			if mst < threshold {
-				break
-			}
 
-			totalDuration += dur
-			// captured traffic ratio is a measure of what fraction of sent traffic was delivered
-			totalBytes += float64(dur) * float64(nbytes) * ctr / 1e6
+	/* SSBWE-TODO: maybe include active group if it is reasonably full?
+	mst, dur, nbytes, ctr := c.activePacketGroup.Traffic()
+	totalDuration += dur
+	// captured traffic ratio is a measure of what fraction of sent traffic was delivered
+	totalBytes += 1e6 * float64(nbytes) * ctr / float64(dur)
+	c.params.Logger.Infow("RAJA traffic active", "mst", mst, "dur", dur, "nbytes", nbytes, "ctr", ctr, "rate", 1e6 * float64(nbytes) * ctr / float64(dur), "totalDuration", totalDuration, "totalBytes", totalBytes)	// REMOVE)
+	*/
+
+	threshold := activeMinSendTime - c.params.Config.RateMeasurementWindowDurationMax.Microseconds()
+	for idx := len(c.packetGroups) - 1; idx >= 0; idx-- {
+		pg := c.packetGroups[idx]
+		mst, dur, nbytes, ctr := pg.Traffic()
+		if mst < threshold {
+			break
 		}
+
+		totalDuration += dur
+		totalBytes += 1e6 * float64(nbytes) * ctr / float64(dur)
+		c.params.Logger.Infow("RAJA traffic not active", "mst", mst, "dur", dur, "nbytes", nbytes, "ctr", ctr, "rate", 1e6 * float64(nbytes) * ctr / float64(dur), "totalDuration", totalDuration, "totalBytes", totalBytes)	// REMOVE)
 	}
 
 	if totalDuration >= c.params.Config.RateMeasurementWindowDurationMin.Microseconds() {
 		c.lock.Lock()
-		c.estimatedAvailableChannelCapacity = int64(totalBytes * 1e6 / float64(totalDuration))
+		c.estimatedAvailableChannelCapacity = int64(totalBytes * 8 * 1e6 / float64(totalDuration))
 		c.lock.Unlock()
 	} else {
 		c.params.Logger.Infow("not enough data to estimate available channel capacity", "totalDuration", totalDuration)

@@ -786,7 +786,7 @@ func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
 	if cscd.congestionState == sendsidebwe.CongestionStateCongested {
 		// SSBWE-TODO-START
 		// Can potentially do
-		//   1. On early warning, stop any up lyaering
+		//   1. On early warning, stop any up layering
 		//   2. On congestion relief, can start probe?
 		// SSBWE-TODO-END
 		s.probeController.AbortProbe()
@@ -1221,6 +1221,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 
 				for _, track := range sorted {
 					_, usedChannelCapacity := track.ProvisionalAllocate(availableChannelCapacity, layer, s.allowPause, FlagAllowOvershootWhileDeficient)
+					s.params.Logger.Infow("debug allocated", "trackID", track.ID(), "usedChannelCapacity", usedChannelCapacity, "availableChannelCapacity", availableChannelCapacity) // REMOVE
 					availableChannelCapacity -= usedChannelCapacity
 					if availableChannelCapacity < 0 {
 						availableChannelCapacity = 0
