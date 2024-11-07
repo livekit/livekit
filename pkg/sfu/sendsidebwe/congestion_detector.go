@@ -362,6 +362,7 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 
 	// 1. go through the TWCC feedback report and record recive time as reported by remote
 	// 2. process acknowledged packet and group them
+	// NOTE: losses are not recorded if a feedback report is completely lost.
 	sn := report.BaseSequenceNumber
 	deltaIdx := 0
 	recvRefTime := int64(report.ReferenceTime) * 64 * 1000 // in us
@@ -378,7 +379,14 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 				} else {
 					pi, piPrev := c.PacketTracker.RecordPacketReceivedByRemote(sn, 0)
 					trackPacketGroup(pi, piPrev, true)
-					c.params.Logger.Infow("lost packet", "sn", sn, "pisn", pi.sn, "size", pi.payloadSize, "piPrevSn", piPrev.sn, "prevSize", piPrev.payloadSize)	// REMOVE
+					c.params.Logger.Infow(
+						"lost packet",
+						"sn", sn,
+						"pisn", pi.sn,
+						"size", pi.payloadSize,
+						"piPrevSN", piPrev.sn,
+						"prevSize", piPrev.payloadSize,
+					) // REMOVE
 				}
 				sn++
 			}
