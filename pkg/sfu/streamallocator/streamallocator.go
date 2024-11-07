@@ -1082,7 +1082,6 @@ func (s *StreamAllocator) onProbeDone(isNotFailing bool, isGoalReached bool) {
 		highestEstimateInProbe = s.sendSideBWE.GetEstimatedAvailableChannelCapacity()
 	}
 
-
 	//
 	// Reset estimator at the end of a probe irrespective of probe result to get fresh readings.
 	// With a failed probe, the latest estimate could be lower than committed estimate.
