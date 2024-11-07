@@ -11,7 +11,7 @@ import (
 // ------------------------------------------------------
 
 const (
-	outlierReportFactor            = 4
+	outlierReportFactor            = 3
 	estimatedFeedbackIntervalAlpha = float64(0.9)
 )
 
@@ -23,8 +23,14 @@ var (
 
 // ------------------------------------------------------
 
+type TWCCFeedbackParams struct {
+	Logger logger.Logger
+}
+
+// SSBWE-TODO: what is the purpose of this module? is it needed?
+// maybe, it needs to flag large gaps between reports?
 type TWCCFeedback struct {
-	logger logger.Logger
+	params TWCCFeedbackParams
 
 	lastFeedbackTime          time.Time
 	estimatedFeedbackInterval time.Duration
@@ -32,9 +38,9 @@ type TWCCFeedback struct {
 	// SSBWE-TODO- maybe store some history of reports as is, maybe for debugging?
 }
 
-func NewTWCCFeedback(logger logger.Logger) *TWCCFeedback {
+func NewTWCCFeedback(params TWCCFeedbackParams) *TWCCFeedback {
 	return &TWCCFeedback{
-		logger: logger,
+		params: params,
 	}
 }
 
@@ -43,7 +49,7 @@ func (t *TWCCFeedback) GetReport(report *rtcp.TransportLayerCC, at time.Time) (*
 		return nil, err
 	}
 
-	t.logger.Infow("TWCC feedback", "report", report.String()) // REMOVE
+	t.params.Logger.Infow("TWCC feedback", "report", report.String()) // REMOVE
 	return report, nil
 }
 
@@ -51,7 +57,7 @@ func (t *TWCCFeedback) updateFeedbackState(report *rtcp.TransportLayerCC, at tim
 	if !t.lastFeedbackTime.IsZero() {
 		if (report.FbPktCount - t.highestFeedbackCount) < (1 << 7) { // in-order}
 			sinceLast := at.Sub(t.lastFeedbackTime)
-			t.logger.Infow("report received", "at", at, "sinceLast", sinceLast, "pktCount", report.FbPktCount)	// REMOVE
+			t.params.Logger.Infow("report received", "at", at, "sinceLast", sinceLast, "pktCount", report.FbPktCount) // REMOVE
 			if t.estimatedFeedbackInterval == 0 {
 				t.estimatedFeedbackInterval = sinceLast
 			} else {

@@ -4,6 +4,7 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+// SSBWE-TODO: evaluate this struct and clean up as many fields as possible
 type packetInfo struct {
 	sendTime  int64
 	sendDelta int64

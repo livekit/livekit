@@ -5,13 +5,14 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/livekit/protocol/logger"
 	"go.uber.org/zap/zapcore"
 )
 
 // -------------------------------------------------------------
 
 var (
-	errOutOfRange = errors.New("packet out of range")
+	errGroupFinalized = errors.New("packet group is finalized")
 )
 
 // -------------------------------------------------------------
@@ -22,6 +23,7 @@ type queuingRegion int
 const (
 	queuingRegionJoint queuingRegion = iota
 	queuingRegionDisjoint
+	queuingRegionIndeterminate
 )
 
 func (q queuingRegion) String() string {
@@ -30,6 +32,8 @@ func (q queuingRegion) String() string {
 		return "JOINT"
 	case queuingRegionDisjoint:
 		return "DISJOINT"
+	case queuingRegionIndeterminate:
+		return "INDETERMINATE"
 	default:
 		return fmt.Sprintf("%d", int(q))
 	}
@@ -37,8 +41,21 @@ func (q queuingRegion) String() string {
 
 // -------------------------------------------------------------
 
+type PacketGroupConfig struct {
+	MinPackets        int           `yaml:"min_packets,omitempty"`
+	MaxWindowDuration time.Duration `yaml:"max_window_duration,omitempty"`
+}
+
+var (
+	DefaultPacketGroupConfig = PacketGroupConfig{
+		MinPackets:        20,
+		MaxWindowDuration: 500 * time.Millisecond,
+	}
+)
+
 type PacketGroupParams struct {
-	Spread time.Duration
+	Config PacketGroupConfig
+	Logger logger.Logger
 }
 
 type PacketGroup struct {
@@ -57,6 +74,8 @@ type PacketGroup struct {
 	aggregateSendDelta int64
 	aggregateRecvDelta int64
 	queuingDelay       int64
+
+	isFinalized bool
 	// SSBWE-TODO: check number of zero crossings of the delta jitter
 	// if the number of zero crossings is a high ratio of number of packets, it is not stable
 }
@@ -69,9 +88,9 @@ func NewPacketGroup(params PacketGroupParams, queuingDelay int64) *PacketGroup {
 }
 
 // SSBWE-TODO - can get a really old packet (out-of-order delivery to the remote)  that could spread things a bunch, how to deal with it?
-func (p *PacketGroup) Add(pi *packetInfo) error {
-	if p.minInitialized && (pi.sendTime-p.minSendTime) > p.params.Spread.Microseconds() {
-		return errOutOfRange
+func (p *PacketGroup) Add(pi *packetInfo, piPrev *packetInfo) error {
+	if p.isFinalized {
+		return errGroupFinalized
 	}
 
 	// sendDelta is delta from this packet's sendTime to the previous acked packet's sendTime,
@@ -82,6 +101,11 @@ func (p *PacketGroup) Add(pi *packetInfo) error {
 		p.minSendTime = prevSendTime
 	}
 	*/
+	// start window including the gap from this packet to previous packet
+	// which would have been in previous group to ensure continuity.
+	// although, pi.sendTime - pi.sendDelta should be equal to piPrev.sendTime,
+	// it is written as an equation below to emphasize that inter-group gap is
+	// covered to maintain continuity.
 	if !p.minInitialized {
 		p.minInitialized = true
 		p.minSendTime = pi.sendTime - pi.sendDelta
@@ -94,19 +118,33 @@ func (p *PacketGroup) Add(pi *packetInfo) error {
 		p.maxRecvTime = pi.recvTime
 	}
 
+	// in the gap from this packet to prev packet, the previous packet
+	// is the one that was transimitted, so count size of previous packet here.
 	p.numPackets++
-	if !pi.isRTX {
-		p.numBytesPrimary += int(pi.headerSize) + int(pi.payloadSize)
+	if !piPrev.isRTX {
+		p.numBytesPrimary += int(piPrev.headerSize) + int(piPrev.payloadSize)
 	} else {
-		p.numBytesRTX += int(pi.headerSize) + int(pi.payloadSize)
+		p.numBytesRTX += int(piPrev.headerSize) + int(piPrev.payloadSize)
 	}
 
 	p.aggregateSendDelta += pi.sendDelta
 	p.aggregateRecvDelta += pi.recvDelta
+
+	if p.numPackets == p.params.Config.MinPackets || (pi.sendTime-p.minSendTime) > p.params.Config.MaxWindowDuration.Microseconds() {
+		p.isFinalized = true
+	}
 	return nil
 }
 
-func (p *PacketGroup) QueuingDelayNext() int64 {
+func (p *PacketGroup) MinSendTime() (int64, bool) {
+	return p.minSendTime, p.minInitialized
+}
+
+func (p *PacketGroup) PropagatedQueuingDelay() int64 {
+	if !p.isFinalized {
+		return 0
+	}
+
 	if p.queuingDelay+p.aggregateRecvDelta-p.aggregateSendDelta > 0 {
 		return p.queuingDelay + p.aggregateRecvDelta - p.aggregateSendDelta
 	}
@@ -158,5 +196,7 @@ func (p *PacketGroup) MarshalLogObject(e zapcore.ObjectEncoder) error {
 		e.AddFloat64("capturedTrafficRatio", capturedTrafficRatio)
 		e.AddFloat64("availableBandwidth", min(1.0, capturedTrafficRatio)*sendBitRate)
 	}
+
+	e.AddBool("isFinalized", p.isFinalized)
 	return nil
 }

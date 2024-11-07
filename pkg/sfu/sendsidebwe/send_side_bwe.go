@@ -34,20 +34,31 @@ func (c CongestionState) String() string {
 
 // ---------------------------------------------------------------------------
 
-type SendSideBWE struct {
-	*TransportWideSequenceNumber
-	*PacketTracker
+type SendSideBWEParams struct {
+	Logger logger.Logger
 }
 
-func NewSendSideBWE(logger logger.Logger) *SendSideBWE {
+type SendSideBWE struct {
+	params SendSideBWEParams
+
+	*TransportWideSequenceNumber
+	*CongestionDetector
+}
+
+func NewSendSideBWE(params SendSideBWEParams) *SendSideBWE {
 	return &SendSideBWE{
+		params:                      params,
 		TransportWideSequenceNumber: NewTransportWideSequenceNumber(),
-		PacketTracker:               NewPacketTracker(logger),
+		CongestionDetector: NewCongestionDetector(CongestionDetectorParams{
+			// SSBWE-TODO: need to pass in params from config
+			Config: DefaultCongestionDetectorConfig,
+			Logger: params.Logger,
+		}),
 	}
 }
 
 func (s *SendSideBWE) Stop() {
-	s.PacketTracker.Stop()
+	s.CongestionDetector.Stop()
 }
 
 // ------------------------------------------------
