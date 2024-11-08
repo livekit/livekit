@@ -804,8 +804,10 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *Room {
 			DepartureTimeout: 1,
 		},
 		&sfu.AudioConfig{
-			UpdateInterval:  audioUpdateInterval,
-			SmoothIntervals: opts.audioSmoothIntervals,
+			AudioLevelConfig: audio.AudioLevelConfig{
+				UpdateInterval:  audioUpdateInterval,
+				SmoothIntervals: opts.audioSmoothIntervals,
+			},
 		},
 		&livekit.ServerInfo{
 			Edition:  livekit.ServerInfo_Standard,

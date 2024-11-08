@@ -63,16 +63,8 @@ var (
 // --------------------------------------
 
 type AudioConfig struct {
-	// minimum level to be considered active, 0-127, where 0 is loudest
-	ActiveLevel uint8 `yaml:"active_level,omitempty"`
-	// percentile to measure, a participant is considered active if it has exceeded the ActiveLevel more than
-	// MinPercentile% of the time
-	MinPercentile uint8 `yaml:"min_percentile,omitempty"`
-	// interval to update clients, in ms
-	UpdateInterval uint32 `yaml:"update_interval,omitempty"`
-	// smoothing for audioLevel values sent to the client.
-	// audioLevel will be an average of `smooth_intervals`, 0 to disable
-	SmoothIntervals uint32 `yaml:"smooth_intervals,omitempty"`
+	audio.AudioLevelConfig `yaml:",inline"`
+
 	// enable red encoding downtrack for opus only audio up track
 	ActiveREDEncoding bool `yaml:"active_red_encoding,omitempty"`
 	// enable proxying weakest subscriber loss to publisher in RTCP Receiver Report
@@ -81,10 +73,7 @@ type AudioConfig struct {
 
 var (
 	DefaultAudioConfig = AudioConfig{
-		ActiveLevel:     35, // -35dBov
-		MinPercentile:   40,
-		UpdateInterval:  400,
-		SmoothIntervals: 2,
+		AudioLevelConfig: audio.DefaultAudioLevelConfig,
 	}
 )
 
@@ -379,10 +368,7 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 	}
 	buff.SetLogger(w.logger.WithValues("layer", layer))
 	buff.SetAudioLevelParams(audio.AudioLevelParams{
-		ActiveLevel:     w.audioConfig.ActiveLevel,
-		MinPercentile:   w.audioConfig.MinPercentile,
-		ObserveDuration: w.audioConfig.UpdateInterval,
-		SmoothIntervals: w.audioConfig.SmoothIntervals,
+		Config: w.audioConfig.AudioLevelConfig,
 	})
 	buff.SetAudioLossProxying(w.audioConfig.EnableLossProxying)
 	buff.OnRtcpFeedback(w.sendRTCP)

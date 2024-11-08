@@ -129,7 +129,7 @@ type CongestionControlConfig struct {
 
 	StreamAllocator streamallocator.StreamAllocatorConfig `yaml:"stream_allocator,omitempty"`
 
-	UseSendSideBWE bool `yaml:"send_side_bandwidth_estimation,omitempty"`
+	UseSendSideBWE bool `yaml:"use_send_side_bwe,omitempty"`
 
 	UseTWCC     bool                          `yaml:"use_twcc,omitempty"`
 	SendSideBWE sendsidebwe.SendSideBWEConfig `yaml:"send_side_bwe,omitempty"`
@@ -311,7 +311,10 @@ var DefaultConfig = Config{
 		StrictACKs:            true,
 		PLIThrottle:           sfu.DefaultPLIThrottleConfig,
 		CongestionControl: CongestionControlConfig{
+			Enabled:         true,
+			AllowPause:      false,
 			StreamAllocator: streamallocator.DefaultStreamAllocatorConfig,
+			UseSendSideBWE:  false,
 			UseTWCC:         true,
 			SendSideBWE:     sendsidebwe.DefaultSendSideBWEConfig,
 		},

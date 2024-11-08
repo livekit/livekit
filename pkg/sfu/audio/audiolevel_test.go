@@ -108,9 +108,11 @@ func TestAudioLevel(t *testing.T) {
 
 func createAudioLevel(activeLevel uint8, minPercentile uint8, observeDuration uint32) *AudioLevel {
 	return NewAudioLevel(AudioLevelParams{
-		ActiveLevel:     activeLevel,
-		MinPercentile:   minPercentile,
-		ObserveDuration: observeDuration,
+		Config: AudioLevelConfig{
+			ActiveLevel:    activeLevel,
+			MinPercentile:  minPercentile,
+			UpdateInterval: observeDuration,
+		},
 	})
 }
 
