@@ -62,7 +62,7 @@ type SendSideBWE struct {
 
 func NewSendSideBWE(params SendSideBWEParams) *SendSideBWE {
 	return &SendSideBWE{
-		params:                      params,
+		params: params,
 		CongestionDetector: NewCongestionDetector(CongestionDetectorParams{
 			Config: params.Config.CongestionDetector,
 			Logger: params.Logger,

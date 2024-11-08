@@ -28,8 +28,8 @@ type PacketTracker struct {
 
 	sequenceNumber uint64
 
-	baseSendTime   int64
-	packetInfos    [2048]packetInfo
+	baseSendTime int64
+	packetInfos  [2048]packetInfo
 
 	baseRecvTime  int64
 	highestRecvSN uint16
@@ -37,7 +37,7 @@ type PacketTracker struct {
 
 func NewPacketTracker(params PacketTrackerParams) *PacketTracker {
 	return &PacketTracker{
-		params: params,
+		params:         params,
 		sequenceNumber: uint64(rand.Intn(1<<14)) + uint64(1<<15), // a random number in third quartile of sequence number space
 	}
 }
