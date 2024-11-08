@@ -113,14 +113,14 @@ type ParticipantParams struct {
 	SID                     livekit.ParticipantID
 	Config                  *WebRTCConfig
 	Sink                    routing.MessageSink
-	AudioConfig             config.AudioConfig
+	AudioConfig             sfu.AudioConfig
 	VideoConfig             config.VideoConfig
 	LimitConfig             config.LimitConfig
 	ProtocolVersion         types.ProtocolVersion
 	SessionStartTime        time.Time
 	Telemetry               telemetry.TelemetryService
 	Trailer                 []byte
-	PLIThrottleConfig       config.PLIThrottleConfig
+	PLIThrottleConfig       sfu.PLIThrottleConfig
 	CongestionControlConfig config.CongestionControlConfig
 	// codecs that are enabled for this room
 	PublishEnabledCodecs           []*livekit.Codec

@@ -17,12 +17,56 @@ package streamtracker
 import (
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/logger"
 )
 
+// --------------------------------------------
+
+type StreamTrackerPacketConfig struct {
+	SamplesRequired uint32        `yaml:"samples_required,omitempty"` // number of samples needed per cycle
+	CyclesRequired  uint32        `yaml:"cycles_required,omitempty"`  // number of cycles needed to be active
+	CycleDuration   time.Duration `yaml:"cycle_duration,omitempty"`
+}
+
+var (
+	DefaultStreamTrackerPacketConfigVideo = map[int32]StreamTrackerPacketConfig{
+		0: {SamplesRequired: 1,
+			CyclesRequired: 4,
+			CycleDuration:  500 * time.Millisecond,
+		},
+		1: {SamplesRequired: 5,
+			CyclesRequired: 20,
+			CycleDuration:  500 * time.Millisecond,
+		},
+		2: {SamplesRequired: 5,
+			CyclesRequired: 20,
+			CycleDuration:  500 * time.Millisecond,
+		},
+	}
+
+	DefaultStreamTrackerPacketConfigScreenshare = map[int32]StreamTrackerPacketConfig{
+		0: {
+			SamplesRequired: 1,
+			CyclesRequired:  1,
+			CycleDuration:   2 * time.Second,
+		},
+		1: {
+			SamplesRequired: 1,
+			CyclesRequired:  1,
+			CycleDuration:   2 * time.Second,
+		},
+		2: {
+			SamplesRequired: 1,
+			CyclesRequired:  1,
+			CycleDuration:   2 * time.Second,
+		},
+	}
+)
+
+// --------------------------------------------
+
 type StreamTrackerPacketParams struct {
-	Config config.StreamTrackerPacketConfig
+	Config StreamTrackerPacketConfig
 	Logger logger.Logger
 }
 

@@ -23,12 +23,32 @@ import (
 
 // ------------------------------------------------
 
+type NackTrackerConfig struct {
+	WindowMinDuration time.Duration `yaml:"window_min_duration,omitempty"`
+	WindowMaxDuration time.Duration `yaml:"window_max_duration,omitempty"`
+	RatioThreshold    float64       `yaml:"ratio_threshold,omitempty"`
+}
+
+var (
+	DefaultNackTrackerConfigProbe = NackTrackerConfig{
+		WindowMinDuration: 500 * time.Millisecond,
+		WindowMaxDuration: 1 * time.Second,
+		RatioThreshold:    0.04,
+	}
+
+	DefaultNackTrackerConfigNonProbe = NackTrackerConfig{
+		WindowMinDuration: 2 * time.Second,
+		WindowMaxDuration: 3 * time.Second,
+		RatioThreshold:    0.08,
+	}
+)
+
+// ------------------------------------------------
+
 type NackTrackerParams struct {
-	Name              string
-	Logger            logger.Logger
-	WindowMinDuration time.Duration
-	WindowMaxDuration time.Duration
-	RatioThreshold    float64
+	Name   string
+	Logger logger.Logger
+	Config NackTrackerConfig
 }
 
 type NackTracker struct {
@@ -52,7 +72,7 @@ func NewNackTracker(params NackTrackerParams) *NackTracker {
 }
 
 func (n *NackTracker) Add(packets uint32, repeatedNacks uint32) {
-	if n.params.WindowMaxDuration != 0 && !n.windowStartTime.IsZero() && time.Since(n.windowStartTime) > n.params.WindowMaxDuration {
+	if n.params.Config.WindowMaxDuration != 0 && !n.windowStartTime.IsZero() && time.Since(n.windowStartTime) > n.params.Config.WindowMaxDuration {
 		// STREAM-ALLOCATOR-DATA n.updateHistory()
 
 		n.windowStartTime = time.Time{}
@@ -89,8 +109,8 @@ func (n *NackTracker) GetRatio() float64 {
 }
 
 func (n *NackTracker) IsTriggered() bool {
-	if n.params.WindowMinDuration != 0 && !n.windowStartTime.IsZero() && time.Since(n.windowStartTime) > n.params.WindowMinDuration {
-		return n.GetRatio() > n.params.RatioThreshold
+	if n.params.Config.WindowMinDuration != 0 && !n.windowStartTime.IsZero() && time.Since(n.windowStartTime) > n.params.Config.WindowMinDuration {
+		return n.GetRatio() > n.params.Config.RatioThreshold
 	}
 
 	return false

@@ -17,7 +17,6 @@ package streamallocator
 import (
 	"fmt"
 
-	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -69,9 +68,28 @@ func (c ChannelCongestionReason) String() string {
 
 // ------------------------------------------------
 
+type ChannelObserverConfig struct {
+	Estimate TrendDetectorConfig `yaml:"estimate,omitrmpty"`
+	Nack     NackTrackerConfig   `yaml:"nack,omitempty"`
+}
+
+var (
+	DefaultChannelObserverConfigProbe = ChannelObserverConfig{
+		Estimate: DefaultTrendDetectorConfigProbe,
+		Nack:     DefaultNackTrackerConfigProbe,
+	}
+
+	DefaultChannelObserverConfigNonProbe = ChannelObserverConfig{
+		Estimate: DefaultTrendDetectorConfigNonProbe,
+		Nack:     DefaultNackTrackerConfigNonProbe,
+	}
+)
+
+// ------------------------------------------------
+
 type ChannelObserverParams struct {
 	Name   string
-	Config config.CongestionControlChannelObserverConfig
+	Config ChannelObserverConfig
 }
 
 type ChannelObserver struct {
@@ -87,21 +105,14 @@ func NewChannelObserver(params ChannelObserverParams, logger logger.Logger) *Cha
 		params: params,
 		logger: logger,
 		estimateTrend: NewTrendDetector(TrendDetectorParams{
-			Name:                   params.Name + "-estimate",
-			Logger:                 logger,
-			RequiredSamples:        params.Config.EstimateRequiredSamples,
-			RequiredSamplesMin:     params.Config.EstimateRequiredSamplesMin,
-			DownwardTrendThreshold: params.Config.EstimateDownwardTrendThreshold,
-			DownwardTrendMaxWait:   params.Config.EstimateDownwardTrendMaxWait,
-			CollapseThreshold:      params.Config.EstimateCollapseThreshold,
-			ValidityWindow:         params.Config.EstimateValidityWindow,
+			Name:   params.Name + "-estimate",
+			Logger: logger,
+			Config: params.Config.Estimate,
 		}),
 		nackTracker: NewNackTracker(NackTrackerParams{
-			Name:              params.Name + "-nack",
-			Logger:            logger,
-			WindowMinDuration: params.Config.NackWindowMinDuration,
-			WindowMaxDuration: params.Config.NackWindowMaxDuration,
-			RatioThreshold:    params.Config.NackRatioThreshold,
+			Name:   params.Name + "-nack",
+			Logger: logger,
+			Config: params.Config.Nack,
 		}),
 	}
 }

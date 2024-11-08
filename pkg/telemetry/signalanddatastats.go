@@ -23,7 +23,6 @@ import (
 	"github.com/frostbyte73/core"
 	"go.uber.org/atomic"
 
-	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 )
@@ -122,7 +121,7 @@ func (s *BytesTrackStats) report() {
 }
 
 func (s *BytesTrackStats) reporter() {
-	ticker := time.NewTicker(config.TelemetryNonMediaStatsUpdateInterval)
+	ticker := time.NewTicker(telemetryNonMediaStatsUpdateInterval)
 	defer func() {
 		ticker.Stop()
 		s.report()

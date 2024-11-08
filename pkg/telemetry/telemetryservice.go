@@ -19,7 +19,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -87,6 +86,9 @@ type TelemetryService interface {
 const (
 	workerCleanupWait = 3 * time.Minute
 	jobsQueueMinSize  = 2048
+
+	telemetryStatsUpdateInterval         = time.Second * 30
+	telemetryNonMediaStatsUpdateInterval = time.Minute * 5
 )
 
 type telemetryService struct {
@@ -172,7 +174,7 @@ func (t *telemetryService) FlushStats() {
 }
 
 func (t *telemetryService) run() {
-	for range time.Tick(config.TelemetryStatsUpdateInterval) {
+	for range time.Tick(telemetryStatsUpdateInterval) {
 		t.FlushStats()
 	}
 }
