@@ -98,6 +98,8 @@ func (p *PacketTracker) RecordPacketReceivedByRemote(sn uint16, recvTime int64) 
 		pi.recvTime = recvTime - p.baseRecvTime
 
 		// skip out-of-order deliveries
+		// SSBWE-TODO: should we skip out-of-order deliveries?
+		// SSBWE-TODO: can we derive a congestion signal from out-of-order deliveries
 		if (sn - p.highestRecvSN) < (1 << 15) {
 			// SSBWE-TODO: may need to different prev for send and recv,
 			// SSBWE-TODO: i. e. send should be contiguous and account for losses too
@@ -116,6 +118,8 @@ func (p *PacketTracker) RecordPacketReceivedByRemote(sn uint16, recvTime int64) 
 			p.highestRecvSN = sn
 		}
 	} else {
+		// SSBWE-TODO: figure out packet loss case properly
+		// SSBWE-TODO: is this the right place to report loss?
 		piPrev = p.getPacketInfoExisting(sn - 1)
 	}
 	return

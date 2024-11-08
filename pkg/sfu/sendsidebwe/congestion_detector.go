@@ -365,6 +365,7 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 	// NOTE: losses are not recorded if a feedback report is completely lost.
 	sn := report.BaseSequenceNumber
 	deltaIdx := 0
+	// SSBWE-TODO: base reference time is signed 24-bit, so may not be good to do a diff using first as base as it may overflow
 	recvRefTime := int64(report.ReferenceTime) * 64 * 1000 // in us
 	for _, chunk := range report.PacketChunks {
 		switch chunk := chunk.(type) {
