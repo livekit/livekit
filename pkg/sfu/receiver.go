@@ -30,7 +30,6 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 
-	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/sfu/audio"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
@@ -44,6 +43,52 @@ var (
 	ErrBufferNotFound        = errors.New("buffer not found")
 	ErrDuplicateLayer        = errors.New("duplicate layer")
 )
+
+// --------------------------------------
+
+type PLIThrottleConfig struct {
+	LowQuality  time.Duration `yaml:"low_quality,omitempty"`
+	MidQuality  time.Duration `yaml:"mid_quality,omitempty"`
+	HighQuality time.Duration `yaml:"high_quality,omitempty"`
+}
+
+var (
+	DefaultPLIThrottleConfig = PLIThrottleConfig{
+		LowQuality:  500 * time.Millisecond,
+		MidQuality:  time.Second,
+		HighQuality: time.Second,
+	}
+)
+
+// --------------------------------------
+
+type AudioConfig struct {
+	// minimum level to be considered active, 0-127, where 0 is loudest
+	ActiveLevel uint8 `yaml:"active_level,omitempty"`
+	// percentile to measure, a participant is considered active if it has exceeded the ActiveLevel more than
+	// MinPercentile% of the time
+	MinPercentile uint8 `yaml:"min_percentile,omitempty"`
+	// interval to update clients, in ms
+	UpdateInterval uint32 `yaml:"update_interval,omitempty"`
+	// smoothing for audioLevel values sent to the client.
+	// audioLevel will be an average of `smooth_intervals`, 0 to disable
+	SmoothIntervals uint32 `yaml:"smooth_intervals,omitempty"`
+	// enable red encoding downtrack for opus only audio up track
+	ActiveREDEncoding bool `yaml:"active_red_encoding,omitempty"`
+	// enable proxying weakest subscriber loss to publisher in RTCP Receiver Report
+	EnableLossProxying bool `yaml:"enable_loss_proxying,omitempty"`
+}
+
+var (
+	DefaultAudioConfig = AudioConfig{
+		ActiveLevel:     35, // -35dBov
+		MinPercentile:   40,
+		UpdateInterval:  400,
+		SmoothIntervals: 2,
+	}
+)
+
+// --------------------------------------
 
 type AudioLevelHandle func(level uint8, duration uint32)
 
@@ -94,8 +139,8 @@ type TrackReceiver interface {
 type WebRTCReceiver struct {
 	logger logger.Logger
 
-	pliThrottleConfig config.PLIThrottleConfig
-	audioConfig       config.AudioConfig
+	pliThrottleConfig PLIThrottleConfig
+	audioConfig       AudioConfig
 
 	trackID        livekit.TrackID
 	streamID       string
@@ -138,7 +183,7 @@ type WebRTCReceiver struct {
 type ReceiverOpts func(w *WebRTCReceiver) *WebRTCReceiver
 
 // WithPliThrottleConfig indicates minimum time(ms) between sending PLIs
-func WithPliThrottleConfig(pliThrottleConfig config.PLIThrottleConfig) ReceiverOpts {
+func WithPliThrottleConfig(pliThrottleConfig PLIThrottleConfig) ReceiverOpts {
 	return func(w *WebRTCReceiver) *WebRTCReceiver {
 		w.pliThrottleConfig = pliThrottleConfig
 		return w
@@ -146,7 +191,7 @@ func WithPliThrottleConfig(pliThrottleConfig config.PLIThrottleConfig) ReceiverO
 }
 
 // WithAudioConfig sets up parameters for active speaker detection
-func WithAudioConfig(audioConfig config.AudioConfig) ReceiverOpts {
+func WithAudioConfig(audioConfig AudioConfig) ReceiverOpts {
 	return func(w *WebRTCReceiver) *WebRTCReceiver {
 		w.audioConfig = audioConfig
 		return w
@@ -187,7 +232,7 @@ func NewWebRTCReceiver(
 	trackInfo *livekit.TrackInfo,
 	logger logger.Logger,
 	onRTCP func([]rtcp.Packet),
-	trackersConfig config.StreamTrackersConfig,
+	streamTrackerManagerConfig StreamTrackerManagerConfig,
 	opts ...ReceiverOpts,
 ) *WebRTCReceiver {
 	w := &WebRTCReceiver{
@@ -227,7 +272,7 @@ func NewWebRTCReceiver(
 		strings.EqualFold(w.codec.MimeType, MimeTypeAudioRed) || strings.Contains(strings.ToLower(w.codec.SDPFmtpLine), "useinbandfec=1"),
 	)
 
-	w.streamTrackerManager = NewStreamTrackerManager(logger, trackInfo, w.isSVC, w.codec.ClockRate, trackersConfig)
+	w.streamTrackerManager = NewStreamTrackerManager(logger, trackInfo, w.isSVC, w.codec.ClockRate, streamTrackerManagerConfig)
 	w.streamTrackerManager.SetListener(w)
 	// SVC-TODO: Handle DD for non-SVC cases???
 	if w.isSVC {

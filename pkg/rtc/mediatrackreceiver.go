@@ -32,7 +32,6 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 
-	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -91,7 +90,7 @@ type MediaTrackReceiverParams struct {
 	ParticipantVersion  uint32
 	ReceiverConfig      ReceiverConfig
 	SubscriberConfig    DirectionConfig
-	AudioConfig         config.AudioConfig
+	AudioConfig         sfu.AudioConfig
 	Telemetry           telemetry.TelemetryService
 	Logger              logger.Logger
 }

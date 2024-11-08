@@ -18,15 +18,54 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/sfu/sendsidebwe"
 	"github.com/livekit/protocol/logger"
 )
 
 // ---------------------------------------------------------------------------
 
+type ProbeControllerConfig struct {
+	BaseInterval  time.Duration `yaml:"base_interval,omitempty"`
+	BackoffFactor float64       `yaml:"backoff_factor,omitempty"`
+	MaxInterval   time.Duration `yaml:"max_interval,omitempty"`
+
+	SettleWait    time.Duration `yaml:"settle_wait,omitempty"`
+	SettleWaitMax time.Duration `yaml:"settle_wait_max,omitempty"`
+
+	TrendWait time.Duration `yaml:"trend_wait,omitempty"`
+
+	OveragePct             int64         `yaml:"overage_pct,omitempty"`
+	MinBps                 int64         `yaml:"min_bps,omitempty"`
+	MinDuration            time.Duration `yaml:"min_duration,omitempty"`
+	MaxDuration            time.Duration `yaml:"max_duration,omitempty"`
+	DurationOverflowFactor float64       `yaml:"duration_overflow_factor,omitempty"`
+	DurationIncreaseFactor float64       `yaml:"duration_increase_factor,omitempty"`
+}
+
+var (
+	DefaultProbeControllerConfig = ProbeControllerConfig{
+		BaseInterval:  3 * time.Second,
+		BackoffFactor: 1.5,
+		MaxInterval:   2 * time.Minute,
+
+		SettleWait:    250 * time.Millisecond,
+		SettleWaitMax: 10 * time.Second,
+
+		TrendWait: 2 * time.Second,
+
+		OveragePct:             120,
+		MinBps:                 200_000,
+		MinDuration:            200 * time.Millisecond,
+		MaxDuration:            20 * time.Second,
+		DurationOverflowFactor: 1.25,
+		DurationIncreaseFactor: 1.5,
+	}
+)
+
+// ---------------------------------------------------------------------------
+
 type ProbeControllerParams struct {
-	Config config.CongestionControlProbeConfig
+	Config ProbeControllerConfig
 	Prober *Prober
 	Logger logger.Logger
 }

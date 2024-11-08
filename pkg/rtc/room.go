@@ -39,6 +39,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/livekit-server/pkg/telemetry"
@@ -107,7 +108,7 @@ type Room struct {
 	Logger     logger.Logger
 
 	config          WebRTCConfig
-	audioConfig     *config.AudioConfig
+	audioConfig     *sfu.AudioConfig
 	serverInfo      *livekit.ServerInfo
 	telemetry       telemetry.TelemetryService
 	egressLauncher  EgressLauncher
@@ -234,7 +235,7 @@ func NewRoom(
 	internal *livekit.RoomInternal,
 	config WebRTCConfig,
 	roomConfig config.RoomConfig,
-	audioConfig *config.AudioConfig,
+	audioConfig *sfu.AudioConfig,
 	serverInfo *livekit.ServerInfo,
 	telemetry telemetry.TelemetryService,
 	agentClient agent.Client,
