@@ -126,7 +126,7 @@ type CongestionControlConfig struct {
 	Enabled         bool                                  `yaml:"enabled,omitempty"`
 	AllowPause      bool                                  `yaml:"allow_pause,omitempty"`
 	StreamAllocator streamallocator.StreamAllocatorConfig `yaml:"stream_allocator,omitempty"`
-	UseSendSideBWE  bool                                  `yaml:"send_side_bandwidth_estimation,omitempty"`
+	UseSendSideBWE  bool                                  `yaml:"use_send_side_bwe,omitempty"`
 }
 
 type PlayoutDelayConfig struct {
@@ -305,7 +305,10 @@ var DefaultConfig = Config{
 		StrictACKs:            true,
 		PLIThrottle:           sfu.DefaultPLIThrottleConfig,
 		CongestionControl: CongestionControlConfig{
+			Enabled:         true,
+			AllowPause:      false,
 			StreamAllocator: streamallocator.DefaultStreamAllocatorConfig,
+			UseSendSideBWE:  false,
 		},
 	},
 	Audio: sfu.DefaultAudioConfig,
