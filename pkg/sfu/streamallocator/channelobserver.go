@@ -69,7 +69,7 @@ func (c ChannelCongestionReason) String() string {
 // ------------------------------------------------
 
 type ChannelObserverConfig struct {
-	Estimate TrendDetectorConfig `yaml:"estimate,omitrmpty"`
+	Estimate TrendDetectorConfig `yaml:"estimate,omitempty"`
 	Nack     NackTrackerConfig   `yaml:"nack,omitempty"`
 }
 
