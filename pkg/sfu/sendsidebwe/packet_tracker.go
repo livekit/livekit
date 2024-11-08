@@ -40,7 +40,7 @@ func NewPacketTracker(params PacketTrackerParams) *PacketTracker {
 }
 
 // SSBWE-TODO: this potentially needs to take isProbe as argument?
-func (p *PacketTracker) PacketSent(esn uint64, at time.Time, headerSize int, payloadSize int, isRTX bool) {
+func (p *PacketTracker) PacketSent(esn uint64, at time.Time, size int, isRTX bool) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
@@ -50,7 +50,7 @@ func (p *PacketTracker) PacketSent(esn uint64, at time.Time, headerSize int, pay
 		p.highestSentESN = esn - 1
 	}
 
-	// old packet - should not happens packets should be sent in order
+	// old packet - should not happen as packets should be sent in order
 	if esn < p.highestSentESN {
 		sn := uint16(esn)
 		pi := p.getPacketInfo(sn)
@@ -69,10 +69,9 @@ func (p *PacketTracker) PacketSent(esn uint64, at time.Time, headerSize int, pay
 
 	sn := uint16(esn)
 	pi := p.getPacketInfo(sn)
-	pi.sn = sn
+	pi.sequenceNumber = sn
 	pi.sendTime = sendTime - p.baseSendTime
-	pi.headerSize = uint8(headerSize)
-	pi.payloadSize = uint16(payloadSize)
+	pi.size = uint16(size)
 	pi.isRTX = isRTX
 	pi.ResetReceiveAndDeltas()
 	// REMOVE p.params.Logger.Infow("packet sent", "packetInfo", pi) // REMOVE
@@ -131,7 +130,7 @@ func (p *PacketTracker) getPacketInfo(sn uint16) *packetInfo {
 
 func (p *PacketTracker) getPacketInfoExisting(sn uint16) *packetInfo {
 	pi := &p.packetInfos[int(sn)%len(p.packetInfos)]
-	if pi.sn == sn {
+	if pi.sequenceNumber == sn {
 		return pi
 	}
 

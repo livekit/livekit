@@ -146,7 +146,7 @@ func (p *PacketGroup) Add(pi *packetInfo, piPrev *packetInfo) error {
 
 	// in the gap from this packet to prev packet, the packet that was transmitted
 	// is the previous packet, so count size of previous packet here for this delta.
-	p.acked.add(int(piPrev.headerSize)+int(piPrev.payloadSize), piPrev.isRTX)
+	p.acked.add(int(piPrev.size), piPrev.isRTX)
 
 	p.aggregateSendDelta += pi.sendDelta
 	p.aggregateRecvDelta += pi.recvDelta

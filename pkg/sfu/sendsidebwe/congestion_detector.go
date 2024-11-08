@@ -382,10 +382,10 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 						c.params.Logger.Infow(
 							"lost packet",
 							"sn", sn,
-							"pisn", pi.sn,
-							"size", pi.payloadSize,
-							"piPrevSN", piPrev.sn,
-							"prevSize", piPrev.payloadSize,
+							"pisn", pi.sequenceNumber,
+							"size", pi.size,
+							"piPrevSN", piPrev.sequenceNumber,
+							"prevSize", piPrev.size,
 						) // REMOVE
 					}
 				}
@@ -407,10 +407,10 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 						c.params.Logger.Infow(
 							"lost packet",
 							"sn", sn,
-							"pisn", pi.sn,
-							"size", pi.payloadSize,
-							"piPrevSN", piPrev.sn,
-							"prevSize", piPrev.payloadSize,
+							"pisn", pi.sequenceNumber,
+							"size", pi.size,
+							"piPrevSN", piPrev.sequenceNumber,
+							"prevSize", piPrev.size,
 						) // REMOVE
 					}
 				}
