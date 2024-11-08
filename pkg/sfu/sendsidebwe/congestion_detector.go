@@ -20,12 +20,12 @@ type CongestionSignalConfig struct {
 
 var (
 	DefaultEarlyWarningCongestionSignalConfig = CongestionSignalConfig{
-		MinNumberOfGroups: 2,
+		MinNumberOfGroups: 1,
 		MinDuration:       100 * time.Millisecond,
 	}
 
 	DefaultCongestedCongestionSignalConfig = CongestionSignalConfig{
-		MinNumberOfGroups: 4,
+		MinNumberOfGroups: 3,
 		MinDuration:       300 * time.Millisecond,
 	}
 )
