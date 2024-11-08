@@ -379,15 +379,17 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 					trackPacketGroup(pi, piPrev)
 				} else {
 					pi := c.PacketTracker.getPacketInfo(sn)
-					piPrev := c.PacketTracker.getPacketInfo(sn - 1)
-					c.params.Logger.Infow(
-						"lost packet",
-						"sn", sn,
-						"pisn", pi.sn,
-						"size", pi.payloadSize,
-						"piPrevSN", piPrev.sn,
-						"prevSize", piPrev.payloadSize,
-					) // REMOVE
+					if pi.recvTime == 0 {
+						piPrev := c.PacketTracker.getPacketInfo(sn - 1)
+						c.params.Logger.Infow(
+							"lost packet",
+							"sn", sn,
+							"pisn", pi.sn,
+							"size", pi.payloadSize,
+							"piPrevSN", piPrev.sn,
+							"prevSize", piPrev.payloadSize,
+						) // REMOVE
+					}
 				}
 				sn++
 			}
@@ -402,15 +404,17 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 					trackPacketGroup(pi, piPrev)
 				} else {
 					pi := c.PacketTracker.getPacketInfo(sn)
-					piPrev := c.PacketTracker.getPacketInfo(sn - 1)
-					c.params.Logger.Infow(
-						"lost packet",
-						"sn", sn,
-						"pisn", pi.sn,
-						"size", pi.payloadSize,
-						"piPrevSN", piPrev.sn,
-						"prevSize", piPrev.payloadSize,
-					) // REMOVE
+					if pi.recvTime == 0 {
+						piPrev := c.PacketTracker.getPacketInfo(sn - 1)
+						c.params.Logger.Infow(
+							"lost packet",
+							"sn", sn,
+							"pisn", pi.sn,
+							"size", pi.payloadSize,
+							"piPrevSN", piPrev.sn,
+							"prevSize", piPrev.payloadSize,
+						) // REMOVE
+					}
 				}
 				sn++
 			}
