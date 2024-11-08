@@ -2,6 +2,7 @@ package sendsidebwe
 
 import (
 	"errors"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -25,8 +26,9 @@ type PacketTracker struct {
 
 	lock sync.Mutex
 
+	sequenceNumber uint64
+
 	baseSendTime   int64
-	highestSentESN uint64
 	packetInfos    [2048]packetInfo
 
 	baseRecvTime  int64
@@ -36,38 +38,22 @@ type PacketTracker struct {
 func NewPacketTracker(params PacketTrackerParams) *PacketTracker {
 	return &PacketTracker{
 		params: params,
+		sequenceNumber: uint64(rand.Intn(1<<14)) + uint64(1<<15), // a random number in third quartile of sequence number space
 	}
 }
 
 // SSBWE-TODO: this potentially needs to take isProbe as argument?
-func (p *PacketTracker) PacketSent(esn uint64, at time.Time, size int, isRTX bool) {
+func (p *PacketTracker) RecordPacketSendAndGetSequenceNumber(at time.Time, size int, isRTX bool) uint16 {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
 	sendTime := at.UnixMicro()
 	if p.baseSendTime == 0 {
 		p.baseSendTime = sendTime
-		p.highestSentESN = esn - 1
 	}
 
-	// old packet - should not happen as packets should be sent in order
-	if esn < p.highestSentESN {
-		sn := uint16(esn)
-		pi := p.getPacketInfo(sn)
-		pi.Reset(sn)
-		return
-	}
-
-	// clear slots occupied by missing packets,
-	// ideally this should never run as seequence numbers should be generated in order
-	// and packets sent in order.
-	for i := p.highestSentESN + 1; i != esn; i++ {
-		sn := uint16(i)
-		pi := p.getPacketInfo(sn)
-		pi.Reset(sn)
-	}
-
-	sn := uint16(esn)
+	p.sequenceNumber++
+	sn := uint16(p.sequenceNumber)
 	pi := p.getPacketInfo(sn)
 	pi.sequenceNumber = sn
 	pi.sendTime = sendTime - p.baseSendTime
@@ -76,7 +62,7 @@ func (p *PacketTracker) PacketSent(esn uint64, at time.Time, size int, isRTX boo
 	pi.ResetReceiveAndDeltas()
 	// REMOVE p.params.Logger.Infow("packet sent", "packetInfo", pi) // REMOVE
 
-	p.highestSentESN = esn
+	return sn
 }
 
 func (p *PacketTracker) RecordPacketReceivedByRemote(sn uint16, recvTime int64) (pi *packetInfo, piPrev *packetInfo) {

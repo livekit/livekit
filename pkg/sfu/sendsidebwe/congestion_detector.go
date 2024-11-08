@@ -363,25 +363,34 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 	// 1. go through the TWCC feedback report and record recive time as reported by remote
 	// 2. process acknowledged packet and group them
 	// NOTE: losses are not recorded if a feedback report is completely lost.
-	sn := report.BaseSequenceNumber
+	sequenceNumber := report.BaseSequenceNumber
+	endSequenceNumberExclusive := sequenceNumber + report.PacketStatusCount
 	deltaIdx := 0
 	for _, chunk := range report.PacketChunks {
+		if sequenceNumber == endSequenceNumberExclusive {
+			break
+		}
+
 		switch chunk := chunk.(type) {
 		case *rtcp.RunLengthChunk:
 			for i := uint16(0); i < chunk.RunLength; i++ {
+				if sequenceNumber == endSequenceNumberExclusive {
+					break
+				}
+
 				if chunk.PacketStatusSymbol != rtcp.TypeTCCPacketNotReceived {
 					recvRefTime += report.RecvDeltas[deltaIdx].Delta
 					deltaIdx++
 
-					pi, piPrev := c.PacketTracker.RecordPacketReceivedByRemote(sn, recvRefTime)
+					pi, piPrev := c.PacketTracker.RecordPacketReceivedByRemote(sequenceNumber, recvRefTime)
 					trackPacketGroup(pi, piPrev)
 				} else {
-					pi := c.PacketTracker.getPacketInfo(sn)
+					pi := c.PacketTracker.getPacketInfo(sequenceNumber)
 					if pi.recvTime == 0 {
-						piPrev := c.PacketTracker.getPacketInfo(sn - 1)
+						piPrev := c.PacketTracker.getPacketInfo(sequenceNumber - 1)
 						c.params.Logger.Infow(
 							"lost packet",
-							"sn", sn,
+							"sequenceNumber", sequenceNumber,
 							"pisn", pi.sequenceNumber,
 							"size", pi.size,
 							"piPrevSN", piPrev.sequenceNumber,
@@ -389,24 +398,28 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 						) // REMOVE
 					}
 				}
-				sn++
+				sequenceNumber++
 			}
 
 		case *rtcp.StatusVectorChunk:
 			for _, symbol := range chunk.SymbolList {
+				if sequenceNumber == endSequenceNumberExclusive {
+					break
+				}
+
 				if symbol != rtcp.TypeTCCPacketNotReceived {
 					recvRefTime += report.RecvDeltas[deltaIdx].Delta
 					deltaIdx++
 
-					pi, piPrev := c.PacketTracker.RecordPacketReceivedByRemote(sn, recvRefTime)
+					pi, piPrev := c.PacketTracker.RecordPacketReceivedByRemote(sequenceNumber, recvRefTime)
 					trackPacketGroup(pi, piPrev)
 				} else {
-					pi := c.PacketTracker.getPacketInfo(sn)
+					pi := c.PacketTracker.getPacketInfo(sequenceNumber)
 					if pi.recvTime == 0 {
-						piPrev := c.PacketTracker.getPacketInfo(sn - 1)
+						piPrev := c.PacketTracker.getPacketInfo(sequenceNumber - 1)
 						c.params.Logger.Infow(
-							"lost packet",
-							"sn", sn,
+							"svc lost packet",
+							"sequenceNumber", sequenceNumber,
 							"pisn", pi.sequenceNumber,
 							"size", pi.size,
 							"piPrevSN", piPrev.sequenceNumber,
@@ -414,7 +427,7 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 						) // REMOVE
 					}
 				}
-				sn++
+				sequenceNumber++
 			}
 		}
 	}

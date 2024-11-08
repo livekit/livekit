@@ -51,7 +51,7 @@ func (b *Base) SendPacket(p *Packet) (int, error) {
 		}
 	}()
 
-	sendingAt, twESN, err := b.writeRTPHeaderExtensions(p)
+	err := b.writeRTPHeaderExtensions(p)
 	if err != nil {
 		b.logger.Errorw("writing rtp header extensions err", err)
 		return 0, err
@@ -66,15 +66,11 @@ func (b *Base) SendPacket(p *Packet) (int, error) {
 		return 0, err
 	}
 
-	if p.TransportWideExtID != 0 && b.sendSideBWE != nil {
-		b.sendSideBWE.PacketSent(twESN, sendingAt, p.Header.MarshalSize()+len(p.Payload), p.IsRTX)
-	}
-
 	return written, nil
 }
 
 // writes RTP header extensions of track
-func (b *Base) writeRTPHeaderExtensions(p *Packet) (time.Time, uint64, error) {
+func (b *Base) writeRTPHeaderExtensions(p *Packet) error {
 	// clear out extensions that may have been in the forwarded header
 	p.Header.Extension = false
 	p.Header.ExtensionProfile = 0
@@ -93,33 +89,34 @@ func (b *Base) writeRTPHeaderExtensions(p *Packet) (time.Time, uint64, error) {
 		sendTime := rtp.NewAbsSendTimeExtension(sendingAt)
 		b, err := sendTime.Marshal()
 		if err != nil {
-			return time.Time{}, 0, err
+			return err
 		}
 
-		err = p.Header.SetExtension(p.AbsSendTimeExtID, b)
-		if err != nil {
-			return time.Time{}, 0, err
+		if err = p.Header.SetExtension(p.AbsSendTimeExtID, b); err != nil {
+			return err
 		}
 	}
 
-	twESN := uint64(0)
 	if p.TransportWideExtID != 0 && b.sendSideBWE != nil {
-		twESN = b.sendSideBWE.GetNext()
-		tw := rtp.TransportCCExtension{
-			TransportSequence: uint16(twESN),
+		twccSN := b.sendSideBWE.RecordPacketSendAndGetSequenceNumber(
+			sendingAt,
+			p.Header.MarshalSize()+len(p.Payload),
+			p.IsRTX,
+		)
+		twccExt := rtp.TransportCCExtension{
+			TransportSequence: twccSN,
 		}
-		b, err := tw.Marshal()
+		b, err := twccExt.Marshal()
 		if err != nil {
-			return time.Time{}, 0, err
+			return err
 		}
 
-		err = p.Header.SetExtension(p.TransportWideExtID, b)
-		if err != nil {
-			return time.Time{}, 0, err
+		if err = p.Header.SetExtension(p.TransportWideExtID, b); err != nil {
+			return err
 		}
 	}
 
-	return sendingAt, twESN, nil
+	return nil
 }
 
 // ------------------------------------------------
