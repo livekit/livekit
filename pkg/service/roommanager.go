@@ -440,7 +440,7 @@ func (r *RoomManager) StartSession(
 	if r.config.RTC.ReconnectOnDataChannelError != nil {
 		reconnectOnDataChannelError = *r.config.RTC.ReconnectOnDataChannelError
 	}
-	subscriberAllowPause := r.config.RTC.CongestionControl.StreamAllocator.AllowPause
+	subscriberAllowPause := r.config.RTC.CongestionControl.AllowPause
 	if pi.SubscriberAllowPause != nil {
 		subscriberAllowPause = *pi.SubscriberAllowPause
 	}

@@ -146,8 +146,6 @@ const (
 )
 
 type StreamAllocatorConfig struct {
-	Enabled                          bool                  `yaml:"enabled,omitempty"`
-	AllowPause                       bool                  `yaml:"allow_pause,omitempty"`
 	NackRatioAttenuator              float64               `yaml:"nack_ratio_attenuator,omitempty"`
 	ExpectedUsageThreshold           float64               `yaml:"expected_usage_threshold,omitempty"`
 	ProbeMode                        ProbeMode             `yaml:"probe_mode,omitempty"`
@@ -160,8 +158,6 @@ type StreamAllocatorConfig struct {
 
 var (
 	DefaultStreamAllocatorConfig = StreamAllocatorConfig{
-		Enabled:                 true,
-		AllowPause:              false,
 		NackRatioAttenuator:     0.4,
 		ExpectedUsageThreshold:  0.95,
 		ProbeMode:               ProbeModePadding,
@@ -185,6 +181,7 @@ type StreamAllocator struct {
 
 	bwe cc.BandwidthEstimator
 
+	enabled    bool
 	allowPause bool
 
 	lastReceivedEstimate      int64
@@ -210,10 +207,11 @@ type StreamAllocator struct {
 	isStopped atomic.Bool
 }
 
-func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
+func NewStreamAllocator(params StreamAllocatorParams, enabled bool, allowPause bool) *StreamAllocator {
 	s := &StreamAllocator{
 		params:     params,
-		allowPause: params.Config.AllowPause,
+		enabled:    enabled,
+		allowPause: allowPause,
 		prober: NewProber(ProberParams{
 			Logger: params.Logger,
 		}),
@@ -905,7 +903,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	s.probeController.AbortProbe()
 
 	// if not deficient, free pass allocate track
-	if !s.params.Config.Enabled || s.state == streamAllocatorStateStable || !track.IsManaged() {
+	if !s.enabled || s.state == streamAllocatorStateStable || !track.IsManaged() {
 		update := NewStreamStateUpdate()
 		allocation := track.AllocateOptimal(FlagAllowOvershootWhileOptimal)
 		updateStreamStateChange(track, allocation, update)
@@ -1132,7 +1130,7 @@ boost_loop:
 }
 
 func (s *StreamAllocator) allocateAllTracks() {
-	if !s.params.Config.Enabled {
+	if !s.enabled {
 		// nothing else to do when disabled
 		return
 	}

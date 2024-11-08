@@ -123,6 +123,8 @@ type TURNServer struct {
 }
 
 type CongestionControlConfig struct {
+	Enabled         bool                                  `yaml:"enabled,omitempty"`
+	AllowPause      bool                                  `yaml:"allow_pause,omitempty"`
 	StreamAllocator streamallocator.StreamAllocatorConfig `yaml:"stream_allocator,omitempty"`
 	UseSendSideBWE  bool                                  `yaml:"send_side_bandwidth_estimation,omitempty"`
 }
