@@ -24,11 +24,34 @@ const (
 	negInv20         = -1.0 / 20
 )
 
+// --------------------------------------
+
+type AudioLevelConfig struct {
+	// minimum level to be considered active, 0-127, where 0 is loudest
+	ActiveLevel uint8 `yaml:"active_level,omitempty"`
+	// percentile to measure, a participant is considered active if it has exceeded the ActiveLevel more than
+	// MinPercentile% of the time
+	MinPercentile uint8 `yaml:"min_percentile,omitempty"`
+	// interval to update clients, in ms
+	UpdateInterval uint32 `yaml:"update_interval,omitempty"`
+	// smoothing for audioLevel values sent to the client.
+	// audioLevel will be an average of `smooth_intervals`, 0 to disable
+	SmoothIntervals uint32 `yaml:"smooth_intervals,omitempty"`
+}
+
+var (
+	DefaultAudioLevelConfig = AudioLevelConfig{
+		ActiveLevel:     35, // -35dBov
+		MinPercentile:   40,
+		UpdateInterval:  400,
+		SmoothIntervals: 2,
+	}
+)
+
+// --------------------------------------
+
 type AudioLevelParams struct {
-	ActiveLevel     uint8
-	MinPercentile   uint8
-	ObserveDuration uint32
-	SmoothIntervals uint32
+	Config AudioLevelConfig
 }
 
 // keeps track of audio level for a participant
@@ -51,15 +74,15 @@ type AudioLevel struct {
 func NewAudioLevel(params AudioLevelParams) *AudioLevel {
 	l := &AudioLevel{
 		params:               params,
-		minActiveDuration:    uint32(params.MinPercentile) * params.ObserveDuration / 100,
+		minActiveDuration:    uint32(params.Config.MinPercentile) * params.Config.UpdateInterval / 100,
 		smoothFactor:         1,
-		activeThreshold:      ConvertAudioLevel(float64(params.ActiveLevel)),
+		activeThreshold:      ConvertAudioLevel(float64(params.Config.ActiveLevel)),
 		loudestObservedLevel: silentAudioLevel,
 	}
 
-	if l.params.SmoothIntervals > 0 {
+	if l.params.Config.SmoothIntervals > 0 {
 		// exponential moving average (EMA), same center of mass with simple moving average (SMA)
-		l.smoothFactor = float64(2) / (float64(l.params.SmoothIntervals + 1))
+		l.smoothFactor = float64(2) / (float64(l.params.Config.SmoothIntervals + 1))
 	}
 
 	return l
@@ -74,14 +97,14 @@ func (l *AudioLevel) Observe(level uint8, durationMs uint32, arrivalTime int64) 
 
 	l.observedDuration += durationMs
 
-	if level <= l.params.ActiveLevel {
+	if level <= l.params.Config.ActiveLevel {
 		l.activeDuration += durationMs
 		if l.loudestObservedLevel > level {
 			l.loudestObservedLevel = level
 		}
 	}
 
-	if l.observedDuration >= l.params.ObserveDuration {
+	if l.observedDuration >= l.params.Config.UpdateInterval {
 		smoothedLevel := float64(0.0)
 		// compute and reset
 		if l.activeDuration >= l.minActiveDuration {
@@ -89,7 +112,7 @@ func (l *AudioLevel) Observe(level uint8, durationMs uint32, arrivalTime int64) 
 			// Weight will be 0 if active the entire duration
 			// > 0 if active for longer than observe duration
 			// < 0 if active for less than observe duration
-			activityWeight := 20 * math.Log10(float64(l.activeDuration)/float64(l.params.ObserveDuration))
+			activityWeight := 20 * math.Log10(float64(l.activeDuration)/float64(l.params.Config.UpdateInterval))
 			adjustedLevel := float64(l.loudestObservedLevel) - activityWeight
 			linearLevel := ConvertAudioLevel(adjustedLevel)
 
@@ -111,7 +134,7 @@ func (l *AudioLevel) GetLevel(now int64) (float64, bool) {
 }
 
 func (l *AudioLevel) resetIfStaleLocked(arrivalTime int64) {
-	if (arrivalTime-l.lastObservedAt)/1e6 < int64(2*l.params.ObserveDuration) {
+	if (arrivalTime-l.lastObservedAt)/1e6 < int64(2*l.params.Config.UpdateInterval) {
 		return
 	}
 
