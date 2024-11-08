@@ -502,7 +502,6 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 		)
 		return
 	}
-
 	r.extHighestSNFromRR = extHighestSNFromRR
 
 	if r.srNewest != nil {
@@ -515,12 +514,10 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 		}
 	}
 
-	// This is 24-bit max in the protocol. So, technically doesn't need extended type. But, done for consistency.
-	packetsLostFromRR := r.packetsLostFromRR&0xFFFF_FFFF_0000_0000 + uint64(rr.TotalLost)
-	if (rr.TotalLost-r.lastRR.TotalLost) < (1<<31) && rr.TotalLost < r.lastRR.TotalLost {
-		packetsLostFromRR += (1 << 32)
+	r.packetsLostFromRR = r.packetsLostFromRR&0xFFFF_FFFF_FF00_0000 + uint64(rr.TotalLost)
+	if ((rr.TotalLost-r.lastRR.TotalLost)&((1<<24)-1)) < (1<<23) && rr.TotalLost < r.lastRR.TotalLost {
+		r.packetsLostFromRR += (1 << 24)
 	}
-	r.packetsLostFromRR = packetsLostFromRR
 
 	if isRttChanged {
 		r.rtt = rtt

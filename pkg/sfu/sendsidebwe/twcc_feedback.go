@@ -11,8 +11,11 @@ import (
 // ------------------------------------------------------
 
 const (
-	outlierReportFactor            = 3
-	estimatedFeedbackIntervalAlpha = float64(0.9)
+	cOutlierReportFactor            = 3
+	cEstimatedFeedbackIntervalAlpha = float64(0.9)
+
+	cReferenceTimeMask       = (1 << 24) - 1
+	cReferenceTimeResolution = 64 // 64 ms
 )
 
 // ------------------------------------------------------
@@ -34,7 +37,11 @@ type TWCCFeedback struct {
 
 	lastFeedbackTime          time.Time
 	estimatedFeedbackInterval time.Duration
-	highestFeedbackCount      uint8
+
+	highestFeedbackCount uint8
+
+	cycles               int64
+	highestReferenceTime uint32
 	// SSBWE-TODO- maybe store some history of reports as is, maybe for debugging?
 }
 
@@ -44,37 +51,59 @@ func NewTWCCFeedback(params TWCCFeedbackParams) *TWCCFeedback {
 	}
 }
 
-func (t *TWCCFeedback) GetReport(report *rtcp.TransportLayerCC, at time.Time) (*rtcp.TransportLayerCC, error) {
-	if err := t.updateFeedbackState(report, at); err != nil {
-		return nil, err
+func (t *TWCCFeedback) GetReport(report *rtcp.TransportLayerCC, at time.Time) (*rtcp.TransportLayerCC, int64, error) {
+	referenceTime, err := t.updateFeedbackState(report, at)
+	if err != nil {
+		return nil, 0, err
 	}
 
 	// REMOVE t.params.Logger.Infow("TWCC feedback", "report", report.String()) // REMOVE
-	return report, nil
+	return report, referenceTime, nil
 }
 
-func (t *TWCCFeedback) updateFeedbackState(report *rtcp.TransportLayerCC, at time.Time) error {
-	if !t.lastFeedbackTime.IsZero() {
-		if (report.FbPktCount - t.highestFeedbackCount) < (1 << 7) { // in-order}
-			sinceLast := at.Sub(t.lastFeedbackTime)
-			// REMOVE t.params.Logger.Infow("report received", "at", at, "sinceLast", sinceLast, "pktCount", report.FbPktCount) // REMOVE
-			if t.estimatedFeedbackInterval == 0 {
-				t.estimatedFeedbackInterval = sinceLast
-			} else {
-				// filter out outliers from estimate
-				if sinceLast > t.estimatedFeedbackInterval/outlierReportFactor && sinceLast < outlierReportFactor*t.estimatedFeedbackInterval {
-					// smoothed version of inter feedback interval
-					t.estimatedFeedbackInterval = time.Duration(estimatedFeedbackIntervalAlpha*float64(t.estimatedFeedbackInterval) + (1.0-estimatedFeedbackIntervalAlpha)*float64(sinceLast))
-				}
-			}
-		} else {
-			return errFeedbackReportOutOfOrder
-		}
+func (t *TWCCFeedback) updateFeedbackState(report *rtcp.TransportLayerCC, at time.Time) (int64, error) {
+	if t.lastFeedbackTime.IsZero() {
+		t.lastFeedbackTime = at
+		t.highestReferenceTime = report.ReferenceTime
+		t.highestFeedbackCount = report.FbPktCount
+		return (t.cycles + int64(report.ReferenceTime)) * cReferenceTimeResolution * 1000, nil
 	}
 
+	if (report.FbPktCount - t.highestFeedbackCount) > (1 << 7) {
+		// SSBWE-TODO: should out-of-order reports be dropped or processed??
+		return 0, errFeedbackReportOutOfOrder
+	}
+
+	// reference time wrap around handling
+	var referenceTime int64
+	if (report.ReferenceTime-t.highestReferenceTime)&cReferenceTimeMask < (1 << 23) {
+		if report.ReferenceTime < t.highestReferenceTime {
+			t.cycles += (1 << 24)
+		}
+		t.highestReferenceTime = report.ReferenceTime
+		referenceTime = t.cycles + int64(report.ReferenceTime)
+	} else {
+		cycles := t.cycles
+		if report.ReferenceTime > t.highestReferenceTime && cycles >= (1<<24) {
+			cycles -= (1 << 24)
+		}
+		referenceTime = cycles + int64(report.ReferenceTime)
+	}
+
+	sinceLast := at.Sub(t.lastFeedbackTime)
+	// REMOVE t.params.Logger.Infow("report received", "at", at, "sinceLast", sinceLast, "pktCount", report.FbPktCount) // REMOVE
+	if t.estimatedFeedbackInterval == 0 {
+		t.estimatedFeedbackInterval = sinceLast
+	} else {
+		// filter out outliers from estimate
+		if sinceLast > t.estimatedFeedbackInterval/cOutlierReportFactor && sinceLast < cOutlierReportFactor*t.estimatedFeedbackInterval {
+			// smoothed version of inter feedback interval
+			t.estimatedFeedbackInterval = time.Duration(cEstimatedFeedbackIntervalAlpha*float64(t.estimatedFeedbackInterval) + (1.0-cEstimatedFeedbackIntervalAlpha)*float64(sinceLast))
+		}
+	}
 	t.lastFeedbackTime = at
 	t.highestFeedbackCount = report.FbPktCount
-	return nil
+	return referenceTime * cReferenceTimeResolution * 1000, nil
 }
 
 // ------------------------------------------------
