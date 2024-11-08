@@ -18,7 +18,6 @@ import (
 	"math"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -30,8 +29,42 @@ const (
 	frameRateDecreaseFactor = 0.9  // fast decrease
 )
 
+// -------------------------------------------------------
+
+type StreamTrackerFrameConfig struct {
+	MinFPS float64 `yaml:"min_fps,omitempty"`
+}
+
+var (
+	DefaultStreamTrackerFrameConfigVideo = map[int32]StreamTrackerFrameConfig{
+		0: {
+			MinFPS: 5.0,
+		},
+		1: {
+			MinFPS: 5.0,
+		},
+		2: {
+			MinFPS: 5.0,
+		},
+	}
+
+	DefaultStreamTrackerFrameConfigScreenshare = map[int32]StreamTrackerFrameConfig{
+		0: {
+			MinFPS: 0.5,
+		},
+		1: {
+			MinFPS: 0.5,
+		},
+		2: {
+			MinFPS: 0.5,
+		},
+	}
+)
+
+// -------------------------------------------------------
+
 type StreamTrackerFrameParams struct {
-	Config    config.StreamTrackerFrameConfig
+	Config    StreamTrackerFrameConfig
 	ClockRate uint32
 	Logger    logger.Logger
 }

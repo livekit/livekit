@@ -28,7 +28,6 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
-	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/utils"
@@ -137,8 +136,41 @@ func (e Event) String() string {
 
 // ---------------------------------------------------------------------------
 
+type (
+	ProbeMode string
+)
+
+const (
+	ProbeModePadding ProbeMode = "padding"
+	ProbeModeMedia   ProbeMode = "media"
+)
+
+type StreamAllocatorConfig struct {
+	NackRatioAttenuator              float64               `yaml:"nack_ratio_attenuator,omitempty"`
+	ExpectedUsageThreshold           float64               `yaml:"expected_usage_threshold,omitempty"`
+	ProbeMode                        ProbeMode             `yaml:"probe_mode,omitempty"`
+	MinChannelCapacity               int64                 `yaml:"min_channel_capacity,omitempty"`
+	ProbeController                  ProbeControllerConfig `yaml:"probe_controller,omitempty"`
+	ChannelObserverProbe             ChannelObserverConfig `yaml:"channel_observer_probe,omitempty"`
+	ChannelObserverNonProbe          ChannelObserverConfig `yaml:"channel_observer_non_probe,omitempty"`
+	DisableEstimationUnmanagedTracks bool                  `yaml:"disable_etimation_unmanaged_tracks,omitempty"`
+}
+
+var (
+	DefaultStreamAllocatorConfig = StreamAllocatorConfig{
+		NackRatioAttenuator:     0.4,
+		ExpectedUsageThreshold:  0.95,
+		ProbeMode:               ProbeModePadding,
+		ProbeController:         DefaultProbeControllerConfig,
+		ChannelObserverProbe:    DefaultChannelObserverConfigProbe,
+		ChannelObserverNonProbe: DefaultChannelObserverConfigNonProbe,
+	}
+)
+
+// ---------------------------------------------------------------------------
+
 type StreamAllocatorParams struct {
-	Config config.CongestionControlConfig
+	Config StreamAllocatorConfig
 	Logger logger.Logger
 }
 
@@ -149,6 +181,7 @@ type StreamAllocator struct {
 
 	bwe cc.BandwidthEstimator
 
+	enabled    bool
 	allowPause bool
 
 	lastReceivedEstimate      int64
@@ -174,10 +207,11 @@ type StreamAllocator struct {
 	isStopped atomic.Bool
 }
 
-func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
+func NewStreamAllocator(params StreamAllocatorParams, enabled bool, allowPause bool) *StreamAllocator {
 	s := &StreamAllocator{
 		params:     params,
-		allowPause: params.Config.AllowPause,
+		enabled:    enabled,
+		allowPause: allowPause,
 		prober: NewProber(ProberParams{
 			Logger: params.Logger,
 		}),
@@ -191,7 +225,7 @@ func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 	}
 
 	s.probeController = NewProbeController(ProbeControllerParams{
-		Config: s.params.Config.ProbeConfig,
+		Config: s.params.Config.ProbeController,
 		Prober: s.prober,
 		Logger: params.Logger,
 	})
@@ -869,7 +903,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	s.probeController.AbortProbe()
 
 	// if not deficient, free pass allocate track
-	if !s.params.Config.Enabled || s.state == streamAllocatorStateStable || !track.IsManaged() {
+	if !s.enabled || s.state == streamAllocatorStateStable || !track.IsManaged() {
 		update := NewStreamStateUpdate()
 		allocation := track.AllocateOptimal(FlagAllowOvershootWhileOptimal)
 		updateStreamStateChange(track, allocation, update)
@@ -1096,7 +1130,7 @@ boost_loop:
 }
 
 func (s *StreamAllocator) allocateAllTracks() {
-	if !s.params.Config.Enabled {
+	if !s.enabled {
 		// nothing else to do when disabled
 		return
 	}
@@ -1276,7 +1310,7 @@ func (s *StreamAllocator) newChannelObserverProbe() *ChannelObserver {
 	return NewChannelObserver(
 		ChannelObserverParams{
 			Name:   "probe",
-			Config: s.params.Config.ChannelObserverProbeConfig,
+			Config: s.params.Config.ChannelObserverProbe,
 		},
 		s.params.Logger,
 	)
@@ -1286,7 +1320,7 @@ func (s *StreamAllocator) newChannelObserverNonProbe() *ChannelObserver {
 	return NewChannelObserver(
 		ChannelObserverParams{
 			Name:   "non-probe",
-			Config: s.params.Config.ChannelObserverNonProbeConfig,
+			Config: s.params.Config.ChannelObserverNonProbe,
 		},
 		s.params.Logger,
 	)
@@ -1325,10 +1359,10 @@ func (s *StreamAllocator) maybeProbe() {
 	}
 
 	switch s.params.Config.ProbeMode {
-	case config.CongestionControlProbeModeMedia:
+	case ProbeModeMedia:
 		s.maybeProbeWithMedia()
 		s.adjustState()
-	case config.CongestionControlProbeModePadding:
+	case ProbeModePadding:
 		s.maybeProbeWithPadding()
 	}
 }

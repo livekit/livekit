@@ -444,9 +444,9 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 	}
 	if params.IsSendSide {
 		t.streamAllocator = streamallocator.NewStreamAllocator(streamallocator.StreamAllocatorParams{
-			Config: params.CongestionControlConfig,
+			Config: params.CongestionControlConfig.StreamAllocator,
 			Logger: params.Logger.WithComponent(utils.ComponentCongestionControl),
-		})
+		}, params.CongestionControlConfig.Enabled, params.CongestionControlConfig.AllowPause)
 		t.streamAllocator.OnStreamStateChange(params.Handler.OnStreamStateChange)
 		t.streamAllocator.Start()
 		t.pacer = pacer.NewPassThrough(params.Logger)

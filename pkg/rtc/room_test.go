@@ -31,6 +31,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
+	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/audio"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
@@ -802,7 +803,7 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *Room {
 			EmptyTimeout:     5 * 60,
 			DepartureTimeout: 1,
 		},
-		&config.AudioConfig{
+		&sfu.AudioConfig{
 			UpdateInterval:  audioUpdateInterval,
 			SmoothIntervals: opts.audioSmoothIntervals,
 		},

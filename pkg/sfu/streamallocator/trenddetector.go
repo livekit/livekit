@@ -70,15 +70,41 @@ func trendDetectorSampleListToString(samples []trendDetectorSample) string {
 
 // ------------------------------------------------
 
+type TrendDetectorConfig struct {
+	RequiredSamples        int           `yaml:"required_samples,omitempty"`
+	RequiredSamplesMin     int           `yaml:"required_samples_min,omitempty"`
+	DownwardTrendThreshold float64       `yaml:"downward_trend_threshold,omitempty"`
+	DownwardTrendMaxWait   time.Duration `yaml:"downward_trend_max_wait,omitempty"`
+	CollapseThreshold      time.Duration `yaml:"collapse_threshold,omitempty"`
+	ValidityWindow         time.Duration `yaml:"validity_window,omitempty"`
+}
+
+var (
+	DefaultTrendDetectorConfigProbe = TrendDetectorConfig{
+		RequiredSamples:        3,
+		RequiredSamplesMin:     3,
+		DownwardTrendThreshold: 0.0,
+		DownwardTrendMaxWait:   5 * time.Second,
+		CollapseThreshold:      0,
+		ValidityWindow:         10 * time.Second,
+	}
+
+	DefaultTrendDetectorConfigNonProbe = TrendDetectorConfig{
+		RequiredSamples:        12,
+		RequiredSamplesMin:     8,
+		DownwardTrendThreshold: -0.6,
+		DownwardTrendMaxWait:   5 * time.Second,
+		CollapseThreshold:      500 * time.Millisecond,
+		ValidityWindow:         10 * time.Second,
+	}
+)
+
+// ------------------------------------------------
+
 type TrendDetectorParams struct {
-	Name                   string
-	Logger                 logger.Logger
-	RequiredSamples        int
-	RequiredSamplesMin     int
-	DownwardTrendThreshold float64
-	DownwardTrendMaxWait   time.Duration
-	CollapseThreshold      time.Duration
-	ValidityWindow         time.Duration
+	Name   string
+	Logger logger.Logger
+	Config TrendDetectorConfig
 }
 
 type TrendDetector struct {
@@ -134,7 +160,7 @@ func (t *TrendDetector) AddValue(value int64) {
 	if len(t.samples) != 0 {
 		lastSample = &t.samples[len(t.samples)-1]
 	}
-	if lastSample != nil && lastSample.value == value && t.params.CollapseThreshold > 0 && time.Since(lastSample.at) < t.params.CollapseThreshold {
+	if lastSample != nil && lastSample.value == value && t.params.Config.CollapseThreshold > 0 && time.Since(lastSample.at) < t.params.Config.CollapseThreshold {
 		return
 	}
 
@@ -156,7 +182,7 @@ func (t *TrendDetector) GetDirection() TrendDirection {
 }
 
 func (t *TrendDetector) HasEnoughSamples() bool {
-	return t.numSamples >= t.params.RequiredSamples
+	return t.numSamples >= t.params.Config.RequiredSamples
 }
 
 func (t *TrendDetector) ToString() string {
@@ -173,13 +199,13 @@ func (t *TrendDetector) prune() {
 	// prune based on a few rules
 
 	//  1. If there are more than required samples
-	if len(t.samples) > t.params.RequiredSamples {
-		t.samples = t.samples[len(t.samples)-t.params.RequiredSamples:]
+	if len(t.samples) > t.params.Config.RequiredSamples {
+		t.samples = t.samples[len(t.samples)-t.params.Config.RequiredSamples:]
 	}
 
 	// 2. drop samples that are too old
-	if len(t.samples) != 0 && t.params.ValidityWindow > 0 {
-		cutoffTime := time.Now().Add(-t.params.ValidityWindow)
+	if len(t.samples) != 0 && t.params.Config.ValidityWindow > 0 {
+		cutoffTime := time.Now().Add(-t.params.Config.ValidityWindow)
 		cutoffIndex := -1
 		for i := 0; i < len(t.samples); i++ {
 			if t.samples[i].at.After(cutoffTime) {
@@ -213,7 +239,7 @@ func (t *TrendDetector) prune() {
 }
 
 func (t *TrendDetector) updateDirection() {
-	if len(t.samples) < t.params.RequiredSamplesMin {
+	if len(t.samples) < t.params.Config.RequiredSamplesMin {
 		t.direction = TrendDirectionNeutral
 		return
 	}
@@ -223,9 +249,9 @@ func (t *TrendDetector) updateDirection() {
 
 	t.direction = TrendDirectionNeutral
 	switch {
-	case kt > 0 && len(t.samples) >= t.params.RequiredSamples:
+	case kt > 0 && len(t.samples) >= t.params.Config.RequiredSamples:
 		t.direction = TrendDirectionUpward
-	case kt < t.params.DownwardTrendThreshold && (len(t.samples) >= t.params.RequiredSamples || t.samples[len(t.samples)-1].at.Sub(t.samples[0].at) > t.params.DownwardTrendMaxWait):
+	case kt < t.params.Config.DownwardTrendThreshold && (len(t.samples) >= t.params.Config.RequiredSamples || t.samples[len(t.samples)-1].at.Sub(t.samples[0].at) > t.params.Config.DownwardTrendMaxWait):
 		t.direction = TrendDirectionDownward
 	}
 }
