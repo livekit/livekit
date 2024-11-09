@@ -150,12 +150,12 @@ func (p *packetGroup) Add(pi *packetInfo, sendDelta, recvDelta int64, isLost boo
 	}
 	p.maxSequenceNumber = max(p.maxSequenceNumber, pi.sequenceNumber)
 
-	if p.minSendTime == 0 || (pi.sendTime - sendDelta) < p.minSendTime {
+	if p.minSendTime == 0 || (pi.sendTime-sendDelta) < p.minSendTime {
 		p.minSendTime = pi.sendTime - sendDelta
 	}
 	p.maxSendTime = max(p.maxSendTime, pi.sendTime)
 
-	if p.minRecvTime == 0 || (pi.recvTime - recvDelta) < p.minRecvTime {
+	if p.minRecvTime == 0 || (pi.recvTime-recvDelta) < p.minRecvTime {
 		p.minRecvTime = pi.recvTime - recvDelta
 	}
 	p.maxRecvTime = max(p.maxRecvTime, pi.recvTime)
