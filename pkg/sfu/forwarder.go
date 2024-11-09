@@ -755,7 +755,7 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 		}
 
 		alloc.TargetLayer = buffer.VideoLayer{
-			Spatial:  int32(math.Min(float64(maxSeenLayer.Spatial), float64(maxSpatial))),
+			Spatial:  min(maxSeenLayer.Spatial, maxSpatial),
 			Temporal: getMaxTemporal(),
 		}
 	}
@@ -783,7 +783,7 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 		//   2. If current is a valid layer, check against currently available layers and continue at current
 		//      if possible. Else, choose the highest available layer as the next target.
 		//   3. If current is not valid, set next target to be opportunistic.
-		maxLayerSpatialLimit := int32(math.Min(float64(maxLayer.Spatial), float64(maxSeenLayer.Spatial)))
+		maxLayerSpatialLimit := min(maxLayer.Spatial, maxSeenLayer.Spatial)
 		highestAvailableLayer := buffer.InvalidLayerSpatial
 		requestLayerSpatial := buffer.InvalidLayerSpatial
 		for _, al := range availableLayers {
@@ -1120,7 +1120,7 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() (VideoTransit
 				break
 			}
 
-			bandwidthDelta := int64(math.Max(float64(0), float64(existingBandwidthNeeded-f.provisional.bitrates[s][t])))
+			bandwidthDelta := max(0, existingBandwidthNeeded-f.provisional.bitrates[s][t])
 
 			transitionCost := int32(0)
 			// SVC-TODO: SVC will need a different cost transition

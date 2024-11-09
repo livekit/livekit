@@ -208,7 +208,7 @@ func TestForwarderAllocateOptimal(t *testing.T) {
 	f.PubMute(false)
 
 	// when max layers changes, target is opportunistic, but requested spatial layer should be at max
-	f.SetMaxTemporalLayerSeen(3)
+	f.SetMaxTemporalLayerSeen(buffer.DefaultMaxLayerTemporal)
 	f.vls.SetMax(buffer.VideoLayer{Spatial: 1, Temporal: 3})
 	expectedResult = VideoAllocation{
 		PauseReason:         VideoPauseReasonNone,
