@@ -408,7 +408,7 @@ func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 				} else {
 					isLost = true
 				}
-				pi, sendDelta, recvDelta := c.packetTracker.RecordPacketReceivedByRemote(sequenceNumber, recvTime)
+				pi, sendDelta, recvDelta := c.packetTracker.RecordPacketIndicationFromRemote(sequenceNumber, recvTime)
 				if pi.sendTime != 0 {
 					trackPacketGroup(&pi, sendDelta, recvDelta, isLost)
 				}
@@ -431,7 +431,7 @@ func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 				} else {
 					isLost = true
 				}
-				pi, sendDelta, recvDelta := c.packetTracker.RecordPacketReceivedByRemote(sequenceNumber, recvTime)
+				pi, sendDelta, recvDelta := c.packetTracker.RecordPacketIndicationFromRemote(sequenceNumber, recvTime)
 				if pi.sendTime != 0 {
 					trackPacketGroup(&pi, sendDelta, recvDelta, isLost)
 				}
