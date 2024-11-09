@@ -19,14 +19,14 @@ var (
 // -------------------------------------------------------------
 
 type PacketGroupConfig struct {
-	MinPackets          int           `yaml:"min_packets,omitempty"`
-	MaxWindowDuration   time.Duration `yaml:"max_window_duration,omitempty"`
+	MinPackets        int           `yaml:"min_packets,omitempty"`
+	MaxWindowDuration time.Duration `yaml:"max_window_duration,omitempty"`
 }
 
 var (
 	DefaultPacketGroupConfig = PacketGroupConfig{
-		MinPackets:          20,
-		MaxWindowDuration:   500 * time.Millisecond,
+		MinPackets:        20,
+		MaxWindowDuration: 500 * time.Millisecond,
 	}
 )
 
