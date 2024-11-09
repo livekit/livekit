@@ -261,15 +261,13 @@ func (c *CongestionDetector) congestionDetectionStateMachine() {
 		}
 
 	case CongestionStateCongestedRelieving:
-		if time.Since(c.congestionStateSwitchedAt) >= c.params.Config.CongestedHangover {
-			if congestedTriggered {
-				c.params.Logger.Warnw("invalid congested state transition", nil, "from", state)
-			}
-			if earlyWarningTriggered {
-				newState = CongestionStateEarlyWarning
-			} else {
-				newState = CongestionStateNone
-			}
+		if congestedTriggered {
+			c.params.Logger.Warnw("invalid congested state transition", nil, "from", state)
+		}
+		if earlyWarningTriggered {
+			newState = CongestionStateEarlyWarning
+		} else if time.Since(c.congestionStateSwitchedAt) >= c.params.Config.CongestedHangover {
+			newState = CongestionStateNone
 		}
 	}
 
@@ -299,7 +297,7 @@ func (c *CongestionDetector) estimateAvailableChannelCapacity() {
 	mst, dur, nbytes, ctr := c.activePacketGroup.Traffic()
 	totalDuration += dur
 	// captured traffic ratio is a measure of what fraction of sent traffic was delivered
-	totalBytes += float64(nbytes) * ctr
+		totalBytes += float64(nbytes) * ctr
 	*/
 
 	threshold := activeMinSendTime - c.params.Config.RateMeasurementWindowDurationMax.Microseconds()
@@ -325,8 +323,9 @@ func (c *CongestionDetector) estimateAvailableChannelCapacity() {
 }
 
 func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
-	report, recvRefTime, err := c.twccFeedback.GetReport(fbr.report, fbr.at)
-	if err != nil {
+	recvRefTime, isOutOfOrder := c.twccFeedback.ProcessReport(fbr.report, fbr.at)
+	if isOutOfOrder {
+		// SSBWE-TODO: should out-of-order reports be dropped or processed??
 		return
 	}
 
@@ -347,7 +346,7 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 
 		if err := c.activePacketGroup.Add(pi, piPrev); err != nil {
 			c.packetGroups = append(c.packetGroups, c.activePacketGroup)
-			c.params.Logger.Infow("packet group done", "group", c.activePacketGroup) // REMOVE
+			c.params.Logger.Infow("packet group done", "group", c.activePacketGroup) // SSBWE-REMOVE
 
 			c.activePacketGroup = NewPacketGroup(
 				PacketGroupParams{
@@ -362,11 +361,20 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 
 	// 1. go through the TWCC feedback report and record recive time as reported by remote
 	// 2. process acknowledged packet and group them
-	// NOTE: losses are not recorded if a feedback report is completely lost.
-	sequenceNumber := report.BaseSequenceNumber
-	endSequenceNumberExclusive := sequenceNumber + report.PacketStatusCount
+	//
+	// losses are not recorded if a feedback report is completely lost.
+	// RFC recommends treating lost reports by ignoring packets that would have been in it.
+	// -----------------------------------------------------------------------------------
+	// | From a congestion control perspective, lost feedback messages are               |
+	// | handled by ignoring packets which would have been reported as lost or           |
+	// | received in the lost feedback messages.  This behavior is similar to            |
+	// | how a lost RTCP receiver report is handled.                                     |
+	// -----------------------------------------------------------------------------------
+	// Reference: https://datatracker.ietf.org/doc/html/draft-holmer-rmcat-transport-wide-cc-extensions-01#page-4
+	sequenceNumber := fbr.report.BaseSequenceNumber
+	endSequenceNumberExclusive := sequenceNumber + fbr.report.PacketStatusCount
 	deltaIdx := 0
-	for _, chunk := range report.PacketChunks {
+	for _, chunk := range fbr.report.PacketChunks {
 		if sequenceNumber == endSequenceNumberExclusive {
 			break
 		}
@@ -379,23 +387,25 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 				}
 
 				if chunk.PacketStatusSymbol != rtcp.TypeTCCPacketNotReceived {
-					recvRefTime += report.RecvDeltas[deltaIdx].Delta
+					recvRefTime += fbr.report.RecvDeltas[deltaIdx].Delta
 					deltaIdx++
 
 					pi, piPrev := c.PacketTracker.RecordPacketReceivedByRemote(sequenceNumber, recvRefTime)
 					trackPacketGroup(pi, piPrev)
 				} else {
 					pi := c.PacketTracker.getPacketInfo(sequenceNumber)
-					if pi.recvTime == 0 {
+					if pi != nil && pi.recvTime == 0 {
 						piPrev := c.PacketTracker.getPacketInfo(sequenceNumber - 1)
-						c.params.Logger.Infow(
-							"lost packet",
-							"sequenceNumber", sequenceNumber,
-							"pisn", pi.sequenceNumber,
-							"size", pi.size,
-							"piPrevSN", piPrev.sequenceNumber,
-							"prevSize", piPrev.size,
-						) // REMOVE
+						if piPrev != nil {
+							c.params.Logger.Infow(
+								"lost packet",
+								"sequenceNumber", sequenceNumber,
+								"pisn", pi.sequenceNumber,
+								"size", pi.size,
+								"piPrevSN", piPrev.sequenceNumber,
+								"prevSize", piPrev.size,
+							) // SSBWE-REMOVE
+						}
 					}
 				}
 				sequenceNumber++
@@ -408,23 +418,25 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 				}
 
 				if symbol != rtcp.TypeTCCPacketNotReceived {
-					recvRefTime += report.RecvDeltas[deltaIdx].Delta
+					recvRefTime += fbr.report.RecvDeltas[deltaIdx].Delta
 					deltaIdx++
 
 					pi, piPrev := c.PacketTracker.RecordPacketReceivedByRemote(sequenceNumber, recvRefTime)
 					trackPacketGroup(pi, piPrev)
 				} else {
 					pi := c.PacketTracker.getPacketInfo(sequenceNumber)
-					if pi.recvTime == 0 {
+					if pi != nil && pi.recvTime == 0 {
 						piPrev := c.PacketTracker.getPacketInfo(sequenceNumber - 1)
-						c.params.Logger.Infow(
-							"svc lost packet",
-							"sequenceNumber", sequenceNumber,
-							"pisn", pi.sequenceNumber,
-							"size", pi.size,
-							"piPrevSN", piPrev.sequenceNumber,
-							"prevSize", piPrev.size,
-						) // REMOVE
+						if piPrev != nil {
+							c.params.Logger.Infow(
+								"svc lost packet",
+								"sequenceNumber", sequenceNumber,
+								"pisn", pi.sequenceNumber,
+								"size", pi.size,
+								"piPrevSN", piPrev.sequenceNumber,
+								"prevSize", piPrev.size,
+							) // SSBWE-REMOVE
+						}
 					}
 				}
 				sequenceNumber++

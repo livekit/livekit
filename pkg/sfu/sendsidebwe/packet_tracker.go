@@ -60,7 +60,7 @@ func (p *PacketTracker) RecordPacketSendAndGetSequenceNumber(at time.Time, size 
 	pi.size = uint16(size)
 	pi.isRTX = isRTX
 	pi.ResetReceiveAndDeltas()
-	// REMOVE p.params.Logger.Infow("packet sent", "packetInfo", pi) // REMOVE
+	// SSBWE-REMOVE p.params.Logger.Infow("packet sent", "packetInfo", pi) // SSBWE-REMOVE
 
 	return sn
 }
@@ -93,7 +93,7 @@ func (p *PacketTracker) RecordPacketReceivedByRemote(sn uint16, recvTime int64) 
 			if piPrev != nil {
 				pi.sendDelta = pi.sendTime - piPrev.sendTime
 				pi.recvDelta = pi.recvTime - piPrev.recvTime
-				// REMOVE p.params.Logger.Infow("packet received", "packetInfo", pi, "prev", piPrev) // REMOVE
+				// SSBWE-REMOVE p.params.Logger.Infow("packet received", "packetInfo", pi, "prev", piPrev) // SSBWE-REMOVE
 				// NOTE:
 				// TWCC feedback has a resolution of 250 us inter packet interval,
 				// so small send intervals could get coalesced on receiver side

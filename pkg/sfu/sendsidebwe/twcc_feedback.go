@@ -6,6 +6,7 @@ import (
 
 	"github.com/livekit/protocol/logger"
 	"github.com/pion/rtcp"
+	"go.uber.org/zap/zapcore"
 )
 
 // ------------------------------------------------------
@@ -30,19 +31,18 @@ type TWCCFeedbackParams struct {
 	Logger logger.Logger
 }
 
-// SSBWE-TODO: what is the purpose of this module? is it needed?
-// maybe, it needs to flag large gaps between reports?
 type TWCCFeedback struct {
 	params TWCCFeedbackParams
 
 	lastFeedbackTime          time.Time
 	estimatedFeedbackInterval time.Duration
+	numReports                int
+	numReportsOutOfOrder      int
 
 	highestFeedbackCount uint8
 
 	cycles               int64
 	highestReferenceTime uint32
-	// SSBWE-TODO- maybe store some history of reports as is, maybe for debugging?
 }
 
 func NewTWCCFeedback(params TWCCFeedbackParams) *TWCCFeedback {
@@ -51,27 +51,20 @@ func NewTWCCFeedback(params TWCCFeedbackParams) *TWCCFeedback {
 	}
 }
 
-func (t *TWCCFeedback) GetReport(report *rtcp.TransportLayerCC, at time.Time) (*rtcp.TransportLayerCC, int64, error) {
-	referenceTime, err := t.updateFeedbackState(report, at)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	// REMOVE t.params.Logger.Infow("TWCC feedback", "report", report.String()) // REMOVE
-	return report, referenceTime, nil
-}
-
-func (t *TWCCFeedback) updateFeedbackState(report *rtcp.TransportLayerCC, at time.Time) (int64, error) {
+func (t *TWCCFeedback) ProcessReport(report *rtcp.TransportLayerCC, at time.Time) (int64, bool) {
+	// SSBWE-REMOVE t.params.Logger.Infow("TWCC feedback", "report", report.String()) // SSBWE-REMOVE
+	t.numReports++
 	if t.lastFeedbackTime.IsZero() {
 		t.lastFeedbackTime = at
 		t.highestReferenceTime = report.ReferenceTime
 		t.highestFeedbackCount = report.FbPktCount
-		return (t.cycles + int64(report.ReferenceTime)) * cReferenceTimeResolution * 1000, nil
+		return (t.cycles + int64(report.ReferenceTime)) * cReferenceTimeResolution * 1000, false
 	}
 
+	isOutOfOrder := false
 	if (report.FbPktCount - t.highestFeedbackCount) > (1 << 7) {
-		// SSBWE-TODO: should out-of-order reports be dropped or processed??
-		return 0, errFeedbackReportOutOfOrder
+		t.numReportsOutOfOrder++
+		isOutOfOrder = true
 	}
 
 	// reference time wrap around handling
@@ -90,20 +83,34 @@ func (t *TWCCFeedback) updateFeedbackState(report *rtcp.TransportLayerCC, at tim
 		referenceTime = cycles + int64(report.ReferenceTime)
 	}
 
-	sinceLast := at.Sub(t.lastFeedbackTime)
-	// REMOVE t.params.Logger.Infow("report received", "at", at, "sinceLast", sinceLast, "pktCount", report.FbPktCount) // REMOVE
-	if t.estimatedFeedbackInterval == 0 {
-		t.estimatedFeedbackInterval = sinceLast
-	} else {
-		// filter out outliers from estimate
-		if sinceLast > t.estimatedFeedbackInterval/cOutlierReportFactor && sinceLast < cOutlierReportFactor*t.estimatedFeedbackInterval {
-			// smoothed version of inter feedback interval
-			t.estimatedFeedbackInterval = time.Duration(cEstimatedFeedbackIntervalAlpha*float64(t.estimatedFeedbackInterval) + (1.0-cEstimatedFeedbackIntervalAlpha)*float64(sinceLast))
+	if !isOutOfOrder {
+		sinceLast := at.Sub(t.lastFeedbackTime)
+		// SSBWE-REMOVE t.params.Logger.Infow("report received", "at", at, "sinceLast", sinceLast, "pktCount", report.FbPktCount) // SSBWE-REMOVE
+		if t.estimatedFeedbackInterval == 0 {
+			t.estimatedFeedbackInterval = sinceLast
+		} else {
+			// filter out outliers from estimate
+			if sinceLast > t.estimatedFeedbackInterval/cOutlierReportFactor && sinceLast < cOutlierReportFactor*t.estimatedFeedbackInterval {
+				// smoothed version of inter feedback interval
+				t.estimatedFeedbackInterval = time.Duration(cEstimatedFeedbackIntervalAlpha*float64(t.estimatedFeedbackInterval) + (1.0-cEstimatedFeedbackIntervalAlpha)*float64(sinceLast))
+			}
 		}
+		t.lastFeedbackTime = at
+		t.highestFeedbackCount = report.FbPktCount
 	}
-	t.lastFeedbackTime = at
-	t.highestFeedbackCount = report.FbPktCount
-	return referenceTime * cReferenceTimeResolution * 1000, nil
+
+	return referenceTime * cReferenceTimeResolution * 1000, isOutOfOrder
 }
 
-// ------------------------------------------------
+func (t *TWCCFeedback) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if t == nil {
+		return nil
+	}
+
+	e.AddTime("lastFeedbackTime", t.lastFeedbackTime)
+	e.AddDuration("estimatedFeedbackInterval", t.estimatedFeedbackInterval)
+	e.AddInt("numReports", t.numReports)
+	e.AddInt("numReportsOutOfOrder", t.numReportsOutOfOrder)
+	e.AddInt64("cycles", t.cycles/(1<<24))
+	return nil
+}

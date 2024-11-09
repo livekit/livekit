@@ -144,7 +144,7 @@ func (p *PacketGroup) Add(pi *packetInfo, piPrev *packetInfo) error {
 		p.maxRecvTime = pi.recvTime
 	}
 
-	// in the gap from this packet to prev packet, the packet that was transmitted
+	// in the gap from the prev packet to this packet, the packet that was transmitted
 	// is the previous packet, so count size of previous packet here for this delta.
 	p.acked.add(int(piPrev.size), piPrev.isRTX)
 
@@ -189,6 +189,7 @@ func (p *PacketGroup) Traffic() (int64, int64, int, float64) {
 
 	// SSBWE-TODO: should traffic include lost bytes as well to calculate rate? CTR does not capture loss
 	// SSBWE-TODO: not including lost means send side rate could be under calculated if there are a bunch of losses
+	// SSBWE-TODO: should traffic include RTX bytes? RTX could happen in bunches and that could skew the rate?
 	return p.minSendTime, p.maxSendTime - p.minSendTime, p.acked.numBytes(), min(1.0, capturedTrafficRatio)
 }
 
@@ -209,16 +210,16 @@ func (p *PacketGroup) MarshalLogObject(e zapcore.ObjectEncoder) error {
 
 	e.AddObject("acked", p.acked)
 
-	sendBitRate := float64(0)
+	sendBitrate := float64(0)
 	if sendDuration != 0 {
-		sendBitRate = float64(p.acked.numBytes()*8) / sendDuration.Seconds()
-		e.AddFloat64("sendBitRate", sendBitRate)
+		sendBitrate = float64(p.acked.numBytes()*8) / sendDuration.Seconds()
+		e.AddFloat64("sendBitrate", sendBitrate)
 	}
 
-	recvBitRate := float64(0)
+	recvBitrate := float64(0)
 	if recvDuration != 0 {
-		recvBitRate = float64(p.acked.numBytes()*8) / recvDuration.Seconds()
-		e.AddFloat64("recvBitRate", recvBitRate)
+		recvBitrate = float64(p.acked.numBytes()*8) / recvDuration.Seconds()
+		e.AddFloat64("recvBitrate", recvBitrate)
 	}
 
 	e.AddInt64("aggregateSendDelta", p.aggregateSendDelta)
@@ -227,10 +228,8 @@ func (p *PacketGroup) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddInt64("groupDelay", p.aggregateRecvDelta-p.aggregateSendDelta)
 	if p.aggregateRecvDelta != 0 {
 		capturedTrafficRatio := float64(p.aggregateSendDelta) / float64(p.aggregateRecvDelta)
-		if capturedTrafficRatio != 0 && sendBitRate != 0 {
-			e.AddFloat64("capturedTrafficRatio", capturedTrafficRatio)
-			e.AddFloat64("estimatedAvailableChannelCapacity", min(1.0, capturedTrafficRatio)*sendBitRate)
-		}
+		e.AddFloat64("capturedTrafficRatio", capturedTrafficRatio)
+		e.AddFloat64("estimatedAvailableChannelCapacity", sendBitrate*min(1.0, capturedTrafficRatio))
 	}
 
 	e.AddBool("isFinalized", p.isFinalized)
