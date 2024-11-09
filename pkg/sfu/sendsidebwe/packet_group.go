@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 	"go.uber.org/zap/zapcore"
 )
 
@@ -12,19 +13,24 @@ import (
 
 var (
 	errGroupFinalized = errors.New("packet group is finalized")
+	errOldPacket      = errors.New("packet is older than packet group start")
 )
 
 // -------------------------------------------------------------
 
 type PacketGroupConfig struct {
-	MinPackets        int           `yaml:"min_packets,omitempty"`
-	MaxWindowDuration time.Duration `yaml:"max_window_duration,omitempty"`
+	MinPackets          int           `yaml:"min_packets,omitempty"`
+	MaxWindowDuration   time.Duration `yaml:"max_window_duration,omitempty"`
+	LossMinPacketsRatio float64       `yaml:"loss_min_packets_ratio,omitempty"`
+	LossAmplifierFactor float64       `yaml:"loss_amplifier_factor,omitempty"`
 }
 
 var (
 	DefaultPacketGroupConfig = PacketGroupConfig{
-		MinPackets:        20,
-		MaxWindowDuration: 500 * time.Millisecond,
+		MinPackets:          20,
+		MaxWindowDuration:   500 * time.Millisecond,
+		LossMinPacketsRatio: 0.5, // at least half number of min packets should be available to calculate loss
+		LossAmplifierFactor: 0.5,
 	}
 )
 
@@ -38,6 +44,11 @@ type stat struct {
 func (s *stat) add(size int) {
 	s.numPackets++
 	s.numBytes += size
+}
+
+func (s *stat) remove(size int) {
+	s.numPackets--
+	s.numBytes -= size
 }
 
 func (s *stat) getNumPackets() int {
@@ -69,6 +80,14 @@ func (c *classStat) add(size int, isRTX bool) {
 	}
 }
 
+func (c *classStat) remove(size int, isRTX bool) {
+	if isRTX {
+		c.rtx.remove(size)
+	} else {
+		c.primary.remove(size)
+	}
+}
+
 func (c *classStat) numPackets() int {
 	return c.primary.getNumPackets() + c.rtx.getNumPackets()
 }
@@ -85,23 +104,26 @@ func (c classStat) MarshalLogObject(e zapcore.ObjectEncoder) error {
 
 // -------------------------------------------------------------
 
-type PacketGroupParams struct {
+type packetGroupParams struct {
 	Config PacketGroupConfig
 	Logger logger.Logger
 }
 
-type PacketGroup struct {
-	params PacketGroupParams
+type packetGroup struct {
+	params packetGroupParams
 
-	minSendInitialized bool
-	minSendTime        int64
-	maxSendTime        int64
+	minSequenceNumber uint64
+	maxSequenceNumber uint64
 
-	minRecvInitialized bool  // for information only
-	minRecvTime        int64 // for information only
-	maxRecvTime        int64 // for information only
+	minSendTime int64
+	maxSendTime int64
 
-	acked classStat
+	minRecvTime int64 // for information only
+	maxRecvTime int64 // for information only
+
+	acked    classStat
+	lost     classStat
+	snBitmap *utils.Bitmap[uint64]
 
 	aggregateSendDelta int64
 	aggregateRecvDelta int64
@@ -110,46 +132,52 @@ type PacketGroup struct {
 	isFinalized bool
 }
 
-func NewPacketGroup(params PacketGroupParams, queuingDelay int64) *PacketGroup {
-	return &PacketGroup{
+func NewPacketGroup(params packetGroupParams, queuingDelay int64) *packetGroup {
+	return &packetGroup{
 		params:       params,
 		queuingDelay: queuingDelay,
+		snBitmap:     utils.NewBitmap[uint64](params.Config.MinPackets),
 	}
 }
 
-func (p *PacketGroup) Add(pi *packetInfo, piPrev *packetInfo) error {
-	if p.isFinalized {
-		return errGroupFinalized
+func (p *packetGroup) Add(pi *packetInfo, sendDelta, recvDelta int64, isLost bool) error {
+	if isLost {
+		return p.lostPacket(pi)
 	}
 
-	// start window including the gap from this packet to previous packet
-	// which would have been in previous group to ensure continuity.
-	// although, pi.sendTime - pi.sendDelta should be equal to piPrev.sendTime,
-	// it is written as an equation below to emphasize that inter-group gap is
-	// covered to maintain continuity.
-	// SSBWE-TODO: check if older packets can get in here, i. e. packets before min
-	if !p.minSendInitialized {
-		p.minSendInitialized = true
-		p.minSendTime = pi.sendTime - pi.sendDelta
-	}
-	if p.maxSendTime == 0 || pi.sendTime > p.maxSendTime {
-		p.maxSendTime = pi.sendTime
+	if err := p.inGroup(pi.sequenceNumber); err != nil {
+		return err
 	}
 
-	if !p.minRecvInitialized {
-		p.minRecvInitialized = true
-		p.minRecvTime = pi.recvTime - pi.recvDelta
+	if p.minSequenceNumber == 0 || pi.sequenceNumber < p.minSequenceNumber {
+		p.minSequenceNumber = pi.sequenceNumber
 	}
-	if p.maxRecvTime == 0 || pi.recvTime > p.maxRecvTime {
-		p.maxRecvTime = pi.recvTime
+	p.maxSequenceNumber = max(p.maxSequenceNumber, pi.sequenceNumber)
+
+	if p.minSendTime == 0 || pi.sendTime < p.minSendTime {
+		p.minSendTime = pi.sendTime
+	}
+	p.maxSendTime = max(p.maxSendTime, pi.sendTime)
+
+	if p.minRecvTime == 0 || pi.recvTime < p.minRecvTime {
+		p.minRecvTime = pi.recvTime
+	}
+	p.maxRecvTime = max(p.maxRecvTime, pi.recvTime)
+
+	p.acked.add(int(pi.size), pi.isRTX)
+	if p.snBitmap.IsSet(pi.sequenceNumber - p.minSequenceNumber) {
+		// an earlier packet reported as lost has been received
+		p.snBitmap.Clear(pi.sequenceNumber - p.minSequenceNumber)
+		p.lost.remove(int(pi.size), pi.isRTX)
 	}
 
-	// in the gap from the prev packet to this packet, the packet that was transmitted
-	// is the previous packet, so count size of previous packet here for this delta.
-	p.acked.add(int(piPrev.size), piPrev.isRTX)
-
-	p.aggregateSendDelta += pi.sendDelta
-	p.aggregateRecvDelta += pi.recvDelta
+	// note that out-of-order deliveries will amplify the queueing delay.
+	// for e.g. a, b, c getting delivered as a, c, b.
+	// let us say packets are delivered with interval of `x`
+	//   send delta aggregate will go up by x((a, c) = 2x + (c, b) -1x)
+	//   recv delta aggregate will go up by 3x((a, c) = 2x + (c, b) 1x)
+	p.aggregateSendDelta += sendDelta
+	p.aggregateRecvDelta += recvDelta
 
 	if p.acked.numPackets() == p.params.Config.MinPackets || (pi.sendTime-p.minSendTime) > p.params.Config.MaxWindowDuration.Microseconds() {
 		p.isFinalized = true
@@ -157,23 +185,44 @@ func (p *PacketGroup) Add(pi *packetInfo, piPrev *packetInfo) error {
 	return nil
 }
 
-func (p *PacketGroup) MinSendTime() (int64, bool) {
-	return p.minSendTime, p.minSendInitialized
+func (p *packetGroup) lostPacket(pi *packetInfo) error {
+	if pi.recvTime != 0 {
+		// previously received packet, so not lost
+		return nil
+	}
+
+	if err := p.inGroup(pi.sequenceNumber); err != nil {
+		return err
+	}
+
+	if p.minSequenceNumber == 0 || pi.sequenceNumber < p.minSequenceNumber {
+		p.minSequenceNumber = pi.sequenceNumber
+	}
+	p.maxSequenceNumber = max(p.maxSequenceNumber, pi.sequenceNumber)
+	p.snBitmap.Set(pi.sequenceNumber - p.minSequenceNumber)
+
+	p.lost.add(int(pi.size), pi.isRTX)
+	return nil
 }
 
-func (p *PacketGroup) PropagatedQueuingDelay() int64 {
+func (p *packetGroup) MinSendTime() int64 {
+	return p.minSendTime
+}
+
+func (p *packetGroup) PropagatedQueuingDelay() int64 {
 	if !p.isFinalized {
 		return 0
 	}
 
-	if p.queuingDelay+p.aggregateRecvDelta-p.aggregateSendDelta > 0 {
-		return p.queuingDelay + p.aggregateRecvDelta - p.aggregateSendDelta
+	aggregateRecvDelta := int64((1.0 + p.lossRatio()) * float64(p.aggregateRecvDelta))
+	if p.queuingDelay+aggregateRecvDelta-p.aggregateSendDelta > 0 {
+		return p.queuingDelay + aggregateRecvDelta - p.aggregateSendDelta
 	}
 
 	return max(0, p.aggregateRecvDelta-p.aggregateSendDelta)
 }
 
-func (p *PacketGroup) SendDuration() int64 {
+func (p *packetGroup) SendDuration() int64 {
 	if !p.isFinalized {
 		return 0
 	}
@@ -181,19 +230,23 @@ func (p *PacketGroup) SendDuration() int64 {
 	return p.maxSendTime - p.minSendTime
 }
 
-func (p *PacketGroup) Traffic() (int64, int64, int, float64) {
+func (p *packetGroup) AckedTraffic() (int64, int64, int, float64, float64) {
 	capturedTrafficRatio := float64(0.0)
 	if p.aggregateRecvDelta != 0 {
-		capturedTrafficRatio = float64(p.aggregateSendDelta) / float64(p.aggregateRecvDelta)
+		aggregateRecvDelta := (1.0 + p.lossRatio()) * float64(p.aggregateRecvDelta)
+		capturedTrafficRatio = float64(p.aggregateSendDelta) / aggregateRecvDelta
 	}
 
-	// SSBWE-TODO: should traffic include lost bytes as well to calculate rate? CTR does not capture loss
-	// SSBWE-TODO: not including lost means send side rate could be under calculated if there are a bunch of losses
+	fullness := max(
+		float64(p.acked.numPackets())/float64(p.params.Config.MinPackets),
+		float64(p.maxSendTime-p.minSendTime)/float64(p.params.Config.MaxWindowDuration.Microseconds()),
+	)
+
 	// SSBWE-TODO: should traffic include RTX bytes? RTX could happen in bunches and that could skew the rate?
-	return p.minSendTime, p.maxSendTime - p.minSendTime, p.acked.numBytes(), min(1.0, capturedTrafficRatio)
+	return p.minSendTime, p.maxSendTime - p.minSendTime, p.acked.numBytes(), min(1.0, capturedTrafficRatio), fullness
 }
 
-func (p *PacketGroup) MarshalLogObject(e zapcore.ObjectEncoder) error {
+func (p *packetGroup) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	if p == nil {
 		return nil
 	}
@@ -209,6 +262,8 @@ func (p *PacketGroup) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddDuration("recvDuration", recvDuration)
 
 	e.AddObject("acked", p.acked)
+	e.AddObject("lost", p.lost)
+	e.AddFloat64("lossRatio", float64(p.lost.numPackets())/float64(p.acked.numPackets()+p.lost.numPackets()))
 
 	sendBitrate := float64(0)
 	if sendDuration != 0 {
@@ -234,4 +289,25 @@ func (p *PacketGroup) MarshalLogObject(e zapcore.ObjectEncoder) error {
 
 	e.AddBool("isFinalized", p.isFinalized)
 	return nil
+}
+
+func (p *packetGroup) inGroup(sequenceNumber uint64) error {
+	if p.isFinalized && sequenceNumber > p.maxSequenceNumber {
+		return errGroupFinalized
+	}
+
+	if sequenceNumber < p.minSequenceNumber {
+		return errOldPacket
+	}
+
+	return nil
+}
+
+func (p *packetGroup) lossRatio() float64 {
+	totalPackets := float64(p.acked.numPackets() + p.lost.numPackets())
+	if totalPackets < p.params.Config.LossMinPacketsRatio*float64(p.params.Config.MinPackets) {
+		return 0.0
+	}
+
+	return float64(p.lost.numPackets()) / float64(p.acked.numPackets()+p.lost.numPackets())
 }

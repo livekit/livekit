@@ -41,6 +41,7 @@ type CongestionDetectorConfig struct {
 	EarlyWarningHangover             time.Duration          `yaml:"early_warning_hangover,omitempty"`
 	Congested                        CongestionSignalConfig `yaml:"congested,omitempty"`
 	CongestedHangover                time.Duration          `yaml:"congested_hangover,omitempty"`
+	RateMeasurementWindowFullnessMin float64                `yaml:"rate_measurement_window_fullness_min,omitempty"`
 	RateMeasurementWindowDurationMin time.Duration          `yaml:"rate_measurement_window_duration_min,omitempty"`
 	RateMeasurementWindowDurationMax time.Duration          `yaml:"rate_measurement_window_duration_max,omitempty"`
 }
@@ -55,6 +56,7 @@ var (
 		EarlyWarningHangover:             500 * time.Millisecond,
 		Congested:                        DefaultCongestedCongestionSignalConfig,
 		CongestedHangover:                3 * time.Second,
+		RateMeasurementWindowFullnessMin: 0.8,
 		RateMeasurementWindowDurationMin: 800 * time.Millisecond,
 		RateMeasurementWindowDurationMax: 2 * time.Second,
 	}
@@ -67,22 +69,21 @@ type feedbackReport struct {
 	report *rtcp.TransportLayerCC
 }
 
-type CongestionDetectorParams struct {
+type congestionDetectorParams struct {
 	Config CongestionDetectorConfig
 	Logger logger.Logger
 }
 
-type CongestionDetector struct {
-	params CongestionDetectorParams
+type congestionDetector struct {
+	params congestionDetectorParams
 
 	lock            sync.RWMutex
 	feedbackReports deque.Deque[feedbackReport]
 
-	*PacketTracker
-	twccFeedback *TWCCFeedback
+	*packetTracker
+	twccFeedback *twccFeedback
 
-	packetGroups      []*PacketGroup
-	activePacketGroup *PacketGroup
+	packetGroups []*packetGroup
 
 	wake chan struct{}
 	stop core.Fuse
@@ -93,11 +94,11 @@ type CongestionDetector struct {
 	onCongestionStateChange           func(congestionState CongestionState, estimatedAvailableChannelCapacity int64)
 }
 
-func NewCongestionDetector(params CongestionDetectorParams) *CongestionDetector {
-	c := &CongestionDetector{
+func NewCongestionDetector(params congestionDetectorParams) *congestionDetector {
+	c := &congestionDetector{
 		params:                            params,
-		PacketTracker:                     NewPacketTracker(PacketTrackerParams{Logger: params.Logger}),
-		twccFeedback:                      NewTWCCFeedback(TWCCFeedbackParams{Logger: params.Logger}),
+		packetTracker:                     NewPacketTracker(packetTrackerParams{Logger: params.Logger}),
+		twccFeedback:                      NewTWCCFeedback(twccFeedbackParams{Logger: params.Logger}),
 		wake:                              make(chan struct{}, 1),
 		estimatedAvailableChannelCapacity: 100_000_000,
 	}
@@ -108,27 +109,27 @@ func NewCongestionDetector(params CongestionDetectorParams) *CongestionDetector 
 	return c
 }
 
-func (c *CongestionDetector) Stop() {
+func (c *congestionDetector) Stop() {
 	c.stop.Once(func() {
 		close(c.wake)
 	})
 }
 
-func (c *CongestionDetector) OnCongestionStateChange(f func(congestionState CongestionState, estimatedAvailableChannelCapacity int64)) {
+func (c *congestionDetector) OnCongestionStateChange(f func(congestionState CongestionState, estimatedAvailableChannelCapacity int64)) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
 	c.onCongestionStateChange = f
 }
 
-func (c *CongestionDetector) GetCongestionState() CongestionState {
+func (c *congestionDetector) GetCongestionState() CongestionState {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 
 	return c.congestionState
 }
 
-func (c *CongestionDetector) updateCongestionState(state CongestionState) {
+func (c *congestionDetector) updateCongestionState(state CongestionState) {
 	c.lock.Lock()
 	c.params.Logger.Infow(
 		"congestion state change",
@@ -147,14 +148,14 @@ func (c *CongestionDetector) updateCongestionState(state CongestionState) {
 	}
 }
 
-func (c *CongestionDetector) GetEstimatedAvailableChannelCapacity() int64 {
+func (c *congestionDetector) GetEstimatedAvailableChannelCapacity() int64 {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 
 	return c.estimatedAvailableChannelCapacity
 }
 
-func (c *CongestionDetector) HandleRTCP(report *rtcp.TransportLayerCC) {
+func (c *congestionDetector) HandleRTCP(report *rtcp.TransportLayerCC) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -167,28 +168,21 @@ func (c *CongestionDetector) HandleRTCP(report *rtcp.TransportLayerCC) {
 	}
 }
 
-func (c *CongestionDetector) prunePacketGroups() {
-	if c.activePacketGroup == nil {
+func (c *congestionDetector) prunePacketGroups() {
+	if len(c.packetGroups) == 0 {
 		return
 	}
 
-	activeMinSendTime, ok := c.activePacketGroup.MinSendTime()
-	if !ok {
-		return
-	}
-
-	threshold := activeMinSendTime - c.params.Config.PacketGroupMaxAge.Microseconds()
+	threshold := c.packetGroups[len(c.packetGroups)-1].MinSendTime() - c.params.Config.PacketGroupMaxAge.Microseconds()
 	for idx, pg := range c.packetGroups {
-		if mst, ok := pg.MinSendTime(); ok {
-			if mst < threshold {
-				c.packetGroups = c.packetGroups[idx+1:]
-				return
-			}
+		if mst := pg.MinSendTime(); mst < threshold {
+			c.packetGroups = c.packetGroups[idx+1:]
+			return
 		}
 	}
 }
 
-func (c *CongestionDetector) isCongestionSignalTriggered() (bool, bool) {
+func (c *congestionDetector) isCongestionSignalTriggered() (bool, bool) {
 	earlyWarningTriggered := false
 	congestedTriggered := false
 
@@ -223,7 +217,7 @@ func (c *CongestionDetector) isCongestionSignalTriggered() (bool, bool) {
 	return earlyWarningTriggered, congestedTriggered
 }
 
-func (c *CongestionDetector) congestionDetectionStateMachine() {
+func (c *congestionDetector) congestionDetectionStateMachine() {
 	state := c.GetCongestionState()
 	newState := state
 
@@ -280,32 +274,24 @@ func (c *CongestionDetector) congestionDetectionStateMachine() {
 	}
 }
 
-func (c *CongestionDetector) estimateAvailableChannelCapacity() {
-	if c.activePacketGroup == nil {
-		return
-	}
-
-	activeMinSendTime, ok := c.activePacketGroup.MinSendTime()
-	if !ok {
+func (c *congestionDetector) estimateAvailableChannelCapacity() {
+	if len(c.packetGroups) == 0 {
 		return
 	}
 
 	totalDuration := int64(0)
 	totalBytes := float64(0.0)
 
-	/* SSBWE-TODO: maybe include active group if it is reasonably full?
-	mst, dur, nbytes, ctr := c.activePacketGroup.Traffic()
-	totalDuration += dur
-	// captured traffic ratio is a measure of what fraction of sent traffic was delivered
-		totalBytes += float64(nbytes) * ctr
-	*/
-
-	threshold := activeMinSendTime - c.params.Config.RateMeasurementWindowDurationMax.Microseconds()
+	threshold := c.packetGroups[len(c.packetGroups)-1].MinSendTime() - c.params.Config.RateMeasurementWindowDurationMax.Microseconds()
 	for idx := len(c.packetGroups) - 1; idx >= 0; idx-- {
 		pg := c.packetGroups[idx]
-		mst, dur, nbytes, ctr := pg.Traffic()
+		mst, dur, nbytes, ctr, fullness := pg.AckedTraffic()
 		if mst < threshold {
 			break
+		}
+
+		if fullness < c.params.Config.RateMeasurementWindowFullnessMin {
+			continue
 		}
 
 		totalDuration += dur
@@ -322,40 +308,60 @@ func (c *CongestionDetector) estimateAvailableChannelCapacity() {
 	}
 }
 
-func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
+func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 	recvRefTime, isOutOfOrder := c.twccFeedback.ProcessReport(fbr.report, fbr.at)
 	if isOutOfOrder {
 		// SSBWE-TODO: should out-of-order reports be dropped or processed??
 		return
 	}
 
-	if c.activePacketGroup == nil {
-		c.activePacketGroup = NewPacketGroup(
-			PacketGroupParams{
-				Config: c.params.Config.PacketGroup,
-				Logger: c.params.Logger,
-			},
-			0,
-		)
-	}
-
-	trackPacketGroup := func(pi *packetInfo, piPrev *packetInfo) {
-		if pi == nil || piPrev == nil {
-			return
-		}
-
-		if err := c.activePacketGroup.Add(pi, piPrev); err != nil {
-			c.packetGroups = append(c.packetGroups, c.activePacketGroup)
-			c.params.Logger.Infow("packet group done", "group", c.activePacketGroup) // SSBWE-REMOVE
-
-			c.activePacketGroup = NewPacketGroup(
-				PacketGroupParams{
+	if len(c.packetGroups) == 0 {
+		c.packetGroups = append(
+			c.packetGroups,
+			NewPacketGroup(
+				packetGroupParams{
 					Config: c.params.Config.PacketGroup,
 					Logger: c.params.Logger,
 				},
-				c.activePacketGroup.PropagatedQueuingDelay(),
+				0,
+			),
+		)
+	}
+
+	pg := c.packetGroups[len(c.packetGroups)-1]
+	trackPacketGroup := func(pi *packetInfo, sendDelta, recvDelta int64, isLost bool) {
+		if pi == nil {
+			return
+		}
+
+		err := pg.Add(pi, sendDelta, recvDelta, isLost)
+		if err == nil {
+			return
+		}
+
+		if err == errGroupFinalized {
+			// previous group ended, start a new group
+			pg = NewPacketGroup(
+				packetGroupParams{
+					Config: c.params.Config.PacketGroup,
+					Logger: c.params.Logger,
+				},
+				pg.PropagatedQueuingDelay(),
 			)
-			c.activePacketGroup.Add(pi, piPrev)
+			c.packetGroups = append(c.packetGroups, pg)
+
+			pg.Add(pi, sendDelta, recvDelta, isLost)
+			return
+		}
+
+		// try an older group
+		for idx := len(c.packetGroups) - 2; idx >= 0; idx-- {
+			opg := c.packetGroups[idx]
+			if err := opg.Add(pi, sendDelta, recvDelta, isLost); err == nil {
+				return
+			} else if err == errGroupFinalized {
+				c.params.Logger.Infow("unpected finalized group", "packetInfo", pi, "packetGroup", opg)
+			}
 		}
 	}
 
@@ -386,27 +392,19 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 					break
 				}
 
+				recvTime := int64(0)
+				isLost := false
 				if chunk.PacketStatusSymbol != rtcp.TypeTCCPacketNotReceived {
 					recvRefTime += fbr.report.RecvDeltas[deltaIdx].Delta
 					deltaIdx++
 
-					pi, piPrev := c.PacketTracker.RecordPacketReceivedByRemote(sequenceNumber, recvRefTime)
-					trackPacketGroup(pi, piPrev)
+					recvTime = recvRefTime
 				} else {
-					pi := c.PacketTracker.getPacketInfo(sequenceNumber)
-					if pi != nil && pi.recvTime == 0 {
-						piPrev := c.PacketTracker.getPacketInfo(sequenceNumber - 1)
-						if piPrev != nil {
-							c.params.Logger.Infow(
-								"lost packet",
-								"sequenceNumber", sequenceNumber,
-								"pisn", pi.sequenceNumber,
-								"size", pi.size,
-								"piPrevSN", piPrev.sequenceNumber,
-								"prevSize", piPrev.size,
-							) // SSBWE-REMOVE
-						}
-					}
+					isLost = true
+				}
+				pi, sendDelta, recvDelta := c.packetTracker.RecordPacketReceivedByRemote(sequenceNumber, recvTime)
+				if pi.sendTime != 0 {
+					trackPacketGroup(&pi, sendDelta, recvDelta, isLost)
 				}
 				sequenceNumber++
 			}
@@ -417,27 +415,19 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 					break
 				}
 
+				recvTime := int64(0)
+				isLost := false
 				if symbol != rtcp.TypeTCCPacketNotReceived {
 					recvRefTime += fbr.report.RecvDeltas[deltaIdx].Delta
 					deltaIdx++
 
-					pi, piPrev := c.PacketTracker.RecordPacketReceivedByRemote(sequenceNumber, recvRefTime)
-					trackPacketGroup(pi, piPrev)
+					recvTime = recvRefTime
 				} else {
-					pi := c.PacketTracker.getPacketInfo(sequenceNumber)
-					if pi != nil && pi.recvTime == 0 {
-						piPrev := c.PacketTracker.getPacketInfo(sequenceNumber - 1)
-						if piPrev != nil {
-							c.params.Logger.Infow(
-								"svc lost packet",
-								"sequenceNumber", sequenceNumber,
-								"pisn", pi.sequenceNumber,
-								"size", pi.size,
-								"piPrevSN", piPrev.sequenceNumber,
-								"prevSize", piPrev.size,
-							) // SSBWE-REMOVE
-						}
-					}
+					isLost = true
+				}
+				pi, sendDelta, recvDelta := c.packetTracker.RecordPacketReceivedByRemote(sequenceNumber, recvTime)
+				if pi.sendTime != 0 {
+					trackPacketGroup(&pi, sendDelta, recvDelta, isLost)
 				}
 				sequenceNumber++
 			}
@@ -448,7 +438,7 @@ func (c *CongestionDetector) processFeedbackReport(fbr feedbackReport) {
 	c.congestionDetectionStateMachine()
 }
 
-func (c *CongestionDetector) worker() {
+func (c *congestionDetector) worker() {
 	for {
 		select {
 		case <-c.wake:

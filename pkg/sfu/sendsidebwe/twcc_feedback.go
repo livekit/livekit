@@ -27,12 +27,12 @@ var (
 
 // ------------------------------------------------------
 
-type TWCCFeedbackParams struct {
+type twccFeedbackParams struct {
 	Logger logger.Logger
 }
 
-type TWCCFeedback struct {
-	params TWCCFeedbackParams
+type twccFeedback struct {
+	params twccFeedbackParams
 
 	lastFeedbackTime          time.Time
 	estimatedFeedbackInterval time.Duration
@@ -45,13 +45,13 @@ type TWCCFeedback struct {
 	highestReferenceTime uint32
 }
 
-func NewTWCCFeedback(params TWCCFeedbackParams) *TWCCFeedback {
-	return &TWCCFeedback{
+func NewTWCCFeedback(params twccFeedbackParams) *twccFeedback {
+	return &twccFeedback{
 		params: params,
 	}
 }
 
-func (t *TWCCFeedback) ProcessReport(report *rtcp.TransportLayerCC, at time.Time) (int64, bool) {
+func (t *twccFeedback) ProcessReport(report *rtcp.TransportLayerCC, at time.Time) (int64, bool) {
 	// SSBWE-REMOVE t.params.Logger.Infow("TWCC feedback", "report", report.String()) // SSBWE-REMOVE
 	t.numReports++
 	if t.lastFeedbackTime.IsZero() {
@@ -102,7 +102,7 @@ func (t *TWCCFeedback) ProcessReport(report *rtcp.TransportLayerCC, at time.Time
 	return referenceTime * cReferenceTimeResolution * 1000, isOutOfOrder
 }
 
-func (t *TWCCFeedback) MarshalLogObject(e zapcore.ObjectEncoder) error {
+func (t *twccFeedback) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	if t == nil {
 		return nil
 	}
