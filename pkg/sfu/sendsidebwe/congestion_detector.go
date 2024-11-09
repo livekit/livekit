@@ -190,7 +190,11 @@ func (c *congestionDetector) isCongestionSignalTriggered() (bool, bool) {
 	duration := int64(0)
 	for idx := len(c.packetGroups) - 1; idx >= 0; idx-- {
 		pg := c.packetGroups[idx]
-		pqd := pg.PropagatedQueuingDelay()
+		pqd, ok := pg.PropagatedQueuingDelay()
+		if !ok {
+			continue
+		}
+
 		if pqd > c.params.Config.JQRMinDelay.Microseconds() {
 			numGroups++
 			duration += pg.SendDuration()
@@ -341,12 +345,14 @@ func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 
 		if err == errGroupFinalized {
 			// previous group ended, start a new group
+			c.params.Logger.Infow("packet group done", "group", pg, "numGroups", len(c.packetGroups)) // SSBWE-REMOVE
+			pqd, _ := pg.PropagatedQueuingDelay()
 			pg = NewPacketGroup(
 				packetGroupParams{
 					Config: c.params.Config.PacketGroup,
 					Logger: c.params.Logger,
 				},
-				pg.PropagatedQueuingDelay(),
+				pqd,
 			)
 			c.packetGroups = append(c.packetGroups, pg)
 
@@ -439,6 +445,9 @@ func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 }
 
 func (c *congestionDetector) worker() {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-c.wake:
@@ -453,6 +462,10 @@ func (c *congestionDetector) worker() {
 
 				c.processFeedbackReport(fbReport)
 			}
+
+		case <-ticker.C:
+			c.prunePacketGroups()
+			c.congestionDetectionStateMachine()
 
 		case <-c.stop.Watch():
 			return

@@ -21,16 +21,12 @@ var (
 type PacketGroupConfig struct {
 	MinPackets          int           `yaml:"min_packets,omitempty"`
 	MaxWindowDuration   time.Duration `yaml:"max_window_duration,omitempty"`
-	LossMinPacketsRatio float64       `yaml:"loss_min_packets_ratio,omitempty"`
-	LossAmplifierFactor float64       `yaml:"loss_amplifier_factor,omitempty"`
 }
 
 var (
 	DefaultPacketGroupConfig = PacketGroupConfig{
 		MinPackets:          20,
 		MaxWindowDuration:   500 * time.Millisecond,
-		LossMinPacketsRatio: 0.5, // at least half number of min packets should be available to calculate loss
-		LossAmplifierFactor: 0.5,
 	}
 )
 
@@ -209,17 +205,16 @@ func (p *packetGroup) MinSendTime() int64 {
 	return p.minSendTime
 }
 
-func (p *packetGroup) PropagatedQueuingDelay() int64 {
+func (p *packetGroup) PropagatedQueuingDelay() (int64, bool) {
 	if !p.isFinalized {
-		return 0
+		return 0, false
 	}
 
-	aggregateRecvDelta := int64((1.0 + p.lossRatio()) * float64(p.aggregateRecvDelta))
-	if p.queuingDelay+aggregateRecvDelta-p.aggregateSendDelta > 0 {
-		return p.queuingDelay + aggregateRecvDelta - p.aggregateSendDelta
+	if p.queuingDelay+p.aggregateRecvDelta-p.aggregateSendDelta > 0 {
+		return p.queuingDelay + p.aggregateRecvDelta - p.aggregateSendDelta, true
 	}
 
-	return max(0, p.aggregateRecvDelta-p.aggregateSendDelta)
+	return max(0, p.aggregateRecvDelta-p.aggregateSendDelta), true
 }
 
 func (p *packetGroup) SendDuration() int64 {
@@ -233,8 +228,7 @@ func (p *packetGroup) SendDuration() int64 {
 func (p *packetGroup) AckedTraffic() (int64, int64, int, float64, float64) {
 	capturedTrafficRatio := float64(0.0)
 	if p.aggregateRecvDelta != 0 {
-		aggregateRecvDelta := (1.0 + p.lossRatio()) * float64(p.aggregateRecvDelta)
-		capturedTrafficRatio = float64(p.aggregateSendDelta) / aggregateRecvDelta
+		capturedTrafficRatio = float64(p.aggregateSendDelta) / float64(p.aggregateRecvDelta)
 	}
 
 	fullness := max(
@@ -301,13 +295,4 @@ func (p *packetGroup) inGroup(sequenceNumber uint64) error {
 	}
 
 	return nil
-}
-
-func (p *packetGroup) lossRatio() float64 {
-	totalPackets := float64(p.acked.numPackets() + p.lost.numPackets())
-	if totalPackets < p.params.Config.LossMinPacketsRatio*float64(p.params.Config.MinPackets) {
-		return 0.0
-	}
-
-	return float64(p.lost.numPackets()) / float64(p.acked.numPackets()+p.lost.numPackets())
 }
