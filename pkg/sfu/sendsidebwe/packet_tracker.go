@@ -78,10 +78,10 @@ func (p *packetTracker) RecordPacketIndicationFromRemote(sn uint16, recvTime int
 	if pi == nil {
 		return
 	}
-	piRecv = *pi
 
 	if recvTime == 0 {
 		// maybe lost OR already receied but reported lost in a later report
+		piRecv = *pi
 		return
 	}
 
@@ -91,6 +91,7 @@ func (p *packetTracker) RecordPacketIndicationFromRemote(sn uint16, recvTime int
 	}
 
 	pi.recvTime = recvTime - p.baseRecvTime
+	piRecv = *pi
 	if p.piLastRecv != nil {
 		sendDelta, recvDelta = pi.sendTime-p.piLastRecv.sendTime, pi.recvTime-p.piLastRecv.recvTime
 	}

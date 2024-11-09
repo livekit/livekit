@@ -833,6 +833,12 @@ func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
 		)
 		s.committedChannelCapacity = cscd.estimatedAvailableChannelCapacity
 
+		// SSBWE-TODO: cannot rely on a single run of this when congested as
+		// SSBWE-TODO: the estimate may be wrong. So, have to get estimate perodically
+		// SSBWE-TODO: look for a downward trend and re-allocate all tracks if the
+		// SSBWE-TODO: trend warrants a kick. Alternatively, the allocation point
+		// SSBWE-TODO: estiamte can be recorded and re-allocate can be kicked if the
+		// SSBWE-TODO: estimate drops by x% since the last allocate.
 		s.allocateAllTracks()
 	}
 }
