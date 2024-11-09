@@ -154,8 +154,8 @@ func (t *Track) WritePaddingRTP(bytesToSend int) int {
 	return t.downTrack.WritePaddingRTP(bytesToSend, false, false)
 }
 
-func (t *Track) AllocateOptimal(allowOvershoot bool) sfu.VideoAllocation {
-	return t.downTrack.AllocateOptimal(allowOvershoot)
+func (t *Track) AllocateOptimal(allowOvershoot bool, hold bool) sfu.VideoAllocation {
+	return t.downTrack.AllocateOptimal(allowOvershoot, hold)
 }
 
 func (t *Track) ProvisionalAllocatePrepare() {

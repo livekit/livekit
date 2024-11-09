@@ -205,7 +205,8 @@ type StreamAllocator struct {
 	isAllocateAllPending bool
 	rembTrackingSSRC     uint32
 
-	state streamAllocatorState
+	state     streamAllocatorState
+	isHolding bool
 
 	eventsQueue *utils.TypedOpsQueue[Event]
 
@@ -817,29 +818,34 @@ func (s *StreamAllocator) handleSignalRTCPReceiverReport(event Event) {
 
 func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
 	cscd := event.Data.(congestionStateChangeData)
-	if cscd.congestionState == sendsidebwe.CongestionStateCongested {
-		// SSBWE-TODO-START
-		// Can potentially do
-		//   1. On early warning, stop any up layering
-		//   2. On congestion relief, can start probe?
-		// SSBWE-TODO-END
-		s.probeController.AbortProbe()
+	if cscd.congestionState == sendsidebwe.CongestionStateEarlyWarning {
+		s.isHolding = true
+	} else {
+		s.isHolding = false
+		if cscd.congestionState == sendsidebwe.CongestionStateCongested {
+			// SSBWE-TODO-START
+			// Can potentially do
+			//   1. On early warning, stop any up layering
+			//   2. On congestion relief, can start probe?
+			// SSBWE-TODO-END
+			s.probeController.AbortProbe()
 
-		s.params.Logger.Infow(
-			"stream allocator: channel congestion detected, updating channel capacity",
-			"old(bps)", s.committedChannelCapacity,
-			"new(bps)", cscd.estimatedAvailableChannelCapacity,
-			"expectedUsage(bps)", s.getExpectedBandwidthUsage(),
-		)
-		s.committedChannelCapacity = cscd.estimatedAvailableChannelCapacity
+			s.params.Logger.Infow(
+				"stream allocator: channel congestion detected, updating channel capacity",
+				"old(bps)", s.committedChannelCapacity,
+				"new(bps)", cscd.estimatedAvailableChannelCapacity,
+				"expectedUsage(bps)", s.getExpectedBandwidthUsage(),
+			)
+			s.committedChannelCapacity = cscd.estimatedAvailableChannelCapacity
 
-		// SSBWE-TODO: cannot rely on a single run of this when congested as
-		// SSBWE-TODO: the estimate may be wrong. So, have to get estimate perodically
-		// SSBWE-TODO: look for a downward trend and re-allocate all tracks if the
-		// SSBWE-TODO: trend warrants a kick. Alternatively, the allocation point
-		// SSBWE-TODO: estiamte can be recorded and re-allocate can be kicked if the
-		// SSBWE-TODO: estimate drops by x% since the last allocate.
-		s.allocateAllTracks()
+			// SSBWE-TODO: cannot rely on a single run of this when congested as
+			// SSBWE-TODO: the estimate may be wrong. So, have to get estimate perodically
+			// SSBWE-TODO: look for a downward trend and re-allocate all tracks if the
+			// SSBWE-TODO: trend warrants a kick. Alternatively, the allocation point
+			// SSBWE-TODO: estiamte can be recorded and re-allocate can be kicked if the
+			// SSBWE-TODO: estimate drops by x% since the last allocate.
+			s.allocateAllTracks()
+		}
 	}
 }
 
@@ -968,7 +974,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	// if not deficient, free pass allocate track
 	if !s.enabled || s.state == streamAllocatorStateStable || !track.IsManaged() {
 		update := NewStreamStateUpdate()
-		allocation := track.AllocateOptimal(FlagAllowOvershootWhileOptimal)
+		allocation := track.AllocateOptimal(FlagAllowOvershootWhileOptimal, s.isHolding)
 		updateStreamStateChange(track, allocation, update)
 		s.maybeSendUpdate(update)
 		return
@@ -1227,7 +1233,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 			continue
 		}
 
-		allocation := track.AllocateOptimal(FlagAllowOvershootExemptTrackWhileDeficient)
+		allocation := track.AllocateOptimal(FlagAllowOvershootExemptTrackWhileDeficient, false)
 		updateStreamStateChange(track, allocation, update)
 
 		// STREAM-ALLOCATOR-TODO: optimistic allocation before bitrate is available will return 0. How to account for that?
