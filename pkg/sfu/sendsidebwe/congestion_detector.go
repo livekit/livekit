@@ -49,10 +49,10 @@ type CongestionDetectorConfig struct {
 	RateMeasurementWindowDurationMin time.Duration `yaml:"rate_measurement_window_duration_min,omitempty"`
 	RateMeasurementWindowDurationMax time.Duration `yaml:"rate_measurement_window_duration_max,omitempty"`
 
-	PeriodicCheckInterval          time.Duration `yaml:"periodic_check_interval,omitempty"`
-	PeriodicCheckIntervalCongested time.Duration `yaml:"periodic_check_interval_congested,omitempty"`
-	CongestedEstimateTrend ccutils.TrendDetectorConfig `yaml:"congested_estimate_trend,omitempty"`
-	CongestedEstimateEpsilon int64 `yaml:"congested_estimate_epsilon,omitempty"`
+	PeriodicCheckInterval          time.Duration               `yaml:"periodic_check_interval,omitempty"`
+	PeriodicCheckIntervalCongested time.Duration               `yaml:"periodic_check_interval_congested,omitempty"`
+	CongestedEstimateTrend         ccutils.TrendDetectorConfig `yaml:"congested_estimate_trend,omitempty"`
+	CongestedEstimateEpsilon       int64                       `yaml:"congested_estimate_epsilon,omitempty"`
 }
 
 var (
@@ -79,8 +79,8 @@ var (
 		RateMeasurementWindowDurationMax: 2 * time.Second,
 		PeriodicCheckInterval:            2 * time.Second,
 		PeriodicCheckIntervalCongested:   200 * time.Millisecond,
-		CongestedEstimateTrend: defaultTrendDetectorConfigCongestedEstimate,
-		CongestedEstimateEpsilon: 10000,
+		CongestedEstimateTrend:           defaultTrendDetectorConfigCongestedEstimate,
+		CongestedEstimateEpsilon:         10000,
 	}
 )
 

@@ -294,7 +294,7 @@ func (p *packetGroup) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	if p.aggregateRecvDelta != 0 {
 		lossPenalty := p.getLossPenalty()
 		e.AddInt64("lossPenalty", lossPenalty)
-		capturedTrafficRatio := float64(p.aggregateSendDelta) / float64(p.aggregateRecvDelta + lossPenalty)
+		capturedTrafficRatio := float64(p.aggregateSendDelta) / float64(p.aggregateRecvDelta+lossPenalty)
 		e.AddFloat64("capturedTrafficRatio", capturedTrafficRatio)
 		e.AddFloat64("estimatedAvailableChannelCapacity", sendBitrate*min(1.0, capturedTrafficRatio))
 	}
