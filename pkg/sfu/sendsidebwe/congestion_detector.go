@@ -113,7 +113,7 @@ type congestionDetector struct {
 	estimatedAvailableChannelCapacity int64
 	congestionState                   CongestionState
 	congestionStateSwitchedAt         time.Time
-	congestedEstimateTrend            *ccutils.TrendDetector
+	congestedEstimateTrend            *ccutils.TrendDetector[int64]
 
 	onCongestionStateChange func(congestionState CongestionState, estimatedAvailableChannelCapacity int64)
 }
@@ -179,7 +179,7 @@ func (c *congestionDetector) updateCongestionState(state CongestionState) {
 	// relieve congestion, by monitoing on a continuous basis allocations can be
 	// adjusted in the direction of releving congestion
 	if state == CongestionStateCongested && prevState != CongestionStateCongested {
-		c.congestedEstimateTrend = ccutils.NewTrendDetector(ccutils.TrendDetectorParams{
+		c.congestedEstimateTrend = ccutils.NewTrendDetector[int64](ccutils.TrendDetectorParams{
 			Name:   "ssbwe-estimate",
 			Logger: c.params.Logger,
 			Config: c.params.Config.CongestedEstimateTrend,
@@ -341,7 +341,7 @@ func (c *congestionDetector) updateTrend(estimatedAvailableChannelCapacity int64
 		}
 
 		// reset to get new set of samples for next trend
-		c.congestedEstimateTrend = ccutils.NewTrendDetector(ccutils.TrendDetectorParams{
+		c.congestedEstimateTrend = ccutils.NewTrendDetector[int64](ccutils.TrendDetectorParams{
 			Name:   "ssbwe-estimate",
 			Logger: c.params.Logger,
 			Config: c.params.Config.CongestedEstimateTrend,

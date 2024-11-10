@@ -116,7 +116,7 @@ type ChannelObserver struct {
 	params ChannelObserverParams
 	logger logger.Logger
 
-	estimateTrend *ccutils.TrendDetector
+	estimateTrend *ccutils.TrendDetector[int64]
 	nackTracker   *NackTracker
 }
 
@@ -124,7 +124,7 @@ func NewChannelObserver(params ChannelObserverParams, logger logger.Logger) *Cha
 	return &ChannelObserver{
 		params: params,
 		logger: logger,
-		estimateTrend: ccutils.NewTrendDetector(ccutils.TrendDetectorParams{
+		estimateTrend: ccutils.NewTrendDetector[int64](ccutils.TrendDetectorParams{
 			Name:   params.Name + "-estimate",
 			Logger: logger,
 			Config: params.Config.Estimate,

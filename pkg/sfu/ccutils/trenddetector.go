@@ -46,26 +46,15 @@ func (t TrendDirection) String() string {
 
 // ------------------------------------------------
 
-type trendDetectorSample struct {
-	value int64
-	at    time.Time
+type trendDetectorNumber interface {
+	int64 | float64
 }
 
-func trendDetectorSampleListToString(samples []trendDetectorSample) string {
-	samplesStr := ""
-	if len(samples) > 0 {
-		firstTime := samples[0].at
-		samplesStr += "["
-		for i, sample := range samples {
-			suffix := ", "
-			if i == len(samples)-1 {
-				suffix = ""
-			}
-			samplesStr += fmt.Sprintf("%d(%d)%s", sample.value, sample.at.Sub(firstTime).Milliseconds(), suffix)
-		}
-		samplesStr += "]"
-	}
-	return samplesStr
+// ------------------------------------------------
+
+type trendDetectorSample[T trendDetectorNumber] struct {
+	value T
+	at    time.Time
 }
 
 // ------------------------------------------------
@@ -87,35 +76,35 @@ type TrendDetectorParams struct {
 	Config TrendDetectorConfig
 }
 
-type TrendDetector struct {
+type TrendDetector[T trendDetectorNumber] struct {
 	params TrendDetectorParams
 
 	startTime    time.Time
 	numSamples   int
-	samples      []trendDetectorSample
-	lowestValue  int64
-	highestValue int64
+	samples      []trendDetectorSample[T]
+	lowestValue  T
+	highestValue T
 
 	direction TrendDirection
 }
 
-func NewTrendDetector(params TrendDetectorParams) *TrendDetector {
-	return &TrendDetector{
+func NewTrendDetector[T trendDetectorNumber](params TrendDetectorParams) *TrendDetector[T] {
+	return &TrendDetector[T]{
 		params:    params,
 		startTime: time.Now(),
 		direction: TrendDirectionNeutral,
 	}
 }
 
-func (t *TrendDetector) Seed(value int64) {
+func (t *TrendDetector[T]) Seed(value T) {
 	if len(t.samples) != 0 {
 		return
 	}
 
-	t.samples = append(t.samples, trendDetectorSample{value: value, at: time.Now()})
+	t.samples = append(t.samples, trendDetectorSample[T]{value: value, at: time.Now()})
 }
 
-func (t *TrendDetector) AddValue(value int64) {
+func (t *TrendDetector[T]) AddValue(value T) {
 	t.numSamples++
 	if t.lowestValue == 0 || value < t.lowestValue {
 		t.lowestValue = value
@@ -136,7 +125,7 @@ func (t *TrendDetector) AddValue(value int64) {
 	// But, on the flip side, estimate could fall once or twice within a sliding window and stay there.
 	// In those cases, using a collapse window to record a value even if it is duplicate. By doing that,
 	// a trend could be detected eventually. It will be delayed, but that is fine with slow changing estimates.
-	var lastSample *trendDetectorSample
+	var lastSample *trendDetectorSample[T]
 	if len(t.samples) != 0 {
 		lastSample = &t.samples[len(t.samples)-1]
 	}
@@ -144,38 +133,52 @@ func (t *TrendDetector) AddValue(value int64) {
 		return
 	}
 
-	t.samples = append(t.samples, trendDetectorSample{value: value, at: time.Now()})
+	t.samples = append(t.samples, trendDetectorSample[T]{value: value, at: time.Now()})
 	t.prune()
 	t.updateDirection()
 }
 
-func (t *TrendDetector) GetLowest() int64 {
+func (t *TrendDetector[T]) GetLowest() T {
 	return t.lowestValue
 }
 
-func (t *TrendDetector) GetHighest() int64 {
+func (t *TrendDetector[T]) GetHighest() T {
 	return t.highestValue
 }
 
-func (t *TrendDetector) GetDirection() TrendDirection {
+func (t *TrendDetector[T]) GetDirection() TrendDirection {
 	return t.direction
 }
 
-func (t *TrendDetector) HasEnoughSamples() bool {
+func (t *TrendDetector[T]) HasEnoughSamples() bool {
 	return t.numSamples >= t.params.Config.RequiredSamples
 }
 
-func (t *TrendDetector) ToString() string {
+func (t *TrendDetector[T]) ToString() string {
+	samplesStr := ""
+	if len(t.samples) > 0 {
+		firstTime := t.samples[0].at
+		samplesStr += "["
+		for i, sample := range t.samples {
+			suffix := ", "
+			if i == len(t.samples)-1 {
+				suffix = ""
+			}
+			samplesStr += fmt.Sprintf("%v(%d)%s", sample.value, sample.at.Sub(firstTime).Milliseconds(), suffix)
+		}
+		samplesStr += "]"
+	}
+
 	now := time.Now()
 	elapsed := now.Sub(t.startTime).Seconds()
-	return fmt.Sprintf("n: %s, t: %+v|%+v|%.2fs, v: %d|%d|%d|%s|%.2f",
+	return fmt.Sprintf("n: %s, t: %+v|%+v|%.2fs, v: %d|%v|%v|%s|%.2f",
 		t.params.Name,
 		t.startTime.Format(time.UnixDate), now.Format(time.UnixDate), elapsed,
-		t.numSamples, t.lowestValue, t.highestValue, trendDetectorSampleListToString(t.samples), kendallsTau(t.samples),
+		t.numSamples, t.lowestValue, t.highestValue, samplesStr, t.kendallsTau(),
 	)
 }
 
-func (t *TrendDetector) prune() {
+func (t *TrendDetector[T]) prune() {
 	// prune based on a few rules
 
 	//  1. If there are more than required samples
@@ -218,14 +221,14 @@ func (t *TrendDetector) prune() {
 	}
 }
 
-func (t *TrendDetector) updateDirection() {
+func (t *TrendDetector[T]) updateDirection() {
 	if len(t.samples) < t.params.Config.RequiredSamplesMin {
 		t.direction = TrendDirectionNeutral
 		return
 	}
 
 	// using Kendall's Tau to find trend
-	kt := kendallsTau(t.samples)
+	kt := t.kendallsTau()
 
 	t.direction = TrendDirectionNeutral
 	switch {
@@ -236,17 +239,15 @@ func (t *TrendDetector) updateDirection() {
 	}
 }
 
-// ------------------------------------------------
-
-func kendallsTau(samples []trendDetectorSample) float64 {
+func (t *TrendDetector[T]) kendallsTau() float64 {
 	concordantPairs := 0
 	discordantPairs := 0
 
-	for i := 0; i < len(samples)-1; i++ {
-		for j := i + 1; j < len(samples); j++ {
-			if samples[i].value < samples[j].value {
+	for i := 0; i < len(t.samples)-1; i++ {
+		for j := i + 1; j < len(t.samples); j++ {
+			if t.samples[i].value < t.samples[j].value {
 				concordantPairs++
-			} else if samples[i].value > samples[j].value {
+			} else if t.samples[i].value > t.samples[j].value {
 				discordantPairs++
 			}
 		}
