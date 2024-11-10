@@ -208,6 +208,11 @@ func (p *packetGroup) lostPacket(pi *packetInfo) error {
 	return nil
 }
 
+func (p *packetGroup) Finalize() {
+	// SSBWE-TODO: handle forced finalize properly
+	p.isFinalized = true
+}
+
 func (p *packetGroup) MinSendTime() int64 {
 	return p.minSendTime
 }

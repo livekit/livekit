@@ -33,6 +33,9 @@ type packetTracker struct {
 
 	baseRecvTime int64
 	piLastRecv   *packetInfo
+
+	inProbe                    bool
+	probingStartSequenceNumber uint64
 }
 
 func NewPacketTracker(params packetTrackerParams) *packetTracker {
@@ -59,6 +62,10 @@ func (p *packetTracker) RecordPacketSendAndGetSequenceNumber(at time.Time, size 
 	pi.size = uint16(size)
 	pi.isRTX = isRTX
 	// SSBWE-REMOVE p.params.Logger.Infow("packet sent", "packetInfo", pi) // SSBWE-REMOVE
+
+	if p.inProbe && p.probingStartSequenceNumber == 0 {
+		p.probingStartSequenceNumber = p.sequenceNumber
+	}
 
 	p.sequenceNumber++
 
@@ -97,6 +104,32 @@ func (p *packetTracker) RecordPacketIndicationFromRemote(sn uint16, recvTime int
 	}
 	p.piLastRecv = pi
 	return
+}
+
+func (p *packetTracker) ProbingStart() {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	p.inProbe = true
+	p.probingStartSequenceNumber = 0
+}
+
+func (p *packetTracker) ProbingEnd() {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	p.inProbe = false
+}
+
+func (p *packetTracker) ProbingStartSequenceNumber() (uint64, bool) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	if p.probingStartSequenceNumber == 0 {
+		return 0, false
+	}
+
+	return p.probingStartSequenceNumber, true
 }
 
 func (p *packetTracker) getPacketInfo(sn uint16) *packetInfo {

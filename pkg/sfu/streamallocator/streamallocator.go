@@ -1409,23 +1409,28 @@ func (s *StreamAllocator) initProbe(probeGoalDeltaBps int64) {
 	expectedBandwidthUsage := s.getExpectedBandwidthUsage()
 	probeClusterId, probeGoalBps := s.probeController.InitProbe(probeGoalDeltaBps, expectedBandwidthUsage)
 
-	channelState := ""
-	if s.channelObserver != nil {
-		channelState = s.channelObserver.ToString()
-	}
-	s.channelObserver = s.newChannelObserverProbe()
-	s.channelObserver.SeedEstimate(s.lastReceivedEstimate)
-
-	s.params.Logger.Debugw(
-		"stream allocator: starting probe",
+	logFields := []any{
 		"probeClusterId", probeClusterId,
 		"current usage", expectedBandwidthUsage,
 		"committed", s.committedChannelCapacity,
-		"lastReceived", s.lastReceivedEstimate,
-		"channel", channelState,
 		"probeGoalDeltaBps", probeGoalDeltaBps,
 		"goalBps", probeGoalBps,
-	)
+	}
+	if s.sendSideBWE != nil {
+		channelState := ""
+		if s.channelObserver != nil {
+			channelState = s.channelObserver.ToString()
+		}
+		s.channelObserver = s.newChannelObserverProbe()
+		s.channelObserver.SeedEstimate(s.lastReceivedEstimate)
+		logFields = append(
+			logFields,
+			"lastReceived", s.lastReceivedEstimate,
+			"channel", channelState,
+		)
+	}
+
+	s.params.Logger.Debugw("stream allocator: starting probe", logFields...)
 }
 
 func (s *StreamAllocator) maybeProbe() {

@@ -116,6 +116,9 @@ type congestionDetector struct {
 	congestedCTRTrend                 *ccutils.TrendDetector[float64]
 
 	onCongestionStateChange func(congestionState CongestionState, estimatedAvailableChannelCapacity int64)
+
+	inProbe    bool
+	probeGroup *packetGroup
 }
 
 func NewCongestionDetector(params congestionDetectorParams) *congestionDetector {
@@ -208,6 +211,22 @@ func (c *congestionDetector) HandleRTCP(report *rtcp.TransportLayerCC) {
 	case c.wake <- struct{}{}:
 	default:
 	}
+}
+
+func (c *congestionDetector) ProbingStart() {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	c.inProbe = true
+	c.packetTracker.ProbingStart()
+}
+
+func (c *congestionDetector) ProbingEnd() {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	c.inProbe = false
+	c.packetTracker.ProbingEnd()
 }
 
 func (c *congestionDetector) prunePacketGroups() {
@@ -389,6 +408,11 @@ func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 		c.params.Logger.Infow("received out-of-order feedback report")
 	}
 
+	c.lock.RLock()
+	inProbe := c.inProbe
+	probingStartSequenceNumber, probingStartSequenceNumberOk := c.packetTracker.ProbingStartSequenceNumber()
+	c.lock.RUnlock()
+
 	if len(c.packetGroups) == 0 {
 		c.packetGroups = append(
 			c.packetGroups,
@@ -406,6 +430,31 @@ func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 	trackPacketGroup := func(pi *packetInfo, sendDelta, recvDelta int64, isLost bool) {
 		if pi == nil {
 			return
+		}
+
+		if inProbe && c.probeGroup == nil && probingStartSequenceNumberOk && pi.sequenceNumber == probingStartSequenceNumber {
+			// force finalize the active group and start the probe group
+			pg.Finalize()
+
+			c.probeGroup = NewPacketGroup(
+				packetGroupParams{
+					Config: PacketGroupConfig{
+						MinPackets:                 2000,
+						MaxWindowDuration:          50000 * time.Millisecond,
+						LossPenaltyMinPacketsRatio: 0.5,
+						LossPenaltyFactor:          0.25,
+					},
+					Logger: c.params.Logger,
+				},
+				0,
+			)
+			pg = c.probeGroup
+		}
+
+		if !inProbe && c.probeGroup != nil {
+			c.probeGroup.Finalize()
+			c.params.Logger.Infow("probe group done", "group", c.probeGroup) // SSBWE-REMOVE
+			c.probeGroup = nil
 		}
 
 		err := pg.Add(pi, sendDelta, recvDelta, isLost)
