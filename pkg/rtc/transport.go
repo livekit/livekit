@@ -351,6 +351,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	if params.IsSendSide {
 		se.DetachDataChannels()
 		if params.CongestionControlConfig.UseSendSideBWEInterceptor || params.UseSendSideBWEInterceptor && (!params.CongestionControlConfig.UseSendSideBWE && !params.UseSendSideBWE) {
+			params.Logger.Infow("using send side BWE - interceptor")
 			gf, err := cc.NewInterceptor(func() (cc.BandwidthEstimator, error) {
 				return gcc.NewSendSideBWE(
 					gcc.SendSideBWEInitialBitrate(1*1000*1000),
@@ -454,6 +455,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		t.streamAllocator.Start()
 
 		if params.CongestionControlConfig.UseSendSideBWE || params.UseSendSideBWE {
+			params.Logger.Infow("using send side BWE")
 			t.sendSideBWE = sendsidebwe.NewSendSideBWE(sendsidebwe.SendSideBWEParams{
 				Config: params.CongestionControlConfig.SendSideBWE,
 				Logger: params.Logger,
