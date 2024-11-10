@@ -508,7 +508,7 @@ func (t *PCTransport) createPeerConnection() error {
 	t.me = me
 
 	if bwe != nil && t.streamAllocator != nil {
-		t.streamAllocator.SetBandwidthEstimator(bwe)
+		t.streamAllocator.SetSendSideBWEInterceptor(bwe)
 	}
 
 	return nil

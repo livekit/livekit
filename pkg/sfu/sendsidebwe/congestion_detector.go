@@ -417,7 +417,7 @@ func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 			// previous group ended, start a new group
 			c.updateTrend(pg.CapturedTrafficRatio())
 
-			c.params.Logger.Infow("packet group done", "group", pg, "numGroups", len(c.packetGroups)) // SSBWE-REMOVE
+			// SSBWE-REMOVE c.params.Logger.Infow("packet group done", "group", pg, "numGroups", len(c.packetGroups)) // SSBWE-REMOVE
 			pqd, _ := pg.PropagatedQueuingDelay()
 			pg = NewPacketGroup(
 				packetGroupParams{

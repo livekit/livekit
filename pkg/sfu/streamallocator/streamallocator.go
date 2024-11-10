@@ -183,8 +183,8 @@ type StreamAllocator struct {
 
 	onStreamStateChange func(update *StreamStateUpdate) error
 
-	bwe         cc.BandwidthEstimator
-	sendSideBWE *sendsidebwe.SendSideBWE
+	sendSideBWEInterceptor cc.BandwidthEstimator
+	sendSideBWE            *sendsidebwe.SendSideBWE
 
 	enabled    bool
 	allowPause bool
@@ -262,11 +262,11 @@ func (s *StreamAllocator) OnStreamStateChange(f func(update *StreamStateUpdate) 
 	s.onStreamStateChange = f
 }
 
-func (s *StreamAllocator) SetBandwidthEstimator(bwe cc.BandwidthEstimator) {
-	if bwe != nil {
-		bwe.OnTargetBitrateChange(s.onTargetBitrateChange)
+func (s *StreamAllocator) SetSendSideBWEInterceptor(sendSideBWEInterceptor cc.BandwidthEstimator) {
+	if sendSideBWEInterceptor != nil {
+		sendSideBWEInterceptor.OnTargetBitrateChange(s.onTargetBitrateChange)
 	}
-	s.bwe = bwe
+	s.sendSideBWEInterceptor = sendSideBWEInterceptor
 }
 
 func (s *StreamAllocator) SetSendSideBWE(sendSideBWE *sendsidebwe.SendSideBWE) {
@@ -442,8 +442,8 @@ func (s *StreamAllocator) OnREMB(downTrack *sfu.DownTrack, remb *rtcp.ReceiverEs
 
 // called when a new transport-cc feedback is received
 func (s *StreamAllocator) OnTransportCCFeedback(downTrack *sfu.DownTrack, fb *rtcp.TransportLayerCC) {
-	if s.bwe != nil {
-		s.bwe.WriteRTCP([]rtcp.Packet{fb}, nil)
+	if s.sendSideBWEInterceptor != nil {
+		s.sendSideBWEInterceptor.WriteRTCP([]rtcp.Packet{fb}, nil)
 	}
 
 	if s.sendSideBWE != nil {
