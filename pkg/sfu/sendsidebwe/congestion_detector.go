@@ -57,7 +57,7 @@ type CongestionDetectorConfig struct {
 
 var (
 	defaultTrendDetectorConfigCongestedCTR = ccutils.TrendDetectorConfig{
-		RequiredSamples:        4,
+		RequiredSamples:        5,
 		RequiredSamplesMin:     2,
 		DownwardTrendThreshold: -0.6,
 		DownwardTrendMaxWait:   5 * time.Second,
@@ -330,7 +330,7 @@ func (c *congestionDetector) updateTrend(ctr float64) {
 	c.congestedCTRTrend.AddValue(float64(int((ctr+(c.params.Config.CongestedCTREpsilon/2))/c.params.Config.CongestedCTREpsilon)) * c.params.Config.CongestedCTREpsilon)
 
 	if c.congestedCTRTrend.GetDirection() == ccutils.TrendDirectionDownward {
-		c.params.Logger.Infow("estimate is trending downward", "channel", c.congestedCTRTrend.ToString())
+		c.params.Logger.Infow("captured traffic ratio is trending downward", "channel", c.congestedCTRTrend.ToString())
 
 		c.lock.RLock()
 		state := c.congestionState

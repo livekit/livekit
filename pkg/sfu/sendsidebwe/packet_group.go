@@ -2,6 +2,7 @@ package sendsidebwe
 
 import (
 	"errors"
+	"math"
 	"time"
 
 	"github.com/livekit/protocol/logger"
@@ -32,7 +33,7 @@ var (
 		MinPackets:                 20,
 		MaxWindowDuration:          500 * time.Millisecond,
 		LossPenaltyMinPacketsRatio: 0.5,
-		LossPenaltyFactor:          0.5,
+		LossPenaltyFactor:          0.25,
 	}
 )
 
@@ -321,12 +322,17 @@ func (p *packetGroup) getLossPenalty() int64 {
 		return 0
 	}
 
-	ackedPackets := p.acked.numPackets()
 	lostPackets := p.lost.numPackets()
-	if (ackedPackets + lostPackets) < int(float64(p.params.Config.MinPackets)*p.params.Config.LossPenaltyMinPacketsRatio) {
+	totalPackets := float64(lostPackets + p.acked.numPackets())
+	if totalPackets < float64(p.params.Config.MinPackets)*p.params.Config.LossPenaltyMinPacketsRatio {
 		return 0
 	}
 
-	lossRatio := float64(lostPackets) / float64(ackedPackets+lostPackets)
-	return int64(float64(p.aggregateRecvDelta) * lossRatio * p.params.Config.LossPenaltyFactor)
+	// Log10 is used to give higher weight for the same loss ratio at higher packet rates,
+	// for e.g. with a penalty factor of 0.25
+	//    - 10% loss at 20 total packets = 0.1 * log10(20) * 0.25 = 0.032
+	//    - 10% loss at 100 total packets = 0.1 * log10(100) * 0.25 = 0.05
+	//    - 10% loss at 1000 total packets = 0.1 * log10(100) * 0.25 = 0.075
+	lossRatio := float64(lostPackets) / totalPackets
+	return int64(float64(p.aggregateRecvDelta) * lossRatio * math.Log10(totalPackets) * p.params.Config.LossPenaltyFactor)
 }
