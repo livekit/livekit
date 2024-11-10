@@ -51,9 +51,20 @@ type CongestionDetectorConfig struct {
 
 	PeriodicCheckInterval          time.Duration `yaml:"periodic_check_interval,omitempty"`
 	PeriodicCheckIntervalCongested time.Duration `yaml:"periodic_check_interval_congested,omitempty"`
+	CongestedEstimateTrend ccutils.TrendDetectorConfig `yaml:"congested_estimate_trend,omitempty"`
+	CongestedEstimateEpsilon int64 `yaml:"congested_estimate_epsilon,omitempty"`
 }
 
 var (
+	defaultTrendDetectorConfigCongestedEstimate = ccutils.TrendDetectorConfig{
+		RequiredSamples:        8,
+		RequiredSamplesMin:     4,
+		DownwardTrendThreshold: -0.6,
+		DownwardTrendMaxWait:   5 * time.Second,
+		CollapseThreshold:      500 * time.Millisecond,
+		ValidityWindow:         10 * time.Second,
+	}
+
 	DefaultCongestionDetectorConfig = CongestionDetectorConfig{
 		PacketGroup:                      DefaultPacketGroupConfig,
 		PacketGroupMaxAge:                30 * time.Second,
@@ -68,15 +79,8 @@ var (
 		RateMeasurementWindowDurationMax: 2 * time.Second,
 		PeriodicCheckInterval:            2 * time.Second,
 		PeriodicCheckIntervalCongested:   200 * time.Millisecond,
-	}
-
-	defaultTrendDetectorConfigCongested = ccutils.TrendDetectorConfig{
-		RequiredSamples:        8,
-		RequiredSamplesMin:     4,
-		DownwardTrendThreshold: -0.6,
-		DownwardTrendMaxWait:   5 * time.Second,
-		CollapseThreshold:      500 * time.Millisecond,
-		ValidityWindow:         10 * time.Second,
+		CongestedEstimateTrend: defaultTrendDetectorConfigCongestedEstimate,
+		CongestedEstimateEpsilon: 10000,
 	}
 )
 
@@ -178,7 +182,7 @@ func (c *congestionDetector) updateCongestionState(state CongestionState) {
 		c.congestedEstimateTrend = ccutils.NewTrendDetector(ccutils.TrendDetectorParams{
 			Name:   "ssbwe-estimate",
 			Logger: c.params.Logger,
-			Config: defaultTrendDetectorConfigCongested,
+			Config: c.params.Config.CongestedEstimateTrend,
 		})
 	} else if state != CongestionStateCongested {
 		c.congestedEstimateTrend = nil
@@ -321,20 +325,27 @@ func (c *congestionDetector) updateTrend(estimatedAvailableChannelCapacity int64
 		return
 	}
 
-	c.congestedEstimateTrend.AddValue(estimatedAvailableChannelCapacity)
+	c.congestedEstimateTrend.AddValue((estimatedAvailableChannelCapacity + c.params.Config.CongestedEstimateEpsilon - 1) / c.params.Config.CongestedEstimateEpsilon * c.params.Config.CongestedEstimateEpsilon)
 
 	if c.congestedEstimateTrend.GetDirection() == ccutils.TrendDirectionDownward {
 		c.params.Logger.Infow("estimate is trending downward", "channel", c.congestedEstimateTrend.ToString())
+		estimatedAvailableChannelCapacity := c.congestedEstimateTrend.GetLowest()
 
 		c.lock.RLock()
 		state := c.congestionState
-		estimatedAvailableChannelCapacity := c.estimatedAvailableChannelCapacity
 		onCongestionStateChange := c.onCongestionStateChange
 		c.lock.RUnlock()
 
 		if onCongestionStateChange != nil {
 			onCongestionStateChange(state, estimatedAvailableChannelCapacity)
 		}
+
+		// reset to get new set of samples for next trend
+		c.congestedEstimateTrend = ccutils.NewTrendDetector(ccutils.TrendDetectorParams{
+			Name:   "ssbwe-estimate",
+			Logger: c.params.Logger,
+			Config: c.params.Config.CongestedEstimateTrend,
+		})
 	}
 }
 
