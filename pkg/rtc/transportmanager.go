@@ -103,6 +103,8 @@ type TransportManagerParams struct {
 	PublisherHandler             transport.Handler
 	SubscriberHandler            transport.Handler
 	DataChannelStats             *telemetry.BytesTrackStats
+	UseSendSideBWEInterceptor    bool
+	UseSendSideBWE               bool
 }
 
 type TransportManager struct {
@@ -180,6 +182,8 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		DataChannelMaxBufferedAmount: params.DataChannelMaxBufferedAmount,
 		Transport:                    livekit.SignalTarget_SUBSCRIBER,
 		Handler:                      TransportManagerTransportHandler{params.SubscriberHandler, t, lgr},
+		UseSendSideBWEInterceptor:    params.UseSendSideBWEInterceptor,
+		UseSendSideBWE:               params.UseSendSideBWE,
 	})
 	if err != nil {
 		return nil, err
