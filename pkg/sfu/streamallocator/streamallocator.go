@@ -818,11 +818,14 @@ func (s *StreamAllocator) handleSignalRTCPReceiverReport(event Event) {
 
 func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
 	cscd := event.Data.(congestionStateChangeData)
-	if cscd.congestionState == sendsidebwe.CongestionStateEarlyWarning {
+	if cscd.congestionState == sendsidebwe.CongestionStateEarlyWarning ||
+		cscd.congestionState == sendsidebwe.CongestionStateEarlyWarningHangover {
 		s.isHolding = true
 	} else {
 		s.isHolding = false
-		if cscd.congestionState == sendsidebwe.CongestionStateCongested {
+		if cscd.congestionState == sendsidebwe.CongestionStateNone {
+			// SSBWE-TODO: need to do optimal allocation of all tracks
+		} else if cscd.congestionState == sendsidebwe.CongestionStateCongested {
 			// SSBWE-TODO-START
 			// Can potentially do
 			//   1. On early warning, stop any up layering

@@ -13,9 +13,9 @@ type CongestionState int
 const (
 	CongestionStateNone CongestionState = iota
 	CongestionStateEarlyWarning
-	CongestionStateEarlyWarningRelieving
+	CongestionStateEarlyWarningHangover
 	CongestionStateCongested
-	CongestionStateCongestedRelieving
+	CongestionStateCongestedHangover
 )
 
 func (c CongestionState) String() string {
@@ -24,12 +24,12 @@ func (c CongestionState) String() string {
 		return "NONE"
 	case CongestionStateEarlyWarning:
 		return "EARLY_WARNING"
-	case CongestionStateEarlyWarningRelieving:
-		return "EARLY_WARNING_RELIEVING"
+	case CongestionStateEarlyWarningHangover:
+		return "EARLY_WARNING_HANGOVER"
 	case CongestionStateCongested:
 		return "CONGESTED"
-	case CongestionStateCongestedRelieving:
-		return "CONGESTED_RELIEVING"
+	case CongestionStateCongestedHangover:
+		return "CONGESTED_HANGOVER"
 	default:
 		return fmt.Sprintf("%d", int(c))
 	}

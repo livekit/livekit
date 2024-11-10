@@ -240,10 +240,10 @@ func (c *congestionDetector) congestionDetectionStateMachine() {
 		if congestedTriggered {
 			newState = CongestionStateCongested
 		} else if !earlyWarningTriggered {
-			newState = CongestionStateEarlyWarningRelieving
+			newState = CongestionStateEarlyWarningHangover
 		}
 
-	case CongestionStateEarlyWarningRelieving:
+	case CongestionStateEarlyWarningHangover:
 		if congestedTriggered {
 			c.params.Logger.Warnw("invalid congested state transition", nil, "from", state)
 		}
@@ -255,10 +255,10 @@ func (c *congestionDetector) congestionDetectionStateMachine() {
 
 	case CongestionStateCongested:
 		if !congestedTriggered {
-			newState = CongestionStateCongestedRelieving
+			newState = CongestionStateCongestedHangover
 		}
 
-	case CongestionStateCongestedRelieving:
+	case CongestionStateCongestedHangover:
 		if congestedTriggered {
 			c.params.Logger.Warnw("invalid congested state transition", nil, "from", state)
 		}
