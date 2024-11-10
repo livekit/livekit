@@ -119,14 +119,19 @@ func (p *ProbeController) Reset() {
 
 func (p *ProbeController) ProbeClusterDone(info ProbeClusterInfo) {
 	p.lock.Lock()
-	defer p.lock.Unlock()
 
 	if p.probeClusterId != info.Id {
 		p.params.Logger.Debugw("not expected probe cluster", "probeClusterId", p.probeClusterId, "resetProbeClusterId", info.Id)
+		p.lock.Unlock()
 		return
 	}
 
 	p.doneProbeClusterInfo = info
+	p.lock.Unlock()
+
+	if p.sendSideBWE != nil {
+		p.sendSideBWE.ProbingEnd()
+	}
 }
 
 func (p *ProbeController) CheckProbe(trend ChannelTrend, highestEstimate int64) {
@@ -289,6 +294,8 @@ func (p *ProbeController) pollProbe(probeClusterId ProbeClusterId) {
 	if p.sendSideBWE == nil {
 		return
 	}
+
+	p.sendSideBWE.ProbingStart()
 
 	startingEstimate := p.sendSideBWE.GetEstimatedAvailableChannelCapacity()
 

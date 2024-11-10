@@ -281,6 +281,8 @@ func (p *packetGroup) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	recvDuration := time.Duration((p.maxRecvTime - p.minRecvTime) * 1000)
 	e.AddDuration("recvDuration", recvDuration)
 
+	e.AddUint64("minSequenceNumber", p.minSequenceNumber)
+	e.AddUint64("maxSequenceNumber", p.maxSequenceNumber)
 	e.AddObject("acked", p.acked)
 	e.AddObject("lost", p.lost)
 

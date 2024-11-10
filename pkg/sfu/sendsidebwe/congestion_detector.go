@@ -117,7 +117,6 @@ type congestionDetector struct {
 
 	onCongestionStateChange func(congestionState CongestionState, estimatedAvailableChannelCapacity int64)
 
-	inProbe    bool
 	probeGroup *packetGroup
 }
 
@@ -211,22 +210,6 @@ func (c *congestionDetector) HandleRTCP(report *rtcp.TransportLayerCC) {
 	case c.wake <- struct{}{}:
 	default:
 	}
-}
-
-func (c *congestionDetector) ProbingStart() {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	c.inProbe = true
-	c.packetTracker.ProbingStart()
-}
-
-func (c *congestionDetector) ProbingEnd() {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	c.inProbe = false
-	c.packetTracker.ProbingEnd()
 }
 
 func (c *congestionDetector) prunePacketGroups() {
@@ -409,8 +392,9 @@ func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 	}
 
 	c.lock.RLock()
-	inProbe := c.inProbe
 	probingStartSequenceNumber, probingStartSequenceNumberOk := c.packetTracker.ProbingStartSequenceNumber()
+	probingEndSequenceNumber, probingEndSequenceNumberOk := c.packetTracker.ProbingEndSequenceNumber()
+	c.params.Logger.Infow("probe sequence numbers", "startOk", probingStartSequenceNumberOk, "start", probingStartSequenceNumber, "endOk", probingEndSequenceNumberOk, "end", probingEndSequenceNumber)	// REMOVE
 	c.lock.RUnlock()
 
 	if len(c.packetGroups) == 0 {
@@ -432,7 +416,7 @@ func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 			return
 		}
 
-		if inProbe && c.probeGroup == nil && probingStartSequenceNumberOk && pi.sequenceNumber == probingStartSequenceNumber {
+		if c.probeGroup == nil && probingStartSequenceNumberOk && pi.sequenceNumber == probingStartSequenceNumber {
 			// force finalize the active group and start the probe group
 			pg.Finalize()
 
@@ -450,8 +434,12 @@ func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 			)
 			pg = c.probeGroup
 		}
+		if c.probeGroup != nil {
+			c.params.Logger.Infow("processing probe sequence", "packetInfo", pi, "sn", pi.sequenceNumber) // SSBWE-REMOVE
+			pg = c.probeGroup
+		}
 
-		if !inProbe && c.probeGroup != nil {
+		if c.probeGroup != nil && probingEndSequenceNumberOk && pi.sequenceNumber == probingEndSequenceNumber {
 			c.probeGroup.Finalize()
 			c.params.Logger.Infow("probe group done", "group", c.probeGroup) // SSBWE-REMOVE
 			c.probeGroup = nil
