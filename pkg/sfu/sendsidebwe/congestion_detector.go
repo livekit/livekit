@@ -6,6 +6,7 @@ import (
 
 	"github.com/frostbyte73/core"
 	"github.com/gammazero/deque"
+	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils/mono"
 	"github.com/pion/rtcp"
@@ -33,17 +34,23 @@ var (
 // -------------------------------------------------------------------------------
 
 type CongestionDetectorConfig struct {
-	PacketGroup                      PacketGroupConfig      `yaml:"packet_group,omitempty"`
-	PacketGroupMaxAge                time.Duration          `yaml:"packet_group_max_age,omitempty"`
-	JQRMinDelay                      time.Duration          `yaml:"jqr_min_delay,omitempty"`
-	DQRMaxDelay                      time.Duration          `yaml:"dqr_max_delay,omitempty"`
-	EarlyWarning                     CongestionSignalConfig `yaml:"early_warning,omitempty"`
-	EarlyWarningHangover             time.Duration          `yaml:"early_warning_hangover,omitempty"`
-	Congested                        CongestionSignalConfig `yaml:"congested,omitempty"`
-	CongestedHangover                time.Duration          `yaml:"congested_hangover,omitempty"`
-	RateMeasurementWindowFullnessMin float64                `yaml:"rate_measurement_window_fullness_min,omitempty"`
-	RateMeasurementWindowDurationMin time.Duration          `yaml:"rate_measurement_window_duration_min,omitempty"`
-	RateMeasurementWindowDurationMax time.Duration          `yaml:"rate_measurement_window_duration_max,omitempty"`
+	PacketGroup       PacketGroupConfig `yaml:"packet_group,omitempty"`
+	PacketGroupMaxAge time.Duration     `yaml:"packet_group_max_age,omitempty"`
+
+	JQRMinDelay time.Duration `yaml:"jqr_min_delay,omitempty"`
+	DQRMaxDelay time.Duration `yaml:"dqr_max_delay,omitempty"`
+
+	EarlyWarning         CongestionSignalConfig `yaml:"early_warning,omitempty"`
+	EarlyWarningHangover time.Duration          `yaml:"early_warning_hangover,omitempty"`
+	Congested            CongestionSignalConfig `yaml:"congested,omitempty"`
+	CongestedHangover    time.Duration          `yaml:"congested_hangover,omitempty"`
+
+	RateMeasurementWindowFullnessMin float64       `yaml:"rate_measurement_window_fullness_min,omitempty"`
+	RateMeasurementWindowDurationMin time.Duration `yaml:"rate_measurement_window_duration_min,omitempty"`
+	RateMeasurementWindowDurationMax time.Duration `yaml:"rate_measurement_window_duration_max,omitempty"`
+
+	PeriodicCheckInterval          time.Duration `yaml:"periodic_check_interval,omitempty"`
+	PeriodicCheckIntervalCongested time.Duration `yaml:"periodic_check_interval_congested,omitempty"`
 }
 
 var (
@@ -59,6 +66,17 @@ var (
 		RateMeasurementWindowFullnessMin: 0.8,
 		RateMeasurementWindowDurationMin: 800 * time.Millisecond,
 		RateMeasurementWindowDurationMax: 2 * time.Second,
+		PeriodicCheckInterval:            2 * time.Second,
+		PeriodicCheckIntervalCongested:   200 * time.Millisecond,
+	}
+
+	defaultTrendDetectorConfigCongested = ccutils.TrendDetectorConfig{
+		RequiredSamples:        8,
+		RequiredSamplesMin:     4,
+		DownwardTrendThreshold: -0.6,
+		DownwardTrendMaxWait:   5 * time.Second,
+		CollapseThreshold:      500 * time.Millisecond,
+		ValidityWindow:         10 * time.Second,
 	}
 )
 
@@ -91,7 +109,9 @@ type congestionDetector struct {
 	estimatedAvailableChannelCapacity int64
 	congestionState                   CongestionState
 	congestionStateSwitchedAt         time.Time
-	onCongestionStateChange           func(congestionState CongestionState, estimatedAvailableChannelCapacity int64)
+	congestedEstimateTrend            *ccutils.TrendDetector
+
+	onCongestionStateChange func(congestionState CongestionState, estimatedAvailableChannelCapacity int64)
 }
 
 func NewCongestionDetector(params congestionDetectorParams) *congestionDetector {
@@ -137,6 +157,8 @@ func (c *congestionDetector) updateCongestionState(state CongestionState) {
 		"to", state,
 		"estimatedAvailableChannelCapacity", c.estimatedAvailableChannelCapacity,
 	)
+
+	prevState := c.congestionState
 	c.congestionState = state
 
 	onCongestionStateChange := c.onCongestionStateChange
@@ -145,6 +167,21 @@ func (c *congestionDetector) updateCongestionState(state CongestionState) {
 
 	if onCongestionStateChange != nil {
 		onCongestionStateChange(state, estimatedAvailableChannelCapacity)
+	}
+
+	// when in congested state, monitor changes in estimate to ensure allocations
+	// are in line with estimate, it is possible that the estimate is incorrect
+	// congestion starts and the allocation mayb be sub-optimal and not enough to
+	// relieve congestion, by monitoing on a continuous basis allocations can be
+	// adjusted in the direction of releving congestion
+	if state == CongestionStateCongested && prevState != CongestionStateCongested {
+		c.congestedEstimateTrend = ccutils.NewTrendDetector(ccutils.TrendDetectorParams{
+			Name:   "ssbwe-estimate",
+			Logger: c.params.Logger,
+			Config: defaultTrendDetectorConfigCongested,
+		})
+	} else if state != CongestionStateCongested {
+		c.congestedEstimateTrend = nil
 	}
 }
 
@@ -278,6 +315,28 @@ func (c *congestionDetector) congestionDetectionStateMachine() {
 	}
 }
 
+func (c *congestionDetector) updateTrend(estimatedAvailableChannelCapacity int64) {
+	if c.congestedEstimateTrend == nil {
+		return
+	}
+
+	c.congestedEstimateTrend.AddValue(estimatedAvailableChannelCapacity)
+
+	if c.congestedEstimateTrend.GetDirection() == ccutils.TrendDirectionDownward {
+		c.params.Logger.Infow("estimate is trending downward", "channel", c.congestedEstimateTrend.ToString())
+
+		c.lock.RLock()
+		state := c.congestionState
+		estimatedAvailableChannelCapacity := c.estimatedAvailableChannelCapacity
+		onCongestionStateChange := c.onCongestionStateChange
+		c.lock.RUnlock()
+
+		if onCongestionStateChange != nil {
+			onCongestionStateChange(state, estimatedAvailableChannelCapacity)
+		}
+	}
+}
+
 func (c *congestionDetector) estimateAvailableChannelCapacity() {
 	if len(c.packetGroups) == 0 {
 		return
@@ -304,9 +363,13 @@ func (c *congestionDetector) estimateAvailableChannelCapacity() {
 	}
 
 	if totalDuration >= c.params.Config.RateMeasurementWindowDurationMin.Microseconds() {
+		estimatedAvailableChannelCapacity := int64(totalBytes * 8 * 1e6 / float64(totalDuration))
+
 		c.lock.Lock()
-		c.estimatedAvailableChannelCapacity = int64(totalBytes * 8 * 1e6 / float64(totalDuration))
+		c.estimatedAvailableChannelCapacity = estimatedAvailableChannelCapacity
 		c.lock.Unlock()
+
+		c.updateTrend(estimatedAvailableChannelCapacity)
 	} else {
 		c.params.Logger.Infow("not enough data to estimate available channel capacity", "totalDuration", totalDuration)
 	}
@@ -445,7 +508,7 @@ func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 }
 
 func (c *congestionDetector) worker() {
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(c.params.Config.PeriodicCheckInterval)
 	defer ticker.Stop()
 
 	for {
@@ -461,6 +524,12 @@ func (c *congestionDetector) worker() {
 				c.lock.Unlock()
 
 				c.processFeedbackReport(fbReport)
+			}
+
+			if c.GetCongestionState() == CongestionStateCongested {
+				ticker.Reset(c.params.Config.PeriodicCheckIntervalCongested)
+			} else {
+				ticker.Reset(c.params.Config.PeriodicCheckInterval)
 			}
 
 		case <-ticker.C:

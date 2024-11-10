@@ -16,7 +16,9 @@ package streamallocator
 
 import (
 	"fmt"
+	"time"
 
+	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -69,18 +71,36 @@ func (c ChannelCongestionReason) String() string {
 // ------------------------------------------------
 
 type ChannelObserverConfig struct {
-	Estimate TrendDetectorConfig `yaml:"estimate,omitempty"`
-	Nack     NackTrackerConfig   `yaml:"nack,omitempty"`
+	Estimate ccutils.TrendDetectorConfig `yaml:"estimate,omitempty"`
+	Nack     NackTrackerConfig           `yaml:"nack,omitempty"`
 }
 
 var (
+	defaultTrendDetectorConfigProbe = ccutils.TrendDetectorConfig{
+		RequiredSamples:        3,
+		RequiredSamplesMin:     3,
+		DownwardTrendThreshold: 0.0,
+		DownwardTrendMaxWait:   5 * time.Second,
+		CollapseThreshold:      0,
+		ValidityWindow:         10 * time.Second,
+	}
+
 	DefaultChannelObserverConfigProbe = ChannelObserverConfig{
-		Estimate: DefaultTrendDetectorConfigProbe,
+		Estimate: defaultTrendDetectorConfigProbe,
 		Nack:     DefaultNackTrackerConfigProbe,
 	}
 
+	defaultTrendDetectorConfigNonProbe = ccutils.TrendDetectorConfig{
+		RequiredSamples:        12,
+		RequiredSamplesMin:     8,
+		DownwardTrendThreshold: -0.6,
+		DownwardTrendMaxWait:   5 * time.Second,
+		CollapseThreshold:      500 * time.Millisecond,
+		ValidityWindow:         10 * time.Second,
+	}
+
 	DefaultChannelObserverConfigNonProbe = ChannelObserverConfig{
-		Estimate: DefaultTrendDetectorConfigNonProbe,
+		Estimate: defaultTrendDetectorConfigNonProbe,
 		Nack:     DefaultNackTrackerConfigNonProbe,
 	}
 )
@@ -96,7 +116,7 @@ type ChannelObserver struct {
 	params ChannelObserverParams
 	logger logger.Logger
 
-	estimateTrend *TrendDetector
+	estimateTrend *ccutils.TrendDetector
 	nackTracker   *NackTracker
 }
 
@@ -104,7 +124,7 @@ func NewChannelObserver(params ChannelObserverParams, logger logger.Logger) *Cha
 	return &ChannelObserver{
 		params: params,
 		logger: logger,
-		estimateTrend: NewTrendDetector(TrendDetectorParams{
+		estimateTrend: ccutils.NewTrendDetector(ccutils.TrendDetectorParams{
 			Name:   params.Name + "-estimate",
 			Logger: logger,
 			Config: params.Config.Estimate,
@@ -155,7 +175,7 @@ func (c *ChannelObserver) GetTrend() (ChannelTrend, ChannelCongestionReason) {
 	estimateDirection := c.estimateTrend.GetDirection()
 
 	switch {
-	case estimateDirection == TrendDirectionDownward:
+	case estimateDirection == ccutils.TrendDirectionDownward:
 		c.logger.Debugw("stream allocator: channel observer: estimate is trending downward", "channel", c.ToString())
 		return ChannelTrendCongesting, ChannelCongestionReasonEstimate
 
@@ -163,7 +183,7 @@ func (c *ChannelObserver) GetTrend() (ChannelTrend, ChannelCongestionReason) {
 		c.logger.Debugw("stream allocator: channel observer: high rate of repeated NACKs", "channel", c.ToString())
 		return ChannelTrendCongesting, ChannelCongestionReasonLoss
 
-	case estimateDirection == TrendDirectionUpward:
+	case estimateDirection == ccutils.TrendDirectionUpward:
 		return ChannelTrendClearing, ChannelCongestionReasonNone
 	}
 

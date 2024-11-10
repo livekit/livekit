@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package streamallocator
+package ccutils
 
 import (
 	"fmt"
@@ -78,26 +78,6 @@ type TrendDetectorConfig struct {
 	CollapseThreshold      time.Duration `yaml:"collapse_threshold,omitempty"`
 	ValidityWindow         time.Duration `yaml:"validity_window,omitempty"`
 }
-
-var (
-	DefaultTrendDetectorConfigProbe = TrendDetectorConfig{
-		RequiredSamples:        3,
-		RequiredSamplesMin:     3,
-		DownwardTrendThreshold: 0.0,
-		DownwardTrendMaxWait:   5 * time.Second,
-		CollapseThreshold:      0,
-		ValidityWindow:         10 * time.Second,
-	}
-
-	DefaultTrendDetectorConfigNonProbe = TrendDetectorConfig{
-		RequiredSamples:        12,
-		RequiredSamplesMin:     8,
-		DownwardTrendThreshold: -0.6,
-		DownwardTrendMaxWait:   5 * time.Second,
-		CollapseThreshold:      500 * time.Millisecond,
-		ValidityWindow:         10 * time.Second,
-	}
-)
 
 // ------------------------------------------------
 
