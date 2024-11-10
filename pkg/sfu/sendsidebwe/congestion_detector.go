@@ -51,14 +51,14 @@ type CongestionDetectorConfig struct {
 
 	PeriodicCheckInterval          time.Duration               `yaml:"periodic_check_interval,omitempty"`
 	PeriodicCheckIntervalCongested time.Duration               `yaml:"periodic_check_interval_congested,omitempty"`
-	CongestedEstimateTrend         ccutils.TrendDetectorConfig `yaml:"congested_estimate_trend,omitempty"`
-	CongestedEstimateEpsilon       int64                       `yaml:"congested_estimate_epsilon,omitempty"`
+	CongestedCTRTrend              ccutils.TrendDetectorConfig `yaml:"congested_ctr_trend,omitempty"`
+	CongestedCTREpsilon            float64                     `yaml:"congested_ctr_epsilon,omitempty"`
 }
 
 var (
-	defaultTrendDetectorConfigCongestedEstimate = ccutils.TrendDetectorConfig{
-		RequiredSamples:        8,
-		RequiredSamplesMin:     4,
+	defaultTrendDetectorConfigCongestedCTR = ccutils.TrendDetectorConfig{
+		RequiredSamples:        4,
+		RequiredSamplesMin:     2,
 		DownwardTrendThreshold: -0.6,
 		DownwardTrendMaxWait:   5 * time.Second,
 		CollapseThreshold:      500 * time.Millisecond,
@@ -79,8 +79,8 @@ var (
 		RateMeasurementWindowDurationMax: 2 * time.Second,
 		PeriodicCheckInterval:            2 * time.Second,
 		PeriodicCheckIntervalCongested:   200 * time.Millisecond,
-		CongestedEstimateTrend:           defaultTrendDetectorConfigCongestedEstimate,
-		CongestedEstimateEpsilon:         10000,
+		CongestedCTRTrend:                defaultTrendDetectorConfigCongestedCTR,
+		CongestedCTREpsilon:              0.05,
 	}
 )
 
@@ -113,7 +113,7 @@ type congestionDetector struct {
 	estimatedAvailableChannelCapacity int64
 	congestionState                   CongestionState
 	congestionStateSwitchedAt         time.Time
-	congestedEstimateTrend            *ccutils.TrendDetector[int64]
+	congestedCTRTrend                 *ccutils.TrendDetector[float64]
 
 	onCongestionStateChange func(congestionState CongestionState, estimatedAvailableChannelCapacity int64)
 }
@@ -173,19 +173,20 @@ func (c *congestionDetector) updateCongestionState(state CongestionState) {
 		onCongestionStateChange(state, estimatedAvailableChannelCapacity)
 	}
 
-	// when in congested state, monitor changes in estimate to ensure allocations
-	// are in line with estimate, it is possible that the estimate is incorrect
-	// congestion starts and the allocation mayb be sub-optimal and not enough to
-	// relieve congestion, by monitoing on a continuous basis allocations can be
-	// adjusted in the direction of releving congestion
+	// when in congested state, monitor changes in captured traffic ratio (CTR)
+	// to ensure allocations are in line with latest estimates, it is possible that
+	// the estimate is incorrect congestion starts and the allocation may be
+	// sub-optimal and not enough to reduce/relieve congestion, by monitoing CTR
+	// on a continuous basis allocations can be adjusted in the direction of
+	// reducing/relieving congestion
 	if state == CongestionStateCongested && prevState != CongestionStateCongested {
-		c.congestedEstimateTrend = ccutils.NewTrendDetector[int64](ccutils.TrendDetectorParams{
+		c.congestedCTRTrend = ccutils.NewTrendDetector[float64](ccutils.TrendDetectorParams{
 			Name:   "ssbwe-estimate",
 			Logger: c.params.Logger,
-			Config: c.params.Config.CongestedEstimateTrend,
+			Config: c.params.Config.CongestedCTRTrend,
 		})
 	} else if state != CongestionStateCongested {
-		c.congestedEstimateTrend = nil
+		c.congestedCTRTrend = nil
 	}
 }
 
@@ -320,19 +321,20 @@ func (c *congestionDetector) congestionDetectionStateMachine() {
 	}
 }
 
-func (c *congestionDetector) updateTrend(estimatedAvailableChannelCapacity int64) {
-	if c.congestedEstimateTrend == nil {
+func (c *congestionDetector) updateTrend(ctr float64) {
+	if c.congestedCTRTrend == nil {
 		return
 	}
 
-	c.congestedEstimateTrend.AddValue((estimatedAvailableChannelCapacity + c.params.Config.CongestedEstimateEpsilon - 1) / c.params.Config.CongestedEstimateEpsilon * c.params.Config.CongestedEstimateEpsilon)
+	// quantise the CTR to filter out small changes
+	c.congestedCTRTrend.AddValue(float64(int((ctr+(c.params.Config.CongestedCTREpsilon/2))/c.params.Config.CongestedCTREpsilon)) * c.params.Config.CongestedCTREpsilon)
 
-	if c.congestedEstimateTrend.GetDirection() == ccutils.TrendDirectionDownward {
-		c.params.Logger.Infow("estimate is trending downward", "channel", c.congestedEstimateTrend.ToString())
-		estimatedAvailableChannelCapacity := c.congestedEstimateTrend.GetLowest()
+	if c.congestedCTRTrend.GetDirection() == ccutils.TrendDirectionDownward {
+		c.params.Logger.Infow("estimate is trending downward", "channel", c.congestedCTRTrend.ToString())
 
 		c.lock.RLock()
 		state := c.congestionState
+		estimatedAvailableChannelCapacity := c.estimatedAvailableChannelCapacity
 		onCongestionStateChange := c.onCongestionStateChange
 		c.lock.RUnlock()
 
@@ -341,10 +343,10 @@ func (c *congestionDetector) updateTrend(estimatedAvailableChannelCapacity int64
 		}
 
 		// reset to get new set of samples for next trend
-		c.congestedEstimateTrend = ccutils.NewTrendDetector[int64](ccutils.TrendDetectorParams{
+		c.congestedCTRTrend = ccutils.NewTrendDetector[float64](ccutils.TrendDetectorParams{
 			Name:   "ssbwe-estimate",
 			Logger: c.params.Logger,
-			Config: c.params.Config.CongestedEstimateTrend,
+			Config: c.params.Config.CongestedCTRTrend,
 		})
 	}
 }
@@ -373,13 +375,9 @@ func (c *congestionDetector) estimateAvailableChannelCapacity() {
 	}
 
 	if totalDuration >= c.params.Config.RateMeasurementWindowDurationMin.Microseconds() {
-		estimatedAvailableChannelCapacity := int64(totalBytes) * 8 * 1e6 / totalDuration
-
 		c.lock.Lock()
-		c.estimatedAvailableChannelCapacity = estimatedAvailableChannelCapacity
+		c.estimatedAvailableChannelCapacity = int64(totalBytes) * 8 * 1e6 / totalDuration
 		c.lock.Unlock()
-
-		c.updateTrend(estimatedAvailableChannelCapacity)
 	} else {
 		c.params.Logger.Infow("not enough data to estimate available channel capacity", "totalDuration", totalDuration)
 	}
@@ -417,6 +415,8 @@ func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 
 		if err == errGroupFinalized {
 			// previous group ended, start a new group
+			c.updateTrend(pg.CapturedTrafficRatio())
+
 			c.params.Logger.Infow("packet group done", "group", pg, "numGroups", len(c.packetGroups)) // SSBWE-REMOVE
 			pqd, _ := pg.PropagatedQueuingDelay()
 			pg = NewPacketGroup(

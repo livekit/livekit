@@ -231,7 +231,7 @@ func (p *packetGroup) SendDuration() int64 {
 	return p.maxSendTime - p.minSendTime
 }
 
-func (p *packetGroup) Traffic() (int64, int64, int, float64) {
+func (p *packetGroup) CapturedTrafficRatio() float64 {
 	capturedTrafficRatio := float64(0.0)
 	if p.aggregateRecvDelta != 0 {
 		// apply a penalty for lost packets,
@@ -246,7 +246,11 @@ func (p *packetGroup) Traffic() (int64, int64, int, float64) {
 		// like this could cause queuing region to be stuck in JQR
 		capturedTrafficRatio = float64(p.aggregateSendDelta) / float64(p.aggregateRecvDelta+p.getLossPenalty())
 	}
-	numBytes := int(float64(p.acked.numBytes()) * min(1.0, capturedTrafficRatio))
+	return min(1.0, capturedTrafficRatio)
+}
+
+func (p *packetGroup) Traffic() (int64, int64, int, float64) {
+	numBytes := int(float64(p.acked.numBytes()) * p.CapturedTrafficRatio())
 
 	fullness := max(
 		float64(p.acked.numPackets())/float64(p.params.Config.MinPackets),
@@ -273,7 +277,6 @@ func (p *packetGroup) MarshalLogObject(e zapcore.ObjectEncoder) error {
 
 	e.AddObject("acked", p.acked)
 	e.AddObject("lost", p.lost)
-	e.AddFloat64("lossRatio", float64(p.lost.numPackets())/float64(p.acked.numPackets()+p.lost.numPackets()))
 
 	sendBitrate := float64(0)
 	if sendDuration != 0 {
@@ -291,13 +294,11 @@ func (p *packetGroup) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddInt64("aggregateRecvDelta", p.aggregateRecvDelta)
 	e.AddInt64("queuingDelay", p.queuingDelay)
 	e.AddInt64("groupDelay", p.aggregateRecvDelta-p.aggregateSendDelta)
-	if p.aggregateRecvDelta != 0 {
-		lossPenalty := p.getLossPenalty()
-		e.AddInt64("lossPenalty", lossPenalty)
-		capturedTrafficRatio := float64(p.aggregateSendDelta) / float64(p.aggregateRecvDelta+lossPenalty)
-		e.AddFloat64("capturedTrafficRatio", capturedTrafficRatio)
-		e.AddFloat64("estimatedAvailableChannelCapacity", sendBitrate*min(1.0, capturedTrafficRatio))
-	}
+	e.AddFloat64("lossRatio", float64(p.lost.numPackets())/float64(p.acked.numPackets()+p.lost.numPackets()))
+	e.AddInt64("lossPenalty", p.getLossPenalty())
+	capturedTrafficRatio := p.CapturedTrafficRatio()
+	e.AddFloat64("capturedTrafficRatio", capturedTrafficRatio)
+	e.AddFloat64("estimatedAvailableChannelCapacity", sendBitrate*capturedTrafficRatio)
 
 	e.AddBool("isFinalized", p.isFinalized)
 	return nil
