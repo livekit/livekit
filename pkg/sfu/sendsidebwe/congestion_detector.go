@@ -233,6 +233,7 @@ func (c *congestionDetector) isCongestionSignalTriggered() (bool, bool) {
 		}
 
 		if pqd > c.params.Config.JQRMinDelay.Microseconds() {
+			// JQR group builds up congestion signal
 			numGroups++
 			duration += pg.SendDuration()
 		}
@@ -343,12 +344,11 @@ func (c *congestionDetector) estimateAvailableChannelCapacity() {
 	}
 
 	totalDuration := int64(0)
-	totalBytes := float64(0.0)
-
+	totalBytes := 0
 	threshold := c.packetGroups[len(c.packetGroups)-1].MinSendTime() - c.params.Config.RateMeasurementWindowDurationMax.Microseconds()
 	for idx := len(c.packetGroups) - 1; idx >= 0; idx-- {
 		pg := c.packetGroups[idx]
-		mst, dur, nbytes, ctr, fullness := pg.AckedTraffic()
+		mst, dur, nbytes, fullness := pg.Traffic()
 		if mst < threshold {
 			break
 		}
@@ -358,12 +358,11 @@ func (c *congestionDetector) estimateAvailableChannelCapacity() {
 		}
 
 		totalDuration += dur
-		// captured traffic ratio is a measure of what fraction of sent traffic was delivered
-		totalBytes += float64(nbytes) * ctr
+		totalBytes += nbytes
 	}
 
 	if totalDuration >= c.params.Config.RateMeasurementWindowDurationMin.Microseconds() {
-		estimatedAvailableChannelCapacity := int64(totalBytes * 8 * 1e6 / float64(totalDuration))
+		estimatedAvailableChannelCapacity := int64(totalBytes) * 8 * 1e6 / totalDuration
 
 		c.lock.Lock()
 		c.estimatedAvailableChannelCapacity = estimatedAvailableChannelCapacity
@@ -378,8 +377,7 @@ func (c *congestionDetector) estimateAvailableChannelCapacity() {
 func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 	recvRefTime, isOutOfOrder := c.twccFeedback.ProcessReport(fbr.report, fbr.at)
 	if isOutOfOrder {
-		// SSBWE-TODO: should out-of-order reports be dropped or processed??
-		return
+		c.params.Logger.Infow("received out-of-order feedback report")
 	}
 
 	if len(c.packetGroups) == 0 {

@@ -818,37 +818,40 @@ func (s *StreamAllocator) handleSignalRTCPReceiverReport(event Event) {
 
 func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
 	cscd := event.Data.(congestionStateChangeData)
+	if cscd.congestionState != sendsidebwe.CongestionStateNone {
+		s.probeController.AbortProbe()
+	}
+
 	if cscd.congestionState == sendsidebwe.CongestionStateEarlyWarning ||
 		cscd.congestionState == sendsidebwe.CongestionStateEarlyWarningHangover {
 		s.isHolding = true
 	} else {
 		s.isHolding = false
-		if cscd.congestionState == sendsidebwe.CongestionStateNone {
-			// SSBWE-TODO: need to do optimal allocation of all tracks
-		} else if cscd.congestionState == sendsidebwe.CongestionStateCongested {
-			// SSBWE-TODO-START
-			// Can potentially do
-			//   1. On early warning, stop any up layering
-			//   2. On congestion relief, can start probe?
-			// SSBWE-TODO-END
-			s.probeController.AbortProbe()
 
-			s.params.Logger.Infow(
-				"stream allocator: channel congestion detected, updating channel capacity",
-				"old(bps)", s.committedChannelCapacity,
-				"new(bps)", cscd.estimatedAvailableChannelCapacity,
-				"expectedUsage(bps)", s.getExpectedBandwidthUsage(),
-			)
-			s.committedChannelCapacity = cscd.estimatedAvailableChannelCapacity
-
-			// SSBWE-TODO: cannot rely on a single run of this when congested as
-			// SSBWE-TODO: the estimate may be wrong. So, have to get estimate perodically
-			// SSBWE-TODO: look for a downward trend and re-allocate all tracks if the
-			// SSBWE-TODO: trend warrants a kick. Alternatively, the allocation point
-			// SSBWE-TODO: estiamte can be recorded and re-allocate can be kicked if the
-			// SSBWE-TODO: estimate drops by x% since the last allocate.
-			s.allocateAllTracks()
+		// early warning is done and hold has been released,
+		// if there is no congestion, allocate all tracks optimally as
+		// some tracks may have been held at sub-optimal allocation
+		// during early warning hold
+		if cscd.congestionState == sendsidebwe.CongestionStateNone && s.state == streamAllocatorStateStable {
+			update := NewStreamStateUpdate()
+			for _, track := range s.getTracks() {
+				allocation := track.AllocateOptimal(FlagAllowOvershootWhileOptimal, s.isHolding)
+				updateStreamStateChange(track, allocation, update)
+			}
+			s.maybeSendUpdate(update)
 		}
+	}
+
+	if cscd.congestionState == sendsidebwe.CongestionStateCongested {
+		s.params.Logger.Infow(
+			"stream allocator: channel congestion detected, updating channel capacity",
+			"old(bps)", s.committedChannelCapacity,
+			"new(bps)", cscd.estimatedAvailableChannelCapacity,
+			"expectedUsage(bps)", s.getExpectedBandwidthUsage(),
+		)
+		s.committedChannelCapacity = cscd.estimatedAvailableChannelCapacity
+
+		s.allocateAllTracks()
 	}
 }
 
@@ -1434,7 +1437,6 @@ func (s *StreamAllocator) maybeProbe() {
 		return
 	}
 	if s.sendSideBWE != nil && s.sendSideBWE.GetCongestionState() != sendsidebwe.CongestionStateNone {
-		// SSBWE-TODO: check if probe can be started without wait in send side bwe case
 		return
 	}
 

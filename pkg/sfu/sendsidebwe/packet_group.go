@@ -21,12 +21,18 @@ var (
 type PacketGroupConfig struct {
 	MinPackets        int           `yaml:"min_packets,omitempty"`
 	MaxWindowDuration time.Duration `yaml:"max_window_duration,omitempty"`
+
+	// should have at least this fraction of `MinPackets` for loss penalty consideration
+	LossPenaltyMinPacketsRatio float64 `yaml:"loss_penalty_min_packet_ratio,omitempty"`
+	LossPenaltyFactor          float64 `yaml:"loss_penalty_factor,omitempty"`
 }
 
 var (
 	DefaultPacketGroupConfig = PacketGroupConfig{
-		MinPackets:        20,
-		MaxWindowDuration: 500 * time.Millisecond,
+		MinPackets:                 20,
+		MaxWindowDuration:          500 * time.Millisecond,
+		LossPenaltyMinPacketsRatio: 0.5,
+		LossPenaltyFactor:          0.5,
 	}
 )
 
@@ -225,19 +231,29 @@ func (p *packetGroup) SendDuration() int64 {
 	return p.maxSendTime - p.minSendTime
 }
 
-func (p *packetGroup) AckedTraffic() (int64, int64, int, float64, float64) {
+func (p *packetGroup) Traffic() (int64, int64, int, float64) {
 	capturedTrafficRatio := float64(0.0)
 	if p.aggregateRecvDelta != 0 {
-		capturedTrafficRatio = float64(p.aggregateSendDelta) / float64(p.aggregateRecvDelta)
+		// apply a penalty for lost packets,
+		// tha rationale being packet dropping is a strategy to relieve congestion
+		// and if they were not dropped, they would have increased queuing delay,
+		// as it is not possible to know the reason for the losses,
+		// apply a small penalty to receive delta aggregate to simulate those packets
+		// build up queuing delay.
+		//
+		// note that it is applied only for determining rate and
+		// not while determining queuing region, adding synthetic delays
+		// like this could cause queuing region to be stuck in JQR
+		capturedTrafficRatio = float64(p.aggregateSendDelta) / float64(p.aggregateRecvDelta+p.getLossPenalty())
 	}
+	numBytes := int(float64(p.acked.numBytes()) * min(1.0, capturedTrafficRatio))
 
 	fullness := max(
 		float64(p.acked.numPackets())/float64(p.params.Config.MinPackets),
 		float64(p.maxSendTime-p.minSendTime)/float64(p.params.Config.MaxWindowDuration.Microseconds()),
 	)
 
-	// SSBWE-TODO: should traffic include RTX bytes? RTX could happen in bunches and that could skew the rate?
-	return p.minSendTime, p.maxSendTime - p.minSendTime, p.acked.numBytes(), min(1.0, capturedTrafficRatio), fullness
+	return p.minSendTime, p.maxSendTime - p.minSendTime, numBytes, fullness
 }
 
 func (p *packetGroup) MarshalLogObject(e zapcore.ObjectEncoder) error {
@@ -295,4 +311,19 @@ func (p *packetGroup) inGroup(sequenceNumber uint64) error {
 	}
 
 	return nil
+}
+
+func (p *packetGroup) getLossPenalty() int64 {
+	if p.aggregateRecvDelta == 0 {
+		return 0
+	}
+
+	ackedPackets := p.acked.numPackets()
+	lostPackets := p.lost.numPackets()
+	if (ackedPackets + lostPackets) < int(float64(p.params.Config.MinPackets)*p.params.Config.LossPenaltyMinPacketsRatio) {
+		return 0
+	}
+
+	lossRatio := float64(lostPackets) / float64(ackedPackets+lostPackets)
+	return int64(float64(p.aggregateRecvDelta) * lossRatio * p.params.Config.LossPenaltyFactor)
 }
