@@ -129,10 +129,10 @@ type CongestionControlConfig struct {
 
 	StreamAllocator streamallocator.StreamAllocatorConfig `yaml:"stream_allocator,omitempty"`
 
-	UseSendSideBWE bool `yaml:"use_send_side_bwe,omitempty"`
+	UseSendSideBWEInterceptor bool `yaml:"use_send_side_bwe_interceptor,omitempty"`
 
-	UseTWCC     bool                          `yaml:"use_twcc,omitempty"`
-	SendSideBWE sendsidebwe.SendSideBWEConfig `yaml:"send_side_bwe,omitempty"`
+	UseSendSideBWE bool                          `yaml:"use_send_side_bwe,omitempty"`
+	SendSideBWE    sendsidebwe.SendSideBWEConfig `yaml:"send_side_bwe,omitempty"`
 }
 
 type PlayoutDelayConfig struct {
@@ -311,12 +311,12 @@ var DefaultConfig = Config{
 		StrictACKs:            true,
 		PLIThrottle:           sfu.DefaultPLIThrottleConfig,
 		CongestionControl: CongestionControlConfig{
-			Enabled:         true,
-			AllowPause:      false,
-			StreamAllocator: streamallocator.DefaultStreamAllocatorConfig,
-			UseSendSideBWE:  false,
-			UseTWCC:         true,
-			SendSideBWE:     sendsidebwe.DefaultSendSideBWEConfig,
+			Enabled:                   true,
+			AllowPause:                false,
+			StreamAllocator:           streamallocator.DefaultStreamAllocatorConfig,
+			UseSendSideBWEInterceptor: true,
+			UseSendSideBWE:            false,
+			SendSideBWE:               sendsidebwe.DefaultSendSideBWEConfig,
 		},
 	},
 	Audio: sfu.DefaultAudioConfig,
