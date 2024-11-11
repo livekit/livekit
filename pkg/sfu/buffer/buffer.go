@@ -161,7 +161,7 @@ func (b *Buffer) SetLogger(logger logger.Logger) {
 	b.Lock()
 	defer b.Unlock()
 
-	b.logger = logger.WithComponent(sutils.ComponentSFU).WithValues("ssrc", b.mediaSSRC)
+	b.logger = logger.WithComponent(sutils.ComponentPub).WithComponent(sutils.ComponentSFU).WithValues("ssrc", b.mediaSSRC)
 	if b.rtpStats != nil {
 		b.rtpStats.SetLogger(b.logger)
 	}
