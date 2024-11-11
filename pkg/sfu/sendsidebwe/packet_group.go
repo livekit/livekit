@@ -261,6 +261,22 @@ func (p *packetGroup) Traffic() (int64, int64, int, float64) {
 	return p.minSendTime, p.maxSendTime - p.minSendTime, numBytes, fullness
 }
 
+func (p *packetGroup) LossRatio() (float64, bool) {
+	if !p.isFinalized {
+		return 0.0, false
+	}
+
+	return p.lossRatio()
+}
+
+func (p *packetGroup) lossRatio() (float64, bool) {
+	lostPackets := p.lost.numPackets()
+	totalPackets := float64(lostPackets + p.acked.numPackets())
+	lossRatio := float64(lostPackets) / totalPackets
+	// indeterminate if not enough packets, the second return value will be false if indeterminate
+	return lossRatio, totalPackets >= float64(p.params.Config.MinPackets)*p.params.Config.LossPenaltyMinPacketsRatio
+}
+
 func (p *packetGroup) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	if p == nil {
 		return nil
@@ -276,6 +292,8 @@ func (p *packetGroup) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	recvDuration := time.Duration((p.maxRecvTime - p.minRecvTime) * 1000)
 	e.AddDuration("recvDuration", recvDuration)
 
+	e.AddUint64("minSequenceNumber", p.minSequenceNumber)
+	e.AddUint64("maxSequenceNumber", p.maxSequenceNumber)
 	e.AddObject("acked", p.acked)
 	e.AddObject("lost", p.lost)
 
@@ -295,8 +313,13 @@ func (p *packetGroup) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddInt64("aggregateRecvDelta", p.aggregateRecvDelta)
 	e.AddInt64("queuingDelay", p.queuingDelay)
 	e.AddInt64("groupDelay", p.aggregateRecvDelta-p.aggregateSendDelta)
-	e.AddFloat64("lossRatio", float64(p.lost.numPackets())/float64(p.acked.numPackets()+p.lost.numPackets()))
+
+	lossRatio, lossRatioValid := p.lossRatio()
+	e.AddFloat64("lossRatio", lossRatio)
+	e.AddBool("lossRatioValid", lossRatioValid)
+
 	e.AddInt64("lossPenalty", p.getLossPenalty())
+
 	capturedTrafficRatio := p.CapturedTrafficRatio()
 	e.AddFloat64("capturedTrafficRatio", capturedTrafficRatio)
 	e.AddFloat64("estimatedAvailableChannelCapacity", sendBitrate*capturedTrafficRatio)
@@ -318,21 +341,16 @@ func (p *packetGroup) inGroup(sequenceNumber uint64) error {
 }
 
 func (p *packetGroup) getLossPenalty() int64 {
-	if p.aggregateRecvDelta == 0 {
-		return 0
-	}
-
-	lostPackets := p.lost.numPackets()
-	totalPackets := float64(lostPackets + p.acked.numPackets())
-	if totalPackets < float64(p.params.Config.MinPackets)*p.params.Config.LossPenaltyMinPacketsRatio {
-		return 0
-	}
-
 	// Log10 is used to give higher weight for the same loss ratio at higher packet rates,
 	// for e.g. with a penalty factor of 0.25
 	//    - 10% loss at 20 total packets = 0.1 * log10(20) * 0.25 = 0.032
 	//    - 10% loss at 100 total packets = 0.1 * log10(100) * 0.25 = 0.05
 	//    - 10% loss at 1000 total packets = 0.1 * log10(100) * 0.25 = 0.075
-	lossRatio := float64(lostPackets) / totalPackets
-	return int64(float64(p.aggregateRecvDelta) * lossRatio * math.Log10(totalPackets) * p.params.Config.LossPenaltyFactor)
+	lossRatio, _ := p.lossRatio()
+	return int64(
+		float64(p.aggregateRecvDelta) *
+			lossRatio *
+			math.Log10(float64(p.acked.numPackets()+p.lost.numPackets())) *
+			p.params.Config.LossPenaltyFactor,
+	)
 }
