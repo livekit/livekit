@@ -284,7 +284,6 @@ func (c *congestionDetector) isCongestionSignalTriggered() (bool, string, bool, 
 	congestedTriggered := false
 	congestedReason := ""
 
-	// RAJA-TODO, maybe send in contributing groups so that details of those can be logged
 	qd := &congestionSignalCalculator[int64]{
 		thresholdMin: c.params.Config.JQRMinDelay.Microseconds(),
 		thresholdMax: c.params.Config.DQRMaxDelay.Microseconds(),
