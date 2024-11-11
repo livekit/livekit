@@ -35,7 +35,7 @@ type packetTracker struct {
 	piLastRecv   *packetInfo
 }
 
-func NewPacketTracker(params packetTrackerParams) *packetTracker {
+func newPacketTracker(params packetTrackerParams) *packetTracker {
 	return &packetTracker{
 		params:         params,
 		sequenceNumber: uint64(rand.Intn(1<<14)) + uint64(1<<15), // a random number in third quartile of sequence number space

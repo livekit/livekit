@@ -118,11 +118,11 @@ type congestionDetector struct {
 	onCongestionStateChange func(congestionState CongestionState, estimatedAvailableChannelCapacity int64)
 }
 
-func NewCongestionDetector(params congestionDetectorParams) *congestionDetector {
+func newCongestionDetector(params congestionDetectorParams) *congestionDetector {
 	c := &congestionDetector{
 		params:                            params,
-		packetTracker:                     NewPacketTracker(packetTrackerParams{Logger: params.Logger}),
-		twccFeedback:                      NewTWCCFeedback(twccFeedbackParams{Logger: params.Logger}),
+		packetTracker:                     newPacketTracker(packetTrackerParams{Logger: params.Logger}),
+		twccFeedback:                      newTWCCFeedback(twccFeedbackParams{Logger: params.Logger}),
 		wake:                              make(chan struct{}, 1),
 		estimatedAvailableChannelCapacity: 100_000_000,
 	}
@@ -175,7 +175,7 @@ func (c *congestionDetector) updateCongestionState(state CongestionState) {
 
 	// when in congested state, monitor changes in captured traffic ratio (CTR)
 	// to ensure allocations are in line with latest estimates, it is possible that
-	// the estimate is incorrect congestion starts and the allocation may be
+	// the estimate is incorrect when congestion starts and the allocation may be
 	// sub-optimal and not enough to reduce/relieve congestion, by monitoing CTR
 	// on a continuous basis allocations can be adjusted in the direction of
 	// reducing/relieving congestion
@@ -200,6 +200,10 @@ func (c *congestionDetector) GetEstimatedAvailableChannelCapacity() int64 {
 func (c *congestionDetector) HandleRTCP(report *rtcp.TransportLayerCC) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
+
+	if c.stop.IsBroken() {
+		return
+	}
 
 	c.feedbackReports.PushBack(feedbackReport{mono.Now(), report})
 
@@ -392,7 +396,7 @@ func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 	if len(c.packetGroups) == 0 {
 		c.packetGroups = append(
 			c.packetGroups,
-			NewPacketGroup(
+			newPacketGroup(
 				packetGroupParams{
 					Config: c.params.Config.PacketGroup,
 					Logger: c.params.Logger,
@@ -419,7 +423,7 @@ func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 
 			// SSBWE-REMOVE c.params.Logger.Infow("packet group done", "group", pg, "numGroups", len(c.packetGroups)) // SSBWE-REMOVE
 			pqd, _ := pg.PropagatedQueuingDelay()
-			pg = NewPacketGroup(
+			pg = newPacketGroup(
 				packetGroupParams{
 					Config: c.params.Config.PacketGroup,
 					Logger: c.params.Logger,
