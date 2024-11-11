@@ -134,9 +134,7 @@ func newCongestionDetector(params congestionDetectorParams) *congestionDetector 
 }
 
 func (c *congestionDetector) Stop() {
-	c.stop.Once(func() {
-		close(c.wake)
-	})
+	c.stop.Break()
 }
 
 func (c *congestionDetector) OnCongestionStateChange(f func(congestionState CongestionState, estimatedAvailableChannelCapacity int64)) {
@@ -199,13 +197,8 @@ func (c *congestionDetector) GetEstimatedAvailableChannelCapacity() int64 {
 
 func (c *congestionDetector) HandleRTCP(report *rtcp.TransportLayerCC) {
 	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	if c.stop.IsBroken() {
-		return
-	}
-
 	c.feedbackReports.PushBack(feedbackReport{mono.Now(), report})
+	c.lock.Unlock()
 
 	// notify worker of a new feedback
 	select {
