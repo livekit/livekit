@@ -20,16 +20,60 @@ type CongestionSignalConfig struct {
 }
 
 var (
-	DefaultEarlyWarningCongestionSignalConfig = CongestionSignalConfig{
+	DefaultQueuingDelayEarlyWarningCongestionSignalConfig = CongestionSignalConfig{
 		MinNumberOfGroups: 1,
 		MinDuration:       100 * time.Millisecond,
 	}
 
-	DefaultCongestedCongestionSignalConfig = CongestionSignalConfig{
+	DefaultLossEarlyWarningCongestionSignalConfig = CongestionSignalConfig{
+		MinNumberOfGroups: 2,
+		MinDuration:       200 * time.Millisecond,
+	}
+
+	DefaultQueuingDelayCongestedCongestionSignalConfig = CongestionSignalConfig{
 		MinNumberOfGroups: 3,
 		MinDuration:       300 * time.Millisecond,
 	}
+
+	DefaultLossCongestedCongestionSignalConfig = CongestionSignalConfig{
+		MinNumberOfGroups: 5,
+		MinDuration:       600 * time.Millisecond,
+	}
 )
+
+// -------------------------------------------------------------------------------
+
+type congestionSignalCalculator[T int64 | float64] struct {
+	thresholdMin T
+	thresholdMax T
+	isSealed     bool
+	numGroups    int
+	duration     int64
+}
+
+func (c *congestionSignalCalculator[T]) processSample(val T, duration int64) {
+	if c.isSealed {
+		return
+	}
+
+	if val < c.thresholdMin {
+		// any DQR group breaks the continuity
+		c.isSealed = true
+		return
+	}
+
+	// INDETERMINATE group is treated as a no-op
+
+	// JQR group builds up congestion signal
+	if val > c.thresholdMax {
+		c.numGroups++
+		c.duration += duration
+	}
+}
+
+func (c *congestionSignalCalculator[T]) isTriggered(config CongestionSignalConfig) bool {
+	return c.numGroups >= config.MinNumberOfGroups && c.duration >= config.MinDuration.Microseconds()
+}
 
 // -------------------------------------------------------------------------------
 
@@ -40,10 +84,16 @@ type CongestionDetectorConfig struct {
 	JQRMinDelay time.Duration `yaml:"jqr_min_delay,omitempty"`
 	DQRMaxDelay time.Duration `yaml:"dqr_max_delay,omitempty"`
 
-	EarlyWarning         CongestionSignalConfig `yaml:"early_warning,omitempty"`
-	EarlyWarningHangover time.Duration          `yaml:"early_warning_hangover,omitempty"`
-	Congested            CongestionSignalConfig `yaml:"congested,omitempty"`
-	CongestedHangover    time.Duration          `yaml:"congested_hangover,omitempty"`
+	JQRMinLoss float64 `yaml:"jqr_min_loss,omitempty"`
+	DQRMaxLoss float64 `yaml:"dqr_max_loss,omitempty"`
+
+	QueuingDelayEarlyWarning CongestionSignalConfig `yaml:"queuing_delay_early_warning,omitempty"`
+	LossEarlyWarning         CongestionSignalConfig `yaml:"loss_early_warning,omitempty"`
+	EarlyWarningHangover     time.Duration          `yaml:"early_warning_hangover,omitempty"`
+
+	QueuingDelayCongested CongestionSignalConfig `yaml:"queuing_delay_congested,omitempty"`
+	LossCongested         CongestionSignalConfig `yaml:"loss_congested,omitempty"`
+	CongestedHangover     time.Duration          `yaml:"congested_hangover,omitempty"`
 
 	RateMeasurementWindowFullnessMin float64       `yaml:"rate_measurement_window_fullness_min,omitempty"`
 	RateMeasurementWindowDurationMin time.Duration `yaml:"rate_measurement_window_duration_min,omitempty"`
@@ -70,9 +120,13 @@ var (
 		PacketGroupMaxAge:                30 * time.Second,
 		JQRMinDelay:                      15 * time.Millisecond,
 		DQRMaxDelay:                      5 * time.Millisecond,
-		EarlyWarning:                     DefaultEarlyWarningCongestionSignalConfig,
+		JQRMinLoss:                       0.15,
+		DQRMaxLoss:                       0.05,
+		QueuingDelayEarlyWarning:         DefaultQueuingDelayEarlyWarningCongestionSignalConfig,
+		LossEarlyWarning:                 DefaultLossEarlyWarningCongestionSignalConfig,
 		EarlyWarningHangover:             500 * time.Millisecond,
-		Congested:                        DefaultCongestedCongestionSignalConfig,
+		QueuingDelayCongested:            DefaultQueuingDelayCongestedCongestionSignalConfig,
+		LossCongested:                    DefaultLossCongestedCongestionSignalConfig,
 		CongestedHangover:                3 * time.Second,
 		RateMeasurementWindowFullnessMin: 0.8,
 		RateMeasurementWindowDurationMin: 800 * time.Millisecond,
@@ -136,9 +190,7 @@ func newCongestionDetector(params congestionDetectorParams) *congestionDetector 
 }
 
 func (c *congestionDetector) Stop() {
-	c.stop.Once(func() {
-		close(c.wake)
-	})
+	c.stop.Break()
 }
 
 func (c *congestionDetector) OnCongestionStateChange(f func(congestionState CongestionState, estimatedAvailableChannelCapacity int64)) {
@@ -155,12 +207,14 @@ func (c *congestionDetector) GetCongestionState() CongestionState {
 	return c.congestionState
 }
 
-func (c *congestionDetector) updateCongestionState(state CongestionState) {
+func (c *congestionDetector) updateCongestionState(state CongestionState, reason string, oldestContributingGroup int) {
 	c.lock.Lock()
 	c.params.Logger.Infow(
 		"congestion state change",
 		"from", c.congestionState,
 		"to", state,
+		"reason", reason,
+		"contributingGroups", logger.ObjectSlice(c.packetGroups[oldestContributingGroup:]),
 		"estimatedAvailableChannelCapacity", c.estimatedAvailableChannelCapacity,
 	)
 
@@ -201,13 +255,8 @@ func (c *congestionDetector) GetEstimatedAvailableChannelCapacity() int64 {
 
 func (c *congestionDetector) HandleRTCP(report *rtcp.TransportLayerCC) {
 	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	if c.stop.IsBroken() {
-		return
-	}
-
 	c.feedbackReports.PushBack(feedbackReport{mono.Now(), report})
+	c.lock.Unlock()
 
 	// notify worker of a new feedback
 	select {
@@ -230,51 +279,74 @@ func (c *congestionDetector) prunePacketGroups() {
 	}
 }
 
-func (c *congestionDetector) isCongestionSignalTriggered() (bool, bool) {
+func (c *congestionDetector) isCongestionSignalTriggered() (bool, string, bool, string, int) {
 	earlyWarningTriggered := false
-	congestedTriggered := false
+	earlyWarningReason := ""
 
-	numGroups := 0
-	duration := int64(0)
-	for idx := len(c.packetGroups) - 1; idx >= 0; idx-- {
+	congestedTriggered := false
+	congestedReason := ""
+
+	qd := &congestionSignalCalculator[int64]{
+		thresholdMin: c.params.Config.JQRMinDelay.Microseconds(),
+		thresholdMax: c.params.Config.DQRMaxDelay.Microseconds(),
+	}
+	loss := &congestionSignalCalculator[float64]{
+		thresholdMin: c.params.Config.JQRMinLoss,
+		thresholdMax: c.params.Config.DQRMaxLoss,
+	}
+
+	var idx int
+	for idx = len(c.packetGroups) - 1; idx >= 0; idx-- {
 		pg := c.packetGroups[idx]
-		pqd, ok := pg.PropagatedQueuingDelay()
-		if !ok {
+		pqd, pqdOk := pg.PropagatedQueuingDelay()
+		lr, lrOk := pg.LossRatio()
+		if !pqdOk && !lrOk {
 			continue
 		}
 
-		if pqd > c.params.Config.JQRMinDelay.Microseconds() {
-			// JQR group builds up congestion signal
-			numGroups++
-			duration += pg.SendDuration()
+		// `queueing delay` and `loss` based congestion signals are determined independently,
+		// i. e. one packet group triggering `queueing delay` and another group triggering
+		// `loss` will not combine to trigger the aggregate congestion signal
+		sendDuration := pg.SendDuration()
+		if pqdOk {
+			qd.processSample(pqd, sendDuration)
+		}
+		if lrOk {
+			loss.processSample(lr, sendDuration)
 		}
 
-		// INDETERMINATE group is treated as a no-op
-
-		if pqd < c.params.Config.DQRMaxDelay.Microseconds() {
-			// any DQR group breaks the continuity
-			return earlyWarningTriggered, congestedTriggered
-		}
-
-		if numGroups >= c.params.Config.EarlyWarning.MinNumberOfGroups && duration >= c.params.Config.EarlyWarning.MinDuration.Microseconds() {
+		if !earlyWarningTriggered && qd.isTriggered(c.params.Config.QueuingDelayEarlyWarning) {
 			earlyWarningTriggered = true
+			earlyWarningReason = "queuing-delay"
 		}
-		if numGroups >= c.params.Config.Congested.MinNumberOfGroups && duration >= c.params.Config.Congested.MinDuration.Microseconds() {
+		if !earlyWarningTriggered && loss.isTriggered(c.params.Config.LossEarlyWarning) {
+			earlyWarningTriggered = true
+			earlyWarningReason = "loss"
+		}
+
+		if !congestedTriggered && qd.isTriggered(c.params.Config.QueuingDelayCongested) {
 			congestedTriggered = true
+			congestedReason = "queuing-delay"
 		}
+		if !congestedTriggered && loss.isTriggered(c.params.Config.LossCongested) {
+			congestedTriggered = true
+			congestedReason = "loss"
+		}
+
 		if earlyWarningTriggered && congestedTriggered {
 			break
 		}
 	}
 
-	return earlyWarningTriggered, congestedTriggered
+	return earlyWarningTriggered, earlyWarningReason, congestedTriggered, congestedReason, idx
 }
 
 func (c *congestionDetector) congestionDetectionStateMachine() {
 	state := c.GetCongestionState()
 	newState := state
+	reason := ""
 
-	earlyWarningTriggered, congestedTriggered := c.isCongestionSignalTriggered()
+	earlyWarningTriggered, earlyWarningReason, congestedTriggered, congestedReason, oldestContributingGroup := c.isCongestionSignalTriggered()
 
 	switch state {
 	case CongestionStateNone:
@@ -283,11 +355,13 @@ func (c *congestionDetector) congestionDetectionStateMachine() {
 		}
 		if earlyWarningTriggered {
 			newState = CongestionStateEarlyWarning
+			reason = earlyWarningReason
 		}
 
 	case CongestionStateEarlyWarning:
 		if congestedTriggered {
 			newState = CongestionStateCongested
+			reason = congestedReason
 		} else if !earlyWarningTriggered {
 			newState = CongestionStateEarlyWarningHangover
 		}
@@ -298,6 +372,7 @@ func (c *congestionDetector) congestionDetectionStateMachine() {
 		}
 		if earlyWarningTriggered {
 			newState = CongestionStateEarlyWarning
+			reason = earlyWarningReason
 		} else if time.Since(c.congestionStateSwitchedAt) >= c.params.Config.EarlyWarningHangover {
 			newState = CongestionStateNone
 		}
@@ -313,6 +388,7 @@ func (c *congestionDetector) congestionDetectionStateMachine() {
 		}
 		if earlyWarningTriggered {
 			newState = CongestionStateEarlyWarning
+			reason = earlyWarningReason
 		} else if time.Since(c.congestionStateSwitchedAt) >= c.params.Config.CongestedHangover {
 			newState = CongestionStateNone
 		}
@@ -323,7 +399,7 @@ func (c *congestionDetector) congestionDetectionStateMachine() {
 	// update after running the above estimate as state change callback includes the estimated available channel capacity
 	if newState != state {
 		c.congestionStateSwitchedAt = mono.Now()
-		c.updateCongestionState(newState)
+		c.updateCongestionState(newState, reason, oldestContributingGroup)
 	}
 }
 
