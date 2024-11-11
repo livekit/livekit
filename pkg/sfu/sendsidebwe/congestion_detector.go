@@ -57,12 +57,18 @@ func (c *congestionSignalCalculator[T]) processSample(val T, duration int64) {
 	}
 
 	if val < c.thresholdMin {
+		// any DQR group breaks the continuity
 		c.isSealed = true
 		return
 	}
 
-	c.numGroups++
-	c.duration += duration
+	// INDETERMINATE group is treated as a no-op
+
+	// JQR group builds up congestion signal
+	if val > c.thresholdMax {
+		c.numGroups++
+		c.duration += duration
+	}
 }
 
 func (c *congestionSignalCalculator[T]) isTriggered(config CongestionSignalConfig) bool {
@@ -300,11 +306,6 @@ func (c *congestionDetector) isCongestionSignalTriggered() (bool, string, bool, 
 		// `queueing delay` and `loss` based congestion signals are determined indepdently,
 		// i. e. one packet group triggering `queueing delay` and another group triggering
 		// `loss` will not combine to trigger the aggregate congestion signal
-		//
-		// JQR group builds up congestion signal
-		// INDETERMINATE group is treated as a no-op
-		// any DQR group breaks the continuity
-
 		sendDuration := pg.SendDuration()
 		if pqdOk {
 			qd.processSample(pqd, sendDuration)
