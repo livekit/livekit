@@ -45,7 +45,7 @@ type twccFeedback struct {
 	highestReferenceTime uint32
 }
 
-func NewTWCCFeedback(params twccFeedbackParams) *twccFeedback {
+func newTWCCFeedback(params twccFeedbackParams) *twccFeedback {
 	return &twccFeedback{
 		params: params,
 	}

@@ -135,7 +135,7 @@ type packetGroup struct {
 	isFinalized bool
 }
 
-func NewPacketGroup(params packetGroupParams, queuingDelay int64) *packetGroup {
+func newPacketGroup(params packetGroupParams, queuingDelay int64) *packetGroup {
 	return &packetGroup{
 		params:       params,
 		queuingDelay: queuingDelay,

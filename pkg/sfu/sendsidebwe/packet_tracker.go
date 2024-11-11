@@ -36,10 +36,10 @@ type packetTracker struct {
 
 	inProbe                    bool
 	probingStartSequenceNumber uint64
-	probingEndSequenceNumber uint64
+	probingEndSequenceNumber   uint64
 }
 
-func NewPacketTracker(params packetTrackerParams) *packetTracker {
+func newPacketTracker(params packetTrackerParams) *packetTracker {
 	return &packetTracker{
 		params:         params,
 		sequenceNumber: uint64(rand.Intn(1<<14)) + uint64(1<<15), // a random number in third quartile of sequence number space
@@ -67,13 +67,13 @@ func (p *packetTracker) RecordPacketSendAndGetSequenceNumber(at time.Time, size 
 	if p.inProbe {
 		if p.probingStartSequenceNumber == 0 {
 			p.probingStartSequenceNumber = p.sequenceNumber
-			p.params.Logger.Infow("probing start", "sn", p.probingStartSequenceNumber)	// REMOVE
+			p.params.Logger.Infow("probing start", "sn", p.probingStartSequenceNumber) // REMOVE
 		}
 	} else {
 		if p.probingEndSequenceNumber == 0 {
 			// SSBWE-TODO: this is not right as this after a probe end
 			p.probingEndSequenceNumber = p.sequenceNumber
-			p.params.Logger.Infow("probing end", "sn", p.probingEndSequenceNumber)	// REMOVE
+			p.params.Logger.Infow("probing end", "sn", p.probingEndSequenceNumber) // REMOVE
 		}
 	}
 
