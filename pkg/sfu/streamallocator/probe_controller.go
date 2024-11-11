@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/sfu/sendsidebwe"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -73,6 +74,7 @@ type ProbeController struct {
 	params ProbeControllerParams
 
 	lock                      sync.RWMutex
+	sendSideBWE               *sendsidebwe.SendSideBWE
 	probeInterval             time.Duration
 	lastProbeStartTime        time.Time
 	probeGoalBps              int64
@@ -93,6 +95,13 @@ func NewProbeController(params ProbeControllerParams) *ProbeController {
 
 	p.Reset()
 	return p
+}
+
+func (p *ProbeController) SetSendSideBWE(sendSideBWE *sendsidebwe.SendSideBWE) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	p.sendSideBWE = sendSideBWE
 }
 
 func (p *ProbeController) Reset() {
@@ -270,7 +279,76 @@ func (p *ProbeController) InitProbe(probeGoalDeltaBps int64, expectedBandwidthUs
 		time.Duration(float64(p.probeDuration.Milliseconds())*p.params.Config.DurationOverflowFactor)*time.Millisecond,
 	)
 
+	p.pollProbe(p.probeClusterId)
+
 	return p.probeClusterId, p.probeGoalBps
+}
+
+// SSBWE-TODO: try to do same path for both SSBWE and regular, the congesting part might be different though
+func (p *ProbeController) pollProbe(probeClusterId ProbeClusterId) {
+	if p.sendSideBWE == nil {
+		return
+	}
+
+	startingEstimate := p.sendSideBWE.GetEstimatedAvailableChannelCapacity()
+
+	go func() {
+		for {
+			p.lock.Lock()
+			if p.probeClusterId != probeClusterId {
+				p.lock.Unlock()
+				return
+			}
+
+			done := false
+			congestionState := p.sendSideBWE.GetCongestionState()
+			currentEstimate := p.sendSideBWE.GetEstimatedAvailableChannelCapacity()
+			switch {
+			case currentEstimate <= startingEstimate && time.Since(p.lastProbeStartTime) > p.params.Config.TrendWait:
+				//
+				// More of a safety net.
+				// In rare cases, the estimate gets stuck. Prevent from probe running amok
+				// STREAM-ALLOCATOR-TODO: Need more testing here to ensure that probe does not cause a lot of damage
+				//
+				p.params.Logger.Infow("stream allocator: probe: aborting, no trend", "cluster", probeClusterId)
+				p.abortProbeLocked()
+				done = true
+				break
+
+			case congestionState == sendsidebwe.CongestionStateCongested || congestionState == sendsidebwe.CongestionStateEarlyWarning:
+				// stop immediately if the probe is congesting channel more
+				p.params.Logger.Infow(
+					"stream allocator: probe: aborting, channel is congesting",
+					"cluster", probeClusterId,
+					"congestionState", congestionState,
+				)
+				p.abortProbeLocked()
+				done = true
+				break
+
+			case currentEstimate > p.probeGoalBps:
+				// reached goal, stop probing
+				p.params.Logger.Infow(
+					"stream allocator: probe: stopping, goal reached",
+					"cluster", probeClusterId,
+					"goal", p.probeGoalBps,
+					"current", currentEstimate,
+				)
+				p.goalReachedProbeClusterId = p.probeClusterId
+				p.StopProbe()
+				done = true
+				break
+			}
+			p.lock.Unlock()
+
+			if done {
+				return
+			}
+
+			// SSBWE-TODO: do not hard code sleep time
+			time.Sleep(50 * time.Millisecond)
+		}
+	}()
 }
 
 func (p *ProbeController) clearProbeLocked() {

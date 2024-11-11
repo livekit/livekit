@@ -29,6 +29,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/metric"
 	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/sendsidebwe"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
 	"github.com/livekit/protocol/livekit"
@@ -123,10 +124,15 @@ type TURNServer struct {
 }
 
 type CongestionControlConfig struct {
-	Enabled         bool                                  `yaml:"enabled,omitempty"`
-	AllowPause      bool                                  `yaml:"allow_pause,omitempty"`
+	Enabled    bool `yaml:"enabled,omitempty"`
+	AllowPause bool `yaml:"allow_pause,omitempty"`
+
 	StreamAllocator streamallocator.StreamAllocatorConfig `yaml:"stream_allocator,omitempty"`
-	UseSendSideBWE  bool                                  `yaml:"use_send_side_bwe,omitempty"`
+
+	UseSendSideBWEInterceptor bool `yaml:"use_send_side_bwe_interceptor,omitempty"`
+
+	UseSendSideBWE bool                          `yaml:"use_send_side_bwe,omitempty"`
+	SendSideBWE    sendsidebwe.SendSideBWEConfig `yaml:"send_side_bwe,omitempty"`
 }
 
 type PlayoutDelayConfig struct {
@@ -305,10 +311,12 @@ var DefaultConfig = Config{
 		StrictACKs:            true,
 		PLIThrottle:           sfu.DefaultPLIThrottleConfig,
 		CongestionControl: CongestionControlConfig{
-			Enabled:         true,
-			AllowPause:      false,
-			StreamAllocator: streamallocator.DefaultStreamAllocatorConfig,
-			UseSendSideBWE:  false,
+			Enabled:                   true,
+			AllowPause:                false,
+			StreamAllocator:           streamallocator.DefaultStreamAllocatorConfig,
+			UseSendSideBWEInterceptor: false,
+			UseSendSideBWE:            false,
+			SendSideBWE:               sendsidebwe.DefaultSendSideBWEConfig,
 		},
 	},
 	Audio: sfu.DefaultAudioConfig,

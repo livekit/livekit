@@ -30,6 +30,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/sendsidebwe"
 	"github.com/livekit/livekit-server/pkg/utils"
 )
 
@@ -86,6 +87,7 @@ const (
 	streamAllocatorSignalSetChannelCapacity
 	// STREAM-ALLOCATOR-DATA streamAllocatorSignalNACK
 	// STREAM-ALLOCATOR-DATA streamAllocatorSignalRTCPReceiverReport
+	streamAllocatorSignalCongestionStateChange
 )
 
 func (s streamAllocatorSignal) String() string {
@@ -116,6 +118,8 @@ func (s streamAllocatorSignal) String() string {
 		case streamAllocatorSignalRTCPReceiverReport:
 			return "RTCP_RECEIVER_REPORT"
 		*/
+	case streamAllocatorSignalCongestionStateChange:
+		return "CONGESTION_STATE_CHANGE"
 	default:
 		return fmt.Sprintf("%d", int(s))
 	}
@@ -179,7 +183,8 @@ type StreamAllocator struct {
 
 	onStreamStateChange func(update *StreamStateUpdate) error
 
-	bwe cc.BandwidthEstimator
+	sendSideBWEInterceptor cc.BandwidthEstimator
+	sendSideBWE            *sendsidebwe.SendSideBWE
 
 	enabled    bool
 	allowPause bool
@@ -200,7 +205,8 @@ type StreamAllocator struct {
 	isAllocateAllPending bool
 	rembTrackingSSRC     uint32
 
-	state streamAllocatorState
+	state     streamAllocatorState
+	isHolding bool
 
 	eventsQueue *utils.TypedOpsQueue[Event]
 
@@ -256,11 +262,19 @@ func (s *StreamAllocator) OnStreamStateChange(f func(update *StreamStateUpdate) 
 	s.onStreamStateChange = f
 }
 
-func (s *StreamAllocator) SetBandwidthEstimator(bwe cc.BandwidthEstimator) {
-	if bwe != nil {
-		bwe.OnTargetBitrateChange(s.onTargetBitrateChange)
+func (s *StreamAllocator) SetSendSideBWEInterceptor(sendSideBWEInterceptor cc.BandwidthEstimator) {
+	if sendSideBWEInterceptor != nil {
+		sendSideBWEInterceptor.OnTargetBitrateChange(s.onTargetBitrateChange)
 	}
-	s.bwe = bwe
+	s.sendSideBWEInterceptor = sendSideBWEInterceptor
+}
+
+func (s *StreamAllocator) SetSendSideBWE(sendSideBWE *sendsidebwe.SendSideBWE) {
+	if sendSideBWE != nil {
+		sendSideBWE.OnCongestionStateChange(s.onCongestionStateChange)
+	}
+	s.sendSideBWE = sendSideBWE
+	s.probeController.SetSendSideBWE(sendSideBWE)
 }
 
 type AddTrackParams struct {
@@ -428,8 +442,12 @@ func (s *StreamAllocator) OnREMB(downTrack *sfu.DownTrack, remb *rtcp.ReceiverEs
 
 // called when a new transport-cc feedback is received
 func (s *StreamAllocator) OnTransportCCFeedback(downTrack *sfu.DownTrack, fb *rtcp.TransportLayerCC) {
-	if s.bwe != nil {
-		s.bwe.WriteRTCP([]rtcp.Packet{fb}, nil)
+	if s.sendSideBWEInterceptor != nil {
+		s.sendSideBWEInterceptor.WriteRTCP([]rtcp.Packet{fb}, nil)
+	}
+
+	if s.sendSideBWE != nil {
+		s.sendSideBWE.HandleRTCP(fb)
 	}
 }
 
@@ -438,6 +456,22 @@ func (s *StreamAllocator) onTargetBitrateChange(bitrate int) {
 	s.postEvent(Event{
 		Signal: streamAllocatorSignalEstimate,
 		Data:   int64(bitrate),
+	})
+}
+
+// called when congestion state changes (send side bandwidth estimation)
+type congestionStateChangeData struct {
+	congestionState                   sendsidebwe.CongestionState
+	estimatedAvailableChannelCapacity int64
+}
+
+func (s *StreamAllocator) onCongestionStateChange(congestionState sendsidebwe.CongestionState, estimatedAvailableChannelCapacity int64) {
+	s.postEvent(Event{
+		Signal: streamAllocatorSignalCongestionStateChange,
+		Data: congestionStateChangeData{
+			congestionState:                   congestionState,
+			estimatedAvailableChannelCapacity: estimatedAvailableChannelCapacity,
+		},
 	})
 }
 
@@ -637,6 +671,8 @@ func (s *StreamAllocator) postEvent(event Event) {
 			case streamAllocatorSignalRTCPReceiverReport:
 				event.s.handleSignalRTCPReceiverReport(event)
 			*/
+		case streamAllocatorSignalCongestionStateChange:
+			s.handleSignalCongestionStateChange(event)
 		}
 	}, event)
 }
@@ -780,6 +816,45 @@ func (s *StreamAllocator) handleSignalRTCPReceiverReport(event Event) {
 }
 */
 
+func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
+	cscd := event.Data.(congestionStateChangeData)
+	if cscd.congestionState != sendsidebwe.CongestionStateNone {
+		s.probeController.AbortProbe()
+	}
+
+	if cscd.congestionState == sendsidebwe.CongestionStateEarlyWarning ||
+		cscd.congestionState == sendsidebwe.CongestionStateEarlyWarningHangover {
+		s.isHolding = true
+	} else {
+		s.isHolding = false
+
+		// early warning is done and hold has been released,
+		// if there is no congestion, allocate all tracks optimally as
+		// some tracks may have been held at sub-optimal allocation
+		// during early warning hold
+		if cscd.congestionState == sendsidebwe.CongestionStateNone && s.state == streamAllocatorStateStable {
+			update := NewStreamStateUpdate()
+			for _, track := range s.getTracks() {
+				allocation := track.AllocateOptimal(FlagAllowOvershootWhileOptimal, s.isHolding)
+				updateStreamStateChange(track, allocation, update)
+			}
+			s.maybeSendUpdate(update)
+		}
+	}
+
+	if cscd.congestionState == sendsidebwe.CongestionStateCongested {
+		s.params.Logger.Infow(
+			"stream allocator: channel congestion detected, updating channel capacity",
+			"old(bps)", s.committedChannelCapacity,
+			"new(bps)", cscd.estimatedAvailableChannelCapacity,
+			"expectedUsage(bps)", s.getExpectedBandwidthUsage(),
+		)
+		s.committedChannelCapacity = cscd.estimatedAvailableChannelCapacity
+
+		s.allocateAllTracks()
+	}
+}
+
 func (s *StreamAllocator) setState(state streamAllocatorState) {
 	if s.state == state {
 		return
@@ -905,7 +980,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	// if not deficient, free pass allocate track
 	if !s.enabled || s.state == streamAllocatorStateStable || !track.IsManaged() {
 		update := NewStreamStateUpdate()
-		allocation := track.AllocateOptimal(FlagAllowOvershootWhileOptimal)
+		allocation := track.AllocateOptimal(FlagAllowOvershootWhileOptimal, s.isHolding)
 		updateStreamStateChange(track, allocation, update)
 		s.maybeSendUpdate(update)
 		return
@@ -1055,6 +1130,9 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 
 func (s *StreamAllocator) onProbeDone(isNotFailing bool, isGoalReached bool) {
 	highestEstimateInProbe := s.channelObserver.GetHighestEstimate()
+	if s.sendSideBWE != nil {
+		highestEstimateInProbe = s.sendSideBWE.GetEstimatedAvailableChannelCapacity()
+	}
 
 	//
 	// Reset estimator at the end of a probe irrespective of probe result to get fresh readings.
@@ -1161,7 +1239,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 			continue
 		}
 
-		allocation := track.AllocateOptimal(FlagAllowOvershootExemptTrackWhileDeficient)
+		allocation := track.AllocateOptimal(FlagAllowOvershootExemptTrackWhileDeficient, false)
 		updateStreamStateChange(track, allocation, update)
 
 		// STREAM-ALLOCATOR-TODO: optimistic allocation before bitrate is available will return 0. How to account for that?
@@ -1198,6 +1276,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 
 				for _, track := range sorted {
 					_, usedChannelCapacity := track.ProvisionalAllocate(availableChannelCapacity, layer, s.allowPause, FlagAllowOvershootWhileDeficient)
+					s.params.Logger.Infow("debug allocated", "trackID", track.ID(), "usedChannelCapacity", usedChannelCapacity, "availableChannelCapacity", availableChannelCapacity) // REMOVE
 					availableChannelCapacity -= usedChannelCapacity
 					if availableChannelCapacity < 0 {
 						availableChannelCapacity = 0
@@ -1355,6 +1434,9 @@ func (s *StreamAllocator) maybeProbe() {
 		return
 	}
 	if !s.probeController.CanProbe() {
+		return
+	}
+	if s.sendSideBWE != nil && s.sendSideBWE.GetCongestionState() != sendsidebwe.CongestionStateNone {
 		return
 	}
 

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/gammazero/deque"
+	"github.com/livekit/livekit-server/pkg/sfu/sendsidebwe"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -38,9 +39,9 @@ type LeakyBucket struct {
 	isStopped bool
 }
 
-func NewLeakyBucket(logger logger.Logger, interval time.Duration, bitrate int) *LeakyBucket {
+func NewLeakyBucket(logger logger.Logger, sendSideBWE *sendsidebwe.SendSideBWE, interval time.Duration, bitrate int) *LeakyBucket {
 	l := &LeakyBucket{
-		Base:     NewBase(logger),
+		Base:     NewBase(logger, sendSideBWE),
 		logger:   logger,
 		interval: interval,
 		bitrate:  bitrate,
