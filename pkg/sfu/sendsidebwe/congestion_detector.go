@@ -395,11 +395,15 @@ func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 		c.params.Logger.Infow("received out-of-order feedback report")
 	}
 
-	c.lock.RLock()
 	probingStartSequenceNumber, probingStartSequenceNumberOk := c.packetTracker.ProbingStartSequenceNumber()
 	probingEndSequenceNumber, probingEndSequenceNumberOk := c.packetTracker.ProbingEndSequenceNumber()
-	c.params.Logger.Infow("probe sequence numbers", "startOk", probingStartSequenceNumberOk, "start", probingStartSequenceNumber, "endOk", probingEndSequenceNumberOk, "end", probingEndSequenceNumber) // REMOVE
-	c.lock.RUnlock()
+	c.params.Logger.Infow(
+		"probe sequence numbers",
+		"startOk", probingStartSequenceNumberOk,
+		"start", probingStartSequenceNumber,
+		"endOk", probingEndSequenceNumberOk,
+		"end", probingEndSequenceNumber,
+	) // REMOVE
 
 	if len(c.packetGroups) == 0 {
 		c.packetGroups = append(
