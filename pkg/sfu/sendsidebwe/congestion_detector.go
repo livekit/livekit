@@ -302,7 +302,7 @@ func (c *congestionDetector) isCongestionSignalTriggered() (bool, string, bool, 
 			continue
 		}
 
-		// `queueing delay` and `loss` based congestion signals are determined indepdently,
+		// `queueing delay` and `loss` based congestion signals are determined independently,
 		// i. e. one packet group triggering `queueing delay` and another group triggering
 		// `loss` will not combine to trigger the aggregate congestion signal
 		sendDuration := pg.SendDuration()
