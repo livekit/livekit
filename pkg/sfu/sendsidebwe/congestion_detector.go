@@ -120,7 +120,7 @@ var (
 		PacketGroupMaxAge:                30 * time.Second,
 		JQRMinDelay:                      15 * time.Millisecond,
 		DQRMaxDelay:                      5 * time.Millisecond,
-		JQRMinLoss:                       0.15,
+		JQRMinLoss:                       0.25,
 		DQRMaxLoss:                       0.05,
 		QueuingDelayEarlyWarning:         DefaultQueuingDelayEarlyWarningCongestionSignalConfig,
 		LossEarlyWarning:                 DefaultLossEarlyWarningCongestionSignalConfig,
@@ -297,8 +297,8 @@ func (c *congestionDetector) isCongestionSignalTriggered() (bool, string, bool, 
 	for idx = len(c.packetGroups) - 1; idx >= 0; idx-- {
 		pg := c.packetGroups[idx]
 		pqd, pqdOk := pg.PropagatedQueuingDelay()
-		lr, lrOk := pg.LossRatio()
-		if !pqdOk && !lrOk {
+		wlr, wlrOk := pg.WeightedLossRatio()
+		if !pqdOk && !wlrOk {
 			continue
 		}
 
@@ -309,8 +309,8 @@ func (c *congestionDetector) isCongestionSignalTriggered() (bool, string, bool, 
 		if pqdOk {
 			qd.processSample(pqd, sendDuration)
 		}
-		if lrOk {
-			loss.processSample(lr, sendDuration)
+		if wlrOk {
+			loss.processSample(wlr, sendDuration)
 		}
 
 		if !earlyWarningTriggered && qd.isTriggered(c.params.Config.QueuingDelayEarlyWarning) {
