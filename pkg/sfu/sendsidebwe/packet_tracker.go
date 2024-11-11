@@ -84,6 +84,13 @@ func (p *packetTracker) RecordPacketSendAndGetSequenceNumber(at time.Time, size 
 	return uint16(pi.sequenceNumber)
 }
 
+func (p *packetTracker) BaseSendTime() int64 {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	return p.baseSendTime
+}
+
 func (p *packetTracker) RecordPacketIndicationFromRemote(sn uint16, recvTime int64) (piRecv packetInfo, sendDelta, recvDelta int64) {
 	p.lock.Lock()
 	defer p.lock.Unlock()

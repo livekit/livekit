@@ -14,12 +14,40 @@
 
 package sendsidebwe
 
-import "math"
+import (
+	"math"
+	"time"
+
+	"github.com/livekit/protocol/logger"
+	"go.uber.org/zap/zapcore"
+)
+
+// -----------------------------------------------------------
+
+type WeightedLossConfig struct {
+	MinPacketsForLossValidity int     `yaml:"min_packets_for_loss_validity,omitempty"`
+	LossPenaltyFactor         float64 `yaml:"loss_penalty_factor,omitempty"`
+}
+
+var (
+	defaultWeightedLossConfig = WeightedLossConfig{
+		MinPacketsForLossValidity: 20,
+		LossPenaltyFactor:         0.25,
+	}
+)
+
+// -----------------------------------------------------------
+
+type trafficStatsParams struct {
+	Config WeightedLossConfig
+	Logger logger.Logger
+}
 
 type trafficStats struct {
+	params trafficStatsParams
+
 	minSendTime  int64
-	duration     int64
-	queuingDelay int64
+	maxSendTime  int64
 	sendDelta    int64
 	recvDelta    int64
 	ackedPackets int
@@ -27,16 +55,19 @@ type trafficStats struct {
 	lostPackets  int
 }
 
-func newTrafficStats() *trafficStats {
-	return &trafficStats{}
+func newTrafficStats(params trafficStatsParams) *trafficStats {
+	return &trafficStats{
+		params: params,
+	}
 }
 
-func (ts *trafficStats) Merge(rhs trafficStats) {
+func (ts *trafficStats) Merge(rhs *trafficStats) {
 	if rhs.minSendTime == 0 || rhs.minSendTime < ts.minSendTime {
 		ts.minSendTime = rhs.minSendTime
 	}
-	ts.duration += rhs.duration
-	ts.queuingDelay += rhs.queuingDelay
+	if rhs.maxSendTime > ts.maxSendTime {
+		ts.maxSendTime = rhs.maxSendTime
+	}
 	ts.sendDelta += rhs.sendDelta
 	ts.recvDelta += rhs.recvDelta
 	ts.ackedPackets += rhs.ackedPackets
@@ -45,19 +76,15 @@ func (ts *trafficStats) Merge(rhs trafficStats) {
 }
 
 func (ts *trafficStats) Duration() int64 {
-	return ts.duration
+	return ts.maxSendTime - ts.minSendTime
 }
 
-func (ts *trafficStats) PropagatedQueuingDelay() int64 {
-	return ts.queuingDelay + ts.sendDelta - ts.recvDelta
+func (ts *trafficStats) AcknowledgedBitrate() int64 {
+	ackedBitrate := int64(ts.ackedBytes) * 8 * 1e6 / ts.Duration()
+	return int64(float64(ackedBitrate) * ts.CapturedTrafficRatio())
 }
 
-func (ts *trafficStats) AcknowledgedBitrate(minPacketsForLossValidity int, lossPenaltyFactor float64) int64 {
-	ackedBitrate := int64(ts.ackedBytes) * 8 * 1e6 / ts.duration
-	return int64(float64(ackedBitrate) * ts.CapturedTrafficRatio(minPacketsForLossValidity, lossPenaltyFactor))
-}
-
-func (ts *trafficStats) CapturedTrafficRatio(minPacketsForLossValidity int, lossPenaltyFactor float64) float64 {
+func (ts *trafficStats) CapturedTrafficRatio() float64 {
 	if ts.recvDelta == 0 {
 		return 0.0
 	}
@@ -68,12 +95,12 @@ func (ts *trafficStats) CapturedTrafficRatio(minPacketsForLossValidity int, loss
 	// as it is not possible to know the reason for the losses,
 	// apply a small penalty to receive delta aggregate to simulate those packets
 	// building up queuing delay.
-	return min(1.0, float64(ts.sendDelta)/float64(ts.recvDelta+ts.lossPenalty(minPacketsForLossValidity, lossPenaltyFactor)))
+	return min(1.0, float64(ts.sendDelta)/float64(ts.recvDelta+ts.lossPenalty()))
 }
 
-func (ts *trafficStats) WeightedLoss(minPacketsForLossValidity int, lossPenaltyFactor float64) float64 {
+func (ts *trafficStats) WeightedLoss() float64 {
 	totalPackets := float64(ts.lostPackets + ts.ackedPackets)
-	if int(totalPackets) < minPacketsForLossValidity {
+	if int(totalPackets) < ts.params.Config.MinPacketsForLossValidity {
 		return 0.0
 	}
 
@@ -82,16 +109,48 @@ func (ts *trafficStats) WeightedLoss(minPacketsForLossValidity int, lossPenaltyF
 		lossRatio = float64(ts.lostPackets) / totalPackets
 	}
 
-	pps := totalPackets * 1e6 / float64(ts.duration)
+	pps := totalPackets * 1e6 / float64(ts.Duration())
 
 	// Log10 is used to give higher weight for the same loss ratio at higher packet rates,
 	// for e.g. with a penalty factor of 0.25
 	//    - 10% loss at 20 pps = 0.1 * log10(20) * 0.25 = 0.032
 	//    - 10% loss at 100 pps = 0.1 * log10(100) * 0.25 = 0.05
 	//    - 10% loss at 1000 pps = 0.1 * log10(1000) * 0.25 = 0.075
-	return lossRatio * math.Log10(pps) * lossPenaltyFactor
+	return lossRatio * math.Log10(pps) * ts.params.Config.LossPenaltyFactor
 }
 
-func (ts *trafficStats) lossPenalty(minPacketsForLossValidity int, lossPenaltyFactor float64) int64 {
-	return int64(float64(ts.recvDelta) * ts.WeightedLoss(minPacketsForLossValidity, lossPenaltyFactor))
+func (ts *trafficStats) lossPenalty() int64 {
+	return int64(float64(ts.recvDelta) * ts.WeightedLoss())
+}
+
+func (ts *trafficStats) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if ts == nil {
+		return nil
+	}
+
+	e.AddInt64("minSendTime", ts.minSendTime)
+	e.AddInt64("maxSendTime", ts.maxSendTime)
+	duration := time.Duration(ts.Duration() * 1000)
+	e.AddDuration("duration", duration)
+
+	bitrate := float64(0)
+	if duration != 0 {
+		bitrate = float64(ts.ackedBytes*8) / duration.Seconds()
+		e.AddFloat64("bitrate", bitrate)
+	}
+
+	e.AddInt64("sendDelta", ts.sendDelta)
+	e.AddInt64("recvDelta", ts.recvDelta)
+	e.AddInt64("groupDelay", ts.recvDelta-ts.sendDelta)
+
+	e.AddFloat64("weightedLoss", ts.WeightedLoss())
+	if (ts.ackedPackets + ts.lostPackets) != 0 {
+		e.AddFloat64("rawLoss", float64(ts.lostPackets)/float64(ts.ackedPackets+ts.lostPackets))
+	}
+	e.AddInt64("lossPenalty", ts.lossPenalty())
+
+	capturedTrafficRatio := ts.CapturedTrafficRatio()
+	e.AddFloat64("capturedTrafficRatio", capturedTrafficRatio)
+	e.AddFloat64("estimatedAvailableChannelCapacity", bitrate*capturedTrafficRatio)
+	return nil
 }
