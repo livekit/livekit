@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package sendsidebwe
 
 import (
@@ -43,49 +57,85 @@ var (
 
 // -------------------------------------------------------------------------------
 
-type congestionSignalCalculator[T int64 | float64] struct {
-	thresholdMin T
-	thresholdMax T
-	isSealed     bool
-	numGroups    int
-	duration     int64
+type measurement[T int64 | float64] struct {
+	config CongestionSignalConfig
+
+	isSealed bool
+	val      T
 }
 
-func (c *congestionSignalCalculator[T]) processSample(val T, duration int64) {
-	if c.isSealed {
-		return
-	}
-
-	if val < c.thresholdMin {
-		// any DQR group breaks the continuity
-		c.isSealed = true
-		return
-	}
-
-	// INDETERMINATE group is treated as a no-op
-
-	// JQR group builds up congestion signal
-	if val > c.thresholdMax {
-		c.numGroups++
-		c.duration += duration
+func newMeasurement[T int64 | float64](config CongestionSignalConfig) *measurement[T] {
+	return &measurement[T]{
+		config: config,
 	}
 }
 
-func (c *congestionSignalCalculator[T]) isTriggered(config CongestionSignalConfig) bool {
-	return c.numGroups >= config.MinNumberOfGroups && c.duration >= config.MinDuration.Microseconds()
+func (m *measurement[T]) ProcessSample(numGroups int, duration int64, val T) {
+	if m.isSealed {
+		return
+	}
+
+	if numGroups >= m.config.MinNumberOfGroups && duration >= m.config.MinDuration.Microseconds() {
+		m.isSealed = true
+		m.val = val
+	}
+}
+
+func (m *measurement[T]) IsSealed() bool {
+	return m.isSealed
+}
+
+func (m *measurement[T]) IsTriggered(thresholdMin T) bool {
+	return m.isSealed && m.val > thresholdMin
 }
 
 // -------------------------------------------------------------------------------
+
+type stage struct {
+	qd   *measurement[int64]
+	loss *measurement[float64]
+}
+
+func newStage(
+	qdConfig CongestionSignalConfig,
+	lossConfig CongestionSignalConfig,
+) *stage {
+	return &stage{
+		qd:   newMeasurement[int64](qdConfig),
+		loss: newMeasurement[float64](lossConfig),
+	}
+}
+
+func (s *stage) ProcessSample(numGroups int, ts *trafficStats) {
+	s.qd.ProcessSample(numGroups, ts.Duration(), ts.PropagatedQueuingDelay())
+	s.loss.ProcessSample(numGroups, ts.Duration(), ts.WeightedLoss(10, 0.25 /* RAJA-TODO make this config */))
+}
+
+func (s *stage) IsSealed() bool {
+	return s.qd.IsSealed() && s.loss.IsSealed()
+}
+
+func (s *stage) IsTriggered(qdThresholdMin int64, lossThresholdMin float64) (bool, string) {
+	if s.qd.IsTriggered(qdThresholdMin) {
+		return true, "queuing-delay"
+	}
+
+	if s.loss.IsTriggered(lossThresholdMin) {
+		return true, "loss"
+	}
+
+	return false, ""
+}
 
 type CongestionDetectorConfig struct {
 	PacketGroup       PacketGroupConfig `yaml:"packet_group,omitempty"`
 	PacketGroupMaxAge time.Duration     `yaml:"packet_group_max_age,omitempty"`
 
 	JQRMinDelay time.Duration `yaml:"jqr_min_delay,omitempty"`
-	DQRMaxDelay time.Duration `yaml:"dqr_max_delay,omitempty"`
+	DQRMaxDelay time.Duration `yaml:"dqr_max_delay,omitempty"` // RAJA-REMOVE
 
 	JQRMinLoss float64 `yaml:"jqr_min_loss,omitempty"`
-	DQRMaxLoss float64 `yaml:"dqr_max_loss,omitempty"`
+	DQRMaxLoss float64 `yaml:"dqr_max_loss,omitempty"` // RAJA-REMOVE
 
 	QueuingDelayEarlyWarning CongestionSignalConfig `yaml:"queuing_delay_early_warning,omitempty"`
 	LossEarlyWarning         CongestionSignalConfig `yaml:"loss_early_warning,omitempty"`
@@ -95,7 +145,6 @@ type CongestionDetectorConfig struct {
 	LossCongested         CongestionSignalConfig `yaml:"loss_congested,omitempty"`
 	CongestedHangover     time.Duration          `yaml:"congested_hangover,omitempty"`
 
-	RateMeasurementWindowFullnessMin float64       `yaml:"rate_measurement_window_fullness_min,omitempty"`
 	RateMeasurementWindowDurationMin time.Duration `yaml:"rate_measurement_window_duration_min,omitempty"`
 	RateMeasurementWindowDurationMax time.Duration `yaml:"rate_measurement_window_duration_max,omitempty"`
 
@@ -128,7 +177,6 @@ var (
 		QueuingDelayCongested:            DefaultQueuingDelayCongestedCongestionSignalConfig,
 		LossCongested:                    DefaultLossCongestedCongestionSignalConfig,
 		CongestedHangover:                3 * time.Second,
-		RateMeasurementWindowFullnessMin: 0.8,
 		RateMeasurementWindowDurationMin: 800 * time.Millisecond,
 		RateMeasurementWindowDurationMax: 2 * time.Second,
 		PeriodicCheckInterval:            2 * time.Second,
@@ -268,73 +316,50 @@ func (c *congestionDetector) prunePacketGroups() {
 		return
 	}
 
+	// RAJA-TODO: maybe this should use current time based off send clock??
 	threshold := c.packetGroups[len(c.packetGroups)-1].MinSendTime() - c.params.Config.PacketGroupMaxAge.Microseconds()
 	for idx, pg := range c.packetGroups {
-		if mst := pg.MinSendTime(); mst < threshold {
-			c.packetGroups = c.packetGroups[idx+1:]
+		if mst := pg.MinSendTime(); mst > threshold {
+			c.packetGroups = c.packetGroups[idx:]
 			return
 		}
 	}
 }
 
 func (c *congestionDetector) isCongestionSignalTriggered() (bool, string, bool, string, int) {
-	earlyWarningTriggered := false
-	earlyWarningReason := ""
+	earlyWarningStage := newStage(
+		c.params.Config.QueuingDelayEarlyWarning,
+		c.params.Config.QueuingDelayCongested,
+	)
+	congestedStage := newStage(
+		c.params.Config.QueuingDelayCongested,
+		c.params.Config.LossCongested,
+	)
 
-	congestedTriggered := false
-	congestedReason := ""
-
-	qd := &congestionSignalCalculator[int64]{
-		thresholdMin: c.params.Config.JQRMinDelay.Microseconds(),
-		thresholdMax: c.params.Config.DQRMaxDelay.Microseconds(),
-	}
-	loss := &congestionSignalCalculator[float64]{
-		thresholdMin: c.params.Config.JQRMinLoss,
-		thresholdMax: c.params.Config.DQRMaxLoss,
-	}
-
+	numGroups := 0
+	agg := newTrafficStats()
 	var idx int
 	for idx = len(c.packetGroups) - 1; idx >= 0; idx-- {
-		pg := c.packetGroups[idx]
-		pqd, pqdOk := pg.PropagatedQueuingDelay()
-		wlr, wlrOk := pg.WeightedLossRatio()
-		if !pqdOk && !wlrOk {
-			continue
-		}
+		numGroups++
+		agg.Merge(c.packetGroups[idx].Traffic())
 
-		// `queueing delay` and `loss` based congestion signals are determined independently,
-		// i. e. one packet group triggering `queueing delay` and another group triggering
-		// `loss` will not combine to trigger the aggregate congestion signal
-		sendDuration := pg.SendDuration()
-		if pqdOk {
-			qd.processSample(pqd, sendDuration)
-		}
-		if wlrOk {
-			loss.processSample(wlr, sendDuration)
-		}
+		earlyWarningStage.ProcessSample(numGroups, agg)
+		congestedStage.ProcessSample(numGroups, agg)
 
-		if !earlyWarningTriggered && qd.isTriggered(c.params.Config.QueuingDelayEarlyWarning) {
-			earlyWarningTriggered = true
-			earlyWarningReason = "queuing-delay"
-		}
-		if !earlyWarningTriggered && loss.isTriggered(c.params.Config.LossEarlyWarning) {
-			earlyWarningTriggered = true
-			earlyWarningReason = "loss"
-		}
-
-		if !congestedTriggered && qd.isTriggered(c.params.Config.QueuingDelayCongested) {
-			congestedTriggered = true
-			congestedReason = "queuing-delay"
-		}
-		if !congestedTriggered && loss.isTriggered(c.params.Config.LossCongested) {
-			congestedTriggered = true
-			congestedReason = "loss"
-		}
-
-		if earlyWarningTriggered && congestedTriggered {
+		// if both stages have enough data to make a decision, stop processing groups
+		if earlyWarningStage.IsSealed() && congestedStage.IsSealed() {
 			break
 		}
 	}
+
+	earlyWarningTriggered, earlyWarningReason := earlyWarningStage.IsTriggered(
+		c.params.Config.JQRMinDelay.Microseconds(),
+		c.params.Config.JQRMinLoss,
+	)
+	congestedTriggered, congestedReason := congestedStage.IsTriggered(
+		c.params.Config.JQRMinDelay.Microseconds(),
+		c.params.Config.JQRMinLoss,
+	)
 
 	return earlyWarningTriggered, earlyWarningReason, congestedTriggered, congestedReason, idx
 }
@@ -436,31 +461,27 @@ func (c *congestionDetector) estimateAvailableChannelCapacity() {
 		return
 	}
 
-	totalDuration := int64(0)
-	totalBytes := 0
+	agg := newTrafficStats()
+	// RAJA-TODO: maybe have to use current time and not time of last group?
 	threshold := c.packetGroups[len(c.packetGroups)-1].MinSendTime() - c.params.Config.RateMeasurementWindowDurationMax.Microseconds()
 	for idx := len(c.packetGroups) - 1; idx >= 0; idx-- {
 		pg := c.packetGroups[idx]
-		mst, dur, nbytes, fullness := pg.Traffic()
-		if mst < threshold {
+		ts := pg.Traffic()
+		if ts.minSendTime < threshold {
 			break
 		}
 
-		if fullness < c.params.Config.RateMeasurementWindowFullnessMin {
-			continue
-		}
-
-		totalDuration += dur
-		totalBytes += nbytes
+		agg.Merge(ts)
 	}
 
-	if totalDuration >= c.params.Config.RateMeasurementWindowDurationMin.Microseconds() {
-		c.lock.Lock()
-		c.estimatedAvailableChannelCapacity = int64(totalBytes) * 8 * 1e6 / totalDuration
-		c.lock.Unlock()
-	} else {
-		c.params.Logger.Infow("not enough data to estimate available channel capacity", "totalDuration", totalDuration)
+	if agg.Duration() < c.params.Config.RateMeasurementWindowDurationMin.Microseconds() {
+		c.params.Logger.Infow("not enough data to estimate available channel capacity", "duration", agg.Duration())
+		return
 	}
+
+	c.lock.Lock()
+	c.estimatedAvailableChannelCapacity = agg.AcknowledgedBitrate(10, 0.25 /* RAJA-TODO: use config */)
+	c.lock.Unlock()
 }
 
 func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {

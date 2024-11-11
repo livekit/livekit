@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package sendsidebwe
 
 import (
@@ -24,8 +38,8 @@ type PacketGroupConfig struct {
 	MaxWindowDuration time.Duration `yaml:"max_window_duration,omitempty"`
 
 	// should have at least this fraction of `MinPackets` for loss penalty consideration
-	LossPenaltyMinPacketsRatio float64 `yaml:"loss_penalty_min_packet_ratio,omitempty"`
-	LossPenaltyFactor          float64 `yaml:"loss_penalty_factor,omitempty"`
+	LossPenaltyMinPacketsRatio float64 `yaml:"loss_penalty_min_packet_ratio,omitempty"` // RAJA-REMOVE
+	LossPenaltyFactor          float64 `yaml:"loss_penalty_factor,omitempty"`           // RAJA-REMOVE
 }
 
 var (
@@ -224,14 +238,7 @@ func (p *packetGroup) PropagatedQueuingDelay() (int64, bool) {
 	return max(0, p.aggregateRecvDelta-p.aggregateSendDelta), true
 }
 
-func (p *packetGroup) SendDuration() int64 {
-	if !p.isFinalized {
-		return 0
-	}
-
-	return p.maxSendTime - p.minSendTime
-}
-
+// RAJA-REMOVE: should merge traffic stats on group completion when congested and take CTR
 func (p *packetGroup) CapturedTrafficRatio() float64 {
 	capturedTrafficRatio := float64(0.0)
 	if p.aggregateRecvDelta != 0 {
@@ -250,17 +257,20 @@ func (p *packetGroup) CapturedTrafficRatio() float64 {
 	return min(1.0, capturedTrafficRatio)
 }
 
-func (p *packetGroup) Traffic() (int64, int64, int, float64) {
-	numBytes := int(float64(p.acked.numBytes()) * p.CapturedTrafficRatio())
-
-	fullness := max(
-		float64(p.acked.numPackets())/float64(p.params.Config.MinPackets),
-		float64(p.maxSendTime-p.minSendTime)/float64(p.params.Config.MaxWindowDuration.Microseconds()),
-	)
-
-	return p.minSendTime, p.maxSendTime - p.minSendTime, numBytes, fullness
+func (p *packetGroup) Traffic() trafficStats {
+	return trafficStats{
+		minSendTime:  p.minSendTime,
+		duration:     p.maxSendTime - p.minSendTime,
+		queuingDelay: p.queuingDelay,
+		sendDelta:    p.aggregateSendDelta,
+		recvDelta:    p.aggregateRecvDelta,
+		ackedPackets: p.acked.numPackets(),
+		ackedBytes:   p.acked.numBytes(),
+		lostPackets:  p.lost.numPackets(),
+	}
 }
 
+// RAJA-REMOVE
 func (p *packetGroup) WeightedLossRatio() (float64, bool) {
 	if !p.isFinalized {
 		return 0.0, false
@@ -269,6 +279,7 @@ func (p *packetGroup) WeightedLossRatio() (float64, bool) {
 	return p.weightedLossRatio()
 }
 
+// RAJA-REMOVE
 func (p *packetGroup) weightedLossRatio() (float64, bool) {
 	lostPackets := p.lost.numPackets()
 	totalPackets := float64(lostPackets + p.acked.numPackets())
@@ -292,6 +303,7 @@ func (p *packetGroup) MarshalLogObject(e zapcore.ObjectEncoder) error {
 		return nil
 	}
 
+	// RAJA-TODO: make traffic stats and log traffic stats for a lot of these
 	e.AddInt64("minSendTime", p.minSendTime)
 	e.AddInt64("maxSendTime", p.maxSendTime)
 	sendDuration := time.Duration((p.maxSendTime - p.minSendTime) * 1000)
@@ -354,6 +366,7 @@ func (p *packetGroup) inGroup(sequenceNumber uint64) error {
 	return nil
 }
 
+// RAJA-REMOVE
 func (p *packetGroup) getLossPenalty() int64 {
 	weightedLossRatio, _ := p.weightedLossRatio()
 	return int64(float64(p.aggregateRecvDelta) * weightedLossRatio * p.params.Config.LossPenaltyFactor)
