@@ -32,8 +32,10 @@ func NewPassThrough(logger logger.Logger, sendSideBWE *sendsidebwe.SendSideBWE) 
 func (p *PassThrough) Stop() {
 }
 
-func (p *PassThrough) Enqueue(pkt Packet) {
+func (p *PassThrough) Enqueue(pkt Packet) (int, int) {
+	headerSize, payloadSize := p.Base.Prepare(&pkt)
 	p.Base.SendPacket(&pkt)
+	return headerSize, payloadSize
 }
 
 // ------------------------------------------------

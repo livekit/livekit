@@ -29,6 +29,7 @@ type ExtensionData struct {
 
 type Packet struct {
 	Header             *rtp.Header
+	HeaderSize         int // calculated and set inside Pacer
 	Extensions         []ExtensionData
 	Payload            []byte
 	IsRTX              bool
@@ -40,7 +41,7 @@ type Packet struct {
 }
 
 type Pacer interface {
-	Enqueue(p Packet)
+	Enqueue(p Packet) (int, int)
 	Stop()
 
 	SetInterval(interval time.Duration)

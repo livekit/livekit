@@ -25,6 +25,11 @@ import (
 	"github.com/pion/rtp"
 )
 
+var (
+	dummyAbsSendTimeExt, _ = rtp.NewAbsSendTimeExtension(mono.Now()).Marshal()
+	dummyTransportCCExt, _ = rtp.TransportCCExtension{TransportSequence: 12345}.Marshal()
+)
+
 type Base struct {
 	logger logger.Logger
 
@@ -44,6 +49,36 @@ func (b *Base) SetInterval(_interval time.Duration) {
 func (b *Base) SetBitrate(_bitrate int) {
 }
 
+// prepare adds given extensions,
+// for extensions that need to be added with timing as close to packet
+// send (abs-send-time and transport-cc), a dummy extension is used
+// so that header size can be calculated.
+func (b *Base) Prepare(p *Packet) (int, int) {
+	// clear out extensions that may have been in the forwarded header
+	p.Header.Extension = false
+	p.Header.ExtensionProfile = 0
+	p.Header.Extensions = []rtp.Extension{}
+
+	for _, ext := range p.Extensions {
+		if ext.ID == 0 || len(ext.Payload) == 0 {
+			continue
+		}
+
+		p.Header.SetExtension(ext.ID, ext.Payload)
+	}
+
+	if p.AbsSendTimeExtID != 0 {
+		p.Header.SetExtension(p.AbsSendTimeExtID, dummyAbsSendTimeExt)
+	}
+
+	if p.TransportWideExtID != 0 && b.sendSideBWE != nil {
+		p.Header.SetExtension(p.TransportWideExtID, dummyTransportCCExt)
+	}
+
+	p.HeaderSize = p.Header.MarshalSize()
+	return p.HeaderSize, len(p.Payload)
+}
+
 func (b *Base) SendPacket(p *Packet) (int, error) {
 	defer func() {
 		if p.Pool != nil && p.PoolEntity != nil {
@@ -51,7 +86,7 @@ func (b *Base) SendPacket(p *Packet) (int, error) {
 		}
 	}()
 
-	err := b.writeRTPHeaderExtensions(p)
+	err := b.patchRTPHeaderExtensions(p)
 	if err != nil {
 		b.logger.Errorw("writing rtp header extensions err", err)
 		return 0, err
@@ -69,21 +104,8 @@ func (b *Base) SendPacket(p *Packet) (int, error) {
 	return written, nil
 }
 
-// writes RTP header extensions of track
-func (b *Base) writeRTPHeaderExtensions(p *Packet) error {
-	// clear out extensions that may have been in the forwarded header
-	p.Header.Extension = false
-	p.Header.ExtensionProfile = 0
-	p.Header.Extensions = []rtp.Extension{}
-
-	for _, ext := range p.Extensions {
-		if ext.ID == 0 || len(ext.Payload) == 0 {
-			continue
-		}
-
-		p.Header.SetExtension(ext.ID, ext.Payload)
-	}
-
+// patch just abs-send-time and transport-cc extensions if applicable
+func (b *Base) patchRTPHeaderExtensions(p *Packet) error {
 	sendingAt := mono.Now()
 	if p.AbsSendTimeExtID != 0 {
 		sendTime := rtp.NewAbsSendTimeExtension(sendingAt)
@@ -100,7 +122,7 @@ func (b *Base) writeRTPHeaderExtensions(p *Packet) error {
 	if p.TransportWideExtID != 0 && b.sendSideBWE != nil {
 		twccSN := b.sendSideBWE.RecordPacketSendAndGetSequenceNumber(
 			sendingAt,
-			p.Header.MarshalSize()+len(p.Payload),
+			p.HeaderSize+len(p.Payload),
 			p.IsRTX,
 		)
 		twccExt := rtp.TransportCCExtension{

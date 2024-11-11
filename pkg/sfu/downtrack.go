@@ -942,20 +942,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		)
 	}
 
-	d.sendingPacket(
-		hdr,
-		len(payload),
-		&sendPacketMetadata{
-			layer:             layer,
-			packetTime:        extPkt.Arrival,
-			extSequenceNumber: tp.rtp.extSequenceNumber,
-			extTimestamp:      tp.rtp.extTimestamp,
-			isKeyFrame:        extPkt.KeyFrame,
-			isOutOfOrder:      extPkt.IsOutOfOrder,
-			tp:                &tp,
-		},
-	)
-	d.pacer.Enqueue(pacer.Packet{
+	headerSize, payloadSize := d.pacer.Enqueue(pacer.Packet{
 		Header:             hdr,
 		Extensions:         extensions,
 		Payload:            payload,
@@ -965,6 +952,36 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		Pool:               PacketFactory,
 		PoolEntity:         poolEntity,
 	})
+	d.updateStats(updateStatsParams{
+		packetTime:        extPkt.Arrival,
+		extSequenceNumber: tp.rtp.extSequenceNumber,
+		extTimestamp:      tp.rtp.extTimestamp,
+		isOutOfOrder:      extPkt.IsOutOfOrder,
+		headerSize:        headerSize,
+		payloadSize:       payloadSize,
+		marker:            hdr.Marker,
+	})
+
+	if extPkt.KeyFrame {
+		d.isNACKThrottled.Store(false)
+		d.rtpStats.UpdateKeyFrame(1)
+		d.params.Logger.Debugw(
+			"forwarded key frame",
+			"layer", layer,
+			"rtpsn", tp.rtp.extSequenceNumber,
+			"rtpts", tp.rtp.extTimestamp,
+		)
+	}
+
+	if tp.isSwitching {
+		d.postMaxLayerNotifierEvent("switching")
+	}
+
+	if tp.isResuming {
+		if sal := d.getStreamAllocatorListener(); sal != nil {
+			sal.OnResume(d)
+		}
+	}
 	return nil
 }
 
@@ -1041,23 +1058,21 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 		// last byte of padding has padding size including that byte
 		payload[RTPPaddingMaxPayloadSize-1] = byte(RTPPaddingMaxPayloadSize)
 
-		d.sendingPacket(
-			&hdr,
-			len(payload),
-			&sendPacketMetadata{
-				packetTime:           mono.UnixNano(),
-				extSequenceNumber:    snts[i].extSequenceNumber,
-				extTimestamp:         snts[i].extTimestamp,
-				isPadding:            true,
-				shouldDisableCounter: true,
-			},
-		)
-		d.pacer.Enqueue(pacer.Packet{
+		headerSize, payloadSize := d.pacer.Enqueue(pacer.Packet{
 			Header:             &hdr,
 			Payload:            payload,
 			AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 			TransportWideExtID: uint8(d.transportWideExtID),
 			WriteStream:        d.writeStream,
+		})
+		d.updateStats(updateStatsParams{
+			packetTime:        mono.UnixNano(),
+			extSequenceNumber: snts[i].extSequenceNumber,
+			extTimestamp:      snts[i].extTimestamp,
+			headerSize:        headerSize,
+			payloadSize:       payloadSize,
+			isPadding:         true,
+			disableCounter:    true,
 		})
 
 		bytesSent += hdr.MarshalSize() + len(payload)
@@ -1590,17 +1605,19 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 					return
 				}
 
-				d.sendingPacket(&hdr, len(payload), &sendPacketMetadata{
-					packetTime:        mono.UnixNano(),
-					extSequenceNumber: snts[i].extSequenceNumber,
-					extTimestamp:      snts[i].extTimestamp,
-				})
-				d.pacer.Enqueue(pacer.Packet{
+				headerSize, payloadSize := d.pacer.Enqueue(pacer.Packet{
 					Header:             &hdr,
 					Payload:            payload,
 					AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 					TransportWideExtID: uint8(d.transportWideExtID),
 					WriteStream:        d.writeStream,
+				})
+				d.updateStats(updateStatsParams{
+					packetTime:        mono.UnixNano(),
+					extSequenceNumber: snts[i].extSequenceNumber,
+					extTimestamp:      snts[i].extTimestamp,
+					headerSize:        headerSize,
+					payloadSize:       payloadSize,
 				})
 
 				// only the first frame will need frameEndNeeded to close out the
@@ -1950,19 +1967,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			)
 		}
 
-		d.sendingPacket(
-			&pkt.Header,
-			len(payload),
-			&sendPacketMetadata{
-				layer:             int32(epm.layer),
-				packetTime:        mono.UnixNano(),
-				extSequenceNumber: epm.extSequenceNumber,
-				extTimestamp:      epm.extTimestamp,
-				isRTX:             true,
-				isOutOfOrder:      true,
-			},
-		)
-		d.pacer.Enqueue(pacer.Packet{
+		headerSize, payloadSize := d.pacer.Enqueue(pacer.Packet{
 			Header:             &pkt.Header,
 			Extensions:         extensions,
 			Payload:            payload,
@@ -1972,6 +1977,15 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			WriteStream:        d.writeStream,
 			Pool:               PacketFactory,
 			PoolEntity:         poolEntity,
+		})
+		d.updateStats(updateStatsParams{
+			packetTime:        mono.UnixNano(),
+			extSequenceNumber: epm.extSequenceNumber,
+			extTimestamp:      epm.extTimestamp,
+			isOutOfOrder:      true,
+			headerSize:        headerSize,
+			payloadSize:       payloadSize,
+			isRTX:             true,
 		})
 	}
 
@@ -2175,23 +2189,21 @@ func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
 				return
 			}
 
-			d.sendingPacket(
-				&hdr,
-				len(payload),
-				&sendPacketMetadata{
-					packetTime:        mono.UnixNano(),
-					extSequenceNumber: snts[i].extSequenceNumber,
-					extTimestamp:      snts[i].extTimestamp,
-					// although this is using empty frames, mark as padding as these are used to trigger Pion OnTrack only
-					isPadding: true,
-				},
-			)
-			d.pacer.Enqueue(pacer.Packet{
+			headerSize, payloadSize := d.pacer.Enqueue(pacer.Packet{
 				Header:             &hdr,
 				Payload:            payload,
 				AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 				TransportWideExtID: uint8(d.transportWideExtID),
 				WriteStream:        d.writeStream,
+			})
+			d.updateStats(updateStatsParams{
+				packetTime:        mono.UnixNano(),
+				extSequenceNumber: snts[i].extSequenceNumber,
+				extTimestamp:      snts[i].extTimestamp,
+				headerSize:        headerSize,
+				payloadSize:       payloadSize,
+				// although this is using empty frames, mark as padding as these are used to trigger Pion OnTrack only
+				isPadding: true,
 			})
 		}
 
@@ -2219,27 +2231,26 @@ func (d *DownTrack) handleRTCPSenderReportData(publisherSRData *livekit.RTCPSend
 	d.rtpStats.MaybeAdjustFirstPacketTime(publisherSRData, tsOffset)
 }
 
-type sendPacketMetadata struct {
-	layer                int32
-	packetTime           int64
-	extSequenceNumber    uint64
-	extTimestamp         uint64
-	isKeyFrame           bool
-	isRTX                bool
-	isOutOfOrder         bool
-	isPadding            bool
-	shouldDisableCounter bool
-	tp                   *TranslationParams
+type updateStatsParams struct {
+	packetTime        int64
+	extSequenceNumber uint64
+	extTimestamp      uint64
+	isOutOfOrder      bool
+	headerSize        int
+	payloadSize       int
+	marker            bool
+	isRTX             bool
+	isPadding         bool
+	disableCounter    bool
 }
 
-func (d *DownTrack) sendingPacket(hdr *rtp.Header, payloadSize int, spmd *sendPacketMetadata) {
-	hdrSize := hdr.MarshalSize()
-	if !spmd.shouldDisableCounter {
+func (d *DownTrack) updateStats(params updateStatsParams) {
+	if !params.disableCounter {
 		// STREAM-ALLOCATOR-TODO: remove this stream allocator bytes counter once stream allocator changes fully to pull bytes counter
-		size := uint32(hdrSize + payloadSize)
+		size := uint32(params.headerSize + params.payloadSize)
 		d.streamAllocatorBytesCounter.Add(size)
 		/* STREAM-ALLOCATOR-DATA
-		if spmd.isRTX {
+		if params.isRTX {
 			d.bytesRetransmitted.Add(size)
 		} else {
 			d.bytesSent.Add(size)
@@ -2248,36 +2259,23 @@ func (d *DownTrack) sendingPacket(hdr *rtp.Header, payloadSize int, spmd *sendPa
 	}
 
 	// update RTPStats
-	paddingSize := payloadSize
-	if spmd.isPadding {
+	payloadSize := params.payloadSize
+	paddingSize := params.payloadSize
+	if params.isPadding {
 		payloadSize = 0
 	} else {
 		paddingSize = 0
 	}
-	d.rtpStats.Update(spmd.packetTime, spmd.extSequenceNumber, spmd.extTimestamp, hdr.Marker, hdrSize, payloadSize, paddingSize, spmd.isOutOfOrder)
-
-	if spmd.isKeyFrame {
-		d.isNACKThrottled.Store(false)
-		d.rtpStats.UpdateKeyFrame(1)
-		d.params.Logger.Debugw(
-			"forwarded key frame",
-			"layer", spmd.layer,
-			"rtpsn", spmd.extSequenceNumber,
-			"rtpts", spmd.extTimestamp,
-		)
-	}
-
-	if spmd.tp != nil {
-		if spmd.tp.isSwitching {
-			d.postMaxLayerNotifierEvent("switching")
-		}
-
-		if spmd.tp.isResuming {
-			if sal := d.getStreamAllocatorListener(); sal != nil {
-				sal.OnResume(d)
-			}
-		}
-	}
+	d.rtpStats.Update(
+		params.packetTime,
+		params.extSequenceNumber,
+		params.extTimestamp,
+		params.marker,
+		params.headerSize,
+		payloadSize,
+		paddingSize,
+		params.isOutOfOrder,
+	)
 }
 
 // -------------------------------------------------------------------------------
