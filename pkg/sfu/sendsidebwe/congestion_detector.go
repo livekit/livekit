@@ -141,7 +141,7 @@ func (q *qdMeasurement) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddInt("numGroups", q.numGroups)
 	e.AddInt64("minSendTime", q.minSendTime)
 	e.AddInt64("maxSendTime", q.maxSendTime)
-	e.AddDuration("duration", time.Duration((q.maxSendTime - q.minSendTime) * 1000))
+	e.AddDuration("duration", time.Duration((q.maxSendTime-q.minSendTime)*1000))
 	e.AddBool("isSealed", q.isSealed)
 	e.AddBool("isEarlyWarningTriggered", q.IsEarlyWarningTriggered())
 	e.AddBool("isCongestedTriggered", q.IsCongestedTriggered())
@@ -482,10 +482,9 @@ func (c *congestionDetector) isCongestionSignalTriggered() (bool, string, bool, 
 	}
 	// RAJA-REMOVE START
 	if congestedTriggered {
-		c.params.Logger.Infow("congested triggered", "qd", qdMeasurement, "loss", lossMeasurement)	// REMOVE
+		c.params.Logger.Infow("congested triggered", "qd", qdMeasurement, "loss", lossMeasurement) // REMOVE
 	}
 	// RAJA-REMOVE END
-
 
 	return earlyWarningTriggered, earlyWarningReason, congestedTriggered, congestedReason, max(0, idx)
 }
@@ -625,8 +624,8 @@ func (c *congestionDetector) estimateAvailableChannelCapacity() {
 				"mst", mst,
 				"threshold", threshold,
 				"numGroups", len(c.packetGroups),
-				"now", mono.UnixMicro() - c.packetTracker.baseSendTime,
-			)	// REMOVE
+				"now", mono.UnixMicro()-c.packetTracker.baseSendTime,
+			) // REMOVE
 			break
 		}
 
@@ -652,11 +651,11 @@ func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 	probingStartSequenceNumber, probingStartSequenceNumberOk := c.packetTracker.ProbingStartSequenceNumber()
 	probingEndSequenceNumber, probingEndSequenceNumberOk := c.packetTracker.ProbingEndSequenceNumber()
 	// SSBWE-REMOVE c.params.Logger.Infow(
-		// SSBWE-REMOVE "probe sequence numbers",
-		// SSBWE-REMOVE "startOk", probingStartSequenceNumberOk,
-		// SSBWE-REMOVE "start", probingStartSequenceNumber,
-		// SSBWE-REMOVE "endOk", probingEndSequenceNumberOk,
-		// SSBWE-REMOVE "end", probingEndSequenceNumber,
+	// SSBWE-REMOVE "probe sequence numbers",
+	// SSBWE-REMOVE "startOk", probingStartSequenceNumberOk,
+	// SSBWE-REMOVE "start", probingStartSequenceNumber,
+	// SSBWE-REMOVE "endOk", probingEndSequenceNumberOk,
+	// SSBWE-REMOVE "end", probingEndSequenceNumber,
 	// SSBWE-REMOVE ) // SSBWE-REMOVE
 
 	if len(c.packetGroups) == 0 {
