@@ -612,8 +612,9 @@ func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 			c.packetGroups,
 			newPacketGroup(
 				packetGroupParams{
-					Config: c.params.Config.PacketGroup,
-					Logger: c.params.Logger,
+					Config:       c.params.Config.PacketGroup,
+					WeightedLoss: c.params.Config.WeightedLoss,
+					Logger:       c.params.Logger,
 				},
 				0,
 			),
@@ -632,13 +633,13 @@ func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 
 			c.probeGroup = newPacketGroup(
 				packetGroupParams{
+					// some high numbers to ensure all packets of a probe form the same group
 					Config: PacketGroupConfig{
-						MinPackets:                 2000,
-						MaxWindowDuration:          50000 * time.Millisecond,
-						LossPenaltyMinPacketsRatio: 0.5,
-						LossPenaltyFactor:          0.25,
+						MinPackets:        2000,
+						MaxWindowDuration: 50000 * time.Millisecond,
 					},
-					Logger: c.params.Logger,
+					WeightedLoss: c.params.Config.WeightedLoss,
+					Logger:       c.params.Logger,
 				},
 				0,
 			)
@@ -668,8 +669,9 @@ func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 			pqd, _ := pg.PropagatedQueuingDelay()
 			pg = newPacketGroup(
 				packetGroupParams{
-					Config: c.params.Config.PacketGroup,
-					Logger: c.params.Logger,
+					Config:       c.params.Config.PacketGroup,
+					WeightedLoss: c.params.Config.WeightedLoss,
+					Logger:       c.params.Logger,
 				},
 				pqd,
 			)
