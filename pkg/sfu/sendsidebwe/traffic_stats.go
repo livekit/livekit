@@ -116,11 +116,11 @@ func (ts *trafficStats) WeightedLoss() float64 {
 	//    - 10% loss at 20 pps = 0.1 * log10(20) * 0.25 = 0.032
 	//    - 10% loss at 100 pps = 0.1 * log10(100) * 0.25 = 0.05
 	//    - 10% loss at 1000 pps = 0.1 * log10(1000) * 0.25 = 0.075
-	return lossRatio * math.Log10(pps) * ts.params.Config.LossPenaltyFactor
+	return lossRatio * math.Log10(pps)
 }
 
 func (ts *trafficStats) lossPenalty() int64 {
-	return int64(float64(ts.recvDelta) * ts.WeightedLoss())
+	return int64(float64(ts.recvDelta) * ts.WeightedLoss() * ts.params.Config.LossPenaltyFactor)
 }
 
 func (ts *trafficStats) MarshalLogObject(e zapcore.ObjectEncoder) error {
