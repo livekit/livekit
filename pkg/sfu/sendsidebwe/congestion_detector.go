@@ -640,7 +640,7 @@ func (c *congestionDetector) estimateAvailableChannelCapacity() {
 			"numGroups", len(c.packetGroups),
 			"oldestUsed", max(0, idx),
 			"threshold", threshold,
-			"now", mono.UnixMicro()-c.packetTracker.baseSendTime,	// REMOVE
+			"now", mono.UnixMicro()-c.packetTracker.baseSendTime, // REMOVE
 		)
 		return
 	}

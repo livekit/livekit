@@ -49,8 +49,8 @@ type packetTracker struct {
 
 func newPacketTracker(params packetTrackerParams) *packetTracker {
 	return &packetTracker{
-		params:         params,
-		sequenceNumber: uint64(rand.Intn(1<<14)) + uint64(1<<15), // a random number in third quartile of sequence number space
+		params:                   params,
+		sequenceNumber:           uint64(rand.Intn(1<<14)) + uint64(1<<15), // a random number in third quartile of sequence number space
 		probingEndSequenceNumber: 0xdeadbeef,
 	}
 }
