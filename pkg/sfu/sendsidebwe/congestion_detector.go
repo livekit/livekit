@@ -268,7 +268,7 @@ var (
 
 	DefaultCongestionDetectorConfig = CongestionDetectorConfig{
 		PacketGroup:                      DefaultPacketGroupConfig,
-		PacketGroupMaxAge:                30 * time.Second,
+		PacketGroupMaxAge:                15 * time.Second,
 		JQRMinDelay:                      15 * time.Millisecond,
 		DQRMaxDelay:                      5 * time.Millisecond,
 		WeightedLoss:                     defaultWeightedLossConfig,
@@ -615,7 +615,8 @@ func (c *congestionDetector) estimateAvailableChannelCapacity() {
 		Config: c.params.Config.WeightedLoss,
 		Logger: c.params.Logger,
 	})
-	for idx := len(c.packetGroups) - 1; idx >= 0; idx-- {
+	var idx int
+	for idx = len(c.packetGroups) - 1; idx >= 0; idx-- {
 		pg := c.packetGroups[idx]
 		if mst := pg.MinSendTime(); mst != 0 && mst < threshold {
 			c.params.Logger.Infow(
@@ -633,7 +634,14 @@ func (c *congestionDetector) estimateAvailableChannelCapacity() {
 	}
 
 	if agg.Duration() < c.params.Config.RateMeasurementWindowDurationMin.Microseconds() {
-		c.params.Logger.Infow("not enough data to estimate available channel capacity", "duration", agg.Duration())
+		c.params.Logger.Infow(
+			"not enough data to estimate available channel capacity",
+			"duration", agg.Duration(),
+			"numGroups", len(c.packetGroups),
+			"oldestUsed", max(0, idx),
+			"threshold", threshold,
+			"now", mono.UnixMicro()-c.packetTracker.baseSendTime,	// REMOVE
+		)
 		return
 	}
 
