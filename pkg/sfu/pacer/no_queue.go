@@ -28,11 +28,10 @@ type NoQueue struct {
 
 	logger logger.Logger
 
-	lock      sync.RWMutex
-	packets   deque.Deque[Packet]
-	wake      chan struct{}
-	stop      core.Fuse
-	isStopped bool
+	lock    sync.RWMutex
+	packets deque.Deque[Packet]
+	wake    chan struct{}
+	stop    core.Fuse
 }
 
 func NewNoQueue(logger logger.Logger, sendSideBWE *sendsidebwe.SendSideBWE) *NoQueue {
