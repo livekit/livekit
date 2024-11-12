@@ -51,7 +51,7 @@ func (b *Base) SendPacket(p *Packet) (int, error) {
 		}
 	}()
 
-	err := b.writeRTPHeaderExtensions(p)
+	err := b.patchRTPHeaderExtensions(p)
 	if err != nil {
 		b.logger.Errorw("writing rtp header extensions err", err)
 		return 0, err
@@ -69,21 +69,8 @@ func (b *Base) SendPacket(p *Packet) (int, error) {
 	return written, nil
 }
 
-// writes RTP header extensions of track
-func (b *Base) writeRTPHeaderExtensions(p *Packet) error {
-	// clear out extensions that may have been in the forwarded header
-	p.Header.Extension = false
-	p.Header.ExtensionProfile = 0
-	p.Header.Extensions = []rtp.Extension{}
-
-	for _, ext := range p.Extensions {
-		if ext.ID == 0 || len(ext.Payload) == 0 {
-			continue
-		}
-
-		p.Header.SetExtension(ext.ID, ext.Payload)
-	}
-
+// patch just abs-send-time and transport-cc extensions if applicable
+func (b *Base) patchRTPHeaderExtensions(p *Packet) error {
 	sendingAt := mono.Now()
 	if p.AbsSendTimeExtID != 0 {
 		sendTime := rtp.NewAbsSendTimeExtension(sendingAt)

@@ -32,8 +32,8 @@ func NewPassThrough(logger logger.Logger, sendSideBWE *sendsidebwe.SendSideBWE) 
 func (p *PassThrough) Stop() {
 }
 
-func (p *PassThrough) Enqueue(pkt Packet) {
-	p.Base.SendPacket(&pkt)
+func (p *PassThrough) Enqueue(pkt *Packet) {
+	p.Base.SendPacket(pkt)
 }
 
 // ------------------------------------------------

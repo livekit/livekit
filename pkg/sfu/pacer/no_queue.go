@@ -17,6 +17,7 @@ package pacer
 import (
 	"sync"
 
+	"github.com/frostbyte73/core"
 	"github.com/gammazero/deque"
 	"github.com/livekit/livekit-server/pkg/sfu/sendsidebwe"
 	"github.com/livekit/protocol/logger"
@@ -27,10 +28,10 @@ type NoQueue struct {
 
 	logger logger.Logger
 
-	lock      sync.RWMutex
-	packets   deque.Deque[Packet]
-	wake      chan struct{}
-	isStopped bool
+	lock    sync.RWMutex
+	packets deque.Deque[*Packet]
+	wake    chan struct{}
+	stop    core.Fuse
 }
 
 func NewNoQueue(logger logger.Logger, sendSideBWE *sendsidebwe.SendSideBWE) *NoQueue {
@@ -46,27 +47,17 @@ func NewNoQueue(logger logger.Logger, sendSideBWE *sendsidebwe.SendSideBWE) *NoQ
 }
 
 func (n *NoQueue) Stop() {
-	n.lock.Lock()
-	if n.isStopped {
-		n.lock.Unlock()
-		return
-	}
-
-	close(n.wake)
-	n.isStopped = true
-	n.lock.Unlock()
+	n.stop.Break()
 }
 
-func (n *NoQueue) Enqueue(p Packet) {
+func (n *NoQueue) Enqueue(p *Packet) {
 	n.lock.Lock()
-	defer n.lock.Unlock()
-
 	n.packets.PushBack(p)
-	if n.packets.Len() == 1 && !n.isStopped {
-		select {
-		case n.wake <- struct{}{}:
-		default:
-		}
+	n.lock.Unlock()
+
+	select {
+	case n.wake <- struct{}{}:
+	default:
 	}
 }
 
@@ -74,12 +65,11 @@ func (n *NoQueue) sendWorker() {
 	for {
 		<-n.wake
 		for {
-			n.lock.Lock()
-			if n.isStopped {
-				n.lock.Unlock()
+			if n.stop.IsBroken() {
 				return
 			}
 
+			n.lock.Lock()
 			if n.packets.Len() == 0 {
 				n.lock.Unlock()
 				break
@@ -87,7 +77,7 @@ func (n *NoQueue) sendWorker() {
 			p := n.packets.PopFront()
 			n.lock.Unlock()
 
-			n.Base.SendPacket(&p)
+			n.Base.SendPacket(p)
 		}
 	}
 }
