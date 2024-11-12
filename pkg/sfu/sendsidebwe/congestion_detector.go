@@ -351,18 +351,9 @@ func (c *congestionDetector) updateCongestionState(state CongestionState, reason
 	// on a continuous basis allocations can be adjusted in the direction of
 	// reducing/relieving congestion
 	if state == CongestionStateCongested && prevState != CongestionStateCongested {
-		c.congestedCTRTrend = ccutils.NewTrendDetector[float64](ccutils.TrendDetectorParams{
-			Name:   "ssbwe-ctr",
-			Logger: c.params.Logger,
-			Config: c.params.Config.CongestedCTRTrend,
-		})
-		c.congestedTrafficStats = newTrafficStats(trafficStatsParams{
-			Config: c.params.Config.WeightedLoss,
-			Logger: c.params.Logger,
-		})
+		c.resetCTRTrend()
 	} else if state != CongestionStateCongested {
-		c.congestedCTRTrend = nil
-		c.congestedTrafficStats = nil
+		c.clearCTRTrend()
 	}
 }
 
@@ -518,7 +509,24 @@ func (c *congestionDetector) congestionDetectionStateMachine() {
 	}
 }
 
-func (c *congestionDetector) updateTrend(pg *packetGroup) {
+func (c *congestionDetector) resetCTRTrend() {
+	c.congestedCTRTrend = ccutils.NewTrendDetector[float64](ccutils.TrendDetectorParams{
+		Name:   "ssbwe-ctr",
+		Logger: c.params.Logger,
+		Config: c.params.Config.CongestedCTRTrend,
+	})
+	c.congestedTrafficStats = newTrafficStats(trafficStatsParams{
+		Config: c.params.Config.WeightedLoss,
+		Logger: c.params.Logger,
+	})
+}
+
+func (c *congestionDetector) clearCTRTrend() {
+	c.congestedCTRTrend = nil
+	c.congestedTrafficStats = nil
+}
+
+func (c *congestionDetector) updateCTRTrend(pg *packetGroup) {
 	if c.congestedCTRTrend == nil {
 		return
 	}
@@ -531,30 +539,24 @@ func (c *congestionDetector) updateTrend(pg *packetGroup) {
 	// quantise CTR to filter out small changes
 	c.congestedCTRTrend.AddValue(float64(int((ctr+(c.params.Config.CongestedCTREpsilon/2))/c.params.Config.CongestedCTREpsilon)) * c.params.Config.CongestedCTREpsilon)
 
-	if c.congestedCTRTrend.GetDirection() == ccutils.TrendDirectionDownward {
-		c.params.Logger.Infow("captured traffic ratio is trending downward", "channel", c.congestedCTRTrend.ToString())
-
-		c.lock.RLock()
-		state := c.congestionState
-		estimatedAvailableChannelCapacity := c.estimatedAvailableChannelCapacity
-		onCongestionStateChange := c.onCongestionStateChange
-		c.lock.RUnlock()
-
-		if onCongestionStateChange != nil {
-			onCongestionStateChange(state, estimatedAvailableChannelCapacity)
-		}
-
-		// reset to get new set of samples for next trend
-		c.congestedCTRTrend = ccutils.NewTrendDetector[float64](ccutils.TrendDetectorParams{
-			Name:   "ssbwe-ctr",
-			Logger: c.params.Logger,
-			Config: c.params.Config.CongestedCTRTrend,
-		})
-		c.congestedTrafficStats = newTrafficStats(trafficStatsParams{
-			Config: c.params.Config.WeightedLoss,
-			Logger: c.params.Logger,
-		})
+	if c.congestedCTRTrend.GetDirection() != ccutils.TrendDirectionDownward {
+		return
 	}
+
+	c.params.Logger.Infow("captured traffic ratio is trending downward", "channel", c.congestedCTRTrend.ToString())
+
+	c.lock.RLock()
+	state := c.congestionState
+	estimatedAvailableChannelCapacity := c.estimatedAvailableChannelCapacity
+	onCongestionStateChange := c.onCongestionStateChange
+	c.lock.RUnlock()
+
+	if onCongestionStateChange != nil {
+		onCongestionStateChange(state, estimatedAvailableChannelCapacity)
+	}
+
+	// reset to get new set of samples for next trend
+	c.resetCTRTrend()
 }
 
 func (c *congestionDetector) estimateAvailableChannelCapacity() {
@@ -663,7 +665,7 @@ func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 
 		if err == errGroupFinalized {
 			// previous group ended, start a new group
-			c.updateTrend(pg)
+			c.updateCTRTrend(pg)
 
 			// SSBWE-REMOVE c.params.Logger.Infow("packet group done", "group", pg, "numGroups", len(c.packetGroups)) // SSBWE-REMOVE
 			pqd, _ := pg.PropagatedQueuingDelay()
