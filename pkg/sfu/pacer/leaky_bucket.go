@@ -34,7 +34,7 @@ type LeakyBucket struct {
 	logger logger.Logger
 
 	lock     sync.RWMutex
-	packets  deque.Deque[Packet]
+	packets  deque.Deque[*Packet]
 	interval time.Duration
 	bitrate  int
 	stop     core.Fuse
@@ -71,14 +71,10 @@ func (l *LeakyBucket) Stop() {
 	l.stop.Break()
 }
 
-func (l *LeakyBucket) Enqueue(p Packet) (int, int) {
-	headerSize, payloadSize := l.Base.Prepare(&p)
-
+func (l *LeakyBucket) Enqueue(p *Packet) {
 	l.lock.Lock()
 	l.packets.PushBack(p)
 	l.lock.Unlock()
-
-	return headerSize, payloadSize
 }
 
 func (l *LeakyBucket) sendWorker() {
@@ -131,7 +127,7 @@ func (l *LeakyBucket) sendWorker() {
 			p := l.packets.PopFront()
 			l.lock.Unlock()
 
-			written, _ := l.Base.SendPacket(&p)
+			written, _ := l.Base.SendPacket(p)
 			toSendBytes -= written
 			if toSendBytes < 0 {
 				// overage, wait for next interval

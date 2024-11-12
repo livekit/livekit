@@ -132,6 +132,9 @@ var (
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	}
+
+	dummyAbsSendTimeExt, _ = rtp.NewAbsSendTimeExtension(mono.Now()).Marshal()
+	dummyTransportCCExt, _ = rtp.TransportCCExtension{TransportSequence: 12345}.Marshal()
 )
 
 // -------------------------------------------------------------------
@@ -865,32 +868,26 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	}
 	payload = payload[:len(tp.codecBytes)+n]
 
-	hdr, err := d.getTranslatedRTPHeader(extPkt, &tp)
-	if err != nil {
-		d.params.Logger.Errorw("could not get translated RTP header", err)
-		PacketFactory.Put(poolEntity)
-		return err
+	// translate RTP header
+	hdr := &rtp.Header{
+		Version:        extPkt.Packet.Version,
+		Padding:        extPkt.Packet.Padding,
+		PayloadType:    d.getTranslatedPayloadType(extPkt.Packet.PayloadType),
+		SequenceNumber: uint16(tp.rtp.extSequenceNumber),
+		Timestamp:      uint32(tp.rtp.extTimestamp),
+		SSRC:           d.ssrc,
+	}
+	if tp.marker {
+		hdr.Marker = tp.marker
 	}
 
-	var extensions []pacer.ExtensionData
+	// add extensions
 	if tp.ddBytes != nil {
-		extensions = append(
-			extensions,
-			pacer.ExtensionData{
-				ID:      uint8(d.dependencyDescriptorExtID),
-				Payload: tp.ddBytes,
-			},
-		)
+		hdr.SetExtension(uint8(d.dependencyDescriptorExtID), tp.ddBytes)
 	}
 	if d.playoutDelayExtID != 0 && d.playoutDelay != nil {
 		if val := d.playoutDelay.GetDelayExtension(hdr.SequenceNumber); val != nil {
-			extensions = append(
-				extensions,
-				pacer.ExtensionData{
-					ID:      uint8(d.playoutDelayExtID),
-					Payload: val,
-				},
-			)
+			hdr.SetExtension(uint8(d.playoutDelayExtID), val)
 
 			// NOTE: play out delay extension is not cached in sequencer,
 			// i. e. they will not be added to retransmitted packet.
@@ -912,20 +909,20 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		_, _, refSenderReport := d.forwarder.GetSenderReportParams()
 		if refSenderReport != nil {
 			actExtCopy := *extPkt.AbsCaptureTimeExt
-			if err = actExtCopy.Rewrite(rtpstats.RTCPSenderReportPropagationDelay(refSenderReport, !d.params.DisableSenderReportPassThrough)); err == nil {
+			if err = actExtCopy.Rewrite(
+				rtpstats.RTCPSenderReportPropagationDelay(
+					refSenderReport,
+					!d.params.DisableSenderReportPassThrough,
+				),
+			); err == nil {
 				actBytes, err = actExtCopy.Marshal()
 				if err == nil {
-					extensions = append(
-						extensions,
-						pacer.ExtensionData{
-							ID:      uint8(d.absCaptureTimeExtID),
-							Payload: actBytes,
-						},
-					)
+					hdr.SetExtension(uint8(d.absCaptureTimeExtID), actBytes)
 				}
 			}
 		}
 	}
+	d.addDummyExtensions(hdr)
 
 	if d.sequencer != nil {
 		d.sequencer.push(
@@ -942,24 +939,23 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		)
 	}
 
-	headerSize, payloadSize := d.pacer.Enqueue(pacer.Packet{
+	d.updateStats(updateStatsParams{
+		packetTime:        extPkt.Arrival,
+		extSequenceNumber: tp.rtp.extSequenceNumber,
+		extTimestamp:      tp.rtp.extTimestamp,
+		isOutOfOrder:      extPkt.IsOutOfOrder,
+		headerSize:        hdr.MarshalSize(),
+		payloadSize:       len(payload),
+		marker:            hdr.Marker,
+	})
+	d.pacer.Enqueue(&pacer.Packet{
 		Header:             hdr,
-		Extensions:         extensions,
 		Payload:            payload,
 		AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 		TransportWideExtID: uint8(d.transportWideExtID),
 		WriteStream:        d.writeStream,
 		Pool:               PacketFactory,
 		PoolEntity:         poolEntity,
-	})
-	d.updateStats(updateStatsParams{
-		packetTime:        extPkt.Arrival,
-		extSequenceNumber: tp.rtp.extSequenceNumber,
-		extTimestamp:      tp.rtp.extTimestamp,
-		isOutOfOrder:      extPkt.IsOutOfOrder,
-		headerSize:        headerSize,
-		payloadSize:       payloadSize,
-		marker:            hdr.Marker,
 	})
 
 	if extPkt.KeyFrame {
@@ -1043,7 +1039,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 
 	bytesSent := 0
 	for i := 0; i < len(snts); i++ {
-		hdr := rtp.Header{
+		hdr := &rtp.Header{
 			Version:        2,
 			Padding:        true,
 			Marker:         false,
@@ -1051,31 +1047,33 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 			SequenceNumber: uint16(snts[i].extSequenceNumber),
 			Timestamp:      uint32(snts[i].extTimestamp),
 			SSRC:           d.ssrc,
-			CSRC:           []uint32{},
 		}
+		d.addDummyExtensions(hdr)
 
 		payload := make([]byte, RTPPaddingMaxPayloadSize)
 		// last byte of padding has padding size including that byte
 		payload[RTPPaddingMaxPayloadSize-1] = byte(RTPPaddingMaxPayloadSize)
 
-		headerSize, payloadSize := d.pacer.Enqueue(pacer.Packet{
-			Header:             &hdr,
+		hdrSize := hdr.MarshalSize()
+		payloadSize := len(payload)
+		d.updateStats(updateStatsParams{
+			packetTime:        mono.UnixNano(),
+			extSequenceNumber: snts[i].extSequenceNumber,
+			extTimestamp:      snts[i].extTimestamp,
+			headerSize:        hdrSize,
+			payloadSize:       payloadSize,
+			isPadding:         true,
+			disableCounter:    true,
+		})
+		d.pacer.Enqueue(&pacer.Packet{
+			Header:             hdr,
 			Payload:            payload,
 			AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 			TransportWideExtID: uint8(d.transportWideExtID),
 			WriteStream:        d.writeStream,
 		})
-		d.updateStats(updateStatsParams{
-			packetTime:        mono.UnixNano(),
-			extSequenceNumber: snts[i].extSequenceNumber,
-			extTimestamp:      snts[i].extTimestamp,
-			headerSize:        headerSize,
-			payloadSize:       payloadSize,
-			isPadding:         true,
-			disableCounter:    true,
-		})
 
-		bytesSent += hdr.MarshalSize() + len(payload)
+		bytesSent += hdrSize + payloadSize
 	}
 
 	// STREAM_ALLOCATOR-TODO: change this to pull this counter from stream allocator so that counter can be updated in pacer callback
@@ -1587,7 +1585,7 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 			}
 
 			for i := 0; i < len(snts); i++ {
-				hdr := rtp.Header{
+				hdr := &rtp.Header{
 					Version:        2,
 					Padding:        false,
 					Marker:         true,
@@ -1595,8 +1593,8 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 					SequenceNumber: uint16(snts[i].extSequenceNumber),
 					Timestamp:      uint32(snts[i].extTimestamp),
 					SSRC:           d.ssrc,
-					CSRC:           []uint32{},
 				}
+				d.addDummyExtensions(hdr)
 
 				payload, err := getBlankFrame(frameEndNeeded)
 				if err != nil {
@@ -1605,19 +1603,19 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 					return
 				}
 
-				headerSize, payloadSize := d.pacer.Enqueue(pacer.Packet{
-					Header:             &hdr,
-					Payload:            payload,
-					AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
-					TransportWideExtID: uint8(d.transportWideExtID),
-					WriteStream:        d.writeStream,
-				})
 				d.updateStats(updateStatsParams{
 					packetTime:        mono.UnixNano(),
 					extSequenceNumber: snts[i].extSequenceNumber,
 					extTimestamp:      snts[i].extTimestamp,
-					headerSize:        headerSize,
-					payloadSize:       payloadSize,
+					headerSize:        hdr.MarshalSize(),
+					payloadSize:       len(payload),
+				})
+				d.pacer.Enqueue(&pacer.Packet{
+					Header:             hdr,
+					Payload:            payload,
+					AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
+					TransportWideExtID: uint8(d.transportWideExtID),
+					WriteStream:        d.writeStream,
 				})
 
 				// only the first frame will need frameEndNeeded to close out the
@@ -1941,7 +1939,6 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			payload = payload[:int(epm.numCodecBytesOut)+len(pkt.Payload)-int(epm.numCodecBytesIn)]
 		}
 
-		var extensions []pacer.ExtensionData
 		if d.dependencyDescriptorExtID != 0 {
 			var ddBytes []byte
 			if len(epm.ddBytesSlice) != 0 {
@@ -1949,27 +1946,24 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			} else {
 				ddBytes = epm.ddBytes[:epm.ddBytesSize]
 			}
-			extensions = append(
-				extensions,
-				pacer.ExtensionData{
-					ID:      uint8(d.dependencyDescriptorExtID),
-					Payload: ddBytes,
-				},
-			)
+			pkt.Header.SetExtension(uint8(d.dependencyDescriptorExtID), ddBytes)
 		}
 		if d.absCaptureTimeExtID != 0 && len(epm.actBytes) != 0 {
-			extensions = append(
-				extensions,
-				pacer.ExtensionData{
-					ID:      uint8(d.absCaptureTimeExtID),
-					Payload: epm.actBytes,
-				},
-			)
+			pkt.Header.SetExtension(uint8(d.absCaptureTimeExtID), epm.actBytes)
 		}
+		d.addDummyExtensions(&pkt.Header)
 
-		headerSize, payloadSize := d.pacer.Enqueue(pacer.Packet{
+		d.updateStats(updateStatsParams{
+			packetTime:        mono.UnixNano(),
+			extSequenceNumber: epm.extSequenceNumber,
+			extTimestamp:      epm.extTimestamp,
+			isOutOfOrder:      true,
+			headerSize:        pkt.Header.MarshalSize(),
+			payloadSize:       len(payload),
+			isRTX:             true,
+		})
+		d.pacer.Enqueue(&pacer.Packet{
 			Header:             &pkt.Header,
-			Extensions:         extensions,
 			Payload:            payload,
 			IsRTX:              true,
 			AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
@@ -1977,15 +1971,6 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			WriteStream:        d.writeStream,
 			Pool:               PacketFactory,
 			PoolEntity:         poolEntity,
-		})
-		d.updateStats(updateStatsParams{
-			packetTime:        mono.UnixNano(),
-			extSequenceNumber: epm.extSequenceNumber,
-			extTimestamp:      epm.extTimestamp,
-			isOutOfOrder:      true,
-			headerSize:        headerSize,
-			payloadSize:       payloadSize,
-			isRTX:             true,
 		})
 	}
 
@@ -2011,17 +1996,14 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	*/
 }
 
-func (d *DownTrack) getTranslatedRTPHeader(extPkt *buffer.ExtPacket, tp *TranslationParams) (*rtp.Header, error) {
-	hdr := extPkt.Packet.Header
-	hdr.PayloadType = d.getTranslatedPayloadType(hdr.PayloadType)
-	hdr.Timestamp = uint32(tp.rtp.extTimestamp)
-	hdr.SequenceNumber = uint16(tp.rtp.extSequenceNumber)
-	hdr.SSRC = d.ssrc
-	if tp.marker {
-		hdr.Marker = tp.marker
+func (d *DownTrack) addDummyExtensions(hdr *rtp.Header) {
+	// add dummy extensions (actual ones will be filed by pacer) to get header size
+	if d.absSendTimeExtID != 0 {
+		hdr.SetExtension(uint8(d.absSendTimeExtID), dummyAbsSendTimeExt)
 	}
-
-	return &hdr, nil
+	if d.transportWideExtID != 0 {
+		hdr.SetExtension(uint8(d.transportWideExtID), dummyTransportCCExt)
+	}
 }
 
 func (d *DownTrack) getTranslatedPayloadType(src uint8) uint8 {
@@ -2172,7 +2154,7 @@ func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
 			return
 		}
 		for i := 0; i < len(snts); i++ {
-			hdr := rtp.Header{
+			hdr := &rtp.Header{
 				Version:        2,
 				Padding:        false,
 				Marker:         true,
@@ -2180,8 +2162,8 @@ func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
 				SequenceNumber: uint16(snts[i].extSequenceNumber),
 				Timestamp:      uint32(snts[i].extTimestamp),
 				SSRC:           d.ssrc,
-				CSRC:           []uint32{},
 			}
+			d.addDummyExtensions(hdr)
 
 			payload, err := d.getOpusBlankFrame(false)
 			if err != nil {
@@ -2189,21 +2171,21 @@ func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
 				return
 			}
 
-			headerSize, payloadSize := d.pacer.Enqueue(pacer.Packet{
-				Header:             &hdr,
-				Payload:            payload,
-				AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
-				TransportWideExtID: uint8(d.transportWideExtID),
-				WriteStream:        d.writeStream,
-			})
 			d.updateStats(updateStatsParams{
 				packetTime:        mono.UnixNano(),
 				extSequenceNumber: snts[i].extSequenceNumber,
 				extTimestamp:      snts[i].extTimestamp,
-				headerSize:        headerSize,
-				payloadSize:       payloadSize,
+				headerSize:        hdr.MarshalSize(),
+				payloadSize:       len(payload),
 				// although this is using empty frames, mark as padding as these are used to trigger Pion OnTrack only
 				isPadding: true,
+			})
+			d.pacer.Enqueue(&pacer.Packet{
+				Header:             hdr,
+				Payload:            payload,
+				AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
+				TransportWideExtID: uint8(d.transportWideExtID),
+				WriteStream:        d.writeStream,
 			})
 		}
 

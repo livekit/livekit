@@ -29,7 +29,7 @@ type NoQueue struct {
 	logger logger.Logger
 
 	lock    sync.RWMutex
-	packets deque.Deque[Packet]
+	packets deque.Deque[*Packet]
 	wake    chan struct{}
 	stop    core.Fuse
 }
@@ -50,9 +50,7 @@ func (n *NoQueue) Stop() {
 	n.stop.Break()
 }
 
-func (n *NoQueue) Enqueue(p Packet) (int, int) {
-	headerSize, payloadSize := n.Base.Prepare(&p)
-
+func (n *NoQueue) Enqueue(p *Packet) {
 	n.lock.Lock()
 	n.packets.PushBack(p)
 	n.lock.Unlock()
@@ -61,8 +59,6 @@ func (n *NoQueue) Enqueue(p Packet) (int, int) {
 	case n.wake <- struct{}{}:
 	default:
 	}
-
-	return headerSize, payloadSize
 }
 
 func (n *NoQueue) sendWorker() {
@@ -81,7 +77,7 @@ func (n *NoQueue) sendWorker() {
 			p := n.packets.PopFront()
 			n.lock.Unlock()
 
-			n.Base.SendPacket(&p)
+			n.Base.SendPacket(p)
 		}
 	}
 }

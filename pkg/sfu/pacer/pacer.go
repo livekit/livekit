@@ -22,15 +22,8 @@ import (
 	"github.com/pion/webrtc/v3"
 )
 
-type ExtensionData struct {
-	ID      uint8
-	Payload []byte
-}
-
 type Packet struct {
 	Header             *rtp.Header
-	HeaderSize         int // calculated and set inside Pacer
-	Extensions         []ExtensionData
 	Payload            []byte
 	IsRTX              bool
 	AbsSendTimeExtID   uint8
@@ -41,7 +34,7 @@ type Packet struct {
 }
 
 type Pacer interface {
-	Enqueue(p Packet) (int, int)
+	Enqueue(p *Packet)
 	Stop()
 
 	SetInterval(interval time.Duration)
