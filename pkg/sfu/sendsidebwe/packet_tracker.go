@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package sendsidebwe
 
 import (
@@ -85,6 +99,13 @@ func (p *packetTracker) RecordPacketSendAndGetSequenceNumber(at time.Time, size 
 	}
 
 	return uint16(pi.sequenceNumber)
+}
+
+func (p *packetTracker) BaseSendTime() int64 {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	return p.baseSendTime
 }
 
 func (p *packetTracker) RecordPacketIndicationFromRemote(sn uint16, recvTime int64) (piRecv packetInfo, sendDelta, recvDelta int64) {
