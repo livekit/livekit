@@ -157,5 +157,5 @@ func (l *LocalNodeImpl) SecondsSinceNodeStatsUpdate() float64 {
 	l.lock.RLock()
 	defer l.lock.RUnlock()
 
-	return time.Since(time.Unix(0, l.node.Stats.UpdatedAt)).Seconds()
+	return time.Since(time.Unix(l.node.Stats.UpdatedAt, 0)).Seconds()
 }
