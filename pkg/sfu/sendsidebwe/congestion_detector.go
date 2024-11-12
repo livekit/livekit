@@ -24,6 +24,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils/mono"
 	"github.com/pion/rtcp"
+	"go.uber.org/zap/zapcore"
 )
 
 // -------------------------------------------------------------------------------
@@ -31,6 +32,10 @@ import (
 type CongestionSignalConfig struct {
 	MinNumberOfGroups int           `yaml:"min_number_of_groups,omitempty"`
 	MinDuration       time.Duration `yaml:"min_duration,omitempty"`
+}
+
+func (c CongestionSignalConfig) IsTriggered(numGroups int, duration int64) bool {
+	return numGroups >= c.MinNumberOfGroups && duration >= c.MinDuration.Microseconds()
 }
 
 var (
@@ -111,7 +116,7 @@ func (q *qdMeasurement) ProcessPacketGroup(pg *packetGroup) {
 	}
 
 	// can seal if congested config thresholds are met as they are longer
-	if q.numGroups >= q.congestedConfig.MinNumberOfGroups && (q.maxSendTime-q.minSendTime) >= q.congestedConfig.MinDuration.Microseconds() {
+	if q.congestedConfig.IsTriggered(q.numGroups, q.maxSendTime-q.minSendTime) {
 		q.isSealed = true
 	}
 }
@@ -121,11 +126,26 @@ func (q *qdMeasurement) IsSealed() bool {
 }
 
 func (q *qdMeasurement) IsEarlyWarningTriggered() bool {
-	return q.numGroups >= q.earlyWarningConfig.MinNumberOfGroups && (q.maxSendTime-q.minSendTime) >= q.earlyWarningConfig.MinDuration.Microseconds()
+	return q.earlyWarningConfig.IsTriggered(q.numGroups, q.maxSendTime-q.minSendTime)
 }
 
 func (q *qdMeasurement) IsCongestedTriggered() bool {
-	return q.numGroups >= q.congestedConfig.MinNumberOfGroups && (q.maxSendTime-q.minSendTime) >= q.congestedConfig.MinDuration.Microseconds()
+	return q.congestedConfig.IsTriggered(q.numGroups, q.maxSendTime-q.minSendTime)
+}
+
+func (q *qdMeasurement) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if q == nil {
+		return nil
+	}
+
+	e.AddInt("numGroups", q.numGroups)
+	e.AddInt64("minSendTime", q.minSendTime)
+	e.AddInt64("maxSendTime", q.maxSendTime)
+	e.AddDuration("duration", time.Duration((q.maxSendTime - q.minSendTime) * 1000))
+	e.AddBool("isSealed", q.isSealed)
+	e.AddBool("isEarlyWarningTriggered", q.IsEarlyWarningTriggered())
+	e.AddBool("isCongestedTriggered", q.IsCongestedTriggered())
+	return nil
 }
 
 // -------------------------------------------------------------------------------
@@ -167,13 +187,14 @@ func (l *lossMeasurement) ProcessPacketGroup(pg *packetGroup) {
 		return
 	}
 
+	l.numGroups++
 	l.ts.Merge(pg.Traffic())
 
 	duration := l.ts.Duration()
-	if l.numGroups >= l.earlyWarningConfig.MinNumberOfGroups && duration >= l.earlyWarningConfig.MinDuration.Microseconds() {
+	if l.earlyWarningConfig.IsTriggered(l.numGroups, duration) {
 		l.earlyWarningWeightedLoss = l.ts.WeightedLoss()
 	}
-	if l.numGroups >= l.congestedConfig.MinNumberOfGroups && duration >= l.congestedConfig.MinDuration.Microseconds() {
+	if l.congestedConfig.IsTriggered(l.numGroups, duration) {
 		l.congestedWeightedLoss = l.ts.WeightedLoss()
 		l.isSealed = true // can seal if congested thresholds are satisfied as those should be higher
 	}
@@ -189,6 +210,21 @@ func (l *lossMeasurement) IsEarlyWarningTriggered() bool {
 
 func (l *lossMeasurement) IsCongestedTriggered() bool {
 	return l.congestedWeightedLoss > l.congestionMinLoss
+}
+
+func (l *lossMeasurement) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if l == nil {
+		return nil
+	}
+
+	e.AddInt("numGroups", l.numGroups)
+	e.AddObject("ts", l.ts)
+	e.AddFloat64("earlyWarningWeightedLoss", l.earlyWarningWeightedLoss)
+	e.AddFloat64("congestedWeightedLoss", l.congestedWeightedLoss)
+	e.AddBool("isSealed", l.isSealed)
+	e.AddBool("isEarlyWarningTriggered", l.IsEarlyWarningTriggered())
+	e.AddBool("isCongestedTriggered", l.IsCongestedTriggered())
+	return nil
 }
 
 // -------------------------------------------------------------------------------
@@ -329,6 +365,8 @@ func (c *congestionDetector) updateCongestionState(state CongestionState, reason
 		"from", c.congestionState,
 		"to", state,
 		"reason", reason,
+		"numPacketGroups", len(c.packetGroups),
+		"numContributingGroups", len(c.packetGroups[oldestContributingGroup:]),
 		"contributingGroups", logger.ObjectSlice(c.packetGroups[oldestContributingGroup:]),
 		"estimatedAvailableChannelCapacity", c.estimatedAvailableChannelCapacity,
 	)
@@ -381,11 +419,10 @@ func (c *congestionDetector) prunePacketGroups() {
 		return
 	}
 
-	bst := c.packetTracker.BaseSendTime()
-	if bst == 0 {
+	threshold, ok := c.packetTracker.BaseSendTimeThreshold(c.params.Config.PacketGroupMaxAge.Microseconds())
+	if !ok {
 		return
 	}
-	threshold := mono.UnixMicro() - bst - c.params.Config.PacketGroupMaxAge.Microseconds()
 
 	for idx, pg := range c.packetGroups {
 		if mst := pg.MinSendTime(); mst > threshold {
@@ -443,8 +480,14 @@ func (c *congestionDetector) isCongestionSignalTriggered() (bool, string, bool, 
 			congestedReason = "loss"
 		}
 	}
+	// RAJA-REMOVE START
+	if congestedTriggered {
+		c.params.Logger.Infow("congested triggered", "qd", qdMeasurement, "loss", lossMeasurement)	// REMOVE
+	}
+	// RAJA-REMOVE END
 
-	return earlyWarningTriggered, earlyWarningReason, congestedTriggered, congestedReason, idx
+
+	return earlyWarningTriggered, earlyWarningReason, congestedTriggered, congestedReason, max(0, idx)
 }
 
 func (c *congestionDetector) congestionDetectionStateMachine() {
@@ -457,7 +500,7 @@ func (c *congestionDetector) congestionDetectionStateMachine() {
 	switch state {
 	case CongestionStateNone:
 		if congestedTriggered {
-			c.params.Logger.Warnw("invalid congested state transition", nil, "from", state)
+			c.params.Logger.Warnw("invalid congested state transition", nil, "from", state, "reason", congestedReason)
 		}
 		if earlyWarningTriggered {
 			newState = CongestionStateEarlyWarning
@@ -474,7 +517,7 @@ func (c *congestionDetector) congestionDetectionStateMachine() {
 
 	case CongestionStateEarlyWarningHangover:
 		if congestedTriggered {
-			c.params.Logger.Warnw("invalid congested state transition", nil, "from", state)
+			c.params.Logger.Warnw("invalid congested state transition", nil, "from", state, "reason", congestedReason)
 		}
 		if earlyWarningTriggered {
 			newState = CongestionStateEarlyWarning
@@ -490,7 +533,7 @@ func (c *congestionDetector) congestionDetectionStateMachine() {
 
 	case CongestionStateCongestedHangover:
 		if congestedTriggered {
-			c.params.Logger.Warnw("invalid congested state transition", nil, "from", state)
+			c.params.Logger.Warnw("invalid congested state transition", nil, "from", state, "reason", congestedReason)
 		}
 		if earlyWarningTriggered {
 			newState = CongestionStateEarlyWarning
@@ -564,11 +607,10 @@ func (c *congestionDetector) estimateAvailableChannelCapacity() {
 		return
 	}
 
-	bst := c.packetTracker.BaseSendTime()
-	if bst == 0 {
+	threshold, ok := c.packetTracker.BaseSendTimeThreshold(c.params.Config.RateMeasurementWindowDurationMax.Microseconds())
+	if !ok {
 		return
 	}
-	threshold := mono.UnixMicro() - bst - c.params.Config.RateMeasurementWindowDurationMax.Microseconds()
 
 	agg := newTrafficStats(trafficStatsParams{
 		Config: c.params.Config.WeightedLoss,
@@ -576,7 +618,15 @@ func (c *congestionDetector) estimateAvailableChannelCapacity() {
 	})
 	for idx := len(c.packetGroups) - 1; idx >= 0; idx-- {
 		pg := c.packetGroups[idx]
-		if pg.MinSendTime() < threshold {
+		if mst := pg.MinSendTime(); mst != 0 && mst < threshold {
+			c.params.Logger.Infow(
+				"ending agg",
+				"idx", idx,
+				"mst", mst,
+				"threshold", threshold,
+				"numGroups", len(c.packetGroups),
+				"now", mono.UnixMicro() - c.packetTracker.baseSendTime,
+			)	// REMOVE
 			break
 		}
 
@@ -601,13 +651,13 @@ func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 
 	probingStartSequenceNumber, probingStartSequenceNumberOk := c.packetTracker.ProbingStartSequenceNumber()
 	probingEndSequenceNumber, probingEndSequenceNumberOk := c.packetTracker.ProbingEndSequenceNumber()
-	c.params.Logger.Infow(
-		"probe sequence numbers",
-		"startOk", probingStartSequenceNumberOk,
-		"start", probingStartSequenceNumber,
-		"endOk", probingEndSequenceNumberOk,
-		"end", probingEndSequenceNumber,
-	) // REMOVE
+	// SSBWE-REMOVE c.params.Logger.Infow(
+		// SSBWE-REMOVE "probe sequence numbers",
+		// SSBWE-REMOVE "startOk", probingStartSequenceNumberOk,
+		// SSBWE-REMOVE "start", probingStartSequenceNumber,
+		// SSBWE-REMOVE "endOk", probingEndSequenceNumberOk,
+		// SSBWE-REMOVE "end", probingEndSequenceNumber,
+	// SSBWE-REMOVE ) // SSBWE-REMOVE
 
 	if len(c.packetGroups) == 0 {
 		c.packetGroups = append(

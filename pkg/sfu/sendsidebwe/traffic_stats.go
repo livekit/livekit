@@ -62,7 +62,7 @@ func newTrafficStats(params trafficStatsParams) *trafficStats {
 }
 
 func (ts *trafficStats) Merge(rhs *trafficStats) {
-	if rhs.minSendTime == 0 || rhs.minSendTime < ts.minSendTime {
+	if ts.minSendTime == 0 || rhs.minSendTime < ts.minSendTime {
 		ts.minSendTime = rhs.minSendTime
 	}
 	if rhs.maxSendTime > ts.maxSendTime {

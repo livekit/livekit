@@ -226,7 +226,7 @@ func (p *packetGroup) MinSendTime() int64 {
 }
 
 func (p *packetGroup) SendWindow() (int64, int64) {
-	return p.maxSendTime, p.minSendTime
+	return p.minSendTime, p.maxSendTime
 }
 
 func (p *packetGroup) PropagatedQueuingDelay() (int64, bool) {
@@ -280,6 +280,9 @@ func (p *packetGroup) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	})
 	ts.Merge(p.Traffic())
 	e.AddObject("trafficStats", ts)
+	e.AddInt64("queuingDelay", p.queuingDelay)
+	pqd, _ := p.PropagatedQueuingDelay()
+	e.AddInt64("propagatedQueuingDelay", pqd)
 
 	e.AddBool("isFinalized", p.isFinalized)
 	return nil

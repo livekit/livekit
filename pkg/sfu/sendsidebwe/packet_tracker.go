@@ -15,18 +15,12 @@
 package sendsidebwe
 
 import (
-	"errors"
 	"math/rand"
 	"sync"
 	"time"
 
 	"github.com/livekit/protocol/logger"
-)
-
-// -------------------------------------------------------------------------------
-
-var (
-	errNoPacketInRange = errors.New("no packet in range")
+	"github.com/livekit/protocol/utils/mono"
 )
 
 // -------------------------------------------------------------------------------
@@ -101,11 +95,15 @@ func (p *packetTracker) RecordPacketSendAndGetSequenceNumber(at time.Time, size 
 	return uint16(pi.sequenceNumber)
 }
 
-func (p *packetTracker) BaseSendTime() int64 {
+func (p *packetTracker) BaseSendTimeThreshold(threshold int64) (int64, bool) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	return p.baseSendTime
+	if p.baseSendTime == 0 {
+		return 0, false
+	}
+
+	return mono.UnixMicro() - p.baseSendTime - threshold, true
 }
 
 func (p *packetTracker) RecordPacketIndicationFromRemote(sn uint16, recvTime int64) (piRecv packetInfo, sendDelta, recvDelta int64) {
