@@ -749,9 +749,9 @@ func (w *WebRTCReceiver) forwardRTP(layer int32, buff *buffer.Buffer) {
 		// track video layers
 		if w.Kind() == webrtc.RTPCodecTypeVideo {
 			if spatialTrackers[spatialLayer] == nil {
-				spatialTrackers[spatialLayer] = w.streamTrackerManager.GetTracker(pkt.Spatial)
+				spatialTrackers[spatialLayer] = w.streamTrackerManager.GetTracker(spatialLayer)
 				if spatialTrackers[spatialLayer] == nil {
-					spatialTrackers[spatialLayer] = w.streamTrackerManager.AddTracker(pkt.Spatial)
+					spatialTrackers[spatialLayer] = w.streamTrackerManager.AddTracker(spatialLayer)
 				}
 			}
 			if spatialTrackers[spatialLayer] != nil {
