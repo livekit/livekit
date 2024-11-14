@@ -30,6 +30,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/livekit/livekit-server/pkg/sfu/sendsidebwe"
 	"github.com/livekit/livekit-server/pkg/utils"
 )
@@ -195,7 +196,7 @@ type StreamAllocator struct {
 
 	probeController *ProbeController
 
-	prober *Prober
+	prober *ccutils.Prober
 
 	channelObserver *ChannelObserver
 	// STREAM-ALLOCATOR-DATA rateMonitor     *RateMonitor
@@ -218,7 +219,7 @@ func NewStreamAllocator(params StreamAllocatorParams, enabled bool, allowPause b
 		params:     params,
 		enabled:    enabled,
 		allowPause: allowPause,
-		prober: NewProber(ProberParams{
+		prober: ccutils.NewProber(ccutils.ProberParams{
 			Logger: params.Logger,
 		}),
 		// STREAM-ALLOCATOR-DATA rateMonitor: NewRateMonitor(),
@@ -562,7 +563,7 @@ func (s *StreamAllocator) OnSendProbe(bytesToSend int) {
 }
 
 // called when prober finishes a probe cluster, could be called when prober is reset which stops an active cluster
-func (s *StreamAllocator) OnProbeClusterDone(info ProbeClusterInfo) {
+func (s *StreamAllocator) OnProbeClusterDone(info ccutils.ProbeClusterInfo) {
 	s.postEvent(Event{
 		Signal: streamAllocatorSignalProbeClusterDone,
 		Data:   info,
@@ -759,7 +760,7 @@ func (s *StreamAllocator) handleSignalSendProbe(event Event) {
 }
 
 func (s *StreamAllocator) handleSignalProbeClusterDone(event Event) {
-	info, _ := event.Data.(ProbeClusterInfo)
+	info, _ := event.Data.(ccutils.ProbeClusterInfo)
 	s.probeController.ProbeClusterDone(info)
 }
 
