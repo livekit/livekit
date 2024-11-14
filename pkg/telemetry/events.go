@@ -86,7 +86,6 @@ func (t *telemetryService) ParticipantJoined(
 			livekit.RoomName(room.Name),
 			livekit.ParticipantID(participant.Sid),
 			livekit.ParticipantIdentity(participant.Identity),
-			false,
 		)
 		if !found {
 			prometheus.IncrementParticipantRtcConnected(1)
@@ -125,7 +124,6 @@ func (t *telemetryService) ParticipantActive(
 			livekit.RoomName(room.Name),
 			livekit.ParticipantID(participant.Sid),
 			livekit.ParticipantIdentity(participant.Identity),
-			false,
 		)
 		if !found {
 			// need to also account for participant count
@@ -162,7 +160,6 @@ func (t *telemetryService) ParticipantResumed(
 			livekit.RoomName(room.Name),
 			livekit.ParticipantID(participant.Sid),
 			livekit.ParticipantIdentity(participant.Identity),
-			true,
 		)
 		if !found {
 			prometheus.AddParticipant()

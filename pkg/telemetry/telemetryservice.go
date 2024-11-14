@@ -197,7 +197,6 @@ func (t *telemetryService) getOrCreateWorker(
 	roomName livekit.RoomName,
 	participantID livekit.ParticipantID,
 	participantIdentity livekit.ParticipantIdentity,
-	transferConnectedState bool,
 ) (*StatsWorker, bool) {
 	t.workersMu.Lock()
 	defer t.workersMu.Unlock()
@@ -208,7 +207,7 @@ func (t *telemetryService) getOrCreateWorker(
 	}
 
 	existingIsConnected := false
-	if ok && transferConnectedState {
+	if ok {
 		existingIsConnected = worker.IsConnected()
 	}
 
