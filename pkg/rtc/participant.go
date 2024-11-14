@@ -2392,7 +2392,6 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 			p.supervisor.ClearPublishedTrack(trackID, mt)
 		}
 
-		// not logged when closing
 		p.params.Telemetry.TrackUnpublished(
 			context.Background(),
 			p.ID(),
@@ -2401,7 +2400,6 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 			true,
 		)
 
-		// re-use Track sid
 		p.pendingTracksLock.Lock()
 		if pti := p.pendingTracks[signalCid]; pti != nil {
 			p.sendTrackPublished(signalCid, pti.trackInfos[0])
