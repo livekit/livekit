@@ -69,7 +69,6 @@ func NewRTCService(
 		router:        router,
 		roomAllocator: ra,
 		store:         store,
-		upgrader:      websocket.Upgrader{},
 		currentNode:   currentNode,
 		config:        conf,
 		isDev:         conf.Development,
@@ -79,10 +78,14 @@ func NewRTCService(
 		connections:   map[*websocket.Conn]struct{}{},
 	}
 
-	// allow connections from any origin, since script may be hosted anywhere
-	// security is enforced by access tokens
-	s.upgrader.CheckOrigin = func(r *http.Request) bool {
-		return true
+	s.upgrader = websocket.Upgrader{
+		EnableCompression: true,
+
+		// allow connections from any origin, since script may be hosted anywhere
+		// security is enforced by access tokens
+		CheckOrigin: func(r *http.Request) bool {
+			return true
+		},
 	}
 
 	return s
