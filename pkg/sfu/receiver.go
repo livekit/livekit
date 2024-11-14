@@ -35,6 +35,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
+	"github.com/livekit/livekit-server/pkg/sfu/streamtracker"
 )
 
 var (
@@ -124,6 +125,8 @@ type TrackReceiver interface {
 	AddOnReady(func())
 }
 
+type redPktWriteFunc func(pkt *buffer.ExtPacket, spatialLayer int32) int
+
 // WebRTCReceiver receives a media track
 type WebRTCReceiver struct {
 	logger logger.Logger
@@ -164,7 +167,7 @@ type WebRTCReceiver struct {
 
 	primaryReceiver atomic.Pointer[RedPrimaryReceiver]
 	redReceiver     atomic.Pointer[RedReceiver]
-	redPktWriter    func(pkt *buffer.ExtPacket, spatialLayer int32) int
+	redPktWriter    atomic.Value // redPktWriteFunc
 
 	forwardStats *ForwardStats
 }
@@ -411,7 +414,7 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 		w.streamTrackerManager.AddTracker(layer)
 	}
 
-	go w.forwardRTP(layer)
+	go w.forwardRTP(layer, buff)
 	return nil
 }
 
@@ -691,10 +694,7 @@ func (w *WebRTCReceiver) GetLastSenderReportTime() time.Time {
 	return latestSRTime
 }
 
-func (w *WebRTCReceiver) forwardRTP(layer int32) {
-	pktBuf := make([]byte, bucket.MaxPktSize)
-	tracker := w.streamTrackerManager.GetTracker(layer)
-
+func (w *WebRTCReceiver) forwardRTP(layer int32, buff *buffer.Buffer) {
 	defer func() {
 		w.closeOnce.Do(func() {
 			w.closed.Store(true)
@@ -713,48 +713,57 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 		}
 	}()
 
+	var spatialTrackers [buffer.DefaultMaxLayerSpatial + 1]streamtracker.StreamTrackerWorker
+	if layer < 0 || int(layer) >= len(spatialTrackers) {
+		w.logger.Errorw("invalid layer", nil, "layer", layer)
+		return
+	}
+	spatialTrackers[layer] = w.streamTrackerManager.GetTracker(layer)
+
+	pktBuf := make([]byte, bucket.MaxPktSize)
 	for {
-		w.bufferMu.RLock()
-		buf := w.buffers[layer]
-		redPktWriter := w.redPktWriter
-		w.bufferMu.RUnlock()
-		pkt, err := buf.ReadExtended(pktBuf)
+		pkt, err := buff.ReadExtended(pktBuf)
 		if err == io.EOF {
 			return
 		}
 
-		spatialTracker := tracker
 		spatialLayer := layer
 		if pkt.Spatial >= 0 {
-			// svc packet, dispatch to correct tracker
+			// svc packet, take spatial layer info from packet
 			spatialLayer = pkt.Spatial
-			spatialTracker = w.streamTrackerManager.GetTracker(pkt.Spatial)
-			if spatialTracker == nil {
-				spatialTracker = w.streamTrackerManager.AddTracker(pkt.Spatial)
-			}
 		}
 
 		writeCount := w.downTrackSpreader.Broadcast(func(dt TrackSender) {
 			_ = dt.WriteRTP(pkt, spatialLayer)
 		})
 
-		if redPktWriter != nil {
-			writeCount += redPktWriter(pkt, spatialLayer)
+		if f := w.redPktWriter.Load(); f != nil {
+			writeCount += f.(redPktWriteFunc)(pkt, spatialLayer)
 		}
 
+		// track delay/jitter
 		if writeCount > 0 && w.forwardStats != nil {
 			w.forwardStats.Update(pkt.Arrival, time.Now().UnixNano())
 		}
 
-		if spatialTracker != nil {
-			spatialTracker.Observe(
-				pkt.Temporal,
-				len(pkt.RawPacket),
-				len(pkt.Packet.Payload),
-				pkt.Packet.Marker,
-				pkt.Packet.Timestamp,
-				pkt.DependencyDescriptor,
-			)
+		// track video layers
+		if w.Kind() == webrtc.RTPCodecTypeVideo {
+			if spatialTrackers[spatialLayer] == nil {
+				spatialTrackers[spatialLayer] = w.streamTrackerManager.GetTracker(pkt.Spatial)
+				if spatialTrackers[spatialLayer] == nil {
+					spatialTrackers[spatialLayer] = w.streamTrackerManager.AddTracker(pkt.Spatial)
+				}
+			}
+			if spatialTrackers[spatialLayer] != nil {
+				spatialTrackers[spatialLayer].Observe(
+					pkt.Temporal,
+					len(pkt.RawPacket),
+					len(pkt.Packet.Payload),
+					pkt.Packet.Marker,
+					pkt.Packet.Timestamp,
+					pkt.DependencyDescriptor,
+				)
+			}
 		}
 	}
 }
@@ -810,9 +819,7 @@ func (w *WebRTCReceiver) GetPrimaryReceiverForRed() TrackReceiver {
 			Logger:    w.logger,
 		})
 		if w.primaryReceiver.CompareAndSwap(nil, pr) {
-			w.bufferMu.Lock()
-			w.redPktWriter = pr.ForwardRTP
-			w.bufferMu.Unlock()
+			w.redPktWriter.Store(redPktWriteFunc(pr.ForwardRTP))
 		}
 	}
 	return w.primaryReceiver.Load()
@@ -829,9 +836,7 @@ func (w *WebRTCReceiver) GetRedReceiver() TrackReceiver {
 			Logger:    w.logger,
 		})
 		if w.redReceiver.CompareAndSwap(nil, pr) {
-			w.bufferMu.Lock()
-			w.redPktWriter = pr.ForwardRTP
-			w.bufferMu.Unlock()
+			w.redPktWriter.Store(redPktWriteFunc(pr.ForwardRTP))
 		}
 	}
 	return w.redReceiver.Load()
