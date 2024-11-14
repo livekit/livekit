@@ -315,7 +315,7 @@ var DefaultConfig = Config{
 			AllowPause:                false,
 			StreamAllocator:           streamallocator.DefaultStreamAllocatorConfig,
 			UseSendSideBWEInterceptor: false,
-			UseSendSideBWE:            true,
+			UseSendSideBWE:            false,
 			SendSideBWE:               sendsidebwe.DefaultSendSideBWEConfig,
 		},
 	},
