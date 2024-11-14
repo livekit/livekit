@@ -349,7 +349,7 @@ func (s *StreamTrackerManager) GetTracker(layer int32) streamtracker.StreamTrack
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 
-	if int(layer) >= len(s.trackers) {
+	if layer < 0 || int(layer) >= len(s.trackers) {
 		s.logger.Errorw("unexpected layer", nil, "layer", layer)
 		return nil
 	}
