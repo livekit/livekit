@@ -129,10 +129,6 @@ func (p *ProbeController) ProbeClusterDone(info ccutils.ProbeClusterInfo) {
 
 	p.doneProbeClusterInfo = info
 	p.lock.Unlock()
-
-	if p.sendSideBWE != nil {
-		p.sendSideBWE.ProbingEnd()
-	}
 }
 
 func (p *ProbeController) CheckProbe(trend ChannelTrend, highestEstimate int64) {
@@ -296,10 +292,7 @@ func (p *ProbeController) pollProbe(probeClusterId ccutils.ProbeClusterId) {
 		return
 	}
 
-	p.sendSideBWE.ProbingStart()
-
 	startingEstimate := p.sendSideBWE.GetEstimatedAvailableChannelCapacity()
-
 	go func() {
 		for {
 			p.lock.Lock()

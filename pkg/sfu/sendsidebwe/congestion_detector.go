@@ -321,8 +321,6 @@ type congestionDetector struct {
 	congestedTrafficStats             *trafficStats
 
 	onCongestionStateChange func(congestionState CongestionState, estimatedAvailableChannelCapacity int64)
-
-	probeGroup *packetGroup
 }
 
 func newCongestionDetector(params congestionDetectorParams) *congestionDetector {
@@ -656,16 +654,6 @@ func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 		c.params.Logger.Infow("received out-of-order feedback report")
 	}
 
-	probingStartSequenceNumber, probingStartSequenceNumberOk := c.packetTracker.ProbingStartSequenceNumber()
-	probingEndSequenceNumber, probingEndSequenceNumberOk := c.packetTracker.ProbingEndSequenceNumber()
-	// SSBWE-REMOVE c.params.Logger.Infow(
-	// SSBWE-REMOVE "probe sequence numbers",
-	// SSBWE-REMOVE "startOk", probingStartSequenceNumberOk,
-	// SSBWE-REMOVE "start", probingStartSequenceNumber,
-	// SSBWE-REMOVE "endOk", probingEndSequenceNumberOk,
-	// SSBWE-REMOVE "end", probingEndSequenceNumber,
-	// SSBWE-REMOVE ) // SSBWE-REMOVE
-
 	if len(c.packetGroups) == 0 {
 		c.packetGroups = append(
 			c.packetGroups,
@@ -684,35 +672,6 @@ func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 	trackPacketGroup := func(pi *packetInfo, sendDelta, recvDelta int64, isLost bool) {
 		if pi == nil {
 			return
-		}
-
-		if c.probeGroup == nil && probingStartSequenceNumberOk && pi.sequenceNumber == probingStartSequenceNumber {
-			// force finalize the active group and start the probe group
-			pg.Finalize()
-
-			c.probeGroup = newPacketGroup(
-				packetGroupParams{
-					// some high numbers to ensure all packets of a probe form the same group
-					Config: PacketGroupConfig{
-						MinPackets:        2000,
-						MaxWindowDuration: 50000 * time.Millisecond,
-					},
-					WeightedLoss: c.params.Config.WeightedLoss,
-					Logger:       c.params.Logger,
-				},
-				0,
-			)
-			pg = c.probeGroup
-		}
-		if c.probeGroup != nil {
-			c.params.Logger.Infow("processing probe sequence", "packetInfo", pi, "sn", pi.sequenceNumber) // SSBWE-REMOVE
-			pg = c.probeGroup
-		}
-
-		if c.probeGroup != nil && probingEndSequenceNumberOk && pi.sequenceNumber == probingEndSequenceNumber {
-			c.probeGroup.Finalize()
-			c.params.Logger.Infow("probe group done", "group", c.probeGroup) // SSBWE-REMOVE
-			c.probeGroup = nil
 		}
 
 		err := pg.Add(pi, sendDelta, recvDelta, isLost)

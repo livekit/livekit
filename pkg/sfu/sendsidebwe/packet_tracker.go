@@ -41,17 +41,12 @@ type packetTracker struct {
 
 	baseRecvTime int64
 	piLastRecv   *packetInfo
-
-	inProbe                    bool
-	probingStartSequenceNumber uint64
-	probingEndSequenceNumber   uint64
 }
 
 func newPacketTracker(params packetTrackerParams) *packetTracker {
 	return &packetTracker{
-		params:                   params,
-		sequenceNumber:           uint64(rand.Intn(1<<14)) + uint64(1<<15), // a random number in third quartile of sequence number space
-		probingEndSequenceNumber: 0xdeadbeef,
+		params:         params,
+		sequenceNumber: uint64(rand.Intn(1<<14)) + uint64(1<<15), // a random number in third quartile of sequence number space
 	}
 }
 
@@ -72,19 +67,6 @@ func (p *packetTracker) RecordPacketSendAndGetSequenceNumber(at time.Time, size 
 	pi.size = uint16(size)
 	pi.isRTX = isRTX
 	// SSBWE-REMOVE p.params.Logger.Infow("packet sent", "packetInfo", pi) // SSBWE-REMOVE
-
-	if p.inProbe {
-		if p.probingStartSequenceNumber == 0 {
-			p.probingStartSequenceNumber = p.sequenceNumber
-			p.params.Logger.Infow("probing start", "sn", p.probingStartSequenceNumber) // REMOVE
-		}
-	} else {
-		if p.probingEndSequenceNumber == 0 {
-			// SSBWE-TODO: this is not right as this after a probe end
-			p.probingEndSequenceNumber = p.sequenceNumber
-			p.params.Logger.Infow("probing end", "sn", p.probingEndSequenceNumber) // REMOVE
-		}
-	}
 
 	p.sequenceNumber++
 
@@ -134,45 +116,6 @@ func (p *packetTracker) RecordPacketIndicationFromRemote(sn uint16, recvTime int
 	}
 	p.piLastRecv = pi
 	return
-}
-
-func (p *packetTracker) ProbingStart() {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	p.inProbe = true
-	p.probingStartSequenceNumber = 0
-	p.probingEndSequenceNumber = 0xdeadbeef
-}
-
-func (p *packetTracker) ProbingEnd() {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	p.inProbe = false
-	p.probingEndSequenceNumber = 0
-}
-
-func (p *packetTracker) ProbingStartSequenceNumber() (uint64, bool) {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	if p.probingStartSequenceNumber == 0 {
-		return 0, false
-	}
-
-	return p.probingStartSequenceNumber, true
-}
-
-func (p *packetTracker) ProbingEndSequenceNumber() (uint64, bool) {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	if p.probingEndSequenceNumber == 0 || p.probingEndSequenceNumber == 0xdeadbeef {
-		return 0, false
-	}
-
-	return p.probingEndSequenceNumber, true
 }
 
 func (p *packetTracker) getPacketInfo(sn uint16) *packetInfo {
