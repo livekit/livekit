@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/livekit/livekit-server/pkg/sfu/sendsidebwe"
 	"github.com/livekit/protocol/logger"
 )
@@ -66,7 +67,7 @@ var (
 
 type ProbeControllerParams struct {
 	Config ProbeControllerConfig
-	Prober *Prober
+	Prober *ccutils.Prober
 	Logger logger.Logger
 }
 
@@ -78,10 +79,10 @@ type ProbeController struct {
 	probeInterval             time.Duration
 	lastProbeStartTime        time.Time
 	probeGoalBps              int64
-	probeClusterId            ProbeClusterId
-	doneProbeClusterInfo      ProbeClusterInfo
-	abortedProbeClusterId     ProbeClusterId
-	goalReachedProbeClusterId ProbeClusterId
+	probeClusterId            ccutils.ProbeClusterId
+	doneProbeClusterInfo      ccutils.ProbeClusterInfo
+	abortedProbeClusterId     ccutils.ProbeClusterId
+	goalReachedProbeClusterId ccutils.ProbeClusterId
 	probeTrendObserved        bool
 	probeEndTime              time.Time
 	probeDuration             time.Duration
@@ -117,23 +118,24 @@ func (p *ProbeController) Reset() {
 	p.clearProbeLocked()
 }
 
-func (p *ProbeController) ProbeClusterDone(info ProbeClusterInfo) {
+func (p *ProbeController) ProbeClusterDone(info ccutils.ProbeClusterInfo) {
 	p.lock.Lock()
-	defer p.lock.Unlock()
 
 	if p.probeClusterId != info.Id {
 		p.params.Logger.Debugw("not expected probe cluster", "probeClusterId", p.probeClusterId, "resetProbeClusterId", info.Id)
+		p.lock.Unlock()
 		return
 	}
 
 	p.doneProbeClusterInfo = info
+	p.lock.Unlock()
 }
 
 func (p *ProbeController) CheckProbe(trend ChannelTrend, highestEstimate int64) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	if p.probeClusterId == ProbeClusterIdInvalid {
+	if p.probeClusterId == ccutils.ProbeClusterIdInvalid {
 		return
 	}
 
@@ -181,15 +183,15 @@ func (p *ProbeController) MaybeFinalizeProbe(
 		return false, false, false
 	}
 
-	if p.goalReachedProbeClusterId != ProbeClusterIdInvalid {
+	if p.goalReachedProbeClusterId != ccutils.ProbeClusterIdInvalid {
 		// finalise goal reached probe cluster
 		p.finalizeProbeLocked(ChannelTrendNeutral)
 		return true, true, true
 	}
 
-	if (isComplete || p.abortedProbeClusterId != ProbeClusterIdInvalid) &&
+	if (isComplete || p.abortedProbeClusterId != ccutils.ProbeClusterIdInvalid) &&
 		p.probeEndTime.IsZero() &&
-		p.doneProbeClusterInfo.Id != ProbeClusterIdInvalid && p.doneProbeClusterInfo.Id == p.probeClusterId {
+		p.doneProbeClusterInfo.Id != ccutils.ProbeClusterIdInvalid && p.doneProbeClusterInfo.Id == p.probeClusterId {
 		// ensure any queueing due to probing is flushed
 		// STREAM-ALLOCATOR-TODO: CongestionControlProbeConfig.SettleWait should actually be a certain number of RTTs.
 		expectedDuration := float64(9.0)
@@ -227,7 +229,7 @@ func (p *ProbeController) DoesProbeNeedFinalize() bool {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
-	return p.abortedProbeClusterId != ProbeClusterIdInvalid || p.goalReachedProbeClusterId != ProbeClusterIdInvalid
+	return p.abortedProbeClusterId != ccutils.ProbeClusterIdInvalid || p.goalReachedProbeClusterId != ccutils.ProbeClusterIdInvalid
 }
 
 func (p *ProbeController) finalizeProbeLocked(trend ChannelTrend) (isNotFailing bool) {
@@ -250,7 +252,7 @@ func (p *ProbeController) finalizeProbeLocked(trend ChannelTrend) (isNotFailing 
 	return true
 }
 
-func (p *ProbeController) InitProbe(probeGoalDeltaBps int64, expectedBandwidthUsage int64) (ProbeClusterId, int64) {
+func (p *ProbeController) InitProbe(probeGoalDeltaBps int64, expectedBandwidthUsage int64) (ccutils.ProbeClusterId, int64) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
@@ -263,16 +265,16 @@ func (p *ProbeController) InitProbe(probeGoalDeltaBps int64, expectedBandwidthUs
 	}
 	p.probeGoalBps = expectedBandwidthUsage + desiredIncreaseBps
 
-	p.doneProbeClusterInfo = ProbeClusterInfo{Id: ProbeClusterIdInvalid}
-	p.abortedProbeClusterId = ProbeClusterIdInvalid
-	p.goalReachedProbeClusterId = ProbeClusterIdInvalid
+	p.doneProbeClusterInfo = ccutils.ProbeClusterInfo{Id: ccutils.ProbeClusterIdInvalid}
+	p.abortedProbeClusterId = ccutils.ProbeClusterIdInvalid
+	p.goalReachedProbeClusterId = ccutils.ProbeClusterIdInvalid
 
 	p.probeTrendObserved = false
 
 	p.probeEndTime = time.Time{}
 
 	p.probeClusterId = p.params.Prober.AddCluster(
-		ProbeClusterModeUniform,
+		ccutils.ProbeClusterModeUniform,
 		int(p.probeGoalBps),
 		int(expectedBandwidthUsage),
 		p.probeDuration,
@@ -285,13 +287,12 @@ func (p *ProbeController) InitProbe(probeGoalDeltaBps int64, expectedBandwidthUs
 }
 
 // SSBWE-TODO: try to do same path for both SSBWE and regular, the congesting part might be different though
-func (p *ProbeController) pollProbe(probeClusterId ProbeClusterId) {
+func (p *ProbeController) pollProbe(probeClusterId ccutils.ProbeClusterId) {
 	if p.sendSideBWE == nil {
 		return
 	}
 
 	startingEstimate := p.sendSideBWE.GetEstimatedAvailableChannelCapacity()
-
 	go func() {
 		for {
 			p.lock.Lock()
@@ -352,10 +353,10 @@ func (p *ProbeController) pollProbe(probeClusterId ProbeClusterId) {
 }
 
 func (p *ProbeController) clearProbeLocked() {
-	p.probeClusterId = ProbeClusterIdInvalid
-	p.doneProbeClusterInfo = ProbeClusterInfo{Id: ProbeClusterIdInvalid}
-	p.abortedProbeClusterId = ProbeClusterIdInvalid
-	p.goalReachedProbeClusterId = ProbeClusterIdInvalid
+	p.probeClusterId = ccutils.ProbeClusterIdInvalid
+	p.doneProbeClusterInfo = ccutils.ProbeClusterInfo{Id: ccutils.ProbeClusterIdInvalid}
+	p.abortedProbeClusterId = ccutils.ProbeClusterIdInvalid
+	p.goalReachedProbeClusterId = ccutils.ProbeClusterIdInvalid
 }
 
 func (p *ProbeController) backoffProbeIntervalLocked() {
@@ -404,14 +405,14 @@ func (p *ProbeController) IsInProbe() bool {
 }
 
 func (p *ProbeController) isInProbeLocked() bool {
-	return p.probeClusterId != ProbeClusterIdInvalid
+	return p.probeClusterId != ccutils.ProbeClusterIdInvalid
 }
 
 func (p *ProbeController) CanProbe() bool {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
-	return time.Since(p.lastProbeStartTime) >= p.probeInterval && p.probeClusterId == ProbeClusterIdInvalid
+	return time.Since(p.lastProbeStartTime) >= p.probeInterval && p.probeClusterId == ccutils.ProbeClusterIdInvalid
 }
 
 // ------------------------------------------------
