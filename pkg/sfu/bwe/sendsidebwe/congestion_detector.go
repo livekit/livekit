@@ -20,6 +20,7 @@ import (
 
 	"github.com/frostbyte73/core"
 	"github.com/gammazero/deque"
+	"github.com/livekit/livekit-server/pkg/sfu/bwe"
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils/mono"
@@ -315,12 +316,12 @@ type congestionDetector struct {
 	stop core.Fuse
 
 	estimatedAvailableChannelCapacity int64
-	congestionState                   CongestionState
+	congestionState                   bwe.CongestionState
 	congestionStateSwitchedAt         time.Time
 	congestedCTRTrend                 *ccutils.TrendDetector[float64]
 	congestedTrafficStats             *trafficStats
 
-	onCongestionStateChange func(congestionState CongestionState, estimatedAvailableChannelCapacity int64)
+	bweListener bwe.BWEListener
 }
 
 func newCongestionDetector(params congestionDetectorParams) *congestionDetector {
@@ -338,25 +339,34 @@ func newCongestionDetector(params congestionDetectorParams) *congestionDetector 
 	return c
 }
 
+func (c *congestionDetector) Reset() {
+	// RAJA-TODO-BWE
+	//  1. may be clear all packet groups?
+	//  2. reset congestion state to none
+	//  3. reset estimate to 100 Mbps
+	//  4. reset packet_tracker?? maybe only the probe state??
+}
+
 func (c *congestionDetector) Stop() {
 	c.stop.Break()
 }
 
-func (c *congestionDetector) OnCongestionStateChange(f func(congestionState CongestionState, estimatedAvailableChannelCapacity int64)) {
+func (c *congestionDetector) SetBWEListener(bweListener bwe.BWEListener) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	c.onCongestionStateChange = f
+	c.bweListener = bweListener
 }
 
-func (c *congestionDetector) GetCongestionState() CongestionState {
+// RAJA-TODO-BWE: this API should not be necessary - should be all callbacks from here
+func (c *congestionDetector) GetCongestionState() bwe.CongestionState {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 
 	return c.congestionState
 }
 
-func (c *congestionDetector) updateCongestionState(state CongestionState, reason string, oldestContributingGroup int) {
+func (c *congestionDetector) updateCongestionState(state bwe.CongestionState, reason string, oldestContributingGroup int) {
 	c.lock.Lock()
 	c.params.Logger.Infow(
 		"congestion state change",
@@ -369,15 +379,19 @@ func (c *congestionDetector) updateCongestionState(state CongestionState, reason
 		"estimatedAvailableChannelCapacity", c.estimatedAvailableChannelCapacity,
 	)
 
+	if state != c.congestionState {
+		c.congestionStateSwitchedAt = mono.Now()
+	}
+
 	prevState := c.congestionState
 	c.congestionState = state
 
-	onCongestionStateChange := c.onCongestionStateChange
+	bweListener := c.bweListener
 	estimatedAvailableChannelCapacity := c.estimatedAvailableChannelCapacity
 	c.lock.Unlock()
 
-	if onCongestionStateChange != nil {
-		onCongestionStateChange(state, estimatedAvailableChannelCapacity)
+	if bweListener != nil {
+		bweListener.OnCongestionStateChange(state, estimatedAvailableChannelCapacity)
 	}
 
 	// when in congested state, monitor changes in captured traffic ratio (CTR)
@@ -386,13 +400,14 @@ func (c *congestionDetector) updateCongestionState(state CongestionState, reason
 	// sub-optimal and not enough to reduce/relieve congestion, by monitoing CTR
 	// on a continuous basis allocations can be adjusted in the direction of
 	// reducing/relieving congestion
-	if state == CongestionStateCongested && prevState != CongestionStateCongested {
+	if state == bwe.CongestionStateCongested && prevState != bwe.CongestionStateCongested {
 		c.resetCTRTrend()
-	} else if state != CongestionStateCongested {
+	} else if state != bwe.CongestionStateCongested {
 		c.clearCTRTrend()
 	}
 }
 
+// RAJA-TODO-BWE: this API should not be necessary - should be all callbacks from here
 func (c *congestionDetector) GetEstimatedAvailableChannelCapacity() int64 {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
@@ -400,7 +415,7 @@ func (c *congestionDetector) GetEstimatedAvailableChannelCapacity() int64 {
 	return c.estimatedAvailableChannelCapacity
 }
 
-func (c *congestionDetector) HandleRTCP(report *rtcp.TransportLayerCC) {
+func (c *congestionDetector) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 	c.lock.Lock()
 	c.feedbackReports.PushBack(feedbackReport{mono.Now(), report})
 	c.lock.Unlock()
@@ -490,48 +505,48 @@ func (c *congestionDetector) congestionDetectionStateMachine() {
 	earlyWarningTriggered, earlyWarningReason, congestedTriggered, congestedReason, oldestContributingGroup := c.isCongestionSignalTriggered()
 
 	switch state {
-	case CongestionStateNone:
+	case bwe.CongestionStateNone:
 		if congestedTriggered {
 			c.params.Logger.Warnw("invalid congested state transition", nil, "from", state, "reason", congestedReason)
 		}
 		if earlyWarningTriggered {
-			newState = CongestionStateEarlyWarning
+			newState = bwe.CongestionStateEarlyWarning
 			reason = earlyWarningReason
 		}
 
-	case CongestionStateEarlyWarning:
+	case bwe.CongestionStateEarlyWarning:
 		if congestedTriggered {
-			newState = CongestionStateCongested
+			newState = bwe.CongestionStateCongested
 			reason = congestedReason
 		} else if !earlyWarningTriggered {
-			newState = CongestionStateEarlyWarningHangover
+			newState = bwe.CongestionStateEarlyWarningHangover
 		}
 
-	case CongestionStateEarlyWarningHangover:
+	case bwe.CongestionStateEarlyWarningHangover:
 		if congestedTriggered {
 			c.params.Logger.Warnw("invalid congested state transition", nil, "from", state, "reason", congestedReason)
 		}
 		if earlyWarningTriggered {
-			newState = CongestionStateEarlyWarning
+			newState = bwe.CongestionStateEarlyWarning
 			reason = earlyWarningReason
 		} else if time.Since(c.congestionStateSwitchedAt) >= c.params.Config.EarlyWarningHangover {
-			newState = CongestionStateNone
+			newState = bwe.CongestionStateNone
 		}
 
-	case CongestionStateCongested:
+	case bwe.CongestionStateCongested:
 		if !congestedTriggered {
-			newState = CongestionStateCongestedHangover
+			newState = bwe.CongestionStateCongestedHangover
 		}
 
-	case CongestionStateCongestedHangover:
+	case bwe.CongestionStateCongestedHangover:
 		if congestedTriggered {
 			c.params.Logger.Warnw("invalid congested state transition", nil, "from", state, "reason", congestedReason)
 		}
 		if earlyWarningTriggered {
-			newState = CongestionStateEarlyWarning
+			newState = bwe.CongestionStateEarlyWarning
 			reason = earlyWarningReason
 		} else if time.Since(c.congestionStateSwitchedAt) >= c.params.Config.CongestedHangover {
-			newState = CongestionStateNone
+			newState = bwe.CongestionStateNone
 		}
 	}
 
@@ -539,7 +554,6 @@ func (c *congestionDetector) congestionDetectionStateMachine() {
 
 	// update after running the above estimate as state change callback includes the estimated available channel capacity
 	if newState != state {
-		c.congestionStateSwitchedAt = mono.Now()
 		c.updateCongestionState(newState, reason, oldestContributingGroup)
 	}
 }
@@ -583,11 +597,11 @@ func (c *congestionDetector) updateCTRTrend(pg *packetGroup) {
 	c.lock.RLock()
 	state := c.congestionState
 	estimatedAvailableChannelCapacity := c.estimatedAvailableChannelCapacity
-	onCongestionStateChange := c.onCongestionStateChange
+	bweListener := c.bweListener
 	c.lock.RUnlock()
 
-	if onCongestionStateChange != nil {
-		onCongestionStateChange(state, estimatedAvailableChannelCapacity)
+	if bweListener != nil {
+		bweListener.OnCongestionStateChange(state, estimatedAvailableChannelCapacity)
 	}
 
 	// reset to get new set of samples for next trend
@@ -787,7 +801,7 @@ func (c *congestionDetector) worker() {
 				c.processFeedbackReport(fbReport)
 			}
 
-			if c.GetCongestionState() == CongestionStateCongested {
+			if c.GetCongestionState() == bwe.CongestionStateCongested {
 				ticker.Reset(c.params.Config.PeriodicCheckIntervalCongested)
 			} else {
 				ticker.Reset(c.params.Config.PeriodicCheckInterval)

@@ -20,7 +20,7 @@ import (
 
 	"github.com/frostbyte73/core"
 	"github.com/gammazero/deque"
-	"github.com/livekit/livekit-server/pkg/sfu/sendsidebwe"
+	"github.com/livekit/livekit-server/pkg/sfu/bwe/sendsidebwe"
 	"github.com/livekit/protocol/logger"
 )
 

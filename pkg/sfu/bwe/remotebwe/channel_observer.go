@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package streamallocator
+package remotebwe
 
 import (
 	"fmt"
@@ -47,21 +47,21 @@ func (c ChannelTrend) String() string {
 
 // ------------------------------------------------
 
-type ChannelCongestionReason int
+type channelCongestionReason int
 
 const (
-	ChannelCongestionReasonNone ChannelCongestionReason = iota
-	ChannelCongestionReasonEstimate
-	ChannelCongestionReasonLoss
+	channelCongestionReasonNone channelCongestionReason = iota
+	channelCongestionReasonEstimate
+	channelCongestionReasonLoss
 )
 
-func (c ChannelCongestionReason) String() string {
+func (c channelCongestionReason) String() string {
 	switch c {
-	case ChannelCongestionReasonNone:
+	case channelCongestionReasonNone:
 		return "NONE"
-	case ChannelCongestionReasonEstimate:
+	case channelCongestionReasonEstimate:
 		return "ESTIMATE"
-	case ChannelCongestionReasonLoss:
+	case channelCongestionReasonLoss:
 		return "LOSS"
 	default:
 		return fmt.Sprintf("%d", int(c))
@@ -85,9 +85,9 @@ var (
 		ValidityWindow:         10 * time.Second,
 	}
 
-	DefaultChannelObserverConfigProbe = ChannelObserverConfig{
+	defaultChannelObserverConfigProbe = ChannelObserverConfig{
 		Estimate: defaultTrendDetectorConfigProbe,
-		Nack:     DefaultNackTrackerConfigProbe,
+		Nack:     defaultNackTrackerConfigProbe,
 	}
 
 	defaultTrendDetectorConfigNonProbe = ccutils.TrendDetectorConfig{
@@ -99,29 +99,29 @@ var (
 		ValidityWindow:         10 * time.Second,
 	}
 
-	DefaultChannelObserverConfigNonProbe = ChannelObserverConfig{
+	defaultChannelObserverConfigNonProbe = ChannelObserverConfig{
 		Estimate: defaultTrendDetectorConfigNonProbe,
-		Nack:     DefaultNackTrackerConfigNonProbe,
+		Nack:     defaultNackTrackerConfigNonProbe,
 	}
 )
 
 // ------------------------------------------------
 
-type ChannelObserverParams struct {
+type channelObserverParams struct {
 	Name   string
 	Config ChannelObserverConfig
 }
 
-type ChannelObserver struct {
-	params ChannelObserverParams
+type channelObserver struct {
+	params channelObserverParams
 	logger logger.Logger
 
 	estimateTrend *ccutils.TrendDetector[int64]
-	nackTracker   *NackTracker
+	nackTracker   *nackTracker
 }
 
-func NewChannelObserver(params ChannelObserverParams, logger logger.Logger) *ChannelObserver {
-	return &ChannelObserver{
+func newChannelObserver(params channelObserverParams, logger logger.Logger) *channelObserver {
+	return &channelObserver{
 		params: params,
 		logger: logger,
 		estimateTrend: ccutils.NewTrendDetector[int64](ccutils.TrendDetectorParams{
@@ -129,7 +129,7 @@ func NewChannelObserver(params ChannelObserverParams, logger logger.Logger) *Cha
 			Logger: logger,
 			Config: params.Config.Estimate,
 		}),
-		nackTracker: NewNackTracker(NackTrackerParams{
+		nackTracker: newNackTracker(nackTrackerParams{
 			Name:   params.Name + "-nack",
 			Logger: logger,
 			Config: params.Config.Nack,
@@ -137,60 +137,60 @@ func NewChannelObserver(params ChannelObserverParams, logger logger.Logger) *Cha
 	}
 }
 
-func (c *ChannelObserver) SeedEstimate(estimate int64) {
+func (c *channelObserver) SeedEstimate(estimate int64) {
 	c.estimateTrend.Seed(estimate)
 }
 
-func (c *ChannelObserver) AddEstimate(estimate int64) {
+func (c *channelObserver) AddEstimate(estimate int64) {
 	c.estimateTrend.AddValue(estimate)
 }
 
-func (c *ChannelObserver) AddNack(packets uint32, repeatedNacks uint32) {
+func (c *channelObserver) AddNack(packets uint32, repeatedNacks uint32) {
 	c.nackTracker.Add(packets, repeatedNacks)
 }
 
-func (c *ChannelObserver) GetLowestEstimate() int64 {
+func (c *channelObserver) GetLowestEstimate() int64 {
 	return c.estimateTrend.GetLowest()
 }
 
-func (c *ChannelObserver) GetHighestEstimate() int64 {
+func (c *channelObserver) GetHighestEstimate() int64 {
 	return c.estimateTrend.GetHighest()
 }
 
-func (c *ChannelObserver) HasEnoughEstimateSamples() bool {
+func (c *channelObserver) HasEnoughEstimateSamples() bool {
 	return c.estimateTrend.HasEnoughSamples()
 }
 
-func (c *ChannelObserver) GetNackRatio() float64 {
+func (c *channelObserver) GetNackRatio() float64 {
 	return c.nackTracker.GetRatio()
 }
 
-/* STREAM-ALLOCATOR-DATA
-func (c *ChannelObserver) GetNackHistory() []string {
+/* REMOTE-BWE-DATA
+func (c *channelObserver) GetNackHistory() []string {
 	return c.nackTracker.GetHistory()
 }
 */
 
-func (c *ChannelObserver) GetTrend() (ChannelTrend, ChannelCongestionReason) {
+func (c *channelObserver) GetTrend() (ChannelTrend, channelCongestionReason) {
 	estimateDirection := c.estimateTrend.GetDirection()
 
 	switch {
 	case estimateDirection == ccutils.TrendDirectionDownward:
 		c.logger.Debugw("stream allocator: channel observer: estimate is trending downward", "channel", c.ToString())
-		return ChannelTrendCongesting, ChannelCongestionReasonEstimate
+		return ChannelTrendCongesting, channelCongestionReasonEstimate
 
 	case c.nackTracker.IsTriggered():
 		c.logger.Debugw("stream allocator: channel observer: high rate of repeated NACKs", "channel", c.ToString())
-		return ChannelTrendCongesting, ChannelCongestionReasonLoss
+		return ChannelTrendCongesting, channelCongestionReasonLoss
 
 	case estimateDirection == ccutils.TrendDirectionUpward:
-		return ChannelTrendClearing, ChannelCongestionReasonNone
+		return ChannelTrendClearing, channelCongestionReasonNone
 	}
 
-	return ChannelTrendNeutral, ChannelCongestionReasonNone
+	return ChannelTrendNeutral, channelCongestionReasonNone
 }
 
-func (c *ChannelObserver) ToString() string {
+func (c *channelObserver) ToString() string {
 	return fmt.Sprintf("name: %s, estimate: {%s}, nack {%s}", c.params.Name, c.estimateTrend.ToString(), c.nackTracker.ToString())
 }
 

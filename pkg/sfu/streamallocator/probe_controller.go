@@ -18,8 +18,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/sfu/bwe"
+	"github.com/livekit/livekit-server/pkg/sfu/bwe/remotebwe"
+	"github.com/livekit/livekit-server/pkg/sfu/bwe/sendsidebwe"
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
-	"github.com/livekit/livekit-server/pkg/sfu/sendsidebwe"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -75,7 +77,7 @@ type ProbeController struct {
 	params ProbeControllerParams
 
 	lock                      sync.RWMutex
-	sendSideBWE               *sendsidebwe.SendSideBWE
+	sendSideBWE               *sendsidebwe.SendSideBWE // RAJA-TODO: should just be BWE interface if needed
 	probeInterval             time.Duration
 	lastProbeStartTime        time.Time
 	probeGoalBps              int64
@@ -98,12 +100,14 @@ func NewProbeController(params ProbeControllerParams) *ProbeController {
 	return p
 }
 
+/* RAJA-TODO-BWE
 func (p *ProbeController) SetSendSideBWE(sendSideBWE *sendsidebwe.SendSideBWE) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
 	p.sendSideBWE = sendSideBWE
 }
+*/
 
 func (p *ProbeController) Reset() {
 	p.lock.Lock()
@@ -131,7 +135,8 @@ func (p *ProbeController) ProbeClusterDone(info ccutils.ProbeClusterInfo) {
 	p.lock.Unlock()
 }
 
-func (p *ProbeController) CheckProbe(trend ChannelTrend, highestEstimate int64) {
+// RAJA-TODO-BWE: trend should be some common stuff???
+func (p *ProbeController) CheckProbe(trend remotebwe.ChannelTrend, highestEstimate int64) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
@@ -139,7 +144,7 @@ func (p *ProbeController) CheckProbe(trend ChannelTrend, highestEstimate int64) 
 		return
 	}
 
-	if trend != ChannelTrendNeutral {
+	if trend != remotebwe.ChannelTrendNeutral {
 		p.probeTrendObserved = true
 	}
 
@@ -153,7 +158,7 @@ func (p *ProbeController) CheckProbe(trend ChannelTrend, highestEstimate int64) 
 		p.params.Logger.Debugw("stream allocator: probe: aborting, no trend", "cluster", p.probeClusterId)
 		p.abortProbeLocked()
 
-	case trend == ChannelTrendCongesting:
+	case trend == remotebwe.ChannelTrendCongesting:
 		// stop immediately if the probe is congesting channel more
 		p.params.Logger.Debugw("stream allocator: probe: aborting, channel is congesting", "cluster", p.probeClusterId)
 		p.abortProbeLocked()
@@ -173,7 +178,7 @@ func (p *ProbeController) CheckProbe(trend ChannelTrend, highestEstimate int64) 
 
 func (p *ProbeController) MaybeFinalizeProbe(
 	isComplete bool,
-	trend ChannelTrend,
+	trend remotebwe.ChannelTrend,
 	lowestEstimate int64,
 ) (isHandled bool, isNotFailing bool, isGoalReached bool) {
 	p.lock.Lock()
@@ -185,7 +190,7 @@ func (p *ProbeController) MaybeFinalizeProbe(
 
 	if p.goalReachedProbeClusterId != ccutils.ProbeClusterIdInvalid {
 		// finalise goal reached probe cluster
-		p.finalizeProbeLocked(ChannelTrendNeutral)
+		p.finalizeProbeLocked(remotebwe.ChannelTrendNeutral)
 		return true, true, true
 	}
 
@@ -194,7 +199,7 @@ func (p *ProbeController) MaybeFinalizeProbe(
 		p.doneProbeClusterInfo.Id != ccutils.ProbeClusterIdInvalid && p.doneProbeClusterInfo.Id == p.probeClusterId {
 		// ensure any queueing due to probing is flushed
 		// STREAM-ALLOCATOR-TODO: CongestionControlProbeConfig.SettleWait should actually be a certain number of RTTs.
-		expectedDuration := float64(9.0)
+		expectedDuration := float64(0.0)
 		if lowestEstimate != 0 {
 			expectedDuration = float64(p.doneProbeClusterInfo.BytesSent*8*1000) / float64(lowestEstimate)
 		}
@@ -232,12 +237,12 @@ func (p *ProbeController) DoesProbeNeedFinalize() bool {
 	return p.abortedProbeClusterId != ccutils.ProbeClusterIdInvalid || p.goalReachedProbeClusterId != ccutils.ProbeClusterIdInvalid
 }
 
-func (p *ProbeController) finalizeProbeLocked(trend ChannelTrend) (isNotFailing bool) {
+func (p *ProbeController) finalizeProbeLocked(trend remotebwe.ChannelTrend) (isNotFailing bool) {
 	aborted := p.probeClusterId == p.abortedProbeClusterId
 
 	p.clearProbeLocked()
 
-	if aborted || trend == ChannelTrendCongesting {
+	if aborted || trend == remotebwe.ChannelTrendCongesting {
 		// failed probe, backoff
 		p.backoffProbeIntervalLocked()
 		p.resetProbeDurationLocked()
@@ -246,7 +251,7 @@ func (p *ProbeController) finalizeProbeLocked(trend ChannelTrend) (isNotFailing 
 
 	// reset probe interval and increase probe duration on a upward trending probe
 	p.resetProbeIntervalLocked()
-	if trend == ChannelTrendClearing {
+	if trend == remotebwe.ChannelTrendClearing {
 		p.increaseProbeDurationLocked()
 	}
 	return true
@@ -316,7 +321,7 @@ func (p *ProbeController) pollProbe(probeClusterId ccutils.ProbeClusterId) {
 				done = true
 				break
 
-			case congestionState == sendsidebwe.CongestionStateCongested || congestionState == sendsidebwe.CongestionStateEarlyWarning:
+			case congestionState == bwe.CongestionStateCongested || congestionState == bwe.CongestionStateEarlyWarning:
 				// stop immediately if the probe is congesting channel more
 				p.params.Logger.Infow(
 					"stream allocator: probe: aborting, channel is congesting",

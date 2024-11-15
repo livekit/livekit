@@ -15,7 +15,7 @@
 package pacer
 
 import (
-	"github.com/livekit/livekit-server/pkg/sfu/sendsidebwe"
+	"github.com/livekit/livekit-server/pkg/sfu/bwe/sendsidebwe"
 	"github.com/livekit/protocol/logger"
 )
 

@@ -19,7 +19,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/sfu/sendsidebwe"
+	"github.com/livekit/livekit-server/pkg/sfu/bwe/sendsidebwe"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils/mono"
 	"github.com/pion/rtp"
