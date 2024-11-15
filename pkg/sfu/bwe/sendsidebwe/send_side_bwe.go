@@ -15,9 +15,9 @@
 package sendsidebwe
 
 import (
-	"fmt"
-
+	"github.com/livekit/livekit-server/pkg/sfu/bwe"
 	"github.com/livekit/protocol/logger"
+	"github.com/pion/rtcp"
 )
 
 //
@@ -50,35 +50,6 @@ import (
 
 // ---------------------------------------------------------------------------
 
-type CongestionState int
-
-const (
-	CongestionStateNone CongestionState = iota
-	CongestionStateEarlyWarning
-	CongestionStateEarlyWarningHangover
-	CongestionStateCongested
-	CongestionStateCongestedHangover
-)
-
-func (c CongestionState) String() string {
-	switch c {
-	case CongestionStateNone:
-		return "NONE"
-	case CongestionStateEarlyWarning:
-		return "EARLY_WARNING"
-	case CongestionStateEarlyWarningHangover:
-		return "EARLY_WARNING_HANGOVER"
-	case CongestionStateCongested:
-		return "CONGESTED"
-	case CongestionStateCongestedHangover:
-		return "CONGESTED_HANGOVER"
-	default:
-		return fmt.Sprintf("%d", int(c))
-	}
-}
-
-// ---------------------------------------------------------------------------
-
 type SendSideBWEConfig struct {
 	CongestionDetector CongestionDetectorConfig `yaml:"congestion_detector,omitempty"`
 }
@@ -97,6 +68,8 @@ type SendSideBWEParams struct {
 }
 
 type SendSideBWE struct {
+	bwe.NullBWE
+
 	params SendSideBWEParams
 
 	*congestionDetector
@@ -112,8 +85,20 @@ func NewSendSideBWE(params SendSideBWEParams) *SendSideBWE {
 	}
 }
 
+func (s *SendSideBWE) SetBWEListener(bweListener bwe.BWEListener) {
+	s.congestionDetector.SetBWEListener(bweListener)
+}
+
+func (s *SendSideBWE) Reset() {
+	s.congestionDetector.Reset()
+}
+
 func (s *SendSideBWE) Stop() {
 	s.congestionDetector.Stop()
+}
+
+func (s *SendSideBWE) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
+	s.congestionDetector.HandleTWCCFeedback(report)
 }
 
 // ------------------------------------------------

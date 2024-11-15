@@ -18,8 +18,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/sfu/bwe"
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
-	"github.com/livekit/livekit-server/pkg/sfu/sendsidebwe"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -75,7 +75,7 @@ type ProbeController struct {
 	params ProbeControllerParams
 
 	lock                      sync.RWMutex
-	sendSideBWE               *sendsidebwe.SendSideBWE
+	bwe                       bwe.BWE
 	probeInterval             time.Duration
 	lastProbeStartTime        time.Time
 	probeGoalBps              int64
@@ -98,11 +98,11 @@ func NewProbeController(params ProbeControllerParams) *ProbeController {
 	return p
 }
 
-func (p *ProbeController) SetSendSideBWE(sendSideBWE *sendsidebwe.SendSideBWE) {
+func (p *ProbeController) SetBWE(bwe bwe.BWE) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	p.sendSideBWE = sendSideBWE
+	p.bwe = bwe
 }
 
 func (p *ProbeController) Reset() {
@@ -131,49 +131,9 @@ func (p *ProbeController) ProbeClusterDone(info ccutils.ProbeClusterInfo) {
 	p.lock.Unlock()
 }
 
-func (p *ProbeController) CheckProbe(trend ChannelTrend, highestEstimate int64) {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	if p.probeClusterId == ccutils.ProbeClusterIdInvalid {
-		return
-	}
-
-	if trend != ChannelTrendNeutral {
-		p.probeTrendObserved = true
-	}
-
-	switch {
-	case !p.probeTrendObserved && time.Since(p.lastProbeStartTime) > p.params.Config.TrendWait:
-		//
-		// More of a safety net.
-		// In rare cases, the estimate gets stuck. Prevent from probe running amok
-		// STREAM-ALLOCATOR-TODO: Need more testing here to ensure that probe does not cause a lot of damage
-		//
-		p.params.Logger.Debugw("stream allocator: probe: aborting, no trend", "cluster", p.probeClusterId)
-		p.abortProbeLocked()
-
-	case trend == ChannelTrendCongesting:
-		// stop immediately if the probe is congesting channel more
-		p.params.Logger.Debugw("stream allocator: probe: aborting, channel is congesting", "cluster", p.probeClusterId)
-		p.abortProbeLocked()
-
-	case highestEstimate > p.probeGoalBps:
-		// reached goal, stop probing
-		p.params.Logger.Infow(
-			"stream allocator: probe: stopping, goal reached",
-			"cluster", p.probeClusterId,
-			"goal", p.probeGoalBps,
-			"highest", highestEstimate,
-		)
-		p.goalReachedProbeClusterId = p.probeClusterId
-		p.StopProbe()
-	}
-}
-
 func (p *ProbeController) MaybeFinalizeProbe(
 	isComplete bool,
-	trend ChannelTrend,
+	trend bwe.ChannelTrend,
 	lowestEstimate int64,
 ) (isHandled bool, isNotFailing bool, isGoalReached bool) {
 	p.lock.Lock()
@@ -185,7 +145,7 @@ func (p *ProbeController) MaybeFinalizeProbe(
 
 	if p.goalReachedProbeClusterId != ccutils.ProbeClusterIdInvalid {
 		// finalise goal reached probe cluster
-		p.finalizeProbeLocked(ChannelTrendNeutral)
+		p.finalizeProbeLocked(bwe.ChannelTrendNeutral)
 		return true, true, true
 	}
 
@@ -193,8 +153,8 @@ func (p *ProbeController) MaybeFinalizeProbe(
 		p.probeEndTime.IsZero() &&
 		p.doneProbeClusterInfo.Id != ccutils.ProbeClusterIdInvalid && p.doneProbeClusterInfo.Id == p.probeClusterId {
 		// ensure any queueing due to probing is flushed
-		// STREAM-ALLOCATOR-TODO: CongestionControlProbeConfig.SettleWait should actually be a certain number of RTTs.
-		expectedDuration := float64(9.0)
+		// STREAM-ALLOCATOR-TODO: ProbeControllerConfig.SettleWait should actually be a certain number of RTTs.
+		expectedDuration := float64(0.0)
 		if lowestEstimate != 0 {
 			expectedDuration = float64(p.doneProbeClusterInfo.BytesSent*8*1000) / float64(lowestEstimate)
 		}
@@ -232,12 +192,12 @@ func (p *ProbeController) DoesProbeNeedFinalize() bool {
 	return p.abortedProbeClusterId != ccutils.ProbeClusterIdInvalid || p.goalReachedProbeClusterId != ccutils.ProbeClusterIdInvalid
 }
 
-func (p *ProbeController) finalizeProbeLocked(trend ChannelTrend) (isNotFailing bool) {
+func (p *ProbeController) finalizeProbeLocked(trend bwe.ChannelTrend) (isNotFailing bool) {
 	aborted := p.probeClusterId == p.abortedProbeClusterId
 
 	p.clearProbeLocked()
 
-	if aborted || trend == ChannelTrendCongesting {
+	if aborted || trend == bwe.ChannelTrendCongesting {
 		// failed probe, backoff
 		p.backoffProbeIntervalLocked()
 		p.resetProbeDurationLocked()
@@ -246,7 +206,7 @@ func (p *ProbeController) finalizeProbeLocked(trend ChannelTrend) (isNotFailing 
 
 	// reset probe interval and increase probe duration on a upward trending probe
 	p.resetProbeIntervalLocked()
-	if trend == ChannelTrendClearing {
+	if trend == bwe.ChannelTrendClearing {
 		p.increaseProbeDurationLocked()
 	}
 	return true
@@ -281,18 +241,18 @@ func (p *ProbeController) InitProbe(probeGoalDeltaBps int64, expectedBandwidthUs
 		time.Duration(float64(p.probeDuration.Milliseconds())*p.params.Config.DurationOverflowFactor)*time.Millisecond,
 	)
 
-	p.pollProbe(p.probeClusterId)
+	p.pollProbe(p.probeClusterId, expectedBandwidthUsage)
 
 	return p.probeClusterId, p.probeGoalBps
 }
 
-// SSBWE-TODO: try to do same path for both SSBWE and regular, the congesting part might be different though
-func (p *ProbeController) pollProbe(probeClusterId ccutils.ProbeClusterId) {
-	if p.sendSideBWE == nil {
+func (p *ProbeController) pollProbe(probeClusterId ccutils.ProbeClusterId, expectedBandwidthUsage int64) {
+	if p.bwe == nil {
 		return
 	}
 
-	startingEstimate := p.sendSideBWE.GetEstimatedAvailableChannelCapacity()
+	p.bwe.ProbingStart(expectedBandwidthUsage)
+
 	go func() {
 		for {
 			p.lock.Lock()
@@ -302,10 +262,37 @@ func (p *ProbeController) pollProbe(probeClusterId ccutils.ProbeClusterId) {
 			}
 
 			done := false
-			congestionState := p.sendSideBWE.GetCongestionState()
-			currentEstimate := p.sendSideBWE.GetEstimatedAvailableChannelCapacity()
+
+			_, trend, _, highestEstimate := p.bwe.GetProbeStatus()
+			if !p.probeTrendObserved && trend != bwe.ChannelTrendNeutral {
+				p.probeTrendObserved = true
+			}
+
 			switch {
-			case currentEstimate <= startingEstimate && time.Since(p.lastProbeStartTime) > p.params.Config.TrendWait:
+			case trend == bwe.ChannelTrendCongesting:
+				// stop immediately if the probe is congesting channel more
+				p.params.Logger.Infow(
+					"stream allocator: probe: aborting, channel is congesting",
+					"cluster", probeClusterId,
+				)
+				p.abortProbeLocked()
+				done = true
+				break
+
+			case highestEstimate > p.probeGoalBps:
+				// reached goal, stop probing
+				p.params.Logger.Infow(
+					"stream allocator: probe: stopping, goal reached",
+					"cluster", probeClusterId,
+					"goal", p.probeGoalBps,
+					"highestEstimate", highestEstimate,
+				)
+				p.goalReachedProbeClusterId = p.probeClusterId
+				p.StopProbe()
+				done = true
+				break
+
+			case !p.probeTrendObserved && time.Since(p.lastProbeStartTime) > p.params.Config.TrendWait:
 				//
 				// More of a safety net.
 				// In rare cases, the estimate gets stuck. Prevent from probe running amok
@@ -315,30 +302,6 @@ func (p *ProbeController) pollProbe(probeClusterId ccutils.ProbeClusterId) {
 				p.abortProbeLocked()
 				done = true
 				break
-
-			case congestionState == sendsidebwe.CongestionStateCongested || congestionState == sendsidebwe.CongestionStateEarlyWarning:
-				// stop immediately if the probe is congesting channel more
-				p.params.Logger.Infow(
-					"stream allocator: probe: aborting, channel is congesting",
-					"cluster", probeClusterId,
-					"congestionState", congestionState,
-				)
-				p.abortProbeLocked()
-				done = true
-				break
-
-			case currentEstimate > p.probeGoalBps:
-				// reached goal, stop probing
-				p.params.Logger.Infow(
-					"stream allocator: probe: stopping, goal reached",
-					"cluster", probeClusterId,
-					"goal", p.probeGoalBps,
-					"current", currentEstimate,
-				)
-				p.goalReachedProbeClusterId = p.probeClusterId
-				p.StopProbe()
-				done = true
-				break
 			}
 			p.lock.Unlock()
 
@@ -346,7 +309,7 @@ func (p *ProbeController) pollProbe(probeClusterId ccutils.ProbeClusterId) {
 				return
 			}
 
-			// SSBWE-TODO: do not hard code sleep time
+			// BWE-TODO: do not hard code sleep time
 			time.Sleep(50 * time.Millisecond)
 		}
 	}()
@@ -395,13 +358,6 @@ func (p *ProbeController) AbortProbe() {
 func (p *ProbeController) abortProbeLocked() {
 	p.abortedProbeClusterId = p.probeClusterId
 	p.StopProbe()
-}
-
-func (p *ProbeController) IsInProbe() bool {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-
-	return p.isInProbeLocked()
 }
 
 func (p *ProbeController) isInProbeLocked() bool {

@@ -39,10 +39,12 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/transport"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/sfu/bwe"
+	"github.com/livekit/livekit-server/pkg/sfu/bwe/remotebwe"
+	"github.com/livekit/livekit-server/pkg/sfu/bwe/sendsidebwe"
 	sfuinterceptor "github.com/livekit/livekit-server/pkg/sfu/interceptor"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	pd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/playoutdelay"
-	"github.com/livekit/livekit-server/pkg/sfu/sendsidebwe"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	sfuutils "github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
@@ -208,8 +210,8 @@ type PCTransport struct {
 	streamAllocator *streamallocator.StreamAllocator
 
 	// only for subscriber PC
-	sendSideBWE *sendsidebwe.SendSideBWE
-	pacer       pacer.Pacer
+	bwe   bwe.BWE
+	pacer pacer.Pacer
 
 	previousAnswer *webrtc.SessionDescription
 	// track id -> description map in previous offer sdp
@@ -350,7 +352,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	ir := &interceptor.Registry{}
 	if params.IsSendSide {
 		se.DetachDataChannels()
-		if params.CongestionControlConfig.UseSendSideBWEInterceptor || params.UseSendSideBWEInterceptor && (!params.CongestionControlConfig.UseSendSideBWE && !params.UseSendSideBWE) {
+		if (params.CongestionControlConfig.UseSendSideBWEInterceptor || params.UseSendSideBWEInterceptor) && (!params.CongestionControlConfig.UseSendSideBWE && !params.UseSendSideBWE) {
 			params.Logger.Infow("using send side BWE - interceptor")
 			gf, err := cc.NewInterceptor(func() (cc.BandwidthEstimator, error) {
 				return gcc.NewSendSideBWE(
@@ -456,16 +458,20 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 
 		if params.CongestionControlConfig.UseSendSideBWE || params.UseSendSideBWE {
 			params.Logger.Infow("using send side BWE")
-			t.sendSideBWE = sendsidebwe.NewSendSideBWE(sendsidebwe.SendSideBWEParams{
+			ssbwe := sendsidebwe.NewSendSideBWE(sendsidebwe.SendSideBWEParams{
 				Config: params.CongestionControlConfig.SendSideBWE,
 				Logger: params.Logger,
 			})
-			t.pacer = pacer.NewNoQueue(params.Logger, t.sendSideBWE)
-
-			t.streamAllocator.SetSendSideBWE(t.sendSideBWE)
+			t.pacer = pacer.NewNoQueue(params.Logger, ssbwe)
+			t.bwe = ssbwe
 		} else {
+			t.bwe = remotebwe.NewRemoteBWE(remotebwe.RemoteBWEParams{
+				Config: params.CongestionControlConfig.RemoteBWE,
+				Logger: params.Logger,
+			})
 			t.pacer = pacer.NewPassThrough(params.Logger, nil)
 		}
+		t.streamAllocator.SetBWE(t.bwe)
 	}
 
 	if err := t.createPeerConnection(); err != nil {
@@ -991,8 +997,8 @@ func (t *PCTransport) Close() {
 	if t.pacer != nil {
 		t.pacer.Stop()
 	}
-	if t.sendSideBWE != nil {
-		t.sendSideBWE.Stop()
+	if t.bwe != nil {
+		t.bwe.Stop()
 	}
 
 	_ = t.pc.Close()

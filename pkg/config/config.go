@@ -29,7 +29,8 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/metric"
 	"github.com/livekit/livekit-server/pkg/sfu"
-	"github.com/livekit/livekit-server/pkg/sfu/sendsidebwe"
+	"github.com/livekit/livekit-server/pkg/sfu/bwe/remotebwe"
+	"github.com/livekit/livekit-server/pkg/sfu/bwe/sendsidebwe"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
 	"github.com/livekit/protocol/livekit"
@@ -128,6 +129,8 @@ type CongestionControlConfig struct {
 	AllowPause bool `yaml:"allow_pause,omitempty"`
 
 	StreamAllocator streamallocator.StreamAllocatorConfig `yaml:"stream_allocator,omitempty"`
+
+	RemoteBWE remotebwe.RemoteBWEConfig `yaml:"remote_bwe,omitempty"`
 
 	UseSendSideBWEInterceptor bool `yaml:"use_send_side_bwe_interceptor,omitempty"`
 
@@ -314,6 +317,7 @@ var DefaultConfig = Config{
 			Enabled:                   true,
 			AllowPause:                false,
 			StreamAllocator:           streamallocator.DefaultStreamAllocatorConfig,
+			RemoteBWE:                 remotebwe.DefaultRemoteBWEConfig,
 			UseSendSideBWEInterceptor: false,
 			UseSendSideBWE:            false,
 			SendSideBWE:               sendsidebwe.DefaultSendSideBWEConfig,
