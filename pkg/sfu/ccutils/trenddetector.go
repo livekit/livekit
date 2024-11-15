@@ -154,7 +154,7 @@ func (t *TrendDetector[T]) HasEnoughSamples() bool {
 	return t.numSamples >= t.params.Config.RequiredSamples
 }
 
-func (t *TrendDetector[T]) ToString() string {
+func (t *TrendDetector[T]) String() string {
 	samplesStr := ""
 	if len(t.samples) > 0 {
 		firstTime := t.samples[0].at

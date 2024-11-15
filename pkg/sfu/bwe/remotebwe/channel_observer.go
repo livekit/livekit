@@ -154,11 +154,11 @@ func (c *channelObserver) GetTrend() (bwe.ChannelTrend, channelCongestionReason)
 
 	switch {
 	case estimateDirection == ccutils.TrendDirectionDownward:
-		c.logger.Debugw("stream allocator: channel observer: estimate is trending downward", "channel", c.ToString())
+		c.logger.Debugw("stream allocator: channel observer: estimate is trending downward", "channel", c)
 		return bwe.ChannelTrendCongesting, channelCongestionReasonEstimate
 
 	case c.nackTracker.IsTriggered():
-		c.logger.Debugw("stream allocator: channel observer: high rate of repeated NACKs", "channel", c.ToString())
+		c.logger.Debugw("stream allocator: channel observer: high rate of repeated NACKs", "channel", c)
 		return bwe.ChannelTrendCongesting, channelCongestionReasonLoss
 
 	case estimateDirection == ccutils.TrendDirectionUpward:
@@ -168,8 +168,8 @@ func (c *channelObserver) GetTrend() (bwe.ChannelTrend, channelCongestionReason)
 	return bwe.ChannelTrendNeutral, channelCongestionReasonNone
 }
 
-func (c *channelObserver) ToString() string {
-	return fmt.Sprintf("name: %s, estimate: {%s}, nack {%s}", c.params.Name, c.estimateTrend.ToString(), c.nackTracker.ToString())
+func (c *channelObserver) String() string {
+	return fmt.Sprintf("name: %s, estimate: {%v}, nack {%v}", c.params.Name, c.estimateTrend, c.nackTracker)
 }
 
 // ------------------------------------------------

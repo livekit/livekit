@@ -200,34 +200,26 @@ func (r *RemoteBWE) estimateAvailableChannelCapacity(reason channelCongestionRea
 		action = "skipping"
 	}
 
+	ulgr := r.params.Logger.WithUnlikelyValues(
+		"reason", reason,
+		"old(bps)", r.committedChannelCapacity,
+		"new(bps)", estimateToCommit,
+		"lastReceived(bps)", r.lastReceivedEstimate,
+		"expectedUsage(bps)", r.lastExpectedBandwidthUsage,
+		"commitThreshold(bps)", commitThreshold,
+		"channel", r.channelObserver,
+	)
+	logMessage := fmt.Sprintf("remote bwe: channel congestion detected, %s channel capacity update", action)
 	if action == "applying" {
-		r.params.Logger.Infow(
-			fmt.Sprintf("remote bwe: channel congestion detected, %s channel capacity update", action),
-			"reason", reason,
-			"old(bps)", r.committedChannelCapacity,
-			"new(bps)", estimateToCommit,
-			"lastReceived(bps)", r.lastReceivedEstimate,
-			"expectedUsage(bps)", r.lastExpectedBandwidthUsage,
-			"commitThreshold(bps)", commitThreshold,
-			"channel", r.channelObserver.ToString(),
-		)
+		ulgr.Infow(logMessage)
 	} else {
-		r.params.Logger.Debugw(
-			fmt.Sprintf("remote bwe: channel congestion detected, %s channel capacity update", action),
-			"reason", reason,
-			"old(bps)", r.committedChannelCapacity,
-			"new(bps)", estimateToCommit,
-			"lastReceived(bps)", r.lastReceivedEstimate,
-			"expectedUsage(bps)", r.lastExpectedBandwidthUsage,
-			"commitThreshold(bps)", commitThreshold,
-			"channel", r.channelObserver.ToString(),
-		)
+		ulgr.Debugw(logMessage)
 	}
-	/*
-		r.params.Logger.Debugw(
-			fmt.Sprintf("remote bwe: channel congestion detected, %s channel capacity: experimental", action),
-			"nackHistory", r.channelObserver.GetNackHistory(),
-		)
+	/* REMOTE-BWE-DATA
+	r.params.Logger.Debugw(
+		fmt.Sprintf("remote bwe: channel congestion detected, %s channel capacity: experimental", action),
+		"nackHistory", r.channelObserver.GetNackHistory(),
+	)
 	*/
 	if estimateToCommit > commitThreshold {
 		return false
@@ -278,16 +270,11 @@ func (r *RemoteBWE) ProbingStart(expectedBandwidthUsage int64) {
 	r.isInProbe = true
 	r.lastExpectedBandwidthUsage = expectedBandwidthUsage
 
-	channelState := ""
-	if r.channelObserver != nil {
-		channelState = r.channelObserver.ToString()
-	}
-
 	r.params.Logger.Debugw(
 		"stream allocator: starting probe",
 		"lastReceived", r.lastReceivedEstimate,
 		"expectedBandwidthUsage", expectedBandwidthUsage,
-		"channel", channelState,
+		"channel", r.channelObserver,
 	)
 
 	r.channelObserver = newChannelObserver(
@@ -318,16 +305,15 @@ func (r *RemoteBWE) ProbingEnd(isNotFailing bool, isGoalReached bool) {
 	// NOTE: With TWCC, it is possible to reset bandwidth estimation to clean state as
 	// the send side is in full control of bandwidth estimation.
 	//
-	channelObserverString := r.channelObserver.ToString()
-	r.channelObserver = r.newChannelObserverNonProbe()
 	r.params.Logger.Debugw(
 		"probe done",
 		"isNotFailing", isNotFailing,
 		"isGoalReached", isGoalReached,
 		"committedEstimate", r.committedChannelCapacity,
 		"highestEstimate", highestEstimateInProbe,
-		"channel", channelObserverString,
+		"channel", r.channelObserver,
 	)
+	r.channelObserver = r.newChannelObserverNonProbe()
 	if !isNotFailing {
 		return
 	}

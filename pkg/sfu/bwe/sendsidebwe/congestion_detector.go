@@ -542,7 +542,7 @@ func (c *congestionDetector) updateCTRTrend(pg *packetGroup) {
 		return
 	}
 
-	c.params.Logger.Infow("captured traffic ratio is trending downward", "channel", c.congestedCTRTrend.ToString())
+	c.params.Logger.Infow("captured traffic ratio is trending downward", "channel", c.congestedCTRTrend)
 
 	if bweListener := c.getBWEListener(); bweListener != nil {
 		bweListener.OnCongestionStateChange(c.congestionState, c.estimatedAvailableChannelCapacity)
