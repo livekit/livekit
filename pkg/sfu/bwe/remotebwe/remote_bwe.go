@@ -15,7 +15,6 @@
 package remotebwe
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
@@ -195,10 +194,6 @@ func (r *RemoteBWE) estimateAvailableChannelCapacity(reason channelCongestionRea
 	}
 
 	commitThreshold := int64(r.params.Config.ExpectedUsageThreshold * float64(r.lastExpectedBandwidthUsage))
-	action := "applying"
-	if estimateToCommit > commitThreshold {
-		action = "skipping"
-	}
 
 	ulgr := r.params.Logger.WithUnlikelyValues(
 		"reason", reason,
@@ -209,21 +204,18 @@ func (r *RemoteBWE) estimateAvailableChannelCapacity(reason channelCongestionRea
 		"commitThreshold(bps)", commitThreshold,
 		"channel", r.channelObserver,
 	)
-	logMessage := fmt.Sprintf("remote bwe: channel congestion detected, %s channel capacity update", action)
-	if action == "applying" {
-		ulgr.Infow(logMessage)
-	} else {
-		ulgr.Debugw(logMessage)
+	if estimateToCommit > commitThreshold {
+		ulgr.Debugw("remote bwe: channel congestion detected, skipping above commit threshold  channel capacity update")
+		return false
 	}
+
+	ulgr.Infow("remote bwe: channel congestion detected, applying channel capacity update")
 	/* REMOTE-BWE-DATA
 	r.params.Logger.Debugw(
 		fmt.Sprintf("remote bwe: channel congestion detected, %s channel capacity: experimental", action),
 		"nackHistory", r.channelObserver.GetNackHistory(),
 	)
 	*/
-	if estimateToCommit > commitThreshold {
-		return false
-	}
 
 	r.committedChannelCapacity = estimateToCommit
 
