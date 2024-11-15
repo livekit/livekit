@@ -128,7 +128,7 @@ func (r *RemoteBWE) HandleREMB(
 	r.lastReceivedEstimate = receivedEstimate
 	r.lastExpectedBandwidthUsage = expectedBandwidthUsage
 
-	if isProbeFinalizing {
+	if !isProbeFinalizing {
 		r.channelObserver.AddEstimate(r.lastReceivedEstimate)
 		r.channelObserver.AddNack(sentPackets, repeatedNacks)
 	}
