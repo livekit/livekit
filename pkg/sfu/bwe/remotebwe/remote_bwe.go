@@ -339,7 +339,7 @@ func (r *RemoteBWE) ProbingEnd(isNotFailing bool, isGoalReached bool) {
 
 func (r *RemoteBWE) GetProbeStatus() (bool, bwe.ChannelTrend, int64, int64) {
 	r.lock.RLock()
-	defer r.lock.Unlock()
+	defer r.lock.RUnlock()
 
 	if !r.isInProbe {
 		return false, bwe.ChannelTrendNeutral, 0, 0
