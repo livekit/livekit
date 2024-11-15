@@ -27,7 +27,6 @@ func (n *NullBWE) Stop() {}
 
 func (n *NullBWE) HandleREMB(
 	_receivedEstimate int64,
-	_isInProbe bool,
 	_isProbeFinalizing bool,
 	_expectedBandwidthUsage int64,
 	_sentPackets uint32,
@@ -37,12 +36,12 @@ func (n *NullBWE) HandleREMB(
 
 func (n *NullBWE) HandleTWCCFeedback(_report *rtcp.TransportLayerCC) {}
 
-func (n *NullBWE) ProbingStart() {}
+func (n *NullBWE) ProbingStart(_expectedBandwidthUsage int64) {}
 
-func (n *NullBWE) ProbingEnd() {}
+func (n *NullBWE) ProbingEnd(_isNotFailing bool, _isGoalReached bool) {}
 
-func (n *NullBWE) GetProbeStatus() (isValidSignal bool, isCongesting bool, lowestEstimate int64, highestEstimate int64) {
-	return false, false, 0, 0
+func (n *NullBWE) GetProbeStatus() (bool, ChannelTrend, int64, int64) {
+	return false, ChannelTrendNeutral, 0, 0
 }
 
 // ------------------------------------------------

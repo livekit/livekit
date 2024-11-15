@@ -196,8 +196,9 @@ type StreamAllocator struct {
 	isAllocateAllPending bool
 	rembTrackingSSRC     uint32
 
-	state     streamAllocatorState
-	isHolding bool
+	state           streamAllocatorState
+	congestionState bwe.CongestionState
+	isHolding       bool
 
 	eventsQueue *utils.TypedOpsQueue[Event]
 
@@ -707,7 +708,6 @@ func (s *StreamAllocator) handleSignalEstimate(event Event) {
 	if s.bwe != nil {
 		s.bwe.HandleREMB(
 			receivedEstimate,
-			s.probeController.IsInProbe(),
 			s.probeController.DoesProbeNeedFinalize(), // waiting for goal reached OR aborted probe to finalize
 			s.getExpectedBandwidthUsage(),
 			packetDelta,
@@ -717,18 +717,18 @@ func (s *StreamAllocator) handleSignalEstimate(event Event) {
 }
 
 func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
-	/* RAJA-TODO-BWE: need a unified way to access different bwe
 	// finalize probe if necessary
-	trend, _ := s.channelObserver.GetTrend()
-	isHandled, isNotFailing, isGoalReached := s.probeController.MaybeFinalizeProbe(
-		s.channelObserver.HasEnoughEstimateSamples(),
-		trend,
-		s.channelObserver.GetLowestEstimate(),
-	)
-	if isHandled {
-		s.onProbeDone(isNotFailing, isGoalReached)
+	if s.bwe != nil {
+		isValidSignal, trend, lowestEstimate, highestEstimate := s.bwe.GetProbeStatus()
+		isHandled, isNotFailing, isGoalReached := s.probeController.MaybeFinalizeProbe(
+			isValidSignal,
+			trend,
+			lowestEstimate,
+		)
+		if isHandled {
+			s.onProbeDone(isNotFailing, isGoalReached, highestEstimate)
+		}
 	}
-	*/
 
 	// probe if necessary and timing is right
 	if s.state == streamAllocatorStateDeficient {
@@ -864,11 +864,17 @@ func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
 		s.committedChannelCapacity = cscd.estimatedAvailableChannelCapacity
 
 		// reset probe to ensure it does not start too soon after a downward trend
-		// RAJA-TODO-BWE: maybe probe controller setting is algorithm specific where the reset could be waiting shorter in SSBWE case or BWE can have interface which can be queried if probe controller should be reset
+		// BWE-TODO: maybe probe controller setting should be algorithm specific
+		// BWE-TODO: for e. g., the reset could be waiting shorter in SSBWE case
+		// BWE-TODO: a couple of things to consider
+		// BWE-TODO:    1. Make ProbeController be owned by BWE modules?
+		// BWE-TODO:    2. Add an interface method to BWE to check if probe controller should be reset?
 		s.probeController.Reset()
 
 		s.allocateAllTracks()
 	}
+
+	s.congestionState = cscd.congestionState
 }
 
 func (s *StreamAllocator) setState(state streamAllocatorState) {
@@ -884,7 +890,11 @@ func (s *StreamAllocator) setState(state streamAllocatorState) {
 
 	// a fresh start after state transition to get clean data
 	if s.bwe != nil {
-		// RAJA-TODO-BWE ssbwe maybe should not reset like this as it might have useful state across state changes in StreamAllocator, actually even remotebwe should also manage it internally, Reset should probably only be used if all managed tracks go away and we can get a clean start
+		// BWE-TODO: ssbwe maybe should not reset like this as it might have useful state across
+		// BWE-TODO: state changes in this module, actually even remotebwe should also manage it
+		// BWE-TODO: internally, Reset should probably only be used if all managed tracks go away
+		// BWE-TODO: and we can get a clean start, mimicking existing behaviour till this can be
+		// BWE-TODO: evaluated more.
 		s.bwe.Reset()
 	}
 }
@@ -1055,44 +1065,20 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	s.adjustState()
 }
 
-func (s *StreamAllocator) onProbeDone(isNotFailing bool, isGoalReached bool) {
-	/* RAJA-TODO-BWE
-	highestEstimateInProbe := s.channelObserver.GetHighestEstimate()
-	if s.sendSideBWE != nil {
-		highestEstimateInProbe = s.sendSideBWE.GetEstimatedAvailableChannelCapacity()
+func (s *StreamAllocator) onProbeDone(isNotFailing bool, isGoalReached bool, highestEstimate int64) {
+	if s.bwe != nil {
+		s.bwe.ProbingEnd(isNotFailing, isGoalReached)
 	}
 
-	//
-	// Reset estimator at the end of a probe irrespective of probe result to get fresh readings.
-	// With a failed probe, the latest estimate could be lower than committed estimate.
-	// As bandwidth estimator (remote in REMB case, local in TWCC case) holds state,
-	// subsequent estimates could start from the lower point. That should not trigger a
-	// downward trend and get latched to committed estimate as that would trigger a re-allocation.
-	// With fresh readings, as long as the trend is not going downward, it will not get latched.
-	//
-	// NOTE: With TWCC, it is possible to reset bandwidth estimation to clean state as
-	// the send side is in full control of bandwidth estimation.
-	//
-	channelObserverString := s.channelObserver.ToString()
-	s.channelObserver = s.newChannelObserverNonProbe()
-	s.params.Logger.Debugw(
-		"probe done",
-		"isNotFailing", isNotFailing,
-		"isGoalReached", isGoalReached,
-		"committedEstimate", s.committedChannelCapacity,
-		"highestEstimate", highestEstimateInProbe,
-		"channel", channelObserverString,
-	)
 	if !isNotFailing {
 		return
 	}
 
-	if highestEstimateInProbe > s.committedChannelCapacity {
-		s.committedChannelCapacity = highestEstimateInProbe
+	if highestEstimate > s.committedChannelCapacity {
+		s.committedChannelCapacity = highestEstimate
 	}
 
 	s.maybeBoostDeficientTracks()
-	*/
 }
 
 func (s *StreamAllocator) maybeBoostDeficientTracks() {
@@ -1205,7 +1191,6 @@ func (s *StreamAllocator) allocateAllTracks() {
 
 				for _, track := range sorted {
 					_, usedChannelCapacity := track.ProvisionalAllocate(availableChannelCapacity, layer, s.allowPause, FlagAllowOvershootWhileDeficient)
-					s.params.Logger.Infow("debug allocated", "trackID", track.ID(), "usedChannelCapacity", usedChannelCapacity, "availableChannelCapacity", availableChannelCapacity) // REMOVE
 					availableChannelCapacity -= usedChannelCapacity
 					if availableChannelCapacity < 0 {
 						availableChannelCapacity = 0
@@ -1317,31 +1302,14 @@ func (s *StreamAllocator) getNackDelta() (uint32, uint32) {
 func (s *StreamAllocator) initProbe(probeGoalDeltaBps int64) {
 	expectedBandwidthUsage := s.getExpectedBandwidthUsage()
 	probeClusterId, probeGoalBps := s.probeController.InitProbe(probeGoalDeltaBps, expectedBandwidthUsage)
-
-	logFields := []any{
+	s.params.Logger.Debugw(
+		"stream allocator: starting probe",
 		"probeClusterId", probeClusterId,
 		"current usage", expectedBandwidthUsage,
 		"committed", s.committedChannelCapacity,
 		"probeGoalDeltaBps", probeGoalDeltaBps,
 		"goalBps", probeGoalBps,
-	}
-	/* RAJA-TODO-BWE
-	if s.sendSideBWE == nil {
-		channelState := ""
-		if s.channelObserver != nil {
-			channelState = s.channelObserver.ToString()
-		}
-		s.channelObserver = s.newChannelObserverProbe()
-		s.channelObserver.SeedEstimate(s.lastReceivedEstimate)
-		logFields = append(
-			logFields,
-			"lastReceived", s.lastReceivedEstimate,
-			"channel", channelState,
-		)
-	}
-	*/
-
-	s.params.Logger.Debugw("stream allocator: starting probe", logFields...)
+	)
 }
 
 func (s *StreamAllocator) maybeProbe() {
@@ -1349,7 +1317,8 @@ func (s *StreamAllocator) maybeProbe() {
 		// do not probe if channel capacity is overridden
 		return
 	}
-	if !s.probeController.CanProbe() {
+
+	if s.congestionState != bwe.CongestionStateNone || !s.probeController.CanProbe() {
 		return
 	}
 

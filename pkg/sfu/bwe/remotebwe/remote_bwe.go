@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/frostbyte73/core"
-	"github.com/gammazero/deque"
 	"github.com/livekit/livekit-server/pkg/sfu/bwe"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils/mono"
@@ -57,16 +56,6 @@ var (
 
 // ---------------------------------------------------------------------------
 
-type rembReport struct {
-	at                     time.Time
-	receivedEstimate       int64
-	isInProbe              bool // RAJA-TODO-BWE: this should not be here
-	isProbeFinalizing      bool // RAJA-TODO-BWE: this should not be here
-	expectedBandwidthUsage int64
-	sentPackets            uint32
-	repeatedNacks          uint32
-}
-
 type RemoteBWEParams struct {
 	Config RemoteBWEConfig
 	Logger logger.Logger
@@ -77,11 +66,11 @@ type RemoteBWE struct {
 
 	params RemoteBWEParams
 
-	lock        sync.RWMutex
-	rembReports deque.Deque[rembReport]
+	lock sync.RWMutex
 
 	lastReceivedEstimate       int64
 	lastExpectedBandwidthUsage int64
+	isInProbe                  bool
 	committedChannelCapacity   int64
 
 	channelObserver *channelObserver
@@ -96,9 +85,11 @@ type RemoteBWE struct {
 }
 
 func NewRemoteBWE(params RemoteBWEParams) *RemoteBWE {
-	return &RemoteBWE{
+	r := &RemoteBWE{
 		params: params,
 	}
+	r.channelObserver = r.newChannelObserverNonProbe()
+	return r
 }
 
 func (r *RemoteBWE) SetBWEListener(bweListener bwe.BWEListener) {
@@ -108,7 +99,13 @@ func (r *RemoteBWE) SetBWEListener(bweListener bwe.BWEListener) {
 	r.bweListener = bweListener
 }
 
-// RAJA-TODO-BWE: is this interface neeeded?
+func (r *RemoteBWE) getBWEListener() bwe.BWEListener {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	return r.bweListener
+}
+
 func (r *RemoteBWE) Reset() {
 	r.lock.Lock()
 	defer r.lock.Unlock()
@@ -122,55 +119,51 @@ func (r *RemoteBWE) Stop() {
 
 func (r *RemoteBWE) HandleREMB(
 	receivedEstimate int64,
-	isInProbe bool,
 	isProbeFinalizing bool,
 	expectedBandwidthUsage int64,
 	sentPackets uint32,
 	repeatedNacks uint32,
 ) {
 	r.lock.Lock()
-	r.rembReports.PushBack(rembReport{
-		mono.Now(),
-		receivedEstimate,
-		isInProbe,
-		isProbeFinalizing,
-		expectedBandwidthUsage,
-		sentPackets,
-		repeatedNacks,
-	})
+	r.lastReceivedEstimate = receivedEstimate
+	r.lastExpectedBandwidthUsage = expectedBandwidthUsage
+
+	if isProbeFinalizing {
+		r.channelObserver.AddEstimate(r.lastReceivedEstimate)
+		r.channelObserver.AddNack(sentPackets, repeatedNacks)
+	}
+
+	var (
+		shouldNotify             bool
+		state                    bwe.CongestionState
+		committedChannelCapacity int64
+	)
+	if !r.isInProbe {
+		shouldNotify, state, committedChannelCapacity = r.congestionDetectionStateMachine()
+	}
 	r.lock.Unlock()
 
-	// notify worker of a new REMB
-	select {
-	case r.wake <- struct{}{}:
-	default:
+	if shouldNotify {
+		if bweListener := r.getBWEListener(); bweListener != nil {
+			bweListener.OnCongestionStateChange(state, committedChannelCapacity)
+		}
 	}
 }
 
-// RAJA-TODO-BWE: this API should not be necessary - should be all callbacks from here
-func (r *RemoteBWE) GetCongestionState() bwe.CongestionState {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
-
-	return r.congestionState
-}
-
-func (r *RemoteBWE) congestionDetectionStateMachine() {
-	state := r.GetCongestionState()
-	newState := state
+func (r *RemoteBWE) congestionDetectionStateMachine() (bool, bwe.CongestionState, int64) {
+	newState := r.congestionState
 	update := false
-
 	trend, reason := r.channelObserver.GetTrend()
-	switch state {
+	switch r.congestionState {
 	case bwe.CongestionStateNone:
-		if trend == ChannelTrendCongesting {
+		if trend == bwe.ChannelTrendCongesting {
 			if r.estimateAvailableChannelCapacity(reason) {
 				newState = bwe.CongestionStateCongested
 			}
 		}
 
 	case bwe.CongestionStateCongested:
-		if trend == ChannelTrendCongesting {
+		if trend == bwe.ChannelTrendCongesting {
 			if r.estimateAvailableChannelCapacity(reason) {
 				// update state sa this needs to reset switch time to wait for congestion min duration again
 				update = true
@@ -180,17 +173,13 @@ func (r *RemoteBWE) congestionDetectionStateMachine() {
 		}
 	}
 
-	if newState != state || update {
+	shouldNotify := false
+	if newState != r.congestionState || update {
 		r.updateCongestionState(newState, reason)
+		shouldNotify = true
 	}
-}
 
-// RAJA-TODO-BWE: this API should not be necessary - should be all callbacks from here
-func (r *RemoteBWE) GetEstimatedAvailableChannelCapacity() int64 {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
-
-	return r.committedChannelCapacity
+	return shouldNotify, r.congestionState, r.committedChannelCapacity
 }
 
 func (r *RemoteBWE) estimateAvailableChannelCapacity(reason channelCongestionReason) bool {
@@ -244,60 +233,32 @@ func (r *RemoteBWE) estimateAvailableChannelCapacity(reason channelCongestionRea
 		return false
 	}
 
-	r.lock.Lock()
 	r.committedChannelCapacity = estimateToCommit
-	r.lock.Unlock()
 
 	// reset to get new set of samples for next trend
 	r.channelObserver = r.newChannelObserverNonProbe()
 	return true
 }
 
-func (r *RemoteBWE) processREMBReport(report rembReport) {
-	r.lastReceivedEstimate = report.receivedEstimate
-	r.lastExpectedBandwidthUsage = report.expectedBandwidthUsage
-
-	if !report.isProbeFinalizing {
-		r.channelObserver.AddEstimate(r.lastReceivedEstimate)
-		r.channelObserver.AddNack(report.sentPackets, report.repeatedNacks)
-	}
-
-	if !report.isInProbe { // RAJA-TODO-BWE: avoid this check, state machine should run always, state machine can probably manage in-probe/non-probe logic
-		r.congestionDetectionStateMachine()
-	}
-}
-
 func (r *RemoteBWE) updateCongestionState(state bwe.CongestionState, reason channelCongestionReason) {
-	r.lock.Lock()
 	r.params.Logger.Infow(
-		"congestion state change",
+		"remote bwe: congestion state change",
 		"from", r.congestionState,
 		"to", state,
 		"reason", reason,
 		"committedChannelCapacity", r.committedChannelCapacity,
 	)
 
+	if state != r.congestionState {
+		// notify worker for ticker interval management based on state
+		select {
+		case r.wake <- struct{}{}:
+		default:
+		}
+	}
+
 	r.congestionState = state
 	r.congestionStateSwitchedAt = mono.Now()
-
-	bweListener := r.bweListener
-	committedChannelCapacity := r.committedChannelCapacity
-	r.lock.Unlock()
-
-	if bweListener != nil {
-		bweListener.OnCongestionStateChange(state, committedChannelCapacity)
-	}
-}
-
-// RAJA-TODO-BWE: need to have InitProbe OR ProbingStart interface where this needs to be instantiated
-func (r *RemoteBWE) newChannelObserverProbe() *channelObserver {
-	return newChannelObserver(
-		channelObserverParams{
-			Name:   "probe",
-			Config: r.params.Config.ChannelObserverProbe,
-		},
-		r.params.Logger,
-	)
 }
 
 func (r *RemoteBWE) newChannelObserverNonProbe() *channelObserver {
@@ -310,19 +271,85 @@ func (r *RemoteBWE) newChannelObserverNonProbe() *channelObserver {
 	)
 }
 
-func (r *RemoteBWE) ProbingStart() {
+func (r *RemoteBWE) ProbingStart(expectedBandwidthUsage int64) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	r.isInProbe = true
+	r.lastExpectedBandwidthUsage = expectedBandwidthUsage
+
 	channelState := ""
 	if r.channelObserver != nil {
 		channelState = r.channelObserver.ToString()
 	}
-	r.channelObserver = r.newChannelObserverProbe()
-	r.channelObserver.SeedEstimate(r.lastReceivedEstimate)
 
 	r.params.Logger.Debugw(
 		"stream allocator: starting probe",
 		"lastReceived", r.lastReceivedEstimate,
+		"expectedBandwidthUsage", expectedBandwidthUsage,
 		"channel", channelState,
 	)
+
+	r.channelObserver = newChannelObserver(
+		channelObserverParams{
+			Name:   "probe",
+			Config: r.params.Config.ChannelObserverProbe,
+		},
+		r.params.Logger,
+	)
+	r.channelObserver.SeedEstimate(r.lastReceivedEstimate)
+}
+
+func (r *RemoteBWE) ProbingEnd(isNotFailing bool, isGoalReached bool) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	highestEstimateInProbe := r.channelObserver.GetHighestEstimate()
+
+	//
+	// Reset estimator at the end of a probe irrespective of probe result to get fresh readings.
+	// With a failed probe, the latest estimate could be lower than committed estimate.
+	// As bandwidth estimator (remote in REMB case, local in TWCC case) holds state,
+	// subsequent estimates could start from the lower point. That should not trigger a
+	// downward trend and get latched to committed estimate as that would trigger a re-allocation.
+	// With fresh readings, as long as the trend is not going downward, it will not get latched.
+	//
+	// BWE-TODO: clean up this comment after implementing probing in TWCC case
+	// NOTE: With TWCC, it is possible to reset bandwidth estimation to clean state as
+	// the send side is in full control of bandwidth estimation.
+	//
+	channelObserverString := r.channelObserver.ToString()
+	r.channelObserver = r.newChannelObserverNonProbe()
+	r.params.Logger.Debugw(
+		"probe done",
+		"isNotFailing", isNotFailing,
+		"isGoalReached", isGoalReached,
+		"committedEstimate", r.committedChannelCapacity,
+		"highestEstimate", highestEstimateInProbe,
+		"channel", channelObserverString,
+	)
+	if !isNotFailing {
+		return
+	}
+
+	if highestEstimateInProbe > r.committedChannelCapacity {
+		r.committedChannelCapacity = highestEstimateInProbe
+	}
+}
+
+func (r *RemoteBWE) GetProbeStatus() (bool, bwe.ChannelTrend, int64, int64) {
+	r.lock.RLock()
+	defer r.lock.Unlock()
+
+	if !r.isInProbe {
+		return false, bwe.ChannelTrendNeutral, 0, 0
+	}
+
+	trend, _ := r.channelObserver.GetTrend()
+	return r.channelObserver.HasEnoughEstimateSamples(),
+		trend,
+		r.channelObserver.GetLowestEstimate(),
+		r.channelObserver.GetHighestEstimate()
 }
 
 func (r *RemoteBWE) worker() {
@@ -332,26 +359,30 @@ func (r *RemoteBWE) worker() {
 	for {
 		select {
 		case <-r.wake:
-			for {
-				r.lock.Lock()
-				if r.rembReports.Len() == 0 {
-					r.lock.Unlock()
-					break
-				}
-				rembReport := r.rembReports.PopFront()
-				r.lock.Unlock()
-
-				r.processREMBReport(rembReport)
-			}
-
-			if r.GetCongestionState() == bwe.CongestionStateCongested {
+			r.lock.RLock()
+			state := r.congestionState
+			r.lock.RUnlock()
+			if state == bwe.CongestionStateCongested {
 				ticker.Reset(r.params.Config.PeriodicCheckIntervalCongested)
 			} else {
 				ticker.Reset(r.params.Config.PeriodicCheckInterval)
 			}
 
 		case <-ticker.C:
-			r.congestionDetectionStateMachine()
+			var (
+				shouldNotify             bool
+				state                    bwe.CongestionState
+				committedChannelCapacity int64
+			)
+			r.lock.Lock()
+			shouldNotify, state, committedChannelCapacity = r.congestionDetectionStateMachine()
+			r.lock.Unlock()
+
+			if shouldNotify {
+				if bweListener := r.getBWEListener(); bweListener != nil {
+					bweListener.OnCongestionStateChange(state, committedChannelCapacity)
+				}
+			}
 
 		case <-r.stop.Watch():
 			return
