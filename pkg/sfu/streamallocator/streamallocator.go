@@ -258,7 +258,7 @@ func (s *StreamAllocator) SetBWE(bwe bwe.BWE) {
 		bwe.SetBWEListener(s)
 	}
 	s.bwe = bwe
-	// RAJA-TODO-BWE s.probeController.SetSendSideBWE(sendSideBWE)
+	s.probeController.SetBWE(bwe)
 }
 
 func (s *StreamAllocator) SetSendSideBWEInterceptor(sendSideBWEInterceptor cc.BandwidthEstimator) {
@@ -708,6 +708,7 @@ func (s *StreamAllocator) handleSignalEstimate(event Event) {
 		s.bwe.HandleREMB(
 			receivedEstimate,
 			s.probeController.IsInProbe(),
+			s.probeController.DoesProbeNeedFinalize(), // waiting for goal reached OR aborted probe to finalize
 			s.getExpectedBandwidthUsage(),
 			packetDelta,
 			repeatedNackDelta,
@@ -863,7 +864,7 @@ func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
 		s.committedChannelCapacity = cscd.estimatedAvailableChannelCapacity
 
 		// reset probe to ensure it does not start too soon after a downward trend
-		// RAJA-TODO: maybe probe controller setting is algorithm specific where the reset could be waiting shorter in SSBWE case or BWE can have interface which can be queried if probe controller should be reset
+		// RAJA-TODO-BWE: maybe probe controller setting is algorithm specific where the reset could be waiting shorter in SSBWE case or BWE can have interface which can be queried if probe controller should be reset
 		s.probeController.Reset()
 
 		s.allocateAllTracks()
@@ -897,24 +898,6 @@ func (s *StreamAllocator) adjustState() {
 	}
 
 	s.setState(streamAllocatorStateStable)
-}
-
-func (s *StreamAllocator) handleNewEstimateInProbe() {
-	// always update NACKs, even if aborted
-	// RAJA-TODO-BWE send information to remote bwe packetDelta, repeatedNackDelta := s.getNackDelta()
-
-	if s.probeController.DoesProbeNeedFinalize() {
-		// waiting for aborted probe to finalize
-		return
-	}
-
-	/* RAJA-TODO-BWE - this is currently a mix of stream allocator stuff and remote bwe stuff, make a clean split
-	s.channelObserver.AddEstimate(s.lastReceivedEstimate)
-	s.channelObserver.AddNack(packetDelta, repeatedNackDelta)
-
-	trend, _ := s.channelObserver.GetTrend()
-	s.probeController.CheckProbe(trend, s.channelObserver.GetHighestEstimate())
-	*/
 }
 
 func (s *StreamAllocator) allocateTrack(track *Track) {
@@ -1369,11 +1352,6 @@ func (s *StreamAllocator) maybeProbe() {
 	if !s.probeController.CanProbe() {
 		return
 	}
-	/* RAJA-TODO
-	if s.sendSideBWE != nil && s.sendSideBWE.GetCongestionState() != bwe.CongestionStateNone {
-		return
-	}
-	*/
 
 	switch s.params.Config.ProbeMode {
 	case ProbeModeMedia:
