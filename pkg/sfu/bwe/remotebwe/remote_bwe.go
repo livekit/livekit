@@ -263,7 +263,7 @@ func (r *RemoteBWE) ProbingStart(expectedBandwidthUsage int64) {
 	r.lastExpectedBandwidthUsage = expectedBandwidthUsage
 
 	r.params.Logger.Debugw(
-		"stream allocator: starting probe",
+		"remote bwe: starting probe",
 		"lastReceived", r.lastReceivedEstimate,
 		"expectedBandwidthUsage", expectedBandwidthUsage,
 		"channel", r.channelObserver,

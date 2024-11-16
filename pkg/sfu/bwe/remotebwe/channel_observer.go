@@ -154,11 +154,11 @@ func (c *channelObserver) GetTrend() (bwe.ChannelTrend, channelCongestionReason)
 
 	switch {
 	case estimateDirection == ccutils.TrendDirectionDownward:
-		c.logger.Debugw("stream allocator: channel observer: estimate is trending downward", "channel", c)
+		c.logger.Debugw("remote bwe: channel observer: estimate is trending downward", "channel", c)
 		return bwe.ChannelTrendCongesting, channelCongestionReasonEstimate
 
 	case c.nackTracker.IsTriggered():
-		c.logger.Debugw("stream allocator: channel observer: high rate of repeated NACKs", "channel", c)
+		c.logger.Debugw("remote bwe: channel observer: high rate of repeated NACKs", "channel", c)
 		return bwe.ChannelTrendCongesting, channelCongestionReasonLoss
 
 	case estimateDirection == ccutils.TrendDirectionUpward:
