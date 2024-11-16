@@ -116,7 +116,7 @@ func (n *nackTracker) IsTriggered() bool {
 	return false
 }
 
-func (n *nackTracker) ToString() string {
+func (n *nackTracker) String() string {
 	window := ""
 	if !n.windowStartTime.IsZero() {
 		now := time.Now()
@@ -136,7 +136,7 @@ func (n *nackTracker) updateHistory() {
 		n.history = n.history[1:]
 	}
 
-	n.history = append(n.history, n.ToString())
+	n.history = append(n.history, n.String())
 }
 */
 
