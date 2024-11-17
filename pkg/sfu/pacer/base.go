@@ -19,7 +19,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/sfu/bwe/sendsidebwe"
+	"github.com/livekit/livekit-server/pkg/sfu/bwe"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils/mono"
 	"github.com/pion/rtp"
@@ -28,13 +28,13 @@ import (
 type Base struct {
 	logger logger.Logger
 
-	sendSideBWE *sendsidebwe.SendSideBWE
+	bwe bwe.BWE
 }
 
-func NewBase(logger logger.Logger, sendSideBWE *sendsidebwe.SendSideBWE) *Base {
+func NewBase(logger logger.Logger, bwe bwe.BWE) *Base {
 	return &Base{
-		logger:      logger,
-		sendSideBWE: sendSideBWE,
+		logger: logger,
+		bwe:    bwe,
 	}
 }
 
@@ -84,9 +84,9 @@ func (b *Base) patchRTPHeaderExtensions(p *Packet) error {
 		}
 	}
 
-	if p.TransportWideExtID != 0 && b.sendSideBWE != nil {
-		twccSN := b.sendSideBWE.RecordPacketSendAndGetSequenceNumber(
-			sendingAt,
+	if p.TransportWideExtID != 0 && b.bwe != nil {
+		twccSN := b.bwe.RecordPacketSendAndGetSequenceNumber(
+			sendingAt.UnixMicro(),
 			p.Header.MarshalSize()+len(p.Payload),
 			p.IsRTX,
 		)

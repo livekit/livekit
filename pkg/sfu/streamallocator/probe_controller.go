@@ -120,15 +120,13 @@ func (p *ProbeController) Reset() {
 
 func (p *ProbeController) ProbeClusterDone(info ccutils.ProbeClusterInfo) {
 	p.lock.Lock()
+	defer p.lock.Unlock()
 
 	if p.probeClusterId != info.Id {
 		p.params.Logger.Debugw("not expected probe cluster", "probeClusterId", p.probeClusterId, "resetProbeClusterId", info.Id)
-		p.lock.Unlock()
-		return
+	} else {
+		p.doneProbeClusterInfo = info
 	}
-
-	p.doneProbeClusterInfo = info
-	p.lock.Unlock()
 }
 
 func (p *ProbeController) MaybeFinalizeProbe(

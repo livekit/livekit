@@ -89,6 +89,9 @@ type BWE interface {
 		repeatedNacks uint32,
 	)
 
+	// TWCC sequence number
+	RecordPacketSendAndGetSequenceNumber(atMicro int64, size int, isRTX bool) uint16
+
 	HandleTWCCFeedback(report *rtcp.TransportLayerCC)
 
 	ProbingStart(expectedBandwidthUsage int64)

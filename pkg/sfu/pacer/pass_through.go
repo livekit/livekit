@@ -15,7 +15,7 @@
 package pacer
 
 import (
-	"github.com/livekit/livekit-server/pkg/sfu/bwe/sendsidebwe"
+	"github.com/livekit/livekit-server/pkg/sfu/bwe"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -23,9 +23,9 @@ type PassThrough struct {
 	*Base
 }
 
-func NewPassThrough(logger logger.Logger, sendSideBWE *sendsidebwe.SendSideBWE) *PassThrough {
+func NewPassThrough(logger logger.Logger, bwe bwe.BWE) *PassThrough {
 	return &PassThrough{
-		Base: NewBase(logger, sendSideBWE),
+		Base: NewBase(logger, bwe),
 	}
 }
 
