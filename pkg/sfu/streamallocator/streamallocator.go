@@ -210,9 +210,6 @@ func NewStreamAllocator(params StreamAllocatorParams, enabled bool, allowPause b
 		params:     params,
 		enabled:    enabled,
 		allowPause: allowPause,
-		prober: ccutils.NewProber(ccutils.ProberParams{
-			Logger: params.Logger,
-		}),
 		// STREAM-ALLOCATOR-DATA rateMonitor: NewRateMonitor(),
 		videoTracks: make(map[livekit.TrackID]*Track),
 		eventsQueue: utils.NewTypedOpsQueue[Event](utils.OpsQueueParams{
@@ -222,6 +219,11 @@ func NewStreamAllocator(params StreamAllocatorParams, enabled bool, allowPause b
 		}),
 	}
 
+	s.prober = ccutils.NewProber(ccutils.ProberParams{
+		Listener: s,
+		Logger:   params.Logger,
+	})
+
 	s.probeController = NewProbeController(ProbeControllerParams{
 		Config: s.params.Config.ProbeController,
 		Prober: s.prober,
@@ -229,8 +231,6 @@ func NewStreamAllocator(params StreamAllocatorParams, enabled bool, allowPause b
 	})
 
 	s.resetState()
-
-	s.prober.SetProberListener(s)
 
 	return s
 }

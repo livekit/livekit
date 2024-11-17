@@ -20,7 +20,7 @@ import (
 
 	"github.com/frostbyte73/core"
 	"github.com/gammazero/deque"
-	"github.com/livekit/livekit-server/pkg/sfu/bwe/sendsidebwe"
+	"github.com/livekit/livekit-server/pkg/sfu/bwe"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -40,9 +40,9 @@ type LeakyBucket struct {
 	stop     core.Fuse
 }
 
-func NewLeakyBucket(logger logger.Logger, sendSideBWE *sendsidebwe.SendSideBWE, interval time.Duration, bitrate int) *LeakyBucket {
+func NewLeakyBucket(logger logger.Logger, bwe bwe.BWE, interval time.Duration, bitrate int) *LeakyBucket {
 	l := &LeakyBucket{
-		Base:     NewBase(logger, sendSideBWE),
+		Base:     NewBase(logger, bwe),
 		logger:   logger,
 		interval: interval,
 		bitrate:  bitrate,

@@ -14,7 +14,9 @@
 
 package bwe
 
-import "github.com/pion/rtcp"
+import (
+	"github.com/pion/rtcp"
+)
 
 type NullBWE struct {
 }
@@ -24,6 +26,10 @@ func (n *NullBWE) SetBWEListener(_bweListener BWEListener) {}
 func (n *NullBWE) Reset() {}
 
 func (n *NullBWE) Stop() {}
+
+func (n *NullBWE) RecordPacketSendAndGetSequenceNumber(_atMicro int64, _size int, _isRTX bool) uint16 {
+	return 0
+}
 
 func (n *NullBWE) HandleREMB(
 	_receivedEstimate int64,

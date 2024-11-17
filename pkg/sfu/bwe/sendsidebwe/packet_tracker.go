@@ -17,7 +17,6 @@ package sendsidebwe
 import (
 	"math/rand"
 	"sync"
-	"time"
 
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils/mono"
@@ -51,18 +50,17 @@ func newPacketTracker(params packetTrackerParams) *packetTracker {
 }
 
 // SSBWE-TODO: this potentially needs to take isProbe as argument?
-func (p *packetTracker) RecordPacketSendAndGetSequenceNumber(at time.Time, size int, isRTX bool) uint16 {
+func (p *packetTracker) RecordPacketSendAndGetSequenceNumber(atMicro int64, size int, isRTX bool) uint16 {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	sendTime := at.UnixMicro()
 	if p.baseSendTime == 0 {
-		p.baseSendTime = sendTime
+		p.baseSendTime = atMicro
 	}
 
 	pi := p.getPacketInfo(uint16(p.sequenceNumber))
 	pi.sequenceNumber = p.sequenceNumber
-	pi.sendTime = sendTime - p.baseSendTime
+	pi.sendTime = atMicro - p.baseSendTime
 	pi.recvTime = 0
 	pi.size = uint16(size)
 	pi.isRTX = isRTX

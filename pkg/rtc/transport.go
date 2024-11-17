@@ -458,12 +458,11 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 
 		if params.CongestionControlConfig.UseSendSideBWE || params.UseSendSideBWE {
 			params.Logger.Infow("using send side BWE")
-			ssbwe := sendsidebwe.NewSendSideBWE(sendsidebwe.SendSideBWEParams{
+			t.bwe = sendsidebwe.NewSendSideBWE(sendsidebwe.SendSideBWEParams{
 				Config: params.CongestionControlConfig.SendSideBWE,
 				Logger: params.Logger,
 			})
-			t.pacer = pacer.NewNoQueue(params.Logger, ssbwe)
-			t.bwe = ssbwe
+			t.pacer = pacer.NewNoQueue(params.Logger, t.bwe)
 		} else {
 			t.bwe = remotebwe.NewRemoteBWE(remotebwe.RemoteBWEParams{
 				Config: params.CongestionControlConfig.RemoteBWE,
