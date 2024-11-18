@@ -112,6 +112,12 @@ func (r *RedReceiver) DeleteDownTrack(subscriberID livekit.ParticipantID) {
 	r.logger.Debugw("red receiver downtrack deleted", "subscriberID", subscriberID)
 }
 
+func (r *RedReceiver) ResyncDownTracks() {
+	r.downTrackSpreader.Broadcast(func(dt TrackSender) {
+		dt.Resync()
+	})
+}
+
 func (r *RedReceiver) CanClose() bool {
 	return r.closed.Load() || r.downTrackSpreader.DownTrackCount() == 0
 }
