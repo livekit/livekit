@@ -123,7 +123,7 @@ func (r *RedPrimaryReceiver) DeleteDownTrack(subscriberID livekit.ParticipantID)
 
 func (r *RedPrimaryReceiver) ResyncDownTracks() {
 	r.downTrackSpreader.Broadcast(func(dt TrackSender) {
-		_ = dt.Resync
+		dt.Resync()
 	})
 }
 
