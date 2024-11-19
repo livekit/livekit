@@ -216,6 +216,10 @@ func (t *TransportManager) IsPublisherEstablished() bool {
 	return t.publisher.IsEstablished()
 }
 
+func (t *TransportManager) GetPublisherRTT() (float64, bool) {
+	return t.publisher.GetRTT()
+}
+
 func (t *TransportManager) GetPublisherMid(rtpReceiver *webrtc.RTPReceiver) string {
 	return t.publisher.GetMid(rtpReceiver)
 }
@@ -226,6 +230,10 @@ func (t *TransportManager) GetPublisherRTPReceiver(mid string) *webrtc.RTPReceiv
 
 func (t *TransportManager) WritePublisherRTCP(pkts []rtcp.Packet) error {
 	return t.publisher.WriteRTCP(pkts)
+}
+
+func (t *TransportManager) GetSubscriberRTT() (float64, bool) {
+	return t.subscriber.GetRTT()
 }
 
 func (t *TransportManager) HasSubscriberEverConnected() bool {

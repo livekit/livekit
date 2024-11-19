@@ -81,6 +81,7 @@ const (
 )
 
 var (
+	ErrNoICETransport                   = errors.New("no ICE transport")
 	ErrIceRestartWithoutLocalSDP        = errors.New("ICE restart without local SDP settled")
 	ErrIceRestartOnClosedPeerConnection = errors.New("ICE restart on closed peer connection")
 	ErrNoTransceiver                    = errors.New("no transceiver")
@@ -176,9 +177,10 @@ type trackDescription struct {
 
 // PCTransport is a wrapper around PeerConnection, with some helper methods
 type PCTransport struct {
-	params TransportParams
-	pc     *webrtc.PeerConnection
-	me     *webrtc.MediaEngine
+	params       TransportParams
+	pc           *webrtc.PeerConnection
+	iceTransport *webrtc.ICETransport
+	me           *webrtc.MediaEngine
 
 	lock sync.RWMutex
 
@@ -501,7 +503,11 @@ func (t *PCTransport) createPeerConnection() error {
 	t.pc.OnDataChannel(t.onDataChannel)
 	t.pc.OnTrack(t.params.Handler.OnTrack)
 
-	t.pc.SCTP().Transport().ICETransport().OnSelectedCandidatePairChange(func(pair *webrtc.ICECandidatePair) {
+	t.iceTransport = t.pc.SCTP().Transport().ICETransport()
+	if t.iceTransport == nil {
+		return ErrNoICETransport
+	}
+	t.iceTransport.OnSelectedCandidatePairChange(func(pair *webrtc.ICECandidatePair) {
 		t.params.Logger.Debugw("selected ICE candidate pair changed", "pair", wrappedICECandidatePairLogger{pair})
 		t.connectionDetails.SetSelectedPair(pair)
 		existingPair := t.selectedPair.Load()
@@ -935,6 +941,15 @@ func (t *PCTransport) CreateDataChannelIfEmpty(dcLabel string, dci *webrtc.DataC
 
 	t.onDataChannel(dc)
 	return dc.Label(), *dc.ID(), false, nil
+}
+
+func (t *PCTransport) GetRTT() (float64, bool) {
+	scps, ok := t.iceTransport.GetSelectedCandidatePairStats()
+	if !ok {
+		return 0.0, false
+	}
+
+	return scps.CurrentRoundTripTime, true
 }
 
 // IsEstablished returns true if the PeerConnection has been established
