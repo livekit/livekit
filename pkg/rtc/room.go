@@ -1171,7 +1171,6 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 			// skip publishing participant
 			continue
 		}
-		// ANSWER-ONLY-MODE-TODO: should bypass this check as participant is not connected yet
 		if existingParticipant.State() != livekit.ParticipantInfo_ACTIVE {
 			// not fully joined. don't subscribe yet
 			continue
