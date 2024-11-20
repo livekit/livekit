@@ -1116,6 +1116,16 @@ type FakeLocalParticipant struct {
 	updateVideoTrackReturnsOnCall map[int]struct {
 		result1 error
 	}
+	VerifyStub        func() bool
+	verifyMutex       sync.RWMutex
+	verifyArgsForCall []struct {
+	}
+	verifyReturns struct {
+		result1 bool
+	}
+	verifyReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	VerifySubscribeParticipantInfoStub        func(livekit.ParticipantID, uint32)
 	verifySubscribeParticipantInfoMutex       sync.RWMutex
 	verifySubscribeParticipantInfoArgsForCall []struct {
@@ -7100,6 +7110,59 @@ func (fake *FakeLocalParticipant) UpdateVideoTrackReturnsOnCall(i int, result1 e
 	}{result1}
 }
 
+func (fake *FakeLocalParticipant) Verify() bool {
+	fake.verifyMutex.Lock()
+	ret, specificReturn := fake.verifyReturnsOnCall[len(fake.verifyArgsForCall)]
+	fake.verifyArgsForCall = append(fake.verifyArgsForCall, struct {
+	}{})
+	stub := fake.VerifyStub
+	fakeReturns := fake.verifyReturns
+	fake.recordInvocation("Verify", []interface{}{})
+	fake.verifyMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) VerifyCallCount() int {
+	fake.verifyMutex.RLock()
+	defer fake.verifyMutex.RUnlock()
+	return len(fake.verifyArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) VerifyCalls(stub func() bool) {
+	fake.verifyMutex.Lock()
+	defer fake.verifyMutex.Unlock()
+	fake.VerifyStub = stub
+}
+
+func (fake *FakeLocalParticipant) VerifyReturns(result1 bool) {
+	fake.verifyMutex.Lock()
+	defer fake.verifyMutex.Unlock()
+	fake.VerifyStub = nil
+	fake.verifyReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) VerifyReturnsOnCall(i int, result1 bool) {
+	fake.verifyMutex.Lock()
+	defer fake.verifyMutex.Unlock()
+	fake.VerifyStub = nil
+	if fake.verifyReturnsOnCall == nil {
+		fake.verifyReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.verifyReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
 func (fake *FakeLocalParticipant) VerifySubscribeParticipantInfo(arg1 livekit.ParticipantID, arg2 uint32) {
 	fake.verifySubscribeParticipantInfoMutex.Lock()
 	fake.verifySubscribeParticipantInfoArgsForCall = append(fake.verifySubscribeParticipantInfoArgsForCall, struct {
@@ -7562,6 +7625,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.updateSubscriptionPermissionMutex.RUnlock()
 	fake.updateVideoTrackMutex.RLock()
 	defer fake.updateVideoTrackMutex.RUnlock()
+	fake.verifyMutex.RLock()
+	defer fake.verifyMutex.RUnlock()
 	fake.verifySubscribeParticipantInfoMutex.RLock()
 	defer fake.verifySubscribeParticipantInfoMutex.RUnlock()
 	fake.versionMutex.RLock()

@@ -1363,6 +1363,16 @@ func (p *ParticipantImpl) CanSubscribeMetrics() bool {
 	return p.grants.Load().Video.GetCanSubscribeMetrics()
 }
 
+func (p *ParticipantImpl) Verify() bool {
+	state := p.State()
+	isActive := state != livekit.ParticipantInfo_JOINING && state != livekit.ParticipantInfo_JOINED
+	if p.params.UseOneShotSignallingMode {
+		isActive = isActive && p.TransportManager.HasPublisherEverConnected()
+	}
+
+	return isActive
+}
+
 func (p *ParticipantImpl) VerifySubscribeParticipantInfo(pID livekit.ParticipantID, version uint32) {
 	if !p.IsReady() {
 		// we have not sent a JoinResponse yet. metadata would be covered in JoinResponse
