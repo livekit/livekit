@@ -163,17 +163,6 @@ type ParticipantParams struct {
 	UseOneShotSignallingMode       bool
 }
 
-// ONE-SHOT-SIGNALLING-MODE-TODO START
-//   1. Listen to peer connection close and that should close participant too when in SDP only mode
-//	 2. Make sure participant state (JOINED, ACTIVE, DISCONNECTED) are set up properly
-//   3. Make sure transport callbacks behave properly, i. e. things like onAnyTransportFailed???
-//   4. Transport failure should probably close the participant as there is no way to indicate to remote
-//   5. Participant should auto-subscribe - :tick:
-//   6. Rename AddTrack methods to not mention subscriber
-//   7. Have to do synchronous subscribe, i. e. no subscription manager: Intercept SubscribeToTrack and UnsubscribeFromTrack
-//   8. make sure all subscription/downtrack callbacks can work in synchronous mode
-//   9. Make publisher as primary peer connection :tick:
-
 type ParticipantImpl struct {
 	// utils.TimedVersion is a atomic. To be correctly aligned also on 32bit archs
 	// 64it atomics need to be at the front of a struct
