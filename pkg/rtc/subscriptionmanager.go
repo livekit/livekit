@@ -646,6 +646,8 @@ func (m *SubscriptionManager) subscribeSynchronous(trackID livekit.TrackID) erro
 			"subscribedVideoCount", m.subscribedVideoCount.Load(),
 		)
 	}
+	// ONE-SHOT-SIGNALLING-MODE-TODO
+	//   1. Analytics events for `TrackSubscribed`
 	return nil
 }
 
