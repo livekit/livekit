@@ -538,9 +538,12 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 		}
 	}
 
-	r.packetsLostFromRR = r.packetsLostFromRR&0xFFFF_FFFF_FF00_0000 + uint64(rr.TotalLost)
-	if ((rr.TotalLost-r.lastRR.TotalLost)&((1<<24)-1)) < (1<<23) && rr.TotalLost < r.lastRR.TotalLost {
-		r.packetsLostFromRR += (1 << 24)
+	lossDelta := int32((rr.TotalLost - r.lastRR.TotalLost) & ((1 << 24) - 1))
+	if lossDelta > 0 && lossDelta < (1<<23) {
+		r.packetsLostFromRR += uint64(lossDelta)
+		if rr.TotalLost < r.lastRR.TotalLost {
+			r.packetsLostFromRR += (1 << 24)
+		}
 	}
 
 	if isRttChanged {
