@@ -1025,7 +1025,7 @@ func (t *PCTransport) clearConnTimer() {
 
 func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription) error {
 	if t.params.UseOneShotSignallingMode {
-		// add remove candidates to ICE connection details
+		// add remote candidates to ICE connection details
 		parsed, err := sd.Unmarshal()
 		if err == nil {
 			addRemoteICECandidates := func(attrs []sdp.Attribute) {
