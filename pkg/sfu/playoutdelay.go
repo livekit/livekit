@@ -22,7 +22,18 @@ import (
 	pd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/playoutdelay"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/protocol/logger"
+	"go.uber.org/zap/zapcore"
 )
+
+const (
+	jitterMultiToDelay      = 10
+	targetDelayLogThreshold = 500
+
+	// limit max delay change to make it smoother for a/v sync
+	maxDelayChangePerSec = 80
+)
+
+// ----------------------------------------------------
 
 type PlayoutDelayState int32
 
@@ -30,12 +41,6 @@ const (
 	PlayoutDelayStateChanged PlayoutDelayState = iota
 	PlayoutDelaySending
 	PlayoutDelayAcked
-
-	jitterMultiToDelay      = 10
-	targetDelayLogThreshold = 500
-
-	// limit max delay change to make it smoother for a/v sync
-	maxDelayChangePerSec = 80
 )
 
 func (s PlayoutDelayState) String() string {
@@ -50,6 +55,19 @@ func (s PlayoutDelayState) String() string {
 	return "Unknown"
 }
 
+// ----------------------------------------------------
+
+type PlayoutDelayControllerState struct {
+	SenderSnapshotID uint32
+}
+
+func (p PlayoutDelayControllerState) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	e.AddUint32("SenderSnapshotID", p.SenderSnapshotID)
+	return nil
+}
+
+// ----------------------------------------------------
+
 type PlayoutDelayController struct {
 	lock               sync.Mutex
 	state              atomic.Int32
@@ -60,7 +78,7 @@ type PlayoutDelayController struct {
 	sendingAtTime      time.Time
 	logger             logger.Logger
 	rtpStats           *rtpstats.RTPStatsSender
-	snapshotID         uint32
+	senderSnapshotID   uint32
 
 	highDelayCount atomic.Uint32
 }
@@ -73,24 +91,40 @@ func NewPlayoutDelayController(minDelay, maxDelay uint32, logger logger.Logger, 
 		maxDelay = pd.PlayoutDelayMaxValue
 	}
 	c := &PlayoutDelayController{
-		currentDelay: minDelay,
-		minDelay:     minDelay,
-		maxDelay:     maxDelay,
-		logger:       logger,
-		rtpStats:     rtpStats,
-		snapshotID:   rtpStats.NewSenderSnapshotId(),
+		currentDelay:     minDelay,
+		minDelay:         minDelay,
+		maxDelay:         maxDelay,
+		logger:           logger,
+		rtpStats:         rtpStats,
+		senderSnapshotID: rtpStats.NewSenderSnapshotId(),
 	}
 	return c, c.createExtData()
 }
 
+func (c *PlayoutDelayController) GetState() PlayoutDelayControllerState {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	return PlayoutDelayControllerState{
+		SenderSnapshotID: c.senderSnapshotID,
+	}
+}
+
+func (c *PlayoutDelayController) SeedState(pdcs PlayoutDelayControllerState) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	c.senderSnapshotID = pdcs.SenderSnapshotID
+}
+
 func (c *PlayoutDelayController) SetJitter(jitter uint32) {
-	deltaInfo := c.rtpStats.DeltaInfoSender(c.snapshotID)
+	c.lock.Lock()
+	deltaInfoSender := c.rtpStats.DeltaInfoSender(c.senderSnapshotID)
 	var nackPercent uint32
-	if deltaInfo != nil && deltaInfo.Packets > 0 {
-		nackPercent = deltaInfo.Nacks * 100 / deltaInfo.Packets
+	if deltaInfoSender != nil && deltaInfoSender.Packets > 0 {
+		nackPercent = deltaInfoSender.Nacks * 100 / deltaInfoSender.Packets
 	}
 
-	c.lock.Lock()
 	targetDelay := jitter * jitterMultiToDelay
 	if nackPercent > 60 {
 		targetDelay += (nackPercent - 60) * 2

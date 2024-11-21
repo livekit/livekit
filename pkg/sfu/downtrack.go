@@ -140,15 +140,17 @@ var (
 // -------------------------------------------------------------------
 
 type DownTrackState struct {
-	RTPStats                   *rtpstats.RTPStatsSender
-	DeltaStatsSenderSnapshotId uint32
-	ForwarderState             *livekit.RTPForwarderState
+	RTPStats                    *rtpstats.RTPStatsSender
+	DeltaStatsSenderSnapshotId  uint32
+	ForwarderState              *livekit.RTPForwarderState
+	PlayoutDelayControllerState PlayoutDelayControllerState
 }
 
 func (d DownTrackState) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddObject("RTPStats", d.RTPStats)
 	e.AddUint32("DeltaStatsSenderSnapshotId", d.DeltaStatsSenderSnapshotId)
 	e.AddObject("ForwarderState", logger.Proto(d.ForwarderState))
+	e.AddObject("PlayoutDelayControllerState", d.PlayoutDelayControllerState)
 	return nil
 }
 
@@ -1257,11 +1259,16 @@ func (d *DownTrack) MaxLayer() buffer.VideoLayer {
 }
 
 func (d *DownTrack) GetState() DownTrackState {
-	return DownTrackState{
+	dts := DownTrackState{
 		RTPStats:                   d.rtpStats,
 		DeltaStatsSenderSnapshotId: d.deltaStatsSenderSnapshotId,
 		ForwarderState:             d.forwarder.GetState(),
 	}
+
+	if d.playoutDelay != nil {
+		dts.PlayoutDelayControllerState = d.playoutDelay.GetState()
+	}
+	return dts
 }
 
 func (d *DownTrack) SeedState(state DownTrackState) {
@@ -1271,6 +1278,9 @@ func (d *DownTrack) SeedState(state DownTrackState) {
 	if state.RTPStats != nil {
 		d.rtpStats.Seed(state.RTPStats)
 		d.deltaStatsSenderSnapshotId = state.DeltaStatsSenderSnapshotId
+		if d.playoutDelay != nil {
+			d.playoutDelay.SeedState(state.PlayoutDelayControllerState)
+		}
 	}
 	d.forwarder.SeedState(state.ForwarderState)
 }
