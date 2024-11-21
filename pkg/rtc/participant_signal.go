@@ -320,7 +320,7 @@ func (p *ParticipantImpl) sendTrackHasBeenSubscribed(trackID livekit.TrackID) {
 }
 
 func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
-	if p.IsDisconnected() || (!p.IsReady() && msg.GetJoin() == nil) || p.params.UseOneShotSignallingMode {
+	if p.IsDisconnected() || (!p.IsReady() && msg.GetJoin() == nil) {
 		return nil
 	}
 
