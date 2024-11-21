@@ -348,7 +348,7 @@ func (r *rtpStatsBaseLite) deltaInfoLite(
 			"packetsLost", packetsLost,
 			"duration", endTime.Sub(startTime).String(),
 		}
-		err = errors.New("too many packets expected in delta lite")
+		err = errors.New("unexpected number of packets lost in delta lite")
 	}
 
 	deltaInfoLite = &RTPDeltaInfoLite{
