@@ -288,12 +288,12 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 			// if the attributes match. This prevents SDP from bloating
 			// because of dormant transceivers building up.
 			//
-			sender, transceiver, err = sub.AddTrackToSubscriber(downTrack, addTrackParams)
+			sender, transceiver, err = sub.AddTrackLocal(downTrack, addTrackParams)
 			if err != nil {
 				return nil, err
 			}
 		} else {
-			sender, transceiver, err = sub.AddTransceiverFromTrackToSubscriber(downTrack, addTrackParams)
+			sender, transceiver, err = sub.AddTransceiverFromTrackLocal(downTrack, addTrackParams)
 			if err != nil {
 				return nil, err
 			}
@@ -305,6 +305,8 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	sub.UncacheDownTrack(transceiver)
 
 	// negotiation isn't required if we've replaced track
+	// ONE-SHOT-SIGNALLING-MODE: this should not be needed, but that mode information is not available here,
+	//   but it is not detrimental to set this, needs clean up when participants modes are separated out better.
 	subTrack.SetNeedsNegotiation(!replacedTrack)
 	subTrack.SetRTPSender(sender)
 	// it is possible that subscribed track is closed before subscription manager sets
@@ -316,7 +318,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	// the `OnClose` callback. So, set it here to handle cases of early close.
 	subTrack.OnClose(func(isExpectedToResume bool) {
 		if !isExpectedToResume {
-			if err := sub.RemoveTrackFromSubscriber(sender); err != nil {
+			if err := sub.RemoveTrackLocal(sender); err != nil {
 				t.params.Logger.Warnw("could not remove track from peer connection", err)
 			}
 		}

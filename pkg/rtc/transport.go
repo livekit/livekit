@@ -87,6 +87,8 @@ var (
 	ErrNoTransceiver                    = errors.New("no transceiver")
 	ErrNoSender                         = errors.New("no sender")
 	ErrMidNotFound                      = errors.New("mid not found")
+	ErrNotSynchronousPeerConnectionMode = errors.New("not using synchronous peer connection mode")
+	ErrNoRemoteDescription              = errors.New("no remote description")
 )
 
 // -------------------------------------------------------------------------
@@ -261,6 +263,7 @@ type TransportParams struct {
 	DataChannelMaxBufferedAmount uint64
 	UseSendSideBWEInterceptor    bool
 	UseSendSideBWE               bool
+	UseOneShotSignallingMode     bool
 }
 
 func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimator cc.BandwidthEstimator)) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
@@ -494,10 +497,12 @@ func (t *PCTransport) createPeerConnection() error {
 	}
 
 	t.pc = pc
-	t.pc.OnICEGatheringStateChange(t.onICEGatheringStateChange)
+	if !t.params.UseOneShotSignallingMode {
+		// one shot signalling mode gathers all candidates and sends in answer
+		t.pc.OnICEGatheringStateChange(t.onICEGatheringStateChange)
+		t.pc.OnICECandidate(t.onICECandidateTrickle)
+	}
 	t.pc.OnICEConnectionStateChange(t.onICEConnectionStateChange)
-	t.pc.OnICECandidate(t.onICECandidateTrickle)
-
 	t.pc.OnConnectionStateChange(t.onPeerConnectionStateChange)
 
 	t.pc.OnDataChannel(t.onDataChannel)
@@ -1033,11 +1038,45 @@ func (t *PCTransport) clearConnTimer() {
 	}
 }
 
-func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription) {
+func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription) error {
+	if t.params.UseOneShotSignallingMode {
+		err := t.pc.SetRemoteDescription(sd)
+		if err != nil {
+			t.params.Logger.Errorw("could not set remote description on synchronous mode peer connection", err)
+		}
+		return err
+	}
+
 	t.postEvent(event{
 		signal: signalRemoteDescriptionReceived,
 		data:   &sd,
 	})
+	return nil
+}
+
+func (t *PCTransport) GetAnswer() (webrtc.SessionDescription, error) {
+	if !t.params.UseOneShotSignallingMode {
+		return webrtc.SessionDescription{}, ErrNotSynchronousPeerConnectionMode
+	}
+
+	prd := t.pc.PendingRemoteDescription()
+	if prd == nil || prd.Type != webrtc.SDPTypeOffer {
+		return webrtc.SessionDescription{}, ErrNoRemoteDescription
+	}
+
+	answer, err := t.pc.CreateAnswer(nil)
+	if err != nil {
+		return webrtc.SessionDescription{}, err
+	}
+
+	if err = t.pc.SetLocalDescription(answer); err != nil {
+		return webrtc.SessionDescription{}, err
+	}
+
+	// wait for gathering to complete to include all candidates in the answer
+	<-webrtc.GatheringCompletePromise(t.pc)
+
+	return *t.pc.CurrentLocalDescription(), nil
 }
 
 func (t *PCTransport) OnNegotiationStateChanged(f func(state transport.NegotiationState)) {

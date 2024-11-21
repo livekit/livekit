@@ -242,7 +242,12 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		prometheus.IncrementParticipantJoinFail(1)
-		handleError(w, r, http.StatusInternalServerError, err, loggerFields...)
+		status := http.StatusInternalServerError
+		var psrpcErr psrpc.Error
+		if errors.As(err, &psrpcErr) {
+			status = psrpcErr.ToHttp()
+		}
+		handleError(w, r, status, err, loggerFields...)
 		return
 	}
 
