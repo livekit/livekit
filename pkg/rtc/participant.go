@@ -1388,12 +1388,21 @@ func (p *ParticipantImpl) onTrackSubscribed(subTrack types.SubscribedTrack) {
 		if err != nil {
 			return
 		}
-		if p.TransportManager.HasSubscriberEverConnected() {
-			dt := subTrack.DownTrack()
-			dt.SeedState(sfu.DownTrackState{ForwarderState: p.getAndDeleteForwarderState(subTrack.ID())})
-			dt.SetConnected()
+		if p.params.UseOneShotSignallingMode {
+			if p.TransportManager.HasPublisherEverConnected() {
+				dt := subTrack.DownTrack()
+				dt.SeedState(sfu.DownTrackState{ForwarderState: p.getAndDeleteForwarderState(subTrack.ID())})
+				dt.SetConnected()
+			}
+			// ONE-SHOT-SIGNALLING-MODE-TODO: video support should add to publisher PC for congestion control
+		} else {
+			if p.TransportManager.HasSubscriberEverConnected() {
+				dt := subTrack.DownTrack()
+				dt.SeedState(sfu.DownTrackState{ForwarderState: p.getAndDeleteForwarderState(subTrack.ID())})
+				dt.SetConnected()
+			}
+			p.TransportManager.AddSubscribedTrack(subTrack)
 		}
-		p.TransportManager.AddSubscribedTrack(subTrack)
 	})
 }
 
@@ -1880,6 +1889,10 @@ func (p *ParticipantImpl) onPublisherInitialConnected() {
 
 	if p.supervisor != nil {
 		p.supervisor.SetPublisherPeerConnectionConnected(true)
+	}
+
+	if p.params.UseOneShotSignallingMode {
+		p.setDownTracksConnected()
 	}
 
 	p.pubRTCPQueue.Start()
