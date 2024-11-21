@@ -111,7 +111,7 @@ func (s *defaultSessionHandler) HandleSession(
 		return err
 	}
 
-	return s.roomManager.StartSession(ctx, pi, requestSource, responseSink)
+	return s.roomManager.StartSession(ctx, pi, requestSource, responseSink, false)
 }
 
 func (s *SignalServer) Start() error {

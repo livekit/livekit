@@ -539,8 +539,7 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 	}
 
 	time.AfterFunc(time.Minute, func() {
-		state := participant.State()
-		if state == livekit.ParticipantInfo_JOINING || state == livekit.ParticipantInfo_JOINED {
+		if !participant.Verify() {
 			r.RemoveParticipant(participant.Identity(), participant.ID(), types.ParticipantCloseReasonJoinTimeout)
 		}
 	})

@@ -281,6 +281,7 @@ func (r *RoomManager) StartSession(
 	pi routing.ParticipantInit,
 	requestSource routing.MessageSource,
 	responseSink routing.MessageSink,
+	useOneShotSignallingMode bool,
 ) error {
 	sessionStartTime := time.Now()
 
@@ -489,6 +490,7 @@ func (r *RoomManager) StartSession(
 		SyncStreams:                  roomInternal.GetSyncStreams(),
 		ForwardStats:                 r.forwardStats,
 		MetricConfig:                 r.config.Metric,
+		UseOneShotSignallingMode:     useOneShotSignallingMode,
 	})
 	if err != nil {
 		return err
