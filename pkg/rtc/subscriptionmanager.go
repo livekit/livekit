@@ -168,11 +168,7 @@ func (m *SubscriptionManager) SubscribeToTrack(trackID livekit.TrackID) {
 
 func (m *SubscriptionManager) UnsubscribeFromTrack(trackID livekit.TrackID) {
 	if m.params.UseOneShotSignallingMode {
-		// ONE-SHOT-SIGNALLING-MODE-TODO
-		//   1. Remove from peer connection
-		//   2. Analytics events for `TrackUnsubscribed` and `RTPStats`.
-		//      Note that these are sent only if track was bound.
-		//      So, maybe one shot mode also should maintain subscribed tracks?
+		m.unsubscribeSynchronous(trackID)
 		return
 	}
 
@@ -626,6 +622,17 @@ func (m *SubscriptionManager) subscribeSynchronous(trackID livekit.TrackID) erro
 		return ErrTrackNotFound
 	}
 
+	m.lock.Lock()
+	sub, ok := m.subscriptions[trackID]
+	if !ok {
+		sLogger := m.params.Logger.WithValues(
+			"trackID", trackID,
+		)
+		sub = newTrackSubscription(m.params.Participant.ID(), trackID, sLogger)
+		m.subscriptions[trackID] = sub
+	}
+	m.lock.Unlock()
+
 	subTrack, err := track.AddSubscriber(m.params.Participant)
 	if err != nil && !errors.Is(err, errAlreadySubscribed) {
 		return err
@@ -639,6 +646,35 @@ func (m *SubscriptionManager) subscribeSynchronous(trackID livekit.TrackID) erro
 		)
 	}
 	if err == nil && subTrack != nil { // subTrack could be nil if already subscribed
+		subTrack.OnClose(func(isExpectedToResume bool) {
+			m.handleSubscribedTrackClose(sub, isExpectedToResume)
+
+			m.lock.Lock()
+			delete(m.subscriptions, trackID)
+			m.lock.Unlock()
+		})
+		subTrack.AddOnBind(func(err error) {
+			if err != nil {
+				sub.logger.Infow("failed to bind track", "err", err)
+				sub.maybeRecordError(m.params.Telemetry, m.params.Participant.ID(), err, true)
+				m.UnsubscribeFromTrack(trackID)
+				m.params.OnSubscriptionError(trackID, false, err)
+				return
+			}
+			sub.setBound()
+			sub.maybeRecordSuccess(m.params.Telemetry, m.params.Participant.ID())
+		})
+		sub.setSubscribedTrack(subTrack)
+
+		switch track.Kind() {
+		case livekit.TrackType_VIDEO:
+			m.subscribedVideoCount.Inc()
+		case livekit.TrackType_AUDIO:
+			m.subscribedAudioCount.Inc()
+		}
+
+		go m.params.OnTrackSubscribed(subTrack)
+
 		m.params.Logger.Debugw(
 			"subscribed to track",
 			"trackID", trackID,
@@ -646,8 +682,6 @@ func (m *SubscriptionManager) subscribeSynchronous(trackID livekit.TrackID) erro
 			"subscribedVideoCount", m.subscribedVideoCount.Load(),
 		)
 	}
-	// ONE-SHOT-SIGNALLING-MODE-TODO
-	//   1. Analytics events for `TrackSubscribed`
 	return nil
 }
 
@@ -668,6 +702,29 @@ func (m *SubscriptionManager) unsubscribe(s *trackSubscription) error {
 		track.RemoveSubscriber(pID, false)
 	}()
 
+	return nil
+}
+
+func (m *SubscriptionManager) unsubscribeSynchronous(trackID livekit.TrackID) error {
+	m.lock.Lock()
+	sub := m.subscriptions[trackID]
+	delete(m.subscriptions, trackID)
+	m.lock.Unlock()
+	if sub == nil {
+		// already unsubscribed or not subscribed
+		return nil
+	}
+
+	sub.logger.Debugw("executing unsubscribe synchronous")
+
+	subTrack := sub.getSubscribedTrack()
+	if subTrack == nil {
+		// already unsubscribed
+		return nil
+	}
+
+	track := subTrack.MediaTrack()
+	track.RemoveSubscriber(m.params.Participant.ID(), false)
 	return nil
 }
 
@@ -780,10 +837,12 @@ func (m *SubscriptionManager) handleSubscribedTrackClose(s *trackSubscription, i
 		t := time.Now()
 		s.subscribeAt.Store(&t)
 	}
-	if relieveFromLimits {
-		m.queueReconcile(trackIDForReconcileSubscriptions)
-	} else {
-		m.queueReconcile(s.trackID)
+	if !m.params.UseOneShotSignallingMode {
+		if relieveFromLimits {
+			m.queueReconcile(trackIDForReconcileSubscriptions)
+		} else {
+			m.queueReconcile(s.trackID)
+		}
 	}
 }
 

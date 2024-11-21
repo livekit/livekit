@@ -1025,7 +1025,28 @@ func (t *PCTransport) clearConnTimer() {
 
 func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription) error {
 	if t.params.UseOneShotSignallingMode {
-		err := t.pc.SetRemoteDescription(sd)
+		// add remove candidates to ICE connection details
+		parsed, err := sd.Unmarshal()
+		if err == nil {
+			addRemoteICECandidates := func(attrs []sdp.Attribute) {
+				for _, a := range attrs {
+					if a.IsICECandidate() {
+						c, err := ice.UnmarshalCandidate(a.Value)
+						if err != nil {
+							continue
+						}
+						t.connectionDetails.AddRemoteICECandidate(c, false, false, false)
+					}
+				}
+			}
+
+			addRemoteICECandidates(parsed.Attributes)
+			for _, m := range parsed.MediaDescriptions {
+				addRemoteICECandidates(m.Attributes)
+			}
+		}
+
+		err = t.pc.SetRemoteDescription(sd)
 		if err != nil {
 			t.params.Logger.Errorw("could not set remote description on synchronous mode peer connection", err)
 		}
@@ -1061,7 +1082,30 @@ func (t *PCTransport) GetAnswer() (webrtc.SessionDescription, error) {
 	// wait for gathering to complete to include all candidates in the answer
 	<-webrtc.GatheringCompletePromise(t.pc)
 
-	return *t.pc.CurrentLocalDescription(), nil
+	cld := t.pc.CurrentLocalDescription()
+
+	// add local candidates to ICE connection details
+	parsed, err := cld.Unmarshal()
+	if err == nil {
+		addLocalICECandidates := func(attrs []sdp.Attribute) {
+			for _, a := range attrs {
+				if a.IsICECandidate() {
+					c, err := ice.UnmarshalCandidate(a.Value)
+					if err != nil {
+						continue
+					}
+					t.connectionDetails.AddLocalICECandidate(c, false, false)
+				}
+			}
+		}
+
+		addLocalICECandidates(parsed.Attributes)
+		for _, m := range parsed.MediaDescriptions {
+			addLocalICECandidates(m.Attributes)
+		}
+	}
+
+	return *cld, nil
 }
 
 func (t *PCTransport) OnNegotiationStateChanged(f func(state transport.NegotiationState)) {
