@@ -195,6 +195,19 @@ func (m *SubscriptionManager) GetSubscribedTracks() []types.SubscribedTrack {
 	return tracks
 }
 
+func (m *SubscriptionManager) IsTrackNameSubscribed(publisherIdentity livekit.ParticipantIdentity, trackName string) bool {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+
+	for _, s := range m.subscriptions {
+		st := s.getSubscribedTrack()
+		if st != nil && st.PublisherIdentity() == publisherIdentity && st.MediaTrack() != nil && st.MediaTrack().Name() == trackName {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *SubscriptionManager) StopAndGetSubscribedTracksForwarderState() map[livekit.TrackID]*livekit.RTPForwarderState {
 	m.lock.RLock()
 	defer m.lock.RUnlock()

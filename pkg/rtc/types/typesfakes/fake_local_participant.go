@@ -628,6 +628,18 @@ type FakeLocalParticipant struct {
 	isSubscribedToReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	IsTrackNameSubscribedStub        func(livekit.ParticipantIdentity, string) bool
+	isTrackNameSubscribedMutex       sync.RWMutex
+	isTrackNameSubscribedArgsForCall []struct {
+		arg1 livekit.ParticipantIdentity
+		arg2 string
+	}
+	isTrackNameSubscribedReturns struct {
+		result1 bool
+	}
+	isTrackNameSubscribedReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	IssueFullReconnectStub        func(types.ParticipantCloseReason)
 	issueFullReconnectMutex       sync.RWMutex
 	issueFullReconnectArgsForCall []struct {
@@ -4363,6 +4375,68 @@ func (fake *FakeLocalParticipant) IsSubscribedToReturnsOnCall(i int, result1 boo
 	}{result1}
 }
 
+func (fake *FakeLocalParticipant) IsTrackNameSubscribed(arg1 livekit.ParticipantIdentity, arg2 string) bool {
+	fake.isTrackNameSubscribedMutex.Lock()
+	ret, specificReturn := fake.isTrackNameSubscribedReturnsOnCall[len(fake.isTrackNameSubscribedArgsForCall)]
+	fake.isTrackNameSubscribedArgsForCall = append(fake.isTrackNameSubscribedArgsForCall, struct {
+		arg1 livekit.ParticipantIdentity
+		arg2 string
+	}{arg1, arg2})
+	stub := fake.IsTrackNameSubscribedStub
+	fakeReturns := fake.isTrackNameSubscribedReturns
+	fake.recordInvocation("IsTrackNameSubscribed", []interface{}{arg1, arg2})
+	fake.isTrackNameSubscribedMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) IsTrackNameSubscribedCallCount() int {
+	fake.isTrackNameSubscribedMutex.RLock()
+	defer fake.isTrackNameSubscribedMutex.RUnlock()
+	return len(fake.isTrackNameSubscribedArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) IsTrackNameSubscribedCalls(stub func(livekit.ParticipantIdentity, string) bool) {
+	fake.isTrackNameSubscribedMutex.Lock()
+	defer fake.isTrackNameSubscribedMutex.Unlock()
+	fake.IsTrackNameSubscribedStub = stub
+}
+
+func (fake *FakeLocalParticipant) IsTrackNameSubscribedArgsForCall(i int) (livekit.ParticipantIdentity, string) {
+	fake.isTrackNameSubscribedMutex.RLock()
+	defer fake.isTrackNameSubscribedMutex.RUnlock()
+	argsForCall := fake.isTrackNameSubscribedArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeLocalParticipant) IsTrackNameSubscribedReturns(result1 bool) {
+	fake.isTrackNameSubscribedMutex.Lock()
+	defer fake.isTrackNameSubscribedMutex.Unlock()
+	fake.IsTrackNameSubscribedStub = nil
+	fake.isTrackNameSubscribedReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) IsTrackNameSubscribedReturnsOnCall(i int, result1 bool) {
+	fake.isTrackNameSubscribedMutex.Lock()
+	defer fake.isTrackNameSubscribedMutex.Unlock()
+	fake.IsTrackNameSubscribedStub = nil
+	if fake.isTrackNameSubscribedReturnsOnCall == nil {
+		fake.isTrackNameSubscribedReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.isTrackNameSubscribedReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
 func (fake *FakeLocalParticipant) IssueFullReconnect(arg1 types.ParticipantCloseReason) {
 	fake.issueFullReconnectMutex.Lock()
 	fake.issueFullReconnectArgsForCall = append(fake.issueFullReconnectArgsForCall, struct {
@@ -7501,6 +7575,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.isRecorderMutex.RUnlock()
 	fake.isSubscribedToMutex.RLock()
 	defer fake.isSubscribedToMutex.RUnlock()
+	fake.isTrackNameSubscribedMutex.RLock()
+	defer fake.isTrackNameSubscribedMutex.RUnlock()
 	fake.issueFullReconnectMutex.RLock()
 	defer fake.issueFullReconnectMutex.RUnlock()
 	fake.kindMutex.RLock()
