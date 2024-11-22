@@ -138,6 +138,30 @@ type senderSnapshot struct {
 	intervalStats intervalStats
 }
 
+func (s *senderSnapshot) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if s == nil {
+		return nil
+	}
+
+	e.AddBool("isValid", s.isValid)
+	e.AddTime("startTime", s.startTime)
+	e.AddUint64("extStartSN", s.extStartSN)
+	e.AddUint64("bytes", s.bytes)
+	e.AddUint64("headerBytes", s.headerBytes)
+	e.AddUint64("packetsPadding", s.packetsPadding)
+	e.AddUint64("bytesPadding", s.bytesPadding)
+	e.AddUint64("headerBytesPadding", s.headerBytesPadding)
+	e.AddUint64("packetsDuplicate", s.packetsDuplicate)
+	e.AddUint64("bytesDuplicate", s.bytesDuplicate)
+	e.AddUint64("headerBytesDuplicate", s.headerBytesDuplicate)
+	e.AddUint64("packetsOutOfOrder", s.packetsOutOfOrder)
+	e.AddUint64("packetsLostFeed", s.packetsLostFeed)
+	e.AddUint64("packetsLost", s.packetsLost)
+	e.AddUint32("frames", s.frames)
+	e.AddUint32("nacks", s.nacks)
+	return nil
+}
+
 // -------------------------------------------------------------------
 
 type rttMarker struct {
@@ -514,9 +538,12 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 		}
 	}
 
-	r.packetsLostFromRR = r.packetsLostFromRR&0xFFFF_FFFF_FF00_0000 + uint64(rr.TotalLost)
-	if ((rr.TotalLost-r.lastRR.TotalLost)&((1<<24)-1)) < (1<<23) && rr.TotalLost < r.lastRR.TotalLost {
-		r.packetsLostFromRR += (1 << 24)
+	lossDelta := (rr.TotalLost - r.lastRR.TotalLost) & ((1 << 24) - 1)
+	if lossDelta > 0 && lossDelta < (1<<23) {
+		r.packetsLostFromRR += uint64(lossDelta)
+		if rr.TotalLost < r.lastRR.TotalLost {
+			r.packetsLostFromRR += (1 << 24)
+		}
 	}
 
 	if isRttChanged {
@@ -563,6 +590,7 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 				"packetsInInterval", extReceivedRRSN-s.extLastRRSN,
 				"rtpStats", lockedRTPStatsSenderLogEncoder{r},
 			)
+			s.extLastRRSN = extReceivedRRSN
 			continue
 		}
 
@@ -768,11 +796,10 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) *RTPDeltaInfo 
 	if packetsExpected > cNumSequenceNumbers {
 		r.logger.Warnw(
 			"too many packets expected in delta (sender)", nil,
-			"startSN", then.extStartSN,
-			"endSN", now.extStartSN,
+			"senderSnapshotID", senderSnapshotID,
+			"senderSnapshotNow", now,
+			"senderSnapshotThen", then,
 			"packetsExpected", packetsExpected,
-			"startTime", startTime,
-			"endTime", endTime,
 			"duration", endTime.Sub(startTime),
 			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
 		)
@@ -793,15 +820,14 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) *RTPDeltaInfo 
 	}
 	if packetsLost > packetsExpected {
 		r.logger.Warnw(
-			"unexpected number of packets lost",
-			fmt.Errorf(
-				"start: %d, end: %d, expected: %d, lost: report: %d, feed: %d",
-				then.extStartSN,
-				now.extStartSN,
-				packetsExpected,
-				packetsLost,
-				packetsLostFeed,
-			),
+			"unexpected number of packets lost", nil,
+			"senderSnapshotID", senderSnapshotID,
+			"senderSnapshotNow", now,
+			"senderSnapshotThen", then,
+			"packetsExpected", packetsExpected,
+			"packetsLost", packetsLost,
+			"packetsLostFeed", packetsLostFeed,
+			"duration", endTime.Sub(startTime),
 			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
 		)
 		packetsLost = packetsExpected
@@ -906,7 +932,7 @@ func (r *RTPStatsSender) getSenderSnapshot(startTime time.Time, s *senderSnapsho
 		bytesDuplicate:       r.bytesDuplicate,
 		headerBytesDuplicate: r.headerBytesDuplicate,
 		packetsOutOfOrder:    s.packetsOutOfOrder + s.intervalStats.packetsOutOfOrder,
-		packetsLostFeed:      r.packetsLost,
+		packetsLostFeed:      s.packetsLost + s.intervalStats.packetsLost,
 		packetsLost:          r.packetsLostFromRR,
 		frames:               s.frames + s.intervalStats.frames,
 		nacks:                r.nacks,

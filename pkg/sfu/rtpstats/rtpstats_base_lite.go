@@ -44,6 +44,23 @@ type RTPDeltaInfoLite struct {
 	Nacks             uint32
 }
 
+func (r *RTPDeltaInfoLite) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if r == nil {
+		return nil
+	}
+
+	e.AddTime("StartTime", r.StartTime)
+	e.AddTime("EndTime", r.EndTime)
+	e.AddUint32("Packets", r.Packets)
+	e.AddUint64("Bytes", r.Bytes)
+	e.AddUint32("PacketsLost", r.PacketsLost)
+	e.AddUint32("PacketsOutOfOrder", r.PacketsOutOfOrder)
+	e.AddUint32("Nacks", r.Nacks)
+	return nil
+}
+
+// -------------------------------------------------------
+
 type snapshotLite struct {
 	isValid bool
 
@@ -57,6 +74,21 @@ type snapshotLite struct {
 	packetsLost uint64
 
 	nacks uint32
+}
+
+func (s *snapshotLite) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if s == nil {
+		return nil
+	}
+
+	e.AddBool("isValid", s.isValid)
+	e.AddTime("startTime", s.startTime)
+	e.AddUint64("extStartSN", s.extStartSN)
+	e.AddUint64("bytes", s.bytes)
+	e.AddUint64("packetsOutOfOrder", s.packetsOutOfOrder)
+	e.AddUint64("packetsLost", s.packetsLost)
+	e.AddUint32("nacks", s.nacks)
+	return nil
 }
 
 // ------------------------------------------------------------------
@@ -280,17 +312,16 @@ func (r *rtpStatsBaseLite) deltaInfoLite(
 	startTime := then.startTime
 	endTime := now.startTime
 
-	packetsExpected := now.extStartSN - then.extStartSN
+	packetsExpected := uint32(now.extStartSN - then.extStartSN)
 	if then.extStartSN > extHighestSN {
 		packetsExpected = 0
 	}
 	if packetsExpected > cNumSequenceNumbers {
 		loggingFields = []interface{}{
-			"startSN", then.extStartSN,
-			"endSN", now.extStartSN,
+			"snapshotLiteID", snapshotLiteID,
+			"snapshotLiteNow", now,
+			"snapshotLiteThen", then,
 			"packetsExpected", packetsExpected,
-			"startTime", startTime,
-			"endTime", endTime,
 			"duration", endTime.Sub(startTime).String(),
 		}
 		err = errors.New("too many packets expected in delta lite")
@@ -308,11 +339,22 @@ func (r *rtpStatsBaseLite) deltaInfoLite(
 	if int32(packetsLost) < 0 {
 		packetsLost = 0
 	}
+	if packetsLost > packetsExpected {
+		loggingFields = []interface{}{
+			"snapshotLiteID", snapshotLiteID,
+			"snapshotLiteNow", now,
+			"snapshotLiteThen", then,
+			"packetsExpected", packetsExpected,
+			"packetsLost", packetsLost,
+			"duration", endTime.Sub(startTime).String(),
+		}
+		err = errors.New("unexpected number of packets lost in delta lite")
+	}
 
 	deltaInfoLite = &RTPDeltaInfoLite{
 		StartTime:         startTime,
 		EndTime:           endTime,
-		Packets:           uint32(packetsExpected),
+		Packets:           packetsExpected,
 		Bytes:             now.bytes - then.bytes,
 		PacketsLost:       packetsLost,
 		PacketsOutOfOrder: uint32(now.packetsOutOfOrder - then.packetsOutOfOrder),
