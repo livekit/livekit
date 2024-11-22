@@ -381,6 +381,7 @@ type LocalParticipant interface {
 	UnsubscribeFromTrack(trackID livekit.TrackID)
 	UpdateSubscribedTrackSettings(trackID livekit.TrackID, settings *livekit.UpdateTrackSettings)
 	GetSubscribedTracks() []SubscribedTrack
+	IsTrackNameSubscribed(publisherIdentity livekit.ParticipantIdentity, trackName string) bool
 	Verify() bool
 	VerifySubscribeParticipantInfo(pID livekit.ParticipantID, version uint32)
 	// WaitUntilSubscribed waits until all subscriptions have been settled, or if the timeout
