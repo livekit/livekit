@@ -1892,6 +1892,8 @@ func (p *ParticipantImpl) onPublisherInitialConnected() {
 	}
 
 	if p.params.UseOneShotSignallingMode {
+		go p.subscriberRTCPWorker()
+
 		p.setDownTracksConnected()
 	}
 
