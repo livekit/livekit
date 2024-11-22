@@ -265,7 +265,11 @@ func (t *TransportManager) RemoveTrackLocal(sender *webrtc.RTPSender) error {
 }
 
 func (t *TransportManager) WriteSubscriberRTCP(pkts []rtcp.Packet) error {
-	return t.subscriber.WriteRTCP(pkts)
+	if t.params.UseOneShotSignallingMode {
+		return t.publisher.WriteRTCP(pkts)
+	} else {
+		return t.subscriber.WriteRTCP(pkts)
+	}
 }
 
 func (t *TransportManager) GetSubscriberPacer() pacer.Pacer {
