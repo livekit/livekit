@@ -19,7 +19,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20240730083616-559fa5ece598
-	github.com/livekit/protocol v1.26.1-0.20241016155912-37cb4c8b250d
+	github.com/livekit/protocol v1.27.2-0.20241107143334-083fcac1318d
 	github.com/livekit/psrpc v0.6.1-0.20240924010758-9f0a4268a3b9
 	github.com/mackerelio/go-osstat v0.2.5
 	github.com/magefile/mage v1.15.0
@@ -28,7 +28,7 @@ require (
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/ory/dockertest/v3 v3.11.0
 	github.com/pion/dtls/v2 v2.2.12
-	github.com/pion/ice/v2 v2.3.36
+	github.com/pion/ice/v2 v2.3.37
 	github.com/pion/interceptor v0.1.37
 	github.com/pion/rtcp v1.2.14
 	github.com/pion/rtp v1.8.9
@@ -55,6 +55,8 @@ require (
 	google.golang.org/protobuf v1.35.1
 	gopkg.in/yaml.v3 v3.0.1
 )
+
+// replace github.com/livekit/protocol => ../protocol
 
 require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.33.0-20240401165935-b983156c5e99.1 // indirect
@@ -126,7 +128,7 @@ require (
 	github.com/xeipuuv/gojsonschema v1.2.0 // indirect
 	github.com/xrash/smetrics v0.0.0-20240521201337-686a1a2994c1 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
-	go.uber.org/zap/exp v0.2.0 // indirect
+	go.uber.org/zap/exp v0.3.0 // indirect
 	golang.org/x/crypto v0.28.0 // indirect
 	golang.org/x/mod v0.21.0 // indirect
 	golang.org/x/net v0.30.0 // indirect

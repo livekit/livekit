@@ -39,6 +39,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/livekit-server/pkg/telemetry"
@@ -107,7 +108,7 @@ type Room struct {
 	Logger     logger.Logger
 
 	config          WebRTCConfig
-	audioConfig     *config.AudioConfig
+	audioConfig     *sfu.AudioConfig
 	serverInfo      *livekit.ServerInfo
 	telemetry       telemetry.TelemetryService
 	egressLauncher  EgressLauncher
@@ -234,7 +235,7 @@ func NewRoom(
 	internal *livekit.RoomInternal,
 	config WebRTCConfig,
 	roomConfig config.RoomConfig,
-	audioConfig *config.AudioConfig,
+	audioConfig *sfu.AudioConfig,
 	serverInfo *livekit.ServerInfo,
 	telemetry telemetry.TelemetryService,
 	agentClient agent.Client,
@@ -541,8 +542,7 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 	}
 
 	time.AfterFunc(time.Minute, func() {
-		state := participant.State()
-		if state == livekit.ParticipantInfo_JOINING || state == livekit.ParticipantInfo_JOINED {
+		if !participant.Verify() {
 			r.RemoveParticipant(participant.Identity(), participant.ID(), types.ParticipantCloseReasonJoinTimeout)
 		}
 	})
@@ -1225,7 +1225,7 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 			}()
 		}
 	}
-	if r.internal != nil && r.internal.TrackEgress != nil {
+	if participant.Kind() != livekit.ParticipantInfo_EGRESS && r.internal != nil && r.internal.TrackEgress != nil {
 		go func() {
 			if err := StartTrackEgress(
 				context.Background(),
@@ -1731,9 +1731,7 @@ func (r *Room) createAgentDispatchesFromRoomAgent() {
 	roomDisp := r.internal.AgentDispatches
 	if len(roomDisp) == 0 {
 		// Backward compatibility: by default, start any agent in the empty JobName
-		roomDisp = []*livekit.RoomAgentDispatch{
-			&livekit.RoomAgentDispatch{},
-		}
+		roomDisp = []*livekit.RoomAgentDispatch{{}}
 	}
 
 	for _, ag := range roomDisp {
@@ -1827,8 +1825,8 @@ func connectionDetailsFields(infos []*types.ICEConnectionInfo) []interface{} {
 		candidates := make([]string, 0, len(info.Remote)+len(info.Local))
 		for _, c := range info.Local {
 			cStr := "[local]"
-			if c.Selected {
-				cStr += "[selected]"
+			if c.SelectedOrder != 0 {
+				cStr += fmt.Sprintf("[selected:%d]", c.SelectedOrder)
 			} else if c.Filtered {
 				cStr += "[filtered]"
 			}
@@ -1840,15 +1838,21 @@ func connectionDetailsFields(infos []*types.ICEConnectionInfo) []interface{} {
 		}
 		for _, c := range info.Remote {
 			cStr := "[remote]"
-			if c.Selected {
-				cStr += "[selected]"
+			if c.SelectedOrder != 0 {
+				cStr += fmt.Sprintf("[selected:%d]", c.SelectedOrder)
 			} else if c.Filtered {
 				cStr += "[filtered]"
 			}
 			if c.Trickle {
 				cStr += "[trickle]"
 			}
-			cStr += " " + c.Remote.String()
+			cStr += " " + fmt.Sprintf("%s %s %s:%d", c.Remote.NetworkType(), c.Remote.Type(), MaybeTruncateIP(c.Remote.Address()), c.Remote.Port())
+			if relatedAddress := c.Remote.RelatedAddress(); relatedAddress != nil {
+				relatedAddr := MaybeTruncateIP(relatedAddress.Address)
+				if relatedAddr != "" {
+					cStr += " " + fmt.Sprintf(" related %s:%d", relatedAddr, relatedAddress.Port)
+				}
+			}
 			candidates = append(candidates, cStr)
 		}
 		if len(candidates) > 0 {

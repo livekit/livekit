@@ -27,7 +27,7 @@ type OWDEstimatorParams struct {
 	PropagationDelaySpikeAdaptationFactor float64
 
 	PropagationDelayDeltaThresholdMin                time.Duration
-	PropagationDelayDeltaThresholdMaxFactor          int
+	PropagationDelayDeltaThresholdMaxFactor          int64
 	PropagationDelayDeltaHighResetNumReports         int
 	PropagationDelayDeltaHighResetWait               time.Duration
 	PropagationDelayDeltaLongTermAdaptationThreshold time.Duration
@@ -72,14 +72,14 @@ type OWDEstimator struct {
 	params OWDEstimatorParams
 
 	initialized                        bool
-	lastSenderClockTime                time.Time
-	lastPropagationDelay               time.Duration
-	lastDeltaPropagationDelay          time.Duration
-	estimatedPropagationDelay          time.Duration
-	longTermDeltaPropagationDelay      time.Duration
+	lastSenderClockTimeNs              int64
+	lastPropagationDelayNs             int64
+	lastDeltaPropagationDelayNs        int64
+	estimatedPropagationDelayNs        int64
+	longTermDeltaPropagationDelayNs    int64
 	propagationDelayDeltaHighCount     int
 	propagationDelayDeltaHighStartTime time.Time
-	propagationDelaySpike              time.Duration
+	propagationDelaySpikeNs            int64
 }
 
 func NewOWDEstimator(params OWDEstimatorParams) *OWDEstimator {
@@ -90,58 +90,58 @@ func NewOWDEstimator(params OWDEstimatorParams) *OWDEstimator {
 
 func (o *OWDEstimator) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	if o != nil {
-		e.AddTime("lastSenderClockTime", o.lastSenderClockTime)
-		e.AddDuration("lastPropagationDelay", o.lastPropagationDelay)
-		e.AddDuration("lastDeltaPropagationDelay", o.lastDeltaPropagationDelay)
-		e.AddDuration("estimatedPropagationDelay", o.estimatedPropagationDelay)
-		e.AddDuration("longTermDeltaPropagationDelay", o.longTermDeltaPropagationDelay)
+		e.AddTime("lastSenderClockTimeNs", time.Unix(0, o.lastSenderClockTimeNs))
+		e.AddDuration("lastPropagationDelayNs", time.Duration(o.lastPropagationDelayNs))
+		e.AddDuration("lastDeltaPropagationDelayNs", time.Duration(o.lastDeltaPropagationDelayNs))
+		e.AddDuration("estimatedPropagationDelayNs", time.Duration(o.estimatedPropagationDelayNs))
+		e.AddDuration("longTermDeltaPropagationDelayNs", time.Duration(o.longTermDeltaPropagationDelayNs))
 		e.AddInt("propagationDelayDeltaHighCount", o.propagationDelayDeltaHighCount)
 		e.AddTime("propagationDelayDeltaHighStartTime", o.propagationDelayDeltaHighStartTime)
-		e.AddDuration("propagationDelaySpike", o.propagationDelaySpike)
+		e.AddDuration("propagationDelaySpikeNs", time.Duration(o.propagationDelaySpikeNs))
 	}
 	return nil
 }
 
-func (o *OWDEstimator) Update(senderClockTime time.Time, receiverClockTime time.Time) (time.Duration, bool) {
+func (o *OWDEstimator) Update(senderClockTimeNs int64, receiverClockTimeNs int64) (int64, bool) {
 	resetDelta := func() {
 		o.propagationDelayDeltaHighCount = 0
 		o.propagationDelayDeltaHighStartTime = time.Time{}
-		o.propagationDelaySpike = 0
+		o.propagationDelaySpikeNs = 0
 	}
 
-	initPropagationDelay := func(pd time.Duration) {
-		o.estimatedPropagationDelay = pd
-		o.longTermDeltaPropagationDelay = 0
+	initPropagationDelay := func(pd int64) {
+		o.estimatedPropagationDelayNs = pd
+		o.longTermDeltaPropagationDelayNs = 0
 		resetDelta()
 	}
 
-	o.lastPropagationDelay = receiverClockTime.Sub(senderClockTime)
+	o.lastPropagationDelayNs = receiverClockTimeNs - senderClockTimeNs
 	if !o.initialized {
 		o.initialized = true
-		o.lastSenderClockTime = senderClockTime
-		initPropagationDelay(o.lastPropagationDelay)
-		return o.estimatedPropagationDelay, true
+		o.lastSenderClockTimeNs = senderClockTimeNs
+		initPropagationDelay(o.lastPropagationDelayNs)
+		return o.estimatedPropagationDelayNs, true
 	}
 
 	stepChange := false
-	o.lastDeltaPropagationDelay = o.lastPropagationDelay - o.estimatedPropagationDelay
+	o.lastDeltaPropagationDelayNs = o.lastPropagationDelayNs - o.estimatedPropagationDelayNs
 	// check for path changes, i. e. a step jump increase in propagation delay observed over time
-	if o.lastDeltaPropagationDelay > o.params.PropagationDelayDeltaThresholdMin { // ignore small changes for path change consideration
-		if o.longTermDeltaPropagationDelay != 0 &&
-			o.lastDeltaPropagationDelay > o.longTermDeltaPropagationDelay*time.Duration(o.params.PropagationDelayDeltaThresholdMaxFactor) {
+	if o.lastDeltaPropagationDelayNs > o.params.PropagationDelayDeltaThresholdMin.Nanoseconds() { // ignore small changes for path change consideration
+		if o.longTermDeltaPropagationDelayNs != 0 &&
+			o.lastDeltaPropagationDelayNs > o.longTermDeltaPropagationDelayNs*o.params.PropagationDelayDeltaThresholdMaxFactor {
 			o.propagationDelayDeltaHighCount++
 			if o.propagationDelayDeltaHighStartTime.IsZero() {
 				o.propagationDelayDeltaHighStartTime = time.Now()
 			}
-			if o.propagationDelaySpike == 0 {
-				o.propagationDelaySpike = o.lastPropagationDelay
+			if o.propagationDelaySpikeNs == 0 {
+				o.propagationDelaySpikeNs = o.lastPropagationDelayNs
 			} else {
-				o.propagationDelaySpike += time.Duration(o.params.PropagationDelaySpikeAdaptationFactor * float64(o.lastPropagationDelay-o.propagationDelaySpike))
+				o.propagationDelaySpikeNs += int64(o.params.PropagationDelaySpikeAdaptationFactor * float64(o.lastPropagationDelayNs-o.propagationDelaySpikeNs))
 			}
 
 			if o.propagationDelayDeltaHighCount >= o.params.PropagationDelayDeltaHighResetNumReports && time.Since(o.propagationDelayDeltaHighStartTime) >= o.params.PropagationDelayDeltaHighResetWait {
 				stepChange = true
-				initPropagationDelay(o.propagationDelaySpike)
+				initPropagationDelay(o.propagationDelaySpikeNs)
 			}
 		} else {
 			resetDelta()
@@ -150,30 +150,30 @@ func (o *OWDEstimator) Update(senderClockTime time.Time, receiverClockTime time.
 		resetDelta()
 
 		factor := o.params.PropagationDelayFallFactor
-		if o.lastPropagationDelay > o.estimatedPropagationDelay {
+		if o.lastPropagationDelayNs > o.estimatedPropagationDelayNs {
 			factor = o.params.PropagationDelayRiseFactor
 		}
-		o.estimatedPropagationDelay += time.Duration(factor * float64(o.lastPropagationDelay-o.estimatedPropagationDelay))
+		o.estimatedPropagationDelayNs += int64(factor * float64(o.lastPropagationDelayNs-o.estimatedPropagationDelayNs))
 	}
 
-	if o.lastDeltaPropagationDelay < o.params.PropagationDelayDeltaLongTermAdaptationThreshold {
-		if o.longTermDeltaPropagationDelay == 0 {
-			o.longTermDeltaPropagationDelay = o.lastDeltaPropagationDelay
+	if o.lastDeltaPropagationDelayNs < o.params.PropagationDelayDeltaLongTermAdaptationThreshold.Nanoseconds() {
+		if o.longTermDeltaPropagationDelayNs == 0 {
+			o.longTermDeltaPropagationDelayNs = o.lastDeltaPropagationDelayNs
 		} else {
 			// do not adapt to large +ve spikes, can happen when channel is congested and reports are delivered very late
 			// if the spike is in fact a path change, it will persist and handled by path change detection above
-			sinceLast := senderClockTime.Sub(o.lastSenderClockTime)
+			sinceLast := senderClockTimeNs - o.lastSenderClockTimeNs
 			adaptationFactor := min(1.0, float64(sinceLast)/float64(o.params.PropagationDelayDeltaHighResetWait))
-			o.longTermDeltaPropagationDelay += time.Duration(adaptationFactor * float64(o.lastDeltaPropagationDelay-o.longTermDeltaPropagationDelay))
+			o.longTermDeltaPropagationDelayNs += int64(adaptationFactor * float64(o.lastDeltaPropagationDelayNs-o.longTermDeltaPropagationDelayNs))
 		}
 	}
-	if o.longTermDeltaPropagationDelay < 0 {
-		o.longTermDeltaPropagationDelay = 0
+	if o.longTermDeltaPropagationDelayNs < 0 {
+		o.longTermDeltaPropagationDelayNs = 0
 	}
-	o.lastSenderClockTime = senderClockTime
-	return o.estimatedPropagationDelay, stepChange
+	o.lastSenderClockTimeNs = senderClockTimeNs
+	return o.estimatedPropagationDelayNs, stepChange
 }
 
-func (o *OWDEstimator) EstimatedPropagationDelay() time.Duration {
-	return o.estimatedPropagationDelay
+func (o *OWDEstimator) EstimatedPropagationDelay() int64 {
+	return o.estimatedPropagationDelayNs
 }

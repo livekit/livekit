@@ -17,6 +17,7 @@ package service
 import (
 	"context"
 
+	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils/guid"
@@ -25,12 +26,21 @@ import (
 type AgentDispatchService struct {
 	agentDispatchClient rpc.TypedAgentDispatchInternalClient
 	topicFormatter      rpc.TopicFormatter
+	roomAllocator       RoomAllocator
+	router              routing.MessageRouter
 }
 
-func NewAgentDispatchService(agentDispatchClient rpc.TypedAgentDispatchInternalClient, topicFormatter rpc.TopicFormatter) *AgentDispatchService {
+func NewAgentDispatchService(
+	agentDispatchClient rpc.TypedAgentDispatchInternalClient,
+	topicFormatter rpc.TopicFormatter,
+	roomAllocator RoomAllocator,
+	router routing.MessageRouter,
+) *AgentDispatchService {
 	return &AgentDispatchService{
 		agentDispatchClient: agentDispatchClient,
 		topicFormatter:      topicFormatter,
+		roomAllocator:       roomAllocator,
+		router:              router,
 	}
 }
 
@@ -38,6 +48,14 @@ func (ag *AgentDispatchService) CreateDispatch(ctx context.Context, req *livekit
 	err := EnsureAdminPermission(ctx, livekit.RoomName(req.Room))
 	if err != nil {
 		return nil, twirpAuthError(err)
+	}
+
+	if ag.roomAllocator.AutoCreateEnabled(ctx) {
+		// ensure at least one node is available to handle the request
+		_, err = ag.router.CreateRoom(ctx, &livekit.CreateRoomRequest{Name: req.Room})
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	dispatch := &livekit.AgentDispatch{

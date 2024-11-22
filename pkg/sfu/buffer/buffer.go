@@ -134,7 +134,6 @@ type Buffer struct {
 	packetNotFoundCount   atomic.Uint32
 	packetTooOldCount     atomic.Uint32
 	extPacketTooMuchCount atomic.Uint32
-	invalidPacketCount    atomic.Uint32
 
 	primaryBufferForRTX *Buffer
 	rtxPktBuf           []byte
@@ -162,7 +161,7 @@ func (b *Buffer) SetLogger(logger logger.Logger) {
 	b.Lock()
 	defer b.Unlock()
 
-	b.logger = logger.WithComponent(sutils.ComponentSFU).WithValues("ssrc", b.mediaSSRC)
+	b.logger = logger.WithComponent(sutils.ComponentPub).WithComponent(sutils.ComponentSFU).WithValues("ssrc", b.mediaSSRC)
 	if b.rtpStats != nil {
 		b.rtpStats.SetLogger(b.logger)
 	}
@@ -231,6 +230,10 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 		switch ext.URI {
 		case dd.ExtensionURI:
 			if IsSvcCodec(codec.MimeType) {
+				if b.ddExtID != 0 {
+					b.logger.Warnw("multiple dependency descriptor extensions found", nil, "id", ext.ID, "previous", b.ddExtID)
+					continue
+				}
 				b.ddExtID = uint8(ext.ID)
 				frc := NewFrameRateCalculatorDD(b.clockRate, b.logger)
 				for i := range b.frameRateCalculator {

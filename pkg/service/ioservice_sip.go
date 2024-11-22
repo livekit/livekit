@@ -19,6 +19,8 @@ import (
 	"errors"
 	"net/netip"
 
+	"github.com/twitchtv/twirp"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
@@ -57,7 +59,7 @@ func (s *IOInfoService) EvaluateSIPDispatchRules(ctx context.Context, req *rpc.E
 	srcIP, err := netip.ParseAddr(req.SrcAddress)
 	if req.SrcAddress != "" && err != nil {
 		log.Errorw("cannot parse source IP", err)
-		return nil, err
+		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
 	}
 	trunk, err := s.matchSIPTrunk(ctx, req.SipTrunkId, req.CallingNumber, req.CalledNumber, srcIP)
 	if err != nil {
@@ -102,7 +104,7 @@ func (s *IOInfoService) GetSIPTrunkAuthentication(ctx context.Context, req *rpc.
 	srcIP, err := netip.ParseAddr(req.SrcAddress)
 	if req.SrcAddress != "" && err != nil {
 		log.Errorw("cannot parse source IP", err)
-		return nil, err
+		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
 	}
 	trunk, err := s.matchSIPTrunk(ctx, "", req.From, req.To, srcIP)
 	if err != nil {

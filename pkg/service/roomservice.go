@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/pkg/errors"
 	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -81,48 +80,12 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 		return nil, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, s.limitConf.MaxRoomNameLength)
 	}
 
-	if s.roomAllocator.CreateRoomEnabled() {
-		err := s.roomAllocator.SelectRoomNode(ctx, livekit.RoomName(req.Name), livekit.NodeID(req.NodeId))
-		if err != nil {
-			return nil, err
-		}
-
-		return s.router.CreateRoom(ctx, req)
-	}
-
-	rm, _, created, err := s.roomAllocator.CreateRoom(ctx, req, true)
-	if err != nil {
-		err = errors.Wrap(err, "could not create room")
-		return nil, err
-	}
-	err = s.roomAllocator.SelectRoomNode(ctx, livekit.RoomName(req.Name), livekit.NodeID(req.NodeId))
+	err := s.roomAllocator.SelectRoomNode(ctx, livekit.RoomName(req.Name), livekit.NodeID(req.NodeId))
 	if err != nil {
 		return nil, err
 	}
 
-	done, err := s.startRoom(ctx, livekit.RoomName(req.Name))
-	if err != nil {
-		return nil, err
-	}
-	defer done()
-
-	if created {
-		if req.Egress != nil && req.Egress.Room != nil {
-			// ensure room name matches
-			req.Egress.Room.RoomName = req.Name
-			_, err = s.egressLauncher.StartEgress(ctx, &rpc.StartEgressRequest{
-				Request: &rpc.StartEgressRequest_RoomComposite{
-					RoomComposite: req.Egress.Room,
-				},
-				RoomId: rm.Sid,
-			})
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	return rm, nil
+	return s.router.CreateRoom(ctx, req)
 }
 
 func (s *RoomService) ListRooms(ctx context.Context, req *livekit.ListRoomsRequest) (*livekit.ListRoomsResponse, error) {
@@ -159,17 +122,10 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 		return nil, err
 	}
 
-	if s.roomAllocator.CreateRoomEnabled() {
-		_, err := s.router.CreateRoom(ctx, &livekit.CreateRoomRequest{Name: req.Room})
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		done, err := s.startRoom(ctx, livekit.RoomName(req.Room))
-		if err != nil {
-			return nil, err
-		}
-		defer done()
+	// ensure at least one node is available to handle the request
+	_, err = s.router.CreateRoom(ctx, &livekit.CreateRoomRequest{Name: req.Room})
+	if err != nil {
+		return nil, err
 	}
 
 	_, err = s.roomClient.DeleteRoom(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
@@ -303,18 +259,6 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 	}
 
 	return room, nil
-}
-
-// startRoom starts the room on an RTC node, to ensure metadata & empty timeout functionality
-func (s *RoomService) startRoom(ctx context.Context, roomName livekit.RoomName) (func(), error) {
-	res, err := s.router.StartParticipantSignal(ctx, roomName, routing.ParticipantInit{})
-	if err != nil {
-		return nil, err
-	}
-	return func() {
-		res.RequestSink.Close()
-		res.ResponseSource.Close()
-	}, nil
 }
 
 func redactCreateRoomRequest(req *livekit.CreateRoomRequest) *livekit.CreateRoomRequest {

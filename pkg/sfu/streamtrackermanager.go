@@ -26,7 +26,6 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 
-	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/streamtracker"
 )
@@ -44,13 +43,79 @@ type StreamTrackerManagerListener interface {
 
 // ---------------------------------------------------
 
+type (
+	StreamTrackerType string
+)
+
+const (
+	StreamTrackerTypePacket StreamTrackerType = "packet"
+	StreamTrackerTypeFrame  StreamTrackerType = "frame"
+)
+
+type StreamTrackerPacketConfig struct {
+	SamplesRequired uint32        `yaml:"samples_required,omitempty"` // number of samples needed per cycle
+	CyclesRequired  uint32        `yaml:"cycles_required,omitempty"`  // number of cycles needed to be active
+	CycleDuration   time.Duration `yaml:"cycle_duration,omitempty"`
+}
+
+type StreamTrackerFrameConfig struct {
+	MinFPS float64 `yaml:"min_fps,omitempty"`
+}
+
+type StreamTrackerConfig struct {
+	StreamTrackerType     StreamTrackerType                                 `yaml:"stream_tracker_type,omitempty"`
+	BitrateReportInterval map[int32]time.Duration                           `yaml:"bitrate_report_interval,omitempty"`
+	PacketTracker         map[int32]streamtracker.StreamTrackerPacketConfig `yaml:"packet_tracker,omitempty"`
+	FrameTracker          map[int32]streamtracker.StreamTrackerFrameConfig  `yaml:"frame_tracker,omitempty"`
+}
+
+var (
+	DefaultStreamTrackerConfigVideo = StreamTrackerConfig{
+		StreamTrackerType: StreamTrackerTypePacket,
+		BitrateReportInterval: map[int32]time.Duration{
+			0: 1 * time.Second,
+			1: 1 * time.Second,
+			2: 1 * time.Second,
+		},
+		PacketTracker: streamtracker.DefaultStreamTrackerPacketConfigVideo,
+		FrameTracker:  streamtracker.DefaultStreamTrackerFrameConfigVideo,
+	}
+
+	DefaultStreamTrackerConfigScreenshare = StreamTrackerConfig{
+		StreamTrackerType: StreamTrackerTypePacket,
+		BitrateReportInterval: map[int32]time.Duration{
+			0: 4 * time.Second,
+			1: 4 * time.Second,
+			2: 4 * time.Second,
+		},
+		PacketTracker: streamtracker.DefaultStreamTrackerPacketConfigScreenshare,
+		FrameTracker:  streamtracker.DefaultStreamTrackerFrameConfigScreenshare,
+	}
+)
+
+// ---------------------------------------------------
+
+type StreamTrackerManagerConfig struct {
+	Video       StreamTrackerConfig `yaml:"video,omitempty"`
+	Screenshare StreamTrackerConfig `yaml:"screenshare,omitempty"`
+}
+
+var (
+	DefaultStreamTrackerManagerConfig = StreamTrackerManagerConfig{
+		Video:       DefaultStreamTrackerConfigVideo,
+		Screenshare: DefaultStreamTrackerConfigScreenshare,
+	}
+)
+
+// ---------------------------------------------------
+
 type StreamTrackerManager struct {
 	logger    logger.Logger
 	trackInfo atomic.Pointer[livekit.TrackInfo]
 	isSVC     bool
 	clockRate uint32
 
-	trackerConfig config.StreamTrackerConfig
+	trackerConfig StreamTrackerConfig
 
 	lock                 sync.RWMutex
 	maxPublishedLayer    int32
@@ -73,7 +138,7 @@ func NewStreamTrackerManager(
 	trackInfo *livekit.TrackInfo,
 	isSVC bool,
 	clockRate uint32,
-	trackersConfig config.StreamTrackersConfig,
+	config StreamTrackerManagerConfig,
 ) *StreamTrackerManager {
 	s := &StreamTrackerManager{
 		logger:               logger,
@@ -86,11 +151,11 @@ func NewStreamTrackerManager(
 
 	switch trackInfo.Source {
 	case livekit.TrackSource_SCREEN_SHARE:
-		s.trackerConfig = trackersConfig.Screenshare
+		s.trackerConfig = config.Screenshare
 	case livekit.TrackSource_CAMERA:
-		s.trackerConfig = trackersConfig.Video
+		s.trackerConfig = config.Video
 	default:
-		s.trackerConfig = trackersConfig.Video
+		s.trackerConfig = config.Video
 	}
 
 	s.maxExpectedLayerFromTrackInfo()
@@ -193,9 +258,9 @@ func (s *StreamTrackerManager) AddTracker(layer int32) streamtracker.StreamTrack
 	if tracker == nil {
 		var trackerImpl streamtracker.StreamTrackerImpl
 		switch s.trackerConfig.StreamTrackerType {
-		case config.StreamTrackerTypePacket:
+		case StreamTrackerTypePacket:
 			trackerImpl = s.createStreamTrackerPacket(layer)
-		case config.StreamTrackerTypeFrame:
+		case StreamTrackerTypeFrame:
 			trackerImpl = s.createStreamTrackerFrame(layer)
 		}
 		if trackerImpl == nil {
@@ -284,7 +349,7 @@ func (s *StreamTrackerManager) GetTracker(layer int32) streamtracker.StreamTrack
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 
-	if int(layer) >= len(s.trackers) {
+	if layer < 0 || int(layer) >= len(s.trackers) {
 		s.logger.Errorw("unexpected layer", nil, "layer", layer)
 		return nil
 	}

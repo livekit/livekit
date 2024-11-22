@@ -28,6 +28,10 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/livekit-server/pkg/metric"
+	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/bwe/remotebwe"
+	"github.com/livekit/livekit-server/pkg/sfu/bwe/sendsidebwe"
+	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -35,23 +39,8 @@ import (
 	"github.com/livekit/protocol/rpc"
 )
 
-type (
-	CongestionControlProbeMode string
-	StreamTrackerType          string
-)
-
 const (
 	generatedCLIFlagUsage = "generated"
-
-	CongestionControlProbeModePadding CongestionControlProbeMode = "padding"
-	CongestionControlProbeModeMedia   CongestionControlProbeMode = "media"
-
-	StreamTrackerTypePacket StreamTrackerType = "packet"
-	StreamTrackerTypeFrame  StreamTrackerType = "frame"
-
-	StatsUpdateInterval                  = time.Second * 10
-	TelemetryStatsUpdateInterval         = time.Second * 30
-	TelemetryNonMediaStatsUpdateInterval = time.Minute * 5
 )
 
 var (
@@ -67,7 +56,7 @@ type Config struct {
 	Prometheus     PrometheusConfig         `yaml:"prometheus,omitempty"`
 	RTC            RTCConfig                `yaml:"rtc,omitempty"`
 	Redis          redisLiveKit.RedisConfig `yaml:"redis,omitempty"`
-	Audio          AudioConfig              `yaml:"audio,omitempty"`
+	Audio          sfu.AudioConfig          `yaml:"audio,omitempty"`
 	Video          VideoConfig              `yaml:"video,omitempty"`
 	Room           RoomConfig               `yaml:"room,omitempty"`
 	TURN           TURNConfig               `yaml:"turn,omitempty"`
@@ -105,7 +94,7 @@ type RTCConfig struct {
 	PacketBufferSizeAudio int `yaml:"packet_buffer_size_audio,omitempty"`
 
 	// Throttle periods for pli/fir rtcp packets
-	PLIThrottle PLIThrottleConfig `yaml:"pli_throttle,omitempty"`
+	PLIThrottle sfu.PLIThrottleConfig `yaml:"pli_throttle,omitempty"`
 
 	CongestionControl CongestionControlConfig `yaml:"congestion_control,omitempty"`
 
@@ -135,93 +124,18 @@ type TURNServer struct {
 	Credential string `yaml:"credential,omitempty"`
 }
 
-type PLIThrottleConfig struct {
-	LowQuality  time.Duration `yaml:"low_quality,omitempty"`
-	MidQuality  time.Duration `yaml:"mid_quality,omitempty"`
-	HighQuality time.Duration `yaml:"high_quality,omitempty"`
-}
-
-type CongestionControlProbeConfig struct {
-	BaseInterval  time.Duration `yaml:"base_interval,omitempty"`
-	BackoffFactor float64       `yaml:"backoff_factor,omitempty"`
-	MaxInterval   time.Duration `yaml:"max_interval,omitempty"`
-
-	SettleWait    time.Duration `yaml:"settle_wait,omitempty"`
-	SettleWaitMax time.Duration `yaml:"settle_wait_max,omitempty"`
-
-	TrendWait time.Duration `yaml:"trend_wait,omitempty"`
-
-	OveragePct             int64         `yaml:"overage_pct,omitempty"`
-	MinBps                 int64         `yaml:"min_bps,omitempty"`
-	MinDuration            time.Duration `yaml:"min_duration,omitempty"`
-	MaxDuration            time.Duration `yaml:"max_duration,omitempty"`
-	DurationOverflowFactor float64       `yaml:"duration_overflow_factor,omitempty"`
-	DurationIncreaseFactor float64       `yaml:"duration_increase_factor,omitempty"`
-}
-
-type CongestionControlChannelObserverConfig struct {
-	EstimateRequiredSamples        int           `yaml:"estimate_required_samples,omitempty"`
-	EstimateRequiredSamplesMin     int           `yaml:"estimate_required_samples_min,omitempty"`
-	EstimateDownwardTrendThreshold float64       `yaml:"estimate_downward_trend_threshold,omitempty"`
-	EstimateDownwardTrendMaxWait   time.Duration `yaml:"estimate_downward_trend_max_wait,omitempty"`
-	EstimateCollapseThreshold      time.Duration `yaml:"estimate_collapse_threshold,omitempty"`
-	EstimateValidityWindow         time.Duration `yaml:"estimate_validity_window,omitempty"`
-	NackWindowMinDuration          time.Duration `yaml:"nack_window_min_duration,omitempty"`
-	NackWindowMaxDuration          time.Duration `yaml:"nack_window_max_duration,omitempty"`
-	NackRatioThreshold             float64       `yaml:"nack_ratio_threshold,omitempty"`
-}
-
 type CongestionControlConfig struct {
-	Enabled                          bool                                   `yaml:"enabled,omitempty"`
-	AllowPause                       bool                                   `yaml:"allow_pause,omitempty"`
-	NackRatioAttenuator              float64                                `yaml:"nack_ratio_attenuator,omitempty"`
-	ExpectedUsageThreshold           float64                                `yaml:"expected_usage_threshold,omitempty"`
-	UseSendSideBWE                   bool                                   `yaml:"send_side_bandwidth_estimation,omitempty"`
-	ProbeMode                        CongestionControlProbeMode             `yaml:"probe_mode,omitempty"`
-	MinChannelCapacity               int64                                  `yaml:"min_channel_capacity,omitempty"`
-	ProbeConfig                      CongestionControlProbeConfig           `yaml:"probe_config,omitempty"`
-	ChannelObserverProbeConfig       CongestionControlChannelObserverConfig `yaml:"channel_observer_probe_config,omitempty"`
-	ChannelObserverNonProbeConfig    CongestionControlChannelObserverConfig `yaml:"channel_observer_non_probe_config,omitempty"`
-	DisableEstimationUnmanagedTracks bool                                   `yaml:"disable_etimation_unmanaged_tracks,omitempty"`
-}
+	Enabled    bool `yaml:"enabled,omitempty"`
+	AllowPause bool `yaml:"allow_pause,omitempty"`
 
-type AudioConfig struct {
-	// minimum level to be considered active, 0-127, where 0 is loudest
-	ActiveLevel uint8 `yaml:"active_level,omitempty"`
-	// percentile to measure, a participant is considered active if it has exceeded the ActiveLevel more than
-	// MinPercentile% of the time
-	MinPercentile uint8 `yaml:"min_percentile,omitempty"`
-	// interval to update clients, in ms
-	UpdateInterval uint32 `yaml:"update_interval,omitempty"`
-	// smoothing for audioLevel values sent to the client.
-	// audioLevel will be an average of `smooth_intervals`, 0 to disable
-	SmoothIntervals uint32 `yaml:"smooth_intervals,omitempty"`
-	// enable red encoding downtrack for opus only audio up track
-	ActiveREDEncoding bool `yaml:"active_red_encoding,omitempty"`
-	// enable proxying weakest subscriber loss to publisher in RTCP Receiver Report
-	EnableLossProxying bool `yaml:"enable_loss_proxying,omitempty"`
-}
+	StreamAllocator streamallocator.StreamAllocatorConfig `yaml:"stream_allocator,omitempty"`
 
-type StreamTrackerPacketConfig struct {
-	SamplesRequired uint32        `yaml:"samples_required,omitempty"` // number of samples needed per cycle
-	CyclesRequired  uint32        `yaml:"cycles_required,omitempty"`  // number of cycles needed to be active
-	CycleDuration   time.Duration `yaml:"cycle_duration,omitempty"`
-}
+	RemoteBWE remotebwe.RemoteBWEConfig `yaml:"remote_bwe,omitempty"`
 
-type StreamTrackerFrameConfig struct {
-	MinFPS float64 `yaml:"min_fps,omitempty"`
-}
+	UseSendSideBWEInterceptor bool `yaml:"use_send_side_bwe_interceptor,omitempty"`
 
-type StreamTrackerConfig struct {
-	StreamTrackerType     StreamTrackerType                   `yaml:"stream_tracker_type,omitempty"`
-	BitrateReportInterval map[int32]time.Duration             `yaml:"bitrate_report_interval,omitempty"`
-	PacketTracker         map[int32]StreamTrackerPacketConfig `yaml:"packet_tracker,omitempty"`
-	FrameTracker          map[int32]StreamTrackerFrameConfig  `yaml:"frame_tracker,omitempty"`
-}
-
-type StreamTrackersConfig struct {
-	Video       StreamTrackerConfig `yaml:"video,omitempty"`
-	Screenshare StreamTrackerConfig `yaml:"screenshare,omitempty"`
+	UseSendSideBWE bool                          `yaml:"use_send_side_bwe,omitempty"`
+	SendSideBWE    sendsidebwe.SendSideBWEConfig `yaml:"send_side_bwe,omitempty"`
 }
 
 type PlayoutDelayConfig struct {
@@ -231,8 +145,8 @@ type PlayoutDelayConfig struct {
 }
 
 type VideoConfig struct {
-	DynacastPauseDelay time.Duration        `yaml:"dynacast_pause_delay,omitempty"`
-	StreamTracker      StreamTrackersConfig `yaml:"stream_tracker,omitempty"`
+	DynacastPauseDelay   time.Duration                  `yaml:"dynacast_pause_delay,omitempty"`
+	StreamTrackerManager sfu.StreamTrackerManagerConfig `yaml:"stream_tracker_manager,omitempty"`
 }
 
 type RoomConfig struct {
@@ -253,8 +167,8 @@ type RoomConfig struct {
 	// deprecated, moved to limits
 	MaxRoomNameLength int `yaml:"max_room_name_length,omitempty"`
 	// deprecated, moved to limits
-	MaxParticipantIdentityLength int                                  `yaml:"max_participant_identity_length,omitempty"`
-	RoomConfigurations           map[string]livekit.RoomConfiguration `yaml:"room_configurations,omitempty"`
+	MaxParticipantIdentityLength int                                   `yaml:"max_participant_identity_length,omitempty"`
+	RoomConfigurations           map[string]*livekit.RoomConfiguration `yaml:"room_configurations,omitempty"`
 }
 
 type CodecSpec struct {
@@ -398,140 +312,21 @@ var DefaultConfig = Config{
 		PacketBufferSizeVideo: 500,
 		PacketBufferSizeAudio: 200,
 		StrictACKs:            true,
-		PLIThrottle: PLIThrottleConfig{
-			LowQuality:  500 * time.Millisecond,
-			MidQuality:  time.Second,
-			HighQuality: time.Second,
-		},
+		PLIThrottle:           sfu.DefaultPLIThrottleConfig,
 		CongestionControl: CongestionControlConfig{
-			Enabled:                true,
-			AllowPause:             false,
-			NackRatioAttenuator:    0.4,
-			ExpectedUsageThreshold: 0.95,
-			ProbeMode:              CongestionControlProbeModePadding,
-			ProbeConfig: CongestionControlProbeConfig{
-				BaseInterval:  3 * time.Second,
-				BackoffFactor: 1.5,
-				MaxInterval:   2 * time.Minute,
-
-				SettleWait:    250 * time.Millisecond,
-				SettleWaitMax: 10 * time.Second,
-
-				TrendWait: 2 * time.Second,
-
-				OveragePct:             120,
-				MinBps:                 200_000,
-				MinDuration:            200 * time.Millisecond,
-				MaxDuration:            20 * time.Second,
-				DurationOverflowFactor: 1.25,
-				DurationIncreaseFactor: 1.5,
-			},
-			ChannelObserverProbeConfig: CongestionControlChannelObserverConfig{
-				EstimateRequiredSamples:        3,
-				EstimateRequiredSamplesMin:     3,
-				EstimateDownwardTrendThreshold: 0.0,
-				EstimateDownwardTrendMaxWait:   5 * time.Second,
-				EstimateCollapseThreshold:      0,
-				EstimateValidityWindow:         10 * time.Second,
-				NackWindowMinDuration:          500 * time.Millisecond,
-				NackWindowMaxDuration:          1 * time.Second,
-				NackRatioThreshold:             0.04,
-			},
-			ChannelObserverNonProbeConfig: CongestionControlChannelObserverConfig{
-				EstimateRequiredSamples:        12,
-				EstimateRequiredSamplesMin:     8,
-				EstimateDownwardTrendThreshold: -0.6,
-				EstimateDownwardTrendMaxWait:   5 * time.Second,
-				EstimateCollapseThreshold:      500 * time.Millisecond,
-				EstimateValidityWindow:         10 * time.Second,
-				NackWindowMinDuration:          2 * time.Second,
-				NackWindowMaxDuration:          3 * time.Second,
-				NackRatioThreshold:             0.08,
-			},
+			Enabled:                   true,
+			AllowPause:                false,
+			StreamAllocator:           streamallocator.DefaultStreamAllocatorConfig,
+			RemoteBWE:                 remotebwe.DefaultRemoteBWEConfig,
+			UseSendSideBWEInterceptor: false,
+			UseSendSideBWE:            false,
+			SendSideBWE:               sendsidebwe.DefaultSendSideBWEConfig,
 		},
 	},
-	Audio: AudioConfig{
-		ActiveLevel:     35, // -35dBov
-		MinPercentile:   40,
-		UpdateInterval:  400,
-		SmoothIntervals: 2,
-	},
+	Audio: sfu.DefaultAudioConfig,
 	Video: VideoConfig{
-		DynacastPauseDelay: 5 * time.Second,
-		StreamTracker: StreamTrackersConfig{
-			Video: StreamTrackerConfig{
-				StreamTrackerType: StreamTrackerTypePacket,
-				BitrateReportInterval: map[int32]time.Duration{
-					0: 1 * time.Second,
-					1: 1 * time.Second,
-					2: 1 * time.Second,
-				},
-				PacketTracker: map[int32]StreamTrackerPacketConfig{
-					0: {
-						SamplesRequired: 1,
-						CyclesRequired:  4,
-						CycleDuration:   500 * time.Millisecond,
-					},
-					1: {
-						SamplesRequired: 5,
-						CyclesRequired:  20,
-						CycleDuration:   500 * time.Millisecond,
-					},
-					2: {
-						SamplesRequired: 5,
-						CyclesRequired:  20,
-						CycleDuration:   500 * time.Millisecond,
-					},
-				},
-				FrameTracker: map[int32]StreamTrackerFrameConfig{
-					0: {
-						MinFPS: 5.0,
-					},
-					1: {
-						MinFPS: 5.0,
-					},
-					2: {
-						MinFPS: 5.0,
-					},
-				},
-			},
-			Screenshare: StreamTrackerConfig{
-				StreamTrackerType: StreamTrackerTypePacket,
-				BitrateReportInterval: map[int32]time.Duration{
-					0: 4 * time.Second,
-					1: 4 * time.Second,
-					2: 4 * time.Second,
-				},
-				PacketTracker: map[int32]StreamTrackerPacketConfig{
-					0: {
-						SamplesRequired: 1,
-						CyclesRequired:  1,
-						CycleDuration:   2 * time.Second,
-					},
-					1: {
-						SamplesRequired: 1,
-						CyclesRequired:  1,
-						CycleDuration:   2 * time.Second,
-					},
-					2: {
-						SamplesRequired: 1,
-						CyclesRequired:  1,
-						CycleDuration:   2 * time.Second,
-					},
-				},
-				FrameTracker: map[int32]StreamTrackerFrameConfig{
-					0: {
-						MinFPS: 0.5,
-					},
-					1: {
-						MinFPS: 0.5,
-					},
-					2: {
-						MinFPS: 0.5,
-					},
-				},
-			},
-		},
+		DynacastPauseDelay:   5 * time.Second,
+		StreamTrackerManager: sfu.DefaultStreamTrackerManagerConfig,
 	},
 	Redis: redisLiveKit.RedisConfig{},
 	Room: RoomConfig{

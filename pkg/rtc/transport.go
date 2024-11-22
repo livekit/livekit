@@ -36,16 +36,12 @@ import (
 	"go.uber.org/atomic"
 	"go.uber.org/zap/zapcore"
 
-	lkinterceptor "github.com/livekit/mediatransportutil/pkg/interceptor"
-	lktwcc "github.com/livekit/mediatransportutil/pkg/twcc"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/logger/pionlogger"
-	lksdp "github.com/livekit/protocol/sdp"
-
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/transport"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/sfu/bwe"
+	"github.com/livekit/livekit-server/pkg/sfu/bwe/remotebwe"
+	"github.com/livekit/livekit-server/pkg/sfu/bwe/sendsidebwe"
 	sfuinterceptor "github.com/livekit/livekit-server/pkg/sfu/interceptor"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	pd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/playoutdelay"
@@ -53,6 +49,12 @@ import (
 	sfuutils "github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/livekit-server/pkg/utils"
+	lkinterceptor "github.com/livekit/mediatransportutil/pkg/interceptor"
+	lktwcc "github.com/livekit/mediatransportutil/pkg/twcc"
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/logger/pionlogger"
+	lksdp "github.com/livekit/protocol/sdp"
 )
 
 const (
@@ -84,6 +86,8 @@ var (
 	ErrNoTransceiver                    = errors.New("no transceiver")
 	ErrNoSender                         = errors.New("no sender")
 	ErrMidNotFound                      = errors.New("mid not found")
+	ErrNotSynchronousPeerConnectionMode = errors.New("not using synchronous peer connection mode")
+	ErrNoRemoteDescription              = errors.New("no remote description")
 )
 
 // -------------------------------------------------------------------------
@@ -150,6 +154,12 @@ func (w wrappedICECandidatePairLogger) MarshalLogObject(e zapcore.ObjectEncoder)
 	if w.pair.Remote != nil {
 		e.AddString("remoteProtocol", w.pair.Remote.Protocol.String())
 		e.AddString("remoteCandidateType", w.pair.Remote.Typ.String())
+		e.AddString("remoteAdddress", MaybeTruncateIP(w.pair.Remote.Address))
+		e.AddUint16("remotePort", w.pair.Remote.Port)
+		if w.pair.Remote.RelatedAddress != "" {
+			e.AddString("relatedAdddress", MaybeTruncateIP(w.pair.Remote.RelatedAddress))
+			e.AddUint16("relatedPort", w.pair.Remote.RelatedPort)
+		}
 	}
 	return nil
 }
@@ -176,6 +186,8 @@ type PCTransport struct {
 
 	firstOfferReceived      bool
 	firstOfferNoDataChannel bool
+	remoteICEIsLite         *bool
+	localICEIsLite          *bool
 	reliableDC              *webrtc.DataChannel
 	reliableDCOpened        bool
 	lossyDC                 *webrtc.DataChannel
@@ -200,6 +212,7 @@ type PCTransport struct {
 	streamAllocator *streamallocator.StreamAllocator
 
 	// only for subscriber PC
+	bwe   bwe.BWE
 	pacer pacer.Pacer
 
 	previousAnswer *webrtc.SessionDescription
@@ -246,6 +259,9 @@ type TransportParams struct {
 	IsSendSide                   bool
 	AllowPlayoutDelay            bool
 	DataChannelMaxBufferedAmount uint64
+	UseSendSideBWEInterceptor    bool
+	UseSendSideBWE               bool
+	UseOneShotSignallingMode     bool
 }
 
 func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimator cc.BandwidthEstimator)) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
@@ -288,7 +304,14 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	//
 	se.DisableSRTPReplayProtection(true)
 	se.DisableSRTCPReplayProtection(true)
-	if !params.ProtocolVersion.SupportsICELite() {
+	if !params.ProtocolVersion.SupportsICELite() || !params.ClientInfo.SupportPrflxOverRelay() {
+		// if client don't support prflx over relay which is only Firefox, disable ICE Lite to ensure that
+		// aggressive nomination is handled properly. Firefox does aggressive nomination even if peer is
+		// ICE Lite (see comment as to historical reasons: https://github.com/pion/ice/pull/739#issuecomment-2452245066).
+		// pion/ice (as of v2.3.37) will accept all use-candidate switches when in ICE Lite mode.
+		// That combined with aggressive nomination from Firefox could potentially lead to the two ends
+		// ending up with different candidates.
+		// As Firefox does not support migration, ICE Lite can be disabled.
 		se.SetLite(false)
 	}
 	se.SetDTLSRetransmissionInterval(dtlsRetransmissionInterval)
@@ -332,7 +355,8 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	ir := &interceptor.Registry{}
 	if params.IsSendSide {
 		se.DetachDataChannels()
-		if params.CongestionControlConfig.UseSendSideBWE {
+		if (params.CongestionControlConfig.UseSendSideBWEInterceptor || params.UseSendSideBWEInterceptor) && (!params.CongestionControlConfig.UseSendSideBWE && !params.UseSendSideBWE) {
+			params.Logger.Infow("using send side BWE - interceptor")
 			gf, err := cc.NewInterceptor(func() (cc.BandwidthEstimator, error) {
 				return gcc.NewSendSideBWE(
 					gcc.SendSideBWEInitialBitrate(1*1000*1000),
@@ -429,12 +453,27 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 	}
 	if params.IsSendSide {
 		t.streamAllocator = streamallocator.NewStreamAllocator(streamallocator.StreamAllocatorParams{
-			Config: params.CongestionControlConfig,
+			Config: params.CongestionControlConfig.StreamAllocator,
 			Logger: params.Logger.WithComponent(utils.ComponentCongestionControl),
-		})
+		}, params.CongestionControlConfig.Enabled, params.CongestionControlConfig.AllowPause)
 		t.streamAllocator.OnStreamStateChange(params.Handler.OnStreamStateChange)
 		t.streamAllocator.Start()
-		t.pacer = pacer.NewPassThrough(params.Logger)
+
+		if params.CongestionControlConfig.UseSendSideBWE || params.UseSendSideBWE {
+			params.Logger.Infow("using send side BWE")
+			t.bwe = sendsidebwe.NewSendSideBWE(sendsidebwe.SendSideBWEParams{
+				Config: params.CongestionControlConfig.SendSideBWE,
+				Logger: params.Logger,
+			})
+			t.pacer = pacer.NewNoQueue(params.Logger, t.bwe)
+		} else {
+			t.bwe = remotebwe.NewRemoteBWE(remotebwe.RemoteBWEParams{
+				Config: params.CongestionControlConfig.RemoteBWE,
+				Logger: params.Logger,
+			})
+			t.pacer = pacer.NewPassThrough(params.Logger, nil)
+		}
+		t.streamAllocator.SetBWE(t.bwe)
 	}
 
 	if err := t.createPeerConnection(); err != nil {
@@ -456,10 +495,12 @@ func (t *PCTransport) createPeerConnection() error {
 	}
 
 	t.pc = pc
-	t.pc.OnICEGatheringStateChange(t.onICEGatheringStateChange)
+	if !t.params.UseOneShotSignallingMode {
+		// one shot signalling mode gathers all candidates and sends in answer
+		t.pc.OnICEGatheringStateChange(t.onICEGatheringStateChange)
+		t.pc.OnICECandidate(t.onICECandidateTrickle)
+	}
 	t.pc.OnICEConnectionStateChange(t.onICEConnectionStateChange)
-	t.pc.OnICECandidate(t.onICECandidateTrickle)
-
 	t.pc.OnConnectionStateChange(t.onPeerConnectionStateChange)
 
 	t.pc.OnDataChannel(t.onDataChannel)
@@ -468,13 +509,20 @@ func (t *PCTransport) createPeerConnection() error {
 	t.pc.SCTP().Transport().ICETransport().OnSelectedCandidatePairChange(func(pair *webrtc.ICECandidatePair) {
 		t.params.Logger.Debugw("selected ICE candidate pair changed", "pair", wrappedICECandidatePairLogger{pair})
 		t.connectionDetails.SetSelectedPair(pair)
+		existingPair := t.selectedPair.Load()
+		if existingPair != nil {
+			t.params.Logger.Infow(
+				"ice reconnected or switched pair",
+				"existingPair", wrappedICECandidatePairLogger{existingPair},
+				"newPair", wrappedICECandidatePairLogger{pair})
+		}
 		t.selectedPair.Store(pair)
 	})
 
 	t.me = me
 
 	if bwe != nil && t.streamAllocator != nil {
-		t.streamAllocator.SetBandwidthEstimator(bwe)
+		t.streamAllocator.SetSendSideBWEInterceptor(bwe)
 	}
 
 	return nil
@@ -624,7 +672,7 @@ func (t *PCTransport) handleConnectionFailed(forceShortConn bool) {
 		}
 	}
 
-	t.params.Handler.OnFailed(isShort)
+	t.params.Handler.OnFailed(isShort, t.GetICEConnectionInfo())
 }
 
 func (t *PCTransport) onICEConnectionStateChange(state webrtc.ICEConnectionState) {
@@ -648,8 +696,6 @@ func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionSta
 			t.params.Handler.OnInitialConnected()
 
 			t.maybeNotifyFullyEstablished()
-		} else {
-			t.params.Logger.Infow("ice reconnected", "pair", wrappedICECandidatePairLogger{t.selectedPair.Load()})
 		}
 	case webrtc.PeerConnectionStateFailed:
 		t.clearConnTimer()
@@ -955,6 +1001,9 @@ func (t *PCTransport) Close() {
 	if t.pacer != nil {
 		t.pacer.Stop()
 	}
+	if t.bwe != nil {
+		t.bwe.Stop()
+	}
 
 	_ = t.pc.Close()
 
@@ -974,11 +1023,89 @@ func (t *PCTransport) clearConnTimer() {
 	}
 }
 
-func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription) {
+func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription) error {
+	if t.params.UseOneShotSignallingMode {
+		// add remote candidates to ICE connection details
+		parsed, err := sd.Unmarshal()
+		if err == nil {
+			addRemoteICECandidates := func(attrs []sdp.Attribute) {
+				for _, a := range attrs {
+					if a.IsICECandidate() {
+						c, err := ice.UnmarshalCandidate(a.Value)
+						if err != nil {
+							continue
+						}
+						t.connectionDetails.AddRemoteICECandidate(c, false, false, false)
+					}
+				}
+			}
+
+			addRemoteICECandidates(parsed.Attributes)
+			for _, m := range parsed.MediaDescriptions {
+				addRemoteICECandidates(m.Attributes)
+			}
+		}
+
+		err = t.pc.SetRemoteDescription(sd)
+		if err != nil {
+			t.params.Logger.Errorw("could not set remote description on synchronous mode peer connection", err)
+		}
+		return err
+	}
+
 	t.postEvent(event{
 		signal: signalRemoteDescriptionReceived,
 		data:   &sd,
 	})
+	return nil
+}
+
+func (t *PCTransport) GetAnswer() (webrtc.SessionDescription, error) {
+	if !t.params.UseOneShotSignallingMode {
+		return webrtc.SessionDescription{}, ErrNotSynchronousPeerConnectionMode
+	}
+
+	prd := t.pc.PendingRemoteDescription()
+	if prd == nil || prd.Type != webrtc.SDPTypeOffer {
+		return webrtc.SessionDescription{}, ErrNoRemoteDescription
+	}
+
+	answer, err := t.pc.CreateAnswer(nil)
+	if err != nil {
+		return webrtc.SessionDescription{}, err
+	}
+
+	if err = t.pc.SetLocalDescription(answer); err != nil {
+		return webrtc.SessionDescription{}, err
+	}
+
+	// wait for gathering to complete to include all candidates in the answer
+	<-webrtc.GatheringCompletePromise(t.pc)
+
+	cld := t.pc.CurrentLocalDescription()
+
+	// add local candidates to ICE connection details
+	parsed, err := cld.Unmarshal()
+	if err == nil {
+		addLocalICECandidates := func(attrs []sdp.Attribute) {
+			for _, a := range attrs {
+				if a.IsICECandidate() {
+					c, err := ice.UnmarshalCandidate(a.Value)
+					if err != nil {
+						continue
+					}
+					t.connectionDetails.AddLocalICECandidate(c, false, false)
+				}
+			}
+		}
+
+		addLocalICECandidates(parsed.Attributes)
+		for _, m := range parsed.MediaDescriptions {
+			addLocalICECandidates(m.Attributes)
+		}
+	}
+
+	return *cld, nil
 }
 
 func (t *PCTransport) OnNegotiationStateChanged(f func(state transport.NegotiationState)) {
@@ -1397,7 +1524,7 @@ func (t *PCTransport) handleRemoteICECandidate(e event) error {
 	c := e.data.(*webrtc.ICECandidateInit)
 
 	filtered := false
-	if t.preferTCP.Load() && !strings.Contains(c.Candidate, "tcp") {
+	if t.preferTCP.Load() && !strings.Contains(strings.ToLower(c.Candidate), "tcp") {
 		t.params.Logger.Debugw("filtering out remote candidate", "candidate", c.Candidate)
 		filtered = true
 	}
@@ -1407,7 +1534,7 @@ func (t *PCTransport) handleRemoteICECandidate(e event) error {
 		filtered = true
 	}
 
-	t.connectionDetails.AddRemoteCandidate(*c, filtered, true)
+	t.connectionDetails.AddRemoteCandidate(*c, filtered, true, false)
 	if filtered {
 		return nil
 	}
@@ -1464,7 +1591,7 @@ func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription, preferTCP, 
 				if isLocal {
 					t.connectionDetails.AddLocalICECandidate(c, excluded, false)
 				} else {
-					t.connectionDetails.AddRemoteICECandidate(c, excluded, false)
+					t.connectionDetails.AddRemoteICECandidate(c, excluded, false, false)
 				}
 			} else {
 				filteredAttrs = append(filteredAttrs, a)

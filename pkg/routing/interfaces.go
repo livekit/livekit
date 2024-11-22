@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/auth"
@@ -40,6 +41,37 @@ type MessageSink interface {
 	ConnectionID() livekit.ConnectionID
 }
 
+// ----------
+
+type NullMessageSink struct {
+	connID   livekit.ConnectionID
+	isClosed atomic.Bool
+}
+
+func NewNullMessageSink(connID livekit.ConnectionID) *NullMessageSink {
+	return &NullMessageSink{
+		connID: connID,
+	}
+}
+
+func (n *NullMessageSink) WriteMessage(_msg proto.Message) error {
+	return nil
+}
+
+func (n *NullMessageSink) IsClosed() bool {
+	return n.isClosed.Load()
+}
+
+func (n *NullMessageSink) Close() {
+	n.isClosed.Store(true)
+}
+
+func (n *NullMessageSink) ConnectionID() livekit.ConnectionID {
+	return n.connID
+}
+
+// ------------------------------------------------
+
 //counterfeiter:generate . MessageSource
 type MessageSource interface {
 	// ReadChan exposes a one way channel to make it easier to use with select
@@ -48,6 +80,41 @@ type MessageSource interface {
 	Close()
 	ConnectionID() livekit.ConnectionID
 }
+
+// ----------
+
+type NullMessageSource struct {
+	connID   livekit.ConnectionID
+	msgChan  chan proto.Message
+	isClosed atomic.Bool
+}
+
+func NewNullMessageSource(connID livekit.ConnectionID) *NullMessageSource {
+	return &NullMessageSource{
+		connID:  connID,
+		msgChan: make(chan proto.Message, 0),
+	}
+}
+
+func (n *NullMessageSource) ReadChan() <-chan proto.Message {
+	return n.msgChan
+}
+
+func (n *NullMessageSource) IsClosed() bool {
+	return n.isClosed.Load()
+}
+
+func (n *NullMessageSource) Close() {
+	if !n.isClosed.Swap(true) {
+		close(n.msgChan)
+	}
+}
+
+func (n *NullMessageSource) ConnectionID() livekit.ConnectionID {
+	return n.connID
+}
+
+// ------------------------------------------------
 
 type ParticipantInit struct {
 	Identity             livekit.ParticipantIdentity
@@ -169,6 +236,7 @@ func ParticipantInitFromStartSession(ss *livekit.StartSession, region string) (*
 		AdaptiveStream:  ss.AdaptiveStream,
 		ID:              livekit.ParticipantID(ss.ParticipantId),
 		DisableICELite:  ss.DisableIceLite,
+		CreateRoom:      ss.CreateRoom,
 	}
 	if ss.SubscriberAllowPause != nil {
 		subscriberAllowPause := *ss.SubscriberAllowPause

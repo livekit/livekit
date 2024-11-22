@@ -18,7 +18,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/frostbyte73/core"
 	"github.com/gammazero/deque"
+	"github.com/livekit/livekit-server/pkg/sfu/bwe"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -31,16 +33,16 @@ type LeakyBucket struct {
 
 	logger logger.Logger
 
-	lock      sync.RWMutex
-	packets   deque.Deque[Packet]
-	interval  time.Duration
-	bitrate   int
-	isStopped bool
+	lock     sync.RWMutex
+	packets  deque.Deque[*Packet]
+	interval time.Duration
+	bitrate  int
+	stop     core.Fuse
 }
 
-func NewLeakyBucket(logger logger.Logger, interval time.Duration, bitrate int) *LeakyBucket {
+func NewLeakyBucket(logger logger.Logger, bwe bwe.BWE, interval time.Duration, bitrate int) *LeakyBucket {
 	l := &LeakyBucket{
-		Base:     NewBase(logger),
+		Base:     NewBase(logger, bwe),
 		logger:   logger,
 		interval: interval,
 		bitrate:  bitrate,
@@ -66,23 +68,13 @@ func (l *LeakyBucket) SetBitrate(bitrate int) {
 }
 
 func (l *LeakyBucket) Stop() {
-	l.lock.Lock()
-	if l.isStopped {
-		l.lock.Unlock()
-		return
-	}
-
-	l.isStopped = true
-	l.lock.Unlock()
+	l.stop.Break()
 }
 
-func (l *LeakyBucket) Enqueue(p Packet) {
+func (l *LeakyBucket) Enqueue(p *Packet) {
 	l.lock.Lock()
-	defer l.lock.Unlock()
-
-	if !l.isStopped {
-		l.packets.PushBack(p)
-	}
+	l.packets.PushBack(p)
+	l.lock.Unlock()
 }
 
 func (l *LeakyBucket) sendWorker() {
@@ -120,12 +112,11 @@ func (l *LeakyBucket) sendWorker() {
 		}
 
 		for {
-			l.lock.Lock()
-			if l.isStopped {
-				l.lock.Unlock()
+			if l.stop.IsBroken() {
 				return
 			}
 
+			l.lock.Lock()
 			if l.packets.Len() == 0 {
 				l.lock.Unlock()
 				// allow overshoot in next interval with shortage in this interval
@@ -136,7 +127,7 @@ func (l *LeakyBucket) sendWorker() {
 			p := l.packets.PopFront()
 			l.lock.Unlock()
 
-			written, _ := l.Base.SendPacket(&p)
+			written, _ := l.Base.SendPacket(p)
 			toSendBytes -= written
 			if toSendBytes < 0 {
 				// overage, wait for next interval

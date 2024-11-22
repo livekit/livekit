@@ -58,6 +58,36 @@ type RTPDeltaInfo struct {
 	Firs                 uint32
 }
 
+func (r *RTPDeltaInfo) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if r == nil {
+		return nil
+	}
+
+	e.AddTime("StartTime", r.StartTime)
+	e.AddTime("EndTime", r.EndTime)
+	e.AddUint32("Packets", r.Packets)
+	e.AddUint64("Bytes", r.Bytes)
+	e.AddUint64("HeaderBytes", r.HeaderBytes)
+	e.AddUint32("PacketsDuplicate", r.PacketsDuplicate)
+	e.AddUint64("BytesDuplicate", r.BytesDuplicate)
+	e.AddUint64("HeaderBytesDuplicate", r.HeaderBytesDuplicate)
+	e.AddUint32("PacketsPadding", r.PacketsPadding)
+	e.AddUint64("BytesPadding", r.BytesPadding)
+	e.AddUint64("HeaderBytesPadding", r.HeaderBytesPadding)
+	e.AddUint32("PacketsLost", r.PacketsLost)
+	e.AddUint32("PacketsMissing", r.PacketsMissing)
+	e.AddUint32("PacketsOutOfOrder", r.PacketsOutOfOrder)
+	e.AddUint32("Frames", r.Frames)
+	e.AddUint32("RttMax", r.RttMax)
+	e.AddFloat64("JitterMax", r.JitterMax)
+	e.AddUint32("Nacks", r.Nacks)
+	e.AddUint32("Plis", r.Plis)
+	e.AddUint32("Firs", r.Firs)
+	return nil
+}
+
+// -------------------------------------------------------
+
 type snapshot struct {
 	snapshotLite
 
@@ -78,6 +108,27 @@ type snapshot struct {
 
 	maxRtt    uint32
 	maxJitter float64
+}
+
+func (s *snapshot) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if s == nil {
+		return nil
+	}
+
+	e.AddObject("snapshotLite", &s.snapshotLite)
+	e.AddUint64("headerBytes", s.headerBytes)
+	e.AddUint64("packetsDuplicate", s.packetsDuplicate)
+	e.AddUint64("bytesDuplicate", s.bytesDuplicate)
+	e.AddUint64("headerBytesDuplicate", s.headerBytesDuplicate)
+	e.AddUint64("packetsPadding", s.packetsPadding)
+	e.AddUint64("bytesPadding", s.bytesPadding)
+	e.AddUint64("headerBytesPadding", s.headerBytesPadding)
+	e.AddUint32("frames", s.frames)
+	e.AddUint32("plis", s.plis)
+	e.AddUint32("firs", s.firs)
+	e.AddUint32("maxRtt", s.maxRtt)
+	e.AddFloat64("maxJitter", s.maxJitter)
+	return nil
 }
 
 // ------------------------------------------------------------------
@@ -195,6 +246,7 @@ func (r *rtpStatsBase) seed(from *rtpStatsBase) bool {
 	}
 
 	r.firstTime = from.firstTime
+	r.firstTimeAdjustment = from.firstTimeAdjustment
 	r.highestTime = from.highestTime
 
 	r.lastTransit = from.lastTransit
@@ -202,6 +254,8 @@ func (r *rtpStatsBase) seed(from *rtpStatsBase) bool {
 
 	r.headerBytes = from.headerBytes
 
+	r.packetsDuplicate = from.packetsDuplicate
+	r.bytesDuplicate = from.bytesDuplicate
 	r.headerBytesDuplicate = from.headerBytesDuplicate
 
 	r.packetsPadding = from.packetsPadding
@@ -212,13 +266,6 @@ func (r *rtpStatsBase) seed(from *rtpStatsBase) bool {
 
 	r.jitter = from.jitter
 	r.maxJitter = from.maxJitter
-
-	r.nackAcks = from.nackAcks
-	r.nackMisses = from.nackMisses
-	r.nackRepeated = from.nackRepeated
-
-	r.plis = from.plis
-	r.lastPli = from.lastPli
 
 	r.firs = from.firs
 	r.lastFir = from.lastFir
@@ -403,12 +450,11 @@ func (r *rtpStatsBase) deltaInfo(
 	}
 	if packetsExpected > cNumSequenceNumbers {
 		loggingFields = []interface{}{
-			"startSN", then.extStartSN,
-			"endSN", now.extStartSN,
-			"packetsExpected", packetsExpected,
-			"startTime", startTime,
-			"endTime", endTime,
+			"snapshotID", snapshotID,
+			"snapshotNow", now,
+			"snapshotThen", then,
 			"duration", endTime.Sub(startTime),
+			"packetsExpected", packetsExpected,
 		}
 		err = errors.New("too many packets expected in delta")
 		return
@@ -430,11 +476,13 @@ func (r *rtpStatsBase) deltaInfo(
 	packetsPadding := now.packetsPadding - then.packetsPadding
 	if packetsExpected < packetsPadding {
 		loggingFields = []interface{}{
+			"snapshotID", snapshotID,
+			"snapshotNow", now,
+			"snapshotThen", then,
+			"duration", endTime.Sub(startTime),
 			"packetsExpected", packetsExpected,
 			"packetsPadding", packetsPadding,
 			"packetsLost", packetsLost,
-			"startSequenceNumber", then.extStartSN,
-			"endSequenceNumber", now.extStartSN - 1,
 		}
 		err = errors.New("padding packets more than expected")
 		packetsExpected = 0

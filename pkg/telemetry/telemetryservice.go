@@ -19,14 +19,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/webhook"
 )
 
-//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 . TelemetryService
+//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
+
+//counterfeiter:generate . TelemetryService
 type TelemetryService interface {
 	// TrackStats is called periodically for each track in both directions (published/subscribed)
 	TrackStats(key StatsKey, stat *livekit.AnalyticsStat)
@@ -85,6 +86,9 @@ type TelemetryService interface {
 const (
 	workerCleanupWait = 3 * time.Minute
 	jobsQueueMinSize  = 2048
+
+	telemetryStatsUpdateInterval         = time.Second * 30
+	telemetryNonMediaStatsUpdateInterval = time.Minute * 5
 )
 
 type telemetryService struct {
@@ -170,7 +174,7 @@ func (t *telemetryService) FlushStats() {
 }
 
 func (t *telemetryService) run() {
-	for range time.Tick(config.TelemetryStatsUpdateInterval) {
+	for range time.Tick(telemetryStatsUpdateInterval) {
 		t.FlushStats()
 	}
 }
@@ -193,7 +197,6 @@ func (t *telemetryService) getOrCreateWorker(
 	roomName livekit.RoomName,
 	participantID livekit.ParticipantID,
 	participantIdentity livekit.ParticipantIdentity,
-	transferConnectedState bool,
 ) (*StatsWorker, bool) {
 	t.workersMu.Lock()
 	defer t.workersMu.Unlock()
@@ -204,7 +207,7 @@ func (t *telemetryService) getOrCreateWorker(
 	}
 
 	existingIsConnected := false
-	if ok && transferConnectedState {
+	if ok {
 		existingIsConnected = worker.IsConnected()
 	}
 

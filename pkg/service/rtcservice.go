@@ -69,7 +69,6 @@ func NewRTCService(
 		router:        router,
 		roomAllocator: ra,
 		store:         store,
-		upgrader:      websocket.Upgrader{},
 		currentNode:   currentNode,
 		config:        conf,
 		isDev:         conf.Development,
@@ -79,10 +78,14 @@ func NewRTCService(
 		connections:   map[*websocket.Conn]struct{}{},
 	}
 
-	// allow connections from any origin, since script may be hosted anywhere
-	// security is enforced by access tokens
-	s.upgrader.CheckOrigin = func(r *http.Request) bool {
-		return true
+	s.upgrader = websocket.Upgrader{
+		EnableCompression: true,
+
+		// allow connections from any origin, since script may be hosted anywhere
+		// security is enforced by access tokens
+		CheckOrigin: func(r *http.Request) bool {
+			return true
+		},
 	}
 
 	return s
@@ -166,6 +169,12 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 		}
 	}
 
+	createRequest := &livekit.CreateRoomRequest{
+		Name:       string(roomName),
+		RoomPreset: claims.RoomPreset,
+	}
+	SetRoomConfiguration(createRequest, claims.GetRoomConfiguration())
+
 	pi = routing.ParticipantInit{
 		Reconnect:       boolValue(reconnectParam),
 		ReconnectReason: livekit.ReconnectReason(reconnectReason),
@@ -175,10 +184,7 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 		Client:          s.ParseClientInfo(r),
 		Grants:          claims,
 		Region:          region,
-		CreateRoom: &livekit.CreateRoomRequest{
-			Name:       string(roomName),
-			ConfigName: GetRoomConfiguration(r.Context()),
-		},
+		CreateRoom:      createRequest,
 	}
 	if pi.Reconnect {
 		pi.ID = livekit.ParticipantID(participantID)
@@ -236,7 +242,12 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		prometheus.IncrementParticipantJoinFail(1)
-		handleError(w, r, http.StatusInternalServerError, err, loggerFields...)
+		status := http.StatusInternalServerError
+		var psrpcErr psrpc.Error
+		if errors.As(err, &psrpcErr) {
+			status = psrpcErr.ToHttp()
+		}
+		handleError(w, r, status, err, loggerFields...)
 		return
 	}
 
@@ -520,13 +531,6 @@ func (s *RTCService) startConnection(
 ) (connectionResult, *livekit.SignalResponse, error) {
 	var cr connectionResult
 	var err error
-
-	if !s.roomAllocator.CreateRoomEnabled() {
-		cr.Room, _, _, err = s.roomAllocator.CreateRoom(ctx, pi.CreateRoom, false)
-		if err != nil {
-			return cr, nil, err
-		}
-	}
 
 	if err := s.roomAllocator.SelectRoomNode(ctx, roomName, ""); err != nil {
 		return cr, nil, err

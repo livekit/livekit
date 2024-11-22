@@ -31,6 +31,11 @@ func checkYAMLTags(t reflect.Type, seen map[reflect.Type]struct{}) error {
 		for i := 0; i < t.NumField(); i++ {
 			field := t.Field(i)
 
+			if !field.IsExported() {
+				// ignore unexported fields
+				continue
+			}
+
 			if field.Type.Kind() == reflect.Bool {
 				// ignore boolean fields
 				continue

@@ -113,14 +113,14 @@ type ParticipantParams struct {
 	SID                     livekit.ParticipantID
 	Config                  *WebRTCConfig
 	Sink                    routing.MessageSink
-	AudioConfig             config.AudioConfig
+	AudioConfig             sfu.AudioConfig
 	VideoConfig             config.VideoConfig
 	LimitConfig             config.LimitConfig
 	ProtocolVersion         types.ProtocolVersion
 	SessionStartTime        time.Time
 	Telemetry               telemetry.TelemetryService
 	Trailer                 []byte
-	PLIThrottleConfig       config.PLIThrottleConfig
+	PLIThrottleConfig       sfu.PLIThrottleConfig
 	CongestionControlConfig config.CongestionControlConfig
 	// codecs that are enabled for this room
 	PublishEnabledCodecs           []*livekit.Codec
@@ -158,6 +158,9 @@ type ParticipantParams struct {
 	ForwardStats                   *sfu.ForwardStats
 	DisableSenderReportPassThrough bool
 	MetricConfig                   metric.MetricConfig
+	UseSendSideBWEInterceptor      bool
+	UseSendSideBWE                 bool
+	UseOneShotSignallingMode       bool
 }
 
 type ParticipantImpl struct {
@@ -817,17 +820,105 @@ func (p *ParticipantImpl) HandleSignalSourceClose() {
 	}
 }
 
+func (p *ParticipantImpl) synthesizeAddTrackRequests(offer webrtc.SessionDescription) error {
+	parsed, err := offer.Unmarshal()
+	if err != nil {
+		return err
+	}
+
+	for _, m := range parsed.MediaDescriptions {
+		if !strings.EqualFold(m.MediaName.Media, "audio") {
+			// ONE-SHOT-SIGNALLING-MODE-TODO: support video
+			continue
+		}
+
+		trackID := ""
+
+		msid, ok := m.Attribute(sdp.AttrKeyMsid)
+		if ok {
+			if split := strings.Split(msid, " "); len(split) == 2 {
+				trackID = split[1]
+			}
+		}
+
+		if trackID == "" {
+			attr, ok := m.Attribute(sdp.AttrKeySSRC)
+			if ok {
+				split := strings.Split(attr, " ")
+				if len(split) == 3 && strings.HasPrefix(split[1], "msid:") {
+					trackID = split[2]
+				}
+			}
+		}
+
+		if trackID == "" {
+			trackID = guid.New(utils.TrackPrefix)
+		}
+
+		req := &livekit.AddTrackRequest{
+			Cid:        trackID,
+			Name:       "synthesized-microphone",
+			Source:     livekit.TrackSource_MICROPHONE,
+			Type:       livekit.TrackType_AUDIO,
+			DisableDtx: true,
+			Stereo:     false,
+			Stream:     "camera",
+		}
+		p.AddTrack(req)
+	}
+	return nil
+}
+
 // HandleOffer an offer from remote participant, used when clients make the initial connection
-func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) {
+func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) error {
 	p.pubLogger.Debugw("received offer", "transport", livekit.SignalTarget_PUBLISHER, "offer", offer)
+
+	if p.params.UseOneShotSignallingMode {
+		if err := p.synthesizeAddTrackRequests(offer); err != nil {
+			return err
+		}
+	}
+
 	shouldPend := false
 	if p.MigrateState() == types.MigrateStateInit {
 		shouldPend = true
 	}
 
 	offer = p.setCodecPreferencesForPublisher(offer)
+	err := p.TransportManager.HandleOffer(offer, shouldPend)
+	if p.params.UseOneShotSignallingMode {
+		p.updateState(livekit.ParticipantInfo_ACTIVE)
+	}
+	return err
+}
 
-	p.TransportManager.HandleOffer(offer, shouldPend)
+func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) error {
+	if p.IsClosed() || p.IsDisconnected() {
+		return nil
+	}
+
+	answer = p.configurePublisherAnswer(answer)
+	p.pubLogger.Debugw("sending answer", "transport", livekit.SignalTarget_PUBLISHER, "answer", answer)
+	return p.writeMessage(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_Answer{
+			Answer: ToProtoSessionDescription(answer),
+		},
+	})
+}
+
+func (p *ParticipantImpl) GetAnswer() (webrtc.SessionDescription, error) {
+	if p.IsClosed() || p.IsDisconnected() {
+		return webrtc.SessionDescription{}, ErrParticipantSessionClosed
+	}
+
+	answer, err := p.TransportManager.GetAnswer()
+	if err != nil {
+		return answer, err
+	}
+
+	answer = p.configurePublisherAnswer(answer)
+	p.pubLogger.Debugw("returning answer", "transport", livekit.SignalTarget_PUBLISHER, "answer", answer)
+	return answer, nil
 }
 
 // HandleAnswer handles a client answer response, with subscriber PC, server initiates the
@@ -844,20 +935,6 @@ func (p *ParticipantImpl) HandleAnswer(answer webrtc.SessionDescription) {
 	p.TransportManager.UpdateSignalingRTT(uint32(signalConnCost))
 
 	p.TransportManager.HandleAnswer(answer)
-}
-
-func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) error {
-	if p.IsClosed() || p.IsDisconnected() {
-		return nil
-	}
-
-	answer = p.configurePublisherAnswer(answer)
-	p.pubLogger.Debugw("sending answer", "transport", livekit.SignalTarget_PUBLISHER, "answer", answer)
-	return p.writeMessage(&livekit.SignalResponse{
-		Message: &livekit.SignalResponse_Answer{
-			Answer: ToProtoSessionDescription(answer),
-		},
-	})
 }
 
 func (p *ParticipantImpl) handleMigrateTracks() {
@@ -967,7 +1044,12 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	p.clearMigrationTimer()
 
 	if sendLeave {
-		p.sendLeaveRequest(reason, isExpectedToResume, false, false)
+		p.sendLeaveRequest(
+			reason,
+			isExpectedToResume,
+			false, // isExpectedToReconnect
+			false, // sendOnlyIfSupportingLeaveRequestWithAction
+		)
 	}
 
 	if p.supervisor != nil {
@@ -1015,6 +1097,10 @@ func (p *ParticipantImpl) CloseReason() types.ParticipantCloseReason {
 // Negotiate subscriber SDP with client, if force is true, will cancel pending
 // negotiate task and negotiate immediately
 func (p *ParticipantImpl) Negotiate(force bool) {
+	if p.params.UseOneShotSignallingMode {
+		return
+	}
+
 	if p.MigrateState() != types.MigrateStateInit {
 		p.TransportManager.NegotiateSubscriber(force)
 	}
@@ -1062,6 +1148,10 @@ func (p *ParticipantImpl) setupMigrationTimerLocked() {
 }
 
 func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
+	if p.params.UseOneShotSignallingMode {
+		return false
+	}
+
 	allTransportConnected := p.TransportManager.HasSubscriberEverConnected()
 	if p.IsPublisher() {
 		allTransportConnected = allTransportConnected && p.TransportManager.HasPublisherEverConnected()
@@ -1074,7 +1164,12 @@ func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
 		onStart()
 	}
 
-	p.sendLeaveRequest(types.ParticipantCloseReasonMigrationRequested, true, false, true)
+	p.sendLeaveRequest(
+		types.ParticipantCloseReasonMigrationRequested,
+		true,  // isExpectedToResume
+		false, // isExpectedToReconnect
+		true,  // sendOnlyIfSupportingLeaveRequestWithAction
+	)
 	p.CloseSignalConnection(types.SignallingCloseReasonMigration)
 
 	p.clearMigrationTimer()
@@ -1131,6 +1226,10 @@ func (p *ParticipantImpl) MigrateState() types.MigrateState {
 
 // ICERestart restarts subscriber ICE connections
 func (p *ParticipantImpl) ICERestart(iceConfig *livekit.ICEConfig) {
+	if p.params.UseOneShotSignallingMode {
+		return
+	}
+
 	p.clearDisconnectTimer()
 	p.clearMigrationTimer()
 
@@ -1257,6 +1356,16 @@ func (p *ParticipantImpl) CanSubscribeMetrics() bool {
 	return p.grants.Load().Video.GetCanSubscribeMetrics()
 }
 
+func (p *ParticipantImpl) Verify() bool {
+	state := p.State()
+	isActive := state != livekit.ParticipantInfo_JOINING && state != livekit.ParticipantInfo_JOINED
+	if p.params.UseOneShotSignallingMode {
+		isActive = isActive && p.TransportManager.HasPublisherEverConnected()
+	}
+
+	return isActive
+}
+
 func (p *ParticipantImpl) VerifySubscribeParticipantInfo(pID livekit.ParticipantID, version uint32) {
 	if !p.IsReady() {
 		// we have not sent a JoinResponse yet. metadata would be covered in JoinResponse
@@ -1283,12 +1392,21 @@ func (p *ParticipantImpl) onTrackSubscribed(subTrack types.SubscribedTrack) {
 		if err != nil {
 			return
 		}
-		if p.TransportManager.HasSubscriberEverConnected() {
-			dt := subTrack.DownTrack()
-			dt.SeedState(sfu.DownTrackState{ForwarderState: p.getAndDeleteForwarderState(subTrack.ID())})
-			dt.SetConnected()
+		if p.params.UseOneShotSignallingMode {
+			if p.TransportManager.HasPublisherEverConnected() {
+				dt := subTrack.DownTrack()
+				dt.SeedState(sfu.DownTrackState{ForwarderState: p.getAndDeleteForwarderState(subTrack.ID())})
+				dt.SetConnected()
+			}
+			// ONE-SHOT-SIGNALLING-MODE-TODO: video support should add to publisher PC for congestion control
+		} else {
+			if p.TransportManager.HasSubscriberEverConnected() {
+				dt := subTrack.DownTrack()
+				dt.SeedState(sfu.DownTrackState{ForwarderState: p.getAndDeleteForwarderState(subTrack.ID())})
+				dt.SetConnected()
+			}
+			p.TransportManager.AddSubscribedTrack(subTrack)
 		}
-		p.TransportManager.AddSubscribedTrack(subTrack)
 	})
 }
 
@@ -1337,7 +1455,7 @@ type AnyTransportHandler struct {
 	p *ParticipantImpl
 }
 
-func (h AnyTransportHandler) OnFailed(isShortLived bool) {
+func (h AnyTransportHandler) OnFailed(_isShortLived bool, _ici *types.ICEConnectionInfo) {
 	h.p.onAnyTransportFailed()
 }
 
@@ -1420,7 +1538,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 	var pth transport.Handler = PublisherTransportHandler{ath}
 	var sth transport.Handler = SubscriberTransportHandler{ath}
 
-	subscriberAsPrimary := p.ProtocolVersion().SubscriberAsPrimary() && p.CanSubscribe()
+	subscriberAsPrimary := p.ProtocolVersion().SubscriberAsPrimary() && p.CanSubscribe() && !p.params.UseOneShotSignallingMode
 	if subscriberAsPrimary {
 		sth = PrimaryTransportHandler{sth, p}
 	} else {
@@ -1452,6 +1570,9 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		PublisherHandler:             pth,
 		SubscriberHandler:            sth,
 		DataChannelStats:             p.dataChannelStats,
+		UseSendSideBWEInterceptor:    p.params.UseSendSideBWEInterceptor,
+		UseSendSideBWE:               p.params.UseSendSideBWE,
+		UseOneShotSignallingMode:     p.params.UseOneShotSignallingMode,
 	}
 	if p.params.SyncStreams && p.params.PlayoutDelay.GetEnabled() && p.params.ClientInfo.isFirefox() {
 		// we will disable playout delay for Firefox if the user is expecting
@@ -1507,15 +1628,16 @@ func (p *ParticipantImpl) setupUpTrackManager() {
 
 func (p *ParticipantImpl) setupSubscriptionManager() {
 	p.SubscriptionManager = NewSubscriptionManager(SubscriptionManagerParams{
-		Participant:            p,
-		Logger:                 p.subLogger.WithoutSampler(),
-		TrackResolver:          p.params.TrackResolver,
-		Telemetry:              p.params.Telemetry,
-		OnTrackSubscribed:      p.onTrackSubscribed,
-		OnTrackUnsubscribed:    p.onTrackUnsubscribed,
-		OnSubscriptionError:    p.onSubscriptionError,
-		SubscriptionLimitVideo: p.params.SubscriptionLimitVideo,
-		SubscriptionLimitAudio: p.params.SubscriptionLimitAudio,
+		Participant:              p,
+		Logger:                   p.subLogger.WithoutSampler(),
+		TrackResolver:            p.params.TrackResolver,
+		Telemetry:                p.params.Telemetry,
+		OnTrackSubscribed:        p.onTrackSubscribed,
+		OnTrackUnsubscribed:      p.onTrackUnsubscribed,
+		OnSubscriptionError:      p.onSubscriptionError,
+		SubscriptionLimitVideo:   p.params.SubscriptionLimitVideo,
+		SubscriptionLimitAudio:   p.params.SubscriptionLimitAudio,
+		UseOneShotSignallingMode: p.params.UseOneShotSignallingMode,
 	})
 }
 
@@ -1773,6 +1895,12 @@ func (p *ParticipantImpl) onPublisherInitialConnected() {
 		p.supervisor.SetPublisherPeerConnectionConnected(true)
 	}
 
+	if p.params.UseOneShotSignallingMode {
+		go p.subscriberRTCPWorker()
+
+		p.setDownTracksConnected()
+	}
+
 	p.pubRTCPQueue.Start()
 }
 
@@ -1822,8 +1950,20 @@ func (p *ParticipantImpl) setupDisconnectTimer() {
 }
 
 func (p *ParticipantImpl) onAnyTransportFailed() {
-	// clients support resuming of connections when websocket becomes disconnected
-	p.sendLeaveRequest(types.ParticipantCloseReasonPeerConnectionDisconnected, true, false, true)
+	if p.params.UseOneShotSignallingMode {
+		// as there is no way to notify participant, close the participant on transport failure
+		_ = p.Close(false, types.ParticipantCloseReasonPeerConnectionDisconnected, false)
+		return
+	}
+
+	p.sendLeaveRequest(
+		types.ParticipantCloseReasonPeerConnectionDisconnected,
+		true,  // isExpectedToResume
+		false, // isExpectedToReconnect
+		true,  // sendOnlyIfSupportingLeaveRequestWithAction
+	)
+
+	// clients support resuming of connections when signalling becomes disconnected
 	p.CloseSignalConnection(types.SignallingCloseReasonTransportFailure)
 
 	// detect when participant has actually left.
@@ -2376,7 +2516,6 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 			p.supervisor.ClearPublishedTrack(trackID, mt)
 		}
 
-		// not logged when closing
 		p.params.Telemetry.TrackUnpublished(
 			context.Background(),
 			p.ID(),
@@ -2385,7 +2524,6 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 			true,
 		)
 
-		// re-use Track sid
 		p.pendingTracksLock.Lock()
 		if pti := p.pendingTracks[signalCid]; pti != nil {
 			p.sendTrackPublished(signalCid, pti.trackInfos[0])
@@ -2660,7 +2798,12 @@ func (p *ParticipantImpl) GetCachedDownTrack(trackID livekit.TrackID) (*webrtc.R
 }
 
 func (p *ParticipantImpl) IssueFullReconnect(reason types.ParticipantCloseReason) {
-	p.sendLeaveRequest(reason, false, true, false)
+	p.sendLeaveRequest(
+		reason,
+		false, // isExpectedToResume
+		true,  // isExpectedToReconnect
+		false, // sendOnlyIfSupportingLeaveRequestWithAction
+	)
 
 	scr := types.SignallingCloseReasonUnknown
 	switch reason {
@@ -2809,7 +2952,14 @@ func (p *ParticipantImpl) setupEnabledCodecs(publishEnabledCodecs []*livekit.Cod
 }
 
 func (p *ParticipantImpl) GetEnabledPublishCodecs() []*livekit.Codec {
-	return p.enabledPublishCodecs
+	codecs := make([]*livekit.Codec, 0, len(p.enabledPublishCodecs))
+	for _, c := range p.enabledPublishCodecs {
+		if c.Mime == "video/rtx" {
+			continue
+		}
+		codecs = append(codecs, c)
+	}
+	return codecs
 }
 
 func (p *ParticipantImpl) UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack) error {

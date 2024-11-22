@@ -714,7 +714,7 @@ func (f *Forwarder) GetOptimalBandwidthNeeded(brs Bitrates) int64 {
 	return getOptimalBandwidthNeeded(f.muted, f.pubMuted, f.vls.GetMaxSeen().Spatial, brs, f.vls.GetMax())
 }
 
-func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allowOvershoot bool) VideoAllocation {
+func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allowOvershoot bool, hold bool) VideoAllocation {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -755,7 +755,7 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 		}
 
 		alloc.TargetLayer = buffer.VideoLayer{
-			Spatial:  int32(math.Min(float64(maxSeenLayer.Spatial), float64(maxSpatial))),
+			Spatial:  min(maxSeenLayer.Spatial, maxSpatial),
 			Temporal: getMaxTemporal(),
 		}
 	}
@@ -783,8 +783,9 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 		//   2. If current is a valid layer, check against currently available layers and continue at current
 		//      if possible. Else, choose the highest available layer as the next target.
 		//   3. If current is not valid, set next target to be opportunistic.
-		maxLayerSpatialLimit := int32(math.Min(float64(maxLayer.Spatial), float64(maxSeenLayer.Spatial)))
+		maxLayerSpatialLimit := min(maxLayer.Spatial, maxSeenLayer.Spatial)
 		highestAvailableLayer := buffer.InvalidLayerSpatial
+		lowestAvailableLayer := buffer.InvalidLayerSpatial
 		requestLayerSpatial := buffer.InvalidLayerSpatial
 		for _, al := range availableLayers {
 			if al > requestLayerSpatial && al <= maxLayerSpatialLimit {
@@ -792,6 +793,9 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 			}
 			if al > highestAvailableLayer {
 				highestAvailableLayer = al
+			}
+			if lowestAvailableLayer == buffer.InvalidLayerSpatial || al < lowestAvailableLayer {
+				lowestAvailableLayer = al
 			}
 		}
 		if requestLayerSpatial == buffer.InvalidLayerSpatial && highestAvailableLayer != buffer.InvalidLayerSpatial && allowOvershoot && f.vls.IsOvershootOkay() {
@@ -811,20 +815,46 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 					Temporal: getMaxTemporal(),
 				}
 			} else {
-				// current layer has stopped, switch to highest available
-				alloc.TargetLayer = buffer.VideoLayer{
-					Spatial:  requestLayerSpatial,
-					Temporal: getMaxTemporal(),
+				// current layer has stopped, switch to lowest available if `hold`ing, else switch to highest available
+				if hold {
+					// if `hold` is requested, may be set due to early warning congestion
+					// signal, in that case layers are not increased as increasing layers
+					// will result in more load on the channel
+					alloc.TargetLayer = buffer.VideoLayer{
+						Spatial:  lowestAvailableLayer,
+						Temporal: 0,
+					}
+				} else {
+					alloc.TargetLayer = buffer.VideoLayer{
+						Spatial:  requestLayerSpatial,
+						Temporal: getMaxTemporal(),
+					}
 				}
 			}
 			alloc.RequestLayerSpatial = alloc.TargetLayer.Spatial
 		} else {
-			// opportunistically latch on to anything
-			opportunisticAlloc()
-			if requestLayerSpatial == buffer.InvalidLayerSpatial {
-				alloc.RequestLayerSpatial = maxLayerSpatialLimit
+			if hold {
+				// allocate minimal to make the stream active while `hold`ing.
+				if lowestAvailableLayer == buffer.InvalidLayerSpatial {
+					alloc.TargetLayer = buffer.VideoLayer{
+						Spatial:  0,
+						Temporal: 0,
+					}
+				} else {
+					alloc.TargetLayer = buffer.VideoLayer{
+						Spatial:  lowestAvailableLayer,
+						Temporal: 0,
+					}
+				}
+				alloc.RequestLayerSpatial = alloc.TargetLayer.Spatial
 			} else {
-				alloc.RequestLayerSpatial = requestLayerSpatial
+				// opportunistically latch on to anything
+				opportunisticAlloc()
+				if requestLayerSpatial == buffer.InvalidLayerSpatial {
+					alloc.RequestLayerSpatial = maxLayerSpatialLimit
+				} else {
+					alloc.RequestLayerSpatial = requestLayerSpatial
+				}
 			}
 		}
 	}
@@ -834,7 +864,7 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 		alloc.RequestLayerSpatial = buffer.InvalidLayerSpatial
 	}
 	if alloc.TargetLayer.IsValid() {
-		alloc.BandwidthRequested = optimalBandwidthNeeded
+		alloc.BandwidthRequested = getOptimalBandwidthNeeded(f.muted, f.pubMuted, maxSeenLayer.Spatial, brs, alloc.TargetLayer)
 	}
 	alloc.BandwidthDelta = alloc.BandwidthRequested - getBandwidthNeeded(brs, f.vls.GetTarget(), f.lastAllocation.BandwidthRequested)
 	alloc.DistanceToDesired = getDistanceToDesired(
@@ -1120,7 +1150,7 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() (VideoTransit
 				break
 			}
 
-			bandwidthDelta := int64(math.Max(float64(0), float64(existingBandwidthNeeded-f.provisional.bitrates[s][t])))
+			bandwidthDelta := max(0, existingBandwidthNeeded-f.provisional.bitrates[s][t])
 
 			transitionCost := int32(0)
 			// SVC-TODO: SVC will need a different cost transition

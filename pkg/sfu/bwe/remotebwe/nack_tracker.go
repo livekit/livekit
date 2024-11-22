@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package streamallocator
+package remotebwe
 
 import (
 	"fmt"
@@ -23,37 +23,57 @@ import (
 
 // ------------------------------------------------
 
-type NackTrackerParams struct {
-	Name              string
-	Logger            logger.Logger
-	WindowMinDuration time.Duration
-	WindowMaxDuration time.Duration
-	RatioThreshold    float64
+type NackTrackerConfig struct {
+	WindowMinDuration time.Duration `yaml:"window_min_duration,omitempty"`
+	WindowMaxDuration time.Duration `yaml:"window_max_duration,omitempty"`
+	RatioThreshold    float64       `yaml:"ratio_threshold,omitempty"`
 }
 
-type NackTracker struct {
-	params NackTrackerParams
+var (
+	defaultNackTrackerConfigProbe = NackTrackerConfig{
+		WindowMinDuration: 500 * time.Millisecond,
+		WindowMaxDuration: 1 * time.Second,
+		RatioThreshold:    0.04,
+	}
+
+	defaultNackTrackerConfigNonProbe = NackTrackerConfig{
+		WindowMinDuration: 2 * time.Second,
+		WindowMaxDuration: 3 * time.Second,
+		RatioThreshold:    0.08,
+	}
+)
+
+// ------------------------------------------------
+
+type nackTrackerParams struct {
+	Name   string
+	Logger logger.Logger
+	Config NackTrackerConfig
+}
+
+type nackTracker struct {
+	params nackTrackerParams
 
 	windowStartTime time.Time
 	packets         uint32
 	repeatedNacks   uint32
 
-	/* STREAM-ALLOCATOR-DATA
-	// STREAM-ALLOCATOR-EXPERIMENTAL-TODO: remove when cleaning up experimental stuff
+	/* REMOTE-BWE-DATA
+	// REMOTE-BWE-EXPERIMENTAL-TODO: remove when cleaning up experimental stuff
 	history []string
 	*/
 }
 
-func NewNackTracker(params NackTrackerParams) *NackTracker {
-	return &NackTracker{
+func newNackTracker(params nackTrackerParams) *nackTracker {
+	return &nackTracker{
 		params: params,
-		// STREAM-ALLOCATOR-DATA history: make([]string, 0, 10),
+		// REMOTE-BWE-DATA history: make([]string, 0, 10),
 	}
 }
 
-func (n *NackTracker) Add(packets uint32, repeatedNacks uint32) {
-	if n.params.WindowMaxDuration != 0 && !n.windowStartTime.IsZero() && time.Since(n.windowStartTime) > n.params.WindowMaxDuration {
-		// STREAM-ALLOCATOR-DATA n.updateHistory()
+func (n *nackTracker) Add(packets uint32, repeatedNacks uint32) {
+	if n.params.Config.WindowMaxDuration != 0 && !n.windowStartTime.IsZero() && time.Since(n.windowStartTime) > n.params.Config.WindowMaxDuration {
+		// REMOTE-BWE-DATA n.updateHistory()
 
 		n.windowStartTime = time.Time{}
 		n.packets = 0
@@ -76,7 +96,7 @@ func (n *NackTracker) Add(packets uint32, repeatedNacks uint32) {
 	}
 }
 
-func (n *NackTracker) GetRatio() float64 {
+func (n *nackTracker) GetRatio() float64 {
 	ratio := 0.0
 	if n.packets != 0 {
 		ratio = float64(n.repeatedNacks) / float64(n.packets)
@@ -88,15 +108,15 @@ func (n *NackTracker) GetRatio() float64 {
 	return ratio
 }
 
-func (n *NackTracker) IsTriggered() bool {
-	if n.params.WindowMinDuration != 0 && !n.windowStartTime.IsZero() && time.Since(n.windowStartTime) > n.params.WindowMinDuration {
-		return n.GetRatio() > n.params.RatioThreshold
+func (n *nackTracker) IsTriggered() bool {
+	if n.params.Config.WindowMinDuration != 0 && !n.windowStartTime.IsZero() && time.Since(n.windowStartTime) > n.params.Config.WindowMinDuration {
+		return n.GetRatio() > n.params.Config.RatioThreshold
 	}
 
 	return false
 }
 
-func (n *NackTracker) ToString() string {
+func (n *nackTracker) String() string {
 	window := ""
 	if !n.windowStartTime.IsZero() {
 		now := time.Now()
@@ -106,17 +126,17 @@ func (n *NackTracker) ToString() string {
 	return fmt.Sprintf("n: %s, %s, p: %d, rn: %d, rn/p: %.2f", n.params.Name, window, n.packets, n.repeatedNacks, n.GetRatio())
 }
 
-/* STREAM-ALLOCATOR-DATA
-func (n *NackTracker) GetHistory() []string {
+/* REMOTE-BWE-DATA
+func (n *nackTracker) GetHistory() []string {
 	return n.history
 }
 
-func (n *NackTracker) updateHistory() {
+func (n *nackTracker) updateHistory() {
 	if len(n.history) >= 10 {
 		n.history = n.history[1:]
 	}
 
-	n.history = append(n.history, n.ToString())
+	n.history = append(n.history, n.String())
 }
 */
 

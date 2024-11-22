@@ -19,6 +19,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/sfu/bwe"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils/mono"
 	"github.com/pion/rtp"
@@ -26,11 +27,14 @@ import (
 
 type Base struct {
 	logger logger.Logger
+
+	bwe bwe.BWE
 }
 
-func NewBase(logger logger.Logger) *Base {
+func NewBase(logger logger.Logger, bwe bwe.BWE) *Base {
 	return &Base{
 		logger: logger,
+		bwe:    bwe,
 	}
 }
 
@@ -47,7 +51,7 @@ func (b *Base) SendPacket(p *Packet) (int, error) {
 		}
 	}()
 
-	_, err := b.writeRTPHeaderExtensions(p)
+	err := b.patchRTPHeaderExtensions(p)
 	if err != nil {
 		b.logger.Errorw("writing rtp header extensions err", err)
 		return 0, err
@@ -65,36 +69,41 @@ func (b *Base) SendPacket(p *Packet) (int, error) {
 	return written, nil
 }
 
-// writes RTP header extensions of track
-func (b *Base) writeRTPHeaderExtensions(p *Packet) (time.Time, error) {
-	// clear out extensions that may have been in the forwarded header
-	p.Header.Extension = false
-	p.Header.ExtensionProfile = 0
-	p.Header.Extensions = []rtp.Extension{}
-
-	for _, ext := range p.Extensions {
-		if ext.ID == 0 || len(ext.Payload) == 0 {
-			continue
-		}
-
-		p.Header.SetExtension(ext.ID, ext.Payload)
-	}
-
+// patch just abs-send-time and transport-cc extensions if applicable
+func (b *Base) patchRTPHeaderExtensions(p *Packet) error {
 	sendingAt := mono.Now()
 	if p.AbsSendTimeExtID != 0 {
 		sendTime := rtp.NewAbsSendTimeExtension(sendingAt)
 		b, err := sendTime.Marshal()
 		if err != nil {
-			return time.Time{}, err
+			return err
 		}
 
-		err = p.Header.SetExtension(p.AbsSendTimeExtID, b)
-		if err != nil {
-			return time.Time{}, err
+		if err = p.Header.SetExtension(p.AbsSendTimeExtID, b); err != nil {
+			return err
 		}
 	}
 
-	return sendingAt, nil
+	if p.TransportWideExtID != 0 && b.bwe != nil {
+		twccSN := b.bwe.RecordPacketSendAndGetSequenceNumber(
+			sendingAt.UnixMicro(),
+			p.Header.MarshalSize()+len(p.Payload),
+			p.IsRTX,
+		)
+		twccExt := rtp.TransportCCExtension{
+			TransportSequence: twccSN,
+		}
+		b, err := twccExt.Marshal()
+		if err != nil {
+			return err
+		}
+
+		if err = p.Header.SetExtension(p.TransportWideExtID, b); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // ------------------------------------------------
