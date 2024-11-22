@@ -31,7 +31,6 @@ var (
 )
 
 type UpTrackManagerParams struct {
-	SID              livekit.ParticipantID
 	Logger           logger.Logger
 	VersionGenerator utils.TimedVersionGenerator
 }

@@ -1607,7 +1607,6 @@ func (p *ParticipantImpl) setupTransportManager() error {
 
 func (p *ParticipantImpl) setupUpTrackManager() {
 	p.UpTrackManager = NewUpTrackManager(UpTrackManagerParams{
-		SID:              p.params.SID,
 		Logger:           p.pubLogger,
 		VersionGenerator: p.params.VersionGenerator,
 	})
