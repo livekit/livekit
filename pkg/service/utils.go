@@ -27,6 +27,9 @@ import (
 )
 
 func handleError(w http.ResponseWriter, r *http.Request, status int, err error, keysAndValues ...interface{}) {
+	if errors.Is(r.Context().Err(), context.Canceled) {
+		return
+	}
 	keysAndValues = append(keysAndValues, "status", status)
 	if r != nil && r.URL != nil {
 		keysAndValues = append(keysAndValues, "method", r.Method, "path", r.URL.Path)
