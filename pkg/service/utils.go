@@ -31,7 +31,7 @@ func handleError(w http.ResponseWriter, r *http.Request, status int, err error, 
 	if r != nil && r.URL != nil {
 		keysAndValues = append(keysAndValues, "method", r.Method, "path", r.URL.Path)
 	}
-	if !errors.Is(err, context.Canceled) {
+	if !errors.Is(err, context.Canceled) && !errors.Is(r.Context().Err(), context.Canceled) {
 		logger.GetLogger().WithCallDepth(1).Warnw("error handling request", err, keysAndValues...)
 	}
 	w.WriteHeader(status)
