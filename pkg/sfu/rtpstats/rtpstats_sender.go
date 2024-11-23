@@ -572,7 +572,7 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 
 	r.packetsLostFromRR = uint64(rr.TotalLost)
 	lossDelta := (rr.TotalLost - r.lastRR.TotalLost) & ((1 << 24) - 1)
-	if lossDelta > 0 && lossDelta < (1<<23) && rr.TotalLost < r.lastRR.TotalLost {
+	if lossDelta < (1<<23) && rr.TotalLost < r.lastRR.TotalLost {
 		r.packetsLostFromRR += (1 << 24)
 	}
 
