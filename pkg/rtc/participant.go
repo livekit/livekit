@@ -161,6 +161,7 @@ type ParticipantParams struct {
 	UseSendSideBWEInterceptor      bool
 	UseSendSideBWE                 bool
 	UseOneShotSignallingMode       bool
+	DisableMetrics                 bool
 }
 
 type ParticipantImpl struct {
@@ -238,7 +239,7 @@ type ParticipantImpl struct {
 	onMigrateStateChange func(p types.LocalParticipant, migrateState types.MigrateState)
 	onParticipantUpdate  func(types.LocalParticipant)
 	onDataPacket         func(types.LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket)
-	onMetrics            func(types.LocalParticipant, *livekit.DataPacket)
+	onMetrics            func(types.Participant, *livekit.DataPacket)
 
 	migrateState atomic.Value // types.MigrateState
 
@@ -254,6 +255,8 @@ type ParticipantImpl struct {
 	tracksQuality map[livekit.TrackID]livekit.ConnectionQuality
 
 	metricTimestamper *metric.MetricTimestamper
+	metricsCollector  *metric.MetricsCollector
+	metricsReporter   *metric.MetricsReporter
 
 	// loggers for publisher and subscriber
 	pubLogger logger.Logger
@@ -289,12 +292,8 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 			params.Telemetry,
 		),
 		tracksQuality: make(map[livekit.TrackID]livekit.ConnectionQuality),
-		metricTimestamper: metric.NewMetricTimestamper(metric.MetricTimestamperParams{
-			Config: params.MetricConfig.Timestamper,
-			Logger: params.Logger,
-		}),
-		pubLogger: params.Logger.WithComponent(sutils.ComponentPub),
-		subLogger: params.Logger.WithComponent(sutils.ComponentSub),
+		pubLogger:     params.Logger.WithComponent(sutils.ComponentPub),
+		subLogger:     params.Logger.WithComponent(sutils.ComponentSub),
 	}
 	if !params.DisableSupervisor {
 		p.supervisor = supervisor.NewParticipantSupervisor(supervisor.ParticipantSupervisorParams{Logger: params.Logger})
@@ -325,6 +324,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 
 	p.setupUpTrackManager()
 	p.setupSubscriptionManager()
+	p.setupMetrics()
 
 	return p, nil
 }
@@ -784,13 +784,13 @@ func (p *ParticipantImpl) getOnDataPacket() func(types.LocalParticipant, livekit
 	return p.onDataPacket
 }
 
-func (p *ParticipantImpl) OnMetrics(callback func(types.LocalParticipant, *livekit.DataPacket)) {
+func (p *ParticipantImpl) OnMetrics(callback func(types.Participant, *livekit.DataPacket)) {
 	p.lock.Lock()
 	p.onMetrics = callback
 	p.lock.Unlock()
 }
 
-func (p *ParticipantImpl) getOnMetrics() func(types.LocalParticipant, *livekit.DataPacket) {
+func (p *ParticipantImpl) getOnMetrics() func(types.Participant, *livekit.DataPacket) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	return p.onMetrics
@@ -1076,6 +1076,9 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	go func() {
 		p.SubscriptionManager.Close(isExpectedToResume)
 		p.TransportManager.Close()
+
+		p.metricsCollector.Stop()
+		p.metricsReporter.Stop()
 	}()
 
 	p.dataChannelStats.Stop()
@@ -1633,6 +1636,65 @@ func (p *ParticipantImpl) setupSubscriptionManager() {
 		SubscriptionLimitVideo:   p.params.SubscriptionLimitVideo,
 		SubscriptionLimitAudio:   p.params.SubscriptionLimitAudio,
 		UseOneShotSignallingMode: p.params.UseOneShotSignallingMode,
+	})
+}
+
+func (p *ParticipantImpl) MetricsCollectorTimeToCollectMetrics() {
+	publisherRTT, ok := p.TransportManager.GetPublisherRTT()
+	if ok {
+		p.metricsCollector.AddPublisherRTT(p.Identity(), float32(publisherRTT))
+	}
+
+	subscriberRTT, ok := p.TransportManager.GetSubscriberRTT()
+	if ok {
+		p.metricsCollector.AddSubscriberRTT(float32(subscriberRTT))
+	}
+}
+
+func (p *ParticipantImpl) MetricsCollectorBatchReady(mb *livekit.MetricsBatch) {
+	if onMetrics := p.getOnMetrics(); onMetrics != nil {
+		onMetrics(p, &livekit.DataPacket{
+			Value: &livekit.DataPacket_Metrics{
+				Metrics: mb,
+			},
+		})
+	}
+}
+
+func (p *ParticipantImpl) MetricsReporterBatchReady(mb *livekit.MetricsBatch) {
+	dpData, err := proto.Marshal(&livekit.DataPacket{
+		Value: &livekit.DataPacket_Metrics{
+			Metrics: mb,
+		},
+	})
+	if err != nil {
+		p.params.Logger.Errorw("failed to marshal data packet", err)
+		return
+	}
+
+	p.TransportManager.SendDataPacket(livekit.DataPacket_RELIABLE, dpData)
+}
+
+func (p *ParticipantImpl) setupMetrics() {
+	if p.params.DisableMetrics {
+		return
+	}
+
+	p.metricTimestamper = metric.NewMetricTimestamper(metric.MetricTimestamperParams{
+		Config: p.params.MetricConfig.Timestamper,
+		Logger: p.params.Logger,
+	})
+	p.metricsCollector = metric.NewMetricsCollector(metric.MetricsCollectorParams{
+		ParticipantIdentity: p.Identity(),
+		Config:              p.params.MetricConfig.Collector,
+		Provider:            p,
+		Logger:              p.params.Logger,
+	})
+	p.metricsReporter = metric.NewMetricsReporter(metric.MetricsReporterParams{
+		ParticipantIdentity: p.Identity(),
+		Config:              p.params.MetricConfig.Reporter,
+		Consumer:            p,
+		Logger:              p.params.Logger,
 	})
 }
 
@@ -3029,25 +3091,12 @@ func (p *ParticipantImpl) HandleMetrics(senderParticipantID livekit.ParticipantI
 		return ErrNoSubscribeMetricsPermission
 	}
 
-	if !p.SubscriptionManager.IsSubscribedTo(senderParticipantID) {
+	if senderParticipantID != p.ID() && !p.SubscriptionManager.IsSubscribedTo(senderParticipantID) {
 		return nil
 	}
 
-	// METRICS-TODO:  This is just forwarding. Will have to do more, including but not limited to
-	//   1. Filtering: subscriber metrics from self only should be sent to that participant.
-	//   2. Batching: could include re-mapping labels to consolidate multiple batches.
-	//   3. (Maybe) Time stamps: this is done on receive, TBD if required here also
-	dpData, err := proto.Marshal(&livekit.DataPacket{
-		Value: &livekit.DataPacket_Metrics{
-			Metrics: metrics,
-		},
-	})
-	if err != nil {
-		p.params.Logger.Errorw("failed to marshal data packet", err)
-		return err
-	}
-
-	return p.TransportManager.SendDataPacket(livekit.DataPacket_RELIABLE, dpData)
+	p.metricsReporter.Merge(metrics)
+	return nil
 }
 
 // ----------------------------------------------

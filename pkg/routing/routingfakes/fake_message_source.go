@@ -6,7 +6,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/protocol/livekit"
-	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/proto"
 )
 
 type FakeMessageSource struct {
@@ -34,15 +34,15 @@ type FakeMessageSource struct {
 	isClosedReturnsOnCall map[int]struct {
 		result1 bool
 	}
-	ReadChanStub        func() <-chan protoreflect.ProtoMessage
+	ReadChanStub        func() <-chan proto.Message
 	readChanMutex       sync.RWMutex
 	readChanArgsForCall []struct {
 	}
 	readChanReturns struct {
-		result1 <-chan protoreflect.ProtoMessage
+		result1 <-chan proto.Message
 	}
 	readChanReturnsOnCall map[int]struct {
-		result1 <-chan protoreflect.ProtoMessage
+		result1 <-chan proto.Message
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
@@ -178,7 +178,7 @@ func (fake *FakeMessageSource) IsClosedReturnsOnCall(i int, result1 bool) {
 	}{result1}
 }
 
-func (fake *FakeMessageSource) ReadChan() <-chan protoreflect.ProtoMessage {
+func (fake *FakeMessageSource) ReadChan() <-chan proto.Message {
 	fake.readChanMutex.Lock()
 	ret, specificReturn := fake.readChanReturnsOnCall[len(fake.readChanArgsForCall)]
 	fake.readChanArgsForCall = append(fake.readChanArgsForCall, struct {
@@ -202,32 +202,32 @@ func (fake *FakeMessageSource) ReadChanCallCount() int {
 	return len(fake.readChanArgsForCall)
 }
 
-func (fake *FakeMessageSource) ReadChanCalls(stub func() <-chan protoreflect.ProtoMessage) {
+func (fake *FakeMessageSource) ReadChanCalls(stub func() <-chan proto.Message) {
 	fake.readChanMutex.Lock()
 	defer fake.readChanMutex.Unlock()
 	fake.ReadChanStub = stub
 }
 
-func (fake *FakeMessageSource) ReadChanReturns(result1 <-chan protoreflect.ProtoMessage) {
+func (fake *FakeMessageSource) ReadChanReturns(result1 <-chan proto.Message) {
 	fake.readChanMutex.Lock()
 	defer fake.readChanMutex.Unlock()
 	fake.ReadChanStub = nil
 	fake.readChanReturns = struct {
-		result1 <-chan protoreflect.ProtoMessage
+		result1 <-chan proto.Message
 	}{result1}
 }
 
-func (fake *FakeMessageSource) ReadChanReturnsOnCall(i int, result1 <-chan protoreflect.ProtoMessage) {
+func (fake *FakeMessageSource) ReadChanReturnsOnCall(i int, result1 <-chan proto.Message) {
 	fake.readChanMutex.Lock()
 	defer fake.readChanMutex.Unlock()
 	fake.ReadChanStub = nil
 	if fake.readChanReturnsOnCall == nil {
 		fake.readChanReturnsOnCall = make(map[int]struct {
-			result1 <-chan protoreflect.ProtoMessage
+			result1 <-chan proto.Message
 		})
 	}
 	fake.readChanReturnsOnCall[i] = struct {
-		result1 <-chan protoreflect.ProtoMessage
+		result1 <-chan proto.Message
 	}{result1}
 }
 

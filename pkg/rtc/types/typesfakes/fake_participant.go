@@ -178,6 +178,11 @@ type FakeParticipant struct {
 	kindReturnsOnCall map[int]struct {
 		result1 livekit.ParticipantInfo_Kind
 	}
+	OnMetricsStub        func(func(types.Participant, *livekit.DataPacket))
+	onMetricsMutex       sync.RWMutex
+	onMetricsArgsForCall []struct {
+		arg1 func(types.Participant, *livekit.DataPacket)
+	}
 	RemovePublishedTrackStub        func(types.MediaTrack, bool, bool)
 	removePublishedTrackMutex       sync.RWMutex
 	removePublishedTrackArgsForCall []struct {
@@ -1122,6 +1127,38 @@ func (fake *FakeParticipant) KindReturnsOnCall(i int, result1 livekit.Participan
 	}{result1}
 }
 
+func (fake *FakeParticipant) OnMetrics(arg1 func(types.Participant, *livekit.DataPacket)) {
+	fake.onMetricsMutex.Lock()
+	fake.onMetricsArgsForCall = append(fake.onMetricsArgsForCall, struct {
+		arg1 func(types.Participant, *livekit.DataPacket)
+	}{arg1})
+	stub := fake.OnMetricsStub
+	fake.recordInvocation("OnMetrics", []interface{}{arg1})
+	fake.onMetricsMutex.Unlock()
+	if stub != nil {
+		fake.OnMetricsStub(arg1)
+	}
+}
+
+func (fake *FakeParticipant) OnMetricsCallCount() int {
+	fake.onMetricsMutex.RLock()
+	defer fake.onMetricsMutex.RUnlock()
+	return len(fake.onMetricsArgsForCall)
+}
+
+func (fake *FakeParticipant) OnMetricsCalls(stub func(func(types.Participant, *livekit.DataPacket))) {
+	fake.onMetricsMutex.Lock()
+	defer fake.onMetricsMutex.Unlock()
+	fake.OnMetricsStub = stub
+}
+
+func (fake *FakeParticipant) OnMetricsArgsForCall(i int) func(types.Participant, *livekit.DataPacket) {
+	fake.onMetricsMutex.RLock()
+	defer fake.onMetricsMutex.RUnlock()
+	argsForCall := fake.onMetricsArgsForCall[i]
+	return argsForCall.arg1
+}
+
 func (fake *FakeParticipant) RemovePublishedTrack(arg1 types.MediaTrack, arg2 bool, arg3 bool) {
 	fake.removePublishedTrackMutex.Lock()
 	fake.removePublishedTrackArgsForCall = append(fake.removePublishedTrackArgsForCall, struct {
@@ -1469,6 +1506,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.isRecorderMutex.RUnlock()
 	fake.kindMutex.RLock()
 	defer fake.kindMutex.RUnlock()
+	fake.onMetricsMutex.RLock()
+	defer fake.onMetricsMutex.RUnlock()
 	fake.removePublishedTrackMutex.RLock()
 	defer fake.removePublishedTrackMutex.RUnlock()
 	fake.stateMutex.RLock()

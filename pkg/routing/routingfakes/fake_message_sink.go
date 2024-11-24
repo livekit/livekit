@@ -6,7 +6,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/protocol/livekit"
-	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/proto"
 )
 
 type FakeMessageSink struct {
@@ -34,10 +34,10 @@ type FakeMessageSink struct {
 	isClosedReturnsOnCall map[int]struct {
 		result1 bool
 	}
-	WriteMessageStub        func(protoreflect.ProtoMessage) error
+	WriteMessageStub        func(proto.Message) error
 	writeMessageMutex       sync.RWMutex
 	writeMessageArgsForCall []struct {
-		arg1 protoreflect.ProtoMessage
+		arg1 proto.Message
 	}
 	writeMessageReturns struct {
 		result1 error
@@ -179,11 +179,11 @@ func (fake *FakeMessageSink) IsClosedReturnsOnCall(i int, result1 bool) {
 	}{result1}
 }
 
-func (fake *FakeMessageSink) WriteMessage(arg1 protoreflect.ProtoMessage) error {
+func (fake *FakeMessageSink) WriteMessage(arg1 proto.Message) error {
 	fake.writeMessageMutex.Lock()
 	ret, specificReturn := fake.writeMessageReturnsOnCall[len(fake.writeMessageArgsForCall)]
 	fake.writeMessageArgsForCall = append(fake.writeMessageArgsForCall, struct {
-		arg1 protoreflect.ProtoMessage
+		arg1 proto.Message
 	}{arg1})
 	stub := fake.WriteMessageStub
 	fakeReturns := fake.writeMessageReturns
@@ -204,13 +204,13 @@ func (fake *FakeMessageSink) WriteMessageCallCount() int {
 	return len(fake.writeMessageArgsForCall)
 }
 
-func (fake *FakeMessageSink) WriteMessageCalls(stub func(protoreflect.ProtoMessage) error) {
+func (fake *FakeMessageSink) WriteMessageCalls(stub func(proto.Message) error) {
 	fake.writeMessageMutex.Lock()
 	defer fake.writeMessageMutex.Unlock()
 	fake.WriteMessageStub = stub
 }
 
-func (fake *FakeMessageSink) WriteMessageArgsForCall(i int) protoreflect.ProtoMessage {
+func (fake *FakeMessageSink) WriteMessageArgsForCall(i int) proto.Message {
 	fake.writeMessageMutex.RLock()
 	defer fake.writeMessageMutex.RUnlock()
 	argsForCall := fake.writeMessageArgsForCall[i]

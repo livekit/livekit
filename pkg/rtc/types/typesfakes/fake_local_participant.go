@@ -706,10 +706,10 @@ type FakeLocalParticipant struct {
 	onICEConfigChangedArgsForCall []struct {
 		arg1 func(participant types.LocalParticipant, iceConfig *livekit.ICEConfig)
 	}
-	OnMetricsStub        func(func(types.LocalParticipant, *livekit.DataPacket))
+	OnMetricsStub        func(func(types.Participant, *livekit.DataPacket))
 	onMetricsMutex       sync.RWMutex
 	onMetricsArgsForCall []struct {
-		arg1 func(types.LocalParticipant, *livekit.DataPacket)
+		arg1 func(types.Participant, *livekit.DataPacket)
 	}
 	OnMigrateStateChangeStub        func(func(p types.LocalParticipant, migrateState types.MigrateState))
 	onMigrateStateChangeMutex       sync.RWMutex
@@ -4821,10 +4821,10 @@ func (fake *FakeLocalParticipant) OnICEConfigChangedArgsForCall(i int) func(part
 	return argsForCall.arg1
 }
 
-func (fake *FakeLocalParticipant) OnMetrics(arg1 func(types.LocalParticipant, *livekit.DataPacket)) {
+func (fake *FakeLocalParticipant) OnMetrics(arg1 func(types.Participant, *livekit.DataPacket)) {
 	fake.onMetricsMutex.Lock()
 	fake.onMetricsArgsForCall = append(fake.onMetricsArgsForCall, struct {
-		arg1 func(types.LocalParticipant, *livekit.DataPacket)
+		arg1 func(types.Participant, *livekit.DataPacket)
 	}{arg1})
 	stub := fake.OnMetricsStub
 	fake.recordInvocation("OnMetrics", []interface{}{arg1})
@@ -4840,13 +4840,13 @@ func (fake *FakeLocalParticipant) OnMetricsCallCount() int {
 	return len(fake.onMetricsArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) OnMetricsCalls(stub func(func(types.LocalParticipant, *livekit.DataPacket))) {
+func (fake *FakeLocalParticipant) OnMetricsCalls(stub func(func(types.Participant, *livekit.DataPacket))) {
 	fake.onMetricsMutex.Lock()
 	defer fake.onMetricsMutex.Unlock()
 	fake.OnMetricsStub = stub
 }
 
-func (fake *FakeLocalParticipant) OnMetricsArgsForCall(i int) func(types.LocalParticipant, *livekit.DataPacket) {
+func (fake *FakeLocalParticipant) OnMetricsArgsForCall(i int) func(types.Participant, *livekit.DataPacket) {
 	fake.onMetricsMutex.RLock()
 	defer fake.onMetricsMutex.RUnlock()
 	argsForCall := fake.onMetricsArgsForCall[i]
