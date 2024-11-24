@@ -58,7 +58,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-// replace github.com/livekit/protocol => ../protocol
+replace github.com/livekit/protocol => ../protocol
 
 require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.34.2-20240717164558-a6c49f84cc0f.2 // indirect
@@ -142,5 +142,3 @@ require (
 	google.golang.org/grpc v1.68.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
-
-replace github.com/livekit/protocol => ../protocol
