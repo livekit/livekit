@@ -161,7 +161,7 @@ type ParticipantParams struct {
 	UseSendSideBWEInterceptor      bool
 	UseSendSideBWE                 bool
 	UseOneShotSignallingMode       bool
-	DisableMetrics                 bool
+	EnableMetrics                  bool
 }
 
 type ParticipantImpl struct {
@@ -1676,7 +1676,7 @@ func (p *ParticipantImpl) MetricsReporterBatchReady(mb *livekit.MetricsBatch) {
 }
 
 func (p *ParticipantImpl) setupMetrics() {
-	if p.params.DisableMetrics {
+	if !p.params.EnableMetrics {
 		return
 	}
 
