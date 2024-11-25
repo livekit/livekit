@@ -24,21 +24,21 @@ LiveKit's server is written in Go, using the awesome [Pion WebRTC](https://githu
 
 ## Features
 
-- Scalable, distributed WebRTC SFU (Selective Forwarding Unit)
-- Modern, full-featured client SDKs
-- Built for production, supports JWT authentication
-- Robust networking and connectivity, UDP/TCP/TURN
-- Easy to deploy: single binary, Docker or Kubernetes
-- Advanced features including:
-  - [speaker detection](https://docs.livekit.io/home/client/tracks/subscribe/#speaker-detection)
-  - [simulcast](https://docs.livekit.io/home/client/tracks/publish/#video-simulcast)
-  - [end-to-end optimizations](https://blog.livekit.io/livekit-one-dot-zero/)
-  - [selective subscription](https://docs.livekit.io/home/client/tracks/subscribe/#selective-subscription)
-  - [moderation APIs](https://docs.livekit.io/home/server/managing-participants/)
-  - end-to-end encryption
-  - SVC codecs (VP9, AV1)
-  - [webhooks](https://docs.livekit.io/home/server/webhooks/)
-  - [distributed and multi-region](https://docs.livekit.io/home/self-hosting/distributed/)
+-   Scalable, distributed WebRTC SFU (Selective Forwarding Unit)
+-   Modern, full-featured client SDKs
+-   Built for production, supports JWT authentication
+-   Robust networking and connectivity, UDP/TCP/TURN
+-   Easy to deploy: single binary, Docker or Kubernetes
+-   Advanced features including:
+    -   [speaker detection](https://docs.livekit.io/home/client/tracks/subscribe/#speaker-detection)
+    -   [simulcast](https://docs.livekit.io/home/client/tracks/publish/#video-simulcast)
+    -   [end-to-end optimizations](https://blog.livekit.io/livekit-one-dot-zero/)
+    -   [selective subscription](https://docs.livekit.io/home/client/tracks/subscribe/#selective-subscription)
+    -   [moderation APIs](https://docs.livekit.io/home/server/managing-participants/)
+    -   end-to-end encryption
+    -   SVC codecs (VP9, AV1)
+    -   [webhooks](https://docs.livekit.io/home/server/webhooks/)
+    -   [distributed and multi-region](https://docs.livekit.io/home/self-hosting/distributed/)
 
 ## Documentation & Guides
 
@@ -46,16 +46,16 @@ https://docs.livekit.io
 
 ## Live Demos
 
-- [LiveKit Meet](https://meet.livekit.io) ([source](https://github.com/livekit-examples/meet))
-- [Spatial Audio](https://spatial-audio-demo.livekit.io/) ([source](https://github.com/livekit-examples/spatial-audio))
-- Livestreaming from OBS Studio ([source](https://github.com/livekit-examples/livestream))
-- [AI voice assistant using ChatGPT](https://livekit.io/kitt) ([source](https://github.com/livekit-examples/kitt))
+-   [LiveKit Meet](https://meet.livekit.io) ([source](https://github.com/livekit-examples/meet))
+-   [Spatial Audio](https://spatial-audio-demo.livekit.io/) ([source](https://github.com/livekit-examples/spatial-audio))
+-   Livestreaming from OBS Studio ([source](https://github.com/livekit-examples/livestream))
+-   [AI voice assistant using ChatGPT](https://livekit.io/kitt) ([source](https://github.com/livekit-examples/kitt))
 
 ## Ecosystem
 
-- [Agents](https://github.com/livekit/agents): build real-time multimodal AI applications with programmable backend participants
-- [Egress](https://github.com/livekit/egress): record or multi-stream rooms and export individual tracks
-- [Ingress](https://github.com/livekit/ingress): ingest streams from external sources like RTMP, WHIP, HLS, or OBS Studio
+-   [Agents](https://github.com/livekit/agents): build real-time multimodal AI applications with programmable backend participants
+-   [Egress](https://github.com/livekit/egress): record or multi-stream rooms and export individual tracks
+-   [Ingress](https://github.com/livekit/ingress): ingest streams from external sources like RTMP, WHIP, HLS, or OBS Studio
 
 ## SDKs & Tools
 
@@ -189,9 +189,9 @@ enabling you to build automations that behave like end-users.
 
 ### Tools
 
-- [CLI](https://github.com/livekit/livekit-cli) - command line interface & load tester
-- [Docker image](https://hub.docker.com/r/livekit/livekit-server)
-- [Helm charts](https://github.com/livekit/livekit-helm)
+-   [CLI](https://github.com/livekit/livekit-cli) - command line interface & load tester
+-   [Docker image](https://hub.docker.com/r/livekit/livekit-server)
+-   [Helm charts](https://github.com/livekit/livekit-helm)
 
 ## Install
 
@@ -282,8 +282,8 @@ Read our [deployment docs](https://docs.livekit.io/deploy/) for more information
 
 Pre-requisites:
 
-- Go 1.22+ is installed
-- GOPATH/bin is in your PATH
+-   Go 1.23+ is installed
+-   GOPATH/bin is in your PATH
 
 Then run
 
