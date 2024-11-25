@@ -18,10 +18,14 @@ package metric
 
 type MetricConfig struct {
 	Timestamper MetricTimestamperConfig `yaml:"timestamper_config,omitempty"`
+	Collector   MetricsCollectorConfig  `yaml:"collector,omitempty"`
+	Reporter    MetricsReporterConfig   `yaml:"reporter,omitempty"`
 }
 
 var (
 	DefaultMetricConfig = MetricConfig{
 		Timestamper: DefaultMetricTimestamperConfig,
+		Collector:   DefaultMetricsCollectorConfig,
+		Reporter:    DefaultMetricsReporterConfig,
 	}
 )

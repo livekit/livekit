@@ -300,6 +300,8 @@ type Participant interface {
 	) error
 
 	DebugInfo() map[string]interface{}
+
+	OnMetrics(callback func(Participant, *livekit.DataPacket))
 }
 
 // -------------------------------------------------------
@@ -420,7 +422,6 @@ type LocalParticipant interface {
 	// OnParticipantUpdate - metadata or permission is updated
 	OnParticipantUpdate(callback func(LocalParticipant))
 	OnDataPacket(callback func(LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket))
-	OnMetrics(callback func(LocalParticipant, *livekit.DataPacket))
 	OnSubscribeStatusChanged(fn func(publisherID livekit.ParticipantID, subscribed bool))
 	OnClose(callback func(LocalParticipant))
 	OnClaimsChanged(callback func(LocalParticipant))

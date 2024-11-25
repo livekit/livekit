@@ -1270,7 +1270,7 @@ func (r *Room) onDataPacket(source types.LocalParticipant, kind livekit.DataPack
 	BroadcastDataPacketForRoom(r, source, kind, dp, r.Logger)
 }
 
-func (r *Room) onMetrics(source types.LocalParticipant, dp *livekit.DataPacket) {
+func (r *Room) onMetrics(source types.Participant, dp *livekit.DataPacket) {
 	BroadcastMetricsForRoom(r, source, dp, r.Logger)
 }
 

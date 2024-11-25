@@ -63,6 +63,10 @@ func NewMetricTimestamper(params MetricTimestamperParams) *MetricTimestamper {
 }
 
 func (m *MetricTimestamper) Process(batch *livekit.MetricsBatch) {
+	if m == nil {
+		return
+	}
+
 	// run OWD estimation periodically
 	estimatedOWDNanos := m.maybeRunOWDEstimator(batch)
 
