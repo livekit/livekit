@@ -1654,6 +1654,7 @@ func (p *ParticipantImpl) MetricsCollectorTimeToCollectMetrics() {
 func (p *ParticipantImpl) MetricsCollectorBatchReady(mb *livekit.MetricsBatch) {
 	if onMetrics := p.getOnMetrics(); onMetrics != nil {
 		onMetrics(p, &livekit.DataPacket{
+			ParticipantIdentity: string(p.Identity()),
 			Value: &livekit.DataPacket_Metrics{
 				Metrics: mb,
 			},
@@ -1663,6 +1664,7 @@ func (p *ParticipantImpl) MetricsCollectorBatchReady(mb *livekit.MetricsBatch) {
 
 func (p *ParticipantImpl) MetricsReporterBatchReady(mb *livekit.MetricsBatch) {
 	dpData, err := proto.Marshal(&livekit.DataPacket{
+		ParticipantIdentity: string(p.Identity()),
 		Value: &livekit.DataPacket_Metrics{
 			Metrics: mb,
 		},
