@@ -33,12 +33,12 @@ type MetricsReporterConsumer interface {
 // --------------------------------------------------------
 
 type MetricsReporterConfig struct {
-	ReportingInterval time.Duration `yaml:"reporting_interval,omitempty" json:"reporting_interval,omitempty"`
+	ReportingIntervalMs uint32 `yaml:"reporting_interval_ms,omitempty" json:"reporting_interval_ms,omitempty"`
 }
 
 var (
 	DefaultMetricsReporterConfig = MetricsReporterConfig{
-		ReportingInterval: 10 * time.Second,
+		ReportingIntervalMs: 10 * 1000,
 	}
 )
 
@@ -117,7 +117,11 @@ func (mr *MetricsReporter) reset() {
 }
 
 func (mr *MetricsReporter) worker() {
-	reportingTicker := time.NewTicker(mr.params.Config.ReportingInterval)
+	reportingIntervalMs := mr.params.Config.ReportingIntervalMs
+	if reportingIntervalMs == 0 {
+		reportingIntervalMs = DefaultMetricsReporterConfig.ReportingIntervalMs
+	}
+	reportingTicker := time.NewTicker(time.Duration(reportingIntervalMs) * time.Millisecond)
 	defer reportingTicker.Stop()
 
 	for {

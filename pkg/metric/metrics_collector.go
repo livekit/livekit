@@ -34,14 +34,14 @@ type MetricsCollectorProvider interface {
 // --------------------------------------------------------
 
 type MetricsCollectorConfig struct {
-	SamplingInterval time.Duration `yaml:"sampling_interval,omitempty" json:"sampling_interval,omitempty"`
-	BatchInterval    time.Duration `yaml:"batch_interval,omitempty" json:"batch_interval,omitempty"`
+	SamplingIntervalMs uint32 `yaml:"sampling_interval_ms,omitempty" json:"sampling_interval_ms,omitempty"`
+	BatchIntervalMs    uint32 `yaml:"batch_interval_ms,omitempty" json:"batch_interval_ms,omitempty"`
 }
 
 var (
 	DefaultMetricsCollectorConfig = MetricsCollectorConfig{
-		SamplingInterval: 3 * time.Second,
-		BatchInterval:    10 * time.Second,
+		SamplingIntervalMs: 3 * 1000,
+		BatchIntervalMs:    10 * 1000,
 	}
 )
 
@@ -194,14 +194,18 @@ func (mc *MetricsCollector) addTimeSeriesMetricSample(metricId int, value float3
 }
 
 func (mc *MetricsCollector) worker() {
-	samplingTicker := time.NewTicker(mc.params.Config.SamplingInterval)
+	samplingIntervalMs := mc.params.Config.SamplingIntervalMs
+	if samplingIntervalMs == 0 {
+		samplingIntervalMs = DefaultMetricsCollectorConfig.SamplingIntervalMs
+	}
+	samplingTicker := time.NewTicker(time.Duration(samplingIntervalMs) * time.Millisecond)
 	defer samplingTicker.Stop()
 
-	batchInterval := mc.params.Config.BatchInterval
-	if batchInterval < mc.params.Config.SamplingInterval {
-		batchInterval = mc.params.Config.SamplingInterval
+	batchIntervalMs := mc.params.Config.BatchIntervalMs
+	if batchIntervalMs < samplingIntervalMs {
+		batchIntervalMs = samplingIntervalMs
 	}
-	batchTicker := time.NewTicker(batchInterval)
+	batchTicker := time.NewTicker(time.Duration(batchIntervalMs) * time.Millisecond)
 	defer batchTicker.Stop()
 
 	for {
