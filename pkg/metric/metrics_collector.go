@@ -124,9 +124,9 @@ func (mc *MetricsCollector) AddRelayRTT(participantIdentity livekit.ParticipantI
 	metricId, ok := mc.relayRTTMetricId[participantIdentity]
 	if !ok {
 		var err error
-		metricId, err = mc.createTimeSeriesMetric(livekit.MetricLabel_PUBLISHER_RTT, participantIdentity)
+		metricId, err = mc.createTimeSeriesMetric(livekit.MetricLabel_SERVER_MESH_RTT, participantIdentity)
 		if err != nil {
-			mc.params.Logger.Warnw("could not add time series metric for publisher RTT", err)
+			mc.params.Logger.Warnw("could not add time series metric for server mesh RTT", err)
 			return
 		}
 
