@@ -302,6 +302,8 @@ github.com/dTelecom/protocol v1.0.14 h1:JENzD8nYRykhEMYN5Sg1zsFup1xTTKEUwMAhJvv0
 github.com/dTelecom/protocol v1.0.14/go.mod h1:0RHLm7rpjqZRyW61iiiZ2nVFGXVvloWrWJ88y+e/+24=
 github.com/dTelecom/psrpc v1.0.1 h1:O9xAfdNcM0Zrc4UzJtgmJn/+6POaiqePP+Kr8/c9YWQ=
 github.com/dTelecom/psrpc v1.0.1/go.mod h1:K0j8f1PgLShR7Lx80KbmwFkDH2BvOnycXGV0OSRURKc=
+github.com/dTelecom/psrpc v1.0.2 h1:1CXmvCDp5aKJkk1JJgChQ9y+oBoxV4tvONfUOAWusZE=
+github.com/dTelecom/psrpc v1.0.2/go.mod h1:K0j8f1PgLShR7Lx80KbmwFkDH2BvOnycXGV0OSRURKc=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
