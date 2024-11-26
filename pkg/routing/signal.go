@@ -2,7 +2,6 @@ package routing
 
 import (
 	"context"
-	"log"
 
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
@@ -72,14 +71,10 @@ func (r *signalClient) StartParticipantSignal(
 ) {
 	connectionID = livekit.ConnectionID(utils.NewGuid("CO_"))
 
-	log.Printf("StartParticipantSignal progress 1")
-
 	ss, err := pi.ToStartSession(roomKey, connectionID)
 	if err != nil {
 		return
 	}
-
-	log.Printf("StartParticipantSignal progress 2")
 
 	logger.Debugw(
 		"starting signal connection",
@@ -94,15 +89,11 @@ func (r *signalClient) StartParticipantSignal(
 		return
 	}
 
-	log.Printf("StartParticipantSignal progress 3")
-
 	err = stream.Send(&rpc.RelaySignalRequest{StartSession: ss})
 	if err != nil {
 		stream.Close(err)
 		return
 	}
-
-	log.Printf("StartParticipantSignal progress 4")
 
 	resChan := NewDefaultMessageChannel()
 
@@ -131,7 +122,6 @@ func (r *signalClient) StartParticipantSignal(
 
 		resChan.Close()
 	}()
-	log.Printf("StartParticipantSignal progress 5")
 
 	return connectionID, &relaySignalRequestSink{stream}, resChan, nil
 }

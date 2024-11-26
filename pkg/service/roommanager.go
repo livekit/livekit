@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"sync"
 	"time"
@@ -285,14 +284,11 @@ func (r *RoomManager) StartSession(
 	requestSource routing.MessageSource,
 	responseSink routing.MessageSink,
 ) error {
-	log.Printf("StartSession progress 1")
 
 	room, outRelayCollection, err := r.getOrCreateRoom(ctx, roomKey)
 	if err != nil {
 		return err
 	}
-
-	log.Printf("StartSession progress 2")
 
 	defer room.Release()
 
@@ -345,8 +341,6 @@ func (r *RoomManager) StartSession(
 		return errors.New("could not restart participant")
 	}
 
-	log.Printf("StartSession progress 3")
-
 	logger.Debugw("starting RTC session",
 		"room", roomKey,
 		"nodeID", r.currentNode.Id,
@@ -378,7 +372,7 @@ func (r *RoomManager) StartSession(
 	if r.config.RTC.ReconnectOnSubscriptionError != nil {
 		reconnectOnSubscriptionError = *r.config.RTC.ReconnectOnSubscriptionError
 	}
-	log.Printf("StartSession progress 4")
+
 	participant, err = rtc.NewParticipant(rtc.ParticipantParams{
 		Identity:                pi.Identity,
 		Name:                    pi.Name,
@@ -424,7 +418,6 @@ func (r *RoomManager) StartSession(
 	if err != nil {
 		return err
 	}
-	log.Printf("StartSession progress 5")
 	iceConfig := r.setIceConfig(participant)
 
 	// join room
@@ -439,7 +432,6 @@ func (r *RoomManager) StartSession(
 	if err = r.roomStore.StoreParticipant(ctx, roomKey, participant.ToProto()); err != nil {
 		pLogger.Errorw("could not store participant", err)
 	}
-	log.Printf("StartSession progress 6")
 
 	persistRoomForParticipantCount := func(proto *livekit.Room) {
 		if !participant.Hidden() {
@@ -449,10 +441,8 @@ func (r *RoomManager) StartSession(
 			}
 		}
 	}
-	log.Printf("StartSession progress 7")
 	// update room store with new numParticipants
 	persistRoomForParticipantCount(room.ToProto())
-	log.Printf("StartSession progress 8")
 
 	clientMeta := &livekit.AnalyticsClientMeta{Region: r.currentNode.Region, Node: r.currentNode.Id}
 	r.telemetry.ParticipantJoined(ctx, protoRoom, participant.ToProto(), pi.Client, clientMeta, true)
@@ -482,7 +472,6 @@ func (r *RoomManager) StartSession(
 		}
 		r.lock.Unlock()
 	})
-	log.Printf("StartSession progress 9")
 
 	go r.rtcSessionWorker(room, participant, requestSource)
 	return nil

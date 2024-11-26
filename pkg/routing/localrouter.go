@@ -105,13 +105,11 @@ func (r *LocalRouter) ListNodes() ([]*livekit.Node, error) {
 }
 
 func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomKey livekit.RoomKey, pi ParticipantInit) (connectionID livekit.ConnectionID, reqSink MessageSink, resSource MessageSource, err error) {
-	log.Printf("StartParticipantSignal start")
 
 	if _, ok := r.routerCommunicators[roomKey]; !ok {
 		db := r.mainDatabase
 		r.routerCommunicators[roomKey] = p2p.NewRouterCommunicatorImpl(roomKey, db, r.writeFromP2P)
 	}
-	log.Printf("StartParticipantSignal progress")
 
 	return r.StartParticipantSignalWithNodeID(ctx, roomKey, pi, livekit.NodeID(r.currentNode.Id))
 }

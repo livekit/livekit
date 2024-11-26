@@ -67,11 +67,7 @@ func NewRouterCommunicatorImpl(key livekit.RoomKey, mainDatabase *p2p_database.D
 		messageHandler: messageHandler,
 	}
 
-	log.Printf("RouterCommunicatorImpl before init")
-
 	routerCommunicator.init()
-
-	log.Printf("RouterCommunicatorImpl after init")
 
 	return routerCommunicator
 }
