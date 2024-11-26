@@ -1842,7 +1842,6 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 	shouldForwardData := true
 	shouldForwardMetrics := false
 	overrideSenderIdentity := true
-	isPublisher := true
 	// only forward on user payloads
 	switch payload := dp.Value.(type) {
 	case *livekit.DataPacket_User:
@@ -1887,7 +1886,6 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		}
 		shouldForwardData = false
 		shouldForwardMetrics = true
-		isPublisher = false
 		// METRICS-TODO-QUESTIONS:
 		// 1. Should this record (and do processing/batching) metrics (i. e. publisher side) rather
 		//    than forwarding and recording/processing/batching at every subscriber (in this case
@@ -1928,10 +1926,6 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		if onMetrics := p.getOnMetrics(); onMetrics != nil {
 			onMetrics(p, dp)
 		}
-	}
-
-	if isPublisher {
-		p.setIsPublisher(true)
 	}
 }
 
