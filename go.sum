@@ -326,6 +326,8 @@ github.com/dTelecom/psrpc v1.0.12 h1:hRyEewkBS9AHF/ntT5vcoIldJ6hwHGP6uwV0rKC4pt0
 github.com/dTelecom/psrpc v1.0.12/go.mod h1:K0j8f1PgLShR7Lx80KbmwFkDH2BvOnycXGV0OSRURKc=
 github.com/dTelecom/psrpc v1.0.13 h1:+9U9XozVGQxgHplV1Cm9X6GAGUWOr9hAKSOyA1wT1XU=
 github.com/dTelecom/psrpc v1.0.13/go.mod h1:K0j8f1PgLShR7Lx80KbmwFkDH2BvOnycXGV0OSRURKc=
+github.com/dTelecom/psrpc v1.0.14 h1:lcL7du+KdPVXtjDEF0N1f+YXoWAhVlXDozA3NWNd+iY=
+github.com/dTelecom/psrpc v1.0.14/go.mod h1:K0j8f1PgLShR7Lx80KbmwFkDH2BvOnycXGV0OSRURKc=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
