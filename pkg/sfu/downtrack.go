@@ -37,6 +37,7 @@ import (
 	"github.com/livekit/protocol/utils/mono"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	act "github.com/livekit/livekit-server/pkg/sfu/rtpextension/abscapturetime"
@@ -985,7 +986,12 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 
 // WritePaddingRTP tries to write as many padding only RTP packets as necessary
 // to satisfy given size to the DownTrack
-func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMarker bool) int {
+func (d *DownTrack) WritePaddingRTP(
+	bytesToSend int,
+	paddingOnMute bool,
+	forceMarker bool,
+	probeClusterId ccutils.ProbeClusterId,
+) int {
 	if !d.writable.Load() {
 		return 0
 	}
@@ -1072,6 +1078,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 			Payload:            payload,
 			AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 			TransportWideExtID: uint8(d.transportWideExtID),
+			ProbeClusterId:     probeClusterId,
 			WriteStream:        d.writeStream,
 		})
 
@@ -2140,7 +2147,7 @@ func (d *DownTrack) sendPaddingOnMuteForVideo() {
 		if i == 0 {
 			d.params.Logger.Debugw("sending padding on mute")
 		}
-		d.WritePaddingRTP(20, true, true)
+		d.WritePaddingRTP(20, true, true, 0)
 		time.Sleep(paddingOnMuteInterval)
 	}
 }

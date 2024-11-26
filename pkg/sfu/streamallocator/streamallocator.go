@@ -463,10 +463,7 @@ type congestionStateChangeData struct {
 func (s *StreamAllocator) OnCongestionStateChange(congestionState bwe.CongestionState, estimatedAvailableChannelCapacity int64) {
 	s.postEvent(Event{
 		Signal: streamAllocatorSignalCongestionStateChange,
-		Data: congestionStateChangeData{
-			congestionState:                   congestionState,
-			estimatedAvailableChannelCapacity: estimatedAvailableChannelCapacity,
-		},
+		Data:   congestionStateChangeData{congestionState, estimatedAvailableChannelCapacity},
 	})
 }
 
@@ -549,10 +546,15 @@ func (s *StreamAllocator) OnRTCPReceiverReport(downTrack *sfu.DownTrack, rr rtcp
 */
 
 // called when prober wants to send packet(s)
-func (s *StreamAllocator) OnSendProbe(bytesToSend int) {
+type sendProbeData struct {
+	bytesToSend    int
+	probeClusterId ccutils.ProbeClusterId
+}
+
+func (s *StreamAllocator) OnSendProbe(bytesToSend int, probeClusterId ccutils.ProbeClusterId) {
 	s.postEvent(Event{
 		Signal: streamAllocatorSignalSendProbe,
-		Data:   bytesToSend,
+		Data:   sendProbeData{bytesToSend, probeClusterId},
 	})
 }
 
@@ -742,21 +744,22 @@ func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
 }
 
 func (s *StreamAllocator) handleSignalSendProbe(event Event) {
-	bytesToSend := event.Data.(int)
-	if bytesToSend <= 0 {
+	spd := event.Data.(sendProbeData)
+	if spd.bytesToSend <= 0 {
 		return
 	}
 
 	bytesSent := 0
 	for _, track := range s.getTracks() {
-		sent := track.WritePaddingRTP(bytesToSend)
+		sent := track.WritePaddingRTP(spd.bytesToSend, spd.probeClusterId)
 		bytesSent += sent
-		bytesToSend -= sent
-		if bytesToSend <= 0 {
+		spd.bytesToSend -= sent
+		if spd.bytesToSend <= 0 {
 			break
 		}
 	}
 
+	// RAJA-TODO: change this to not report here and let pacer/bwe modules report back when desired bytes have passed through
 	if bytesSent != 0 {
 		s.prober.ProbeSent(bytesSent)
 	}

@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
 )
@@ -28,6 +29,7 @@ type Packet struct {
 	IsRTX              bool
 	AbsSendTimeExtID   uint8
 	TransportWideExtID uint8
+	ProbeClusterId     ccutils.ProbeClusterId
 	WriteStream        webrtc.TrackLocalWriter
 	Pool               *sync.Pool
 	PoolEntity         *[]byte

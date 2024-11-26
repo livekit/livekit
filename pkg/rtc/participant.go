@@ -1888,13 +1888,6 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		shouldForwardData = false
 		shouldForwardMetrics = true
 		isPublisher = false
-		// METRICS-TODO-QUESTIONS:
-		// 1. Should this record (and do processing/batching) metrics (i. e. publisher side) rather
-		//    than forwarding and recording/processing/batching at every subscriber (in this case
-		//    subscriber is defined as the other participants pushing this to edge client).
-		// 2. If the above is done, there could be two cadences, publisher side recording/processing/batching
-		//    and pushing it to all subscribers on some cadence and subscribers have their own cadence of
-		//    processing/batching and sending to edge clients.
 		p.metricTimestamper.Process(payload.Metrics)
 	case *livekit.DataPacket_RpcRequest:
 		if payload.RpcRequest == nil {

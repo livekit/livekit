@@ -131,7 +131,7 @@ import (
 )
 
 type ProberListener interface {
-	OnSendProbe(bytesToSend int)
+	OnSendProbe(bytesToSend int, probeClusterId ProbeClusterId)
 	OnProbeClusterDone(info ProbeClusterInfo)
 	OnActiveChanged(isActive bool)
 }
@@ -571,7 +571,7 @@ func (c *Cluster) Process() {
 	c.lock.RUnlock()
 
 	if bytesShortFall > 0 && c.listener != nil {
-		c.listener.OnSendProbe(bytesShortFall)
+		c.listener.OnSendProbe(bytesShortFall, c.id)
 	}
 
 	// STREAM-ALLOCATOR-TODO look at adapting sleep time based on how many bytes and how much time is left
