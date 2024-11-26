@@ -31,6 +31,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/mono"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/codecmunger"
@@ -208,12 +209,12 @@ func (r refInfo) MarshalLogObject(e zapcore.ObjectEncoder) error {
 // -------------------------------------------------------------------
 
 type Forwarder struct {
-	lock                    sync.RWMutex
-	codec                   webrtc.RTPCodecCapability
-	kind                    webrtc.RTPCodecType
-	logger                  logger.Logger
-	skipReferenceTS         bool
-	getExpectedRTPTimestamp func(at time.Time) (uint64, error)
+	lock            sync.RWMutex
+	codec           webrtc.RTPCodecCapability
+	kind            webrtc.RTPCodecType
+	logger          logger.Logger
+	skipReferenceTS bool
+	rtpStats        *rtpstats.RTPStatsSender
 
 	muted                 bool
 	pubMuted              bool
@@ -244,18 +245,18 @@ func NewForwarder(
 	kind webrtc.RTPCodecType,
 	logger logger.Logger,
 	skipReferenceTS bool,
-	getExpectedRTPTimestamp func(at time.Time) (uint64, error),
+	rtpStats *rtpstats.RTPStatsSender,
 ) *Forwarder {
 	f := &Forwarder{
-		kind:                    kind,
-		logger:                  logger,
-		skipReferenceTS:         skipReferenceTS,
-		getExpectedRTPTimestamp: getExpectedRTPTimestamp,
-		referenceLayerSpatial:   buffer.InvalidLayerSpatial,
-		lastAllocation:          VideoAllocationDefault,
-		rtpMunger:               NewRTPMunger(logger),
-		vls:                     videolayerselector.NewNull(logger),
-		codecMunger:             codecmunger.NewNull(logger),
+		kind:                  kind,
+		logger:                logger,
+		skipReferenceTS:       skipReferenceTS,
+		rtpStats:              rtpStats,
+		referenceLayerSpatial: buffer.InvalidLayerSpatial,
+		lastAllocation:        VideoAllocationDefault,
+		rtpMunger:             NewRTPMunger(logger),
+		vls:                   videolayerselector.NewNull(logger),
+		codecMunger:           codecmunger.NewNull(logger),
 	}
 
 	if f.kind == webrtc.RTPCodecTypeVideo {
@@ -1684,6 +1685,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			"extLastTS", extLastTS,
 			"diffSeconds", math.Abs(diffSeconds),
 			"refInfos", logger.ObjectSlice(f.refInfos[:]),
+			"rtpStats", f.rtpStats,
 		)
 	}
 	// TODO-REMOVE-AFTER-DATA-COLLECTION
@@ -1699,6 +1701,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			"extLastTS", extLastTS,
 			"diffSeconds", math.Abs(diffSeconds),
 			"refInfos", logger.ObjectSlice(f.refInfos[:]),
+			"rtpStats", f.rtpStats,
 		)
 	}
 
@@ -1717,7 +1720,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 	extExpectedTS := extLastTS
 	extRefTS := extLastTS
 	refTS := uint32(extRefTS)
-	switchingAt := time.Now()
+	switchingAt := mono.Now()
 	if !f.skipReferenceTS {
 		var err error
 		refTS, err = f.getRefLayerRTPTimestamp(extPkt.Packet.Timestamp, f.referenceLayerSpatial, layer)
@@ -1742,8 +1745,8 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		extRefTS -= (1 << 32)
 	}
 
-	if f.getExpectedRTPTimestamp != nil {
-		tsExt, err := f.getExpectedRTPTimestamp(switchingAt)
+	if f.rtpStats != nil {
+		tsExt, err := f.rtpStats.GetExpectedRTPTimestamp(switchingAt)
 		if err == nil {
 			extExpectedTS = tsExt
 		} else {
@@ -1861,6 +1864,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			"extIncomingSN", extPkt.ExtSequenceNumber,
 			"incomingTS", extPkt.Packet.Timestamp,
 			"extIncomingTS", extPkt.ExtTimestamp,
+			"rtpStats", f.rtpStats,
 		)
 	} else {
 		f.logger.Debugw(
@@ -1878,6 +1882,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			"nextSN", rtpMungerState.ExtLastSequenceNumber+1,
 			"extIncomingSN", extPkt.ExtSequenceNumber,
 			"extIncomingTS", extPkt.ExtTimestamp,
+			"rtpStats", f.rtpStats,
 		)
 	}
 
@@ -1895,6 +1900,7 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 				"error", err,
 				"layer", layer,
 				"refInfos", logger.ObjectSlice(f.refInfos[:]),
+				"rtpStats", f.rtpStats,
 				"currentLayer", f.vls.GetCurrent(),
 				"targetLayer", f.vls.GetCurrent(),
 				"maxLayer", f.vls.GetMax(),
@@ -2089,8 +2095,8 @@ func (f *Forwarder) GetSnTsForBlankFrames(frameRate uint32, numPackets int) ([]S
 
 	extLastTS := f.rtpMunger.GetState().ExtLastTimestamp
 	extExpectedTS := extLastTS
-	if f.getExpectedRTPTimestamp != nil {
-		tsExt, err := f.getExpectedRTPTimestamp(time.Now())
+	if f.rtpStats != nil {
+		tsExt, err := f.rtpStats.GetExpectedRTPTimestamp(mono.Now())
 		if err == nil {
 			extExpectedTS = tsExt
 		}
