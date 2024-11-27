@@ -1842,7 +1842,6 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 	shouldForwardData := true
 	shouldForwardMetrics := false
 	overrideSenderIdentity := true
-	isPublisher := true
 	// only forward on user payloads
 	switch payload := dp.Value.(type) {
 	case *livekit.DataPacket_User:
@@ -1887,7 +1886,6 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		}
 		shouldForwardData = false
 		shouldForwardMetrics = true
-		isPublisher = false
 		p.metricTimestamper.Process(payload.Metrics)
 	case *livekit.DataPacket_RpcRequest:
 		if payload.RpcRequest == nil {
@@ -1921,10 +1919,6 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		if onMetrics := p.getOnMetrics(); onMetrics != nil {
 			onMetrics(p, dp)
 		}
-	}
-
-	if isPublisher {
-		p.setIsPublisher(true)
 	}
 }
 

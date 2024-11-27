@@ -374,18 +374,19 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 	d.params.Logger = params.Logger.WithValues(
 		"subscriberID", d.SubscriberID(),
 	)
-	d.forwarder = NewForwarder(
-		d.kind,
-		d.params.Logger,
-		false,
-		d.getExpectedRTPTimestamp,
-	)
 
 	d.rtpStats = rtpstats.NewRTPStatsSender(rtpstats.RTPStatsParams{
 		ClockRate: d.codec.ClockRate,
 		Logger:    d.params.Logger,
 	})
 	d.deltaStatsSenderSnapshotId = d.rtpStats.NewSenderSnapshotId()
+
+	d.forwarder = NewForwarder(
+		d.kind,
+		d.params.Logger,
+		false,
+		d.rtpStats,
+	)
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
 		SenderProvider: d,
@@ -2057,10 +2058,6 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 		"CurrentSpatialLayer": d.forwarder.CurrentLayer().Spatial,
 		"Stats":               stats,
 	}
-}
-
-func (d *DownTrack) getExpectedRTPTimestamp(at time.Time) (uint64, error) {
-	return d.rtpStats.GetExpectedRTPTimestamp(at)
 }
 
 func (d *DownTrack) GetConnectionScoreAndQuality() (float32, livekit.ConnectionQuality) {
