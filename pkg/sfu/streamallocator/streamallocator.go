@@ -295,10 +295,12 @@ func (s *StreamAllocator) AddTrack(downTrack *sfu.DownTrack, params AddTrackPara
 	}
 
 	downTrack.SetStreamAllocatorListener(s)
+	/* RAJA-TODO
 	if s.prober.IsRunning() {
 		// STREAM-ALLOCATOR-TODO: this can be changed to adapt to probe rate
 		downTrack.SetStreamAllocatorReportInterval(50 * time.Millisecond)
 	}
+	*/
 
 	s.maybePostEventAllocateTrack(downTrack)
 }
@@ -546,15 +548,10 @@ func (s *StreamAllocator) OnRTCPReceiverReport(downTrack *sfu.DownTrack, rr rtcp
 */
 
 // called when prober wants to send packet(s)
-type sendProbeData struct {
-	bytesToSend    int
-	probeClusterId ccutils.ProbeClusterId
-}
-
-func (s *StreamAllocator) OnSendProbe(bytesToSend int, probeClusterId ccutils.ProbeClusterId) {
+func (s *StreamAllocator) OnSendProbe(bytesToSend int) {
 	s.postEvent(Event{
 		Signal: streamAllocatorSignalSendProbe,
-		Data:   sendProbeData{bytesToSend, probeClusterId},
+		Data:   bytesToSend,
 	})
 }
 
@@ -575,6 +572,14 @@ func (s *StreamAllocator) OnActiveChanged(isActive bool) {
 		} else {
 			t.DownTrack().ClearStreamAllocatorReportInterval()
 		}
+	}
+}
+
+// called when probe cluster changes
+func (s *StreamAllocator) OnProbeClusterSwitch(probeClusterId ccutils.ProbeClusterId) {
+	// RAJA-TODO: tell pacer of new probe cluster
+	for _, t := range s.getTracks() {
+		t.DownTrack().SetProbeClusterId(probeClusterId)
 	}
 }
 
@@ -744,17 +749,17 @@ func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
 }
 
 func (s *StreamAllocator) handleSignalSendProbe(event Event) {
-	spd := event.Data.(sendProbeData)
-	if spd.bytesToSend <= 0 {
+	bytesToSend := event.Data.(int)
+	if bytesToSend <= 0 {
 		return
 	}
 
 	bytesSent := 0
 	for _, track := range s.getTracks() {
-		sent := track.WritePaddingRTP(spd.bytesToSend, spd.probeClusterId)
+		sent := track.WritePaddingRTP(bytesToSend)
 		bytesSent += sent
-		spd.bytesToSend -= sent
-		if spd.bytesToSend <= 0 {
+		bytesToSend -= sent
+		if bytesToSend <= 0 {
 			break
 		}
 	}

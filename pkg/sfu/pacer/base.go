@@ -87,7 +87,7 @@ func (b *Base) patchRTPHeaderExtensions(p *Packet) error {
 	if p.TransportWideExtID != 0 && b.bwe != nil {
 		twccSN := b.bwe.RecordPacketSendAndGetSequenceNumber(
 			sendingAt.UnixMicro(),
-			p.Header.MarshalSize()+len(p.Payload),
+			p.HeaderSize+len(p.Payload),
 			p.IsRTX,
 		)
 		twccExt := rtp.TransportCCExtension{

@@ -25,11 +25,13 @@ import (
 
 type Packet struct {
 	Header             *rtp.Header
+	HeaderSize         int
 	Payload            []byte
 	IsRTX              bool
+	ProbeClusterId     ccutils.ProbeClusterId
+	IsProbe            bool
 	AbsSendTimeExtID   uint8
 	TransportWideExtID uint8
-	ProbeClusterId     ccutils.ProbeClusterId
 	WriteStream        webrtc.TrackLocalWriter
 	Pool               *sync.Pool
 	PoolEntity         *[]byte

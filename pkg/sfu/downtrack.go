@@ -300,6 +300,7 @@ type DownTrack struct {
 	bytesSent                       atomic.Uint32
 	bytesRetransmitted              atomic.Uint32
 	*/
+	probeClusterId atomic.Uint32
 
 	playoutDelay *PlayoutDelayController
 
@@ -672,6 +673,10 @@ func (d *DownTrack) ClearStreamAllocatorReportInterval() {
 	d.streamAllocatorLock.Unlock()
 }
 
+func (d *DownTrack) SetProbeClusterId(probeClusterId ccutils.ProbeClusterId) {
+	d.probeClusterId.Store(uint32(probeClusterId))
+}
+
 // ID is the unique identifier for this Track. This should be unique for the
 // stream, but doesn't have to globally unique. A common example would be 'audio' or 'video'
 // and StreamID would be 'desktop' or 'webcam'
@@ -943,18 +948,21 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		)
 	}
 
+	headerSize := hdr.MarshalSize()
 	d.updateStats(updateStatsParams{
 		packetTime:        extPkt.Arrival,
 		extSequenceNumber: tp.rtp.extSequenceNumber,
 		extTimestamp:      tp.rtp.extTimestamp,
 		isOutOfOrder:      extPkt.IsOutOfOrder,
-		headerSize:        hdr.MarshalSize(),
+		headerSize:        headerSize,
 		payloadSize:       len(payload),
 		marker:            hdr.Marker,
 	})
 	d.pacer.Enqueue(&pacer.Packet{
 		Header:             hdr,
+		HeaderSize:         headerSize,
 		Payload:            payload,
+		ProbeClusterId:     ccutils.ProbeClusterId(d.probeClusterId.Load()),
 		AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 		TransportWideExtID: uint8(d.transportWideExtID),
 		WriteStream:        d.writeStream,
@@ -991,7 +999,6 @@ func (d *DownTrack) WritePaddingRTP(
 	bytesToSend int,
 	paddingOnMute bool,
 	forceMarker bool,
-	probeClusterId ccutils.ProbeClusterId,
 ) int {
 	if !d.writable.Load() {
 		return 0
@@ -1076,10 +1083,12 @@ func (d *DownTrack) WritePaddingRTP(
 		})
 		d.pacer.Enqueue(&pacer.Packet{
 			Header:             hdr,
+			HeaderSize:         hdrSize,
 			Payload:            payload,
+			ProbeClusterId:     ccutils.ProbeClusterId(d.probeClusterId.Load()),
+			IsProbe:            true,
 			AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 			TransportWideExtID: uint8(d.transportWideExtID),
-			ProbeClusterId:     probeClusterId,
 			WriteStream:        d.writeStream,
 		})
 
@@ -1621,16 +1630,19 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 					return
 				}
 
+				headerSize := hdr.MarshalSize()
 				d.updateStats(updateStatsParams{
 					packetTime:        mono.UnixNano(),
 					extSequenceNumber: snts[i].extSequenceNumber,
 					extTimestamp:      snts[i].extTimestamp,
-					headerSize:        hdr.MarshalSize(),
+					headerSize:        headerSize,
 					payloadSize:       len(payload),
 				})
 				d.pacer.Enqueue(&pacer.Packet{
 					Header:             hdr,
+					HeaderSize:         headerSize,
 					Payload:            payload,
+					ProbeClusterId:     ccutils.ProbeClusterId(d.probeClusterId.Load()),
 					AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 					TransportWideExtID: uint8(d.transportWideExtID),
 					WriteStream:        d.writeStream,
@@ -1971,18 +1983,21 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		}
 		d.addDummyExtensions(&pkt.Header)
 
+		headerSize := pkt.Header.MarshalSize()
 		d.updateStats(updateStatsParams{
 			packetTime:        mono.UnixNano(),
 			extSequenceNumber: epm.extSequenceNumber,
 			extTimestamp:      epm.extTimestamp,
 			isOutOfOrder:      true,
-			headerSize:        pkt.Header.MarshalSize(),
+			headerSize:        headerSize,
 			payloadSize:       len(payload),
 			isRTX:             true,
 		})
 		d.pacer.Enqueue(&pacer.Packet{
 			Header:             &pkt.Header,
+			HeaderSize:         headerSize,
 			Payload:            payload,
+			ProbeClusterId:     ccutils.ProbeClusterId(d.probeClusterId.Load()),
 			IsRTX:              true,
 			AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 			TransportWideExtID: uint8(d.transportWideExtID),
@@ -2144,7 +2159,7 @@ func (d *DownTrack) sendPaddingOnMuteForVideo() {
 		if i == 0 {
 			d.params.Logger.Debugw("sending padding on mute")
 		}
-		d.WritePaddingRTP(20, true, true, 0)
+		d.WritePaddingRTP(20, true, true)
 		time.Sleep(paddingOnMuteInterval)
 	}
 }
@@ -2185,18 +2200,21 @@ func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
 				return
 			}
 
+			headerSize := hdr.MarshalSize()
 			d.updateStats(updateStatsParams{
 				packetTime:        mono.UnixNano(),
 				extSequenceNumber: snts[i].extSequenceNumber,
 				extTimestamp:      snts[i].extTimestamp,
-				headerSize:        hdr.MarshalSize(),
+				headerSize:        headerSize,
 				payloadSize:       len(payload),
 				// although this is using empty frames, mark as padding as these are used to trigger Pion OnTrack only
 				isPadding: true,
 			})
 			d.pacer.Enqueue(&pacer.Packet{
 				Header:             hdr,
+				HeaderSize:         headerSize,
 				Payload:            payload,
+				ProbeClusterId:     ccutils.ProbeClusterId(d.probeClusterId.Load()),
 				AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 				TransportWideExtID: uint8(d.transportWideExtID),
 				WriteStream:        d.writeStream,

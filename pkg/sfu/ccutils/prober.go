@@ -131,8 +131,9 @@ import (
 )
 
 type ProberListener interface {
-	OnSendProbe(bytesToSend int, probeClusterId ProbeClusterId)
+	OnSendProbe(bytesToSend int)
 	OnProbeClusterDone(info ProbeClusterInfo)
+	OnProbeClusterSwitch(probeClusterId ProbeClusterId)
 	OnActiveChanged(isActive bool)
 }
 
@@ -316,13 +317,13 @@ func (p *Prober) processActiveStateQueue() {
 }
 
 func (p *Prober) run() {
-	// determine how long to sleep
 	cluster := p.getFrontCluster()
 	if cluster == nil {
 		return
 	}
 
 	timer := time.NewTimer(cluster.GetSleepDuration())
+	defer timer.Stop()
 	for {
 		<-timer.C
 
@@ -344,7 +345,6 @@ func (p *Prober) run() {
 			p.popFrontCluster(cluster)
 		}
 
-		// determine how long to sleep
 		cluster := p.getFrontCluster()
 		if cluster == nil {
 			return
@@ -571,7 +571,7 @@ func (c *Cluster) Process() {
 	c.lock.RUnlock()
 
 	if bytesShortFall > 0 && c.listener != nil {
-		c.listener.OnSendProbe(bytesShortFall, c.id)
+		c.listener.OnSendProbe(bytesShortFall)
 	}
 
 	// STREAM-ALLOCATOR-TODO look at adapting sleep time based on how many bytes and how much time is left

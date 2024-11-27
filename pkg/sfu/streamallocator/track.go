@@ -20,7 +20,6 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 )
 
 type Track struct {
@@ -151,8 +150,8 @@ func (t *Track) SetMaxLayer(layer buffer.VideoLayer) bool {
 	return true
 }
 
-func (t *Track) WritePaddingRTP(bytesToSend int, probeClusterId ccutils.ProbeClusterId) int {
-	return t.downTrack.WritePaddingRTP(bytesToSend, false, false, probeClusterId)
+func (t *Track) WritePaddingRTP(bytesToSend int) int {
+	return t.downTrack.WritePaddingRTP(bytesToSend, false, false)
 }
 
 func (t *Track) AllocateOptimal(allowOvershoot bool, hold bool) sfu.VideoAllocation {
