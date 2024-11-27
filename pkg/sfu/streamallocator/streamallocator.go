@@ -563,6 +563,7 @@ func (s *StreamAllocator) OnProbeClusterDone(info ccutils.ProbeClusterInfo) {
 	})
 }
 
+/* RAJA-REMOVE
 // called when prober active state changes
 func (s *StreamAllocator) OnActiveChanged(isActive bool) {
 	for _, t := range s.getTracks() {
@@ -574,6 +575,7 @@ func (s *StreamAllocator) OnActiveChanged(isActive bool) {
 		}
 	}
 }
+*/
 
 // called when probe cluster changes
 func (s *StreamAllocator) OnProbeClusterSwitch(probeClusterId ccutils.ProbeClusterId) {

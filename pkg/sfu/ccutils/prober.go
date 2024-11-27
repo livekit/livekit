@@ -134,7 +134,7 @@ type ProberListener interface {
 	OnSendProbe(bytesToSend int)
 	OnProbeClusterDone(info ProbeClusterInfo)
 	OnProbeClusterSwitch(probeClusterId ProbeClusterId)
-	OnActiveChanged(isActive bool)
+	// RAJA-REMOVE OnActiveChanged(isActive bool)
 }
 
 type ProberParams struct {
@@ -147,11 +147,11 @@ type Prober struct {
 
 	clusterId atomic.Uint32
 
-	clustersMu                sync.RWMutex
-	clusters                  deque.Deque[*Cluster]
-	activeCluster             *Cluster
-	activeStateQueue          []bool
-	activeStateQueueInProcess atomic.Bool
+	clustersMu    sync.RWMutex
+	clusters      deque.Deque[*Cluster]
+	activeCluster *Cluster
+	// RAJA-REMOVE activeStateQueue          []bool
+	// RAJA-REMOVE activeStateQueueInProcess atomic.Bool
 }
 
 func NewProber(params ProberParams) *Prober {
@@ -183,7 +183,7 @@ func (p *Prober) Reset() {
 	p.clusters.Clear()
 	p.activeCluster = nil
 
-	p.activeStateQueue = append(p.activeStateQueue, false)
+	// RAJA-REMOVE p.activeStateQueue = append(p.activeStateQueue, false)
 	p.clustersMu.Unlock()
 
 	if reset {
@@ -192,7 +192,7 @@ func (p *Prober) Reset() {
 		}
 	}
 
-	p.processActiveStateQueue()
+	// RAJA-REMOVE p.processActiveStateQueue()
 }
 
 func (p *Prober) AddCluster(mode ProbeClusterMode, desiredRateBps int, expectedRateBps int, minDuration time.Duration, maxDuration time.Duration) ProbeClusterId {
@@ -218,7 +218,7 @@ func (p *Prober) AddCluster(mode ProbeClusterMode, desiredRateBps int, expectedR
 }
 
 func (p *Prober) PacketsSent(size int) {
-	cluster := p.getFrontCluster()
+	cluster := p.getActiveCluster()
 	if cluster == nil {
 		return
 	}
@@ -227,7 +227,7 @@ func (p *Prober) PacketsSent(size int) {
 }
 
 func (p *Prober) ProbeSent(size int) {
-	cluster := p.getFrontCluster()
+	cluster := p.getActiveCluster()
 	if cluster == nil {
 		return
 	}
@@ -235,7 +235,7 @@ func (p *Prober) ProbeSent(size int) {
 	cluster.ProbeSent(size)
 }
 
-func (p *Prober) getFrontCluster() *Cluster {
+func (p *Prober) getActiveCluster() *Cluster {
 	p.clustersMu.Lock()
 	defer p.clustersMu.Unlock()
 
@@ -269,12 +269,14 @@ func (p *Prober) popFrontCluster(cluster *Cluster) {
 		p.activeCluster = nil
 	}
 
+	/* RAJA-REMOVE
 	if p.clusters.Len() == 0 {
 		p.activeStateQueue = append(p.activeStateQueue, false)
 	}
+	*/
 	p.clustersMu.Unlock()
 
-	p.processActiveStateQueue()
+	// RAJA-REMOVE p.processActiveStateQueue()
 }
 
 func (p *Prober) pushBackClusterAndMaybeStart(cluster *Cluster) {
@@ -282,15 +284,16 @@ func (p *Prober) pushBackClusterAndMaybeStart(cluster *Cluster) {
 	p.clusters.PushBack(cluster)
 
 	if p.clusters.Len() == 1 {
-		p.activeStateQueue = append(p.activeStateQueue, true)
+		// RAJA-REMOVE p.activeStateQueue = append(p.activeStateQueue, true)
 
 		go p.run()
 	}
 	p.clustersMu.Unlock()
 
-	p.processActiveStateQueue()
+	// RAJA-REMOVE p.processActiveStateQueue()
 }
 
+/* RAJA-REMOVE
 func (p *Prober) processActiveStateQueue() {
 	if p.activeStateQueueInProcess.Swap(true) {
 		// processing queue
@@ -315,9 +318,10 @@ func (p *Prober) processActiveStateQueue() {
 
 	p.activeStateQueueInProcess.Store(false)
 }
+*/
 
 func (p *Prober) run() {
-	cluster := p.getFrontCluster()
+	cluster := p.getActiveCluster()
 	if cluster == nil {
 		return
 	}
@@ -328,13 +332,14 @@ func (p *Prober) run() {
 		<-timer.C
 
 		// wake up and check for probes to send
-		cluster = p.getFrontCluster()
+		cluster = p.getActiveCluster()
 		if cluster == nil {
 			return
 		}
 
 		cluster.Process()
 
+		// RAJA-TODO: this should be notified from outside
 		if cluster.IsFinished() {
 			p.params.Logger.Debugw("cluster finished", "cluster", cluster.String())
 
@@ -345,7 +350,7 @@ func (p *Prober) run() {
 			p.popFrontCluster(cluster)
 		}
 
-		cluster := p.getFrontCluster()
+		cluster := p.getActiveCluster()
 		if cluster == nil {
 			return
 		}
@@ -430,6 +435,7 @@ func newCluster(
 	c := &Cluster{
 		id:          id,
 		mode:        mode,
+		listener:    listener,
 		minDuration: minDuration,
 		maxDuration: maxDuration,
 	}
@@ -540,6 +546,7 @@ func (c *Cluster) GetInfo() ProbeClusterInfo {
 	}
 }
 
+// simplify this, this should just be sending x-amount of data, so probably don't even need to call this API, can just send standard amount?
 func (c *Cluster) Process() {
 	c.lock.RLock()
 	timeElapsed := time.Since(c.startTime)
@@ -564,6 +571,7 @@ func (c *Cluster) Process() {
 	// move to next bucket if necessary
 	if timeElapsed > c.buckets[c.bucketIdx].desiredElapsedTime {
 		c.bucketIdx++
+		// stay in the last bucket till desired number of bytes are sent
 		if c.bucketIdx >= len(c.buckets) {
 			c.bucketIdx = len(c.buckets) - 1
 		}
