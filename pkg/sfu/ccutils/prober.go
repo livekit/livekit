@@ -430,6 +430,7 @@ func newCluster(
 	c := &Cluster{
 		id:          id,
 		mode:        mode,
+		listener:    listener,
 		minDuration: minDuration,
 		maxDuration: maxDuration,
 	}
