@@ -467,6 +467,7 @@ func (c *Cluster) initBuckets(desiredRateBps int, expectedRateBps int, duration 
 
 		c.buckets = append(c.buckets, clusterBucket{
 			desiredNumProbes: runningNumProbes,
+			desiredBytes:     runningDesiredBytes,
 			sleepDuration:    time.Duration(sleepDurationMicroSeconds) * time.Microsecond,
 		})
 	}
