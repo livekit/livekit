@@ -21,7 +21,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20241125052448-0e9ef3242e3b
-	github.com/livekit/protocol v1.27.2-0.20241125042926-792495362f28
+	github.com/livekit/protocol v1.28.2-0.20241128110641-c9f20a60249a
 	github.com/livekit/psrpc v0.6.1-0.20241018124827-1efff3d113a8
 	github.com/mackerelio/go-osstat v0.2.5
 	github.com/magefile/mage v1.15.0
@@ -34,7 +34,7 @@ require (
 	github.com/pion/interceptor v0.1.37
 	github.com/pion/rtcp v1.2.14
 	github.com/pion/rtp v1.8.9
-	github.com/pion/sctp v1.8.33
+	github.com/pion/sctp v1.8.34
 	github.com/pion/sdp/v3 v3.0.9
 	github.com/pion/transport/v2 v2.2.10
 	github.com/pion/turn/v2 v2.1.6
@@ -43,7 +43,7 @@ require (
 	github.com/prometheus/client_golang v1.20.5
 	github.com/redis/go-redis/v9 v9.7.0
 	github.com/rs/cors v1.11.1
-	github.com/stretchr/testify v1.9.0
+	github.com/stretchr/testify v1.10.0
 	github.com/thoas/go-funk v0.9.3
 	github.com/twitchtv/twirp v8.1.3+incompatible
 	github.com/ua-parser/uap-go v0.0.0-20240611065828-3a4781585db6
