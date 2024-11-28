@@ -170,7 +170,6 @@ func (p *Prober) Reset(info ProbeClusterInfo) {
 	p.clustersMu.Lock()
 	defer p.clustersMu.Unlock()
 
-	p.clustersMu.Unlock()
 	if p.activeCluster != nil {
 		if p.activeCluster.Id() == info.ProbeClusterId {
 			p.activeCluster.MarkCompleted(info)
