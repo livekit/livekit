@@ -1685,6 +1685,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			"extLastTS", extLastTS,
 			"diffSeconds", math.Abs(diffSeconds),
 			"refInfos", logger.ObjectSlice(f.refInfos[:]),
+			"lastSwitchExtIncomingTS", f.lastSwitchExtIncomingTS,
 			"rtpStats", f.rtpStats,
 		)
 	}
@@ -1701,6 +1702,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			"extLastTS", extLastTS,
 			"diffSeconds", math.Abs(diffSeconds),
 			"refInfos", logger.ObjectSlice(f.refInfos[:]),
+			"lastSwitchExtIncomingTS", f.lastSwitchExtIncomingTS,
 			"rtpStats", f.rtpStats,
 		)
 	}
@@ -1900,6 +1902,7 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 				"error", err,
 				"layer", layer,
 				"refInfos", logger.ObjectSlice(f.refInfos[:]),
+				"lastSwitchExtIncomingTS", f.lastSwitchExtIncomingTS,
 				"rtpStats", f.rtpStats,
 				"currentLayer", f.vls.GetCurrent(),
 				"targetLayer", f.vls.GetCurrent(),
@@ -1914,6 +1917,7 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, layer i
 			"to", extPkt.Packet.SSRC,
 			"layer", layer,
 			"refInfos", logger.ObjectSlice(f.refInfos[:]),
+			"lastSwitchExtIncomingTS", f.lastSwitchExtIncomingTS,
 			"currentLayer", f.vls.GetCurrent(),
 			"targetLayer", f.vls.GetCurrent(),
 			"maxLayer", f.vls.GetMax(),
