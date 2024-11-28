@@ -611,10 +611,10 @@ func (s *StreamAllocator) OnProbeClusterSwitch(probeClusterId ccutils.ProbeClust
 }
 
 // called when pacer probe observer observes a cluster completion
-func (s *StreamAllocator) OnPacerProbeObserverClusterComplete(info ccutils.ProbeClusterInfo) {
+func (s *StreamAllocator) OnPacerProbeObserverClusterComplete(probeClusterId ccutils.ProbeClusterId) {
 	s.postEvent(Event{
 		Signal: streamAllocatorSignalPacerProbeObserverClusterComplete,
-		Data:   info,
+		Data:   probeClusterId,
 	})
 }
 
@@ -929,10 +929,10 @@ func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
 }
 
 func (s *StreamAllocator) handleSignalPacerProbeObserverClusterComplete(event Event) {
-	info, _ := event.Data.(ccutils.ProbeClusterInfo)
-	s.params.Logger.Infow("pacer indicating cluster done", "info", info) // RAJA-REMOVE
+	probeClusterId, _ := event.Data.(ccutils.ProbeClusterId)
+	s.params.Logger.Infow("pacer indicating cluster done", "pci", probeClusterId) // RAJA-REMOVE
 	// RAJA-TODO: maybe avoid translating this info
-	s.probeController.ProbeClusterDone(info)
+	s.probeController.ProbeClusterDone(probeClusterId)
 }
 
 func (s *StreamAllocator) setState(state streamAllocatorState) {

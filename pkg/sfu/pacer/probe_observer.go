@@ -169,25 +169,17 @@ func (po *ProbeObserver) RecordPacket(size int, isRTX bool, probeClusterId ccuti
 	}
 
 	notify := false
-	var clusterInfo ccutils.ProbeClusterInfo
+	var clusterId ccutils.ProbeClusterId
 	if !po.isActiveClusterDone && po.bytesProbe+po.bytesNonProbePrimary+po.bytesNonProbeRTX >= po.desiredProbeClusterBytes {
 		po.isActiveClusterDone = true
 
 		notify = true
-		clusterInfo = ccutils.ProbeClusterInfo{
-			ProbeClusterId:       po.activeProbeClusterId,
-			DesiredBytes:         po.desiredProbeClusterBytes,
-			StartTime:            po.clusterStartTime,
-			EndTime:              mono.UnixNano(),
-			BytesProbe:           po.bytesProbe,
-			BytesNonProbePrimary: po.bytesNonProbePrimary,
-			BytesNonProbeRTX:     po.bytesNonProbeRTX,
-		}
+		clusterId = po.activeProbeClusterId
 	}
 	po.lock.Unlock()
 
 	if notify && po.listener != nil {
-		po.listener.OnPacerProbeObserverClusterComplete(clusterInfo)
+		po.listener.OnPacerProbeObserverClusterComplete(clusterId)
 	}
 }
 

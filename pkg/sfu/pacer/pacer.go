@@ -50,7 +50,7 @@ type Pacer interface {
 }
 
 type PacerProbeObserverListener interface {
-	OnPacerProbeObserverClusterComplete(info ccutils.ProbeClusterInfo)
+	OnPacerProbeObserverClusterComplete(probeClusterId ccutils.ProbeClusterId)
 }
 
 // ------------------------------------------------

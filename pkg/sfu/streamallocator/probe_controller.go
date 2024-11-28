@@ -127,14 +127,17 @@ func (p *ProbeController) Reset() {
 	p.clearProbeLocked()
 }
 
-func (p *ProbeController) ProbeClusterDone(info ccutils.ProbeClusterInfo) {
+func (p *ProbeController) ProbeClusterDone(probeClusterId ccutils.ProbeClusterId) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	if p.probeClusterId != info.ProbeClusterId {
-		p.params.Logger.Debugw("not expected probe cluster", "probeClusterId", p.probeClusterId, "resetProbeClusterId", info.ProbeClusterId)
+	if p.probeClusterId != probeClusterId {
+		p.params.Logger.Debugw("not expected probe cluster", "probeClusterId", p.probeClusterId, "resetProbeClusterId", probeClusterId)
 	} else {
-		p.doneProbeClusterInfo = info
+		p.doneProbeClusterInfo = ccutils.ProbeClusterInfoInvalid
+		if p.pacer != nil {
+			p.doneProbeClusterInfo = p.pacer.EndProbeCluster(probeClusterId)
+		}
 	}
 	// RAJA-TODO pass this on to the prober so that it can close out the cluster
 }
